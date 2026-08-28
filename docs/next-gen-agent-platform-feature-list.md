@@ -1,10 +1,8 @@
 # EVOWORK · 功能清单
 
-> 本文档定义 **EVOWORK**（我们要做的下一代智能体平台，即本仓库）的功能范围。
+> 本文档定义 **EVOWORK**（我们要做的下一代智能体平台，即本仓库）的功能范围，回答「EVOWORK 应该长什么样」。
 >
-> 与 [agent-platform-feature-list.md](agent-platform-feature-list.md)（对标平台盘点）区分：那份是「现在的智能体平台长什么样」，这份是「EVOWORK 应该长什么样」。**怎么做到**见 [next-gen-agent-platform-tech-roadmap.md](next-gen-agent-platform-tech-roadmap.md)。
->
-> 注：对标平台（腾讯 EvoWork）与本产品同名，文档中一律以大小写区分——`EVOWORK` 指我们的，`EvoWork` 指对标平台。
+> **怎么做到**见 [next-gen-agent-platform-tech-roadmap.md](next-gen-agent-platform-tech-roadmap.md)，**第一步先做什么**见 [next-gen-agent-platform-poc-scope.md](next-gen-agent-platform-poc-scope.md)。
 >
 > 核心命题：**平台的竞争力不在 Agent 有多能干，而在用户敢让它干多少。** 当能力被模型迅速拉平，差异落在放权深度上——能否放心把生产系统的写权限交出去。
 
@@ -241,7 +239,7 @@
 | **Phase 3** | 让它进企业生产 | policy-as-code + SSO/RBAC/审批链 + DLP + 组织资产仓库 + 团队协作 + 回放取证 |
 | **Phase 4** | 让它复利 | 轨迹自蒸馏 + 回归评测闭环 + 端侧路由 + A2A 与生态 |
 
-优先级排序依据（来自演进推论）：**① 事件驱动+异步审批**是体验代差 → **② 编排与对抗验证**决定完成质量 → **③ 审计/权限/成本**决定能否进企业 → **④ 注入防护**是唯一会真出安全事故的一项 → **⑤ 自蒸馏**决定长期复利。
+优先级排序依据：**① 事件驱动+异步审批**是体验代差 → **② 编排与对抗验证**决定完成质量 → **③ 审计/权限/成本**决定能否进企业 → **④ 注入防护**是唯一会真出安全事故的一项 → **⑤ 自蒸馏**决定长期复利。
 
 ---
 
