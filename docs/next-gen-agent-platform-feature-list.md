@@ -2,7 +2,7 @@
 
 > 本文档定义 **EVOWORK**（我们要做的下一代智能体平台，即本仓库）的功能范围，回答「EVOWORK 应该长什么样」。
 >
-> **怎么做到**见 [next-gen-agent-platform-tech-roadmap.md](next-gen-agent-platform-tech-roadmap.md)，**第一步先做什么**见 [next-gen-agent-platform-poc-scope.md](next-gen-agent-platform-poc-scope.md)。
+> **怎么做到**见 [next-gen-agent-platform-tech-roadmap.md](next-gen-agent-platform-tech-roadmap.md)，**第一步先做什么**见 [next-gen-agent-platform-poc-scope.md](next-gen-agent-platform-poc-scope.md)，**每个契约长什么样**见 [`docs/design/`](design/00-index.md)。
 >
 > 核心命题：**平台的竞争力不在 Agent 有多能干，而在用户敢让它干多少。** 当能力被模型迅速拉平，差异落在放权深度上——能否放心把生产系统的写权限交出去。
 

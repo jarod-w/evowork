@@ -6,13 +6,14 @@
 >
 > 本文是 [next-gen-agent-platform-tech-roadmap.md](next-gen-agent-platform-tech-roadmap.md) 第九节「起步形态」的可执行版本：那一节回答「第一版长什么样」，本文回答「在客户催的前提下，第一步先交付到哪，且不留技术债」。
 >
-> 三份文档的分工：
+> 文档分工：
 >
 > | 文档 | 回答 |
 > |---|---|
 > | [next-gen-agent-platform-feature-list.md](next-gen-agent-platform-feature-list.md) | EVOWORK **要做什么** |
 > | [next-gen-agent-platform-tech-roadmap.md](next-gen-agent-platform-tech-roadmap.md) | EVOWORK **怎么做到** |
 > | 本文 | EVOWORK **第一步先做什么** |
+> | [`docs/design/`](design/00-index.md) | 第一步的**每个契约长什么样**（设计文档组） |
 
 ---
 
