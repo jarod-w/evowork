@@ -2,13 +2,14 @@
 
 > **EVOWORK** 是我们要做的下一代智能体平台，即本仓库。
 >
-> 三份文档的分工：
+> 文档分工：
 >
 > | 文档 | 回答 |
 > |---|---|
 > | [next-gen-agent-platform-feature-list.md](next-gen-agent-platform-feature-list.md) | EVOWORK **要做什么** |
 > | 本文 | EVOWORK **怎么做到** |
 > | [next-gen-agent-platform-poc-scope.md](next-gen-agent-platform-poc-scope.md) | EVOWORK **第一步先做什么**（POC 范围与零丢弃约束） |
+> | [`docs/design/`](design/00-index.md) | 第一步的**每个契约长什么样**（设计文档组） |
 >
 > 两条核心判断：
 > 1. **「客户端即运行时」这套主流桌面 Agent 架构不能作为 EVOWORK 的起点**——必须先做控制面与执行面的分离，再谈功能（第一至八节）
