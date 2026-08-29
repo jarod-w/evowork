@@ -204,6 +204,17 @@ version = "0.1.0"
 [[package]]
 name = "evo-model"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "evo-protocol",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "toml",
+]
 
 [[package]]
 name = "evo-policy"
