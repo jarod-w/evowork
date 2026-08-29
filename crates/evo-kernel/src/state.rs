@@ -133,7 +133,19 @@ impl RunState {
     pub fn events_since_checkpoint(&self) -> u64 {
         match self.last_checkpoint_seq {
             None => self.last_seq + 1,
-            Some(at) => self.last_seq.saturating_sub(at),
+            Some(at) => {
+                debug_assert!(
+                    at <= self.last_seq,
+                    "last_checkpoint_seq ({at}) > last_seq ({}): 检查点比最新事件还新，\
+                     这是不可能出现的状态。写检查点时 reduce 会把 last_checkpoint_seq \
+                     与 last_seq 同时设成同一个 event.seq，之后 last_seq 只增不减，\
+                     所以 last_checkpoint_seq <= last_seq 恒成立；出现违反说明状态 \
+                     被别的路径污染了。若这里用 saturating_sub 掩盖，会静默返回 0，\
+                     表现为『刚打完检查点』，导致该打检查点时不打。",
+                    self.last_seq
+                );
+                self.last_seq.saturating_sub(at)
+            }
         }
     }
 }

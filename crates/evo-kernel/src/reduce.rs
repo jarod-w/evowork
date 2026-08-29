@@ -9,6 +9,15 @@ use evo_protocol::{Event, EventBody};
 /// 注意：**不许读 `event.recorded_at`**。那是 daemon 的写入时刻，
 /// 内核对时间的唯一来源是 env.sampled（01 §5）。
 pub fn reduce(state: &RunState, event: &Event) -> RunState {
+    debug_assert!(
+        event.seq >= state.last_seq,
+        "event.seq ({}) < state.last_seq ({}): 事件必须按 seq 非递减顺序喂进来。\
+         `events()` 保证按 seq 升序返回；出现倒退说明调用方绕过了这个排序保证 \
+         （回放器从快照恢复时会把快照所在 seq 的那条事件重新喂一遍，\
+         此时 event.seq == state.last_seq，属于合法情况，故用 >= 而非 >）。",
+        event.seq,
+        state.last_seq
+    );
     let mut s = state.clone();
     s.last_seq = event.seq;
 
