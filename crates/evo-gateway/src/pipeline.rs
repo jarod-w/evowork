@@ -62,9 +62,9 @@ impl Gateway {
         let mut events = Vec::new();
 
         // 无 manifest 即最严
-        let manifest = match self.manifests.get(&req.call.tool) {
-            Some(m) => m.clone(),
-            None => ManifestRegistry::strictest_default(&req.call.tool),
+        let (manifest, manifest_missing) = match self.manifests.get(&req.call.tool) {
+            Some(m) => (m.clone(), false),
+            None => (ManifestRegistry::strictest_default(&req.call.tool), true),
         };
 
         let targets: Vec<_> = manifest
@@ -142,15 +142,36 @@ impl Gateway {
         };
         let (policy_decision, rules_hit) = self.policy.evaluate_with_trace(&ctx);
 
-        let decision = if taint_gate {
-            // 结构性闸门：策略说 Allow 也要审批
-            PolicyDecision::RequireApproval {
-                risk: RiskLevel::L2,
+        // 结构性闸门：manifest 缺失 / 污点未清，都只能把策略判定收紧成
+        // RequireApproval，不能把 Deny 放宽——闸门是拿来加严的，不是拿来盖过
+        // 拒绝的。所以 Deny 必须先于两个闸门判断（下面 match 里 Deny 分支排在
+        // 最前面，没有 guard，无论 manifest_missing / taint_gate 是否为真都会
+        // 命中），只有 Allow（或策略本身已经给出的 RequireApproval）才可能被
+        // 两个闸门进一步收紧。
+        //
+        // 两个闸门都命中时，reason_code 报 "no_manifest"：manifest 缺失意味着
+        // 我们连这个工具的 class / reversible / targets 都是猜的最严默认值,
+        // 这比"工具形状已知、只是这次调用摸到了污点数据"更从根上不可信，
+        // 优先暴露这个更严重的理由；risk 取两个闸门里较高的 L3
+        // （污点闸门单独命中时仍是 L2，行为不变）。
+        let (decision, reason) = match policy_decision {
+            PolicyDecision::Deny { reason_code } => {
+                (PolicyDecision::Deny { reason_code }, "policy")
             }
-        } else {
-            policy_decision
+            _ if manifest_missing => (
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L3,
+                },
+                "no_manifest",
+            ),
+            _ if taint_gate => (
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L2,
+                },
+                "taint_gate",
+            ),
+            other => (other, "policy"),
         };
-        let reason = if taint_gate { "taint_gate" } else { "policy" };
 
         match &decision {
             PolicyDecision::Deny { reason_code } => {

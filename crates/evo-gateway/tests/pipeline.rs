@@ -166,6 +166,31 @@ fn a_tainted_read_is_still_allowed() {
 }
 
 #[test]
+fn the_taint_gate_only_tightens_allow_it_never_loosens_a_deny() {
+    // 污点闸门以前的写法是无条件覆盖 policy_decision，如果策略本来判定 Deny，
+    // taint_gate 命中会把它覆盖成 RequireApproval——等于把一次拒绝"放宽"成了
+    // 可审批通过。这里用一条明确 deny fs.write 的策略 + tainted 输入复现，
+    // 断言结果仍然是 Deny。
+    const DENY_FS_WRITE: &str = r#"
+version = "poc-1"
+
+[[rule]]
+id = "deny-fs-write"
+tool = "fs.write"
+decision = "deny"
+"#;
+    let gw = Gateway::new(
+        Box::new(HardcodedPolicy::from_toml_str(DENY_FS_WRITE).unwrap()),
+        ManifestRegistry::from_toml_str(TOOLS).unwrap(),
+    );
+    let verdict = gw.admit(admit("fs.write", TaintLevel::Tainted, ExecutionMode::Live));
+    let GatewayAction::Deny { reason_code } = verdict.action else {
+        panic!("策略 Deny 时，即使这次调用摸到了污点数据，也必须仍然是 Deny")
+    };
+    assert_eq!(reason_code, "deny-fs-write");
+}
+
+#[test]
 fn dry_run_suppresses_writes_and_produces_a_tool_result() {
     let verdict = gateway().admit(admit("fs.write", TaintLevel::Clean, ExecutionMode::DryRun));
     assert!(matches!(verdict.action, GatewayAction::DryRun { .. }));
@@ -234,6 +259,87 @@ targets = [{ from_param = "/path", kind = "file", op = "create" }]
         ExecutionMode::DryRun,
     ));
     assert!(matches!(dry.action, GatewayAction::DryRun { .. }));
+}
+
+#[test]
+fn a_tool_with_no_manifest_is_forced_to_approval_even_when_no_policy_rule_would_catch_it() {
+    // 复现 review 找到的缺口：客户策略文件里如果没配那条 external -> require_approval
+    // 规则（这里只有 read -> allow），HardcodedPolicy 的兜底会返回 Allow，
+    // strictest_default 标的 External 就被悄悄吃掉。manifest 闸门必须在
+    // Gateway 里结构性地兜住这个洞，不依赖策略文件配没配那条规则。
+    const POLICY_WITHOUT_EXTERNAL_RULE: &str = r#"
+version = "poc-1"
+
+[[rule]]
+id = "read-is-free"
+class = "read"
+decision = "allow"
+"#;
+    let gw = Gateway::new(
+        Box::new(HardcodedPolicy::from_toml_str(POLICY_WITHOUT_EXTERNAL_RULE).unwrap()),
+        ManifestRegistry::from_toml_str(TOOLS).unwrap(),
+    );
+    let verdict = gw.admit(admit(
+        "mcp:unknown/do_thing",
+        TaintLevel::Clean,
+        ExecutionMode::Live,
+    ));
+    let GatewayAction::AwaitApproval { risk, .. } = verdict.action else {
+        panic!("无 manifest 必须要求审批，即使策略文件里没有覆盖它的规则")
+    };
+    assert_eq!(risk, RiskLevel::L3);
+    let pe = verdict
+        .events
+        .iter()
+        .find(|e| e.kind() == "policy.evaluated")
+        .unwrap();
+    let EventBody::PolicyEvaluated(pe) = pe else {
+        unreachable!()
+    };
+    assert_eq!(pe.reason_code, "no_manifest");
+}
+
+#[test]
+fn the_manifest_gate_only_tightens_allow_it_never_loosens_a_deny() {
+    // 闸门是用来收紧的，不是用来放宽的：策略把一切都 deny 掉时，
+    // 无 manifest 的工具仍然应该是 Deny，不能被闸门"升级"成 RequireApproval。
+    const DENY_EVERYTHING: &str = r#"
+version = "poc-1"
+
+[[rule]]
+id = "deny-all"
+decision = "deny"
+"#;
+    let gw = Gateway::new(
+        Box::new(HardcodedPolicy::from_toml_str(DENY_EVERYTHING).unwrap()),
+        ManifestRegistry::from_toml_str(TOOLS).unwrap(),
+    );
+    let verdict = gw.admit(admit(
+        "mcp:unknown/do_thing",
+        TaintLevel::Clean,
+        ExecutionMode::Live,
+    ));
+    let GatewayAction::Deny { reason_code } = verdict.action else {
+        panic!("策略 Deny 时，即使 manifest 缺失也必须仍然是 Deny")
+    };
+    assert_eq!(reason_code, "deny-all");
+}
+
+#[test]
+fn a_declared_tool_is_not_affected_by_the_manifest_gate() {
+    // 回归：已经写了 manifest 的工具不应该被这个闸门误伤——它只应该管
+    // manifest 缺失的那条路径。
+    let verdict = gateway().admit(admit("fs.write", TaintLevel::Clean, ExecutionMode::Live));
+    assert!(matches!(verdict.action, GatewayAction::Dispatch(_)));
+    let pe = verdict
+        .events
+        .iter()
+        .find(|e| e.kind() == "policy.evaluated")
+        .unwrap();
+    let EventBody::PolicyEvaluated(pe) = pe else {
+        unreachable!()
+    };
+    assert_eq!(pe.reason_code, "policy");
 }
 
 #[test]
