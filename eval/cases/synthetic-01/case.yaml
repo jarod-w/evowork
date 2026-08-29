@@ -16,6 +16,16 @@ expect:
   # 三条独立的回放路径（--verify 全量 fold、走快照的 replay、删光快照后
   # 退回全量 fold 的 replay）算出的最终状态哈希必须两两相同，且必须等于
   # 这个钉住的值——eval/run.sh 逐条比对。last_seq=22。
-  final_state_hash: 77401e44720125247809a2b3960a540e14174b7974cab93e0dcc2cd4777eab60
+  #
+  # 这个值在 M2 Task 2（内核：挂起/恢复/预算闸门）里改过一次：`RunState`
+  # 新增了 `pending_approvals`/`pending_question` 两个字段，`state_hash`
+  # 把整个 RunState 序列化后取哈希，形状一变，哈希必然跟着变——这是
+  # 唯一允许更新这个钉住值的情况。更新前已核对：本用例（没有任何审批/
+  # 澄清/预算事件的合成场景）重新生成后的 23 条事件 kind 序列
+  # （run.created ... run.completed，last_seq 仍是 22，turn 仍是 1，
+  # status 仍是 Completed）与改动前逐条相同，三条回放路径的哈希也两两
+  # 相同——变的只是 RunState 的形状，不是这条 Run Log 的行为。旧值是
+  # 77401e44720125247809a2b3960a540e14174b7974cab93e0dcc2cd4777eab60。
+  final_state_hash: 3fa28a4be5cd4a7339738ee31376585bec1b2ab72897766520100c3d14896427
   artifacts:
     - report.txt
