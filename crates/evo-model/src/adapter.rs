@@ -33,6 +33,13 @@ pub enum ModelError {
     Io(#[from] std::io::Error),
     #[error("fixture exhausted after {0} responses")]
     FixtureExhausted(usize),
+    #[error(
+        "cost overflow: quantity={quantity} * unit_price_micros={unit_price_micros} 超出 u64 范围"
+    )]
+    CostOverflow {
+        quantity: u64,
+        unit_price_micros: u64,
+    },
 }
 
 #[async_trait]

@@ -47,6 +47,18 @@ impl PriceTable {
         &self.file.version
     }
 
+    /// 定价表里是否收录了这个 provider/model。
+    ///
+    /// 用来区分「真免费」（`charges` 返回空列表，但 usage 全为 0）和
+    /// 「未定价」（`charges` 返回空列表，是因为表里根本没有这个模型）——
+    /// 对财务而言这两者含义完全不同。
+    pub fn covers(&self, provider: &str, model: &str) -> bool {
+        self.file
+            .models
+            .iter()
+            .any(|e| e.provider == provider && e.model == model)
+    }
+
     /// 一次模型往返产生的全部记账行。用量为 0 的单位不产生记账行。
     ///
     /// **micros 整数，不用浮点**——财务客户，账要对得上。
@@ -57,7 +69,7 @@ impl PriceTable {
         usage: &Usage,
         dimension: &CostDimension,
         turn: Option<u32>,
-    ) -> Vec<CostCharged> {
+    ) -> Result<Vec<CostCharged>, ModelError> {
         let Some(e) = self
             .file
             .models
@@ -65,7 +77,7 @@ impl PriceTable {
             .find(|e| e.provider == provider && e.model == model)
         else {
             // 表里没有就不出账，而不是按 0 出一笔「看起来对」的账
-            return Vec::new();
+            return Ok(Vec::new());
         };
 
         let rows = [
@@ -89,16 +101,25 @@ impl PriceTable {
 
         rows.into_iter()
             .filter(|(_, qty, _)| *qty > 0)
-            .map(|(unit, quantity, unit_price_micros)| CostCharged {
-                effect_id: None,
-                turn,
-                unit,
-                quantity,
-                unit_price_micros,
-                amount_micros: quantity * unit_price_micros,
-                currency: self.file.currency,
-                price_table_ver: self.file.version.clone(),
-                dimension: dimension.clone(),
+            .map(|(unit, quantity, unit_price_micros)| {
+                let amount_micros =
+                    quantity
+                        .checked_mul(unit_price_micros)
+                        .ok_or(ModelError::CostOverflow {
+                            quantity,
+                            unit_price_micros,
+                        })?;
+                Ok(CostCharged {
+                    effect_id: None,
+                    turn,
+                    unit,
+                    quantity,
+                    unit_price_micros,
+                    amount_micros,
+                    currency: self.file.currency,
+                    price_table_ver: self.file.version.clone(),
+                    dimension: dimension.clone(),
+                })
             })
             .collect()
     }
