@@ -226,9 +226,17 @@ Expected: 通过（TS 侧包含 `tauri.ts` 也应当类型检查通过——`@ta
 
 ```bash
 echo "== CI-9 外壳不渗进业务代码 =="
-# @tauri-apps/api 与 ipcRenderer 的命中必须全部落在 apps/ui/src/platform/ 内。
+# 外壳 API 的命中必须全部落在 apps/ui/src/platform/ 内。
 # UI 里到处 invoke，就是「内核在 UI 进程里」这条红线的前置形态。
-offenders=$(grep -rlE '@tauri-apps/api|ipcRenderer' apps/ui/src/ 2>/dev/null \
+#
+# 匹配整个 `@tauri-apps/` 家族，不是只匹配 `@tauri-apps/api`——
+# Tauri 2 把能力拆进了 `@tauri-apps/plugin-*`（dialog / fs / notification /
+# opener / process / autostart …），**没有一个包含 `api` 子串**。只匹配
+# `/api` 的话，业务组件里 `import { open } from '@tauri-apps/plugin-dialog'`
+# 会畅通无阻——那正是这条检查要挡的东西。
+# （设计文档 00 §4 检查 9 的原文也只写了 `@tauri-apps/api`，同一个缺口，
+#  Task 5 回填文档时一并订正。）
+offenders=$(grep -rlE '@tauri-apps/|ipcRenderer' apps/ui/src/ 2>/dev/null \
             | grep -v '^apps/ui/src/platform/' || true)
 if [ -n "$offenders" ]; then
   echo "FAIL: platform/ 之外出现了外壳 API：$offenders"; exit 1
@@ -246,7 +254,13 @@ echo "ok"
 
 - [ ] **Step 4: 造反例验证 CI-9 真的会 fail**
 
-在 `apps/ui/src/App.tsx`（`platform/` 之外）临时加一行 `import { invoke } from '@tauri-apps/api/core'`，确认 CI-9 FAIL；还原确认恢复绿。**一条永远通过的检查比没有检查更糟**——这个项目已经出过三次。
+**两种写法都要试**，因为它们走的是不同的包名：
+1. 在 `apps/ui/src/App.tsx`（`platform/` 之外）临时加 `import { invoke } from '@tauri-apps/api/core'` → CI-9 必须 FAIL
+2. 换成 `import { open } from '@tauri-apps/plugin-dialog'` → CI-9 **也必须 FAIL**（这条是原模式漏掉的那类）
+
+两次都还原确认恢复绿。**一条永远通过的检查比没有检查更糟**——这个项目已经出过四次。
+
+> **不要用 `grep -c "tauri-apps" apps/ui/dist/assets/*.js` 来验证「浏览器产物没带 Tauri 代码」。** 压缩后的产物本来就不保留 npm scope 字符串，不论代码有没有被打进去都返回 0——那是个永远通过的检查。真正的验证方式是看 chunk 切分与 `index.html` 的引用关系（Task 3 的报告里有做法）。
 
 同样给 CI-4 造一次反例（在 `apps/ui/src/` 下临时写一个客户名词），确认它现在真的覆盖了 `apps/`。
 
