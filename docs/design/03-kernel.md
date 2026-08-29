@@ -43,13 +43,20 @@ pub enum Command {
     SampleEnv,
     AssembleContext { turn: u32, profile: ContextProfile },
     CallModel { turn: u32 },
-    RequestEffect { effect: EffectRequest },
+    RequestEffect { call: PlannedCall },   // 不是完整 EffectRequest，见下
     AskClarification { question: ClarificationSpec },
     Checkpoint { reason: CheckpointReason },
     Suspend { reason: SuspendReason },
     Complete { status: RunStatus },
 }
 ```
+
+> `RequestEffect` 带的是 `PlannedCall`（工具名 + 参数引用 + 指纹），**不是**完整的
+> `EffectRequest`：`class` / `targets` / `egress` / `reversible` 由 Gateway 从工具
+> manifest 推导，内核看不到 manifest。**内核少知道一样东西，确定性就少一个破口。**
+> `PlannedCall` 随 [01 §4.3](01-run-log.md#43-上下文与模型) 的 `plan.step.call`
+> 一起从 `model.responded` 解析出来，实际类型见 `crates/evo-protocol/src/events/model.rs`，
+> `decide` 的实现见 `crates/evo-kernel/src/decide.rs`。
 
 **模型响应的解析放在 runtime，不放在内核。** 内核只吃已经结构化的 `plan.step` 事件。理由：解析要容忍模型输出的各种形态，是最容易引入非确定性（正则、时间、随机重试）的地方，把它关在内核外面，内核的确定性就好守得多。代价是 `plan.step` 的 schema 要足够表达；这个代价可以接受。**（Q-12 已定：解析在 runtime。）**
 
