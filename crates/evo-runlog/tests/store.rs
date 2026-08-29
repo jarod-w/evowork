@@ -15,8 +15,14 @@ fn run_created(run_id: &RunId) -> EventBody {
         run_id: run_id.clone(),
         parent_run_id: None,
         workspace_id: "ws-1".into(),
-        principal: PrincipalRef { kind: "user".into(), id: "u-1".into() },
-        trigger: TriggerRef { kind: TriggerKind::Manual, reference: "cli".into() },
+        principal: PrincipalRef {
+            kind: "user".into(),
+            id: "u-1".into(),
+        },
+        trigger: TriggerRef {
+            kind: TriggerKind::Manual,
+            reference: "cli".into(),
+        },
         budget: BudgetSpec::default(),
         labels: Default::default(),
     })
@@ -26,10 +32,19 @@ fn run_created(run_id: &RunId) -> EventBody {
 fn seq_starts_at_zero_and_increases_by_one() {
     let (_d, mut log) = open();
     let r = RunId::from("r-1");
-    let e0 = log.append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r)).unwrap();
+    let e0 = log
+        .append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r))
+        .unwrap();
     let e1 = log
-        .append(&r, Actor::Kernel, "2026-08-29T10:00:01Z",
-                EventBody::RunCompleted(RunCompleted { status: CompletionStatus::Ok, summary_ref: None }))
+        .append(
+            &r,
+            Actor::Kernel,
+            "2026-08-29T10:00:01Z",
+            EventBody::RunCompleted(RunCompleted {
+                status: CompletionStatus::Ok,
+                summary_ref: None,
+            }),
+        )
         .unwrap();
     assert_eq!(e0.seq, 0);
     assert_eq!(e1.seq, 1);
@@ -40,8 +55,11 @@ fn two_runs_share_one_database_with_independent_seq() {
     let (_d, mut log) = open();
     let a = RunId::from("r-a");
     let b = RunId::from("r-b");
-    log.append(&a, Actor::Runtime, "t", run_created(&a)).unwrap();
-    let first_of_b = log.append(&b, Actor::Runtime, "t", run_created(&b)).unwrap();
+    log.append(&a, Actor::Runtime, "t", run_created(&a))
+        .unwrap();
+    let first_of_b = log
+        .append(&b, Actor::Runtime, "t", run_created(&b))
+        .unwrap();
     assert_eq!(first_of_b.seq, 0, "单库多 run，seq 是 run 内单调（Q-06）");
 }
 
@@ -49,7 +67,9 @@ fn two_runs_share_one_database_with_independent_seq() {
 fn events_roundtrip_through_kind_and_payload_columns() {
     let (_d, mut log) = open();
     let r = RunId::from("r-1");
-    let written = log.append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r)).unwrap();
+    let written = log
+        .append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r))
+        .unwrap();
     let read = log.events(&r, 0, None).unwrap();
     assert_eq!(read.len(), 1);
     assert_eq!(read[0], written);
@@ -60,9 +80,14 @@ fn events_can_be_read_as_a_half_open_range() {
     let (_d, mut log) = open();
     let r = RunId::from("r-1");
     for _ in 0..5 {
-        log.append(&r, Actor::Runtime, "t", run_created(&r)).unwrap();
+        log.append(&r, Actor::Runtime, "t", run_created(&r))
+            .unwrap();
     }
-    assert_eq!(log.events(&r, 1, Some(3)).unwrap().len(), 3, "[1, 3] 闭区间共 3 条");
+    assert_eq!(
+        log.events(&r, 1, Some(3)).unwrap().len(),
+        3,
+        "[1, 3] 闭区间共 3 条"
+    );
     assert_eq!(log.last_seq(&r).unwrap(), Some(4));
 }
 
@@ -70,7 +95,8 @@ fn events_can_be_read_as_a_half_open_range() {
 fn runs_projection_tracks_last_seq() {
     let (_d, mut log) = open();
     let r = RunId::from("r-1");
-    log.append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r)).unwrap();
+    log.append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r))
+        .unwrap();
     assert_eq!(log.run_ids().unwrap(), vec![r]);
 }
 
@@ -97,7 +123,9 @@ fn a_second_writer_computing_the_same_seq_gets_an_error_not_a_silent_success() {
     let mut writer_a = RunLog::open(&db_path, &blob_root).unwrap();
 
     let r = RunId::from("r-contended");
-    let first = writer_a.append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r)).unwrap();
+    let first = writer_a
+        .append(&r, Actor::Runtime, "2026-08-29T10:00:00Z", run_created(&r))
+        .unwrap();
     assert_eq!(first.seq, 0);
 
     // 模拟第二个写者：它在第一个写者提交之前读到 last_seq=None，于是也把
@@ -144,7 +172,12 @@ fn actor_variants_with_payload_roundtrip_through_the_actor_column() {
 
     let r_human = RunId::from("r-human");
     let written_human = log
-        .append(&r_human, Actor::Human("user@example.com".into()), "t", run_created(&r_human))
+        .append(
+            &r_human,
+            Actor::Human("user@example.com".into()),
+            "t",
+            run_created(&r_human),
+        )
         .unwrap();
     let read_human = log.events(&r_human, 0, None).unwrap();
     assert_eq!(read_human.len(), 1);
@@ -152,7 +185,12 @@ fn actor_variants_with_payload_roundtrip_through_the_actor_column() {
 
     let r_trigger = RunId::from("r-trigger");
     let written_trigger = log
-        .append(&r_trigger, Actor::Trigger("cron:nightly".into()), "t", run_created(&r_trigger))
+        .append(
+            &r_trigger,
+            Actor::Trigger("cron:nightly".into()),
+            "t",
+            run_created(&r_trigger),
+        )
         .unwrap();
     let read_trigger = log.events(&r_trigger, 0, None).unwrap();
     assert_eq!(read_trigger.len(), 1);

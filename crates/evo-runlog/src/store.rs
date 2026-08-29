@@ -1,8 +1,8 @@
+use crate::RunLogError;
 use crate::blobstore::BlobStore;
 use crate::schema::DDL;
-use crate::RunLogError;
 use evo_protocol::{Actor, Event, EventBody, RunId};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 
 /// Run Log 的 SQLite 存储层。
@@ -24,7 +24,10 @@ impl RunLog {
         }
         let conn = Connection::open(db_path)?;
         conn.execute_batch(DDL)?;
-        Ok(Self { conn, blobs: BlobStore::open(blob_root)? })
+        Ok(Self {
+            conn,
+            blobs: BlobStore::open(blob_root)?,
+        })
     }
 
     pub fn blobs(&self) -> &BlobStore {
@@ -145,8 +148,11 @@ impl RunLog {
     }
 
     pub fn run_ids(&self) -> Result<Vec<RunId>, RunLogError> {
-        let mut stmt = self.conn.prepare("SELECT run_id FROM runs ORDER BY run_id")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT run_id FROM runs ORDER BY run_id")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        rows.map(|r| r.map(RunId::from).map_err(RunLogError::from)).collect()
+        rows.map(|r| r.map(RunId::from).map_err(RunLogError::from))
+            .collect()
     }
 }

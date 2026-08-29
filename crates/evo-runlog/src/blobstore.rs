@@ -12,7 +12,9 @@ pub struct BlobStore {
 impl BlobStore {
     pub fn open(root: &Path) -> Result<Self, RunLogError> {
         fs::create_dir_all(root)?;
-        Ok(Self { root: root.to_path_buf() })
+        Ok(Self {
+            root: root.to_path_buf(),
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -58,7 +60,10 @@ impl BlobStore {
     }
 
     fn path_of_hex(&self, hex_digest: &str) -> PathBuf {
-        self.root.join(&hex_digest[0..2]).join(&hex_digest[2..4]).join(hex_digest)
+        self.root
+            .join(&hex_digest[0..2])
+            .join(&hex_digest[2..4])
+            .join(hex_digest)
     }
 }
 
@@ -71,7 +76,9 @@ mod tests {
     fn put_then_get_roundtrips() {
         let dir = tempfile::tempdir().unwrap();
         let store = BlobStore::open(dir.path()).unwrap();
-        let r = store.put(BlobClass::Content, "text/plain", b"hello").unwrap();
+        let r = store
+            .put(BlobClass::Content, "text/plain", b"hello")
+            .unwrap();
         assert_eq!(store.get(&r).unwrap(), b"hello");
         assert_eq!(r.size, 5);
         assert_eq!(r.mime, "text/plain");
@@ -81,8 +88,12 @@ mod tests {
     fn same_content_gives_the_same_hash_and_is_written_once() {
         let dir = tempfile::tempdir().unwrap();
         let store = BlobStore::open(dir.path()).unwrap();
-        let a = store.put(BlobClass::Content, "text/plain", b"same").unwrap();
-        let b = store.put(BlobClass::Content, "text/plain", b"same").unwrap();
+        let a = store
+            .put(BlobClass::Content, "text/plain", b"same")
+            .unwrap();
+        let b = store
+            .put(BlobClass::Content, "text/plain", b"same")
+            .unwrap();
         assert_eq!(a.content_hash, b.content_hash);
     }
 

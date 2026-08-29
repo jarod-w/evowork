@@ -21,13 +21,22 @@ pub enum RunStatus {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AwaitReason {
-    Approval { approval_id: ApprovalId, effect_id: EffectId },
-    Clarification { question_id: String },
+    Approval {
+        approval_id: ApprovalId,
+        effect_id: EffectId,
+    },
+    Clarification {
+        question_id: String,
+    },
     /// [P2] 人机混合队列
-    Human { step: String },
+    Human {
+        step: String,
+    },
     Budget,
     /// [P2] 条件触发
-    ExternalEvent { kind: String },
+    ExternalEvent {
+        kind: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

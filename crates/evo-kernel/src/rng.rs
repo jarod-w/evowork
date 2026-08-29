@@ -18,12 +18,17 @@ impl DeterministicRng {
             h ^= u64::from(*b);
             h = h.wrapping_mul(0x1000_0000_01b3);
         }
-        Self { seed: h, counter: 0 }
+        Self {
+            seed: h,
+            counter: 0,
+        }
     }
 
     pub fn next_u64(&mut self) -> u64 {
         self.counter = self.counter.wrapping_add(1);
-        let mut z = self.seed.wrapping_add(self.counter.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+        let mut z = self
+            .seed
+            .wrapping_add(self.counter.wrapping_mul(0x9e37_79b9_7f4a_7c15));
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         z ^ (z >> 31)

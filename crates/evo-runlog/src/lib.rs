@@ -18,5 +18,9 @@ pub enum RunLogError {
     #[error("malformed blob ref: {0}")]
     BadBlobRef(String),
     #[error("seq gap in run {run_id}: expected {expected}, got {got}")]
-    SeqGap { run_id: String, expected: u64, got: u64 },
+    SeqGap {
+        run_id: String,
+        expected: u64,
+        got: u64,
+    },
 }

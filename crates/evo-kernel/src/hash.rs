@@ -13,7 +13,10 @@ pub fn state_hash(state: &RunState) -> [u8; 32] {
 }
 
 pub fn state_hash_hex(state: &RunState) -> String {
-    state_hash(state).iter().map(|b| format!("{b:02x}")).collect()
+    state_hash(state)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[cfg(test)]

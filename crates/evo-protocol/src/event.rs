@@ -201,8 +201,14 @@ mod tests {
                 run_id: RunId::from("r-001"),
                 parent_run_id: None,
                 workspace_id: "ws-1".to_owned(),
-                principal: PrincipalRef { kind: "user".to_owned(), id: "u-1".to_owned() },
-                trigger: TriggerRef { kind: TriggerKind::Manual, reference: "cli".to_owned() },
+                principal: PrincipalRef {
+                    kind: "user".to_owned(),
+                    id: "u-1".to_owned(),
+                },
+                trigger: TriggerRef {
+                    kind: TriggerKind::Manual,
+                    reference: "cli".to_owned(),
+                },
                 budget: BudgetSpec::default(),
                 labels: BTreeMap::new(),
             }),
@@ -246,7 +252,10 @@ mod tests {
                 turn: 0,
                 provider: "anthropic".to_owned(),
                 model: "claude".to_owned(),
-                params: ModelParams { temperature: 0.0, max_tokens: None },
+                params: ModelParams {
+                    temperature: 0.0,
+                    max_tokens: None,
+                },
                 request_digest: "d1".to_owned(),
                 messages_ref: BlobRef {
                     content_hash: "sha256:ccc".to_owned(),
@@ -299,7 +308,10 @@ mod tests {
             EventBody::ImpactEstimated(ImpactEstimated {
                 effect_id: EffectId::from("e-1"),
                 targets: vec![ImpactTarget {
-                    resource: ResourceRef { kind: "file".to_owned(), id: "f-1".to_owned() },
+                    resource: ResourceRef {
+                        kind: "file".to_owned(),
+                        id: "f-1".to_owned(),
+                    },
                     op: ResourceOp::Read,
                     detail_ref: None,
                 }],
