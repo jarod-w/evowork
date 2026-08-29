@@ -117,7 +117,43 @@ POC 文档 4.11⑤ 划的线是「crate 级依赖，不是 fork 级」。受控 
 
 第 4 条是这条路径与 fork 的分界线，排期紧张时最容易被越过——和 4.11⑤ 那句警告是同一条。
 
-> **Q-21 已定为 macOS**，「退回 Windows daemon」这条备选不在 POC 关键路径上，B 的成立不再有前提。将来产品期若要支持 Windows daemon，再评估是否引入 `codex-windows-sandbox` 全套——届时 OTel 的问题要重新回答一次，但那时有时间做干净处理。
+> **Q-21 已定：daemon 宿主就是财务那台台式 Mac mini（macOS）**，「退回 Windows daemon」这条备选不在 POC 关键路径上，B 的成立不再有前提。
+
+### 产品期 Windows 路径（不进 POC，但结论现在记下来）
+
+POC 只做 macOS 是对的，但 **Windows 客户端是产品期的既定项，不是换客户才碰的东西**。它在本架构里其实是两件事，价钱差一个量级：
+
+| | 是什么 | 成本 | 何时需要 |
+|---|---|---|---|
+| **Windows 壳** | Tauri 出 Windows 目标 + `platform` 接口的第二个实现 | **人周级** | 组织版形态就够用——daemon 在服务器，Windows 上只跑 UI |
+| **Windows daemon + 沙箱** | AppContainer、Windows Service 安装形态、第二套策略语义 | **人月级** | 只有单机桌面版才需要 |
+
+顺序上第一件可以先走：Windows 用户连组织内 Runner，当天可用，不必等沙箱那一大块。**这把「支持 Windows」从一个人月级门槛拆成了一个人周级台阶。**
+
+**A / B 的取舍到 Windows 会翻转。** 本节选 B 的理由是「在 macOS 上依赖 `codex-sandboxing` 会白白拖进 OTel」——**而那条 OTel 链正是从 `codex-windows-sandbox` 自己身上长出来的**，到了 Windows 这个躲法不存在：
+
+| | 到 Windows 之后 |
+|---|---|
+| 继续走 B | 要 vendor 2.1 万行，且 OTel 大概率就在 `audit` 那部分里。要么改 vendor 目录（违反上面的规则 1 / 4，那就是借错层），要么切一个远比 macOS 那 2,000 行难划的子集 |
+| **切回 A** | 直接依赖 `codex-sandboxing` 全套，接受依赖树里有 OTel |
+
+**建议届时整体切回 A，而不是再 vendor 第二个子集**，三条理由：
+
+1. **B 的理由是 POC 专属的。** 「对一个正在评估财务明细会不会出内网的客户，这是一段不必要的对话」说的是**演示现场**。产品期有 forward proxy 当场证明它出不去、有出口日志当证据、有时间做审计文档——同一个事实，答起来完全不同
+2. 两个平台之后，**一个依赖比「一个 vendor + 一个依赖」好维护**：同步纪律、CI 检查 6、闭包基线都要维护两份
+3. 那时 **macOS 侧是否也切回 A 值得一起重估**——vendor 纪律的性价比在两平台之后是下降的
+
+**三件借了 crate 也躲不掉的事：**
+
+| # | 事 | 说明 |
+|:-:|---|---|
+| 1 | **策略映射** | AppContainer 是另一套模型（capability SID + ACL），与 seatbelt 的路径式策略语言不同。[05 §3](05-execution-plane.md) 那张策略表要在另一种原语上重新表达一遍。**crate 给的是机制，映射是我们自己的**——「静默放行」的风险住在这里 |
+| 2 | **测试覆盖未实测** | 本节对 macOS 子集实测过：实现 2,000 行、测试 4,100 行，并据此判断「测试比实现值钱」。**`windows-sandbox-rs` 的测试覆盖没有实测过。** 产品期第一个动作应当是复验这一条——若它测试很薄，「借 codex 更容易」这个结论要打折 |
+| 3 | **rev 漂移与 rama 锁定** | POC 期 rev 冻结（Q-20c），做 Windows 时上游已跑远，bump rev 要连带重验 macOS 子集。更麻烦的是 `codex-network-proxy` 用 `=0.3.0-alpha.4` 精确锁死整套 `rama-*`——bump 时 rama 若动，出口代理那条要一起动 |
+
+**codex 一样都不给的三样**：Windows Service 安装形态（SCM 注册、服务账户、断电自启）、**代码签名证书**（OV/EV，私钥须放硬件令牌或云签名服务；新 OV 证书在 SmartScreen 上仍会弹警告直到攒够信誉）、WebView2 Runtime 分发。这三样是安装工程，**第二样的 lead time 比写代码长**——与 POC 文档 4.10② 的 Apple Developer 账号是同一类问题，同样要提前启动。
+
+> 一句话：**沙箱本身借 codex 几乎肯定值；难的不是那 2.1 万行，是策略映射与安装工程。** 而「用 codex 就容易了」成立的前提，是它的 Windows 测试和 macOS 一样厚——那一条现在还没实测，**别当成已知**。
 
 ---
 

@@ -30,7 +30,7 @@ pub struct Lease {
 
 POC 期只有一种实现（`LocalSandboxExecutor`），且与 daemon 同进程。**但 lease 机制仍然存在**——这是 0.2 白名单「执行面：只做本地沙箱一种实现，组织内 Runner / 云沙箱是同一接口的另两种实现」的可执行形态。lease 现在是一个结构体传参，将来是一次 RPC 领取，调用点不变。
 
-> 技术路线那句话在这里兑现：**「长时进程守护」和「跨设备接管」不再是功能，而是部署选项。** POC 期 daemon 跑在客户内网常开机上（4.8），这两项当天就成立。
+> 技术路线那句话在这里兑现：**「长时进程守护」和「跨设备接管」不再是功能，而是部署选项。** POC 期 daemon 与 UI 同机，都在财务那台 Mac mini 上（4.8），daemon 装成 LaunchDaemon 跑在专用服务账户下——**桌面客户端退出、财务注销，任务照跑**。这两项当天就成立，且不需要第二台机器。
 
 `EffectOutcome` 必须带 `actual_targets` 与 `actual_egress`，与 effect 声明的 `declared_*` 比对（[01 §4.4](01-run-log.md)）。POC 期只记录不拦截，但字段与比对代码现在就写——这是「供应链管控：声明只读却在写文件即拦截」的数据基础。
 
@@ -50,9 +50,21 @@ POC 期只有一种实现（`LocalSandboxExecutor`），且与 daemon 同进程�
 
 ## 三、沙箱
 
-**Q-21 已定：常开机器为 macOS。** 沙箱用 `sandbox-exec`（seatbelt），实现复用 codex 的 seatbelt 子集（[08 §3](08-codex-integration.md)）。
+**Q-21 已定：daemon 宿主是财务那台台式 Mac mini，macOS。** 沙箱用 `sandbox-exec`（seatbelt），实现复用 codex 的 seatbelt 子集（[08 §3](08-codex-integration.md)）。
 
 这条落定同时消掉两件事：POC 文档 4.8 那条「退回 Windows daemon」的排期风险不再需要预留，[08 §3](08-codex-integration.md) 选 vendor macOS 子集的路径也随之确定成立——不必再为 `codex-windows-sandbox` 留后路。
+
+**落位形态：LaunchDaemon + 专用服务账户（如 `_evowork`）。** 这不只是部署细节，它同时是沙箱之外的第二层隔离：
+
+| | 说明 |
+|---|---|
+| 系统级启动，与登录无关 | 财务锁屏、注销、退出桌面客户端都不影响 daemon；**只有关机不行** |
+| 工作区、Run Log、blob、用友只读凭据都在服务账户家目录下 | 财务的日常登录账户读不到——与本节最后那条敏感目录硬拦截同向：**有些约束不该由策略来保证** |
+| 卸载 = 删一个用户 + 一个 plist | POC 结束机器还回去是干净的 |
+
+> **这是 POC 期的形态，不是唯一形态。** 产品期的 Windows 对应物是 Windows Service + 服务账户（届时 BitLocker 配 TPM 开机自动解锁，反而没有下面 FileVault 那个坑）。**daemon 代码不该知道自己是被 launchd 还是被 SCM 拉起来的**——不读 launchd 特有的环境变量、不把 plist 路径写进业务代码，这条现在是零成本，后补则要翻一遍启动路径。产品期 Windows 的完整路径见 [08 §3](08-codex-integration.md) 末。
+
+> **一条前提必须在装机前验，否则"常开"是假的**：机器若开着 FileVault，**断电重启后停在解锁界面，LaunchDaemon 在有人登录前根本不会启动**。要么请 IT 对这台机关掉（daemon 数据本来就在独立服务账户下，不靠全盘加密），要么接受"意外断电需有人去输一次密码"并且别把自动恢复写进承诺。计划内重启可用 `fdesetup authrestart` 绕过，意外断电绕不过。另需 `pmset -a sleep 0 disksleep 0 autorestart 1` 并挪开系统自动更新的重启窗口。
 
 | 维度 | POC 期策略 |
 |---|---|
@@ -138,7 +150,7 @@ MCP server 是**独立进程**（4.1：用友接入 = 一个 MCP Server 进程�
 | 实现 | 何时 | 与 POC 的关系 |
 |---|---|---|
 | 本地沙箱 | POC | 唯一实现 |
-| 组织内 Runner | 已经是了 | POC 期常开机上跑的**就是同一份 daemon 代码**（4.8），不是另一套东西 |
+| 组织内 Runner | 已经是了 | POC 期财务那台 Mac mini 上跑的**就是同一份 daemon 代码**（4.8）。客户将来要把它挪到机房专机，改的是一个地址 |
 | 云沙箱 | Phase 2+ | Fleet 扩容，可选 |
 
 ---
@@ -150,5 +162,5 @@ MCP server 是**独立进程**（4.1：用友接入 = 一个 MCP Server 进程�
 | Q-17 | 出口白名单初版清单，除三项外还有没有 | 客户 |
 | Q-18 | 托管运行时能否接受「预装依赖、不开 pypi/npm 出口」 | 客户 |
 | ~~Q-19~~ | ~~MCP server 子进程的沙箱与出口路径~~ | — **已定：同等对待**。Q-24 走 API，出口完全被 proxy 覆盖，无遗留验证项 |
-| ~~Q-21~~ | ~~常开机器平台与公网可达性~~ | — **已定：macOS，可访问公网模型 API** |
+| ~~Q-21~~ | ~~常开机器平台与公网可达性~~ | — **已定：daemon 宿主 = 财务的台式 Mac mini（macOS），可访问公网模型 API。客户零硬件** |
 | ~~Q-20a~~ | ~~`codex-sandboxing` 的取舍~~ | — **已定：vendor macOS 子集**，见 [08 §3](08-codex-integration.md) |
