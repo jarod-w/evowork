@@ -103,6 +103,24 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                 CompletionStatus::Ok | CompletionStatus::Partial => RunStatus::Completed,
             };
         }
+        // 下面这批变体是本次「事件目录补齐」新增的（M2 治理面 Task 1），
+        // 尚无生产方，`reduce` 语义留给消费它们的那个任务去定（例如
+        // `RunSuspended`/`RunResumed` 要驱动 `RunStatus::Suspended` 与
+        // `AwaitReason`，`ApprovalRequested` 等要维护审批台账）。这里先给
+        // 空 match 臂，只为满足穷尽性、让新增变体能编译通过；显式列出
+        // 每个变体而不是用 `_` 通配，好让下一个任务给某个变体添加真实
+        // 处理时，删掉对应这一行本身就是「待办清单」。
+        EventBody::RunSuspended(_)
+        | EventBody::RunResumed(_)
+        | EventBody::RunFailed(_)
+        | EventBody::ContextCompacted(_)
+        | EventBody::ApprovalRequested(_)
+        | EventBody::ApprovalGranted(_)
+        | EventBody::ApprovalDenied(_)
+        | EventBody::ApprovalExpired(_)
+        | EventBody::ArtifactEmitted(_)
+        | EventBody::ClarificationRequested(_)
+        | EventBody::ClarificationAnswered(_) => {}
     }
     s
 }
