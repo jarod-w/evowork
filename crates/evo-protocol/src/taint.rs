@@ -11,7 +11,11 @@ pub enum TaintLevel {
 impl TaintLevel {
     /// 污点只升不降：任何一块 tainted，整体就是 tainted。
     pub fn join(self, other: Self) -> Self {
-        if self == Self::Tainted || other == Self::Tainted { Self::Tainted } else { Self::Clean }
+        if self == Self::Tainted || other == Self::Tainted {
+            Self::Tainted
+        } else {
+            Self::Clean
+        }
     }
 }
 
@@ -39,8 +43,14 @@ mod tests {
     #[test]
     fn taint_only_goes_up() {
         assert_eq!(TaintLevel::Clean.join(TaintLevel::Clean), TaintLevel::Clean);
-        assert_eq!(TaintLevel::Clean.join(TaintLevel::Tainted), TaintLevel::Tainted);
-        assert_eq!(TaintLevel::Tainted.join(TaintLevel::Clean), TaintLevel::Tainted);
+        assert_eq!(
+            TaintLevel::Clean.join(TaintLevel::Tainted),
+            TaintLevel::Tainted
+        );
+        assert_eq!(
+            TaintLevel::Tainted.join(TaintLevel::Clean),
+            TaintLevel::Tainted
+        );
     }
 
     #[test]

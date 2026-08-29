@@ -27,7 +27,17 @@ macro_rules! string_id {
     };
 }
 
-string_id!(RunId, EffectId, ApprovalId, CiteId, ToolId, LeaseId, ExecutorId, ArtifactId, CheckpointId);
+string_id!(
+    RunId,
+    EffectId,
+    ApprovalId,
+    CiteId,
+    ToolId,
+    LeaseId,
+    ExecutorId,
+    ArtifactId,
+    CheckpointId
+);
 
 #[cfg(test)]
 mod tests {
