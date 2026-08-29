@@ -31,9 +31,43 @@ function pickFile(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
+
+    // The native file picker is modal: once `input.click()` opens it,
+    // exactly one of these two signals eventually fires, and either one
+    // is allowed to settle the promise -- the other must then become a
+    // no-op instead of resolving a second time.
+    let settled = false
+    const settle = (file: File | null) => {
+      if (settled) return
+      settled = true
+      window.removeEventListener('focus', onWindowFocus)
+      resolve(file)
+    }
+
     input.addEventListener('change', () => {
-      resolve(input.files?.[0] ?? null)
+      settle(input.files?.[0] ?? null)
     })
+
+    // Primary path: recent Chromium/Firefox fire a `cancel` event on the
+    // <input> itself when the picker is dismissed without a selection.
+    // Feature-detected because older engines don't support it.
+    if ('oncancel' in input) {
+      input.addEventListener('cancel', () => {
+        settle(null)
+      })
+    }
+
+    // Fallback heuristic, kept even where `cancel` is supported: the
+    // picker is modal, so this window loses focus while it's open and
+    // regains it the instant the dialog closes, cancel or pick alike.
+    // `change` (a real pick) fires just before focus returns, so
+    // deferring one macrotask lets `change` win that race and settle
+    // first; if `cancel` already settled us, this is a no-op.
+    const onWindowFocus = () => {
+      window.setTimeout(() => settle(null), 0)
+    }
+    window.addEventListener('focus', onWindowFocus, { once: true })
+
     input.click()
   })
 }
