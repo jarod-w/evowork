@@ -1,0 +1,18 @@
+{
+  "provider": "fixture",
+  "model": "fixture-v1",
+  "responses": [
+    {
+      "text": "{\"intent\":\"tool_call\",\"tool\":\"fs.write\",\"params\":{\"path\":\"report.txt\",\"content\":\"账龄表\"}}",
+      "usage": { "input": 120, "output": 40, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop",
+      "latency_ms": 12
+    },
+    {
+      "text": "{\"intent\":\"finish\"}",
+      "usage": { "input": 200, "output": 10, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop",
+      "latency_ms": 9
+    }
+  ]
+}
