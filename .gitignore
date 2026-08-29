@@ -1,0 +1,7 @@
+.superpowers/
+
+/target
+/blobs
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

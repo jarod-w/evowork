@@ -1,0 +1,15 @@
+[package]
+name = "evo-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints.clippy]
+disallowed_methods = "deny"
+disallowed_types   = "deny"
+
+[dependencies]
+evo-protocol.workspace = true
+serde.workspace = true
+ciborium.workspace = true
+sha2.workspace = true

@@ -1,0 +1,10 @@
+disallowed-methods = [
+  "std::time::SystemTime::now",
+  "std::time::Instant::now",
+  "std::env::var",
+  "std::env::vars",
+]
+disallowed-types = [
+  "std::time::SystemTime",
+  "std::time::Instant",
+]
