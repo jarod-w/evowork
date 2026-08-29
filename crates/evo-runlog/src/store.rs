@@ -46,10 +46,11 @@ impl RunLog {
     /// 中间没有锁把这两步粘在一起。这在单写者假定下没有问题——见
     /// [`RunLog`] 的类型级文档。但如果假定被打破，也就是**同一个 run**
     /// 出现了第二个并发写者，两次调用可能算出同一个 seq；此时 `run_events`
-    /// 上的 `PRIMARY KEY (run_id, seq)` 会挡住后提交的那个事务，使其在
-    /// `tx.commit()` 处返回 `Err`（SQLite 扩展错误码 1555，
-    /// `SQLITE_CONSTRAINT_PRIMARYKEY`）并整体回滚——不会出现两条事件共用
-    /// 一个 seq，也不会有事件被静默吞掉。
+    /// 上的 `PRIMARY KEY (run_id, seq)` 约束会在第一条 INSERT 执行时**立即**
+    /// 被检查，冲突导致 `tx.execute()` 返回 `SqliteFailure`（SQLite 扩展错误码 1555，
+    /// `SQLITE_CONSTRAINT_PRIMARYKEY`），`?` 直接短路返回错误；后续的 `runs`
+    /// 表 INSERT 和 `tx.commit()` 都不会被执行到，事务在 Transaction 被 Drop
+    /// 时自动回滚——不会出现两条事件共用一个 seq，也不会有事件被静默吞掉。
     ///
     /// **拿到这个 `Err` 时，正确的反应是去找那个第二个写者，而不是重试。**
     /// 单写者是本存储层唯一依赖的并发不变量；这里的 `Err` 就是它被违反的
