@@ -1,4 +1,4 @@
-use evo_daemon::{DaemonConfig, FixedClock, Runtime};
+use evo_daemon::{DaemonConfig, FixedClock, RunOutcome, Runtime};
 use evo_exec_local::{LocalExecutor, WorkspaceOnlySandbox};
 use evo_kernel::RunStatus;
 use evo_model::FixtureAdapter;
@@ -35,7 +35,10 @@ async fn a_full_turn_writes_the_event_sequence_from_doc_03() {
     let dir = tempfile::tempdir().unwrap();
     let mut rt = setup(dir.path());
     let run_id = RunId::from("r-1");
-    let state = rt.run_once(&run_id, "把账龄表做出来").await.unwrap();
+    let outcome = rt.start(&run_id, "把账龄表做出来").await.unwrap();
+    let RunOutcome::Completed(state) = outcome else {
+        panic!("expected Completed, got {outcome:?}");
+    };
     assert_eq!(state.status, RunStatus::Completed);
 
     let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
@@ -79,7 +82,7 @@ async fn a_full_turn_writes_the_event_sequence_from_doc_03() {
 async fn the_side_effect_really_happened() {
     let dir = tempfile::tempdir().unwrap();
     let mut rt = setup(dir.path());
-    rt.run_once(&RunId::from("r-1"), "把账龄表做出来")
+    rt.start(&RunId::from("r-1"), "把账龄表做出来")
         .await
         .unwrap();
     let written = dir.path().join("workspaces").join("r-1").join("report.txt");
@@ -92,7 +95,7 @@ async fn business_content_never_lands_in_the_event_payload() {
     let dir = tempfile::tempdir().unwrap();
     let mut rt = setup(dir.path());
     let run_id = RunId::from("r-1");
-    rt.run_once(&run_id, "客户甲欠款 123456 元").await.unwrap();
+    rt.start(&run_id, "客户甲欠款 123456 元").await.unwrap();
 
     let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
     for e in log.events(&run_id, 0, None).unwrap() {
@@ -115,7 +118,11 @@ async fn the_intent_text_is_retrievable_from_the_blob_store() {
     let dir = tempfile::tempdir().unwrap();
     let mut rt = setup(dir.path());
     let run_id = RunId::from("r-1");
-    let state = rt.run_once(&run_id, "客户甲欠款 123456 元").await.unwrap();
+    let state = rt
+        .start(&run_id, "客户甲欠款 123456 元")
+        .await
+        .unwrap()
+        .into_state();
 
     let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
     let intent = state.intent.expect("intent 应当在 state 里");
@@ -128,7 +135,7 @@ async fn cost_is_charged_from_our_own_price_table() {
     let dir = tempfile::tempdir().unwrap();
     let mut rt = setup(dir.path());
     let run_id = RunId::from("r-1");
-    let state = rt.run_once(&run_id, "x").await.unwrap();
+    let state = rt.start(&run_id, "x").await.unwrap().into_state();
     // (120*1 + 40*2) + (200*1 + 10*2) = 200 + 220
     assert_eq!(state.budget_used.amount_micros, 420);
 }
@@ -137,7 +144,7 @@ async fn cost_is_charged_from_our_own_price_table() {
 async fn two_runs_share_one_database() {
     let dir = tempfile::tempdir().unwrap();
     let mut rt = setup(dir.path());
-    rt.run_once(&RunId::from("r-1"), "x").await.unwrap();
+    rt.start(&RunId::from("r-1"), "x").await.unwrap();
     let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
     assert_eq!(log.run_ids().unwrap().len(), 1);
 }
@@ -186,8 +193,12 @@ async fn a_tool_call_without_a_tool_field_fails_the_run_not_completes_it() {
     )
     .unwrap();
     let run_id = RunId::from("r-1");
-    let state = rt.run_once(&run_id, "把账龄表做出来").await.unwrap();
+    let outcome = rt.start(&run_id, "把账龄表做出来").await.unwrap();
+    let RunOutcome::Failed { state, error } = outcome else {
+        panic!("expected Failed, got {outcome:?}");
+    };
     assert_eq!(state.status, RunStatus::Failed);
+    assert!(!error.is_empty(), "Failed 变体应该带一句人话的错误信息");
 
     let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
     let events = log.events(&run_id, 0, None).unwrap();

@@ -28,7 +28,7 @@ async fn produce_a_run(dir: &std::path::Path) -> RunId {
     )
     .unwrap();
     let run_id = RunId::from("r-1");
-    rt.run_once(&run_id, "把账龄表做出来").await.unwrap();
+    rt.start(&run_id, "把账龄表做出来").await.unwrap();
     run_id
 }
 

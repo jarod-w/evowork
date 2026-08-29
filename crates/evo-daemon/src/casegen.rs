@@ -69,5 +69,6 @@ pub async fn generate_case(case_dir: &Path) -> Result<RunState, DaemonError> {
         Arc::new(FixtureAdapter::from_json_str(&fixtures)?),
         Arc::new(LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()))),
     )?;
-    rt.run_once(&run_id, &intent).await
+    let outcome = rt.start(&run_id, &intent).await?;
+    Ok(outcome.into_state())
 }
