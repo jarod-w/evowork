@@ -243,7 +243,6 @@ dependencies = [
  "clap",
  "evo-daemon",
  "evo-protocol",
- "evo-runlog",
  "tempfile",
  "tokio",
 ]
@@ -253,14 +252,12 @@ name = "evo-context"
 version = "0.1.0"
 dependencies = [
  "evo-protocol",
- "serde",
 ]
 
 [[package]]
 name = "evo-daemon"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "ciborium",
  "evo-context",
  "evo-exec",
@@ -273,7 +270,6 @@ dependencies = [
  "evo-runlog",
  "hex",
  "rusqlite",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror",

@@ -1,7 +1,4 @@
-use evo_protocol::events::lifecycle::{PrincipalRef, RunCreated, TriggerKind, TriggerRef};
-use evo_protocol::{Actor, BudgetSpec, EventBody, RunId};
-use evo_runlog::RunLog;
-use std::collections::BTreeMap;
+use evo_protocol::RunId;
 use std::process::Command;
 
 fn bin() -> Command {
@@ -24,37 +21,23 @@ fn a_log_without_checkpoints_is_reported_as_vacuous_not_ok() {
     // CI 上那行绿字就是假的。这条测试守住 CLI 侧的呈现。
     //
     // 构造：不跑完整的 Runtime（那需要 evo-daemon/evo-model/evo-exec-local
-    // 一整套），直接建一条只有 `run.created` 事件的最小 Log——阶段 1 的
-    // checkpoint 只在写操作前插入，一条只声明了 run、什么都没做的 run
-    // 合法地一个 checkpoint 都没有。
+    // 一整套），只写一条 `run.created` 事件——阶段 1 的 checkpoint 只在写
+    // 操作前插入，一条只声明了 run、什么都没做的 run 合法地一个检查点都
+    // 没有。写 Run Log 这件事本身经由 evo_daemon::write_bare_run_created
+    // 完成——evo-cli（连它的测试也算）不允许自己持有 RunLog 去 append。
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("runlog.sqlite");
     let blob_root = dir.path().join("blobs");
 
-    let mut log = RunLog::open(&db_path, &blob_root).unwrap();
     let run_id = RunId::from("r-vacuous");
-    log.append(
+    evo_daemon::write_bare_run_created(
+        &db_path,
+        &blob_root,
         &run_id,
-        Actor::Runtime,
+        "ws-1",
         "2026-08-29T00:00:00Z",
-        EventBody::RunCreated(RunCreated {
-            run_id: run_id.clone(),
-            parent_run_id: None,
-            workspace_id: "ws-1".to_owned(),
-            principal: PrincipalRef {
-                kind: "user".to_owned(),
-                id: "u-1".to_owned(),
-            },
-            trigger: TriggerRef {
-                kind: TriggerKind::Manual,
-                reference: "cli".to_owned(),
-            },
-            budget: BudgetSpec::default(),
-            labels: BTreeMap::new(),
-        }),
     )
     .unwrap();
-    drop(log);
 
     let out = bin()
         .args(["replay", "--verify", db_path.to_str().unwrap()])

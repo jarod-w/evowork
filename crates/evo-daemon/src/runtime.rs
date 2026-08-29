@@ -4,7 +4,7 @@ use evo_context::Assembler;
 use evo_exec::{CapabilityToken, DispatchedEffect, EgressPolicy, Executor, Lease, WorkspaceHandle};
 use evo_exec_local::WorkspaceRoot;
 use evo_gateway::{AdmitRequest, Gateway, GatewayAction, ManifestRegistry};
-use evo_kernel::{Command, RunState, decide, reduce, state_hash};
+use evo_kernel::{Command, RunState, RunStatus, decide, reduce, state_hash};
 use evo_model::{Message, ModelAdapter, ModelRequest, PriceTable, request_digest};
 use evo_policy::HardcodedPolicy;
 use evo_protocol::events::accounting::{Checkpoint, CheckpointReason, CostDimension};
@@ -42,6 +42,8 @@ pub enum DaemonError {
     Denied(String),
     #[error("turn limit exceeded: {0}")]
     TurnLimit(u32),
+    #[error("turn loop made {0} iterations without a turn ever terminating it")]
+    LoopIterationLimit(u32),
     #[error("snapshot is undecodable at seq {seq}: {detail}")]
     SnapshotDecode { seq: u64, detail: String },
     #[error("not implemented in phase 1: {0}")]
@@ -87,6 +89,16 @@ pub fn parse_plan(text: &str) -> Result<ParsedPlan, DaemonError> {
 
 /// 单 run 最多跑多少 turn。防的是 fixture 或模型让循环停不下来。
 const MAX_TURNS: u32 = 64;
+
+/// 循环体最多转多少圈，与 `state.turn` 是否推进无关。
+///
+/// `MAX_TURNS` 这道保险挂在 `state.turn` 上：今天 `decide` 要么推进 turn
+/// 要么终止 run，两者必居其一，所以够用。但阶段 2 一旦出现「返回命令但不
+/// 推进 turn」的序列（挂起/恢复、dry-run 早返回——第一个这样的命令就会
+/// 让 daemon 一边空转一边往 Log 里写事件），只看 `state.turn` 的保险形同
+/// 虚设：turn 不动，`state.turn > MAX_TURNS` 永远不成立。这里独立计一次
+/// 「循环体转了几圈」，与 turn 绑不绑得上无关，兜住这类序列。
+const MAX_LOOP_ITERATIONS: u32 = 10_000;
 
 pub struct Runtime {
     config: DaemonConfig,
@@ -183,7 +195,12 @@ impl Runtime {
             }),
         )?;
 
+        let mut iterations: u32 = 0;
         loop {
+            iterations += 1;
+            if iterations > MAX_LOOP_ITERATIONS {
+                return Err(DaemonError::LoopIterationLimit(MAX_LOOP_ITERATIONS));
+            }
             if state.turn > MAX_TURNS {
                 return Err(DaemonError::TurnLimit(MAX_TURNS));
             }
@@ -238,11 +255,18 @@ impl Runtime {
 
             Command::Checkpoint { reason } => self.checkpoint(state, reason),
 
-            Command::Complete { .. } => self.emit(
+            // 内核的判决（RunStatus）原样转成 Log 里的 CompletionStatus——
+            // 此前这里无条件写 Ok，把 decide() 判出来的 Failed 悄悄抹掉
+            // （唯一产出 Failed 的分支：ToolCall 却没给出合法 call，见
+            // evo-kernel/src/decide.rs）。
+            Command::Complete { status } => self.emit(
                 &state,
                 Actor::Kernel,
                 EventBody::RunCompleted(RunCompleted {
-                    status: CompletionStatus::Ok,
+                    status: match status {
+                        RunStatus::Failed => CompletionStatus::Failed,
+                        _ => CompletionStatus::Ok,
+                    },
                     summary_ref: None,
                 }),
             ),

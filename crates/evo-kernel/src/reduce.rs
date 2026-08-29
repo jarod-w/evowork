@@ -1,6 +1,7 @@
 use crate::rng::DeterministicRng;
 use crate::state::{ContextRecord, EffectState, RunState, RunStatus};
 use evo_protocol::events::effect::ToolResultStatus;
+use evo_protocol::events::lifecycle::CompletionStatus;
 use evo_protocol::ids::RunId;
 use evo_protocol::{Event, EventBody};
 
@@ -93,8 +94,14 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
         EventBody::Checkpoint(_) => {
             s.last_checkpoint_seq = Some(event.seq);
         }
-        EventBody::RunCompleted(_) => {
-            s.status = RunStatus::Completed;
+        EventBody::RunCompleted(e) => {
+            // Ok/Partial 都记成 Completed——Partial 尚无产生方，先按「完成」
+            // 处理；Failed 是唯一改变终态的分支（Q-29 之前，这里无条件写
+            // Completed，把内核 decide 判出来的失败悄悄抹掉）。
+            s.status = match e.status {
+                CompletionStatus::Failed => RunStatus::Failed,
+                CompletionStatus::Ok | CompletionStatus::Partial => RunStatus::Completed,
+            };
         }
     }
     s

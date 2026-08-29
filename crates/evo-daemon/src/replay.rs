@@ -1,8 +1,9 @@
 use crate::runtime::DaemonError;
-use evo_kernel::{RunState, reduce, state_hash};
+use evo_kernel::{RunState, RunStatus, reduce, state_hash_hex};
 use evo_protocol::EventBody;
 use evo_protocol::ids::RunId;
 use evo_runlog::RunLog;
+use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mismatch {
@@ -114,7 +115,7 @@ pub fn verify(log: &RunLog, run_id: &RunId) -> Result<VerifyReport, DaemonError>
     for event in log.events(run_id, 0, None)? {
         if let EventBody::Checkpoint(cp) = &event.body {
             // 事件里的 hash 是「写这条 checkpoint 之前」的状态
-            let actual = hex::encode(state_hash(&state));
+            let actual = state_hash_hex(&state);
             checkpoints_checked += 1;
             if actual != cp.state_hash {
                 mismatches.push(Mismatch {
@@ -131,6 +132,75 @@ pub fn verify(log: &RunLog, run_id: &RunId) -> Result<VerifyReport, DaemonError>
         run_id: run_id.clone(),
         checkpoints_checked,
         mismatches,
-        final_state_hash: hex::encode(state_hash(&state)),
+        final_state_hash: state_hash_hex(&state),
+    })
+}
+
+/// 一个 run 的回放结果，供 [`cli_replay`] 交回给调用方展示。
+#[derive(Clone, Debug)]
+pub enum RunOutcome {
+    Verified(VerifyReport),
+    Replayed {
+        status: RunStatus,
+        turn: u32,
+        last_seq: u64,
+        final_state_hash: String,
+    },
+}
+
+/// 一个 run_id 连同它的回放结果（或失败原因）。
+pub type RunReplayResult = (RunId, Result<RunOutcome, DaemonError>);
+
+/// [`cli_replay`] 的结果：删了几个快照，以及每个 run 各自的回放结果。
+#[derive(Debug)]
+pub struct CliReplayReport {
+    pub dropped_snapshots: usize,
+    pub runs: Vec<RunReplayResult>,
+}
+
+/// `evo-cli replay` 子命令唯一允许触碰 [`RunLog`] 的入口。
+///
+/// `evo-cli` 自己不持有 `RunLog`——那是「唯一写 Run Log 的进程」独有的类型
+/// （见 [`crate::casegen`] 顶部那句话，Task 19 定下的先例：mkcase 要生成
+/// Run Log，也没有让 `evo-cli` 自己 `use evo_runlog::RunLog` 去 `append`，
+/// 而是把组装逻辑收进 `evo_daemon::casegen::generate_case`，`evo-cli` 只
+/// 拿组装完的结果）。`replay` 子命令要做的「开库、可选删快照、逐 run
+/// 回放或回放自校验」同样只在这里发生一次，`evo-cli` 只拿到这个结构化的
+/// 只读结果。
+///
+/// `clear_snapshots` 会真的改动 sqlite 文件（删行），这不是「写 Run Log」——
+/// Run Log 是 `run_events` 表，快照是加速用的派生数据，删光快照后回放结果
+/// 必须不变（CI 检查 8）——但同样的道理：这个操作也只该由这唯一的入口做。
+pub fn cli_replay(
+    db_path: &Path,
+    blob_root: &Path,
+    verify_mode: bool,
+    drop_snapshots: bool,
+) -> Result<CliReplayReport, DaemonError> {
+    let mut log = RunLog::open(db_path, blob_root)?;
+    let dropped_snapshots = if drop_snapshots {
+        log.clear_snapshots()?
+    } else {
+        0
+    };
+    let run_ids = log.run_ids()?;
+
+    let mut runs = Vec::with_capacity(run_ids.len());
+    for run_id in run_ids {
+        let result = if verify_mode {
+            verify(&log, &run_id).map(RunOutcome::Verified)
+        } else {
+            replay_to(&log, &run_id, None, !drop_snapshots).map(|state| RunOutcome::Replayed {
+                status: state.status,
+                turn: state.turn,
+                last_seq: state.last_seq,
+                final_state_hash: state_hash_hex(&state),
+            })
+        };
+        runs.push((run_id, result));
+    }
+    Ok(CliReplayReport {
+        dropped_snapshots,
+        runs,
     })
 }

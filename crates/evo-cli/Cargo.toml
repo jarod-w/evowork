@@ -9,7 +9,6 @@ workspace = true
 
 [dependencies]
 evo-daemon = { workspace = true }
-evo-runlog = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 
