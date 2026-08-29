@@ -90,6 +90,16 @@ pub fn resolve_in_workspace(ws: &WorkspaceHandle, rel: &str) -> Result<PathBuf, 
 /// 对尚不存在的目标文件依然可用：如果候选路径整条都不存在，逐级向上
 /// 最终会落到工作区根本身——它在 `WorkspaceRoot::ensure` 里已经
 /// canonicalize 过，一定存在、一定在根内，循环必然终止。
+///
+/// 「已存在」判断不能用 `Path::exists`：它是 `stat`，会跟随符号链接，
+/// 对一个指向尚不存在目标的**悬空符号链接**会返回 `false`。这会把
+/// 「这里真的什么都没有」和「这里有一个软链节点，只是它指向的东西还
+/// 不存在」混为一谈——后者应当在这一层就被识别为已存在、拿去
+/// `canonicalize`（进而因为目标不存在而报错拒绝），而不是被当成空气
+/// 继续向上剥，剥到工作区根、判定“安全”，实际写入却由内核跟随软链
+/// 落到工作区之外。这里改用 `symlink_metadata`（`lstat`，只探测路径
+/// 本身，不跟随它自己这一层的符号链接），悬空软链节点也能被正确认作
+/// “已存在”。
 fn resolve_through_symlinks(
     ws: &WorkspaceHandle,
     lexical: &Path,
@@ -99,7 +109,7 @@ fn resolve_through_symlinks(
 
     let mut existing = lexical.to_path_buf();
     let mut trailing: Vec<std::ffi::OsString> = Vec::new();
-    while !existing.exists() {
+    while existing.symlink_metadata().is_err() {
         let popped = existing.file_name().map(|name| name.to_os_string());
         if !existing.pop() {
             break;
