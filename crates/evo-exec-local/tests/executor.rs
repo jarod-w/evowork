@@ -5,7 +5,7 @@ use evo_exec::{
 use evo_exec_local::{LocalExecutor, WorkspaceOnlySandbox, WorkspaceRoot, resolve_in_workspace};
 use evo_protocol::effect::{EffectClass, EffectRequest};
 use evo_protocol::events::effect::{ExecutionMode, ToolResultStatus};
-use evo_protocol::{BlobRef, EffectId, LeaseId, RunId, TaintLevel, ToolId};
+use evo_protocol::{BlobRef, EffectId, LeaseId, ResourceRef, RunId, TaintLevel, ToolId};
 use std::sync::Arc;
 
 fn lease(ws: WorkspaceHandle) -> Lease {
@@ -79,6 +79,44 @@ async fn actual_targets_are_reported_for_supply_chain_comparison() {
     assert_eq!(outcome.actual_targets.len(), 1);
     assert_eq!(outcome.actual_targets[0].kind, "file");
     assert!(outcome.actual_targets[0].id.ends_with("report.txt"));
+}
+
+// --- actual_targets 命名空间修复:declared_targets(TargetSpec::resolve
+// 从参数原值取出的工作区相对路径)与 actual_targets 必须落在同一命名空间,
+// 否则任何比对都会 100% 不匹配,而这两个字段存在的全部意义就是互相比对。
+
+#[tokio::test]
+async fn actual_targets_use_workspace_relative_paths_not_absolute_ones() {
+    let (_d, outcome, _ws) = run("report.txt", "hello").await;
+    assert_eq!(outcome.actual_targets[0].id, "report.txt");
+}
+
+#[tokio::test]
+async fn actual_targets_preserve_nested_relative_paths() {
+    let (_d, outcome, _ws) = run("sub/dir/report.txt", "hello").await;
+    assert_eq!(outcome.actual_targets[0].id, "sub/dir/report.txt");
+}
+
+#[tokio::test]
+async fn actual_targets_are_comparable_with_declared_targets() {
+    // declared_targets 是 Gateway 从参数原值静态提取的(TargetSpec::resolve),
+    // 也就是工具调用时传入的原始相对路径。这里直接用同一个原值构造一个
+    // ResourceRef,模拟 declared_targets 里会出现的那一条。
+    let declared = ResourceRef {
+        kind: "file".to_owned(),
+        id: "report.txt".to_owned(),
+    };
+    let (_d, outcome, _ws) = run("report.txt", "hello").await;
+    assert_eq!(outcome.actual_targets[0], declared);
+}
+
+#[tokio::test]
+async fn actual_targets_are_stable_across_different_workspace_roots() {
+    // 同样的相对路径,在两个不同的工作区根下执行,actual_targets 必须相同——
+    // 这证明它不再含机器/临时目录路径,Log 才可移植、才有确定性。
+    let (_d1, outcome1, _ws1) = run("report.txt", "hello").await;
+    let (_d2, outcome2, _ws2) = run("report.txt", "hello").await;
+    assert_eq!(outcome1.actual_targets, outcome2.actual_targets);
 }
 
 #[tokio::test]
