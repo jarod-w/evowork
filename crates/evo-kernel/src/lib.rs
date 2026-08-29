@@ -5,9 +5,11 @@
 //! **想读时钟都没有地方读**——这比在规范上禁止可靠。
 
 pub mod hash;
+pub mod reduce;
 pub mod rng;
 pub mod state;
 
 pub use hash::{state_hash, state_hash_hex};
+pub use reduce::{fold, reduce};
 pub use rng::DeterministicRng;
 pub use state::{ArtifactRecord, AwaitReason, ContextRecord, EffectState, RunState, RunStatus};
