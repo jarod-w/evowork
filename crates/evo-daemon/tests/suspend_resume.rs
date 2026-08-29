@@ -42,13 +42,22 @@ const FINISH_ONLY_FIXTURES: &str = r#"{
   ]
 }"#;
 
-/// 单轮：模型直接说要澄清，不涉及任何工具/effect。
+/// 第一轮：模型直接说要澄清，不涉及任何工具/effect。第二轮（内核修复
+/// 澄清死循环之后才会真的被消费到——`clarification.answered` 现在会把
+/// `context_turn`/`plan_turn` 一并回退，`decide` 因而会重新
+/// `AssembleContext` → `CallModel`）：模型说结束，让「回答之后能驱动到
+/// 底」的测试有地方落地，而不是撞上 `FixtureExhausted`。
+/// 只调一次模型的测试（比如 `bare_resume_recomputes_from_the_log_not_from_memory`
+/// 里那两个全新的 `Runtime` 实例）永远只会用到下标 0，不受第二条响应影响。
 const CLARIFY_FIXTURES: &str = r#"{
   "provider": "fixture",
   "model": "fixture-v1",
   "responses": [
     { "text": "{\"intent\":\"clarify\"}",
       "usage": { "input": 10, "output": 5, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 1 },
+    { "text": "{\"intent\":\"finish\"}",
+      "usage": { "input": 15, "output": 5, "cache_read": 0, "cache_write": 0 },
       "stop_reason": "stop", "latency_ms": 1 }
   ]
 }"#;
@@ -341,13 +350,16 @@ async fn a_brand_new_runtime_resumes_a_suspended_run_purely_from_the_log() {
 /// 折叠出 state，不是从内存：起一条会挂在「等澄清」上的 run，丢弃
 /// Runtime，用一个全新的实例只调 `resume(run_id)`。
 ///
-/// 这里如实记录一个内核侧的已知边界（不在本任务范围内，因为不许改
-/// evo-kernel）：`clarification.answered` 不会推进 `plan_turn`，
-/// `decide()` 在同一个 turn 里会立刻对同一个 `last_plan`（intent 仍是
-/// Clarify）再问一次——所以裸调 `resume()`（不曾有人真正回答过问题）
-/// 会立刻产出**一条新的** `clarification.requested` 并再次挂起，而不是
-/// 卡住或报错。这恰好是本测试要证明的东西：全新的 Runtime 确实重新
-/// 计算了一遍，而不是保持沉默或崩溃。
+/// 这里没有人调用过 `answer_clarification`——只是丢弃 Runtime、换一个
+/// 全新实例裸调 `resume()`。`evo_kernel::reduce` 里 `clarification.
+/// answered` 的死循环修复（把 `context_turn`/`plan_turn` 一并回退）只
+/// 挂在那条事件上；这里从未发生过 `clarification.answered`，`plan_turn`
+/// 仍然停在原地、`last_plan`（intent 仍是 Clarify）也还是那份没被回答过
+/// 的规划，所以裸调 `resume()`（`Runtime::resume` 无条件先落一条
+/// `run.resumed`）之后，`decide()` 在同一个 turn 里会立刻对着同一份
+/// `last_plan` 再问一次——这条行为在澄清死循环修复前后都成立，不是那个
+/// bug 的一部分：这里验证的是「全新的 Runtime 确实从 Log 重新算出了
+/// 第二次追问」，而不是从内存里保留着什么残留状态。
 #[tokio::test]
 async fn bare_resume_recomputes_from_the_log_not_from_memory() {
     let dir = tempfile::tempdir().unwrap();
@@ -423,31 +435,29 @@ async fn clarification_suspends_cleanly_and_answering_it_produces_no_err() {
         .await
         .expect("回答澄清、驱动到底，全程不该有 Err");
 
-    // 见 bare_resume_recomputes_from_the_log_not_from_memory 上的注释：
-    // 内核目前会对同一个 last_plan 再问一次，所以这里断言的是「干净地
-    // 再次挂起」而不是「完成」——重点是全程没有 Err，事件序列干净。
-    let RunOutcome::Suspended {
-        reason: second_reason,
-        ..
-    } = outcome
-    else {
-        panic!("expected Suspended, got {outcome:?}");
+    // 内核那边的死循环已经修了（`clarification.answered` 现在会把
+    // `context_turn`/`plan_turn` 一并回退），所以回答之后 `decide` 不会
+    // 再对着同一份 `last_plan` 重发一次 `AskClarification`，而是重新
+    // `AssembleContext` → `CallModel`——第二轮 fixture 响应说 finish，
+    // run 应该干净地跑完，而不是又挂在一条新的追问上。
+    let RunOutcome::Completed(state) = outcome else {
+        panic!("expected Completed, got {outcome:?}");
     };
-    let AwaitReason::Clarification {
-        question_id: second_question_id,
-    } = second_reason
-    else {
-        panic!("expected AwaitReason::Clarification, got {second_reason:?}");
-    };
-    assert_ne!(
-        question_id, second_question_id,
-        "应该是一次新的追问，不是同一条的残留"
-    );
+    assert_eq!(state.status, RunStatus::Completed);
 
     let log = open_log(dir.path());
     let kinds = event_kinds(&log, &run_id);
     assert!(kinds.contains(&"clarification.answered"));
     assert!(kinds.contains(&"run.resumed"));
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|k| **k == "clarification.requested")
+            .count(),
+        1,
+        "回答一次就该翻篇，不该再收到第二条追问：{kinds:?}"
+    );
+    assert_eq!(kinds.last(), Some(&"run.completed"));
 }
 
 // ————————————————————————————————————————————————————————————
