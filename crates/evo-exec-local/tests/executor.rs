@@ -193,3 +193,128 @@ async fn a_new_file_in_new_nested_directories_still_works() {
         "hello"
     );
 }
+
+// --- 悬空符号链接绕过：resolve_through_symlinks 用 `Path::exists()` 判断
+// 某个分量是否已存在,而 `exists()` 会跟随符号链接——对一个指向尚不存在
+// 目标的悬空软链,它返回 `false`。于是循环把“这里真的什么都没有”和
+// “这里有个软链节点,只是它指向的东西还不存在”混为一谈,把悬空软链
+// 当空气继续向上剥,最终 canonicalize 到工作区根、判定“安全”,而
+// `fs::write` 落笔时内核跟随软链,真实文件写到了工作区之外。
+
+#[tokio::test]
+async fn a_dangling_symlink_pointing_outside_the_workspace_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    // x.txt 在工作区里是一个软链,指向工作区外一个真实存在的目录下、
+    // 尚不存在的文件——outside 本身存在,但 outside/newfile.txt 还没被创建。
+    std::os::unix::fs::symlink(outside.path().join("newfile.txt"), ws.path().join("x.txt"))
+        .unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(lease(ws.clone()), write_effect("x.txt", "pwned"))
+        .await;
+
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    // 最要紧的断言:工作区外那个文件确实没有被创建出来。
+    assert!(!outside.path().join("newfile.txt").exists());
+}
+
+#[tokio::test]
+async fn toctou_replacing_a_written_file_with_a_dangling_external_symlink_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+
+    let first = exec
+        .execute(lease(ws.clone()), write_effect("toctou.txt", "first"))
+        .await;
+    assert_eq!(first.status, ToolResultStatus::Ok);
+
+    // 把刚写好的普通文件替换成一个指向工作区外、尚不存在目标的软链,
+    // 再对同一个相对路径发起第二次写入。
+    std::fs::remove_file(ws.path().join("toctou.txt")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("newfile.txt"),
+        ws.path().join("toctou.txt"),
+    )
+    .unwrap();
+
+    let second = exec
+        .execute(lease(ws.clone()), write_effect("toctou.txt", "pwned"))
+        .await;
+
+    assert_eq!(second.status, ToolResultStatus::Error);
+    assert!(!outside.path().join("newfile.txt").exists());
+}
+
+#[tokio::test]
+async fn a_dangling_symlink_pointing_inside_the_workspace_is_refused() {
+    // link 是软链,指向工作区内部一个尚不存在的文件(newfile.txt)。
+    // canonicalize 对不存在的目标同样会失败,所以这条路径也被拒绝——
+    // 这是一次「误伤」:目标其实落在工作区内部,理论上写进去并不逃逸。
+    //
+    // 判断:接受这次误伤,视为可接受的保守行为。理由:
+    //   1) resolve_through_symlinks 唯一的职责是判断「真实落地路径是否
+    //      在工作区内」。它没有能力(也不该有)区分「悬空软链最终指向
+    //      哪儿」和「这条悬空软链本身是不是恶意构造的」——一旦侦测到
+    //      某个分量是符号链接节点,就必须能 canonicalize 成功才放行,
+    //      规则简单、没有需要额外判断的例外分支。
+    //   2) 调用方如果真的要通过这个软链写工作区内部的新文件,直接用
+    //      真实路径("newfile.txt")操作即可;被牺牲掉的只是一种几乎
+    //      不会有人依赖的边缘写法(先建软链、再指望它当新文件用)。
+    //   3) 反过来放宽——比如只要词法解出的最终目标仍在工作区内就放行
+    //      悬空软链——等于重新相信软链自己声明的目标,而不是文件系统
+    //      的真实状态,这正是本轮要堵的洞的一个变种,不能开这个口子。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::os::unix::fs::symlink(ws.path().join("newfile.txt"), ws.path().join("link")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(lease(ws.clone()), write_effect("link", "hello"))
+        .await;
+
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(!ws.path().join("newfile.txt").exists());
+}
+
+#[tokio::test]
+async fn legitimate_new_files_and_valid_symlinks_still_work_after_the_dangling_symlink_fix() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+
+    let brand_new = exec
+        .execute(lease(ws.clone()), write_effect("fresh.txt", "hello"))
+        .await;
+    assert_eq!(brand_new.status, ToolResultStatus::Ok);
+
+    let nested = exec
+        .execute(
+            lease(ws.clone()),
+            write_effect("deep/nested/dirs/fresh.txt", "hello"),
+        )
+        .await;
+    assert_eq!(nested.status, ToolResultStatus::Ok);
+
+    std::fs::create_dir_all(ws.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(ws.path().join("real"), ws.path().join("valid_link")).unwrap();
+    let via_symlink = exec
+        .execute(
+            lease(ws.clone()),
+            write_effect("valid_link/inside.txt", "ok"),
+        )
+        .await;
+    assert_eq!(via_symlink.status, ToolResultStatus::Ok);
+    assert_eq!(
+        std::fs::read_to_string(ws.path().join("real/inside.txt")).unwrap(),
+        "ok"
+    );
+}
