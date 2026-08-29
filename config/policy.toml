@@ -1,0 +1,20 @@
+# POC 期策略。02 §6 的高危分级口径待客户确认（Q-08），此处是占位的最小集合。
+version = "poc-1"
+
+[[rule]]
+id = "read-is-free"
+class = "read"
+decision = "allow"
+
+[[rule]]
+id = "external-needs-approval"
+class = "external"
+decision = "require_approval"
+risk = "l3"
+
+[[rule]]
+id = "irreversible-write-needs-approval"
+class = "write"
+reversible = false
+decision = "require_approval"
+risk = "l2"
