@@ -137,8 +137,14 @@ pub fn verify(log: &RunLog, run_id: &RunId) -> Result<VerifyReport, DaemonError>
 }
 
 /// 一个 run 的回放结果，供 [`cli_replay`] 交回给调用方展示。
+///
+/// 改名自 `RunOutcome`（M2 Task 3）：`crate::runtime::RunOutcome` 那个更
+/// 核心的概念（`start`/`resume`/`decide_approval`/`answer_clarification`
+/// 的统一产出——`Completed`/`Suspended`/`Failed`）需要占用 `RunOutcome`
+/// 这个名字，两者不能同时在 crate 根部 `pub use` 成同一个标识符，因此把
+/// 这个更早、更局限于 CLI 回放展示的类型让出名字。
 #[derive(Clone, Debug)]
-pub enum RunOutcome {
+pub enum ReplayOutcome {
     Verified(VerifyReport),
     Replayed {
         status: RunStatus,
@@ -149,7 +155,7 @@ pub enum RunOutcome {
 }
 
 /// 一个 run_id 连同它的回放结果（或失败原因）。
-pub type RunReplayResult = (RunId, Result<RunOutcome, DaemonError>);
+pub type RunReplayResult = (RunId, Result<ReplayOutcome, DaemonError>);
 
 /// [`cli_replay`] 的结果：删了几个快照，以及每个 run 各自的回放结果。
 #[derive(Debug)]
@@ -188,9 +194,9 @@ pub fn cli_replay(
     let mut runs = Vec::with_capacity(run_ids.len());
     for run_id in run_ids {
         let result = if verify_mode {
-            verify(&log, &run_id).map(RunOutcome::Verified)
+            verify(&log, &run_id).map(ReplayOutcome::Verified)
         } else {
-            replay_to(&log, &run_id, None, !drop_snapshots).map(|state| RunOutcome::Replayed {
+            replay_to(&log, &run_id, None, !drop_snapshots).map(|state| ReplayOutcome::Replayed {
                 status: state.status,
                 turn: state.turn,
                 last_seq: state.last_seq,

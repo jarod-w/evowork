@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use evo_daemon::RunOutcome;
+use evo_daemon::ReplayOutcome;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -67,7 +67,7 @@ fn main() -> ExitCode {
 
                 for (run_id, outcome) in report.runs {
                     match outcome {
-                        Ok(RunOutcome::Verified(report)) => {
+                        Ok(ReplayOutcome::Verified(report)) => {
                             // 「一个 checkpoint 都没检查到」不是通过。把它显示成
                             // 绿色的 OK，等于让 CI 每次都打印一行骗人的绿字。
                             if report.is_vacuous() {
@@ -96,7 +96,7 @@ fn main() -> ExitCode {
                                 }
                             }
                         }
-                        Ok(RunOutcome::Replayed {
+                        Ok(ReplayOutcome::Replayed {
                             status,
                             turn,
                             last_seq,

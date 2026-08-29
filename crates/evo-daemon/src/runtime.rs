@@ -1,27 +1,35 @@
 use crate::clock::Clock;
 use crate::config::DaemonConfig;
+use crate::replay::replay_to;
 use evo_context::Assembler;
 use evo_exec::{CapabilityToken, DispatchedEffect, EgressPolicy, Executor, Lease, WorkspaceHandle};
 use evo_exec_local::WorkspaceRoot;
 use evo_gateway::{AdmitRequest, Gateway, GatewayAction, ManifestRegistry};
-use evo_kernel::{Command, RunState, RunStatus, decide, reduce, state_hash};
+use evo_kernel::{
+    AwaitReason, Command, EffectState, RunState, RunStatus, decide, reduce, state_hash,
+};
 use evo_model::{Message, ModelAdapter, ModelRequest, PriceTable, request_digest};
 use evo_policy::HardcodedPolicy;
 use evo_protocol::events::accounting::{Checkpoint, CheckpointReason, CostDimension};
+use evo_protocol::events::approval::{
+    ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia,
+};
+use evo_protocol::events::clarification::{ClarificationAnswered, ClarificationRequested};
 use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
-use evo_protocol::events::effect::{EffectDispatched, ExecutionMode, ToolResult};
+use evo_protocol::events::effect::{EffectDispatched, ExecutionMode, ToolRequested, ToolResult};
 use evo_protocol::events::lifecycle::{
-    CompletionStatus, IntentDeclared, PrincipalRef, RunCompleted, RunCreated, TriggerKind,
-    TriggerRef,
+    CompletionStatus, ErrorDetail, IntentDeclared, PrincipalRef, RunCompleted, RunCreated,
+    RunFailed, RunResumed, RunSuspended, SuspendReason, TriggerKind, TriggerRef,
 };
 use evo_protocol::events::model::{
     ModelParams, ModelRequested, ModelResponded, PlanIntent, PlanStep, PlannedCall,
 };
 use evo_protocol::{
-    Actor, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass, EffectId, EventBody, LeaseId,
-    RunId,
+    Actor, ApprovalId, BlobClass, BudgetSpec, CheckpointId, EffectClass, EffectId, EffectRequest,
+    EventBody, LeaseId, RunId,
 };
 use evo_runlog::RunLog;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
@@ -38,22 +46,22 @@ pub enum DaemonError {
     Exec(#[from] evo_exec::ExecError),
     #[error("model output is not a plan: {0}")]
     UnparseablePlan(String),
-    #[error("effect was denied: {0}")]
-    Denied(String),
     #[error("turn limit exceeded: {0}")]
     TurnLimit(u32),
     #[error("turn loop made {0} iterations without a turn ever terminating it")]
     LoopIterationLimit(u32),
     #[error("snapshot is undecodable at seq {seq}: {detail}")]
     SnapshotDecode { seq: u64, detail: String },
-    #[error("not implemented in phase 1: {0}")]
-    NotImplemented(&'static str),
     #[error("model {provider}/{model} is not in the price table")]
     ModelNotPriced { provider: String, model: String },
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("case.yaml: {0}")]
     CaseFormat(String),
+    #[error("approval {0} is not currently pending (already resolved, or never requested)")]
+    UnknownApproval(String),
+    #[error("question {0} is not currently pending (already answered, or never asked)")]
+    UnknownClarification(String),
 }
 
 /// runtime 从模型输出里解析出的结构化决策。
@@ -93,12 +101,48 @@ const MAX_TURNS: u32 = 64;
 /// 循环体最多转多少圈，与 `state.turn` 是否推进无关。
 ///
 /// `MAX_TURNS` 这道保险挂在 `state.turn` 上：今天 `decide` 要么推进 turn
-/// 要么终止 run，两者必居其一，所以够用。但阶段 2 一旦出现「返回命令但不
-/// 推进 turn」的序列（挂起/恢复、dry-run 早返回——第一个这样的命令就会
-/// 让 daemon 一边空转一边往 Log 里写事件），只看 `state.turn` 的保险形同
-/// 虚设：turn 不动，`state.turn > MAX_TURNS` 永远不成立。这里独立计一次
-/// 「循环体转了几圈」，与 turn 绑不绑得上无关，兜住这类序列。
+/// 要么终止 run，两者必居其一，所以够用。但挂起/恢复、dry-run 早返回这类
+/// 「返回命令但不推进 turn」的序列会让只看 `state.turn` 的保险形同虚设：
+/// turn 不动，`state.turn > MAX_TURNS` 永远不成立。这里独立计一次「循环体
+/// 转了几圈」，与 turn 绑不绑得上无关，兜住这类序列。
 const MAX_LOOP_ITERATIONS: u32 = 10_000;
+
+/// 审批有效期。**起点是 `state.clock_ms`（来自本 run 最近一次
+/// `env.sampled.wall_clock_ms`），不是 daemon 自己读的挂钟时间**——
+/// 内核与执行面都不许自己读时钟（05 节），`ApprovalRequested.expires_at_ms`
+/// 的文档注释把这条红线写得很清楚：起点必须是 Log 里已经落盘的值，否则
+/// 同一条 Log 在两次回放里算出的过期判定可能不一致。
+const APPROVAL_TTL_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// [`Runtime::start`] / [`Runtime::resume`] / [`Runtime::decide_approval`] /
+/// [`Runtime::answer_clarification`] 的统一产出。
+///
+/// 挂起（`Suspended`）与失败（`Failed`）都是**正常返回值，不是 `Err`**——
+/// 这是本任务（M2 Task 3）的核心反转。`Err` 只留给真正的故障：IO 失败、
+/// 模型输出解析不出来、定价表查不到……「人还没批」不是故障。
+#[derive(Clone, Debug)]
+pub enum RunOutcome {
+    Completed(RunState),
+    Suspended {
+        state: RunState,
+        reason: AwaitReason,
+    },
+    Failed {
+        state: RunState,
+        error: String,
+    },
+}
+
+impl RunOutcome {
+    /// 不管落在哪个变体，都要看最终状态时用——`RunState` 三个变体里都带着。
+    pub fn into_state(self) -> RunState {
+        match self {
+            RunOutcome::Completed(state) => state,
+            RunOutcome::Suspended { state, .. } => state,
+            RunOutcome::Failed { state, .. } => state,
+        }
+    }
+}
 
 pub struct Runtime {
     config: DaemonConfig,
@@ -152,14 +196,15 @@ impl Runtime {
         Ok(reduce(state, &event))
     }
 
-    pub async fn run_once(
+    /// 起一条新 run：建 state、发 `run.created` + `intent.declared`，然后驱动到停。
+    pub async fn start(
         &mut self,
         run_id: &RunId,
         intent_text: &str,
-    ) -> Result<RunState, DaemonError> {
-        let mut state = RunState::new(run_id);
+    ) -> Result<RunOutcome, DaemonError> {
+        let state = RunState::new(run_id);
 
-        state = self.emit(
+        let state = self.emit(
             &state,
             Actor::Runtime,
             EventBody::RunCreated(RunCreated {
@@ -184,7 +229,7 @@ impl Runtime {
             self.log
                 .blobs()
                 .put(BlobClass::Content, "text/plain", intent_text.as_bytes())?;
-        state = self.emit(
+        let state = self.emit(
             &state,
             Actor::Runtime,
             EventBody::IntentDeclared(IntentDeclared {
@@ -195,6 +240,159 @@ impl Runtime {
             }),
         )?;
 
+        self.drive(state).await
+    }
+
+    /// 从 Log 恢复一条已存在的 run，继续驱动到停。
+    ///
+    /// 意图从 `state.intent` 指向的 blob 取，不从参数取——这个方法的签名
+    /// 里根本没有 `intent_text`，恢复本来就不该需要它。
+    ///
+    /// 恢复之后先补一件事：**已经批准、但还没真正派发的 effect**。
+    /// `decide()` 在 effect 停留在 `Requested` 时只会等待，不会重新规划
+    /// （见 evo-kernel 的 `approval_granted_then_resumed_lets_the_run_continue`
+    /// 测试），真正把它派发出去是 daemon 的责任，而且这份责任必须落在
+    /// `resume` 这个唯一的恢复入口上，不能只塞进 `decide_approval` 里——
+    /// 否则「谁触发的派发」会分叉成两条路径，而 `decide_approval` 之外
+    /// 也可能有人直接调 `resume`（比如这条测试）。
+    ///
+    /// 先发 `run.resumed` 再补派发，不是反过来：`run.resumed` 标志着这条
+    /// run 重新变回 `Running`，之后发生的 checkpoint/派发/结算都应该发生
+    /// 在「正在跑」的状态下，而不是让它们记录在状态字段仍是 `Suspended`
+    /// 的那一小段窗口里——两种顺序在 `reduce()` 折叠出的最终状态上等价，
+    /// 但前者读起来更像一个正常的因果链条。
+    pub async fn resume(&mut self, run_id: &RunId) -> Result<RunOutcome, DaemonError> {
+        let state = replay_to(&self.log, run_id, None, true)?;
+        let from_seq = state.last_seq + 1;
+        let mut state = self.emit(
+            &state,
+            Actor::Runtime,
+            EventBody::RunResumed(RunResumed {
+                by: Actor::Runtime,
+                from_seq,
+            }),
+        )?;
+
+        // 「已批准但还没派发」= pending_effects 里还是 Requested，但已经
+        // 不在 pending_approvals 里了。被拒绝/过期的 effect 会被标成
+        // EffectState::Denied（不是 Requested），不会被这里误当成待派发。
+        let awaiting_approval: BTreeSet<EffectId> =
+            state.pending_approvals.values().cloned().collect();
+        let approved_but_undispatched: Vec<EffectId> = state
+            .pending_effects
+            .iter()
+            .filter(|(id, st)| **st == EffectState::Requested && !awaiting_approval.contains(*id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for effect_id in approved_but_undispatched {
+            let tool_requested = self.find_tool_requested(run_id, &effect_id)?.expect(
+                "pending_effects 里的每个 effect_id 必有一条对应的 tool.requested——\
+                 Gateway 的 admit() 管线在判定动作之前一定先写这条事件",
+            );
+            let request = self.rebuild_effect_request(&state, tool_requested);
+            state = self.dispatch_effect(state, effect_id, request).await?;
+        }
+
+        self.drive(state).await
+    }
+
+    /// 人做出审批决定：往 Log 追加 `approval.granted` / `approval.denied`，然后 resume。
+    ///
+    /// 真正把批准之后的 effect 派发出去的逻辑不在这里——见 [`Runtime::resume`]
+    /// 顶部的说明。这里只管把人的决定记进 Log。
+    pub async fn decide_approval(
+        &mut self,
+        run_id: &RunId,
+        approval_id: &ApprovalId,
+        granted: bool,
+        by: Actor,
+        note: Option<&str>,
+    ) -> Result<RunOutcome, DaemonError> {
+        let state = replay_to(&self.log, run_id, None, true)?;
+        if !state.pending_approvals.contains_key(approval_id) {
+            return Err(DaemonError::UnknownApproval(
+                approval_id.as_str().to_owned(),
+            ));
+        }
+        let note_ref = note
+            .map(|n| {
+                self.log
+                    .blobs()
+                    .put(BlobClass::Content, "text/plain", n.as_bytes())
+            })
+            .transpose()?;
+
+        if granted {
+            self.emit(
+                &state,
+                by.clone(),
+                EventBody::ApprovalGranted(ApprovalGranted {
+                    approval_id: approval_id.clone(),
+                    by,
+                    via: ApprovalVia::Ui,
+                    note_ref,
+                }),
+            )?;
+        } else {
+            self.emit(
+                &state,
+                by.clone(),
+                EventBody::ApprovalDenied(ApprovalDenied {
+                    approval_id: approval_id.clone(),
+                    by,
+                    reason_ref: note_ref,
+                }),
+            )?;
+        }
+
+        self.resume(run_id).await
+    }
+
+    /// 人回答澄清：追加 `clarification.answered`，然后 resume。
+    pub async fn answer_clarification(
+        &mut self,
+        run_id: &RunId,
+        question_id: &str,
+        option_id: Option<&str>,
+        free_text: Option<&str>,
+        by: Actor,
+    ) -> Result<RunOutcome, DaemonError> {
+        let state = replay_to(&self.log, run_id, None, true)?;
+        if state.pending_question.as_deref() != Some(question_id) {
+            return Err(DaemonError::UnknownClarification(question_id.to_owned()));
+        }
+        let free_text_ref = free_text
+            .map(|t| {
+                self.log
+                    .blobs()
+                    .put(BlobClass::Content, "text/plain", t.as_bytes())
+            })
+            .transpose()?;
+
+        self.emit(
+            &state,
+            by.clone(),
+            EventBody::ClarificationAnswered(ClarificationAnswered {
+                question_id: question_id.to_owned(),
+                by,
+                option_id: option_id.map(str::to_owned),
+                free_text_ref,
+            }),
+        )?;
+
+        self.resume(run_id).await
+    }
+
+    /// 唯一的驱动循环。[`Runtime::start`] 与 [`Runtime::resume`]
+    /// （连同经它转发的 [`Runtime::decide_approval`] /
+    /// [`Runtime::answer_clarification`]）都收敛到这一个函数——它们的差别
+    /// 只在「循环之前怎么拿到 state」，循环本身只有这一份实现。
+    ///
+    /// 挂起路径上不许有 `Err`：Gateway/内核判定的每一种「先别继续」都被
+    /// 翻译成一条 Log 事件（`run.suspended`/`run.failed` 及其配套事件），
+    /// `reduce` 据此改变 `state.status`，下一轮 `decide()` 自然返回空，
+    /// 循环干净结束——不需要提前 `return`，也不需要抛错误短路。
+    async fn drive(&mut self, mut state: RunState) -> Result<RunOutcome, DaemonError> {
         let mut iterations: u32 = 0;
         loop {
             iterations += 1;
@@ -209,20 +407,112 @@ impl Runtime {
                 break;
             }
             for cmd in commands {
-                state = self
-                    .execute_command(state, cmd, &intent_ref, intent_text)
-                    .await?;
+                state = self.execute_command(state, cmd).await?;
             }
         }
-        Ok(state)
+
+        Ok(match state.status {
+            RunStatus::Suspended => {
+                let reason = state.awaiting.clone().expect(
+                    "reduce() 的不变量：RunSuspended 落地的同时必然置 awaiting \
+                     （evo_kernel::reduce 对 EventBody::RunSuspended 的处理）",
+                );
+                RunOutcome::Suspended { state, reason }
+            }
+            RunStatus::Failed => {
+                let error = self.failure_message(&state)?;
+                RunOutcome::Failed { state, error }
+            }
+            RunStatus::Completed => RunOutcome::Completed(state),
+            RunStatus::Running => {
+                // decide() 只有在「还有 effect 没结算」时才会在 status 仍是
+                // Running 的情况下返回空命令。本文件里每个 effect 的生命周期
+                // 都在单次 execute_command / dispatch_effect 内同步跑完
+                // （checkpoint → lease → execute → tool.result 一次写完），
+                // 所以 drive() 每次调用 decide() 时不可能撞见这种中间态。
+                // 走到这里说明这条不变量被打破了——按「完成」处理是最不
+                // 危险的兜底，但这本身就是一个需要修的 bug。
+                debug_assert!(
+                    false,
+                    "drive() 在 status 仍是 Running 时提前结束：decide() 返回了空命令，\
+                     但没有任何终结/挂起事件把状态转成 Suspended/Completed/Failed"
+                );
+                RunOutcome::Completed(state)
+            }
+        })
+    }
+
+    /// `state.status` 变成 `Failed` 的那条终结事件里带的错误信息。
+    ///
+    /// `Failed` 有两个独立的落点：`run.failed`（本任务新增，Gateway 拒绝、
+    /// 真正的故障）与 `run.completed{status: failed}`（既有行为，模型说
+    /// 要调工具却没给出合法 call）。两者都要能讲出「为什么」。
+    fn failure_message(&self, state: &RunState) -> Result<String, DaemonError> {
+        let last = self
+            .log
+            .events(&state.run_id, state.last_seq, Some(state.last_seq))?
+            .into_iter()
+            .next();
+        Ok(match last.map(|e| e.body) {
+            Some(EventBody::RunFailed(rf)) => rf.error.code,
+            Some(EventBody::RunCompleted(rc)) if rc.status == CompletionStatus::Failed => {
+                "plan called for a tool but runtime could not parse a valid call".to_owned()
+            }
+            other => format!(
+                "run status is Failed but its terminal event doesn't explain why: {other:?}"
+            ),
+        })
+    }
+
+    /// 在 Log 里找到某个 effect 的 `tool.requested`——重建 `EffectRequest`
+    /// 唯一的信息来源（`resume` 补派已批准的 effect时用得上）。
+    fn find_tool_requested(
+        &self,
+        run_id: &RunId,
+        effect_id: &EffectId,
+    ) -> Result<Option<ToolRequested>, DaemonError> {
+        for event in self.log.events(run_id, 0, None)? {
+            if let EventBody::ToolRequested(tr) = event.body
+                && &tr.effect_id == effect_id
+            {
+                return Ok(Some(tr));
+            }
+        }
+        Ok(None)
+    }
+
+    /// 从 `tool.requested`（Gateway 判定阶段就写好的字段）+ 当前 state
+    /// （taint）+ 配置（capability）拼回一份 `EffectRequest`。
+    ///
+    /// 这是 `resume` 补派已批准 effect 时唯一可行的路径：Gateway 当初返回
+    /// 的那份 `EffectRequest`只活在内存里，`Runtime` 实例一旦被丢弃就没了；
+    /// 但它的每个字段要么来自 manifest（已经写进 `tool.requested`），要么
+    /// 来自当前 state（taint），要么是可以按同样规则重新推导的（capability）。
+    fn rebuild_effect_request(&self, state: &RunState, tr: ToolRequested) -> EffectRequest {
+        EffectRequest {
+            effect_id: tr.effect_id,
+            run_id: state.run_id.clone(),
+            turn: tr.turn,
+            tool: tr.tool,
+            params_ref: tr.params_ref,
+            params_digest: tr.params_digest,
+            class: tr.class,
+            targets: tr.declared_targets,
+            egress: tr.declared_egress,
+            reversible: tr.reversible,
+            taint: state.taint,
+            cites_referenced: tr.cites_referenced,
+            capability: CapabilityToken {
+                subject: self.config.principal.clone(),
+                scopes: vec!["*".to_owned()],
+            },
+        }
     }
 
     async fn execute_command(
         &mut self,
         state: RunState,
         cmd: Command,
-        intent_ref: &BlobRef,
-        intent_text: &str,
     ) -> Result<RunState, DaemonError> {
         match cmd {
             Command::SampleEnv => {
@@ -241,7 +531,15 @@ impl Runtime {
             }
 
             Command::AssembleContext { turn, .. } => {
-                let assembled = self.assembler.assemble(turn, intent_ref, intent_text);
+                // 意图从 state.intent 指向的 blob 取，不是函数参数——
+                // resume 之后没有 intent_text 参数可用，这是唯一的信息来源。
+                let intent_ref = state.intent.clone().expect(
+                    "AssembleContext 只会在 intent.declared 已经写入之后被 decide 产出——\
+                     state.intent 此时必为 Some（start/resume 都先保证了这一点）",
+                );
+                let intent_text = String::from_utf8(self.log.blobs().get(&intent_ref)?)
+                    .expect("intent blob 是 runtime 自己用 UTF-8 写入的原文，不应解码失败");
+                let assembled = self.assembler.assemble(turn, &intent_ref, &intent_text);
                 self.emit(
                     &state,
                     Actor::Runtime,
@@ -271,10 +569,60 @@ impl Runtime {
                 }),
             ),
 
-            Command::AskClarification { .. } => Err(DaemonError::NotImplemented(
-                "clarification.requested 属阶段 2",
-            )),
-            Command::Suspend { .. } => Err(DaemonError::NotImplemented("run.suspended 属阶段 2")),
+            // 问题正文与选项文案一起落进一个 blob（见
+            // `ClarificationRequested::prompt_ref` 的文档给出的建议形状）；
+            // 本任务只出机制——kernel 目前产出的 `question` 字符串永远是
+            // 空的（decide.rs 还没有从模型输出里提炼真实问题文本的能力，
+            // 那需要 PlanStep 携带更多信息，属于后续切片），这里如实落盘，
+            // 不在 daemon 这一层编造内容。
+            Command::AskClarification { question } => {
+                let prompt = serde_json::json!({ "question": question, "options": {} });
+                let prompt_ref = self.log.blobs().put(
+                    BlobClass::Content,
+                    "application/json",
+                    &serde_json::to_vec(&prompt).expect("prompt 可序列化"),
+                )?;
+                let question_id = format!("{}-q{}", state.run_id, state.last_seq);
+                let state = self.emit(
+                    &state,
+                    Actor::Runtime,
+                    EventBody::ClarificationRequested(ClarificationRequested {
+                        question_id,
+                        prompt_ref,
+                        options: Vec::new(),
+                    }),
+                )?;
+                self.emit(
+                    &state,
+                    Actor::Runtime,
+                    EventBody::RunSuspended(RunSuspended {
+                        reason: SuspendReason::AwaitingHuman,
+                        detail_ref: None,
+                    }),
+                )
+            }
+
+            // 预算超限，内核发的（decide.rs 里唯一构造 Command::Suspend 的
+            // 分支）。挂起，不是 Err：追加 run.suspended，让 reduce 置
+            // awaiting，循环自然结束。
+            Command::Suspend { reason } => {
+                let suspend_reason = match reason {
+                    AwaitReason::Budget => SuspendReason::BudgetExhausted,
+                    other => unreachable!(
+                        "evo-kernel::decide 目前只在预算超限时产出 Command::Suspend\
+                         （唯一构造点是 decide.rs 的 budget_exceeded 分支）；出现 \
+                         {other:?} 说明这条假设被打破，daemon 需要新增对应的挂起处理分支"
+                    ),
+                };
+                self.emit(
+                    &state,
+                    Actor::Kernel,
+                    EventBody::RunSuspended(RunSuspended {
+                        reason: suspend_reason,
+                        detail_ref: None,
+                    }),
+                )
+            }
         }
     }
 
@@ -416,15 +764,80 @@ impl Runtime {
             state = self.emit(&state, Actor::Gateway, body)?;
         }
 
-        let request = match verdict.action {
-            GatewayAction::Dispatch(req) => req,
-            GatewayAction::DryRun { .. } => return Ok(state),
-            GatewayAction::Deny { reason_code } => return Err(DaemonError::Denied(reason_code)),
-            GatewayAction::AwaitApproval { .. } => {
-                // 阶段 2：写 approval.requested 并挂起。阶段 1 的工具都不触发它。
-                return Err(DaemonError::Denied("approval_required".to_owned()));
+        match verdict.action {
+            GatewayAction::Dispatch(request) => {
+                self.dispatch_effect(state, effect_id, request).await
             }
-        };
+
+            // Gateway 已经把 tool.result{dry_run} 塞进了 verdict.events
+            // （上面的循环已经写过了）——这里只是继续循环，不是终止。
+            GatewayAction::DryRun { .. } => Ok(state),
+
+            GatewayAction::Deny { reason_code } => {
+                // 先下一个检查点，再追加 run.failed：否则这条 run 没有任何
+                // 可校验的锚点，`verify` 会报 VACUOUS——一条被拒的 run 应当
+                // 既能关掉也能验。
+                let state = self.checkpoint(state, CheckpointReason::PreApproval)?;
+                let message_ref = self.log.blobs().put(
+                    BlobClass::Content,
+                    "text/plain",
+                    reason_code.as_bytes(),
+                )?;
+                self.emit(
+                    &state,
+                    Actor::Gateway,
+                    EventBody::RunFailed(RunFailed {
+                        at_seq: state.last_seq,
+                        error: ErrorDetail {
+                            code: reason_code,
+                            message_ref: Some(message_ref),
+                            retryable: false,
+                        },
+                    }),
+                )
+            }
+
+            GatewayAction::AwaitApproval { risk, .. } => {
+                let approval_id = ApprovalId::from(format!("{}-a{}", state.run_id, state.last_seq));
+                let expires_at_ms = state.clock_ms + APPROVAL_TTL_MS;
+                let state = self.emit(
+                    &state,
+                    Actor::Gateway,
+                    EventBody::ApprovalRequested(ApprovalRequested {
+                        approval_id,
+                        effect_id: effect_id.clone(),
+                        risk,
+                        impact_ref: None,
+                        expires_at_ms,
+                    }),
+                )?;
+                self.emit(
+                    &state,
+                    Actor::Gateway,
+                    EventBody::RunSuspended(RunSuspended {
+                        reason: SuspendReason::AwaitingApproval,
+                        detail_ref: None,
+                    }),
+                )
+            }
+        }
+    }
+
+    /// 派发一个已经放行的 effect：pre_write 检查点、租约、真正执行、结算。
+    ///
+    /// 两个调用点收在这一个方法里：`request_effect` 的 `Dispatch` 分支
+    /// （一次性放行），以及 `resume` 对「已批准但还没派发」的 effect 的
+    /// 补派——此前这两条路径各写一份几乎相同的代码，容易漏改其中一处。
+    async fn dispatch_effect(
+        &mut self,
+        state: RunState,
+        effect_id: EffectId,
+        request: EffectRequest,
+    ) -> Result<RunState, DaemonError> {
+        let mut state = state;
+        let params: serde_json::Value =
+            serde_json::from_slice(&self.log.blobs().get(&request.params_ref)?)
+                .unwrap_or(serde_json::json!({}));
 
         // pre_write 语义检查点（03 §5）：不可逆动作之前留一个可回滚的锚点
         if request.class == EffectClass::Write || request.class == EffectClass::External {
