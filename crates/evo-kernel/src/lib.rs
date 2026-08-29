@@ -4,11 +4,13 @@
 //! 内核要知道时间，只能读 `RunState::clock_ms`，而它只由 `env.sampled` 事件写入。
 //! **想读时钟都没有地方读**——这比在规范上禁止可靠。
 
+pub mod decide;
 pub mod hash;
 pub mod reduce;
 pub mod rng;
 pub mod state;
 
+pub use decide::{CHECKPOINT_EVERY, Command, decide};
 pub use hash::{state_hash, state_hash_hex};
 pub use reduce::{fold, reduce};
 pub use rng::DeterministicRng;
