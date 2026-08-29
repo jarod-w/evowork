@@ -5267,6 +5267,8 @@ pub enum DaemonError {
     SnapshotDecode { seq: u64, detail: String },
     #[error("not implemented in phase 1: {0}")]
     NotImplemented(&'static str),
+    #[error("model {provider}/{model} is not in the price table")]
+    ModelNotPriced { provider: String, model: String },
 }
 
 /// runtime 从模型输出里解析出的结构化决策。
@@ -5473,9 +5475,17 @@ impl Runtime {
             skill: None,
             tool: None,
         };
+        // 定价表里没有这个模型时 charges() 返回空列表——那和「这次真的没费用」
+        // 是两回事，必须能分辨，否则「未定价」会被静默当成「免费」。
+        if !self.pricing.covers(self.model.provider(), self.model.model()) {
+            return Err(DaemonError::ModelNotPriced {
+                provider: self.model.provider().to_owned(),
+                model: self.model.model().to_owned(),
+            });
+        }
         for charge in self.pricing.charges(
             self.model.provider(), self.model.model(), &response.usage, &dimension, Some(turn),
-        ) {
+        )? {
             state = self.emit(&state, Actor::Runtime, EventBody::CostCharged(charge))?;
         }
 
