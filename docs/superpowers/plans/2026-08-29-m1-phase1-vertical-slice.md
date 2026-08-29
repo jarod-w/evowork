@@ -1720,7 +1720,12 @@ impl RunLog {
                 payload
             ],
         )?;
-        // runs 是投影表：只从事件推导，不接受任何 Log 里没有的字段
+        // runs 是投影表：只从事件推导，不接受任何 Log 里没有的字段。
+        //
+        // 阶段 1 只维护 run_id / 时间戳 / last_seq —— 这是 run_ids() 唯一用到的部分。
+        // workspace_id / principal / status / cost_micros 要从 run.created、run.completed、
+        // cost.charged 折叠出来，那是阶段 3 接 `run.list` / `cost.query` 时的事；
+        // **在此之前不许有任何读取方依赖这几列**，否则它们会被当成真值。
         tx.execute(
             "INSERT INTO runs (run_id, parent_run_id, workspace_id, principal, status,
                                created_at, updated_at, last_seq, title, cost_micros)
@@ -2862,7 +2867,7 @@ risk = "l2"
     #[test]
     fn first_matching_rule_wins_and_is_reported() {
         let p = HardcodedPolicy::from_toml_str(POLICY).unwrap();
-        let (decision, rules) = p.evaluate_with_trace(&ctx("fs.read", EffectClass::Read, true));
+        let (decision, rules) = PolicyHook::evaluate_with_trace(&p, &ctx("fs.read", EffectClass::Read, true));
         assert_eq!(decision, PolicyDecision::Allow);
         assert_eq!(rules, vec!["read-is-free".to_owned()]);
     }
@@ -2923,6 +2928,15 @@ pub struct PolicyContext {
 
 pub trait PolicyHook: Send + Sync {
     fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision;
+
+    /// 判定 + 命中的规则 id，后者进 policy.evaluated.rules_hit。
+    ///
+    /// **带默认实现**：换 Cedar / OPA 时只需实现 `evaluate`，
+    /// 诊断信息拿不到就留空，不给新实现增加必填项。
+    fn evaluate_with_trace(&self, ctx: &PolicyContext) -> (PolicyDecision, Vec<String>) {
+        (self.evaluate(ctx), Vec::new())
+    }
+
     /// 进 policy.evaluated.policy_ver
     fn version(&self) -> &str;
 }
@@ -3021,8 +3035,15 @@ impl HardcodedPolicy {
         Self::from_toml_str(&std::fs::read_to_string(p)?)
     }
 
-    /// 返回判定与命中的规则 id 列表，后者进 policy.evaluated.rules_hit。
-    pub fn evaluate_with_trace(&self, ctx: &PolicyContext) -> (PolicyDecision, Vec<String>) {
+}
+
+impl PolicyHook for HardcodedPolicy {
+    fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
+        self.evaluate_with_trace(ctx).0
+    }
+
+    /// 规则从上到下先命中先赢，命中的规则 id 回填进 policy.evaluated.rules_hit。
+    fn evaluate_with_trace(&self, ctx: &PolicyContext) -> (PolicyDecision, Vec<String>) {
         for rule in &self.file.rule {
             if rule.matches(ctx) {
                 let decision = rule.decision().unwrap_or(PolicyDecision::Deny {
@@ -3033,12 +3054,6 @@ impl HardcodedPolicy {
         }
         // 没有规则命中 = 放行。真正的兜底最严在 Gateway 的 manifest 缺失分支（02 §4）
         (PolicyDecision::Allow, Vec::new())
-    }
-}
-
-impl PolicyHook for HardcodedPolicy {
-    fn evaluate(&self, ctx: &PolicyContext) -> PolicyDecision {
-        self.evaluate_with_trace(ctx).0
     }
 
     fn version(&self) -> &str {
@@ -4251,6 +4266,16 @@ fn manifest_fields_are_filled_by_the_gateway_not_the_tool() {
 }
 
 #[test]
+fn the_rule_that_decided_is_named_in_the_event() {
+    let verdict = gateway().admit(admit("fs.read", TaintLevel::Clean, ExecutionMode::Live));
+    let pe = verdict.events.iter().find(|e| e.kind() == "policy.evaluated").unwrap();
+    let EventBody::PolicyEvaluated(pe) = pe else { unreachable!() };
+    assert_eq!(pe.rules_hit, vec!["read-is-free".to_owned()],
+               "审计要能回答「凭哪条规则放的行」");
+    assert_eq!(pe.policy_ver, "poc-1");
+}
+
+#[test]
 fn impact_is_estimated_unconditionally_not_only_in_dry_run() {
     // 02 §2 细节 2：影响预估是审计与审批材料的一部分，正常模式下也要有
     let verdict = gateway().admit(admit("fs.write", TaintLevel::Clean, ExecutionMode::Live));
@@ -4624,7 +4649,7 @@ impl Gateway {
             targets,
             reversible: request.reversible,
         };
-        let (policy_decision, rules_hit) = self.policy_with_trace(&ctx);
+        let (policy_decision, rules_hit) = self.policy.evaluate_with_trace(&ctx);
 
         let decision = if taint_gate {
             // 结构性闸门：策略说 Allow 也要审批
@@ -4678,16 +4703,8 @@ impl Gateway {
 
         GatewayVerdict { events, action: GatewayAction::Dispatch(request) }
     }
-
-    fn policy_with_trace(&self, ctx: &PolicyContext) -> (PolicyDecision, Vec<String>) {
-        // PolicyHook 的最终接口只有 evaluate；rules_hit 是可选的诊断信息。
-        // 阶段 1 用 downcast 之外的最简做法：接口上不加方法，命中规则从实现侧另取。
-        (self.policy.evaluate(ctx), Vec::new())
-    }
 }
 ```
-
-> **`policy_with_trace` 的取舍**：`rules_hit` 是 `policy.evaluated` 的字段，但把它加进 `PolicyHook` trait 会让「换 Cedar 只实现一个 trait」变难（Cedar 的诊断形态不同）。阶段 1 先留空数组，阶段 2 在 trait 上加一个 **默认实现为空** 的 `fn evaluate_with_trace` —— 这样既填上字段，又不给新实现增加必填项。
 
 `crates/evo-gateway/src/lib.rs`：
 
@@ -4722,7 +4739,7 @@ targets = [{ from_param = "/path", kind = "file", op = "read" }]
 - [ ] **Step 6: 跑测试**
 
 Run: `cargo test -p evo-gateway && cargo clippy -p evo-gateway --all-targets -- -D warnings`
-Expected: PASS，10 个测试
+Expected: PASS，11 个测试
 
 - [ ] **Step 7: Commit**
 
@@ -5236,6 +5253,10 @@ pub enum DaemonError {
     Denied(String),
     #[error("turn limit exceeded: {0}")]
     TurnLimit(u32),
+    #[error("snapshot is undecodable at seq {seq}: {detail}")]
+    SnapshotDecode { seq: u64, detail: String },
+    #[error("not implemented in phase 1: {0}")]
+    NotImplemented(&'static str),
 }
 
 /// runtime 从模型输出里解析出的结构化决策。
@@ -5391,9 +5412,11 @@ impl Runtime {
                 }),
             ),
 
-            Command::AskClarification { .. } | Command::Suspend { .. } => {
-                // 阶段 2 实现。阶段 1 的 fixture 不产生这两条。
-                Err(DaemonError::UnparseablePlan("clarify/suspend 属阶段 2".into()))
+            Command::AskClarification { .. } => {
+                Err(DaemonError::NotImplemented("clarification.requested 属阶段 2"))
+            }
+            Command::Suspend { .. } => {
+                Err(DaemonError::NotImplemented("run.suspended 属阶段 2"))
             }
         }
     }
@@ -5812,7 +5835,10 @@ pub fn replay_to(
         match log.snapshot_at_or_before(run_id, target)? {
             Some(snap) => {
                 let restored: RunState = ciborium::from_reader(snap.state_blob.as_slice())
-                    .map_err(|e| DaemonError::UnparseablePlan(format!("snapshot decode: {e}")))?;
+                    .map_err(|e| DaemonError::SnapshotDecode {
+                        seq: snap.seq,
+                        detail: e.to_string(),
+                    })?;
                 // 快照存的是「写检查点之前」的状态，所以要从该 seq 起重放
                 (restored, snap.seq)
             }
@@ -6384,9 +6410,9 @@ git commit -m "doc: 回填 M1 实现中定下的三处契约偏离
 | 审批挂起与恢复（`approval.*` / `run.suspended`） | 阶段 2 |
 | dry-run 第 1 级（调 preview）与预算闸门 | 阶段 2 |
 | `codex-network-proxy` 子进程与出口记账 | 阶段 2 |
-| `rules_hit` 的真实内容（`PolicyHook::evaluate_with_trace`） | 阶段 2 |
 | 判据 1 的「记账」一项（工具级 `cost.charged`） | 阶段 2 |
 | `shell.exec` 工具 | 阶段 2 |
+| `runs` 投影表的 status / principal / cost_micros 三列 | 阶段 3（接 `run.list` / `cost.query` 时） |
 | HTTP `/v1/rpc`、WS `/v1/events`、ts-rs 导出 | 阶段 3 |
 | CI 检查 5 / 6 / 7、GitHub Actions | 阶段 3 |
 | macOS seatbelt 实现 | 拿到真机后 |
