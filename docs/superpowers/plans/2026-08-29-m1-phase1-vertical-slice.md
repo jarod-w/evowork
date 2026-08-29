@@ -1778,14 +1778,6 @@ impl RunLog {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map(RunId::from).map_err(RunLogError::from)).collect()
     }
-
-    pub(crate) fn conn(&self) -> &Connection {
-        &self.conn
-    }
-
-    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
-        &mut self.conn
-    }
 }
 ```
 
@@ -4841,7 +4833,23 @@ fn writing_the_same_seq_twice_overwrites_rather_than_erroring() {
 Run: `cargo test -p evo-runlog --test snapshot`
 Expected: FAIL，`no method named put_snapshot found`
 
-- [ ] **Step 3: 实现**
+- [ ] **Step 3: 给 `RunLog` 加两个 crate 内访问器**
+
+`snapshot.rs` 是 `store.rs` 的兄弟模块，拿不到私有的 `conn` 字段。在 `crates/evo-runlog/src/store.rs` 的 `impl RunLog` 末尾补上：
+
+```rust
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
+```
+
+> 这两个访问器**放在首次使用它们的任务里**，不提前到 Task 5——提前声明会在 Task 5 到 Task 14 之间一直是 dead code，而唯一能让 `clippy -D warnings` 过的办法是加 `#[allow(dead_code)]`，那等于用掩盖换取一个没人用的 API。
+
+- [ ] **Step 4: 实现快照存储**
 
 `crates/evo-runlog/src/snapshot.rs`：
 
@@ -4916,12 +4924,12 @@ impl RunLog {
 
 `lib.rs` 补 `pub mod snapshot; pub use snapshot::Snapshot;`
 
-- [ ] **Step 4: 跑测试**
+- [ ] **Step 5: 跑测试**
 
 Run: `cargo test -p evo-runlog`
 Expected: PASS，14 个测试
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add crates/evo-runlog
