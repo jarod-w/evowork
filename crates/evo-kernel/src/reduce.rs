@@ -96,7 +96,7 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
         }
         EventBody::RunCompleted(e) => {
             // Ok/Partial 都记成 Completed——Partial 尚无产生方，先按「完成」
-            // 处理；Failed 是唯一改变终态的分支（Q-29 之前，这里无条件写
+            // 处理；Failed 是唯一改变终态的分支（终审 I1 之前，这里无条件写
             // Completed，把内核 decide 判出来的失败悄悄抹掉）。
             s.status = match e.status {
                 CompletionStatus::Failed => RunStatus::Failed,

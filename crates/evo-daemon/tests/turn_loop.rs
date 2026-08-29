@@ -173,7 +173,7 @@ async fn a_tool_call_without_a_tool_field_fails_the_run_not_completes_it() {
     // decide() 的唯一一个产出 RunStatus::Failed 的分支：模型说要调工具
     // （PlanIntent::ToolCall），但 runtime 解析不出合法的 call。此前 daemon
     // 在 Command::Complete 里无条件写 CompletionStatus::Ok，这个失败在 Log
-    // 里被悄悄记成了成功（Q-29）。
+    // 里被悄悄记成了成功（全分支终审 I1）。
     use evo_protocol::EventBody;
     use evo_protocol::events::lifecycle::CompletionStatus;
 
