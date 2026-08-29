@@ -14,19 +14,34 @@ echo "== 前端构建与类型检查 =="
 # 如果这里没装 node/pnpm 就直接 exit 1，客户机器上原本能跑、也最需要跑
 # 的那七段 Rust 自查（fmt/clippy/test/CI-1/CI-4/CI-2+CI-8/CI-3）会被一起
 # 拖垮——这违背了「同一份脚本能在客户机器上直接跑」这条初衷。所以这里
-# 选择：没装 node/pnpm 时跳过本段，但把跳过打印得足够醒目、不会被当成
-# 「通过」——这个项目已经吃过好几次「一条检查其实什么都没测、但看起来
-# 是绿的」的亏（比如后面 CI-4 那条关于 workspace 写法的注释），跳过必须
+# 选择：没装 node/pnpm 时可以跳过本段，但跳过必须是显式、对自动化不静默
+# 的——只看退出码的 CI（GitHub Actions / GitLab CI 的常规做法）不会去读
+# 横幅，缺了 node 而退出码仍是 0，前端检查就会从此永久失效而 ci.sh 永远
+# 绿。所以跳过必须由调用方显式设置 ALLOW_SKIP_FRONTEND=1 才成立；没设就
+# 硬失败。这个项目已经吃过好几次「一条检查其实什么都没测、但看起来是
+# 绿的」的亏（比如后面 CI-4 那条关于 workspace 写法的注释），跳过必须
 # 跟静默通过划清界限。
+#
+# 注意：ALLOW_SKIP_FRONTEND 只在「工具缺失」时才有意义——工具齐备时会
+# 直接进入 else 分支正常执行，不会去看这个变量。它不能变成一个能在工具
+# 齐备的情况下也跳过前端检查的开关。
 if ! command -v node >/dev/null 2>&1 || ! command -v pnpm >/dev/null 2>&1; then
   missing=""
   command -v node >/dev/null 2>&1 || missing="${missing} node"
   command -v pnpm >/dev/null 2>&1 || missing="${missing} pnpm"
-  echo "############################################################"
-  echo "## SKIPPED -- 前端构建/类型检查/测试本次未执行"
-  echo "## 缺少工具:${missing}"
-  echo "## 这不是「通过」，是「跳过」。要验证前端，请安装上述工具后重跑。"
-  echo "############################################################"
+  if [ "${ALLOW_SKIP_FRONTEND:-}" = "1" ]; then
+    echo "############################################################"
+    echo "## SKIPPED -- 前端构建/类型检查/测试本次未执行"
+    echo "## 缺少工具:${missing}"
+    echo "## 这不是「通过」，是「跳过」——因为显式设置了 ALLOW_SKIP_FRONTEND=1 才允许跳过。"
+    echo "## 要验证前端，请安装上述工具后重跑（不设该变量）。"
+    echo "############################################################"
+  else
+    echo "FAIL: 缺少前端工具链，无法执行前端构建/类型检查/测试:${missing}"
+    echo "如果这是交付到客户机器上的环境、本来就不该有前端工具链，"
+    echo "请设置 ALLOW_SKIP_FRONTEND=1 后重跑以显式跳过本段。"
+    exit 1
+  fi
 else
   (
     cd apps/ui
@@ -56,7 +71,16 @@ echo "ok"
 echo "== CI-4 客户名词隔离 =="
 # u8 不能直接 grep——它是 Rust 的基本类型，全仓都是。
 # 00 §4 检查 4 的这一项要在阶段 3 换成对标识符边界的匹配。此处先只查另外两个词。
-if grep -riE 'yonyou|用友' crates/ apps/ 2>/dev/null; then
+#
+# 排除 node_modules/ 与 dist/：两者都在 apps/ui/.gitignore 里，是第三方
+# 依赖代码和构建产物，根本不是「我们的代码」，grep 不感知 .gitignore 也
+# 不会自动跳过它们（review 用 canary 文件实测确认过会被扫进去）。这条
+# 检查要测的是「我们有没有把客户名字写进自己的代码」，不是「某个依赖包
+# 的文档/测试夹具/贡献者名字里有没有偶然出现这两个字」——不排除的话，
+# 未来任何一次 pnpm install 引入的新依赖都可能让 CI-4 因为跟代码泄漏
+# 无关的原因变红。pnpm-lock.yaml 不在排除之列：它是已提交、进 code review
+# 的文件，理应保持在扫描范围内。
+if grep -riE --exclude-dir=node_modules --exclude-dir=dist 'yonyou|用友' crates/ apps/ 2>/dev/null; then
   echo "FAIL: crates/ apps/ 里出现客户专有名词"; exit 1
 fi
 echo "ok"
@@ -70,7 +94,17 @@ echo "== CI-9 外壳不渗进业务代码 =="
 # opener / process / autostart …），**没有一个包含 `api` 子串**。只匹配
 # `/api` 的话，业务组件里 `import { open } from '@tauri-apps/plugin-dialog'`
 # 会畅通无阻——那正是这条检查要挡的东西。
-offenders=$(grep -rlE '@tauri-apps/|ipcRenderer' apps/ui/src/ 2>/dev/null \
+#
+# 也匹配 `__TAURI__`：Tauri 2 的 `app.withGlobalTauri` 配置项一旦打开，会
+# 把外壳能力挂到 window 全局对象上，届时
+# `(window as any).__TAURI__.core.invoke(...)` 完全不含任何 import 语句，
+# 只靠 `@tauri-apps/|ipcRenderer` 会永久漏判。今天 tauri.conf.json5 里该
+# 配置项是 false、这条路径不可达，但补上这条匹配成本极低。注意这不会
+# 误伤 platform/index.ts 里合法的 `__TAURI_INTERNALS__` 运行时探测——
+# 一是 `__TAURI__` 不是 `__TAURI_INTERNALS__` 的子串（后者是单下划线接
+# INTERNALS__，不是双下划线收尾），二是 platform/ 本来就在下面的排除
+# 范围内。
+offenders=$(grep -rlE '@tauri-apps/|ipcRenderer|__TAURI__' apps/ui/src/ 2>/dev/null \
             | grep -v '^apps/ui/src/platform/' || true)
 if [ -n "$offenders" ]; then
   echo "FAIL: platform/ 之外出现了外壳 API：$offenders"; exit 1
