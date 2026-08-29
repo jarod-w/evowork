@@ -46,6 +46,25 @@ pub struct GatewayVerdict {
     pub action: GatewayAction,
 }
 
+/// 把策略判定收紧到「至少 floor 这一档」。
+///
+/// **这是整个 Gateway 里唯一允许改变策略判定的地方。** 闸门只能收紧、
+/// 绝不能放宽——`Deny` 原样返回，`Allow` 提升为 `RequireApproval{floor}`，
+/// 已经是 `RequireApproval` 的取 `max(原 risk, floor)`。
+///
+/// 抽成独立函数是有原因的：这条不变量在本组件上破过三次（闸门不存在、
+/// 闸门无条件覆盖 Deny、闸门硬编码 risk 导致降级）。把它收进一个函数后，
+/// 新增的第三个闸门只要复用它就自动获得这条不变量，调用方写不出「放宽」。
+fn tighten(decision: PolicyDecision, floor: RiskLevel) -> PolicyDecision {
+    match decision {
+        PolicyDecision::Deny { reason_code } => PolicyDecision::Deny { reason_code },
+        PolicyDecision::Allow => PolicyDecision::RequireApproval { risk: floor },
+        PolicyDecision::RequireApproval { risk } => PolicyDecision::RequireApproval {
+            risk: risk.max(floor),
+        },
+    }
+}
+
 pub struct Gateway {
     policy: Box<dyn PolicyHook>,
     manifests: ManifestRegistry,
@@ -142,47 +161,30 @@ impl Gateway {
         };
         let (policy_decision, rules_hit) = self.policy.evaluate_with_trace(&ctx);
 
-        // 结构性闸门：manifest 缺失 / 污点未清，都只能把策略判定收紧成
-        // RequireApproval，不能把 Deny 放宽——闸门是拿来加严的，不是拿来盖过
-        // 拒绝的。所以 Deny 必须先于两个闸门判断（下面 match 里 Deny 分支排在
-        // 最前面，没有 guard，无论 manifest_missing / taint_gate 是否为真都会
-        // 命中），只有 Allow（或策略本身已经给出的 RequireApproval）才可能被
-        // 两个闸门进一步收紧。
+        // 结构性闸门：manifest 缺失 / 污点未清，都只能把策略判定收紧
+        // （交给 `tighten` 去做），不能把 Deny 放宽——闸门是拿来加严的，
+        // 不是拿来盖过拒绝的。`tighten` 对 Deny 原样返回，所以无论
+        // manifest_missing / taint_gate 是否为真，Deny 都不会被两个闸门
+        // 改动；只有 Allow（或策略本身已经给出的 RequireApproval）才可能
+        // 被进一步收紧。
         //
-        // 两个闸门都命中时，reason_code 报 "no_manifest"：manifest 缺失意味着
-        // 我们连这个工具的 class / reversible / targets 都是猜的最严默认值,
-        // 这比"工具形状已知、只是这次调用摸到了污点数据"更从根上不可信，
-        // 优先暴露这个更严重的理由；risk 取两个闸门里较高的 L3
-        // （manifest 闸门固定取全局最高档 L3，天然不会比策略原判更低）。
+        // manifest 闸门优先于污点闸门判断：两者都命中时，reason_code 报
+        // "no_manifest"——manifest 缺失意味着我们连这个工具的
+        // class / reversible / targets 都是猜的最严默认值，这比"工具形状
+        // 已知、只是这次调用摸到了污点数据"更从根上不可信，优先暴露这个
+        // 更严重的理由。manifest 闸门的下限是全局最高档 L3，天然不低于
+        // 污点闸门的 L2，所以两者都命中时，即使只跑 manifest 闸门也不会漏
+        // 收紧污点闸门本该收紧的部分。
         //
-        // 污点闸门只保证「至少 L2」——取 max(策略给出的 risk, L2)，绝不能把
-        // 策略已经判到 L3 的调用压回 L2（这里的 risk 是策略在 RequireApproval
-        // 里给出的档位；策略给 Allow 时视作没有下限，直接落到闸门的 L2）。
-        // 之前的写法是硬编码 L2，等于把 policy 判过的更高档位悄悄降级，是这轮
-        // re-review 修的缺陷。
-        let (decision, reason) = match policy_decision {
-            PolicyDecision::Deny { reason_code } => {
-                (PolicyDecision::Deny { reason_code }, "policy")
-            }
-            _ if manifest_missing => (
-                PolicyDecision::RequireApproval {
-                    risk: RiskLevel::L3,
-                },
-                "no_manifest",
-            ),
-            PolicyDecision::RequireApproval { risk } if taint_gate => (
-                PolicyDecision::RequireApproval {
-                    risk: risk.max(RiskLevel::L2),
-                },
-                "taint_gate",
-            ),
-            PolicyDecision::Allow if taint_gate => (
-                PolicyDecision::RequireApproval {
-                    risk: RiskLevel::L2,
-                },
-                "taint_gate",
-            ),
-            other => (other, "policy"),
+        // 污点闸门用 `tighten(.., L2)`：只保证「至少 L2」，绝不能把策略
+        // 已经判到 L3 的调用压回 L2。之前的写法是硬编码 L2，等于把 policy
+        // 判过的更高档位悄悄降级，是这轮 re-review 修的缺陷。
+        let (decision, reason) = if manifest_missing {
+            (tighten(policy_decision, RiskLevel::L3), "no_manifest")
+        } else if taint_gate {
+            (tighten(policy_decision, RiskLevel::L2), "taint_gate")
+        } else {
+            (policy_decision, "policy")
         };
 
         match &decision {
@@ -249,5 +251,142 @@ impl Gateway {
             events,
             action: GatewayAction::Dispatch(request),
         }
+    }
+}
+
+#[cfg(test)]
+mod tighten_tests {
+    // `tighten` 的穷举单元测试：Deny / Allow / RequireApproval{L1,L2,L3} ×
+    // floor ∈ {L2, L3}，共 10 格全部断言。这比在集成测试里手工搭一整套
+    // Gateway/Policy/Manifest 才能验证一次闸门行为要小、要快、覆盖还更全——
+    // 集成测试（tests/pipeline.rs）验证的是闸门在真实管线里的接线，两者是
+    // 不同层次，都要留着，谁也不能替代谁。
+    use super::tighten;
+    use evo_policy::{PolicyDecision, RiskLevel};
+
+    fn deny() -> PolicyDecision {
+        PolicyDecision::Deny {
+            reason_code: "some_rule".to_owned(),
+        }
+    }
+
+    #[test]
+    fn deny_stays_deny_under_l2_floor() {
+        assert_eq!(tighten(deny(), RiskLevel::L2), deny());
+    }
+
+    #[test]
+    fn deny_stays_deny_under_l3_floor() {
+        assert_eq!(tighten(deny(), RiskLevel::L3), deny());
+    }
+
+    #[test]
+    fn allow_becomes_require_approval_at_l2_floor() {
+        assert_eq!(
+            tighten(PolicyDecision::Allow, RiskLevel::L2),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L2
+            }
+        );
+    }
+
+    #[test]
+    fn allow_becomes_require_approval_at_l3_floor() {
+        assert_eq!(
+            tighten(PolicyDecision::Allow, RiskLevel::L3),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l1_is_lifted_to_l2_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L1
+                },
+                RiskLevel::L2
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L2
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l1_is_lifted_to_l3_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L1
+                },
+                RiskLevel::L3
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l2_stays_l2_under_l2_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L2
+                },
+                RiskLevel::L2
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L2
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l2_is_lifted_to_l3_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L2
+                },
+                RiskLevel::L3
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l3_never_downgraded_by_l2_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L3
+                },
+                RiskLevel::L2
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l3_stays_l3_under_l3_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L3
+                },
+                RiskLevel::L3
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
     }
 }
