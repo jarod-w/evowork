@@ -21,6 +21,7 @@
 - `crates/` 与 `apps/` 里**不得出现客户专有名词**（`yonyou` / `u8` / `用友`）
 - codex 上游 rev 冻结在 `c6bf330b42ed6fcbdcc902dc06ef38306b2e02f3`，只 pin `rev`，**永不用 `branch = "main"`**
 - `Cargo.lock` 进版本库
+- **改了任何 `Cargo.toml` 的依赖，必须把随之更新的 `Cargo.lock` 一并提交**——lockfile 漏提交不会让本地构建失败，只会让交付到客户机器上的构建不可复现
 - **每个任务 commit 前必须跑 `cargo fmt --all`**，并以 `./scripts/ci.sh` 五段全绿作为收尾条件——不是只跑本 crate 的 `cargo test -p X`。计划正文里的代码块是手写的、未经 rustfmt，照抄会引入格式漂移；只验单个 crate 则漂移要到很久以后才被发现
 - 每个任务以一次 commit 收尾
 
