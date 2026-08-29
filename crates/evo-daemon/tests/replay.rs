@@ -108,3 +108,30 @@ async fn a_tampered_checkpoint_hash_is_caught() {
     assert!(!report.is_ok());
     assert_eq!(report.mismatches.len(), report.checkpoints_checked);
 }
+
+#[tokio::test]
+async fn verifying_a_nonexistent_run_is_vacuous_not_passing() {
+    // 「空洞」不等于「通过」：一个根本不存在的 run_id 没有任何 checkpoint
+    // 可比对，is_ok() 会是 true——但那是因为什么都没查，调用方必须靠
+    // is_vacuous() 把这种情况和「真的验证过、没问题」区分开。
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::from("r-does-not-exist");
+    let report = verify(&open(dir.path()), &run_id).unwrap();
+    assert!(report.is_ok(), "空 run 没有不一致，is_ok() 应为 true");
+    assert!(
+        report.is_vacuous(),
+        "没有任何 checkpoint 被检查，is_vacuous() 应为 true"
+    );
+}
+
+#[tokio::test]
+async fn verifying_a_normal_run_is_not_vacuous() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = produce_a_run(dir.path()).await;
+    let report = verify(&open(dir.path()), &run_id).unwrap();
+    assert!(report.is_ok(), "不一致的检查点：{:?}", report.mismatches);
+    assert!(
+        !report.is_vacuous(),
+        "有 checkpoint 被检查到，is_vacuous() 应为 false"
+    );
+}
