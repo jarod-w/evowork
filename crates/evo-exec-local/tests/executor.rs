@@ -115,3 +115,81 @@ fn each_run_gets_its_own_workspace() {
     assert_ne!(a.path(), b.path());
     assert!(a.path().is_dir() && b.path().is_dir());
 }
+
+// --- 符号链接逃逸：词法校验看不见符号链接，工作区里预先放一个指向
+// 工作区外的软链，就能骗过 `..`/前缀比对，真实文件落到工作区之外。
+
+#[test]
+fn a_symlink_to_outside_the_workspace_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), ws.path().join("escape")).unwrap();
+
+    let err = resolve_in_workspace(&ws, "escape/x.txt").unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+}
+
+#[test]
+fn a_symlink_in_a_middle_path_segment_is_refused() {
+    // a 是软链指向工作区外的目录，b 在那个外部目录里真实存在——
+    // 证明拦的不只是候选路径的最后一段，中间层同样会被抓到。
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(outside.path().join("b")).unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), ws.path().join("a")).unwrap();
+
+    let err = resolve_in_workspace(&ws, "a/b/x.txt").unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+}
+
+#[tokio::test]
+async fn symlink_escape_via_fs_write_does_not_create_the_file_outside_the_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), ws.path().join("escape")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(lease(ws.clone()), write_effect("escape/pwned.txt", "pwned"))
+        .await;
+
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    // 最要紧的断言：文件真的没有写到工作区外面去，不只是返回了个错误。
+    assert!(!outside.path().join("pwned.txt").exists());
+}
+
+#[tokio::test]
+async fn a_symlink_inside_the_workspace_still_works() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::fs::create_dir_all(ws.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(ws.path().join("real"), ws.path().join("link")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(lease(ws.clone()), write_effect("link/inside.txt", "ok"))
+        .await;
+
+    assert_eq!(outcome.status, ToolResultStatus::Ok);
+    assert_eq!(
+        std::fs::read_to_string(ws.path().join("real/inside.txt")).unwrap(),
+        "ok"
+    );
+}
+
+#[tokio::test]
+async fn a_new_file_in_new_nested_directories_still_works() {
+    let (_d, outcome, ws) = run("nested/dirs/report.txt", "hello").await;
+    assert_eq!(outcome.status, ToolResultStatus::Ok);
+    assert_eq!(
+        std::fs::read_to_string(ws.path().join("nested/dirs/report.txt")).unwrap(),
+        "hello"
+    );
+}
