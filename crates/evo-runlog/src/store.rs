@@ -5,6 +5,13 @@ use evo_protocol::{Actor, Event, EventBody, RunId};
 use rusqlite::{params, Connection};
 use std::path::Path;
 
+/// Run Log 的 SQLite 存储层。
+///
+/// **单写者假定**：本类型假定同一时刻只有一个写者在追加同一个 run 的事件——
+/// 在 evowork 里这个写者永远是 `evo-daemon`。这不是巧合，是架构约束的直接
+/// 收益：设计文档明确「只有 evo-daemon 写 Run Log」，多写者一致性问题因此
+/// 根本不存在，`RunLog` 也就没有必要为多写者场景做协调（加锁、重试、
+/// CAS 循环……）。见 `append` 的文档了解违反这条假定时会发生什么。
 pub struct RunLog {
     conn: Connection,
     blobs: BlobStore,
@@ -34,6 +41,23 @@ impl RunLog {
     }
 
     /// 追加一条事件。seq 由本函数分配，调用方不许自己算。
+    ///
+    /// seq 分配方式是「事务外读 [`last_seq`](Self::last_seq)、事务内 INSERT」，
+    /// 中间没有锁把这两步粘在一起。这在单写者假定下没有问题——见
+    /// [`RunLog`] 的类型级文档。但如果假定被打破，也就是**同一个 run**
+    /// 出现了第二个并发写者，两次调用可能算出同一个 seq；此时 `run_events`
+    /// 上的 `PRIMARY KEY (run_id, seq)` 会挡住后提交的那个事务，使其在
+    /// `tx.commit()` 处返回 `Err`（SQLite 扩展错误码 1555，
+    /// `SQLITE_CONSTRAINT_PRIMARYKEY`）并整体回滚——不会出现两条事件共用
+    /// 一个 seq，也不会有事件被静默吞掉。
+    ///
+    /// **拿到这个 `Err` 时，正确的反应是去找那个第二个写者，而不是重试。**
+    /// 单写者是本存储层唯一依赖的并发不变量；这里的 `Err` 就是它被违反的
+    /// 信号——说明有代码绕过了「只有 evo-daemon 写 Run Log」的边界。重试
+    /// 能让调用方的这一次 `append` 看起来成功，但那只是用循环把一次边界
+    /// 违规糊过去：下一次冲突还会发生，而且从此没有任何报错能提醒任何人
+    /// 去修那个真正多出来的写者。因此本方法不会加重试循环，也不会加锁——
+    /// 加了反而会把「边界被破坏」从一次响亮的 `Err` 变成静默容忍。
     pub fn append(
         &mut self,
         run_id: &RunId,
