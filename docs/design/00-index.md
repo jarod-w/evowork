@@ -67,8 +67,10 @@ evowork/
 │   └── evo-cli/                  # 运维命令 + eval runner
 ├── apps/
 │   └── ui/                       # Vite + React + AntD，纯 Web
-│       ├── src/platform/         # 唯一允许出现 @tauri-apps/api 的目录（CI 检查 9）
+│       ├── src/platform/         # 唯一允许出现 @tauri-apps/api 及其 plugin 家族的目录（CI 检查 9）
+│       ├── src/daemon/           # daemonClient：UI 访问 daemon 的唯一模块
 │       └── src-tauri/            # Tauri 2 外壳，约 200 行，零业务逻辑
+│           └── capabilities/     # Tauri 2 的 IPC 白名单（见下方说明）
 ├── packages/
 │   └── protocol/                 # ts-rs 生成产物，不手写
 ├── mcp-servers/
@@ -84,6 +86,8 @@ evowork/
 `crates/evo-exec-local/vendor/` 下是受控 vendor 的上游代码（[08](08-codex-integration.md)），**该目录内不做任何修改**，CI 检查与上游逐字节一致。
 
 `mcp-servers/yonyou` 与主干同仓但不同依赖树，靠 CI 检查隔离（第四节第 5 条）。客户换成金蝶时删掉这一个目录即可——这就是 4.1「主干里零行用友」的可执行形态。
+
+`apps/ui/src-tauri/capabilities/` 这个目录**缺失时不会报任何错**：Tauri 2 的 IPC 是白名单模型，`capabilities/` 为空目录（或不存在）会让 Tauri 静默解析出一个空权限集，编译不报错、启动不报错，只在真机上第一次调用某个桌面能力时以 `command not allowed` 拒绝——这意味着 `apps/ui/src/platform/tauri.ts` 的全部 5 个方法会在真机上悄无声息地失效，且这个坑在编译期完全不可见。值得在仓库结构图里单独列一行，就是为了不让这个目录被当成「可有可无的空文件夹」删掉或漏建。
 
 ### 依赖方向
 
@@ -150,14 +154,18 @@ evo-daemon     ← 全部
 | 1 | 内核不读时钟 / 随机数 / env | `clippy.toml` 的 `disallowed-methods` + `disallowed-types`；并检查 `evo-kernel` 的 `cargo tree` 不含 `chrono` / `time` / `rand` / `uuid` / `getrandom` |
 | 2 | **回放自校验** | 对 `eval/cases/` 中每条历史 Log 全量重放，每个 `checkpoint` 事件处比对 `state_hash`。不一致即 fail |
 | 3 | 治理旁路 | 检查 `evo-exec*` / `evo-mcp` 未被 `evo-daemon` 之外的地方直接调用（即不得绕过 gateway） |
-| 4 | 客户名词隔离 | `grep -riE 'yonyou\|u8\|用友' crates/ apps/` 必须为空 |
+| 4 | 客户名词隔离 | `grep -riE --exclude-dir=node_modules --exclude-dir=dist 'yonyou\|用友' crates/ apps/` 必须为空。`u8` 未实现——它是 Rust 基本类型，全仓皆是，需要按标识符边界匹配，留给阶段 3 |
 | 5 | 协议同步 | `ts-rs` 生成结果与 `packages/protocol` 已提交内容一致，否则 fail |
 | 6 | vendor 未被修改 | `crates/evo-exec-local/vendor/` 与上游 pin 住的 rev 逐字节一致（[08 §3](08-codex-integration.md)） |
 | 7 | 上游依赖闭包 | `scripts/codex-closure.py` 的输出与基线一致；闭包变大即 fail（借错层的早期信号） |
 | 8 | **快照可丢弃** | 删掉全部 snapshot 后回放结果与保留快照时一致（Q-06）。没有它，早晚有人往快照里塞一个 Log 里没有的状态 |
-| 9 | **外壳不渗进业务代码** | `grep -rE '@tauri-apps/api\|ipcRenderer' apps/ui/src/` 的命中必须全部落在 `apps/ui/src/platform/` 内。POC 期就要出桌面外壳（4.10②）之后，这条从「将来注意」变成当期防线——**UI 里到处 `invoke`，就是红线 1 的前置形态** |
+| 9 | **外壳不渗进业务代码** | `grep -rlE '@tauri-apps/\|ipcRenderer\|__TAURI__' apps/ui/src/` 的命中必须全部落在 `apps/ui/src/platform/` 内。POC 期就要出桌面外壳（4.10②）之后，这条从「将来注意」变成当期防线——**UI 里到处 `invoke`，就是红线 1 的前置形态** |
 
 > 第 2 条是整套设计里性价比最高的一项：它把「内核里悄悄读了时钟」从**半年后被发现**变成**当天被发现**。技术路线第七节点名担心的正是这一条。
+
+> **CI-9 为什么匹配 `@tauri-apps/` 整个家族，不是只匹配 `@tauri-apps/api`。** Tauri 2 把外壳能力拆进了一批 `@tauri-apps/plugin-*` 包（本工程实际用了 dialog / fs / notification / opener / process / autostart 六个），**没有一个包名包含 `api` 子串**。只匹配 `.../api` 的话，业务组件里 `import { open } from '@tauri-apps/plugin-dialog'` 会畅通无阻地漏过检查——那正是这条检查存在的意义所在。
+>
+> **为什么还额外匹配 `__TAURI__`。** `tauri.conf.json5` 的 `app.withGlobalTauri` 一旦打开，外壳能力会被挂到 `window` 全局对象上，届时 `(window as any).__TAURI__.core.invoke(...)` 完全不含任何 import 语句，只靠包名匹配会永久漏判。当前该开关是 `false`、此路径不可达，但补上这条匹配成本极低，不留后手隐患。（这条匹配不会误伤 `platform/index.ts` 里合法的 `__TAURI_INTERNALS__` 运行时探测：`__TAURI__` 不是 `__TAURI_INTERNALS__` 的子串，且 `platform/` 本身就在允许范围内。）
 
 ---
 
