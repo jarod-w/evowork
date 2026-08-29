@@ -1,9 +1,20 @@
 use crate::rng::DeterministicRng;
-use crate::state::{ContextRecord, EffectState, RunState, RunStatus};
+use crate::state::{AwaitReason, ContextRecord, EffectState, RunState, RunStatus};
 use evo_protocol::events::effect::ToolResultStatus;
-use evo_protocol::events::lifecycle::CompletionStatus;
+use evo_protocol::events::lifecycle::{CompletionStatus, SuspendReason};
 use evo_protocol::ids::RunId;
 use evo_protocol::{Event, EventBody};
+
+/// `ToolResult`（正常结算）与 `ApprovalDenied`/`ApprovalExpired`（终结但不
+/// 结算）共用的收尾：一个 effect 跑到终态后，检查本 turn 是否所有 effect
+/// 都已终结——是的话推进到下一个 turn。`EffectState::is_resolved` 把
+/// `Settled` 与 `Denied` 一视同仁：两者都不再产生后续事件，`decide` 都不
+/// 需要继续等。
+fn advance_turn_if_all_effects_resolved(s: &mut RunState) {
+    if s.pending_effects.values().all(EffectState::is_resolved) {
+        s.turn += 1;
+    }
+}
 
 /// 纯函数。入参只有 &RunState 与 &Event，两者都是纯数据。
 ///
@@ -81,12 +92,7 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                 // 错误不终止 run，交给下一 turn 的模型处理
             }
             // 一个 effect 结算完，本 turn 结束，进入下一 turn
-            if s.pending_effects
-                .values()
-                .all(|v| *v == EffectState::Settled)
-            {
-                s.turn += 1;
-            }
+            advance_turn_if_all_effects_resolved(&mut s);
         }
         EventBody::CostCharged(e) => {
             s.budget_used.amount_micros += e.amount_micros;
@@ -103,24 +109,113 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                 CompletionStatus::Ok | CompletionStatus::Partial => RunStatus::Completed,
             };
         }
-        // 下面这批变体是本次「事件目录补齐」新增的（M2 治理面 Task 1），
-        // 尚无生产方，`reduce` 语义留给消费它们的那个任务去定（例如
-        // `RunSuspended`/`RunResumed` 要驱动 `RunStatus::Suspended` 与
-        // `AwaitReason`，`ApprovalRequested` 等要维护审批台账）。这里先给
-        // 空 match 臂，只为满足穷尽性、让新增变体能编译通过；显式列出
-        // 每个变体而不是用 `_` 通配，好让下一个任务给某个变体添加真实
-        // 处理时，删掉对应这一行本身就是「待办清单」。
-        EventBody::RunSuspended(_)
-        | EventBody::RunResumed(_)
-        | EventBody::RunFailed(_)
-        | EventBody::ContextCompacted(_)
-        | EventBody::ApprovalRequested(_)
-        | EventBody::ApprovalGranted(_)
-        | EventBody::ApprovalDenied(_)
-        | EventBody::ApprovalExpired(_)
-        | EventBody::ArtifactEmitted(_)
-        | EventBody::ClarificationRequested(_)
-        | EventBody::ClarificationAnswered(_) => {}
+        EventBody::RunSuspended(e) => {
+            // 挂起不是特殊状态机，就是 awaiting 有值时 decide 返回空
+            // （03 §4）。这条事件是那个「有值」的唯一落点。
+            s.status = RunStatus::Suspended;
+            s.awaiting = Some(match e.reason {
+                // Gateway 已经先发了一条 `approval.requested`（`reduce`
+                // 处理它时把 approval_id/effect_id 记进了
+                // `pending_approvals`），这里从台账里取出那条未决审批，
+                // 拼成携带完整上下文的 `AwaitReason::Approval`——不从
+                // `RunSuspended` 本身取，因为它的 payload 里根本没有
+                // approval_id/effect_id 这两个字段（该事件只携带
+                // `SuspendReason` 这个粗粒度分类 + 一个 blob 引用）。
+                SuspendReason::AwaitingApproval => {
+                    let (approval_id, effect_id) = s
+                        .pending_approvals
+                        .iter()
+                        .next_back()
+                        .map(|(a, e)| (a.clone(), e.clone()))
+                        .expect(
+                            "run.suspended{reason: AwaitingApproval} 之前必须先有一条 \
+                             approval.requested 把审批记进 pending_approvals——\
+                             这是 daemon 侧的发送顺序保证，不是内核能自己满足的前提",
+                        );
+                    AwaitReason::Approval {
+                        approval_id,
+                        effect_id,
+                    }
+                }
+                // `SuspendReason::AwaitingHuman` 的文档原话是「澄清式追问：
+                // 需要人回答问题，不一定经过审批队列」——它就是
+                // `clarification.requested` 之后的那次挂起，同构于上面的
+                // 审批分支：从 `pending_question`（`clarification.requested`
+                // 写入）里取当前这条追问的 question_id。
+                SuspendReason::AwaitingHuman => {
+                    let question_id = s.pending_question.clone().expect(
+                        "run.suspended{reason: AwaitingHuman} 之前必须先有一条 \
+                         clarification.requested 把 question_id 写进 pending_question",
+                    );
+                    AwaitReason::Clarification { question_id }
+                }
+                SuspendReason::BudgetExhausted => AwaitReason::Budget,
+                // 「人工暂停，不归入以上任何一类具体原因」——没有配套的
+                // approval_id/question_id 可取，`AwaitReason` 里也没有专门
+                // 为它开的变体（`Human{step}` 是 [P2] 人机混合队列，语义
+                // 是「流程走到了某个人工步骤」，与这里的「无缘由手动暂停」
+                // 不是一回事，勉强复用会让将来读 Log 的人误以为两者同源）。
+                // 挪用最不相关联的 `ExternalEvent` 变体，把 kind 写成一个
+                // 稳定标记，好过瞎猜语义相近的变体、或者 panic 掉一整条
+                // 合法事件。
+                SuspendReason::Paused => AwaitReason::ExternalEvent {
+                    kind: "manual_pause".to_owned(),
+                },
+            });
+        }
+        EventBody::RunResumed(_) => {
+            // 恢复是显式事件：awaiting 的清空只由这里负责，
+            // approval.granted / clarification.answered 都不许直接清空它
+            // ——否则「谁能往 Log 追加事件谁就能恢复任务」这条推论会失去
+            // 唯一的落点，Log 里也查不出「谁、什么时候恢复的」。
+            s.status = RunStatus::Running;
+            s.awaiting = None;
+        }
+        EventBody::RunFailed(_) => {
+            s.status = RunStatus::Failed;
+        }
+        EventBody::ApprovalRequested(e) => {
+            s.pending_approvals
+                .insert(e.approval_id.clone(), e.effect_id.clone());
+        }
+        EventBody::ApprovalGranted(e) => {
+            // 只销账，不清 awaiting（红线①）：审批通过只是记录了「人批
+            // 了」，effect 真正往前走要等 Gateway 真的派发、`reduce` 收到
+            // `effect.dispatched`/`tool.result`；run 真正重新跑起来要等
+            // 随后那条 `run.resumed`。
+            s.pending_approvals.remove(&e.approval_id);
+        }
+        EventBody::ApprovalDenied(e) => {
+            // 被拒的 effect 标成 EffectState::Denied——见该变体上的注释：
+            // 复用 pending_effects 这张已有的单一真源，而不是另开一张
+            // 「被拒集合」。它是与 Settled 并列的终态，所以同样要检查
+            // 「本 turn 是否所有 effect 都已终结」，否则 decide 会因为
+            // 这个 effect 永远停在非终态而卡死整个 turn 循环，即使随后
+            // 来了 run.resumed 清空 awaiting 也无济于事——decide 卡在
+            // pending_effects 的阻塞检查上，永远走不到重新规划那一步。
+            if let Some(effect_id) = s.pending_approvals.remove(&e.approval_id) {
+                s.pending_effects.insert(effect_id, EffectState::Denied);
+                advance_turn_if_all_effects_resolved(&mut s);
+            }
+        }
+        EventBody::ApprovalExpired(e) => {
+            // 到期未处理与被拒是同一种终态：这个 effect 都不会再被派发。
+            // 处理方式与 ApprovalDenied 对称。
+            if let Some(effect_id) = s.pending_approvals.remove(&e.approval_id) {
+                s.pending_effects.insert(effect_id, EffectState::Denied);
+                advance_turn_if_all_effects_resolved(&mut s);
+            }
+        }
+        EventBody::ClarificationRequested(e) => {
+            s.pending_question = Some(e.question_id.clone());
+        }
+        EventBody::ClarificationAnswered(_) => {
+            // 同构于 ApprovalGranted：只记「回答到了」，不清 awaiting。
+            s.pending_question = None;
+        }
+        // 这两个变体本切片仍不产生（各自的事件定义处已注明：产物区、
+        // 上下文压缩都排在后续切片），继续留白，交给对应切片处理。
+        EventBody::ContextCompacted(_) | EventBody::ArtifactEmitted(_) => {}
     }
     s
 }

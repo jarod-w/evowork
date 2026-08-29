@@ -1,4 +1,4 @@
-use crate::state::{AwaitReason, EffectState, RunState, RunStatus};
+use crate::state::{AwaitReason, RunState, RunStatus};
 use evo_protocol::events::accounting::CheckpointReason;
 use evo_protocol::events::model::{PlanIntent, PlannedCall};
 
@@ -21,6 +21,22 @@ pub enum Command {
     Complete { status: RunStatus },
 }
 
+/// 预算是否超限。**只在对应字段是 `Some` 时才判**——`None` 表示「不设
+/// 限」，不是「设成 0」；把 `None` 当 0 比会让所有没配预算的 run 一启动
+/// 就撞上限。三个维度独立判断，任一维度超了就算超限（`BudgetSpec` 与
+/// `BudgetUsage` 的字段本就是一一对应的三元组，没有理由只查其中一个）。
+fn budget_exceeded(state: &RunState) -> bool {
+    let spec = &state.budget;
+    let used = &state.budget_used;
+    spec.max_tokens.is_some_and(|max| used.tokens > max)
+        || spec
+            .max_amount_micros
+            .is_some_and(|max| used.amount_micros > max)
+        || spec
+            .max_wall_seconds
+            .is_some_and(|max_seconds| used.wall_ms > max_seconds.saturating_mul(1000))
+}
+
 /// 纯函数：给定状态，内核说「接下来该做什么」，但不做。
 pub fn decide(state: &RunState) -> Vec<Command> {
     if state.status != RunStatus::Running || state.awaiting.is_some() {
@@ -34,12 +50,21 @@ pub fn decide(state: &RunState) -> Vec<Command> {
         });
     }
 
-    // 有 effect 还没结算，等执行面回流，不做新决策
-    if state
-        .pending_effects
-        .values()
-        .any(|v| *v != EffectState::Settled)
-    {
+    // 预算超限：挂起，不是失败、也不是静默继续（功能清单原话「超限自动
+    // 挂起而非静默烧钱」）。人提额后可续跑——续跑靠的是随后一条
+    // `run.resumed`，与审批链路走的是同一套恢复机制。
+    if budget_exceeded(state) {
+        cmds.push(Command::Suspend {
+            reason: AwaitReason::Budget,
+        });
+        return cmds;
+    }
+
+    // 有 effect 还没跑到终态，等执行面回流，不做新决策。`Denied` 与
+    // `Settled` 都算终态（`EffectState::is_resolved`）——否则一个被拒的
+    // effect 会让这个 turn 永远卡在这里，即使 run.resumed 已经把 awaiting
+    // 清空也没用：decide 走不到下面重新规划的分支。
+    if state.pending_effects.values().any(|v| !v.is_resolved()) {
         return cmds;
     }
 
