@@ -62,6 +62,8 @@ POC 期只有一种实现（`LocalSandboxExecutor`），且与 daemon 同进程�
 | 工作区、Run Log、blob、用友只读凭据都在服务账户家目录下 | 财务的日常登录账户读不到——与本节最后那条敏感目录硬拦截同向：**有些约束不该由策略来保证** |
 | 卸载 = 删一个用户 + 一个 plist | POC 结束机器还回去是干净的 |
 
+> **这是 POC 期的形态，不是唯一形态。** 产品期的 Windows 对应物是 Windows Service + 服务账户（届时 BitLocker 配 TPM 开机自动解锁，反而没有下面 FileVault 那个坑）。**daemon 代码不该知道自己是被 launchd 还是被 SCM 拉起来的**——不读 launchd 特有的环境变量、不把 plist 路径写进业务代码，这条现在是零成本，后补则要翻一遍启动路径。产品期 Windows 的完整路径见 [08 §3](08-codex-integration.md) 末。
+
 > **一条前提必须在装机前验，否则"常开"是假的**：机器若开着 FileVault，**断电重启后停在解锁界面，LaunchDaemon 在有人登录前根本不会启动**。要么请 IT 对这台机关掉（daemon 数据本来就在独立服务账户下，不靠全盘加密），要么接受"意外断电需有人去输一次密码"并且别把自动恢复写进承诺。计划内重启可用 `fdesetup authrestart` 绕过，意外断电绕不过。另需 `pmset -a sleep 0 disksleep 0 autorestart 1` 并挪开系统自动更新的重启窗口。
 
 | 维度 | POC 期策略 |

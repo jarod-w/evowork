@@ -340,11 +340,13 @@ daemon 装成系统级 **LaunchDaemon**，跑在一个专用服务账户（如 `
 
 财务电脑就是 Mac mini，daemon 又与它同机，于是技术路线首选的 `sandbox-exec` 路径直接成立，08 选 vendor macOS 子集的路径也随之确定——不必再为 `codex-windows-sandbox` 留后路。
 
-**原「客户端必须是 Windows」这条排期风险，整条消失。**
+**原「客户端必须是 Windows」这条排期风险，在 POC 期整条消失。**
 
 它原先已缩小到半条（"页面在财务的 Edge 里打得开、产物下得来、能被 Windows 版 Excel 正常打开"）。财务电脑是 Mac 之后，这半条也没了，只剩一个十分钟的检查项：**产物在 Mac 版 Excel 里打得开**——导出 xlsx 而不是 GBK CSV 即可。用友那侧的 GBK 编码仍在 daemon 侧处理，与本条无关。
 
 建议仍在 M2 结束前在那台真机上完整跑一次，不要留到 M3 彩排。
+
+> **但这只是 POC 期的消失，不是产品期的取消。** Windows 客户端是产品期的既定项——只是它在本架构里其实是两件事，价钱差一个量级：**Windows 壳**（Tauri 出第二个目标 + `platform` 接口的第二个实现，人周级，组织版形态下就够用）与 **Windows daemon + 沙箱**（AppContainer、Windows Service 安装形态、第二套策略语义，人月级，只有单机桌面版才需要）。顺序上前者可以先走。具体路径与代价见设计文档组 08 第三节末的「产品期 Windows 路径」。
 
 **话术要跟着改准确**，它收窄过两次，现在放回半档：
 
@@ -418,7 +420,7 @@ POC 期的正确形态：**企业微信推送消息（附带一个链接）→ �
 |---|---|
 | 财务电脑零安装：不签名、不申请软件审批、不碰 WebView2 | **失效**。daemon 本来就要装在这台 Mac mini 上（4.8），软件审批已经要过一次，再多一个 `.app` 是同一次 |
 | 4.9 的「推链接 → 点开批准」天然成立 | **仍然成立，但不排斥壳**——同一份 Vite 产物两种加载方式，不是二选一 |
-| 4.8 那条 Windows 排期风险随之塌缩 | **失效**。财务电脑是 Mac，壳只需要出 macOS 一个平台 |
+| 4.8 那条 Windows 排期风险随之塌缩 | **失效**。财务电脑是 Mac，**POC 期**的壳只需要出 macOS 一个平台（产品期仍要出 Windows 壳，见 4.8 末） |
 
 加上客户已明确**形态是验收条件**（"要一个装在电脑上的客户端，不是网页"），于是外壳进 POC 范围。
 
@@ -500,7 +502,7 @@ monorepo 里一个 `packages/protocol`，只放 Run Log schema 的类型定义�
 | 本文的项 | codex 里的对应件 | 判断 |
 |---|---|---|
 | A 类 10 网络出口白名单 | **`network-proxy`**：本地 HTTP + SOCKS5 代理，allow/deny 列表与通配、HTTPS MITM 钩子、**OTEL 结构化审计事件**、向子进程注入 `HTTP(S)_PROXY` | **正是本文要求的"本地 forward proxy 层"**，自研至少两周且容易做错 |
-| A 类 2 / 地基 D 本地沙箱 | `sandboxing` + macOS `sandbox-exec` + `linux-sandbox`(landlock/seccomp) + **`windows-sandbox-rs`（2.1 万行，含 ACL / audit / conpty）** | 三平台齐活。本次只用 macOS 那套（4.8 已定），Windows / Linux 两套是换客户时的存量，不进 POC |
+| A 类 2 / 地基 D 本地沙箱 | `sandboxing` + macOS `sandbox-exec` + `linux-sandbox`(landlock/seccomp) + **`windows-sandbox-rs`（2.1 万行，含 ACL / audit / conpty）** | 三平台齐活。POC 期只用 macOS 那套（4.8 已定）；**`windows-sandbox-rs` 是产品期 Windows daemon 的现成实现——这正是选 codex 的长期理由之一**，不是换客户才用得上的存量 |
 | A 类 9 MCP 接入 | `codex-mcp` / `rmcp-client` / `mcp-server` | 成熟 |
 | A 类 11 流程库 | `skills` + plugin manifest（声明 skills / mcp_servers / hooks / apps） | 承载方式与 0.3 一致：以数据存在，不进代码 |
 | 高危命令口径 | `execpolicy` | 可直接作为 Gateway 策略钩子的实现 |

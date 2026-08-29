@@ -196,7 +196,7 @@ evo-daemon     ← 全部
 | Q-16 | 记忆在 POC 期是否启用 | **建表不启用**，精力放口径库 | 04 |
 | Q-19 | MCP server 的沙箱与出口 | **与其他被执行的东西同等对待**。DB 直连是 M1 验证任务 | 05 |
 | Q-20 | codex crate 依赖形态 | **pin 住 rev 的 git 依赖**（实测不在 crates.io） | 08 |
-| Q-20a | `codex-sandboxing` 取舍 | **vendor macOS 子集**，避开 OTel 依赖链 | 08 |
+| Q-20a | `codex-sandboxing` 取舍 | **vendor macOS 子集**，避开 OTel 依赖链。**产品期做 Windows 时预计整体切回 A（直接依赖全套）**——B 的理由是 POC 专属的，见 08 §3 末 | 08 |
 | Q-20b | vendor 同步纪律 | **进 CI**（检查 6） | 08 |
 | Q-20c | 上游 rev | **POC 期冻结** | 08 |
 | Q-22 | UI ↔ daemon token | `/Library/Application Support/evowork/client.toml` 分发（daemon 与桌面客户端同机但在不同账户下，权限 644）；**审批链接 token 24 小时 + 单次使用** | 06 |
