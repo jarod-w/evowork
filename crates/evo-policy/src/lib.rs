@@ -12,9 +12,15 @@ use serde::{Deserialize, Serialize};
 pub use hardcoded::HardcodedPolicy;
 
 /// **`Ord`/`PartialOrd` 是派生的，依赖声明顺序**：`L1 < L2 < L3`，与危险程度
-/// 递增一致，Gateway 的结构性闸门（`evo-gateway::pipeline::admit`）靠这个序
-/// 做 `max(策略给出的 risk, 闸门下限)`，只收紧不放宽。新增档位**必须**插在
-/// 正确的位置——插在中间会静默地把所有既有比较结果改掉。
+/// 递增一致，Gateway 的结构性闸门（`evo-gateway::pipeline::tighten`）靠这个
+/// 序做 `max(策略给出的 risk, 闸门下限)`，只收紧不放宽。
+///
+/// 下面 `risk_level_order_is_l1_lt_l2_lt_l3` 测试拦得住的，只是「重排既有
+/// 档位」——例如把 `L3` 挪到 `L1` 前面。它拦不住「插入一个语义上该排在别处
+/// 的新档位」：派生 `Ord` 只看被断言的这几个变体之间的相对顺序，在 `L1`/`L2`
+/// 之间插入一个新变体，不会动摇 `L1 < L2 < L3` 这条断言，测试依旧全绿，但
+/// 新变体在真实危险程度里排在哪一档，测试完全不知道。新增档位时必须人工
+/// 确认它在声明顺序里的位置与其危险程度一致，不能只看这条测试是否通过。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
@@ -74,8 +80,10 @@ mod tests {
     #[test]
     fn risk_level_order_is_l1_lt_l2_lt_l3() {
         // 派生的 Ord 依赖声明顺序。evo-gateway 的结构性闸门靠 `risk.max(...)`
-        // 做"只收紧不放宽"，如果将来有人在 L1/L2/L3 中间插入新档位，
-        // 派生序会静默改变，这条测试就是为了在那一刻当场失败。
+        // 做"只收紧不放宽"，这条测试拦的是「重排既有档位」（例如把 L3 挪到
+        // L1 前面）——那会让下面的断言当场失败。它拦不住「插入一个语义上该
+        // 排在别处的新档位」：在 L1/L2 之间插入新变体不影响这三者的相对
+        // 顺序，断言依旧全绿。新增档位时必须人工确认位置，不能只看这条测试。
         assert!(RiskLevel::L1 < RiskLevel::L2);
         assert!(RiskLevel::L2 < RiskLevel::L3);
         assert!(RiskLevel::L1 < RiskLevel::L3);
