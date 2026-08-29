@@ -5,15 +5,20 @@ use serde::{Deserialize, Serialize};
 
 /// 风险档位，驱动是否需要人批准以及批准的严格程度（02 §…「结构性闸门」）。
 ///
-/// **刻意与 `evo-policy::RiskLevel` 是两份独立定义，不是同一个类型的重
-/// 导出**：`evo-policy` 依赖 `evo-protocol`（它要用 `EffectClass` /
-/// `ResourceRef` / `TaintLevel`），反过来让 `evo-protocol` 依赖
-/// `evo-policy` 会成环；而本任务的红线之一是不给 `evo-protocol` 加任何
-/// 依赖。两份定义的变体名、声明顺序（决定 `Ord`，`L1 < L2 < L3`）与
-/// 序列化形态（`rename_all = "lowercase"` → `"l1"`/`"l2"`/`"l3"`）必须
-/// 保持一致——daemon 组装 `approval.requested` 时要把 Gateway 判定出的
-/// `evo_policy::RiskLevel` 映射到这里；谁在 `evo-policy` 那边新增档位，
-/// 必须同步把这份镜像也补上。
+/// **唯一定义在这里**：`evo-policy` 本来就依赖 `evo-protocol`（要用
+/// `EffectClass` / `ResourceRef` / `TaintLevel`），所以不需要反向依赖，
+/// `evo_policy::RiskLevel` 是对本类型的 `pub use` 重导出，不是另一份定义。
+///
+/// **`Ord`/`PartialOrd` 是派生的，依赖声明顺序**：`L1 < L2 < L3`，与危险程度
+/// 递增一致，Gateway 的结构性闸门（`evo-gateway::pipeline::tighten`）靠这个
+/// 序做 `max(策略给出的 risk, 闸门下限)`，只收紧不放宽。
+///
+/// 下面 `risk_level_order_is_l1_lt_l2_lt_l3` 测试拦得住的，只是「重排既有
+/// 档位」——例如把 `L3` 挪到 `L1` 前面。它拦不住「插入一个语义上该排在别处
+/// 的新档位」：派生 `Ord` 只看被断言的这几个变体之间的相对顺序，在 `L1`/`L2`
+/// 之间插入一个新变体，不会动摇 `L1 < L2 < L3` 这条断言，测试依旧全绿，但
+/// 新变体在真实危险程度里排在哪一档，测试完全不知道。新增档位时必须人工
+/// 确认它在声明顺序里的位置与其危险程度一致，不能只看这条测试是否通过。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
@@ -23,6 +28,23 @@ pub enum RiskLevel {
     L2,
     /// 对外发送 / 资金 / 生产系统写——强制单条审批，不可批量放行
     L3,
+}
+
+#[cfg(test)]
+mod risk_level_tests {
+    use super::RiskLevel;
+
+    #[test]
+    fn risk_level_order_is_l1_lt_l2_lt_l3() {
+        // 派生的 Ord 依赖声明顺序。evo-gateway 的结构性闸门靠 `risk.max(...)`
+        // 做"只收紧不放宽"，这条测试拦的是「重排既有档位」（例如把 L3 挪到
+        // L1 前面）——那会让下面的断言当场失败。它拦不住「插入一个语义上该
+        // 排在别处的新档位」：在 L1/L2 之间插入新变体不影响这三者的相对
+        // 顺序，断言依旧全绿。新增档位时必须人工确认位置，不能只看这条测试。
+        assert!(RiskLevel::L1 < RiskLevel::L2);
+        assert!(RiskLevel::L2 < RiskLevel::L3);
+        assert!(RiskLevel::L1 < RiskLevel::L3);
+    }
 }
 
 /// Gateway 判定某个 effect 需要人批准时发出。这是「挂起而不是 `Err`」这条
