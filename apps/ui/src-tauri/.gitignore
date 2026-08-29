@@ -1,0 +1,5 @@
+# Standard Rust build output. The repo-root `.gitignore` only ignores a
+# top-level `/target` (the root Cargo workspace's), which this crate's
+# `[workspace]` isolation (see Cargo.toml) deliberately does not share --
+# so it needs its own ignore rule here.
+/target

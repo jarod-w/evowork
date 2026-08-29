@@ -1,0 +1,126 @@
+// evowork desktop shell configuration.
+//
+// This is `tauri.conf.json5`, not `tauri.conf.json`: strict JSON cannot
+// hold the comments this file needs (see the macOS signing/notarization
+// block below, which exists specifically so "get the Apple account" day
+// is a fill-in-the-blanks day, not a from-scratch research day). JSON5
+// is an officially supported Tauri config format; the `config-json5`
+// feature is enabled on both the `tauri` and `tauri-build` crates in
+// Cargo.toml so this file is actually the one read at build time, not
+// dead documentation sitting next to a real `tauri.conf.json`.
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "evowork",
+  "version": "0.1.0",
+
+  // Reverse-DNS app identifier. PLACEHOLDER: this needs to become the
+  // organization's real domain before this ever ships signed -- the
+  // notarized binary's identifier has to match what's registered with
+  // the Apple Developer account, and changing it later is not a
+  // find-and-replace (it affects the keychain items Tauri's updater and
+  // autostart plugin key off of).
+  "identifier": "com.evowork.desktop",
+
+  "build": {
+    // Both paths/URLs below are relative to/at the frontend project
+    // (`apps/ui`), which is one level up from this file.
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173", // Vite's default dev server port
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    // NOTE: `pnpm tauri dev` / `pnpm tauri build` cannot actually be run
+    // yet -- `@tauri-apps/cli` is not installed and `apps/ui/package.json`
+    // has no `tauri` script. That is scope for whichever task first
+    // needs an actual local Tauri build (this task's brief only asked
+    // for source that would build on macOS, not for the CLI wiring);
+    // this comment exists so that gap is a documented "not yet", not a
+    // silent one.
+  },
+
+  "app": {
+    "windows": [
+      {
+        "title": "evowork",
+        "width": 1024,
+        "height": 768,
+        "minWidth": 640,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      // `null` = Tauri's default (no CSP restriction). Fine for M1 (a
+      // single first-party frontend origin, no third-party content
+      // loaded into the webview); revisit once the daemon origin the
+      // frontend talks to is finalized (design doc 06 §4).
+      "csp": null
+    }
+  },
+
+  "bundle": {
+    "active": true,
+    // macOS-only targets: `app` (the .app bundle itself) and `dmg` (the
+    // disk image users actually download). No Linux/Windows targets --
+    // this crate's Rust dependency chain isn't even verified to compile
+    // there yet (see Cargo.toml), and the delivery target for M1 is
+    // macOS only (POC acceptance condition, design doc 00 Q-30).
+    "targets": ["app", "dmg"],
+    // Placeholder swatches generated locally (this box has neither
+    // ImageMagick nor a real logo asset) -- solid-color PNGs, not the
+    // product's actual icon. Once real branding art exists, regenerate
+    // this whole set (including the macOS-required `icon.icns`, which
+    // isn't checked in yet) with:
+    //   pnpm dlx @tauri-apps/cli icon path/to/logo.png
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      // ---- Signing & notarization: filled in the day we have the ----
+      // ---- company's Apple Developer account, not before.        ----
+      //
+      // What's needed, and exactly where it goes:
+      //
+      //  1. A "Developer ID Application: <Org Name> (<TEAM_ID>)"
+      //     certificate, installed in the build machine's keychain (or
+      //     supplied to CI as base64 via the `APPLE_CERTIFICATE` /
+      //     APPLE_CERTIFICATE_PASSWORD` env vars -- NOT config fields,
+      //     so they don't appear in this file). Its name or SHA-1
+      //     thumbprint is what goes in `signingIdentity` below.
+      //
+      //  2. `providerShortName`: only needed if the Apple ID/team is
+      //     one of several teams on the same Apple ID. Get it with
+      //     `xcrun altool --list-providers -u <apple-id>` once the
+      //     account exists.
+      //
+      //  3. Notarization is NOT a `tauri.conf.json` field at all -- the
+      //     Tauri CLI reads it from environment variables at build
+      //     time. It needs ONE of these two credential pairs (set as CI
+      //     secrets when the day comes, never committed here):
+      //       a) `APPLE_ID` + `APPLE_PASSWORD` (an *app-specific*
+      //          password generated at
+      //          https://appleid.apple.com/account/manage -- not the
+      //          Apple ID's login password) + `APPLE_TEAM_ID`
+      //       b) `APPLE_API_KEY` + `APPLE_API_KEY_PATH` +
+      //          `APPLE_API_ISSUER` (an App Store Connect API key --
+      //          preferred for CI since it has no 2FA/app-specific-
+      //          password to rotate)
+      //
+      // Until then: `signingIdentity: null` produces an unsigned,
+      // un-notarized `.app`/`.dmg` -- installable locally (with a
+      // Gatekeeper warning), not distributable to the client.
+      "signingIdentity": null,
+      "providerShortName": null,
+      // Required for notarization to be accepted at all; safe to leave
+      // on even before we have signing credentials.
+      "hardenedRuntime": true,
+      // Path to a hardened-runtime entitlements .plist, only if some
+      // capability ever needs an exception (e.g. JIT). None known to be
+      // needed for this shell (no custom commands, no native code
+      // beyond the plugins in Cargo.toml).
+      "entitlements": null,
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

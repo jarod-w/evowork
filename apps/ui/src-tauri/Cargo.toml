@@ -1,0 +1,62 @@
+[package]
+name = "evowork-desktop"
+version = "0.1.0"
+description = "evowork desktop shell: window chrome only, zero business logic"
+edition = "2021"
+rust-version = "1.77"
+license = "Apache-2.0"
+
+# Deliberately isolated from the repo-root Cargo workspace (daemon/kernel
+# crates under crates/*, none of which need a GUI toolchain). Without this
+# empty table, Cargo walks up the directory tree looking for an enclosing
+# `[workspace]`, finds the repo-root one, and -- since this crate's path
+# does not match its `members = ["crates/*"]` glob and is not `exclude`d
+# either -- fails with "current package believes it's in a workspace when
+# it's not". An empty `[workspace]` here declares this crate as its own
+# workspace root instead, so `cargo clippy --workspace` / `cargo check
+# --workspace` run from the repo root never pull in this crate's
+# GTK/WebKitGTK-on-Linux dependency chain (see
+# docs/superpowers/notes/2026-08-29-tauri-linux-probe.md).
+[workspace]
+
+[build-dependencies]
+# `config-json5` lets `tauri.conf.json5` (this crate's actual config file,
+# see the comment at its top for why it's `.json5` and not `.json`) be
+# parsed by `tauri-build` at compile time.
+tauri-build = { version = "2", features = ["config-json5"] }
+
+[dependencies]
+# Same `config-json5` feature, needed at runtime this time: the
+# `tauri::generate_context!()` macro in `src/main.rs` reads the same
+# `tauri.conf.json5` file.
+tauri = { version = "2", features = ["config-json5"] }
+
+# One official plugin crate per `platform/tauri.ts` capability (see that
+# file's module comment for the full method -> plugin mapping). Each of
+# these is registered with `.plugin(...)` in `src/main.rs` -- that
+# registration is shell wiring the JS side needs to function, not
+# business logic: main.rs never adds a `#[tauri::command]`, never touches
+# the Run Log, never touches SQLite, and does not depend on any `evo-*`
+# crate.
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- NOT VERIFIED ON THIS MACHINE ---
+# `cargo check` cannot run here: Tauri's Linux backend (GTK/WebKitGTK via
+# `wry`/`tao`) pulls in `glib-sys`, whose build script requires
+# `pkg-config`, which this Linux dev box does not have installed (see
+# docs/superpowers/notes/2026-08-29-tauri-linux-probe.md for the full
+# probe). Installing GTK here would only validate the Linux backend,
+# which shares no `*-sys` crates with the actual delivery target (macOS,
+# WKWebView) -- a green `cargo check` on this machine would be a false
+# "verified" signal, not a real one. This crate is reviewed by hand
+# against the Tauri 2 / plugin docs instead, and is expected to need at
+# most small, mechanical fixes (crate versions, feature flag names) the
+# first time it is actually built on macOS.

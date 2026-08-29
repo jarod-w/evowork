@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getPlatform } from './platform'
-import type { Platform } from './platform'
+import type { Platform, PlatformInfo } from './platform'
 import { createDaemonClient } from './daemon/client'
 import type { DaemonClientStatus } from './daemon/client'
 
@@ -24,9 +24,24 @@ const daemonClient = createDaemonClient({
 })
 
 function App() {
-  const platform = useMemo(() => getPlatform(), [])
+  // getPlatform() is async (see platform/index.ts): the desktop branch
+  // reaches `platform/tauri.ts` through a dynamic import so the Tauri JS
+  // bindings never land in the browser bundle. `null` means "still
+  // resolving" -- on every real target (browser or desktop) that's a
+  // single microtask, never a visible loading state in practice.
+  const [platformInfo, setPlatformInfo] = useState<PlatformInfo | null>(null)
   const [daemonStatus, setDaemonStatus] = useState<DaemonClientStatus>(daemonClient.getStatus())
   const [daemonError, setDaemonError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getPlatform().then((platform) => {
+      if (!cancelled) setPlatformInfo(platform.info)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -51,16 +66,22 @@ function App() {
 
       <section>
         <h2>Platform</h2>
-        <p>
-          kind: <strong>{platform.info.kind}</strong>
-        </p>
-        <ul>
-          {CAPABILITIES.map((cap) => (
-            <li key={cap}>
-              {cap}: {platform.info.supports(cap) ? 'supported' : 'not supported'}
-            </li>
-          ))}
-        </ul>
+        {platformInfo ? (
+          <>
+            <p>
+              kind: <strong>{platformInfo.kind}</strong>
+            </p>
+            <ul>
+              {CAPABILITIES.map((cap) => (
+                <li key={cap}>
+                  {cap}: {platformInfo.supports(cap) ? 'supported' : 'not supported'}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p>detecting...</p>
+        )}
       </section>
 
       <section>
