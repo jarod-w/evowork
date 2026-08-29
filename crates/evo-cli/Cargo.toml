@@ -11,7 +11,10 @@ workspace = true
 evo-daemon = { workspace = true }
 evo-runlog = { workspace = true }
 evo-protocol = { workspace = true }
+evo-exec-local = { workspace = true }
+evo-model = { workspace = true }
 clap = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
