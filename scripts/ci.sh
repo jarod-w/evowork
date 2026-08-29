@@ -33,14 +33,21 @@ echo "== CI-2 回放自校验 + CI-8 快照可丢弃 =="
 echo "ok"
 
 echo "== CI-3 治理旁路 =="
-# evo-exec* 与 evo-mcp 只允许被 evo-daemon（组装点）依赖
+# evo-exec* 与 evo-mcp 只允许被组装点依赖：evo-daemon（运行时组装 Runtime）、
+# evo-cli（mkcase 为生成 eval 用例同样直接组装 Runtime，见 Task 19）。
+# evo-exec-local 依赖 evo-exec 是允许的——它就是 exec 的实现。
+#
+# 本仓的 Cargo.toml 里点号写法（`name.workspace = true`）与花括号写法
+# （`name = { workspace = true }`）混用，甚至同一个文件里都两种都有——
+# 只匹配其中一种，检查会在另一种写法下悄悄漏判，变成一条摆设。
 for c in evo-exec evo-exec-local evo-mcp; do
-  offenders=$(grep -rl "^${c}\.workspace = true" crates/*/Cargo.toml \
+  offenders=$(grep -rlE "^${c}\.workspace[[:space:]]*=[[:space:]]*true|^${c}[[:space:]]*=.*workspace[[:space:]]*=[[:space:]]*true" crates/*/Cargo.toml \
               | grep -v "crates/evo-daemon/Cargo.toml" \
               | grep -v "crates/${c}/Cargo.toml" \
-              | grep -v "crates/evo-exec-local/Cargo.toml" || true)
+              | grep -v "crates/evo-exec-local/Cargo.toml" \
+              | grep -v "crates/evo-cli/Cargo.toml" || true)
   if [ -n "$offenders" ]; then
-    echo "FAIL: $c 被 evo-daemon 之外的 crate 依赖：$offenders"; exit 1
+    echo "FAIL: $c 被组装点之外的 crate 依赖：$offenders"; exit 1
   fi
 done
 echo "ok"
