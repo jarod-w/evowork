@@ -54,7 +54,7 @@ evowork/
 ├── crates/
 │   ├── evo-protocol/             # 事件 + RPC 类型定义，ts-rs 导出 TS
 │   ├── evo-kernel/               # 纯函数状态机。无 IO / 无时钟 / 无随机数
-│   ├── evo-runlog/               # SQLite 事件存储、快照、回放器
+│   ├── evo-runlog/               # SQLite 事件存储、快照存储
 │   ├── evo-context/              # 上下文装配、污点传播、cite 校验
 │   ├── evo-memory/               # 记忆存储 + 口径库加载
 │   ├── evo-policy/               # 策略钩子 trait + POC 硬编码实现
@@ -63,7 +63,7 @@ evowork/
 │   ├── evo-exec-local/           # 本地沙箱实现，依赖 codex crates
 │   ├── evo-model/                # 模型 adapter + 能力声明 + 定价表
 │   ├── evo-mcp/                  # MCP client
-│   ├── evo-daemon/               # 唯一组装点，唯一写 Run Log 的进程
+│   ├── evo-daemon/               # 唯一组装点，唯一写 Run Log 的进程；回放器在此
 │   └── evo-cli/                  # 运维命令 + eval runner
 ├── apps/
 │   └── ui/                       # Vite + React + AntD，纯 Web
@@ -101,6 +101,14 @@ evo-daemon     ← 全部
 
 一条规则：**组装只发生在 `evo-daemon`。** 新增一条兄弟 crate 之间的依赖，需要在 PR 描述里说明为什么不能由 daemon 组装。这条不是洁癖——它是「内核不在 UI 进程里」这条边界在 crate 层的对应物。
 
+> **回放器为什么在 `evo-daemon` 而不是 `evo-runlog`。** 回放需要 `evo-kernel::fold`
+>（`reduce` + `decide`），如果把回放器放进 `evo-runlog`，就会形成一条兄弟 crate 依赖
+> `evo-runlog → evo-kernel`，与上面这张依赖方向表冲突（`evo-runlog` 该依赖里没有
+> `evo-kernel`）。因此**存储在 `evo-runlog`，回放在 `evo-daemon`**（见
+> `crates/evo-daemon/src/replay.rs`），`evo-cli` 经 daemon 取用。这样「组装只发生在
+> `evo-daemon`」就没有第二个例外——回放虽然只读，但它同样是「把 kernel 的纯函数与
+> runlog 的存储组装到一起」，性质上和写 Run Log 是同一件事。
+
 ---
 
 ## 三、开发约定（五条不可议价）
@@ -122,6 +130,12 @@ evo-daemon     ← 全部
 3. `eval/cases/` 里至少一条历史 Log 的回放通过
 
 > 这三条缺一条就合不进去。**这是红线 3 唯一可执行的防线**——「不许后补字段」是口号，「PR 必须带历史回放测试」才是机制。
+
+> **首次演练：M1 阶段 1 给 `plan.step` 加了 optional 字段 `call`**（见
+> [01 §4.3](01-run-log.md#43-上下文与模型)）。三条要求逐条兑现——① `schema_ver` 不升
+>（新增 optional 字段）；② 旧版解码路径由 `evo-protocol` 的
+> `unknown_optional_fields_do_not_break_decoding` 覆盖；③ `eval/cases/synthetic-01`
+> 的回放在 CI 里通过。**这条流程是可执行的，不是口号。**
 
 ---
 
