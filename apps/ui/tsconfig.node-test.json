@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node-test.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    // Scoped, single-file sibling of tsconfig.node.json: this project
+    // exists solely so `src/platform/tauri.capabilities.test.ts` (the
+    // only file under `src` that reads real files off disk via
+    // `node:fs`/`node:url` rather than running purely in the
+    // jsdom-simulated browser) gets Node's global types. Giving it its
+    // own project -- rather than adding "node" to tsconfig.app.json's
+    // `types`, which covers all of `src` via that config's `include` --
+    // keeps Node's ambient globals (e.g. `setTimeout` returning a Node
+    // `Timeout` instead of DOM's `number`) out of every browser-side file.
+    // tsconfig.app.json excludes this one file to avoid double-checking
+    // it under two projects with two different `types` lists.
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/platform/tauri.capabilities.test.ts"]
+}

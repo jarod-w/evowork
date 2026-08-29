@@ -4,13 +4,7 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    // "node" is needed for `src/platform/tauri.capabilities.test.ts`, the
-    // only file under `src` that reads real files off disk (`node:fs`,
-    // `node:url`) rather than running purely in the jsdom-simulated
-    // browser -- everything else here still targets `lib: ["ES2023",
-    // "DOM"]` above, so this does not change what the actual app bundle
-    // can assume is available at runtime.
-    "types": ["vite/client", "node"],
+    "types": ["vite/client"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
@@ -29,5 +23,12 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // `src/platform/tauri.capabilities.test.ts` is the only file under
+  // `src` that reads real files off disk (`node:fs`, `node:url`) rather
+  // than running purely in the jsdom-simulated browser -- it needs
+  // Node's global types, which this project deliberately does not carry
+  // (see the `types` comment in tsconfig.node-test.json). It is checked
+  // instead as its own scoped project; see tsconfig.json's references.
+  "exclude": ["src/platform/tauri.capabilities.test.ts"]
 }
