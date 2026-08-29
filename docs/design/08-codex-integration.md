@@ -117,7 +117,7 @@ POC 文档 4.11⑤ 划的线是「crate 级依赖，不是 fork 级」。受控 
 
 第 4 条是这条路径与 fork 的分界线，排期紧张时最容易被越过——和 4.11⑤ 那句警告是同一条。
 
-> **Q-21 已定为 macOS**，「退回 Windows daemon」这条备选不在 POC 关键路径上，B 的成立不再有前提。将来产品期若要支持 Windows daemon，再评估是否引入 `codex-windows-sandbox` 全套——届时 OTel 的问题要重新回答一次，但那时有时间做干净处理。
+> **Q-21 已定：daemon 宿主就是财务那台台式 Mac mini（macOS）**，「退回 Windows daemon」这条备选不在 POC 关键路径上，B 的成立不再有前提。将来产品期若要支持 Windows daemon，再评估是否引入 `codex-windows-sandbox` 全套——届时 OTel 的问题要重新回答一次，但那时有时间做干净处理。
 
 ---
 
