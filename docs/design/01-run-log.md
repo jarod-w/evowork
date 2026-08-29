@@ -266,6 +266,7 @@ turn N+1 开始 → 重新采样
 | 影响预估面板 | `impact.estimated` | A-4 / 演示时刻 2 |
 | 待审批队列 | `approval.requested` 未匹配 granted/denied | A-5 |
 | 溯源面板 | `context.assembled.blocks` + `artifact.emitted.cites` | A-13 / 演示时刻 4 |
+| **出内网内容清单** | `context.assembled.blocks` 的 source + token 汇总 | 演示时刻 1（[04 §3](04-context-memory.md)） |
 | eval 用例 | 导出一条 run 的全部事件 + blob | 4.7 |
 | 审计导出 | 事件表整表 + hash chain | Phase 3 |
 
