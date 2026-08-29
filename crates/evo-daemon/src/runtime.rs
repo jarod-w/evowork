@@ -48,6 +48,10 @@ pub enum DaemonError {
     NotImplemented(&'static str),
     #[error("model {provider}/{model} is not in the price table")]
     ModelNotPriced { provider: String, model: String },
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("case.yaml: {0}")]
+    CaseFormat(String),
 }
 
 /// runtime 从模型输出里解析出的结构化决策。

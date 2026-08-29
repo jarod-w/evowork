@@ -242,8 +242,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "evo-daemon",
- "evo-exec-local",
- "evo-model",
  "evo-protocol",
  "evo-runlog",
  "tempfile",
