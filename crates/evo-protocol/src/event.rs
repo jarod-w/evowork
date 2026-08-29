@@ -362,14 +362,13 @@ event_body! {
     };
     ClarificationRequested(ClarificationRequested) = "clarification.requested", ver = 1, sample = ClarificationRequested {
         question_id: "q-1".to_owned(),
-        question_ref: BlobRef {
+        prompt_ref: BlobRef {
             content_hash: "sha256:iii".to_owned(),
             size: 1,
-            mime: "text/plain".to_owned(),
+            mime: "application/json".to_owned(),
         },
         options: vec![ClarificationOption {
             id: "opt-1".to_owned(),
-            label: "按上月同期".to_owned(),
             is_default: true,
         }],
     };
