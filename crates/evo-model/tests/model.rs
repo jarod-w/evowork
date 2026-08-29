@@ -88,7 +88,9 @@ fn pricing_produces_one_charge_per_non_zero_unit() {
         skill: None,
         tool: None,
     };
-    let charges = t.charges("fixture", "fixture-v1", &usage, &dim, Some(0));
+    let charges = t
+        .charges("fixture", "fixture-v1", &usage, &dim, Some(0))
+        .unwrap();
     assert_eq!(charges.len(), 2, "cache 用量为 0 时不产生记账行");
     let input = charges
         .iter()
@@ -106,6 +108,10 @@ fn pricing_produces_one_charge_per_non_zero_unit() {
 
 #[test]
 fn amounts_are_integers_so_the_books_balance() {
+    // 必须和上面 PRICING TOML 里 fixture/fixture-v1 的单价保持一致。
+    const INPUT_PRICE_MICROS: u64 = 1;
+    const OUTPUT_PRICE_MICROS: u64 = 2;
+
     let t = PriceTable::from_toml_str(PRICING).unwrap();
     let usage = Usage {
         input: 3,
@@ -122,10 +128,11 @@ fn amounts_are_integers_so_the_books_balance() {
     };
     let total: u64 = t
         .charges("fixture", "fixture-v1", &usage, &dim, None)
+        .unwrap()
         .iter()
         .map(|c| c.amount_micros)
         .sum();
-    assert_eq!(total, 3 + 7 * 2);
+    assert_eq!(total, 3 * INPUT_PRICE_MICROS + 7 * OUTPUT_PRICE_MICROS);
 }
 
 #[test]
@@ -144,5 +151,64 @@ fn an_unknown_model_yields_no_charges_rather_than_a_wrong_number() {
         skill: None,
         tool: None,
     };
-    assert!(t.charges("openai", "gpt-9", &usage, &dim, None).is_empty());
+    assert!(
+        t.charges("openai", "gpt-9", &usage, &dim, None)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_multiplication_overflow_is_an_error_not_a_wrapped_number() {
+    // release 模式下普通 `*` 会静默回绕；这里必须显式报错，而不是算出一个
+    // 看起来正常但错误的 amount_micros。
+    const OVERFLOW_PRICING: &str = r#"
+version = "poc-1"
+currency = "CNY"
+
+[[model]]
+provider = "fixture"
+model = "fixture-v1"
+input_micros_per_token = 2
+output_micros_per_token = 0
+cache_read_micros_per_token = 0
+cache_write_micros_per_token = 0
+"#;
+    let t = PriceTable::from_toml_str(OVERFLOW_PRICING).unwrap();
+    let usage = Usage {
+        input: 9_223_372_036_854_775_907,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+    };
+    let dim = CostDimension {
+        principal: "u-1".into(),
+        team: None,
+        run_id: RunId::from("r-1"),
+        skill: None,
+        tool: None,
+    };
+    let err = t
+        .charges("fixture", "fixture-v1", &usage, &dim, None)
+        .expect_err("溢出必须报错，而不是回绕出一个错误的 amount_micros");
+    match err {
+        evo_model::ModelError::CostOverflow {
+            quantity,
+            unit_price_micros,
+        } => {
+            assert_eq!(quantity, 9_223_372_036_854_775_907);
+            assert_eq!(unit_price_micros, 2);
+        }
+        other => panic!("expected CostOverflow, got {other:?}"),
+    }
+}
+
+#[test]
+fn covers_distinguishes_truly_free_from_unpriced() {
+    let t = PriceTable::from_toml_str(PRICING).unwrap();
+    assert!(t.covers("fixture", "fixture-v1"), "定价表里有这个模型");
+    assert!(
+        !t.covers("openai", "gpt-9"),
+        "定价表里没有这个模型，调用方不应该把空账单误读成免费"
+    );
 }
