@@ -12,6 +12,8 @@ use evo_protocol::events::approval::{
 use evo_protocol::events::clarification::{ClarificationAnswered, ClarificationRequested};
 use evo_protocol::events::effect::ToolRequested;
 use evo_protocol::events::lifecycle::{RunResumed, RunSuspended, SuspendReason};
+use evo_protocol::events::model::{PlanIntent, PlanStep};
+use evo_protocol::taint::TaintLevel;
 use evo_protocol::{Actor, ApprovalId, BlobRef, EffectId, Event, EventBody, RunId, ToolId};
 
 fn ev(seq: u64, body: EventBody) -> Event {
@@ -354,4 +356,109 @@ fn clarification_chain_mirrors_the_approval_chain() {
     assert_eq!(resumed.awaiting, None);
     assert_eq!(resumed.status, RunStatus::Running);
     assert_eq!(decide(&resumed), vec![Command::SampleEnv]);
+}
+
+// ————————————————————————————————————————————————————————————
+// 8. 澄清死循环修复：回答之后 decide 不能再发一次 AskClarification
+//    （上面第 7 条测试没抓到这个——它从空状态起步，env_sampled_turn 一直
+//    是 None，decide 第一条分支永远先判 SampleEnv，根本走不到
+//    plan_turn/last_plan 那条会重发 AskClarification 的分支。这里手工
+//    把进度标记推到「这一 turn 已经问完模型、模型说要 Clarify」的状态，
+//    才能真正复现并验证死循环已经被打破。）
+// ————————————————————————————————————————————————————————————
+
+/// 模拟「这一 turn 已经采样环境、装配上下文、问过模型，模型的答复是
+/// Clarify」的状态——`clarification.requested` 正常发生在这之后。
+fn state_mid_turn_with_clarify_plan(turn: u32) -> RunState {
+    let mut s = RunState::new(&RunId::from("r-1"));
+    s.turn = turn;
+    s.env_sampled_turn = Some(turn);
+    s.context_turn = Some(turn);
+    s.plan_turn = Some(turn);
+    s.last_plan = Some(PlanStep {
+        turn,
+        intent: PlanIntent::Clarify,
+        rationale_ref: None,
+        taint_inherited: TaintLevel::Clean,
+        call: None,
+    });
+    s
+}
+
+#[test]
+fn clarification_answered_and_resumed_does_not_ask_again() {
+    let mid_turn = state_mid_turn_with_clarify_plan(3);
+    // decide 在问过之前必须先真的问一次——否则下面「不再追问」的断言就是
+    // 空话。
+    assert_eq!(
+        decide(&mid_turn),
+        vec![Command::AskClarification {
+            question: String::new()
+        }]
+    );
+
+    let events = vec![
+        ev(0, clarification_requested("q-1")),
+        ev(1, run_suspended(SuspendReason::AwaitingHuman)),
+        ev(2, clarification_answered("q-1")),
+        ev(3, run_resumed(4)),
+    ];
+    let s = events.into_iter().fold(mid_turn, |s, e| reduce(&s, &e));
+
+    assert_eq!(s.status, RunStatus::Running);
+    assert_eq!(s.awaiting, None);
+
+    let cmds = decide(&s);
+    assert!(
+        !cmds
+            .iter()
+            .any(|c| matches!(c, Command::AskClarification { .. })),
+        "回答之后 decide 不许再发一次 AskClarification——这正是那个死循环：{cmds:?}"
+    );
+    // 进度标记被退回到「需要重新装配上下文」，decide 应该产出
+    // AssembleContext（env 那一步已经在这个 turn 采过了，不需要重采）。
+    assert_eq!(
+        cmds,
+        vec![Command::AssembleContext {
+            turn: 3,
+            profile: "default".into()
+        }]
+    );
+}
+
+#[test]
+fn clarification_answered_can_reach_call_model_after_context_reassembled() {
+    let mid_turn = state_mid_turn_with_clarify_plan(3);
+    let events = vec![
+        ev(0, clarification_requested("q-1")),
+        ev(1, run_suspended(SuspendReason::AwaitingHuman)),
+        ev(2, clarification_answered("q-1")),
+        ev(3, run_resumed(4)),
+    ];
+    let mut s = events.into_iter().fold(mid_turn, |s, e| reduce(&s, &e));
+
+    // 手工推进进度标记，模拟「装配器已经把答案带进新的上下文」——本任务
+    // 不管装配器怎么做到这一点,只验证内核这边看到 context_turn 追上
+    // 之后会正确地继续往前走到 CallModel，而不是卡在别处或者又绕回
+    // Clarify（`last_plan` 此时还是旧的那份，但 decide 判断
+    // 「要不要重新规划」只看 plan_turn 是否追上 turn，不看 last_plan 的
+    // 陈旧内容——重新规划之后 last_plan 会被新的 plan.step 覆盖）。
+    s.context_turn = Some(s.turn);
+
+    assert_eq!(decide(&s), vec![Command::CallModel { turn: 3 }]);
+}
+
+#[test]
+fn clarification_never_requested_still_asks_it() {
+    // 回归：确认修复没有把「该问的时候不问」也顺手改掉了。这一 turn 的
+    // last_plan 是 Clarify，且从没有发生过 clarification.requested /
+    // answered，decide 必须照样发出 AskClarification。
+    let s = state_mid_turn_with_clarify_plan(0);
+
+    assert_eq!(
+        decide(&s),
+        vec![Command::AskClarification {
+            question: String::new()
+        }]
+    );
 }

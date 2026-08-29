@@ -210,8 +210,30 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
             s.pending_question = Some(e.question_id.clone());
         }
         EventBody::ClarificationAnswered(_) => {
-            // 同构于 ApprovalGranted：只记「回答到了」，不清 awaiting。
+            // 不完全同构于 ApprovalGranted：审批场景里 effect 本身还没
+            // 结算，run.resumed 之后 decide 自然会去等执行面回流；但澄清
+            // 场景里 `last_plan.intent == Clarify` 已经是「一个 turn 内的
+            // 终态」——`decide` 会一直卡在 `plan_turn == Some(turn)` 这条
+            // 分支上，拿着同一个 `last_plan` 反复判成 Clarify，再发一遍
+            // `AskClarification`（这就是本次要修的死循环：只清
+            // pending_question 不够，run 永远推不动）。
+            //
+            // 修法：把这一 turn 的进度标记回退到「需要重新装配上下文」——
+            // `context_turn` 与 `plan_turn` 一并清空。`decide` 由此依次
+            // 产出 `AssembleContext` → `CallModel`，模型才有机会带着答案
+            // 重新规划，而不是对着同一份（不含答案的）`last_plan` 打转。
+            //
+            // 为什么连 `context_turn` 也退：上下文是在提问之前装配的，
+            // 里面没有那个答案；只退 `plan_turn` 的话模型会拿着一份不含
+            // 答案的上下文重新规划，跟没回答没区别。
+            //
+            // 交接：把答案真正塞进重新装配的上下文，是装配器
+            // （AssembleContext 的执行方）的责任，不在这条 reduce 分支、
+            // 也不在本任务范围内——这里只负责让状态机不再原地打转。装配器
+            // 如果不落实这一步，这个能力仍然是「形式上不空转、内容上空转」。
             s.pending_question = None;
+            s.context_turn = None;
+            s.plan_turn = None;
         }
         // 这两个变体本切片仍不产生（各自的事件定义处已注明：产物区、
         // 上下文压缩都排在后续切片），继续留白，交给对应切片处理。
