@@ -130,7 +130,7 @@ fn a_tool_with_no_manifest_gets_the_strictest_treatment() {
         TaintLevel::Clean,
         ExecutionMode::Live,
     ));
-    let GatewayAction::AwaitApproval { risk, request } = verdict.action else {
+    let GatewayAction::AwaitApproval { risk, request, .. } = verdict.action else {
         panic!("无 manifest 必须要求审批")
     };
     assert_eq!(risk, RiskLevel::L3);

@@ -764,61 +764,105 @@ impl Runtime {
             state = self.emit(&state, Actor::Gateway, body)?;
         }
 
-        match verdict.action {
-            GatewayAction::Dispatch(request) => {
-                self.dispatch_effect(state, effect_id, request).await
-            }
+        self.handle_gateway_action(state, effect_id, verdict.action)
+            .await
+    }
 
-            // Gateway 已经把 tool.result{dry_run} 塞进了 verdict.events
-            // （上面的循环已经写过了）——这里只是继续循环，不是终止。
-            GatewayAction::DryRun { .. } => Ok(state),
+    /// [`Gateway::admit`] 的产出可能不止一种结局：正常情况下五种动作里选
+    /// 一种；一个声明了 `preview` 的工具还会先给出
+    /// `GatewayAction::NeedPreview`，要再问一轮 executor、调用
+    /// [`Gateway::admit_with_preview`] 才能拿到真正的结局。用 `loop` 而不是
+    /// 递归 `async fn` 调自己，是因为递归 `async fn` 的 future 大小在编译期
+    /// 算不出来，需要额外 `Box::pin`；而这里的"递归"深度天然只有一层——
+    /// `admit_with_preview` 的产出不会再是 `NeedPreview`——用 `loop` 更直接。
+    ///
+    /// **`NeedPreview` 现在的处理**：M2 这一轮还没有任何工具在
+    /// `config/tools.toml` 里声明 `preview`，`Executor` 也还没有真正调用它
+    /// 的能力（那是后续任务接上某个回写演示场景时才要做的事）。真正接上
+    /// 之前，这里显式传 `None`——不做任何 IO，退回第 2/3 级
+    /// （`DeclaredOnly`）。这不阻塞接入，是判据 1 延伸的直接体现。
+    async fn handle_gateway_action(
+        &mut self,
+        mut state: RunState,
+        effect_id: EffectId,
+        mut action: GatewayAction,
+    ) -> Result<RunState, DaemonError> {
+        loop {
+            match action {
+                GatewayAction::Dispatch(request) => {
+                    return self.dispatch_effect(state, effect_id, request).await;
+                }
 
-            GatewayAction::Deny { reason_code } => {
-                // 先下一个检查点，再追加 run.failed：否则这条 run 没有任何
-                // 可校验的锚点，`verify` 会报 VACUOUS——一条被拒的 run 应当
-                // 既能关掉也能验。
-                let state = self.checkpoint(state, CheckpointReason::PreApproval)?;
-                let message_ref = self.log.blobs().put(
-                    BlobClass::Content,
-                    "text/plain",
-                    reason_code.as_bytes(),
-                )?;
-                self.emit(
-                    &state,
-                    Actor::Gateway,
-                    EventBody::RunFailed(RunFailed {
-                        at_seq: state.last_seq,
-                        error: ErrorDetail {
-                            code: reason_code,
-                            message_ref: Some(message_ref),
-                            retryable: false,
-                        },
-                    }),
-                )
-            }
+                // Gateway 已经把 tool.result{dry_run} 塞进了本轮的
+                // verdict.events（调用方已经写过了）——这里只是继续循环，
+                // 不是终止。
+                GatewayAction::DryRun { .. } => return Ok(state),
 
-            GatewayAction::AwaitApproval { risk, .. } => {
-                let approval_id = ApprovalId::from(format!("{}-a{}", state.run_id, state.last_seq));
-                let expires_at_ms = state.clock_ms + APPROVAL_TTL_MS;
-                let state = self.emit(
-                    &state,
-                    Actor::Gateway,
-                    EventBody::ApprovalRequested(ApprovalRequested {
-                        approval_id,
-                        effect_id: effect_id.clone(),
-                        risk,
-                        impact_ref: None,
-                        expires_at_ms,
-                    }),
-                )?;
-                self.emit(
-                    &state,
-                    Actor::Gateway,
-                    EventBody::RunSuspended(RunSuspended {
-                        reason: SuspendReason::AwaitingApproval,
-                        detail_ref: None,
-                    }),
-                )
+                GatewayAction::Deny { reason_code } => {
+                    // 先下一个检查点，再追加 run.failed：否则这条 run 没有
+                    // 任何可校验的锚点，`verify` 会报 VACUOUS——一条被拒的
+                    // run 应当既能关掉也能验。
+                    let state = self.checkpoint(state, CheckpointReason::PreApproval)?;
+                    let message_ref = self.log.blobs().put(
+                        BlobClass::Content,
+                        "text/plain",
+                        reason_code.as_bytes(),
+                    )?;
+                    return self.emit(
+                        &state,
+                        Actor::Gateway,
+                        EventBody::RunFailed(RunFailed {
+                            at_seq: state.last_seq,
+                            error: ErrorDetail {
+                                code: reason_code,
+                                message_ref: Some(message_ref),
+                                retryable: false,
+                            },
+                        }),
+                    );
+                }
+
+                GatewayAction::AwaitApproval { risk, impact, .. } => {
+                    let approval_id =
+                        ApprovalId::from(format!("{}-a{}", state.run_id, state.last_seq));
+                    let expires_at_ms = state.clock_ms + APPROVAL_TTL_MS;
+                    // 影响预估可能带具体资源标识甚至金额，一律 blob，
+                    // 不进 `approval.requested` 的 payload（红线①）。
+                    let impact_bytes =
+                        serde_json::to_vec(&impact).expect("ImpactEstimated 可序列化");
+                    let impact_ref = self.log.blobs().put(
+                        BlobClass::Content,
+                        "application/json",
+                        &impact_bytes,
+                    )?;
+                    state = self.emit(
+                        &state,
+                        Actor::Gateway,
+                        EventBody::ApprovalRequested(ApprovalRequested {
+                            approval_id,
+                            effect_id: effect_id.clone(),
+                            risk,
+                            impact_ref: Some(impact_ref),
+                            expires_at_ms,
+                        }),
+                    )?;
+                    return self.emit(
+                        &state,
+                        Actor::Gateway,
+                        EventBody::RunSuspended(RunSuspended {
+                            reason: SuspendReason::AwaitingApproval,
+                            detail_ref: None,
+                        }),
+                    );
+                }
+
+                GatewayAction::NeedPreview { pending } => {
+                    let verdict = self.gateway.admit_with_preview(pending, None);
+                    for body in verdict.events {
+                        state = self.emit(&state, Actor::Gateway, body)?;
+                    }
+                    action = verdict.action;
+                }
             }
         }
     }
