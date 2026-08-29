@@ -12,6 +12,10 @@ pub enum CostUnit {
     Call,
 }
 
+/// 刻意不加 `rename_all`：`CNY` / `USD` 是 ISO 4217 货币代码，本就该大写，
+/// 与本 crate 其他枚举的 snake_case 风格不一致是故意的，契约文档里写的也是
+/// 大写代码。不要为了风格统一给它加 `rename_all = "lowercase"`（或任何改变
+/// 序列化形态的属性）——那会让已经落盘的历史账目解不开。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Currency {
     CNY,
