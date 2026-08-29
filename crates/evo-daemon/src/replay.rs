@@ -20,8 +20,24 @@ pub struct VerifyReport {
 }
 
 impl VerifyReport {
+    /// 在**已检查的** checkpoint 中没有发现不一致。
+    ///
+    /// 注意：这不等于「验证通过」。一条没有任何 checkpoint 的 run（阶段 1
+    /// 的 checkpoint 是 `pre_write` 语义点，不做写操作的 run 合法地一个都
+    /// 没有）或者一个不存在的 `run_id`，同样会得到 `is_ok() == true`——因为
+    /// 根本没东西可比对。调用方在展示结果前，必须先查
+    /// [`Self::is_vacuous`]，把「什么都没查」和「查了、没问题」区分开。
     pub fn is_ok(&self) -> bool {
         self.mismatches.is_empty()
+    }
+
+    /// 这份报告什么都没验证——Log 里一个 checkpoint 都没有。
+    ///
+    /// **`is_ok()` 为 true 但 `is_vacuous()` 也为 true，意味着「没发现问题」而
+    /// 不是「验证通过」。** 调用方（CLI、CI）必须把这两种情况分开呈现，
+    /// 否则一个什么都没检查的报告会显示成一行绿色的 OK。
+    pub fn is_vacuous(&self) -> bool {
+        self.checkpoints_checked == 0
     }
 }
 
@@ -67,6 +83,29 @@ pub fn replay_to(
 /// 全量重放，在每个 checkpoint 处比对 state_hash。
 ///
 /// 不一致就是内核有非确定性，当天暴露（03 §2 防线 4）。
+///
+/// ## 保证什么
+///
+/// **内核状态的一致性**：任何会改变 `reduce` 折叠结果的损坏——篡改中间
+/// 事件的 payload、删除某条事件——都会在下一个 checkpoint 处被抓到，
+/// 报告为 [`Mismatch`]。「篡改 payload」这一种已有测试固定
+/// （`tests/replay.rs` 的 `a_tampered_checkpoint_hash_is_caught`）；
+/// 「删除事件」同理会改变折叠结果，因而同样会被下一个 checkpoint 抓到，
+/// 原理与篡改 payload 一致，此处不再重复建测试。
+///
+/// ## 不保证什么
+///
+/// **不保证事件序列的字节级防篡改。** 如果两条相邻事件在 `reduce` 里
+/// 写的是互不覆盖的字段（例如 `run.created` 与 `intent.declared`），把它们
+/// 的 seq 对调之后最终状态在数学上完全相同——`verify` 察觉不到这种重排。
+/// 这不是缺陷，是「基于状态哈希比对」这类方法的固有边界：它比对的是
+/// 折叠结果，不是事件本身的顺序或字节。要察觉这类重排，需要给事件链本身
+/// 加密封（hash chain），那是后续阶段的事。
+///
+/// 另外，一份 `checkpoints_checked == 0` 的报告——不存在的 `run_id`，或者
+/// 一条合法地没有任何 checkpoint 的 run——`is_ok()` 会是 true，但那是
+/// 「没查」不是「查过」。调用方必须用 [`VerifyReport::is_vacuous`] 把这
+/// 两种情况分开。
 pub fn verify(log: &RunLog, run_id: &RunId) -> Result<VerifyReport, DaemonError> {
     let mut state = RunState::new(run_id);
     let mut checkpoints_checked = 0usize;
