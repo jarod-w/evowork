@@ -15,9 +15,13 @@ more than this shell uses.
 Each permission below is named for the exact `Platform` method(s) that
 need it. If a permission has no method still using it, delete the
 permission (and this line) together -- an orphaned grant is unused attack
-surface. `src/platform/tauri.capabilities.test.ts` enforces the reverse
-direction automatically: it fails the build if `platform/tauri.ts` ever
-calls a plugin command with no matching permission here.
+surface. `src/platform/tauri.capabilities.test.ts` enforces both
+directions automatically, not just as a manual reminder: it fails if any
+`.ts` file under `platform/` calls a plugin command with no matching
+permission here, *and* it fails if this file grants a permission that no
+file under `platform/` actually uses any more (the orphan case this
+paragraph describes) -- both directions have a passing-then-failing
+counter-example recorded in `.superpowers/sdd/final-review-fix-report.md`.
 
 | Permission | Needed by | Why |
 |---|---|---|

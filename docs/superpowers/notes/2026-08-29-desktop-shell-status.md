@@ -71,33 +71,62 @@ The pkg-config command could not be found.
 核对），但从未在任何机器上跑通过一次 `cargo check`/`cargo build`/`tauri build`。** 语法
 错误、Tauri API 用法错误、`Cargo.toml` 依赖版本冲突这类问题，**编译器一次都没检查过**。
 
-### 4. Tauri capability 的 9 条权限标识符：手工核对，非编译器验证
+**一个例外，范围很窄**：`tauri.conf.json5` 本身能否被 Tauri 实际使用的配置解析器接受，
+以及它的窗口 `label` 是否与 `capabilities/default.json` 的 `"windows": ["main"]` 匹配，
+不需要编译整个 `tauri`/`wry`/`tao`/`gtk-sys` 依赖链——`tauri-utils`（提供
+`tauri_utils::config::Config` 和实际的 JSON5 解析函数）是纯 Rust，不拉 GTK，在这台 Linux
+机器上能编译。`scripts/verify-tauri-config.sh` 把这一步做成了可重复执行的检查：临时生成一个
+只依赖 `tauri-utils`（版本钉死为 `Cargo.lock` 锁定的 2.9.3）的独立 Cargo 项目，
+反序列化 `tauri.conf.json5`，确认 `capabilities/default.json` 里的窗口 label 都能在
+`app.windows[].label` 里找到对应项——已跑通，`"main"` 与 `"main"` 匹配。这**只**证明了
+配置文件语法正确、窗口 label 没写错（原本被列为「本机无法发现」的一类坑，见第三节表格第 1
+步的说明——label 写错会让 5 个方法在真机上全部被拒），**不证明** `src-tauri` 整个 crate 能
+编译——真正需要 GTK/WebKitGTK 链路的那部分代码（`main.rs`、各 plugin 的 Rust 绑定、
+`Cargo.toml` 版本冲突）依然一次都没有被编译器检查过，这一条「未验」本身没有被拿掉。
+
+### 4. Tauri capability 的 9 条权限标识符：曾经只手工核对，现已有可重复脚本核对（仍非编译器/运行时验证）
 
 `apps/ui/src-tauri/capabilities/default.json` 里的 9 条权限（`dialog:allow-open`、
 `fs:allow-read-file`、`opener:allow-open-url`、`notification:allow-is-permission-granted`、
 `notification:allow-request-permission`、`notification:allow-notify`、
-`autostart:allow-enable`、`autostart:allow-disable`、`process:allow-exit`）是 Task 3 review
+`autostart:allow-enable`、`autostart:allow-disable`、`process:allow-exit`）最初是 Task 3 review
 时**手工对着 `tauri-plugin-*` crate 源码里的 `permissions/*.toml` 逐条核对出来的**（`README.md`
-「Not verified on a real machine」一节原话），不是凭记忆或文档猜的，也不是编译器验证过的。
+「Not verified on a real machine」一节原话），不是凭记忆或文档猜的。final-review-fix 这一轮把这件
+一次性的手工核对做成了可重复执行的脚本 `scripts/verify-tauri-permissions.sh`：对着
+`apps/ui/src-tauri/Cargo.lock` 锁定的每个 `tauri-plugin-*` 版本，去本机 `~/.cargo/registry/src`
+下对应版本的源码里，grep 确认这 9 个权限标识符确实以 `identifier = "..."` 的形式存在于某个
+`permissions/*.toml` 里。9 条全部通过（dialog 2.7.2 / fs 2.5.1 / notification 2.3.3 /
+opener 2.5.4 / process 2.3.1 / autostart 2.5.1）。
 
 这一条重要到值得单独强调：**这份 `capabilities/default.json` 曾经整个目录都不存在**——
 Tauri 2 的 IPC 是白名单模型，`capabilities/` 缺失时 Tauri 静默解析出一个空权限集，不报编译错误、
 不报配置错误，只在真机上第一次调用时以 `command not allowed` 拒绝，且这个坑**编译期完全不可见，
-原本也不在这份「未验」清单的草稿里**——是 Task 3 review 时从 Tauri 源码里查证才补上的。这个
-先例说明：capability 相关的错误只会在能跑 `cargo build`/真机 IPC 往返的机器上暴露，权限标识符
-本身如果拼写错误（比如把 `allow-open` 误写成 `allow_open` 或权限名对不上 plugin 实际注册的
-命令名），在这台 Linux 机器上**没有任何手段能发现**——不会编译失败、不会测试失败，因为
-根本跑不到解析这份 JSON 的那一步。
+原本也不在这份「未验」清单的草稿里**——是 Task 3 review 时从 Tauri 源码里查证才补上的。
 
-### 5. capability 一致性检查（`tauri.capabilities.test.ts`）证明的范围有限
+**这条脚本缩小了什么、没缩小什么**：它把「权限标识符的拼写、对应的 plugin crate 前缀是否正确」
+从纯手工核对变成了可重复执行、可在 CI 里重跑的检查，往后这 9 个字符串的任何一处笔误、或
+`Cargo.lock` 升级到某个不再声明该标识符的插件新版本，都能被这个脚本发现。**它没有验证的是
+Tauri 运行时本身是否真的接受这些标识符**——`permissions/*.toml` 里存在这个 `identifier`
+只说明 plugin crate 的作者声明了它，不代表 Tauri 2 的 IPC 允许列表解析器在这个具体版本组合下
+真的会放行对应的 `invoke()` 调用（例如大小写、`windows` 字段范围匹配等运行时细节）。这一层
+**仍然只有真机上 5 个 `Platform` 方法真的被调用一次才能证伪**，见下面第三节表格第 1 步。
+
+### 5. capability 一致性检查（`tauri.capabilities.test.ts`）：范围已扩大，孤儿权限方向已补上
 
 `apps/ui/src/platform/tauri.capabilities.test.ts` 用 TS 编译器 API 遍历 AST，确保
-`platform/tauri.ts` 里调用的每个 plugin 命令都能在 `capabilities/default.json` 里找到对应
-权限，反之亦然（孤儿权限也会报错）。这条测试**只保证两份文件互相不漂移**——它证明的是
-「代码用到的」与「JSON 里授予的」这两份东西相互一致，**完全不能证明这 9 个权限字符串对
-Tauri 2 的运行时是合法的**。如果 Tauri 2.11.5 实际的权限命名规则与本人核对时看到的
-`permissions/*.toml` 不一致（版本漂移、笔误、看错文件），这条测试会继续全绿，因为它两边
-比较的都是同一份人工抄录的字符串，不涉及 Tauri 运行时本身。
+`platform/` 目录下每个非测试 `.ts` 文件（不再只硬编码 `tauri.ts` 一个文件名，final-review-fix
+之前的版本只扫 `tauri.ts`，新增文件如果绕过它就完全不会被这条测试看到）里调用的每个 plugin
+命令都能在 `capabilities/default.json` 里找到对应权限，**并且反过来**：`capabilities/default.json`
+授予的每一条权限都必须能在这份手工维护的清单里找到映射、且该映射对应的 import 确实还有代码
+在用——孤儿权限（清单里有、代码里没人用的权限）现在真的会让测试失败。这是本轮修复新加的方向；
+之前的版本这句话是**假的**（`tauri.capabilities.test.ts` 只有单向检查），加了三条没人用的权限
+（`fs:allow-write-file`、`shell:allow-execute`、`fs:allow-remove`）能拿到 19/19 全绿——已用
+反例验证过：加上会 FAIL，删掉恢复绿（细节见 `final-review-fix-report.md`）。
+
+即便如此，这条测试**依然只保证两份文件（代码 import 与 JSON 授权列表）互相不漂移**——它证明的是
+「代码用到的」与「JSON 里授予的」这两份东西相互一致，**不能单独证明这 9 个权限字符串对 Tauri 2
+的运行时是合法的**（那一层由上面第 4 条的脚本核对到 plugin crate 源码这一步，仍缺运行时这最后
+一环）。
 
 ## 三、拿到 Mac + Apple 账号那天，按顺序要做的事
 
@@ -125,7 +154,7 @@ Tauri 2 的运行时是合法的**。如果 Tauri 2.11.5 实际的权限命名�
 |---|---|
 | 前端（`apps/ui/src`，含 `platform`/`daemon`） | 写完、测试覆盖、`pnpm build` 通过，**验证充分** |
 | `apps/ui/src-tauri` 源码 | 写完、三轮 review clean，**编译期未验证**（结构性，见上） |
-| Tauri capability 权限清单 | 写完、手工核对 plugin 源码、有一致性测试兜底，**运行时合法性未验证** |
+| Tauri capability 权限清单 | 写完，`scripts/verify-tauri-permissions.sh` 对着锁定版本的 plugin 源码核实过 9 条标识符存在，一致性测试（含孤儿权限方向）兜底，`scripts/verify-tauri-config.sh` 核实过窗口 label 匹配——**Tauri 运行时是否真的放行这些标识符，仍未验证**（只有真机 IPC 往返能证伪） |
 | 签名与公证 | 配置占位已写好注释，**从未执行** |
 | `.app` / `.dmg` | **从未产出** |
 
@@ -150,3 +179,19 @@ Tauri 2 的运行时是合法的**。如果 Tauri 2.11.5 实际的权限命名�
 理由是：这两条是**协议/部署层面的契约**（谁能读 token、daemon 以什么身份跑），跟本文档记录的
 「桌面外壳这一次交付验没验」是两类信息——契约放进设计文档，交付状态放进这份 status note，
 避免同一条约束将来要在两个地方分别改。
+
+## 六、已知缺口（不是「未验」，是已经发现、还没修的技术债）
+
+与上面「未验清单」不同——这里记的不是「本机结构性验证不了」，而是**已经能在本机验证到、
+且已确认存在**的问题，只是这一轮不修，留给后续任务：
+
+1. **`daemonClient.subscribe()` 的重连没有退避、没有重试上限**
+   （`apps/ui/src/daemon/client.ts` 约 328 行 `ws.onclose`）。对着一个拒绝连接的 daemon 实测：
+   约 50 毫秒内发起 40 次 socket 连接（约 800 次/秒），无限持续，且每个 `subscribe()` 订阅
+   各自独立计数（多个订阅会成倍放大）。今天没有任何调用方用到 `subscribe()`（M1 范围内没有
+   run 视图），所以这个问题目前是潜伏的、不影响任何用户可见行为；但 M2 一旦接上 run 视图，
+   daemon 只要短暂不可用，UI 就会用这个速率反复砸它。代码里已加 `TODO(M2, run view)` 注释
+   标出具体位置和实测数据，修法是加指数退避 + 重试次数上限，留给 M2 那个任务一并做。
+
+以上是这一轮 final-review-fix 里发现、评估后决定不在本轮修的问题；本轮实际修了什么、
+新增了哪些可重复执行的检查，见 `.superpowers/sdd/final-review-fix-report.md`。

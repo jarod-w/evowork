@@ -5,6 +5,19 @@ cd "$(dirname "$0")/.."
 echo "== fmt =="
 cargo fmt --all -- --check
 
+echo "== fmt (src-tauri) =="
+# apps/ui/src-tauri 用空 `[workspace]` 把自己隔离成独立 workspace 根（见
+# 该 crate Cargo.toml 顶部注释），所以上面根目录的 `cargo fmt --all` 永远
+# 到不了这个 crate——它默认只看仓库根这一个 workspace 的成员，
+# apps/ui/src-tauri 不在里面。`cargo fmt --check` 不需要编译（不像
+# `cargo check`/`cargo clippy`，不会碰到这台机器上装不了的 GTK 依赖链），
+# 只是从没被接进 ci.sh，属于一条本来就免费、只是没人接的检查。
+(
+  cd apps/ui/src-tauri
+  cargo fmt --all -- --check
+)
+echo "ok"
+
 echo "== 前端构建与类型检查 =="
 # ci.sh 不只是「在 CI 上跑」的脚本——00 号设计文档第六节把它定成本地可跑
 # 的入口，理由是 daemon 要交付到客户机器上，出问题时要能在那台机器上直接
@@ -48,9 +61,17 @@ else
     pnpm install --frozen-lockfile
     pnpm build
     pnpm exec tsc -b --noEmit
+    pnpm lint
     pnpm test
   )
   echo "ok"
+
+  echo "== 产物纯净性：浏览器入口 chunk 不得渗入 Tauri 代码 =="
+  # 独立脚本，不是内联在这里——见 scripts/check-entry-chunk-purity.sh
+  # 顶部注释：它依赖上面 `pnpm build` 刚产出的 dist/，放进单独脚本是
+  # 为了能在开发时脱离整条 ci.sh 单独重跑（比如改完 platform/ 之后想
+  # 先只验这一条，不必等 clippy/cargo test 跑完）。
+  ./scripts/check-entry-chunk-purity.sh
 fi
 
 echo "== clippy =="
@@ -80,7 +101,16 @@ echo "== CI-4 客户名词隔离 =="
 # 未来任何一次 pnpm install 引入的新依赖都可能让 CI-4 因为跟代码泄漏
 # 无关的原因变红。pnpm-lock.yaml 不在排除之列：它是已提交、进 code review
 # 的文件，理应保持在扫描范围内。
-if grep -riE --exclude-dir=node_modules --exclude-dir=dist 'yonyou|用友' crates/ apps/ 2>/dev/null; then
+#
+# 同样排除 target/：这不在任何 .gitignore 顶层规则里统一处理，是
+# apps/ui/src-tauri/.gitignore 单独声明的一条（因为 src-tauri 用空
+# `[workspace]` 把自己隔离成独立 workspace 根，根 .gitignore 的
+# `/target` 只挡得住仓库根的 target，挡不住 src-tauri 自己的）。第一次
+# 在 Mac 上 `cargo build` 就会在 apps/ui/src-tauri/target/ 下生成几个 GB
+# 的构建产物——同 node_modules/dist 一样，是第三方/生成物，不是「我们的
+# 代码」，不排除的话 CI-4 会去扫几个 GB 的编译中间产物，纯粹浪费时间还
+# 可能因为依赖 crate 的构建脚本/文档里偶然出现这两个词而被误伤。
+if grep -riE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=target 'yonyou|用友' crates/ apps/ 2>/dev/null; then
   echo "FAIL: crates/ apps/ 里出现客户专有名词"; exit 1
 fi
 echo "ok"
@@ -95,16 +125,32 @@ echo "== CI-9 外壳不渗进业务代码 =="
 # `/api` 的话，业务组件里 `import { open } from '@tauri-apps/plugin-dialog'`
 # 会畅通无阻——那正是这条检查要挡的东西。
 #
-# 也匹配 `__TAURI__`：Tauri 2 的 `app.withGlobalTauri` 配置项一旦打开，会
-# 把外壳能力挂到 window 全局对象上，届时
-# `(window as any).__TAURI__.core.invoke(...)` 完全不含任何 import 语句，
-# 只靠 `@tauri-apps/|ipcRenderer` 会永久漏判。今天 tauri.conf.json5 里该
-# 配置项是 false、这条路径不可达，但补上这条匹配成本极低。注意这不会
-# 误伤 platform/index.ts 里合法的 `__TAURI_INTERNALS__` 运行时探测——
-# 一是 `__TAURI__` 不是 `__TAURI_INTERNALS__` 的子串（后者是单下划线接
-# INTERNALS__，不是双下划线收尾），二是 platform/ 本来就在下面的排除
-# 范围内。
-offenders=$(grep -rlE '@tauri-apps/|ipcRenderer|__TAURI__' apps/ui/src/ 2>/dev/null \
+# 也匹配 `__TAURI` 前缀（不是精确匹配 `__TAURI__`）：Tauri 2 注入
+# `window.__TAURI_INTERNALS__` 用于底层 IPC（`invoke()` 内部走的就是它），
+# `app.withGlobalTauri` 配置项打开后还会额外注入 `window.__TAURI__`。
+# 之前只精确匹配字面量 `__TAURI__`，注释还专门论证过它不是
+# `__TAURI_INTERNALS__` 的子串——但这个论证本身没有换来任何东西：
+# platform/ 本来就在下面被排除了，精确匹配唯一的效果是漏掉了业务代码里
+# 直接写 `window.__TAURI_INTERNALS__.invoke('plugin:dialog|open', ...)`
+# 这条最直接的绕过路径（完全不含任何 import 语句，`@tauri-apps/` 那半条
+# 匹配不到）。放宽成前缀匹配后，platform/index.ts 里合法的
+# `'__TAURI_INTERNALS__' in window` 探测不会被误伤——因为它就在下面被
+# 排除的 platform/ 目录里，不是因为字符串本身不匹配（已实测验证过，见
+# final-review-fix 报告）。
+# 目标目录必须先存在，且失败要响亮：`grep ... apps/ui/src/ | grep -v ...`
+# 这条流水线的退出码由最后一个 grep 决定，如果 apps/ui/src/ 被改名/移动
+# 导致第一个 grep 报「No such file or directory」且不产出任何一行，
+# 第二个 grep 面对空输入同样会以「无匹配」退出（码 1），被后面的
+# `|| true` 一并吞掉——整条检查会在目标目录消失时静默变成空操作，永远
+# 打印 "ok"（终审用 `mv apps/ui/src apps/ui/app` 实测过）。CI-4 用
+# `crates/ apps/` 这种更宽的扫描面扛住了同一类目录搬迁，这里改成扫描
+# 前显式校验目录存在、不存在就直接响亮失败，而不是依赖扫描范围本身
+# 够宽。
+if [ ! -d apps/ui/src ]; then
+  echo "FAIL: apps/ui/src 目录不存在——CI-9 的扫描目标是硬编码路径，目录被改名/移动后必须先更新这条检查，而不是让它静默通过"
+  exit 1
+fi
+offenders=$(grep -rlE '@tauri-apps/|ipcRenderer|__TAURI' apps/ui/src/ \
             | grep -v '^apps/ui/src/platform/' || true)
 if [ -n "$offenders" ]; then
   echo "FAIL: platform/ 之外出现了外壳 API：$offenders"; exit 1

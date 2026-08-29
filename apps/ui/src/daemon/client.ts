@@ -331,6 +331,17 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
         // the last seq this subscription actually observed, so a dropped
         // connection never re-delivers events or silently skips them
         // (design doc 06 §2).
+        //
+        // TODO(M2, run view): no backoff, no retry-count ceiling. Against
+        // a daemon that refuses every connection, this measured ~40
+        // socket attempts inside 50ms (~800/s), indefinitely, and that
+        // multiplies per subscription -- there is no caller today
+        // (nothing in M1 calls `subscribe()` yet) so it's dormant, but
+        // once the M2 run view wires this up, a daemon that goes down
+        // will make the UI hammer it at that rate for as long as the
+        // view stays open. Needs exponential backoff and a ceiling
+        // before M2 ships this to a real run view. Tracked as a known
+        // gap in docs/superpowers/notes/2026-08-29-desktop-shell-status.md.
         connect(lastSeq + 1)
       }
     }

@@ -1,11 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import * as ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
-// FORCING FUNCTION -- read before touching either `tauri.ts` or
-// `../../src-tauri/capabilities/default.json`.
+// FORCING FUNCTION -- read before touching `platform/`,
+// `../../src-tauri/capabilities/default.json`, or this file.
 //
 // Tauri 2's IPC is default-deny (see `src-tauri/capabilities/README.md`):
 // a plugin command the frontend calls is only reachable if some
@@ -20,24 +20,47 @@ import { describe, expect, it } from 'vitest'
 //
 // This test statically cross-references two independent sources of truth
 // against the hand-maintained manifest below:
-//   1. Which `@tauri-apps/plugin-*` imports `tauri.ts` actually uses, and
-//      which of their exports it actually reaches (parsed from a real
-//      TypeScript AST via the `typescript` compiler API -- this file
-//      deliberately does not import `./tauri` itself, which would
-//      require mocking every plugin just to load the module).
+//   1. Which `@tauri-apps/plugin-*` imports files under `platform/`
+//      actually use, and which of their exports they actually reach
+//      (parsed from a real TypeScript AST via the `typescript` compiler
+//      API -- this file deliberately does not import those modules
+//      itself, which would require mocking every plugin just to load
+//      them).
 //   2. Which permission identifiers `../../src-tauri/capabilities/default.json`
 //      actually grants.
-// Every plugin import `tauri.ts` makes MUST appear in the manifest below
-// (an import missing from it means either the manifest went stale or a
-// genuinely new capability was wired up without telling this test --
-// both must fail loudly), and the permission the manifest says that
-// import needs MUST be present in the capability file. Concretely, this
-// fails if either of these happens:
-//   - `tauri.ts` gains a new plugin call with no corresponding manifest
-//     entry (a new import shows up that `PLUGIN_IMPORT_PERMISSIONS`
-//     doesn't know about).
+// Every plugin import a file under `platform/` makes MUST appear in the
+// manifest below (an import missing from it means either the manifest
+// went stale or a genuinely new capability was wired up without telling
+// this test -- both must fail loudly), and the permission the manifest
+// says that import needs MUST be present in the capability file.
+// Symmetrically, every permission the capability file grants MUST map to
+// a manifest entry that some file under `platform/` still actually uses
+// -- an orphan grant (a permission nothing calls any more) is exactly as
+// much of a drift bug as a missing one, and is real attack surface, not
+// a harmless leftover. Concretely, this fails if any of these happens:
+//   - a file under `platform/` gains a new plugin call with no
+//     corresponding manifest entry (a new import shows up that
+//     `PLUGIN_IMPORT_PERMISSIONS` doesn't know about).
 //   - `capabilities/default.json` loses a permission that a
-//     still-imported plugin call in `tauri.ts` needs.
+//     still-imported plugin call under `platform/` needs.
+//   - `capabilities/default.json` grants a permission that no manifest
+//     entry maps to, or that maps to a manifest entry nothing under
+//     `platform/` imports any more (an orphan permission -- see below).
+//
+// Scans every `.ts` source file directly under `platform/` (excluding
+// `*.test.ts` files, which are not shipped runtime code), not a single
+// hardcoded filename. An earlier version of this test only ever read
+// `./tauri.ts`, hardcoded by name -- a new file under `platform/` (e.g.
+// `platform/extra.ts`) importing an ungranted plugin command sailed
+// through 19/19 green, both directions, because the test simply never
+// looked at it. That is the exact class of bug this test's own header
+// warns about: "a silent pass on unrecognized code is exactly the bug
+// this test exists to avoid reintroducing in a new shape" -- scoping the
+// scan to one filename was that bug wearing a different shape. `tauri.ts`
+// is expected to be the only file that actually imports plugin packages
+// today (it is the one file in the repo allowed to, per its own
+// file-level comment), but this test does not take that on faith -- it
+// looks at every file and lets the AST walk prove it.
 //
 // AST, not regex -- and an explicit refusal, not a false "all clear",
 // for anything an AST walk can't pin down:
@@ -48,13 +71,13 @@ import { describe, expect, it } from 'vitest'
 // export: `import * as ns from '...'` plus `ns.someCommand(...)`,
 // `await import('@tauri-apps/plugin-x')`, a default import, etc. -- code
 // using any of those forms would call an ungranted command and this test
-// would still show 19/19 green, precisely the class of "checks that can
-// be silently walked around" this repo has already been bitten by once
-// (see the CI-9 grep fix). Parsing a real AST via the `typescript`
-// compiler API instead means named imports, namespace imports, and
-// dynamic `import()` calls are all visible to the same walk, because
-// they're all just node kinds in the same tree, not text patterns that
-// have to each be separately guessed at.
+// would still show all-green, precisely the class of "checks that can be
+// silently walked around" this repo has already been bitten by once (see
+// the CI-9 grep fix). Parsing a real AST via the `typescript` compiler
+// API instead means named imports, namespace imports, and dynamic
+// `import()` calls are all visible to the same walk, because they're all
+// just node kinds in the same tree, not text patterns that have to each
+// be separately guessed at.
 //
 // That said, some constructs are *inherently* not statically resolvable
 // -- e.g. `ns[someVariable]()`, where the actual command name only exists
@@ -76,27 +99,45 @@ import { describe, expect, it } from 'vitest'
 // the pattern by going through a variable sidesteps that transform and
 // gets the real `file://` URL both here and under `vitest run`.
 const thisModuleUrl = import.meta.url
-const tauriTsUrl = new URL('./tauri.ts', thisModuleUrl)
+const platformDirUrl = new URL('.', thisModuleUrl)
 const capabilitiesUrl = new URL('../../src-tauri/capabilities/default.json', thisModuleUrl)
 
-const tauriTsPath = fileURLToPath(tauriTsUrl)
-const tauriTsSource = readFileSync(tauriTsPath, 'utf-8')
+const platformDirPath = fileURLToPath(platformDirUrl)
 const capabilities = JSON.parse(readFileSync(fileURLToPath(capabilitiesUrl), 'utf-8')) as {
   permissions: string[]
 }
+
+// Every `.ts` source file directly under `platform/`, excluding
+// `*.test.ts` (not shipped runtime code -- and excluding this file
+// itself, which imports `typescript`/`vitest`/`node:fs`, none of which
+// are `@tauri-apps/plugin-*` specifiers, so including it would be inert
+// anyway). Sorted for a stable, deterministic test list across machines.
+//
+// Deliberately not recursive beyond this one directory: `platform/` has
+// no subdirectories today, and the module-comment rule ("the one and
+// only surface the UI is allowed to touch for native capabilities") is
+// scoped to this directory specifically. If `platform/` ever grows
+// subdirectories, extend this to recurse into them rather than silently
+// leaving them unscanned.
+const platformSourceFiles = readdirSync(platformDirPath, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts'))
+  .map((entry) => entry.name)
+  .sort()
 
 interface PluginBinding {
   module: string
   namedImport: string
 }
 
-// Manifest: every export `tauri.ts` pulls from a `@tauri-apps/plugin-*`
-// package and reaches (whether via a named import or a namespace-import
-// property access), and the exact capability permission identifier that
-// export needs so it isn't rejected by the IPC allowlist at runtime. Keep
-// this in lockstep with both `tauri.ts`'s plugin usage and
-// `capabilities/default.json`'s permission list -- the tests below fail
-// if either one drifts from this manifest.
+// Manifest: every export any file under `platform/` pulls from a
+// `@tauri-apps/plugin-*` package and reaches (whether via a named import
+// or a namespace-import property access), and the exact capability
+// permission identifier that export needs so it isn't rejected by the
+// IPC allowlist at runtime. Keep this in lockstep with both `platform/`'s
+// actual plugin usage and `capabilities/default.json`'s permission list
+// -- the tests below fail if either one drifts from this manifest, in
+// either direction (a used import missing a permission, or a granted
+// permission nothing uses any more).
 const PLUGIN_IMPORT_PERMISSIONS: ReadonlyArray<PluginBinding & { permission: string }> = [
   { module: '@tauri-apps/plugin-dialog', namedImport: 'open', permission: 'dialog:allow-open' },
   { module: '@tauri-apps/plugin-fs', namedImport: 'readFile', permission: 'fs:allow-read-file' },
@@ -129,7 +170,7 @@ function isPluginModuleSpecifier(text: string): boolean {
 
 // Walks a real TypeScript AST of `source` (parsed as `fileName`, purely
 // for diagnostics -- nothing is written back) and returns every
-// (module, exported name) pair it can prove `tauri.ts` reaches inside a
+// (module, exported name) pair it can prove this file reaches inside a
 // `@tauri-apps/plugin-*` package. "Reaches" means either:
 //   - a named import (`import { a, b as c } from '...'` -> the plugin's
 //     *exported* name, `a`/`b`, not the local alias `c`), or
@@ -155,8 +196,9 @@ function isPluginModuleSpecifier(text: string): boolean {
 //     downstream of `await import(expr)` is walked for property access,
 //     so a plugin call reached this way is invisible to this analysis.
 //   - a re-export (`export * from '...'` / `export { x } from '...'`) of
-//     a plugin module: `tauri.ts` isn't expected to re-export plugin
-//     internals, so treat it as unanalyzed rather than assume it's dead.
+//     a plugin module: files under `platform/` aren't expected to
+//     re-export plugin internals, so treat it as unanalyzed rather than
+//     assume it's dead.
 function analyzeTauriPluginUsage(source: string, fileName: string): PluginBinding[] {
   const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 
@@ -169,7 +211,7 @@ function analyzeTauriPluginUsage(source: string, fileName: string): PluginBindin
   const bindingsByKey = new Map<string, PluginBinding>()
 
   function recordBinding(moduleSpecifier: string, namedImport: string): void {
-    bindingsByKey.set(`${moduleSpecifier} ${namedImport}`, { module: moduleSpecifier, namedImport })
+    bindingsByKey.set(`${moduleSpecifier} ${namedImport}`, { module: moduleSpecifier, namedImport })
   }
 
   function fail(node: ts.Node, reason: string): never {
@@ -189,7 +231,8 @@ function analyzeTauriPluginUsage(source: string, fileName: string): PluginBindin
         fail(
           statement,
           `re-exports from plugin module '${statement.moduleSpecifier.text}'; this test only understands ` +
-            `direct imports inside tauri.ts, not re-exports. Import the specific command(s) directly instead.`,
+            `direct imports inside files under platform/, not re-exports. Import the specific command(s) ` +
+            `directly instead.`,
         )
       }
       continue
@@ -283,24 +326,40 @@ function analyzeTauriPluginUsage(source: string, fileName: string): PluginBindin
   return [...bindingsByKey.values()]
 }
 
-describe('platform/tauri.ts plugin usage <-> capabilities/default.json permissions', () => {
-  const actualBindings = analyzeTauriPluginUsage(tauriTsSource, tauriTsPath)
+describe('platform/*.ts plugin usage <-> capabilities/default.json permissions', () => {
+  // Aggregated across every source file under `platform/` (see
+  // `platformSourceFiles` above), not just `tauri.ts` -- deduped by
+  // (module, namedImport) so a binding reached from more than one file
+  // only appears once.
+  const bindingsByKey = new Map<string, PluginBinding>()
+  for (const fileName of platformSourceFiles) {
+    const filePath = fileURLToPath(new URL(fileName, platformDirUrl))
+    const source = readFileSync(filePath, 'utf-8')
+    for (const binding of analyzeTauriPluginUsage(source, filePath)) {
+      bindingsByKey.set(`${binding.module} ${binding.namedImport}`, binding)
+    }
+  }
+  const actualBindings = [...bindingsByKey.values()]
+
+  it('scanned at least one file under platform/ (sanity check that the directory listing still works)', () => {
+    expect(platformSourceFiles.length).toBeGreaterThan(0)
+  })
 
   it('found at least one @tauri-apps/plugin-* import (sanity check that the AST walk still matches real source)', () => {
     expect(actualBindings.length).toBeGreaterThan(0)
   })
 
   it.each(actualBindings)(
-    'the $module import "$namedImport" used by tauri.ts is covered by the manifest above',
+    'the $module import "$namedImport" used under platform/ is covered by the manifest above',
     ({ module, namedImport }) => {
       const manifestEntry = PLUGIN_IMPORT_PERMISSIONS.find(
         (entry) => entry.module === module && entry.namedImport === namedImport,
       )
       expect(
         manifestEntry,
-        `tauri.ts reaches "${namedImport}" from '${module}', but PLUGIN_IMPORT_PERMISSIONS in this test ` +
-          `has no entry for it. Either this import is unused (dead code -- remove it), or a new plugin ` +
-          `capability was wired into tauri.ts without adding it here AND to ` +
+        `a file under platform/ reaches "${namedImport}" from '${module}', but PLUGIN_IMPORT_PERMISSIONS in ` +
+          `this test has no entry for it. Either this import is unused (dead code -- remove it), or a new ` +
+          `plugin capability was wired into platform/ without adding it here AND to ` +
           `src-tauri/capabilities/default.json -- add both.`,
       ).toBeDefined()
     },
@@ -310,18 +369,58 @@ describe('platform/tauri.ts plugin usage <-> capabilities/default.json permissio
     'permission "$permission" (needed by $module\'s "$namedImport") is granted in capabilities/default.json',
     ({ module, namedImport, permission }) => {
       const isActuallyImported = actualBindings.some((b) => b.module === module && b.namedImport === namedImport)
-      // Only enforce the grant while tauri.ts still actually uses this
-      // import -- a manifest entry for a call that was removed from
-      // tauri.ts should be deleted from the manifest above, not force a
-      // capability grant nothing needs any more.
+      // Only enforce the grant while some file under platform/ still
+      // actually uses this import -- a manifest entry for a call that
+      // was removed from platform/ should be deleted from the manifest
+      // above, not force a capability grant nothing needs any more.
       if (!isActuallyImported) return
 
       expect(
         capabilities.permissions,
-        `capabilities/default.json is missing "${permission}", which ${module}'s "${namedImport}" (used by ` +
-          `tauri.ts) needs -- without it, that call is silently rejected by Tauri's IPC allowlist on a real ` +
+        `capabilities/default.json is missing "${permission}", which ${module}'s "${namedImport}" (used under ` +
+          `platform/) needs -- without it, that call is silently rejected by Tauri's IPC allowlist on a real ` +
           `machine.`,
       ).toContain(permission)
+    },
+  )
+
+  // The reverse direction: every permission `capabilities/default.json`
+  // grants must correspond to an import some file under `platform/`
+  // still actually uses. Before this test existed, the delivery-status
+  // note's description of the sibling test above claimed this direction
+  // was already covered ("反之亦然（孤儿权限也会报错）") -- it was not:
+  // adding unused permissions (`fs:allow-write-file`, `shell:allow-execute`,
+  // `fs:allow-remove`) to capabilities/default.json passed 19/19 green,
+  // because the tests above only ever walk from code to capabilities,
+  // never the other way. An orphan grant is not a harmless leftover --
+  // it is unreviewed attack surface sitting in a default-deny allowlist
+  // for no reason (`shell:allow-execute` sitting unused in this file
+  // would be exactly that). This test makes the claim true instead of
+  // deleting it.
+  it.each(capabilities.permissions)(
+    'permission "%s" granted in capabilities/default.json is not an orphan',
+    (permission) => {
+      const manifestEntry = PLUGIN_IMPORT_PERMISSIONS.find((entry) => entry.permission === permission)
+      expect(
+        manifestEntry,
+        `capabilities/default.json grants "${permission}", but PLUGIN_IMPORT_PERMISSIONS in this test has no ` +
+          `entry mapping to it. Either this permission is unused and should be removed from ` +
+          `capabilities/default.json (extra permissions are extra attack surface, not a harmless margin), or ` +
+          `a plugin call that needs it exists somewhere under platform/ and this manifest is missing the ` +
+          `corresponding entry -- add it.`,
+      ).toBeDefined()
+      if (!manifestEntry) return
+
+      const isActuallyImported = actualBindings.some(
+        (b) => b.module === manifestEntry.module && b.namedImport === manifestEntry.namedImport,
+      )
+      expect(
+        isActuallyImported,
+        `capabilities/default.json grants "${permission}" (mapped to ${manifestEntry.module}'s ` +
+          `"${manifestEntry.namedImport}"), but no file under platform/ actually imports/calls it any more -- ` +
+          `this is an orphan permission with no code using it. Remove the permission from ` +
+          `capabilities/default.json (or, if the code using it is coming back, keep both in sync).`,
+      ).toBe(true)
     },
   )
 })
