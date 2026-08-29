@@ -16,6 +16,7 @@
 - **UI 只经 `daemonClient` 一个模块访问 daemon**，不直接读 SQLite、不用 `invoke` 拿业务数据
 - `crates/` 与 `apps/` 里**不得出现客户专有名词**（`yonyou` / `用友`）
 - **`apps/ui/src-tauri` 不进根 Rust workspace**——根 workspace 是 daemon/kernel 那一套，把 GUI 壳塞进去会让 `cargo clippy --workspace` 在每台机器上都要求 GTK/webkit，而壳的正确性与那套无关
+- **类型检查必须用 `tsc -b --noEmit`（或 `pnpm build`，其 `build` 脚本是 `tsc -b && vite build`），不要用不带 `-p`/`-b` 的 `tsc --noEmit`**——本工程根 `tsconfig.json` 是 solution 风格（`"files": []` + `references`），裸 `tsc` 编译 **0 个文件**、恒为 0 退出码（实测 `--listFiles` 命中 0）。验收清单上一条恒真的命令比没有它更糟：它让人以为多了一层保障。这是本项目第六个「永远通过的检查」，且是写在派活指令里的
 - 每个任务 commit 前跑格式化，以 `./scripts/ci.sh` 全段绿收尾
 - 每个任务以一次 commit 收尾
 
@@ -143,7 +144,7 @@ git commit -m "chore: Tauri 与前端工具链在 Linux 上的可行性实测"
 
 - [ ] **Step 5: 构建与类型检查**
 
-Run: `cd apps/ui && pnpm install && pnpm build && pnpm exec tsc --noEmit`
+Run: `cd apps/ui && pnpm install && pnpm build && pnpm exec tsc -b --noEmit`
 Expected: 都通过
 
 - [ ] **Step 6: Commit**
@@ -177,7 +178,7 @@ UI 访问 daemon 的**唯一**模块。协议本身属阶段 3，本次只出接
 
 - [ ] **Step 4: 测试与构建**
 
-Run: `cd apps/ui && pnpm test && pnpm build && pnpm exec tsc --noEmit`
+Run: `cd apps/ui && pnpm test && pnpm build && pnpm exec tsc -b --noEmit`
 
 - [ ] **Step 5: Commit**
 
@@ -208,7 +209,7 @@ Run: `cd apps/ui && pnpm test && pnpm build && pnpm exec tsc --noEmit`
 
 - [ ] **Step 4: 验证能验的部分**
 
-Run: `cd apps/ui && pnpm build && pnpm exec tsc --noEmit`
+Run: `cd apps/ui && pnpm build && pnpm exec tsc -b --noEmit`
 Expected: 通过（TS 侧包含 `tauri.ts` 也应当类型检查通过——`@tauri-apps/api` 是纯 TS 包）
 
 若 Task 0 的结论是 Linux 上能 `cargo check`，则再跑 `cd apps/ui/src-tauri && cargo check` 并把输出贴进报告。
@@ -250,7 +251,7 @@ echo "ok"
 
 - [ ] **Step 3: 前端构建与类型检查进 ci.sh**
 
-加一段跑 `pnpm install --frozen-lockfile`、`pnpm build`、`pnpm exec tsc --noEmit`、以及前端测试。**注意**：ci.sh 现在是 Rust 项目的入口，加前端段后要保证在没装 node 的机器上有清楚的报错，而不是莫名其妙的失败。
+加一段跑 `pnpm install --frozen-lockfile`、`pnpm build`、`pnpm exec tsc -b --noEmit`、以及前端测试。**注意**：ci.sh 现在是 Rust 项目的入口，加前端段后要保证在没装 node 的机器上有清楚的报错，而不是莫名其妙的失败。
 
 - [ ] **Step 4: 造反例验证 CI-9 真的会 fail**
 
