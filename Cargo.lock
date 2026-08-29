@@ -124,6 +124,10 @@ version = "0.1.0"
 [[package]]
 name = "evo-context"
 version = "0.1.0"
+dependencies = [
+ "evo-protocol",
+ "serde",
+]
 
 [[package]]
 name = "evo-daemon"
