@@ -191,6 +191,76 @@ decision = "deny"
 }
 
 #[test]
+fn the_taint_gate_never_downgrades_a_policy_risk_that_is_already_higher() {
+    // re-review 实测复现的缺陷：策略已经判 RequireApproval { risk: L3 }
+    // （比如 class = "external" 命中 external-needs-approval），这次调用
+    // 又恰好 tainted，污点闸门以前硬编码 risk: L2，等于把 L3 压低成 L2——
+    // 一个本该逐条审批、不可批量放行的高危操作，被闸门"放宽"成了可以批量
+    // 放行的档位。闸门只应该保底抬升，绝不能压低策略已经给出的档位。
+    const EXTERNAL_TOOL: &str = r#"
+[[method]]
+name = "net.send"
+class = "external"
+reversible = false
+targets = []
+"#;
+    let gw = Gateway::new(
+        Box::new(HardcodedPolicy::from_toml_str(POLICY).unwrap()),
+        ManifestRegistry::from_toml_str(EXTERNAL_TOOL).unwrap(),
+    );
+    let verdict = gw.admit(admit("net.send", TaintLevel::Tainted, ExecutionMode::Live));
+    let GatewayAction::AwaitApproval { risk, .. } = verdict.action else {
+        panic!("污点 + external 都要求审批")
+    };
+    assert_eq!(risk, RiskLevel::L3, "策略原判的 L3 不能被污点闸门降级成 L2");
+    let pe = verdict
+        .events
+        .iter()
+        .find(|e| e.kind() == "policy.evaluated")
+        .unwrap();
+    let EventBody::PolicyEvaluated(pe) = pe else {
+        unreachable!()
+    };
+    assert_eq!(pe.reason_code, "taint_gate");
+}
+
+#[test]
+fn the_taint_gate_still_floors_an_allow_at_l2() {
+    // 回归：策略判 Allow（本例：fs.write 没有命中任何规则，HardcodedPolicy
+    // 兜底为 Allow）+ 污点闸门命中 —— 结果仍然是 RequireApproval { risk: L2 }，
+    // 确认「至少 L2」的保底没有被这轮修复带走。
+    let verdict = gateway().admit(admit("fs.write", TaintLevel::Tainted, ExecutionMode::Live));
+    let GatewayAction::AwaitApproval { risk, .. } = verdict.action else {
+        panic!("污点闸门必须要求审批")
+    };
+    assert_eq!(risk, RiskLevel::L2);
+}
+
+#[test]
+fn the_taint_gate_lifts_an_l1_policy_risk_up_to_l2() {
+    // 策略给出的是 RequireApproval { risk: L1 }（不是 Allow），污点闸门命中后
+    // 应该把它抬到 L2——闸门的保底线是 L2，不是「原样透传」。
+    const L1_THEN_TAINT: &str = r#"
+version = "poc-1"
+
+[[rule]]
+id = "fs-write-is-l1"
+tool = "fs.write"
+decision = "require_approval"
+risk = "l1"
+"#;
+    let gw = Gateway::new(
+        Box::new(HardcodedPolicy::from_toml_str(L1_THEN_TAINT).unwrap()),
+        ManifestRegistry::from_toml_str(TOOLS).unwrap(),
+    );
+    let verdict = gw.admit(admit("fs.write", TaintLevel::Tainted, ExecutionMode::Live));
+    let GatewayAction::AwaitApproval { risk, .. } = verdict.action else {
+        panic!("污点闸门必须要求审批")
+    };
+    assert_eq!(risk, RiskLevel::L2, "污点闸门把 L1 抬到保底的 L2");
+}
+
+#[test]
 fn dry_run_suppresses_writes_and_produces_a_tool_result() {
     let verdict = gateway().admit(admit("fs.write", TaintLevel::Clean, ExecutionMode::DryRun));
     assert!(matches!(verdict.action, GatewayAction::DryRun { .. }));
