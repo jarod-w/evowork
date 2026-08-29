@@ -4,8 +4,10 @@
 
 pub mod clock;
 pub mod config;
+pub mod replay;
 pub mod runtime;
 
 pub use clock::{Clock, FixedClock, RealClock};
 pub use config::DaemonConfig;
+pub use replay::{Mismatch, VerifyReport, replay_to, verify};
 pub use runtime::{DaemonError, ParsedPlan, Runtime, parse_plan};
