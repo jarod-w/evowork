@@ -1,13 +1,14 @@
-use crate::impact::estimate;
-use crate::manifest::ManifestRegistry;
+use crate::impact::{PreviewOutcome, estimate};
+use crate::manifest::{ManifestRegistry, ToolManifest};
 use evo_policy::{PolicyContext, PolicyDecision, PolicyHook, RiskLevel};
 use evo_protocol::EventBody;
 use evo_protocol::effect::{CapabilityToken, EffectClass, EffectRequest};
 use evo_protocol::events::effect::{
-    ExecutionMode, PolicyDecisionKind, PolicyEvaluated, ToolRequested, ToolResult, ToolResultStatus,
+    ExecutionMode, ImpactEstimated, PolicyDecisionKind, PolicyEvaluated, ToolRequested, ToolResult,
+    ToolResultStatus,
 };
 use evo_protocol::events::model::PlannedCall;
-use evo_protocol::ids::{CiteId, EffectId, RunId};
+use evo_protocol::ids::{CiteId, EffectId, RunId, ToolId};
 use evo_protocol::taint::TaintLevel;
 
 pub struct AdmitRequest {
@@ -34,7 +35,66 @@ pub enum GatewayAction {
     AwaitApproval {
         risk: RiskLevel,
         request: EffectRequest,
+        /// 构造 `approval.requested.impact_ref` 的素材。**这里给的是值，
+        /// 不是 blob 引用**——Gateway 不持有 blob store 句柄，把值存成 blob
+        /// 是 daemon 的活；`impact_ref` 本身按红线①不能把具体资源标识
+        /// 直接放进 `ApprovalRequested` 的 payload，所以 daemon 必须先把
+        /// 这个值写成 blob，再把返回的 `BlobRef` 填进
+        /// `ApprovalRequested.impact_ref`。
+        impact: ImpactEstimated,
     },
+    /// manifest 给这个工具声明了 `preview`——第 1 级 dry-run 降级要调它才能
+    /// 拿到 `ImpactPrecision::Exact`，而调用 preview 是一次 IO。`admit` 是
+    /// 纯函数、不持有任何执行句柄，做不了 IO，于是在这里停下来，把「已经
+    /// 走到第⑥步」的全部上下文原样封进 [`PendingAdmit`] 还给调用方：调用方
+    /// （daemon）拿着它问 executor 要 preview 结果，再调用
+    /// [`Gateway::admit_with_preview`] 从这一步续跑。
+    ///
+    /// 这次分岔之前的事件（`tool.requested`、`policy.evaluated`）已经在
+    /// `GatewayVerdict::events` 里——daemon 应该立刻落盘，不要攒到
+    /// preview 问完才一起写：那样会让还没决定要不要问 preview 之前的
+    /// 治理动作也悬在内存里，一次 IO 超时就可能连审计都丢了。
+    NeedPreview {
+        pending: PendingAdmit,
+    },
+}
+
+/// [`GatewayAction::NeedPreview`] 的续跑凭据：`admit` 走到「要不要调
+/// preview」这一步时已经算出的全部上下文，纯数据、不含任何句柄。
+///
+/// 之所以需要这个类型：两段式准入把一次 `admit` 拆成了 `admit` +
+/// `admit_with_preview` 两次调用，中间隔着 daemon 去问 executor 的一次
+/// await——`admit_with_preview` 不能从头再算一遍（policy 已经判过了，
+/// 重新判一遍如果策略源在这期间变了，两次判定可能对不上），所以第一次
+/// 调用必须把判到一半的状态原样交出来，第二次原样收回去接着做。
+pub struct PendingAdmit {
+    manifest: ToolManifest,
+    params: serde_json::Value,
+    decision: PolicyDecision,
+    request: EffectRequest,
+    mode: ExecutionMode,
+}
+
+impl PendingAdmit {
+    /// manifest 里声明的 preview 方法名——调用方拿它去问 executor 该调哪个
+    /// preview。`NeedPreview` 只会在这个字段是 `Some` 时被构造出来，这里
+    /// `expect` 的是 Gateway 自己的不变量，不是调用方可能犯的错。
+    pub fn preview_method(&self) -> &str {
+        self.manifest
+            .preview
+            .as_deref()
+            .expect("PendingAdmit 只会在 manifest 声明了 preview 时被构造")
+    }
+
+    /// 要预览哪个工具调用。
+    pub fn tool(&self) -> &ToolId {
+        &self.request.tool
+    }
+
+    /// 该工具调用的参数正文，preview 调用同样需要它。
+    pub fn params(&self) -> &serde_json::Value {
+        &self.params
+    }
 }
 
 /// Gateway 的产出：要追加哪些事件，以及接下来做什么。
@@ -216,23 +276,95 @@ impl Gateway {
         }
 
         // ⑥ 影响预估 —— **无条件执行，不只在 dry-run 时执行**
-        events.push(EventBody::ImpactEstimated(estimate(
-            &req.effect_id,
-            &manifest,
-            &req.params,
-        )));
-
-        if let PolicyDecision::RequireApproval { risk } = decision {
+        //
+        // 工具声明了 preview：第 1 级降级要调它才能拿到 `Exact` 精度，而那是
+        // 一次 IO。`admit` 做不了 IO，就在这里停下来，把状态封进
+        // `PendingAdmit` 交还调用方——`tool.requested` / `policy.evaluated`
+        // 这两条已经决定了的事件已经在 `events` 里，随这次返回一起落盘。
+        if manifest.preview.is_some() {
             return GatewayVerdict {
                 events,
-                action: GatewayAction::AwaitApproval { risk, request },
+                action: GatewayAction::NeedPreview {
+                    pending: PendingAdmit {
+                        manifest,
+                        params: req.params.clone(),
+                        decision,
+                        request,
+                        mode: req.mode,
+                    },
+                },
+            };
+        }
+
+        // 未声明 preview：直接按第 2/3 级（`DeclaredOnly`）估。targets 能不能
+        // 从参数静态提取出来，区分的正是这两级——见 `impact::estimate` 的
+        // 文档注释。
+        let impact = estimate(&req.effect_id, &manifest, &req.params, None);
+        Self::finish(events, decision, request, req.mode, impact)
+    }
+
+    /// 从 [`GatewayAction::NeedPreview`] 续跑。
+    ///
+    /// `preview` 是调用方问过 executor 之后拿到的结果：`Some` 换来第 1 级
+    /// （`ImpactPrecision::Exact`），`None` 表示放弃 preview、退回第 2/3 级
+    /// （`DeclaredOnly`）——比如 executor 暂时没有真正实现这个 preview
+    /// 方法。**退回 `None` 不阻塞接入**，这正是判据 1 的延伸：宁可精度差一
+    /// 档，也不能因为一个工具的 preview 没接好就把它挡在 Gateway 外面。
+    pub fn admit_with_preview(
+        &self,
+        pending: PendingAdmit,
+        preview: Option<PreviewOutcome>,
+    ) -> GatewayVerdict {
+        let PendingAdmit {
+            manifest,
+            params,
+            decision,
+            request,
+            mode,
+        } = pending;
+        let impact = estimate(&request.effect_id, &manifest, &params, preview.as_ref());
+        Self::finish(Vec::new(), decision, request, mode, impact)
+    }
+
+    /// `admit` 与 `admit_with_preview` 共用的尾段：拿到影响预估之后，两者
+    /// 剩下的分支（审批 / dry-run 降级 / 派发）完全一样，抽出来避免两处
+    /// 各写一份、容易漏改其中一处。
+    ///
+    /// `decision` 到这里不会是 `Deny`——`admit` 在算出 `Deny` 的那一刻就
+    /// 已经提前返回，从不会走到这个分支来构造 `PendingAdmit` 或直接调用
+    /// `finish`。
+    fn finish(
+        mut events: Vec<EventBody>,
+        decision: PolicyDecision,
+        request: EffectRequest,
+        mode: ExecutionMode,
+        impact: ImpactEstimated,
+    ) -> GatewayVerdict {
+        events.push(EventBody::ImpactEstimated(impact.clone()));
+
+        let risk = match decision {
+            PolicyDecision::RequireApproval { risk } => Some(risk),
+            PolicyDecision::Allow => None,
+            PolicyDecision::Deny { .. } => {
+                unreachable!("Deny 在 admit() 里已经提前返回，不会走到 finish() 才被发现")
+            }
+        };
+
+        if let Some(risk) = risk {
+            return GatewayVerdict {
+                events,
+                action: GatewayAction::AwaitApproval {
+                    risk,
+                    request,
+                    impact,
+                },
             };
         }
 
         // dry-run：Write / External 降级为 record-only，Read / Compute 照常执行
-        if req.mode == ExecutionMode::DryRun && request.class.suppressed_in_dry_run() {
+        if mode == ExecutionMode::DryRun && request.class.suppressed_in_dry_run() {
             events.push(EventBody::ToolResult(ToolResult {
-                effect_id: req.effect_id.clone(),
+                effect_id: request.effect_id.clone(),
                 status: ToolResultStatus::DryRun,
                 output_ref: None,
                 bytes: None,
