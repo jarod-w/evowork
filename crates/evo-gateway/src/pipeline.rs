@@ -67,6 +67,24 @@ pub enum GatewayAction {
 /// await——`admit_with_preview` 不能从头再算一遍（policy 已经判过了，
 /// 重新判一遍如果策略源在这期间变了，两次判定可能对不上），所以第一次
 /// 调用必须把判到一半的状态原样交出来，第二次原样收回去接着做。
+///
+/// **这是策略漂移的防线，不是省一次计算。** `manifest` / `decision` /
+/// `mode` 三个字段在第一次 `admit()` 里就被冻结进这个结构体：`decision`
+/// 是那一刻策略求值 + `tighten` 收紧之后的最终判定，`manifest` 是那一刻
+/// 从 `ManifestRegistry` 里取到的那一份。`admit` 与 `admit_with_preview`
+/// 之间隔着 daemon 去问 executor 要 preview 结果的一次 await，如果策略
+/// 文件或 manifest 在这段时间被重新加载，`admit_with_preview` 只要不重新
+/// 求值，拿到的就还是冻结在这里的旧判定——不会出现「`tool.requested` /
+/// `policy.evaluated` 按旧策略判过，最终的 `impact.estimated` /
+/// `AwaitApproval` 却按新策略走」这种新旧判定混在同一个 effect 里的情况。
+///
+/// **反向约束：以后往 `admit_with_preview` 里加逻辑，不许在里面重新求值
+/// 策略**（不能重新调 `self.policy.evaluate_with_trace`、重新
+/// `self.manifests.get`，也不能重新跑 `tighten`）——那会绕开这里冻结的
+/// `decision` / `manifest`，把上面这层保护直接打掉，一次 preview 往返之间
+/// 策略文件的变动就会重新泄漏进同一个 effect 的判定里。`admit_with_preview`
+/// 该做的只是用 `preview` 结果去调整 `impact` 的精度，其余字段原样传给
+/// `finish`。
 pub struct PendingAdmit {
     manifest: ToolManifest,
     params: serde_json::Value,
