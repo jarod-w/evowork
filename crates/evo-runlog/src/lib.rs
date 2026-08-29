@@ -1,8 +1,10 @@
 pub mod blobstore;
 pub mod schema;
+pub mod snapshot;
 pub mod store;
 
 pub use blobstore::BlobStore;
+pub use snapshot::Snapshot;
 pub use store::RunLog;
 
 #[derive(Debug, thiserror::Error)]

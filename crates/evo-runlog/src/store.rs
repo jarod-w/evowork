@@ -155,4 +155,12 @@ impl RunLog {
         rows.map(|r| r.map(RunId::from).map_err(RunLogError::from))
             .collect()
     }
+
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
 }
