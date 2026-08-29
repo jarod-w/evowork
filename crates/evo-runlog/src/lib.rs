@@ -1,6 +1,9 @@
 pub mod blobstore;
+pub mod schema;
+pub mod store;
 
 pub use blobstore::BlobStore;
+pub use store::RunLog;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunLogError {
