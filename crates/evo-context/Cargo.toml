@@ -8,3 +8,5 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+evo-protocol.workspace = true
+serde.workspace = true
