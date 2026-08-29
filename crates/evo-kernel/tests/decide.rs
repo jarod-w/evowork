@@ -118,3 +118,24 @@ fn no_second_checkpoint_immediately_after_one() {
         Some(Command::Checkpoint { .. })
     ));
 }
+
+#[test]
+fn a_tool_call_plan_without_call_parameter_fails_the_run() {
+    let mut s = base();
+    s.env_sampled_turn = Some(0);
+    s.context_turn = Some(0);
+    s.plan_turn = Some(0);
+    s.last_plan = Some(PlanStep {
+        turn: 0,
+        intent: PlanIntent::ToolCall,
+        rationale_ref: None,
+        taint_inherited: TaintLevel::Clean,
+        call: None,
+    });
+    assert_eq!(
+        decide(&s),
+        vec![Command::Complete {
+            status: RunStatus::Failed
+        }]
+    );
+}
