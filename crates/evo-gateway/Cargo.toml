@@ -8,3 +8,9 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+evo-protocol = { workspace = true }
+evo-policy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }

@@ -182,6 +182,14 @@ dependencies = [
 [[package]]
 name = "evo-gateway"
 version = "0.1.0"
+dependencies = [
+ "evo-policy",
+ "evo-protocol",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml",
+]
 
 [[package]]
 name = "evo-kernel"
