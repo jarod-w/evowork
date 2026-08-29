@@ -60,11 +60,44 @@ function pickFile(): Promise<File | null> {
     // Fallback heuristic, kept even where `cancel` is supported: the
     // picker is modal, so this window loses focus while it's open and
     // regains it the instant the dialog closes, cancel or pick alike.
-    // `change` (a real pick) fires just before focus returns, so
-    // deferring one macrotask lets `change` win that race and settle
-    // first; if `cancel` already settled us, this is a no-op.
+    //
+    // Safari has never shipped the `cancel` event on <input type=file>,
+    // so on Safari -- which is exactly the engine every user of this
+    // browser shell is on, since it's opened from an enterprise-WeChat
+    // approval link on iOS -- this fallback isn't a rare edge case, it's
+    // the ONLY path that ever unsticks a cancelled pick.
+    //
+    // A naive version of this fallback assumes `change` always wins the
+    // race and unconditionally settles null the instant focus returns.
+    // That assumption is false: nothing guarantees the browser dispatches
+    // (or that we finish handling) `change` before the `focus` event's
+    // callback runs. An adversarial-but-real ordering -- focus fires,
+    // this callback runs, *then* `change` arrives with a real File --
+    // reproduces the bug directly: a real selection gets reported as
+    // null, and the later `change` is silently swallowed by the
+    // `settled` guard above.
+    //
+    // The fix: don't infer "cancelled" from focus alone. The browser
+    // sets `input.files` synchronously the moment the user picks a file,
+    // before it dispatches `change` or returns focus to this window -- so
+    // by the time this callback runs, `input.files` already reflects the
+    // truth even if the `change` *event* hasn't been handled yet. Check
+    // it: a non-empty `files` means a file was actually picked (`change`
+    // is either on its way or already handled, in which case `settle` is
+    // already a no-op), so only an EMPTY `files` list means a real cancel.
+    //
+    // The delay can't be 0ms: that gives the browser no room to flush
+    // `input.files` and dispatch `change` before we've already decided
+    // "no file" -- 0ms is exactly what reproduces the adversarial
+    // ordering above. 300ms is the value the community's "focus +
+    // timeout" cancel-detection pattern has converged on; it's cheap
+    // (the user already closed a modal dialog, so a third-of-a-second
+    // is imperceptible) and gives `change` a real window to land.
     const onWindowFocus = () => {
-      window.setTimeout(() => settle(null), 0)
+      window.setTimeout(() => {
+        if (input.files && input.files.length > 0) return
+        settle(null)
+      }, 300)
     }
     window.addEventListener('focus', onWindowFocus, { once: true })
 

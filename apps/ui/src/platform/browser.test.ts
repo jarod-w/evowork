@@ -31,6 +31,7 @@ function setInputFiles(input: HTMLInputElement, files: File[]): void {
 describe('browser platform: pickFile()', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('resolves with the selected file on change', async () => {
@@ -82,5 +83,45 @@ describe('browser platform: pickFile()', () => {
     window.dispatchEvent(new Event('focus'))
 
     await expect(result).resolves.toBe(file)
+  })
+
+  it('resolves with the real file even when the focus fallback timer elapses before `change` is dispatched (adversarial ordering)', async () => {
+    // Reproduces the race a naive "focus means cancel" fallback gets
+    // wrong: the browser sets `input.files` synchronously the moment a
+    // file is picked, *before* dispatching either `focus` or `change` --
+    // so `files` is already populated here even though our `change`
+    // listener hasn't run yet. The fallback's timeout callback must see
+    // that non-empty `files` and refuse to settle null; only the later
+    // `change` event should settle the promise, with the real File.
+    vi.useFakeTimers()
+    const { getInput } = interceptFileInput()
+    const platform = createBrowserPlatform()
+
+    const result = platform.pickFile()
+    const input = getInput()
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
+    setInputFiles(input, [file])
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(300)
+    input.dispatchEvent(new Event('change'))
+
+    await expect(result).resolves.toBe(file)
+  })
+
+  it('resolves with null once the focus fallback timer elapses with no file ever selected (true cancel)', async () => {
+    // Regression guard for the fix above: confirms checking
+    // `input.files.length` in the timeout callback didn't also block the
+    // genuine-cancel path -- with no file ever assigned to the input, the
+    // fallback must still settle null once its delay elapses.
+    vi.useFakeTimers()
+    const { getInput } = interceptFileInput()
+    const platform = createBrowserPlatform()
+
+    const result = platform.pickFile()
+    getInput()
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(300)
+
+    await expect(result).resolves.toBeNull()
   })
 })
