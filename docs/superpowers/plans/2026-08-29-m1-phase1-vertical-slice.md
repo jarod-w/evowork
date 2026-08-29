@@ -5956,6 +5956,15 @@ fn replay_verify_on_a_missing_file_fails_loudly() {
 }
 
 #[test]
+fn a_log_without_checkpoints_is_reported_as_vacuous_not_ok() {
+    // 判据 3 的检测器如果对「没检查到任何东西」也报通过，
+    // CI 上那行绿字就是假的。这条测试守住 CLI 侧的呈现。
+    // 构造：用 mkcase 生成的用例先删掉全部 checkpoint 事件再 verify。
+    // （实现时若更方便，也可以直接建一个只有 run.created 的最小 Log。）
+    // 断言：退出码非 0，stderr 含 "VACUOUS"。
+}
+
+#[test]
 fn replay_verify_needs_at_least_one_path() {
     let out = bin().args(["replay", "--verify"]).output().unwrap();
     assert!(!out.status.success());
@@ -6049,6 +6058,15 @@ fn main() -> ExitCode {
                 for run_id in run_ids {
                     if do_verify {
                         match verify(&log, &run_id) {
+                            // 「一个 checkpoint 都没检查到」不是通过。把它显示成
+                            // 绿色的 OK，等于让 CI 每次都打印一行骗人的绿字。
+                            Ok(report) if report.is_vacuous() => {
+                                failed = true;
+                                eprintln!(
+                                    "VACUOUS {} {run_id}  Log 里没有 checkpoint，什么都没验到",
+                                    path.display()
+                                );
+                            }
                             Ok(report) if report.is_ok() => println!(
                                 "OK   {} {run_id}  checkpoints={} final={}",
                                 path.display(),
@@ -6254,6 +6272,8 @@ for case_dir in eval/cases/*/; do
   ./target/debug/mkcase "$case_dir"
 done
 
+# evo-cli 对「Log 里没有 checkpoint」会打印 VACUOUS 并以非 0 退出——
+# 一条什么都没验到的用例不该让 CI 变绿。
 echo "== 回放自校验（带快照）=="
 ./target/debug/evo-cli replay --verify eval/cases/*/runlog.sqlite
 
