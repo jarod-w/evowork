@@ -1,0 +1,4 @@
+cases/*/runlog.sqlite
+cases/*/runlog.sqlite-*
+cases/*/blobs/
+cases/*/workspaces/

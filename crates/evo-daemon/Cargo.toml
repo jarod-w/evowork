@@ -1,0 +1,29 @@
+[package]
+name = "evo-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+evo-protocol = { workspace = true }
+evo-kernel = { workspace = true }
+evo-runlog = { workspace = true }
+evo-context = { workspace = true }
+evo-policy = { workspace = true }
+evo-gateway = { workspace = true }
+evo-exec = { workspace = true }
+evo-exec-local = { workspace = true }
+evo-model = { workspace = true }
+serde_json = { workspace = true }
+ciborium = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+rusqlite = { workspace = true }

@@ -1,0 +1,28 @@
+# POC 期策略。02 §6 的高危分级口径待客户确认（Q-08），此处是占位的最小集合。
+#
+# 规则求值顺序：从上到下，先命中先赢，命中即返回，后面的规则不再看。
+# 每条规则的 class / tool / reversible 三个条件字段是 AND 关系；省略某个字段
+# 等于该字段不约束（不参与匹配判断）。因此一条把 class / tool / reversible
+# 全部省略的规则会匹配任何请求——这是有意支持的用法，用来在规则列表末尾写
+# 「以上都不是则如何处理」这类兜底规则（例如「其余全部拒绝」）。
+# 但同样因为先命中先赢，这种无条件规则如果被放在列表中间，会让排在它后面的
+# 所有规则永远失效，因此只应该放在最后。
+version = "poc-1"
+
+[[rule]]
+id = "read-is-free"
+class = "read"
+decision = "allow"
+
+[[rule]]
+id = "external-needs-approval"
+class = "external"
+decision = "require_approval"
+risk = "l3"
+
+[[rule]]
+id = "irreversible-write-needs-approval"
+class = "write"
+reversible = false
+decision = "require_approval"
+risk = "l2"

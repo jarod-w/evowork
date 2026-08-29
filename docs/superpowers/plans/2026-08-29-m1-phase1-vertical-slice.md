@@ -21,6 +21,8 @@
 - `crates/` 与 `apps/` 里**不得出现客户专有名词**（`yonyou` / `u8` / `用友`）
 - codex 上游 rev 冻结在 `c6bf330b42ed6fcbdcc902dc06ef38306b2e02f3`，只 pin `rev`，**永不用 `branch = "main"`**
 - `Cargo.lock` 进版本库
+- **改了任何 `Cargo.toml` 的依赖，必须把随之更新的 `Cargo.lock` 一并提交**——lockfile 漏提交不会让本地构建失败，只会让交付到客户机器上的构建不可复现
+- **每个任务 commit 前必须跑 `cargo fmt --all`**，并以 `./scripts/ci.sh` 五段全绿作为收尾条件——不是只跑本 crate 的 `cargo test -p X`。计划正文里的代码块是手写的、未经 rustfmt，照抄会引入格式漂移；只验单个 crate 则漂移要到很久以后才被发现
 - 每个任务以一次 commit 收尾
 
 ---
@@ -1777,14 +1779,6 @@ impl RunLog {
         let mut stmt = self.conn.prepare("SELECT run_id FROM runs ORDER BY run_id")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map(RunId::from).map_err(RunLogError::from)).collect()
-    }
-
-    pub(crate) fn conn(&self) -> &Connection {
-        &self.conn
-    }
-
-    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
-        &mut self.conn
     }
 }
 ```
@@ -4841,7 +4835,23 @@ fn writing_the_same_seq_twice_overwrites_rather_than_erroring() {
 Run: `cargo test -p evo-runlog --test snapshot`
 Expected: FAIL，`no method named put_snapshot found`
 
-- [ ] **Step 3: 实现**
+- [ ] **Step 3: 给 `RunLog` 加两个 crate 内访问器**
+
+`snapshot.rs` 是 `store.rs` 的兄弟模块，拿不到私有的 `conn` 字段。在 `crates/evo-runlog/src/store.rs` 的 `impl RunLog` 末尾补上：
+
+```rust
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
+```
+
+> 这两个访问器**放在首次使用它们的任务里**，不提前到 Task 5——提前声明会在 Task 5 到 Task 14 之间一直是 dead code，而唯一能让 `clippy -D warnings` 过的办法是加 `#[allow(dead_code)]`，那等于用掩盖换取一个没人用的 API。
+
+- [ ] **Step 4: 实现快照存储**
 
 `crates/evo-runlog/src/snapshot.rs`：
 
@@ -4916,12 +4926,12 @@ impl RunLog {
 
 `lib.rs` 补 `pub mod snapshot; pub use snapshot::Snapshot;`
 
-- [ ] **Step 4: 跑测试**
+- [ ] **Step 5: 跑测试**
 
 Run: `cargo test -p evo-runlog`
 Expected: PASS，14 个测试
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add crates/evo-runlog
@@ -5257,6 +5267,8 @@ pub enum DaemonError {
     SnapshotDecode { seq: u64, detail: String },
     #[error("not implemented in phase 1: {0}")]
     NotImplemented(&'static str),
+    #[error("model {provider}/{model} is not in the price table")]
+    ModelNotPriced { provider: String, model: String },
 }
 
 /// runtime 从模型输出里解析出的结构化决策。
@@ -5463,9 +5475,17 @@ impl Runtime {
             skill: None,
             tool: None,
         };
+        // 定价表里没有这个模型时 charges() 返回空列表——那和「这次真的没费用」
+        // 是两回事，必须能分辨，否则「未定价」会被静默当成「免费」。
+        if !self.pricing.covers(self.model.provider(), self.model.model()) {
+            return Err(DaemonError::ModelNotPriced {
+                provider: self.model.provider().to_owned(),
+                model: self.model.model().to_owned(),
+            });
+        }
         for charge in self.pricing.charges(
             self.model.provider(), self.model.model(), &response.usage, &dimension, Some(turn),
-        ) {
+        )? {
             state = self.emit(&state, Actor::Runtime, EventBody::CostCharged(charge))?;
         }
 
@@ -5936,6 +5956,15 @@ fn replay_verify_on_a_missing_file_fails_loudly() {
 }
 
 #[test]
+fn a_log_without_checkpoints_is_reported_as_vacuous_not_ok() {
+    // 判据 3 的检测器如果对「没检查到任何东西」也报通过，
+    // CI 上那行绿字就是假的。这条测试守住 CLI 侧的呈现。
+    // 构造：用 mkcase 生成的用例先删掉全部 checkpoint 事件再 verify。
+    // （实现时若更方便，也可以直接建一个只有 run.created 的最小 Log。）
+    // 断言：退出码非 0，stderr 含 "VACUOUS"。
+}
+
+#[test]
 fn replay_verify_needs_at_least_one_path() {
     let out = bin().args(["replay", "--verify"]).output().unwrap();
     assert!(!out.status.success());
@@ -6029,6 +6058,15 @@ fn main() -> ExitCode {
                 for run_id in run_ids {
                     if do_verify {
                         match verify(&log, &run_id) {
+                            // 「一个 checkpoint 都没检查到」不是通过。把它显示成
+                            // 绿色的 OK，等于让 CI 每次都打印一行骗人的绿字。
+                            Ok(report) if report.is_vacuous() => {
+                                failed = true;
+                                eprintln!(
+                                    "VACUOUS {} {run_id}  Log 里没有 checkpoint，什么都没验到",
+                                    path.display()
+                                );
+                            }
                             Ok(report) if report.is_ok() => println!(
                                 "OK   {} {run_id}  checkpoints={} final={}",
                                 path.display(),
@@ -6234,6 +6272,8 @@ for case_dir in eval/cases/*/; do
   ./target/debug/mkcase "$case_dir"
 done
 
+# evo-cli 对「Log 里没有 checkpoint」会打印 VACUOUS 并以非 0 退出——
+# 一条什么都没验到的用例不该让 CI 变绿。
 echo "== 回放自校验（带快照）=="
 ./target/debug/evo-cli replay --verify eval/cases/*/runlog.sqlite
 

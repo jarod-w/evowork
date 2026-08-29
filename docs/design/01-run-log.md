@@ -101,6 +101,10 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
 
 24 个事件。标 `[P2]` 的是留位，POC 不产生但字段必须在。
 
+> 本节逐条列举为准。`intent.declared` 是 M1 实现时补入的第 25 条——原目录漏了它，但
+> [06 §2](06-protocol.md) 的事件流示例用了它，[03 §3](03-kernel.md) 的 `RunState.intent`
+> 也依赖它。定义见 `crates/evo-protocol/src/events/lifecycle.rs` 的 `IntentDeclared`。
+
 ### 4.1 生命周期
 
 ```ts
@@ -110,6 +114,10 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
   trigger: { kind: "manual"|"schedule"|"webhook"|"file"|"condition", ref: string },
   budget: BudgetSpec,                      // token / 时长 / 金额 / 并发 / 递归深度
   labels: Record<string,string> }
+
+// kind: "intent.declared"    // M1 实现补入，见本节开头的说明
+{ intent_ref: BlobRef,        // 原文进 blob，事件里只留长度、语言与引用
+  char_len: number, lang: string, source: string }
 
 // kind: "run.suspended"  { reason: "awaiting_approval"|"awaiting_human"|"budget_exhausted"|"paused", detail_ref? }
 // kind: "run.resumed"    { by: ActorRef, from_seq: number }
@@ -152,11 +160,20 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
 
 // kind: "plan.step"          // runtime 从 model.responded 解析出的结构化决策
 { turn, intent: "tool_call"|"clarify"|"finish", rationale_ref?: BlobRef,
-  taint_inherited: "clean"|"tainted" }
+  taint_inherited: "clean"|"tainted",
+  call?: { tool: ToolId, params_ref: BlobRef, params_digest: string } }
 
 // kind: "context.compacted"  // 压缩是新事件，不改旧事件
 { from_seq, to_seq, summary_ref: BlobRef, summary_cite_id }
 ```
+
+> `call` 是 `plan.step` 的 optional 新增字段（`schema_ver` 不升，符合第三节的变更规则，
+> 见 [00 §3](00-index.md#三开发约定五条不可议价) 的「首次演练」记录）。它存在的原因是内核要发
+> `RequestEffect`，而 `class` / `targets` / `egress` 来自工具 manifest——**内核看不到
+> manifest**。因此 `plan.step` 只带工具名与参数引用，其余字段由 Gateway 在
+> `tool.requested` 时从 manifest 补全。这与 [02 §1](02-effect-gateway.md)「由工具
+> manifest 静态推导」不冲突，只是把「谁来推导」写明确了。实际类型见
+> `crates/evo-protocol/src/events/model.rs` 的 `PlanStep` / `PlannedCall`。
 
 ### 4.4 副作用（详见 [02](02-effect-gateway.md)）
 
@@ -216,11 +233,22 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
 // kind: "clarification.answered"  { by: ActorRef, option_id?, free_text_ref? }
 ```
 
-**`cost.charged` 的三个细节，每一个都是后补要命的：**
+> `checkpoint.snapshot_ref` 类型是 `Option<String>`，**不是** `BlobRef`。快照走的是
+> `evo-runlog` 里独立的 `snapshots` 表（SQLite 内联存储，见 `crates/evo-runlog/src/schema.rs`
+> 与 `snapshot.rs`），不进 blob store——blob store 是给「原文」用的 content-addressed 文件，
+> 快照是「状态」，读写路径与保留策略都不一样。将来若要统一，得先想清楚快照的 GC 策略
+> 是不是也要跟着 blob 的 `retain_until` 走；不要顺手把它改成 `BlobRef`。
+
+**`cost.charged` 的四个细节，每一个都是后补要命的：**
 
 1. **金额算在我们这边。** 4.11② 实测确认 codex 的 `TokenUsage` 只有 token 数，金额来自 OpenAI 后端。换任何供应商都拿不到——所以定价表必须是产品自己的一张表，且版本化。
 2. **micros 整数，不用浮点。** 财务客户，账要对得上。
 3. **四维归因从第一天就带**，POC 只用得上 `principal` 与 `run_id`，另两维留空但字段在。
+4. **`currency` 序列化为大写 `"CNY"` / `"USD"`，不是 `"cny"` / `"usd"`。** 这与本文
+   其他枚举的 snake_case 风格不一致，是**有意的**——ISO 4217 标准货币代码本就大写，
+   契约文档里写的也是大写代码。`Currency` 定义（`crates/evo-protocol/src/events/accounting.rs`）
+   刻意不加 `rename_all`；不要为了风格统一给它加 `rename_all = "lowercase"`，那会让
+   已经落盘的历史账目解不开。
 
 ---
 

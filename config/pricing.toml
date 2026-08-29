@@ -1,0 +1,12 @@
+# POC 期定价表。Q-05（对客户呈现的口径与汇率来源）未定，此处记原币，折算放查询层。
+
+version = "poc-1"
+currency = "CNY"
+
+[[model]]
+provider = "fixture"
+model = "fixture-v1"
+input_micros_per_token = 1
+output_micros_per_token = 2
+cache_read_micros_per_token = 0
+cache_write_micros_per_token = 0

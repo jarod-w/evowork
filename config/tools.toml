@@ -1,0 +1,14 @@
+# 内置工具 manifest。与代码同仓，编译期校验（02 §4）。
+# 未在此列出的工具按最严处理：External + 不可逆 + 需审批。
+
+[[method]]
+name = "fs.write"
+class = "write"
+reversible = true
+targets = [{ from_param = "/path", kind = "file", op = "update" }]
+
+[[method]]
+name = "fs.read"
+class = "read"
+reversible = true
+targets = [{ from_param = "/path", kind = "file", op = "read" }]

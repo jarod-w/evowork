@@ -1,0 +1,17 @@
+[package]
+name = "evo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+evo-daemon = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+evo-protocol = { workspace = true }

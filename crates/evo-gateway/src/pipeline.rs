@@ -1,0 +1,392 @@
+use crate::impact::estimate;
+use crate::manifest::ManifestRegistry;
+use evo_policy::{PolicyContext, PolicyDecision, PolicyHook, RiskLevel};
+use evo_protocol::EventBody;
+use evo_protocol::effect::{CapabilityToken, EffectClass, EffectRequest};
+use evo_protocol::events::effect::{
+    ExecutionMode, PolicyDecisionKind, PolicyEvaluated, ToolRequested, ToolResult, ToolResultStatus,
+};
+use evo_protocol::events::model::PlannedCall;
+use evo_protocol::ids::{CiteId, EffectId, RunId};
+use evo_protocol::taint::TaintLevel;
+
+pub struct AdmitRequest {
+    pub effect_id: EffectId,
+    pub run_id: RunId,
+    pub turn: u32,
+    pub call: PlannedCall,
+    /// 参数正文。daemon 从 blob 取出后传进来。
+    pub params: serde_json::Value,
+    pub taint: TaintLevel,
+    pub cites_referenced: Vec<CiteId>,
+    pub capability: CapabilityToken,
+    pub mode: ExecutionMode,
+}
+
+pub enum GatewayAction {
+    Dispatch(EffectRequest),
+    DryRun {
+        request: EffectRequest,
+    },
+    Deny {
+        reason_code: String,
+    },
+    AwaitApproval {
+        risk: RiskLevel,
+        request: EffectRequest,
+    },
+}
+
+/// Gateway 的产出：要追加哪些事件，以及接下来做什么。
+///
+/// **Gateway 不写 Log**——由 daemon 落盘。这是「只有 evo-daemon 写 Run Log」
+/// 在类型上的形态。
+pub struct GatewayVerdict {
+    pub events: Vec<EventBody>,
+    pub action: GatewayAction,
+}
+
+/// 把策略判定收紧到「至少 floor 这一档」。
+///
+/// **这是整个 Gateway 里唯一允许改变策略判定的地方。** 闸门只能收紧、
+/// 绝不能放宽——`Deny` 原样返回，`Allow` 提升为 `RequireApproval{floor}`，
+/// 已经是 `RequireApproval` 的取 `max(原 risk, floor)`。
+///
+/// 抽成独立函数是有原因的：这条不变量在本组件上破过三次（闸门不存在、
+/// 闸门无条件覆盖 Deny、闸门硬编码 risk 导致降级）。把它收进一个函数后，
+/// 新增的第三个闸门只要复用它就自动获得这条不变量，调用方写不出「放宽」。
+fn tighten(decision: PolicyDecision, floor: RiskLevel) -> PolicyDecision {
+    match decision {
+        PolicyDecision::Deny { reason_code } => PolicyDecision::Deny { reason_code },
+        PolicyDecision::Allow => PolicyDecision::RequireApproval { risk: floor },
+        PolicyDecision::RequireApproval { risk } => PolicyDecision::RequireApproval {
+            risk: risk.max(floor),
+        },
+    }
+}
+
+pub struct Gateway {
+    policy: Box<dyn PolicyHook>,
+    manifests: ManifestRegistry,
+}
+
+impl Gateway {
+    pub fn new(policy: Box<dyn PolicyHook>, manifests: ManifestRegistry) -> Self {
+        Self { policy, manifests }
+    }
+
+    /// 六步管线。每一步产出一个事件——**「Gateway 做了什么」本身可回放、可举证**，
+    /// 而不是一堆日志行。每一步失败也要先写事件再返回。
+    pub fn admit(&self, req: AdmitRequest) -> GatewayVerdict {
+        let mut events = Vec::new();
+
+        // 无 manifest 即最严
+        let (manifest, manifest_missing) = match self.manifests.get(&req.call.tool) {
+            Some(m) => (m.clone(), false),
+            None => (ManifestRegistry::strictest_default(&req.call.tool), true),
+        };
+
+        let targets: Vec<_> = manifest
+            .targets
+            .iter()
+            .filter_map(|t| t.resolve(&req.params))
+            .map(|(r, _)| r)
+            .collect();
+
+        let request = EffectRequest {
+            effect_id: req.effect_id.clone(),
+            run_id: req.run_id.clone(),
+            turn: req.turn,
+            tool: req.call.tool.clone(),
+            params_ref: req.call.params_ref.clone(),
+            params_digest: req.call.params_digest.clone(),
+            class: manifest.class,
+            targets: targets.clone(),
+            egress: manifest.egress.clone(),
+            reversible: manifest.reversible,
+            taint: req.taint,
+            cites_referenced: req.cites_referenced.clone(),
+            capability: req.capability.clone(),
+        };
+
+        events.push(EventBody::ToolRequested(ToolRequested {
+            effect_id: request.effect_id.clone(),
+            turn: request.turn,
+            tool: request.tool.clone(),
+            params_ref: request.params_ref.clone(),
+            params_digest: request.params_digest.clone(),
+            class: request.class,
+            declared_targets: request.targets.clone(),
+            declared_egress: request.egress.clone(),
+            reversible: request.reversible,
+            cites_referenced: request.cites_referenced.clone(),
+        }));
+
+        let push_policy = |events: &mut Vec<EventBody>, decision, rules, reason: &str| {
+            events.push(EventBody::PolicyEvaluated(PolicyEvaluated {
+                effect_id: req.effect_id.clone(),
+                decision,
+                rules_hit: rules,
+                policy_ver: self.policy.version().to_owned(),
+                reason_code: reason.to_owned(),
+            }));
+        };
+
+        // ① 身份解析 + ② 能力校验：权限只能收窄
+        if !req.capability.allows(&request.tool) {
+            push_policy(
+                &mut events,
+                PolicyDecisionKind::Deny,
+                Vec::new(),
+                "capability_scope",
+            );
+            return GatewayVerdict {
+                events,
+                action: GatewayAction::Deny {
+                    reason_code: "capability_scope".to_owned(),
+                },
+            };
+        }
+
+        // ③ 污点检查 —— **在 ④ 之前，且不可被策略放行**
+        let taint_gate = req.taint == TaintLevel::Tainted && request.class != EffectClass::Read;
+
+        // ④ 策略求值
+        let ctx = PolicyContext {
+            tool: request.tool.clone(),
+            class: request.class,
+            taint: req.taint,
+            targets,
+            reversible: request.reversible,
+        };
+        let (policy_decision, rules_hit) = self.policy.evaluate_with_trace(&ctx);
+
+        // 结构性闸门：manifest 缺失 / 污点未清，都只能把策略判定收紧
+        // （交给 `tighten` 去做），不能把 Deny 放宽——闸门是拿来加严的，
+        // 不是拿来盖过拒绝的。`tighten` 对 Deny 原样返回，所以无论
+        // manifest_missing / taint_gate 是否为真，Deny 都不会被两个闸门
+        // 改动；只有 Allow（或策略本身已经给出的 RequireApproval）才可能
+        // 被进一步收紧。
+        //
+        // manifest 闸门优先于污点闸门判断：两者都命中时，reason_code 报
+        // "no_manifest"——manifest 缺失意味着我们连这个工具的
+        // class / reversible / targets 都是猜的最严默认值，这比"工具形状
+        // 已知、只是这次调用摸到了污点数据"更从根上不可信，优先暴露这个
+        // 更严重的理由。manifest 闸门的下限是全局最高档 L3，天然不低于
+        // 污点闸门的 L2，所以两者都命中时，即使只跑 manifest 闸门也不会漏
+        // 收紧污点闸门本该收紧的部分。
+        //
+        // 污点闸门用 `tighten(.., L2)`：只保证「至少 L2」，绝不能把策略
+        // 已经判到 L3 的调用压回 L2。之前的写法是硬编码 L2，等于把 policy
+        // 判过的更高档位悄悄降级，是这轮 re-review 修的缺陷。
+        let (decision, reason) = if manifest_missing {
+            (tighten(policy_decision, RiskLevel::L3), "no_manifest")
+        } else if taint_gate {
+            (tighten(policy_decision, RiskLevel::L2), "taint_gate")
+        } else {
+            (policy_decision, "policy")
+        };
+
+        match &decision {
+            PolicyDecision::Deny { reason_code } => {
+                push_policy(
+                    &mut events,
+                    PolicyDecisionKind::Deny,
+                    rules_hit,
+                    reason_code,
+                );
+                return GatewayVerdict {
+                    events,
+                    action: GatewayAction::Deny {
+                        reason_code: reason_code.clone(),
+                    },
+                };
+            }
+            PolicyDecision::RequireApproval { .. } => {
+                push_policy(
+                    &mut events,
+                    PolicyDecisionKind::RequireApproval,
+                    rules_hit,
+                    reason,
+                );
+            }
+            PolicyDecision::Allow => {
+                push_policy(&mut events, PolicyDecisionKind::Allow, rules_hit, reason);
+            }
+        }
+
+        // ⑥ 影响预估 —— **无条件执行，不只在 dry-run 时执行**
+        events.push(EventBody::ImpactEstimated(estimate(
+            &req.effect_id,
+            &manifest,
+            &req.params,
+        )));
+
+        if let PolicyDecision::RequireApproval { risk } = decision {
+            return GatewayVerdict {
+                events,
+                action: GatewayAction::AwaitApproval { risk, request },
+            };
+        }
+
+        // dry-run：Write / External 降级为 record-only，Read / Compute 照常执行
+        if req.mode == ExecutionMode::DryRun && request.class.suppressed_in_dry_run() {
+            events.push(EventBody::ToolResult(ToolResult {
+                effect_id: req.effect_id.clone(),
+                status: ToolResultStatus::DryRun,
+                output_ref: None,
+                bytes: None,
+                taint: TaintLevel::Clean,
+                cites_produced: Vec::new(),
+                actual_targets: Vec::new(),
+                actual_egress: Vec::new(),
+            }));
+            return GatewayVerdict {
+                events,
+                action: GatewayAction::DryRun { request },
+            };
+        }
+
+        GatewayVerdict {
+            events,
+            action: GatewayAction::Dispatch(request),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tighten_tests {
+    // `tighten` 的穷举单元测试：Deny / Allow / RequireApproval{L1,L2,L3} ×
+    // floor ∈ {L2, L3}，共 10 格全部断言。这比在集成测试里手工搭一整套
+    // Gateway/Policy/Manifest 才能验证一次闸门行为要小、要快、覆盖还更全——
+    // 集成测试（tests/pipeline.rs）验证的是闸门在真实管线里的接线，两者是
+    // 不同层次，都要留着，谁也不能替代谁。
+    use super::tighten;
+    use evo_policy::{PolicyDecision, RiskLevel};
+
+    fn deny() -> PolicyDecision {
+        PolicyDecision::Deny {
+            reason_code: "some_rule".to_owned(),
+        }
+    }
+
+    #[test]
+    fn deny_stays_deny_under_l2_floor() {
+        assert_eq!(tighten(deny(), RiskLevel::L2), deny());
+    }
+
+    #[test]
+    fn deny_stays_deny_under_l3_floor() {
+        assert_eq!(tighten(deny(), RiskLevel::L3), deny());
+    }
+
+    #[test]
+    fn allow_becomes_require_approval_at_l2_floor() {
+        assert_eq!(
+            tighten(PolicyDecision::Allow, RiskLevel::L2),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L2
+            }
+        );
+    }
+
+    #[test]
+    fn allow_becomes_require_approval_at_l3_floor() {
+        assert_eq!(
+            tighten(PolicyDecision::Allow, RiskLevel::L3),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l1_is_lifted_to_l2_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L1
+                },
+                RiskLevel::L2
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L2
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l1_is_lifted_to_l3_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L1
+                },
+                RiskLevel::L3
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l2_stays_l2_under_l2_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L2
+                },
+                RiskLevel::L2
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L2
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l2_is_lifted_to_l3_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L2
+                },
+                RiskLevel::L3
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l3_never_downgraded_by_l2_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L3
+                },
+                RiskLevel::L2
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+
+    #[test]
+    fn require_approval_l3_stays_l3_under_l3_floor() {
+        assert_eq!(
+            tighten(
+                PolicyDecision::RequireApproval {
+                    risk: RiskLevel::L3
+                },
+                RiskLevel::L3
+            ),
+            PolicyDecision::RequireApproval {
+                risk: RiskLevel::L3
+            }
+        );
+    }
+}

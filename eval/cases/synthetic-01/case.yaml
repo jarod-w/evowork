@@ -1,0 +1,21 @@
+# 阶段 1 的合成用例。目的只有一个：让回放自校验在有真实用例之前就跑起来。
+# 真实冻结用例（含 truth/ 与 rules.lock）是 M2 的事（07）。
+id: synthetic-01
+description: 一条两 turn 的 run，第一 turn 调 fs.write，第二 turn 结束
+run_id: r-synthetic-01
+intent: 把账龄表做出来
+clock_start_ms: 1756461600000
+fixtures: fixtures.json
+expect:
+  # 实跑出来的最终状态是 turn=1（0-indexed：env.sampled(0) -> tool_call ->
+  # env.sampled(1) -> finish，effect 结算后进入 turn 1，随即 Complete，turn
+  # 不再推进）。这里原来写的是 2，从来没有代码读过这个块，所以从没被
+  # 拆穿——eval/run.sh 现在真的读它、断言它，参见该脚本。
+  turns: 1
+  checkpoints_at_least: 1
+  # 三条独立的回放路径（--verify 全量 fold、走快照的 replay、删光快照后
+  # 退回全量 fold 的 replay）算出的最终状态哈希必须两两相同，且必须等于
+  # 这个钉住的值——eval/run.sh 逐条比对。last_seq=22。
+  final_state_hash: 77401e44720125247809a2b3960a540e14174b7974cab93e0dcc2cd4777eab60
+  artifacts:
+    - report.txt
