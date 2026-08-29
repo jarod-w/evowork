@@ -129,7 +129,9 @@ run.fork（06 §3）从冻结快照重跑，只换 provider
 
 选一海外一国内的理由是「能力与计费差异越大，抽象越经得起用」（第六节）。但 **DeepSeek 的 API 基本是 OpenAI Chat Completions 兼容的**——如果 GPT 那一侧也走 Chat Completions，两个 adapter 会长得几乎一样，抽象等于没被压过。
 
-**建议：GPT 侧走 Responses API，DeepSeek 侧走 Chat Completions。** 让两个 adapter 在 wire 形态上真的不同，抽象才被验到。成本是多花半天，收益是真的知道抽象漏没漏。
+**已定（Q-01d）：GPT 侧走 Responses API，DeepSeek 侧走 Chat Completions。** 让两个 adapter 在 wire 形态上真的不同，抽象才被验到。成本是多花半天，收益是真的知道抽象漏没漏。
+
+随之而来的一条实现约束：`ModelRequest` / `ModelResponse` **不得长成任何一方 wire 格式的镜像**。两侧都要做真实的形变（Responses 的 `input`/`output` 项 vs Chat Completions 的 `messages`/`choices`），谁都不许在 adapter 里直接透传。透传是抽象没做的信号。
 
 > 顺带一提，[08 §5](08-codex-integration.md) 实测过 codex 的 `WireApi` 现在只剩 `Responses` 一个变体——那是他们收窄接口的结果，恰好说明这两种 wire 形态在真实世界里是会分道扬镳的，不是同一件事的两种写法。
 
@@ -155,4 +157,4 @@ run.fork（06 §3）从冻结快照重跑，只换 provider
 | Q-01f | 协议里的**日志留存期与访问控制**条款 | 客户 | 「不做训练」通常不覆盖服务端日志留存。合规审计时会被问，值得核一眼——不阻塞开发 |
 | Q-05 | 成本对客户呈现口径与汇率来源 | 客户 | M3 |
 | ~~Q-01c~~ | ~~M1 接哪两家~~ | — | **已定：DeepSeek + GPT** |
-| Q-01d | GPT 侧走 Responses 还是 Chat Completions | 团队 | **Responses**，否则两个 adapter 太像，抽象验不到 |
+| ~~Q-01d~~ | ~~GPT 侧走 Responses 还是 Chat Completions~~ | — | **已定：Responses**，见第五节 |

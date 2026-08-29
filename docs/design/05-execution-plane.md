@@ -50,7 +50,9 @@ POC 期只有一种实现（`LocalSandboxExecutor`），且与 daemon 同进程�
 
 ## 三、沙箱
 
-POC 期 daemon 定在 macOS（4.8），沙箱用 `sandbox-exec`（seatbelt），实现复用 codex 的 seatbelt 子集（[08 §3](08-codex-integration.md)）。
+**Q-21 已定：常开机器为 macOS。** 沙箱用 `sandbox-exec`（seatbelt），实现复用 codex 的 seatbelt 子集（[08 §3](08-codex-integration.md)）。
+
+这条落定同时消掉两件事：POC 文档 4.8 那条「退回 Windows daemon」的排期风险不再需要预留，[08 §3](08-codex-integration.md) 选 vendor macOS 子集的路径也随之确定成立——不必再为 `codex-windows-sandbox` 留后路。
 
 | 维度 | POC 期策略 |
 |---|---|
@@ -87,7 +89,7 @@ POC 期 daemon 定在 macOS（4.8），沙箱用 `sandbox-exec`（seatbelt），
 | 目的地 | 用途 | 备注 |
 |---|---|---|
 | **DeepSeek API** | 唯一的模型出口 | Q-01b 已定。**GPT 是开发期供应商，不进交付形态的 allowlist**（[09 §5](09-model-plane.md)） |
-| 用友服务器（内网 IP/域名） | 取数 | 内网，不出客户网络 |
+| 用友服务器（内网 IP/域名） | 取数，**HTTP API**（Q-24） | 内网，不出客户网络；与其他两条走同一个 proxy |
 | 企业微信群机器人 webhook | 内部推送与审批（4.9） | **公网**，但只发通知文本 |
 | 其余 | **全部拒绝** | 包括 pypi / npm（见第三节）、以及**任何第二个模型域名** |
 
@@ -95,7 +97,9 @@ POC 期 daemon 定在 macOS（4.8），沙箱用 `sandbox-exec`（seatbelt），
 
 演示时刻 1 就是把这张表打印出来，加上出口日志：**只有模型 API 一条，财务明细一条没出内网。** **Q-17 / Q-21**
 
-> **Q-21 的后半句常被忽略**：客户内网的常开机器往往默认没有公网出口。模型 API 与企业微信 webhook 都需要公网——这件事要在 M1 就跟客户 IT 确认，不要拖到 M3 彩排。
+> **Q-21 已定：该机器可访问公网模型 API。** 于是 DeepSeek 与企业微信 webhook 两条路都通。
+>
+> 这让演示时刻 1 的性质变得更好，而不是更弱：**出口是被我们的 proxy 拒掉的，不是被网络环境拒掉的。** 机器本身能上公网，却只有 allowlist 里那几条走得通——可以当场往 allowlist 里加一条再删掉，让客户看见管控是活的。靠「机器本来就没网」演出来的「数据没走」，客户回去自己装一台能上网的机器就复现不了了。
 
 ### 记账粒度
 
@@ -121,7 +125,11 @@ MCP server 是**独立进程**（4.1：用友接入 = 一个 MCP Server 进程�
 | 调用 | 每次 MCP tool call 是一个 effect，走 Gateway 六步 |
 | manifest | 由 daemon 侧的 `mcp-manifest.toml` 补齐（[02 §4](02-effect-gateway.md)） |
 
-代价是数据库直连协议（若 Q-24 走直连而非 HTTP API）不走 HTTP proxy，SOCKS5 可以覆盖一部分，但不是全部。**这一条要在 M1 就试通，不能假设**。**Q-19 / Q-24**
+**Q-19 已定：按上表处理，MCP server 与其他被执行的东西同等对待。**
+
+**Q-24 已定为走 HTTP API，这个洞随之关上了。** 原本的担心是数据库直连不走 HTTP proxy、SOCKS5 只能覆盖一部分——走 API 之后，用友取数与模型调用、企业微信推送是同一条路径：注入 `HTTP(S)_PROXY`，allowlist 匹配，全量记账。**「所有出口只有 proxy 一个」这句话因此没有缺口**，M1 不再需要为此留验证任务。
+
+> 若将来某个客户只能走库直连，退路仍然在（把该 MCP server 放进沙箱自己的网络命名空间，或接受只记账不代理并在出口清单里显式标注）——但那是换客户时的事，不进 POC 排期。
 
 ---
 
@@ -141,6 +149,6 @@ MCP server 是**独立进程**（4.1：用友接入 = 一个 MCP Server 进程�
 |:-:|---|:---:|
 | Q-17 | 出口白名单初版清单，除三项外还有没有 | 客户 |
 | Q-18 | 托管运行时能否接受「预装依赖、不开 pypi/npm 出口」 | 客户 |
-| Q-19 | MCP server 子进程的沙箱与出口路径（尤其数据库直连时） | 团队，**M1 内试通** |
-| Q-21 | 常开机器最终平台；**该机器能否访问 `api.deepseek.com` 与企业微信 webhook** | 客户 |
-| Q-20a | `codex-sandboxing` 的取舍，见 [08 §3](08-codex-integration.md) | 团队 |
+| ~~Q-19~~ | ~~MCP server 子进程的沙箱与出口路径~~ | — **已定：同等对待**。Q-24 走 API，出口完全被 proxy 覆盖，无遗留验证项 |
+| ~~Q-21~~ | ~~常开机器平台与公网可达性~~ | — **已定：macOS，可访问公网模型 API** |
+| ~~Q-20a~~ | ~~`codex-sandboxing` 的取舍~~ | — **已定：vendor macOS 子集**，见 [08 §3](08-codex-integration.md) |

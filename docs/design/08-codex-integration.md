@@ -88,7 +88,7 @@ codex-sandboxing → codex-windows-sandbox → codex-otel → opentelemetry-otlp
 | B | **受控 vendor macOS 子集** | 约 2 人日 | 干净 | 需要一套同步纪律，见下 |
 | C | 自己写 `sandbox-exec` 包装 | 3–5 人日 | 最干净 | seatbelt 策略写错不会报错，只会静默放行——这正是最贵最容易做错的一块 |
 
-**建议 B。** macOS 那部分的边界很清楚：
+**已定：B。** macOS 那部分的边界很清楚：
 
 ```
 seatbelt.rs            1,043 行   ┐
@@ -117,7 +117,7 @@ POC 文档 4.11⑤ 划的线是「crate 级依赖，不是 fork 级」。受控 
 
 第 4 条是这条路径与 fork 的分界线，排期紧张时最容易被越过——和 4.11⑤ 那句警告是同一条。
 
-> 退回 Windows daemon 时（4.8 的备选），再评估是否引入 `codex-windows-sandbox` 全套。届时 OTel 的问题要重新回答一次，但那时已有产品期的时间做干净处理。**Q-20a**
+> **Q-21 已定为 macOS**，「退回 Windows daemon」这条备选不在 POC 关键路径上，B 的成立不再有前提。将来产品期若要支持 Windows daemon，再评估是否引入 `codex-windows-sandbox` 全套——届时 OTel 的问题要重新回答一次，但那时有时间做干净处理。
 
 ---
 
@@ -160,9 +160,9 @@ POC 文档 4.11⑤ 划的线是「crate 级依赖，不是 fork 级」。受控 
 | # | 问题 | 谁定 | 建议 |
 |:-:|---|:---:|---|
 | Q-20 | ~~codex crate 能否 crate 级依赖~~ | — | **已实测：不在 crates.io，改用 pin rev 的 git 依赖** |
-| Q-20a | `codex-sandboxing` 取 A（全量依赖，带 OTel）还是 B（vendor macOS 子集） | 团队 | **B**。约 2 人日，换来干净的依赖树与可当场打印的安全评审材料 |
-| Q-20b | vendor 目录的同步纪律是否写进 CI | 团队 | 是。第三节第 4 条不进 CI 就一定会被越过 |
-| Q-20c | 上游 rev 在 POC 期是否冻结 | 团队 | 冻结。理由见第二节 |
+| ~~Q-20a~~ | ~~`codex-sandboxing` 取 A 还是 B~~ | — | **已定：B，vendor macOS 子集**。约 2 人日，换来干净的依赖树与可当场打印的安全评审材料 |
+| ~~Q-20b~~ | ~~vendor 同步纪律是否写进 CI~~ | — | **已定：是**（[00 §4](00-index.md) 检查 6） |
+| ~~Q-20c~~ | ~~上游 rev 在 POC 期是否冻结~~ | — | **已定：冻结**。理由见第二节 |
 
 ---
 
