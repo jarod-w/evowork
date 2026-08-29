@@ -157,3 +157,44 @@ fn unparseable_model_output_is_an_error_not_a_guess() {
     use evo_daemon::parse_plan;
     assert!(parse_plan("我觉得应该写个文件").is_err());
 }
+
+const TOOL_CALL_WITHOUT_A_TOOL_FIXTURES: &str = r#"{
+  "provider": "fixture",
+  "model": "fixture-v1",
+  "responses": [
+    { "text": "{\"intent\":\"tool_call\"}",
+      "usage": { "input": 10, "output": 5, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 1 }
+  ]
+}"#;
+
+#[tokio::test]
+async fn a_tool_call_without_a_tool_field_fails_the_run_not_completes_it() {
+    // decide() 的唯一一个产出 RunStatus::Failed 的分支：模型说要调工具
+    // （PlanIntent::ToolCall），但 runtime 解析不出合法的 call。此前 daemon
+    // 在 Command::Complete 里无条件写 CompletionStatus::Ok，这个失败在 Log
+    // 里被悄悄记成了成功（Q-29）。
+    use evo_protocol::EventBody;
+    use evo_protocol::events::lifecycle::CompletionStatus;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = Runtime::new(
+        DaemonConfig::for_test(dir.path()),
+        Arc::new(FixedClock::new(1_756_461_600_000)),
+        Arc::new(FixtureAdapter::from_json_str(TOOL_CALL_WITHOUT_A_TOOL_FIXTURES).unwrap()),
+        Arc::new(LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()))),
+    )
+    .unwrap();
+    let run_id = RunId::from("r-1");
+    let state = rt.run_once(&run_id, "把账龄表做出来").await.unwrap();
+    assert_eq!(state.status, RunStatus::Failed);
+
+    let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
+    let events = log.events(&run_id, 0, None).unwrap();
+    let last = events.last().expect("Log 不应为空");
+    assert_eq!(last.body.kind(), "run.completed");
+    match &last.body {
+        EventBody::RunCompleted(rc) => assert_eq!(rc.status, CompletionStatus::Failed),
+        other => panic!("Log 末尾应为 run.completed，实得 {}", other.kind()),
+    }
+}

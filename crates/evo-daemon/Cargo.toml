@@ -17,12 +17,10 @@ evo-gateway = { workspace = true }
 evo-exec = { workspace = true }
 evo-exec-local = { workspace = true }
 evo-model = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 ciborium = { workspace = true }
 hex = { workspace = true }
 tokio = { workspace = true }
-async-trait = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

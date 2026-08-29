@@ -53,6 +53,12 @@ pub struct IntentDeclared {
 pub enum CompletionStatus {
     Ok,
     Partial,
+    /// 新增变体，additive（事件 schema 只增不改）。内核 `decide` 在
+    /// `PlanIntent::ToolCall` 但解析不出合法 `call` 时会产出
+    /// `RunStatus::Failed`；daemon 必须把这个状态原样写进 `run.completed`
+    /// 事件，而不是像此前那样一律写 `Ok`——否则失败的 run 在 Log 里被
+    /// 记成成功，回放也读不出真相。
+    Failed,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

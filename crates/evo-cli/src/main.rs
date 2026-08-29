@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
-use evo_daemon::{replay_to, verify};
-use evo_runlog::RunLog;
+use evo_daemon::RunOutcome;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -46,51 +45,45 @@ fn main() -> ExitCode {
                     .parent()
                     .unwrap_or(std::path::Path::new("."))
                     .join("blobs");
-                let mut log = match RunLog::open(path, &blob_root) {
-                    Ok(l) => l,
-                    Err(e) => {
-                        eprintln!("打不开 {}：{e}", path.display());
-                        failed = true;
-                        continue;
-                    }
-                };
-                if drop_snapshots {
-                    match log.clear_snapshots() {
-                        Ok(n) => println!("{}：删除 {n} 个快照", path.display()),
+
+                // evo-cli 自己不持有 RunLog——唯一允许打开它、读它、删它快照
+                // 的入口是 evo_daemon::cli_replay（见该函数的文档）。
+                let report =
+                    match evo_daemon::cli_replay(path, &blob_root, do_verify, drop_snapshots) {
+                        Ok(v) => v,
                         Err(e) => {
-                            eprintln!("{}：删快照失败 {e}", path.display());
+                            eprintln!("{}：{e}", path.display());
                             failed = true;
                             continue;
                         }
-                    }
+                    };
+                if drop_snapshots {
+                    println!(
+                        "{}：删除 {} 个快照",
+                        path.display(),
+                        report.dropped_snapshots
+                    );
                 }
-                let run_ids = match log.run_ids() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("{}：读 run 列表失败 {e}", path.display());
-                        failed = true;
-                        continue;
-                    }
-                };
-                for run_id in run_ids {
-                    if do_verify {
-                        match verify(&log, &run_id) {
+
+                for (run_id, outcome) in report.runs {
+                    match outcome {
+                        Ok(RunOutcome::Verified(report)) => {
                             // 「一个 checkpoint 都没检查到」不是通过。把它显示成
                             // 绿色的 OK，等于让 CI 每次都打印一行骗人的绿字。
-                            Ok(report) if report.is_vacuous() => {
+                            if report.is_vacuous() {
                                 failed = true;
                                 eprintln!(
                                     "VACUOUS {} {run_id}  Log 里没有 checkpoint，什么都没验到",
                                     path.display()
                                 );
-                            }
-                            Ok(report) if report.is_ok() => println!(
-                                "OK   {} {run_id}  checkpoints={} final={}",
-                                path.display(),
-                                report.checkpoints_checked,
-                                &report.final_state_hash[..16]
-                            ),
-                            Ok(report) => {
+                            } else if report.is_ok() {
+                                println!(
+                                    "OK verify path={} run={run_id} checkpoints={} final={}",
+                                    path.display(),
+                                    report.checkpoints_checked,
+                                    report.final_state_hash
+                                );
+                            } else {
                                 failed = true;
                                 for m in &report.mismatches {
                                     eprintln!(
@@ -102,24 +95,21 @@ fn main() -> ExitCode {
                                     );
                                 }
                             }
-                            Err(e) => {
-                                failed = true;
-                                eprintln!("FAIL {} {run_id}：{e}", path.display());
-                            }
                         }
-                    } else {
-                        match replay_to(&log, &run_id, None, !drop_snapshots) {
-                            Ok(state) => println!(
-                                "{} {run_id}  status={:?} turn={} last_seq={}",
-                                path.display(),
-                                state.status,
-                                state.turn,
-                                state.last_seq
-                            ),
-                            Err(e) => {
-                                failed = true;
-                                eprintln!("FAIL {} {run_id}：{e}", path.display());
-                            }
+                        Ok(RunOutcome::Replayed {
+                            status,
+                            turn,
+                            last_seq,
+                            final_state_hash,
+                        }) => {
+                            println!(
+                                "OK replay path={} run={run_id} status={status:?} turn={turn} last_seq={last_seq} final={final_state_hash}",
+                                path.display()
+                            );
+                        }
+                        Err(e) => {
+                            failed = true;
+                            eprintln!("FAIL {} {run_id}：{e}", path.display());
                         }
                     }
                 }

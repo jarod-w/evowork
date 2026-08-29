@@ -7,9 +7,13 @@ pub mod clock;
 pub mod config;
 pub mod replay;
 pub mod runtime;
+pub mod test_support;
 
 pub use casegen::generate_case;
 pub use clock::{Clock, FixedClock, RealClock};
 pub use config::DaemonConfig;
-pub use replay::{Mismatch, VerifyReport, replay_to, verify};
+pub use replay::{
+    CliReplayReport, Mismatch, RunOutcome, VerifyReport, cli_replay, replay_to, verify,
+};
 pub use runtime::{DaemonError, ParsedPlan, Runtime, parse_plan};
+pub use test_support::write_bare_run_created;
