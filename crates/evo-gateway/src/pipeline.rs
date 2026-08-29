@@ -153,7 +153,13 @@ impl Gateway {
         // 我们连这个工具的 class / reversible / targets 都是猜的最严默认值,
         // 这比"工具形状已知、只是这次调用摸到了污点数据"更从根上不可信，
         // 优先暴露这个更严重的理由；risk 取两个闸门里较高的 L3
-        // （污点闸门单独命中时仍是 L2，行为不变）。
+        // （manifest 闸门固定取全局最高档 L3，天然不会比策略原判更低）。
+        //
+        // 污点闸门只保证「至少 L2」——取 max(策略给出的 risk, L2)，绝不能把
+        // 策略已经判到 L3 的调用压回 L2（这里的 risk 是策略在 RequireApproval
+        // 里给出的档位；策略给 Allow 时视作没有下限，直接落到闸门的 L2）。
+        // 之前的写法是硬编码 L2，等于把 policy 判过的更高档位悄悄降级，是这轮
+        // re-review 修的缺陷。
         let (decision, reason) = match policy_decision {
             PolicyDecision::Deny { reason_code } => {
                 (PolicyDecision::Deny { reason_code }, "policy")
@@ -164,7 +170,13 @@ impl Gateway {
                 },
                 "no_manifest",
             ),
-            _ if taint_gate => (
+            PolicyDecision::RequireApproval { risk } if taint_gate => (
+                PolicyDecision::RequireApproval {
+                    risk: risk.max(RiskLevel::L2),
+                },
+                "taint_gate",
+            ),
+            PolicyDecision::Allow if taint_gate => (
                 PolicyDecision::RequireApproval {
                     risk: RiskLevel::L2,
                 },
