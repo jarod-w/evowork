@@ -68,22 +68,67 @@ echo "ok"
 echo "== CI-3 治理旁路 =="
 # evo-exec* / evo-mcp / evo-runlog 只允许被组装点依赖：唯一的组装点是
 # evo-daemon（运行时组装 Runtime；mkcase 要用的离线组装入口
-# evo_daemon::casegen 也在这里，见 Task 19）。evo-exec-local 依赖 evo-exec
-# 是允许的——它就是 exec 的实现。evo-runlog 是「唯一写 Run Log 的进程」
-# 手里的类型，只有 evo-daemon 允许依赖它——evo-cli 曾经直接依赖它、
-# 它的测试还真的调了 RunLog::append（与之前修掉的 mkcase 是同一类问题，
-# 见该 crate Cargo.toml 的历史），现在改成经 evo_daemon 暴露的入口访问。
+# evo_daemon::casegen 也在这里，见 Task 19）。evo-runlog 是「唯一写 Run Log
+# 的进程」手里的类型，只有 evo-daemon 允许依赖它——evo-cli 曾经直接依赖
+# 它、它的测试还真的调了 RunLog::append（与之前修掉的 mkcase 是同一类
+# 问题，见该 crate Cargo.toml 的历史），现在改成经 evo_daemon 暴露的入口
+# 访问。
 #
-# 本仓的 Cargo.toml 里点号写法（`name.workspace = true`）与花括号写法
-# （`name = { workspace = true }`）混用，甚至同一个文件里都两种都有——
-# 只匹配其中一种，检查会在另一种写法下悄悄漏判，变成一条摆设。
-for c in evo-exec evo-exec-local evo-mcp evo-runlog; do
-  offenders=$(grep -rlE "^${c}\.workspace[[:space:]]*=[[:space:]]*true|^${c}[[:space:]]*=.*workspace[[:space:]]*=[[:space:]]*true" crates/*/Cargo.toml \
-              | grep -v "crates/evo-daemon/Cargo.toml" \
-              | grep -v "crates/${c}/Cargo.toml" \
-              | grep -v "crates/evo-exec-local/Cargo.toml" || true)
-  if [ -n "$offenders" ]; then
-    echo "FAIL: $c 被组装点之外的 crate 依赖：$offenders"; exit 1
-  fi
+# 唯一的例外是 evo-exec-local 依赖 evo-exec——它就是 exec 的实现。这条
+# 例外**只对 evo-exec 成立**：以前它写成无条件的
+# `grep -v "crates/evo-exec-local/Cargo.toml"`，却放在遍历四个受管 crate 的
+# 循环体里，等于把 evo-exec-local 从四条检查里全免了。实测：给
+# crates/evo-exec-local/Cargo.toml 加上 evo-runlog 依赖、并在 lib.rs 里真的
+# 调 RunLog::open 去读 Run Log，本检查照样打印 ok——执行器绕开组装点直接
+# 读写 Run Log，正是这条检查存在的理由，却恰恰是它唯一免检的对象。
+#
+# 「怎么写出一条依赖」必须穷举。只认其中几种写法，检查会在别的写法下悄悄
+# 漏判，变成一条摆设——本仓的 Cargo.toml 里点号写法（`name.workspace = true`）
+# 与花括号写法（`name = { workspace = true }`）本来就混用，同一个文件里两种
+# 都有。下面三条正则合起来覆盖：
+#   1. `name = ...` 与 `name.xxx = ...`：吃掉 `{ workspace = true }`、
+#      `{ path = "../evo-runlog" }`、`"0.1"` 这类版本号字符串、
+#      `name.path = "..."` 等所有行内写法；
+#   2. 分表写法的表头：`[dependencies.name]`、`[dev-dependencies.name]`、
+#      `[target.'cfg(unix)'.dependencies.name]`——表头下面写
+#      `workspace = true` 还是 `path = ...` 都不重要，表头本身就是依赖边；
+#   3. 改名依赖：`别名 = { package = "name", ... }`——行首是别名，前两条都
+#      看不见它，必须直接认 `package = "name"`，且它通常写在花括号里而不在
+#      行首，所以左边界只能是行首/空白/逗号/左花括号；
+#   4. 指向该 crate 目录的 path：`... path = "../evo-runlog"`——改名依赖的
+#      另一半，也兜住把 crate vendor 到别处再依赖的写法。
+# 右边界分别是 `[.=]`、`]` 和收尾的引号，所以查 evo-exec 时不会误伤
+# evo-exec-local（`evo-exec-local` 的下一个字符是 `-`，`"../evo-exec-local"`
+# 的引号前也不是 `evo-exec`）。
+#
+# 扫描面同理：原来只 glob 了 crates/*/Cargo.toml 一层，crates/ 二层下的
+# crate、以及 crates/ 之外（apps/ 等）的 crate 全部漏网。改成枚举整个仓库
+# 里被 git 认得的 Cargo.toml——已跟踪的加上「未跟踪且没被 .gitignore 排除
+# 的」，后者让还没 git add 的新 crate 也当场被查，前者让 target/ 里的东西
+# 不进来。只排掉根 workspace 清单：它的 [workspace.dependencies] 按定义就
+# 列着所有 path 依赖，那不是依赖边。
+#
+# 归属按清单里的 package name 判断，不按路径——crate 挪了目录，检查不会
+# 跟着失效。
+offenders=""
+for manifest in $(git ls-files --cached --others --exclude-standard -- '*Cargo.toml' | grep -v '^Cargo\.toml$'); do
+  owner=$(sed -nE 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -1)
+  # 唯一的组装点，允许依赖全部受管 crate
+  if [ "$owner" = "evo-daemon" ]; then continue; fi
+  for c in evo-exec evo-exec-local evo-mcp evo-runlog; do
+    # crate 自己的清单
+    if [ "$owner" = "$c" ]; then continue; fi
+    # 唯一的例外，且只对 evo-exec 成立
+    if [ "$c" = "evo-exec" ] && [ "$owner" = "evo-exec-local" ]; then continue; fi
+    if grep -qE "^[[:space:]]*${c}[[:space:]]*[.=]|^[[:space:]]*\[[^]]*\.${c}\][[:space:]]*(#.*)?$|(^|[[:space:],{])package[[:space:]]*=[[:space:]]*\"${c}\"|path[[:space:]]*=[[:space:]]*\"[^\"]*${c}\"" "$manifest"; then
+      offenders="${offenders}  ${manifest}（package ${owner:-?}）依赖了 ${c}
+"
+    fi
+  done
 done
+if [ -n "$offenders" ]; then
+  echo "FAIL: 组装点（evo-daemon）之外的 crate 依赖了受管 crate："
+  printf '%s' "$offenders"
+  exit 1
+fi
 echo "ok"
