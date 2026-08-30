@@ -2,6 +2,35 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+echo "== CI-9 构建产物/依赖目录未被跟踪 =="
+# 事故背景：m1-desktop-shell 分支下 apps/ui/ 在本分支（m2-governance）是
+# 未跟踪目录，管它的 apps/ui/.gitignore 也只在那条分支上被跟踪、这边看
+# 不到，于是一次提交计划文档时用了 git add -A，把 node_modules 和
+# apps/ui/src-tauri/target/debug/deps/*.d 这类构建产物整包收了进去
+# （3781 个文件、150 万行）。已用 git filter-branch 清理，这里补一条检查
+# 让同类事故当场暴露。
+#
+# 要查的是「有没有被 git 跟踪」，不是「磁盘上存不存在」——磁盘上有
+# node_modules 完全正常（apps/ui 在别的分支上就有）。必须用
+# git ls-files，绝不能用 find/ls 之类的文件系统遍历，否则会把别的分支
+# 遗留、根本没被 git 跟踪的目录也当成命中。
+#
+# 匹配要精确到路径分量：用 (^|/)name(/|$)，不是子串匹配，防止误伤例如
+# 恰好叫 target-something 的 crate 目录，或文档里恰好叫 dist 的路径。
+# 除了要求的 node_modules/target/dist/.pnpm，再加两个 Rust 侧的构建
+# 产物后缀：*.rlib（编译出的 Rust 静态库，正常只应出现在 target/ 下，
+# 但既然要防的是「不该被跟踪的东西」，独立按后缀再挡一层不吃亏）、
+# *.rs.bk（rustfmt 失败时留的源码备份文件，同样不该进版本库）。
+tracked_offenders=$(git ls-files | grep -E '(^|/)(node_modules|target|dist|\.pnpm)(/|$)|\.rlib$|\.rs\.bk$' || true)
+if [ -n "$tracked_offenders" ]; then
+  offender_count=$(echo "$tracked_offenders" | wc -l | tr -d ' ')
+  echo "FAIL: 有 ${offender_count} 个构建产物/依赖目录文件被 git 跟踪，前 20 条："
+  echo "$tracked_offenders" | head -20
+  echo "修复：git rm -r --cached <path>，确认 .gitignore 覆盖了它，再提交。"
+  exit 1
+fi
+echo "ok"
+
 echo "== fmt =="
 cargo fmt --all -- --check
 
