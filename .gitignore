@@ -5,3 +5,24 @@
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# —— macOS Finder 与资源分叉产生的垃圾 ——
+# 开发机现在是 macOS（见 docs/STATUS.md 第二节），Finder 每浏览一个目录就写一个
+# .DS_Store；仓库根已经出现过一个未跟踪的 .DS_Store。这两条不带斜杠，因此在**任意
+# 层级**匹配，不只是仓库根——apps/ui/.gitignore 里那条 .DS_Store 只覆盖它自己那棵
+# 子树，crates/、config/、docs/ 下的同名文件此前无人管。
+.DS_Store
+._*
+
+# —— 编辑器与工具的本地状态 ——
+# .vscode/ 有意**不**列进来：这个仓库还没有决定要不要提交共享的编辑器配置，
+# 悄悄忽略掉等于替将来的人做了这个决定。要忽略就显式加，不要靠这里默认。
+.idea/
+*.swp
+*.swo
+
+# —— rustfmt 的备份文件 ——
+# scripts/ci.sh 的 CI-10 已经把 *.rs.bk 列为「不该被跟踪」的产物之一。这一行是它的
+# 前置防线：CI-10 拦的是「已经 add 进去了」，这里拦的是「根本不会被 add」。
+# 两道都要有——CI-10 是最后一道，不是第一道。
+*.rs.bk
