@@ -189,11 +189,23 @@ fn approval_granted_then_resumed_lets_the_run_continue() {
     );
     assert_eq!(s.status, RunStatus::Running);
     assert_eq!(s.awaiting, None);
-    // effect 还停在 Requested（还没被真正派发/结算），所以 decide 现在
-    // 应该在等执行面回流，而不是空手——它不再是「挂起」，只是「等」。
+    // effect 走到 Approved：人批过了（这是状态里唯一一处「批过」的正向
+    // 痕迹，daemon 的补派逻辑读的就是它，见 EffectState::Approved），但
+    // 还没被真正派发/结算，所以 decide 现在应该在等执行面回流，而不是
+    // 空手——它不再是「挂起」，只是「等」。
+    //
+    // 这条断言原本要求它停在 `Requested`。M2 终审 BL-1 把 daemon 的补派
+    // 判据从反向（「Requested 且不在 pending_approvals 里」）改成正向
+    // （「有人批过」），`Requested` 与 `Approved` 因此必须可区分：前者
+    // 包含「谁也没批过、只是恰好没在未决台账里」的 effect，那正是被
+    // 误派发的那一类。
     assert_eq!(
         s.pending_effects.get(&EffectId::from("e-1")),
-        Some(&EffectState::Requested)
+        Some(&EffectState::Approved)
+    );
+    assert!(
+        !EffectState::Approved.is_resolved(),
+        "Approved 不是终态：effect 还要走 effect.dispatched -> tool.result"
     );
     assert!(
         decide(&s).is_empty() || matches!(decide(&s).first(), Some(Command::Checkpoint { .. })),
@@ -462,4 +474,43 @@ fn clarification_never_requested_still_asks_it() {
             question: String::new()
         }]
     );
+}
+
+// ————————————————————————————————————————————————————————————
+// M2 终审 BL-1：Gateway 直接拒掉的 effect 走 `tool.result{Denied}`，
+// 它是与 `approval.denied` 同一个终态，不是 `Settled`。
+//
+// 「跑过了」与「压根没让它跑」必须在状态里分得开：daemon 决定要不要
+// 补派、UI 渲染这一步的结局，读的都是这张表。
+// ————————————————————————————————————————————————————————————
+
+#[test]
+fn a_denied_tool_result_is_a_denial_not_a_settlement() {
+    use evo_protocol::events::effect::{ToolResult, ToolResultStatus};
+
+    let events = vec![
+        ev(0, tool_requested("e-1", 0)),
+        ev(
+            1,
+            EventBody::ToolResult(ToolResult {
+                effect_id: EffectId::from("e-1"),
+                status: ToolResultStatus::Denied,
+                output_ref: None,
+                bytes: None,
+                taint: TaintLevel::Clean,
+                cites_produced: vec![],
+                actual_targets: vec![],
+                actual_egress: vec![],
+            }),
+        ),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+
+    assert_eq!(
+        s.pending_effects.get(&EffectId::from("e-1")),
+        Some(&EffectState::Denied),
+        "被拒的结算要落在 Denied 上，不能与真的跑过一遍的 Settled 混为一谈"
+    );
+    // 终态照样把这一 turn 往前推——否则 decide 会永远等这个 effect。
+    assert_eq!(s.turn, 1);
 }

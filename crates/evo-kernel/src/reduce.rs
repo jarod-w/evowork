@@ -81,8 +81,15 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                 .insert(e.effect_id.clone(), EffectState::Dispatched);
         }
         EventBody::ToolResult(e) => {
-            s.pending_effects
-                .insert(e.effect_id.clone(), EffectState::Settled);
+            // `Denied` 是「Gateway 判定不放行」的结算，effect 从未执行——
+            // 它落在与 `approval.denied` 同一个终态上，不是 `Settled`。
+            // 把它记成 `Settled` 会让「这个 effect 到底跑没跑过」在状态里
+            // 分辨不出来，而 daemon 恰恰要靠这个区分决定要不要补派。
+            let terminal = match e.status {
+                ToolResultStatus::Denied => EffectState::Denied,
+                _ => EffectState::Settled,
+            };
+            s.pending_effects.insert(e.effect_id.clone(), terminal);
             // 外部返回一律 tainted（02 §2 步骤 ③ 的前提）
             s.taint = s.taint.join(e.taint);
             for c in &e.cites_produced {
@@ -183,7 +190,18 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
             // 了」，effect 真正往前走要等 Gateway 真的派发、`reduce` 收到
             // `effect.dispatched`/`tool.result`；run 真正重新跑起来要等
             // 随后那条 `run.resumed`。
-            s.pending_approvals.remove(&e.approval_id);
+            //
+            // 但「人批过了」这件事必须在状态里留下正向痕迹：effect 从
+            // `Requested` 走到 `Approved`。daemon 的补派逻辑读的就是它
+            // （见 `EffectState::Approved` 的注释与 `Runtime::resume`）。
+            // 只在 effect 还停在 `Requested` 时改写：一条迟到的
+            // `approval.granted` 不该把已经派发/结算/被拒的 effect 拽回来。
+            if let Some(effect_id) = s.pending_approvals.remove(&e.approval_id)
+                && let Some(st) = s.pending_effects.get_mut(&effect_id)
+                && *st == EffectState::Requested
+            {
+                *st = EffectState::Approved;
+            }
         }
         EventBody::ApprovalDenied(e) => {
             // 被拒的 effect 标成 EffectState::Denied——见该变体上的注释：
