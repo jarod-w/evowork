@@ -1,0 +1,26 @@
+---
+description: 策略规则与工具 manifest 的默认值
+globs: crates/evo-policy/**, config/**
+alwaysApply: false
+---
+
+# policy / config
+
+三份配置都由 `DaemonConfig` 以字符串读入：`config/policy.toml`、
+`config/tools.toml`、`config/pricing.toml`。
+
+- 策略：先命中先赢。无规则命中 = Allow，且 `policy.toml` **没有**兜底 deny
+  （STATUS P1-8）。一个 `class=compute` 的新工具会走到这条 Allow 上，且因
+  manifest 存在也不触发 L3 闸门。加新工具时不要假设「没写规则就是拒绝」。
+  末尾加一条兜底 deny 是一行能做的收口，建议随手做掉。
+- 工具 manifest：未列出的按最严处理（External + 不可逆 + 需审批）。
+  不要为了少弹审批去放宽这个默认；要少弹就补 manifest。
+- `pricing.toml` 只给模型定价。Effect 不出账（STATUS P0-2）。不要在报表
+  文案里写「含工具成本」。
+
+`PolicyContext.taint` / `.targets` 老实填了，但 `Rule` 只有 class / tool /
+reversible 三个条件字段，`matches` 完全不看这两个。今天写不出「对某目录
+的写要审批」这类规则。不要在规则注释里假装这两个字段生效。
+
+CI-4 客户名词检查只扫 `crates/` 与 `apps/`。`config/` 与 `eval/` 不在扫描面
+里——不要把 `用友` 写进 `tools.toml` 并声称「CI 会拦住」。

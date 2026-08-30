@@ -1,0 +1,26 @@
+---
+description: evo-protocol 事件 schema 只增不改
+globs: crates/evo-protocol/**
+alwaysApply: false
+---
+
+# evo-protocol
+
+谁都依赖它；它不依赖任何 `evo-*`。事件、ID、blob ref、budget、taint 住在这里。
+
+`event_body!` 统一生成变体列表、`kind()`、`schema_ver()`、测试样本表。
+**新增变体不写 `sample =` 就编译不过。** 不要绕开这个宏手写平行的变体清单。
+
+## 三条硬约束
+
+1. 只增不改。
+2. 新增字段必须 optional。
+3. 改语义必须升 `schema_ver` 并保留旧版解码。
+
+任何事件结构体都**不得**加 `#[serde(deny_unknown_fields)]`。
+`all_27_variants_tolerate_unknown_optional_fields` 对全部变体穷尽验证这一条。
+
+改事件定义的 PR 必须同时含：① `schema_ver` 处理 ② 旧版解码路径与测试
+③ `eval/cases/` 里至少一条历史 Log 回放通过。缺一条合不进去。
+
+更细的流程见 `@event-schema.mdc`（按需挂上）。

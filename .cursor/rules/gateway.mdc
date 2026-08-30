@@ -1,0 +1,36 @@
+---
+description: Effect Gateway 六步管线与 tighten
+globs: crates/evo-gateway/**
+alwaysApply: false
+---
+
+# evo-gateway
+
+`pipeline.rs::admit` 是任何工具调用的唯一出口，包括内置工具。
+`admit` 是纯函数：不持有 run 状态、不做 IO。
+
+## 现状（不要写成已经接通）
+
+| 步 | 内容 | 今天实际 |
+|:-:|---|---|
+| ① | 身份解析 | `CapabilityToken.subject` 全仓无读者——不是弱实现，是不存在 |
+| ② | 能力校验 | `allows()` 本身对，但 daemon 两个构造点写死 `scopes: ["*"]` |
+| ③ | 污点闸门 | 在 ④ 之前，且不可被策略放宽 |
+| ④ | 策略求值 | `config/policy.toml`，先命中先赢 |
+| ⑥ | 影响预估 | 无条件执行、无条件落事件 |
+| ⑤ | 预算闸门 | 提到 ⑥ 后面，无条件执行 |
+
+要 preview 就返回 `NeedPreview { pending }`，让 daemon 去问 executor，再从
+`admit_with_preview` 续跑。**不许重新求值。** 今天它收 `&self` 却一次都没用
+（STATUS P1-7）；不要在这个方法里碰 `self.policy` / `self.manifests`。
+修法是改成关联函数，让重新求值变成编译错误——不要只加注释。
+
+## 关键不变式
+
+`tighten(decision, floor)`：闸门只收紧不放宽。`tighten` 对 `Deny` 原样返回。
+manifest 缺失 → 最严默认（External + 不可逆 + 需审批）。污点未清 → 至少 L2。
+不要再手写一套「策略可以把闸门放宽」的路径——那种路径曾经被写坏三次。
+
+`ImpactPrecision` 缺 `Unknown`。「估不出」与「没有影响面」在 Log 里不可区分
+（STATUS P5）。审批卡文案不要写「将在沙箱工作区内执行，出口受白名单约束」——
+两半都不成立（设计文档 02 与 `impact.rs` 的现有措辞是错的）。

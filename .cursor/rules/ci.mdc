@@ -1,0 +1,30 @@
+---
+description: 新增或修改 CI 检查时的反例义务
+globs: scripts/**
+alwaysApply: false
+---
+
+# scripts / CI
+
+`./scripts/ci.sh` 是唯一入口。编号跨分支唯一：设计文档 00 §4 已用 1–10。
+并行分支各自新增时会撞号（CI-9 与曾用 9 的构建产物检查撞过，后者改成 CI-10）。
+新增编号前先看一眼其他未合并分支。
+
+已实现 7 条（缺 CI-5 协议同步、CI-6 vendor、CI-7 依赖闭包）。
+`scripts/codex-closure.py` 已写好，但**没有任何脚本调用它，也没有基线文件**。
+不要在注释里写「CI-7 已挂进 ci.sh」。
+
+## 改检查的义务
+
+新增或修改任何检查，必须构造一个具体的违规输入，实测它会红，再恢复确认复绿。
+三段输出都要留证。修完之后，拿修好的检查当靶子再打一轮。
+
+不要在命令行手工重现脚本里的 grep。交互式 `grep` 是 `.gitignore`-aware 的
+包装，与脚本里跑的 `grep` 行为不同。一律调 `./scripts/ci.sh`。
+
+本项目已抓到七处「永远不会失败的检查」，形状包括：只匹配点分写法、
+无 checkpoint 时 `verify()` 空过、`tsc --noEmit` 缺 `-b`、压缩产物里
+npm scope 已被去掉还去 `grep tauri-apps`。不要再加一条答不出「什么输入
+能让它红」的检查。
+
+`ALLOW_SKIP_FRONTEND=1` 只在 node/pnpm 缺失时有意义。

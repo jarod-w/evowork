@@ -1,0 +1,20 @@
+---
+description: 改 evo-protocol 事件定义时的 PR 三项义务（schema_ver、旧版解码、历史回放）
+alwaysApply: false
+---
+
+# 事件 schema 变更
+
+在改 `crates/evo-protocol` 的事件定义、或新增 `EventBody` 变体时挂上本规则。
+
+PR 必须同时包含下面三条，缺一条合不进去。这是红线 3 唯一可执行的防线。
+
+1. `schema_ver` 的处理：新增 optional 字段可不升版；语义变化必须升。
+2. 旧版本解码路径的保留，以及会在旧 payload 上通过的测试。
+3. `eval/cases/` 里至少一条历史 Log 的回放通过。
+
+`event_body!` 新增变体必须带 `sample =`，否则编译不过。
+任何事件结构体都不得加 `#[serde(deny_unknown_fields)]`。
+
+不要为 UI 方便另做一套 DTO。UI 收到的就是 Log 里存的（设计文档 06）。
+`packages/protocol` 是 `ts-rs` 生成产物，不手写；该目录与 CI-5 今天都不存在。

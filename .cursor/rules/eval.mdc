@@ -1,0 +1,27 @@
+---
+description: eval 回放钉子与 final_state_hash
+globs: eval/**
+alwaysApply: false
+---
+
+# eval
+
+`./eval/run.sh` 跑三轮回放（`--verify` 全量 fold、走快照、删光快照）并与
+`case.yaml` 钉住的期望比对。合成用例的 `runlog.sqlite` 不进 git，每次由
+`mkcase` 重建。
+
+`eval/cases/synthetic-01/case.yaml` 的 `final_state_hash` 是判据 3 的锚点。
+它**可以**变——`RunState` 形状一变，哈希必然跟着变。但每次变更必须：
+
+1. 在一个**只含本次改动**的工作区上重新生成
+2. 逐条核对新旧事件 kind 序列的差异**是本次有意引入的**
+3. 按该文件里现有注释的格式，写清楚变了什么、为什么变、以及**哪些没变**
+
+绝不能不加说明就换掉这个值。现有的三段注释是范例。
+
+## 本用例覆盖不到什么
+
+这条用例是 `run.created … run.completed`，无审批 / 澄清 / 挂起 / 驳回。
+CI-2 / CI-8 **完全不覆盖** M2 新增的四条治理路径（STATUS P2-12）。
+不要在 PR 里写「回放检查已覆盖治理面」。`expect.artifacts` 只断言文件存在，
+改内容仍然全绿（STATUS P2-13）。

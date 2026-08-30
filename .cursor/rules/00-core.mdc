@@ -1,0 +1,11 @@
+---
+description: EVOWORK 仓级约定（始终生效）
+alwaysApply: true
+---
+
+# 仓级约定
+
+Cursor Agent 模式不保证读取仓库根的 `.cursorrules`。本文件是它的加载器：
+把仓级约定正文拉进每一次对话。路径分册按 glob 另挂，不要把它们抄到这里。
+
+@.cursorrules

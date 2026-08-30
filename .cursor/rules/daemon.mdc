@@ -1,0 +1,36 @@
+---
+description: evo-daemon 唯一组装点与 Run Log 唯一写者
+globs: crates/evo-daemon/**
+alwaysApply: false
+---
+
+# evo-daemon
+
+唯一组装点，唯一写 Run Log 的进程。回放器在 `src/replay.rs`，因为它要
+`evo-kernel::fold`。今天本 crate 是纯 lib，全仓没有把它起成服务的 `main.rs`。
+HTTP `/v1/rpc` 与 WS `/v1/events` 尚未开始（STATUS §三档一）。
+
+不要新增一条对 `evo-exec` / `evo-exec-local` / `evo-mcp` / `evo-runlog` 的
+兄弟 crate 依赖——CI-3 只允许 `evo-daemon` 依赖它们（唯一例外：
+`evo-exec-local → evo-exec`）。也不要 `pub use` 再导出它们来绕过这张表。
+
+## 写事件时
+
+被网关拒绝的 effect 不能在 `resume()` 里当成已批准执行。终审红线 1 破口
+就是这样来的。不要写「拒绝后标成 `EffectState::Denied`」除非代码真的有
+这个状态转换，并且 `resume` 读它。
+
+无终结事件的 run 不能报成 `Completed`。非网关故障要落 `run.failed`。
+
+## 已知 P0，改到附近时不要装作没看见
+
+- `runtime.rs` 构造的 `ModelRequest.content` 是空字符串。链路（答案 → blob
+  → 装配 → `context.assembled`）是通的，模型收到的始终是空。fixture 模型
+  不看输入，所以今天不暴露。不要加一条只断「blocks 非空」的测试然后宣称修好了。
+- `CostCharged` 全仓只有 `call_model` 一个产生点。Effect 不出账。
+- `ApprovalRequested.expires_at_ms` 有人写、全仓无人读。`approval.expired`
+  零产生者。不要在 UI 文案里写「审批将于 … 过期」。
+- `answer_clarification` 不校验 `option_id` 属于本题选项。
+- `resume()` 仍能恢复终态 run。
+
+capability 两个构造点写死 `scopes: ["*"]`。不要在注释里写「能力校验已生效」。
