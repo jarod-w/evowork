@@ -56,6 +56,13 @@ pub enum DaemonError {
     TurnLimit(u32),
     #[error("turn loop made {0} iterations without a turn ever terminating it")]
     LoopIterationLimit(u32),
+    /// 只作为 `run.failed` 的正文来源存在：turn 循环停在了 Running 上，
+    /// 因为 Log 里留着一批不会有人再去推的 effect（上一次进程被杀的残局）。
+    /// 它不会作为 `Err` 冒泡——正是本轮修掉的那种行为。
+    #[error(
+        "turn loop stopped while the run was still Running:          these effects will never reach a terminal state on their own: {0}"
+    )]
+    StalledEffects(String),
     #[error("snapshot is undecodable at seq {seq}: {detail}")]
     SnapshotDecode { seq: u64, detail: String },
     #[error("model {provider}/{model} is not in the price table")]
@@ -481,11 +488,22 @@ impl Runtime {
         let mut iterations: u32 = 0;
         loop {
             iterations += 1;
+            // 两道保险撞上了同样是故障，同样要落成 run.failed：一条撞了
+            // 上限就被 `Err` 掀翻的 run，在 Log 里看不出任何结局。
             if iterations > MAX_LOOP_ITERATIONS {
-                return Err(DaemonError::LoopIterationLimit(MAX_LOOP_ITERATIONS));
+                let state = self.fail_run(
+                    state,
+                    "loop_iteration_limit",
+                    &DaemonError::LoopIterationLimit(MAX_LOOP_ITERATIONS),
+                )?;
+                let error = self.failure_message(&state)?;
+                return Ok(RunOutcome::Failed { state, error });
             }
             if state.turn > MAX_TURNS {
-                return Err(DaemonError::TurnLimit(MAX_TURNS));
+                let state =
+                    self.fail_run(state, "turn_limit", &DaemonError::TurnLimit(MAX_TURNS))?;
+                let error = self.failure_message(&state)?;
+                return Ok(RunOutcome::Failed { state, error });
             }
             let commands = decide(&state);
             if commands.is_empty() {
@@ -527,36 +545,63 @@ impl Runtime {
                 // 如实描述「卡在一个没人会去推的 effect 上」——`AwaitingApproval`
                 // 会伪造一条不存在的审批（`reduce` 会在空的 pending_approvals
                 // 上 panic），`Paused` 则会被读成「有人手动暂停了」。
-                let stalled: Vec<&str> = state
+                let stalled: Vec<String> = state
                     .pending_effects
                     .iter()
                     .filter(|(_, st)| !st.is_resolved())
-                    .map(|(id, _)| id.as_str())
+                    .map(|(id, _)| id.as_str().to_owned())
                     .collect();
-                let detail = format!(
-                    "turn loop stopped while the run was still Running: \
-                     these effects will never reach a terminal state on their own: {stalled:?}"
-                );
-                let message_ref =
-                    self.log
-                        .blobs()
-                        .put(BlobClass::Content, "text/plain", detail.as_bytes())?;
-                let state = self.emit(
-                    &state,
-                    Actor::Runtime,
-                    EventBody::RunFailed(RunFailed {
-                        at_seq: state.last_seq,
-                        error: ErrorDetail {
-                            code: "stalled_unresolved_effects".to_owned(),
-                            message_ref: Some(message_ref),
-                            retryable: false,
-                        },
-                    }),
+                let state = self.fail_run(
+                    state,
+                    "stalled_unresolved_effects",
+                    &DaemonError::StalledEffects(format!("{stalled:?}")),
                 )?;
                 let error = self.failure_message(&state)?;
                 RunOutcome::Failed { state, error }
             }
         })
+    }
+
+    /// 把一个**真正的故障**落成一条 `run.failed`，而不是让 `Err` 冒泡。
+    ///
+    /// `evo_protocol` 里 `RunFailed` 的文档写的就是这件事：「真正的故障
+    /// （IO 失败、模型解析不出来、预算表查不到……）落到这里成为一条 Log
+    /// 事件，而不是掀翻调用栈、把 run 晾在没有终结事件的状态里」。此前
+    /// 全仓唯一写 `RunFailed` 的地方是 Gateway 的 Deny 分支，别的故障路径
+    /// 一律 `Err` 冒泡：Log 最后一条停在 `cost.charged`，status 折叠出来
+    /// 还是 Running，这条 run 的结局只存在于调用方的错误字符串里，不在
+    /// 唯一权威事实里（M2 终审 BL-8）。
+    ///
+    /// `code` 是稳定的错误分类，进 payload；错误正文进 blob（红线 4），
+    /// 事件里只留 `message_ref`。正文一律取对应 [`DaemonError`] 的
+    /// `Display`，好让「这条 run 为什么失败」在 Log 里和在错误类型里是
+    /// 同一句话。
+    ///
+    /// 落完这条事件，`reduce` 把 status 置为 `Failed`，下一轮 `decide`
+    /// 自然返回空命令，`drive` 的循环干净结束——与挂起路径同一套机制。
+    fn fail_run(
+        &mut self,
+        state: RunState,
+        code: &str,
+        detail: &DaemonError,
+    ) -> Result<RunState, DaemonError> {
+        let message_ref = self.log.blobs().put(
+            BlobClass::Content,
+            "text/plain",
+            detail.to_string().as_bytes(),
+        )?;
+        self.emit(
+            &state,
+            Actor::Runtime,
+            EventBody::RunFailed(RunFailed {
+                at_seq: state.last_seq,
+                error: ErrorDetail {
+                    code: code.to_owned(),
+                    message_ref: Some(message_ref),
+                    retryable: false,
+                },
+            }),
+        )
     }
 
     /// `state.status` 变成 `Failed` 的那条终结事件里带的错误信息。
@@ -909,10 +954,11 @@ impl Runtime {
             .pricing
             .covers(self.model.provider(), self.model.model())
         {
-            return Err(DaemonError::ModelNotPriced {
+            let detail = DaemonError::ModelNotPriced {
                 provider: self.model.provider().to_owned(),
                 model: self.model.model().to_owned(),
-            });
+            };
+            return self.fail_run(state, "model_not_priced", &detail);
         }
         for charge in self.pricing.charges(
             self.model.provider(),
@@ -924,7 +970,12 @@ impl Runtime {
             state = self.emit(&state, Actor::Runtime, EventBody::CostCharged(charge))?;
         }
 
-        let parsed = parse_plan(&response.text)?;
+        // 模型返回散文而不是计划：这是最常见的一种真实故障，落成事件，
+        // 不冒泡。错误正文（含模型原文的前 60 个字符）进 blob。
+        let parsed = match parse_plan(&response.text) {
+            Ok(p) => p,
+            Err(e) => return self.fail_run(state, "unparseable_plan", &e),
+        };
         let call = match (&parsed.intent, &parsed.tool) {
             (PlanIntent::ToolCall, Some(tool)) => {
                 let params_bytes = serde_json::to_vec(&parsed.params).expect("params 可序列化");

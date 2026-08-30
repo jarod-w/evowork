@@ -209,3 +209,134 @@ async fn a_tool_call_without_a_tool_field_fails_the_run_not_completes_it() {
         other => panic!("Log 末尾应为 run.completed，实得 {}", other.kind()),
     }
 }
+
+// ————————————————————————————————————————————————————————————
+// M2 终审 BL-8：非 Gateway-Deny 的故障也必须落成 run.failed。
+//
+// `evo-protocol` 里 RunFailed 的文档原话：「真正的故障（IO 失败、模型解析
+// 不出来、预算表查不到……）落到这里成为一条 Log 事件，而不是掀翻调用栈、
+// 把 run 晾在没有终结事件的状态里」。此前全仓唯一写 RunFailed 的地方是
+// Gateway 的 Deny 分支，下面这几条路径都是直接 `Err` 冒泡：Log 最后一条
+// 是 cost.charged，status 折叠出来还是 Running，这条 run 的结局只存在于
+// 调用方的错误字符串里，不在唯一权威事实里。
+// ————————————————————————————————————————————————————————————
+
+/// 模型返回散文，不是 JSON 计划——最真实的一种故障。
+const PROSE_FIXTURES: &str = r#"{
+  "provider": "fixture",
+  "model": "fixture-v1",
+  "responses": [
+    { "text": "我觉得可以先把账龄表拉出来看看，你说呢？",
+      "usage": { "input": 120, "output": 40, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 12 }
+  ]
+}"#;
+
+/// 定价表里没有这个 provider/model。
+const UNPRICED_FIXTURES: &str = r#"{
+  "provider": "no-such-provider",
+  "model": "no-such-model",
+  "responses": [
+    { "text": "{\"intent\":\"finish\"}",
+      "usage": { "input": 10, "output": 5, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 1 }
+  ]
+}"#;
+
+fn setup_with_fixtures(dir: &std::path::Path, fixtures: &str) -> Runtime {
+    Runtime::new(
+        DaemonConfig::for_test(dir),
+        Arc::new(FixedClock::new(1_756_461_600_000)),
+        Arc::new(FixtureAdapter::from_json_str(fixtures).unwrap()),
+        Arc::new(LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()))),
+    )
+    .unwrap()
+}
+
+fn kinds_of(dir: &std::path::Path, run_id: &RunId) -> Vec<&'static str> {
+    let log = RunLog::open(&dir.join("runlog.sqlite"), &dir.join("blobs")).unwrap();
+    log.events(run_id, 0, None)
+        .unwrap()
+        .iter()
+        .map(|e| e.body.kind())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_model_answering_in_prose_ends_the_run_in_the_log_not_only_in_an_error_string() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup_with_fixtures(dir.path(), PROSE_FIXTURES);
+    let run_id = RunId::from("r-1");
+
+    let outcome = rt
+        .start(&run_id, "把账龄表做出来")
+        .await
+        .expect("真正的故障也要落成一条 Log 事件，不该掀翻调用栈");
+    let RunOutcome::Failed { state, error } = outcome else {
+        panic!("expected Failed, got {outcome:?}");
+    };
+    assert_eq!(state.status, RunStatus::Failed);
+    assert!(!error.is_empty());
+
+    let kinds = kinds_of(dir.path(), &run_id);
+    assert_eq!(
+        kinds.last(),
+        Some(&"run.failed"),
+        "解析不出计划的 run 必须以 run.failed 收尾，而不是停在 cost.charged：{kinds:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_unpriced_model_ends_the_run_in_the_log_not_only_in_an_error_string() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup_with_fixtures(dir.path(), UNPRICED_FIXTURES);
+    let run_id = RunId::from("r-1");
+
+    let outcome = rt
+        .start(&run_id, "把账龄表做出来")
+        .await
+        .expect("查不到定价同样是故障，不是 panic 式的短路");
+    let RunOutcome::Failed { state, .. } = outcome else {
+        panic!("expected Failed, got {outcome:?}");
+    };
+    assert_eq!(state.status, RunStatus::Failed);
+
+    let kinds = kinds_of(dir.path(), &run_id);
+    assert_eq!(
+        kinds.last(),
+        Some(&"run.failed"),
+        "未定价的模型必须让 run 以 run.failed 收尾：{kinds:?}"
+    );
+}
+
+#[tokio::test]
+async fn hitting_the_turn_limit_ends_the_run_in_the_log_not_only_in_an_error_string() {
+    // 每一 turn 都调一次 fs.write，永远不 finish——撞上 MAX_TURNS 那道保险。
+    let one = r#"{ "text": "{\"intent\":\"tool_call\",\"tool\":\"fs.write\",\"params\":{\"path\":\"report.txt\",\"content\":\"x\"}}",
+      "usage": { "input": 1, "output": 1, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 1 }"#;
+    let fixtures = format!(
+        r#"{{ "provider": "fixture", "model": "fixture-v1", "responses": [{}] }}"#,
+        vec![one; 70].join(",")
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup_with_fixtures(dir.path(), &fixtures);
+    let run_id = RunId::from("r-1");
+
+    let outcome = rt
+        .start(&run_id, "把账龄表做出来")
+        .await
+        .expect("撞上 turn 上限也要落成一条 Log 事件");
+    let RunOutcome::Failed { state, .. } = outcome else {
+        panic!("expected Failed, got {outcome:?}");
+    };
+    assert_eq!(state.status, RunStatus::Failed);
+
+    let kinds = kinds_of(dir.path(), &run_id);
+    assert_eq!(
+        kinds.last(),
+        Some(&"run.failed"),
+        "撞上 turn 上限的 run 必须有终结事件：{kinds:?}"
+    );
+}
