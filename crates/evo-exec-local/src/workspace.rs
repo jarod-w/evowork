@@ -22,13 +22,101 @@ impl WorkspaceRoot {
         Self { base }
     }
 
+    /// 工作区根本身必须落在 `base` 下面。
+    ///
+    /// 这里是 `RunId` 变成文件系统路径分量的**唯一**位置（Run Log 那边
+    /// run_id 只作为 SQL 参数出现，不进路径），也就是说，工作区边界这套
+    /// 校验里所有「在不在工作区内」的判断，都以这个函数交出的路径为原点。
+    /// 原点自己被搬到 `base` 之外，后面每一道校验都会照常「通过」——因为
+    /// 工作区就是那个目录，边界跟着一起搬走了。所以这里必须自己站住。
+    ///
+    /// 两件事要保证，缺一不可：
+    ///
+    ///   1. **不能逃出 `base`。** `..` 会往上爬；绝对路径更直接——
+    ///      `Path::join` 遇到绝对路径会整条丢掉左边的 base。
+    ///   2. **run_id → 目录必须是单射。** 光挡住 `..` 不够：`r-1`、
+    ///      `./r-1`、`r-1/.`、`sub/../r-1` 都落在同一个目录上，两个不同的
+    ///      run 会静默共用一个工作区，互相读写对方的文件，而两条 Run Log
+    ///      各自看起来都正常。
+    ///
+    /// 做法是允许清单而不是拒绝清单：run_id 必须整个就是一个安全的目录名
+    /// （见 [`workspace_dir_name`]），目录名与 run_id 逐字节相同，单射由
+    /// 「恒等映射」直接给出，不需要再论证哪些归一化形式被覆盖到了。
+    ///
+    /// 校验之后仍然再验一次落点：run_id 干净不代表 `base/<run_id>` 这个
+    /// 目录项干净——它可能已经是一条指向别处的符号链接，而 `create_dir_all`
+    /// 对已存在的目标直接返回成功。所以 canonicalize 之后要求它是 `base`
+    /// （同样 canonicalize 过）的**直接子目录**，且名字仍是那个 run_id。
+    ///
+    /// **为什么不改到 `RunId` 的构造处。** 那里是 `string_id!` 宏，一份
+    /// 定义生出九种 id，`From<&str>` / `From<String>` 是不可失败的转换，
+    /// 要在那里校验只能 panic，或者把九种 id 的构造全改成 `Result`（连带
+    /// 每个调用点）。更要紧的是理由本身站不住：这里要的性质不是「run_id
+    /// 长得好看」，而是「它当一个文件系统路径分量用是安全的」——这是**这个
+    /// 汇聚点**的性质，不是 id 的性质。`CiteId` 之类根本不进路径的 id 没有
+    /// 理由被同一套字符集绑住。所以校验放在 id 变成路径的那一刻。
     pub fn ensure(&self, run_id: &RunId) -> Result<WorkspaceHandle, ExecError> {
-        let path = self.base.join(run_id.as_str());
+        let name = workspace_dir_name(run_id)?;
+        let path = self.base.join(name);
         std::fs::create_dir_all(&path)?;
         // canonicalize 之后再交出去：后续的越界判断依赖一个已解析的真实路径
         let path = path.canonicalize()?;
-        Ok(WorkspaceHandle::new(run_id.as_str(), path))
+
+        let base = self.base.canonicalize()?;
+        if path.parent() != Some(base.as_path())
+            || path.file_name() != Some(std::ffi::OsStr::new(name))
+        {
+            return Err(ExecError::PathEscape(format!(
+                "workspace for run {name} resolved to {}, which is not a direct child of {}",
+                path.display(),
+                base.display()
+            )));
+        }
+        Ok(WorkspaceHandle::new(name, path))
     }
+}
+
+/// run_id 当目录名用的允许清单：首字符是 ASCII 小写字母或数字，其余字符
+/// 取自 `[a-z0-9._-]`，长度不超过 [`MAX_RUN_ID_LEN`]。
+///
+/// 允许清单（而不是「拒绝 `..` 和 `/`」）的理由是单射：允许集合里没有
+/// 任何路径分隔符、没有 `.`/`..` 这两个特殊分量（首字符必须是字母数字，
+/// 它俩进不来）、没有会被文件系统改写的字符，于是 run_id 与目录名是
+/// 恒等映射，不同的 run_id 必然拿到不同的目录。
+///
+/// 几处刻意的收紧，都是为了这条恒等映射在别的平台上也成立：
+///
+///   - **不收大写字母。** macOS 的 APFS/HFS+ 默认大小写不敏感，`r-A` 与
+///     `r-a` 会落到同一个目录——正是这个函数要挡的「两个 run 静默共用
+///     工作区」。全小写就没有折叠可言。代价：调用方如果用 ULID 这类大写
+///     编码当 run_id，会在这里当场拿到一个错误（而不是在 macOS 上悄悄
+///     串工作区），转成小写或十六进制即可。
+///   - **只收 ASCII。** HFS+ 会把文件名规范化成 NFD，不同 Unicode 表示
+///     的同一个字符串会折叠到一起；ASCII 没有这个问题。
+///   - **首字符必须是字母数字。** 顺带排除 `.`、`..`、以及 `-` 开头这类
+///     会被命令行当选项解析的名字。
+///
+/// 违反时报 [`ExecError::PathEscape`]：这确实是一次越界——差别只在于
+/// 越出去的是工作区根自己，不是工作区里的某个文件。
+fn workspace_dir_name(run_id: &RunId) -> Result<&str, ExecError> {
+    const MAX_RUN_ID_LEN: usize = 128;
+
+    let name = run_id.as_str();
+    let allowed =
+        |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-');
+    let first_ok = name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+
+    if !first_ok || name.len() > MAX_RUN_ID_LEN || !name.chars().all(allowed) {
+        return Err(ExecError::PathEscape(format!(
+            "run_id {name:?} is not usable as a workspace directory name \
+             (expected [a-z0-9][a-z0-9._-]{{0,{}}})",
+            MAX_RUN_ID_LEN - 1
+        )));
+    }
+    Ok(name)
 }
 
 /// 把工具给的相对路径解析成工作区内的绝对路径，越界即拒。
