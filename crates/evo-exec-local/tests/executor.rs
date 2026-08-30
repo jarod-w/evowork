@@ -552,3 +552,115 @@ fn ordinary_run_ids_still_get_their_workspace_after_the_run_id_fix() {
         assert_eq!(ws.id(), id);
     }
 }
+
+// --- fs.read ---------------------------------------------------------------
+//
+// `config/tools.toml` 从 M1 起就声明了 `fs.read`，执行面却一直没有实现，
+// 于是任何真实调用都会掉进 `UnknownTool`。下面这组把它钉住：读得到内容、
+// 路径校验与 `fs.write` 同一套（工作区边界、绝对路径、符号链接逃逸都要
+// 挡住）、actual_targets 与 declared_targets 落在同一命名空间。
+
+fn read_effect(path: &str) -> DispatchedEffect {
+    DispatchedEffect {
+        request: EffectRequest {
+            effect_id: EffectId::from("e-1"),
+            run_id: RunId::from("r-1"),
+            turn: 0,
+            tool: ToolId::from("fs.read"),
+            params_ref: BlobRef {
+                content_hash: "sha256:aa".into(),
+                size: 0,
+                mime: "application/json".into(),
+            },
+            params_digest: "d".into(),
+            class: EffectClass::Read,
+            targets: Vec::new(),
+            egress: Vec::new(),
+            reversible: true,
+            taint: TaintLevel::Clean,
+            cites_referenced: Vec::new(),
+            capability: CapabilityToken {
+                subject: "u-1".into(),
+                scopes: vec!["*".into()],
+            },
+        },
+        params: serde_json::json!({ "path": path }),
+        mode: ExecutionMode::Live,
+    }
+}
+
+/// 先在工作区里放一个文件（不经 `fs.write`，模拟"这个文件本来就在那儿"
+/// ——外部对账单、上一条命令拉下来的东西），再用 `fs.read` 读它。
+async fn run_read(
+    plant: Option<(&str, &str)>,
+    path: &str,
+) -> (tempfile::TempDir, EffectOutcome, WorkspaceHandle) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    if let Some((name, content)) = plant {
+        let p = ws.path().join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    }
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec.execute(lease(ws.clone()), read_effect(path)).await;
+    (dir, outcome, ws)
+}
+
+#[tokio::test]
+async fn fs_read_returns_the_file_content() {
+    let (_d, outcome, _ws) = run_read(Some(("inbox.txt", "对账单正文")), "inbox.txt").await;
+    assert_eq!(outcome.status, ToolResultStatus::Ok);
+    assert_eq!(outcome.output.unwrap(), "对账单正文".as_bytes());
+}
+
+#[tokio::test]
+async fn fs_read_reports_a_workspace_relative_actual_target() {
+    let (_d, outcome, _ws) = run_read(Some(("sub/inbox.txt", "x")), "sub/inbox.txt").await;
+    assert_eq!(outcome.actual_targets.len(), 1);
+    assert_eq!(
+        outcome.actual_targets[0],
+        ResourceRef {
+            kind: "file".to_owned(),
+            id: "sub/inbox.txt".to_owned(),
+        }
+    );
+}
+
+#[tokio::test]
+async fn fs_read_refuses_a_path_escaping_the_workspace() {
+    // 「只是读」不能走一条更松的路径校验——它恰恰是最该挡住的方向。
+    let (_d, outcome, _ws) = run_read(None, "../../etc/passwd").await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(outcome.error.unwrap().contains("escapes the workspace"));
+}
+
+#[tokio::test]
+async fn fs_read_refuses_an_absolute_path() {
+    let (_d, outcome, _ws) = run_read(None, "/etc/passwd").await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+}
+
+#[tokio::test]
+async fn fs_read_refuses_a_symlink_pointing_outside_the_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = dir.path().join("outside.txt");
+    std::fs::write(&outside, "secret").unwrap();
+    let root = WorkspaceRoot::new(dir.path().join("ws"));
+    std::fs::create_dir_all(dir.path().join("ws")).unwrap();
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::os::unix::fs::symlink(&outside, ws.path().join("link.txt")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec.execute(lease(ws), read_effect("link.txt")).await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(outcome.output.is_none(), "越界的读绝不能回传内容");
+}
+
+#[tokio::test]
+async fn fs_read_of_a_missing_file_is_an_error_not_an_empty_success() {
+    let (_d, outcome, _ws) = run_read(None, "nope.txt").await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(outcome.output.is_none());
+}
