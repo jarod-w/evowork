@@ -462,3 +462,93 @@ async fn ordinary_single_linked_files_still_work_after_the_hard_link_fix() {
         .await;
     assert_eq!(via_symlink.status, ToolResultStatus::Ok);
 }
+
+// --- BL-4 工作区根本身可被创建到根之外：`ensure` 直接把 run_id 当路径
+// 分量 join 上去，没有任何校验。run_id 由调用方（Runtime::start）给，
+// `RunId` 自己零校验。一个带 `..` 的 run_id 会让工作区落在 workspaces
+// 根之外——而**之后所有的路径校验都会「通过」**，因为工作区就是那个
+// 目录，边界跟着一起搬走了。
+
+#[test]
+fn a_run_id_with_parent_dir_components_cannot_place_the_workspace_outside_the_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("workspaces");
+    std::fs::create_dir_all(&base).unwrap();
+    let root = WorkspaceRoot::new(base.clone());
+
+    let err = root
+        .ensure(&RunId::from("../escaped-workspace"))
+        .unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+    assert!(!dir.path().join("escaped-workspace").exists());
+}
+
+#[test]
+fn an_absolute_run_id_cannot_place_the_workspace_outside_the_root() {
+    // `Path::join` 遇到绝对路径会**整条丢弃**左边的 base——工作区直接
+    // 落在调用方给的绝对路径上。
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let base = dir.path().join("workspaces");
+    std::fs::create_dir_all(&base).unwrap();
+    let root = WorkspaceRoot::new(base);
+
+    let target = outside.path().join("absolute-workspace");
+    let err = root
+        .ensure(&RunId::from(target.to_str().unwrap()))
+        .unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+    assert!(!target.exists());
+}
+
+#[test]
+fn distinct_run_ids_cannot_normalize_onto_the_same_workspace() {
+    // run_id -> 目录必须是单射：否则两个不同的 run 会静默共用一个工作区，
+    // 互相读写对方的文件，而 Log 里两条 run 各自看起来都正常。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let plain = root.ensure(&RunId::from("r-1")).unwrap();
+
+    for alias in ["./r-1", "r-1/", "r-1/.", "sub/../r-1"] {
+        match root.ensure(&RunId::from(alias)) {
+            Err(e) => assert!(
+                e.to_string().contains("escapes the workspace"),
+                "run_id {alias:?} 被拒但错误不对：{e}"
+            ),
+            Ok(ws) => panic!(
+                "run_id {alias:?} 归一化到了 {}，与 r-1 的 {} 撞车",
+                ws.path().display(),
+                plain.path().display()
+            ),
+        }
+    }
+}
+
+#[test]
+fn a_pre_existing_symlink_in_the_workspaces_root_cannot_relocate_a_workspace() {
+    // 就算 run_id 本身干净，workspaces/<run_id> 这个目录项也可能已经是
+    // 一条指向工作区根之外的软链（create_dir_all 对已存在的目标直接
+    // 成功）。工作区根必须是 base 下的**直接子目录**，不能只是「能被
+    // 创建出来」。
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let base = dir.path().join("workspaces");
+    std::fs::create_dir_all(&base).unwrap();
+    std::os::unix::fs::symlink(outside.path(), base.join("r-1")).unwrap();
+    let root = WorkspaceRoot::new(base);
+
+    let err = root.ensure(&RunId::from("r-1")).unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+}
+
+#[test]
+fn ordinary_run_ids_still_get_their_workspace_after_the_run_id_fix() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().join("workspaces"));
+    for id in ["r-1", "r-synthetic-01", "r-001", "run.2026-08-30_42"] {
+        let ws = root.ensure(&RunId::from(id)).unwrap();
+        assert!(ws.path().is_dir());
+        assert_eq!(ws.path().file_name().unwrap(), id);
+        assert_eq!(ws.id(), id);
+    }
+}
