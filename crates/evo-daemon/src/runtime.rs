@@ -18,7 +18,9 @@ use evo_protocol::events::clarification::{
     ClarificationAnswered, ClarificationOption, ClarificationRequested,
 };
 use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
-use evo_protocol::events::effect::{EffectDispatched, ExecutionMode, ToolRequested, ToolResult};
+use evo_protocol::events::effect::{
+    EffectDispatched, ExecutionMode, ToolRequested, ToolResult, ToolResultStatus,
+};
 use evo_protocol::events::lifecycle::{
     CompletionStatus, ErrorDetail, IntentDeclared, PrincipalRef, RunCompleted, RunCreated,
     RunFailed, RunResumed, RunSuspended, SuspendReason, TriggerKind, TriggerRef,
@@ -27,12 +29,13 @@ use evo_protocol::events::model::{
     ModelParams, ModelRequested, ModelResponded, PlanIntent, PlanStep, PlannedCall,
     PlannedClarification,
 };
+use evo_protocol::taint::TaintLevel;
 use evo_protocol::{
     Actor, ApprovalId, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass, EffectId,
     EffectRequest, EventBody, LeaseId, RunId,
 };
 use evo_runlog::RunLog;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
@@ -326,15 +329,21 @@ impl Runtime {
             }),
         )?;
 
-        // 「已批准但还没派发」= pending_effects 里还是 Requested，但已经
-        // 不在 pending_approvals 里了。被拒绝/过期的 effect 会被标成
-        // EffectState::Denied（不是 Requested），不会被这里误当成待派发。
-        let awaiting_approval: BTreeSet<EffectId> =
-            state.pending_approvals.values().cloned().collect();
+        // 「已批准但还没派发」= pending_effects 里是 `EffectState::Approved`。
+        // 这是一条**正向**判定：只有真的落过一条 `approval.granted`
+        // （`reduce` 据此把 effect 从 `Requested` 改写成 `Approved`）的
+        // effect 才会被补派。
+        //
+        // 此前这里判的是反向条件「还是 Requested，且不在 pending_approvals
+        // 里」，那是 BL-1 的根：任何让 effect 停在 `Requested` 的路径都会被
+        // 误当成已批准——被 Gateway 直接拒掉的 effect（那条路径现在会写
+        // `tool.result{Denied}`，但即使不写，正向判定也不会派发它），以及
+        // `tool.requested` 落盘后、`approval.requested` 落盘前进程被杀留下的
+        // 孤儿 effect（谁也没批过，反向判定却照样派发）。
         let approved_but_undispatched: Vec<EffectId> = state
             .pending_effects
             .iter()
-            .filter(|(id, st)| **st == EffectState::Requested && !awaiting_approval.contains(*id))
+            .filter(|(_, st)| **st == EffectState::Approved)
             .map(|(id, _)| id.clone())
             .collect();
         for effect_id in approved_but_undispatched {
@@ -995,6 +1004,27 @@ impl Runtime {
                     // 任何可校验的锚点，`verify` 会报 VACUOUS——一条被拒的
                     // run 应当既能关掉也能验。
                     let state = self.checkpoint(state, CheckpointReason::PreApproval)?;
+                    // 把 effect 推到终态。`tool.requested` 已经让 reduce 把它
+                    // 记成 `EffectState::Requested`；不写这条结算，它就永远停
+                    // 在那儿，而「停在 Requested」是 `resume` 补派的判据之一
+                    // ——一条被明确拒绝的写操作会在下一次恢复时被真的执行
+                    // （M2 终审 BL-1）。`ToolResultStatus::Denied` 这个此前
+                    // 零生产者的状态就是为这一刻留的：effect 从未执行，所以
+                    // 没有输出、没有实际目标、taint 保持 Clean。
+                    let state = self.emit(
+                        &state,
+                        Actor::Gateway,
+                        EventBody::ToolResult(ToolResult {
+                            effect_id,
+                            status: ToolResultStatus::Denied,
+                            output_ref: None,
+                            bytes: None,
+                            taint: TaintLevel::Clean,
+                            cites_produced: Vec::new(),
+                            actual_targets: Vec::new(),
+                            actual_egress: Vec::new(),
+                        }),
+                    )?;
                     let message_ref = self.log.blobs().put(
                         BlobClass::Content,
                         "text/plain",

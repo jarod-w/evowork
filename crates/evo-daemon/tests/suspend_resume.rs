@@ -466,3 +466,43 @@ async fn clarification_suspends_cleanly_and_answering_it_produces_no_err() {
 //    `decide_approval`/`answer_clarification`）都以它收尾，仓库里只有
 //    这一份 turn 循环的实现。这条不易在测试里直接断言，改在报告里说明。
 // ————————————————————————————————————————————————————————————
+
+// ————————————————————————————————————————————————————————————
+// 9. 被 Gateway 拒掉的 effect，之后任何一次 resume 都不许把它派发出去
+//    （M2 终审 BL-1，红线 1「未经放行的 effect 不会发生」的破口）。
+//
+//    Deny 分支此前只写 checkpoint + run.failed，从不把 effect 推到终态，
+//    于是它一直停在 `tool.requested` 记下的 `EffectState::Requested`；
+//    `resume()` 的反向推断「Requested 且不在 pending_approvals 里 ⇒
+//    已批准待派发」对它成立，一次 resume 就把一个被明确拒绝的写操作
+//    真的执行了。
+// ————————————————————————————————————————————————————————————
+
+#[tokio::test]
+async fn a_gateway_denied_effect_is_never_dispatched_by_a_later_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup_with_policy(dir.path(), DENY_WRITE_POLICY, FIXTURES);
+    let run_id = RunId::from("r-1");
+
+    let outcome = rt.start(&run_id, "把账龄表做出来").await.unwrap();
+    assert!(
+        matches!(outcome, RunOutcome::Failed { .. }),
+        "被拒的 run 应该以 Failed 收场，实得 {outcome:?}"
+    );
+    let written = dir.path().join("workspaces").join("r-1").join("report.txt");
+    assert!(!written.exists(), "被拒的 effect 在 start 阶段就不该执行");
+
+    // 有人（UI、CLI、崩溃重启后的恢复流程）再调一次 resume。
+    rt.resume(&run_id).await.expect("resume 不该有 Err");
+
+    assert!(
+        !written.exists(),
+        "被 Gateway 拒绝的 effect 被一次 resume 真的执行了——红线 1 被击穿"
+    );
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(
+        !kinds.contains(&"effect.dispatched"),
+        "被拒的 effect 不该有任何派发事件：{kinds:?}"
+    );
+}

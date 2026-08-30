@@ -43,6 +43,19 @@ pub enum AwaitReason {
 #[serde(rename_all = "snake_case")]
 pub enum EffectState {
     Requested,
+    /// 这个 effect 的审批被 `approval.granted` 批准了，但还没被派发。
+    ///
+    /// 与 `Requested` 分开，是因为「该不该派发」必须是一条**正向**判定：
+    /// daemon 恢复一条 run 时补派的是「有人明确批过」的 effect，而不是
+    /// 「没在未决审批台账里」的 effect（M2 终审 BL-1）。后者是反向判定，
+    /// 任何让 effect 停在 `Requested` 的路径都会被它误当成已批准——被
+    /// Gateway 直接拒掉的 effect 是一条，`tool.requested` 落盘后、
+    /// `approval.requested` 落盘前进程被杀是另一条，两条都会让一个从未
+    /// 获批的 L3 动作在下一次恢复时被真的执行。
+    ///
+    /// 它不是终态（`is_resolved()` 为 false）：effect 还要走
+    /// `effect.dispatched` → `tool.result`，`decide` 仍应等执行面回流。
+    Approved,
     Dispatched,
     Settled,
     /// 对应这个 effect 的审批被 `approval.denied`（或到期未处理，
