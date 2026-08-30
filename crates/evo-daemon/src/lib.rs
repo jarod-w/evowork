@@ -13,7 +13,8 @@ pub use casegen::generate_case;
 pub use clock::{Clock, FixedClock, RealClock};
 pub use config::DaemonConfig;
 pub use replay::{
-    CliReplayReport, Mismatch, ReplayOutcome, VerifyReport, cli_replay, replay_to, verify,
+    CliReplayReport, Mismatch, ReplayOutcome, SnapshotRejected, VerifyReport, cli_replay,
+    replay_to, replay_to_checked, verify,
 };
 pub use runtime::{DaemonError, ParsedPlan, RunOutcome, Runtime, parse_plan};
 pub use test_support::write_bare_run_created;

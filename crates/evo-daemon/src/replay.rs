@@ -1,5 +1,5 @@
 use crate::runtime::DaemonError;
-use evo_kernel::{RunState, RunStatus, reduce, state_hash_hex};
+use evo_kernel::{RunState, RunStatus, reduce, state_hash, state_hash_hex};
 use evo_protocol::EventBody;
 use evo_protocol::ids::RunId;
 use evo_runlog::RunLog;
@@ -42,22 +42,68 @@ impl VerifyReport {
     }
 }
 
+/// 一个快照没通过自校验、被丢弃了。
+///
+/// 这不是错误——快照本就可丢弃，丢掉它退回全量 fold 得到的是同一个结果。
+/// 但它是一个**必须能被看见**的信号：正常运行的系统不会写出对不上自己
+/// 哈希的快照，出现它意味着 sqlite 文件被改过（或者写快照的那条路径有
+/// 缺陷），两种都值得有人来看一眼。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SnapshotRejected {
+    pub seq: u64,
+    /// 快照自带的 `state_hash` 列（hex）
+    pub expected: String,
+    /// 对快照 blob 解出来的 state 重算出的哈希（hex）
+    pub actual: String,
+}
+
 /// 回放到某个 seq。**不重新调模型、不重新执行 effect**——
 /// 直接重放同一批事件，内核走过完全相同的路径。
 ///
 /// `use_snapshots` 只影响从哪里起步，不影响结果。这一点由
-/// 「删光快照结果不变」那条测试保证。
+/// 「删光快照结果不变」那条测试保证，也由 [`replay_to_checked`] 里的
+/// 快照自校验兜住：对不上就当没有快照。
 pub fn replay_to(
     log: &RunLog,
     run_id: &RunId,
     to_seq: Option<u64>,
     use_snapshots: bool,
 ) -> Result<RunState, DaemonError> {
+    replay_to_checked(log, run_id, to_seq, use_snapshots).map(|(state, _)| state)
+}
+
+/// 同 [`replay_to`]，另外交回「有没有快照因为自校验没过而被丢弃」。
+///
+/// ## 为什么必须校验
+///
+/// 快照是加速器，Log 是唯一权威事实（03 §5）。此前这里直接
+/// `ciborium::from_reader` 把快照 blob 当起点，`snapshots.state_hash`
+/// 这一列读进了 `Snapshot` 结构体却**从不比对**——改一改快照里的
+/// `budget_used`/`taint`，不动任何事件、不动哈希列，带快照的回放就会
+/// 算出一个 Log 里根本不存在的状态，而 `verify()` 照样报 is_ok（它比的
+/// 是 checkpoint 事件里的哈希，不是快照）。`Runtime::resume` 走的正是
+/// 这条路径，被污染的快照会直接驱动真实执行（M2 终审 BL-2）。
+///
+/// ## 为什么是降级而不是报错
+///
+/// 「快照可丢弃」这条性质让兜底零代价：扔掉快照退回全量 fold，结果必然
+/// 与诚实回放相同，调用方什么都不会失去（只是慢一点）。反过来，报错终止
+/// 会把一次数据损坏升级成「这条 run 再也恢复不了」——把可用性搭进去换
+/// 一个本来就不需要的强硬姿态。所以：静默降级，但留下信号（返回值里的
+/// [`SnapshotRejected`]，外加一行 stderr 警告，因为不是每个调用方都会看
+/// 返回值里的这一项）。
+pub fn replay_to_checked(
+    log: &RunLog,
+    run_id: &RunId,
+    to_seq: Option<u64>,
+    use_snapshots: bool,
+) -> Result<(RunState, Option<SnapshotRejected>), DaemonError> {
     let target = match to_seq {
         Some(s) => s,
         None => log.last_seq(run_id)?.unwrap_or(0),
     };
 
+    let mut rejected = None;
     let (mut state, from_seq) = if use_snapshots {
         match log.snapshot_at_or_before(run_id, target)? {
             Some(snap) => {
@@ -66,8 +112,24 @@ pub fn replay_to(
                         seq: snap.seq,
                         detail: e.to_string(),
                     })?;
-                // 快照存的是「写检查点之前」的状态，所以要从该 seq 起重放
-                (restored, snap.seq)
+                let actual = state_hash(&restored);
+                if actual[..] == snap.state_hash[..] {
+                    // 快照存的是「写检查点之前」的状态，所以要从该 seq 起重放
+                    (restored, snap.seq)
+                } else {
+                    let r = SnapshotRejected {
+                        seq: snap.seq,
+                        expected: hex::encode(&snap.state_hash),
+                        actual: hex::encode(actual),
+                    };
+                    eprintln!(
+                        "warning: 丢弃 run {run_id} 在 seq {} 的快照（自校验没过：\
+                         快照声称 {}，重算得 {}），退回全量 fold",
+                        r.seq, r.expected, r.actual
+                    );
+                    rejected = Some(r);
+                    (RunState::new(run_id), 0)
+                }
             }
             None => (RunState::new(run_id), 0),
         }
@@ -78,7 +140,7 @@ pub fn replay_to(
     for event in log.events(run_id, from_seq, Some(target))? {
         state = reduce(&state, &event);
     }
-    Ok(state)
+    Ok((state, rejected))
 }
 
 /// 全量重放，在每个 checkpoint 处比对 state_hash。
