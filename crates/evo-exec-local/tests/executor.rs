@@ -356,3 +356,109 @@ async fn legitimate_new_files_and_valid_symlinks_still_work_after_the_dangling_s
         "ok"
     );
 }
+
+// --- BL-3 硬链接逃逸：canonicalize 对硬链接无能为力——硬链接不是「指向
+// 另一条路径的节点」，它就是同一个 inode 的第二个名字，两个名字之间没有
+// 主次之分，也没有任何可供 canonicalize 跟随的指向关系。于是工作区里的
+// `innocent.txt` 与工作区外的 `outside-secret.txt` 是同一份数据：真实
+// 路径校验全部通过（这个名字确实在工作区里），`fs::write` 落笔改的却是
+// 工作区外那份文件的内容，而 `actual_targets` 报出来的是一条干净的
+// 工作区相对路径——供应链行为异常检测（executor.rs）拿到的是伪证。
+
+#[tokio::test]
+async fn a_hard_link_to_a_file_outside_the_workspace_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+
+    let secret = outside.path().join("outside-secret.txt");
+    std::fs::write(&secret, "ORIGINAL").unwrap();
+    std::fs::hard_link(&secret, ws.path().join("innocent.txt")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(
+            lease(ws.clone()),
+            write_effect("innocent.txt", "PWNED BY THE AGENT"),
+        )
+        .await;
+
+    // 最要紧的断言放最前：工作区外那份文件的内容确实没有被改动。
+    assert_eq!(
+        std::fs::read_to_string(&secret).unwrap(),
+        "ORIGINAL",
+        "工作区外的文件被改写了；actual_targets={:?} 报的却是一条干净的\
+         工作区相对路径",
+        outcome.actual_targets
+    );
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+}
+
+#[test]
+fn a_hard_link_is_refused_at_resolve_time_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "ORIGINAL").unwrap();
+    std::fs::hard_link(
+        outside.path().join("secret.txt"),
+        ws.path().join("innocent.txt"),
+    )
+    .unwrap();
+
+    let err = resolve_in_workspace(&ws, "innocent.txt").unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+}
+
+#[tokio::test]
+async fn a_hard_link_whose_other_name_is_also_inside_the_workspace_is_refused_too() {
+    // 有意接受的误伤：`nlink > 1` 只能说明「这个 inode 有第二个名字」，
+    // 说不出第二个名字在哪儿——要说得出必须扫全盘找同 inode 的目录项。
+    // 所以工作区内部两个互为硬链接的文件也会被拒。理由与悬空软链那次
+    // 取舍一致：宁可拒一种几乎没人依赖的写法，也不放行一条无法判定
+    // 落点的路径。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::fs::write(ws.path().join("a.txt"), "hello").unwrap();
+    std::fs::hard_link(ws.path().join("a.txt"), ws.path().join("b.txt")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(lease(ws.clone()), write_effect("b.txt", "x"))
+        .await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+}
+
+#[tokio::test]
+async fn ordinary_single_linked_files_still_work_after_the_hard_link_fix() {
+    // 反向保险：`nlink == 1` 的普通文件——新建的、覆写已存在的、经由
+    // 工作区内软链写的——一条都不该被这次修复挡住。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+
+    let created = exec
+        .execute(lease(ws.clone()), write_effect("report.txt", "hello"))
+        .await;
+    assert_eq!(created.status, ToolResultStatus::Ok);
+
+    let overwritten = exec
+        .execute(lease(ws.clone()), write_effect("report.txt", "hello again"))
+        .await;
+    assert_eq!(overwritten.status, ToolResultStatus::Ok);
+    assert_eq!(
+        std::fs::read_to_string(ws.path().join("report.txt")).unwrap(),
+        "hello again"
+    );
+
+    std::fs::create_dir_all(ws.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(ws.path().join("real"), ws.path().join("link")).unwrap();
+    let via_symlink = exec
+        .execute(lease(ws.clone()), write_effect("link/inside.txt", "ok"))
+        .await;
+    assert_eq!(via_symlink.status, ToolResultStatus::Ok);
+}

@@ -39,6 +39,9 @@ impl WorkspaceRoot {
 /// 但词法层看不见符号链接：工作区里预先放一个指向工作区外的软链，
 /// 词法消解会判定「合法」，真实文件却落在工作区之外。所以词法校验
 /// 通过之后还要再做一遍**真实路径**校验，见 [`resolve_through_symlinks`]。
+///
+/// 真实路径校验也不是最后一道：硬链接根本没有「另一条真实路径」可供
+/// canonicalize 跟随，前缀比对对它永远成立，见 [`reject_hard_linked_file`]。
 pub fn resolve_in_workspace(ws: &WorkspaceHandle, rel: &str) -> Result<PathBuf, ExecError> {
     let candidate = Path::new(rel);
     if candidate.is_absolute() {
@@ -124,10 +127,67 @@ fn resolve_through_symlinks(
     if !real_ancestor.starts_with(ws_root) {
         return Err(ExecError::PathEscape(rel.to_owned()));
     }
+    reject_hard_linked_file(&real_ancestor, rel)?;
 
     let mut resolved = real_ancestor;
     for part in trailing {
         resolved.push(part);
     }
     Ok(resolved)
+}
+
+/// 硬链接逃逸：`canonicalize` 在这里帮不上任何忙。
+///
+/// 符号链接是一个**指向另一条路径**的节点，所以「真实路径」这个概念成立，
+/// canonicalize 能把它跟到底。硬链接不是：它就是同一个 inode 的第二个
+/// 目录项，两个名字之间没有主次、没有指向关系，各自都是「真实路径」。
+/// 工作区内的 `innocent.txt` 与工作区外的 `outside-secret.txt` 硬链到同一
+/// 个 inode 时，`innocent.txt` canonicalize 出来还是 `<ws>/innocent.txt`
+/// ——前缀比对干干净净地通过，而 `fs::write` 落笔改的是那个 inode 的内容，
+/// 工作区外那个名字看到的数据同样被改写了。更糟的是 `actual_targets` 报出
+/// 来的是一条合法的工作区相对路径：`executor.rs` 那段「declared 与 actual
+/// 比对」的供应链行为异常检测在这个场景下拿到的是伪证。
+///
+/// 能拿到的唯一信号是 `nlink`：`nlink > 1` 说明这个 inode 还有别的名字。
+/// **它说不出别的名字在哪儿**——要说得出，只能扫遍所有可能的挂载点去找
+/// 同 inode 的目录项，每次 `fs.write` 一遍，代价不可接受（工作区里放一个
+/// 几万文件的仓库是常态）。所以这里采取保守判定：目标是普通文件且
+/// `nlink > 1` 就拒。
+///
+/// 两个必须写清楚的边界：
+///
+///   1. **只对普通文件判。** 目录的 `nlink` 天然 ≥ 2（`.` 自己算一个，
+///      每个子目录的 `..` 再各算一个），拿目录去比 `nlink > 1` 会把每个
+///      工作区都判成逃逸。Linux 也不允许对目录建硬链接，所以只看
+///      `is_file()` 不留口子。判定对象是 canonicalize 之后的真实祖先：
+///      如果先经过一条工作区内的软链再落到一个硬链接文件上，
+///      `symlink_metadata` 拿到的会是软链自己的 `nlink`（恒为 1），
+///      必须在解析之后再看。
+///   2. **会误伤工作区内部两个互为硬链接的文件。** 这是有意接受的代价。
+///      工作区是每个 run 独享的临时目录，内容全部由这次 run 自己产生，
+///      内部互为硬链接的两个文件既罕见又总有等价写法（写到新路径，或先
+///      `rm` 再写）。反过来，最常见的「工作区里出现硬链接」恰恰是危险
+///      的那一类——比如包管理器把全局 store 里的文件硬链进 node_modules，
+///      对它写入损坏的是 store 而不是工作区。宁可拒一种几乎没人依赖的
+///      写法，也不放行一条落点无法判定的路径；这与悬空软链那次的取舍
+///      是同一条原则。
+///
+/// 残余风险（本轮不修，属另一类问题）：这仍是校验时刻的判断，挡不住
+/// 「校验之后、`fs::write` 之前」有并发进程把目标换成硬链接的 TOCTOU。
+/// 工作区内已有的符号链接防护是同一个时刻做的，同样有这个窗口——真要
+/// 关掉它，得让写入路径改成 `O_NOFOLLOW` 打开、对同一个 fd `fstat` 再
+/// 写，那是对 `executor.rs` 写入路径的改造，不在这条修复的范围里。
+fn reject_hard_linked_file(real_ancestor: &Path, rel: &str) -> Result<(), ExecError> {
+    use std::os::unix::fs::MetadataExt;
+
+    // real_ancestor 已经 canonicalize 过，路径上不再有符号链接，
+    // 这里的 symlink_metadata 与 metadata 等价。
+    let md = real_ancestor.symlink_metadata()?;
+    if md.is_file() && md.nlink() > 1 {
+        return Err(ExecError::PathEscape(format!(
+            "{rel}: hard link (nlink={}) — the same inode may have another name outside the workspace",
+            md.nlink()
+        )));
+    }
+    Ok(())
 }
