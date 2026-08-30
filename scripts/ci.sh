@@ -2,7 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "== CI-9 构建产物/依赖目录未被跟踪 =="
+echo "== CI-10 构建产物/依赖目录未被跟踪 =="
+# CI-9 在 m1-desktop-shell 分支上已被「外壳不渗进业务代码」检查
+# （断言 @tauri-apps/ 家族的 import 只出现在 apps/ui/src/platform/）占用，
+# 所以本分支的这条检查从编号 10 起。
+#
 # 事故背景：m1-desktop-shell 分支下 apps/ui/ 在本分支（m2-governance）是
 # 未跟踪目录，管它的 apps/ui/.gitignore 也只在那条分支上被跟踪、这边看
 # 不到，于是一次提交计划文档时用了 git add -A，把 node_modules 和
