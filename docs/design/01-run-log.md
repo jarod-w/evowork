@@ -104,6 +104,13 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
 > 本节逐条列举为准。`intent.declared` 是 M1 实现时补入的第 25 条——原目录漏了它，但
 > [06 §2](06-protocol.md) 的事件流示例用了它，[03 §3](03-kernel.md) 的 `RunState.intent`
 > 也依赖它。定义见 `crates/evo-protocol/src/events/lifecycle.rs` 的 `IntentDeclared`。
+>
+> `budget.amended` 是 M2 接通预算闸门时补入的第 26 条（见 4.5 末尾的说明）。加上
+> 它，`crates/evo-protocol/src/event.rs` 的 `EventBody` 现在是 27 个变体——比这里
+> 列的多一个，因为 `run.spawned`/`run.joined` 两条 [P2] 还没进代码，而 `checkpoint`
+> 在代码里算一个变体。两边的对照由该文件的
+> `the_event_catalog_covers_every_kind_the_contract_lists` 逐条钉住：改了这份目录
+> 就要改那份清单，反之亦然。
 
 ### 4.1 生命周期
 
@@ -227,6 +234,11 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
   cites: string[],                  // 该产物中数字的溯源锚点
   supersedes?: string }
 
+// kind: "budget.amended"      // M2 接通预算闸门时补入，见本节末尾的说明
+{ budget: BudgetSpec,        // 整体替换，不是增量
+  by: ActorRef,              // 额度是钱，改过必须记名
+  reason_ref?: BlobRef }     // 提额理由是自由文本，进 blob
+
 // kind: "checkpoint"
 { checkpoint_id, state_hash: string, snapshot_ref?: string, reason: "periodic"|"pre_write"|"pre_approval" }
 
@@ -239,6 +251,21 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
 > 与 `snapshot.rs`），不进 blob store——blob store 是给「原文」用的 content-addressed 文件，
 > 快照是「状态」，读写路径与保留策略都不一样。将来若要统一，得先想清楚快照的 GC 策略
 > 是不是也要跟着 blob 的 `retain_until` 走；不要顺手把它改成 `BlobRef`。
+
+**`budget.amended` 为什么必须是一条事件：** 原目录里没有它——原设计以为
+「超限挂起、人提额续跑」（02 §7）不需要自己的事件。实际上不行：
+`RunState::budget` 除了 `run.created` 没有任何写入方，提额只能靠调用方
+绕过 Log 直接改内存里的状态字段，而那样的状态**在 Log 上推不出来**，
+判据 3（回放结果与原始执行一致）当场不成立。没有它，`run.resumed` 之后
+预算判定仍然为真，内核立刻再产出一次挂起，run 永远推不动——「人提额后
+续跑」这条能力在代码里根本没有落点。
+
+语义是**整体替换**：payload 里就是这条 run 从此刻起完整的 `BudgetSpec`。
+两个理由——一、Log 是唯一权威事实，单独读出一条 `budget.amended` 就该能
+回答「现在的额度是多少」，增量写法要求读者先把之前每一条都折叠一遍；
+二、「把某个维度从有限改回不设限」（`Some` → `None`）用加法表达不出来。
+它**只改上限、不碰已用量**：提额不是销账，`cost.charged` 这本账谁也不许
+倒着写。
 
 **`cost.charged` 的四个细节，每一个都是后补要命的：**
 

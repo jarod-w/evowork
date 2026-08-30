@@ -63,8 +63,9 @@ tool.requested (事件已写入 Log)
    ├─ ② 能力校验     capability.allows(tool, targets)?          权限只能收窄
    ├─ ③ 污点检查     taint == Tainted && class != Read → 强制审批
    ├─ ④ 策略求值     PolicyHook::evaluate(ctx)                  → policy.evaluated
-   ├─ ⑤ 预算闸门     token / 时长 / 金额 / 并发 / 递归深度
    ├─ ⑥ 影响预估     ImpactEstimator::estimate(effect)          → impact.estimated
+   ├─ ⑤ 预算闸门     token / 时长 / 金额 / 并发 / 递归深度
+   │                 （求值次序上在 ⑥ 之后，见下方细节 4）
    │
    ├─ decision == RequireApproval → approval.requested，run 挂起
    ├─ mode == DryRun && class ∈ {Write, External} → 不派发，直接产出 tool.result{status:"dry_run"}
@@ -78,6 +79,9 @@ tool.requested (事件已写入 Log)
 1. **③ 在 ④ 之前。** 污点检查是结构性的，不允许被策略放行——策略可以放宽目录权限，不能放宽「不可信内容不得触发提权动作」。这是技术路线地基 C 那条「提示注入防护必须是结构性的，不能是嘱托性的」在 Gateway 里的落点。
 2. **⑥ 无条件执行，不只在 dry-run 时执行。** 影响预估是审计与审批材料的一部分，正常模式下也要有。
 3. **每一步失败都写事件再返回。** 「被拒绝的调用」是审计里最有价值的记录，不能只在内存里 return。
+4. **⑤ 的求值次序在 ⑥ 之后，编号不变。** 预算闸门有两类判据：「已经花光了没有」（`used >= max`，三个维度各判各的）与「按影响预估这一次会不会打穿」（`used + est_cost > max`，即预扣）。后一类的输入 `est_cost_micros` 就是 ⑥ 的产出，而 ⑥ 按细节 2 必须无条件执行。把 ⑤ 排在 ⑥ 前面只有两种收场：要么 ⑥ 变成有条件的（破细节 2——一次被预算拦下的调用照样该留下影响预估，那是人决定要不要提额时唯一的材料），要么预扣那一半永远读不到值，闸门只剩一半。挪的只是求值次序，判定方向不变：③④ 收紧出来的结论已经落定，⑤ 只会在它之上再加严，从不放宽。实现见 `crates/evo-gateway/src/pipeline.rs` 的 `budget_gate`。
+
+   ⑤ 也排在审批分支**之前**：没钱就是没钱，先请人批一个注定跑不动的动作是在浪费人的注意力，而审批疲劳会让所有审批一起贬值。
 
 ### POC 期各步的实现程度
 
@@ -87,7 +91,7 @@ tool.requested (事件已写入 Log)
 | ② 能力 | `CapabilityToken` 结构存在，只做 scope 字符串匹配 | macaroon / biscuit 可衰减令牌 | 否 |
 | ③ 污点 | **完整实现**（结构性，不能糊） | — | — |
 | ④ 策略 | `HardcodedPolicy` 读一个 TOML | Cedar / OPA | 否 |
-| ⑤ 预算 | token + 金额 + 时长；并发与递归深度留字段 | 加维度 | 否 |
+| ⑤ 预算 | token + 金额 + 时长三维全部通电；并发与递归深度留字段 | 加维度 | 否 |
 | ⑥ 预估 | 见第三节 | 提高精度 | 否 |
 | 记账 | **完整实现** | — | — |
 
@@ -217,6 +221,21 @@ pub struct BudgetSpec {
 ```
 
 超限行为是**挂起**（`run.suspended { reason: "budget_exhausted" }`），不是失败、不是静默继续。人可以提额续跑。这条是功能清单原话「超限自动挂起而非静默烧钱」。
+
+**闸门有两道，分工不同，谁也替代不了谁：**
+
+| | 在哪 | 拦什么 | 判据 |
+|---|---|---|---|
+| turn 级 | `evo_kernel::decide` 的 `budget_exhausted` | 这条 run 还能不能开始下一步 | `used >= max`，三维独立 |
+| effect 级 | 本文档第二节的 ⑤，`evo_gateway` 的 `budget_gate` | 这一次工具调用会不会打穿额度 | 同上，外加预扣 `used + est_cost > max` |
+
+内核看不到 manifest 与影响预估（它连 `est_cost_micros` 都拿不到），Gateway 不驱动 turn 循环——两道必须各写各的。
+
+判据用 `>=` 而不是 `>`：**正好花到上限时余额是 0**，再放行一次动作必然超支；`>` 把上限读成了「可以花到、并且可以再多花一次」。
+
+**提额靠一条 `budget.amended` 事件**（01 §4.5），不是改配置、更不是改内存里的状态字段——`DaemonConfig.budget` 只决定新 run 的起点，改它对已经在跑的 run 无效，它们的额度活在各自的 Log 里。续跑需要两条事件：先 `budget.amended` 抬高上限（否则判定仍然为真，内核立刻再挂一次），再 `run.resumed` 清空挂起。
+
+**记账项：模型调用这一侧还没有预扣。** ⑤ 的预扣只覆盖 effect（而且只在拿得到 `est_cost_micros` 时生效）；模型调用的计费发生在调用**之后**（`cost.charged`），调用之前无从知道这次会花多少 token。所以即便闸门活着，最坏情况仍会超支整整一次模型调用的成本，上界是「一次调用」。真正的预扣要一套「预留 → 结算/释放」事件，留给后续。
 
 子 run 的预算从父 run 扣，且不能超过父 run 剩余——[P2]，但字段现在就在。
 

@@ -41,6 +41,31 @@ expect:
   # 样子：接通污点不等于"从此每一步都要人批"。哪天这条用例改成会调
   # `fs.read` / `shell.exec`，这个值就会变，且必须连同事件 kind 序列的
   # 差异一起在这里说明。
-  final_state_hash: 3fa28a4be5cd4a7339738ee31376585bec1b2ab72897766520100c3d14896427
+  #
+  # M2 终审 BL-10（接通预算闸门）**改了**这个值：旧值是
+  # 3fa28a4be5cd4a7339738ee31376585bec1b2ab72897766520100c3d14896427。
+  # 与上一次一样，变的是 `RunState` 的形状与内容，不是这条 Run Log 的行为。
+  #
+  # 已在一个只含 BL-10 改动的工作区上重新生成并逐条核对：23 条事件的
+  # kind 序列与改动前**逐条相同**（run.created … run.completed），
+  # last_seq 仍是 22，turn 仍是 1，status 仍是 Completed，
+  # checkpoints 仍是 1，三条回放路径的哈希仍然两两相同。
+  #
+  # 变的是两处，两处都是有意引入的：
+  #   1. `RunState` 新增了 `clock_start_ms: Option<u64>`，本用例里是
+  #      Some(1756461600000)——它是 `budget_used.wall_ms` 的计算起点，
+  #      让「这条 run 跑了多久」能在纯函数里算出来，而不用给内核开读时钟
+  #      的口子。
+  #   2. `budget_used.wall_ms` 第一次真的有了写入方（`env.sampled`）。
+  #      本用例采样两次、`FixedClock` 每次推进 1000ms，所以它从恒定的 0
+  #      变成 1000。
+  #
+  # 有一处**没有**变，值得记一笔，因为它看起来该变：`RunState.budget`。
+  # `run.created` 现在带的是 `DaemonConfig.budget` 而不是写死的
+  # `BudgetSpec::default()`，但 `DaemonConfig::for_test`（mkcase 用的就是
+  # 它）保持默认值不设限，所以这条用例的 `run.created` payload 里
+  # `budget` 仍然是 `{}`，逐字节相同——实测两份 Log 的该字段完全一致。
+  # 这是刻意的：接通闸门不该让既有的、没配预算的用例突然撞上限。
+  final_state_hash: fb15aa1ada899da648dd64bfc52796b4188dfde5509191a1bf55f1efce5fc1cd
   artifacts:
     - report.txt
