@@ -25,5 +25,9 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# 篡改快照 blob（而不是事件、也不是哈希列）是 tests/replay.rs 里
+# 「被污染的快照必须被丢弃」那条测试唯一的构造手段：快照存的是 CBOR
+# 编码的 RunState，要改其中一个字段就得解出来再编回去。
+ciborium = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 rusqlite = { workspace = true }
