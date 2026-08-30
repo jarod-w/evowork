@@ -250,6 +250,7 @@ event_body! {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,
+        clarification: None,
     };
     ToolRequested(ToolRequested) = "tool.requested", ver = 1, sample = ToolRequested {
         effect_id: EffectId::from("e-1"),

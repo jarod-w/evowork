@@ -25,6 +25,7 @@ use evo_protocol::events::lifecycle::{
 };
 use evo_protocol::events::model::{
     ModelParams, ModelRequested, ModelResponded, PlanIntent, PlanStep, PlannedCall,
+    PlannedClarification,
 };
 use evo_protocol::{
     Actor, ApprovalId, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass, EffectId,
@@ -85,11 +86,11 @@ pub struct ParsedClarifyOption {
 ///
 /// `question`/`options` 只在 `intent == Clarify` 时有意义——内核的
 /// `Command::AskClarification` 不携带这两样（`decide` 目前只发得出一个
-/// 空字符串占位，见 evo-kernel/src/decide.rs），真正的问题正文与选项
-/// 文案由 daemon 在处理该 Command 时重新解析模型这一轮的原始响应拿到
-/// （见 `Runtime::latest_model_responded_upto`），这里只是把解析能力
-/// 一次性做完，供两处调用（`call_model` 记 `PlanStep`、`AskClarification`
-/// 取问题/选项）复用。
+/// 空字符串占位，见 evo-kernel/src/decide.rs）。`parse_plan` 只在
+/// `call_model` 里被调用这一次：解析结果里的 `question`/`options` 随即
+/// 被落进一个 blob，随 `PlanStep.clarification`（对称于 `call`）一并写进
+/// Log；`Command::AskClarification` 分支从 `state.last_plan.clarification`
+/// 读，不再对模型原文重新解析一遍。
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParsedPlan {
     pub intent: PlanIntent,
@@ -533,32 +534,6 @@ impl Runtime {
         Ok(None)
     }
 
-    /// 找到 `run_id` 这条 Log 里、`seq <= upto_seq` 范围内**最新**一条
-    /// `model.responded`。
-    ///
-    /// 不能只找"turn 等于当前 turn 的那条"再取第一条——`clarification.
-    /// answered` 会让 `plan_turn`/`context_turn` 回退到同一个 turn 号，
-    /// 于是同一个 turn 内会有两条 `model.responded`（问澄清那次、以及
-    /// 回答之后重新规划那次），turn 号本身分不清谁是谁。用"seq 上界内最
-    /// 靠后的一条"取而代之：`AskClarification` 永远紧跟在触发它的那次
-    /// `CallModel` 之后（`decide` 的 `Clarify` 分支挂在 `plan_turn == turn`
-    /// 之后，而 `plan_turn` 只由 `call_model` 产出的 `PlanStep` 设置），
-    /// 所以调用方传入 `state.last_seq`（此时正是那条 `PlanStep` 的 seq）
-    /// 时，取到的必然是同一轮 `CallModel` 留下的那条，不会翻到更早的历史。
-    fn latest_model_responded_upto(
-        &self,
-        run_id: &RunId,
-        upto_seq: u64,
-    ) -> Result<Option<ModelResponded>, DaemonError> {
-        let mut found = None;
-        for event in self.log.events(run_id, 0, Some(upto_seq))? {
-            if let EventBody::ModelResponded(mr) = event.body {
-                found = Some(mr);
-            }
-        }
-        Ok(found)
-    }
-
     /// 把这条 run 里迄今**已回答**的每一条澄清，拼成一个 (答案 blob 引用,
     /// 答案纯文本) 的列表，供 `AssembleContext` 传给 `Assembler`。
     ///
@@ -741,62 +716,36 @@ impl Runtime {
                 }),
             ),
 
-            // 问题正文与选项文案一起落进一个 blob（见
-            // `ClarificationRequested::prompt_ref` 的文档给出的建议形状）。
+            // 问题正文与选项文案（含 `label`，绝不进 payload）早已在
+            // `call_model` 里随 `PlanStep.clarification` 落进一个 blob（见
+            // `ClarificationRequested::prompt_ref` 的文档给出的建议形状）
+            // ——`call_model` 那次 `parse_plan` 的产物直接读出来用，不在
+            // 这里对模型原文重新解析一遍。
             //
             // `question` 这个字段来自内核，但 `decide()` 目前永远发一个空
             // 字符串占位（evo-kernel/src/decide.rs 的 `Clarify` 分支）——
-            // 内核只知道"该问问题了"，不知道问题本身是什么，那份内容只存在
-            // 于模型这一轮的原始响应里。真正的问题正文与选项文案（含
-            // `label`，绝不进 payload）从这里重新解析出来：找到刚刚那次
-            // `CallModel` 写下的 `model.responded`，取它的 `response_ref`
-            // blob，再喂给 `parse_plan`——`call_model` 当初解析的就是同一
-            // 份文本，这里只是为了同一份信息在两个不同时间点被两处消费，
-            // 重新做一遍解析，而不是让内核越权携带业务文本。
+            // 内核只知道"该问问题了"，不知道问题本身是什么，真正的内容
+            // 从 `state.last_plan` 里取。
             Command::AskClarification { .. } => {
-                let responded = self
-                    .latest_model_responded_upto(&state.run_id, state.last_seq)?
+                let clarification = state
+                    .last_plan
+                    .as_ref()
+                    .and_then(|p| p.clarification.clone())
                     .expect(
-                        "AskClarification 只会在 CallModel 已经写过 model.responded \
-                         之后被 decide 产出——见 evo-kernel::decide 的 Clarify 分支，\
-                         它挂在 plan_turn == turn 之后，而 plan_turn 只由 PlanStep \
-                         设置，PlanStep 只由 call_model 在 model.responded 之后发出",
+                        "AskClarification 只会在 CallModel 已经写过带 clarification \
+                         的 PlanStep 之后被 decide 产出——见 evo-kernel::decide 的 \
+                         Clarify 分支，它挂在 plan_turn == turn 之后，而 plan_turn \
+                         只由 call_model 产出的 PlanStep 设置，PlanStep.clarification \
+                         则由 call_model 在 intent == Clarify 时一并写入",
                     );
-                let response_text =
-                    String::from_utf8(self.log.blobs().get(&responded.response_ref)?)
-                        .expect("model 响应 blob 是 runtime 自己用 UTF-8 写入的原文，不应解码失败");
-                let parsed = parse_plan(&response_text)?;
-
-                let options_by_id: BTreeMap<String, String> = parsed
-                    .options
-                    .iter()
-                    .map(|o| (o.id.clone(), o.label.clone()))
-                    .collect();
-                let prompt = serde_json::json!({
-                    "question": parsed.question.clone().unwrap_or_default(),
-                    "options": options_by_id,
-                });
-                let prompt_ref = self.log.blobs().put(
-                    BlobClass::Content,
-                    "application/json",
-                    &serde_json::to_vec(&prompt).expect("prompt 可序列化"),
-                )?;
                 let question_id = format!("{}-q{}", state.run_id, state.last_seq);
-                let options: Vec<ClarificationOption> = parsed
-                    .options
-                    .into_iter()
-                    .map(|o| ClarificationOption {
-                        id: o.id,
-                        is_default: o.is_default,
-                    })
-                    .collect();
                 let state = self.emit(
                     &state,
                     Actor::Runtime,
                     EventBody::ClarificationRequested(ClarificationRequested {
                         question_id,
-                        prompt_ref,
-                        options,
+                        prompt_ref: clarification.prompt_ref,
+                        options: clarification.options,
                     }),
                 )?;
                 self.emit(
@@ -928,6 +877,41 @@ impl Runtime {
             }
             _ => None,
         };
+        // 澄清路径与工具调用路径对称：问题正文与选项文案（含 label，
+        // 绝不进事件 payload）在这里——`parse_plan` 唯一被调用的地方——
+        // 一次性落进一个 blob，`Command::AskClarification` 分支只从
+        // `state.last_plan.clarification` 读，不再对模型原文重新解析。
+        let clarification = match parsed.intent {
+            PlanIntent::Clarify => {
+                let options_by_id: BTreeMap<String, String> = parsed
+                    .options
+                    .iter()
+                    .map(|o| (o.id.clone(), o.label.clone()))
+                    .collect();
+                let prompt = serde_json::json!({
+                    "question": parsed.question.clone().unwrap_or_default(),
+                    "options": options_by_id,
+                });
+                let prompt_ref = self.log.blobs().put(
+                    BlobClass::Content,
+                    "application/json",
+                    &serde_json::to_vec(&prompt).expect("prompt 可序列化"),
+                )?;
+                let options: Vec<ClarificationOption> = parsed
+                    .options
+                    .into_iter()
+                    .map(|o| ClarificationOption {
+                        id: o.id,
+                        is_default: o.is_default,
+                    })
+                    .collect();
+                Some(PlannedClarification {
+                    prompt_ref,
+                    options,
+                })
+            }
+            _ => None,
+        };
         self.emit(
             &state,
             Actor::Runtime,
@@ -937,6 +921,7 @@ impl Runtime {
                 rationale_ref: None,
                 taint_inherited: state.taint,
                 call,
+                clarification,
             }),
         )
     }

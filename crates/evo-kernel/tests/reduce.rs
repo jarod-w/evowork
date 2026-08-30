@@ -98,6 +98,7 @@ fn plan_step_records_the_turn_it_belongs_to() {
                 rationale_ref: None,
                 taint_inherited: TaintLevel::Clean,
                 call: None,
+                clarification: None,
             }),
         ),
     );
