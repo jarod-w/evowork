@@ -506,3 +506,90 @@ async fn a_gateway_denied_effect_is_never_dispatched_by_a_later_resume() {
         "被拒的 effect 不该有任何派发事件：{kinds:?}"
     );
 }
+
+// ————————————————————————————————————————————————————————————
+// 10. 对一条「挂起等审批、人还没批」的 run 调 resume()，调用方不能被
+//     告知「完成」（M2 终审 BL-7）。
+//
+//     此前：resume() 无条件先落 run.resumed（awaiting 被清空、status 变回
+//     Running），decide() 因为那个 effect 还停在非终态返回空命令，循环随即
+//     break，落到 drive() 的 RunStatus::Running 分支——debug 构建在那儿
+//     panic，release 构建返回 RunOutcome::Completed，而 Log 最后一条是
+//     run.resumed：一条没有任何终结事件的 run 被报成了完成。
+// ————————————————————————————————————————————————————————————
+
+#[tokio::test]
+async fn resuming_a_run_whose_approval_is_still_pending_stays_suspended() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut rt, run_id, _approval_id) = start_and_suspend_on_approval(dir.path()).await;
+
+    // 没有人批过——直接 resume。
+    let outcome = rt.resume(&run_id).await.expect("resume 不该有 Err");
+    let RunOutcome::Suspended { state, reason } = outcome else {
+        panic!("审批未决时 resume 必须仍然是 Suspended，实得 {outcome:?}");
+    };
+    assert_eq!(state.status, RunStatus::Suspended);
+    assert!(
+        matches!(reason, AwaitReason::Approval { .. }),
+        "挂起原因应该仍是 Approval，实得 {reason:?}"
+    );
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(
+        !kinds.contains(&"run.completed"),
+        "没批过的 run 不该出现任何完成事件：{kinds:?}"
+    );
+    assert_eq!(
+        kinds.last(),
+        Some(&"run.suspended"),
+        "Log 最后一条应该仍是那条 run.suspended——一次推不动任何事情的恢复\
+         不该在 Log 里留下一条悬空的 run.resumed：{kinds:?}"
+    );
+}
+
+// ————————————————————————————————————————————————————————————
+// 11. 同一条红线的另一半（BL-7 的兜底 + BL-1 点名的第二条路径）：
+//     `tool.requested` 落盘后、`approval.requested` 落盘前进程被杀，
+//     留下一个谁也没批过、谁也不会去推的 effect。
+//
+//     * 它绝不能在下一次 resume 时被派发（正向判定挡住了它）；
+//     * 这条真的推不动的 run 必须以 run.failed 收场，而不是被报成完成。
+// ————————————————————————————————————————————————————————————
+
+#[tokio::test]
+async fn a_run_stuck_on_an_effect_nobody_will_dispatch_fails_instead_of_completing() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::from("r-1");
+    let effect_id = evo_protocol::EffectId::from("r-1-e1");
+    evo_daemon::write_run_created_then_orphan_tool_requested(
+        &dir.path().join("runlog.sqlite"),
+        &dir.path().join("blobs"),
+        &run_id,
+        &effect_id,
+        "2026-08-30T00:00:00Z",
+    )
+    .unwrap();
+
+    let mut rt = setup_with_policy(dir.path(), REQUIRE_APPROVAL_FOR_WRITES_POLICY, FIXTURES);
+    let outcome = rt.resume(&run_id).await.expect("resume 不该有 Err");
+
+    // 先查最要紧的那条：那个 effect 有没有被真的派发出去。
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(
+        !kinds.contains(&"effect.dispatched"),
+        "谁也没批过的 effect 不该被 resume 派发：{kinds:?}"
+    );
+    assert_eq!(
+        kinds.last(),
+        Some(&"run.failed"),
+        "Log 必须有终结事件收尾：{kinds:?}"
+    );
+
+    let RunOutcome::Failed { state, error } = outcome else {
+        panic!("一条推不动的 run 必须报 Failed，实得 {outcome:?}");
+    };
+    assert_eq!(state.status, RunStatus::Failed);
+    assert!(!error.is_empty());
+}

@@ -319,6 +319,29 @@ impl Runtime {
     /// 但前者读起来更像一个正常的因果链条。
     pub async fn resume(&mut self, run_id: &RunId) -> Result<RunOutcome, DaemonError> {
         let state = replay_to(&self.log, run_id, None, true)?;
+
+        // 拦住一种推不动任何事情的恢复：这条 run 挂在「等审批」上，而那条
+        // 审批**仍然未决**（没人批、也没人驳）。此前这里照样先落一条
+        // `run.resumed`，run 变回 Running、awaiting 被清空，然后 `decide`
+        // 因为那个 effect 还停在非终态返回空命令，循环立刻 break，落到
+        // `drive` 的 `RunStatus::Running` 分支——调用方（UI/CLI）被告知
+        // 「完成」，而 Log 最后一条是 `run.resumed`（M2 终审 BL-7）。
+        //
+        // 正确的答案是「什么都没发生」：恢复的前提是那个挡路的东西被解决
+        // 了，没解决就不该往 Log 里写一条骗人的 `run.resumed`。审批一旦被
+        // 批准或驳回，`reduce` 就把它从 `pending_approvals` 里销掉，这个
+        // 条件自然不再成立，`decide_approval` 转发过来的 resume 照常往下走。
+        //
+        // 只拦审批这一种：澄清的裸 resume 有既有的、被测试固定的行为
+        // （重新问一次，随即再次挂起——那条路径自己会落 run.suspended，
+        // 不会撞上 Running 分支），不在本次修复范围内。
+        if let Some(AwaitReason::Approval { approval_id, .. }) = state.awaiting.clone()
+            && state.pending_approvals.contains_key(&approval_id)
+        {
+            let reason = state.awaiting.clone().expect("刚匹配过 Some");
+            return Ok(RunOutcome::Suspended { state, reason });
+        }
+
         let from_seq = state.last_seq + 1;
         let mut state = self.emit(
             &state,
@@ -487,19 +510,51 @@ impl Runtime {
             }
             RunStatus::Completed => RunOutcome::Completed(state),
             RunStatus::Running => {
-                // decide() 只有在「还有 effect 没结算」时才会在 status 仍是
-                // Running 的情况下返回空命令。本文件里每个 effect 的生命周期
-                // 都在单次 execute_command / dispatch_effect 内同步跑完
-                // （checkpoint → lease → execute → tool.result 一次写完），
-                // 所以 drive() 每次调用 decide() 时不可能撞见这种中间态。
-                // 走到这里说明这条不变量被打破了——按「完成」处理是最不
-                // 危险的兜底，但这本身就是一个需要修的 bug。
-                debug_assert!(
-                    false,
-                    "drive() 在 status 仍是 Running 时提前结束：decide() 返回了空命令，\
-                     但没有任何终结/挂起事件把状态转成 Suspended/Completed/Failed"
+                // decide() 只有在「还有 effect 没跑到终态」时才会在 status 仍是
+                // Running 的情况下返回空命令。单次 drive() 内部撞不上这种中间
+                // 态——每个 effect 的生命周期都在 dispatch_effect 里同步跑完
+                // （checkpoint → lease → execute → tool.result 一次写完）——
+                // 但**跨进程**撞得上：Log 里可能留着上一次进程被杀时的残局，
+                // 一个停在 Requested（`tool.requested` 落盘后就被杀，没人批过
+                // 它、`resume` 也不会补派）或停在 Dispatched（执行中途被杀）
+                // 的 effect，谁也不会再把它推向终态。
+                //
+                // 此前这里是 `debug_assert!(false)` + 按「完成」兜底：debug 构建
+                // panic，release 构建把一条没有任何终结事件的 run 报成 Completed
+                // （M2 终审 BL-7）。现在落一条 `run.failed`——这既是唯一诚实的
+                // 结局（这条 run 真的推不动了），也是唯一可用的终结事件：
+                // `run.suspended` 需要一个 `SuspendReason`，而没有任何一个能
+                // 如实描述「卡在一个没人会去推的 effect 上」——`AwaitingApproval`
+                // 会伪造一条不存在的审批（`reduce` 会在空的 pending_approvals
+                // 上 panic），`Paused` 则会被读成「有人手动暂停了」。
+                let stalled: Vec<&str> = state
+                    .pending_effects
+                    .iter()
+                    .filter(|(_, st)| !st.is_resolved())
+                    .map(|(id, _)| id.as_str())
+                    .collect();
+                let detail = format!(
+                    "turn loop stopped while the run was still Running: \
+                     these effects will never reach a terminal state on their own: {stalled:?}"
                 );
-                RunOutcome::Completed(state)
+                let message_ref =
+                    self.log
+                        .blobs()
+                        .put(BlobClass::Content, "text/plain", detail.as_bytes())?;
+                let state = self.emit(
+                    &state,
+                    Actor::Runtime,
+                    EventBody::RunFailed(RunFailed {
+                        at_seq: state.last_seq,
+                        error: ErrorDetail {
+                            code: "stalled_unresolved_effects".to_owned(),
+                            message_ref: Some(message_ref),
+                            retryable: false,
+                        },
+                    }),
+                )?;
+                let error = self.failure_message(&state)?;
+                RunOutcome::Failed { state, error }
             }
         })
     }
