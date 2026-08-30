@@ -107,6 +107,19 @@ pub struct RunState {
 
     /// 只由 env.sampled 写入。内核想读时钟，只有这一个地方可读。
     pub clock_ms: u64,
+    /// 本 run **第一条** `env.sampled` 的 `wall_clock_ms`，之后不再改写。
+    ///
+    /// 它的唯一用途是让 `budget_used.wall_ms`（「这条 run 已经跑了多久」）
+    /// 能在纯函数里算出来：`wall_ms = clock_ms - clock_start_ms`。内核不许
+    /// 读时钟（01 §5 的红线），但 `clock_ms` 是由 `env.sampled` 喂进来的
+    /// 纯数据，两个采样点相减同样是纯数据——**时长维度因此不需要给内核
+    /// 开任何读时钟的口子**。
+    ///
+    /// `Option` 而不是「用 0 表示还没采过」：0 是一个合法的挂钟时刻，
+    /// 把它当哨兵会让第一次采样发生在 epoch 的 run 算出一个天文数字的
+    /// `wall_ms`。这与 `BudgetSpec` 上「`None` 是不设限、不是设成 0」是
+    /// 同一条戒律。
+    pub clock_start_ms: Option<u64>,
     /// 同上，只由 env.sampled 写入
     pub rng: DeterministicRng,
     pub env: BTreeMap<String, String>,
@@ -154,6 +167,7 @@ impl RunState {
             status: RunStatus::Running,
             turn: 0,
             clock_ms: 0,
+            clock_start_ms: None,
             rng: DeterministicRng::from_seed(""),
             env: BTreeMap::new(),
             intent: None,

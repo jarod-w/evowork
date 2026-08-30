@@ -5,11 +5,14 @@
 //! 只能由 `run.resumed` 负责——审批/澄清本身都不许直接清它。
 
 use evo_kernel::{AwaitReason, Command, EffectState, RunState, RunStatus, decide, fold, reduce};
+use evo_protocol::budget::BudgetSpec;
 use evo_protocol::effect::EffectClass;
+use evo_protocol::events::accounting::BudgetAmended;
 use evo_protocol::events::approval::{
     ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia, RiskLevel,
 };
 use evo_protocol::events::clarification::{ClarificationAnswered, ClarificationRequested};
+use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
 use evo_protocol::events::effect::ToolRequested;
 use evo_protocol::events::lifecycle::{RunResumed, RunSuspended, SuspendReason};
 use evo_protocol::events::model::{PlanIntent, PlanStep};
@@ -34,6 +37,20 @@ fn blob_ref() -> BlobRef {
         size: 2,
         mime: "application/json".into(),
     }
+}
+
+fn env_sampled(turn: u32, wall_clock_ms: u64) -> EventBody {
+    EventBody::EnvSampled(EnvSampled {
+        turn,
+        wall_clock_ms,
+        rng_seed: "seed-0".into(),
+        env: Default::default(),
+        model_route: ModelRoute {
+            provider: "fixture".into(),
+            model: "fixture-v1".into(),
+            params_digest: "d0".into(),
+        },
+    })
 }
 
 fn tool_requested(effect_id: &str, turn: u32) -> EventBody {
@@ -73,6 +90,19 @@ fn approval_granted(approval_id: &str) -> EventBody {
 fn approval_denied(approval_id: &str) -> EventBody {
     EventBody::ApprovalDenied(ApprovalDenied {
         approval_id: ApprovalId::from(approval_id),
+        by: Actor::Human("u-1".into()),
+        reason_ref: None,
+    })
+}
+
+/// 人提额：一条真的事件，不是往 state 上手写字段。整体替换语义——
+/// payload 里就是这条 run 从此刻起完整的 `BudgetSpec`。
+fn budget_amended(max_amount_micros: u64) -> EventBody {
+    EventBody::BudgetAmended(BudgetAmended {
+        budget: BudgetSpec {
+            max_amount_micros: Some(max_amount_micros),
+            ..BudgetSpec::default()
+        },
         by: Actor::Human("u-1".into()),
         reason_ref: None,
     })
@@ -304,10 +334,103 @@ fn budget_none_means_unlimited_not_zero() {
 }
 
 #[test]
+fn budget_is_exhausted_at_the_limit_not_one_action_past_it() {
+    // `>=` 而不是 `>`：正好花到上限时余额是 0，再放行一次动作必然超支。
+    // 旧判据是 `>`，它把「上限」读成了「可以花到、并且可以再多花一次」。
+    let mut s = RunState::new(&RunId::from("r-1"));
+    s.env_sampled_turn = Some(0);
+    s.budget.max_amount_micros = Some(1_000);
+    s.budget_used.amount_micros = 1_000; // 不多不少，正好花完
+
+    assert_eq!(
+        decide(&s),
+        vec![Command::Suspend {
+            reason: AwaitReason::Budget
+        }],
+        "正好花到上限就该挂起——余额是 0，没有再放行一次的余地"
+    );
+
+    // 差一点点没花完则照常放行：闸门不许提前一步收网。
+    s.budget_used.amount_micros = 999;
+    assert_eq!(
+        decide(&s),
+        vec![Command::AssembleContext {
+            turn: 0,
+            profile: "default".into()
+        }]
+    );
+}
+
+#[test]
+fn the_wall_clock_dimension_is_fed_by_env_sampled() {
+    // `budget_used.wall_ms` 此前在 `reduce` 的任何 arm 里都没有写入方，
+    // 恒为 0——时长这一维在代码里是死的，只有注释说它活着。写入方现在是
+    // `env.sampled`：本次采样时刻减去本 run 第一次采样时刻。
+    let events = vec![
+        ev(0, env_sampled(0, 1_000_000)),
+        ev(1, env_sampled(1, 1_003_500)),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+
+    assert_eq!(
+        s.clock_start_ms,
+        Some(1_000_000),
+        "起点钉在第一条 env.sampled 上，之后不再改写"
+    );
+    assert_eq!(s.budget_used.wall_ms, 3_500);
+
+    // 配 3 秒的额度：3500ms >= 3000ms，挂起。
+    let mut limited = s.clone();
+    limited.budget.max_wall_seconds = Some(3);
+    assert_eq!(
+        decide(&limited),
+        vec![Command::Suspend {
+            reason: AwaitReason::Budget
+        }]
+    );
+
+    // 配 4 秒的就还跑得动——证明上面那条确实是被时长这一维拦下的，
+    // 不是因为别的原因挂的。
+    let mut roomy = s;
+    roomy.budget.max_wall_seconds = Some(4);
+    assert!(
+        !decide(&roomy)
+            .iter()
+            .any(|c| matches!(c, Command::Suspend { .. })),
+        "3500ms 没到 4 秒的上限，不该挂起"
+    );
+}
+
+#[test]
+fn a_backwards_clock_never_refunds_wall_time() {
+    // 计量器只增不减：挂钟往回跳（对时、换机器）不许把已经计满的时长
+    // 退回去，否则一条撞了时长上限的 run 靠时钟抖动就能一直跑下去。
+    let events = vec![
+        ev(0, env_sampled(0, 1_000_000)),
+        ev(1, env_sampled(1, 1_005_000)),
+        ev(2, env_sampled(2, 1_002_000)), // 时钟倒退
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+
+    assert_eq!(s.clock_ms, 1_002_000, "clock_ms 如实记录最近一次采样");
+    assert_eq!(
+        s.budget_used.wall_ms, 5_000,
+        "wall_ms 保持在到过的最大值，不跟着时钟回退"
+    );
+}
+
+#[test]
 fn raising_the_budget_lets_a_suspended_run_continue() {
-    // 「人提额后可续跑」：把超限之后的挂起状态跑一遍，再模拟人提额
-    // （直接把 max 调高——本任务的事件目录里还没有专门的「提额」事件，
-    // 提额本身不是这个任务的范围），run.resumed 之后应该正常继续决策。
+    // 「人提额后可续跑」——**提额走的是一条真的事件**。
+    //
+    // 这条测试原来是直接改 state 字段来「提额」的
+    // （`resumed.budget.max_amount_micros = Some(10_000)`），理由写的是
+    // 「事件目录里还没有专门的提额事件」。它因此验证了一个**在 Log 上
+    // 推不出来的状态**：真实链路里没有任何事件能改 `RunState::budget`，
+    // 所以 `run.resumed` 之后 `budget_exhausted` 仍然为真，`decide` 立刻
+    // 再产出一次 `Suspend`，run 永远推不动。那条绿测试掩盖的正是这个缺口
+    // （M2 终审 BL-10）。现在提额是 `budget.amended`，整条链路从头到尾
+    // 只由事件驱动，`fold` 得出的状态就是真实运行时会得到的状态。
     let mut s = RunState::new(&RunId::from("r-1"));
     s.env_sampled_turn = Some(0);
     s.budget.max_amount_micros = Some(1_000);
@@ -322,8 +445,29 @@ fn raising_the_budget_lets_a_suspended_run_continue() {
     let suspended = reduce(&s, &ev(0, run_suspended(SuspendReason::BudgetExhausted)));
     assert!(decide(&suspended).is_empty());
 
-    let mut resumed = reduce(&suspended, &ev(1, run_resumed(2)));
-    resumed.budget.max_amount_micros = Some(10_000); // 人提额
+    // 只 resume、不提额：额度没变，decide 必须**再挂一次**，不许假装
+    // 能跑。这是旧写法从没验过的那一半。
+    let resumed_without_amendment = reduce(&suspended, &ev(1, run_resumed(2)));
+    assert_eq!(
+        decide(&resumed_without_amendment),
+        vec![Command::Suspend {
+            reason: AwaitReason::Budget
+        }],
+        "没提额就 resume，只能再挂一次——run 推不动是正确行为，不是缺陷"
+    );
+
+    // 提额（事件）+ resume（事件）：这才真的续跑。
+    let amended = reduce(&suspended, &ev(1, budget_amended(10_000)));
+    let resumed = reduce(&amended, &ev(2, run_resumed(3)));
+    assert_eq!(
+        resumed.budget.max_amount_micros,
+        Some(10_000),
+        "额度的变化必须是折叠出来的，不是手写上去的"
+    );
+    assert_eq!(
+        resumed.budget_used.amount_micros, 1_001,
+        "提额不销账：已经花掉的钱不会因为上限抬高而回退"
+    );
     assert_eq!(
         decide(&resumed),
         vec![Command::AssembleContext {
@@ -331,6 +475,46 @@ fn raising_the_budget_lets_a_suspended_run_continue() {
             profile: "default".into()
         }]
     );
+}
+
+#[test]
+fn the_amended_budget_survives_a_full_replay() {
+    // 提额可回放：从空状态把整串事件折叠一遍（回放器做的就是这件事），
+    // 得到的额度必须是提额之后的那个。旧写法（改 state 字段）在这里
+    // 必然失败——手写的字段不在 Log 里，回放推不出来。
+    let events = vec![
+        ev(0, run_suspended(SuspendReason::BudgetExhausted)),
+        ev(1, budget_amended(10_000)),
+        ev(2, run_resumed(3)),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+
+    assert_eq!(s.budget.max_amount_micros, Some(10_000));
+    assert_eq!(s.status, RunStatus::Running);
+    assert_eq!(s.awaiting, None);
+}
+
+#[test]
+fn an_amendment_can_also_lower_or_lift_a_limit() {
+    // 整体替换语义的两个直接后果：额度可以调低，也可以把某个维度改回
+    // 「不设限」（`Some` → `None`）——后者用增量写法根本表达不出来，
+    // 这正是选替换而不是增量的理由之一。
+    let lowered = fold(&RunId::from("r-1"), &[ev(0, budget_amended(10))]);
+    assert_eq!(lowered.budget.max_amount_micros, Some(10));
+
+    let lifted = reduce(
+        &lowered,
+        &ev(
+            1,
+            EventBody::BudgetAmended(BudgetAmended {
+                budget: BudgetSpec::default(), // 五个维度全部不设限
+                by: Actor::Human("u-1".into()),
+                reason_ref: None,
+            }),
+        ),
+    );
+    assert_eq!(lifted.budget.max_amount_micros, None);
+    assert_eq!(lifted.budget, BudgetSpec::default());
 }
 
 // ————————————————————————————————————————————————————————————

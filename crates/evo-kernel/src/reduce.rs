@@ -44,6 +44,23 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
         EventBody::EnvSampled(e) => {
             s.turn = e.turn;
             s.clock_ms = e.wall_clock_ms;
+            // `budget_used.wall_ms` 的**唯一写入方**。此前这个字段在 reduce
+            // 的任何 arm 里都没有写入方，恒为 0，于是 `decide` 里那条
+            // `used.wall_ms > max_wall_seconds * 1000` 永远为假——预算的三个
+            // 维度里，时长这一维是死的（M2 终审 BL-10）。
+            //
+            // 起点是本 run 第一条 env.sampled 的采样时刻（见
+            // `RunState::clock_start_ms`）：内核读不到真实时钟，但两个采样点
+            // 相减是纯数据运算，同一条 Log 回放多少次都得到同一个值。
+            let start = *s.clock_start_ms.get_or_insert(e.wall_clock_ms);
+            // 取 max 而不是直接赋值：预算表是**只增不减**的计量器。挂钟
+            // 万一往回跳（daemon 侧对时、换机器），直接赋值会让已经计满的
+            // 时长凭空退回去，一条撞了时长上限的 run 就能靠时钟抖动一直
+            // 跑下去；saturating_sub 只挡住下溢 panic，挡不住这个。
+            s.budget_used.wall_ms = s
+                .budget_used
+                .wall_ms
+                .max(e.wall_clock_ms.saturating_sub(start));
             s.rng = DeterministicRng::from_seed(&e.rng_seed);
             s.env = e.env.clone();
             s.env_sampled_turn = Some(e.turn);
@@ -116,6 +133,18 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
         }
         EventBody::CostCharged(e) => {
             s.budget_used.amount_micros += e.amount_micros;
+        }
+        EventBody::BudgetAmended(e) => {
+            // `RunState::budget` 在 `run.created` 之外唯一的写入方——「人提额
+            // 之后 run 能续跑」这件事在 Log 上的落点。整体替换，不是增量：
+            // 理由见 `BudgetAmended` 的文档注释。
+            //
+            // **只改上限，不碰 `budget_used`。** 提额不是销账：已经花掉的
+            // token / 金额 / 时长照旧记在那儿，run 能继续跑是因为上限抬高
+            // 之后 `decide` 里的 `budget_exhausted` 不再成立，不是因为账被
+            // 抹平了。倒着改账本会让 `cost.charged` 聚合出来的成本报表
+            // （A-7）与 Log 对不上。
+            s.budget = e.budget;
         }
         EventBody::Checkpoint(_) => {
             s.last_checkpoint_seq = Some(event.seq);
