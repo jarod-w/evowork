@@ -10,7 +10,9 @@ use evo_kernel::{
 };
 use evo_model::{Message, ModelAdapter, ModelRequest, PriceTable, request_digest};
 use evo_policy::HardcodedPolicy;
-use evo_protocol::events::accounting::{Checkpoint, CheckpointReason, CostDimension};
+use evo_protocol::events::accounting::{
+    BudgetAmended, Checkpoint, CheckpointReason, CostDimension,
+};
 use evo_protocol::events::approval::{
     ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia,
 };
@@ -282,7 +284,7 @@ impl Runtime {
                     kind: TriggerKind::Manual,
                     reference: "cli".into(),
                 },
-                budget: BudgetSpec::default(),
+                budget: self.config.budget,
                 labels: Default::default(),
             }),
         )?;
@@ -473,6 +475,67 @@ impl Runtime {
         )?;
 
         self.resume(run_id).await
+    }
+
+    /// 人改一条**已经在跑**（或已经挂起）的 run 的额度：往 Log 追加一条
+    /// `budget.amended`，如果这条 run 正挂在预算上就顺手把它续起来。
+    ///
+    /// **这是「人提额后续跑」唯一的落点。** 在这个方法存在之前，
+    /// `RunState::budget` 除了 `run.created` 没有任何写入方——提额只能靠
+    /// 调用方绕过 Log 直接改内存里的状态字段，而那样的状态**在 Log 上
+    /// 推不出来**：回放同一条 Log 得到的额度还是原来那个，
+    /// `budget_exhausted` 仍然为真，`decide` 立刻再产出一次 `Suspend`。
+    /// 「状态里有 Log 里推不出来的东西」正是判据 3 要挡的那类问题
+    /// （`evo-kernel/tests/suspend_resume.rs` 里那条测试就曾经这么写，
+    /// 于是它「证明」了一件在真实链路上根本不成立的事）。
+    ///
+    /// 与 [`Runtime::decide_approval`] 同构：先把人的决定记进 Log，再
+    /// `resume`。差别在于**只有真的挂在预算上的 run 才续跑**——一条挂在
+    /// 等审批上的 run，提额并不解除它的挂起理由，这时候写一条
+    /// `run.resumed` 就是在骗人（与 `resume` 顶部拦住「审批仍未决却恢复」
+    /// 是同一条道理，M2 终审 BL-7）。额度照记，恢复留给那个原因自己。
+    pub async fn amend_budget(
+        &mut self,
+        run_id: &RunId,
+        budget: BudgetSpec,
+        by: Actor,
+        reason: Option<&str>,
+    ) -> Result<RunOutcome, DaemonError> {
+        let state = replay_to(&self.log, run_id, None, true)?;
+        // 提额理由是人写的自由文本，进 blob，不进 payload（红线①）。
+        let reason_ref = reason
+            .map(|r| {
+                self.log
+                    .blobs()
+                    .put(BlobClass::Content, "text/plain", r.as_bytes())
+            })
+            .transpose()?;
+        let state = self.emit(
+            &state,
+            by.clone(),
+            EventBody::BudgetAmended(BudgetAmended {
+                budget,
+                by,
+                reason_ref,
+            }),
+        )?;
+
+        if state.awaiting == Some(AwaitReason::Budget) {
+            return self.resume(run_id).await;
+        }
+        Ok(match (state.status, state.awaiting.clone()) {
+            (RunStatus::Suspended, Some(reason)) => RunOutcome::Suspended { state, reason },
+            (RunStatus::Completed, _) => RunOutcome::Completed(state),
+            (RunStatus::Failed, _) => {
+                let error = self.failure_message(&state)?;
+                RunOutcome::Failed { state, error }
+            }
+            // 还在跑（或者 Suspended 却没有 awaiting——`reduce` 的不变量说
+            // 这不可能，真出现了也该由 drive 的收尾逻辑如实报出来，而不是
+            // 在这里猜一个结局）：不写 `run.resumed`，它从来没挂起过，
+            // 直接接着驱动。
+            _ => return self.drive(state).await,
+        })
     }
 
     /// 唯一的驱动循环。[`Runtime::start`] 与 [`Runtime::resume`]
@@ -1137,6 +1200,11 @@ impl Runtime {
                 scopes: vec!["*".to_owned()],
             },
             mode: ExecutionMode::Live,
+            // 第⑤步（预算闸门）的输入。Gateway 不持有 run 状态，额度与
+            // 已用量都由这里从 `RunState` 里取出来当纯数据递进去——
+            // `state` 本身是 Log 折叠的结果，所以这两个值同样是可回放的。
+            budget: state.budget,
+            budget_used: state.budget_used,
         });
 
         for body in verdict.events {
@@ -1252,6 +1320,54 @@ impl Runtime {
                         EventBody::RunSuspended(RunSuspended {
                             reason: SuspendReason::AwaitingApproval,
                             detail_ref: None,
+                        }),
+                    );
+                }
+
+                // 第⑤步拦下了这次调用。与 `Deny` 分支同构的收尾，只有结局
+                // 不同：被拒是 `run.failed`（这个动作本身不许做），超预算是
+                // `run.suspended{BudgetExhausted}`（动作合法，只是现在没钱）
+                // ——「超限自动挂起而非静默烧钱」。
+                GatewayAction::BudgetExceeded { reason_code, .. } => {
+                    // 与 Deny 分支同样的理由：先下检查点，否则这条 run 没有
+                    // 任何可校验的锚点，`verify` 会报 VACUOUS。
+                    let state = self.checkpoint(state, CheckpointReason::PreApproval)?;
+                    // 把 effect 推到终态。不写这条结算，它会永远停在
+                    // `Requested`：`decide` 的「还有 effect 没跑到终态」检查
+                    // 会一直挡在前面，人提额、`run.resumed` 清空 awaiting
+                    // 之后 run 照样推不动——turn 循环走不到重新规划那一步，
+                    // 最后落进 `drive` 的 stalled 分支报 run.failed。
+                    // 这条 effect 从未执行，所以没有输出、没有实际目标、
+                    // taint 保持 Clean，与 Gateway 直接拒掉的那条路径一致。
+                    let state = self.emit(
+                        &state,
+                        Actor::Gateway,
+                        EventBody::ToolResult(ToolResult {
+                            effect_id,
+                            status: ToolResultStatus::Denied,
+                            output_ref: None,
+                            bytes: None,
+                            taint: TaintLevel::Clean,
+                            cites_produced: Vec::new(),
+                            actual_targets: Vec::new(),
+                            actual_egress: Vec::new(),
+                        }),
+                    )?;
+                    // 哪个维度、为什么拦，进 blob——`RunSuspended` 的 payload
+                    // 里只有粗粒度的 `SuspendReason`，具体分类码走 detail_ref
+                    // （红线①：正文不进 payload）。这是 UI 要告诉人「加多少
+                    // 才跑得动」时唯一的线索来源。
+                    let detail_ref = self.log.blobs().put(
+                        BlobClass::Content,
+                        "text/plain",
+                        reason_code.as_bytes(),
+                    )?;
+                    return self.emit(
+                        &state,
+                        Actor::Gateway,
+                        EventBody::RunSuspended(RunSuspended {
+                            reason: SuspendReason::BudgetExhausted,
+                            detail_ref: Some(detail_ref),
                         }),
                     );
                 }
