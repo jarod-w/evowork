@@ -1,0 +1,37 @@
+---
+description: 桌面外壳隔离与 daemonClient
+globs: apps/ui/**
+alwaysApply: false
+---
+
+# apps/ui
+
+Vite + React。`src/platform/` 是**唯一**允许出现 `@tauri-apps/`、
+`ipcRenderer`、`__TAURI` 的目录（CI-9：匹配整个 `@tauri-apps/` 家族与
+`__TAURI` 前缀，不是只匹配 `@tauri-apps/api` / `__TAURI__`）。
+浏览器与 Tauri 两套实现同时在；不要删掉浏览器入口。
+
+`src/daemon/daemonClient` 是 UI 访问 daemon 的唯一模块。UI 不轮询——
+内核是事件溯源的，UI 是事件流的投影（设计文档 06）。不要为「方便渲染」
+在推送时合并事件；要合并请在前端合并。
+
+`src-tauri/` 是约 200 行零业务逻辑的壳，用空 `[workspace]` 隔离成独立
+workspace 根。不要把业务逻辑写进去。`capabilities/` 缺失时 Tauri 2
+静默解析出空权限集，编译不报、启动不报，只在真机上第一次调用时
+`command not allowed`。不要把这个目录当空文件夹删掉。
+
+## 今天的界面是什么
+
+`App.tsx` 是 platform 层与 `daemonClient` 的验收页，不是产品 UI 的早期版本。
+浏览器里 daemon 恒为 `not connected` 是预期——daemon 还没有 HTTP 入口。
+跳过档一（daemon 二进制 + `/v1/rpc` + `/v1/events` + `packages/protocol`）
+和档二那批接线去做「好看的界面」，做出来的是第二个探针页。
+
+## 碰 `subscribe()` 时
+
+`client.ts` 的 `ws.onclose` 直接重连，无退避、无重试上限（STATUS P0-16）。
+全仓今天没有任何调用方用到它。UI 一接 run 视图就活。改这个文件就一并加上
+指数退避 + 重试上限，不要只加 `TODO`。
+
+Agent Loop 不许写进 UI 进程（红线 1）。`crates/` / `apps/` 不得出现
+`用友` / `yonyou`。

@@ -1,0 +1,41 @@
+---
+description: evo-kernel 确定性与 fold 约定
+globs: crates/evo-kernel/**
+alwaysApply: false
+---
+
+# evo-kernel
+
+`reduce` / `decide` / `state_hash` / `fold` 是本 crate 导出的全部内容。
+无 IO、无时钟、无随机数。想读时间只能读 `RunState::clock_ms`，它只由
+`env.sampled` 写入——想读时钟都没有地方读。
+
+`clippy.toml` 的 `disallowed-methods` / `disallowed-types` 只在本 crate
+上是 `deny`。根 workspace 对这两条是 `allow`；`evo-protocol` 继承的是
+allow。不要假设「整个 workspace 都禁了 `SystemTime::now()`」。
+
+## 硬约束
+
+- `reduce` 不得读 `Event::recorded_at`。内核不可见墙钟。今天没有任何测试
+  喂两份只有 `recorded_at` 不同的事件流去断哈希相同（STATUS P2-15）——
+  改 `reduce` 时不要成为第一个去读它的人，也不要写注释说「已有测试守着」。
+- 快照只是加速。删光后 `fold` 结果必须一字不差（CI-8）。不要往快照里塞
+  Log 里没有的状态。
+- `map` 顺序不能影响哈希。现有「两个 2 元素 map」测试对 `HashMap` 是抛硬币
+  （STATUS P2-15）。不要把哈希实现改回 `HashMap` 并靠那条测试证明没事。
+
+## 测试
+
+断 `decide` 接下来做了什么，不要只断某个 pending 字段被清空。澄清死循环
+就是这样漏掉的：测试绿了，答了问题运行卡死。
+
+`AwaitReason::Human`、`SuspendReason::Paused`、`CompletionStatus::Partial`、
+`RunState::children` 等是死变体/死字段，均有注释。不要在没有产生方的情况下
+写「本层保证处理了 X」。
+
+`reduce` 忽略 `ContextCompacted` / `ArtifactEmitted`。`RunState::artifacts`
+全仓零写入点（声明 + `Vec::new()`，没有 `push`）。做产物区 = 先给
+`artifact.emitted` 找产生方，再接进 `reduce`，最后才谈渲染。
+
+改 `RunState` 形状会改 `eval/cases/synthetic-01` 的 `final_state_hash`。
+更新规则见 `.cursorrules`「不要做的事」与该 yaml 里现有三段注释。

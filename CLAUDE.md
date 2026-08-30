@@ -4,6 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 当前状态与未做事项见 [`docs/STATUS.md`](docs/STATUS.md)。契约见 [`docs/design/`](docs/design/00-index.md)（00 是索引，含仓库结构、依赖方向、CI 清单、待确认问题）。
 
+Cursor 侧的仓级约定正文是 [`.cursorrules`](.cursorrules)，Agent 模式靠
+[`.cursor/rules/`](.cursor/rules/) 加载（`00-core.mdc` 用 `@.cursorrules`
+把正文拉进上下文，其余按路径挂分册）。与本文件说的是同一套，不要在那边
+另写一份「更强」的保证。
+
 ---
 
 ## 常用命令

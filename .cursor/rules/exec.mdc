@@ -1,0 +1,29 @@
+---
+description: 执行面、沙箱与 vendor 边界
+globs: crates/evo-exec/**, crates/evo-exec-local/**
+alwaysApply: false
+---
+
+# evo-exec / evo-exec-local
+
+工作区边界建立在「每个 `WorkspaceHandle` 都来自 `ensure`」上，但
+`WorkspaceHandle::new` 是 `pub`（STATUS P1-5）。不要再增加直接 `new` 的
+调用点。封口要改 `evo-exec` 的可见性，不是再写一条注释。
+
+污点判定表住在 `evo-exec-local` 里。`Executor` trait 层没有污点约束
+（STATUS P1-6）。第二个 executor 返回 `Clean` 今天没有任何东西拦得住。
+不要在 trait 默认实现里写「外部返回一律 tainted」——那正是曾经骗过
+内核注释的那句话，三个执行出口当时全部写死 `Clean`。
+
+## 不要沿用已过期的隔离声明
+
+`sandbox.rs` / `workspace.rs` / `executor.rs` 里仍有多处宣称「工作区级隔离
++ 强制走 proxy」「敏感目录硬拦截」「actual_egress 是实际出口」——对应代码
+做不到（STATUS P3）。改这些文件时把过强的标题句改成「本层不保证 X，见
+\<位置\>」，不要再抄进新注释。
+
+`Lease.expires_at_ms` 有人写、零读者。`cmd.output().await` 无界
+（STATUS P0-3）。碰执行路径时不要假定超时已经接通。
+
+`crates/evo-exec-local/vendor/` 内不做任何修改。该目录目前几乎是空的
+（只有 README），CI-6 尚未开始。不要把本地改动写进 vendor。

@@ -1,0 +1,80 @@
+# EVOWORK · Cursor 仓级约定
+
+本文件是仓级约定的**正文**。Cursor Agent 模式不保证读取仓库根的
+`.cursorrules`；始终生效的加载器是 `.cursor/rules/00-core.mdc`（用
+`@.cursorrules` 把本文拉进上下文）。路径分册在 `.cursor/rules/*.mdc`，
+按 glob 自动挂上——不要把分册内容再抄进这里。
+
+当前状态与未做事项：[`docs/STATUS.md`](docs/STATUS.md)。先读再改。
+契约：[`docs/design/00-index.md`](docs/design/00-index.md)。
+命令、crate 地图、收尾检查：[`CLAUDE.md`](CLAUDE.md)。
+
+三处说的是同一套。不要在本文件另写一份「更强」的保证。
+
+---
+
+## 一句话
+
+**Run Log 是权威事实，任务状态是 Log 的折叠结果。**
+UI 看到的、报表算出的、审计导出的，是同一条 Log 的不同投影。
+不要另起一张表记状态或成本。
+
+## 六条红线
+
+越过任何一条就是在做一次性工程（POC 文档零章）。允许实现简陋，不允许调用点错位。
+
+1. Agent Loop 不许写进 UI 进程。
+2. 任何工具调用只有 Gateway 一个出口，包括内置工具。
+3. 事件 schema 只增不改：新字段必须 optional；改语义必须升 `schema_ver` 并保留旧版解码。
+4. 内核不得读时钟 / 随机数 / env / 文件 / 网络。要时间只读 `RunState::clock_ms`，它只由 `env.sampled` 写入。
+5. 不为演示铺 mock 数据、预置答案、演示专用页面。
+6. `crates/` 与 `apps/` 里不得出现客户专有名词（`用友` / `yonyou`）。客户换成金蝶时删掉的是 `mcp-servers/yonyou`，不是主干。
+
+## 三条工程约定（优先于「测试变绿」）
+
+本项目已为下面每一条付过代价。它们不是风格偏好。
+
+1. **新增或修改任何检查，必须构造一个具体的违规输入，实测它会红，再恢复确认复绿。**
+   三段输出都要留证。答不出「什么输入能让它红」的检查，等于没有这条检查。
+   不要在命令行手工重现脚本里的 grep——交互式 `grep` 是 `.gitignore`-aware 的包装。一律调 `./scripts/ci.sh`。
+2. **测试要断行为，不断中间字段。** 修 bug 时，先写一条在未修代码上会红的测试，把红的输出留证，再修。
+   「我加了测试且它绿」不算。不要把现存 bug 改写成期望。
+3. **注释不要宣称代码做不到的事。** 写下「本层保证 X」之前，问一句代码在哪一行做了 X。
+   做不到就写成「本层**不**保证 X，见 \<位置\>」。过强的声明比没有声明更危险。
+
+## 结构优于纪律
+
+能让错误**写不出来**的结构，优于要求人记住的纪律。仓内已有的例子：`tighten(decision, floor)`、`event_body!` 强制 `sample =`。
+评审时如果发现「这里靠约定」，先想能不能改成「这里靠类型」。
+
+## 组装与依赖
+
+组装只发生在 `evo-daemon`。新增一条兄弟 crate 之间的依赖，要在 PR 描述里说明为什么不能由 daemon 组装。
+回放器住在 `evo-daemon/src/replay.rs` 而不是 `evo-runlog`，因为它要 `evo-kernel::fold`。
+
+## 当前路线（只改顺序，不改判据）
+
+顺序以 `docs/STATUS.md` **第三节**为准，不要按自己的优先级重排。第三节挑出来提前的条目，全部是因为 UI 会把它们变成用户可见的错误，不是因为它们的性质变了。
+
+今天的事实（写进规则是为了阻止把未接通写成已接通）：
+
+- `evo-daemon` 是纯 lib crate，全仓没有把它起成服务的 `main.rs`。
+- `apps/ui` 的 `App.tsx` 是 platform 层与 `daemonClient` 的**探针页**，不是产品 UI 的早期版本。
+- P0 四条外加 P0-16 **不因 UI 优先而下沉**。条目编号按新增顺序追加，不随优先级重排。
+
+## 收尾
+
+- `./scripts/ci.sh` 全段绿才算完——不是 `cargo test -p <crate>`。
+- `ALLOW_SKIP_FRONTEND=1` 只在 node/pnpm 缺失时有意义；工具齐备时它不是跳过开关。
+- 改了 `Cargo.toml` 必须一并提交 `Cargo.lock`。
+- 一个逻辑改动一次 commit。
+- commit message **英文**，沿用 `doc:` / `feat:` / `fix:`。`docs/` 保持中文。
+- **绝不 `git add -A`。** CI-10 是最后一道，不是第一道。
+
+## 不要做的事
+
+- 不要把 `docs/STATUS.md` 里的未做项写成已经接通，也不要在注释里写「已保证」而代码没有读者。
+- 不要静默改 `eval/cases/synthetic-01/case.yaml` 的 `final_state_hash`。要改必须：只含本次改动的工作区上重新生成；逐条核对事件 kind 序列差异是有意的；按该文件现有注释格式写清变了什么、为什么变、哪些没变。
+- 不要在 `apps/ui/src/` 的 `platform/` 之外写 `@tauri-apps/`、`ipcRenderer`、`__TAURI`（CI-9；前缀匹配，不是只匹配 `__TAURI__`）。
+- 不要新增 CI 检查编号而不先看其他未合并分支。设计文档 00 §4 已用到 1–10。
+- 不要手写 `packages/protocol`——那个目录是 `ts-rs` 生成产物，且今天尚不存在（CI-5 未做）。
