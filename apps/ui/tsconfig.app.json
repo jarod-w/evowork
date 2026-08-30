@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  // `src/platform/tauri.capabilities.test.ts` is the only file under
+  // `src` that reads real files off disk (`node:fs`, `node:url`) rather
+  // than running purely in the jsdom-simulated browser -- it needs
+  // Node's global types, which this project deliberately does not carry
+  // (see the `types` comment in tsconfig.node-test.json). It is checked
+  // instead as its own scoped project; see tsconfig.json's references.
+  "exclude": ["src/platform/tauri.capabilities.test.ts"]
+}
