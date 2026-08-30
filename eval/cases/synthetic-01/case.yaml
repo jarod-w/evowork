@@ -16,6 +16,56 @@ expect:
   # 三条独立的回放路径（--verify 全量 fold、走快照的 replay、删光快照后
   # 退回全量 fold 的 replay）算出的最终状态哈希必须两两相同，且必须等于
   # 这个钉住的值——eval/run.sh 逐条比对。last_seq=22。
-  final_state_hash: 77401e44720125247809a2b3960a540e14174b7974cab93e0dcc2cd4777eab60
+  #
+  # 这个值在 M2 Task 2（内核：挂起/恢复/预算闸门）里改过一次：`RunState`
+  # 新增了 `pending_approvals`/`pending_question` 两个字段，`state_hash`
+  # 把整个 RunState 序列化后取哈希，形状一变，哈希必然跟着变——这是
+  # 唯一允许更新这个钉住值的情况。更新前已核对：本用例（没有任何审批/
+  # 澄清/预算事件的合成场景）重新生成后的 23 条事件 kind 序列
+  # （run.created ... run.completed，last_seq 仍是 22，turn 仍是 1，
+  # status 仍是 Completed）与改动前逐条相同，三条回放路径的哈希也两两
+  # 相同——变的只是 RunState 的形状，不是这条 Run Log 的行为。旧值是
+  # 77401e44720125247809a2b3960a540e14174b7974cab93e0dcc2cd4777eab60。
+  #
+  # M2 终审 BL-9（接通污点闸门）**没有**改动这个值，这里记一笔，因为它
+  # 看起来该改：接通之后 `RunState.taint` 在真实 run 里第一次会变成
+  # `Tainted`，而 `state_hash` 把整个 `RunState` 序列化后取哈希。已在一个
+  # 只含 BL-9 改动的干净工作区上重新生成核对过：三条回放路径仍是
+  # 3fa28a4b…，23 条事件 kind 序列逐条相同，last_seq 仍是 22。
+  #
+  # 不变的原因是这条用例只调 `fs.write` 一个工具，而 `fs.write` 恰好是
+  # 污点判定表里唯一的 `Clean`（`evo_exec_local` 的 `outcome_taint`：它
+  # `output` 恒为 `None`，没有任何内容回流）；`tool.result` 没有
+  # `output_ref`，daemon 因而也不会给下一 turn 的上下文加工具返回 block。
+  # 所以这条用例从头到尾是 `Clean`，闸门一次都不该命中——这正是它该有的
+  # 样子：接通污点不等于"从此每一步都要人批"。哪天这条用例改成会调
+  # `fs.read` / `shell.exec`，这个值就会变，且必须连同事件 kind 序列的
+  # 差异一起在这里说明。
+  #
+  # M2 终审 BL-10（接通预算闸门）**改了**这个值：旧值是
+  # 3fa28a4be5cd4a7339738ee31376585bec1b2ab72897766520100c3d14896427。
+  # 与上一次一样，变的是 `RunState` 的形状与内容，不是这条 Run Log 的行为。
+  #
+  # 已在一个只含 BL-10 改动的工作区上重新生成并逐条核对：23 条事件的
+  # kind 序列与改动前**逐条相同**（run.created … run.completed），
+  # last_seq 仍是 22，turn 仍是 1，status 仍是 Completed，
+  # checkpoints 仍是 1，三条回放路径的哈希仍然两两相同。
+  #
+  # 变的是两处，两处都是有意引入的：
+  #   1. `RunState` 新增了 `clock_start_ms: Option<u64>`，本用例里是
+  #      Some(1756461600000)——它是 `budget_used.wall_ms` 的计算起点，
+  #      让「这条 run 跑了多久」能在纯函数里算出来，而不用给内核开读时钟
+  #      的口子。
+  #   2. `budget_used.wall_ms` 第一次真的有了写入方（`env.sampled`）。
+  #      本用例采样两次、`FixedClock` 每次推进 1000ms，所以它从恒定的 0
+  #      变成 1000。
+  #
+  # 有一处**没有**变，值得记一笔，因为它看起来该变：`RunState.budget`。
+  # `run.created` 现在带的是 `DaemonConfig.budget` 而不是写死的
+  # `BudgetSpec::default()`，但 `DaemonConfig::for_test`（mkcase 用的就是
+  # 它）保持默认值不设限，所以这条用例的 `run.created` payload 里
+  # `budget` 仍然是 `{}`，逐字节相同——实测两份 Log 的该字段完全一致。
+  # 这是刻意的：接通闸门不该让既有的、没配预算的用例突然撞上限。
+  final_state_hash: fb15aa1ada899da648dd64bfc52796b4188dfde5509191a1bf55f1efce5fc1cd
   artifacts:
     - report.txt

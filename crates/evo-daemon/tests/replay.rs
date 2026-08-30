@@ -1,4 +1,4 @@
-use evo_daemon::{DaemonConfig, FixedClock, Runtime, replay_to, verify};
+use evo_daemon::{DaemonConfig, FixedClock, Runtime, replay_to, replay_to_checked, verify};
 use evo_exec_local::{LocalExecutor, WorkspaceOnlySandbox};
 use evo_kernel::state_hash;
 use evo_model::FixtureAdapter;
@@ -28,7 +28,7 @@ async fn produce_a_run(dir: &std::path::Path) -> RunId {
     )
     .unwrap();
     let run_id = RunId::from("r-1");
-    rt.run_once(&run_id, "把账龄表做出来").await.unwrap();
+    rt.start(&run_id, "把账龄表做出来").await.unwrap();
     run_id
 }
 
@@ -134,4 +134,71 @@ async fn verifying_a_normal_run_is_not_vacuous() {
         !report.is_vacuous(),
         "有 checkpoint 被检查到，is_vacuous() 应为 false"
     );
+}
+
+/// M2 终审 BL-2：快照被无条件信任。
+///
+/// `snapshots` 表里存着 `state_hash` 列，`Snapshot` 结构体也把它读了出来，
+/// 但全仓没有一处比对过——`replay_to(use_snapshots=true)` 直接
+/// `ciborium::from_reader` 拿它当起点。于是改一改快照 blob 里的
+/// `budget_used`/`taint`（**不动任何事件、不动哈希列**），带快照回放出来的
+/// state 就与诚实全量 fold 的结果不一致，而 `verify()` 仍然报 is_ok——它比
+/// 的是 checkpoint 事件里的哈希，不是快照。
+///
+/// 这条路径不是理论风险：`Runtime::resume` 走的正是
+/// `replay_to(use_snapshots=true)`，被污染的快照会直接驱动真实执行。
+///
+/// 「快照可丢弃」这条性质让兜底零代价：对不上就扔掉快照退回全量 fold，
+/// 结果必然与诚实回放相同。
+#[tokio::test]
+async fn a_tampered_snapshot_is_discarded_not_trusted() {
+    use evo_kernel::RunState;
+    use evo_protocol::taint::TaintLevel;
+
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = produce_a_run(dir.path()).await;
+    let honest = replay_to(&open(dir.path()), &run_id, None, false).unwrap();
+    // 先确认没被篡改的快照不会被误伤——否则「对不上就丢弃」会退化成
+    // 「永远丢弃」，测试照样绿，加速器却白扔了。
+    let (before, rejected) = replay_to_checked(&open(dir.path()), &run_id, None, true).unwrap();
+    assert_eq!(before, honest);
+    assert_eq!(rejected, None, "诚实的快照不该被丢弃");
+
+    // 篡改每一个快照的 blob：预算用量与 taint 各改一处，事件与
+    // state_hash 列都原样不动。
+    let db = dir.path().join("runlog.sqlite");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let rows: Vec<(i64, Vec<u8>)> = conn
+        .prepare("SELECT seq, state_blob FROM snapshots")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert!(!rows.is_empty(), "先确认真的有快照可篡改");
+    for (seq, blob) in rows {
+        let mut state: RunState = ciborium::from_reader(blob.as_slice()).unwrap();
+        state.budget_used.tokens += 1_000_000;
+        state.taint = TaintLevel::Tainted;
+        let mut tampered = Vec::new();
+        ciborium::into_writer(&state, &mut tampered).unwrap();
+        conn.execute(
+            "UPDATE snapshots SET state_blob = ?1 WHERE seq = ?2",
+            rusqlite::params![tampered, seq],
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    let (from_snapshot, rejected) =
+        replay_to_checked(&open(dir.path()), &run_id, None, true).unwrap();
+    assert_eq!(
+        from_snapshot, honest,
+        "带快照回放必须与诚实全量 fold 结果相同：快照是加速器，不是第二份权威事实"
+    );
+    assert_eq!(state_hash(&from_snapshot), state_hash(&honest));
+    // 降级是静默的（不报错），但不是无声的：调用方拿得到「哪个快照被
+    // 丢了、声称的哈希与重算的哈希各是什么」。
+    let rejected = rejected.expect("被污染的快照必须留下一个可观测的信号");
+    assert_ne!(rejected.expected, rejected.actual);
 }

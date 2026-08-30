@@ -1,5 +1,6 @@
 use evo_gateway::{AdmitRequest, Gateway, GatewayAction, ManifestRegistry};
 use evo_policy::{HardcodedPolicy, RiskLevel};
+use evo_protocol::budget::{BudgetSpec, BudgetUsage};
 use evo_protocol::effect::CapabilityToken;
 use evo_protocol::events::effect::{ExecutionMode, PolicyDecisionKind, ToolResultStatus};
 use evo_protocol::events::model::PlannedCall;
@@ -63,6 +64,11 @@ fn admit(tool: &str, taint: TaintLevel, mode: ExecutionMode) -> AdmitRequest {
             scopes: vec!["*".into()],
         },
         mode,
+        // 预算闸门（第⑤步）的输入。这些测试关心的是 ①–④ 与 ⑥，
+        // 全 `None` = 不设限，闸门永远放行，不干扰它们的判定。
+        // 第⑤步自己的测试在 tests/budget_gate.rs。
+        budget: BudgetSpec::default(),
+        budget_used: BudgetUsage::default(),
     }
 }
 
@@ -130,7 +136,7 @@ fn a_tool_with_no_manifest_gets_the_strictest_treatment() {
         TaintLevel::Clean,
         ExecutionMode::Live,
     ));
-    let GatewayAction::AwaitApproval { risk, request } = verdict.action else {
+    let GatewayAction::AwaitApproval { risk, request, .. } = verdict.action else {
         panic!("无 manifest 必须要求审批")
     };
     assert_eq!(risk, RiskLevel::L3);

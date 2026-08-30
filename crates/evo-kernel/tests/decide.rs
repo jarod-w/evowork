@@ -53,6 +53,7 @@ fn a_tool_call_plan_becomes_a_request_effect() {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: Some(call.clone()),
+        clarification: None,
     });
     assert_eq!(decide(&s), vec![Command::RequestEffect { call }]);
 }
@@ -69,6 +70,7 @@ fn a_finish_plan_completes_the_run() {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,
+        clarification: None,
     });
     assert_eq!(
         decide(&s),
@@ -131,6 +133,7 @@ fn a_tool_call_plan_without_call_parameter_fails_the_run() {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,
+        clarification: None,
     });
     assert_eq!(
         decide(&s),

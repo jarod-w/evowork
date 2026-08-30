@@ -22,13 +22,101 @@ impl WorkspaceRoot {
         Self { base }
     }
 
+    /// 工作区根本身必须落在 `base` 下面。
+    ///
+    /// 这里是 `RunId` 变成文件系统路径分量的**唯一**位置（Run Log 那边
+    /// run_id 只作为 SQL 参数出现，不进路径），也就是说，工作区边界这套
+    /// 校验里所有「在不在工作区内」的判断，都以这个函数交出的路径为原点。
+    /// 原点自己被搬到 `base` 之外，后面每一道校验都会照常「通过」——因为
+    /// 工作区就是那个目录，边界跟着一起搬走了。所以这里必须自己站住。
+    ///
+    /// 两件事要保证，缺一不可：
+    ///
+    ///   1. **不能逃出 `base`。** `..` 会往上爬；绝对路径更直接——
+    ///      `Path::join` 遇到绝对路径会整条丢掉左边的 base。
+    ///   2. **run_id → 目录必须是单射。** 光挡住 `..` 不够：`r-1`、
+    ///      `./r-1`、`r-1/.`、`sub/../r-1` 都落在同一个目录上，两个不同的
+    ///      run 会静默共用一个工作区，互相读写对方的文件，而两条 Run Log
+    ///      各自看起来都正常。
+    ///
+    /// 做法是允许清单而不是拒绝清单：run_id 必须整个就是一个安全的目录名
+    /// （见 [`workspace_dir_name`]），目录名与 run_id 逐字节相同，单射由
+    /// 「恒等映射」直接给出，不需要再论证哪些归一化形式被覆盖到了。
+    ///
+    /// 校验之后仍然再验一次落点：run_id 干净不代表 `base/<run_id>` 这个
+    /// 目录项干净——它可能已经是一条指向别处的符号链接，而 `create_dir_all`
+    /// 对已存在的目标直接返回成功。所以 canonicalize 之后要求它是 `base`
+    /// （同样 canonicalize 过）的**直接子目录**，且名字仍是那个 run_id。
+    ///
+    /// **为什么不改到 `RunId` 的构造处。** 那里是 `string_id!` 宏，一份
+    /// 定义生出九种 id，`From<&str>` / `From<String>` 是不可失败的转换，
+    /// 要在那里校验只能 panic，或者把九种 id 的构造全改成 `Result`（连带
+    /// 每个调用点）。更要紧的是理由本身站不住：这里要的性质不是「run_id
+    /// 长得好看」，而是「它当一个文件系统路径分量用是安全的」——这是**这个
+    /// 汇聚点**的性质，不是 id 的性质。`CiteId` 之类根本不进路径的 id 没有
+    /// 理由被同一套字符集绑住。所以校验放在 id 变成路径的那一刻。
     pub fn ensure(&self, run_id: &RunId) -> Result<WorkspaceHandle, ExecError> {
-        let path = self.base.join(run_id.as_str());
+        let name = workspace_dir_name(run_id)?;
+        let path = self.base.join(name);
         std::fs::create_dir_all(&path)?;
         // canonicalize 之后再交出去：后续的越界判断依赖一个已解析的真实路径
         let path = path.canonicalize()?;
-        Ok(WorkspaceHandle::new(run_id.as_str(), path))
+
+        let base = self.base.canonicalize()?;
+        if path.parent() != Some(base.as_path())
+            || path.file_name() != Some(std::ffi::OsStr::new(name))
+        {
+            return Err(ExecError::PathEscape(format!(
+                "workspace for run {name} resolved to {}, which is not a direct child of {}",
+                path.display(),
+                base.display()
+            )));
+        }
+        Ok(WorkspaceHandle::new(name, path))
     }
+}
+
+/// run_id 当目录名用的允许清单：首字符是 ASCII 小写字母或数字，其余字符
+/// 取自 `[a-z0-9._-]`，长度不超过 [`MAX_RUN_ID_LEN`]。
+///
+/// 允许清单（而不是「拒绝 `..` 和 `/`」）的理由是单射：允许集合里没有
+/// 任何路径分隔符、没有 `.`/`..` 这两个特殊分量（首字符必须是字母数字，
+/// 它俩进不来）、没有会被文件系统改写的字符，于是 run_id 与目录名是
+/// 恒等映射，不同的 run_id 必然拿到不同的目录。
+///
+/// 几处刻意的收紧，都是为了这条恒等映射在别的平台上也成立：
+///
+///   - **不收大写字母。** macOS 的 APFS/HFS+ 默认大小写不敏感，`r-A` 与
+///     `r-a` 会落到同一个目录——正是这个函数要挡的「两个 run 静默共用
+///     工作区」。全小写就没有折叠可言。代价：调用方如果用 ULID 这类大写
+///     编码当 run_id，会在这里当场拿到一个错误（而不是在 macOS 上悄悄
+///     串工作区），转成小写或十六进制即可。
+///   - **只收 ASCII。** HFS+ 会把文件名规范化成 NFD，不同 Unicode 表示
+///     的同一个字符串会折叠到一起；ASCII 没有这个问题。
+///   - **首字符必须是字母数字。** 顺带排除 `.`、`..`、以及 `-` 开头这类
+///     会被命令行当选项解析的名字。
+///
+/// 违反时报 [`ExecError::PathEscape`]：这确实是一次越界——差别只在于
+/// 越出去的是工作区根自己，不是工作区里的某个文件。
+fn workspace_dir_name(run_id: &RunId) -> Result<&str, ExecError> {
+    const MAX_RUN_ID_LEN: usize = 128;
+
+    let name = run_id.as_str();
+    let allowed =
+        |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-');
+    let first_ok = name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+
+    if !first_ok || name.len() > MAX_RUN_ID_LEN || !name.chars().all(allowed) {
+        return Err(ExecError::PathEscape(format!(
+            "run_id {name:?} is not usable as a workspace directory name \
+             (expected [a-z0-9][a-z0-9._-]{{0,{}}})",
+            MAX_RUN_ID_LEN - 1
+        )));
+    }
+    Ok(name)
 }
 
 /// 把工具给的相对路径解析成工作区内的绝对路径，越界即拒。
@@ -39,6 +127,9 @@ impl WorkspaceRoot {
 /// 但词法层看不见符号链接：工作区里预先放一个指向工作区外的软链，
 /// 词法消解会判定「合法」，真实文件却落在工作区之外。所以词法校验
 /// 通过之后还要再做一遍**真实路径**校验，见 [`resolve_through_symlinks`]。
+///
+/// 真实路径校验也不是最后一道：硬链接根本没有「另一条真实路径」可供
+/// canonicalize 跟随，前缀比对对它永远成立，见 [`reject_hard_linked_file`]。
 pub fn resolve_in_workspace(ws: &WorkspaceHandle, rel: &str) -> Result<PathBuf, ExecError> {
     let candidate = Path::new(rel);
     if candidate.is_absolute() {
@@ -124,10 +215,67 @@ fn resolve_through_symlinks(
     if !real_ancestor.starts_with(ws_root) {
         return Err(ExecError::PathEscape(rel.to_owned()));
     }
+    reject_hard_linked_file(&real_ancestor, rel)?;
 
     let mut resolved = real_ancestor;
     for part in trailing {
         resolved.push(part);
     }
     Ok(resolved)
+}
+
+/// 硬链接逃逸：`canonicalize` 在这里帮不上任何忙。
+///
+/// 符号链接是一个**指向另一条路径**的节点，所以「真实路径」这个概念成立，
+/// canonicalize 能把它跟到底。硬链接不是：它就是同一个 inode 的第二个
+/// 目录项，两个名字之间没有主次、没有指向关系，各自都是「真实路径」。
+/// 工作区内的 `innocent.txt` 与工作区外的 `outside-secret.txt` 硬链到同一
+/// 个 inode 时，`innocent.txt` canonicalize 出来还是 `<ws>/innocent.txt`
+/// ——前缀比对干干净净地通过，而 `fs::write` 落笔改的是那个 inode 的内容，
+/// 工作区外那个名字看到的数据同样被改写了。更糟的是 `actual_targets` 报出
+/// 来的是一条合法的工作区相对路径：`executor.rs` 那段「declared 与 actual
+/// 比对」的供应链行为异常检测在这个场景下拿到的是伪证。
+///
+/// 能拿到的唯一信号是 `nlink`：`nlink > 1` 说明这个 inode 还有别的名字。
+/// **它说不出别的名字在哪儿**——要说得出，只能扫遍所有可能的挂载点去找
+/// 同 inode 的目录项，每次 `fs.write` 一遍，代价不可接受（工作区里放一个
+/// 几万文件的仓库是常态）。所以这里采取保守判定：目标是普通文件且
+/// `nlink > 1` 就拒。
+///
+/// 两个必须写清楚的边界：
+///
+///   1. **只对普通文件判。** 目录的 `nlink` 天然 ≥ 2（`.` 自己算一个，
+///      每个子目录的 `..` 再各算一个），拿目录去比 `nlink > 1` 会把每个
+///      工作区都判成逃逸。Linux 也不允许对目录建硬链接，所以只看
+///      `is_file()` 不留口子。判定对象是 canonicalize 之后的真实祖先：
+///      如果先经过一条工作区内的软链再落到一个硬链接文件上，
+///      `symlink_metadata` 拿到的会是软链自己的 `nlink`（恒为 1），
+///      必须在解析之后再看。
+///   2. **会误伤工作区内部两个互为硬链接的文件。** 这是有意接受的代价。
+///      工作区是每个 run 独享的临时目录，内容全部由这次 run 自己产生，
+///      内部互为硬链接的两个文件既罕见又总有等价写法（写到新路径，或先
+///      `rm` 再写）。反过来，最常见的「工作区里出现硬链接」恰恰是危险
+///      的那一类——比如包管理器把全局 store 里的文件硬链进 node_modules，
+///      对它写入损坏的是 store 而不是工作区。宁可拒一种几乎没人依赖的
+///      写法，也不放行一条落点无法判定的路径；这与悬空软链那次的取舍
+///      是同一条原则。
+///
+/// 残余风险（本轮不修，属另一类问题）：这仍是校验时刻的判断，挡不住
+/// 「校验之后、`fs::write` 之前」有并发进程把目标换成硬链接的 TOCTOU。
+/// 工作区内已有的符号链接防护是同一个时刻做的，同样有这个窗口——真要
+/// 关掉它，得让写入路径改成 `O_NOFOLLOW` 打开、对同一个 fd `fstat` 再
+/// 写，那是对 `executor.rs` 写入路径的改造，不在这条修复的范围里。
+fn reject_hard_linked_file(real_ancestor: &Path, rel: &str) -> Result<(), ExecError> {
+    use std::os::unix::fs::MetadataExt;
+
+    // real_ancestor 已经 canonicalize 过，路径上不再有符号链接，
+    // 这里的 symlink_metadata 与 metadata 等价。
+    let md = real_ancestor.symlink_metadata()?;
+    if md.is_file() && md.nlink() > 1 {
+        return Err(ExecError::PathEscape(format!(
+            "{rel}: hard link (nlink={}) — the same inode may have another name outside the workspace",
+            md.nlink()
+        )));
+    }
+    Ok(())
 }

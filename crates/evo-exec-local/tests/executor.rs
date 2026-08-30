@@ -356,3 +356,311 @@ async fn legitimate_new_files_and_valid_symlinks_still_work_after_the_dangling_s
         "ok"
     );
 }
+
+// --- BL-3 硬链接逃逸：canonicalize 对硬链接无能为力——硬链接不是「指向
+// 另一条路径的节点」，它就是同一个 inode 的第二个名字，两个名字之间没有
+// 主次之分，也没有任何可供 canonicalize 跟随的指向关系。于是工作区里的
+// `innocent.txt` 与工作区外的 `outside-secret.txt` 是同一份数据：真实
+// 路径校验全部通过（这个名字确实在工作区里），`fs::write` 落笔改的却是
+// 工作区外那份文件的内容，而 `actual_targets` 报出来的是一条干净的
+// 工作区相对路径——供应链行为异常检测（executor.rs）拿到的是伪证。
+
+#[tokio::test]
+async fn a_hard_link_to_a_file_outside_the_workspace_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+
+    let secret = outside.path().join("outside-secret.txt");
+    std::fs::write(&secret, "ORIGINAL").unwrap();
+    std::fs::hard_link(&secret, ws.path().join("innocent.txt")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(
+            lease(ws.clone()),
+            write_effect("innocent.txt", "PWNED BY THE AGENT"),
+        )
+        .await;
+
+    // 最要紧的断言放最前：工作区外那份文件的内容确实没有被改动。
+    assert_eq!(
+        std::fs::read_to_string(&secret).unwrap(),
+        "ORIGINAL",
+        "工作区外的文件被改写了；actual_targets={:?} 报的却是一条干净的\
+         工作区相对路径",
+        outcome.actual_targets
+    );
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+}
+
+#[test]
+fn a_hard_link_is_refused_at_resolve_time_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "ORIGINAL").unwrap();
+    std::fs::hard_link(
+        outside.path().join("secret.txt"),
+        ws.path().join("innocent.txt"),
+    )
+    .unwrap();
+
+    let err = resolve_in_workspace(&ws, "innocent.txt").unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+}
+
+#[tokio::test]
+async fn a_hard_link_whose_other_name_is_also_inside_the_workspace_is_refused_too() {
+    // 有意接受的误伤：`nlink > 1` 只能说明「这个 inode 有第二个名字」，
+    // 说不出第二个名字在哪儿——要说得出必须扫全盘找同 inode 的目录项。
+    // 所以工作区内部两个互为硬链接的文件也会被拒。理由与悬空软链那次
+    // 取舍一致：宁可拒一种几乎没人依赖的写法，也不放行一条无法判定
+    // 落点的路径。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::fs::write(ws.path().join("a.txt"), "hello").unwrap();
+    std::fs::hard_link(ws.path().join("a.txt"), ws.path().join("b.txt")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(lease(ws.clone()), write_effect("b.txt", "x"))
+        .await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+}
+
+#[tokio::test]
+async fn ordinary_single_linked_files_still_work_after_the_hard_link_fix() {
+    // 反向保险：`nlink == 1` 的普通文件——新建的、覆写已存在的、经由
+    // 工作区内软链写的——一条都不该被这次修复挡住。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+
+    let created = exec
+        .execute(lease(ws.clone()), write_effect("report.txt", "hello"))
+        .await;
+    assert_eq!(created.status, ToolResultStatus::Ok);
+
+    let overwritten = exec
+        .execute(lease(ws.clone()), write_effect("report.txt", "hello again"))
+        .await;
+    assert_eq!(overwritten.status, ToolResultStatus::Ok);
+    assert_eq!(
+        std::fs::read_to_string(ws.path().join("report.txt")).unwrap(),
+        "hello again"
+    );
+
+    std::fs::create_dir_all(ws.path().join("real")).unwrap();
+    std::os::unix::fs::symlink(ws.path().join("real"), ws.path().join("link")).unwrap();
+    let via_symlink = exec
+        .execute(lease(ws.clone()), write_effect("link/inside.txt", "ok"))
+        .await;
+    assert_eq!(via_symlink.status, ToolResultStatus::Ok);
+}
+
+// --- BL-4 工作区根本身可被创建到根之外：`ensure` 直接把 run_id 当路径
+// 分量 join 上去，没有任何校验。run_id 由调用方（Runtime::start）给，
+// `RunId` 自己零校验。一个带 `..` 的 run_id 会让工作区落在 workspaces
+// 根之外——而**之后所有的路径校验都会「通过」**，因为工作区就是那个
+// 目录，边界跟着一起搬走了。
+
+#[test]
+fn a_run_id_with_parent_dir_components_cannot_place_the_workspace_outside_the_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("workspaces");
+    std::fs::create_dir_all(&base).unwrap();
+    let root = WorkspaceRoot::new(base.clone());
+
+    let err = root
+        .ensure(&RunId::from("../escaped-workspace"))
+        .unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+    assert!(!dir.path().join("escaped-workspace").exists());
+}
+
+#[test]
+fn an_absolute_run_id_cannot_place_the_workspace_outside_the_root() {
+    // `Path::join` 遇到绝对路径会**整条丢弃**左边的 base——工作区直接
+    // 落在调用方给的绝对路径上。
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let base = dir.path().join("workspaces");
+    std::fs::create_dir_all(&base).unwrap();
+    let root = WorkspaceRoot::new(base);
+
+    let target = outside.path().join("absolute-workspace");
+    let err = root
+        .ensure(&RunId::from(target.to_str().unwrap()))
+        .unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+    assert!(!target.exists());
+}
+
+#[test]
+fn distinct_run_ids_cannot_normalize_onto_the_same_workspace() {
+    // run_id -> 目录必须是单射：否则两个不同的 run 会静默共用一个工作区，
+    // 互相读写对方的文件，而 Log 里两条 run 各自看起来都正常。
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let plain = root.ensure(&RunId::from("r-1")).unwrap();
+
+    for alias in ["./r-1", "r-1/", "r-1/.", "sub/../r-1"] {
+        match root.ensure(&RunId::from(alias)) {
+            Err(e) => assert!(
+                e.to_string().contains("escapes the workspace"),
+                "run_id {alias:?} 被拒但错误不对：{e}"
+            ),
+            Ok(ws) => panic!(
+                "run_id {alias:?} 归一化到了 {}，与 r-1 的 {} 撞车",
+                ws.path().display(),
+                plain.path().display()
+            ),
+        }
+    }
+}
+
+#[test]
+fn a_pre_existing_symlink_in_the_workspaces_root_cannot_relocate_a_workspace() {
+    // 就算 run_id 本身干净，workspaces/<run_id> 这个目录项也可能已经是
+    // 一条指向工作区根之外的软链（create_dir_all 对已存在的目标直接
+    // 成功）。工作区根必须是 base 下的**直接子目录**，不能只是「能被
+    // 创建出来」。
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let base = dir.path().join("workspaces");
+    std::fs::create_dir_all(&base).unwrap();
+    std::os::unix::fs::symlink(outside.path(), base.join("r-1")).unwrap();
+    let root = WorkspaceRoot::new(base);
+
+    let err = root.ensure(&RunId::from("r-1")).unwrap_err();
+    assert!(err.to_string().contains("escapes the workspace"));
+}
+
+#[test]
+fn ordinary_run_ids_still_get_their_workspace_after_the_run_id_fix() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().join("workspaces"));
+    for id in ["r-1", "r-synthetic-01", "r-001", "run.2026-08-30_42"] {
+        let ws = root.ensure(&RunId::from(id)).unwrap();
+        assert!(ws.path().is_dir());
+        assert_eq!(ws.path().file_name().unwrap(), id);
+        assert_eq!(ws.id(), id);
+    }
+}
+
+// --- fs.read ---------------------------------------------------------------
+//
+// `config/tools.toml` 从 M1 起就声明了 `fs.read`，执行面却一直没有实现，
+// 于是任何真实调用都会掉进 `UnknownTool`。下面这组把它钉住：读得到内容、
+// 路径校验与 `fs.write` 同一套（工作区边界、绝对路径、符号链接逃逸都要
+// 挡住）、actual_targets 与 declared_targets 落在同一命名空间。
+
+fn read_effect(path: &str) -> DispatchedEffect {
+    DispatchedEffect {
+        request: EffectRequest {
+            effect_id: EffectId::from("e-1"),
+            run_id: RunId::from("r-1"),
+            turn: 0,
+            tool: ToolId::from("fs.read"),
+            params_ref: BlobRef {
+                content_hash: "sha256:aa".into(),
+                size: 0,
+                mime: "application/json".into(),
+            },
+            params_digest: "d".into(),
+            class: EffectClass::Read,
+            targets: Vec::new(),
+            egress: Vec::new(),
+            reversible: true,
+            taint: TaintLevel::Clean,
+            cites_referenced: Vec::new(),
+            capability: CapabilityToken {
+                subject: "u-1".into(),
+                scopes: vec!["*".into()],
+            },
+        },
+        params: serde_json::json!({ "path": path }),
+        mode: ExecutionMode::Live,
+    }
+}
+
+/// 先在工作区里放一个文件（不经 `fs.write`，模拟"这个文件本来就在那儿"
+/// ——外部对账单、上一条命令拉下来的东西），再用 `fs.read` 读它。
+async fn run_read(
+    plant: Option<(&str, &str)>,
+    path: &str,
+) -> (tempfile::TempDir, EffectOutcome, WorkspaceHandle) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    if let Some((name, content)) = plant {
+        let p = ws.path().join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    }
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec.execute(lease(ws.clone()), read_effect(path)).await;
+    (dir, outcome, ws)
+}
+
+#[tokio::test]
+async fn fs_read_returns_the_file_content() {
+    let (_d, outcome, _ws) = run_read(Some(("inbox.txt", "对账单正文")), "inbox.txt").await;
+    assert_eq!(outcome.status, ToolResultStatus::Ok);
+    assert_eq!(outcome.output.unwrap(), "对账单正文".as_bytes());
+}
+
+#[tokio::test]
+async fn fs_read_reports_a_workspace_relative_actual_target() {
+    let (_d, outcome, _ws) = run_read(Some(("sub/inbox.txt", "x")), "sub/inbox.txt").await;
+    assert_eq!(outcome.actual_targets.len(), 1);
+    assert_eq!(
+        outcome.actual_targets[0],
+        ResourceRef {
+            kind: "file".to_owned(),
+            id: "sub/inbox.txt".to_owned(),
+        }
+    );
+}
+
+#[tokio::test]
+async fn fs_read_refuses_a_path_escaping_the_workspace() {
+    // 「只是读」不能走一条更松的路径校验——它恰恰是最该挡住的方向。
+    let (_d, outcome, _ws) = run_read(None, "../../etc/passwd").await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(outcome.error.unwrap().contains("escapes the workspace"));
+}
+
+#[tokio::test]
+async fn fs_read_refuses_an_absolute_path() {
+    let (_d, outcome, _ws) = run_read(None, "/etc/passwd").await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+}
+
+#[tokio::test]
+async fn fs_read_refuses_a_symlink_pointing_outside_the_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = dir.path().join("outside.txt");
+    std::fs::write(&outside, "secret").unwrap();
+    let root = WorkspaceRoot::new(dir.path().join("ws"));
+    std::fs::create_dir_all(dir.path().join("ws")).unwrap();
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    std::os::unix::fs::symlink(&outside, ws.path().join("link.txt")).unwrap();
+
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec.execute(lease(ws), read_effect("link.txt")).await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(outcome.output.is_none(), "越界的读绝不能回传内容");
+}
+
+#[tokio::test]
+async fn fs_read_of_a_missing_file_is_an_error_not_an_empty_success() {
+    let (_d, outcome, _ws) = run_read(None, "nope.txt").await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(outcome.output.is_none());
+}

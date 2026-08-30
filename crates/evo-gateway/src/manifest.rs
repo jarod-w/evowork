@@ -74,8 +74,11 @@ pub struct ToolManifest {
     pub targets: Vec<TargetSpec>,
     #[serde(default)]
     pub egress: Vec<EgressRef>,
-    /// 声明了 preview 的工具在 dry-run 下能给出精确 diff（降级第 1 级）。
-    /// 阶段 1 只读这个字段决定 precision，不真的调 preview。
+    /// 声明了 preview 的工具能给出精确 diff（降级第 1 级，
+    /// `ImpactPrecision::Exact`）。这个字段本身只是方法名——`Gateway::admit`
+    /// 撞见它是 `Some` 就会产出 `GatewayAction::NeedPreview` 交还调用方，
+    /// 真正调用 preview（一次 IO）发生在 Gateway 之外，见 `pipeline::PendingAdmit`
+    /// 与 `impact::PreviewOutcome` 的文档。
     #[serde(default)]
     pub preview: Option<String>,
 }

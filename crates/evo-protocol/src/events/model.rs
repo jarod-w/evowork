@@ -1,4 +1,5 @@
 use crate::blob::BlobRef;
+use crate::events::clarification::ClarificationOption;
 use crate::ids::ToolId;
 use crate::taint::TaintLevel;
 use serde::{Deserialize, Serialize};
@@ -54,6 +55,12 @@ pub enum PlanIntent {
 ///
 /// `call` 是对 01 §4.3 的新增 optional 字段：内核要发 RequestEffect，
 /// 必须从这里拿到工具名与参数引用（class / targets 由 Gateway 从 manifest 补全）。
+///
+/// `clarification` 与 `call` 对称：`AskClarification` 分支要问的问题正文
+/// 与选项，同样必须从这里拿，不能靠 daemon 拿着 `response_ref` 再对模型
+/// 原文 `parse_plan` 一遍——那是两处消费同一份解析结果、只靠人记得保持
+/// 同步的脆弱模式。`call_model` 已经 `parse_plan` 过一次，这里把那次解
+/// 析的产物直接落盘。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanStep {
     pub turn: u32,
@@ -63,6 +70,8 @@ pub struct PlanStep {
     pub taint_inherited: TaintLevel,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call: Option<PlannedCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clarification: Option<PlannedClarification>,
 }
 
 /// 内核能看到的「要调哪个工具」。不含 class / targets——那些来自 manifest，内核看不到。
@@ -71,4 +80,17 @@ pub struct PlannedCall {
     pub tool: ToolId,
     pub params_ref: BlobRef,
     pub params_digest: String,
+}
+
+/// 内核能看到的「要问哪个问题」，与 `PlannedCall` 同构。
+///
+/// 问题正文与全部选项的展示文案（含 `label`）**不在这里**——那些是自由
+/// 文本，一律进 `prompt_ref` 指向的 blob（形状同
+/// [`ClarificationRequested::prompt_ref`][crate::events::clarification::ClarificationRequested::prompt_ref]
+/// 的建议）。`options` 里的 [`ClarificationOption`] 本身已经不含
+/// `label`（见它的文档：那道红线是历史教训），所以可以直接进事件 payload。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlannedClarification {
+    pub prompt_ref: BlobRef,
+    pub options: Vec<ClarificationOption>,
 }

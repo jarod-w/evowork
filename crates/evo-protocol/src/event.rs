@@ -1,10 +1,17 @@
-use crate::events::accounting::{Checkpoint, CostCharged};
-use crate::events::context::ContextAssembled;
+use crate::events::accounting::{BudgetAmended, Checkpoint, CostCharged};
+use crate::events::approval::{
+    ApprovalDenied, ApprovalExpired, ApprovalGranted, ApprovalRequested,
+};
+use crate::events::artifact::ArtifactEmitted;
+use crate::events::clarification::{ClarificationAnswered, ClarificationRequested};
+use crate::events::context::{ContextAssembled, ContextCompacted};
 use crate::events::determinism::EnvSampled;
 use crate::events::effect::{
     EffectDispatched, ImpactEstimated, PolicyEvaluated, ToolRequested, ToolResult,
 };
-use crate::events::lifecycle::{IntentDeclared, RunCompleted, RunCreated};
+use crate::events::lifecycle::{
+    IntentDeclared, RunCompleted, RunCreated, RunFailed, RunResumed, RunSuspended,
+};
 use crate::events::model::{ModelRequested, ModelResponded, PlanStep};
 use crate::ids::RunId;
 use serde::{Deserialize, Serialize};
@@ -52,7 +59,7 @@ macro_rules! event_body {
         /// optional，旧版本解码器必须还能读进带新增字段的 payload；一旦某个事件结构体
         /// 加了 `deny_unknown_fields`，旧解码器遇到新增字段就会直接报错，当场破坏这条
         /// 契约。这条约束由
-        /// `tests::all_15_variants_tolerate_unknown_optional_fields` 对全部变体
+        /// `tests::all_27_variants_tolerate_unknown_optional_fields` 对全部变体
         /// 做穷尽验证——谁给某个事件结构体加了 `deny_unknown_fields`，这条测试就会红。
         ///
         /// 变体列表、`kind()`、`schema_ver()`、测试样本表由 [`event_body!`] 宏统一
@@ -83,7 +90,7 @@ macro_rules! event_body {
         }
 
         /// 每个变体各给一份合法样本，供
-        /// `tests::all_15_variants_tolerate_unknown_optional_fields` 做穷尽容忍验证。
+        /// `tests::all_27_variants_tolerate_unknown_optional_fields` 做穷尽容忍验证。
         #[cfg(test)]
         fn all_event_bodies() -> Vec<EventBody> {
             vec![$(EventBody::$variant($sample)),+]
@@ -102,6 +109,10 @@ use crate::effect::{EffectClass, ResourceOp, ResourceRef};
 #[cfg(test)]
 use crate::events::accounting::{CheckpointReason, CostDimension, CostUnit, Currency};
 #[cfg(test)]
+use crate::events::approval::{ApprovalVia, RiskLevel};
+#[cfg(test)]
+use crate::events::clarification::ClarificationOption;
+#[cfg(test)]
 use crate::events::context::ContextBlock;
 #[cfg(test)]
 use crate::events::determinism::ModelRoute;
@@ -110,11 +121,15 @@ use crate::events::effect::{
     ExecutionMode, ImpactPrecision, ImpactTarget, PolicyDecisionKind, ToolResultStatus,
 };
 #[cfg(test)]
-use crate::events::lifecycle::{CompletionStatus, PrincipalRef, TriggerKind, TriggerRef};
+use crate::events::lifecycle::{
+    CompletionStatus, ErrorDetail, PrincipalRef, SuspendReason, TriggerKind, TriggerRef,
+};
 #[cfg(test)]
 use crate::events::model::{ModelParams, PlanIntent, Usage};
 #[cfg(test)]
-use crate::ids::{CheckpointId, CiteId, EffectId, ExecutorId, LeaseId, ToolId};
+use crate::ids::{
+    ApprovalId, ArtifactId, CheckpointId, CiteId, EffectId, ExecutorId, LeaseId, ToolId,
+};
 #[cfg(test)]
 use crate::taint::{TaintLevel, TrustLevel};
 #[cfg(test)]
@@ -146,6 +161,26 @@ event_body! {
         lang: "zh".to_owned(),
         source: "user".to_owned(),
     };
+    RunSuspended(RunSuspended) = "run.suspended", ver = 1, sample = RunSuspended {
+        reason: SuspendReason::AwaitingApproval,
+        detail_ref: None,
+    };
+    RunResumed(RunResumed) = "run.resumed", ver = 1, sample = RunResumed {
+        by: Actor::Human("u-1".to_owned()),
+        from_seq: 4,
+    };
+    RunCompleted(RunCompleted) = "run.completed", ver = 1, sample = RunCompleted {
+        status: CompletionStatus::Ok,
+        summary_ref: None,
+    };
+    RunFailed(RunFailed) = "run.failed", ver = 1, sample = RunFailed {
+        at_seq: 4,
+        error: ErrorDetail {
+            code: "tool_error".to_owned(),
+            message_ref: None,
+            retryable: false,
+        },
+    };
     EnvSampled(EnvSampled) = "env.sampled", ver = 1, sample = EnvSampled {
         turn: 0,
         wall_clock_ms: 1_756_461_600_000,
@@ -171,6 +206,16 @@ event_body! {
         }],
         taint_level: TaintLevel::Clean,
         total_token_estimate: 5,
+    };
+    ContextCompacted(ContextCompacted) = "context.compacted", ver = 1, sample = ContextCompacted {
+        from_seq: 1,
+        to_seq: 3,
+        summary_ref: BlobRef {
+            content_hash: "sha256:ccc0".to_owned(),
+            size: 1,
+            mime: "text/plain".to_owned(),
+        },
+        summary_cite_id: CiteId::from("c-summary-1"),
     };
     ModelRequested(ModelRequested) = "model.requested", ver = 1, sample = ModelRequested {
         turn: 0,
@@ -205,6 +250,7 @@ event_body! {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,
+        clarification: None,
     };
     ToolRequested(ToolRequested) = "tool.requested", ver = 1, sample = ToolRequested {
         effect_id: EffectId::from("e-1"),
@@ -243,6 +289,27 @@ event_body! {
         est_cost_micros: None,
         precision: ImpactPrecision::DeclaredOnly,
     };
+    ApprovalRequested(ApprovalRequested) = "approval.requested", ver = 1, sample = ApprovalRequested {
+        approval_id: ApprovalId::from("ap-1"),
+        effect_id: EffectId::from("e-1"),
+        risk: RiskLevel::L2,
+        impact_ref: None,
+        expires_at_ms: 1_756_461_600_000 + 3_600_000,
+    };
+    ApprovalGranted(ApprovalGranted) = "approval.granted", ver = 1, sample = ApprovalGranted {
+        approval_id: ApprovalId::from("ap-1"),
+        by: Actor::Human("u-1".to_owned()),
+        via: ApprovalVia::Ui,
+        note_ref: None,
+    };
+    ApprovalDenied(ApprovalDenied) = "approval.denied", ver = 1, sample = ApprovalDenied {
+        approval_id: ApprovalId::from("ap-1"),
+        by: Actor::Human("u-1".to_owned()),
+        reason_ref: None,
+    };
+    ApprovalExpired(ApprovalExpired) = "approval.expired", ver = 1, sample = ApprovalExpired {
+        approval_id: ApprovalId::from("ap-1"),
+    };
     EffectDispatched(EffectDispatched) = "effect.dispatched", ver = 1, sample = EffectDispatched {
         effect_id: EffectId::from("e-1"),
         executor_id: ExecutorId::from("x-1"),
@@ -276,15 +343,49 @@ event_body! {
             tool: None,
         },
     };
+    BudgetAmended(BudgetAmended) = "budget.amended", ver = 1, sample = BudgetAmended {
+        budget: BudgetSpec {
+            max_amount_micros: Some(10_000),
+            ..BudgetSpec::default()
+        },
+        by: Actor::Human("u-1".to_owned()),
+        reason_ref: None,
+    };
+    ArtifactEmitted(ArtifactEmitted) = "artifact.emitted", ver = 1, sample = ArtifactEmitted {
+        artifact_id: ArtifactId::from("art-1"),
+        path: "reports/summary.xlsx".to_owned(),
+        blob: BlobRef {
+            content_hash: "sha256:hhh".to_owned(),
+            size: 1,
+            mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_owned(),
+        },
+        cites: vec![],
+        supersedes: None,
+    };
     Checkpoint(Checkpoint) = "checkpoint", ver = 1, sample = Checkpoint {
         checkpoint_id: CheckpointId::from("cp-1"),
         state_hash: "sha256:ggg".to_owned(),
         snapshot_ref: None,
         reason: CheckpointReason::Periodic,
     };
-    RunCompleted(RunCompleted) = "run.completed", ver = 1, sample = RunCompleted {
-        status: CompletionStatus::Ok,
-        summary_ref: None,
+    ClarificationRequested(ClarificationRequested) = "clarification.requested", ver = 1, sample = ClarificationRequested {
+        question_id: "q-1".to_owned(),
+        prompt_ref: BlobRef {
+            content_hash: "sha256:iii".to_owned(),
+            size: 1,
+            mime: "application/json".to_owned(),
+        },
+        options: vec![ClarificationOption {
+            id: "opt-1".to_owned(),
+            is_default: true,
+        }],
+    };
+    ClarificationAnswered(ClarificationAnswered) = "clarification.answered", ver = 1, sample = ClarificationAnswered {
+        question_id: "q-1".to_owned(),
+        by: Actor::Human("u-1".to_owned()),
+        option_id: Some("opt-1".to_owned()),
+        free_text_ref: None,
     };
 }
 
@@ -343,14 +444,14 @@ mod tests {
     }
 
     #[test]
-    fn all_15_variants_tolerate_unknown_optional_fields() {
+    fn all_27_variants_tolerate_unknown_optional_fields() {
         // 红线 3 的穷尽版：unknown_optional_fields_do_not_break_decoding 只锁住了
-        // plan.step 一个变体，若有人给其余 14 个事件结构体之一加上
-        // `#[serde(deny_unknown_fields)]`，那条测试并不会变红。这里对全部 15 个
+        // plan.step 一个变体，若有人给其余事件结构体之一加上
+        // `#[serde(deny_unknown_fields)]`，那条测试并不会变红。这里对全部 26 个
         // 变体各自序列化、注入一个未来才会出现的字段、再解码，逐一验证旧解码
         // 路径能读进新 payload。
         let bodies = all_event_bodies();
-        assert_eq!(bodies.len(), 15, "事件目录变了就要同步补全这份穷尽样本");
+        assert_eq!(bodies.len(), 27, "事件目录变了就要同步补全这份穷尽样本");
 
         for body in bodies {
             let mut value = serde_json::to_value(&body).unwrap();
@@ -363,5 +464,51 @@ mod tests {
                 .unwrap_or_else(|e| panic!("variant {} 未能容忍未知字段: {e}", body.kind()));
             assert_eq!(back, body, "variant {} 解码结果与原样本不一致", body.kind());
         }
+    }
+
+    #[test]
+    fn the_event_catalog_covers_every_kind_the_contract_lists() {
+        // 契约文档 01 §4 的事件目录。新增事件必须同步这份清单——
+        // 它是「实现有没有偏离契约」的唯一可执行对照物。`run.spawned` /
+        // `run.joined` 标 [P2]（子 Agent，属后续 Phase），本次不加。
+        //
+        // `budget.amended` 是 M2 接通预算闸门时补入的：文档原目录里没有它，
+        // 因为原设计以为「人提额续跑」不需要自己的事件。实际上不行——
+        // `RunState::budget` 除了 `run.created` 没有任何写入方，提额只能靠
+        // 绕过 Log 直接改内存状态，那样的状态在 Log 上不可复现。补入的同时
+        // 01 §4.5 也已同步。
+        let expected = [
+            "run.created",
+            "intent.declared",
+            "run.suspended",
+            "run.resumed",
+            "run.completed",
+            "run.failed",
+            "env.sampled",
+            "context.assembled",
+            "context.compacted",
+            "model.requested",
+            "model.responded",
+            "plan.step",
+            "tool.requested",
+            "policy.evaluated",
+            "impact.estimated",
+            "approval.requested",
+            "approval.granted",
+            "approval.denied",
+            "approval.expired",
+            "effect.dispatched",
+            "tool.result",
+            "cost.charged",
+            "budget.amended",
+            "artifact.emitted",
+            "checkpoint",
+            "clarification.requested",
+            "clarification.answered",
+        ];
+        let actual: std::collections::BTreeSet<&str> =
+            all_event_bodies().iter().map(|b| b.kind()).collect();
+        let expected_set: std::collections::BTreeSet<&str> = expected.into_iter().collect();
+        assert_eq!(actual, expected_set, "事件目录与契约文档 01 §4 不一致");
     }
 }
