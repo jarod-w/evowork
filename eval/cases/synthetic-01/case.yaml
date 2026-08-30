@@ -26,6 +26,21 @@ expect:
   # status 仍是 Completed）与改动前逐条相同，三条回放路径的哈希也两两
   # 相同——变的只是 RunState 的形状，不是这条 Run Log 的行为。旧值是
   # 77401e44720125247809a2b3960a540e14174b7974cab93e0dcc2cd4777eab60。
+  #
+  # M2 终审 BL-9（接通污点闸门）**没有**改动这个值，这里记一笔，因为它
+  # 看起来该改：接通之后 `RunState.taint` 在真实 run 里第一次会变成
+  # `Tainted`，而 `state_hash` 把整个 `RunState` 序列化后取哈希。已在一个
+  # 只含 BL-9 改动的干净工作区上重新生成核对过：三条回放路径仍是
+  # 3fa28a4b…，23 条事件 kind 序列逐条相同，last_seq 仍是 22。
+  #
+  # 不变的原因是这条用例只调 `fs.write` 一个工具，而 `fs.write` 恰好是
+  # 污点判定表里唯一的 `Clean`（`evo_exec_local` 的 `outcome_taint`：它
+  # `output` 恒为 `None`，没有任何内容回流）；`tool.result` 没有
+  # `output_ref`，daemon 因而也不会给下一 turn 的上下文加工具返回 block。
+  # 所以这条用例从头到尾是 `Clean`，闸门一次都不该命中——这正是它该有的
+  # 样子：接通污点不等于"从此每一步都要人批"。哪天这条用例改成会调
+  # `fs.read` / `shell.exec`，这个值就会变，且必须连同事件 kind 序列的
+  # 差异一起在这里说明。
   final_state_hash: 3fa28a4be5cd4a7339738ee31376585bec1b2ab72897766520100c3d14896427
   artifacts:
     - report.txt

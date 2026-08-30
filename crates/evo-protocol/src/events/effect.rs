@@ -95,7 +95,19 @@ pub struct ToolResult {
     pub output_ref: Option<BlobRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
-    /// 外部返回一律 tainted
+    /// 这次返回带回来的污点。
+    ///
+    /// **由执行面按来源判定**，不是由这条事件的写入者随手填的：有内容
+    /// 回流的工具（`fs.read` 的文件内容、`shell.exec` 的 stdout/stderr）
+    /// 一律 `Tainted`，因为工作区里的字节是谁写的、执行面看不出来；没有
+    /// 任何内容回流的（`fs.write` 成功、Gateway 拒绝时补的 `Denied`、
+    /// dry-run 的 `DryRun`）是 `Clean`。判定表见 `evo_exec_local` 的
+    /// `outcome_taint`，那里也讲了为什么基线是 `Tainted` 而不是 `Clean`。
+    ///
+    /// 这一行以前写的是「外部返回一律 tainted」——那时它是一句**假的**
+    /// 断言：执行面三个出口全部写死 `Clean`，`TaintLevel::Tainted` 在整个
+    /// 生产代码里没有任何构造点，02 §2 步骤 ③ 的闸门因而恒为假。注释断言
+    /// 了一个执行面并不满足的前提，比没有注释更糟。
     pub taint: TaintLevel,
     #[serde(default)]
     pub cites_produced: Vec<CiteId>,

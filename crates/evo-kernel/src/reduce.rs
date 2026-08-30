@@ -90,7 +90,20 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                 _ => EffectState::Settled,
             };
             s.pending_effects.insert(e.effect_id.clone(), terminal);
-            // 外部返回一律 tainted（02 §2 步骤 ③ 的前提）
+            // 污点只 join，不覆盖：`TaintLevel::join` 只升不降，所以这一行
+            // 永远只能把 run 变得更脏，任何一次工具返回都不可能把已经脏了的
+            // run 洗回 Clean。这是 02 §2 步骤 ③ 那道闸门的前提——闸门读的是
+            // `RunState.taint`，而它的唯一涨点就是这里与 `ContextAssembled`
+            // 那一支。
+            //
+            // 这条注释以前写的是「外部返回一律 tainted」。那句话当时是假的
+            // （执行面三个出口全写死 `Clean`，`Tainted` 在生产代码里零构造点，
+            // 闸门恒为假），现在也不该照抄成真：`e.taint` 由执行器按**来源**
+            // 判定（见 `evo_exec_local` 的 `outcome_taint`），`fs.read` /
+            // `shell.exec` 这类有内容回流的是 `Tainted`，而 `fs.write`
+            // （`output` 恒为 `None`，没有任何内容回流）与 Gateway 拒绝时补的
+            // 那条 `Denied`（effect 从没执行过）是 `Clean`。内核不重判来源，
+            // 只负责把执行面给出的判定单调地累进 state。
             s.taint = s.taint.join(e.taint);
             for c in &e.cites_produced {
                 s.cites.insert(c.clone());

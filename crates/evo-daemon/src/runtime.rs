@@ -1,7 +1,7 @@
 use crate::clock::Clock;
 use crate::config::DaemonConfig;
 use crate::replay::replay_to;
-use evo_context::{AnsweredClarification, Assembler};
+use evo_context::{AnsweredClarification, Assembler, ToolOutput};
 use evo_exec::{CapabilityToken, DispatchedEffect, EgressPolicy, Executor, Lease, WorkspaceHandle};
 use evo_exec_local::WorkspaceRoot;
 use evo_gateway::{AdmitRequest, Gateway, GatewayAction, ManifestRegistry};
@@ -718,6 +718,57 @@ impl Runtime {
         Ok(out)
     }
 
+    /// 把这条 run 里迄今每一份**有内容回传**的工具返回，拼成一个
+    /// (工具名, 输出 blob 引用, 文本形态) 的列表，供 `AssembleContext`
+    /// 传给 `Assembler`。
+    ///
+    /// 这是污点闸门在上下文这一侧的电源（M2 终审 BL-9）。在它存在之前，
+    /// `assemble` 只见得到 intent 与澄清答案两种来源，两者都是用户当面
+    /// 输入，于是 `context.assembled.taint_level` 恒为 `Clean`——04 §2
+    /// 第 1 条「块的污点进 run」在代码里是一条恒等式。
+    ///
+    /// 三个判断：
+    ///
+    /// 1. **只收 `output_ref` 有值的**。一个 block 的身份就是它的
+    ///    `content_hash`（04 §1），没有 blob 就没有内容可引用。`fs.write`
+    ///    成功（不回传任何东西）、被 Gateway 拒掉的 `Denied`、dry-run 的
+    ///    `DryRun`、执行出错的 `Error`，都落在这一类里。
+    /// 2. **工具名从 `tool.requested` 取**。`tool.result` 的 payload 里
+    ///    没有工具名，只有 `effect_id`——两条事件按 `effect_id` 对起来。
+    ///    取不到就跳过：一条没有对应 `tool.requested` 的 `tool.result`
+    ///    是 Log 损坏，不该在这里静默编一个工具名出来。
+    /// 3. **文本按有损方式转**。`fs.read` 读二进制文件完全合法，而
+    ///    `output_text` 只用来估 token 数——block 引用的是 blob 的
+    ///    `content_hash`，有损转换不会改变它（见 `ToolOutput` 的文档），
+    ///    判据 3 因而不受影响。
+    fn tool_output_blobs_for(
+        &self,
+        run_id: &RunId,
+    ) -> Result<Vec<(String, BlobRef, String)>, DaemonError> {
+        let mut tool_of: BTreeMap<EffectId, String> = BTreeMap::new();
+        let mut out = Vec::new();
+        for event in self.log.events(run_id, 0, None)? {
+            match event.body {
+                EventBody::ToolRequested(tr) => {
+                    tool_of.insert(tr.effect_id, tr.tool.as_str().to_owned());
+                }
+                EventBody::ToolResult(res) => {
+                    let Some(output_ref) = res.output_ref else {
+                        continue;
+                    };
+                    let Some(tool) = tool_of.get(&res.effect_id) else {
+                        continue;
+                    };
+                    let bytes = self.log.blobs().get(&output_ref)?;
+                    let text = String::from_utf8_lossy(&bytes).into_owned();
+                    out.push((tool.clone(), output_ref, text));
+                }
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+
     /// 从 `tool.requested`（Gateway 判定阶段就写好的字段）+ 当前 state
     /// （taint）+ 配置（capability）拼回一份 `EffectRequest`。
     ///
@@ -793,9 +844,30 @@ impl Runtime {
                     })
                     .collect();
 
-                let assembled = self
-                    .assembler
-                    .assemble(turn, &intent_ref, &intent_text, &answered);
+                // 工具返回同理：内容早就在 blob 里了，daemon 读出来递进去，
+                // `evo-context` 自己不碰 blob store。它们进上下文时带
+                // `TrustLevel::Untrusted`（判定在 `evo_context::BlockSource`
+                // 那一侧，不在这里），于是这个 turn 的
+                // `context.assembled.taint_level` 变成 `Tainted`，`reduce`
+                // 把它 join 进 `RunState.taint`，下一步非 Read 的 effect 就
+                // 会撞上 Gateway 的第 ③ 步。
+                let tool_output_blobs = self.tool_output_blobs_for(&state.run_id)?;
+                let tool_outputs: Vec<ToolOutput<'_>> = tool_output_blobs
+                    .iter()
+                    .map(|(tool, output_ref, output_text)| ToolOutput {
+                        tool,
+                        output_ref,
+                        output_text,
+                    })
+                    .collect();
+
+                let assembled = self.assembler.assemble(
+                    turn,
+                    &intent_ref,
+                    &intent_text,
+                    &answered,
+                    &tool_outputs,
+                );
                 self.emit(
                     &state,
                     Actor::Runtime,

@@ -202,7 +202,8 @@ blobs/<hash[0:2]>/<hash[2:4]>/<hash>      # sha256 十六进制
 // kind: "tool.result"
 { effect_id, status: "ok"|"error"|"dry_run"|"denied",
   output_ref?: BlobRef, output_digest?, bytes?, 
-  taint: "clean"|"tainted",        // 外部返回一律 tainted
+  taint: "clean"|"tainted",        // 有内容回流的返回一律 tainted；没有内容
+                                   // 回流的（写成功、denied、dry_run）clean
   cites_produced: string[],
   actual_targets?: ResourceRef[],  // 实际触碰的，用于与 declared 比对（供应链行为异常告警）
   actual_egress?: EgressRef[] }

@@ -12,15 +12,59 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+/// 一次工具返回该带什么污点。**基线是 `Tainted`，`Clean` 才是要论证的
+/// 那一边**——这个函数是 02 §2 步骤 ③ 那道闸门在执行面的唯一电源，
+/// 在它存在之前，`LocalExecutor` 三个出口全部写死 `Clean`，于是
+/// `TaintLevel::Tainted` 在整个生产代码里没有任何构造点，闸门恒为假。
+///
+/// 判定按**来源**，不按"这次返回看起来危不危险"：内容级的启发式判断
+/// （"含不含 http://"、"像不像指令"）恰恰是 04 开篇点名的那种嘱托性
+/// 防护，一段精心构造的内容就能绕开。所以规则只有一条表，键是工具：
+///
+/// | 工具 | 回传什么 | 污点 |
+/// |---|---|---|
+/// | `fs.write` | 什么都不回传（`output: None`） | `Clean` |
+/// | `fs.read` | 工作区里某个文件的全部内容 | `Tainted` |
+/// | `shell.exec` | 任意命令的 stdout / stderr | `Tainted` |
+/// | 其它（未知工具） | 不知道 | `Tainted` |
+///
+/// `fs.write` 是唯一的 `Clean`，理由不是"写文件比读文件安全"（并不），
+/// 而是**它根本没有内容回流**：它的 `EffectOutcome::output` 恒为 `None`，
+/// `actual_targets` 由调用参数推导（参数本身的污点早在上游就已经进了
+/// `RunState.taint`，且污点只升不降，见 `TaintLevel::join`）。把它标成
+/// `Tainted` 不会多防住任何东西，只会让"第一次写文件之后整条 run 永远
+/// 需要审批"——那是噪声，不是安全。
+///
+/// 反过来，`fs.read` 与 `shell.exec` 回传的都是**工作区里的字节**：可能是
+/// 人丢进来的外部对账单、可能是上一条命令从网上拉下来的、也可能是攻击者
+/// 写进去的。谁写的这一层看不出来，所以一律不可信。
+///
+/// 未知工具走 `Tainted`，与 `config/tools.toml` 里"未列出的工具按最严
+/// 处理"、以及 02 §4 那句「忘记写 manifest 的后果是『多问一次人』，不是
+/// 『静默漏掉治理』」是同一条口径：漏标一个来源的代价必须是多问一次人。
+///
+/// **成功与失败用同一张表**（见 [`error_outcome`]）：失败路径绝不能比成功
+/// 路径更干净，否则"想办法让这次调用失败"就成了一条洗白通道——
+/// `EffectOutcome::error` 里本来就带着执行面的字符串，今天 daemon 没把它
+/// 写进 Run Log，不代表明天不会。
+fn outcome_taint(tool: &str) -> TaintLevel {
+    match tool {
+        "fs.write" => TaintLevel::Clean,
+        _ => TaintLevel::Tainted,
+    }
+}
+
 /// 三条工具路径遇到 `ExecError` 时的失败结局是一样的：状态 Error，
 /// 没有 output，没有 actual_targets / actual_egress（没跑成，谈不上
 /// "实际碰到了什么"）。抽出来避免三处分支各写一遍同样的六个字段。
-fn error_outcome(e: ExecError) -> EffectOutcome {
+///
+/// `taint` 走的是与成功路径**同一个** [`outcome_taint`]，理由见那里。
+fn error_outcome(tool: &str, e: ExecError) -> EffectOutcome {
     EffectOutcome {
         status: ToolResultStatus::Error,
         output: None,
         output_mime: "text/plain".to_owned(),
-        taint: TaintLevel::Clean,
+        taint: outcome_taint(tool),
         actual_targets: Vec::new(),
         actual_egress: Vec::new(),
         error: Some(e.to_string()),
@@ -123,7 +167,7 @@ impl LocalExecutor {
             status: ToolResultStatus::Ok,
             output: Some(bytes),
             output_mime: "application/octet-stream".to_owned(),
-            taint: TaintLevel::Clean,
+            taint: outcome_taint("fs.read"),
             actual_targets: vec![workspace_relative_target(lease, &target)?],
             actual_egress: Vec::new(),
             error: None,
@@ -208,7 +252,7 @@ impl LocalExecutor {
             status: ToolResultStatus::Ok,
             output: Some(serde_json::to_vec(&payload).expect("json object serializes to bytes")),
             output_mime: "application/json".to_owned(),
-            taint: TaintLevel::Clean,
+            taint: outcome_taint("shell.exec"),
             actual_targets,
             actual_egress,
             error: None,
@@ -231,28 +275,33 @@ impl Executor for LocalExecutor {
     }
 
     async fn execute(&self, lease: Lease, effect: DispatchedEffect) -> EffectOutcome {
-        match effect.request.tool.as_str() {
+        let tool = effect.request.tool.as_str();
+        match tool {
             "fs.write" => match self.run_fs_write(&lease, &effect).await {
+                // `output: None` 是 `fs.write` 这一支的**结构性事实**，不是
+                // 一次偶然的取值——`outcome_taint("fs.write") == Clean` 整个
+                // 建立在它之上（那里的表逐条讲了为什么）。这一支要是哪天开始
+                // 回传内容，`outcome_taint` 必须跟着改。
                 Ok(actual_targets) => EffectOutcome {
                     status: ToolResultStatus::Ok,
                     output: None,
                     output_mime: "application/octet-stream".to_owned(),
-                    taint: TaintLevel::Clean,
+                    taint: outcome_taint(tool),
                     actual_targets,
                     actual_egress: Vec::new(),
                     error: None,
                 },
-                Err(e) => error_outcome(e),
+                Err(e) => error_outcome(tool, e),
             },
             "fs.read" => match self.run_fs_read(&lease, &effect).await {
                 Ok(outcome) => outcome,
-                Err(e) => error_outcome(e),
+                Err(e) => error_outcome(tool, e),
             },
             "shell.exec" => match self.run_shell_exec(&lease, &effect).await {
                 Ok(outcome) => outcome,
-                Err(e) => error_outcome(e),
+                Err(e) => error_outcome(tool, e),
             },
-            other => error_outcome(ExecError::UnknownTool(other.to_owned())),
+            other => error_outcome(other, ExecError::UnknownTool(other.to_owned())),
         }
     }
 

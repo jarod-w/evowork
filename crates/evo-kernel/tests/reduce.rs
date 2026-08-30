@@ -1,9 +1,10 @@
 use evo_kernel::{RunState, RunStatus, fold, reduce};
 use evo_protocol::events::context::{ContextAssembled, ContextBlock};
 use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
+use evo_protocol::events::effect::{ToolResult, ToolResultStatus};
 use evo_protocol::events::lifecycle::{CompletionStatus, RunCompleted};
 use evo_protocol::events::model::{PlanIntent, PlanStep};
-use evo_protocol::{Actor, CiteId, Event, EventBody, RunId, TaintLevel, TrustLevel};
+use evo_protocol::{Actor, CiteId, EffectId, Event, EventBody, RunId, TaintLevel, TrustLevel};
 
 fn ev(seq: u64, body: EventBody) -> Event {
     Event {
@@ -83,6 +84,75 @@ fn context_taint_is_carried_into_state() {
     assert_eq!(s.taint, TaintLevel::Tainted);
     assert_eq!(s.context_turn, Some(0));
     assert!(s.cites.contains(&CiteId::from("c-1")));
+}
+
+/// M2 终审 BL-9：`tool.result` → `RunState.taint` 这一段传播链。
+///
+/// 闸门（`evo_gateway` 管线第 ③ 步）读的是 `RunState.taint`，而 daemon
+/// 每次 `admit` 都把 `state.taint` 原样递进去。所以「执行器标了污点」到
+/// 「闸门看得见」中间只隔这一行 `join`——它必须被单独钉住，不能只靠
+/// 端到端测试间接覆盖。
+#[test]
+fn tool_result_taint_is_carried_into_state() {
+    let s = RunState::new(&RunId::from("r-1"));
+    let s = reduce(
+        &s,
+        &ev(
+            0,
+            EventBody::ToolResult(ToolResult {
+                effect_id: EffectId::from("e-1"),
+                status: ToolResultStatus::Ok,
+                output_ref: None,
+                bytes: None,
+                taint: TaintLevel::Tainted,
+                cites_produced: Vec::new(),
+                actual_targets: Vec::new(),
+                actual_egress: Vec::new(),
+            }),
+        ),
+    );
+    assert_eq!(s.taint, TaintLevel::Tainted);
+}
+
+/// 污点只升不降：脏了之后，一次 `Clean` 的工具返回（比如 `fs.write`
+/// 成功，它不回传任何内容）不能把 run 洗回干净。这条要是红了，
+/// 「先读一个外部文件、再写一个文件、然后就自由了」就成立了。
+#[test]
+fn a_clean_tool_result_cannot_wash_the_taint_off() {
+    let s = RunState::new(&RunId::from("r-1"));
+    let dirty = reduce(
+        &s,
+        &ev(
+            0,
+            EventBody::ToolResult(ToolResult {
+                effect_id: EffectId::from("e-1"),
+                status: ToolResultStatus::Ok,
+                output_ref: None,
+                bytes: None,
+                taint: TaintLevel::Tainted,
+                cites_produced: Vec::new(),
+                actual_targets: Vec::new(),
+                actual_egress: Vec::new(),
+            }),
+        ),
+    );
+    let after = reduce(
+        &dirty,
+        &ev(
+            1,
+            EventBody::ToolResult(ToolResult {
+                effect_id: EffectId::from("e-2"),
+                status: ToolResultStatus::Ok,
+                output_ref: None,
+                bytes: None,
+                taint: TaintLevel::Clean,
+                cites_produced: Vec::new(),
+                actual_targets: Vec::new(),
+                actual_egress: Vec::new(),
+            }),
+        ),
+    );
+    assert_eq!(after.taint, TaintLevel::Tainted);
 }
 
 #[test]
