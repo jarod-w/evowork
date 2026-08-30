@@ -1,10 +1,15 @@
 # 项目状态
 
-> 截至 2026-08-30。`main` = `0d4c982`，114 次提交，254 个测试通过，`./scripts/ci.sh` 全段绿。
+> 截至 2026-08-30。`main` = `041194c`，116 次提交，254 个测试通过。
+> 最后一次实跑 `./scripts/ci.sh` 全段绿是在 `0d4c982`；其后两次提交只动文档
+> （`CLAUDE.md` 与本文件），未重跑。
 >
 > 这份文档记录**当前真实状态**与**未做事项**。它的编写前提是：
 > 「结构写好了」不等于「接通了」，「测试绿了」不等于「检查有效」。
 > 下面每一条未做项都标注了**它今天会怎么坏**，而不只是「还没做」。
+>
+> **2026-08-30 增补**：路线已按「优先看到 UI」重排，见 §三。那一节**只改顺序**——
+> §四 的优先级判据、条目编号与每一条的措辞一概不动。
 
 ---
 
@@ -51,15 +56,133 @@
 
 ---
 
-## 二、未做事项（按优先级）
+## 二、开发与交付环境（2026-08-30 核实）
+
+之前多份文档——包括本文 §四 P6 的 CI-6 一行，以及
+`docs/superpowers/notes/2026-08-29-tauri-linux-probe.md`、
+`docs/superpowers/notes/2026-08-29-desktop-shell-status.md` 整篇——都建立在
+「开发机是 Linux」这个前提上。**这个前提已经不成立。** 本次逐条实测：
+
+| 项 | 实测结果 |
+|---|---|
+| 机器 | macOS 26.6.2 / Apple Silicon |
+| 前端工具链 | node 24.19、pnpm 11.24，`apps/ui/node_modules` 已安装 |
+| Rust 主 workspace | **已在这台 Mac 上编译过**——`target/debug/` 下有 `evo-cli`、`mkcase` |
+| `apps/ui/src-tauri` | **从未编译过**：该目录下没有 `target/`。那约 200 行 Rust 至今没有被任何编译器看过一次 |
+| `src-tauri/Cargo.lock` | 已是跨平台解析（`objc2`/`wry`/`gtk` 同时在内，`tauri` 钉 2.11.5）——首次在 Mac 上构建若改动它，要一并提交 |
+| 签名身份 | `security find-identity -v -p codesigning` → **0 valid identities**。Apple Developer Program 组织账号仍未申请 |
+| 浏览器入口 | `dist/` 起静态服务、Chrome headless 截图确认可打开，页面即 §三「今天的界面是什么」描述的探针页 |
+
+两条直接后果：
+
+1. **CI-6 的推迟理由失效了。** 「开发机是 Linux 所以 macOS seatbelt 子集无法 vendor 与实测」
+   这句话现在为假——机器就是 macOS。它从「结构性做不到」变成「还没排期」，见 §四 P6。
+2. **`src-tauri` 那条「未验」仍然成立，且现在是唯一挡在 `.app`/`.dmg` 之前的自有工作。**
+   签名公证等 Apple 账号，但「这 200 行 Rust 能不能编译」不等任何人，今天就能试。
+
+---
+
+## 三、当前路线：UI 优先（2026-08-30 决定）
+
+> **决定**：把「能看见界面」提到协议层之后的第一顺位，**早于**真 DeepSeek adapter 与用友 MCP
+> Server。理由是产品形态需要先被看见——客户已明确桌面客户端形态是验收条件（POC 4.10②），
+> 而今天能打开的只有一个探针页。
+>
+> **这一节只改顺序，不改判据。** §四 的优先级判据原样成立；下面挑出来的条目全部是
+> **因为 UI 会把它们变成用户可见的错误**才提前，不是因为它们的性质变了。**P0 四条一条都没有下沉。**
+>
+> **这个顺序的代价，先写在这里**：UI 先于真 adapter 意味着界面上跑的仍是 fixture 模型——
+> 演示时它展示的是**形态**，不是**能力**。这是可以接受的（形态本身就是验收条件），但
+> 对外说明时不能把两者混为一谈。
+
+### 今天的界面是什么
+
+`apps/ui` 唯一的页面是 `src/App.tsx`（约 90 行；无 CSS 框架、无路由、无状态库，
+`index.css` 只有 6 行）。它渲染两段：`platform.kind` 与 5 个能力的支持与否；daemon 连接状态。
+浏览器里的实测结果是 `kind: browser`、`setAutoLaunch`/`quit` 显示 not supported、
+daemon 恒为 `not connected` 并带一行红色 `(Failed to fetch)`——**这是预期结果**，
+daemon 还没有 HTTP 入口，`App.tsx` 的注释里写明了这一点。
+
+**它不是「UI 的早期版本」，是 platform 层与 `daemonClient` 的验收页。** 存在的目的是证明
+这两个调用点写对了，接上真 daemon 时不必改 UI。所以它长成这样不是「还没来得及做好看」。
+
+### 档一：硬前置（不做就开不了工，只有一条）
+
+**协议层**（§四 P6 第 1 项）。其中有一件此前没有单列的事实：
+
+> **`evo-daemon` 今天是纯 lib crate，全仓没有一个把服务起起来的 `main.rs`。**
+> 仓库里现有的两个二进制都在 `evo-cli`（`evo-cli` 与 `mkcase`），都是命令行工具，不是常驻进程。
+> 「daemon」这个名字目前只描述职责，不描述形态。
+
+于是档一是四件事：**daemon 二进制 → HTTP `/v1/rpc` → WS `/v1/events` → `ts-rs` 生成
+`packages/protocol`（含 CI-5）**。
+
+### 档二：界面每一块各自的接线
+
+下面每一条**今天都不产生错误结果**——这正是它们此前躺在 P4/P5 的原因。但 UI 一旦把对应区域
+画出来，它就变成用户可见的错误或空白。共同形状与 §四 P4 那批一致：**字段在、结构对、
+没有读者或没有写者。**
+
+| 界面区块 | 依赖条目 | 不接线的话，界面上是什么 |
+|---|---|---|
+| 决策 Inbox / 澄清卡 | P4「`AskClarification` 恒发空串」· **P0-1** · P5「`answer_clarification` 不校验 `option_id`」 | 卡片**没有题面**；人答完模型收到的仍是空串；选项 id 拼错时事件照写、run 照跑，人以为答了、系统当没选 |
+| 审批卡 | P3 末行（文案两半都不成立）· P5「`ImpactPrecision` 缺 `Unknown`」 | 审批人看到 `targets: []` 时分不清「不知道」与「没有」——**把未知当安全**，而这恰恰是审批卡存在的唯一理由 |
+| 多条待审批并列 | P5「`reduce.rs:125-134` 的 `.next_back()` + `.expect()`」 | 今天恰好只有一条所以不爆；UI 一展示并发 effect 就指错，顺序异常的 Log 让**回放 panic** |
+| 产物区（预览 / diff） | P4「`reduce` 忽略 `ArtifactEmitted`」 | **三层都是空的**，见下 |
+| 成本视图 | **P0-2** | 金额天然少算（工具那侧一分不涨），而界面上没有任何信号说明这一点 |
+| 预算提额 | P5「提额没有任何界面」 | 预算闸门**已经接通**，run 被挡住而界面不给提额入口 = 卡死无出路。`budget.amended` 事件已经有了，缺的**就是**界面 |
+| 回放 / 审计视图 | P5「被驳回 / 等审批的 run 一个 checkpoint 都没有」· P2-12 | 审计价值最高的那类 run 恰恰是回放视图里唯一验不了的 |
+
+**产物区那条，本次实测比 §四 P4 记的更空**（2026-08-30 全仓 grep）：
+
+1. `artifact.emitted` **零产生方**——`ArtifactEmitted` 在 `evo-protocol` 之外只出现一次，
+   就是 `crates/evo-kernel/src/reduce.rs:300` 那条忽略它的 match 臂；
+2. `reduce` 不处理它；
+3. **`RunState::artifacts` 全仓零写入点**——`crates/evo-kernel/src/state.rs` 里只有第 148 行的
+   声明与第 183 行的 `Vec::new()`，`reduce.rs` 一次 `push` 都没有。
+
+所以产物区不是「数据还没填」，是**从事件到状态整条链路都不存在**。做产物区 =
+先给 `artifact.emitted` 找一个产生方，再把它接进 `reduce`，最后才谈渲染。
+
+### 档三：这次明确推迟的
+
+§四 的 **P1 全部十条**（结构收口）、**P2 的 11 / 13 / 14 / 15**、**P3 除审批卡那行外的九处**
+注释订正，以及 P5 的沙箱 / 污点 / `replay.rs` 三组——UI 一行都不碰它们。
+
+**推迟不是取消，代价记在这里**：P1 那批的共同形状是「今天不出错，只差一次顺手的编辑」，
+而接下来几周恰恰会有大量顺手的编辑发生在 daemon 与 gateway 上。其中两条成本低到不该排队，
+建议随手做掉：**P1-7**（`admit_with_preview` 改成关联函数，**一行**）与
+**P1-8**（`config/policy.toml` 末尾加一条兜底 deny，**一条规则**）。
+
+**两条 P0 不因 UI 优先而下沉**：P0-3（沙箱无超时、stdout 无上限）与 P0-4（审批永不过期）
+与 UI 无关，但演示前必须修；且 **P0-4 修完之后界面上会多一个「已过期」状态要渲染——
+先修它，UI 就不必为此返工**。
+
+### 顺序
+
+1. **档一**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）
+2. **档二里 Inbox / 审批卡 / 产物区 / 成本这四条接线**——**在写 UI 之前**做完。
+   跳过这一步做出来的是第二个探针页
+3. **UI 本体**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
+4. 收尾：预算提额入口、人工驳回路径的 checkpoint、P0-4 带来的「已过期」状态
+
+一条独立于以上四步、随时可插的：**在 macOS 上第一次编译 `src-tauri`**（见 §二）。
+它不依赖任何一步，却能消掉「那 200 行 Rust 从没被编译器看过」这个最大的单点未知。
+
+---
+
+## 四、未做事项（按优先级）
 
 优先级判据：**能不能在演示现场变成事故** > **防线是否靠纪律而非机制** > **检查能不能发现问题** > **文档是否与代码一致** > **尚未开始的功能**。
+
+条目编号（1–16）按**新增顺序**追加，**不随优先级重排**——重排会让所有既有引用失效，
+理由与 `event_body!` 的「只增不改」同源。所以新补的第 16 条排在 P0 末尾而不是插进中间。
 
 ---
 
 ### P0 — 会在演示现场变成事故
 
-#### 1. 澄清答案从未进入模型请求
+#### 1. 澄清答案从未进入模型请求（UI 档二前置，见 §三）
 
 `crates/evo-daemon/src/runtime.rs:787` 构造的 `ModelRequest` 里 `content` 是**空字符串**。整条链路（答案 → blob → 装配 → `context.assembled` 事件）都是通的，模型收到的始终是空。
 
@@ -67,7 +190,7 @@
 
 **换成真实 adapter 那一刻**：人回答「否，再等等」与回答「是，立即发起」对模型输入毫无区别——A-12 澄清追问整条能力是空的。而那时演示已经在跑。
 
-#### 2. Effect 完全不出账
+#### 2. Effect 完全不出账（UI 档二前置，见 §三）
 
 `pricing.toml` 只给模型定价，`CostCharged` 全仓只有 `call_model` 一个产生点，`EffectOutcome` 没有任何成本字段。
 
@@ -83,6 +206,23 @@
 `ApprovalRequested.expires_at_ms` 被写入（`runtime.rs:1020`），**全仓无人读取**。`approval.expired` 零产生者，`reduce` 里对应的处理分支是死代码。
 
 **后果**：一条 L3 审批 30 天后被人点开链接批准，`decide_approval` 照收，`resume` 照派发——一条早该过期的对外发送被执行。
+
+#### 16. `daemonClient.subscribe()` 的重连是一场风暴（UI 档一同期必修）
+
+> 本条 2026-08-30 随「UI 优先」补入。它此前只记在
+> `docs/superpowers/notes/2026-08-29-desktop-shell-status.md` 第六节，没有进本文——
+> 因为当时它是「潜伏的前端技术债」；UI 优先之后它变成 P0。
+
+`apps/ui/src/daemon/client.ts` 的 `ws.onclose` 直接重连，**无退避、无重试上限**。
+对着一个拒绝连接的 daemon 实测（数据出自上述 note，本次未复测）：约 50 毫秒内发起 40 次
+socket 连接（约 800 次/秒），无限持续，且**每个 `subscribe()` 订阅各自独立计数**，
+多个订阅成倍放大。
+
+**今天为什么不暴露**：全仓没有任何调用方用到 `subscribe()`——因为没有事件可订。
+
+**UI 一接 run 视图就活**：daemon 只要短暂不可用（重启、升级、崩溃），界面就用这个速率砸它——
+而 daemon 正在重启这件事，本身就是它最脆弱的时候。代码里已有 `TODO(M2, run view)` 标出位置
+与实测数据。修法是指数退避 + 重试上限。
 
 ---
 
@@ -125,7 +265,7 @@
 
 `scripts/codex-closure.py` 写好了、docstring 写明「每次升级上游 rev 后重跑，与基线比对」，但**没有任何脚本调用它，也没有基线文件**。
 
-#### 12. eval 用例里一个治理事件都没有
+#### 12. eval 用例里一个治理事件都没有（UI 档二：回放 / 审计视图的配套检查）
 
 `eval/cases/synthetic-01/case.yaml` 是 `run.created … run.completed`，无审批/澄清/挂起/驳回。`casegen.rs` 也无法在 case.yaml 里表达「批准/驳回/回答」。
 
@@ -183,8 +323,8 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 | `PolicyContext.taint` / `.targets` | 老实填了，但 `Rule` 只有 class/tool/reversible 三个条件字段，`matches` 完全不看这两个。今天写不出「对某目录的写要审批」这类规则 |
 | `Lease.expires_at_ms` | 零读者（见 P0-3） |
 | `BudgetSpec.max_concurrency` / `max_recursion_depth` | 零读取方 |
-| `Command::AskClarification { question }` | 恒发空串，唯一消费方直接丢弃。两条内核测试还在断这个空占位——断言的是「占位符仍然是空的」 |
-| `reduce` 忽略 `ContextCompacted` / `ArtifactEmitted` | 今天二者无产生方，尚不构成投影缺口；等哪个切片开始写 `artifact.emitted`，它会静默不进状态 |
+| `Command::AskClarification { question }` | 恒发空串，唯一消费方直接丢弃。两条内核测试还在断这个空占位——断言的是「占位符仍然是空的」。**UI 档二前置**：澄清卡没有题面，就是这一条 |
+| `reduce` 忽略 `ContextCompacted` / `ArtifactEmitted` | 今天二者无产生方，尚不构成投影缺口；等哪个切片开始写 `artifact.emitted`，它会静默不进状态。**UI 档二前置，且 2026-08-30 实测比这句更空**：`RunState::artifacts` 全仓零写入点（`state.rs:148` 声明、`183` 建空 `Vec`，`reduce.rs` 一次 `push` 都没有）——产物区是从事件到状态整条链路都不存在，不是「数据没填」 |
 | `AwaitReason::Human`、`SuspendReason::Paused`、`CompletionStatus::Partial`、`Checkpoint.snapshot_ref`、`RunState::children`、`RunFailed.at_seq` | 死变体/死字段，均有注释 |
 | `reduce.rs:91-93` | 空的 `if e.status == ToolResultStatus::Error {}`，只有注释没有语句 |
 
@@ -196,14 +336,14 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 |---|---|
 | `replay.rs` | **解不开**的快照仍报错而非降级。按「快照可丢弃」的同一逻辑它也该降级——现在损坏一个 blob 会让整条 run 无法恢复。修 BL-2 时只堵了信任漏洞 |
 | `runtime.rs` | `resume()` 仍能恢复**终态** run。被拒的 run 被 resume 会一路跑到 `run.completed`（effect 保持 denied 不会执行，红线守住了），但「Failed 的 run 能被复活」本身可疑 |
-| `runtime.rs:405-435` | `answer_clarification` 不校验 `option_id` 属于本题选项。传了过期/拼错的 id，事件照写、run 照跑，而摘要里没有「选择：…」一行——人以为自己回答了，系统当作没选 |
-| `runtime.rs` | 被人驳回 / 尚在等审批的 run 一个 checkpoint 都没有，`verify` 报 VACUOUS 并让 CLI 非 0 退出。网关自动 Deny 那条路径专门补了检查点，人工驳回这条没有——**审计价值最高的那类 run 恰恰是唯一验不了的** |
-| `reduce.rs:125-134` | `RunSuspended{AwaitingApproval}` 取 `pending_approvals` 的 `.next_back()`（字典序最大），注释却说「取出当前唯一一条」。今天恰好只有一条；一旦支持并发 effect 就会指错。同处用 `.expect()`，顺序异常的 Log 会让**回放 panic** 而不是报错 |
+| `runtime.rs:405-435` | **【UI 档二】**`answer_clarification` 不校验 `option_id` 属于本题选项。传了过期/拼错的 id，事件照写、run 照跑，而摘要里没有「选择：…」一行——人以为自己回答了，系统当作没选 |
+| `runtime.rs` | **【UI 档二】**被人驳回 / 尚在等审批的 run 一个 checkpoint 都没有，`verify` 报 VACUOUS 并让 CLI 非 0 退出。网关自动 Deny 那条路径专门补了检查点，人工驳回这条没有——**审计价值最高的那类 run 恰恰是唯一验不了的** |
+| `reduce.rs:125-134` | **【UI 档二】**`RunSuspended{AwaitingApproval}` 取 `pending_approvals` 的 `.next_back()`（字典序最大），注释却说「取出当前唯一一条」。今天恰好只有一条；一旦支持并发 effect 就会指错。同处用 `.expect()`，顺序异常的 Log 会让**回放 panic** 而不是报错 |
 | `pipeline.rs` | dry-run 的 `mode` 没有持久化，审批往返后必然降级成 Live。今天不爆是因为 `ExecutionMode::DryRun` 在生产代码里零构造点 |
-| `impact.rs` | 「估不出影响面」与「没有影响面」在 Log 里不可区分（`ImpactPrecision` 缺 `Unknown` 一档）。审批人看到 `targets: []` 时没有任何信号能区分「不知道」和「没有」——把未知当安全 |
+| `impact.rs` | **【UI 档二】**「估不出影响面」与「没有影响面」在 Log 里不可区分（`ImpactPrecision` 缺 `Unknown` 一档）。审批人看到 `targets: []` 时没有任何信号能区分「不知道」和「没有」——把未知当安全 |
 | `decide.rs` | 模型侧无预扣：token 数要等响应才知道，真预扣需要「预留→结算/释放」事件加失败对账加回放语义 |
 | 沙箱 | `spec.env` 只有 PATH 一个键受保护（`LD_PRELOAD`/`BASH_ENV` 原样透传）；`program_allowed` 放行任意路径下的同名程序；resolve 与 write 之间的并发 TOCTOU；工作区内的 bind mount |
-| 预算 | 提额没有任何界面；子 run 预算未实现；⑤的预扣半边在 daemon 里今天走不到（没有工具声明 `preview`） |
+| 预算 | **【UI 档二】**提额没有任何界面；子 run 预算未实现；⑤的预扣半边在 daemon 里今天走不到（没有工具声明 `preview`） |
 | 污点 | 一级 dry-run 的 preview 输出没有污点判定；模型输出本身不是污点源；`start()` 收裸 `&str`，无法把 intent 声明为不可信——而粘贴进来的外部文本正是首要注入向量；`cites_produced` 恒空 |
 | daemon | 崩溃残留的 `Dispatched` effect 只能让 run 失败，无法与执行器实际做了什么对账 |
 
@@ -211,23 +351,25 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 
 ### P6 — 尚未开始的功能
 
-按计划顺序。前三项是 M2 剩余范围，其余按依赖排。
+按计划顺序。**顺序已按 §三「UI 优先」重排：UI 本体从第 4 项提到第 2 项，排到真 DeepSeek
+adapter 与用友 MCP 之前。** 其余按依赖排。
 
 | 项 | 状态 | 阻塞 |
 |---|---|---|
-| **协议层**：HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | 未开始 | 无。**事件集已随 M2 稳定，这是当初把它排在治理面之后的原因**——协议只生成一次 |
-| **真 DeepSeek adapter** | 未开始 | key 已到位，排在协议层之后 |
-| **用友 MCP Server（A-9）** | 未开始 | 账号已到位，排在协议层之后 |
-| **UI 本体** | 未开始 | 桌面外壳只交付了 platform 层与 `daemonClient`，没有应用界面 |
+| **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | 未开始 | 无。**事件集已随 M2 稳定，这是当初把它排在治理面之后的原因**——协议只生成一次。**UI 档一，唯一硬前置（§三）**。注意 `evo-daemon` 今天是纯 lib、没有 `main.rs`，起服务这件事也在本项里 |
+| **UI 本体** | 未开始 | 桌面外壳只交付了 platform 层与 `daemonClient`，没有应用界面。**已提前到本位置**；前置是档一 + 档二那批接线，逐条见 §三 |
+| **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。它一落地，P0-1（澄清答案没进模型请求）就从潜伏变成真错 |
+| **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |
 | A-11 口径库 | 未开始 | 财务的历史成品表未到位。机制与内容一起做，避免机制与真实条目形状对不上 |
 | A-10 出口代理子进程 | 未开始 | 属 M3。注意 P4 里的出口 allowlist 死代码在等它 |
-| CI-6 vendor 检查 | 未开始 | `vendor/` 目前为空——开发机是 Linux，macOS seatbelt 子集尚未 vendor |
+| **桌面外壳打包（`.app` / `.dmg`）** | 未开始 | 四个缺口都在本仓、不等外部：① `@tauri-apps/cli` 未安装且 `apps/ui/package.json` 无 `tauri` script，`pnpm tauri build` 这条命令目前不存在；② `src-tauri` 从未编译过（§二）；③ `icons/` 是 4 张纯色占位 PNG、无 `icon.icns`（Tauri 会不会从 PNG 自动生成 icns —— **未验证**）；④ `identifier` 仍是占位 `com.evowork.desktop`，**必须在第一次签名之前**换成组织真实域名。签名与公证另等 Apple 账号 |
+| CI-6 vendor 检查 | 未开始 | `vendor/` 目前为空。原先的理由「开发机是 Linux，macOS seatbelt 子集无法编译与实测」**已失效**——机器就是 macOS（§二）。现在缺的只是排期 |
 | 真机跑通 | 未开始 | 装机三前提（Q-31）未确认 |
 
 ---
 
-## 三、贯穿性经验
+## 五、贯穿性经验
 
 这三条是本项目反复付出代价换来的，写在这里是因为**它们决定了上面每一条该怎么修**。
 
