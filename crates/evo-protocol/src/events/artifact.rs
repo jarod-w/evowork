@@ -1,6 +1,7 @@
 use crate::blob::BlobRef;
 use crate::ids::{ArtifactId, CiteId};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// 产物区事件：一个工具/流程向产物区写入了一份可交付文件。
 ///
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// `BlobRef` 本就是「指向 blob 的引用」，没有理由在这里重新发明一遍同样
 /// 的三元组。`path` 是给人看的展示/下载路径，与 blob store 内部按
 /// content hash 分桶的物理路径是两回事，不能互相推导，所以分开存。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ArtifactEmitted {
     pub artifact_id: ArtifactId,
     pub path: String,

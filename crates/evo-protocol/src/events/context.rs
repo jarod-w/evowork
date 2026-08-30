@@ -2,8 +2,9 @@ use crate::blob::BlobRef;
 use crate::ids::CiteId;
 use crate::taint::{TaintLevel, TrustLevel};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ContextBlock {
     pub cite_id: CiteId,
     pub source: String,
@@ -15,7 +16,7 @@ pub struct ContextBlock {
     pub token_estimate: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ContextAssembled {
     pub turn: u32,
     pub profile: String,
@@ -34,7 +35,7 @@ pub struct ContextAssembled {
 /// 可能夹带业务上下文（例如摘要里复述了客户名），一律进 blob，不进
 /// payload（红线①）；`summary_cite_id` 让这段摘要也能被后续引用溯源，
 /// 不至于变成一段查不到出处的文本。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ContextCompacted {
     pub from_seq: u64,
     pub to_seq: u64,

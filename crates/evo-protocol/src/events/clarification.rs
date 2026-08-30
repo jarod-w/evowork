@@ -1,6 +1,7 @@
 use crate::blob::BlobRef;
 use crate::event::Actor;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// 澄清问题给出的一个选项。
 ///
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// 催收）里，选项文案完全可能长这样：「是否对『某某公司』的 12 万逾期发起
 /// 催收」。客户名和金额就这么进了 payload，而 schema 层面没有任何东西拦得
 /// 住。不要把 `label` 一类的展示文本加回这个结构体。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ClarificationOption {
     pub id: String,
     pub is_default: bool,
@@ -28,7 +29,7 @@ pub struct ClarificationOption {
 /// `question_ref`。加它是因为同一个 run 里可能连续问好几轮，`seq` 距离
 /// 猜不出某条 `clarification.answered` 对应的是哪一条请求；有了
 /// `question_id`，两条事件靠它精确配对，不依赖顺序假设。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ClarificationRequested {
     pub question_id: String,
     /// 问题正文**与全部选项的展示文案**都在这里，不只是问题本身——字段从
@@ -58,7 +59,7 @@ pub struct ClarificationRequested {
 
 /// 对某条 `clarification.requested` 的回答。`option_id` 与 `free_text_ref`
 /// 都是 optional 且不互斥：产品形态允许「选一个选项，外加一句补充说明」。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ClarificationAnswered {
     pub question_id: String,
     pub by: Actor,

@@ -3,7 +3,9 @@ pub mod budget;
 pub mod effect;
 pub mod event;
 pub mod events;
+pub mod export;
 pub mod ids;
+pub mod rpc;
 pub mod taint;
 
 pub use blob::{BlobClass, BlobRef};
@@ -14,5 +16,7 @@ pub use events::accounting::{CheckpointReason, CostUnit, Currency};
 pub use events::determinism::ModelRoute;
 pub use events::effect::{ExecutionMode, ToolResultStatus};
 pub use events::model::{PlanIntent, PlannedCall};
+pub use export::export_typescript;
 pub use ids::*;
+pub use rpc::{HelloFrame, PROTOCOL_VER, RUNLOG_SCHEMA_VER, RpcErrorBody, RpcRequest, RpcResponse};
 pub use taint::{TaintLevel, TrustLevel};

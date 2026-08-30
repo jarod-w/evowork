@@ -10,3 +10,10 @@ workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# 只用于把本 crate 的类型导出成 packages/protocol 的 TS。运行时零开销——
+# derive 生成的是编译期代码，CI-5 靠 `export-protocol` 这个 bin 写出文件。
+ts-rs = { version = "11.1.0", features = ["serde-compat", "no-serde-warnings"] }
+
+[[bin]]
+name = "export-protocol"
+path = "src/bin/export_protocol.rs"

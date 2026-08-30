@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use ts_rs::TS;
 
 macro_rules! string_id {
     ($($name:ident),* $(,)?) => {
         $(
-            #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+            #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
             #[serde(transparent)]
             pub struct $name(String);
 

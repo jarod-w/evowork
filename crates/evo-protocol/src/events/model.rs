@@ -3,15 +3,16 @@ use crate::events::clarification::ClarificationOption;
 use crate::ids::ToolId;
 use crate::taint::TaintLevel;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ModelParams {
     pub temperature: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ModelRequested {
     pub turn: u32,
     pub provider: String,
@@ -23,7 +24,7 @@ pub struct ModelRequested {
     pub messages_ref: BlobRef,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Usage {
     pub input: u64,
     pub output: u64,
@@ -33,7 +34,7 @@ pub struct Usage {
     pub cache_write: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ModelResponded {
     pub turn: u32,
     pub response_ref: BlobRef,
@@ -43,7 +44,7 @@ pub struct ModelResponded {
     pub latency_ms: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanIntent {
     ToolCall,
@@ -61,7 +62,7 @@ pub enum PlanIntent {
 /// 原文 `parse_plan` 一遍——那是两处消费同一份解析结果、只靠人记得保持
 /// 同步的脆弱模式。`call_model` 已经 `parse_plan` 过一次，这里把那次解
 /// 析的产物直接落盘。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct PlanStep {
     pub turn: u32,
     pub intent: PlanIntent,
@@ -75,7 +76,7 @@ pub struct PlanStep {
 }
 
 /// 内核能看到的「要调哪个工具」。不含 class / targets——那些来自 manifest，内核看不到。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct PlannedCall {
     pub tool: ToolId,
     pub params_ref: BlobRef,
@@ -89,7 +90,7 @@ pub struct PlannedCall {
 /// [`ClarificationRequested::prompt_ref`][crate::events::clarification::ClarificationRequested::prompt_ref]
 /// 的建议）。`options` 里的 [`ClarificationOption`] 本身已经不含
 /// `label`（见它的文档：那道红线是历史教训），所以可以直接进事件 payload。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct PlannedClarification {
     pub prompt_ref: BlobRef,
     pub options: Vec<ClarificationOption>,

@@ -148,6 +148,10 @@ if grep -riE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=target 
 fi
 echo "ok"
 
+echo "== CI-5 协议同步 =="
+./scripts/check-protocol-sync.sh
+echo "ok"
+
 echo "== CI-9 外壳不渗进业务代码 =="
 # 外壳 API 的命中必须全部落在 apps/ui/src/platform/ 内。
 # UI 里到处 invoke，就是「内核在 UI 进程里」这条红线的前置形态。

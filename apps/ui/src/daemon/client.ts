@@ -6,23 +6,17 @@
 // of the event stream, not a second copy of daemon state kept fresh by
 // timers (design doc 06 §1 / §6).
 //
-// The daemon does not have an HTTP/WS entrypoint yet (that's a later
-// stage) -- this module only pins down the interface, the wire types, and
-// the version-negotiation rule so the call sites are already correct once
-// a real daemon exists to talk to. `fetch` and `WebSocket` are both
-// injectable so tests exercise this module against stubs instead of a
-// live network.
+// Wire types come from `@evowork/protocol` (ts-rs output of evo-protocol).
+// Do not re-declare them here.
 
 import type {
-  CaughtUpFrame,
   EventFrame,
   HelloFrame,
-  ProtocolVersion,
   RpcRequest,
   RpcResponse,
   ServerStreamFrame,
   SubscribeFrame,
-} from './types'
+} from '@evowork/protocol'
 
 // ---------------------------------------------------------------------------
 // Injection seams
@@ -78,6 +72,12 @@ export interface DaemonClientConfig {
   fetchImpl?: DaemonFetchLike
   /** Defaults to the global `WebSocket`. Override in tests with a stub. */
   webSocketCtor?: DaemonWebSocketCtor
+  /**
+   * Used by `subscribe()` to delay reconnects. Defaults to `setTimeout`.
+   * Tests inject a queue so backoff is deterministic and not wall-clock.
+   */
+  schedule?: (fn: () => void, ms: number) => unknown
+  cancelSchedule?: (handle: unknown) => void
 }
 
 export interface DaemonClientStatus {
@@ -129,6 +129,17 @@ export interface DaemonClient {
  * lockstep with a breaking daemon change; see design doc 06 §5.
  */
 export const CLIENT_PROTOCOL_VERSION: ProtocolVersion = { major: 1, minor: 0 }
+
+/** First reconnect wait. Doubles each attempt up to `SUBSCRIBE_MAX_BACKOFF_MS`. */
+export const SUBSCRIBE_INITIAL_BACKOFF_MS = 200
+export const SUBSCRIBE_MAX_BACKOFF_MS = 10_000
+/** After this many failed reconnects, `subscribe()` stops. Unsubscribe still works. */
+export const SUBSCRIBE_MAX_RETRIES = 20
+
+export interface ProtocolVersion {
+  major: number
+  minor: number
+}
 
 /**
  * RPC methods that only read state (design doc 06 §3). Everything *not*
@@ -227,18 +238,20 @@ class GlobalWebSocketAdapter implements DaemonWebSocketLike {
 }
 
 function isServerStreamFrame(value: unknown): value is ServerStreamFrame {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'op' in value &&
-    ((value as { op: unknown }).op === 'event' || (value as { op: unknown }).op === 'caught_up')
-  )
+  if (typeof value !== 'object' || value === null || !('op' in value)) return false
+  const op = (value as { op: unknown }).op
+  if (op === 'event') return 'event' in value
+  if (op === 'caught_up') return 'run_id' in value && 'at_seq' in value
+  return false
 }
 
 export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
   const fetchImpl: DaemonFetchLike =
     config.fetchImpl ?? ((url, init) => globalThis.fetch(url, init))
   const webSocketCtor: DaemonWebSocketCtor = config.webSocketCtor ?? GlobalWebSocketAdapter
+  const schedule = config.schedule ?? ((fn, ms) => globalThis.setTimeout(fn, ms))
+  const cancelSchedule =
+    config.cancelSchedule ?? ((handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>))
 
   let nextRequestId = 1
   const status: DaemonClientStatus = {
@@ -272,7 +285,7 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
     }
 
     const id = nextRequestId++
-    const request: RpcRequest<TParams> = { id, method, params }
+    const request: RpcRequest = { id, method, params: params as unknown }
     const res = await fetchImpl(`${config.baseUrl}/v1/rpc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -281,7 +294,7 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
     if (!res.ok) {
       throw new Error(`daemonClient.rpc(${method}): HTTP ${res.status}`)
     }
-    const response = (await res.json()) as RpcResponse<TResult>
+    const response = (await res.json()) as RpcResponse
     if (response.error) {
       throw new DaemonRpcError(response.error.code, response.error.message)
     }
@@ -293,9 +306,15 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
     fromSeq: number,
     onEvent: (frame: ServerStreamFrame) => void,
   ): DaemonSubscription {
-    let lastSeq = fromSeq
+    let lastObservedSeq: number | null = null
     let stopped = false
     let socket: DaemonWebSocketLike | null = null
+    let reconnectAttempt = 0
+    let reconnectHandle: unknown = null
+
+    function nextFromSeq(): number {
+      return lastObservedSeq === null ? fromSeq : lastObservedSeq + 1
+    }
 
     function connect(resumeFromSeq: number): void {
       const wsUrl =
@@ -305,6 +324,7 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
       socket = ws
 
       ws.onopen = () => {
+        reconnectAttempt = 0
         const frame: SubscribeFrame = {
           op: 'subscribe',
           run_id: runId,
@@ -318,31 +338,24 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
         if (!isServerStreamFrame(parsed)) return
 
         if (parsed.op === 'event') {
-          lastSeq = (parsed as EventFrame).seq
-        } else {
-          lastSeq = (parsed as CaughtUpFrame).at_seq
+          lastObservedSeq = (parsed as EventFrame).event.seq
         }
         onEvent(parsed)
       }
 
       ws.onclose = () => {
         if (stopped) return
-        // Reconnect-with-resume, never a polling fallback: pick up from
-        // the last seq this subscription actually observed, so a dropped
-        // connection never re-delivers events or silently skips them
-        // (design doc 06 §2).
-        //
-        // TODO(M2, run view): no backoff, no retry-count ceiling. Against
-        // a daemon that refuses every connection, this measured ~40
-        // socket attempts inside 50ms (~800/s), indefinitely, and that
-        // multiplies per subscription -- there is no caller today
-        // (nothing in M1 calls `subscribe()` yet) so it's dormant, but
-        // once the M2 run view wires this up, a daemon that goes down
-        // will make the UI hammer it at that rate for as long as the
-        // view stays open. Needs exponential backoff and a ceiling
-        // before M2 ships this to a real run view. Tracked as a known
-        // gap in docs/superpowers/notes/2026-08-29-desktop-shell-status.md.
-        connect(lastSeq + 1)
+        if (reconnectAttempt >= SUBSCRIBE_MAX_RETRIES) return
+        const delay = Math.min(
+          SUBSCRIBE_INITIAL_BACKOFF_MS * 2 ** reconnectAttempt,
+          SUBSCRIBE_MAX_BACKOFF_MS,
+        )
+        reconnectAttempt += 1
+        reconnectHandle = schedule(() => {
+          reconnectHandle = null
+          if (stopped) return
+          connect(nextFromSeq())
+        }, delay)
       }
     }
 
@@ -351,6 +364,10 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
     return {
       unsubscribe(): void {
         stopped = true
+        if (reconnectHandle !== null) {
+          cancelSchedule(reconnectHandle)
+          reconnectHandle = null
+        }
         socket?.close()
       },
     }

@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import type { EventFrame, HelloFrame, ServerStreamFrame } from '@evowork/protocol'
 import {
   createDaemonClient,
   DaemonReadOnlyError,
   DaemonRpcError,
+  SUBSCRIBE_INITIAL_BACKOFF_MS,
+  SUBSCRIBE_MAX_RETRIES,
   type DaemonFetchResponseLike,
   type DaemonWebSocketCtor,
   type DaemonWebSocketLike,
 } from './client'
-import type { EventFrame, HelloFrame, ServerStreamFrame } from './types'
 
 // ---------------------------------------------------------------------------
 // Test doubles. Neither a real daemon nor a real network exists yet (that's
@@ -79,6 +81,51 @@ class FakeWebSocket implements DaemonWebSocketLike {
 function freshFakeWebSocketCtor(): DaemonWebSocketCtor {
   FakeWebSocket.instances = []
   return FakeWebSocket
+}
+
+function eventFrame(runId: string, seq: number, kind: string): EventFrame {
+  return {
+    op: 'event',
+    event: {
+      run_id: runId,
+      seq,
+      recorded_at: 't',
+      actor: 'runtime',
+      schema_ver: 1,
+      body: { kind } as EventFrame['event']['body'],
+    },
+  }
+}
+
+interface ScheduledReconnect {
+  fn: () => void
+  ms: number
+  cancelled: boolean
+}
+
+function queuedScheduler() {
+  const queued: ScheduledReconnect[] = []
+  const delays: number[] = []
+  return {
+    delays,
+    schedule: (fn: () => void, ms: number) => {
+      const item: ScheduledReconnect = { fn, ms, cancelled: false }
+      queued.push(item)
+      delays.push(ms)
+      return item
+    },
+    cancelSchedule: (handle: unknown) => {
+      ;(handle as ScheduledReconnect).cancelled = true
+    },
+    fireNext() {
+      const item = queued.shift()
+      if (!item || item.cancelled) return
+      item.fn()
+    },
+    pending() {
+      return queued.filter((item) => !item.cancelled).length
+    },
+  }
 }
 
 describe('createDaemonClient()', () => {
@@ -246,29 +293,35 @@ describe('createDaemonClient()', () => {
       const ws = FakeWebSocket.instances[0]
       ws.simulateOpen()
 
-      const evt: EventFrame = { op: 'event', run_id: 'r-1', seq: 0, kind: 'run.created' }
+      const evt = eventFrame('r-1', 0, 'run.created')
       ws.simulateMessage(evt)
       ws.simulateMessage({ op: 'caught_up', run_id: 'r-1', at_seq: 0 })
 
       expect(received).toEqual([evt, { op: 'caught_up', run_id: 'r-1', at_seq: 0 }])
     })
 
-    it('on an unexpected drop, reconnects and resumes from the last seq seen (not from the start)', () => {
+    it('on an unexpected drop, reconnects after backoff and resumes from the last seq seen', () => {
       const webSocketCtor = freshFakeWebSocketCtor()
+      const scheduler = queuedScheduler()
       const client = createDaemonClient({
         baseUrl: 'http://localhost:4000',
         token: 'tok',
         webSocketCtor,
+        schedule: scheduler.schedule,
+        cancelSchedule: scheduler.cancelSchedule,
       })
       client.subscribe('r-1', 0, () => {})
 
       const first = FakeWebSocket.instances[0]
       first.simulateOpen()
-      first.simulateMessage({ op: 'event', run_id: 'r-1', seq: 0, kind: 'run.created' })
-      first.simulateMessage({ op: 'event', run_id: 'r-1', seq: 1, kind: 'intent.declared' })
+      first.simulateMessage(eventFrame('r-1', 0, 'run.created'))
+      first.simulateMessage(eventFrame('r-1', 1, 'intent.declared'))
 
       first.simulateDrop()
+      expect(FakeWebSocket.instances).toHaveLength(1)
+      expect(scheduler.delays).toEqual([SUBSCRIBE_INITIAL_BACKOFF_MS])
 
+      scheduler.fireNext()
       expect(FakeWebSocket.instances).toHaveLength(2)
       const second = FakeWebSocket.instances[1]
       second.simulateOpen()
@@ -277,12 +330,62 @@ describe('createDaemonClient()', () => {
       ])
     })
 
-    it('unsubscribe() closes the socket and does not trigger a reconnect', () => {
+    it('doubles the reconnect delay on each failure (P0-16)', () => {
       const webSocketCtor = freshFakeWebSocketCtor()
+      const scheduler = queuedScheduler()
       const client = createDaemonClient({
         baseUrl: 'http://localhost:4000',
         token: 'tok',
         webSocketCtor,
+        schedule: scheduler.schedule,
+        cancelSchedule: scheduler.cancelSchedule,
+      })
+      client.subscribe('r-1', 0, () => {})
+
+      FakeWebSocket.instances[0].simulateDrop()
+      scheduler.fireNext()
+      FakeWebSocket.instances[1].simulateDrop()
+      scheduler.fireNext()
+      FakeWebSocket.instances[2].simulateDrop()
+
+      expect(scheduler.delays).toEqual([
+        SUBSCRIBE_INITIAL_BACKOFF_MS,
+        SUBSCRIBE_INITIAL_BACKOFF_MS * 2,
+        SUBSCRIBE_INITIAL_BACKOFF_MS * 4,
+      ])
+    })
+
+    it('stops reconnecting after SUBSCRIBE_MAX_RETRIES (P0-16)', () => {
+      const webSocketCtor = freshFakeWebSocketCtor()
+      const scheduler = queuedScheduler()
+      const client = createDaemonClient({
+        baseUrl: 'http://localhost:4000',
+        token: 'tok',
+        webSocketCtor,
+        schedule: scheduler.schedule,
+        cancelSchedule: scheduler.cancelSchedule,
+      })
+      client.subscribe('r-1', 0, () => {})
+
+      for (let i = 0; i < SUBSCRIBE_MAX_RETRIES; i++) {
+        FakeWebSocket.instances.at(-1)?.simulateDrop()
+        scheduler.fireNext()
+      }
+      const socketsAfterCeiling = FakeWebSocket.instances.length
+      FakeWebSocket.instances.at(-1)?.simulateDrop()
+      expect(scheduler.pending()).toBe(0)
+      expect(FakeWebSocket.instances).toHaveLength(socketsAfterCeiling)
+    })
+
+    it('unsubscribe() closes the socket and does not trigger a reconnect', () => {
+      const webSocketCtor = freshFakeWebSocketCtor()
+      const scheduler = queuedScheduler()
+      const client = createDaemonClient({
+        baseUrl: 'http://localhost:4000',
+        token: 'tok',
+        webSocketCtor,
+        schedule: scheduler.schedule,
+        cancelSchedule: scheduler.cancelSchedule,
       })
       const subscription = client.subscribe('r-1', 0, () => {})
       FakeWebSocket.instances[0].simulateOpen()
@@ -290,6 +393,7 @@ describe('createDaemonClient()', () => {
       subscription.unsubscribe()
 
       expect(FakeWebSocket.instances).toHaveLength(1)
+      expect(scheduler.pending()).toBe(0)
     })
   })
 })

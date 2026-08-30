@@ -2,8 +2,9 @@ use crate::blob::BlobRef;
 use crate::ids::{CiteId, EffectId, RunId, ToolId};
 use crate::taint::TaintLevel;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum EffectClass {
     Read,
@@ -19,7 +20,7 @@ impl EffectClass {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceOp {
     Read,
@@ -28,13 +29,13 @@ pub enum ResourceOp {
     Delete,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 pub struct ResourceRef {
     pub kind: String,
     pub id: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 pub struct EgressRef {
     /// 绝大多数工具能在 manifest 里静态声明一个具体主机名（比如
     /// `http.get` 的目标 URL）。`shell.exec` 不行——命令行是任意的，
@@ -51,7 +52,7 @@ pub struct EgressRef {
 }
 
 /// 能力令牌。POC 期只做 scope 字符串匹配（02 §2 步骤 ②）。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CapabilityToken {
     pub subject: String,
     pub scopes: Vec<String>,
@@ -64,7 +65,7 @@ impl CapabilityToken {
 }
 
 /// Gateway 读得懂的「声明」，不是待执行的闭包（02 §1）。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct EffectRequest {
     pub effect_id: EffectId,
     pub run_id: RunId,

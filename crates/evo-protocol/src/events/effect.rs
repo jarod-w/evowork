@@ -3,8 +3,9 @@ use crate::effect::{EffectClass, EgressRef, ResourceOp, ResourceRef};
 use crate::ids::{CiteId, EffectId, ExecutorId, LeaseId, ToolId};
 use crate::taint::TaintLevel;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ToolRequested {
     pub effect_id: EffectId,
     pub turn: u32,
@@ -19,7 +20,7 @@ pub struct ToolRequested {
     pub cites_referenced: Vec<CiteId>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyDecisionKind {
     Allow,
@@ -27,7 +28,7 @@ pub enum PolicyDecisionKind {
     RequireApproval,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct PolicyEvaluated {
     pub effect_id: EffectId,
     pub decision: PolicyDecisionKind,
@@ -37,7 +38,7 @@ pub struct PolicyEvaluated {
     pub reason_code: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImpactTarget {
     pub resource: ResourceRef,
     pub op: ResourceOp,
@@ -45,14 +46,14 @@ pub struct ImpactTarget {
     pub detail_ref: Option<BlobRef>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ImpactPrecision {
     Exact,
     DeclaredOnly,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImpactEstimated {
     pub effect_id: EffectId,
     pub targets: Vec<ImpactTarget>,
@@ -63,14 +64,14 @@ pub struct ImpactEstimated {
     pub precision: ImpactPrecision,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
     Live,
     DryRun,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct EffectDispatched {
     pub effect_id: EffectId,
     pub executor_id: ExecutorId,
@@ -78,7 +79,7 @@ pub struct EffectDispatched {
     pub mode: ExecutionMode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolResultStatus {
     Ok,
@@ -87,7 +88,7 @@ pub enum ToolResultStatus {
     Denied,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct ToolResult {
     pub effect_id: EffectId,
     pub status: ToolResultStatus,
