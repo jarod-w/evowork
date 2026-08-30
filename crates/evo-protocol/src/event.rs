@@ -1,4 +1,4 @@
-use crate::events::accounting::{Checkpoint, CostCharged};
+use crate::events::accounting::{BudgetAmended, Checkpoint, CostCharged};
 use crate::events::approval::{
     ApprovalDenied, ApprovalExpired, ApprovalGranted, ApprovalRequested,
 };
@@ -59,7 +59,7 @@ macro_rules! event_body {
         /// optional，旧版本解码器必须还能读进带新增字段的 payload；一旦某个事件结构体
         /// 加了 `deny_unknown_fields`，旧解码器遇到新增字段就会直接报错，当场破坏这条
         /// 契约。这条约束由
-        /// `tests::all_26_variants_tolerate_unknown_optional_fields` 对全部变体
+        /// `tests::all_27_variants_tolerate_unknown_optional_fields` 对全部变体
         /// 做穷尽验证——谁给某个事件结构体加了 `deny_unknown_fields`，这条测试就会红。
         ///
         /// 变体列表、`kind()`、`schema_ver()`、测试样本表由 [`event_body!`] 宏统一
@@ -90,7 +90,7 @@ macro_rules! event_body {
         }
 
         /// 每个变体各给一份合法样本，供
-        /// `tests::all_26_variants_tolerate_unknown_optional_fields` 做穷尽容忍验证。
+        /// `tests::all_27_variants_tolerate_unknown_optional_fields` 做穷尽容忍验证。
         #[cfg(test)]
         fn all_event_bodies() -> Vec<EventBody> {
             vec![$(EventBody::$variant($sample)),+]
@@ -343,6 +343,14 @@ event_body! {
             tool: None,
         },
     };
+    BudgetAmended(BudgetAmended) = "budget.amended", ver = 1, sample = BudgetAmended {
+        budget: BudgetSpec {
+            max_amount_micros: Some(10_000),
+            ..BudgetSpec::default()
+        },
+        by: Actor::Human("u-1".to_owned()),
+        reason_ref: None,
+    };
     ArtifactEmitted(ArtifactEmitted) = "artifact.emitted", ver = 1, sample = ArtifactEmitted {
         artifact_id: ArtifactId::from("art-1"),
         path: "reports/summary.xlsx".to_owned(),
@@ -436,14 +444,14 @@ mod tests {
     }
 
     #[test]
-    fn all_26_variants_tolerate_unknown_optional_fields() {
+    fn all_27_variants_tolerate_unknown_optional_fields() {
         // 红线 3 的穷尽版：unknown_optional_fields_do_not_break_decoding 只锁住了
         // plan.step 一个变体，若有人给其余事件结构体之一加上
         // `#[serde(deny_unknown_fields)]`，那条测试并不会变红。这里对全部 26 个
         // 变体各自序列化、注入一个未来才会出现的字段、再解码，逐一验证旧解码
         // 路径能读进新 payload。
         let bodies = all_event_bodies();
-        assert_eq!(bodies.len(), 26, "事件目录变了就要同步补全这份穷尽样本");
+        assert_eq!(bodies.len(), 27, "事件目录变了就要同步补全这份穷尽样本");
 
         for body in bodies {
             let mut value = serde_json::to_value(&body).unwrap();
@@ -463,6 +471,12 @@ mod tests {
         // 契约文档 01 §4 的事件目录。新增事件必须同步这份清单——
         // 它是「实现有没有偏离契约」的唯一可执行对照物。`run.spawned` /
         // `run.joined` 标 [P2]（子 Agent，属后续 Phase），本次不加。
+        //
+        // `budget.amended` 是 M2 接通预算闸门时补入的：文档原目录里没有它，
+        // 因为原设计以为「人提额续跑」不需要自己的事件。实际上不行——
+        // `RunState::budget` 除了 `run.created` 没有任何写入方，提额只能靠
+        // 绕过 Log 直接改内存状态，那样的状态在 Log 上不可复现。补入的同时
+        // 01 §4.5 也已同步。
         let expected = [
             "run.created",
             "intent.declared",
@@ -486,6 +500,7 @@ mod tests {
             "effect.dispatched",
             "tool.result",
             "cost.charged",
+            "budget.amended",
             "artifact.emitted",
             "checkpoint",
             "clarification.requested",
