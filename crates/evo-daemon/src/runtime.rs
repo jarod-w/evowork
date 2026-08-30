@@ -1,7 +1,7 @@
 use crate::clock::Clock;
 use crate::config::DaemonConfig;
 use crate::replay::replay_to;
-use evo_context::Assembler;
+use evo_context::{AnsweredClarification, Assembler};
 use evo_exec::{CapabilityToken, DispatchedEffect, EgressPolicy, Executor, Lease, WorkspaceHandle};
 use evo_exec_local::WorkspaceRoot;
 use evo_gateway::{AdmitRequest, Gateway, GatewayAction, ManifestRegistry};
@@ -14,7 +14,9 @@ use evo_protocol::events::accounting::{Checkpoint, CheckpointReason, CostDimensi
 use evo_protocol::events::approval::{
     ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia,
 };
-use evo_protocol::events::clarification::{ClarificationAnswered, ClarificationRequested};
+use evo_protocol::events::clarification::{
+    ClarificationAnswered, ClarificationOption, ClarificationRequested,
+};
 use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
 use evo_protocol::events::effect::{EffectDispatched, ExecutionMode, ToolRequested, ToolResult};
 use evo_protocol::events::lifecycle::{
@@ -25,11 +27,11 @@ use evo_protocol::events::model::{
     ModelParams, ModelRequested, ModelResponded, PlanIntent, PlanStep, PlannedCall,
 };
 use evo_protocol::{
-    Actor, ApprovalId, BlobClass, BudgetSpec, CheckpointId, EffectClass, EffectId, EffectRequest,
-    EventBody, LeaseId, RunId,
+    Actor, ApprovalId, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass, EffectId,
+    EffectRequest, EventBody, LeaseId, RunId,
 };
 use evo_runlog::RunLog;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
@@ -64,15 +66,37 @@ pub enum DaemonError {
     UnknownClarification(String),
 }
 
+/// 一个 `clarify` 计划里的一个选项，解析自模型输出的 JSON——**不是**
+/// `evo_protocol::events::clarification::ClarificationOption`：那个类型
+/// 特意不带 `label`（见它的文档注释），选项文案只能活在这里，活在
+/// runtime 解析出来、随即被塞进 blob 的这一步，绝不允许流进任何事件
+/// payload。
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParsedClarifyOption {
+    pub id: String,
+    pub label: String,
+    pub is_default: bool,
+}
+
 /// runtime 从模型输出里解析出的结构化决策。
 ///
 /// **解析在这里，不在内核（Q-12）**：它是最容易引入非确定性
 /// （正则、时间、随机重试）的地方，关在内核外面，内核的确定性好守得多。
+///
+/// `question`/`options` 只在 `intent == Clarify` 时有意义——内核的
+/// `Command::AskClarification` 不携带这两样（`decide` 目前只发得出一个
+/// 空字符串占位，见 evo-kernel/src/decide.rs），真正的问题正文与选项
+/// 文案由 daemon 在处理该 Command 时重新解析模型这一轮的原始响应拿到
+/// （见 `Runtime::latest_model_responded_upto`），这里只是把解析能力
+/// 一次性做完，供两处调用（`call_model` 记 `PlanStep`、`AskClarification`
+/// 取问题/选项）复用。
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParsedPlan {
     pub intent: PlanIntent,
     pub tool: Option<String>,
     pub params: serde_json::Value,
+    pub question: Option<String>,
+    pub options: Vec<ParsedClarifyOption>,
 }
 
 pub fn parse_plan(text: &str) -> Result<ParsedPlan, DaemonError> {
@@ -88,10 +112,38 @@ pub fn parse_plan(text: &str) -> Result<ParsedPlan, DaemonError> {
             ));
         }
     };
+    let question = v
+        .get("question")
+        .and_then(|q| q.as_str())
+        .map(str::to_owned);
+    let options = v
+        .get("options")
+        .and_then(|o| o.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let id = item.get("id")?.as_str()?.to_owned();
+                    let label = item.get("label")?.as_str()?.to_owned();
+                    let is_default = item
+                        .get("is_default")
+                        .and_then(|d| d.as_bool())
+                        .unwrap_or(false);
+                    Some(ParsedClarifyOption {
+                        id,
+                        label,
+                        is_default,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(ParsedPlan {
         intent,
         tool: v.get("tool").and_then(|t| t.as_str()).map(str::to_owned),
         params: v.get("params").cloned().unwrap_or(serde_json::json!({})),
+        question,
+        options,
     })
 }
 
@@ -481,6 +533,107 @@ impl Runtime {
         Ok(None)
     }
 
+    /// 找到 `run_id` 这条 Log 里、`seq <= upto_seq` 范围内**最新**一条
+    /// `model.responded`。
+    ///
+    /// 不能只找"turn 等于当前 turn 的那条"再取第一条——`clarification.
+    /// answered` 会让 `plan_turn`/`context_turn` 回退到同一个 turn 号，
+    /// 于是同一个 turn 内会有两条 `model.responded`（问澄清那次、以及
+    /// 回答之后重新规划那次），turn 号本身分不清谁是谁。用"seq 上界内最
+    /// 靠后的一条"取而代之：`AskClarification` 永远紧跟在触发它的那次
+    /// `CallModel` 之后（`decide` 的 `Clarify` 分支挂在 `plan_turn == turn`
+    /// 之后，而 `plan_turn` 只由 `call_model` 产出的 `PlanStep` 设置），
+    /// 所以调用方传入 `state.last_seq`（此时正是那条 `PlanStep` 的 seq）
+    /// 时，取到的必然是同一轮 `CallModel` 留下的那条，不会翻到更早的历史。
+    fn latest_model_responded_upto(
+        &self,
+        run_id: &RunId,
+        upto_seq: u64,
+    ) -> Result<Option<ModelResponded>, DaemonError> {
+        let mut found = None;
+        for event in self.log.events(run_id, 0, Some(upto_seq))? {
+            if let EventBody::ModelResponded(mr) = event.body {
+                found = Some(mr);
+            }
+        }
+        Ok(found)
+    }
+
+    /// 把这条 run 里迄今**已回答**的每一条澄清，拼成一个 (答案 blob 引用,
+    /// 答案纯文本) 的列表，供 `AssembleContext` 传给 `Assembler`。
+    ///
+    /// 每一项都是"daemon 读 blob、拼文本、再写一个新 blob"：
+    /// 1. 从 `clarification.requested` 的 `prompt_ref` 里取回问题正文与
+    ///    全部选项文案（`ClarificationRequested::prompt_ref` 建议的
+    ///    `{"question":..,"options":{id:label}}` 形状）；
+    /// 2. 用 `clarification.answered` 的 `option_id` 查出被选中那项的
+    ///    文案，`free_text_ref`（如果有）另外取一遍原文；
+    /// 3. 把这些拼成一段人类可读的文本，写成一个新 blob——这个新 blob
+    ///    才是 `AnsweredClarification::answer_ref` 真正引用的对象。
+    ///
+    /// 新开一个 blob 而不是直接复用 `prompt_ref`/`free_text_ref` 之一，
+    /// 是因为"选中了哪一项"这件事本身不活在任何一个既有 blob 里
+    /// （`prompt_ref` 里所有选项的文案都在，唯独不知道选的是哪个）——
+    /// 拼出的这段文本才是这条已回答澄清的完整、可独立引用的内容。这个
+    /// blob store 是内容寻址的（`BlobStore::put`），同一次回答在多个 turn
+    /// 里被反复装配进上下文，只会落一份文件，不是每次都新增。
+    fn answer_blobs_for(&self, run_id: &RunId) -> Result<Vec<(BlobRef, String)>, DaemonError> {
+        let mut requested: BTreeMap<String, ClarificationRequested> = BTreeMap::new();
+        let mut resolved: Vec<(ClarificationRequested, ClarificationAnswered)> = Vec::new();
+        for event in self.log.events(run_id, 0, None)? {
+            match event.body {
+                EventBody::ClarificationRequested(e) => {
+                    requested.insert(e.question_id.clone(), e);
+                }
+                EventBody::ClarificationAnswered(a) => {
+                    if let Some(req) = requested.get(&a.question_id) {
+                        resolved.push((req.clone(), a));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut out = Vec::with_capacity(resolved.len());
+        for (req, ans) in resolved {
+            let prompt: serde_json::Value =
+                serde_json::from_slice(&self.log.blobs().get(&req.prompt_ref)?)
+                    .unwrap_or(serde_json::json!({}));
+            let question = prompt
+                .get("question")
+                .and_then(|q| q.as_str())
+                .unwrap_or_default();
+            let chosen_label = ans.option_id.as_ref().and_then(|id| {
+                prompt
+                    .get("options")
+                    .and_then(|opts| opts.get(id))
+                    .and_then(|label| label.as_str())
+            });
+            let free_text = match &ans.free_text_ref {
+                Some(r) => Some(
+                    String::from_utf8(self.log.blobs().get(r)?)
+                        .expect("free_text blob 是 runtime 自己用 UTF-8 写入的原文，不应解码失败"),
+                ),
+                None => None,
+            };
+
+            let mut summary = format!("澄清问题：{question}");
+            if let Some(label) = chosen_label {
+                summary.push_str(&format!("\n选择：{label}"));
+            }
+            if let Some(free) = &free_text {
+                summary.push_str(&format!("\n补充说明：{free}"));
+            }
+
+            let answer_ref =
+                self.log
+                    .blobs()
+                    .put(BlobClass::Content, "text/plain", summary.as_bytes())?;
+            out.push((answer_ref, summary));
+        }
+        Ok(out)
+    }
+
     /// 从 `tool.requested`（Gateway 判定阶段就写好的字段）+ 当前 state
     /// （taint）+ 配置（capability）拼回一份 `EffectRequest`。
     ///
@@ -539,7 +692,26 @@ impl Runtime {
                 );
                 let intent_text = String::from_utf8(self.log.blobs().get(&intent_ref)?)
                     .expect("intent blob 是 runtime 自己用 UTF-8 写入的原文，不应解码失败");
-                let assembled = self.assembler.assemble(turn, &intent_ref, &intent_text);
+
+                // 把这条 run 里已经回答过的澄清都带进来——这是 Task 6 的要害:
+                // `evo_kernel::reduce` 处理 `ClarificationAnswered` 时把
+                // `context_turn`/`plan_turn` 一并回退，就是为了让 decide 重新
+                // 产出 AssembleContext；这里如果不把答案真的塞进去，模型拿到
+                // 的还是一份不含答案的上下文，跟没回答没有区别（见该 reduce
+                // 分支的交接注释）。答案文本从 blob 读出来再传给 Assembler——
+                // evo-context 本身不读 blob store。
+                let answer_blobs = self.answer_blobs_for(&state.run_id)?;
+                let answered: Vec<AnsweredClarification<'_>> = answer_blobs
+                    .iter()
+                    .map(|(answer_ref, answer_text)| AnsweredClarification {
+                        answer_ref,
+                        answer_text,
+                    })
+                    .collect();
+
+                let assembled = self
+                    .assembler
+                    .assemble(turn, &intent_ref, &intent_text, &answered);
                 self.emit(
                     &state,
                     Actor::Runtime,
@@ -570,26 +742,61 @@ impl Runtime {
             ),
 
             // 问题正文与选项文案一起落进一个 blob（见
-            // `ClarificationRequested::prompt_ref` 的文档给出的建议形状）；
-            // 本任务只出机制——kernel 目前产出的 `question` 字符串永远是
-            // 空的（decide.rs 还没有从模型输出里提炼真实问题文本的能力，
-            // 那需要 PlanStep 携带更多信息，属于后续切片），这里如实落盘，
-            // 不在 daemon 这一层编造内容。
-            Command::AskClarification { question } => {
-                let prompt = serde_json::json!({ "question": question, "options": {} });
+            // `ClarificationRequested::prompt_ref` 的文档给出的建议形状）。
+            //
+            // `question` 这个字段来自内核，但 `decide()` 目前永远发一个空
+            // 字符串占位（evo-kernel/src/decide.rs 的 `Clarify` 分支）——
+            // 内核只知道"该问问题了"，不知道问题本身是什么，那份内容只存在
+            // 于模型这一轮的原始响应里。真正的问题正文与选项文案（含
+            // `label`，绝不进 payload）从这里重新解析出来：找到刚刚那次
+            // `CallModel` 写下的 `model.responded`，取它的 `response_ref`
+            // blob，再喂给 `parse_plan`——`call_model` 当初解析的就是同一
+            // 份文本，这里只是为了同一份信息在两个不同时间点被两处消费，
+            // 重新做一遍解析，而不是让内核越权携带业务文本。
+            Command::AskClarification { .. } => {
+                let responded = self
+                    .latest_model_responded_upto(&state.run_id, state.last_seq)?
+                    .expect(
+                        "AskClarification 只会在 CallModel 已经写过 model.responded \
+                         之后被 decide 产出——见 evo-kernel::decide 的 Clarify 分支，\
+                         它挂在 plan_turn == turn 之后，而 plan_turn 只由 PlanStep \
+                         设置，PlanStep 只由 call_model 在 model.responded 之后发出",
+                    );
+                let response_text =
+                    String::from_utf8(self.log.blobs().get(&responded.response_ref)?)
+                        .expect("model 响应 blob 是 runtime 自己用 UTF-8 写入的原文，不应解码失败");
+                let parsed = parse_plan(&response_text)?;
+
+                let options_by_id: BTreeMap<String, String> = parsed
+                    .options
+                    .iter()
+                    .map(|o| (o.id.clone(), o.label.clone()))
+                    .collect();
+                let prompt = serde_json::json!({
+                    "question": parsed.question.clone().unwrap_or_default(),
+                    "options": options_by_id,
+                });
                 let prompt_ref = self.log.blobs().put(
                     BlobClass::Content,
                     "application/json",
                     &serde_json::to_vec(&prompt).expect("prompt 可序列化"),
                 )?;
                 let question_id = format!("{}-q{}", state.run_id, state.last_seq);
+                let options: Vec<ClarificationOption> = parsed
+                    .options
+                    .into_iter()
+                    .map(|o| ClarificationOption {
+                        id: o.id,
+                        is_default: o.is_default,
+                    })
+                    .collect();
                 let state = self.emit(
                     &state,
                     Actor::Runtime,
                     EventBody::ClarificationRequested(ClarificationRequested {
                         question_id,
                         prompt_ref,
-                        options: Vec::new(),
+                        options,
                     }),
                 )?;
                 self.emit(
