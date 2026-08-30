@@ -85,19 +85,22 @@ echo "== CI-3 治理旁路 =="
 # 「怎么写出一条依赖」必须穷举。只认其中几种写法，检查会在别的写法下悄悄
 # 漏判，变成一条摆设——本仓的 Cargo.toml 里点号写法（`name.workspace = true`）
 # 与花括号写法（`name = { workspace = true }`）本来就混用，同一个文件里两种
-# 都有。下面三条正则合起来覆盖：
-#   1. `name = ...` 与 `name.xxx = ...`：吃掉 `{ workspace = true }`、
-#      `{ path = "../evo-runlog" }`、`"0.1"` 这类版本号字符串、
-#      `name.path = "..."` 等所有行内写法；
-#   2. 分表写法的表头：`[dependencies.name]`、`[dev-dependencies.name]`、
-#      `[target.'cfg(unix)'.dependencies.name]`——表头下面写
-#      `workspace = true` 还是 `path = ...` 都不重要，表头本身就是依赖边；
+# 都有。而 TOML 允许的写法比这两种多得多：键可以加引号，点号键可以摊平写在
+# 顶层，表头里可以到处塞空白，依赖还可以改名。下面四条正则合起来覆盖：
+#   1. 行首键：`name = ...`、`name.xxx = ...`，键上可带 TOML 引号
+#      （`"name" = ...`）。吃掉 `{ workspace = true }`、
+#      `{ path = "../evo-runlog" }`、`"0.1"` 这类版本号字符串等全部行内写法；
+#   2. 作为点号键中间一段出现：`[dependencies.name]`、`[dev-dependencies.name]`、
+#      `[target.'cfg(unix)'.dependencies.name]` 这些表头，以及摊平写在顶层的
+#      `dependencies.name.workspace = true` / `dependencies.name = { ... }`。
+#      判据是「前面有个点、后面跟着 . = 或 ]」，所以点号两侧的空白和键上的
+#      引号都不影响；
 #   3. 改名依赖：`别名 = { package = "name", ... }`——行首是别名，前两条都
 #      看不见它，必须直接认 `package = "name"`，且它通常写在花括号里而不在
 #      行首，所以左边界只能是行首/空白/逗号/左花括号；
 #   4. 指向该 crate 目录的 path：`... path = "../evo-runlog"`——改名依赖的
 #      另一半，也兜住把 crate vendor 到别处再依赖的写法。
-# 右边界分别是 `[.=]`、`]` 和收尾的引号，所以查 evo-exec 时不会误伤
+# 右边界分别是 `[.=]`、`[]=.]` 和收尾的引号，所以查 evo-exec 时不会误伤
 # evo-exec-local（`evo-exec-local` 的下一个字符是 `-`，`"../evo-exec-local"`
 # 的引号前也不是 `evo-exec`）。
 #
@@ -109,10 +112,20 @@ echo "== CI-3 治理旁路 =="
 # 列着所有 path 依赖，那不是依赖边。
 #
 # 归属按清单里的 package name 判断，不按路径——crate 挪了目录，检查不会
-# 跟着失效。
+# 跟着失效。name 只从 [package] 表里取：TOML 的表可以任意顺序，`[[bin]]`
+# 底下也有个 name 键，不限定表就能靠「把 [[bin]] 的 name 写成 evo-daemon 并
+# 放在 [package] 前面」骗到组装点的豁免。取不到 name 时 owner 为空，等于
+# 什么都不豁免——宁可误报也不漏报。
 offenders=""
 for manifest in $(git ls-files --cached --others --exclude-standard -- '*Cargo.toml' | grep -v '^Cargo\.toml$'); do
-  owner=$(sed -nE 's/^[[:space:]]*name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -1)
+  owner=$(awk '
+    /^[[:space:]]*\[/ { inpkg = ($0 ~ /^[[:space:]]*\[[[:space:]]*package[[:space:]]*\][[:space:]]*$/); next }
+    inpkg && /^[[:space:]]*("name"|name)[[:space:]]*=/ {
+      if (match($0, /=[[:space:]]*"[^"]*"/)) {
+        v = substr($0, RSTART, RLENGTH); sub(/^=[[:space:]]*"/, "", v); sub(/"$/, "", v)
+        print v; exit
+      }
+    }' "$manifest")
   # 唯一的组装点，允许依赖全部受管 crate
   if [ "$owner" = "evo-daemon" ]; then continue; fi
   for c in evo-exec evo-exec-local evo-mcp evo-runlog; do
@@ -120,7 +133,7 @@ for manifest in $(git ls-files --cached --others --exclude-standard -- '*Cargo.t
     if [ "$owner" = "$c" ]; then continue; fi
     # 唯一的例外，且只对 evo-exec 成立
     if [ "$c" = "evo-exec" ] && [ "$owner" = "evo-exec-local" ]; then continue; fi
-    if grep -qE "^[[:space:]]*${c}[[:space:]]*[.=]|^[[:space:]]*\[[^]]*\.${c}\][[:space:]]*(#.*)?$|(^|[[:space:],{])package[[:space:]]*=[[:space:]]*\"${c}\"|path[[:space:]]*=[[:space:]]*\"[^\"]*${c}\"" "$manifest"; then
+    if grep -qE "^[[:space:]]*[\"']?${c}[\"']?[[:space:]]*[.=]|\.[[:space:]]*[\"']?${c}[\"']?[[:space:]]*[]=.]|(^|[[:space:],{])package[[:space:]]*=[[:space:]]*[\"']${c}[\"']|path[[:space:]]*=[[:space:]]*[\"'][^\"']*${c}[\"']" "$manifest"; then
       offenders="${offenders}  ${manifest}（package ${owner:-?}）依赖了 ${c}
 "
     fi
