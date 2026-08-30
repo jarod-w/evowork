@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ModelRoute {
     pub provider: String,
     pub model: String,
@@ -9,7 +10,7 @@ pub struct ModelRoute {
 }
 
 /// 内核唯一的时间与随机数来源。每 turn 一次（Q-04）。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct EnvSampled {
     pub turn: u32,
     pub wall_clock_ms: u64,

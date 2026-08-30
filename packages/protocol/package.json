@@ -1,0 +1,10 @@
+{
+  "name": "@evowork/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generated TypeScript bindings for evo-protocol. Do not edit generated/ by hand; run ./scripts/gen-protocol.sh.",
+  "exports": {
+    ".": "./generated/index.ts"
+  }
+}

@@ -15,9 +15,10 @@ use crate::events::lifecycle::{
 use crate::events::model::{ModelRequested, ModelResponded, PlanStep};
 use crate::ids::RunId;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// 谁产生了这条事件。对应 run_events.actor 列。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Actor {
     Kernel,
@@ -29,7 +30,7 @@ pub enum Actor {
 }
 
 /// Run Log 里的一条事件。字段与 run_events 表逐列对应。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub struct Event {
     pub run_id: RunId,
     pub seq: u64,
@@ -64,7 +65,7 @@ macro_rules! event_body {
         ///
         /// 变体列表、`kind()`、`schema_ver()`、测试样本表由 [`event_body!`] 宏统一
         /// 生成：新增变体必须在宏调用里同时给出 `sample =`，否则编译不过。
-        #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+        #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
         #[serde(tag = "kind")]
         pub enum EventBody {
             $(

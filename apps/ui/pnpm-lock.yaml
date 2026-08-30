@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@evowork/protocol':
+        specifier: file:../../packages/protocol
+        version: file:../../packages/protocol
       '@tauri-apps/api':
         specifier: ^2.11.1
         version: 2.11.1
@@ -113,6 +116,9 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
+
+  '@evowork/protocol@file:../../packages/protocol':
+    resolution: {directory: ../../packages/protocol, type: directory}
 
   '@exodus/bytes@1.15.1':
     resolution: {integrity: sha512-S6mL0yNB/Abt9Ei4tq8gDhcczc4S3+vQ4ra7vxnAf+YHC02srtqxKKZghx2Dq6p0e66THKwR6r8N6P95wEty7Q==}
@@ -885,6 +891,8 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.0': {}
+
+  '@evowork/protocol@file:../../packages/protocol': {}
 
   '@exodus/bytes@1.15.1': {}
 

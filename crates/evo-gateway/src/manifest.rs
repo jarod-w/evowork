@@ -141,6 +141,10 @@ impl ManifestRegistry {
         self.by_name.get(tool.as_str())
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &ToolManifest> {
+        self.by_name.values()
+    }
+
     /// 未提供 manifest 的工具按最严处理：External + 不可逆 + 需审批。
     ///
     /// **这个默认值是有意选成最严的**：忘记写 manifest 的后果是「多问一次人」，

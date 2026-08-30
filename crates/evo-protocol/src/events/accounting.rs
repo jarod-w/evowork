@@ -3,8 +3,9 @@ use crate::budget::BudgetSpec;
 use crate::event::Actor;
 use crate::ids::{CheckpointId, EffectId, RunId, ToolId};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum CostUnit {
     InputToken,
@@ -19,14 +20,14 @@ pub enum CostUnit {
 /// 与本 crate 其他枚举的 snake_case 风格不一致是故意的，契约文档里写的也是
 /// 大写代码。不要为了风格统一给它加 `rename_all = "lowercase"`（或任何改变
 /// 序列化形态的属性）——那会让已经落盘的历史账目解不开。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum Currency {
     CNY,
     USD,
 }
 
 /// 四维归因从第一天就带。POC 只用得上 principal 与 run_id，另两维留空。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CostDimension {
     pub principal: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -39,7 +40,7 @@ pub struct CostDimension {
 }
 
 /// micros 整数，不用浮点——财务客户，账要对得上。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CostCharged {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect_id: Option<EffectId>,
@@ -77,7 +78,7 @@ pub struct CostCharged {
 /// 谁也不许倒着写。
 ///
 /// 提额理由是人写的自由文本，一律进 blob，事件 payload 里只留引用（红线①）。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct BudgetAmended {
     pub budget: BudgetSpec,
     /// 谁改的。额度是钱，改过必须记名。
@@ -86,7 +87,7 @@ pub struct BudgetAmended {
     pub reason_ref: Option<BlobRef>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointReason {
     Periodic,
@@ -94,7 +95,7 @@ pub enum CheckpointReason {
     PreApproval,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Checkpoint {
     pub checkpoint_id: CheckpointId,
     /// 回放到此 seq 时重算，不一致即 fail。判据 3 的自动检测器。

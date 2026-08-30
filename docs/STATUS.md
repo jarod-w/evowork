@@ -1,8 +1,7 @@
 # 项目状态
 
-> 截至 2026-08-30。`main` = `041194c`，116 次提交，254 个测试通过。
-> 最后一次实跑 `./scripts/ci.sh` 全段绿是在 `0d4c982`；其后两次提交只动文档
-> （`CLAUDE.md` 与本文件），未重跑。
+> 截至 2026-08-30。档一（daemon 二进制 + `/v1/rpc` + `/v1/events` +
+> `packages/protocol` + CI-5）已落地；本次 `./scripts/ci.sh` 全段绿。
 >
 > 这份文档记录**当前真实状态**与**未做事项**。它的编写前提是：
 > 「结构写好了」不等于「接通了」，「测试绿了」不等于「检查有效」。
@@ -37,7 +36,7 @@
 
 ### CI 检查清单实现情况
 
-设计文档 00 §4 列了 10 条，已实现 7 条。
+设计文档 00 §4 列了 10 条，已实现 8 条。
 
 | # | 检查 | 状态 |
 |---|---|---|
@@ -45,7 +44,7 @@
 | 2 | 回放自校验 | ✅ |
 | 3 | 治理旁路 | ✅ |
 | 4 | 客户名词隔离 | ✅ |
-| 5 | 协议同步（ts-rs ↔ `packages/protocol`） | ❌ `packages/` 尚不存在，随协议层一起做 |
+| 5 | 协议同步（ts-rs ↔ `packages/protocol`） | ✅ |
 | 6 | vendor 未被修改 | ❌ `crates/evo-exec-local/vendor/` 目前只有 README，无内容可校 |
 | 7 | 上游依赖闭包 | ⚠️ **`scripts/codex-closure.py` 已写好，但没有任何脚本调用它，也没有基线文件** |
 | 8 | 快照可丢弃 | ✅ |
@@ -99,23 +98,27 @@
 
 `apps/ui` 唯一的页面是 `src/App.tsx`（约 90 行；无 CSS 框架、无路由、无状态库，
 `index.css` 只有 6 行）。它渲染两段：`platform.kind` 与 5 个能力的支持与否；daemon 连接状态。
-浏览器里的实测结果是 `kind: browser`、`setAutoLaunch`/`quit` 显示 not supported、
-daemon 恒为 `not connected` 并带一行红色 `(Failed to fetch)`——**这是预期结果**，
-daemon 还没有 HTTP 入口，`App.tsx` 的注释里写明了这一点。
+浏览器里的实测结果是 `kind: browser`、`setAutoLaunch`/`quit` 显示 not supported。
+daemon 连接取决于本机是否起了 `evo-daemon` 以及探针页有没有带上 token
+（`VITE_DAEMON_TOKEN`，来自 `~/.evowork/client.toml`）。没起 daemon 时仍是
+`not connected` + `(Failed to fetch)`——这还是预期。起了之后 `hello()` 会变成
+`connected`，调用点本身从外壳阶段就没改过（设计文档 06 §6）。
 
 **它不是「UI 的早期版本」，是 platform 层与 `daemonClient` 的验收页。** 存在的目的是证明
 这两个调用点写对了，接上真 daemon 时不必改 UI。所以它长成这样不是「还没来得及做好看」。
 
-### 档一：硬前置（不做就开不了工，只有一条）
+### 档一：硬前置（已落地）
 
-**协议层**（§四 P6 第 1 项）。其中有一件此前没有单列的事实：
+**协议层**（§四 P6 第 1 项）四件事都已接通：
 
-> **`evo-daemon` 今天是纯 lib crate，全仓没有一个把服务起起来的 `main.rs`。**
-> 仓库里现有的两个二进制都在 `evo-cli`（`evo-cli` 与 `mkcase`），都是命令行工具，不是常驻进程。
-> 「daemon」这个名字目前只描述职责，不描述形态。
+1. **`evo-daemon` 二进制**：`cargo run -p evo-daemon` 起常驻进程（默认 `127.0.0.1:4477`）。首次启动把共享 token 写进 `{data_dir}/client.toml`（默认 `~/.evowork/client.toml`）。
+2. **HTTP `POST /v1/rpc`**：实现 `run.create` / `run.get` / `run.list` / `run.events` / `run.resume` / `approval.decide` / `clarification.answer` / `cost.query` / `tool.list` / `tool.manifest` / `policy.get`。06 §3 其余方法返回 `not implemented`（`-32601`）。`GET /v1/hello` 做版本协商。认证是 `Authorization: Bearer`。
+3. **WS `/v1/events?token=`**：`subscribe` / `subscribe_all`，`from_seq` 续订，积压回放后 `caught_up`，随后实时推送。事件体就是 Log 里的 `Event`，不另做 DTO。
+4. **`packages/protocol`**：`ts-rs` 从 `evo-protocol` 生成，CI-5（`scripts/check-protocol-sync.sh`）比对生成物与已提交内容。手写的 `apps/ui/src/daemon/types.ts` 已删除，`daemonClient` 改从 `@evowork/protocol` 取类型。
 
-于是档一是四件事：**daemon 二进制 → HTTP `/v1/rpc` → WS `/v1/events` → `ts-rs` 生成
-`packages/protocol`（含 CI-5）**。
+同期修了 **P0-16**（`subscribe()` 重连风暴）：指数退避（200ms 起，封顶 10s）+ 20 次上限。
+
+探针页接上跑着的 daemon 之后，`hello()` 不再是必然的 `(Failed to fetch)`——要的是 `~/.evowork/client.toml` 里的 token（或 `VITE_DAEMON_TOKEN`）。没起 daemon 时仍显示 not connected，这还是预期。
 
 ### 档二：界面每一块各自的接线
 
@@ -160,7 +163,7 @@ daemon 还没有 HTTP 入口，`App.tsx` 的注释里写明了这一点。
 
 ### 顺序
 
-1. **档一**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）
+1. **档一（已落地）**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）+ P0-16 重连退避
 2. **档二里 Inbox / 审批卡 / 产物区 / 成本这四条接线**——**在写 UI 之前**做完。
    跳过这一步做出来的是第二个探针页
 3. **UI 本体**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
@@ -207,22 +210,13 @@ daemon 还没有 HTTP 入口，`App.tsx` 的注释里写明了这一点。
 
 **后果**：一条 L3 审批 30 天后被人点开链接批准，`decide_approval` 照收，`resume` 照派发——一条早该过期的对外发送被执行。
 
-#### 16. `daemonClient.subscribe()` 的重连是一场风暴（UI 档一同期必修）
+#### 16. `daemonClient.subscribe()` 的重连是一场风暴（**已修**，UI 档一同交）
 
-> 本条 2026-08-30 随「UI 优先」补入。它此前只记在
-> `docs/superpowers/notes/2026-08-29-desktop-shell-status.md` 第六节，没有进本文——
-> 因为当时它是「潜伏的前端技术债」；UI 优先之后它变成 P0。
+> 本条 2026-08-30 随「UI 优先」补入，同日在档一落地时修掉。
 
-`apps/ui/src/daemon/client.ts` 的 `ws.onclose` 直接重连，**无退避、无重试上限**。
-对着一个拒绝连接的 daemon 实测（数据出自上述 note，本次未复测）：约 50 毫秒内发起 40 次
-socket 连接（约 800 次/秒），无限持续，且**每个 `subscribe()` 订阅各自独立计数**，
-多个订阅成倍放大。
+此前 `ws.onclose` 直接重连，无退避、无重试上限。对着拒绝连接的 daemon 实测约 50 毫秒内 40 次（约 800 次/秒），无限持续，且每个 `subscribe()` 独立计数。
 
-**今天为什么不暴露**：全仓没有任何调用方用到 `subscribe()`——因为没有事件可订。
-
-**UI 一接 run 视图就活**：daemon 只要短暂不可用（重启、升级、崩溃），界面就用这个速率砸它——
-而 daemon 正在重启这件事，本身就是它最脆弱的时候。代码里已有 `TODO(M2, run view)` 标出位置
-与实测数据。修法是指数退避 + 重试上限。
+**现况**：指数退避（200ms 起、封顶 10s）+ 20 次上限；`unsubscribe()` 取消已排队的重连。只按实际收到的 `event` 帧推进 `from_seq`（`caught_up` 不再误推进）。前端测试覆盖退避加倍、触顶停连、unsubscribe 不重连。
 
 ---
 
@@ -356,7 +350,7 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 
 | 项 | 状态 | 阻塞 |
 |---|---|---|
-| **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | 未开始 | 无。**事件集已随 M2 稳定，这是当初把它排在治理面之后的原因**——协议只生成一次。**UI 档一，唯一硬前置（§三）**。注意 `evo-daemon` 今天是纯 lib、没有 `main.rs`，起服务这件事也在本项里 |
+| **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | **已落地**（档一） | `cargo run -p evo-daemon`；token 在 `{data_dir}/client.toml`。未接线的 RPC 方法返回 `not implemented`。`run.create mode=dry_run` 同样未实现 |
 | **UI 本体** | 未开始 | 桌面外壳只交付了 platform 层与 `daemonClient`，没有应用界面。**已提前到本位置**；前置是档一 + 档二那批接线，逐条见 §三 |
 | **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。它一落地，P0-1（澄清答案没进模型请求）就从潜伏变成真错 |
 | **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |

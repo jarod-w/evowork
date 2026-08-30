@@ -34,7 +34,7 @@ use evo_protocol::events::model::{
 use evo_protocol::taint::TaintLevel;
 use evo_protocol::{
     Actor, ApprovalId, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass, EffectId,
-    EffectRequest, EventBody, LeaseId, RunId,
+    EffectRequest, Event, EventBody, LeaseId, RunId,
 };
 use evo_runlog::RunLog;
 use std::collections::BTreeMap;
@@ -219,6 +219,9 @@ pub struct Runtime {
     assembler: Assembler,
     pricing: PriceTable,
     workspaces: WorkspaceRoot,
+    /// HTTP/WS 层订阅的事件广播。没有订阅者时 `send` 只是 no-op（bounded
+    /// broadcast 在零接收者时返回 Err，这里故意忽略）。
+    event_tx: Option<tokio::sync::broadcast::Sender<Event>>,
 }
 
 impl Runtime {
@@ -246,7 +249,35 @@ impl Runtime {
             assembler,
             pricing,
             workspaces,
+            event_tx: None,
         })
+    }
+
+    /// 接上 HTTP/WS 层的事件广播。必须在任何 `start` / `resume` 之前调用。
+    pub fn with_event_sink(mut self, tx: tokio::sync::broadcast::Sender<Event>) -> Self {
+        self.event_tx = Some(tx);
+        self
+    }
+
+    pub fn config(&self) -> &DaemonConfig {
+        &self.config
+    }
+
+    pub fn events(
+        &self,
+        run_id: &RunId,
+        from_seq: u64,
+        to_seq: Option<u64>,
+    ) -> Result<Vec<Event>, DaemonError> {
+        Ok(self.log.events(run_id, from_seq, to_seq)?)
+    }
+
+    pub fn run_ids(&self) -> Result<Vec<RunId>, DaemonError> {
+        Ok(self.log.run_ids()?)
+    }
+
+    pub fn last_seq(&self, run_id: &RunId) -> Result<Option<u64>, DaemonError> {
+        Ok(self.log.last_seq(run_id)?)
     }
 
     /// 唯一写 Run Log 的地方。写完立刻 reduce——state 永远是 Log 的折叠结果。
@@ -258,14 +289,29 @@ impl Runtime {
     ) -> Result<RunState, DaemonError> {
         let recorded_at = self.clock.now_rfc3339();
         let event = self.log.append(&state.run_id, actor, &recorded_at, body)?;
+        if let Some(tx) = &self.event_tx {
+            let _ = tx.send(event.clone());
+        }
         Ok(reduce(state, &event))
     }
 
     /// 起一条新 run：建 state、发 `run.created` + `intent.declared`，然后驱动到停。
+    ///
+    /// `source` 同时写入 `run.created.trigger.reference` 与 `intent.declared.source`。
+    /// CLI 与 HTTP 入口走同一个函数，只是 source 不同——不要为此再开一条写 Log 的路径。
     pub async fn start(
         &mut self,
         run_id: &RunId,
         intent_text: &str,
+    ) -> Result<RunOutcome, DaemonError> {
+        self.start_from(run_id, intent_text, "cli").await
+    }
+
+    pub async fn start_from(
+        &mut self,
+        run_id: &RunId,
+        intent_text: &str,
+        source: &str,
     ) -> Result<RunOutcome, DaemonError> {
         let state = RunState::new(run_id);
 
@@ -282,7 +328,7 @@ impl Runtime {
                 },
                 trigger: TriggerRef {
                     kind: TriggerKind::Manual,
-                    reference: "cli".into(),
+                    reference: source.into(),
                 },
                 budget: self.config.budget,
                 labels: Default::default(),
@@ -301,7 +347,7 @@ impl Runtime {
                 intent_ref: intent_ref.clone(),
                 char_len: intent_text.chars().count() as u64,
                 lang: "zh".to_owned(),
-                source: "cli".to_owned(),
+                source: source.to_owned(),
             }),
         )?;
 

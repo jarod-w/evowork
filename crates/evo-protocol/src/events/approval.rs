@@ -2,6 +2,7 @@ use crate::blob::BlobRef;
 use crate::event::Actor;
 use crate::ids::{ApprovalId, EffectId};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// 风险档位，驱动是否需要人批准以及批准的严格程度（02 §…「结构性闸门」）。
 ///
@@ -19,7 +20,7 @@ use serde::{Deserialize, Serialize};
 /// 之间插入一个新变体，不会动摇 `L1 < L2 < L3` 这条断言，测试依旧全绿，但
 /// 新变体在真实危险程度里排在哪一档，测试完全不知道。新增档位时必须人工
 /// 确认它在声明顺序里的位置与其危险程度一致，不能只看这条测试是否通过。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
     /// 可逆、仅本地、不对外——直接执行，只留审计
@@ -50,7 +51,7 @@ mod risk_level_tests {
 /// Gateway 判定某个 effect 需要人批准时发出。这是「挂起而不是 `Err`」这条
 /// 控制流反转的起点：daemon 追加这条事件 + 一条 `run.suspended`，然后
 /// `reduce` 置 `awaiting`，`decide` 自然返回空，turn 循环干净结束。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ApprovalRequested {
     /// 审批请求的稳定标识，`approval.granted` / `denied` / `expired`
     /// 都靠它关联回这一条请求
@@ -75,14 +76,14 @@ pub struct ApprovalRequested {
 }
 
 /// 审批的送达渠道。POC 期两条：站内 UI、企业微信免登录链接。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalVia {
     Ui,
     WecomLink,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ApprovalGranted {
     pub approval_id: ApprovalId,
     pub by: Actor,
@@ -93,7 +94,7 @@ pub struct ApprovalGranted {
     pub note_ref: Option<BlobRef>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ApprovalDenied {
     pub approval_id: ApprovalId,
     pub by: Actor,
@@ -105,7 +106,7 @@ pub struct ApprovalDenied {
 /// `expires_at_ms` 到了却没人处理时，daemon（不是人）发出这条事件；没有
 /// 额外字段——过期本身就是全部信息，谁想知道超时时长可以从
 /// `approval.requested.expires_at_ms` 与本事件的 `recorded_at` 反推。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ApprovalExpired {
     pub approval_id: ApprovalId,
 }

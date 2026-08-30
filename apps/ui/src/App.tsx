@@ -12,15 +12,14 @@ const CAPABILITIES: readonly (keyof Platform)[] = [
   'quit',
 ]
 
-// There is no daemon HTTP/WS entrypoint yet (that lands in a later stage),
-// so `daemonClient.hello()` below is expected to fail every time this runs
-// today -- the UI is meant to show "not connected" until a real daemon
-// exists to answer it. That is the point of wiring this up now: the call
-// site is already correct, so plugging in a real daemon later needs no UI
-// change (design doc 06 §6).
+// `daemonClient.hello()` talks to the local daemon at /v1/hello. Until
+// `evo-daemon` is running with a matching token, this page shows
+// "not connected" -- that's expected. Set VITE_DAEMON_TOKEN (and
+// optionally VITE_DAEMON_URL) from data_dir/client.toml; the call site
+// itself does not change (design doc 06 §6).
 const daemonClient = createDaemonClient({
-  baseUrl: 'http://localhost:4477',
-  token: '',
+  baseUrl: import.meta.env.VITE_DAEMON_URL ?? 'http://localhost:4477',
+  token: import.meta.env.VITE_DAEMON_TOKEN ?? '',
 })
 
 function App() {
