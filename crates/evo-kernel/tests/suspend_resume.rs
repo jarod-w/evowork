@@ -381,6 +381,7 @@ fn state_mid_turn_with_clarify_plan(turn: u32) -> RunState {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,
+        clarification: None,
     });
     s
 }
