@@ -106,10 +106,21 @@ yaml_scalar() {
   sed -nE "s/^[[:space:]]*$2:[[:space:]]*//p" "$1" | head -1 | yaml_norm
 }
 
-# 取 `<key>:` 下面那串缩进的 `- item` 列表，遇到第一个既不是列表项也不是
-# 空行/注释行的行就停。
+# 取 `<key>:` 的列表值，两种合法 YAML 写法都认：行内的 flow 写法
+# `key: [a, b]`，以及下面那串缩进的 `- item`（遇到第一个既不是列表项也不是
+# 空行/注释行的行就停）。只认其中一种的话，另一种会被当成「键不存在」，
+# 于是一条写法完全合法的 case 反而报「缺了钉子」——和裸字符串比哈希的假红
+# 是同一类问题。
 yaml_list() {
   awk -v key="$2" '
+    $0 ~ "^[[:space:]]*" key ":[[:space:]]*\\[" {
+      line = $0
+      sub(/^[^[]*\[/, "", line)
+      sub(/\][[:space:]]*(#.*)?$/, "", line)
+      n = split(line, items, ",")
+      for (i = 1; i <= n; i++) print items[i]
+      exit
+    }
     $0 ~ "^[[:space:]]*" key ":[[:space:]]*$" { inlist = 1; next }
     inlist && /^[[:space:]]*-[[:space:]]*/    { sub(/^[[:space:]]*-[[:space:]]*/, ""); print; next }
     inlist && /^[[:space:]]*(#.*)?$/          { next }
@@ -169,10 +180,19 @@ for case_dir in eval/cases/*/; do
   # DaemonConfig::for_test(case_dir) 里的 <case_dir>/workspaces，每条 run 一个
   # 以 run_id 命名的子目录；mkcase 每次生成前会把它整个删掉重建，所以这里
   # 看到的一定是本次跑出来的结果，不是上一次的残留。
+  # 钉子本身也不能写成一条永远成立的断言：路径必须是工作区内的相对路径
+  # （`.`、`..`、绝对路径都能让「文件存在」恒真），且必须是普通文件。
   ws_dir="${case_dir}workspaces/${run_id}"
   while IFS= read -r artifact; do
     [ -n "$artifact" ] || continue
-    if [ ! -e "${ws_dir}/${artifact}" ]; then
+    case "$artifact" in
+      /* | . | .. | ./* | ../* | */.. | */../* | */. )
+        echo "FAIL: ${yaml} 的 artifact 路径 ${artifact} 不合法：必须是工作区内的相对路径，不能是绝对路径，也不能含 . 或 .. 路径分量"
+        fail=1
+        continue
+        ;;
+    esac
+    if [ ! -f "${ws_dir}/${artifact}" ]; then
       echo "FAIL: ${yaml} 期望产出 artifact ${artifact}，但 ${ws_dir}/${artifact} 不存在"
       echo "      工作区实有：$(ls -A "$ws_dir" 2>/dev/null | tr '\n' ' ')"
       fail=1
