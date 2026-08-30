@@ -29,6 +29,12 @@ pub enum ExecError {
     UnknownTool(String),
     #[error("bad params: {0}")]
     BadParams(String),
+    /// PATH 安全决策（M2 Task 5，见 `evo_exec_local::sandbox` 的文档注释）：
+    /// 子进程解析裸程序名走一份固定白名单，不透传调用方的 PATH。命中
+    /// 这个错误说明调用方（模型）想跑的程序名不在白名单里——这是预期的
+    /// 拒绝，不是 bug。
+    #[error("program not allowed by the sandbox's PATH policy: {0}")]
+    ProgramNotAllowed(String),
 }
 
 /// 工作区句柄。**从第一天就是抽象，不是 PathBuf 别名**——

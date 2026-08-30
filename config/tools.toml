@@ -12,3 +12,17 @@ name = "fs.read"
 class = "read"
 reversible = true
 targets = [{ from_param = "/path", kind = "file", op = "read" }]
+
+# 命令行是任意的：targets 静态提取不出来，只能声明成字面量"整个工作区"
+# （evo-exec-local 那边 actual_targets 会如实回报"确认在这个工作区里
+# 跑过"，见 executor.rs 的注释）。egress 用 `via = "proxy"` 而不是
+# `host = "proxy"`——具体连哪个主机运行时才知道，这不是一个真实主机名。
+# reversible = false + class = write 会命中 config/policy.toml 里的
+# `irreversible-write-needs-approval`：shell.exec 本来就该每次问人，
+# 不为了演示顺畅放宽它。
+[[method]]
+name = "shell.exec"
+class = "write"
+reversible = false
+targets = [{ literal = "sandbox:workspace", kind = "workspace", op = "update" }]
+egress = [{ via = "proxy" }]

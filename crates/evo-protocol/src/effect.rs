@@ -36,6 +36,15 @@ pub struct ResourceRef {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EgressRef {
+    /// 绝大多数工具能在 manifest 里静态声明一个具体主机名（比如
+    /// `http.get` 的目标 URL）。`shell.exec` 不行——命令行是任意的，
+    /// manifest 只能声明「这次调用一定会经过 proxy，但具体连哪个主机
+    /// 要等运行时才知道」。TOML 里用 `via = "proxy"` 而不是
+    /// `host = "proxy"` 拼写这后一种情况，读起来才不会被误认成一个
+    /// 真实主机名；两者落在同一个字段上（alias 而非新增变体），因为
+    /// 对下游（impact 预估、actual_egress 比对）来说它们本来就是同一种
+    /// 数据形状，只是可读性上值得区分拼法。
+    #[serde(alias = "via")]
     pub host: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
