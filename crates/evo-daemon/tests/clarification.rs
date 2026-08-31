@@ -11,8 +11,9 @@
 use evo_daemon::{DaemonConfig, FixedClock, RunOutcome, Runtime};
 use evo_exec_local::{LocalExecutor, WorkspaceOnlySandbox};
 use evo_kernel::{AwaitReason, RunStatus};
-use evo_model::FixtureAdapter;
+use evo_model::{FixtureAdapter, Message};
 use evo_protocol::events::context::ContextAssembled;
+use evo_protocol::events::model::ModelRequested;
 use evo_protocol::{Actor, BlobRef, EventBody, RunId};
 use evo_runlog::RunLog;
 use std::sync::Arc;
@@ -308,4 +309,121 @@ async fn none_of_the_sensitive_text_leaks_into_any_event_payload() {
             );
         }
     }
+}
+
+fn model_requested_events(log: &RunLog, run_id: &RunId) -> Vec<ModelRequested> {
+    log.events(run_id, 0, None)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e.body {
+            EventBody::ModelRequested(m) => Some(m),
+            _ => None,
+        })
+        .collect()
+}
+
+fn messages_in(log: &RunLog, requested: &ModelRequested) -> Vec<Message> {
+    serde_json::from_slice(&log.blobs().get(&requested.messages_ref).unwrap()).unwrap()
+}
+
+// ————————————————————————————————————————————————————————————
+// P0-1：答案必须出现在第二次 model.requested 的 messages 里。
+// 只断 context.assembled.blocks 抓不住「装配通了、模型请求仍是空串」。
+// ————————————————————————————————————————————————————————————
+
+#[tokio::test]
+async fn the_answer_reaches_the_second_model_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup(dir.path(), CLARIFY_WITH_OPTIONS_FIXTURES);
+    let run_id = RunId::from("r-1");
+
+    let outcome = rt.start(&run_id, INTENT_TEXT).await.unwrap();
+    let RunOutcome::Suspended { reason, .. } = outcome else {
+        panic!("expected Suspended, got {outcome:?}");
+    };
+    let AwaitReason::Clarification { question_id } = reason else {
+        panic!("expected AwaitReason::Clarification, got {reason:?}");
+    };
+
+    {
+        let log = open_log(dir.path());
+        let requested = model_requested_events(&log, &run_id);
+        assert_eq!(requested.len(), 1, "提问前只有一次模型请求");
+        let first = messages_in(&log, &requested[0]);
+        let joined: String = first.iter().map(|m| m.content.clone()).collect();
+        assert!(
+            joined.contains(INTENT_TEXT),
+            "第一次请求应带 intent，实得：{joined:?}"
+        );
+        assert!(
+            !joined.contains("否，再等等"),
+            "提问前的请求不该已经含答案：{joined:?}"
+        );
+    }
+
+    rt.answer_clarification(
+        &run_id,
+        &question_id,
+        Some("opt-no"),
+        Some(FREE_TEXT_ANSWER),
+        Actor::Human("u-1".into()),
+    )
+    .await
+    .expect("回答澄清、驱动到底，全程不该有 Err");
+
+    let log = open_log(dir.path());
+    let requested = model_requested_events(&log, &run_id);
+    assert_eq!(requested.len(), 2, "回答之后应再问一次模型");
+    let second = messages_in(&log, &requested[1]);
+    let joined: String = second.iter().map(|m| m.content.clone()).collect();
+    assert!(
+        joined.contains("否，再等等"),
+        "第二次模型请求必须含被选中选项的文案，实得：{joined:?}"
+    );
+    assert!(
+        joined.contains(FREE_TEXT_ANSWER),
+        "第二次模型请求必须含自由文本，实得：{joined:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_typo_option_id_does_not_write_an_answer_or_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup(dir.path(), CLARIFY_WITH_OPTIONS_FIXTURES);
+    let run_id = RunId::from("r-1");
+
+    let outcome = rt.start(&run_id, INTENT_TEXT).await.unwrap();
+    let RunOutcome::Suspended { reason, .. } = outcome else {
+        panic!("expected Suspended, got {outcome:?}");
+    };
+    let AwaitReason::Clarification { question_id } = reason else {
+        panic!("expected AwaitReason::Clarification, got {reason:?}");
+    };
+
+    let err = rt
+        .answer_clarification(
+            &run_id,
+            &question_id,
+            Some("opt-typo"),
+            None,
+            Actor::Human("u-1".into()),
+        )
+        .await
+        .expect_err("拼错的 option_id 必须拒绝，不许写事件");
+    assert!(
+        err.to_string().contains("opt-typo"),
+        "错误应点名那个非法 id，实得：{err}"
+    );
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(
+        !kinds.contains(&"clarification.answered"),
+        "非法选项不许落 clarification.answered：{kinds:?}"
+    );
+    assert_eq!(
+        kinds.last(),
+        Some(&"run.suspended"),
+        "拒绝之后 run 应仍停在挂起：{kinds:?}"
+    );
 }

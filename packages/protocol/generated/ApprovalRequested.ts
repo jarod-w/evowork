@@ -22,7 +22,7 @@ effect_id: EffectId, risk: RiskLevel,
 /**
  * 影响预估的引用：可能带具体资源标识甚至金额，一律 blob，不进
  * payload（红线①）。`Option` 是因为并非所有 effect 都能算出影响
- * 预估（`ImpactPrecision::DeclaredOnly` 时可能什么都估不出来）
+ * 预估（`ImpactPrecision::Unknown` 时估不出任何资源；空清单不是「没有」）
  */
 impact_ref?: BlobRef | null, 
 /**

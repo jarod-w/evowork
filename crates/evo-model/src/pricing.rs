@@ -1,6 +1,7 @@
 use crate::adapter::ModelError;
 use evo_protocol::events::accounting::{CostCharged, CostDimension, CostUnit, Currency};
 use evo_protocol::events::model::Usage;
+use evo_protocol::ids::EffectId;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -17,11 +18,19 @@ struct PriceEntry {
 }
 
 #[derive(Debug, Deserialize)]
+struct ToolPriceEntry {
+    name: String,
+    call_micros: u64,
+}
+
+#[derive(Debug, Deserialize)]
 struct PriceFile {
     version: String,
     currency: Currency,
     #[serde(default, rename = "model")]
     models: Vec<PriceEntry>,
+    #[serde(default, rename = "tool")]
+    tools: Vec<ToolPriceEntry>,
 }
 
 /// 产品自己的定价表，版本化。
@@ -122,5 +131,37 @@ impl PriceTable {
                 })
             })
             .collect()
+    }
+
+    pub fn currency(&self) -> Currency {
+        self.file.currency
+    }
+
+    /// 一次已执行的工具调用按次计费。表里没有、或 `call_micros` 为 0，
+    /// 返回空——未定价不等于免费记账一行 0。
+    pub fn tool_charges(
+        &self,
+        tool: &str,
+        effect_id: &EffectId,
+        turn: Option<u32>,
+        dimension: &CostDimension,
+    ) -> Result<Vec<CostCharged>, ModelError> {
+        let Some(e) = self.file.tools.iter().find(|e| e.name == tool) else {
+            return Ok(Vec::new());
+        };
+        if e.call_micros == 0 {
+            return Ok(Vec::new());
+        }
+        Ok(vec![CostCharged {
+            effect_id: Some(effect_id.clone()),
+            turn,
+            unit: CostUnit::Call,
+            quantity: 1,
+            unit_price_micros: e.call_micros,
+            amount_micros: e.call_micros,
+            currency: self.file.currency,
+            price_table_ver: self.file.version.clone(),
+            dimension: dimension.clone(),
+        }])
     }
 }

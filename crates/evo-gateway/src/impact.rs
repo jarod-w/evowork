@@ -25,15 +25,18 @@ pub struct PreviewOutcome {
 ///
 /// - `preview` 是 `Some`：第 1 级，`ImpactPrecision::Exact`。`targets` 直接
 ///   取自 preview 的产出，不再从参数重新静态提取——preview 的答案理应比
-///   静态提取更准，两者若有分歧，以 preview 为准。
-/// - `preview` 是 `None`：第 2、3 级，两级的 `precision` 都是
-///   `ImpactPrecision::DeclaredOnly`，本函数不额外区分——区别只在 `targets`
-///   是否非空：manifest 能从参数静态提取出资源就非空（第 2 级，「将触碰
-///   这些资源」）；提取不出来（`shell.exec` 一类，第 3 级）就是空清单，
-///   「将在沙箱内执行、出口受白名单约束」这句话由调用方结合
-///   `EffectRequest.class` + 本结构体的 `externals` 表达；命令原文本来就在
-///   `ToolRequested.params_ref` / `EffectRequest.params_ref` 里，不需要在
-///   这里再重复一份内容（红线①：具体内容一律走 blob，不进事件 payload）。
+///   静态提取更准，两者若有分歧，以 preview 为准。空清单在这里是 preview
+///   **明确说没有**，可以当成「无影响」。
+/// - `preview` 是 `None` 且静态提取出至少一项：第 2 级，
+///   `ImpactPrecision::DeclaredOnly`——声明会触碰这些资源。
+/// - `preview` 是 `None` 且一项都提取不出：第 3 级，
+///   `ImpactPrecision::Unknown`。空清单的意思是「不知道」，不是「没有」。
+///   命令原文在 `ToolRequested.params_ref` / `EffectRequest.params_ref` 里
+///   （红线①：具体内容一律走 blob，不进事件 payload）。
+///
+/// **本函数不保证**「将在沙箱内执行、出口受白名单约束」——那两半今天都不
+/// 成立（沙箱覆盖面与出口代理都还没接到这一层）。不要把 Unknown 渲染成
+/// 「安全 / 无影响」。
 pub fn estimate(
     effect_id: &EffectId,
     manifest: &ToolManifest,
@@ -61,11 +64,17 @@ pub fn estimate(
         })
         .collect();
 
+    let precision = if targets.is_empty() {
+        ImpactPrecision::Unknown
+    } else {
+        ImpactPrecision::DeclaredOnly
+    };
+
     ImpactEstimated {
         effect_id: effect_id.clone(),
         targets,
         externals: manifest.egress.clone(),
         est_cost_micros: None,
-        precision: ImpactPrecision::DeclaredOnly,
+        precision,
     }
 }

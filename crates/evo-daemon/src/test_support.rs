@@ -141,3 +141,107 @@ pub fn write_run_created_then_orphan_tool_requested(
     )?;
     Ok(())
 }
+
+/// 两条未决审批并列后挂起。Runtime 今天一次只发一个 effect，这个状态
+/// 没法从公开接口走出来，但 `resume` / `reduce` 必须在它上面不 panic、
+/// 也不因为批了字典序较大的那条就把另一条当没看见。
+pub fn write_run_suspended_with_two_pending_approvals(
+    db_path: &Path,
+    blob_root: &Path,
+    run_id: &RunId,
+    recorded_at: &str,
+) -> Result<(evo_protocol::ApprovalId, evo_protocol::ApprovalId), DaemonError> {
+    use evo_protocol::ApprovalId;
+    use evo_protocol::events::approval::{ApprovalRequested, RiskLevel};
+    use evo_protocol::events::lifecycle::{RunSuspended, SuspendReason};
+
+    let mut log = RunLog::open(db_path, blob_root)?;
+    log.append(
+        run_id,
+        Actor::Runtime,
+        recorded_at,
+        EventBody::RunCreated(RunCreated {
+            run_id: run_id.clone(),
+            parent_run_id: None,
+            workspace_id: run_id.as_str().to_owned(),
+            principal: PrincipalRef {
+                kind: "user".to_owned(),
+                id: "u-1".to_owned(),
+            },
+            trigger: TriggerRef {
+                kind: TriggerKind::Manual,
+                reference: "cli".to_owned(),
+            },
+            budget: BudgetSpec::default(),
+            labels: BTreeMap::new(),
+        }),
+    )?;
+    let intent_ref = log.blobs().put(
+        BlobClass::Content,
+        "text/plain",
+        "把账龄表做出来".as_bytes(),
+    )?;
+    log.append(
+        run_id,
+        Actor::Runtime,
+        recorded_at,
+        EventBody::IntentDeclared(IntentDeclared {
+            intent_ref,
+            char_len: 7,
+            lang: "zh".to_owned(),
+            source: "cli".to_owned(),
+        }),
+    )?;
+
+    let params_ref = log
+        .blobs()
+        .put(BlobClass::Content, "application/json", b"{}")?;
+    let params_digest = params_ref.content_hash.clone();
+
+    let first = ApprovalId::from("r-1-a10");
+    let last = ApprovalId::from("r-1-a9");
+    let e1 = EffectId::from("e-1");
+    let e2 = EffectId::from("e-2");
+
+    for (effect_id, approval_id) in [(&e1, &first), (&e2, &last)] {
+        log.append(
+            run_id,
+            Actor::Gateway,
+            recorded_at,
+            EventBody::ToolRequested(ToolRequested {
+                effect_id: effect_id.clone(),
+                turn: 0,
+                tool: ToolId::from("fs.write"),
+                params_ref: params_ref.clone(),
+                params_digest: params_digest.clone(),
+                class: EffectClass::Write,
+                declared_targets: Vec::new(),
+                declared_egress: Vec::new(),
+                reversible: true,
+                cites_referenced: Vec::new(),
+            }),
+        )?;
+        log.append(
+            run_id,
+            Actor::Gateway,
+            recorded_at,
+            EventBody::ApprovalRequested(ApprovalRequested {
+                approval_id: approval_id.clone(),
+                effect_id: effect_id.clone(),
+                risk: RiskLevel::L2,
+                impact_ref: None,
+                expires_at_ms: 1_000_000,
+            }),
+        )?;
+    }
+    log.append(
+        run_id,
+        Actor::Runtime,
+        recorded_at,
+        EventBody::RunSuspended(RunSuspended {
+            reason: SuspendReason::AwaitingApproval,
+            detail_ref: None,
+        }),
+    )?;
+    Ok((first, last))
+}

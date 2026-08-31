@@ -68,6 +68,7 @@ fn error_outcome(tool: &str, e: ExecError) -> EffectOutcome {
         actual_targets: Vec::new(),
         actual_egress: Vec::new(),
         error: Some(e.to_string()),
+        cost_micros: None,
     }
 }
 
@@ -171,6 +172,7 @@ impl LocalExecutor {
             actual_targets: vec![workspace_relative_target(lease, &target)?],
             actual_egress: Vec::new(),
             error: None,
+            cost_micros: None,
         })
     }
 
@@ -256,6 +258,7 @@ impl LocalExecutor {
             actual_targets,
             actual_egress,
             error: None,
+            cost_micros: None,
         })
     }
 }
@@ -290,6 +293,7 @@ impl Executor for LocalExecutor {
                     actual_targets,
                     actual_egress: Vec::new(),
                     error: None,
+                    cost_micros: None,
                 },
                 Err(e) => error_outcome(tool, e),
             },

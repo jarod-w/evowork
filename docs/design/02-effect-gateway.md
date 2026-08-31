@@ -125,7 +125,7 @@ pub enum ExecutionMode { Live, DryRun }
 |:-:|---|---|---|
 | 1 | 工具 manifest 声明了 `preview` 方法 | 调 preview，得到精确 diff / 将写入的记录清单 | `exact` |
 | 2 | 未声明 preview，但 targets 可从参数静态提取 | 「将触碰这些资源」清单，无内容级 diff | `declared_only` |
-| 3 | targets 无法静态提取（`shell.exec` 一类） | 「将在沙箱工作区内执行，出口受白名单约束」+ 命令原文 | `declared_only` |
+| 3 | targets 无法静态提取（`shell.exec` 一类） | 精度为 `unknown`：空清单表示「不知道」，不是「没有」。命令原文在 `params_ref` | `unknown` |
 
 **第 2、3 级不阻塞接入**，这一点很重要：如果只有实现了 preview 的工具才能接入，接入门槛会高到没人接，最后一定有人加个后门绕过 Gateway。优雅降级是这个设计能被遵守的前提。
 

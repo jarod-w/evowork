@@ -134,8 +134,9 @@ pub struct RunState {
 
     /// 审批台账：`approval.requested` 插入，`approval.granted` /
     /// `approval.denied` / `approval.expired` 移除。`run.suspended`
-    /// 判定 `SuspendReason::AwaitingApproval` 时，从这张表里取出当前
-    /// 唯一一条未决审批，拼出 `AwaitReason::Approval`。
+    /// 判定 `SuspendReason::AwaitingApproval` 时，从这张表里取出一条
+    /// **代表**（字典序最小的 id）拼出 `AwaitReason::Approval`。表空则
+    /// 不发明 id。完整未决清单以本字段为准，不看 `awaiting` 里那一个。
     pub pending_approvals: BTreeMap<ApprovalId, EffectId>,
     /// 当前未回答的追问 id。`clarification.requested` 写入，
     /// `clarification.answered` 清空。`run.suspended` 判定

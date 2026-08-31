@@ -111,6 +111,9 @@ pub struct EffectOutcome {
     pub actual_targets: Vec<ResourceRef>,
     pub actual_egress: Vec<EgressRef>,
     pub error: Option<String>,
+    /// 执行器回报的实际费用。本地工具恒为 `None`，daemon 再去查定价表。
+    /// `Some(0)` 表示「跑了，但这回免费」，会压掉表上的那一行。
+    pub cost_micros: Option<u64>,
 }
 
 #[derive(Clone, Debug)]

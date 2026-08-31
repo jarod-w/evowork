@@ -212,3 +212,50 @@ fn covers_distinguishes_truly_free_from_unpriced() {
         "定价表里没有这个模型，调用方不应该把空账单误读成免费"
     );
 }
+
+const TOOL_PRICING: &str = r#"
+version = "poc-1"
+currency = "CNY"
+
+[[model]]
+provider = "fixture"
+model = "fixture-v1"
+input_micros_per_token = 1
+output_micros_per_token = 2
+cache_read_micros_per_token = 0
+cache_write_micros_per_token = 0
+
+[[tool]]
+name = "fs.write"
+call_micros = 100
+"#;
+
+#[test]
+fn tool_charges_are_one_call_when_priced() {
+    use evo_protocol::EffectId;
+    let t = PriceTable::from_toml_str(TOOL_PRICING).unwrap();
+    let dim = CostDimension {
+        principal: "u-1".into(),
+        team: None,
+        run_id: RunId::from("r-1"),
+        skill: None,
+        tool: Some(evo_protocol::ToolId::from("fs.write")),
+    };
+    let charges = t
+        .tool_charges("fs.write", &EffectId::from("e-1"), Some(0), &dim)
+        .unwrap();
+    assert_eq!(charges.len(), 1);
+    assert_eq!(charges[0].unit, CostUnit::Call);
+    assert_eq!(charges[0].quantity, 1);
+    assert_eq!(charges[0].amount_micros, 100);
+    assert_eq!(
+        charges[0].effect_id.as_ref().map(|e| e.as_str()),
+        Some("e-1")
+    );
+    assert!(
+        t.tool_charges("fs.read", &EffectId::from("e-2"), None, &dim)
+            .unwrap()
+            .is_empty(),
+        "未定价的工具不出账"
+    );
+}

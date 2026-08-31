@@ -11,11 +11,13 @@ use evo_protocol::events::accounting::BudgetAmended;
 use evo_protocol::events::approval::{
     ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia, RiskLevel,
 };
-use evo_protocol::events::clarification::{ClarificationAnswered, ClarificationRequested};
+use evo_protocol::events::clarification::{
+    ClarificationAnswered, ClarificationOption, ClarificationRequested,
+};
 use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
 use evo_protocol::events::effect::ToolRequested;
 use evo_protocol::events::lifecycle::{RunResumed, RunSuspended, SuspendReason};
-use evo_protocol::events::model::{PlanIntent, PlanStep};
+use evo_protocol::events::model::{PlanIntent, PlanStep, PlannedClarification};
 use evo_protocol::taint::TaintLevel;
 use evo_protocol::{Actor, ApprovalId, BlobRef, EffectId, Event, EventBody, RunId, ToolId};
 
@@ -36,6 +38,16 @@ fn blob_ref() -> BlobRef {
         content_hash: "sha256:aa".into(),
         size: 2,
         mime: "application/json".into(),
+    }
+}
+
+fn planned_clarification() -> PlannedClarification {
+    PlannedClarification {
+        prompt_ref: blob_ref(),
+        options: vec![ClarificationOption {
+            id: "yes".into(),
+            is_default: true,
+        }],
     }
 }
 
@@ -577,7 +589,7 @@ fn state_mid_turn_with_clarify_plan(turn: u32) -> RunState {
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,
-        clarification: None,
+        clarification: Some(planned_clarification()),
     });
     s
 }
@@ -590,7 +602,7 @@ fn clarification_answered_and_resumed_does_not_ask_again() {
     assert_eq!(
         decide(&mid_turn),
         vec![Command::AskClarification {
-            question: String::new()
+            clarification: planned_clarification()
         }]
     );
 
@@ -655,7 +667,19 @@ fn clarification_never_requested_still_asks_it() {
     assert_eq!(
         decide(&s),
         vec![Command::AskClarification {
-            question: String::new()
+            clarification: planned_clarification()
+        }]
+    );
+}
+
+#[test]
+fn clarify_without_planned_clarification_completes_failed() {
+    let mut s = state_mid_turn_with_clarify_plan(0);
+    s.last_plan.as_mut().unwrap().clarification = None;
+    assert_eq!(
+        decide(&s),
+        vec![Command::Complete {
+            status: RunStatus::Failed
         }]
     );
 }
@@ -697,4 +721,59 @@ fn a_denied_tool_result_is_a_denial_not_a_settlement() {
     );
     // 终态照样把这一 turn 往前推——否则 decide 会永远等这个 effect。
     assert_eq!(s.turn, 1);
+}
+
+// ————————————————————————————————————————————————————————————
+// 多条待审批并列：不 panic、不发明 id、台账是真源
+// ————————————————————————————————————————————————————————————
+
+#[test]
+fn two_pending_approvals_do_not_panic_on_suspend() {
+    let events = vec![
+        ev(0, tool_requested("e-1", 0)),
+        ev(1, approval_requested("r-1-a10", "e-1")),
+        ev(2, tool_requested("e-2", 0)),
+        ev(3, approval_requested("r-1-a9", "e-2")),
+        ev(4, run_suspended(SuspendReason::AwaitingApproval)),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+    assert_eq!(s.pending_approvals.len(), 2);
+    // BTreeMap 字典序：`r-1-a10` < `r-1-a9`，代表是较小的那个，不是插入的最后一条。
+    assert_eq!(
+        s.awaiting,
+        Some(AwaitReason::Approval {
+            approval_id: ApprovalId::from("r-1-a10"),
+            effect_id: EffectId::from("e-1"),
+        })
+    );
+    assert!(decide(&s).is_empty());
+}
+
+#[test]
+fn suspend_awaiting_approval_without_requested_does_not_panic() {
+    let events = vec![ev(0, run_suspended(SuspendReason::AwaitingApproval))];
+    let s = fold(&RunId::from("r-1"), &events);
+    assert_eq!(s.status, RunStatus::Suspended);
+    assert_eq!(s.awaiting, None);
+    assert!(decide(&s).is_empty());
+}
+
+#[test]
+fn granting_the_lexically_last_of_two_leaves_the_other_pending() {
+    let events = vec![
+        ev(0, tool_requested("e-1", 0)),
+        ev(1, approval_requested("r-1-a10", "e-1")),
+        ev(2, tool_requested("e-2", 0)),
+        ev(3, approval_requested("r-1-a9", "e-2")),
+        ev(4, run_suspended(SuspendReason::AwaitingApproval)),
+        ev(5, approval_granted("r-1-a9")),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+    assert_eq!(s.pending_approvals.len(), 1);
+    assert!(
+        s.pending_approvals
+            .contains_key(&ApprovalId::from("r-1-a10"))
+    );
+    assert_eq!(s.status, RunStatus::Suspended);
+    assert!(decide(&s).is_empty());
 }

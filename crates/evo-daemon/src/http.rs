@@ -329,6 +329,10 @@ impl From<DaemonError> for RpcFail {
                 code: RPC_NOT_FOUND,
                 message: err.to_string(),
             },
+            DaemonError::UnknownClarificationOption { .. } => Self {
+                code: RPC_INVALID_PARAMS,
+                message: err.to_string(),
+            },
             _ => Self {
                 code: RPC_INTERNAL,
                 message: err.to_string(),

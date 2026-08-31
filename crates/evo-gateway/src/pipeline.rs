@@ -402,9 +402,8 @@ impl Gateway {
             };
         }
 
-        // 未声明 preview：直接按第 2/3 级（`DeclaredOnly`）估。targets 能不能
-        // 从参数静态提取出来，区分的正是这两级——见 `impact::estimate` 的
-        // 文档注释。
+        // 未声明 preview：直接按第 2 级（`DeclaredOnly`，提取出了 target）
+        // 或第 3 级（`Unknown`，一项都没有）估。见 `impact::estimate`。
         let impact = estimate(&req.effect_id, &manifest, &req.params, None);
         Self::finish(
             events,
@@ -420,10 +419,11 @@ impl Gateway {
     /// 从 [`GatewayAction::NeedPreview`] 续跑。
     ///
     /// `preview` 是调用方问过 executor 之后拿到的结果：`Some` 换来第 1 级
-    /// （`ImpactPrecision::Exact`），`None` 表示放弃 preview、退回第 2/3 级
-    /// （`DeclaredOnly`）——比如 executor 暂时没有真正实现这个 preview
-    /// 方法。**退回 `None` 不阻塞接入**，这正是判据 1 的延伸：宁可精度差一
-    /// 档，也不能因为一个工具的 preview 没接好就把它挡在 Gateway 外面。
+    /// （`ImpactPrecision::Exact`），`None` 表示放弃 preview、退回第 2 级
+    /// （`DeclaredOnly`，能静态提取）或第 3 级（`Unknown`，提取不出）——
+    /// 比如 executor 暂时没有真正实现这个 preview 方法。**退回 `None` 不阻塞
+    /// 接入**，这正是判据 1 的延伸：宁可精度差一档，也不能因为一个工具的
+    /// preview 没接好就把它挡在 Gateway 外面。
     pub fn admit_with_preview(
         &self,
         pending: PendingAdmit,

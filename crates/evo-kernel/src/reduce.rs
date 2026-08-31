@@ -1,5 +1,5 @@
 use crate::rng::DeterministicRng;
-use crate::state::{AwaitReason, ContextRecord, EffectState, RunState, RunStatus};
+use crate::state::{ArtifactRecord, AwaitReason, ContextRecord, EffectState, RunState, RunStatus};
 use evo_protocol::events::effect::ToolResultStatus;
 use evo_protocol::events::lifecycle::{CompletionStatus, SuspendReason};
 use evo_protocol::ids::RunId;
@@ -162,29 +162,27 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
             // 挂起不是特殊状态机，就是 awaiting 有值时 decide 返回空
             // （03 §4）。这条事件是那个「有值」的唯一落点。
             s.status = RunStatus::Suspended;
-            s.awaiting = Some(match e.reason {
+            s.awaiting = match e.reason {
                 // Gateway 已经先发了一条 `approval.requested`（`reduce`
                 // 处理它时把 approval_id/effect_id 记进了
-                // `pending_approvals`），这里从台账里取出那条未决审批，
-                // 拼成携带完整上下文的 `AwaitReason::Approval`——不从
+                // `pending_approvals`），这里从台账里取出**一条代表**，
+                // 拼成携带上下文的 `AwaitReason::Approval`——不从
                 // `RunSuspended` 本身取，因为它的 payload 里根本没有
-                // approval_id/effect_id 这两个字段（该事件只携带
-                // `SuspendReason` 这个粗粒度分类 + 一个 blob 引用）。
+                // approval_id/effect_id。台账才是真源：BTreeMap 按 id
+                // 字典序，不是插入序，所以这里取 `.next()`（最小 id）
+                // 只是一个稳定的代表，UI/RPC 的 `awaiting` 字符串指向它；
+                // 多条未决并列时，完整清单是 `pending_approvals`。
+                //
+                // 台账为空时不发明一个 id，也不 panic：畸形 Log 回放
+                // 必须能走完。status 已经是 Suspended，`decide` 照样返回空。
                 SuspendReason::AwaitingApproval => {
-                    let (approval_id, effect_id) = s
-                        .pending_approvals
+                    s.pending_approvals
                         .iter()
-                        .next_back()
-                        .map(|(a, e)| (a.clone(), e.clone()))
-                        .expect(
-                            "run.suspended{reason: AwaitingApproval} 之前必须先有一条 \
-                             approval.requested 把审批记进 pending_approvals——\
-                             这是 daemon 侧的发送顺序保证，不是内核能自己满足的前提",
-                        );
-                    AwaitReason::Approval {
-                        approval_id,
-                        effect_id,
-                    }
+                        .next()
+                        .map(|(approval_id, effect_id)| AwaitReason::Approval {
+                            approval_id: approval_id.clone(),
+                            effect_id: effect_id.clone(),
+                        })
                 }
                 // `SuspendReason::AwaitingHuman` 的文档原话是「澄清式追问：
                 // 需要人回答问题，不一定经过审批队列」——它就是
@@ -196,9 +194,9 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                         "run.suspended{reason: AwaitingHuman} 之前必须先有一条 \
                          clarification.requested 把 question_id 写进 pending_question",
                     );
-                    AwaitReason::Clarification { question_id }
+                    Some(AwaitReason::Clarification { question_id })
                 }
-                SuspendReason::BudgetExhausted => AwaitReason::Budget,
+                SuspendReason::BudgetExhausted => Some(AwaitReason::Budget),
                 // 「人工暂停，不归入以上任何一类具体原因」——没有配套的
                 // approval_id/question_id 可取，`AwaitReason` 里也没有专门
                 // 为它开的变体（`Human{step}` 是 [P2] 人机混合队列，语义
@@ -207,10 +205,10 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
                 // 挪用最不相关联的 `ExternalEvent` 变体，把 kind 写成一个
                 // 稳定标记，好过瞎猜语义相近的变体、或者 panic 掉一整条
                 // 合法事件。
-                SuspendReason::Paused => AwaitReason::ExternalEvent {
+                SuspendReason::Paused => Some(AwaitReason::ExternalEvent {
                     kind: "manual_pause".to_owned(),
-                },
-            });
+                }),
+            };
         }
         EventBody::RunResumed(_) => {
             // 恢复是显式事件：awaiting 的清空只由这里负责，
@@ -295,9 +293,17 @@ pub fn reduce(state: &RunState, event: &Event) -> RunState {
             s.context_turn = None;
             s.plan_turn = None;
         }
-        // 这两个变体本切片仍不产生（各自的事件定义处已注明：产物区、
-        // 上下文压缩都排在后续切片），继续留白，交给对应切片处理。
-        EventBody::ContextCompacted(_) | EventBody::ArtifactEmitted(_) => {}
+        // ContextCompacted 本切片仍不产生。ArtifactEmitted 由 daemon 在
+        // 成功的 `fs.write` 之后写出，这里折进 `RunState::artifacts`；
+        // 同一 path 的更新靠事件上的 `supersedes`，状态里两条都留着。
+        EventBody::ContextCompacted(_) => {}
+        EventBody::ArtifactEmitted(e) => {
+            s.artifacts.push(ArtifactRecord {
+                artifact_id: e.artifact_id.clone(),
+                path: e.path.clone(),
+                content_hash: e.blob.content_hash.clone(),
+            });
+        }
     }
     s
 }
