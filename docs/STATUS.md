@@ -1,7 +1,7 @@
 # 项目状态
 
-> 截至 2026-08-30。档一（daemon 二进制 + `/v1/rpc` + `/v1/events` +
-> `packages/protocol` + CI-5）已落地；本次 `./scripts/ci.sh` 全段绿。
+> 截至 2026-08-31。档二（Inbox / 审批卡 / 产物区 / 成本的接线，以及多条
+> 待审批并列）已落地；UI 本体仍未开始。本次 `./scripts/ci.sh` 全段绿。
 >
 > 这份文档记录**当前真实状态**与**未做事项**。它的编写前提是：
 > 「结构写好了」不等于「接通了」，「测试绿了」不等于「检查有效」。
@@ -120,32 +120,21 @@ daemon 连接取决于本机是否起了 `evo-daemon` 以及探针页有没有�
 
 探针页接上跑着的 daemon 之后，`hello()` 不再是必然的 `(Failed to fetch)`——要的是 `~/.evowork/client.toml` 里的 token（或 `VITE_DAEMON_TOKEN`）。没起 daemon 时仍显示 not connected，这还是预期。
 
-### 档二：界面每一块各自的接线
+### 档二：界面每一块各自的接线（已落地）
 
-下面每一条**今天都不产生错误结果**——这正是它们此前躺在 P4/P5 的原因。但 UI 一旦把对应区域
-画出来，它就变成用户可见的错误或空白。共同形状与 §四 P4 那批一致：**字段在、结构对、
-没有读者或没有写者。**
+下面四条接线外加「多条待审批并列」已接通。**UI 还没画**——档三才画。
+接通的意思是：产生方、reduce/读者、以及一条在未修代码上会红的行为测试
+都在。不要把这张表读成「界面做完了」。
 
-| 界面区块 | 依赖条目 | 不接线的话，界面上是什么 |
+| 界面区块 | 接线 | 仍缺的（档三 / 收尾） |
 |---|---|---|
-| 决策 Inbox / 澄清卡 | P4「`AskClarification` 恒发空串」· **P0-1** · P5「`answer_clarification` 不校验 `option_id`」 | 卡片**没有题面**；人答完模型收到的仍是空串；选项 id 拼错时事件照写、run 照跑，人以为答了、系统当没选 |
-| 审批卡 | P3 末行（文案两半都不成立）· P5「`ImpactPrecision` 缺 `Unknown`」 | 审批人看到 `targets: []` 时分不清「不知道」与「没有」——**把未知当安全**，而这恰恰是审批卡存在的唯一理由 |
-| 多条待审批并列 | P5「`reduce.rs:125-134` 的 `.next_back()` + `.expect()`」 | 今天恰好只有一条所以不爆；UI 一展示并发 effect 就指错，顺序异常的 Log 让**回放 panic** |
-| 产物区（预览 / diff） | P4「`reduce` 忽略 `ArtifactEmitted`」 | **三层都是空的**，见下 |
-| 成本视图 | **P0-2** | 金额天然少算（工具那侧一分不涨），而界面上没有任何信号说明这一点 |
-| 预算提额 | P5「提额没有任何界面」 | 预算闸门**已经接通**，run 被挡住而界面不给提额入口 = 卡死无出路。`budget.amended` 事件已经有了，缺的**就是**界面 |
-| 回放 / 审计视图 | P5「被驳回 / 等审批的 run 一个 checkpoint 都没有」· P2-12 | 审计价值最高的那类 run 恰恰是回放视图里唯一验不了的 |
-
-**产物区那条，本次实测比 §四 P4 记的更空**（2026-08-30 全仓 grep）：
-
-1. `artifact.emitted` **零产生方**——`ArtifactEmitted` 在 `evo-protocol` 之外只出现一次，
-   就是 `crates/evo-kernel/src/reduce.rs:300` 那条忽略它的 match 臂；
-2. `reduce` 不处理它；
-3. **`RunState::artifacts` 全仓零写入点**——`crates/evo-kernel/src/state.rs` 里只有第 148 行的
-   声明与第 183 行的 `Vec::new()`，`reduce.rs` 一次 `push` 都没有。
-
-所以产物区不是「数据还没填」，是**从事件到状态整条链路都不存在**。做产物区 =
-先给 `artifact.emitted` 找一个产生方，再把它接进 `reduce`，最后才谈渲染。
+| 决策 Inbox / 澄清卡 | `AskClarification` 携带 `PlannedClarification`；模型请求 messages 与装配器同源（P0-1）；`option_id` 不在选项里则拒写事件 | 卡片 UI |
+| 审批卡 | `ImpactPrecision::Unknown`：无 preview 且 0 个 target 时不再发 `DeclaredOnly` + 空清单 | 卡片 UI；不要把 Unknown 画成「无影响」 |
+| 多条待审批并列 | `reduce` 不再 `.expect()`；`resume` 在台账非空时不写 `run.resumed` | 列出全部未决的 UI（档三） |
+| 产物区（预览 / diff） | 成功的 `fs.write` 发 `artifact.emitted`；`reduce` 折进 `RunState::artifacts` | 预览 / diff UI |
+| 成本视图 | 已执行的工具可按 `[[tool]]` 出账；执行器 `cost_micros` 优先于表。生产表仍不定价本地工具 | 成本 UI |
+| 预算提额 | 未做（收尾） | 预算闸门已经接通，缺的**就是**界面 |
+| 回放 / 审计视图 | 未做（收尾） | 被驳回 / 等审批的 run 仍可能没有 checkpoint |
 
 ### 档三：这次明确推迟的
 
@@ -164,8 +153,8 @@ daemon 连接取决于本机是否起了 `evo-daemon` 以及探针页有没有�
 ### 顺序
 
 1. **档一（已落地）**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）+ P0-16 重连退避
-2. **档二里 Inbox / 审批卡 / 产物区 / 成本这四条接线**——**在写 UI 之前**做完。
-   跳过这一步做出来的是第二个探针页
+2. **档二（已落地）**：Inbox / 审批卡 / 产物区 / 成本四条接线 + 多条待审批并列。
+   UI 本体仍未开始——跳过接线做出来的会是第二个探针页
 3. **UI 本体**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
 4. 收尾：预算提额入口、人工驳回路径的 checkpoint、P0-4 带来的「已过期」状态
 
@@ -185,19 +174,25 @@ daemon 连接取决于本机是否起了 `evo-daemon` 以及探针页有没有�
 
 ### P0 — 会在演示现场变成事故
 
-#### 1. 澄清答案从未进入模型请求（UI 档二前置，见 §三）
+#### 1. 澄清答案从未进入模型请求（**已修**，UI 档二同交）
 
-`crates/evo-daemon/src/runtime.rs:787` 构造的 `ModelRequest` 里 `content` 是**空字符串**。整条链路（答案 → blob → 装配 → `context.assembled` 事件）都是通的，模型收到的始终是空。
+此前 `call_model` 构造的 `ModelRequest.messages` 是一条空的 user 消息。
+整条链路（答案 → blob → 装配 → `context.assembled`）是通的，模型收到的始终是空。
 
-**今天为什么不暴露**：fixture 模型不看输入。相关测试断的是事件里的 blocks 内容（中间字段），所以必绿。
+**现况**：messages 与装配器同一批来源、同一顺序（intent、已回答澄清摘要、
+工具返回）。行为测试断的是第二次 `model.requested` 的 blob 里含被选中选项
+文案与自由文本，不是 `context.assembled.blocks`。`AskClarification` 携带
+`PlannedClarification`；非法 `option_id` 拒写事件。
 
-**换成真实 adapter 那一刻**：人回答「否，再等等」与回答「是，立即发起」对模型输入毫无区别——A-12 澄清追问整条能力是空的。而那时演示已经在跑。
+#### 2. Effect 完全不出账（**已修**，UI 档二同交）
 
-#### 2. Effect 完全不出账（UI 档二前置，见 §三）
+此前 `pricing.toml` 只给模型定价，`CostCharged` 全仓只有 `call_model` 一个产生点，
+`EffectOutcome` 没有任何成本字段。
 
-`pricing.toml` 只给模型定价，`CostCharged` 全仓只有 `call_model` 一个产生点，`EffectOutcome` 没有任何成本字段。
-
-**后果**：一次 `shell.exec` 调外部收费 API 烧的钱，金额维度一分不涨。**预算闸门刚刚接通，但它看不见工具那一侧的账**——「别静默烧钱」这条能力只覆盖了模型侧。A-7 成本归因同理。
+**现况**：已执行的工具（Ok / Error，不是 Denied / DryRun）可以出账。执行器
+`cost_micros` 优先；否则查 `[[tool]]` 的 `call_micros`。未定价不让 run 失败。
+生产 `config/pricing.toml` **没有**给本地工具编单价——测试用测试表给
+`fs.write` 定价，断言 `budget_used` 含那一笔。
 
 #### 3. 沙箱无超时、stdout 无上限
 
@@ -302,7 +297,7 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 | `executor.rs:184` | `has_network: false` | `shell.exec` 经 `sh -c curl` 有网络（实测 200） |
 | `lifecycle.rs:97-99` | `from_seq`「回放时用它核对恢复点」 | `reduce`/`replay`/`verify` 都不读 |
 | `pipeline.rs:38-43` | `impact_ref` 走 blob 是「按红线①」 | 01 §3 表格明确把「目标资源标识」列在可进 payload 那一列，且同一个值已作为 `impact.estimated` 完整落盘。理由写错了，blob 是重复存储 |
-| `02-effect-gateway.md:124` + `impact.rs:33` | 审批卡文案「将在沙箱工作区内执行，出口受白名单约束」 | 两半都不成立。UI 还没做，做的时候不能照抄 |
+| `02-effect-gateway.md` + `impact.rs` | 审批卡文案「将在沙箱工作区内执行，出口受白名单约束」 | **源头已订正**（档二）：第 3 级现在是 `unknown`，注释明确两半都不成立。UI 做审批卡时仍不能发明这句 |
 
 ---
 
@@ -317,8 +312,9 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 | `PolicyContext.taint` / `.targets` | 老实填了，但 `Rule` 只有 class/tool/reversible 三个条件字段，`matches` 完全不看这两个。今天写不出「对某目录的写要审批」这类规则 |
 | `Lease.expires_at_ms` | 零读者（见 P0-3） |
 | `BudgetSpec.max_concurrency` / `max_recursion_depth` | 零读取方 |
-| `Command::AskClarification { question }` | 恒发空串，唯一消费方直接丢弃。两条内核测试还在断这个空占位——断言的是「占位符仍然是空的」。**UI 档二前置**：澄清卡没有题面，就是这一条 |
-| `reduce` 忽略 `ContextCompacted` / `ArtifactEmitted` | 今天二者无产生方，尚不构成投影缺口；等哪个切片开始写 `artifact.emitted`，它会静默不进状态。**UI 档二前置，且 2026-08-30 实测比这句更空**：`RunState::artifacts` 全仓零写入点（`state.rs:148` 声明、`183` 建空 `Vec`，`reduce.rs` 一次 `push` 都没有）——产物区是从事件到状态整条链路都不存在，不是「数据没填」 |
+| `Command::AskClarification` | **已接线**（档二）：携带 `PlannedClarification`，与 `RequestEffect` 的 `call` 对称。Clarify 却没给 clarification → `Complete { Failed }` |
+| `reduce` 忽略 `ContextCompacted` | 今天无产生方，尚不构成投影缺口 |
+| `ArtifactEmitted` / `RunState::artifacts` | **已接线**（档二）：成功的 `fs.write` 发 `artifact.emitted`，`reduce` `push` 进 `artifacts`。渲染仍是档三 |
 | `AwaitReason::Human`、`SuspendReason::Paused`、`CompletionStatus::Partial`、`Checkpoint.snapshot_ref`、`RunState::children`、`RunFailed.at_seq` | 死变体/死字段，均有注释 |
 | `reduce.rs:91-93` | 空的 `if e.status == ToolResultStatus::Error {}`，只有注释没有语句 |
 
@@ -330,11 +326,11 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 |---|---|
 | `replay.rs` | **解不开**的快照仍报错而非降级。按「快照可丢弃」的同一逻辑它也该降级——现在损坏一个 blob 会让整条 run 无法恢复。修 BL-2 时只堵了信任漏洞 |
 | `runtime.rs` | `resume()` 仍能恢复**终态** run。被拒的 run 被 resume 会一路跑到 `run.completed`（effect 保持 denied 不会执行，红线守住了），但「Failed 的 run 能被复活」本身可疑 |
-| `runtime.rs:405-435` | **【UI 档二】**`answer_clarification` 不校验 `option_id` 属于本题选项。传了过期/拼错的 id，事件照写、run 照跑，而摘要里没有「选择：…」一行——人以为自己回答了，系统当作没选 |
+| `runtime.rs` | **【UI 档二，已修】**`answer_clarification` 校验 `option_id` 属于本题选项。拼错的 id 返回错误、不写事件、run 仍挂起 |
 | `runtime.rs` | **【UI 档二】**被人驳回 / 尚在等审批的 run 一个 checkpoint 都没有，`verify` 报 VACUOUS 并让 CLI 非 0 退出。网关自动 Deny 那条路径专门补了检查点，人工驳回这条没有——**审计价值最高的那类 run 恰恰是唯一验不了的** |
-| `reduce.rs:125-134` | **【UI 档二】**`RunSuspended{AwaitingApproval}` 取 `pending_approvals` 的 `.next_back()`（字典序最大），注释却说「取出当前唯一一条」。今天恰好只有一条；一旦支持并发 effect 就会指错。同处用 `.expect()`，顺序异常的 Log 会让**回放 panic** 而不是报错 |
+| `reduce.rs` + `resume()` | **【UI 档二，已修】**`RunSuspended{AwaitingApproval}` 不再 `.expect()`；台账空则 `awaiting` 为 None。`resume` 在 `pending_approvals` 非空时不写 `run.resumed` |
 | `pipeline.rs` | dry-run 的 `mode` 没有持久化，审批往返后必然降级成 Live。今天不爆是因为 `ExecutionMode::DryRun` 在生产代码里零构造点 |
-| `impact.rs` | **【UI 档二】**「估不出影响面」与「没有影响面」在 Log 里不可区分（`ImpactPrecision` 缺 `Unknown` 一档）。审批人看到 `targets: []` 时没有任何信号能区分「不知道」和「没有」——把未知当安全 |
+| `impact.rs` | **【UI 档二，已修】**无 preview 且 0 个 target 时发 `ImpactPrecision::Unknown`，不再是 `DeclaredOnly` + 空清单 |
 | `decide.rs` | 模型侧无预扣：token 数要等响应才知道，真预扣需要「预留→结算/释放」事件加失败对账加回放语义 |
 | 沙箱 | `spec.env` 只有 PATH 一个键受保护（`LD_PRELOAD`/`BASH_ENV` 原样透传）；`program_allowed` 放行任意路径下的同名程序；resolve 与 write 之间的并发 TOCTOU；工作区内的 bind mount |
 | 预算 | **【UI 档二】**提额没有任何界面；子 run 预算未实现；⑤的预扣半边在 daemon 里今天走不到（没有工具声明 `preview`） |
@@ -351,8 +347,8 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 | 项 | 状态 | 阻塞 |
 |---|---|---|
 | **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | **已落地**（档一） | `cargo run -p evo-daemon`；token 在 `{data_dir}/client.toml`。未接线的 RPC 方法返回 `not implemented`。`run.create mode=dry_run` 同样未实现 |
-| **UI 本体** | 未开始 | 桌面外壳只交付了 platform 层与 `daemonClient`，没有应用界面。**已提前到本位置**；前置是档一 + 档二那批接线，逐条见 §三 |
-| **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。它一落地，P0-1（澄清答案没进模型请求）就从潜伏变成真错 |
+| **UI 本体** | 未开始 | 桌面外壳只交付了 platform 层与 `daemonClient`，没有应用界面。档一与档二接线已齐，可以开始画 |
+| **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。P0-1 已在档二接通，真 adapter 落地时模型会看见澄清答案 |
 | **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |
 | A-11 口径库 | 未开始 | 财务的历史成品表未到位。机制与内容一起做，避免机制与真实条目形状对不上 |

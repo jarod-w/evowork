@@ -58,9 +58,10 @@ UI 看到的、报表算出的、审计导出的，是同一条 Log 的不同投
 
 今天的事实（写进规则是为了阻止把未接通写成已接通）：
 
-- `evo-daemon` 是纯 lib crate，全仓没有把它起成服务的 `main.rs`。
+- `evo-daemon` 有二进制入口：`cargo run -p evo-daemon` 起 HTTP `/v1/rpc` 与 WS `/v1/events`。
+- `packages/protocol` 由 `ts-rs` 生成，CI-5 比对生成物。不要手写。
 - `apps/ui` 的 `App.tsx` 是 platform 层与 `daemonClient` 的**探针页**，不是产品 UI 的早期版本。
-- P0 四条外加 P0-16 **不因 UI 优先而下沉**。条目编号按新增顺序追加，不随优先级重排。
+- P0-1 / P0-2 已在档二接通。P0-3（沙箱超时）与 P0-4（审批过期）不因 UI 优先而下沉。
 
 ## 收尾
 
@@ -68,7 +69,10 @@ UI 看到的、报表算出的、审计导出的，是同一条 Log 的不同投
 - `ALLOW_SKIP_FRONTEND=1` 只在 node/pnpm 缺失时有意义；工具齐备时它不是跳过开关。
 - 改了 `Cargo.toml` 必须一并提交 `Cargo.lock`。
 - 一个逻辑改动一次 commit。
-- commit message **英文**，沿用 `doc:` / `feat:` / `fix:`。`docs/` 保持中文。
+- **Commit messages must be English**, subject and body. Prefixes stay
+  `doc:` / `feat:` / `fix:`. Do not put Chinese in either line, including
+  route labels: write `tranche 1` / `tranche 2`, not `档一` / `档二`.
+  `docs/` file contents stay Chinese.
 - **绝不 `git add -A`。** CI-10 是最后一道，不是第一道。
 
 ## 不要做的事
@@ -77,4 +81,4 @@ UI 看到的、报表算出的、审计导出的，是同一条 Log 的不同投
 - 不要静默改 `eval/cases/synthetic-01/case.yaml` 的 `final_state_hash`。要改必须：只含本次改动的工作区上重新生成；逐条核对事件 kind 序列差异是有意的；按该文件现有注释格式写清变了什么、为什么变、哪些没变。
 - 不要在 `apps/ui/src/` 的 `platform/` 之外写 `@tauri-apps/`、`ipcRenderer`、`__TAURI`（CI-9；前缀匹配，不是只匹配 `__TAURI__`）。
 - 不要新增 CI 检查编号而不先看其他未合并分支。设计文档 00 §4 已用到 1–10。
-- 不要手写 `packages/protocol`——那个目录是 `ts-rs` 生成产物，且今天尚不存在（CI-5 未做）。
+- 不要手写 `packages/protocol`——那个目录是 `ts-rs` 生成产物，用 `./scripts/gen-protocol.sh` 再生成。CI-5 比对。

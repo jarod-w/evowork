@@ -23,15 +23,13 @@ workspace 根。不要把业务逻辑写进去。`capabilities/` 缺失时 Tauri
 ## 今天的界面是什么
 
 `App.tsx` 是 platform 层与 `daemonClient` 的验收页，不是产品 UI 的早期版本。
-浏览器里 daemon 恒为 `not connected` 是预期——daemon 还没有 HTTP 入口。
-跳过档一（daemon 二进制 + `/v1/rpc` + `/v1/events` + `packages/protocol`）
-和档二那批接线去做「好看的界面」，做出来的是第二个探针页。
+浏览器里 daemon 恒为 `not connected` 是预期——没起 daemon、或探针页没带
+token 时如此。跳过档二那批接线去做「好看的界面」，做出来的是第二个探针页。
 
 ## 碰 `subscribe()` 时
 
-`client.ts` 的 `ws.onclose` 直接重连，无退避、无重试上限（STATUS P0-16）。
-全仓今天没有任何调用方用到它。UI 一接 run 视图就活。改这个文件就一并加上
-指数退避 + 重试上限，不要只加 `TODO`。
+`client.ts` 的重连有指数退避 + 20 次上限（P0-16，档一）。改这个文件时
+不要撤掉退避。
 
 Agent Loop 不许写进 UI 进程（红线 1）。`crates/` / `apps/` 不得出现
 `用友` / `yonyou`。

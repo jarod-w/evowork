@@ -7,8 +7,8 @@ alwaysApply: false
 # evo-daemon
 
 唯一组装点，唯一写 Run Log 的进程。回放器在 `src/replay.rs`，因为它要
-`evo-kernel::fold`。今天本 crate 是纯 lib，全仓没有把它起成服务的 `main.rs`。
-HTTP `/v1/rpc` 与 WS `/v1/events` 尚未开始（STATUS §三档一）。
+`evo-kernel::fold`。HTTP `/v1/rpc` 与 WS `/v1/events` 由二进制入口拉起
+（档一）。`App.tsx` 仍是探针页，不是产品 UI。
 
 不要新增一条对 `evo-exec` / `evo-exec-local` / `evo-mcp` / `evo-runlog` 的
 兄弟 crate 依赖——CI-3 只允许 `evo-daemon` 依赖它们（唯一例外：
@@ -24,13 +24,8 @@ HTTP `/v1/rpc` 与 WS `/v1/events` 尚未开始（STATUS §三档一）。
 
 ## 已知 P0，改到附近时不要装作没看见
 
-- `runtime.rs` 构造的 `ModelRequest.content` 是空字符串。链路（答案 → blob
-  → 装配 → `context.assembled`）是通的，模型收到的始终是空。fixture 模型
-  不看输入，所以今天不暴露。不要加一条只断「blocks 非空」的测试然后宣称修好了。
-- `CostCharged` 全仓只有 `call_model` 一个产生点。Effect 不出账。
 - `ApprovalRequested.expires_at_ms` 有人写、全仓无人读。`approval.expired`
   零产生者。不要在 UI 文案里写「审批将于 … 过期」。
-- `answer_clarification` 不校验 `option_id` 属于本题选项。
 - `resume()` 仍能恢复终态 run。
 
 capability 两个构造点写死 `scopes: ["*"]`。不要在注释里写「能力校验已生效」。

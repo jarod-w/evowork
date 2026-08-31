@@ -15,8 +15,9 @@ alwaysApply: false
   末尾加一条兜底 deny 是一行能做的收口，建议随手做掉。
 - 工具 manifest：未列出的按最严处理（External + 不可逆 + 需审批）。
   不要为了少弹审批去放宽这个默认；要少弹就补 manifest。
-- `pricing.toml` 只给模型定价。Effect 不出账（STATUS P0-2）。不要在报表
-  文案里写「含工具成本」。
+- `pricing.toml` 可以给 `[[tool]]` 按次定价（`call_micros`）。生产表不定价
+  本地工具——没有真实单价就不编一个。未定价的工具跳过，不让 run 失败。
+  生产表没有 `[[tool]]` 时，报表不要写「含工具成本」。
 
 `PolicyContext.taint` / `.targets` 老实填了，但 `Rule` 只有 class / tool /
 reversible 三个条件字段，`matches` 完全不看这两个。今天写不出「对某目录
