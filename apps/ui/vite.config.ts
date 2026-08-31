@@ -14,10 +14,9 @@ export default defineConfig({
     },
   },
   test: {
-    // Everything under test today is the `platform` layer, which touches
-    // `window`/`document`/`Notification` -- jsdom is the lightest
-    // environment that gives us those. Do not add anything heavier
-    // (a real browser, Playwright, etc.) without a concrete reason.
+    // jsdom covers `window`/`document` for platform + workspace component tests.
+    // Do not add anything heavier (a real browser, Playwright, etc.) without
+    // a concrete reason.
     environment: 'jsdom',
   },
 })

@@ -1,9 +1,10 @@
 use evo_daemon::{AppState, DaemonConfig, FixedClock, Runtime};
 use evo_exec_local::{LocalExecutor, WorkspaceOnlySandbox};
 use evo_model::FixtureAdapter;
+use evo_protocol::EventBody;
 use evo_protocol::rpc::{
-    CaughtUpFrame, ClientStreamFrame, EventFrame, HelloFrame, RpcRequest, RpcResponse,
-    RunCreateResult, RunEventsResult, RunGetResult, RunListResult,
+    BlobGetResult, CaughtUpFrame, ClientStreamFrame, EventFrame, HelloFrame, RpcRequest,
+    RpcResponse, RunCreateResult, RunEventsResult, RunGetResult, RunListResult,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -140,6 +141,69 @@ async fn run_create_list_get_events_and_cost_query_roundtrip() {
     let cost = cost.result.unwrap();
     assert!(cost["entries"].as_u64().unwrap() >= 1);
     assert!(cost["amount_micros"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn blob_get_returns_the_intent_text_written_at_run_create() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let intent = "把账龄表做出来";
+    let created = rpc(&base, "run.create", serde_json::json!({ "intent": intent })).await;
+    let result: RunCreateResult = serde_json::from_value(created.result.unwrap()).unwrap();
+
+    let events = rpc(
+        &base,
+        "run.events",
+        serde_json::json!({ "run_id": result.run_id.as_str(), "from_seq": 0 }),
+    )
+    .await;
+    let bundle: RunEventsResult = serde_json::from_value(events.result.unwrap()).unwrap();
+    let intent_ref = bundle
+        .events
+        .iter()
+        .find_map(|e| match &e.body {
+            EventBody::IntentDeclared(d) => Some(d.intent_ref.clone()),
+            _ => None,
+        })
+        .expect("run.create 必须写出 intent.declared");
+
+    let got = rpc(
+        &base,
+        "blob.get",
+        serde_json::json!({ "content_hash": intent_ref.content_hash }),
+    )
+    .await;
+    let blob: BlobGetResult = serde_json::from_value(got.result.unwrap()).unwrap();
+    assert_eq!(blob.text, intent);
+    assert_eq!(blob.content_hash, intent_ref.content_hash);
+    assert_eq!(blob.size, intent.len() as u64);
+}
+
+#[tokio::test]
+async fn blob_get_missing_hash_is_not_found_not_internal() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let res = rpc(
+        &base,
+        "blob.get",
+        serde_json::json!({ "content_hash": format!("sha256:{}", "ab".repeat(32)) }),
+    )
+    .await;
+    let err = res.error.unwrap();
+    assert_eq!(err.code, -32004);
+    assert!(err.message.contains("blob not found"));
+}
+
+#[tokio::test]
+async fn blob_get_malformed_hash_is_invalid_params() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let res = rpc(
+        &base,
+        "blob.get",
+        serde_json::json!({ "content_hash": "not-a-hash" }),
+    )
+    .await;
+    let err = res.error.unwrap();
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("malformed blob ref"));
 }
 
 #[tokio::test]

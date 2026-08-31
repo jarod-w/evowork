@@ -396,4 +396,59 @@ describe('createDaemonClient()', () => {
       expect(scheduler.pending()).toBe(0)
     })
   })
+
+  describe('subscribeAll() (design doc 06 §2 -- Inbox / cost panel)', () => {
+    it('sends subscribe_all from_seq 0 on open', () => {
+      const webSocketCtor = freshFakeWebSocketCtor()
+      const client = createDaemonClient({
+        baseUrl: 'http://localhost:4000',
+        token: 'tok',
+        webSocketCtor,
+      })
+      client.subscribeAll(() => {})
+      FakeWebSocket.instances[0].simulateOpen()
+      expect(FakeWebSocket.instances[0].sent).toEqual([
+        JSON.stringify({ op: 'subscribe_all', from_seq: 0 }),
+      ])
+    })
+
+    it('reconnects from from_seq 0 even after seeing a high seq (one seq cannot resume N runs)', () => {
+      const webSocketCtor = freshFakeWebSocketCtor()
+      const scheduler = queuedScheduler()
+      const client = createDaemonClient({
+        baseUrl: 'http://localhost:4000',
+        token: 'tok',
+        webSocketCtor,
+        schedule: scheduler.schedule,
+        cancelSchedule: scheduler.cancelSchedule,
+      })
+      client.subscribeAll(() => {})
+
+      const first = FakeWebSocket.instances[0]
+      first.simulateOpen()
+      first.simulateMessage(eventFrame('r-1', 40, 'run.created'))
+      first.simulateDrop()
+      scheduler.fireNext()
+
+      const second = FakeWebSocket.instances[1]
+      second.simulateOpen()
+      expect(second.sent).toEqual([JSON.stringify({ op: 'subscribe_all', from_seq: 0 })])
+    })
+
+    it('unsubscribe() does not reconnect', () => {
+      const webSocketCtor = freshFakeWebSocketCtor()
+      const scheduler = queuedScheduler()
+      const client = createDaemonClient({
+        baseUrl: 'http://localhost:4000',
+        token: 'tok',
+        webSocketCtor,
+        schedule: scheduler.schedule,
+        cancelSchedule: scheduler.cancelSchedule,
+      })
+      const subscription = client.subscribeAll(() => {})
+      FakeWebSocket.instances[0].simulateOpen()
+      subscription.unsubscribe()
+      expect(scheduler.pending()).toBe(0)
+    })
+  })
 })

@@ -319,6 +319,23 @@ pub struct PolicyGetResult {
     pub policy_toml: String,
 }
 
+/// 按 content hash 取回 blob 正文。事件 payload 里只有 [`crate::BlobRef`]，
+/// 澄清选项文案、意图原文、产物内容都在 blob store 里——UI 是 Log 的投影，
+/// 要渲染这些就得有一条只读的取回通道，不能把正文再拷进事件（红线①）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct BlobGetParams {
+    pub content_hash: String,
+}
+
+/// UTF-8 文本。当前所有产生方（intent / 澄清 prompt JSON / `fs.write`）
+/// 都是文本；非 UTF-8 由 daemon 以错误返回，不在这里发明一种二进制包装。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct BlobGetResult {
+    pub content_hash: String,
+    pub size: u64,
+    pub text: String,
+}
+
 /// 06 §3 列出的全部方法。实现方按这个清单接线；未接线的返回
 /// [`RPC_METHOD_NOT_FOUND`]。
 pub const RPC_METHODS: &[&str] = &[
@@ -334,6 +351,7 @@ pub const RPC_METHODS: &[&str] = &[
     "clarification.answer",
     "artifact.list",
     "artifact.download",
+    "blob.get",
     "cost.query",
     "trigger.create",
     "trigger.list",

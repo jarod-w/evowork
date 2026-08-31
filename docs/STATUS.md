@@ -1,7 +1,7 @@
 # 项目状态
 
-> 截至 2026-08-31。档二（Inbox / 审批卡 / 产物区 / 成本的接线，以及多条
-> 待审批并列）已落地；UI 本体仍未开始。本次 `./scripts/ci.sh` 全段绿。
+> 截至 2026-08-31。档三（UI 本体：Inbox / 时间线 / 审批卡 / 产物区 / 成本）
+> 已落地。本次 `./scripts/ci.sh` 全段绿。
 >
 > 这份文档记录**当前真实状态**与**未做事项**。它的编写前提是：
 > 「结构写好了」不等于「接通了」，「测试绿了」不等于「检查有效」。
@@ -70,7 +70,7 @@
 | `apps/ui/src-tauri` | **从未编译过**：该目录下没有 `target/`。那约 200 行 Rust 至今没有被任何编译器看过一次 |
 | `src-tauri/Cargo.lock` | 已是跨平台解析（`objc2`/`wry`/`gtk` 同时在内，`tauri` 钉 2.11.5）——首次在 Mac 上构建若改动它，要一并提交 |
 | 签名身份 | `security find-identity -v -p codesigning` → **0 valid identities**。Apple Developer Program 组织账号仍未申请 |
-| 浏览器入口 | `dist/` 起静态服务、Chrome headless 截图确认可打开，页面即 §三「今天的界面是什么」描述的探针页 |
+| 浏览器入口 | `dist/` 起静态服务、Chrome headless 截图确认可打开。当时页面是探针页；档三之后主界面是 Inbox / 时间线 / 审批 / 产物 / 成本 |
 
 两条直接后果：
 
@@ -96,43 +96,38 @@
 
 ### 今天的界面是什么
 
-`apps/ui` 唯一的页面是 `src/App.tsx`（约 90 行；无 CSS 框架、无路由、无状态库，
-`index.css` 只有 6 行）。它渲染两段：`platform.kind` 与 5 个能力的支持与否；daemon 连接状态。
-浏览器里的实测结果是 `kind: browser`、`setAutoLaunch`/`quit` 显示 not supported。
-daemon 连接取决于本机是否起了 `evo-daemon` 以及探针页有没有带上 token
-（`VITE_DAEMON_TOKEN`，来自 `~/.evowork/client.toml`）。没起 daemon 时仍是
-`not connected` + `(Failed to fetch)`——这还是预期。起了之后 `hello()` 会变成
-`connected`，调用点本身从外壳阶段就没改过（设计文档 06 §6）。
-
-**它不是「UI 的早期版本」，是 platform 层与 `daemonClient` 的验收页。** 存在的目的是证明
-这两个调用点写对了，接上真 daemon 时不必改 UI。所以它长成这样不是「还没来得及做好看」。
+`apps/ui` 的主页面是 `src/App.tsx`：左侧 Inbox（澄清卡 + **全部**未决审批卡）与
+任务列表，右侧选中 run 的时间线 / 审批 / 产物 / 成本。底部 status bar 仍是
+platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态是 `applyEvent`
+的折叠结果，不轮询。没起 daemon 或没带 token 时 Inbox 为空、status bar 为
+`not connected`——这还是预期。
 
 ### 档一：硬前置（已落地）
 
 **协议层**（§四 P6 第 1 项）四件事都已接通：
 
 1. **`evo-daemon` 二进制**：`cargo run -p evo-daemon` 起常驻进程（默认 `127.0.0.1:4477`）。首次启动把共享 token 写进 `{data_dir}/client.toml`（默认 `~/.evowork/client.toml`）。
-2. **HTTP `POST /v1/rpc`**：实现 `run.create` / `run.get` / `run.list` / `run.events` / `run.resume` / `approval.decide` / `clarification.answer` / `cost.query` / `tool.list` / `tool.manifest` / `policy.get`。06 §3 其余方法返回 `not implemented`（`-32601`）。`GET /v1/hello` 做版本协商。认证是 `Authorization: Bearer`。
+2. **HTTP `POST /v1/rpc`**：实现 `run.create` / `run.get` / `run.list` / `run.events` / `run.resume` / `approval.decide` / `clarification.answer` / `blob.get` / `cost.query` / `tool.list` / `tool.manifest` / `policy.get`。06 §3 其余方法返回 `not implemented`（`-32601`）。`GET /v1/hello` 做版本协商。认证是 `Authorization: Bearer`。
 3. **WS `/v1/events?token=`**：`subscribe` / `subscribe_all`，`from_seq` 续订，积压回放后 `caught_up`，随后实时推送。事件体就是 Log 里的 `Event`，不另做 DTO。
 4. **`packages/protocol`**：`ts-rs` 从 `evo-protocol` 生成，CI-5（`scripts/check-protocol-sync.sh`）比对生成物与已提交内容。手写的 `apps/ui/src/daemon/types.ts` 已删除，`daemonClient` 改从 `@evowork/protocol` 取类型。
 
 同期修了 **P0-16**（`subscribe()` 重连风暴）：指数退避（200ms 起，封顶 10s）+ 20 次上限。
 
-探针页接上跑着的 daemon 之后，`hello()` 不再是必然的 `(Failed to fetch)`——要的是 `~/.evowork/client.toml` 里的 token（或 `VITE_DAEMON_TOKEN`）。没起 daemon 时仍显示 not connected，这还是预期。
+探针接上跑着的 daemon 之后，`hello()` 不再是必然的 `(Failed to fetch)`——要的是 `~/.evowork/client.toml` 里的 token（或 `VITE_DAEMON_TOKEN`）。没起 daemon 时 status bar 仍显示 not connected，这还是预期。
 
 ### 档二：界面每一块各自的接线（已落地）
 
-下面四条接线外加「多条待审批并列」已接通。**UI 还没画**——档三才画。
-接通的意思是：产生方、reduce/读者、以及一条在未修代码上会红的行为测试
-都在。不要把这张表读成「界面做完了」。
+下面四条接线外加「多条待审批并列」已接通，档三把它们画成了界面。
+接通的意思仍是：产生方、reduce/读者、以及一条在未修代码上会红的行为测试
+都在。表格里「仍缺的」只剩收尾两项。
 
 | 界面区块 | 接线 | 仍缺的（档三 / 收尾） |
 |---|---|---|
-| 决策 Inbox / 澄清卡 | `AskClarification` 携带 `PlannedClarification`；模型请求 messages 与装配器同源（P0-1）；`option_id` 不在选项里则拒写事件 | 卡片 UI |
-| 审批卡 | `ImpactPrecision::Unknown`：无 preview 且 0 个 target 时不再发 `DeclaredOnly` + 空清单 | 卡片 UI；不要把 Unknown 画成「无影响」 |
-| 多条待审批并列 | `reduce` 不再 `.expect()`；`resume` 在台账非空时不写 `run.resumed` | 列出全部未决的 UI（档三） |
-| 产物区（预览 / diff） | 成功的 `fs.write` 发 `artifact.emitted`；`reduce` 折进 `RunState::artifacts` | 预览 / diff UI |
-| 成本视图 | 已执行的工具可按 `[[tool]]` 出账；执行器 `cost_micros` 优先于表。生产表仍不定价本地工具 | 成本 UI |
+| 决策 Inbox / 澄清卡 | `AskClarification` 携带 `PlannedClarification`；模型请求 messages 与装配器同源（P0-1）；`option_id` 不在选项里则拒写事件 | **卡片 UI 已做**。选项文案经 `blob.get` 取 `prompt_ref` |
+| 审批卡 | `ImpactPrecision::Unknown`：无 preview 且 0 个 target 时不再发 `DeclaredOnly` + 空清单 | **卡片 UI 已做**。Unknown 画成「影响未知」，不画成「无影响」，也不发明沙箱/白名单句 |
+| 多条待审批并列 | `reduce` 不再 `.expect()`；`resume` 在台账非空时不写 `run.resumed` | **列出全部未决**：Inbox 与 run 面板都按 `pending_approvals` 全量渲染，不看 `awaiting` 那一个 |
+| 产物区（预览 / diff） | 成功的 `fs.write` 发 `artifact.emitted`；`reduce` 折进 `RunState::artifacts` | **预览 / diff UI 已做**。正文经 `blob.get`；有 `supersedes` 时做行 diff |
+| 成本视图 | 已执行的工具可按 `[[tool]]` 出账；执行器 `cost_micros` 优先于表。生产表仍不定价本地工具 | **成本 UI 已做**。折叠 `cost.charged`，不轮询 `cost.query` |
 | 预算提额 | 未做（收尾） | 预算闸门已经接通，缺的**就是**界面 |
 | 回放 / 审计视图 | 未做（收尾） | 被驳回 / 等审批的 run 仍可能没有 checkpoint |
 
@@ -154,8 +149,7 @@ daemon 连接取决于本机是否起了 `evo-daemon` 以及探针页有没有�
 
 1. **档一（已落地）**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）+ P0-16 重连退避
 2. **档二（已落地）**：Inbox / 审批卡 / 产物区 / 成本四条接线 + 多条待审批并列。
-   UI 本体仍未开始——跳过接线做出来的会是第二个探针页
-3. **UI 本体**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
+3. **UI 本体（已落地）**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
 4. 收尾：预算提额入口、人工驳回路径的 checkpoint、P0-4 带来的「已过期」状态
 
 一条独立于以上四步、随时可插的：**在 macOS 上第一次编译 `src-tauri`**（见 §二）。
@@ -347,7 +341,7 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 | 项 | 状态 | 阻塞 |
 |---|---|---|
 | **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | **已落地**（档一） | `cargo run -p evo-daemon`；token 在 `{data_dir}/client.toml`。未接线的 RPC 方法返回 `not implemented`。`run.create mode=dry_run` 同样未实现 |
-| **UI 本体** | 未开始 | 桌面外壳只交付了 platform 层与 `daemonClient`，没有应用界面。档一与档二接线已齐，可以开始画 |
+| **UI 本体** | **已落地**（档三） | Inbox / 时间线 / 审批卡 / 产物区 / 成本。事件流投影，不轮询。`blob.get` 取澄清文案与产物正文。收尾项（预算提额、过期状态、回放视图）见 §三 |
 | **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。P0-1 已在档二接通，真 adapter 落地时模型会看见澄清答案 |
 | **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |

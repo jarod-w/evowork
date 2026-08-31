@@ -18,14 +18,15 @@ use evo_kernel::{AwaitReason, RunStatus};
 use evo_protocol::events::accounting::CostCharged;
 use evo_protocol::events::effect::ExecutionMode;
 use evo_protocol::rpc::{
-    ApprovalDecideParams, CaughtUpFrame, ClarificationAnswerParams, ClientStreamFrame,
-    CostQueryParams, CostQueryResult, EventFrame, HelloFrame, PolicyGetResult, RPC_INTERNAL,
-    RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND, RPC_METHODS, RPC_NOT_FOUND, RpcRequest, RpcResponse,
-    RunCreateParams, RunCreateResult, RunEventsParams, RunEventsResult, RunGetResult, RunIdParams,
-    RunListResult, ToolListItem, ToolListResult, ToolManifestParams, ToolManifestResult,
+    ApprovalDecideParams, BlobGetParams, BlobGetResult, CaughtUpFrame, ClarificationAnswerParams,
+    ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame, HelloFrame, PolicyGetResult,
+    RPC_INTERNAL, RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND, RPC_METHODS, RPC_NOT_FOUND, RpcRequest,
+    RpcResponse, RunCreateParams, RunCreateResult, RunEventsParams, RunEventsResult, RunGetResult,
+    RunIdParams, RunListResult, ToolListItem, ToolListResult, ToolManifestParams,
+    ToolManifestResult,
 };
-use evo_protocol::{Actor, Currency, Event, EventBody, RunId};
-use evo_runlog::RunLog;
+use evo_protocol::{Actor, BlobRef, Currency, Event, EventBody, RunId};
+use evo_runlog::{RunLog, RunLogError};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -299,6 +300,7 @@ async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "approval.decide" => approval_decide(state, params).await,
         "clarification.answer" => clarification_answer(state, params).await,
         "cost.query" => cost_query(state, params),
+        "blob.get" => blob_get(state, params),
         "tool.list" => tool_list(state, params),
         "tool.manifest" => tool_manifest(state, params),
         "policy.get" => policy_get(state, params),
@@ -497,6 +499,43 @@ async fn clarification_answer(
         )
         .await?;
     Ok(outcome_result(p.run_id, outcome))
+}
+
+fn blob_get(state: &AppState, raw: serde_json::Value) -> Result<serde_json::Value, RpcFail> {
+    let p: BlobGetParams = params(raw)?;
+    let log = state.open_log()?;
+    // mime/size 在事件里的 BlobRef 上，不在文件系统路径里。这里只按 hash 取回字节。
+    let refer = BlobRef {
+        content_hash: p.content_hash.clone(),
+        size: 0,
+        mime: String::new(),
+    };
+    let bytes = match log.blobs().get(&refer) {
+        Ok(bytes) => bytes,
+        Err(RunLogError::BlobNotFound(hash)) => {
+            return Err(RpcFail {
+                code: RPC_NOT_FOUND,
+                message: format!("blob not found: {hash}"),
+            });
+        }
+        Err(RunLogError::BadBlobRef(hash)) => {
+            return Err(RpcFail {
+                code: RPC_INVALID_PARAMS,
+                message: format!("malformed blob ref: {hash}"),
+            });
+        }
+        Err(other) => return Err(DaemonError::from(other).into()),
+    };
+    let text = String::from_utf8(bytes).map_err(|_| RpcFail {
+        code: RPC_INTERNAL,
+        message: format!("blob {} is not utf-8", p.content_hash),
+    })?;
+    Ok(serde_json::to_value(BlobGetResult {
+        content_hash: p.content_hash,
+        size: text.len() as u64,
+        text,
+    })
+    .expect("BlobGetResult 必须可序列化"))
 }
 
 fn cost_query(state: &AppState, raw: serde_json::Value) -> Result<serde_json::Value, RpcFail> {

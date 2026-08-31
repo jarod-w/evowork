@@ -9,11 +9,12 @@ use std::path::Path;
 use ts_rs::TS;
 
 use crate::rpc::{
-    ApprovalDecideParams, CaughtUpFrame, ClarificationAnswerParams, ClientStreamFrame,
-    CostQueryParams, CostQueryResult, EventFrame, HelloFrame, PolicyGetResult, RpcErrorBody,
-    RpcRequest, RpcResponse, RunCreateParams, RunCreateResult, RunEventsParams, RunEventsResult,
-    RunGetResult, RunIdParams, RunListResult, ServerStreamFrame, SubscribeAllFrame, SubscribeFrame,
-    ToolListItem, ToolListResult, ToolManifestParams, ToolManifestResult,
+    ApprovalDecideParams, BlobGetParams, BlobGetResult, CaughtUpFrame, ClarificationAnswerParams,
+    ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame, HelloFrame, PolicyGetResult,
+    RpcErrorBody, RpcRequest, RpcResponse, RunCreateParams, RunCreateResult, RunEventsParams,
+    RunEventsResult, RunGetResult, RunIdParams, RunListResult, ServerStreamFrame,
+    SubscribeAllFrame, SubscribeFrame, ToolListItem, ToolListResult, ToolManifestParams,
+    ToolManifestResult,
 };
 use crate::{Event, EventBody};
 
@@ -56,6 +57,8 @@ pub fn export_typescript(out_dir: &Path) -> io::Result<()> {
     export_one::<ToolManifestParams>(out_dir)?;
     export_one::<ToolManifestResult>(out_dir)?;
     export_one::<PolicyGetResult>(out_dir)?;
+    export_one::<BlobGetParams>(out_dir)?;
+    export_one::<BlobGetResult>(out_dir)?;
 
     rewrite_bigint_as_json_number(out_dir)?;
     write_index(out_dir)

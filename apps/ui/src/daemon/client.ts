@@ -15,6 +15,7 @@ import type {
   RpcRequest,
   RpcResponse,
   ServerStreamFrame,
+  SubscribeAllFrame,
   SubscribeFrame,
 } from '@evowork/protocol'
 
@@ -121,6 +122,18 @@ export interface DaemonClient {
     fromSeq: number,
     onEvent: (frame: ServerStreamFrame) => void,
   ): DaemonSubscription
+  /**
+   * Subscribes to every run's event stream (design doc 06 §2). Inbox and
+   * the cost panel are projections of this global log, not of a second
+   * store. Reconnects with the same backoff as `subscribe()`.
+   *
+   * Resume is always `from_seq: 0`. The subscribe_all frame only carries
+   * one seq, which the daemon applies independently to each run — sending
+   * the last seq observed on run A would skip every earlier seq on run B.
+   * The UI fold is idempotent per `(run_id, seq)`, so replaying from 0
+   * after a drop does not double-count.
+   */
+  subscribeAll(onEvent: (frame: ServerStreamFrame) => void): DaemonSubscription
   getStatus(): DaemonClientStatus
 }
 
@@ -155,6 +168,7 @@ const READ_ONLY_SAFE_METHODS: ReadonlySet<string> = new Set([
   'run.events',
   'artifact.list',
   'artifact.download',
+  'blob.get',
   'cost.query',
   'tool.list',
   'tool.manifest',
@@ -373,9 +387,70 @@ export function createDaemonClient(config: DaemonClientConfig): DaemonClient {
     }
   }
 
+  function subscribeAll(onEvent: (frame: ServerStreamFrame) => void): DaemonSubscription {
+    // See the method doc on `DaemonClient.subscribeAll`: a single
+    // from_seq cannot resume N runs, so every connect (including
+    // reconnect) asks for the full backlog.
+    let stopped = false
+    let socket: DaemonWebSocketLike | null = null
+    let reconnectAttempt = 0
+    let reconnectHandle: unknown = null
+
+    function connect(): void {
+      const wsUrl =
+        `${toWebSocketOrigin(config.baseUrl)}/v1/events` +
+        `?token=${encodeURIComponent(config.token)}`
+      const ws = new webSocketCtor(wsUrl)
+      socket = ws
+
+      ws.onopen = () => {
+        reconnectAttempt = 0
+        const frame: SubscribeAllFrame = {
+          op: 'subscribe_all',
+          from_seq: 0,
+        }
+        ws.send(JSON.stringify(frame))
+      }
+
+      ws.onmessage = (event) => {
+        const parsed: unknown = JSON.parse(event.data)
+        if (!isServerStreamFrame(parsed)) return
+        onEvent(parsed)
+      }
+
+      ws.onclose = () => {
+        if (stopped) return
+        if (reconnectAttempt >= SUBSCRIBE_MAX_RETRIES) return
+        const delay = Math.min(
+          SUBSCRIBE_INITIAL_BACKOFF_MS * 2 ** reconnectAttempt,
+          SUBSCRIBE_MAX_BACKOFF_MS,
+        )
+        reconnectAttempt += 1
+        reconnectHandle = schedule(() => {
+          reconnectHandle = null
+          if (stopped) return
+          connect()
+        }, delay)
+      }
+    }
+
+    connect()
+
+    return {
+      unsubscribe(): void {
+        stopped = true
+        if (reconnectHandle !== null) {
+          cancelSchedule(reconnectHandle)
+          reconnectHandle = null
+        }
+        socket?.close()
+      },
+    }
+  }
+
   function getStatus(): DaemonClientStatus {
     return { ...status }
   }
 
-  return { hello, rpc, subscribe, getStatus }
+  return { hello, rpc, subscribe, subscribeAll, getStatus }
 }

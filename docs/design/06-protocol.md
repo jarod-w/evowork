@@ -55,6 +55,7 @@ POST /v1/rpc     { "id": 1, "method": "run.create", "params": {...} }
 | `approval.decide` | 批准 / 驳回 | A-5 |
 | `clarification.answer` | 回答澄清追问 | A-12 |
 | `artifact.list` / `artifact.download` | 产物必须可导出 | A-3 |
+| `blob.get` | 按 content hash 取回 blob 正文（澄清选项文案、意图原文、产物预览）。事件 payload 里只有 `BlobRef`，UI 要渲染这些就得有一条只读取回通道 | A-3 / A-12 |
 | `cost.query` | 按维度聚合 | A-7 |
 | `trigger.create` / `list` / `delete` / `dryrun` | 定时与 webhook | A-8 |
 | `tool.list` / `tool.manifest` | 工具与其治理声明 | A-4 |
