@@ -606,6 +606,7 @@ async fn granting_the_lexically_last_of_two_pending_approvals_does_not_resume() 
         &config_probe.blob_root,
         &run_id,
         "2026-08-31T00:00:00Z",
+        9_000_000_000_000,
     )
     .unwrap();
 
@@ -631,4 +632,83 @@ async fn granting_the_lexically_last_of_two_pending_approvals_does_not_resume() 
         !kinds.contains(&"run.resumed"),
         "剩下一条未决时不许写 run.resumed：{kinds:?}"
     );
+}
+
+/// 夹具里的 `expires_at_ms` 早于 `FixedClock` 起点。未修时
+/// `decide_approval` 照写 `approval.granted`，`resume` 照派发。
+const ALREADY_EXPIRED_AT_MS: u64 = 1_000_000;
+
+#[tokio::test]
+async fn granting_an_expired_approval_does_not_dispatch_the_effect() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::from("r-1");
+    let config_probe = DaemonConfig::for_test(dir.path());
+    let (_first, last) = evo_daemon::write_run_suspended_with_two_pending_approvals(
+        &config_probe.db_path,
+        &config_probe.blob_root,
+        &run_id,
+        "2026-08-31T00:00:00Z",
+        ALREADY_EXPIRED_AT_MS,
+    )
+    .unwrap();
+
+    let mut rt = setup_with_policy(dir.path(), REQUIRE_APPROVAL_FOR_WRITES_POLICY, FIXTURES);
+    let _outcome = rt
+        .decide_approval(&run_id, &last, true, Actor::Human("u-1".into()), None)
+        .await
+        .expect("过期审批的 decide 不该是 Err，过期本身就是决定");
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(
+        kinds.contains(&"approval.expired"),
+        "截止已过必须落 approval.expired：{kinds:?}"
+    );
+    assert!(
+        !kinds.contains(&"approval.granted"),
+        "过期之后不许再写 granted：{kinds:?}"
+    );
+    assert!(
+        !kinds.contains(&"effect.dispatched"),
+        "过期的 L3 不许被派发：{kinds:?}"
+    );
+}
+
+#[tokio::test]
+async fn resume_expires_overdue_approvals_instead_of_leaving_them_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::from("r-1");
+    let config_probe = DaemonConfig::for_test(dir.path());
+    evo_daemon::write_run_suspended_with_two_pending_approvals(
+        &config_probe.db_path,
+        &config_probe.blob_root,
+        &run_id,
+        "2026-08-31T00:00:00Z",
+        ALREADY_EXPIRED_AT_MS,
+    )
+    .unwrap();
+
+    let mut rt = setup_with_policy(dir.path(), REQUIRE_APPROVAL_FOR_WRITES_POLICY, FIXTURES);
+    let _outcome = rt
+        .resume(&run_id)
+        .await
+        .expect("过期后的 resume 不该是 Err");
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(
+        kinds.contains(&"approval.expired"),
+        "裸 resume 也必须扫过期：{kinds:?}"
+    );
+    assert!(
+        !kinds.contains(&"effect.dispatched"),
+        "过期的 effect 不许被派发：{kinds:?}"
+    );
+    let expired: Vec<_> = log
+        .events(&run_id, 0, None)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.body.kind() == "approval.expired")
+        .collect();
+    assert_eq!(expired.len(), 2, "两条都过期，都该落事件：{kinds:?}");
 }

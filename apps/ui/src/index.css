@@ -200,6 +200,14 @@ main {
   border-left: 4px solid var(--ok);
 }
 
+.approval-card.expired {
+  opacity: 0.72;
+}
+
+.pill.expired-pill {
+  background: var(--danger);
+}
+
 .card header {
   display: flex;
   gap: 0.5rem;

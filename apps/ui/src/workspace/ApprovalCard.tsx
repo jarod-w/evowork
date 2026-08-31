@@ -1,5 +1,5 @@
 import type { PendingApproval } from '../projection/fold'
-import { describeImpact, riskLabel } from '../projection/format'
+import { describeImpact, isApprovalExpired, riskLabel } from '../projection/format'
 
 interface ApprovalCardProps {
   approval: PendingApproval
@@ -10,12 +10,22 @@ interface ApprovalCardProps {
 
 export function ApprovalCard({ approval, readOnly, busy, onDecide }: ApprovalCardProps) {
   const impact = describeImpact(approval.impact)
-  const disabled = readOnly || busy
+  const expired = isApprovalExpired(approval.expiresAtMs)
+  const disabled = readOnly || busy || expired
 
   return (
-    <article className={`card approval-card risk-${approval.risk}`} data-testid="approval-card">
+    <article
+      className={`card approval-card risk-${approval.risk}${expired ? ' expired' : ''}`}
+      data-testid="approval-card"
+      data-expired={expired ? 'true' : 'false'}
+    >
       <header>
         <span className="pill">{riskLabel(approval.risk)}</span>
+        {expired ? (
+          <span className="pill expired-pill" data-testid="approval-expired">
+            已过期
+          </span>
+        ) : null}
         <strong>{approval.tool ?? approval.effectId}</strong>
         <span className="muted">#{approval.approvalId}</span>
       </header>

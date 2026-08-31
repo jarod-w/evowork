@@ -14,7 +14,7 @@ use evo_protocol::events::accounting::{
     BudgetAmended, Checkpoint, CheckpointReason, CostCharged, CostDimension, CostUnit,
 };
 use evo_protocol::events::approval::{
-    ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia,
+    ApprovalDenied, ApprovalExpired, ApprovalGranted, ApprovalRequested, ApprovalVia,
 };
 use evo_protocol::events::artifact::ArtifactEmitted;
 use evo_protocol::events::clarification::{
@@ -399,6 +399,11 @@ impl Runtime {
         // 未决台账是真源，不是 `awaiting` 里那一个代表 id。多条审批并列时
         // `awaiting` 只指向其中一条；只拦那一条会让「批了代表、另一条还
         // 没人看」也写出一条骗人的 `run.resumed`。
+        //
+        // 过期的审批先销掉再判断：`approval.expired` 是台账的合法终结，
+        // 与 granted/denied 一样会把 pending 清空。不先扫过期的话，一条
+        // 早该作废的 L3 会把 resume 永远挡在 Suspended 上。
+        let state = self.expire_overdue_approvals(state)?;
         if !state.pending_approvals.is_empty() {
             let reason = state.awaiting.clone().unwrap_or_else(|| {
                 let (approval_id, effect_id) = state
@@ -471,6 +476,13 @@ impl Runtime {
             return Err(DaemonError::UnknownApproval(
                 approval_id.as_str().to_owned(),
             ));
+        }
+        let state = self.expire_overdue_approvals(state)?;
+        // 刚被 expire_overdue 销掉：人点了批准/驳回，但截止时刻已过。
+        // 不写 granted/denied——过期本身就是全部信息。随后 resume 把
+        // Denied 的 effect 收尾，不会派发。
+        if !state.pending_approvals.contains_key(approval_id) {
+            return self.resume(run_id).await;
         }
         let note_ref = note
             .map(|n| {
@@ -800,6 +812,49 @@ impl Runtime {
             }
         }
         Ok(None)
+    }
+
+    fn find_approval_requested(
+        &self,
+        run_id: &RunId,
+        approval_id: &ApprovalId,
+    ) -> Result<Option<ApprovalRequested>, DaemonError> {
+        for event in self.log.events(run_id, 0, None)? {
+            if let EventBody::ApprovalRequested(req) = event.body
+                && &req.approval_id == approval_id
+            {
+                return Ok(Some(req));
+            }
+        }
+        Ok(None)
+    }
+
+    /// 把 `expires_at_ms` 已过的未决审批写成 `approval.expired`。
+    ///
+    /// 截止时刻来自 Log 里的 `approval.requested`（它的起点是
+    /// `env.sampled`），比对用 daemon 的 [`Clock`]——人点链接是墙钟事件，
+    /// 内核仍然只吃已经落盘的 `approval.expired`，回放不读墙钟。
+    fn expire_overdue_approvals(&mut self, mut state: RunState) -> Result<RunState, DaemonError> {
+        let now = self.clock.now_ms();
+        let overdue: Vec<ApprovalId> = {
+            let mut ids = Vec::new();
+            for approval_id in state.pending_approvals.keys() {
+                if let Some(req) = self.find_approval_requested(&state.run_id, approval_id)?
+                    && now >= req.expires_at_ms
+                {
+                    ids.push(approval_id.clone());
+                }
+            }
+            ids
+        };
+        for approval_id in overdue {
+            state = self.emit(
+                &state,
+                Actor::Runtime,
+                EventBody::ApprovalExpired(ApprovalExpired { approval_id }),
+            )?;
+        }
+        Ok(state)
     }
 
     /// 模型请求的 messages：与装配器同一批来源、同一顺序。

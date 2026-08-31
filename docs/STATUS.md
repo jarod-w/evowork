@@ -141,16 +141,14 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 建议随手做掉：**P1-7**（`admit_with_preview` 改成关联函数，**一行**）与
 **P1-8**（`config/policy.toml` 末尾加一条兜底 deny，**一条规则**）。
 
-**两条 P0 不因 UI 优先而下沉**：P0-3（沙箱无超时、stdout 无上限）与 P0-4（审批永不过期）
-与 UI 无关，但演示前必须修；且 **P0-4 修完之后界面上会多一个「已过期」状态要渲染——
-先修它，UI 就不必为此返工**。
+**两条 P0 此前不因 UI 优先而下沉，现已修**：P0-3（沙箱超时与 stdout 上限）与 P0-4（审批过期）。P0-4 修完后界面上的「已过期」状态一并落地，不必为此返工。
 
 ### 顺序
 
 1. **档一（已落地）**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）+ P0-16 重连退避
 2. **档二（已落地）**：Inbox / 审批卡 / 产物区 / 成本四条接线 + 多条待审批并列。
 3. **UI 本体（已落地）**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
-4. 收尾：预算提额入口、人工驳回路径的 checkpoint、P0-4 带来的「已过期」状态
+4. 收尾：预算提额入口、人工驳回路径的 checkpoint
 
 一条独立于以上四步、随时可插的：**在 macOS 上第一次编译 `src-tauri`**（见 §二）。
 它不依赖任何一步，却能消掉「那 200 行 Rust 从没被编译器看过」这个最大的单点未知。
@@ -188,16 +186,17 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 生产 `config/pricing.toml` **没有**给本地工具编单价——测试用测试表给
 `fs.write` 定价，断言 `budget_used` 含那一笔。
 
-#### 3. 沙箱无超时、stdout 无上限
+#### 3. 沙箱无超时、stdout 无上限（**已修**）
 
-- `crates/evo-exec-local/src/sandbox.rs:137` 的 `cmd.output().await` 无界。`Lease.expires_at_ms` 有人写、**零读者**。一条 `sh -c 'sleep infinity'` 就是 daemon 永久挂死。
-- stdout 无上限，且随后 `executor.rs:131-135` 做 `from_utf8_lossy` + `json!` + `to_vec`，同一份数据在内存里三份，最后整个进 blob store。实测捕获过 100MB。一条命令就能撑爆 daemon 和 Run Log。
+此前 `sandbox.rs` 的 `cmd.output().await` 无界。`Lease.expires_at_ms` 有人写、**零读者**。一条 `sh -c 'sleep infinity'` 就是 daemon 永久挂死。stdout 无上限，随后 `from_utf8_lossy` + `json!` + `to_vec` 同一份数据在内存里三份，实测捕获过 100MB。
 
-#### 4. 审批永不过期
+**现况**：执行面用 `expires_at_ms - issued_at_ms` 得到剩余窗口（不读墙钟），封顶 60s；剩余 0 不 spawn。stdout/stderr 各自 1MiB 上限，触顶杀进程组（含 `sh -c` 的孙子）。行为测试断的是 `sleep` 在租约窗口内被杀掉、已过期租约不 spawn、2MiB 输出带 `truncated: true` 且不超过上限。
 
-`ApprovalRequested.expires_at_ms` 被写入（`runtime.rs:1020`），**全仓无人读取**。`approval.expired` 零产生者，`reduce` 里对应的处理分支是死代码。
+#### 4. 审批永不过期（**已修**）
 
-**后果**：一条 L3 审批 30 天后被人点开链接批准，`decide_approval` 照收，`resume` 照派发——一条早该过期的对外发送被执行。
+此前 `ApprovalRequested.expires_at_ms` 被写入，**全仓无人读取**。`approval.expired` 零产生者，`reduce` 里对应的处理分支是死代码。一条 L3 审批 30 天后被人点开链接批准，`decide_approval` 照收，`resume` 照派发。
+
+**现况**：`resume` 与 `decide_approval` 在动作前对照 daemon `Clock` 扫过期，过期落 `approval.expired`（不写 granted/denied），`reduce` 把 effect 标成 `Denied`，不派发。UI 在墙钟已过截止时画「已过期」并禁用批准/驳回，不等那条事件。比对用 daemon 时钟而不是内核 `clock_ms`（挂起期间内核时钟冻结）。
 
 #### 16. `daemonClient.subscribe()` 的重连是一场风暴（**已修**，UI 档一同交）
 
@@ -304,7 +303,7 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 | `EgressPolicy::permits()` + `DaemonConfig.egress_allow` | 唯一调用者是它自己的单元测试。没有 proxy 进程，`proxy_addr: None` |
 | `ExecutorCapabilities` | 零消费者。一个 class=External 的 effect 会被派到自称做不了 External 的 executor 上 |
 | `PolicyContext.taint` / `.targets` | 老实填了，但 `Rule` 只有 class/tool/reversible 三个条件字段，`matches` 完全不看这两个。今天写不出「对某目录的写要审批」这类规则 |
-| `Lease.expires_at_ms` | 零读者（见 P0-3） |
+| `Lease.expires_at_ms` | **已接线**（P0-3）：与 `issued_at_ms` 相减得到 spawn 超时，封顶 60s |
 | `BudgetSpec.max_concurrency` / `max_recursion_depth` | 零读取方 |
 | `Command::AskClarification` | **已接线**（档二）：携带 `PlannedClarification`，与 `RequestEffect` 的 `call` 对称。Clarify 却没给 clarification → `Complete { Failed }` |
 | `reduce` 忽略 `ContextCompacted` | 今天无产生方，尚不构成投影缺口 |
@@ -341,7 +340,7 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 | 项 | 状态 | 阻塞 |
 |---|---|---|
 | **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | **已落地**（档一） | `cargo run -p evo-daemon`；token 在 `{data_dir}/client.toml`。未接线的 RPC 方法返回 `not implemented`。`run.create mode=dry_run` 同样未实现 |
-| **UI 本体** | **已落地**（档三） | Inbox / 时间线 / 审批卡 / 产物区 / 成本。事件流投影，不轮询。`blob.get` 取澄清文案与产物正文。收尾项（预算提额、过期状态、回放视图）见 §三 |
+| **UI 本体** | **已落地**（档三） | Inbox / 时间线 / 审批卡 / 产物区 / 成本。事件流投影，不轮询。`blob.get` 取澄清文案与产物正文。审批卡含「已过期」。收尾项（预算提额、回放视图）见 §三 |
 | **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。P0-1 已在档二接通，真 adapter 落地时模型会看见澄清答案 |
 | **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |

@@ -9,7 +9,7 @@ use evo_protocol::budget::BudgetSpec;
 use evo_protocol::effect::EffectClass;
 use evo_protocol::events::accounting::BudgetAmended;
 use evo_protocol::events::approval::{
-    ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia, RiskLevel,
+    ApprovalDenied, ApprovalExpired, ApprovalGranted, ApprovalRequested, ApprovalVia, RiskLevel,
 };
 use evo_protocol::events::clarification::{
     ClarificationAnswered, ClarificationOption, ClarificationRequested,
@@ -104,6 +104,12 @@ fn approval_denied(approval_id: &str) -> EventBody {
         approval_id: ApprovalId::from(approval_id),
         by: Actor::Human("u-1".into()),
         reason_ref: None,
+    })
+}
+
+fn approval_expired(approval_id: &str) -> EventBody {
+    EventBody::ApprovalExpired(ApprovalExpired {
+        approval_id: ApprovalId::from(approval_id),
     })
 }
 
@@ -307,6 +313,52 @@ fn after_denial_and_resume_decide_never_re_requests_the_denied_effect() {
             .iter()
             .any(|c| matches!(c, Command::RequestEffect { .. })),
         "decide 不许再对这个被拒的 effect（或任何 effect）重新发起请求：{cmds:?}"
+    );
+}
+
+// ————————————————————————————————————————————————————————————
+// 4b. approval.expired 与 denied 同终态：effect Denied，resume 后
+//     decide 不再重新请求。reduce 这一支原先是死代码（P0-4）。
+// ————————————————————————————————————————————————————————————
+
+#[test]
+fn approval_expired_marks_the_effect_as_a_terminal_denial() {
+    let events = vec![
+        ev(0, tool_requested("e-1", 0)),
+        ev(1, approval_requested("a-1", "e-1")),
+        ev(2, run_suspended(SuspendReason::AwaitingApproval)),
+        ev(3, approval_expired("a-1")),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+
+    assert!(s.pending_approvals.is_empty());
+    assert_eq!(
+        s.pending_effects.get(&EffectId::from("e-1")),
+        Some(&EffectState::Denied)
+    );
+}
+
+#[test]
+fn after_expiry_and_resume_decide_never_re_requests_the_expired_effect() {
+    let events = vec![
+        ev(0, tool_requested("e-1", 0)),
+        ev(1, approval_requested("a-1", "e-1")),
+        ev(2, run_suspended(SuspendReason::AwaitingApproval)),
+        ev(3, approval_expired("a-1")),
+        ev(4, run_resumed(5)),
+    ];
+    let s = fold(&RunId::from("r-1"), &events);
+
+    assert_eq!(s.status, RunStatus::Running);
+    assert_eq!(s.awaiting, None);
+    assert_eq!(s.turn, 1, "过期的 effect 应该像被拒一样让 turn 前进");
+
+    let cmds = decide(&s);
+    assert!(
+        !cmds
+            .iter()
+            .any(|c| matches!(c, Command::RequestEffect { .. })),
+        "decide 不许再对这个已过期的 effect 重新发起请求：{cmds:?}"
     );
 }
 

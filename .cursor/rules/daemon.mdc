@@ -23,10 +23,11 @@ alwaysApply: false
 
 无终结事件的 run 不能报成 `Completed`。非网关故障要落 `run.failed`。
 
-## 已知 P0，改到附近时不要装作没看见
+## 已知缺口，改到附近时不要装作没看见
 
-- `ApprovalRequested.expires_at_ms` 有人写、全仓无人读。`approval.expired`
-  零产生者。不要在 UI 文案里写「审批将于 … 过期」。
+- 审批过期已接线（P0-4）：`resume` / `decide_approval` 对照 daemon 时钟
+  落 `approval.expired`，过期后不写 granted、不派发。UI 画「已过期」。
+  不要发明「审批将于 … 过期」的倒计时文案——那是墙钟承诺，Log 事件才是真源。
 - `resume()` 仍能恢复终态 run。
 
 capability 两个构造点写死 `scopes: ["*"]`。不要在注释里写「能力校验已生效」。
