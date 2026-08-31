@@ -1528,7 +1528,9 @@ impl Runtime {
             lease_id: LeaseId::from(format!("{effect_id}-l")),
             run_id: state.run_id.clone(),
             effect_id: effect_id.clone(),
-            // 来自 env.sampled 的 clock_ms，不是执行器自己读时钟
+            // 两个时刻都来自 env.sampled 的 clock_ms，不是执行器自己读时钟。
+            // spawn 超时 = expires_at_ms - issued_at_ms，封顶 60s。
+            issued_at_ms: state.clock_ms,
             expires_at_ms: state.clock_ms + 60_000,
             workspace,
             egress_policy: EgressPolicy {

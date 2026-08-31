@@ -10,6 +10,7 @@ use evo_protocol::ids::{EffectId, ExecutorId, LeaseId, RunId};
 use evo_protocol::taint::TaintLevel;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 // 本 crate 的公开 API 里出现的 protocol 类型一并 re-export，
 // 免得每个消费者都要同时依赖 evo-protocol 才能构造一个 Lease。
@@ -85,7 +86,11 @@ pub struct Lease {
     pub lease_id: LeaseId,
     pub run_id: RunId,
     pub effect_id: EffectId,
-    /// 来自 env.sampled，不是执行器自己读时钟
+    /// 发租时的 sampled clock（与 `expires_at_ms` 同源）。执行面用
+    /// `expires_at_ms.saturating_sub(issued_at_ms)` 得到剩余窗口，
+    /// **不读墙钟**。
+    pub issued_at_ms: u64,
+    /// 绝对截止时刻，来自 env.sampled，不是执行器自己读时钟。
     pub expires_at_ms: u64,
     pub workspace: WorkspaceHandle,
     pub egress_policy: EgressPolicy,
@@ -143,6 +148,27 @@ pub struct SandboxOutput {
     pub exit_code: i32,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+    /// stdout 或 stderr 至少有一侧触到了字节上限，内容已被截断。
+    pub truncated: bool,
+}
+
+/// 子进程最长运行时间的硬上限。与 daemon 写进租约的窗口（60s）对齐。
+/// `Lease.expires_at_ms - issued_at_ms` 算出的剩余时间再与这个值取 min，
+/// 防止测试里 `expires_at_ms: u64::MAX` 把 `timeout` 变成「永远等」。
+pub const SANDBOX_TIMEOUT_CAP_MS: u64 = 60_000;
+
+/// stdout / stderr **各自**的捕获上限。超过就停读、杀掉子进程，避免
+/// 一份输出在 `from_utf8_lossy` + `json!` + blob 里复制三份撑爆 daemon。
+pub const SANDBOX_MAX_OUTPUT_BYTES: usize = 1024 * 1024;
+
+impl Lease {
+    /// 子进程最多再跑多久。执行面不读墙钟：窗口完全由租约上两个
+    /// sampled 时刻相减得到，再封顶 [`SANDBOX_TIMEOUT_CAP_MS`]。
+    /// 剩余 0 表示租约已过期，调用方应直接返回 [`ExecError::LeaseExpired`]。
+    pub fn spawn_timeout(&self) -> Duration {
+        let remaining = self.expires_at_ms.saturating_sub(self.issued_at_ms);
+        Duration::from_millis(remaining.min(SANDBOX_TIMEOUT_CAP_MS))
+    }
 }
 
 /// 沙箱。**这是调用点，它现在就正确**——
@@ -154,6 +180,8 @@ pub trait Sandbox: Send + Sync {
         spec: &CommandSpec,
         ws: &WorkspaceHandle,
         egress: &EgressPolicy,
+        timeout: Duration,
+        max_output_bytes: usize,
     ) -> Result<SandboxOutput, ExecError>;
 
     /// 进 executor capabilities 与交付说明——「这台机器上跑的是哪种沙箱」必须可查。
@@ -181,6 +209,7 @@ mod tests {
             lease_id: LeaseId::from("l-1"),
             run_id: RunId::from("r-1"),
             effect_id: EffectId::from("e-1"),
+            issued_at_ms: 1_756_461_600_000,
             expires_at_ms: 1_756_461_660_000,
             workspace: WorkspaceHandle::new("r-1", PathBuf::from("/tmp/ws")),
             egress_policy: EgressPolicy::deny_all(),
@@ -190,6 +219,25 @@ mod tests {
             },
         };
         assert_eq!(lease.expires_at_ms, 1_756_461_660_000);
+        assert_eq!(lease.spawn_timeout(), Duration::from_millis(60_000));
+    }
+
+    #[test]
+    fn a_lease_past_its_deadline_has_a_zero_spawn_timeout() {
+        let lease = Lease {
+            lease_id: LeaseId::from("l-1"),
+            run_id: RunId::from("r-1"),
+            effect_id: EffectId::from("e-1"),
+            issued_at_ms: 1_000,
+            expires_at_ms: 999,
+            workspace: WorkspaceHandle::new("r-1", PathBuf::from("/tmp/ws")),
+            egress_policy: EgressPolicy::deny_all(),
+            capability: CapabilityToken {
+                subject: "u-1".into(),
+                scopes: vec!["*".into()],
+            },
+        };
+        assert_eq!(lease.spawn_timeout(), Duration::from_millis(0));
     }
 
     #[test]

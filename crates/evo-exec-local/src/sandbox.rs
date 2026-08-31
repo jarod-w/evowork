@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use evo_exec::{CommandSpec, EgressPolicy, ExecError, Sandbox, SandboxOutput, WorkspaceHandle};
 use std::path::Path;
+use std::process::Stdio;
+use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 /// Linux 开发机上的沙箱实现：工作区级隔离 + 强制走 proxy。
@@ -91,6 +94,43 @@ fn program_allowed(program: &str) -> bool {
     ALLOWED_PROGRAMS.contains(&name)
 }
 
+/// 读到 `cap` 字节就停。返回 `(bytes, truncated)`。停读之后调用方必须
+/// 杀掉子进程，否则对端塞满管道会卡住。
+async fn read_capped<R: AsyncReadExt + Unpin>(
+    mut reader: R,
+    cap: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut tmp).await?;
+        if n == 0 {
+            return Ok((buf, false));
+        }
+        let room = cap.saturating_sub(buf.len());
+        if n > room {
+            buf.extend_from_slice(&tmp[..room]);
+            return Ok((buf, true));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if buf.len() >= cap {
+            return Ok((buf, true));
+        }
+    }
+}
+
+fn kill_child_tree(child: &mut tokio::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        // `sh -c 'sleep infinity'` 的 sleep 是孙子进程；只杀 sh 会留下
+        // 孤儿 sleep。process_group(0) 之后对 -pid 发 SIGKILL 清掉整组。
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
+    }
+    let _ = child.start_kill();
+}
+
 impl WorkspaceOnlySandbox {
     pub fn new() -> Self {
         Self
@@ -110,13 +150,28 @@ impl Sandbox for WorkspaceOnlySandbox {
         spec: &CommandSpec,
         ws: &WorkspaceHandle,
         egress: &EgressPolicy,
+        timeout: Duration,
+        max_output_bytes: usize,
     ) -> Result<SandboxOutput, ExecError> {
         if !program_allowed(&spec.program) {
             return Err(ExecError::ProgramNotAllowed(spec.program.clone()));
         }
+        if timeout.is_zero() {
+            return Err(ExecError::LeaseExpired(format!(
+                "lease already expired before spawning {}",
+                spec.program
+            )));
+        }
         let mut cmd = Command::new(&spec.program);
         cmd.args(&spec.args);
         cmd.current_dir(ws.path());
+        cmd.kill_on_drop(true);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
         // 子进程继承同一 profile 与 proxy 设置（05 §3）
         cmd.env_clear();
         for (k, v) in &spec.env {
@@ -134,12 +189,76 @@ impl Sandbox for WorkspaceOnlySandbox {
         // 可能出现的同名键覆盖掉。见上面 ALLOWED_PROGRAMS 的决策说明：
         // 这不是图方便的默认值，是安全边界的一部分。
         cmd.env("PATH", SANDBOX_PATH);
-        let out = cmd.output().await?;
-        Ok(SandboxOutput {
-            exit_code: out.status.code().unwrap_or(-1),
-            stdout: out.stdout,
-            stderr: out.stderr,
-        })
+
+        let mut child = cmd.spawn()?;
+        let stdout = child.stdout.take().expect("stdout piped");
+        let stderr = child.stderr.take().expect("stderr piped");
+
+        let stdout_read = read_capped(stdout, max_output_bytes);
+        let stderr_read = read_capped(stderr, max_output_bytes);
+        tokio::pin!(stdout_read);
+        tokio::pin!(stderr_read);
+        let mut out_result: Option<(Vec<u8>, bool)> = None;
+        let mut err_result: Option<(Vec<u8>, bool)> = None;
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        loop {
+            if out_result.is_some() && err_result.is_some() {
+                break;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => {
+                    kill_child_tree(&mut child);
+                    let _ = child.wait().await;
+                    return Err(ExecError::LeaseExpired(format!(
+                        "sandbox timed out after {}ms running {}",
+                        timeout.as_millis(),
+                        spec.program
+                    )));
+                }
+                result = &mut stdout_read, if out_result.is_none() => {
+                    let (bytes, truncated) = result?;
+                    if truncated {
+                        // 一侧触顶就杀进程，否则另一侧还在等 EOF，
+                        // `yes` 这类无界生产者会把 select 卡住。
+                        kill_child_tree(&mut child);
+                    }
+                    out_result = Some((bytes, truncated));
+                }
+                result = &mut stderr_read, if err_result.is_none() => {
+                    let (bytes, truncated) = result?;
+                    if truncated {
+                        kill_child_tree(&mut child);
+                    }
+                    err_result = Some((bytes, truncated));
+                }
+            }
+        }
+
+        let (stdout, out_trunc) = out_result.expect("stdout collected");
+        let (stderr, err_trunc) = err_result.expect("stderr collected");
+        let truncated = out_trunc || err_trunc;
+        if truncated {
+            kill_child_tree(&mut child);
+        }
+        match tokio::time::timeout_at(deadline, child.wait()).await {
+            Ok(Ok(status)) => Ok(SandboxOutput {
+                exit_code: status.code().unwrap_or(-1),
+                stdout,
+                stderr,
+                truncated,
+            }),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_elapsed) => {
+                kill_child_tree(&mut child);
+                let _ = child.wait().await;
+                Err(ExecError::LeaseExpired(format!(
+                    "sandbox timed out after {}ms waiting for {} to exit",
+                    timeout.as_millis(),
+                    spec.program
+                )))
+            }
+        }
     }
 
     fn kind(&self) -> &'static str {

@@ -2,7 +2,7 @@ use crate::workspace::resolve_in_workspace;
 use async_trait::async_trait;
 use evo_exec::{
     CommandSpec, DispatchedEffect, EffectOutcome, ExecError, Executor, ExecutorCapabilities, Lease,
-    Sandbox,
+    SANDBOX_MAX_OUTPUT_BYTES, Sandbox,
 };
 use evo_protocol::effect::{EffectClass, EgressRef, ResourceRef};
 use evo_protocol::events::effect::ToolResultStatus;
@@ -209,20 +209,41 @@ impl LocalExecutor {
             args,
             env: BTreeMap::new(),
         };
+        let timeout = lease.spawn_timeout();
+        if timeout.is_zero() {
+            return Err(ExecError::LeaseExpired(lease.lease_id.to_string()));
+        }
         let out = self
             .sandbox
-            .spawn(&spec, &lease.workspace, &lease.egress_policy)
+            .spawn(
+                &spec,
+                &lease.workspace,
+                &lease.egress_policy,
+                timeout,
+                SANDBOX_MAX_OUTPUT_BYTES,
+            )
             .await?;
 
         // 命令本身跑起来了（spawn 成功）——它自己的退出码是数据，不是
         // 执行器层面的失败，所以无论 exit_code 是不是 0，ToolResultStatus
-        // 都是 Ok。真正的 ExecError（程序不在白名单、spawn 失败……）
-        // 会在上面 `?` 处提前返回，走 execute() 里统一的错误分支。
-        let payload = serde_json::json!({
+        // 都是 Ok。真正的 ExecError（程序不在白名单、租约到期、spawn
+        // 失败……）会在上面提前返回，走 execute() 里统一的错误分支。
+        //
+        // stdout/stderr 在沙箱里已经按 SANDBOX_MAX_OUTPUT_BYTES 截过，
+        // 这里不再对同一份字节做无界的 from_utf8_lossy → json → to_vec
+        // 放大：截断后的上限是 1MiB/侧。truncated 进 payload，让模型
+        // 知道后面被丢掉了。
+        let mut payload = serde_json::json!({
             "exit_code": out.exit_code,
             "stdout": String::from_utf8_lossy(&out.stdout),
             "stderr": String::from_utf8_lossy(&out.stderr),
         });
+        if out.truncated {
+            payload
+                .as_object_mut()
+                .expect("json object")
+                .insert("truncated".to_owned(), serde_json::Value::Bool(true));
+        }
 
         // --- actual_targets / actual_egress：如实回报，不夸大 ---
         //

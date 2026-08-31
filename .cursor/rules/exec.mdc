@@ -22,8 +22,9 @@ alwaysApply: false
 做不到（STATUS P3）。改这些文件时把过强的标题句改成「本层不保证 X，见
 \<位置\>」，不要再抄进新注释。
 
-`Lease.expires_at_ms` 有人写、零读者。`cmd.output().await` 无界
-（STATUS P0-3）。碰执行路径时不要假定超时已经接通。
+`Lease.spawn_timeout()` 读 `expires_at_ms - issued_at_ms`（不读墙钟），
+stdout/stderr 各自 1MiB 上限（STATUS P0-3，已修）。超时与截断必须杀掉
+进程组，否则 `sh -c 'sleep infinity'` 的孙子会留下。
 
 `crates/evo-exec-local/vendor/` 内不做任何修改。该目录目前几乎是空的
 （只有 README），CI-6 尚未开始。不要把本地改动写进 vendor。
