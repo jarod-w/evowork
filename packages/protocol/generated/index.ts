@@ -11,6 +11,8 @@ export * from "./ApprovalRequested";
 export * from "./ApprovalVia";
 export * from "./ArtifactEmitted";
 export * from "./ArtifactId";
+export * from "./BlobGetParams";
+export * from "./BlobGetResult";
 export * from "./BlobRef";
 export * from "./BudgetAmended";
 export * from "./BudgetSpec";
