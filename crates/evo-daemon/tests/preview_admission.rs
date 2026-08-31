@@ -111,6 +111,7 @@ async fn a_tool_declaring_preview_still_completes_the_run_via_the_none_fallback(
             "checkpoint",
             "effect.dispatched",
             "tool.result",
+            "artifact.emitted",
             "env.sampled",
             "context.assembled",
             "model.requested",

@@ -11,11 +11,12 @@ use evo_kernel::{
 use evo_model::{Message, ModelAdapter, ModelRequest, PriceTable, request_digest};
 use evo_policy::HardcodedPolicy;
 use evo_protocol::events::accounting::{
-    BudgetAmended, Checkpoint, CheckpointReason, CostDimension,
+    BudgetAmended, Checkpoint, CheckpointReason, CostCharged, CostDimension, CostUnit,
 };
 use evo_protocol::events::approval::{
     ApprovalDenied, ApprovalGranted, ApprovalRequested, ApprovalVia,
 };
+use evo_protocol::events::artifact::ArtifactEmitted;
 use evo_protocol::events::clarification::{
     ClarificationAnswered, ClarificationOption, ClarificationRequested,
 };
@@ -33,8 +34,8 @@ use evo_protocol::events::model::{
 };
 use evo_protocol::taint::TaintLevel;
 use evo_protocol::{
-    Actor, ApprovalId, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass, EffectId,
-    EffectRequest, Event, EventBody, LeaseId, RunId,
+    Actor, ApprovalId, ArtifactId, BlobClass, BlobRef, BudgetSpec, CheckpointId, EffectClass,
+    EffectId, EffectRequest, Event, EventBody, LeaseId, RunId, ToolId,
 };
 use evo_runlog::RunLog;
 use std::collections::BTreeMap;
@@ -77,6 +78,11 @@ pub enum DaemonError {
     UnknownApproval(String),
     #[error("question {0} is not currently pending (already answered, or never asked)")]
     UnknownClarification(String),
+    #[error("option {option_id} is not one of the options for question {question_id}")]
+    UnknownClarificationOption {
+        question_id: String,
+        option_id: String,
+    },
 }
 
 /// 一个 `clarify` 计划里的一个选项，解析自模型输出的 JSON——**不是**
@@ -96,13 +102,12 @@ pub struct ParsedClarifyOption {
 /// **解析在这里，不在内核（Q-12）**：它是最容易引入非确定性
 /// （正则、时间、随机重试）的地方，关在内核外面，内核的确定性好守得多。
 ///
-/// `question`/`options` 只在 `intent == Clarify` 时有意义——内核的
-/// `Command::AskClarification` 不携带这两样（`decide` 目前只发得出一个
-/// 空字符串占位，见 evo-kernel/src/decide.rs）。`parse_plan` 只在
-/// `call_model` 里被调用这一次：解析结果里的 `question`/`options` 随即
-/// 被落进一个 blob，随 `PlanStep.clarification`（对称于 `call`）一并写进
-/// Log；`Command::AskClarification` 分支从 `state.last_plan.clarification`
-/// 读，不再对模型原文重新解析一遍。
+/// `question`/`options` 只在 `intent == Clarify` 时有意义。`parse_plan`
+/// 只在 `call_model` 里被调用这一次：解析结果里的 `question`/`options`
+/// 随即被落进一个 blob，随 `PlanStep.clarification`（对称于 `call`）一并
+/// 写进 Log；`decide` 把那份 `PlannedClarification` 原样放进
+/// `Command::AskClarification`，runtime 执行时读 Command 载荷，不再从
+/// `last_plan` 另读一遍、也不对模型原文重新解析。
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParsedPlan {
     pub intent: PlanIntent,
@@ -390,10 +395,23 @@ impl Runtime {
         // 只拦审批这一种：澄清的裸 resume 有既有的、被测试固定的行为
         // （重新问一次，随即再次挂起——那条路径自己会落 run.suspended，
         // 不会撞上 Running 分支），不在本次修复范围内。
-        if let Some(AwaitReason::Approval { approval_id, .. }) = state.awaiting.clone()
-            && state.pending_approvals.contains_key(&approval_id)
-        {
-            let reason = state.awaiting.clone().expect("刚匹配过 Some");
+        //
+        // 未决台账是真源，不是 `awaiting` 里那一个代表 id。多条审批并列时
+        // `awaiting` 只指向其中一条；只拦那一条会让「批了代表、另一条还
+        // 没人看」也写出一条骗人的 `run.resumed`。
+        if !state.pending_approvals.is_empty() {
+            let reason = state.awaiting.clone().unwrap_or_else(|| {
+                let (approval_id, effect_id) = state
+                    .pending_approvals
+                    .iter()
+                    .next()
+                    .map(|(a, e)| (a.clone(), e.clone()))
+                    .expect("刚判断过 pending_approvals 非空");
+                AwaitReason::Approval {
+                    approval_id,
+                    effect_id,
+                }
+            });
             return Ok(RunOutcome::Suspended { state, reason });
         }
 
@@ -500,6 +518,17 @@ impl Runtime {
         let state = replay_to(&self.log, run_id, None, true)?;
         if state.pending_question.as_deref() != Some(question_id) {
             return Err(DaemonError::UnknownClarification(question_id.to_owned()));
+        }
+        if let Some(option_id) = option_id {
+            let requested = self
+                .find_clarification_requested(run_id, question_id)?
+                .ok_or_else(|| DaemonError::UnknownClarification(question_id.to_owned()))?;
+            if !requested.options.iter().any(|o| o.id == option_id) {
+                return Err(DaemonError::UnknownClarificationOption {
+                    question_id: question_id.to_owned(),
+                    option_id: option_id.to_owned(),
+                });
+            }
         }
         let free_text_ref = free_text
             .map(|t| {
@@ -625,10 +654,16 @@ impl Runtime {
 
         Ok(match state.status {
             RunStatus::Suspended => {
-                let reason = state.awaiting.clone().expect(
-                    "reduce() 的不变量：RunSuspended 落地的同时必然置 awaiting \
-                     （evo_kernel::reduce 对 EventBody::RunSuspended 的处理）",
-                );
+                // 畸形 Log（`run.suspended{AwaitingApproval}` 却没有任何
+                // `approval.requested`）时 `reduce` 不再 panic，`awaiting`
+                // 可能是 None。decide 看到 Suspended 本来就会返回空，这里
+                // 也不该为了凑一个审批 id 再 panic 一次。
+                let reason = state
+                    .awaiting
+                    .clone()
+                    .unwrap_or(AwaitReason::ExternalEvent {
+                        kind: "suspended_without_await_reason".to_owned(),
+                    });
                 RunOutcome::Suspended { state, reason }
             }
             RunStatus::Failed => {
@@ -652,8 +687,8 @@ impl Runtime {
                 // 结局（这条 run 真的推不动了），也是唯一可用的终结事件：
                 // `run.suspended` 需要一个 `SuspendReason`，而没有任何一个能
                 // 如实描述「卡在一个没人会去推的 effect 上」——`AwaitingApproval`
-                // 会伪造一条不存在的审批（`reduce` 会在空的 pending_approvals
-                // 上 panic），`Paused` 则会被读成「有人手动暂停了」。
+                // 会让 UI 以为在等一条并不存在的审批，`Paused` 则会被读成
+                // 「有人手动暂停了」。
                 let stalled: Vec<String> = state
                     .pending_effects
                     .iter()
@@ -750,6 +785,60 @@ impl Runtime {
             }
         }
         Ok(None)
+    }
+
+    fn find_clarification_requested(
+        &self,
+        run_id: &RunId,
+        question_id: &str,
+    ) -> Result<Option<ClarificationRequested>, DaemonError> {
+        for event in self.log.events(run_id, 0, None)? {
+            if let EventBody::ClarificationRequested(c) = event.body
+                && c.question_id == question_id
+            {
+                return Ok(Some(c));
+            }
+        }
+        Ok(None)
+    }
+
+    /// 模型请求的 messages：与装配器同一批来源、同一顺序。
+    ///
+    /// 1. intent 原文
+    /// 2. 已回答澄清的摘要（`answer_blobs_for`）
+    /// 3. 有内容回流的工具返回，标上工具名
+    ///
+    /// 不另造 system prompt。来源都空时才退回一条空的 user 消息——适配器
+    /// 至少要有一条，但生产路径上 `intent.declared` 已经写过。
+    fn model_messages(&self, state: &RunState) -> Result<Vec<Message>, DaemonError> {
+        let mut messages = Vec::new();
+        if let Some(intent_ref) = &state.intent {
+            let text = String::from_utf8(self.log.blobs().get(intent_ref)?)
+                .expect("intent blob 是 runtime 自己用 UTF-8 写入的原文，不应解码失败");
+            messages.push(Message {
+                role: "user".into(),
+                content: text,
+            });
+        }
+        for (_, summary) in self.answer_blobs_for(&state.run_id)? {
+            messages.push(Message {
+                role: "user".into(),
+                content: summary,
+            });
+        }
+        for (tool, _, text) in self.tool_output_blobs_for(&state.run_id)? {
+            messages.push(Message {
+                role: "user".into(),
+                content: format!("[{tool}]\n{text}"),
+            });
+        }
+        if messages.is_empty() {
+            messages.push(Message {
+                role: "user".into(),
+                content: String::new(),
+            });
+        }
+        Ok(messages)
     }
 
     /// 把这条 run 里迄今**已回答**的每一条澄清，拼成一个 (答案 blob 引用,
@@ -1009,25 +1098,9 @@ impl Runtime {
             // 问题正文与选项文案（含 `label`，绝不进 payload）早已在
             // `call_model` 里随 `PlanStep.clarification` 落进一个 blob（见
             // `ClarificationRequested::prompt_ref` 的文档给出的建议形状）
-            // ——`call_model` 那次 `parse_plan` 的产物直接读出来用，不在
-            // 这里对模型原文重新解析一遍。
-            //
-            // `question` 这个字段来自内核，但 `decide()` 目前永远发一个空
-            // 字符串占位（evo-kernel/src/decide.rs 的 `Clarify` 分支）——
-            // 内核只知道"该问问题了"，不知道问题本身是什么，真正的内容
-            // 从 `state.last_plan` 里取。
-            Command::AskClarification { .. } => {
-                let clarification = state
-                    .last_plan
-                    .as_ref()
-                    .and_then(|p| p.clarification.clone())
-                    .expect(
-                        "AskClarification 只会在 CallModel 已经写过带 clarification \
-                         的 PlanStep 之后被 decide 产出——见 evo-kernel::decide 的 \
-                         Clarify 分支，它挂在 plan_turn == turn 之后，而 plan_turn \
-                         只由 call_model 产出的 PlanStep 设置，PlanStep.clarification \
-                         则由 call_model 在 intent == Clarify 时一并写入",
-                    );
+            // ——`decide` 把那份 `PlannedClarification` 放进 Command，这里
+            // 读载荷，不从 `last_plan` 另读一遍，也不对模型原文重新解析。
+            Command::AskClarification { clarification } => {
                 let question_id = format!("{}-q{}", state.run_id, state.last_seq);
                 let state = self.emit(
                     &state,
@@ -1075,10 +1148,7 @@ impl Runtime {
     async fn call_model(&mut self, state: RunState, turn: u32) -> Result<RunState, DaemonError> {
         let mut state = state;
         let request = ModelRequest {
-            messages: vec![Message {
-                role: "user".into(),
-                content: String::new(),
-            }],
+            messages: self.model_messages(&state)?,
             params: ModelParams {
                 temperature: 0.0,
                 max_tokens: None,
@@ -1175,8 +1245,8 @@ impl Runtime {
         };
         // 澄清路径与工具调用路径对称：问题正文与选项文案（含 label，
         // 绝不进事件 payload）在这里——`parse_plan` 唯一被调用的地方——
-        // 一次性落进一个 blob，`Command::AskClarification` 分支只从
-        // `state.last_plan.clarification` 读，不再对模型原文重新解析。
+        // 一次性落进一个 blob，随 `PlanStep.clarification` 写进 Log。
+        // `decide` 再把它放进 `Command::AskClarification`，执行方读载荷。
         let clarification = match parsed.intent {
             PlanIntent::Clarify => {
                 let options_by_id: BTreeMap<String, String> = parsed
@@ -1272,8 +1342,8 @@ impl Runtime {
     /// **`NeedPreview` 现在的处理**：M2 这一轮还没有任何工具在
     /// `config/tools.toml` 里声明 `preview`，`Executor` 也还没有真正调用它
     /// 的能力（那是后续任务接上某个回写演示场景时才要做的事）。真正接上
-    /// 之前，这里显式传 `None`——不做任何 IO，退回第 2/3 级
-    /// （`DeclaredOnly`）。这不阻塞接入，是判据 1 延伸的直接体现。
+    /// 之前，这里显式传 `None`——不做任何 IO，退回第 2 级（`DeclaredOnly`）
+    /// 或第 3 级（`Unknown`）。这不阻塞接入，是判据 1 延伸的直接体现。
     async fn handle_gateway_action(
         &mut self,
         mut state: RunState,
@@ -1441,9 +1511,12 @@ impl Runtime {
         request: EffectRequest,
     ) -> Result<RunState, DaemonError> {
         let mut state = state;
+        let tool = request.tool.clone();
+        let turn = request.turn;
         let params: serde_json::Value =
             serde_json::from_slice(&self.log.blobs().get(&request.params_ref)?)
                 .unwrap_or(serde_json::json!({}));
+        let params_for_artifact = params.clone();
 
         // pre_write 语义检查点（03 §5）：不可逆动作之前留一个可回滚的锚点
         if request.class == EffectClass::Write || request.class == EffectClass::External {
@@ -1500,11 +1573,18 @@ impl Runtime {
             None => (None, None),
         };
 
-        self.emit(
+        let executed = matches!(
+            outcome.status,
+            ToolResultStatus::Ok | ToolResultStatus::Error
+        );
+        let write_ok = outcome.status == ToolResultStatus::Ok && tool.as_str() == "fs.write";
+        let reported_cost = outcome.cost_micros;
+
+        let mut state = self.emit(
             &state,
             Actor::Executor,
             EventBody::ToolResult(ToolResult {
-                effect_id,
+                effect_id: effect_id.clone(),
                 status: outcome.status,
                 output_ref,
                 bytes,
@@ -1513,7 +1593,99 @@ impl Runtime {
                 actual_targets: outcome.actual_targets,
                 actual_egress: outcome.actual_egress,
             }),
+        )?;
+
+        if write_ok {
+            state = self.emit_artifact_for_write(&state, &params_for_artifact)?;
+        }
+
+        if executed {
+            state = self.charge_effect(state, &effect_id, &tool, turn, reported_cost)?;
+        }
+
+        Ok(state)
+    }
+
+    /// 成功的 `fs.write` 才进产物区。错误 / 拒绝 / dry-run、以及 `fs.read` /
+    /// `shell.exec` 都不发。`cites` 恒空——`cites_produced` 今天没有写入方，
+    /// 不在这里编一份。同一 path 再次写出时 `supersedes` 指向状态里已有的
+    /// 那条；两条都留在 `RunState::artifacts` 里（不可变，替代关系靠字段）。
+    fn emit_artifact_for_write(
+        &mut self,
+        state: &RunState,
+        params: &serde_json::Value,
+    ) -> Result<RunState, DaemonError> {
+        let Some(path) = params.get("path").and_then(|v| v.as_str()) else {
+            return Ok(state.clone());
+        };
+        let Some(content) = params.get("content").and_then(|v| v.as_str()) else {
+            return Ok(state.clone());
+        };
+        let blob = self
+            .log
+            .blobs()
+            .put(BlobClass::Artifact, "text/plain", content.as_bytes())?;
+        let supersedes = state
+            .artifacts
+            .iter()
+            .rev()
+            .find(|a| a.path == path)
+            .map(|a| a.artifact_id.clone());
+        let artifact_id = ArtifactId::from(format!("{}-art{}", state.run_id, state.last_seq));
+        self.emit(
+            state,
+            Actor::Executor,
+            EventBody::ArtifactEmitted(ArtifactEmitted {
+                artifact_id,
+                path: path.to_owned(),
+                blob,
+                cites: Vec::new(),
+                supersedes,
+            }),
         )
+    }
+
+    /// 已执行的工具（Ok / Error，不是 Denied / DryRun）才出账。
+    ///
+    /// 优先用执行器回报的 `cost_micros`：`Some(n>0)` 按次计；`Some(0)` 表示
+    /// 这次明确免费，不再查定价表。`None` 才查表。表里没有、或 `call_micros`
+    /// 为 0，就跳过——未定价的本地工具不让 run 失败（与模型未定价不同）。
+    fn charge_effect(
+        &mut self,
+        mut state: RunState,
+        effect_id: &EffectId,
+        tool: &ToolId,
+        turn: u32,
+        reported_cost: Option<u64>,
+    ) -> Result<RunState, DaemonError> {
+        let dimension = CostDimension {
+            principal: self.config.principal.clone(),
+            team: None,
+            run_id: state.run_id.clone(),
+            skill: None,
+            tool: Some(tool.clone()),
+        };
+        let charges = match reported_cost {
+            Some(0) => Vec::new(),
+            Some(micros) => vec![CostCharged {
+                effect_id: Some(effect_id.clone()),
+                turn: Some(turn),
+                unit: CostUnit::Call,
+                quantity: 1,
+                unit_price_micros: micros,
+                amount_micros: micros,
+                currency: self.pricing.currency(),
+                price_table_ver: self.pricing.version().to_owned(),
+                dimension,
+            }],
+            None => self
+                .pricing
+                .tool_charges(tool.as_str(), effect_id, Some(turn), &dimension)?,
+        };
+        for charge in charges {
+            state = self.emit(&state, Actor::Runtime, EventBody::CostCharged(charge))?;
+        }
+        Ok(state)
     }
 
     /// 写一个检查点：先算当前 state 的 hash 进事件，再存快照。

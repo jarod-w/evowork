@@ -17,4 +17,5 @@ PR 必须同时包含下面三条，缺一条合不进去。这是红线 3 唯�
 任何事件结构体都不得加 `#[serde(deny_unknown_fields)]`。
 
 不要为 UI 方便另做一套 DTO。UI 收到的就是 Log 里存的（设计文档 06）。
-`packages/protocol` 是 `ts-rs` 生成产物，不手写；该目录与 CI-5 今天都不存在。
+`packages/protocol` 是 `ts-rs` 生成产物，不手写；用 `./scripts/gen-protocol.sh`。
+CI-5 比对生成物与已提交内容。

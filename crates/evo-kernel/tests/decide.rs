@@ -1,5 +1,6 @@
 use evo_kernel::{AwaitReason, CHECKPOINT_EVERY, Command, RunState, RunStatus, decide};
-use evo_protocol::events::model::{PlanIntent, PlanStep, PlannedCall};
+use evo_protocol::events::clarification::ClarificationOption;
+use evo_protocol::events::model::{PlanIntent, PlanStep, PlannedCall, PlannedClarification};
 use evo_protocol::{ApprovalId, BlobRef, EffectId, RunId, TaintLevel, ToolId};
 
 fn base() -> RunState {
@@ -130,6 +131,59 @@ fn a_tool_call_plan_without_call_parameter_fails_the_run() {
     s.last_plan = Some(PlanStep {
         turn: 0,
         intent: PlanIntent::ToolCall,
+        rationale_ref: None,
+        taint_inherited: TaintLevel::Clean,
+        call: None,
+        clarification: None,
+    });
+    assert_eq!(
+        decide(&s),
+        vec![Command::Complete {
+            status: RunStatus::Failed
+        }]
+    );
+}
+
+#[test]
+fn a_clarify_plan_becomes_ask_clarification() {
+    let mut s = base();
+    s.env_sampled_turn = Some(0);
+    s.context_turn = Some(0);
+    s.plan_turn = Some(0);
+    let clarification = PlannedClarification {
+        prompt_ref: BlobRef {
+            content_hash: "sha256:aa".into(),
+            size: 2,
+            mime: "application/json".into(),
+        },
+        options: vec![ClarificationOption {
+            id: "yes".into(),
+            is_default: true,
+        }],
+    };
+    s.last_plan = Some(PlanStep {
+        turn: 0,
+        intent: PlanIntent::Clarify,
+        rationale_ref: None,
+        taint_inherited: TaintLevel::Clean,
+        call: None,
+        clarification: Some(clarification.clone()),
+    });
+    assert_eq!(
+        decide(&s),
+        vec![Command::AskClarification { clarification }]
+    );
+}
+
+#[test]
+fn a_clarify_plan_without_clarification_fails_the_run() {
+    let mut s = base();
+    s.env_sampled_turn = Some(0);
+    s.context_turn = Some(0);
+    s.plan_turn = Some(0);
+    s.last_plan = Some(PlanStep {
+        turn: 0,
+        intent: PlanIntent::Clarify,
         rationale_ref: None,
         taint_inherited: TaintLevel::Clean,
         call: None,

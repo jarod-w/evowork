@@ -53,7 +53,7 @@ const CLARIFY_FIXTURES: &str = r#"{
   "provider": "fixture",
   "model": "fixture-v1",
   "responses": [
-    { "text": "{\"intent\":\"clarify\"}",
+    { "text": "{\"intent\":\"clarify\",\"question\":\"是否催收？\",\"options\":[{\"id\":\"opt-yes\",\"label\":\"是\",\"is_default\":true},{\"id\":\"opt-no\",\"label\":\"否\",\"is_default\":false}]}",
       "usage": { "input": 10, "output": 5, "cache_read": 0, "cache_write": 0 },
       "stop_reason": "stop", "latency_ms": 1 },
     { "text": "{\"intent\":\"finish\"}",
@@ -592,4 +592,43 @@ async fn a_run_stuck_on_an_effect_nobody_will_dispatch_fails_instead_of_completi
     };
     assert_eq!(state.status, RunStatus::Failed);
     assert!(!error.is_empty());
+}
+
+#[tokio::test]
+async fn granting_the_lexically_last_of_two_pending_approvals_does_not_resume() {
+    // 旧代码只拦 `awaiting` 里那一个代表（字典序最大）。批了代表、另一条
+    // 还在台账里时，照样写出 `run.resumed`。
+    let dir = tempfile::tempdir().unwrap();
+    let run_id = RunId::from("r-1");
+    let config_probe = DaemonConfig::for_test(dir.path());
+    let (_first, last) = evo_daemon::write_run_suspended_with_two_pending_approvals(
+        &config_probe.db_path,
+        &config_probe.blob_root,
+        &run_id,
+        "2026-08-31T00:00:00Z",
+    )
+    .unwrap();
+
+    let mut rt = setup_with_policy(dir.path(), REQUIRE_APPROVAL_FOR_WRITES_POLICY, FIXTURES);
+    let outcome = rt
+        .decide_approval(&run_id, &last, true, Actor::Human("u-1".into()), None)
+        .await
+        .expect("批一条未决审批不该有 Err");
+    let RunOutcome::Suspended { state, .. } = outcome else {
+        panic!("另一条还没批完，应仍是 Suspended，实得 {outcome:?}");
+    };
+    assert_eq!(state.pending_approvals.len(), 1);
+    assert!(
+        state
+            .pending_approvals
+            .contains_key(&evo_protocol::ApprovalId::from("r-1-a10"))
+    );
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    assert!(kinds.contains(&"approval.granted"));
+    assert!(
+        !kinds.contains(&"run.resumed"),
+        "剩下一条未决时不许写 run.resumed：{kinds:?}"
+    );
 }

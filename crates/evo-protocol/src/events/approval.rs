@@ -61,7 +61,7 @@ pub struct ApprovalRequested {
     pub risk: RiskLevel,
     /// 影响预估的引用：可能带具体资源标识甚至金额，一律 blob，不进
     /// payload（红线①）。`Option` 是因为并非所有 effect 都能算出影响
-    /// 预估（`ImpactPrecision::DeclaredOnly` 时可能什么都估不出来）
+    /// 预估（`ImpactPrecision::Unknown` 时估不出任何资源；空清单不是「没有」）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub impact_ref: Option<BlobRef>,
     /// 审批过期的时刻（wall clock 毫秒）。**来源是本 run 最近一次

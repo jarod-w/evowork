@@ -6,8 +6,9 @@ import type { CiteId } from "./CiteId";
 /**
  * 产物区事件：一个工具/流程向产物区写入了一份可交付文件。
  *
- * **本切片不产生**——产物区属 UI 切片，排在后面——但字段现在就定死：
- * 红线③要求事件目录一次定完，不许「等做产物区那天再回来补字段」。
+ * 今天的产生方是 daemon：成功的 `fs.write`（`ToolResultStatus::Ok`）之后
+ * 写一条。`reduce` 把它折进 `RunState::artifacts`。字段从第一天就定死
+ * （红线③：事件目录一次定完）。
  *
  * `blob` 复用 [`BlobRef`] 而不是各开 `mime` / `size` / `content_hash`
  * 三个字段：产物文件内容进 blob store（`BlobClass::Artifact`），

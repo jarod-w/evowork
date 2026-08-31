@@ -1,6 +1,6 @@
 use crate::state::{AwaitReason, RunState, RunStatus};
 use evo_protocol::events::accounting::CheckpointReason;
-use evo_protocol::events::model::{PlanIntent, PlannedCall};
+use evo_protocol::events::model::{PlanIntent, PlannedCall, PlannedClarification};
 
 /// 每 50 个事件一个检查点（Q-06），外加 pre_write / pre_approval 两个语义点。
 pub const CHECKPOINT_EVERY: u64 = 50;
@@ -9,13 +9,15 @@ pub const CHECKPOINT_EVERY: u64 = 50;
 ///
 /// `RequestEffect` 带的是 PlannedCall 而非完整 EffectRequest：
 /// class / targets / egress 来自工具 manifest，内核看不到 manifest，由 Gateway 补全。
+/// `AskClarification` 同理：题面与选项来自 `PlanStep.clarification`，内核
+/// 原样转交，不另造一份空字符串占位。
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     SampleEnv,
     AssembleContext { turn: u32, profile: String },
     CallModel { turn: u32 },
     RequestEffect { call: PlannedCall },
-    AskClarification { question: String },
+    AskClarification { clarification: PlannedClarification },
     Checkpoint { reason: CheckpointReason },
     Suspend { reason: AwaitReason },
     Complete { status: RunStatus },
@@ -125,26 +127,33 @@ pub fn decide(state: &RunState) -> Vec<Command> {
         return cmds;
     }
 
-    match state.last_plan.as_ref().map(|p| (p.intent, p.call.clone())) {
-        Some((PlanIntent::ToolCall, Some(call))) => {
-            cmds.push(Command::RequestEffect { call });
-        }
-        Some((PlanIntent::ToolCall, None)) => {
-            // plan.step 说要调工具却没给 call —— runtime 解析出了问题
-            cmds.push(Command::Complete {
-                status: RunStatus::Failed,
-            });
-        }
-        Some((PlanIntent::Clarify, _)) => {
-            cmds.push(Command::AskClarification {
-                question: String::new(),
-            });
-        }
-        Some((PlanIntent::Finish, _)) | None => {
-            cmds.push(Command::Complete {
+    match state.last_plan.as_ref() {
+        Some(plan) => match plan.intent {
+            PlanIntent::ToolCall => match plan.call.clone() {
+                Some(call) => cmds.push(Command::RequestEffect { call }),
+                None => {
+                    // plan.step 说要调工具却没给 call —— runtime 解析出了问题
+                    cmds.push(Command::Complete {
+                        status: RunStatus::Failed,
+                    });
+                }
+            },
+            PlanIntent::Clarify => match plan.clarification.clone() {
+                Some(clarification) => cmds.push(Command::AskClarification { clarification }),
+                None => {
+                    // 与 ToolCall 却没给 call 对称：Clarify 却没给要问的问题
+                    cmds.push(Command::Complete {
+                        status: RunStatus::Failed,
+                    });
+                }
+            },
+            PlanIntent::Finish => cmds.push(Command::Complete {
                 status: RunStatus::Completed,
-            });
-        }
+            }),
+        },
+        None => cmds.push(Command::Complete {
+            status: RunStatus::Completed,
+        }),
     }
     cmds
 }

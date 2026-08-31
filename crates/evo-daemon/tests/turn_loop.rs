@@ -66,6 +66,7 @@ async fn a_full_turn_writes_the_event_sequence_from_doc_03() {
             "checkpoint",
             "effect.dispatched",
             "tool.result",
+            "artifact.emitted",
             "env.sampled",
             "context.assembled",
             "model.requested",
@@ -76,6 +77,8 @@ async fn a_full_turn_writes_the_event_sequence_from_doc_03() {
             "run.completed",
         ]
     );
+    assert_eq!(state.artifacts.len(), 1, "{:?}", state.artifacts);
+    assert_eq!(state.artifacts[0].path, "report.txt");
 }
 
 #[tokio::test]
@@ -138,6 +141,49 @@ async fn cost_is_charged_from_our_own_price_table() {
     let state = rt.start(&run_id, "x").await.unwrap().into_state();
     // (120*1 + 40*2) + (200*1 + 10*2) = 200 + 220
     assert_eq!(state.budget_used.amount_micros, 420);
+}
+
+#[tokio::test]
+async fn a_priced_tool_effect_is_charged() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = DaemonConfig::for_test(dir.path());
+    config.pricing_toml.push_str(
+        r#"
+
+[[tool]]
+name = "fs.write"
+call_micros = 100
+"#,
+    );
+    let mut rt = Runtime::new(
+        config,
+        Arc::new(FixedClock::new(1_756_461_600_000)),
+        Arc::new(FixtureAdapter::from_json_str(FIXTURES).unwrap()),
+        Arc::new(LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()))),
+    )
+    .unwrap();
+    let run_id = RunId::from("r-1");
+    let state = rt.start(&run_id, "x").await.unwrap().into_state();
+    // 模型 420 + fs.write 100
+    assert_eq!(state.budget_used.amount_micros, 520);
+
+    let log = RunLog::open(&dir.path().join("runlog.sqlite"), &dir.path().join("blobs")).unwrap();
+    let tool_charges: Vec<_> = log
+        .events(&run_id, 0, None)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| match e.body {
+            evo_protocol::EventBody::CostCharged(c) if c.effect_id.is_some() => Some(c),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tool_charges.len(), 1, "应恰好一笔工具账");
+    assert_eq!(tool_charges[0].amount_micros, 100);
+    assert_eq!(tool_charges[0].unit, evo_protocol::CostUnit::Call);
+    assert_eq!(
+        tool_charges[0].dimension.tool.as_ref().map(|t| t.as_str()),
+        Some("fs.write")
+    );
 }
 
 #[tokio::test]

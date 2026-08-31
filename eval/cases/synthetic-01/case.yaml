@@ -15,7 +15,7 @@ expect:
   checkpoints_at_least: 1
   # 三条独立的回放路径（--verify 全量 fold、走快照的 replay、删光快照后
   # 退回全量 fold 的 replay）算出的最终状态哈希必须两两相同，且必须等于
-  # 这个钉住的值——eval/run.sh 逐条比对。last_seq=22。
+  # 这个钉住的值——eval/run.sh 逐条比对。last_seq=23。
   #
   # 这个值在 M2 Task 2（内核：挂起/恢复/预算闸门）里改过一次：`RunState`
   # 新增了 `pending_approvals`/`pending_question` 两个字段，`state_hash`
@@ -66,6 +66,20 @@ expect:
   # 它）保持默认值不设限，所以这条用例的 `run.created` payload 里
   # `budget` 仍然是 `{}`，逐字节相同——实测两份 Log 的该字段完全一致。
   # 这是刻意的：接通闸门不该让既有的、没配预算的用例突然撞上限。
-  final_state_hash: fb15aa1ada899da648dd64bfc52796b4188dfde5509191a1bf55f1efce5fc1cd
+  #
+  # 档二产物区接线**改了**这个值：旧值是
+  # fb15aa1ada899da648dd64bfc52796b4188dfde5509191a1bf55f1efce5fc1cd。
+  # 已在只含本次改动的工作区上重新生成并逐条核对。
+  #
+  # 事件 kind 序列的有意差异只有一处：第一次 `tool.result` 之后多了一条
+  # `artifact.emitted`（成功的 `fs.write` 现在会把 `report.txt` 写进产物
+  # 区）。24 条事件，last_seq 从 22 变成 23。turn 仍是 1，status 仍是
+  # Completed，checkpoints 仍是 1。四笔 `cost.charged` 仍全是模型侧——
+  # 生产 `pricing.toml` 没有给本地工具定价，这条用例的金额仍是 420。
+  #
+  # `RunState.artifacts` 第一次非空（path=`report.txt`），这是哈希变化的
+  # 另一半：`state_hash` 序列化整个状态。`expect.artifacts` 断言的仍是
+  # 工作区文件，不是这张表，所以那一行不用改。
+  final_state_hash: 742421e80ddd7e5ed8349e0b10fdda70b29839151a93bbcee5c2e71fd092e9e6
   artifacts:
     - report.txt

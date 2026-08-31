@@ -51,6 +51,31 @@ pub struct ImpactTarget {
 pub enum ImpactPrecision {
     Exact,
     DeclaredOnly,
+    /// 没有 preview、也解析不出任何 target。空清单在这里的意思是「不知道」，
+    /// 不是「没有」。不要把这一档渲染成「无影响」。
+    Unknown,
+}
+
+#[cfg(test)]
+mod impact_precision_tests {
+    use super::ImpactPrecision;
+
+    #[test]
+    fn old_declared_only_still_decodes() {
+        let p: ImpactPrecision = serde_json::from_str("\"declared_only\"").unwrap();
+        assert_eq!(p, ImpactPrecision::DeclaredOnly);
+    }
+
+    #[test]
+    fn unknown_roundtrips() {
+        let p = ImpactPrecision::Unknown;
+        let encoded = serde_json::to_string(&p).unwrap();
+        assert_eq!(encoded, "\"unknown\"");
+        assert_eq!(
+            serde_json::from_str::<ImpactPrecision>(&encoded).unwrap(),
+            p
+        );
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]

@@ -2,8 +2,9 @@
 //!
 //! `tests/pipeline.rs` 已经覆盖六步管线的接线与 `tighten` 闸门；这个文件
 //! 专门测三件事：
-//!   1. 三级降级各自的产出（`Exact` / `DeclaredOnly` 两种 precision，第 2、3
-//!      级靠 targets 是否非空区分）。
+//!   1. 三级降级各自的产出（`Exact` / `DeclaredOnly` / `Unknown`；第 2、3
+//!      级靠能不能静态提取出 target 区分，空清单配 `Unknown` 而不是
+//!      `DeclaredOnly`）。
 //!   2. 第 2、3 级不阻塞接入——没有 preview、targets 也提取不出来的工具，
 //!      仍然拿到完整治理。
 //!   3. `Read` 在 dry-run 下照常执行、`External` 在 dry-run 下永不自动放行
@@ -230,10 +231,10 @@ fn level_2_targets_statically_extracted_from_params_are_declared_only() {
 // ── 第 3 级：targets 提取不出来（如 shell.exec）────────────────────────────
 
 #[test]
-fn level_3_a_tool_with_no_extractable_targets_gets_an_empty_declared_only_estimate() {
+fn level_3_a_tool_with_no_extractable_targets_is_unknown_not_empty_declared() {
     // shell.exec 一类：manifest 没声明 targets（Agent 可以执行任意命令，
-    // 静态分析管不住），估不出具体资源，但仍然是 DeclaredOnly，不是拒绝
-    // 或报错。
+    // 静态分析管不住），估不出具体资源。这是 Unknown，不是 DeclaredOnly
+    // 配一张空清单——后者会被审批卡读成「安全 / 没有影响」。
     let gw = gateway();
     let verdict = gw.admit(admit(
         "shell.exec",
@@ -241,7 +242,7 @@ fn level_3_a_tool_with_no_extractable_targets_gets_an_empty_declared_only_estima
         ExecutionMode::Live,
     ));
     let ie = find_impact(&verdict.events);
-    assert_eq!(ie.precision, ImpactPrecision::DeclaredOnly);
+    assert_eq!(ie.precision, ImpactPrecision::Unknown);
     assert!(
         ie.targets.is_empty(),
         "targets 提取不出来时清单应为空，不是伪造一个"
@@ -252,7 +253,6 @@ fn level_3_a_tool_with_no_extractable_targets_gets_an_empty_declared_only_estima
 fn level_2_and_3_tools_are_not_blocked_from_admission_and_get_full_governance() {
     // 判据 1 的延伸：一个既没有 preview、targets 也提取不出来的工具
     // （shell.exec），仍然要拿到完整治理——三个审计事件一个不少，
-    // 影响预估照给（只是 precision 是 DeclaredOnly），dry-run 也照样降级，
     // 不需要工具作者写一行治理代码。
     let gw = gateway();
 

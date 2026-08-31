@@ -1,10 +1,13 @@
 use evo_kernel::{RunState, RunStatus, fold, reduce};
+use evo_protocol::events::artifact::ArtifactEmitted;
 use evo_protocol::events::context::{ContextAssembled, ContextBlock};
 use evo_protocol::events::determinism::{EnvSampled, ModelRoute};
 use evo_protocol::events::effect::{ToolResult, ToolResultStatus};
 use evo_protocol::events::lifecycle::{CompletionStatus, RunCompleted};
 use evo_protocol::events::model::{PlanIntent, PlanStep};
-use evo_protocol::{Actor, CiteId, EffectId, Event, EventBody, RunId, TaintLevel, TrustLevel};
+use evo_protocol::{
+    Actor, ArtifactId, BlobRef, CiteId, EffectId, Event, EventBody, RunId, TaintLevel, TrustLevel,
+};
 
 fn ev(seq: u64, body: EventBody) -> Event {
     Event {
@@ -206,4 +209,29 @@ fn folding_the_same_events_twice_gives_the_same_state() {
         fold(&RunId::from("r-1"), &events),
         fold(&RunId::from("r-1"), &events)
     );
+}
+
+#[test]
+fn artifact_emitted_is_folded_into_run_state() {
+    let blob = BlobRef {
+        content_hash: "sha256:art".into(),
+        size: 4,
+        mime: "text/plain".into(),
+    };
+    let s = reduce(
+        &RunState::new(&RunId::from("r-1")),
+        &ev(
+            0,
+            EventBody::ArtifactEmitted(ArtifactEmitted {
+                artifact_id: ArtifactId::from("r-1-art0"),
+                path: "report.txt".into(),
+                blob,
+                cites: vec![],
+                supersedes: None,
+            }),
+        ),
+    );
+    assert_eq!(s.artifacts.len(), 1);
+    assert_eq!(s.artifacts[0].path, "report.txt");
+    assert_eq!(s.artifacts[0].content_hash, "sha256:art");
 }

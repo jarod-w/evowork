@@ -33,9 +33,9 @@ allow。不要假设「整个 workspace 都禁了 `SystemTime::now()`」。
 `RunState::children` 等是死变体/死字段，均有注释。不要在没有产生方的情况下
 写「本层保证处理了 X」。
 
-`reduce` 忽略 `ContextCompacted` / `ArtifactEmitted`。`RunState::artifacts`
-全仓零写入点（声明 + `Vec::new()`，没有 `push`）。做产物区 = 先给
-`artifact.emitted` 找产生方，再接进 `reduce`，最后才谈渲染。
+`reduce` 忽略 `ContextCompacted`（今天无产生方）。`ArtifactEmitted`
+由 daemon 在成功的 `fs.write` 之后写出，`reduce` 折进 `RunState::artifacts`。
+同一 path 的更新靠事件上的 `supersedes`，状态里两条都留着。渲染是档三。
 
 改 `RunState` 形状会改 `eval/cases/synthetic-01` 的 `final_state_hash`。
 更新规则见 `.cursorrules`「不要做的事」与该 yaml 里现有三段注释。
