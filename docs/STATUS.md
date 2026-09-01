@@ -13,7 +13,7 @@
 > **2026-09-01 增补**：`apps/ui/src-tauri` 在这台 Mac 上**第一次被编译**，并打出了
 > `.app` 与未签名的 `.dmg`。§二 那条「从未编译过」作废；§四 P6 打包一行的四个缺口
 > 逐条重写（两条消掉、两条仍在），另有**三条本次新发现**，其中最要紧的一条升为
-> **P0-17**——产物连不上 daemon。打包本身**没有**改动任何构建配置：用 `pnpm dlx` 临时拉
+> **P0-17**——产物连不上 daemon（**同日修完**，改法与验到哪一步见该条）。打包本身**没有**改动任何构建配置：用 `pnpm dlx` 临时拉
 > CLI 做的，`package.json` / `pnpm-lock.yaml` / `Cargo.lock` 一个都没动。随后按 P2 #14
 > 补了 `apps/ui/src-tauri/.gitignore` 的 `/gen/schemas`（第一道防线，CI-10 那半仍未做）。
 
@@ -87,7 +87,7 @@
 2. **`src-tauri` 那条「未验」已消掉（2026-09-01）。** 它当时被判为「唯一挡在 `.app`/`.dmg`
    之前的自有工作」，这个判断偏乐观了一点——编译与打包都一次通过，但打通之后露出了
    三条原先看不见的缺口（§四 P6 打包一行的⑤⑥⑦），其中 ⑦ 不是打包问题而是产品问题，
-   已升为 **P0-17：打出来的产物连不上 daemon**。
+   已升为 **P0-17：打出来的产物连不上 daemon**（当天已修，见该条）。
    现在挡在「可交付的 dmg」之前的是两类：签名公证（等 Apple 账号）＋ 那三条。
 
 ---
@@ -220,40 +220,78 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 
 **现况**：指数退避（200ms 起、封顶 10s）+ 20 次上限；`unsubscribe()` 取消已排队的重连。只按实际收到的 `event` 帧推进 `from_seq`（`caught_up` 不再误推进）。前端测试覆盖退避加倍、触顶停连、unsubscribe 不重连。
 
-#### 17. 打包出来的桌面产物连不上 daemon（**未修**）
+#### 17. 打包出来的桌面产物连不上 daemon（**已修，2026-09-01**；剩一条未验）
 
-> 本条 2026-09-01 随「第一次在 macOS 上打出 `.app`/`.dmg`」发现（§二、§四 P6 ⑦）。
-> 它排在 P0 是因为**判据的第一条就是「能不能在演示现场变成事故」**：客户双击拿到的
-> 是一个永远空着的窗口。
+> 本条 2026-09-01 随「第一次在 macOS 上打出 `.app`/`.dmg`」发现（§二、§四 P6 ⑦），
+> 当天修完。排 P0 的理由是「判据的第一条就是能不能在演示现场变成事故」：
+> 客户双击拿到的是一个永远空着的窗口。
 
-外壳里没有 daemon，也没有 sidecar（`src-tauri/src/main.rs` 不 spawn 任何进程，
-这是它「零业务逻辑」设计的直接结果）。而 `apps/ui/src/App.tsx:31-38` 把
-`http://localhost:4477` 与 `import.meta.env.VITE_DAEMON_TOKEN ?? ''`
-在 **build 时**烧进产物：
+**当天的复现（三条，都是实测）**：
 
-- 装了 dmg 的机器上不另起 `cargo run -p evo-daemon`，status bar 恒为
-  `not connected`、Inbox 恒空；
-- 即便 daemon 起着**也连不上**：daemon 首启把随机 token 写进
-  `~/.evowork/client.toml`，产物里烧进去的是空串 → `/v1/hello` 走 401；
-- 界面里**没有任何**填 URL / token 的入口，装完之后没有补救手段。
+1. 4477 上没有进程在听 → `lsof -nP -iTCP:4477 -sTCP:LISTEN` 空，UI status bar
+   报 `(Load failed)`——那是 WebKit 的网络层失败文案，不是 401。
+2. 起了 daemon 也连不上：产物里烧进去的是空 token。
+   `evo-daemon --token demo-token-abc` 起着时，`Authorization: Bearer `（空）
+   → **401**；带对的 token → **200** `{"op":"hello","protocol_ver":"1.0",…}`。
+3. 界面里没有任何填 URL / token 的入口，装完之后没有补救手段。
 
-§三「今天的界面是什么」里那句「没起 daemon 或没带 token 时 Inbox 为空——这还是预期」
-在**浏览器入口**下成立：开发者自己起 daemon、自己配 `VITE_DAEMON_TOKEN`。
-**同一句话放到交给客户双击的 dmg 上就不再是「预期」，而是「打开即空窗」**——
-这正是本文档开头那条前提（「结构写好了」不等于「接通了」）在交付形态上的一次复现。
+另外顺手量到两条：daemon 只听 IPv4（`http://[::1]:4477` 直接 refused，而 UI 连的是
+`localhost`），以及那句提示 `（VITE_DAEMON_TOKEN 或 client.toml）` 在说谎——
+全仓没有任何一行 UI 代码读过 `client.toml`，只有 daemon 在写它。
 
-两条修法，选一条：
+**选的是第 2 条修法（界面加设置入口 + 读 client.toml）**，不是 sidecar。理由：
+改动小得多，且不必把「拉起一个业务进程」塞进外壳的生命周期
+（`src-tauri/src/main.rs` 的「零业务逻辑」不用重新界定）。代价照旧：
+客户仍要自己先起一个 daemon 进程——这条**没有**被这次修复消掉。
 
-1. **daemon 做成 Tauri sidecar**：`bundle.externalBin` + 按 target triple 命名的二进制
-   + 启动时 spawn。产物自洽，但把一个业务进程塞进了外壳的生命周期——
-   `main.rs` 的「零业务逻辑」要重新界定成「不含业务逻辑，但负责拉起 daemon」。
-2. **界面加设置入口**（daemon URL + token），首启时读 `~/.evowork/client.toml`。
-   改动小得多，但它把「客户要自己先起一个进程」留在了流程里。
+落地：
 
-**在选定之前不要把这个 dmg 当成「形态验收件」给客户看**——它能证明「双击能打开」，
-不能证明「打开之后有东西」。
+| 位置 | 做了什么 |
+|---|---|
+| `apps/ui/src/daemon/config.ts`（新） | 设置解析，纯逻辑无 IO。四个来源按 `saved` → `build-time` → `client-toml` → 默认 取先命中；url/token **成对**取，不跨来源拼字段 |
+| `apps/ui/src/workspace/DaemonSettings.tsx`（新） | 设置面板。未连接时**强制展开**在主区域第一块，连上后收进 header 的「设置」按钮 |
+| `Platform` 第 6 个方法 `readClientToml` | 读 `~/.evowork/client.toml`。桌面走 fs 插件，浏览器 `supports()` 报 false 且调用即抛 |
+| `capabilities/default.json` | 新增 `fs:allow-read-text-file`，**带一条只含单个文件名的 command scope** |
+| `scripts/verify-tauri-permissions.sh` | 认识带 scope 的对象形 permission（旧版会把它打成 `[object Object]`，报一条指错地方的 FAIL） |
+| `StatusBar` | 能力清单加了编译期穷尽检查，漏一个 `Platform` 方法直接编译不过 |
 
----
+默认 URL 从 `http://localhost:4477` 改成 `http://127.0.0.1:4477`，对应上面量到的
+IPv4-only。那句说谎的提示改成了指向设置面板。
+
+**Platform 的 5 方法上限被突破成 6，这是有意的**，理由写在
+`platform/index.ts` 的注释里：读固定路径的文件是原生能力，浏览器结构上做不到，
+它就该在这个接口后面。没有为了让「5」这个数字看着还成立而另开一个
+`platform/clientToml.ts`——那样只会让注释里的 5 名义上为真，同时把外壳替换时
+要重写的适配器从一个变成两个，而这正是这条上限要保护的性质。
+
+**验到哪一步**：
+
+- ✅ 131 条前端测试通过（原 96）。新增的行为测试在**未修**代码上会红：把
+  `buildTimeConfig()` 恢复成旧的「无条件返回一对设置」，12 条里 3 条变红，
+  其中包括「桌面上零操作从 client.toml 取到 token」那条。
+- ✅ 四条新增/改动的检查都构造过违规输入实测变红再复绿：scope 被简化成裸字符串
+  （capabilities 测试红）、授权被删（红）、加一条带 scope 的孤儿授权（红——**这个形状在改动前是看不见的**，因为断言拿对象和字符串比）、
+  `StatusBar` 的能力清单漏一项（`tsc` 报 `Type '"readClientToml"' does not satisfy the constraint 'never'`）。
+  `verify-tauri-permissions.sh` 也验了两种：对象形里放错标识符、以及既不是字符串也没有
+  `identifier` 的元素——都 exit 1。
+- ⚠️ **真机 IPC 往返：有间接证据，没有直接确认。** 修完后重新打了 `.app`
+  （Rust 侧 `--locked` 通过，`Cargo.lock` / `package.json` 一个没动），在
+  `~/.evowork/client.toml` 里放好 token 后双击运行，观察到
+  `lsof -nP -iTCP:4477` 出现**两条 ESTABLISHED**——来自
+  `com.apple.WebKit.Networking`（不是 app 进程本身，这一点第一次查漏了）。
+  客户端只在 `hello()` resolve 之后才调 `subscribeAll` 开 WS，所以「有一条稳定的
+  WS 挂着」与「401」是互斥的：这基本等于说 scope 生效、token 读到了、`hello` 回了 200。
+  **但没有拿到直接确认**：原计划用一个记录 `Authorization` 头的探针来看清它到底发了
+  什么，那一步没做完；也没能截到界面（本机 `screencapture` 没有屏幕录制权限）。
+  scope 本身仍只有静态核对（标识符对着 `tauri-plugin-fs` 2.5.1 的
+  `permissions/*.toml`、路径对着测试）。
+  **要补的一步**：把 `client.toml` 的 `url` 指向一个记录请求头的端口，跑一次
+  `.app`，确认 `GET /v1/hello` 带的是 `Bearer <client.toml 里那串>`。
+
+**仍然没做**：外壳不带 daemon。客户机器上要么自己起一个 `evo-daemon`，
+要么把 daemon 做成 sidecar（当时的第 1 条修法，未采纳，未排期）。
+这条 dmg 现在能证明「打开之后有东西」的前提是「本机已经有一个 daemon 在跑」。
+
 
 ### P1 — 防线靠纪律而非机制
 
@@ -411,7 +449,7 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 | ④ | `identifier` 是占位 `com.evowork.desktop` | **仍在**，且**必须在第一次签名之前**换成组织真实域名（理由见 `tauri.conf.json5` 顶部注释：它牵动 keychain 项与更新/自启插件的键，不是一次 find-and-replace）。已实测这个占位值原样进了产物：`evowork.app/Contents/Info.plist` 的 `CFBundleIdentifier` 就是它 |
 | ⑤ | 只装了 `aarch64-apple-darwin` | **新发现**。产物名就写着 `evowork_0.1.0_aarch64.dmg`，`lipo -info` 是 thin arm64——**Intel Mac 打不开**。要 universal 得先 `rustup target add x86_64-apple-darwin`，再按 `universal-apple-darwin` 打。客户机器的芯片是哪种，目前文档里没有记录 |
 | ⑥ | `verify-tauri-config.sh` / `verify-tauri-permissions.sh` 没有调用方 | **新发现**。两个脚本都在，`ci.sh` 一个都不跑，等于「写了检查但没有装上」。本次手工跑 permissions：9 条标识符全 ok。注意这是在 `cargo fetch --locked` 之后跑的——在此之前本机没有 plugin 源码缓存（`cargo fetch --offline` 直接报 `no matching package named tauri-plugin-autostart`），脚本会逐条 FAIL 在「registry 缓存里没有该版本」上，而不是真在核对标识符。既然现在本机能编译 src-tauri 了，接进 `ci.sh` 的结构性障碍已消失——但新增/接入检查要先按「必须被证明能失败」造反例 |
-| ⑦ | 产物连不上 daemon | **新发现，已升 P0-17**。这条不是打包问题，是「双击能打开」与「打开之后有东西」之间的差距 |
+| ⑦ | 产物连不上 daemon | **新发现，已升 P0-17，当天已修**（界面加设置入口 + 读 `client.toml`）。这条不是打包问题，是「双击能打开」与「打开之后有东西」之间的差距。剩下的是外壳仍不带 daemon——客户机器上要自己起一个 |
 
 签名与公证仍另等 Apple 账号（§二）。**⑦ 不解决，打包做完了也只是一个能双击的空窗口。**
 

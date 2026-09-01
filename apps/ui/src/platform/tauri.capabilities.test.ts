@@ -103,9 +103,68 @@ const platformDirUrl = new URL('.', thisModuleUrl)
 const capabilitiesUrl = new URL('../../src-tauri/capabilities/default.json', thisModuleUrl)
 
 const platformDirPath = fileURLToPath(platformDirUrl)
+
+// A Tauri 2 capability's `permissions` array is heterogeneous: a plain
+// string for an unscoped grant, or an object
+// (`{ identifier, allow?, deny? }`) for one carrying a command scope.
+// `capabilities/default.json` has held both since `fs:allow-read-text-file`
+// gained a one-file scope for `readClientToml()` (P0-17).
+//
+// This distinction is not cosmetic to this test: before it was handled,
+// every assertion below compared array elements against permission-name
+// STRINGS, so an object entry silently matched nothing -- the orphan
+// direction reported the scoped `fs:allow-read-text-file` as an
+// unmapped permission, and the forward direction reported the grant as
+// missing. Verified by adding the scoped entry before this change: 2
+// failures, both naming `fs:allow-read-text-file`.
+type CapabilityPermissionEntry = string | { identifier: string; allow?: unknown; deny?: unknown }
+
 const capabilities = JSON.parse(readFileSync(fileURLToPath(capabilitiesUrl), 'utf-8')) as {
-  permissions: string[]
+  permissions: CapabilityPermissionEntry[]
 }
+
+function permissionIdentifier(entry: CapabilityPermissionEntry): string {
+  if (typeof entry === 'string') return entry
+  if (typeof entry === 'object' && entry !== null && typeof entry.identifier === 'string') {
+    return entry.identifier
+  }
+  throw new Error(
+    `tauri.capabilities.test.ts: capabilities/default.json has a permissions entry that is neither a ` +
+      `string nor an object with a string "identifier": ${JSON.stringify(entry)}. Tauri would reject this ` +
+      `file at build time; this test refuses to guess what was meant rather than skipping the entry (a ` +
+      `skipped entry is an ungranted-but-believed-granted permission, which is the exact failure mode this ` +
+      `whole file exists to prevent).`,
+  )
+}
+
+/**
+ * Just the identifiers, for the assertions that only care about "is this
+ * permission granted at all". The scope attached to an entry is checked
+ * separately below -- see `SCOPE_REQUIRED_PERMISSIONS`.
+ */
+const grantedPermissionIdentifiers = capabilities.permissions.map(permissionIdentifier)
+
+/**
+ * Permissions that are useless -- silently, at runtime -- without a
+ * static scope, and the scope entry each one must carry.
+ *
+ * `fs:allow-read-text-file` is the whole reason this list exists.
+ * Granting the command alone compiles, launches, and passes every other
+ * assertion in this file, then fails on a real machine with `forbidden
+ * path` the first time `readClientToml()` runs, because the fs plugin's
+ * scope defaults to empty and nothing widens it for a path the code (not
+ * a dialog gesture) chose. `pickFile()`'s `fs:allow-read-file` is
+ * deliberately NOT in this list: the dialog plugin grants a one-shot
+ * scope for the picked path at runtime, so a static scope there would be
+ * standing authority for no benefit (see capabilities/README.md).
+ */
+const SCOPE_REQUIRED_PERMISSIONS: ReadonlyArray<{ permission: string; allow: string; why: string }> = [
+  {
+    permission: 'fs:allow-read-text-file',
+    allow: '$HOME/.evowork/client.toml',
+    why: "platform/tauri.ts's readClientToml() reads a code-chosen path, so no dialog gesture widens the fs scope for it",
+  },
+]
 
 // Every `.ts` source file directly under `platform/`, excluding
 // `*.test.ts` (not shipped runtime code -- and excluding this file
@@ -138,9 +197,34 @@ interface PluginBinding {
 // -- the tests below fail if either one drifts from this manifest, in
 // either direction (a used import missing a permission, or a granted
 // permission nothing uses any more).
-const PLUGIN_IMPORT_PERMISSIONS: ReadonlyArray<PluginBinding & { permission: string }> = [
+// `permission: null` means "this export is not an IPC command, so there
+// is no permission to grant for it". Exactly one binding needs that
+// today (`BaseDirectory`, a plain numeric enum the fs plugin's JS side
+// passes through as an option field), and it is spelled out rather than
+// filtered from the scan: an unrecognized import must still fail this
+// test, and "not a command" is a claim that belongs written down next to
+// the import it excuses. Marking a real command `null` would defeat the
+// test -- no static check can prevent that, which is why it is a
+// documented exception with a stated reason and not a general escape
+// hatch.
+const PLUGIN_IMPORT_PERMISSIONS: ReadonlyArray<PluginBinding & { permission: string | null }> = [
   { module: '@tauri-apps/plugin-dialog', namedImport: 'open', permission: 'dialog:allow-open' },
   { module: '@tauri-apps/plugin-fs', namedImport: 'readFile', permission: 'fs:allow-read-file' },
+  { module: '@tauri-apps/plugin-fs', namedImport: 'readTextFile', permission: 'fs:allow-read-text-file' },
+  {
+    module: '@tauri-apps/plugin-fs',
+    // Not a command: `BaseDirectory` is a numeric enum in the plugin's JS
+    // package, passed as `readTextFile(path, { baseDir })` and resolved
+    // inside the plugin's own `read_text_file` handler on the Rust side.
+    // It issues no `invoke()` of its own, so there is no separate
+    // permission identifier it could possibly need. (Reaching for
+    // `@tauri-apps/api/path`'s `homeDir()` instead WOULD have been a real
+    // second command -- and one this test cannot see, since it only
+    // scans `@tauri-apps/plugin-*` specifiers. That is why tauri.ts uses
+    // this enum.)
+    namedImport: 'BaseDirectory',
+    permission: null,
+  },
   { module: '@tauri-apps/plugin-opener', namedImport: 'openUrl', permission: 'opener:allow-open-url' },
   {
     module: '@tauri-apps/plugin-notification',
@@ -374,13 +458,42 @@ describe('platform/*.ts plugin usage <-> capabilities/default.json permissions',
       // was removed from platform/ should be deleted from the manifest
       // above, not force a capability grant nothing needs any more.
       if (!isActuallyImported) return
+      // A non-command binding (see `permission: null` above) has no
+      // permission to look for.
+      if (permission === null) return
 
       expect(
-        capabilities.permissions,
+        grantedPermissionIdentifiers,
         `capabilities/default.json is missing "${permission}", which ${module}'s "${namedImport}" (used under ` +
           `platform/) needs -- without it, that call is silently rejected by Tauri's IPC allowlist on a real ` +
           `machine.`,
       ).toContain(permission)
+    },
+  )
+
+  // Granting a command without the scope it needs is a *silent* runtime
+  // failure, not a build error -- the IPC call is allowed through and the
+  // fs plugin then rejects the path. That is one layer deeper than the
+  // assertions above can see, so it gets its own check.
+  it.each(SCOPE_REQUIRED_PERMISSIONS)(
+    'permission "$permission" carries its required scope entry "$allow"',
+    ({ permission, allow, why }) => {
+      const entry = capabilities.permissions.find(
+        (candidate) => typeof candidate === 'object' && candidate.identifier === permission,
+      )
+      expect(
+        entry,
+        `capabilities/default.json grants "${permission}" without a scope (it is a bare string, or absent). ` +
+          `It needs one: ${why}. Replace the plain string with ` +
+          `{"identifier": "${permission}", "allow": ["${allow}"]}.`,
+      ).toBeDefined()
+      if (typeof entry !== 'object') return
+
+      expect(
+        entry.allow,
+        `capabilities/default.json's "${permission}" entry has a scope, but its "allow" list does not contain ` +
+          `"${allow}". ${why}.`,
+      ).toContain(allow)
     },
   )
 
@@ -397,7 +510,7 @@ describe('platform/*.ts plugin usage <-> capabilities/default.json permissions',
   // for no reason (`shell:allow-execute` sitting unused in this file
   // would be exactly that). This test makes the claim true instead of
   // deleting it.
-  it.each(capabilities.permissions)(
+  it.each(grantedPermissionIdentifiers)(
     'permission "%s" granted in capabilities/default.json is not an orphan',
     (permission) => {
       const manifestEntry = PLUGIN_IMPORT_PERMISSIONS.find((entry) => entry.permission === permission)

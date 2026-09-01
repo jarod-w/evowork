@@ -31,7 +31,16 @@ declare global {
 // direct imports of the mocked modules resolve to the same mock
 // instances.
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }))
-vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: vi.fn() }))
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  readFile: vi.fn(),
+  readTextFile: vi.fn(),
+  // `BaseDirectory` is a real numeric enum in the plugin package, not
+  // a command -- `readClientToml()` passes `BaseDirectory.Home` through
+  // as an option, so the mock has to carry the member it reads or the
+  // assertion below would compare `undefined` to `undefined` and pass
+  // no matter which directory the code asked for.
+  BaseDirectory: { Home: 12 },
+}))
 vi.mock('@tauri-apps/plugin-notification', () => ({
   isPermissionGranted: vi.fn(),
   requestPermission: vi.fn(),
@@ -42,7 +51,11 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }))
 vi.mock('@tauri-apps/plugin-process', () => ({ exit: vi.fn() }))
 
 const { open: mockOpen } = await import('@tauri-apps/plugin-dialog')
-const { readFile: mockReadFile } = await import('@tauri-apps/plugin-fs')
+const {
+  readFile: mockReadFile,
+  readTextFile: mockReadTextFile,
+  BaseDirectory: mockBaseDirectory,
+} = await import('@tauri-apps/plugin-fs')
 const {
   isPermissionGranted: mockIsPermissionGranted,
   requestPermission: mockRequestPermission,
@@ -94,10 +107,24 @@ describe('getPlatform()', () => {
     const platform = await getPlatform()
 
     expect(platform.info.kind).toBe('desktop')
-    // All five capabilities are real OS-level operations on desktop --
+    // All six capabilities are real OS-level operations on desktop --
     // unlike the browser shell, nothing is structurally unsupported.
     expect(platform.info.supports('setAutoLaunch')).toBe(true)
     expect(platform.info.supports('quit')).toBe(true)
+    expect(platform.info.supports('readClientToml')).toBe(true)
+  })
+
+  // `readClientToml` is the 6th `Platform` method, added for P0-17 (the
+  // packaged .app shipped an empty daemon token). The browser shell
+  // cannot read a file at a fixed absolute path at all, so it must
+  // report the capability as absent -- and App.tsx's bootstrap checks
+  // `supports()` before calling, so a `true` here would turn "this is a
+  // web page" into an unhandled rejection at startup.
+  it('reports readClientToml as unsupported in the browser shell, and throws if called anyway', async () => {
+    const platform = await getPlatform()
+
+    expect(platform.info.supports('readClientToml')).toBe(false)
+    await expect(platform.readClientToml()).rejects.toThrow(/readClientToml/)
   })
 
   it('rejects if the desktop branch is reached without the real Tauri isTauri() signal (belt-and-suspenders guard)', async () => {
@@ -193,6 +220,34 @@ describe('getPlatform()', () => {
       await platform.quit()
 
       expect(mockExit).toHaveBeenCalledWith(0)
+    })
+
+    it('readClientToml() reads .evowork/client.toml relative to $HOME via the fs plugin', async () => {
+      vi.mocked(mockReadTextFile).mockResolvedValue('token = "t"\n')
+
+      const platform = await desktopPlatform()
+      const raw = await platform.readClientToml()
+
+      expect(raw).toBe('token = "t"\n')
+      // The path must stay relative and the baseDir must be Home: an
+      // absolute path built in JS would need `@tauri-apps/api/path`'s
+      // homeDir(), a second IPC command that tauri.capabilities.test.ts
+      // structurally cannot see (it only scans `@tauri-apps/plugin-*`).
+      expect(mockReadTextFile).toHaveBeenCalledWith('.evowork/client.toml', {
+        baseDir: mockBaseDirectory.Home,
+      })
+    })
+
+    it('readClientToml() resolves null when the file is not there, rather than rejecting', async () => {
+      // The fs plugin surfaces "not found" as an untyped rejection, and
+      // so does a denied scope -- `readClientToml` deliberately collapses
+      // both to null because they mean the same thing to its caller
+      // ("no settings to be had here, ask the user").
+      vi.mocked(mockReadTextFile).mockRejectedValue(new Error('path not allowed'))
+
+      const platform = await desktopPlatform()
+
+      await expect(platform.readClientToml()).resolves.toBeNull()
     })
   })
 })

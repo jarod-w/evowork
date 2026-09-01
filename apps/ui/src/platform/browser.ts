@@ -3,16 +3,26 @@
 // shell -- e.g. this M1 scaffold, or any future "run in a browser tab"
 // mode.
 //
-// Two capabilities are structurally impossible from a web page:
-// `setAutoLaunch` (no OS-level "start at login" hook) and `quit` (a page
-// cannot terminate its own host process). Both report `supports() ===
-// false` AND throw a clear error if called anyway -- never a silent
-// no-op, so "this doesn't work here" is discoverable without trial and
-// error.
+// Three capabilities are structurally impossible from a web page:
+// `setAutoLaunch` (no OS-level "start at login" hook), `quit` (a page
+// cannot terminate its own host process), and `readClientToml` (a page
+// cannot read a file at a fixed absolute path -- the only file bytes it
+// ever sees are ones the user hands it through a picker). All three
+// report `supports() === false` AND throw a clear error if called anyway
+// -- never a silent no-op, so "this doesn't work here" is discoverable
+// without trial and error.
+//
+// `readClientToml` returning `null` here instead of throwing would have
+// been convenient for its one caller (App.tsx's bootstrap treats "no
+// file" and "cannot read files" the same way), and that is exactly why
+// it does not: `null` is this method's legitimate "the file is not
+// there" answer on desktop, so reusing it for "this shell has no
+// filesystem" would make the two indistinguishable at the seam. The
+// caller checks `supports()` first.
 
 import type { Platform, PlatformInfo } from './index'
 
-const UNSUPPORTED = new Set<keyof Platform>(['setAutoLaunch', 'quit'])
+const UNSUPPORTED = new Set<keyof Platform>(['setAutoLaunch', 'quit', 'readClientToml'])
 
 function supports(cap: keyof Platform): boolean {
   return !UNSUPPORTED.has(cap)
@@ -22,8 +32,8 @@ function unsupported(cap: keyof Platform): never {
   throw new Error(
     `platform.${cap}() is not supported in the browser shell: a web page ` +
       'cannot control its host process (no autostart registration, no ' +
-      'process exit). This capability only exists in the desktop (Tauri) ' +
-      'shell.',
+      'process exit) and cannot read a file at a fixed absolute path. ' +
+      'This capability only exists in the desktop (Tauri) shell.',
   )
 }
 
@@ -142,7 +152,11 @@ async function quit(): Promise<void> {
   unsupported('quit')
 }
 
+async function readClientToml(): Promise<string | null> {
+  unsupported('readClientToml')
+}
+
 export function createBrowserPlatform(): Platform & { info: PlatformInfo } {
   const info: PlatformInfo = { kind: 'browser', supports }
-  return { pickFile, openExternal, notify, setAutoLaunch, quit, info }
+  return { pickFile, openExternal, notify, setAutoLaunch, quit, readClientToml, info }
 }
