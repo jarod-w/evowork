@@ -9,6 +9,13 @@
 >
 > **2026-08-30 增补**：路线已按「优先看到 UI」重排，见 §三。那一节**只改顺序**——
 > §四 的优先级判据、条目编号与每一条的措辞一概不动。
+>
+> **2026-09-01 增补**：`apps/ui/src-tauri` 在这台 Mac 上**第一次被编译**，并打出了
+> `.app` 与未签名的 `.dmg`。§二 那条「从未编译过」作废；§四 P6 打包一行的四个缺口
+> 逐条重写（两条消掉、两条仍在），另有**三条本次新发现**，其中最要紧的一条升为
+> **P0-17**——产物连不上 daemon。打包本身**没有**改动任何构建配置：用 `pnpm dlx` 临时拉
+> CLI 做的，`package.json` / `pnpm-lock.yaml` / `Cargo.lock` 一个都没动。随后按 P2 #14
+> 补了 `apps/ui/src-tauri/.gitignore` 的 `/gen/schemas`（第一道防线，CI-10 那半仍未做）。
 
 ---
 
@@ -49,13 +56,13 @@
 | 7 | 上游依赖闭包 | ⚠️ **`scripts/codex-closure.py` 已写好，但没有任何脚本调用它，也没有基线文件** |
 | 8 | 快照可丢弃 | ✅ |
 | 9 | 外壳不渗进业务代码 | ✅ |
-| 10 | 构建产物/依赖目录未被跟踪 | ✅ |
+| 10 | 构建产物/依赖目录未被跟踪 | ✅（扫描面漏掉 `apps/ui/src-tauri/gen/`，见 P2 #14） |
 
 另有非编号段：`fmt`、`fmt (src-tauri)`、前端构建与类型检查、产物纯净性、`clippy`、`test`。
 
 ---
 
-## 二、开发与交付环境（2026-08-30 核实）
+## 二、开发与交付环境（2026-08-30 核实，2026-09-01 复核并增补打包两行）
 
 之前多份文档——包括本文 §四 P6 的 CI-6 一行，以及
 `docs/superpowers/notes/2026-08-29-tauri-linux-probe.md`、
@@ -67,17 +74,21 @@
 | 机器 | macOS 26.6.2 / Apple Silicon |
 | 前端工具链 | node 24.19、pnpm 11.24，`apps/ui/node_modules` 已安装 |
 | Rust 主 workspace | **已在这台 Mac 上编译过**——`target/debug/` 下有 `evo-cli`、`mkcase` |
-| `apps/ui/src-tauri` | **从未编译过**：该目录下没有 `target/`。那约 200 行 Rust 至今没有被任何编译器看过一次 |
-| `src-tauri/Cargo.lock` | 已是跨平台解析（`objc2`/`wry`/`gtk` 同时在内，`tauri` 钉 2.11.5）——首次在 Mac 上构建若改动它，要一并提交 |
-| 签名身份 | `security find-identity -v -p codesigning` → **0 valid identities**。Apple Developer Program 组织账号仍未申请 |
+| `apps/ui/src-tauri` | **已编译**（2026-09-01 首次）：`cargo check --locked` exit 0、零 warning、零改动。08-30 那条「那约 200 行 Rust 至今没有被任何编译器看过一次」自此作废。连 Cargo.toml 里预告「最可能需要小修」的 `MacosLauncher::LaunchAgent` 签名也原样通过 |
+| `src-tauri/Cargo.lock` | 已是跨平台解析（`objc2`/`wry`/`gtk` 同时在内，`tauri` 钉 2.11.5）。**2026-09-01 首次 Mac 构建没有改动它**（`--locked` 通过），因此不存在需要一并提交的锁文件漂移 |
+| 打包产物 | **已打出**（2026-09-01）：`apps/ui/src-tauri/target/release/bundle/` 下 `macos/evowork.app` 与 `dmg/evowork_0.1.0_aarch64.dmg`（3.2 MB）。dmg 内容正确（`evowork.app` + `Applications` 符号链接）。**未签名**：只有 linker 给的 adhoc 签名（`codesign -dv` 显示 `adhoc,linker-signed`、`TeamIdentifier=not set`），`spctl -a` 评估不通过。**本机双击能打开**（已实测：窗口起来了，进程没崩）——因为本地产物没有 quarantine 标记；一旦经下载/传输带上 quarantine 交到客户机器，弹的就是 POC 4.10② 要避免的那个「无法验证开发者」框。**仅 arm64** |
+| 签名身份 | `security find-identity -v -p codesigning` → **0 valid identities**（2026-09-01 复核仍是 0）。Apple Developer Program 组织账号仍未申请。`xcrun notarytool` 本机有（CLT 自带），缺的只有证书与 `APPLE_*` 凭据 |
 | 浏览器入口 | `dist/` 起静态服务、Chrome headless 截图确认可打开。当时页面是探针页；档三之后主界面是 Inbox / 时间线 / 审批 / 产物 / 成本 |
 
 两条直接后果：
 
 1. **CI-6 的推迟理由失效了。** 「开发机是 Linux 所以 macOS seatbelt 子集无法 vendor 与实测」
    这句话现在为假——机器就是 macOS。它从「结构性做不到」变成「还没排期」，见 §四 P6。
-2. **`src-tauri` 那条「未验」仍然成立，且现在是唯一挡在 `.app`/`.dmg` 之前的自有工作。**
-   签名公证等 Apple 账号，但「这 200 行 Rust 能不能编译」不等任何人，今天就能试。
+2. **`src-tauri` 那条「未验」已消掉（2026-09-01）。** 它当时被判为「唯一挡在 `.app`/`.dmg`
+   之前的自有工作」，这个判断偏乐观了一点——编译与打包都一次通过，但打通之后露出了
+   三条原先看不见的缺口（§四 P6 打包一行的⑤⑥⑦），其中 ⑦ 不是打包问题而是产品问题，
+   已升为 **P0-17：打出来的产物连不上 daemon**。
+   现在挡在「可交付的 dmg」之前的是两类：签名公证（等 Apple 账号）＋ 那三条。
 
 ---
 
@@ -153,6 +164,8 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 
 一条独立于以上四步、随时可插的：**在 macOS 上第一次编译 `src-tauri`**（见 §二）。
 它不依赖任何一步，却能消掉「那 200 行 Rust 从没被编译器看过」这个最大的单点未知。
+**2026-09-01 已做**，并顺带把 `.app` 与未签名 `.dmg` 一起打了出来。该未知消掉了；
+它换来的三条新缺口见 §四 P6 打包一行与 P0-17。
 
 ---
 
@@ -206,6 +219,39 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 此前 `ws.onclose` 直接重连，无退避、无重试上限。对着拒绝连接的 daemon 实测约 50 毫秒内 40 次（约 800 次/秒），无限持续，且每个 `subscribe()` 独立计数。
 
 **现况**：指数退避（200ms 起、封顶 10s）+ 20 次上限；`unsubscribe()` 取消已排队的重连。只按实际收到的 `event` 帧推进 `from_seq`（`caught_up` 不再误推进）。前端测试覆盖退避加倍、触顶停连、unsubscribe 不重连。
+
+#### 17. 打包出来的桌面产物连不上 daemon（**未修**）
+
+> 本条 2026-09-01 随「第一次在 macOS 上打出 `.app`/`.dmg`」发现（§二、§四 P6 ⑦）。
+> 它排在 P0 是因为**判据的第一条就是「能不能在演示现场变成事故」**：客户双击拿到的
+> 是一个永远空着的窗口。
+
+外壳里没有 daemon，也没有 sidecar（`src-tauri/src/main.rs` 不 spawn 任何进程，
+这是它「零业务逻辑」设计的直接结果）。而 `apps/ui/src/App.tsx:31-38` 把
+`http://localhost:4477` 与 `import.meta.env.VITE_DAEMON_TOKEN ?? ''`
+在 **build 时**烧进产物：
+
+- 装了 dmg 的机器上不另起 `cargo run -p evo-daemon`，status bar 恒为
+  `not connected`、Inbox 恒空；
+- 即便 daemon 起着**也连不上**：daemon 首启把随机 token 写进
+  `~/.evowork/client.toml`，产物里烧进去的是空串 → `/v1/hello` 走 401；
+- 界面里**没有任何**填 URL / token 的入口，装完之后没有补救手段。
+
+§三「今天的界面是什么」里那句「没起 daemon 或没带 token 时 Inbox 为空——这还是预期」
+在**浏览器入口**下成立：开发者自己起 daemon、自己配 `VITE_DAEMON_TOKEN`。
+**同一句话放到交给客户双击的 dmg 上就不再是「预期」，而是「打开即空窗」**——
+这正是本文档开头那条前提（「结构写好了」不等于「接通了」）在交付形态上的一次复现。
+
+两条修法，选一条：
+
+1. **daemon 做成 Tauri sidecar**：`bundle.externalBin` + 按 target triple 命名的二进制
+   + 启动时 spawn。产物自洽，但把一个业务进程塞进了外壳的生命周期——
+   `main.rs` 的「零业务逻辑」要重新界定成「不含业务逻辑，但负责拉起 daemon」。
+2. **界面加设置入口**（daemon URL + token），首启时读 `~/.evowork/client.toml`。
+   改动小得多，但它把「客户要自己先起一个进程」留在了流程里。
+
+**在选定之前不要把这个 dmg 当成「形态验收件」给客户看**——它能证明「双击能打开」，
+不能证明「打开之后有东西」。
 
 ---
 
@@ -267,6 +313,7 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 | CI-4 客户名词 | 只扫 `crates/ apps/`。`config/` 与 `eval/` 都是随产品走的文件，已实测把 `用友` 写进 `config/tools.toml` 全绿 |
 | CI-1 内核依赖 | 只看 `--edges normal`。给 evo-kernel 加 `[dev-dependencies] chrono` 全绿（影响有限：`--all-targets` 的 clippy 会拦住测试里读时钟） |
 | CI-3 治理旁路 | 剩下的绕法全在「不经过 Cargo.toml」这一维：`evo-daemon` 的 `pub use evo_runlog::RunLog` 再导出（这条边界实际靠的是 evo-daemon 的 API 表面），以及 `#[path]`/`include!` |
+| CI-10 构建产物 | 名字白名单只有 `node_modules` / `target` / `dist` / `.pnpm` 四个，**不含 `gen`**。2026-09-01 首次构建 `src-tauri` 后新出现 `apps/ui/src-tauri/gen/schemas/*.json`（Tauri codegen 产物），当时也没有任何 `.gitignore` 覆盖它——**两道防线同时漏**（`.gitignore` 是第一道、CI-10 是最后一道，见 ci.sh 里那段注释）。**已实测**：把这 4 个文件 `git add` 之后跑真实 `./scripts/ci.sh`，CI-10 照样打印 `ok`。第一道**已补**：`apps/ui/src-tauri/.gitignore` 加了 `/gen/schemas`（窄化到 `schemas` 而不是整个 `/gen`，因为 Tauri 移动端的 `gen/android`、`gen/apple` 是**该**进版本库的）。**最后一道仍漏**：CI-10 白名单补 `gen` 这半没做——按「新增的检查必须被证明能失败」，它要先构造反例实测会红 |
 
 #### 15. 三条缺失或无效的测试
 
@@ -347,9 +394,26 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |
 | A-11 口径库 | 未开始 | 财务的历史成品表未到位。机制与内容一起做，避免机制与真实条目形状对不上 |
 | A-10 出口代理子进程 | 未开始 | 属 M3。注意 P4 里的出口 allowlist 死代码在等它 |
-| **桌面外壳打包（`.app` / `.dmg`）** | 未开始 | 四个缺口都在本仓、不等外部：① `@tauri-apps/cli` 未安装且 `apps/ui/package.json` 无 `tauri` script，`pnpm tauri build` 这条命令目前不存在；② `src-tauri` 从未编译过（§二）；③ `icons/` 是 4 张纯色占位 PNG、无 `icon.icns`（Tauri 会不会从 PNG 自动生成 icns —— **未验证**）；④ `identifier` 仍是占位 `com.evowork.desktop`，**必须在第一次签名之前**换成组织真实域名。签名与公证另等 Apple 账号 |
+| **桌面外壳打包（`.app` / `.dmg`）** | **本机已能打出未签名产物**（2026-09-01 实测，见 §二） | 原四个缺口：**②③ 已消**、**①④ 仍在**；另有 **⑤⑥⑦ 三条本次新发现**。逐条见下表 |
 | CI-6 vendor 检查 | 未开始 | `vendor/` 目前为空。原先的理由「开发机是 Linux，macOS seatbelt 子集无法编译与实测」**已失效**——机器就是 macOS（§二）。现在缺的只是排期 |
 | 真机跑通 | 未开始 | 装机三前提（Q-31）未确认 |
+
+#### 打包七条缺口逐条（2026-09-01 实测后重写）
+
+复现命令：仓里目前**没有**能打包的命令，本次是
+`cd apps/ui && pnpm dlx @tauri-apps/cli@2.11.4 build`（见 ①）。全程 release 编译约 2 分钟。
+
+| # | 缺口 | 状态 |
+|:-:|---|---|
+| ① | `@tauri-apps/cli` 未安装、`apps/ui/package.json` 无 `tauri` script | **仍在**。`pnpm tauri build` 这条命令依然不存在。本次用 `pnpm dlx @tauri-apps/cli@2.11.4` 绕过——npm 上 latest 是 2.11.4，与 `Cargo.lock` 锁的 `tauri` 2.11.5 混用**没有**报版本告警。修法是加 devDependency + script + `pnpm-lock.yaml` |
+| ② | `src-tauri` 从未编译过 | **已消**。`cargo check --locked` exit 0、零 warning、锁文件零改动（§二） |
+| ③ | 无 `icon.icns`，Tauri 是否从 PNG 生成 icns 未验证 | **已验证：会生成**。bundler 自己产出 `evowork.icns`（29808 字节）放进 `evowork.app/Contents/Resources/`，不需要预置 `.icns`。**但**那 4 张 PNG 仍是纯色占位，生成出来的就是个纯色方块——图标本身仍缺真实素材 |
+| ④ | `identifier` 是占位 `com.evowork.desktop` | **仍在**，且**必须在第一次签名之前**换成组织真实域名（理由见 `tauri.conf.json5` 顶部注释：它牵动 keychain 项与更新/自启插件的键，不是一次 find-and-replace）。已实测这个占位值原样进了产物：`evowork.app/Contents/Info.plist` 的 `CFBundleIdentifier` 就是它 |
+| ⑤ | 只装了 `aarch64-apple-darwin` | **新发现**。产物名就写着 `evowork_0.1.0_aarch64.dmg`，`lipo -info` 是 thin arm64——**Intel Mac 打不开**。要 universal 得先 `rustup target add x86_64-apple-darwin`，再按 `universal-apple-darwin` 打。客户机器的芯片是哪种，目前文档里没有记录 |
+| ⑥ | `verify-tauri-config.sh` / `verify-tauri-permissions.sh` 没有调用方 | **新发现**。两个脚本都在，`ci.sh` 一个都不跑，等于「写了检查但没有装上」。本次手工跑 permissions：9 条标识符全 ok。注意这是在 `cargo fetch --locked` 之后跑的——在此之前本机没有 plugin 源码缓存（`cargo fetch --offline` 直接报 `no matching package named tauri-plugin-autostart`），脚本会逐条 FAIL 在「registry 缓存里没有该版本」上，而不是真在核对标识符。既然现在本机能编译 src-tauri 了，接进 `ci.sh` 的结构性障碍已消失——但新增/接入检查要先按「必须被证明能失败」造反例 |
+| ⑦ | 产物连不上 daemon | **新发现，已升 P0-17**。这条不是打包问题，是「双击能打开」与「打开之后有东西」之间的差距 |
+
+签名与公证仍另等 Apple 账号（§二）。**⑦ 不解决，打包做完了也只是一个能双击的空窗口。**
 
 ---
 
