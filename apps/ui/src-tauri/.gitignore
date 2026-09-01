@@ -3,3 +3,19 @@
 # `[workspace]` isolation (see Cargo.toml) deliberately does not share --
 # so it needs its own ignore rule here.
 /target
+
+# Tauri's codegen output. `tauri-build` writes `gen/schemas/*.json` (the ACL
+# capability and permission manifests) on every build, so this directory
+# appeared the first time this crate was compiled on macOS -- untracked and,
+# until this rule, not ignored either.
+#
+# Narrowed to `/gen/schemas` rather than all of `/gen` on purpose: Tauri's
+# mobile targets put `gen/android` and `gen/apple` under the same directory and
+# those ARE meant to be committed. Ignoring the whole `/gen` would silently
+# swallow them if this project ever adds a mobile target.
+#
+# This is only the first line of defence. CI-10 (scripts/ci.sh) is the last one
+# and does NOT cover this path -- its name whitelist is node_modules / target /
+# dist / .pnpm, so a forced `git add` of this directory still passes CI
+# (measured, see docs/STATUS.md P2 #14).
+/gen/schemas
