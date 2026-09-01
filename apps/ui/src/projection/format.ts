@@ -138,3 +138,50 @@ export function runStatusLabel(status: string): string {
       return status
   }
 }
+
+export function awaitingLabel(reason: string | null): string | null {
+  switch (reason) {
+    case 'budget_exhausted':
+      return '预算已用尽'
+    case 'awaiting_approval':
+      return '等待审批'
+    case 'awaiting_human':
+      return '等待澄清'
+    case 'paused':
+      return '已暂停'
+    default:
+      return null
+  }
+}
+
+/** Whole-spec replacement must raise at least the exhausted amount dimension. */
+export function suggestedAmountMicros(used: number, max: number | null | undefined): number {
+  const floor = used + 1
+  const doubled = Math.max(used, max ?? 0) * 2
+  return Math.max(floor, doubled, 1)
+}
+
+export function yuanToMicros(yuan: number): number {
+  return Math.round(yuan * 1_000_000)
+}
+
+export function microsToYuanInput(micros: number): string {
+  return (micros / 1_000_000).toString()
+}
+
+export const GOVERNANCE_EVENT_KINDS: ReadonlySet<Event['body']['kind']> = new Set([
+  'run.suspended',
+  'run.resumed',
+  'run.completed',
+  'run.failed',
+  'approval.requested',
+  'approval.granted',
+  'approval.denied',
+  'approval.expired',
+  'budget.amended',
+  'checkpoint',
+  'clarification.requested',
+  'clarification.answered',
+  'policy.evaluated',
+  'impact.estimated',
+])

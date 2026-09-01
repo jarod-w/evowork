@@ -22,10 +22,11 @@ workspace 根。不要把业务逻辑写进去。`capabilities/` 缺失时 Tauri
 
 ## 今天的界面是什么
 
-`App.tsx` 是产品 UI 本体：Inbox（澄清卡 + 全部未决审批）、时间线、审批卡、产物区、成本。
+`App.tsx` 是产品 UI 本体：Inbox（澄清卡 + 全部未决审批 + 预算提额）、时间线（含治理/检查点筛选）、审批卡、产物区、成本。
 `App.tsx` 底部的 status bar 仍是 platform / daemon 探针，不是主界面。
 UI 是事件流的投影（`subscribeAll` + `applyEvent`），不要为渲染再轮询 `run.get` /
-`cost.query`。`ImpactPrecision::unknown` 画成「影响未知」，空清单不是「没有」。
+`cost.query`。预算提额走 `budget.amend`，不要改内存里的 `budget` 字段冒充提额。
+过期审批画「已过期」并禁用批准/驳回。`ImpactPrecision::unknown` 画成「影响未知」，空清单不是「没有」。
 不要写「将在沙箱工作区内执行，出口受白名单约束」。
 
 ## 碰 `subscribe()` 时

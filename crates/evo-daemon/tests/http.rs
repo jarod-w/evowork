@@ -2,6 +2,7 @@ use evo_daemon::{AppState, DaemonConfig, FixedClock, Runtime};
 use evo_exec_local::{LocalExecutor, WorkspaceOnlySandbox};
 use evo_model::FixtureAdapter;
 use evo_protocol::EventBody;
+use evo_protocol::budget::BudgetSpec;
 use evo_protocol::rpc::{
     BlobGetResult, CaughtUpFrame, ClientStreamFrame, EventFrame, HelloFrame, RpcRequest,
     RpcResponse, RunCreateResult, RunEventsResult, RunGetResult, RunListResult,
@@ -26,8 +27,16 @@ const FINISH_FIXTURES: &str = r#"{
 const TOKEN: &str = "test-token";
 
 async fn spawn_server(fixtures: &str) -> (String, tempfile::TempDir) {
+    spawn_server_with(fixtures, |_| {}).await
+}
+
+async fn spawn_server_with(
+    fixtures: &str,
+    tweak: impl FnOnce(&mut DaemonConfig),
+) -> (String, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let config = DaemonConfig::for_test(dir.path());
+    let mut config = DaemonConfig::for_test(dir.path());
+    tweak(&mut config);
     let runtime = Runtime::new(
         config,
         Arc::new(FixedClock::new(1_756_461_600_000)),
@@ -292,6 +301,90 @@ async fn ws_subscribe_replays_backlog_then_caught_up() {
     }
     assert!(saw_created, "backlog must include run.created");
     assert!(saw_caught_up, "server must mark catch-up");
+}
+
+/// 三轮：写 report-0、写 report-1、结束。额度 300 micros 会在第二轮模型
+/// 调用之后挂起（与 `budget_gate.rs` 同一条账）。这条测的是 **RPC**
+/// `budget.amend` 真的接到 `Runtime::amend_budget`，不是只在 Runtime
+/// 测试里走得通。
+const THREE_TURN_FIXTURES: &str = r#"{
+  "provider": "fixture",
+  "model": "fixture-v1",
+  "responses": [
+    { "text": "{\"intent\":\"tool_call\",\"tool\":\"fs.write\",\"params\":{\"path\":\"report-0.txt\",\"content\":\"第一版\"}}",
+      "usage": { "input": 120, "output": 40, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 12 },
+    { "text": "{\"intent\":\"tool_call\",\"tool\":\"fs.write\",\"params\":{\"path\":\"report-1.txt\",\"content\":\"第二版\"}}",
+      "usage": { "input": 120, "output": 40, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 12 },
+    { "text": "{\"intent\":\"finish\"}",
+      "usage": { "input": 10, "output": 5, "cache_read": 0, "cache_write": 0 },
+      "stop_reason": "stop", "latency_ms": 9 }
+  ]
+}"#;
+
+#[tokio::test]
+async fn budget_amend_rpc_raises_the_ceiling_and_the_run_finishes() {
+    let (base, _dir) = spawn_server_with(THREE_TURN_FIXTURES, |config| {
+        config.budget = BudgetSpec {
+            max_amount_micros: Some(300),
+            ..BudgetSpec::default()
+        };
+    })
+    .await;
+
+    let created = rpc(
+        &base,
+        "run.create",
+        serde_json::json!({ "intent": "把账龄表做出来" }),
+    )
+    .await;
+    let created: RunCreateResult = serde_json::from_value(created.result.unwrap()).unwrap();
+    assert_eq!(
+        created.status, "suspended",
+        "300 micros 必须在第二轮之前把 run 挂起，实得 {}",
+        created.status
+    );
+
+    let got = rpc(
+        &base,
+        "run.get",
+        serde_json::json!({ "run_id": created.run_id.as_str() }),
+    )
+    .await;
+    let summary: RunGetResult = serde_json::from_value(got.result.unwrap()).unwrap();
+    assert_eq!(summary.awaiting.as_deref(), Some("budget"));
+
+    let amended = rpc(
+        &base,
+        "budget.amend",
+        serde_json::json!({
+            "run_id": created.run_id.as_str(),
+            "budget": { "max_amount_micros": 2_000 },
+            "reason": "这条 run 值得跑完"
+        }),
+    )
+    .await;
+    let amended: RunCreateResult = serde_json::from_value(amended.result.unwrap()).unwrap();
+    assert_eq!(
+        amended.status, "completed",
+        "提额之后 run 必须真的跑完，实得 {}",
+        amended.status
+    );
+
+    let events = rpc(
+        &base,
+        "run.events",
+        serde_json::json!({ "run_id": created.run_id.as_str(), "from_seq": 0 }),
+    )
+    .await;
+    let bundle: RunEventsResult = serde_json::from_value(events.result.unwrap()).unwrap();
+    let kinds: Vec<&str> = bundle.events.iter().map(|e| e.body.kind()).collect();
+    assert!(
+        kinds.contains(&"budget.amended"),
+        "RPC 提额必须落 budget.amended：{kinds:?}"
+    );
+    assert_eq!(kinds.last().copied(), Some("run.completed"));
 }
 
 #[tokio::test]

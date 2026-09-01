@@ -165,6 +165,127 @@ describe('App workspace', () => {
     unmount()
   })
 
+  it('sends budget.amend through daemonClient.rpc when the exhausted-budget card is submitted', async () => {
+    const rpc = vi.fn().mockResolvedValue({})
+    const { client, push } = stubClient({ onRpc: rpc })
+    const { host, unmount } = render(<App client={client} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      push({
+        op: 'event',
+        event: event('r-b', 0, {
+          kind: 'run.created',
+          run_id: 'r-b',
+          workspace_id: 'w',
+          principal: { kind: 'user', id: 'p' },
+          trigger: { kind: 'manual', reference: 'ui' },
+          budget: { max_amount_micros: 300 },
+          labels: {},
+        }),
+      })
+      push({
+        op: 'event',
+        event: event('r-b', 1, {
+          kind: 'cost.charged',
+          unit: 'call',
+          quantity: 1,
+          unit_price_micros: 400,
+          amount_micros: 400,
+          currency: 'CNY',
+          price_table_ver: '1',
+          dimension: { principal: 'p', run_id: 'r-b' },
+        }),
+      })
+      push({
+        op: 'event',
+        event: event('r-b', 2, {
+          kind: 'run.suspended',
+          reason: 'budget_exhausted',
+        }),
+      })
+    })
+
+    const cards = host.querySelectorAll('[data-testid="budget-card"]')
+    expect(cards.length).toBeGreaterThanOrEqual(1)
+    expect(host.querySelector('[data-testid="inbox"] [data-testid="budget-card"]')).toBeTruthy()
+    expect(host.querySelector('[data-testid="run-budget"] [data-testid="budget-card"]')).toBeTruthy()
+
+    const button = [...host.querySelectorAll('button')].find((el) => el.textContent === '提额并续跑')
+    expect(button).toBeTruthy()
+    await act(async () => {
+      button?.click()
+    })
+    expect(rpc).toHaveBeenCalledWith(
+      'budget.amend',
+      expect.objectContaining({
+        run_id: 'r-b',
+        budget: expect.objectContaining({ max_amount_micros: expect.any(Number) }),
+      }),
+    )
+    const sent = rpc.mock.calls.find((call) => call[0] === 'budget.amend')?.[1] as {
+      budget: { max_amount_micros: number }
+    }
+    expect(sent.budget.max_amount_micros).toBeGreaterThan(400)
+    unmount()
+  })
+
+  it('shows checkpoint count on the timeline instead of leaving the audit view empty', async () => {
+    const { client, push } = stubClient()
+    const { host, unmount } = render(<App client={client} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      push({
+        op: 'event',
+        event: event('r-a', 0, {
+          kind: 'run.created',
+          run_id: 'r-a',
+          workspace_id: 'w',
+          principal: { kind: 'user', id: 'p' },
+          trigger: { kind: 'manual', reference: 'ui' },
+          budget: {},
+          labels: {},
+        }),
+      })
+      push({
+        op: 'event',
+        event: event('r-a', 1, {
+          kind: 'checkpoint',
+          checkpoint_id: 'r-a-cp1',
+          state_hash: 'deadbeefcafebabe',
+          reason: 'pre_approval',
+        }),
+      })
+      push({
+        op: 'event',
+        event: event('r-a', 2, {
+          kind: 'approval.denied',
+          approval_id: 'a-1',
+          by: { human: 'p' },
+        }),
+      })
+    })
+
+    expect(host.querySelector('[data-testid="audit-summary"]')?.textContent).toContain('1 个检查点')
+    expect(host.querySelector('[data-testid="timeline"]')?.textContent).toContain('检查点')
+
+    const checkpointTab = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="timeline-filter"] button')].find(
+      (el) => el.textContent === '检查点',
+    )
+    expect(checkpointTab).toBeTruthy()
+    await act(async () => {
+      checkpointTab?.click()
+    })
+    const kinds = [...host.querySelectorAll('[data-testid="timeline"] li')].map((li) => li.getAttribute('data-kind'))
+    expect(kinds).toEqual(['checkpoint'])
+    unmount()
+  })
+
   it('sends clarification.answer through daemonClient.rpc, not a local state patch', async () => {
     const rpc = vi.fn().mockResolvedValue({})
     const { client, push } = stubClient({ onRpc: rpc })

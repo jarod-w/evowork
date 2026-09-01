@@ -4,6 +4,7 @@
 //! （06 §2）。本模块只放两条通道上**额外**的帧：hello、JSON-RPC 信封、
 //! 订阅指令、`caught_up`，以及 RPC 方法的 params/result。
 
+use crate::budget::BudgetSpec;
 use crate::effect::EffectClass;
 use crate::events::accounting::Currency;
 use crate::events::effect::ExecutionMode;
@@ -265,6 +266,16 @@ pub struct ApprovalDecideParams {
     pub note: Option<String>,
 }
 
+/// 人改一条已经在跑（或已经挂起）的 run 的额度。`budget` 是整体替换，
+/// 不是增量——与 `budget.amended` 事件同形（01 §4.5）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct BudgetAmendParams {
+    pub run_id: RunId,
+    pub budget: BudgetSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ClarificationAnswerParams {
     pub run_id: RunId,
@@ -353,6 +364,7 @@ pub const RPC_METHODS: &[&str] = &[
     "artifact.download",
     "blob.get",
     "cost.query",
+    "budget.amend",
     "trigger.create",
     "trigger.list",
     "trigger.delete",
@@ -387,5 +399,13 @@ mod tests {
         assert_eq!(v["op"], "subscribe");
         assert_eq!(v["run_id"], "r-1");
         assert_eq!(v["from_seq"], 0);
+    }
+
+    #[test]
+    fn budget_amend_is_in_the_method_catalog() {
+        assert!(
+            RPC_METHODS.contains(&"budget.amend"),
+            "漏登记的方法走 unknown，UI 会当成根本没这能力"
+        );
     }
 }

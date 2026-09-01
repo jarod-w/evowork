@@ -471,13 +471,13 @@ impl Runtime {
         by: Actor,
         note: Option<&str>,
     ) -> Result<RunOutcome, DaemonError> {
-        let state = replay_to(&self.log, run_id, None, true)?;
+        let mut state = replay_to(&self.log, run_id, None, true)?;
         if !state.pending_approvals.contains_key(approval_id) {
             return Err(DaemonError::UnknownApproval(
                 approval_id.as_str().to_owned(),
             ));
         }
-        let state = self.expire_overdue_approvals(state)?;
+        state = self.expire_overdue_approvals(state)?;
         // 刚被 expire_overdue 销掉：人点了批准/驳回，但截止时刻已过。
         // 不写 granted/denied——过期本身就是全部信息。随后 resume 把
         // Denied 的 effect 收尾，不会派发。
@@ -504,6 +504,10 @@ impl Runtime {
                 }),
             )?;
         } else {
+            // 网关自动 Deny 会先写 checkpoint 再失败；人工驳回此前跳过这一
+            // 步，verify 报 VACUOUS。审计价值最高的那类 run 恰恰是唯一验
+            // 不了的。与 Deny 同构：先下检查点，再记人的决定。
+            state = self.checkpoint(state, CheckpointReason::PreApproval)?;
             self.emit(
                 &state,
                 by.clone(),
@@ -1462,6 +1466,10 @@ impl Runtime {
                 }
 
                 GatewayAction::AwaitApproval { risk, impact, .. } => {
+                    // 与 Deny / BudgetExceeded 同构：挂起等人之前先下一个
+                    // 检查点。否则「尚在等审批」的 run 一个 checkpoint 都
+                    // 没有，verify 报 VACUOUS——审计要看的正是这类 run。
+                    let mut state = self.checkpoint(state, CheckpointReason::PreApproval)?;
                     let approval_id =
                         ApprovalId::from(format!("{}-a{}", state.run_id, state.last_seq));
                     let expires_at_ms = state.clock_ms + APPROVAL_TTL_MS;

@@ -96,8 +96,8 @@
 
 ### 今天的界面是什么
 
-`apps/ui` 的主页面是 `src/App.tsx`：左侧 Inbox（澄清卡 + **全部**未决审批卡）与
-任务列表，右侧选中 run 的时间线 / 审批 / 产物 / 成本。底部 status bar 仍是
+`apps/ui` 的主页面是 `src/App.tsx`：左侧 Inbox（澄清卡 + **全部**未决审批卡 + 预算提额卡）与
+任务列表，右侧选中 run 的时间线 / 审批 / 产物 / 成本。时间线可筛治理事件与检查点。底部 status bar 仍是
 platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态是 `applyEvent`
 的折叠结果，不轮询。没起 daemon 或没带 token 时 Inbox 为空、status bar 为
 `not connected`——这还是预期。
@@ -119,7 +119,8 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 
 下面四条接线外加「多条待审批并列」已接通，档三把它们画成了界面。
 接通的意思仍是：产生方、reduce/读者、以及一条在未修代码上会红的行为测试
-都在。表格里「仍缺的」只剩收尾两项。
+都在。预算提额与回放/审计（含人工驳回、等审批的 checkpoint）是档二表里
+原先标「收尾」的两项，现已接通。
 
 | 界面区块 | 接线 | 仍缺的（档三 / 收尾） |
 |---|---|---|
@@ -128,8 +129,8 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 | 多条待审批并列 | `reduce` 不再 `.expect()`；`resume` 在台账非空时不写 `run.resumed` | **列出全部未决**：Inbox 与 run 面板都按 `pending_approvals` 全量渲染，不看 `awaiting` 那一个 |
 | 产物区（预览 / diff） | 成功的 `fs.write` 发 `artifact.emitted`；`reduce` 折进 `RunState::artifacts` | **预览 / diff UI 已做**。正文经 `blob.get`；有 `supersedes` 时做行 diff |
 | 成本视图 | 已执行的工具可按 `[[tool]]` 出账；执行器 `cost_micros` 优先于表。生产表仍不定价本地工具 | **成本 UI 已做**。折叠 `cost.charged`，不轮询 `cost.query` |
-| 预算提额 | 未做（收尾） | 预算闸门已经接通，缺的**就是**界面 |
-| 回放 / 审计视图 | 未做（收尾） | 被驳回 / 等审批的 run 仍可能没有 checkpoint |
+| 预算提额 | RPC `budget.amend` → `Runtime::amend_budget` → `budget.amended`；挂在预算上则续跑。Inbox 与 run 面板在 `budget_exhausted` 时画提额卡 | 子 run 预算与 ⑤ 的预扣半边仍未做（P5） |
+| 回放 / 审计视图 | 等审批与人工驳回都会先写 `checkpoint`（`PreApproval`），`verify` 不再 VACUOUS。时间线可筛治理事件 / 检查点 | 审批卡「已过期」已做（P0-4） |
 
 ### 档三：这次明确推迟的
 
@@ -146,9 +147,9 @@ platform 与 daemon 连接探针。UI 经 `subscribeAll` 吃事件流，状态�
 ### 顺序
 
 1. **档一（已落地）**：daemon 二进制 + 两个入口 + `packages/protocol`（含 CI-5）+ P0-16 重连退避
-2. **档二（已落地）**：Inbox / 审批卡 / 产物区 / 成本四条接线 + 多条待审批并列。
+2. **档二（已落地）**：Inbox / 审批卡 / 产物区 / 成本四条接线 + 多条待审批并列 + 预算提额入口 + 人工驳回/等审批的 checkpoint 与审计筛选。
 3. **UI 本体（已落地）**：Inbox → 时间线 → 审批卡 → 产物区 → 成本
-4. 收尾：预算提额入口、人工驳回路径的 checkpoint
+4. **收尾（已落地）**：预算提额入口、人工驳回路径的 checkpoint、P0-4「已过期」状态
 
 一条独立于以上四步、随时可插的：**在 macOS 上第一次编译 `src-tauri`**（见 §二）。
 它不依赖任何一步，却能消掉「那 200 行 Rust 从没被编译器看过」这个最大的单点未知。
@@ -320,13 +321,13 @@ M2 终审在这条分支上数出**十处**「注释宣称了一件代码不做�
 | `replay.rs` | **解不开**的快照仍报错而非降级。按「快照可丢弃」的同一逻辑它也该降级——现在损坏一个 blob 会让整条 run 无法恢复。修 BL-2 时只堵了信任漏洞 |
 | `runtime.rs` | `resume()` 仍能恢复**终态** run。被拒的 run 被 resume 会一路跑到 `run.completed`（effect 保持 denied 不会执行，红线守住了），但「Failed 的 run 能被复活」本身可疑 |
 | `runtime.rs` | **【UI 档二，已修】**`answer_clarification` 校验 `option_id` 属于本题选项。拼错的 id 返回错误、不写事件、run 仍挂起 |
-| `runtime.rs` | **【UI 档二】**被人驳回 / 尚在等审批的 run 一个 checkpoint 都没有，`verify` 报 VACUOUS 并让 CLI 非 0 退出。网关自动 Deny 那条路径专门补了检查点，人工驳回这条没有——**审计价值最高的那类 run 恰恰是唯一验不了的** |
+| `runtime.rs` | **【UI 档二，已修】**被人驳回 / 尚在等审批的 run 此前一个 checkpoint 都没有，`verify` 报 VACUOUS。现与网关自动 Deny 同构：`AwaitApproval` 与人工驳回都先写 `PreApproval` 检查点 |
 | `reduce.rs` + `resume()` | **【UI 档二，已修】**`RunSuspended{AwaitingApproval}` 不再 `.expect()`；台账空则 `awaiting` 为 None。`resume` 在 `pending_approvals` 非空时不写 `run.resumed` |
 | `pipeline.rs` | dry-run 的 `mode` 没有持久化，审批往返后必然降级成 Live。今天不爆是因为 `ExecutionMode::DryRun` 在生产代码里零构造点 |
 | `impact.rs` | **【UI 档二，已修】**无 preview 且 0 个 target 时发 `ImpactPrecision::Unknown`，不再是 `DeclaredOnly` + 空清单 |
 | `decide.rs` | 模型侧无预扣：token 数要等响应才知道，真预扣需要「预留→结算/释放」事件加失败对账加回放语义 |
 | 沙箱 | `spec.env` 只有 PATH 一个键受保护（`LD_PRELOAD`/`BASH_ENV` 原样透传）；`program_allowed` 放行任意路径下的同名程序；resolve 与 write 之间的并发 TOCTOU；工作区内的 bind mount |
-| 预算 | **【UI 档二】**提额没有任何界面；子 run 预算未实现；⑤的预扣半边在 daemon 里今天走不到（没有工具声明 `preview`） |
+| 预算 | **【UI 档二，已修】**提额入口：RPC `budget.amend` + Inbox/run 面板提额卡，走 `budget.amended` 后续跑。子 run 预算未实现；⑤的预扣半边在 daemon 里今天走不到（没有工具声明 `preview`） |
 | 污点 | 一级 dry-run 的 preview 输出没有污点判定；模型输出本身不是污点源；`start()` 收裸 `&str`，无法把 intent 声明为不可信——而粘贴进来的外部文本正是首要注入向量；`cites_produced` 恒空 |
 | daemon | 崩溃残留的 `Dispatched` effect 只能让 run 失败，无法与执行器实际做了什么对账 |
 
@@ -340,7 +341,7 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 | 项 | 状态 | 阻塞 |
 |---|---|---|
 | **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | **已落地**（档一） | `cargo run -p evo-daemon`；token 在 `{data_dir}/client.toml`。未接线的 RPC 方法返回 `not implemented`。`run.create mode=dry_run` 同样未实现 |
-| **UI 本体** | **已落地**（档三） | Inbox / 时间线 / 审批卡 / 产物区 / 成本。事件流投影，不轮询。`blob.get` 取澄清文案与产物正文。审批卡含「已过期」。收尾项（预算提额、回放视图）见 §三 |
+| **UI 本体** | **已落地**（档三） | Inbox / 时间线 / 审批卡 / 产物区 / 成本 / 预算提额。事件流投影，不轮询。`blob.get` 取澄清文案与产物正文。`budget.amend` 提额。时间线可筛治理事件与检查点。审批卡含「已过期」（P0-4） |
 | **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。P0-1 已在档二接通，真 adapter 落地时模型会看见澄清答案 |
 | **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |

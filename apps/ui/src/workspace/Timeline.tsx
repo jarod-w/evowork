@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { Event } from '@evowork/protocol'
 
-import { eventTitle } from '../projection/format'
+import type { CheckpointView } from '../projection/fold'
+import { GOVERNANCE_EVENT_KINDS, eventTitle } from '../projection/format'
+
+export type TimelineFilter = 'all' | 'governance' | 'checkpoint'
 
 interface TimelineProps {
   events: Event[]
+  checkpoints: CheckpointView[]
 }
 
 function summary(event: Event): string {
@@ -29,22 +33,63 @@ function summary(event: Event): string {
       return body.error.code
     case 'policy.evaluated':
       return `${body.decision} · ${body.reason_code}`
+    case 'run.suspended':
+      return body.reason
+    case 'budget.amended':
+      return body.budget.max_amount_micros == null
+        ? '金额不设限'
+        : `金额 ${body.budget.max_amount_micros}`
+    case 'checkpoint':
+      return `${body.reason} · ${body.state_hash.slice(0, 12)}`
     default:
       return `#${event.seq}`
   }
 }
 
-export function Timeline({ events }: TimelineProps) {
+function matchesFilter(event: Event, filter: TimelineFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'checkpoint') return event.body.kind === 'checkpoint'
+  return GOVERNANCE_EVENT_KINDS.has(event.body.kind)
+}
+
+export function Timeline({ events, checkpoints }: TimelineProps) {
   const [open, setOpen] = useState<Set<number>>(() => new Set())
+  const [filter, setFilter] = useState<TimelineFilter>('all')
+  const visible = useMemo(() => events.filter((event) => matchesFilter(event, filter)), [events, filter])
 
   return (
     <section className="timeline" data-testid="timeline">
       <h2>时间线</h2>
-      {events.length === 0 ? (
-        <p className="empty">还没有事件。</p>
+      <p className="audit-summary" data-testid="audit-summary">
+        {checkpoints.length === 0
+          ? '还没有检查点。verify 会报 VACUOUS。'
+          : `${checkpoints.length} 个检查点，可回放核对。`}
+      </p>
+      <div className="timeline-filters" data-testid="timeline-filter" role="tablist">
+        {(
+          [
+            ['all', '全部'],
+            ['governance', '治理 / 审计'],
+            ['checkpoint', '检查点'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={filter === id}
+            className={filter === id ? 'active' : ''}
+            onClick={() => setFilter(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {visible.length === 0 ? (
+        <p className="empty">{events.length === 0 ? '还没有事件。' : '这一层没有事件。'}</p>
       ) : (
         <ol>
-          {events.map((event) => {
+          {visible.map((event) => {
             const expanded = open.has(event.seq)
             return (
               <li key={event.seq} data-kind={event.body.kind}>

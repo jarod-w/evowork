@@ -100,7 +100,8 @@ button {
 .clarification-card button,
 .inbox-jump,
 .run-list button,
-.event-row {
+.event-row,
+.timeline-filters button {
   border: 1px solid var(--ink);
   background: var(--ink);
   color: var(--paper);
@@ -109,7 +110,8 @@ button {
 
 .composer button:disabled,
 .card-actions button:disabled,
-.clarification-card button:disabled {
+.clarification-card button:disabled,
+.budget-card button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -158,6 +160,7 @@ main {
 
 .inbox-list > li,
 .run-approvals .approval-card,
+.run-budget .budget-card,
 .artifacts li {
   margin-bottom: 0.85rem;
 }
@@ -251,14 +254,17 @@ main {
 }
 
 .card-actions,
-.clarification-card form {
+.clarification-card form,
+.budget-card form {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
 }
 
 .card-actions input,
-.clarification-card textarea {
+.clarification-card textarea,
+.budget-card input,
+.budget-card label {
   flex: 1 1 100%;
   border: 1px solid var(--line);
   padding: 0.35rem;
@@ -305,6 +311,57 @@ button.danger {
 .timeline ol {
   border-left: 1px solid var(--line);
   margin-left: 0.6rem;
+}
+
+.audit-summary {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.timeline-filters {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.timeline-filters button {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.timeline-filters button.active,
+.timeline-filters button[aria-selected='true'] {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.budget-dims {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.budget-dims li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.budget-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1 1 30%;
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
 }
 
 .timeline li {

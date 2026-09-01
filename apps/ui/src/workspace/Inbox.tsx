@@ -1,11 +1,13 @@
 import { useState } from 'react'
 
-import type { InboxItem, PendingClarification } from '../projection/fold'
+import type { InboxItem, PendingClarification, RunView } from '../projection/fold'
 import { riskLabel } from '../projection/format'
 import { ApprovalCard } from './ApprovalCard'
+import { BudgetCard, type BudgetAmendPayload } from './BudgetCard'
 
 interface InboxProps {
   items: InboxItem[]
+  runs: RunView[]
   selectedRunId: string | null
   blobTexts: Map<string, string>
   readOnly: boolean
@@ -13,6 +15,7 @@ interface InboxProps {
   onSelectRun: (runId: string) => void
   onDecide: (runId: string, approvalId: string, granted: boolean, note: string) => void
   onAnswer: (runId: string, questionId: string, optionId: string | null, freeText: string) => void
+  onAmendBudget: (runId: string, payload: BudgetAmendPayload) => void
 }
 
 function parsePrompt(raw: string | undefined): { question: string; options: Record<string, string> } {
@@ -99,6 +102,7 @@ function ClarificationCard({
 
 export function Inbox({
   items,
+  runs,
   selectedRunId,
   blobTexts,
   readOnly,
@@ -106,6 +110,7 @@ export function Inbox({
   onSelectRun,
   onDecide,
   onAnswer,
+  onAmendBudget,
 }: InboxProps) {
   return (
     <section className="inbox" data-testid="inbox">
@@ -132,6 +137,24 @@ export function Inbox({
                     onAnswer={(questionId, optionId, freeText) =>
                       onAnswer(item.runId, questionId, optionId, freeText)
                     }
+                  />
+                </li>
+              )
+            }
+            if (item.kind === 'budget') {
+              const run = runs.find((candidate) => candidate.runId === item.runId)
+              return (
+                <li key={`b-${item.runId}-${item.seq}`} className={active ? 'active' : ''}>
+                  <button type="button" className="inbox-jump" onClick={() => onSelectRun(item.runId)}>
+                    {item.runId} · 预算
+                  </button>
+                  <BudgetCard
+                    budget={run?.budget ?? null}
+                    used={run?.budgetUsed ?? { tokens: 0, amount_micros: 0, wall_ms: 0 }}
+                    currency={run?.costs[0]?.currency ?? 'CNY'}
+                    readOnly={readOnly}
+                    busy={busy}
+                    onAmend={(payload) => onAmendBudget(item.runId, payload)}
                   />
                 </li>
               )
