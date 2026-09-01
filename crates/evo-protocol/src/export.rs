@@ -9,12 +9,12 @@ use std::path::Path;
 use ts_rs::TS;
 
 use crate::rpc::{
-    ApprovalDecideParams, BlobGetParams, BlobGetResult, CaughtUpFrame, ClarificationAnswerParams,
-    ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame, HelloFrame, PolicyGetResult,
-    RpcErrorBody, RpcRequest, RpcResponse, RunCreateParams, RunCreateResult, RunEventsParams,
-    RunEventsResult, RunGetResult, RunIdParams, RunListResult, ServerStreamFrame,
-    SubscribeAllFrame, SubscribeFrame, ToolListItem, ToolListResult, ToolManifestParams,
-    ToolManifestResult,
+    ApprovalDecideParams, BlobGetParams, BlobGetResult, BudgetAmendParams, CaughtUpFrame,
+    ClarificationAnswerParams, ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame,
+    HelloFrame, PolicyGetResult, RpcErrorBody, RpcRequest, RpcResponse, RunCreateParams,
+    RunCreateResult, RunEventsParams, RunEventsResult, RunGetResult, RunIdParams, RunListResult,
+    ServerStreamFrame, SubscribeAllFrame, SubscribeFrame, ToolListItem, ToolListResult,
+    ToolManifestParams, ToolManifestResult,
 };
 use crate::{Event, EventBody};
 
@@ -49,6 +49,7 @@ pub fn export_typescript(out_dir: &Path) -> io::Result<()> {
     export_one::<RunEventsParams>(out_dir)?;
     export_one::<RunEventsResult>(out_dir)?;
     export_one::<ApprovalDecideParams>(out_dir)?;
+    export_one::<BudgetAmendParams>(out_dir)?;
     export_one::<ClarificationAnswerParams>(out_dir)?;
     export_one::<CostQueryParams>(out_dir)?;
     export_one::<CostQueryResult>(out_dir)?;

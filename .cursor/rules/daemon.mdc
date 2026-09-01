@@ -8,8 +8,9 @@ alwaysApply: false
 
 唯一组装点，唯一写 Run Log 的进程。回放器在 `src/replay.rs`，因为它要
 `evo-kernel::fold`。HTTP `/v1/rpc` 与 WS `/v1/events` 由二进制入口拉起
-（档一）。`blob.get` 供 UI 取澄清文案与产物正文。App.tsx 是产品 UI 本体
-（Inbox / 时间线 / 审批 / 产物 / 成本），不是探针页。
+（档一）。`blob.get` 供 UI 取澄清文案与产物正文。`budget.amend` 接到
+`Runtime::amend_budget`。App.tsx 是产品 UI 本体
+（Inbox / 时间线 / 审批 / 产物 / 成本 / 预算提额），不是探针页。
 
 不要新增一条对 `evo-exec` / `evo-exec-local` / `evo-mcp` / `evo-runlog` 的
 兄弟 crate 依赖——CI-3 只允许 `evo-daemon` 依赖它们（唯一例外：

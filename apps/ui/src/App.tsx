@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type {
   ApprovalDecideParams,
+  BudgetAmendParams,
   ClarificationAnswerParams,
   Event,
   RunCreateParams,
@@ -15,8 +16,10 @@ import { getPlatform } from './platform'
 import type { PlatformInfo } from './platform'
 import { applyEvent, emptyWorkspace, workspaceCostMicros } from './projection/fold'
 import type { RunView, WorkspaceView } from './projection/fold'
-import { formatMicros, runStatusLabel } from './projection/format'
+import { formatMicros, awaitingLabel, runStatusLabel } from './projection/format'
 import { Artifacts } from './workspace/Artifacts'
+import { BudgetCard } from './workspace/BudgetCard'
+import type { BudgetAmendPayload } from './workspace/BudgetCard'
 import { Composer } from './workspace/Composer'
 import { CostPane } from './workspace/CostPane'
 import { Inbox } from './workspace/Inbox'
@@ -148,6 +151,16 @@ export default function App({ client }: AppProps) {
     )
   }
 
+  function onAmendBudget(runId: string, payload: BudgetAmendPayload) {
+    void runAction(() =>
+      daemonClient.rpc<BudgetAmendParams, unknown>('budget.amend', {
+        run_id: runId,
+        budget: payload.budget,
+        reason: payload.reason.trim() ? payload.reason : null,
+      }),
+    )
+  }
+
   return (
     <div className="app">
       <header className="top">
@@ -178,6 +191,7 @@ export default function App({ client }: AppProps) {
         <aside>
           <Inbox
             items={view.inbox}
+            runs={view.runs}
             selectedRunId={selectedId}
             blobTexts={blobTexts}
             readOnly={readOnly}
@@ -185,6 +199,7 @@ export default function App({ client }: AppProps) {
             onSelectRun={setSelectedRunId}
             onDecide={onDecide}
             onAnswer={onAnswer}
+            onAmendBudget={onAmendBudget}
           />
           <section className="run-list" data-testid="run-list">
             <h2>任务</h2>
@@ -201,6 +216,7 @@ export default function App({ client }: AppProps) {
                     >
                       <code>{run.runId}</code>
                       <span>{runStatusLabel(run.status)}</span>
+                      {run.awaiting ? <span className="muted"> · {awaitingLabel(run.awaiting)}</span> : null}
                     </button>
                   </li>
                 ))}
@@ -216,11 +232,28 @@ export default function App({ client }: AppProps) {
                 <h2>
                   <code>{selected.runId}</code>
                   <span className={`status status-${selected.status}`}>{runStatusLabel(selected.status)}</span>
+                  {selected.awaiting ? (
+                    <span className="status status-suspended">{awaitingLabel(selected.awaiting)}</span>
+                  ) : null}
                 </h2>
                 {selected.intentRef ? (
                   <p className="intent">{blobTexts.get(selected.intentRef.content_hash) ?? '意图正文尚未取回。'}</p>
                 ) : null}
               </div>
+
+              {selected.awaiting === 'budget_exhausted' ? (
+                <section className="run-budget" data-testid="run-budget">
+                  <h2>预算</h2>
+                  <BudgetCard
+                    budget={selected.budget}
+                    used={selected.budgetUsed}
+                    currency={currency}
+                    readOnly={readOnly}
+                    busy={busy}
+                    onAmend={(payload) => onAmendBudget(selected.runId, payload)}
+                  />
+                </section>
+              ) : null}
 
               {selected.pendingApprovals.length > 0 ? (
                 <section className="run-approvals" data-testid="run-approvals">
@@ -239,11 +272,16 @@ export default function App({ client }: AppProps) {
                 </section>
               ) : null}
 
-              <Timeline events={selected.events} />
+              <Timeline events={selected.events} checkpoints={selected.checkpoints} />
 
               <div className="split">
                 <Artifacts artifacts={selected.artifacts} blobTexts={blobTexts} />
-                <CostPane lines={selected.costs} currency={currency} />
+                <CostPane
+                  lines={selected.costs}
+                  currency={currency}
+                  budget={selected.budget}
+                  used={selected.budgetUsed}
+                />
               </div>
             </>
           ) : (

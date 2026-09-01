@@ -177,6 +177,35 @@ async fn awaiting_approval_suspends_cleanly_with_no_err() {
     assert_eq!(kinds.last(), Some(&"run.suspended"));
 }
 
+/// 尚在等审批的 run 必须已经有 checkpoint，否则 `verify` 报 VACUOUS——
+/// 审计要看的正是这类「还没人批」的 Log。
+#[tokio::test]
+async fn awaiting_approval_leaves_a_checkpoint_so_verify_is_not_vacuous() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut rt = setup_with_policy(dir.path(), REQUIRE_APPROVAL_FOR_WRITES_POLICY, FIXTURES);
+    let run_id = RunId::from("r-1");
+    let outcome = rt.start(&run_id, "把账龄表做出来").await.unwrap();
+    assert!(matches!(outcome, RunOutcome::Suspended { .. }));
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    let suspended_at = kinds
+        .iter()
+        .position(|k| *k == "run.suspended")
+        .expect("must suspend");
+    assert!(
+        kinds[..suspended_at].contains(&"checkpoint"),
+        "挂起等人之前必须先有 checkpoint，否则 verify 报 VACUOUS：{kinds:?}"
+    );
+
+    let report = evo_daemon::verify(&log, &run_id).unwrap();
+    assert!(
+        !report.is_vacuous(),
+        "等审批的 run 必须能验，不该是 VACUOUS"
+    );
+    assert!(report.is_ok(), "不一致的检查点：{:?}", report.mismatches);
+}
+
 /// 走一遍「start -> 挂起在审批」，把 approval_id 交给调用方继续。
 async fn start_and_suspend_on_approval(
     dir: &std::path::Path,
@@ -272,6 +301,44 @@ async fn denying_approval_never_executes_the_effect() {
     let state = outcome.into_state();
     assert_eq!(state.status, RunStatus::Completed);
     assert_eq!(kinds.last(), Some(&"run.completed"));
+}
+
+/// 人工驳回必须在 `approval.denied` 正前方落下 checkpoint（与网关 Deny
+/// 同构）。只靠「等审批时已经写过一个」不够——那是另一条路径；这条测
+/// 的是驳回本身会不会留下可校验的锚点。
+#[tokio::test]
+async fn denying_approval_writes_a_checkpoint_immediately_before_the_denial() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut rt, run_id, approval_id) = start_and_suspend_on_approval(dir.path()).await;
+
+    rt.decide_approval(
+        &run_id,
+        &approval_id,
+        false,
+        Actor::Human("u-1".into()),
+        Some("金额太大，先别写"),
+    )
+    .await
+    .unwrap();
+
+    let log = open_log(dir.path());
+    let kinds = event_kinds(&log, &run_id);
+    let denied_at = kinds
+        .iter()
+        .position(|k| *k == "approval.denied")
+        .expect("must deny");
+    assert_eq!(
+        kinds.get(denied_at.saturating_sub(1)).copied(),
+        Some("checkpoint"),
+        "人工驳回之前必须先有一个 checkpoint，与网关 Deny 同构：{kinds:?}"
+    );
+
+    let report = evo_daemon::verify(&log, &run_id).unwrap();
+    assert!(
+        !report.is_vacuous(),
+        "被驳回的 run 必须能验，不该是 VACUOUS"
+    );
+    assert!(report.is_ok(), "不一致的检查点：{:?}", report.mismatches);
 }
 
 // ————————————————————————————————————————————————————————————

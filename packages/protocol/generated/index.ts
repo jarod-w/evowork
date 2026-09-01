@@ -14,6 +14,7 @@ export * from "./ArtifactId";
 export * from "./BlobGetParams";
 export * from "./BlobGetResult";
 export * from "./BlobRef";
+export * from "./BudgetAmendParams";
 export * from "./BudgetAmended";
 export * from "./BudgetSpec";
 export * from "./CaughtUpFrame";

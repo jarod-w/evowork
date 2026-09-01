@@ -9,14 +9,30 @@ import type {
   ApprovalRequested,
   BlobRef,
   BudgetSpec,
+  Checkpoint,
   ClarificationOption,
   CostCharged,
   Event,
   ImpactEstimated,
   RiskLevel,
+  SuspendReason,
 } from '@evowork/protocol'
 
 export type RunStatus = 'running' | 'suspended' | 'completed' | 'failed'
+
+export interface BudgetUsed {
+  tokens: number
+  amount_micros: number
+  wall_ms: number
+}
+
+export interface CheckpointView {
+  seq: number
+  recordedAt: string
+  checkpointId: string
+  stateHash: string
+  reason: Checkpoint['reason']
+}
 
 export interface PendingApproval {
   runId: string
@@ -59,19 +75,25 @@ export interface RunView {
   turn: number
   principal: string | null
   budget: BudgetSpec | null
+  budgetUsed: BudgetUsed
+  /** `run.suspended.reason`; cleared on resume / terminal events. */
+  awaiting: SuspendReason | null
   intentRef: BlobRef | null
   events: Event[]
   pendingApprovals: PendingApproval[]
   pendingClarification: PendingClarification | null
   artifacts: ArtifactView[]
   costs: CostCharged[]
+  checkpoints: CheckpointView[]
   /** effect_id → last tool name / impact, used to join approval cards. */
   effects: Record<string, { tool: string | null; impact: ImpactEstimated | null }>
+  clockStartMs: number | null
 }
 
 export type InboxItem =
   | { kind: 'clarification'; runId: string; clarification: PendingClarification }
   | { kind: 'approval'; runId: string; approval: PendingApproval }
+  | { kind: 'budget'; runId: string; seq: number; recordedAt: string }
 
 export interface WorkspaceView {
   runs: RunView[]
@@ -90,14 +112,30 @@ function emptyRun(runId: string): RunView {
     turn: 0,
     principal: null,
     budget: null,
+    budgetUsed: { tokens: 0, amount_micros: 0, wall_ms: 0 },
+    awaiting: null,
     intentRef: null,
     events: [],
     pendingApprovals: [],
     pendingClarification: null,
     artifacts: [],
     costs: [],
+    checkpoints: [],
     effects: {},
+    clockStartMs: null,
   }
+}
+
+function inboxRecordedAt(item: InboxItem): string {
+  if (item.kind === 'clarification') return item.clarification.recordedAt
+  if (item.kind === 'approval') return item.approval.recordedAt
+  return item.recordedAt
+}
+
+function inboxSeq(item: InboxItem): number {
+  if (item.kind === 'clarification') return item.clarification.seq
+  if (item.kind === 'approval') return item.approval.seq
+  return item.seq
 }
 
 function rebuildInbox(runs: RunView[]): InboxItem[] {
@@ -113,15 +151,20 @@ function rebuildInbox(runs: RunView[]): InboxItem[] {
     for (const approval of run.pendingApprovals) {
       items.push({ kind: 'approval', runId: run.runId, approval })
     }
+    if (run.status === 'suspended' && run.awaiting === 'budget_exhausted') {
+      const suspend = [...run.events].reverse().find((event) => event.body.kind === 'run.suspended')
+      items.push({
+        kind: 'budget',
+        runId: run.runId,
+        seq: suspend?.seq ?? run.lastSeq,
+        recordedAt: suspend?.recorded_at ?? '',
+      })
+    }
   }
   items.sort((a, b) => {
-    const at = a.kind === 'clarification' ? a.clarification.recordedAt : a.approval.recordedAt
-    const bt = b.kind === 'clarification' ? b.clarification.recordedAt : b.approval.recordedAt
-    const byTime = at.localeCompare(bt)
+    const byTime = inboxRecordedAt(a).localeCompare(inboxRecordedAt(b))
     if (byTime !== 0) return byTime
-    const as = a.kind === 'clarification' ? a.clarification.seq : a.approval.seq
-    const bs = b.kind === 'clarification' ? b.clarification.seq : b.approval.seq
-    return as - bs
+    return inboxSeq(a) - inboxSeq(b)
   })
   return items
 }
@@ -200,25 +243,46 @@ export function applyEvent(view: WorkspaceView, event: Event): WorkspaceView {
           status: 'running',
           principal: body.principal.id,
           budget: body.budget,
+          awaiting: null,
         }
         break
       case 'intent.declared':
         next = { ...next, intentRef: body.intent_ref }
         break
       case 'run.suspended':
-        next = { ...next, status: 'suspended' }
+        next = { ...next, status: 'suspended', awaiting: body.reason }
         break
       case 'run.resumed':
-        next = { ...next, status: 'running' }
+        next = { ...next, status: 'running', awaiting: null }
         break
       case 'run.completed':
-        next = { ...next, status: 'completed' }
+        next = { ...next, status: 'completed', awaiting: null }
         break
       case 'run.failed':
-        next = { ...next, status: 'failed' }
+        next = { ...next, status: 'failed', awaiting: null }
         break
-      case 'env.sampled':
-        next = { ...next, turn: body.turn }
+      case 'env.sampled': {
+        const clockStartMs = next.clockStartMs ?? body.wall_clock_ms
+        const wallMs = Math.max(
+          next.budgetUsed.wall_ms,
+          Math.max(0, body.wall_clock_ms - clockStartMs),
+        )
+        next = {
+          ...next,
+          turn: body.turn,
+          clockStartMs,
+          budgetUsed: { ...next.budgetUsed, wall_ms: wallMs },
+        }
+        break
+      }
+      case 'model.responded':
+        next = {
+          ...next,
+          budgetUsed: {
+            ...next.budgetUsed,
+            tokens: next.budgetUsed.tokens + body.usage.input + body.usage.output,
+          },
+        }
         break
       case 'tool.requested':
         next = patchEffect(next, body.effect_id, { tool: body.tool })
@@ -262,7 +326,32 @@ export function applyEvent(view: WorkspaceView, event: Event): WorkspaceView {
         next = { ...next, artifacts: [...next.artifacts, asArtifact(next.runId, event.seq, body)] }
         break
       case 'cost.charged':
-        next = { ...next, costs: [...next.costs, body] }
+        next = {
+          ...next,
+          costs: [...next.costs, body],
+          budgetUsed: {
+            ...next.budgetUsed,
+            amount_micros: next.budgetUsed.amount_micros + body.amount_micros,
+          },
+        }
+        break
+      case 'budget.amended':
+        next = { ...next, budget: body.budget }
+        break
+      case 'checkpoint':
+        next = {
+          ...next,
+          checkpoints: [
+            ...next.checkpoints,
+            {
+              seq: event.seq,
+              recordedAt: event.recorded_at,
+              checkpointId: body.checkpoint_id,
+              stateHash: body.state_hash,
+              reason: body.reason,
+            },
+          ],
+        }
         break
       default:
         break

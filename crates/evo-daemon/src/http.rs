@@ -18,12 +18,12 @@ use evo_kernel::{AwaitReason, RunStatus};
 use evo_protocol::events::accounting::CostCharged;
 use evo_protocol::events::effect::ExecutionMode;
 use evo_protocol::rpc::{
-    ApprovalDecideParams, BlobGetParams, BlobGetResult, CaughtUpFrame, ClarificationAnswerParams,
-    ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame, HelloFrame, PolicyGetResult,
-    RPC_INTERNAL, RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND, RPC_METHODS, RPC_NOT_FOUND, RpcRequest,
-    RpcResponse, RunCreateParams, RunCreateResult, RunEventsParams, RunEventsResult, RunGetResult,
-    RunIdParams, RunListResult, ToolListItem, ToolListResult, ToolManifestParams,
-    ToolManifestResult,
+    ApprovalDecideParams, BlobGetParams, BlobGetResult, BudgetAmendParams, CaughtUpFrame,
+    ClarificationAnswerParams, ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame,
+    HelloFrame, PolicyGetResult, RPC_INTERNAL, RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND,
+    RPC_METHODS, RPC_NOT_FOUND, RpcRequest, RpcResponse, RunCreateParams, RunCreateResult,
+    RunEventsParams, RunEventsResult, RunGetResult, RunIdParams, RunListResult, ToolListItem,
+    ToolListResult, ToolManifestParams, ToolManifestResult,
 };
 use evo_protocol::{Actor, BlobRef, Currency, Event, EventBody, RunId};
 use evo_runlog::{RunLog, RunLogError};
@@ -299,6 +299,7 @@ async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "run.resume" => run_resume(state, params).await,
         "approval.decide" => approval_decide(state, params).await,
         "clarification.answer" => clarification_answer(state, params).await,
+        "budget.amend" => budget_amend(state, params).await,
         "cost.query" => cost_query(state, params),
         "blob.get" => blob_get(state, params),
         "tool.list" => tool_list(state, params),
@@ -477,6 +478,24 @@ async fn approval_decide(
             p.granted,
             Actor::Human(principal),
             p.note.as_deref(),
+        )
+        .await?;
+    Ok(outcome_result(p.run_id, outcome))
+}
+
+async fn budget_amend(
+    state: &AppState,
+    raw: serde_json::Value,
+) -> Result<serde_json::Value, RpcFail> {
+    let p: BudgetAmendParams = params(raw)?;
+    let mut rt = state.runtime.lock().await;
+    let principal = rt.config().principal.clone();
+    let outcome = rt
+        .amend_budget(
+            &p.run_id,
+            p.budget,
+            Actor::Human(principal),
+            p.reason.as_deref(),
         )
         .await?;
     Ok(outcome_result(p.run_id, outcome))

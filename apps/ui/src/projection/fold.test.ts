@@ -230,6 +230,77 @@ describe('applyEvent()', () => {
       }),
     ])
     expect(totalCostMicros(view.runs[0])).toBe(1250)
+    expect(view.runs[0].budgetUsed.amount_micros).toBe(1250)
+  })
+
+  it('puts a budget-exhausted run on the inbox and lifts the ceiling on budget.amended', () => {
+    const suspended = applyEvents(emptyWorkspace(), [
+      event('r-1', 0, {
+        kind: 'run.created',
+        run_id: 'r-1',
+        workspace_id: 'w',
+        principal: { kind: 'user', id: 'p' },
+        trigger: { kind: 'manual', reference: 'ui' },
+        budget: { max_amount_micros: 300 },
+        labels: {},
+      }),
+      event('r-1', 1, {
+        kind: 'cost.charged',
+        unit: 'call',
+        quantity: 1,
+        unit_price_micros: 400,
+        amount_micros: 400,
+        currency: 'CNY',
+        price_table_ver: '1',
+        dimension: { principal: 'p', run_id: 'r-1' },
+      }),
+      event('r-1', 2, {
+        kind: 'run.suspended',
+        reason: 'budget_exhausted',
+      }),
+    ])
+    expect(suspended.inbox).toEqual([
+      expect.objectContaining({ kind: 'budget', runId: 'r-1', seq: 2 }),
+    ])
+    expect(suspended.runs[0].awaiting).toBe('budget_exhausted')
+    expect(suspended.runs[0].budgetUsed.amount_micros).toBe(400)
+
+    const raised = applyEvent(
+      suspended,
+      event('r-1', 3, {
+        kind: 'budget.amended',
+        budget: { max_amount_micros: 2000 },
+        by: { human: 'p' },
+      }),
+    )
+    expect(raised.runs[0].budget?.max_amount_micros).toBe(2000)
+    expect(raised.runs[0].budgetUsed.amount_micros).toBe(400)
+
+    const resumed = applyEvent(
+      raised,
+      event('r-1', 4, {
+        kind: 'run.resumed',
+        by: 'runtime',
+        from_seq: 4,
+      }),
+    )
+    expect(resumed.inbox).toEqual([])
+    expect(resumed.runs[0].awaiting).toBeNull()
+  })
+
+  it('keeps checkpoints on the run view so the audit pane does not poll', () => {
+    const view = applyEvent(
+      emptyWorkspace(),
+      event('r-1', 0, {
+        kind: 'checkpoint',
+        checkpoint_id: 'r-1-cp0',
+        state_hash: 'abc123',
+        reason: 'pre_approval',
+      }),
+    )
+    expect(view.runs[0].checkpoints).toEqual([
+      expect.objectContaining({ checkpointId: 'r-1-cp0', stateHash: 'abc123', reason: 'pre_approval' }),
+    ])
   })
 
   it('joins impact.estimated onto a later approval.requested for the same effect', () => {
