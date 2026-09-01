@@ -108,7 +108,7 @@ describe('App workspace', () => {
           approval_id: 'a-1',
           effect_id: 'e-1',
           risk: 'l3',
-          expires_at_ms: 1,
+          expires_at_ms: 4_000_000_000_000,
         }),
       })
       push({
@@ -118,7 +118,7 @@ describe('App workspace', () => {
           approval_id: 'a-2',
           effect_id: 'e-2',
           risk: 'l2',
-          expires_at_ms: 1,
+          expires_at_ms: 4_000_000_000_000,
         }),
       })
       push({

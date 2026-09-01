@@ -132,6 +132,29 @@ describe('applyEvent()', () => {
     expect(denied.inbox).toEqual([])
   })
 
+  it('drops a pending approval on approval.expired', () => {
+    const requested = applyEvent(
+      emptyWorkspace(),
+      event('r-1', 0, {
+        kind: 'approval.requested',
+        approval_id: 'a-1',
+        effect_id: 'e-1',
+        risk: 'l3',
+        expires_at_ms: 1,
+      }),
+    )
+    expect(requested.runs[0].pendingApprovals).toHaveLength(1)
+    const expired = applyEvent(
+      requested,
+      event('r-1', 1, {
+        kind: 'approval.expired',
+        approval_id: 'a-1',
+      }),
+    )
+    expect(expired.runs[0].pendingApprovals).toEqual([])
+    expect(expired.inbox).toEqual([])
+  })
+
   it('puts a clarification on the inbox and removes it when answered', () => {
     const asked = applyEvent(
       emptyWorkspace(),

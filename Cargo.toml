@@ -27,7 +27,7 @@ hex         = "0.4"
 thiserror   = "2"
 anyhow      = "1"
 rusqlite    = { version = "0.32", features = ["bundled"] }
-tokio       = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "io-util"] }
+tokio       = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "io-util", "time"] }
 async-trait = "0.1"
 toml        = "0.8"
 clap        = { version = "4", features = ["derive"] }

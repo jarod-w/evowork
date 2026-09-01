@@ -61,7 +61,7 @@ UI 看到的、报表算出的、审计导出的，是同一条 Log 的不同投
 - `evo-daemon` 有二进制入口：`cargo run -p evo-daemon` 起 HTTP `/v1/rpc` 与 WS `/v1/events`。
 - `packages/protocol` 由 `ts-rs` 生成，CI-5 比对生成物。不要手写。
 - `apps/ui` 的 `App.tsx` 是产品 UI 本体（Inbox / 时间线 / 审批卡 / 产物区 / 成本）。底部 status bar 才是 platform / daemon 探针。
-- P0-1 / P0-2 已在档二接通。P0-3（沙箱超时）与 P0-4（审批过期）不因 UI 优先而下沉。
+- P0-1 / P0-2 已在档二接通。P0-3（沙箱超时与 stdout 上限）与 P0-4（审批过期）已修。
 
 ## 收尾
 

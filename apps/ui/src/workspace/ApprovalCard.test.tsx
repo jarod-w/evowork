@@ -4,7 +4,10 @@ import type { PendingApproval } from '../projection/fold'
 import { ApprovalCard } from './ApprovalCard'
 import { render } from './renderTest'
 
-function approval(precision: 'unknown' | 'exact' | 'declared_only'): PendingApproval {
+function approval(
+  precision: 'unknown' | 'exact' | 'declared_only',
+  expiresAtMs = 4_000_000_000_000,
+): PendingApproval {
   return {
     runId: 'r-1',
     seq: 4,
@@ -20,7 +23,7 @@ function approval(precision: 'unknown' | 'exact' | 'declared_only'): PendingAppr
       precision,
     },
     tool: 'shell.exec',
-    expiresAtMs: 1,
+    expiresAtMs,
   }
 }
 
@@ -51,6 +54,30 @@ describe('ApprovalCard', () => {
     expect(cards).toHaveLength(2)
     expect(host.textContent).toContain('a-1')
     expect(host.textContent).toContain('a-2')
+    unmount()
+  })
+
+  it('renders 已过期 and disables both actions when the deadline has passed', () => {
+    const onDecide = () => {
+      throw new Error('expired card must not call onDecide')
+    }
+    const { host, unmount } = render(
+      <ApprovalCard
+        approval={approval('unknown', 1)}
+        readOnly={false}
+        busy={false}
+        onDecide={onDecide}
+      />,
+    )
+    expect(host.querySelector('[data-testid="approval-expired"]')?.textContent).toBe('已过期')
+    expect(host.querySelector('[data-testid="approval-card"]')?.getAttribute('data-expired')).toBe(
+      'true',
+    )
+    const buttons = [...host.querySelectorAll('button')]
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) {
+      expect(button.disabled).toBe(true)
+    }
     unmount()
   })
 })

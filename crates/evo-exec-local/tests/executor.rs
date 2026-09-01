@@ -13,6 +13,7 @@ fn lease(ws: WorkspaceHandle) -> Lease {
         lease_id: LeaseId::from("l-1"),
         run_id: RunId::from("r-1"),
         effect_id: EffectId::from("e-1"),
+        issued_at_ms: 0,
         expires_at_ms: u64::MAX,
         workspace: ws,
         egress_policy: EgressPolicy::deny_all(),

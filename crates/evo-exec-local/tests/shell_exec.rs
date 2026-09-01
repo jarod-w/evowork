@@ -44,6 +44,7 @@ fn lease(ws: WorkspaceHandle, egress_policy: EgressPolicy) -> Lease {
         lease_id: LeaseId::from("l-1"),
         run_id: RunId::from("r-1"),
         effect_id: EffectId::from("e-1"),
+        issued_at_ms: 0,
         expires_at_ms: u64::MAX,
         workspace: ws,
         egress_policy,
@@ -331,4 +332,98 @@ async fn actual_egress_is_empty_when_the_lease_never_actually_wired_up_a_proxy()
     let (_d, outcome, _ws) = run("echo", &["hi"]).await;
     assert!(outcome.actual_egress.is_empty());
     assert_ne!(outcome.actual_egress, vec![declared_proxy_egress()]);
+}
+
+fn lease_expiring_in(ws: WorkspaceHandle, remaining_ms: u64) -> Lease {
+    let mut l = lease(ws, EgressPolicy::deny_all());
+    l.issued_at_ms = 0;
+    l.expires_at_ms = remaining_ms;
+    l
+}
+
+// --- P0-3：租约超时与 stdout 上限 ---
+
+#[tokio::test]
+async fn a_sleep_infinity_is_killed_when_the_lease_expires() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let started = std::time::Instant::now();
+    let outcome = exec
+        .execute(
+            lease_expiring_in(ws, 250),
+            shell_effect("sh", &["-c", "sleep 10"], serde_json::json!({})),
+        )
+        .await;
+    let elapsed = started.elapsed();
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(
+        outcome
+            .error
+            .as_ref()
+            .unwrap()
+            .to_lowercase()
+            .contains("lease"),
+        "got: {:?}",
+        outcome.error
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "timeout did not fire; hung for {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_already_expired_lease_does_not_spawn() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let outcome = exec
+        .execute(
+            lease_expiring_in(ws, 0),
+            shell_effect("echo", &["should-not-run"], serde_json::json!({})),
+        )
+        .await;
+    assert_eq!(outcome.status, ToolResultStatus::Error);
+    assert!(
+        outcome.error.as_ref().unwrap().contains("lease"),
+        "got: {:?}",
+        outcome.error
+    );
+    assert!(outcome.output.is_none());
+}
+
+#[tokio::test]
+async fn stdout_is_capped_and_the_child_is_killed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = WorkspaceRoot::new(dir.path().to_path_buf());
+    let ws = root.ensure(&RunId::from("r-1")).unwrap();
+    let exec = LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()));
+    let started = std::time::Instant::now();
+    let outcome = exec
+        .execute(
+            lease(ws, EgressPolicy::deny_all()),
+            shell_effect(
+                "python3",
+                &["-c", "print('x' * (2 * 1024 * 1024))"],
+                serde_json::json!({}),
+            ),
+        )
+        .await;
+    let elapsed = started.elapsed();
+    assert_eq!(outcome.status, ToolResultStatus::Ok);
+    let p = payload(&outcome);
+    assert_eq!(p["truncated"], true);
+    let stdout = p["stdout"].as_str().unwrap();
+    assert!(
+        stdout.len() <= evo_exec::SANDBOX_MAX_OUTPUT_BYTES,
+        "stdout leaked past the cap: {} bytes",
+        stdout.len()
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "uncapped producer was not killed; hung for {elapsed:?}"
+    );
 }

@@ -61,6 +61,11 @@ export function riskLabel(risk: RiskLevel): string {
   }
 }
 
+/** Wall-clock check for the approval card. Daemon expiry is a Log event; this is display only. */
+export function isApprovalExpired(expiresAtMs: number, nowMs: number = Date.now()): boolean {
+  return nowMs >= expiresAtMs
+}
+
 function formatTarget(target: ImpactTarget): string {
   return `${target.op} ${target.resource.kind}:${target.resource.id}`
 }

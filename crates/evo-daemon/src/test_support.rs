@@ -145,11 +145,16 @@ pub fn write_run_created_then_orphan_tool_requested(
 /// 两条未决审批并列后挂起。Runtime 今天一次只发一个 effect，这个状态
 /// 没法从公开接口走出来，但 `resume` / `reduce` 必须在它上面不 panic、
 /// 也不因为批了字典序较大的那条就把另一条当没看见。
+///
+/// `expires_at_ms` 必须相对测试时钟有意义：`FixedClock` 从
+/// `1_756_461_600_000` 起跳，小于该值的截止时刻在第一次 `now_ms()` 时
+/// 就已经过期（P0-4）。「仍未决」夹具用一个远未来值；过期夹具用过去值。
 pub fn write_run_suspended_with_two_pending_approvals(
     db_path: &Path,
     blob_root: &Path,
     run_id: &RunId,
     recorded_at: &str,
+    expires_at_ms: u64,
 ) -> Result<(evo_protocol::ApprovalId, evo_protocol::ApprovalId), DaemonError> {
     use evo_protocol::ApprovalId;
     use evo_protocol::events::approval::{ApprovalRequested, RiskLevel};
@@ -230,7 +235,7 @@ pub fn write_run_suspended_with_two_pending_approvals(
                 effect_id: effect_id.clone(),
                 risk: RiskLevel::L2,
                 impact_ref: None,
-                expires_at_ms: 1_000_000,
+                expires_at_ms,
             }),
         )?;
     }

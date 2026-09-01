@@ -425,6 +425,7 @@ dependencies = [
  "async-trait",
  "evo-exec",
  "evo-protocol",
+ "libc",
  "serde_json",
  "tempfile",
  "tokio",
