@@ -65,7 +65,7 @@ button {
 
 .top {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 1.25rem;
   align-items: start;
   padding: 1rem 1.25rem 0.75rem;
@@ -475,4 +475,66 @@ code {
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
+}
+
+/* daemon 连接设置面板（P0-17）。装完之后唯一的补救入口，所以未连接时
+   它是主区域里第一块内容，而不是藏在某个折叠里。 */
+.settings-toggle {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0.35rem 0.8rem;
+  align-self: start;
+}
+
+.settings-toggle[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+.daemon-settings {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 0.9rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.daemon-settings h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.daemon-settings p {
+  margin: 0 0 0.5rem;
+}
+
+.daemon-settings .banner {
+  padding: 0.4rem 0.6rem;
+}
+
+.daemon-settings label {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.daemon-settings label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.daemon-settings label.inline input {
+  flex: 0 0 auto;
+}
+
+.daemon-settings input[type='text'],
+.daemon-settings input[type='password'] {
+  border: 1px solid var(--line);
+  padding: 0.35rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
 }

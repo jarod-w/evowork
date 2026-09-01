@@ -1,10 +1,14 @@
 {
   "identifier": "default",
-  "description": "Grants exactly the plugin commands src/platform/tauri.ts's five Platform methods call -- see README.md in this directory for why each permission is here, and src/platform/tauri.capabilities.test.ts for the automated check that keeps this file honest.",
+  "description": "Grants exactly the plugin commands src/platform/tauri.ts's six Platform methods call -- see README.md in this directory for why each permission is here, and src/platform/tauri.capabilities.test.ts for the automated check that keeps this file honest.",
   "windows": ["main"],
   "permissions": [
     "dialog:allow-open",
     "fs:allow-read-file",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": ["$HOME/.evowork/client.toml"]
+    },
     "opener:allow-open-url",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",

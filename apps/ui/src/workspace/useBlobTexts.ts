@@ -7,9 +7,20 @@ import type { DaemonClient } from '../daemon/client'
 /**
  * Fetches blob text through daemonClient.rpc('blob.get'). Does not poll:
  * each content_hash is requested at most once per mount.
+ *
+ * `client` is nullable because `App` cannot build one until it has
+ * resolved which daemon to talk to (see `daemon/config.ts`); a null
+ * client is the pre-connection state, not an error.
+ *
+ * The cache deliberately survives a client swap (reconnecting to a
+ * different daemon). That is safe *because* blobs are content-addressed:
+ * a `content_hash` that resolved to some text on one daemon resolves to
+ * the same text on any other, or to nothing. This would be a stale-cache
+ * bug for any key that were merely an identifier -- do not extend this
+ * hook to cache anything keyed that way without clearing on swap.
  */
 export function useBlobTexts(
-  client: DaemonClient,
+  client: DaemonClient | null,
   connected: boolean,
   refs: readonly (BlobRef | null | undefined)[],
 ): Map<string, string> {
@@ -17,7 +28,7 @@ export function useBlobTexts(
   const inflight = useRef(new Set<string>())
 
   useEffect(() => {
-    if (!connected) return
+    if (!connected || !client) return
     let cancelled = false
     for (const ref of refs) {
       if (!ref) continue

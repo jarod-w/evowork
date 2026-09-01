@@ -32,10 +32,25 @@ if [ ! -d "$REGISTRY_SRC" ]; then
   exit 1
 fi
 
+# capabilities 的 permissions 数组是异质的：不带 scope 的授权是一个字符串，
+# 带 command scope 的是一个对象 `{identifier, allow?, deny?}`。
+# `fs:allow-read-text-file` 自 P0-17（readClientToml 读 ~/.evowork/client.toml）
+# 起就是后者。
+#
+# 这里必须显式取 `.identifier`：早先这段是 `console.log(p)`，对象会被打成
+# `[object Object]`，于是 prefix 变成 `[object Object]`、crate 名变成
+# `tauri-plugin-[object Object]`，脚本报的是「找不到锁定版本」——一条真实的
+# FAIL，但报错原因完全指错了地方。不认识的元素形状一律硬失败，不跳过：
+# 跳过等于「以为验过、其实没验」，正是本仓已抓到七次的那种检查。
 permissions=$(node -e "
 const fs = require('fs')
 const caps = JSON.parse(fs.readFileSync('$CAPS', 'utf8'))
-for (const p of caps.permissions) console.log(p)
+for (const p of caps.permissions) {
+  if (typeof p === 'string') { console.log(p); continue }
+  if (p && typeof p === 'object' && typeof p.identifier === 'string') { console.log(p.identifier); continue }
+  console.error('FAIL: permissions 里有既不是字符串、也没有字符串 identifier 字段的元素: ' + JSON.stringify(p))
+  process.exit(1)
+}
 ")
 
 fail=0
