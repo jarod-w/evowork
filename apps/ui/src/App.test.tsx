@@ -274,7 +274,7 @@ describe('App workspace', () => {
     expect(host.querySelector('[data-testid="audit-summary"]')?.textContent).toContain('1 个检查点')
     expect(host.querySelector('[data-testid="timeline"]')?.textContent).toContain('检查点')
 
-    const checkpointTab = [...host.querySelectorAll('[data-testid="timeline-filter"] button')].find(
+    const checkpointTab = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="timeline-filter"] button')].find(
       (el) => el.textContent === '检查点',
     )
     expect(checkpointTab).toBeTruthy()
