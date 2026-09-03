@@ -1,0 +1,617 @@
+<title>Codex 作为 EvoWork 内核</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EFF1F4; --surface:#FFFFFF; --surface-2:#F6F7F9; --surface-3:#EAECF0;
+  --ink:#14171E; --ink-2:#3C434E; --muted:#6A7280;
+  --hair:#D6DAE0; --hair-strong:#B5BBC5;
+  --reuse:#0E7059; --reuse-tint:#E0EFEA;
+  --adapt:#8A560B; --adapt-tint:#F5EEDE;
+  --build:#A82A2A; --build-tint:#F6E6E5;
+  --focus:#1E48C0;
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --disp:"Archivo","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C0F14; --surface:#13171E; --surface-2:#181D25; --surface-3:#1F252E;
+    --ink:#E6E9EE; --ink-2:#C2C8D1; --muted:#8C95A2;
+    --hair:#252B34; --hair-strong:#39414D;
+    --reuse:#4FC5A4; --reuse-tint:#10251F;
+    --adapt:#DDA24C; --adapt-tint:#2A2013;
+    --build:#EE7A72; --build-tint:#2B1716;
+    --focus:#7FA0FF;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C0F14; --surface:#13171E; --surface-2:#181D25; --surface-3:#1F252E;
+  --ink:#E6E9EE; --ink-2:#C2C8D1; --muted:#8C95A2;
+  --hair:#252B34; --hair-strong:#39414D;
+  --reuse:#4FC5A4; --reuse-tint:#10251F;
+  --adapt:#DDA24C; --adapt-tint:#2A2013;
+  --build:#EE7A72; --build-tint:#2B1716;
+  --focus:#7FA0FF;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 24px 96px}
+a{color:var(--focus); text-decoration:none; border-bottom:1px solid color-mix(in srgb, var(--focus) 35%, transparent)}
+a:hover{border-bottom-color:var(--focus)}
+:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+
+/* ---------- masthead ---------- */
+.mast{padding:56px 0 28px; border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.1em;
+  color:var(--muted); text-transform:uppercase; margin:0 0 18px;
+  display:flex; flex-wrap:wrap; gap:6px 14px;
+}
+.eyebrow span::before{content:"—"; margin-right:8px; color:var(--hair-strong)}
+.eyebrow span:first-child::before{content:none}
+h1{
+  font-family:var(--disp); font-weight:700; font-size:clamp(30px,5.4vw,50px);
+  line-height:1.05; letter-spacing:-.02em; margin:0 0 18px; text-wrap:balance;
+}
+.stand{max-width:62ch; font-size:16.5px; color:var(--ink-2); margin:0}
+.stand strong{color:var(--ink); font-weight:600}
+
+/* ---------- verdict ---------- */
+.verdict{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px; background:var(--hair); border:1px solid var(--hair);
+  margin:0 0 8px; border-top:none;
+}
+.vcell{background:var(--surface); padding:18px 18px 16px}
+.vnum{font-family:var(--disp); font-weight:700; font-size:30px; line-height:1; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.vlab{font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--muted); margin-top:8px; text-transform:uppercase}
+.vsub{font-size:12.5px; color:var(--ink-2); margin-top:6px; line-height:1.45}
+.vcell.r .vnum{color:var(--reuse)} .vcell.a .vnum{color:var(--adapt)} .vcell.b .vnum{color:var(--build)}
+.vnote{
+  font-family:var(--mono); font-size:11.5px; color:var(--muted);
+  border:1px solid var(--hair); border-top:none; background:var(--surface-2);
+  padding:9px 18px; display:flex; flex-wrap:wrap; gap:4px 20px;
+}
+
+/* ---------- sections ---------- */
+section{
+  display:grid; grid-template-columns:56px minmax(0,1fr); gap:0 20px;
+  padding-top:56px;
+}
+.snum{
+  font-family:var(--mono); font-size:12px; font-weight:600; color:var(--muted);
+  padding-top:7px; letter-spacing:.02em;
+}
+h2{
+  font-family:var(--disp); font-weight:600; font-size:23px; letter-spacing:-.01em;
+  margin:0 0 6px; line-height:1.25;
+}
+.dek{color:var(--muted); font-size:14px; margin:0 0 22px; max-width:64ch}
+.body{max-width:72ch}
+.body p{margin:0 0 14px; color:var(--ink-2)}
+.body p strong{color:var(--ink); font-weight:600}
+@media (max-width:760px){
+  section{grid-template-columns:1fr; gap:0}
+  .snum{padding:0 0 6px}
+}
+
+/* ---------- chips ---------- */
+.chip{
+  display:inline-block; font-family:var(--mono); font-size:11px; font-weight:600;
+  padding:2px 7px; border-radius:2px; white-space:nowrap; letter-spacing:.01em;
+}
+.chip.r{background:var(--reuse-tint); color:var(--reuse)}
+.chip.a{background:var(--adapt-tint); color:var(--adapt)}
+.chip.b{background:var(--build-tint); color:var(--build)}
+.legend{display:flex; flex-wrap:wrap; gap:8px 18px; margin:0 0 18px; font-size:13px; color:var(--muted)}
+.legend div{display:flex; align-items:center; gap:8px}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto; border:1px solid var(--hair); background:var(--surface); border-radius:3px}
+table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:640px}
+thead th{
+  font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); text-align:left;
+  padding:10px 14px; border-bottom:1px solid var(--hair-strong); background:var(--surface-2);
+  white-space:nowrap;
+}
+tbody td{padding:10px 14px; border-bottom:1px solid var(--hair); vertical-align:top; color:var(--ink-2)}
+tbody tr:last-child td{border-bottom:none}
+tbody td:first-child{color:var(--ink); font-weight:500}
+.grp td{
+  background:var(--surface-3); font-family:var(--mono); font-size:11px; font-weight:600;
+  letter-spacing:.07em; text-transform:uppercase; color:var(--ink); padding:8px 14px;
+}
+code{
+  font-family:var(--mono); font-size:12px; background:var(--surface-2);
+  border:1px solid var(--hair); padding:.5px 4px; border-radius:2px;
+  color:var(--ink); word-break:break-word;
+}
+.num{font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap}
+.tot td{border-top:1px solid var(--hair-strong); font-weight:600; color:var(--ink); background:var(--surface-2)}
+.sev{font-family:var(--mono); font-size:12px; font-weight:600; text-align:center}
+
+/* ---------- figure ---------- */
+figure{margin:0 0 8px}
+figure svg{display:block; width:100%; max-width:100%; height:auto; color:var(--ink)}
+.figbox{border:1px solid var(--hair); background:var(--surface); border-radius:3px; padding:22px 20px 8px; overflow-x:auto}
+figcaption{
+  font-size:12.5px; color:var(--muted); padding:12px 2px 2px; line-height:1.55;
+  border-top:1px solid var(--hair); margin-top:14px;
+}
+
+/* ---------- callout ---------- */
+.call{
+  border:1px solid var(--hair); border-left:3px solid var(--build);
+  background:var(--surface); padding:14px 16px; margin:0 0 16px; font-size:13.5px; color:var(--ink-2);
+}
+.call .h{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--build); margin-bottom:5px}
+
+/* ---------- gaps ---------- */
+.gaps{display:grid; gap:1px; background:var(--hair); border:1px solid var(--hair); border-radius:3px}
+.gap{background:var(--surface); padding:16px 18px}
+.gap h3{font-family:var(--disp); font-weight:600; font-size:15.5px; margin:0 0 4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.gap p{margin:0; font-size:13.5px; color:var(--ink-2)}
+.gap .why{font-family:var(--mono); font-size:11.5px; color:var(--muted); margin-top:7px}
+
+/* ---------- questions ---------- */
+.qs{display:grid; gap:1px; background:var(--hair); border:1px solid var(--hair); border-radius:3px}
+.q{background:var(--surface); padding:15px 18px; display:grid; grid-template-columns:44px minmax(0,1fr); gap:0 14px}
+.qid{font-family:var(--mono); font-size:12.5px; font-weight:600; color:var(--muted); padding-top:2px}
+.qh{display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; margin-bottom:5px}
+.qt{font-weight:600; font-size:14.5px; color:var(--ink)}
+.tag{font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; padding:2px 6px; border-radius:2px; white-space:nowrap}
+.tag.block{background:var(--ink); color:var(--surface)}
+.tag.major{background:transparent; border:1px solid var(--hair-strong); color:var(--muted)}
+.tag.minor{background:transparent; color:var(--muted); padding-left:0}
+.q p{margin:0; font-size:13.5px; color:var(--ink-2)}
+.rec{font-size:13px; color:var(--ink-2); margin-top:8px; padding-top:8px; border-top:1px dashed var(--hair)}
+.rec b{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-right:8px}
+@media (max-width:600px){ .q{grid-template-columns:1fr} .qid{padding:0 0 4px} }
+
+/* ---------- footer ---------- */
+footer{
+  margin-top:72px; padding-top:20px; border-top:1px solid var(--hair);
+  font-family:var(--mono); font-size:11.5px; color:var(--muted); line-height:1.9;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow"><span>架构评估</span><span>2026-09-02</span><span>基线 openai/codex @ 1c1e177</span><span>草案 v0.1</span></p>
+  <h1>Codex 作为 EvoWork 内核</h1>
+  <p class="stand">把 EvoWork 的功能清单逐条压到 <code>openai/codex</code> 的真实实现上，结论是<strong>可以用它做内核，但只能做内核</strong>。清单里约六成能力已经存在，而且深度普遍超过清单描述；真正的工作量集中在它完全没有的三块地方。</p>
+</header>
+
+<div class="verdict">
+  <div class="vcell r"><div class="vnum">57%</div><div class="vlab">直接复用</div><div class="vsub">agent 循环、沙箱、审批、会话存储、技能与插件市场、子 agent、安全审查</div></div>
+  <div class="vcell a"><div class="vnum">25%</div><div class="vlab">需改造</div><div class="vsub">模型接入层、连接器目录、办公产物技能、Ask 模式</div></div>
+  <div class="vcell b"><div class="vnum">18%</div><div class="vlab">必须自建</div><div class="vsub">整个前端、定时调度、文档解析入口、可视化、国内生态</div></div>
+  <div class="vcell"><div class="vnum">53</div><div class="vlab">人周（估）</div><div class="vsub">4 人约 3.3 个月；已按 2026-09-03 决策重算（+国内模型适配 +桌面分发，−国内生态 −公开市场）</div></div>
+</div>
+<div class="vnote"><span>许可 Apache-2.0 · 可商用闭源分发</span><span>须保留 LICENSE / NOTICE</span><span>不得使用 Codex / OpenAI 品牌</span></div>
+
+<!-- ============ 1 架构 ============ -->
+<section>
+  <div class="snum">01</div>
+  <div>
+    <h2>架构：内核不动，两端自建</h2>
+    <p class="dek">codex 有一套被上游承诺兼容性的扩展边界。把 EvoWork 的一切放在这条边界之外，是这个方案能否长期成立的唯一前提。</p>
+
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 900 636" role="img" aria-label="分层架构图：EvoWork 前端与本机服务通过 app-server JSON-RPC 调用同机的 codex 内核；EvoWork 扩展包以 skills、hooks、MCP 形式被内核加载；内核通过 Responses API 调用云端模型网关，网关再对接各家模型。云端只有账号、私有源、分享托管与网关四件事。">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+            <marker id="ahr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--reuse)"/>
+            </marker>
+          </defs>
+
+          <!-- R1 frontend + service -->
+          <rect x="40" y="26" width="382" height="88" rx="2" fill="none" stroke="var(--build)" stroke-width="1.5"/>
+          <text x="58" y="52" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">EvoWork 前端</text>
+          <text x="58" y="74" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">侧边栏 · 对话区 · 结果区</text>
+          <text x="58" y="92" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">产物 / 变更 / 预览 / Visualizer</text>
+          <text x="404" y="46" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="var(--build)">自建</text>
+
+          <rect x="478" y="26" width="382" height="88" rx="2" fill="none" stroke="var(--build)" stroke-width="1.5"/>
+          <text x="496" y="52" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">EvoWork 本机服务</text>
+          <text x="496" y="74" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">Scheduler · 文档解析 · 产物索引（本机 sqlite）</text>
+          <text x="496" y="92" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">云端只有：账号/配额 · 私有源 · 分享托管 · 网关</text>
+          <text x="842" y="46" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="var(--build)">自建</text>
+
+          <!-- arrows into kernel -->
+          <line x1="231" y1="114" x2="231" y2="176" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)"/>
+          <line x1="669" y1="114" x2="669" y2="176" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)"/>
+          <text x="450" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="600" fill="currentColor">app-server JSON-RPC v2</text>
+          <text x="450" y="158" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".65">thread/* · turn/* · fs/* · review/*</text>
+
+          <!-- R2 kernel -->
+          <rect x="40" y="178" width="820" height="146" rx="2" fill="none" stroke="var(--reuse)" stroke-width="2"/>
+          <text x="58" y="206" font-family="Archivo, sans-serif" font-size="16" font-weight="700" fill="currentColor">codex 内核</text>
+          <text x="842" y="204" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="var(--reuse)">复用 · 跟随上游</text>
+          <text x="58" y="234" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".78">core · tools · thread-store · rollout · skills · agent-roles · memories · goal</text>
+          <text x="58" y="256" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".78">sandboxing · execpolicy · guardian-v2 · hooks · agent-identity · secrets</text>
+          <text x="58" y="278" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".78">app-server · plugin marketplace · mcp-server · rmcp-client · otel</text>
+          <line x1="58" y1="294" x2="842" y2="294" stroke="currentColor" stroke-width="1" opacity=".18"/>
+          <text x="58" y="312" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".6">真正的代码补丁只有 2 处：模式模板文案、对外品牌字符串</text>
+
+          <!-- ext pack up-arrow -->
+          <line x1="255" y1="400" x2="255" y2="328" stroke="var(--reuse)" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ahr)"/>
+          <text x="272" y="352" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">被内核加载</text>
+          <text x="272" y="369" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".65">extension-api · plugin manifest · MCP</text>
+
+          <!-- gateway down-arrow -->
+          <line x1="695" y1="328" x2="695" y2="400" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)"/>
+          <text x="678" y="352" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">Responses API</text>
+          <text x="678" y="369" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".65">唯一支持的线协议</text>
+
+          <!-- R3 ext pack + gateway -->
+          <rect x="40" y="402" width="430" height="104" rx="2" fill="none" stroke="var(--build)" stroke-width="1.5"/>
+          <text x="58" y="428" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">EvoWork 扩展包</text>
+          <text x="452" y="424" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="var(--build)">自建</text>
+          <text x="58" y="450" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".72">办公产物技能 ppt / docx / xlsx / pdf / chart</text>
+          <text x="58" y="470" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".72">专家角色包 agents/*.toml</text>
+          <text x="58" y="490" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".72">MCP 连接器 · Hooks 策略包</text>
+
+          <rect x="530" y="402" width="330" height="104" rx="2" fill="none" stroke="var(--adapt)" stroke-width="1.5"/>
+          <text x="548" y="428" font-family="Archivo, sans-serif" font-size="15" font-weight="600" fill="currentColor">Responses API 网关</text>
+          <text x="842" y="424" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="var(--adapt)">改造</text>
+          <text x="548" y="450" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".72">流式 · 工具调用 · reasoning 降级</text>
+          <text x="548" y="470" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".72">prompt cache 语义</text>
+          <text x="548" y="490" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--adapt)" font-weight="600">wire_api = "chat" 已被上游移除 · 国内模型必须支持</text>
+
+          <!-- R4 models -->
+          <line x1="695" y1="506" x2="695" y2="552" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)"/>
+          <rect x="530" y="554" width="330" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/>
+          <text x="548" y="578" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".8">P0：DeepSeek · Kimi · GLM-5.3-flash</text>
+          <text x="548" y="596" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".8">Anthropic 等其余按需扩展</text>
+
+          <!-- direct path note -->
+          <line x1="530" y1="582" x2="470" y2="582" stroke="currentColor" stroke-width="1" opacity=".3"/>
+          <text x="460" y="578" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".55">OpenAI / Bedrock / Ollama</text>
+          <text x="460" y="592" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".55">可直连，但本期不走（Q2）</text>
+        </svg>
+      </div>
+      <figcaption>前端与本机服务只说 JSON-RPC，扩展包只被加载、不被调用，模型差异全部收敛在网关里。三条边界各自独立演进，内核保持可替换、可跟随上游。Q1=A 后上面两个框与内核跑在同一台机器上，云端只剩账号、私有源、分享托管与网关；Q2 已定必须支持国内模型，右下那条直连虚线本期不生效，网关工作量按 8 人周计。</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ 2 映射表 ============ -->
+<section>
+  <div class="snum">02</div>
+  <div>
+    <h2>能力映射表</h2>
+    <p class="dek">按功能清单的章节顺序逐条对照。路径可直接在仓库中定位。</p>
+    <div class="legend">
+      <div><span class="chip r">复用</span> 直接可用，零到低成本</div>
+      <div><span class="chip a">改造</span> 有底座，需适配或扩展</div>
+      <div><span class="chip b">自建</span> 仓库内零基础</div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th style="width:24%">清单能力</th><th style="width:9%">状态</th><th style="width:34%">codex 对应实现</th><th>说明</th></tr>
+        </thead>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第一章 · 核心能力</td></tr>
+          <tr><td>自然语言理解 / 自主规划执行</td><td><span class="chip r">复用</span></td><td><code>codex-rs/core</code> agent 循环</td><td>成熟，无需改动</td></tr>
+          <tr><td>本地文件操作</td><td><span class="chip r">复用</span></td><td><code>file-system</code> · <code>apply-patch</code></td><td>含 diff 应用与逐项审批</td></tr>
+          <tr><td>多任务并行</td><td><span class="chip r">复用</span></td><td><code>ThreadManager::spawn_subagent</code></td><td>子 agent 谱系可查询</td></tr>
+          <tr><td>结果可交付（产物）</td><td><span class="chip a">改造</span></td><td><code>core-plugins/src/artifact_operation.rs</code></td><td>只有识别逻辑，生成技能不在仓库</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第三章 · 工作模式</td></tr>
+          <tr><td>Craft（你说我做）</td><td><span class="chip r">复用</span></td><td><code>templates/default.md</code> + workspace-write</td><td>—</td></tr>
+          <tr><td>Plan（先想再做）</td><td><span class="chip r">复用</span></td><td><code>templates/plan.md</code></td><td>—</td></tr>
+          <tr><td>Ask（只谈不动）</td><td><span class="chip a">改造</span></td><td>read-only + <code>AskForApproval::Never</code></td><td>需新增 <code>ask.md</code>，并在工具层过滤写工具</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第四 / 五章 · 任务管理与对话</td></tr>
+          <tr><td>任务列表 · 分页 · 筛选</td><td><span class="chip r">复用</span></td><td><code>thread/list</code></td><td>支持 cursor、sortKey、cwd、archived、searchTerm</td></tr>
+          <tr><td>对话内搜索</td><td><span class="chip r">复用</span></td><td><code>thread/searchOccurrences</code></td><td>—</td></tr>
+          <tr><td>置顶 · 文件夹分组</td><td><span class="chip r">复用</span></td><td><code>threadSection/*</code></td><td>内置 pinned 分区 + 手动排序</td></tr>
+          <tr><td>重命名 · 归档 · 删除</td><td><span class="chip r">复用</span></td><td><code>thread/name/set</code> · <code>archive</code> · <code>delete</code></td><td>归档会一并处理子线程</td></tr>
+          <tr><td>继续处理已有任务</td><td><span class="chip r">复用</span></td><td><code>thread/resume</code> · <code>thread/fork</code></td><td>fork 可指定回合边界、可临时化</td></tr>
+          <tr><td>中断 · 中断后补充</td><td><span class="chip r">复用</span></td><td><code>turn/interrupt</code> · <code>turn/steer</code></td><td>steer 不新起回合</td></tr>
+          <tr><td>追问排队</td><td><span class="chip r">复用</span></td><td><code>thread/queue/*</code></td><td>FIFO，可编辑、可重排</td></tr>
+          <tr><td>粘贴截图 / 上传图片</td><td><span class="chip r">复用</span></td><td><code>UserInput::Image</code> / <code>LocalImage</code></td><td>—</td></tr>
+          <tr><td>上传 PDF / Word / Excel / ZIP</td><td><span class="chip b">自建</span></td><td>—</td><td><code>UserInput</code> 只有 Text / Image / Audio，需前置解析管道</td></tr>
+          <tr><td><code>@</code> 引用文件 / 技能 / 规则</td><td><span class="chip r">复用</span></td><td><code>UserInput::Mention</code> + <code>file-search</code></td><td>—</td></tr>
+          <tr><td>执行过程展示</td><td><span class="chip r">复用</span></td><td><code>item/*</code> 事件流</td><td>agentMessage / plan / reasoning / commandExecution / fileChange</td></tr>
+          <tr><td>变更视图</td><td><span class="chip r">复用</span></td><td><code>fileChange</code> item · <code>codex apply</code></td><td>—</td></tr>
+          <tr><td>内置浏览器预览</td><td><span class="chip a">改造</span></td><td><code>BrowserUseConfig</code></td><td>只是 origin 级权限策略层，真浏览器需外部 MCP</td></tr>
+          <tr><td>语音交互</td><td><span class="chip r">复用</span></td><td><code>thread/realtime/*</code></td><td>WebSocket / WebRTC，清单未提及的额外能力</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第八 / 九章 · 技能与专家</td></tr>
+          <tr><td>技能加载（用户级 / 项目级）</td><td><span class="chip r">复用</span></td><td><code>skills</code> · <code>ext/skills</code></td><td>三处根目录，含动态技能选择器</td></tr>
+          <tr><td>技能市场（搜索 / 安装 / 升级）</td><td><span class="chip r">复用</span></td><td><code>core-plugins/src/marketplace*.rs</code></td><td>支持 npm / git / 本地目录，含 bundle 校验</td></tr>
+          <tr><td>技能安全审计 P0/P1/P2</td><td><span class="chip a">改造</span></td><td><code>ext/guardian-v2</code> + <code>marketplace_policy.rs</code></td><td>已有风险分级，需映射到 P0/P1/P2 语义</td></tr>
+          <tr><td>自定义技能创建</td><td><span class="chip r">复用</span></td><td>内置 <code>skill-creator</code> · <code>plugin-creator</code></td><td>—</td></tr>
+          <tr><td>内置办公技能（文档/表格/PPT/图表）</td><td><span class="chip b">自建</span></td><td>—</td><td>不在仓库，从 OpenAI 私有市场下载</td></tr>
+          <tr><td>专家中心 100+ 角色</td><td><span class="chip a">改造</span></td><td><code>agent-roles</code></td><td>机制完整（每角色可带独立 config 层），角色内容需自建</td></tr>
+          <tr><td>多角色协作</td><td><span class="chip r">复用</span></td><td><code>spawn_subagent</code> + <code>ancestorThreadId</code></td><td>—</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第十章 · 连接器与 MCP</td></tr>
+          <tr><td>MCP 协议 · 工具权限策略</td><td><span class="chip r">复用</span></td><td><code>mcp-server</code> · <code>rmcp-client</code> · <code>app_tool_policy.rs</code></td><td>双向支持：既是 client 也可作 server 被调</td></tr>
+          <tr><td>200+ 第三方连接器</td><td><span class="chip b">自建</span></td><td>—</td><td><code>connectors/src/lib.rs:483</code> 硬编码 chatgpt.com，一个都拿不到</td></tr>
+          <tr><td>连接器推荐</td><td><span class="chip b">自建</span></td><td>—</td><td>—</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第七 / 十一 / 十二章 · 记忆 · 可视化 · 自动化</td></tr>
+          <tr><td>用户级本地记忆</td><td><span class="chip r">复用</span></td><td><code>memories/{read,write}</code></td><td>目录 <code>CODEX_HOME/memories</code>，可按任务开关写入</td></tr>
+          <tr><td>工作空间记忆</td><td><span class="chip r">复用</span></td><td><code>AGENTS.md</code> 层级加载 + <code>ext/history-notes</code></td><td>—</td></tr>
+          <tr><td>云端记忆</td><td><span class="chip a">改造</span></td><td><code>MemoryBackend</code> trait</td><td>远端实现需自建；Q1=A + Q3 下默认关闭，只同步条目不同步原文</td></tr>
+          <tr><td>定时执行 / Automations</td><td><span class="chip b">自建</span></td><td>—</td><td>全仓库无任何 cron / scheduler</td></tr>
+          <tr><td>可视化 SVG / Chart.js</td><td><span class="chip b">自建</span></td><td>—</td><td>本属前端职责</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第十四章 · 安全与隐私 —— codex 强于清单描述</td></tr>
+          <tr><td>三平台沙箱</td><td><span class="chip r">复用</span></td><td><code>linux-sandbox</code>（landlock/seccomp）· Seatbelt · <code>windows-sandbox-rs</code></td><td>—</td></tr>
+          <tr><td>命令白名单</td><td><span class="chip r">复用</span></td><td><code>execpolicy</code></td><td>独立 DSL，<code>codex execpolicy</code> 可离线校验</td></tr>
+          <tr><td>网络出口管控</td><td><span class="chip r">复用</span></td><td><code>network-proxy</code></td><td>—</td></tr>
+          <tr><td>高危操作二次确认</td><td><span class="chip r">复用</span></td><td><code>AskForApproval::Granular</code></td><td>可分类允许 / 自动拒绝</td></tr>
+          <tr><td>提示注入防护</td><td><span class="chip r">复用</span></td><td><code>ext/guardian-v2</code></td><td>独立安全审查 subagent，动作分级 + 证据留存</td></tr>
+          <tr><td>策略即代码</td><td><span class="chip r">复用</span></td><td><code>hooks</code>（12 类事件）</td><td>含管理员强制层 <code>requirements.toml</code></td></tr>
+          <tr><td>Agent 密码学身份</td><td><span class="chip r">复用</span></td><td><code>agent-identity</code>（ed25519 + JWT）</td><td>清单第 15 章"下一代"方向，已有雏形</td></tr>
+        </tbody>
+
+        <tbody>
+          <tr class="grp"><td colspan="4">第十三章 · 界面</td></tr>
+          <tr><td>侧边栏 / 对话区 / 结果区</td><td><span class="chip b">自建</span></td><td>—</td><td>仓库内只有 TUI；桌面 App 与 VS Code 扩展闭源</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3 硬缺口 ============ -->
+<section>
+  <div class="snum">03</div>
+  <div>
+    <h2>四个硬缺口</h2>
+    <p class="dek">这些不是"改造一下"，是从零开始。工作量与风险都集中在这里。</p>
+
+    <div class="gaps">
+      <div class="gap">
+        <h3>整个前端 <span class="chip b">自建</span></h3>
+        <p>仓库里只有 TUI。桌面 App 和 VS Code 扩展是闭源的，<code>codex app</code> 只负责去下载安装器。三栏布局、产物面板、变更视图、浏览器预览，全部要自己写。</p>
+        <p class="why">好消息：app-server 的 JSON-RPC 协议文档有 2800 行，且有官方 TS / Python SDK。</p>
+      </div>
+      <div class="gap">
+        <h3>定时自动化 <span class="chip b">自建</span></h3>
+        <p>全仓库 grep 不到任何 cron 或 scheduler。定时执行、有效期、ACTIVE/PAUSED、执行历史都要自建——本来也不该进内核，因为它牵涉多租户、幂等、重试与告警。</p>
+        <p class="why">好消息：<code>codex exec</code> 非交互模式成熟，外部调度器套上去即可。</p>
+      </div>
+      <div class="gap">
+        <h3>办公产物技能 <span class="chip b">自建</span></h3>
+        <p>内核里有产物<em>识别</em>逻辑，认 <code>presentations</code> / <code>documents</code> / <code>spreadsheets</code> / <code>pdf</code> 四个插件，但技能本体从 OpenAI 私有市场 <code>openai-primary-runtime</code> 下载。机制开放，内容要自己写。</p>
+        <p class="why">上报约定已固定：<code>--operation-kind</code> · <code>--expected-output-count</code> · <code>--output-format</code>。</p>
+      </div>
+      <div class="gap">
+        <h3>文档解析入口 <span class="chip b">自建</span></h3>
+        <p><code>UserInput</code> 只支持 Text / Image / Audio。清单里的 PDF / Word / Excel / CSV / ZIP 上传，需要<strong>本机</strong>解析管道先解析成 Markdown + 附图，再以文本与图片形式注入回合。Q3 硬约束 + Q1=A 后没有云端兜底：解析运行时随包分发。</p>
+        <p class="why">这条链路同时是"文件处理默认在本地完成"这条隐私承诺的落地点。</p>
+      </div>
+    </div>
+
+    <div class="call" style="margin-top:20px">
+      <div class="h">最容易被低估的一项</div>
+      <code>wire_api = "chat"</code> 已被上游移除，codex 只说 OpenAI <strong>Responses API</strong>，内置 provider 仅 OpenAI / Amazon Bedrock / Ollama / LMStudio。接任何国内模型或 Anthropic，都必须自建一层协议网关，且要完整实现流式语义、工具调用、reasoning 段与 prompt cache 行为。这是本方案单项风险最高的工作量——除非主力模型本就是 OpenAI 或 Bedrock，那么它归零。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4 上游改动 ============ -->
+<section>
+  <div class="snum">04</div>
+  <div>
+    <h2>上游要改的地方</h2>
+    <p class="dek">这份清单短，是判断"内核不动"策略可行的直接证据。</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th style="width:8%">#</th><th style="width:34%">位置</th><th style="width:12%">是否需改码</th><th>做法</th></tr></thead>
+        <tbody>
+          <tr><td>P1</td><td>连接器 base URL <code>connectors/src/lib.rs:483</code></td><td><span class="chip r">否</span></td><td>环境变量 <code>CODEX_APP_SERVER_CHATGPT_BASE_URL</code> 覆盖</td></tr>
+          <tr><td>P2</td><td>模型 provider 注册</td><td><span class="chip r">否</span></td><td><code>config.toml</code> 的 <code>model_providers</code></td></tr>
+          <tr><td>P3</td><td>工作模式 instructions</td><td><span class="chip a">是</span></td><td>新增 <code>ask.md</code>；文案优先走 <code>developer_instructions</code> 配置注入</td></tr>
+          <tr><td>P4</td><td>对外可见品牌字符串</td><td><span class="chip a">是</span></td><td>面较散；只改对外文案，保留内部路径名以降低冲突</td></tr>
+          <tr><td>P5</td><td>遥测端点</td><td><span class="chip r">否</span></td><td>走配置</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px; font-size:13.5px; color:var(--ink-2); max-width:72ch">真正的补丁只有两处。建议把补丁数设为硬性上限（≤5），每个补丁必须附一条"为什么无法通过扩展点实现"的说明，并让 CI 每日对 <code>upstream/main</code> 做试合并告警。</p>
+  </div>
+</section>
+
+<!-- ============ 5 里程碑 ============ -->
+<section>
+  <div class="snum">05</div>
+  <div>
+    <h2>里程碑与工作量</h2>
+    <p class="dek">按 3–4 人（1 Rust / 2 前端与服务 / 1 技能与内容）估算。</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th style="width:10%">阶段</th><th style="width:38%">内容</th><th style="width:12%" class="num">人周</th><th>交付判定</th></tr></thead>
+        <tbody>
+          <tr><td>M0</td><td>可行性验证：模型网关打通 + 一个自写 PPT 技能端到端</td><td class="num">3</td><td>一句话生成 pptx 成功</td></tr>
+          <tr><td>M1</td><td>Responses API 网关完整语义 + DeepSeek / Kimi / GLM-5.3-flash 三家适配（Q2/Q16）+ 私有部署包（Q14）</td><td class="num">8</td><td>三家均跑通端到端工具调用；日志 / trace / 错误上报均不含正文</td></tr>
+          <tr><td>M2</td><td>前端 MVP：三栏 + 任务列表 + 对话流 + 中断/追问 + 变更视图</td><td class="num">10</td><td>覆盖清单第四、五章</td></tr>
+          <tr><td>M3</td><td>办公技能包 + 文档解析管道</td><td class="num">8</td><td>覆盖清单 2.1 与 6.2</td></tr>
+          <tr><td>M4</td><td>Hooks 策略包 + guardian 分级映射 + 审计</td><td class="num">4</td><td>通过内部安全评审</td></tr>
+          <tr><td>M5</td><td>Automations：<b>本机常驻调度器</b>（misfire 补偿 + 设备绑定）+ 执行历史 + 配置界面</td><td class="num">5</td><td>关机 8 小时后按 misfire 策略正确补偿</td></tr>
+          <tr><td>M6</td><td>仅浏览器 MCP（Q9：国内生态集成本期不做）</td><td class="num">2</td><td>网页任务与预览可用</td></tr>
+          <tr><td>M7</td><td>企业私有源装载 + 专家角色内容（Q5：不做公开 registry 与审核）</td><td class="num">5</td><td>—</td></tr>
+          <tr><td>M8</td><td>Visualizer + 本机产物索引 + 分享链接（默认关闭、逐次授权）</td><td class="num">5</td><td>—</td></tr>
+          <tr><td>M9</td><td><b>桌面分发</b>（Q1=A 新增）：打包内核二进制与解析运行时 · 三平台签名公证 · 自动更新 · EvoWork CLI 随包</td><td class="num">3</td><td>三平台安装包可自动升级，离线可用</td></tr>
+          <tr class="tot"><td>合计</td><td>到达本期范围对齐</td><td class="num">53</td><td>不含视频 / 3D、国内生态集成、公开技能市场；另需常设 0.5 人力做季度 rebase</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6 风险 ============ -->
+<section>
+  <div class="snum">06</div>
+  <div>
+    <h2>主要风险</h2>
+    <p class="dek">影响 / 概率按 高 · 中 · 低 三档；已按 2026-09-03 决策重排（R9–R11 由 Q1=A 派生，隐私冲突随 Q1/Q3 落定而降级）。</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th style="width:30%">风险</th><th style="width:8%" class="sev">影响</th><th style="width:8%" class="sev">概率</th><th>缓解</th></tr></thead>
+        <tbody>
+          <tr><td>Responses API 网关工作量被低估</td><td class="sev">高</td><td class="sev">高</td><td>Q2 决策必须支持国内模型 → M1 上调至 8 人周；每家模型的流式与工具调用差异单独建测试用例；预留 1.5 倍 buffer</td></tr>
+          <tr><td><strong>定位摩擦</strong>：codex 假设 git 仓库与编码场景，办公场景持续别扭</td><td class="sev">高</td><td class="sev">高</td><td>M0 直接在"写周报"这类办公场景验证，而不是编码场景</td></tr>
+          <tr><td><strong>本机调度不可靠</strong>：关机 / 休眠 / 多设备导致定时任务漏跑或重复跑（Q1=A 派生）</td><td class="sev">高</td><td class="sev">高</td><td>misfire 补偿窗口 + 设备绑定 + 可选系统唤醒；前端如实展示"下次执行 / 上次跳过原因"，不承诺云端级 SLA</td></tr>
+          <tr><td><strong>桌面分发成本</strong>：内核二进制 + 解析运行时（+100–300MB）、三平台签名公证、自动更新（Q1=A 派生）</td><td class="sev">中</td><td class="sev">高</td><td>单列 M9；解析运行时按需下载而非全量随包；升级走差量包</td></tr>
+          <tr><td><strong>治理弱化</strong>：企业策略无法在服务端强制拦截，只能下发到每台设备（Q1=A 派生）</td><td class="sev">中</td><td class="sev">中</td><td>策略包签名 + 启动校验 + requirements.toml / allow_managed_hooks_only；离线超期降级为只读</td></tr>
+          <tr><td>隐私承诺与云端能力（分享链接、云记忆）冲突</td><td class="sev">高</td><td class="sev">低</td><td>Q1=A + Q3 硬约束已把执行面留在本机；剩余出网点只有分享链接与云记忆，均默认关闭并逐次授权</td></tr>
+          <tr><td>上游 API 快速变动，rebase 成本失控</td><td class="sev">高</td><td class="sev">中</td><td>补丁清单化；CI 每日试合并；必要时在稳定 tag 冻结</td></tr>
+          <tr><td>模型能力不足导致产物质量差（PPT 排版、图表美观）</td><td class="sev">中</td><td class="sev">高</td><td>技能内置模板库，压缩模型自由度</td></tr>
+          <tr><td>Visualizer 渲染模型生成的 HTML 引入 XSS</td><td class="sev">高</td><td class="sev">中</td><td>独立 origin 的 iframe + 严格 CSP 白名单</td></tr>
+          <tr><td>Windows 沙箱成熟度低于 Linux / macOS</td><td class="sev">中</td><td class="sev">中</td><td>Q6 决策暂用上游 windows-sandbox-rs，不自研；M4 单独评估隔离强度，不足则禁用 danger-full-access 并以审批为主</td></tr>
+          <tr><td>Apache-2.0 合规疏漏（NOTICE、商标）</td><td class="sev">中</td><td class="sev">低</td><td>法务过一遍；建 <code>THIRD_PARTY_NOTICES</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7 待确认 ============ -->
+<section>
+  <div class="snum">07</div>
+  <div>
+    <h2>16 个问题的决策记录</h2>
+    <p class="dek">2026-09-03 产品评审全部决策完毕，含三个阻塞项与两个由 Q1=A 派生的问题。没有开放项，唯一未答的是"是否有自建推理服务"，按"无"处理。</p>
+
+    <div class="qs">
+      <div class="q"><div class="qid">Q1</div><div>
+        <div class="qh"><span class="tag block">阻塞</span><span class="qt">部署形态？</span></div>
+        <p>A 纯本地桌面应用 · B 本地 agent + 云端服务 · C 纯云端容器执行。这决定沙箱、文件访问、隐私承诺与调度器的位置。C 与"文件处理在本地完成"直接冲突。</p>
+        <div class="rec"><b>已决策 · A 纯本地桌面应用</b>执行、沙箱、解析、调度、产物索引全部在本机；云端只做账号 · 私有源索引 · 模型网关 · 分享托管。代价是调度可靠性与分发体积，见 D9 / R9 / R10 / M9。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q2</div><div>
+        <div class="qh"><span class="tag block">阻塞</span><span class="qt">主力模型是哪家？是否必须支持国内模型？</span></div>
+        <p>codex 只说 Responses API。是否必须支持通义 / 豆包 / DeepSeek / Kimi？是否有自建推理服务？</p>
+        <div class="rec"><b>已决策 · 必须支持国内模型</b>网关是全量协议适配层而非薄转发，M1 由 6 上调到 8 人周；P0 名单见 Q16：DeepSeek · Kimi · GLM-5.3-flash。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q3</div><div>
+        <div class="qh"><span class="tag block">阻塞</span><span class="qt">"原始数据不上传云端"是硬约束还是宣传口径？</span></div>
+        <p>若为硬约束，则文档解析必须本地执行（需随包分发 Python/Node 运行时，安装包增大 100–300MB）、不能用云端 OCR 理解扫描件、产物分享需显式二次授权。</p>
+        <div class="rec"><b>已决策 · 硬约束</b>解析必须本地执行、不得用云端 OCR、离开本机的动作逐次显式授权。与 Q1=A 同向，无内部张力。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q4</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">视频 / 3D 生成本期是否 P0？</span></div>
+        <p>codex 只有图片生成（走当前 model provider，可直接用）。视频与 3D 各需新写 extension + 对接第三方 API，每项约 3 人周。</p>
+        <div class="rec"><b>已决策 · 本期只做图片</b>直接复用 ext/image-generation，增量成本≈0；视频与 3D 放 v2。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q5</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">技能市场是集中托管还是仅私有源？</span></div>
+        <p>codex 支持 npm / git / 本地目录三种来源。集中托管需自建 registry + 审核流 + 评分，约 6–8 人周。</p>
+        <div class="rec"><b>已决策 · v1 只做官方内置技能 + 企业私有源</b>不建公开 registry、不做审核评分，M7 由 8 降到 5 人周。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q6</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">是否必须支持 Windows？安全等级要求？</span></div>
+        <p><code>windows-sandbox-rs</code> 相对新，隔离强度弱于 Linux landlock 与 macOS Seatbelt。</p>
+        <div class="rec"><b>已决策 · 支持 Windows，暂用上游 windows-sandbox-rs</b>不自研沙箱；隔离强度在 M4 单独评估，不足则禁用 danger-full-access 并以审批为主。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q7</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">与上游的长期关系：跟随 rebase 还是版本冻结？</span></div>
+        <p>跟随可持续获得上游演进（guardian、goal、多 agent 演进很快），但需常设约 0.5 人力；冻结短期省事，一年后等于自己维护一个分叉。</p>
+        <div class="rec"><b>已决策 · 跟随上游</b>季度 rebase，补丁硬上限 5 个文件 / 500 行，常设 0.5 人力（不计入 53 人周）。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q8</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">定时任务的并发与失败语义？</span></div>
+        <p>上次未跑完又到点：跳过 / 排队 / 并行？失败是否重试、几次、间隔多久？连续失败是否自动暂停并告警？</p>
+        <div class="rec"><b>已决策 · SKIP + 不自动重试 + 连败 3 次自动 PAUSE 并通知</b>scheduler 数据模型据此定型。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q9</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">国内生态集成的 P0 名单？</span></div>
+        <p>清单提到腾讯文档 / ima 知识库 / 乐享 / 企业网盘。每家 OAuth + API 约 2–5 人日。</p>
+        <div class="rec"><b>已决策 · 本期不做</b>飞书 / 企微 / 钉钉 / 腾讯文档 / ima / 乐享 / 企业网盘全部推 v2，只保留浏览器 MCP，M6 由 8 降到 2 人周。MCP 协议能力本身仍完整，用户可自接第三方 server。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q10</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">产物分享链接的托管形态？</span></div>
+        <p>"生成公开链接"需要服务端托管产物内容，与 Q3 的隐私承诺存在张力。A 显式授权后上传 · B 仅内网链接 · C 导出文件自行分发。</p>
+        <div class="rec"><b>已决策 · A 显式授权后上传</b>默认关闭、逐次授权、链接带有效期。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q11</div><div>
+        <div class="qh"><span class="tag major">重要</span><span class="qt">并发与成本上限？</span></div>
+        <p>单用户可并行多少任务？是否需要单任务 token 硬预算（<code>ThreadGoal</code> 已有 budget 字段）？超预算是暂停、降级还是失败？</p>
+        <div class="rec"><b>已决策 · 单用户 3 并行 + 单任务硬预算 + 超预算暂停询问</b>并行数再按本机 CPU / 内存动态下调（Q1=A 后机器就是资源上限）。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q12</div><div>
+        <div class="qh"><span class="tag minor">可选</span><span class="qt">清单第 15 章的"下一代"方向本期是否落地？</span></div>
+        <p>codex 里恰好都有雏形：声明式目标与预算（<code>ext/goal</code>）、审计可复现（<code>rollout-trace</code>）、Agent 身份（<code>agent-identity</code>）、对抗式验证（<code>guardian-v2</code> + <code>review/start</code>）。落地成本远低于从零做。</p>
+        <div class="rec"><b>已决策 · 只落审计留痕与单任务预算</b>其余（agent 密码学身份、对抗式验证、持续 reconcile）保留接口不实现。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q13</div><div>
+        <div class="qh"><span class="tag minor">可选</span><span class="qt">是否对外保留 CLI 形态？</span></div>
+        <p><code>codex exec</code> 与 TUI 已存在，几乎零成本。保留对开发者生态与自动化集成有价值，但会暴露技术来源。</p>
+        <div class="rec"><b>已决策 · 保留 CLI</b>以「EvoWork CLI」独立品牌对外，随桌面包分发。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q14</div><div>
+        <div class="qh"><span class="tag major">新增</span><span class="qt">模型网关的托管形态？</span></div>
+        <p>Q1=A 把执行面留在本机，但模型调用天然要出网。网关放云端统一托管、企业私有部署，还是桌面内置？</p>
+        <div class="rec"><b>已决策 · 云端托管为主 + 企业私有部署包</b>网关不落盘 prompt 与响应体，只记 token 计数、时延与错误码。要同时管住三条会泄露正文的路径：应用日志、APM trace 的 span attribute、错误上报的异常堆栈。私有部署下密钥由客户自持，EvoWork 云不接触 prompt。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q15</div><div>
+        <div class="qh"><span class="tag major">新增</span><span class="qt">同账号多设备时，定时任务归属哪台设备？</span></div>
+        <p>Q1=A 下触发在本机，多设备会重复执行。</p>
+        <div class="rec"><b>已决策 · 绑定创建它的设备</b>只有该设备触发，其他设备只读展示并提供「迁移到本机」；离线超 7 天提示迁移。迁移要重置 misfire 基准，否则新设备一上线就补出一堆历史触发。</div>
+      </div></div>
+
+      <div class="q"><div class="qid">Q16</div><div>
+        <div class="qh"><span class="tag major">新增</span><span class="qt">国内模型的 P0 名单与是否有自建推理服务？</span></div>
+        <p>Q2 已定「必须支持」，但每多一家就是一份完整的语义适配，约 1–1.5 人周。</p>
+        <div class="rec"><b>已决策 · DeepSeek · Kimi · GLM-5.3-flash</b>合计 3–4.5 人周，含在 M1 的 8 人周内。DeepSeek 作为基准实现先做；GLM-5.3-flash 属轻量档，工具调用与长指令遵循通常弱于旗舰档，M0 就该用它验证产物质量的下限。「是否有自建推理服务」未答复，按「无」处理，网关仍保留私有 endpoint 与自定义鉴权配置。</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  完整设计文档：evowork-on-codex-design.md（仓库根目录）<br>
+  评估基线：openai/codex main @ 1c1e17782a · Apache-2.0 · 2026-09-02<br>
+  本页所有路径均可在该仓库中直接定位；结论基于代码而非文档描述。
+</footer>
+
+</div>
