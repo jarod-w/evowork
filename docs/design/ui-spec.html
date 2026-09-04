@@ -1,0 +1,1458 @@
+<title>EvoWork 设计系统</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ============================================================
+   页面 chrome —— 沿用 evowork-on-codex-assessment.html 的编辑体语言
+   ============================================================ */
+:root{
+  --ground:#EFF1F4; --surface:#FFFFFF; --surface-2:#F6F7F9; --surface-3:#EAECF0;
+  --ink:#14171E; --ink-2:#3C434E; --muted:#6A7280;
+  --hair:#D6DAE0; --hair-strong:#B5BBC5;
+  --reuse:#0E7059; --reuse-tint:#E0EFEA;
+  --adapt:#8A560B; --adapt-tint:#F5EEDE;
+  --build:#A82A2A; --build-tint:#F6E6E5;
+  --focus:#1E48C0;
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --disp:"Archivo","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C0F14; --surface:#13171E; --surface-2:#181D25; --surface-3:#1F252E;
+    --ink:#E6E9EE; --ink-2:#C2C8D1; --muted:#8C95A2;
+    --hair:#252B34; --hair-strong:#39414D;
+    --reuse:#4FC5A4; --reuse-tint:#10251F;
+    --adapt:#DDA24C; --adapt-tint:#2A2013;
+    --build:#EE7A72; --build-tint:#2B1716;
+    --focus:#7FA0FF;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C0F14; --surface:#13171E; --surface-2:#181D25; --surface-3:#1F252E;
+  --ink:#E6E9EE; --ink-2:#C2C8D1; --muted:#8C95A2;
+  --hair:#252B34; --hair-strong:#39414D;
+  --reuse:#4FC5A4; --reuse-tint:#10251F;
+  --adapt:#DDA24C; --adapt-tint:#2A2013;
+  --build:#EE7A72; --build-tint:#2B1716;
+  --focus:#7FA0FF;
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.65; -webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px; margin:0 auto; padding:0 24px 96px}
+a{color:var(--focus); text-decoration:none; border-bottom:1px solid color-mix(in srgb, var(--focus) 35%, transparent)}
+a:hover{border-bottom-color:var(--focus)}
+:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+
+.mast{padding:56px 0 28px; border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; margin:0 0 18px; display:flex; flex-wrap:wrap; gap:6px 14px}
+.eyebrow span::before{content:"—"; margin-right:8px; color:var(--hair-strong)}
+.eyebrow span:first-child::before{content:none}
+h1{font-family:var(--disp); font-weight:700; font-size:clamp(30px,5.4vw,50px); line-height:1.05; letter-spacing:-.02em; margin:0 0 18px; text-wrap:balance}
+.stand{max-width:62ch; font-size:16.5px; color:var(--ink-2); margin:0}
+.stand strong{color:var(--ink); font-weight:600}
+
+.verdict{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--hair); border:1px solid var(--hair); margin:0 0 8px; border-top:none}
+.vcell{background:var(--surface); padding:18px 18px 16px}
+.vnum{font-family:var(--disp); font-weight:700; font-size:30px; line-height:1; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.vlab{font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--muted); margin-top:8px; text-transform:uppercase}
+.vsub{font-size:12.5px; color:var(--ink-2); margin-top:6px; line-height:1.45}
+.vnote{font-family:var(--mono); font-size:11.5px; color:var(--muted); border:1px solid var(--hair); border-top:none; background:var(--surface-2); padding:9px 18px; display:flex; flex-wrap:wrap; gap:4px 20px}
+
+section{display:grid; grid-template-columns:56px minmax(0,1fr); gap:0 20px; padding-top:56px}
+.snum{font-family:var(--mono); font-size:12px; font-weight:600; color:var(--muted); padding-top:7px; letter-spacing:.02em}
+h2{font-family:var(--disp); font-weight:600; font-size:23px; letter-spacing:-.01em; margin:0 0 6px; line-height:1.25}
+h3.sh{font-family:var(--disp); font-weight:600; font-size:15px; margin:28px 0 12px; color:var(--ink); letter-spacing:-.005em}
+h3.sh:first-child{margin-top:0}
+.dek{color:var(--muted); font-size:14px; margin:0 0 22px; max-width:64ch}
+.body{max-width:74ch}
+.body p{margin:0 0 14px; color:var(--ink-2)}
+.body p strong{color:var(--ink); font-weight:600}
+@media (max-width:760px){ section{grid-template-columns:1fr; gap:0} .snum{padding:0 0 6px} }
+
+.tw{overflow-x:auto; border:1px solid var(--hair); background:var(--surface); border-radius:3px; margin:0 0 16px}
+table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:520px}
+thead th{font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); text-align:left; padding:10px 14px; border-bottom:1px solid var(--hair-strong); background:var(--surface-2); white-space:nowrap}
+tbody td{padding:9px 14px; border-bottom:1px solid var(--hair); vertical-align:top; color:var(--ink-2)}
+tbody tr:last-child td{border-bottom:none}
+tbody td:first-child{color:var(--ink); font-weight:500}
+.grp td{background:var(--surface-3); font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink); padding:8px 14px}
+code{font-family:var(--mono); font-size:12px; background:var(--surface-2); border:1px solid var(--hair); padding:.5px 4px; border-radius:2px; color:var(--ink); word-break:break-word}
+.num{font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; font-family:var(--mono); font-size:12.5px}
+.pass{color:var(--reuse); font-weight:600}
+.fail{color:var(--build); font-weight:600}
+.warnv{color:var(--adapt); font-weight:600}
+
+.call{border:1px solid var(--hair); border-left:3px solid var(--build); background:var(--surface); padding:14px 16px; margin:0 0 16px; font-size:13.5px; color:var(--ink-2)}
+.call.ok{border-left-color:var(--reuse)}
+.call.warn{border-left-color:var(--adapt)}
+.call .h{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--build); margin-bottom:5px}
+.call.ok .h{color:var(--reuse)} .call.warn .h{color:var(--adapt)}
+.call p{margin:0 0 8px} .call p:last-child{margin:0}
+
+figure{margin:0 0 8px}
+figure svg{display:block; width:100%; max-width:100%; height:auto; color:var(--ink)}
+.figbox{border:1px solid var(--hair); background:var(--surface); border-radius:3px; padding:22px 20px 8px; overflow-x:auto}
+figcaption{font-size:12.5px; color:var(--muted); padding:12px 2px 2px; line-height:1.55; border-top:1px solid var(--hair); margin-top:14px}
+
+footer{margin-top:72px; padding-top:20px; border-top:1px solid var(--hair); font-family:var(--mono); font-size:11.5px; color:var(--muted); line-height:1.9}
+.toc{display:grid; grid-template-columns:repeat(auto-fit,minmax(196px,1fr)); gap:1px; background:var(--hair); border:1px solid var(--hair); margin:28px 0 0}
+.toc a{background:var(--surface); padding:11px 14px; border:none; display:block; font-size:13px; color:var(--ink-2)}
+.toc a:hover{background:var(--surface-2); color:var(--ink)}
+.toc a b{font-family:var(--mono); font-size:10.5px; color:var(--muted); display:block; letter-spacing:.06em; margin-bottom:2px}
+
+/* ============================================================
+   规格标尺 —— 样例区外面的说明性外壳
+   ============================================================ */
+.spec{border:1px solid var(--hair); background:var(--surface); border-radius:3px; margin:0 0 16px; overflow:hidden}
+.spec>.sbar{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:9px 14px; background:var(--surface-2); border-bottom:1px solid var(--hair)}
+.spec>.sbar .sid{font-family:var(--mono); font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.04em}
+.spec>.sbar .snm{font-family:var(--disp); font-size:14px; font-weight:600; color:var(--ink)}
+.spec>.sbar .sdim{font-family:var(--mono); font-size:11px; color:var(--muted); margin-left:auto; text-align:right}
+.spec>.note{padding:9px 14px; border-top:1px solid var(--hair); background:var(--surface-2); font-size:12.5px; color:var(--muted)}
+.stwo{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+@media (max-width:720px){ .stwo{grid-template-columns:1fr} }
+
+/* ============================================================
+   EvoWork 真实 token —— 样例一律在 .ew 容器内渲染
+   1pt = 1css px（@1x），因此下面所有样例是 1:1 实尺寸
+   ============================================================ */
+.ew{
+  --bg-app:#F2F1EE; --bg-canvas:#FCFCFA; --bg-surface:#FFFFFF; --bg-sunken:#F7F6F3;
+  --bg-hover:rgba(29,29,27,.045); --bg-active:rgba(29,29,27,.075);
+  --bg-selected:#E9E8E4; --bg-inverse:#1D1D1B;
+  --text-primary:#1F1F1D; --text-secondary:#6E6D68; --text-tertiary:#9B9A94; --text-inverse:#FFFFFF;
+  --border-subtle:#E7E6E1; --border-default:#DCDBD5; --border-strong:#C9C8C1;
+  --accent:#2FA37A; --accent-weak:#E8F5EE; --accent-strong:#1B6B4F;
+  --info:#3B7DD8; --info-weak:#E9F1FC; --info-text:#225CAC;
+  --success:#2FA37A; --success-weak:#E8F5EE;
+  --warning:#C98A16; --warning-weak:#FBF2DE; --warning-text:#895E0F;
+  --danger:#D24B3E; --danger-weak:#FBECEA; --danger-text:#A53227;
+  --focus-ring:rgba(47,163,122,.4);
+  --r-xs:6px; --r-sm:8px; --r-md:10px; --r-lg:12px; --r-xl:16px; --r-2xl:20px; --r-full:999px;
+  --shadow-xs:0 1px 2px rgba(24,24,20,.05);
+  --shadow-sm:0 1px 3px rgba(24,24,20,.06), 0 1px 2px rgba(24,24,20,.04);
+  --shadow-md:0 4px 12px rgba(24,24,20,.08), 0 1px 3px rgba(24,24,20,.05);
+  --shadow-lg:0 12px 32px rgba(24,24,20,.12), 0 2px 8px rgba(24,24,20,.06);
+  --ewsans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Noto Sans CJK SC",-apple-system,"Segoe UI",Roboto,sans-serif;
+  --ewmono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  font-family:var(--ewsans); color:var(--text-primary);
+  background:var(--bg-canvas); padding:20px; line-height:1.5;
+}
+.ew[data-ew-theme="dark"]{
+  --bg-app:#191917; --bg-canvas:#1F1F1D; --bg-surface:#262624; --bg-sunken:#212120;
+  --bg-hover:rgba(240,239,234,.06); --bg-active:rgba(240,239,234,.1);
+  --bg-selected:#33332F; --bg-inverse:#F2F1EE;
+  --text-primary:#F0EFEA; --text-secondary:#A8A7A0; --text-tertiary:#77766F; --text-inverse:#1D1D1B;
+  --border-subtle:#2F2F2C; --border-default:#3A3A36; --border-strong:#4A4A45;
+  --accent:#41B891; --accent-weak:#18302A; --accent-strong:#8FDCC1;
+  --info:#6BA0EA; --info-weak:#16233A; --info-text:#A8C8F5;
+  --success:#41B891; --success-weak:#18302A;
+  --warning:#E0A93E; --warning-weak:#2E2515; --warning-text:#F0CE82;
+  --danger:#E8756A; --danger-weak:#331C1A; --danger-text:#F5A9A1;
+  --shadow-xs:none; --shadow-sm:none; --shadow-md:none; --shadow-lg:0 12px 32px rgba(0,0,0,.5);
+}
+.ew.app{background:var(--bg-app)}
+.ew.flat{padding:0}
+.ew svg{display:block}
+.ico{width:20px;height:20px;flex:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.i14{width:14px;height:14px} .i15{width:15px;height:15px} .i16{width:16px;height:16px} .i18{width:18px;height:18px} .i12{width:12px;height:12px} .i24{width:24px;height:24px} .i28{width:28px;height:28px}
+
+/* 样例区的主题开关 */
+.ewbar{display:flex; align-items:center; gap:8px; padding:7px 14px; background:var(--surface-2); border-bottom:1px solid var(--hair); font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:.04em}
+.ewbar .sp{margin-left:auto; display:flex; gap:0; border:1px solid var(--hair-strong); border-radius:2px; overflow:hidden}
+.ewbar button{font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border:none; background:var(--surface); color:var(--muted); cursor:pointer}
+.ewbar button[aria-pressed="true"]{background:var(--ink); color:var(--surface)}
+
+/* ---------- 色板 ---------- */
+.sw{display:grid; grid-template-columns:repeat(auto-fill,minmax(154px,1fr)); gap:1px; background:var(--hair); border:1px solid var(--hair); margin:0 0 16px}
+.swi{background:var(--surface); padding:0}
+.swc{height:56px; border-bottom:1px solid var(--hair)}
+.swm{padding:8px 10px}
+.swn{font-family:var(--mono); font-size:10.5px; font-weight:600; color:var(--ink); word-break:break-all; line-height:1.4}
+.swv{font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:2px}
+.swu{font-size:11.5px; color:var(--ink-2); margin-top:5px; line-height:1.4}
+.swr{font-family:var(--mono); font-size:10px; margin-top:4px}
+
+/* ---------- 间距 / 圆角 / 阴影 ---------- */
+.scale{display:flex; align-items:flex-end; gap:8px; flex-wrap:wrap}
+.scale div{text-align:center}
+.scale .bar{background:var(--adapt); opacity:.75}
+.scale .lb{font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:5px}
+.rgrid{display:flex; gap:14px; flex-wrap:wrap}
+.rgrid .rb{width:60px;height:60px;background:var(--bg-sunken);border:1px solid var(--border-default)}
+.shrow{display:flex; gap:20px; flex-wrap:wrap}
+.shrow .sb{width:104px;height:64px;background:var(--bg-surface);border-radius:var(--r-lg);display:flex;align-items:center;justify-content:center;font-family:var(--ewmono);font-size:10px;color:var(--text-tertiary)}
+
+/* ============================================================
+   32 个组件 —— 尺寸严格按 01 §5
+   ============================================================ */
+.ew .row{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.ew .col{display:flex; flex-direction:column; gap:8px}
+.ew .stk{display:flex; flex-direction:column; gap:5px}
+.stlab{font-family:var(--mono); font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:5px}
+.sgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,max-content)); gap:18px 22px}
+
+/* 5.1 IconButton */
+.c-ib{width:28px;height:28px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);background:transparent;border:none;cursor:pointer}
+.c-ib.h{background:var(--bg-hover)} .c-ib.a{background:var(--bg-active)}
+.c-ib.s{background:var(--bg-selected);color:var(--text-primary)}
+.c-ib.f{box-shadow:0 0 0 2px var(--focus-ring)}
+/* 5.2 AppSwitcherChip */
+.c-asc{height:26px;border-radius:var(--r-full);background:var(--bg-surface);border:1px solid var(--border-default);display:inline-flex;align-items:center;gap:4px;padding:0 10px;font-size:12px;color:var(--text-primary)}
+/* 5.3 NavItem */
+.c-nav{height:28px;border-radius:var(--r-sm);display:flex;align-items:center;gap:8px;padding:0 8px;font-size:13px;font-weight:500;color:var(--text-secondary)}
+.c-nav.h{background:var(--bg-hover)}
+.c-nav.s{background:var(--bg-selected);color:var(--text-primary);font-weight:600}
+.c-nav .tail{margin-left:auto;font-size:12px;color:var(--text-tertiary);font-weight:400}
+.c-nav .cnt{margin-left:auto;height:18px;min-width:18px;border-radius:var(--r-full);background:var(--bg-selected);color:var(--text-secondary);font-size:11px;font-weight:500;display:flex;align-items:center;justify-content:center;padding:0 6px}
+/* 5.4 SidebarSectionHeader */
+.c-ssh{height:28px;display:flex;align-items:center;gap:4px;padding:0 20px;font-size:12px;font-weight:500;color:var(--text-secondary)}
+/* 5.5 TaskListItem */
+.c-tli{height:28px;border-radius:var(--r-sm);display:flex;align-items:center;gap:8px;padding:0 8px;font-size:13px;font-weight:500;color:var(--text-primary)}
+.c-tli.s{background:var(--bg-selected)} .c-tli.h{background:var(--bg-hover)}
+.c-tli .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-tli .tm{font-size:12px;font-weight:400;color:var(--text-tertiary);flex:none}
+.c-tli.arch{color:var(--text-tertiary)}
+.dot{width:6px;height:6px;border-radius:var(--r-full);flex:none}
+.dot.run{background:var(--accent);animation:bre 1.6s var(--ease,ease-in-out) infinite}
+.dot.plan{background:var(--info)} .dot.pend{background:var(--warning);animation:bre 1.6s ease-in-out infinite}
+.dot.done{background:var(--text-tertiary)} .dot.fail{background:var(--danger)}
+@keyframes bre{0%,100%{opacity:1}50%{opacity:.35}}
+/* 5.6 PromoCard */
+.c-promo{width:244px;height:68px;border-radius:var(--r-lg);background:var(--bg-surface);box-shadow:var(--shadow-sm);border:1px solid var(--border-subtle);padding:12px;position:relative}
+.c-promo .ti{font-size:13px;font-weight:600;margin-bottom:4px}
+.c-promo .su{font-size:12px;color:var(--text-secondary)}
+.c-promo .act{position:absolute;right:12px;bottom:12px;height:24px;border-radius:var(--r-full);background:var(--bg-selected);color:var(--text-secondary);font-size:12px;display:flex;align-items:center;padding:0 10px}
+.c-promo .x{position:absolute;right:8px;top:8px;color:var(--text-tertiary)}
+/* 5.7 UserFooter */
+.c-uf{height:62px;display:flex;align-items:center;gap:10px;padding:8px 12px}
+.c-uf .av{width:28px;height:28px;border-radius:var(--r-full);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex:none}
+.c-uf .nm{font-size:13px;font-weight:500;line-height:1.25}
+.c-uf .vr{font-size:11px;font-weight:500;color:var(--text-tertiary);line-height:1.25}
+.c-uf .sp{margin-left:auto;display:flex;gap:2px}
+.bdot{position:relative}
+.bdot::after{content:"";position:absolute;right:4px;top:4px;width:6px;height:6px;border-radius:999px;background:var(--danger)}
+/* 5.8 PillButton */
+.c-pb{height:28px;border-radius:var(--r-full);background:var(--bg-surface);border:1px solid var(--border-subtle);box-shadow:var(--shadow-xs);display:inline-flex;align-items:center;gap:6px;padding:0 12px;font-size:13px;font-weight:500;color:var(--text-primary)}
+.c-pb.acc{background:var(--accent-weak);color:var(--accent-strong);border-color:transparent;box-shadow:none}
+.c-pb.gh{background:transparent;border-color:transparent;box-shadow:none;color:var(--text-secondary)}
+/* 5.9 / 5.10 SegmentedControl */
+.c-seg{height:36px;border-radius:var(--r-full);background:var(--bg-sunken);padding:4px;display:inline-flex;gap:0}
+.c-seg .it{height:28px;border-radius:var(--r-full);display:flex;align-items:center;gap:6px;padding:0 14px;font-size:13px;font-weight:500;color:var(--text-secondary);white-space:nowrap}
+.c-seg.dark .it.on{background:var(--bg-inverse);color:var(--text-inverse)}
+.c-seg.lite{height:28px;padding:3px}
+.c-seg.lite .it{height:22px;padding:0 12px;font-size:12.5px}
+.c-seg.lite .it.on{background:var(--bg-surface);box-shadow:var(--shadow-xs);color:var(--text-primary)}
+/* 5.11 FilterChip */
+.c-fc{height:26px;border-radius:var(--r-full);display:inline-flex;align-items:center;padding:0 12px;font-size:13px;font-weight:500;color:var(--text-secondary);white-space:nowrap}
+.c-fc.on{background:var(--bg-selected);color:var(--text-primary);font-weight:600}
+.c-fc.h{background:var(--bg-hover)}
+.fcrow{position:relative;display:flex;gap:8px;overflow:hidden;align-items:center}
+.fcrow .nx{width:28px;height:28px;border-radius:var(--r-full);background:var(--bg-surface);border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex:none;margin-left:4px}
+/* 5.12 ScenarioChip */
+.c-sc{height:30px;border-radius:var(--r-full);background:var(--bg-surface);border:1px solid var(--border-default);display:inline-flex;align-items:center;gap:6px;padding:0 14px;font-size:13px;font-weight:500;color:var(--text-primary);white-space:nowrap}
+.c-sc.h{box-shadow:var(--shadow-xs);border-color:var(--border-strong)}
+/* 5.13 Composer */
+.c-comp{border-radius:var(--r-xl);background:var(--bg-sunken);border:1px solid var(--border-subtle);box-shadow:var(--shadow-md);padding:6px;max-width:100%}
+.c-comp .ic{border-radius:var(--r-lg);background:var(--bg-surface);padding:16px 12px}
+.c-comp .ta{font-size:15px;color:var(--text-tertiary);min-height:60px}
+.c-comp .ta b{font-weight:400;opacity:.85}
+.c-comp .tr{height:36px;display:flex;align-items:center;gap:8px;margin-top:4px}
+.c-comp .ft{height:40px;display:flex;align-items:center;gap:4px;padding:0 10px}
+.c-send{width:32px;height:32px;border-radius:var(--r-full);display:flex;align-items:center;justify-content:center;flex:none;background:var(--bg-inverse);color:var(--text-inverse)}
+.c-send.off{background:var(--bg-selected);color:var(--text-tertiary)}
+.c-send.stop{background:var(--danger);color:#fff}
+.c-send.bud{background:var(--warning);color:#fff}
+/* 5.14 / 5.15 InlineSelect */
+.c-is{height:24px;border-radius:var(--r-full);display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:13px;font-weight:500;color:var(--text-secondary);white-space:nowrap}
+.c-is.ph{color:var(--text-tertiary)}
+.c-is.h{background:var(--bg-hover)}
+.c-is .mo{font-family:var(--ewmono);font-size:12px}
+.c-is .chg{width:4px;height:4px;border-radius:999px;background:var(--accent);flex:none}
+/* 5.16 SearchInput */
+.c-si{height:28px;border-radius:var(--r-sm);background:var(--bg-surface);border:1px solid var(--border-default);display:inline-flex;align-items:center;gap:6px;padding:0 10px;font-size:13px;color:var(--text-tertiary);width:200px}
+.c-si.f{border-color:var(--accent);box-shadow:0 0 0 2px var(--focus-ring)}
+/* 5.17 GhostButton */
+.c-gb{height:28px;border-radius:var(--r-sm);background:transparent;border:1px solid var(--border-default);display:inline-flex;align-items:center;gap:6px;padding:0 12px;font-size:13px;font-weight:500;color:var(--text-primary);white-space:nowrap}
+.c-gb .n{color:var(--text-tertiary);font-weight:400}
+/* 5.18 SectionHeader */
+.c-sh{display:flex;align-items:center;gap:10px;min-height:36px}
+.c-sh .t1{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.c-sh .t2{font-size:15px;font-weight:600}
+.c-sh .sp{margin-left:auto;display:flex;align-items:center;gap:6px}
+/* 5.19 Menu */
+.c-menu{border-radius:var(--r-lg);background:var(--bg-surface);border:1px solid var(--border-subtle);box-shadow:var(--shadow-lg);padding:6px;min-width:200px}
+.c-mi{height:30px;border-radius:var(--r-sm);display:flex;align-items:center;gap:8px;padding:0 8px;font-size:13px;font-weight:500;color:var(--text-primary)}
+.c-mi.h{background:var(--bg-hover)}
+.c-mi .k{margin-left:auto;font-size:12px;font-weight:400;color:var(--text-tertiary);font-family:var(--ewmono)}
+.c-mi.dg{color:var(--danger-text)}
+.c-mi.off{color:var(--text-tertiary)}
+.c-mi.off .rsn{margin-left:auto;font-size:11px;font-weight:400}
+.c-msep{height:1px;background:var(--border-subtle);margin:4px 0}
+/* 5.20 ItemCard */
+.c-card{width:258px;min-height:112px;border-radius:var(--r-lg);background:var(--bg-surface);border:1px solid var(--border-subtle);padding:16px;display:flex;gap:12px}
+.c-card.h{box-shadow:var(--shadow-md);border-color:var(--border-strong)}
+.c-card.inst{background:var(--bg-sunken)}
+.c-card .lg{width:28px;height:28px;border-radius:var(--r-sm);flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff}
+.c-card .lg.rnd{border-radius:var(--r-full)}
+.c-card .bd{min-width:0;flex:1}
+.c-card .nm{font-size:15px;font-weight:600;line-height:1.3;padding-right:26px}
+.c-card .ds{font-size:13px;color:var(--text-secondary);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:40px}
+.c-card .bg{display:flex;gap:6px;align-items:center;margin-top:8px;font-size:11px;font-weight:500;color:var(--text-tertiary)}
+.c-card .add{position:absolute;right:16px;top:16px;width:24px;height:24px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--text-secondary)}
+.cwrap{position:relative;display:inline-block}
+/* 5.21 CaseCard */
+.c-case{width:191px}
+.c-case .cv{width:191px;height:107px;border-radius:var(--r-md);background:var(--bg-sunken);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary)}
+.c-case .nm{font-size:13px;font-weight:500;margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 5.22 TextTabs */
+.c-tt{display:flex;gap:24px;align-items:baseline}
+.c-tt .it{font-size:20px;font-weight:500;color:var(--text-tertiary)}
+.c-tt .it.on{font-weight:700;color:var(--text-primary)}
+/* 5.23 PanelHeader */
+.c-ph{height:52px;display:flex;align-items:center;padding:0 20px}
+.c-ph .t{font-size:17px;font-weight:600} .c-ph .sp{margin-left:auto}
+/* 5.24 PanelNavItem */
+.c-pni{height:28px;border-radius:var(--r-sm);display:flex;align-items:center;gap:8px;padding:0 10px;margin:0 12px;font-size:13px;font-weight:500;color:var(--text-secondary)}
+.c-pni.s{background:var(--bg-selected);color:var(--text-primary);font-weight:600}
+/* 5.25 TreeSectionHeader */
+.c-tsh{height:28px;display:flex;align-items:center;gap:4px;padding:0 12px;font-size:12px;font-weight:500;color:var(--text-secondary)}
+.c-tsh .sp{margin-left:auto}
+/* 5.26 TreeItem */
+.c-ti{height:28px;border-radius:var(--r-sm);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--text-primary)}
+.c-ti.d1{padding-left:12px} .c-ti.d2{padding-left:28px}
+.c-ti.drop{box-shadow:inset 0 -2px 0 var(--accent)}
+/* 5.27 QuotaFooter */
+.c-qf{height:56px;padding:8px 12px}
+.c-qf .l1{display:flex;align-items:center;font-size:12px;color:var(--text-secondary)}
+.c-qf .l1 .sp{margin-left:auto}
+.c-qf .tk{height:4px;border-radius:var(--r-full);background:var(--bg-selected);margin-top:8px;overflow:hidden}
+.c-qf .fl{height:100%;background:var(--accent);border-radius:var(--r-full)}
+.c-qf .fl.w{background:var(--warning)} .c-qf .fl.d{background:var(--danger)}
+/* 5.28 DataTable */
+.c-dt{width:100%;border-collapse:collapse;font-size:13px;min-width:0;font-family:var(--ewsans)}
+.c-dt th{height:40px;text-align:left;font-size:12px;font-weight:500;color:var(--text-secondary);border-bottom:1px solid var(--border-subtle);padding:0 12px 0 0;text-transform:none;letter-spacing:0;background:transparent;font-family:var(--ewsans);white-space:nowrap}
+.c-dt td{height:48px;padding:0 12px 0 0;color:var(--text-secondary);border-bottom:none;vertical-align:middle;font-size:13px;font-family:var(--ewsans)}
+.c-dt tbody tr.h{background:var(--bg-hover)}
+.c-dt td.f{color:var(--text-primary);font-weight:500}
+.c-dt td.f span{display:flex;align-items:center;gap:12px}
+.c-dt .ficon{width:20px;height:20px;border-radius:var(--r-xs);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:600;flex:none}
+/* 5.29 TipBanner */
+.c-tb{border-radius:var(--r-lg);background:var(--bg-surface);border:1px solid var(--border-subtle);padding:16px}
+.c-tb .hd{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-bottom:12px}
+.c-tb .hd .sp{margin-left:auto}
+.c-tb .sub{display:flex;gap:12px;align-items:stretch}
+.c-tb .sc{width:222px;min-height:112px;border-radius:var(--r-md);background:var(--bg-sunken);padding:14px}
+.c-tb .sc .t{font-size:13px;font-weight:600;line-height:1.4}
+.c-tb .sc .d{font-size:12px;color:var(--text-secondary);margin-top:6px}
+.c-tb .nav{width:32px;height:32px;border-radius:var(--r-full);border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);align-self:center;flex:none}
+/* 5.30 Badge / StatusDot */
+.bdg{height:18px;border-radius:var(--r-full);display:inline-flex;align-items:center;padding:0 6px;font-size:11px;font-weight:500;white-space:nowrap}
+.bdg.n{background:var(--bg-selected);color:var(--text-secondary)}
+.bdg.i{background:var(--info-weak);color:var(--info-text)}
+.bdg.s{background:var(--success-weak);color:var(--accent-strong)}
+.bdg.w{background:var(--warning-weak);color:var(--warning-text)}
+.bdg.d{background:var(--danger-weak);color:var(--danger-text)}
+/* 5.31 Toast */
+.c-toast{width:320px;border-radius:var(--r-lg);background:var(--bg-surface);box-shadow:var(--shadow-lg);border:1px solid var(--border-subtle);padding:12px 16px;display:flex;gap:10px;align-items:flex-start}
+.c-toast .tx{font-size:13px;color:var(--text-primary);flex:1}
+/* 5.32 ApprovalCard */
+.c-ap{border-radius:var(--r-lg);background:var(--bg-surface);border:1px solid var(--border-subtle);border-left:3px solid var(--warning);padding:16px}
+.c-ap.dg{border-left-color:var(--danger)}
+.c-ap .hd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--warning-text);margin-bottom:10px}
+.c-ap.dg .hd{color:var(--danger-text)}
+.c-ap .ti{font-size:15px;font-weight:600;margin-bottom:10px}
+.c-ap .cmd{font-family:var(--ewmono);font-size:12.5px;background:var(--bg-sunken);border-radius:var(--r-sm);padding:10px 12px;color:var(--text-primary);overflow-x:auto;white-space:nowrap}
+.c-ap .cmd .p{color:var(--text-tertiary)}
+.c-ap .why{font-size:13px;color:var(--text-secondary);margin-top:10px}
+.c-ap .why b{color:var(--text-primary);font-weight:500}
+.c-ap .btns{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.c-ap .btns .sp{margin-left:auto}
+.c-bt{height:28px;border-radius:var(--r-sm);padding:0 12px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;background:var(--bg-inverse);color:var(--text-inverse)}
+.c-bt.sec{background:var(--bg-selected);color:var(--text-primary)}
+.c-bt.gh{background:transparent;color:var(--text-secondary)}
+
+/* ---------- 页面拼装（缩放对照） ---------- */
+.mock{border:1px solid var(--hair); background:var(--surface); border-radius:3px; overflow:hidden; margin:0 0 16px}
+.mockv{overflow:auto}
+.mockin{width:1111px; height:682px; display:flex; transform-origin:top left; font-family:var(--ewsans); margin:0 -311px -191px 0}
+.mcap{font-family:var(--mono); font-size:11px; color:var(--muted); padding:8px 14px; border-top:1px solid var(--hair); background:var(--surface-2)}
+.sb{width:260px;flex:none;background:var(--bg-app);display:flex;flex-direction:column}
+.cv{flex:1;background:var(--bg-canvas);min-width:0;display:flex;flex-direction:column}
+.mid{width:272px;flex:none;background:var(--bg-app);border-right:1px solid var(--border-subtle);display:flex;flex-direction:column}
+.tbar{height:52px;flex:none;display:flex;align-items:center;padding:0 12px;gap:4px}
+.tlight{display:flex;gap:8px;margin-left:8px;margin-right:20px}
+.tlight i{width:12px;height:12px;border-radius:999px;background:var(--border-strong);display:block}
+.colw{max-width:800px;width:100%;margin:0 auto;padding:0 28px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-pluscirc" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.25"/><path d="M10 6.75v6.5M6.75 10h6.5"/></symbol>
+<symbol id="i-user" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.25"/><circle cx="10" cy="8" r="2.25"/><path d="M5.9 15.4c.6-2 2.1-3.1 4.1-3.1s3.5 1.1 4.1 3.1"/></symbol>
+<symbol id="i-proj" viewBox="0 0 20 20"><circle cx="5" cy="6" r="1.9"/><circle cx="15" cy="10" r="1.9"/><circle cx="5" cy="14" r="1.9"/><path d="M6.7 7l6.6 2.1M6.7 13l6.6-2.1"/></symbol>
+<symbol id="i-cat" viewBox="0 0 20 20"><path d="M3 7h9l-2.2-2.2M17 13H8l2.2 2.2"/></symbol>
+<symbol id="i-checkcirc" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.25"/><path d="M6.9 10.2l2.1 2.1 4.1-4.4"/></symbol>
+<symbol id="i-book" viewBox="0 0 20 20"><path d="M10 5.6v10M10 5.6C8.8 4.7 7.2 4.3 4.6 4.3a.6.6 0 0 0-.6.6v9c0 .3.3.6.6.6 2.6 0 4.2.4 5.4 1.1M10 5.6c1.2-.9 2.8-1.3 5.4-1.3.3 0 .6.3.6.6v9c0 .3-.3.6-.6.6-2.6 0-4.2.4-5.4 1.1"/></symbol>
+<symbol id="i-grid" viewBox="0 0 20 20"><circle cx="6.5" cy="6.5" r="1.6"/><circle cx="13.5" cy="6.5" r="1.6"/><circle cx="6.5" cy="13.5" r="1.6"/><circle cx="13.5" cy="13.5" r="1.6"/></symbol>
+<symbol id="i-search" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.2"/><path d="M12.9 12.9L16.5 16.5"/></symbol>
+<symbol id="i-filter" viewBox="0 0 20 20"><path d="M3.5 5h13l-5 5.6v4.6l-3 1.3v-5.9z"/></symbol>
+<symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/></symbol>
+<symbol id="i-bell" viewBox="0 0 20 20"><path d="M6 9a4 4 0 0 1 8 0c0 3 .8 4.2 1.3 4.7H4.7C5.2 13.2 6 12 6 9z"/><path d="M8.5 15.6a1.7 1.7 0 0 0 3 0"/></symbol>
+<symbol id="i-device" viewBox="0 0 20 20"><rect x="2.5" y="5" width="10" height="8" rx="1.4"/><rect x="13" y="8" width="4.5" height="7.5" rx="1.2"/><path d="M5.5 15.5h4"/></symbol>
+<symbol id="i-chevd" viewBox="0 0 20 20"><path d="M6 8.3l4 3.8 4-3.8"/></symbol>
+<symbol id="i-chevr" viewBox="0 0 20 20"><path d="M8.3 6l3.8 4-3.8 4"/></symbol>
+<symbol id="i-close" viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8"/></symbol>
+<symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 5v10M5 10h10"/></symbol>
+<symbol id="i-check" viewBox="0 0 20 20"><path d="M4.5 10.5l3.4 3.4L15.5 6"/></symbol>
+<symbol id="i-pin" viewBox="0 0 20 20"><path d="M10 12.5v4M6.6 4h6.8l-.9 4.2 1.7 2.1H5.8l1.7-2.1z"/></symbol>
+<symbol id="i-mic" viewBox="0 0 20 20"><rect x="7.6" y="3" width="4.8" height="8.4" rx="2.4"/><path d="M5.2 9.6a4.8 4.8 0 0 0 9.6 0M10 14.4V17"/></symbol>
+<symbol id="i-up" viewBox="0 0 20 20"><path d="M10 15.5V5M5.6 9.2L10 4.7l4.4 4.5"/></symbol>
+<symbol id="i-folder" viewBox="0 0 20 20"><path d="M3 6.4c0-.8.6-1.4 1.4-1.4h2.9l1.5 1.8h5.8c.8 0 1.4.6 1.4 1.4v5.4c0 .8-.6 1.4-1.4 1.4H4.4C3.6 15 3 14.4 3 13.6z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 20 20"><path d="M10 3.2l5.5 2v4.4c0 3.1-2.2 5.6-5.5 6.8-3.3-1.2-5.5-3.7-5.5-6.8V5.2z"/><path d="M7.7 9.9l1.7 1.7 3.1-3.4"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 20 20"><path d="M11.2 2.8L5.6 11h3.8l-.6 6.2L14.4 9h-3.8z"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.6v3h-3"/></symbol>
+<symbol id="i-mega" viewBox="0 0 20 20"><path d="M4 8.4L14.6 4.4v11.2L4 11.6z"/><path d="M6.6 12.4v3.2M4 8.4v3.2"/></symbol>
+<symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.25"/><path d="M10 6.2V10l2.8 1.9"/></symbol>
+<symbol id="i-alert" viewBox="0 0 20 20"><path d="M10 3.4l7 12.2H3z"/><path d="M10 8v3.2M10 13.4v.1"/></symbol>
+<symbol id="i-lock" viewBox="0 0 20 20"><rect x="4.6" y="9" width="10.8" height="7.2" rx="1.6"/><path d="M7.2 9V7.2a2.8 2.8 0 0 1 5.6 0V9"/></symbol>
+<symbol id="i-cup" viewBox="0 0 20 20"><path d="M4.4 5h9.2v5.4a4.6 4.6 0 0 1-9.2 0z"/><path d="M13.6 6.4h1.6a1.8 1.8 0 0 1 0 3.6h-1.6M3.6 16.6h11"/></symbol>
+<symbol id="i-code" viewBox="0 0 20 20"><path d="M7.2 6.6L3.4 10l3.8 3.4M12.8 6.6L16.6 10l-3.8 3.4"/></symbol>
+<symbol id="i-palette" viewBox="0 0 20 20"><path d="M10 16.6a6.6 6.6 0 1 1 6.6-6.6c0 2-1.6 2.6-3 2.6h-.8c-1.1 0-2 .9-2 2 0 1.1-.4 2-1.4 2z"/><circle cx="7.4" cy="8.4" r=".9" fill="currentColor" stroke="none"/><circle cx="11" cy="7" r=".9" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-file" viewBox="0 0 20 20"><path d="M5 3.6h6l4 4v9H5z"/><path d="M11 3.6v4h4"/></symbol>
+<symbol id="i-pie" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.25"/><path d="M10 2.75V10h7.25"/></symbol>
+<symbol id="i-box" viewBox="0 0 20 20"><path d="M10 3.2l6.2 3.2v7.2L10 16.8 3.8 13.6V6.4z"/><path d="M3.8 6.4L10 9.7l6.2-3.3M10 9.7v7.1"/></symbol>
+<symbol id="i-stop" viewBox="0 0 20 20"><rect x="6.4" y="6.4" width="7.2" height="7.2" rx="1.4" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12.6V3.8M6.6 7l3.4-3.4L13.4 7"/><path d="M4.6 11.4v4a1.2 1.2 0 0 0 1.2 1.2h8.4a1.2 1.2 0 0 0 1.2-1.2v-4"/></symbol>
+<symbol id="i-sparkle" viewBox="0 0 20 20"><path d="M10 3.2l1.5 4 4 1.5-4 1.5L10 14.2l-1.5-4-4-1.5 4-1.5z"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow"><span>设计系统</span><span>2026-09-04</span><span>UI 基线：评审附件 4 张截图</span><span>草案 v0.1</span></p>
+  <h1>EvoWork 设计系统<br>Token 与组件可视对照</h1>
+  <p class="stand">这是 <a href="01-ui-design-system.md">01 · UI 设计系统</a> 的渲染面。左边那份文档给出数值，这一页把数值画出来 —— 每个色板都带**实测对比度**，每个组件都是**按规格尺寸真渲染**的活样例，可以直接拿去和附件截图逐项比。凡文档与本页数值不一致，以文档为准并回来修本页。</p>
+</header>
+
+<div class="verdict">
+  <div class="vcell"><div class="vnum">32</div><div class="vlab">组件</div><div class="vsub">全部按 01 §5 的尺寸真渲染，含默认 / 悬停 / 选中 / 禁用等状态</div></div>
+  <div class="vcell"><div class="vnum">62</div><div class="vlab">Token</div><div class="vsub">颜色 34 · 圆角 7 · 阴影 4 · 字阶 8 · 间距 12 · 动效 5</div></div>
+  <div class="vcell"><div class="vnum">1:1</div><div class="vlab">实尺寸</div><div class="vsub">token 单位是逻辑 pt，@1x 下 1pt = 1css px，因此样例即真实大小</div></div>
+  <div class="vcell"><div class="vnum">±2</div><div class="vlab">pt 容差</div><div class="vsub">尺寸由截图反推而非源码；实现以 token 为准，不以截图像素为准</div></div>
+</div>
+<div class="vnote"><span>推定逻辑视口 1111 × 682 pt @2x</span><span>侧边栏 260 · 中栏 272 · 内容列 800</span><span>品牌层只有 4 项 token，换品牌不动布局</span></div>
+
+<nav class="toc">
+  <a href="#s1"><b>01</b>重建基准与容差</a>
+  <a href="#s2"><b>02</b>颜色 token 与对比度</a>
+  <a href="#s3"><b>03</b>语义色：一个必须修的坑</a>
+  <a href="#s4"><b>04</b>圆角 · 阴影 · 间距</a>
+  <a href="#s5"><b>05</b>字体阶梯</a>
+  <a href="#s6"><b>06</b>布局与节奏</a>
+  <a href="#s7"><b>07</b>组件清单 32 个</a>
+  <a href="#s8"><b>08</b>状态视觉</a>
+  <a href="#s9"><b>09</b>页面拼装对照</a>
+  <a href="#s10"><b>10</b>暗色推导</a>
+</nav>
+
+<!-- ============ 01 ============ -->
+<section id="s1">
+  <div class="snum">01</div>
+  <div>
+    <h2>重建基准与容差</h2>
+    <p class="dek">这一页的所有数值来自 4 张截图的反推，不来自源码。先把测量链条说清楚，后面每个数字才有意义。</p>
+    <div class="tw"><table>
+      <thead><tr><th>项</th><th>值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>截图原始尺寸</td><td class="num">2222 × 1364 px</td><td>4 张一致（±18px）</td></tr>
+        <tr><td>推定逻辑视口</td><td class="num">1111 × 682 pt</td><td>@2x macOS 窗口；本页所有尺寸均为逻辑 pt</td></tr>
+        <tr><td>换算链</td><td class="num">显示值 × 0.5555</td><td>显示 2000px 宽 → 原始 2222 → 逻辑 1111</td></tr>
+        <tr><td>取整规则</td><td>间距 →4 的倍数<br>组件高 →8 的倍数</td><td>使所有值落在 §04 的间距刻度上</td></tr>
+        <tr><td>容差</td><td class="num warnv">±2 pt</td><td>实现以 token 为准。量出来差 1–2pt 属重建误差，不是 bug</td></tr>
+        <tr><td>最小支持窗口</td><td class="num">1024 × 640</td><td>低于此折叠中栏或结果区；&lt;860 不支持</td></tr>
+      </tbody>
+    </table></div>
+    <div class="call warn">
+      <div class="h">口径</div>
+      <p>截图中的产品名为 <b>WorkBuddy</b>，本页按 <b>EvoWork</b> 落地（总纲 K5：对外不得出现第三方品牌）。品牌只影响 4 项 token —— <code>appName</code> / <code>logo</code> / <code>mascot</code> / <code>--accent</code> 系列 —— <strong>不影响任何布局</strong>。若产品对外定名另有结论，替换这 4 项即可，不产生返工。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 ============ -->
+<section id="s2">
+  <div class="snum">02</div>
+  <div>
+    <h2>颜色 token 与实测对比度</h2>
+    <p class="dek">截图的底色不是纯灰，带黄绿暖偏。整套中性色按这个暖偏重建 —— 这是这套视觉语言最容易在实现时丢掉的特征（随手用 <code>#F5F5F5</code> 就没了）。每块色板下的比值是按 WCAG 2.1 相对亮度公式实算的，不是估的。</p>
+
+    <h3 class="sh">背景与表面 · 6 项</h3>
+    <div class="sw">
+      <div class="swi"><div class="swc" style="background:#F2F1EE"></div><div class="swm"><div class="swn">--bg-app</div><div class="swv">#F2F1EE</div><div class="swu">侧边栏 · 中栏 · 窗口 chrome</div></div></div>
+      <div class="swi"><div class="swc" style="background:#FCFCFA"></div><div class="swm"><div class="swn">--bg-canvas</div><div class="swv">#FCFCFA</div><div class="swu">主内容区底色</div></div></div>
+      <div class="swi"><div class="swc" style="background:#FFFFFF"></div><div class="swm"><div class="swn">--bg-surface</div><div class="swv">#FFFFFF</div><div class="swu">卡片 · 弹层 · 输入卡</div></div></div>
+      <div class="swi"><div class="swc" style="background:#F7F6F3"></div><div class="swm"><div class="swn">--bg-sunken</div><div class="swv">#F7F6F3</div><div class="swu">Composer 外壳 · 分段轨道 · chip 轨道</div></div></div>
+      <div class="swi"><div class="swc" style="background:#E9E8E4"></div><div class="swm"><div class="swn">--bg-selected</div><div class="swv">#E9E8E4</div><div class="swu">侧边栏选中行 · 选中 chip</div></div></div>
+      <div class="swi"><div class="swc" style="background:#1D1D1B"></div><div class="swm"><div class="swn">--bg-inverse</div><div class="swv">#1D1D1B</div><div class="swu">分段控件选中态（深色变体）</div><div class="swr pass">白字 16.9 : 1</div></div></div>
+    </div>
+
+    <h3 class="sh">文字 · 4 项</h3>
+    <div class="sw">
+      <div class="swi"><div class="swc" style="background:#1F1F1D"></div><div class="swm"><div class="swn">--text-primary</div><div class="swv">#1F1F1D</div><div class="swu">标题 · 正文</div><div class="swr pass">14.6 – 16.5 : 1</div></div></div>
+      <div class="swi"><div class="swc" style="background:#6E6D68"></div><div class="swm"><div class="swn">--text-secondary</div><div class="swv">#6E6D68</div><div class="swu">说明文字 · 卡片描述</div><div class="swr warnv">4.59 : 1（bg-app）</div></div></div>
+      <div class="swi"><div class="swc" style="background:#9B9A94"></div><div class="swm"><div class="swn">--text-tertiary</div><div class="swv">#9B9A94</div><div class="swu">仅时间戳 · 占位符 · 版本号</div><div class="swr fail">2.50 : 1 · 非文本专用</div></div></div>
+      <div class="swi"><div class="swc" style="background:#FFFFFF"></div><div class="swm"><div class="swn">--text-inverse</div><div class="swv">#FFFFFF</div><div class="swu">深色底上的文字</div></div></div>
+    </div>
+
+    <div class="call">
+      <div class="h">两条由实测数据推出的硬规则</div>
+      <p><strong>① <code>--text-secondary</code> 在 <code>--bg-app</code> 上只有 4.59 : 1</strong>，余量 0.09。侧边栏与中栏的次要文字<b>不得再调浅，也不得叠加透明度</b> —— 加一层 <code>opacity:.9</code> 就掉到 4.1，直接不合规。</p>
+      <p><strong>② <code>--text-tertiary</code> 是 2.50 : 1，任何标准下都不是可读文本色。</strong>它的合法用途穷举完只有三个：时间戳、占位符、版本号。用它写标签、说明、按钮文案都是错的。</p>
+    </div>
+
+    <h3 class="sh">边框 · 3 项（默认值不达标，见 §03 末）</h3>
+    <div class="sw">
+      <div class="swi"><div class="swc" style="background:#E7E6E1"></div><div class="swm"><div class="swn">--border-subtle</div><div class="swv">#E7E6E1</div><div class="swu">卡片描边 · 分割线</div><div class="swr fail">1.25 : 1</div></div></div>
+      <div class="swi"><div class="swc" style="background:#DCDBD5"></div><div class="swm"><div class="swn">--border-default</div><div class="swv">#DCDBD5</div><div class="swu">输入框 · chip 描边</div><div class="swr fail">1.39 : 1</div></div></div>
+      <div class="swi"><div class="swc" style="background:#C9C8C1"></div><div class="swm"><div class="swn">--border-strong</div><div class="swv">#C9C8C1</div><div class="swu">悬停 / 聚焦前置态</div><div class="swr fail">1.68 : 1</div></div></div>
+    </div>
+
+    <h3 class="sh">品牌与语义 —— 图形色 · 8 项</h3>
+    <p style="font-size:13.5px;color:var(--ink-2);margin:0 0 14px">这 4 组基色只用于<strong>图形</strong>：状态点、左侧竖条、进度填充、图标。<strong>写文字必须换 §03 的加深变体。</strong></p>
+    <div class="sw">
+      <div class="swi"><div class="swc" style="background:#2FA37A"></div><div class="swm"><div class="swn">--accent / --success</div><div class="swv">#2FA37A</div><div class="swu">品牌绿 · 进行中 · 已完成</div><div class="swr">白底 3.16 : 1（图形达标）</div></div></div>
+      <div class="swi"><div class="swc" style="background:#E8F5EE"></div><div class="swm"><div class="swn">--accent-weak</div><div class="swv">#E8F5EE</div><div class="swu">活动卡底 · 成功 Badge 底</div></div></div>
+      <div class="swi"><div class="swc" style="background:#3B7DD8"></div><div class="swm"><div class="swn">--info</div><div class="swv">#3B7DD8</div><div class="swu">规划中 · 提示条</div></div></div>
+      <div class="swi"><div class="swc" style="background:#E9F1FC"></div><div class="swm"><div class="swn">--info-weak</div><div class="swv">#E9F1FC</div><div class="swu">提示条底</div></div></div>
+      <div class="swi"><div class="swc" style="background:#C98A16"></div><div class="swm"><div class="swn">--warning</div><div class="swv">#C98A16</div><div class="swu">待处理 · 配额告警 · misfire</div></div></div>
+      <div class="swi"><div class="swc" style="background:#FBF2DE"></div><div class="swm"><div class="swn">--warning-weak</div><div class="swv">#FBF2DE</div><div class="swu">审批卡底</div></div></div>
+      <div class="swi"><div class="swc" style="background:#D24B3E"></div><div class="swm"><div class="swn">--danger</div><div class="swv">#D24B3E</div><div class="swu">失败 · 高危审批 · 删除</div></div></div>
+      <div class="swi"><div class="swc" style="background:#FBECEA"></div><div class="swm"><div class="swn">--danger-weak</div><div class="swv">#FBECEA</div><div class="swu">危险态底</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 03 ============ -->
+<section id="s3">
+  <div class="snum">03</div>
+  <div>
+    <h2>语义色：一个必须修的坑</h2>
+    <p class="dek">画这一页时把对比度实算了一遍，发现原稿有个会真出问题的地方：直接用语义基色写 Badge 文字，全部不达标。左右两列是同一个 Badge 的错与对。</p>
+
+    <div class="stwo">
+      <div class="spec">
+        <div class="sbar"><span class="sid">✗ 错</span><span class="snm">基色写文字</span><span class="sdim">2.6 – 3.8 : 1 · 不达标</span></div>
+        <div class="ew flat" style="padding:20px">
+          <div class="row" style="gap:8px">
+            <span class="bdg" style="background:var(--info-weak);color:var(--info)">规划中</span>
+            <span class="bdg" style="background:var(--warning-weak);color:var(--warning)">待你确认</span>
+            <span class="bdg" style="background:var(--danger-weak);color:var(--danger)">失败</span>
+            <span class="bdg" style="background:var(--success-weak);color:var(--accent)">已完成</span>
+          </div>
+        </div>
+        <div class="note"><code>--warning</code> on <code>--warning-weak</code> = <span class="fail">2.64</span>，正文要求 4.5。字重再低一点就基本看不清。</div>
+      </div>
+      <div class="spec">
+        <div class="sbar"><span class="sid">✓ 对</span><span class="snm">加深变体写文字</span><span class="sdim">4.9 – 5.9 : 1 · 达标</span></div>
+        <div class="ew flat" style="padding:20px">
+          <div class="row" style="gap:8px">
+            <span class="bdg i">规划中</span>
+            <span class="bdg w">待你确认</span>
+            <span class="bdg d">失败</span>
+            <span class="bdg s">已完成</span>
+          </div>
+        </div>
+        <div class="note">底不变，只把字色换成 <code>-text</code> / <code>-strong</code>。视觉几乎不变，合规性从不达标变达标。</div>
+      </div>
+    </div>
+
+    <h3 class="sh">新增的文字变体 · 4 项</h3>
+    <div class="sw">
+      <div class="swi"><div class="swc" style="background:#1B6B4F"></div><div class="swm"><div class="swn">--accent-strong</div><div class="swv">#1B6B4F</div><div class="swu">绿底上的文字与图标</div><div class="swr pass">weak 底 5.7 · 白底 6.4</div></div></div>
+      <div class="swi"><div class="swc" style="background:#225CAC"></div><div class="swm"><div class="swn">--info-text</div><div class="swv">#225CAC</div><div class="swu">info Badge / 提示条正文</div><div class="swr pass">weak 底 5.8 · 白底 6.6</div></div></div>
+      <div class="swi"><div class="swc" style="background:#895E0F"></div><div class="swm"><div class="swn">--warning-text</div><div class="swv">#895E0F</div><div class="swu">审批卡标题 · 告警正文</div><div class="swr pass">weak 底 5.1 · 白底 5.7</div></div></div>
+      <div class="swi"><div class="swc" style="background:#A53227"></div><div class="swm"><div class="swn">--danger-text</div><div class="swv">#A53227</div><div class="swu">危险菜单项 · 失败正文</div><div class="swr pass">weak 底 5.9 · 白底 6.8</div></div></div>
+    </div>
+
+    <h3 class="sh">边框对比度：正面承认的取舍</h3>
+    <p style="font-size:14px;color:var(--ink-2);margin:0 0 14px">截图的分隔线是<strong>极浅的暖灰</strong>，这是这套视觉语言的识别特征。要把 <code>--border-default</code> 提到 3 : 1 需要做到 <code>#949389</code> 左右 —— 那已经是中灰实线，界面立刻变"重"，不再是附件里那个产品。下面是三档的真实观感对比：</p>
+    <div class="spec">
+      <div class="sbar"><span class="sid">对照</span><span class="snm">三档边框的观感与比值</span><span class="sdim">同一个 SearchInput</span></div>
+      <div class="ew flat" style="padding:24px 20px"><div class="sgrid">
+        <div><div class="stlab">默认 · 1.39 : 1</div><span class="c-si"><svg class="ico i15"><use href="#i-search"/></svg>搜索技能</span></div>
+        <div><div class="stlab">高对比 · 3.51 : 1</div><span class="c-si" style="border-color:#8A8981"><svg class="ico i15"><use href="#i-search"/></svg>搜索技能</span></div>
+        <div><div class="stlab">过头 · 5.2 : 1</div><span class="c-si" style="border-color:#6E6D68"><svg class="ico i15"><use href="#i-search"/></svg>搜索技能</span></div>
+      </div></div>
+      <div class="note">中间那档是 <code>prefers-contrast: more</code> 与设置项「高对比度」下的取值。它只覆盖 3 个 token，<strong>不改布局、圆角、字号</strong> —— 不产生第二套设计。</div>
+    </div>
+    <div class="call ok">
+      <div class="h">处理方式</div>
+      <p>① 默认主题<b>保真度优先</b>，接受 1.4.11 不达标这个事实；② 控件边界<b>不得只靠描边</b>表达，必须同时有填充差异与内边距差异；③ 聚焦态用 2px <code>--focus-ring</code>（对白底 3.16 : 1，<span class="pass">达标</span>），这是键盘用户的主要定位手段；④ 提供只覆盖 3 个 token 的高对比模式。</p>
+      <p>验收时对比度断言必须<b>分档</b>：文本 ≥4.5、<code>-text</code> 变体 ≥4.5、边框在<b>高对比模式下</b> ≥3.0。不允许把默认模式的边框断言设成 3.0 然后放宽通过条件。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="s4">
+  <div class="snum">04</div>
+  <div>
+    <h2>圆角 · 阴影 · 间距</h2>
+    <p class="dek">三套刻度，配用法约定。约定比数值重要 —— 同一类东西必须一直用同一档，否则界面会"看起来对但说不出哪里不对"。</p>
+
+    <h3 class="sh">圆角 · 7 档</h3>
+    <div class="spec">
+      <div class="sbar"><span class="sid">R</span><span class="snm">圆角刻度</span><span class="sdim">6 · 8 · 10 · 12 · 16 · 20 · 999</span></div>
+      <div class="ew flat" style="padding:24px 20px"><div class="rgrid">
+        <div><div class="rb" style="border-radius:6px"></div><div class="stlab" style="margin:6px 0 0">xs 6<br>—</div></div>
+        <div><div class="rb" style="border-radius:8px"></div><div class="stlab" style="margin:6px 0 0">sm 8<br>图标钮 · 行 · 输入框</div></div>
+        <div><div class="rb" style="border-radius:10px"></div><div class="stlab" style="margin:6px 0 0">md 10<br>封面图</div></div>
+        <div><div class="rb" style="border-radius:12px"></div><div class="stlab" style="margin:6px 0 0">lg 12<br>卡片 · 弹层</div></div>
+        <div><div class="rb" style="border-radius:16px"></div><div class="stlab" style="margin:6px 0 0">xl 16<br>Composer 外壳</div></div>
+        <div><div class="rb" style="border-radius:20px"></div><div class="stlab" style="margin:6px 0 0">2xl 20<br>—</div></div>
+        <div><div class="rb" style="border-radius:999px"></div><div class="stlab" style="margin:6px 0 0">full<br>chip · 分段 · 头像</div></div>
+      </div></div>
+    </div>
+
+    <h3 class="sh">阴影 · 4 档</h3>
+    <div class="spec">
+      <div class="sbar"><span class="sid">E</span><span class="snm">阴影刻度</span><span class="sdim">截图的卡片阴影极轻，近乎只有描边</span></div>
+      <div class="ew" style="padding:32px 24px"><div class="shrow">
+        <div><div class="sb" style="box-shadow:var(--shadow-xs)">xs</div><div class="stlab" style="margin:8px 0 0">chip · 小按钮</div></div>
+        <div><div class="sb" style="box-shadow:var(--shadow-sm)">sm</div><div class="stlab" style="margin:8px 0 0">卡片静态</div></div>
+        <div><div class="sb" style="box-shadow:var(--shadow-md)">md</div><div class="stlab" style="margin:8px 0 0">卡片悬停 · Composer</div></div>
+        <div><div class="sb" style="box-shadow:var(--shadow-lg)">lg</div><div class="stlab" style="margin:8px 0 0">弹层 · 下拉</div></div>
+      </div></div>
+      <div class="note"><strong>规则：静态卡片用 <code>--border-subtle</code> + <code>--shadow-xs</code>，只有悬停才升到 <code>--shadow-md</code>。</strong>不要一上来就打重阴影 —— 那是最容易让这套设计跑偏的一步。</div>
+    </div>
+
+    <h3 class="sh">间距 · 12 档</h3>
+    <div class="spec">
+      <div class="sbar"><span class="sid">S</span><span class="snm">间距刻度</span><span class="sdim">不允许 10 / 14 / 18 / 22 这类中间值</span></div>
+      <div class="ew flat" style="padding:24px 20px"><div class="scale">
+        <div><div class="bar" style="width:2px;height:2px"></div><div class="lb">2</div></div>
+        <div><div class="bar" style="width:4px;height:4px"></div><div class="lb">4</div></div>
+        <div><div class="bar" style="width:6px;height:6px"></div><div class="lb">6</div></div>
+        <div><div class="bar" style="width:8px;height:8px"></div><div class="lb">8</div></div>
+        <div><div class="bar" style="width:12px;height:12px"></div><div class="lb">12</div></div>
+        <div><div class="bar" style="width:16px;height:16px"></div><div class="lb">16</div></div>
+        <div><div class="bar" style="width:20px;height:20px"></div><div class="lb">20</div></div>
+        <div><div class="bar" style="width:24px;height:24px"></div><div class="lb">24</div></div>
+        <div><div class="bar" style="width:32px;height:32px"></div><div class="lb">32</div></div>
+        <div><div class="bar" style="width:40px;height:40px"></div><div class="lb">40</div></div>
+        <div><div class="bar" style="width:48px;height:48px"></div><div class="lb">48</div></div>
+        <div><div class="bar" style="width:64px;height:64px"></div><div class="lb">64</div></div>
+      </div></div>
+    </div>
+
+    <h3 class="sh">动效 · 5 项</h3>
+    <div class="tw"><table>
+      <thead><tr><th>Token</th><th>值</th><th>用在</th></tr></thead>
+      <tbody>
+        <tr><td><code>--dur-fast</code></td><td class="num">120ms</td><td>悬停 · 按下</td></tr>
+        <tr><td><code>--dur-base</code></td><td class="num">180ms</td><td>面板展开 · 下拉 · Tab 切换 · 新 Item 淡入</td></tr>
+        <tr><td><code>--dur-slow</code></td><td class="num">280ms</td><td>三栏宽度变化 · 抽屉</td></tr>
+        <tr><td><code>--ease-out</code></td><td class="num">cubic-bezier(.2,.8,.2,1)</td><td>出现类</td></tr>
+        <tr><td><code>--ease-inout</code></td><td class="num">cubic-bezier(.4,0,.2,1)</td><td>位移类</td></tr>
+      </tbody>
+    </table></div>
+    <div class="call">
+      <div class="h">两条反直觉的规定</div>
+      <p><strong>① 流式文字追加不做逐字动画。</strong>长回复逐字入场会让整段看起来在卡顿，且触发大量重排。只在<b>新 Item 插入</b>时做 120ms 淡入 + 4pt 上移。</p>
+      <p><strong>② <code>prefers-reduced-motion</code> 下全部归零并保留最终态</strong>，呼吸动画改为静态实心点 —— 状态点是靠 §08 的文字 Badge 传递语义的，去掉动画不损失信息。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 ============ -->
+<section id="s5">
+  <div class="snum">05</div>
+  <div>
+    <h2>字体阶梯</h2>
+    <p class="dek">8 档，按实际字号渲染。中文排版的三条硬规则写在下面 —— 其中「卡片描述固定 2 行」是截图里卡片高度能对齐的唯一原因。</p>
+    <div class="spec">
+      <div class="sbar"><span class="sid">T</span><span class="snm">8 档字阶</span><span class="sdim">PingFang SC / HarmonyOS Sans SC / Microsoft YaHei</span></div>
+      <div class="ew" style="padding:28px 24px">
+        <div style="display:flex;flex-direction:column;gap:22px">
+          <div><div class="stlab">display · 36 / 44 / 700 · letter-spacing −.02em · 首页 Hero</div><div style="font-size:36px;line-height:44px;font-weight:700;letter-spacing:-.02em">EvoWork，我帮你</div></div>
+          <div><div class="stlab">title-1 · 20 / 28 / 700 · 页面区块标题</div><div style="font-size:20px;line-height:28px;font-weight:700;letter-spacing:-.01em">精选技能</div></div>
+          <div><div class="stlab">title-2 · 17 / 24 / 600 · 面板标题</div><div style="font-size:17px;line-height:24px;font-weight:600">资料库</div></div>
+          <div><div class="stlab">body-lg · 15 / 24 / 400 · Composer 输入 · 卡片标题</div><div style="font-size:15px;line-height:24px">今天帮你做些什么？</div></div>
+          <div><div class="stlab">label · 13 / 20 / 500 · 导航 · 按钮 · chip · 表头</div><div style="font-size:13px;line-height:20px;font-weight:500">专家 · 技能 · 连接器</div></div>
+          <div><div class="stlab">body · 13 / 20 / 400 · 卡片描述 · 消息正文</div><div style="font-size:13px;line-height:20px;color:var(--text-secondary);max-width:520px">管理网盘文件（列表、上传、下载、删除、分享），并提供生成分享链接能力。</div></div>
+          <div><div class="stlab">caption · 12 / 16 / 400 · 时间戳 · 分区标题 · 配额</div><div style="font-size:12px;line-height:16px;color:var(--text-tertiary)">1 天前 · 已使用 1.4 GB</div></div>
+          <div><div class="stlab">micro · 11 / 14 / 500 · 角标 · 版本号</div><div style="font-size:11px;line-height:14px;font-weight:500;color:var(--text-tertiary)">V1.0.0</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>中文排版硬规则</th><th>为什么</th></tr></thead>
+      <tbody>
+        <tr><td>行高 ≥ 字号 × 1.5</td><td>汉字字面率高于拉丁字母，同字号下更"满"，行距不足会糊成一片。<code>body</code> 13/20 = 1.54</td></tr>
+        <tr><td><strong>卡片描述固定 2 行</strong>，<code>line-clamp:2</code>，不足 2 行也占 2 行高</td><td>这是截图 2 / 3 里 9 张卡片高度能严格对齐的唯一原因。取消它，网格立刻参差</td></tr>
+        <tr><td>中英混排不手动插空格</td><td>由字族的字距自然处理；手动插空格会在换行时产生孤字</td></tr>
+        <tr><td>禁止 <code>text-align: justify</code></td><td>中文两端对齐会产生不可控字距，且没有连字符可断</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ 06 ============ -->
+<section id="s6">
+  <div class="snum">06</div>
+  <div>
+    <h2>布局与节奏</h2>
+    <p class="dek">两种骨架、一条内容列、一个纵向节奏。这四个数（260 / 272 / 800 / 33）是整套界面的骨头，比任何颜色都更决定"像不像附件"。</p>
+
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 900 356" role="img" aria-label="布局骨架图：两栏骨架为侧边栏 260 加主内容区；三栏骨架为侧边栏 260 加中栏 272 加主内容区；主内容列最大宽 800 居中。下方为标题栏带结构，高 52，侧边栏段放折叠、搜索、筛选三个图标，中心 x 为 161、197、233，主内容区段左放页面 Tab、右放搜索与动作按钮。">
+          <text x="20" y="22" font-family="Archivo, sans-serif" font-size="13" font-weight="600" fill="currentColor">A · 两栏（截图 1 / 2 / 3）</text>
+          <rect x="20" y="34" width="400" height="190" fill="none" stroke="var(--hair-strong)" stroke-width="1"/>
+          <rect x="20" y="34" width="94" height="190" fill="var(--surface-3)" stroke="var(--hair-strong)" stroke-width="1"/>
+          <text x="67" y="126" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">侧边栏</text>
+          <text x="67" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">260</text>
+          <rect x="123" y="46" width="288" height="166" fill="none" stroke="var(--reuse)" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="267" y="122" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--reuse)">内容列</text>
+          <text x="267" y="137" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="var(--reuse)">max 800</text>
+          <text x="118" y="240" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".6">左右各留 ≥28</text>
+
+          <text x="480" y="22" font-family="Archivo, sans-serif" font-size="13" font-weight="600" fill="currentColor">B · 三栏（截图 4 · 任务工作台同构）</text>
+          <rect x="480" y="34" width="400" height="190" fill="none" stroke="var(--hair-strong)" stroke-width="1"/>
+          <rect x="480" y="34" width="94" height="190" fill="var(--surface-3)" stroke="var(--hair-strong)" stroke-width="1"/>
+          <text x="527" y="126" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">侧边栏</text>
+          <text x="527" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">260</text>
+          <rect x="574" y="34" width="98" height="190" fill="var(--surface-2)" stroke="var(--hair-strong)" stroke-width="1"/>
+          <text x="623" y="126" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">中栏</text>
+          <text x="623" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">272</text>
+          <text x="776" y="126" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">主内容区</text>
+          <text x="776" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="currentColor">flex</text>
+          <text x="578" y="240" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".6">中栏可拖拽 240–360 · 侧边栏只可折叠不可调宽</text>
+
+          <line x1="20" y1="258" x2="880" y2="258" stroke="var(--hair)" stroke-width="1"/>
+          <text x="20" y="282" font-family="Archivo, sans-serif" font-size="13" font-weight="600" fill="currentColor">标题栏带 —— 页面控件在窗口标题栏行内，没有独立 header</text>
+          <rect x="20" y="294" width="860" height="46" fill="var(--surface-2)" stroke="var(--hair-strong)" stroke-width="1"/>
+          <line x1="219" y1="294" x2="219" y2="340" stroke="var(--hair-strong)" stroke-width="1" stroke-dasharray="3 3"/>
+          <circle cx="42" cy="317" r="5" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <circle cx="58" cy="317" r="5" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <circle cx="74" cy="317" r="5" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <rect x="120" y="307" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+          <rect x="148" y="307" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+          <rect x="176" y="307" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1"/>
+          <text x="130" y="352" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".65">x 161 · 197 · 233（步长 36）</text>
+          <rect x="236" y="307" width="52" height="20" rx="10" fill="var(--ink)"/>
+          <rect x="294" y="307" width="46" height="20" rx="10" fill="none" stroke="currentColor" stroke-width="1" opacity=".4"/>
+          <rect x="346" y="307" width="46" height="20" rx="10" fill="none" stroke="currentColor" stroke-width="1" opacity=".4"/>
+          <text x="240" y="352" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".65">页面 Tab（左）</text>
+          <rect x="640" y="307" width="90" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <rect x="738" y="307" width="62" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <rect x="808" y="307" width="52" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+          <text x="672" y="352" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".65">搜索 + 页面动作（右）· 行内元素高 28</text>
+          <text x="866" y="288" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="currentColor">高 52 · 无背景 · 无下边框</text>
+        </svg>
+      </div>
+      <figcaption>把页面控件放进标题栏带是这套设计最容易做错的结构 —— 一旦另加一个页面 header，垂直空间立刻少 52pt，首页的 Composer 就会被挤出首屏。Windows / Linux 上交通灯占位移到右侧，三个图标左移到 x 24 / 60 / 96。</figcaption>
+    </figure>
+
+    <h3 class="sh">侧边栏纵向结构与 33 节奏</h3>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 900 400" role="img" aria-label="侧边栏纵向结构图：标题栏带高 52，品牌行高 36，主导航 7 项每项节奏 33，分区标题高 28，任务列表为滚动区，运营位卡高 68，用户区高 62，总高 682。">
+          <rect x="60" y="20" width="130" height="341" fill="var(--surface-3)" stroke="var(--hair-strong)" stroke-width="1"/>
+          <g stroke="var(--hair-strong)" stroke-width="1">
+            <line x1="60" y1="46" x2="190" y2="46"/><line x1="60" y1="64" x2="190" y2="64"/>
+            <line x1="60" y1="179.5" x2="190" y2="179.5"/><line x1="60" y1="193.5" x2="190" y2="193.5"/>
+            <line x1="60" y1="288" x2="190" y2="288"/><line x1="60" y1="330" x2="190" y2="330"/>
+          </g>
+          <g fill="var(--surface)" stroke="var(--hair-strong)" stroke-width=".8">
+            <rect x="64" y="66" width="122" height="14" rx="3"/><rect x="64" y="82.5" width="122" height="14" rx="3"/>
+            <rect x="64" y="99" width="122" height="14" rx="3"/><rect x="64" y="115.5" width="122" height="14" rx="3"/>
+            <rect x="64" y="132" width="122" height="14" rx="3"/><rect x="64" y="148.5" width="122" height="14" rx="3"/>
+            <rect x="64" y="165" width="122" height="14" rx="3"/>
+          </g>
+          <rect x="64" y="66" width="122" height="14" rx="3" fill="var(--ink)" opacity=".14"/>
+          <g fill="var(--surface)" stroke="var(--hair-strong)" stroke-width=".8" opacity=".7">
+            <rect x="64" y="196" width="122" height="14" rx="3"/><rect x="64" y="212.5" width="122" height="14" rx="3"/>
+            <rect x="64" y="229" width="122" height="14" rx="3"/><rect x="64" y="245.5" width="122" height="14" rx="3"/>
+            <rect x="64" y="262" width="122" height="14" rx="3"/>
+          </g>
+          <rect x="64" y="291" width="122" height="34" rx="6" fill="var(--surface)" stroke="var(--hair-strong)" stroke-width=".8"/>
+          <circle cx="78" cy="345" r="7" fill="var(--reuse)" opacity=".55"/>
+          <rect x="90" y="340" width="42" height="4" rx="2" fill="currentColor" opacity=".3"/>
+          <rect x="90" y="348" width="26" height="4" rx="2" fill="currentColor" opacity=".18"/>
+
+          <g font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">
+            <line x1="196" y1="33" x2="248" y2="33" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="36">标题栏带 · 高 52</text>
+            <line x1="196" y1="55" x2="248" y2="55" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="58">品牌行 · 高 36 ·「发现应用」chip</text>
+            <line x1="196" y1="122" x2="248" y2="122" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="118" font-weight="600">主导航 · 7 项 · 节奏 33</text><text x="254" y="132" opacity=".65">= 行高 28 + 行距 5 · 首项为选中态</text>
+            <line x1="196" y1="186" x2="248" y2="186" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="189">分区标题「任务 (N)」· 高 28 · 左内边距 20</text>
+            <line x1="196" y1="240" x2="248" y2="240" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="236" font-weight="600">任务列表 · 唯一滚动区 · 同 33 节奏</text><text x="254" y="250" opacity=".65">虚拟滚动 + cursor 分页 · 与主导航视觉连续</text>
+            <line x1="196" y1="308" x2="248" y2="308" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="305">运营位卡 · 高 68 + 上下 8 · 默认关闭</text>
+            <line x1="196" y1="345" x2="248" y2="345" stroke="var(--hair-strong)" stroke-width=".8"/><text x="254" y="348">用户区 · 高 62 · 头像 28 + 通知 + 设备</text>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".55">
+            <text x="54" y="24" text-anchor="end">y 0</text><text x="54" y="184" text-anchor="end">319</text>
+            <text x="54" y="365" text-anchor="end">682</text>
+          </g>
+          <text x="60" y="384" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".6">图示为 0.5 倍缩放 · 水平内边距 8（可点行的外边界）· 纯文本标题额外内缩 12</text>
+        </svg>
+      </div>
+      <figcaption>33 这个节奏是整个侧边栏的度量单位：主导航与任务列表共用它，所以两段之间视觉连续、看起来像一条列表。运营位关闭后任务列表可用高度 +84 —— 这也是为什么把运营位做成插槽而不是固定结构。</figcaption>
+    </figure>
+
+    <h3 class="sh">网格</h3>
+    <div class="tw"><table>
+      <thead><tr><th>场景</th><th class="num">列</th><th class="num">列宽</th><th class="num">间距</th><th>校验</th></tr></thead>
+      <tbody>
+        <tr><td>技能 / 连接器 / 专家卡（截图 2 / 3）</td><td class="num">3</td><td class="num">258</td><td class="num">12</td><td class="num pass">258×3 + 12×2 = 798 ≈ 800 ✓</td></tr>
+        <tr><td>案例卡（截图 1）</td><td class="num">4</td><td class="num">191</td><td class="num">12</td><td class="num pass">191×4 + 12×3 = 800 ✓</td></tr>
+        <tr><td>资料库提示子卡（截图 4）</td><td class="num">2</td><td class="num">222</td><td class="num">12</td><td>—</td></tr>
+        <tr><td>结果区产物卡</td><td class="num">2</td><td>自适应</td><td class="num">12</td><td>—</td></tr>
+      </tbody>
+    </table></div>
+    <div class="call ok">
+      <div class="h">内容列 800 的证据</div>
+      <p>截图 1 的 4 张案例卡与截图 2 的 3 张技能卡<b>实测同宽</b>（各自加上间距都落在 800 上），说明产品用的是同一条内容列。这不是推测，是两组独立数据交叉验证出来的 —— 也是本页最有把握的一个数。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 07 ============ -->
+<section id="s7">
+  <div class="snum">07</div>
+  <div>
+    <h2>组件清单 · 32 个</h2>
+    <p class="dek">全部按 01 §5 的规格真渲染，@1x 下即实尺寸。后续页面（任务工作台、自动化、审批卡这些截图没覆盖的地方）只能用这些拼 —— <strong>出现第 33 个组件，必须先回文档登记</strong>。</p>
+
+    <div class="spec" style="margin-bottom:24px">
+      <div class="ewbar">
+        <span>样例主题</span>
+        <span style="opacity:.7">切换后本页所有组件样例一起变，用来验证 01 §4.5 的暗色推导</span>
+        <span class="sp">
+          <button type="button" id="tl" aria-pressed="true">Light</button>
+          <button type="button" id="td" aria-pressed="false">Dark</button>
+        </span>
+      </div>
+    </div>
+
+    <h3 class="sh">A · 侧边栏族 · 7 个</h3>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.1</span><span class="snm">IconButton</span><span class="sdim">28 × 28 · r-sm · 图标 20 / 描边 1.5</span></div>
+      <div class="ew app"><div class="sgrid">
+        <div><div class="stlab">默认</div><span class="c-ib"><svg class="ico"><use href="#i-sidebar"/></svg></span></div>
+        <div><div class="stlab">悬停</div><span class="c-ib h"><svg class="ico"><use href="#i-search"/></svg></span></div>
+        <div><div class="stlab">按下</div><span class="c-ib a"><svg class="ico"><use href="#i-filter"/></svg></span></div>
+        <div><div class="stlab">选中</div><span class="c-ib s"><svg class="ico"><use href="#i-filter"/></svg></span></div>
+        <div><div class="stlab">键盘聚焦</div><span class="c-ib f"><svg class="ico"><use href="#i-bell"/></svg></span></div>
+      </div></div>
+      <div class="note">用于标题栏三图标、卡片关闭、面板折叠。聚焦环只在 <code>:focus-visible</code> 下出现 —— 鼠标点击不该留下焦点框。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.2</span><span class="snm">AppSwitcherChip</span><span class="sdim">高 26 · r-full · 图标 14 + 4 + caption + 4 + chevron 12</span></div>
+      <div class="ew app"><div class="row">
+        <span class="c-asc"><svg class="ico i14"><use href="#i-box"/></svg>发现应用<svg class="ico i12"><use href="#i-chevd"/></svg></span>
+      </div></div>
+      <div class="note">点击展开「应用目录」抽屉。应用 = 带 <code>interface</code> 元数据的 plugin bundle（05 §6）—— 不复用内核的 Apps 目录（K7）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.3</span><span class="snm">NavItem</span><span class="sdim">高 28 · r-sm · 节奏 33 · 图标 20 + 8 + label</span></div>
+      <div class="ew app" style="max-width:260px;padding:8px">
+        <div class="stk">
+          <div class="c-nav s"><svg class="ico"><use href="#i-pluscirc"/></svg>新建任务</div>
+          <div class="c-nav"><svg class="ico"><use href="#i-user"/></svg>助理</div>
+          <div class="c-nav h"><svg class="ico"><use href="#i-proj"/></svg>项目</div>
+          <div class="c-nav"><svg class="ico"><use href="#i-cat"/></svg>专家·技能·连接器</div>
+          <div class="c-nav"><svg class="ico"><use href="#i-checkcirc"/></svg>自动化</div>
+          <div class="c-nav"><svg class="ico"><use href="#i-book"/></svg>资料库</div>
+          <div class="c-nav"><svg class="ico"><use href="#i-grid"/></svg>更多<span class="tail">灵感</span></div>
+          <div class="c-nav"><svg class="ico"><use href="#i-bell"/></svg>通知<span class="cnt">3</span></div>
+        </div>
+      </div>
+      <div class="note">第 1 项为选中态、第 3 项为悬停态。<strong>选中态用中性灰而不是品牌色填充</strong> —— 截图即如此，用绿色填充会让侧边栏变成一面招牌。7 个入口的图标语义见 01 §7.1。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.4 / 5.5</span><span class="snm">SidebarSectionHeader + TaskListItem</span><span class="sdim">分区头 28 · 任务行 28 · 状态点 6</span></div>
+      <div class="ew app" style="max-width:260px;padding:8px 0">
+        <div class="c-ssh">任务 (8)<svg class="ico i12"><use href="#i-chevd"/></svg></div>
+        <div class="stk" style="padding:0 8px">
+          <div class="c-tli s"><span class="dot run"></span><span class="t">正在生成季度汇报 PPT</span><span class="tm">刚刚</span></div>
+          <div class="c-tli"><span class="dot pend"></span><span class="t">批量整理发票文件</span><span class="tm">2小时前</span></div>
+          <div class="c-tli h"><svg class="ico i12" style="color:var(--text-tertiary)"><use href="#i-pin"/></svg><span class="dot plan"></span><span class="t">下季度预算方案</span><span class="tm">5小时前</span></div>
+          <div class="c-tli"><span class="dot done"></span><span class="t">查询当前黄金价格</span><span class="tm">1天前</span></div>
+          <div class="c-tli"><svg class="ico i12" style="color:var(--danger)"><use href="#i-alert"/></svg><span class="t">导出上月对账单</span><span class="tm">1天前</span></div>
+          <div class="c-tli arch"><span class="t">第 35 周周报</span><span class="tm">7天前</span></div>
+        </div>
+      </div>
+      <div class="note">六行分别是：进行中（选中）· 待处理 · 规划中（置顶，悬停）· 已完成 · 失败 · 已归档。置顶项带 12px 图钉且始终排在内置 pinned 分区。悬停时时间戳换成 ⋯ 操作。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.6 / 5.7</span><span class="snm">PromoCard + UserFooter</span><span class="sdim">卡 244 × 68 · r-lg · 用户区高 62 · 头像 28</span></div>
+      <div class="ew app" style="max-width:260px;padding:8px">
+        <div class="c-promo">
+          <svg class="ico i12 x"><use href="#i-close"/></svg>
+          <div class="ti">本周使用小结</div>
+          <div class="su">完成 12 个任务</div>
+          <span class="act">查看</span>
+        </div>
+        <div class="c-uf" style="margin-top:8px">
+          <span class="av">J</span>
+          <span><span class="nm" style="display:block">J.W</span><span class="vr" style="display:block">V1.0.0</span></span>
+          <span class="sp">
+            <span class="c-ib bdot"><svg class="ico"><use href="#i-bell"/></svg></span>
+            <span class="c-ib"><svg class="ico"><use href="#i-device"/></svg></span>
+          </span>
+        </div>
+      </div>
+      <div class="note"><code>PromoCard</code> 是 <code>slot.sidebar-promo</code> 插槽，<strong>默认关闭</strong>（Q18 待决策）。样例里的内容是本地统计而非营销 —— 插槽只渲染静态内容，不带任何回传埋点。铃铛红点 = 有未读；设备图标 = Q15 的设备中心入口。</div>
+    </div>
+
+    <h3 class="sh">B · 按钮与切换族 · 7 个</h3>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.8</span><span class="snm">PillButton</span><span class="sdim">高 28 · r-full · 3 个变体</span></div>
+      <div class="ew"><div class="sgrid">
+        <div><div class="stlab">默认</div><span class="c-pb"><svg class="ico i14"><use href="#i-sparkle"/></svg>查看使用技巧<svg class="ico i12"><use href="#i-chevr"/></svg></span></div>
+        <div><div class="stlab">accent</div><span class="c-pb acc"><svg class="ico i14"><use href="#i-checkcirc"/></svg>已连接</span></div>
+        <div><div class="stlab">ghost</div><span class="c-pb gh"><svg class="ico i14"><use href="#i-refresh"/></svg>换一批</span></div>
+      </div></div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.9</span><span class="snm">SegmentedControl · 深色变体</span><span class="sdim">轨道 36 · 项 28 · 选中 = bg-inverse</span></div>
+      <div class="ew"><div class="col">
+        <div><div class="stlab">首页场景切换（截图 1）</div>
+          <span class="c-seg dark">
+            <span class="it on"><svg class="ico i15"><use href="#i-cup"/></svg>日常办公</span>
+            <span class="it"><svg class="ico i15"><use href="#i-code"/></svg>代码开发</span>
+            <span class="it"><svg class="ico i15"><use href="#i-palette"/></svg>设计创意</span>
+          </span>
+        </div>
+        <div><div class="stlab">目录页顶部 Tab（截图 2 / 3）</div>
+          <span class="c-seg dark">
+            <span class="it"><svg class="ico i15"><use href="#i-user"/></svg>专家</span>
+            <span class="it on"><svg class="ico i15"><use href="#i-sparkle"/></svg>技能</span>
+            <span class="it"><svg class="ico i15"><use href="#i-cat"/></svg>连接器</span>
+          </span>
+        </div>
+      </div></div>
+      <div class="note">用于<strong>互斥的一级切换 —— 决定页面装什么</strong>。切换时选中胶囊做 180ms 位移动画。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.10</span><span class="snm">SegmentedControl · 浅色变体</span><span class="sdim">轨道 28 · 项 22 · 选中 = bg-surface + shadow-xs</span></div>
+      <div class="ew"><div class="row">
+        <span class="c-seg lite">
+          <span class="it on">最近访问</span><span class="it">我分享的</span><span class="it" style="color:var(--text-tertiary)">与我共享</span>
+        </span>
+      </div></div>
+      <div class="note"><strong>分工是硬规则：深色 = 决定页面装什么；浅色 = 决定已装内容怎么看。不得混用。</strong>第三项灰掉 —— 「与我共享」在 v1 不渲染（Q19 未决策，06 §4.3），这里只是示意禁用观感。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.11 / 5.12</span><span class="snm">FilterChip + ScenarioChip</span><span class="sdim">Filter 26 · Scenario 30 · 均 r-full</span></div>
+      <div class="ew"><div class="col" style="gap:16px">
+        <div><div class="stlab">FilterChipRow · 溢出时右端浮出 28 圆形箭头</div>
+          <div class="fcrow"><span class="c-fc on">全部</span><span class="c-fc">办公协同</span><span class="c-fc h">效率工具</span><span class="c-fc">内容创作</span><span class="c-fc">数据分析</span><span class="nx"><svg class="ico i15"><use href="#i-chevr"/></svg></span></div>
+        </div>
+        <div><div class="stlab">ScenarioChip · 点击 = 写入 Composer，不发送</div>
+          <div class="row" style="gap:8px"><span class="c-sc"><svg class="ico i15"><use href="#i-file"/></svg>文档处理</span><span class="c-sc h"><svg class="ico i15"><use href="#i-pie"/></svg>数据分析及可视化</span><span class="c-sc"><svg class="ico i15"><use href="#i-box"/></svg>幻灯片</span></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.17 / 5.22</span><span class="snm">GhostButton + TextTabs</span><span class="sdim">按钮 28 · Tab 用 title-1 靠字重区分</span></div>
+      <div class="ew"><div class="col" style="gap:18px">
+        <div class="row"><span class="c-gb"><svg class="ico i15"><use href="#i-checkcirc"/></svg>我已安装的<span class="n">36</span></span><span class="c-gb"><svg class="ico i15"><use href="#i-plus"/></svg>添加技能</span><span class="c-gb"><svg class="ico i15"><use href="#i-plus"/></svg>自定义连接器</span></div>
+        <div class="c-tt"><span class="it on">推荐</span><span class="it">套件</span></div>
+      </div></div>
+      <div class="note">TextTabs <strong>无下划线、无底色</strong>，只靠字重与颜色区分。截图 2 的第二个 Tab「SkillHub」在 v1 <strong>不渲染</strong>（Q5：不做公开 registry）—— 置灰会让用户反复点、反复失望，不存在比坏掉好。</div>
+    </div>
+
+    <h3 class="sh">C · 输入族 · 4 个</h3>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.13</span><span class="snm">Composer</span><span class="sdim">外壳 r-xl · 折叠态高 180 · 自增至 396</span></div>
+      <div class="ew" style="padding:24px">
+        <div class="c-comp" style="width:100%;max-width:794px">
+          <div class="ic">
+            <div class="ta">今天帮你做些什么？&nbsp; <b>@ 引用对话文件，/ 调用技能与指令</b></div>
+            <div class="tr">
+              <span class="c-ib"><svg class="ico"><use href="#i-plus"/></svg></span>
+              <span style="margin-left:auto"></span>
+              <span class="c-is"><svg class="ico i14"><use href="#i-box"/></svg><span class="mo">evowork/deepseek-chat</span><svg class="ico i12"><use href="#i-chevd"/></svg></span>
+              <span class="c-ib"><svg class="ico"><use href="#i-mic"/></svg></span>
+              <span class="c-send"><svg class="ico"><use href="#i-up"/></svg></span>
+            </div>
+          </div>
+          <div class="ft">
+            <span class="c-is"><svg class="ico i14"><use href="#i-folder"/></svg>~/work/weekly<svg class="ico i12"><use href="#i-chevd"/></svg></span>
+            <span class="c-is"><svg class="ico i14"><use href="#i-shield"/></svg>默认权限<svg class="ico i12"><use href="#i-chevd"/></svg></span>
+            <span class="c-is"><svg class="ico i14"><use href="#i-bolt"/></svg>Craft<span class="chg"></span><svg class="ico i12"><use href="#i-chevd"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div class="note">截图 1 的底栏只有<b>工作空间</b>与<b>默认权限</b>两个下拉。第三个「模式」是<strong>同族同位的受控扩展</strong> —— 总纲要求 Craft / Plan / Ask 三模式，而模式与权限不是一回事，合并会造成 3×3 组合的解释负担（03 §2.1）。「Craft」后面那个 4px 绿点表示"这一项被你改过、不再是场景默认值"，点它可一键回落。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.13</span><span class="snm">SendButton · 5 态</span><span class="sdim">32 圆形</span></div>
+      <div class="ew"><div class="sgrid">
+        <div><div class="stlab">空输入 · 禁用</div><span class="c-send off"><svg class="ico"><use href="#i-up"/></svg></span></div>
+        <div><div class="stlab">有内容</div><span class="c-send"><svg class="ico"><use href="#i-up"/></svg></span></div>
+        <div><div class="stlab">执行中 = 中断</div><span class="c-send stop"><svg class="ico"><use href="#i-stop"/></svg></span></div>
+        <div><div class="stlab">超预算 = 追加</div><span class="c-send bud"><svg class="ico"><use href="#i-bolt"/></svg></span></div>
+        <div><div class="stlab">排队中</div><span class="c-pb"><svg class="ico i14"><use href="#i-clock"/></svg>排队中（前面 1 个）</span></div>
+      </div></div>
+      <div class="note">最后一个不是按钮态而是替换控件：本机并发已满（Q11 上限 3）时发送键换成可取消的排队指示，<strong>不阻塞输入</strong>。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.14 / 5.15</span><span class="snm">InlineSelect + ModelSelect</span><span class="sdim">高 24 · r-full · 透明底</span></div>
+      <div class="ew"><div class="col" style="gap:14px">
+        <div class="row">
+          <span class="c-is ph"><svg class="ico i14"><use href="#i-folder"/></svg>选择工作空间<svg class="ico i12"><use href="#i-chevd"/></svg></span>
+          <span class="c-is h"><svg class="ico i14"><use href="#i-shield"/></svg>只读<svg class="ico i12"><use href="#i-chevd"/></svg></span>
+          <span class="c-is"><svg class="ico i14"><use href="#i-box"/></svg><span class="mo">evowork/glm-flash</span><svg class="ico i12"><use href="#i-chevd"/></svg></span>
+        </div>
+        <div>
+          <div class="stlab">ModelSelect 展开 · 按 provider 分组 + 能力徽标</div>
+          <div class="c-menu" style="min-width:300px">
+            <div style="font-size:11px;font-weight:500;color:var(--text-tertiary);padding:4px 8px 2px">DEEPSEEK</div>
+            <div class="c-mi h"><svg class="ico i16"><use href="#i-check"/></svg><span class="mo" style="font-family:var(--ewmono);font-size:12px">deepseek-chat</span><span class="k" style="font-family:var(--ewsans)"><span class="bdg s">推理</span></span></div>
+            <div class="c-mi"><span style="width:16px"></span><span style="font-family:var(--ewmono);font-size:12px">deepseek-reasoner</span><span class="k" style="font-family:var(--ewsans)"><span class="bdg s">推理</span></span></div>
+            <div class="c-msep"></div>
+            <div style="font-size:11px;font-weight:500;color:var(--text-tertiary);padding:4px 8px 2px">智谱 GLM</div>
+            <div class="c-mi"><span style="width:16px"></span><span style="font-family:var(--ewmono);font-size:12px">glm-flash</span><span class="k" style="font-family:var(--ewsans)"><span class="bdg n" style="text-decoration:line-through">图片输入</span></span></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="note"><strong>缺失的能力必须显示为灰色划除，不能隐藏</strong>（总纲 D2：降级必须显式）。徽标数据来自网关的能力声明 —— 用户要能在选模型时就知道选完会少什么，而不是等附件被拒收才发现。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.16</span><span class="snm">SearchInput</span><span class="sdim">高 28 · r-sm · 标题栏内宽 200</span></div>
+      <div class="ew"><div class="row">
+        <span class="c-si"><svg class="ico i15"><use href="#i-search"/></svg>搜索技能</span>
+        <span class="c-si f"><svg class="ico i15"><use href="#i-search"/></svg><span style="color:var(--text-primary)">周报</span><span style="margin-left:auto"><svg class="ico i14"><use href="#i-close"/></svg></span></span>
+      </div></div>
+    </div>
+
+    <h3 class="sh">D · 卡片与容器族 · 5 个</h3>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.18 / 5.19</span><span class="snm">SectionHeader + Menu</span><span class="sdim">菜单项 30 · 最小宽 200</span></div>
+      <div class="ew"><div class="col" style="gap:18px">
+        <div style="max-width:520px">
+          <div class="c-sh"><span class="t1">精选技能</span><span class="sp"><span class="c-pb gh"><svg class="ico i14"><use href="#i-refresh"/></svg>换一换</span></span></div>
+          <div class="c-sh"><span class="t2">不知道做什么，试试最佳实践案例</span><span class="sp"><span class="c-pb gh"><svg class="ico i14"><use href="#i-refresh"/></svg>换一批</span><span class="c-ib"><svg class="ico i16"><use href="#i-close"/></svg></span></span></div>
+        </div>
+        <div class="c-menu" style="min-width:236px">
+          <div class="c-mi h"><svg class="ico i16"><use href="#i-pin"/></svg>置顶</div>
+          <div class="c-mi"><svg class="ico i16"><use href="#i-file"/></svg>重命名<span class="k">⏎</span></div>
+          <div class="c-mi"><svg class="ico i16"><use href="#i-folder"/></svg>打开所在文件夹</div>
+          <div class="c-msep"></div>
+          <div class="c-mi"><svg class="ico i16"><use href="#i-share"/></svg>分享任务…</div>
+          <div class="c-mi off"><svg class="ico i16"><use href="#i-lock"/></svg>上传到云端<span class="rsn">企业策略已禁用</span></div>
+          <div class="c-msep"></div>
+          <div class="c-mi dg"><svg class="ico i16"><use href="#i-close"/></svg>删除</div>
+        </div>
+      </div></div>
+      <div class="note"><strong>禁用项必须给出原因</strong>（01 §6.3）：一个没有 tooltip 的灰按钮会让用户反复点。「分享任务…」的省略号表示<b>会先弹授权模态</b> —— Q10 要求逐次显式授权，不记住选择。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.20</span><span class="snm">ItemCard</span><span class="sdim">258 × 112 固定 · r-lg · 描述固定 2 行</span></div>
+      <div class="ew"><div class="row" style="gap:12px;align-items:stretch">
+        <span class="cwrap"><span class="c-card">
+          <span class="lg" style="background:#4A7CF7">文</span>
+          <span class="bd"><span class="nm">文档排版</span><span class="ds">生成与排版 Word / Markdown / PDF 文档，含目录、页眉页脚与中文字体嵌入。</span><span class="bg"><span class="bdg s">官方内置</span><span class="bdg n">P0 低风险</span></span></span>
+        </span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+        <span class="cwrap"><span class="c-card h">
+          <span class="lg" style="background:#E0873C">表</span>
+          <span class="bd"><span class="nm">表格处理</span><span class="ds">读写 Excel / CSV，输出带公式与条件格式的工作簿。</span><span class="bg"><span class="bdg s">官方内置</span><span class="bdg w">P1 需注意</span></span></span>
+        </span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+        <span class="cwrap"><span class="c-card inst">
+          <span class="lg rnd" style="background:#2FA37A">财</span>
+          <span class="bd"><span class="nm">财务分析专家</span><span class="ds">财报解读、比率分析、预算编制。</span><span class="bg"><span class="bdg n">企业私有源</span></span></span>
+        </span><span class="add" style="color:var(--accent)"><svg class="ico i16"><use href="#i-check"/></svg></span></span>
+      </div></div>
+      <div class="note">三态：默认 · 悬停 · 已安装。<strong>高度固定 112 是网格能对齐的前提</strong>（描述 clamp 2 行）；有角标行时 128。专家用<b>圆形</b>头像、技能与连接器用<b>圆角方形</b> —— 以形状区分类别，不靠颜色。来源角标（官方内置 / 企业私有源 / 本地目录 / Git）是硬要求：用户必须一眼看出这东西是谁给的。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.21 / 5.29</span><span class="snm">CaseCard + TipBanner</span><span class="sdim">案例卡 191 · 封面 16:9 · 提示子卡 222 × 112</span></div>
+      <div class="ew"><div class="col" style="gap:20px">
+        <div class="row" style="gap:12px">
+          <span class="c-case"><span class="cv"><svg class="ico i24"><use href="#i-file"/></svg></span><span class="nm">打工人小账本</span></span>
+          <span class="c-case"><span class="cv"><svg class="ico i24"><use href="#i-pie"/></svg></span><span class="nm">季度经营分析报告</span></span>
+          <span class="c-case"><span class="cv"><svg class="ico i24"><use href="#i-box"/></svg></span><span class="nm">产品发布会演示稿</span></span>
+        </div>
+        <div class="c-tb" style="max-width:520px">
+          <div class="hd"><svg class="ico i16" style="color:var(--warning)"><use href="#i-sparkle"/></svg>资料库的 100 种用法<span class="sp"><span class="c-pb gh">我知道了</span></span></div>
+          <div class="sub">
+            <span class="sc"><span class="t">知识复利</span><span class="d">上一次的成果，就是下一次工作的起点。</span></span>
+            <span class="sc"><span class="t">人机协作</span><span class="d">划词、修订、评论，让 agent 安全改文档。</span></span>
+            <span class="nav"><svg class="ico i16"><use href="#i-chevr"/></svg></span>
+          </div>
+        </div>
+      </div></div>
+      <div class="note">案例卡点击 = 写入 Composer（提示词 + 场景 + 预置附件），<strong>不自动发送</strong>。封面统一 382×215 WebP / ≤40KB / 池 ≤24 个 → 总计 &lt;1MB（R10 分发体积）；无封面时降级为 <code>bg-sunken</code> 底 + 大图标，正如上面三张。</div>
+    </div>
+
+    <h3 class="sh">E · 面板族 · 6 个</h3>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.23–5.27</span><span class="snm">中栏五件套</span><span class="sdim">PanelHeader 52 · NavItem 28/节奏 32 · TreeItem 28 · QuotaFooter 56</span></div>
+      <div class="ew app flat" style="width:272px;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;height:420px">
+        <div class="c-ph"><span class="t">资料库</span><span class="sp"><span class="c-ib"><svg class="ico i18"><use href="#i-mega"/></svg></span></span></div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1">
+          <div class="c-pni"><svg class="ico i18"><use href="#i-search"/></svg>搜索</div>
+          <div class="c-pni s"><svg class="ico i18"><use href="#i-clock"/></svg>最近</div>
+          <div class="c-pni"><svg class="ico i18"><use href="#i-box"/></svg>本地产物</div>
+          <div style="height:1px;background:var(--border-subtle);margin:8px 12px"></div>
+          <div class="c-tsh">我的资料<svg class="ico i12"><use href="#i-chevd"/></svg><span class="sp"><svg class="ico i16"><use href="#i-plus"/></svg></span></div>
+          <div class="c-ti d2"><svg class="ico i16"><use href="#i-file"/></svg>长期记忆</div>
+          <div class="c-ti d2"><svg class="ico i16"><use href="#i-file"/></svg>周报模板.md</div>
+          <div class="c-tsh" style="margin-top:8px">团队空间<svg class="ico i12"><use href="#i-chevd"/></svg><span class="sp"><svg class="ico i16"><use href="#i-plus"/></svg></span></div>
+          <div class="c-ti d2"><svg class="ico i16" style="color:var(--text-tertiary)"><use href="#i-lock"/></svg>财务口径手册<span style="margin-left:auto;padding-right:12px"><span class="dot plan"></span></span></div>
+        </div>
+        <div class="c-qf">
+          <div class="l1">本机占用 1.4 GB<span class="sp"><span class="c-pb gh" style="height:20px;font-size:12px">清理 ›</span></span></div>
+          <div class="tk"><div class="fl" style="width:34%"></div></div>
+        </div>
+      </div>
+      <div class="note">团队空间条目带<b>锁图标</b>（只读订阅，Q19 默认方案）+ 蓝点（有新版本可更新）。<code>QuotaFooter</code> 按 Q17 默认方案显示的是<strong>本机磁盘占用</strong>，右侧动作是「清理」而不是「升级」 —— 截图的 5GB 云配额与 K6 / D9 冲突，改成本机语义后布局完全不变（06 §3.5）。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.28</span><span class="snm">DataTable</span><span class="sdim">表头 40 · 行 48 · 首列 = 图标 20 + 12 + 名称</span></div>
+      <div class="ew" style="padding:20px 24px">
+        <table class="c-dt">
+          <thead><tr><th style="width:44%">名称</th><th>所有者</th><th>位置</th><th>最近访问</th></tr></thead>
+          <tbody>
+            <tr class="h"><td class="f"><span><span class="ficon" style="background:#4A7CF7">D</span>Q3 经营分析报告.docx</span></td><td>我</td><td>本地产物</td><td>10 分钟前</td></tr>
+            <tr><td class="f"><span><span class="ficon" style="background:#1E9E63">X</span>费用明细-2026Q3.xlsx</span></td><td>我</td><td>本地产物</td><td>1 小时前</td></tr>
+            <tr><td class="f"><span><span class="ficon" style="background:#E0873C">P</span>产品发布会.pptx</span></td><td>我</td><td>本地产物</td><td>昨天</td></tr>
+            <tr><td class="f"><span><span class="ficon" style="background:#8A8981">M</span>财务口径手册.md</span></td><td>财务中心</td><td>团队空间</td><td>3 天前</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">列可排序，行操作在悬停时从右端浮出、不占列宽。<strong>当前视图内所有行的所有者相同时自动隐藏「所有者」列</strong> —— 个人版下它几乎恒为「我」，留一整列废信息不如把宽度让给名称（06 §3.3）。</div>
+    </div>
+
+    <h3 class="sh">F · 反馈族 · 3 个</h3>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.30</span><span class="snm">Badge / StatusDot</span><span class="sdim">Badge 高 18 · 点 6 · 5 个变体</span></div>
+      <div class="ew"><div class="col" style="gap:14px">
+        <div class="row" style="gap:8px"><span class="bdg n">已完成</span><span class="bdg i">规划中</span><span class="bdg s">已连接</span><span class="bdg w">待你确认</span><span class="bdg d">失败</span></div>
+        <div class="row" style="gap:18px">
+          <span class="row" style="gap:6px"><span class="dot run"></span><span style="font-size:12px;color:var(--text-secondary)">进行中</span></span>
+          <span class="row" style="gap:6px"><span class="dot plan"></span><span style="font-size:12px;color:var(--text-secondary)">规划中</span></span>
+          <span class="row" style="gap:6px"><span class="dot pend"></span><span style="font-size:12px;color:var(--text-secondary)">待处理</span></span>
+          <span class="row" style="gap:6px"><span class="dot done"></span><span style="font-size:12px;color:var(--text-secondary)">已完成</span></span>
+          <span class="row" style="gap:6px"><span class="dot fail"></span><span style="font-size:12px;color:var(--text-secondary)">失败</span></span>
+        </div>
+      </div></div>
+      <div class="note">Badge 文字一律用 <code>-text</code> / <code>-strong</code> 变体（§03）。<strong>6px 状态点不满足 3:1</strong>（accent 2.80 / warning 2.61 / tertiary 2.50），因此它在无障碍上被定义为<b>冗余装饰</b> —— 状态的可感知性由同一行的文字 Badge 或图标承担，点只做快速扫视。这是「状态不靠颜色单传」那条规则的技术前提。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.31</span><span class="snm">Toast</span><span class="sdim">宽 320 · r-lg · shadow-lg · 右下角</span></div>
+      <div class="ew"><div class="col" style="gap:12px">
+        <div class="c-toast"><svg class="ico i16" style="color:var(--accent)"><use href="#i-checkcirc"/></svg><span class="tx">已生成 <b>Q3 经营分析报告.docx</b></span><span class="c-pb gh" style="height:20px;font-size:12px;flex:none">打开</span></div>
+        <div class="c-toast" style="border-left:3px solid var(--warning)"><svg class="ico i16" style="color:var(--warning)"><use href="#i-alert"/></svg><span class="tx">自动化「周报」已暂停：最近 3 次都因为模型调用失败。</span></div>
+      </div></div>
+      <div class="note">默认 4s 自动消失；含动作或 danger 变体<strong>不自动消失</strong>。同时最多 3 条，超出折叠为「另有 N 条」。</div>
+    </div>
+
+    <div class="spec">
+      <div class="sbar"><span class="sid">5.32</span><span class="snm">ApprovalCard</span><span class="sdim">内容列全宽 · r-lg · 左侧 3px 竖条 · 内边距 16</span></div>
+      <div class="ew" style="padding:24px">
+        <div class="c-ap" style="max-width:640px">
+          <div class="hd"><svg class="ico i14"><use href="#i-alert"/></svg>需要你确认</div>
+          <div class="ti">执行命令</div>
+          <div class="cmd"><span class="p">$</span> pip install openpyxl</div>
+          <div class="why"><b>为什么需要确认：</b>这个命令会从网络安装软件包<br><b>影响范围：</b>写入 Python 环境目录，需要联网</div>
+          <div class="btns">
+            <span class="c-bt">允许这一次</span>
+            <span class="c-bt sec">本次任务内都允许</span>
+            <span class="c-bt gh">拒绝</span>
+            <span class="sp"><span class="c-bt gh">查看策略详情</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="note"><strong>「为什么需要确认」是必填的</strong>，来自 <code>execpolicy</code> 的判定理由 —— 没有理由的审批等于让用户瞎点。命令超长时单行截断 + 「查看完整命令」，<strong>绝不省略中间部分后让用户点允许</strong>（那是注入攻击的最佳藏身处）。审批是 server→client <b>request</b>，内核会一直等，因此必须配超时策略与跨页可见性（10 §3）。</div>
+    </div>
+
+    <div class="call ok">
+      <div class="h">32 个组件覆盖了什么</div>
+      <p>4 张截图里的每一个控件都能在上面找到出处，反之上面每个组件都至少被一张截图或一份细化文档用到。<strong>这条双向覆盖是这份清单的验收标准</strong> —— 既不允许截图里有控件在清单外，也不允许清单里堆没人用的组件。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 08 ============ -->
+<section id="s8">
+  <div class="snum">08</div>
+  <div>
+    <h2>状态视觉</h2>
+    <p class="dek">清单要求 6 种任务状态，实际需要 7 种 —— <code>TurnStatus::Interrupted</code> 是真实存在的终态，映射到"已完成"会误导、映射到"失败"会让用户以为出错了。</p>
+    <div class="tw"><table>
+      <thead><tr><th>状态</th><th>Badge</th><th>点</th><th>侧边栏行</th><th>派生依据</th></tr></thead>
+      <tbody>
+        <tr><td>进行中</td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#E8F5EE;color:#1B6B4F">进行中</span></td><td>accent + 呼吸</td><td>标题 600</td><td><code>Active</code> 且 activeFlags 为空</td></tr>
+        <tr><td>规划中</td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#E9F1FC;color:#225CAC">规划中</span></td><td>info</td><td>标题 600</td><td>投影表 <code>mode=plan</code> 且有未确认 plan item</td></tr>
+        <tr><td>待处理</td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#FBF2DE;color:#895E0F">待你确认</span></td><td>warning + 呼吸</td><td>标题 600 + 行尾圆点</td><td>activeFlags 含 <code>WaitingOnApproval</code> / <code>WaitingOnUserInput</code></td></tr>
+        <tr><td>已完成</td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#E9E8E4;color:#6E6D68">已完成</span></td><td>tertiary</td><td>常规</td><td>投影表 <code>last_turn_status=completed</code></td></tr>
+        <tr><td>失败</td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#FBECEA;color:#A53227">失败</span></td><td>danger</td><td>常规 + 标题前感叹图标</td><td>投影表 <code>failed</code> 或 <code>SystemError</code></td></tr>
+        <tr><td><strong>已中断</strong></td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#E9E8E4;color:#6E6D68">已中断，可继续</span></td><td>tertiary</td><td>常规</td><td>投影表 <code>interrupted</code> · <span class="warnv">清单缺此态</span></td></tr>
+        <tr><td>已归档</td><td><span style="display:inline-flex;align-items:center;height:18px;border-radius:999px;padding:0 6px;font-size:11px;font-weight:500;background:#E9E8E4;color:#6E6D68">已归档</span></td><td>无</td><td>整行 tertiary</td><td><code>thread/list?archived=true</code></td></tr>
+      </tbody>
+    </table></div>
+    <div class="call">
+      <div class="h">为什么状态必须自己派生</div>
+      <p>内核的 <code>ThreadStatus</code> 只有 <code>NotLoaded | Idle | SystemError | Active{activeFlags}</code>，<strong>未加载的 thread 状态恒为 NotLoaded、不携带上次执行结果</strong>；<code>thread/list</code> 也没有状态与日期过滤参数；<code>ThreadExtra</code> 是空结构体、<code>thread/metadata/update</code> 只能改 projectId 与 gitInfo —— <strong>协议没有客户端自定义元数据槽</strong>。三条加起来，"已完成 / 失败 / 已中断"这几个用户最关心的状态和"按状态筛选"这个功能，都只能靠本机投影表（09 §4.1）。「待你确认」用第二人称，因为它要求用户行动；其余用客观描述。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 09 ============ -->
+<section id="s9">
+  <div class="snum">09</div>
+  <div>
+    <h2>页面拼装对照</h2>
+    <p class="dek">用上面 32 个组件按真实尺寸拼出三张截图对应的页面，缩放 72% 展示。这是检查"像不像附件"的地方 —— 把它和截图并排放，逐块比侧边栏宽度、内容列、节奏与卡片尺寸。</p>
+
+    <div class="mock">
+      <div class="ewbar"><span>MOCK 1 / 3</span><span style="opacity:.7">对应截图 1 · 首页（运营位插槽按默认全部关闭）</span></div>
+      <div class="mockv" style="height:496px"><div class="mockin ew flat" style="transform:scale(.72)">
+        <div class="sb">
+          <div class="tbar"><span class="tlight"><i></i><i></i><i></i></span><span class="c-ib"><svg class="ico"><use href="#i-sidebar"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-search"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-filter"/></svg></span></div>
+          <div style="height:36px;display:flex;align-items:center;padding:0 8px 0 20px"><span style="font-size:15px;font-weight:600">EvoWork</span><span style="margin-left:auto"><span class="c-asc"><svg class="ico i14"><use href="#i-box"/></svg>发现应用<svg class="ico i12"><use href="#i-chevd"/></svg></span></span></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:5px">
+            <div class="c-nav s"><svg class="ico"><use href="#i-pluscirc"/></svg>新建任务</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-user"/></svg>助理</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-proj"/></svg>项目</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-cat"/></svg>专家·技能·连接器</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-checkcirc"/></svg>自动化</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-book"/></svg>资料库</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-grid"/></svg>更多<span class="tail">灵感</span></div>
+          </div>
+          <div class="c-ssh" style="margin-top:4px">任务 (8)<svg class="ico i12"><use href="#i-chevd"/></svg></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:5px;flex:1">
+            <div class="c-tli"><span class="dot run"></span><span class="t">季度汇报 PPT</span><span class="tm">刚刚</span></div>
+            <div class="c-tli"><span class="dot pend"></span><span class="t">批量整理发票文件</span><span class="tm">2小时前</span></div>
+            <div class="c-tli"><span class="dot done"></span><span class="t">查询当前黄金价格</span><span class="tm">1天前</span></div>
+            <div class="c-tli"><span class="dot done"></span><span class="t">上月对账单核对</span><span class="tm">1天前</span></div>
+            <div class="c-tli"><span class="dot done"></span><span class="t">第 35 周周报</span><span class="tm">7天前</span></div>
+          </div>
+          <div class="c-uf"><span class="av">J</span><span><span class="nm" style="display:block">J.W</span><span class="vr" style="display:block">V1.0.0</span></span><span class="sp"><span class="c-ib bdot"><svg class="ico"><use href="#i-bell"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-device"/></svg></span></span></div>
+        </div>
+        <div class="cv">
+          <div class="tbar"></div>
+          <div class="colw" style="padding-top:0">
+            <div style="text-align:center;font-size:36px;line-height:44px;font-weight:700;letter-spacing:-.02em">EvoWork，我帮你</div>
+            <div style="display:flex;justify-content:center;margin-top:24px"><span class="c-seg dark"><span class="it on"><svg class="ico i15"><use href="#i-cup"/></svg>日常办公</span><span class="it"><svg class="ico i15"><use href="#i-code"/></svg>代码开发</span><span class="it"><svg class="ico i15"><use href="#i-palette"/></svg>设计创意</span></span></div>
+            <div class="fcrow" style="margin-top:40px"><span class="c-sc"><svg class="ico i15"><use href="#i-file"/></svg>文档处理</span><span class="c-sc"><svg class="ico i15"><use href="#i-pie"/></svg>数据分析及可视化</span><span class="c-sc"><svg class="ico i15"><use href="#i-box"/></svg>幻灯片</span><span class="c-sc"><svg class="ico i15"><use href="#i-grid"/></svg>个人工作台</span><span class="nx"><svg class="ico i15"><use href="#i-chevr"/></svg></span></div>
+            <div class="c-comp" style="margin-top:16px">
+              <div class="ic"><div class="ta">今天帮你做些什么？&nbsp; <b>@ 引用对话文件，/ 调用技能与指令</b></div>
+                <div class="tr"><span class="c-ib"><svg class="ico"><use href="#i-plus"/></svg></span><span style="margin-left:auto"></span><span class="c-is"><svg class="ico i14"><use href="#i-box"/></svg><span class="mo">evowork/deepseek-chat</span><svg class="ico i12"><use href="#i-chevd"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-mic"/></svg></span><span class="c-send off"><svg class="ico"><use href="#i-up"/></svg></span></div>
+              </div>
+              <div class="ft"><span class="c-is ph"><svg class="ico i14"><use href="#i-folder"/></svg>选择工作空间<svg class="ico i12"><use href="#i-chevd"/></svg></span><span class="c-is"><svg class="ico i14"><use href="#i-shield"/></svg>默认权限<svg class="ico i12"><use href="#i-chevd"/></svg></span><span class="c-is"><svg class="ico i14"><use href="#i-bolt"/></svg>Craft<svg class="ico i12"><use href="#i-chevd"/></svg></span></div>
+            </div>
+            <div class="c-sh" style="margin-top:32px"><span class="t2">不知道做什么，试试最佳实践案例</span><span class="sp"><span class="c-pb gh"><svg class="ico i14"><use href="#i-refresh"/></svg>换一批</span><span class="c-ib"><svg class="ico i16"><use href="#i-close"/></svg></span></span></div>
+            <div class="row" style="gap:12px;margin-top:12px;flex-wrap:nowrap">
+              <span class="c-case"><span class="cv" style="background:var(--bg-sunken)"><svg class="ico i24"><use href="#i-file"/></svg></span><span class="nm">打工人小账本</span></span>
+              <span class="c-case"><span class="cv" style="background:var(--bg-sunken)"><svg class="ico i24"><use href="#i-pie"/></svg></span><span class="nm">季度经营分析报告</span></span>
+              <span class="c-case"><span class="cv" style="background:var(--bg-sunken)"><svg class="ico i24"><use href="#i-box"/></svg></span><span class="nm">产品发布会演示稿</span></span>
+              <span class="c-case"><span class="cv" style="background:var(--bg-sunken)"><svg class="ico i24"><use href="#i-book"/></svg></span><span class="nm">读书精读笔记卡</span></span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="mcap">1111 × 682 pt @ 72% · 侧边栏 260 · 内容列 800 居中 · 垂直节奏 46/44/24/36/40/30/16/180/32/12 · 与截图 1 的差异：品牌名、无运营位（4 个插槽默认关闭）、Composer 底栏多一个「模式」下拉</div>
+    </div>
+
+    <div class="mock">
+      <div class="ewbar"><span>MOCK 2 / 3</span><span style="opacity:.7">对应截图 2 · 技能目录（Q5 约束下 SkillHub Tab 不渲染）</span></div>
+      <div class="mockv" style="height:496px"><div class="mockin ew flat" style="transform:scale(.72)">
+        <div class="sb">
+          <div class="tbar"><span class="tlight"><i></i><i></i><i></i></span><span class="c-ib"><svg class="ico"><use href="#i-sidebar"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-search"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-filter"/></svg></span></div>
+          <div style="height:36px;display:flex;align-items:center;padding:0 8px 0 20px"><span style="font-size:15px;font-weight:600">EvoWork</span><span style="margin-left:auto"><span class="c-asc"><svg class="ico i14"><use href="#i-box"/></svg>发现应用<svg class="ico i12"><use href="#i-chevd"/></svg></span></span></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:5px">
+            <div class="c-nav"><svg class="ico"><use href="#i-pluscirc"/></svg>新建任务</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-user"/></svg>助理</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-proj"/></svg>项目</div>
+            <div class="c-nav s"><svg class="ico"><use href="#i-cat"/></svg>专家·技能·连接器</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-checkcirc"/></svg>自动化</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-book"/></svg>资料库</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-grid"/></svg>更多<span class="tail">灵感</span></div>
+          </div>
+          <div class="c-ssh" style="margin-top:4px">任务 (8)<svg class="ico i12"><use href="#i-chevd"/></svg></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:5px;flex:1">
+            <div class="c-tli"><span class="dot run"></span><span class="t">季度汇报 PPT</span><span class="tm">刚刚</span></div>
+            <div class="c-tli"><span class="dot pend"></span><span class="t">批量整理发票文件</span><span class="tm">2小时前</span></div>
+            <div class="c-tli"><span class="dot done"></span><span class="t">查询当前黄金价格</span><span class="tm">1天前</span></div>
+          </div>
+          <div class="c-uf"><span class="av">J</span><span><span class="nm" style="display:block">J.W</span><span class="vr" style="display:block">V1.0.0</span></span><span class="sp"><span class="c-ib bdot"><svg class="ico"><use href="#i-bell"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-device"/></svg></span></span></div>
+        </div>
+        <div class="cv">
+          <div class="tbar" style="padding:0 28px">
+            <span class="c-seg dark"><span class="it"><svg class="ico i15"><use href="#i-user"/></svg>专家</span><span class="it on"><svg class="ico i15"><use href="#i-sparkle"/></svg>技能</span><span class="it"><svg class="ico i15"><use href="#i-cat"/></svg>连接器</span></span>
+            <span style="margin-left:auto;display:flex;gap:12px;align-items:center">
+              <span class="c-si"><svg class="ico i15"><use href="#i-search"/></svg>搜索技能</span>
+              <span class="c-gb"><svg class="ico i15"><use href="#i-checkcirc"/></svg>我已安装的<span class="n">12</span></span>
+              <span class="c-gb"><svg class="ico i15"><use href="#i-plus"/></svg>添加技能</span>
+            </span>
+          </div>
+          <div class="colw">
+            <div class="c-sh" style="margin-top:36px"><span class="t1">精选技能</span><span class="sp"><span class="c-pb gh"><svg class="ico i14"><use href="#i-refresh"/></svg>换一换</span></span></div>
+            <div class="row" style="gap:12px;margin-top:12px;flex-wrap:nowrap">
+              <span class="cwrap"><span class="c-card"><span class="lg" style="background:#4A7CF7">文</span><span class="bd"><span class="nm">文档排版</span><span class="ds">生成与排版 Word / Markdown / PDF，含目录、页眉页脚与中文字体嵌入。</span><span class="bg"><span class="bdg s">官方内置</span><span class="bdg n">P0</span></span></span></span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+              <span class="cwrap"><span class="c-card"><span class="lg" style="background:#1E9E63">表</span><span class="bd"><span class="nm">表格处理</span><span class="ds">读写 Excel / CSV，输出带公式与条件格式的工作簿。</span><span class="bg"><span class="bdg s">官方内置</span><span class="bdg w">P1</span></span></span></span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+              <span class="cwrap"><span class="c-card"><span class="lg" style="background:#E0873C">演</span><span class="bd"><span class="nm">幻灯片生成</span><span class="ds">按模板生成 pptx，排版由模板渲染而非模型自由决定。</span><span class="bg"><span class="bdg s">官方内置</span><span class="bdg n">P0</span></span></span></span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+            </div>
+            <div class="c-tt" style="margin-top:32px"><span class="it on">推荐</span><span class="it">套件</span></div>
+            <div class="fcrow" style="margin-top:20px"><span class="c-fc on">全部</span><span class="c-fc">办公协同</span><span class="c-fc">开发工具</span><span class="c-fc">效率工具</span><span class="c-fc">内容创作</span><span class="c-fc">数据分析</span><span class="nx"><svg class="ico i15"><use href="#i-chevr"/></svg></span></div>
+            <div class="row" style="gap:12px;margin-top:16px;flex-wrap:nowrap">
+              <span class="cwrap"><span class="c-card"><span class="lg" style="background:#7B61D9">图</span><span class="bd"><span class="nm">图表绘制</span><span class="ds">matplotlib / vega 出图，配色取自设计 token，中文不乱码。</span><span class="bg"><span class="bdg s">官方内置</span></span></span></span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+              <span class="cwrap"><span class="c-card inst"><span class="lg" style="background:#8A8981">审</span><span class="bd"><span class="nm">财务口径校验</span><span class="ds">按企业口径手册校验报表科目与计算逻辑。</span><span class="bg"><span class="bdg n">企业私有源</span></span></span></span><span class="add" style="color:var(--accent)"><svg class="ico i16"><use href="#i-check"/></svg></span></span>
+              <span class="cwrap"><span class="c-card"><span class="lg" style="background:#C0526B">创</span><span class="bd"><span class="nm">技能创建器</span><span class="ds">让 EvoWork 帮你写一个新技能，含 SKILL.md 与脚本骨架。</span><span class="bg"><span class="bdg s">官方内置</span></span></span></span><span class="add"><svg class="ico i16"><use href="#i-plus"/></svg></span></span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="mcap">页面控件在标题栏带内 · 3 列 258 + 12 gap = 798 ≈ 内容列 800 · 与截图 2 的差异：无 SkillHub Tab（Q5）、卡片增来源与风险角标、无评分与下载量</div>
+    </div>
+
+    <div class="mock">
+      <div class="ewbar"><span>MOCK 3 / 3</span><span style="opacity:.7">对应截图 4 · 资料库（Q17 默认方案：配额条改本机占用）</span></div>
+      <div class="mockv" style="height:496px"><div class="mockin ew flat" style="transform:scale(.72)">
+        <div class="sb">
+          <div class="tbar"><span class="tlight"><i></i><i></i><i></i></span><span class="c-ib"><svg class="ico"><use href="#i-sidebar"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-search"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-filter"/></svg></span></div>
+          <div style="height:36px;display:flex;align-items:center;padding:0 8px 0 20px"><span style="font-size:15px;font-weight:600">EvoWork</span><span style="margin-left:auto"><span class="c-asc"><svg class="ico i14"><use href="#i-box"/></svg>发现应用<svg class="ico i12"><use href="#i-chevd"/></svg></span></span></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:5px">
+            <div class="c-nav"><svg class="ico"><use href="#i-pluscirc"/></svg>新建任务</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-user"/></svg>助理</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-proj"/></svg>项目</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-cat"/></svg>专家·技能·连接器</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-checkcirc"/></svg>自动化</div>
+            <div class="c-nav s"><svg class="ico"><use href="#i-book"/></svg>资料库</div>
+            <div class="c-nav"><svg class="ico"><use href="#i-grid"/></svg>更多<span class="tail">灵感</span></div>
+          </div>
+          <div class="c-ssh" style="margin-top:4px">任务 (8)<svg class="ico i12"><use href="#i-chevd"/></svg></div>
+          <div style="padding:0 8px;display:flex;flex-direction:column;gap:5px;flex:1">
+            <div class="c-tli"><span class="dot run"></span><span class="t">季度汇报 PPT</span><span class="tm">刚刚</span></div>
+            <div class="c-tli"><span class="dot done"></span><span class="t">查询当前黄金价格</span><span class="tm">1天前</span></div>
+          </div>
+          <div class="c-uf"><span class="av">J</span><span><span class="nm" style="display:block">J.W</span><span class="vr" style="display:block">V1.0.0</span></span><span class="sp"><span class="c-ib bdot"><svg class="ico"><use href="#i-bell"/></svg></span><span class="c-ib"><svg class="ico"><use href="#i-device"/></svg></span></span></div>
+        </div>
+        <div class="mid">
+          <div class="c-ph"><span class="t">资料库</span><span class="sp"><span class="c-ib"><svg class="ico i18"><use href="#i-mega"/></svg></span></span></div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1">
+            <div class="c-pni"><svg class="ico i18"><use href="#i-search"/></svg>搜索</div>
+            <div class="c-pni s"><svg class="ico i18"><use href="#i-clock"/></svg>最近</div>
+            <div class="c-pni"><svg class="ico i18"><use href="#i-box"/></svg>本地产物</div>
+            <div style="height:1px;background:var(--border-subtle);margin:8px 12px"></div>
+            <div class="c-tsh">我的资料<svg class="ico i12"><use href="#i-chevd"/></svg><span class="sp"><svg class="ico i16"><use href="#i-plus"/></svg></span></div>
+            <div class="c-ti d2"><svg class="ico i16"><use href="#i-file"/></svg>长期记忆</div>
+            <div class="c-ti d2"><svg class="ico i16"><use href="#i-file"/></svg>周报模板.md</div>
+            <div class="c-tsh" style="margin-top:8px">团队空间<svg class="ico i12"><use href="#i-chevd"/></svg><span class="sp"><svg class="ico i16"><use href="#i-plus"/></svg></span></div>
+            <div class="c-ti d2"><svg class="ico i16" style="color:var(--text-tertiary)"><use href="#i-lock"/></svg>财务口径手册</div>
+          </div>
+          <div class="c-qf"><div class="l1">本机占用 1.4 GB<span class="sp"><span class="c-pb gh" style="height:20px;font-size:12px">清理 ›</span></span></div><div class="tk"><div class="fl" style="width:34%"></div></div></div>
+        </div>
+        <div class="cv">
+          <div class="tbar" style="padding:0 24px"><span class="c-ib"><svg class="ico"><use href="#i-sidebar"/></svg></span></div>
+          <div style="padding:0 24px">
+            <div style="font-size:17px;font-weight:600;margin-bottom:20px">最近</div>
+            <div style="display:flex;align-items:center"><span class="c-seg lite"><span class="it on">最近访问</span><span class="it">我分享的</span></span><span style="margin-left:auto"><span class="c-gb">全部类型<svg class="ico i12"><use href="#i-chevd"/></svg></span></span></div>
+            <table class="c-dt" style="margin-top:18px">
+              <thead><tr><th style="width:46%">名称</th><th>位置</th><th>最近访问</th></tr></thead>
+              <tbody>
+                <tr><td class="f"><span><span class="ficon" style="background:#4A7CF7">D</span>Q3 经营分析报告.docx</span></td><td>本地产物</td><td>10 分钟前</td></tr>
+                <tr><td class="f"><span><span class="ficon" style="background:#1E9E63">X</span>费用明细-2026Q3.xlsx</span></td><td>本地产物</td><td>1 小时前</td></tr>
+                <tr><td class="f"><span><span class="ficon" style="background:#E0873C">P</span>产品发布会.pptx</span></td><td>本地产物</td><td>昨天</td></tr>
+                <tr><td class="f"><span><span class="ficon" style="background:#8A8981">M</span>财务口径手册.md</span></td><td>团队空间</td><td>3 天前</td></tr>
+              </tbody>
+            </table>
+            <div class="c-tb" style="margin-top:28px">
+              <div class="hd"><svg class="ico i16" style="color:var(--warning)"><use href="#i-sparkle"/></svg>资料库的用法<span class="sp"><span class="c-pb gh">我知道了</span></span></div>
+              <div class="sub"><span class="sc"><span class="t">知识复利</span><span class="d">上一次的成果，就是下一次工作的起点。</span></span><span class="sc"><span class="t">人机协作</span><span class="d">划词、修订、评论，让 agent 安全改文档。</span></span><span class="nav"><svg class="ico i16"><use href="#i-chevr"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="mcap">三栏 260 + 272 + flex · 表头 40 / 行 48 · 与截图 4 的差异：无「与我共享」Tab（Q19 未决）、「所有者」列因全为「我」自动隐藏、配额条为本机占用而非 5GB 云配额 + 升级（Q17）</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="s10">
+  <div class="snum">10</div>
+  <div>
+    <h2>暗色推导</h2>
+    <p class="dek">截图只有浅色。暗色按同一套 token 名反相，<strong>保留暖偏</strong>（中性色带黄，避免冷蓝）。用 §07 顶部的 Light / Dark 开关可以把上面所有组件样例一起切过去看。</p>
+    <div class="tw"><table>
+      <thead><tr><th>Token</th><th>浅色</th><th>暗色</th><th>暗色下的比值</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td colspan="4">背景</td></tr>
+        <tr><td><code>--bg-app</code></td><td class="num">#F2F1EE</td><td class="num">#191917</td><td>—</td></tr>
+        <tr><td><code>--bg-canvas</code></td><td class="num">#FCFCFA</td><td class="num">#1F1F1D</td><td>—</td></tr>
+        <tr><td><code>--bg-surface</code></td><td class="num">#FFFFFF</td><td class="num">#262624</td><td>层级主要靠它与 canvas 的明度差</td></tr>
+        <tr><td><code>--bg-selected</code></td><td class="num">#E9E8E4</td><td class="num">#33332F</td><td>—</td></tr>
+        <tr><td><code>--bg-inverse</code></td><td class="num">#1D1D1B</td><td class="num">#F2F1EE</td><td>反转后分段控件变浅底深字</td></tr>
+        <tr class="grp"><td colspan="4">文字</td></tr>
+        <tr><td><code>--text-primary</code></td><td class="num">#1F1F1D</td><td class="num">#F0EFEA</td><td class="num pass">13.2 – 14.3</td></tr>
+        <tr><td><code>--text-secondary</code></td><td class="num">#6E6D68</td><td class="num">#A8A7A0</td><td class="num pass">6.3 – 6.8 · 比浅色更宽裕</td></tr>
+        <tr><td><code>--text-tertiary</code></td><td class="num">#9B9A94</td><td class="num">#77766F</td><td class="num">3.3 · 仍为非文本专用</td></tr>
+        <tr class="grp"><td colspan="4">边框与品牌</td></tr>
+        <tr><td><code>--border-subtle</code></td><td class="num">#E7E6E1</td><td class="num">#2F2F2C</td><td class="num fail">1.13 · 只做收边</td></tr>
+        <tr><td><code>--border-default</code></td><td class="num">#DCDBD5</td><td class="num">#3A3A36</td><td class="num fail">1.33 · 高对比模式提到 #5A5A54</td></tr>
+        <tr><td><code>--accent</code></td><td class="num">#2FA37A</td><td class="num">#41B891</td><td class="num pass">6.13 · 提亮后可写文字</td></tr>
+        <tr><td><code>--accent-weak</code></td><td class="num">#E8F5EE</td><td class="num">#18302A</td><td>语义 weak 底改为该色 12% 叠加</td></tr>
+      </tbody>
+    </table></div>
+    <div class="call warn">
+      <div class="h">暗色的两条与浅色不同的规则</div>
+      <p><strong>① 阴影全部失效。</strong>暗色下 <code>--shadow-*</code> 归零，层级由 <code>--bg-surface</code>(#262624) 与 <code>--bg-canvas</code>(#1F1F1D) 的明度差承担，描边只做收边 —— 因为 <code>--border-subtle</code> 在暗色下只有 1.13 : 1，指望它撑层级会得到一片糊。</p>
+      <p><strong>② 语义色的文字变体方向相反：</strong>浅色下是<b>加深</b>（<code>--danger-text</code> #A53227），暗色下是<b>提亮</b>（#F5A9A1）。同一个 token 名、相反的推导方向，这是实现时最容易写错的一处。</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  EvoWork 设计系统 · Token 与组件可视对照 · 草案 v0.1 · 2026-09-04<br>
+  文字规格真源：docs/design/01-ui-design-system.md · 本页为其渲染面，数值不一致时以文档为准<br>
+  UI 基线：产品评审附件 4 张截图 · 尺寸为反推重建，容差 ±2pt · 对比度按 WCAG 2.1 相对亮度公式实算<br>
+  待产品拍板：Q17 个人云存储 · Q18 积分与运营位 · Q19 团队空间形态 · Q20 助理定位（见 docs/design/README.md §5）
+</footer>
+
+</div>
+
+<script>
+(function(){
+  var l=document.getElementById('tl'), d=document.getElementById('td');
+  if(!l||!d) return;
+  function set(dark){
+    document.querySelectorAll('.ew').forEach(function(n){
+      if(dark) n.setAttribute('data-ew-theme','dark'); else n.removeAttribute('data-ew-theme');
+    });
+    l.setAttribute('aria-pressed', dark?'false':'true');
+    d.setAttribute('aria-pressed', dark?'true':'false');
+  }
+  l.addEventListener('click',function(){set(false)});
+  d.addEventListener('click',function(){set(true)});
+})();
+</script>
