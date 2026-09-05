@@ -15,6 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "node scripts/typecheck.mjs",
+    "build": "node scripts/build.mjs",
+    "build:renderer": "pnpm --filter @evowork/desktop run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run check:kernel-budget",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.0",
     "@types/node": "^22.19.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",

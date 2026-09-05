@@ -9,7 +9,8 @@ EvoWork 是全场景职场 AI 智能体工作台：用一句话下达需求，�
 - [docs/evowork-on-codex-design.md](docs/evowork-on-codex-design.md) —— 架构、决策 D1–D9、上游补丁清单、里程碑 M0–M9、风险 R1–R11、**产品决策记录 Q1–Q29（2026-09-03 与 09-05 已全部决策，无开放项，见第 10 章）**、内核代码路径索引（附录 A）
 - [docs/agent-platform-feature-list.md](docs/agent-platform-feature-list.md) —— 功能点清单（需求基线）
 - [docs/agent-platform-implementation-summary.md](docs/agent-platform-implementation-summary.md) —— 端云协同架构的观察与推断
-- [evowork/docs/status.md](docs/status.md) —— **当前开发状态**：做到哪了、什么验过了、什么卡住了。**接手前先读它**
+- [docs/status.md](docs/status.md) —— **当前开发状态**：做到哪了、什么验过了、什么卡住了。**接手前先读它**
+- [docs/build-and-deploy.md](docs/build-and-deploy.md) —— 编译与部署（含上游内核）。**每条命令都实际跑过；没跑通的写明「没验过」**
 
 本文件只写「跨会话必须遵守的规则」和「怎么找东西」。
 
@@ -183,6 +184,7 @@ evowork/
 ```bash
 # ── 本仓库（改代码前后各跑一次，它是唯一的验收口径）──
 pnpm run check                    # 格式 · lint（含 K2 边界规则）· 类型（含测试）· 测试 · K1 补丁预算
+pnpm run build                    # 四步装配：tsc → 复制入口与 vendor → esbuild 三个入口 → vite 渲染层
 pnpm run test -- --project store  # 只跑一个包
 node scripts/kernel-drift.mjs     # 上游漂移 + F1–F16 断言机器复核
 

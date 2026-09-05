@@ -1,0 +1,24 @@
+{
+  "//": "主进程与 preload 的编译配置。渲染层由 vite 从 TS 源码打包，不走这里 —— 两边都编一遍会产出一份没人用的 dist/renderer/*.js。",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": false,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts"],
+  "references": [
+    { "path": "../../packages/logging" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../services/store" },
+    { "path": "../../services/kernel-adapter" },
+    { "path": "../../services/scheduler" },
+    { "path": "../../services/policy" },
+    { "path": "../../services/ingest" },
+    { "path": "../../services/artifacts" }
+  ]
+}

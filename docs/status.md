@@ -1,7 +1,8 @@
 # 开发状态
 
-> **更新于 2026-09-05（第 8 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
-> 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)。
+> **更新于 2026-09-05（第 9 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
+> 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 
 ## 一句话

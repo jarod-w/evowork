@@ -23,3 +23,5 @@ patches/
 # 交给 prettier 会让两个门互相打架（格式化一次 → notices --check 立刻失败）。
 # 生成物的格式由生成器负责，不由 prettier 负责。
 THIRD_PARTY_NOTICES.md
+# hook 策略包的 vendor 产物：生成物，格式由生成它的编译器负责
+plugins/hooks/*/vendor/

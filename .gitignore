@@ -37,3 +37,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# hook 策略包的 vendor 产物（由 scripts/build.mjs 从 services/policy/dist 复制）
+plugins/hooks/*/vendor/
