@@ -17,10 +17,16 @@
 | Rust | **1.95.0**（`codex-rs/rust-toolchain.toml` 已锁） | 只构建内核时需要 | rustup（会按 toolchain 文件自动切） |
 | Python | ≥ 3.10（实测 3.12） | 办公扩展的宿主 | 系统自带 |
 | `pkg-config` + `libssl-dev` | — | **只构建内核时需要** | `apt install pkg-config libssl-dev` |
+| `bubblewrap` | — | 内核在 Linux 上的沙箱（**运行时**需要，不是构建时） | `apt install bubblewrap` |
 
-> **`pkg-config` 与 `libssl-dev` 是实测踩到的**：缺了它们 `cargo build` 会在 `openssl-sys`
-> 上失败，而错误信息出现在几百行输出的中间，`cargo` 最后只说 "build failed"。
-> macOS 上通常由 Homebrew 的 openssl 满足；Debian/Ubuntu 要显式装。
+> 这三个都是实测踩到的：
+>
+> - 缺 `pkg-config` / `libssl-dev` 时 `cargo build` 在 `openssl-sys` 上失败，而错误出现在
+>   几百行输出的中间，`cargo` 最后只说 "build failed"。macOS 上通常由 Homebrew 的 openssl
+>   满足；Debian/Ubuntu 要显式装。
+> - 缺 `bubblewrap` 时**构建不受影响**，但内核启动会往 stderr 报
+>   `Codex could not find bubblewrap on PATH`，然后回落到自带的那个。
+>   这条在容器里尤其容易漏 —— 它不阻断启动，所以很容易被当成噪音。
 
 只用产品、不改内核的话，**Rust 与那两个系统包都不需要** —— 直接用发布的内核二进制即可（§2.3）。
 
@@ -36,17 +42,49 @@ cargo build -p codex-app-server              # 开发用
 cargo build -p codex-app-server --release    # 分发用
 ```
 
-产物：`target/{debug,release}/codex-app-server`。
+产物：`target/{debug,release}/codex-app-server`。**debug 构建出来的二进制约 1.1 GB**
+（带完整调试信息，属正常），`target/` 总计约 7.7 GB。
 
 **只构建这一个 crate**，不要 `cargo build --workspace`：内核工作区有 200+ 个 crate，
 而 EvoWork 只对话 app-server 这一个进程（K2）。全量构建会多花几十分钟，且构建出的
 TUI / CLI 我们一个都不用。
 
-首次构建会拉几百个依赖并编译，**耗时以小时计**：本机（多核容器）跑到 30 分钟时
-`target/` 已经 5.8 GB 还没产出二进制。留足时间与磁盘（**准备 10 GB 以上**），
+首次构建会拉几百个依赖并编译，**耗时以小时计**：本机（多核容器）实测约 40 分钟，
+其间 `target/` 一路涨到 7.7 GB。留足时间与磁盘（**准备 10 GB 以上**），
 别在 CI 里给它设 30 分钟超时。增量构建通常在一分钟内。
 
 在没有改内核的场景下，这一整节都可以跳过 —— 见 §2.3。
+
+### 2.1.1 验证它能用
+
+```bash
+./target/debug/codex-app-server --help      # 能打出用法就说明构建没问题
+```
+
+再验一次真正重要的那条 —— **K2 边界**：给它一行 `initialize` 请求，看它回什么。
+注意 **stdin 要保持打开**：管道一关它就退出，你会看到"没有响应"而误以为握手失败。
+
+```bash
+node -e '
+const {spawn}=require("node:child_process");
+const p=spawn("./target/debug/codex-app-server",[],{
+  env:{...process.env, CODEX_HOME:"/tmp/probe-home"}, stdio:["pipe","pipe","ignore"]});
+p.stdout.on("data",d=>{console.log(String(d)); p.kill(); process.exit(0);});
+p.stdin.write(JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",
+  params:{clientInfo:{name:"evowork-probe",title:"EvoWork",version:"0.0.0"},
+          capabilities:{experimentalApi:true}}})+"\n");
+setTimeout(()=>{console.log("超时"); p.kill(); process.exit(1);}, 20000);'
+```
+
+实测返回：
+
+```json
+{"id":1,"result":{"userAgent":"evowork-probe/0.0.0 (...)","codexHome":"/tmp/probe-home",
+                  "platformFamily":"unix","platformOs":"linux"}}
+```
+
+`codexHome` 回显的是我们给的 `CODEX_HOME` —— 这正是桌面壳把内核家目录指到
+`~/.evowork/kernel/` 的机制（K5：只改对外可见字符串，内部环境变量名不动）。
 
 ### 2.2 摸协议行为（改适配层之前建议先跑）
 
@@ -242,6 +280,8 @@ macOS（dmg / zip，Q26 首发）· Windows（nsis）· Linux（AppImage / deb�
 | Electron `FATAL ... Running as root` | 容器里以 root 跑 | 加 `--no-sandbox`（仅限容器/CI） |
 | `require('electron')` 报 "failed to install correctly" | pnpm 拦了 postinstall，运行时才发现 | `pnpm rebuild electron`；确认 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 里有它 |
 | 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 见 §3.3；或用 `EVOWORK_OFFICE_PYTHON` 指定 |
+| 内核 stderr 报 `could not find bubblewrap` | Linux 沙箱组件没装 | `apt install bubblewrap`。不装它会回落到自带的那个，**不阻断启动**，所以容易被当成噪音漏掉 |
+| 手工发 `initialize` 没有响应 | **stdin 被关掉了** —— 管道一关内核就退出 | 保持 stdin 打开，见 §2.1.1 的写法 |
 | 策略 hook 看起来没生效 | 忘了 vendor 步骤，hook 找不到实现会**放行并往 stderr 报错** | 跑 `pnpm run build`；真正的兜底在沙箱层，不在 hook 上 |
 
 ---
@@ -256,9 +296,11 @@ macOS（dmg / zip，Q26 首发）· Windows（nsis）· Linux（AppImage / deb�
 | 代码签名与公证 | 缺证书 | U4 |
 | Windows 上的隔离强度 | 缺 Windows 机器；当前按保守侧走（停用完全访问） | U5 |
 | systemd 单元 | 本机没有以服务方式跑过，只跑过前台进程 | — |
-| **内核 `cargo build` 跑完** | 起了两次：第一次因缺 `pkg-config` / `libssl-dev` 失败（那条已修进 §1），第二次装好依赖后**编译超过一小时仍未结束**，`target/` 到 6.5 GB。所以 §2 的命令与先决条件是验过的，**"它能编完"这件事还没验** | §2 |
+已验证的：
 
-已验证的：`pnpm run check`（840 测试）· `pnpm run build` 四步 ·
-网关单文件启动 + 能力端点 401/200 + **对 DeepSeek 的端到端流式请求** ·
-四个办公技能真实产出 pptx / docx / xlsx / png（xlsx 里确认是 `=B2*C2` 而不是算好的数）·
-策略 hook 加载 vendor 后正确拦截 `~/.ssh` · Electron 二进制 `--version` 可运行。
+- **内核** `cargo build -p codex-app-server` 编完（约 40 分钟，二进制 1.1 GB），
+  `--help` 可运行，**`initialize` 握手返回正确、`codexHome` 回显我们给的 `CODEX_HOME`**
+- `pnpm run check`（840 测试）· `pnpm run build` 四步
+- 网关单文件启动 + 能力端点 401/200 + **对 DeepSeek 的端到端流式请求**
+- 四个办公技能真实产出 pptx / docx / xlsx / png（xlsx 里确认是 `=B2*C2` 而不是算好的数）
+- 策略 hook 加载 vendor 后正确拦截 `~/.ssh` · Electron 二进制 `--version` 可运行
