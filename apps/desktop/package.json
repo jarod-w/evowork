@@ -2,8 +2,11 @@
   "name": "@evowork/desktop",
   "version": "0.0.0",
   "private": true,
+  "author": "EvoWork",
   "description": "桌面壳 + 三栏 UI（Electron + React + Vite）；Q1=A 后它同时是本机服务的宿主",
   "type": "module",
+  "//main": "electron-builder 的 directories.app 指向本目录，这个字段就是打包后应用的入口。改名要同步 scripts/build.mjs 第 ② 步。",
+  "main": "dist/main/electron-entry.mjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -29,7 +32,6 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^33.4.11",
     "jsdom": "^27.0.0",
     "vite": "^7.1.9",
     "vitest": "^3.2.4"

@@ -18,8 +18,16 @@
 | Python | ≥ 3.10（实测 3.12） | 办公扩展的宿主 | 系统自带 |
 | `pkg-config` + `libssl-dev` | — | **只构建内核时需要** | `apt install pkg-config libssl-dev` |
 | `bubblewrap` | — | 内核在 Linux 上的沙箱（**运行时**需要，不是构建时） | `apt install bubblewrap` |
+| Electron | **≥ 35**（当前 44.2.0，带 Node 24.20） | 桌面壳与打包 | `pnpm install`（装在**仓库根**，见 §6） |
 
-> 这三个都是实测踩到的：
+> **Electron 的下限不是随便定的**：`services/store` 用 `node:sqlite`，那是 Node **22.5** 起才有的
+> 内置模块，而 **Electron 的 Node 版本比同期 Node LTS 落后一到两代** —— Electron 33 带的是
+> Node 20.18.3，主进程 bundle 在 `import` 阶段就抛 `ERR_UNKNOWN_BUILTIN_MODULE`，
+> 表现是**装得上、点了没反应、一行日志都没有**（2026-09-06 实测，见 §6）。
+> 升降 Electron 之前先验一句：
+> `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "require('node:sqlite')"`。
+
+> 下面这三个都是实测踩到的：
 >
 > - 缺 `pkg-config` / `libssl-dev` 时 `cargo build` 在 `openssl-sys` 上失败，而错误出现在
 >   几百行输出的中间，`cargo` 最后只说 "build failed"。macOS 上通常由 Homebrew 的 openssl
@@ -332,8 +340,13 @@ pnpm run package    # = node scripts/package.mjs；--dry-run 只跑前置检查
 
 `files` 里有一条 `!node_modules`：三个入口都是自包含产物（§3.1），运行时唯一的外部
 require 是 `electron` 本身，而 electron-builder 默认会把整棵生产依赖树塞进 `app.asar` ——
-实测 80MB 里 7390 个条目是 node_modules、我们自己的只有 75 个，去掉后 dmg 从 115MB 降到 95MB。
+实测 `app.asar` 80MB 里 7390 个条目是 node_modules、我们自己的只有 75 个，
+去掉后同口径的 dmg 从 115MB 降到 95MB（Electron 33 + 占位内核时量的）。
 **将来引入原生模块（`.node`）时必须把它加回来**，那种依赖打不进 bundle。
+
+**2026-09-06 的真实数字**（macOS arm64，Electron 44.2.0 + 217MB 内核二进制）：
+dmg / zip 各 **197MB**，对 220MB 预算只剩 23MB 余量。内核 release 档带着符号
+（`strip = false`，上游注释说留给打包阶段归档后再剥），真要压体积第一刀应该切在那里。
 
 ### 5.5 首次运行
 
@@ -378,7 +391,15 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | 内核 stderr 报 `could not find bubblewrap` | Linux 沙箱组件没装 | `apt install bubblewrap`。不装它会回落到自带的那个，**不阻断启动**，所以容易被当成噪音漏掉 |
 | 手工发 `initialize` 没有响应 | **stdin 被关掉了** —— 管道一关内核就退出 | 保持 stdin 打开，见 §2.1.1 的写法 |
 | electron-builder 报 `Cannot compute electron version from installed node modules` | 它检测到 pnpm workspace 后把 projectDir 定在**仓库根**，去那里找 `node_modules/electron`；而 electron 装在 `apps/desktop` 下 | `electron` 声明在**根** `package.json` 的 devDependencies（2026-09-05 从 apps/desktop 挪过来的原因就是这个） |
-| 打包出的 App 双击没反应；命令行直接跑**退出码 0、一行输出都没有** | 主进程 bundle 在 `import` 阶段就抛了，异常没来得及落到 stderr。当前已知的一处：`services/store` 用 `node:sqlite`，而 Electron 33 带的是 **Node 20.18.3**，没有这个内置模块 | `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "import('./apps/desktop/dist/main/bootstrap.bundle.js').catch(e=>console.log(e.code,e.message))"` 会把真正的错误打出来 |
+| 打包出的 App 双击没反应：主进程活着、**零个 Helper 子进程**、stderr 一行不打 | 主进程 bundle 在 `import` 阶段就抛了 —— `bootstrap()` 从没执行，窗口从没创建，而 Electron 的主进程没有窗口也不会自己退。**2026-09-06 真踩到过一次**：`services/store` 用 `node:sqlite`，而当时钉的 Electron 33 带的是 Node 20.18.3，没有这个内置模块（已随 Electron 升到 44 解决，见 §1） | `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "import('./apps/desktop/dist/main/bootstrap.bundle.js').catch(e=>console.log(e.code,e.message))"` 会把真正的错误打出来。判"起没起来"别看进程在不在，看 `pgrep -f 'EvoWork Helper'` 有没有子进程 |
+| 内核启动即退，且**什么都没说** | 内核要求它的家目录（`~/.evowork/kernel/`）**已存在**，它不会自己建；而我们默认丢弃内核 stderr（launcher.ts 写了为什么） | `createServiceHost` 里的 `ensurePaths` 负责建。手工排查时先 `ls ~/.evowork/` |
+| 窗口正常打开、标题栏正常，**整页全白**，主进程日志一切正常 | 打包后走 `loadFile`（file://），而 vite 默认 `base: '/'` 生成的 `<script src="/assets/…">` 在 file:// 下指向**文件系统根目录** | `vite.config.ts` 里 `base: './'`；`apps/desktop/test/packaging.test.ts` 钉住了。排查手法见下方 |
+| 界面出来了，但一操作就报 `No handler registered for 'evowork:xxx'` | `bootstrap` 只注册了 `askApproval`，preload 声明的六个渲染动作一个都没接 —— M2 的接线缺口，**不是打包问题** | 未修，见 [status.md](status.md) |
+
+> **怎么查渲染层**：主进程日志看不到渲染进程里的事。给 `BrowserWindow` 挂
+> `console-message` / `did-fail-load` / `did-finish-load`，并在 `did-finish-load` 里
+> `executeJavaScript` 取 `#root` 的 innerHTML 长度与 `typeof window.evowork` ——
+> 这两个数字直接区分开"JS 没加载"、"加载了但渲染为空"、"渲染了但 preload 桥没通"。
 | 装好的应用启动即报找不到内核 | `build/kernel/` 下的目录名写成了 `darwin-arm64`。`extraResources` 匹配不到时**不报错**，只拷一个空目录 | 用 `mac-arm64`（§5.2）；`pnpm run package` 会先拦这一条 |
 | 策略 hook 看起来没生效 | 忘了 vendor 步骤，hook 找不到实现会**放行并往 stderr 报错** | 跑 `pnpm run build`；真正的兜底在沙箱层，不在 hook 上 |
 
@@ -392,6 +413,7 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | --- | --- | --- |
 | `electron-builder` 出 Windows / Linux 包 | 缺这两个平台的构建机（macOS 的实测体积见 §5.4） | M9 · §5.7 |
 | 代码签名与公证 | 缺证书 | U4 |
+| 应用图标 | 还没有 `build/icon.icns` —— 打包时用的是 **Electron 默认图标**（electron-builder 只 warn，不失败） | Q25 品牌 |
 | Windows 上的隔离强度 | 缺 Windows 机器；当前按保守侧走（停用完全访问） | U5 |
 | systemd 单元 | 本机没有以服务方式跑过，只跑过前台进程 | §5.2 |
 | 网关放到服务器上：`HOST=0.0.0.0` + 反向代理终止 TLS | 只跑过明文 `127.0.0.1` 的前台进程 | §5.2 |
@@ -401,8 +423,16 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 
 已验证的：
 
-- **内核** `cargo build -p codex-app-server` 编完（约 40 分钟，二进制 1.1 GB），
-  `--help` 可运行，**`initialize` 握手返回正确、`codexHome` 回显我们给的 `CODEX_HOME`**
+- **内核** `cargo build -p codex-app-server` 编完（Linux debug 约 40 分钟、二进制 1.1 GB；
+  **macOS arm64 release 36 分钟、二进制 217 MB** —— release 档开着 `lto = "thin"`，
+  最后一个 crate 的链接期优化不打进度，看着像卡住），`--help` 可运行，
+  **`initialize` 握手返回正确、`codexHome` 回显我们给的家目录**（2026-09-06 在 macOS 上复验）
+- **macOS arm64 的完整打包与启动**（2026-09-06）：`pnpm run package` 出 dmg / zip 各 197MB，
+  `hdiutil attach` 可挂载；装出的 App 启动后 **3 个 Helper 子进程 + 1 个内核进程**，
+  干净机器上 `~/.evowork/{kernel,logs,evowork.db}` 自动建出、两个迁移器跑完、
+  `desktop.host.started` 落日志，**渲染层出界面**（`#root` 有内容、`window.evowork` 是对象）。
+  这一次跑通改掉了五个"装得上、看不出哪里错了"的缺陷，见 [status.md](status.md)。
+  **仍不可用**：六个渲染动作的 IPC handler 没接，界面能看不能用
 - `pnpm run check`（840 测试）· `pnpm run build` 四步
 - 网关单文件启动 + 能力端点 401/200 + **对 DeepSeek 的端到端流式请求**
 - 四个办公技能真实产出 pptx / docx / xlsx / png（xlsx 里确认是 `=B2*C2` 而不是算好的数）

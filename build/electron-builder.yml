@@ -10,6 +10,10 @@ productName: EvoWork
 copyright: Copyright © 2026 EvoWork
 
 directories:
+  # 应用清单是 apps/desktop/package.json（name/version/main/electron 版本都从那里读）。
+  # `files` 的路径相对本目录；`extraResources.from` 与 `output` 相对仓库根 —— 这是
+  # electron-builder 的既定语义，不是笔误。
+  app: apps/desktop
   output: dist/release
   buildResources: build
 
@@ -18,9 +22,17 @@ files:
   - 'dist/preload/**'
   - 'dist/renderer/**'
   - '!**/*.map'
+  # 不带 node_modules。三个入口都是自包含产物（scripts/build.mjs 第 ③/④ 步：
+  # 主进程与 preload 走 esbuild、渲染层走 vite），运行时唯一的外部 require 是 `electron`
+  # 本身。electron-builder 默认会把整棵生产依赖树塞进 app.asar —— 实测 80MB 里
+  # 7390 个条目是 node_modules、我们自己的只有 75 个。**加回来之前先确认没有原生模块**：
+  # 有 .node 的依赖必须留在 node_modules 里，打不进 bundle。
+  - '!node_modules'
 
 extraResources:
-  # 执行内核。三平台各自的二进制在 CI 里构建后放进 build/kernel/<platform>/
+  # 执行内核。三平台各自的二进制在 CI 里构建后放进 build/kernel/<os>-<arch>/。
+  # `${os}` 展开的是 electron-builder 的 buildConfigurationKey，即 **mac / win / linux**
+  # （不是 node 的 darwin/win32）—— 目录名照它建，`scripts/package.mjs` 会在打包前校验。
   - from: build/kernel/${os}-${arch}
     to: kernel
   # 随产品分发的扩展点内容（K3）：技能包 · 策略包 · 配置模板

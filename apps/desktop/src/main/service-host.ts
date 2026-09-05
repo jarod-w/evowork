@@ -23,7 +23,7 @@
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
 import type { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -70,6 +70,30 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
   };
 }
 
+/**
+ * 建目录。**必须在开库与起内核之前**。
+ *
+ * 在此之前仓库里没有任何一处创建 `~/.evowork` —— 开发时它一直存在（是人手工建的），
+ * 所以这条只在**干净机器上第一次运行**时表现出来，而那恰恰是用户走的那条路径。
+ *
+ * 两个依赖它的地方，失败方式都不指向原因：
+ *
+ *   · sqlite 库在 `~/.evowork/evowork.db`，父目录不存在时 `openStore` 直接抛；
+ *   · **内核要求它的家目录已存在，它不会自己建** —— 2026-09-06 在 macOS 上对
+ *     release 二进制实测：目录不存在时它往 stderr 打一行然后以退出码 1 结束。
+ *     而我们默认丢弃内核 stderr（launcher.ts 里写了为什么），所以现象是
+ *     "内核起不来，且什么都没说"。（那个环境变量叫什么是适配层的知识，
+ *     这个文件里连提都不该提 —— service-host.test.ts 有一条测试在扫它。）
+ *
+ * `modes` / `scenarios` 不在这里建：它们是随产品分发的**内容**目录，
+ * 读取方用 `existsSync` 兜底，凭空建一个空目录反而会掩盖"内容没装上"。
+ */
+export function ensurePaths(paths: EvoworkPaths): void {
+  for (const dir of [paths.home, paths.logs, paths.kernelHome]) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
+
 export interface ServiceHostOptions {
   readonly paths: EvoworkPaths;
   /** app-server 可执行文件路径。M9 打包时随内核二进制一起分发 */
@@ -110,7 +134,7 @@ const RECONCILE_INTERVAL_MS = 10 * 60_000;
 /**
  * 启动本机服务宿主。
  *
- * 顺序是刻意的：**先开库、再起内核**。库开不了（权威表迁移失败）时要中止启动
+ * 顺序是刻意的：**先建目录、再开库、最后起内核**。库开不了（权威表迁移失败）时要中止启动
  * （09 §4.6：宁可启动失败也不丢定时任务定义），此时不该已经起了一个内核进程在那儿等着。
  */
 export function createServiceHost(options: ServiceHostOptions): ServiceHost {
@@ -124,7 +148,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       base: { appVersion: options.appVersion, platform: process.platform },
     });
 
-  // ① 先开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
+  // ⓪ 先建目录 —— 开库与起内核都要求它们已经存在（见 ensurePaths 的注释）
+  ensurePaths(options.paths);
+
+  // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
   const store = openStore({ path: options.paths.db, logger });
 
   const readInstructions = (file: string): string | undefined => {

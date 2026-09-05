@@ -5,7 +5,7 @@
  * 先开库再起内核、库开不了就中止启动、崩溃后有恢复、UI 事件真的推给渲染进程、
  * 审批真的走到 UI 再回内核。这些只能在宿主这一层测 —— 拆开看每个模块都是对的。
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -124,6 +124,51 @@ describe('路径布局（09 §7）', () => {
     // EvoWork 自己的配置与内核配置分开放（09 §7：不混进 config.toml）
     expect(paths.modes).toBe('/home/u/.evowork/modes');
     expect(paths.scenarios).toBe('/home/u/.evowork/scenarios');
+  });
+});
+
+describe('干净机器上的第一次运行', () => {
+  it('宿主构造时就把 home / logs / kernel 建出来', () => {
+    // 干净目录：只有 mkdtemp 建的 root，下面什么都没有
+    const fresh = mkdtempSync(join(tmpdir(), 'evowork-fresh-'));
+    const paths = resolvePaths(join(fresh, '.evowork'));
+    expect(existsSync(paths.kernelHome)).toBe(false);
+
+    host = createServiceHost({
+      paths,
+      appServerPath: '/fake/codex-app-server',
+      appVersion: '0.0.0-test',
+      emitToRenderer: () => undefined,
+      askRenderer: async () => ({ decision: 'accept' }),
+      spawnFn: (() => new FakeChild()) as unknown as HostOptions['spawnFn'],
+    } as HostOptions);
+
+    // 内核**要求 CODEX_HOME 已存在**，不存在时它直接退出，而我们默认丢弃它的 stderr ——
+    // 少了这一步，现象是"内核起不来且什么都没说"（见 ensurePaths 的注释）
+    expect(existsSync(paths.kernelHome)).toBe(true);
+    expect(existsSync(paths.logs)).toBe(true);
+    // 库能开出来本身就说明父目录在（sqlite 不会替你建目录）
+    expect(host.store.migrations.length).toBeGreaterThan(0);
+
+    rmSync(fresh, { recursive: true, force: true });
+  });
+
+  it('不凭空建 modes / scenarios —— 空目录会掩盖"随包内容没装上"', () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'evowork-fresh-'));
+    const paths = resolvePaths(join(fresh, '.evowork'));
+    host = createServiceHost({
+      paths,
+      appServerPath: '/fake/codex-app-server',
+      appVersion: '0.0.0-test',
+      emitToRenderer: () => undefined,
+      askRenderer: async () => ({ decision: 'accept' }),
+      spawnFn: (() => new FakeChild()) as unknown as HostOptions['spawnFn'],
+    } as HostOptions);
+
+    expect(existsSync(paths.modes)).toBe(false);
+    expect(existsSync(paths.scenarios)).toBe(false);
+
+    rmSync(fresh, { recursive: true, force: true });
   });
 });
 

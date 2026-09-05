@@ -40,7 +40,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测） | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 策略包签名下发（R11）· 审计 UI · **Windows 隔离强度结论（见 U5）** |
 | **P3-1** M5 自动化 | 🟢 | **带命名时区的 cron**（含 DST 两个边界）· misfire 三策略与落库顺序 · 失败分类与自动暂停 · 设备绑定与迁移 · 自然语言触发解析（不调模型）· 调度循环 | 与内核的接线（`startRun` 现在是注入端口）· `wake_system` 的三平台唤醒 · 自动化的 UI（07 的表单与历史页） |
 | **P3-3** M8 可视化等 | 🟢 | **Visualizer**（fence 识别 · SVG 白名单清洗 · chart spec 校验 · 沙箱 iframe）· 产物识别三信号与版本 · 分享授权流（Q10 六条规则）· 资料库视图与两种删除语义 · 本机磁盘占用 | 图表库与 mermaid 的实际接线（属 M9 打包）· 资料库三栏 UI · 分享的上传实现与云端托管 · `fs/watch` 接线 |
-| **P3-2** M9 打包 | 🟡 | Electron 入口（10 行，唯一 import electron 的文件）· electron-builder 配置（三平台 + 差量更新）· macOS entitlements · **体积预算与档位边界检查**（R10）· **无证书时降级为未签名并把标注写进文件名**（U4） | 实际安装 `electron` 依赖并跑通打包 · 签名公证（卡 P0-5 证书）· 自动更新服务端 · EvoWork CLI 随包（Q13） |
+| **P3-2** M9 打包 | 🟢 | Electron 入口 · electron-builder 配置（三平台 + 差量更新）· macOS entitlements · **体积预算与档位边界检查**（R10）· **无证书时降级为未签名并把标注写进文件名**（U4）· **打包驱动 `scripts/package.mjs`**（把 package-plan 的四条规则接上）· **2026-09-06：macOS arm64 真实打包跑通并启动验证** | 签名公证（卡 P0-5 证书）· 自动更新服务端 · EvoWork CLI 随包（Q13）· 应用图标（现在用的是 Electron 默认图标）· Windows / Linux 未在真机打过 |
 
 图例：✅ 完成 · 🟢 核心完成，剩余项已列 · 🟡 部分 · ⬜ 未开始
 
@@ -82,6 +82,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | ✅ **F1–F18 内核事实** | 在基线 `89a4eec6da` 上逐条复核，6 处行号已订正 |
 | ❌ **GLM 的产物质量**（U1） | **没验。** 上面验的是协议语义，不是它 PPT 写得好不好。需要 08 §5.4 的三个任务人工评分 |
 | ❌ **misfire 补偿的真机体验**（U3） | **没验。** 需要真机关机一夜再唤醒；单测证明不了 OS 行为 |
+| ✅ **macOS 打包与启动**（M9） | **2026-09-06 在 macOS arm64 实测**：`pnpm run package` 出 dmg/zip 各 197MB，dmg 可挂载；装出的 App 启动后 3 个 Helper 子进程 + 1 个内核进程，`desktop.host.started` 落日志。**过程中修掉三个只有真跑才会暴露的缺陷**，见下表 |
 | ❌ **签名 / 公证链路**（U4） | **没验。** 卡 P0-5 的证书 |
 | ❌ **Windows 隔离强度**（U5，新增） | **没验。** 需要一台 Windows 机器实测 `windows-sandbox-rs` 的隔离边界。当前 `WINDOWS_ISOLATION = 'unknown'`，行为**按保守侧走**（停用完全访问 + 能力页如实说"还没评估"）—— 默认按"足够"走的话，结论一旦是"不足"，中间这段时间 Windows 用户是在一个我们以为安全、实际未知的环境里跑完全访问 |
 | ❌ **`maxContextTokens`** | **没验。** 要塞满上下文才能测；五个型号都仍在能力表的 `unverified` 列表里 |
@@ -154,6 +155,40 @@ DST 一年只发生两次，错了要等半年才有人报 —— 这正是"写�
 
 前两条尤其值得记：它们各自的单元测试全绿，因为**每个模块单独看都是对的**。
 
+### 真跑一次打包改出的五个缺陷（**全部是"装得上、看不出哪里错了"**）
+
+2026-09-06 第一次在 macOS 上真正打出 dmg 并双击它。五条缺陷此前都存在于仓库里，
+**没有一条能被现有测试抓到** —— 它们的共同特征是失败时不报错、不退出、不打日志。
+现在 `apps/desktop/test/packaging.test.ts` 把其中四条钉住了：
+
+| 缺陷 | 表现 | 已改 |
+| --- | --- | --- |
+| **ESM 入口的顶层 `await` 与 `whenReady()` 死锁** | 入口模块求值必须先结束 Electron 才发 `ready`，而 `bootstrap()` 第一件事就是 `await whenReady()` —— 互相等。现象是**进程活着、零个 Helper 子进程、一行输出都没有**，和"崩了"完全区分不开 | 入口不再顶层 await，promise 放走并 `.catch` 后 `app.exit(1)`：启动失败必须响亮 |
+| **preload 根本没有入口** | `preload/index.ts` 只导出 `installBridge`，**从不自调用**（那是刻意的，为了让"暴露了哪些方法"可断言）。打包出的 preload 因此是一段谁也不执行的代码：`window.evowork` 不存在，渲染层每次调用都是 `undefined is not a function`，而主进程一切正常 | 新增 `preload-entry.cjs`。必须是 **CJS**：窗口开着 `sandbox: true`，而 Electron 的沙箱化 preload 不支持 ESM |
+| **没有任何地方创建 `~/.evowork`** | 开发机上它一直存在（人手工建的），所以这条只在**干净机器第一次运行**时出现。内核要求它的家目录已存在、不存在就退出，而我们默认丢弃内核 stderr → "内核起不来且什么都没说" | `createServiceHost` 里加 `ensurePaths`，**在开库与起内核之前**；两条测试钉住 |
+| **`node:sqlite` 与 Electron 版本冲突** | `services/store` 用 `node:sqlite`（Node 22.5+），而当时钉的 Electron 33 带 Node 20.18.3 → 主进程 bundle 在 import 阶段抛 `ERR_UNKNOWN_BUILTIN_MODULE`，同样是静默退出 | Electron 升到 44.2.0（Node 24.20）。**Electron 的 Node 比同期 LTS 落后一到两代**，这是选内置模块时要先查的一件事 |
+| **vite 的 `base` 是绝对路径** | 打包后走 `loadFile`（file://），而 `base: '/'` 生成的 `<script src="/assets/…">` 在 file:// 下指向**文件系统根目录** → 404。现象是**窗口正常打开、标题栏正常、整页全白**，主进程日志一切正常，渲染进程也不报错 | `vite.config.ts` 设 `base: './'`。这一条是装完 dmg 双击才发现的 —— 前四条在命令行就能复现，它不行 |
+
+外加两条打包配置问题：`electron` 装在 `apps/desktop` 下导致 electron-builder 算不出版本号
+（它检测到 pnpm workspace 后从**仓库根**解析），已挪到根；`app.asar` 里 7390 个条目是
+用不上的 `node_modules`（三个入口都是自包含 bundle），排除后 dmg 从 115MB 降到 95MB。
+
+**方法论上值得记的两条**：
+
+① 排查中途 `ELECTRON_RUN_AS_NODE=1` 泄漏进了 shell 环境，导致后续几次"启动失败"
+其实是以纯 Node 在跑，得出的结论全是假的。判"应用起没起来"不要看主进程在不在 ——
+看 `pgrep -f 'EvoWork Helper'` 有没有子进程。
+
+② **命令行验证到不了终点**。前四条在命令行就能复现；第五条（全白）必须装完 dmg 双击。
+最有效的探针是给 `BrowserWindow` 挂 `console-message` / `did-fail-load` / `did-finish-load`，
+在 `did-finish-load` 里 `executeJavaScript` 取 `#root` 的 innerHTML 长度与 `typeof window.evowork` ——
+这两个数字直接区分开"没加载 JS"、"加载了但渲染为空"、"渲染了但桥没通"。
+
+**还没修的**：`bootstrap` 只注册了 `askApproval` 一个 IPC handler，而 preload 声明了
+六个渲染动作（`send` / `interrupt` / `decideApproval` / `rowAction` / `refreshVisible` /
+`listScenarios`）。界面能渲染，但**任何用户操作都会得到 `No handler registered`**。
+这是 M2 的接线缺口，不是打包问题 —— 只是从没被真正拉起过，所以一直没人发现。
+
 ### 三家实测改出的缺陷（都是"不报错但行为错"）
 
 1. **Kimi 的 404 会被内核无限重试** —— 它的错误体只有 `type` 没有 `code`，而映射只看 `code`；查不到就落到"原样返回"，内核对映射不上的错误一律当可重试。已修（`code` 缺失回退到 `type` + 401/403/404 列入永久状态码）。
@@ -181,7 +216,7 @@ DST 一年只发生两次，错了要等半年才有人报 —— 这正是"写�
 2. ~~P2-2 M4~~ **核心已完成**（2026-09-05）。剩 Windows 隔离结论（U5，需真机）与策略包签名下发（R11）。
 3. ~~P3-1 M5~~ **核心已完成**（2026-09-05）。剩与内核接线、`wake_system`、以及 07 的自动化 UI。
 4. ~~P3-3 M8~~ **核心已完成**（2026-09-05）。剩图表库/mermaid 接线（随 M9 打包）、资料库三栏 UI、分享的上传实现。
-5. **P3-2 M9 打包**：入口与配置已就位，剩下的是**装上 `electron` 依赖跑通一次真实打包**，以及签名公证（卡 P0-5 证书，U4）。
+5. ~~P3-2 M9 打包~~ **macOS 侧已跑通**（2026-09-06）。剩签名公证（卡 P0-5 证书，U4）、应用图标、以及 Windows / Linux 的真机打包。
 
 ---
 

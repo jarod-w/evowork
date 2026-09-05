@@ -90,4 +90,14 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+
+  // CommonJS 文件按定义就只能用 require —— 仓库里只有一个：`preload-entry.cjs`。
+  // 它必须是 CJS 而不是我们偷懒：窗口开着 sandbox: true，而 Electron 的沙箱化 preload
+  // 不支持 ESM（见那个文件的头注释）。这个豁免只解开 require，其余规则照常。
+  {
+    files: ['**/*.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );

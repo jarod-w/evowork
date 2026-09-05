@@ -72,16 +72,23 @@ console.log('\n③ 打包可独立运行的入口（esbuild）');
  *     一直是个麻烦，打包之后它就只是一个普通文件。
  */
 const BUNDLES = [
-  { entry: 'services/gateway/src/main.ts', out: 'dist/gateway/main.js', platform: 'node' },
+  { entry: 'services/gateway/src/main.ts', out: 'dist/gateway/main.js', format: 'esm' },
   {
     entry: 'apps/desktop/src/main/bootstrap.ts',
     out: 'apps/desktop/dist/main/bootstrap.bundle.js',
-    platform: 'node',
+    format: 'esm',
   },
   {
-    entry: 'apps/desktop/src/preload/index.ts',
-    out: 'apps/desktop/dist/preload/index.bundle.js',
-    platform: 'node',
+    /*
+     * preload 的入口是 `preload-entry.cjs` 而不是 `index.ts` —— 后者只导出
+     * `installBridge`，没有自调用，单独打包出来是一段谁也不执行的代码（见那个 .cjs 的头注释）。
+     *
+     * 格式必须是 **cjs**：窗口开着 `sandbox: true`，而 Electron 的沙箱化 preload 不支持 ESM。
+     * 后缀跟着写 `.cjs`，因为 apps/desktop 是 `"type": "module"`。
+     */
+    entry: 'apps/desktop/src/preload/preload-entry.cjs',
+    out: 'apps/desktop/dist/preload/index.bundle.cjs',
+    format: 'cjs',
   },
 ];
 for (const bundle of BUNDLES) {
@@ -89,8 +96,8 @@ for (const bundle of BUNDLES) {
     bundle.entry,
     '--bundle',
     `--outfile=${bundle.out}`,
-    `--platform=${bundle.platform}`,
-    '--format=esm',
+    '--platform=node',
+    `--format=${bundle.format}`,
     '--target=node22',
     /*
      * **只把 electron 排除在外**，workspace 包必须打进来 ——
@@ -118,5 +125,5 @@ console.log('   dist/gateway/main.js                             网关（单文
 console.log('   apps/desktop/dist/renderer/                      渲染层（vite）');
 console.log('   apps/desktop/dist/main/electron-entry.mjs        Electron 入口');
 console.log('   apps/desktop/dist/main/bootstrap.bundle.js       主进程（单文件）');
-console.log('   apps/desktop/dist/preload/index.bundle.js        preload（单文件）');
+console.log('   apps/desktop/dist/preload/index.bundle.cjs       preload（单文件，CJS）');
 console.log('   plugins/hooks/evowork-policy/vendor/policy.mjs   策略包');
