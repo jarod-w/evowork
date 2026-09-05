@@ -249,6 +249,8 @@ export const LAYOUT = {
   promoCardHeight: 68,
   /** 04 §7：沙箱 iframe 高度上限，超出内部滚动 */
   visualizerFrameHeight: 600,
+  /** §5.31 Toast 宽 320 */
+  toastWidth: 320,
 } as const;
 
 /** 品牌层（K5：换品牌只改这四项）。 */
