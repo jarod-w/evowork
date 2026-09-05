@@ -1,0 +1,29 @@
+---
+description: 办公技能与策略包。结构化生成；报错不含用户内容；技能格式零改动。
+globs: plugins/**/*
+alwaysApply: false
+---
+
+# plugins
+
+技能格式零改动：`SKILL.md` + frontmatter，沿用内核加载机制。
+模型输出的是受 JSON Schema 约束的**内容 JSON**，不是 pptx/python 代码；
+排版由 `render.py` 按模板完成（R4）。
+
+## 四个技能共用骨架（`skills/_shared`）
+
+退出码：0 成功 · 2 JSON 不合法 · 3 运行时缺失 · 4 引用文件不存在。
+报错只用路径（索引与字段名）、校验器名、schema 侧期望值——
+默认 jsonschema 消息会把用户内容嵌进 stderr，进 rollout / 日志（与 Q14 同口径）。
+
+运行时缺失文案必须与 `services/ingest` 的 `RUNTIME_TIERS` **逐字相同**。
+缺办公扩展时不要改用别的方式硬造文件。
+
+| 技能 | 改错的表现 |
+|---|---|
+| spreadsheets | 计算列给公式，rows 对应位置必须是 `null`；否则用户改输入列合计不动 |
+| documents | 标题层级只能逐级下降；否则 Word 目录缺一层且生成时不报错 |
+| charts | 没有中文字体就停下来，不画方框图 |
+
+connectors **本期只做 `browser/`**（Q9）。不要写飞书 / 企微 / 钉钉 / 腾讯文档。
+hooks 决策在 `services/policy`，本目录脚本只做 I/O。

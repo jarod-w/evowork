@@ -1,0 +1,87 @@
+# EVOWORK · Cursor 仓级约定
+
+本文件是仓级约定的**正文**。Cursor Agent 模式不保证读取仓库根的
+`.cursorrules`；始终生效的加载器是 `.cursor/rules/00-core.mdc`（用
+`@.cursorrules` 把本文拉进上下文）。路径分册在 `.cursor/rules/*.mdc`，
+按 glob 自动挂上——不要把分册内容再抄进这里。
+
+跨会话完整规则：[`CLAUDE.md`](CLAUDE.md)。
+当前状态：[`docs/status.md`](docs/status.md)。**先读再改。**
+契约：[`docs/evowork-on-codex-design.md`](docs/evowork-on-codex-design.md)。
+细化规格：[`docs/design/README.md`](docs/design/README.md)。
+
+三处说的是同一套。不要在本文件另写一份「更强」的保证。
+
+---
+
+## 一句话
+
+把 `openai/codex` 当作**不可变的执行内核**。所有 EvoWork 特性通过官方
+扩展点注入；前端与调度层完全自建。本仓库可写，`../codex` **只读**。
+
+## 七条铁律
+
+越过任何一条，代价都是每次上游 rebase 重付一遍。允许实现简陋，不允许调用点错位。
+
+1. **K1 内核不可变。** 不改 `../codex`。扩展点做不到时才落 `patches/evowork/*.patch`，
+   每个补丁必须说明四个扩展点为什么不行。硬上限 ≤ 5 文件 / ≤ 500 行。
+2. **K2 唯一边界是 app-server JSON-RPC v2。** 不链接 Rust、不调 SDK 内部、
+   不读内核 sqlite / rollout。实验方法只在 `services/kernel-adapter` 出现。
+3. **K3 只走四个扩展点**（能外就外）：技能 → MCP → hooks → `ext/` Rust contributor。
+4. **K4 模型走 Responses API 网关。** 不改内核模型层。网关是全量适配，不是薄转发。
+5. **K5 对外不得出现 Codex / OpenAI 品牌。** 内部路径名（如 `CODEX_HOME`）保持不动。
+6. **K6 本地优先，无云端解析兜底。** 文件处理在本机；出网必须显式授权。不要加
+   「传到云上解析」分支——测试会扫 `services/ingest` 里的 `fetch` / `node:http`。
+7. **K7 不复用上游 Apps/连接器目录与 Codex Cloud。** 连接器自建 MCP；本期只做 `browser/`（Q9）。
+
+铁律是机器守着的，撞上时长什么样见 `CLAUDE.md` §2.1。先看它拦的是什么，多半它是对的。
+
+## 新需求落哪一层
+
+```
+纯展示 / 交互？                        → apps/desktop
+跨会话、定时、持久化元数据？            → services/
+能被模型调用的能力？
+  SKILL.md + 脚本                      → plugins/skills/     ← 首选
+  外部系统 / OAuth                     → plugins/connectors/
+  内核内部状态或事件流                 → ext/
+策略 / 审批 / 审计 / 成本？            → plugins/hooks/ + services/policy
+以上都不行？先改 docs/，再考虑 patches/
+```
+
+判不出来时往**外**推。云端只有四件事（D9）：账号/配额 · 私有源索引 · 模型网关 · 分享托管。
+再加一项云端职责必须先回总纲决策。
+
+## 验收与命令
+
+```bash
+pnpm run check              # 唯一验收口径：format · lint · tsc · test · K1 预算
+pnpm run test -- --project store
+node scripts/kernel-drift.mjs
+```
+
+Node ≥ 22.12 · pnpm 10。不要用单包测试代替 `pnpm run check`。
+
+## 约定
+
+- **文档中文，commit message 英文**（subject 与 body）。前缀 `doc:` / `feat:` / `fix:` 等。
+- **改架构先改文档。** 文档与代码冲突时，修文档或修代码，不要让代码悄悄漂移。
+- 引用内核用 `path:line` 并当场核对（行号会漂）。改断言同步 `scripts/kernel-assertions.json`。
+- 讨论功能用任务/Thread、空间/Project 这张映射表（`CLAUDE.md` §5），别造第三个词。
+- 动手前在 `../codex` 里搜一遍：清单里一半以上能力内核已有。
+- 组件只能来自 01 §5 的 32 个；第 33 个先补进 01。
+- 渲染层可选 prop 写成 `?: T | undefined`；`packages/` 与 `services/` 保持
+  `exactOptionalPropertyTypes`。
+- 降级、跳过、认不出来都要如实说。不静默降级。
+- 测试断言**后果**，不断言实现；跳过必须能被环境证伪。
+
+## 不要做的事
+
+- 不要把 `docs/status.md` 里未验过的断言写成已接通（U1 / U3 / U4 / U5）。
+- 不要在 `apps/desktop` 渲染层直连实验方法或 `@evowork/protocol` 的传输面。
+- 不要为演示铺 mock 数据、预置答案、演示专用页面。
+- 不要引入 UI 组件库；不要把颜色 / px 字面量写进组件（`@evowork/no-style-literals`）。
+- 不要给日志入口加自由字符串重载；未注册字段会被静默丢掉。
+- 不要做：多模态视频/3D、公开技能市场、国内生态集成（飞书/企微/钉钉）、
+  个人云盘、团队空间双向协作、积分体系。
+- 不要对 `docs/` 或 `CLAUDE.md` 跑 prettier（会按东亚宽度重排表格，淹没语义 diff）。

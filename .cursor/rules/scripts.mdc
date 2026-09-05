@@ -1,0 +1,20 @@
+---
+description: 仓库脚本。漂移雷达与断言孪生体、补丁预算、Q14 探针不打印正文。
+globs: scripts/**/*
+alwaysApply: false
+---
+
+# scripts
+
+`pnpm run check` 是唯一验收口径，不是 `scripts/ci.sh`（本仓库没有那条入口）。
+
+| 脚本 | 守的是 |
+|---|---|
+| `patch-budget.mjs` | K1 ≤ 5 文件 / ≤ 500 行 + 说明文件必须有「为什么扩展点做不到」 |
+| `kernel-drift.mjs` | 上游漂移 + F1–F16 机器复核。`LINE-MOVED` 是常态不算失败；`BROKEN` 可能意味着设计被推翻 |
+| `kernel-assertions.json` | `docs/design/README.md` §4 的孪生体。改一边必须改另一边 |
+| `gen-third-party-notices.mjs` | K5。生成物不要交给 prettier，否则与 `--check` 互打 |
+| `verify-provider.mjs` | **只打印形状，不打印正文。** 不进 `pnpm run check`（要网络、要钱） |
+
+本目录关掉了 `@evowork/no-kernel-internals`（漂移雷达必须谈论 rollout 等名字）。
+不要把「放在 scripts 里就不算破 K2」当成默认逃生口扩散到 `tools/` 或测试。

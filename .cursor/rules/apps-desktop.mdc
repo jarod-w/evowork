@@ -1,0 +1,35 @@
+---
+description: 桌面壳与渲染层：token-only、32 组件、K2 经适配层、Visualizer 沙箱。
+globs: apps/desktop/**/*
+alwaysApply: false
+---
+
+# apps/desktop
+
+Q23 = Electron，Q24 = React + TS + Vite，32 个组件全自建、不引 UI 库。
+本机五个服务跑在 Electron **主进程**（不拆进程）。渲染层只经
+`services/kernel-adapter` 的语义化 API，**不直连**实验方法或协议传输。
+
+## 样式
+
+- 颜色与 px 一律走 token。`@evowork/no-style-literals` 只在
+  `src/renderer/**` 上开。数值真源是 01 §2，代码在 `packages/tokens`。
+- 语义色的文字必须用 `-text` / `-strong`。`--text-tertiary` 只用于非必要信息。
+- 第 33 个组件出现前先补进 01 §5。
+
+## 改错了不会立刻报错
+
+| 位置 | 约束 | 写错的后果 |
+|---|---|---|
+| `bootstrap.ts` `WINDOW_SECURITY` | 五项安全参数（R5） | 开发期无症状，被注入那天出事 |
+| `composer.tsx` `detectTrigger` | `/` 只在行首触发 | `~/work/a.md` 弹出技能菜单 |
+| `composer.tsx` Ask 联动 | 切回 Craft 恢复**上一次**权限 | 每次进出 Ask 都要重选 |
+| `sidebar.tsx` `onVisibleChange` | 只报可见页 | 筛出 800 条变成 800 次 `thread/read` |
+| `changes-view.tsx` `REVERT_COPY` | 撤销动磁盘、回滚不动 | 文案拼反 → 用户丢文件 |
+| `app.tsx` `mergeItem` | 同 id 覆盖且保持原位置 | 流式更新时消息跳到末尾 |
+| `visualizer.tsx` `IFRAME_SANDBOX` | `allow-scripts`，**绝不** `allow-same-origin` | 两者同时给等于没有沙箱 |
+| `sanitizeSvg` | 白名单，点名删 `foreignObject` | SVG 里嵌任意 HTML |
+| `validateChartSpec` | 拒绝未知字段与函数字符串 | `formatter: "function..."` 是任意代码入口 |
+
+运营位插槽只渲染静态内容，禁行为回传埋点（Q18）。
+渲染层可选 prop 写成 `?: T | undefined`。

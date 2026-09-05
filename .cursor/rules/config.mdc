@@ -1,0 +1,21 @@
+---
+description: 配置模板分工。EvoWork 自己的配置不混进内核 config.toml。
+globs: config/**/*
+alwaysApply: false
+---
+
+# config
+
+对应 `~/.evowork/` 布局。分工必须守住：
+
+| 文件 | 归属 | 规则 |
+|---|---|---|
+| `config.toml` | **内核配置** | `model_providers` / `permissions` / `mcp_servers` / `hooks` |
+| `requirements.toml` | 企业强制层 | `allow_managed_hooks_only` 等（R11） |
+| `modes/*.md` | EvoWork | developer instructions。Ask 模式靠这个，不打 P3 补丁（F1） |
+| `scenarios/*.toml` | EvoWork | 场景包。内核 `collaborationMode/list` 硬编码，装不了这个（F3） |
+| `showcase/*.toml` | EvoWork | 案例池，随包 + 私有源，**不联网** |
+| `slots.toml` | EvoWork | 运营位。默认关，只有 `showcase` 开；插槽只渲染静态内容 |
+
+**EvoWork 自己的配置不混进 `config.toml`**，否则 rebase 时与上游 schema 冲突。
+`CODEX_HOME` 内部路径名不动，用环境变量指向 `~/.evowork/kernel/`。
