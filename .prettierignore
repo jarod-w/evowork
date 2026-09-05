@@ -12,6 +12,8 @@ pnpm-lock.yaml
 #
 # 已发生过一次（2026-09-05 P0-1 回写时误跑）：内容无损，但那次 diff 里约 1400 行是纯对齐。
 docs/
+# CLAUDE.md 与 docs/ 同理：它是手工排的中文表格，prettier 会按 East Asian 宽度重排整份
+CLAUDE.md
 # 上游补丁：字节级内容，格式化即失效
 patches/
 # 内核 rollout / fixture 录制样本：字节级比对
