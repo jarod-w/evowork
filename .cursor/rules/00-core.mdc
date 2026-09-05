@@ -1,0 +1,6 @@
+---
+description: EvoWork 仓级约定加载器。Agent 模式不保证读取仓库根 .cursorrules，由本文件始终挂上。
+alwaysApply: true
+---
+
+@.cursorrules

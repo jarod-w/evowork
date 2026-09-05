@@ -1,0 +1,24 @@
+---
+description: 设计与状态文档。中文；status.md 只写当前事实；改架构先改总纲。
+globs: docs/**/*
+alwaysApply: false
+---
+
+# docs
+
+`docs/` 保持中文。commit message 仍是英文。不要对 `docs/` 跑 prettier
+（会按东亚宽度重排表格，一次内容修订被对齐 diff 淹没）。
+
+| 文档 | 角色 |
+|---|---|
+| `docs/status.md` | **当前事实**：做到哪了、什么验过了、什么卡住了。两边冲突以它的验收凭据列为准 |
+| `docs/evowork-on-codex-design.md` | 决策真源（D* / Q* / K* / M* / R*） |
+| `docs/design/` | 细化到可开工；不重复也不推翻总纲 |
+| `docs/work-priority.md` §10 | 尚未被证伪的断言 |
+
+写 `status.md` 的前提：「结构写好了」不等于「接通了」，「测试绿了」不等于「对着真东西验过了」。
+不要把 U1 / U3 / U4 / U5 写成已关闭。不要把注释里「本层保证 X」写进已完成，
+除非代码里有读者、有写入方、有一条会在未接通时变红的测试。
+
+引用内核 `path:line` 必须当场核对，并同步 `scripts/kernel-assertions.json`
+（`docs/design/README.md` §4 的机器孪生体）。改一边必须改另一边。

@@ -1,0 +1,23 @@
+---
+description: 测试要断行为。跳过必须能被环境证伪。端到端才能抓住接线缺陷。
+globs:
+  - "**/*.test.ts"
+  - "**/*.test.js"
+  - "**/test/**"
+alwaysApply: false
+---
+
+# tests
+
+断言写后果，不写实现。`expect(x).toBe(3)` 半年后没人知道为什么是 3；
+写成「超预算只给两个动作，没有『用便宜模型继续』（Q11）」改的人才知道自己在破坏什么。
+
+- **跳过要能被环境证伪。** `skipIf(装了扩展)` 会让「没装时怎么办」永远没人验。
+  正确做法是强制构造那个环境（如 `EVOWORK_OFFICE_PYTHON` 指向不存在的路径）。
+- **两个模块各自对，合起来可能不对。** 接线缺陷（幂等键、信号优先级、签名不匹配、
+  日志字段名）单测结构上抓不到，端到端不是锦上添花。
+- 修 bug 时先写一条在未修代码上会红的测试，把红的输出留证，再修。
+  不要把现存 bug 改写成期望。
+- `services/` 与 `packages/` 保持 `exactOptionalPropertyTypes`；渲染层可选 prop
+  才写成 `?: T | undefined`。
+- 工具与测试不关 K2 规则。要提 `rollout` / `memories` 等名字时用 inline disable 并写明理由。

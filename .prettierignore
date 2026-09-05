@@ -14,6 +14,10 @@ pnpm-lock.yaml
 docs/
 # CLAUDE.md 与 docs/ 同理：它是手工排的中文表格，prettier 会按 East Asian 宽度重排整份
 CLAUDE.md
+# Cursor 规则：YAML frontmatter + 中文表格，与 docs/ 同理不交给 prettier
+.cursor/
+.cursorrules
+AGENTS.md
 # 上游补丁：字节级内容，格式化即失效
 patches/
 # 内核 rollout / fixture 录制样本：字节级比对

@@ -1,0 +1,24 @@
+---
+description: 内核补丁预算与 Rust 扩展。能用技能/MCP/hooks 就不要写 Rust，更不要打补丁。
+globs:
+  - ext/**/*
+  - patches/**/*
+alwaysApply: false
+---
+
+# ext · patches
+
+K3 最后一档才是 `ext/`（需要内核内部状态或事件流）。
+当前设计里确定要写 Rust 的是 D8：Ask 模式在 `ToolContributor` 层过滤写工具。
+这是扩展，**不占 K1 预算**。接口：`../codex/codex-rs/ext/extension-api/src/lib.rs`。
+
+## 补丁（K1）
+
+硬上限 ≤ 5 文件 / ≤ 500 行，`scripts/patch-budget.mjs` 守着。当前清单为空；
+设计判定只剩 P4（对外可见品牌字符串）。内部路径名如 `CODEX_HOME` 保持不动。
+
+加补丁前置：
+
+1. 同名 `.md`，其中「为什么扩展点做不到」必须对技能 / MCP / hooks / extension-api **逐一说明**。
+   「上游没提供」不算理由。
+2. 先改 `docs/`，再动补丁。

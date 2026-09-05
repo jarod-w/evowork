@@ -1,0 +1,20 @@
+---
+description: 本机 sqlite。投影类可丢弃重建，权威类宁可启动失败也不丢。
+globs: services/store/**/*
+alwaysApply: false
+---
+
+# services/store
+
+单个 sqlite：`~/.evowork/evowork.db`，WAL。单写者是服务层；UI 只读走服务层 API。
+存在理由是协议缺口（F8 无状态/日期过滤，F9 无客户端元数据槽），不是缓存优化。
+
+两个迁移器必须在代码里显式区分（09 §4.6）：
+
+| 类别 | 例子 | 迁移失败时 |
+|---|---|---|
+| 投影类（真源在别处） | `thread_projection` · `item_digest` · `library_index` | 丢弃重建，不阻塞启动 |
+| 权威类（丢了就没了） | `automation` · `share` · `audit_log` · `subscription` | 先备份 → 失败则回滚并报错 |
+
+不显式区分的话，「重建索引」总有一天会把 `automation` 也清了。
+表结构以 `src/schema.ts` 与 09 §4 为准，不要在规则里另记一份张数。

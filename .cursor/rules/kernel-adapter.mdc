@@ -1,0 +1,19 @@
+---
+description: K2 边界的唯一实现处。实验方法、场景展开、审批回复、降级都只在这里。
+globs: services/kernel-adapter/**/*
+alwaysApply: false
+---
+
+# services/kernel-adapter
+
+这是 K2 的唯一实现处。`project/*`、`thread/queue/*`、`turn/start.collaborationMode`
+等实验方法只在这里出现一次。前端只传 `{scenarioId, modeId, overrides}`，由这里展开。
+
+- 用 `experimentalFeature/list` 的**实际返回**决定 UI，不硬编码「实验方法一定可用」。
+  缺失时走 09 §3.3 降级表，且降级一律显式。
+- **审批是 server→client request，不是通知**（F14）。必须实现可回复的请求处理器；
+  内核在等回复时会一直等。交互式不自动拒绝；定时任务 10 分钟自动 Decline。
+- `@evowork/no-kernel-internals` 允许本包谈论 `CODEX_HOME` 等内核路径；
+  其它包不行。不要把 launcher 再塞回桌面壳。
+- 协议类型来自 `@evowork/protocol` 的**手写子集**（依赖面的声明）。
+  上游改了我们没用到的形状，不该让我们变红；改了用到的，必须变红。

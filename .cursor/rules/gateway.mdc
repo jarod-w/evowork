@@ -1,0 +1,26 @@
+---
+description: 云端 Responses API 网关。全量适配、显式降级、Q14 不落盘正文。
+globs: services/gateway/**/*
+alwaysApply: false
+---
+
+# services/gateway
+
+云端。内核只认 Responses API，本包做全量翻译（流式、工具调用、reasoning、cache、用量）。
+P0 三家：DeepSeek（基准）· Kimi · GLM-5.3-flash。
+
+## 不可协商
+
+1. **降级必须显式。** 能力缺失在响应里标注；无思维链时留空占位，**不得伪造**；
+   不支持 cache 时如实上报 0 命中。
+2. **不落盘 prompt 与响应体**（Q14）。应用日志、APM span attribute、错误上报
+   三条路径都不许带正文。只记 token 数 / 时延 / 错误码。实现在 `packages/logging`：
+   没有接受自由字符串的入口。
+
+## 实测踩过的坑（改映射时先看测试）
+
+- 错误体只有 `type` 没有 `code` 时，必须回退到 `type`；401/403/404 是永久错误，
+  否则内核无限重试（Kimi 404 曾经如此）。
+- cache 命中字段三家位置不同。漏读会显示 0，而 0 也是「不支持」的合法值。
+- 推理模型会吃掉 `max_tokens`；给很小预算可能返回空 content。
+- `imageInput` 有三种结局：真能看 / 明确拒绝 / **接受但看不见**。按「接受」画 UI 会骗人。

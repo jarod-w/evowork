@@ -1,0 +1,25 @@
+---
+description: 本机文档解析。无云端兜底、注入不含全文、压缩包先列后解。
+globs: services/ingest/**/*
+alwaysApply: false
+---
+
+# services/ingest
+
+K6 / Q3：文件在本机解析。office / ocr 档缺失时给出「装扩展」或「以原始文件引用」，
+**结构上不存在**「传到云上解析」。`test/pipeline.test.ts` 会扫源码里的
+`fetch` / `node:http` / `WebSocket`。
+
+外部解析器必须在受限子进程里跑且网络关闭；这里只定接口，强制点在 M4 沙箱。
+
+## 改错了不会立刻报错
+
+| 位置 | 约束 | 写错的后果 |
+|---|---|---|
+| `detect.ts` zip 分支 | docx/xlsx/pptx 与 zip 同头，看内部条目区分 | 把 xlsx 当压缩包解开 |
+| `gates.ts` `checkArchive` | 先列后解；先查穿越再查规模；穿越拒**整包** | 42KB zip 写满磁盘；或部分成功探目录 |
+| `inject.ts` `SUMMARY_LIMIT` | 路径 + 摘要 + 关键页，**不含全文** | 长文档炸上下文 |
+| `runtime.ts` `RUNTIME_TIERS` | 与 `plugins/skills/_shared/evowork_skill.py` **逐字相同** | 用户以为解析和生成要装两套 |
+| `parsers/builtin.ts` 列类型 | 判据是「全部都像」不是「多数像」 | 混了一个「合计」的列被当数值 |
+
+摘要是启发式的，**不调模型**（解析发生在第一条消息之前）。

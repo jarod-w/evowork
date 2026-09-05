@@ -1,0 +1,28 @@
+---
+description: 跨层共享库。protocol 是手写子集；logging 无自由字符串入口；tokens 是 01 的代码形态。
+globs: packages/**/*
+alwaysApply: false
+---
+
+# packages
+
+只放「被两层以上使用、复制会造成语义分裂」的东西。不是 utils 垃圾场。
+
+## protocol
+
+K2 的类型与传输。手写子集 = 依赖面的声明。不要改成从内核 `ts-rs` 全量生成：
+那样会把「我们依赖哪一部分」丢掉。审批是 server→client request（F14）。
+
+## logging（Q14 的实现处）
+
+- `log.info(event, fields)`，**没有** `log.info(message)`。
+- 只有注册过的字段能进日志；未注册字段被**静默丢掉**。改调用方时先查注册表。
+- 没有任何「短自由文本」档。路径走 `pathKind` + `pathDigest`，错误走
+  `errorClass` + `errorCode` + `messageDigest`。
+- `code` 允许小写（内核与三家模型的真实错误码是小写）；不允许空白、CJK、长度 > 64。
+
+## tokens
+
+01 §2 是数值真源。组件禁止字面量颜色/字号/圆角。品牌层只有四项：
+`--accent` 系列 + `appName` + `logo` + `mascot`。
+默认主题边框对比度不达标是刻意取舍——不要把默认模式的断言设成 3.0 再放宽通过条件。

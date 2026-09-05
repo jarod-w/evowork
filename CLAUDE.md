@@ -12,6 +12,11 @@ EvoWork 是全场景职场 AI 智能体工作台：用一句话下达需求，�
 - [docs/status.md](docs/status.md) —— **当前开发状态**：做到哪了、什么验过了、什么卡住了。**接手前先读它**
 - [docs/build-and-deploy.md](docs/build-and-deploy.md) —— 编译与部署（含上游内核）。**每条命令都实际跑过；没跑通的写明「没验过」**
 
+Cursor 侧的仓级约定正文是 [`.cursorrules`](.cursorrules)，Agent 模式靠
+[`.cursor/rules/`](.cursor/rules/) 加载（`00-core.mdc` 用 `@.cursorrules`
+把正文拉进上下文，其余按路径挂分册）。与本文件说的是同一套，不要在那边
+另写一份「更强」的保证。跨工具入口是 [AGENTS.md](AGENTS.md)，只做指针。
+
 本文件只写「跨会话必须遵守的规则」和「怎么找东西」。
 
 ---

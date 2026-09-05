@@ -1,0 +1,32 @@
+---
+description: 安全与策略。错了不报错只静默失效。硬拦截不看 permission_mode；hooks 契约见 F19。
+globs:
+  - services/policy/**/*
+  - plugins/hooks/**/*
+alwaysApply: false
+---
+
+# services/policy · plugins/hooks
+
+错了不会报错，只会静默失效。`plugins/hooks/evowork-policy/` 的脚本**只做 I/O**，
+决策在 `services/policy/src/hooks/handlers.ts`。放进脚本就测不了。
+
+## 四条不能松
+
+1. 硬拦截对「完全访问」也生效，判定**不看 `permission_mode`**。
+2. `..` 必须在匹配前解析。`~/work/../.ssh/id_rsa` 不解析就会被判成工作空间内。
+3. 未知权限档位显示 id 本身，**不隐藏**。
+4. `AuditRecord` 没有能装正文的字段。想记正文得先改类型。
+
+## F19（hooks 输出）
+
+镜像在 `hooks/contract.ts`。写错了内核丢掉整条输出，策略静默失效：
+
+- `deny` 必须带非空 reason
+- 没有 `ask`
+- `updatedInput` 只配 `allow`
+
+`execpolicy.ts` 是启发式，**不是安全边界**。真正的边界是沙箱与 `paths.ts`。
+
+`WINDOWS_ISOLATION` 当前是 `'unknown'`，按保守侧走（停用完全访问）。
+不要改成「足够」—— U5 还没在 Windows 真机上证伪。

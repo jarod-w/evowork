@@ -15,7 +15,8 @@
 | [工作优先级](docs/work-priority.md)             | 排序判据 · P0–P4 分级 · 关键路径 · **§10 尚未被证伪的断言**                      |
 | [可视规格](docs/design/ui-spec.html)            | 01 的渲染面：色板带实测对比度 · 32 组件真渲染 · 三张页面拼装图                   |
 
-跨会话必须遵守的规则在仓库上一层的 [`CLAUDE.md`](../CLAUDE.md)（铁律 K1–K7 + 决策树）。
+跨会话必须遵守的规则在 [`CLAUDE.md`](CLAUDE.md)（铁律 K1–K7 + 决策树）。
+Cursor 规则：[`.cursorrules`](.cursorrules) 与 [`.cursor/rules/`](.cursor/rules/)。
 
 ## 仓库结构
 

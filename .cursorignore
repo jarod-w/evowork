@@ -1,0 +1,15 @@
+# 索引排除。这些进编辑器上下文没有收益，只会占额度。
+
+node_modules/
+dist/
+out/
+coverage/
+.kernel-drift/
+build/kernel/
+build/release/
+runtimes/
+*.db
+*.db-wal
+*.db-shm
+pnpm-lock.yaml
+plugins/hooks/*/vendor/
