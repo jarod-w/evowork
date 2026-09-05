@@ -256,7 +256,9 @@ macOS（dmg / zip，Q26 首发）· Windows（nsis）· Linux（AppImage / deb�
 | 代码签名与公证 | 缺证书 | U4 |
 | Windows 上的隔离强度 | 缺 Windows 机器；当前按保守侧走（停用完全访问） | U5 |
 | systemd 单元 | 本机没有以服务方式跑过，只跑过前台进程 | — |
+| **内核 `cargo build` 跑完** | 起了两次：第一次因缺 `pkg-config` / `libssl-dev` 失败（那条已修进 §1），第二次装好依赖后**编译超过一小时仍未结束**，`target/` 到 6.5 GB。所以 §2 的命令与先决条件是验过的，**"它能编完"这件事还没验** | §2 |
 
-已验证的包括：内核 `cargo build -p codex-app-server`、`pnpm run check`（840 测试）、
-`pnpm run build` 四步、网关单文件启动 + 能力端点 + **对 DeepSeek 的端到端流式请求**、
-四个办公技能真实产出 pptx/docx/xlsx/png、hook 加载 vendor 后正确拦截 `~/.ssh`。
+已验证的：`pnpm run check`（840 测试）· `pnpm run build` 四步 ·
+网关单文件启动 + 能力端点 401/200 + **对 DeepSeek 的端到端流式请求** ·
+四个办公技能真实产出 pptx / docx / xlsx / png（xlsx 里确认是 `=B2*C2` 而不是算好的数）·
+策略 hook 加载 vendor 后正确拦截 `~/.ssh` · Electron 二进制 `--version` 可运行。
