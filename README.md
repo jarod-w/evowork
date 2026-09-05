@@ -13,6 +13,7 @@
 | [详细设计集 01–10](docs/design/README.md)       | 页面/组件/数据模型/协议序列到可开工粒度 · **F1–F16 内核实测断言**                |
 | [功能清单](docs/agent-platform-feature-list.md) | 需求基线                                                                         |
 | [工作优先级](docs/work-priority.md)             | 排序判据 · P0–P4 分级 · 关键路径 · **§10 尚未被证伪的断言**                      |
+| [实现架构](docs/architecture.md)                | **as-built**：进程与信任边界 · 模块与依赖图 · 六条跨边界通道 · 架构不变量与守卫  |
 | [可视规格](docs/design/ui-spec.html)            | 01 的渲染面：色板带实测对比度 · 32 组件真渲染 · 三张页面拼装图                   |
 
 跨会话必须遵守的规则在 [`CLAUDE.md`](CLAUDE.md)（铁律 K1–K7 + 决策树）。

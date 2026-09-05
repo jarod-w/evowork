@@ -207,9 +207,35 @@ EVOWORK_GATEWAY_TOKEN=local-dev-token \
 
 ## 5. 部署
 
-Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**云端只有网关**，其余全在用户机器上。
+Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端必须部署的只有网关一个组件**，
+而它甚至不一定在服务器上 —— [config.toml.template](../config/config.toml.template) 里
+`base_url` 的默认值就是 `http://127.0.0.1:8787/v1`。
 
-### 5.1 网关（唯一的服务端组件）
+### 5.1 需要几台服务器
+
+先回答"除了用户的工作机还要什么"这个问题，再看每个组件怎么装。
+
+| 拓扑 | 服务端 | 适用 | 代价 |
+| --- | --- | --- | --- |
+| **A · 零服务器** | 无。网关作为本机进程随桌面 App 起，监听 `127.0.0.1` | 个人 · 试点 · 完全离网的私有环境 | **厂商 API key 落在用户机器上**，没有集中计量与配额 —— Q14 选"云端托管为主"正是为了托管密钥 |
+| **B · 一台服务器 + 一个静态桶** | 网关（§5.2）· 静态文件源（§5.3） | 团队 · 生产的最小面。**推荐的起点** | 要管 TLS 与 token 发放；配额仍是静态 token 粒度 |
+| **C · 完整企业形态** | B + identity · 分享托管 · 私有源索引 · 策略包下发 | 多租户 · 企业合规 | 这四样**现在一个都没建**（§5.6） |
+
+**为什么网关省不掉**：内核只认 Responses API —— `wire_api = "chat"` 已被上游移除
+（`model-provider-info/src/lib.rs:57`，2026-09-05 在签出 `728cb12fe5` 上核对），
+而 DeepSeek / Kimi / GLM 都只说 Chat。**不存在"让内核直连厂商"这条路** ——
+可选的是网关的位置，不是它的存在。
+
+用户机器上跑的是执行面的**全部**：agent 循环、沙箱、文档解析、定时调度、产物索引、
+策略与审计，没有一样在服务端（进程图见 [architecture.md §1](architecture.md)）。
+全仓库非测试代码里的出网调用点只有两处，这就是数据面的全部：
+
+| 出网点 | 谁在发 | 什么时候 |
+| --- | --- | --- |
+| [providers/registry.ts:115](../services/gateway/src/providers/registry.ts) | **网关**（不是用户机器） | 每次模型调用；prompt 过境但不落盘（Q14） |
+| [artifacts/src/upload.ts:85](../services/artifacts/src/upload.ts) | 桌面 App | 仅在逐次授权的分享上传时。**当前产品代码里没有调用方**，见 §5.6 |
+
+### 5.2 网关（唯一必须的服务端组件）
 
 产物是一个文件，运行时只需要 Node ≥ 22：
 
@@ -223,12 +249,21 @@ scp dist/gateway/main.js server:/opt/evowork/
 | `DEEPSEEK_API_KEY` / `MOONSHOT_API_KEY` / `ZHIPU_API_KEY` | **至少一个** | 一家都没有则拒绝启动 |
 | `PRIVATE_MODEL_API_KEY` + `PRIVATE_MODEL_BASE_URL` | 否 | 私有 endpoint（Q29 保留的配置项） |
 | `*_BASE_URL` | 否 | 覆盖各家默认地址（私有部署 / 代理） |
-| `PORT` / `HOST` | 否 | 默认 `8787` / `127.0.0.1` |
+| `PORT` / `HOST` | 否 | 默认 `8787` / **`127.0.0.1`** |
 | `LOG_LEVEL` | 否 | 默认 `info` |
 
-**密钥只从环境变量读，不写进配置文件**（K4 / Q14）。
+**密钥只从环境变量读，不写进配置文件**（K4 / Q14）。两个拒绝启动的条件见 §4.1 ——
+起一个"看起来正常但每次请求都失败"的网关，会让排查从"没配密钥"变成"模型为什么总报错"。
 
-systemd 单元示例：
+三条只在"放到服务器上"时才会遇到的（前两条是代码事实，不是建议）：
+
+| 事实 | 出处 | 部署时怎么办 |
+| --- | --- | --- |
+| **默认只监听 `127.0.0.1`** | [main.ts](../services/gateway/src/main.ts) 的 `HOST` 默认值 | 显式设 `HOST=0.0.0.0`。忘了的表现是"服务起来了但从外面连不上" |
+| **是明文 HTTP，没有 TLS** | [server.ts](../services/gateway/src/server.ts) 用 `node:http`，全仓库没有 `createSecureServer` | 证书由反向代理终止。**这一段没实测过**（§7） |
+| **无状态**：不写盘、无数据库、无会话亲和 | 同上；`server.ts` 里没有任何持久化 | LB 后面水平扩展不需要共享存储。**长压测没做**（status.md 的 M1 剩余项） |
+
+systemd 单元示例（**本机没以服务方式跑过**，见 §7）：
 
 ```ini
 [Service]
@@ -248,24 +283,84 @@ PrivateTmp=yes
 运维侧要验证这件事，看两处：`packages/logging` 的字段注册表、
 `services/gateway/test/pipeline.test.ts` 的 Q14 组。
 
-### 5.2 桌面 App
+### 5.3 两个静态文件源（不是应用服务器）
 
-打包配置在 [build/electron-builder.yml](../build/electron-builder.yml)。三平台目标：
-macOS（dmg / zip，Q26 首发）· Windows（nsis）· Linux（AppImage / deb）。
+| 源 | 谁要它 | 状态 |
+| --- | --- | --- |
+| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://updates.evowork.example/${channel}` | 配置已就位，**服务端没建**。一个对象存储桶即可；不做自动更新就手工分发安装包 |
+| 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
 
-打包前把内核二进制放到 `build/kernel/<os>-<arch>/`，它会作为 `extraResources` 随包。
-**解析运行时不随包**（08 §4：按需下载，否则安装包 +300MB 会挡在首次体验前面）——
-`scripts/package-plan.mjs` 里有一条检查专门拦"办公库混进基础包"。
+这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
 
-> **打包本身没有实际跑通过。** `electron-builder` 还没接进来，签名与公证需要 P0-5 的证书
-> （work-priority §10 的 U4）。`scripts/package-plan.mjs` 已经实现了体积预算、档位边界检查、
-> 以及**缺任一 secret 时整体降级为未签名并把标注写进文件名** —— 半签名的产物看起来像正式包，
-> 比未签名的更危险。这些逻辑有测试，但"跑一次真实打包"这件事**还没做**。
+### 5.4 桌面 App
 
-### 5.3 首次运行
+打包配置在 [build/electron-builder.yml](../build/electron-builder.yml)，驱动是
+[scripts/package.mjs](../scripts/package.mjs)。三平台目标：macOS（dmg / zip，Q26 首发）·
+Windows（nsis）· Linux（AppImage / deb）。
+
+```bash
+# 一次性：把内核二进制放到 build/kernel/<os>-<arch>/
+(cd ../codex/codex-rs && cargo build -p codex-app-server --release)
+mkdir -p build/kernel/mac-arm64
+cp ../codex/codex-rs/target/release/codex-app-server build/kernel/mac-arm64/
+
+pnpm run build      # 打包只搬产物，不会替你构建
+pnpm run package    # = node scripts/package.mjs；--dry-run 只跑前置检查
+```
+
+产物落在 `dist/release/`。
+
+**目录名用 `mac-arm64` 而不是 `darwin-arm64`**：`${os}` 展开的是 electron-builder 的
+`buildConfigurationKey`（`app-builder-lib/out/core.js`：`Platform.MAC = ("mac","mac","darwin")`），
+即 **mac / win / linux**。写错了不会报错 —— `extraResources` 会静默拷一个空目录，
+应用装上了、一启动找不到内核。`scripts/package.mjs` 因此在打包前先校验这个路径存在且有执行位。
+
+**为什么要 `package.mjs` 而不是直接 `electron-builder --mac dmg`**：
+`scripts/package-plan.mjs` 里的四条规则写完之后一个调用方都没有 —— 有测试、但打包时不生效。
+这个脚本就是调用方，它接的是：
+
+| 规则 | 做什么 | 直接跑 electron-builder 会怎样 |
+| --- | --- | --- |
+| `planSigning`（U4） | 缺任一 secret → 整体不签名，`-unsigned` 进**文件名**，并显式 `mac.identity=null` | 静默产出一个名字看起来像正式包的未签名 dmg；或摸到钥匙串里任意一张证书签出一个没打算签的包 |
+| `checkTierPlacement`（08 §4） | 对**解压后的 .app** 扫文件名，拦办公库混进基础包 | 安装包悄悄胖 200MB，等用户下载时才发现 |
+| `checkSizeBudget`（R10） | 对**安装包**（dmg/exe/AppImage/deb）比 220MB 预算 | 同上 |
+| 前置检查 | 四个入口产物 + 内核二进制 + 执行位 | 对着空 dist 也会**成功**，产出一个白屏或秒退的应用 |
+
+体积口径是**安装包**不是解压后的 .app：R10 与 08 §4 约束的是"用户下载多少"
+（原话「首次下载 300MB+ 挡在体验前面」）。.app 一定更大 —— Electron 的 framework
+单独就 250MB 上下，拿它去比 220MB 会永远红，而那个红不指向任何可以做的事。
+
+`files` 里有一条 `!node_modules`：三个入口都是自包含产物（§3.1），运行时唯一的外部
+require 是 `electron` 本身，而 electron-builder 默认会把整棵生产依赖树塞进 `app.asar` ——
+实测 80MB 里 7390 个条目是 node_modules、我们自己的只有 75 个，去掉后 dmg 从 115MB 降到 95MB。
+**将来引入原生模块（`.node`）时必须把它加回来**，那种依赖打不进 bundle。
+
+### 5.5 首次运行
 
 用户侧的授权引导在应用内（02 §9 六步）：欢迎与隐私说明 → 选工作空间 → 权限默认值 →
 接入模型 → 解析组件（**可跳过**）→ 完成。运维不需要预置任何东西，除了网关地址与 token。
+
+### 5.6 现在还不需要部署的四件事
+
+D9 给云端留了四类职责，除模型网关外的其余部分**都还没有实现**。不写清这一点的后果是
+按 C 拓扑去准备机器，然后发现没有东西可以装上去。
+
+| 组件 | D9 里的职责 | 实际状态 | 不部署它的影响 |
+| --- | --- | --- | --- |
+| identity | 账号 · 租户 · 配额 · 授权 | `services/identity/` 只有一份 README | 网关退回静态 token（`staticTokenAuth`）。试点够用，但**没有按用户的配额与审计** |
+| 分享托管 | 产物分享（Q10），`/v1/shares` | 客户端 [upload.ts](../services/artifacts/src/upload.ts) 已实现，但 `createUploader` 在产品代码里**没有调用方**；服务端没写 | 分享功能整体不可用。这也意味着**当前形态下本机内容不会离开设备**（除模型调用） |
+| 企业私有源索引 | 技能 / 插件分发（Q5：无公开市场） | 未建；`plugins/connectors/` 只有 `.gitkeep`（Q9 本期不做） | 扩展只能随包分发 |
+| 签名策略包下发 | 审计汇总 · 策略下发（R11） | 未建。策略与审计链在本机（`services/policy`）已实现 | 企业无法在服务端强制拦截 —— 这正是 D9 明确列出的代价 |
+
+### 5.7 不是"服务器"，但绕不开的基础设施
+
+问"要几台机器"时真正的成本在这里，不在运行时：
+
+| 需要什么 | 为什么 | 状态 |
+| --- | --- | --- |
+| **三台构建机**（macOS / Windows / Linux） | 内核二进制要按平台构建后放进 `build/kernel/<os>-<arch>/`（§5.4）；electron-builder 也需要在目标平台上出包 | 只有 macOS 一台 |
+| **签名证书** | Apple Developer ID + 公证 · Windows 代码签名 | 卡 P0-5，见 §7 与 U4。缺任一 secret 时 `package.mjs` 整体降级为未签名并标注进文件名 |
+| 内核构建的时间与磁盘 | 首次约 40 分钟、`target/` 涨到 7.7 GB（§2.1） | 别在 CI 里给它设 30 分钟超时 |
 
 ---
 
@@ -282,6 +377,9 @@ macOS（dmg / zip，Q26 首发）· Windows（nsis）· Linux（AppImage / deb�
 | 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 见 §3.3；或用 `EVOWORK_OFFICE_PYTHON` 指定 |
 | 内核 stderr 报 `could not find bubblewrap` | Linux 沙箱组件没装 | `apt install bubblewrap`。不装它会回落到自带的那个，**不阻断启动**，所以容易被当成噪音漏掉 |
 | 手工发 `initialize` 没有响应 | **stdin 被关掉了** —— 管道一关内核就退出 | 保持 stdin 打开，见 §2.1.1 的写法 |
+| electron-builder 报 `Cannot compute electron version from installed node modules` | 它检测到 pnpm workspace 后把 projectDir 定在**仓库根**，去那里找 `node_modules/electron`；而 electron 装在 `apps/desktop` 下 | `electron` 声明在**根** `package.json` 的 devDependencies（2026-09-05 从 apps/desktop 挪过来的原因就是这个） |
+| 打包出的 App 双击没反应；命令行直接跑**退出码 0、一行输出都没有** | 主进程 bundle 在 `import` 阶段就抛了，异常没来得及落到 stderr。当前已知的一处：`services/store` 用 `node:sqlite`，而 Electron 33 带的是 **Node 20.18.3**，没有这个内置模块 | `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "import('./apps/desktop/dist/main/bootstrap.bundle.js').catch(e=>console.log(e.code,e.message))"` 会把真正的错误打出来 |
+| 装好的应用启动即报找不到内核 | `build/kernel/` 下的目录名写成了 `darwin-arm64`。`extraResources` 匹配不到时**不报错**，只拷一个空目录 | 用 `mac-arm64`（§5.2）；`pnpm run package` 会先拦这一条 |
 | 策略 hook 看起来没生效 | 忘了 vendor 步骤，hook 找不到实现会**放行并往 stderr 报错** | 跑 `pnpm run build`；真正的兜底在沙箱层，不在 hook 上 |
 
 ---
@@ -292,10 +390,15 @@ macOS（dmg / zip，Q26 首发）· Windows（nsis）· Linux（AppImage / deb�
 
 | 项 | 为什么没验 | 关联 |
 | --- | --- | --- |
-| `electron-builder` 打包三平台 | 依赖没接进来；且需要各平台的构建机 | M9 |
+| `electron-builder` 出 Windows / Linux 包 | 缺这两个平台的构建机（macOS 的实测体积见 §5.4） | M9 · §5.7 |
 | 代码签名与公证 | 缺证书 | U4 |
 | Windows 上的隔离强度 | 缺 Windows 机器；当前按保守侧走（停用完全访问） | U5 |
-| systemd 单元 | 本机没有以服务方式跑过，只跑过前台进程 | — |
+| systemd 单元 | 本机没有以服务方式跑过，只跑过前台进程 | §5.2 |
+| 网关放到服务器上：`HOST=0.0.0.0` + 反向代理终止 TLS | 只跑过明文 `127.0.0.1` 的前台进程 | §5.2 |
+| 网关的水平扩展与长压测 | 只跑过单实例；`maxContextTokens` 也仍未实测 | M1 剩余项 |
+| 自动更新服务端 | `publish` 配置已就位，服务端没建 | §5.3 · M9 |
+| 办公扩展的下载编排 | 没实现；§3.3 现在是手工建 venv | §5.3 · M9 |
+
 已验证的：
 
 - **内核** `cargo build -p codex-app-server` 编完（约 40 分钟，二进制 1.1 GB），
