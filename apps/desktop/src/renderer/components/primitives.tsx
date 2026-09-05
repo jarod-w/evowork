@@ -114,12 +114,18 @@ export function StatusDot({
 export function PillButton({
   children,
   variant = 'default',
+  icon,
+  trailing,
   onClick,
   disabled,
   disabledReason,
 }: {
   readonly children: ReactNode;
   readonly variant?: 'default' | 'accent' | 'ghost' | undefined;
+  /** §5.8 的「可选图标 14」 */
+  readonly icon?: ReactNode | undefined;
+  /** §5.8 的「可选 chevron/箭头 12」 */
+  readonly trailing?: ReactNode | undefined;
   readonly onClick?: (() => void) | undefined;
   readonly disabled?: boolean | undefined;
   readonly disabledReason?: string | undefined;
@@ -133,8 +139,153 @@ export function PillButton({
       {...(disabled && disabledReason ? { title: disabledReason } : {})}
       onClick={onClick}
     >
-      {children}
+      {icon ? (
+        <span className="ew-pill-icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
+      <span className="ew-pill-label">{children}</span>
+      {trailing ? (
+        <span className="ew-pill-trailing" aria-hidden="true">
+          {trailing}
+        </span>
+      ) : null}
     </button>
+  );
+}
+
+/**
+ * 01 §5.2 AppSwitcherChip（「发现应用」）：高 26，`--r-full`，图标 14 + caption + chevron 12。
+ *
+ * 它在截图里紧挨着品牌名，是侧边栏顶部那一行的另一半 —— 没有它，品牌行只剩一个名字，
+ * 整条左栏的重心就散了。点击展开应用目录抽屉（05 §6，本期未实现时不给 onClick）。
+ */
+export function AppSwitcherChip({
+  label,
+  icon,
+  onClick,
+}: {
+  readonly label: string;
+  readonly icon?: ReactNode | undefined;
+  readonly onClick?: (() => void) | undefined;
+}) {
+  return (
+    <button
+      type="button"
+      className="ew-app-switcher"
+      onClick={onClick}
+      disabled={onClick === undefined}
+      title={onClick === undefined ? `${label}（本期未开放）` : label}
+    >
+      {icon ? (
+        <span className="ew-app-switcher-icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
+      <span>{label}</span>
+      <span className="ew-app-switcher-chevron" aria-hidden="true">
+        {chevron()}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * 01 §5.6 PromoCard（运营位卡）。
+ *
+ * **Q18：只渲染静态内容，禁任何行为回传。** 所以这里没有 `onImpression`、没有 `onClickTrack`，
+ * 连 `href` 都不收 —— 有了回传通道，"默认关闭"就只是个配置项而不是结构性保证。
+ * 关闭动作是本机的（调用方持久化），不通知任何人。
+ */
+export function PromoCard({
+  title,
+  body,
+  actionLabel,
+  onClose,
+}: {
+  readonly title: string;
+  readonly body: string;
+  readonly actionLabel?: string | undefined;
+  readonly onClose?: (() => void) | undefined;
+}) {
+  return (
+    <div className="ew-promo-card" data-slot="sidebar-promo">
+      <div className="ew-promo-text">
+        <p className="ew-promo-title">{title}</p>
+        <p className="ew-promo-body">{body}</p>
+      </div>
+      {actionLabel ? <span className="ew-promo-action">{actionLabel}</span> : null}
+      {onClose ? (
+        <button type="button" className="ew-promo-close" aria-label="关闭运营位" onClick={onClose}>
+          ✕
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 01 §5.7 UserFooter：高 62，头像 28 + 名称/版本两行 + 通知与设备两个 IconButton。
+ *
+ * 版本号显示在这里是刻意的：这是一个**本机应用**（Q1=A），"我装的是哪一版"
+ * 是用户报障时唯一能自己回答的问题。
+ */
+export function UserFooter({
+  name,
+  version,
+  unreadCount,
+  notificationIcon,
+  deviceIcon,
+  onNotifications,
+  onDevices,
+}: {
+  readonly name: string;
+  readonly version: string;
+  readonly unreadCount?: number | undefined;
+  readonly notificationIcon?: ReactNode | undefined;
+  readonly deviceIcon?: ReactNode | undefined;
+  readonly onNotifications?: (() => void) | undefined;
+  readonly onDevices?: (() => void) | undefined;
+}) {
+  const unread = unreadCount !== undefined && unreadCount > 0;
+  return (
+    <div className="ew-user-footer">
+      <span className="ew-avatar" aria-hidden="true">
+        {name.slice(0, 1)}
+      </span>
+      <span className="ew-user-text">
+        <span className="ew-user-name">{name}</span>
+        <span className="ew-user-version">{version}</span>
+      </span>
+      <span className="ew-user-actions">
+        <span className="ew-notify-anchor" data-unread={unread ? 'true' : undefined}>
+          <IconButton
+            label={unread ? `通知中心（${unreadCount} 条未读）` : '通知中心'}
+            icon={notificationIcon ?? '🔔'}
+            onClick={onNotifications}
+          />
+        </span>
+        <IconButton label="设备中心" icon={deviceIcon ?? '🖥'} onClick={onDevices} />
+      </span>
+    </div>
+  );
+}
+
+/** AppSwitcherChip 的 chevron。单独一个函数，免得图标集与基础件互相 import。 */
+function chevron(): ReactNode {
+  return (
+    <svg
+      className="ew-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6.75 9.75 12 15l5.25-5.25" />
+    </svg>
   );
 }
 

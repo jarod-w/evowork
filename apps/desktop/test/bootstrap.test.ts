@@ -19,7 +19,8 @@ import {
   type ElectronApi,
   type ElectronWindow,
 } from '../src/main/bootstrap.js';
-import { IPC, type ServiceHost } from '../src/main/service-host.js';
+import { RENDERER_ACTIONS } from '../src/preload/index.js';
+import { type ServiceHost } from '../src/main/service-host.js';
 
 let home: string;
 let sent: { channel: string; payload: unknown }[];
@@ -61,6 +62,15 @@ function fakeHost(): ServiceHost {
     adapter: {} as ServiceHost['adapter'],
     logger: {} as ServiceHost['logger'],
     services: {} as ServiceHost['services'],
+    actions: {
+      send: vi.fn(async () => ({ threadId: 't1' })),
+      interrupt: vi.fn(async () => undefined),
+      decideApproval: vi.fn(async () => undefined),
+      rowAction: vi.fn(async () => undefined),
+      refreshVisible: vi.fn(async () => undefined),
+      getStartup: vi.fn(async () => ({}) as never),
+    } as unknown as ServiceHost['actions'],
+    resolveApproval: vi.fn(),
     reconcileIntervalMs: 0,
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
@@ -138,25 +148,25 @@ describe('接线', () => {
     expect(hostOptions.paths.kernelHome).toBe(join(home, '.evowork', 'kernel'));
   });
 
-  it('审批：主进程发问 → 渲染进程回答 → promise 兑现（F14 的完整回路）', async () => {
-    await boot();
-    const answer = hostOptions.askRenderer(IPC.askApproval, { kind: 'command' });
-
-    const asked = sent.find((s) => s.channel === IPC.askApproval);
-    const id = (asked?.payload as { id: string }).id;
-    expect(id).toMatch(/^apv_/);
-
-    await handlers.get(IPC.askApproval)?.(null, { id, decision: 'decline' });
-    await expect(answer).resolves.toEqual({ decision: 'decline' });
+  /**
+   * 这条守的是一次真实故障：preload 声明了六个动作，而这里只注册了审批一个。
+   * 表现是**界面完全正常、回车没有任何反应** —— 渲染层用 `void send()` 发起调用，
+   * `No handler registered for 'evowork:send'` 这个 rejection 无人接管，
+   * 既不弹窗也不进日志。
+   */
+  it('preload 声明的每个动作都注册了 ipcMain handler', async () => {
+    const { host } = await boot();
+    for (const action of RENDERER_ACTIONS) {
+      expect(handlers.has(`evowork:${action}`), `evowork:${action} 没有 handler`).toBe(true);
+    }
+    // 少一个都不行；多一个说明有人绕过了 RENDERER_ACTIONS
+    expect([...handlers.keys()].sort()).toEqual(RENDERER_ACTIONS.map((a) => `evowork:${a}`).sort());
+    expect(host.actions.send).toBeDefined();
   });
 
-  it('渲染进程不回复时 promise 就一直悬着（10 §3.6：交互式任务不自动拒绝）', async () => {
-    await boot();
-    const answer = hostOptions.askRenderer(IPC.askApproval, {});
-    const settled = await Promise.race([
-      answer.then(() => 'settled'),
-      new Promise((r) => setTimeout(() => r('pending'), 20)),
-    ]);
-    expect(settled).toBe('pending');
+  it('动作的载荷原样交给宿主（回车 = 一次 send）', async () => {
+    const { host } = await boot();
+    await handlers.get('evowork:send')?.(null, { text: '做个周报' });
+    expect(host.actions.send).toHaveBeenCalledWith({ text: '做个周报' });
   });
 });

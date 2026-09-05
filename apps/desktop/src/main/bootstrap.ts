@@ -16,7 +16,8 @@
  */
 import { join } from 'node:path';
 
-import { createServiceHost, IPC, resolvePaths, type ServiceHost } from './service-host.js';
+import { RENDERER_ACTIONS } from '../preload/index.js';
+import { createServiceHost, resolvePaths, type ServiceHost } from './service-host.js';
 
 /** 只声明我们真正用到的那部分 Electron API。 */
 export interface ElectronWindow {
@@ -38,6 +39,8 @@ export interface BrowserWindowOptions {
   readonly height: number;
   readonly minWidth: number;
   readonly minHeight: number;
+  /** macOS：交通灯浮在内容上（01 §3.2：页面控件在标题栏行内，没有独立 header） */
+  readonly titleBarStyle?: 'hiddenInset' | undefined;
   readonly webPreferences: {
     readonly preload: string;
     readonly contextIsolation: boolean;
@@ -87,6 +90,20 @@ export const WINDOW_SIZE = Object.freeze({
   minHeight: 640,
 });
 
+/**
+ * 01 §3.2：**页面级控件放在窗口标题栏行内，没有独立的页面 header**。
+ *
+ * 这要求内容延伸到标题栏下面，所以 macOS 上用 `hiddenInset`（交通灯保留、标题栏消失）。
+ * 用系统标题栏的话，侧边栏那条 52 高的图标带下面会再压一条系统栏 ——
+ * 界面矮一截、且顶部凭空多出一条与设计稿无关的横带。
+ *
+ * 侧边栏的三个图标是**右对齐**的（01 §3.2 给的中心 x = 161/197/233），
+ * 所以 Windows / Linux 上窗口控件跑到右上角也不会打架，不需要按平台分支。
+ */
+export const WINDOW_CHROME = Object.freeze({
+  titleBarStyle: 'hiddenInset' as const,
+});
+
 export interface BootstrapOptions {
   readonly electron: ElectronApi;
   /** app-server 可执行文件（M9 打包时随内核二进制分发） */
@@ -95,6 +112,8 @@ export interface BootstrapOptions {
   /** 开发时指向 vite dev server；生产为 undefined，走 loadFile */
   readonly devServerUrl?: string | undefined;
   readonly rendererHtmlPath: string;
+  /** 随包的 `config/` 目录。首次运行时内核配置从这里装（见 `ensureKernelConfig`） */
+  readonly configDir?: string | undefined;
   /** 注入以便测试；默认用真的宿主 */
   readonly createHost?:
     ((options: Parameters<typeof createServiceHost>[0]) => ServiceHost) | undefined;
@@ -112,6 +131,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   const paths = resolvePaths(join(electron.app.getPath('home'), '.evowork'));
   const window = electron.createWindow({
     ...WINDOW_SIZE,
+    ...(process.platform === 'darwin' ? WINDOW_CHROME : {}),
     webPreferences: { preload: options.preloadPath, ...WINDOW_SECURITY },
   });
 
@@ -121,33 +141,31 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     event.preventDefault();
   });
 
-  const pendingApproval = new Map<string, (value: unknown) => void>();
-  let seq = 0;
-
   const create = options.createHost ?? createServiceHost;
   const host = create({
     paths,
     appServerPath: options.appServerPath,
     appVersion: electron.app.getVersion(),
+    ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
     emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
-    askRenderer: (channel, payload) => {
-      // 审批是**服务端发起的请求**（F14），最终落在用户身上。
-      // 这里把它变成一个 promise，等渲染进程通过 ipc 回来才 resolve ——
-      // 渲染进程不回复时它就一直悬着，那是对的：交互式任务不自动拒绝（10 §3.6）
-      const id = `apv_${(seq += 1)}`;
-      return new Promise((resolve) => {
-        pendingApproval.set(id, resolve);
-        window.webContents.send(channel, { id, ...(payload as object) });
-      });
-    },
   });
 
-  electron.ipcMain.handle(IPC.askApproval, async (_event, payload) => {
-    const { id, ...rest } = payload as { id: string };
-    pendingApproval.get(id)?.(rest);
-    pendingApproval.delete(id);
-    return undefined;
-  });
+  /*
+   * 六个渲染动作。
+   *
+   * **在此之前这里只注册了审批一个** —— 于是界面能画出来，但回车、中断、行操作、
+   * 场景列表全都得到 `No handler registered for 'evowork:send'`，
+   * 而渲染层用 `void send()` 发起调用，rejection 无人接管：**表现就是"点了没反应"**。
+   *
+   * 循环遍历 `RENDERER_ACTIONS` 而不是逐个手写，是为了让"preload 声明了什么"
+   * 与"主进程实现了什么"没有分叉的余地 —— 少一个就是编译期的类型错误，
+   * 而不是运行期一句没人看见的报错（bootstrap.test.ts 有一条断言在扫它）。
+   */
+  for (const action of RENDERER_ACTIONS) {
+    electron.ipcMain.handle(`evowork:${action}`, async (_event, payload) =>
+      (host.actions[action] as (arg: never) => Promise<unknown>)(payload as never),
+    );
+  }
 
   await host.start();
 

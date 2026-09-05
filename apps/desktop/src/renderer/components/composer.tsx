@@ -21,6 +21,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, type ModelOption } from './menu.js';
 import { Badge, Banner, PillButton } from './primitives.js';
 
@@ -425,7 +426,7 @@ export function Composer(props: ComposerProps) {
               aria-label="添加附件"
               onClick={props.onAttach}
             >
-              ＋
+              {renderIcon('plus')}
             </button>
 
             {props.models ? (
@@ -446,7 +447,7 @@ export function Composer(props: ComposerProps) {
                 aria-label="语音输入"
                 onClick={props.onMic}
               >
-                ●
+                {renderIcon('mic')}
               </button>
             ) : null}
 
@@ -465,6 +466,7 @@ export function Composer(props: ComposerProps) {
         <div className="ew-composer-footer">
           <InlineSelect
             ariaLabel="选择工作空间"
+            icon={renderIcon('folder')}
             placeholder="选择工作空间"
             value={props.workspaceId}
             options={props.workspaces ?? []}
@@ -472,6 +474,7 @@ export function Composer(props: ComposerProps) {
           />
           <InlineSelect
             ariaLabel="权限"
+            icon={renderIcon('shield')}
             placeholder="默认权限"
             value={props.permissionId}
             options={permissionOptions}
@@ -487,6 +490,7 @@ export function Composer(props: ComposerProps) {
           />
           <InlineSelect
             ariaLabel="工作模式"
+            icon={renderIcon('sparkle')}
             placeholder="Craft 你说我做"
             value={mode}
             options={MODE_OPTIONS}
@@ -576,7 +580,7 @@ function SendButton({
         aria-label="中断"
         onClick={onInterrupt}
       >
-        ■
+        {renderIcon('stop')}
       </button>
     );
   }
@@ -617,7 +621,7 @@ function SendButton({
       disabled={disabled}
       onClick={onSend}
     >
-      {parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : '↑'}
+      {parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : renderIcon('arrow-up')}
     </button>
   );
 }

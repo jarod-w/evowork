@@ -23,21 +23,30 @@
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
 import type { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 import {
   createAdapter,
   createSpawnLauncher,
   type Adapter,
+  type ApprovalReply,
+  type PendingApproval,
   type SessionNotice,
-  type UiEvent,
 } from '@evowork/kernel-adapter';
 import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
+import { BRAND } from '@evowork/tokens';
 import { openStore, type Store } from '@evowork/store';
 
 import { createLocalServices, type LocalServices } from './local-services.js';
+import {
+  createEventTranslator,
+  createRendererActions,
+  toApprovalView,
+  type RendererActions,
+} from './renderer-bridge.js';
+import { BUILTIN_CASES } from './showcase.js';
 
 /** `~/.evowork/` 的布局（09 §7）。 */
 export interface EvoworkPaths {
@@ -94,6 +103,34 @@ export function ensurePaths(paths: EvoworkPaths): void {
   }
 }
 
+/**
+ * 首次运行时把随包的配置模板装进**内核的**家目录。
+ *
+ * ## 为什么这一步不能省
+ *
+ * `config/config.toml.template` 里的 `[permissions.*]` 四个命名 profile 是
+ * `thread/start` 的 `permissions` 参数唯一的解析依据（10 §2.2 / F5）。
+ * 没有它，内核对**每一次**新建任务都回
+ * `failed to load configuration: default_permissions requires a \`[permissions]\` table` ——
+ * 而在 UI 上，那就是"回车之后什么都没发生"。
+ *
+ * ## 装到哪
+ *
+ * `paths.kernelHome/config.toml`，即 `~/.evowork/kernel/config.toml` —— 内核只读**它自己的
+ * 家目录**下的配置。模板文件的头注释原先写的是 `~/.evowork/config.toml`，那是错的，已订正。
+ * （宿主只知道"内核的家在这儿"，不知道那个环境变量叫什么 —— 那是适配层的知识，
+ * 见 `EvoworkPaths.kernelHome`；service-host.test.ts 有一条测试在扫这件事。）
+ *
+ * **已存在就不覆盖**：企业会改这个文件（私有网关地址、锁死的权限档位），
+ * 每次启动盖回去等于把他们的部署改回默认值。
+ */
+export function ensureKernelConfig(paths: EvoworkPaths, templatePath: string): boolean {
+  const target = join(paths.kernelHome, 'config.toml');
+  if (existsSync(target) || !existsSync(templatePath)) return false;
+  copyFileSync(templatePath, target);
+  return true;
+}
+
 export interface ServiceHostOptions {
   readonly paths: EvoworkPaths;
   /** app-server 可执行文件路径。M9 打包时随内核二进制一起分发 */
@@ -102,8 +139,11 @@ export interface ServiceHostOptions {
   readonly logger?: Logger;
   /** 把 UI 事件推给渲染进程（Electron 里是 `webContents.send`） */
   readonly emitToRenderer: (channel: string, payload: unknown) => void;
-  /** 向渲染进程发起请求并等回复（审批要用：F14 的可回复处理器最终落在 UI 上） */
-  readonly askRenderer: (channel: string, payload: unknown) => Promise<unknown>;
+  /**
+   * 随包分发的 `config/` 目录（打包后在 `process.resourcesPath/config`）。
+   * 给了才会在首次运行时装配置模板 —— 见 `ensureKernelConfig`。
+   */
+  readonly configDir?: string;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
   readonly spawnFn?: typeof spawn;
 }
@@ -114,6 +154,13 @@ export interface ServiceHost {
   readonly logger: Logger;
   /** 五个本机服务之间的接线（scheduler / 产物索引 / 解析运行时探测） */
   readonly services: LocalServices;
+  /**
+   * 渲染进程能调用的六个动作。**它们在这里实现、由 `bootstrap` 挂到 ipcMain 上** ——
+   * 挂载与实现分开，是为了让"发一条需求会发生什么"能不起 Electron 就跑完。
+   */
+  readonly actions: RendererActions;
+  /** 用户对某条审批的决定（F14：服务端发起的请求必须有人回复） */
+  resolveApproval(id: string, reply: ApprovalReply): void;
   start(): Promise<void>;
   stop(): Promise<void>;
   /** 对账定时器（09 §4.1：启动时 + 每 10 分钟一次） */
@@ -150,6 +197,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   // ⓪ 先建目录 —— 开库与起内核都要求它们已经存在（见 ensurePaths 的注释）
   ensurePaths(options.paths);
+  if (options.configDir !== undefined) {
+    const installed = ensureKernelConfig(
+      options.paths,
+      join(options.configDir, 'config.toml.template'),
+    );
+    if (installed) logger.info('desktop.kernel_config.installed', {});
+  }
 
   // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
   const store = openStore({ path: options.paths.db, logger });
@@ -159,6 +213,17 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     const path = join(options.paths.home, file);
     return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
   };
+
+  /*
+   * 挂起中的审批：内核发起请求 → 推给渲染层 → 用户点了按钮 → `decideApproval` 回到这里。
+   *
+   * key 用**审批自己的 id**（适配层生成的 `apv_N`），而不是宿主再编一个 ——
+   * 渲染层从 `pending-approvals` 看到的就是这个 id，两边编两套 id 的话，
+   * 用户点的那一条永远对不上挂起的那一条。
+   */
+  const approvalReplies = new Map<string, (reply: ApprovalReply) => void>();
+
+  const translate = createEventTranslator(store, () => Date.now());
 
   const adapter = createAdapter({
     store,
@@ -175,17 +240,28 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
       }),
     },
-    onUiEvent: (event: UiEvent) => options.emitToRenderer(IPC.uiEvent, event),
+    // 适配层的事件是**任务视角**，渲染层要的是**组件视角**，翻译在 renderer-bridge 里
+    onUiEvent: (event) => {
+      for (const mapped of translate(event)) options.emitToRenderer(IPC.uiEvent, mapped);
+    },
     onNotice: (notice: SessionNotice) => options.emitToRenderer(IPC.notice, notice),
     // 降级一律显式（09 §3.3）：推给 UI，让它在设置里列出"当前不可用的能力"
     onDegrade: (report) => options.emitToRenderer(IPC.degrade, report),
-    onPendingApprovalsChanged: (pending) => options.emitToRenderer(IPC.pendingApprovals, pending),
+    onPendingApprovalsChanged: (pending: readonly PendingApproval[]) =>
+      options.emitToRenderer(
+        IPC.pendingApprovals,
+        pending.map((a) => toApprovalView(a, adapter.allowsAcceptForSession(a), Date.now())),
+      ),
     // 审批最终落在用户身上（F14）。渲染进程不回复时这个 Promise 就一直悬着 ——
     // 那是正确的：交互式任务**不自动拒绝**（10 §3.6），超时策略在适配层里
-    askApproval: async (approval) => {
-      const reply = await options.askRenderer(IPC.askApproval, approval);
-      return reply as { decision: 'accept' | 'acceptForSession' | 'decline' | 'cancel' };
-    },
+    askApproval: (approval) =>
+      new Promise((resolve) => {
+        approvalReplies.set(approval.id, resolve);
+        options.emitToRenderer(
+          IPC.askApproval,
+          toApprovalView(approval, adapter.allowsAcceptForSession(approval), Date.now()),
+        );
+      }),
     onSideEffect: (effect) => {
       // 副作用的落点：通知中心、并发计数、预算闸门、产物识别、automation_run。
       logger.debug('desktop.side_effect', { reason: effect.kind.toUpperCase().replace(/-/g, '_') });
@@ -229,11 +305,35 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   let reconcileTimer: ReturnType<typeof setInterval> | undefined;
 
+  const resolveApproval = (id: string, reply: ApprovalReply): void => {
+    const pending = approvalReplies.get(id);
+    if (!pending) {
+      // 已经超时自动处理过了。**记一条**：静默丢弃会让"我明明点了允许"变成无从查起
+      logger.warn('desktop.approval.stale_decision', { reason: 'ALREADY_RESOLVED' });
+      return;
+    }
+    approvalReplies.delete(id);
+    pending(reply);
+  };
+
+  const actions = createRendererActions({
+    adapter,
+    store,
+    logger,
+    resolveApproval,
+    appName: BRAND.appName,
+    appVersion: options.appVersion,
+    userName: userInfo().username,
+    cases: BUILTIN_CASES,
+  });
+
   return {
     store,
     adapter,
     logger,
     services,
+    actions,
+    resolveApproval,
     reconcileIntervalMs: RECONCILE_INTERVAL_MS,
 
     async start() {

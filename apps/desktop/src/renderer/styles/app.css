@@ -9,6 +9,104 @@
 
 /* ─────────────────────────── 骨架（01 §3.1 / 04 §1）─────────────────────────── */
 
+/*
+ * 应用外壳。
+ *
+ * 在此之前这个文件里**没有一条 `.ew-app` 规则，也没有 html/body 的高度** ——
+ * 于是侧边栏按内容高度收成左上角一个小方块，主区跟在它下面，整个界面和设计稿毫无关系。
+ * 这类缺失不会有任何报错：每个组件的样式都是对的，只是没有人给它们一个容器。
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-cjk);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+textarea {
+  font-family: inherit;
+}
+
+/* 01 §3.1 骨架 A：侧边栏 260 + 主内容区 flex */
+.ew-app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+.ew-app > .ew-home,
+.ew-app > .ew-task-workspace {
+  flex: 1;
+  min-width: 0;
+}
+
+/* §3.1：< 860 不支持（桌面应用，无移动端形态）；< 1024 侧边栏收成图标条 */
+@media (max-width: 1024px) {
+  .ew-sidebar {
+    width: var(--space-64);
+  }
+  .ew-sidebar-brand,
+  .ew-nav-label,
+  .ew-nav-trailing,
+  .ew-user-text {
+    display: none;
+  }
+}
+
+/* SVG 图标：尺寸由 CSS 给（01 §5 对不同位置给了 20/16/15/14/12 五档） */
+.ew-icon {
+  width: var(--layout-icon-size);
+  height: var(--layout-icon-size);
+  flex: none;
+  display: block;
+}
+
+/* 各处的图标档位。写在一起是为了让"§5 给的五档到底用在哪"一眼可查 */
+.ew-nav-icon,
+.ew-scenario-chip-icon,
+.ew-segmented-item,
+.ew-inline-select-icon,
+.ew-composer-attach,
+.ew-composer-mic,
+.ew-send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ew-scenario-chip-icon .ew-icon,
+.ew-segmented-item .ew-icon {
+  width: var(--layout-icon-size-sm);
+  height: var(--layout-icon-size-sm);
+}
+.ew-inline-select-icon .ew-icon {
+  width: var(--layout-icon-size-xs);
+  height: var(--layout-icon-size-xs);
+}
+.ew-composer-attach .ew-icon,
+.ew-composer-mic .ew-icon,
+.ew-send-button .ew-icon {
+  width: var(--layout-icon-size-md);
+  height: var(--layout-icon-size-md);
+}
+/* 图标型发送按钮是正圆（§5.13：SendButton 32 圆形）；带文案时才用胶囊 */
+.ew-send-button:has(.ew-icon) {
+  width: var(--layout-send-button-size);
+  padding: 0;
+}
+.ew-case-cover-icon .ew-icon {
+  width: var(--space-40);
+  height: var(--space-40);
+  color: var(--text-tertiary);
+}
+
 .ew-task-workspace {
   display: flex;
   flex-direction: column;
@@ -122,6 +220,19 @@
   font-weight: var(--font-label-weight);
   cursor: pointer;
 }
+.ew-pill-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.ew-pill-icon .ew-icon {
+  width: var(--layout-icon-size-xs);
+  height: var(--layout-icon-size-xs);
+}
+.ew-pill-trailing .ew-icon {
+  width: var(--layout-chevron-size);
+  height: var(--layout-chevron-size);
+}
 .ew-pill-button[data-variant='accent'] {
   background: var(--accent-weak);
   color: var(--accent-strong);
@@ -216,7 +327,7 @@
 
 /* SegmentedControl：两个变体的分工是硬规则（01 §5.10） */
 .ew-segmented {
-  height: var(--space-32);
+  height: var(--layout-segmented-track-height);
   padding: var(--space-4);
   border-radius: var(--r-full);
   background: var(--bg-sunken);
@@ -914,16 +1025,202 @@
 .ew-sidebar {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  flex: none;
   width: var(--layout-sidebar-width);
-  padding: var(--space-8);
+  height: 100%;
+  padding: 0 var(--space-8) var(--space-8);
   background: var(--bg-app);
-  overflow-y: auto;
+  overflow: hidden;
 }
-.ew-sidebar-top {
+
+/*
+ * 01 §3.2 标题栏带：高 52，无背景色、无下边框（继承侧边栏底色）。
+ *
+ * 三个图标**右对齐**而不是接着交通灯排 —— §3.2 给的中心 x 是 161/197/233，
+ * 而 260 - 233 - 14 = 13 正好是右内边距。右对齐同时解决了 Windows/Linux 上
+ * 窗口控件跑到右上角的情况：那时交通灯占位为 0，左对齐会让三个图标突然贴到最左边。
+ */
+.ew-sidebar-titlebar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  height: var(--layout-title-bar-height);
+  padding: 0 var(--space-12);
+  /* 无边框窗口下这条带子是拖拽区；按钮自己再改回 no-drag */
+  -webkit-app-region: drag;
+}
+.ew-sidebar-titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+/* §3.3 品牌行：logo + 名称 + 「发现应用」chip */
+.ew-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--layout-brand-row-height);
+  padding: 0 var(--space-8);
+}
+.ew-brand-name {
+  flex: 1;
+  font-size: var(--font-title-2-size);
+  line-height: var(--font-title-2-line);
+  font-weight: var(--font-title-2-weight);
+  letter-spacing: -0.01em;
+}
+
+/* §5.2 AppSwitcherChip */
+.ew-app-switcher {
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-4);
+  height: var(--layout-app-switcher-height);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-full);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-caption-size);
+  cursor: pointer;
+}
+.ew-app-switcher:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.ew-app-switcher:not(:disabled):hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.ew-app-switcher-icon .ew-icon {
+  width: var(--layout-icon-size-xs);
+  height: var(--layout-icon-size-xs);
+}
+.ew-app-switcher-chevron .ew-icon {
+  width: var(--layout-chevron-size);
+  height: var(--layout-chevron-size);
+}
+
+/* §3.3：主导航节奏 33 = 行高 28 + 行距 5。任务列表沿用同一节奏 */
+.ew-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--layout-nav-rhythm) - var(--layout-nav-item-height));
+  padding: var(--space-8) 0;
+}
+
+/* §3.3：任务列表是唯一的滚动区 */
+.ew-sidebar-tasks {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ew-sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-8);
+}
+
+/* §5.6 PromoCard —— Q18：只渲染静态内容，没有任何回传 */
+.ew-promo-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--layout-promo-card-height);
+  padding: var(--space-12);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+.ew-promo-text {
+  flex: 1;
+  min-width: 0;
+}
+.ew-promo-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-label-size);
+  font-weight: var(--font-label-weight);
+}
+.ew-promo-body {
+  margin: 0;
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-promo-action {
+  padding: 0 var(--space-8);
+  border-radius: var(--r-full);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  font-size: var(--font-caption-size);
+  line-height: var(--space-24);
+}
+.ew-promo-close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--font-micro-size);
+  cursor: pointer;
+}
+
+/* §5.7 UserFooter */
+.ew-user-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--layout-user-footer-height);
+  padding: 0 var(--space-8);
+  border-top: 1px solid var(--border-subtle);
+}
+.ew-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--layout-avatar-size);
+  height: var(--layout-avatar-size);
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--accent-weak);
+  color: var(--accent-strong);
+  font-weight: var(--font-label-weight);
+}
+.ew-user-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.ew-user-name {
+  font-size: var(--font-label-size);
+  font-weight: var(--font-label-weight);
+}
+.ew-user-version {
+  font-size: var(--font-micro-size);
+  color: var(--text-tertiary);
+}
+.ew-user-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+/* 未读时铃铛右上角一个 danger 圆点（§5.7） */
+.ew-notify-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.ew-notify-anchor[data-unread='true']::after {
+  content: '';
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--r-full);
+  background: var(--danger);
 }
 .ew-filter-anchor {
   position: relative;
@@ -1266,7 +1563,6 @@
 /* ─────────────────────────── QuotaFooter（01 §5.27，本机语义 Q17）─────────────────────────── */
 
 .ew-quota-footer {
-  margin-top: auto;
   height: var(--layout-quota-footer-height);
   padding: var(--space-8) var(--space-12);
 }
@@ -1309,6 +1605,16 @@
   color: var(--text-primary);
   font-family: var(--font-cjk);
   font-size: var(--font-body-size);
+}
+/*
+ * Hero 与场景切换**居中**，其余（chips / Composer / 案例区）左对齐撑满内容列。
+ * 截图 1 就是这个不对称的排布：居中的是"这个产品是什么"，左对齐的是"你可以做什么"。
+ */
+.ew-home .ew-hero {
+  text-align: center;
+}
+.ew-home .ew-segmented {
+  align-self: center;
 }
 .ew-hero {
   margin: var(--space-48) 0 var(--space-24);

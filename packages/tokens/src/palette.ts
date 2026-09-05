@@ -221,6 +221,26 @@ export const LAYOUT = {
    * 以下是 01 §5 各组件的固定尺寸。它们进 token 而不是写在 CSS 里，理由与其他 token 一样：
    * 01 §5 是数值真源，写进 CSS 就等于开了第二份。凡是 §5 白纸黑字给了数字的都在这儿。
    */
+  /** §3.2 macOS 交通灯占位：left 20 起、宽 60 */
+  trafficLightWidth: 60,
+  /** §3.3 品牌行（logo + 名称 + AppSwitcherChip） */
+  brandRowHeight: 36,
+  /** §5.2 AppSwitcherChip */
+  appSwitcherHeight: 26,
+  /** §5.7 UserFooter 与其头像 */
+  userFooterHeight: 62,
+  avatarSize: 28,
+  /** §5.6 PromoCard 宽 = 侧边栏内容宽（260 - 8×2） */
+  sidebarContentWidth: 244,
+  /*
+   * 图标尺寸。§5 各处点名给了 20 / 16 / 15 / 14 / 12 五档（§5.1 图标 20、§5.20 图标 28
+   * 是卡片专用），进 token 的理由与其他尺寸一样：§5 是数值真源，写死在 SVG 里就是第二份。
+   */
+  iconSize: 20,
+  iconSizeMd: 16,
+  iconSizeSm: 15,
+  iconSizeXs: 14,
+  chevronSize: 12,
   /** §5.11 FilterChip */
   chipHeight: 26,
   /** §5.12 ScenarioChip */

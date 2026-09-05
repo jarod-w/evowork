@@ -1,4 +1,8 @@
-# EvoWork 的内核配置模板（→ 安装时写入 ~/.evowork/config.toml）
+# EvoWork 的内核配置模板（→ 首次运行时装到 ~/.evowork/kernel/config.toml）
+#
+# **装到 kernel/ 而不是 ~/.evowork/**：内核只读 $CODEX_HOME 下的 config.toml，
+# 而 launcher 把 CODEX_HOME 指向 ~/.evowork/kernel/。装错地方的表现是
+# 每次 thread/start 都回 "default_permissions requires a `[permissions]` table"。
 #
 # 纪律（09 §7）：**只有内核认识的键放这里**。EvoWork 自己的配置（场景包、运营位、模式片段）
 # 放在同级的 scenarios/ · slots.toml · modes/ 里 —— 混进来会在每次上游 rebase 时

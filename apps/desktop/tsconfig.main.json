@@ -10,10 +10,11 @@
     "noEmit": false,
     "jsx": "react-jsx"
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts"],
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"],
   "references": [
     { "path": "../../packages/logging" },
     { "path": "../../packages/protocol" },
+    { "path": "../../packages/tokens" },
     { "path": "../../services/store" },
     { "path": "../../services/kernel-adapter" },
     { "path": "../../services/scheduler" },

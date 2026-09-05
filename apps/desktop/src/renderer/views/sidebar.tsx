@@ -18,16 +18,22 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { BRAND } from '@evowork/tokens';
+
+import { renderIcon } from '../components/icons.js';
 import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
 import {
+  AppSwitcherChip,
   FilterChip,
   IconButton,
   NavItem,
   PillButton,
+  PromoCard,
   QuotaFooter,
   SearchInput,
   SidebarSectionHeader,
   TaskListItem,
+  UserFooter,
 } from '../components/primitives.js';
 import { STATUS_VIEW, type TaskStatus } from './task-workspace.js';
 
@@ -132,11 +138,44 @@ export interface SidebarProps {
     readonly id: string;
     readonly label: string;
     readonly icon?: string | undefined;
+    readonly trailing?: string | undefined;
     readonly count?: number | undefined;
   }[];
   readonly activeNavId?: string | undefined;
   readonly onNavSelect?: ((id: string) => void) | undefined;
+  /** 品牌名（K5：换品牌只改 token，布局零改动）。缺省用 BRAND.appName */
+  readonly brandName?: string | undefined;
+  readonly onToggleCollapse?: (() => void) | undefined;
+  /** 用户区（01 §5.7）。不给就不渲染 —— 未登录时那一块本来就没有内容 */
+  readonly user?:
+    | { readonly name: string; readonly version: string; readonly unread?: number | undefined }
+    | undefined;
+  readonly onNotifications?: (() => void) | undefined;
+  readonly onDevices?: (() => void) | undefined;
+  /** Q18 的 `sidebar-promo` 插槽。**默认关闭**，且只渲染静态内容 */
+  readonly promo?:
+    | { readonly title: string; readonly body: string; readonly actionLabel?: string | undefined }
+    | undefined;
 }
+
+/**
+ * 02 §1 的一级信息架构：**7 个固定入口 + 1 个动态任务区**。
+ *
+ * 写死在这里而不是由调用方传，是因为它就是固定的 —— 02 §1 的那张表是产品的骨架，
+ * 不是配置。传进来只会让"侧边栏有哪几项"变成一个各页面各答一次的问题。
+ *
+ * 「新建任务」是**导航项而不是按钮**（02 §1 的原话）：它切换的是主内容区的一个视图，
+ * 与其余 6 项同级、需要保持选中态。做成按钮就没有选中态，用户永远不知道自己在首页。
+ */
+export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
+  { id: 'new-task', label: '新建任务', icon: 'new-task' },
+  { id: 'assistant', label: '助理', icon: 'assistant' },
+  { id: 'projects', label: '项目', icon: 'project' },
+  { id: 'catalog', label: '专家·技能·连接器', icon: 'catalog' },
+  { id: 'automations', label: '自动化', icon: 'automation' },
+  { id: 'library', label: '资料库', icon: 'library' },
+  { id: 'more', label: '更多', icon: 'more', trailing: '灵感' },
+];
 
 const DEFAULT_PAGE_SIZE = 30;
 
@@ -183,24 +222,32 @@ export function Sidebar(props: SidebarProps) {
   const filtering = isFilterActive(filter) || search.trim() !== '';
   const closeMenu = useCallback(() => setMenuFor(null), []);
 
+  const nav = props.nav ?? MAIN_NAV;
+  // 不在任何任务里时点亮「新建任务」（02 §2 的选中映射：`/tasks/:id` 不点亮任何导航项）
+  const activeNavId =
+    props.activeNavId ?? (props.selectedId === undefined ? 'new-task' : undefined);
+
   return (
     <nav className="ew-sidebar" aria-label="侧边栏">
-      <div className="ew-sidebar-top">
-        <PillButton variant="accent" onClick={props.onNewTask}>
-          新建任务
-        </PillButton>
+      {/* 01 §3.2 标题栏带：折叠 / 搜索 / 筛选三个 IconButton，macOS 上让开交通灯 */}
+      <div className="ew-sidebar-titlebar">
+        <IconButton
+          label="折叠侧边栏"
+          icon={renderIcon('panel-left')}
+          onClick={props.onToggleCollapse}
+        />
         <IconButton
           // 与下面 SearchInput 的无障碍名区分开：两个都叫「搜索任务」时，
           // 读屏用户听到的是两个同名控件，而测试里也定位不到唯一元素
           label={searchOpen ? '收起搜索框' : '打开搜索框'}
-          icon="⌕"
+          icon={renderIcon('search')}
           selected={searchOpen}
           onClick={() => setSearchOpen((v) => !v)}
         />
         <span className="ew-filter-anchor">
           <IconButton
             label="筛选任务"
-            icon="⌄"
+            icon={renderIcon('filter')}
             selected={filterOpen || isFilterActive(filter)}
             onClick={() => setFilterOpen((v) => !v)}
           />
@@ -215,6 +262,12 @@ export function Sidebar(props: SidebarProps) {
         </span>
       </div>
 
+      {/* 01 §3.3 品牌行 */}
+      <div className="ew-sidebar-brand">
+        <span className="ew-brand-name">{props.brandName ?? BRAND.appName}</span>
+        <AppSwitcherChip label="发现应用" icon={renderIcon('compass')} />
+      </div>
+
       {searchOpen ? (
         <SearchInput
           ariaLabel="搜索任务"
@@ -224,110 +277,143 @@ export function Sidebar(props: SidebarProps) {
         />
       ) : null}
 
-      {(props.nav ?? []).map((item) => (
-        <NavItem
-          key={item.id}
-          label={item.label}
-          icon={item.icon}
-          count={item.count}
-          selected={item.id === props.activeNavId}
-          onClick={() => props.onNavSelect?.(item.id)}
+      <div className="ew-sidebar-nav">
+        {nav.map((item) => (
+          <NavItem
+            key={item.id}
+            label={item.label}
+            icon={renderIcon(item.icon)}
+            trailing={item.trailing}
+            count={item.count}
+            selected={item.id === activeNavId}
+            onClick={() => {
+              if (item.id === 'new-task') props.onNewTask?.();
+              props.onNavSelect?.(item.id);
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="ew-sidebar-tasks">
+        <SidebarSectionHeader
+          label="任务"
+          count={topLevel.length}
+          {...(filtering ? { filteredCount: matched.length } : {})}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((v) => !v)}
+          {...(filtering
+            ? {
+                onResetFilter: () => {
+                  setFilter(EMPTY_FILTER);
+                  setSearch('');
+                },
+              }
+            : {})}
         />
-      ))}
 
-      <SidebarSectionHeader
-        label="任务"
-        count={topLevel.length}
-        {...(filtering ? { filteredCount: matched.length } : {})}
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((v) => !v)}
-        {...(filtering
-          ? {
-              onResetFilter: () => {
-                setFilter(EMPTY_FILTER);
-                setSearch('');
-              },
-            }
-          : {})}
-      />
-
-      {collapsed ? null : (
-        <div className="ew-task-groups">
-          {grouped.map((group) => (
-            <div key={group.id} className="ew-task-group">
-              <p className="ew-task-group-name">
-                {group.id === PINNED_SECTION ? '📌 置顶' : group.name}
-              </p>
-              <ul className="ew-task-list">
-                {group.tasks.map((task) => (
-                  <li key={task.id}>
-                    <span className="ew-task-row-anchor">
-                      <TaskListItem
-                        title={task.title ?? '未命名任务'}
-                        time={task.timeLabel}
-                        tone={STATUS_VIEW[task.status].tone}
-                        breathing={STATUS_VIEW[task.status].breathing}
-                        pinned={task.sectionId === PINNED_SECTION}
-                        selected={task.id === props.selectedId}
-                        onClick={() => props.onSelect?.(task.id)}
-                        onMore={() => setMenuFor(task.id === menuFor ? null : task.id)}
-                      />
-                      <Popover open={menuFor === task.id} onClose={closeMenu} align="end">
-                        <Menu
-                          ariaLabel={`${task.title ?? '未命名任务'} 的操作`}
-                          items={rowMenuItems(task)}
-                          onSelect={(action) => {
-                            closeMenu();
-                            if (action === 'delete') {
-                              setConfirmDelete(task);
-                              return;
-                            }
-                            props.onRowAction?.(action as RowAction, task.id);
-                          }}
+        {collapsed ? null : (
+          <div className="ew-task-groups">
+            {grouped.map((group) => (
+              <div key={group.id} className="ew-task-group">
+                <p className="ew-task-group-name">
+                  {group.id === PINNED_SECTION ? '📌 置顶' : group.name}
+                </p>
+                <ul className="ew-task-list">
+                  {group.tasks.map((task) => (
+                    <li key={task.id}>
+                      <span className="ew-task-row-anchor">
+                        <TaskListItem
+                          title={task.title ?? '未命名任务'}
+                          time={task.timeLabel}
+                          tone={STATUS_VIEW[task.status].tone}
+                          breathing={STATUS_VIEW[task.status].breathing}
+                          pinned={task.sectionId === PINNED_SECTION}
+                          selected={task.id === props.selectedId}
+                          onClick={() => props.onSelect?.(task.id)}
+                          onMore={() => setMenuFor(task.id === menuFor ? null : task.id)}
                         />
-                      </Popover>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-
-          {matched.length === 0 ? (
-            <p className="ew-task-list-empty">
-              {filtering ? '没有符合条件的任务。改一下筛选条件，或者重置。' : '还没有任务。'}
-            </p>
-          ) : null}
-
-          {matched.length > visible.length ? (
-            <p className="ew-task-list-more">还有 {matched.length - visible.length} 条，滚动加载</p>
-          ) : null}
-        </div>
-      )}
-
-      {props.diskUsageLabel !== undefined ? (
-        <QuotaFooter
-          usedLabel={props.diskUsageLabel}
-          percent={props.diskUsagePercent ?? 0}
-          onCleanup={props.onCleanup}
-        />
-      ) : null}
-
-      {(props.contentMatches ?? []).length > 0 ? (
-        <div className="ew-content-matches">
-          <p className="ew-content-matches-title">对话内容命中</p>
-          <ul>
-            {(props.contentMatches ?? []).map((hit) => (
-              <li key={hit.id}>
-                <button type="button" onClick={() => props.onSelect?.(hit.id)}>
-                  <span className="ew-content-match-title">{hit.title}</span>
-                  <span className="ew-content-match-excerpt">{hit.excerpt}</span>
-                </button>
-              </li>
+                        <Popover open={menuFor === task.id} onClose={closeMenu} align="end">
+                          <Menu
+                            ariaLabel={`${task.title ?? '未命名任务'} 的操作`}
+                            items={rowMenuItems(task)}
+                            onSelect={(action) => {
+                              closeMenu();
+                              if (action === 'delete') {
+                                setConfirmDelete(task);
+                                return;
+                              }
+                              props.onRowAction?.(action as RowAction, task.id);
+                            }}
+                          />
+                        </Popover>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
-        </div>
-      ) : null}
+
+            {matched.length === 0 ? (
+              <p className="ew-task-list-empty">
+                {filtering ? '没有符合条件的任务。改一下筛选条件，或者重置。' : '还没有任务。'}
+              </p>
+            ) : null}
+
+            {matched.length > visible.length ? (
+              <p className="ew-task-list-more">
+                还有 {matched.length - visible.length} 条，滚动加载
+              </p>
+            ) : null}
+          </div>
+        )}
+
+        {(props.contentMatches ?? []).length > 0 ? (
+          <div className="ew-content-matches">
+            <p className="ew-content-matches-title">对话内容命中</p>
+            <ul>
+              {(props.contentMatches ?? []).map((hit) => (
+                <li key={hit.id}>
+                  <button type="button" onClick={() => props.onSelect?.(hit.id)}>
+                    <span className="ew-content-match-title">{hit.title}</span>
+                    <span className="ew-content-match-excerpt">{hit.excerpt}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+
+      {/* 01 §3.3：任务列表是唯一的滚动区，运营位与用户区吸底 */}
+      <div className="ew-sidebar-bottom">
+        {props.promo ? (
+          <PromoCard
+            title={props.promo.title}
+            body={props.promo.body}
+            actionLabel={props.promo.actionLabel}
+          />
+        ) : null}
+
+        {props.diskUsageLabel !== undefined ? (
+          <QuotaFooter
+            usedLabel={props.diskUsageLabel}
+            percent={props.diskUsagePercent ?? 0}
+            onCleanup={props.onCleanup}
+          />
+        ) : null}
+
+        {props.user ? (
+          <UserFooter
+            name={props.user.name}
+            version={props.user.version}
+            unreadCount={props.user.unread}
+            notificationIcon={renderIcon('bell')}
+            deviceIcon={renderIcon('devices')}
+            onNotifications={props.onNotifications}
+            onDevices={props.onDevices}
+          />
+        ) : null}
+      </div>
 
       {confirmDelete ? (
         <div className="ew-delete-confirm" role="alertdialog" aria-label="删除任务">

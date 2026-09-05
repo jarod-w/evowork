@@ -46,10 +46,24 @@ bootstrap({
     createWindow: (options) => new BrowserWindow(options),
     ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   },
-  // 打包时内核二进制随包（M9）；开发时用仓库里构建出来的那个
-  appServerPath: isDev
-    ? join(process.cwd(), '../codex/codex-rs/target/debug/codex-app-server')
-    : join(process.resourcesPath, 'kernel', 'codex-app-server'),
+  /*
+   * 打包时内核二进制随包（M9）；开发时用仓库里构建出来的那个。
+   *
+   * `EVOWORK_APP_SERVER` 可以覆盖两者。加它是因为开发机上常常没有 debug 构建
+   * （`cargo build -p codex-app-server` 要几分钟），而这时**唯一的症状是启动失败**——
+   * 与"代码写错了"区分不开。企业离线部署换内核路径也走这个变量。
+   */
+  appServerPath:
+    process.env.EVOWORK_APP_SERVER ??
+    (isDev
+      ? join(process.cwd(), '../codex/codex-rs/target/debug/codex-app-server')
+      : join(process.resourcesPath, 'kernel', 'codex-app-server')),
+  /*
+   * 随包的 `config/`（electron-builder.yml 的 extraResources 把它放在 resources 下）。
+   * 首次运行时 `[permissions.*]` 四个档位从这里装进内核家目录 ——
+   * 少了它，**每一次新建任务都会被内核拒掉**，而 UI 上只表现为"回车没反应"。
+   */
+  configDir: isDev ? join(process.cwd(), 'config') : join(process.resourcesPath, 'config'),
   preloadPath: join(import.meta.dirname, '../preload/index.bundle.cjs'),
   rendererHtmlPath: join(import.meta.dirname, '../renderer/index.html'),
   devServerUrl: isDev ? 'http://localhost:5173' : undefined,

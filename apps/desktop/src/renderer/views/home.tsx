@@ -17,7 +17,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Composer, type ComposerProps, type SelectOption } from '../components/composer.js';
+import { renderIcon } from '../components/icons.js';
 import {
+  Banner,
   CaseCard,
   FilterChipRow,
   IconButton,
@@ -91,6 +93,15 @@ export interface HomeProps {
   readonly onChange: (value: string) => void;
   /** 场景配置损坏时回落到内置 office 并提示，不白屏（03 §8） */
   readonly configNotice?: string | undefined;
+  /**
+   * 首页也要能显示失败。
+   *
+   * 此前提示条只在任务页渲染 —— 而**第一条消息是在首页发的**：它失败时用户看到的是
+   * 输入框恢复原样、别的什么都没有。"不静默降级"这条纪律在这里最容易漏，
+   * 因为写代码时人总是从"已经进了任务页"想起。
+   */
+  readonly notices?:
+    readonly { readonly tone: 'info' | 'warning' | 'danger'; readonly text: string }[] | undefined;
 }
 
 export function Home(props: HomeProps) {
@@ -139,6 +150,12 @@ export function Home(props: HomeProps) {
       <div className="ew-content-column">
         {props.configNotice ? <p className="ew-config-notice">{props.configNotice}</p> : null}
 
+        {(props.notices ?? []).map((notice, index) => (
+          <Banner key={`${notice.tone}-${index}`} tone={notice.tone}>
+            {notice.text}
+          </Banner>
+        ))}
+
         <h1 className="ew-hero">{props.heroLine}</h1>
 
         {/* 深色变体：**决定页面装什么**（01 §5.9 / §5.10 的硬规则） */}
@@ -146,7 +163,11 @@ export function Home(props: HomeProps) {
           variant="dark"
           ariaLabel="场景"
           value={scenario?.id ?? ''}
-          items={props.scenarios.map((s) => ({ id: s.id, label: s.name, icon: s.icon }))}
+          items={props.scenarios.map((s) => ({
+            id: s.id,
+            label: s.name,
+            icon: renderIcon(s.icon),
+          }))}
           onChange={props.onScenarioChange}
         />
 
@@ -155,7 +176,7 @@ export function Home(props: HomeProps) {
             <ScenarioChip
               key={chip.label}
               label={chip.label}
-              icon={chip.icon}
+              icon={renderIcon(chip.icon)}
               shortcut={index < MAX_CHIPS ? `⌥${index + 1}` : undefined}
               onClick={() => {
                 writePrompt(chip.prompt);
@@ -173,10 +194,18 @@ export function Home(props: HomeProps) {
               title="不知道做什么，试试最佳实践案例"
               actions={
                 <>
-                  <PillButton variant="ghost" onClick={props.onShuffleCases}>
+                  <PillButton
+                    variant="ghost"
+                    icon={renderIcon('refresh')}
+                    onClick={props.onShuffleCases}
+                  >
                     换一批
                   </PillButton>
-                  <IconButton label="关闭案例区" icon="✕" onClick={() => setShowcaseClosed(true)} />
+                  <IconButton
+                    label="关闭案例区"
+                    icon={renderIcon('close')}
+                    onClick={() => setShowcaseClosed(true)}
+                  />
                 </>
               }
             />
@@ -186,6 +215,7 @@ export function Home(props: HomeProps) {
                   key={item.id}
                   title={item.title}
                   cover={item.cover}
+                  icon={renderIcon('image')}
                   onClick={() => writePrompt(item.prompt)}
                 />
               ))}

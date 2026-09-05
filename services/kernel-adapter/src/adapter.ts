@@ -453,6 +453,17 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     /** 当前不可用的能力，供设置页「本机能力」列出（09 §3.3：降级一律显式）。 */
+    /**
+     * 「本次任务内都允许」能不能给（10 §3.3）。
+     *
+     * 转发审批路由的判断而不是让 UI 自己算：那条规则（批量变更与删除不给）
+     * 只该有一个定义处 —— 复制到前端去，两边迟早会不一致，而不一致的那一侧
+     * 是"多给了一个一键放开写权限的按钮"。
+     */
+    allowsAcceptForSession(approval: PendingApproval): boolean {
+      return approvals.allowsAcceptForSession(approval);
+    },
+
     degradations(): CapabilityReport[] {
       return capabilities.unavailable();
     },

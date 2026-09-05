@@ -31,11 +31,13 @@ export interface ApprovalViewModel {
   readonly reason?: string | undefined;
   readonly command?: string | undefined;
   readonly cwd?: string | undefined;
-  readonly changes?: readonly {
-    readonly path: string;
-    readonly kind?: string | undefined;
-    readonly outsideWorkspace?: boolean | undefined;
-  }[];
+  readonly changes?:
+    | readonly {
+        readonly path: string;
+        readonly kind?: string | undefined;
+        readonly outsideWorkspace?: boolean | undefined;
+      }[]
+    | undefined;
   readonly paths?: readonly { readonly path: string; readonly access: string }[] | undefined;
   readonly networkTargets?: readonly string[] | undefined;
   readonly purpose?: string | undefined;

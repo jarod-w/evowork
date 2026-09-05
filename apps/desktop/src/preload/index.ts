@@ -27,14 +27,24 @@ export const RENDERER_CHANNELS = Object.freeze({
   askApproval: 'evowork:ask-approval',
 });
 
-/** 渲染进程能调用的动作。**这就是它能做的全部事情**。 */
+/**
+ * 渲染进程能调用的动作。**这就是它能做的全部事情**。
+ *
+ * 主进程遍历这个数组注册 handler（见 `bootstrap.ts`），所以往这里加一项
+ * 就必须在 `ServiceHost['actions']` 里有同名实现，否则编译期就红 ——
+ * 这条约束是被一次真实故障换来的：以前主进程只注册了审批一个 handler，
+ * 而这里声明着六个，界面上的表现是"回车没反应"，一行报错都看不到。
+ *
+ * 每个动作**只收一个载荷参数**（形状见 `shared/ipc.ts`）。多参数会被这层悄悄丢掉，
+ * 所以契约里没有多参数的动作。
+ */
 export const RENDERER_ACTIONS = Object.freeze([
   'send',
   'interrupt',
   'decideApproval',
   'rowAction',
   'refreshVisible',
-  'listScenarios',
+  'getStartup',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {

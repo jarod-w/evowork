@@ -99,7 +99,6 @@ function makeHost(over: HostOverride = {}): ServiceHost {
     appServerPath: '/fake/codex-app-server',
     appVersion: '0.0.0-test',
     emitToRenderer: (channel, payload) => emitted.push({ channel, payload }),
-    askRenderer: async () => ({ decision: 'accept' }),
     spawnFn: (() => child) as unknown as HostOptions['spawnFn'],
     ...over,
   } as HostOptions);
@@ -259,9 +258,8 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
     expect(JSON.stringify(uiEvents)).not.toContain('thread/started');
   });
 
-  it('审批请求 → 问渲染进程 → 回复内核（F14 的完整回路）', async () => {
-    const askRenderer = vi.fn(async () => ({ decision: 'decline' as const }));
-    host = makeHost({ askRenderer });
+  it('审批请求 → 推给渲染进程 → 用户的决定回给内核（F14 的完整回路）', async () => {
+    host = makeHost();
     await host.start();
     const before = child.received.length;
 
@@ -271,14 +269,23 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
       command: 'rm -rf build',
       reason: '这个命令会删除文件',
     });
-    await vi.waitFor(() => expect(child.received.length).toBeGreaterThan(before));
 
-    // ① 问过渲染进程
-    expect(askRenderer).toHaveBeenCalledWith(
-      IPC.askApproval,
-      expect.objectContaining({ kind: 'command', threadId: 't1' }),
-    );
-    // ② 把用户的决定回给了内核
+    // ① 推给了渲染进程，且是**审批卡能直接渲染的形状**（不是协议原始 params）
+    await vi.waitFor(() => expect(emitted.some((e) => e.channel === IPC.askApproval)).toBe(true));
+    const asked = emitted.filter((e) => e.channel === IPC.askApproval).at(-1)?.payload as {
+      id: string;
+      kind: string;
+      threadId: string;
+      command?: string;
+      reason?: string;
+    };
+    expect(asked.kind).toBe('command');
+    expect(asked.threadId).toBe('t1');
+    expect(asked.reason).toBe('这个命令会删除文件');
+
+    // ② 用户的决定按**审批自己的 id**回来（两边编两套 id 的话永远对不上）
+    host.resolveApproval(asked.id, { decision: 'decline' });
+    await vi.waitFor(() => expect(child.received.length).toBeGreaterThan(before));
     const reply = JSON.parse(child.received.at(-1) as string) as {
       id: number;
       result: { decision: string };
@@ -288,8 +295,7 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
   });
 
   it('待审批列表变化推给渲染进程（10 §3.5 的全局可见性）', async () => {
-    let resolveUser: (v: unknown) => void = () => {};
-    host = makeHost({ askRenderer: () => new Promise((resolve) => (resolveUser = resolve)) });
+    host = makeHost();
     await host.start();
     emitted = [];
 
@@ -301,7 +307,10 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
     const pending = emitted.filter((e) => e.channel === IPC.pendingApprovals).at(-1);
     expect((pending?.payload as unknown[]).length).toBe(1);
 
-    resolveUser({ decision: 'accept' });
+    const asked = emitted.filter((e) => e.channel === IPC.askApproval).at(-1)?.payload as {
+      id: string;
+    };
+    host.resolveApproval(asked.id, { decision: 'accept' });
     await vi.waitFor(() => {
       const last = emitted.filter((e) => e.channel === IPC.pendingApprovals).at(-1);
       expect((last?.payload as unknown[]).length).toBe(0);

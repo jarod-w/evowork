@@ -7,10 +7,21 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { App, mergeItem, type EvoworkBridge, type UiEventFromMain } from '../src/renderer/app.js';
+import type { RendererEvent, StartupInfo } from '../src/shared/ipc.js';
+import { App, mergeItem, type EvoworkBridge } from '../src/renderer/app.js';
+
+const STARTUP: StartupInfo = {
+  appName: 'EvoWork',
+  appVersion: '0.0.0',
+  userName: '本机用户',
+  scenarios: [{ id: 'office', name: '日常办公', chips: [], defaults: {} }],
+  permissions: [{ id: 'evowork-workspace', label: 'evowork-workspace', allowed: true }],
+  cases: [],
+  tasks: [],
+};
 
 function fakeBridge(over: Partial<EvoworkBridge> = {}) {
-  const emit: { ui?: (e: UiEventFromMain) => void } = {};
+  const emit: { ui?: (e: RendererEvent) => void } = {};
   const bridge: EvoworkBridge = {
     onUiEvent: (handler) => {
       emit.ui = handler;
@@ -24,7 +35,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     decideApproval: vi.fn(async () => undefined),
     rowAction: vi.fn(async () => undefined),
     refreshVisible: vi.fn(async () => undefined),
-    listScenarios: async () => [{ id: 'office', name: '日常办公', chips: [], defaults: {} }],
+    getStartup: async () => STARTUP,
     ...over,
   };
   return { bridge, emit };
@@ -47,7 +58,9 @@ describe('首页不创建 Thread（03 §1）', () => {
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '做个周报' } });
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
 
-    await waitFor(() => expect(bridge.send).toHaveBeenCalledWith({ text: '做个周报' }));
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith({ text: '做个周报', scenarioId: 'office' }),
+    );
     // 切到任务页：首页的 Hero 不在了
     await waitFor(() => expect(screen.queryByText('EvoWork，我帮你')).toBeNull());
   });
@@ -64,7 +77,11 @@ describe('首页不创建 Thread（03 §1）', () => {
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '第二条' } });
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
     await waitFor(() =>
-      expect(bridge.send).toHaveBeenLastCalledWith({ threadId: 't1', text: '第二条' }),
+      expect(bridge.send).toHaveBeenLastCalledWith({
+        threadId: 't1',
+        text: '第二条',
+        scenarioId: 'office',
+      }),
     );
   });
 });
