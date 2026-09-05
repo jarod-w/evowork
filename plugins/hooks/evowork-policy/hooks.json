@@ -1,0 +1,30 @@
+{
+  "_comment": "EvoWork 的策略包（K3 的第三个扩展点）。内核的 hooks 事件契约见 ../../../codex/codex-rs/hooks/src/events/。每个 handler 从 stdin 读一行 JSON，向 stdout 写一行 JSON。",
+  "PreToolUse": [
+    {
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/bin/pre-tool-use.mjs" }]
+    }
+  ],
+  "PermissionRequest": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/bin/permission-request.mjs" }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/bin/post-tool-use.mjs" }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/bin/session-end.mjs" }]
+    }
+  ]
+}

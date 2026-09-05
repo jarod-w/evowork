@@ -1,0 +1,26 @@
+{
+  "name": "@evowork/kernel-adapter",
+  "version": "0.0.0",
+  "private": true,
+  "description": "app-server 协议适配层：收敛实验方法 · 展开 EvoWork 概念 · 事件流投影 · 断连重连（M2a）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/logging": "workspace:*",
+    "@evowork/protocol": "workspace:*",
+    "@evowork/store": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

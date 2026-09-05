@@ -1,0 +1,21 @@
+{
+  "name": "@evowork/logging",
+  "version": "0.0.0",
+  "private": true,
+  "description": "结构化日志：把 Q14「不落盘 prompt 与响应体」做成代码层面的不可能",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,26 @@
+# 设计创意。03 §2.2。
+id      = "design"
+name    = "设计创意"
+icon    = "palette"
+order   = 30
+
+model             = "evowork/deepseek-chat"
+reasoning_effort  = "medium"
+permissions       = "evowork-workspace"
+mode              = "craft"
+instructions_file = "modes/craft-design.md"
+budget_limit      = 400000
+
+skills              = ["charts"]
+connectors          = []
+experts_recommended = []
+
+[[chips]]
+label  = "出几个方案"
+icon   = "lightbulb"
+prompt = "围绕这个主题给我几个方案："
+
+[[chips]]
+label  = "配图"
+icon   = "image"
+prompt = "帮我生成一张配图："

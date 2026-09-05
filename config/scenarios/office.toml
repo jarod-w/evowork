@@ -1,0 +1,51 @@
+# 日常办公（默认场景）。03 §2.2。
+#
+# 场景包必须由 EvoWork 自己维护：内核的 collaborationMode/list 返回硬编码的 plan + default，
+# 不读任何配置（F3），装不下场景这个概念。每次 turn/start 由适配层把它展开成完整参数下发。
+
+id      = "office"
+name    = "日常办公"
+icon    = "cup"
+order   = 10
+default = true
+
+# 展开到 turn/start 的部分
+model             = "evowork/deepseek-chat"
+reasoning_effort  = "medium"
+permissions       = "evowork-workspace"
+mode              = "craft"
+instructions_file = "modes/craft-office.md"
+# 定时任务强制硬预算（07 §8-3）；交互式任务用它做默认值
+budget_limit      = 400000
+
+# 影响可用能力
+skills              = ["documents", "spreadsheets", "presentations", "charts"]
+connectors          = []                       # Q9：本期只有 browser，办公场景默认不开
+experts_recommended = ["report-writer", "data-analyst", "finance-analyst"]
+
+# 影响首页（截图 1 的 5 个 chips）。点击只写入 Composer，**不自动发送**（03 §3.2）
+[[chips]]
+label         = "文档处理"
+icon          = "file-text"
+prompt        = "帮我处理这些文档："
+requires_file = true
+
+[[chips]]
+label  = "金融服务"
+icon   = "bank"
+prompt = "帮我分析这份财务数据："
+
+[[chips]]
+label  = "数据分析及可视化"
+icon   = "pie-chart"
+prompt = "分析这份数据并给出可视化："
+
+[[chips]]
+label  = "个人工作台"
+icon   = "layout"
+prompt = "帮我整理今天的工作安排："
+
+[[chips]]
+label  = "幻灯片"
+icon   = "presentation"
+prompt = "帮我做一份汇报幻灯片："

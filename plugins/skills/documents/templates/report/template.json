@@ -1,0 +1,26 @@
+{
+  "_comment": "对外报告：有封面、有目录、正文 11pt、页眉写文档标题、页脚写页码。数值不进渲染代码 —— 与 presentations 同一条纪律。",
+  "page": { "margin_cm": 2.5, "orientation": "portrait" },
+  "font": { "cjk": "微软雅黑", "latin": "Calibri" },
+  "styles": {
+    "title": { "size_pt": 26, "bold": true, "space_after_pt": 6, "align": "center" },
+    "subtitle": {
+      "size_pt": 13,
+      "bold": false,
+      "space_after_pt": 24,
+      "align": "center",
+      "color": "6E6D68"
+    },
+    "h1": { "size_pt": 18, "bold": true, "space_before_pt": 18, "space_after_pt": 8 },
+    "h2": { "size_pt": 15, "bold": true, "space_before_pt": 14, "space_after_pt": 6 },
+    "h3": { "size_pt": 13, "bold": true, "space_before_pt": 10, "space_after_pt": 4 },
+    "h4": { "size_pt": 11, "bold": true, "space_before_pt": 8, "space_after_pt": 4 },
+    "body": { "size_pt": 11, "line_spacing": 1.5, "space_after_pt": 8 },
+    "quote": { "size_pt": 10.5, "italic": true, "color": "6E6D68", "indent_cm": 1.0 },
+    "caption": { "size_pt": 9, "color": "6E6D68", "align": "center", "space_after_pt": 10 }
+  },
+  "table": { "style": "Table Grid", "header_fill": "E9E8E4", "header_bold": true, "font_pt": 10 },
+  "header_footer": { "header_text": "{title}", "footer_page_number": true },
+  "cover_page": true,
+  "image_default_width_cm": 14
+}

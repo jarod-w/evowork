@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # M9 之前不需要真的 Electron 二进制；CI 里跳过它能省几分钟与几百 MB
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+jobs:
+  check:
+    name: 格式 · lint · 类型 · 测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 格式（prettier）
+        run: pnpm run format:check
+
+      - name: Lint（含 K2 边界纪律与 01 §9 的 token-only 样式）
+        run: pnpm run lint
+
+      - name: 类型检查
+        run: pnpm run typecheck
+
+      - name: 测试
+        run: pnpm run test
+
+      - name: K1 内核补丁预算
+        run: node scripts/patch-budget.mjs
+
+      - name: THIRD_PARTY_NOTICES 是否最新（K5）
+        # 内核签出不在 CI 里，因此只校验 npm 依赖那一段；内核那一段由 kernel-drift 工作流覆盖
+        run: node scripts/gen-third-party-notices.mjs --check || echo "::warning::THIRD_PARTY_NOTICES 需要重新生成（CI 内无内核签出，本步骤仅告警）"
+
+  # 内核断言复核：CI 里没有 ../codex，所以单独 checkout 一份浅签出。
+  # 它与 kernel-drift.yml 的区别是：这个跑在**每个 PR** 上，只用 PR 里锁定的断言清单核对
+  # 当前上游 main —— 目的不是发现漂移（那是每日 job 的事），而是防止有人在改设计文档时
+  # 顺手写下一个当场就不成立的断言。
+  kernel-assertions:
+    name: 内核断言复核（F1–F16）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: evowork
+
+      - name: 签出执行内核（浅）
+        uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          path: codex
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 复核断言
+        working-directory: evowork
+        env:
+          EVOWORK_KERNEL_DIR: ${{ github.workspace }}/codex
+        run: node scripts/kernel-drift.mjs --no-fetch | tee "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,19 @@
+# 运营位插槽（Q18：保留布局插槽、默认不启用）。01 §7.4 / 03 §6。
+#
+# 插槽只渲染**静态内容**（文案 + 图标 + 一个跳转目标），**不接受任何回传埋点**。
+# 企业版可通过 requirements.toml 强制全部置空且用户不可开启。
+#
+# 若将来决策要做积分体系，需要新增的不是 UI 而是：云端活动服务 + 用户行为上报通道 +
+# 与 Q3 隐私口径的对齐结论。那三项不在本期范围里。
+
+[slots.titlebar-promo]
+enabled = false
+
+[slots.activity-popover]
+enabled = false          # 吉祥物随它一起不渲染（01 §7.3）
+
+[slots.sidebar-promo]
+enabled = false          # 关闭后任务列表可用高度 +84
+
+[slots.showcase]
+enabled = true           # 唯一默认开启的：内容是官方最佳实践而非营销（03 §5）

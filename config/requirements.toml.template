@@ -1,0 +1,28 @@
+# 企业强制层模板（→ ~/.evowork/requirements.toml）。R11 / 10 §8。
+#
+# 这份文件由**云端签名策略包**下发并覆盖，用户不可编辑。启动时校验签名与有效期：
+#   有效     → 写入并锁定相关配置
+#   即将过期 → 提示续期
+#   超期     → 自动降级为只读模式 + 明确告知原因与恢复方式
+#
+# 「降级为只读」的文案必须给出恢复路径（「请连接企业网络以更新安全策略」），
+# 否则用户只会看到产品突然不能用了 —— 这是 R11 在体验层的唯一缓解手段。
+
+# 只允许管理员配置的 hooks（总纲 §3.7）
+allow_managed_hooks_only = true
+
+# 禁用的权限档：permissionProfile/list 会返回 allowed=false，前端置灰并给出原因
+# （不隐藏 —— 用户需要知道存在这个档位但自己不能选，10 §2.3）
+[permissions]
+disabled = ["evowork-full"]
+
+# 企业开关（10 §8 的可强制项）
+[evowork]
+# 禁用产物分享（Q10 的出网路径）
+sharing_enabled = false
+# 禁用运营位（Q18 的四个插槽全关且用户不可开启）
+slots_enabled = false
+# 强制审计上报（只上报摘要，无内容 —— D9）
+audit_upload = true
+# 可用模型白名单（网关侧 + 本机双重）
+allowed_models = ["evowork/deepseek-chat"]

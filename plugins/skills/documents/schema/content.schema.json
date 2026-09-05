@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evowork.local/schemas/documents/content.schema.json",
+  "title": "EvoWork documents 内容 JSON",
+  "description": "08 §5.3 的结构化生成契约：模型给内容与层级，字号/行距/页眉页脚/目录由模板渲染。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "blocks"],
+  "properties": {
+    "template": {
+      "type": "string",
+      "enum": ["report", "memo", "minimal"],
+      "default": "report",
+      "description": "不确定用哪个就用 report。"
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "subtitle": { "type": "string", "maxLength": 200 },
+    "author": { "type": "string", "maxLength": 80 },
+    "date": { "type": "string", "maxLength": 40 },
+    "toc": {
+      "description": "是否插入目录。超过 6 个 heading 时建议开。docx 的目录需要用户在 Word 里按 F9 更新一次域 —— 渲染器会在目录下方写一行提示。",
+      "type": "boolean",
+      "default": false
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 400,
+      "items": { "$ref": "#/$defs/block" }
+    }
+  },
+  "$defs": {
+    "block": {
+      "type": "object",
+      "required": ["block"],
+      "oneOf": [
+        { "$ref": "#/$defs/heading" },
+        { "$ref": "#/$defs/paragraph" },
+        { "$ref": "#/$defs/bullets" },
+        { "$ref": "#/$defs/ordered" },
+        { "$ref": "#/$defs/table" },
+        { "$ref": "#/$defs/image" },
+        { "$ref": "#/$defs/quote" },
+        { "$ref": "#/$defs/pagebreak" }
+      ]
+    },
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "level", "text"],
+      "properties": {
+        "block": { "const": "heading" },
+        "level": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 100 }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "text"],
+      "properties": {
+        "block": { "const": "paragraph" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      }
+    },
+    "bullets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "items"],
+      "properties": {
+        "block": { "const": "bullets" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      }
+    },
+    "ordered": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "items"],
+      "properties": {
+        "block": { "const": "ordered" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "header", "rows"],
+      "properties": {
+        "block": { "const": "table" },
+        "caption": { "type": "string", "maxLength": 120 },
+        "header": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "type": "array",
+            "items": { "type": ["string", "number", "null"] }
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "path"],
+      "properties": {
+        "block": { "const": "image" },
+        "path": {
+          "description": "已经存在的图片文件（用 charts 技能先生成）。不要写还不存在的路径。",
+          "type": "string",
+          "minLength": 1
+        },
+        "caption": { "type": "string", "maxLength": 200 },
+        "width_cm": { "type": "number", "minimum": 2, "maximum": 17 }
+      }
+    },
+    "quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "text"],
+      "properties": {
+        "block": { "const": "quote" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "cite": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "pagebreak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block"],
+      "properties": { "block": { "const": "pagebreak" } }
+    }
+  }
+}

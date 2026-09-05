@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      CSP：渲染进程不允许连任何外部地址。
+      本机服务宿主与内核之间说话走主进程，渲染进程一句网络都不该说 ——
+      这条同时是 K6（本地优先）在前端的落点：没有出网路径就不会有"悄悄上传"。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
+    <title>EvoWork</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

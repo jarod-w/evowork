@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evowork.local/schemas/charts/content.schema.json",
+  "title": "EvoWork charts 内容 JSON",
+  "description": "08 §5.3 的结构化生成契约：模型给数据与标注，配色/字号/坐标轴/图例由渲染器按 01 §2 的 token 决定。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chart", "title", "series"],
+  "properties": {
+    "chart": {
+      "description": "图表种类。没有第六种 —— 需要别的表达时用最接近的一种。",
+      "type": "string",
+      "enum": ["bar", "stacked-bar", "line", "pie", "scatter"]
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "x_label": { "type": "string", "maxLength": 40 },
+    "y_label": { "type": "string", "maxLength": 40 },
+    "categories": {
+      "description": "分类轴的标签。bar / stacked-bar / line / pie 必填，且长度要与每个 series 的 values 一致。",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 60,
+      "items": { "type": "string", "minLength": 1, "maxLength": 30 }
+    },
+    "series": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/series" }
+    },
+    "theme": {
+      "description": "浅色 / 深色。配色本身来自 01 §2 的 token，这里只选明暗。",
+      "type": "string",
+      "enum": ["light", "dark"],
+      "default": "light"
+    },
+    "value_format": {
+      "description": "数值标注格式：整数 / 一位小数 / 百分比 / 千分位。影响坐标轴与数据标签。",
+      "type": "string",
+      "enum": ["int", "decimal1", "percent", "thousands"],
+      "default": "int"
+    },
+    "source": {
+      "description": "数据来源。会渲染到图的左下角 —— 用户拿去汇报时会被问“这个数哪来的”。",
+      "type": "string",
+      "maxLength": 120
+    },
+    "width_px": { "type": "integer", "minimum": 320, "maximum": 2400, "default": 960 },
+    "height_px": { "type": "integer", "minimum": 240, "maximum": 1800, "default": 540 }
+  },
+  "$defs": {
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "values"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "items": { "type": "number" }
+        },
+        "x_values": {
+          "description": "仅 scatter 用：横坐标。长度必须与 values 一致。",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "items": { "type": "number" }
+        }
+      }
+    }
+  }
+}

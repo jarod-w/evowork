@@ -1,0 +1,111 @@
+{
+  "id": "data-heavy",
+  "name": "数据评审",
+  "description": "表格与图表优先，字号更紧凑。",
+  "theme": {
+    "font_cjk": "Microsoft YaHei",
+    "font_latin": "Arial",
+    "ink": "#1F1F1D",
+    "muted": "#6E6D68",
+    "accent": "#1B6B4F",
+    "styles": {
+      "display": {
+        "size_pt": 32,
+        "bold": true,
+        "color": "ink"
+      },
+      "subtitle": {
+        "size_pt": 15,
+        "color": "muted"
+      },
+      "section": {
+        "size_pt": 24,
+        "bold": true,
+        "color": "ink"
+      },
+      "title": {
+        "size_pt": 22,
+        "bold": true,
+        "color": "ink"
+      },
+      "body": {
+        "size_pt": 18,
+        "color": "ink"
+      },
+      "caption": {
+        "size_pt": 11,
+        "color": "muted"
+      },
+      "table_header": {
+        "size_pt": 12,
+        "color": "ink"
+      },
+      "table_body": {
+        "size_pt": 11,
+        "color": "ink"
+      }
+    }
+  },
+  "metrics": {
+    "slide_width_emu": 12191695,
+    "slide_height_emu": 6858000,
+    "title_slide_title": {
+      "left": 457200,
+      "top": 2377440,
+      "width": 11277295,
+      "height": 1280160
+    },
+    "title_slide_subtitle": {
+      "left": 457200,
+      "top": 3749039,
+      "width": 11277295,
+      "height": 731520
+    },
+    "section_title": {
+      "left": 457200,
+      "top": 2834640,
+      "width": 11277295,
+      "height": 1097280
+    },
+    "body_title": {
+      "left": 457200,
+      "top": 365760,
+      "width": 11277295,
+      "height": 822960
+    },
+    "body_content": {
+      "left": 457200,
+      "top": 1097280,
+      "width": 11277295,
+      "height": 5120640
+    },
+    "chart_area": {
+      "left": 457200,
+      "top": 1097280,
+      "width": 11277295,
+      "height": 4572000
+    },
+    "table_area": {
+      "left": 457200,
+      "top": 1097280,
+      "width": 11277295,
+      "height": 4572000
+    },
+    "caption": {
+      "left": 457200,
+      "top": 6035040,
+      "width": 11277295,
+      "height": 457200
+    },
+    "bullet_shrink_steps": [
+      {
+        "min_items": 5,
+        "size_pt": 20
+      },
+      {
+        "min_items": 6,
+        "size_pt": 18
+      }
+    ]
+  }
+}

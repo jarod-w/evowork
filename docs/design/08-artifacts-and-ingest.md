@@ -20,12 +20,12 @@
 
 总纲 D6 写「识别时机为 `fileChange` item 与产物技能的显式上报（参考 `artifact_operation.rs` 的约定）」，§6.7 又说「内核已有识别逻辑」。**实测（2026-09-04 @ `728cb12fe5`）后者不成立**：
 
-| 事实 | 出处 |
-|---|---|
-| `recognize_artifact_operation()` 的返回值**只被 `codex_analytics` 消费**，不进 app-server 协议，前端拿不到任何产物事件 | `core/src/tools/events.rs:111,140-142` |
-| 它要求 `attribution.plugin_id.marketplace_name == "openai-primary-runtime"` —— **硬编码的 OpenAI marketplace 名** | `core-plugins/src/artifact_operation.rs:4,57-58` |
-| 它只认 4 个硬编码 plugin 名 + 精确脚本路径 `skills/<name>/container_tools/mark_artifact_operation_started.mjs` | `core-plugins/src/artifact_operation.rs:24-49` |
-| 它认的 `artifact_type` 只有 `presentation` / `document` / `spreadsheet` / `pdf` —— **没有 chart** | 同上 |
+| 事实                                                                                                                   | 出处                                             |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `recognize_artifact_operation()` 的返回值**只被 `codex_analytics` 消费**，不进 app-server 协议，前端拿不到任何产物事件 | `core/src/tools/events.rs:111,140-142`           |
+| 它要求 `attribution.plugin_id.marketplace_name == "openai-primary-runtime"` —— **硬编码的 OpenAI marketplace 名**      | `core-plugins/src/artifact_operation.rs:4,57-58` |
+| 它只认 4 个硬编码 plugin 名 + 精确脚本路径 `skills/<name>/container_tools/mark_artifact_operation_started.mjs`         | `core-plugins/src/artifact_operation.rs:24-49`   |
+| 它认的 `artifact_type` 只有 `presentation` / `document` / `spreadsheet` / `pdf` —— **没有 chart**                      | 同上                                             |
 
 而 P5（关闭/改向遥测端点）本来就要把 analytics 关掉。所以这条链路对 EvoWork **完全无用**。
 
@@ -33,11 +33,11 @@
 
 **产物识别 100% 由 EvoWork 自建**，走三个互补的信号源（任一命中即入索引，去重按绝对路径）：
 
-| 信号 | 来源 | 覆盖 |
-|---|---|---|
-| ① **技能显式上报**（主） | 产物技能在开始生成前调用 EvoWork 的 `mark_artifact` 脚本 → 写入本机 artifacts 服务 | 官方四个技能，元数据最全（意图、期望数量、格式） |
-| ② `FileChange` item（兜底） | `item/completed` 的 `FileChange`，按扩展名匹配产物类型表 | agent 用 shell/python 直接写出的文件 |
-| ③ `post_tool_use` hook（保险） | hook 拿到工具调用结果，扫描新增文件 | 绕过前两者的情况（如脚本内部批量生成） |
+| 信号                           | 来源                                                                               | 覆盖                                             |
+| ------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------ |
+| ① **技能显式上报**（主）       | 产物技能在开始生成前调用 EvoWork 的 `mark_artifact` 脚本 → 写入本机 artifacts 服务 | 官方四个技能，元数据最全（意图、期望数量、格式） |
+| ② `FileChange` item（兜底）    | `item/completed` 的 `FileChange`，按扩展名匹配产物类型表                           | agent 用 shell/python 直接写出的文件             |
+| ③ `post_tool_use` hook（保险） | hook 拿到工具调用结果，扫描新增文件                                                | 绕过前两者的情况（如脚本内部批量生成）           |
 
 `artifact_operation.rs` 只作**约定参考**：EvoWork 的 `mark_artifact` 沿用它的参数形状（`--operation-kind create|edit`、`--expected-output-count`、`--output-format`），这样如果上游哪天把识别结果接进协议，我们能低成本切换。**但不复用它的 marketplace 名**（K5：不引入 OpenAI 品牌字符串；且那个常量随时可能变）。
 
@@ -45,17 +45,26 @@
 
 内核的四类不够（缺 chart、缺图片、缺分析报告），自建一张表：
 
-| `artifact_type` | 扩展名 | 生成技能 | 结果区图标 |
-|---|---|---|---|
-| `document` | doc / docx / md / rtf | `documents` | 文档 |
-| `spreadsheet` | csv / tsv / xls / xlsx | `spreadsheets` | 表格 |
-| `presentation` | ppt / pptx | `presentations` | 幻灯片 |
-| `pdf` | pdf | `documents`（导出） | PDF |
-| `chart` | svg / png（图表） | `charts` | 图表 |
-| `image` | png / jpg / webp（生成图） | `ext/image-generation` | 图片 |
-| `webpage` | html（单文件） | 任意 | 网页 |
-| `data` | json / parquet / sqlite | 任意 | 数据 |
-| `archive` | zip | 任意 | 压缩包 |
+| `artifact_type` | 扩展名                     | 生成技能               | 结果区图标 |
+| --------------- | -------------------------- | ---------------------- | ---------- |
+| `document`      | doc / docx / md / rtf      | `documents`            | 文档       |
+| `spreadsheet`   | csv / tsv / xls / xlsx     | `spreadsheets`         | 表格       |
+| `presentation`  | ppt / pptx                 | `presentations`        | 幻灯片     |
+| `pdf`           | pdf                        | `documents`（导出）    | PDF        |
+| `chart`         | svg / png（图表）          | `charts`               | 图表       |
+| `image`         | png / jpg / webp（生成图） | `ext/image-generation` | 图片       |
+| `webpage`       | html（单文件）             | 任意                   | 网页       |
+| `data`          | json / parquet / sqlite    | 任意                   | 数据       |
+| `archive`       | zip                        | 任意                   | 压缩包     |
+
+> **2026-09-05 修订（接线时实测）**：三个信号**到达顺序不固定**，而先到的那个会先落一条记录。
+> 典型序列是：`charts` 技能写出 png → watcher 先扫到（信号 ③，按扩展名判成 `image`）→
+> 技能的 `mark_artifact` 上报（信号 ①）随后到达。此时内容哈希没变，
+> 按"去重"的字面意思会把上报**整条丢掉**，那张图就永远显示成「图片」而不是「图表」。
+>
+> 所以去重规则要补一条：**内容没变但来了更高优先级的信号时，做一次元数据订正**
+> （同一条记录、同一版本，只改 `artifact_type` / `title` / `operation_kind` / `source_signal`）。
+> 它不是新版本 —— 变的不是内容，是我们对这份内容的认识。
 
 `chart` 与 `image` 都可能是 png，区分依据是**信号源**（`charts` 技能上报的是 chart，图片生成扩展产出的是 image），而不是扩展名。这也是为什么信号 ① 必须存在 —— 只靠扩展名分不清。
 
@@ -120,31 +129,31 @@ artifact
 
 ### 3.3 解析器矩阵
 
-| 类型 | 解析器 | 产出 | 备注 |
-|---|---|---|---|
-| PDF（文本层） | `pdfplumber` / `pypdf` | md + 页图 | 保留表格结构 |
-| PDF（扫描件） | **本机 OCR**（`tesseract` / 系统 OCR） | md（低置信）+ 页图 | Q3 硬约束：**不得走云端 OCR**；置信度低时如实标注 |
-| Word | `python-docx` → md | md + 嵌入图 | 保留标题层级、表格、脚注 |
-| Excel | `openpyxl` | 每 sheet 一段 md 表 + csv 副本 | 大表只取前 200 行进 md，完整数据留 csv 供 agent 读 |
-| PPT | `python-pptx` | 每页标题+文本+备注 → md，每页导出 png | 版式信息丢失可接受 |
-| CSV/TSV | 内置 | md 预览 + 列类型推断 | 编码嗅探（GBK/UTF-8） |
-| TXT/MD/RTF | 内置 / `pandoc` | md | — |
-| ZIP/RAR | 内置 | 解包后递归解析（限深度 2、限 200 文件） | **压缩包炸弹防护**：解压后总大小上限 500MB |
-| 图片 | 不解析 | 直接 `LocalImage` | 需要文字时按需 OCR |
-| 代码文件 | 不解析 | 直接 `Mention` | agent 用 shell 读 |
+| 类型          | 解析器                                 | 产出                                    | 备注                                               |
+| ------------- | -------------------------------------- | --------------------------------------- | -------------------------------------------------- |
+| PDF（文本层） | `pdfplumber` / `pypdf`                 | md + 页图                               | 保留表格结构                                       |
+| PDF（扫描件） | **本机 OCR**（`tesseract` / 系统 OCR） | md（低置信）+ 页图                      | Q3 硬约束：**不得走云端 OCR**；置信度低时如实标注  |
+| Word          | `python-docx` → md                     | md + 嵌入图                             | 保留标题层级、表格、脚注                           |
+| Excel         | `openpyxl`                             | 每 sheet 一段 md 表 + csv 副本          | 大表只取前 200 行进 md，完整数据留 csv 供 agent 读 |
+| PPT           | `python-pptx`                          | 每页标题+文本+备注 → md，每页导出 png   | 版式信息丢失可接受                                 |
+| CSV/TSV       | 内置                                   | md 预览 + 列类型推断                    | 编码嗅探（GBK/UTF-8）                              |
+| TXT/MD/RTF    | 内置 / `pandoc`                        | md                                      | —                                                  |
+| ZIP/RAR       | 内置                                   | 解包后递归解析（限深度 2、限 200 文件） | **压缩包炸弹防护**：解压后总大小上限 500MB         |
+| 图片          | 不解析                                 | 直接 `LocalImage`                       | 需要文字时按需 OCR                                 |
+| 代码文件      | 不解析                                 | 直接 `Mention`                          | agent 用 shell 读                                  |
 
 运行时依赖 Python（+ tesseract）。这就是 R10 里"+100–300MB"的来源。分发策略见 §4。
 
 ### 3.4 闸门
 
-| 闸门 | 规则 | 超限行为 |
-|---|---|---|
-| 单文件大小 | ≤ 200MB | 拒绝并说明；建议"把文件放进工作空间，直接让 agent 读" |
-| 单次上传总数 | ≤ 20 个 | 拒绝多余部分 |
-| 解析超时 | 单文件 120s | 超时保留已产出部分 + 标注不完整 |
-| ZIP 解压后总量 | ≤ 500MB / 200 文件 / 深度 2 | 拒绝，防压缩炸弹 |
-| 路径穿越 | ZIP 内 `../` 一律拒绝整包 | 安全硬规则 |
-| 加密文件 | 提示输入密码（一次性，内存中） | 拒绝时如实说 |
+| 闸门           | 规则                           | 超限行为                                              |
+| -------------- | ------------------------------ | ----------------------------------------------------- |
+| 单文件大小     | ≤ 200MB                        | 拒绝并说明；建议"把文件放进工作空间，直接让 agent 读" |
+| 单次上传总数   | ≤ 20 个                        | 拒绝多余部分                                          |
+| 解析超时       | 单文件 120s                    | 超时保留已产出部分 + 标注不完整                       |
+| ZIP 解压后总量 | ≤ 500MB / 200 文件 / 深度 2    | 拒绝，防压缩炸弹                                      |
+| 路径穿越       | ZIP 内 `../` 一律拒绝整包      | 安全硬规则                                            |
+| 加密文件       | 提示输入密码（一次性，内存中） | 拒绝时如实说                                          |
 
 ### 3.5 上传的隐私边界
 
@@ -158,11 +167,11 @@ artifact
 
 安装包不全量携带解析运行时（否则首次下载 300MB+ 挡在体验前面）：
 
-| 档位 | 内容 | 大小 | 能力 |
-|---|---|---|---|
-| **基础包**（随主程序） | 内置解析器（TXT / MD / CSV / TSV / ZIP / JSON） | 0（Rust/TS 实现） | 纯文本与数据文件可用 |
-| **办公扩展**（按需下载） | Python + python-docx / openpyxl / python-pptx / pdfplumber | ~120MB | Word / Excel / PPT / PDF 文本层 |
-| **OCR 扩展**（按需下载） | tesseract + 中文模型 | ~60MB | 扫描件 |
+| 档位                     | 内容                                                       | 大小              | 能力                            |
+| ------------------------ | ---------------------------------------------------------- | ----------------- | ------------------------------- |
+| **基础包**（随主程序）   | 内置解析器（TXT / MD / CSV / TSV / ZIP / JSON）            | 0（Rust/TS 实现） | 纯文本与数据文件可用            |
+| **办公扩展**（按需下载） | Python + python-docx / openpyxl / python-pptx / pdfplumber | ~120MB            | Word / Excel / PPT / PDF 文本层 |
+| **OCR 扩展**（按需下载） | tesseract + 中文模型                                       | ~60MB             | 扫描件                          |
 
 - 首次拖入需要某档的文件时提示下载（03 §8），可跳过 → 该类型显示为"需要安装办公扩展"。
 - 企业离线部署提供全量包（含所有档位）。
@@ -189,6 +198,7 @@ plugins/skills/presentations/
 ```
 
 `mark_artifact.mjs` 参数沿用内核约定形状（§2.2）：
+
 ```
 mark_artifact --operation-kind create --expected-output-count 1 --output-format pptx \
               --title "Q3 业绩汇报" --path <绝对路径>
@@ -196,12 +206,12 @@ mark_artifact --operation-kind create --expected-output-count 1 --output-format 
 
 ### 5.2 四个技能
 
-| 技能 | 输出 | 实现 | 关键质量点 |
-|---|---|---|---|
-| `documents` | docx / md / pdf | `python-docx`；pdf 走 docx→pdf 或 `pandoc` | 标题层级、目录、页眉页脚、中文字体嵌入 |
-| `spreadsheets` | xlsx / csv | `openpyxl` | **公式而非硬编码结果**、数字格式、冻结首行、条件格式 |
-| `presentations` | pptx | `python-pptx` + 模板库 | 版式一致、文字不溢出框、图表嵌入 |
-| `charts` | svg / png | `matplotlib`（配中文字体）或 vega | 中文不乱码、配色来自 01 §2 token、坐标轴与图例完整 |
+| 技能            | 输出            | 实现                                       | 关键质量点                                           |
+| --------------- | --------------- | ------------------------------------------ | ---------------------------------------------------- |
+| `documents`     | docx / md / pdf | `python-docx`；pdf 走 docx→pdf 或 `pandoc` | 标题层级、目录、页眉页脚、中文字体嵌入               |
+| `spreadsheets`  | xlsx / csv      | `openpyxl`                                 | **公式而非硬编码结果**、数字格式、冻结首行、条件格式 |
+| `presentations` | pptx            | `python-pptx` + 模板库                     | 版式一致、文字不溢出框、图表嵌入                     |
+| `charts`        | svg / png       | `matplotlib`（配中文字体）或 vega          | 中文不乱码、配色来自 01 §2 token、坐标轴与图例完整   |
 
 ### 5.3 模板库是质量的主要手段（R4 的落点）
 
@@ -228,12 +238,12 @@ mark_artifact --operation-kind create --expected-output-count 1 --output-format 
 
 ## 6. 产物在界面上的呈现
 
-| 位置 | 形态 | 文档 |
-|---|---|---|
-| 对话流内 | 生成完成后插入产物卡（文件名 + 类型 Badge + 预览缩略 + 打开/另存/分享） | 04 §5 |
-| 结果区「产物」 | 2 列产物卡网格 | 04 §6.1 |
-| 资料库「本地产物」 | 表格视图，跨任务聚合 | 06 §3.2 |
-| 通知 | 定时任务产出产物时通知 | 02 §5.1 |
+| 位置               | 形态                                                                    | 文档    |
+| ------------------ | ----------------------------------------------------------------------- | ------- |
+| 对话流内           | 生成完成后插入产物卡（文件名 + 类型 Badge + 预览缩略 + 打开/另存/分享） | 04 §5   |
+| 结果区「产物」     | 2 列产物卡网格                                                          | 04 §6.1 |
+| 资料库「本地产物」 | 表格视图，跨任务聚合                                                    | 06 §3.2 |
+| 通知               | 定时任务产出产物时通知                                                  | 02 §5.1 |
 
 产物卡的预览缩略：docx/pptx/pdf 取首页渲染图（由技能生成时顺带导出）、xlsx 取首屏表格截图、chart/image 直接用图。**生不成缩略图就用类型图标**，不做懒加载渲染（会拖慢结果区）。
 
@@ -275,24 +285,24 @@ Q10 已决策：**显式授权后上传 EvoWork 云 · 默认关闭 · 逐次授
 
 ## 8. 空态与异常
 
-| 情况 | 表现 |
-|---|---|
-| 产物文件被外部删除 | `file_state = MISSING`，卡片置灰 + 「文件已不存在」+ 「移除记录 / 重新生成」（后者 = 用原 prompt 在原任务里重跑） |
-| 产物文件被移动 | `fs/watch` 尝试按 `content_hash` 重新定位；成功则静默更新 path，失败则标 `MOVED` |
-| 解析失败 | 附件卡 `--danger` + 失败原因分类（加密 / 损坏 / 不支持的子格式 / 超时）+ 「以原始文件引用」备选 |
-| 扫描件 OCR 置信度低 | 注入的 Text 里如实写「这是扫描件，本机 OCR 识别可能有误」，并在附件卡上标注。**不静默当作正常文本** |
-| 办公扩展未安装 | 生成/解析时提示下载（§4），可跳过则该能力不可用 |
-| 磁盘空间不足 | 解析与生成前预检；不足时拒绝并给出所需空间 |
-| 上传中断 | 断点不续传（分享文件通常不大），失败即清理云端残留并提示重试 |
+| 情况                | 表现                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 产物文件被外部删除  | `file_state = MISSING`，卡片置灰 + 「文件已不存在」+ 「移除记录 / 重新生成」（后者 = 用原 prompt 在原任务里重跑） |
+| 产物文件被移动      | `fs/watch` 尝试按 `content_hash` 重新定位；成功则静默更新 path，失败则标 `MOVED`                                  |
+| 解析失败            | 附件卡 `--danger` + 失败原因分类（加密 / 损坏 / 不支持的子格式 / 超时）+ 「以原始文件引用」备选                   |
+| 扫描件 OCR 置信度低 | 注入的 Text 里如实写「这是扫描件，本机 OCR 识别可能有误」，并在附件卡上标注。**不静默当作正常文本**               |
+| 办公扩展未安装      | 生成/解析时提示下载（§4），可跳过则该能力不可用                                                                   |
+| 磁盘空间不足        | 解析与生成前预检；不足时拒绝并给出所需空间                                                                        |
+| 上传中断            | 断点不续传（分享文件通常不大），失败即清理云端残留并提示重试                                                      |
 
 ---
 
 ## 9. 需要回写总纲的部分
 
-| # | 内容 | 依据 |
-|---|---|---|
-| 1 | D6 / §6.7 里「内核已有识别逻辑」改为「内核的识别只服务 analytics 且硬编码 OpenAI marketplace 名，产物识别为 [自建]，`artifact_operation.rs` 仅作约定参考」 | README F10 |
-| 2 | §6.7 技能表补注：内核 `artifact_type` 无 `chart`，EvoWork 自建 9 类产物类型体系（§2.3） | README F11 |
-| 3 | §6.7 补「解析运行时按档位分发」（基础 / 办公 / OCR），对齐 R10 的"按需下载而非全量随包" | §4 |
-| 4 | §6.7 补「结构化生成」原则（模型产出内容 JSON、排版由模板渲染），作为 R4 的主要缓解手段 | §5.3 |
-| 5 | M3（8 人周）应显式包含 §4 的三档运行时分发工作，否则会漏排 | §4 |
+| #   | 内容                                                                                                                                                       | 依据       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 1   | D6 / §6.7 里「内核已有识别逻辑」改为「内核的识别只服务 analytics 且硬编码 OpenAI marketplace 名，产物识别为 [自建]，`artifact_operation.rs` 仅作约定参考」 | README F10 |
+| 2   | §6.7 技能表补注：内核 `artifact_type` 无 `chart`，EvoWork 自建 9 类产物类型体系（§2.3）                                                                    | README F11 |
+| 3   | §6.7 补「解析运行时按档位分发」（基础 / 办公 / OCR），对齐 R10 的"按需下载而非全量随包"                                                                    | §4         |
+| 4   | §6.7 补「结构化生成」原则（模型产出内容 JSON、排版由模板渲染），作为 R4 的主要缓解手段                                                                     | §5.3       |
+| 5   | M3（8 人周）应显式包含 §4 的三档运行时分发工作，否则会漏排                                                                                                 | §4         |

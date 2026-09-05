@@ -1,0 +1,111 @@
+{
+  "id": "minimal",
+  "name": "极简",
+  "description": "内部同步。无装饰，信息密度高。",
+  "theme": {
+    "font_cjk": "Microsoft YaHei",
+    "font_latin": "Helvetica",
+    "ink": "#1F1F1D",
+    "muted": "#6E6D68",
+    "accent": "#1B6B4F",
+    "styles": {
+      "display": {
+        "size_pt": 34,
+        "bold": true,
+        "color": "ink"
+      },
+      "subtitle": {
+        "size_pt": 16,
+        "color": "muted"
+      },
+      "section": {
+        "size_pt": 26,
+        "bold": true,
+        "color": "ink"
+      },
+      "title": {
+        "size_pt": 24,
+        "bold": true,
+        "color": "ink"
+      },
+      "body": {
+        "size_pt": 20,
+        "color": "ink"
+      },
+      "caption": {
+        "size_pt": 11,
+        "color": "muted"
+      },
+      "table_header": {
+        "size_pt": 13,
+        "color": "ink"
+      },
+      "table_body": {
+        "size_pt": 12,
+        "color": "ink"
+      }
+    }
+  },
+  "metrics": {
+    "slide_width_emu": 12191695,
+    "slide_height_emu": 6858000,
+    "title_slide_title": {
+      "left": 548640,
+      "top": 2377440,
+      "width": 11094415,
+      "height": 1280160
+    },
+    "title_slide_subtitle": {
+      "left": 548640,
+      "top": 3749039,
+      "width": 11094415,
+      "height": 731520
+    },
+    "section_title": {
+      "left": 548640,
+      "top": 2834640,
+      "width": 11094415,
+      "height": 1097280
+    },
+    "body_title": {
+      "left": 548640,
+      "top": 457200,
+      "width": 11094415,
+      "height": 822960
+    },
+    "body_content": {
+      "left": 548640,
+      "top": 1280160,
+      "width": 11094415,
+      "height": 4754880
+    },
+    "chart_area": {
+      "left": 548640,
+      "top": 1280160,
+      "width": 11094415,
+      "height": 4206240
+    },
+    "table_area": {
+      "left": 548640,
+      "top": 1280160,
+      "width": 11094415,
+      "height": 4206240
+    },
+    "caption": {
+      "left": 548640,
+      "top": 6035040,
+      "width": 11094415,
+      "height": 457200
+    },
+    "bullet_shrink_steps": [
+      {
+        "min_items": 5,
+        "size_pt": 20
+      },
+      {
+        "min_items": 6,
+        "size_pt": 18
+      }
+    ]
+  }
+}

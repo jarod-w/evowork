@@ -1,0 +1,110 @@
+name: 内核漂移雷达
+
+# R2「上游高速演进」的缓解措施（总纲 D7：「CI 对 upstream/main 做每日试合并告警」）。
+#
+# 它必须在**有代码之前**就跑起来 —— work-priority §2 的原话：这是 P0 里最便宜、又最容易
+# 被推迟到「等有代码再说」的一项，而它恰恰要在有代码之前建立，否则设计文档会持续腐化。
+#
+# 事实依据：从总纲 v0.1 的基线到现在，上游走了 237 个提交；从详细设计集 v0.1 的基线算，53 个。
+# 这个速度下，「动手前重新核对」这条人工纪律必然失效。
+
+on:
+  schedule:
+    # 每天 01:00 UTC（北京时间 09:00，上班就能看到）
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      create_issue:
+        description: 有 BROKEN 时是否开 issue
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: 提交量 · 断言复核 · 补丁试合并
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: evowork
+
+      # 需要完整历史才能算 HEAD..origin/main 的提交量与子目录影响面
+      - name: 签出执行内核（完整历史）
+        uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          path: codex
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 内核签出的 HEAD 就是上游最新，直接对比会永远显示"落后 0 个提交"。
+      # 我们要比的是「EvoWork 当前锁定的内核基线」与上游最新的差距，
+      # 所以把内核回退到断言清单里记录的基线提交上，再让脚本 fetch origin/main。
+      - name: 把内核回退到 EvoWork 锁定的基线
+        working-directory: codex
+        run: |
+          BASE=$(node -e "console.log(require('${GITHUB_WORKSPACE}/evowork/scripts/kernel-assertions.json').baseline.commit)")
+          echo "锁定基线：$BASE"
+          git checkout --quiet "$BASE"
+
+      - name: 生成报告
+        id: report
+        working-directory: evowork
+        env:
+          EVOWORK_KERNEL_DIR: ${{ github.workspace }}/codex
+        run: |
+          set +e
+          node scripts/kernel-drift.mjs > drift.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cat drift.md >> "$GITHUB_STEP_SUMMARY"
+          cat drift.md
+
+      - name: 上传报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-drift-report
+          path: evowork/drift.md
+
+      # BROKEN = 设计文档里的某条判断可能已被上游推翻。这类事情必须留下可追踪的条目，
+      # 否则它会淹在 Actions 的历史里。按 CLAUDE.md §9：先改文档，再改代码。
+      - name: 有 BROKEN 时开 issue
+        if: steps.report.outputs.exit_code != '0' && (github.event_name == 'schedule' || inputs.create_issue)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('evowork/drift.md', 'utf8');
+            const title = `内核断言复核失败（${new Date().toISOString().slice(0, 10)}）`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'kernel-drift',
+            });
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                labels: ['kernel-drift', 'R2'],
+                body,
+              });
+            }
+
+      - name: 失败即失败（不容忍 BROKEN）
+        if: steps.report.outputs.exit_code != '0'
+        run: exit 1

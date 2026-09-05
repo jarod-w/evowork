@@ -1,0 +1,79 @@
+{
+  "_comment": "内部备忘：无封面、无目录页、正文 10.5pt、信息密度更高。标题直接起在第一页。",
+  "page": {
+    "margin_cm": 2.0,
+    "orientation": "portrait"
+  },
+  "font": {
+    "cjk": "微软雅黑",
+    "latin": "Calibri"
+  },
+  "styles": {
+    "title": {
+      "size_pt": 20,
+      "bold": true,
+      "space_after_pt": 4,
+      "align": "left"
+    },
+    "subtitle": {
+      "size_pt": 11,
+      "bold": false,
+      "space_after_pt": 14,
+      "align": "left",
+      "color": "6E6D68"
+    },
+    "h1": {
+      "size_pt": 18,
+      "bold": true,
+      "space_before_pt": 18,
+      "space_after_pt": 8
+    },
+    "h2": {
+      "size_pt": 15,
+      "bold": true,
+      "space_before_pt": 14,
+      "space_after_pt": 6
+    },
+    "h3": {
+      "size_pt": 13,
+      "bold": true,
+      "space_before_pt": 10,
+      "space_after_pt": 4
+    },
+    "h4": {
+      "size_pt": 11,
+      "bold": true,
+      "space_before_pt": 8,
+      "space_after_pt": 4
+    },
+    "body": {
+      "size_pt": 10.5,
+      "line_spacing": 1.35,
+      "space_after_pt": 8
+    },
+    "quote": {
+      "size_pt": 10.5,
+      "italic": true,
+      "color": "6E6D68",
+      "indent_cm": 1.0
+    },
+    "caption": {
+      "size_pt": 9,
+      "color": "6E6D68",
+      "align": "center",
+      "space_after_pt": 10
+    }
+  },
+  "table": {
+    "style": "Table Grid",
+    "header_fill": "E9E8E4",
+    "header_bold": true,
+    "font_pt": 10
+  },
+  "header_footer": {
+    "header_text": "",
+    "footer_page_number": true
+  },
+  "cover_page": false,
+  "image_default_width_cm": 14
+}

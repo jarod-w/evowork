@@ -1,0 +1,111 @@
+{
+  "id": "business",
+  "name": "商务汇报",
+  "description": "对外汇报与评审。标题页留白大，正文 24pt。",
+  "theme": {
+    "font_cjk": "Microsoft YaHei",
+    "font_latin": "Arial",
+    "ink": "#1F1F1D",
+    "muted": "#6E6D68",
+    "accent": "#1B6B4F",
+    "styles": {
+      "display": {
+        "size_pt": 40,
+        "bold": true,
+        "color": "ink"
+      },
+      "subtitle": {
+        "size_pt": 18,
+        "color": "muted"
+      },
+      "section": {
+        "size_pt": 32,
+        "bold": true,
+        "color": "accent"
+      },
+      "title": {
+        "size_pt": 28,
+        "bold": true,
+        "color": "ink"
+      },
+      "body": {
+        "size_pt": 24,
+        "color": "ink"
+      },
+      "caption": {
+        "size_pt": 12,
+        "color": "muted"
+      },
+      "table_header": {
+        "size_pt": 14,
+        "color": "ink"
+      },
+      "table_body": {
+        "size_pt": 13,
+        "color": "ink"
+      }
+    }
+  },
+  "metrics": {
+    "slide_width_emu": 12191695,
+    "slide_height_emu": 6858000,
+    "title_slide_title": {
+      "left": 822960,
+      "top": 2377440,
+      "width": 10545775,
+      "height": 1280160
+    },
+    "title_slide_subtitle": {
+      "left": 822960,
+      "top": 3749039,
+      "width": 10545775,
+      "height": 731520
+    },
+    "section_title": {
+      "left": 822960,
+      "top": 2834640,
+      "width": 10545775,
+      "height": 1097280
+    },
+    "body_title": {
+      "left": 822960,
+      "top": 640080,
+      "width": 10545775,
+      "height": 822960
+    },
+    "body_content": {
+      "left": 822960,
+      "top": 1645920,
+      "width": 10545775,
+      "height": 4206240
+    },
+    "chart_area": {
+      "left": 822960,
+      "top": 1645920,
+      "width": 10545775,
+      "height": 3657599
+    },
+    "table_area": {
+      "left": 822960,
+      "top": 1645920,
+      "width": 10545775,
+      "height": 3657599
+    },
+    "caption": {
+      "left": 822960,
+      "top": 6035040,
+      "width": 10545775,
+      "height": 457200
+    },
+    "bullet_shrink_steps": [
+      {
+        "min_items": 5,
+        "size_pt": 20
+      },
+      {
+        "min_items": 6,
+        "size_pt": 18
+      }
+    ]
+  }
+}

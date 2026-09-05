@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evowork.local/schemas/spreadsheets/content.schema.json",
+  "title": "EvoWork spreadsheets 内容 JSON",
+  "description": "08 §5.3 的结构化生成契约。这个 schema 的核心约束是：计算列必须给公式（formula），不许给算好的数 —— 见 columns 的说明。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sheets"],
+  "properties": {
+    "title": { "type": "string", "maxLength": 120 },
+    "sheets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/sheet" }
+    }
+  },
+  "$defs": {
+    "sheet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "columns", "rows"],
+      "properties": {
+        "name": {
+          "description": "工作表名。Excel 不允许 : \\ / ? * [ ] 这几个字符，也不能超过 31 字。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 31,
+          "pattern": "^[^:\\\\/?*\\[\\]]+$"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "items": { "$ref": "#/$defs/column" }
+        },
+        "rows": {
+          "description": "数据行。每行是一个数组，长度必须等于 columns 的长度；计算列的位置写 null。",
+          "type": "array",
+          "maxItems": 50000,
+          "items": { "type": "array", "items": { "type": ["string", "number", "boolean", "null"] } }
+        },
+        "freeze_header": {
+          "description": "冻结首行。默认开 —— 表格超过一屏时不冻结首行就没法看。",
+          "type": "boolean",
+          "default": true
+        },
+        "total_row": {
+          "description": "是否在末尾追加合计行。合计同样用公式（SUM），不是算好的数。",
+          "type": "boolean",
+          "default": false
+        },
+        "conditional_formats": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "$ref": "#/$defs/conditionalFormat" }
+        },
+        "note": { "type": "string", "maxLength": 300 }
+      }
+    },
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header"],
+      "properties": {
+        "header": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "type": {
+          "description": "决定数字格式：text 文本 · number 数值 · currency 货币 · percent 百分比 · date 日期 · integer 整数",
+          "type": "string",
+          "enum": ["text", "number", "integer", "currency", "percent", "date"],
+          "default": "text"
+        },
+        "width": { "type": "integer", "minimum": 4, "maximum": 80 },
+        "formula": {
+          "description": "计算列的 Excel 公式模板。用 {row} 代表当前行号，例如 \"=B{row}*C{row}\"、\"=IF(D{row}>0,D{row}/C{row},0)\"。给了 formula 的列，rows 里对应位置必须是 null —— 因为值由 Excel 算，不由你算。",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 200,
+          "pattern": "^="
+        }
+      }
+    },
+    "conditionalFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "rule"],
+      "properties": {
+        "column": { "description": "按 header 指定列", "type": "string", "minLength": 1 },
+        "rule": {
+          "type": "string",
+          "enum": ["negative-red", "above-average-green", "top10-green", "data-bar"]
+        }
+      }
+    }
+  }
+}

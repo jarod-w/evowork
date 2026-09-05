@@ -1,0 +1,25 @@
+{
+  "name": "@evowork/store",
+  "version": "0.0.0",
+  "private": true,
+  "description": "本机 sqlite：任务状态投影 + 权威表 + 两个迁移器（09 §4）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/logging": "workspace:*",
+    "@evowork/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

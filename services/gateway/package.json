@@ -1,0 +1,25 @@
+{
+  "name": "@evowork/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Responses API 网关：全量协议适配 + 三家国内模型（M1，云端）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "start": "node --experimental-strip-types src/main.ts"
+  },
+  "dependencies": {
+    "@evowork/logging": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

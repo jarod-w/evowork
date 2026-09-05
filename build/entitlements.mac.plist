@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  hardened runtime 下必须显式声明的能力。
+  每一条都对应一个真实需求，**没有"以防万一"的条目** ——
+  多给一条就是多一个逃逸面（10 §2 的同一条思路）。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron 需要（V8 的 JIT） -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- 侧载内核二进制与按需下载的解析运行时（08 §4） -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- 模型网关与更新检查 -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- 用户选择的工作空间目录 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+  </dict>
+</plist>

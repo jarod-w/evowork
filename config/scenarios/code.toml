@@ -1,0 +1,31 @@
+# 代码开发。03 §2.2。
+id      = "code"
+name    = "代码开发"
+icon    = "code"
+order   = 20
+
+model             = "evowork/deepseek-chat"
+reasoning_effort  = "high"
+permissions       = "evowork-workspace"
+mode              = "craft"
+instructions_file = "modes/craft-code.md"
+budget_limit      = 600000
+
+skills              = []
+connectors          = []
+experts_recommended = []
+
+[[chips]]
+label  = "读懂这个项目"
+icon   = "book"
+prompt = "帮我梳理这个项目的结构与关键路径："
+
+[[chips]]
+label  = "修一个 bug"
+icon   = "bug"
+prompt = "这里有个问题："
+
+[[chips]]
+label  = "写测试"
+icon   = "check"
+prompt = "为这段代码补测试："

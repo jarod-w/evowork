@@ -1,0 +1,181 @@
+{
+  "$comment": [
+    "docs/design/README.md §4 的 F1–F16 的机器可读孪生体。",
+    "存在理由：CLAUDE.md §1 要求「凡是设计文档里带 path:line 的断言，动手前都要重新核对」。",
+    "人不会每天做这件事，所以让 CI 每天做（scripts/kernel-drift.mjs + .github/workflows/kernel-drift.yml）。",
+    "改这个文件时必须同步改 docs/design/README.md §4，反之亦然 —— 两者不一致就是文档腐化的开始。",
+    "line 是「上次核对时的行号」，漂移不算失败（会报 LINE-MOVED 并给出新行号）；",
+    "needle 找不到才算失败（BROKEN），那意味着断言本身可能已被上游推翻。"
+  ],
+  "baseline": {
+    "commit": "89a4eec6da",
+    "verifiedAt": "2026-09-05",
+    "previousBaselines": [
+      "728cb12fe5 (2026-09-03, 详细设计集 v0.1)",
+      "1c1e17782a (2026-08-31, 总纲 v0.1)"
+    ]
+  },
+  "assertions": [
+    {
+      "id": "F1",
+      "summary": "turn/start 接受完整 collaborationMode，含 settings.developer_instructions（Ask 模式纯配置可实现 → P3 补丁已删）",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "needle": "pub collaboration_mode: Option<CollaborationMode>",
+      "line": 251,
+      "mustContain": ["Takes precedence over model, reasoning_effort, and developer instructions"],
+      "impact": "总纲 §3.2 / §7（P3 删除）· 设计 03 §2.4 · 09 §3.3"
+    },
+    {
+      "id": "F2",
+      "summary": "ModeKind 仅 Plan | Default —— D8「不新增模式枚举」成立",
+      "file": "codex-rs/protocol/src/config_types.rs",
+      "needle": "pub enum ModeKind",
+      "line": 673,
+      "enumVariants": { "name": "ModeKind", "expected": 2 },
+      "impact": "总纲 D8 · 设计 03 §2.4"
+    },
+    {
+      "id": "F3",
+      "summary": "collaborationMode/list 返回硬编码 builtins（仅 plan + default），不读 config → 场景包必须自建",
+      "file": "codex-rs/models-manager/src/collaboration_mode_presets.rs",
+      "needle": "pub fn builtin_collaboration_mode_presets",
+      "line": 16,
+      "mustContain": ["vec![plan_preset(), default_preset()]"],
+      "impact": "总纲 §3.8（场景包 [自建]）· 设计 03 §2.3 · 09 §3.3"
+    },
+    {
+      "id": "F4",
+      "summary": "permissionProfile/list 返回 {id, description, allowed} —— 权限下拉可完全由协议驱动，含企业策略置灰",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/permissions.rs",
+      "needle": "pub struct PermissionProfileSummary",
+      "line": 406,
+      "mustContain": ["pub allowed: bool"],
+      "impact": "设计 10 §2 · 03 §4.5"
+    },
+    {
+      "id": "F5",
+      "summary": "turn/start.permissions（命名 profile）与 sandboxPolicy 互斥",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "needle": "Cannot be combined with `sandboxPolicy`",
+      "line": 209,
+      "impact": "设计 03 §3.4 · 09 §3.3 · 10 §2.1"
+    },
+    {
+      "id": "F6",
+      "summary": "UserInput = Text/Image/LocalImage/Audio/LocalAudio/Skill/Mention，无文档类型 → 必须有前置解析管道",
+      "file": "codex-rs/protocol/src/user_input.rs",
+      "needle": "pub enum UserInput",
+      "line": 15,
+      "enumVariants": { "name": "UserInput", "expected": 7 },
+      "mustNotContain": ["    Document {", "    File {", "    Pdf {"],
+      "impact": "总纲 §6.7 · 设计 08 §3.1"
+    },
+    {
+      "id": "F7",
+      "summary": "ThreadStatus = NotLoaded|Idle|SystemError|Active{activeFlags}；已完成/失败不在其中",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "needle": "pub enum ThreadStatus",
+      "line": 1639,
+      "enumVariants": { "name": "ThreadStatus", "expected": 4 },
+      "impact": "设计 04 §2.1 · 09 §4.1"
+    },
+    {
+      "id": "F8",
+      "summary": "thread/list 无状态过滤、无日期区间过滤 → 状态/日期筛选为 [自建]",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "needle": "pub struct ThreadListParams",
+      "line": 1368,
+      "structFields": {
+        "name": "ThreadListParams",
+        "mustNotHave": [
+          "status",
+          "statuses",
+          "derived_status",
+          "created_after",
+          "created_before",
+          "updated_after",
+          "updated_before",
+          "date_range"
+        ]
+      },
+      "impact": "总纲 §3.3（改 [自建]）· 设计 04 §3.4 · 09 §4.1"
+    },
+    {
+      "id": "F9",
+      "summary": "ThreadExtra 是空结构体 —— 协议没有客户端自定义元数据槽",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs",
+      "needle": "pub struct ThreadExtra {}",
+      "line": 167,
+      "impact": "总纲 §3.3 · 设计 09 §4.1（投影表存在的根据）"
+    },
+    {
+      "id": "F10",
+      "summary": "产物识别硬编码 OpenAI marketplace 名，且只喂 analytics → 产物识别 100% 自建",
+      "file": "codex-rs/core-plugins/src/artifact_operation.rs",
+      "needle": "const PRIMARY_RUNTIME_MARKETPLACE_NAME: &str = \"openai-primary-runtime\"",
+      "line": 4,
+      "impact": "总纲 D6（改 [自建]）· 设计 08 §2.1"
+    },
+    {
+      "id": "F11",
+      "summary": "内核 artifact_type 只有 presentation/document/spreadsheet/pdf，无 chart",
+      "file": "codex-rs/core-plugins/src/artifact_operation.rs",
+      "needle": "const ARTIFACT_SKILLS: &[ArtifactSkill]",
+      "line": 24,
+      "mustNotContain": ["artifact_type: \"chart\""],
+      "impact": "总纲 §6.7 · 设计 08 §2.3（自建 9 类）"
+    },
+    {
+      "id": "F12",
+      "summary": "TurnStatus = Completed|Interrupted|Failed|InProgress（含「已中断」这一真实终态）",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "needle": "pub enum TurnStatus",
+      "line": 32,
+      "enumVariants": { "name": "TurnStatus", "expected": 4 },
+      "impact": "设计 04 §2.2（补「已中断」态）· 09 §3.4"
+    },
+    {
+      "id": "F13",
+      "summary": "ThreadItem 共 19 个变体 —— 对话区渲染面是 19 类，不是「消息+工具」两类",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/item.rs",
+      "needle": "pub enum ThreadItem",
+      "line": 234,
+      "enumVariants": { "name": "ThreadItem", "expected": 19 },
+      "impact": "设计 04 §5.2（逐类渲染规范）"
+    },
+    {
+      "id": "F14",
+      "summary": "审批是 server→client request（不是通知）→ 前端必须实现可回复的请求处理器",
+      "file": "codex-rs/app-server-protocol/src/protocol/common.rs",
+      "needle": "CommandExecutionRequestApproval => \"item/commandExecution/requestApproval\"",
+      "line": 1700,
+      "mustContain": [
+        "FileChangeRequestApproval => \"item/fileChange/requestApproval\"",
+        "ToolRequestUserInput => \"item/tool/requestUserInput\"",
+        "PermissionsRequestApproval => \"item/permissions/requestApproval\""
+      ],
+      "impact": "设计 10 §3 · 04 §5.3"
+    },
+    {
+      "id": "F15",
+      "summary": "hooks 12 类事件确认无误",
+      "file": "codex-rs/hooks/src/lib.rs",
+      "needle": "pub fn hook_event_key_label",
+      "line": 95,
+      "mustContain": [
+        "HookEventName::PreToolUse => \"pre_tool_use\"",
+        "HookEventName::PermissionRequest => \"permission_request\"",
+        "HookEventName::SubagentStart => \"subagent_start\""
+      ],
+      "impact": "总纲 §6.11 策略包清单"
+    },
+    {
+      "id": "F16",
+      "summary": "内核确有 v2/apps.rs 与 app/list/updated 通知（K7 决定不复用，「发现应用」自建）",
+      "file": "codex-rs/app-server-protocol/src/protocol/common.rs",
+      "needle": "AppListUpdated => \"app/list/updated\"",
+      "line": 1918,
+      "impact": "总纲 K7 · 设计 05 §6"
+    }
+  ]
+}

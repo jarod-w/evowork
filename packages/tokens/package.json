@@ -1,0 +1,22 @@
+{
+  "name": "@evowork/tokens",
+  "version": "0.0.0",
+  "private": true,
+  "description": "01 §2 的 design token（CSS 变量 + TS 常量）+ 对比度自动化检查",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./tokens.css": "./src/tokens.css"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

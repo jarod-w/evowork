@@ -1,0 +1,58 @@
+# M9 桌面分发（总纲 §8 M9 / R10）。
+#
+# 三条与设计直接相关的配置，不是模板抄来的：
+#   · `extraResources.kernel` —— 内核二进制随包（K2：我们只跟它说 JSON-RPC，但它得在）
+#   · **解析运行时不在这里** —— 08 §4 决定按需下载而非全量随包，
+#     否则安装包 +300MB 会挡在首次体验前面（R10）
+#   · 公证与签名**只在有 secrets 时启用**，否则产出标注「未签名」的包（U4）
+appId: com.evowork.desktop
+productName: EvoWork
+copyright: Copyright © 2026 EvoWork
+
+directories:
+  output: dist/release
+  buildResources: build
+
+files:
+  - 'dist/main/**'
+  - 'dist/preload/**'
+  - 'dist/renderer/**'
+  - '!**/*.map'
+
+extraResources:
+  # 执行内核。三平台各自的二进制在 CI 里构建后放进 build/kernel/<platform>/
+  - from: build/kernel/${os}-${arch}
+    to: kernel
+  # 随产品分发的扩展点内容（K3）：技能包 · 策略包 · 配置模板
+  - from: plugins
+    to: plugins
+  - from: config
+    to: config
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  # Q26：macOS 首发
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+win:
+  target:
+    - nsis
+  # Q6 / U5：Windows 的隔离强度结论还没拿到。产品在运行时会按保守侧处理
+  # （停用完全访问 + 能力页说明），打包这一层不做特殊处理。
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Office
+
+# 自动更新：差量包（R10 的缓解手段之一）
+publish:
+  provider: generic
+  url: https://updates.evowork.example/${channel}

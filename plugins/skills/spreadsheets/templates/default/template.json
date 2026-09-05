@@ -1,0 +1,30 @@
+{
+  "_comment": "数字格式与列宽的默认值。改这里不用改渲染代码 —— 与 presentations 的 template.json 同一条纪律。",
+  "number_formats": {
+    "text": "@",
+    "number": "#,##0.00",
+    "integer": "#,##0",
+    "currency": "¥#,##0.00",
+    "percent": "0.0%",
+    "date": "yyyy-mm-dd"
+  },
+  "default_widths": {
+    "text": 18,
+    "number": 14,
+    "integer": 12,
+    "currency": 16,
+    "percent": 12,
+    "date": 14
+  },
+  "header": {
+    "bold": true,
+    "fill": "E9E8E4",
+    "font_color": "1D1D1B",
+    "font_cjk": "微软雅黑"
+  },
+  "colors": {
+    "negative": "A53227",
+    "positive": "1B6B4F",
+    "data_bar": "2FA37A"
+  }
+}

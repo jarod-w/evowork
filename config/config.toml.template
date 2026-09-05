@@ -1,0 +1,69 @@
+# EvoWork 的内核配置模板（→ 安装时写入 ~/.evowork/config.toml）
+#
+# 纪律（09 §7）：**只有内核认识的键放这里**。EvoWork 自己的配置（场景包、运营位、模式片段）
+# 放在同级的 scenarios/ · slots.toml · modes/ 里 —— 混进来会在每次上游 rebase 时
+# 与内核的配置 schema 冲突。
+#
+# CODEX_HOME 保持内部路径名不动（K5：只改对外可见字符串），由桌面 App 用环境变量
+# 指向 ~/.evowork/kernel/。
+
+# ─────────────────────────── 模型接入（K4 / D2） ───────────────────────────
+#
+# 不改内核的模型层，只把 base_url 指向自建网关。`wire_api = "chat"` 已被上游移除
+# （model-provider-info/src/lib.rs:58），内核**只认 Responses API** ——
+# 这正是网关必须做全量协议适配而不是薄转发的原因（R1）。
+
+model = "evowork/deepseek-chat"
+model_provider = "evowork"
+
+[model_providers.evowork]
+name = "EvoWork Gateway"
+# 云端托管：https://gateway.evowork.example/v1
+# 私有部署：客户自己的地址（Q14）
+base_url = "http://127.0.0.1:8787/v1"
+wire_api = "responses"
+# 网关的访问令牌从环境变量取，**不写进配置文件**（Q14：密钥不落盘）
+env_key = "EVOWORK_GATEWAY_TOKEN"
+# 网关侧已有超时；这里给内核一个更宽的上限，避免两层超时互相打断
+stream_idle_timeout_ms = 300000
+
+# ─────────────────────────── 权限 profile（10 §2.2 / F4） ───────────────────────────
+#
+# 四个命名 profile，都用 extends 从内置档继承以减少出错面。
+# `permissionProfile/list` 会把它们连同 allowed 标记一起返回，前端据此渲染下拉
+# （allowed=false 就是"这个档位存在但你不能选"，企业策略置灰）。
+
+[permissions.evowork-ask]
+extends = ":read-only"
+# Ask 模式：只能查看文件，不能修改，也不联网（D8）
+
+[permissions.evowork-plan]
+extends = ":read-only"
+# Plan 模式：可以查看文件和上网查资料，不能修改文件
+network_access = true
+
+[permissions.evowork-workspace]
+extends = ":workspace"
+# 默认权限：可以在这个工作空间里读写文件、执行命令
+
+[permissions.evowork-full]
+extends = ":danger-full-access"
+# 完全访问：需二次确认，仅对当前任务生效。
+# **注意**：10 §2.3 的硬拦截清单（系统目录 / 密钥凭据 / EvoWork 自身配置）
+# 对这个档位**同样生效**，由 pre_tool_use hook 实现，不可绕过。
+
+# ─────────────────────────── 审批与沙箱 ───────────────────────────
+
+approval_policy = "on-request"
+
+# ─────────────────────────── Hooks 策略包（M4 / §6.11） ───────────────────────────
+# 由 plugins/hooks/ 提供，安装时按平台写入绝对路径。
+# [hooks.pre_tool_use] / [hooks.permission_request] / [hooks.post_tool_use] /
+# [hooks.session_start] / [hooks.session_end] / [hooks.subagent_start]
+
+# ─────────────────────────── 遥测（§7 P5） ───────────────────────────
+# 内核的 analytics 端点一律关闭：产物识别不依赖它（F10 后已确认自建），
+# 而它是一条我们没有登记过的出网路径（K6）。
+[otel]
+environment = "local"
+exporter = "none"

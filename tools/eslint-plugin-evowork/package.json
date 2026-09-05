@@ -1,0 +1,18 @@
+{
+  "name": "@evowork/eslint-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "把 CLAUDE.md 的铁律做成 lint 规则：K2 边界纪律 · 01 §9 的 token-only 样式",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.0",
+    "vitest": "^3.2.4"
+  }
+}

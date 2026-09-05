@@ -1,0 +1,1459 @@
+/*
+ * 组件样式。**只允许 var(--token)**，不允许颜色与尺寸字面量（01 §9 验收项 1）。
+ *
+ * eslint 管不到 CSS，所以这条由 `test/styles.test.ts` 用一条断言守着 ——
+ * 那条测试会扫这个文件里的 hex / rgb() / 非 0/1 的 px。
+ *
+ * 例外与 lint 规则一致：`1px` 边框宽度（01 §4.5 明确要它）与 `0`。
+ */
+
+/* ─────────────────────────── 骨架（01 §3.1 / 04 §1）─────────────────────────── */
+
+.ew-task-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-cjk);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+.ew-title-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--layout-title-bar-height);
+  padding: 0 var(--space-20);
+  /* 标题栏带无背景色、无下边框（01 §3.2）—— 它继承各栏底色 */
+  background: transparent;
+}
+
+.ew-task-title {
+  margin: 0;
+  font-size: var(--font-title-2-size);
+  line-height: var(--font-title-2-line);
+  font-weight: var(--font-title-2-weight);
+}
+
+.ew-title-bar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-8);
+}
+
+.ew-workspace-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ew-conversation {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* 内容列 800 居中，左右各留 ≥28（01 §3.1 的全局硬约束） */
+.ew-content-column {
+  max-width: var(--layout-content-column);
+  margin: 0 auto;
+  padding: var(--space-24) var(--space-32) var(--space-64);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.ew-result-pane {
+  width: var(--layout-middle-width);
+  min-width: var(--layout-middle-min);
+  max-width: var(--layout-middle-max);
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-app);
+  padding: var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  overflow-y: auto;
+}
+
+/* ─────────────────────────── 基础件（01 §5）─────────────────────────── */
+
+.ew-icon-button {
+  width: var(--layout-nav-item-height);
+  height: var(--layout-nav-item-height);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.ew-icon-button:hover {
+  background: var(--bg-hover);
+}
+.ew-icon-button:active {
+  background: var(--bg-active);
+}
+.ew-icon-button[data-selected='true'] {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+}
+.ew-icon-button:disabled {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ew-pill-button {
+  height: var(--layout-nav-item-height);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--font-label-weight);
+  cursor: pointer;
+}
+.ew-pill-button[data-variant='accent'] {
+  background: var(--accent-weak);
+  color: var(--accent-strong);
+  border-color: transparent;
+}
+.ew-pill-button[data-variant='ghost'] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+.ew-pill-button:disabled {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Badge：底用 -weak、字用 -text 变体（01 §2.2）。用基色写文字会直接失败 */
+.ew-badge {
+  height: var(--space-20);
+  padding: 0 var(--space-6);
+  border-radius: var(--r-full);
+  font-size: var(--font-micro-size);
+  line-height: var(--space-20);
+  font-weight: var(--font-micro-weight);
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.ew-badge[data-variant='neutral'] {
+  background: var(--bg-selected);
+  color: var(--text-secondary);
+}
+.ew-badge[data-variant='info'] {
+  background: var(--info-weak);
+  color: var(--info-text);
+}
+.ew-badge[data-variant='success'] {
+  background: var(--success-weak);
+  color: var(--accent-strong);
+}
+.ew-badge[data-variant='warning'] {
+  background: var(--warning-weak);
+  color: var(--warning-text);
+}
+.ew-badge[data-variant='danger'] {
+  background: var(--danger-weak);
+  color: var(--danger-text);
+}
+
+/* StatusDot：6px，**冗余装饰**（01 §6.1）——状态的可感知性由 Badge 承担 */
+.ew-status-dot {
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--r-full);
+  display: inline-block;
+  flex: none;
+}
+.ew-status-dot[data-tone='accent'] {
+  background: var(--accent);
+}
+.ew-status-dot[data-tone='info'] {
+  background: var(--info);
+}
+.ew-status-dot[data-tone='warning'] {
+  background: var(--warning);
+}
+.ew-status-dot[data-tone='danger'] {
+  background: var(--danger);
+}
+.ew-status-dot[data-tone='muted'] {
+  background: var(--text-tertiary);
+}
+.ew-status-dot[data-breathing='true'] {
+  animation: ew-breathe 1600ms var(--ease-inout) infinite;
+}
+@keyframes ew-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+/* prefers-reduced-motion 下呼吸改为静态实心点（01 §8.1） */
+@media (prefers-reduced-motion: reduce) {
+  .ew-status-dot[data-breathing='true'] {
+    animation: none;
+  }
+}
+
+/* SegmentedControl：两个变体的分工是硬规则（01 §5.10） */
+.ew-segmented {
+  height: var(--space-32);
+  padding: var(--space-4);
+  border-radius: var(--r-full);
+  background: var(--bg-sunken);
+  display: inline-flex;
+  gap: var(--space-2);
+}
+.ew-segmented-item {
+  height: var(--layout-nav-item-height);
+  padding: 0 var(--space-12);
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  transition:
+    background var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
+}
+/* 深色变体：**决定页面装什么** */
+.ew-segmented[data-variant='dark'] .ew-segmented-item[data-selected='true'] {
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+}
+/* 浅色变体：**决定已装内容怎么看** */
+.ew-segmented[data-variant='light'] .ew-segmented-item[data-selected='true'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+/* 空态：文案必须给出下一步动作（01 §4.3） */
+.ew-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-48) var(--space-24);
+  text-align: center;
+}
+.ew-empty-state-icon {
+  color: var(--text-tertiary);
+}
+.ew-empty-state-title {
+  margin: 0;
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  color: var(--text-primary);
+}
+.ew-empty-state-hint {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.ew-empty-state-action {
+  margin-top: var(--space-16);
+}
+
+.ew-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.ew-skeleton-row {
+  height: var(--ew-skeleton-h, var(--space-48));
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  animation: ew-pulse 1400ms var(--ease-inout) infinite;
+}
+@keyframes ew-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ew-skeleton-row {
+    animation: none;
+  }
+}
+
+.ew-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--r-lg);
+  max-width: var(--layout-content-column);
+  margin: var(--space-12) auto 0;
+}
+.ew-banner[data-tone='info'] {
+  background: var(--info-weak);
+  color: var(--info-text);
+}
+.ew-banner[data-tone='warning'] {
+  background: var(--warning-weak);
+  color: var(--warning-text);
+}
+.ew-banner[data-tone='danger'] {
+  background: var(--danger-weak);
+  color: var(--danger-text);
+}
+.ew-banner[data-tone='accent'] {
+  background: var(--accent-weak);
+  color: var(--accent-strong);
+}
+.ew-banner-action {
+  margin-left: auto;
+}
+
+/* ─────────────────────────── Item 渲染（04 §5）─────────────────────────── */
+
+.ew-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* 用户消息右对齐块，最大宽 640；agent 输出左对齐无气泡（04 §5.1） */
+.ew-item-user {
+  align-items: flex-end;
+}
+.ew-user-bubble {
+  /* 04 §5.1：用户消息块最大宽 640 = 64 × 10 */
+  max-width: calc(var(--space-64) * 10);
+  background: var(--bg-sunken);
+  border-radius: var(--r-lg);
+  padding: var(--space-12) var(--space-16);
+}
+.ew-user-bubble p {
+  margin: 0;
+}
+
+.ew-mention {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-selected);
+  border-radius: var(--r-xs);
+  padding: 0 var(--space-6);
+  margin: 0 var(--space-2);
+  color: var(--text-primary);
+}
+
+.ew-markdown {
+  color: var(--text-primary);
+}
+
+.ew-item-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  border: 0;
+  background: transparent;
+  padding: var(--space-4) 0;
+  font: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+.ew-item-summary:hover {
+  color: var(--text-primary);
+}
+
+.ew-item-body {
+  padding-left: var(--space-16);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.ew-item-divider {
+  align-items: center;
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+  text-align: center;
+}
+
+.ew-command,
+.ew-command-output,
+.ew-json {
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+.ew-command-output,
+.ew-json {
+  /* 尾部滚动窗口：单命令 100MB 输出不 OOM（04 §9） */
+  max-height: calc(var(--space-64) * 6);
+  overflow: auto;
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--space-8);
+}
+
+.ew-exit-code,
+.ew-token-usage,
+.ew-change-stat {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+}
+
+.ew-plan-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.ew-plan-steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.ew-change-list,
+.ew-search-results,
+.ew-approval-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ew-change-path {
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+}
+
+.ew-generated-image {
+  max-width: 100%;
+  border-radius: var(--r-md);
+}
+
+/* 图片还没生成出来时的占位：给出确定的高度，避免图片到位那一刻整条时间线跳动 */
+.ew-image-pending {
+  display: grid;
+  place-items: center;
+  min-height: var(--space-64);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+
+.ew-item-action {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ─────────────────────────── 审批（10 §3）─────────────────────────── */
+
+.ew-approval-card {
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  /* 左侧 3px 竖条（01 §5.32） */
+  border-left-width: var(--space-2);
+  border-left-style: solid;
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.ew-approval-card[data-tone='warning'] {
+  border-left-color: var(--warning);
+}
+.ew-approval-card[data-tone='danger'] {
+  border-left-color: var(--danger);
+}
+
+.ew-approval-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.ew-approval-command {
+  font-family: var(--font-mono);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--space-8);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.ew-approval-cwd,
+.ew-approval-reason,
+.ew-approval-purpose {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.ew-approval-changes li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-approval-changes li[data-outside='true'] {
+  color: var(--warning-text);
+}
+.ew-approval-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+.ew-approval-answer {
+  width: 100%;
+  min-height: calc(var(--space-64) + var(--space-16));
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: var(--space-8);
+  font: inherit;
+  resize: vertical;
+}
+.ew-approval-options {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+/* 吸顶条：z-400，必须高于模态之外的一切（01 §2.8 / 10 §3.5） */
+.ew-approval-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-approval-bar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-16);
+  background: var(--warning-weak);
+  color: var(--warning-text);
+}
+
+/* ─────────────────────────── 焦点（01 §6.2）─────────────────────────── */
+
+/* 只在键盘导航时出现（:focus-visible）。2px 环 = 键盘用户的主要定位手段（01 §8.3） */
+:focus-visible {
+  outline: var(--space-2) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ─────────────────────── Menu / Popover / InlineSelect（01 §5.14 / §5.15 / §5.19）─────────────────────── */
+
+.ew-popover {
+  position: absolute;
+  z-index: var(--z-popover);
+  margin-top: var(--space-4);
+}
+.ew-popover[data-align='end'] {
+  right: 0;
+}
+
+.ew-menu {
+  min-width: var(--layout-menu-min-width);
+  padding: var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.ew-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: var(--layout-menu-item-height);
+  padding: 0 var(--space-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.ew-menu-item[data-active='true'] {
+  background: var(--bg-selected);
+}
+.ew-menu-item[data-danger='true'] {
+  color: var(--danger-text);
+}
+.ew-menu-item:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+/* 跨组的 1px 分割 + 上下 4 间距（01 §5.19） */
+.ew-menu-item[data-group-start='true'] {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ew-menu-label {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.ew-menu-description,
+.ew-menu-reason,
+.ew-menu-shortcut {
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  color: var(--text-tertiary);
+}
+.ew-menu-group-title {
+  margin: var(--space-4) var(--space-8);
+  font-size: var(--font-caption-size);
+  font-weight: var(--font-caption-weight);
+  color: var(--text-secondary);
+}
+.ew-mono {
+  font-family: var(--font-mono);
+}
+.ew-model-caps {
+  display: flex;
+  gap: var(--space-4);
+}
+.ew-model-cap {
+  font-size: var(--font-micro-size);
+  color: var(--text-secondary);
+}
+/* D2：缺失能力**划除**而不是隐藏 */
+.ew-model-cap[data-available='false'] {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.ew-inline-select,
+.ew-model-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.ew-inline-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--layout-inline-select-height);
+  padding: 0 var(--space-8);
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.ew-inline-select-trigger:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.ew-inline-select-trigger[data-placeholder='true'] {
+  color: var(--text-tertiary);
+}
+.ew-inline-select-trigger[data-mono='true'] {
+  font-family: var(--font-mono);
+}
+.ew-inline-select-trigger:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+/* 03 §2.5：4px 圆点表示「已被你改过」 */
+.ew-override-dot {
+  width: var(--space-4);
+  height: var(--space-4);
+  margin-left: var(--space-2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* ─────────────────────────── Composer（01 §5.13 / 03 §4）─────────────────────────── */
+
+.ew-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.ew-composer-shell {
+  padding: var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  background: var(--bg-sunken);
+  box-shadow: var(--shadow-md);
+  min-height: var(--layout-composer-collapsed-height);
+  max-height: var(--layout-composer-max-height);
+}
+.ew-composer-input-card {
+  position: relative;
+  padding: var(--space-16) var(--space-12);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+}
+.ew-composer-textarea {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  resize: none;
+}
+.ew-composer-textarea:focus {
+  outline: none;
+}
+.ew-composer-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.ew-completion {
+  position: absolute;
+  left: var(--space-12);
+  z-index: var(--z-popover);
+}
+.ew-composer-tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--layout-segmented-track-height);
+}
+.ew-composer-attach,
+.ew-composer-mic {
+  width: var(--layout-nav-item-height);
+  height: var(--layout-nav-item-height);
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ew-send-button {
+  margin-left: auto;
+  min-width: var(--layout-send-button-size);
+  height: var(--layout-send-button-size);
+  padding: 0 var(--space-12);
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  font: inherit;
+  cursor: pointer;
+}
+.ew-send-button[data-state='disabled'] {
+  background: var(--bg-selected);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+/* 执行中 = 中断（03 §4.6） */
+.ew-send-button[data-state='running'] {
+  background: var(--danger);
+  color: var(--text-inverse);
+  border-radius: var(--r-md);
+}
+.ew-send-button[data-state='over-budget'] {
+  background: var(--warning-weak);
+  color: var(--warning-text);
+}
+.ew-send-button[data-state='queued'] {
+  background: var(--bg-selected);
+  color: var(--text-secondary);
+}
+.ew-composer-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--space-40);
+  padding: 0 var(--space-8);
+}
+
+.ew-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0 0 var(--space-8);
+  padding: 0;
+  list-style: none;
+}
+.ew-attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--layout-attachment-height);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+.ew-attachment[data-state='failed'] {
+  border-color: var(--danger);
+}
+.ew-attachment-size,
+.ew-attachment-progress {
+  font-size: var(--font-caption-size);
+  color: var(--text-tertiary);
+}
+.ew-attachment-fallback,
+.ew-attachment-remove,
+.ew-queue-remove,
+.ew-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+/* K6/Q3 的对外表达点（03 §4.4） */
+.ew-privacy-note {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-caption-size);
+  color: var(--text-tertiary);
+}
+
+.ew-queue {
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+.ew-queue-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-queue-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-queue-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-queue-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ew-steer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+
+.ew-danger-confirm,
+.ew-delete-confirm,
+.ew-revert-confirm {
+  z-index: var(--z-modal);
+  padding: var(--space-16);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+.ew-danger-confirm-title,
+.ew-delete-confirm-title,
+.ew-revert-confirm-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-title-2-size);
+  font-weight: var(--font-title-2-weight);
+}
+.ew-danger-confirm-list {
+  margin: 0 0 var(--space-8);
+  padding-left: var(--space-20);
+  color: var(--text-secondary);
+}
+.ew-danger-confirm-scope,
+.ew-delete-confirm-body,
+.ew-revert-confirm-body {
+  margin: 0 0 var(--space-12);
+  color: var(--text-secondary);
+}
+
+/* ─────────────────────────── 侧边栏与任务列表（01 §5.3–§5.5 / 04 §3）─────────────────────────── */
+
+.ew-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: var(--layout-sidebar-width);
+  padding: var(--space-8);
+  background: var(--bg-app);
+  overflow-y: auto;
+}
+.ew-sidebar-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.ew-filter-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.ew-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--layout-nav-item-height);
+  padding: 0 var(--space-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.ew-nav-item:hover {
+  background: var(--bg-hover);
+}
+/* 选中态用中性灰而**不是**品牌色填充（01 §5.3） */
+.ew-nav-item[data-selected='true'] {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: var(--font-label-weight);
+}
+.ew-nav-label {
+  flex: 1;
+  text-align: left;
+}
+.ew-nav-trailing,
+.ew-nav-count {
+  font-size: var(--font-caption-size);
+  color: var(--text-tertiary);
+}
+.ew-nav-count {
+  padding: 0 var(--space-6);
+  border-radius: var(--r-full);
+  background: var(--bg-selected);
+}
+
+.ew-sidebar-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--layout-nav-item-height);
+  padding: 0 var(--space-20);
+}
+.ew-sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-caption-size);
+  font-weight: var(--font-caption-weight);
+  cursor: pointer;
+}
+.ew-reset-filter {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: var(--font-caption-size);
+  cursor: pointer;
+}
+
+.ew-task-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.ew-task-group-name {
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-12);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-task-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-task-row-anchor {
+  position: relative;
+  display: block;
+}
+.ew-task-item {
+  display: flex;
+  align-items: center;
+  height: var(--layout-nav-item-height);
+  border-radius: var(--r-sm);
+}
+.ew-task-item:hover {
+  background: var(--bg-hover);
+}
+.ew-task-item[data-selected='true'] {
+  background: var(--bg-selected);
+}
+.ew-task-item-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--space-8);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ew-task-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/*
+ * 时间戳与 ⋯ 同位叠放：悬停时互换而**行宽不变**（01 §5.5）。
+ * 用两个并排元素会让每次悬停都重排一次列表。
+ */
+.ew-task-item-tail {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: var(--space-48);
+  padding-right: var(--space-8);
+}
+.ew-task-item-tail .ew-icon-button {
+  position: absolute;
+  right: 0;
+  opacity: 0;
+}
+.ew-task-item:hover .ew-task-item-time {
+  opacity: 0;
+}
+.ew-task-item:hover .ew-task-item-tail .ew-icon-button {
+  opacity: 1;
+}
+.ew-task-item-time {
+  font-size: var(--font-caption-size);
+  color: var(--text-tertiary);
+}
+.ew-task-list-empty,
+.ew-task-list-more {
+  margin: var(--space-8) var(--space-12);
+  font-size: var(--font-caption-size);
+  color: var(--text-tertiary);
+}
+
+.ew-content-matches-title {
+  margin: var(--space-12) var(--space-12) var(--space-4);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-content-match-excerpt {
+  display: block;
+  font-size: var(--font-caption-size);
+  color: var(--text-tertiary);
+}
+
+.ew-filter-panel {
+  min-width: var(--layout-menu-min-width);
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+.ew-filter-group-title {
+  margin: var(--space-8) 0 var(--space-4);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+/* ─────────────────────── FilterChip / ScenarioChip / CaseCard（01 §5.11 / §5.12 / §5.21）─────────────────────── */
+
+.ew-filter-chip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-filter-chip-track {
+  display: flex;
+  gap: var(--space-8);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ew-filter-chip {
+  height: var(--layout-chip-height);
+  padding: 0 var(--space-12);
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.ew-filter-chip:hover {
+  background: var(--bg-hover);
+}
+.ew-filter-chip[data-selected='true'] {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: var(--font-label-weight);
+}
+
+.ew-scenario-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--layout-scenario-chip-height);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-full);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ew-scenario-chip:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.ew-case-grid {
+  display: grid;
+  grid-template-columns: repeat(4, var(--layout-case-card-width));
+  gap: var(--layout-grid-gap);
+}
+.ew-case-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-case-cover {
+  display: grid;
+  place-items: center;
+  width: var(--layout-case-card-width);
+  height: var(--layout-case-cover-height);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.ew-case-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ew-case-title {
+  display: block;
+  margin-top: var(--space-8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-label-weight);
+}
+
+/* ─────────────────────────── SearchInput / GhostButton / SectionHeader ─────────────────────────── */
+
+.ew-search-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--layout-nav-item-height);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+}
+.ew-search-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--space-2) var(--focus-ring);
+}
+.ew-search-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+.ew-search-input input:focus {
+  outline: none;
+}
+
+.ew-ghost-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--layout-nav-item-height);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.ew-ghost-count {
+  color: var(--text-tertiary);
+}
+
+.ew-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--layout-nav-item-height);
+}
+.ew-section-header-title {
+  margin: 0;
+  font-size: var(--font-title-2-size);
+  font-weight: var(--font-title-2-weight);
+}
+.ew-section-header[data-size='large'] .ew-section-header-title {
+  font-size: var(--font-title-1-size);
+  font-weight: var(--font-title-1-weight);
+}
+.ew-section-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-left: auto;
+}
+
+/* ─────────────────────────── QuotaFooter（01 §5.27，本机语义 Q17）─────────────────────────── */
+
+.ew-quota-footer {
+  margin-top: auto;
+  height: var(--layout-quota-footer-height);
+  padding: var(--space-8) var(--space-12);
+}
+.ew-quota-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-quota-label {
+  flex: 1;
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-quota-bar {
+  height: var(--layout-quota-bar-height);
+  margin-top: var(--space-6);
+  border-radius: var(--r-full);
+  background: var(--bg-selected);
+  overflow: hidden;
+}
+.ew-quota-fill {
+  display: block;
+  width: var(--ew-quota-percent);
+  height: 100%;
+  background: var(--accent);
+}
+.ew-quota-bar[data-level='warning'] .ew-quota-fill {
+  background: var(--warning);
+}
+.ew-quota-bar[data-level='danger'] .ew-quota-fill {
+  background: var(--danger);
+}
+
+/* ─────────────────────────── 首页（03）─────────────────────────── */
+
+.ew-home {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-cjk);
+  font-size: var(--font-body-size);
+}
+.ew-hero {
+  margin: var(--space-48) 0 var(--space-24);
+  font-size: var(--font-display-size);
+  line-height: var(--font-display-line);
+  font-weight: var(--font-display-weight);
+}
+/* 窗口高 < 720 时 Hero 降级，保证 Composer 不被挤出首屏（03 §3.1） */
+@media (max-height: 720px) {
+  .ew-hero {
+    margin-top: var(--space-24);
+    font-size: var(--font-title-1-size);
+    line-height: var(--font-title-1-line);
+  }
+}
+.ew-showcase {
+  margin-top: var(--space-32);
+}
+.ew-config-notice {
+  margin: 0 0 var(--space-12);
+  font-size: var(--font-caption-size);
+  color: var(--warning-text);
+}
+
+/* ─────────────────────────── 变更视图（04 §6.3）─────────────────────────── */
+
+.ew-changes-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+.ew-changes-toolbar {
+  display: flex;
+  gap: var(--space-8);
+}
+.ew-changed-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-changed-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  padding: var(--space-4) var(--space-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ew-changed-file[data-selected='true'] {
+  background: var(--bg-selected);
+}
+.ew-changed-file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+}
+.ew-changed-file-outside {
+  color: var(--warning-text);
+  font-size: var(--font-micro-size);
+}
+.ew-diff-added {
+  /*
+   * 用 accent-strong 而不是 success：01 §2.2 给了 info / warning / danger 三个文字变体，
+   * 唯独没有 success-text —— 因为 `--success` 与 `--accent` 是同一个值，
+   * 它的文字变体就是 `--accent-strong`。这里不是将就，是同一个色的正确用法。
+   */
+  color: var(--accent-strong);
+  font-size: var(--font-caption-size);
+}
+.ew-diff-removed {
+  color: var(--danger-text);
+  font-size: var(--font-caption-size);
+}
+.ew-diff-body {
+  margin: 0;
+  padding: var(--space-12);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  overflow-x: auto;
+}
+.ew-diff-actions {
+  display: flex;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+}
+
+/* 对话区底部的 Composer（03 §4.6：输入框留在原地、周围长出了对话） */
+.ew-conversation-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  padding: var(--space-12) 0 var(--space-16);
+  background: var(--bg-canvas);
+}
+
+/* ─────────────────────────── Visualizer（04 §7）─────────────────────────── */
+
+.ew-visualizer {
+  margin: var(--space-12) 0;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+}
+.ew-visualizer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+.ew-visualizer-source,
+.ew-visualizer-code {
+  margin: 0;
+  padding: var(--space-12);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  overflow-x: auto;
+}
+.ew-visualizer-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.ew-visualizer-error {
+  margin: 0 0 var(--space-8);
+  color: var(--danger-text);
+  font-size: var(--font-caption-size);
+}
+/* 高度上限 600 后内部滚动（04 §7）。宽度撑满内容列 */
+.ew-visualizer-frame {
+  width: 100%;
+  height: var(--layout-visualizer-frame-height);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-canvas);
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@evowork/skill-spreadsheets",
+  "version": "0.0.0",
+  "private": true,
+  "description": "办公产物技能：生成 xlsx / csv（公式而非硬编码结果，08 §5.2）",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  },
+  "evowork": {
+    "skill": true,
+    "runtimeTier": "office",
+    "runtimeNote": "xlsx 依赖办公扩展（Python + openpyxl）；csv 属基础包，无需下载（08 §4）"
+  }
+}

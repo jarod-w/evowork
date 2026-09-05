@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "noEmit": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [
+    { "path": "../../packages/logging" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/tokens" },
+    { "path": "../../services/store" },
+    { "path": "../../services/kernel-adapter" },
+    { "path": "../../services/scheduler" },
+    { "path": "../../services/policy" },
+    { "path": "../../services/ingest" },
+    { "path": "../../services/artifacts" }
+  ]
+}

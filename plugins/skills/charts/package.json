@@ -1,0 +1,18 @@
+{
+  "name": "@evowork/skill-charts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "办公产物技能：生成图表（svg / png），配色来自 01 §2 的 design token",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  },
+  "evowork": {
+    "skill": true,
+    "runtimeTier": "office",
+    "runtimeNote": "渲染依赖办公扩展（Python + matplotlib，随办公扩展一起下载，08 §4）"
+  }
+}

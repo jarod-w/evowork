@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evowork.local/schemas/presentations/content.schema.json",
+  "title": "EvoWork presentations 内容 JSON",
+  "description": "08 §5.3 的结构化生成契约：模型产出内容与结构，排版由模板渲染。渲染器先校验再渲染，校验失败把具体错误回给模型让它修一次。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slides"],
+  "properties": {
+    "template": {
+      "description": "模板 id。不确定用哪个就用 business。",
+      "type": "string",
+      "enum": ["business", "minimal", "data-heavy"],
+      "default": "business"
+    },
+    "title": { "type": "string", "maxLength": 120 },
+    "subtitle": { "type": "string", "maxLength": 200 },
+    "author": { "type": "string", "maxLength": 80 },
+    "slides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 60,
+      "items": { "$ref": "#/$defs/slide" }
+    }
+  },
+  "$defs": {
+    "slide": {
+      "type": "object",
+      "required": ["layout"],
+      "oneOf": [
+        { "$ref": "#/$defs/titleSlide" },
+        { "$ref": "#/$defs/bulletsSlide" },
+        { "$ref": "#/$defs/chartSlide" },
+        { "$ref": "#/$defs/tableSlide" },
+        { "$ref": "#/$defs/sectionSlide" }
+      ]
+    },
+    "titleSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "title"],
+      "properties": {
+        "layout": { "const": "title" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "subtitle": { "type": "string", "maxLength": 200 },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "bulletsSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "title", "bullets"],
+      "properties": {
+        "layout": { "const": "bullets" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "bullets": {
+          "description": "每页最多 6 条：超过就该拆页。单条最多 80 字 —— 模板会缩字号，但缩到看不清就不是排版问题而是内容问题。",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+        },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "chartSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "title", "chart_ref"],
+      "properties": {
+        "layout": { "const": "chart" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "chart_ref": {
+          "description": "已经生成好的图片路径（相对内容 JSON 所在目录，或绝对路径）。必须真实存在 —— 渲染器会检查。",
+          "type": "string",
+          "minLength": 1
+        },
+        "caption": {
+          "description": "数据来源。用户汇报时会被问“这个数哪来的”，所以这里要能回答。",
+          "type": "string",
+          "maxLength": 200
+        },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "tableSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "title", "table"],
+      "properties": {
+        "layout": { "const": "table" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "table": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["header", "rows"],
+          "properties": {
+            "header": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": { "type": "string", "maxLength": 24 }
+            },
+            "rows": {
+              "description": "每页最多 12 行：再多就该导出成 xlsx 附件而不是塞进幻灯片。",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "items": { "type": "string", "maxLength": 40 }
+              }
+            }
+          }
+        },
+        "caption": { "type": "string", "maxLength": 200 },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "sectionSlide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "title"],
+      "properties": {
+        "layout": { "const": "section" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    }
+  }
+}

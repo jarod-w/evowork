@@ -1,0 +1,23 @@
+node_modules/
+dist/
+out/
+coverage/
+pnpm-lock.yaml
+# 文档不交给 prettier。
+#
+# 理由不是偏好：docs/ 是唯一真源（CLAUDE.md §9），它的 3000 行中文表格与 ASCII 布局图
+# 是手工排的，而 prettier 会按 East Asian 宽度重排所有表格 —— 一次内容修订的 diff 会被
+# 几百行纯对齐改动埋掉，而"git diff 可逐条对应"正是文档回写这类工作的验收判据。
+# 代价是文档格式靠人自觉；收益是文档的 diff 永远只包含语义变化。
+#
+# 已发生过一次（2026-09-05 P0-1 回写时误跑）：内容无损，但那次 diff 里约 1400 行是纯对齐。
+docs/
+# 上游补丁：字节级内容，格式化即失效
+patches/
+# 内核 rollout / fixture 录制样本：字节级比对
+**/fixtures/**/*.json
+**/fixtures/**/*.jsonl
+# 生成物：由 scripts/gen-third-party-notices.mjs 写出，并由同一个脚本以 --check 逐字节比对。
+# 交给 prettier 会让两个门互相打架（格式化一次 → notices --check 立刻失败）。
+# 生成物的格式由生成器负责，不由 prettier 负责。
+THIRD_PARTY_NOTICES.md

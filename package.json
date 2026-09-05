@@ -1,0 +1,36 @@
+{
+  "name": "evowork",
+  "version": "0.0.0",
+  "private": true,
+  "description": "EvoWork —— 全场景职场 AI 智能体工作台（以 openai/codex 为不可变执行内核）",
+  "license": "MIT",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run check:kernel-budget",
+    "check:kernel-budget": "node scripts/patch-budget.mjs",
+    "kernel:drift": "node scripts/kernel-drift.mjs",
+    "notices": "node scripts/gen-third-party-notices.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.19.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^3.2.4"
+  }
+}

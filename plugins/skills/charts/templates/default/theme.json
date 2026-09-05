@@ -1,0 +1,36 @@
+{
+  "_comment": "配色不是在这里挑的，是从 01 §2 的 design token 抄过来的。`test/render.test.ts` 有一条断言逐个比对 packages/tokens/src/palette.ts —— 改这里而不改那里会直接变红。八条系列色 = 四个语义基色 + 它们的加深变体，这样八条线在灰度打印下也能区分。",
+  "palette": [
+    "#2FA37A",
+    "#3B7DD8",
+    "#C98A16",
+    "#D24B3E",
+    "#1B6B4F",
+    "#225CAC",
+    "#895E0F",
+    "#A53227"
+  ],
+  "light": {
+    "background": "#FCFCFA",
+    "grid": "#E7E6E1",
+    "text": "#1D1D1B",
+    "text_secondary": "#6E6D68"
+  },
+  "dark": {
+    "background": "#1F1F1D",
+    "grid": "#2F2F2C",
+    "text": "#F5F4F0",
+    "text_secondary": "#A3A29B"
+  },
+  "metrics": {
+    "dpi": 144,
+    "title_pt": 15,
+    "label_pt": 11,
+    "tick_pt": 10,
+    "legend_pt": 10,
+    "source_pt": 9,
+    "line_width": 2.0,
+    "bar_width": 0.62,
+    "grid_width": 0.8
+  }
+}

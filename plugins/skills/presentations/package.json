@@ -1,0 +1,18 @@
+{
+  "name": "@evowork/skill-presentations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "办公产物技能：生成 pptx（结构化生成，08 §5.3）",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  },
+  "evowork": {
+    "skill": true,
+    "runtimeTier": "office",
+    "runtimeNote": "渲染依赖办公扩展（Python + python-pptx，约 120MB，按需下载，08 §4）"
+  }
+}

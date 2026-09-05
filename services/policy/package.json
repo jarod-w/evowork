@@ -1,0 +1,24 @@
+{
+  "name": "@evowork/policy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "安全与策略（10）：路径三级策略 · 权限 profile 文案 · execpolicy 风险判定 · 审计 · 并发与预算 · guardian 映射",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/logging": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

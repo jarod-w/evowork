@@ -1,0 +1,39 @@
+# 依赖与构建产物
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+.vite/
+coverage/
+
+# 本机运行时数据（K6：这些是用户数据，永远不进仓库）
+.evowork/
+*.db
+*.db-wal
+*.db-shm
+*.db.bak.*
+
+# 解析运行时与下载的档位包（08 §4，按需下载，不随仓库）
+runtimes/
+*.whl
+
+# 内核签出与上游试合并的临时物（scripts/kernel-drift.mjs）
+.kernel-drift/
+
+# 环境与密钥（K4/Q14：网关密钥只从环境注入，不落盘）
+.env
+.env.*
+!.env.example
+
+# `build/` 目录本身是**源码**（electron-builder 配置、entitlements、图标），要进仓库。
+# 只忽略它里面的产物与随 CI 落进去的内核二进制。
+build/kernel/
+build/release/
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
