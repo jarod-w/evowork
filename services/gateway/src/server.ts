@@ -14,12 +14,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { errorFields, type Logger } from '@evowork/logging';
 
-import {
-  capabilityNotices,
-  ModelNotConfiguredError,
-  runPipeline,
-  type PipelineDeps,
-} from './pipeline.js';
+import { MODELS_ENDPOINT_PATH, toCatalogEntry, type ModelCatalogResponse } from './catalog.js';
+import { ModelNotConfiguredError, runPipeline, type PipelineDeps } from './pipeline.js';
 import { toSseData, type ResponsesRequest } from './protocol.js';
 
 export interface ServerOptions extends PipelineDeps {
@@ -64,29 +60,23 @@ export function createGatewayServer(options: ServerOptions): Server {
       return;
     }
 
-    if (req.method === 'GET' && url.pathname === '/v1/evowork/models') {
+    if (req.method === 'GET' && url.pathname === MODELS_ENDPOINT_PATH) {
       if (!(await authenticate(req.headers.authorization))) {
         unauthorized(res);
         return;
       }
-      // 能力声明：桌面 App 据此渲染徽标与拒绝说明（03 §4.5 / §8）。
-      // `verified` 如实透出 —— 未经真实 endpoint 验证的能力位不该看起来像已验证的
-      const data = options.models.list().map((model) => ({
-        id: model.id,
-        displayName: model.displayName,
-        provider: model.provider,
-        tier: model.tier,
-        capabilities: model.capabilities,
-        verified: model.verified,
-        // 「验过什么、没验什么」一起透出：只给一个布尔值时，
-        // 一行"大部分实测过、上下文长度没测"的记录只能在撒谎与自我否定之间二选一
-        ...(model.verifiedAt ? { verifiedAt: model.verifiedAt } : {}),
-        unverified: model.unverified,
-        notes: model.notes,
-        notices: capabilityNotices(model),
-      }));
+      /*
+       * 能力声明：桌面 App 据此渲染下拉、徽标与拒绝说明（03 §4.5 / §8）。
+       *
+       * **这里列出的就是"现在真的能选"的模型** —— `main.ts` 的 `availableModels()`
+       * 已经把没配密钥的厂商筛掉了。这一点是模型下拉不走内核 `model/list` 的决定性理由
+       * （F24，见 `catalog.ts` 的头注释）：内核不知道哪家有密钥。
+       *
+       * 形状由 `catalog.ts` 的具名类型定义，消费侧 import 同一个类型。
+       */
+      const body: ModelCatalogResponse = { data: options.models.list().map(toCatalogEntry) };
       res.writeHead(200, JSON_HEADERS);
-      res.end(JSON.stringify({ data }));
+      res.end(JSON.stringify(body));
       return;
     }
 

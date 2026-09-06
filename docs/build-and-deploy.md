@@ -179,16 +179,41 @@ uv pip install --python ~/.evowork/runtime/office/bin/python \
 
 ```bash
 DEEPSEEK_API_KEY=sk-... \
+MOONSHOT_API_KEY=sk-... \
+ZHIPU_API_KEY=... \
 EVOWORK_GATEWAY_TOKENS=local-dev-token \
-PORT=8791 \
+PORT=8787 \
 node dist/gateway/main.js
 ```
 
-验证：
+**端口要与内核 `config.toml` 的 `base_url` 一致**（模板里是 `127.0.0.1:8787`）。
+桌面 App 的模型下拉也读这个地址 —— 它是从同一个 `config.toml` 里取的，
+所以只要改一处，内核与下拉会一起跟着走（见 `main/model-catalog.ts`）。
+
+密钥多了之后放一个只有自己能读的文件更省事（**在仓库之外**）：
 
 ```bash
-curl -H "authorization: Bearer local-dev-token" http://127.0.0.1:8791/v1/evowork/models
+umask 177 && cat > ~/.evowork/gateway.env <<'EOF'
+DEEPSEEK_API_KEY=sk-...
+MOONSHOT_API_KEY=sk-...
+ZHIPU_API_KEY=...
+EVOWORK_GATEWAY_TOKENS=local-dev-token
+PORT=8787
+EOF
+set -a && . ~/.evowork/gateway.env && set +a && node dist/gateway/main.js
 ```
+
+与 `~/.evowork/gateway-token` 一样，这是**过渡方案**：明文文件不满足"密钥不落盘"的本意。
+
+验证（**列出来的就是"现在真的能选的"**）：
+
+```bash
+curl -H "authorization: Bearer local-dev-token" http://127.0.0.1:8787/v1/evowork/models
+```
+
+配了几家就只应该出现几家：只配 DeepSeek 时不该看到 Kimi 与 GLM。
+2026-09-06 这里曾经**不成立**（没配密钥的厂商被原样加回来，且每条重复一次），
+修法与回归测试见 `services/gateway/src/main.ts` 的 `availableModelRegistry`。
 
 **至少要有一家厂商的密钥，且至少要有一个访问 token**，否则网关**拒绝启动**并说明原因 ——
 起一个"看起来正常但每次请求都失败"的网关，会让排查从"没配密钥"变成"模型为什么总报错"。
@@ -226,6 +251,19 @@ printf 'local-dev-token\n' > ~/.evowork/gateway-token && chmod 600 ~/.evowork/ga
 
 这个值要与网关的 `EVOWORK_GATEWAY_TOKENS` 里的某一个**逐字相同**。
 两个都没有时应用启动就会提示，而不是等发出一句话才失败。
+
+#### 模型下拉读的是哪个地址
+
+同一个令牌，地址取自**内核的 `~/.evowork/kernel/config.toml`** 里
+`[model_providers.evowork]` 段的 `base_url` —— 与内核发请求用的是同一个值，
+所以改私有网关只改这一处。开发时要临时指到别的端口用 `EVOWORK_GATEWAY_URL`：
+
+```bash
+EVOWORK_GATEWAY_URL=http://127.0.0.1:8791/v1 ./node_modules/.bin/electron …
+```
+
+下拉里列出的是网关**真的配了密钥**的那些模型（F24）。网关没起时下拉是空的，
+Composer 顶部给一条 danger 提示并**禁用发送** —— 03 §8：模型不可用要在发送之前就说。
 
 > **这是过渡方案。** 明文文件不满足"密钥不落盘"的本意。终态有两条候选、都还没决策：
 > Electron `safeStorage` 存进系统钥匙串 + 设置页录入，或由 identity 服务签发短期令牌

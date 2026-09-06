@@ -8,6 +8,7 @@
  * 文件分工：
  *   · `protocol.ts`            内核与网关之间的线上契约，含**三条会让整条流失败的硬约束**
  *   · `capabilities.ts`        能力声明（D2 语义矩阵 + Q16 三家），含"未验证"如实标注
+ *   · `catalog.ts`             模型下拉的线上契约（**桌面 App 与网关共用同一个类型**，F24）
  *   · `translate/to-chat.ts`   Responses → Chat（instructions / tool 结果 / 图片拒绝）
  *   · `translate/from-chat.ts` Chat 流 → Responses 事件（编号 / 工具参数重组 / reasoning）
  *   · `translate/usage.ts`     用量规范化（cache 如实报 0、缺数据宁可省略）
@@ -18,6 +19,7 @@
 export {
   CAPABILITY_COPY,
   createModelRegistry,
+  createModelRegistryFrom,
   DEGRADE_COPY,
   P0_MODELS,
   type CapabilityLookup,
@@ -27,6 +29,12 @@ export {
   type ModelRegistryEntry,
   type ProviderId,
 } from './capabilities.js';
+export {
+  MODELS_ENDPOINT_PATH,
+  toCatalogEntry,
+  type ModelCatalogEntry,
+  type ModelCatalogResponse,
+} from './catalog.js';
 export {
   capabilityNotices,
   degradeNotices,

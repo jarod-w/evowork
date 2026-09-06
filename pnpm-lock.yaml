@@ -50,6 +50,9 @@ importers:
       '@evowork/artifacts':
         specifier: workspace:*
         version: link:../../services/artifacts
+      '@evowork/gateway':
+        specifier: workspace:*
+        version: link:../../services/gateway
       '@evowork/ingest':
         specifier: workspace:*
         version: link:../../services/ingest

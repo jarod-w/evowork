@@ -68,7 +68,7 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 3  ← initialize result（记录内核版本）
 4  → initialized                   ← **不是** notifications/initialized（F17，2026-09-05 修订）
 5  → 能力探测：对无副作用的实验方法各调一次 → 决定 UI 降级（F18，见 §3.3 的修订）
-6  → model/list + modelProvider/capabilities/read   · 模型下拉与能力徽标（03 §4.5）
+6  → 网关 GET /v1/evowork/models（**不是 model/list**，F24）· 模型下拉与能力徽标（03 §4.5）
 7  → permissionProfile/list        · 权限下拉（含 allowed 标记）
 8  → skills/list · plugin/installed · mcpServerStatus/list
 9  → threadSection/list · project/list(exp)
@@ -82,6 +82,16 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 `app-server-test-client/src/lib.rs:1773`）。本文原先写的 `notifications/initialized` 是错的。
 写错的后果值得单独说：内核**不会报错**，握手看起来完全成功，只是它永远收不到那条通知 ——
 这种"静默半成功"比报错难查得多。
+
+**第 6 步的数据源（F24，2026-09-06 修订）**：本文原先写「调 `model/list` +
+`modelProvider/capabilities/read`」。**那条不成立** —— 内核不知道网关配了哪几家的密钥，
+它列出的模型有一部分是**选中之后必然失败**的（03 §8 要求在发送之前就说）；
+而且不配 `model_catalog_json` 时它返回的是 OpenAI 的型号清单（K5 + 一条未登记的出网路径）。
+改为由宿主直接读网关的能力端点 `GET /v1/evowork/models`，它的返回**就是"现在真的能选的那一份"**。
+
+这一步与握手的其余部分**不同源**，所以它不在 `getStartup()` 那一次调用里：
+本机服务起不来 = 整个界面没有意义；网关连不上 = 界面完全可用、只是发不出新消息。
+合成一个调用会让网关的一次超时把整个首页拖成白屏。
 
 **第 5 步的机制（F18，2026-09-05 修订）**：本文原先写「用 `experimentalFeature/list` 的实际返回
 决定 UI」，**这条不成立**。实测 `experimentalFeature/list` 返回的是**内核运行时功能开关**

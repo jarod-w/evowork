@@ -11,7 +11,12 @@
  */
 import { createLogger, jsonLinesSink } from '@evowork/logging';
 
-import { createModelRegistry, P0_MODELS, type ModelRegistryEntry } from './capabilities.js';
+import {
+  createModelRegistryFrom,
+  P0_MODELS,
+  type CapabilityLookup,
+  type ModelRegistryEntry,
+} from './capabilities.js';
 import { DEFAULT_BASE_URL, PROVIDERS } from './providers/registry.js';
 import type { ProviderConfig } from './providers/types.js';
 import { createGatewayServer } from './server.js';
@@ -55,6 +60,19 @@ export function buildConfigResolver(): (model: ModelRegistryEntry) => ProviderCo
 /** 只保留"密钥齐了"的模型。 */
 export function availableModels(): ModelRegistryEntry[] {
   return P0_MODELS.filter((model) => Boolean(env(KEY_ENV[model.provider] ?? '')));
+}
+
+/**
+ * 「现在真的能选的模型」—— 这就是 `GET /v1/evowork/models` 会列出的那一份。
+ *
+ * **单独一个导出函数，是因为缺陷出在"组合"上而不是任何一半上。**
+ * `availableModels()` 的过滤一直是对的（它有测试），`createModelRegistry` 的
+ * `[...P0_MODELS, ...extra]` 也是对的（它有测试）—— 而把前者当后者的 `extra` 传进去，
+ * 结果是没配密钥的厂商被原样加回来、且每条重复一次（2026-09-06 接下拉时实测到）。
+ * 组合逻辑留在 `main()` 里的话，唯一能验它的方法是真起一个进程发一个请求。
+ */
+export function availableModelRegistry(): CapabilityLookup {
+  return createModelRegistryFrom(availableModels());
 }
 
 /**
@@ -106,7 +124,8 @@ export function main(): void {
   }
 
   const server = createGatewayServer({
-    models: createModelRegistry(models),
+    // 「真的能选的那一份」。**不要在这里重新组合** —— 见 `availableModelRegistry`
+    models: availableModelRegistry(),
     providers: PROVIDERS,
     configFor: buildConfigResolver(),
     logger,

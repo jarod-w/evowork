@@ -19,6 +19,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
   ApprovalView,
+  ModelCatalogResult,
+  ModelOptionView,
   RendererEvent,
   SendInput,
   StartupInfo,
@@ -28,6 +30,7 @@ import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
+import { resolveModelChoice } from './model-selection.js';
 import { Home, type Scenario } from './views/home.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskWorkspace } from './views/task-workspace.js';
@@ -47,6 +50,13 @@ export interface EvoworkBridge {
   refreshVisible(ids: readonly string[]): Promise<void>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
+  /**
+   * 模型下拉的数据（03 §4.5「启动时 + 手动刷新」）。
+   *
+   * 与 `getStartup` 分开：它是一次网络调用（到网关），失败时界面仍然可用 ——
+   * 只是发不出新任务。合并会让网关的一次超时把整个首页拖成白屏。
+   */
+  listModels(): Promise<ModelCatalogResult>;
 }
 
 declare global {
@@ -82,6 +92,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [draft, setDraft] = useState('');
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [models, setModels] = useState<readonly ModelOptionView[]>([]);
+  const [modelId, setModelId] = useState<string | undefined>(undefined);
+  /** 用户是否**显式**改过模型（03 §2.5 的圆点）。切场景时保留他的选择，不悄悄改回去 */
+  const [modelOverridden, setModelOverridden] = useState(false);
+  const [modelUnavailable, setModelUnavailable] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const offs = [
@@ -164,6 +179,69 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       });
   }, [bridge]);
 
+  /**
+   * 模型下拉（03 §4.5「启动时 + 手动刷新」）。
+   *
+   * 拿不到列表**不是异常**：网关没起、令牌不对、一家密钥都没配，都会走到这里，
+   * 而它们的共同后果是"现在发不出任务"。所以结果落在 `modelUnavailable` 上，
+   * 由 Composer 渲染成 danger 条并禁用发送（03 §8：**在发送之前就说**，
+   * 而不是等任务失败）。
+   */
+  const loadModels = useCallback(async () => {
+    try {
+      const result = await bridge.listModels();
+      setModels(result.models);
+      setModelUnavailable(result.unavailable);
+    } catch (err: unknown) {
+      // IPC 本身失败（handler 没注册之类）——这是我们自己的 bug，不能装成"网关不通"
+      setModels([]);
+      setModelUnavailable(`读不到可用模型：${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [bridge]);
+
+  useEffect(() => {
+    void loadModels();
+  }, [loadModels]);
+
+  /**
+   * 选中项跟着「列表 + 场景默认值 + 用户已选」三者走。
+   *
+   * 场景默认的模型不在列表里时会换一个并**说出来** —— 见 `resolveModelChoice`。
+   * 那条提示只在换掉的那一次插入，不会每次渲染都堆一条：`notice` 只有在
+   * 选中项真的发生变化时才会被消费。
+   */
+  const scenarioDefaultModel = startup?.scenarios.find((s) => s.id === scenarioId)?.defaults
+    .modelId;
+  useEffect(() => {
+    const choice = resolveModelChoice(
+      models,
+      modelOverridden ? modelId : undefined,
+      scenarioDefaultModel,
+    );
+    if (choice.modelId === modelId) return;
+    setModelId(choice.modelId);
+    const notice = choice.notice;
+    if (notice) setNotices((prev) => [...prev, { tone: 'warning', text: notice }]);
+    // modelId 不进依赖：它是这个 effect 的输出，进去会让"换一个"再触发一次自己
+  }, [models, modelOverridden, scenarioDefaultModel]);
+
+  /**
+   * 切到某个任务时，下拉跟着**那个任务的**模型走（04 §4 的任务级设置）。
+   *
+   * 少了这一步，打开一个用 Kimi 跑过的旧任务、直接接着问一句，那一句会被发给
+   * 当前下拉里选中的模型 —— 又一次"静默换模型"，而且用户完全看不出来。
+   * 视为一次显式选择（打上圆点）：它确实是用户此前对这个任务做过的选择。
+   */
+  useEffect(() => {
+    if (activeTaskId === null) return;
+    const taskModel = tasks.find((t) => t.id === activeTaskId)?.modelId;
+    if (taskModel === undefined || taskModel === modelId) return;
+    setModelId(taskModel);
+    setModelOverridden(true);
+    // tasks / modelId 不进依赖：这个 effect 只该在**切任务**时跑。
+    // 把 tasks 加进去会让每一次流式更新（任务行随时在变）都重置一遍下拉
+  }, [activeTaskId]);
+
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text) return;
@@ -173,6 +251,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         ...(activeTaskId ? { threadId: activeTaskId } : {}),
         text,
         scenarioId,
+        // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
+        // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
+        ...(modelId !== undefined ? { modelId } : {}),
       });
       setActiveTaskId(threadId);
     } catch (err: unknown) {
@@ -183,7 +264,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         { tone: 'danger', text: `没能发出去：${err instanceof Error ? err.message : String(err)}` },
       ]);
     }
-  }, [bridge, draft, activeTaskId, scenarioId]);
+  }, [bridge, draft, activeTaskId, scenarioId, modelId]);
 
   const scenarios: readonly Scenario[] = useMemo(
     () =>
@@ -223,8 +304,39 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onPermissionChange: setPermissionId,
       mode,
       onModeChange: setMode,
+      models,
+      modelId,
+      onModelChange: (id: string) => {
+        setModelId(id);
+        // 03 §2.5：显式改过的控件带一个圆点，切场景时不再被默认值改回去
+        setModelOverridden(true);
+      },
+      overrides: { model: modelOverridden },
+      onResetOverride: (key: 'model' | 'permission' | 'mode') => {
+        if (key === 'model') setModelOverridden(false);
+      },
+      /*
+       * 03 §8：模型不可用 → danger 条 + 禁用发送，**不换一个模型继续**。
+       * 「检查模型接入」重新拉一次列表 —— 用户通常是去把网关起起来了再回来点它。
+       */
+      ...(modelUnavailable !== undefined
+        ? { modelUnavailable: { text: modelUnavailable, onFix: () => void loadModels() } }
+        : {}),
     }),
-    [send, running, activeTaskId, bridge, permissions, permissionId, mode],
+    [
+      send,
+      running,
+      activeTaskId,
+      bridge,
+      permissions,
+      permissionId,
+      mode,
+      models,
+      modelId,
+      modelOverridden,
+      modelUnavailable,
+      loadModels,
+    ],
   );
 
   return (

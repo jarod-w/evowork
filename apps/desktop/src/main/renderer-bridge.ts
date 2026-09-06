@@ -1,5 +1,5 @@
 /**
- * 渲染进程能做的六件事，以及推给它的三种事件。
+ * 渲染进程能做的那几件事（`RENDERER_ACTIONS`），以及推给它的三种事件。
  *
  * ## 为什么单独一个文件
  *
@@ -30,6 +30,7 @@ import type {
   ApprovalDecisionInput,
   ApprovalView,
   CaseView,
+  ModelCatalogResult,
   RenderItemView,
   RendererEvent,
   RowActionInput,
@@ -66,6 +67,8 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
     hasArtifacts: row.artifact_count > 0,
     source: row.automation_id ? 'automation' : 'manual',
     ...(row.cwd !== null ? { cwd: row.cwd } : {}),
+    // 打开旧任务时下拉要显示它自己的模型（见 `TaskRowView.modelId`）
+    ...(row.model !== null ? { modelId: row.model } : {}),
   };
 }
 
@@ -80,6 +83,14 @@ export interface RendererBridgeOptions {
   readonly userName?: string | undefined;
   /** 随包分发的案例池（03 §5）。真源是 `config/showcase/*.toml`，缺省用内置兜底 */
   readonly cases?: readonly CaseView[] | undefined;
+  /**
+   * 读模型目录（03 §4.5 的下拉）。
+   *
+   * 注入而不是在这里直接 fetch：它是一次**网络调用**，而这个文件的其余部分全是
+   * 纯翻译。注入之后"网关不通时界面怎么表现"能在测试里跑，不必真起一个网关。
+   * 没给时下拉为空并说明原因 —— **不假装有模型可选**（03 §8）。
+   */
+  readonly readModelCatalog?: (() => Promise<ModelCatalogResult>) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -147,7 +158,7 @@ export function createEventTranslator(store: Store, now: () => number) {
 }
 
 /**
- * 六个渲染动作的实现。
+ * 渲染动作的实现。
  *
  * 不 import electron：`bootstrap.ts` 负责把它们挂到 `ipcMain` 上，
  * 这样"发送一条需求会发生什么"能在测试里跑完整条链路（这正是它此前从未被验证的原因）。
@@ -162,16 +173,52 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const text = input.text.trim();
       if (text === '') throw new Error('空需求');
       const content = [{ type: 'text' as const, text }];
+      // 用户手选的模型是优先级最高的一档（03 §2.4：场景默认 → 模式 → 用户显式选择）
+      const overrides = input.modelId !== undefined ? { model: input.modelId } : undefined;
 
       if (input.threadId !== undefined) {
-        await adapter.sendMessage({ threadId: input.threadId, input: content });
+        /*
+         * 已有任务里换模型：**先落任务级设置，再发这一回合**。
+         *
+         * 两件事都要做。只发不存的话，下一回合 `sendMessage` 会从投影表读回旧的
+         * `row.model`，用户切了模型只在这一轮生效、下一轮又悄悄换回去；
+         * 只存不发的话，这一轮还是旧模型 —— 而用户刚刚就是为了这一轮才切的。
+         * （04 §4：任务级设置下一次 `turn/start` 生效，**不追溯已发生的回合**。）
+         */
+        if (input.modelId !== undefined) {
+          adapter.setTaskSettings(input.threadId, { model: input.modelId });
+        }
+        await adapter.sendMessage({
+          threadId: input.threadId,
+          input: content,
+          ...(overrides ? { overrides } : {}),
+        });
         return { threadId: input.threadId };
       }
       const created = await adapter.createTask({
         input: content,
         ...(input.scenarioId !== undefined ? { scenarioId: input.scenarioId } : {}),
+        ...(overrides ? { overrides } : {}),
       });
+      // 新任务同样要落库：否则这个任务的第二条消息就回落到场景默认模型
+      if (input.modelId !== undefined) {
+        adapter.setTaskSettings(created.threadId, { model: input.modelId });
+      }
       return { threadId: created.threadId };
+    },
+
+    /**
+     * 模型下拉的数据（03 §4.5「启动时 + 手动刷新」）。
+     *
+     * 单独一个动作、不并进 `getStartup`：见 `main/model-catalog.ts` 的头注释 ——
+     * 本机服务起不来与网关连不上是两种后果完全不同的失败，合成一个调用会让
+     * 网关的一次超时把整个首页拖成白屏。
+     */
+    async listModels(): Promise<ModelCatalogResult> {
+      if (!options.readModelCatalog) {
+        return { models: [], unavailable: '这个版本没有配置模型网关地址，无法列出可用模型。' };
+      }
+      return options.readModelCatalog();
     },
 
     async interrupt(threadId: string): Promise<void> {

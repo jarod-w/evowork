@@ -40,6 +40,7 @@ import { BRAND } from '@evowork/tokens';
 import { openStore, type Store } from '@evowork/store';
 
 import { createLocalServices, type LocalServices } from './local-services.js';
+import { fetchModelCatalog, readGatewayBaseUrl } from './model-catalog.js';
 import {
   createEventTranslator,
   createRendererActions,
@@ -229,7 +230,7 @@ export interface ServiceHost {
   /** 五个本机服务之间的接线（scheduler / 产物索引 / 解析运行时探测） */
   readonly services: LocalServices;
   /**
-   * 渲染进程能调用的六个动作。**它们在这里实现、由 `bootstrap` 挂到 ipcMain 上** ——
+   * 渲染进程能调用的动作（`RENDERER_ACTIONS`）。**它们在这里实现、由 `bootstrap` 挂到 ipcMain 上** ——
    * 挂载与实现分开，是为了让"发一条需求会发生什么"能不起 Electron 就跑完。
    */
   readonly actions: RendererActions;
@@ -396,6 +397,19 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     pending(reply);
   };
 
+  /*
+   * 模型下拉的数据源（03 §4.5）。
+   *
+   * 地址取自**内核自己的 `config.toml`** —— 这个文件就是它的写入方（`ensureKernelConfig`）。
+   * 另起一个 EvoWork 侧的地址配置会漂：企业改成私有网关时只会改 config.toml，
+   * 于是内核打私有网关、下拉打默认网关，而两处配置各自都是对的
+   * （表现是"下拉里的模型发过去说不存在"）。
+   *
+   * 令牌与内核用的是**同一个** `gatewayToken`：网关对两个端点用同一套鉴权，
+   * 各读各的只会让"内核能用、下拉 401"这种半可用状态成为可能。
+   */
+  const gatewayBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, options.env);
+
   const actions = createRendererActions({
     adapter,
     store,
@@ -405,6 +419,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     appVersion: options.appVersion,
     userName: userInfo().username,
     cases: BUILTIN_CASES,
+    readModelCatalog: () =>
+      fetchModelCatalog({
+        baseUrl: gatewayBaseUrl,
+        ...(gatewayToken ? { token: gatewayToken } : {}),
+      }),
   });
 
   return {

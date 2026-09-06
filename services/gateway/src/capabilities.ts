@@ -229,13 +229,39 @@ export interface CapabilityLookup {
   list(): readonly ModelRegistryEntry[];
 }
 
-export function createModelRegistry(extra: readonly ModelRegistryEntry[] = []): CapabilityLookup {
-  const all = [...P0_MODELS, ...extra];
-  const byId = new Map(all.map((m) => [m.id, m]));
+/**
+ * 从**一份确定的清单**建注册表。`list()` 返回的就是它，一条不多。
+ *
+ * ## 为什么需要这个而不是只有 `createModelRegistry`
+ *
+ * 2026-09-06 接模型下拉时实测发现的缺陷：`main.ts` 拿 `availableModels()`（按密钥
+ * 过滤过的子集）当 `extra` 传给 `createModelRegistry`，而后者的实现是
+ * `[...P0_MODELS, ...extra]` —— 于是
+ *
+ *   ① 每个模型在 `list()` 里出现**两次**；
+ *   ② 更糟的是 **`P0_MODELS` 被无条件加了回来**：只配了 DeepSeek 密钥时，
+ *      端点照样列出 Kimi 与 GLM。用户选中它、发出去、拿到一个 401 ——
+ *      而"按密钥过滤"这件事正是模型下拉不走内核 `model/list` 的**决定性理由**（F24）。
+ *
+ * 两个函数各自都是对的（过滤对、组合对），合起来是错的
+ * （CLAUDE.md §9.1）。这个缺陷在此之前看不见，因为没有任何 UI 消费过 `list()`。
+ *
+ * **同 id 后来者覆盖前者**（企业用私有 endpoint 覆盖 `evowork/deepseek-chat` 是真实场景），
+ * 位置保持第一次出现时的位置 —— 下拉的顺序不该因为一次覆盖而跳动。
+ */
+export function createModelRegistryFrom(models: readonly ModelRegistryEntry[]): CapabilityLookup {
+  const byId = new Map<string, ModelRegistryEntry>();
+  for (const model of models) byId.set(model.id, model);
+  const all = [...byId.values()];
   return {
     find: (modelId) => byId.get(modelId) ?? byId.get(`evowork/${modelId}`),
     list: () => all,
   };
+}
+
+/** P0 三家 + 额外条目（企业自定义 / 测试用）。**要"只有这些"时用 `createModelRegistryFrom`**。 */
+export function createModelRegistry(extra: readonly ModelRegistryEntry[] = []): CapabilityLookup {
+  return createModelRegistryFrom([...P0_MODELS, ...extra]);
 }
 
 /**

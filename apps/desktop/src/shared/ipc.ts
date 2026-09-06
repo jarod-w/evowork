@@ -23,6 +23,14 @@ export interface TaskRowView {
   readonly hasArtifacts?: boolean | undefined;
   readonly source?: 'manual' | 'automation' | 'cli' | undefined;
   readonly cwd?: string | undefined;
+  /**
+   * 这个任务上一次用的模型（04 §4 的任务级设置）。
+   *
+   * 打开旧任务时下拉要显示**它的**模型，而不是当前选中的那个 —— 否则用户打开一个
+   * 用 Kimi 跑过的任务、直接接着问一句，那一句就被悄悄发给了别的模型。
+   * 「不静默换模型」这条在这里同样成立。
+   */
+  readonly modelId?: string | undefined;
 }
 
 export interface RenderItemView {
@@ -105,10 +113,53 @@ export interface StartupInfo {
   readonly tasks: readonly TaskRowView[];
 }
 
+/**
+ * 模型下拉的一项（01 §5.15）。
+ *
+ * 形状与 `services/gateway` 的 `ModelCatalogEntry` 是**两个类型**，因为它们回答
+ * 两个不同的问题：那边是"网关知道什么"，这边是"下拉要画什么"。翻译在
+ * `main/model-catalog.ts` 里一处完成 —— 让渲染层直接吃网关的形状，
+ * 等于把一个 HTTP 契约钉死在 UI 组件上。
+ */
+export interface ModelOptionView {
+  readonly id: string;
+  /** 等宽显示的 `provider/model` */
+  readonly label: string;
+  readonly provider: string;
+  /** 缺失的能力**保留并标 false**（灰色划除），不隐藏 —— D2「降级必须显式」 */
+  readonly capabilities: readonly {
+    readonly id: 'reasoning' | 'image-input' | 'parallel-tools';
+    readonly label: string;
+    readonly available: boolean;
+  }[];
+  /** 缺失能力的用户可见文案（03 §8） */
+  readonly notices: readonly string[];
+}
+
+/**
+ * 模型目录的读取结果。
+ *
+ * `unavailable` 不是错误，是一个**正常的运行状态**：网关没起、令牌不对、一家密钥都没配。
+ * 它被渲染成 Composer 顶部的 danger 条并禁用发送（03 §8：模型不可用**不静默降级**，
+ * 也不该等到发出一句话、任务失败之后才说）。
+ */
+export interface ModelCatalogResult {
+  readonly models: readonly ModelOptionView[];
+  readonly unavailable?: string | undefined;
+}
+
 export interface SendInput {
   readonly threadId?: string | undefined;
   readonly text: string;
   readonly scenarioId?: string | undefined;
+  /**
+   * 用户在 Composer 里手动选的模型（03 §2.4 的优先级最高一档）。
+   *
+   * 新任务时它作为 `overrides.model` 展开进 `turn/start`；已有任务时它**同时**写进
+   * 任务级设置（04 §4：下一次回合生效，不追溯已发生的回合）—— 只传不存的话，
+   * 用户切了模型、下一轮又悄悄换回场景默认值。
+   */
+  readonly modelId?: string | undefined;
 }
 
 export type ApprovalDecisionView = 'accept' | 'acceptForSession' | 'decline' | 'cancel';

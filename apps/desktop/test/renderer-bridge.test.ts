@@ -223,6 +223,75 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(adapter.createTask).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * 手选模型必须**既发出去、又存下来**（03 §2.4 + 04 §4）。
+   *
+   * 少任何一半都有一个具体的坏表现：
+   *   · 只存不发 —— 这一轮还是旧模型，而用户刚刚就是为了这一轮才切的；
+   *   · 只发不存 —— 下一轮 `sendMessage` 从投影表读回旧的 `row.model`，
+   *     用户切了模型只生效一轮，然后悄悄换回去（而界面上仍显示他选的那个）。
+   */
+  it('新任务里手选模型：展开进 turn/start **并且**落进任务级设置', async () => {
+    const adapter = {
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      setTaskSettings: vi.fn(),
+    } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    await actions.send({ text: '做个周报', modelId: 'evowork/kimi-k3' });
+
+    expect(adapter.createTask).toHaveBeenCalledWith({
+      input: [{ type: 'text', text: '做个周报' }],
+      overrides: { model: 'evowork/kimi-k3' },
+    });
+    expect(adapter.setTaskSettings).toHaveBeenCalledWith('new-1', { model: 'evowork/kimi-k3' });
+  });
+
+  it('已有任务里换模型：同样两件事都做', async () => {
+    const adapter = {
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      setTaskSettings: vi.fn(),
+    } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    await actions.send({ threadId: 't1', text: '换个模型再来', modelId: 'evowork/glm-flash' });
+
+    expect(adapter.setTaskSettings).toHaveBeenCalledWith('t1', { model: 'evowork/glm-flash' });
+    expect(adapter.sendMessage).toHaveBeenCalledWith({
+      threadId: 't1',
+      input: [{ type: 'text', text: '换个模型再来' }],
+      overrides: { model: 'evowork/glm-flash' },
+    });
+  });
+
+  it('没选模型时**不塞一个 overrides 进去** —— 场景默认值才能生效', async () => {
+    const adapter = {
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      setTaskSettings: vi.fn(),
+    } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    await actions.send({ text: '做个周报' });
+
+    expect(adapter.createTask).toHaveBeenCalledWith({
+      input: [{ type: 'text', text: '做个周报' }],
+    });
+    expect(adapter.setTaskSettings).not.toHaveBeenCalled();
+  });
+
+  it('没有配置模型目录读取方时**说清楚**，不是回一个空列表假装没有模型', async () => {
+    const adapter = { createTask: vi.fn(), sendMessage: vi.fn() } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    const result = await actions.listModels();
+    expect(result.models).toEqual([]);
+    // 空列表 + 空原因 = 下拉是空的而没人知道为什么
+    expect(result.unavailable).toBeTruthy();
+  });
+
   it('空可见页不发请求 —— 04 §3.4 的有界校正，0 条也算一条边界', async () => {
     const adapter = { refreshAuthoritative: vi.fn(async () => 0) } as unknown as Adapter;
     const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
