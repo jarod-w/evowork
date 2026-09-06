@@ -9,8 +9,6 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { dayChainHash, type AuditRecord } from '@evowork/policy';
-
 import {
   ACTION_LABEL,
   AuditPage,
@@ -129,25 +127,28 @@ describe('审计页：能被真的用起来（10 §6「用户可见」）', () =
 });
 
 describe('审计页：防篡改与保留期', () => {
-  const day = (records_: AuditRecord[]) => ({
-    chainHash: dayChainHash({ previousChainHash: '', records: records_ }),
-    records: records_,
-  });
-
-  it('链对不上时**醒目告知**，并说明导出会带上校验结果', () => {
-    const good = day([records[0] as AuditRecord]);
-    render(
-      <AuditPage
-        records={records}
-        now={NOW}
-        chain={[{ ...good, records: [records[1] as AuditRecord] }]}
-      />,
-    );
+  /*
+   * 2026-09-06 改动：页面收的是**校验结论**（`chainVerdict`）而不是原始链。
+   *
+   * 校验挪去了主进程，两条理由：① `verifyChain` 依赖 `node:crypto`，
+   * 渲染进程是浏览器环境、根本跑不起来（这一页被挂进 `app.tsx` 那一刻才暴露）；
+   * ② 完整性校验读的是权威表，本来就该由持有权威数据的那一层做。
+   *
+   * 这条断言仍然守着同一件事：**链对不上要醒目告知**。
+   * `dayChainHash` / `verifyChain` 的正确性由 `services/policy` 自己的测试覆盖。
+   */
+  it('链对不上时**醒目告知**', () => {
+    render(<AuditPage records={records} now={NOW} chainVerdict={{ ok: false, brokenDays: 0 }} />);
     expect(screen.getByRole('alert').textContent).toContain('有记录被删改过');
   });
 
   it('链对得上时不打扰用户', () => {
-    render(<AuditPage records={records} now={NOW} chain={[day([records[0] as AuditRecord])]} />);
+    render(<AuditPage records={records} now={NOW} chainVerdict={{ ok: true }} />);
+    expect(screen.queryByText(/被删改过/)).toBeNull();
+  });
+
+  it('没给结论时也不打扰 —— "没校验"不等于"校验失败"', () => {
+    render(<AuditPage records={records} now={NOW} />);
     expect(screen.queryByText(/被删改过/)).toBeNull();
   });
 

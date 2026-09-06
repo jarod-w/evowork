@@ -42,10 +42,88 @@ textarea {
   height: 100%;
   overflow: hidden;
 }
+/*
+ * 主内容区。**每个能出现在 `.ew-app` 下的顶层视图都要在这里列出** ——
+ * 少列一个的表现是那一页按内容高度缩成左上角一小块，而每个组件自己的样式都是对的。
+ * `app.css` 开头记过一次同样的事：`.ew-app` 当时根本没有规则，侧边栏就是这样塌掉的。
+ */
 .ew-app > .ew-home,
-.ew-app > .ew-task-workspace {
+.ew-app > .ew-task-workspace,
+.ew-app > .ew-page,
+.ew-app > .ew-library {
   flex: 1;
   min-width: 0;
+}
+
+/* 目录式页面（02 §1 的一级入口）：标题栏带高度留白 + 内容列 800 居中 */
+.ew-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-24) 0;
+  overflow-y: auto;
+}
+.ew-page > .ew-content-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* 首运行引导盖住整个窗口：它要拿到工作空间与权限的答案才放行（02 §9） */
+.ew-app-onboarding {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--bg-app);
+}
+
+/* ── 自动化列表（07 §2）────────────────────────────────────────────── */
+
+.ew-automation-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-automation-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: var(--layout-data-table-row-height);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-automation-row:hover {
+  background: var(--bg-hover);
+}
+.ew-automation-row[data-selected='true'] {
+  background: var(--bg-selected);
+  border-color: var(--border-default);
+}
+/* 名字吃掉余量，右侧的徽标与 cron 表达式各自占固定宽 */
+.ew-automation-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: var(--font-label-weight);
+}
+.ew-automation-schedule {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
 }
 
 /* §3.1：< 860 不支持（桌面应用，无移动端形态）；< 1024 侧边栏收成图标条 */

@@ -19,6 +19,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
   ApprovalView,
+  AuditDataView,
+  AutomationsDataView,
+  LibraryDataView,
   ModelCatalogResult,
   ModelOptionView,
   RendererEvent,
@@ -28,10 +31,16 @@ import type {
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
+import { EmptyState } from './components/primitives.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { resolveModelChoice } from './model-selection.js';
+import { AuditPage, type AuditRow } from './views/audit.js';
+import type { LibraryRow } from '@evowork/artifacts/library.js';
+import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
+import { Library } from './views/library.js';
+import { Onboarding, ONBOARDING_STEPS, type OnboardingStep } from './views/onboarding.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskWorkspace } from './views/task-workspace.js';
 
@@ -57,7 +66,38 @@ export interface EvoworkBridge {
    * 只是发不出新任务。合并会让网关的一次超时把整个首页拖成白屏。
    */
   listModels(): Promise<ModelCatalogResult>;
+  /*
+   * 三个目录式页面各自一个动作。**按需拉，不并进 getStartup** ——
+   * 它们读的是本机 sqlite，且绝大多数会话里用户根本不会打开资料库。
+   */
+  getLibrary(): Promise<LibraryDataView>;
+  getAutomations(): Promise<AutomationsDataView>;
+  getAudit(): Promise<AuditDataView>;
+  /** 打开系统目录选择框。返回空对象 = 用户取消，或这个构建没有选择器 */
+  pickWorkspace(): Promise<{ path?: string }>;
+  completeOnboarding(): Promise<void>;
 }
+
+/**
+ * 主内容区显示什么。
+ *
+ * **不引 router**：只有两种形态——任务（首页 / 工作台，由 `activeTaskId` 区分）
+ * 与一个目录式页面。侧边栏的 7 个入口就是全部的导航面（02 §1），
+ * 它是产品骨架而不是可扩展的路由表。
+ */
+type MainView =
+  'task' | 'library' | 'automations' | 'audit' | 'assistant' | 'projects' | 'catalog' | 'more';
+
+/** 侧边栏 id → 主内容区。**没有页面的入口也必须在这里出现**，见 `UnbuiltPage`。 */
+const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
+  'new-task': 'task',
+  assistant: 'assistant',
+  projects: 'projects',
+  catalog: 'catalog',
+  automations: 'automations',
+  library: 'library',
+  more: 'more',
+};
 
 declare global {
   interface Window {
@@ -99,6 +139,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [modelUnavailable, setModelUnavailable] = useState<string | undefined>(undefined);
   /** 选中的工作空间（EvoWork 的「空间」= 内核的 Project + cwd）。主进程负责翻成 cwd */
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
+  const [view, setView] = useState<MainView>('task');
+  const [library, setLibrary] = useState<LibraryDataView | null>(null);
+  const [automations, setAutomations] = useState<AutomationsDataView | null>(null);
+  const [audit, setAudit] = useState<AuditDataView | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>(
+    ONBOARDING_STEPS[0] as OnboardingStep,
+  );
+  /**
+   * 引导里已选的工作空间。
+   *
+   * 单独一份 state 而不是选完重拉 `getStartup`：选完要立刻能点「下一步」，
+   * 而为了看到刚选的目录重拉一次整个启动数据，中间那半秒按钮还是灰的 ——
+   * 用户会以为没选上，再点一次。
+   */
+  const [pickedWorkspaces, setPickedWorkspaces] = useState<readonly string[]>([]);
 
   useEffect(() => {
     const offs = [
@@ -244,6 +299,32 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     // 把 tasks 加进去会让每一次流式更新（任务行随时在变）都重置一遍下拉
   }, [activeTaskId]);
 
+  /**
+   * 进到某一页时才去拉它的数据。
+   *
+   * **每次进都重拉**，不做缓存：这三张表随时在被别的东西写（调度器在跑、
+   * watcher 在索引产物、hook 在写审计）。缓存一份的话，用户跑完一个任务
+   * 回到资料库看不到新产物 —— 而他没有任何理由知道要刷新。
+   */
+  useEffect(() => {
+    if (view === 'library')
+      void bridge
+        .getLibrary()
+        .then(setLibrary)
+        .catch(() => setLibrary(null));
+    if (view === 'automations') {
+      void bridge
+        .getAutomations()
+        .then(setAutomations)
+        .catch(() => setAutomations(null));
+    }
+    if (view === 'audit')
+      void bridge
+        .getAudit()
+        .then(setAudit)
+        .catch(() => setAudit(null));
+  }, [view, bridge]);
+
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text) return;
@@ -360,14 +441,74 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     ],
   );
 
+  /*
+   * 首次引导（02 §9）。**盖住整个界面** —— 它要拿到工作空间与权限档位的答案，
+   * 而这两件事决定后面每个任务在哪跑、能动什么。走完落 `meta` 表，不再出现。
+   *
+   * `startup === null` 时不显示：那时我们还不知道走没走过，
+   * 闪一下引导再消失比晚半秒更糟。
+   */
+  if (startup !== null && !startup.onboarded) {
+    return (
+      <div className="ew-app ew-app-onboarding">
+        <Onboarding
+          step={onboardingStep}
+          onStepChange={setOnboardingStep}
+          workspaces={[
+            ...startup.workspaces.map((w) => w.path ?? w.name),
+            ...pickedWorkspaces.filter((p) => !startup.workspaces.some((w) => w.path === p)),
+          ]}
+          /*
+           * **这一步是硬门槛**：`blockingReason` 要求至少一个工作空间，
+           * 而干净机器上内核一个 project 都没有。不接这个回调的话，
+           * 「下一步」永远是灰的 —— 整个应用打不开（2026-09-06 实测撞到）。
+           */
+          onPickWorkspace={() => {
+            void bridge.pickWorkspace().then((r) => {
+              if (r.path) setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
+            });
+          }}
+          permissionProfiles={(startup.permissions ?? []).map((p) => ({
+            id: p.id,
+            allowed: p.allowed,
+            ...(p.description !== undefined ? { description: p.description } : {}),
+          }))}
+          permissionId={permissionId}
+          onPermissionChange={setPermissionId}
+          modelStatus={modelUnavailable ? 'failed' : models.length > 0 ? 'ok' : 'unchecked'}
+          {...(modelUnavailable !== undefined ? { modelError: modelUnavailable } : {})}
+          onCheckModel={() => void loadModels()}
+          /*
+           * 办公扩展的下载器**还没有实现**（08 §4 的按需下载，M9 剩余项）。
+           * 这里如实说，不给一个点了没反应的按钮 —— 那正是这一轮在修的那类缺陷。
+           */
+          runtimeInstalled={false}
+          onSkipRuntime={() => setOnboardingStep('done')}
+          onFinish={() => {
+            void bridge.completeOnboarding().then(() => {
+              setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
+            });
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="ew-app">
       <Sidebar
         tasks={tasks}
         sections={[]}
-        selectedId={activeTaskId ?? undefined}
-        onSelect={setActiveTaskId}
-        onNewTask={() => setActiveTaskId(null)}
+        selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
+        onSelect={(id) => {
+          setActiveTaskId(id);
+          setView('task');
+        }}
+        onNewTask={() => {
+          setActiveTaskId(null);
+          setView('task');
+        }}
+        onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
         onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
         onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
         brandName={startup?.appName}
@@ -376,7 +517,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           : {})}
       />
 
-      {activeTaskId === null ? (
+      {view !== 'task' ? (
+        <MainPage
+          view={view}
+          library={library}
+          automations={automations}
+          audit={audit}
+          onOpenTask={(id) => {
+            setActiveTaskId(id);
+            setView('task');
+          }}
+        />
+      ) : activeTaskId === null ? (
         <Home
           heroLine={`${startup?.appName ?? 'EvoWork'}，我帮你`}
           scenarios={scenarios}
@@ -408,6 +560,97 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * 目录式页面的分发。
+ *
+ * ## 为什么没有页面的入口也要在这里出现
+ *
+ * 02 §1 的 7 个入口是产品骨架，其中三个（助理 / 项目 / 专家·技能·连接器）
+ * 与「更多」现在**还没有页面**。在此之前它们的表现是**点了没有任何反应** ——
+ * 用户看到的是一个有七个菜单项、其中四个是死的应用，而"点了没反应"
+ * 与"坏了"在界面上完全无法区分。
+ *
+ * 所以这里给它们一个如实说明的空页：**说清是没做，不是坏了**
+ * （CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」的同一条）。
+ * 页面做好之后把它加进这个 switch，这段自然消失。
+ */
+function MainPage(props: {
+  readonly view: MainView;
+  readonly library: LibraryDataView | null;
+  readonly automations: AutomationsDataView | null;
+  readonly audit: AuditDataView | null;
+  readonly onOpenTask: (threadId: string) => void;
+}) {
+  switch (props.view) {
+    /*
+     * 两处 `as` 是**跨 IPC 的类型收窄**，不是绕过检查。
+     *
+     * `shared/ipc.ts` 里这些字段是 `string`：那一层是序列化边界，把服务层的字面量
+     * 联合重新声明一遍，等于同一组取值在三处各写一份，加一个取值要改三处。
+     * 值本身确实来自那些联合（它们从 sqlite 的 TEXT 列原样回来），
+     * 而两个页面对**认不出来的取值**都有兜底：资料库的类型筛选不匹配它，
+     * 审计页显示原值而不是空白。
+     */
+    case 'library':
+      return (
+        <Library
+          rows={(props.library?.rows ?? []) as readonly LibraryRow[]}
+          {...(props.library?.diskUsage ? { diskUsage: props.library.diskUsage } : {})}
+        />
+      );
+
+    case 'automations':
+      return (
+        <AutomationsPage
+          rows={props.automations?.automations ?? []}
+          runs={props.automations?.runs ?? {}}
+          deviceName={props.automations?.deviceName ?? '这台电脑'}
+        />
+      );
+
+    case 'audit':
+      return (
+        <AuditPage
+          records={(props.audit?.records ?? []) as readonly AuditRow[]}
+          retentionDays={props.audit?.retentionDays ?? 90}
+          retentionWarningDays={props.audit?.retentionWarningDays ?? 7}
+          {...(props.audit?.oldestAt !== undefined ? { oldestAt: props.audit.oldestAt } : {})}
+        />
+      );
+
+    default:
+      return <UnbuiltPage view={props.view} />;
+  }
+}
+
+/** 02 §1 里已有入口、但页面还没做的那几个。**说清是没做**，不留一个空白主区。 */
+const UNBUILT_COPY: Readonly<Record<string, { title: string; hint: string }>> = {
+  assistant: {
+    title: '助理还没做好',
+    hint: '助理会是一个常驻的对话（默认只读，不进任务列表）。现在请用「新建任务」。',
+  },
+  projects: {
+    title: '项目页还没做好',
+    hint: '工作空间目前可以在输入框下方的「选择工作空间」里挑，只是还不能在这里管理。',
+  },
+  catalog: {
+    title: '专家·技能·连接器还没做好',
+    hint: '办公技能（文档 / 表格 / 幻灯片 / 图表）已经随产品分发并可用，只是还没有这个管理界面。',
+  },
+  more: { title: '这里还没有内容', hint: '设置、通知与灵感会陆续放到这里。' },
+};
+
+function UnbuiltPage({ view }: { readonly view: MainView }) {
+  const copy = UNBUILT_COPY[view] ?? { title: '这个页面还没做好', hint: '' };
+  return (
+    <div className="ew-page">
+      <div className="ew-content-column">
+        <EmptyState title={copy.title} hint={copy.hint} />
+      </div>
     </div>
   );
 }

@@ -24,13 +24,24 @@ import {
   type PendingApproval,
   type UiEvent,
 } from '@evowork/kernel-adapter';
+/*
+ * 审计保留期与预警阈值（10 §6）。
+ *
+ * **从 `@evowork/policy` import**，不在这里另写一个数：主进程是 node 环境，
+ * 那个包的 `node:crypto` 依赖在这一侧完全没问题。渲染层拿不到它
+ * （浏览器环境），所以由这里经 IPC 送过去 —— 一个真源，两条路径。
+ */
+import { RETENTION_DAYS, RETENTION_WARNING_DAYS } from '@evowork/policy';
 import type { Logger } from '@evowork/logging';
-import type { ProjectionRow, Store } from '@evowork/store';
+import { readMeta, writeMeta, type ProjectionRow, type Store } from '@evowork/store';
 
 import type {
   ApprovalDecisionInput,
   ApprovalView,
+  AuditDataView,
+  AutomationsDataView,
   CaseView,
+  LibraryDataView,
   ModelCatalogResult,
   RenderItemView,
   RendererEvent,
@@ -92,9 +103,58 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
   };
 }
 
+/** `meta` 表里存首次引导标记的键。**一个常量，别在两处各写一遍字符串** */
+export const ONBOARDED_KEY = 'evowork.onboarded';
+
+/**
+ * 本机记录的工作空间（JSON 数组）。
+ *
+ * 这正是 `DEGRADATION[project/list]` 写的兜底：「用本机表自己管工作空间
+ * （只记路径与名称，不做 thread 归属）」。干净机器上内核一个 project 都没有，
+ * 而首运行**要求**至少选一个工作空间 —— 没有这个键，引导第②步就是死路。
+ */
+export const LOCAL_WORKSPACES_KEY = 'evowork.workspaces';
+
+/** 读本机记录的工作空间路径。坏数据当作没有，不让一条脏记录挡住启动。 */
+export function readLocalWorkspaces(store: Store): readonly string[] {
+  const raw = readMeta(store.db, LOCAL_WORKSPACES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export interface RendererBridgeOptions {
   readonly adapter: Adapter;
   readonly store: Store;
+  /**
+   * 三个目录式页面的数据源（本机 sqlite）。
+   *
+   * 注入而不是让这个文件自己建 repo：宿主已经建过一套给调度器与产物索引用了
+   * （`local-services.ts`），再建一套等于同一张表有两个入口，
+   * 而"两个模块各自对、合起来不对"在这个项目里已经发生过四次（CLAUDE.md §9.1）。
+   */
+  readonly pageData?:
+    | {
+        readonly listArtifacts: () => readonly {
+          readonly id: string;
+          readonly path: string;
+          readonly title: string;
+          readonly artifactType: string;
+          readonly createdAt: number;
+        }[];
+        readonly listAutomations: () => readonly Record<string, unknown>[];
+        readonly listRuns: (automationId: string) => readonly Record<string, unknown>[];
+        readonly listAudit: () => readonly Record<string, unknown>[];
+        readonly auditOldestAt: () => number | undefined;
+        readonly diskUsage?: (() => LibraryDataView['diskUsage']) | undefined;
+        readonly deviceId: string;
+        readonly deviceName: string;
+      }
+    | undefined;
   /** 把用户的决定交回给挂起的审批（F14：审批是**服务端发起的请求**，必须有人回复） */
   readonly resolveApproval?: ((id: string, reply: ApprovalReply) => void) | undefined;
   readonly logger?: Logger | undefined;
@@ -111,6 +171,8 @@ export interface RendererBridgeOptions {
    * 没给时下拉为空并说明原因 —— **不假装有模型可选**（03 §8）。
    */
   readonly readModelCatalog?: (() => Promise<ModelCatalogResult>) | undefined;
+  /** 打开系统目录选择框（首运行第②步）。没有它时 `pickWorkspace` 返回 undefined */
+  readonly pickDirectory?: (() => Promise<string | undefined>) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -362,6 +424,106 @@ export function createRendererActions(options: RendererBridgeOptions) {
       await adapter.refreshAuthoritative(ids);
     },
 
+    /**
+     * 资料库（06 §3）。**本机产物索引，不出网**（Q17：不做云盘）。
+     *
+     * `location` 给的是**目录**而不是完整路径：表格里一列完整路径会把名称挤没，
+     * 而用户在这一列想知道的是"它在哪个工作空间"。完整路径在打开时才需要。
+     */
+    async getLibrary(): Promise<LibraryDataView> {
+      const data = options.pageData;
+      if (!data) return Promise.resolve({ rows: [] });
+      const rows = data.listArtifacts().map((a) => ({
+        id: a.id,
+        name: a.title || basename(a.path),
+        source: 'artifact' as const,
+        // Q17/Q19 都不做 → 所有者恒为「我」，表格会自动隐藏这一列
+        owner: '我',
+        location: dirname(a.path),
+        accessedAt: a.createdAt,
+        artifactType: a.artifactType,
+        extension: extensionOf(a.path),
+      }));
+      const usage = data.diskUsage?.();
+      return Promise.resolve({ rows, ...(usage ? { diskUsage: usage } : {}) });
+    },
+
+    /**
+     * 自动化列表 + 每条的执行历史（07）。
+     *
+     * **含暂停的**：连败 3 次会自动 PAUSE（Q8），而那正是需要用户去看的状态。
+     * 只列启用的话，"我的定时任务怎么不跑了"没有任何入口。
+     */
+    async getAutomations(): Promise<AutomationsDataView> {
+      const data = options.pageData;
+      if (!data) return Promise.resolve({ automations: [], runs: {}, deviceName: '这台电脑' });
+
+      const raw = data.listAutomations();
+      const runs: Record<string, AutomationsDataView['runs'][string]> = {};
+      const automations = raw.map((a) => {
+        const id = String(a.id ?? '');
+        runs[id] = data.listRuns(id).map(toRunView);
+        return {
+          id,
+          name: String(a.name ?? ''),
+          status: String(a.status ?? 'ACTIVE'),
+          schedule: String(a.schedule ?? ''),
+          timezone: String(a.timezone ?? ''),
+          // Q15：别的设备建的只读 + 可「迁移到本机」，判据是 device_id
+          ownedByThisDevice: String(a.deviceId ?? a.device_id ?? '') === data.deviceId,
+          ...(typeof a.consecutiveFailures === 'number'
+            ? { consecutiveFailures: a.consecutiveFailures }
+            : {}),
+        };
+      });
+      return Promise.resolve({ automations, runs, deviceName: data.deviceName });
+    },
+
+    /**
+     * 审计（10 §6）。
+     *
+     * 这条链路 2026-09-06 之前是断的：hook 在产出记录，但没人设置
+     * `EVOWORK_AUDIT_LOG`，也没人读 `audit_log` 表 —— "只写不读就是死数据"
+     * （10 §6 原话）当时是"既不写也不读"。
+     */
+    async getAudit(): Promise<AuditDataView> {
+      const data = options.pageData;
+      if (!data) {
+        return Promise.resolve({
+          records: [],
+          retentionDays: RETENTION_DAYS,
+          retentionWarningDays: RETENTION_WARNING_DAYS,
+        });
+      }
+      const oldest = data.auditOldestAt();
+      return Promise.resolve({
+        records: data.listAudit().map((r) => toAuditView(r)),
+        retentionDays: RETENTION_DAYS,
+        retentionWarningDays: RETENTION_WARNING_DAYS,
+        ...(oldest !== undefined ? { oldestAt: oldest } : {}),
+      });
+    },
+
+    /**
+     * 选一个工作空间目录（首运行第②步，也是「项目」页做出来之前唯一的入口）。
+     *
+     * 选完**立刻落 `meta`**，不等引导走完：用户可能选了目录之后关掉窗口，
+     * 而下次打开又从"一个工作空间都没有"开始，等于白选。
+     */
+    async pickWorkspace(): Promise<{ path?: string }> {
+      const picked = await options.pickDirectory?.();
+      if (!picked) return {};
+      const next = [...new Set([...readLocalWorkspaces(store), picked])];
+      writeMeta(store.db, LOCAL_WORKSPACES_KEY, JSON.stringify(next));
+      return { path: picked };
+    },
+
+    /** 首次引导走完（02 §9）。落 `meta` 表 —— 换窗口、清缓存都不该让人重走一遍。 */
+    async completeOnboarding(): Promise<void> {
+      writeMeta(store.db, ONBOARDED_KEY, '1');
+      return Promise.resolve();
+    },
+
     /** 首页要渲染的一切，一次给全 */
     async getStartup(): Promise<StartupInfo> {
       const catalog = adapter.catalog();
@@ -400,12 +562,28 @@ export function createRendererActions(options: RendererBridgeOptions) {
           allowed: p.allowed,
         })),
         cases: options.cases ?? [],
-        // `project/list` 不可用时是空数组（适配层已记过一条降级）—— 下拉据此显示说明
-        workspaces: (catalog?.workspaces ?? []).map((w) => ({
-          id: w.id,
-          name: w.name,
-          ...(w.path !== null ? { path: w.path } : {}),
-        })),
+        onboarded: readMeta(store.db, ONBOARDED_KEY) === '1',
+        /*
+         * 工作空间 = 内核的 project **加上**本机自己记的那些。
+         *
+         * 后者是 `DEGRADATION[project/list]` 写明的兜底，也是干净机器上唯一的来源：
+         * 内核一个 project 都没有，而首运行要求至少选一个。只取内核那一份的话，
+         * 用户在引导里选的目录选完就消失了。
+         */
+        workspaces: [
+          ...(catalog?.workspaces ?? []).map((w) => ({
+            id: w.id,
+            name: w.name,
+            ...(w.path !== null ? { path: w.path } : {}),
+          })),
+          ...readLocalWorkspaces(store)
+            .filter((path) => !(catalog?.workspaces ?? []).some((w) => w.path === path))
+            .map((path) => ({
+              id: `local:${path}`,
+              name: path.slice(path.lastIndexOf('/') + 1) || path,
+              path,
+            })),
+        ],
         tasks: adapter
           .listTasks({})
           .map((t) => store.threads.get(t.threadId))
@@ -417,6 +595,110 @@ export function createRendererActions(options: RendererBridgeOptions) {
 }
 
 export type RendererActions = ReturnType<typeof createRendererActions>;
+
+/* ─────────────────── 三个页面的行翻译（纯函数，单独可测）─────────────────── */
+
+/** 路径的最后一段。不用 `node:path` 是因为这几个函数也被渲染层的测试直接调 */
+function basename(path: string): string {
+  const cut = path.lastIndexOf('/');
+  return cut < 0 ? path : path.slice(cut + 1);
+}
+
+function dirname(path: string): string {
+  const cut = path.lastIndexOf('/');
+  return cut <= 0 ? '/' : path.slice(0, cut);
+}
+
+/** 扩展名（不含点）。没有扩展名返回 undefined —— 不编一个空串当"有扩展名" */
+function extensionOf(path: string): string | undefined {
+  const name = basename(path);
+  const cut = name.lastIndexOf('.');
+  return cut > 0 ? name.slice(cut + 1).toLowerCase() : undefined;
+}
+
+/**
+ * `automation_run` 行 → 执行历史行（07 §5）。
+ *
+ * **跳过与漏跑分开**：`SKIPPED` 是策略生效（关机不执行、并发已满），
+ * `MISSED` 是真的漏了。两者归一类的话，关机一夜漏跑 3 次看起来像"失败 3 次"，
+ * 用户会去查任务本身，而那里什么问题都没有。
+ */
+export function toRunView(
+  raw: Record<string, unknown>,
+): AutomationsDataView['runs'][string][number] {
+  const num = (k: string): number | undefined =>
+    typeof raw[k] === 'number' ? (raw[k] as number) : undefined;
+  const str = (k: string): string | undefined =>
+    typeof raw[k] === 'string' ? (raw[k] as string) : undefined;
+  const status = str('status') ?? str('run_status') ?? 'RUNNING';
+  return {
+    id: String(raw.id ?? ''),
+    fireTime: num('fireTime') ?? num('fire_time') ?? 0,
+    status: (['RUNNING', 'SUCCEEDED', 'FAILED', 'SKIPPED', 'MISSED'] as const).includes(
+      status as never,
+    )
+      ? (status as 'RUNNING')
+      : 'RUNNING',
+    trigger: str('trigger') ?? 'schedule',
+    ...((str('skipReason') ?? str('skip_reason'))
+      ? { skipReason: str('skipReason') ?? str('skip_reason') }
+      : {}),
+    ...((str('failureClass') ?? str('failure_class'))
+      ? { failureClass: str('failureClass') ?? str('failure_class') }
+      : {}),
+    ...((num('originalFireTime') ?? num('original_fire_time'))
+      ? { originalFireTime: num('originalFireTime') ?? num('original_fire_time') }
+      : {}),
+    ...((num('durationMs') ?? num('duration_ms'))
+      ? { durationMs: num('durationMs') ?? num('duration_ms') }
+      : {}),
+    ...((num('tokenUsage') ?? num('token_usage'))
+      ? { tokenUsage: num('tokenUsage') ?? num('token_usage') }
+      : {}),
+    ...((num('artifactCount') ?? num('artifact_count'))
+      ? { artifactCount: num('artifactCount') ?? num('artifact_count') }
+      : {}),
+  };
+}
+
+/**
+ * `audit_log` 行 → 审计页的一行。
+ *
+ * **逐字段挑，不整体展开**：页面与导出用的是同一份数据，而导出会让它离开这台电脑。
+ * `{...raw}` 会把表里任何新增列原样带出去 —— 而 10 §6 的承诺是"不含正文"。
+ */
+export function toAuditView(raw: Record<string, unknown>): AuditDataView['records'][number] {
+  const num = (k: string): number | undefined =>
+    typeof raw[k] === 'number' ? (raw[k] as number) : undefined;
+  const str = (k: string): string | undefined =>
+    typeof raw[k] === 'string' ? (raw[k] as string) : undefined;
+  const keys = [
+    'threadId',
+    'turnId',
+    'itemId',
+    'toolName',
+    'actionSummary',
+    'pathKind',
+    'pathDigest',
+    'networkTarget',
+    'approvalResult',
+    'decidedBy',
+    'guardianRisk',
+  ] as const;
+  const optional: Record<string, string> = {};
+  for (const k of keys) {
+    const v = str(k);
+    if (v !== undefined) optional[k] = v;
+  }
+  return {
+    id: String(raw.id ?? ''),
+    occurredAt: num('occurredAt') ?? 0,
+    action: str('action') ?? 'unknown',
+    ...optional,
+    ...(num('exitCode') !== undefined ? { exitCode: num('exitCode') } : {}),
+    ...(num('tokenUsage') !== undefined ? { tokenUsage: num('tokenUsage') } : {}),
+  };
+}
 
 /**
  * `PendingApproval` → 审批卡视图（10 §3.2）。

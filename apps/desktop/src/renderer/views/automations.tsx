@@ -16,16 +16,22 @@
  */
 import { useMemo, useState } from 'react';
 
-import {
-  describeCron,
-  OFFLINE_EXPECTATION_NOTICE,
-  bindingNotice,
-  parseNaturalSchedule,
-  upcomingFireTimes,
-  parseCron,
-  CronParseError,
-  type MisfirePolicy,
-} from '@evowork/scheduler';
+/*
+ * **深路径，不走 `@evowork/scheduler` 的 barrel。**
+ *
+ * 这三个模块本身是纯的（cron 解析、设备文案、自然语言解析），而 barrel 会把
+ * `scheduler.ts` / `kernel-bridge.ts` 一起拉进渲染层的 bundle ——
+ * 它们今天恰好没有 node 依赖，所以这样写**现在能过**。
+ *
+ * 靠"恰好"是这一轮踩到的坑：`@evowork/policy` 与 `@evowork/ingest` 的 barrel
+ * 就带着 `node:crypto` / `node:child_process`，而它们的问题一直到这几个页面
+ * 被挂进 `app.tsx` 才暴露（在那之前这些文件从没进过 bundle）。
+ * `styles.test.ts` 现在扫源码拦这类导入，不看可达性。
+ */
+import { CronParseError, parseCron, upcomingFireTimes } from '@evowork/scheduler/cron.js';
+import { bindingNotice, OFFLINE_EXPECTATION_NOTICE } from '@evowork/scheduler/device.js';
+import type { MisfirePolicy } from '@evowork/scheduler/misfire.js';
+import { describeCron, parseNaturalSchedule } from '@evowork/scheduler/nl.js';
 
 import { InlineSelect } from '../components/menu.js';
 import { DataTable, PanelHeader, TextTabs, type Column } from '../components/panels.js';
@@ -516,5 +522,100 @@ export function AutomationHistory({
         }
       />
     </section>
+  );
+}
+
+/* ─────────────────────────── 自动化列表页（07 §2）─────────────────────────── */
+
+export interface AutomationListRow {
+  readonly id: string;
+  readonly name: string;
+  readonly status: string;
+  readonly schedule: string;
+  readonly timezone: string;
+  /** Q15：别的设备建的**只读**，且可「迁移到本机」 */
+  readonly ownedByThisDevice: boolean;
+  readonly consecutiveFailures?: number | undefined;
+}
+
+/** 状态 → 徽标。**「已暂停」与「自动暂停」是两件事**，不能合并。 */
+export function describeAutomationStatus(row: AutomationListRow): {
+  readonly badge: BadgeVariant;
+  readonly text: string;
+} {
+  if (row.status === 'ACTIVE') return { badge: 'success', text: '启用中' };
+  // Q8：连败 3 次自动 PAUSE。不说明"为什么暂停"的话，用户只会以为是自己关的
+  if ((row.consecutiveFailures ?? 0) >= 3) {
+    return { badge: 'danger', text: `连续失败 ${row.consecutiveFailures} 次，已自动暂停` };
+  }
+  if (row.status === 'PAUSED') return { badge: 'neutral', text: '已暂停' };
+  return { badge: 'neutral', text: row.status };
+}
+
+/**
+ * 自动化页：左边列表、右边选中那条的执行历史。
+ *
+ * 表单（`AutomationForm`）不在这里 —— 它是"新建/编辑"的流程，由列表页的
+ * 「新建」进入。先把**看得见现有任务**这件事接通：07 §5 的执行历史
+ * 是用户唯一能回答"它到底跑没跑"的地方，而在此之前这一页根本打不开。
+ */
+export function AutomationsPage(props: {
+  readonly rows: readonly AutomationListRow[];
+  readonly runs: Readonly<Record<string, readonly RunRow[]>>;
+  readonly deviceName: string;
+  readonly onOpenTask?: ((runId: string) => void) | undefined;
+}) {
+  const [selectedId, setSelectedId] = useState<string | undefined>(props.rows[0]?.id);
+  const selected = props.rows.find((r) => r.id === selectedId) ?? props.rows[0];
+
+  if (props.rows.length === 0) {
+    return (
+      <div className="ew-page">
+        <EmptyState
+          title="还没有定时任务"
+          hint={`定时任务绑定创建它的这台电脑（${props.deviceName}），关机期间不会执行。`}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="ew-page ew-automations-page">
+      <div className="ew-content-column">
+        <ul className="ew-automation-list">
+          {props.rows.map((row) => {
+            const status = describeAutomationStatus(row);
+            return (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  className="ew-automation-row"
+                  data-selected={row.id === selected?.id ? 'true' : undefined}
+                  onClick={() => setSelectedId(row.id)}
+                >
+                  <span className="ew-automation-name">{row.name}</span>
+                  <Badge variant={status.badge}>{status.text}</Badge>
+                  <code className="ew-automation-schedule">{row.schedule}</code>
+                  {/* Q15：不是这台电脑建的就说清楚，别让用户点了编辑才发现改不了 */}
+                  {row.ownedByThisDevice ? null : (
+                    <Badge variant="neutral">在别的设备上创建，只读</Badge>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {selected ? (
+          <AutomationHistory
+            name={selected.name}
+            rows={props.runs[selected.id] ?? []}
+            timezone={selected.timezone}
+            paused={selected.status !== 'ACTIVE'}
+            {...(props.onOpenTask ? { onOpenTask: props.onOpenTask } : {})}
+          />
+        ) : null}
+      </div>
+    </div>
   );
 }

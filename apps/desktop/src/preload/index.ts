@@ -48,6 +48,21 @@ export const RENDERER_ACTIONS = Object.freeze([
   // 模型下拉（03 §4.5「启动时 + 手动刷新」）。与 getStartup 分开是因为它是一次网络调用，
   // 失败方式与"本机服务起不来"完全不同（见 main/model-catalog.ts 的头注释）
   'listModels',
+  /*
+   * 三个目录式页面各自一个动作，**不并进 `getStartup`**。
+   *
+   * `getStartup` 那条"一次给全"的理由是**数据同源**（都来自同一次内核握手）。
+   * 这三个不同源，也不同步：它们读的是本机 sqlite，且只在用户真的点进那一页时
+   * 才需要。并进去等于每次启动都查三张表、扫一遍磁盘占用 ——
+   * 而绝大多数会话里用户根本不会打开资料库。
+   */
+  'getLibrary',
+  'getAutomations',
+  'getAudit',
+  /** 选一个工作空间目录。**必须有**：首运行要求至少一个，而干净机器上一个都没有 */
+  'pickWorkspace',
+  /** 首次引导走完（02 §9）。落 `meta` 表，换窗口/清缓存都不该让人重走一遍 */
+  'completeOnboarding',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {

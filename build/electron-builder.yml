@@ -40,6 +40,11 @@ extraResources:
     to: plugins
   - from: config
     to: config
+  # 本机网关（拓扑 A）。单文件、无依赖，运行时用 Electron 自己当 node 跑
+  # （ELECTRON_RUN_AS_NODE=1）—— **用户机器上没有 node**。
+  # 企业把网关部署在服务器上时它照样在包里，只是永远不执行（判据在 gateway-process.ts）。
+  - from: dist/gateway
+    to: gateway
 
 mac:
   category: public.app-category.productivity

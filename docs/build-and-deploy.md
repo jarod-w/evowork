@@ -442,6 +442,9 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 
 | 现象 | 原因 | 怎么办 |
 | --- | --- | --- |
+| 从仓库直接跑构建产物，报 `spawn .../electron/dist/Electron.app/Contents/Resources/kernel/codex-app-server ENOENT` | 旧版入口用一个 `EVOWORK_DEV` 同时决定"随包资源在哪"与"渲染层从哪来"，于是"跑一次构建好的产物"没有表示法。**2026-09-06 已修**：资源看 `app.isPackaged`，vite 才看 `EVOWORK_DEV` | 重新 `pnpm run build`。没有 debug 内核时用 `EVOWORK_APP_SERVER=$PWD/build/kernel/mac-arm64/codex-app-server` |
+| 模型下拉里还是旧的模型表 | 网关是**独立进程**，模型表在它内存里；改代码不会让已经在跑的那个变 | 2026-09-06 起 App 会自己拉起本机网关（`base_url` 指向环回时），重启 App 即可。手工跑的旧进程要先 `pkill -f "dist/gateway/main.js"` |
+| 首运行卡在「选一个工作空间」，「下一步」一直是灰的 | 干净机器上内核一个 project 都没有，而这一步要求至少一个。**2026-09-06 已修**（接上目录选择器） | 点「选择文件夹」。企业预置可直接写 `~/.evowork/evowork.db` 的 `meta` 表 `evowork.workspaces` |
 | `cargo build` 在 `openssl-sys` 失败 | 缺 `pkg-config` / `libssl-dev` | 见 §1 |
 | `node dist/.../main.js` 报 `ERR_MODULE_NOT_FOUND: .../src/*.js` | 跑的是 tsc 产物而不是 esbuild 打包产物 | 跑 `pnpm run build`，用 `dist/gateway/main.js` |
 | 网关启动即退出，日志 `gateway.boot.no_models` | 一家厂商密钥都没配 | 见 §5.1 |

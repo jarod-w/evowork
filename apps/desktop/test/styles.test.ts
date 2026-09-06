@@ -11,7 +11,7 @@
  *   · `@keyframes` 里的百分比与 `opacity` 数值 —— 它们不是尺寸也不是颜色
  *   · 动画时长（`1600ms` / `1400ms`）—— 呼吸与骨架的节奏，01 §6.1 / §4.4 直接给了数值且没有对应 token
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -158,3 +158,88 @@ function tokenExists(name: string, generatorSource: string): boolean {
   }
   return haystack.includes(`'${bare}'`) || haystack.includes(`${bare}:`);
 }
+
+/*
+ * 渲染层**不许 import 服务层包的 barrel**。
+ *
+ * 2026-09-06 接四个页面时撞到的：`@evowork/policy` 的 index 会带出 `audit.ts`
+ * （`node:crypto`）、`@evowork/ingest` 的会带出 `probe.ts`（`node:child_process`）——
+ * 渲染进程是浏览器环境，vite 打包时直接失败。
+ *
+ * **为什么 vite 自己不够**：它只看得见从入口能到达的文件。这四个页面写完之后
+ * 一直没被挂进 `app.tsx`，所以它们的 barrel import 从没进过 bundle，
+ * 也就一直没报错 —— 直到接上路由那一刻，四个页面一起炸。
+ * 源码扫描不看可达性，所以下一个"写好了还没接上"的页面会在写的时候就被拦下。
+ *
+ * 深路径（`@evowork/policy/profiles.js`）是允许的：那是明确挑一个纯模块。
+ */
+describe('渲染层不引服务层的 barrel（浏览器环境没有 node 内置模块）', () => {
+  const RENDERER = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src/renderer');
+  const SERVICE_PACKAGES = [
+    'policy',
+    'ingest',
+    'artifacts',
+    'scheduler',
+    'store',
+    'kernel-adapter',
+  ];
+
+  function sources(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? sources(resolve(dir, e.name))
+        : /\.tsx?$/.test(e.name)
+          ? [resolve(dir, e.name)]
+          : [],
+    );
+  }
+
+  it("没有 `from '@evowork/<服务包>'` 这样的整包导入", () => {
+    const hits: string[] = [];
+    for (const file of sources(RENDERER)) {
+      const text = readFileSync(file, 'utf8');
+      for (const pkg of SERVICE_PACKAGES) {
+        // 只拦 barrel：`@evowork/policy'` 结尾。`@evowork/policy/profiles.js'` 放行
+        const re = new RegExp(`from '@evowork/${pkg}'`, 'g');
+        // `import type` 会在编译期被抹掉，不进 bundle —— 它不是问题
+        for (const line of text.split('\n')) {
+          if (re.test(line) && !line.trimStart().startsWith('import type')) {
+            hits.push(`${file.slice(RENDERER.length + 1)}: ${line.trim()}`);
+          }
+        }
+      }
+    }
+    expect(hits, `渲染层引了服务层 barrel：\n${hits.join('\n')}`).toEqual([]);
+  });
+});
+
+/*
+ * **每个顶层视图的根类都要出现在 `.ew-app >` 的 flex 规则里。**
+ *
+ * `.ew-app` 是 `display: flex`，主内容区靠 `flex: 1; min-width: 0` 才铺开。
+ * 漏掉一个的表现是那一页**缩成左上角一小块**，而页面组件自己的样式全是对的 ——
+ * 2026-09-06 接四个页面时 `.ew-page` 就是这样：类名是我新造的，CSS 里一条规则都没有。
+ *
+ * app.css 开头记过同一件事的更严重版本：`.ew-app` 当时整个没有规则，侧边栏塌成一个方块。
+ * 这条断言比"每个类都要有规则"窄得多（那样要给 35 个纯语义类挨个开白名单），
+ * 但它守的正是**会让整页看起来坏掉**的那一种。
+ */
+describe('主内容区的每个根类都要参与 .ew-app 的 flex 布局', () => {
+  const VIEW_ROOTS = ['ew-home', 'ew-task-workspace', 'ew-page', 'ew-library'];
+
+  it('四个视图根都在 `.ew-app >` 的规则里', () => {
+    const rule = /\.ew-app\s*>[^{]*\{[^}]*flex:\s*1[^}]*\}/.exec(code)?.[0] ?? '';
+    expect(rule, '找不到 `.ew-app > ... { flex: 1 }` 这条规则').not.toBe('');
+    for (const root of VIEW_ROOTS) {
+      expect(rule, `${root} 不在 .ew-app > 的规则里 —— 那一页会缩成左上角一小块`).toContain(
+        `.${root}`,
+      );
+    }
+  });
+
+  it('`.ew-page` 自己也有规则（撑满高度 + 内部滚动）', () => {
+    const rule = /\.ew-page\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('height: 100%');
+    expect(rule).toContain('overflow-y: auto');
+  });
+});

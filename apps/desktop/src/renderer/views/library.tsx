@@ -17,6 +17,9 @@
  * 06 §3.2：资料库不是独立存储，只是本机文件的一个视图 + 索引。
  * 所以**两种删除的语义不同**，而且必须在确认框里说清 —— 写反了用户会丢文件。
  * 文案由 `@evowork/artifacts` 给（`describeDeleteMine` / `describeRemoveArtifact`），
+ * **走深路径 `/library.js` 而不是包的 barrel**：barrel 会把 `upload.ts` 一起拉进来，
+ * 而那个文件顶上有 `node:crypto` —— 渲染进程是浏览器环境，vite 打包直接失败。
+ * 这条在这一页被挂进 `app.tsx` 之前看不见（它从没进过渲染层的 bundle）。
  * 不在这里拼：拼在这里的话，改一处忘一处的概率是 100%。
  *
  * ## 「所有者」列会自动消失
@@ -39,7 +42,7 @@ import {
   type LibraryRow,
   type RecentTab,
   type TypeFilter,
-} from '@evowork/artifacts';
+} from '@evowork/artifacts/library.js';
 
 import {
   DataTable,

@@ -81,6 +81,20 @@ export function createAutomationRepo(db: SqliteLike) {
     },
 
     /** 只列**本机绑定**且未暂停的（Q15：其他设备只读，不触发）。 */
+    /**
+     * 自动化列表页要的是**全部**，不只是启用的。
+     *
+     * `listActive` 是调度器用的（只有它该被触发），而 07 的列表页必须显示
+     * 暂停与连败自动暂停的那些 —— 恰恰是它们需要用户去处理（Q8：连败 3 次自动 PAUSE）。
+     * 隐藏它们等于让"我的定时任务怎么不跑了"没有任何入口。
+     */
+    listAll(deviceId: string): readonly AutomationRow[] {
+      const rows = db
+        .prepare('SELECT * FROM automation WHERE device_id = ? ORDER BY created_at DESC')
+        .all(deviceId) as RawAutomation[];
+      return rows.map(toAutomation);
+    },
+
     listActive(deviceId: string): readonly AutomationRow[] {
       const rows = db
         .prepare("SELECT * FROM automation WHERE device_id = ? AND status = 'ACTIVE'")
@@ -207,6 +221,155 @@ export function createAutomationRepo(db: SqliteLike) {
 export type AutomationRepo = ReturnType<typeof createAutomationRepo>;
 
 /* ─────────────────────────── artifact ─────────────────────────── */
+
+/**
+ * 审计记录（10 §6）。**这一层此前整个不存在** —— `audit_log` 表在 schema 里，
+ * hook 也在产出记录，但没有任何一处读写它，所以审计页会是一张永远空的表。
+ *
+ * ## 字段与 `AuditRecord` 是**同一张表的两面**
+ *
+ * 这里刻意不 import `@evowork/policy` 的 `AuditRecord`：store 是被它依赖的一侧，
+ * 反过来 import 会成环。形状由 `audit_log` 的 DDL 定义，两边各自对着 DDL 写 ——
+ * 而 `apps/desktop` 的 ingest 是唯一同时看到两者的地方，缝在那里最容易被发现。
+ *
+ * ## 只写不读就是死数据（10 §6 原话）
+ *
+ * Q1=A 之下没有企业后台替用户看审计，所以 `list` 与 `insert` 必须同时存在。
+ * 只有 insert 的版本会长成"记了三个月、没人打开过"。
+ */
+export interface AuditLogRow {
+  readonly id: number;
+  readonly occurredAt: number;
+  readonly action: string;
+  readonly threadId?: string | undefined;
+  readonly turnId?: string | undefined;
+  readonly itemId?: string | undefined;
+  readonly toolName?: string | undefined;
+  readonly actionSummary?: string | undefined;
+  readonly pathKind?: string | undefined;
+  readonly pathDigest?: string | undefined;
+  readonly networkTarget?: string | undefined;
+  readonly approvalResult?: string | undefined;
+  readonly decidedBy?: string | undefined;
+  readonly guardianRisk?: string | undefined;
+  readonly exitCode?: number | undefined;
+  readonly tokenUsage?: number | undefined;
+}
+
+/** 写入用的形状：`id` 由表自增，其余与 `AuditLogRow` 相同。 */
+export type AuditLogInput = Omit<AuditLogRow, 'id'>;
+
+interface RawAudit {
+  id: number;
+  occurred_at: number;
+  thread_id: string | null;
+  turn_id: string | null;
+  item_id: string | null;
+  tool_name: string | null;
+  action_summary: string | null;
+  path_kind: string | null;
+  path_digest: string | null;
+  network_target: string | null;
+  approval_result: string | null;
+  decided_by: string | null;
+  guardian_risk: string | null;
+  exit_code: number | null;
+  token_usage: number | null;
+}
+
+const opt = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
+
+export function createAuditRepo(db: SqliteLike) {
+  return {
+    /**
+     * 追加一批记录。
+     *
+     * **`action` 落在 `tool_name` 上是刻意的**：DDL 里没有单独的 action 列
+     * （它是 2026-09-05 定表时按"工具名 + 摘要"设计的），而 hook 产出的
+     * `AuditRecord.action` 是分类值（`tool_call` / `approval` / …）。
+     * 硬塞进 `action_summary` 会把分类和摘要混成一个字段，之后没法按类型筛。
+     * 所以这里 `tool_name` 存 `toolName ?? action` —— 有工具名用工具名，
+     * 没有的（会话开始/结束）用分类值，两者都是"这条记录是关于什么的"。
+     */
+    insertMany(records: readonly AuditLogInput[]): number {
+      if (records.length === 0) return 0;
+      const stmt = db.prepare(
+        `INSERT INTO audit_log
+           (occurred_at, thread_id, turn_id, item_id, tool_name, action_summary,
+            path_kind, path_digest, network_target, approval_result, decided_by,
+            guardian_risk, exit_code, token_usage)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const r of records) {
+        stmt.run(
+          r.occurredAt,
+          r.threadId ?? null,
+          r.turnId ?? null,
+          r.itemId ?? null,
+          r.toolName ?? r.action,
+          r.actionSummary ?? null,
+          r.pathKind ?? null,
+          r.pathDigest ?? null,
+          r.networkTarget ?? null,
+          r.approvalResult ?? null,
+          r.decidedBy ?? null,
+          r.guardianRisk ?? null,
+          r.exitCode ?? null,
+          r.tokenUsage ?? null,
+        );
+      }
+      return records.length;
+    },
+
+    /** 最近的记录，新的在前（审计页按时间倒序读）。 */
+    list(limit = 200): readonly AuditLogRow[] {
+      const rows = db
+        .prepare('SELECT * FROM audit_log ORDER BY occurred_at DESC, id DESC LIMIT ?')
+        .all(limit) as RawAudit[];
+      return rows.map((raw) => ({
+        id: raw.id,
+        occurredAt: raw.occurred_at,
+        action: raw.tool_name ?? 'unknown',
+        threadId: opt(raw.thread_id),
+        turnId: opt(raw.turn_id),
+        itemId: opt(raw.item_id),
+        toolName: opt(raw.tool_name),
+        actionSummary: opt(raw.action_summary),
+        pathKind: opt(raw.path_kind),
+        pathDigest: opt(raw.path_digest),
+        networkTarget: opt(raw.network_target),
+        approvalResult: opt(raw.approval_result),
+        decidedBy: opt(raw.decided_by),
+        guardianRisk: opt(raw.guardian_risk),
+        exitCode: opt(raw.exit_code),
+        tokenUsage: opt(raw.token_usage),
+      }));
+    },
+
+    /** 最早一条的时间（审计页显示"保留 N 天，最早到 X"）。空库返回 undefined。 */
+    oldestAt(): number | undefined {
+      const row = db.prepare('SELECT MIN(occurred_at) AS at FROM audit_log').get() as
+        | {
+            at: number | null;
+          }
+        | undefined;
+      return row?.at ?? undefined;
+    },
+
+    /** 过期清理（10 §6 的保留期）。返回删掉几条。 */
+    deleteBefore(cutoff: number): number {
+      const before = (
+        db.prepare('SELECT COUNT(*) AS n FROM audit_log WHERE occurred_at < ?').get(cutoff) as {
+          n: number;
+        }
+      ).n;
+      db.prepare('DELETE FROM audit_log WHERE occurred_at < ?').run(cutoff);
+      return before;
+    },
+  };
+}
+
+export type AuditRepo = ReturnType<typeof createAuditRepo>;
 
 export interface ArtifactRow {
   readonly id: string;
@@ -345,6 +508,22 @@ export function createArtifactRepo(db: SqliteLike) {
         return;
       }
       db.prepare('UPDATE artifact SET file_state = ?, path = ? WHERE id = ?').run(state, path, id);
+    },
+
+    /**
+     * 资料库的「本地产物」一栏（06 §3）：**全部工作空间**里还在的产物，最近的在前。
+     *
+     * 与 `listPresent(root)` 分开而不是给它一个可选参数：那个方法是**对账**用的
+     * （拿一个目录下我们以为存在的记录，去和磁盘比对），传空前缀会让它悄悄
+     * 变成"对账整个库"——两个用途的分页与排序要求完全不同。
+     */
+    listAllPresent(limit = 200): readonly ArtifactRow[] {
+      const rows = db
+        .prepare(
+          "SELECT * FROM artifact WHERE file_state = 'PRESENT' ORDER BY created_at DESC LIMIT ?",
+        )
+        .all(limit) as RawArtifact[];
+      return rows.map(toArtifact);
     },
 
     /** 结果区「产物」与资料库「本地产物」都读它。 */

@@ -128,6 +128,13 @@ export interface StartupInfo {
   readonly workspaces: readonly WorkspaceView[];
   /** 已有任务（冷启动时投影表里就有，不必等事件流） */
   readonly tasks: readonly TaskRowView[];
+  /**
+   * 走没走过首次引导（02 §9）。
+   *
+   * 落在 `meta` 表而不是渲染层的 localStorage：换个窗口、清个缓存都不该让
+   * 用户再走一遍五步引导，而"这台机器配好了没有"本来就是本机状态。
+   */
+  readonly onboarded: boolean;
 }
 
 /**
@@ -184,6 +191,102 @@ export interface SendInput {
    * 而 id → path 的对应只有拿过 catalog 的那一侧知道。
    */
   readonly workspaceId?: string | undefined;
+}
+
+/* ─────────────────── 三个目录式页面的数据（02 §1 的一级入口）─────────────────── */
+
+/**
+ * 资料库（06）。**形状与 `@evowork/artifacts` 的 `LibraryRow` 是两个类型** ——
+ * 同一条纪律：那边回答"本机索引里有什么"，这边回答"表格要画什么"。
+ */
+export interface LibraryDataView {
+  readonly rows: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly source: 'artifact' | 'mine' | 'team';
+    readonly owner: string;
+    readonly location: string;
+    readonly accessedAt: number;
+    readonly artifactType?: string | undefined;
+    readonly extension?: string | undefined;
+  }[];
+  /** 本机磁盘占用（Q17：不做云盘，配额条显示的是本机占用，动作是「清理」） */
+  readonly diskUsage?:
+    | {
+        readonly artifactsBytes: number;
+        readonly parseCacheBytes: number;
+        readonly indexBytes: number;
+        readonly diskFreeBytes: number;
+      }
+    | undefined;
+}
+
+/** 自动化列表页（07）。**含暂停的** —— 恰恰是它们需要用户处理（Q8） */
+export interface AutomationRowView {
+  readonly id: string;
+  readonly name: string;
+  readonly status: string;
+  readonly schedule: string;
+  readonly timezone: string;
+  /** 这台设备创建的才可编辑（Q15：其他设备只读 + 可「迁移到本机」） */
+  readonly ownedByThisDevice: boolean;
+  readonly consecutiveFailures?: number | undefined;
+  readonly nextFireAt?: number | undefined;
+}
+
+export interface AutomationRunView {
+  readonly id: string;
+  readonly fireTime: number;
+  readonly status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED' | 'MISSED';
+  readonly trigger: string;
+  readonly skipReason?: string | undefined;
+  readonly failureClass?: string | undefined;
+  readonly originalFireTime?: number | undefined;
+  readonly durationMs?: number | undefined;
+  readonly tokenUsage?: number | undefined;
+  readonly artifactCount?: number | undefined;
+}
+
+export interface AutomationsDataView {
+  readonly automations: readonly AutomationRowView[];
+  /** 按 automation id 分组的执行历史 */
+  readonly runs: Readonly<Record<string, readonly AutomationRunView[]>>;
+  readonly deviceName: string;
+}
+
+/**
+ * 审计（10 §6）。
+ *
+ * **字段全部是分类与摘要，没有正文** —— 页面与导出用的是同一份数据，
+ * 而导出会让它离开这台电脑。多带一个"原始路径"很自然，但那会让一份
+ * 承诺不含正文的记录突然含了。
+ */
+export interface AuditRecordView {
+  readonly id: string;
+  readonly occurredAt: number;
+  readonly action: string;
+  readonly threadId?: string | undefined;
+  readonly turnId?: string | undefined;
+  readonly itemId?: string | undefined;
+  readonly toolName?: string | undefined;
+  readonly actionSummary?: string | undefined;
+  readonly pathKind?: string | undefined;
+  readonly pathDigest?: string | undefined;
+  readonly networkTarget?: string | undefined;
+  readonly approvalResult?: string | undefined;
+  readonly decidedBy?: string | undefined;
+  readonly guardianRisk?: string | undefined;
+  readonly exitCode?: number | undefined;
+  readonly tokenUsage?: number | undefined;
+}
+
+export interface AuditDataView {
+  readonly records: readonly AuditRecordView[];
+  readonly retentionDays: number;
+  /** 还剩几天到期时开始预警。与 `retentionDays` 一样，真源在 `@evowork/policy` */
+  readonly retentionWarningDays: number;
+  /** 最早一条的时间。空库为 undefined —— 页面据此说"还没有记录"而不是"最早到 1970" */
+  readonly oldestAt?: number | undefined;
 }
 
 export type ApprovalDecisionView = 'accept' | 'acceptForSession' | 'decline' | 'cancel';

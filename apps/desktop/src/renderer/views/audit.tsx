@@ -15,13 +15,20 @@
  */
 import { useMemo, useState } from 'react';
 
-import {
-  RETENTION_DAYS,
-  RETENTION_WARNING_DAYS,
-  verifyChain,
-  type AuditAction,
-  type AuditRecord,
-} from '@evowork/policy';
+/*
+ * **只 import type，一个值都不从服务层拿。**
+ *
+ * `@evowork/policy` 的 `audit.ts` 顶上有 `import { createHash } from 'node:crypto'`，
+ * 而渲染进程是浏览器环境 —— 从它那儿拿任何**值**（哪怕只是一个常量）都会把
+ * 整个模块拉进 bundle，vite 直接构建失败。`import type` 在编译期就被抹掉，不留痕迹。
+ *
+ * 这条在此之前看不见：这一页从没被挂进 `app.tsx`，也就从没进过渲染层的 bundle。
+ *
+ * 两个数值（保留期与预警阈值）现在**从 props 来**，由主进程给 ——
+ * 它们的真源仍然是 `@evowork/policy`，只是走 IPC 而不是走 import。
+ * 链式校验同理，见 `AuditPageProps.chainVerdict`。
+ */
+import type { AuditAction, AuditRecord } from '@evowork/policy/audit.js';
 
 import { InlineSelect } from '../components/menu.js';
 import { DataTable, PanelHeader, type Column } from '../components/panels.js';
@@ -87,11 +94,19 @@ export interface AuditRow extends AuditRecord {
 export interface AuditPageProps {
   readonly records: readonly AuditRow[];
   readonly now?: number | undefined;
-  /** 每日链式哈希（10 §6 的防篡改）。给了就做一次校验并显示结果 */
-  readonly chain?:
-    readonly { readonly chainHash: string; readonly records: readonly AuditRecord[] }[] | undefined;
+  /**
+   * 链式哈希校验的**结论**（10 §6 的防篡改），不是原始链。
+   *
+   * 校验在主进程做：① 它读的是权威表，而完整性校验属于持有权威数据的那一层；
+   * ② `verifyChain` 依赖 `node:crypto`，渲染进程里根本跑不起来；
+   * ③ 只为了算一遍哈希，把整条审计链搬过 IPC 是纯浪费。
+   */
+  readonly chainVerdict?: { readonly ok: boolean; readonly brokenDays?: number } | undefined;
   readonly onExport?: ((format: 'csv' | 'jsonl') => void) | undefined;
+  /** 保留期（10 §6）。真源是 `@evowork/policy` 的 `RETENTION_DAYS`，经主进程送过来 */
   readonly retentionDays?: number | undefined;
+  /** 还剩几天到期时开始预警。同上，真源在服务层 */
+  readonly retentionWarningDays?: number | undefined;
   /** 最早一条记录的时间，用来算"还有几天到期" */
   readonly oldestAt?: number | undefined;
 }
@@ -118,12 +133,9 @@ export function AuditPage(props: AuditPageProps) {
     });
   }, [props.records, range, action, query, now]);
 
-  const integrity = useMemo(
-    () => (props.chain ? verifyChain(props.chain) : undefined),
-    [props.chain],
-  );
+  const integrity = props.chainVerdict;
 
-  const retention = props.retentionDays ?? RETENTION_DAYS;
+  const retention = props.retentionDays ?? 90;
   const expiringInDays =
     props.oldestAt === undefined
       ? undefined
@@ -141,7 +153,9 @@ export function AuditPage(props: AuditPageProps) {
       header: '动作',
       render: (row) => {
         const badge = ACTION_BADGE[row.action];
-        const label = ACTION_LABEL[row.action];
+        // 未登记的动作**显示原值**，不显示空白：策略包比界面新时会出现这种记录，
+        // 而一行"时间有、动作空"看起来像数据坏了（R2 的同一条防线）
+        const label = ACTION_LABEL[row.action] ?? row.action;
         return badge ? <Badge variant={badge}>{label}</Badge> : label;
       },
     },
@@ -204,12 +218,12 @@ export function AuditPage(props: AuditPageProps) {
 
       {integrity && !integrity.ok ? (
         <Banner tone="danger">
-          审计链在第 {(integrity.firstBrokenIndex ?? 0) + 1} 天对不上 —— 有记录被删改过。
+          审计链在第 {(integrity.brokenDays ?? 0) + 1} 天对不上 —— 有记录被删改过。
           导出的文件会带上这个校验结果。
         </Banner>
       ) : null}
 
-      {expiringInDays !== undefined && expiringInDays <= RETENTION_WARNING_DAYS ? (
+      {expiringInDays !== undefined && expiringInDays <= (props.retentionWarningDays ?? 7) ? (
         // 到期前提示再清理（10 §6），而不是到点静默删掉
         <Banner tone="warning">
           最早的记录还有 {Math.max(0, expiringInDays)} 天到期并被自动清理。需要留档就先导出。

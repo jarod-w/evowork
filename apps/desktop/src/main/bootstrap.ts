@@ -62,6 +62,18 @@ export interface ElectronApi {
   readonly ipcMain: {
     handle(channel: string, handler: (event: unknown, payload: unknown) => Promise<unknown>): void;
   };
+  /**
+   * 选一个目录（首运行第②步的工作空间）。
+   *
+   * **只有主进程能开系统对话框**，所以它必须从这里注入。没有它的话，
+   * 首运行会卡在"选一个工作空间"那一步 —— `blockingReason` 要求至少有一个，
+   * 而干净机器上一个都没有：整个应用打不开。2026-09-06 打开引导门禁时实测撞到。
+   */
+  readonly showOpenDialog?:
+    | ((options: {
+        properties: readonly ('openDirectory' | 'createDirectory')[];
+      }) => Promise<{ canceled: boolean; filePaths: readonly string[] }>)
+    | undefined;
 }
 
 /**
@@ -108,6 +120,8 @@ export interface BootstrapOptions {
   readonly electron: ElectronApi;
   /** app-server 可执行文件（M9 打包时随内核二进制分发） */
   readonly appServerPath: string;
+  /** 网关单文件产物。只在 `base_url` 指向本机时才被执行（见 `gateway-process.ts`） */
+  readonly gatewayEntryPath?: string | undefined;
   readonly preloadPath: string;
   /** 开发时指向 vite dev server；生产为 undefined，走 loadFile */
   readonly devServerUrl?: string | undefined;
@@ -145,8 +159,25 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   const host = create({
     paths,
     appServerPath: options.appServerPath,
+    ...(options.gatewayEntryPath !== undefined
+      ? { gatewayEntryPath: options.gatewayEntryPath }
+      : {}),
     appVersion: electron.app.getVersion(),
     ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
+    /*
+     * 目录选择框。`showOpenDialog` 是可选注入，缺了就**没有这个能力**（返回 undefined），
+     * 而不是崩 —— 测试里不需要真开一个系统对话框。
+     */
+    ...(electron.showOpenDialog
+      ? {
+          pickDirectory: async (): Promise<string | undefined> => {
+            const r = await electron.showOpenDialog?.({
+              properties: ['openDirectory', 'createDirectory'],
+            });
+            return r && !r.canceled ? r.filePaths[0] : undefined;
+          },
+        }
+      : {}),
     emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
   });
 

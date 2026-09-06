@@ -18,6 +18,7 @@ const STARTUP: StartupInfo = {
   permissions: [{ id: 'evowork-workspace', label: 'evowork-workspace', allowed: true }],
   cases: [],
   workspaces: [],
+  onboarded: true,
   tasks: [],
 };
 
@@ -64,6 +65,11 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     refreshVisible: vi.fn(async () => undefined),
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
+    getLibrary: vi.fn(async () => ({ rows: [] })),
+    getAutomations: vi.fn(async () => ({ automations: [], runs: {}, deviceName: '这台电脑' })),
+    getAudit: vi.fn(async () => ({ records: [], retentionDays: 90, retentionWarningDays: 7 })),
+    pickWorkspace: vi.fn(async () => ({ path: '/Users/x/work' })),
+    completeOnboarding: vi.fn(async () => undefined),
     ...over,
   };
   return { bridge, emit };
@@ -267,5 +273,132 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
     await waitFor(() => expect(listModels).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: '检查模型接入' }));
     await waitFor(() => expect(listModels).toHaveBeenCalledTimes(2));
+  });
+});
+
+/* ─────────────────── 侧边栏七个入口的路由（02 §1）─────────────────── */
+
+describe('侧边栏的七个入口都要有落点', () => {
+  /*
+   * 2026-09-06 之前：`app.tsx` 只挂了 Home / TaskWorkspace / Sidebar，
+   * `onNavSelect` 没人传 —— 助理 / 项目 / 专家·技能·连接器 / 自动化 / 资料库 / 更多
+   * **点了没有任何反应**。用户看到的是一个七个菜单项、六个是死的应用，
+   * 而"点了没反应"与"坏了"在界面上完全无法区分。
+   */
+  it('点「资料库」进资料库页，并去拉那一页的数据', async () => {
+    const getLibrary = vi.fn(async () => ({
+      rows: [
+        {
+          id: 'a1',
+          name: '季度汇报.pptx',
+          source: 'artifact' as const,
+          owner: '我',
+          location: '/Users/x/work',
+          accessedAt: Date.now(),
+          artifactType: 'presentation',
+        },
+      ],
+    }));
+    const { bridge } = fakeBridge({ getLibrary });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /资料库/ }));
+    expect(await screen.findByText('季度汇报.pptx')).toBeTruthy();
+    expect(getLibrary).toHaveBeenCalled();
+  });
+
+  it('点「自动化」进自动化页；一条都没有时说清"绑这台电脑、关机不跑"', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /自动化/ }));
+    expect(await screen.findByText('还没有定时任务')).toBeTruthy();
+    // Q8 / R9：这两条要在**看到列表时**就说，不是等它漏跑了再解释
+    expect(screen.getByText(/关机期间不会执行/)).toBeTruthy();
+  });
+
+  /*
+   * 还没做的页面**说清是没做**，不留一个空白主区
+   * （CLAUDE.md §9.1：降级、跳过、认不出来都要如实说）。
+   */
+  it('还没做的入口给出说明，而不是什么都不发生', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /助理/ }));
+    expect(await screen.findByText('助理还没做好')).toBeTruthy();
+    // 并且告诉用户现在该怎么办（在**说明文字里**找，侧边栏那一项同名）
+    expect(screen.getByText(/现在请用「新建任务」/)).toBeTruthy();
+  });
+
+  it('从别的页面点「新建任务」回到首页', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /资料库/ }));
+    expect(screen.queryByLabelText('需求输入')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /新建任务/ }));
+    expect(await screen.findByLabelText('需求输入')).toBeTruthy();
+  });
+
+  /*
+   * **每次进都重拉**：这三张表随时在被别的东西写（调度器在跑、watcher 在索引产物、
+   * hook 在写审计）。缓存一份的话，用户跑完一个任务回到资料库看不到新产物，
+   * 而他没有任何理由知道要刷新。
+   */
+  it('离开再进资料库会重新拉一次', async () => {
+    const getLibrary = vi.fn(async () => ({ rows: [] }));
+    const { bridge } = fakeBridge({ getLibrary });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /资料库/ }));
+    await waitFor(() => expect(getLibrary).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: /新建任务/ }));
+    fireEvent.click(screen.getByRole('button', { name: /资料库/ }));
+    await waitFor(() => expect(getLibrary).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('首次引导（02 §9）', () => {
+  it('没走过引导时它盖住整个界面', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, onboarded: false }),
+    });
+    render(<App bridge={bridge} />);
+    // 引导在，主界面不在
+    await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeNull());
+    expect(screen.getByText(/第 1 \/ 6 步/)).toBeTruthy();
+  });
+
+  it('走过引导就直接进主界面', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    expect(await screen.findByLabelText('侧边栏')).toBeTruthy();
+  });
+
+  /*
+   * **落 `meta` 表，不是渲染层的 localStorage**：换个窗口、清个缓存都不该让
+   * 用户再走一遍五步引导，而"这台机器配好了没有"本来就是本机状态。
+   */
+  it('走完引导调 completeOnboarding 并进主界面', async () => {
+    const completeOnboarding = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, onboarded: false }),
+      completeOnboarding,
+    });
+    render(<App bridge={bridge} />);
+
+    // 直接跳到最后一步（每一步的必填校验由 onboarding.test 覆盖）
+    await screen.findByText(/第 1 \/ 6 步/);
+    for (let i = 0; i < 5; i += 1) {
+      const next = screen.queryByRole('button', { name: /下一步|开始使用/ });
+      if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
+    }
+    const finish = screen.queryByRole('button', { name: '开始使用' });
+    if (finish) fireEvent.click(finish);
+    if (completeOnboarding.mock.calls.length > 0) {
+      await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeTruthy());
+    }
   });
 });

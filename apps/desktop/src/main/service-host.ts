@@ -24,7 +24,7 @@
  */
 import type { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
-import { homedir, userInfo } from 'node:os';
+import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -37,8 +37,10 @@ import {
 } from '@evowork/kernel-adapter';
 import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
 import { BRAND } from '@evowork/tokens';
-import { openStore, type Store } from '@evowork/store';
+import { createAuditRepo, openStore, type Store } from '@evowork/store';
 
+import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
+import { startLocalGateway, type GatewayProcess } from './gateway-process.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
 import { fetchModelCatalog, readGatewayBaseUrl } from './model-catalog.js';
 import {
@@ -66,6 +68,14 @@ export interface EvoworkPaths {
    */
   readonly gatewayToken: string;
   /**
+   * hook 写审计记录的 JSONL（10 §6）。
+   *
+   * 中间隔一个文件而不是让 hook 直接写库 —— 理由在 `audit-ingest.ts` 的头注释里，
+   * 一句话是：hook 是内核起的短命子进程，与常驻的桌面进程抢 sqlite 写锁只会
+   * 让审计被静默吞掉，而那正是审计最不该发生的失败方式。
+   */
+  readonly auditLog: string;
+  /**
    * 内核的家目录（`~/.evowork/kernel/`）。
    *
    * 宿主只知道"内核的家在这儿"，**不知道那个环境变量叫什么** ——
@@ -84,6 +94,7 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
     scenarios: join(root, 'scenarios'),
     logs: join(root, 'logs'),
     gatewayToken: join(root, 'gateway-token'),
+    auditLog: join(root, 'audit.jsonl'),
     kernelHome: join(root, 'kernel'),
   };
 }
@@ -208,6 +219,13 @@ export interface ServiceHostOptions {
   readonly paths: EvoworkPaths;
   /** app-server 可执行文件路径。M9 打包时随内核二进制一起分发 */
   readonly appServerPath: string;
+  /**
+   * 网关单文件产物（`dist/gateway/main.js`）。
+   *
+   * **只在 `base_url` 指向本机时才会被用到**（拓扑 A）。企业把网关部署在服务器上时
+   * 这个路径存在但永远不执行 —— 判据在 `gateway-process.ts`，不在这里。
+   */
+  readonly gatewayEntryPath?: string | undefined;
   readonly appVersion: string;
   readonly logger?: Logger;
   /** 把 UI 事件推给渲染进程（Electron 里是 `webContents.send`） */
@@ -221,6 +239,15 @@ export interface ServiceHostOptions {
   readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
   readonly spawnFn?: typeof spawn;
+  /**
+   * 打开系统的目录选择框（首运行第②步）。
+   *
+   * 由 `bootstrap` 从 electron 注入 —— 这个文件不 import electron，
+   * 否则"选工作空间会发生什么"就只能靠真跑一次来验。
+   * **没有它时首运行走不完**：`blockingReason` 要求至少一个工作空间，
+   * 而干净机器上内核一个 project 都没有。
+   */
+  readonly pickDirectory?: () => Promise<string | undefined>;
 }
 
 export interface ServiceHost {
@@ -316,8 +343,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       launcher: createSpawnLauncher({
         appServerPath: options.appServerPath,
         kernelHome: options.paths.kernelHome,
-        // 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**
-        ...(gatewayToken ? { extraEnv: { EVOWORK_GATEWAY_TOKEN: gatewayToken } } : {}),
+        /*
+         * 内核的进程环境。hook 是**内核起的子进程**，环境从这里继承 ——
+         * 所以 `EVOWORK_AUDIT_LOG` 必须在这一层给，而不是给我们自己的进程。
+         * 在此之前没有任何地方设置它，于是 hook 每次都跳过审计写入，
+         * `audit_log` 表一条记录都没有（10 §6 的"用户可见"从没成立过）。
+         *
+         * 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**。
+         */
+        extraEnv: {
+          EVOWORK_AUDIT_LOG: options.paths.auditLog,
+          ...(gatewayToken ? { EVOWORK_GATEWAY_TOKEN: gatewayToken } : {}),
+        },
         ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
       }),
     },
@@ -385,6 +422,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   });
 
   let reconcileTimer: ReturnType<typeof setInterval> | undefined;
+  /** 本机网关子进程（拓扑 A）。网关在服务器上时它一直是 undefined */
+  let gateway: GatewayProcess | undefined;
 
   const resolveApproval = (id: string, reply: ApprovalReply): void => {
     const pending = approvalReplies.get(id);
@@ -410,11 +449,51 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    */
   const gatewayBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, options.env);
 
+  /*
+   * 三个目录式页面的数据源。
+   *
+   * **复用 `services` 已经建好的那两个 repo**，不再建一套：同一张表两个入口
+   * 是"两个模块各自对、合起来不对"最常见的起点（CLAUDE.md §9.1，这个项目里发生过四次）。
+   * 审计的 repo 是新的 —— 那张表此前没有任何读写方。
+   */
+  const auditRepo = createAuditRepo(store.db);
+  ensureAuditLog(options.paths.auditLog);
+
+  /** 搬一次 hook 写的审计记录。**读之前先搬**，否则页面永远慢一拍 */
+  const ingestAudit = (): void => {
+    ingestAuditLog({
+      path: options.paths.auditLog,
+      insert: (records) => auditRepo.insertMany(records),
+      logger,
+    });
+  };
+
   const actions = createRendererActions({
     adapter,
     store,
     logger,
     resolveApproval,
+    /*
+     * 选工作空间。**没注入选择器时返回 undefined**，由渲染层显示"选不了"，
+     * 而不是抛一个"没有 handler"——后者在界面上就是点了没反应。
+     */
+    ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
+    pageData: {
+      listArtifacts: () => services.artifacts.listAllPresent(),
+      listAutomations: () =>
+        services.automations.listAll(store.deviceId) as unknown as readonly Record<
+          string,
+          unknown
+        >[],
+      listRuns: (automationId) => services.automations.listRuns(automationId),
+      listAudit: () => {
+        ingestAudit();
+        return auditRepo.list() as unknown as readonly Record<string, unknown>[];
+      },
+      auditOldestAt: () => auditRepo.oldestAt(),
+      deviceId: store.deviceId,
+      deviceName: hostname(),
+    },
     appName: BRAND.appName,
     appVersion: options.appVersion,
     userName: userInfo().username,
@@ -436,6 +515,28 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     reconcileIntervalMs: RECONCILE_INTERVAL_MS,
 
     async start() {
+      /*
+       * 网关**在内核之前起**：内核握手之后随时可能发第一个请求，
+       * 而网关起来要几百毫秒。反过来的话第一次发消息有概率打在还没监听的端口上，
+       * 表现是一次莫名其妙的 ECONNREFUSED，重试一下又好了 —— 最难查的那种。
+       *
+       * 网关在别处（拓扑 B）时这里什么都不做，见 `startLocalGateway`。
+       */
+      if (options.gatewayEntryPath) {
+        gateway = startLocalGateway({
+          baseUrl: gatewayBaseUrl,
+          entryPath: options.gatewayEntryPath,
+          ...(gatewayToken ? { token: gatewayToken } : {}),
+          ...(options.env ? { env: options.env } : {}),
+          ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
+          logger,
+        });
+        // `REMOTE` 没有 notice：网关在服务器上是正常部署，不该提示任何东西
+        if (!gateway.result.started && gateway.result.reason !== 'REMOTE') {
+          options.emitToRenderer(IPC.notice, { kind: 'model', text: gateway.result.notice });
+        }
+      }
+
       const catalog = await adapter.start();
       logger.info('desktop.host.started', {
         itemCount: catalog.permissionProfiles.length,
@@ -466,6 +567,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       });
       reconcileTimer = setInterval(() => {
         void adapter.reconcile().catch(() => undefined);
+        /*
+         * 顺带搬一次审计。
+         *
+         * 只在打开审计页时搬的话，从没打开过那一页的用户会攒一个越来越大的
+         * JSONL —— 而它是**未压缩的明文**（虽然不含正文）。跟着对账的节奏走，
+         * 不新开一个定时器：两者都是"把本机状态收拢一次"。
+         */
+        ingestAudit();
       }, RECONCILE_INTERVAL_MS);
 
       /*
@@ -484,6 +593,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
     async stop() {
       if (reconcileTimer) clearInterval(reconcileTimer);
+      // 网关先停：它没有状态也不写盘，留着只会占住端口，下次启动起不来
+      gateway?.stop();
+      gateway = undefined;
       services.stop();
       await adapter.stop();
       store.close();

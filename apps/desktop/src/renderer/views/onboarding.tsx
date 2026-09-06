@@ -15,8 +15,17 @@
  *    **不能写成"完全不出网"**：模型调用是要出网的。写错这句话比不写更糟。
  */
 
-import { RUNTIME_TIERS } from '@evowork/ingest';
-import { toProfileOptions, type ProtocolProfile } from '@evowork/policy';
+/*
+ * **深路径，不走两个包的 barrel。**
+ *
+ * `@evowork/ingest` 的 index 会带出 `probe.ts`（`node:child_process` / `node:fs` / `node:os`），
+ * `@evowork/policy` 的会带出 `audit.ts`（`node:crypto`）—— 渲染进程是浏览器环境，
+ * vite 打包时直接失败。这两个文件本身是纯的（一份常量表、一组文案），深路径拿它们没有代价。
+ *
+ * 这条在这一页被挂进 `app.tsx` 之前看不见：它从没进过渲染层的 bundle。
+ */
+import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
+import { toProfileOptions, type ProtocolProfile } from '@evowork/policy/profiles.js';
 
 import { Banner, EmptyState, PillButton, SegmentedControl } from '../components/primitives.js';
 

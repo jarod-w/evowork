@@ -11,7 +11,7 @@
  * 而那个红没有任何信息量（我们知道它没装）。写成 .mjs 让类型检查跳过这一个文件，
  * 其余全部照常受约束。装上 electron 之后可以原样改名成 .ts。
  */
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { join } from 'node:path';
 
 /*
@@ -22,7 +22,41 @@ import { join } from 'node:path';
  */
 import { bootstrap } from './bootstrap.bundle.js';
 
-const isDev = process.env.EVOWORK_DEV === '1';
+/*
+ * **两个独立的问题，此前被压成了一个开关。**
+ *
+ * ① 随包资源（内核 / 网关 / config）在哪？—— 由**是不是装出来的应用**决定。
+ * ② 渲染层从哪来（vite dev server 还是 loadFile）？—— 由**开发者起没起 vite** 决定。
+ *
+ * 原先两个都看 `EVOWORK_DEV`，于是"用仓库里构建好的产物直接跑一次"这种最常见的
+ * 验证方式**没有任何表示法**：不设 `EVOWORK_DEV` 就去 `process.resourcesPath` 找内核，
+ * 而那时它指向 **Electron 自己的 app 包**：
+ *
+ *   Error: spawn .../electron/dist/Electron.app/Contents/Resources/kernel/codex-app-server ENOENT
+ *
+ * 设了 `EVOWORK_DEV=1` 又会去连一个没起的 vite（白屏）。两条路都不通。
+ * 现在 ① 看 `app.isPackaged`（Electron 自己知道这件事），② 才看 `EVOWORK_DEV`。
+ */
+const isPackaged = app.isPackaged;
+const useDevServer = process.env.EVOWORK_DEV === '1';
+
+/**
+ * 仓库根。`import.meta.dirname` 是 `<repo>/apps/desktop/dist/main`，往上四层。
+ *
+ * 内核不在仓库里，在它**旁边**（CLAUDE.md 第 1 节：`../codex` 是只读的执行内核签出），
+ * 所以另有一个 `kernelCheckout`。
+ */
+const repoRoot = join(import.meta.dirname, '../../../..');
+const kernelCheckout = join(repoRoot, '..', 'codex');
+
+/**
+ * 随包资源的根。
+ *
+ * 未打包时用**相对入口文件**的路径而不是 `process.cwd()`：从哪个目录敲的命令
+ * 不该改变内核在哪 —— 那会让"在仓库根跑没事、在 apps/desktop 里跑就 ENOENT"，
+ * 而这两次跑的是同一个产物。
+ */
+const resourceRoot = isPackaged ? process.resourcesPath : repoRoot;
 
 /*
  * **不要在这里用顶层 await。**
@@ -45,6 +79,8 @@ bootstrap({
     },
     createWindow: (options) => new BrowserWindow(options),
     ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+    // 首运行第②步的目录选择框。**只有主进程能开系统对话框**
+    showOpenDialog: (options) => dialog.showOpenDialog(options),
   },
   /*
    * 打包时内核二进制随包（M9）；开发时用仓库里构建出来的那个。
@@ -55,18 +91,26 @@ bootstrap({
    */
   appServerPath:
     process.env.EVOWORK_APP_SERVER ??
-    (isDev
-      ? join(process.cwd(), '../codex/codex-rs/target/debug/codex-app-server')
-      : join(process.resourcesPath, 'kernel', 'codex-app-server')),
+    (isPackaged
+      ? join(resourceRoot, 'kernel', 'codex-app-server')
+      : join(kernelCheckout, 'codex-rs/target/debug/codex-app-server')),
   /*
    * 随包的 `config/`（electron-builder.yml 的 extraResources 把它放在 resources 下）。
    * 首次运行时 `[permissions.*]` 四个档位从这里装进内核家目录 ——
    * 少了它，**每一次新建任务都会被内核拒掉**，而 UI 上只表现为"回车没反应"。
    */
-  configDir: isDev ? join(process.cwd(), 'config') : join(process.resourcesPath, 'config'),
+  /*
+   * 网关单文件产物。开发时在仓库的 dist/，打包后随 extraResources 进 Resources/gateway/。
+   * 只在 config.toml 的 base_url 指向本机时才会被执行（gateway-process.ts 的判据）。
+   */
+  gatewayEntryPath: isPackaged
+    ? join(resourceRoot, 'gateway', 'main.js')
+    : join(repoRoot, 'dist/gateway/main.js'),
+  configDir: isPackaged ? join(resourceRoot, 'config') : join(repoRoot, 'config'),
   preloadPath: join(import.meta.dirname, '../preload/index.bundle.cjs'),
   rendererHtmlPath: join(import.meta.dirname, '../renderer/index.html'),
-  devServerUrl: isDev ? 'http://localhost:5173' : undefined,
+  // 只有"开发者真的起了 vite"才连它。与随包资源在哪**无关**（见文件头）
+  devServerUrl: useDevServer ? 'http://localhost:5173' : undefined,
 }).catch((error) => {
   /*
    * 启动失败必须**响亮**。
