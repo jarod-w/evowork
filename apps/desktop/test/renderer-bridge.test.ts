@@ -20,7 +20,12 @@ import {
   timeLabel,
   toTaskRow,
 } from '../src/main/renderer-bridge.js';
-import { ensureKernelConfig, ensurePaths, resolvePaths } from '../src/main/service-host.js';
+import {
+  ensureKernelConfig,
+  ensurePaths,
+  readGatewayToken,
+  resolvePaths,
+} from '../src/main/service-host.js';
 
 function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
   return {
@@ -118,6 +123,46 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
         channel: 'agentMessage',
         delta: 'x',
       }),
+    ).toEqual([]);
+  });
+
+  /**
+   * 这条守的是用户直接撞上的那个 bug：任务标着「失败」、对话里一个字都没有。
+   * 内核**是**把原因发过来的（`Turn.error`，仅在 failed 时填充），是我们丢的。
+   */
+  it('失败的回合把内核给的原因带上来', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(
+      translate({
+        type: 'turn-completed',
+        threadId: 't1',
+        turnId: 'r1',
+        status: 'failed',
+        error: { message: '连不上模型网关', details: 'ECONNREFUSED 127.0.0.1:8787' },
+      }),
+    ).toEqual([
+      {
+        type: 'turn-failed',
+        taskId: 't1',
+        message: '连不上模型网关',
+        details: 'ECONNREFUSED 127.0.0.1:8787',
+      },
+    ]);
+  });
+
+  it('成功的回合不吵人；失败但内核没给原因时也不编一个', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(
+      translate({ type: 'turn-completed', threadId: 't1', turnId: 'r1', status: 'completed' }),
+    ).toEqual([]);
+    expect(
+      translate({ type: 'turn-completed', threadId: 't1', turnId: 'r2', status: 'failed' }),
     ).toEqual([]);
   });
 
@@ -225,5 +270,35 @@ describe('首次运行装内核配置', () => {
     const paths = resolvePaths(dir);
     ensurePaths(paths);
     expect(ensureKernelConfig(paths, join(dir, 'nope.toml'))).toBe(false);
+  });
+});
+
+describe('网关访问令牌（内核从进程环境取它）', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'evowork-tok-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  /**
+   * 从访达双击启动的应用**不继承任何 shell 环境变量** —— 所以文件那条路不是备选，
+   * 是 GUI 场景下唯一能走的。少了它，内核对每一次回合回
+   * `Missing environment variable: EVOWORK_GATEWAY_TOKEN`，界面上就是"任务失败了"。
+   */
+  it('环境变量优先，其次是 ~/.evowork/gateway-token', () => {
+    const paths = resolvePaths(dir);
+    ensurePaths(paths);
+    expect(readGatewayToken(paths, {})).toBeUndefined();
+
+    writeFileSync(paths.gatewayToken, 'from-file\n', 'utf8');
+    expect(readGatewayToken(paths, {})).toBe('from-file');
+    expect(readGatewayToken(paths, { EVOWORK_GATEWAY_TOKEN: 'from-env' })).toBe('from-env');
+  });
+
+  it('空文件与只有空白的环境变量都算「没有」，不会传一个空令牌进去', () => {
+    const paths = resolvePaths(dir);
+    ensurePaths(paths);
+    writeFileSync(paths.gatewayToken, '\n', 'utf8');
+    expect(readGatewayToken(paths, { EVOWORK_GATEWAY_TOKEN: '   ' })).toBeUndefined();
   });
 });

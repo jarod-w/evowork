@@ -142,10 +142,35 @@ describe('developer_instructions 拼接（03 §2.4）', () => {
       overrides: { modeId: 'ask' },
       readInstructions: read,
     });
-    expect(result.params.collaborationMode?.settings?.developerInstructions).toContain(
+    expect(result.params.collaborationMode?.settings?.developer_instructions).toContain(
       '不要修改任何文件',
     );
     expect(MODES.ask.instructionsFile).toBe('modes/ask.md');
+  });
+});
+
+/**
+ * F22：`Settings` 是 v2 里唯一没有 `rename_all` 的结构体，线上字段名就是 snake_case，
+ * 而它也不 `deny_unknown_fields` —— 写成 camelCase 的后果**不是报错，是被静默丢掉**。
+ *
+ * 丢掉的那段指令第一句是「你是 EvoWork 的执行智能体」。所以这条断言守的不是命名风格，
+ * 是**产品的身份**：写错时用户问「介绍一下你自己」，回答会是
+ * 「我是运行在 Codex CLI 里的编码代理」（K5 的运行时破口）。
+ */
+describe('F22：settings 的字段名是 snake_case', () => {
+  it('三个字段一律 snake_case，且不留一份 camelCase 的影子', () => {
+    const settings = expandTurnStart({
+      threadId: 't1',
+      input: [],
+      scenario: { ...OFFICE, model: 'evowork/deepseek-chat', reasoningEffort: 'medium' },
+      readInstructions: read,
+    }).params.collaborationMode?.settings as Record<string, unknown>;
+
+    expect(Object.keys(settings).sort()).toEqual([
+      'developer_instructions',
+      'model',
+      'reasoning_effort',
+    ]);
   });
 });
 

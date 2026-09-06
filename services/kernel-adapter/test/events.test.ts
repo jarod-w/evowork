@@ -124,6 +124,36 @@ describe('09 §3.4 的分发表逐行', () => {
     expect(ui.at(-1)).toEqual({ type: 'task-status', threadId: 't1', status: 'interrupted' });
   });
 
+  /**
+   * 内核只在 `status = failed` 时填 `Turn.error`（`v2/thread_data.rs:390-391`）。
+   * 丢掉它的表现是任务标着「失败」、对话里一个字都没有 —— 用户能做的只有再试一次，
+   * 而再试一次也会失败。2026-09-06 用户第一次真发消息时撞上的就是这个。
+   */
+  it('失败的回合把 Turn.error 往上传，成功的回合不带它', () => {
+    router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
+
+    router.handle(NOTIFICATION.turnCompleted, {
+      threadId: 't1',
+      turn: {
+        ...makeTurn({ id: 'turn1', status: 'failed' }),
+        error: { message: '连不上模型网关', additionalDetails: 'ECONNREFUSED' },
+      },
+    });
+    expect(ui.find((e) => e.type === 'turn-completed')).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error: { message: '连不上模型网关', details: 'ECONNREFUSED' },
+      }),
+    );
+
+    ui.length = 0;
+    router.handle(NOTIFICATION.turnCompleted, {
+      threadId: 't1',
+      turn: makeTurn({ id: 'turn2', status: 'completed' }),
+    });
+    expect(ui.find((e) => e.type === 'turn-completed')).not.toHaveProperty('error');
+  });
+
   it('来自定时任务的回合额外产生 automation-run-finished（09 §3.4 第 7 行）', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     store.db

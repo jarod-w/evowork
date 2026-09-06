@@ -40,7 +40,20 @@ export type RendererEvent =
       readonly status?: TaskStatusView;
       readonly title?: string | null;
     }
-  | { readonly type: 'item'; readonly taskId: string; readonly item: RenderItemView };
+  | { readonly type: 'item'; readonly taskId: string; readonly item: RenderItemView }
+  /**
+   * 回合失败，**带内核给的原因**。
+   *
+   * 单独一种事件而不是塞进 `task-updated`：状态只回答"成没成"，
+   * 而用户此刻唯一需要的是"为什么"。没有它的表现是任务标着「失败」、
+   * 对话里一个字都没有 —— 用户能做的只有再试一次，而再试一次也会失败。
+   */
+  | {
+      readonly type: 'turn-failed';
+      readonly taskId: string;
+      readonly message: string;
+      readonly details?: string | undefined;
+    };
 
 export interface ScenarioView {
   readonly id: string;

@@ -207,6 +207,29 @@ EVOWORK_GATEWAY_TOKEN=local-dev-token \
 
 `EVOWORK_DEV=1` 让入口去连 vite dev server，并用 `../codex/codex-rs/target/debug/codex-app-server`
 作为内核（见 [electron-entry.mjs](../apps/desktop/src/main/electron-entry.mjs)）。
+没有 debug 构建时可以用 `EVOWORK_APP_SERVER=<路径>` 指向任意一个内核二进制 ——
+少了它唯一的症状是启动失败，与"代码写错了"区分不开。
+
+#### 网关访问令牌怎么给到桌面 App
+
+内核按 `config.toml` 的 `env_key` 从**它自己的进程环境**里取令牌，而
+**从访达双击启动的应用不继承任何 shell 环境变量** —— 所以宿主必须显式传。
+两个来源，按顺序：
+
+```bash
+# ① 环境变量（开发时从终端起、企业用 launchd 注入）
+EVOWORK_GATEWAY_TOKEN=local-dev-token ./node_modules/.bin/electron …
+
+# ② 文件（GUI 启动**唯一**能走的路径）
+printf 'local-dev-token\n' > ~/.evowork/gateway-token && chmod 600 ~/.evowork/gateway-token
+```
+
+这个值要与网关的 `EVOWORK_GATEWAY_TOKENS` 里的某一个**逐字相同**。
+两个都没有时应用启动就会提示，而不是等发出一句话才失败。
+
+> **这是过渡方案。** 明文文件不满足"密钥不落盘"的本意。终态有两条候选、都还没决策：
+> Electron `safeStorage` 存进系统钥匙串 + 设置页录入，或由 identity 服务签发短期令牌
+> （Q14 的原设计，但 identity 尚未开始）。见 [status.md §4](status.md)。
 
 > **以 root 运行时** Electron 需要 `--no-sandbox`，否则直接 `FATAL ... Running as root is not supported`。
 > 这是容器/CI 里的常见情况；正常桌面环境不需要它，**也不该加**。

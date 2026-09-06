@@ -90,6 +90,23 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setTasks((prev) => [event.task, ...prev.filter((t) => t.id !== event.task.id)]);
           return;
         }
+        if (event.type === 'turn-failed') {
+          /*
+           * 03 §8：模型不可用**不静默降级**。这里把内核给的原因原样显示 ——
+           * 不改写、不归类：`connection refused` 与 `401` 对用户是完全不同的两件事，
+           * 归成一句"模型调用失败"就等于把唯一的线索删掉了。
+           */
+          setNotices((prev) => [
+            ...prev,
+            {
+              tone: 'danger',
+              text: event.details
+                ? `这一回合失败了：${event.message}（${event.details}）`
+                : `这一回合失败了：${event.message}`,
+            },
+          ]);
+          return;
+        }
         if (event.type === 'task-updated') {
           setTasks((prev) =>
             prev.map((t) =>

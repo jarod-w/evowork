@@ -157,7 +157,8 @@ describe('新建任务（03 §4.6）', () => {
     const turnStart = server.received.find((r) => r.method === 'turn/start');
     expect(turnStart?.params.collaborationMode).toMatchObject({
       mode: 'default',
-      settings: { developerInstructions: '你可以动手。' },
+      // F22：snake_case。写成 camelCase 内核会静默丢掉它，产品因此失去自己的身份
+      settings: { developer_instructions: '你可以动手。' },
     });
     // F5：permissions 与 sandbox 不同传
     expect(turnStart?.params.permissions).toBe('evowork-workspace');

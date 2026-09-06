@@ -7,7 +7,9 @@
  * 所有形状于 2026-09-05 在 `89a4eec6da` 上对照 Rust 定义写成；带 F 编号的地方是
  * docs/design/README.md §4 里有实测记录的断言，改动前先看那里。
  *
- * 约定：内核用 serde `rename_all = "camelCase"`，所以线上字段一律 camelCase。
+ * 约定：内核**多数**结构体用 serde `rename_all = "camelCase"`，所以线上字段一般是 camelCase。
+ * **例外：`CollaborationMode.settings` 是 snake_case**（F22，见下面那处注释）——
+ * 它没有任何 serde 属性，也不 deny_unknown_fields，所以写错只会被静默丢掉。
  * 可选字段用 `?`，可为 null 的用 `| null` —— 两者在内核里是不同的东西
  * （`#[ts(optional = nullable)]` 同时是可缺省与可为 null），我们统一写成 `?: T | null`。
  */
@@ -235,13 +237,28 @@ export type AskForApproval = 'untrusted' | 'onFailure' | 'onRequest' | 'never' |
 /** F2：`ModeKind` 只有两个值 —— Craft/Ask 都映射到 `default`，Plan 映射到 `plan`（D8）。 */
 export type ModeKind = 'plan' | 'default';
 
-/** F1：`settings.developer_instructions` 优先于 model / effort / developer instructions。 */
+/**
+ * F1：`settings.developer_instructions` 优先于 model / effort / developer instructions。
+ *
+ * **F22：`settings` 的字段名是 snake_case，不是 camelCase。**
+ *
+ * v2 协议里几乎每个结构体都带 `#[serde(rename_all = "camelCase")]`，
+ * 而 `Settings`（`protocol/src/config_types.rs:777-783`）**一个 serde 属性都没有** ——
+ * 所以线上字段名就是 Rust 字段名。它也没有 `deny_unknown_fields`，于是写成
+ * `developerInstructions` 的后果不是报错，是**被静默丢掉**。
+ *
+ * 那条被丢掉的指令里第一句是「你是 EvoWork 的执行智能体」。丢了它，内核自带的身份
+ * 原样漏出来 —— 用户问「介绍一下你自己」，回答是「我是运行在 Codex CLI 里的编码代理」。
+ * 这是 K5 在运行时的破口，而这条路径上没有任何东西会报错。2026-09-06 实测到。
+ *
+ * `model` 恰好两种写法相同，所以"模型是对的、只有指令没生效"这个组合最难归因。
+ */
 export interface CollaborationMode {
   readonly mode?: ModeKind;
   readonly settings?: {
     readonly model?: string;
-    readonly reasoningEffort?: string;
-    readonly developerInstructions?: string | null;
+    readonly reasoning_effort?: string;
+    readonly developer_instructions?: string | null;
   };
 }
 

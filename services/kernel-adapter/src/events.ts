@@ -39,6 +39,13 @@ export type UiEvent =
       readonly turnId: string;
       readonly status: Turn['status'];
       readonly durationMs?: number | null;
+      /**
+       * 失败原因。内核只在 `status = failed` 时填它（`v2/thread_data.rs:390-391`）。
+       *
+       * **必须往上传。** 丢掉它的表现是任务标着"失败"、对话里一个字都没有 ——
+       * 用户唯一能做的就是再试一次，而再试一次也会失败。
+       */
+      readonly error?: { readonly message: string; readonly details?: string } | undefined;
     }
   | { readonly type: 'item-started'; readonly threadId: string; readonly item: ThreadItem }
   | { readonly type: 'item-completed'; readonly threadId: string; readonly item: ThreadItem }
@@ -203,12 +210,22 @@ export function createEventRouter(options: EventRouterOptions) {
       const p = params as { threadId?: string; turn?: Turn };
       if (!p.threadId || !p.turn) return [];
       const status = store.threads.applyTurnCompleted(p.threadId, p.turn, now());
+      const failure = p.turn.error;
       onUiEvent({
         type: 'turn-completed',
         threadId: p.threadId,
         turnId: p.turn.id,
         status: p.turn.status,
         durationMs: p.turn.durationMs ?? null,
+        // **不记日志**：这段文本可能带模型/提供方回的正文（Q14 不落盘）。只往 UI 送
+        ...(failure
+          ? {
+              error: {
+                message: failure.message,
+                ...(failure.additionalDetails ? { details: failure.additionalDetails } : {}),
+              },
+            }
+          : {}),
       });
       onUiEvent({ type: 'task-status', threadId: p.threadId, status });
 

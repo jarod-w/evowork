@@ -103,6 +103,18 @@ export function createEventTranslator(store: Store, now: () => number) {
       }
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
+      case 'turn-completed': {
+        // 成功的回合不用说什么；失败的必须说清楚（03 §8 / 09 §3.3「降级一律显式」）
+        if (event.status !== 'failed' || !event.error) return [];
+        return [
+          {
+            type: 'turn-failed',
+            taskId: event.threadId,
+            message: event.error.message,
+            ...(event.error.details !== undefined ? { details: event.error.details } : {}),
+          },
+        ];
+      }
       case 'task-renamed':
         return [{ type: 'task-updated', taskId: event.threadId, title: event.title }];
       case 'item-started':

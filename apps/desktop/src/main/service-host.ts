@@ -23,7 +23,7 @@
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
 import type { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -58,6 +58,13 @@ export interface EvoworkPaths {
   readonly scenarios: string;
   readonly logs: string;
   /**
+   * 网关访问令牌（见 `readGatewayToken`）。
+   *
+   * 单独一个文件而不是写进 `config.toml`：那个文件是**内核的**配置，
+   * 而令牌是 EvoWork 自己的凭据；混进去等于让内核的配置文件承载我们的密钥。
+   */
+  readonly gatewayToken: string;
+  /**
    * 内核的家目录（`~/.evowork/kernel/`）。
    *
    * 宿主只知道"内核的家在这儿"，**不知道那个环境变量叫什么** ——
@@ -75,6 +82,7 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
     modes: join(root, 'modes'),
     scenarios: join(root, 'scenarios'),
     logs: join(root, 'logs'),
+    gatewayToken: join(root, 'gateway-token'),
     kernelHome: join(root, 'kernel'),
   };
 }
@@ -131,6 +139,70 @@ export function ensureKernelConfig(paths: EvoworkPaths, templatePath: string): b
   return true;
 }
 
+/**
+ * 网关访问令牌 → 内核进程的环境。
+ *
+ * ## 为什么必须由宿主显式传
+ *
+ * `config.toml` 里写的是 `env_key = "EVOWORK_GATEWAY_TOKEN"` —— 内核从**它自己的进程环境**
+ * 里取这个值。而从访达双击启动的应用**不继承任何 shell 环境变量**，
+ * 所以在正常安装的应用里那个变量永远是空的，内核对**每一次回合**回
+ * `Missing environment variable: \`EVOWORK_GATEWAY_TOKEN\`` ——
+ * 在界面上就是"发了一句话，任务失败了"。2026-09-06 用户第一次真发消息时撞上的就是这条。
+ *
+ * ## 两个来源，顺序是刻意的
+ *
+ *   ① `process.env` —— 开发时从终端起、以及企业用 launchd/服务管理器注入的场景；
+ *   ② `~/.evowork/gateway-token` —— GUI 启动唯一能用的路径。
+ *
+ * ## 这是**过渡方案**，不是终态
+ *
+ * 明文文件不满足"密钥不落盘"的本意。终态有两条候选（都还没决策）：
+ * Electron `safeStorage` 存进系统钥匙串 + 设置页录入，或由 identity 服务签发短期令牌
+ * （Q14 的原设计，但 identity 尚未开始）。**在做出决策前不要把这个文件当成正式机制**。
+ */
+export function readGatewayToken(
+  paths: EvoworkPaths,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const fromEnv = env.EVOWORK_GATEWAY_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  if (!existsSync(paths.gatewayToken)) return undefined;
+  const fromFile = readFileSync(paths.gatewayToken, 'utf8').split('\n')[0]?.trim();
+  return fromFile ? fromFile : undefined;
+}
+
+/**
+ * 首次运行时把随包的**模式指令**装进 `~/.evowork/modes/`。
+ *
+ * ## 少了它会发生什么（K5 的实际破口）
+ *
+ * `config/modes/*.md` 的第一句就是「你是 EvoWork 的执行智能体」。它们没被安装时
+ * `readInstructions` 返回 undefined → `developer_instructions` 为空 →
+ * **内核自带的身份原样漏出来**：用户问"介绍一下你自己"，得到的回答是
+ * 「我是运行在 Codex CLI 里的一个编码代理」。2026-09-06 实测到。
+ *
+ * 这不是文案问题：K5 要求产品对外不出现那个品牌，而这条路径上没有任何东西会报错 ——
+ * 空指令是完全合法的，只是产品变成了另一个产品。
+ *
+ * 逐个文件比对：企业可能只覆盖其中一份（比如 `ask.md`），整目录判断会让
+ * 新增的模式文件永远装不进去。**已存在的不覆盖。**
+ */
+export function ensureModeInstructions(paths: EvoworkPaths, configDir: string): number {
+  const from = join(configDir, 'modes');
+  if (!existsSync(from)) return 0;
+  mkdirSync(paths.modes, { recursive: true });
+  let installed = 0;
+  for (const name of readdirSync(from)) {
+    if (!name.endsWith('.md')) continue;
+    const target = join(paths.modes, name);
+    if (existsSync(target)) continue;
+    copyFileSync(join(from, name), target);
+    installed += 1;
+  }
+  return installed;
+}
+
 export interface ServiceHostOptions {
   readonly paths: EvoworkPaths;
   /** app-server 可执行文件路径。M9 打包时随内核二进制一起分发 */
@@ -144,6 +216,8 @@ export interface ServiceHostOptions {
    * 给了才会在首次运行时装配置模板 —— 见 `ensureKernelConfig`。
    */
   readonly configDir?: string;
+  /** 注入进程环境，便于测试 */
+  readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
   readonly spawnFn?: typeof spawn;
 }
@@ -203,10 +277,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       join(options.configDir, 'config.toml.template'),
     );
     if (installed) logger.info('desktop.kernel_config.installed', {});
+    const modes = ensureModeInstructions(options.paths, options.configDir);
+    if (modes > 0) logger.info('desktop.mode_instructions.installed', { itemCount: modes });
   }
 
   // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
   const store = openStore({ path: options.paths.db, logger });
+
+  const gatewayToken = readGatewayToken(options.paths, options.env);
 
   const readInstructions = (file: string): string | undefined => {
     // `config/modes/*.md` 随产品分发（取代原 P3 补丁，F1）
@@ -237,6 +315,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       launcher: createSpawnLauncher({
         appServerPath: options.appServerPath,
         kernelHome: options.paths.kernelHome,
+        // 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**
+        ...(gatewayToken ? { extraEnv: { EVOWORK_GATEWAY_TOKEN: gatewayToken } } : {}),
         ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
       }),
     },
@@ -342,6 +422,21 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         itemCount: catalog.permissionProfiles.length,
         concurrency: catalog.scenarios.length,
       });
+
+      /*
+       * 03 §8：模型不可用要**在发送之前**就说，而不是等用户发了一句话、
+       * 任务标成"失败"才知道。这里只判"有没有令牌" —— 网关通不通要发请求才知道，
+       * 那条由回合失败的原因负责（`turn-failed`）。
+       */
+      if (!gatewayToken) {
+        logger.warn('desktop.gateway_token.missing', { reason: 'NO_GATEWAY_TOKEN' });
+        options.emitToRenderer(IPC.notice, {
+          kind: 'model',
+          text:
+            '还没有配置模型网关的访问令牌，任务发出去会失败。' +
+            '把令牌写进 ~/.evowork/gateway-token（一行），或用 EVOWORK_GATEWAY_TOKEN 启动。',
+        });
+      }
 
       // 09 §4.1 的一致性校正：启动时一次 + 每 10 分钟一次
       await adapter.reconcile().catch((err: unknown) => {

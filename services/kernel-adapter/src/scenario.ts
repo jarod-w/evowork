@@ -188,10 +188,13 @@ export function expandTurnStart(ctx: ExpandContext): ExpandResult {
   if (collaborationModeAvailable) {
     collaborationMode = {
       mode: mode.kernelMode,
+      // F22：**snake_case**。`Settings` 是 v2 里唯一没有 rename_all 的结构体，
+      // 而它也不 deny_unknown_fields —— 写成 camelCase 会被静默丢掉，
+      // 表现是模型对、指令没生效（产品因此失去自己的身份，K5）
       settings: {
         ...(model ? { model } : {}),
-        ...(effort ? { reasoningEffort: effort } : {}),
-        ...(instructions ? { developerInstructions: instructions } : {}),
+        ...(effort ? { reasoning_effort: effort } : {}),
+        ...(instructions ? { developer_instructions: instructions } : {}),
       },
     };
   } else {
