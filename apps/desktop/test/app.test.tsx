@@ -17,6 +17,7 @@ const STARTUP: StartupInfo = {
   scenarios: [{ id: 'office', name: '日常办公', chips: [], defaults: {} }],
   permissions: [{ id: 'evowork-workspace', label: 'evowork-workspace', allowed: true }],
   cases: [],
+  workspaces: [],
   tasks: [],
 };
 

@@ -92,9 +92,34 @@ describe('09 §3.4 的分发表逐行', () => {
   it('thread/name/updated → 更新标题 + 触发全文索引更新', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     effects = [];
-    router.handle(NOTIFICATION.threadNameUpdated, { threadId: 't1', name: '新名字' });
+    router.handle(NOTIFICATION.threadNameUpdated, { threadId: 't1', threadName: '新名字' });
     expect(store.threads.get('t1')?.title).toBe('新名字');
     expect(effects).toEqual([{ kind: 'index-title', threadId: 't1' }]);
+  });
+
+  /*
+   * **字段名读错不会报错，只会把标题静默抹成 null。**
+   *
+   * 内核发的是 `threadName`（`v2/thread.rs:1982-1988` 的
+   * `ThreadNameUpdatedNotification { thread_id, thread_name }` + camelCase），
+   * 而 `thread_name` 是 `Option` 且 `skip_serializing_if = "Option::is_none"` ——
+   * **字段缺席 = 名字被清空**，所以"读不到就置 null"这个行为本身是对的。
+   *
+   * 危险的是这两件事叠在一起：读错字段名的实现，与"清空"这个合法语义，
+   * 拼出来的效果是"每收到一条重命名就把标题变回未命名"，而没有任何一层报错。
+   * 上面那条断言曾经是绿的，因为它自己也写的 `name`：**测试与实现犯了同一个错**。
+   *
+   * 所以这里两条一起断：读对字段能拿到名字，字段缺席才清空。
+   */
+  it('只有 threadName 能设标题；字段缺席才是"名字被清空"', () => {
+    router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
+
+    router.handle(NOTIFICATION.threadNameUpdated, { threadId: 't1', threadName: '真名字' });
+    expect(store.threads.get('t1')?.title).toBe('真名字');
+
+    // 内核清空名字时就是这个形状（Option::is_none → 字段不出现）
+    router.handle(NOTIFICATION.threadNameUpdated, { threadId: 't1' });
+    expect(store.threads.get('t1')?.title).toBe(null);
   });
 
   it('turn/started 与 turn/completed 一对一地加减并发计数（Q11 的闸门数据源）', () => {

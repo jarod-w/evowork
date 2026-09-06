@@ -82,6 +82,20 @@ function text(item: RenderItem, key: string): string {
   return typeof value === 'string' ? value : '';
 }
 
+/**
+ * 内核有几个字段是 `Vec<String>` 而不是 `String`（`Reasoning.summary` / `Reasoning.content`
+ * 是 `v2/item.rs:280-286`）。`text()` 对它们一律返回空串 —— 表现是推理区
+ * **流式时有字、完成后变空白**：流式增量被主进程累加进 `text`，而 `item/completed`
+ * 用内核的完整条目整个替换掉它，`text` 就没了。
+ */
+function joined(item: RenderItem, key: string): string {
+  const value = item[key];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value))
+    return value.filter((v): v is string => typeof v === 'string').join('\n\n');
+  return '';
+}
+
 function Collapsible({
   summary,
   defaultExpanded,
@@ -198,17 +212,33 @@ export function ItemRenderer({
       );
     }
 
-    // ③ Reasoning —— 折叠；**模型无推理能力时整体不渲染，不留空壳**
+    /*
+     * ③ Reasoning —— 折叠；**模型无推理能力时整体不渲染，不留空壳**。
+     *
+     * 摘要行此前恒为「思考中…」，任务跑完也不变：它只看 `durationSeconds`，
+     * 而内核的 `Reasoning` 变体**只有 `id` / `summary` / `content` 三个字段**
+     * （`v2/item.rs:280-286`），从来不给时长。也就是说那句"思考中"不是没刷新，
+     * 是**没有任何东西会让它变**。
+     *
+     * 现在分三态，各自说的是不同的事实：
+     *   · 还在流   → 「思考中…」
+     *   · 完成且量到了时长（主进程按 item/started→item/completed 掐的表）→「已思考 N 秒」
+     *   · 完成但量不到（比如刷新后从历史里读出来的条目）→「推理过程」
+     *
+     * 第三态不编一个 0 秒：**量不到就别说数字**（CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」）。
+     */
     case 'reasoning': {
       if (!context.reasoningAvailable) return null;
       const seconds = typeof item.durationSeconds === 'number' ? item.durationSeconds : undefined;
+      const done = item.completed === true;
+      const body = joined(item, 'text') || joined(item, 'content') || joined(item, 'summary');
       return (
         <Collapsible
           kind={kind}
           defaultExpanded={defaultExpanded}
-          summary={seconds === undefined ? '思考中…' : `已思考 ${seconds} 秒`}
+          summary={seconds !== undefined ? `已思考 ${seconds} 秒` : done ? '推理过程' : '思考中…'}
         >
-          <div className="ew-reasoning-body">{text(item, 'text') || text(item, 'summaryText')}</div>
+          <div className="ew-reasoning-body">{body}</div>
         </Collapsible>
       );
     }

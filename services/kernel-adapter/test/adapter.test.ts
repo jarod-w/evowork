@@ -136,6 +136,40 @@ describe('启动序列（09 §3.2）', () => {
   });
 });
 
+describe('工作空间（EvoWork 的「空间」= Project + cwd）', () => {
+  it('catalog 带上 project/list 的结果，只取第一个 root 作为 cwd', async () => {
+    server.handlers.set('project/list', () => ({
+      data: [
+        {
+          id: 'p1',
+          name: '周报',
+          roots: [{ path: '/Users/x/weekly' }, { path: '/Users/x/other' }],
+        },
+        { id: 'p2', name: '空空间', roots: [] },
+      ],
+      nextCursor: null,
+    }));
+    const catalog = await adapter.start();
+    expect(catalog.workspaces).toEqual([
+      // 多根时取第一个：turn/start 只收一个 cwd，猜"最合适的"会让任务跑错目录
+      { id: 'p1', name: '周报', path: '/Users/x/weekly' },
+      // 没有 root 的空间**保留并把 path 记成 null**，由 UI 说明"会落在默认目录"
+      { id: 'p2', name: '空空间', path: null },
+    ]);
+  });
+
+  /*
+   * `project/list` 是实验方法。不可用时**给空数组，不让启动失败** ——
+   * 一个下拉的内容不该决定 App 能不能用（09 §3.3）。
+   */
+  it('project/list 不可用时 workspaces 是空数组，App 照常起来', async () => {
+    server.removeMethod('project/list');
+    const catalog = await adapter.start();
+    expect(catalog.workspaces).toEqual([]);
+    expect(catalog.scenarios.length).toBeGreaterThan(0);
+  });
+});
+
 describe('新建任务（03 §4.6）', () => {
   it('thread/start → turn/start，且投影表记下 EvoWork 的初值', async () => {
     await adapter.start();
@@ -173,6 +207,53 @@ describe('新建任务（03 §4.6）', () => {
     });
     const threadStart = server.received.find((r) => r.method === 'thread/start');
     expect(threadStart?.params.permissions).toBe('evowork-ask');
+  });
+
+  /*
+   * **新任务自动起名。**
+   *
+   * 内核不会做这件事：`thread/name/updated` 只在客户端显式调 `thread/name/set`
+   * 之后才发（`thread_processor.rs:638-658`），`Thread.name` 在那之前一直是 null。
+   * 少了这一步，侧边栏里每一行都叫「未命名任务」——2026-09-06 的截图。
+   *
+   * 顺序也在断言里：起名排在 `turn/start` **之后**，它对这一回合没有影响，
+   * 排前面只会让第一个字慢一次往返。
+   */
+  it('新任务用第一条需求起名，且排在 turn/start 之后', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      input: [{ type: 'text', text: '把 data/ 下的三张表合并成季度汇总' }],
+    });
+
+    const setName = server.received.find((r) => r.method === 'thread/name/set');
+    expect(setName?.params).toMatchObject({ threadId, name: '把 data/ 下的三张表合并成季度汇总' });
+
+    const order = server.received.map((r) => r.method);
+    expect(order.indexOf('turn/start')).toBeLessThan(order.indexOf('thread/name/set'));
+
+    // 内核回的 thread/name/updated 走事件路由落进投影表（title 的真源是内核，09 §4.1）
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.threads.get(threadId)?.title).toBe('把 data/ 下的三张表合并成季度汇总');
+  });
+
+  it('起名不了就不起（只有附件的任务不发 thread/name/set）', async () => {
+    await adapter.start();
+    await adapter.createTask({ input: [{ type: 'localImage', path: '/tmp/a.png' }] });
+    expect(server.received.some((r) => r.method === 'thread/name/set')).toBe(false);
+  });
+
+  /*
+   * 起名失败**不能把任务变成"创建失败"**：那一回合已经在跑了，
+   * 而丢的只是一个装饰性字段。
+   */
+  it('内核拒绝起名时任务照常返回，只是没有标题', async () => {
+    await adapter.start();
+    server.handlers.set('thread/name/set', () => {
+      throw new Error('kernel refused');
+    });
+    const result = await adapter.createTask({ input: [{ type: 'text', text: '做个周报' }] });
+    expect(result.threadId).toBeTruthy();
+    expect(store.threads.get(result.threadId)?.title).toBe(null);
   });
 
   it('打开的 thread 会被登记，供崩溃后恢复用（09 §1）', async () => {

@@ -48,12 +48,54 @@ import {
   type ModeId,
   type Scenario,
 } from './scenario.js';
+import { deriveTaskTitle } from './title.js';
+
+/**
+ * 工作空间（第 5 节的映射表：EvoWork 的「空间」= 内核的 Project + cwd）。
+ *
+ * 只留 UI 真正要的三项。内核的 `Project` 还有 metadata / position / 两个时间戳，
+ * 全量转发等于把一个实验方法的形状钉在 Composer 上（K2 的收敛职责）。
+ */
+export interface Workspace {
+  readonly id: string;
+  readonly name: string;
+  /** 第一个 root 的绝对路径。任务在这个目录里跑（`turn/start` 的 cwd） */
+  readonly path: string | null;
+}
+
+/** `project/list` 的响应形状里我们真正读的那部分（`v2/project.rs:22-35`）。 */
+interface RawProject {
+  readonly id: string;
+  readonly name: string;
+  readonly roots?: readonly { readonly path?: string }[];
+}
+
+/**
+ * `Project` → `Workspace`。
+ *
+ * **只取第一个 root**：内核允许一个 project 有多个根，而 `turn/start` 只收一个 cwd。
+ * 多根时取第一个是唯一不会静默出错的选择 —— 其余的根在 UI 上没有表达方式，
+ * 猜一个"最合适的"会让任务跑在用户没预期的目录里。
+ */
+function toWorkspace(project: RawProject): Workspace {
+  return {
+    id: project.id,
+    name: project.name,
+    path: project.roots?.[0]?.path ?? null,
+  };
+}
 
 export interface Catalog {
   readonly permissionProfiles: readonly PermissionProfileSummary[];
   readonly experimentalFeatures: readonly ExperimentalFeature[];
   readonly scenarios: readonly Scenario[];
   readonly modes: readonly (typeof MODES)[ModeId][];
+  /**
+   * 可选的工作空间。**`project/list` 不可用时是空数组，不是缺字段** ——
+   * 前端据此渲染"还没有工作空间"的说明，而不是一个空白下拉
+   * （2026-09-06 用户报的「点选择工作空间不能正常显示」正是空下拉）。
+   */
+  readonly workspaces: readonly Workspace[];
 }
 
 export interface TaskListItem {
@@ -136,6 +178,28 @@ export function createAdapter(options: AdapterOptions) {
 
   let catalog: Catalog | undefined;
 
+  /**
+   * 重命名任务（04 §3.3 的行操作，也是新任务自动起名的落点）。
+   *
+   * **写内核而不是写投影表**：09 §4.1 规定 `title` 的真源是内核，投影表只是缓存。
+   * 内核会回一条 `thread/name/updated`，由事件路由更新投影表并推给 UI ——
+   * 所以这里不碰 sqlite，少一个"两处不一致"的机会。
+   *
+   * 空名字**在这里就挡掉**：内核对空名回 `invalid_request`
+   * （`thread_processor.rs:1788` 的 `normalize_thread_name`），送过去只是换一种方式失败。
+   */
+  async function setTaskName(threadId: string, name: string): Promise<boolean> {
+    if (name.trim() === '') return false;
+    try {
+      await session.peer.request(METHOD.threadSetName, { threadId, name });
+      return true;
+    } catch (err: unknown) {
+      // 起名失败不影响任务本身，但**要留痕**：否则"为什么还是未命名"没有任何线索
+      logger?.warn('adapter.set_task_name.failed', { threadId, ...errorFields(err) });
+      return false;
+    }
+  }
+
   /** 重启后补齐：对每个打开的 thread 做 `thread/resume` + `thread/items/list`（09 §1 / §5）。 */
   async function recoverOpenThreads(): Promise<number> {
     let recovered = 0;
@@ -205,11 +269,23 @@ export function createAdapter(options: AdapterOptions) {
         await session.peer.request(method, {});
       });
 
+      /*
+       * 工作空间列表。`project/list` 是实验方法，所以走 `callExperimental`：
+       * 不可用时拿到空数组并已由能力表记过一条降级（09 §3.3），
+       * **不会让启动失败** —— 一个下拉的内容不该决定 App 能不能用。
+       */
+      const projects = await callExperimental<{ data?: readonly RawProject[] }>(
+        EXPERIMENTAL_METHOD.projectList,
+        {},
+        () => ({ data: [] }),
+      );
+
       catalog = {
         permissionProfiles: profiles.data ?? [],
         experimentalFeatures: features.data ?? [],
         scenarios,
         modes: Object.values(MODES),
+        workspaces: (projects.data ?? []).map(toWorkspace),
       };
       return catalog;
     },
@@ -332,8 +408,19 @@ export function createAdapter(options: AdapterOptions) {
         METHOD.turnStart,
         expanded.params,
       );
+
+      /*
+       * 起名放在 `turn/start` **之后**：它对这一回合毫无影响，排在前面只会
+       * 让第一个字慢一次往返。失败也不抛 —— 一个装饰性字段没写上，
+       * 不该把一个已经跑起来的任务变成"创建失败"（见 `setTaskName`）。
+       */
+      const title = deriveTaskTitle(args.input);
+      if (title !== undefined) await setTaskName(threadId, title);
+
       return { threadId, turn: turnResponse.turn, degradations: expanded.degradations };
     },
+
+    setTaskName,
 
     /**
      * 在已有任务里发消息。

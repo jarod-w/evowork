@@ -166,6 +166,148 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
     ).toEqual([]);
   });
 
+  /*
+   * 「思考中…」永远停在那儿的根因不在渲染层，在这里。
+   *
+   * 内核的 `Reasoning` 只有 id / summary / content 三个字段（`v2/item.rs:280-286`），
+   * **没有任何"跑完了"或"用了多久"的信号**。渲染层要区分这两态，就只能由
+   * 收到 `item/completed` 的这一层把事实贴到条目上。
+   */
+  it('条目完成时打上 completed，并按 started→completed 量出耗时', () => {
+    let clock = 0;
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => clock,
+    );
+    translate({
+      type: 'item-started',
+      threadId: 't1',
+      item: { id: 'r1', type: 'reasoning' } as never,
+    });
+    clock = 12_400;
+    const out = translate({
+      type: 'item-completed',
+      threadId: 't1',
+      item: { id: 'r1', type: 'reasoning', content: ['先看表头'] } as never,
+    });
+    expect(out).toEqual([
+      {
+        type: 'item',
+        taskId: 't1',
+        item: {
+          id: 'r1',
+          type: 'reasoning',
+          content: ['先看表头'],
+          completed: true,
+          durationSeconds: 12,
+        },
+      },
+    ]);
+  });
+
+  /*
+   * 没见过开始就没法量 —— **此时不填 durationSeconds**，让渲染层说「推理过程」。
+   * 填 0 是把"量不到"说成"零秒"（CLAUDE.md §9.1）。
+   */
+  it('没见过 item-started 的条目只标 completed，不编一个 0 秒', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 5000,
+    );
+    const out = translate({
+      type: 'item-completed',
+      threadId: 't1',
+      item: { id: 'r9', type: 'reasoning' } as never,
+    });
+    expect(out[0]).toMatchObject({ item: { completed: true } });
+    expect((out[0] as { item: Record<string, unknown> }).item.durationSeconds).toBeUndefined();
+  });
+
+  /*
+   * 中断与失败时内核**不会**给挂着的条目补 `item/completed`（它们确实没完成）。
+   * 不收摊的话，任务标着「失败」而推理区还在说「思考中…」。
+   */
+  it('回合结束时收摊还挂着的条目，且只收这个任务的', () => {
+    let clock = 0;
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => clock,
+    );
+    translate({
+      type: 'item-started',
+      threadId: 't1',
+      item: { id: 'r1', type: 'reasoning' } as never,
+    });
+    translate({
+      type: 'item-started',
+      threadId: 't2',
+      item: { id: 'r2', type: 'reasoning' } as never,
+    });
+    clock = 3000;
+
+    const out = translate({
+      type: 'turn-completed',
+      threadId: 't1',
+      turnId: 'x',
+      status: 'interrupted',
+    });
+    expect(out).toEqual([
+      {
+        type: 'item',
+        taskId: 't1',
+        item: { id: 'r1', type: 'reasoning', completed: true, durationSeconds: 3 },
+      },
+    ]);
+
+    // t2 还挂着（它属于另一个任务，可能正跑着）—— 再收一次也不该重复吐出 r1
+    expect(
+      translate({ type: 'turn-completed', threadId: 't1', turnId: 'y', status: 'completed' }),
+    ).toEqual([]);
+  });
+
+  it('失败的回合先收摊再报原因，两条都不丢', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    translate({
+      type: 'item-started',
+      threadId: 't1',
+      item: { id: 'r1', type: 'reasoning' } as never,
+    });
+    const out = translate({
+      type: 'turn-completed',
+      threadId: 't1',
+      turnId: 'x',
+      status: 'failed',
+      error: { message: '连不上模型网关' },
+    });
+    expect(out.map((e) => e.type)).toEqual(['item', 'turn-failed']);
+  });
+
+  it('第一条消息没有内核名字时，行标题回退到第一条消息', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row({ title: null, first_message: '把 data/ 下的三张表合并成季度汇总' })),
+      () => 0,
+    );
+    const out = translate({ type: 'task-created', threadId: 't1', title: null });
+    expect(out).toEqual([
+      {
+        type: 'task-created',
+        task: expect.objectContaining({ title: '把 data/ 下的三张表合并成季度汇总' }),
+      },
+    ]);
+  });
+
+  it('名字与第一条消息都没有时才是 null（由 UI 显示「未命名任务」）', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row({ title: null, first_message: null })),
+      () => 0,
+    );
+    const out = translate({ type: 'task-created', threadId: 't1', title: null });
+    expect(out[0]).toMatchObject({ task: { title: null } });
+  });
+
   it('UI 上没有落点的事件返回空数组（它们已在适配层落过库）', () => {
     const translate = createEventTranslator(
       fakeStore(() => row()),

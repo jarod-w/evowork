@@ -749,6 +749,15 @@ textarea {
   line-height: var(--font-caption-line);
   color: var(--text-tertiary);
 }
+/* 空菜单的说明行。**没有它，空菜单就是一个盖住 Footer 的白色空盒子** */
+.ew-menu-empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-8);
+  max-width: var(--layout-menu-empty-max-width);
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
 .ew-menu-group-title {
   margin: var(--space-4) var(--space-8);
   font-size: var(--font-caption-size);
@@ -758,9 +767,39 @@ textarea {
 .ew-mono {
   font-family: var(--font-mono);
 }
+
+/* ── ModelSelect 下拉（01 §5.15）───────────────────────────────────────────
+ *
+ * 一行 = 等宽 `provider/model` + 弹性空隙 + 右侧三个能力徽标。三条硬要求：
+ *
+ *   ① 名字**不折行**。`deepseek/deepseek-v4-flash` 在 180 宽的通用菜单里会
+ *      从中间折成两行，徽标再贴上去就成了截图里那一坨。名字比可用宽度还长时
+ *      交给省略号（§5.15 的 28 字中间省略在 JS 里已经做了，这里是最后一道）。
+ *   ② 徽标**不收缩、不折行**：它们是这一行的固定右列，收缩会让「并行工具」
+ *      折成「并行 / 工具」两行，看着像两个徽标。
+ *   ③ 列表**自己滚**：模型多起来时下拉不该把 Composer 顶出屏幕。
+ */
+.ew-model-menu {
+  min-width: var(--layout-model-menu-min-width);
+  max-height: var(--layout-model-menu-max-height);
+  overflow-y: auto;
+}
+.ew-model-menu .ew-menu-item {
+  gap: var(--space-12);
+}
+/* 名字这一列吃掉所有余量，徽标被顶到最右 */
+.ew-model-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .ew-model-caps {
   display: flex;
-  gap: var(--space-4);
+  flex-shrink: 0;
+  gap: var(--space-6);
+  white-space: nowrap;
 }
 .ew-model-cap {
   font-size: var(--font-micro-size);

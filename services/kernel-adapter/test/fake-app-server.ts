@@ -81,7 +81,7 @@ export class FakeAppServer {
           id: threadId,
           cwd: (ctx.params.cwd as string) ?? '/w',
         }),
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         modelProvider: 'evowork',
         cwd: (ctx.params.cwd as string) ?? '/w',
       };
@@ -101,6 +101,29 @@ export class FakeAppServer {
     }));
     this.handlers.set('thread/list', () => ({ data: [], nextCursor: null }));
     this.handlers.set('thread/goal/set', () => ({}));
+    /*
+     * `thread/name/set` 照抄内核的**两个**行为，因为它们各自都藏过一个缺陷：
+     *
+     *   ① 空名字回 invalid_request（`thread_processor.rs:1788` 的 `normalize_thread_name`）；
+     *   ② 成功后跟一条 `thread/name/updated`，字段是 **`threadName`**
+     *      （`v2/thread.rs:1982-1988`），不是 `name`。
+     *
+     * 第②条是这个假内核最该照抄的一处：我们的路由此前读 `p.name`，读到 undefined
+     * 就把标题抹成 null，而假内核当时根本不发这条通知，所以测试全绿。
+     */
+    this.handlers.set('thread/name/set', (ctx) => {
+      const name = String(ctx.params.name ?? '').trim();
+      if (name === '') throw new Error('thread name must not be empty');
+      // 内核是**先回响应再发通知**（`thread_processor.rs:1799-1817`）。照抄这个顺序：
+      // 反过来的话，通知会先于 `setTaskName` 的 resolve 到达，测试就看不出真实时序
+      queueMicrotask(() => {
+        this.notify('thread/name/updated', {
+          threadId: ctx.params.threadId,
+          threadName: name,
+        });
+      });
+      return {};
+    });
   }
 
   /** 作为 launcher 交给 KernelSession。每次 launch 都是"一个新进程"。 */
@@ -222,7 +245,7 @@ export function makeThread(over: Partial<Thread> = {}): Thread {
     preview: '把 data/ 下的三张表合并',
     ephemeral: false,
     modelProvider: 'evowork',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     createdAt: 1_757_000_000,
     updatedAt: 1_757_000_100,
     recencyAt: 1_757_000_100,

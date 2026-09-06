@@ -10,6 +10,7 @@
  *   · `events.ts`       事件流 → 落库 → UI → 副作用，顺序固定（09 §3.4）
  *   · `approvals.ts`    审批路由与两套超时策略（10 §3，F14）
  *   · `scenario.ts`     场景 + 模式 + 覆盖 → turn/start 参数（03 §2.4，F3）
+ *   · `title.ts`        任务标题的就地派生（内核不自动命名，见该文件头注释）
  */
 export {
   createAdapter,
@@ -17,6 +18,7 @@ export {
   type AdapterOptions,
   type Catalog,
   type TaskListItem,
+  type Workspace,
 } from './adapter.js';
 export {
   createApprovalRouter,
@@ -63,6 +65,7 @@ export {
   type Scenario,
   type ScenarioChip,
 } from './scenario.js';
+export { deriveTaskTitle, titleFromText, TITLE_MAX_CHARS } from './title.js';
 export {
   KernelSession,
   type KernelLauncher,

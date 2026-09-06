@@ -297,6 +297,78 @@ describe('降级必须显式（03 §8 / D2）', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  /*
+   * 模型下拉（01 §5.15）。2026-09-06 截图里"模型列表很乱"的三条成因各守一条：
+   * 名字与徽标挤在通用菜单的 180 宽里折行、徽标被压缩、以及分组标题失去层次。
+   *
+   * 断言落在**类名与结构**上而不是像素上：jsdom 量不出布局，
+   * 而这三条修复全部落在 `ew-model-menu` / `ew-model-name` / `ew-model-caps`
+   * 这几个选择器上（宽度与滚动在 `LAYOUT.modelMenuMinWidth / modelMenuMaxHeight`）。
+   */
+  it('模型下拉用自己的菜单类，名字与能力徽标是两列', () => {
+    renderComposer({
+      models: [
+        {
+          id: 'evowork/deepseek-v4-flash',
+          label: 'deepseek/deepseek-v4-flash',
+          provider: 'deepseek',
+          capabilities: [
+            { id: 'reasoning', label: '推理', available: true },
+            { id: 'image-input', label: '读图', available: false },
+            { id: 'parallel-tools', label: '并行工具', available: true },
+          ],
+        },
+      ],
+      modelId: 'evowork/deepseek-v4-flash',
+    });
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }));
+
+    // 通用 180 宽的 ew-menu 装不下"名字 + 三个徽标"，所以这个下拉必须带自己的类
+    expect(document.querySelector('.ew-model-menu')).not.toBeNull();
+
+    const item = screen.getByRole('menuitem', { name: /deepseek-v4-flash/ });
+    // 名字单独一列（可省略号），不复用 flex 两行容器的 ew-menu-label
+    expect(item.querySelector('.ew-model-name')?.textContent).toBe('deepseek/deepseek-v4-flash');
+    // 被省略号截掉时仍能看到完整 id
+    expect(item.getAttribute('title')).toBe('deepseek/deepseek-v4-flash');
+    // D2：缺失能力划除而不是隐藏 —— 三个徽标一个都不少
+    expect(item.querySelectorAll('.ew-model-cap')).toHaveLength(3);
+    expect(item.querySelector('.ew-model-cap[data-available="false"]')?.textContent).toBe('读图');
+  });
+
+  /*
+   * 2026-09-06 用户报的第五个：**点「选择工作空间」后不能正常显示**。
+   *
+   * 成因不是定位，是"零个选项"：`ew-menu` 带内边距和阴影，一项都没有时它渲染成
+   * 一个盖住 Footer 的**白色空盒子**，看起来像界面坏了。这与 01 §5.19
+   * 「禁用项必须给出原因」是同一条纪律的另一半 —— **空也要给出原因**。
+   */
+  it('一个工作空间都没有时，下拉里是一句说明而不是空白浮层', () => {
+    renderComposer({ workspaces: [] });
+    fireEvent.click(screen.getByRole('button', { name: '选择工作空间' }));
+
+    const menu = screen.getByRole('menu', { name: '选择工作空间' });
+    // 关键断言：菜单**不是空的**（空盒子就是那个 bug）
+    expect(menu.textContent?.trim()).not.toBe('');
+    expect(menu.textContent).toContain('还没有工作空间');
+    // 而且说清了后果：不说的话用户只知道选不了，不知道任务会跑在哪
+    expect(menu.textContent).toContain('默认目录');
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+  });
+
+  it('有工作空间时列出来，且把路径显示成"任务会跑在哪"', () => {
+    const onWorkspaceChange = vi.fn();
+    renderComposer({
+      workspaces: [{ id: 'p1', label: '周报', description: '/Users/x/work/weekly' }],
+      onWorkspaceChange,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '选择工作空间' }));
+    const item = screen.getByRole('menuitem', { name: /周报/ });
+    expect(item.textContent).toContain('/Users/x/work/weekly');
+    fireEvent.click(item);
+    expect(onWorkspaceChange).toHaveBeenCalledWith('p1');
+  });
+
   it('provider 不支持音频时**隐藏**麦克风，而不是点了报错（03 §4.7）', () => {
     renderComposer({ micAvailable: false });
     expect(screen.queryByRole('button', { name: '语音输入' })).toBeNull();

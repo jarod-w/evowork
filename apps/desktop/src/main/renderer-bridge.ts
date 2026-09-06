@@ -16,12 +16,13 @@
  * （连报错都没有：`void send()` 把 rejection 吞了）。
  * 它一直没被发现，是因为这条链路从来没有被真正拉起来过。
  */
-import type {
-  Adapter,
-  ApprovalDecision,
-  ApprovalReply,
-  PendingApproval,
-  UiEvent,
+import {
+  titleFromText,
+  type Adapter,
+  type ApprovalDecision,
+  type ApprovalReply,
+  type PendingApproval,
+  type UiEvent,
 } from '@evowork/kernel-adapter';
 import type { Logger } from '@evowork/logging';
 import type { ProjectionRow, Store } from '@evowork/store';
@@ -56,10 +57,29 @@ export function timeLabel(at: number | null, now: number): string {
   return `${Math.floor(diff / (24 * 60 * minute))} 天前`;
 }
 
+/**
+ * 行标题：**内核的名字优先，没有就从第一条消息现推**。
+ *
+ * 新任务在创建时就会被 `adapter.createTask` 写上名字，所以走不到回退这一支。
+ * 回退是给**下架之前建的那些任务**的：它们的 `title` 永远是 null
+ * （内核不自动命名，见 `kernel-adapter/src/title.ts`），只加自动起名的话，
+ * 它们会一直是侧边栏里那 12 行「未命名任务」——用户报的正是这个。
+ *
+ * 回退**不写库**：它是一个展示值。真源仍然是内核（09 §4.1），用户重命名之后
+ * `title` 有了值，这里就再也不看 `first_message`。
+ *
+ * 两条都没有时返回 null，由 UI 显示「未命名任务」—— 那时它是**真的**没名字
+ * （比如一个只丢了张图片进去的任务）。
+ */
+export function displayTitle(row: ProjectionRow | null | undefined): string | null {
+  if (!row) return null;
+  return row.title ?? titleFromText(row.first_message ?? '') ?? null;
+}
+
 export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
   return {
     id: row.thread_id,
-    title: row.title,
+    title: displayTitle(row),
     status: row.derived_status,
     timeLabel: timeLabel(row.recency_at ?? row.updated_at, now),
     sectionId: row.section_id ?? 'ungrouped',
@@ -95,6 +115,24 @@ export interface RendererBridgeOptions {
 }
 
 /**
+ * 条目"跑完了"的标记，**由这里加，不是内核给的**。
+ *
+ * 内核的 `item/completed` 只告诉我们"这条结束了"，条目本身没有任何状态字段
+ * （`Reasoning` 就三个字段：id / summary / content）。渲染层需要区分
+ * "还在想"与"想完了"，所以这个事实必须在**知道它的那一层**落到条目上 ——
+ * 也就是收到 `item-completed` 的这里。
+ *
+ * 同理 `durationSeconds`：内核对 `commandExecution` 给 `durationMs`，
+ * 对 `reasoning` 什么都不给，所以推理耗时只能由我们按
+ * `item/started` → `item/completed` 的墙钟时间量。量不到就不填 ——
+ * 渲染层据此改说「推理过程」而不是编一个 0 秒。
+ */
+export interface StreamCompletionFields {
+  readonly completed: true;
+  readonly durationSeconds?: number;
+}
+
+/**
  * 适配层事件 → 渲染层事件。
  *
  * 返回数组而不是单个：一条 `task-created` 在渲染层要同时给出整行数据，
@@ -103,7 +141,19 @@ export interface RendererBridgeOptions {
  */
 export function createEventTranslator(store: Store, now: () => number) {
   /** 增量累加的暂存。key = itemId，随 `item-completed` 清掉 */
-  const streaming = new Map<string, { taskId: string; item: Record<string, unknown> }>();
+  const streaming = new Map<
+    string,
+    { taskId: string; item: Record<string, unknown>; startedAtMs: number }
+  >();
+
+  /** 完成时把"跑完了"与（能量到的话）耗时贴到条目上。见 `StreamCompletionFields`。 */
+  function completionFields(itemId: string): StreamCompletionFields {
+    const held = streaming.get(itemId);
+    if (held === undefined) return { completed: true };
+    const seconds = Math.round((now() - held.startedAtMs) / 1000);
+    // 负数只可能来自时钟回拨；不填比填一个负秒数好
+    return seconds >= 0 ? { completed: true, durationSeconds: seconds } : { completed: true };
+  }
 
   return function translate(event: UiEvent): readonly RendererEvent[] {
     switch (event.type) {
@@ -115,9 +165,29 @@ export function createEventTranslator(store: Store, now: () => number) {
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
       case 'turn-completed': {
+        /*
+         * 回合结束时**收尾还挂着的条目**。
+         *
+         * 中断与失败时内核不会给这些条目补一条 `item/completed`（它们确实没完成），
+         * 于是"思考中…"会永远停在那儿 —— 而任务标着「失败」。这一步把它们
+         * 一次性标成完成态：耗时量得到就报，量不到就让渲染层说「推理过程」。
+         * 收摊的是**这个任务**的条目，别的任务可能正跑着。
+         */
+        const stale: RendererEvent[] = [];
+        for (const [itemId, held] of [...streaming]) {
+          if (held.taskId !== event.threadId) continue;
+          stale.push({
+            type: 'item',
+            taskId: held.taskId,
+            item: { ...held.item, ...completionFields(itemId) } as unknown as RenderItemView,
+          });
+          streaming.delete(itemId);
+        }
+
         // 成功的回合不用说什么；失败的必须说清楚（03 §8 / 09 §3.3「降级一律显式」）
-        if (event.status !== 'failed' || !event.error) return [];
+        if (event.status !== 'failed' || !event.error) return stale;
         return [
+          ...stale,
           {
             type: 'turn-failed',
             taskId: event.threadId,
@@ -126,17 +196,37 @@ export function createEventTranslator(store: Store, now: () => number) {
           },
         ];
       }
-      case 'task-renamed':
-        return [{ type: 'task-updated', taskId: event.threadId, title: event.title }];
-      case 'item-started':
+      case 'task-renamed': {
+        /*
+         * 名字被**清空**时（内核发一条不带 `threadName` 的通知）不能直接把标题设成 null：
+         * 那样这一行会掉回「未命名任务」，而下次启动读投影表时又会显示第一条消息 ——
+         * 同一个任务在刷新前后叫两个名字。回落走 `displayTitle`，两条路径口径一致。
+         */
+        const title = event.title ?? displayTitle(store.threads.get(event.threadId) ?? null);
+        return [{ type: 'task-updated', taskId: event.threadId, title }];
+      }
+      case 'item-started': {
+        const item = event.item as unknown as Record<string, unknown> & {
+          id: string;
+          type: string;
+        };
+        streaming.set(item.id, {
+          taskId: event.threadId,
+          item: { ...item },
+          startedAtMs: now(),
+        });
+        return [{ type: 'item', taskId: event.threadId, item }];
+      }
       case 'item-completed': {
         const item = event.item as unknown as Record<string, unknown> & {
           id: string;
           type: string;
         };
-        if (event.type === 'item-completed') streaming.delete(item.id);
-        else streaming.set(item.id, { taskId: event.threadId, item: { ...item } });
-        return [{ type: 'item', taskId: event.threadId, item }];
+        const completed = { ...item, ...completionFields(item.id) };
+        streaming.delete(item.id);
+        return [
+          { type: 'item', taskId: event.threadId, item: completed as unknown as RenderItemView },
+        ];
       }
       case 'item-delta': {
         const field = TEXT_DELTA_FIELD[event.channel];
@@ -147,7 +237,7 @@ export function createEventTranslator(store: Store, now: () => number) {
           ...held.item,
           [field]: `${String(held.item[field] ?? '')}${event.delta}`,
         };
-        streaming.set(event.itemId, { taskId: held.taskId, item: merged });
+        streaming.set(event.itemId, { ...held, item: merged });
         return [{ type: 'item', taskId: held.taskId, item: merged as unknown as RenderItemView }];
       }
       default:
@@ -173,8 +263,25 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const text = input.text.trim();
       if (text === '') throw new Error('空需求');
       const content = [{ type: 'text' as const, text }];
+
+      /*
+       * 工作空间 id → cwd。**在这里翻译**，渲染层只拿 id（见 `SendInput.workspaceId`）。
+       *
+       * 选了一个没有 root 的空间时 `path` 是 undefined —— 此时**不设 cwd**，
+       * 让任务落在默认目录，而不是传一个 undefined 进 `thread/start` 假装设过。
+       */
+      const cwd = input.workspaceId
+        ? adapter.catalog()?.workspaces.find((w) => w.id === input.workspaceId)?.path
+        : undefined;
+
       // 用户手选的模型是优先级最高的一档（03 §2.4：场景默认 → 模式 → 用户显式选择）
-      const overrides = input.modelId !== undefined ? { model: input.modelId } : undefined;
+      const overrides =
+        input.modelId !== undefined || cwd
+          ? {
+              ...(input.modelId !== undefined ? { model: input.modelId } : {}),
+              ...(cwd ? { cwd } : {}),
+            }
+          : undefined;
 
       if (input.threadId !== undefined) {
         /*
@@ -293,6 +400,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
           allowed: p.allowed,
         })),
         cases: options.cases ?? [],
+        // `project/list` 不可用时是空数组（适配层已记过一条降级）—— 下拉据此显示说明
+        workspaces: (catalog?.workspaces ?? []).map((w) => ({
+          id: w.id,
+          name: w.name,
+          ...(w.path !== null ? { path: w.path } : {}),
+        })),
         tasks: adapter
           .listTasks({})
           .map((t) => store.threads.get(t.threadId))

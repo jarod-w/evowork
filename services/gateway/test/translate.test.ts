@@ -672,10 +672,13 @@ describe('真实上游形状（DeepSeek，2026-09-05 实测）', () => {
 });
 
 describe('能力声明（Q16 三家）', () => {
-  it('P0 名单覆盖 Q16 决策的三家，DeepSeek 有三个型号', () => {
-    expect(P0_MODELS.map((m) => m.provider).sort()).toEqual([
-      'deepseek',
-      'deepseek',
+  /*
+   * Q16 定的是**三家**（DeepSeek / Kimi / GLM），不是几个型号 ——
+   * 2026-09-06 下架两个 DeepSeek 型号之后，要守住的仍然是"三家一家不少"。
+   * 按型号数量断言会让"删一个型号"看起来像"违反了 Q16"，而 Q16 没这么说。
+   */
+  it('P0 名单覆盖 Q16 决策的三家，一家不少', () => {
+    expect([...new Set(P0_MODELS.map((m) => m.provider))].sort()).toEqual([
       'deepseek',
       'moonshot',
       'zhipu',
@@ -707,7 +710,8 @@ describe('能力声明（Q16 三家）', () => {
 
   it('验过的模型必须给日期，并如实列出仍未实测的能力键', () => {
     const verified = P0_MODELS.filter((m) => m.verified);
-    expect(verified.length, '三个 DeepSeek 型号 + Kimi + GLM').toBe(5);
+    // 2026-09-06 下架 deepseek-chat / deepseek-reasoner 后剩三条（见 capabilities.ts 头注释）
+    expect(verified.length, 'deepseek-v4-flash + Kimi + GLM').toBe(3);
     for (const model of verified) {
       expect(model.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       // 上下文长度要塞满才能测，探针不做 —— 所以它必须还在未验证列表里
@@ -723,10 +727,26 @@ describe('能力声明（Q16 三家）', () => {
     expect(flash?.capabilities.parallelToolCalls).toBe(true);
   });
 
-  it('deepseek-reasoner 的并行工具调用是 true（实测订正了原表的 false）', () => {
-    const reasoner = P0_MODELS.find((m) => m.id === 'evowork/deepseek-reasoner');
-    expect(reasoner?.capabilities.parallelToolCalls).toBe(true);
-    expect(reasoner?.notes).toContain('订正');
+  /*
+   * 2026-09-06 下架 `deepseek-chat` / `deepseek-reasoner` 之后，这条断言换了守法。
+   *
+   * 原断言（reasoner 的 parallelToolCalls 是 true）守的是"探针订正过一次能力表"这件事。
+   * 型号没了，那条断言只能删 —— 但**不能连着"能力位必须来自实测"一起删掉**：
+   * 那才是它真正在守的东西。所以改成对整张表断言：
+   * 每一条 verified 的 notes 里都得有实测证据（帧数 / 具体行为 / 订正）。
+   */
+  it('每条 verified 的 notes 都得带实测证据，而不只是一句"支持"', () => {
+    for (const model of P0_MODELS.filter((m) => m.verified)) {
+      expect(model.notes, `${model.id} 的 notes 要写清实测看到了什么`).toMatch(
+        /帧|实测|返回|答"|订正/,
+      );
+    }
+  });
+
+  it('下架的两个 DeepSeek 型号不再出现在目录里（2026-09-06）', () => {
+    const ids = P0_MODELS.map((m) => m.id);
+    expect(ids).not.toContain('evowork/deepseek-chat');
+    expect(ids).not.toContain('evowork/deepseek-reasoner');
   });
 
   it('GLM-5.3-flash 标为 light 档，且 notes 里写清它为什么在 P0 名单里（R4）', () => {

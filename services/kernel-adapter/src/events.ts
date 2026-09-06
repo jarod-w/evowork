@@ -165,13 +165,21 @@ export function createEventRouter(options: EventRouterOptions) {
       return status === 'pending' ? [{ kind: 'notify', reason: 'PENDING_APPROVAL' }] : [];
     },
 
+    /*
+     * 字段名是 `threadName`，**不是 `name`**（`v2/thread.rs:1982-1988` 的
+     * `ThreadNameUpdatedNotification { thread_id, thread_name }` + `rename_all = "camelCase"`）。
+     *
+     * 读错的代价这里格外隐蔽：`p.name` 恒为 undefined → `?? null` → 每收到一条重命名
+     * 就把标题**抹成 null**。也就是说改名之后标题不是没更新，是变回了「未命名任务」，
+     * 而这条路径不报任何错。2026-09-06 对着内核逐字核对时抓到。
+     */
     [NOTIFICATION.threadNameUpdated]: (params) => {
-      const p = params as { threadId?: string; name?: string | null };
+      const p = params as { threadId?: string; threadName?: string | null };
       if (!p.threadId) return [];
       store.db
         .prepare('UPDATE thread_projection SET title = ?, updated_at = ? WHERE thread_id = ?')
-        .run(p.name ?? null, now(), p.threadId);
-      onUiEvent({ type: 'task-renamed', threadId: p.threadId, title: p.name ?? null });
+        .run(p.threadName ?? null, now(), p.threadId);
+      onUiEvent({ type: 'task-renamed', threadId: p.threadId, title: p.threadName ?? null });
       return [{ kind: 'index-title', threadId: p.threadId }];
     },
 

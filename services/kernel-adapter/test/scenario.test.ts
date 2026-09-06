@@ -24,7 +24,7 @@ describe('展开优先级：场景默认值 → 工作模式 → 用户显式选
     const result = expandTurnStart({
       threadId: 't1',
       input: [{ type: 'text', text: '生成周报' }],
-      scenario: { ...OFFICE, model: 'deepseek-chat' },
+      scenario: { ...OFFICE, model: 'deepseek-v4-flash' },
       overrides: { model: 'glm-5.3-flash' },
       readInstructions: read,
     });
@@ -162,7 +162,7 @@ describe('F22：settings 的字段名是 snake_case', () => {
     const settings = expandTurnStart({
       threadId: 't1',
       input: [],
-      scenario: { ...OFFICE, model: 'evowork/deepseek-chat', reasoningEffort: 'medium' },
+      scenario: { ...OFFICE, model: 'evowork/deepseek-v4-flash', reasoningEffort: 'medium' },
       readInstructions: read,
     }).params.collaborationMode?.settings as Record<string, unknown>;
 
@@ -179,14 +179,14 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
     const result = expandTurnStart({
       threadId: 't1',
       input: [],
-      scenario: { ...OFFICE, model: 'deepseek-chat', reasoningEffort: 'medium' },
+      scenario: { ...OFFICE, model: 'deepseek-v4-flash', reasoningEffort: 'medium' },
       overrides: { modeId: 'ask' },
       readInstructions: read,
       collaborationModeAvailable: false,
     });
 
     expect(result.params.collaborationMode).toBeUndefined();
-    expect(result.params.model).toBe('deepseek-chat');
+    expect(result.params.model).toBe('deepseek-v4-flash');
     expect(result.params.effort).toBe('medium');
     expect(result.degradations[0]).toContain('ToolContributor');
   });
@@ -195,11 +195,11 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
     const result = expandTurnStart({
       threadId: 't1',
       input: [],
-      scenario: { ...OFFICE, model: 'deepseek-chat' },
+      scenario: { ...OFFICE, model: 'deepseek-v4-flash' },
       readInstructions: read,
       collaborationModeAvailable: true,
     });
-    expect(result.params.collaborationMode?.settings?.model).toBe('deepseek-chat');
+    expect(result.params.collaborationMode?.settings?.model).toBe('deepseek-v4-flash');
     expect(result.params.model).toBeUndefined();
   });
 

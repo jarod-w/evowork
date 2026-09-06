@@ -311,6 +311,13 @@
 
 其余实测确认：流式增量在 `choices[0].delta.content`；工具调用首帧带 `id` + `function.name`、后续帧只带 `arguments` 片段；cache 口径是 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`（不是 OpenAI 的 `prompt_tokens_details`，两者 DeepSeek 都给）；未知模型返回 400 + `error.code = invalid_request_error`，能映射为永久性错误（映射不上会被内核当成可重试）。
 
+> **2026-09-06 下架 `deepseek-chat` 与 `deepseek-reasoner`。** 目录里 DeepSeek 只留 `deepseek-v4-flash`。
+> 上面这段实测记录**保留不删** —— 它是"探针订正了三处假设"的证据，与型号在不在目录里无关。
+> 下架理由是产品侧的：`deepseek-v4-flash` 在能力位上是另两者的超集（推理 + 并行工具 + cache），
+> 一家占三行只是让用户多做两次没有分辨依据的选择。
+> 连带改了三个场景包的默认模型（`config/scenarios/*.toml` 与 `scenario.ts` 的内置副本）——
+> 漏改的话每次启动都会弹一条"场景默认的模型当前不可用"，而那句话该留给真正配错的用户。
+
 **Kimi 与 GLM 实测结果（2026-09-05 同日拿到另两把 key）** —— 三家至此全部跑通，Q16 名单的协议语义部分收口：
 
 | 维度 | DeepSeek（chat / reasoner / v4-flash） | Kimi（kimi-k3） | GLM（glm-5.3-flash） |

@@ -24,7 +24,7 @@ const OFFICE: Scenario = {
     { label: '文档处理', prompt: '帮我处理这些文档：', requiresFile: true },
     { label: '数据分析及可视化', prompt: '分析这份数据并给出可视化：' },
   ],
-  defaults: { modelId: 'evowork/deepseek-chat', permissionId: ':workspace', mode: 'craft' },
+  defaults: { modelId: 'evowork/deepseek-v4-flash', permissionId: ':workspace', mode: 'craft' },
 };
 
 const CODE: Scenario = {

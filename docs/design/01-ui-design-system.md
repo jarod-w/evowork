@@ -340,6 +340,11 @@ ComposerShell   --r-xl · --bg-sunken · --border-subtle · --shadow-md · paddi
 同 `InlineSelect`，但 label 用等宽字族显示 `provider/model`（截图 1 为 `deepseek/deepseek-v4-flash-0731`），最长 28 字符后中间省略。
 下拉分组显示：**按 provider 分组**，每项右侧标注能力徽标（推理 / 图片输入 / 并行工具调用）—— 徽标数据来自网关的能力声明（总纲 D2「降级必须显式」），缺失能力**必须显示为灰色划除**而非隐藏。
 
+**下拉尺寸（2026-09-06 补，实机截图暴露）**：最小宽 **340**、最大高 **320（超出内部滚动）**，不用 §5.19 的通用 180。
+一行要**并排**装下等宽名字（28 字约 190）与三个能力徽标（约 110），180 之下名字会从中间折成两行、徽标贴着折行文字——
+截图里"模型列表很乱"就是这一处。配套的两条：名字所在列 `text-overflow: ellipsis` 单行截断（并把完整 id 放进 `title`），
+能力徽标 `flex-shrink: 0` + `nowrap`（收缩会把「并行工具」折成两行，看着像两个徽标）。
+
 ### 5.16 SearchInput
 
 高 28，`--r-sm`，`--bg-surface` + `--border-default`，内边距 0 10：搜索图标 15 + 6 + `label`。聚焦时边框 `--accent` + 2px `--focus-ring`。带清除按钮（有值时）。宽度：标题栏内 200，面板内 100%。

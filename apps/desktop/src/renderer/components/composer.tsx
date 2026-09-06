@@ -464,12 +464,21 @@ export function Composer(props: ComposerProps) {
         </div>
 
         <div className="ew-composer-footer">
+          {/*
+           * 一个空间都没有时，下拉里是**一句说明**而不是空白浮层。
+           *
+           * 2026-09-06 用户报的「点"选择工作空间"后不能正常显示」就是空白浮层：
+           * `ew-menu` 有内边距和阴影，零个选项时渲染成一个盖住 Footer 的白盒子，
+           * 看起来像界面坏了。这句话同时回答"那我的任务跑在哪"——不说的话，
+           * 用户只知道选不了，不知道会发生什么。
+           */}
           <InlineSelect
             ariaLabel="选择工作空间"
             icon={renderIcon('folder')}
             placeholder="选择工作空间"
             value={props.workspaceId}
             options={props.workspaces ?? []}
+            emptyHint="还没有工作空间。任务会在默认目录里跑，你也可以先在「项目」里建一个。"
             onChange={(id) => props.onWorkspaceChange?.(id)}
           />
           <InlineSelect

@@ -22,7 +22,7 @@ import {
 } from '../src/main/model-catalog.js';
 
 const CONFIG = `
-model = "evowork/deepseek-chat"
+model = "evowork/deepseek-v4-flash"
 model_provider = "evowork"
 
 [model_providers.evowork]

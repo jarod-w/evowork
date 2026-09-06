@@ -27,6 +27,35 @@ const css = readFileSync(CSS_PATH, 'utf8');
 /** 去掉注释：注释里会提到 `1px`、`3px` 这类文档原话 */
 const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
+/*
+ * ModelSelect 下拉的三条布局约束（01 §5.15，2026-09-06 补）。
+ *
+ * 断言写在 CSS 上是因为**这三条只在 CSS 里存在**：jsdom 量不出布局，
+ * 组件测试只能证明类名在，证明不了名字不会折行。删掉其中任何一条，
+ * 下拉就会回到截图里那个"名字折成两行、徽标贴上去"的样子。
+ */
+describe('ModelSelect 下拉的布局约束（01 §5.15）', () => {
+  it('用自己的最小宽与最大高，不是 §5.19 的通用 180', () => {
+    expect(code).toContain('--layout-model-menu-min-width');
+    expect(code).toContain('--layout-model-menu-max-height');
+    // 模型多起来时下拉自己滚，而不是把 Composer 顶出屏幕
+    expect(code).toMatch(/\.ew-model-menu\s*\{[^}]*overflow-y:\s*auto/);
+  });
+
+  it('名字单行截断（折行是"很乱"的直接成因）', () => {
+    const rule = /\.ew-model-name\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('white-space: nowrap');
+    expect(rule).toContain('text-overflow: ellipsis');
+    expect(rule).toContain('overflow: hidden');
+  });
+
+  it('能力徽标不收缩、不折行（收缩会把「并行工具」折成两行，像两个徽标）', () => {
+    const rule = /\.ew-model-caps\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('flex-shrink: 0');
+    expect(rule).toContain('white-space: nowrap');
+  });
+});
+
 describe('CSS 只用 token（01 §9 验收项 1）', () => {
   it('没有 hex 颜色', () => {
     const hits = code.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];

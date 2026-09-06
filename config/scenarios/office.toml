@@ -10,7 +10,7 @@ order   = 10
 default = true
 
 # 展开到 turn/start 的部分
-model             = "evowork/deepseek-chat"
+model             = "evowork/deepseek-v4-flash"
 reasoning_effort  = "medium"
 permissions       = "evowork-workspace"
 mode              = "craft"

@@ -88,6 +88,18 @@ export interface PermissionOptionView {
   readonly allowed: boolean;
 }
 
+/**
+ * 工作空间下拉的一项（EvoWork 的「空间」= 内核的 Project + cwd，见 CLAUDE.md 第 5 节）。
+ *
+ * `path` 可能为 null（内核允许一个 project 没有 root）——此时选它**不设 cwd**，
+ * 任务落在默认目录。这一条在 UI 上要说出来，不能选完了让用户猜任务跑在哪。
+ */
+export interface WorkspaceView {
+  readonly id: string;
+  readonly name: string;
+  readonly path?: string | undefined;
+}
+
 export interface CaseView {
   readonly id: string;
   readonly title: string;
@@ -109,6 +121,11 @@ export interface StartupInfo {
   readonly scenarios: readonly ScenarioView[];
   readonly permissions: readonly PermissionOptionView[];
   readonly cases: readonly CaseView[];
+  /**
+   * 可选的工作空间。**空数组是一个正常状态**（还没建过空间，或 `project/*` 不可用），
+   * 由下拉渲染成一句说明 —— 空白浮层是 2026-09-06 用户报的那个 bug。
+   */
+  readonly workspaces: readonly WorkspaceView[];
   /** 已有任务（冷启动时投影表里就有，不必等事件流） */
   readonly tasks: readonly TaskRowView[];
 }
@@ -160,6 +177,13 @@ export interface SendInput {
    * 用户切了模型、下一轮又悄悄换回场景默认值。
    */
   readonly modelId?: string | undefined;
+  /**
+   * 用户选的工作空间。主进程把它翻成 `overrides.cwd`（任务在哪个目录里跑）。
+   *
+   * 翻译放在主进程而不是这里传路径：渲染层不该持有绝对路径，
+   * 而 id → path 的对应只有拿过 catalog 的那一侧知道。
+   */
+  readonly workspaceId?: string | undefined;
 }
 
 export type ApprovalDecisionView = 'accept' | 'acceptForSession' | 'decline' | 'cancel';

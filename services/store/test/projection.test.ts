@@ -16,7 +16,7 @@ function thread(over: Partial<Thread> = {}): Thread {
     preview: '把 data/ 下的三张表合并',
     ephemeral: false,
     modelProvider: 'evowork',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     createdAt: 1_757_000_000,
     updatedAt: 1_757_000_100,
     recencyAt: 1_757_000_100,

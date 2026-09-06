@@ -68,6 +68,19 @@ export type ProviderId = 'deepseek' | 'moonshot' | 'zhipu' | 'private';
  * 如果只有一个布尔值，这种情况下的诚实选择只剩两个：标 false（抹掉已经拿到的结论），
  * 或标 true（把一个没测过的数字说成测过了）。所以改成 `verifiedAt` + `unverified` 列表：
  * **说清验过什么、没验什么**。能力端点把这两个字段一起吐给前端与运维。
+ *
+ * ## 2026-09-06：`deepseek-chat` 与 `deepseek-reasoner` 已下架
+ *
+ * 两条都在 2026-09-05 对真实 endpoint 实测通过（记录留在总纲 §D2 的实测表里，
+ * **不要因为条目没了就把那段删掉** —— 它是"探针发现了三处与假设不符"的证据）。
+ * 下架是产品决定：DeepSeek 一家在下拉里占三行，而 `deepseek-v4-flash` 在能力位上
+ * 是前两者的超集（推理 + 并行工具 + cache），留着另外两条只是让用户多做两次没有
+ * 分辨依据的选择。
+ *
+ * 下架**连带改了场景默认模型**（`config/scenarios/*.toml` 与 `scenario.ts` 的内置副本
+ * 都指向 `evowork/deepseek-v4-flash`）：漏改的话 `resolveModelChoice` 每次启动都会
+ * 弹一条"场景默认的模型当前不可用，已改用…"——功能上对，但那句话是说给
+ * 配置出错的用户听的，不该由一次下架来触发。
  */
 export interface ModelRegistryEntry extends ModelEntry {
   readonly verified: boolean;
@@ -79,55 +92,6 @@ export interface ModelRegistryEntry extends ModelEntry {
 }
 
 export const P0_MODELS: readonly ModelRegistryEntry[] = [
-  {
-    id: 'evowork/deepseek-chat',
-    provider: 'deepseek',
-    upstreamModel: 'deepseek-chat',
-    displayName: 'DeepSeek Chat',
-    tier: 'standard',
-    verified: true,
-    verifiedAt: '2026-09-05',
-    // 上下文长度要塞满才能测，探针不做；其余五项都是实测
-    unverified: ['maxContextTokens'],
-    notes:
-      '基准实现（D2）。2026-09-05 实测：流式增量在 choices[0].delta.content；' +
-      '**不吐 reasoning_content**（与 reasoning:false 一致）；并行工具调用成立' +
-      '（一次返回 get_weather + get_time 两个 tool_calls）；usage 带 ' +
-      'prompt_cache_hit_tokens / prompt_cache_miss_tokens。',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: false,
-      promptCache: true,
-      imageInput: false,
-      maxContextTokens: 128_000,
-    },
-  },
-  {
-    id: 'evowork/deepseek-reasoner',
-    provider: 'deepseek',
-    upstreamModel: 'deepseek-reasoner',
-    displayName: 'DeepSeek Reasoner',
-    tier: 'flagship',
-    verified: true,
-    verifiedAt: '2026-09-05',
-    unverified: ['maxContextTokens'],
-    notes:
-      '推理型号：思维链走 delta.reasoning_content，映射为 reasoning item（D2）。' +
-      '2026-09-05 实测**订正了一处**：原表写 parallelToolCalls: false，实测一次返回两个 ' +
-      'tool_calls，改为 true。推理帧占比很高（20 帧里 17 帧是 reasoning_content），' +
-      '这决定了 04 §5.2 #3 的折叠区默认必须是折叠的。',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: true,
-      promptCache: true,
-      imageInput: false,
-      maxContextTokens: 128_000,
-    },
-  },
   {
     /*
      * 2026-09-05 探针发现的型号：**它是个推理模型**，尽管名字里带 flash。
@@ -246,7 +210,7 @@ export interface CapabilityLookup {
  * 两个函数各自都是对的（过滤对、组合对），合起来是错的
  * （CLAUDE.md §9.1）。这个缺陷在此之前看不见，因为没有任何 UI 消费过 `list()`。
  *
- * **同 id 后来者覆盖前者**（企业用私有 endpoint 覆盖 `evowork/deepseek-chat` 是真实场景），
+ * **同 id 后来者覆盖前者**（企业用私有 endpoint 覆盖 `evowork/deepseek-v4-flash` 是真实场景），
  * 位置保持第一次出现时的位置 —— 下拉的顺序不该因为一次覆盖而跳动。
  */
 export function createModelRegistryFrom(models: readonly ModelRegistryEntry[]): CapabilityLookup {

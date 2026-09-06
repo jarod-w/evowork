@@ -25,4 +25,4 @@ slots_enabled = false
 # 强制审计上报（只上报摘要，无内容 —— D9）
 audit_upload = true
 # 可用模型白名单（网关侧 + 本机双重）
-allowed_models = ["evowork/deepseek-chat"]
+allowed_models = ["evowork/deepseek-v4-flash"]

@@ -97,6 +97,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   /** 用户是否**显式**改过模型（03 §2.5 的圆点）。切场景时保留他的选择，不悄悄改回去 */
   const [modelOverridden, setModelOverridden] = useState(false);
   const [modelUnavailable, setModelUnavailable] = useState<string | undefined>(undefined);
+  /** 选中的工作空间（EvoWork 的「空间」= 内核的 Project + cwd）。主进程负责翻成 cwd */
+  const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const offs = [
@@ -254,6 +256,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
         // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
         ...(modelId !== undefined ? { modelId } : {}),
+        // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
       setActiveTaskId(threadId);
     } catch (err: unknown) {
@@ -264,7 +268,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         { tone: 'danger', text: `没能发出去：${err instanceof Error ? err.message : String(err)}` },
       ]);
     }
-  }, [bridge, draft, activeTaskId, scenarioId, modelId]);
+  }, [bridge, draft, activeTaskId, scenarioId, modelId, workspaceId]);
 
   const scenarios: readonly Scenario[] = useMemo(
     () =>
@@ -291,6 +295,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [startup],
   );
 
+  /** 工作空间下拉的选项。空数组时 Composer 渲染一句说明，**不是空白浮层** */
+  const workspaces: readonly SelectOption[] = useMemo(
+    () =>
+      (startup?.workspaces ?? []).map((w) => ({
+        id: w.id,
+        label: w.name,
+        // 路径就是"任务会跑在哪"，是这一项唯一重要的信息；没有 root 的空间如实说明
+        description: w.path ?? '这个空间没有目录，任务会落在默认目录',
+      })),
+    [startup],
+  );
+
   const active = tasks.find((t) => t.id === activeTaskId);
   const composer = useMemo(
     () => ({
@@ -299,6 +315,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onInterrupt: () => {
         if (activeTaskId) void bridge.interrupt(activeTaskId);
       },
+      workspaces,
+      workspaceId,
+      onWorkspaceChange: setWorkspaceId,
       permissions,
       permissionId,
       onPermissionChange: setPermissionId,
@@ -328,6 +347,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       running,
       activeTaskId,
       bridge,
+      workspaces,
+      workspaceId,
       permissions,
       permissionId,
       mode,

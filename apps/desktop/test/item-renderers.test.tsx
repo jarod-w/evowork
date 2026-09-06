@@ -91,6 +91,50 @@ describe('Reasoning：模型无推理能力时**整体不渲染，不留空壳**
     expect(container.firstChild).toBeNull();
     expect(container.textContent).toBe('');
   });
+
+  /*
+   * 摘要行的三态。守的是 2026-09-06 用户报的那个 bug：**任务已完成、这里还写着"思考中"**。
+   *
+   * 根因是它当时只有两态，而"完成"这一态**永远到不了**：判据是 `durationSeconds`，
+   * 内核的 `Reasoning` 变体压根没有这个字段（`v2/item.rs:280-286`）。
+   * 现在耗时由主进程量、完成由主进程标，三态各自对应一个不同的事实。
+   */
+  it('还在流 → 思考中', () => {
+    renderItem({ id: 'i1', type: 'reasoning', text: '先看表头' });
+    expect(screen.getByRole('button', { name: /思考中/ })).toBeTruthy();
+  });
+
+  it('完成但量不到耗时 → 「推理过程」，**不编一个 0 秒**', () => {
+    renderItem({ id: 'i1', type: 'reasoning', completed: true, content: ['先看表头'] });
+    expect(screen.getByRole('button', { name: /推理过程/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /思考中/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /0 秒/ })).toBeNull();
+  });
+
+  /*
+   * 内核给的是 `content: Vec<String>` 与 `summary: Vec<String>`，不是字符串。
+   * 只读 `text` 的话，推理区**流式时有字、完成后变空白** ——
+   * 因为 `item/completed` 用内核的完整条目整个替换掉了累加出来的 `text`。
+   */
+  it('完成后正文从内核的 content 数组里取，不是变成空白', () => {
+    renderItem({
+      id: 'i1',
+      type: 'reasoning',
+      completed: true,
+      durationSeconds: 3,
+      content: ['先看表头', '再决定怎么分组'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /已思考 3 秒/ }));
+    const body = document.querySelector('.ew-reasoning-body');
+    expect(body?.textContent).toContain('先看表头');
+    expect(body?.textContent).toContain('再决定怎么分组');
+  });
+
+  it('没有 content 时退回 summary 数组', () => {
+    renderItem({ id: 'i1', type: 'reasoning', completed: true, summary: ['盘一下表结构'] });
+    fireEvent.click(screen.getByRole('button', { name: /推理过程/ }));
+    expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('盘一下表结构');
+  });
 });
 
 describe('CommandExecution（04 §5.2 #5）', () => {

@@ -46,17 +46,32 @@ export interface MenuProps {
   readonly ariaLabel: string;
   /** 当前高亮项（受控；`@` 补全菜单要用键盘上下移动） */
   readonly activeId?: string | undefined;
+  /**
+   * 一项都没有时显示的话。**必须说清为什么空**，不能只留一个空盒子。
+   *
+   * 2026-09-06 用户报的「点"选择工作空间"后不能正常显示」就是这个：
+   * 没有任何选项时，`ew-menu` 渲染成一个**带内边距和阴影的空白圆角矩形**，
+   * 盖在 Footer 上 —— 看起来像界面坏了，而它其实只是"没有可选项"。
+   * 这与 01 §5.19「禁用项要给出原因」是同一条纪律：**空也要给出原因**。
+   */
+  readonly emptyHint?: string | undefined;
 }
 
 /**
  * 纯粹的菜单**内容**，不含浮层定位 —— 定位由外面的 `Popover` 或行内容器负责。
  * 拆开是因为 `@` 补全菜单锚在光标上、行操作菜单锚在按钮上，定位方式不同但内容一样。
  */
-export function Menu({ items, onSelect, ariaLabel, activeId }: MenuProps) {
+export function Menu({ items, onSelect, ariaLabel, activeId, emptyHint }: MenuProps) {
   assertDisabledHasReason(items);
   let lastGroup: string | undefined;
   return (
     <div className="ew-menu" role="menu" aria-label={ariaLabel}>
+      {/* 空菜单不是一个空盒子（见 `MenuProps.emptyHint`） */}
+      {items.length === 0 ? (
+        <p className="ew-menu-empty" role="note">
+          {emptyHint ?? '没有可选项。'}
+        </p>
+      ) : null}
       {items.map((item) => {
         const newGroup = lastGroup !== undefined && item.group !== lastGroup;
         lastGroup = item.group;
@@ -180,6 +195,8 @@ export interface InlineSelectProps {
   readonly onResetOverride?: (() => void) | undefined;
   /** 等宽字族显示（ModelSelect 用，01 §5.15） */
   readonly mono?: boolean | undefined;
+  /** 一项都没有时显示的话（见 `MenuProps.emptyHint`）。**不给就用通用兜底，绝不留空盒子** */
+  readonly emptyHint?: string | undefined;
 }
 
 /** 01 §5.14 InlineSelect（Footer 下拉）。ModelSelect 是它 `mono` + 能力徽标的特化。 */
@@ -228,6 +245,7 @@ export function InlineSelect(props: InlineSelectProps) {
       <Popover open={open} onClose={close}>
         <Menu
           ariaLabel={props.ariaLabel}
+          {...(props.emptyHint !== undefined ? { emptyHint: props.emptyHint } : {})}
           items={props.options.map((o) => ({
             id: o.id,
             label: o.label,
@@ -320,8 +338,15 @@ export function ModelSelect({
       ) : null}
 
       <Popover open={open} onClose={() => setOpen(false)}>
-        {/* 按 provider 分组（01 §5.15） */}
-        <div className="ew-menu" role="menu" aria-label="模型列表">
+        {/*
+         * 按 provider 分组（01 §5.15）。
+         *
+         * `ew-model-menu` 而不是光秃秃的 `ew-menu`：这个下拉一行要并排装
+         * 「等宽的 provider/model」与「三个能力徽标」，通用菜单的 180 最小宽装不下，
+         * 名字会从中间折行、徽标贴上去 —— 就是 2026-09-06 截图里那个样子。
+         * 宽度与滚动的数值在 `LAYOUT.modelMenuMinWidth / modelMenuMaxHeight`。
+         */}
+        <div className="ew-menu ew-model-menu" role="menu" aria-label="模型列表">
           {[...new Set(models.map((m) => m.provider))].map((provider) => (
             <div key={provider} className="ew-menu-group">
               <p className="ew-menu-group-title">{provider}</p>
@@ -334,12 +359,19 @@ export function ModelSelect({
                     role="menuitem"
                     className="ew-menu-item"
                     data-active={model.id === value ? 'true' : undefined}
+                    // 名字被 CSS 省略号截掉时，悬停仍能看到完整 id
+                    title={model.label}
                     onClick={() => {
                       setOpen(false);
                       onChange(model.id);
                     }}
                   >
-                    <span className="ew-menu-label ew-mono">{model.label}</span>
+                    {/*
+                     * 不复用 `ew-menu-label`：那个类是 `display: flex` 的两行容器
+                     * （标签 + 描述），而 `text-overflow: ellipsis` 对 flex 容器里的
+                     * 匿名文本不生效 —— 名字会被硬裁掉而不是给出省略号。
+                     */}
+                    <span className="ew-model-name ew-mono">{model.label}</span>
                     <span className="ew-model-caps">
                       {model.capabilities.map((cap) => (
                         <span

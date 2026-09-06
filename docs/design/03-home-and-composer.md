@@ -51,7 +51,7 @@ order         = 10
 default       = true
 
 # 展开到 turn/start 的部分
-model         = "evowork/deepseek-chat"        # 可被用户在 ModelSelect 里覆盖
+model         = "evowork/deepseek-v4-flash"   # 可被用户在 ModelSelect 里覆盖
 reasoning_effort = "medium"
 permissions   = "evowork-workspace"            # config.toml 的 [permissions.<id>]
 mode          = "craft"                        # 默认工作模式

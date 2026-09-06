@@ -248,6 +248,26 @@ export const LAYOUT = {
   /** §5.19 Menu 项高与最小宽 */
   menuItemHeight: 30,
   menuMinWidth: 180,
+  /**
+   * §5.15 ModelSelect 下拉的最小宽与最大高。
+   *
+   * 它比通用菜单的 180 宽，是因为一行要**并排**装下两样东西：等宽的
+   * `provider/model`（§5.15 规定最长 28 字符）与右侧三个能力徽标。
+   * 180 之下两者挤在一起，`deepseek/deepseek-v4-flash` 会从中间折成两行，
+   * 徽标又贴着折行的文字 —— 2026-09-06 截图里的"模型列表很乱"就是这个。
+   *
+   * 340 = 28 字等宽（约 190）+ 间距 12 + 三个徽标（约 110）+ 左右内边距 16 + 余量。
+   * 高度封顶让下拉在模型变多时**自己滚**，而不是把 Composer 顶出屏幕。
+   */
+  modelMenuMinWidth: 340,
+  modelMenuMaxHeight: 320,
+  /**
+   * §5.19 空菜单说明行的最大宽。
+   *
+   * 空菜单必须说清为什么空（见 `MenuProps.emptyHint`），而那句话往往比
+   * 菜单最小宽 180 长。不封顶的话，一句两行的说明会把浮层拉成一条横幅。
+   */
+  menuEmptyMaxWidth: 260,
   /** §5.14 InlineSelect */
   inlineSelectHeight: 24,
   /** §5.9 SegmentedControl 轨道 */

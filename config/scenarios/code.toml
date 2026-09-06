@@ -4,7 +4,7 @@ name    = "代码开发"
 icon    = "code"
 order   = 20
 
-model             = "evowork/deepseek-chat"
+model             = "evowork/deepseek-v4-flash"
 reasoning_effort  = "high"
 permissions       = "evowork-workspace"
 mode              = "craft"
