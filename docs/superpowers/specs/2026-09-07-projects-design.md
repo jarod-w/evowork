@@ -44,7 +44,9 @@
 卡片三个数字的口径**写死在这里**，因为"差不多"的计数会让用户不信任整页：
 
 - **任务数** = `cwd` 落在 root 下且 `archived = 0` 的 `thread_projection` 行数。`cwd` 为 null 的任务不属于任何空间
-- **产物数** = `path` 落在 root 下且 `file_state = 'PRESENT'` 的 `artifact` 行数（**按 `path` 去重取最高 `version`**，否则同一个文件改三版会显示 3 个产物）
+- **产物数** = `path` 落在 root 下的 `artifact` 行，**先按 `path` 折成"最高 `version` 那一行"，再看那一行是不是 `PRESENT`**，最后计数。
+  顺序不能反：先滤 `PRESENT` 再去重的话，一个「建了又删」的文件（v1 `PRESENT`、v2 `MISSING`）
+  会因为 v1 还在表里而被算成 1 个产物 —— 用户点开是空的，而这正是这条规则本来要防的事
 - **最近活动** = 该空间任务里最大的 `recency_at`；一个任务都没有时不显示这一段，而不是显示"从未"
 
 `membership.ts` 与 `tree.ts` 的越界判定共用 `@evowork/policy` 的归一化 ——
