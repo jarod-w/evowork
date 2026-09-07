@@ -410,9 +410,15 @@ ComposerShell   --r-xl · --bg-sunken · --border-subtle · --shadow-md · paddi
 
 高 28，内边距 0 12：`caption`/500/`--text-secondary` + 4 + chevron 12 + 弹性 + `IconButton`（＋）。截图 4「我的资料 ＋」「团队空间 ＋」。
 
+可选 `action` 插槽（右端一个 `IconButton`）：给「不是新建」的分区动作用，
+如项目详情页文件树的刷新。**它同时是一句声明** —— 有刷新按钮意味着这棵树不是实时的。
+
 ### 5.26 TreeItem
 
 高 28，`--r-sm`，缩进 = 12 + 层级×16：图标/emoji 16 + 8 + `label` 单行省略。悬停浮出 ⋯。支持拖拽（拖拽中显示 2px `--accent` 插入线）。
+
+可选 `muted`：噪声目录（`.git` / `node_modules` 之类）用它弱化为 `--text-tertiary`。
+**弱化不是隐藏** —— 隐藏会让用户以为刚生成的文件丢了。
 
 ### 5.27 QuotaFooter
 

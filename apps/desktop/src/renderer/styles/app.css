@@ -50,7 +50,8 @@ textarea {
 .ew-app > .ew-home,
 .ew-app > .ew-task-workspace,
 .ew-app > .ew-page,
-.ew-app > .ew-library {
+.ew-app > .ew-library,
+.ew-app > .ew-project-detail {
   flex: 1;
   min-width: 0;
 }
@@ -2090,6 +2091,10 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 噪声目录弱化但不隐藏（01 §5.26） */
+.ew-tree-item[data-muted='true'] .ew-tree-item-label {
+  color: var(--text-tertiary);
+}
 
 .ew-text-tabs {
   display: flex;
@@ -2539,4 +2544,70 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+}
+
+/* ─────────────────────────── 项目详情页（02 §4.3，三栏）─────────────────────────── */
+
+.ew-project-detail {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+.ew-project-main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-24);
+  overflow-y: auto;
+}
+.ew-project-head {
+  margin-bottom: var(--space-16);
+}
+.ew-project-name {
+  margin: 0;
+  font-size: var(--font-title-1-size);
+  font-weight: var(--font-title-1-weight);
+}
+.ew-project-root {
+  margin: var(--space-4) 0 var(--space-12);
+  color: var(--text-secondary);
+}
+.ew-project-actions {
+  display: flex;
+  gap: var(--space-8);
+}
+.ew-project-section {
+  margin-top: var(--space-24);
+}
+.ew-project-section-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-title-2-size);
+  font-weight: var(--font-title-2-weight);
+}
+.ew-project-memo {
+  width: 100%;
+  min-height: var(--layout-memo-min-height);
+  padding: var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  resize: vertical;
+}
+.ew-project-memo-hint {
+  margin: 0 0 var(--space-8);
+  color: var(--text-secondary);
+}
+.ew-project-memo-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+}
+.ew-project-memo-saved {
+  color: var(--success);
+}
+.ew-panel-empty {
+  margin: var(--space-8) var(--space-12);
+  color: var(--text-tertiary);
 }

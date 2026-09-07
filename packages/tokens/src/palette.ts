@@ -298,6 +298,8 @@ export const LAYOUT = {
   visualizerFrameHeight: 600,
   /** §5.31 Toast 宽 320 */
   toastWidth: 320,
+  /** 空间记忆编辑框的最小高（02 §4.3）：约 8 行 */
+  memoMinHeight: 180,
 } as const;
 
 /** 品牌层（K5：换品牌只改这四项）。 */

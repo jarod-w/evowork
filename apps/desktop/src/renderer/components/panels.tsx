@@ -66,12 +66,15 @@ export function TreeSectionHeader({
   onToggle,
   onAdd,
   addLabel,
+  action,
 }: {
   readonly label: string;
   readonly collapsed?: boolean | undefined;
   readonly onToggle?: (() => void) | undefined;
   readonly onAdd?: (() => void) | undefined;
   readonly addLabel?: string | undefined;
+  /** 右端的非「新建」动作（01 §5.25）。与 `onAdd` 可以并存 */
+  readonly action?: ReactNode | undefined;
 }) {
   return (
     <div className="ew-tree-section-header">
@@ -85,6 +88,7 @@ export function TreeSectionHeader({
         <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
       </button>
       {onAdd ? <IconButton label={addLabel ?? `新建${label}`} icon="＋" onClick={onAdd} /> : null}
+      {action}
     </div>
   );
 }
@@ -95,6 +99,7 @@ export function TreeItem({
   icon,
   depth = 0,
   selected,
+  muted,
   onClick,
   onMore,
 }: {
@@ -102,6 +107,8 @@ export function TreeItem({
   readonly icon?: ReactNode | undefined;
   readonly depth?: number | undefined;
   readonly selected?: boolean | undefined;
+  /** 噪声目录（`.git` / `node_modules` 之类）弱化为 `--text-tertiary`，**弱化不是隐藏**（01 §5.26） */
+  readonly muted?: boolean | undefined;
   readonly onClick?: (() => void) | undefined;
   readonly onMore?: (() => void) | undefined;
 }) {
@@ -109,6 +116,7 @@ export function TreeItem({
     <div
       className="ew-tree-item"
       data-selected={selected ? 'true' : undefined}
+      data-muted={muted ? 'true' : undefined}
       // 缩进用 CSS 变量而不是内联 px：token-only 规则同样管这里（01 §9）
       style={{ ['--ew-tree-depth' as string]: String(depth) }}
     >
