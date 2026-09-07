@@ -62,4 +62,21 @@ describe('暴露面', () => {
     await (api.send as (p: unknown) => Promise<unknown>)({ text: '你好' });
     expect(ipc.invoke).toHaveBeenCalledWith('evowork:send', { text: '你好' });
   });
+
+  it('十个项目动作都暴露给渲染层 —— 少一个的表现是"点了没反应"，一行报错都看不到', () => {
+    for (const action of [
+      'listProjects',
+      'createProject',
+      'importProject',
+      'renameProject',
+      'removeProject',
+      'openProjectFolder',
+      'readProjectDetail',
+      'listProjectDir',
+      'readAgentsMemo',
+      'writeAgentsMemo',
+    ]) {
+      expect(RENDERER_ACTIONS).toContain(action);
+    }
+  });
 });

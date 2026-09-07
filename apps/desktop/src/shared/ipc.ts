@@ -397,3 +397,83 @@ export interface ApplyModelAccessInput {
   readonly moonshotApiKey?: string | undefined;
   readonly zhipuApiKey?: string | undefined;
 }
+
+/* ─────────────────────────── 项目（02 §4.3）─────────────────────────── */
+
+/**
+ * 列表页的一张卡。
+ *
+ * `recencyLabel` 可缺席：这个空间还没有任务时**不显示这一段**，
+ * 而不是显示"从未" —— 后者读起来像出了什么问题。
+ */
+export interface ProjectCardView {
+  readonly id: string;
+  readonly name: string;
+  /** 中段省略后的显示串。渲染层不持有完整绝对路径 */
+  readonly rootDisplay: string;
+  /** 路径失效。整卡转 warning，「在此空间新建任务」禁用并给原因 */
+  readonly rootMissing: boolean;
+  readonly taskCount: number;
+  readonly artifactCount: number;
+  readonly recencyLabel?: string | undefined;
+}
+
+export interface ProjectsDataView {
+  readonly projects: readonly ProjectCardView[];
+}
+
+/** 详情页主区「最近的文件动作」的一行（D-P6：产物与变更合并） */
+export interface ProjectFileActionView {
+  readonly id: string;
+  readonly name: string;
+  /** 生成 / 修改。真源是 artifact.operation_kind */
+  readonly action: string;
+  readonly fromTaskTitle?: string | undefined;
+  readonly threadId?: string | undefined;
+  readonly at: number;
+}
+
+export interface ProjectAutomationView {
+  readonly id: string;
+  readonly name: string;
+  readonly schedule: string;
+  readonly status: string;
+  readonly nextFireAt?: number | undefined;
+}
+
+export interface ProjectDetailView {
+  readonly id: string;
+  readonly name: string;
+  readonly rootDisplay: string;
+  readonly rootMissing: boolean;
+  readonly tasks: readonly TaskRowView[];
+  readonly fileActions: readonly ProjectFileActionView[];
+  readonly automations: readonly ProjectAutomationView[];
+}
+
+/** 文件树的一行。`path` 是**主进程给的**，渲染层原样回传，不自己拼 */
+export interface DirEntryView {
+  readonly name: string;
+  readonly path: string;
+  readonly isDirectory: boolean;
+  /** 噪声目录：默认折叠 + 样式弱化，**不是隐藏** */
+  readonly noisy: boolean;
+}
+
+/**
+ * 增删改的结果。
+ *
+ * `refused` 是一条**要显示给用户的话**（如"这个目录被安全策略拦下了"），
+ * 不是错误码 —— 抛错在界面上的表现是按钮转一下然后什么都没发生。
+ */
+export interface ProjectMutationResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+  readonly projects: readonly ProjectCardView[];
+}
+
+/** 空间记忆。`exists` 为 false 时页面显示占位说明并允许创建 */
+export interface AgentsMemoView {
+  readonly exists: boolean;
+  readonly content: string;
+}

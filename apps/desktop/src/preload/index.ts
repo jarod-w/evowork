@@ -87,6 +87,22 @@ export const RENDERER_ACTIONS = Object.freeze([
   'getRuntimeStatus',
   /** 装办公扩展。进度走 `runtimeProgress` 频道，这里只返回最终结果 */
   'installOfficeRuntime',
+  /*
+   * 「项目」页（02 §4.3）。与 `getLibrary` 同一条理由：读的是本机 sqlite 与磁盘，
+   * 只在用户真的点进那一页时才需要，**不并进 `getStartup`**。
+   */
+  'listProjects',
+  'createProject',
+  'importProject',
+  'renameProject',
+  'removeProject',
+  /** 在访达/资源管理器里打开根目录（清单 §4.5 的四个操作之一） */
+  'openProjectFolder',
+  'readProjectDetail',
+  /** 文件树懒加载：展开哪层读哪层（D-P5） */
+  'listProjectDir',
+  'readAgentsMemo',
+  'writeAgentsMemo',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {

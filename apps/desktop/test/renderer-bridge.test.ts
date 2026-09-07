@@ -12,13 +12,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Adapter, UiEvent } from '@evowork/kernel-adapter';
-import type { ProjectionRow, Store } from '@evowork/store';
+import { openStore, type ProjectionRow, type Store } from '@evowork/store';
 
 import {
   createEventTranslator,
   createRendererActions,
   timeLabel,
   toTaskRow,
+  type ProjectPorts,
 } from '../src/main/renderer-bridge.js';
 import {
   ensureKernelConfig,
@@ -63,6 +64,49 @@ function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
 
 function fakeStore(get: (id: string) => ProjectionRow | undefined): Store {
   return { threads: { get } } as unknown as Store;
+}
+
+/* ─────────────────── 项目动作测试的公共辅助（Task 9 也要用它们）─────────────────── */
+
+/** 一个内存 sqlite，`createRendererActions` 内部会在它上面开 `createProjectRepo`。 */
+function memoryStore(): Store {
+  return openStore({ path: ':memory:' });
+}
+
+/**
+ * 往 `artifact` 表插一行，只为了证明「移除空间」不碰这张表。
+ * 字段照 `services/store/test/projects-repo.test.ts` 里那条 INSERT 的写法。
+ */
+function seedArtifact(store: Store, path: string): void {
+  store.db
+    .prepare(
+      `INSERT INTO artifact (id, path, artifact_type, output_format, title, operation_kind,
+                             version, source_signal, file_state, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(`af-${path}`, path, 'document', 'docx', 'r', 'create', 1, 'SKILL_REPORT', 'PRESENT', 1);
+}
+
+/** 只假造项目动作用得到的那几个 adapter 方法，其余留空——测的不是内核桥。 */
+function fakeAdapter(overrides: Partial<Adapter> = {}): Adapter {
+  return {
+    listTasks: vi.fn(() => []),
+    mirrorProjectCreate: vi.fn(async () => undefined),
+    mirrorProjectUpdate: vi.fn(async () => undefined),
+    mirrorProjectDelete: vi.fn(async () => undefined),
+    ...overrides,
+  } as unknown as Adapter;
+}
+
+/** 建 actions 的公共入口：默认给一个干净内存库 + 假 adapter，按需覆盖。 */
+function makeActions(overrides: Partial<Parameters<typeof createRendererActions>[0]> = {}) {
+  return createRendererActions({
+    appName: 'EvoWork',
+    appVersion: '0.0.0',
+    store: memoryStore(),
+    adapter: fakeAdapter(),
+    ...overrides,
+  });
 }
 
 describe('事件翻译：适配层的任务视角 → 渲染层的组件视角', () => {
@@ -577,5 +621,260 @@ describe('网关访问令牌（内核从进程环境取它）', () => {
     ensurePaths(paths);
     writeFileSync(paths.gatewayToken, '\n', 'utf8');
     expect(readGatewayToken(paths, { EVOWORK_GATEWAY_TOKEN: '   ' })).toBeUndefined();
+  });
+});
+
+describe('项目动作（spec §2.6）', () => {
+  function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
+    return {
+      home: '/Users/li',
+      rootExists: () => true,
+      // 默认恒等：软链的负面用例各自覆盖它
+      realpath: async (p) => p,
+      pickDirectory: async () => '/w/new',
+      readDir: async () => [{ name: 'src', isDirectory: true }],
+      openFolder: async () => {},
+      readTextFile: async () => undefined,
+      writeTextFile: async () => {},
+      ...overrides,
+    };
+  }
+
+  it('新建空间会落库并回一份新列表 —— 渲染层不必再拉一次', async () => {
+    const actions = makeActions({ projectPorts: ports() });
+    const result = await actions.createProject({ name: '季度汇报', path: '/w/new' });
+    expect(result.ok).toBe(true);
+    expect(result.projects.map((p) => p.name)).toContain('季度汇报');
+  });
+
+  it('选中硬拦截目录被拒，且给一句能显示的话 —— 不抛错（抛错=点了没反应）', async () => {
+    const actions = makeActions({ projectPorts: ports() });
+    const result = await actions.createProject({ name: '密钥', path: '/Users/li/.ssh' });
+    expect(result.ok).toBe(false);
+    expect(result.refused).toBeTruthy();
+    expect(result.projects).toHaveLength(0);
+  });
+
+  it('镜像失败不影响本机建成 —— 用户什么都不该看见', async () => {
+    const actions = makeActions({
+      projectPorts: ports(),
+      adapter: fakeAdapter({ mirrorProjectCreate: async () => undefined }),
+    });
+    const result = await actions.createProject({ name: 'A', path: '/w/a' });
+    expect(result.ok).toBe(true);
+  });
+
+  it('移除只解绑：不碰磁盘，也不碰 artifact 索引', async () => {
+    /*
+     * 断言的是**行为**：移除期间没有任何一个写盘端口被调用，且 artifact 表原封不动。
+     * 光断言 `projects` 空了证明不了"没删文件" —— 而写反了的代价正是用户丢文件。
+     */
+    const writeTextFile = vi.fn(async () => {});
+    const store = memoryStore();
+    seedArtifact(store, '/w/a/r.docx');
+
+    const actions = makeActions({ store, projectPorts: ports({ writeTextFile }) });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const after = await actions.removeProject({ id });
+
+    expect(after.projects).toHaveLength(0);
+    expect(writeTextFile).not.toHaveBeenCalled();
+    const left = store.db.prepare('SELECT COUNT(*) AS n FROM artifact').get() as { n: number };
+    expect(left.n).toBe(1);
+  });
+
+  it('路径失效时卡片标 rootMissing，且路径原样保留', async () => {
+    const actions = makeActions({ projectPorts: ports({ rootExists: () => false }) });
+    await actions.createProject({ name: 'A', path: '/w/gone' });
+    const list = await actions.listProjects();
+    expect(list.projects[0]?.rootMissing).toBe(true);
+    expect(list.projects[0]?.rootDisplay).toContain('gone');
+  });
+
+  it('文件树展开越界路径返回空数组 —— 渲染层传 <root>/../.ssh 时主进程拒读', async () => {
+    let readPath: string | undefined;
+    const actions = makeActions({
+      projectPorts: ports({
+        readDir: async (p) => {
+          readPath = p;
+          return [];
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.listProjectDir({ id, path: '/w/a/../.ssh' });
+    expect(out).toEqual([]);
+    // 关键：**根本没去读盘**，不是读了再过滤
+    expect(readPath).toBeUndefined();
+  });
+
+  it('root 里的软链指向外面时拒读 —— 字符串判定看不出来，realpath 之后必须复查', async () => {
+    let readPath: string | undefined;
+    const actions = makeActions({
+      projectPorts: ports({
+        // `<root>/escape` 其实指向 /etc
+        realpath: async (p) => (p === '/w/a/escape' ? '/etc' : p),
+        readDir: async (p) => {
+          readPath = p;
+          return [];
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    expect(await actions.listProjectDir({ id, path: '/w/a/escape' })).toEqual([]);
+    // 又一次：**根本没读盘**
+    expect(readPath).toBeUndefined();
+  });
+
+  it('AGENTS.md 只写 <root>/AGENTS.md，渲染层传别的路径也没用', async () => {
+    let written: { path: string; content: string } | undefined;
+    const actions = makeActions({
+      projectPorts: ports({
+        writeTextFile: async (path, content) => {
+          written = { path, content };
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    await actions.writeAgentsMemo({ id, content: '记住：报告用中文' });
+    expect(written?.path).toBe('/w/a/AGENTS.md');
+  });
+
+  it('文件不存在时 readAgentsMemo 报 exists:false 而不是空串 —— 页面据此说"还没有"', async () => {
+    const actions = makeActions({ projectPorts: ports({ readTextFile: async () => undefined }) });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const memo = await actions.readAgentsMemo({ id });
+    expect(memo.exists).toBe(false);
+    expect(memo.content).toBe('');
+  });
+
+  /*
+   * ── 补充：安全边界的另一半（realpath 之后复查）不能只在"字符串就露馅"的用例上成立 ──
+   *
+   * 下面这组把 `listProjectDir` / `readAgentsMemo` / `writeAgentsMemo` 三个真正碰盘的
+   * 动作各测两遍：realpath 解析不了（返回 undefined）与 realpath 直接抛错。
+   * 两种都必须拒绝，且**读/写端口一次都不能被调用** —— 断言的是"根本没读/没写"，
+   * 不是"读了/写了但结果被扔掉"，因为后一种情况下磁盘副作用已经发生了。
+   */
+
+  it('listProjectDir：realpath 解析不了（返回 undefined）时拒读，不是读了再过滤', async () => {
+    let readCalled = false;
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async () => undefined,
+        readDir: async () => {
+          readCalled = true;
+          return [];
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+    expect(await actions.listProjectDir({ id, path: '/w/a/x' })).toEqual([]);
+    expect(readCalled).toBe(false);
+  });
+
+  it('listProjectDir：realpath 直接抛错时同样拒读 —— 失败一律收紧，不能让异常从安全判定里漏出去', async () => {
+    let readCalled = false;
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async () => {
+          throw new Error('EACCES');
+        },
+        readDir: async () => {
+          readCalled = true;
+          return [];
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+    expect(await actions.listProjectDir({ id, path: '/w/a/x' })).toEqual([]);
+    expect(readCalled).toBe(false);
+  });
+
+  it('readAgentsMemo：root 的 realpath 落在外面时拒读，从不调用 readTextFile', async () => {
+    let readCalled = false;
+    const actions = makeActions({
+      projectPorts: ports({
+        // root 本身被 realpath 判定成落在别处（比如 root 被换成了一个软链）
+        realpath: async () => '/etc',
+        readTextFile: async () => {
+          readCalled = true;
+          return undefined;
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+    const memo = await actions.readAgentsMemo({ id });
+    expect(memo).toEqual({ exists: false, content: '' });
+    expect(readCalled).toBe(false);
+  });
+
+  it('readAgentsMemo：realpath 抛错时拒读，从不调用 readTextFile', async () => {
+    let readCalled = false;
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async () => {
+          throw new Error('ENOENT');
+        },
+        readTextFile: async () => {
+          readCalled = true;
+          return undefined;
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+    const memo = await actions.readAgentsMemo({ id });
+    expect(memo).toEqual({ exists: false, content: '' });
+    expect(readCalled).toBe(false);
+  });
+
+  it('writeAgentsMemo：root 的 realpath 落在外面时拒写，从不调用 writeTextFile', async () => {
+    let writeCalled = false;
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async () => '/etc',
+        writeTextFile: async () => {
+          writeCalled = true;
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+    const out = await actions.writeAgentsMemo({ id, content: 'x' });
+    expect(out.ok).toBe(false);
+    expect(writeCalled).toBe(false);
+  });
+
+  it('writeAgentsMemo：realpath 抛错时拒写，从不调用 writeTextFile', async () => {
+    let writeCalled = false;
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async () => {
+          throw new Error('EPERM');
+        },
+        writeTextFile: async () => {
+          writeCalled = true;
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+    const out = await actions.writeAgentsMemo({ id, content: 'x' });
+    expect(out.ok).toBe(false);
+    expect(writeCalled).toBe(false);
   });
 });

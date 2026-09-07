@@ -16,6 +16,7 @@
     "@evowork/kernel-adapter": "workspace:*",
     "@evowork/scheduler": "workspace:*",
     "@evowork/policy": "workspace:*",
+    "@evowork/projects": "workspace:*",
     "@evowork/ingest": "workspace:*",
     "@evowork/runtime-installer": "workspace:*",
     "@evowork/artifacts": "workspace:*",

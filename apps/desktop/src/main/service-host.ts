@@ -24,6 +24,7 @@
  */
 import type { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -279,6 +280,8 @@ export interface ServiceHostOptions {
    * 而干净机器上内核一个 project 都没有。
    */
   readonly pickDirectory?: () => Promise<string | undefined>;
+  /** 在访达 / 资源管理器里打开一个目录。由 M9 入口注入 `shell.openPath` */
+  readonly openPath?: ((path: string) => Promise<void>) | undefined;
   /**
    * 本机网关 listen 最多等多久。测试里假 spawn 不会真的听端口，传 0 跳过。
    * 不传 = 8 秒（见 `waitUntilGatewayReady`）。
@@ -576,6 +579,45 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 办公扩展的探测与安装（08 §4）。本机服务里已经有一份带缓存的探针，
     // 安装成功后由它自己 invalidate —— 这里只是把入口交给渲染层
     officeRuntime: services.officeRuntime,
+    /*
+     * 「项目」页的 I/O。真正读盘的只有这几行 —— 判定全在 `@evowork/projects` 里，
+     * 所以"越界了怎么办"是可单测的，而不是埋在这段 fs 调用中间。
+     */
+    projectPorts: {
+      home: homedir(),
+      rootExists: (path) => existsSync(path),
+      realpath: async (path) => {
+        try {
+          return await realpath(path);
+        } catch {
+          // 解析不了（不存在、断链、没权限）就是不给读 —— 失败一律收紧，不放行
+          return undefined;
+        }
+      },
+      pickDirectory: async () => options.pickDirectory?.() ?? undefined,
+      readDir: async (path) => {
+        try {
+          const entries = await readdir(path, { withFileTypes: true });
+          return entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
+        } catch {
+          // 读不了（没权限、刚被删）就是空的。抛错在树上的表现是节点卡在转圈
+          return [];
+        }
+      },
+      openFolder: async (path) => {
+        await options.openPath?.(path);
+      },
+      readTextFile: async (path) => {
+        try {
+          return await readFile(path, 'utf8');
+        } catch {
+          return undefined;
+        }
+      },
+      writeTextFile: async (path, content) => {
+        await writeFile(path, content, 'utf8');
+      },
+    },
     pageData: {
       listArtifacts: () => services.artifacts.listAllPresent(),
       listAutomations: () =>

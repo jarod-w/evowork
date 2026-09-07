@@ -31,28 +31,45 @@ import {
  * 那个包的 `node:crypto` 依赖在这一侧完全没问题。渲染层拿不到它
  * （浏览器环境），所以由这里经 IPC 送过去 —— 一个真源，两条路径。
  */
-import { RETENTION_DAYS, RETENTION_WARNING_DAYS } from '@evowork/policy';
+import { classifyPath, RETENTION_DAYS, RETENTION_WARNING_DAYS } from '@evowork/policy';
+import {
+  buildProjectCard,
+  ellipsizeMiddle,
+  isUnderRoot,
+  resolveChildPath,
+  sortEntries,
+  type ArtifactLite,
+  type ThreadLite,
+} from '@evowork/projects';
 import type { Logger } from '@evowork/logging';
 import type { ThreadItem } from '@evowork/protocol';
 import {
+  createProjectRepo,
   readMeta,
   writeMeta,
   type ItemDigestEntry,
   type ProjectionRow,
+  type ProjectLocalRow,
   type Store,
 } from '@evowork/store';
 
 import type {
+  AgentsMemoView,
   ApprovalDecisionInput,
   ApprovalView,
   ApplyModelAccessInput,
   AuditDataView,
   AutomationsDataView,
   CaseView,
+  DirEntryView,
   LibraryDataView,
   ModelCatalogResult,
   OpenTaskInput,
   OpenTaskResult,
+  ProjectCardView,
+  ProjectDetailView,
+  ProjectMutationResult,
+  ProjectsDataView,
   RenderItemView,
   RendererEvent,
   RowActionInput,
@@ -139,6 +156,40 @@ export function readLocalWorkspaces(store: Store): readonly string[] {
   }
 }
 
+/**
+ * 「项目」页要的 I/O 端口。
+ *
+ * **全部注入**，与 `pageData` / `officeRuntime` 同一条理由：这个文件的其余部分是纯翻译，
+ * 而这些是真的读盘、开访达、弹目录选择框。注入之后"路径失效时界面怎么表现"
+ * 能在测试里跑，不必真去建一个目录再删掉。
+ *
+ * **这里没有删除文件的口子**，这是刻意的：02 §4.3 的「从列表移除」是解绑。
+ * 想删文件就得先改这个类型，而改类型会被 review 看见（与 `audit.ts` 同一条手法）。
+ */
+export interface ProjectPorts {
+  readonly home: string;
+  readonly rootExists: (path: string) => boolean;
+  /**
+   * 解析符号链接（`fs.realpath`）。读不了就返回 undefined。
+   *
+   * **这个端口是安全边界的一半**：`isUnderRoot` / `resolveChildPath` 是纯字符串判定，
+   * 它们看不见 `<root>/link` 其实指向 `/etc`。所以每一次真的要碰盘之前，
+   * 都要先 realpath、**再用同一个判定复查一遍**。少了这一步，
+   * 工作空间里放一个软链就能把文件树变成全盘浏览器。
+   */
+  readonly realpath: (path: string) => Promise<string | undefined>;
+  /** 弹目录选择框。返回 undefined = 用户取消 */
+  readonly pickDirectory: () => Promise<string | undefined>;
+  readonly readDir: (
+    path: string,
+  ) => Promise<readonly { readonly name: string; readonly isDirectory: boolean }[]>;
+  /** 在访达 / 资源管理器里打开 */
+  readonly openFolder: (path: string) => Promise<void>;
+  /** 读不到（不存在、没权限）返回 undefined —— 不要把它和空文件混为一谈 */
+  readonly readTextFile: (path: string) => Promise<string | undefined>;
+  readonly writeTextFile: (path: string, content: string) => Promise<void>;
+}
+
 export interface RendererBridgeOptions {
   readonly adapter: Adapter;
   readonly store: Store;
@@ -156,6 +207,11 @@ export interface RendererBridgeOptions {
           readonly path: string;
           readonly title: string;
           readonly artifactType: string;
+          /** 生成 / 修改。「最近的文件动作」那一列问的是这个 */
+          readonly operationKind: string;
+          readonly version: number;
+          readonly fileState: 'PRESENT' | 'MISSING' | 'MOVED';
+          readonly threadId?: string | undefined;
           readonly createdAt: number;
         }[];
         readonly listAutomations: () => readonly Record<string, unknown>[];
@@ -207,6 +263,8 @@ export interface RendererBridgeOptions {
         readonly install: () => Promise<RuntimeInstallResultView>;
       }
     | undefined;
+  /** 「项目」页的 I/O 端口。没给时那十个动作如实返回空/失败，不抛错 */
+  readonly projectPorts?: ProjectPorts | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -352,6 +410,143 @@ export function createEventTranslator(store: Store, now: () => number) {
 export function createRendererActions(options: RendererBridgeOptions) {
   const { adapter, store } = options;
   const now = options.now ?? (() => Date.now());
+
+  const projects = createProjectRepo(store.db);
+
+  /** 没注入端口时的诚实回答：功能不可用，而不是一个点了没反应的按钮 */
+  const NO_PORTS = '这个构建没有接文件系统，项目功能不可用。';
+
+  const allThreadsLite = (): readonly ThreadLite[] =>
+    adapter
+      .listTasks({})
+      .map((t) => store.threads.get(t.threadId))
+      .filter((row): row is ProjectionRow => row !== undefined)
+      .map((row) => ({ cwd: row.cwd, archived: row.archived === 1, recencyAt: row.recency_at }));
+
+  const allArtifactsLite = (): readonly ArtifactLite[] =>
+    (options.pageData?.listArtifacts() ?? []).map((a) => ({
+      path: a.path,
+      version: a.version,
+      fileState: a.fileState,
+    }));
+
+  const toCard = (row: ProjectLocalRow, ports: ProjectPorts): ProjectCardView => {
+    const card = buildProjectCard({
+      project: {
+        id: row.id,
+        name: row.name,
+        roots: row.roots,
+        ...(row.kernelId !== undefined ? { kernelId: row.kernelId } : {}),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      },
+      threads: allThreadsLite(),
+      artifacts: allArtifactsLite(),
+      rootExists: ports.rootExists,
+      home: ports.home,
+    });
+    return {
+      id: card.id,
+      name: card.name,
+      rootDisplay: card.rootDisplay,
+      rootMissing: card.rootState === 'missing',
+      taskCount: card.taskCount,
+      artifactCount: card.artifactCount,
+      ...(card.recencyAt !== null ? { recencyLabel: timeLabel(card.recencyAt, now()) } : {}),
+    };
+  };
+
+  const cards = (ports: ProjectPorts): readonly ProjectCardView[] =>
+    projects.list().map((row) => toCard(row, ports));
+
+  /** 空间的根目录。没有 root 的空间返回 undefined —— 它做不了任何需要 cwd 的事 */
+  const rootOf = (id: string): string | undefined => projects.get(id)?.roots[0];
+
+  /**
+   * 包一层 `ports.realpath`：解析失败（无论是返回 undefined 还是直接抛错）一律当成
+   * "解析不了"，绝不让异常从安全判定里漏出去。
+   *
+   * 端口自己的约定是"读不了就返回 undefined"（见 `ProjectPorts.realpath` 的文档），
+   * 真实实现（`service-host.ts`）也确实在内部 catch 了 —— 但这里是安全边界，
+   * 多一层防御不依赖调用方老实遵守约定：一个第三方/测试用的 ports 实现哪怕
+   * 让 `realpath` 抛错，也不能变成"没走到复查就已经读盘了"。
+   */
+  const safeRealpath = async (ports: ProjectPorts, path: string): Promise<string | undefined> => {
+    try {
+      return await ports.realpath(path);
+    } catch {
+      return undefined;
+    }
+  };
+
+  /**
+   * `<root>/AGENTS.md` 的真实路径，越界则 undefined。
+   *
+   * 路径**由这里拼**（不接受渲染层传任意路径），再经 realpath 复查 ——
+   * 把 root 本身做成软链、或在 root 里放一个叫 AGENTS.md 的软链指向
+   * `~/.ssh/authorized_keys`，字面判定都看不出来。
+   */
+  const agentsMemoPath = async (ports: ProjectPorts, root: string): Promise<string | undefined> => {
+    const realRoot = await safeRealpath(ports, root);
+    if (realRoot === undefined || !isUnderRoot(root, realRoot, ports.home)) return undefined;
+    return `${realRoot.replace(/\/$/, '')}/AGENTS.md`;
+  };
+
+  /**
+   * 新建空间。
+   *
+   * **写成独立的局部函数而不是对象上的方法**：`importProject` 与 `pickWorkspace` 都要复用它，
+   * 而 `bootstrap.ts` 注册 handler 时是 `(host.actions[action] as ...)(payload)` ——
+   * 一次脱离接收者的调用，`this` 在 ESM 严格模式下是 undefined。
+   *
+   * 顺序刻意：**先过路径闸门，再落库，最后才镜像**。
+   * 闸门放在最后的话，一个被策略拒绝的目录已经写进本机表了。
+   */
+  const createProjectImpl = async (input: {
+    readonly name: string;
+    readonly path: string;
+  }): Promise<ProjectMutationResult> => {
+    const ports = options.projectPorts;
+    if (!ports) return { ok: false, refused: NO_PORTS, projects: [] };
+
+    const verdict = classifyPath(input.path, {
+      workspaceRoot: input.path,
+      home: ports.home,
+    });
+    if (verdict.verdict === 'hard-block') {
+      /*
+       * 10 §5 那条"把工作空间设在 ~/.ssh 就能绕过"正是这个入口。
+       * 不在这里拦，后面所有路径策略都白做。
+       */
+      return {
+        ok: false,
+        refused: `这个目录被安全策略拦下了（${verdict.reason ?? '受保护目录'}），换一个吧。`,
+        projects: cards(ports),
+      };
+    }
+
+    const at = now();
+    const id = `p-${at.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const name = input.name.trim() || input.path.slice(input.path.lastIndexOf('/') + 1);
+    projects.insert({ id, name, roots: [input.path], createdAt: at, updatedAt: at });
+
+    // 镜像：失败静默（spec §2.3）。用户看到的是空间建好了
+    try {
+      const kernelId = await adapter.mirrorProjectCreate({
+        name,
+        rootPath: input.path,
+        idempotencyKey: id,
+      });
+      if (kernelId !== undefined) projects.setKernelId(id, kernelId);
+    } catch (err: unknown) {
+      options.logger?.warn('desktop.project.mirror_failed', {
+        method: 'project/create',
+        errorClass: err instanceof Error ? err.name : 'UnknownError',
+      });
+    }
+
+    return { ok: true, projects: cards(ports) };
+  };
 
   return {
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
@@ -622,6 +817,211 @@ export function createRendererActions(options: RendererBridgeOptions) {
         };
       }
       return options.officeRuntime.install();
+    },
+
+    /* ── 项目（02 §4.3）───────────────────────────────────────────── */
+
+    listProjects(): Promise<ProjectsDataView> {
+      const ports = options.projectPorts;
+      if (!ports) return Promise.resolve({ projects: [] });
+      return Promise.resolve({ projects: cards(ports) });
+    },
+
+    createProject: createProjectImpl,
+
+    /** 导入 = 弹目录选择框 + 走同一条新建路径（名字取目录名） */
+    async importProject(): Promise<ProjectMutationResult> {
+      const ports = options.projectPorts;
+      if (!ports) return { ok: false, refused: NO_PORTS, projects: [] };
+      const picked = await ports.pickDirectory();
+      if (picked === undefined) return { ok: true, projects: cards(ports) };
+      /*
+       * 调 `createProjectImpl` 而**不是** `this.createProject`：
+       * `bootstrap.ts` 注册 handler 时写的是 `(host.actions[action] as ...)(payload)` ——
+       * 那是一次**脱离接收者**的调用，`this` 在 ESM 严格模式下是 undefined。
+       * 写成 `this.` 的话，用户点「导入现有文件夹」会得到
+       * "Cannot read properties of undefined"，而直接调 `actions.importProject()`
+       * 的单测反而是过的（那时 `this` 有值）—— 测试绿、真窗口炸。
+       */
+      return createProjectImpl({
+        name: picked.slice(picked.lastIndexOf('/') + 1) || picked,
+        path: picked,
+      });
+    },
+
+    async renameProject(input: {
+      readonly id: string;
+      readonly name: string;
+    }): Promise<ProjectMutationResult> {
+      const ports = options.projectPorts;
+      if (!ports) return { ok: false, refused: NO_PORTS, projects: [] };
+      const name = input.name.trim();
+      if (name === '') {
+        return { ok: false, refused: '名字不能为空。', projects: cards(ports) };
+      }
+      projects.rename(input.id, name, now());
+
+      const kernelId = projects.get(input.id)?.kernelId;
+      if (kernelId !== undefined) {
+        try {
+          await adapter.mirrorProjectUpdate({ kernelId, name });
+        } catch (err: unknown) {
+          options.logger?.warn('desktop.project.mirror_failed', {
+            method: 'project/update',
+            errorClass: err instanceof Error ? err.name : 'UnknownError',
+          });
+        }
+      }
+      return { ok: true, projects: cards(ports) };
+    },
+
+    /**
+     * 从列表移除。**只解绑**：不碰磁盘文件，也不碰 artifact 索引。
+     * 02 §4.3 要求二次确认文案说清这一点 —— 文案在渲染层，这里保证行为对得上。
+     */
+    async removeProject(input: { readonly id: string }): Promise<ProjectMutationResult> {
+      const ports = options.projectPorts;
+      if (!ports) return { ok: false, refused: NO_PORTS, projects: [] };
+      const kernelId = projects.get(input.id)?.kernelId;
+      projects.remove(input.id);
+      if (kernelId !== undefined) {
+        try {
+          await adapter.mirrorProjectDelete(kernelId);
+        } catch (err: unknown) {
+          options.logger?.warn('desktop.project.mirror_failed', {
+            method: 'project/delete',
+            errorClass: err instanceof Error ? err.name : 'UnknownError',
+          });
+        }
+      }
+      return { ok: true, projects: cards(ports) };
+    },
+
+    async openProjectFolder(input: { readonly id: string }): Promise<void> {
+      const ports = options.projectPorts;
+      const root = rootOf(input.id);
+      if (!ports || root === undefined) return;
+      await ports.openFolder(root);
+    },
+
+    readProjectDetail(input: { readonly id: string }): Promise<ProjectDetailView | null> {
+      const ports = options.projectPorts;
+      const row = projects.get(input.id);
+      if (!ports || !row) return Promise.resolve(null);
+      const root = row.roots[0] ?? '';
+      const at = now();
+
+      const tasks = adapter
+        .listTasks({})
+        .map((t) => store.threads.get(t.threadId))
+        .filter((r): r is ProjectionRow => r !== undefined)
+        .filter((r) => r.archived === 0 && r.cwd !== null && isUnderRoot(root, r.cwd, ports.home))
+        .map((r) => toTaskRow(r, at));
+
+      const titleOf = new Map(tasks.map((t) => [t.id, t.title]));
+
+      /*
+       * D-P6：产物与变更是同一张表的同一批行，合并成「最近的文件动作」。
+       * `action` 用 `operationKind`（生成 / 修改）而不是 `artifactType`（文档 / 表格）——
+       * 这一列问的是"做了什么"，类型信息已经在文件名的后缀里了。
+       */
+      const fileActions = (options.pageData?.listArtifacts() ?? [])
+        .filter((a) => root !== '' && isUnderRoot(root, a.path, ports.home))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 50)
+        .map((a) => ({
+          id: a.id,
+          name: a.path.slice(a.path.lastIndexOf('/') + 1),
+          action: a.operationKind,
+          at: a.createdAt,
+          // 任务不在这个空间里（或已归档）时就没有标题可给 —— 那一格留空，不编一个
+          ...(a.threadId !== undefined && titleOf.get(a.threadId) != null
+            ? { fromTaskTitle: titleOf.get(a.threadId) as string, threadId: a.threadId }
+            : {}),
+        }));
+
+      const automations = (options.pageData?.listAutomations() ?? [])
+        .filter((raw) => {
+          const list = raw.workspaces;
+          const paths = Array.isArray(list) ? (list as unknown[]) : [];
+          return paths.some(
+            (p) => typeof p === 'string' && root !== '' && isUnderRoot(root, p, ports.home),
+          );
+        })
+        .map((raw) => ({
+          id: String(raw.id ?? ''),
+          name: String(raw.name ?? ''),
+          schedule: String(raw.schedule ?? ''),
+          status: String(raw.status ?? ''),
+        }));
+
+      return Promise.resolve({
+        id: row.id,
+        name: row.name,
+        rootDisplay: ellipsizeMiddle(root),
+        rootMissing: root === '' || !ports.rootExists(root),
+        tasks,
+        fileActions,
+        automations,
+      });
+    },
+
+    /**
+     * 文件树展开一层（D-P5：懒加载）。
+     *
+     * **越界时根本不去读盘**，不是读了再过滤：`resolveChildPath` 返回 null
+     * 就直接给空数组。渲染层传过来的字符串不可信。
+     */
+    async listProjectDir(input: {
+      readonly id: string;
+      readonly path?: string | undefined;
+    }): Promise<readonly DirEntryView[]> {
+      const ports = options.projectPorts;
+      const root = rootOf(input.id);
+      if (!ports || root === undefined) return [];
+      const target = resolveChildPath(root, input.path ?? root, ports.home);
+      if (target === null) return [];
+      /*
+       * 字符串判定过了还不够：`<root>/link` 在字面上完全合规，而它可能指向 /etc。
+       * 所以 realpath 之后**用同一个判定再过一遍**，两道都过才读。
+       */
+      const real = await safeRealpath(ports, target);
+      if (real === undefined || !isUnderRoot(root, real, ports.home)) return [];
+      const entries = await ports.readDir(real);
+      return sortEntries(entries).map((e) => ({
+        name: e.name,
+        path: `${target.replace(/\/$/, '')}/${e.name}`,
+        isDirectory: e.isDirectory,
+        noisy: e.noisy,
+      }));
+    },
+
+    async readAgentsMemo(input: { readonly id: string }): Promise<AgentsMemoView> {
+      const ports = options.projectPorts;
+      const root = rootOf(input.id);
+      if (!ports || root === undefined) return { exists: false, content: '' };
+      const memoPath = await agentsMemoPath(ports, root);
+      if (memoPath === undefined) return { exists: false, content: '' };
+      const content = await ports.readTextFile(memoPath);
+      // 读不到与空文件是两回事：前者页面说"还没有"，后者是用户自己清空的
+      return content === undefined ? { exists: false, content: '' } : { exists: true, content };
+    },
+
+    /**
+     * 写空间记忆。**路径固定拼成 `<root>/AGENTS.md`**，不接受渲染层传任意路径 ——
+     * 接受的话渲染层就能让主进程写盘任意文件。
+     */
+    async writeAgentsMemo(input: {
+      readonly id: string;
+      readonly content: string;
+    }): Promise<{ readonly ok: boolean }> {
+      const ports = options.projectPorts;
+      const root = rootOf(input.id);
+      if (!ports || root === undefined) return { ok: false };
+      const memoPath = await agentsMemoPath(ports, root);
+      if (memoPath === undefined) return { ok: false };
+      await ports.writeTextFile(memoPath, input.content);
+      return { ok: true };
     },
 
     /** 首页要渲染的一切，一次给全 */

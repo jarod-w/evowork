@@ -74,6 +74,13 @@ export interface ElectronApi {
         properties: readonly ('openDirectory' | 'createDirectory')[];
       }) => Promise<{ canceled: boolean; filePaths: readonly string[] }>)
     | undefined;
+  /**
+   * 在访达 / 资源管理器里打开一个目录（「项目」页的「打开文件夹」，清单 §4.5）。
+   *
+   * 同样只有主进程能调 `shell.openPath`，所以走同一条注入路径。没有它时
+   * `openProjectFolder` 静默什么都不做 —— 见 `service-host.ts` 的 `openPath` 选项。
+   */
+  readonly openPath?: ((path: string) => Promise<string>) | undefined;
 }
 
 /**
@@ -175,6 +182,13 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
               properties: ['openDirectory', 'createDirectory'],
             });
             return r && !r.canceled ? r.filePaths[0] : undefined;
+          },
+        }
+      : {}),
+    ...(electron.openPath
+      ? {
+          openPath: async (path: string): Promise<void> => {
+            await electron.openPath?.(path);
           },
         }
       : {}),
