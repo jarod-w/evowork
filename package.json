@@ -1,6 +1,6 @@
 {
   "name": "evowork",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "EvoWork —— 全场景职场 AI 智能体工作台（以 openai/codex 为不可变执行内核）",
   "license": "MIT",
