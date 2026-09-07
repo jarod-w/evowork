@@ -53,7 +53,7 @@ describe('createProjectRepo', () => {
     expect(repo.get('p1')?.kernelId).toBe('k-123');
   });
 
-  it('移除会连 root 一起删干净 —— 留下孤儿 root 会让下次同路径新建报主键冲突', () => {
+  it('移除会连 root 一起删干净 —— 留下孤儿 root 不会报错，只会让下次同路径新建被 INSERT OR IGNORE 静默吞掉，留下一条过期的孤儿行', () => {
     const { store, repo } = fresh();
     repo.insert({ id: 'p1', name: 'A', roots: ['/a'], createdAt: 1, updatedAt: 1 });
     repo.remove('p1');

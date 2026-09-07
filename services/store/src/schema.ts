@@ -207,6 +207,15 @@ export const TABLES: readonly TableSpec[] = [
        * 独立成表是 spec D-P2 的落点：**单根，但结构留多根**。
        * 内核 `turn/start` 只收一个 cwd，所以 UI 只用 position 最小的那个；
        * 以后放开多根时不用迁移。
+       *
+       * **没有 FOREIGN KEY 指回 project_local(id)** —— 防孤儿目前只靠约定：
+       * 所有删除必须走 `createProjectRepo.remove()`（先删本表再删 project_local）。
+       * 如果未来有代码绕开它、直接 `DELETE FROM project_local WHERE id = ?`，
+       * 这里的行会变成静默孤儿：不会报错，只是不再对应任何 project_local。
+       * 更麻烦的是它不会在下次出事时显形——`insert()` 用的是
+       * `INSERT OR IGNORE INTO project_root`，之后如果有新项目复用同一个
+       * id/path 组合，这条 INSERT 会被主键冲突静默吞掉（IGNORE），
+       * 结果是状态过期（stale），不是一次可见的失败。
        */
       `CREATE TABLE IF NOT EXISTS project_root (
          project_id TEXT NOT NULL,

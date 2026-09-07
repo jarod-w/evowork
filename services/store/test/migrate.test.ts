@@ -581,4 +581,124 @@ describe('第 2 版权威迁移：工作空间收敛成一处真源（spec §2.2
 
     store.close();
   });
+
+  /**
+   * 下面两条不是泛用的"事务能回滚"测试（那条已经在上面用一个搭出来的
+   * bolt-on 迁移测过了）—— 这两条要测的是 `migrateLegacyWorkspaces`**自己内部**
+   * 的顺序（建表 → 解析 → 插入循环 → 删 meta）：把真实迁移原样跑起来，
+   * 只在它自己的某次 `prepare(...).run(...)` 上注入失败，不把迁移体抄进测试。
+   *
+   * 做法：包一层 `SqliteLike`，`exec`/`get`/`all` 全部原样转发给真实的内存库，
+   * 只有 `run()` 会数"匹配某个 SQL 片段的第几次调用"，数到目标次数就抛错——
+   * 这样失败点就落在迁移代码自己写的某一行 SQL 上，而不是测试臆造的一行。
+   */
+  function failOnNthMatchingRun(
+    real: SqliteLike,
+    matchesSql: (sql: string) => boolean,
+    failOnCount: number,
+  ): SqliteLike {
+    let count = 0;
+    return {
+      exec: (sql) => real.exec(sql),
+      prepare: (sql) => {
+        const stmt = real.prepare(sql);
+        return {
+          run: (...params: unknown[]) => {
+            if (matchesSql(sql)) {
+              count += 1;
+              if (count === failOnCount) {
+                throw new Error(`注入失败：第 ${failOnCount} 次匹配 "${sql}" 的 run()`);
+              }
+            }
+            return stmt.run(...params);
+          },
+          get: (...params: unknown[]) => stmt.get(...params),
+          all: (...params: unknown[]) => stmt.all(...params),
+        };
+      },
+    };
+  }
+
+  it(
+    '插入循环第 3 条 project_root 失败：legacy 键必须原样还在（数据可恢复），' +
+      '这次事务里新建的 project_local/project_root 连 CREATE TABLE 都被回滚（no such table），' +
+      '版本号不推进 —— 半完成的迁移不能被当成"迁完了"',
+    () => {
+      const db = memoryDb();
+      ensureMeta(db);
+      // 模拟一个真的停在第 1 版的老库（同上面"老库"那条测试的搭法）：
+      // 这次迁移必须自己建 project_local / project_root，失败时才能验证
+      // 连 CREATE TABLE 都被回滚。
+      const oldTables = AUTHORITATIVE_TABLES.filter(
+        (t) => t.name !== 'project_local' && t.name !== 'project_root',
+      );
+      for (const t of oldTables) for (const ddl of t.ddl) db.exec(ddl);
+      writeMeta(db, 'schema_version_authoritative', '1');
+
+      const rawJson = JSON.stringify(['/w/a', '/w/b', '/w/c', '/w/d', '/w/e']);
+      writeMeta(db, LEGACY_WORKSPACES_META_KEY, rawJson);
+
+      // 5 条路径进循环，第 3 条 project_root 插入时失败
+      const failingDb = failOnNthMatchingRun(
+        db,
+        (sql) => sql.includes('INSERT OR IGNORE INTO project_root'),
+        3,
+      );
+
+      let thrown: unknown;
+      try {
+        migrateAuthoritative(failingDb);
+      } catch (err) {
+        thrown = err;
+      }
+
+      // ① migrateAuthoritative 抛的是权威迁移失败，不是裸 Error 漏出去
+      expect(thrown).toBeInstanceOf(AuthoritativeMigrationFailed);
+      // ② legacy 键原样还在，一个字节都没变 —— 数据仍然可恢复
+      expect(readMeta(db, LEGACY_WORKSPACES_META_KEY)).toBe(rawJson);
+      // ③ 连这次事务里新建的表都被回滚了 —— SQLite 的 DDL 是事务性的，
+      //    "建表 + 插入"是同一个 up()、同一个事务，没有半张表这回事
+      expect(() => db.prepare('SELECT * FROM project_local').all()).toThrow(/no such table/);
+      // ④ 版本号没被推进 —— 下次重开还会再跑一次这次迁移，不会被当成"迁完了"
+      expect(readMeta(db, 'schema_version_authoritative')).toBe('1');
+    },
+  );
+
+  it(
+    '插入全部成功后，最后一步 DELETE FROM meta 失败：前面插进去的行也要跟着回滚，' +
+      '不是"数据已经进去了、只差清理 legacy 键"——半完成的迁移没有部分成功这回事',
+    () => {
+      const db = memoryDb();
+      ensureMeta(db);
+      const oldTables = AUTHORITATIVE_TABLES.filter(
+        (t) => t.name !== 'project_local' && t.name !== 'project_root',
+      );
+      for (const t of oldTables) for (const ddl of t.ddl) db.exec(ddl);
+      writeMeta(db, 'schema_version_authoritative', '1');
+
+      const rawJson = JSON.stringify(['/w/a', '/w/b']);
+      writeMeta(db, LEGACY_WORKSPACES_META_KEY, rawJson);
+
+      // 插入循环本身完全不注入失败，只在收尾的 DELETE FROM meta 上失败 ——
+      // 这是"看起来数据都进去了"最容易被误判为部分成功的那一刻
+      const failingDb = failOnNthMatchingRun(db, (sql) => sql.includes('DELETE FROM meta'), 1);
+
+      let thrown: unknown;
+      try {
+        migrateAuthoritative(failingDb);
+      } catch (err) {
+        thrown = err;
+      }
+
+      // ① 同样抛权威迁移失败
+      expect(thrown).toBeInstanceOf(AuthoritativeMigrationFailed);
+      // ② legacy 键原样还在 —— 哪怕插入循环全部"成功"过，键也没被删掉
+      expect(readMeta(db, LEGACY_WORKSPACES_META_KEY)).toBe(rawJson);
+      // ③ 插入过的行也回滚了：project_local 连表都不存在，
+      //    证明"插入循环跑完"不等于"这次迁移的任何一部分被保留"
+      expect(() => db.prepare('SELECT * FROM project_local').all()).toThrow(/no such table/);
+      // ④ 版本号没被推进
+      expect(readMeta(db, 'schema_version_authoritative')).toBe('1');
+    },
+  );
 });
