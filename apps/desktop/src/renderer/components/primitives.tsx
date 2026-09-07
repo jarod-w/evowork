@@ -837,10 +837,14 @@ export function ProgressBar({
 /**
  * 01 §5.34 Dialog（模态壳）。
  *
- * **新模态一律用它**。仓库里此前有三处各自搭的确认框：`views/library.tsx`
- * （`ew-delete-confirm`）· `components/changes-view.tsx`（`ew-revert-confirm`）·
- * `components/composer.tsx`（`ew-danger-confirm`）。本任务只并掉第一个，
- * 后两个是记下来的债 —— 一次并三处会让这个任务的 diff 盖住三个页面。
+ * **新模态一律用它**。仓库里此前有**四处**各自搭的确认框：`views/library.tsx` 与
+ * `views/sidebar.tsx`（两处共用 `ew-delete-confirm`）· `components/changes-view.tsx`
+ * （`ew-revert-confirm`）· `components/composer.tsx`（`ew-danger-confirm`）。
+ * 本任务只并掉 library 那一处，其余三处是记下来的债。
+ *
+ * **`ew-delete-confirm` 这个类名因此不能从 CSS 里删掉** —— sidebar 还在用它。
+ * 而 sidebar 的测试只断言 role 与文案，删了不会有任何一条测试变红，
+ * 表现是那个确认框丢掉边框背景阴影、变成浮在页面上的裸文字。
  *
  * 它不管自己什么时候出现 —— 由调用方决定挂不挂载，
  * 这样"打开着的时候按 Esc"与"根本没打开"是两个显然不同的状态，

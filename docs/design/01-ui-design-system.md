@@ -471,12 +471,16 @@ ComposerShell   --r-xl · --bg-sunken · --border-subtle · --shadow-md · paddi
 `role="dialog"`；**确认破坏性动作时用 `role="alertdialog"`**。`Esc` 关闭（§6.2 的逐层关闭链），
 打开时焦点落在第一个可聚焦元素，关闭后还给触发它的按钮。
 
-**它是已登记的模态壳，不是既成事实**：新模态一律用它搭。渲染层眼下还有三处各写一遍的
-确认面板——`views/library.tsx` 的 `ew-delete-confirm`、`components/changes-view.tsx` 的
-`ew-revert-confirm`、`components/composer.tsx` 的 `ew-danger-confirm`（`components/approval-card.tsx`
-的 `role="alertdialog"` 不算，那是 10 §3 规格下的内联审批卡，不是模态）。实现 Dialog 时只并入
-`library.tsx` 这一处，刻意把改动面控制住；`changes-view.tsx` 与 `composer.tsx` 两处**登记为
-待还债务**，之后再逐个折进来。理由不是好看：三份各写一遍的确认文案，「删文件」还是
+**它是已登记的模态壳，不是既成事实**：新模态一律用它搭。渲染层眼下还有**四处**各写一遍的
+确认面板——`views/library.tsx` 与 `views/sidebar.tsx`（**两处共用 `ew-delete-confirm`**）、
+`components/changes-view.tsx` 的 `ew-revert-confirm`、`components/composer.tsx` 的
+`ew-danger-confirm`（`components/approval-card.tsx` 的 `role="alertdialog"` 不算，
+那是 10 §3 规格下的内联审批卡，不是模态）。实现 Dialog 时只并入 `library.tsx` 这一处，
+刻意把改动面控制住；其余三处**登记为待还债务**，之后再逐个折进来。
+
+**`ew-delete-confirm` 的 CSS 规则因此不能跟着 library 一起删** —— sidebar 还在用它。
+2026-09-08 实现 Dialog 时差点删掉：三个选择器共用一条容器规则，而 sidebar 的测试
+只断言 role 与文案，删了一条测试都不会红，表现是那个确认框丢掉边框背景阴影。理由不是好看：三份各写一遍的确认文案，「删文件」还是
 「删索引」这种措辞纪律会在其中一处慢慢走样而没人发现，直到用户真的删错了东西。
 
 ---
