@@ -569,3 +569,150 @@ describe('实验方法门禁（K2）', () => {
     expect(adapter.capabilities.isUsable(EXPERIMENTAL_METHOD.threadQueueAdd)).toBe(true);
   });
 });
+
+describe('内核镜像：尽力而为，失败不降级（spec §2.3）', () => {
+  it('创建成功时返回内核 project id', async () => {
+    await adapter.start();
+    server.handlers.set('project/create', () => ({ project: { id: 'k-1', name: 'A', roots: [] } }));
+
+    await expect(
+      adapter.mirrorProjectCreate({ name: 'A', rootPath: '/w/a', idempotencyKey: 'idem-1' }),
+    ).resolves.toBe('k-1');
+  });
+
+  it('带上 idempotencyKey，且 root 按 roots: [{ path }] 形状发送 —— 内核那个字段是必填的', async () => {
+    await adapter.start();
+    let seen: unknown;
+    server.handlers.set('project/create', (ctx) => {
+      seen = ctx.params;
+      return { project: { id: 'k-1', name: 'A', roots: [] } };
+    });
+
+    await adapter.mirrorProjectCreate({ name: 'A', rootPath: '/w/a', idempotencyKey: 'idem-1' });
+    expect(seen).toMatchObject({
+      name: 'A',
+      roots: [{ path: '/w/a' }],
+      idempotencyKey: 'idem-1',
+    });
+  });
+
+  it('响应里没有 project.id 时返回 undefined，而不是抛错或返回畸形值', async () => {
+    await adapter.start();
+    server.handlers.set('project/create', () => ({ project: { name: 'A', roots: [] } }));
+
+    await expect(
+      adapter.mirrorProjectCreate({ name: 'A', rootPath: '/w/a', idempotencyKey: 'idem-1' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('方法不存在（-32601）时返回 undefined 而不是抛错 —— 空间照常建成，用户什么都不该看见', async () => {
+    await adapter.start();
+    server.removeMethod('project/create'); // → -32601 method not found
+
+    await expect(
+      adapter.mirrorProjectCreate({ name: 'A', rootPath: '/w/a', idempotencyKey: 'idem-1' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('改名与删除在方法不存在时同样不抛', async () => {
+    await adapter.start();
+    server.removeMethod('project/update');
+    server.removeMethod('project/delete');
+
+    await expect(
+      adapter.mirrorProjectUpdate({ kernelId: 'k-1', name: '新名' }),
+    ).resolves.toBeUndefined();
+    await expect(adapter.mirrorProjectDelete('k-1')).resolves.toBeUndefined();
+  });
+
+  /*
+   * 这三条是本任务真正的重点：**不是所有失败都叫"降级"**。
+   * -32601（method not found）才是降级；内部错误 / 畸形响应 / 传输故障都必须原样冒出来 ——
+   * 否则"内核进程出事了"会被当成"这次镜像没同步"悄悄吞掉。
+   */
+  describe('非降级失败必须原样抛出（不能被当成尽力而为吞掉）', () => {
+    it('project/create 回 -32603 internalError 时 mirrorProjectCreate 抛错', async () => {
+      await adapter.start();
+      server.handlers.set('project/create', () => {
+        throw new Error('boom'); // 假内核统一包成 internalError（-32603），见 fake-app-server.ts
+      });
+
+      await expect(
+        adapter.mirrorProjectCreate({ name: 'A', rootPath: '/w/a', idempotencyKey: 'idem-1' }),
+      ).rejects.toThrow();
+    });
+
+    it('project/update 回 -32603 internalError 时 mirrorProjectUpdate 抛错', async () => {
+      await adapter.start();
+      server.handlers.set('project/update', () => {
+        throw new Error('boom');
+      });
+
+      await expect(
+        adapter.mirrorProjectUpdate({ kernelId: 'k-1', name: '新名' }),
+      ).rejects.toThrow();
+    });
+
+    it('project/delete 传输故障（内核进程崩溃）时 mirrorProjectDelete 抛错', async () => {
+      await adapter.start();
+      /*
+       * 崩溃是"内核进程出事了"而不是"镜像没同步"：`server.crash()` 在处理这个请求时触发，
+       * 会让 session 用 `resetPending` 把这个 in-flight 请求拒掉——拒绝理由是
+       * `TransportClosedError`（不是 `JsonRpcCallError`），`classifyFailure` 对它恒定判非降级，
+       * 必须原样冒出来，不能被 fallback 吞掉。
+       */
+      server.handlers.set('project/delete', () => {
+        server.crash();
+        return {};
+      });
+
+      await expect(adapter.mirrorProjectDelete('k-1')).rejects.toThrow();
+    });
+  });
+
+  describe('降级只进结构化日志，不带路径与项目名（Q14）', () => {
+    it('mirrorProjectCreate 降级时记一条日志：方法名 + 错误码，不含 rootPath / name', async () => {
+      const records: { event: string; fields: Record<string, unknown> }[] = [];
+      const fakeLogger = {
+        debug: () => {},
+        info: (event: string, fields?: Record<string, unknown>) =>
+          records.push({ event, fields: fields ?? {} }),
+        warn: (event: string, fields?: Record<string, unknown>) =>
+          records.push({ event, fields: fields ?? {} }),
+        error: (event: string, fields?: Record<string, unknown>) =>
+          records.push({ event, fields: fields ?? {} }),
+        child: () => fakeLogger,
+        registry: undefined as never,
+      };
+      const loggedAdapter = createAdapter({
+        store,
+        sessionOptions: {
+          launcher: server.launcher(),
+          clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+          heartbeatIntervalMs: 10 ** 9,
+        },
+        logger: fakeLogger as never,
+      });
+      await loggedAdapter.start();
+      server.removeMethod('project/create');
+
+      const secretPath = '/Users/li.wang/私密项目/合同';
+      const secretName = '张三的私密项目';
+      await loggedAdapter.mirrorProjectCreate({
+        name: secretName,
+        rootPath: secretPath,
+        idempotencyKey: 'idem-1',
+      });
+
+      expect(records.length).toBeGreaterThan(0);
+      const dump = JSON.stringify(records);
+      expect(dump).not.toContain(secretPath);
+      expect(dump).not.toContain(secretName);
+      expect(records.some((r) => r.fields.method === 'project/create')).toBe(true);
+
+      await loggedAdapter.stop();
+    });
+  });
+});

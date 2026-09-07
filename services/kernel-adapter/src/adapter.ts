@@ -21,6 +21,9 @@ import {
   METHOD,
   type ExperimentalFeature,
   type PermissionProfileSummary,
+  type ProjectCreateParams,
+  type ProjectDeleteParams,
+  type ProjectUpdateParams,
   type Thread,
   type ThreadItem,
   type ThreadItemEntry,
@@ -237,7 +240,19 @@ export function createAdapter(options: AdapterOptions) {
       return await session.peer.request<T>(method, params);
     } catch (err) {
       const classified = capabilities.classifyFailure(method, err);
-      if (classified.degraded) return fallback();
+      if (classified.degraded) {
+        /*
+         * 只在**第一次**判定降级时走到这里：`isUsable` 之后的调用会在上面短路，
+         * 不会再发请求、也不会再走到这一行 —— 所以不会刷屏。
+         * 只记方法名 + 错误码，不带 params（Q14；params 里可能是路径 / 项目名这类正文）。
+         */
+        logger?.warn('adapter.experimental_call.degraded', {
+          method,
+          ...errorFields(err),
+          errorCode: classified.report?.reason ?? 'METHOD_NOT_FOUND',
+        });
+        return fallback();
+      }
       throw err;
     }
   }
@@ -569,6 +584,53 @@ export function createAdapter(options: AdapterOptions) {
 
     degradations(): CapabilityReport[] {
       return capabilities.unavailable();
+    },
+
+    /*
+     * ── 内核镜像（spec §2.3）────────────────────────────────────────────
+     *
+     * 本机 `project_local` 是真源，这三个方法是**尽力而为**的同步。
+     * 全部走 `callExperimental`：不可用或调用失败时走 fallback，**不抛错** ——
+     * 用户点「新建空间」看到的应该是空间建好了，而不是一个他无法处理的错误。
+     * 失败进结构化日志（方法名 + 错误码，无路径正文，见 `callExperimental`）。
+     *
+     * 但只吞**降级**：`callExperimental` 只在 `classifyFailure().degraded` 为 true
+     * （目前只有 -32601 method not found）时才走 fallback，其余错误原样抛出 ——
+     * 内核进程崩了不是"镜像没同步"，那是 App 出事了。
+     */
+
+    /** 成功返回内核 project id；不可用或失败返回 undefined。 */
+    async mirrorProjectCreate(input: {
+      readonly name: string;
+      readonly rootPath: string;
+      readonly idempotencyKey: string;
+    }): Promise<string | undefined> {
+      const params: ProjectCreateParams = {
+        name: input.name,
+        roots: [{ path: input.rootPath }],
+        // 必填字段（`v2/project.rs:92` 是 String 不是 Option）：漏了它是参数解析错误，
+        // 而镜像调用失败是静默的，于是"内核那边永远建不出空间"会没有任何征兆
+        idempotencyKey: input.idempotencyKey,
+      };
+      const result = await callExperimental<{ project?: { id?: string } } | undefined>(
+        EXPERIMENTAL_METHOD.projectCreate,
+        params,
+        () => undefined,
+      );
+      return result?.project?.id;
+    },
+
+    async mirrorProjectUpdate(input: {
+      readonly kernelId: string;
+      readonly name: string;
+    }): Promise<void> {
+      const params: ProjectUpdateParams = { projectId: input.kernelId, name: input.name };
+      await callExperimental<unknown>(EXPERIMENTAL_METHOD.projectUpdate, params, () => undefined);
+    },
+
+    async mirrorProjectDelete(kernelId: string): Promise<void> {
+      const params: ProjectDeleteParams = { projectId: kernelId };
+      await callExperimental<unknown>(EXPERIMENTAL_METHOD.projectDelete, params, () => undefined);
     },
   };
 }
