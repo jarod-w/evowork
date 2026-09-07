@@ -5,7 +5,7 @@
  * 以及**这个模块里没有任何出网调用**（K6/Q3 的硬约束，没有云端兜底）。
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -147,7 +147,16 @@ describe('运行时缺失时给两个出路（03 §8），**没有云端兜底**
     expect(outcome?.status).toBe('parsed');
   });
 
-  it('外部解析器返回 undefined（装了一半）也走同一条降级路径', async () => {
+  /**
+   * 扩展装好了却没解析出内容，**不能再说"需要安装组件"**。
+   *
+   * 这条断言换掉的是它自己的旧版本：旧版本要求这里也返回 `runtime-missing`，
+   * 于是管道复用了 `availabilityFor` 的文案，而那个文案在"装好了"的分支上恒为
+   * undefined，兜底句正是「这种文件需要额外的本地组件才能解析」。
+   * 结果是 2026-09-06 实测到的那个谎：用户装好办公扩展后拖入 docx，
+   * 仍被告知去安装办公扩展 —— 而他唯一能做的动作（再装一遍）不会有任何效果。
+   */
+  it('装了扩展但没解析出来 → unparsed，且**不劝用户去装已经装了的东西**', async () => {
     const ingest = createIngest({
       store: memoryStore(),
       probe: ALL_INSTALLED,
@@ -155,7 +164,26 @@ describe('运行时缺失时给两个出路（03 §8），**没有云端兜底**
     });
     const pdf = Uint8Array.from([0x25, 0x50, 0x44, 0x46]);
     const [outcome] = await ingest.ingest([{ fileName: 'a.pdf', bytes: pdf }]);
-    expect(outcome?.status).toBe('runtime-missing');
+
+    if (outcome?.status !== 'unparsed') throw new Error(`应该是 unparsed，实际 ${outcome?.status}`);
+    expect(outcome.message).not.toContain('安装');
+    expect(outcome.fallback).toBe('refer-as-raw');
+    // 原始文件仍然落了盘 —— 用户还能让 agent 用命令去读它
+    expect(outcome.uploadDir).toContain('uploads/');
+  });
+
+  /**
+   * 解析器压根没接上（当前就是这个状态：`ExternalParser` 等 M4 的受限子进程）。
+   * 此时更不能提"安装"——装什么都不会让这条路通。
+   */
+  it('这个版本没有外部解析器时，文案不暗示用户去装东西', async () => {
+    const ingest = createIngest({ store: memoryStore(), probe: ALL_INSTALLED });
+    const pdf = Uint8Array.from([0x25, 0x50, 0x44, 0x46]);
+    const [outcome] = await ingest.ingest([{ fileName: 'a.pdf', bytes: pdf }]);
+
+    if (outcome?.status !== 'unparsed') throw new Error('应该是 unparsed');
+    expect(outcome.message).not.toContain('安装');
+    expect(outcome.message).toContain('还不能解析');
   });
 });
 
@@ -268,15 +296,18 @@ describe('**注入载荷里没有全文**（08 §3.2 第 ⑤ 步 / 总纲 §6.7�
 describe('K6：这个模块里**没有出网路径**', () => {
   it('源码里不出现 fetch / http 请求 —— 云端兜底不存在，不是"默认关闭"', () => {
     const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), '../src');
-    const files = [
-      'pipeline.ts',
-      'inject.ts',
-      'runtime.ts',
-      'gates.ts',
-      'detect.ts',
-      'parsers/builtin.ts',
-      'parsers/zip.ts',
-    ];
+    /*
+     * **扫整个 src，不是一份手写的文件名单。**
+     *
+     * 名单版的漏洞是：往这个包里新加一个文件，它自动就不在扫描范围内 ——
+     * 而"不出网"这条承诺恰恰是要挡住"某天有人加了个会出网的文件"。
+     * 2026-09-07 把办公扩展的下载器放进**另一个包**（`services/runtime-installer`）
+     * 而不是放进这里，正是为了让这条扫描能收紧成整个目录。
+     */
+    const files = readdirSync(srcDir, { recursive: true, encoding: 'utf8' }).filter((f) =>
+      f.endsWith('.ts'),
+    );
+    expect(files.length, '一个文件都没扫到说明路径错了，而不是"都合规"').toBeGreaterThan(5);
     for (const file of files) {
       const source = readFileSync(join(srcDir, file), 'utf8').replace(
         /\/\*[\s\S]*?\*\/|\/\/.*/g,

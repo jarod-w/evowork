@@ -17,6 +17,11 @@ coverage/
 runtimes/
 *.whl
 
+# Python 字节码。技能脚本一被执行就会生成，跟着提交只会带来二进制噪音。
+# （2026-09-07 之前 `_shared/__pycache__` 被误跟踪过，同日已 untrack）
+__pycache__/
+*.pyc
+
 # 内核签出与上游试合并的临时物（scripts/kernel-drift.mjs）
 .kernel-drift/
 

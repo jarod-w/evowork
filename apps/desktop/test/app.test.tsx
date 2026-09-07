@@ -70,6 +70,19 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     getAudit: vi.fn(async () => ({ records: [], retentionDays: 90, retentionWarningDays: 7 })),
     pickWorkspace: vi.fn(async () => ({ path: '/Users/x/work' })),
     completeOnboarding: vi.fn(async () => undefined),
+    /*
+     * 办公扩展（08 §4）。默认"支持但没装" —— 这是**干净机器上的真实初始状态**，
+     * 也是引导第 ⑤ 步唯一有内容可渲染的状态。默认成"装好了"会让那一屏在
+     * 绝大多数测试里退化成一句"已经装好了"，等于没测。
+     */
+    getRuntimeStatus: vi.fn(async () => ({
+      installed: false,
+      missing: ['docx', 'openpyxl', 'pptx', 'pdfplumber', 'matplotlib'],
+      supported: true,
+      downloadSize: '约 43 MB',
+    })),
+    installOfficeRuntime: vi.fn(async () => ({ ok: true })),
+    onRuntimeProgress: () => () => undefined,
     ...over,
   };
   return { bridge, emit };

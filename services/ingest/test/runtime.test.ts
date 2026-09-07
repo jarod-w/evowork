@@ -6,6 +6,7 @@
  * 而这两处一个在 TypeScript 里、一个在 Python 里，靠自觉一定会分叉。
  */
 import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   availabilityFor,
+  officeFontsPath,
+  officeInterpreterPaths,
   probeTiers,
   RUNTIME_TIERS,
   runtimeMissingMessage,
@@ -106,5 +109,42 @@ describe('**解析侧与生成侧的文案必须一致**（08 §4）', () => {
     ].join('\n');
     const fromPython = execFileSync('python3', ['-c', script], { encoding: 'utf8' }).trim();
     expect(fromPython).toBe(runtimeMissingMessage('office', '生成 pptx'));
+  });
+
+  /**
+   * **解释器候选路径两边必须一样**。
+   *
+   * 分叉的表现最难查：探针在 `bin/python` 找不到就说"没装"，而技能从
+   * `bin/python3` 找到了照常跑 —— 界面说没装、产物却生成得好好的（或者反过来）。
+   * 2026-09-07 加了 python-build-standalone 的两个候选（`bin/python3` 与根上的
+   * `python.exe`）之后，两边各有一份四元组，这条断言是它们唯一的粘合剂。
+   */
+  it('解释器候选路径与 Python 侧逐条相同（顺序也要一样）', () => {
+    const script = [
+      'import json,sys',
+      `sys.path.insert(0, ${JSON.stringify(SHARED_PY)})`,
+      'import evowork_skill as e',
+      /*
+       * 把 `office_python()` **真正在用的那张表**读走，不在这里抄一份。
+       * 抄一份的话，有人改了 Python 侧的候选顺序，这条测试照样通过 —— 也就什么都没守住。
+       */
+      'print(json.dumps([str(p) for p in e.office_interpreter_candidates()]))',
+    ].join('\n');
+    const fromPython = JSON.parse(
+      execFileSync('python3', ['-c', script], { encoding: 'utf8' }),
+    ) as string[];
+
+    expect(fromPython).toEqual([...officeInterpreterPaths(homedir())]);
+  });
+
+  /** 字体目录同理：charts 去那里找中文字体，安装器往那里装。 */
+  it('字体目录与 Python 侧一致', () => {
+    const script = [
+      `import sys; sys.path.insert(0, ${JSON.stringify(SHARED_PY)})`,
+      'import evowork_skill as e',
+      'print(str(e.OFFICE_VENV / "fonts"))',
+    ].join('\n');
+    const fromPython = execFileSync('python3', ['-c', script], { encoding: 'utf8' }).trim();
+    expect(fromPython).toBe(officeFontsPath(homedir()));
   });
 });

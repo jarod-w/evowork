@@ -261,4 +261,74 @@ describe('**第 ⑤ 步必须可跳过，且说清后果**（R10）', () => {
     expect(screen.getByText('已经装好了。')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '以后再说' })).toBeNull();
   });
+
+  it('「现在安装」真的会触发安装 —— 在此之前这个按钮是没有回调的', () => {
+    const onInstallRuntime = vi.fn();
+    render(<OnboardingHarness over={{ step: 'runtime', onInstallRuntime }} />);
+    fireEvent.click(screen.getByRole('button', { name: '现在安装' }));
+    expect(onInstallRuntime).toHaveBeenCalled();
+  });
+});
+
+/**
+ * 安装这几分钟里界面必须说清"在等什么"（08 §4）。
+ *
+ * 2026-09-07 之前这一屏的 `runtimeInstalled` 是硬编码的 `false`，安装按钮没有回调 ——
+ * 因为下载器根本不存在。下面这组断言守的是它现在真的接上了，
+ * 以及**三种状态各自长什么样**：没装 / 正在装 / 装失败了。
+ */
+describe('办公扩展安装的三种状态各自可辨认', () => {
+  it('正在装时给进度条 + 阶段名 + 字节数，且不再显示安装按钮', () => {
+    render(
+      <OnboardingHarness
+        over={{
+          step: 'runtime',
+          runtimeProgress: { label: '正在下载运行时', percent: 37, detail: '9.3 / 25.1 MB' },
+        }}
+      />,
+    );
+
+    const bar = screen.getByRole('progressbar', { name: '正在下载运行时' });
+    expect(bar.getAttribute('aria-valuenow')).toBe('37');
+    // 只有百分比不够：pip 那两分钟没有细粒度进度，光看数字像死了
+    expect(screen.getByText(/正在下载运行时 · 9\.3 \/ 25\.1 MB/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '现在安装' })).toBeNull();
+  });
+
+  it('失败时给出可照做的原因，按钮变「重试安装」 —— 不是停在一个不动的进度条上', () => {
+    render(
+      <OnboardingHarness
+        over={{
+          step: 'runtime',
+          runtimeError: '连不上 Python 包镜像（PyPI）。公司网络常会拦截它 —— 换个网络重试。',
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/连不上 Python 包镜像/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试安装' })).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    // 失败了也还能跳过：R10 那条在失败态同样成立
+    expect(screen.getByRole('button', { name: '以后再说' })).toBeTruthy();
+  });
+
+  /**
+   * 不支持的架构上**不给按钮**。给一个点了必然失败的按钮比明说更糟：
+   * 用户会反复点，然后把它当成网络问题去查。
+   */
+  it('平台不支持时说清楚，且没有安装按钮', () => {
+    render(<OnboardingHarness over={{ step: 'runtime', runtimeSupported: false }} />);
+    expect(screen.getByText(/暂时没有可用的办公扩展/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '现在安装' })).toBeNull();
+  });
+
+  it('下载体积按平台显示 —— linux x64 是 macOS 的四倍，写死一个数字会骗人', () => {
+    render(<OnboardingHarness over={{ step: 'runtime', runtimeDownloadSize: '约 129 MB' }} />);
+    expect(screen.getByText(/约 129 MB/)).toBeTruthy();
+  });
+
+  it('提到它带中文字体 —— 这是扩展真的带的东西，不是一句空话', () => {
+    render(<OnboardingHarness over={{ step: 'runtime' }} />);
+    expect(screen.getByText(/中文才不会变成方框/)).toBeTruthy();
+  });
 });

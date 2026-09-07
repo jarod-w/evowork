@@ -766,6 +766,11 @@ export function QuotaFooter({
   readonly onCleanup?: (() => void) | undefined;
 }) {
   const level = percent > 95 ? 'danger' : percent > 80 ? 'warning' : 'normal';
+  /*
+   * 这条**不用 5.33 ProgressBar**：它带 >80% 转 warning、>95% 转 danger 的阈值配色，
+   * 是"用量"语义而不是"进度"语义。合并会让两种含义共用一套颜色规则 ——
+   * 于是一个装到 85% 的进度条会变成黄色，看起来像出了问题。
+   */
   return (
     <div className="ew-quota-footer">
       <div className="ew-quota-row">
@@ -788,6 +793,43 @@ export function QuotaFooter({
           style={{ ['--ew-quota-percent' as string]: `${percent}%` } as CSSProperties}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * 5.33 ProgressBar —— 确定进度条。
+ *
+ * **只有确定态，没有"不确定态"**（那种永远循环的动画）。不知道进度就把"在等什么"
+ * 写在旁边的文字里：一条永远在动的条会让人以为程序还活着，而它可能已经卡死了 ——
+ * 办公扩展安装恰恰有过这个失败模式（下载停滞，进度停在 0%），
+ * 现在由下载器的停滞看门狗在 60 秒内把它变成一条明确的失败信息。
+ *
+ * `label` 说的是**在进行什么**（"正在下载运行时"），不是"进度" ——
+ * 读屏用户听到"进度 40%"而不知道是什么的进度，等于没听到。
+ */
+export function ProgressBar({
+  percent,
+  label,
+}: {
+  readonly percent: number;
+  readonly label: string;
+}) {
+  // 越界的值不该把填充画到轨道外面去（上游算错时，界面不跟着错）
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  return (
+    <div
+      className="ew-progress-bar"
+      role="progressbar"
+      aria-valuenow={clamped}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={label}
+    >
+      <span
+        className="ew-progress-fill"
+        style={{ ['--ew-progress-percent' as string]: `${clamped}%` } as CSSProperties}
+      />
     </div>
   );
 }

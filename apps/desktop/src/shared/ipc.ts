@@ -319,3 +319,40 @@ export interface ApprovalView {
   readonly waitedMs?: number | undefined;
   readonly unattended?: boolean | undefined;
 }
+
+/* ─────────────────── 办公扩展的安装（08 §4）─────────────────── */
+
+/**
+ * 扩展装了没有。**它不是一个布尔值**，因为"没装"和"装了但缺东西"要给的话不一样：
+ * 后者是升级路径上的真实状态（换了版本、清单加了新包），此时该说缺什么，
+ * 而不是让用户从头装一遍。
+ */
+export interface RuntimeStatusView {
+  readonly installed: boolean;
+  /** 缺哪些模块。**逐个列出来** —— "装了一半"是真实会发生的状态 */
+  readonly missing: readonly string[];
+  /** 这台机器支不支持（架构没有对应的运行时时为 false） */
+  readonly supported: boolean;
+  /** 要下多少（如 "约 43 MB"）。不支持的平台上不填 */
+  readonly downloadSize?: string | undefined;
+}
+
+/**
+ * 安装进度。主进程按 `RENDERER_CHANNELS.runtimeProgress` 推给渲染层。
+ *
+ * 带 `label` 而不是让渲染层自己映射阶段名：那份文案（08 §4 要求解析与生成**统一口径**）
+ * 的真源在 `@evowork/runtime-installer`，渲染层再抄一份就会分叉。
+ */
+export interface RuntimeProgressView {
+  readonly phase: string;
+  readonly label: string;
+  readonly percent: number;
+  readonly detail?: string | undefined;
+}
+
+/** 安装结束。失败时 `message` 是**可以直接显示**的一句话，不含堆栈。 */
+export interface RuntimeInstallResultView {
+  readonly ok: boolean;
+  readonly failure?: string | undefined;
+  readonly message?: string | undefined;
+}

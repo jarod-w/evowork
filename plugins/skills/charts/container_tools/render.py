@@ -28,6 +28,7 @@ from evowork_skill import (  # noqa: E402 -- 必须在 sys.path 调整之后
     EXIT_INVALID_CONTENT,
     EXIT_RUNTIME_MISSING,
     fail,
+    office_fonts_dir,
     read_content,
     runtime_missing_message,
     succeeded,
@@ -37,7 +38,13 @@ from evowork_skill import (  # noqa: E402 -- 必须在 sys.path 调整之后
 CHARTS = ("bar", "stacked-bar", "line", "pie", "scatter")
 
 #: 按优先级探测的中文字体族。列表本身就是"我们支持哪些环境"的声明。
+#:
+#: **第一个是办公扩展自带的那份**（安装器装进 `<扩展根>/fonts/`），排在系统字体前面
+#: 是有意的：它在所有平台上都是同一份，字重也是确定的（wght=400 的静态实例）。
+#: 靠系统字体的话，同一张图在 macOS 和 Windows 上会用不同的字体渲染，
+#: 而在裸 Linux 上根本渲染不出来。
 CJK_FONTS = (
+    "Noto Sans SC",
     "PingFang SC",
     "Hiragino Sans GB",
     "Heiti SC",
@@ -45,7 +52,6 @@ CJK_FONTS = (
     "Noto Sans CJK SC",
     "Source Han Sans SC",
     "WenQuanYi Zen Hei",
-    "Noto Sans SC",
 )
 
 VALUE_FORMATTERS = {
@@ -96,6 +102,26 @@ def validate(content: dict) -> None:
                 )
 
 
+def register_bundled_fonts(font_manager) -> int:  # noqa: ANN001 -- matplotlib.font_manager
+    """把办公扩展自带的字体登记进 matplotlib，返回登记了几个。
+
+    matplotlib 只扫系统字体目录，**不会**去看 `~/.evowork/runtime/office/fonts/`，
+    所以这一步不做的话，扩展里的字体等于不存在 —— 这正是"装了扩展、图表仍然报没有中文字体"
+    的成因。放在探测之前调用，顺序不能反。
+    """
+    fonts = office_fonts_dir()
+    if fonts is None:
+        return 0
+    registered = 0
+    for path in sorted(fonts.glob("*.tt[fc]")) + sorted(fonts.glob("*.otf")):
+        try:
+            font_manager.fontManager.addfont(str(path))
+            registered += 1
+        except Exception:  # noqa: BLE001 -- 坏字体不该让整张图画不出来
+            continue
+    return registered
+
+
 def pick_cjk_font(font_manager) -> str | None:  # noqa: ANN001 -- matplotlib.font_manager
     available = {f.name for f in font_manager.fontManager.ttflist}
     for name in CJK_FONTS:
@@ -129,13 +155,23 @@ def render(content: dict, out_path: Path) -> None:
     palette = theme["palette"]
 
     if has_cjk(content):
+        # 先把扩展自带的字体登记进来，再探测。反过来的话扩展里那份永远选不上
+        bundled = register_bundled_fonts(font_manager)
         font = pick_cjk_font(font_manager)
         if font is None:
-            # **不产出方框图**：这是这个技能最容易静默失败的地方
+            # **不产出方框图**：这是这个技能最容易静默失败的地方。
+            #
+            # 两句不同的话，因为用户能做的事不同：扩展没装 → 装它（它真的带字体，
+            # 2026-09-06 起安装器会装一份 Noto Sans SC 进去）；扩展装了却还是没有 →
+            # 让他去装系统字体，**不能再劝他装一遍扩展**（装过了，再装一遍还是这样）。
             fail(
                 EXIT_RUNTIME_MISSING,
                 "本机没有可用的中文字体，图里的中文会渲染成方框。"
-                "请安装办公扩展（它带中文字体），或在系统里装一款中文字体后重试。",
+                + (
+                    "办公扩展里的字体没能加载，请在系统里装一款中文字体后重试。"
+                    if bundled
+                    else "请安装办公扩展（它带一份中文字体），或在系统里装一款中文字体后重试。"
+                ),
             )
         plt.rcParams["font.sans-serif"] = [font]
         plt.rcParams["axes.unicode_minus"] = False  # 负号也要用同一款字体，否则显示成方框

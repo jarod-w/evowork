@@ -36,7 +36,7 @@ Cursor 侧的仓级约定正文是 [`.cursorrules`](.cursorrules)，Agent 模式
 > 上一层现在是空的。代价是：工作目录切到 `../codex` 时向上找不到任何 EvoWork 规则，
 > **那种情况下 K1「内核只读」得靠自己记住**——但那么用的话，本来也该从仓库根起手。
 
-**仓库现状**：**M0–M9 的核心实现全部落地**（840 个测试、零跳过，`pnpm run check` 全绿）。
+**仓库现状**：**M0–M9 的核心实现全部落地**（`pnpm run check` 全绿）。
 第 3 节的每个目录都已存在且非空 —— 新文件按它落位，不要另起一套。
 详细进度、验过什么、卡在什么，一律看 [status.md](docs/status.md)，**不要在本文件里再记一份**。
 
@@ -85,7 +85,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 | K1（补丁预算） | `scripts/patch-budget.mjs`，进 `pnpm run check` | 「超出 K1 上限」 |
 | K2（唯一边界） | eslint `@evowork/no-kernel-internals` | 「只有 `services/kernel-adapter` 可以引用 `CODEX_HOME`」—— 它把 launcher 从桌面壳里赶了出来 |
 | K5（品牌） | `scripts/gen-third-party-notices.mjs --check` | 依赖树与 NOTICES 不一致 |
-| K6（不出网） | `services/ingest/test/pipeline.test.ts` 扫源码里的 `fetch` / `node:http` | 「解析管道里不该出现 fetch(」——**云端兜底是结构上不存在，不是"默认关闭"** |
+| K6（不出网） | `services/ingest/test/pipeline.test.ts` 扫 **整个 `src/` 目录**里的 `fetch` / `node:http` | 「解析管道里不该出现 fetch(」——**云端兜底是结构上不存在，不是"默认关闭"**。2026-09-07 从"手工列的文件名单"收紧成整目录：办公扩展的下载器被放进了另一个包（`services/runtime-installer`），这里就不必留口子 |
 | Q14（不落盘正文） | `packages/logging` 的类型 + 字段注册表 + 泄露检测 | 没有接受自由字符串的日志入口；未注册的字段被**静默丢掉** |
 | 01 §9（token-only） | eslint `@evowork/no-style-literals` + `test/styles.test.ts` 扫 CSS | 「组件里不许出现颜色字面量」—— 它拦下过 mermaid 主题的硬编码兜底色 |
 
@@ -103,6 +103,8 @@ evowork/
     store/               【本机】本机 sqlite **14 张表** + 两个迁移器 + 状态投影 + automation/artifact 两个 repo（M2a，见 09 §4）
     scheduler/           【本机】定时调度（M5；带时区的 cron · misfire 补偿 · 设备绑定 · 与内核的桥接）
     ingest/              【本机】解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时（M3，K6，无云端兜底）
+    runtime-installer/   【本机】办公扩展的按需安装（08 §4）。**K6 登记：唯一为装扩展而出网的包**——
+                         下载器不放进 ingest，正是为了让那边的"不出网"扫描能收紧成整个 src 目录
     policy/              【本机】安全与策略（M4）：三级路径策略 · profile 文案 · 命令风险 · 并发预算 · 审计链 · **四个 hook 的决策**
     artifacts/           【本机】产物识别（三信号）· 分享授权与上传 · 资料库视图 · fs 监听（M8，D6/Q10）
     gateway/             【云端】Responses API 网关（M1，K4；Q2=必须支持国内模型 → 全量适配）
@@ -212,15 +214,21 @@ git --no-pager log --oneline HEAD..origin/main    # 上游漂移（D7）
 
 同名任务已配在工作区里（终端 → 运行任务）。
 
-**本机运行时**（08 §4 的"按需下载的办公扩展"，已装）：
+**本机运行时**（08 §4 的"按需下载的办公扩展"）：
 
 | 位置 | 内容 | 谁在用 |
 |---|---|---|
-| `~/.evowork/runtime/office/` | 独立 venv：python-docx · openpyxl · python-pptx · matplotlib · pdfplumber | 四个技能的 `render.py`（缺模块时**自动换到这个解释器重跑**）· `services/ingest` 的运行时探测 |
+| `~/.evowork/runtime/office/` | 自包含 CPython 3.12 + 六个钉死版本的包（python-docx · openpyxl · python-pptx · matplotlib · pdfplumber · jsonschema）+ `fonts/` 里一份中文字体 | 四个技能的 `render.py`（缺模块时**自动换到这个解释器重跑**）· `services/ingest` 的运行时探测 |
 
+**用户在 App 里点「现在安装」即可**（引导第 ⑤ 步），实现在 `services/runtime-installer`。
 装在自己的目录里而不是系统 python：卸载 = 删一个目录，系统 python 升级不会带走它，
 而"装没装"这个判断就是"那个解释器能不能 import 那些模块"，没有歧义。
-企业离线部署用 `EVOWORK_OFFICE_PYTHON` 覆盖路径。
+
+**别再用 `uv venv` 装它**：uv 建的目录不可搬运（`bin/python` 是指向 uv 自己 python 目录的
+绝对符号链接），而且不带 pip —— 客户机器上拷过去就是死链。安装器用
+python-build-standalone 的 `install_only` 构建，自包含、位置无关、自带 pip。
+企业离线部署用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打），
+或用 `EVOWORK_OFFICE_PYTHON` 指向已装好的解释器。
 
 ---
 
@@ -247,7 +255,7 @@ git --no-pager log --oneline HEAD..origin/main    # 上游漂移（D7）
 | Q19 团队空间 | **只读订阅** | 复用「企业私有源索引」这一条云端职责，不新增；写入方向走 Q10 分享通道。「与我共享」收件箱不做 |
 | **Q20 助理** | **一个常驻的特殊 Thread** | 固定 cwd `~/.evowork/assistant/`、默认 Ask、不进任务列表、可 `thread/fork` 升级；别为它自建会话存储 |
 | **Q23 桌面壳** | **Electron** | 不用 Tauri（体积优势被随包 Python 运行时抹平，而侧载子进程/自动更新/公证的成熟度 Electron 更高） |
-| **Q24 前端栈** | **React + TS + Vite，32 组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单；**出现第 33 个组件先补进 01** |
+| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 33 个）；**出现清单外的组件先补进 01** |
 | **Q25 品牌** | 代码与文档统一 **EvoWork** | WorkBuddy 只是候选对外名；品牌层 = `--accent` 系列 + appName + logo + mascot 四项 token |
 | Q26 首发平台 | **macOS 首发**，Windows 随 M4 结论 | Windows 隔离不足时把 `evowork-full` 标 `allowed:false` **并给原因页**，不静默降级 |
 | **Q27 M2a** | **单列里程碑**（服务层与协议适配 2–3 人周） | 前端**不得**直连实验方法，一律经适配层（破 K2 的最常见方式就是把它挤压掉） |
@@ -293,7 +301,7 @@ git --no-pager log --oneline HEAD..origin/main    # 上游漂移（D7）
 4. 是否触碰 K1–K7 中的任何一条？触碰了就先改文档。
 5. 依赖的内核 `path:line` 还成立吗？（`git log HEAD..origin/main`）
 6. 有没有引入未经显式授权的出网路径？（K6）
-7. 要用一个 01 §5 清单之外的 UI 组件吗？**先把它补进 01 §5**（现在是 32 个，四个新页面一个都没加）。
+7. 要用一个 01 §5 清单之外的 UI 组件吗？**先把它补进 01 §5**（现在是 33 个 —— 第 33 个 ProgressBar 是 2026-09-07 为办公扩展安装加的，按这条规矩先登记后实现）。
 
 ---
 

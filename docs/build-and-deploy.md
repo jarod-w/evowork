@@ -155,21 +155,50 @@ plugins/hooks/evowork-policy/vendor/policy.mjs  策略包
 ### 3.3 办公扩展（按需，08 §4）
 
 处理与生成 Word / Excel / PPT / PDF 需要一个**独立的 Python 环境**，装在
-`~/.evowork/runtime/office/`：
+`~/.evowork/runtime/office/`。**用户不需要敲任何命令** —— 在 App 里点「现在安装」即可
+（引导第 ⑤ 步，或第一次遇到这类文件时）。它会下载一份自包含的 python、装六个钉死版本的包、
+装一份中文字体，全程可见进度，装完当场验收。
+
+开发时想用命令装同一份（等价于点按钮）：
 
 ```bash
-uv venv --python 3.12 ~/.evowork/runtime/office
-uv pip install --python ~/.evowork/runtime/office/bin/python \
-  python-docx openpyxl python-pptx matplotlib pdfplumber jsonschema
+EVOWORK_INSTALL_E2E=1 npx vitest run --project runtime-installer -t "干净 HOME"
 ```
+
+> **不要再用 `uv venv` 装它**（2026-09-07 前本节教的就是这个）。uv 建出来的目录
+> **不可搬运**：`bin/python` 是指向 `~/.local/share/uv/python/...` 的绝对符号链接，
+> 拷到别的机器上就是死链，而且那个 venv **不带 pip**。安装器改用
+> python-build-standalone 的 `install_only` 构建，解出来自包含、位置无关、自带 pip。
+> 已经用 uv 装过的环境仍然能用（解释器候选路径两种布局都认），但新装一律走安装器。
 
 装在自己的目录而不是系统 python：卸载 = 删一个目录，系统 python 升级不会带走它，
 而"装没装"这个判断就是"那个解释器能不能 import 那些模块"，没有歧义。
-企业离线部署用 `EVOWORK_OFFICE_PYTHON` 指向别处。
 
 **不装也能用**：文本 / Markdown / CSV / TSV / JSON / 压缩包走内置解析器（基础包）。
 四个技能在缺模块时会**自动换到这个解释器重跑**；两边都没有时以退出码 3 + 可操作提示结束，
 不会产出坏文件。
+
+#### 企业离线部署（上不了 GitHub / PyPI 的机器）
+
+在一台**有网**的机器上打包，把整个目录下发给客户：
+
+```bash
+# 给本机架构打；给别的平台加 --triple（wheel 分平台，一份包只服务一个 triple）
+node scripts/build-office-bundle.mjs --out ~/evowork-office-bundle
+node scripts/build-office-bundle.mjs --triple x86_64-pc-windows-msvc --out ./bundle-win
+```
+
+产出 `python-<triple>.tar.gz` · `wheels/` · `NotoSansSC.ttf` · `MANIFEST.json`。
+目标机器上：
+
+```bash
+export EVOWORK_OFFICE_BUNDLE=/path/to/bundle   # 然后在 App 里点「现在安装」
+```
+
+这条路径**一个字节都不出网**（测试把下载函数换成"一被调用就失败"来守这一条）。
+**2026-09-07 实测**：本机打包 → 干净 HOME 离线装完 41.7 秒，六个模块与字体全部可用。
+
+扩展装在别处时（预置镜像、共享盘）用 `EVOWORK_OFFICE_PYTHON` 指向那个解释器。
 
 ---
 
@@ -451,7 +480,11 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | 网关启动即退出，日志 `gateway.boot.no_tokens` | 没配 `EVOWORK_GATEWAY_TOKENS` | 同上 |
 | Electron `FATAL ... Running as root` | 容器里以 root 跑 | 加 `--no-sandbox`（仅限容器/CI） |
 | `require('electron')` 报 "failed to install correctly" | pnpm 拦了 postinstall，运行时才发现 | `pnpm rebuild electron`；确认 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 里有它 |
-| 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 见 §3.3；或用 `EVOWORK_OFFICE_PYTHON` 指定 |
+| 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 在 App 里点「现在安装」（§3.3）；或用 `EVOWORK_OFFICE_PYTHON` 指定已装好的解释器 |
+| 安装卡在 0% 不动 | 连接停滞。**60 秒收不到数据就会自己失败并给出原因**，不会一直挂着 | 换个网络重试，或用离线包（§3.3） |
+| 安装报"连不上 Python 包镜像（PyPI）" | 公司代理拦了 PyPI（最常见的一类失败） | 用离线包（§3.3）。也可以给 pip 配企业镜像源后重试 |
+| 安装报"下载到的文件与预期不符" | 中间设备改写了响应，或这个 EvoWork 版本的清单已过期 | **不要重试**（内容不对不是运气问题）：换网络，或用离线包 |
+| 图表里的中文变方框 | 扩展没装，或字体没被加载 | 装办公扩展 —— 它带一份 Noto Sans SC。装了仍报错时按提示装一款系统中文字体 |
 | 内核 stderr 报 `could not find bubblewrap` | Linux 沙箱组件没装 | `apt install bubblewrap`。不装它会回落到自带的那个，**不阻断启动**，所以容易被当成噪音漏掉 |
 | 手工发 `initialize` 没有响应 | **stdin 被关掉了** —— 管道一关内核就退出 | 保持 stdin 打开，见 §2.1.1 的写法 |
 | electron-builder 报 `Cannot compute electron version from installed node modules` | 它检测到 pnpm workspace 后把 projectDir 定在**仓库根**，去那里找 `node_modules/electron`；而 electron 装在 `apps/desktop` 下 | `electron` 声明在**根** `package.json` 的 devDependencies（2026-09-05 从 apps/desktop 挪过来的原因就是这个） |

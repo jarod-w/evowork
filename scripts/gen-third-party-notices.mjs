@@ -20,6 +20,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { readManifest } from './build-office-bundle.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const KERNEL_DIR = resolve(process.env.EVOWORK_KERNEL_DIR ?? join(REPO_ROOT, '..', 'codex'));
 const OUT = join(REPO_ROOT, 'THIRD_PARTY_NOTICES.md');
@@ -187,14 +189,36 @@ L.push('');
 L.push('08 §4 的三档运行时（办公扩展、OCR 扩展）**不随主程序分发**，在用户显式同意后下载。');
 L.push('它们各自的许可证清单在下载包内随附，并在下载前的确认界面里给出链接：');
 L.push('');
+/*
+ * 版本号从**安装清单**里读，不在这里抄一份。
+ *
+ * 2026-09-07 之前这一节写的是"具体版本号等 M3 落地时补全" —— 而安装器落地后，
+ * 抄一份的下场是清单升了版本、法务手上的还是旧的。清单是唯一真源。
+ */
+const office = readManifest();
 L.push('| 档位 | 主要组件 | 许可证 |');
 L.push('|---|---|---|');
 L.push(
-  '| 办公扩展 | CPython · python-docx · openpyxl · python-pptx · pdfplumber | PSF-2.0 · MIT · MIT · MIT · MIT |',
+  `| 办公扩展 · 解释器 | CPython ${office.pythonVersion}` +
+    `（python-build-standalone ${office.pythonRelease}，\`install_only\`） | PSF-2.0 |`,
+);
+L.push(
+  `| 办公扩展 · Python 包 | ${office.requirements.join(' · ')} | MIT · MIT · MIT · PSF-2.0 · MIT · MIT |`,
+);
+/*
+ * 字体单列一行：它是**随扩展分发的二进制资产**，而 OFL 有一条 npm 依赖没有的义务 ——
+ * 保留版权声明与许可证原文。漏登记它是 K5 意义上的实质缺失，不是形式问题。
+ */
+L.push(
+  '| 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，安装时切成 wght=400 静态实例） |' +
+    ' SIL Open Font License 1.1 |',
 );
 L.push('| OCR 扩展 | tesseract + 中文语言模型 | Apache-2.0 |');
 L.push('');
-L.push('> 这一节的具体版本号在 M3 落地运行时分发时由同一脚本补全（目前尚无这些依赖）。');
+L.push(
+  '> 办公扩展的版本全部钉死并带 sha256 校验，真源是 ' +
+    '`services/runtime-installer/src/manifest.ts`；这一节由本脚本从那里读出，不手工维护。',
+);
 L.push('');
 
 const content = `${L.join('\n')}\n`;

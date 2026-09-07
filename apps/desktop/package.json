@@ -17,6 +17,7 @@
     "@evowork/scheduler": "workspace:*",
     "@evowork/policy": "workspace:*",
     "@evowork/ingest": "workspace:*",
+    "@evowork/runtime-installer": "workspace:*",
     "@evowork/artifacts": "workspace:*",
     "@evowork/gateway": "workspace:*",
     "@evowork/logging": "workspace:*",

@@ -1,0 +1,29 @@
+{
+  "name": "@evowork/runtime-installer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "办公扩展的按需安装（08 §4）。K6 登记：这是产品里唯一为装扩展而出网的包",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*.js": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/ingest": "workspace:*",
+    "@evowork/logging": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

@@ -27,7 +27,13 @@
 import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
 import { toProfileOptions, type ProtocolProfile } from '@evowork/policy/profiles.js';
 
-import { Banner, EmptyState, PillButton, SegmentedControl } from '../components/primitives.js';
+import {
+  Banner,
+  EmptyState,
+  PillButton,
+  ProgressBar,
+  SegmentedControl,
+} from '../components/primitives.js';
 
 export type OnboardingStep = 'welcome' | 'workspace' | 'permissions' | 'model' | 'runtime' | 'done';
 
@@ -74,6 +80,21 @@ export interface OnboardingProps {
   readonly gatewayUrl?: string | undefined;
   readonly onGatewayUrlChange?: ((url: string) => void) | undefined;
   readonly runtimeInstalled: boolean;
+  /**
+   * 这台机器支不支持（架构没有对应的运行时时为 false）。
+   *
+   * **不支持时不显示安装按钮** —— 显示一个点了必然失败的按钮，比明说"这台机器上用不了"
+   * 更糟：用户会反复点，然后以为是网络问题。
+   */
+  readonly runtimeSupported?: boolean | undefined;
+  /** 要下多少（如 "约 43 MB"）。**按平台算**，linux x64 是 macOS 的四倍 */
+  readonly runtimeDownloadSize?: string | undefined;
+  /** 正在装时的进度。`undefined` = 没在装 */
+  readonly runtimeProgress?:
+    | { readonly label: string; readonly percent: number; readonly detail?: string | undefined }
+    | undefined;
+  /** 上一次安装失败的原因，可直接显示 */
+  readonly runtimeError?: string | undefined;
   readonly onInstallRuntime?: (() => void) | undefined;
   readonly onSkipRuntime?: (() => void) | undefined;
   readonly onFinish?: (() => void) | undefined;
@@ -210,19 +231,52 @@ function Model(props: OnboardingProps) {
 
 function Runtime(props: OnboardingProps) {
   const office = RUNTIME_TIERS.office;
+  const installing = props.runtimeProgress !== undefined;
+  // 探测结果没到之前按"支持"渲染：默认成不支持的话，界面会在半秒里先说
+  // "这台机器用不了"再改口，而那半秒足够被看见
+  const supported = props.runtimeSupported ?? true;
+
   return (
     <div className="ew-onboarding-body">
       <p>
         处理 Word / Excel / PPT / PDF，以及生成这些格式的文件，需要一个本地组件 （{office.label}，
-        {office.size}）。
+        {props.runtimeDownloadSize ?? office.size}）。它还带一份中文字体，
+        图表里的中文才不会变成方框。
       </p>
+
       {props.runtimeInstalled ? (
         <Banner tone="info">已经装好了。</Banner>
+      ) : !supported ? (
+        /* 不支持的平台：**说清楚，不给按钮** —— 点了必然失败的按钮只会让人反复点 */
+        <Banner tone="danger">
+          这台设备的系统架构暂时没有可用的{office.label}。 Word / Excel / PPT / PDF
+          在这台机器上用不了，其余功能不受影响。
+        </Banner>
+      ) : installing ? (
+        <div className="ew-onboarding-progress-block">
+          {/*
+            进度条 + 阶段名 + 字节数。三样都要：只有百分比的话，卡在 40% 的那两分钟
+            （pip 装包，没有细粒度进度）看起来像死了。
+          */}
+          <ProgressBar
+            percent={props.runtimeProgress?.percent ?? 0}
+            label={props.runtimeProgress?.label ?? '正在安装办公扩展'}
+          />
+          <p className="ew-field-hint">
+            {props.runtimeProgress?.label}
+            {props.runtimeProgress?.detail ? ` · ${props.runtimeProgress.detail}` : ''}
+          </p>
+          <p className="ew-field-hint">装的时候可以先往下走，装完了会自己生效。</p>
+        </div>
       ) : (
         <>
+          {props.runtimeError !== undefined ? (
+            // 失败原因照原样给：安装器已经把它写成一句能照做的话了（换网络 / 用离线包 / 清磁盘）
+            <Banner tone="danger">{props.runtimeError}</Banner>
+          ) : null}
           <div className="ew-onboarding-actions">
             <PillButton variant="accent" onClick={props.onInstallRuntime}>
-              现在安装
+              {props.runtimeError !== undefined ? '重试安装' : '现在安装'}
             </PillButton>
             {/* R10：必须允许跳过，且**明确后果** —— 不是"建议安装" */}
             <PillButton onClick={props.onSkipRuntime}>以后再说</PillButton>

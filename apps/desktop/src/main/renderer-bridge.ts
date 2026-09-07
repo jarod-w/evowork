@@ -46,6 +46,8 @@ import type {
   RenderItemView,
   RendererEvent,
   RowActionInput,
+  RuntimeInstallResultView,
+  RuntimeStatusView,
   SendInput,
   StartupInfo,
   TaskRowView,
@@ -173,6 +175,20 @@ export interface RendererBridgeOptions {
   readonly readModelCatalog?: (() => Promise<ModelCatalogResult>) | undefined;
   /** 打开系统目录选择框（首运行第②步）。没有它时 `pickWorkspace` 返回 undefined */
   readonly pickDirectory?: (() => Promise<string | undefined>) | undefined;
+  /**
+   * 办公扩展的探测与安装（08 §4）。注入而不是在这里直接调安装器：
+   * 装扩展要起子进程、要下载，而这个文件其余部分全是纯翻译 ——
+   * 注入之后"装不上时界面怎么表现"能在测试里跑，不必真下 40MB。
+   *
+   * 没给时 `getRuntimeStatus` 报 `supported: false`，引导页据此**不显示安装按钮**
+   * （而不是显示一个点了没反应的）。
+   */
+  readonly officeRuntime?:
+    | {
+        readonly status: () => RuntimeStatusView;
+        readonly install: () => Promise<RuntimeInstallResultView>;
+      }
+    | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -522,6 +538,38 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async completeOnboarding(): Promise<void> {
       writeMeta(store.db, ONBOARDED_KEY, '1');
       return Promise.resolve();
+    },
+
+    /**
+     * 办公扩展装了没有（08 §4）。
+     *
+     * **每次都真探**，不记在渲染层：用户可能在另一个窗口刚装完，也可能刚把
+     * `~/.evowork/runtime/office` 删了。缓存这个状态的代价是界面说"装好了"
+     * 而实际生成产物时报"没装"。
+     */
+    async getRuntimeStatus(): Promise<RuntimeStatusView> {
+      if (!options.officeRuntime) {
+        // 这个版本没接安装器：**如实说不支持**，不给一个点了没反应的按钮
+        return Promise.resolve({ installed: false, missing: [], supported: false });
+      }
+      return Promise.resolve(options.officeRuntime.status());
+    },
+
+    /**
+     * 装办公扩展。进度走 `runtimeProgress` 频道推，这里只等最终结果。
+     *
+     * 没接安装器时返回的是**失败 + 一句能照做的话**（去哪儿手工装），
+     * 而不是抛错 —— 抛错在渲染层的表现是按钮转一下然后什么都没发生。
+     */
+    async installOfficeRuntime(): Promise<RuntimeInstallResultView> {
+      if (!options.officeRuntime) {
+        return {
+          ok: false,
+          failure: 'UNSUPPORTED',
+          message: '这个版本还不能自动安装办公扩展。',
+        };
+      }
+      return options.officeRuntime.install();
     },
 
     /** 首页要渲染的一切，一次给全 */

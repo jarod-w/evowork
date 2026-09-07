@@ -25,6 +25,13 @@ export const RENDERER_CHANNELS = Object.freeze({
   degrade: 'evowork:degrade',
   pendingApprovals: 'evowork:pending-approvals',
   askApproval: 'evowork:ask-approval',
+  /**
+   * 办公扩展的安装进度（08 §4）。
+   *
+   * 是**推送**而不是让渲染层轮询：安装要几分钟，轮询要么太密（白耗）要么太疏
+   * （进度条一跳一大截）。而"现在在下什么"恰恰是这几分钟里用户唯一关心的事。
+   */
+  runtimeProgress: 'evowork:runtime-progress',
 });
 
 /**
@@ -63,6 +70,13 @@ export const RENDERER_ACTIONS = Object.freeze([
   'pickWorkspace',
   /** 首次引导走完（02 §9）。落 `meta` 表，换窗口/清缓存都不该让人重走一遍 */
   'completeOnboarding',
+  /**
+   * 办公扩展装了没有（08 §4）。**每次问都真的去探一遍**，不缓存在渲染层：
+   * 用户可能刚在别处装完，也可能刚把目录删了。
+   */
+  'getRuntimeStatus',
+  /** 装办公扩展。进度走 `runtimeProgress` 频道，这里只返回最终结果 */
+  'installOfficeRuntime',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {
@@ -79,6 +93,7 @@ export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): 
     onNotice: subscribe(RENDERER_CHANNELS.notice),
     onDegrade: subscribe(RENDERER_CHANNELS.degrade),
     onPendingApprovals: subscribe(RENDERER_CHANNELS.pendingApprovals),
+    onRuntimeProgress: subscribe(RENDERER_CHANNELS.runtimeProgress),
   };
   for (const action of RENDERER_ACTIONS) {
     api[action] = (payload?: unknown) => ipc.invoke(`evowork:${action}`, payload);

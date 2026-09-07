@@ -2357,3 +2357,25 @@ textarea {
   gap: var(--space-8);
   margin-top: var(--space-24);
 }
+
+/* ── 5.33 ProgressBar（办公扩展安装，08 §4）──────────────────────── */
+
+.ew-progress-bar {
+  height: var(--layout-quota-bar-height);
+  border-radius: var(--r-full);
+  background: var(--bg-selected);
+  overflow: hidden;
+}
+.ew-progress-fill {
+  display: block;
+  width: var(--ew-progress-percent);
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+.ew-onboarding-progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}

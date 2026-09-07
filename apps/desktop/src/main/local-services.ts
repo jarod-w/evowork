@@ -31,6 +31,13 @@ import {
 import type { Adapter } from '@evowork/kernel-adapter';
 import type { Logger } from '@evowork/logging';
 import { createRuntimeProbe } from '@evowork/ingest';
+import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
+import {
+  installOfficeRuntime,
+  PHASE_LABEL,
+  totalDownloadBytes,
+  TRIPLE_BY_PLATFORM,
+} from '@evowork/runtime-installer';
 import { createKernelBridge, createScheduler, type AutomationDefinition } from '@evowork/scheduler';
 import {
   createArtifactRepo,
@@ -39,11 +46,24 @@ import {
   type Store,
 } from '@evowork/store';
 
+import type {
+  RuntimeInstallResultView,
+  RuntimeProgressView,
+  RuntimeStatusView,
+} from '../shared/ipc.js';
+
 export interface LocalServicesOptions {
   readonly store: Store;
   readonly adapter: Adapter;
   readonly notify: (text: string) => void;
   readonly logger?: Logger | undefined;
+  /**
+   * 办公扩展安装进度往哪儿推（08 §4）。宿主把它接到 `runtimeProgress` 频道上。
+   *
+   * 与 `notify` 分开：notice 是一条会消失的提示，而安装进度要在**同一个位置**
+   * 连续更新几分钟。混用的话界面上会堆出几十条"正在下载 3%…4%…"。
+   */
+  readonly onRuntimeProgress?: ((progress: RuntimeProgressView) => void) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -148,12 +168,58 @@ export function createLocalServices(options: LocalServicesOptions) {
     options.logger?.info('artifacts.watch.started', { pathKind: 'workspace' });
   }
 
+  /* ── 办公扩展：探测 + 安装（08 §4）───────────────────────────── */
+
+  /**
+   * 扩展的状态与安装入口。
+   *
+   * 探测结果**不缓存在这一层**：`createRuntimeProbe()` 自己带缓存，而安装成功后
+   * 必须 `invalidate()` —— 不失效的话界面会一直显示"没装"，用户刚装完就被告知没装，
+   * 只能重启 App 才认。这正是 `probe.ts` 头注释里写的那个"安装流程结束时调用"。
+   */
+  const officeRuntime = {
+    status: (): RuntimeStatusView => {
+      const missing = RUNTIME_TIERS.office.probeModules.filter((m) => !probe.hasModule(m));
+      const triple = TRIPLE_BY_PLATFORM[`${process.arch}-${process.platform}`];
+      return {
+        installed: missing.length === 0,
+        missing,
+        supported: triple !== undefined,
+        ...(triple !== undefined
+          ? { downloadSize: `约 ${Math.round(totalDownloadBytes(triple) / 1_000_000)} MB` }
+          : {}),
+      };
+    },
+
+    install: async (): Promise<RuntimeInstallResultView> => {
+      const result = await installOfficeRuntime({
+        ...(options.logger ? { logger: options.logger } : {}),
+        ...(process.env.EVOWORK_OFFICE_BUNDLE
+          ? { bundleDir: process.env.EVOWORK_OFFICE_BUNDLE }
+          : {}),
+        onProgress: (p) =>
+          options.onRuntimeProgress?.({
+            phase: p.phase,
+            label: PHASE_LABEL[p.phase],
+            percent: p.percent,
+            ...(p.detail !== undefined ? { detail: p.detail } : {}),
+          }),
+      });
+      // 成功与否都失效一次：失败也可能装进去了一部分，缓存住旧答案只会更乱
+      probe.invalidate();
+      return result.ok
+        ? { ok: true }
+        : { ok: false, failure: result.failure, message: result.message };
+    },
+  };
+
   return {
     automations,
     artifacts,
     bridge,
     scheduler,
     probe,
+    officeRuntime,
 
     /**
      * 启动调度：先做一次 misfire 扫描（**先写 MISSED 再补跑**），再按分钟对表。

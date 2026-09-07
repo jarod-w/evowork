@@ -18,6 +18,9 @@
       "path": "services/ingest"
     },
     {
+      "path": "services/runtime-installer"
+    },
+    {
       "path": "services/policy"
     },
     {

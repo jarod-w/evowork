@@ -25,6 +25,9 @@ import type {
   ModelCatalogResult,
   ModelOptionView,
   RendererEvent,
+  RuntimeInstallResultView,
+  RuntimeProgressView,
+  RuntimeStatusView,
   SendInput,
   StartupInfo,
   TaskRowView,
@@ -76,6 +79,11 @@ export interface EvoworkBridge {
   /** 打开系统目录选择框。返回空对象 = 用户取消，或这个构建没有选择器 */
   pickWorkspace(): Promise<{ path?: string }>;
   completeOnboarding(): Promise<void>;
+  /** 办公扩展装了没有（08 §4）。**每次问都真探**，别在渲染层缓存 */
+  getRuntimeStatus(): Promise<RuntimeStatusView>;
+  /** 装办公扩展。要几分钟，进度走 `onRuntimeProgress` */
+  installOfficeRuntime(): Promise<RuntimeInstallResultView>;
+  onRuntimeProgress(handler: (progress: RuntimeProgressView) => void): () => void;
 }
 
 /**
@@ -154,6 +162,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 用户会以为没选上，再点一次。
    */
   const [pickedWorkspaces, setPickedWorkspaces] = useState<readonly string[]>([]);
+  /**
+   * 办公扩展的状态与安装（08 §4）。
+   *
+   * 三份 state 而不是一份：**"没装"、"正在装"、"装失败了"是三种不同的界面**，
+   * 合成一个字段的话，安装失败后进度条会停在最后一个百分比上不动 ——
+   * 看起来像还在装，而实际上已经结束了。
+   */
+  const [runtime, setRuntime] = useState<RuntimeStatusView | null>(null);
+  const [runtimeProgress, setRuntimeProgress] = useState<RuntimeProgressView | undefined>(
+    undefined,
+  );
+  const [runtimeError, setRuntimeError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const offs = [
@@ -259,6 +279,45 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   useEffect(() => {
     void loadModels();
   }, [loadModels]);
+
+  /**
+   * 办公扩展：进来先探一次，安装进度订阅整个会话都在。
+   *
+   * 订阅不只在引导页开：安装可能在引导里发起，而用户会一边装一边往下走完引导 ——
+   * 只在那一屏订阅的话，走出去再回来进度就断了。
+   */
+  useEffect(() => {
+    void bridge
+      .getRuntimeStatus()
+      .then(setRuntime)
+      .catch(() => setRuntime(null));
+    return bridge.onRuntimeProgress(setRuntimeProgress);
+  }, [bridge]);
+
+  /**
+   * 装办公扩展。
+   *
+   * 装完**必须重新探一次**而不是直接把 `installed` 置真：安装器说成功了不等于
+   * 这台机器上探得到（安全软件、权限、装到别的 HOME）。以探测结果为准，
+   * 才不会出现"界面说装好了、生成产物时说没装"。
+   */
+  const installRuntime = useCallback(async () => {
+    setRuntimeError(undefined);
+    setRuntimeProgress({ phase: 'download-python', label: '正在准备', percent: 0 });
+    try {
+      const result = await bridge.installOfficeRuntime();
+      if (!result.ok) setRuntimeError(result.message ?? '安装没能完成。');
+    } catch (err: unknown) {
+      setRuntimeError(`安装没能完成：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      // 成功与否都清掉进度条并重探：失败时留着进度条会像还在装
+      setRuntimeProgress(undefined);
+      await bridge
+        .getRuntimeStatus()
+        .then(setRuntime)
+        .catch(() => undefined);
+    }
+  }, [bridge]);
 
   /**
    * 选中项跟着「列表 + 场景默认值 + 用户已选」三者走。
@@ -479,10 +538,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {...(modelUnavailable !== undefined ? { modelError: modelUnavailable } : {})}
           onCheckModel={() => void loadModels()}
           /*
-           * 办公扩展的下载器**还没有实现**（08 §4 的按需下载，M9 剩余项）。
-           * 这里如实说，不给一个点了没反应的按钮 —— 那正是这一轮在修的那类缺陷。
+           * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，
+           * 因为下载器没实现 —— 那时"如实说"是唯一诚实的选择。现在它实现了，
+           * 这一屏接的是真实探测结果与真实安装动作。
            */
-          runtimeInstalled={false}
+          runtimeInstalled={runtime?.installed ?? false}
+          runtimeSupported={runtime?.supported ?? false}
+          {...(runtime?.downloadSize !== undefined
+            ? { runtimeDownloadSize: runtime.downloadSize }
+            : {})}
+          {...(runtimeProgress ? { runtimeProgress } : {})}
+          {...(runtimeError !== undefined ? { runtimeError } : {})}
+          onInstallRuntime={() => void installRuntime()}
           onSkipRuntime={() => setOnboardingStep('done')}
           onFinish={() => {
             void bridge.completeOnboarding().then(() => {

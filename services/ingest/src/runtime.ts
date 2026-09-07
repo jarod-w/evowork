@@ -57,6 +57,28 @@ export function runtimeMissingMessage(tier: RuntimeTier, what: string): string {
   return `需要安装本地${spec.label}（${spec.size}）才能${what}。安装后重试即可。`;
 }
 
+/**
+ * 扩展**装好了**、却仍然没解析出内容时该说什么。
+ *
+ * 这一句是 2026-09-06 修掉的一个会说谎的文案换来的：管道在这条分支上复用了
+ * `runtimeMissingMessage`，于是扩展装好之后用户拖入一个 docx，看到的仍然是
+ * 「需要安装本地办公扩展」—— 而它明明已经装了。用户能做的只有再装一遍，
+ * 而再装一遍也不会有任何变化。
+ *
+ * 两种情形要分开说，因为用户能做的事不同：
+ *
+ *   · `hasParser: false` —— 这个版本还没接上解析器（当前就是这个状态，
+ *     `ExternalParser` 要等 M4 的受限子进程）。用户**做什么都没用**，所以不能暗示他去装东西；
+ *   · `hasParser: true`  —— 解析器在，但这个文件没解出来（加密 PDF、损坏的 docx……）。
+ *     换个文件或者用原始文件引用是有意义的动作。
+ */
+export function unparsedMessage(hasParser: boolean): string {
+  return hasParser
+    ? '这个文件没能解析出内容，已按原始文件引用 —— 它可能有密码保护或已损坏。'
+    : '这个版本还不能解析这种文件的内容，已按原始文件引用。' +
+        '任务里可以直接让它用命令打开这个文件。';
+}
+
 /** 可解析的输入类型。`code` 与 `image` 不进解析器（08 §3.3 的最后两行）。 */
 export type InputKind =
   | 'txt'
@@ -111,10 +133,41 @@ export const TIER_OF: Readonly<Record<InputKind, RuntimeTier>> = Object.freeze({
  */
 export const OFFICE_RUNTIME_DIR = '.evowork/runtime/office';
 
+/**
+ * 中文字体放在扩展里的哪儿（`plugins/skills/charts` 会去扫它）。
+ *
+ * 字体是**扩展的一部分**，不是"希望系统里刚好有一款"。在此之前 charts 的提示写着
+ * "请安装办公扩展（它带中文字体）"而扩展里一个字体都没有 —— macOS/Windows 靠系统字体
+ * 侥幸能过，裸 Linux 与精简 Windows 镜像上那句话指的路修不好问题。
+ */
+export const OFFICE_FONTS_SUBDIR = 'fonts';
+
+export function officeFontsPath(home: string): string {
+  return `${home}/${OFFICE_RUNTIME_DIR}/${OFFICE_FONTS_SUBDIR}`;
+}
+
+/**
+ * 解释器的候选路径，**按优先级**。
+ *
+ * 四个候选对应两种来源，缺一不可：
+ *
+ *   · `bin/python` / `Scripts/python.exe` —— venv 布局。企业用 `uv venv` 自建的环境，
+ *     以及 2026-09-06 之前文档里教的那种装法；
+ *   · `bin/python3` / `python.exe`（在根上）—— python-build-standalone 的 `install_only`
+ *     布局，也就是内置安装器装出来的那种。**windows 上它就在根目录**，
+ *     `Scripts/` 里放的是 pip.exe 之类，不是解释器。
+ *
+ * 只认前一种的话，内置安装器装完之后探针会说"没装" —— 装了却用不了是最难查的一类故障。
+ * 与 `plugins/skills/_shared/evowork_skill.py` 的 `office_python()` 是同一份约定，
+ * 由 `test/runtime.test.ts` 逐条比对。
+ */
 export function officeInterpreterPaths(home: string): readonly string[] {
+  const root = `${home}/${OFFICE_RUNTIME_DIR}`;
   return [
-    `${home}/${OFFICE_RUNTIME_DIR}/bin/python`,
-    `${home}/${OFFICE_RUNTIME_DIR}/Scripts/python.exe`,
+    `${root}/bin/python`,
+    `${root}/bin/python3`,
+    `${root}/Scripts/python.exe`,
+    `${root}/python.exe`,
   ];
 }
 

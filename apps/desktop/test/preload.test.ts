@@ -23,10 +23,19 @@ function install() {
 }
 
 describe('暴露面', () => {
-  it('只暴露订阅 + 六个动作，**不暴露 ipcRenderer 本身**', () => {
+  // 标题不写数字：动作会随功能增加，写死"六个"只会让标题在某次提交后开始骗人
+  it('只暴露订阅 + RENDERER_ACTIONS，**不暴露 ipcRenderer 本身**', () => {
     const { api } = install();
     expect(Object.keys(api).sort()).toEqual(
-      ['onUiEvent', 'onNotice', 'onDegrade', 'onPendingApprovals', ...RENDERER_ACTIONS].sort(),
+      [
+        'onUiEvent',
+        'onNotice',
+        'onDegrade',
+        'onPendingApprovals',
+        // 办公扩展安装进度（08 §4）：装一次要几分钟，推送比轮询合适
+        'onRuntimeProgress',
+        ...RENDERER_ACTIONS,
+      ].sort(),
     );
     // 暴露 ipcRenderer 等于把整个 IPC 面交出去，之后任何"临时加个频道"都会绕过 preload
     expect(JSON.stringify(Object.keys(api))).not.toContain('ipc');

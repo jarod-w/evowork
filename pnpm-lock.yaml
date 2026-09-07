@@ -68,6 +68,9 @@ importers:
       '@evowork/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@evowork/runtime-installer':
+        specifier: workspace:*
+        version: link:../../services/runtime-installer
       '@evowork/scheduler':
         specifier: workspace:*
         version: link:../../services/scheduler
@@ -182,6 +185,19 @@ importers:
 
   services/policy:
     dependencies:
+      '@evowork/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
+
+  services/runtime-installer:
+    dependencies:
+      '@evowork/ingest':
+        specifier: workspace:*
+        version: link:../ingest
       '@evowork/logging':
         specifier: workspace:*
         version: link:../../packages/logging

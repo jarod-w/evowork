@@ -177,6 +177,28 @@ artifact
 - 企业离线部署提供全量包（含所有档位）。
 - **产物生成技能同样依赖办公扩展**（§5），因此首次生成 PPT/Word 也会触发同一次下载。提示文案要统一，不能一次说"解析组件"、一次说"生成组件"。
 
+### 4.1 安装器（2026-09-07 落地）
+
+在此之前这一节只有决策没有实现：引导第 ⑤ 步的 `runtimeInstalled` 硬编码 `false`，
+安装按钮没有回调，**任何一台干净机器上 Word / Excel / PPT / PDF 都不可用**，
+唯一的装法是让用户自己装 uv 再敲两条命令。实现处 `services/runtime-installer`。
+
+| 决定                              | 内容                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| python 从哪来                     | **python-build-standalone 的 `install_only` 构建**（自带 pip）。钉死 3.12.14+20260901，六个平台各有 sha256           |
+| 为什么不用 `uv venv`              | 它建出来的目录**不可搬运** —— `bin/python` 是指向 `~/.local/share/uv/python/...` 的绝对符号链接（2026-09-06 实测）。客户机器上没有那个目标，拷过去就是死链，随包分发与离线包都不成立 |
+| 装在哪                            | `~/.evowork/runtime/office/`，解释器摊平到根下（unix `bin/python3`、windows `python.exe`）。可用 `EVOWORK_OFFICE_PYTHON` 覆盖 |
+| 中文字体                          | **随扩展装一份 Noto Sans SC**（OFL）到 `<扩展根>/fonts/`。此前 `charts` 的提示写着"请安装办公扩展（它带中文字体）"而扩展里一个字体都没有 —— macOS/Windows 靠系统字体侥幸能过，裸 Linux 与精简 Windows 镜像过不了 |
+| 字体为什么要切静态实例            | 下载的是可变字体，matplotlib 会把它登记成 **weight 100**（实测警告 `Failed to find font weight normal, now using 100`），图表标题明显偏细。安装时用 fontTools（matplotlib 自带依赖）切 `wght=400`，约 9 秒 |
+| 原子性                            | 全程装在 `office.staging/`，**验收通过才 rename**。半截目录会被探针判成"装好了"，然后每次生成都以奇怪的方式失败       |
+| 验收标准                          | 不是"文件都在"：用装出来的解释器真的 import 六个模块，并让 matplotlib 真的登记出 `Noto Sans SC` 这个家族名 —— 与 `charts` 找字体走同一条路 |
+| 失败怎么说                        | 平台不支持 / 下载失败 / 校验不过 / 停滞 / pip 被代理挡 / 磁盘满 / 验收不过，**各自一句能照做的话**，不合并成"安装失败" |
+| 停滞看门狗                        | 60 秒收不到字节即判定连接死了。**没有它的表现是进度条永远停在 0%**（2026-09-07 真机 E2E 撞到过），用户没有任何出路   |
+| 离线安装（企业）                  | `scripts/build-office-bundle.mjs` 打包，目标机器上 `EVOWORK_OFFICE_BUNDLE=<目录>`。**这条路径一个字节都不出网**，有测试守（把下载函数换成"一被调用就失败"） |
+
+出网路径已按 K6 登记在[总纲 D9](../evowork-on-codex-design.md)。发版前必须跑一次真机安装：
+`EVOWORK_INSTALL_E2E=1 npx vitest run --project runtime-installer`（上游资产变了只有它能发现）。
+
 ---
 
 ## 5. 四个办公技能包（输出侧）

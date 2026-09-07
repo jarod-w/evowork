@@ -30,7 +30,7 @@ import {
 import { buildInjection, buildPassThrough, type InjectionItem } from './inject.js';
 import { parseDelimited, parseJson, parsePlainText, type ParseResult } from './parsers/builtin.js';
 import { isDirectoryEntry, listZipEntries, readZipEntry } from './parsers/zip.js';
-import { availabilityFor, type InputKind, type RuntimeProbe } from './runtime.js';
+import { availabilityFor, unparsedMessage, type InputKind, type RuntimeProbe } from './runtime.js';
 
 /** 落盘接口。注入以便测试，也让"写哪儿"这件事只有一处知道。 */
 export interface UploadStore {
@@ -93,6 +93,21 @@ export type IngestOutcome =
       readonly status: 'runtime-missing';
       readonly fileName: string;
       readonly kind: InputKind;
+      readonly message: string;
+      readonly fallback: 'refer-as-raw';
+    }
+  | {
+      /**
+       * 扩展装了，但这个文件没解析出内容。
+       *
+       * **与 `runtime-missing` 分开，因为 UI 要给的东西不一样**：那个要给「安装」按钮，
+       * 这个给了也没用 —— 装过了。合并成一种状态的后果 2026-09-06 兑现过一次：
+       * 用户装好扩展后拖入 docx，仍然被告知「需要安装本地办公扩展」。
+       */
+      readonly status: 'unparsed';
+      readonly fileName: string;
+      readonly kind: InputKind;
+      readonly uploadDir: string;
       readonly message: string;
       readonly fallback: 'refer-as-raw';
     };
@@ -172,12 +187,20 @@ export function createIngest(options: IngestOptions) {
     const uploadDir = writeOriginal(file, kind);
     const result = await runParser(kind, file, uploadDir);
     if (!result) {
+      /*
+       * 走到这里意味着**闸门已经放行**（该装的都装了），解析器却没给出内容。
+       * 所以这里绝不能再说"需要安装组件" —— 装了的人会被这句话骗去装第二遍。
+       * 原来的写法是 `availability.message ?? '这种文件需要额外的本地组件才能解析。'`，
+       * 而 `availability.message` 在"装好了"的分支上恒为 undefined，
+       * 于是那句兜底文案是**装好之后唯一会出现的一句**。
+       */
       return [
         {
-          status: 'runtime-missing',
+          status: 'unparsed',
           fileName: file.fileName,
           kind,
-          message: availability.message ?? '这种文件需要额外的本地组件才能解析。',
+          uploadDir,
+          message: unparsedMessage(options.externalParser !== undefined),
           fallback: 'refer-as-raw',
         },
       ];

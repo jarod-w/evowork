@@ -276,6 +276,8 @@ export const IPC = {
   degrade: 'evowork:degrade',
   pendingApprovals: 'evowork:pending-approvals',
   askApproval: 'evowork:ask-approval',
+  /** 办公扩展安装进度（08 §4）。与 `preload` 的 `RENDERER_CHANNELS` 一一对应 */
+  runtimeProgress: 'evowork:runtime-progress',
 } as const;
 
 const RECONCILE_INTERVAL_MS = 10 * 60_000;
@@ -418,6 +420,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     store,
     adapter,
     notify: (text) => options.emitToRenderer(IPC.notice, { kind: 'automation', text }),
+    // 安装进度单独一个频道：它要在同一个位置连续更新几分钟，
+    // 走 notice 的话界面上会堆出几十条"正在下载 3%…4%…"
+    onRuntimeProgress: (progress) => options.emitToRenderer(IPC.runtimeProgress, progress),
     logger,
   });
 
@@ -478,6 +483,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
      * 而不是抛一个"没有 handler"——后者在界面上就是点了没反应。
      */
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
+    // 办公扩展的探测与安装（08 §4）。本机服务里已经有一份带缓存的探针，
+    // 安装成功后由它自己 invalidate —— 这里只是把入口交给渲染层
+    officeRuntime: services.officeRuntime,
     pageData: {
       listArtifacts: () => services.artifacts.listAllPresent(),
       listAutomations: () =>

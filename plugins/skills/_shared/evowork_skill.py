@@ -59,16 +59,65 @@ def runtime_missing_message(tier: str, what: str) -> str:
 OFFICE_VENV = Path.home() / ".evowork" / "runtime" / "office"
 
 
+def office_interpreter_candidates() -> list[Path]:
+    """解释器候选路径，**按优先级**。
+
+    单独一个函数而不是写在 ``office_python()`` 里，是为了让
+    ``services/ingest/test/runtime.test.ts`` 能把这份表**原样读走**与 TS 侧比对。
+    内联的话那条测试只能自己抄一份候选表 —— 而抄来的表在有人改了这里之后照样通过，
+    也就守不住任何东西。
+    """
+    return [
+        OFFICE_VENV / "bin" / "python",
+        OFFICE_VENV / "bin" / "python3",
+        OFFICE_VENV / "Scripts" / "python.exe",
+        OFFICE_VENV / "python.exe",
+    ]
+
+
 def office_python() -> Path | None:
-    """办公扩展的解释器路径；没装就返回 None。"""
+    """办公扩展的解释器路径；没装就返回 None。
+
+    四个候选对应两种布局，**缺一不可**（与 `services/ingest` 的 `officeInterpreterPaths`
+    逐条对齐，由 `services/ingest/test/runtime.test.ts` 比对）：
+
+      · ``bin/python`` / ``Scripts/python.exe`` —— venv 布局（企业用 uv 自建的环境）；
+      · ``bin/python3`` / ``python.exe``（在根上）—— python-build-standalone 布局，
+        也就是内置安装器装出来的那种。windows 上解释器就在根目录，``Scripts/`` 里是 pip.exe。
+
+    只认 venv 那两个的话，内置安装器装完之后技能会说"没装扩展" ——
+    装了却用不了是最难查的一类故障。
+    """
     override = os.environ.get("EVOWORK_OFFICE_PYTHON")
     if override:
         path = Path(override)
         return path if path.exists() else None
-    for candidate in (OFFICE_VENV / "bin" / "python", OFFICE_VENV / "Scripts" / "python.exe"):
+    for candidate in office_interpreter_candidates():
         if candidate.exists():
             return candidate
     return None
+
+
+def office_fonts_dir() -> Path | None:
+    """办公扩展自带的字体目录；没有就返回 None。
+
+    ## 为什么字体要跟着扩展走
+
+    ``charts`` 在画图前探测中文字体，探不到就停下来报错而不是画一张方框图。
+    在 macOS / Windows 上系统字体让这一步侥幸能过，但**裸 Linux 或精简 Windows 镜像上过不了**
+    —— 而在此之前那句提示写的是"请安装办公扩展（它带中文字体）"，扩展里其实一个字体都没有。
+    2026-09-06 起安装器会把一份 Noto Sans SC 装进 ``<扩展根>/fonts/``，这个函数就是去找它。
+
+    目录由**解释器的位置反推**，不是写死 ``~/.evowork``：企业离线部署用
+    ``EVOWORK_OFFICE_PYTHON`` 把扩展装在别处，字体自然也在那边。
+    """
+    interpreter = office_python()
+    if interpreter is None:
+        return None
+    parent = interpreter.parent
+    root = parent.parent if parent.name in ("bin", "Scripts") else parent
+    fonts = root / "fonts"
+    return fonts if fonts.is_dir() else None
 
 
 def ensure_office_runtime(modules: Iterable[str]) -> None:
