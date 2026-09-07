@@ -255,7 +255,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | Q19 团队空间 | **只读订阅** | 复用「企业私有源索引」这一条云端职责，不新增；写入方向走 Q10 分享通道。「与我共享」收件箱不做 |
 | **Q20 助理** | **一个常驻的特殊 Thread** | 固定 cwd `~/.evowork/assistant/`、默认 Ask、不进任务列表、可 `thread/fork` 升级；别为它自建会话存储 |
 | **Q23 桌面壳** | **Electron** | 不用 Tauri（体积优势被随包 Python 运行时抹平，而侧载子进程/自动更新/公证的成熟度 Electron 更高） |
-| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 33 个）；**出现清单外的组件先补进 01** |
+| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 34 个）；**出现清单外的组件先补进 01** |
 | **Q25 品牌** | 代码与文档统一 **EvoWork** | WorkBuddy 只是候选对外名；品牌层 = `--accent` 系列 + appName + logo + mascot 四项 token |
 | Q26 首发平台 | **macOS 首发**，Windows 随 M4 结论 | Windows 隔离不足时把 `evowork-full` 标 `allowed:false` **并给原因页**，不静默降级 |
 | **Q27 M2a** | **单列里程碑**（服务层与协议适配 2–3 人周） | 前端**不得**直连实验方法，一律经适配层（破 K2 的最常见方式就是把它挤压掉） |
