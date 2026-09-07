@@ -157,6 +157,15 @@ export const FIELD_DEGRADATION = Object.freeze({
   },
 } satisfies Record<string, Degradation>);
 
+/**
+ * 唯一的降级查找入口：以后不管再拆出第三张表（方法、字段，还是别的什么），
+ * 只要接入这里，`markUnavailable` / `unavailable()` 就不会漏查——
+ * 漏查的表现就是 09 §3.3 的红线被破："降级一律显式"变成"这条降级没人看见"。
+ */
+function resolveDegradation(method: string): Degradation | undefined {
+  return DEGRADATION[method] ?? (FIELD_DEGRADATION as Record<string, Degradation>)[method];
+}
+
 export interface CapabilityReport {
   readonly method: string;
   readonly state: CapabilityState;
@@ -205,7 +214,7 @@ export class CapabilityRegistry {
   markUnavailable(method: string, reason: string): CapabilityReport {
     this.#states.set(method, 'unavailable');
     this.#reasons.set(method, reason);
-    const degradation = DEGRADATION[method];
+    const degradation = resolveDegradation(method);
     const report: CapabilityReport = {
       method,
       state: 'unavailable',
@@ -257,7 +266,7 @@ export class CapabilityRegistry {
     return [...this.#states.entries()]
       .filter(([, state]) => state === 'unavailable')
       .map(([method]) => {
-        const degradation = DEGRADATION[method];
+        const degradation = resolveDegradation(method);
         const reason = this.#reasons.get(method);
         return {
           method,

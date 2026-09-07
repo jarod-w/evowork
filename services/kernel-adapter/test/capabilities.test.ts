@@ -122,6 +122,33 @@ describe('CapabilityRegistry —— 失败分类（这是降级与 bug 的分水
     const staleKeys = Object.keys(DEGRADATION).filter((key) => !validMethods.has(key));
     expect(staleKeys).toEqual([]);
   });
+
+  it('FIELD_DEGRADATION 里没有游离的键，且与 DEGRADATION 的键集互不重叠', () => {
+    // FIELD_DEGRADATION 装的是 turn/start 上的字段，不是方法名，所以不能拿
+    // EXPERIMENTAL_METHOD 去校验；但每个键至少要形如 `turn/start.<field>`。
+    const fieldKeys = Object.keys(FIELD_DEGRADATION);
+    for (const key of fieldKeys) {
+      expect(key.startsWith('turn/start.'), `${key} 不是 turn/start 的字段`).toBe(true);
+    }
+    // 两表的键集不能有交集：交集意味着同一个 key 在两张表里都能查到，
+    // 查找顺序会决定结果——这种歧义本身就该在结构上被禁止，而不是靠约定避免。
+    const methodKeys = new Set(Object.keys(DEGRADATION));
+    const overlap = fieldKeys.filter((key) => methodKeys.has(key));
+    expect(overlap).toEqual([]);
+  });
+});
+
+describe('字段降级（turn/start.* 的 FIELD_DEGRADATION）不能在 markUnavailable 里丢失', () => {
+  it('丢了 mustAlsoDo 就意味着 Ask 模式悄悄退化成纯沙箱——这是本次要修的回归', () => {
+    const registry = new CapabilityRegistry();
+    const report = registry.markUnavailable('turn/start.collaborationMode', 'CALL_FAILED');
+
+    expect(report.degradation).toBeDefined();
+    expect(report.degradation?.userVisible).toBe(
+      FIELD_DEGRADATION['turn/start.collaborationMode'].userVisible,
+    );
+    expect(report.degradation?.mustAlsoDo).toContain('ToolContributor');
+  });
 });
 
 describe('project/* 的降级配对（09 §3.3）', () => {
