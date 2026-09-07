@@ -204,13 +204,11 @@ export function readGatewayToken(
  *
  * ## 少了它会发生什么（K5 的实际破口）
  *
- * `config/modes/*.md` 的第一句就是「你是 EvoWork 的执行智能体」。它们没被安装时
- * `readInstructions` 返回 undefined → `developer_instructions` 为空 →
- * **内核自带的身份原样漏出来**：用户问"介绍一下你自己"，得到的回答是
- * 「我是运行在 Codex CLI 里的一个编码代理」。2026-09-06 实测到。
- *
- * 这不是文案问题：K5 要求产品对外不出现那个品牌，而这条路径上没有任何东西会报错 ——
- * 空指令是完全合法的，只是产品变成了另一个产品。
+ * `config/modes/*.md` 描述的是 **Craft / Plan / Ask 怎么干活**，不是产品名。
+ * 它们没被安装时 `developer_instructions` 为空 —— Craft 约束（先产物再解释、
+ * 办公技能不要自己拼）不会进上下文。产品身份是另一层：`thread/start.baseInstructions`
+ * （F25，见 `readBaseInstructions`）。2026-09-06 把两层当成一层修过，
+ * 2026-09-07 证实只叠加 developer 指令盖不住系统底稿里的 Codex CLI。
  *
  * 逐个文件比对：企业可能只覆盖其中一份（比如 `ask.md`），整目录判断会让
  * 新增的模式文件永远装不进去。**已存在的不覆盖。**
@@ -228,6 +226,24 @@ export function ensureModeInstructions(paths: EvoworkPaths, configDir: string): 
     installed += 1;
   }
   return installed;
+}
+
+/**
+ * 读随包的产品身份底稿（`config/prompts/base-instructions.md`）。
+ *
+ * 这是内核 `default.md` 的 fork，只改了身份段。每次 `thread/start` 经
+ * `baseInstructions` 整段替换系统底稿（F25）。相对路径的 `model_instructions_file`
+ * 是按 **cwd** 解析的，不能写进 `config.toml` 模板 —— 用户换工作空间就会找不到文件。
+ *
+ * 从随包目录读而不是装进 `~/.evowork/`：这份文件是产品身份，升级必须立刻生效；
+ * 已存在不覆盖会让旧安装永远停在 Codex CLI（F21/F23 那套对企业配置是对的，对品牌不对）。
+ */
+export function readBaseInstructions(configDir: string | undefined): string | undefined {
+  if (configDir === undefined) return undefined;
+  const path = join(configDir, 'prompts', 'base-instructions.md');
+  if (!existsSync(path)) return undefined;
+  const text = readFileSync(path, 'utf8').trim();
+  return text.length > 0 ? text : undefined;
 }
 
 export interface ServiceHostOptions {
@@ -360,6 +376,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
   };
 
+  const baseInstructions = readBaseInstructions(options.configDir);
+
   /*
    * 挂起中的审批：内核发起请求 → 推给渲染层 → 用户点了按钮 → `decideApproval` 回到这里。
    *
@@ -375,6 +393,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     store,
     logger,
     readInstructions,
+    ...(baseInstructions ? { baseInstructions } : {}),
     sessionOptions: {
       clientInfo: { name: 'evowork-desktop', version: options.appVersion },
       logger,
@@ -657,6 +676,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           text:
             '还没有配置模型网关的访问令牌，任务发出去会失败。' +
             '把令牌写进 ~/.evowork/gateway-token（一行），或用 EVOWORK_GATEWAY_TOKEN 启动。',
+        });
+      }
+
+      if (!baseInstructions) {
+        logger.warn('desktop.base_instructions.missing', { reason: 'NOT_INSTALLED' });
+        options.emitToRenderer(IPC.notice, {
+          kind: 'identity',
+          text:
+            '产品身份底稿没有随包装上，智能体可能自称错误的产品名。' +
+            '这是安装问题，不是模型问题。',
         });
       }
 

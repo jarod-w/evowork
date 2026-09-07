@@ -71,3 +71,15 @@ approval_policy = "on-request"
 [otel]
 environment = "local"
 exporter = "none"
+
+# ─────────────────────────── 系统技能（K5） ───────────────────────────
+#
+# `openai-docs` 把「you / this app / this coding agent」绑到 Codex 文档上。
+# 产品身份走 `thread/start.baseInstructions`（适配层每次建任务都传，F25），
+# 不在这里写 `model_instructions_file`：那个键的相对路径按 **cwd** 解析，
+# 用户换工作空间就会找不到文件。
+# 已有的 config.toml 不会被覆盖（F21）；适配层会在每次 thread/start 再传一次
+# 同名禁用，所以老安装也能生效。
+[[skills.config]]
+name = "openai-docs"
+enabled = false

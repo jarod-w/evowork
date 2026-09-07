@@ -8,7 +8,8 @@
 - ~~P1 连接器 base url~~ → 环境变量绕过，无需改码
 - ~~P2 注册 provider~~ → `config.toml` 的 `model_providers` 绕过
 - ~~P3 `ask.md` 模式模板~~ → **F1 实测后删除**：`turn/start.collaborationMode.settings.developer_instructions` 纯配置可实现
-- **P4 品牌字符串** → 需改（只改对外可见的；内部路径名如 `CODEX_HOME` 保持不动，减少补丁面）
+- **P4 品牌字符串** → 需改（只改对外可见的；内部路径名如 `CODEX_HOME` 保持不动，减少补丁面）。
+  **智能体自称「Codex CLI」不是 P4**：走 `thread/start.baseInstructions`（F25），不打补丁。
 - ~~P5 遥测端点~~ → 走配置
 
 **加补丁的前置条件**（D7 / K1，脚本会检查）：

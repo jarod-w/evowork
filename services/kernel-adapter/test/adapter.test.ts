@@ -59,6 +59,7 @@ beforeEach(() => {
     onUiEvent: (e) => ui.push(e),
     onDegrade: (r) => degradations.push(r),
     readInstructions: (file) => (file === 'modes/craft.md' ? '你可以动手。' : undefined),
+    baseInstructions: "You are EvoWork's execution agent.",
   });
 });
 
@@ -197,6 +198,13 @@ describe('新建任务（03 §4.6）', () => {
     // F5：permissions 与 sandbox 不同传
     expect(turnStart?.params.permissions).toBe('evowork-workspace');
     expect(turnStart?.params.sandboxPolicy).toBeUndefined();
+
+    // F25：产品身份走 thread/start.baseInstructions，不是 developer_instructions
+    const threadStart = server.received.find((r) => r.method === 'thread/start');
+    expect(threadStart?.params.baseInstructions).toBe("You are EvoWork's execution agent.");
+    expect(threadStart?.params.config).toEqual({
+      'skills.config': [{ name: 'openai-docs', enabled: false }],
+    });
   });
 
   it('Ask 模式的任务：权限锁到只读，指令来自 config（无需内核补丁，F1）', async () => {

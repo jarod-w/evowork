@@ -100,6 +100,8 @@ function makeHost(over: HostOverride = {}): ServiceHost {
     appVersion: '0.0.0-test',
     emitToRenderer: (channel, payload) => emitted.push({ channel, payload }),
     spawnFn: (() => child) as unknown as HostOptions['spawnFn'],
+    // 随包 config/：身份底稿从这里读。不传的话 start() 会发一条 identity notice
+    configDir: resolve(dirname(fileURLToPath(import.meta.url)), '../../../config'),
     ...over,
   } as HostOptions);
 }
@@ -190,6 +192,29 @@ describe('启动顺序：**先开库、再起内核**（09 §4.6 的直接后果
     expect(methods).toContain('permissionProfile/list');
     // 启动时做一次对账（09 §4.1）
     expect(methods).toContain('thread/list');
+  });
+
+  it('身份底稿在随包 config 里时不发 notice', async () => {
+    host = makeHost();
+    await host.start();
+    expect(
+      emitted.some(
+        (e) => e.channel === IPC.notice && (e.payload as { kind?: string }).kind === 'identity',
+      ),
+    ).toBe(false);
+  });
+
+  it('底稿缺失时发 notice —— 不静默继续自称 Codex CLI', async () => {
+    host = makeHost({ configDir: join(dir, 'no-such-config') });
+    await host.start();
+    expect(
+      emitted.some(
+        (e) =>
+          e.channel === IPC.notice &&
+          (e.payload as { kind?: string }).kind === 'identity' &&
+          String((e.payload as { text?: string }).text).includes('产品身份底稿'),
+      ),
+    ).toBe(true);
   });
 
   it('spawn 的是 appServerPath 指向的可执行文件（环境变量由适配层负责，见 launcher 测试）', async () => {
@@ -399,8 +424,7 @@ describe('从访达启动也能拿到厂商密钥', () => {
     await host.start();
 
     const gwCall = spawnFn.mock.calls.find((c) => Array.isArray(c[1]) && c[1][0] === entry) as
-      | [string, string[], { env: Record<string, string> }]
-      | undefined;
+      [string, string[], { env: Record<string, string> }] | undefined;
     expect(gwCall?.[2].env.DEEPSEEK_API_KEY).toBe('sk-from-file');
   });
 

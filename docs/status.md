@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-07（第 14 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-07（第 15 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
@@ -18,7 +18,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | --- | --- |
 | 门禁 | `pnpm run check` 全绿：prettier · eslint（含 K2 边界规则）· tsc（含测试）· vitest · K1 补丁预算 |
 | 依赖 | Electron **44.2.0**（`--version` 实测可运行）· mermaid 11.17（**已代码分割**：主 chunk 244KB，mermaid 683KB 独立）· 办公扩展**有了 App 内安装器**（2026-09-07，`services/runtime-installer`）。实测：干净 HOME 从零联网装 **66 秒**通过（含“搬走目录再跑”的可搬运检查）；本机打的离线包在干净 HOME 上**离线装 41.7 秒**通过（下载函数被换成一被调用就炸）。四个技能用系统 python3 调用时 re-exec 兜底实测生效，docx/xlsx/pptx/图表四种产物已生成并回读验证；图表中文用扩展自带的 Noto Sans SC 渲染正常。**OCR 档仍未装**（`pytesseract` 缺失），扫描件走不通 |
-| 测试 | **951 个通过、2 个跳过**。跳过的两条是 presentations 的"装了扩展才验得到"分支（本机没有 `python-pptx`）。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
+| 测试 | **1032 个通过、2 个跳过**。跳过的两条是 presentations 的"装了扩展才验得到"分支（本机没有 `python-pptx`）。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
 | 源码 | 约 28.4k 行（不含测试）+ 17.2k 行测试 |
 | 内核补丁 | **0 个文件 / 0 行**（预算 5 / 500）—— 设计判定只剩 P4 品牌字符串一项待落 |
 | 内核基线 | `89a4eec6da`（2026-09-04）；F1–F19 已在此基线复核（**F19 是 M4 实测新增**：hooks 输出契约的三条硬约束） |
@@ -244,6 +244,24 @@ DST 一年只发生两次，错了要等半年才有人报 —— 这正是"写�
 
 **顺带修掉的一条 UI 纪律漏洞**：提示条此前只在任务页渲染，而**第一条消息是在首页发的** ——
 它失败时用户看到的是输入框恢复原样、别的什么都没有。首页现在也渲染 notices。
+
+### 只叠加 developer 指令盖不住系统底稿（2026-09-07）
+
+F22/F23 修好之后，用户再问「介绍一下自己」，回答变成：
+
+> 我是运行在 **Codex CLI** 里的执行智能体，当前处于 **Craft（你说我做）** 模式…
+
+两层**都生效了**：Craft 来自 `developer_instructions`，Codex CLI 来自内核写死的
+base instructions。模型在「你是谁」上听系统底稿。第二问「你是什么模型」还去
+`cat ~/.evowork/kernel/skills/.system/openai-docs/SKILL.md` —— 那只系统技能把
+「you / this app」绑到 Codex 文档上。
+
+| 缺陷 | 表现 | 已改 |
+| --- | --- | --- |
+| **F25：身份在 base instructions，不在 developer** | `developer_instructions` 只叠加。官方覆盖口是 `thread/start.baseInstructions`（整段替换）。`model_instructions_file` 相对路径按 cwd 解析，不能写进模板 | 随包 `config/prompts/base-instructions.md`（内核 `default.md` 的 fork，只改身份段），每次建任务经适配层传入；缺文件时发 notice，不静默 |
+| **系统技能 `openai-docs`** | 问「你是谁 / 你是什么模型」会去读 Codex 文档 | `[[skills.config]]` 按名字关掉；适配层每次 `thread/start` 再传一次，老安装的 `config.toml` 不被覆盖也能生效 |
+
+这不是 P4。P4 是用户看得见的 CLI 帮助 / UA；「介绍一下自己」走的是内核已经提供的覆盖口。
 
 ### 接模型下拉（手动选模型）改出两个（2026-09-06）
 

@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "docs/design/README.md §4 的 F1–F16 的机器可读孪生体。",
+    "docs/design/README.md §4 的 F 编号机器可读孪生体。",
     "存在理由：CLAUDE.md §1 要求「凡是设计文档里带 path:line 的断言，动手前都要重新核对」。",
     "人不会每天做这件事，所以让 CI 每天做（scripts/kernel-drift.mjs + .github/workflows/kernel-drift.yml）。",
     "改这个文件时必须同步改 docs/design/README.md §4，反之亦然 —— 两者不一致就是文档腐化的开始。",
@@ -176,6 +176,15 @@
       "needle": "AppListUpdated => \"app/list/updated\"",
       "line": 1918,
       "impact": "总纲 K7 · 设计 05 §6"
+    },
+    {
+      "id": "F25",
+      "summary": "thread/start.base_instructions 整段替换模型底稿（developer_instructions 盖不住 Codex CLI 身份）",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "needle": "pub base_instructions: Option<String>",
+      "line": 104,
+      "mustContain": ["pub developer_instructions: Option<String>"],
+      "impact": "K5 身份覆盖走官方接口，不打 P4 · 设计 03 §2.4"
     }
   ]
 }

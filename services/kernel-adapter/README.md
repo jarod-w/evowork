@@ -14,3 +14,6 @@
 
 **审批是 server→client request，不是通知**（F14）—— 适配层必须实现可回复的请求处理器，
 内核在等回复时会一直等。超时/离线语义见 10 §3.6（交互式不自动拒绝，定时任务 10 分钟自动 Decline）。
+
+产品身份（K5）走 `thread/start.baseInstructions` 整段替换内核底稿，并关掉系统技能
+`openai-docs`（F25）。`developer_instructions` 只管 Craft/Plan/Ask 怎么干活，盖不住「你是谁」。

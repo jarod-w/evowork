@@ -223,6 +223,18 @@ export interface ThreadStartParams {
   readonly sandbox?: 'readOnly' | 'workspaceWrite' | 'dangerFullAccess';
   readonly approvalPolicy?: AskForApproval;
   readonly projectId?: string;
+  /**
+   * F25：整段替换内核写死的模型底稿（「You are a coding agent running in the Codex CLI」）。
+   *
+   * 这是 K5 的身份层。`developer_instructions` 只是叠加，盖不住系统底稿 ——
+   * 用户问「介绍一下自己」时模型仍会自称 Codex CLI。官方接口，不打补丁。
+   */
+  readonly baseInstructions?: string;
+  /**
+   * 会话级 `config.toml` 覆盖（与 CLI `-c key=value` 同一条路）。
+   * 用来关掉把「你 / 这个 App」绑到 Codex 文档上的系统技能 `openai-docs`。
+   */
+  readonly config?: Readonly<Record<string, unknown>>;
 }
 
 export interface ThreadStartResponse {

@@ -20,6 +20,8 @@ CLAUDE.md
 AGENTS.md
 # 上游补丁：字节级内容，格式化即失效
 patches/
+# 内核底稿的身份 fork：与 default.md 字节级对照，prettier 重排会让漂移测试误红
+config/prompts/
 # 内核 rollout / fixture 录制样本：字节级比对
 **/fixtures/**/*.json
 **/fixtures/**/*.jsonl

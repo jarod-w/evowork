@@ -112,6 +112,7 @@ prompt = "分析这份数据并给出可视化："
 - `collaborationMode` 与 `permissions` 都是实验字段，经 09 §3 适配层调用，前端只传语义化的 `{scenarioId, modeId, overrides}`。
 - `developer_instructions` 的拼接顺序固定为 **模式片段在前、场景片段在后**（场景更具体，后写的优先），并在末尾附加运行时上下文（当前日期、工作空间路径、可用技能清单摘要）。
 - 模式片段文件：`config/modes/{craft,plan,ask}.md`。**它们不进内核仓库** —— 这是 README §4.1 里 P3 补丁得以取消的原因。
+- **产品身份不在 `developer_instructions` 里。** 那一层只叠加，盖不住内核写死的「You are a coding agent running in the Codex CLI」。身份走同一次建任务的 `thread/start.baseInstructions`（F25，`config/prompts/base-instructions.md` 是内核 `default.md` 的 fork，只改身份段）。相对路径的 `model_instructions_file` 按 cwd 解析，不能写进配置模板。系统技能 `openai-docs` 按名字关掉：它把「you / this app」绑到 Codex 文档上。
 
 ### 2.5 场景切换的交互
 

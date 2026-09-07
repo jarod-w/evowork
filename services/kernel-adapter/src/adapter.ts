@@ -51,6 +51,7 @@ import {
   type Scenario,
 } from './scenario.js';
 import { deriveTaskTitle } from './title.js';
+import { DISABLE_OPENAI_DOCS_CONFIG } from './identity.js';
 
 /**
  * 工作空间（第 5 节的映射表：EvoWork 的「空间」= 内核的 Project + cwd）。
@@ -134,6 +135,13 @@ export interface AdapterOptions {
   readonly askApproval?: (approval: PendingApproval) => Promise<ApprovalReply>;
   readonly scenarios?: readonly Scenario[];
   readonly readInstructions?: (file: string) => string | undefined;
+  /**
+   * 产品身份底稿，原样传给 `thread/start.baseInstructions`（F25）。
+   *
+   * 缺它时内核自带的「Codex CLI」底稿原样漏出来，而这条路径上不会报错。
+   * 宿主从 `config/prompts/base-instructions.md` 读；测试传一句短的即可。
+   */
+  readonly baseInstructions?: string;
   readonly now?: () => number;
   /** 每页拉多少条权威元数据（第 ② 步的上界） */
   readonly authoritativePageSize?: number;
@@ -387,6 +395,9 @@ export function createAdapter(options: AdapterOptions) {
           : {}),
         // F5：permissions 与 sandbox 互斥，只传一个
         permissions,
+        // F25：整段替换内核底稿。developer_instructions 盖不住「你是谁」
+        ...(options.baseInstructions ? { baseInstructions: options.baseInstructions } : {}),
+        config: DISABLE_OPENAI_DOCS_CONFIG,
       });
       const threadId = started.thread.id;
       session.openThreads.add(threadId);

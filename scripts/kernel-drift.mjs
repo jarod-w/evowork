@@ -8,7 +8,7 @@
  *      子目录上（app-server-protocol / extension-api / hooks / skills / core-plugins /
  *      protocol / collaboration-mode-templates）。总提交数没有意义 —— 一天 50 个提交里
  *      49 个改 TUI 与我们无关，剩下 1 个改 v2 协议才是要看的。
- *   ② **断言复核**：把 scripts/kernel-assertions.json（= 设计文档 F1–F16 的机器孪生）逐条
+ *   ② **断言复核**：把 scripts/kernel-assertions.json（= 设计文档 F 编号的机器孪生）逐条
  *      在**当前签出**上重跑。行号漂移只报不failed；needle 消失或枚举变体数变化才算 BROKEN。
  *   ③ **补丁试合并**：patches/evowork/*.patch 能否干净地打到 origin/main 上（K1、D7）。
  *      现在补丁清单只剩 P4，所以通常是空跑 —— 但这个 job 必须在**有补丁之前**就存在，
@@ -329,7 +329,7 @@ if (asJson) {
     L.push('');
   }
 
-  L.push('## ② 断言复核（F1–F16）');
+  L.push('## ② 断言复核');
   L.push('');
   L.push(
     `OK ${assertions.results.length - broken.length - movedLines.length} · LINE-MOVED ${movedLines.length} · **BROKEN ${broken.length}**`,
