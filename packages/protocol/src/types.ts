@@ -315,9 +315,22 @@ export interface ThreadItemsListParams {
   readonly limit?: number;
 }
 
+/**
+ * `thread/items/list` 的一行（`v2/thread.rs` 的 `ThreadItemEntry`）。
+ *
+ * 不是 `ThreadItem` 本身：每条都带着所属 `turnId`。适配层打开任务时必须解开
+ * `.item`，否则对话区拿到的是 `{ turnId, item }` —— 没有顶层 `type`，
+ * 渲染成空白或「新类型事件」。
+ */
+export interface ThreadItemEntry {
+  readonly turnId: string;
+  readonly item: ThreadItem;
+}
+
 export interface ThreadItemsListResponse {
-  readonly data: readonly ThreadItem[];
+  readonly data: readonly ThreadItemEntry[];
   readonly nextCursor?: string | null;
+  readonly backwardsCursor?: string | null;
 }
 
 /** F4：`allowed: false` = 「这个档位存在但你不能选」（企业策略置灰，10 §2.1）。 */

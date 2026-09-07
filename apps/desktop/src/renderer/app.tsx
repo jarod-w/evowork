@@ -26,6 +26,7 @@ import type {
   ModelCatalogResult,
   ModelOptionView,
   ModelUnavailableReason,
+  OpenTaskResult,
   RendererEvent,
   RuntimeInstallResultView,
   RuntimeProgressView,
@@ -45,7 +46,14 @@ import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
 import { Library } from './views/library.js';
-import { Onboarding, ONBOARDING_STEPS, EMPTY_PROVIDER_KEYS, type OnboardingStep, type ProviderKeyId, type ProviderKeys } from './views/onboarding.js';
+import {
+  Onboarding,
+  ONBOARDING_STEPS,
+  EMPTY_PROVIDER_KEYS,
+  type OnboardingStep,
+  type ProviderKeyId,
+  type ProviderKeys,
+} from './views/onboarding.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskWorkspace } from './views/task-workspace.js';
 
@@ -62,6 +70,8 @@ export interface EvoworkBridge {
   rowAction(input: { action: RowAction; threadId: string }): Promise<void>;
   /** 04 §3.4 第②步：对可见页做有界的权威字段校正 */
   refreshVisible(ids: readonly string[]): Promise<void>;
+  /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
+  openTask(input: { threadId: string }): Promise<OpenTaskResult>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
   /**
@@ -182,6 +192,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     undefined,
   );
   const [runtimeError, setRuntimeError] = useState<string | undefined>(undefined);
+  /**
+   * 正在拉当前任务的历史。点开已完成任务到条目到达之前，不能显示
+   * 「这个任务还没有消息」—— 那是刚创建的空态，不是加载中。
+   */
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     const offs = [
@@ -395,6 +410,49 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, [activeTaskId]);
 
   /**
+   * 切到某个任务时拉它的历史（04 §9）。
+   *
+   * 对话条目此前只活在当场的事件流里。重启后再点已完成任务，`itemsByTask`
+   * 是空的，对话区就画出「还没有消息」—— 标题和「已完成」来自投影表，两边对不上。
+   * 权威列表到达后与已有的流式条目按 id 合并：进行中的任务不会被一页历史盖掉。
+   */
+  useEffect(() => {
+    if (activeTaskId === null) return;
+    const threadId = activeTaskId;
+    let cancelled = false;
+    setHistoryLoading(true);
+    void bridge
+      .openTask({ threadId })
+      .then((result) => {
+        if (cancelled) return;
+        setItemsByTask((prev) => ({
+          ...prev,
+          [threadId]: applyHistory(prev[threadId] ?? [], result.items as readonly RenderItem[]),
+        }));
+        const incomplete = result.incomplete;
+        if (incomplete) {
+          setNotices((prev) => [...prev, { tone: 'warning', text: incomplete }]);
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setNotices((prev) => [
+          ...prev,
+          {
+            tone: 'warning',
+            text: `读不到这个任务的历史：${err instanceof Error ? err.message : String(err)}`,
+          },
+        ]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTaskId, bridge]);
+
+  /**
    * 进到某一页时才去拉它的数据。
    *
    * **每次进都重拉**，不做缓存：这三张表随时在被别的东西写（调度器在跑、
@@ -590,9 +648,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {...(modelUnavailable !== undefined ? { modelError: modelUnavailable } : {})}
           onCheckModel={() => void checkModelAccess()}
           providerKeys={providerKeys}
-          onProviderKeyChange={(id, value) =>
-            setProviderKeys((prev) => ({ ...prev, [id]: value }))
-          }
+          onProviderKeyChange={(id, value) => setProviderKeys((prev) => ({ ...prev, [id]: value }))}
           /*
            * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，
            * 因为下载器没实现 —— 那时"如实说"是唯一诚实的选择。现在它实现了，
@@ -679,6 +735,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             mermaid: MERMAID,
           }}
           notices={notices}
+          historyLoading={historyLoading}
           onNewTask={() => setActiveTaskId(null)}
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
         />
@@ -788,4 +845,23 @@ export function mergeItem(
   const next = [...items];
   next[index] = incoming;
   return next;
+}
+
+/**
+ * 打开任务时：权威历史是顺序真源，当场的流式条目叠上去。
+ *
+ * 只替换会丢掉 list 发出之后才到的增量；只追加会让历史永远出不来。
+ * 历史里没有、live 里有的（刚发出去的那一句）接到末尾。
+ */
+export function applyHistory(
+  live: readonly RenderItem[],
+  history: readonly RenderItem[],
+): readonly RenderItem[] {
+  const liveById = new Map(live.map((item) => [item.id, item]));
+  const historyIds = new Set(history.map((item) => item.id));
+  const merged = history.map((item) => {
+    const fromLive = liveById.get(item.id);
+    return fromLive === undefined ? item : (mergeItem([item], fromLive)[0] ?? fromLive);
+  });
+  return [...merged, ...live.filter((item) => !historyIds.has(item.id))];
 }

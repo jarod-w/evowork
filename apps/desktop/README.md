@@ -56,6 +56,7 @@ src/
 | `sidebar.tsx` 的 `onVisibleChange`  | 只报可见页（04 §3.4 第②步）                 | "筛出 800 条"变成 800 个 `thread/read` |
 | `changes-view.tsx` 的 `REVERT_COPY` | 撤销动磁盘、回滚不动                        | 两句文案拼反 → 用户丢文件              |
 | `app.tsx` 的 `mergeItem`            | 同 id 覆盖且**保持原位置**                  | 流式更新时消息跳到列表末尾             |
+| `app.tsx` 切任务                    | 调 `openTask` 拉历史（04 §9）               | 已完成任务打开后对话区是「还没有消息」 |
 
 ## 还没做的
 

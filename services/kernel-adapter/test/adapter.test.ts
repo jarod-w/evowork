@@ -421,7 +421,13 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
       createdAt: 1,
     });
     server.handlers.set('thread/items/list', () => ({
-      data: [{ id: 'i1', type: 'agentMessage', text: '好的，我先读表头，然后分组计算' }],
+      // 内核形状是 ThreadItemEntry，不是裸 ThreadItem
+      data: [
+        {
+          turnId: 'turn_1',
+          item: { id: 'i1', type: 'agentMessage', text: '好的，我先读表头，然后分组计算' },
+        },
+      ],
     }));
 
     const { cached, items } = await adapter.openTask('t1');
@@ -429,8 +435,36 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     // 缓存是同步可用的
     expect(cached).toHaveLength(1);
     expect(cached[0]?.summary).toBe('好的，我先读表头');
-    // 权威内容随后到达
-    await expect(items).resolves.toHaveLength(1);
+    // 权威内容随后到达，而且解开了 { turnId, item }
+    const listed = await items;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toEqual({
+      id: 'i1',
+      type: 'agentMessage',
+      text: '好的，我先读表头，然后分组计算',
+    });
+  });
+
+  it('按页拉完，不把包装对象当成消息', async () => {
+    await adapter.start();
+    server.handlers.set('thread/items/list', (ctx) => {
+      if (ctx.params.cursor === undefined) {
+        return {
+          data: [{ turnId: 'tu', item: { id: 'i1', type: 'agentMessage', text: '第一页' } }],
+          nextCursor: 'page-2',
+        };
+      }
+      return {
+        data: [{ turnId: 'tu', item: { id: 'i2', type: 'userMessage', content: [] } }],
+        nextCursor: null,
+      };
+    });
+
+    const { items } = await adapter.openTask('t1');
+    const listed = await items;
+    expect(listed.map((item) => item.id)).toEqual(['i1', 'i2']);
+    // 包装对象没有顶层 type —— 不解开会让对话区整页空白
+    expect(listed.every((item) => typeof item.type === 'string')).toBe(true);
   });
 });
 

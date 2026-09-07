@@ -169,12 +169,17 @@ describe('顶部提示条（04 §8）', () => {
 describe('空态（01 §4.3：文案必须给出下一步动作）', () => {
   it('新任务的空态给出下一步，而不是"暂无数据"', () => {
     const onNewTask = vi.fn();
-    renderWorkspace({ onNewTask });
+    renderWorkspace({ onNewTask, status: 'idle' });
     expect(screen.getByText('输入你的第一个需求')).toBeTruthy();
     expect(screen.getByText(/说清你要什么产物/)).toBeTruthy();
     expect(screen.queryByText(/暂无/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
     expect(onNewTask).toHaveBeenCalled();
+  });
+
+  it('已完成任务在条目到达前不显示「还没有消息」—— 那是刚创建的空态', () => {
+    renderWorkspace({ status: 'completed', historyLoading: true });
+    expect(screen.queryByText('输入你的第一个需求')).toBeNull();
   });
 });
 

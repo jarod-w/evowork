@@ -179,13 +179,7 @@ export interface ModelCatalogResult {
 
 /** 模型目录读不到时的原因。**每一种的下一步动作都不同**，所以不能压成一个布尔值。 */
 export type ModelUnavailableReason =
-  | 'no-token'
-  | 'no-keys'
-  | 'unauthorized'
-  | 'unreachable'
-  | 'empty'
-  | 'http'
-  | 'broken-install';
+  'no-token' | 'no-keys' | 'unauthorized' | 'unreachable' | 'empty' | 'http' | 'broken-install';
 
 export interface SendInput {
   readonly threadId?: string | undefined;
@@ -206,6 +200,26 @@ export interface SendInput {
    * 而 id → path 的对应只有拿过 catalog 的那一侧知道。
    */
   readonly workspaceId?: string | undefined;
+}
+
+/**
+ * 打开一个已有任务（04 §9）。
+ *
+ * 点侧边栏一行时调用。**不是** `refreshVisible`：那条只校正可见页的标题/状态，
+ * 不拉对话。少了这一步，已完成任务打开后对话区是「还没有消息」—— 标题和徽章
+ * 来自投影表，历史只活在当场的事件流里。
+ */
+export interface OpenTaskInput {
+  readonly threadId: string;
+}
+
+export interface OpenTaskResult {
+  readonly items: readonly RenderItemView[];
+  /**
+   * 权威列表没拉到时，items 是快显缓存（可能只有摘要），这条是给用户看的原因。
+   * 没有这条 = 列表就是完整历史（哪怕长度为 0：这个任务真的还没有消息）。
+   */
+  readonly incomplete?: string | undefined;
 }
 
 /* ─────────────────── 三个目录式页面的数据（02 §1 的一级入口）─────────────────── */

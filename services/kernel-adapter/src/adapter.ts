@@ -23,6 +23,8 @@ import {
   type PermissionProfileSummary,
   type Thread,
   type ThreadItem,
+  type ThreadItemEntry,
+  type ThreadItemsListResponse,
   type ThreadListResponse,
   type ThreadStartResponse,
   type Turn,
@@ -493,6 +495,10 @@ export function createAdapter(options: AdapterOptions) {
      *
      * 先返回投影表缓存的摘要让 UI 立刻渲染，再用 `thread/items/list` 校正 ——
      * 摘要**不是权威副本**（09 §4.2），所以调用方必须用第二个返回值覆盖第一个。
+     *
+     * 内核默认一页 25 条、上限 100（`THREAD_ITEMS_DEFAULT_LIMIT` /
+     * `THREAD_ITEMS_MAX_LIMIT`），条目形状是 `{ turnId, item }` 不是裸 `ThreadItem`。
+     * 这里按页拉完并解开，否则长对话只看到第一页，或整页都因没有顶层 `type` 画不出来。
      */
     async openTask(threadId: string): Promise<{
       readonly cached: ReturnType<Store['readItemDigest']>;
@@ -502,11 +508,10 @@ export function createAdapter(options: AdapterOptions) {
       const cached = store.readItemDigest(threadId);
       const items = (async () => {
         await session.peer.request(METHOD.threadResume, { threadId }).catch(() => undefined);
-        const response = await session.peer.request<{ data: ThreadItem[] }>(
-          METHOD.threadItemsList,
-          { threadId },
+        return listAllThreadItems(
+          (method, params) => session.peer.request(method, params),
+          threadId,
         );
-        return response.data ?? [];
       })();
       return { cached, items };
     },
@@ -558,3 +563,51 @@ export function createAdapter(options: AdapterOptions) {
 }
 
 export type Adapter = ReturnType<typeof createAdapter>;
+
+/** 内核 `THREAD_ITEMS_MAX_LIMIT`（app-server `thread_processor.rs`）。 */
+const ITEM_LIST_PAGE_SIZE = 100;
+/** 防止 `nextCursor` 永远非空时死循环。50 页 × 100 = 5000 条，远超当前对话长度。 */
+const ITEM_LIST_PAGE_CAP = 50;
+
+/**
+ * `thread/items/list` 的 `data[]` 是 `{ turnId, item }`（`ThreadItemEntry`）。
+ *
+ * 解开 `.item`。顺带接受测试夹具里直接塞 `ThreadItem` 的旧形状 —— 两种都没有
+ * 顶层 `type` 时返回 undefined，让调用方跳过，而不是把包装对象当成一条消息。
+ */
+function itemFromListEntry(entry: ThreadItemEntry | ThreadItem | unknown): ThreadItem | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const rec = entry as Record<string, unknown>;
+  const nested = rec.item;
+  if (nested && typeof nested === 'object') {
+    const item = nested as ThreadItem;
+    if (typeof item.id === 'string' && typeof item.type === 'string') return item;
+  }
+  if (typeof rec.id === 'string' && typeof rec.type === 'string' && rec.item === undefined) {
+    return rec as ThreadItem;
+  }
+  return undefined;
+}
+
+async function listAllThreadItems(
+  request: <T>(method: string, params?: unknown) => Promise<T>,
+  threadId: string,
+): Promise<readonly ThreadItem[]> {
+  const items: ThreadItem[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < ITEM_LIST_PAGE_CAP; page += 1) {
+    const response = await request<ThreadItemsListResponse>(METHOD.threadItemsList, {
+      threadId,
+      limit: ITEM_LIST_PAGE_SIZE,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
+    for (const entry of response.data ?? []) {
+      const item = itemFromListEntry(entry);
+      if (item) items.push(item);
+    }
+    const next = response.nextCursor;
+    if (next === undefined || next === null || next === '') return items;
+    cursor = next;
+  }
+  return items;
+}

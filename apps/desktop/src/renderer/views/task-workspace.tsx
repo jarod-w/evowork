@@ -105,6 +105,11 @@ export interface TaskWorkspaceProps {
    */
   readonly composer?: React.ReactNode | undefined;
   readonly onNewTask?: (() => void) | undefined;
+  /**
+   * 正在拉历史。为 true 时不显示「还没有消息」—— 那是刚创建的空态（04 §8），
+   * 已完成任务加载中画那句等于撒谎。
+   */
+  readonly historyLoading?: boolean | undefined;
 }
 
 export function TaskWorkspace(props: TaskWorkspaceProps) {
@@ -177,7 +182,10 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
 
           {/* 内容列 800 居中（01 §3.1 的全局硬约束） */}
           <div className="ew-content-column" aria-live="polite">
-            {props.items.length === 0 && props.pendingApprovals.length === 0 ? (
+            {props.items.length === 0 &&
+            props.pendingApprovals.length === 0 &&
+            !props.historyLoading &&
+            props.status === 'idle' ? (
               <EmptyState
                 title="输入你的第一个需求"
                 hint="这个任务还没有消息。说清你要什么产物，我直接做出来。"

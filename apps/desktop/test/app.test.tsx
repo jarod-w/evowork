@@ -8,7 +8,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ModelOptionView, RendererEvent, StartupInfo } from '../src/shared/ipc.js';
-import { App, mergeItem, type EvoworkBridge } from '../src/renderer/app.js';
+import { App, applyHistory, mergeItem, type EvoworkBridge } from '../src/renderer/app.js';
 
 const STARTUP: StartupInfo = {
   appName: 'EvoWork',
@@ -63,6 +63,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     decideApproval: vi.fn(async () => undefined),
     rowAction: vi.fn(async () => undefined),
     refreshVisible: vi.fn(async () => undefined),
+    openTask: vi.fn(async () => ({ items: [] })),
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
     applyModelAccess: vi.fn(async () => ({ models: MODELS })),
@@ -171,6 +172,93 @@ describe('事件接线', () => {
   });
 });
 
+describe('点开已完成任务要看到历史（不是「还没有消息」）', () => {
+  it('点侧边栏一行会调 openTask，并把条目画进对话区', async () => {
+    const openTask = vi.fn(async () => ({
+      items: [
+        {
+          id: 'u1',
+          type: 'userMessage',
+          completed: true,
+          content: [{ type: 'text', text: '介绍一下自己' }],
+        },
+        { id: 'a1', type: 'agentMessage', completed: true, text: '我是 EvoWork' },
+      ],
+    }));
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 't-done',
+            title: '介绍一下自己',
+            status: 'completed',
+            timeLabel: '25 分钟前',
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      openTask,
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(screen.getByText('介绍一下自己')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('介绍一下自己'));
+
+    await waitFor(() => expect(openTask).toHaveBeenCalledWith({ threadId: 't-done' }));
+    await waitFor(() => expect(screen.getByText('我是 EvoWork')).toBeTruthy());
+    expect(screen.queryByText('输入你的第一个需求')).toBeNull();
+  });
+
+  it('切走之后才回来的历史**不会**盖到当前任务上', async () => {
+    let resolveFirst:
+      | ((value: { items: readonly { id: string; type: string; text: string }[] }) => void)
+      | undefined;
+    const openTask = vi.fn(async ({ threadId }: { threadId: string }) => {
+      if (threadId === 't1') {
+        return new Promise<{ items: readonly { id: string; type: string; text: string }[] }>(
+          (resolve) => {
+            resolveFirst = resolve;
+          },
+        );
+      }
+      return { items: [{ id: 'b', type: 'agentMessage', text: '第二个任务的回答' }] };
+    });
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 't1',
+            title: '先点这个',
+            status: 'completed',
+            timeLabel: '1 小时前',
+            sectionId: 'ungrouped',
+          },
+          {
+            id: 't2',
+            title: '再点这个',
+            status: 'completed',
+            timeLabel: '刚刚',
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      openTask,
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(screen.getByText('先点这个')).toBeTruthy());
+    fireEvent.click(screen.getByText('先点这个'));
+    fireEvent.click(screen.getByText('再点这个'));
+    await waitFor(() => expect(openTask).toHaveBeenCalledWith({ threadId: 't2' }));
+    await waitFor(() => expect(screen.getByText('第二个任务的回答')).toBeTruthy());
+
+    resolveFirst?.({ items: [{ id: 'a', type: 'agentMessage', text: '不该出现的旧历史' }] });
+    await waitFor(() => expect(screen.getByText('第二个任务的回答')).toBeTruthy());
+    expect(screen.queryByText('不该出现的旧历史')).toBeNull();
+  });
+});
+
 describe('流式增量按 id 合并（04 §5.1）', () => {
   it('同 id 覆盖，新 id 追加 —— 不合并的表现是同一条消息出现两次', () => {
     const a = { id: 'i1', type: 'agentMessage', text: '你' };
@@ -182,6 +270,22 @@ describe('流式增量按 id 合并（04 §5.1）', () => {
     expect(mergeItem([a], b)).toEqual([a, b]);
     // 覆盖时**保持原位置**，否则流式更新会让消息在列表里跳到末尾
     expect(mergeItem([a, b], a2)).toEqual([a2, b]);
+  });
+
+  it('打开任务时权威历史是顺序真源，流式增量叠上去', () => {
+    const history = [
+      { id: 'u1', type: 'userMessage', text: '问' },
+      { id: 'a1', type: 'agentMessage', text: '答（历史）' },
+    ];
+    const live = [
+      { id: 'a1', type: 'agentMessage', text: '答（还在流）' },
+      { id: 'a2', type: 'agentMessage', text: '刚到的一句' },
+    ];
+    expect(applyHistory(live, history)).toEqual([
+      { id: 'u1', type: 'userMessage', text: '问' },
+      { id: 'a1', type: 'agentMessage', text: '答（还在流）' },
+      { id: 'a2', type: 'agentMessage', text: '刚到的一句' },
+    ]);
   });
 });
 

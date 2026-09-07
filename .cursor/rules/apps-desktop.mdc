@@ -27,6 +27,7 @@ Q23 = Electron，Q24 = React + TS + Vite，32 个组件全自建、不引 UI 库
 | `sidebar.tsx` `onVisibleChange` | 只报可见页 | 筛出 800 条变成 800 次 `thread/read` |
 | `changes-view.tsx` `REVERT_COPY` | 撤销动磁盘、回滚不动 | 文案拼反 → 用户丢文件 |
 | `app.tsx` `mergeItem` | 同 id 覆盖且保持原位置 | 流式更新时消息跳到末尾 |
+| `app.tsx` 切任务 | 调 `openTask` 拉历史 | 已完成任务打开是空对话 |
 | `visualizer.tsx` `IFRAME_SANDBOX` | `allow-scripts`，**绝不** `allow-same-origin` | 两者同时给等于没有沙箱 |
 | `sanitizeSvg` | 白名单，点名删 `foreignObject` | SVG 里嵌任意 HTML |
 | `validateChartSpec` | 拒绝未知字段与函数字符串 | `formatter: "function..."` 是任意代码入口 |

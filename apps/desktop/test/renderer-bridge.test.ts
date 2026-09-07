@@ -449,6 +449,63 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     await actions.refreshVisible([]);
     expect(adapter.refreshAuthoritative).not.toHaveBeenCalled();
   });
+
+  it('打开任务把权威条目标成已完成；列表失败时回落快显缓存并说出原因', async () => {
+    const adapter = {
+      openTask: vi.fn(async () => ({
+        cached: [
+          {
+            threadId: 't1',
+            seq: 1,
+            itemId: 'i1',
+            itemType: 'agentMessage',
+            summary: '缓存里的一句',
+            createdAt: 1,
+          },
+        ],
+        items: Promise.resolve([
+          {
+            id: 'u1',
+            type: 'userMessage' as const,
+            content: [{ type: 'text' as const, text: '问' }],
+          },
+          { id: 'a1', type: 'agentMessage' as const, text: '完整回答' },
+        ]),
+      })),
+    } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    const ok = await actions.openTask({ threadId: 't1' });
+    expect(ok.items).toEqual([
+      {
+        id: 'u1',
+        type: 'userMessage',
+        content: [{ type: 'text', text: '问' }],
+        completed: true,
+      },
+      { id: 'a1', type: 'agentMessage', text: '完整回答', completed: true },
+    ]);
+    expect(ok.incomplete).toBeUndefined();
+
+    adapter.openTask = vi.fn(async () => ({
+      cached: [
+        {
+          threadId: 't1',
+          seq: 1,
+          itemId: 'i1',
+          itemType: 'agentMessage',
+          summary: '缓存里的一句',
+          createdAt: 1,
+        },
+      ],
+      items: Promise.reject(new Error('connection refused')),
+    }));
+    const fallback = await actions.openTask({ threadId: 't1' });
+    expect(fallback.items).toEqual([
+      { id: 'i1', type: 'agentMessage', completed: true, text: '缓存里的一句' },
+    ]);
+    expect(fallback.incomplete).toContain('connection refused');
+  });
 });
 
 describe('首次运行装内核配置', () => {

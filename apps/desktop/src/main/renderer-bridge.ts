@@ -33,7 +33,14 @@ import {
  */
 import { RETENTION_DAYS, RETENTION_WARNING_DAYS } from '@evowork/policy';
 import type { Logger } from '@evowork/logging';
-import { readMeta, writeMeta, type ProjectionRow, type Store } from '@evowork/store';
+import type { ThreadItem } from '@evowork/protocol';
+import {
+  readMeta,
+  writeMeta,
+  type ItemDigestEntry,
+  type ProjectionRow,
+  type Store,
+} from '@evowork/store';
 
 import type {
   ApprovalDecisionInput,
@@ -44,6 +51,8 @@ import type {
   CaseView,
   LibraryDataView,
   ModelCatalogResult,
+  OpenTaskInput,
+  OpenTaskResult,
   RenderItemView,
   RendererEvent,
   RowActionInput,
@@ -181,8 +190,7 @@ export interface RendererBridgeOptions {
    * 而不是静默丢掉用户刚贴上的 key。
    */
   readonly applyModelAccess?:
-    | ((input: ApplyModelAccessInput) => Promise<ModelCatalogResult>)
-    | undefined;
+    ((input: ApplyModelAccessInput) => Promise<ModelCatalogResult>) | undefined;
   /** 打开系统目录选择框（首运行第②步）。没有它时 `pickWorkspace` 返回 undefined */
   readonly pickDirectory?: (() => Promise<string | undefined>) | undefined;
   /**
@@ -421,7 +429,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
         return {
           models: [],
           reason: 'no-keys',
-          unavailable: '这个版本还不能在界面里保存模型密钥，请把密钥写进 ~/.evowork/gateway.env 后重启。',
+          unavailable:
+            '这个版本还不能在界面里保存模型密钥，请把密钥写进 ~/.evowork/gateway.env 后重启。',
         };
       }
       return options.applyModelAccess(input);
@@ -459,6 +468,28 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async refreshVisible(ids: readonly string[]): Promise<void> {
       if (ids.length === 0) return;
       await adapter.refreshAuthoritative(ids);
+    },
+
+    /**
+     * 打开任务并拉历史（04 §9）。
+     *
+     * 权威列表来自 `adapter.openTask`（内部 `thread/items/list`）。失败时回落快显
+     * 缓存并带上原因 —— 空对话假装"还没有消息"比这更糟。
+     */
+    async openTask(input: OpenTaskInput): Promise<OpenTaskResult> {
+      const threadId = input.threadId?.trim();
+      if (!threadId) throw new Error('没有任务 id');
+      const { cached, items } = await adapter.openTask(threadId);
+      try {
+        const listed = await items;
+        return { items: listed.map(toHistoryItem) };
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : String(err);
+        return {
+          items: cached.map(digestToRenderItem),
+          incomplete: `读不到这个任务的完整历史：${reason}`,
+        };
+      }
     },
 
     /**
@@ -664,6 +695,38 @@ export function createRendererActions(options: RendererBridgeOptions) {
 }
 
 export type RendererActions = ReturnType<typeof createRendererActions>;
+
+/**
+ * 历史条目一律标成已完成。
+ *
+ * 刷新后从 `thread/items/list` 读出来的推理条目没有 `item/started→completed`
+ * 的墙钟时间，渲染层据此说「推理过程」而不是永远停在「思考中…」。
+ */
+export function toHistoryItem(item: ThreadItem): RenderItemView {
+  return { ...(item as unknown as RenderItemView), completed: true };
+}
+
+/** 快显缓存 → 能画出来的条目。摘要不是正文副本（09 §4.2），只在权威列表失败时用。 */
+export function digestToRenderItem(entry: ItemDigestEntry): RenderItemView {
+  const summary = entry.summary ?? '';
+  if (entry.itemType === 'userMessage') {
+    return {
+      id: entry.itemId,
+      type: 'userMessage',
+      completed: true,
+      content: [{ type: 'text', text: summary }],
+    };
+  }
+  if (entry.itemType === 'agentMessage') {
+    return { id: entry.itemId, type: 'agentMessage', completed: true, text: summary };
+  }
+  return {
+    id: entry.itemId,
+    type: entry.itemType,
+    completed: true,
+    ...(summary !== '' ? { summary } : {}),
+  };
+}
 
 /* ─────────────────── 三个页面的行翻译（纯函数，单独可测）─────────────────── */
 
