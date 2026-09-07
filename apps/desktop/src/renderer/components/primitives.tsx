@@ -947,7 +947,17 @@ export function ItemCard({
           </span>
         ) : null}
         <span className="ew-item-card-name">{name}</span>
-        {action ? <span className="ew-item-card-action">{action}</span> : null}
+        {action ? (
+          /*
+           * 整张卡都可点（打开详情），而 `action`（项目卡是 ⋯ 菜单）嵌在卡片内部 ——
+           * 不拦一下的话，点菜单里任何一项都会向上冒泡触发卡片自己的 `onClick`，
+           * 表现是"改名/移除/打开文件夹"顺带把用户跳进了详情页（Task 13 接线时
+           * 实测撞到：`onOpenDetail` 一旦真的做事，这条冒泡就藏不住了）。
+           */
+          <span className="ew-item-card-action" onClick={(event) => event.stopPropagation()}>
+            {action}
+          </span>
+        ) : null}
       </div>
       <p className="ew-item-card-desc">{description}</p>
       {hasBadges ? (

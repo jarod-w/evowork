@@ -18,15 +18,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
+  AgentsMemoView,
   ApprovalView,
   ApplyModelAccessInput,
   AuditDataView,
   AutomationsDataView,
+  DirEntryView,
   LibraryDataView,
   ModelCatalogResult,
   ModelOptionView,
   ModelUnavailableReason,
   OpenTaskResult,
+  ProjectDetailView,
+  ProjectMutationResult,
+  ProjectsDataView,
   RendererEvent,
   RuntimeInstallResultView,
   RuntimeProgressView,
@@ -54,6 +59,8 @@ import {
   type ProviderKeyId,
   type ProviderKeys,
 } from './views/onboarding.js';
+import { ProjectDetailPage } from './views/project-detail.js';
+import { ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskWorkspace } from './views/task-workspace.js';
 
@@ -89,6 +96,24 @@ export interface EvoworkBridge {
   getLibrary(): Promise<LibraryDataView>;
   getAutomations(): Promise<AutomationsDataView>;
   getAudit(): Promise<AuditDataView>;
+  /*
+   * 「项目」页（02 §4.3）。与三个目录式页面同一条理由：**按需拉，不并进 getStartup** ——
+   * 它读的是本机 sqlite 与磁盘，而绝大多数会话里用户不会打开这一页。
+   */
+  listProjects(): Promise<ProjectsDataView>;
+  createProject(input: { name: string; path: string }): Promise<ProjectMutationResult>;
+  importProject(): Promise<ProjectMutationResult>;
+  renameProject(input: { id: string; name: string }): Promise<ProjectMutationResult>;
+  removeProject(input: { id: string }): Promise<ProjectMutationResult>;
+  openProjectFolder(input: { id: string }): Promise<void>;
+  readProjectDetail(input: { id: string }): Promise<ProjectDetailView | null>;
+  /** 文件树懒加载：展开哪层读哪层（D-P5） */
+  listProjectDir(input: {
+    id: string;
+    path?: string | undefined;
+  }): Promise<readonly DirEntryView[]>;
+  readAgentsMemo(input: { id: string }): Promise<AgentsMemoView>;
+  writeAgentsMemo(input: { id: string; content: string }): Promise<{ ok: boolean }>;
   /**
    * 打开系统目录选择框。
    *
@@ -202,6 +227,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    */
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  /*
+   * 「项目」有两个视图（列表与详情），但**不引 router**（`MainView` 的注释）：
+   * 一个 `activeProjectId` 就够了 —— null = 列表，有值 = 详情。
+   */
+  const [projects, setProjects] = useState<ProjectsDataView | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectDetail, setProjectDetail] = useState<ProjectDetailView | null>(null);
+  const [projectTree, setProjectTree] = useState<readonly DirEntryView[]>([]);
+  const [projectTreeChildren, setProjectTreeChildren] = useState<
+    Readonly<Record<string, readonly DirEntryView[]>>
+  >({});
+  const [projectMemo, setProjectMemo] = useState<AgentsMemoView>({ exists: false, content: '' });
+  /** 上一次动作被拒绝的原话。**显示出来**，不吞掉 */
+  const [projectRefusal, setProjectRefusal] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     const offs = [
       bridge.onUiEvent((event) => {
@@ -241,6 +281,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           if (event.status) setRunning(event.status === 'running');
           return;
         }
+        if (event.type === 'projects-changed') {
+          /*
+           * 内核那一侧变了（另一个客户端建了 project）。**只在这一页时才拉** ——
+           * 本机的增删由动作本身返回新列表，不等这个事件。
+           */
+          if (view === 'projects') {
+            void bridge
+              .listProjects()
+              .then(setProjects)
+              .catch(() => undefined);
+          }
+          return;
+        }
         setItemsByTask((prev) => ({
           ...prev,
           // 流式增量按 id 合并（04 §5.1）：同 id 的后来者覆盖前者
@@ -258,7 +311,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }),
     ];
     return () => offs.forEach((off) => off());
-  }, [bridge]);
+    // `view` 进依赖：`onUiEvent` 的 handler 闭包里读它判断 projects-changed 要不要重拉，
+    // 不进依赖的话闭包会永远拿着订阅那一刻的旧 view，切页后事件处理逻辑就是过期的
+  }, [bridge, view]);
 
   useEffect(() => {
     void bridge
@@ -480,7 +535,150 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .getAudit()
         .then(setAudit)
         .catch(() => setAudit(null));
-  }, [view, bridge]);
+    if (view === 'projects' && activeProjectId === null)
+      void bridge
+        .listProjects()
+        .then(setProjects)
+        .catch(() => setProjects(null));
+  }, [view, activeProjectId, bridge]);
+
+  /**
+   * 进详情页时拉三份数据：概览、根目录一层、空间记忆。
+   *
+   * 三次调用而不是一次给全：文件树与记忆都是**读盘**，而概览读的是 sqlite。
+   * 合成一个动作的话，一个没权限的目录会把整页拖成空白。
+   */
+  useEffect(() => {
+    if (view !== 'projects' || activeProjectId === null) return;
+    const id = activeProjectId;
+    void bridge
+      .readProjectDetail({ id })
+      .then(setProjectDetail)
+      .catch(() => setProjectDetail(null));
+    void bridge
+      .listProjectDir({ id })
+      .then(setProjectTree)
+      .catch(() => setProjectTree([]));
+    void bridge
+      .readAgentsMemo({ id })
+      .then(setProjectMemo)
+      .catch(() => setProjectMemo({ exists: false, content: '' }));
+    setProjectTreeChildren({});
+  }, [view, activeProjectId, bridge]);
+
+  /*
+   * 增删改的落地方式：**用返回的新列表直接 setProjects，不再拉一次**（Task 13 的要点）——
+   * 重拉是第二次往返，可能被稍后到达的 `listProjects` 结果反超，画面回退成没改之前的样子。
+   * `refused` 永远跟着一起设：成功时 `result.refused` 是 undefined，正好清掉上一次的拒绝提示。
+   */
+  const applyMutation = useCallback((result: ProjectMutationResult) => {
+    setProjects({ projects: result.projects });
+    setProjectRefusal(result.refused);
+  }, []);
+
+  const createProject = useCallback(
+    (input: { name: string; path: string }) => {
+      void bridge
+        .createProject(input)
+        .then(applyMutation)
+        .catch(() => undefined);
+    },
+    [bridge, applyMutation],
+  );
+
+  const importProject = useCallback(() => {
+    void bridge
+      .importProject()
+      .then(applyMutation)
+      .catch(() => undefined);
+  }, [bridge, applyMutation]);
+
+  const renameProject = useCallback(
+    (input: { id: string; name: string }) => {
+      void bridge
+        .renameProject(input)
+        .then(applyMutation)
+        .catch(() => undefined);
+    },
+    [bridge, applyMutation],
+  );
+
+  const removeProject = useCallback(
+    (id: string) => {
+      void bridge
+        .removeProject({ id })
+        .then(applyMutation)
+        .catch(() => undefined);
+    },
+    [bridge, applyMutation],
+  );
+
+  const openProjectFolder = useCallback(
+    (id: string) => {
+      void bridge.openProjectFolder({ id });
+    },
+    [bridge],
+  );
+
+  /*
+   * 新建对话框里的「选择目录」复用 `pickWorkspace`（同一个系统目录选择框，
+   * 不为项目页另开一条通道）。**拒绝在这一步也要显示**——用户手动选中一个
+   * 受保护目录（如 `~/.ssh`）时，`pickWorkspace` 自己就会带回 `refused`，
+   * 这条路径同样不能被静默吞掉（Task 9 那个"点了没反应"的坑）。
+   */
+  const pickProjectDirectory = useCallback(async () => {
+    const result = await bridge.pickWorkspace();
+    if (result.refused) {
+      setProjectRefusal(result.refused);
+      return undefined;
+    }
+    return result.path;
+  }, [bridge]);
+
+  /**
+   * 02 §4.3：跳首页并**预选该工作空间**。
+   * 首页下拉在 Task 9 之后读的就是 `project_local`，所以这里只是选中一个已有项，
+   * 不新增任何机制。
+   */
+  const newTaskInProject = useCallback((id: string) => {
+    setWorkspaceId(id);
+    setActiveProjectId(null);
+    setActiveTaskId(null);
+    setView('task');
+  }, []);
+
+  const expandProjectDir = useCallback(
+    (path: string) => {
+      if (activeProjectId === null) return;
+      const id = activeProjectId;
+      void bridge
+        .listProjectDir({ id, path })
+        .then((entries) => setProjectTreeChildren((prev) => ({ ...prev, [path]: entries })))
+        .catch(() => undefined);
+    },
+    [activeProjectId, bridge],
+  );
+
+  /** D-P5：不接 `fs/watch`，「刷新」按钮重拉根目录一层并清掉已展开的子层缓存 */
+  const refreshProjectTree = useCallback(() => {
+    if (activeProjectId === null) return;
+    const id = activeProjectId;
+    void bridge
+      .listProjectDir({ id })
+      .then(setProjectTree)
+      .catch(() => setProjectTree([]));
+    setProjectTreeChildren({});
+  }, [activeProjectId, bridge]);
+
+  const saveProjectMemo = useCallback(
+    async (content: string) => {
+      if (activeProjectId === null) return;
+      const id = activeProjectId;
+      const result = await bridge.writeAgentsMemo({ id, content });
+      if (result.ok) setProjectMemo({ exists: true, content });
+    },
+    [activeProjectId, bridge],
+  );
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -725,10 +923,40 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           library={library}
           automations={automations}
           audit={audit}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          projectDetail={projectDetail}
+          projectTree={projectTree}
+          projectTreeChildren={projectTreeChildren}
+          projectMemo={projectMemo}
+          projectRefusal={projectRefusal}
           onOpenTask={(id) => {
             setActiveTaskId(id);
             setView('task');
           }}
+          onCloseProject={() => setActiveProjectId(null)}
+          onOpenProject={(id) => setActiveProjectId(id)}
+          onExpandDir={expandProjectDir}
+          onRefreshTree={refreshProjectTree}
+          onOpenProjectFolder={() => {
+            if (activeProjectId !== null) openProjectFolder(activeProjectId);
+          }}
+          onOpenProjectFolderById={openProjectFolder}
+          onNewTaskInProject={() => {
+            if (activeProjectId !== null) newTaskInProject(activeProjectId);
+          }}
+          onNewTaskInProjectById={newTaskInProject}
+          onSaveMemo={saveProjectMemo}
+          /*
+           * 没有可路由到的自动化详情（「不引 router」），所以这里只切到自动化页 ——
+           * 该页自己管理选中项（默认第一行），不接受外部指定某一条
+           */
+          onOpenAutomation={() => setView('automations')}
+          onCreateProject={createProject}
+          onImportProject={importProject}
+          onRenameProject={renameProject}
+          onRemoveProject={removeProject}
+          onPickDirectory={pickProjectDirectory}
         />
       ) : activeTaskId === null ? (
         <Home
@@ -772,9 +1000,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  *
  * ## 为什么没有页面的入口也要在这里出现
  *
- * 02 §1 的 6 个入口是产品骨架，其中两个（项目 / 专家·技能·连接器）
+ * 02 §1 的 6 个入口是产品骨架，其中一个（专家·技能·连接器）
  * 与「更多」现在**还没有页面**。在此之前它们的表现是**点了没有任何反应** ——
- * 用户看到的是一个有六个菜单项、其中三个是死的应用，而"点了没反应"
+ * 用户看到的是一个有六个菜单项、其中两个是死的应用，而"点了没反应"
  * 与"坏了"在界面上完全无法区分。
  *
  * 所以这里给它们一个如实说明的空页：**说清是没做，不是坏了**
@@ -786,7 +1014,29 @@ function MainPage(props: {
   readonly library: LibraryDataView | null;
   readonly automations: AutomationsDataView | null;
   readonly audit: AuditDataView | null;
+  readonly projects: ProjectsDataView | null;
+  readonly activeProjectId: string | null;
+  readonly projectDetail: ProjectDetailView | null;
+  readonly projectTree: readonly DirEntryView[];
+  readonly projectTreeChildren: Readonly<Record<string, readonly DirEntryView[]>>;
+  readonly projectMemo: AgentsMemoView;
+  readonly projectRefusal: string | undefined;
   readonly onOpenTask: (threadId: string) => void;
+  readonly onCloseProject: () => void;
+  readonly onOpenProject: (id: string) => void;
+  readonly onExpandDir: (path: string) => void;
+  readonly onRefreshTree: () => void;
+  readonly onOpenProjectFolder: () => void;
+  readonly onOpenProjectFolderById: (id: string) => void;
+  readonly onNewTaskInProject: () => void;
+  readonly onNewTaskInProjectById: (id: string) => void;
+  readonly onSaveMemo: (content: string) => Promise<void>;
+  readonly onOpenAutomation: (id: string) => void;
+  readonly onCreateProject: (input: { name: string; path: string }) => void;
+  readonly onImportProject: () => void;
+  readonly onRenameProject: (input: { id: string; name: string }) => void;
+  readonly onRemoveProject: (id: string) => void;
+  readonly onPickDirectory: () => Promise<string | undefined>;
 }) {
   switch (props.view) {
     /*
@@ -825,6 +1075,37 @@ function MainPage(props: {
         />
       );
 
+    case 'projects':
+      return props.activeProjectId !== null && props.projectDetail !== null ? (
+        <ProjectDetailPage
+          detail={props.projectDetail}
+          rootEntries={props.projectTree}
+          childrenOf={props.projectTreeChildren}
+          memo={props.projectMemo}
+          onBack={props.onCloseProject}
+          onExpand={props.onExpandDir}
+          onRefreshTree={props.onRefreshTree}
+          onOpenTask={props.onOpenTask}
+          onOpenFolder={props.onOpenProjectFolder}
+          onNewTaskHere={props.onNewTaskInProject}
+          onSaveMemo={props.onSaveMemo}
+          onOpenAutomation={props.onOpenAutomation}
+        />
+      ) : (
+        <ProjectsPage
+          projects={props.projects?.projects ?? []}
+          onCreate={props.onCreateProject}
+          onImport={props.onImportProject}
+          onRename={props.onRenameProject}
+          onRemove={props.onRemoveProject}
+          onOpenFolder={(id) => props.onOpenProjectFolderById(id)}
+          onNewTaskIn={props.onNewTaskInProjectById}
+          onOpenDetail={props.onOpenProject}
+          onPickDirectory={props.onPickDirectory}
+          {...(props.projectRefusal !== undefined ? { refusal: props.projectRefusal } : {})}
+        />
+      );
+
     default:
       return <UnbuiltPage view={props.view} />;
   }
@@ -832,10 +1113,6 @@ function MainPage(props: {
 
 /** 02 §1 里已有入口、但页面还没做的那几个。**说清是没做**，不留一个空白主区。 */
 const UNBUILT_COPY: Readonly<Record<string, { title: string; hint: string }>> = {
-  projects: {
-    title: '项目页还没做好',
-    hint: '工作空间目前可以在输入框下方的「选择工作空间」里挑，只是还不能在这里管理。',
-  },
   catalog: {
     title: '专家·技能·连接器还没做好',
     hint: '办公技能（文档 / 表格 / 幻灯片 / 图表）已经随产品分发并可用，只是还没有这个管理界面。',

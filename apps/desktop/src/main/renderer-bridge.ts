@@ -392,6 +392,14 @@ export function createEventTranslator(store: Store, now: () => number) {
         streaming.set(event.itemId, { ...held, item: merged });
         return [{ type: 'item', taskId: held.taskId, item: merged as unknown as RenderItemView }];
       }
+      /*
+       * 另一个客户端建了/删了 project（内核那一侧变了）。
+       * `app.tsx` 只在停在「项目」列表页时才据此重拉 —— 本机自己的增删
+       * 已经从动作的返回值里拿到新列表，不等这条事件。
+       */
+      case 'projects-changed':
+        return [{ type: 'projects-changed' }];
+
       default:
         // 其余事件在当前 UI 上没有落点。适配层已经落库并记过日志，这里不再重复
         return [];

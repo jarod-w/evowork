@@ -90,6 +90,16 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     })),
     installOfficeRuntime: vi.fn(async () => ({ ok: true })),
     onRuntimeProgress: () => () => undefined,
+    listProjects: vi.fn(async () => ({ projects: [] })),
+    createProject: vi.fn(async () => ({ ok: true, projects: [] })),
+    importProject: vi.fn(async () => ({ ok: true, projects: [] })),
+    renameProject: vi.fn(async () => ({ ok: true, projects: [] })),
+    removeProject: vi.fn(async () => ({ ok: true, projects: [] })),
+    openProjectFolder: vi.fn(async () => undefined),
+    readProjectDetail: vi.fn(async () => null),
+    listProjectDir: vi.fn(async () => []),
+    readAgentsMemo: vi.fn(async () => ({ exists: false, content: '' })),
+    writeAgentsMemo: vi.fn(async () => ({ ok: true })),
     ...over,
   };
   return { bridge, emit };
@@ -600,5 +610,335 @@ describe('首次引导（02 §9）', () => {
     await waitFor(() => expect(bridge.pickWorkspace).toHaveBeenCalled());
 
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+/*
+ * 「项目」页接线（Task 13）。
+ *
+ * 前十二个任务分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜像调用、十个 IPC
+ * 动作、两个 React 页面各自做对了——**接线本身没有单测能抓**（CLAUDE.md §9.1）。
+ * 这里测的不是任何一个模块，是缝：点侧边栏到拉列表、点卡片到拉详情、
+ * 拒绝到显示、成功到不重拉、新建任务到落点预选、内核事件到条件刷新。
+ */
+describe('项目页接线（Task 13）', () => {
+  const PROJECT_CARD = {
+    id: 'p1',
+    name: '季度汇报',
+    rootDisplay: '~/w/q3',
+    rootMissing: false,
+    taskCount: 2,
+    artifactCount: 1,
+  };
+
+  const PROJECT_DETAIL = {
+    id: 'p1',
+    name: '季度汇报',
+    rootDisplay: '~/w/q3',
+    rootMissing: false,
+    tasks: [],
+    fileActions: [],
+    automations: [],
+  };
+
+  it('点侧边栏「项目」会去拉列表，而不是显示"还没做好"', async () => {
+    const listProjects = vi.fn(async () => ({ projects: [PROJECT_CARD] }));
+    const { bridge } = fakeBridge({ listProjects });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(listProjects).toHaveBeenCalled());
+    expect(await screen.findByText('季度汇报')).toBeTruthy();
+    expect(screen.queryByText('项目页还没做好')).toBeNull();
+  });
+
+  it('点卡片进详情页，且详情是单独拉的 —— 列表里没有文件树与记忆', async () => {
+    const readProjectDetail = vi.fn(async () => PROJECT_DETAIL);
+    const listProjectDir = vi.fn(async () => [
+      { name: 'src', path: '~/w/q3/src', isDirectory: true, noisy: false },
+    ]);
+    const readAgentsMemo = vi.fn(async () => ({ exists: true, content: '先看 README' }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      readProjectDetail,
+      listProjectDir,
+      readAgentsMemo,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await screen.findByText('季度汇报');
+    // 列表页此刻还没有理由拉详情三件套 —— 这条钉住"按需拉"，不是"进了这一页就顺带全拉了"
+    expect(readProjectDetail).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('季度汇报'));
+    await waitFor(() => expect(readProjectDetail).toHaveBeenCalledWith({ id: 'p1' }));
+    expect(listProjectDir).toHaveBeenCalledWith({ id: 'p1' });
+    expect(readAgentsMemo).toHaveBeenCalledWith({ id: 'p1' });
+    expect(await screen.findByText('src')).toBeTruthy();
+    expect((screen.getByLabelText('空间记忆') as HTMLTextAreaElement).value).toBe('先看 README');
+  });
+
+  it('新建被拒时把原话显示出来 —— 不是静默什么都不发生', async () => {
+    const createProject = vi.fn(async () => ({
+      ok: false,
+      refused: '这个目录被安全策略拦下了（受保护目录），换一个吧。',
+      projects: [],
+    }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [] }),
+      createProject,
+      pickWorkspace: vi.fn(async () => ({ path: '/Users/li/.ssh' })),
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+
+    // 空态里那个「新建空间」→ 对话框 → 选目录 → 创建
+    fireEvent.click(screen.getAllByText('新建空间')[1] as HTMLElement);
+    fireEvent.click(screen.getByText('选择目录'));
+    await waitFor(() =>
+      expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/Users/li/.ssh'),
+    );
+    fireEvent.click(screen.getByText('创建'));
+
+    await waitFor(() =>
+      expect(createProject).toHaveBeenCalledWith({ name: '.ssh', path: '/Users/li/.ssh' }),
+    );
+    expect(await screen.findByText(/被安全策略拦下了/)).toBeTruthy();
+  });
+
+  it('新建成功后直接用返回的新列表刷新 —— 不再多调一次 listProjects', async () => {
+    const listProjects = vi.fn(async () => ({ projects: [] }));
+    const createProject = vi.fn(async () => ({
+      ok: true,
+      projects: [PROJECT_CARD],
+    }));
+    const { bridge } = fakeBridge({
+      listProjects,
+      createProject,
+      pickWorkspace: vi.fn(async () => ({ path: '/Users/li/w/q3' })),
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getAllByText('新建空间')[0] as HTMLElement);
+    fireEvent.click(screen.getByText('选择目录'));
+    await waitFor(() =>
+      expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/Users/li/w/q3'),
+    );
+    fireEvent.click(screen.getByText('创建'));
+
+    expect(await screen.findByText('季度汇报')).toBeTruthy();
+    // 卡片是从 createProject 的返回值直接渲染出来的，不是再拉了一次列表
+    expect(listProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('「在此空间新建任务」把首页的工作空间预选上 —— 否则跳过去还得再选一次', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        workspaces: [{ id: 'p1', name: '季度汇报', path: '~/w/q3' }],
+      }),
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await screen.findByText('季度汇报');
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByText('在此空间新建任务'));
+
+    // 回到首页（需求输入框在），且工作空间下拉上真的选中了这个空间 ——
+    // 只断言回到了首页而不断言选中项，"点了没换页"与"换页了但没选中"这两种坏法都会被漏掉。
+    // 下拉触发按钮的可及名固定是"选择工作空间"（`aria-label`），选中的项文字在按钮内部，
+    // 所以用 getByLabelText 拿到按钮本体再看它的文本，而不是按可及名去找"季度汇报"
+    expect(await screen.findByLabelText('需求输入')).toBeTruthy();
+    expect(screen.getByLabelText('选择工作空间').textContent).toContain('季度汇报');
+  });
+
+  it('projects-changed 事件到达时刷新列表 —— 但本机增删不等它', async () => {
+    const listProjects = vi.fn(async () => ({ projects: [] }));
+    const { bridge, emit } = fakeBridge({ listProjects });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
+
+    emit.ui?.({ type: 'projects-changed' });
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(2));
+  });
+
+  it('projects-changed 到达但不在项目页时不刷新 —— 回去才需要看到新数据', async () => {
+    const listProjects = vi.fn(async () => ({ projects: [] }));
+    const { bridge, emit } = fakeBridge({ listProjects });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: /新建任务/ }));
+
+    emit.ui?.({ type: 'projects-changed' });
+    // 给事件循环一个机会：如果错误地不看 view 就刷新，这里就会变成 2
+    await Promise.resolve();
+    expect(listProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('改名 / 移除 / 导入都直接用返回的新列表，且改名对话框预填旧名字', async () => {
+    const renameProject = vi.fn(async () => ({
+      ok: true,
+      projects: [{ ...PROJECT_CARD, name: '年度汇报' }],
+    }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      renameProject,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await screen.findByText('季度汇报');
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByText('改名'));
+    expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('季度汇报');
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '年度汇报' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => expect(renameProject).toHaveBeenCalledWith({ id: 'p1', name: '年度汇报' }));
+    expect(await screen.findByText('年度汇报')).toBeTruthy();
+  });
+
+  it('移除确认后调 removeProject 并用返回的新列表刷新', async () => {
+    const removeProject = vi.fn(async () => ({ ok: true, projects: [] }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      removeProject,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await screen.findByText('季度汇报');
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByText('从列表移除'));
+    fireEvent.click(screen.getByText('移除'));
+
+    await waitFor(() => expect(removeProject).toHaveBeenCalledWith({ id: 'p1' }));
+    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+  });
+
+  it('「导入现有文件夹」直接调 importProject，不弹对话框', async () => {
+    const importProject = vi.fn(async () => ({ ok: true, projects: [PROJECT_CARD] }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [] }),
+      importProject,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+    fireEvent.click(screen.getAllByText('导入现有文件夹')[0] as HTMLElement);
+
+    await waitFor(() => expect(importProject).toHaveBeenCalled());
+    expect(await screen.findByText('季度汇报')).toBeTruthy();
+  });
+
+  it('列表里「打开所在文件夹」按 id 调用；详情页里的同名按钮不用传 id 也对得上当前空间', async () => {
+    const openProjectFolder = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      readProjectDetail: async () => PROJECT_DETAIL,
+      openProjectFolder,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await screen.findByText('季度汇报');
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByText('打开所在文件夹'));
+    await waitFor(() => expect(openProjectFolder).toHaveBeenCalledWith({ id: 'p1' }));
+
+    openProjectFolder.mockClear();
+    fireEvent.click(screen.getByText('季度汇报'));
+    await screen.findByText('~/w/q3', { selector: 'p' });
+    fireEvent.click(screen.getByText('打开所在文件夹'));
+    await waitFor(() => expect(openProjectFolder).toHaveBeenCalledWith({ id: 'p1' }));
+  });
+
+  it('详情页展开目录懒加载子项；刷新按钮重拉根目录', async () => {
+    const listProjectDir = vi.fn(async (input: { id: string; path?: string }) =>
+      input.path === undefined
+        ? [{ name: 'src', path: '~/w/q3/src', isDirectory: true, noisy: false }]
+        : [{ name: 'index.ts', path: '~/w/q3/src/index.ts', isDirectory: false, noisy: false }],
+    );
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      readProjectDetail: async () => PROJECT_DETAIL,
+      listProjectDir,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByText('季度汇报'));
+    await screen.findByText('src');
+    expect(listProjectDir).toHaveBeenCalledWith({ id: 'p1' });
+
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() =>
+      expect(listProjectDir).toHaveBeenCalledWith({ id: 'p1', path: '~/w/q3/src' }),
+    );
+    expect(await screen.findByText('index.ts')).toBeTruthy();
+
+    listProjectDir.mockClear();
+    fireEvent.click(screen.getByLabelText('刷新文件树'));
+    await waitFor(() => expect(listProjectDir).toHaveBeenCalledWith({ id: 'p1' }));
+  });
+
+  it('保存空间记忆调 writeAgentsMemo 并带上当前空间 id', async () => {
+    const writeAgentsMemo = vi.fn(async () => ({ ok: true }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      readProjectDetail: async () => PROJECT_DETAIL,
+      writeAgentsMemo,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByText('季度汇报'));
+    const textarea = await screen.findByLabelText('空间记忆');
+    fireEvent.change(textarea, { target: { value: '新的长期指令' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() =>
+      expect(writeAgentsMemo).toHaveBeenCalledWith({ id: 'p1', content: '新的长期指令' }),
+    );
+  });
+
+  it('详情页点任务行会像侧边栏一样真的去拉历史，而不是空对话', async () => {
+    const openTask = vi.fn(async () => ({ items: [] }));
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      readProjectDetail: async () => ({
+        ...PROJECT_DETAIL,
+        tasks: [
+          {
+            id: 't9',
+            title: '季度评审',
+            status: 'completed' as const,
+            timeLabel: '昨天',
+            sectionId: 'x',
+          },
+        ],
+      }),
+      openTask,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByText('季度汇报'));
+    fireEvent.click(await screen.findByText('季度评审'));
+
+    await waitFor(() => expect(openTask).toHaveBeenCalledWith({ threadId: 't9' }));
   });
 });

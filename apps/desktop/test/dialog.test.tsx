@@ -75,4 +75,26 @@ describe('ItemCard（§5.20）', () => {
     const { container } = render(<ItemCard name="旧方案" description="~/old" tone="warning" />);
     expect(container.querySelector('[data-tone="warning"]')).toBeTruthy();
   });
+
+  /*
+   * 整张卡都可点（打开详情），而 `action` 插槽（项目页放的是 ⋯ 菜单）**嵌在卡片内部**——
+   * 点它的按钮天然会向上冒泡到卡片本身的 `onClick`。这条不是假设：Task 13 接线
+   * `onOpenDetail` 之后，projects 页面每一次点「⋯」菜单里的任何一项都会**同时**
+   * 打开详情页——两个回调各自都对（菜单选中了正确的项、卡片打开了正确的详情），
+   * 合起来是错的（用户只想改名，却被顺带跳到了详情页）。
+   */
+  it('点 action 插槽（⋯ 菜单）不该顺带触发卡片自己的 onClick', async () => {
+    const { ItemCard } = await import('../src/renderer/components/primitives.js');
+    const onClick = vi.fn();
+    render(
+      <ItemCard
+        name="季度汇报"
+        description="~/w/q3"
+        onClick={onClick}
+        action={<button type="button">⋯</button>}
+      />,
+    );
+    fireEvent.click(screen.getByText('⋯'));
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });

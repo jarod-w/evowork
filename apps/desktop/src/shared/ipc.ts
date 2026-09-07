@@ -61,7 +61,12 @@ export type RendererEvent =
       readonly taskId: string;
       readonly message: string;
       readonly details?: string | undefined;
-    };
+    }
+  /**
+   * 「项目」那一侧变了（另一个客户端建了/删了 project）。
+   * 只在停在项目列表页时才据此重拉——本机自己的增删动作直接返回新列表，不等这条事件。
+   */
+  | { readonly type: 'projects-changed' };
 
 export interface ScenarioView {
   readonly id: string;

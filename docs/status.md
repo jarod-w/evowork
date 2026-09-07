@@ -360,6 +360,19 @@ base instructions。模型在「你是谁」上听系统底稿。第二问「你
 2026-09-07 把新 asar 写进 `/Applications/EvoWork.app` 后再起一次：日志是
 `gateway.child.started itemCount=3`，不再是 `skipped reason=NO_KEYS`。
 
+### 「项目」页真正接进 `app.tsx` 改出两个（2026-09-08）
+
+Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜像调用、十个 IPC 动作、
+两个 React 页面各自做对了。接线（Task 13）之后端到端测试立刻抓出两条 ——
+两条都在各自的单测里全绿，因为**每个模块单独看都是对的**：
+
+| 缺陷 | 表现 | 已改 |
+| --- | --- | --- |
+| **`ItemCard` 的 `action` 插槽会把点击冒泡到卡片自己的 `onClick`** | `ProjectsPage` 的卡片整张可点（打开详情），而「⋯」菜单渲染在 `action` 插槽里、嵌在卡片内部（`Popover` 故意不做 portal）。Task 11 的组件测试把 `onOpenDetail` 传成 `noop`，从没暴露过这条；Task 13 把它接成真的 `setActiveProjectId` 之后，点菜单里任何一项（改名/移除/打开文件夹/新建任务）都会**顺带**把用户跳进详情页——两个回调各自都被正确调用了，合起来是用户没点的动作也发生了 | `ItemCard` 给 `action` 插槽的包裹 `span` 加 `onClick={(e) => e.stopPropagation()}`；`apps/desktop/test/dialog.test.tsx` 补一条直接测这条不变式（点 action 插槽不该触发卡片 `onClick`），不依赖 projects 页面复现 |
+| **适配层发的 `projects-changed` 被翻译层当成「没有落点」丢掉** | `services/kernel-adapter/src/events.ts` 一直在发 `{ type: 'projects-changed' }`（`project/changed` 通知），但 `renderer-bridge.ts` 的 `createEventTranslator` 没有对应分支，落进 `default` 和 `skills-changed` 归成一类"当前 UI 没有落点"。`app.tsx` 按 Task 13 的设计确实订阅了这个事件、也确实会在停在项目列表页时重拉——但事件永远到不了它，因为翻译层在半路把它吃掉了 | `createEventTranslator` 加 `case 'projects-changed': return [{ type: 'projects-changed' }]`；`renderer-bridge.test.ts` 补一条钉住这条翻译，`app.test.tsx` 用 `emit.ui?.({ type: 'projects-changed' })` 验证订阅那一端确实会重拉 |
+
+前一条是"两个正确的回调装进同一个可点区域"；后一条是"发送方和接收方都写对了，中间的翻译层漏了一支 `case`"——都不是任何一个模块的单测能抓到的形状。
+
 ---
 
 ## 4. 卡住的事

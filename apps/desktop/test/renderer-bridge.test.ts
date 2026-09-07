@@ -388,6 +388,21 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
     ];
     for (const event of noop) expect(translate(event)).toEqual([]);
   });
+
+  /*
+   * `project/changed` 之前**曾经**落在这个 `default` 分支里，跟 `skills-changed`
+   * 归成一类"没有落点"——但 Task 13 给「项目」页接了 `projects-changed` 的刷新逻辑，
+   * 这条通知**现在有落点了**。适配层一直在发它（`events.ts` 的 `projectChanged` 分支），
+   * 只是这一层从没把它翻译过去：两边各自都"对"（适配层发了、渲染层接了），
+   * 合起来是断的——翻译层把它默默吃掉了。
+   */
+  it('project-changed 翻译成 projects-changed，不再被当成没有落点', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(translate({ type: 'projects-changed' })).toEqual([{ type: 'projects-changed' }]);
+  });
 });
 
 describe('时间戳只到"天"（01 §5.5）', () => {
