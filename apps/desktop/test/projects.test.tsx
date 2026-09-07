@@ -95,6 +95,15 @@ describe('ProjectsPage', () => {
     const dialog = screen.getByRole('alertdialog');
     expect(dialog.textContent).toContain('不会删除');
     expect(dialog.textContent).toContain('磁盘');
+    /*
+     * 强调必须是真的加粗，不能是 markdown 的星号。
+     *
+     * JSX 里 `**不会删除**` 会**原样渲染成星号** —— textContent 里照样含「不会删除」，
+     * 所以上面两条断言对此完全无感。而这是整个功能里最要紧的一句话
+     * （「移除」很容易被读成「删除」），它带着两串星号出厂只会让人怀疑这句话本身。
+     */
+    expect(dialog.textContent).not.toContain('*');
+    expect(dialog.querySelector('strong')?.textContent).toBe('不会删除');
   });
 
   it('确认后才真的调 onRemove', () => {

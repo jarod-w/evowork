@@ -266,7 +266,7 @@ export function ProjectsPage(props: ProjectsPageProps) {
            * 02 §4.3 点名要求这句话：移除**只解绑**。
            * 说反了用户丢文件 —— 而"移除"这个词本身完全可以被理解成删除。
            */}
-          「{pending.project.name}」会从这个列表消失，但**不会删除**磁盘上的任何文件。
+          「{pending.project.name}」会从这个列表消失，但<strong>不会删除</strong>磁盘上的任何文件。
           这个空间里已经完成的任务与产物索引也都保留。
         </Dialog>
       ) : null}
