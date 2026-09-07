@@ -10,6 +10,10 @@ import type { ArtifactLite, ProjectRecord, ThreadLite } from '../src/index.js';
 
 const HOME = '/Users/li';
 
+// 与 cards.ts 里 ROOT_DISPLAY_MAX 的默认值保持一致（该常量未导出，属性测试
+// 只关心"不超过输入长度"这条后置条件，不关心具体数值，所以本地复制一份即可）。
+const DEFAULT_MAX = 36;
+
 const PROJECT: ProjectRecord = {
   id: 'p1',
   name: '季度汇报',
@@ -74,6 +78,38 @@ describe('buildProjectCard', () => {
     expect(card.artifactCount).toBe(1);
   });
 
+  it('建了又删的文件不能算数 —— 先按 version 折叠再看 PRESENT，不能先滤 PRESENT 再去重', () => {
+    // v1 PRESENT + v2 MISSING/MOVED：文件已经不在了，即使 v1 那行仍标 PRESENT
+    // 也不能把它算进产物数，否则用户点开是空的。
+    const deleted = build(
+      [],
+      [
+        { path: '/w/q3/r.docx', version: 1, fileState: 'PRESENT' },
+        { path: '/w/q3/r.docx', version: 2, fileState: 'MISSING' },
+      ],
+    );
+    expect(deleted.artifactCount).toBe(0);
+
+    const movedAway = build(
+      [],
+      [
+        { path: '/w/q3/r.docx', version: 1, fileState: 'PRESENT' },
+        { path: '/w/q3/r.docx', version: 2, fileState: 'MOVED' },
+      ],
+    );
+    expect(movedAway.artifactCount).toBe(0);
+
+    // v1 MISSING + v2 PRESENT：文件被重新创建，这次要算上。
+    const recreated = build(
+      [],
+      [
+        { path: '/w/q3/r.docx', version: 1, fileState: 'MISSING' },
+        { path: '/w/q3/r.docx', version: 2, fileState: 'PRESENT' },
+      ],
+    );
+    expect(recreated.artifactCount).toBe(1);
+  });
+
   it('最近活动取空间内任务的最大 recencyAt', () => {
     const card = build(
       [
@@ -125,4 +161,40 @@ describe('ellipsizeMiddle', () => {
     const out = ellipsizeMiddle('/x/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 10);
     expect(out).toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   });
+
+  it('单段绝对路径不能拼出比输入还长的结果，目录名也不能被印两遍', () => {
+    // lastIndexOf('/') === 0：整条路径只有开头那一个分隔符，没有"中段"可省。
+    // 旧实现会把 tail 算成整个输入，再在前面拼一个 head —— 结果比输入还长，
+    // 目录名相当于出现了两次。
+    const root = '/' + 'a'.repeat(40); // 41 字符
+    const out = ellipsizeMiddle(root); // max = 36（默认）
+    expect(out.length).toBeLessThanOrEqual(root.length);
+    expect(out).not.toBe(root);
+  });
+
+  // 属性测试：不论输入是什么形状，输出长度绝不能超过输入长度。
+  // 这是 ellipsizeMiddle 的后置条件，用一张覆盖各种"斜杠形状"的表来穷举，
+  // 而不是零散地各写一个例子。
+  const SHAPES: ReadonlyArray<{
+    readonly label: string;
+    readonly path: string;
+    readonly max?: number;
+  }> = [
+    { label: '空字符串', path: '' },
+    { label: '完全没有斜杠', path: 'a'.repeat(50) },
+    { label: '单个前导斜杠 + 超长段', path: '/' + 'a'.repeat(50) },
+    { label: '两段', path: '/w/' + 'quarterly-report-final-v2'.repeat(3) },
+    { label: '很多段', path: '/a/b/c/d/e/f/g/h/i/j/' + 'k'.repeat(30) },
+    { label: '长度恰好等于 max', path: 'x'.repeat(DEFAULT_MAX) },
+    { label: '长度恰好比 max 多 1', path: 'x'.repeat(DEFAULT_MAX + 1) },
+    { label: '主目录风格的深路径', path: '~/dev/a/b/c/d/quarterly-report-with-a-long-name.docx' },
+  ];
+
+  it.each(SHAPES)(
+    '$label —— 输出长度绝不超过输入长度（否则卡片上的路径比真实路径还长）',
+    ({ path, max }) => {
+      const out = max === undefined ? ellipsizeMiddle(path) : ellipsizeMiddle(path, max);
+      expect(out.length).toBeLessThanOrEqual(path.length);
+    },
+  );
 });
