@@ -31,3 +31,7 @@ config/prompts/
 THIRD_PARTY_NOTICES.md
 # hook 策略包的 vendor 产物：生成物，格式由生成它的编译器负责
 plugins/hooks/*/vendor/
+
+# SDD 脚手架的暂存区（任务简报 · 报告 · review 包）。它是 git-ignored 的工作文件，
+# 不是产物也不是源码 —— 让 prettier 去管它，等于让一份临时笔记决定门禁红绿。
+.superpowers/

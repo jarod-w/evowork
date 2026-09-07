@@ -168,8 +168,7 @@ describe('起起来之后的参数', () => {
     });
     expect(gw.result.started).toBe(true);
     const error = child.on.mock.calls.find((c) => c[0] === 'error')?.[1] as
-      | ((err: Error) => void)
-      | undefined;
+      ((err: Error) => void) | undefined;
     expect(error).toBeTypeOf('function');
     error?.(new Error('spawn ENOENT'));
     expect(gw.result.started).toBe(false);

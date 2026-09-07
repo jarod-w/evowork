@@ -256,9 +256,7 @@ function Model(props: OnboardingProps) {
   const keys = props.providerKeys ?? EMPTY_PROVIDER_KEYS;
   return (
     <div className="ew-onboarding-body">
-      <p>
-        EvoWork 在这台电脑上跑模型网关。至少填一家厂商的 API 密钥，然后点「检查连通性」。
-      </p>
+      <p>EvoWork 在这台电脑上跑模型网关。至少填一家厂商的 API 密钥，然后点「检查连通性」。</p>
       <ModelAccessFields
         values={keys}
         onChange={(id, value) => props.onProviderKeyChange?.(id, value)}

@@ -24,11 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, type ModelOption } from './menu.js';
 import { Badge, Banner, PillButton } from './primitives.js';
-import {
-  ModelAccessFields,
-  type ProviderKeyId,
-  type ProviderKeys,
-} from '../views/onboarding.js';
+import { ModelAccessFields, type ProviderKeyId, type ProviderKeys } from '../views/onboarding.js';
 
 export const COMPOSER_PLACEHOLDER = '今天帮你做些什么？  @ 引用对话文件，/ 调用技能与指令';
 
@@ -144,7 +140,7 @@ export interface ComposerProps {
         readonly reason?: string | undefined;
         readonly onFix?: () => void;
       }
-      | undefined;
+    | undefined;
   /**
    * 没配厂商密钥时就地录入。只在 `reason === 'no-keys'` 时出现 ——
    * 「连不上」该重试，「没密钥」再 fetch 一次解决不了。

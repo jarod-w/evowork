@@ -7,7 +7,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ModelOptionView, RendererEvent, StartupInfo } from '../src/shared/ipc.js';
+import type {
+  ModelCatalogResult,
+  ModelOptionView,
+  RendererEvent,
+  StartupInfo,
+} from '../src/shared/ipc.js';
 import { App, applyHistory, mergeItem, type EvoworkBridge } from '../src/renderer/app.js';
 
 const STARTUP: StartupInfo = {
@@ -353,7 +358,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
 
   it('没配密钥时给出录入框，不是只让人再点一次「检查模型接入」', async () => {
     const { bridge } = fakeBridge({
-      listModels: vi.fn(async () => ({
+      listModels: vi.fn(async (): Promise<ModelCatalogResult> => ({
         models: [],
         reason: 'no-keys',
         unavailable: '本机网关没有启动：一家模型厂商的密钥都没有配置',
