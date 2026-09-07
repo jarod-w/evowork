@@ -178,6 +178,18 @@ export interface ProjectPorts {
    * 工作空间里放一个软链就能把文件树变成全盘浏览器。
    */
   readonly realpath: (path: string) => Promise<string | undefined>;
+  /**
+   * 判断路径**最后一段自己**是不是软链（`fs.lstat`，不跟随）。
+   *
+   * 这是安全边界补的另一半：`realpath` 解析的是"这条路径最终指向哪"，
+   * 对一个软链而言那正是它想让你看到的假象——`agentsMemoPath` 需要的是反过来的问题，
+   * "这一段本身是不是一条链接"，答案是就该拒绝，不必也不该去看链接指向哪里
+   * （链接可能是悬空的，`realpath` 会失败，但 `writeFile` 仍然会顺着它把目标建出来）。
+   *
+   * 路径不存在（`ENOENT`）不算软链，必须放行——`writeAgentsMemo` 首次建文件走的正是这条路。
+   * 其它任何失败（没权限等）与 `realpath` 同一条纪律：失败一律收紧，当作"是软链"处理。
+   */
+  readonly isSymlink: (path: string) => Promise<boolean>;
   /** 弹目录选择框。返回 undefined = 用户取消 */
   readonly pickDirectory: () => Promise<string | undefined>;
   readonly readDir: (
@@ -480,16 +492,37 @@ export function createRendererActions(options: RendererBridgeOptions) {
   };
 
   /**
-   * `<root>/AGENTS.md` 的真实路径，越界则 undefined。
+   * 包一层 `ports.isSymlink`，理由与 `safeRealpath` 完全一样：这里是安全边界，
+   * 不能让一个第三方/测试用的 ports 实现只要抛错就绕过判定。
+   * 抛错时当作"是软链"处理（拒绝），而不是当作"不是"——两者的安全后果不对称。
+   */
+  const safeIsSymlink = async (ports: ProjectPorts, path: string): Promise<boolean> => {
+    try {
+      return await ports.isSymlink(path);
+    } catch {
+      return true;
+    }
+  };
+
+  /**
+   * `<root>/AGENTS.md` 的真实路径，越界或末段是软链则 undefined。
    *
-   * 路径**由这里拼**（不接受渲染层传任意路径），再经 realpath 复查 ——
-   * 把 root 本身做成软链、或在 root 里放一个叫 AGENTS.md 的软链指向
-   * `~/.ssh/authorized_keys`，字面判定都看不出来。
+   * 路径**由这里拼**（不接受渲染层传任意路径）。安全判定分两步，缺一都不够：
+   *
+   * 1. root 本身经 realpath 复查是否仍在界内——把 root 做成软链，字面判定看不出来；
+   * 2. `<root>/AGENTS.md` 这最后一段**自己**是不是软链——第①步只验过了父目录，
+   *    验过父目录不代表最后一段安全：它自己可以是一条指向
+   *    `~/.ssh/authorized_keys` 的软链，而 `writeFile` 会顺着它写。
+   *    这里**只拒绝，不解析目标再判断是否越界**：这个文件是产品自己的，
+   *    没有任何正当理由是一条链接；"解析后再判断"既更复杂，又拦不住悬空链接——
+   *    那种链接 `realpath` 会失败，但 `writeFile` 仍然会把目标创建出来。
    */
   const agentsMemoPath = async (ports: ProjectPorts, root: string): Promise<string | undefined> => {
     const realRoot = await safeRealpath(ports, root);
     if (realRoot === undefined || !isUnderRoot(root, realRoot, ports.home)) return undefined;
-    return `${realRoot.replace(/\/$/, '')}/AGENTS.md`;
+    const memoPath = `${realRoot.replace(/\/$/, '')}/AGENTS.md`;
+    if (await safeIsSymlink(ports, memoPath)) return undefined;
+    return memoPath;
   };
 
   /**

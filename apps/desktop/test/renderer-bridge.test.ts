@@ -631,6 +631,8 @@ describe('项目动作（spec §2.6）', () => {
       rootExists: () => true,
       // 默认恒等：软链的负面用例各自覆盖它
       realpath: async (p) => p,
+      // 默认恒不是软链：AGENTS.md 本身是软链的用例各自覆盖它
+      isSymlink: async () => false,
       pickDirectory: async () => '/w/new',
       readDir: async () => [{ name: 'src', isDirectory: true }],
       openFolder: async () => {},
@@ -876,5 +878,71 @@ describe('项目动作（spec §2.6）', () => {
     const out = await actions.writeAgentsMemo({ id, content: 'x' });
     expect(out.ok).toBe(false);
     expect(writeCalled).toBe(false);
+  });
+
+  /*
+   * ── 补充：`<root>/AGENTS.md` 自己是软链时必须拒绝（2026-09-08 Task 8 修复的缺陷）──
+   *
+   * 此前只 realpath 了 root、验过父目录就直接拼 `/AGENTS.md`，
+   * 而"父目录没越界"完全不能说明最后一段本身安全——它自己可以是一条软链，
+   * 读会跟随、写更会跟随（悬空软链甚至会被写出目标）。
+   * 下面这组断言的是**读/写端口一次都没被调用**，不是"调用了但结果被扔掉"——
+   * 后一种情况下磁盘副作用（读到了机密内容、写穿了目标）已经发生了。
+   */
+
+  it('AGENTS.md 本身是软链时 readAgentsMemo 拒绝，从不调用 readTextFile', async () => {
+    const readTextFile = vi.fn(async () => '有效载荷');
+    const isSymlink = vi.fn(async (p: string) => p === '/w/a/AGENTS.md');
+    const actions = makeActions({ projectPorts: ports({ readTextFile, isSymlink }) });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const memo = await actions.readAgentsMemo({ id });
+    expect(memo).toEqual({ exists: false, content: '' });
+    expect(readTextFile).not.toHaveBeenCalled();
+  });
+
+  it('AGENTS.md 本身是软链时 writeAgentsMemo 拒绝，从不调用 writeTextFile', async () => {
+    const writeTextFile = vi.fn(async () => {});
+    const isSymlink = vi.fn(async (p: string) => p === '/w/a/AGENTS.md');
+    const actions = makeActions({ projectPorts: ports({ writeTextFile, isSymlink }) });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.writeAgentsMemo({ id, content: 'x' });
+    expect(out.ok).toBe(false);
+    expect(writeTextFile).not.toHaveBeenCalled();
+  });
+
+  it('AGENTS.md 不存在时 writeAgentsMemo 照常成功——首次创建不能被这条新规则挡住', async () => {
+    const writeTextFile = vi.fn(async () => {});
+    // isSymlink 对不存在的路径答"不是"（对应真实现里的 ENOENT 分支）
+    const actions = makeActions({
+      projectPorts: ports({ writeTextFile, isSymlink: async () => false }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.writeAgentsMemo({ id, content: '第一次写' });
+    expect(out.ok).toBe(true);
+    expect(writeTextFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('isSymlink 判定本身抛错时 writeAgentsMemo 拒绝——失败一律收紧，不能让异常漏过安全判定', async () => {
+    const writeTextFile = vi.fn(async () => {});
+    const actions = makeActions({
+      projectPorts: ports({
+        writeTextFile,
+        isSymlink: async () => {
+          throw new Error('EACCES');
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.writeAgentsMemo({ id, content: 'x' });
+    expect(out.ok).toBe(false);
+    expect(writeTextFile).not.toHaveBeenCalled();
   });
 });

@@ -24,7 +24,7 @@
  */
 import type { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
-import { readdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -592,6 +592,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         } catch {
           // 解析不了（不存在、断链、没权限）就是不给读 —— 失败一律收紧，不放行
           return undefined;
+        }
+      },
+      isSymlink: async (path) => {
+        try {
+          return (await lstat(path)).isSymbolicLink();
+        } catch (err: unknown) {
+          // 不存在就不是软链——`writeAgentsMemo` 首次建文件走的正是这条路，不能拦
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+          // 其它失败（没权限等）与 realpath 同一条纪律：失败一律收紧，当作"是"处理
+          return true;
         }
       },
       pickDirectory: async () => options.pickDirectory?.() ?? undefined,
