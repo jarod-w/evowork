@@ -2484,6 +2484,57 @@ textarea {
   transition: width var(--dur-base) var(--ease-out);
 }
 
+/* ─────────────────────────── 项目列表页（02 §4.3）─────────────────────────── */
+
+/*
+ * 目录式页面的标题栏：标题 + 搜索 + 动作按钮一行排开。
+ * 复用 `.ew-title-bar` 的高度与留白 token，不重新定义一套数值。
+ */
+.ew-page-title-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--layout-title-bar-height);
+  padding: 0 var(--space-20);
+}
+.ew-page-title {
+  font-size: var(--font-title-1-size);
+  line-height: var(--font-title-1-line);
+  font-weight: var(--font-title-1-weight);
+  margin-right: var(--space-16);
+}
+/* 搜索框与两个按钮靠左排在标题之后，最右侧的「新建空间」自然落在行尾 */
+.ew-page-title-bar > .ew-search-input {
+  margin-right: auto;
+}
+
+.ew-projects-grid {
+  display: grid;
+  grid-template-columns: repeat(3, var(--layout-item-card-width));
+  gap: var(--layout-grid-gap);
+}
+/* ⋯ 菜单的定位容器：Popover 只管内容，定位归外层（menu.tsx 的头注释） */
+.ew-item-card-menu {
+  position: relative;
+}
+.ew-projects-empty-actions {
+  display: flex;
+  gap: var(--space-8);
+}
+.ew-projects-refusal {
+  margin: 0 0 var(--space-16);
+  padding: var(--space-12);
+  border: 1px solid var(--warning);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+}
+.ew-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-12);
+}
+
 .ew-onboarding-progress-block {
   display: flex;
   flex-direction: column;
