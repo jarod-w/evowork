@@ -795,13 +795,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
      * 走 `createProject` 而不是自己写一遍落库：路径闸门（10 §5）与镜像
      * 都在那条路径上，绕过去等于首运行是唯一不过闸门的入口。
      *
-     * 返回 `{}` 有两种成因：用户取消（`pickDirectory` 给 undefined），或者
-     * 闸门拒绝了选中的目录（`createProjectImpl` 返回 `ok: false`）。**两者
-     * 对调用方而言必须一样**——都是"没有一个新空间可用"，不能把"选了但被拒"
-     * 读成"选成功了"。渲染层（`app.tsx`）只看 `r.path` 是否为真，两种情况
-     * 都不会把任何路径加进已选列表，行为上正是这个约束要求的样子。
+     * `{}` 只对应一种成因：用户取消（`pickDirectory` 给 undefined）——那种情况
+     * **如实无话可说**，不该弹一句提示。闸门拒绝（`createProjectImpl` 返回
+     * `ok: false`）是另一种成因，**不能再和取消混在同一个 `{}` 里**：
+     * `createProjectImpl` 已经拼好了一句能看懂的话（"这个目录被安全策略拦下了…"），
+     * 以前这里直接把它扔掉，选了 `~/.ssh` 之后界面上的表现和用户自己按了取消
+     * 一模一样——按钮看起来像坏了（CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」）。
+     * 所以拒绝时带上 `refused`，渲染层认这个字段来决定要不要提示。
      */
-    async pickWorkspace(): Promise<{ path?: string }> {
+    async pickWorkspace(): Promise<{ path?: string; refused?: string }> {
       const ports = options.projectPorts;
       const picked = await ports?.pickDirectory();
       if (picked === undefined) return {};
@@ -810,7 +812,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
         name: picked.slice(picked.lastIndexOf('/') + 1) || picked,
         path: picked,
       });
-      return result.ok ? { path: picked } : {};
+      if (result.ok) return { path: picked };
+      // exactOptionalPropertyTypes：只有真有话可说时才带上这个字段
+      return result.refused !== undefined ? { refused: result.refused } : {};
     },
 
     /** 首次引导走完（02 §9）。落 `meta` 表 —— 换窗口、清缓存都不该让人重走一遍。 */

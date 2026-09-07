@@ -552,4 +552,53 @@ describe('首次引导（02 §9）', () => {
       await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeTruthy());
     }
   });
+
+  /*
+   * 首运行第②步选中一个被安全策略拦下的目录（如 `~/.ssh`）时，`pickWorkspace`
+   * 带回的 `refused` 必须真的出现在界面上，而不是被 `app.tsx` 里的
+   * `if (r.path) …` 悄悄吞掉——那正是这条缺陷本来的样子：按钮点了，
+   * 什么都没发生，用户以为自己没点中。
+   */
+  it('首运行选中被拒的目录——拒绝理由要真的显示出来，不是点了没反应', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, onboarded: false }),
+      pickWorkspace: vi.fn(async () => ({
+        refused: '这个目录被安全策略拦下了（受保护目录），换一个吧。',
+      })),
+    });
+    render(<App bridge={bridge} />);
+
+    // 从欢迎屏进到"选一个工作空间"这一步
+    await screen.findByText(/第 1 \/ 6 步/);
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
+
+    expect(
+      await screen.findByText('这个目录被安全策略拦下了（受保护目录），换一个吧。'),
+    ).toBeTruthy();
+    // 被拒的目录不能被当成"选成功了"混进已选列表——按钮还在，不会变成"再加一个"
+    expect(screen.getByRole('button', { name: '选择文件夹' })).toBeTruthy();
+  });
+
+  /*
+   * 取消（`pickDirectory` 什么都没选，`pickWorkspace` 回 `{}`）不该弹任何提示——
+   * 用户自己关掉了系统的文件夹选择框，没有话可说，硬提示反而是打扰。
+   */
+  it('取消选择保持安静——不该弹出任何提示', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, onboarded: false }),
+      pickWorkspace: vi.fn(async () => ({})),
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText(/第 1 \/ 6 步/);
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+
+    const pick = await screen.findByRole('button', { name: '选择文件夹' });
+    fireEvent.click(pick);
+    await waitFor(() => expect(bridge.pickWorkspace).toHaveBeenCalled());
+
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });

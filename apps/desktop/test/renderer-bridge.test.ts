@@ -1034,9 +1034,16 @@ describe('工作空间只有一处真源（spec §2.2）', () => {
     expect(startup.workspaces.map((w) => w.path)).toContain('/w/picked');
   });
 
-  it('取消选择不建空间', async () => {
+  /*
+   * 取消不该带上 `refused`——取消是"如实无话可说"，不是被拒绝。
+   * 这条测试与下面「硬拦截目录被拒」那条一起，划出取消与拒绝的分界。
+   */
+  it('取消选择不建空间，也不带 refused —— 取消没有话可说', async () => {
     const actions = makeActions({ projectPorts: ports({ pickDirectory: async () => undefined }) });
-    await actions.pickWorkspace();
+    const picked = await actions.pickWorkspace();
+    expect(picked).toEqual({});
+    expect(picked.refused).toBeUndefined();
+
     const startup = await actions.getStartup();
     expect(startup.workspaces).toHaveLength(0);
   });
@@ -1048,13 +1055,19 @@ describe('工作空间只有一处真源（spec §2.2）', () => {
    * `importProject` 都过闸门，首运行单独绕过去。这条测试证明改完之后
    * 三个入口一致：选中一个硬拦截目录（如 `~/.ssh`）既不建空间，
    * 也不能让调用方把它当成"选成功了"。
+   *
+   * 同时证明拒绝与取消**不再共用同一个 `{}`**：拒绝要带回
+   * `createProjectImpl` 拼好的那句人话，取消才是真的什么都没有。
+   * 这正是本条修复要拆开的两件事——以前两者都返回 `{}`，
+   * 调用方分不清"用户没选"和"选了但被拦下"，界面上表现成按钮没反应。
    */
-  it('首运行选中硬拦截目录被拒——不建空间，也不能读成"选成功了"', async () => {
+  it('首运行选中硬拦截目录被拒——不建空间，也带回一句能看懂的拒绝理由', async () => {
     const actions = makeActions({
       projectPorts: ports({ pickDirectory: async () => '/Users/li/.ssh' }),
     });
     const picked = await actions.pickWorkspace();
     expect(picked.path).toBeUndefined();
+    expect(picked.refused).toBeTruthy();
 
     const startup = await actions.getStartup();
     expect(startup.workspaces).toHaveLength(0);

@@ -37,7 +37,7 @@ import type {
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
-import { EmptyState } from './components/primitives.js';
+import { Banner, EmptyState } from './components/primitives.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { resolveModelChoice } from './model-selection.js';
@@ -89,8 +89,14 @@ export interface EvoworkBridge {
   getLibrary(): Promise<LibraryDataView>;
   getAutomations(): Promise<AutomationsDataView>;
   getAudit(): Promise<AuditDataView>;
-  /** 打开系统目录选择框。返回空对象 = 用户取消，或这个构建没有选择器 */
-  pickWorkspace(): Promise<{ path?: string }>;
+  /**
+   * 打开系统目录选择框。
+   *
+   * `{}`（两个字段都没有）= 用户取消，或这个构建没有选择器——**如实无话可说**。
+   * `refused` 有值 = 选中的目录被路径闸门拦下了，`path` 不会跟着出现；
+   * 这条要害得和取消分得开：都读成"没选成"会把"选了但被拒"悄悄吞掉。
+   */
+  pickWorkspace(): Promise<{ path?: string; refused?: string }>;
   completeOnboarding(): Promise<void>;
   /** 办公扩展装了没有（08 §4）。**每次问都真探**，别在渲染层缓存 */
   getRuntimeStatus(): Promise<RuntimeStatusView>;
@@ -618,6 +624,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   if (startup !== null && !startup.onboarded) {
     return (
       <div className="ew-app ew-app-onboarding">
+        {/*
+         * `Onboarding` 本身不接 `notices`（它是独立视图，本次修复不改它）。
+         * 拒绝目录的提示直接摆在它上面——引导屏这时候是整个界面，
+         * 用户的视线躲不开这条 Banner，效果和别处塞进 `notices` 一样。
+         */}
+        {notices.map((notice, index) => (
+          <Banner key={`${notice.tone}-${index}`} tone={notice.tone}>
+            {notice.text}
+          </Banner>
+        ))}
         <Onboarding
           step={onboardingStep}
           onStepChange={setOnboardingStep}
@@ -632,7 +648,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
            */
           onPickWorkspace={() => {
             void bridge.pickWorkspace().then((r) => {
-              if (r.path) setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
+              if (r.path) {
+                setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
+                return;
+              }
+              /*
+               * 只有"被拒"才提示，取消不提示（`r.refused` 是 undefined 时什么都不做）——
+               * 这正是本条修复要的区分：拒绝要如实说，取消不需要多此一举打扰用户。
+               */
+              if (r.refused)
+                setNotices((prev) => [...prev, { tone: 'warning', text: r.refused as string }]);
             });
           }}
           permissionProfiles={(startup.permissions ?? []).map((p) => ({
