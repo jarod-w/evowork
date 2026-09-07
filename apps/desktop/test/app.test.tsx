@@ -7,6 +7,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { Adapter } from '@evowork/kernel-adapter';
+import { openStore } from '@evowork/store';
+
 import type {
   ModelCatalogResult,
   ModelOptionView,
@@ -14,6 +17,7 @@ import type {
   StartupInfo,
 } from '../src/shared/ipc.js';
 import { App, applyHistory, mergeItem, type EvoworkBridge } from '../src/renderer/app.js';
+import { createRendererActions } from '../src/main/renderer-bridge.js';
 
 const STARTUP: StartupInfo = {
   appName: 'EvoWork',
@@ -76,6 +80,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     getAutomations: vi.fn(async () => ({ automations: [], runs: {}, deviceName: '这台电脑' })),
     getAudit: vi.fn(async () => ({ records: [], retentionDays: 90, retentionWarningDays: 7 })),
     pickWorkspace: vi.fn(async () => ({ path: '/Users/x/work' })),
+    pickProjectDirectory: vi.fn(async () => ({ path: '/Users/x/work' })),
     completeOnboarding: vi.fn(async () => undefined),
     /*
      * 办公扩展（08 §4）。默认"支持但没装" —— 这是**干净机器上的真实初始状态**，
@@ -688,7 +693,8 @@ describe('项目页接线（Task 13）', () => {
     const { bridge } = fakeBridge({
       listProjects: async () => ({ projects: [] }),
       createProject,
-      pickWorkspace: vi.fn(async () => ({ path: '/Users/li/.ssh' })),
+      // 对话框的「选择目录」调的是纯选目录动作（C1），不再是 `pickWorkspace`
+      pickProjectDirectory: vi.fn(async () => ({ path: '/Users/li/.ssh' })),
     });
     render(<App bridge={bridge} />);
 
@@ -718,7 +724,7 @@ describe('项目页接线（Task 13）', () => {
     const { bridge } = fakeBridge({
       listProjects,
       createProject,
-      pickWorkspace: vi.fn(async () => ({ path: '/Users/li/w/q3' })),
+      pickProjectDirectory: vi.fn(async () => ({ path: '/Users/li/w/q3' })),
     });
     render(<App bridge={bridge} />);
 
@@ -735,6 +741,71 @@ describe('项目页接线（Task 13）', () => {
     expect(await screen.findByText('季度汇报')).toBeTruthy();
     // 卡片是从 createProject 的返回值直接渲染出来的，不是再拉了一次列表
     expect(listProjects).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * ── C1：选目录 + 按创建只能建出一个空间 ──
+   *
+   * 上面几条测试里 `pickWorkspace`/`pickProjectDirectory`、`createProject` 全是
+   * `vi.fn`——两边各自"看起来对"，但缝上的事这类测试抓不到：真正的
+   * `pickWorkspace`（Task 9）选完会**立刻建成一个空间**，而这里如果对话框仍然
+   * 错误地调它而不是纯选目录的 `pickProjectDirectory`，用户选目录再按「创建」
+   * 就会插入两行。这条不 mock 桥这一侧的任何项目动作，直接用真实的
+   * `createRendererActions`（内存 sqlite + 假 `pickDirectory` 端口）驱动整条
+   * UI 流程，然后数落库里到底有几个空间。
+   */
+  it('真实 createRendererActions：选目录再按创建只建出一个空间，不是两个', async () => {
+    const store = openStore({ path: ':memory:' });
+    const adapter = {
+      listTasks: vi.fn(() => []),
+      catalog: vi.fn(() => undefined),
+      mirrorProjectCreate: vi.fn(async () => undefined),
+      mirrorProjectUpdate: vi.fn(async () => undefined),
+      mirrorProjectDelete: vi.fn(async () => undefined),
+    } as unknown as Adapter;
+
+    const realActions = createRendererActions({
+      appName: 'EvoWork',
+      appVersion: '0.0.0',
+      store,
+      adapter,
+      projectPorts: {
+        home: '/Users/li',
+        rootExists: () => true,
+        realpath: async (p) => p,
+        isSymlink: async () => false,
+        pickDirectory: async () => '/w/picked',
+        readDir: async () => [],
+        openFolder: async () => {},
+        readTextFile: async () => undefined,
+        writeTextFile: async () => {},
+      },
+    });
+
+    const { bridge } = fakeBridge({
+      listProjects: () => realActions.listProjects(),
+      createProject: (input) => realActions.createProject(input),
+      // 两个都接到真实实现：如果 app.tsx 的源码修复被回退（对话框又调回
+      // `pickWorkspace`），这里会真的撞上它的建空间副作用，而不是一个乖乖
+      // 什么都不做的 vi.fn——这正是这条测试要能抓到回退的地方。
+      pickWorkspace: () => realActions.pickWorkspace(),
+      pickProjectDirectory: () => realActions.pickProjectDirectory(),
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+
+    fireEvent.click(screen.getAllByText('新建空间')[1] as HTMLElement);
+    fireEvent.click(screen.getByText('选择目录'));
+    await waitFor(() =>
+      expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/w/picked'),
+    );
+    fireEvent.click(screen.getByText('创建'));
+
+    await waitFor(() => expect(screen.getAllByText('picked')).toHaveLength(1));
+    // DOM 里只有一张卡片还不够扎实——直接数落库里的行数，卡片渲染层面的巧合排除掉
+    expect((await realActions.listProjects()).projects).toHaveLength(1);
   });
 
   it('「在此空间新建任务」把首页的工作空间预选上 —— 否则跳过去还得再选一次', async () => {
@@ -913,6 +984,40 @@ describe('项目页接线（Task 13）', () => {
     await waitFor(() =>
       expect(writeAgentsMemo).toHaveBeenCalledWith({ id: 'p1', content: '新的长期指令' }),
     );
+  });
+
+  /*
+   * ── C3：`writeAgentsMemo` 的 promise 直接 reject 时也不能让用户看到"已保存" ──
+   *
+   * `project-detail.test.tsx` 测的是"bridge 老实返回 `{ ok: false }` 时页面怎么办"；
+   * 这条测的是更底下一层——桥本身的 promise 被拒绝（对应 `ports.writeTextFile`
+   * 抛出 EACCES/ENOSPC 之类）。以前 `app.tsx` 的 `saveProjectMemo` 对这个 rejection
+   * 没有 `.catch`，是这个文件里唯一一个没有 `.catch` 的 bridge 调用——表现是一个没人
+   * 接住的 unhandled rejection，且因为没走到 `.then`，`ProjectDetailPage` 那句
+   * `.then(() => setSaved(true))` 恰好也不会执行，"看起来没问题"掩盖了这个坑。
+   * 这里故意让它 reject，钉住两件事：不崩、也不显示已保存。
+   */
+  it('writeAgentsMemo 的 promise 被拒绝时不崩溃、不显示「已保存」', async () => {
+    const writeAgentsMemo = vi.fn(async () => {
+      throw new Error('ENOSPC: no space left on device');
+    });
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      readProjectDetail: async () => PROJECT_DETAIL,
+      writeAgentsMemo,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByText('季度汇报'));
+    const textarea = await screen.findByLabelText('空间记忆');
+    fireEvent.change(textarea, { target: { value: '新的长期指令' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => expect(writeAgentsMemo).toHaveBeenCalled());
+    // 拒绝理由要能看见——不是吞掉之后一片安静
+    expect(await screen.findByText(/没能保存/)).toBeTruthy();
+    expect(screen.queryByText('已保存')).toBeNull();
   });
 
   it('详情页点任务行会像侧边栏一样真的去拉历史，而不是空对话', async () => {

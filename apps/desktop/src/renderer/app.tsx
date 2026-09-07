@@ -39,6 +39,7 @@ import type {
   SendInput,
   StartupInfo,
   TaskRowView,
+  WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
@@ -113,15 +114,23 @@ export interface EvoworkBridge {
     path?: string | undefined;
   }): Promise<readonly DirEntryView[]>;
   readAgentsMemo(input: { id: string }): Promise<AgentsMemoView>;
-  writeAgentsMemo(input: { id: string; content: string }): Promise<{ ok: boolean }>;
+  writeAgentsMemo(input: { id: string; content: string }): Promise<WriteAgentsMemoResult>;
   /**
-   * 打开系统目录选择框。
+   * 打开系统目录选择框（首运行第②步）。**选完会立刻建成一个空间**——只有首运行
+   * 该调它，别处（比如「新建空间」对话框）要用下面纯选目录的 `pickProjectDirectory`，
+   * 否则选目录 + 按创建会建出两个一模一样的空间（C1）。
    *
    * `{}`（两个字段都没有）= 用户取消，或这个构建没有选择器——**如实无话可说**。
    * `refused` 有值 = 选中的目录被路径闸门拦下了，`path` 不会跟着出现；
    * 这条要害得和取消分得开：都读成"没选成"会把"选了但被拒"悄悄吞掉。
    */
   pickWorkspace(): Promise<{ path?: string; refused?: string }>;
+  /**
+   * 纯选目录（C1）：只弹选择框、把路径或拒绝理由带回来，**没有任何副作用**——
+   * 不建空间、不落库。「新建空间」对话框的「选择目录」按钮走这个，
+   * 真正的建空间动作留给用户按下「创建」时的 `createProject`。
+   */
+  pickProjectDirectory(): Promise<{ path?: string; refused?: string }>;
   completeOnboarding(): Promise<void>;
   /** 办公扩展装了没有（08 §4）。**每次问都真探**，别在渲染层缓存 */
   getRuntimeStatus(): Promise<RuntimeStatusView>;
@@ -621,13 +630,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   /*
-   * 新建对话框里的「选择目录」复用 `pickWorkspace`（同一个系统目录选择框，
-   * 不为项目页另开一条通道）。**拒绝在这一步也要显示**——用户手动选中一个
-   * 受保护目录（如 `~/.ssh`）时，`pickWorkspace` 自己就会带回 `refused`，
-   * 这条路径同样不能被静默吞掉（Task 9 那个"点了没反应"的坑）。
+   * 新建对话框里的「选择目录」调**纯选目录**动作 `pickProjectDirectory`——
+   * **不能**复用 `pickWorkspace`（C1）：那个动作选完会立刻建成一个空间
+   * （首次引导要的正是这个语义），对话框如果也调它，用户选目录 + 按「创建」
+   * 就会建出两个一模一样的空间；选完按取消，还会留下一个用户没确认过的空间。
+   *
+   * **拒绝在这一步也要显示**——用户手动选中一个受保护目录（如 `~/.ssh`）时，
+   * `pickProjectDirectory` 自己就会带回 `refused`，这条路径同样不能被静默吞掉
+   * （Task 9 那个"点了没反应"的坑）。
    */
   const pickProjectDirectory = useCallback(async () => {
-    const result = await bridge.pickWorkspace();
+    const result = await bridge.pickProjectDirectory();
     if (result.refused) {
       setProjectRefusal(result.refused);
       return undefined;
@@ -670,12 +683,29 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setProjectTreeChildren({});
   }, [activeProjectId, bridge]);
 
+  /*
+   * C3：`onSaveMemo` 把 `WriteAgentsMemoResult` 原样交给页面，**不再假设总是成功**。
+   * 以前这里只在 `result.ok` 为真时更新 `projectMemo`，`ok` 为假就直接返回——页面那边
+   * 又是 `.then(() => setSaved(true))` 不看结果，两边合起来就是"写失败也显示已保存"。
+   *
+   * `.catch` 是防御性的第二道：`writeAgentsMemo` 内部已经把 `ports.writeTextFile`
+   * 包了 try/catch，正常不会走到这里，但这个文件里**别的每一个** bridge 调用
+   * 都有自己的 `.catch`（IPC 本身也可能失败），这里不该是唯一的例外。
+   */
   const saveProjectMemo = useCallback(
-    async (content: string) => {
-      if (activeProjectId === null) return;
+    (content: string): Promise<WriteAgentsMemoResult> => {
+      if (activeProjectId === null) return Promise.resolve({ ok: false });
       const id = activeProjectId;
-      const result = await bridge.writeAgentsMemo({ id, content });
-      if (result.ok) setProjectMemo({ exists: true, content });
+      return bridge
+        .writeAgentsMemo({ id, content })
+        .then((result) => {
+          if (result.ok) setProjectMemo({ exists: true, content });
+          return result;
+        })
+        .catch((): WriteAgentsMemoResult => ({
+          ok: false,
+          refused: '没能保存空间记忆，稍后再试。',
+        }));
     },
     [activeProjectId, bridge],
   );
@@ -1030,7 +1060,7 @@ function MainPage(props: {
   readonly onOpenProjectFolderById: (id: string) => void;
   readonly onNewTaskInProject: () => void;
   readonly onNewTaskInProjectById: (id: string) => void;
-  readonly onSaveMemo: (content: string) => Promise<void>;
+  readonly onSaveMemo: (content: string) => Promise<WriteAgentsMemoResult>;
   readonly onOpenAutomation: (id: string) => void;
   readonly onCreateProject: (input: { name: string; path: string }) => void;
   readonly onImportProject: () => void;

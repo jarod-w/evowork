@@ -443,3 +443,61 @@ describe('从访达启动也能拿到厂商密钥', () => {
     expect(result.unavailable).not.toContain('连不上模型网关');
   });
 });
+
+/*
+ * ── C2：项目卡片的产物数要看到完整的版本链 ──
+ *
+ * `cards.ts` 的折算逻辑本身早就是对的（先按 path 折成最高 version 那一行，
+ * 再看是不是 PRESENT），缺陷在这一层的接线：`service-host.ts` 喂给它的是
+ * `services.artifacts.listAllPresent()`——只挑 PRESENT、按 200 条封顶，MISSING
+ * 的那一行永远进不来。这条不像 `renderer-bridge.test.ts` 里那样自己手搭
+ * `pageData`（那条测的是折算逻辑本身），这里要的是**这一层真实的接线**：
+ * 用 `makeHost()` 起一个真宿主，让 `host.actions.createProject` /
+ * `host.actions.listProjects` 走 `service-host.ts` 里那一行真正的
+ * `listArtifacts: () => services.artifacts.listAllForProjects()`——
+ * 只要那一行被改回 `listAllPresent()`，这条就会变红。
+ */
+describe('C2：项目卡片的产物数要看完整版本链（真实宿主接线）', () => {
+  it('v1-PRESENT + v2-MISSING 的文件，artifactCount 是 0，不是 1', async () => {
+    host = makeHost();
+    await host.start();
+    const projectDir = mkdtempSync(join(tmpdir(), 'evowork-c2-project-'));
+
+    const created = await host.actions.createProject({ name: 'proj', path: projectDir });
+    expect(created.ok).toBe(true);
+
+    const filePath = join(projectDir, 'report.docx');
+    const at = Date.now();
+    // v1：创建时是 PRESENT
+    host.services.artifacts.insert({
+      id: 'c2-a1',
+      path: filePath,
+      artifactType: 'document',
+      outputFormat: 'docx',
+      title: 'report',
+      operationKind: 'create',
+      version: 1,
+      sourceSignal: 'SKILL_REPORT',
+      fileState: 'PRESENT',
+      createdAt: at,
+    });
+    // v2：文件后来被删了——版本链的头是 MISSING，v1 那行仍然留在表里
+    host.services.artifacts.insert({
+      id: 'c2-a2',
+      path: filePath,
+      artifactType: 'document',
+      outputFormat: 'docx',
+      title: 'report',
+      operationKind: 'delete',
+      version: 2,
+      sourceSignal: 'FS_WATCH',
+      fileState: 'MISSING',
+      createdAt: at + 1,
+    });
+
+    const list = await host.actions.listProjects();
+    expect(list.projects[0]?.artifactCount).toBe(0);
+
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+});

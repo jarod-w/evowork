@@ -629,7 +629,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       },
     },
     pageData: {
-      listArtifacts: () => services.artifacts.listAllPresent(),
+      /*
+       * C2：不能喂 `listAllPresent()`——那个 feed 只挑 `PRESENT`、按 200 条封顶，
+       * 折算产物数（`buildProjectCard`）与「最近的文件动作」都要看到完整版本链，
+       * 理由见 `listAllForProjects` 的头注释。
+       */
+      listArtifacts: () => services.artifacts.listAllForProjects(),
       listAutomations: () =>
         services.automations.listAll(store.deviceId) as unknown as readonly Record<
           string,

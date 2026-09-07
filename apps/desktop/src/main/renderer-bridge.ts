@@ -78,6 +78,7 @@ import type {
   SendInput,
   StartupInfo,
   TaskRowView,
+  WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 
 /** 增量能安全累加的两个通道：它们的 item 都用 `text` 承载正文。 */
@@ -499,11 +500,38 @@ export function createRendererActions(options: RendererBridgeOptions) {
   };
 
   /**
-   * `<root>/AGENTS.md` 的真实路径，越界或末段是软链则 undefined。
+   * 把 root 解析成"真实边界"：realpath 一次，复查一次，往后所有子路径判定
+   * 都用这个解析后的结果，**不再用字面 root**（I1）。
+   *
+   * 以前 `agentsMemoPath` / `listProjectDir` 都是拿字面 root 去和 realpath 之后的
+   * 结果比 `isUnderRoot(root, realRoot, home)`——这只在 root 恰好没有任何软链时
+   * 才会为真。root 本身合法地是一条软链是真实场景（macOS 上 `/tmp`、`/var` 都是
+   * 指向 `/private/...` 的软链），命中就会让整棵文件树读成空的、记忆写成"保存失败"
+   * 却不说原因（见 C3/I1 的联动）。
+   *
+   * 但"root 自己是软链"不能因此就完全不设防——把 root 换成指向 `/etc` 这类
+   * 硬拦截目录的软链，仍然必须被拒绝。这里复用 `classifyPath`（10 §5 那道
+   * 路径闸门）对**解析后的**路径再判一次：命中硬拦截才拒，命中的是"就是换了
+   * 个真实位置"则放行，往后一律以这个真实路径为界。
+   *
+   * `isUnderRoot(realRoot, realRoot, home)` 只是借用它内部"退化 root"的守卫
+   * （空串 / `/` 一律拒），不是真的在跟自己比——realpath 失败或退化到这两个值时
+   * 同样必须拒绝，没必要在这里再写一份同样的判断。
+   */
+  const realRootOf = async (ports: ProjectPorts, root: string): Promise<string | undefined> => {
+    const realRoot = await safeRealpath(ports, root);
+    if (realRoot === undefined || !isUnderRoot(realRoot, realRoot, ports.home)) return undefined;
+    const verdict = classifyPath(realRoot, { workspaceRoot: realRoot, home: ports.home });
+    return verdict.verdict === 'hard-block' ? undefined : realRoot;
+  };
+
+  /**
+   * `<root>/AGENTS.md` 的真实路径，越界（含 root 自己解析后落进硬拦截目录）
+   * 或末段是软链则 undefined。
    *
    * 路径**由这里拼**（不接受渲染层传任意路径）。安全判定分两步，缺一都不够：
    *
-   * 1. root 本身经 realpath 复查是否仍在界内——把 root 做成软链，字面判定看不出来；
+   * 1. `realRootOf`：root 解析后的真实边界仍然安全；
    * 2. `<root>/AGENTS.md` 这最后一段**自己**是不是软链——第①步只验过了父目录，
    *    验过父目录不代表最后一段安全：它自己可以是一条指向
    *    `~/.ssh/authorized_keys` 的软链，而 `writeFile` 会顺着它写。
@@ -512,8 +540,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
    *    那种链接 `realpath` 会失败，但 `writeFile` 仍然会把目标创建出来。
    */
   const agentsMemoPath = async (ports: ProjectPorts, root: string): Promise<string | undefined> => {
-    const realRoot = await safeRealpath(ports, root);
-    if (realRoot === undefined || !isUnderRoot(root, realRoot, ports.home)) return undefined;
+    const realRoot = await realRootOf(ports, root);
+    if (realRoot === undefined) return undefined;
     const memoPath = `${realRoot.replace(/\/$/, '')}/AGENTS.md`;
     if (await safeIsSymlink(ports, memoPath)) return undefined;
     return memoPath;
@@ -529,6 +557,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
    * 顺序刻意：**先过路径闸门，再落库，最后才镜像**。
    * 闸门放在最后的话，一个被策略拒绝的目录已经写进本机表了。
    */
+  /** 硬拦截的用户可读文案。`createProjectImpl` 与新的纯选目录动作共用同一句话 */
+  const hardBlockRefusal = (reason: string | undefined): string =>
+    `这个目录被安全策略拦下了（${reason ?? '受保护目录'}），换一个吧。`;
+
   const createProjectImpl = async (input: {
     readonly name: string;
     readonly path: string;
@@ -547,7 +579,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
        */
       return {
         ok: false,
-        refused: `这个目录被安全策略拦下了（${verdict.reason ?? '受保护目录'}），换一个吧。`,
+        refused: hardBlockRefusal(verdict.reason),
         projects: cards(ports),
       };
     }
@@ -723,17 +755,32 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async getLibrary(): Promise<LibraryDataView> {
       const data = options.pageData;
       if (!data) return Promise.resolve({ rows: [] });
-      const rows = data.listArtifacts().map((a) => ({
-        id: a.id,
-        name: a.title || basename(a.path),
-        source: 'artifact' as const,
-        // Q17/Q19 都不做 → 所有者恒为「我」，表格会自动隐藏这一列
-        owner: '我',
-        location: dirname(a.path),
-        accessedAt: a.createdAt,
-        artifactType: a.artifactType,
-        extension: extensionOf(a.path),
-      }));
+      /*
+       * C2 之后 `listArtifacts()` 给的是完整版本链（含 MISSING/MOVED），不再是
+       * 预先过滤好的 PRESENT-only feed——资料库这一栏只展示"现在还在的文件"，
+       * 所以这里要自己按 path 折成最高 version 那一行、再挑 PRESENT。
+       * 折法与 `buildProjectCard` 算产物数是同一条规则：不折的话一个改过两次的
+       * 文件会在库里出现两次；折了不看 PRESENT 的话一个"建了又删"的文件
+       * 会带着它 v1 那行重新冒出来。
+       */
+      const latestByPath = new Map<string, ReturnType<typeof data.listArtifacts>[number]>();
+      for (const a of data.listArtifacts()) {
+        const current = latestByPath.get(a.path);
+        if (current === undefined || a.version > current.version) latestByPath.set(a.path, a);
+      }
+      const rows = Array.from(latestByPath.values())
+        .filter((a) => a.fileState === 'PRESENT')
+        .map((a) => ({
+          id: a.id,
+          name: a.title || basename(a.path),
+          source: 'artifact' as const,
+          // Q17/Q19 都不做 → 所有者恒为「我」，表格会自动隐藏这一列
+          owner: '我',
+          location: dirname(a.path),
+          accessedAt: a.createdAt,
+          artifactType: a.artifactType,
+          extension: extensionOf(a.path),
+        }));
       const usage = data.diskUsage?.();
       return Promise.resolve({ rows, ...(usage ? { diskUsage: usage } : {}) });
     },
@@ -795,7 +842,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     /**
-     * 选一个工作空间目录（首运行第②步）。
+     * 选一个工作空间目录（**只有首运行走这条**，02 §9 第②步）。
      *
      * 选完**立刻建成一个空间**，不等引导走完：用户可能选了目录之后关掉窗口，
      * 而下次打开又从"一个工作空间都没有"开始，等于白选。
@@ -810,6 +857,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
      * 以前这里直接把它扔掉，选了 `~/.ssh` 之后界面上的表现和用户自己按了取消
      * 一模一样——按钮看起来像坏了（CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」）。
      * 所以拒绝时带上 `refused`，渲染层认这个字段来决定要不要提示。
+     *
+     * **C1：这个动作的建空间副作用只对首运行成立**，别的调用方不能再借它当
+     * "只是弹个目录选择框"用——「项目」页「新建空间」对话框要的是
+     * `pickProjectDirectory`（纯选目录，见下）。
      */
     async pickWorkspace(): Promise<{ path?: string; refused?: string }> {
       const ports = options.projectPorts;
@@ -823,6 +874,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (result.ok) return { path: picked };
       // exactOptionalPropertyTypes：只有真有话可说时才带上这个字段
       return result.refused !== undefined ? { refused: result.refused } : {};
+    },
+
+    /**
+     * 纯选目录（C1）：「项目」页「新建空间」对话框专用。**没有任何副作用**——
+     * 不建空间、不落库、不镜像，只弹系统目录选择框、把选中的路径连同拒绝理由
+     * 一起带回来。
+     *
+     * 这是修给一条真实故障的：这个动作出现之前，那个对话框复用的是
+     * `pickWorkspace`——而 `pickWorkspace` 选完会立刻建成一个空间（首次引导要的
+     * 正是这个语义）。用户在对话框里选目录、再按「创建」，就建出了两个
+     * 一模一样的空间；选完按取消，还会留下一个用户从没确认过的空间。
+     *
+     * 受保护目录仍然要把拒绝理由带回来——**拒绝不是副作用，只是如实说**：
+     * 用户手选一个 `~/.ssh` 之类的目录时，这里立刻说清楚，不用等按了
+     * 「创建」、走到 `createProjectImpl` 的闸门才第二次听见同一句话。
+     */
+    async pickProjectDirectory(): Promise<{ path?: string; refused?: string }> {
+      const ports = options.projectPorts;
+      if (!ports) return {};
+      const picked = await ports.pickDirectory();
+      if (picked === undefined) return {};
+      const verdict = classifyPath(picked, { workspaceRoot: picked, home: ports.home });
+      if (verdict.verdict === 'hard-block') return { refused: hardBlockRefusal(verdict.reason) };
+      return { path: picked };
     },
 
     /** 首次引导走完（02 §9）。落 `meta` 表 —— 换窗口、清缓存都不该让人重走一遍。 */
@@ -1028,9 +1103,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
       /*
        * 字符串判定过了还不够：`<root>/link` 在字面上完全合规，而它可能指向 /etc。
        * 所以 realpath 之后**用同一个判定再过一遍**，两道都过才读。
+       *
+       * 复查用的是 `realRootOf(root)`（真实边界），**不是字面 root**（I1）：
+       * root 自己合法地是一条软链时（如 macOS 的 `/tmp` → `/private/tmp`），
+       * 字面 root 与任何子路径的 realpath 结果都对不上前缀，会把整棵树错杀成空的。
        */
+      const realRoot = await realRootOf(ports, root);
+      if (realRoot === undefined) return [];
       const real = await safeRealpath(ports, target);
-      if (real === undefined || !isUnderRoot(root, real, ports.home)) return [];
+      if (real === undefined || !isUnderRoot(realRoot, real, ports.home)) return [];
       const entries = await ports.readDir(real);
       return sortEntries(entries).map((e) => ({
         name: e.name,
@@ -1055,17 +1136,43 @@ export function createRendererActions(options: RendererBridgeOptions) {
      * 写空间记忆。**路径固定拼成 `<root>/AGENTS.md`**，不接受渲染层传任意路径 ——
      * 接受的话渲染层就能让主进程写盘任意文件。
      */
+    /**
+     * C3：`refused` 有值时页面**不能**显示"已保存"——三种成因各给一句人话：
+     * 没接文件系统、路径闸门拒绝（越界/软链/根目录落进硬拦截目录）、写盘本身失败
+     * （EACCES/ENOSPC……）。第三种以前直接把 `ports.writeTextFile` 的 rejection
+     * 扔出去，界面上是一次没人接住的 promise rejection——这里补上 try/catch。
+     *
+     * 失败信息**不回显系统报错原文**：Node 的 fs 报错里带着完整绝对路径
+     * （如 `EACCES: permission denied, open '/Users/…/AGENTS.md'`），原样吐给
+     * 用户或写进日志都会泄露工作空间路径（这条禁令全项目通用）。
+     */
     async writeAgentsMemo(input: {
       readonly id: string;
       readonly content: string;
-    }): Promise<{ readonly ok: boolean }> {
+    }): Promise<WriteAgentsMemoResult> {
       const ports = options.projectPorts;
       const root = rootOf(input.id);
-      if (!ports || root === undefined) return { ok: false };
+      if (!ports || root === undefined) return { ok: false, refused: NO_PORTS };
       const memoPath = await agentsMemoPath(ports, root);
-      if (memoPath === undefined) return { ok: false };
-      await ports.writeTextFile(memoPath, input.content);
-      return { ok: true };
+      if (memoPath === undefined) {
+        return { ok: false, refused: '这个空间的目录已经失效或不安全，没法写空间记忆。' };
+      }
+      try {
+        await ports.writeTextFile(memoPath, input.content);
+        return { ok: true };
+      } catch (err: unknown) {
+        const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+        options.logger?.warn('desktop.project.memo_write_failed', {
+          errorClass: err instanceof Error ? err.name : 'UnknownError',
+        });
+        const refused =
+          code === 'EACCES' || code === 'EPERM'
+            ? '没有权限写入这个目录，检查一下访问权限。'
+            : code === 'ENOSPC'
+              ? '磁盘空间不足，没能保存。'
+              : '没能保存空间记忆，稍后再试。';
+        return { ok: false, refused };
+      }
     },
 
     /** 首页要渲染的一切，一次给全 */

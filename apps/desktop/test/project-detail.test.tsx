@@ -48,7 +48,7 @@ function renderPage(overrides: Record<string, unknown> = {}) {
       onOpenTask={noop}
       onOpenFolder={noop}
       onNewTaskHere={noop}
-      onSaveMemo={async () => {}}
+      onSaveMemo={async () => ({ ok: true })}
       onOpenAutomation={noop}
       {...overrides}
     />,
@@ -154,12 +154,28 @@ describe('ProjectDetailPage', () => {
   });
 
   it('保存后给出「已保存」反馈 —— 没有反馈用户会反复点', async () => {
-    const onSaveMemo = vi.fn(async () => {});
+    const onSaveMemo = vi.fn(async () => ({ ok: true }));
     renderPage({ onSaveMemo });
     fireEvent.change(screen.getByLabelText('空间记忆'), { target: { value: '新内容' } });
     fireEvent.click(screen.getByText('保存'));
     await waitFor(() => expect(screen.getByText('已保存')).toBeTruthy());
     expect(onSaveMemo).toHaveBeenCalledWith('新内容');
+  });
+
+  /*
+   * ── C3：被拒的写入不能显示"已保存" ──
+   *
+   * 以前这里是 `onSaveMemo(draft).then(() => setSaved(true))`——不看 `ok`，
+   * 无条件显示已保存。用户写完长期指令、被路径闸门或系统报错拒绝了，
+   * 却被告知保存成功，内容其实从没落盘。
+   */
+  it('写被拒时不显示「已保存」，而是把拒绝理由摆出来', async () => {
+    const onSaveMemo = vi.fn(async () => ({ ok: false, refused: '磁盘空间不足，没能保存。' }));
+    renderPage({ onSaveMemo });
+    fireEvent.change(screen.getByLabelText('空间记忆'), { target: { value: '新内容' } });
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => expect(screen.getByText('磁盘空间不足，没能保存。')).toBeTruthy());
+    expect(screen.queryByText('已保存')).toBeNull();
   });
 
   it('一个任务都没有时中栏说清是空的，而不是一片留白', () => {

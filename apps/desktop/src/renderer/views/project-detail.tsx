@@ -14,7 +14,12 @@
  */
 import { useEffect, useState } from 'react';
 
-import type { AgentsMemoView, DirEntryView, ProjectDetailView } from '../../shared/ipc.js';
+import type {
+  AgentsMemoView,
+  DirEntryView,
+  ProjectDetailView,
+  WriteAgentsMemoResult,
+} from '../../shared/ipc.js';
 import { DataTable, PanelHeader, TreeItem, TreeSectionHeader } from '../components/panels.js';
 import {
   Banner,
@@ -38,7 +43,8 @@ export interface ProjectDetailPageProps {
   readonly onOpenTask: (threadId: string) => void;
   readonly onOpenFolder: () => void;
   readonly onNewTaskHere: () => void;
-  readonly onSaveMemo: (content: string) => Promise<void>;
+  /** C3：结果必须回读——`ok` 为假时页面不能显示"已保存"，且要把 `refused` 亮出来 */
+  readonly onSaveMemo: (content: string) => Promise<WriteAgentsMemoResult>;
   readonly onOpenAutomation: (id: string) => void;
 }
 
@@ -88,11 +94,14 @@ export function ProjectDetailPage(props: ProjectDetailPageProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [draft, setDraft] = useState(props.memo.content);
   const [saved, setSaved] = useState(false);
+  /** C3：写失败时的原话——不能只是"没显示已保存"，要说清楚为什么 */
+  const [memoRefused, setMemoRefused] = useState<string | undefined>(undefined);
 
   // 换空间时把编辑中的内容换掉 —— 否则 A 空间的草稿会存进 B 空间的 AGENTS.md
   useEffect(() => {
     setDraft(props.memo.content);
     setSaved(false);
+    setMemoRefused(undefined);
   }, [props.memo.content, props.detail.id]);
 
   const toggle = (entry: DirEntryView) => {
@@ -251,13 +260,25 @@ export function ProjectDetailPage(props: ProjectDetailPageProps) {
             onChange={(event) => {
               setDraft(event.target.value);
               setSaved(false);
+              setMemoRefused(undefined);
             }}
           />
+          {/*
+           * C3：`已保存` 以前是 `onSaveMemo(draft).then(() => setSaved(true))`——
+           * 不看 `writeAgentsMemo` 到底成没成功，无条件显示。这里改成读结果的 `ok`，
+           * 拒绝时把 `refused` 摆出来，而不是让用户以为写进去了。
+           */}
+          {memoRefused ? <Banner tone="danger">{memoRefused}</Banner> : null}
           <div className="ew-project-memo-actions">
             <PillButton
               variant="accent"
               onClick={() => {
-                void props.onSaveMemo(draft).then(() => setSaved(true));
+                void props.onSaveMemo(draft).then((result) => {
+                  setSaved(result.ok);
+                  setMemoRefused(
+                    result.ok ? undefined : (result.refused ?? '没能保存，稍后再试。'),
+                  );
+                });
               }}
             >
               保存

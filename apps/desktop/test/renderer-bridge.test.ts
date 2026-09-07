@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Adapter, UiEvent } from '@evowork/kernel-adapter';
-import { openStore, type ProjectionRow, type Store } from '@evowork/store';
+import { createArtifactRepo, openStore, type ProjectionRow, type Store } from '@evowork/store';
 
 import {
   createEventTranslator,
@@ -815,6 +815,36 @@ describe('项目动作（spec §2.6）', () => {
     expect(readPath).toBeUndefined();
   });
 
+  /*
+   * ── I1：root 自己合法地是一条软链时，树不能被错杀成空的 ──
+   *
+   * macOS 上 `/tmp`、`/var`、`/etc` 都是指向 `/private/...` 的软链——工作空间根
+   * 落在这类目录下是完全正常的真实场景，不是攻击。以前的判定是拿**字面** root
+   * 去跟 realpath 之后的结果比前缀，字面 root 与解析后的子路径永远对不上，
+   * 于是整棵树读成空的。真正的边界要用 root 解析后的结果划，划完之后
+   * 子路径才拿这个真实边界去复查——这条钉住"划完之后仍然能正常读"。
+   */
+  it('root 本身是合法软链（如 /tmp → /private/tmp）时仍能正常读树，不是被错杀成空的', async () => {
+    let readPath: string | undefined;
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async (p) => (p === '/w/a' ? '/private/w/a' : p.replace('/w/a', '/private/w/a')),
+        readDir: async (p) => {
+          readPath = p;
+          return [{ name: 'src', isDirectory: true }];
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.listProjectDir({ id, path: '/w/a/docs' });
+    // 展示路径仍然按字面（用户选的）目录拼，不暴露解析后的真实路径
+    expect(out).toEqual([{ name: 'src', path: '/w/a/docs/src', isDirectory: true, noisy: false }]);
+    // 但真正读盘走的是解析后的真实路径
+    expect(readPath).toBe('/private/w/a/docs');
+  });
+
   it('AGENTS.md 只写 <root>/AGENTS.md，渲染层传别的路径也没用', async () => {
     let written: { path: string; content: string } | undefined;
     const actions = makeActions({
@@ -925,6 +955,28 @@ describe('项目动作（spec §2.6）', () => {
     expect(readCalled).toBe(false);
   });
 
+  /*
+   * I1 的补充：root 解析后落在别处，但**不是**硬拦截目录时，要能读到真实的
+   * 空间记忆——不能因为"root 是软链"这一件事本身就一律拒绝（那正是这条缺陷
+   * 本来的样子：`realpath('/w/a') = '/private/w/a'` 时页面说"还没有空间记忆"，
+   * 而 AGENTS.md 其实一直都在）。与上面 `realpath` 恒为 `/etc` 的用例对照着看：
+   * 那条是"解析后落进了硬拦截目录"，仍然要拒——两条一起才说明这里判的是
+   * "解析后的位置本身安不安全"，不是"root 是不是软链"。
+   */
+  it('readAgentsMemo：root 本身是合法软链时仍能读到记忆，不是"还没有"', async () => {
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async (p) => (p === '/w/a' ? '/private/w/a' : p),
+        readTextFile: async (p) => (p === '/private/w/a/AGENTS.md' ? '报告一律用中文' : undefined),
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const memo = await actions.readAgentsMemo({ id });
+    expect(memo).toEqual({ exists: true, content: '报告一律用中文' });
+  });
+
   it('writeAgentsMemo：root 的 realpath 落在外面时拒写，从不调用 writeTextFile', async () => {
     let writeCalled = false;
     const actions = makeActions({
@@ -959,6 +1011,24 @@ describe('项目动作（spec §2.6）', () => {
     const out = await actions.writeAgentsMemo({ id, content: 'x' });
     expect(out.ok).toBe(false);
     expect(writeCalled).toBe(false);
+  });
+
+  it('writeAgentsMemo：root 本身是合法软链时仍能正常写入', async () => {
+    const written: { path: string; content: string }[] = [];
+    const actions = makeActions({
+      projectPorts: ports({
+        realpath: async (p) => (p === '/w/a' ? '/private/w/a' : p),
+        writeTextFile: async (path, content) => {
+          written.push({ path, content });
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.writeAgentsMemo({ id, content: '记住：报告用中文' });
+    expect(out).toEqual({ ok: true });
+    expect(written).toEqual([{ path: '/private/w/a/AGENTS.md', content: '记住：报告用中文' }]);
   });
 
   /*
@@ -1025,6 +1095,100 @@ describe('项目动作（spec §2.6）', () => {
     const out = await actions.writeAgentsMemo({ id, content: 'x' });
     expect(out.ok).toBe(false);
     expect(writeTextFile).not.toHaveBeenCalled();
+  });
+
+  /*
+   * ── C3：`ports.writeTextFile` 抛错时必须被接住，变成一句人话，而不是
+   * 一个没人处理的 rejection ──
+   *
+   * 以前 `writeAgentsMemo` 直接 `await ports.writeTextFile(...)`，没有 try/catch——
+   * `EACCES`/`ENOSPC` 会原样从这个动作里抛出去。这条钉住两件事：不抛错
+   * （`await actions.writeAgentsMemo(...)` 不 reject），且 `refused` 是一句能看懂
+   * 的话，不是把系统报错原文（带着完整路径）回显出去。
+   */
+  it('writeAgentsMemo：写盘本身失败时被接住，返回 refused 而不是抛出 rejection', async () => {
+    const actions = makeActions({
+      projectPorts: ports({
+        writeTextFile: async () => {
+          const err = new Error(
+            "EACCES: permission denied, open '/w/a/AGENTS.md'",
+          ) as NodeJS.ErrnoException;
+          err.code = 'EACCES';
+          throw err;
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const out = await actions.writeAgentsMemo({ id, content: 'x' });
+    expect(out.ok).toBe(false);
+    expect(out.refused).toBeTruthy();
+    // 不回显系统报错原文——那条里带着完整路径
+    expect(out.refused).not.toContain('/w/a');
+  });
+});
+
+/*
+ * ── C2：产物计数要看到完整的版本链，不能只喂 PRESENT-only 的 200 条 feed ──
+ *
+ * `cards.ts` 的 `buildProjectCard` 早就是对的（先按 path 折成最高 version 那一行，
+ * 再看是不是 PRESENT），但一直喂给它的是 `listAllPresent()`——那个方法专门为
+ * 资料库写的，只挑 `PRESENT`、按 200 条封顶，MISSING 的那一行永远进不来。
+ * 这里不 mock `pageData`（`renderer-bridge.test.ts` 以前从来没提供过它，这正是
+ * 这条缺陷一直没被抓到的原因），而是接一个真实的 `ArtifactRepo`，验证
+ * "建了又删"的文件（v1 PRESENT + v2 MISSING）折算出来的 `artifactCount` 是 0。
+ */
+describe('C2：artifactCount 要看完整版本链（真实 pageData 集成）', () => {
+  it('v1-PRESENT、v2-MISSING 的产物链，artifactCount 是 0，不是 1', async () => {
+    const store = memoryStore();
+    const artifacts = createArtifactRepo(store.db);
+    artifacts.insert({
+      id: 'a1',
+      path: '/w/a/report.docx',
+      artifactType: 'document',
+      outputFormat: 'docx',
+      title: 'report',
+      operationKind: 'create',
+      version: 1,
+      sourceSignal: 'SKILL_REPORT',
+      fileState: 'PRESENT',
+      createdAt: 1,
+    });
+    // 同一个文件后来被删了：版本链的头是 v2 MISSING，v1 那行还在表里
+    artifacts.insert({
+      id: 'a2',
+      path: '/w/a/report.docx',
+      artifactType: 'document',
+      outputFormat: 'docx',
+      title: 'report',
+      operationKind: 'delete',
+      version: 2,
+      sourceSignal: 'FS_WATCH',
+      fileState: 'MISSING',
+      createdAt: 2,
+    });
+
+    const actions = createRendererActions({
+      appName: 'EvoWork',
+      appVersion: '0.0.0',
+      store,
+      adapter: fakeAdapter(),
+      projectPorts: ports(),
+      pageData: {
+        // 真正的接线在 service-host.ts：`listArtifacts: () => services.artifacts.listAllForProjects()`
+        listArtifacts: () => artifacts.listAllForProjects(),
+        listAutomations: () => [],
+        listRuns: () => [],
+        listAudit: () => [],
+        auditOldestAt: () => undefined,
+        deviceId: 'd1',
+        deviceName: '这台电脑',
+      },
+    });
+
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    expect(created.projects[0]?.artifactCount).toBe(0);
   });
 });
 

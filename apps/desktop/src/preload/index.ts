@@ -78,6 +78,12 @@ export const RENDERER_ACTIONS = Object.freeze([
   'getAudit',
   /** 选一个工作空间目录。**必须有**：首运行要求至少一个，而干净机器上一个都没有 */
   'pickWorkspace',
+  /**
+   * 纯选目录（C1）：「项目」页「新建空间」对话框专用，**没有副作用**——
+   * 不能让这个对话框继续复用 `pickWorkspace`，那个动作选完会立刻建一个空间，
+   * 对话框还要再按一次「创建」，两次相加就是两个一模一样的空间。
+   */
+  'pickProjectDirectory',
   /** 首次引导走完（02 §9）。落 `meta` 表，换窗口/清缓存都不该让人重走一遍 */
   'completeOnboarding',
   /**

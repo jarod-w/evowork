@@ -482,3 +482,13 @@ export interface AgentsMemoView {
   readonly exists: boolean;
   readonly content: string;
 }
+
+/**
+ * 写空间记忆的结果。与 `ProjectMutationResult` 同一条纪律：`refused` 是
+ * **一句要显示给用户的话**，不是错误码——越界 / 末段软链 / 系统报错（EACCES、
+ * ENOSPC……）都要走这里，不能让页面在写失败之后仍然显示"已保存"（C3）。
+ */
+export interface WriteAgentsMemoResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+}

@@ -526,6 +526,30 @@ export function createArtifactRepo(db: SqliteLike) {
       return rows.map(toArtifact);
     },
 
+    /**
+     * 「项目」页要的 feed（02 §4.3 / C2）：**保留完整版本链，不加 LIMIT**。
+     *
+     * 不能复用 `listAllPresent`：那个方法是为资料库「本地产物」一栏写的——
+     * 只挑 `PRESENT`、按全仓库 200 条封顶。项目卡片的产物数要*先*按 path 折成
+     * 最高 version 那一行、*再*看那一行是不是 `PRESENT`
+     * （`@evowork/projects` 的 `buildProjectCard`）——折算需要看见整条版本链，
+     * 一个「建了又删」的文件是 v1 PRESENT + v2 MISSING，喂 `listAllPresent` 的话
+     * v2 那行进不来，v1 就会被误算成"还在"。
+     *
+     * 也不能封顶：项目页问的是"这一个空间下"的产物，不是"全仓库最近 200 条"——
+     * 仓库里产物一多，200 条会先被别的空间占满，这个空间自己反而报「0 个产物」。
+     *
+     * `readProjectDetail` 的「最近的文件动作」也读这同一个 feed，且**正需要**
+     * 每一条版本变化本身（创建/修改/删除/移动都是一条"动作"），不该在这里
+     * 先按状态过滤掉——过滤掉的话删除/移动就永远进不了那张表（D-P6）。
+     */
+    listAllForProjects(): readonly ArtifactRow[] {
+      const rows = db
+        .prepare('SELECT * FROM artifact ORDER BY created_at DESC')
+        .all() as RawArtifact[];
+      return rows.map(toArtifact);
+    },
+
     /** 结果区「产物」与资料库「本地产物」都读它。 */
     listForThread(threadId: string): readonly ArtifactRow[] {
       const rows = db
