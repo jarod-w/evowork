@@ -46,7 +46,71 @@ function createTables(tables: readonly TableSpec[]): Migration {
 }
 
 export const PROJECTION_MIGRATIONS: readonly Migration[] = [createTables(PROJECTION_TABLES)];
-export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [createTables(AUTHORITATIVE_TABLES)];
+
+/**
+ * 首运行选的工作空间原本存在 `meta` 的这个键里（一个 JSON 路径数组）。
+ * 第 2 版把它搬进 `project_local` 之后这个键就不该再有人读了。
+ */
+export const LEGACY_WORKSPACES_META_KEY = 'evowork.workspaces';
+
+/** 从两张表的 DDL 里取出建表语句 —— 老库跑第 2 版时它们还不存在 */
+function projectTableDdl(): readonly string[] {
+  return AUTHORITATIVE_TABLES.filter(
+    (t) => t.name === 'project_local' || t.name === 'project_root',
+  ).flatMap((t) => t.ddl);
+}
+
+/**
+ * 第 2 版：工作空间收敛成一处真源（spec §2.2）。
+ *
+ * 在此之前「工作空间」有三处：内核 `project/list`、`meta` 里的这个 JSON 数组、
+ * `thread_projection.cwd`。首页下拉把前两处拼起来显示，第三处谁都没用。
+ *
+ * **必须自己建表**：第 1 版只对全新的库跑，已经在第 1 版的老库不会再执行它。
+ * 少了这两行，开发机上一切正常，用户升级后打开 App 报 `no such table: project_local`。
+ */
+const migrateLegacyWorkspaces: Migration = {
+  version: 2,
+  summary: '把 meta 里的 evowork.workspaces 搬进 project_local / project_root',
+  up: (db) => {
+    for (const ddl of projectTableDdl()) db.exec(ddl);
+
+    const raw = readMeta(db, LEGACY_WORKSPACES_META_KEY);
+    if (raw === undefined) return;
+
+    let paths: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      // 坏数据当作没有：一条脏记录不该让整次迁移回滚、App 起不来
+      if (Array.isArray(parsed)) paths = parsed.filter((v): v is string => typeof v === 'string');
+    } catch {
+      paths = [];
+    }
+
+    const now = Date.now();
+    let index = 0;
+    for (const path of [...new Set(paths)]) {
+      const id = `legacy-${index}`;
+      const name = path.slice(path.lastIndexOf('/') + 1) || path;
+      db.prepare(
+        `INSERT OR IGNORE INTO project_local (id, name, kernel_id, created_at, updated_at)
+         VALUES (?, ?, NULL, ?, ?)`,
+      ).run(id, name, now + index, now + index);
+      db.prepare(
+        `INSERT OR IGNORE INTO project_root (project_id, path, position) VALUES (?, ?, 0)`,
+      ).run(id, path);
+      index += 1;
+    }
+
+    // 搬完就删。留着它 = 真源没有真正收敛，下次谁顺手读一下就又分叉了
+    db.prepare(`DELETE FROM meta WHERE key = ?`).run(LEGACY_WORKSPACES_META_KEY);
+  },
+};
+
+export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
+  createTables(AUTHORITATIVE_TABLES),
+  migrateLegacyWorkspaces,
+];
 
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;
 export const AUTHORITATIVE_VERSION = AUTHORITATIVE_MIGRATIONS.at(-1)?.version ?? 0;

@@ -14,6 +14,7 @@ export { deriveStatus, STATUS_LABEL, type DeriveInput } from './derive-status.js
 export {
   AUTHORITATIVE_MIGRATIONS,
   AUTHORITATIVE_VERSION,
+  LEGACY_WORKSPACES_META_KEY,
   AuthoritativeMigrationFailed,
   PROJECTION_MIGRATIONS,
   PROJECTION_VERSION,

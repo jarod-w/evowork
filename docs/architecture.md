@@ -458,7 +458,7 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 | 2 | K3 的四个扩展点用了两个 | 技能包 ✅ · hooks ✅ · MCP server ❌（`plugins/connectors/` 只有 `.gitkeep`，Q9 本期不做）· Rust contributor ❌（`ext/` 只有 README） |
 | 3 | 云端只建了网关 | `services/identity`（账号 · 租户 · 配额 · 签名策略包下发）只有 README。因此 §4 通道 ⑥ 的**云端一侧尚不存在**，`upload.ts` 面向一个还没有实现的端点 |
 | 4 | 专家角色包为空 | `plugins/agents/` 只有 `.gitkeep`，总纲提到的"100+ 角色"一个都没有 |
-| 5 | "14 张表"的说法 | `TABLES` 里是 **13** 张（6 投影 + 7 权威），第 14 张是迁移器自建的 `meta` |
+| 5 | "16 张表"的说法 | `TABLES` 里是 **15** 张（6 投影 + 9 权威，含「项目」的 `project_local` / `project_root`），第 16 张是迁移器自建的 `meta` |
 
 另有若干"还没被证伪的断言"（GLM 产物质量 · misfire 真机体验 · 签名公证链路 · Windows 隔离强度），
 它们是**结论层面**的空白而不是架构层面的，见 [work-priority §10](work-priority.md) 与 [status.md §3](status.md)。

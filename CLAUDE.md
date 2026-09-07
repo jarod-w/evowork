@@ -100,7 +100,7 @@ evowork/
     desktop/             桌面壳 + 三栏 UI（侧边栏/对话区/结果区）；Q1=A 后它同时是本机服务的宿主
   services/              L3 服务层。Q1=A：下面前五个随桌面 App 在**本机**常驻，后两个在**云端**
     kernel-adapter/      【本机】app-server JSON-RPC v2 适配层（M2a）—— **K2 边界的唯一实现处**
-    store/               【本机】本机 sqlite **14 张表** + 两个迁移器 + 状态投影 + automation/artifact 两个 repo（M2a，见 09 §4）
+    store/               【本机】本机 sqlite **16 张表** + 两个迁移器 + 状态投影 + automation/artifact/project 三个 repo（M2a，见 09 §4）
     scheduler/           【本机】定时调度（M5；带时区的 cron · misfire 补偿 · 设备绑定 · 与内核的桥接）
     ingest/              【本机】解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时（M3，K6，无云端兜底）
     runtime-installer/   【本机】办公扩展的按需安装（08 §4）。**K6 登记：唯一为装扩展而出网的包**——

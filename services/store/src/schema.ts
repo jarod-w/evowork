@@ -180,6 +180,44 @@ export const TABLES: readonly TableSpec[] = [
 
   // ───────────────────────── 权威类 ─────────────────────────
   {
+    name: 'project_local',
+    klass: 'authoritative',
+    ddl: [
+      /*
+       * 「项目」= 总纲的「空间 / 工作空间」（spec D-P1）。
+       *
+       * **权威类**：用户建的空间丢了就是丢了，推不回来。内核的 `project/*` 是实验方法
+       * 且干净机器上恒为空，指望它重建等于指望一个可能被上游删掉的东西。
+       */
+      `CREATE TABLE IF NOT EXISTS project_local (
+         id         TEXT PRIMARY KEY,
+         name       TEXT NOT NULL,
+         kernel_id  TEXT,                  -- 镜像成功才有；为 NULL 不影响任何功能
+         created_at INTEGER NOT NULL,
+         updated_at INTEGER NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS ix_pl_created ON project_local(created_at DESC)`,
+    ],
+  },
+  {
+    name: 'project_root',
+    klass: 'authoritative',
+    ddl: [
+      /*
+       * 独立成表是 spec D-P2 的落点：**单根，但结构留多根**。
+       * 内核 `turn/start` 只收一个 cwd，所以 UI 只用 position 最小的那个；
+       * 以后放开多根时不用迁移。
+       */
+      `CREATE TABLE IF NOT EXISTS project_root (
+         project_id TEXT NOT NULL,
+         path       TEXT NOT NULL,         -- 归一化后的绝对路径
+         position   INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (project_id, path)
+       )`,
+      `CREATE INDEX IF NOT EXISTS ix_prt_path ON project_root(path)`,
+    ],
+  },
+  {
     name: 'artifact',
     klass: 'authoritative',
     ddl: [

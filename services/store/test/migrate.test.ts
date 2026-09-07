@@ -8,19 +8,23 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   AUTHORITATIVE_MIGRATIONS,
   AuthoritativeMigrationFailed,
+  LEGACY_WORKSPACES_META_KEY,
   PROJECTION_MIGRATIONS,
   dropProjectionTables,
+  ensureMeta,
   migrateAuthoritative,
   migrateProjection,
   pruneBackups,
   readMeta,
   restoreFromBackup,
+  writeMeta,
   type Migration,
   type SqliteLike,
 } from '../src/migrate.js';
@@ -35,6 +39,11 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
+
+/** 一张裸内存库：不跑任何迁移，测试自己决定跑到哪一版。 */
+function memoryDb(): SqliteLike {
+  return new DatabaseSync(':memory:') as unknown as SqliteLike;
+}
 
 function tableNames(db: SqliteLike): string[] {
   return (
@@ -53,7 +62,8 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       expect(names).toContain(t.name);
     }
     expect(readMeta(store.db, 'schema_version_projection')).toBe('1');
-    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('1');
+    // 权威类现在是第 2 版：建表 + 工作空间收敛迁移都对全新库跑一遍
+    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('2');
     store.close();
   });
 
@@ -198,7 +208,7 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       .run();
 
     const failing: Migration = {
-      version: 2,
+      version: 3,
       summary: '故意失败的权威迁移',
       up: (db) => {
         // 先做一次破坏性改动，再抛错 —— 这才是回滚真正要救的场景
@@ -220,12 +230,12 @@ describe('两个迁移器的分工（09 §4.6）', () => {
 
     // ① 抛错了（启动被刻意中止），且备份文件留下了（"进程被杀"那条路径的凭据）
     expect(thrown).toBeInstanceOf(AuthoritativeMigrationFailed);
-    expect((thrown as AuthoritativeMigrationFailed).backupPath).toBe(`${path}.bak.1`);
-    expect(existsSync(`${path}.bak.1`)).toBe(true);
+    expect((thrown as AuthoritativeMigrationFailed).backupPath).toBe(`${path}.bak.2`);
+    expect(existsSync(`${path}.bak.2`)).toBe(true);
 
     // ② 那条 automation 还在 —— 事务回滚生效。**这是这段代码存在的唯一理由**
     expect(store.db.prepare('SELECT id FROM automation').all()).toEqual([{ id: 'a1' }]);
-    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('1');
+    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('2');
     store.close();
 
     // ③ 重开也还在（不是只在内存里看着像回滚了）
@@ -404,5 +414,171 @@ describe('文件落地', () => {
     expect(existsSync(path)).toBe(true);
     expect(readFileSync(path).length).toBeGreaterThan(0);
     expect(existsSync(`${path}-wal`)).toBe(false);
+  });
+});
+
+describe('第 2 版权威迁移：工作空间收敛成一处真源（spec §2.2）', () => {
+  it('老库（停在第 1 版）也会拿到两张新表 —— 第 1 版只对全新的库跑', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    // 模拟一个真的停在第 1 版的老库：只建**当时**存在的 7 张权威表（不含这次新增的两张），
+    // 再手写版本号为 1。不能直接复用 `AUTHORITATIVE_MIGRATIONS[0]` ——
+    // 它是用*现在*的 `AUTHORITATIVE_TABLES` 生成的，现在这个数组里已经含了新表，
+    // 那样测出来的"老库"其实早就有新表了，测不出这个场景。
+    const oldTables = AUTHORITATIVE_TABLES.filter(
+      (t) => t.name !== 'project_local' && t.name !== 'project_root',
+    );
+    for (const t of oldTables) for (const ddl of t.ddl) db.exec(ddl);
+    writeMeta(db, 'schema_version_authoritative', '1');
+
+    // 老库当然还没有新表（这条断言是为了证明下一步真的做了事）
+    expect(() => db.prepare('SELECT * FROM project_local').all()).toThrow();
+
+    migrateAuthoritative(db);
+    expect(db.prepare('SELECT * FROM project_local').all()).toEqual([]);
+    expect(readMeta(db, 'schema_version_authoritative')).toBe('2');
+  });
+
+  it('meta 里的路径被搬进新表，且那个键消失', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify(['/w/q3', '/w/plan']));
+
+    migrateAuthoritative(db);
+
+    const names = (
+      db.prepare('SELECT name FROM project_local ORDER BY name').all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(names).toEqual(['plan', 'q3']);
+    // 键还在 = 真源没有真正收敛，下次谁顺手读一下就又分叉了
+    expect(readMeta(db, LEGACY_WORKSPACES_META_KEY)).toBeUndefined();
+  });
+
+  it('坏数据当作没有，不让一条脏记录把整次迁移回滚掉（App 起不来）', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, '{ 这不是 JSON');
+
+    expect(() => migrateAuthoritative(db)).not.toThrow();
+    expect(db.prepare('SELECT * FROM project_local').all()).toEqual([]);
+  });
+
+  it('重复路径只生成一个空间', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify(['/w/q3', '/w/q3']));
+
+    migrateAuthoritative(db);
+    expect(db.prepare('SELECT * FROM project_local').all()).toHaveLength(1);
+  });
+
+  it('合法 JSON 但不是数组时当作没有 —— 不是"坏 JSON"才有的特例', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify({ path: '/w/q3' }));
+
+    migrateAuthoritative(db);
+    expect(db.prepare('SELECT * FROM project_local').all()).toEqual([]);
+    expect(readMeta(db, LEGACY_WORKSPACES_META_KEY)).toBeUndefined();
+  });
+
+  it('数组里混进非字符串元素时，只丢那一条，其余路径正常搬', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify(['/w/q3', 42, null, '/w/plan']));
+
+    migrateAuthoritative(db);
+    const names = (
+      db.prepare('SELECT name FROM project_local ORDER BY name').all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(names).toEqual(['plan', 'q3']);
+  });
+
+  it('空数组：迁移干净跑完，只是没有空间可搬', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify([]));
+
+    expect(() => migrateAuthoritative(db)).not.toThrow();
+    expect(db.prepare('SELECT * FROM project_local').all()).toEqual([]);
+    expect(readMeta(db, LEGACY_WORKSPACES_META_KEY)).toBeUndefined();
+  });
+
+  it('迁移跑两次不会重复搬 —— 第二次是空操作，不是再生成一份', () => {
+    const db = memoryDb();
+    ensureMeta(db);
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify(['/w/q3']));
+
+    migrateAuthoritative(db);
+    migrateAuthoritative(db);
+
+    expect(db.prepare('SELECT * FROM project_local').all()).toHaveLength(1);
+  });
+
+  /**
+   * 上面全是内存库。**内存库测不出真正的升级** —— 它每次都是从零开始，
+   * 永远走不到"已经在磁盘上、已经在第 1 版"这条路。这条测试手搭一个
+   * 真实的、停在第 1 版的磁盘库，再走生产入口 `openStore` 完整重开一次，
+   * 这才是用户升级时真正发生的事。
+   */
+  it('真实的磁盘升级：老库重开一次，新表落地、legacy 键消失、姊妹权威表毫发无损、备份确实落盘', () => {
+    const path = join(dir, 'evowork.db');
+
+    // ① 手搭一个真实的、停在第 1 版的老库 —— 只建**当时**存在的表（不含这次新增的两张）
+    const rawDb = new DatabaseSync(path);
+    const db: SqliteLike = rawDb as unknown as SqliteLike;
+    db.exec('PRAGMA journal_mode = WAL');
+    ensureMeta(db);
+    for (const t of PROJECTION_TABLES) for (const ddl of t.ddl) db.exec(ddl);
+    const oldAuthoritativeTables = AUTHORITATIVE_TABLES.filter(
+      (t) => t.name !== 'project_local' && t.name !== 'project_root',
+    );
+    for (const t of oldAuthoritativeTables) for (const ddl of t.ddl) db.exec(ddl);
+    writeMeta(db, 'schema_version_projection', '1');
+    writeMeta(db, 'schema_version_authoritative', '1');
+
+    // 首运行选的工作空间：一个真实的 JSON 路径数组
+    writeMeta(db, LEGACY_WORKSPACES_META_KEY, JSON.stringify(['/w/q3', '/w/plan']));
+
+    // 姊妹权威表里已经有的东西 —— 这次升级绝不能碰它们
+    db.prepare(
+      `INSERT INTO automation(id, name, device_id, prompt, workspaces, schedule, timezone,
+         budget_limit, created_at, updated_at)
+       VALUES('a1','周报','dev1','生成周报','["/w/q3"]','0 9 * * 1','Asia/Shanghai',200000,1,1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO artifact (id, path, artifact_type, output_format, title, operation_kind,
+                             version, source_signal, file_state, created_at)
+       VALUES ('af1','/w/q3/r.docx','document','docx','r','create',1,'SKILL_REPORT','PRESENT',1)`,
+    ).run();
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    rawDb.close();
+
+    // ② 像真的升级一样重新打开 —— 走生产入口 openStore，不手调迁移器
+    const store = openStore({ path });
+
+    // 两张新表都落地了，且两条路径都变成了行
+    const projects = store.db.prepare('SELECT id, name FROM project_local ORDER BY name').all() as {
+      id: string;
+      name: string;
+    }[];
+    expect(projects.map((p) => p.name)).toEqual(['plan', 'q3']);
+    const roots = store.db.prepare('SELECT project_id, path FROM project_root').all() as {
+      project_id: string;
+      path: string;
+    }[];
+    expect(roots).toHaveLength(2);
+
+    // legacy 键搬完就没了
+    expect(readMeta(store.db, LEGACY_WORKSPACES_META_KEY)).toBeUndefined();
+
+    // 姊妹权威表毫发无损 —— 这正是"权威类迁移不许悄悄丢别的表"这条纪律要防的事
+    expect(store.db.prepare('SELECT id FROM automation').all()).toEqual([{ id: 'a1' }]);
+    expect(store.db.prepare('SELECT id FROM artifact').all()).toEqual([{ id: 'af1' }]);
+
+    // 迁移前的整库备份确实落盘了（防"进程被杀"那条路径的凭据）
+    expect(existsSync(`${path}.bak.1`)).toBe(true);
+
+    store.close();
   });
 });

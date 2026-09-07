@@ -541,3 +541,99 @@ export function createArtifactRepo(db: SqliteLike) {
 }
 
 export type ArtifactRepo = ReturnType<typeof createArtifactRepo>;
+
+/* ─────────────────────────── project_local ─────────────────────────── */
+
+export interface ProjectLocalRow {
+  readonly id: string;
+  readonly name: string;
+  /** 内核镜像成功才有（spec §2.3）。缺席是正常状态，不是错误 */
+  readonly kernelId?: string | undefined;
+  readonly roots: readonly string[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+interface RawProjectLocal {
+  id: string;
+  name: string;
+  kernel_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * 工作空间的读写。
+ *
+ * 与 automation / artifact 一样是**权威类**：没有"重建"这条路，只有老实的 CRUD。
+ * `roots` 在另一张表里（D-P2：结构留多根），所以每次读都要跟着查一次 ——
+ * 空间数量是个位数到几十，这点代价换的是以后放开多根不用迁移。
+ */
+export function createProjectRepo(db: SqliteLike) {
+  const rootsOf = (projectId: string): readonly string[] =>
+    (
+      db
+        .prepare('SELECT path FROM project_root WHERE project_id = ? ORDER BY position ASC')
+        .all(projectId) as { path: string }[]
+    ).map((r) => r.path);
+
+  const toRow = (raw: RawProjectLocal): ProjectLocalRow => ({
+    id: raw.id,
+    name: raw.name,
+    ...(raw.kernel_id === null ? {} : { kernelId: raw.kernel_id }),
+    roots: rootsOf(raw.id),
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  });
+
+  return {
+    /** 倒序：刚建的空间在最前面 */
+    list(): readonly ProjectLocalRow[] {
+      const raws = db
+        .prepare('SELECT * FROM project_local ORDER BY created_at DESC')
+        .all() as RawProjectLocal[];
+      return raws.map(toRow);
+    },
+
+    get(id: string): ProjectLocalRow | undefined {
+      const raw = db.prepare('SELECT * FROM project_local WHERE id = ?').get(id) as
+        RawProjectLocal | undefined;
+      return raw ? toRow(raw) : undefined;
+    },
+
+    insert(row: ProjectLocalRow): void {
+      db.prepare(
+        `INSERT INTO project_local (id, name, kernel_id, created_at, updated_at)
+         VALUES (?,?,?,?,?)`,
+      ).run(row.id, row.name, row.kernelId ?? null, row.createdAt, row.updatedAt);
+      row.roots.forEach((path, position) => {
+        db.prepare(
+          `INSERT OR IGNORE INTO project_root (project_id, path, position) VALUES (?,?,?)`,
+        ).run(row.id, path, position);
+      });
+    },
+
+    rename(id: string, name: string, updatedAt: number): void {
+      db.prepare('UPDATE project_local SET name = ?, updated_at = ? WHERE id = ?').run(
+        name,
+        updatedAt,
+        id,
+      );
+    },
+
+    setKernelId(id: string, kernelId: string): void {
+      db.prepare('UPDATE project_local SET kernel_id = ? WHERE id = ?').run(kernelId, id);
+    },
+
+    /**
+     * 移除空间。**只删这两张表的行** —— 不碰磁盘文件，也不碰 artifact 索引。
+     * 「从列表移除」在 02 §4.3 里是解绑，不是删除。
+     */
+    remove(id: string): void {
+      db.prepare('DELETE FROM project_root WHERE project_id = ?').run(id);
+      db.prepare('DELETE FROM project_local WHERE id = ?').run(id);
+    },
+  };
+}
+
+export type ProjectRepo = ReturnType<typeof createProjectRepo>;
