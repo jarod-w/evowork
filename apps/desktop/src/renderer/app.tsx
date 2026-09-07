@@ -103,16 +103,14 @@ export interface EvoworkBridge {
  * 主内容区显示什么。
  *
  * **不引 router**：只有两种形态——任务（首页 / 工作台，由 `activeTaskId` 区分）
- * 与一个目录式页面。侧边栏的 7 个入口就是全部的导航面（02 §1），
+ * 与一个目录式页面。侧边栏的 6 个入口就是全部的导航面（02 §1），
  * 它是产品骨架而不是可扩展的路由表。
  */
-type MainView =
-  'task' | 'library' | 'automations' | 'audit' | 'assistant' | 'projects' | 'catalog' | 'more';
+type MainView = 'task' | 'library' | 'automations' | 'audit' | 'projects' | 'catalog' | 'more';
 
 /** 侧边栏 id → 主内容区。**没有页面的入口也必须在这里出现**，见 `UnbuiltPage`。 */
 const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
   'new-task': 'task',
-  assistant: 'assistant',
   projects: 'projects',
   catalog: 'catalog',
   automations: 'automations',
@@ -749,9 +747,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  *
  * ## 为什么没有页面的入口也要在这里出现
  *
- * 02 §1 的 7 个入口是产品骨架，其中三个（助理 / 项目 / 专家·技能·连接器）
+ * 02 §1 的 6 个入口是产品骨架，其中两个（项目 / 专家·技能·连接器）
  * 与「更多」现在**还没有页面**。在此之前它们的表现是**点了没有任何反应** ——
- * 用户看到的是一个有七个菜单项、其中四个是死的应用，而"点了没反应"
+ * 用户看到的是一个有六个菜单项、其中三个是死的应用，而"点了没反应"
  * 与"坏了"在界面上完全无法区分。
  *
  * 所以这里给它们一个如实说明的空页：**说清是没做，不是坏了**
@@ -809,10 +807,6 @@ function MainPage(props: {
 
 /** 02 §1 里已有入口、但页面还没做的那几个。**说清是没做**，不留一个空白主区。 */
 const UNBUILT_COPY: Readonly<Record<string, { title: string; hint: string }>> = {
-  assistant: {
-    title: '助理还没做好',
-    hint: '助理会是一个常驻的对话（默认只读，不进任务列表）。现在请用「新建任务」。',
-  },
   projects: {
     title: '项目页还没做好',
     hint: '工作空间目前可以在输入框下方的「选择工作空间」里挑，只是还不能在这里管理。',

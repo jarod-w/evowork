@@ -406,13 +406,13 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
   });
 });
 
-/* ─────────────────── 侧边栏七个入口的路由（02 §1）─────────────────── */
+/* ─────────────────── 侧边栏六个入口的路由（02 §1）─────────────────── */
 
-describe('侧边栏的七个入口都要有落点', () => {
+describe('侧边栏的六个入口都要有落点', () => {
   /*
    * 2026-09-06 之前：`app.tsx` 只挂了 Home / TaskWorkspace / Sidebar，
-   * `onNavSelect` 没人传 —— 助理 / 项目 / 专家·技能·连接器 / 自动化 / 资料库 / 更多
-   * **点了没有任何反应**。用户看到的是一个七个菜单项、六个是死的应用，
+   * `onNavSelect` 没人传 —— 项目 / 专家·技能·连接器 / 自动化 / 资料库 / 更多
+   * **点了没有任何反应**。用户看到的是一个六个菜单项、五个是死的应用，
    * 而"点了没反应"与"坏了"在界面上完全无法区分。
    */
   it('点「资料库」进资料库页，并去拉那一页的数据', async () => {
@@ -455,10 +455,26 @@ describe('侧边栏的七个入口都要有落点', () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /助理/ }));
-    expect(await screen.findByText('助理还没做好')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /项目/ }));
+    expect(await screen.findByText('项目页还没做好')).toBeTruthy();
     // 并且告诉用户现在该怎么办（在**说明文字里**找，侧边栏那一项同名）
-    expect(screen.getByText(/现在请用「新建任务」/)).toBeTruthy();
+    expect(screen.getByText(/「选择工作空间」里挑/)).toBeTruthy();
+  });
+
+  /*
+   * 「助理」2026-09-07 下架（02 §4.2 标注，方案保留）。
+   *
+   * 钉住的是**下架**这件事本身：它的方案（常驻特殊 Thread、固定 cwd、默认 Ask、
+   * 自动压缩、读用户级记忆）一行都没有，所以侧边栏里不该有一格去承诺它。
+   * 把它加回来之前，得先有那条链路 —— 否则这条断言应该失败。
+   */
+  it('侧边栏没有「助理」入口，也没有它的空页', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+
+    await screen.findByRole('button', { name: /新建任务/ });
+    expect(screen.queryByRole('button', { name: /助理/ })).toBeNull();
+    expect(screen.queryByText(/助理/)).toBeNull();
   });
 
   it('从别的页面点「新建任务」回到首页', async () => {
