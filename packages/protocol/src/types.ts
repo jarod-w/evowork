@@ -482,3 +482,31 @@ export interface ToolRequestUserInputParams {
   readonly options?: readonly { readonly id: string; readonly label?: string }[];
   readonly [key: string]: unknown;
 }
+
+/* ─────────────────────────── project/*（实验方法）─────────────────────────── */
+
+export interface ProjectRootParam {
+  readonly path: string;
+}
+
+/**
+ * `project/create` 的参数。
+ *
+ * **`idempotencyKey` 是必填的**（内核 `v2/project.rs:92` 是 `String` 而不是 `Option`），
+ * 漏了它拿到的是参数解析错误 —— 而我们的镜像调用失败是静默的（spec §2.3），
+ * 于是"内核那边永远建不出空间"会没有任何征兆。
+ */
+export interface ProjectCreateParams {
+  readonly name: string;
+  readonly roots: readonly ProjectRootParam[];
+  readonly idempotencyKey: string;
+}
+
+export interface ProjectUpdateParams {
+  readonly projectId: string;
+  readonly name?: string;
+}
+
+export interface ProjectDeleteParams {
+  readonly projectId: string;
+}

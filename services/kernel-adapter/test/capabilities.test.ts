@@ -113,4 +113,32 @@ describe('CapabilityRegistry —— 失败分类（这是降级与 bug 的分水
     registry.markAvailable(EXPERIMENTAL_METHOD.memoryReset);
     expect(registry.isUsable(EXPERIMENTAL_METHOD.memoryReset)).toBe(true);
   });
+
+  it('降级表里没有游离的键 —— assertDegradationCoverage 只抓「漏了」，抓不住「多了」', () => {
+    // 反向校验：DEGRADATION 的每个键都必须是 EXPERIMENTAL_METHOD 里真实存在的方法。
+    // 一个拼错的、或者上游已经删掉的方法名留在表里，看着像有覆盖，其实什么都没盖住。
+    // 机械地比较两个键集合，不手写方法名列表 —— 这样方法增删时这条断言不用跟着改。
+    const validMethods = new Set<string>(Object.values(EXPERIMENTAL_METHOD));
+    const staleKeys = Object.keys(DEGRADATION).filter((key) => !validMethods.has(key));
+    expect(staleKeys).toEqual([]);
+  });
+});
+
+describe('project/* 的降级配对（09 §3.3）', () => {
+  it('project/update 在降级表里有条目 —— 漏了它上游哪天删掉，「改名」就白屏', () => {
+    expect(DEGRADATION[EXPERIMENTAL_METHOD.projectUpdate]).toBeDefined();
+  });
+
+  it('每个实验方法都有降级路径', () => {
+    expect(() => assertDegradationCoverage()).not.toThrow();
+  });
+
+  it('project/list 仍是唯一的启动探针 —— 动它会破坏 09 §3.2 第 5 步的判定机制', () => {
+    expect(PROBE_ON_STARTUP).toEqual([EXPERIMENTAL_METHOD.projectList]);
+  });
+
+  it('project/* 的降级文案不再说"任务按目录分组"—— 本机表已是真源，那句话不成立了', () => {
+    const text = DEGRADATION[EXPERIMENTAL_METHOD.projectList]?.userVisible ?? '';
+    expect(text).not.toContain('按目录分组');
+  });
 });

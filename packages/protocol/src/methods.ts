@@ -84,6 +84,7 @@ export const EXPERIMENTAL_METHOD = {
   projectList: 'project/list',
   projectRead: 'project/read',
   projectCreate: 'project/create',
+  projectUpdate: 'project/update',
   projectDelete: 'project/delete',
 
   threadQueueAdd: 'thread/queue/add',

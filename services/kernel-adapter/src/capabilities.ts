@@ -45,19 +45,32 @@ export interface Degradation {
 /**
  * 降级表。**与 `EXPERIMENTAL_METHOD` 是配对的**：新增一个实验方法就必须在这里给它一条兜底路径，
  * 否则"实验方法不可用时白屏"会以最平常的方式发生。`assertDegradationCoverage()` 钉住这件事。
+ *
+ * ## `project/*` 的口径在 2026-09-07 反转了
+ *
+ * 原设计是「内核为主、本机兜底」。做「项目」页时改成**本机权威 + 内核尽力镜像**
+ * （09 §3.3 已回写）。所以这四条降级的 `userVisible` 说的都不再是"功能降级"，
+ * 而是"这次改动没同步到内核" —— 用户可见影响只剩"换台电脑看不到"。
+ *
+ * `project/list` 仍留在 `PROBE_ON_STARTUP`：它不再供数，但降级判定机制
+ * 需要一个无副作用、不需要 thread 上下文的方法来探测（§3.2 第 5 步）。
  */
 export const DEGRADATION: Readonly<Record<string, Degradation>> = Object.freeze({
   [EXPERIMENTAL_METHOD.projectList]: {
-    fallback: '用本机 project_local 表自己管工作空间（只记路径与名称，不做 thread 归属）',
-    userVisible: '「项目」仍可用，但任务按目录分组而不是按空间分组。',
+    fallback: '本机 project_local / project_root 两张权威表是真源，内核不供数',
+    userVisible: '「项目」不受影响：空间存在这台电脑上。',
   },
   [EXPERIMENTAL_METHOD.projectRead]: {
     fallback: '同 project/list',
-    userVisible: '「项目」仍可用，但任务按目录分组而不是按空间分组。',
+    userVisible: '「项目」不受影响：空间存在这台电脑上。',
   },
   [EXPERIMENTAL_METHOD.projectCreate]: {
     fallback: '只在本机记录空间',
     userVisible: '新建的空间只在这台电脑上可见。',
+  },
+  [EXPERIMENTAL_METHOD.projectUpdate]: {
+    fallback: '只改本机的名字',
+    userVisible: '改名只在这台电脑上生效。',
   },
   [EXPERIMENTAL_METHOD.projectDelete]: {
     fallback: '只在本机移除记录',
