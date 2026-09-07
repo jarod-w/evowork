@@ -27,6 +27,9 @@
       "path": "services/scheduler"
     },
     {
+      "path": "services/projects"
+    },
+    {
       "path": "services/artifacts"
     },
     {

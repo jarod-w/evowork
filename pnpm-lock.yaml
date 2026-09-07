@@ -193,6 +193,16 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
 
+  services/projects:
+    dependencies:
+      '@evowork/policy':
+        specifier: workspace:*
+        version: link:../policy
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
+
   services/runtime-installer:
     dependencies:
       '@evowork/ingest':

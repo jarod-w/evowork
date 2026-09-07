@@ -1,0 +1,28 @@
+{
+  "name": "@evowork/projects",
+  "version": "0.0.0",
+  "private": true,
+  "description": "工作空间的归属判定 · 卡片视图 · 文件树纯逻辑（02 §4.3）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*.js": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/policy": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
