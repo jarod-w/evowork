@@ -50,6 +50,12 @@
 `membership.ts` 与 `tree.ts` 的越界判定共用 `@evowork/policy` 的归一化 ——
 不自己写一个 `path.resolve` 版本，否则两处对 `..` 的处理迟早分叉。
 
+**这两个判定只是安全边界的一半**（2026-09-07 Task 2 review 实测得出）：它们是纯字符串函数，
+看不见 `<root>/link` 其实指向 `/etc`。所以每个真的要碰盘的地方（§2.6 的 `listDir` 与
+`readAgentsMd` / `writeAgentsMd`）都必须**先 realpath、再用同一个判定复查**，
+且 realpath 失败一律拒绝而不是放行。纯逻辑包不做这件事是对的（它不做 I/O），
+但"字符串过了就等于安全"这个推论是错的。
+
 ### 2.2 store：两张权威表 + 一次数据迁移
 
 ```sql
@@ -174,6 +180,8 @@ CREATE INDEX ix_prt_path ON project_root(path);
 | 镜像失败（`project/create` 返回 -32601）时空间照常建成 | 内核一升级，用户建不了空间且不知道为什么 |
 | `assertDegradationCoverage()` 对新增的 `project/update` 成立 | 上游删了它 → UI 白屏且没人知道为什么 |
 | `writeAgentsMd` 只接受 `<root>/AGENTS.md` | 渲染层传任意路径就能让主进程写盘任意文件 |
+| root 内的软链指向外部时拒读；realpath 失败也拒读 | 工作空间里放一个软链就把文件树变成全盘浏览器 |
+| `isUnderRoot` 在 `home` 为 `/` 或空串时仍拒绝空 root | 容器里 `HOME` 没设时，空 root 匹配整个文件系统 |
 
 ## 5. 要同步改的既有文档
 
