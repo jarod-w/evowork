@@ -226,11 +226,14 @@ umask 177 && cat > ~/.evowork/gateway.env <<'EOF'
 DEEPSEEK_API_KEY=sk-...
 MOONSHOT_API_KEY=sk-...
 ZHIPU_API_KEY=...
-EVOWORK_GATEWAY_TOKENS=local-dev-token
-PORT=8787
 EOF
-set -a && . ~/.evowork/gateway.env && set +a && node dist/gateway/main.js
 ```
+
+**桌面 App 启动时会自己读这个文件**（2026-09-07 起）。从访达双击启动不继承 shell 环境，
+没有这一步的话本机网关会因「一家密钥都没有」而拒绝启动，界面上却写成「连不上模型网关」。
+引导第④步也可以在界面里填密钥，写的是同一个文件。
+
+手工单独起网关时仍然要自己 `set -a && . ~/.evowork/gateway.env`。
 
 与 `~/.evowork/gateway-token` 一样，这是**过渡方案**：明文文件不满足"密钥不落盘"的本意。
 
@@ -268,18 +271,18 @@ EVOWORK_GATEWAY_TOKEN=local-dev-token \
 
 内核按 `config.toml` 的 `env_key` 从**它自己的进程环境**里取令牌，而
 **从访达双击启动的应用不继承任何 shell 环境变量** —— 所以宿主必须显式传。
-两个来源，按顺序：
+两个来源，按顺序；拓扑 A（本机网关）两个都没有时**宿主会自己签一个**写进文件，
+用户不需要知道有令牌这么回事：
 
 ```bash
 # ① 环境变量（开发时从终端起、企业用 launchd 注入）
 EVOWORK_GATEWAY_TOKEN=local-dev-token ./node_modules/.bin/electron …
 
-# ② 文件（GUI 启动**唯一**能走的路径）
+# ② 文件（GUI 启动能用的路径；本机网关缺失时会自动生成）
 printf 'local-dev-token\n' > ~/.evowork/gateway-token && chmod 600 ~/.evowork/gateway-token
 ```
 
-这个值要与网关的 `EVOWORK_GATEWAY_TOKENS` 里的某一个**逐字相同**。
-两个都没有时应用启动就会提示，而不是等发出一句话才失败。
+这个值要与网关的 `EVOWORK_GATEWAY_TOKENS` 里的某一个**逐字相同**（宿主拉起本机网关时会把同一个值传进去）。
 
 #### 模型下拉读的是哪个地址
 
@@ -441,7 +444,8 @@ dmg / zip 各 **197MB**，对 220MB 预算只剩 23MB 余量。内核 release �
 ### 5.5 首次运行
 
 用户侧的授权引导在应用内（02 §9 六步）：欢迎与隐私说明 → 选工作空间 → 权限默认值 →
-接入模型 → 解析组件（**可跳过**）→ 完成。运维不需要预置任何东西，除了网关地址与 token。
+接入模型（**填至少一家厂商密钥**）→ 解析组件（**可跳过**）→ 完成。
+本机拓扑下运维不需要预置网关 token；密钥可以在引导里填，也可以写 `~/.evowork/gateway.env`。
 
 ### 5.6 现在还不需要部署的四件事
 
@@ -476,6 +480,7 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | 首运行卡在「选一个工作空间」，「下一步」一直是灰的 | 干净机器上内核一个 project 都没有，而这一步要求至少一个。**2026-09-06 已修**（接上目录选择器） | 点「选择文件夹」。企业预置可直接写 `~/.evowork/evowork.db` 的 `meta` 表 `evowork.workspaces` |
 | `cargo build` 在 `openssl-sys` 失败 | 缺 `pkg-config` / `libssl-dev` | 见 §1 |
 | `node dist/.../main.js` 报 `ERR_MODULE_NOT_FOUND: .../src/*.js` | 跑的是 tsc 产物而不是 esbuild 打包产物 | 跑 `pnpm run build`，用 `dist/gateway/main.js` |
+| 装好的 App 报「连不上模型网关」，`~/.evowork/gateway.env` 里其实有密钥 | 从访达启动不继承 shell 环境；旧包的宿主不读这个文件，本机网关走 NO_KEYS 根本不起，fetch 打到没人听的 8787 | 2026-09-07 已修（宿主启动时读该文件）。**必须重新构建后再装**；只改源码、继续跑旧 asar，界面上还是同一句。确认手法：终端里起 App，日志应是 `gateway.child.started` 而不是 `skipped reason=NO_KEYS` |
 | 网关启动即退出，日志 `gateway.boot.no_models` | 一家厂商密钥都没配 | 见 §5.1 |
 | 网关启动即退出，日志 `gateway.boot.no_tokens` | 没配 `EVOWORK_GATEWAY_TOKENS` | 同上 |
 | Electron `FATAL ... Running as root` | 容器里以 root 跑 | 加 `--no-sandbox`（仅限容器/CI） |

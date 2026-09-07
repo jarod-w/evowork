@@ -19,6 +19,7 @@ import {
   parseGatewayBaseUrl,
   readGatewayBaseUrl,
   toModelOption,
+  waitUntilGatewayReady,
 } from '../src/main/model-catalog.js';
 
 const CONFIG = `
@@ -170,6 +171,7 @@ describe('取目录：失败都是**正常状态**，必须说清后果', () => 
     });
     expect(result.models).toEqual([]);
     expect(result.unavailable).toBeTruthy();
+    expect(result.reason).toBe('unreachable');
   });
 
   /**
@@ -204,5 +206,39 @@ describe('取目录：失败都是**正常状态**，必须说清后果', () => 
       'moonshot/kimi-k3',
       'zhipu/glm-5.3-flash',
     ]);
+  });
+});
+
+describe('等到网关开始听端口', () => {
+  it('连不上就重试，一旦端口在听就停 —— 否则启动瞬间会误报「连不上」', async () => {
+    let n = 0;
+    const fetchFn = vi.fn(async () => {
+      n += 1;
+      if (n < 3) throw new Error('connect ECONNREFUSED');
+      return jsonResponse({ data: [entry()] });
+    });
+    await expect(
+      waitUntilGatewayReady({
+        baseUrl: 'http://127.0.0.1:1/v1',
+        token: 't',
+        fetchFn: fetchFn as unknown as typeof fetch,
+        intervalMs: 1,
+        readyTimeoutMs: 1000,
+      }),
+    ).resolves.toBe(true);
+    expect(n).toBe(3);
+  });
+
+  it('timeout 0 立即放弃 —— 测试里假 spawn 不会真的听端口', async () => {
+    const fetchFn = vi.fn();
+    await expect(
+      waitUntilGatewayReady({
+        baseUrl: 'http://127.0.0.1:1/v1',
+        token: 't',
+        fetchFn: fetchFn as unknown as typeof fetch,
+        readyTimeoutMs: 0,
+      }),
+    ).resolves.toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });

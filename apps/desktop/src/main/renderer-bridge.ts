@@ -38,6 +38,7 @@ import { readMeta, writeMeta, type ProjectionRow, type Store } from '@evowork/st
 import type {
   ApprovalDecisionInput,
   ApprovalView,
+  ApplyModelAccessInput,
   AuditDataView,
   AutomationsDataView,
   CaseView,
@@ -173,6 +174,15 @@ export interface RendererBridgeOptions {
    * 没给时下拉为空并说明原因 —— **不假装有模型可选**（03 §8）。
    */
   readonly readModelCatalog?: (() => Promise<ModelCatalogResult>) | undefined;
+  /**
+   * 把用户填的厂商密钥写进本机并拉起网关。
+   *
+   * 注入：真正的写盘与起进程在宿主里。没给时如实说这个版本不能配密钥，
+   * 而不是静默丢掉用户刚贴上的 key。
+   */
+  readonly applyModelAccess?:
+    | ((input: ApplyModelAccessInput) => Promise<ModelCatalogResult>)
+    | undefined;
   /** 打开系统目录选择框（首运行第②步）。没有它时 `pickWorkspace` 返回 undefined */
   readonly pickDirectory?: (() => Promise<string | undefined>) | undefined;
   /**
@@ -404,6 +414,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
         return { models: [], unavailable: '这个版本没有配置模型网关地址，无法列出可用模型。' };
       }
       return options.readModelCatalog();
+    },
+
+    async applyModelAccess(input: ApplyModelAccessInput): Promise<ModelCatalogResult> {
+      if (!options.applyModelAccess) {
+        return {
+          models: [],
+          reason: 'no-keys',
+          unavailable: '这个版本还不能在界面里保存模型密钥，请把密钥写进 ~/.evowork/gateway.env 后重启。',
+        };
+      }
+      return options.applyModelAccess(input);
     },
 
     async interrupt(threadId: string): Promise<void> {

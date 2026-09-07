@@ -2227,6 +2227,11 @@ textarea {
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
+.ew-model-access {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
 .ew-fixed-behavior {
   padding: var(--space-8) var(--space-12);
   border-radius: var(--r-md);

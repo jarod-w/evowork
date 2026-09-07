@@ -65,6 +65,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     refreshVisible: vi.fn(async () => undefined),
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
+    applyModelAccess: vi.fn(async () => ({ models: MODELS })),
     getLibrary: vi.fn(async () => ({ rows: [] })),
     getAutomations: vi.fn(async () => ({ automations: [], runs: {}, deviceName: '这台电脑' })),
     getAudit: vi.fn(async () => ({ records: [], retentionDays: 90, retentionWarningDays: 7 })),
@@ -244,6 +245,18 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '做个周报' } });
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
     expect(bridge.send).not.toHaveBeenCalled();
+  });
+
+  it('没配密钥时给出录入框，不是只让人再点一次「检查模型接入」', async () => {
+    const { bridge } = fakeBridge({
+      listModels: vi.fn(async () => ({
+        models: [],
+        reason: 'no-keys',
+        unavailable: '本机网关没有启动：一家模型厂商的密钥都没有配置',
+      })),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(screen.getByText('DeepSeek API 密钥')).toBeTruthy());
   });
 
   /**

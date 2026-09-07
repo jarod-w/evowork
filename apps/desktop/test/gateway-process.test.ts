@@ -76,7 +76,7 @@ describe('起不起本机网关：判据是 base_url 指向哪儿', () => {
     // 收窄到"没起且有 notice"那一支：`REMOTE` 没有 notice（网关在别处是正常部署）
     if (gw.result.started || gw.result.reason === 'REMOTE') throw new Error('unreachable');
     expect(gw.result.reason).toBe('NO_KEYS');
-    expect(gw.result.notice).toContain('DEEPSEEK_API_KEY');
+    expect(gw.result.notice).toContain('密钥');
   });
 
   it('产物不在时说"安装包不完整"，不说"连不上"', () => {
@@ -156,5 +156,25 @@ describe('起起来之后的参数', () => {
     expect(gw.result.started).toBe(true);
     gw.stop();
     expect(child.kill).toHaveBeenCalled();
+  });
+
+  it('spawn 异步失败后不要假装已经起了 —— 否则 listModels 会写成「连不上」', () => {
+    const { child, spawnFn } = fakeSpawn();
+    const gw = startLocalGateway({
+      baseUrl: 'http://127.0.0.1:8787/v1',
+      entryPath: entry(),
+      env: { DEEPSEEK_API_KEY: 'k' },
+      spawnFn,
+    });
+    expect(gw.result.started).toBe(true);
+    const error = child.on.mock.calls.find((c) => c[0] === 'error')?.[1] as
+      | ((err: Error) => void)
+      | undefined;
+    expect(error).toBeTypeOf('function');
+    error?.(new Error('spawn ENOENT'));
+    expect(gw.result.started).toBe(false);
+    if (gw.result.started || gw.result.reason === 'REMOTE') throw new Error('unreachable');
+    expect(gw.result.reason).toBe('SPAWN_FAILED');
+    expect(gw.result.notice).not.toContain('连不上');
   });
 });

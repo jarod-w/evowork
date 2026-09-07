@@ -32,13 +32,12 @@ import { existsSync } from 'node:fs';
 
 import { errorFields, type Logger } from '@evowork/logging';
 
-/** 厂商密钥的环境变量名。网关自己也认这几个（`gateway/src/providers/registry.ts`）。 */
-const PROVIDER_KEYS = [
-  'DEEPSEEK_API_KEY',
-  'MOONSHOT_API_KEY',
-  'ZHIPU_API_KEY',
-  'PRIVATE_MODEL_API_KEY',
-] as const;
+import { envHasProviderKey, PROVIDER_KEY_ENV } from './gateway-env.js';
+
+/** 没配密钥时给用户看的话。listModels 必须原样用这一句，不能再 fetch 一次变成「连不上」。 */
+export const GATEWAY_NO_KEYS_NOTICE =
+  '本机网关没有启动：一家模型厂商的密钥都没有配置，现在发不出任务。' +
+  '在引导里填入 DEEPSEEK / Kimi / GLM 至少一家的 API 密钥，或写进 ~/.evowork/gateway.env 后重启。';
 
 /**
  * `base_url` 是不是指向本机。
@@ -131,20 +130,18 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
     return { ...noop, result: { started: false, reason: 'REMOTE' } };
   }
 
-  const keys = PROVIDER_KEYS.filter((name) => (env[name] ?? '').trim() !== '');
-  if (keys.length === 0) {
+  if (!envHasProviderKey(env)) {
     options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
     return {
       ...noop,
       result: {
         started: false,
         reason: 'NO_KEYS',
-        notice:
-          '本机网关没有启动：一家模型厂商的密钥都没有配置，现在发不出任务。' +
-          '把 DEEPSEEK_API_KEY / MOONSHOT_API_KEY / ZHIPU_API_KEY 至少配一个再重启 EvoWork。',
+        notice: GATEWAY_NO_KEYS_NOTICE,
       },
     };
   }
+  const keys = PROVIDER_KEY_ENV.filter((name) => (env[name] ?? '').trim() !== '');
 
   if (!existsSync(options.entryPath)) {
     options.logger?.warn('gateway.child.skipped', { reason: 'NO_ENTRY' });
@@ -185,17 +182,39 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
     child.stderr?.on('data', (chunk: Buffer) => {
       options.logger?.warn('gateway.child.stderr', { byteSize: chunk.byteLength });
     });
+
+    /*
+     * `spawn` 返回不等于进程活着：ENOENT / EACCES 走 `error`，密钥没灌进去
+     * 则 `main()` 立刻 `exit 1`。两种都曾经被当成 `{ started: true }`，
+     * 随后那一次 fetch 得到 ECONNREFUSED，界面写成「连不上模型网关」。
+     */
+    let result: GatewayStartResult = { started: true };
+    let stopping = false;
+    const markDead = (notice: string): void => {
+      if (stopping || !result.started) return;
+      result = { started: false, reason: 'SPAWN_FAILED', notice };
+    };
+    child.on('error', (err: Error) => {
+      options.logger?.warn('gateway.child.spawn_failed', errorFields(err));
+      markDead('本机网关没能启动，现在发不出任务。重启 EvoWork 再试。');
+    });
     child.on('exit', (code: number | null) => {
       options.logger?.warn('gateway.child.exited', { exitCode: code ?? -1, reason: 'EXIT' });
+      if (code !== 0 && code !== null) {
+        markDead('本机网关启动后立刻退出了，现在发不出任务。重启 EvoWork 再试。');
+      }
     });
 
     // `itemCount` 而不是 `count`：字段注册表里没有 `count`，未注册的字段会被
     // **静默丢掉**（Q14 的设计意图）—— 实测这条日志带过一次 droppedFields:1
     options.logger?.info('gateway.child.started', { itemCount: keys.length });
     return {
-      result: { started: true },
+      get result() {
+        return result;
+      },
       stop: () => {
         // 网关无状态、不写盘，SIGTERM 直接杀掉没有代价（不需要优雅关闭）
+        stopping = true;
         try {
           child.kill();
         } catch {

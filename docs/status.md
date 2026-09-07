@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-06（第 12 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-07（第 13 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
@@ -317,13 +317,37 @@ DST 一年只发生两次，错了要等半年才有人报 —— 这正是"写�
 真的点下去"。有效探针是 Electron 起窗口 + `executeJavaScript` 点侧边栏，
 再读主内容区的 `getBoundingClientRect()`：**尺寸比文本更能区分"没渲染"与"渲染了但塌了"**。
 
+### 安装后启动报「连不上模型网关」（2026-09-07）
+
+装好的 App 从访达打开，Composer 上一条 danger：「连不上模型网关，现在发不出任务」。
+**2026-09-07 对 `/Applications/EvoWork.app` 当场核对**：启动日志
+`gateway.child.skipped reason=NO_KEYS`，asar 里没有 `readGatewayEnvFile`；
+而 `~/.evowork/gateway.env` 里三家密钥都在。用同一份密钥、同一个
+`Resources/gateway/main.js` 手工 spawn，`GET /v1/evowork/models` 返回 3 个模型 ——
+网关程序没坏，是宿主没把文件里的密钥灌进子进程。
+
+四件事叠在一起，每一件单独看都像已经处理过：
+
+| 缺陷 | 表现 | 已改 |
+| --- | --- | --- |
+| **`~/.evowork/gateway.env` 文档让人写、宿主从不读** | 从终端起 Electron 时 shell 里有 `DEEPSEEK_API_KEY`，网关能起；双击安装包时进程环境是空的，本机网关走 NO_KEYS **根本不起**。模型目录那一次 fetch 打到没人听的 8787，catch 写成「连不上」 | 启动时读 `gateway.env` 补进子进程环境；引导第④步和首页录入框写的是同一个文件 |
+| **NO_KEYS 被误报成「连不上」** | 宿主其实已经知道原因（`gateway.result.notice` 写着没密钥），但 `listModels` 仍然去 fetch，ECONNREFUSED 把原因盖掉。用户下一步该填密钥，界面却让他去查网关进程 | 网关没起时 `listModels` 原样返回 skip notice，带 `reason: 'no-keys'`；Composer 据此画出录入框，而不是只给「检查模型接入」再 fetch 一次 |
+| **本机访问令牌也要人手工写文件** | 双击启动没有 `EVOWORK_GATEWAY_TOKEN`，即使用户配了密钥，网关也会因没令牌拒绝启动 | 拓扑 A 没有令牌时宿主自己签一个写进 `gateway-token`，并传给内核和本机网关。拓扑 B（网关在别处）仍然要用户提供 |
+| **`spawn` 异步失败仍报 `{ started: true }`** | ENOENT / 子进程立刻 `exit 1` 时宿主以为网关在，再 fetch 一次变成「连不上」 | `error` / 非零 `exit` 把 result 改成 `SPAWN_FAILED`，listModels 不再去打没人听的端口 |
+
+另：`spawn` 返回不等于 `listen` 完成。冷启动那几百毫秒里去 fetch，也会变成同一句「连不上」。`start()` 现在会等到端口在听（或超时说清楚）。
+
+源码修了必须**重新构建后再装**。只改工作区、继续跑 14:34 那个 asar，界面上还是同一句「连不上」。
+2026-09-07 把新 asar 写进 `/Applications/EvoWork.app` 后再起一次：日志是
+`gateway.child.started itemCount=3`，不再是 `skipped reason=NO_KEYS`。
+
 ---
 
 ## 4. 卡住的事
 
 | 事项 | 卡在 | 影响 |
 | --- | --- | --- |
-| **网关令牌的正式机制** | **未决策** | 现在是过渡方案：`EVOWORK_GATEWAY_TOKEN` 或 `~/.evowork/gateway-token`（明文）。GUI 启动不继承 shell 环境，所以文件那条不是备选而是唯一路径；但明文落盘不满足「密钥不落盘」的本意。两条候选：Electron `safeStorage` 存钥匙串 + 设置页录入，或 identity 服务签发短期令牌（Q14 原设计，identity 尚未开始）。**决策前不要把这个文件当正式机制** |
+| **网关令牌的正式机制** | **未决策** | 现在是过渡方案：`EVOWORK_GATEWAY_TOKEN`、`~/.evowork/gateway-token`（本机拓扑会自动签发）、厂商密钥在 `~/.evowork/gateway.env` 或引导里填。明文文件不满足「密钥不落盘」的本意。两条候选：Electron `safeStorage` 存钥匙串 + 设置页录入，或 identity 服务签发短期令牌（Q14 原设计，identity 尚未开始）。**决策前不要把这些文件当成正式机制** |
 | **P0-5 代码签名证书** | 外部采购 | M9 打包只能出未签名产物；U4 无法证伪 |
 | **U1 GLM 产物质量** | 需要人工评分（08 §5.4 的三个任务），不是技术阻塞 | 若不达标应换旗舰档，**不靠加模板硬扛**（总纲原话）。这个结论越晚拿到，返工面越大 |
 | **U3 misfire 真机体验** | 需要真机关机一夜 | M5 的文案与补偿策略无法确认 |

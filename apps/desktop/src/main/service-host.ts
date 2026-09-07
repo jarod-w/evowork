@@ -39,10 +39,18 @@ import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
 import { BRAND } from '@evowork/tokens';
 import { createAuditRepo, openStore, type Store } from '@evowork/store';
 
+import type { ModelCatalogResult } from '../shared/ipc.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
-import { startLocalGateway, type GatewayProcess } from './gateway-process.js';
+import {
+  ensureGatewayTokenFile,
+  mergeGatewayEnv,
+  readGatewayEnvFile,
+  tokenFromEnvFile,
+  writeGatewayEnvKeys,
+} from './gateway-env.js';
+import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
-import { fetchModelCatalog, readGatewayBaseUrl } from './model-catalog.js';
+import { fetchModelCatalog, readGatewayBaseUrl, waitUntilGatewayReady } from './model-catalog.js';
 import {
   createEventTranslator,
   createRendererActions,
@@ -67,6 +75,12 @@ export interface EvoworkPaths {
    * 而令牌是 EvoWork 自己的凭据；混进去等于让内核的配置文件承载我们的密钥。
    */
   readonly gatewayToken: string;
+  /**
+   * 厂商密钥（见 `gateway-env.ts`）。
+   *
+   * 从访达启动的应用不继承 shell 环境，这个文件是 GUI 启动唯一能用的密钥来源。
+   */
+  readonly gatewayEnv: string;
   /**
    * hook 写审计记录的 JSONL（10 §6）。
    *
@@ -94,6 +108,7 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
     scenarios: join(root, 'scenarios'),
     logs: join(root, 'logs'),
     gatewayToken: join(root, 'gateway-token'),
+    gatewayEnv: join(root, 'gateway.env'),
     auditLog: join(root, 'audit.jsonl'),
     kernelHome: join(root, 'kernel'),
   };
@@ -248,6 +263,13 @@ export interface ServiceHostOptions {
    * 而干净机器上内核一个 project 都没有。
    */
   readonly pickDirectory?: () => Promise<string | undefined>;
+  /**
+   * 本机网关 listen 最多等多久。测试里假 spawn 不会真的听端口，传 0 跳过。
+   * 不传 = 8 秒（见 `waitUntilGatewayReady`）。
+   */
+  readonly gatewayReadyTimeoutMs?: number | undefined;
+  /** 注入以便测试网关就绪探测，不必真起一个 HTTP 服务 */
+  readonly fetchFn?: typeof fetch | undefined;
 }
 
 export interface ServiceHost {
@@ -314,7 +336,23 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
   const store = openStore({ path: options.paths.db, logger });
 
-  const gatewayToken = readGatewayToken(options.paths, options.env);
+  /*
+   * 本机网关的密钥与令牌。必须在起内核之前备齐：内核从自己的进程环境读令牌，
+   * 而从访达启动时 shell 环境是空的。
+   *
+   *   ① `~/.evowork/gateway.env` 补厂商密钥（文档一直让人写这儿，以前没人读）；
+   *   ② 拓扑 A 没有令牌就签一个 —— 用户不该知道有 gateway-token 这么个东西。
+   */
+  const fileEnv = readGatewayEnvFile(options.paths.gatewayEnv);
+  let gatewayRuntimeEnv = mergeGatewayEnv(fileEnv, options.env ?? process.env);
+  const gatewayBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, gatewayRuntimeEnv);
+  let gatewayToken =
+    readGatewayToken(options.paths, gatewayRuntimeEnv) ?? tokenFromEnvFile(fileEnv);
+  if (isLocalGateway(gatewayBaseUrl)) {
+    const ensured = ensureGatewayTokenFile(options.paths.gatewayToken, gatewayToken);
+    gatewayToken = ensured.token;
+    if (ensured.minted) logger.info('desktop.gateway_token.minted', { reason: 'LOCAL' });
+  }
 
   const readInstructions = (file: string): string | undefined => {
     // `config/modes/*.md` 随产品分发（取代原 P3 补丁，F1）
@@ -442,19 +480,6 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   };
 
   /*
-   * 模型下拉的数据源（03 §4.5）。
-   *
-   * 地址取自**内核自己的 `config.toml`** —— 这个文件就是它的写入方（`ensureKernelConfig`）。
-   * 另起一个 EvoWork 侧的地址配置会漂：企业改成私有网关时只会改 config.toml，
-   * 于是内核打私有网关、下拉打默认网关，而两处配置各自都是对的
-   * （表现是"下拉里的模型发过去说不存在"）。
-   *
-   * 令牌与内核用的是**同一个** `gatewayToken`：网关对两个端点用同一套鉴权，
-   * 各读各的只会让"内核能用、下拉 401"这种半可用状态成为可能。
-   */
-  const gatewayBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, options.env);
-
-  /*
    * 三个目录式页面的数据源。
    *
    * **复用 `services` 已经建好的那两个 repo**，不再建一套：同一张表两个入口
@@ -470,6 +495,52 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       path: options.paths.auditLog,
       insert: (records) => auditRepo.insertMany(records),
       logger,
+    });
+  };
+
+  const catalogFetchOptions = () => ({
+    baseUrl: gatewayBaseUrl,
+    ...(gatewayToken ? { token: gatewayToken } : {}),
+    ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+  });
+
+  /**
+   * 网关没起时**不要再 fetch 一次**。
+   *
+   * NO_KEYS 时 8787 上没人听，fetch 的 catch 会把原因改写成「连不上模型网关」。
+   * 用户下一步该填密钥，不是去查网关进程 —— 两个模块各自都对，合起来把归因弄反了。
+   */
+  const readModelCatalog = async (): Promise<ModelCatalogResult> => {
+    if (gateway && !gateway.result.started && gateway.result.reason !== 'REMOTE') {
+      const reason =
+        gateway.result.reason === 'NO_KEYS'
+          ? ('no-keys' as const)
+          : gateway.result.reason === 'NO_ENTRY'
+            ? ('broken-install' as const)
+            : ('unreachable' as const);
+      return { models: [], unavailable: gateway.result.notice, reason };
+    }
+    return fetchModelCatalog(catalogFetchOptions());
+  };
+
+  const launchLocalGateway = (): void => {
+    if (!options.gatewayEntryPath) return;
+    gateway = startLocalGateway({
+      baseUrl: gatewayBaseUrl,
+      entryPath: options.gatewayEntryPath,
+      ...(gatewayToken ? { token: gatewayToken } : {}),
+      env: gatewayRuntimeEnv,
+      ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
+      logger,
+    });
+  };
+
+  const awaitGatewayReady = async (): Promise<boolean> => {
+    const budget = options.gatewayReadyTimeoutMs ?? 8_000;
+    if (!gateway?.result.started || budget <= 0) return true;
+    return waitUntilGatewayReady({
+      ...catalogFetchOptions(),
+      readyTimeoutMs: budget,
     });
   };
 
@@ -506,11 +577,33 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     appVersion: options.appVersion,
     userName: userInfo().username,
     cases: BUILTIN_CASES,
-    readModelCatalog: () =>
-      fetchModelCatalog({
-        baseUrl: gatewayBaseUrl,
-        ...(gatewayToken ? { token: gatewayToken } : {}),
-      }),
+    readModelCatalog,
+    applyModelAccess: async (input) => {
+      const keys: Record<string, string> = {};
+      if (input.deepseekApiKey?.trim()) keys.DEEPSEEK_API_KEY = input.deepseekApiKey.trim();
+      if (input.moonshotApiKey?.trim()) keys.MOONSHOT_API_KEY = input.moonshotApiKey.trim();
+      if (input.zhipuApiKey?.trim()) keys.ZHIPU_API_KEY = input.zhipuApiKey.trim();
+      if (Object.keys(keys).length > 0) {
+        writeGatewayEnvKeys(options.paths.gatewayEnv, keys);
+        logger.info('desktop.gateway_env.updated', { itemCount: Object.keys(keys).length });
+      }
+      gatewayRuntimeEnv = mergeGatewayEnv(
+        readGatewayEnvFile(options.paths.gatewayEnv),
+        options.env ?? process.env,
+      );
+      gateway?.stop();
+      gateway = undefined;
+      launchLocalGateway();
+      const ready = await awaitGatewayReady();
+      if (!ready) {
+        return {
+          models: [],
+          reason: 'unreachable' as const,
+          unavailable: '本机网关启动了但还没开始接受请求。等几秒再点「检查模型接入」。',
+        };
+      }
+      return readModelCatalog();
+    },
   });
 
   return {
@@ -531,17 +624,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
        * 网关在别处（拓扑 B）时这里什么都不做，见 `startLocalGateway`。
        */
       if (options.gatewayEntryPath) {
-        gateway = startLocalGateway({
-          baseUrl: gatewayBaseUrl,
-          entryPath: options.gatewayEntryPath,
-          ...(gatewayToken ? { token: gatewayToken } : {}),
-          ...(options.env ? { env: options.env } : {}),
-          ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
-          logger,
-        });
+        launchLocalGateway();
         // `REMOTE` 没有 notice：网关在服务器上是正常部署，不该提示任何东西
-        if (!gateway.result.started && gateway.result.reason !== 'REMOTE') {
+        if (gateway && !gateway.result.started && gateway.result.reason !== 'REMOTE') {
           options.emitToRenderer(IPC.notice, { kind: 'model', text: gateway.result.notice });
+        }
+        const ready = await awaitGatewayReady();
+        if (!ready) {
+          logger.warn('gateway.child.not_ready', { reason: 'TIMEOUT' });
+          options.emitToRenderer(IPC.notice, {
+            kind: 'model',
+            text: '本机网关启动了但还没开始接受请求。等几秒再点「检查模型接入」。',
+          });
         }
       }
 

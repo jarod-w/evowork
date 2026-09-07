@@ -19,11 +19,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
   ApprovalView,
+  ApplyModelAccessInput,
   AuditDataView,
   AutomationsDataView,
   LibraryDataView,
   ModelCatalogResult,
   ModelOptionView,
+  ModelUnavailableReason,
   RendererEvent,
   RuntimeInstallResultView,
   RuntimeProgressView,
@@ -43,7 +45,7 @@ import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
 import { Library } from './views/library.js';
-import { Onboarding, ONBOARDING_STEPS, type OnboardingStep } from './views/onboarding.js';
+import { Onboarding, ONBOARDING_STEPS, EMPTY_PROVIDER_KEYS, type OnboardingStep, type ProviderKeyId, type ProviderKeys } from './views/onboarding.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskWorkspace } from './views/task-workspace.js';
 
@@ -69,6 +71,7 @@ export interface EvoworkBridge {
    * 只是发不出新任务。合并会让网关的一次超时把整个首页拖成白屏。
    */
   listModels(): Promise<ModelCatalogResult>;
+  applyModelAccess(input: ApplyModelAccessInput): Promise<ModelCatalogResult>;
   /*
    * 三个目录式页面各自一个动作。**按需拉，不并进 getStartup** ——
    * 它们读的是本机 sqlite，且绝大多数会话里用户根本不会打开资料库。
@@ -145,6 +148,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   /** 用户是否**显式**改过模型（03 §2.5 的圆点）。切场景时保留他的选择，不悄悄改回去 */
   const [modelOverridden, setModelOverridden] = useState(false);
   const [modelUnavailable, setModelUnavailable] = useState<string | undefined>(undefined);
+  const [modelUnavailableReason, setModelUnavailableReason] = useState<
+    ModelUnavailableReason | undefined
+  >(undefined);
+  const [providerKeys, setProviderKeys] = useState<ProviderKeys>(EMPTY_PROVIDER_KEYS);
+  const [modelApplying, setModelApplying] = useState(false);
   /** 选中的工作空间（EvoWork 的「空间」= 内核的 Project + cwd）。主进程负责翻成 cwd */
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
   const [view, setView] = useState<MainView>('task');
@@ -264,17 +272,45 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 由 Composer 渲染成 danger 条并禁用发送（03 §8：**在发送之前就说**，
    * 而不是等任务失败）。
    */
+  const applyCatalog = useCallback((result: ModelCatalogResult) => {
+    setModels(result.models);
+    setModelUnavailable(result.unavailable);
+    setModelUnavailableReason(result.reason);
+  }, []);
+
   const loadModels = useCallback(async () => {
     try {
-      const result = await bridge.listModels();
-      setModels(result.models);
-      setModelUnavailable(result.unavailable);
+      applyCatalog(await bridge.listModels());
     } catch (err: unknown) {
       // IPC 本身失败（handler 没注册之类）——这是我们自己的 bug，不能装成"网关不通"
       setModels([]);
       setModelUnavailable(`读不到可用模型：${err instanceof Error ? err.message : String(err)}`);
+      setModelUnavailableReason(undefined);
     }
-  }, [bridge]);
+  }, [bridge, applyCatalog]);
+
+  const checkModelAccess = useCallback(async () => {
+    const input: ApplyModelAccessInput = {
+      ...(providerKeys.deepseek.trim() ? { deepseekApiKey: providerKeys.deepseek.trim() } : {}),
+      ...(providerKeys.moonshot.trim() ? { moonshotApiKey: providerKeys.moonshot.trim() } : {}),
+      ...(providerKeys.zhipu.trim() ? { zhipuApiKey: providerKeys.zhipu.trim() } : {}),
+    };
+    const hasKeys = Object.keys(input).length > 0;
+    setModelApplying(true);
+    try {
+      if (hasKeys) {
+        applyCatalog(await bridge.applyModelAccess(input));
+      } else {
+        await loadModels();
+      }
+    } catch (err: unknown) {
+      setModels([]);
+      setModelUnavailable(`读不到可用模型：${err instanceof Error ? err.message : String(err)}`);
+      setModelUnavailableReason(undefined);
+    } finally {
+      setModelApplying(false);
+    }
+  }, [bridge, providerKeys, applyCatalog, loadModels]);
 
   useEffect(() => {
     void loadModels();
@@ -479,7 +515,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
        * 「检查模型接入」重新拉一次列表 —— 用户通常是去把网关起起来了再回来点它。
        */
       ...(modelUnavailable !== undefined
-        ? { modelUnavailable: { text: modelUnavailable, onFix: () => void loadModels() } }
+        ? {
+            modelUnavailable: {
+              text: modelUnavailable,
+              ...(modelUnavailableReason !== undefined ? { reason: modelUnavailableReason } : {}),
+              onFix: () => void checkModelAccess(),
+            },
+            modelAccess: {
+              values: providerKeys,
+              onChange: (id: ProviderKeyId, value: string) =>
+                setProviderKeys((prev) => ({ ...prev, [id]: value })),
+              applying: modelApplying,
+            },
+          }
         : {}),
     }),
     [
@@ -497,6 +545,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       modelOverridden,
       modelUnavailable,
       loadModels,
+      checkModelAccess,
+      providerKeys,
+      modelApplying,
+      modelUnavailableReason,
     ],
   );
 
@@ -536,7 +588,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onPermissionChange={setPermissionId}
           modelStatus={modelUnavailable ? 'failed' : models.length > 0 ? 'ok' : 'unchecked'}
           {...(modelUnavailable !== undefined ? { modelError: modelUnavailable } : {})}
-          onCheckModel={() => void loadModels()}
+          onCheckModel={() => void checkModelAccess()}
+          providerKeys={providerKeys}
+          onProviderKeyChange={(id, value) =>
+            setProviderKeys((prev) => ({ ...prev, [id]: value }))
+          }
           /*
            * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，
            * 因为下载器没实现 —— 那时"如实说"是唯一诚实的选择。现在它实现了，

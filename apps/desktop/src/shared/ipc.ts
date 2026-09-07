@@ -170,7 +170,22 @@ export interface ModelOptionView {
 export interface ModelCatalogResult {
   readonly models: readonly ModelOptionView[];
   readonly unavailable?: string | undefined;
+  /**
+   * 为什么不可用。渲染层据此决定下一步：没密钥就给录入框，连不上就只给重试。
+   * 只给文案的话，「检查模型接入」对没配密钥的用户永远是再 fetch 一次失败。
+   */
+  readonly reason?: ModelUnavailableReason | undefined;
 }
+
+/** 模型目录读不到时的原因。**每一种的下一步动作都不同**，所以不能压成一个布尔值。 */
+export type ModelUnavailableReason =
+  | 'no-token'
+  | 'no-keys'
+  | 'unauthorized'
+  | 'unreachable'
+  | 'empty'
+  | 'http'
+  | 'broken-install';
 
 export interface SendInput {
   readonly threadId?: string | undefined;
@@ -355,4 +370,16 @@ export interface RuntimeInstallResultView {
   readonly ok: boolean;
   readonly failure?: string | undefined;
   readonly message?: string | undefined;
+}
+
+/**
+ * 用户在引导或首页填的厂商密钥。空字符串 = 这一家没改。
+ *
+ * 主进程写进 `~/.evowork/gateway.env` 之后立刻拉起本机网关。
+ * **渲染层不会再读到这些值** —— 密钥只走这一次 IPC，不回传、不进日志。
+ */
+export interface ApplyModelAccessInput {
+  readonly deepseekApiKey?: string | undefined;
+  readonly moonshotApiKey?: string | undefined;
+  readonly zhipuApiKey?: string | undefined;
 }

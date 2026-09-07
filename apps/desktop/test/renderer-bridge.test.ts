@@ -434,6 +434,15 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(result.unavailable).toBeTruthy();
   });
 
+  it('这个版本不能保存密钥时如实说，不静默丢掉用户刚贴的 key', async () => {
+    const adapter = { createTask: vi.fn(), sendMessage: vi.fn() } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const result = await actions.applyModelAccess({ deepseekApiKey: 'sk' });
+    expect(result.models).toEqual([]);
+    expect(result.reason).toBe('no-keys');
+    expect(result.unavailable).toContain('gateway.env');
+  });
+
   it('空可见页不发请求 —— 04 §3.4 的有界校正，0 条也算一条边界', async () => {
     const adapter = { refreshAuthoritative: vi.fn(async () => 0) } as unknown as Adapter;
     const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });

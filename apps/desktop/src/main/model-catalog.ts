@@ -111,6 +111,7 @@ export async function fetchModelCatalog(options: FetchCatalogOptions): Promise<M
   if (!options.token) {
     return {
       models: [],
+      reason: 'no-token',
       unavailable:
         '还没有配置模型网关的访问令牌，任务发出去会失败。' +
         '把令牌写进 ~/.evowork/gateway-token（一行），或用 EVOWORK_GATEWAY_TOKEN 启动。',
@@ -131,6 +132,7 @@ export async function fetchModelCatalog(options: FetchCatalogOptions): Promise<M
       // 401 与 503 对用户是两件事，但都不该显示原始响应体（可能带上游的诊断信息）
       return {
         models: [],
+        reason: response.status === 401 ? 'unauthorized' : 'http',
         unavailable:
           response.status === 401
             ? '模型网关拒绝了这个令牌（401）。确认 ~/.evowork/gateway-token 与网关的 EVOWORK_GATEWAY_TOKENS 一致。'
@@ -141,14 +143,51 @@ export async function fetchModelCatalog(options: FetchCatalogOptions): Promise<M
     const models = (body.data ?? []).map(toModelOption);
     if (models.length === 0) {
       // 网关活着但一个模型都没有 = 一家厂商的密钥都没配。**说清楚是哪一侧的问题**
-      return { models: [], unavailable: '模型网关没有可用的模型：它启动时没有配置任何厂商密钥。' };
+      return {
+        models: [],
+        reason: 'empty',
+        unavailable: '模型网关没有可用的模型：它启动时没有配置任何厂商密钥。',
+      };
     }
     return { models };
   } catch {
-    return { models: [], unavailable: GATEWAY_UNREACHABLE };
+    return { models: [], reason: 'unreachable', unavailable: GATEWAY_UNREACHABLE };
   } finally {
     clearTimeout(timer);
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * 等到本机网关开始听端口。
+ *
+ * `spawn` 返回只说明进程在，不说明 `listen` 已经完成。网关冷启动要几百毫秒；
+ * 这段窗口里去 fetch，得到的就是 ECONNREFUSED，界面上写成「连不上模型网关」。
+ * 启动后立刻点「检查模型接入」又好了 —— 最像配置问题、其实是时序问题。
+ *
+ * **`reason !== 'unreachable'` 就算就绪**：401 / 空目录 / 成功都证明端口在听。
+ */
+export async function waitUntilGatewayReady(
+  options: FetchCatalogOptions & {
+    readonly readyTimeoutMs?: number | undefined;
+    readonly intervalMs?: number | undefined;
+  },
+): Promise<boolean> {
+  const budget = options.readyTimeoutMs ?? 8_000;
+  if (budget <= 0) return false;
+  const deadline = Date.now() + budget;
+  const interval = options.intervalMs ?? 200;
+  while (Date.now() < deadline) {
+    const result = await fetchModelCatalog({ ...options, timeoutMs: options.timeoutMs ?? 400 });
+    if (result.reason !== 'unreachable') return true;
+    await delay(interval);
+  }
+  return false;
 }
 
 /**

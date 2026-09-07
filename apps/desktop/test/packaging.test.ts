@@ -52,3 +52,13 @@ describe('preload 有真正的入口（M9）', () => {
     expect(cjs).toMatch(/installBridge\(\s*contextBridge\s*,\s*ipcRenderer\s*\)/);
   });
 });
+
+describe('从访达启动也能拿到厂商密钥（M9）', () => {
+  it('宿主读 ~/.evowork/gateway.env，不依赖 shell 环境', () => {
+    // 装好的 App 不继承任何 shell 变量。文档一直让人把密钥写进这个文件，
+    // 宿主以前从不读它 → 本机网关走 NO_KEYS，界面却写成「连不上模型网关」。
+    expect(read('src/main/service-host.ts')).toContain('readGatewayEnvFile');
+    expect(read('src/main/gateway-env.ts')).toContain('DEEPSEEK_API_KEY');
+    expect(read('src/main/electron-entry.mjs')).toContain('gatewayEntryPath');
+  });
+});

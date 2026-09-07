@@ -55,6 +55,11 @@ export const RENDERER_ACTIONS = Object.freeze([
   // 模型下拉（03 §4.5「启动时 + 手动刷新」）。与 getStartup 分开是因为它是一次网络调用，
   // 失败方式与"本机服务起不来"完全不同（见 main/model-catalog.ts 的头注释）
   'listModels',
+  /**
+   * 把用户填的厂商密钥写入本机并拉起网关。
+   * 引导第④步和首页「检查模型接入」共用 —— 装好的 App 从访达启动读不到 shell 环境。
+   */
+  'applyModelAccess',
   /*
    * 三个目录式页面各自一个动作，**不并进 `getStartup`**。
    *

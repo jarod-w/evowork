@@ -123,6 +123,7 @@ describe('路径布局（09 §7）', () => {
     // EvoWork 自己的配置与内核配置分开放（09 §7：不混进 config.toml）
     expect(paths.modes).toBe('/home/u/.evowork/modes');
     expect(paths.scenarios).toBe('/home/u/.evowork/scenarios');
+    expect(paths.gatewayEnv).toBe('/home/u/.evowork/gateway.env');
   });
 });
 
@@ -367,5 +368,54 @@ describe('对账定时器（09 §4.1：每 10 分钟）', () => {
   it('间隔就是文档里的 10 分钟', () => {
     host = makeHost();
     expect(host.reconcileIntervalMs).toBe(10 * 60_000);
+  });
+});
+
+describe('从访达启动也能拿到厂商密钥', () => {
+  it('读 ~/.evowork/gateway.env，不依赖 shell 环境', async () => {
+    writeFileSync(join(dir, 'gateway.env'), 'DEEPSEEK_API_KEY=sk-from-file\n', 'utf8');
+    const entry = join(dir, 'gw-main.js');
+    writeFileSync(entry, '', 'utf8');
+    const gwChild = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      kill: vi.fn(),
+    };
+    const kernelChild = new FakeChild();
+    child = kernelChild;
+    const spawnFn = vi.fn((...args: unknown[]) => {
+      const argv = args[1];
+      if (Array.isArray(argv) && argv[0] === entry) return gwChild;
+      return kernelChild;
+    });
+    host = makeHost({
+      gatewayEntryPath: entry,
+      gatewayReadyTimeoutMs: 0,
+      // 不把开发机 shell 里的厂商密钥带进来，否则「文件才是来源」这条断言会被环境变量盖掉
+      env: { PATH: process.env.PATH ?? '' },
+      spawnFn: spawnFn as unknown as NonNullable<HostOptions['spawnFn']>,
+    });
+    await host.start();
+
+    const gwCall = spawnFn.mock.calls.find((c) => Array.isArray(c[1]) && c[1][0] === entry) as
+      | [string, string[], { env: Record<string, string> }]
+      | undefined;
+    expect(gwCall?.[2].env.DEEPSEEK_API_KEY).toBe('sk-from-file');
+  });
+
+  it('没配密钥时 listModels 说的是密钥，不是「连不上」', async () => {
+    const entry = join(dir, 'gw-main.js');
+    writeFileSync(entry, '', 'utf8');
+    host = makeHost({
+      gatewayEntryPath: entry,
+      gatewayReadyTimeoutMs: 0,
+      env: { PATH: process.env.PATH ?? '' },
+    });
+    await host.start();
+    const result = await host.actions.listModels();
+    expect(result.reason).toBe('no-keys');
+    expect(result.unavailable).toContain('密钥');
+    expect(result.unavailable).not.toContain('连不上模型网关');
   });
 });

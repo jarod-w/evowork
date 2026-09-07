@@ -37,6 +37,58 @@ import {
 
 export type OnboardingStep = 'welcome' | 'workspace' | 'permissions' | 'model' | 'runtime' | 'done';
 
+export type ProviderKeyId = 'deepseek' | 'moonshot' | 'zhipu';
+
+export type ProviderKeys = Record<ProviderKeyId, string>;
+
+export const EMPTY_PROVIDER_KEYS: ProviderKeys = Object.freeze({
+  deepseek: '',
+  moonshot: '',
+  zhipu: '',
+});
+
+export const PROVIDER_KEY_FIELDS: readonly {
+  readonly id: ProviderKeyId;
+  readonly label: string;
+}[] = [
+  { id: 'deepseek', label: 'DeepSeek API 密钥' },
+  { id: 'moonshot', label: 'Kimi API 密钥' },
+  { id: 'zhipu', label: 'GLM API 密钥' },
+];
+
+/**
+ * 厂商密钥录入。引导第④步和首页「连不上网关」共用。
+ *
+ * Q1=A：从访达启动的应用读不到 shell 环境，必须在界面里收下密钥。
+ * 密钥只走一次 IPC 写进本机文件，不回传、不进日志。
+ */
+export function ModelAccessFields(props: {
+  readonly values: ProviderKeys;
+  readonly onChange: (id: ProviderKeyId, value: string) => void;
+  readonly disabled?: boolean | undefined;
+}) {
+  return (
+    <div className="ew-model-access">
+      {PROVIDER_KEY_FIELDS.map((field) => (
+        <label key={field.id} className="ew-field">
+          <span>{field.label}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={props.values[field.id]}
+            disabled={props.disabled}
+            onChange={(event) => props.onChange(field.id, event.target.value)}
+          />
+        </label>
+      ))}
+      <p className="ew-field-hint">
+        至少填一家。密钥只保存在这台电脑上，不会上传。企业私有网关仍走本机 config.toml 的地址。
+      </p>
+    </div>
+  );
+}
+
 export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   'welcome',
   'workspace',
@@ -77,6 +129,8 @@ export interface OnboardingProps {
   readonly modelStatus: 'unchecked' | 'checking' | 'ok' | 'failed';
   readonly modelError?: string | undefined;
   readonly onCheckModel?: (() => void) | undefined;
+  readonly providerKeys?: ProviderKeys | undefined;
+  readonly onProviderKeyChange?: ((id: ProviderKeyId, value: string) => void) | undefined;
   readonly gatewayUrl?: string | undefined;
   readonly onGatewayUrlChange?: ((url: string) => void) | undefined;
   readonly runtimeInstalled: boolean;
@@ -199,19 +253,17 @@ function Permissions(props: OnboardingProps) {
 }
 
 function Model(props: OnboardingProps) {
+  const keys = props.providerKeys ?? EMPTY_PROVIDER_KEYS;
   return (
     <div className="ew-onboarding-body">
-      <label className="ew-field">
-        <span>模型网关地址</span>
-        <input
-          value={props.gatewayUrl ?? ''}
-          placeholder="https://gateway.evowork.example/v1"
-          onChange={(event) => props.onGatewayUrlChange?.(event.target.value)}
-        />
-        <span className="ew-field-hint">
-          企业私有部署填自己的地址。密钥从环境变量读，不写进配置文件。
-        </span>
-      </label>
+      <p>
+        EvoWork 在这台电脑上跑模型网关。至少填一家厂商的 API 密钥，然后点「检查连通性」。
+      </p>
+      <ModelAccessFields
+        values={keys}
+        onChange={(id, value) => props.onProviderKeyChange?.(id, value)}
+        disabled={props.modelStatus === 'checking'}
+      />
 
       <PillButton variant="accent" onClick={props.onCheckModel}>
         {props.modelStatus === 'checking' ? '检查中…' : '检查连通性'}

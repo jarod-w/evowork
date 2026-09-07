@@ -229,6 +229,14 @@ describe('六步引导（02 §9）', () => {
     );
   });
 
+  it('第④步收的是厂商密钥 —— 从访达启动读不到 shell 环境变量', () => {
+    render(<OnboardingHarness over={{ step: 'model' }} />);
+    expect(screen.getByText('DeepSeek API 密钥')).toBeTruthy();
+    expect(screen.getByText('Kimi API 密钥')).toBeTruthy();
+    expect(screen.getByText('GLM API 密钥')).toBeTruthy();
+    expect(screen.queryByText('模型网关地址')).toBeNull();
+  });
+
   it('权限这一步**不给「完全访问」** —— 它要单独确认且只对当次任务生效', () => {
     render(<OnboardingHarness over={{ step: 'permissions' }} />);
     expect(screen.queryByRole('tab', { name: '完全访问' })).toBeNull();
