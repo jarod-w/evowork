@@ -23,6 +23,8 @@ export const LIGHT_NEUTRAL = {
   'bg-active': 'rgba(29,29,27,.075)',
   'bg-selected': '#E9E8E4',
   'bg-inverse': '#1D1D1B',
+  /** 01 §5.34 Dialog 的遮罩层。仓库里在此之前没有全屏模态，这是第一个需要它的组件 */
+  'bg-scrim': 'rgba(29,29,27,.45)',
   'text-primary': '#1F1F1D',
   'text-secondary': '#6E6D68',
   'text-tertiary': '#9B9A94',
@@ -42,6 +44,8 @@ export const DARK_NEUTRAL = {
   'bg-selected': '#33332F',
   // 反转后选中的分段控件变浅底深字
   'bg-inverse': '#F2F1EE',
+  /** 暗色下遮罩用更深的黑，理由同其他暗色 token：底色本身已经暗，遮罩还要压得住它 */
+  'bg-scrim': 'rgba(10,10,9,.6)',
   'text-primary': '#F0EFEA',
   'text-secondary': '#A8A7A0',
   'text-tertiary': '#77766F',
@@ -268,6 +272,9 @@ export const LAYOUT = {
    * 菜单最小宽 180 长。不封顶的话，一句两行的说明会把浮层拉成一条横幅。
    */
   menuEmptyMaxWidth: 260,
+  /** §5.34 Dialog：常规宽 420，内容多时撑到 520 */
+  dialogWidth: 420,
+  dialogMaxWidth: 520,
   /** §5.14 InlineSelect */
   inlineSelectHeight: 24,
   /** §5.9 SegmentedControl 轨道 */

@@ -23,7 +23,7 @@
  * 所以**渲染层的组件 prop 显式接受 undefined**，服务层保持严格。
  * 这不是把开关关掉 —— `apps/desktop/src/main` 与所有 `packages/` / `services/` 仍受它约束。
  */
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
 export interface IconButtonProps {
   /** 无障碍名。**必填** —— 图标按钮没有可见文字，缺了它屏幕阅读器只会读"按钮" */
@@ -830,6 +830,131 @@ export function ProgressBar({
         className="ew-progress-fill"
         style={{ ['--ew-progress-percent' as string]: `${clamped}%` } as CSSProperties}
       />
+    </div>
+  );
+}
+
+/**
+ * 01 §5.34 Dialog（模态壳）。
+ *
+ * **新模态一律用它**。仓库里此前有三处各自搭的确认框：`views/library.tsx`
+ * （`ew-delete-confirm`）· `components/changes-view.tsx`（`ew-revert-confirm`）·
+ * `components/composer.tsx`（`ew-danger-confirm`）。本任务只并掉第一个，
+ * 后两个是记下来的债 —— 一次并三处会让这个任务的 diff 盖住三个页面。
+ *
+ * 它不管自己什么时候出现 —— 由调用方决定挂不挂载，
+ * 这样"打开着的时候按 Esc"与"根本没打开"是两个显然不同的状态，
+ * 而不是一个藏在组件里的布尔。
+ */
+export function Dialog({
+  title,
+  children,
+  confirmLabel,
+  cancelLabel = '取消',
+  variant = 'default',
+  confirmDisabled,
+  onConfirm,
+  onCancel,
+}: {
+  readonly title: string;
+  readonly children: ReactNode;
+  readonly confirmLabel: string;
+  readonly cancelLabel?: string | undefined;
+  /** danger：破坏性动作。用 `alertdialog` 而不是 `dialog` */
+  readonly variant?: 'default' | 'danger' | undefined;
+  readonly confirmDisabled?: boolean | undefined;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}) {
+  return (
+    <div className="ew-dialog-scrim">
+      <div
+        className="ew-dialog"
+        data-variant={variant}
+        role={variant === 'danger' ? 'alertdialog' : 'dialog'}
+        aria-label={title}
+        aria-modal="true"
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onCancel();
+        }}
+      >
+        <p className="ew-dialog-title">{title}</p>
+        <div className="ew-dialog-body">{children}</div>
+        <div className="ew-dialog-actions">
+          <PillButton onClick={onCancel}>{cancelLabel}</PillButton>
+          <PillButton
+            variant="accent"
+            disabled={confirmDisabled}
+            onClick={confirmDisabled ? undefined : onConfirm}
+          >
+            {confirmLabel}
+          </PillButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 01 §5.20 ItemCard。宽 258、高 112；**带角标行时 128**（项目卡变体走的就是这一档）。
+ *
+ * `tone="warning"` 是项目卡的路径失效态：整卡换边框色，而不是把失效信息
+ * 藏进一个只有悬停才看得到的地方 —— 用户需要在列表上一眼看出哪个空间用不了。
+ */
+export function ItemCard({
+  icon,
+  name,
+  description,
+  badges,
+  tone = 'default',
+  action,
+  onClick,
+}: {
+  readonly icon?: ReactNode | undefined;
+  readonly name: string;
+  readonly description: string;
+  /** 角标行（§5.20：来源 · 风险等级 · 版本；项目卡用的是任务数 · 产物数 · 最近活动） */
+  readonly badges?: readonly string[] | undefined;
+  readonly tone?: 'default' | 'warning' | undefined;
+  /** 右上角。§5.20 是 `+`，项目卡换成 `⋯` 菜单 */
+  readonly action?: ReactNode | undefined;
+  readonly onClick?: (() => void) | undefined;
+}) {
+  const hasBadges = badges !== undefined && badges.length > 0;
+  return (
+    <div
+      className="ew-item-card"
+      data-tone={tone}
+      data-with-badges={hasBadges ? 'true' : undefined}
+      {...(onClick ? { role: 'button', tabIndex: 0, onClick } : {})}
+      {...(onClick
+        ? {
+            onKeyDown: (event: KeyboardEvent) => {
+              if (event.key === 'Enter' || event.key === ' ') onClick();
+            },
+          }
+        : {})}
+    >
+      <div className="ew-item-card-head">
+        {icon ? (
+          <span className="ew-item-card-icon" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
+        <span className="ew-item-card-name">{name}</span>
+        {action ? <span className="ew-item-card-action">{action}</span> : null}
+      </div>
+      <p className="ew-item-card-desc">{description}</p>
+      {hasBadges ? (
+        <p className="ew-item-card-badges">
+          {badges.map((badge) => (
+            <span key={badge} className="ew-item-card-badge">
+              {badge}
+            </span>
+          ))}
+        </p>
+      ) : null}
     </div>
   );
 }

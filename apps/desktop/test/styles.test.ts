@@ -56,6 +56,29 @@ describe('ModelSelect 下拉的布局约束（01 §5.15）', () => {
   });
 });
 
+/*
+ * 01 §5.34 Dialog 上线时，`.ew-delete-confirm` 从这条共享容器规则里退了役
+ * （library.tsx 改用 Dialog 之后不再渲染这个类名），但 `.ew-danger-confirm`
+ * （composer.tsx 的完全访问确认）与 `.ew-revert-confirm`（changes-view.tsx
+ * 的还原确认）**还没并进 Dialog**——它们各自的组件测试只查 `role` 与文案，
+ * 谁要是手滑把整条容器规则一起删了（而不是只摘掉 `.ew-delete-confirm`），
+ * 这两个确认框会静默丢掉边框、背景与阴影，变成一坨浮在页面上的裸文字，
+ * 而不会有一条测试变红。这条钉住的正是那种"删对了名字、删错了范围"的手滑。
+ */
+describe('composer / changes-view 的确认框没有在并入 Dialog 时被误删边框', () => {
+  it('.ew-danger-confirm 与 .ew-revert-confirm 仍然共用一条带边框/背景/阴影的容器规则', () => {
+    const rule = /\.ew-danger-confirm,[\s\S]*?\.ew-revert-confirm\s*\{([^}]*)\}/.exec(code)?.[1];
+    expect(
+      rule,
+      '找不到 .ew-danger-confirm 与 .ew-revert-confirm 共用的容器规则 —— ' +
+        '它们各自的组件测试查不到这个回归，只有这里能查',
+    ).toBeDefined();
+    expect(rule).toContain('border: 1px solid var(--danger)');
+    expect(rule).toContain('background: var(--bg-surface)');
+    expect(rule).toContain('box-shadow: var(--shadow-lg)');
+  });
+});
+
 describe('CSS 只用 token（01 §9 验收项 1）', () => {
   it('没有 hex 颜色', () => {
     const hits = code.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];

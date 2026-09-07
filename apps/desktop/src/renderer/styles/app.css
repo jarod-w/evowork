@@ -1137,6 +1137,111 @@ textarea {
   color: var(--text-secondary);
 }
 
+/*
+ * ─────────────────────────── 01 §5.34 Dialog（模态壳）───────────────────────────
+ *
+ * 上面那组 `.ew-danger-confirm` / `.ew-delete-confirm` / `.ew-revert-confirm` 保留不动：
+ * `.ew-delete-confirm` 虽然 library.tsx 已经改用 Dialog 不再渲染它，但
+ * `views/sidebar.tsx`（删除任务确认）仍在用同一个类名 —— 本任务的文件清单里没有
+ * sidebar.tsx，摘掉它会让那个确认框静默丢边框/背景/阴影而没有一条测试会红。
+ */
+
+.ew-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-24);
+  background: var(--bg-scrim);
+}
+.ew-dialog {
+  width: var(--layout-dialog-width);
+  max-width: var(--layout-dialog-max-width);
+  padding: var(--space-20);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+/* 破坏性动作换边框色：不是装饰，是"这一步删东西"的唯一视觉信号 */
+.ew-dialog[data-variant='danger'] {
+  border-color: var(--danger);
+}
+.ew-dialog-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-title-2-size);
+  font-weight: var(--font-title-2-weight);
+}
+.ew-dialog-body {
+  margin: 0 0 var(--space-16);
+  color: var(--text-secondary);
+}
+.ew-dialog-actions {
+  display: flex;
+  gap: var(--space-8);
+  justify-content: flex-end;
+}
+
+/* ─────────────────────────── 01 §5.20 ItemCard ─────────────────────────── */
+
+.ew-item-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: var(--layout-item-card-width);
+  height: var(--layout-item-card-height);
+  padding: var(--space-16);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-sizing: border-box;
+}
+/* §5.20：角标行存在时高度 128 */
+.ew-item-card[data-with-badges='true'] {
+  height: var(--layout-item-card-height-with-badge);
+}
+.ew-item-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+/* 路径失效：整卡边框转 warning（02 §4.3「不静默改路径」的可见面） */
+.ew-item-card[data-tone='warning'] {
+  border-color: var(--warning);
+}
+.ew-item-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-item-card-icon {
+  color: var(--text-secondary);
+}
+.ew-item-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-body-lg-size);
+  font-weight: var(--font-body-lg-weight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ew-item-card-desc {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ew-item-card-badges {
+  display: flex;
+  gap: var(--space-8);
+  margin: auto 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-micro-size);
+}
+
 /* ─────────────────────────── 侧边栏与任务列表（01 §5.3–§5.5 / 04 §3）─────────────────────────── */
 
 .ew-sidebar {

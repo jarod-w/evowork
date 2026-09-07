@@ -55,6 +55,7 @@ import {
 } from '../components/panels.js';
 import {
   Badge,
+  Dialog,
   EmptyState,
   IconButton,
   PillButton,
@@ -329,8 +330,13 @@ function DeleteDialog({
       : describeDeleteMine(row.name);
 
   return (
-    <div className="ew-delete-confirm" role="alertdialog" aria-label={intent.title}>
-      <p className="ew-delete-confirm-title">{intent.title}</p>
+    <Dialog
+      title={intent.title}
+      variant="danger"
+      confirmLabel={intent.kind === 'delete-file' ? '删除文件' : '从资料库移除'}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
       <p className="ew-delete-confirm-body">{intent.body}</p>
       {intent.offersFileDeletion ? (
         <label className="ew-delete-also">
@@ -342,11 +348,7 @@ function DeleteDialog({
           同时删除磁盘上的文件
         </label>
       ) : null}
-      <PillButton onClick={onCancel}>取消</PillButton>
-      <PillButton variant="accent" onClick={onConfirm}>
-        {intent.kind === 'delete-file' ? '删除文件' : '从资料库移除'}
-      </PillButton>
-    </div>
+    </Dialog>
   );
 }
 
