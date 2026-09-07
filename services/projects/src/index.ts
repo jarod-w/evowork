@@ -7,3 +7,5 @@ export { isUnderRoot } from './membership.js';
 export type { ProjectRecord, RootState } from './types.js';
 export { buildProjectCard, ellipsizeMiddle } from './cards.js';
 export type { ArtifactLite, BuildCardInput, ProjectCard, ThreadLite } from './cards.js';
+export { NOISE_DIRS, resolveChildPath, sortEntries } from './tree.js';
+export type { DirEntryInput, TreeEntry } from './tree.js';

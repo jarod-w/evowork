@@ -19,7 +19,7 @@ function trimTrailing(path: string): string {
  * （容器里 HOME 没设就会这样）——那时"所有路径"都折成 `~/…`，
  * 于是任何基于 `~` 前缀的比较都会把整个文件系统判成空间内。
  */
-function toAbsolute(path: string, home: string): string {
+export function toAbsolute(path: string, home: string): string {
   const absoluteHome = home.replace(/\\/g, '/').replace(/\/+$/, '');
   const normalized = normalizePath(path, home);
   if (normalized === '~') return absoluteHome;
