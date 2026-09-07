@@ -40,4 +40,14 @@ describe('isUnderRoot', () => {
     expect(isUnderRoot('', '/w/proj', HOME)).toBe(false);
     expect(isUnderRoot('/', '/w/proj', HOME)).toBe(false);
   });
+
+  it('home 本身是 / 时，退化 root 依然不该把整个文件系统当成工作空间 —— 否则任意文件都能被当成空间内读走', () => {
+    expect(isUnderRoot('/', '/etc/passwd', '/')).toBe(false);
+    expect(isUnderRoot('', '/etc/passwd', '/')).toBe(false);
+  });
+
+  it('home 是 / 不该连累正常 root 的判断 —— 该拦的仍要拦，该放的仍要放', () => {
+    expect(isUnderRoot('/w/proj', '/etc/passwd', '/')).toBe(false);
+    expect(isUnderRoot('/w/proj', '/w/proj/a', '/')).toBe(true);
+  });
 });

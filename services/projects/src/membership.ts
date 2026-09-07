@@ -20,9 +20,16 @@ function trimTrailing(path: string): string {
  * **只在路径分隔符边界上匹配** —— 裸 `startsWith` 会让 `/work` 吞掉 `/workspace`。
  */
 export function isUnderRoot(root: string, candidate: string, home: string): boolean {
+  // 退化 root 的守卫必须打在原始参数上，不能指望 `normalizePath` 的返回值长什么样。
+  // 反例：home 本身就是 `/` 时，`normalizePath` 内部的 `normalizedHome` 会被算成空串，
+  // 于是任何绝对路径都会被折成 `~/...` 前缀——`root === '/'` 也不例外，
+  // 折完之后既不是 `''` 也不是 `'/'`，原来"判 normalizedRoot"的写法在这种 home 下完全失效。
+  // 这里只统一分隔符、去掉结尾斜杠，不依赖 normalizePath 的折叠行为：
+  // 结尾斜杠一去掉，空串与单独的 `/` 都会变成 `''`，所以只需要判一次 `''`。
+  const rawRoot = trimTrailing(root.replace(/\\/g, '/'));
+  if (rawRoot === '') return false;
+
   const normalizedRoot = trimTrailing(normalizePath(root, home));
-  // 空串与根目录都不接受：一条脏记录不该把全盘任务收进一个空间
-  if (normalizedRoot === '' || normalizedRoot === '/') return false;
   const normalizedCandidate = trimTrailing(normalizePath(candidate, home));
   return (
     normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`)
