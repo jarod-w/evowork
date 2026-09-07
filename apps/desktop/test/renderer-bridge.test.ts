@@ -91,6 +91,8 @@ function seedArtifact(store: Store, path: string): void {
 function fakeAdapter(overrides: Partial<Adapter> = {}): Adapter {
   return {
     listTasks: vi.fn(() => []),
+    // Task 9 之后 `getStartup` 的 workspaces 不再读它，但 scenarios/permissions 还要
+    catalog: vi.fn(() => undefined),
     mirrorProjectCreate: vi.fn(async () => undefined),
     mirrorProjectUpdate: vi.fn(async () => undefined),
     mirrorProjectDelete: vi.fn(async () => undefined),
@@ -107,6 +109,28 @@ function makeActions(overrides: Partial<Parameters<typeof createRendererActions>
     adapter: fakeAdapter(),
     ...overrides,
   });
+}
+
+/**
+ * 「项目」页 I/O 端口的假实现。**提到文件顶层**（本来在
+ * 「项目动作」那个 describe 块里）：Task 9 的「工作空间只有一处真源」
+ * 那个 describe 块也要用它，留在原 describe 里的话第二个 describe 看不见它。
+ */
+function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
+  return {
+    home: '/Users/li',
+    rootExists: () => true,
+    // 默认恒等：软链的负面用例各自覆盖它
+    realpath: async (p) => p,
+    // 默认恒不是软链：AGENTS.md 本身是软链的用例各自覆盖它
+    isSymlink: async () => false,
+    pickDirectory: async () => '/w/new',
+    readDir: async () => [{ name: 'src', isDirectory: true }],
+    openFolder: async () => {},
+    readTextFile: async () => undefined,
+    writeTextFile: async () => {},
+    ...overrides,
+  };
 }
 
 describe('事件翻译：适配层的任务视角 → 渲染层的组件视角', () => {
@@ -625,23 +649,6 @@ describe('网关访问令牌（内核从进程环境取它）', () => {
 });
 
 describe('项目动作（spec §2.6）', () => {
-  function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
-    return {
-      home: '/Users/li',
-      rootExists: () => true,
-      // 默认恒等：软链的负面用例各自覆盖它
-      realpath: async (p) => p,
-      // 默认恒不是软链：AGENTS.md 本身是软链的用例各自覆盖它
-      isSymlink: async () => false,
-      pickDirectory: async () => '/w/new',
-      readDir: async () => [{ name: 'src', isDirectory: true }],
-      openFolder: async () => {},
-      readTextFile: async () => undefined,
-      writeTextFile: async () => {},
-      ...overrides,
-    };
-  }
-
   it('新建空间会落库并回一份新列表 —— 渲染层不必再拉一次', async () => {
     const actions = makeActions({ projectPorts: ports() });
     const result = await actions.createProject({ name: '季度汇报', path: '/w/new' });
@@ -664,6 +671,65 @@ describe('项目动作（spec §2.6）', () => {
     });
     const result = await actions.createProject({ name: 'A', path: '/w/a' });
     expect(result.ok).toBe(true);
+  });
+
+  /*
+   * ── 补充：上面那条「镜像失败不影响本机建成」从没让 adapter 真的抛错 ──
+   *
+   * `fakeAdapter` 默认三个镜像方法都是 `async () => undefined`，那条测试只走了
+   * "resolve 但没给 kernelId" 这一支：把 `createProjectImpl` / `renameProject` /
+   * `removeProject` 里包镜像调用的 try/catch 删掉，它照样绿。下面三条真的让
+   * 对应方法 throw，断言本机操作照样成功、结果不变、异常没有从 action 里漏出去。
+   */
+
+  it('镜像创建抛错，本机仍然建成——try/catch 真的在挡异常，不是摆设', async () => {
+    const actions = makeActions({
+      projectPorts: ports(),
+      adapter: fakeAdapter({
+        mirrorProjectCreate: async () => {
+          throw new Error('kernel unreachable');
+        },
+      }),
+    });
+    const result = await actions.createProject({ name: 'A', path: '/w/a' });
+    expect(result.ok).toBe(true);
+    expect(result.projects.map((p) => p.name)).toContain('A');
+  });
+
+  it('镜像改名抛错，本机仍然改名成功', async () => {
+    const actions = makeActions({
+      projectPorts: ports(),
+      adapter: fakeAdapter({
+        mirrorProjectCreate: async () => 'k-1',
+        mirrorProjectUpdate: async () => {
+          throw new Error('kernel unreachable');
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const result = await actions.renameProject({ id, name: 'B' });
+    expect(result.ok).toBe(true);
+    expect(result.projects.map((p) => p.name)).toContain('B');
+  });
+
+  it('镜像删除抛错，本机仍然移除成功', async () => {
+    const actions = makeActions({
+      projectPorts: ports(),
+      adapter: fakeAdapter({
+        mirrorProjectCreate: async () => 'k-1',
+        mirrorProjectDelete: async () => {
+          throw new Error('kernel unreachable');
+        },
+      }),
+    });
+    const created = await actions.createProject({ name: 'A', path: '/w/a' });
+    const id = created.projects[0]?.id ?? '';
+
+    const result = await actions.removeProject({ id });
+    expect(result.ok).toBe(true);
+    expect(result.projects).toHaveLength(0);
   });
 
   it('移除只解绑：不碰磁盘，也不碰 artifact 索引', async () => {
@@ -944,5 +1010,53 @@ describe('项目动作（spec §2.6）', () => {
     const out = await actions.writeAgentsMemo({ id, content: 'x' });
     expect(out.ok).toBe(false);
     expect(writeTextFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('工作空间只有一处真源（spec §2.2）', () => {
+  it('getStartup 的 workspaces 全部来自 project_local', async () => {
+    const actions = makeActions({ projectPorts: ports() });
+    await actions.createProject({ name: '季度汇报', path: '/w/q3' });
+
+    const startup = await actions.getStartup();
+    expect(startup.workspaces.map((w) => w.name)).toEqual(['季度汇报']);
+    expect(startup.workspaces[0]?.path).toBe('/w/q3');
+  });
+
+  it('pickWorkspace 选完就建成空间 —— 首运行第②步选的目录必须活到下次启动', async () => {
+    const actions = makeActions({
+      projectPorts: ports({ pickDirectory: async () => '/w/picked' }),
+    });
+    const picked = await actions.pickWorkspace();
+    expect(picked.path).toBe('/w/picked');
+
+    const startup = await actions.getStartup();
+    expect(startup.workspaces.map((w) => w.path)).toContain('/w/picked');
+  });
+
+  it('取消选择不建空间', async () => {
+    const actions = makeActions({ projectPorts: ports({ pickDirectory: async () => undefined }) });
+    await actions.pickWorkspace();
+    const startup = await actions.getStartup();
+    expect(startup.workspaces).toHaveLength(0);
+  });
+
+  /*
+   * ── 补充：首运行历史上是唯一不过路径闸门的入口 ──
+   *
+   * `pickWorkspace` 以前直接落 `meta`，从不调 `classifyPath`；`createProject` /
+   * `importProject` 都过闸门，首运行单独绕过去。这条测试证明改完之后
+   * 三个入口一致：选中一个硬拦截目录（如 `~/.ssh`）既不建空间，
+   * 也不能让调用方把它当成"选成功了"。
+   */
+  it('首运行选中硬拦截目录被拒——不建空间，也不能读成"选成功了"', async () => {
+    const actions = makeActions({
+      projectPorts: ports({ pickDirectory: async () => '/Users/li/.ssh' }),
+    });
+    const picked = await actions.pickWorkspace();
+    expect(picked.path).toBeUndefined();
+
+    const startup = await actions.getStartup();
+    expect(startup.workspaces).toHaveLength(0);
   });
 });

@@ -136,27 +136,6 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
 export const ONBOARDED_KEY = 'evowork.onboarded';
 
 /**
- * 本机记录的工作空间（JSON 数组）。
- *
- * 这正是 `DEGRADATION[project/list]` 写的兜底：「用本机表自己管工作空间
- * （只记路径与名称，不做 thread 归属）」。干净机器上内核一个 project 都没有，
- * 而首运行**要求**至少选一个工作空间 —— 没有这个键，引导第②步就是死路。
- */
-export const LOCAL_WORKSPACES_KEY = 'evowork.workspaces';
-
-/** 读本机记录的工作空间路径。坏数据当作没有，不让一条脏记录挡住启动。 */
-export function readLocalWorkspaces(store: Store): readonly string[] {
-  const raw = readMeta(store.db, LOCAL_WORKSPACES_KEY);
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
  * 「项目」页要的 I/O 端口。
  *
  * **全部注入**，与 `pageData` / `officeRuntime` 同一条理由：这个文件的其余部分是纯翻译，
@@ -259,7 +238,14 @@ export interface RendererBridgeOptions {
    */
   readonly applyModelAccess?:
     ((input: ApplyModelAccessInput) => Promise<ModelCatalogResult>) | undefined;
-  /** 打开系统目录选择框（首运行第②步）。没有它时 `pickWorkspace` 返回 undefined */
+  /**
+   * 打开系统目录选择框（首运行第②步）。
+   *
+   * 这个文件里没人读它：`pickWorkspace` 走 `projectPorts.pickDirectory`
+   * （与 `importProject` 同一个端口，理由见 `createProjectImpl` 上的注释）。
+   * 字段留着只是因为 `service-host.ts` 仍把它当独立字段传进来 ——
+   * 那一侧把 electron 的真实选择框同时接进这里与 `projectPorts`。
+   */
   readonly pickDirectory?: (() => Promise<string | undefined>) | undefined;
   /**
    * 办公扩展的探测与安装（08 §4）。注入而不是在这里直接调安装器：
@@ -801,17 +787,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     /**
-     * 选一个工作空间目录（首运行第②步，也是「项目」页做出来之前唯一的入口）。
+     * 选一个工作空间目录（首运行第②步）。
      *
-     * 选完**立刻落 `meta`**，不等引导走完：用户可能选了目录之后关掉窗口，
+     * 选完**立刻建成一个空间**，不等引导走完：用户可能选了目录之后关掉窗口，
      * 而下次打开又从"一个工作空间都没有"开始，等于白选。
+     *
+     * 走 `createProject` 而不是自己写一遍落库：路径闸门（10 §5）与镜像
+     * 都在那条路径上，绕过去等于首运行是唯一不过闸门的入口。
+     *
+     * 返回 `{}` 有两种成因：用户取消（`pickDirectory` 给 undefined），或者
+     * 闸门拒绝了选中的目录（`createProjectImpl` 返回 `ok: false`）。**两者
+     * 对调用方而言必须一样**——都是"没有一个新空间可用"，不能把"选了但被拒"
+     * 读成"选成功了"。渲染层（`app.tsx`）只看 `r.path` 是否为真，两种情况
+     * 都不会把任何路径加进已选列表，行为上正是这个约束要求的样子。
      */
     async pickWorkspace(): Promise<{ path?: string }> {
-      const picked = await options.pickDirectory?.();
-      if (!picked) return {};
-      const next = [...new Set([...readLocalWorkspaces(store), picked])];
-      writeMeta(store.db, LOCAL_WORKSPACES_KEY, JSON.stringify(next));
-      return { path: picked };
+      const ports = options.projectPorts;
+      const picked = await ports?.pickDirectory();
+      if (picked === undefined) return {};
+      // 同样走 `createProjectImpl`，理由见 `importProject` 上的注释（`this` 在这里是 undefined）
+      const result = await createProjectImpl({
+        name: picked.slice(picked.lastIndexOf('/') + 1) || picked,
+        path: picked,
+      });
+      return result.ok ? { path: picked } : {};
     },
 
     /** 首次引导走完（02 §9）。落 `meta` 表 —— 换窗口、清缓存都不该让人重走一遍。 */
@@ -1097,26 +1096,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
         cases: options.cases ?? [],
         onboarded: readMeta(store.db, ONBOARDED_KEY) === '1',
         /*
-         * 工作空间 = 内核的 project **加上**本机自己记的那些。
+         * 工作空间**只有一处真源**：本机 `project_local`（spec D-P1）。
          *
-         * 后者是 `DEGRADATION[project/list]` 写明的兜底，也是干净机器上唯一的来源：
-         * 内核一个 project 都没有，而首运行要求至少选一个。只取内核那一份的话，
-         * 用户在引导里选的目录选完就消失了。
+         * 2026-09-07 之前这里是"内核 catalog + meta 里的 JSON 数组"拼起来的，
+         * 加上 `thread_projection.cwd` 一共三处 —— 而三处对"有哪些空间"
+         * 的回答从来没有对齐过。内核那份现在只是镜像，不供数。
          */
-        workspaces: [
-          ...(catalog?.workspaces ?? []).map((w) => ({
-            id: w.id,
-            name: w.name,
-            ...(w.path !== null ? { path: w.path } : {}),
-          })),
-          ...readLocalWorkspaces(store)
-            .filter((path) => !(catalog?.workspaces ?? []).some((w) => w.path === path))
-            .map((path) => ({
-              id: `local:${path}`,
-              name: path.slice(path.lastIndexOf('/') + 1) || path,
-              path,
-            })),
-        ],
+        workspaces: projects.list().map((row) => ({
+          id: row.id,
+          name: row.name,
+          ...(row.roots[0] !== undefined ? { path: row.roots[0] } : {}),
+        })),
         tasks: adapter
           .listTasks({})
           .map((t) => store.threads.get(t.threadId))
