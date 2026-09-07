@@ -67,5 +67,14 @@ export function resolveChildPath(root: string, requested: string, home: string):
   if (!isUnderRoot(root, requested, home)) return null;
   // 到这里说明 requested 已经在 root 之内；去掉结尾斜杠只是让返回值形态统一，
   // 不影响安全判定——判定已经在 isUnderRoot 里做完了。
-  return toAbsolute(requested, home).replace(/\/+$/, '') || '/';
+  const resolved = toAbsolute(requested, home).replace(/\/+$/, '');
+  // 这一步理论上到不了：isUnderRoot 已经先拒绝了 absoluteRoot 退化成 '' 或 '/'
+  // 的情况（见 membership.ts），而 requested 在 root 之内意味着它至少和
+  // 非空、非 '/' 的 absoluteRoot 一样长，去掉结尾斜杠也不可能削成空串。
+  // 但这是个安全判定函数，不是"反正走不到就无所谓"——它写在这里是为了防
+  // membership.ts 那道守卫将来被削弱：那时这个分支会第一次真的被触发，
+  // 而"空字符串"和"/"只差一个字面量。默认落到 '/' 就是把"我不确定"
+  // 悄悄答成"整个文件系统都能读"。所以宁可返回 null（拒绝），
+  // 也不给一个看起来无害、实际上是最大权限的兜底值。
+  return resolved === '' ? null : resolved;
 }

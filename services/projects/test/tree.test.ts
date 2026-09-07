@@ -65,4 +65,84 @@ describe('resolveChildPath', () => {
   it('空 root 一律拒绝 —— 一条脏记录不该变成读全盘的入口', () => {
     expect(resolveChildPath('', '/anything', HOME)).toBeNull();
   });
+
+  // Task 4 实现时用一次性探针跑过 home = '/' 与 home = '' 两组退化输入，
+  // 确认过没问题就把探针文件删了——committed 用例里从没落过这条轴。
+  // membership.ts 已经在这条轴上摔过两次（home 恰好是 '/' 时 `~` 折叠吞掉
+  // 整个文件系统、以及 trimTrailing 只去一个斜杠放过 `//`），toAbsolute
+  // 之所以在两个文件间共享，就是为了不让这类修复分叉成两份。这里把当时的
+  // 探针钉成表，回归了就是 CI 红，而不是要等到下一次有人手工再跑一遍。
+  describe('degenerate home（home 退化成 / 或 空串时不能失守）', () => {
+    const degenerateHomes = ['/', ''] as const;
+
+    interface Row {
+      readonly home: string;
+      readonly desc: string;
+      readonly root: string;
+      readonly requested: string;
+      readonly expectNull: boolean;
+      readonly expected?: string;
+    }
+
+    it.each<Row>(
+      degenerateHomes.flatMap((home): Row[] => [
+        {
+          home,
+          desc: `home = ${JSON.stringify(home)} 时，正常 root 下的子路径仍要能读 —— 退化 home 不该连累合法请求`,
+          root: '/w/proj',
+          requested: '/w/proj/src',
+          expectNull: false,
+          expected: '/w/proj/src',
+        },
+        {
+          home,
+          desc: `home = ${JSON.stringify(home)} 时，越界请求仍要被拒 —— 否则 home 一退化，/etc/passwd 就被当成空间内`,
+          root: '/w/proj',
+          requested: '/etc/passwd',
+          expectNull: true,
+        },
+        {
+          home,
+          desc: `home = ${JSON.stringify(home)} 时，root 为空串要拒绝 —— 空 root 不能因为 home 也退化就蒙混过关`,
+          root: '',
+          requested: '/anything',
+          expectNull: true,
+        },
+        {
+          home,
+          desc: `home = ${JSON.stringify(home)} 时，root 为 '/' 要拒绝 —— 否则整个文件系统被当成一个空间`,
+          root: '/',
+          requested: '/anything',
+          expectNull: true,
+        },
+        {
+          home,
+          desc: `home = ${JSON.stringify(home)} 时，root 为 '//' 要拒绝 —— 只去一个结尾斜杠会把它误判成 '/'`,
+          root: '//',
+          requested: '/anything',
+          expectNull: true,
+        },
+        {
+          home,
+          desc: `home = ${JSON.stringify(home)} 时，root 为 '/..' 要拒绝 —— 解析完 '..' 就是文件系统根，不能放行`,
+          root: '/..',
+          requested: '/anything',
+          expectNull: true,
+        },
+      ]),
+    )('$desc', ({ root, requested, home, expectNull, expected }) => {
+      const out = resolveChildPath(root, requested, home);
+      if (expectNull) {
+        expect(out).toBeNull();
+      } else {
+        expect(out).toBe(expected);
+      }
+    });
+  });
+
+  // Finding 1 的 fail-closed 分支（toAbsolute(...) 去掉结尾斜杠后削成空串）
+  // 在当前 isUnderRoot 的退化根守卫下不可达：isUnderRoot 通过就意味着
+  // absoluteRoot 非空且不是 '/'，而 requested 落在 root 之内的前提下，
+  // 它的绝对形式至少和 absoluteRoot 一样长，去掉结尾斜杠也不可能变空串。
+  // 这里不伪造一条能命中它的输入——写不出真实输入，就不该写一条假测试。
 });

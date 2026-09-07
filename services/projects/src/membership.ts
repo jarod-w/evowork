@@ -18,6 +18,9 @@ function trimTrailing(path: string): string {
  * 判定必须在**绝对空间**里做。折叠后的 `~` 是相对 home 的，而 home 本身可能是 `/`
  * （容器里 HOME 没设就会这样）——那时"所有路径"都折成 `~/…`，
  * 于是任何基于 `~` 前缀的比较都会把整个文件系统判成空间内。
+ *
+ * 现在 `tree.ts` 的 `resolveChildPath` 也在导入这个函数——不是本文件私有实现了，
+ * 改它的行为会同时影响两处判定。
  */
 export function toAbsolute(path: string, home: string): string {
   const absoluteHome = home.replace(/\\/g, '/').replace(/\/+$/, '');
