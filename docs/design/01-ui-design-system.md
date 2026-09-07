@@ -460,7 +460,7 @@ ComposerShell   --r-xl · --bg-sunken · --border-subtle · --shadow-md · paddi
 ### 5.34 Dialog（模态壳）
 
 宽 420（内容可撑到 520），`--r-lg`，`--bg-surface` + `--shadow-lg`，内边距 20。
-层级 `300 模态`（§1 的 z-index 表里早已留位）。结构：
+层级 `300 模态`（§2.8 的 z-index 表里早已留位）。结构：
 
 ```
 标题 title-2
@@ -468,11 +468,16 @@ ComposerShell   --r-xl · --bg-sunken · --border-subtle · --shadow-md · paddi
 [弹性] [取消 PillButton] [主动作 PillButton accent|danger]
 ```
 
-`role="dialog"`；**确认破坏性动作时用 `role="alertdialog"`**。`Esc` 关闭（§4 的逐层关闭链），
+`role="dialog"`；**确认破坏性动作时用 `role="alertdialog"`**。`Esc` 关闭（§6.2 的逐层关闭链），
 打开时焦点落在第一个可聚焦元素，关闭后还给触发它的按钮。
 
-**它是仓库里唯一的模态实现**：2026-09-07 之前 `library.tsx` 私搭过一个 `ew-delete-confirm`，
-两个各写一遍会让「删文件还是删索引」的措辞纪律在其中一处慢慢走样，所以那个已并入本组件。
+**它是已登记的模态壳，不是既成事实**：新模态一律用它搭。渲染层眼下还有三处各写一遍的
+确认面板——`views/library.tsx` 的 `ew-delete-confirm`、`components/changes-view.tsx` 的
+`ew-revert-confirm`、`components/composer.tsx` 的 `ew-danger-confirm`（`components/approval-card.tsx`
+的 `role="alertdialog"` 不算，那是 10 §3 规格下的内联审批卡，不是模态）。实现 Dialog 时只并入
+`library.tsx` 这一处，刻意把改动面控制住；`changes-view.tsx` 与 `composer.tsx` 两处**登记为
+待还债务**，之后再逐个折进来。理由不是好看：三份各写一遍的确认文案，「删文件」还是
+「删索引」这种措辞纪律会在其中一处慢慢走样而没人发现，直到用户真的删错了东西。
 
 ---
 

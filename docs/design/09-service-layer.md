@@ -115,7 +115,7 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 
 | 实验方法                              | 缺失时的降级                                                                             | 用户可见影响                                                                 |
 | ------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `project/*`                           | **本机 `project_local` / `project_root` 两张权威表是真源**，内核只做尽力镜像；镜像失败不影响任何功能 | 无。新建的空间只在这台电脑上可见（`project/create` 不可用时） |
+| `project/*`                           | **本机 `project_local` / `project_root` 两张权威表是真源**，内核只做尽力镜像；镜像失败不影响任何功能 | 无。新建的空间只在这台电脑上可见（`project/create` 不可用时）    |
 | `thread/queue/*`                      | 前端本地队列：执行中的输入先存本机，`turn/completed` 后自动发送                          | 队列不可跨客户端可见（单客户端场景无影响）                                   |
 | `thread/search` / `searchOccurrences` | 只做标题搜索（`thread/list?searchTerm`）+ 本机投影表缓存的消息摘要                       | 对话内搜索能力下降，需明确提示「内容搜索暂不可用」                           |
 | `turn/start.collaborationMode`        | 退回 `turn/start.model` + `effort`，developer instructions 通过 `additionalContext` 注入 | Ask 模式的指令强度下降 → 此时**必须**依赖 `ToolContributor` 过滤写工具（D8） |

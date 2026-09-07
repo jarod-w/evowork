@@ -34,7 +34,7 @@ EvoWork
 | `/home`                | 首页              | 两栏                 | 场景目录（本机）· `model/list` · `permissionProfile/list` · `project/list` (exp) |
 | ~~`/assistant`~~       | 助理（**已下架**）| —                    | —                                                                                |
 | `/projects`            | 项目列表          | 两栏                 | `project/list` (exp)                                                             |
-| `/projects/:projectId` | 空间详情          | 三栏                 | `project/read` (exp) · `thread/list?projectId`                                   |
+| `/projects/:projectId` | 空间详情          | 三栏                 | 本机 `project_local`/`project_root`（真源）· 内核镜像 · `thread/list?projectId`  |
 | `/catalog/experts`     | 专家目录          | 两栏                 | 本机角色目录 + `plugin/list`                                                     |
 | `/catalog/skills`      | 技能目录          | 两栏                 | `skills/list` · `plugin/installed` · 私有源索引                                  |
 | `/catalog/connectors`  | 连接器目录        | 两栏                 | `mcpServerStatus/list` · 本机连接器目录                                          |
@@ -102,7 +102,7 @@ EvoWork
 | 视图                 | 内容                                                                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 列表 `/projects`     | 目录式。卡片 = 空间名 + 根路径（省略中间段）+ 任务数 + 最近活动时间 + 产物数。动作：新建、导入现有文件夹、在此空间新建任务、打开所在文件夹、移除 |
-| 详情 `/projects/:id` | 三栏。中栏 = 该空间的任务列表 + 文件树；主区 = 空间概览（**最近的文件动作**、绑定的自动化、空间级记忆 `AGENTS.md` 编辑入口） |
+| 详情 `/projects/:id` | 三栏。中栏 = 该空间的任务列表 + 文件树；主区 = 空间概览（**最近的文件动作**、绑定的自动化、空间级记忆 `AGENTS.md` 编辑入口）                     |
 
 **「最近产物」与「最近变更」已合并为「最近的文件动作」**（2026-09-07）：两者在数据上
 是 `artifact` 表的同一批行（`operation_kind` 区分生成与修改），分成两块会让同一个文件
