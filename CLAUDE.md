@@ -88,6 +88,8 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 | K6（不出网） | `services/ingest/test/pipeline.test.ts` 扫 **整个 `src/` 目录**里的 `fetch` / `node:http` | 「解析管道里不该出现 fetch(」——**云端兜底是结构上不存在，不是"默认关闭"**。2026-09-07 从"手工列的文件名单"收紧成整目录：办公扩展的下载器被放进了另一个包（`services/runtime-installer`），这里就不必留口子 |
 | Q14（不落盘正文） | `packages/logging` 的类型 + 字段注册表 + 泄露检测 | 没有接受自由字符串的日志入口；未注册的字段被**静默丢掉** |
 | 01 §9（token-only） | eslint `@evowork/no-style-literals` + `test/styles.test.ts` 扫 CSS | 「组件里不许出现颜色字面量」—— 它拦下过 mermaid 主题的硬编码兜底色 |
+| D10 / Q31（账号是凭据） | `services/store/test/schema-no-tenancy.test.ts` 扫**两个迁移器的全部 DDL** | 「本机表不许有 `tenant_id`」—— 2026-09-08 首次跑它就抓到 `automation` 里两个从没人读写的列（迁移 v3 已删） |
+| Q34（密钥不落明文盘） | `apps/desktop/test/secret-store.test.ts` + IPC 载荷扫描 | 「渲染层收到的任何 payload 里不许出现密钥」；钥匙串不可用时不写明文，除非用户显式选了那条路 |
 
 ---
 
@@ -98,6 +100,9 @@ evowork/
   docs/                  设计与功能文档（唯一真源，改架构先改这里）
   apps/
     desktop/             桌面壳 + 三栏 UI（侧边栏/对话区/结果区）；Q1=A 后它同时是本机服务的宿主
+    web/                 【云端】账号页 + 租户管理端 + 分享页（Q32=B 的密码表单**只在这里**）。
+                         **M10b 才有内容**，现在这一格是空的 —— 登记在此是因为 Q37=B 之后
+                         「管理端」必须有个落点，而客户端里**没有管理界面**（11 §13.1）
   services/              L3 服务层。Q1=A：下面前五个随桌面 App 在**本机**常驻，后两个在**云端**
     kernel-adapter/      【本机】app-server JSON-RPC v2 适配层（M2a）—— **K2 边界的唯一实现处**
     store/               【本机】本机 sqlite **16 张表** + 两个迁移器 + 状态投影 + automation/artifact/project 三个 repo（M2a，见 09 §4）
@@ -255,11 +260,15 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | Q19 团队空间 | **只读订阅** | 复用「企业私有源索引」这一条云端职责，不新增；写入方向走 Q10 分享通道。「与我共享」收件箱不做 |
 | **Q20 助理** | **一个常驻的特殊 Thread** | 固定 cwd `~/.evowork/assistant/`、默认 Ask、不进任务列表、可 `thread/fork` 升级；别为它自建会话存储 |
 | **Q23 桌面壳** | **Electron** | 不用 Tauri（体积优势被随包 Python 运行时抹平，而侧载子进程/自动更新/公证的成熟度 Electron 更高） |
-| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 34 个）；**出现清单外的组件先补进 01** |
+| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 35 个）；**出现清单外的组件先补进 01** |
 | **Q25 品牌** | 代码与文档统一 **EvoWork** | WorkBuddy 只是候选对外名；品牌层 = `--accent` 系列 + appName + logo + mascot 四项 token |
 | Q26 首发平台 | **macOS 首发**，Windows 随 M4 结论 | Windows 隔离不足时把 `evowork-full` 标 `allowed:false` **并给原因页**，不静默降级 |
 | **Q27 M2a** | **单列里程碑**（服务层与协议适配 2–3 人周） | 前端**不得**直连实验方法，一律经适配层（破 K2 的最常见方式就是把它挤压掉） |
 | Q29 自建推理 | **无** | 网关保留私有 endpoint + 自定义鉴权的配置项（成本≈0），不为它排期 |
+| **Q30 未登录能否用** | **能用**，BYOK 与登录并列 | 未登录可用全部执行面、**只能用自定义模型**；未登录时对我们的域名**零请求**（连模型清单都不拉），拔网线后 BYOK 仍可用 |
+| **Q31 多账号共机** | **不做产品内隔离** | 隔离边界是 **OS 账号**。**本机 sqlite 的任何表都不许有 `user_id` / `tenant_id`**（D10）—— 有 schema 扫描守着 |
+| **Q34 密钥存哪** | **Electron `safeStorage`** | 密文落 `~/.evowork/secrets.bin`；**不读回渲染层**（只显示后四位）；钥匙串不可用时**显式让用户选**，不静默写明文 |
+| **Q37 管理员是谁** | **租户管理员** | 管理端在 `apps/web/`，客户端**没有管理界面**；管理端 API 的类型里没有能装内容的字段 |
 
 **本期不做**：多模态视频 / 3D（Q4）、公开技能市场与上架审核（Q5）、国内生态集成（Q9）、设计文档第 15 章「下一代」除「审计留痕」与「单任务预算」外的方向（Q12）、**个人云盘（Q17）**、**团队空间双向协作与「与我共享」（Q19）**、**积分/运营活动体系（Q18）**。
 
@@ -301,7 +310,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 4. 是否触碰 K1–K7 中的任何一条？触碰了就先改文档。
 5. 依赖的内核 `path:line` 还成立吗？（`git log HEAD..origin/main`）
 6. 有没有引入未经显式授权的出网路径？（K6）
-7. 要用一个 01 §5 清单之外的 UI 组件吗？**先把它补进 01 §5**（现在是 34 个 —— 第 34 个 Dialog 是 2026-09-07 为「项目」页加的，按这条规矩先登记后实现）。
+7. 要用一个 01 §5 清单之外的 UI 组件吗？**先把它补进 01 §5**（现在是 35 个 —— 第 35 个 SecretInput 是 2026-09-08 为 M10a 的设置页加的；它原本被计划成第 34 个，而那个号当天已被 Dialog 占了 —— 登记制度就是在这种时候起作用的）。
 
 ---
 
@@ -316,5 +325,6 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | U3 | misfire 补偿的真实体验与文案一致（R9） | 真机关机一夜再唤醒。单测能证明落库顺序对，证明不了 OS 的休眠行为 |
 | U4 | 三平台签名 / 公证链路可用 | P0-5 的证书 |
 | U5 | Windows 隔离强度足以支撑 `evowork-full`（Q6 / Q26） | 一台 Windows 机器。当前 `WINDOWS_ISOLATION = 'unknown'`，**按保守侧走** |
+| U6 | `safeStorage` 在真机上的行为（M10a / Q34） | 三台真机。测试里的 `safeStorage` 是注入的假的 —— 首次加密会不会弹钥匙串授权、换 OS 账号后解密失败的表现、以及**没有 keyring 的 Linux 上那两个方法到底返回什么**（我们按 `basic_text` = 不可用处理，那是照文档写的） |
 
 **U2 已于 2026-09-05 关闭**：三家模型全部对真实 endpoint 实测过，并因此改出三个真缺陷。
