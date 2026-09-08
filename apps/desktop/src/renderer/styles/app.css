@@ -874,6 +874,13 @@ textarea {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 11 §4.2：凭据来源跟着 provider/model 一起显示，不挤掉名字、也不折行 */
+.ew-model-source {
+  flex-shrink: 0;
+  font-size: var(--font-micro-size);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
 .ew-model-caps {
   display: flex;
   flex-shrink: 0;

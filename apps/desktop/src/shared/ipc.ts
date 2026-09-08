@@ -170,7 +170,7 @@ export interface ModelOptionView {
    * 后者是 K6 隐私叙事的一部分：一个用户以为在用自己的密钥、实际走了托管调用，
    * 是隐私承诺层面的问题，不是计费问题。
    */
-  readonly credentialSource: string;
+  readonly credentialSource: 'byok' | 'hosted' | 'private';
   /** 能力位有没有被真实 endpoint 实测过。自定义模型恒为 false（那是用户的声明） */
   readonly verified: boolean;
   /**

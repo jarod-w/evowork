@@ -54,6 +54,12 @@ describe('ModelSelect 下拉的布局约束（01 §5.15）', () => {
     expect(rule).toContain('flex-shrink: 0');
     expect(rule).toContain('white-space: nowrap');
   });
+
+  it('凭据来源标签不收缩、不折行（11 §4.2：下拉里要看得见花谁的钱）', () => {
+    const rule = /\.ew-model-source\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('flex-shrink: 0');
+    expect(rule).toContain('white-space: nowrap');
+  });
 });
 
 /*

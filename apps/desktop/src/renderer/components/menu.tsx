@@ -277,6 +277,7 @@ export interface ModelOption {
   readonly label: string;
   readonly provider: string;
   readonly capabilities: readonly ModelCapability[];
+  readonly credentialSource?: 'byok' | 'hosted' | 'private' | undefined;
 }
 
 /** 标签最长 28 字符，超出**中间省略**（01 §5.15）。 */
@@ -285,6 +286,16 @@ export function truncateModelLabel(label: string, max = 28): string {
   const keep = max - 1;
   const head = Math.ceil(keep / 2);
   return `${label.slice(0, head)}…${label.slice(label.length - (keep - head))}`;
+}
+
+const CREDENTIAL_SOURCE_LABEL: Readonly<Record<string, string>> = {
+  byok: '自有密钥',
+  hosted: '托管',
+  private: '私有',
+};
+
+function credentialLabel(source: string): string {
+  return CREDENTIAL_SOURCE_LABEL[source] ?? source;
 }
 
 /**
@@ -372,6 +383,11 @@ export function ModelSelect({
                      * 匿名文本不生效 —— 名字会被硬裁掉而不是给出省略号。
                      */}
                     <span className="ew-model-name ew-mono">{model.label}</span>
+                    {model.credentialSource ? (
+                      <span className="ew-model-source">
+                        {credentialLabel(model.credentialSource)}
+                      </span>
+                    ) : null}
                     <span className="ew-model-caps">
                       {model.capabilities.map((cap) => (
                         <span
