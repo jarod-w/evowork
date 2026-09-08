@@ -494,10 +494,43 @@ describe('侧边栏的六个入口都要有落点', () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /自动化/ }));
+    expect(
+      (await screen.findByRole('button', { name: '新建任务' })).getAttribute('aria-current'),
+    ).toBe('page');
+
+    fireEvent.click(screen.getByRole('button', { name: /自动化/ }));
     expect(await screen.findByText('还没有定时任务')).toBeTruthy();
     // Q8 / R9：这两条要在**看到列表时**就说，不是等它漏跑了再解释
     expect(screen.getByText(/关机期间不会执行/)).toBeTruthy();
+    // 02 §2：主区换了，侧边栏选中态也要跟上。猜成「没选任务 = 首页」会让高亮停在「新建任务」
+    expect(screen.getByRole('button', { name: '自动化' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(
+      screen.getByRole('button', { name: '新建任务' }).getAttribute('aria-current'),
+    ).toBeNull();
+  });
+
+  it('点「资料库」点亮的是「资料库」，从「更多」进设置则哪一项都不点亮', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /资料库/ }));
+    expect(screen.getByRole('button', { name: '资料库' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(
+      screen.getByRole('button', { name: '新建任务' }).getAttribute('aria-current'),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    await waitFor(() => expect(bridge.getModelAccess).toHaveBeenCalled());
+    // 02 §2：`/settings/*` 不点亮任何一级导航（从「更多」进入）
+    expect(
+      screen.getByRole('button', { name: '新建任务' }).getAttribute('aria-current'),
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: '资料库' }).getAttribute('aria-current')).toBeNull();
   });
 
   /*

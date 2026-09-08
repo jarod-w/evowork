@@ -193,6 +193,26 @@ const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
   more: 'more',
 };
 
+/**
+ * 主内容区 → 侧边栏选中项（02 §2）。
+ *
+ * 设置 / 审计从「更多」进入，不点亮任何一级导航；任务工作台点亮列表行而不是入口。
+ * 缺这一层的话 Sidebar 会把「没选任务」猜成首页，自动化页看起来就像还停在「新建任务」。
+ */
+const VIEW_TO_NAV: Readonly<Partial<Record<MainView, string>>> = {
+  task: 'new-task',
+  projects: 'projects',
+  catalog: 'catalog',
+  automations: 'automations',
+  library: 'library',
+  more: 'more',
+};
+
+function navIdForView(view: MainView, activeTaskId: string | null): string | undefined {
+  if (view === 'task' && activeTaskId !== null) return undefined;
+  return VIEW_TO_NAV[view];
+}
+
 declare global {
   interface Window {
     readonly evowork?: EvoworkBridge;
@@ -990,6 +1010,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         tasks={tasks}
         sections={[]}
         selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
+        activeNavId={navIdForView(view, activeTaskId)}
         onSelect={(id) => {
           setActiveTaskId(id);
           setView('task');

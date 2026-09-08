@@ -193,6 +193,25 @@ describe('行操作（04 §3.3）', () => {
   });
 });
 
+describe('一级导航选中态（02 §2）', () => {
+  it('宿主说现在在自动化页时，点亮的是「自动化」不是「新建任务」', () => {
+    renderSidebar({ activeNavId: 'automations' });
+    expect(screen.getByRole('button', { name: '自动化' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(
+      screen.getByRole('button', { name: '新建任务' }).getAttribute('aria-current'),
+    ).toBeNull();
+  });
+
+  it('没指定导航时不擅自点亮「新建任务」—— 那是首页的事，猜错会让目录页看起来像还在首页', () => {
+    renderSidebar();
+    expect(
+      screen.getByRole('button', { name: '新建任务' }).getAttribute('aria-current'),
+    ).toBeNull();
+  });
+});
+
 describe('本机磁盘占用（Q17：不是云配额）', () => {
   it('动作是「清理」而不是「升级」', () => {
     const onCleanup = vi.fn();

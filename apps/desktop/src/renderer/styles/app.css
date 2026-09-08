@@ -1454,6 +1454,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--space-8);
+  /* 包进定位锚点后不再是 sidebar-nav 的 flex 子项，不拉满就会让选中灰只盖住文字那一半 */
+  box-sizing: border-box;
+  width: 100%;
   height: var(--layout-nav-item-height);
   padding: 0 var(--space-8);
   border: 0;
@@ -1532,11 +1535,15 @@ textarea {
 }
 .ew-task-row-anchor {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 .ew-task-item {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  width: 100%;
   height: var(--layout-nav-item-height);
   border-radius: var(--r-sm);
 }
@@ -2698,8 +2705,13 @@ textarea {
   color: var(--text-tertiary);
 }
 
-/* 「更多」是一个菜单而不是一页（02 §4.7）：给它一个定位锚点 */
+/*
+ * 「更多」是一个菜单而不是一页（02 §4.7）：给它一个定位锚点。
+ * 必须是纵向 flex，否则里面的 NavItem 按内容收缩，选中灰只盖住「更多 灵感」那半截。
+ */
 .ew-more-anchor {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }

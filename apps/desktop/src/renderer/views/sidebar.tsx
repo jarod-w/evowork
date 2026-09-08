@@ -276,9 +276,14 @@ export function Sidebar(props: SidebarProps) {
   const closeMenu = useCallback(() => setMenuFor(null), []);
 
   const nav = props.nav ?? MAIN_NAV;
-  // 不在任何任务里时点亮「新建任务」（02 §2 的选中映射：`/tasks/:id` 不点亮任何导航项）
-  const activeNavId =
-    props.activeNavId ?? (props.selectedId === undefined ? 'new-task' : undefined);
+  /*
+   * 选中映射由宿主传入（02 §2）：首页 → new-task；目录页 → 对应 id；
+   * `/tasks/:id`、设置、审计 → 不传，不点亮任何一级导航。
+   *
+   * 不要在「没选任务」时擅自点亮「新建任务」：目录页同样没有 selectedId，
+   * 猜成首页会让用户看到主区已经是自动化、侧边栏却还停在新建任务。
+   */
+  const activeNavId = props.activeNavId;
 
   return (
     <nav className="ew-sidebar" aria-label="侧边栏">

@@ -266,3 +266,34 @@ describe('主内容区的每个根类都要参与 .ew-app 的 flex 布局', () =
     expect(rule).toContain('overflow-y: auto');
   });
 });
+
+/*
+ * 「更多」包在定位锚点里、「任务」行包在 Popover 锚点里，都不再是 sidebar-nav
+ * 的直接 flex 子项。按钮默认按内容收缩，选中灰就只盖住文字那一半 ——
+ * 用户看到的是主区已经换页、侧边栏高亮却是半截胶囊。
+ * jsdom 量不出布局，所以钉在 CSS 上。
+ */
+describe('侧边栏选中行铺满整行（01 §5.3 / §5.5）', () => {
+  it('NavItem 自己拉满宽度，不依赖父级 flex stretch', () => {
+    const rule = /\.ew-nav-item\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('width: 100%');
+    expect(rule).toContain('box-sizing: border-box');
+  });
+
+  it('「更多」的锚点是纵向 flex，里面的 NavItem 才能被拉满', () => {
+    const rule = /\.ew-more-anchor\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('display: flex');
+    expect(rule).toContain('flex-direction: column');
+    expect(rule).toContain('width: 100%');
+  });
+
+  it('任务行同样拉满，选中灰不会停在标题那一半', () => {
+    const item = /\.ew-task-item\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(item).toContain('width: 100%');
+    expect(item).toContain('box-sizing: border-box');
+    const anchor = /\.ew-task-row-anchor\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(anchor).toContain('display: flex');
+    expect(anchor).toContain('flex-direction: column');
+    expect(anchor).toContain('width: 100%');
+  });
+});
