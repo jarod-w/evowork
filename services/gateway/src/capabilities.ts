@@ -54,6 +54,9 @@ export interface ModelEntry {
 
 export type ProviderId = 'deepseek' | 'moonshot' | 'zhipu' | 'private';
 
+/** 凭据来源（11 §4.2）。花谁的钱、数据过谁的境。 */
+export type CredentialSource = 'byok' | 'hosted' | 'private';
+
 /**
  * P0 三家（Q16）。**能力位分两种来源**：真实 endpoint 实测，与公开文档。
  *
@@ -89,6 +92,15 @@ export interface ModelRegistryEntry extends ModelEntry {
   /** 仍未被真实 endpoint 证实的能力键。空数组 = 整行都实测过 */
   readonly unverified: readonly (keyof ModelCapabilities)[];
   readonly notes: string;
+  /**
+   * 凭据来源（11 §4.2）。内置 P0 缺省 `byok`。
+   * hosted 条目由租户目录注入，本层不填 apiKey / baseUrl。
+   */
+  readonly credentialSource?: CredentialSource;
+  /**
+   * 仅网关内部：自定义模型的上游。**不进** `ModelCatalogEntry`。
+   */
+  readonly baseUrl?: string;
 }
 
 export const P0_MODELS: readonly ModelRegistryEntry[] = [

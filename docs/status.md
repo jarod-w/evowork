@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-07（第 15 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-08（第 16 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
@@ -18,7 +18,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | --- | --- |
 | 门禁 | `pnpm run check` 全绿：prettier · eslint（含 K2 边界规则）· tsc（含测试）· vitest · K1 补丁预算 |
 | 依赖 | Electron **44.2.0**（`--version` 实测可运行）· mermaid 11.17（**已代码分割**：主 chunk 244KB，mermaid 683KB 独立）· 办公扩展**有了 App 内安装器**（2026-09-07，`services/runtime-installer`）。实测：干净 HOME 从零联网装 **66 秒**通过（含“搬走目录再跑”的可搬运检查）；本机打的离线包在干净 HOME 上**离线装 41.7 秒**通过（下载函数被换成一被调用就炸）。四个技能用系统 python3 调用时 re-exec 兜底实测生效，docx/xlsx/pptx/图表四种产物已生成并回读验证；图表中文用扩展自带的 Noto Sans SC 渲染正常。**OCR 档仍未装**（`pytesseract` 缺失），扫描件走不通 |
-| 测试 | **1032 个通过、2 个跳过**。跳过的两条是 presentations 的"装了扩展才验得到"分支（本机没有 `python-pptx`）。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
+| 测试 | **1260 个通过、10 个跳过**。跳过的是办公技能「装了扩展才验得到」分支、runtime-installer e2e、以及一条需要本机 identity 的提示。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
 | 源码 | 约 28.4k 行（不含测试）+ 17.2k 行测试 |
 | 内核补丁 | **0 个文件 / 0 行**（预算 5 / 500）—— 设计判定只剩 P4 品牌字符串一项待落 |
 | 内核基线 | `89a4eec6da`（2026-09-04）；F1–F19 已在此基线复核（**F19 是 M4 实测新增**：hooks 输出契约的三条硬约束） |
@@ -51,12 +51,12 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | 位置 | 内容 | 测试 |
 | --- | --- | --- |
 | `packages/protocol` | app-server JSON-RPC v2 的手写子集 + NDJSON 双向分发（**K2 边界的类型面**） | 20 |
-| `packages/logging` | Q14「不落盘正文」的实现处：**没有接受自由字符串的日志入口** + 字段注册表 + 泄露检测 | 28 |
+| `packages/logging` | Q14「不落盘正文」的实现处：**没有接受自由字符串的日志入口** + 字段注册表 + 泄露检测（11 §6.2 登记 `tenantId` / `credentialSource` / `authMode` / `secretStore` / `quotaClass`；**不注册** `userId` / `password`） | 28 |
 | `packages/tokens` | 01 §2 的 design token + 对比度自动化断言 + CSS 变量生成 | 24 |
 | `services/store` | 16 张本机 sqlite 表（含「项目」的 `project_local` / `project_root` 两张权威表）· 投影/权威两个迁移器 · 状态派生 · FTS5 trigram | 62 |
 | `services/kernel-adapter` | **K2 边界的唯一实现处**：会话 · 心跳 · 退避重启 · 会话恢复 · 能力探测与降级 · 事件流三消费者定序 · 审批双策略 · 场景展开 · 内核进程启动器 | 98 |
-| `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 | 81 |
-| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI | 152 |
+| `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 · 自定义模型 env | 81 |
+| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **设置页与 `safeStorage`（M10a）** | 152 |
 | `services/artifacts` | 产物识别（三信号 + 版本 + 重定位）· 分享授权（Q10）· 资料库视图与磁盘占用 | 26 |
 | `services/scheduler` | 定时调度：cron（时区 + DST）· misfire 补偿 · 失败语义 · 设备迁移 · 自然语言解析 | 54 |
 | `services/policy` | 安全与策略：三级路径策略 · profile 文案 · 命令风险 · 并发与预算 · guardian 映射 · 审计与链式哈希 · 平台能力 · **四个 hook 的决策** | 64 |
@@ -379,7 +379,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 
 | 事项 | 卡在 | 影响 |
 | --- | --- | --- |
-| **网关令牌的正式机制** | **不卡了 —— 已决策（2026-09-07），待实现** | 决策：Q34=A **Electron `safeStorage`** 存自定义模型的厂商密钥与 refresh token，托管形态叠加 identity 签发的短期 JWT（两条候选不是二选一，理由见 [11 §9](design/11-account-and-models.md)）。落地在 **M10a**（1–1.5 人周，无外部依赖）。**在 M10a 完成前，现有 `~/.evowork/gateway.env` / `gateway-token` 仍是过渡方案，不要当成正式机制** |
+| **网关令牌的正式机制** | **M10a 已落地（本机密钥）**；托管 JWT 仍属 M10b | 厂商密钥进 Electron `safeStorage`（`~/.evowork/secrets.bin`），设置页 `/settings/*` 可录入与追加自定义模型。本机网关访问令牌仍是自签的 `gateway-token`（拓扑 A）。托管形态的 identity JWT 是 M10b。`gateway.env` 仅作迁移源。 |
 | **P0-5 代码签名证书** | 外部采购 | M9 打包只能出未签名产物；U4 无法证伪 |
 | **U1 GLM 产物质量** | 需要人工评分（08 §5.4 的三个任务），不是技术阻塞 | 若不达标应换旗舰档，**不靠加模板硬扛**（总纲原话）。这个结论越晚拿到，返工面越大 |
 | **U3 misfire 真机体验** | 需要真机关机一夜 | M5 的文案与补偿策略无法确认 |

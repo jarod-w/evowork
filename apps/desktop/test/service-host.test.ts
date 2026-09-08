@@ -126,6 +126,9 @@ describe('路径布局（09 §7）', () => {
     expect(paths.modes).toBe('/home/u/.evowork/modes');
     expect(paths.scenarios).toBe('/home/u/.evowork/scenarios');
     expect(paths.gatewayEnv).toBe('/home/u/.evowork/gateway.env');
+    expect(paths.appToml).toBe('/home/u/.evowork/app.toml');
+    expect(paths.modelsToml).toBe('/home/u/.evowork/models.toml');
+    expect(paths.secretsBin).toBe('/home/u/.evowork/secrets.bin');
   });
 });
 

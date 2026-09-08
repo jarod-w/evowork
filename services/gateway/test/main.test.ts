@@ -12,7 +12,14 @@ const SAVED = { ...process.env };
 
 beforeEach(() => {
   for (const key of Object.keys(process.env)) {
-    if (key.endsWith('_API_KEY') || key.endsWith('_BASE_URL')) delete process.env[key];
+    if (
+      key.endsWith('_API_KEY') ||
+      key.endsWith('_BASE_URL') ||
+      key.startsWith('EVOWORK_MODEL_KEY_') ||
+      key === 'EVOWORK_CUSTOM_MODELS'
+    ) {
+      delete process.env[key];
+    }
   }
 });
 
@@ -92,6 +99,43 @@ describe('配置解析（全部来自环境变量，不落盘）', () => {
       provider: 'private',
     });
     expect(config.extraHeaders?.authorization).toBe('ApiKey abc');
+  });
+
+  it('只有自定义模型密钥时也能进表，且目录 JSON 不含密钥', () => {
+    process.env.EVOWORK_CUSTOM_MODELS = JSON.stringify([
+      {
+        id: 'evowork/my-llama',
+        displayName: 'My Llama',
+        upstreamModel: 'llama-3',
+        adapter: 'openai-chat',
+        baseUrl: 'https://llm.example/v1',
+      },
+    ]);
+    process.env.EVOWORK_MODEL_KEY_evowork_my_llama = 'sk-custom-secret';
+    const listed = availableModels();
+    expect(listed.map((m) => m.id)).toContain('evowork/my-llama');
+    expect(listed.find((m) => m.id === 'evowork/my-llama')?.credentialSource).toBe('byok');
+    expect(JSON.stringify(listed.map((m) => ({ ...m, baseUrl: undefined })))).not.toContain(
+      'sk-custom-secret',
+    );
+
+    const resolve = buildConfigResolver();
+    const custom = listed.find((m) => m.id === 'evowork/my-llama')!;
+    expect(resolve(custom).apiKey).toBe('sk-custom-secret');
+    expect(resolve(custom).baseUrl).toBe('https://llm.example/v1');
+  });
+
+  it('自定义模型没配密钥就不出现 —— 让它出现在下拉里再 401 更糟', () => {
+    process.env.EVOWORK_CUSTOM_MODELS = JSON.stringify([
+      {
+        id: 'evowork/my-llama',
+        displayName: 'My Llama',
+        upstreamModel: 'llama-3',
+        adapter: 'openai-chat',
+        baseUrl: 'https://llm.example/v1',
+      },
+    ]);
+    expect(availableModels().some((m) => m.id === 'evowork/my-llama')).toBe(false);
   });
 });
 

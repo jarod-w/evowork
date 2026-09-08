@@ -91,6 +91,7 @@ function entry(over: Partial<ModelCatalogEntry> = {}): ModelCatalogEntry {
     unverified: ['maxContextTokens'],
     notes: '',
     notices: ['这个模型不支持图片输入，可切换模型。'],
+    credentialSource: 'byok',
     ...over,
   };
 }

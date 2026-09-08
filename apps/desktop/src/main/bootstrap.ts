@@ -17,6 +17,7 @@
 import { join } from 'node:path';
 
 import { RENDERER_ACTIONS } from '../preload/index.js';
+import { electronCodec } from './secret-store.js';
 import { createServiceHost, resolvePaths, type ServiceHost } from './service-host.js';
 
 /** 只声明我们真正用到的那部分 Electron API。 */
@@ -81,6 +82,16 @@ export interface ElectronApi {
    * `openProjectFolder` 静默什么都不做 —— 见 `service-host.ts` 的 `openPath` 选项。
    */
   readonly openPath?: ((path: string) => Promise<string>) | undefined;
+  /**
+   * 系统密钥库（11 §4.3）。不传 = 测试或不带 Electron 的宿主，密钥库视为不可用。
+   */
+  readonly safeStorage?:
+    | {
+        isEncryptionAvailable(): boolean;
+        encryptString(plain: string): Uint8Array;
+        decryptString(encrypted: Uint8Array): string;
+      }
+    | undefined;
 }
 
 /**
@@ -191,6 +202,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
             await electron.openPath?.(path);
           },
         }
+      : {}),
+    ...(electron.safeStorage
+      ? { secretCodec: electronCodec(electron.safeStorage, process.platform) }
       : {}),
     emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
   });

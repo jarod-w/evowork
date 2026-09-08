@@ -26,9 +26,16 @@ export {
   type DegradeReason,
   type ModelCapabilities,
   type ModelEntry,
+  type CredentialSource,
   type ModelRegistryEntry,
   type ProviderId,
 } from './capabilities.js';
+export {
+  customModelKeyEnv,
+  parseCustomModelsJson,
+  toRegistryEntry,
+  type CustomModelEnvEntry,
+} from './custom-models.js';
 export {
   MODELS_ENDPOINT_PATH,
   toCatalogEntry,

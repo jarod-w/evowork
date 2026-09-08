@@ -163,6 +163,11 @@ export interface ModelOptionView {
   }[];
   /** 缺失能力的用户可见文案（03 §8） */
   readonly notices: readonly string[];
+  /**
+   * 凭据来源（11 §4.2）。下拉里跟着 `provider/model` 一起显示。
+   * 缺省按 byok。hosted 条目没有上游地址。
+   */
+  readonly credentialSource?: 'byok' | 'hosted' | 'private' | undefined;
 }
 
 /**
@@ -180,6 +185,11 @@ export interface ModelCatalogResult {
    * 只给文案的话，「检查模型接入」对没配密钥的用户永远是再 fetch 一次失败。
    */
   readonly reason?: ModelUnavailableReason | undefined;
+  /**
+   * 密钥库不可用，用户还没选明文兜底或每次手填（11 §4.3）。
+   * 渲染层据此弹出那段固定文案，而不是静默写明文。
+   */
+  readonly secretStoreNeedsChoice?: boolean | undefined;
 }
 
 /** 模型目录读不到时的原因。**每一种的下一步动作都不同**，所以不能压成一个布尔值。 */
@@ -394,13 +404,85 @@ export interface RuntimeInstallResultView {
 /**
  * 用户在引导或首页填的厂商密钥。空字符串 = 这一家没改。
  *
- * 主进程写进 `~/.evowork/gateway.env` 之后立刻拉起本机网关。
+ * 主进程写进 `~/.evowork/secrets.bin` 之后立刻拉起本机网关。
  * **渲染层不会再读到这些值** —— 密钥只走这一次 IPC，不回传、不进日志。
  */
 export interface ApplyModelAccessInput {
   readonly deepseekApiKey?: string | undefined;
   readonly moonshotApiKey?: string | undefined;
   readonly zhipuApiKey?: string | undefined;
+}
+
+export type SettingsSectionId = 'account' | 'models' | 'usage' | 'data' | 'about';
+
+/** `/settings/models` 的一行。没有 `apiKey`；hosted 没有 `endpoint`。 */
+export interface SettingsModelRow {
+  readonly id: string;
+  readonly displayName: string;
+  readonly provider: string;
+  readonly upstreamModel: string;
+  readonly credentialSource: 'byok' | 'hosted' | 'private';
+  readonly layer: 'builtin' | 'tenant' | 'custom' | 'enterprise';
+  readonly disabled: boolean;
+  readonly disabledReason?: string | undefined;
+  readonly savedLast4?: string | undefined;
+  readonly adapter?: string | undefined;
+  readonly endpoint?: string | undefined;
+  readonly capabilities: {
+    readonly streaming: boolean;
+    readonly toolCalls: boolean;
+    readonly parallelToolCalls: boolean;
+    readonly reasoning: boolean;
+    readonly promptCache: boolean;
+    readonly imageInput: boolean;
+    readonly maxContextTokens: number;
+  };
+  readonly notices: readonly string[];
+}
+
+export interface SettingsView {
+  readonly mode: 'local' | 'hosted' | 'private';
+  readonly secretStore: {
+    readonly available: boolean;
+    readonly kind: string;
+    readonly needsChoice: boolean;
+  };
+  /** 密钥库不可用时的固定文案（11 §4.3）。不需要选择时不填。 */
+  readonly secretStoreCopy?: string | undefined;
+  readonly models: readonly SettingsModelRow[];
+  readonly appName: string;
+  readonly appVersion: string;
+  readonly userName: string;
+  readonly allowCustomModels: boolean;
+}
+
+export interface SettingsMutationResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+  readonly settings: SettingsView;
+  readonly secretStoreNeedsChoice?: boolean | undefined;
+}
+
+export interface SaveModelKeyInput {
+  readonly slot: string;
+  readonly value: string;
+}
+
+export interface ClearModelKeyInput {
+  readonly slot: string;
+}
+
+export interface AddCustomModelInput {
+  readonly id: string;
+  readonly displayName?: string | undefined;
+  readonly upstreamModel: string;
+  readonly adapter: string;
+  readonly baseUrl: string;
+  readonly apiKey?: string | undefined;
+}
+
+export interface ChooseSecretFallbackInput {
+  readonly fallback: 'plaintext' | 'ephemeral';
 }
 
 /* ─────────────────────────── 项目（02 §4.3）─────────────────────────── */

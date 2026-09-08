@@ -122,8 +122,19 @@ describe('字段注册表（Q14 的第二层防线）', () => {
       'title',
       'path',
       'label',
+      // 11 §6.2 / 验收口径 12：想记人、记密码得先改类型，改类型会被 review 看见
+      'userId',
+      'password',
     ]) {
       expect(BUILTIN_FIELDS[f]).toBeUndefined();
     }
+    // 11 §6.2 新注册的字段都能装下，且形状装不下一句自然语言
+    expect(BUILTIN_FIELDS.tenantId).toBe('id');
+    expect(BUILTIN_FIELDS.credentialSource).toBe('token');
+    expect(BUILTIN_FIELDS.authMode).toBe('token');
+    expect(BUILTIN_FIELDS.secretStore).toBe('token');
+    expect(BUILTIN_FIELDS.quotaClass).toBe('token');
+    expect(isValidValue('token', 'byok')).toBe(true);
+    expect(isValidValue('token', 'plaintext-fallback')).toBe(true);
   });
 });

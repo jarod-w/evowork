@@ -17,6 +17,7 @@ import {
   type CapabilityLookup,
   type ModelRegistryEntry,
 } from './capabilities.js';
+import { customModelKeyEnv, parseCustomModelsJson, toRegistryEntry } from './custom-models.js';
 import { DEFAULT_BASE_URL, PROVIDERS } from './providers/registry.js';
 import type { ProviderConfig } from './providers/types.js';
 import { createGatewayServer } from './server.js';
@@ -43,9 +44,13 @@ const BASE_URL_ENV: Readonly<Record<string, string>> = {
 
 export function buildConfigResolver(): (model: ModelRegistryEntry) => ProviderConfig {
   return (model) => {
-    const apiKey = env(KEY_ENV[model.provider] ?? '') ?? '';
+    const perModelKey = env(customModelKeyEnv(model.id));
+    const apiKey = perModelKey ?? env(KEY_ENV[model.provider] ?? '') ?? '';
     const baseUrl =
-      env(BASE_URL_ENV[model.provider] ?? '') ?? DEFAULT_BASE_URL[model.provider] ?? '';
+      (model.baseUrl && model.baseUrl.trim().length > 0 ? model.baseUrl : undefined) ??
+      env(BASE_URL_ENV[model.provider] ?? '') ??
+      DEFAULT_BASE_URL[model.provider] ??
+      '';
     return {
       baseUrl,
       apiKey,
@@ -57,9 +62,17 @@ export function buildConfigResolver(): (model: ModelRegistryEntry) => ProviderCo
   };
 }
 
+/** 本机自定义模型：元数据在 JSON 里，密钥在对应的 `EVOWORK_MODEL_KEY_*`。 */
+export function availableCustomModels(): ModelRegistryEntry[] {
+  return parseCustomModelsJson(env('EVOWORK_CUSTOM_MODELS'))
+    .map(toRegistryEntry)
+    .filter((model) => Boolean(env(customModelKeyEnv(model.id))));
+}
+
 /** 只保留"密钥齐了"的模型。 */
 export function availableModels(): ModelRegistryEntry[] {
-  return P0_MODELS.filter((model) => Boolean(env(KEY_ENV[model.provider] ?? '')));
+  const p0 = P0_MODELS.filter((model) => Boolean(env(KEY_ENV[model.provider] ?? '')));
+  return [...p0, ...availableCustomModels()];
 }
 
 /**

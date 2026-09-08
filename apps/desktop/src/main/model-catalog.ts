@@ -203,6 +203,7 @@ export function toModelOption(entry: ModelCatalogEntry): ModelOptionView {
     // 用户要能一眼看出发给谁、发的是哪个型号
     label: `${entry.provider}/${entry.upstreamModel}`,
     provider: entry.provider,
+    credentialSource: entry.credentialSource,
     capabilities: [
       { id: 'reasoning', label: '推理', available: entry.capabilities.reasoning },
       { id: 'image-input', label: '读图', available: entry.capabilities.imageInput },

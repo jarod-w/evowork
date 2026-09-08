@@ -23,7 +23,7 @@
  * 所以**渲染层的组件 prop 显式接受 undefined**，服务层保持严格。
  * 这不是把开关关掉 —— `apps/desktop/src/main` 与所有 `packages/` / `services/` 仍受它约束。
  */
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 
 export interface IconButtonProps {
   /** 无障碍名。**必填** —— 图标按钮没有可见文字，缺了它屏幕阅读器只会读"按钮" */
@@ -968,6 +968,130 @@ export function ItemCard({
             </span>
           ))}
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+function keyLooksValid(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length >= 8 && !/\s/.test(trimmed);
+}
+
+/**
+ * 01 §5.35 SecretInput。
+ *
+ * 已保存态**不是**带假值的 password 输入框 —— 那个假值一旦进 `value`，
+ * 就等于密钥进了渲染层。覆盖是一个空输入；清除走 Dialog。
+ */
+export function SecretInput({
+  label,
+  savedLast4,
+  onSave,
+  onClear,
+  disabled,
+  disabledReason,
+}: {
+  readonly label: string;
+  readonly savedLast4?: string | undefined;
+  readonly onSave: (value: string) => void;
+  readonly onClear?: (() => void) | undefined;
+  readonly disabled?: boolean | undefined;
+  readonly disabledReason?: string | undefined;
+}) {
+  const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [confirmClear, setConfirmClear] = useState(false);
+  const saved = Boolean(savedLast4) && !editing;
+
+  const onDraft = (value: string): void => {
+    setDraft(value);
+    if (value.length === 0) {
+      setError(undefined);
+      return;
+    }
+    setError(keyLooksValid(value) ? undefined : '密钥至少 8 位，且不能含空白。');
+  };
+
+  return (
+    <div className="ew-secret-input">
+      <span className="ew-secret-label">{label}</span>
+      {saved ? (
+        <div className="ew-secret-saved-row">
+          <span className="ew-secret-saved">{`已保存 · ****${savedLast4}`}</span>
+          <PillButton
+            disabled={disabled}
+            {...(disabledReason !== undefined ? { disabledReason } : {})}
+            onClick={() => {
+              setEditing(true);
+              setDraft('');
+            }}
+          >
+            覆盖
+          </PillButton>
+          {onClear ? (
+            <PillButton
+              disabled={disabled}
+              {...(disabledReason !== undefined ? { disabledReason } : {})}
+              onClick={() => setConfirmClear(true)}
+            >
+              清除
+            </PillButton>
+          ) : null}
+        </div>
+      ) : (
+        <div className="ew-secret-edit">
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={label}
+            disabled={disabled}
+            title={disabled ? disabledReason : undefined}
+            value={draft}
+            onChange={(event) => onDraft(event.target.value)}
+          />
+          <PillButton
+            variant="accent"
+            disabled={disabled || !keyLooksValid(draft)}
+            disabledReason={disabled ? disabledReason : error}
+            onClick={() => {
+              if (!keyLooksValid(draft)) return;
+              onSave(draft);
+              setDraft('');
+              setEditing(false);
+            }}
+          >
+            保存
+          </PillButton>
+          {savedLast4 && editing ? (
+            <PillButton
+              onClick={() => {
+                setEditing(false);
+                setDraft('');
+                setError(undefined);
+              }}
+            >
+              取消
+            </PillButton>
+          ) : null}
+        </div>
+      )}
+      {error ? <p className="ew-secret-error">{error}</p> : null}
+      {confirmClear ? (
+        <Dialog
+          title="清除这条密钥？"
+          confirmLabel="清除"
+          variant="danger"
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={() => {
+            setConfirmClear(false);
+            onClear?.();
+          }}
+        >
+          清除后要用这个模型，得重新填入密钥。密钥本身不会显示在这里。
+        </Dialog>
       ) : null}
     </div>
   );

@@ -76,6 +76,72 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
     applyModelAccess: vi.fn(async () => ({ models: MODELS })),
+    getSettings: vi.fn(async () => ({
+      mode: 'local' as const,
+      secretStore: { available: true, kind: 'memory', needsChoice: false },
+      models: [],
+      appName: 'EvoWork',
+      appVersion: '0.0.0',
+      userName: '本机用户',
+      allowCustomModels: true,
+    })),
+    saveModelKey: vi.fn(async () => ({
+      ok: true,
+      settings: {
+        mode: 'local' as const,
+        secretStore: { available: true, kind: 'memory', needsChoice: false },
+        models: [],
+        appName: 'EvoWork',
+        appVersion: '0.0.0',
+        userName: '本机用户',
+        allowCustomModels: true,
+      },
+    })),
+    clearModelKey: vi.fn(async () => ({
+      ok: true,
+      settings: {
+        mode: 'local' as const,
+        secretStore: { available: true, kind: 'memory', needsChoice: false },
+        models: [],
+        appName: 'EvoWork',
+        appVersion: '0.0.0',
+        userName: '本机用户',
+        allowCustomModels: true,
+      },
+    })),
+    addCustomModel: vi.fn(async () => ({
+      ok: true,
+      settings: {
+        mode: 'local' as const,
+        secretStore: { available: true, kind: 'memory', needsChoice: false },
+        models: [],
+        appName: 'EvoWork',
+        appVersion: '0.0.0',
+        userName: '本机用户',
+        allowCustomModels: true,
+      },
+    })),
+    removeCustomModel: vi.fn(async () => ({
+      ok: true,
+      settings: {
+        mode: 'local' as const,
+        secretStore: { available: true, kind: 'memory', needsChoice: false },
+        models: [],
+        appName: 'EvoWork',
+        appVersion: '0.0.0',
+        userName: '本机用户',
+        allowCustomModels: true,
+      },
+    })),
+    chooseSecretFallback: vi.fn(async () => ({
+      mode: 'local' as const,
+      secretStore: { available: true, kind: 'memory', needsChoice: false },
+      models: [],
+      appName: 'EvoWork',
+      appVersion: '0.0.0',
+      userName: '本机用户',
+      allowCustomModels: true,
+    })),
     getLibrary: vi.fn(async () => ({ rows: [] })),
     getAutomations: vi.fn(async () => ({ automations: [], runs: {}, deviceName: '这台电脑' })),
     getAudit: vi.fn(async () => ({ records: [], retentionDays: 90, retentionWarningDays: 7 })),
@@ -479,6 +545,26 @@ describe('侧边栏的六个入口都要有落点', () => {
     expect(await screen.findByText('专家·技能·连接器还没做好')).toBeTruthy();
     // 并且告诉用户现在该怎么办（在**说明文字里**找，侧边栏那一项同名）
     expect(screen.getByText(/已经随产品分发并可用/)).toBeTruthy();
+  });
+
+  it('点「更多」进设置页，默认停在模型接入', async () => {
+    const getSettings = vi.fn(async () => ({
+      mode: 'local' as const,
+      secretStore: { available: true, kind: 'memory', needsChoice: false },
+      models: [],
+      appName: 'EvoWork',
+      appVersion: '0.0.0',
+      userName: '本机用户',
+      allowCustomModels: true,
+    }));
+    const { bridge } = fakeBridge({ getSettings });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /更多/ }));
+    expect(await screen.findByText('添加自定义模型')).toBeTruthy();
+    expect(getSettings).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '账号' }));
+    expect(screen.getByText('当前为本机模式，无需登录')).toBeTruthy();
   });
 
   /*

@@ -72,6 +72,9 @@ export const BUILTIN_FIELDS: Readonly<Record<string, FieldKind>> = Object.freeze
   deviceId: 'id',
   projectId: 'id',
   subscriptionId: 'id',
+  // 租户（11 §6.2）。计量与策略下发用。**不注册 userId**：本机日志里不许留一个
+  // 能对外关联到人的稳定标识（D10：账号是凭据，不是数据归属主体）。
+  tenantId: 'id',
 
   // —— 版本与环境 ——
   service: 'token',
@@ -92,6 +95,17 @@ export const BUILTIN_FIELDS: Readonly<Record<string, FieldKind>> = Object.freeze
   mode: 'token',
   scenarioId: 'token',
   permissionProfile: 'token',
+  /** `byok` / `hosted` / `private`（11 §4.2）。花谁的钱、数据过谁的境。 */
+  credentialSource: 'token',
+  /** `local` / `hosted` / `private`（11 §3.2）。默认模型的上游，不是网关在哪。 */
+  authMode: 'token',
+  /**
+   * `keychain` / `dpapi` / `libsecret` / `plaintext-fallback`（11 §4.3）。
+   * 密钥库降级必须可审计，否则"用户到底有没有走明文兜底"事后查不出来。
+   */
+  secretStore: 'token',
+  /** 额度档位（阶段 2）。枚举，不是自由字符串。 */
+  quotaClass: 'token',
 
   // —— 计量（Q14 允许的三样之一：token 数）——
   tokensIn: 'count',

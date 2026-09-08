@@ -11,7 +11,7 @@
  * 而那个红没有任何信息量（我们知道它没装）。写成 .mjs 让类型检查跳过这一个文件，
  * 其余全部照常受约束。装上 electron 之后可以原样改名成 .ts。
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { join } from 'node:path';
 
 /*
@@ -83,6 +83,12 @@ bootstrap({
     showOpenDialog: (options) => dialog.showOpenDialog(options),
     // 「项目」页的「打开文件夹」（清单 §4.5）。同样只有主进程能调 shell
     openPath: (path) => shell.openPath(path),
+    safeStorage: {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (plain) => safeStorage.encryptString(plain),
+      decryptString: (encrypted) =>
+        safeStorage.decryptString(Buffer.isBuffer(encrypted) ? encrypted : Buffer.from(encrypted)),
+    },
   },
   /*
    * 打包时内核二进制随包（M9）；开发时用仓库里构建出来的那个。

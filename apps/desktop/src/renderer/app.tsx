@@ -37,13 +37,16 @@ import type {
   RuntimeProgressView,
   RuntimeStatusView,
   SendInput,
+  SettingsMutationResult,
+  SettingsSectionId,
+  SettingsView,
   StartupInfo,
   TaskRowView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
-import { Banner, EmptyState } from './components/primitives.js';
+import { Banner, Dialog, EmptyState } from './components/primitives.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { resolveModelChoice } from './model-selection.js';
@@ -63,6 +66,7 @@ import {
 import { ProjectDetailPage } from './views/project-detail.js';
 import { ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
+import { Settings, SECRET_STORE_UNAVAILABLE } from './views/settings.js';
 import { TaskWorkspace } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
@@ -90,6 +94,19 @@ export interface EvoworkBridge {
    */
   listModels(): Promise<ModelCatalogResult>;
   applyModelAccess(input: ApplyModelAccessInput): Promise<ModelCatalogResult>;
+  getSettings(): Promise<SettingsView>;
+  saveModelKey(input: { slot: string; value: string }): Promise<SettingsMutationResult>;
+  clearModelKey(input: { slot: string }): Promise<SettingsMutationResult>;
+  addCustomModel(input: {
+    id: string;
+    displayName?: string;
+    upstreamModel: string;
+    adapter: string;
+    baseUrl: string;
+    apiKey?: string;
+  }): Promise<SettingsMutationResult>;
+  removeCustomModel(input: { id: string }): Promise<SettingsMutationResult>;
+  chooseSecretFallback(input: { fallback: 'plaintext' | 'ephemeral' }): Promise<SettingsView>;
   /*
    * 三个目录式页面各自一个动作。**按需拉，不并进 getStartup** ——
    * 它们读的是本机 sqlite，且绝大多数会话里用户根本不会打开资料库。
@@ -146,7 +163,7 @@ export interface EvoworkBridge {
  * 与一个目录式页面。侧边栏的 6 个入口就是全部的导航面（02 §1），
  * 它是产品骨架而不是可扩展的路由表。
  */
-type MainView = 'task' | 'library' | 'automations' | 'audit' | 'projects' | 'catalog' | 'more';
+type MainView = 'task' | 'library' | 'automations' | 'audit' | 'projects' | 'catalog' | 'settings';
 
 /** 侧边栏 id → 主内容区。**没有页面的入口也必须在这里出现**，见 `UnbuiltPage`。 */
 const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
@@ -155,7 +172,7 @@ const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
   catalog: 'catalog',
   automations: 'automations',
   library: 'library',
-  more: 'more',
+  more: 'settings',
 };
 
 declare global {
@@ -250,6 +267,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [projectMemo, setProjectMemo] = useState<AgentsMemoView>({ exists: false, content: '' });
   /** 上一次动作被拒绝的原话。**显示出来**，不吞掉 */
   const [projectRefusal, setProjectRefusal] = useState<string | undefined>(undefined);
+  const [settings, setSettings] = useState<SettingsView | null>(null);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('models');
+  const [settingsRefusal, setSettingsRefusal] = useState<string | undefined>(undefined);
+  const [secretStoreNeedsChoice, setSecretStoreNeedsChoice] = useState(false);
 
   useEffect(() => {
     const offs = [
@@ -359,6 +380,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setModels(result.models);
     setModelUnavailable(result.unavailable);
     setModelUnavailableReason(result.reason);
+    setSecretStoreNeedsChoice(Boolean(result.secretStoreNeedsChoice));
   }, []);
 
   const loadModels = useCallback(async () => {
@@ -549,6 +571,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .listProjects()
         .then(setProjects)
         .catch(() => setProjects(null));
+    if (view === 'settings')
+      void bridge
+        .getSettings()
+        .then(setSettings)
+        .catch(() => setSettings(null));
   }, [view, activeProjectId, bridge]);
 
   /**
@@ -987,6 +1014,41 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onRenameProject={renameProject}
           onRemoveProject={removeProject}
           onPickDirectory={pickProjectDirectory}
+          settings={settings}
+          settingsSection={settingsSection}
+          settingsRefusal={settingsRefusal}
+          onSettingsSection={setSettingsSection}
+          onSaveKey={(slot, value) => {
+            void bridge.saveModelKey({ slot, value }).then((result) => {
+              setSettings(result.settings);
+              setSettingsRefusal(result.refused);
+              if (result.secretStoreNeedsChoice) setSecretStoreNeedsChoice(true);
+            });
+          }}
+          onClearKey={(slot) => {
+            void bridge.clearModelKey({ slot }).then((result) => {
+              setSettings(result.settings);
+              setSettingsRefusal(result.refused);
+            });
+          }}
+          onAddCustom={(input) => {
+            void bridge.addCustomModel(input).then((result) => {
+              setSettings(result.settings);
+              setSettingsRefusal(result.refused);
+            });
+          }}
+          onRemoveCustom={(id) => {
+            void bridge.removeCustomModel({ id }).then((result) => {
+              setSettings(result.settings);
+              setSettingsRefusal(result.refused);
+            });
+          }}
+          onChooseFallback={(fallback) => {
+            void bridge.chooseSecretFallback({ fallback }).then((next) => {
+              setSettings(next);
+              setSecretStoreNeedsChoice(next.secretStore.needsChoice);
+            });
+          }}
         />
       ) : activeTaskId === null ? (
         <Home
@@ -1021,6 +1083,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
         />
       )}
+      {secretStoreNeedsChoice ? (
+        <Dialog
+          title="无法加密保存 API 密钥"
+          confirmLabel="以明文文件保存"
+          cancelLabel="每次启动时填入"
+          onConfirm={() => {
+            void bridge.chooseSecretFallback({ fallback: 'plaintext' }).then(() => {
+              setSecretStoreNeedsChoice(false);
+              void checkModelAccess();
+            });
+          }}
+          onCancel={() => {
+            void bridge.chooseSecretFallback({ fallback: 'ephemeral' }).then(() => {
+              setSecretStoreNeedsChoice(false);
+              void checkModelAccess();
+            });
+          }}
+        >
+          {SECRET_STORE_UNAVAILABLE}
+        </Dialog>
+      ) : null}
     </div>
   );
 }
@@ -1031,7 +1114,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  * ## 为什么没有页面的入口也要在这里出现
  *
  * 02 §1 的 6 个入口是产品骨架，其中一个（专家·技能·连接器）
- * 与「更多」现在**还没有页面**。在此之前它们的表现是**点了没有任何反应** ——
+ * 现在**还没有页面**。在此之前它们的表现是**点了没有任何反应** ——
  * 用户看到的是一个有六个菜单项、其中两个是死的应用，而"点了没反应"
  * 与"坏了"在界面上完全无法区分。
  *
@@ -1067,6 +1150,22 @@ function MainPage(props: {
   readonly onRenameProject: (input: { id: string; name: string }) => void;
   readonly onRemoveProject: (id: string) => void;
   readonly onPickDirectory: () => Promise<string | undefined>;
+  readonly settings: SettingsView | null;
+  readonly settingsSection: SettingsSectionId;
+  readonly settingsRefusal: string | undefined;
+  readonly onSettingsSection: (id: SettingsSectionId) => void;
+  readonly onSaveKey: (slot: string, value: string) => void;
+  readonly onClearKey: (slot: string) => void;
+  readonly onAddCustom: (input: {
+    id: string;
+    displayName: string;
+    upstreamModel: string;
+    adapter: string;
+    baseUrl: string;
+    apiKey: string;
+  }) => void;
+  readonly onRemoveCustom: (id: string) => void;
+  readonly onChooseFallback: (fallback: 'plaintext' | 'ephemeral') => void;
 }) {
   switch (props.view) {
     /*
@@ -1136,6 +1235,27 @@ function MainPage(props: {
         />
       );
 
+    case 'settings':
+      return props.settings ? (
+        <Settings
+          settings={props.settings}
+          section={props.settingsSection}
+          onSection={props.onSettingsSection}
+          onSaveKey={props.onSaveKey}
+          onClearKey={props.onClearKey}
+          onAddCustom={props.onAddCustom}
+          onRemoveCustom={props.onRemoveCustom}
+          onChooseFallback={props.onChooseFallback}
+          {...(props.settingsRefusal !== undefined ? { refusal: props.settingsRefusal } : {})}
+        />
+      ) : (
+        <div className="ew-page">
+          <div className="ew-content-column">
+            <EmptyState title="正在读取设置" hint="" />
+          </div>
+        </div>
+      );
+
     default:
       return <UnbuiltPage view={props.view} />;
   }
@@ -1147,7 +1267,6 @@ const UNBUILT_COPY: Readonly<Record<string, { title: string; hint: string }>> = 
     title: '专家·技能·连接器还没做好',
     hint: '办公技能（文档 / 表格 / 幻灯片 / 图表）已经随产品分发并可用，只是还没有这个管理界面。',
   },
-  more: { title: '这里还没有内容', hint: '设置、通知与灵感会陆续放到这里。' },
 };
 
 function UnbuiltPage({ view }: { readonly view: MainView }) {

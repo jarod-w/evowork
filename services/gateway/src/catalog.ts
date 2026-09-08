@@ -28,7 +28,12 @@
  *
  * 详见 §4 的 F24 与 09 §3.2 的修订。
  */
-import type { ModelCapabilities, ModelRegistryEntry, ProviderId } from './capabilities.js';
+import type {
+  CredentialSource,
+  ModelCapabilities,
+  ModelRegistryEntry,
+  ProviderId,
+} from './capabilities.js';
 import { capabilityNotices } from './pipeline.js';
 
 /** 端点路径。客户端与服务端**共用这一个常量**，拼错就不会各拼各的。 */
@@ -55,6 +60,13 @@ export interface ModelCatalogEntry {
   readonly notes: string;
   /** 缺失能力的用户可见文案（03 §4.5 徽标 + 03 §8 拒绝说明） */
   readonly notices: readonly string[];
+  /**
+   * 凭据来源（11 §4.2）。下拉里跟着 `provider/model` 一起显示。
+   *
+   * **类型上没有 `apiKey`，hosted 条目也没有上游 `baseUrl`**（验收口径 13）。
+   * 那两样是网关内部的，`toCatalogEntry` 不会抄过来。
+   */
+  readonly credentialSource: CredentialSource;
 }
 
 export interface ModelCatalogResponse {
@@ -79,5 +91,6 @@ export function toCatalogEntry(model: ModelRegistryEntry): ModelCatalogEntry {
     unverified: model.unverified,
     notes: model.notes,
     notices: capabilityNotices(model),
+    credentialSource: model.credentialSource ?? 'byok',
   };
 }

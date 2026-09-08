@@ -65,6 +65,12 @@ export const RENDERER_ACTIONS = Object.freeze([
    * 引导第④步和首页「检查模型接入」共用 —— 装好的 App 从访达启动读不到 shell 环境。
    */
   'applyModelAccess',
+  'getSettings',
+  'saveModelKey',
+  'clearModelKey',
+  'addCustomModel',
+  'removeCustomModel',
+  'chooseSecretFallback',
   /*
    * 三个目录式页面各自一个动作，**不并进 `getStartup`**。
    *

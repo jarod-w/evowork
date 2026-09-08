@@ -128,5 +128,7 @@ describe('有没有配密钥', () => {
   it('空白不算配了 —— 否则会起一个每次请求都 401 的网关', () => {
     expect(envHasProviderKey({ DEEPSEEK_API_KEY: '   ' })).toBe(false);
     expect(envHasProviderKey({ DEEPSEEK_API_KEY: 'sk' })).toBe(true);
+    expect(envHasProviderKey({ EVOWORK_MODEL_KEY_evowork_my_llama: 'sk' })).toBe(true);
+    expect(envHasProviderKey({ EVOWORK_MODEL_KEY_evowork_my_llama: '  ' })).toBe(false);
   });
 });

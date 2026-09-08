@@ -88,7 +88,11 @@ export function readGatewayEnvFile(path: string): Record<string, string> {
 }
 
 export function envHasProviderKey(env: NodeJS.ProcessEnv): boolean {
-  return PROVIDER_KEY_ENV.some((name) => (env[name] ?? '').trim() !== '');
+  if (PROVIDER_KEY_ENV.some((name) => (env[name] ?? '').trim() !== '')) return true;
+  // 只有自定义模型时也该起网关（11 §4.1 第 ③ 层）。
+  return Object.keys(env).some(
+    (name) => name.startsWith('EVOWORK_MODEL_KEY_') && (env[name] ?? '').trim() !== '',
+  );
 }
 
 /**

@@ -42,22 +42,36 @@ import { createAuditRepo, openStore, type Store } from '@evowork/store';
 
 import type { ModelCatalogResult } from '../shared/ipc.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
+import { ensureAppConfig, readAppConfig } from './app-config.js';
 import {
   ensureGatewayTokenFile,
   mergeGatewayEnv,
   readGatewayEnvFile,
   tokenFromEnvFile,
-  writeGatewayEnvKeys,
 } from './gateway-env.js';
 import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
 import { fetchModelCatalog, readGatewayBaseUrl, waitUntilGatewayReady } from './model-catalog.js';
+import { readModelsToml } from './models-toml.js';
 import {
   createEventTranslator,
   createRendererActions,
   toApprovalView,
   type RendererActions,
 } from './renderer-bridge.js';
+import {
+  loadSecrets,
+  migrateGatewayEnv,
+  plaintextCodec,
+  secretStoreStatus,
+  type SecretCodec,
+} from './secret-store.js';
+import {
+  createSettingsPorts,
+  mergeSecretEnv,
+  providerKeysFromAccess,
+  SECRET_STORE_UNAVAILABLE,
+} from './settings-actions.js';
 import { BUILTIN_CASES } from './showcase.js';
 
 /** `~/.evowork/` 的布局（09 §7）。 */
@@ -77,11 +91,21 @@ export interface EvoworkPaths {
    */
   readonly gatewayToken: string;
   /**
-   * 厂商密钥（见 `gateway-env.ts`）。
+   * 厂商密钥的**迁移源**（见 `gateway-env.ts`）。
    *
-   * 从访达启动的应用不继承 shell 环境，这个文件是 GUI 启动唯一能用的密钥来源。
+   * M10a 起密钥进 `secrets.bin`。首次启动若这个文件还在、密文还不在，
+   * 就导入后把它改名为 `gateway.env.migrated`，不删。
    */
   readonly gatewayEnv: string;
+  /**
+   * EvoWork 自己的配置（11 §3.2）。**不进内核的 `config.toml`。**
+   * `mode` 回答默认模型的上游在哪，不是网关在哪。
+   */
+  readonly appToml: string;
+  /** 本机自定义模型（11 §4.1 第 ③ 层）。密钥不在这里。 */
+  readonly modelsToml: string;
+  /** 厂商密钥密文（11 §4.3）。编解码见 `secret-store.ts`。 */
+  readonly secretsBin: string;
   /**
    * hook 写审计记录的 JSONL（10 §6）。
    *
@@ -110,6 +134,9 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
     logs: join(root, 'logs'),
     gatewayToken: join(root, 'gateway-token'),
     gatewayEnv: join(root, 'gateway.env'),
+    appToml: join(root, 'app.toml'),
+    modelsToml: join(root, 'models.toml'),
+    secretsBin: join(root, 'secrets.bin'),
     auditLog: join(root, 'audit.jsonl'),
     kernelHome: join(root, 'kernel'),
   };
@@ -289,6 +316,11 @@ export interface ServiceHostOptions {
   readonly gatewayReadyTimeoutMs?: number | undefined;
   /** 注入以便测试网关就绪探测，不必真起一个 HTTP 服务 */
   readonly fetchFn?: typeof fetch | undefined;
+  /**
+   * 密钥编解码（11 §4.3）。生产由 Electron `safeStorage` 注入；
+   * 测试传 `memoryCodec()`。不传且没有用户选定的兜底 = 不写明文。
+   */
+  readonly secretCodec?: SecretCodec | undefined;
 }
 
 export interface ServiceHost {
@@ -359,11 +391,52 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 本机网关的密钥与令牌。必须在起内核之前备齐：内核从自己的进程环境读令牌，
    * 而从访达启动时 shell 环境是空的。
    *
-   *   ① `~/.evowork/gateway.env` 补厂商密钥（文档一直让人写这儿，以前没人读）；
-   *   ② 拓扑 A 没有令牌就签一个 —— 用户不该知道有 gateway-token 这么个东西。
+   *   ① `app.toml` 一次性从内核 base_url 反推 mode（之后 mode 是权威）；
+   *   ② 密钥库可用则把 `gateway.env` 迁进 `secrets.bin`；
+   *   ③ 解密后的密钥 + 自定义模型元数据灌进网关子进程环境。
    */
+  ensureAppConfig(
+    options.paths.appToml,
+    readGatewayBaseUrl(options.paths.kernelHome, options.env ?? process.env),
+  );
+  const appConfig = readAppConfig(options.paths.appToml);
+  const secretStatus = secretStoreStatus(options.secretCodec, appConfig.secrets?.fallback);
+  logger.info('desktop.secret_store.status', {
+    secretStore: secretStatus.kind,
+    authMode: appConfig.gateway.mode,
+  });
+  if (options.secretCodec?.available) {
+    const migrated = migrateGatewayEnv({
+      gatewayEnvPath: options.paths.gatewayEnv,
+      secretsPath: options.paths.secretsBin,
+      codec: options.secretCodec,
+    });
+    if (migrated.migrated) {
+      logger.info('desktop.secret_store.migrated', { itemCount: migrated.imported ?? 0 });
+    }
+  } else if (appConfig.secrets?.fallback === 'plaintext') {
+    migrateGatewayEnv({
+      gatewayEnvPath: options.paths.gatewayEnv,
+      secretsPath: options.paths.secretsBin,
+      codec: plaintextCodec(),
+    });
+  }
+
+  const writeCodec: SecretCodec | undefined = options.secretCodec?.available
+    ? options.secretCodec
+    : appConfig.secrets?.fallback === 'plaintext'
+      ? plaintextCodec()
+      : undefined;
+
+  const rebuildGatewayRuntimeEnv = (): NodeJS.ProcessEnv => {
+    const fileEnvNow = readGatewayEnvFile(options.paths.gatewayEnv);
+    const keys = writeCodec ? loadSecrets(options.paths.secretsBin, writeCodec).keys : {};
+    const custom = readModelsToml(options.paths.modelsToml);
+    return mergeGatewayEnv(mergeSecretEnv(fileEnvNow, keys, custom), options.env ?? process.env);
+  };
+
   const fileEnv = readGatewayEnvFile(options.paths.gatewayEnv);
-  let gatewayRuntimeEnv = mergeGatewayEnv(fileEnv, options.env ?? process.env);
+  let gatewayRuntimeEnv = rebuildGatewayRuntimeEnv();
   const gatewayBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, gatewayRuntimeEnv);
   let gatewayToken =
     readGatewayToken(options.paths, gatewayRuntimeEnv) ?? tokenFromEnvFile(fileEnv);
@@ -566,6 +639,38 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     });
   };
 
+  let currentKeys = (): Record<string, string> => {
+    const codec = writeCodec;
+    return codec ? loadSecrets(options.paths.secretsBin, codec).keys : {};
+  };
+
+  const restartGatewayWithSecrets = async (): Promise<void> => {
+    gatewayRuntimeEnv = mergeGatewayEnv(
+      mergeSecretEnv(
+        readGatewayEnvFile(options.paths.gatewayEnv),
+        currentKeys(),
+        readModelsToml(options.paths.modelsToml),
+      ),
+      options.env ?? process.env,
+    );
+    gateway?.stop();
+    gateway = undefined;
+    launchLocalGateway();
+    await awaitGatewayReady();
+  };
+
+  const settingsPorts = createSettingsPorts({
+    paths: options.paths,
+    ...(options.secretCodec ? { codec: options.secretCodec } : {}),
+    appName: BRAND.appName,
+    appVersion: options.appVersion,
+    userName: userInfo().username,
+    kernelBaseUrl: gatewayBaseUrl,
+    logger,
+    onKeysChanged: restartGatewayWithSecrets,
+  });
+  currentKeys = () => settingsPorts.currentKeys();
+
   const actions = createRendererActions({
     adapter,
     store,
@@ -654,22 +759,32 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     userName: userInfo().username,
     cases: BUILTIN_CASES,
     readModelCatalog,
+    settingsPorts,
     applyModelAccess: async (input) => {
-      const keys: Record<string, string> = {};
-      if (input.deepseekApiKey?.trim()) keys.DEEPSEEK_API_KEY = input.deepseekApiKey.trim();
-      if (input.moonshotApiKey?.trim()) keys.MOONSHOT_API_KEY = input.moonshotApiKey.trim();
-      if (input.zhipuApiKey?.trim()) keys.ZHIPU_API_KEY = input.zhipuApiKey.trim();
-      if (Object.keys(keys).length > 0) {
-        writeGatewayEnvKeys(options.paths.gatewayEnv, keys);
-        logger.info('desktop.gateway_env.updated', { itemCount: Object.keys(keys).length });
+      const added = providerKeysFromAccess(input);
+      if (Object.keys(added).length > 0) {
+        const last = await settingsPorts.saveKeys(added);
+        if (last.secretStoreNeedsChoice) {
+          return {
+            models: [],
+            reason: 'no-keys' as const,
+            unavailable: SECRET_STORE_UNAVAILABLE,
+            secretStoreNeedsChoice: true,
+          };
+        }
+        if (!last.ok) {
+          return {
+            models: [],
+            reason: 'no-keys' as const,
+            unavailable: last.refused ?? SECRET_STORE_UNAVAILABLE,
+          };
+        }
+      } else {
+        await restartGatewayWithSecrets();
       }
-      gatewayRuntimeEnv = mergeGatewayEnv(
-        readGatewayEnvFile(options.paths.gatewayEnv),
-        options.env ?? process.env,
-      );
-      gateway?.stop();
-      gateway = undefined;
-      launchLocalGateway();
+      if (gateway && !gateway.result.started && gateway.result.reason !== 'REMOTE') {
+        return readModelCatalog();
+      }
       const ready = await awaitGatewayReady();
       if (!ready) {
         return {

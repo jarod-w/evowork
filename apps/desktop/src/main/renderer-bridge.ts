@@ -61,6 +61,8 @@ import type {
   AuditDataView,
   AutomationsDataView,
   CaseView,
+  ChooseSecretFallbackInput,
+  ClearModelKeyInput,
   DirEntryView,
   LibraryDataView,
   ModelCatalogResult,
@@ -75,7 +77,11 @@ import type {
   RowActionInput,
   RuntimeInstallResultView,
   RuntimeStatusView,
+  AddCustomModelInput,
+  SaveModelKeyInput,
   SendInput,
+  SettingsMutationResult,
+  SettingsView,
   StartupInfo,
   TaskRowView,
   WriteAgentsMemoResult,
@@ -239,6 +245,20 @@ export interface RendererBridgeOptions {
    */
   readonly applyModelAccess?:
     ((input: ApplyModelAccessInput) => Promise<ModelCatalogResult>) | undefined;
+  /**
+   * 设置页（11 §4.4）。注入：真正读盘与写密钥库在宿主里。
+   * 没给时如实说这个版本不能管模型接入，而不是静默空列表。
+   */
+  readonly settingsPorts?:
+    | {
+        readonly getSettings: () => Promise<SettingsView>;
+        readonly saveModelKey: (input: SaveModelKeyInput) => Promise<SettingsMutationResult>;
+        readonly clearModelKey: (input: ClearModelKeyInput) => Promise<SettingsMutationResult>;
+        readonly addCustomModel: (input: AddCustomModelInput) => Promise<SettingsMutationResult>;
+        readonly removeCustomModel: (input: { id: string }) => Promise<SettingsMutationResult>;
+        readonly chooseSecretFallback: (input: ChooseSecretFallbackInput) => Promise<SettingsView>;
+      }
+    | undefined;
   /**
    * 打开系统目录选择框（首运行第②步）。
    *
@@ -683,11 +703,119 @@ export function createRendererActions(options: RendererBridgeOptions) {
         return {
           models: [],
           reason: 'no-keys',
-          unavailable:
-            '这个版本还不能在界面里保存模型密钥，请把密钥写进 ~/.evowork/gateway.env 后重启。',
+          unavailable: '这个版本还不能在界面里保存模型密钥。',
         };
       }
       return options.applyModelAccess(input);
+    },
+
+    async getSettings(): Promise<SettingsView> {
+      if (!options.settingsPorts) {
+        return {
+          mode: 'local',
+          secretStore: { available: false, kind: 'libsecret', needsChoice: false },
+          secretStoreCopy: '这个版本还不能管理模型接入。',
+          models: [],
+          appName: options.appName,
+          appVersion: options.appVersion,
+          userName: options.userName ?? '本机用户',
+          allowCustomModels: true,
+        };
+      }
+      return options.settingsPorts.getSettings();
+    },
+
+    async saveModelKey(input: SaveModelKeyInput): Promise<SettingsMutationResult> {
+      if (!options.settingsPorts) {
+        return {
+          ok: false,
+          refused: '这个版本还不能在界面里保存模型密钥。',
+          settings: {
+            mode: 'local',
+            secretStore: { available: false, kind: 'libsecret', needsChoice: false },
+            secretStoreCopy: '这个版本还不能管理模型接入。',
+            models: [],
+            appName: options.appName,
+            appVersion: options.appVersion,
+            userName: options.userName ?? '本机用户',
+            allowCustomModels: true,
+          },
+        };
+      }
+      return options.settingsPorts.saveModelKey(input);
+    },
+
+    async clearModelKey(input: ClearModelKeyInput): Promise<SettingsMutationResult> {
+      if (!options.settingsPorts) {
+        return {
+          ok: false,
+          refused: '这个版本还不能在界面里保存模型密钥。',
+          settings: {
+            mode: 'local',
+            secretStore: { available: false, kind: 'libsecret', needsChoice: false },
+            models: [],
+            appName: options.appName,
+            appVersion: options.appVersion,
+            userName: options.userName ?? '本机用户',
+            allowCustomModels: true,
+          },
+        };
+      }
+      return options.settingsPorts.clearModelKey(input);
+    },
+
+    async addCustomModel(input: AddCustomModelInput): Promise<SettingsMutationResult> {
+      if (!options.settingsPorts) {
+        return {
+          ok: false,
+          refused: '这个版本还不能管理模型接入。',
+          settings: {
+            mode: 'local',
+            secretStore: { available: false, kind: 'libsecret', needsChoice: false },
+            models: [],
+            appName: options.appName,
+            appVersion: options.appVersion,
+            userName: options.userName ?? '本机用户',
+            allowCustomModels: true,
+          },
+        };
+      }
+      return options.settingsPorts.addCustomModel(input);
+    },
+
+    async removeCustomModel(input: { id: string }): Promise<SettingsMutationResult> {
+      if (!options.settingsPorts) {
+        return {
+          ok: false,
+          refused: '这个版本还不能管理模型接入。',
+          settings: {
+            mode: 'local',
+            secretStore: { available: false, kind: 'libsecret', needsChoice: false },
+            models: [],
+            appName: options.appName,
+            appVersion: options.appVersion,
+            userName: options.userName ?? '本机用户',
+            allowCustomModels: true,
+          },
+        };
+      }
+      return options.settingsPorts.removeCustomModel(input);
+    },
+
+    async chooseSecretFallback(input: ChooseSecretFallbackInput): Promise<SettingsView> {
+      if (!options.settingsPorts) {
+        return {
+          mode: 'local',
+          secretStore: { available: false, kind: 'libsecret', needsChoice: false },
+          secretStoreCopy: '这个版本还不能管理模型接入。',
+          models: [],
+          appName: options.appName,
+          appVersion: options.appVersion,
+          userName: options.userName ?? '本机用户',
+          allowCustomModels: true,
+        };
+      }
+      return options.settingsPorts.chooseSecretFallback(input);
     },
 
     async interrupt(threadId: string): Promise<void> {

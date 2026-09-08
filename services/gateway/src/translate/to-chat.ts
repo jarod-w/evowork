@@ -231,7 +231,8 @@ export function toChatRequest(
       }
       case 'reasoning': {
         if (capabilities.reasoning) {
-          pendingReasoning += reasoningTextFrom(item);
+          const reasoning = item as Extract<ResponseItem, { type: 'reasoning' }>;
+          pendingReasoning += reasoningTextFrom(reasoning);
         }
         break;
       }
