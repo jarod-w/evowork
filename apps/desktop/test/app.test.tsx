@@ -475,10 +475,10 @@ describe('侧边栏的六个入口都要有落点', () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /项目/ }));
-    expect(await screen.findByText('项目页还没做好')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /专家·技能·连接器/ }));
+    expect(await screen.findByText('专家·技能·连接器还没做好')).toBeTruthy();
     // 并且告诉用户现在该怎么办（在**说明文字里**找，侧边栏那一项同名）
-    expect(screen.getByText(/「选择工作空间」里挑/)).toBeTruthy();
+    expect(screen.getByText(/已经随产品分发并可用/)).toBeTruthy();
   });
 
   /*
