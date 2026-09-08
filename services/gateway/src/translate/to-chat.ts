@@ -1,7 +1,7 @@
 /**
  * Responses 请求 → Chat Completions 请求（国内三家都只提供 Chat Completions）。
  *
- * ## 这个方向的三个坑
+ * ## 这个方向的四个坑
  *
  * 1. **`function_call_output` 必须变成 `role: "tool"` 消息，且 `tool_call_id` 要对得上**。
  *    对不上的表现不是报错，而是模型"看不见工具结果"于是重复调用同一个工具 ——
@@ -10,6 +10,11 @@
  *    Chat 没有对应物；丢了它等于丢掉 developer instructions，Ask 模式会失效（D8）。
  * 3. **图片输入不能静默丢**。上游不支持时必须**拒绝请求**并说明（D2「降级必须显式」）；
  *    静默丢图会让模型答"我没有看到图片"，用户以为是模型笨。
+ * 4. **thinking 模式必须把历史思维链挂回对应 assistant 的 `reasoning_content`**。
+ *    Codex 会把 Responses 的 `reasoning` item 放进下一轮 `input`（这是对的）；
+ *    DeepSeek / Kimi / GLM 的 Chat 接口要求把它写在 assistant 消息上，丢掉会 400：
+ *    `The reasoning_content in the thinking mode must be passed back to the API.`
+ *    仍然**不得**塞进 `content`（会让模型把思维链当成自己说过的话）。
  */
 import type { ContentItem, ResponseItem, ResponsesRequest, ResponsesTool } from '../protocol.js';
 import type { DegradeReason, ModelCapabilities } from '../capabilities.js';
@@ -20,6 +25,8 @@ export interface ChatMessage {
   readonly tool_calls?: readonly ChatToolCall[];
   readonly tool_call_id?: string;
   readonly name?: string;
+  /** DeepSeek / Kimi / GLM thinking：必须原样回传，不能塞进 content */
+  readonly reasoning_content?: string;
 }
 
 export type ChatContentPart =
@@ -123,6 +130,12 @@ function toolToChat(tool: ResponsesTool) {
   };
 }
 
+function reasoningTextFrom(item: Extract<ResponseItem, { type: 'reasoning' }>): string {
+  const fromContent = (item.content ?? []).map((part) => part.text).join('');
+  if (fromContent.length > 0) return fromContent;
+  return item.summary.map((part) => part.text).join('');
+}
+
 export function toChatRequest(
   request: ResponsesRequest,
   upstreamModel: string,
@@ -138,21 +151,61 @@ export function toChatRequest(
 
   /** 待合并的 assistant tool_calls：Chat 要求它们挂在同一条 assistant 消息上 */
   let pendingToolCalls: ChatToolCall[] = [];
+  /**
+   * 当前模型回合尚未挂到 assistant 上的思维链。一直保留到 user / tool 边界，
+   * 这样「reasoning → 正文 → function_call」会写到同一条 assistant 上（坑 4）。
+   */
+  let pendingReasoning = '';
+
+  const reasoningField = (): { readonly reasoning_content: string } | Record<string, never> => {
+    if (!capabilities.reasoning || pendingReasoning.length === 0) return {};
+    return { reasoning_content: pendingReasoning };
+  };
+
+  const pushAssistant = (msg: ChatMessage): void => {
+    messages.push({ ...msg, ...reasoningField() });
+  };
 
   const flushToolCalls = (): void => {
     if (pendingToolCalls.length === 0) return;
-    messages.push({ role: 'assistant', content: null, tool_calls: pendingToolCalls });
+    const last = messages[messages.length - 1];
+    if (last?.role === 'assistant' && last.tool_calls === undefined) {
+      messages[messages.length - 1] = {
+        ...last,
+        tool_calls: pendingToolCalls,
+        ...reasoningField(),
+      };
+    } else {
+      pushAssistant({ role: 'assistant', content: null, tool_calls: pendingToolCalls });
+    }
     pendingToolCalls = [];
+  };
+
+  const flushReasoningAtBoundary = (): void => {
+    flushToolCalls();
+    if (!capabilities.reasoning || pendingReasoning.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last?.role !== 'assistant') {
+      pushAssistant({ role: 'assistant', content: null });
+    } else if (last.reasoning_content === undefined) {
+      messages[messages.length - 1] = { ...last, ...reasoningField() };
+    }
+    pendingReasoning = '';
   };
 
   for (const item of request.input) {
     switch (item.type) {
       case 'message': {
-        flushToolCalls();
         const msg = item as Extract<ResponseItem, { type: 'message' }>;
         const role =
           msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user';
-        messages.push({ role, content: contentToChat(msg.content, capabilities) });
+        if (role === 'assistant') {
+          flushToolCalls();
+          pushAssistant({ role, content: contentToChat(msg.content, capabilities) });
+        } else {
+          flushReasoningAtBoundary();
+          messages.push({ role, content: contentToChat(msg.content, capabilities) });
+        }
         break;
       }
       case 'function_call': {
@@ -167,6 +220,7 @@ export function toChatRequest(
       case 'function_call_output': {
         // 坑 1：tool 消息的 tool_call_id 必须与之前的 call_id 一致
         flushToolCalls();
+        pendingReasoning = '';
         const out = item as Extract<ResponseItem, { type: 'function_call_output' }>;
         messages.push({
           role: 'tool',
@@ -176,8 +230,9 @@ export function toChatRequest(
         break;
       }
       case 'reasoning': {
-        // 历史 reasoning 不回传给上游：Chat 没有对应字段，而把思维链塞进 assistant content
-        // 会让模型把它当成自己说过的话。丢弃是正确的（内核也不依赖它被回传）。
+        if (capabilities.reasoning) {
+          pendingReasoning += reasoningTextFrom(item);
+        }
         break;
       }
       default:
@@ -186,7 +241,7 @@ export function toChatRequest(
         break;
     }
   }
-  flushToolCalls();
+  flushReasoningAtBoundary();
 
   const wantsParallel = request.parallel_tool_calls ?? false;
   if (wantsParallel && !capabilities.parallelToolCalls) {

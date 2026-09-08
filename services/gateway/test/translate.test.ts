@@ -469,7 +469,71 @@ describe('Responses → Chat：instructions / 工具结果 / 未知条目', () =
     expect(request.messages[1]?.role).toBe('tool');
   });
 
-  it('历史 reasoning 不回传上游（Chat 没有对应字段，塞进 content 会污染上下文）', () => {
+  it('thinking 模式：历史 reasoning 挂回下一轮 assistant 的 reasoning_content（丢了 DeepSeek 会 400）', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: '你能做什么' }] },
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: '内部思考' }] },
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: '我能写代码' }],
+          },
+          {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: '写 hello world' }],
+          },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+
+    expect(request.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(request.messages[1]).toEqual({
+      role: 'assistant',
+      content: '我能写代码',
+      reasoning_content: '内部思考',
+    });
+    // 不得塞进 content：否则模型会把思维链当成自己说过的话
+    expect(request.messages[1]?.content).toBe('我能写代码');
+  });
+
+  it('thinking + 工具调用：reasoning_content 挂在带 tool_calls 的那条 assistant 上', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: '列目录' }] },
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: '先 ls 再看' }] },
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: '我先看工作区' }],
+          },
+          { type: 'function_call', name: 'shell', arguments: '{"cmd":"ls"}', call_id: 'call_1' },
+          { type: 'function_call_output', call_id: 'call_1', output: 'a.txt' },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+
+    expect(request.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);
+    expect(request.messages[1]).toEqual({
+      role: 'assistant',
+      content: '我先看工作区',
+      reasoning_content: '先 ls 再看',
+      tool_calls: [
+        { id: 'call_1', type: 'function', function: { name: 'shell', arguments: '{"cmd":"ls"}' } },
+      ],
+    });
+  });
+
+  it('只有思维链没有正文时，仍要发出带 reasoning_content 的 assistant（下一轮 user 不能直接接在后面）', () => {
     const { request } = toChatRequest(
       {
         model: 'm',
@@ -481,7 +545,56 @@ describe('Responses → Chat：instructions / 工具结果 / 未知条目', () =
       'upstream',
       FULL,
     );
-    expect(request.messages).toHaveLength(1);
+    expect(request.messages).toEqual([
+      { role: 'assistant', content: null, reasoning_content: '内部思考' },
+      { role: 'user', content: '继续' },
+    ]);
+  });
+
+  it('reasoning 出现在 assistant 之后，也要挂回那条 assistant（内核历史顺序不保证）', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: '我能写代码' }],
+          },
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: '内部思考' }] },
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: '继续' }] },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+    expect(request.messages[0]).toEqual({
+      role: 'assistant',
+      content: '我能写代码',
+      reasoning_content: '内部思考',
+    });
+  });
+
+  it('非推理模型：历史 reasoning 仍丢掉，且不进 content', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: '内部思考' }] },
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: '我能写代码' }],
+          },
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: '继续' }] },
+        ],
+      },
+      'upstream',
+      LIGHT,
+    );
+    expect(request.messages.map((m) => m.role)).toEqual(['assistant', 'user']);
+    expect(request.messages[0]?.content).toBe('我能写代码');
+    expect(request.messages[0]?.reasoning_content).toBeUndefined();
     expect(JSON.stringify(request)).not.toContain('内部思考');
   });
 

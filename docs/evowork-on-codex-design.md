@@ -286,7 +286,7 @@
 | -------------------------------------------- | -------------------------- | --------------------------------------------------------------------- |
 | 流式事件序列（`response.*` 增量事件）        | 多为 OpenAI Chat 风格 SSE  | 事件重排，`item_id` / `output_index` 由网关自行编号                   |
 | 工具调用（并行调用、增量 arguments）         | 支持度参差，部分不支持并行 | 不支持并行时降级为串行并在网关合并；arguments 分片重组                |
-| reasoning 段 / `encrypted_content`           | 基本无对应物               | 有思维链的映射为 `reasoning` item；无则留空占位，**不得伪造**         |
+| reasoning 段 / `encrypted_content`           | Chat thinking 有 `reasoning_content`，无 `encrypted_content` | 有思维链的映射为 `reasoning` item；无则留空占位，**不得伪造**。下一轮把 `summary` 挂回 Chat assistant 的 `reasoning_content`（thinking 模式强制回传），**不得**塞进 `content` |
 | prompt cache（`prompt_cache_key`、命中计费） | 少数支持且语义不一         | 网关维护映射；不支持时如实上报 0 命中，避免配额口径失真               |
 | 多模态输入（图片）                           | 支持度参差                 | 不支持时网关明确报错，由前端回落到"本地 OCR + 文字描述"（受 Q3 约束） |
 | token 用量口径                               | 各家计数方式不同           | 统一换算为内核 `TokenUsage`，供 `TokenUsageContributor` 计量          |
@@ -295,7 +295,7 @@
 
 | 模型          | 适配重点                                                                                                    |
 | ------------- | ----------------------------------------------------------------------------------------------------------- |
-| DeepSeek      | 有推理型号，思维链字段可映射为 `reasoning` item；工具调用成熟度相对好，作为**基准实现**先做                 |
+| DeepSeek      | 有推理型号，思维链字段可映射为 `reasoning` item；**下一轮必须把 `reasoning_content` 挂回对应 assistant**（丢掉会 400）；工具调用成熟度相对好，作为**基准实现**先做 |
 | Kimi          | 长上下文是卖点，但 cache 与计费口径要单独核对；注意工具调用的并行支持度                                     |
 | GLM-5.3-flash | **flash 属轻量档**，工具调用稳定性与长指令遵循通常弱于旗舰档 —— M0 就该拿它验证最差情况，而不是等到 M1 末期 |
 
@@ -310,6 +310,8 @@
 | 3 | usage 帧的 `choices` 是空数组（OpenAI 形状） | usage 帧**同时带 `choices`、`delta.content` 与 `finish_reason`** | 若按"看到 usage 就跳过这一帧"写，会丢掉最后一段文本。现有实现先取 usage 再遍历 choices，不受影响 |
 
 其余实测确认：流式增量在 `choices[0].delta.content`；工具调用首帧带 `id` + `function.name`、后续帧只带 `arguments` 片段；cache 口径是 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`（不是 OpenAI 的 `prompt_tokens_details`，两者 DeepSeek 都给）；未知模型返回 400 + `error.code = invalid_request_error`，能映射为永久性错误（映射不上会被内核当成可重试）。
+
+> **2026-09-08**：thinking 模式的下一轮请求必须带回上一轮的 `reasoning_content`。这不是 Codex 的缺口 —— 内核已经把 Responses 的 `reasoning` item 放进下一轮 `input`。网关原先按「Chat 没有对应字段」把该 item 丢掉，DeepSeek 回 `The reasoning_content in the thinking mode must be passed back to the API.` 并让整个回合失败。修在 `services/gateway` 的 `to-chat.ts`：推理模型把 `summary` 挂到对应 assistant 上，仍然不塞进 `content`、不伪造 `encrypted_content`。
 
 > **2026-09-06 下架 `deepseek-chat` 与 `deepseek-reasoner`。** 目录里 DeepSeek 只留 `deepseek-v4-flash`。
 > 上面这段实测记录**保留不删** —— 它是"探针订正了三处假设"的证据，与型号在不在目录里无关。

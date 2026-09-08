@@ -211,6 +211,50 @@ describe('完整链路', () => {
     };
     expect(failed.response.error.message).toContain('不支持图片输入');
   });
+
+  it('下一轮请求把上一轮思维链挂回 Chat assistant（thinking 模式强制回传）', async () => {
+    let sent: unknown;
+    const provider = fakeProvider({
+      onRequest: (body) => {
+        sent = body;
+      },
+      lines: [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '好的' }, finish_reason: 'stop' }] })}`,
+        'data: [DONE]',
+      ],
+    });
+
+    await collect(
+      runPipeline(
+        request({
+          input: [
+            {
+              type: 'message',
+              role: 'user',
+              content: [{ type: 'input_text', text: '你能做什么' }],
+            },
+            {
+              type: 'reasoning',
+              summary: [{ type: 'summary_text', text: '先说明能力再问下一步' }],
+            },
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: '我能写代码' }],
+            },
+            { type: 'message', role: 'user', content: [{ type: 'input_text', text: TASK.prompt }] },
+          ],
+        }),
+        { requestId: 'req_1' },
+        deps(provider),
+      ),
+    );
+
+    const messages = (sent as { messages: { role: string; reasoning_content?: string }[] })
+      .messages;
+    const assistant = messages.find((m) => m.role === 'assistant');
+    expect(assistant?.reasoning_content).toBe('先说明能力再问下一步');
+  });
 });
 
 describe('Q14：不落盘 prompt 与响应体（M0 §10.2 第 2 条的可审计手段）', () => {
