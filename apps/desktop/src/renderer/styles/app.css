@@ -2611,3 +2611,95 @@ textarea {
   margin: var(--space-8) var(--space-12);
   color: var(--text-tertiary);
 }
+
+/* ── 设置页（11 §4.4，M10a）。两栏：左分类 + 右内容，左栏复用中栏宽度 token ── */
+.ew-settings {
+  display: flex;
+  gap: var(--space-24);
+  align-items: flex-start;
+}
+.ew-settings-nav {
+  display: flex;
+  flex-direction: column;
+  width: var(--layout-middle-width);
+  flex-shrink: 0;
+  padding: var(--space-8);
+  border-right: 1px solid var(--border-subtle);
+}
+.ew-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  /* 与其余页面同一条硬约束（01 §3.1 的 800 内容列） */
+  max-width: var(--layout-content-column);
+  min-width: 0;
+  flex: 1;
+}
+.ew-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+.ew-settings-note {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.ew-settings-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+.ew-settings-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.ew-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-settings-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+}
+.ew-settings-list-row > .ew-settings-note {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 01 §5.35 SecretInput：已保存态不渲染输入框（一个空框旁写着「已保存」读起来像没保存上） */
+.ew-secret-row,
+.ew-secret-saved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-secret-row input {
+  flex: 1;
+  min-width: 0;
+}
+.ew-secret-mask {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* 被企业策略停用的模型**留在表里**，划除 + 弱化（11 §4.1：消失的东西无法被排查） */
+.ew-mono[data-denied='true'] {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+/* 「更多」是一个菜单而不是一页（02 §4.7）：给它一个定位锚点 */
+.ew-more-anchor {
+  position: relative;
+  display: block;
+}

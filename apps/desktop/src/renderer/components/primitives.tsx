@@ -23,6 +23,7 @@
  * 所以**渲染层的组件 prop 显式接受 undefined**，服务层保持严格。
  * 这不是把开关关掉 —— `apps/desktop/src/main` 与所有 `packages/` / `services/` 仍受它约束。
  */
+import { useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
 export interface IconButtonProps {
@@ -580,6 +581,110 @@ export function SearchInput({
           ✕
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * 01 §5.35 SecretInput：密钥录入（M10a）。
+ *
+ * ## 为什么不是 `SearchInput` 加一个 `secret` prop
+ *
+ * `SearchInput` 的值是可读回的（受控 `value`），而密钥的"不可读回"是一条
+ * **安全属性**。做成同一个组件的 prop，就存在"某处忘了传那个 prop"这种失败方式，
+ * 而它的表现是密钥出现在渲染进程里 —— 等于出现在任何一个 XSS 面上（11 §12 第 2 条）。
+ * 两个组件的话，这种失败方式在类型层面就不存在。
+ *
+ * ## 三种状态是三件不同的事
+ *
+ *   ① 空       —— 一个 `type=password` 输入框；
+ *   ② 刚粘贴   —— 出现「保存」；形状不对时**给提示但不拦保存**（厂商随时会改 key 的
+ *                 形状，拦下来的代价是用户拿着一把有效的 key 进不去）；
+ *   ③ 已保存   —— 只显示后四位 + 「更换」「清除」。**没有读回路径**。
+ *
+ * **没有"显示密码"的小眼睛**：它要求组件持有明文并渲染出来。用户想确认自己贴对了，
+ * 靠的是后四位与一次连通性检查 —— 旁边可能坐着别人。
+ */
+export function SecretInput({
+  label,
+  saved,
+  last4,
+  hint,
+  disabled,
+  onSave,
+  onClear,
+}: {
+  readonly label: string;
+  readonly saved: boolean;
+  readonly last4?: string | undefined;
+  /** 形状提示（如"通常以 sk- 开头"）。**只是提示** */
+  readonly hint?: string | undefined;
+  readonly disabled?: boolean | undefined;
+  readonly onSave: (value: string) => void;
+  readonly onClear?: (() => void) | undefined;
+}) {
+  const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  // 已保存且没在改 → ③。**不渲染任何输入框**：一个空的输入框旁边写着"已保存"，
+  // 读起来像"没保存上"
+  if (saved && !editing) {
+    return (
+      <div className="ew-field ew-secret">
+        <span>{label}</span>
+        <div className="ew-secret-saved">
+          <span className="ew-secret-mask">已保存 · ****{last4 ?? '****'}</span>
+          <PillButton onClick={() => setEditing(true)} disabled={disabled}>
+            更换
+          </PillButton>
+          {onClear ? (
+            <PillButton onClick={onClear} disabled={disabled}>
+              清除
+            </PillButton>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ew-field ew-secret">
+      <span>{label}</span>
+      <div className="ew-secret-row">
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          aria-label={label}
+          value={draft}
+          disabled={disabled}
+          placeholder="粘贴 API 密钥…"
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <PillButton
+          variant="accent"
+          disabled={disabled || draft.trim() === ''}
+          onClick={() => {
+            onSave(draft.trim());
+            // 立刻清空本地草稿：**渲染层不留着这个值**
+            setDraft('');
+            setEditing(false);
+          }}
+        >
+          保存
+        </PillButton>
+        {saved ? (
+          <PillButton
+            onClick={() => {
+              setDraft('');
+              setEditing(false);
+            }}
+          >
+            取消
+          </PillButton>
+        ) : null}
+      </div>
+      {hint ? <p className="ew-field-hint">{hint}</p> : null}
     </div>
   );
 }

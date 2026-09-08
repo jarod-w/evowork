@@ -109,6 +109,25 @@ export const RENDERER_ACTIONS = Object.freeze([
   'listProjectDir',
   'readAgentsMemo',
   'writeAgentsMemo',
+  /*
+   * 设置页（11 §4.4，M10a）。
+   *
+   * **密钥只朝一个方向走**：`saveProviderKey` / `addCustomModel` 把它送进主进程，
+   * 而没有任何一个动作会把密钥送回来（返回的视图里只有后四位）——
+   * 渲染进程拿到密钥等于密钥进了任何一个 XSS 面（11 §12 第 2 条）。
+   */
+  'getModelAccess',
+  'saveProviderKey',
+  'clearProviderKey',
+  'addCustomModel',
+  'removeCustomModel',
+  /** 钥匙串不可用时用户的选择（明文保存 / 不保存）。**不替他选**（11 §4.3） */
+  'setSecretFallback',
+  /** 连通性检查：真的发一次最小请求 —— 只看目录里有没有这个 id 证明不了密钥是对的 */
+  'probeModel',
+  /** 单任务预算与并发上限（Q11 的阶段 1；托管额度随 M10b） */
+  'getPreferences',
+  'setPreferences',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {

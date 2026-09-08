@@ -53,12 +53,25 @@ describe('preload 有真正的入口（M9）', () => {
   });
 });
 
-describe('从访达启动也能拿到厂商密钥（M9）', () => {
-  it('宿主读 ~/.evowork/gateway.env，不依赖 shell 环境', () => {
-    // 装好的 App 不继承任何 shell 变量。文档一直让人把密钥写进这个文件，
-    // 宿主以前从不读它 → 本机网关走 NO_KEYS，界面却写成「连不上模型网关」。
-    expect(read('src/main/service-host.ts')).toContain('readGatewayEnvFile');
-    expect(read('src/main/gateway-env.ts')).toContain('DEEPSEEK_API_KEY');
+describe('从访达启动也能拿到厂商密钥（M9 + M10a）', () => {
+  /*
+   * 装好的 App **不继承任何 shell 变量**，所以密钥必须有一个本机来源。
+   *
+   * M10a 换了那个来源：`~/.evowork/gateway.env`（明文）→ 系统钥匙串（Q34=A）。
+   * 这条断言跟着换成新链路，但守的是同一件事：**这条链路存在**。
+   * 它断过一次（宿主从不读那个文件），表现是本机网关走 NO_KEYS 而界面写成「连不上网关」。
+   */
+  it('密钥经密钥库进网关子进程，且 safeStorage 真的被注入', () => {
+    expect(read('src/main/service-host.ts')).toContain('createModelAccess');
+    expect(read('src/main/secret-store.ts')).toContain('encryptString');
+    // 打包后唯一 import electron 的文件必须把 safeStorage 传进去，否则密钥库永远不可用
+    expect(read('src/main/electron-entry.mjs')).toContain('safeStorage');
     expect(read('src/main/electron-entry.mjs')).toContain('gatewayEntryPath');
+  });
+
+  it('钥匙串不可用时仍读旧的 gateway.env —— 不静默让老机器失去密钥', () => {
+    // 迁移要求密钥库可用；不可用时**不迁移、不改名、继续读**（见 model-access 的 legacyEnv）
+    expect(read('src/main/model-access.ts')).toContain('parseGatewayEnv');
+    expect(read('src/main/gateway-env.ts')).toContain('DEEPSEEK_API_KEY');
   });
 });

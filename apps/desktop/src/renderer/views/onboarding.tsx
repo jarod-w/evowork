@@ -60,7 +60,14 @@ export const PROVIDER_KEY_FIELDS: readonly {
  * 厂商密钥录入。引导第④步和首页「连不上网关」共用。
  *
  * Q1=A：从访达启动的应用读不到 shell 环境，必须在界面里收下密钥。
- * 密钥只走一次 IPC 写进本机文件，不回传、不进日志。
+ * 密钥只走一次 IPC，**写进系统钥匙串**（M10a / Q34=A），不回传、不进日志。
+ *
+ * ## 为什么这里不是 01 §5.35 的 `SecretInput`
+ *
+ * 那个组件是**一家一保存**（每个字段自带「保存」「清除」），设置页用的是它。
+ * 引导这一步是"三家一起填、按下一步一次提交"，换成 SecretInput 会变成
+ * 三个独立的保存动作 + 一个还要再按一次的「下一步」—— 首次使用时那是多余的一步。
+ * 已保存态、更换、清除这些事在设置页做（那里才有它们的语境）。
  */
 export function ModelAccessFields(props: {
   readonly values: ProviderKeys;
@@ -83,7 +90,8 @@ export function ModelAccessFields(props: {
         </label>
       ))}
       <p className="ew-field-hint">
-        至少填一家。密钥只保存在这台电脑上，不会上传。企业私有网关仍走本机 config.toml 的地址。
+        至少填一家。密钥存进这台电脑的<strong>系统钥匙串</strong>，不会上传； 之后在「设置 →
+        模型接入」里可以更换或清除，也可以在那里添加自定义模型。
       </p>
     </div>
   );

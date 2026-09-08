@@ -1,26 +1,25 @@
 /**
- * `~/.evowork/gateway.env` —— 本机网关的厂商密钥（拓扑 A）。
+ * `~/.evowork/gateway.env` 的**解析**（M10a 之后它只剩这一件事）。
  *
- * ## 为什么必须有这个文件
+ * ## 它以前是什么、现在是什么
  *
- * 网关只从**进程环境**读 `DEEPSEEK_API_KEY` 等（`services/gateway/src/main.ts`）。
- * 开发时从终端起 Electron，shell 里的变量在；从访达双击启动的安装包**不继承
- * 任何 shell 环境**，于是一家密钥都看不到 → 本机网关被判定 NO_KEYS 根本不起。
- * 模型目录那一次 fetch 打到没人听的 8787，界面上就变成「连不上模型网关」。
+ * 以前：厂商密钥的唯一 GUI 来源（明文文件，600），宿主启动时读它、设置页写它。
+ * 现在（Q34=A）：密钥的正式家是**系统钥匙串**（`secret-store.ts`）。这个文件只在两处被读：
  *
- * `docs/build-and-deploy.md` 一直让人把密钥写进这个文件，但桌面宿主从来没读过它 ——
- * 手工起网关时 `set -a && . gateway.env` 能用，装好的 App 不能。
+ *   ① **一次性迁移** —— 首次启动把里面的密钥导入钥匙串，然后改名成 `gateway.env.migrated`；
+ *   ② **钥匙串不可用的机器**（无 keyring 的 Linux）—— 那时不迁移、不改名、继续读它，
+ *      并在设置页让用户二选一（明文保存 / 每次手填）。理由见 `model-access.ts` 的 `legacyEnv`：
+ *      悄悄让产品不可用，比继续读一个用户自己创建的文件糟得多。
  *
- * ## 这是过渡方案，与 `gateway-token` 同一档
+ * ## 这个模块里**没有任何写盘函数**（2026-09-08 删掉了三个）
  *
- * 明文文件不满足「密钥不落盘」的本意。终态仍是 status.md §4 那两条未决策的候选
- * （钥匙串 / identity 短令牌）。在那之前，这个文件是 GUI 启动唯一能用的路径。
+ * `writeGatewayEnvKeys` / `ensureGatewayTokenFile` / `tokenFromEnvFile` 都被删了，
+ * 不是因为没人调用，而是因为**留着它们就等于留着一条写明文密钥的入口**。
+ * Q34 的整个意义是让那条路不存在；一个"暂时没人用但随手能用"的写明文函数，
+ * 迟早会在某次赶工里被重新接上（有测试守着这件事，见 `gateway-env.test.ts` 末尾）。
  *
  * **不记值**：Q14。这个模块的日志调用方只许报「读到了几个键」，不许报键名更不许报值。
  */
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
-
 /** 网关 `main.ts` 认的那几个厂商密钥。缺一家就不注册那一家，全缺则拒绝启动。 */
 export const PROVIDER_KEY_ENV = [
   'DEEPSEEK_API_KEY',
@@ -77,81 +76,6 @@ export function parseGatewayEnv(text: string): Record<string, string> {
   return out;
 }
 
-export function readGatewayEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  try {
-    return parseGatewayEnv(readFileSync(path, 'utf8'));
-  } catch {
-    // 读失败当成没有：密钥文件损坏不该让整个应用起不来，网关那一侧会再说没密钥
-    return {};
-  }
-}
-
 export function envHasProviderKey(env: NodeJS.ProcessEnv): boolean {
   return PROVIDER_KEY_ENV.some((name) => (env[name] ?? '').trim() !== '');
-}
-
-/**
- * 进程环境优先、文件补缺 —— 与 dotenv 同一条：已经 export 的开发机变量不被文件盖掉。
- *
- * 从访达启动时进程环境是空的，文件就是唯一来源。
- */
-export function mergeGatewayEnv(
-  fileEnv: Record<string, string>,
-  processEnv: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
-  return { ...fileEnv, ...processEnv };
-}
-
-/**
- * 把用户刚填的密钥合并进文件。空值不覆盖已有的 —— 三个框只填了一个时，
- * 另外两家不该被写成空行从文件里抹掉。
- *
- * 写完 `chmod 600`：mode 只在创建时生效，覆盖已有文件要再设一次。
- */
-export function writeGatewayEnvKeys(path: string, keys: Readonly<Record<string, string>>): void {
-  const current = readGatewayEnvFile(path);
-  const next: Record<string, string> = { ...current };
-  for (const [name, raw] of Object.entries(keys)) {
-    if (!ALLOWED.has(name)) continue;
-    const value = raw.trim();
-    if (value.length === 0) continue;
-    next[name] = value;
-  }
-  const lines = [
-    '# EvoWork 本机网关密钥。只存在这台电脑上，应用启动时读取。',
-    '# 权限 600。不要把这个文件提交进仓库或发到聊天里。',
-    ...Object.entries(next).map(([k, v]) => `${k}=${v}`),
-    '',
-  ];
-  writeFileSync(path, lines.join('\n'), { encoding: 'utf8', mode: 0o600 });
-  chmodSync(path, 0o600);
-}
-
-/**
- * 拓扑 A：本机网关的访问令牌。用户不该知道有这么个东西。
- *
- * 内核从 `EVOWORK_GATEWAY_TOKEN` 取、网关从 `EVOWORK_GATEWAY_TOKENS` 取，
- * 两边必须逐字相同。没有现成令牌时现场签一个写进 `gateway-token`。
- *
- * **只在调用方判定是本机网关时才签**：企业部署（拓扑 B）的令牌是 identity 发的，
- * 我们自己编一个只会让下拉 401，而真正的网关在别人的机器上。
- */
-export function ensureGatewayTokenFile(
-  path: string,
-  existing: string | undefined,
-): { readonly token: string; readonly minted: boolean } {
-  if (existing && existing.length > 0) return { token: existing, minted: false };
-  const token = randomBytes(24).toString('base64url');
-  writeFileSync(path, `${token}\n`, { encoding: 'utf8', mode: 0o600 });
-  chmodSync(path, 0o600);
-  return { token, minted: true };
-}
-
-/** 文件里的访问令牌：单令牌键优先，其次是逗号列表的第一个。 */
-export function tokenFromEnvFile(fileEnv: Record<string, string>): string | undefined {
-  const single = fileEnv.EVOWORK_GATEWAY_TOKEN?.trim();
-  if (single) return single;
-  const first = fileEnv.EVOWORK_GATEWAY_TOKENS?.split(',')[0]?.trim();
-  return first && first.length > 0 ? first : undefined;
 }

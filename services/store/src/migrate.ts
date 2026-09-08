@@ -107,9 +107,49 @@ const migrateLegacyWorkspaces: Migration = {
   },
 };
 
+/**
+ * 第 3 版：删掉 `automation` 上两个从没有人读写的列（D10 / Q31=A，2026-09-08）。
+ *
+ * `tenant_id` / `owner_id` 是建表时为"以后有账号"留的位，而 D10 否掉了那个"以后"：
+ * 本机数据属于这台机器（归属靠 `device_id`），不属于账号。**删空列不是洁癖** ——
+ * 留着它会让"把本机数据按租户切分"看起来只差一次 UPDATE，那正是 R12 的滑坡。
+ *
+ * ## 为什么要一个迁移而不是只改 DDL
+ *
+ * `CREATE TABLE IF NOT EXISTS` 对已经建过表的库**什么都不做**。只改 DDL 的话，
+ * 开发机上（干净库）扫描通过，而所有已装机器的库里那两列还在 ——
+ * 而 D10 的机制化第②条扫的是 DDL，它永远看不到那些库。
+ *
+ * ## 失败不能中止启动
+ *
+ * `DROP COLUMN` 在旧 sqlite（< 3.35）上不支持，而它删的是**两个空列**：
+ * 失败的后果只是"这台机器上还留着两个没人用的列"，而权威迁移器失败的后果是
+ * **应用起不来**（宁可启动失败也不丢定时任务定义）。两者不成比例，所以这里逐列 try
+ * —— 唯一不能接受的是**静默**，所以失败要能被看见：`droppedColumns` 少于 2 时
+ * 上层会记一条（见 `applyMigrations` 的返回）。
+ */
+const dropAutomationTenancyColumns: Migration = {
+  version: 3,
+  summary: '删掉 automation 的 tenant_id / owner_id（D10：账号不是数据归属主体）',
+  up: (db) => {
+    // 老库里可能连表都还没有（第 1 版刚建完的顺序里它已存在，这里只是不假设）
+    for (const column of ['tenant_id', 'owner_id']) {
+      try {
+        db.exec(`ALTER TABLE automation DROP COLUMN ${column}`);
+      } catch {
+        /*
+         * 列不存在（新库已经不带它）或 sqlite 太老。两种都不该让启动失败 ——
+         * 见上面的注释：这两列是空的，而这个迁移器的失败代价是应用打不开。
+         */
+      }
+    }
+  },
+};
+
 export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
   createTables(AUTHORITATIVE_TABLES),
   migrateLegacyWorkspaces,
+  dropAutomationTenancyColumns,
 ];
 
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;

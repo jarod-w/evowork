@@ -209,5 +209,11 @@ export function toModelOption(entry: ModelCatalogEntry): ModelOptionView {
       { id: 'parallel-tools', label: '并行工具', available: entry.capabilities.parallelToolCalls },
     ],
     notices: entry.notices,
+    // 11 §4.2：凭据来源跟着 `provider/model` 一起显示
+    credentialSource: entry.credentialSource,
+    verified: entry.verified,
+    layer: entry.layer,
+    // 被企业策略停用的**留在列表里**（禁用 + 原因），不隐藏
+    ...(entry.denied ? { denied: entry.denied } : {}),
   };
 }

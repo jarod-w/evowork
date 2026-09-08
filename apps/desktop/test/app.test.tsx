@@ -11,6 +11,7 @@ import type { Adapter } from '@evowork/kernel-adapter';
 import { openStore } from '@evowork/store';
 
 import type {
+  ModelAccessView,
   ModelCatalogResult,
   ModelOptionView,
   RendererEvent,
@@ -43,6 +44,8 @@ const MODELS: readonly ModelOptionView[] = [
       { id: 'parallel-tools', label: '并行工具', available: true },
     ],
     notices: ['这个模型不支持图片输入，可切换模型。'],
+    credentialSource: 'byok',
+    verified: true,
   },
   {
     id: 'evowork/kimi-k3',
@@ -54,8 +57,25 @@ const MODELS: readonly ModelOptionView[] = [
       { id: 'parallel-tools', label: '并行工具', available: true },
     ],
     notices: [],
+    credentialSource: 'byok',
+    verified: true,
   },
 ];
+
+/** 设置页的默认视图。**没有任何密钥字段** —— 那个类型里就没有（11 §12 第 2 条） */
+const ACCESS: ModelAccessView = {
+  mode: 'local',
+  secretBackend: 'keychain',
+  providers: [
+    { id: 'deepseek', label: 'DeepSeek', saved: true, last4: '3f9a' },
+    { id: 'moonshot', label: 'Kimi（Moonshot）', saved: false },
+    { id: 'zhipu', label: 'GLM（智谱）', saved: false },
+  ],
+  customModels: [],
+  models: MODELS,
+  allowCustomModels: true,
+  signedIn: false,
+};
 
 function fakeBridge(over: Partial<EvoworkBridge> = {}) {
   const emit: { ui?: (e: RendererEvent) => void } = {};
@@ -105,6 +125,19 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     listProjectDir: vi.fn(async () => []),
     readAgentsMemo: vi.fn(async () => ({ exists: false, content: '' })),
     writeAgentsMemo: vi.fn(async () => ({ ok: true })),
+    /*
+     * 设置页（M10a）。默认是**这台机器的常见状态**：钥匙串可用、配了一家密钥、
+     * 没有自定义模型、未登录（Q30=A 下未登录是常态而不是待修复状态）。
+     */
+    getModelAccess: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    saveProviderKey: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    clearProviderKey: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    addCustomModel: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    removeCustomModel: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    setSecretFallback: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    probeModel: vi.fn(async () => ({ ok: true, message: '通了：这个模型现在可以用。' })),
+    getPreferences: vi.fn(async () => ({ concurrencyComputed: 3, concurrencyLimit: 3 })),
+    setPreferences: vi.fn(async () => ({ concurrencyComputed: 3, concurrencyLimit: 2 })),
     ...over,
   };
   return { bridge, emit };
@@ -1045,5 +1078,60 @@ describe('项目页接线（Task 13）', () => {
     fireEvent.click(await screen.findByText('季度评审'));
 
     await waitFor(() => expect(openTask).toHaveBeenCalledWith({ threadId: 't9' }));
+  });
+});
+
+/*
+ * ── 设置页的入口与接线（M10a）──
+ *
+ * 「更多」在 02 §4.7 里是**一个菜单**，而它此前点开是一个「这里还没有内容」的空页。
+ * 现在它下面的「设置」真的有了，所以这组断言守两件事：菜单里的项能到达设置页，
+ * 以及**设置页改完密钥之后 Composer 的下拉跟着变**（两处用的是同一份目录 ——
+ * 各拉一次的话，"设置里明明有这个模型、下拉里却没有"会变成一次没人能复现的排查）。
+ */
+describe('设置页（11 §4.4）', () => {
+  it('「更多」是菜单而不是页面，选「设置」到达模型接入分区', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    await waitFor(() => expect(bridge.getModelAccess).toHaveBeenCalled());
+    expect(screen.getByRole('navigation', { name: '设置分类' })).toBeTruthy();
+    expect(screen.getByText('已保存 · ****3f9a')).toBeTruthy();
+  });
+
+  it('菜单里没做的项**禁用并给原因**，不静默移除', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    const item = screen.getByRole('menuitem', { name: /设备与同步/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(screen.getByText(/跨设备同步本期不做/)).toBeTruthy();
+  });
+
+  it('在设置页保存密钥后，Composer 的模型下拉用的是同一份新目录', async () => {
+    const { bridge } = fakeBridge({
+      saveProviderKey: vi.fn(async () => ({
+        ok: true,
+        view: { ...ACCESS, models: [{ ...MODELS[0]!, id: 'evowork/new', label: 'new/model' }] },
+      })),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    await waitFor(() => screen.getByLabelText('Kimi（Moonshot） API 密钥'));
+
+    fireEvent.change(screen.getByLabelText('Kimi（Moonshot） API 密钥'), {
+      target: { value: 'sk-new' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0] as HTMLElement);
+    await waitFor(() => expect(bridge.saveProviderKey).toHaveBeenCalled());
+
+    // 回到首页：下拉里应该是设置页刚返回的那一份
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
+    await waitFor(() => expect(screen.getByText('new/model')).toBeTruthy());
   });
 });

@@ -32,8 +32,13 @@ function entry(): string {
   return path;
 }
 
-describe('起不起本机网关：判据是 base_url 指向哪儿', () => {
-  it('环回地址的三种写法都算本机', () => {
+describe('起不起本机网关：判据是 app.toml 的 mode（D11）', () => {
+  /*
+   * `isLocalGateway` **不再决定要不要起网关**（2026-09-08 / D11）：它只剩
+   * `app-config.ts` 里那一次兼容读取（老装机没有 `app.toml` 时反推一次并写回）。
+   * 这两条断言因此仍然要留着 —— 那次反推判错的后果与从前一样。
+   */
+  it('环回地址的三种写法都算本机（一次性兼容反推还要用它）', () => {
     expect(isLocalGateway('http://127.0.0.1:8787/v1')).toBe(true);
     expect(isLocalGateway('http://localhost:8787/v1')).toBe(true);
     expect(isLocalGateway('http://[::1]:8787/v1')).toBe(true);
@@ -47,10 +52,11 @@ describe('起不起本机网关：判据是 base_url 指向哪儿', () => {
     expect(isLocalGateway('http://0.0.0.0:8787/v1')).toBe(false);
   });
 
-  it('远端地址不起进程，且**不给用户任何提示**（网关在服务器上是正常部署）', () => {
+  it('`runsLocally: false` 时不起进程，且**不给用户任何提示**（网关在服务器上是正常部署）', () => {
     const { spawnFn } = fakeSpawn();
     const gw = startLocalGateway({
       baseUrl: 'https://gateway.example.com/v1',
+      runsLocally: false,
       entryPath: entry(),
       env: { DEEPSEEK_API_KEY: 'k' },
       spawnFn,
@@ -67,6 +73,7 @@ describe('起不起本机网关：判据是 base_url 指向哪儿', () => {
     const { spawnFn } = fakeSpawn();
     const gw = startLocalGateway({
       baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
       entryPath: entry(),
       env: {},
       spawnFn,
@@ -83,6 +90,7 @@ describe('起不起本机网关：判据是 base_url 指向哪儿', () => {
     const { spawnFn } = fakeSpawn();
     const gw = startLocalGateway({
       baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
       entryPath: '/nope/main.js',
       env: { ZHIPU_API_KEY: 'k' },
       spawnFn,
@@ -99,6 +107,7 @@ describe('起起来之后的参数', () => {
     const path = entry();
     startLocalGateway({
       baseUrl: 'http://127.0.0.1:9999/v1',
+      runsLocally: true,
       entryPath: path,
       token: 'tok',
       env: { DEEPSEEK_API_KEY: 'k' },
@@ -136,6 +145,7 @@ describe('起起来之后的参数', () => {
   it('不传 spawnFn 时用真的 spawn，而不是判定"缺少启动器"', () => {
     const gw = startLocalGateway({
       baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
       // 产物不存在 → 走 NO_ENTRY 分支，不会真起进程；这里验的是**没有 spawnFn 也能走到这一步**
       entryPath: '/nope/main.js',
       env: { DEEPSEEK_API_KEY: 'k' },
@@ -149,6 +159,7 @@ describe('起起来之后的参数', () => {
     const { child, spawnFn } = fakeSpawn();
     const gw = startLocalGateway({
       baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
       entryPath: entry(),
       env: { MOONSHOT_API_KEY: 'k' },
       spawnFn,
@@ -162,6 +173,7 @@ describe('起起来之后的参数', () => {
     const { child, spawnFn } = fakeSpawn();
     const gw = startLocalGateway({
       baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
       entryPath: entry(),
       env: { DEEPSEEK_API_KEY: 'k' },
       spawnFn,

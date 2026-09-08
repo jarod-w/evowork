@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-07（第 15 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-08（第 16 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
@@ -9,6 +9,9 @@
 
 **M0–M9 的核心实现全部落地并全绿**（P0 骨架 · M1 网关 · M2a 服务层 · M2 前端 · M3 技能与解析 ·
 M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）。
+**2026-09-08 新增 M10a「模型管理」**（1–1.5 人周，[11 §4](design/11-account-and-models.md)）——
+密钥进系统钥匙串、`gateway.env` / `gateway-token` 两个明文文件退役、拓扑改由 `app.toml` 的 `mode` 决定、
+模型表变成四层合并、设置页上线。**§4 的第一个卡住项就此关闭。**
 **Q16 三家模型全部对真实 endpoint 实测过**，并因此改出三个真缺陷。
 
 剩下的不是"还没写"，而是**四类需要外部条件才能推进的事**：
@@ -18,8 +21,8 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | --- | --- |
 | 门禁 | `pnpm run check` 全绿：prettier · eslint（含 K2 边界规则）· tsc（含测试）· vitest · K1 补丁预算 |
 | 依赖 | Electron **44.2.0**（`--version` 实测可运行）· mermaid 11.17（**已代码分割**：主 chunk 244KB，mermaid 683KB 独立）· 办公扩展**有了 App 内安装器**（2026-09-07，`services/runtime-installer`）。实测：干净 HOME 从零联网装 **66 秒**通过（含“搬走目录再跑”的可搬运检查）；本机打的离线包在干净 HOME 上**离线装 41.7 秒**通过（下载函数被换成一被调用就炸）。四个技能用系统 python3 调用时 re-exec 兜底实测生效，docx/xlsx/pptx/图表四种产物已生成并回读验证；图表中文用扩展自带的 Noto Sans SC 渲染正常。**OCR 档仍未装**（`pytesseract` 缺失），扫描件走不通 |
-| 测试 | **1032 个通过、2 个跳过**。跳过的两条是 presentations 的"装了扩展才验得到"分支（本机没有 `python-pptx`）。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
-| 源码 | 约 28.4k 行（不含测试）+ 17.2k 行测试 |
+| 测试 | **1302 个通过、2 个跳过**（M10a 新增 70 条、删掉 7 条 —— 那 7 条守的是已经删掉的明文写入函数）。跳过的两条是 presentations 的"装了扩展才验得到"分支（本机没有 `python-pptx`）。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
+| 源码 | 约 34.4k 行（不含测试）+ 20.2k 行测试 |
 | 内核补丁 | **0 个文件 / 0 行**（预算 5 / 500）—— 设计判定只剩 P4 品牌字符串一项待落 |
 | 内核基线 | `89a4eec6da`（2026-09-04）；F1–F19 已在此基线复核（**F19 是 M4 实测新增**：hooks 输出契约的三条硬约束） |
 
@@ -42,6 +45,8 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P3-3** M8 可视化等 | 🟢 | **Visualizer**（fence 识别 · SVG 白名单清洗 · chart spec 校验 · 沙箱 iframe）· 产物识别三信号与版本 · 分享授权流（Q10 六条规则）· 资料库视图与两种删除语义 · 本机磁盘占用 | 图表库与 mermaid 的实际接线（属 M9 打包）· 资料库三栏 UI · 分享的上传实现与云端托管 · `fs/watch` 接线 |
 | **P3-2** M9 打包 | 🟢 | Electron 入口 · electron-builder 配置（三平台 + 差量更新）· macOS entitlements · **体积预算与档位边界检查**（R10）· **无证书时降级为未签名并把标注写进文件名**（U4）· **打包驱动 `scripts/package.mjs`**（把 package-plan 的四条规则接上）· **2026-09-06：macOS arm64 真实打包跑通并启动验证** | 签名公证（卡 P0-5 证书）· 自动更新服务端 · EvoWork CLI 随包（Q13）· 应用图标（现在用的是 Electron 默认图标）· Windows / Linux 未在真机打过 |
 
+| **P3.5-1** M10a 模型管理 | 🟢 | **密钥库**（`safeStorage` → `secrets.bin` 密文；两个明文文件一次性迁移后改名 `.migrated`；钥匙串不可用时显式二选一、**不静默写明文**）· **`app.toml` 的 `mode`**（拓扑权威，URL 反推退役为一次性兼容）· **模型表四层合并**（② > ②' > ③ > ①，被停用的模型留在列表里带原因）· **自定义模型**（`models.toml` + 必选协议适配类型 + 每条一把独立密钥槽）· **设置页**（六个分区，两个如实说没做）· `SecretInput`（01 §5.35）· 连通性检查 · 单任务预算与并发上限 | ②' 租户默认模型（随 M10b）· 本机网关的转发模式（随 M10b，所以"内核 base_url 恒为 loopback"现在只成立一半）· **真机上的钥匙串（U6）** —— 2026-09-08 已用真实 DeepSeek key 把整条链路跑通（见 §3），但那台机器没有 keyring，验到的是"不可用时的兜底分支"而不是 `safeStorage` 本身 |
+
 图例：✅ 完成 · 🟢 核心完成，剩余项已列 · 🟡 部分 · ⬜ 未开始
 
 ---
@@ -51,12 +56,12 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | 位置 | 内容 | 测试 |
 | --- | --- | --- |
 | `packages/protocol` | app-server JSON-RPC v2 的手写子集 + NDJSON 双向分发（**K2 边界的类型面**） | 20 |
-| `packages/logging` | Q14「不落盘正文」的实现处：**没有接受自由字符串的日志入口** + 字段注册表 + 泄露检测 | 28 |
+| `packages/logging` | Q14「不落盘正文」的实现处：**没有接受自由字符串的日志入口** + 字段注册表（M10a 新增 `credentialSource` / `authMode` / `secretStore` / `quotaClass` / `tenantId`；**刻意不注册 `userId` 与 `password`**）+ 泄露检测 | 30 |
 | `packages/tokens` | 01 §2 的 design token + 对比度自动化断言 + CSS 变量生成 | 24 |
-| `services/store` | 16 张本机 sqlite 表（含「项目」的 `project_local` / `project_root` 两张权威表）· 投影/权威两个迁移器 · 状态派生 · FTS5 trigram | 62 |
+| `services/store` | 16 张本机 sqlite 表（含「项目」的 `project_local` / `project_root` 两张权威表）· 投影/权威两个迁移器（**第 3 版删掉 automation 的 `tenant_id` / `owner_id`，D10**）· 状态派生 · FTS5 trigram · **schema 归属列扫描** | 68 |
 | `services/kernel-adapter` | **K2 边界的唯一实现处**：会话 · 心跳 · 退避重启 · 会话恢复 · 能力探测与降级 · 事件流三消费者定序 · 审批双策略 · 场景展开 · 内核进程启动器 | 98 |
-| `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 | 81 |
-| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI | 152 |
+| `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 · **模型表四层合并（`layers.ts`）与自定义模型的线上形状（`custom-models.ts`，宿主与网关共用）** | 106 |
+| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **密钥库（`secret-store.ts`）· 拓扑（`app-config.ts`）· 模型接入状态机（`model-access.ts`）· 自定义模型文件（`custom-models.ts`）· 设置页（`views/settings.tsx`）** | 522 |
 | `services/artifacts` | 产物识别（三信号 + 版本 + 重定位）· 分享授权（Q10）· 资料库视图与磁盘占用 | 26 |
 | `services/scheduler` | 定时调度：cron（时区 + DST）· misfire 补偿 · 失败语义 · 设备迁移 · 自然语言解析 | 54 |
 | `services/policy` | 安全与策略：三级路径策略 · profile 文案 · 命令风险 · 并发与预算 · guardian 映射 · 审计与链式哈希 · 平台能力 · **四个 hook 的决策** | 64 |
@@ -85,6 +90,8 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | ✅ **端到端跑通并拿到真回答**（M2 + M1） | **2026-09-06 实测**：真窗口按回车 → 内核 → 网关 → DeepSeek → 中文回答显示在对话里，**身份是 EvoWork、场景指令生效**。过程中改出六个缺陷（两批，见下表）。**这条验的仍然是链路与身份，不是产物质量**（U1 未变） |
 | ✅ **macOS 打包与启动**（M9） | **2026-09-06 在 macOS arm64 实测**：`pnpm run package` 出 dmg/zip 各 197MB，dmg 可挂载；装出的 App 启动后 3 个 Helper 子进程 + 1 个内核进程，`desktop.host.started` 落日志。**过程中修掉三个只有真跑才会暴露的缺陷**，见下表 |
 | ✅ **手动选模型的链路**（M2 + M1） | **2026-09-06 实测**：网关带三家真 key 起在 8787，`GET /v1/evowork/models` 返回 5 个模型（**不重复、不含没配密钥的厂商**）；三家各打一次真实 `POST /v1/responses` 都拿到回答（deepseek-v4-flash 1.0s · kimi-k3 3.8s · glm-5.3-flash 2.1s）；真窗口起来后 Composer 里的下拉**已填充**并选中场景默认模型。**下拉的展开与切换是测试覆盖的，不是真点出来的** —— 这台机器上拿不到 UI 自动化的辅助功能权限 |
+| ✅ **M10a 的整条链路**（密钥库 → 网关子进程 → 真实 DeepSeek） | **2026-09-08 用一把真实 DeepSeek key 实测**（`mode = local`），四段都跑通：① 网关直连 `api.deepseek.com`，`GET /v1/evowork/models` 只列配了密钥的那一家、并带上 `credentialSource: byok` 与 `layer: builtin`；流式 `POST /v1/responses` 拿到中文回答，事件序列 `created → 64 帧 reasoning_summary_text.delta → 31 帧 output_text.delta → completed → [DONE]`，usage `in 101 / out 96`（其中 `reasoning_tokens: 64`、`cached_tokens: 0`）—— 顺带再次确认「名字带 flash 但它是推理模型」这条实测记录仍然成立。② **宿主侧六步全过**：干净 HOME → `mode=local` 且 `app.toml` 写出 → 没钥匙串时**拒绝保存且不产生任何文件** → 用户显式选明文兜底后才存下 → 视图序列化后搜不到密钥原文（只有后四位）→ 令牌自动签发进子进程环境 → 网关子进程真起来 → **连通性检查真打到 DeepSeek 并返回"通了"**。③ **第③层自定义模型**（一家内置密钥都没配）：`models.toml` 里只有 `key_env = "EVOWORK_CUSTOM_KEY_1"`、搜不到密钥；目录里只有那条 `my/deepseek`，标 `layer: custom` / `verified: false`；真实调用 200 且跑到 `response.completed`。④ **第②层企业停用**：目录里**仍然列出**并带原因，而请求 403 `model_denied`、原文透出。**这条验的是链路、拓扑判据与四层合并，不是产物质量（U1 未变）**，也不是钥匙串（见下一行） |
+| ❌ **`safeStorage` 真机行为**（U6，新增） | **没验。** 2026-09-08 的实测跑在 headless Linux 上（无 keyring、也没起 Electron），所以走的是「钥匙串不可用 → 用户显式选明文」那条分支 —— **那条分支的行为完全符合设计**（先拒绝、不偷偷写明文、选了才存、`secretStore` 落成可审计的 `plaintext-fallback`），但这**不等于**钥匙串验过了。仍需三台真机回答三件事：macOS 首次加密弹不弹授权框 · 换 OS 账号后解密失败的表现是不是"请重新填密钥"而不是崩 · **一台真的没有 keyring 的 Linux 上 `isEncryptionAvailable()` 与 `getSelectedStorageBackend()` 到底返回什么**（我们按 `basic_text` = 不可用处理，那是照 Electron 文档写的） |
 | ❌ **签名 / 公证链路**（U4） | **没验。** 卡 P0-5 的证书 |
 | ❌ **Windows 隔离强度**（U5，新增） | **没验。** 需要一台 Windows 机器实测 `windows-sandbox-rs` 的隔离边界。当前 `WINDOWS_ISOLATION = 'unknown'`，行为**按保守侧走**（停用完全访问 + 能力页如实说"还没评估"）—— 默认按"足够"走的话，结论一旦是"不足"，中间这段时间 Windows 用户是在一个我们以为安全、实际未知的环境里跑完全访问 |
 | ❌ **`maxContextTokens`** | **没验。** 要塞满上下文才能测；五个型号都仍在能力表的 `unverified` 列表里 |
@@ -379,7 +386,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 
 | 事项 | 卡在 | 影响 |
 | --- | --- | --- |
-| **网关令牌的正式机制** | **不卡了 —— 已决策（2026-09-07），待实现** | 决策：Q34=A **Electron `safeStorage`** 存自定义模型的厂商密钥与 refresh token，托管形态叠加 identity 签发的短期 JWT（两条候选不是二选一，理由见 [11 §9](design/11-account-and-models.md)）。落地在 **M10a**（1–1.5 人周，无外部依赖）。**在 M10a 完成前，现有 `~/.evowork/gateway.env` / `gateway-token` 仍是过渡方案，不要当成正式机制** |
+| ~~**网关令牌与密钥的正式机制**~~ | ✅ **已关闭（2026-09-08）** | Q34=A 落地在 **M10a**：厂商密钥与网关令牌都进 `safeStorage`（密文 `~/.evowork/secrets.bin`），`gateway.env` / `gateway-token` 首次启动导入后改名 `.migrated`。**两条没被这次覆盖的**：① 钥匙串不可用的机器（无 keyring 的 Linux）仍读旧的 `gateway.env` —— 那是刻意的，否则升级会让老机器静默失去密钥；② refresh token 的存放随 M10b（identity 还没有）。**2026-09-08 用真实 DeepSeek key 把「设置页动作 → 密钥库 → 网关子进程 → 上游」整条链路跑通了**（§3 有细节）；但真机上的钥匙串行为仍**没实测过** —— 那次跑在无 keyring 的机器上，走的是明文兜底分支（U6，见 §5）|
 | **P0-5 代码签名证书** | 外部采购 | M9 打包只能出未签名产物；U4 无法证伪 |
 | **U1 GLM 产物质量** | 需要人工评分（08 §5.4 的三个任务），不是技术阻塞 | 若不达标应换旗舰档，**不靠加模板硬扛**（总纲原话）。这个结论越晚拿到，返工面越大 |
 | **U3 misfire 真机体验** | 需要真机关机一夜 | M5 的文案与补偿策略无法确认 |
@@ -394,6 +401,8 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 3. ~~P3-1 M5~~ **核心已完成**（2026-09-05）。剩与内核接线、`wake_system`、以及 07 的自动化 UI。
 4. ~~P3-3 M8~~ **核心已完成**（2026-09-05）。剩图表库/mermaid 接线（随 M9 打包）、资料库三栏 UI、分享的上传实现。
 5. ~~P3-2 M9 打包~~ **macOS 侧已跑通**（2026-09-06）。剩签名公证（卡 P0-5 证书，U4）、应用图标、以及 Windows / Linux 的真机打包。
+6. ~~P3.5-1 M10a 模型管理~~ **已完成并用真实 DeepSeek key 实测**（2026-09-08，四段结论见 §3）。§4 的第一个卡住项就此关闭。**剩下一条未证伪的断言（U6）**：`safeStorage` 本身没验过 —— 那次实测跑在 headless、无 keyring 的机器上，走的是"不可用 → 用户显式选明文"分支（**该分支行为完全符合设计**）。要验的三件事只有真机能给：① macOS 首次加密会不会弹钥匙串授权框、② 换 OS 账号后解密失败的表现是不是"请重新填密钥"而不是崩、③ 一台**真的没有 keyring 的 Linux** 上 `isEncryptionAvailable()` 与 `getSelectedStorageBackend()` 到底返回什么（我们按 `basic_text` = 不可用处理，那是照文档写的）。
+7. **下一段是 M10b（账号）**，但它卡在 §10.1 的外部前置（域名备案 · 发信域 · 云上部署环境 · 法务文本）—— 建议与 P0-5 的证书采购同期启动，因为 ICP 备案以月计。
 
 ---
 
@@ -401,7 +410,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 
 | 类别 | 具体 | 卡在 |
 | --- | --- | --- |
-| **需要外部条件** | GLM 产物质量评分（U1）· misfire 真机（U3）· 签名公证（U4）· Windows 隔离（U5） | 人 / 真机 / 证书 |
+| **需要外部条件** | GLM 产物质量评分（U1）· misfire 真机（U3）· 签名公证（U4）· Windows 隔离（U5）· **`safeStorage` 真机行为（U6，含一台没有 keyring 的 Linux）** · **M10b 的域名备案与发信域** | 人 / 真机 / 证书 / 备案 |
 | ~~需要装依赖~~ | ✅ **不再需要人装**：办公扩展 2026-09-07 起由 App 内的安装器装（`services/runtime-installer`），用户点一个按钮；离线机器用 `EVOWORK_OFFICE_BUNDLE`。`electron` 44 · `mermaid` 11 随包 | — |
 | ~~需要接线~~ | ✅ **已接**：scheduler↔内核 · `fs/watch`↔产物索引 · 分享上传 · 四个技能↔办公运行时（缺模块时自动换解释器重跑）· **安装器↔引导第 ⑤ 步与探针**（装完 `probe.invalidate()` 再重探） | 剩：外部解析器↔受限子进程（等 M4 沙箱）—— 这意味着**拖入 docx/pdf 仍拿不到解析内容**，只会以原始文件引用（文案已改成不再劝人装扩展） |
 | ~~还没画的 UI~~ | ✅ **已完成**：资料库三栏 · 自动化表单与执行历史 · 用量与审计页 · 首运行六步引导。2026-09-07 新增第 33 个组件 **ProgressBar**（办公扩展安装进度），**已按 Q24 的规矩先补进 01 §5.33 再实现** | — |

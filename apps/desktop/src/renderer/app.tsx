@@ -21,16 +21,22 @@ import type {
   AgentsMemoView,
   ApprovalView,
   ApplyModelAccessInput,
+  CustomModelInput,
   AuditDataView,
   AutomationsDataView,
   DirEntryView,
   LibraryDataView,
+  ModelAccessMutationResult,
+  ModelAccessView,
   ModelCatalogResult,
+  ModelProbeResult,
   ModelOptionView,
   ModelUnavailableReason,
   OpenTaskResult,
   ProjectDetailView,
   ProjectMutationResult,
+  PreferencesInput,
+  PreferencesView,
   ProjectsDataView,
   RendererEvent,
   RuntimeInstallResultView,
@@ -61,6 +67,7 @@ import {
   type ProviderKeys,
 } from './views/onboarding.js';
 import { ProjectDetailPage } from './views/project-detail.js';
+import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskWorkspace } from './views/task-workspace.js';
@@ -90,6 +97,25 @@ export interface EvoworkBridge {
    */
   listModels(): Promise<ModelCatalogResult>;
   applyModelAccess(input: ApplyModelAccessInput): Promise<ModelCatalogResult>;
+  /*
+   * 设置页（11 §4.4，M10a）。
+   *
+   * **每个动作都返回一份新视图**：少了它，页面要么自己猜新状态（于是"保存了没有"
+   * 靠乐观更新，而钥匙串可能拒绝了这次写入），要么再发一次请求。
+   * 密钥只朝一个方向走 —— 返回的视图里只有后四位。
+   */
+  getModelAccess(): Promise<ModelAccessMutationResult>;
+  saveProviderKey(input: {
+    providerId: string;
+    apiKey: string;
+  }): Promise<ModelAccessMutationResult>;
+  clearProviderKey(input: { providerId: string }): Promise<ModelAccessMutationResult>;
+  addCustomModel(input: CustomModelInput): Promise<ModelAccessMutationResult>;
+  removeCustomModel(input: { id: string }): Promise<ModelAccessMutationResult>;
+  setSecretFallback(input: { accept: boolean }): Promise<ModelAccessMutationResult>;
+  probeModel(input: { modelId: string }): Promise<ModelProbeResult>;
+  getPreferences(): Promise<PreferencesView>;
+  setPreferences(input: PreferencesInput): Promise<PreferencesView>;
   /*
    * 三个目录式页面各自一个动作。**按需拉，不并进 getStartup** ——
    * 它们读的是本机 sqlite，且绝大多数会话里用户根本不会打开资料库。
@@ -146,7 +172,16 @@ export interface EvoworkBridge {
  * 与一个目录式页面。侧边栏的 6 个入口就是全部的导航面（02 §1），
  * 它是产品骨架而不是可扩展的路由表。
  */
-type MainView = 'task' | 'library' | 'automations' | 'audit' | 'projects' | 'catalog' | 'more';
+type MainView =
+  | 'task'
+  | 'library'
+  | 'automations'
+  | 'audit'
+  | 'projects'
+  | 'catalog'
+  /** 设置（11 §4.4）。**一页多分区**，分区由 `settingsSection` 决定 —— 不是六个视图 */
+  | 'settings'
+  | 'more';
 
 /** 侧边栏 id → 主内容区。**没有页面的入口也必须在这里出现**，见 `UnbuiltPage`。 */
 const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
@@ -204,6 +239,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   /** 选中的工作空间（EvoWork 的「空间」= 内核的 Project + cwd）。主进程负责翻成 cwd */
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
   const [view, setView] = useState<MainView>('task');
+  /** 设置页的当前分区（11 §4.4）。「更多」菜单直接说要去哪个分区 */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('models');
+  const [modelAccess, setModelAccess] = useState<ModelAccessView | null>(null);
+  const [preferences, setPreferences] = useState<PreferencesView | null>(null);
+  /** 上一次设置页动作被拒绝的原话，以及连通性检查的结论。**都要显示出来** */
+  const [settingsRefusal, setSettingsRefusal] = useState<string | undefined>(undefined);
+  const [probeResult, setProbeResult] = useState<string | undefined>(undefined);
   const [library, setLibrary] = useState<LibraryDataView | null>(null);
   const [automations, setAutomations] = useState<AutomationsDataView | null>(null);
   const [audit, setAudit] = useState<AuditDataView | null>(null);
@@ -549,6 +591,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .listProjects()
         .then(setProjects)
         .catch(() => setProjects(null));
+    if (view === 'settings') {
+      /*
+       * 设置页也是每次进都重拉：密钥可能刚在引导里填过、企业策略包可能刚更新过。
+       * `getModelAccess` 顺带读一次网关目录，所以它会花几百毫秒 ——
+       * 这就是它不并进 `getStartup` 的理由（同 `listModels`）。
+       */
+      void bridge
+        .getModelAccess()
+        .then((result) => {
+          setModelAccess(result.view);
+          setSettingsRefusal(result.refused);
+        })
+        .catch(() => setModelAccess(null));
+      void bridge
+        .getPreferences()
+        .then(setPreferences)
+        .catch(() => setPreferences(null));
+    }
   }, [view, activeProjectId, bridge]);
 
   /**
@@ -939,6 +999,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setView('task');
         }}
         onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
+        /*
+         * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
+         * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
+         */
+        onMoreSelect={(id) => {
+          if (id === 'audit') {
+            setView('audit');
+            return;
+          }
+          const [page, section] = id.split(':');
+          if (page === 'settings') {
+            setSettingsSection((section ?? 'models') as SettingsSection);
+            setView('settings');
+          }
+        }}
         onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
         onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
         brandName={startup?.appName}
@@ -950,6 +1025,33 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       {view !== 'task' ? (
         <MainPage
           view={view}
+          settingsSection={settingsSection}
+          onSettingsSection={setSettingsSection}
+          modelAccess={modelAccess}
+          preferences={preferences}
+          appName={startup?.appName ?? 'EvoWork'}
+          appVersion={startup?.appVersion ?? ''}
+          {...(settingsRefusal !== undefined ? { settingsRefusal } : {})}
+          {...(probeResult !== undefined ? { probeResult } : {})}
+          onModelAccessAction={(run) => {
+            void run(bridge).then((result) => {
+              setModelAccess(result.view);
+              // 拒绝的原话要显示出来；成功时把上一次的拒绝清掉
+              setSettingsRefusal(result.refused);
+              // 设置页改了密钥/模型之后，Composer 的下拉也要跟着变（同一份数据）
+              setModels(result.view.models);
+            });
+          }}
+          onProbe={(modelId) => {
+            setProbeResult('正在检查…（会向上游发一次极小的请求）');
+            void bridge
+              .probeModel({ modelId })
+              .then((r) => setProbeResult(r.message))
+              .catch(() => setProbeResult('检查没跑起来。'));
+          }}
+          onPreferences={(input) => {
+            void bridge.setPreferences(input).then(setPreferences);
+          }}
           library={library}
           automations={automations}
           audit={audit}
@@ -1041,6 +1143,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  */
 function MainPage(props: {
   readonly view: MainView;
+  readonly settingsSection: SettingsSection;
+  readonly onSettingsSection: (section: SettingsSection) => void;
+  readonly modelAccess: ModelAccessView | null;
+  readonly preferences: PreferencesView | null;
+  readonly appName: string;
+  readonly appVersion: string;
+  readonly settingsRefusal?: string | undefined;
+  readonly probeResult?: string | undefined;
+  /**
+   * 设置页的所有改动走这**一个**回调，由它统一处理"改完之后怎么更新界面"。
+   *
+   * 六个动作各自接一条 setState 的话，"改了密钥之后下拉要不要跟着变"这件事
+   * 就会在六处各答一次 —— 而它们必须答得一样（设置页与 Composer 用的是同一份目录）。
+   */
+  readonly onModelAccessAction: (
+    run: (bridge: EvoworkBridge) => Promise<ModelAccessMutationResult>,
+  ) => void;
+  readonly onProbe: (modelId: string) => void;
+  readonly onPreferences: (input: PreferencesInput) => void;
   readonly library: LibraryDataView | null;
   readonly automations: AutomationsDataView | null;
   readonly audit: AuditDataView | null;
@@ -1102,6 +1223,35 @@ function MainPage(props: {
           retentionDays={props.audit?.retentionDays ?? 90}
           retentionWarningDays={props.audit?.retentionWarningDays ?? 7}
           {...(props.audit?.oldestAt !== undefined ? { oldestAt: props.audit.oldestAt } : {})}
+        />
+      );
+
+    case 'settings':
+      return (
+        <SettingsPage
+          section={props.settingsSection}
+          onSection={props.onSettingsSection}
+          access={props.modelAccess}
+          preferences={props.preferences}
+          appName={props.appName}
+          appVersion={props.appVersion}
+          {...(props.settingsRefusal !== undefined ? { refusal: props.settingsRefusal } : {})}
+          {...(props.probeResult !== undefined ? { probeResult: props.probeResult } : {})}
+          onSaveProviderKey={(providerId, apiKey) =>
+            props.onModelAccessAction((b) => b.saveProviderKey({ providerId, apiKey }))
+          }
+          onClearProviderKey={(providerId) =>
+            props.onModelAccessAction((b) => b.clearProviderKey({ providerId }))
+          }
+          onAddCustomModel={(input) => props.onModelAccessAction((b) => b.addCustomModel(input))}
+          onRemoveCustomModel={(id) =>
+            props.onModelAccessAction((b) => b.removeCustomModel({ id }))
+          }
+          onSecretFallback={(accept) =>
+            props.onModelAccessAction((b) => b.setSecretFallback({ accept }))
+          }
+          onProbe={props.onProbe}
+          onPreferences={props.onPreferences}
         />
       );
 

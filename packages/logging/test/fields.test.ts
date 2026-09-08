@@ -126,4 +126,35 @@ describe('字段注册表（Q14 的第二层防线）', () => {
       expect(BUILTIN_FIELDS[f]).toBeUndefined();
     }
   });
+
+  /*
+   * 账号与凭据这一组（11 §6.2，M10a）。
+   *
+   * `secretStore` 是这五个里最要紧的一条：**它存在的唯一理由是让明文兜底可审计**。
+   * 用户在钥匙串不可用时可以选择明文保存，而"他到底选了哪条"事后必须查得出来 ——
+   * 否则我们无法回答"这台机器上的密钥是不是加密的"。
+   */
+  it('账号与凭据的五个字段已注册，且都是装不下自然语言的档', () => {
+    for (const f of ['tenantId', 'credentialSource', 'authMode', 'secretStore', 'quotaClass']) {
+      expect(BUILTIN_FIELDS[f], `${f} 没注册 —— 未注册的字段会被静默丢掉`).toBeDefined();
+    }
+    expect(BUILTIN_FIELDS.credentialSource).toBe('token');
+    expect(BUILTIN_FIELDS.secretStore).toBe('token');
+    expect(BUILTIN_FIELDS.tenantId).toBe('id');
+  });
+
+  /*
+   * 两个**刻意不注册**的名字。
+   *
+   *   · `userId` —— 在本机日志里留一个能对外关联到自然人的稳定标识，
+   *     不属于 D9 承诺的"只有身份与计量"。要关联就用 `sub` 的摘要或 `tenantId`。
+   *   · `password` —— Q32=B 的主路径正好是密码，而它只该出现在 WEB 的表单里
+   *     （Q33=A：系统浏览器 + PKCE）。客户端进程与日志里都不该有这个词。
+   */
+  it('userId 与 password **没有**注册（D10 / 11 §12 第 12 条）', () => {
+    expect(BUILTIN_FIELDS.userId).toBeUndefined();
+    expect(BUILTIN_FIELDS.password).toBeUndefined();
+    expect(BUILTIN_FIELDS.apiKey).toBeUndefined();
+    expect(BUILTIN_FIELDS.refreshToken).toBeUndefined();
+  });
 });

@@ -16,10 +16,16 @@
  *   · **拓扑 A**（个人 / 试点 / 离网）：网关随 App 在本机跑，厂商 key 在用户机器上。
  *   · **拓扑 B**（生产的最小面，Q14 选的这条）：网关在服务器上，用户只有一个 token。
  *
- * 所以这里的判据是 **`base_url` 指向哪儿**：指向环回地址才起本机进程，
- * 指向别人的域名就什么都不做。把它写成"总是起一个"会让企业部署的机器上
- * 多一个占着 8787、拿不到任何厂商 key、每次请求都失败的进程 ——
- * 而那台机器的用户会看到"连不上网关"，然后去查那个**根本不该存在**的本机进程。
+ * 所以这里要一个明确的判据。**2026-09-08（M10a / D11）改了判据的来源**：
+ * 从"`base_url` 指向哪儿"（URL 反推）改成 `runsLocally` —— 由 `app.toml` 的
+ * `mode` 决定，宿主传进来。理由见 `app-config.ts` 的头注释：Q36=A 之后
+ * 同一台机器上可以同时有 BYOK 与托管两种上游，而"云端托管"与"企业私有"的
+ * base_url 都不是 loopback，**但令牌来源、密钥归属、登录目标 IdP 全都不同** ——
+ * 一个从 URL 反推出来的布尔值分不开这两者，分错的表现是一个 401。
+ *
+ * 判据错了的后果不变（这就是它必须显式的原因）：企业部署的机器上多一个占着 8787、
+ * 拿不到任何厂商 key、每次请求都失败的进程，而那台机器的用户会看到"连不上网关"，
+ * 然后去查那个**根本不该存在**的本机进程。
  *
  * ## 起不来不是致命错误
  *
@@ -32,12 +38,19 @@ import { existsSync } from 'node:fs';
 
 import { errorFields, type Logger } from '@evowork/logging';
 
+import { CUSTOM_MODELS_ENV } from '@evowork/gateway';
+
 import { envHasProviderKey, PROVIDER_KEY_ENV } from './gateway-env.js';
 
-/** 没配密钥时给用户看的话。listModels 必须原样用这一句，不能再 fetch 一次变成「连不上」。 */
+/**
+ * 没配密钥时给用户看的话。listModels 必须原样用这一句，不能再 fetch 一次变成「连不上」。
+ *
+ * **2026-09-08 改了后半句**：原文让用户去写 `~/.evowork/gateway.env`，而那个明文文件
+ * 已经被密钥库取代（M10a / Q34）—— 指着一条已经退役的路，比不给路更糟。
+ */
 export const GATEWAY_NO_KEYS_NOTICE =
-  '本机网关没有启动：一家模型厂商的密钥都没有配置，现在发不出任务。' +
-  '在引导里填入 DEEPSEEK / Kimi / GLM 至少一家的 API 密钥，或写进 ~/.evowork/gateway.env 后重启。';
+  '本机网关没有启动：一家模型厂商的密钥都没有配置，也没有自定义模型，现在发不出任务。' +
+  '在「设置 → 模型接入」里填入 DeepSeek / Kimi / GLM 至少一家的密钥，或添加一个自定义模型。';
 
 /**
  * `base_url` 是不是指向本机。
@@ -45,6 +58,10 @@ export const GATEWAY_NO_KEYS_NOTICE =
  * 只认环回地址，**不认 `0.0.0.0`**：那是"监听所有网卡"的写法，出现在
  * `base_url` 里意味着有人把服务端配置抄进了客户端配置，此时起一个本机进程
  * 只会掩盖那个笔误。
+ *
+ * **它已经不再决定要不要起网关了**（D11 / M10a）：现在只剩一个调用点 ——
+ * `app-config.ts` 的一次性兼容读取（老装机没有 `app.toml` 时反推一次并写回）。
+ * 不要把它加回到任何判据里；拓扑的真源是 `app.toml` 的 `mode`。
  */
 export function isLocalGateway(baseUrl: string): boolean {
   try {
@@ -69,8 +86,16 @@ export function portOf(baseUrl: string, fallback = 8787): number {
 }
 
 export interface GatewayProcessOptions {
-  /** 内核 `config.toml` 里的 `base_url`。**它决定起不起** */
+  /** 内核 `config.toml` 里的 `base_url`。**只用来取端口** —— 起不起看 `runsLocally` */
   readonly baseUrl: string;
+  /**
+   * 本机该不该跑网关。真源是 `app.toml` 的 `mode`（`local` = true），由宿主传进来。
+   *
+   * **必填**，不给默认值：默认成 true 会让企业部署的机器多起一个必然失败的进程，
+   * 默认成 false 会让个人用户一个模型都发不出去 —— 两个方向都错，
+   * 而"忘了传"这件事必须在编译期就红。
+   */
+  readonly runsLocally: boolean;
   /** 网关单文件产物的绝对路径（打包时在 `Resources/gateway/main.js`） */
   readonly entryPath: string;
   /** 访问令牌。与内核用的是同一个（宿主已经读出来了） */
@@ -124,13 +149,19 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
   const env = options.env ?? process.env;
   const noop = { stop: () => undefined };
 
-  if (!isLocalGateway(options.baseUrl)) {
+  if (!options.runsLocally) {
     // 正常部署，不提示用户；但记一条，否则"网关到底在哪"没有任何线索
     options.logger?.info('gateway.child.skipped', { reason: 'REMOTE' });
     return { ...noop, result: { started: false, reason: 'REMOTE' } };
   }
 
-  if (!envHasProviderKey(env)) {
+  /*
+   * "有没有模型可服务"**不只看内置三家的密钥**（M10a）：只加了一条自定义模型、
+   * 三家一个都没配，是 Q30=A 下完全正常的一种用法。只看 `envHasProviderKey` 的话，
+   * 那位用户会看到"一家密钥都没配"，而他明明刚在设置页加过一个模型。
+   */
+  const hasCustomModels = (env[CUSTOM_MODELS_ENV] ?? '').trim().length > 2;
+  if (!envHasProviderKey(env) && !hasCustomModels) {
     options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
     return {
       ...noop,

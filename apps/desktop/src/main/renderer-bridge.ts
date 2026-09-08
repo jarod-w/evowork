@@ -58,14 +58,19 @@ import type {
   ApprovalDecisionInput,
   ApprovalView,
   ApplyModelAccessInput,
+  CustomModelInput,
   AuditDataView,
   AutomationsDataView,
   CaseView,
   DirEntryView,
   LibraryDataView,
+  ModelAccessMutationResult,
   ModelCatalogResult,
+  ModelProbeResult,
   OpenTaskInput,
   OpenTaskResult,
+  PreferencesInput,
+  PreferencesView,
   ProjectCardView,
   ProjectDetailView,
   ProjectMutationResult,
@@ -74,6 +79,7 @@ import type {
   RendererEvent,
   RowActionInput,
   RuntimeInstallResultView,
+  SaveProviderKeyInput,
   RuntimeStatusView,
   SendInput,
   StartupInfo,
@@ -135,6 +141,30 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
 
 /** `meta` 表里存首次引导标记的键。**一个常量，别在两处各写一遍字符串** */
 export const ONBOARDED_KEY = 'evowork.onboarded';
+
+/**
+ * 没有注入设置页端口时的回答。
+ *
+ * **不抛错**：设置页要能打开并显示"这个构建里做不了"，而不是一个空白主区
+ * （同 `UnbuiltPage` 的那条纪律：说清是没做，不是坏了）。
+ */
+function unavailableModelAccess(why: string): ModelAccessMutationResult {
+  return {
+    ok: false,
+    refused: why,
+    view: {
+      mode: 'local',
+      secretBackend: 'unavailable',
+      secretNotice: why,
+      providers: [],
+      customModels: [],
+      models: [],
+      allowCustomModels: false,
+      lockedReason: why,
+      signedIn: false,
+    },
+  };
+}
 
 /**
  * 「项目」页要的 I/O 端口。
@@ -239,6 +269,26 @@ export interface RendererBridgeOptions {
    */
   readonly applyModelAccess?:
     ((input: ApplyModelAccessInput) => Promise<ModelCatalogResult>) | undefined;
+  /**
+   * 设置页「模型接入」的动作（11 §4.4，M10a）。**由宿主注入** ——
+   * 真正的写钥匙串、写 `models.toml`、重起网关都在那一侧。
+   *
+   * 没给时每个动作**如实说这个版本做不了**，而不是静默丢掉用户刚贴上的密钥。
+   */
+  readonly modelAccessPorts?:
+    | {
+        read(): Promise<ModelAccessMutationResult>;
+        saveProviderKey(input: SaveProviderKeyInput): Promise<ModelAccessMutationResult>;
+        clearProviderKey(providerId: string): Promise<ModelAccessMutationResult>;
+        addCustomModel(input: CustomModelInput): Promise<ModelAccessMutationResult>;
+        removeCustomModel(id: string): Promise<ModelAccessMutationResult>;
+        setPlaintextFallback(accept: boolean): Promise<ModelAccessMutationResult>;
+        probe(modelId: string): Promise<ModelProbeResult>;
+      }
+    | undefined;
+  /** 设置页「用量与预算」的两个数（Q11 的阶段 1） */
+  readonly preferencePorts?:
+    { read(): PreferencesView; write(input: PreferencesInput): PreferencesView } | undefined;
   /**
    * 打开系统目录选择框（首运行第②步）。
    *
@@ -688,6 +738,67 @@ export function createRendererActions(options: RendererBridgeOptions) {
         };
       }
       return options.applyModelAccess(input);
+    },
+
+    /* ── 设置页（11 §4.4）。**每个动作都返回一份新视图** —— 见 ModelAccessMutationResult ── */
+
+    async getModelAccess(): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.read()
+        : unavailableModelAccess('这个版本没有设置页的数据源。');
+    },
+
+    async saveProviderKey(input: SaveProviderKeyInput): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.saveProviderKey(input)
+        : unavailableModelAccess('这个版本还不能在界面里保存模型密钥。');
+    },
+
+    async clearProviderKey(input: {
+      readonly providerId: string;
+    }): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.clearProviderKey(input.providerId)
+        : unavailableModelAccess('这个版本还不能在界面里清除模型密钥。');
+    },
+
+    async addCustomModel(input: CustomModelInput): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.addCustomModel(input)
+        : unavailableModelAccess('这个版本还不能添加自定义模型。');
+    },
+
+    async removeCustomModel(input: { readonly id: string }): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.removeCustomModel(input.id)
+        : unavailableModelAccess('这个版本还不能删除自定义模型。');
+    },
+
+    /** 用户对"钥匙串不可用"的选择（11 §4.3）。**只有他自己能做这个决定** */
+    async setSecretFallback(input: {
+      readonly accept: boolean;
+    }): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.setPlaintextFallback(input.accept)
+        : unavailableModelAccess('这个版本没有密钥库设置。');
+    },
+
+    async probeModel(input: { readonly modelId: string }): Promise<ModelProbeResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.probe(input.modelId)
+        : { ok: false, message: '这个版本不能做连通性检查。' };
+    },
+
+    getPreferences(): Promise<PreferencesView> {
+      return Promise.resolve(
+        options.preferencePorts?.read() ?? { concurrencyComputed: 1, concurrencyLimit: 1 },
+      );
+    },
+
+    setPreferences(input: PreferencesInput): Promise<PreferencesView> {
+      return Promise.resolve(
+        options.preferencePorts?.write(input) ?? { concurrencyComputed: 1, concurrencyLimit: 1 },
+      );
     },
 
     async interrupt(threadId: string): Promise<void> {

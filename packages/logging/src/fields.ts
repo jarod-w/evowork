@@ -135,6 +135,30 @@ export const BUILTIN_FIELDS: Readonly<Record<string, FieldKind>> = Object.freeze
   pathKind: 'token',
   extension: 'token',
 
+  /*
+   * —— 账号 · 凭据 · 拓扑（M10a / M10b，11 §6.2）——
+   *
+   * 这五个都是**码**而不是正文，所以能进。注意这里**没有 `userId`**：
+   * 要在本机日志里关联到人就用 `sub` 的摘要或 `tenantId`，
+   * 留一个能对外关联到自然人的稳定标识不属于"只有身份与计量"（D10 的机制化第①条）。
+   * 同样没有 `password` —— Q32=B 的主路径正好是密码，而它只该出现在 WEB 的表单里
+   * （11 §12 第 12 条有一条测试在扫这件事）。
+   */
+  tenantId: 'id',
+  /** `byok` / `hosted` / `private`（11 §4.2）。它回答"这次调用花谁的钱、数据过谁的境" */
+  credentialSource: 'token',
+  /** `local` / `hosted` / `private` —— `app.toml` 的 `mode`（11 §3.2） */
+  authMode: 'token',
+  /**
+   * `keychain` / `dpapi` / `libsecret` / `plaintext-fallback`（11 §4.3）。
+   *
+   * **它存在的唯一理由是让明文兜底可审计**：`safeStorage` 不可用时用户可以选择
+   * 以 600 权限明文保存，而"他到底选了哪条"事后必须查得出来 —— 否则我们无法回答
+   * "这台机器上的密钥是不是加密的"。
+   */
+  secretStore: 'token',
+  quotaClass: 'token',
+
   // —— 判定与开关 ——
   cacheHit: 'bool',
   degraded: 'bool',

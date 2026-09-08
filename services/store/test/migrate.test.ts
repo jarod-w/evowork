@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   AUTHORITATIVE_MIGRATIONS,
+  AUTHORITATIVE_VERSION,
   AuthoritativeMigrationFailed,
   LEGACY_WORKSPACES_META_KEY,
   PROJECTION_MIGRATIONS,
@@ -62,8 +63,8 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       expect(names).toContain(t.name);
     }
     expect(readMeta(store.db, 'schema_version_projection')).toBe('1');
-    // 权威类现在是第 2 版：建表 + 工作空间收敛迁移都对全新库跑一遍
-    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('2');
+    // 权威类现在是第 3 版：建表 + 工作空间收敛 + 删 automation 的租户列（D10）
+    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('3');
     store.close();
   });
 
@@ -208,7 +209,9 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       .run();
 
     const failing: Migration = {
-      version: 3,
+      // 比最后一版再大一号：写死数字会在每次新增迁移时静默变成"这一版已经跑过了"，
+      // 于是这条测试什么都不测（2026-09-08 加第 3 版时正是这样撞上的）
+      version: AUTHORITATIVE_VERSION + 1,
       summary: '故意失败的权威迁移',
       up: (db) => {
         // 先做一次破坏性改动，再抛错 —— 这才是回滚真正要救的场景
@@ -230,12 +233,14 @@ describe('两个迁移器的分工（09 §4.6）', () => {
 
     // ① 抛错了（启动被刻意中止），且备份文件留下了（"进程被杀"那条路径的凭据）
     expect(thrown).toBeInstanceOf(AuthoritativeMigrationFailed);
-    expect((thrown as AuthoritativeMigrationFailed).backupPath).toBe(`${path}.bak.2`);
-    expect(existsSync(`${path}.bak.2`)).toBe(true);
+    expect((thrown as AuthoritativeMigrationFailed).backupPath).toBe(
+      `${path}.bak.${AUTHORITATIVE_VERSION}`,
+    );
+    expect(existsSync(`${path}.bak.${AUTHORITATIVE_VERSION}`)).toBe(true);
 
     // ② 那条 automation 还在 —— 事务回滚生效。**这是这段代码存在的唯一理由**
     expect(store.db.prepare('SELECT id FROM automation').all()).toEqual([{ id: 'a1' }]);
-    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('2');
+    expect(readMeta(store.db, 'schema_version_authoritative')).toBe(String(AUTHORITATIVE_VERSION));
     store.close();
 
     // ③ 重开也还在（不是只在内存里看着像回滚了）
@@ -436,7 +441,7 @@ describe('第 2 版权威迁移：工作空间收敛成一处真源（spec §2.2
 
     migrateAuthoritative(db);
     expect(db.prepare('SELECT * FROM project_local').all()).toEqual([]);
-    expect(readMeta(db, 'schema_version_authoritative')).toBe('2');
+    expect(readMeta(db, 'schema_version_authoritative')).toBe(String(AUTHORITATIVE_VERSION));
   });
 
   it('meta 里的路径被搬进新表，且那个键消失', () => {

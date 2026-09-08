@@ -91,6 +91,9 @@ function entry(over: Partial<ModelCatalogEntry> = {}): ModelCatalogEntry {
     unverified: ['maxContextTokens'],
     notes: '',
     notices: ['这个模型不支持图片输入，可切换模型。'],
+    // 11 §4.2：每一条都必须带凭据来源 —— 它回答"花谁的钱、数据过谁的境"
+    credentialSource: 'byok',
+    layer: 'builtin',
     ...over,
   };
 }

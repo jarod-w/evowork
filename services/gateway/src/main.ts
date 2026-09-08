@@ -17,6 +17,16 @@ import {
   type CapabilityLookup,
   type ModelRegistryEntry,
 } from './capabilities.js';
+import {
+  CUSTOM_MODELS_ENV,
+  customModelConfig,
+  MODEL_POLICY_ENV,
+  parseCustomModels,
+  parseModelPolicy,
+  toRegistryEntry,
+  type CustomModelSpec,
+} from './custom-models.js';
+import { mergeModelLayers, type ResolvedModel } from './layers.js';
 import { DEFAULT_BASE_URL, PROVIDERS } from './providers/registry.js';
 import type { ProviderConfig } from './providers/types.js';
 import { createGatewayServer } from './server.js';
@@ -41,8 +51,22 @@ const BASE_URL_ENV: Readonly<Record<string, string>> = {
   private: 'PRIVATE_MODEL_BASE_URL',
 };
 
-export function buildConfigResolver(): (model: ModelRegistryEntry) => ProviderConfig {
+/**
+ * 上游配置：**自定义模型一条一条地配，内置三家按厂商配**。
+ *
+ * 不能只按 `model.provider` 查：两条自定义模型可以都选 `private` 适配、
+ * 却指向不同的 endpoint 与不同的密钥（11 §4.1 的"只能追加"就是这个场景）。
+ * 按 provider 查的话，第二条会拿到第一条的地址和 key —— 而两者都是合法值，
+ * 没有任何一层会报错，表现是"我加的模型答的是另一个模型的话"。
+ */
+export function buildConfigResolver(
+  customs: readonly CustomModelSpec[] = [],
+): (model: ModelRegistryEntry) => ProviderConfig {
+  const byId = new Map(customs.map((spec) => [spec.id, spec]));
   return (model) => {
+    const timeoutMs = Number(env('GATEWAY_UPSTREAM_TIMEOUT_MS') ?? 300_000);
+    const custom = byId.get(model.id);
+    if (custom) return customModelConfig(custom, process.env, timeoutMs);
     const apiKey = env(KEY_ENV[model.provider] ?? '') ?? '';
     const baseUrl =
       env(BASE_URL_ENV[model.provider] ?? '') ?? DEFAULT_BASE_URL[model.provider] ?? '';
@@ -52,14 +76,22 @@ export function buildConfigResolver(): (model: ModelRegistryEntry) => ProviderCo
       ...(env('PRIVATE_MODEL_AUTH_HEADER') && model.provider === 'private'
         ? { extraHeaders: { authorization: env('PRIVATE_MODEL_AUTH_HEADER') as string } }
         : {}),
-      timeoutMs: Number(env('GATEWAY_UPSTREAM_TIMEOUT_MS') ?? 300_000),
+      timeoutMs,
     };
   };
 }
 
-/** 只保留"密钥齐了"的模型。 */
+/** 只保留"密钥齐了"的模型（第①层：内置元数据**不自带凭据**，11 §4.1）。 */
 export function availableModels(): ModelRegistryEntry[] {
   return P0_MODELS.filter((model) => Boolean(env(KEY_ENV[model.provider] ?? '')));
+}
+
+/** 第③层：宿主注入的自定义模型（元数据在一个 JSON 里，密钥各自一个变量）。 */
+export function customModelSpecs(): {
+  readonly specs: readonly CustomModelSpec[];
+  readonly dropped: number;
+} {
+  return parseCustomModels(env(CUSTOM_MODELS_ENV));
 }
 
 /**
@@ -71,8 +103,25 @@ export function availableModels(): ModelRegistryEntry[] {
  * 结果是没配密钥的厂商被原样加回来、且每条重复一次（2026-09-06 接下拉时实测到）。
  * 组合逻辑留在 `main()` 里的话，唯一能验它的方法是真起一个进程发一个请求。
  */
-export function availableModelRegistry(): CapabilityLookup {
-  return createModelRegistryFrom(availableModels());
+export function availableModelRegistry(): CapabilityLookup<ResolvedModel> {
+  const { specs } = customModelSpecs();
+  const policy = parseModelPolicy(env(MODEL_POLICY_ENV));
+  return createModelRegistryFrom(
+    mergeModelLayers({
+      builtin: P0_MODELS,
+      custom: specs.map(toRegistryEntry),
+      // ②' 租户默认模型随 M10b —— 这里显式留空而不是省略，是为了让"它还没接"
+      // 在代码里看得见（省略等于让下一个人以为已经接了）
+      tenant: [],
+      policy: {
+        disabledModelIds: policy.disabledModelIds,
+        allowCustomModels: policy.allowCustomModels,
+        ...(policy.reason ? { reason: policy.reason } : {}),
+      },
+      // 只有网关自己的进程环境知道哪家有密钥（F24 的决定性理由）
+      builtinHasKey: (providerId) => Boolean(env(KEY_ENV[providerId] ?? '')),
+    }),
+  );
 }
 
 /**
@@ -109,7 +158,17 @@ export function main(): void {
     base: { appVersion: env('EVOWORK_VERSION') ?? '0.0.0' },
   });
 
-  const models = availableModels();
+  const { specs, dropped } = customModelSpecs();
+  if (dropped > 0) {
+    // 静默丢掉自定义模型 = 用户在设置页看到它、发过去说"未配置的模型"
+    logger.warn('gateway.boot.custom_models_dropped', { itemCount: dropped });
+  }
+  const policy = parseModelPolicy(env(MODEL_POLICY_ENV));
+  if (policy.malformed) {
+    // 读不懂的策略包**按锁处理**（见 `parseModelPolicy`），但必须报出来
+    logger.error('gateway.boot.policy_malformed', { reason: 'MALFORMED_MODEL_POLICY' });
+  }
+  const models = availableModelRegistry().list();
   if (models.length === 0) {
     // 没有任何厂商密钥就别假装能服务：起一个"看起来正常但每次请求都失败"的网关，
     // 会让排查从"网关没配密钥"变成"模型为什么总是报错"
@@ -125,9 +184,9 @@ export function main(): void {
 
   const server = createGatewayServer({
     // 「真的能选的那一份」。**不要在这里重新组合** —— 见 `availableModelRegistry`
-    models: availableModelRegistry(),
+    models: createModelRegistryFrom(models),
     providers: PROVIDERS,
-    configFor: buildConfigResolver(),
+    configFor: buildConfigResolver(specs),
     logger,
     authenticate: staticTokenAuth(tokens),
   });

@@ -150,6 +150,13 @@ export interface SidebarProps {
   readonly user?:
     | { readonly name: string; readonly version: string; readonly unread?: number | undefined }
     | undefined;
+  /**
+   * 「更多」菜单里被选中的那一项（02 §4.7 的二级入口）。
+   *
+   * id 用 `settings:<分区>` 的形式，因为设置页是**一页多分区**而不是六个页面 ——
+   * 让菜单直接说出要去哪个分区，比让 app 再猜一次少一处映射。
+   */
+  readonly onMoreSelect?: ((id: string) => void) | undefined;
   readonly onNotifications?: (() => void) | undefined;
   readonly onDevices?: (() => void) | undefined;
   /** Q18 的 `sidebar-promo` 插槽。**默认关闭**，且只渲染静态内容 */
@@ -184,6 +191,44 @@ export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
   { id: 'more', label: '更多', icon: 'more', trailing: '灵感' },
 ];
 
+/**
+ * 02 §4.7 的三组二级入口。**没做的项留在菜单里但禁用**，并说清为什么。
+ *
+ * 「退出登录」不在这里：账号随 M10b（Q30=A 下未登录是常态，摆一个登出项
+ * 等于承诺一个不存在的登录态）。
+ */
+export const MORE_MENU: readonly MenuItemSpec[] = [
+  { id: 'settings:models', label: '设置' },
+  { id: 'settings:data', label: '数据管理' },
+  { id: 'settings:usage', label: '用量与预算' },
+  { id: 'audit', label: '用量与审计' },
+  { id: 'settings:about', label: '关于' },
+  {
+    id: 'inspiration',
+    label: '灵感 / 案例库',
+    disabled: true,
+    disabledReason: '完整案例库还没做好；首页下方已经有官方最佳实践的入口。',
+  },
+  {
+    id: 'guide',
+    label: '使用指南',
+    disabled: true,
+    disabledReason: '还没写。现在能查的是引导里的五步说明。',
+  },
+  {
+    id: 'devices',
+    label: '设备与同步',
+    disabled: true,
+    disabledReason: '跨设备同步本期不做（Q17 / Q19）。自动化的设备归属在自动化页里看。',
+  },
+  {
+    id: 'update',
+    label: '检查更新',
+    disabled: true,
+    disabledReason: '自动更新还没接上，现在需要手动下载新版本。',
+  },
+];
+
 const DEFAULT_PAGE_SIZE = 30;
 
 export function Sidebar(props: SidebarProps) {
@@ -194,6 +239,7 @@ export function Sidebar(props: SidebarProps) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<TaskRow | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const pageSize = props.pageSize ?? DEFAULT_PAGE_SIZE;
 
   // 04 §3.2：子任务不进顶层列表
@@ -285,20 +331,51 @@ export function Sidebar(props: SidebarProps) {
       ) : null}
 
       <div className="ew-sidebar-nav">
-        {nav.map((item) => (
-          <NavItem
-            key={item.id}
-            label={item.label}
-            icon={renderIcon(item.icon)}
-            trailing={item.trailing}
-            count={item.count}
-            selected={item.id === activeNavId}
-            onClick={() => {
-              if (item.id === 'new-task') props.onNewTask?.();
-              props.onNavSelect?.(item.id);
-            }}
-          />
-        ))}
+        {nav.map((item) =>
+          /*
+           * 「更多」是**一个 Menu，不是一个页面**（02 §4.7）：它聚合二级入口。
+           *
+           * 在此之前它点了会切到一个「这里还没有内容」的空页 —— 而它下面的
+           * 「设置」现在真的有了（M10a）。已实现的项直接跳，没实现的项
+           * **禁用并给原因**（`MenuItemSpec.disabled` + `disabledReason`），
+           * 不静默移除：一个消失的菜单项与一个没做的功能无法区分。
+           */
+          item.id === 'more' ? (
+            <span key={item.id} className="ew-more-anchor">
+              <NavItem
+                label={item.label}
+                icon={renderIcon(item.icon)}
+                trailing={item.trailing}
+                count={item.count}
+                selected={moreOpen || item.id === activeNavId}
+                onClick={() => setMoreOpen((v) => !v)}
+              />
+              <Popover open={moreOpen} onClose={() => setMoreOpen(false)} align="start">
+                <Menu
+                  ariaLabel="更多"
+                  items={MORE_MENU}
+                  onSelect={(id) => {
+                    setMoreOpen(false);
+                    props.onMoreSelect?.(id);
+                  }}
+                />
+              </Popover>
+            </span>
+          ) : (
+            <NavItem
+              key={item.id}
+              label={item.label}
+              icon={renderIcon(item.icon)}
+              trailing={item.trailing}
+              count={item.count}
+              selected={item.id === activeNavId}
+              onClick={() => {
+                if (item.id === 'new-task') props.onNewTask?.();
+                props.onNavSelect?.(item.id);
+              }}
+            />
+          ),
+        )}
       </div>
 
       <div className="ew-sidebar-tasks">

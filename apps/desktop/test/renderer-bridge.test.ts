@@ -21,12 +21,7 @@ import {
   toTaskRow,
   type ProjectPorts,
 } from '../src/main/renderer-bridge.js';
-import {
-  ensureKernelConfig,
-  ensurePaths,
-  readGatewayToken,
-  resolvePaths,
-} from '../src/main/service-host.js';
+import { ensureKernelConfig, ensurePaths, resolvePaths } from '../src/main/service-host.js';
 
 function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
   return {
@@ -641,25 +636,18 @@ describe('网关访问令牌（内核从进程环境取它）', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   /**
-   * 从访达双击启动的应用**不继承任何 shell 环境变量** —— 所以文件那条路不是备选，
-   * 是 GUI 场景下唯一能走的。少了它，内核对每一次回合回
-   * `Missing environment variable: EVOWORK_GATEWAY_TOKEN`，界面上就是"任务失败了"。
+   * 从访达双击启动的应用**不继承任何 shell 环境变量** —— 所以本机必须有一个密钥来源。
+   *
+   * **M10a 换掉了那个来源**：`readGatewayToken`（读 `~/.evowork/gateway-token` 明文文件）
+   * 已经删掉，令牌的正式机制是密钥库（`model-access.ts` 的 `token()`：进程环境 →
+   * `safeStorage` → 本机拓扑下现签一个）。那条链路的断言在 `model-access.test.ts`
+   * 的「拓扑与令牌」与「升级路径」两组里，这里只留下路径布局本身。
    */
-  it('环境变量优先，其次是 ~/.evowork/gateway-token', () => {
+  it('令牌文件的路径仍在布局里（一次性迁移与"钥匙串不可用"那条回退要用）', () => {
     const paths = resolvePaths(dir);
     ensurePaths(paths);
-    expect(readGatewayToken(paths, {})).toBeUndefined();
-
-    writeFileSync(paths.gatewayToken, 'from-file\n', 'utf8');
-    expect(readGatewayToken(paths, {})).toBe('from-file');
-    expect(readGatewayToken(paths, { EVOWORK_GATEWAY_TOKEN: 'from-env' })).toBe('from-env');
-  });
-
-  it('空文件与只有空白的环境变量都算「没有」，不会传一个空令牌进去', () => {
-    const paths = resolvePaths(dir);
-    ensurePaths(paths);
-    writeFileSync(paths.gatewayToken, '\n', 'utf8');
-    expect(readGatewayToken(paths, { EVOWORK_GATEWAY_TOKEN: '   ' })).toBeUndefined();
+    expect(paths.gatewayToken.endsWith('gateway-token')).toBe(true);
+    expect(paths.secrets.endsWith('secrets.bin')).toBe(true);
   });
 });
 

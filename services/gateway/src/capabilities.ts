@@ -83,6 +83,17 @@ export type ProviderId = 'deepseek' | 'moonshot' | 'zhipu' | 'private';
  * 配置出错的用户听的，不该由一次下架来触发。
  */
 export interface ModelRegistryEntry extends ModelEntry {
+  /**
+   * 这个模型**不许用**，且这句话可以直接显示给用户（如"已被你所在组织停用"）。
+   *
+   * 只由 `mergeModelLayers`（`layers.ts` 的第②层）写。**缺席 = 允许** ——
+   * 方向是刻意的：一台没有企业策略包的个人机器必须能用 BYOK（Q30=A），
+   * 默认成"禁"会让个人用户一个模型都选不了。
+   *
+   * 被停用的模型**仍然出现在目录里**（11 §4.1）：消失的东西无法被排查。
+   * 拦截点在 `server.ts` 的 `/v1/responses` —— 目录列它、请求拒它。
+   */
+  readonly denied?: string;
   readonly verified: boolean;
   /** 实测日期（ISO 日期）。`verified: false` 时为 undefined */
   readonly verifiedAt?: string;
@@ -188,9 +199,16 @@ export const CAPABILITY_COPY: Readonly<Record<keyof ModelCapabilities, string>> 
   maxContextTokens: '',
 });
 
-export interface CapabilityLookup {
-  find(modelId: string): ModelRegistryEntry | undefined;
-  list(): readonly ModelRegistryEntry[];
+/**
+ * 泛型是为了让**合并层的结果不丢类型**：`services/gateway/src/layers.ts` 的
+ * `ResolvedModel` 多带 `credentialSource` 与 `layer`，而模型目录端点必须透出前者
+ * （11 §4.2：用户要能看出这次调用花谁的钱、数据过谁的境）。
+ * 写成非泛型的话，`server.ts` 拿到的 `list()` 就退化成基类型，
+ * 那个字段只能靠一次 `as` 找回来 —— 而 `as` 正是"两个模块各自对、合起来不对"的入口。
+ */
+export interface CapabilityLookup<T extends ModelRegistryEntry = ModelRegistryEntry> {
+  find(modelId: string): T | undefined;
+  list(): readonly T[];
 }
 
 /**
@@ -213,8 +231,10 @@ export interface CapabilityLookup {
  * **同 id 后来者覆盖前者**（企业用私有 endpoint 覆盖 `evowork/deepseek-v4-flash` 是真实场景），
  * 位置保持第一次出现时的位置 —— 下拉的顺序不该因为一次覆盖而跳动。
  */
-export function createModelRegistryFrom(models: readonly ModelRegistryEntry[]): CapabilityLookup {
-  const byId = new Map<string, ModelRegistryEntry>();
+export function createModelRegistryFrom<T extends ModelRegistryEntry>(
+  models: readonly T[],
+): CapabilityLookup<T> {
+  const byId = new Map<string, T>();
   for (const model of models) byId.set(model.id, model);
   const all = [...byId.values()];
   return {

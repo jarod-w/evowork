@@ -12,6 +12,7 @@ import { createLogger, memorySink } from '@evowork/logging';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createModelRegistry, type ModelRegistryEntry } from '../src/capabilities.js';
+import type { ResolvedModel } from '../src/layers.js';
 import { createGatewayServer } from '../src/server.js';
 import type { Provider } from '../src/providers/types.js';
 
@@ -34,6 +35,27 @@ const MODEL: ModelRegistryEntry = {
     maxContextTokens: 8_000,
   },
 };
+
+/**
+ * 服务端要的是**合并层的结果**（`layers.ts`）：目录端点必须透出 `credentialSource`。
+ * 这里补上那两个字段而不是把 server 的类型放宽 —— 放宽等于让"这个模型用谁的凭据"
+ * 变成一个可以缺席的字段，而 11 §4.2 要求它对用户可见。
+ */
+function registry(...extra: readonly ModelRegistryEntry[]) {
+  const lookup = createModelRegistry(extra);
+  const resolve = (m: ModelRegistryEntry): ResolvedModel => ({
+    ...m,
+    credentialSource: 'byok',
+    layer: 'builtin',
+  });
+  return {
+    find: (id: string) => {
+      const found = lookup.find(id);
+      return found ? resolve(found) : undefined;
+    },
+    list: () => lookup.list().map(resolve),
+  };
+}
 
 function provider(lines: readonly string[]): Provider {
   return {
@@ -62,7 +84,7 @@ async function start(
   } = {},
 ) {
   const server = createGatewayServer({
-    models: createModelRegistry([MODEL]),
+    models: registry(MODEL),
     providers: { deepseek: provider(opts.lines ?? []) },
     configFor: () => ({ baseUrl: 'https://upstream.invalid/v1', apiKey: 'sk-test' }),
     logger: createLogger({ service: 'gateway', sink }),
@@ -96,7 +118,7 @@ describe('端点与鉴权', () => {
 
   it('**默认拒绝所有请求** —— 误部署到公网时别人用不了我们的额度', async () => {
     const server = createGatewayServer({
-      models: createModelRegistry([MODEL]),
+      models: registry(MODEL),
       providers: { deepseek: provider([]) },
       configFor: () => ({ baseUrl: 'x', apiKey: 'y' }),
       // 不提供 authenticate
@@ -248,7 +270,7 @@ describe('POST /v1/responses —— 内核唯一会调的端点', () => {
 
   it('请求体超限 → 413（上下文可以很大，但不该无上限）', async () => {
     const server = createGatewayServer({
-      models: createModelRegistry([MODEL]),
+      models: registry(MODEL),
       providers: { deepseek: provider([]) },
       configFor: () => ({ baseUrl: 'x', apiKey: 'y' }),
       authenticate: () => true,

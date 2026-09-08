@@ -259,10 +259,18 @@ export const TABLES: readonly TableSpec[] = [
     klass: 'authoritative',
     ddl: [
       // 总纲 §6.9 + Q15 的 device_id。**丢了就是丢了定时任务定义**，所以是权威类。
+      /*
+       * **没有 `tenant_id` / `owner_id`**（D10 / Q31=A，2026-09-08 删）。
+       *
+       * 这两列从建表起就在，但仓库里**没有任何一处读或写它们** —— 它们是
+       * "以后有账号了大概会用上"留的位。而 D10 恰恰否掉了那个"以后"：
+       * 数据属于这台机器，不属于账号（automation 的归属靠 `device_id`，Q15）。
+       * 留着一个空的 `tenant_id` 列的代价不是几个字节，而是它让
+       * "把本机数据按租户切分"看起来只差一次 UPDATE —— 那正是 R12 描述的滑坡。
+       * `test/schema-no-tenancy.test.ts` 扫两个迁移器的全部 DDL，加回来会红。
+       */
       `CREATE TABLE IF NOT EXISTS automation (
          id                   TEXT PRIMARY KEY,
-         tenant_id            TEXT,
-         owner_id             TEXT,
          name                 TEXT NOT NULL,
          device_id            TEXT NOT NULL,
          prompt               TEXT NOT NULL,

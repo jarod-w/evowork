@@ -10,7 +10,15 @@ import { resolveModelChoice } from '../src/renderer/model-selection.js';
 import type { ModelOptionView } from '../src/shared/ipc.js';
 
 function model(id: string, label = id): ModelOptionView {
-  return { id, label, provider: id.split('/')[0] ?? 'x', capabilities: [], notices: [] };
+  return {
+    id,
+    label,
+    provider: id.split('/')[0] ?? 'x',
+    capabilities: [],
+    notices: [],
+    credentialSource: 'byok',
+    verified: true,
+  };
 }
 
 const MODELS = [

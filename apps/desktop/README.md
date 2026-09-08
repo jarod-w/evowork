@@ -26,6 +26,12 @@ src/
   main/
     service-host.ts   本机服务宿主：先开库 → 起内核 → 对账（09 §1 / §4）
     bootstrap.ts      Electron 引导。**electron 是注入的**，见文件头注释
+    secret-store.ts   密钥库（Q34=A / M10a）：safeStorage → secrets.bin 密文。
+                      **没有读回明文的方法**；钥匙串不可用时拒绝写入，不静默写明文
+    app-config.ts     `~/.evowork/app.toml`：`mode` = 默认模型的上游在哪（D11）。
+                      **拓扑的真源** —— URL 反推只剩这里的一次性兼容读取
+    model-access.ts   「模型接入」状态机：密钥 · 令牌 · 拓扑 · 自定义模型 · 第②层策略
+    custom-models.ts  `~/.evowork/models.toml`（**只有元数据，没有密钥**）
   preload/
     index.ts          渲染进程与主进程之间唯一的通道；暴露面被测试钉住
   renderer/
@@ -33,7 +39,8 @@ src/
     views/
       home.tsx            首页：Hero · 场景 · chips · Composer · 案例位（03）
       task-workspace.tsx  三栏工作台（04）
-      sidebar.tsx         任务列表 · 六组筛选 · 行操作（04 §3）
+      sidebar.tsx         任务列表 · 六组筛选 · 行操作（04 §3）· 「更多」菜单（02 §4.7）
+      settings.tsx        设置页六个分区（11 §4.4）。**两个分区如实说自己没做**
     components/
       composer.tsx        首页与任务页**共用**的输入区（03 §4）
       menu.tsx            Menu / Popover / InlineSelect / ModelSelect

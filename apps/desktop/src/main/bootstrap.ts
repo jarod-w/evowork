@@ -81,6 +81,21 @@ export interface ElectronApi {
    * `openProjectFolder` 静默什么都不做 —— 见 `service-host.ts` 的 `openPath` 选项。
    */
   readonly openPath?: ((path: string) => Promise<string>) | undefined;
+  /**
+   * `safeStorage`（Q34=A / M10a）—— 厂商密钥与令牌的加密。
+   *
+   * 可选注入：**没给时密钥库不可用**，设置页会显示 11 §4.3 的两个选项而不是崩。
+   * 与 `showOpenDialog` 同一条纪律 —— 它是一个只有真 Electron 才有的能力，
+   * 而"没有它时会发生什么"必须能在测试里跑到。
+   */
+  readonly safeStorage?:
+    | {
+        isEncryptionAvailable(): boolean;
+        encryptString(plainText: string): Buffer;
+        decryptString(encrypted: Buffer): string;
+        getSelectedStorageBackend?(): string;
+      }
+    | undefined;
 }
 
 /**
@@ -185,6 +200,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
           },
         }
       : {}),
+    ...(electron.safeStorage ? { safeStorage: electron.safeStorage } : {}),
     ...(electron.openPath
       ? {
           openPath: async (path: string): Promise<void> => {

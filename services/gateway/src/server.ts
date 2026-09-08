@@ -14,11 +14,19 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { errorFields, type Logger } from '@evowork/logging';
 
+import type { CapabilityLookup } from './capabilities.js';
 import { MODELS_ENDPOINT_PATH, toCatalogEntry, type ModelCatalogResponse } from './catalog.js';
+import type { ResolvedModel } from './layers.js';
 import { ModelNotConfiguredError, runPipeline, type PipelineDeps } from './pipeline.js';
 import { toSseData, type ResponsesRequest } from './protocol.js';
 
 export interface ServerOptions extends PipelineDeps {
+  /**
+   * **收窄成合并层的结果**（`layers.ts`）：目录端点必须透出 `credentialSource`
+   * 与 `denied`，而基类型里没有它们。`PipelineDeps` 那一侧仍是基类型 ——
+   * 管道不需要知道模型来自哪一层，它只发请求。
+   */
+  readonly models: CapabilityLookup<ResolvedModel>;
   readonly logger?: Logger;
   /** 请求体上限。默认 32MB —— 上下文可以很大，但不该无上限 */
   readonly maxBodyBytes?: number;
@@ -124,6 +132,26 @@ export function createGatewayServer(options: ServerOptions): Server {
     if (!request.model || !Array.isArray(request.input)) {
       res.writeHead(400, JSON_HEADERS);
       res.end(JSON.stringify({ error: { message: '缺少 model 或 input' } }));
+      return;
+    }
+
+    /*
+     * 被企业策略停用的模型：**目录里列它，请求里拒它**（11 §4.1 / §12 第 6 条）。
+     *
+     * 两件事必须都做。只从目录里删掉，用户就会在任务失败时收到一句
+     * "未配置的模型"——而真实原因是组织停用了它，那是他自己改不了的事；
+     * 只在目录里标停用而这里放行，则第②层根本不是禁令（R11 的缓解手段作废）。
+     *
+     * 拒绝的话用 `denied` 的原文，不改写：它已经是一句能直接显示给用户的话。
+     */
+    const denied = options.models.find(request.model)?.denied;
+    if (denied !== undefined) {
+      logger?.warn('gateway.request.denied_model', {
+        model: safeToken(request.model),
+        reason: 'DENIED_BY_POLICY',
+      });
+      res.writeHead(403, JSON_HEADERS);
+      res.end(JSON.stringify({ error: { message: denied, code: 'model_denied' } }));
       return;
     }
 

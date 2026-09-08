@@ -11,7 +11,7 @@
  * 而那个红没有任何信息量（我们知道它没装）。写成 .mjs 让类型检查跳过这一个文件，
  * 其余全部照常受约束。装上 electron 之后可以原样改名成 .ts。
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { join } from 'node:path';
 
 /*
@@ -83,6 +83,22 @@ bootstrap({
     showOpenDialog: (options) => dialog.showOpenDialog(options),
     // 「项目」页的「打开文件夹」（清单 §4.5）。同样只有主进程能调 shell
     openPath: (path) => shell.openPath(path),
+    /*
+     * 密钥加密（Q34=A / M10a）。**只有主进程有 safeStorage**。
+     *
+     * 不传的话密钥库永远不可用，用户在设置页只能选"明文保存"或"每次手填" ——
+     * 而那正是 Q34 想终结的状态。Linux 上 `getSelectedStorageBackend()` 返回
+     * `basic_text` 时我们**当成不可用**（固定密钥等价于明文），所以这里原样透出它。
+     */
+    safeStorage: {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (plain) => safeStorage.encryptString(plain),
+      decryptString: (buf) => safeStorage.decryptString(buf),
+      getSelectedStorageBackend: () =>
+        typeof safeStorage.getSelectedStorageBackend === 'function'
+          ? safeStorage.getSelectedStorageBackend()
+          : undefined,
+    },
   },
   /*
    * 打包时内核二进制随包（M9）；开发时用仓库里构建出来的那个。
@@ -103,7 +119,8 @@ bootstrap({
    */
   /*
    * 网关单文件产物。开发时在仓库的 dist/，打包后随 extraResources 进 Resources/gateway/。
-   * 只在 config.toml 的 base_url 指向本机时才会被执行（gateway-process.ts 的判据）。
+   * 只在 `~/.evowork/app.toml` 的 `mode = "local"` 时才会被执行 ——
+   * 判据是那个 mode，不是 base_url（D11 / M10a，见 gateway-process.ts 的头注释）。
    */
   gatewayEntryPath: isPackaged
     ? join(resourceRoot, 'gateway', 'main.js')

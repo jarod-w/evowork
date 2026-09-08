@@ -163,6 +163,25 @@ export interface ModelOptionView {
   }[];
   /** 缺失能力的用户可见文案（03 §8） */
   readonly notices: readonly string[];
+  /**
+   * 用谁的凭据：`byok` / `hosted` / `private`（11 §4.2）。
+   *
+   * **下拉里要显示它**，因为它同时回答"这次调用花谁的钱"和"数据过谁的境"。
+   * 后者是 K6 隐私叙事的一部分：一个用户以为在用自己的密钥、实际走了托管调用，
+   * 是隐私承诺层面的问题，不是计费问题。
+   */
+  readonly credentialSource: string;
+  /** 能力位有没有被真实 endpoint 实测过。自定义模型恒为 false（那是用户的声明） */
+  readonly verified: boolean;
+  /**
+   * 被企业策略停用的原因（11 §4.1 第②层）。
+   *
+   * 有值时这一项**仍然出现在下拉里**，禁用 + 显示这句话 —— 与 F4
+   * 「`allowed:false` 要禁用并给原因，不隐藏」是同一条。
+   */
+  readonly denied?: string | undefined;
+  /** 来自哪一层：`builtin` / `tenant` / `custom`（设置页据此决定能不能删） */
+  readonly layer?: string | undefined;
 }
 
 /**
@@ -401,6 +420,139 @@ export interface ApplyModelAccessInput {
   readonly deepseekApiKey?: string | undefined;
   readonly moonshotApiKey?: string | undefined;
   readonly zhipuApiKey?: string | undefined;
+}
+
+/* ──────────────────── 设置页（11 §4.4，M10a）──────────────────── */
+
+/**
+ * 密钥存在哪。**它要显示给用户**（11 §4.3）：一个以为密钥被加密保存、
+ * 实际走了明文兜底的用户，是我们自己造成的误解。
+ */
+export type SecretBackendView =
+  'keychain' | 'dpapi' | 'libsecret' | 'plaintext-fallback' | 'unavailable';
+
+/**
+ * 一家内置厂商的密钥状态。
+ *
+ * **没有 `apiKey` 字段**（11 §12 第 2 条）。不是"返回时过滤掉了"，是类型里就没有 ——
+ * 密钥进渲染进程等于进了任何一个 XSS 面，而"某处忘了过滤"是一种会真实发生的失败。
+ * 用户确认自己贴对了靠后四位与一次连通性检查，不靠把 key 亮在屏幕上。
+ */
+export interface ProviderKeyStateView {
+  readonly id: string;
+  readonly label: string;
+  readonly saved: boolean;
+  /** 已保存时的后四位。**只有这四位** */
+  readonly last4?: string | undefined;
+}
+
+/** 一条自定义模型（第③层）。同样**没有 apiKey**，只说密钥存没存。 */
+export interface CustomModelView {
+  readonly id: string;
+  readonly displayName: string;
+  /** 协议适配类型（`deepseek` / `moonshot` / `zhipu` / `private`） */
+  readonly provider: string;
+  readonly upstreamModel: string;
+  /** endpoint。它不是密钥，用户填的、也要能看见自己填了什么 */
+  readonly baseUrl: string;
+  readonly keySaved: boolean;
+  readonly keyLast4?: string | undefined;
+}
+
+/** 设置页「模型接入」一屏要画的全部内容。 */
+export interface ModelAccessView {
+  /** `local` / `hosted` / `private` —— 默认模型的上游在哪（11 §3.2，**不是"网关在哪"**） */
+  readonly mode: string;
+  readonly secretBackend: SecretBackendView;
+  /**
+   * 钥匙串不可用时要显示的那段话（11 §4.3）。有值 = **现在保存不了密钥**，
+   * 页面给两个并列选项（明文保存 / 每次手填），**不替用户选**。
+   */
+  readonly secretNotice?: string | undefined;
+  readonly providers: readonly ProviderKeyStateView[];
+  readonly customModels: readonly CustomModelView[];
+  /**
+   * 四层合并后的结果（11 §4.1）。**与 Composer 下拉是同一份数据** ——
+   * 两处各拉一次的话，"设置里明明有这个模型、下拉里却没有"这种投诉
+   * 就会变成一次没人能复现的排查。
+   */
+  readonly models: readonly ModelOptionView[];
+  /** 企业锁了自定义模型（第②层）。false 时「添加模型」禁用**并给原因**，不隐藏 */
+  readonly allowCustomModels: boolean;
+  readonly lockedReason?: string | undefined;
+  /** 阶段 1 恒为 false（账号随 M10b）。页面据此显示「当前为本机模式，无需登录」 */
+  readonly signedIn: boolean;
+  /** 网关目录读不到时的原因。与 `ModelCatalogResult.unavailable` 同一句话 */
+  readonly catalogUnavailable?: string | undefined;
+}
+
+/**
+ * 保存一把厂商密钥。**密钥只走这一次 IPC**：不回传、不进日志。
+ *
+ * 单独一个动作而不是复用 `applyModelAccess`（那个收三家、给引导用）：
+ * 设置页是一家一家改的，而"改一家"与"首次一起填三家"在失败处理上不同 ——
+ * 前者要能单独报"这一家保存失败了"。
+ */
+export interface SaveProviderKeyInput {
+  readonly providerId: string;
+  readonly apiKey: string;
+}
+
+/** 加一条自定义模型。`apiKey` 只在这里出现一次，之后再也不回读。 */
+export interface CustomModelInput {
+  readonly id: string;
+  readonly displayName?: string | undefined;
+  /** 协议适配类型。**必选** —— endpoint 说哪种方言猜不出来（11 §4.1） */
+  readonly provider: string;
+  readonly upstreamModel: string;
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly authHeader?: string | undefined;
+  readonly reasoning?: boolean | undefined;
+  readonly imageInput?: boolean | undefined;
+  readonly parallelToolCalls?: boolean | undefined;
+  readonly promptCache?: boolean | undefined;
+  readonly maxContextTokens?: number | undefined;
+}
+
+/**
+ * 设置页动作的统一结果。
+ *
+ * `refused` 是**一句要显示给用户的话**（同 `ProjectMutationResult`），不是错误码：
+ * 抛错在界面上的表现是按钮转一下然后什么都没发生。
+ * 成功与失败都带一份新的 `view` —— 少了它，页面要么自己猜新状态，要么再发一次请求。
+ */
+export interface ModelAccessMutationResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+  readonly view: ModelAccessView;
+}
+
+/** 连通性检查的结果。**说清是哪一侧的问题**，不给原始响应体 */
+export interface ModelProbeResult {
+  readonly ok: boolean;
+  readonly message: string;
+}
+
+/**
+ * 设置页「用量与预算」的阶段 1 部分（Q11）。
+ *
+ * 托管额度随 M10b —— 这一屏现在只有本机的两个数：单任务硬预算与并发上限。
+ * **并发只能往下调**（10 §5.1：机器就是资源上限，给一个能调到 8 的滑块
+ * 只会让用户把机器卡住然后来抱怨）。
+ */
+export interface PreferencesView {
+  /** 单任务 token 硬预算。undefined = 不限（定时任务另有强制预算，07 §3.2） */
+  readonly taskTokenBudget?: number | undefined;
+  /** 按这台机器的内存与核数算出来的上限 */
+  readonly concurrencyComputed: number;
+  /** 用户调过之后的生效值（永远 ≤ computed） */
+  readonly concurrencyLimit: number;
+}
+
+export interface PreferencesInput {
+  readonly taskTokenBudget?: number | undefined;
+  readonly concurrencyLimit?: number | undefined;
 }
 
 /* ─────────────────────────── 项目（02 §4.3）─────────────────────────── */

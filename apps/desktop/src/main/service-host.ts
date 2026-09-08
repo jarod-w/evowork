@@ -25,7 +25,7 @@
 import type { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { homedir, hostname, userInfo } from 'node:os';
+import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -37,19 +37,28 @@ import {
   type SessionNotice,
 } from '@evowork/kernel-adapter';
 import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
+/*
+ * 并发上限的公式与"只能往下调"的规则**从 `@evowork/policy` 来**（10 §5.1），
+ * 不在这里另写一份：设置页显示的数与闸门实际用的数必须是同一个，
+ * 否则用户会看到"上限 3"而第 2 个任务就开始排队。
+ */
+import { applyUserPreference, computeConcurrencyLimit } from '@evowork/policy';
 import { BRAND } from '@evowork/tokens';
-import { createAuditRepo, openStore, type Store } from '@evowork/store';
+import { createAuditRepo, openStore, readMeta, writeMeta, type Store } from '@evowork/store';
 
-import type { ModelCatalogResult } from '../shared/ipc.js';
+import type {
+  CustomModelInput,
+  ModelAccessMutationResult,
+  ModelCatalogResult,
+  ModelProbeResult,
+  PreferencesInput,
+  PreferencesView,
+  SaveProviderKeyInput,
+} from '../shared/ipc.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
-import {
-  ensureGatewayTokenFile,
-  mergeGatewayEnv,
-  readGatewayEnvFile,
-  tokenFromEnvFile,
-  writeGatewayEnvKeys,
-} from './gateway-env.js';
-import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
+import { startLocalGateway, type GatewayProcess } from './gateway-process.js';
+import { createModelAccess, probeModel, type ModelAccess } from './model-access.js';
+import { NO_KEYRING_NOTICE, type SafeStorageLike } from './secret-store.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
 import { fetchModelCatalog, readGatewayBaseUrl, waitUntilGatewayReady } from './model-catalog.js';
 import {
@@ -70,18 +79,28 @@ export interface EvoworkPaths {
   readonly scenarios: string;
   readonly logs: string;
   /**
-   * 网关访问令牌（见 `readGatewayToken`）。
+   * 网关访问令牌的**旧**明文文件。
    *
-   * 单独一个文件而不是写进 `config.toml`：那个文件是**内核的**配置，
-   * 而令牌是 EvoWork 自己的凭据；混进去等于让内核的配置文件承载我们的密钥。
+   * M10a 之后令牌也进密钥库（`model-access.ts` 的 `token()`）；这个路径只用于
+   * 一次性迁移与"钥匙串不可用"那条回退路径。单独一个文件而不是写进 `config.toml`
+   * 的理由仍然成立：那个文件是**内核的**配置，混进去等于让它承载我们的凭据。
    */
   readonly gatewayToken: string;
   /**
-   * 厂商密钥（见 `gateway-env.ts`）。
+   * 厂商密钥的**旧**明文文件（`gateway-env.ts`）。
    *
-   * 从访达启动的应用不继承 shell 环境，这个文件是 GUI 启动唯一能用的密钥来源。
+   * M10a 之后它只被读一次：启动时导入密钥库，然后改名成 `gateway.env.migrated`
+   * （见 `migratePlaintextSecrets`）。新装机器上它根本不存在。
    */
   readonly gatewayEnv: string;
+  /** 密钥库（密文，`safeStorage`）。Q34=A 的落点 */
+  readonly secrets: string;
+  /** 明文兜底文件。**只在用户显式选择时才会被创建**（11 §4.3） */
+  readonly secretsPlain: string;
+  /** EvoWork 自己的配置（`mode` = 默认模型的上游在哪，D11）。**不是内核的 config.toml** */
+  readonly appConfig: string;
+  /** 自定义模型的元数据（第③层）。**里面没有密钥** */
+  readonly modelsFile: string;
   /**
    * hook 写审计记录的 JSONL（10 §6）。
    *
@@ -110,6 +129,10 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
     logs: join(root, 'logs'),
     gatewayToken: join(root, 'gateway-token'),
     gatewayEnv: join(root, 'gateway.env'),
+    secrets: join(root, 'secrets.bin'),
+    secretsPlain: join(root, 'secrets.plain.json'),
+    appConfig: join(root, 'app.toml'),
+    modelsFile: join(root, 'models.toml'),
     auditLog: join(root, 'audit.jsonl'),
     kernelHome: join(root, 'kernel'),
   };
@@ -168,39 +191,6 @@ export function ensureKernelConfig(paths: EvoworkPaths, templatePath: string): b
 }
 
 /**
- * 网关访问令牌 → 内核进程的环境。
- *
- * ## 为什么必须由宿主显式传
- *
- * `config.toml` 里写的是 `env_key = "EVOWORK_GATEWAY_TOKEN"` —— 内核从**它自己的进程环境**
- * 里取这个值。而从访达双击启动的应用**不继承任何 shell 环境变量**，
- * 所以在正常安装的应用里那个变量永远是空的，内核对**每一次回合**回
- * `Missing environment variable: \`EVOWORK_GATEWAY_TOKEN\`` ——
- * 在界面上就是"发了一句话，任务失败了"。2026-09-06 用户第一次真发消息时撞上的就是这条。
- *
- * ## 两个来源，顺序是刻意的
- *
- *   ① `process.env` —— 开发时从终端起、以及企业用 launchd/服务管理器注入的场景；
- *   ② `~/.evowork/gateway-token` —— GUI 启动唯一能用的路径。
- *
- * ## 这是**过渡方案**，不是终态
- *
- * 明文文件不满足"密钥不落盘"的本意。终态有两条候选（都还没决策）：
- * Electron `safeStorage` 存进系统钥匙串 + 设置页录入，或由 identity 服务签发短期令牌
- * （Q14 的原设计，但 identity 尚未开始）。**在做出决策前不要把这个文件当成正式机制**。
- */
-export function readGatewayToken(
-  paths: EvoworkPaths,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  const fromEnv = env.EVOWORK_GATEWAY_TOKEN?.trim();
-  if (fromEnv) return fromEnv;
-  if (!existsSync(paths.gatewayToken)) return undefined;
-  const fromFile = readFileSync(paths.gatewayToken, 'utf8').split('\n')[0]?.trim();
-  return fromFile ? fromFile : undefined;
-}
-
-/**
  * 首次运行时把随包的**模式指令**装进 `~/.evowork/modes/`。
  *
  * ## 少了它会发生什么（K5 的实际破口）
@@ -254,8 +244,9 @@ export interface ServiceHostOptions {
   /**
    * 网关单文件产物（`dist/gateway/main.js`）。
    *
-   * **只在 `base_url` 指向本机时才会被用到**（拓扑 A）。企业把网关部署在服务器上时
-   * 这个路径存在但永远不执行 —— 判据在 `gateway-process.ts`，不在这里。
+   * **只在 `app.toml` 的 `mode = "local"` 时才会被用到**（拓扑 A）。企业把网关部署在
+   * 服务器上时这个路径存在但永远不执行 —— 判据是那个 mode（D11），由宿主算出来
+   * 传给 `startLocalGateway`，不在这个文件里从 URL 反推。
    */
   readonly gatewayEntryPath?: string | undefined;
   readonly appVersion: string;
@@ -271,6 +262,13 @@ export interface ServiceHostOptions {
   readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
   readonly spawnFn?: typeof spawn;
+  /**
+   * Electron 的 `safeStorage`（Q34=A）。由 `bootstrap` 注入 —— 这个文件不 import electron。
+   *
+   * **没给时密钥库不可用**：`set()` 拒绝写入，设置页显示 11 §4.3 的那两个选项。
+   * 这正是"钥匙串不可用"那条路径能被测到的方式（否则要一台没有 keyring 的 Linux）。
+   */
+  readonly safeStorage?: SafeStorageLike | undefined;
   /**
    * 打开系统的目录选择框（首运行第②步）。
    *
@@ -356,22 +354,51 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const store = openStore({ path: options.paths.db, logger });
 
   /*
-   * 本机网关的密钥与令牌。必须在起内核之前备齐：内核从自己的进程环境读令牌，
-   * 而从访达启动时 shell 环境是空的。
+   * 本机网关的密钥、令牌、拓扑与自定义模型 —— 全部收在 `model-access.ts` 里（M10a）。
    *
-   *   ① `~/.evowork/gateway.env` 补厂商密钥（文档一直让人写这儿，以前没人读）；
-   *   ② 拓扑 A 没有令牌就签一个 —— 用户不该知道有 gateway-token 这么个东西。
+   * 必须在起内核之前备齐：内核从自己的进程环境读令牌，而从访达启动时 shell 环境是空的。
+   * 这一段此前是"读明文文件 + 按 URL 反推拓扑 + 没令牌就签一个"三件事挤在一起；
+   * 现在顺序是显式的：拓扑（`app.toml`）→ 密钥库（含两个明文文件的一次性迁移）
+   * → 子进程环境（密钥解密后只进环境，不落盘）。
    */
-  const fileEnv = readGatewayEnvFile(options.paths.gatewayEnv);
-  let gatewayRuntimeEnv = mergeGatewayEnv(fileEnv, options.env ?? process.env);
-  const gatewayBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, gatewayRuntimeEnv);
-  let gatewayToken =
-    readGatewayToken(options.paths, gatewayRuntimeEnv) ?? tokenFromEnvFile(fileEnv);
-  if (isLocalGateway(gatewayBaseUrl)) {
-    const ensured = ensureGatewayTokenFile(options.paths.gatewayToken, gatewayToken);
-    gatewayToken = ensured.token;
-    if (ensured.minted) logger.info('desktop.gateway_token.minted', { reason: 'LOCAL' });
+  const baseEnv = options.env ?? process.env;
+  const kernelBaseUrl = readGatewayBaseUrl(options.paths.kernelHome, baseEnv);
+  const modelAccess: ModelAccess = createModelAccess({
+    paths: {
+      home: options.paths.home,
+      kernelHome: options.paths.kernelHome,
+      secrets: options.paths.secrets,
+      secretsPlain: options.paths.secretsPlain,
+      appConfig: options.paths.appConfig,
+      modelsFile: options.paths.modelsFile,
+      gatewayEnv: options.paths.gatewayEnv,
+      gatewayToken: options.paths.gatewayToken,
+      requirements: options.paths.requirements,
+    },
+    ...(options.safeStorage ? { safeStorage: options.safeStorage } : {}),
+    logger,
+    baseEnv,
+    kernelBaseUrl,
+    readFlag: (key) => readMeta(store.db, key),
+    writeFlag: (key, value) => writeMeta(store.db, key, value),
+  });
+  if (modelAccess.inferredMode) {
+    /*
+     * 老装机：`app.toml` 不存在而内核的 base_url 指向别处，于是反推了一次（D11）。
+     * **必须记一条** —— 一次静默的拓扑推断在排查 401 时是完全看不见的。
+     */
+    logger.info('desktop.app_config.inferred', {
+      authMode: modelAccess.mode,
+      reason: 'LEGACY_URL',
+    });
   }
+  logger.info('desktop.model_access.ready', {
+    authMode: modelAccess.mode,
+    secretStore: modelAccess.secretBackend,
+  });
+  const gatewayBaseUrl = modelAccess.upstreamBaseUrl;
+  let gatewayRuntimeEnv = modelAccess.env();
+  let gatewayToken = modelAccess.token();
 
   const readInstructions = (file: string): string | undefined => {
     // `config/modes/*.md` 随产品分发（取代原 P3 补丁，F1）
@@ -549,6 +576,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     if (!options.gatewayEntryPath) return;
     gateway = startLocalGateway({
       baseUrl: gatewayBaseUrl,
+      // D11：起不起看 `app.toml` 的 mode，**不看 URL**（`gateway-process.ts` 的头注释）
+      runsLocally: modelAccess.runsLocalGateway,
       entryPath: options.gatewayEntryPath,
       ...(gatewayToken ? { token: gatewayToken } : {}),
       env: gatewayRuntimeEnv,
@@ -564,6 +593,72 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       ...catalogFetchOptions(),
       readyTimeoutMs: budget,
     });
+  };
+
+  /**
+   * 改完密钥 / 自定义模型之后重起网关，并把新的目录拉回来。
+   *
+   * **必须重起，不能只重拉目录**：模型表在网关进程的内存里（`main.ts` 启动时
+   * 从进程环境算一次）。2026-09-06 为此付过一次代价：模型目录改了、代码与 dmg 都是新的，
+   * 而界面上还是旧列表 —— 因为那个进程是几小时前起的。
+   *
+   * 重起之前**重新算一遍环境**：密钥刚从库里解密出来，自定义模型刚写进文件。
+   */
+  const restartGateway = async (): Promise<ModelCatalogResult> => {
+    gatewayRuntimeEnv = modelAccess.env();
+    gatewayToken = modelAccess.token();
+    gateway?.stop();
+    gateway = undefined;
+    launchLocalGateway();
+    const ready = await awaitGatewayReady();
+    if (!ready) {
+      return {
+        models: [],
+        reason: 'unreachable' as const,
+        unavailable: '本机网关启动了但还没开始接受请求。等几秒再点「检查模型接入」。',
+      };
+    }
+    return readModelCatalog();
+  };
+
+  /*
+   * 设置页「用量与预算」的两个数（阶段 1；托管额度随 M10b）。
+   *
+   * 落在 `meta` 表而不是一个新文件：它们是**本机偏好**，与 `onboarded` 同一档。
+   * 并发上限存的是**用户的意愿值**，生效值每次按当前机器重算 ——
+   * 换了机器（或插了外接显示器把内存吃掉）之后，一个存下来的 3 不该继续生效
+   * （10 §5.1：机器就是资源上限）。
+   */
+  const BUDGET_KEY = 'evowork.prefs.task_token_budget';
+  const CONCURRENCY_KEY = 'evowork.prefs.concurrency';
+
+  const readPreferences = (): PreferencesView => {
+    const computed = computeConcurrencyLimit({
+      totalMemoryBytes: totalmem(),
+      cpuCount: cpus().length,
+    });
+    const rawBudget = Number(readMeta(store.db, BUDGET_KEY) ?? '');
+    const rawConcurrency = Number(readMeta(store.db, CONCURRENCY_KEY) ?? '');
+    return {
+      ...(Number.isFinite(rawBudget) && rawBudget > 0 ? { taskTokenBudget: rawBudget } : {}),
+      concurrencyComputed: computed,
+      concurrencyLimit: applyUserPreference(
+        computed,
+        Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : undefined,
+      ),
+    };
+  };
+
+  const writePreferences = (input: PreferencesInput): PreferencesView => {
+    if (input.taskTokenBudget !== undefined) {
+      // 0 / 负数 = 不限（用户清空了输入框）。**不报错** —— 那是一个合法的选择
+      const value = Math.floor(input.taskTokenBudget);
+      writeMeta(store.db, BUDGET_KEY, value > 0 ? String(value) : '');
+    }
+    if (input.concurrencyLimit !== undefined) {
+      writeMeta(store.db, CONCURRENCY_KEY, String(Math.max(1, Math.floor(input.concurrencyLimit))));
+    }
+    return readPreferences();
   };
 
   const actions = createRendererActions({
@@ -654,31 +749,116 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     userName: userInfo().username,
     cases: BUILTIN_CASES,
     readModelCatalog,
+    /*
+     * 引导第④步与首页「检查模型接入」共用（三家一起填）。
+     *
+     * **M10a 之后它写的是密钥库，不再写 `gateway.env`** —— 明文文件那条路已经退役
+     * （Q34=A）。密钥库不可用时**不静默写明文**：如实返回那段说明，让用户去设置页
+     * 做选择（11 §4.3）。
+     */
     applyModelAccess: async (input) => {
-      const keys: Record<string, string> = {};
-      if (input.deepseekApiKey?.trim()) keys.DEEPSEEK_API_KEY = input.deepseekApiKey.trim();
-      if (input.moonshotApiKey?.trim()) keys.MOONSHOT_API_KEY = input.moonshotApiKey.trim();
-      if (input.zhipuApiKey?.trim()) keys.ZHIPU_API_KEY = input.zhipuApiKey.trim();
-      if (Object.keys(keys).length > 0) {
-        writeGatewayEnvKeys(options.paths.gatewayEnv, keys);
-        logger.info('desktop.gateway_env.updated', { itemCount: Object.keys(keys).length });
+      const pairs: readonly { readonly id: string; readonly key: string | undefined }[] = [
+        { id: 'deepseek', key: input.deepseekApiKey },
+        { id: 'moonshot', key: input.moonshotApiKey },
+        { id: 'zhipu', key: input.zhipuApiKey },
+      ];
+      let saved = 0;
+      let rejected = false;
+      for (const pair of pairs) {
+        if (!pair.key?.trim()) continue;
+        if (modelAccess.saveProviderKey({ providerId: pair.id, apiKey: pair.key })) saved += 1;
+        else rejected = true;
       }
-      gatewayRuntimeEnv = mergeGatewayEnv(
-        readGatewayEnvFile(options.paths.gatewayEnv),
-        options.env ?? process.env,
-      );
-      gateway?.stop();
-      gateway = undefined;
-      launchLocalGateway();
-      const ready = await awaitGatewayReady();
-      if (!ready) {
+      if (saved > 0) logger.info('desktop.provider_keys.saved', { itemCount: saved });
+      if (rejected && saved === 0) {
         return {
           models: [],
-          reason: 'unreachable' as const,
-          unavailable: '本机网关启动了但还没开始接受请求。等几秒再点「检查模型接入」。',
+          reason: 'no-keys' as const,
+          unavailable: NO_KEYRING_NOTICE,
         };
       }
-      return readModelCatalog();
+      return restartGateway();
+    },
+
+    /** 设置页「模型接入」的六个动作（11 §4.4）。都在这里落地，渲染层只拿视图 */
+    modelAccessPorts: {
+      read: async (): Promise<ModelAccessMutationResult> => ({
+        ok: true,
+        view: modelAccess.view(await readModelCatalog()),
+      }),
+      saveProviderKey: async (input: SaveProviderKeyInput): Promise<ModelAccessMutationResult> => {
+        const ok = modelAccess.saveProviderKey(input);
+        if (!ok) {
+          return {
+            ok: false,
+            // 保存不了只有两个原因：密钥库不可用，或这个厂商 id 不认识
+            refused:
+              modelAccess.secretBackend === 'unavailable'
+                ? NO_KEYRING_NOTICE
+                : '这个厂商不在内置名单里。',
+            view: modelAccess.view(await readModelCatalog()),
+          };
+        }
+        logger.info('desktop.provider_keys.saved', { itemCount: 1 });
+        return { ok: true, view: modelAccess.view(await restartGateway()) };
+      },
+      clearProviderKey: async (providerId: string): Promise<ModelAccessMutationResult> => {
+        const ok = modelAccess.clearProviderKey(providerId);
+        return {
+          ok,
+          ...(ok ? {} : { refused: '这把密钥本来就没有保存。' }),
+          view: modelAccess.view(await restartGateway()),
+        };
+      },
+      addCustomModel: async (input: CustomModelInput): Promise<ModelAccessMutationResult> => {
+        const refused = modelAccess.addCustomModel(input);
+        if (refused !== undefined) {
+          // `refused` 是一句要显示给用户的话，不是错误码（同 ProjectMutationResult）
+          return { ok: false, refused, view: modelAccess.view(await readModelCatalog()) };
+        }
+        return { ok: true, view: modelAccess.view(await restartGateway()) };
+      },
+      removeCustomModel: async (id: string): Promise<ModelAccessMutationResult> => {
+        const ok = modelAccess.removeCustomModel(id);
+        return {
+          ok,
+          ...(ok ? {} : { refused: '没有这个自定义模型。' }),
+          view: modelAccess.view(await restartGateway()),
+        };
+      },
+      setPlaintextFallback: async (accept: boolean): Promise<ModelAccessMutationResult> => {
+        const hadToken = gatewayToken !== undefined;
+        modelAccess.setPlaintextFallback(accept);
+        const catalog = await restartGateway();
+        /*
+         * **内核拿不到刚签出来的令牌** —— 它的进程环境是启动时定下的（`extraEnv`），
+         * 而这一刻内核已经在跑了。网关重起就够，内核不行。
+         *
+         * 如实说要重启，而不是让用户发一句话、拿到
+         * `Missing environment variable: EVOWORK_GATEWAY_TOKEN`，然后去猜自己哪儿做错了。
+         * （M10b 之后令牌会变成短期 JWT，那时这条路径要改成"通知内核换令牌"。）
+         */
+        if (!hadToken && gatewayToken !== undefined) {
+          options.emitToRenderer(IPC.notice, {
+            kind: 'model',
+            text: '密钥保存方式已改。**重启 EvoWork 之后**才能发出新任务 —— 当前的内核进程还没有拿到网关令牌。',
+          });
+        }
+        return { ok: true, view: modelAccess.view(catalog) };
+      },
+      probe: async (modelId: string): Promise<ModelProbeResult> =>
+        probeModel({
+          baseUrl: gatewayBaseUrl,
+          token: gatewayToken,
+          modelId,
+          ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+        }),
+    },
+
+    /** 设置页「用量与预算」的阶段 1（Q11：单任务预算 + 并发上限，只能往下调） */
+    preferencePorts: {
+      read: (): PreferencesView => readPreferences(),
+      write: (input: PreferencesInput): PreferencesView => writePreferences(input),
     },
   });
 

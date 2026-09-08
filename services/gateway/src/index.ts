@@ -8,6 +8,8 @@
  * 文件分工：
  *   · `protocol.ts`            内核与网关之间的线上契约，含**三条会让整条流失败的硬约束**
  *   · `capabilities.ts`        能力声明（D2 语义矩阵 + Q16 三家），含"未验证"如实标注
+ *   · `layers.ts`              模型注册表的四层与合并顺序（② > ②' > ③ > ①，11 §4.1）
+ *   · `custom-models.ts`       第③层的线上形状（**宿主与网关共用**，密钥不进那个 JSON）
  *   · `catalog.ts`             模型下拉的线上契约（**桌面 App 与网关共用同一个类型**，F24）
  *   · `translate/to-chat.ts`   Responses → Chat（instructions / tool 结果 / 图片拒绝 / thinking 回传）
  *   · `translate/from-chat.ts` Chat 流 → Responses 事件（编号 / 工具参数重组 / reasoning）
@@ -29,6 +31,28 @@ export {
   type ModelRegistryEntry,
   type ProviderId,
 } from './capabilities.js';
+export {
+  CUSTOM_KEY_ENV_PREFIX,
+  CUSTOM_MODELS_ENV,
+  customModelConfig,
+  encodeCustomModels,
+  MODEL_POLICY_ENV,
+  parseCustomModels,
+  parseModelPolicy,
+  PROTOCOL_ADAPTERS,
+  toRegistryEntry,
+  validateCustomModel,
+  type CustomModelSpec,
+} from './custom-models.js';
+export {
+  CUSTOM_MODELS_LOCKED,
+  DENIED_BY_POLICY,
+  mergeModelLayers,
+  type CredentialSource,
+  type EnterpriseModelPolicy,
+  type ModelLayers,
+  type ResolvedModel,
+} from './layers.js';
 export {
   MODELS_ENDPOINT_PATH,
   toCatalogEntry,

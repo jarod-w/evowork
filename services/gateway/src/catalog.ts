@@ -28,13 +28,24 @@
  *
  * 详见 §4 的 F24 与 09 §3.2 的修订。
  */
-import type { ModelCapabilities, ModelRegistryEntry, ProviderId } from './capabilities.js';
+import type { ModelCapabilities, ProviderId } from './capabilities.js';
+import type { CredentialSource, ResolvedModel } from './layers.js';
 import { capabilityNotices } from './pipeline.js';
 
 /** 端点路径。客户端与服务端**共用这一个常量**，拼错就不会各拼各的。 */
 export const MODELS_ENDPOINT_PATH = '/v1/evowork/models';
 
-/** 一个模型在下拉里需要的全部信息。 */
+/**
+ * 一个模型在下拉里需要的全部信息。
+ *
+ * ## 这个类型里**没有 `apiKey`，hosted 条目也没有上游 `baseUrl`**（11 §12 第 13 条）
+ *
+ * 不是"运行时过滤掉了"，是**类型层面就没有那个字段**。区别在失败方式上：
+ * 过滤是一行可以被漏掉、被绕过、被"临时调试一下"注释掉的代码；类型没有那个字段，
+ * 想把 key 发给客户端就得先改这个类型，而改它会被 review 看见。
+ * 要防的具体后果是：租户共享的厂商 key 落到每一台客户机 —— 一台泄漏 = 整租户额度泄漏，
+ * 而计量同时失真（谁用的都算不清）。
+ */
 export interface ModelCatalogEntry {
   readonly id: string;
   readonly displayName: string;
@@ -55,6 +66,18 @@ export interface ModelCatalogEntry {
   readonly notes: string;
   /** 缺失能力的用户可见文案（03 §4.5 徽标 + 03 §8 拒绝说明） */
   readonly notices: readonly string[];
+  /**
+   * 用谁的凭据（11 §4.2）。**下拉里跟着 `provider/model` 一起显示** ——
+   * 它同时回答"这次调用花谁的钱"和"数据过谁的境"，后者是 K6 隐私叙事的一部分。
+   */
+  readonly credentialSource: CredentialSource;
+  /** 来自哪一层（11 §4.1）。设置页据此决定这一条能不能被用户删 */
+  readonly layer: 'builtin' | 'tenant' | 'custom';
+  /**
+   * 被企业策略停用的原因。**有值时这一条仍然要显示**（划除 + 这句话），
+   * 不隐藏 —— 同 10 §2.2「未知 profile 显示 id 本身」。
+   */
+  readonly denied?: string;
 }
 
 export interface ModelCatalogResponse {
@@ -66,7 +89,7 @@ export interface ModelCatalogResponse {
  *
  * `verified` **如实透出**：未经真实 endpoint 验证的能力位不该在 UI 上看起来像已验证的。
  */
-export function toCatalogEntry(model: ModelRegistryEntry): ModelCatalogEntry {
+export function toCatalogEntry(model: ResolvedModel): ModelCatalogEntry {
   return {
     id: model.id,
     displayName: model.displayName,
@@ -79,5 +102,8 @@ export function toCatalogEntry(model: ModelRegistryEntry): ModelCatalogEntry {
     unverified: model.unverified,
     notes: model.notes,
     notices: capabilityNotices(model),
+    credentialSource: model.credentialSource,
+    layer: model.layer,
+    ...(model.denied ? { denied: model.denied } : {}),
   };
 }
