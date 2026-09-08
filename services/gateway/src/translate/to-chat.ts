@@ -230,8 +230,15 @@ export function toChatRequest(
         break;
       }
       case 'reasoning': {
+        /*
+         * 与本文件其它 case 一样要显式窄化：`ResponseItem` 末尾有一个兜底成员
+         * （`{ type: string; [key: string]: unknown }`，R2 —— 上游会不断新增条目类型），
+         * 所以 `case 'reasoning'` narrow 出来的是「reasoning 变体 | 兜底成员」而不是前者。
+         * 少了这一步在 `exactOptionalPropertyTypes` 下过不了类型检查。
+         */
+        const reasoning = item as Extract<ResponseItem, { type: 'reasoning' }>;
         if (capabilities.reasoning) {
-          pendingReasoning += reasoningTextFrom(item);
+          pendingReasoning += reasoningTextFrom(reasoning);
         }
         break;
       }
