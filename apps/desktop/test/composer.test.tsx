@@ -317,6 +317,7 @@ describe('降级必须显式（03 §8 / D2）', () => {
             { id: 'image-input', label: '读图', available: false },
             { id: 'parallel-tools', label: '并行工具', available: true },
           ],
+          credentialSource: 'byok',
         },
       ],
       modelId: 'evowork/deepseek-v4-flash',
@@ -334,6 +335,8 @@ describe('降级必须显式（03 §8 / D2）', () => {
     // D2：缺失能力划除而不是隐藏 —— 三个徽标一个都不少
     expect(item.querySelectorAll('.ew-model-cap')).toHaveLength(3);
     expect(item.querySelector('.ew-model-cap[data-available="false"]')?.textContent).toBe('读图');
+    // 11 §4.2：下拉里看得见凭据来源，用户才不会把托管调用当成自己的密钥
+    expect(item.querySelector('.ew-model-source')?.textContent).toBe('自有密钥');
   });
 
   /*
