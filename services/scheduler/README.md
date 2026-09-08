@@ -58,8 +58,10 @@ src/
 
 ## 还没做的
 
-- **与内核的接线**：`startRun` 现在是注入的端口，真实实现要经 `kernel-adapter`
-  起 thread 并带上 `ThreadGoal.budget`（Q11）。
+- ~~与内核的接线~~ **已做**（2026-09-06）：`startRun` 仍是注入的端口，真实实现在
+  `apps/desktop/src/main/local-services.ts` 的 `createKernelBridge`。
+- **创建自动化的产品入口**：本包只管调度；`automation` 表的 insert 目前没有 repo 方法、
+  桌面端也没有 create IPC，`AutomationForm` 组件没挂到任何页面 —— 见 `docs/status.md` §6.1 B。
 - **wake_system**（07 §4.4）：请求系统定时唤醒。三个平台机制不同，且**不承诺一定能唤醒**。
 - **U3 仍未证伪**：真机关机一夜再唤醒的体验。单测能证明"给定这样的时间线，
   落库顺序与文案是对的"，证明不了 OS 的休眠行为。
