@@ -885,6 +885,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onResetOverride: (key: 'model' | 'permission' | 'mode') => {
         if (key === 'model') setModelOverridden(false);
       },
+      ...(modelAccess?.policyPack?.status === 'expired' && modelAccess.policyPack.message
+        ? { sendLockedReason: modelAccess.policyPack.message }
+        : {}),
       /*
        * 03 §8：模型不可用 → danger 条 + 禁用发送，**不换一个模型继续**。
        * 「检查模型接入」重新拉一次列表 —— 用户通常是去把网关起起来了再回来点它。
@@ -924,6 +927,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       providerKeys,
       modelApplying,
       modelUnavailableReason,
+      modelAccess,
     ],
   );
 
@@ -1157,6 +1161,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           composer={composer}
           value={draft}
           onChange={setDraft}
+          {...(modelAccess?.policyPack?.disableSlots
+            ? {
+                slots: {
+                  titlebarPromo: false,
+                  activityPopover: false,
+                  sidebarPromo: false,
+                  showcase: false,
+                },
+              }
+            : {})}
           {...(failure !== undefined
             ? { configNotice: `没有连上本机服务：${failure}。重启 EvoWork 再试。` }
             : {})}

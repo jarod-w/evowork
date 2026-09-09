@@ -47,3 +47,22 @@ export {
   type MeteringKey,
 } from './metering.js';
 export { bearer, jwtAuth, type Authenticate, type JwtAuthOptions } from './auth.js';
+export {
+  encodePolicyPackPayload,
+  evaluatePolicyPack,
+  parsePolicyPackEnvelope,
+  parsePolicyPackPayload,
+  POLICY_EXPIRED_COPY,
+  POLICY_EXPIRING_COPY,
+  POLICY_PACK_ALG,
+  POLICY_PACK_SCHEMA_VER,
+  policyPackToRequirementsToml,
+  signPolicyPack,
+  verifyPolicyPack,
+  type PolicyPackEnvelope,
+  type PolicyPackModels,
+  type PolicyPackPayload,
+  type PolicyPackStatusKind,
+  type VerifyPackFailure,
+  type VerifyPackResult,
+} from './policy-pack.js';

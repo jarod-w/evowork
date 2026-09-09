@@ -263,9 +263,11 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
           : {}),
       };
 
-  const policy: LocalModelPolicy = existsSync(deps.paths.requirements)
-    ? parseModelPolicyToml(safeRead(deps.paths.requirements))
-    : { disabledModelIds: [], allowCustomModels: true };
+  function readPolicy(): LocalModelPolicy {
+    return existsSync(deps.paths.requirements)
+      ? parseModelPolicyToml(safeRead(deps.paths.requirements))
+      : { disabledModelIds: [], allowCustomModels: true };
+  }
 
   const runsLocalGateway = true;
   const upstreamBaseUrl =
@@ -301,6 +303,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
   }
 
   function env(): NodeJS.ProcessEnv {
+    const policy = readPolicy();
     const secrets = withoutAccountSecrets(store.toEnv());
     const specs = customSpecs();
     const localToken = token();
@@ -363,6 +366,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
     },
 
     view(catalog) {
+      const policy = readPolicy();
       const described = new Map(store.describe().map((d) => [d.name, d.last4]));
       return {
         mode: config.mode,
@@ -410,6 +414,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
 
     /** 返回**拒绝的理由**（一句给用户看的话），`undefined` = 加成功了。 */
     addCustomModel(input) {
+      const policy = readPolicy();
       if (!policy.allowCustomModels) {
         return policy.reason ?? '你所在组织要求使用统一配置的模型，这台电脑上不能自己添加模型。';
       }

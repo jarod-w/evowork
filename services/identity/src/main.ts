@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { createLogger, jsonLinesSink } from '@evowork/logging';
-import { generateEs256KeyPair } from '@evowork/account';
 
 import { bootstrapFromEnv } from './config.js';
 import { openIdentityDb } from './db.js';
@@ -9,6 +8,7 @@ import { devMailer } from './mailer.js';
 import { PROD_ARGON } from './password.js';
 import { parseMasterKey } from './secret-box.js';
 import { createIdentity } from './service.js';
+import { loadOrCreateSigningKeys } from './signing-keys.js';
 
 function env(name: string): string | undefined {
   const value = process.env[name];
@@ -29,11 +29,12 @@ export function main(): void {
     return;
   }
   const db = openIdentityDb(env('EVOWORK_IDENTITY_DB') ?? ':memory:');
-  const keys = generateEs256KeyPair();
+  const masterKey = parseMasterKey(masterHex);
+  const keys = loadOrCreateSigningKeys(db, masterKey);
   const identity = createIdentity({
     db,
     keys,
-    masterKey: parseMasterKey(masterHex),
+    masterKey,
     mailer: devMailer(env('EVOWORK_WEB_ORIGIN') ?? 'http://127.0.0.1:5174'),
     argon: PROD_ARGON,
     publicOrigin: env('EVOWORK_PUBLIC_ORIGIN') ?? 'http://127.0.0.1:8788',

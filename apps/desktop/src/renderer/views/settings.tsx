@@ -5,9 +5,8 @@
  *
  * ## 六个分类里只有四个有内容，而另外两个**如实说自己没做**
  *
- * 「安全与权限」（审计 UI 是 M4 的遗留项）与「数据管理」的归档任务都还没有实现。
- * 它们**仍然出现在左栏**，点开是一句说明 —— 与 `UnbuiltPage` 同一条纪律：
- * 一个点了没反应的菜单项与一个坏掉的功能在界面上无法区分。
+ * 「安全与权限」现在展示策略包状态（M10c / R11）。权限档位的可视化编辑
+ * 仍未做（10 §7 的本机安全能力页），空态说清，不装成坏了。
  *
  * ## 这一页不显示任何密钥
  *
@@ -115,7 +114,7 @@ export function SettingsPage(props: SettingsPageProps) {
         {props.section === 'models' ? <ModelsSection {...props} /> : null}
         {props.section === 'usage' ? <UsageSection {...props} /> : null}
         {props.section === 'data' ? <DataSection /> : null}
-        {props.section === 'security' ? <SecuritySection /> : null}
+        {props.section === 'security' ? <SecuritySection access={props.access} /> : null}
         {props.section === 'about' ? (
           <AboutSection appName={props.appName} appVersion={props.appVersion} />
         ) : null}
@@ -549,17 +548,31 @@ function DataSection() {
   );
 }
 
-/** 安全与权限：M4 的遗留项。**说清是没做，不是坏了**。 */
-function SecuritySection() {
+/** 安全与权限：策略包状态是 M10c 接上的；档位可视化仍如实说没做。 */
+function SecuritySection({ access }: { readonly access: ModelAccessView | null }) {
+  const pack = access?.policyPack;
+  const statusLine =
+    pack?.status === 'expired'
+      ? (pack.message ?? '安全策略已过期，已切换为只读模式。请连接企业网络以更新。')
+      : pack?.status === 'expiring'
+        ? (pack.message ?? '安全策略即将过期。请连接企业网络以续期。')
+        : pack?.status === 'valid'
+          ? '这台电脑正在执行企业签名策略。'
+          : '这台电脑没有企业策略包。个人使用时不会锁定你自己的模型密钥。';
   return (
     <section className="ew-settings-section">
       <SectionHeader title="安全与权限" />
       <p className="ew-settings-note">
         审批记录与被拦下的操作现在在<strong>用量与审计</strong>页里看（侧边栏「更多」进）。
       </p>
+      {pack?.status === 'expired' || pack?.status === 'expiring' ? (
+        <Banner tone={pack.status === 'expired' ? 'danger' : 'warning'}>{statusLine}</Banner>
+      ) : (
+        <p className="ew-settings-note">{statusLine}</p>
+      )}
       <EmptyState
         title="权限档位的可视化设置还没做好"
-        hint="档位本身可用：在首页 Composer 底部选，或在引导第③步设默认值。"
+        hint="档位本身可用：在首页 Composer 底部选，或在引导第③步设默认值。企业禁用的档会留在列表里并给出原因。"
       />
     </section>
   );

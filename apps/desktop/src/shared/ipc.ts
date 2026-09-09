@@ -489,8 +489,24 @@ export interface ModelAccessView {
   readonly devices?: readonly DeviceView[] | undefined;
   readonly quotaUsed?: number | undefined;
   readonly quotaLimit?: number | undefined;
+  /**
+   * 本机当前的签名策略包状态（M10c / R11）。
+   *
+   * 没有包 = 个人机器，不锁 BYOK（Q30=A）。超期是只读，文案在 `message` 里。
+   */
+  readonly policyPack?: PolicyPackStatusView | undefined;
   /** 网关目录读不到时的原因。与 `ModelCatalogResult.unavailable` 同一句话 */
   readonly catalogUnavailable?: string | undefined;
+}
+
+/** 设置页与 Composer 看到的策略包折叠结果。没有 payload / 签名。 */
+export interface PolicyPackStatusView {
+  readonly status: 'none' | 'valid' | 'expiring' | 'expired';
+  readonly expiresAt?: number | undefined;
+  readonly message?: string | undefined;
+  readonly disableShare: boolean;
+  readonly disableSlots: boolean;
+  readonly disabledProfiles: readonly string[];
 }
 
 /** 一台已登录设备（Q40）。吊销权威在 identity，两端走同一条 API。 */

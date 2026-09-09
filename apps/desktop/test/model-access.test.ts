@@ -222,6 +222,15 @@ describe('第②层：企业策略复用 requirements.toml 这条已有通道', 
     };
     expect(policy.disabledModelIds).toEqual(['evowork/kimi-k3']);
   });
+
+  it('启动之后才写下的 requirements.toml，env() 再读一次就能看到', () => {
+    const m = access();
+    writeFileSync(join(dir, 'requirements.toml'), '[models]\nallow_custom = false\n');
+    const policy = JSON.parse(m.env()[MODEL_POLICY_ENV] as string) as {
+      allowCustomModels: boolean;
+    };
+    expect(policy.allowCustomModels).toBe(false);
+  });
 });
 
 describe('拓扑与令牌（D11）', () => {

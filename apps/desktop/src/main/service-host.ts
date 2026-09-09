@@ -59,6 +59,7 @@ import type {
   ModelAccessView,
   ModelCatalogResult,
   ModelProbeResult,
+  PolicyPackStatusView,
   PreferencesInput,
   PreferencesView,
   SaveProviderKeyInput,
@@ -67,6 +68,7 @@ import { createAccountSession, originsFromEnv } from './account.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
 import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
 import { createModelAccess, probeModel, type ModelAccess } from './model-access.js';
+import { EMPTY_POLICY_VIEW, syncEnterprisePolicy, type PolicyPackView } from './policy-pack.js';
 import { NO_KEYRING_NOTICE, type SafeStorageLike } from './secret-store.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
 import {
@@ -451,10 +453,34 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   });
   let gatewayRuntimeEnv = composeGatewayEnv();
   let gatewayToken = modelAccess.token();
+  let policyView: PolicyPackView = EMPTY_POLICY_VIEW;
+
+  function policyStatus(): PolicyPackStatusView {
+    return {
+      status: policyView.status,
+      ...(policyView.expiresAt !== undefined ? { expiresAt: policyView.expiresAt } : {}),
+      ...(policyView.message !== undefined ? { message: policyView.message } : {}),
+      disableShare: policyView.disableShare,
+      disableSlots: policyView.disableSlots,
+      disabledProfiles: [...policyView.disabledProfiles],
+    };
+  }
+
+  async function refreshPolicy(): Promise<void> {
+    policyView = await syncEnterprisePolicy({
+      home: options.paths.home,
+      requirementsPath: options.paths.requirements,
+      ...(account.origins.identityOrigin ? { identityOrigin: account.origins.identityOrigin } : {}),
+      ...(account.accessToken() ? { accessJwt: account.accessToken() } : {}),
+      ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+      ...(options.logger ? { logger } : {}),
+    });
+  }
 
   const accessView = (catalog: ModelCatalogResult): ModelAccessView => ({
     ...modelAccess.view(catalog),
     ...account.decorate(),
+    policyPack: policyStatus(),
   });
 
   const readInstructions = (file: string): string | undefined => {
@@ -920,7 +946,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     accountPorts: {
       startLogin: async () => {
         const result = await account.startLogin();
-        if (result.ok) await restartGateway();
+        if (result.ok) {
+          await refreshPolicy();
+          await restartGateway();
+        }
         return result;
       },
       logout: async () => {
@@ -931,6 +960,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       listDevices: () => account.listDevices(),
       revokeDevice: (deviceId: string) => account.revokeDevice(deviceId),
       openWeb: (path: string) => account.openWeb(path),
+    },
+    policyPorts: {
+      status: () => policyStatus(),
+      readOnlyReason: () =>
+        policyView.status === 'expired' ? (policyView.message ?? undefined) : undefined,
     },
   });
 
@@ -949,6 +983,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
        * restore 立刻返回，**零出网**（11 §12 第 14 条）。
        */
       await account.restore();
+      await refreshPolicy();
       gatewayRuntimeEnv = composeGatewayEnv();
       /*
        * 网关**在内核之前起**：内核握手之后随时可能发第一个请求，

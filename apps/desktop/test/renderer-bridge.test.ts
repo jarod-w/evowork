@@ -443,6 +443,32 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(adapter.createTask).toHaveBeenCalledTimes(1);
   });
 
+  it('策略包超期时 send 抛出设计原句，不建任务', async () => {
+    const adapter = {
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+    } as unknown as Adapter;
+    const actions = createRendererActions({
+      ...base,
+      adapter,
+      store: fakeStore(() => undefined),
+      policyPorts: {
+        status: () => ({
+          status: 'expired',
+          message: '安全策略已过期，已切换为只读模式。请连接企业网络以更新。',
+          disableShare: false,
+          disableSlots: false,
+          disabledProfiles: [],
+        }),
+        readOnlyReason: () => '安全策略已过期，已切换为只读模式。请连接企业网络以更新。',
+      },
+    });
+    await expect(actions.send({ text: '做个周报' })).rejects.toThrow(
+      '安全策略已过期，已切换为只读模式。请连接企业网络以更新。',
+    );
+    expect(adapter.createTask).not.toHaveBeenCalled();
+  });
+
   /**
    * 手选模型必须**既发出去、又存下来**（03 §2.4 + 04 §4）。
    *

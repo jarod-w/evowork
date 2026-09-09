@@ -299,7 +299,16 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
     }
 
     if (req.method === 'GET' && path === '/v1/quota') {
-      json(res, 200, identity.quota(actor.sub) ?? { used: 0, limit: 0 });
+      json(res, 200, identity.quota(actor.sub) ?? { used: 0, limit: 0, quotaClass: 'default' });
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/v1/policy-pack') {
+      if (actor.tenant === 'none') {
+        json(res, 200, { pack: null });
+        return;
+      }
+      json(res, 200, { pack: identity.currentPolicyPack(actor.tenant) ?? null });
       return;
     }
 
@@ -499,6 +508,72 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       json(res, 200, { ok: true });
       return;
     }
+    if (req.method === 'GET' && path === '/v1/admin/quota-classes') {
+      json(res, 200, { classes: identity.listQuotaClasses(actorId) });
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/quota-classes') {
+      const body = await readJson(req);
+      const name = str(body.name);
+      const tokensLimit = body.tokensLimit;
+      if (!name || typeof tokensLimit !== 'number') {
+        json(res, 400, { error: { message: '需要 name 与 tokensLimit', code: 'bad-request' } });
+        return;
+      }
+      identity.upsertQuotaClass(actorId, name, tokensLimit);
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/quota-class') {
+      const body = await readJson(req);
+      const userId = str(body.userId);
+      const quotaClass = str(body.quotaClass);
+      if (!userId || !quotaClass) {
+        json(res, 400, { error: { message: '需要 userId 与 quotaClass', code: 'bad-request' } });
+        return;
+      }
+      identity.assignQuotaClass(actorId, userId, quotaClass);
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === 'GET' && path === '/v1/admin/policy-pack') {
+      const me = identity.me(actorId);
+      json(res, 200, {
+        pack: me.tenantId ? (identity.currentPolicyPack(me.tenantId) ?? null) : null,
+      });
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/policy-pack') {
+      const body = await readJson(req);
+      const expiresInDays = body.expiresInDays;
+      if (typeof expiresInDays !== 'number') {
+        json(res, 400, { error: { message: '需要 expiresInDays', code: 'bad-request' } });
+        return;
+      }
+      const graceInDays = body.graceInDays;
+      const disabledModels = strList(body.disabledModels);
+      const disabledProfiles = strList(body.disabledProfiles);
+      const reason = str(body.reason);
+      json(
+        res,
+        200,
+        identity.issuePolicyPack(actorId, {
+          expiresInDays,
+          ...(typeof graceInDays === 'number' ? { graceInDays } : {}),
+          ...(disabledModels ? { disabledModels } : {}),
+          ...(typeof body.allowCustom === 'boolean' ? { allowCustom: body.allowCustom } : {}),
+          ...(reason ? { reason } : {}),
+          ...(typeof body.allowManagedHooksOnly === 'boolean'
+            ? { allowManagedHooksOnly: body.allowManagedHooksOnly }
+            : {}),
+          ...(typeof body.disableShare === 'boolean' ? { disableShare: body.disableShare } : {}),
+          ...(typeof body.disableSlots === 'boolean' ? { disableSlots: body.disableSlots } : {}),
+          ...(typeof body.forceAudit === 'boolean' ? { forceAudit: body.forceAudit } : {}),
+          ...(disabledProfiles ? { disabledProfiles } : {}),
+        }),
+      );
+      return;
+    }
     json(res, 404, { error: { message: `未知端点：${path}`, code: 'not-found' } });
   }
 
@@ -542,6 +617,15 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 }
 
+function strList(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item === 'string' && item.trim() !== '') out.push(item.trim());
+  }
+  return out;
+}
+
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -572,6 +656,7 @@ function statusOf(code: IdentityError['code']): number {
       return 401;
     case 'invalid-redirect':
     case 'no-sms':
+    case 'invalid':
       return 400;
     default:
       return 400;

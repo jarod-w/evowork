@@ -62,6 +62,8 @@ export interface AccountDecoration {
 export interface AccountSession {
   readonly origins: AccountOrigins;
   signedIn(): boolean;
+  /** 内存里的 access JWT。未登录是 undefined —— 调用方不得据此出网 */
+  accessToken(): string | undefined;
   decorate(): AccountDecoration;
   /** 注入本机网关子进程。未登录时是空对象 —— 调用方不得据此出网 */
   gatewayInject(): NodeJS.ProcessEnv;
@@ -209,6 +211,8 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
     },
 
     signedIn: () => accessJwt !== undefined,
+
+    accessToken: () => accessJwt,
 
     decorate() {
       return {

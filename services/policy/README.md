@@ -65,5 +65,5 @@ Q6 决定暂用上游 `windows-sandbox-rs` 不自研，隔离强度在 M4 单独
 
 - **hook 包的 vendor 构建**（把 `@evowork/policy` 的产物放进 `plugins/hooks/evowork-policy/vendor/`）——
   属 M9 打包。开发时运行器会退回仓库里的 `dist/`。
-- 策略包的**签名与下发**（R11 / 10 §8）：云端签名策略包 → 校验 → 写 `requirements.toml`。
-- 审计的 UI（设置 →「用量与审计」，可筛选可导出）—— 属 M8 之后。
+- 策略包的**签名与下发**（R11 / 10 §8）已随 M10c 落地：identity 签名 → 桌面校验 → 写 `requirements.toml`。
+- 审计的 UI（设置 →「用量与审计」，可筛选可导出）—— 2026-09-06 已接通。

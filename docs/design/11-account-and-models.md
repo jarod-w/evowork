@@ -336,6 +336,8 @@ D9 的四类云端职责里已包含账号，但**登录与令牌刷新这两个
 | 企业 SSO | OIDC，走 §5.1 同一条 PKCE 流程，只换 IdP。需要客户侧配合（§10.1） |
 | **默认模型的配置面** | **不在这里** —— 它在 M10b 的 WEB 管理端（§13.2）。本阶段只加"每人额度"这一项策略 |
 
+**2026-09-09 落地（M10c）**：identity 用与 JWT 同一把 ES256 密钥签 payload **原文**（密钥经 master key 落库，重启可验旧包）；成员 `GET /v1/policy-pack` 只拿信封。桌面验签后写 `~/.evowork/requirements.toml` 的 `[models]`（网关第②层）以及模板里的 hooks / 权限 / 开关。无包或未登录不锁 BYOK。超期文案用 §8 原句，Composer 与 `send` 都挡。配额班级 `quota_classes` 写入 JWT `quotaClass`；每人 `setQuota` 仍是覆盖。**企业 OIDC SSO 未做**（等客户 IdP，不在本段 1.5 周表里）。
+
 ---
 
 ## 8. 失败路径与文案

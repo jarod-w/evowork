@@ -297,6 +297,20 @@ describe('降级必须显式（03 §8 / D2）', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it('策略包超期 → 设计原句 + 禁用发送', () => {
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        sendLockedReason: '安全策略已过期，已切换为只读模式。请连接企业网络以更新。',
+        value: '做个周报',
+      },
+      onSend,
+    );
+    expect(screen.getByRole('alert').textContent).toContain('请连接企业网络以更新');
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   /*
    * 模型下拉（01 §5.15）。2026-09-06 截图里"模型列表很乱"的三条成因各守一条：
    * 名字与徽标挤在通用菜单的 180 宽里折行、徽标被压缩、以及分组标题失去层次。

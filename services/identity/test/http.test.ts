@@ -120,4 +120,51 @@ describe('identity HTTP', () => {
     const body = (await res.json()) as { keys: unknown[] };
     expect(body.keys.length).toBe(1);
   });
+
+  it('签发策略包后成员 GET 拿到信封，响应里没有 apiKey', async () => {
+    await start();
+    const login = await fetch(`${baseUrl}/v1/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        identifier: 'admin@example.com',
+        password: 'change-me',
+        deviceId: 'dev_pack',
+      }),
+    });
+    const tokens = (await login.json()) as { accessToken: string };
+    await fetch(`${baseUrl}/v1/password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${tokens.accessToken}`,
+      },
+      body: JSON.stringify({ current: 'change-me', next: 'new-pass-1' }),
+    });
+    const issued = await fetch(`${baseUrl}/v1/admin/policy-pack`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${tokens.accessToken}`,
+      },
+      body: JSON.stringify({
+        expiresInDays: 30,
+        allowCustom: false,
+        disabledModels: ['openai/gpt-5'],
+      }),
+    });
+    expect(issued.status).toBe(200);
+    const envelope = (await issued.json()) as Record<string, unknown>;
+    expect(envelope).not.toHaveProperty('apiKey');
+    expect(typeof envelope.payloadJson).toBe('string');
+    expect(JSON.stringify(envelope)).not.toMatch(/apiKey/);
+
+    const got = await fetch(`${baseUrl}/v1/policy-pack`, {
+      headers: { authorization: `Bearer ${tokens.accessToken}` },
+    });
+    expect(got.status).toBe(200);
+    const body = (await got.json()) as { pack: Record<string, unknown> | null };
+    expect(body.pack?.payloadJson).toBe(envelope.payloadJson);
+    expect(JSON.stringify(body)).not.toMatch(/apiKey/);
+  });
 });

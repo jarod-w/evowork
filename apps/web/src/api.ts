@@ -36,6 +36,7 @@ export interface AdminMember {
   readonly email?: string;
   readonly phone?: string;
   readonly role: Role;
+  readonly quotaClass: string;
 }
 
 export interface DeviceRow {
@@ -49,6 +50,18 @@ export interface DeviceRow {
 export interface QuotaView {
   readonly used: number;
   readonly limit: number;
+  readonly quotaClass?: string;
+}
+
+export interface QuotaClassView {
+  readonly name: string;
+  readonly tokensLimit: number;
+}
+
+export interface PolicyPackEnvelopeView {
+  readonly payloadJson: string;
+  readonly signature: string;
+  readonly kid: string;
 }
 
 export interface ApiError {
