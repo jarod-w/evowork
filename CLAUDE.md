@@ -112,12 +112,12 @@ evowork/
     policy/              【本机】安全与策略（M4）：三级路径策略 · profile 文案 · 命令风险 · 并发预算 · 审计链 · **四个 hook 的决策**
     artifacts/           【本机】产物识别（三信号）· 分享授权与上传 · 资料库视图 · fs 监听（M8，D6/Q10）
     gateway/             【云端】Responses API 网关（M1，K4；Q2=必须支持国内模型 → 全量适配）
-    identity/            【云端】账号 · 租户 · 配额 · 计量 · 默认模型（M10b）。策略包签发随 M10c
+    identity/            【云端】账号 · 租户 · 配额班级 · 计量 · 默认模型 · 策略包签发（M10b/M10c）
   packages/              跨层共享库（只放"被两层以上使用、复制会造成语义分裂"的东西）
     protocol/            app-server v2 的类型与传输（手写子集 = 依赖面的声明）
     logging/             结构化日志：正文字段在序列化层被过滤（Q14「不落盘」的实现处）
     tokens/              01 §2 的 design token（前端与 charts 技能共用）
-    account/             账号协议：JWT 验签 · PKCE · 计量类型（无网络、无存储）
+    account/             账号协议：JWT 验签 · PKCE · 计量类型 · 策略包签名（无网络、无存储）
   ext/                   L2 Rust 扩展 crate（extension-api contributor）
   plugins/               L2 随产品分发的插件包
     skills/              办公产物技能：documents / spreadsheets / presentations / charts

@@ -4,6 +4,7 @@ import {
   generateEs256KeyPair,
   parseMeteringDay,
   verifyAccessToken,
+  verifyPolicyPack,
 } from '@evowork/account';
 import { describe, expect, it } from 'vitest';
 
@@ -318,5 +319,86 @@ describe('额度闸门', () => {
     const denied = identity.checkQuota(admin.userId);
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.reason).toContain('不会自动换成');
+  });
+
+  it('配额班级用尽同样拒绝，JWT 带真实 quotaClass，不自动换模型', () => {
+    const { identity, keys } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    identity.upsertQuotaClass(admin.userId, 'staff', 5);
+    identity.assignQuotaClass(admin.userId, admin.userId, 'staff');
+    expect(identity.checkQuota(admin.userId).ok).toBe(true);
+    identity.addQuotaUsage(admin.userId, 5);
+    const denied = identity.checkQuota(admin.userId);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.reason).toContain('不会自动换成');
+    const token = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_b',
+    }).accessToken;
+    const claims = verifyAccessToken(token, {
+      publicPem: keys.publicPem,
+      nowSec: 1_700_000_010,
+    });
+    expect(claims.ok).toBe(true);
+    if (claims.ok) expect(claims.claims.quotaClass).toBe('staff');
+  });
+
+  it('default 班级上限 0 = 不限，没有每人覆盖时放行', () => {
+    const { identity } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    identity.addQuotaUsage(admin.userId, 1_000_000);
+    expect(identity.checkQuota(admin.userId).ok).toBe(true);
+    expect(identity.quota(admin.userId)?.quotaClass).toBe('default');
+  });
+});
+
+describe('签名策略包', () => {
+  it('管理员签发后成员能拿到信封，里面没有 apiKey', () => {
+    const { identity, keys } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    const envelope = identity.issuePolicyPack(admin.userId, {
+      expiresInDays: 30,
+      allowCustom: false,
+      disabledModels: ['evowork/kimi-k3'],
+      reason: '企业锁定',
+    });
+    expect(JSON.stringify(envelope)).not.toMatch(/apiKey/);
+    const verified = verifyPolicyPack(envelope, { publicPem: keys.publicPem });
+    expect(verified.ok).toBe(true);
+    if (verified.ok) {
+      expect(verified.payload.models.allowCustom).toBe(false);
+      expect(verified.payload.models.disabled).toEqual(['evowork/kimi-k3']);
+    }
+    expect(identity.currentPolicyPack(admin.tenantId ?? '')?.payloadJson).toBe(
+      envelope.payloadJson,
+    );
   });
 });

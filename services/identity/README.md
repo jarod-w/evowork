@@ -1,11 +1,11 @@
-# services/identity —— 账号 · 租户 · 默认模型 · 计量（**云端**）
+# services/identity —— 账号 · 租户 · 默认模型 · 计量 · 策略包（**云端**）
 
-设计：[11](../../docs/design/11-account-and-models.md) · D9 · D10 · Q32=B · Q37=B · Q38–Q40
+设计：[11](../../docs/design/11-account-and-models.md) · D9 · D10 · Q32=B · Q37=B · Q38–Q40 · R11
 
 数据面**只有身份与计量，无内容**（D9）。管理端 API 的返回类型里没有任务 / 产物 / prompt
 （11 §12 第 15 条）—— 这是「管理员能不能看员工的任务」的结构性答案。
 
-## 这一包做什么（M10b）
+## 这一包做什么（M10b + M10c）
 
 | 面                 | 落点                                                                     |
 | ------------------ | ------------------------------------------------------------------------ |
@@ -18,6 +18,8 @@
 | 设备吊销           | refresh 绑 `device_id`；吊销后立刻不能换 access（Q40）                   |
 | 默认模型           | key 只存在这里，目录端点类型里没有 `apiKey` / 上游 `baseUrl`             |
 | 计量               | 按天按模型聚合，类型里没有 `threadId`                                    |
+| 配额班级           | `quota_classes` + JWT `quotaClass`。每人覆盖仍走 `quota_accounts`。用尽不自动换模型 |
+| 策略包             | ES256 签 payload 原文 → `GET /v1/policy-pack`。密钥落库，重启仍能验旧包  |
 
 ## 配置在哪
 
@@ -27,9 +29,12 @@
 EVOWORK_BOOTSTRAP_ADMIN_EMAIL
 EVOWORK_BOOTSTRAP_ADMIN_PASSWORD
 EVOWORK_BOOTSTRAP_TENANT_NAME
-EVOWORK_IDENTITY_MASTER_KEY   # 32 字节 hex，加密托管模型的上游 key
+EVOWORK_IDENTITY_MASTER_KEY   # 32 字节 hex，加密托管模型的上游 key **以及** 签发私钥
+EVOWORK_IDENTITY_DB           # 文件库。不设则 :memory:，密钥与策略包重启即丢
 ```
+
+签发密钥必须落库：进程一重启就换钥匙，已经下发的包会全部验不过。
 
 ## 明确不做
 
-策略包签名下发（M10c）· 支付 / 充值（Q42）· 分享页（Q41）· 第二个客户租户 · 短信。
+支付 / 充值（Q42）· 分享页（Q41）· 第二个客户租户 · 短信 · 企业 OIDC SSO（等客户 IdP，不在 1.5 周里程碑表里）。

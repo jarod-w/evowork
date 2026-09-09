@@ -73,6 +73,7 @@ import type {
   OpenTaskResult,
   PreferencesInput,
   PreferencesView,
+  PolicyPackStatusView,
   ProjectCardView,
   ProjectDetailView,
   ProjectMutationResult,
@@ -302,6 +303,15 @@ export interface RendererBridgeOptions {
         listDevices(): Promise<readonly DeviceView[]>;
         revokeDevice(deviceId: string): Promise<AccountActionResult>;
         openWeb(path: string): Promise<AccountActionResult>;
+      }
+    | undefined;
+  /**
+   * 签名策略包折叠结果（M10c）。没给时不锁、不挡发送 —— 个人机器。
+   */
+  readonly policyPorts?:
+    | {
+        status(): PolicyPackStatusView;
+        readOnlyReason(): string | undefined;
       }
     | undefined;
   /**
@@ -675,6 +685,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
   return {
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
     async send(input: SendInput): Promise<{ threadId: string }> {
+      const locked = options.policyPorts?.readOnlyReason();
+      if (locked) throw new Error(locked);
       const text = input.text.trim();
       if (text === '') throw new Error('空需求');
       const content = [{ type: 'text' as const, text }];
@@ -1368,12 +1380,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
           },
         })),
         // F4：`allowed:false` 的档位**保留**，由 UI 禁用并给原因
-        permissions: (catalog?.permissionProfiles ?? []).map((p) => ({
-          id: p.id,
-          label: p.id,
-          ...(p.description ? { description: p.description } : {}),
-          allowed: p.allowed,
-        })),
+        permissions: (catalog?.permissionProfiles ?? []).map((p) => {
+          const packLocked = (options.policyPorts?.status().disabledProfiles ?? []).includes(p.id);
+          return {
+            id: p.id,
+            label: p.id,
+            ...(p.description ? { description: p.description } : {}),
+            allowed: p.allowed && !packLocked,
+          };
+        }),
         cases: options.cases ?? [],
         onboarded: readMeta(store.db, ONBOARDED_KEY) === '1',
         /*

@@ -3,11 +3,14 @@
  */
 import {
   ACCESS_TTL_SEC,
+  POLICY_PACK_SCHEMA_VER,
   REFRESH_TTL_SEC,
   signAccessToken,
+  signPolicyPack,
   verifyCodeChallenge,
   type AccessClaims,
   type Es256KeyPair,
+  type PolicyPackEnvelope,
   type Role,
 } from '@evowork/account';
 
@@ -38,7 +41,8 @@ export type IdentityErrorCode =
   | 'bad-challenge'
   | 'expired'
   | 'invalid-redirect'
-  | 'no-sms';
+  | 'no-sms'
+  | 'invalid';
 
 export class IdentityError extends Error {
   override readonly name = 'IdentityError';
@@ -73,6 +77,7 @@ interface MembershipRow {
   user_id: string;
   tenant_id: string;
   role: Role;
+  quota_class: string;
 }
 
 export function createIdentity(deps: IdentityDeps) {
@@ -93,8 +98,35 @@ export function createIdentity(deps: IdentityDeps) {
 
   function membership(userId: string): MembershipRow | undefined {
     return deps.db
-      .prepare(`SELECT user_id, tenant_id, role FROM memberships WHERE user_id = ?`)
+      .prepare(`SELECT user_id, tenant_id, role, quota_class FROM memberships WHERE user_id = ?`)
       .get(userId) as MembershipRow | undefined;
+  }
+
+  function effectiveQuota(userId: string): { used: number; limit: number } | undefined {
+    const mem = membership(userId);
+    if (!mem) return undefined;
+    const row = deps.db
+      .prepare(
+        `SELECT tokens_used, tokens_limit, quota_override
+         FROM quota_accounts WHERE tenant_id = ? AND user_id = ?`,
+      )
+      .get(mem.tenant_id, userId) as
+      { tokens_used: number; tokens_limit: number; quota_override: number } | undefined;
+    const classRow = deps.db
+      .prepare(`SELECT tokens_limit FROM quota_classes WHERE tenant_id = ? AND name = ?`)
+      .get(mem.tenant_id, mem.quota_class || 'default') as { tokens_limit: number } | undefined;
+    const classLimit = classRow?.tokens_limit ?? 0;
+    const used = row?.tokens_used ?? 0;
+    const limit = row && Number(row.quota_override) === 1 ? row.tokens_limit : classLimit;
+    return { used, limit };
+  }
+
+  function requireAdmin(actorId: string): MembershipRow {
+    const actor = membership(actorId);
+    if (actor?.role !== 'admin') {
+      throw new IdentityError('forbidden', '只有管理员能做这个操作。');
+    }
+    return actor;
   }
 
   function issueAccess(user: UserRow, deviceId: string, role: Role, tenant: string): string {
@@ -105,7 +137,7 @@ export function createIdentity(deps: IdentityDeps) {
       iat,
       exp: iat + ACCESS_TTL_SEC,
       scope: 'gateway',
-      quotaClass: 'default',
+      quotaClass: membership(user.id)?.quota_class ?? 'default',
       deviceId,
       role,
     };
@@ -197,6 +229,11 @@ export function createIdentity(deps: IdentityDeps) {
           `INSERT INTO memberships (user_id, tenant_id, role, created_at) VALUES (?, ?, 'admin', ?)`,
         )
         .run(userId, tenantId, now());
+      deps.db
+        .prepare(
+          `INSERT OR IGNORE INTO quota_classes (tenant_id, name, tokens_limit) VALUES (?, 'default', 0)`,
+        )
+        .run(tenantId);
       return { created: true, tenantId };
     },
 
@@ -586,7 +623,7 @@ export function createIdentity(deps: IdentityDeps) {
       if (actor?.role !== 'admin') throw new IdentityError('forbidden', '只有管理员能看成员。');
       const rows = deps.db
         .prepare(
-          `SELECT u.id, u.email, u.phone, m.role
+          `SELECT u.id, u.email, u.phone, m.role, m.quota_class
            FROM memberships m JOIN users u ON u.id = m.user_id
            WHERE m.tenant_id = ?`,
         )
@@ -595,12 +632,14 @@ export function createIdentity(deps: IdentityDeps) {
         email: string | null;
         phone: string | null;
         role: Role;
+        quota_class: string;
       }[];
       return rows.map((row) => ({
         id: row.id,
         ...(row.email ? { email: row.email } : {}),
         ...(row.phone ? { phone: row.phone } : {}),
         role: row.role,
+        quotaClass: row.quota_class || 'default',
       }));
     },
 
@@ -714,15 +753,9 @@ export function createIdentity(deps: IdentityDeps) {
     },
 
     checkQuota(userId: string): { ok: true } | { ok: false; reason: string } {
-      const mem = membership(userId);
-      if (!mem) return { ok: true };
-      const row = deps.db
-        .prepare(
-          `SELECT tokens_used, tokens_limit FROM quota_accounts WHERE tenant_id = ? AND user_id = ?`,
-        )
-        .get(mem.tenant_id, userId) as { tokens_used: number; tokens_limit: number } | undefined;
-      if (!row || row.tokens_limit <= 0) return { ok: true };
-      if (row.tokens_used >= row.tokens_limit) {
+      const q = effectiveQuota(userId);
+      if (!q || q.limit <= 0) return { ok: true };
+      if (q.used >= q.limit) {
         return { ok: false, reason: '托管额度已用完。不会自动换成其他模型。' };
       }
       return { ok: true };
@@ -734,9 +767,11 @@ export function createIdentity(deps: IdentityDeps) {
       if (!mem) return;
       deps.db
         .prepare(
-          `UPDATE quota_accounts SET tokens_used = tokens_used + ? WHERE tenant_id = ? AND user_id = ?`,
+          `INSERT INTO quota_accounts (tenant_id, user_id, tokens_limit, tokens_used, quota_override)
+           VALUES (?, ?, 0, ?, 0)
+           ON CONFLICT(tenant_id, user_id) DO UPDATE SET tokens_used = tokens_used + excluded.tokens_used`,
         )
-        .run(tokens, mem.tenant_id, userId);
+        .run(mem.tenant_id, userId, tokens);
     },
 
     recordMetering(day: {
@@ -771,16 +806,11 @@ export function createIdentity(deps: IdentityDeps) {
         );
     },
 
-    quota(userId: string): { used: number; limit: number } | undefined {
+    quota(userId: string): { used: number; limit: number; quotaClass: string } | undefined {
       const mem = membership(userId);
       if (!mem) return undefined;
-      const row = deps.db
-        .prepare(
-          `SELECT tokens_used, tokens_limit FROM quota_accounts WHERE tenant_id = ? AND user_id = ?`,
-        )
-        .get(mem.tenant_id, userId) as { tokens_used: number; tokens_limit: number } | undefined;
-      if (!row) return { used: 0, limit: 0 };
-      return { used: row.tokens_used, limit: row.tokens_limit };
+      const q = effectiveQuota(userId) ?? { used: 0, limit: 0 };
+      return { ...q, quotaClass: mem.quota_class ?? 'default' };
     },
 
     setQuota(actorId: string, targetUserId: string, limit: number): void {
@@ -788,8 +818,11 @@ export function createIdentity(deps: IdentityDeps) {
       if (actor?.role !== 'admin') throw new IdentityError('forbidden', '只有管理员能配额度。');
       deps.db
         .prepare(
-          `INSERT INTO quota_accounts (tenant_id, user_id, tokens_limit, tokens_used) VALUES (?, ?, ?, 0)
-         ON CONFLICT(tenant_id, user_id) DO UPDATE SET tokens_limit = excluded.tokens_limit`,
+          `INSERT INTO quota_accounts (tenant_id, user_id, tokens_limit, tokens_used, quota_override)
+           VALUES (?, ?, ?, 0, 1)
+           ON CONFLICT(tenant_id, user_id) DO UPDATE SET
+             tokens_limit = excluded.tokens_limit,
+             quota_override = 1`,
         )
         .run(actor.tenant_id, targetUserId, limit);
     },
@@ -815,6 +848,130 @@ export function createIdentity(deps: IdentityDeps) {
     },
 
     membership,
+    listQuotaClasses(actorId: string): readonly { name: string; tokensLimit: number }[] {
+      const actor = requireAdmin(actorId);
+      const rows = deps.db
+        .prepare(`SELECT name, tokens_limit FROM quota_classes WHERE tenant_id = ? ORDER BY name`)
+        .all(actor.tenant_id) as { name: string; tokens_limit: number }[];
+      return rows.map((row) => ({ name: row.name, tokensLimit: row.tokens_limit }));
+    },
+
+    upsertQuotaClass(actorId: string, name: string, tokensLimit: number): void {
+      const actor = requireAdmin(actorId);
+      if (!/^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(name)) {
+        throw new IdentityError('invalid', '配额班级名不合法。');
+      }
+      if (!Number.isFinite(tokensLimit) || !Number.isInteger(tokensLimit) || tokensLimit < 0) {
+        throw new IdentityError('invalid', '额度上限必须是 ≥ 0 的整数。0 = 不限。');
+      }
+      deps.db
+        .prepare(
+          `INSERT INTO quota_classes (tenant_id, name, tokens_limit) VALUES (?, ?, ?)
+           ON CONFLICT(tenant_id, name) DO UPDATE SET tokens_limit = excluded.tokens_limit`,
+        )
+        .run(actor.tenant_id, name, tokensLimit);
+    },
+
+    assignQuotaClass(actorId: string, targetUserId: string, quotaClass: string): void {
+      const actor = requireAdmin(actorId);
+      const target = membership(targetUserId);
+      if (!target || target.tenant_id !== actor.tenant_id) {
+        throw new IdentityError('not-found', '对方不是本租户成员。');
+      }
+      const cls = deps.db
+        .prepare(`SELECT name FROM quota_classes WHERE tenant_id = ? AND name = ?`)
+        .get(actor.tenant_id, quotaClass) as { name: string } | undefined;
+      if (!cls) throw new IdentityError('not-found', '没有这个配额班级。');
+      deps.db
+        .prepare(`UPDATE memberships SET quota_class = ? WHERE user_id = ? AND tenant_id = ?`)
+        .run(quotaClass, targetUserId, actor.tenant_id);
+    },
+
+    issuePolicyPack(
+      actorId: string,
+      input: {
+        expiresInDays: number;
+        graceInDays?: number | undefined;
+        disabledModels?: readonly string[] | undefined;
+        allowCustom?: boolean | undefined;
+        reason?: string | undefined;
+        allowManagedHooksOnly?: boolean | undefined;
+        disableShare?: boolean | undefined;
+        disableSlots?: boolean | undefined;
+        forceAudit?: boolean | undefined;
+        disabledProfiles?: readonly string[] | undefined;
+      },
+    ): PolicyPackEnvelope {
+      const actor = requireAdmin(actorId);
+      if (
+        !Number.isFinite(input.expiresInDays) ||
+        !Number.isInteger(input.expiresInDays) ||
+        input.expiresInDays < 1 ||
+        input.expiresInDays > 3650
+      ) {
+        throw new IdentityError('invalid', '有效期天数必须是 1–3650。');
+      }
+      const issuedAt = Math.floor(now() / 1000);
+      const expiresAt = issuedAt + input.expiresInDays * 86_400;
+      const graceUntil =
+        input.graceInDays !== undefined &&
+        Number.isInteger(input.graceInDays) &&
+        input.graceInDays > 0
+          ? expiresAt + input.graceInDays * 86_400
+          : undefined;
+      const envelope = signPolicyPack(
+        deps.keys.privatePem,
+        {
+          schemaVer: POLICY_PACK_SCHEMA_VER,
+          tenant: actor.tenant_id,
+          issuedAt,
+          expiresAt,
+          ...(graceUntil !== undefined ? { graceUntil } : {}),
+          models: {
+            disabled: [...(input.disabledModels ?? [])],
+            allowCustom: input.allowCustom !== false,
+            ...(input.reason ? { reason: input.reason } : {}),
+          },
+          allowManagedHooksOnly: input.allowManagedHooksOnly === true,
+          disableShare: input.disableShare === true,
+          disableSlots: input.disableSlots === true,
+          forceAudit: input.forceAudit === true,
+          disabledProfiles: [...(input.disabledProfiles ?? [])],
+        },
+        deps.keys.kid,
+      );
+      deps.db
+        .prepare(
+          `INSERT INTO policy_packs
+             (tenant_id, payload_json, signature, kid, issued_at, expires_at, actor_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(tenant_id) DO UPDATE SET
+             payload_json = excluded.payload_json,
+             signature = excluded.signature,
+             kid = excluded.kid,
+             issued_at = excluded.issued_at,
+             expires_at = excluded.expires_at,
+             actor_user_id = excluded.actor_user_id`,
+        )
+        .run(
+          actor.tenant_id,
+          envelope.payloadJson,
+          envelope.signature,
+          envelope.kid,
+          issuedAt,
+          expiresAt,
+          actorId,
+        );
+      return envelope;
+    },
+
+    currentPolicyPack(tenantId: string): PolicyPackEnvelope | undefined {
+      const row = deps.db
+        .prepare(`SELECT payload_json, signature, kid FROM policy_packs WHERE tenant_id = ?`)
+        .get(tenantId) as { payload_json: string; signature: string; kid: string } | undefined;
+      if (!row) return undefined;
+      return { payloadJson: row.payload_json, signature: row.signature, kid: row.kid };
+    },
   };
 }
 
@@ -826,6 +983,7 @@ export interface AdminMember {
   readonly email?: string | undefined;
   readonly phone?: string | undefined;
   readonly role: Role;
+  readonly quotaClass: string;
 }
 
 /** 客户端目录条目。类型上没有 apiKey / baseUrl。 */

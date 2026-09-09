@@ -166,6 +166,11 @@ export interface ComposerProps {
   /** 本机并发已满（Q11：3）→ 发送按钮变「排队中（前面 N 个）」 */
   readonly queuePosition?: number | undefined;
   readonly onAttach?: (() => void) | undefined;
+  /**
+   * 策略包超期只读（R11 / 11 §8）。有值时禁用发送并显示这句话。
+   * 与 `modelUnavailable` 分开：那条是「检查模型接入」，这条是连企业网更新策略。
+   */
+  readonly sendLockedReason?: string | undefined;
 }
 
 /** 触发中的补全菜单：`@` 补全或行首 `/` 命令。 */
@@ -235,7 +240,8 @@ export function Composer(props: ComposerProps) {
   const parsing = parsingCount(attachments);
   const empty = props.value.trim() === '' && attachments.length === 0;
   const blockedByModel = props.modelUnavailable !== undefined;
-  const sendDisabled = empty || parsing > 0 || blockedByModel;
+  const sendDisabled =
+    empty || parsing > 0 || blockedByModel || props.sendLockedReason !== undefined;
 
   const candidates = useMemo(() => {
     if (!trigger) return [];
@@ -279,7 +285,9 @@ export function Composer(props: ComposerProps) {
   return (
     <section className="ew-composer" aria-label="输入区" data-run-state={runState}>
       {/* 03 §8：模型不可用 → danger 条 + 禁用发送。**不换一个模型继续** */}
-      {props.modelUnavailable ? (
+      {props.sendLockedReason ? (
+        <Banner tone="danger">{props.sendLockedReason}</Banner>
+      ) : props.modelUnavailable ? (
         <Banner
           tone="danger"
           action={

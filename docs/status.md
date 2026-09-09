@@ -45,7 +45,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P1-2** M2a 服务层 | 🟢 | 协议层 · 16 张本机表 + 两个迁移器 · 适配层（会话/心跳/重启/恢复/降级/事件流/审批/场景） | automation 相关表的写入方（等 M5）· 产物索引写入方（等 M8） |
 | **P1-3** M2 前端 | 🟢 | token 层 · **35 个组件全部有实现**（2026-09-09 逐个核对 01 §5.1–5.35）· 19 类 Item · 四类审批卡 · 三栏工作台 · 首页与 Composer · 任务列表与六组筛选 · 变更视图组件 · Electron 引导与 preload · 本机服务宿主 · **2026-09-06：应用外壳与侧边栏骨架（01 §3.1–3.3）· 线性图标集 · IPC 动作接线（现为 36 个，清单与实现逐项相等由测试钉住）· 回车→建任务→切页实测通过 · 模型选择器端到端接通** · **2026-09-07：`openTask` 拉历史 · 项目页落地 · 「助理」入口整个下架**（方案保留在 02 §4.2）· **2026-09-08：设置页六分区** | **2026-09-09 对账后按严重度排**：① **结果区四视图永远是空态** —— `TaskWorkspace` 有 `resultPanel` 插槽，`app.tsx` 从没传过；`ChangesView` 组件有单测但没挂上去 ② **侧边栏行操作九项只接了 `archive` / `delete`**（且是从投影表移除，没调内核归档），重命名 / 移动 / 打开文件夹 / 在此空间新建 / 分享 / 复制链接 / 分叉七项落到 `rowAction` 后只记一条 `unimplemented` 日志，**菜单里看起来能点** ③ **AgentMessage 是纯文本**（`ew-markdown` 只 `{block.text}`），04 §5.1 写的是 Markdown 全量渲染 ④ **时间范围筛选 UI 存在但不生效**（`sidebar.tsx` 的 `matched` 没按 `filter.range` 过滤）⑤ Composer 的 `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音都是"组件支持、宿主没传"（`mentionCandidates` / `slashCommands` / `onAttach` / `queued` / `micAvailable` 在 `app.tsx` 里一个都没接）⑥ 通知中心与设备中心（`UserFooter` 有回调，没人传）· 全局 ⌘K · deeplink `evowork://` · 虚拟滚动 · 自动滚动「↓ 有新内容」· Toast（`ToastStack` 写了，实际用的是 `Banner`）· 暗色主题的产品内切换（只跟系统偏好）⑦ **专家·技能·连接器页**与「更多」本体页是 `UnbuiltPage` |
 | **P2-1** M3 办公技能与解析 | 🟢 | **四个技能全部完成**（documents / spreadsheets / presentations / charts，共用一套骨架）· **本机解析管道**（识别 / 六道闸门 / 内置解析器 / zip / 注入载荷）· **三档运行时探测** · **办公扩展 App 内安装器**（2026-09-07，`services/runtime-installer`） | office / ocr 档的**实际解析器一个都没有**（`ingest/src/parsers/` 只有 `builtin.ts` 与 `zip.ts`；接口已定，等 M4 的受限子进程）—— 所以拖入 docx/pdf 仍只以原始文件引用 · **附件根本没接到 Composer**（M2 ⑤）· OCR 档的安装（安装器只装 office 档，`pytesseract` 缺） |
-| **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测）· **2026-09-06：审计链路接通**（hook → `audit.jsonl` → `audit_log` 表 → 审计页 + 导出，从「更多」可达） | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 策略包签名下发（R11，随 M10c）· 设置页「安全与权限」分区是如实说没做的空态（10 §7 的本机安全能力页）· 任务页的预算进度条与耗尽双动作只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验过 · Ask 模式在 `ToolContributor` 层过滤写工具（D8，`ext/` 还是空的）· **Windows 隔离强度结论（见 U5）** |
+| **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测）· **2026-09-06：审计链路接通**（hook → `audit.jsonl` → `audit_log` 表 → 审计页 + 导出，从「更多」可达）· **2026-09-09：签名策略包下发（R11 / M10c）** | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 设置页「安全与权限」分区仍没有 10 §7 的本机安全能力页（现在只展示策略包状态）· 任务页的预算进度条与耗尽双动作只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验过 · Ask 模式在 `ToolContributor` 层过滤写工具（D8，`ext/` 还是空的）· **Windows 隔离强度结论（见 U5）** |
 | **P3-1** M5 自动化 | 🟡 | **带命名时区的 cron**（含 DST 两个边界）· misfire 三策略与落库顺序 · 失败分类与自动暂停 · 设备绑定与迁移 · 自然语言触发解析（不调模型）· 调度循环 · **与内核的接线已接**（`local-services.ts` 的 `createKernelBridge` + `startScheduler`；`scheduler/README.md` 的「还没做的」第一条已过期）· 列表页与执行历史 UI · 表单组件 `AutomationForm`（含 misfire / wake / 试跑文案） | **2026-09-09 降为 🟡，因为产品里没有任何一条路能建出一个自动化**：`AutomationForm` 写好了但**没有任何地方渲染它**，`RENDERER_ACTIONS` 里只有只读的 `getAutomations`，`createAutomationRepo` **没有 insert automation 方法**（测试用裸 SQL 插）。列表、历史、misfire、连败暂停全部只能对着测试数据成立 · `wake_system` 只有表单勾选框，服务层与宿主没有任何 `powerMonitor` / 唤醒钩子（09 §6.3 的"唤醒直接触发扫描"没做，靠分钟 tick）· 「迁移到本机」有设备层语义、没有 UI/IPC 动作 · 试跑 / 立即运行没有入口 |
 | **P3-3** M8 可视化等 | 🟢 | **Visualizer**（fence 识别 · SVG 白名单清洗 · chart spec 校验 · 沙箱 iframe）· 产物识别三信号与版本 · 分享授权流（Q10 六条规则）· 资料库视图与两种删除语义 · 本机磁盘占用 · **资料库三栏 UI 已落地** · **产物 watcher 已接宿主**（轮询 + 对账，不是内核 `fs/watch`，`local-services.ts`）· mermaid 已随包并代码分割 | **分享整条链路没接**（见 §6 更正：`createShare` / `createUploader` 无调用方，云端端点不存在，「我分享的」表格与撤销按钮无数据）· 资料库的「我的资料」树 / 添加资料 / 团队空间 / 删除对话框都是 UI 壳，`app.tsx` 只传了 `rows` · 全文检索是前端 `filterRows`，没走 FTS 管线 · **结果区产物面板未挂**（M2 ①）· 分享页（Q41）随 `apps/web` |
 | **P3-2** M9 打包 | 🟢 | Electron 入口 · electron-builder 配置（三平台 + 差量更新）· macOS entitlements · **体积预算与档位边界检查**（R10）· **无证书时降级为未签名并把标注写进文件名**（U4）· **打包驱动 `scripts/package.mjs`**（把 package-plan 的四条规则接上）· **2026-09-06：macOS arm64 真实打包跑通并启动验证** | 签名公证（卡 P0-5 证书）· 自动更新服务端 · EvoWork CLI 随包（Q13）· 应用图标（现在用的是 Electron 默认图标）· Windows / Linux 未在真机打过 |
@@ -53,6 +53,8 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P3.5-1** M10a 模型管理 | 🟢 | **密钥库**（`safeStorage` → `secrets.bin` 密文；两个明文文件一次性迁移后改名 `.migrated`；钥匙串不可用时显式二选一、**不静默写明文**）· **`app.toml` 的 `mode`**（拓扑权威，URL 反推退役为一次性兼容）· **模型表四层合并**（② > ②' > ③ > ①，被停用的模型留在列表里带原因）· **自定义模型**（`models.toml` + 必选协议适配类型 + 每条一把独立密钥槽）· **设置页**（六个分区，两个如实说没做）· `SecretInput`（01 §5.35）· 连通性检查 · 单任务预算与并发上限 | **真机上的钥匙串（U6）** —— 2026-09-08 已用真实 DeepSeek key 把整条链路跑通（见 §3），但那台机器没有 keyring，验到的是"不可用时的兜底分支"而不是 `safeStorage` 本身 |
 
 | **P3.5-2** M10b 账号 | 🟢 | **`packages/account`**（JWT ES256 · PKCE · 计量类型，无 `threadId`）· **`services/identity`**（邮箱密码 + 邮件验证 · 种子管理员 · 授予/收回 admin · 注销 · 设备吊销 · 租户默认模型 · 计量 · `/v1/responses` 代理）· **本机网关转发**（`credentialSource=hosted` 转到 identity，不落盘）· **D11**（本机网关常驻，内核 `base_url` 恒为 loopback）· **桌面 PKCE**（系统浏览器 + loopback；IPC 无 `password`）· **`apps/web/`** 账号页与管理端 MVP | 分享页（Q41）不在本段 · 支付不做（Q42）· 第二个客户租户不做 · 生产发信仍是开发期 stderr 通道 · **外部前置**（域名 / 发信域 / 云上部署）未解除 |
+
+| **P3.5-3** M10c 企业面 | 🟢 | **配额班级**（`quota_classes` + JWT `quotaClass`；每人覆盖仍走 `setQuota`；用尽不自动换模型）· **签名策略包**（identity ES256 签 payload 原文 · 密钥落库跨重启 · `GET /v1/policy-pack` · 桌面验签后写 `requirements.toml` · 超期只读 + 11 §8 原句）· WEB 管理端签发 / 班级 | 企业 OIDC SSO 不在本段（等客户 IdP）· 10 §7 本机安全能力页仍未做 · 生产发信仍是 stderr |
 
 图例：✅ 完成 · 🟢 核心完成，剩余项已列 · 🟡 部分 · ⬜ 未开始
 
@@ -407,13 +409,13 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 ## 5. 下一步（按 work-priority 的优先级）
 
 1. ~~P2-1 M3~~ **已完成**（2026-09-05）。Q22「第 12 周内测」的交付面（M0 + M1 + M2a + M2 + M3）至此在代码层面齐了 —— 缺的是 U1 的人工评分。
-2. ~~P2-2 M4~~ **核心已完成**（2026-09-05）。剩 Windows 隔离结论（U5，需真机）与策略包签名下发（R11）。
+2. ~~P2-2 M4~~ **核心已完成**（2026-09-05）。剩 Windows 隔离结论（U5，需真机）。策略包签名下发（R11）已随 M10c 落地。
 3. ~~P3-1 M5~~ **核心已完成**（2026-09-05），内核接线与列表页也在（2026-09-06）。**但 2026-09-09 对账发现产品里建不出自动化**（表单没挂、没有 create IPC、repo 没有 insert），这条在 §1 降回 🟡 —— 补齐它是让整个 M5 从"测试里成立"变成"用户能用"的最短一步。剩 `wake_system`。
 4. ~~P3-3 M8~~ **核心已完成**（2026-09-05）。mermaid 接线与资料库三栏 UI 都已落地。剩分享的宿主接线与云端端点（Q41 分享页随分享上传，不在 M10b）、资料库的资料树 / 删除 / 分享数据接线、结果区面板挂载。
 5. ~~P3-2 M9 打包~~ **macOS 侧已跑通**（2026-09-06）。剩签名公证（卡 P0-5 证书，U4）、应用图标、以及 Windows / Linux 的真机打包。
 6. ~~P3.5-1 M10a 模型管理~~ **已完成并用真实 DeepSeek key 实测**（2026-09-08，四段结论见 §3）。§4 的第一个卡住项就此关闭。**剩下一条未证伪的断言（U6）**：`safeStorage` 本身没验过 —— 那次实测跑在 headless、无 keyring 的机器上，走的是"不可用 → 用户显式选明文"分支（**该分支行为完全符合设计**）。要验的三件事只有真机能给：① macOS 首次加密会不会弹钥匙串授权框、② 换 OS 账号后解密失败的表现是不是"请重新填密钥"而不是崩、③ 一台**真的没有 keyring 的 Linux** 上 `isEncryptionAvailable()` 与 `getSelectedStorageBackend()` 到底返回什么（我们按 `basic_text` = 不可用处理，那是照文档写的）。
 7. ~~**M10b 账号**~~ **核心已落地**（2026-09-08）：identity + WEB 账号/管理端 + 本机网关转发 + 桌面 PKCE。**外部前置未解除**（域名备案 · 发信域 · 云上部署环境 · 法务文本）。分享页（Q41）跟分享上传走，不在本段。
-8. 下一段是 **M10c**（配额策略 · 签名策略包下发）。
+8. ~~**M10c 企业面**~~ **核心已落地**（2026-09-09）：配额班级 + 签名策略包下发（R11）。企业 OIDC SSO 不在本段。
 
 ---
 
@@ -454,7 +456,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 「我分享的」/ 删除对话框 —— **UI 壳全有，`app.tsx` 只传了 `rows`** · §3.4 全文检索是前端 `filterRows`，没接 ingest 的 FTS | `library.tsx` vs `app.tsx` |
 | **07 自动化** | B · `wake_system` 只有勾选框（服务层与宿主无任何唤醒钩子）· 「迁移到本机」有设备层语义没有动作 · 试跑 / 立即运行无入口 · **`scheduler/README.md`「还没做的」第一条已过期**（内核接线在 `local-services.ts` 已做，文档该改） | `automations.tsx` · `services/scheduler/README.md:60` |
 | **08 产物与解析** | D · office / ocr **解析器文件不存在**（`parsers/` 只有 `builtin.ts` `zip.ts`）· OCR 档安装 · 结果区产物面板（A）· 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
-| **10 安全与权限 UX** | 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」是空态 · §8 签名策略包下发（本机能读 `requirements.toml` 作企业层，没有云端签发）· D8 的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `services/identity/` · `ext/` |
+| **10 安全与权限 UX** | 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· D8 的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` |
 
 **仓内为空、但设计依赖的目录**：`ext/` · `plugins/connectors/` · `plugins/agents/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。`apps/web/` 与 `services/identity/` 已有实现；分享页仍未做。
 

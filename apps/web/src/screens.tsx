@@ -12,7 +12,9 @@ import {
   writeSession,
   type AdminMember,
   type DeviceRow,
+  type PolicyPackEnvelopeView,
   type PublicModel,
+  type QuotaClassView,
   type QuotaView,
   type Session,
 } from './api.js';
@@ -332,6 +334,8 @@ export function AdminPage() {
   const session = readSession();
   const [members, setMembers] = useState<readonly AdminMember[]>([]);
   const [models, setModels] = useState<readonly PublicModel[]>([]);
+  const [classes, setClasses] = useState<readonly QuotaClassView[]>([]);
+  const [pack, setPack] = useState<PolicyPackEnvelopeView | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [ok, setOk] = useState<string | undefined>();
 
@@ -341,6 +345,10 @@ export function AdminPage() {
     else setError(m.error.message);
     const modelsOut = await api<{ models: PublicModel[] }>('/v1/admin/models');
     if (modelsOut.ok) setModels(modelsOut.data.models);
+    const classesOut = await api<{ classes: QuotaClassView[] }>('/v1/admin/quota-classes');
+    if (classesOut.ok) setClasses(classesOut.data.classes);
+    const packOut = await api<{ pack: PolicyPackEnvelopeView | null }>('/v1/admin/policy-pack');
+    if (packOut.ok) setPack(packOut.data.pack);
   }
 
   useEffect(() => {
@@ -417,6 +425,68 @@ export function AdminPage() {
     else setOk('已更新额度上限');
   }
 
+  async function saveClass(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const body = formData(e);
+    const out = await api('/v1/admin/quota-classes', {
+      method: 'POST',
+      body: JSON.stringify({ name: body.name, tokensLimit: Number(body.tokensLimit) }),
+    });
+    if (!out.ok) setError(out.error.message);
+    else {
+      setOk('已保存配额班级');
+      e.currentTarget.reset();
+      await reload();
+    }
+  }
+
+  async function assignClass(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const body = formData(e);
+    const out = await api('/v1/admin/quota-class', {
+      method: 'POST',
+      body: JSON.stringify({ userId: body.userId, quotaClass: body.quotaClass }),
+    });
+    if (!out.ok) setError(out.error.message);
+    else {
+      setOk('已分配配额班级');
+      await reload();
+    }
+  }
+
+  async function issuePack(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const body = formData(e);
+    const disabledModels = (body.disabledModels ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part !== '');
+    const disabledProfiles = (body.disabledProfiles ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part !== '');
+    const out = await api('/v1/admin/policy-pack', {
+      method: 'POST',
+      body: JSON.stringify({
+        expiresInDays: Number(body.expiresInDays),
+        ...(body.graceInDays ? { graceInDays: Number(body.graceInDays) } : {}),
+        disabledModels,
+        allowCustom: body.lockCustom !== 'on',
+        ...(body.reason ? { reason: body.reason } : {}),
+        allowManagedHooksOnly: body.allowManagedHooksOnly === 'on',
+        disableShare: body.disableShare === 'on',
+        disableSlots: body.disableSlots === 'on',
+        forceAudit: body.forceAudit === 'on',
+        disabledProfiles,
+      }),
+    });
+    if (!out.ok) setError(out.error.message);
+    else {
+      setOk('已签发策略包。设备下次启动或登录时会拉取。');
+      await reload();
+    }
+  }
+
   return (
     <section>
       <h1>租户管理</h1>
@@ -430,6 +500,7 @@ export function AdminPage() {
           <tr>
             <th>用户</th>
             <th>角色</th>
+            <th>配额班级</th>
             <th></th>
           </tr>
         </thead>
@@ -438,6 +509,7 @@ export function AdminPage() {
             <tr key={member.id}>
               <td>{member.email ?? member.phone ?? member.id}</td>
               <td>{member.role}</td>
+              <td>{member.quotaClass}</td>
               <td>
                 {member.role === 'admin' ? (
                   <button
@@ -498,12 +570,70 @@ export function AdminPage() {
       </form>
 
       <h2>每人额度</h2>
-      <p>只配上限，不收款。没有充值。</p>
+      <p>只配上限，不收款。没有充值。每人覆盖优先于班级默认。</p>
       <form onSubmit={(e) => void setQuota(e)}>
         <Field label="用户 id" name="userId" required />
         <Field label="token 上限（0 = 不限）" name="limit" required />
         <div className="ew-actions">
           <button type="submit">保存额度</button>
+        </div>
+      </form>
+
+      <h2>配额班级</h2>
+      <p>JWT 的 quotaClass 来自班级。default 上限 0 = 不限。</p>
+      <ul>
+        {classes.map((cls) => (
+          <li key={cls.name}>
+            {cls.name} · {cls.tokensLimit <= 0 ? '不限' : `${cls.tokensLimit} tokens`}
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={(e) => void saveClass(e)}>
+        <Field label="班级名" name="name" required />
+        <Field label="token 上限（0 = 不限）" name="tokensLimit" required />
+        <div className="ew-actions">
+          <button type="submit">保存班级</button>
+        </div>
+      </form>
+      <form onSubmit={(e) => void assignClass(e)}>
+        <Field label="用户 id" name="userId" required />
+        <Field label="班级名" name="quotaClass" required />
+        <div className="ew-actions">
+          <button type="submit">分配班级</button>
+        </div>
+      </form>
+
+      <h2>签名策略包</h2>
+      <p>下发到每台设备，写入 requirements.toml。模型锁定复用第②层，不另开通道。超期后设备只读。</p>
+      {pack ? <p>当前包 kid={pack.kid}。签名与原文在设备上校验。</p> : <p>还没有签发过策略包。</p>}
+      <form onSubmit={(e) => void issuePack(e)}>
+        <Field label="有效天数" name="expiresInDays" required />
+        <Field label="宽限天数（可空）" name="graceInDays" />
+        <Field label="停用的模型 id（逗号分隔）" name="disabledModels" />
+        <Field label="停用的权限档 id（逗号分隔）" name="disabledProfiles" />
+        <Field label="锁定原因（给用户看）" name="reason" />
+        <label className="ew-field">
+          <input type="checkbox" name="lockCustom" />
+          锁定自定义模型
+        </label>
+        <label className="ew-field">
+          <input type="checkbox" name="allowManagedHooksOnly" />
+          只允许管理员配置的 hooks
+        </label>
+        <label className="ew-field">
+          <input type="checkbox" name="disableShare" />
+          禁用分享
+        </label>
+        <label className="ew-field">
+          <input type="checkbox" name="disableSlots" />
+          禁用运营位
+        </label>
+        <label className="ew-field">
+          <input type="checkbox" name="forceAudit" />
+          强制审计
+        </label>
+        <div className="ew-actions">
+          <button type="submit">签发策略包</button>
         </div>
       </form>
     </section>

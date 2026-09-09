@@ -603,7 +603,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 1 | **内核签出领先断言基线 89 个提交** | `../codex` HEAD = `7769bccbb2`（2026-09-07），[kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `89a4eec6da`（2026-09-05 复核）。`node scripts/kernel-drift.mjs --no-fetch` 在实际签出上跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3 / F7 / F8 / F14 / F16 行号漂了），断言本身没坏，但 CLAUDE.md §1 与 status.md 记的"当前签出 `89a4eec6da`"在这台机器上已不成立。F17–F25 九条**没有进断言文件**（当前 17 条），只在 [设计集 README §4](design/README.md) 里 |
 | 2 | K3 的四个扩展点用了两个 | 技能包 ✅ · hooks ✅ · MCP server ❌（`plugins/connectors/` 空，Q9 本期只做 browser/，连它也没开始）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
 | 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
-| 4 | 第 ② 层签名策略包未接 | `layers.ts` 的第 ② 层形状已定、来源随 M10c 签名策略包。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
+| 4 | 第 ② 层签名策略包已接（M10c） | identity ES256 签 payload 原文 → 桌面验签后写 `~/.evowork/requirements.toml`。无包 / 未登录不锁 BYOK。超期只读，文案见 11 §8。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
 | 5 | 专家角色包为空 | `plugins/agents/` 空目录，总纲提到的"100+ 角色"一个都没有；「专家·技能·连接器」页是 `UnbuiltPage` |
 | 6 | 解析管道的 office / ocr 档**没有解析器** | [ingest/src/parsers/](../services/ingest/src/parsers/) 只有 `builtin.ts` 与 `zip.ts`；三档运行时探测与安装器都在，但**拖入 docx/pdf 仍拿不到解析内容**，只以原始文件引用。等 M4 的受限子进程接线 |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |

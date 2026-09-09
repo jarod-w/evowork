@@ -260,8 +260,28 @@ describe('还没做好的两个分区', () => {
     expect(screen.getByText(/资料库/)).toBeTruthy();
   });
 
-  it('安全与权限：说清是没做，不是坏了（同 UnbuiltPage 的纪律）', () => {
+  it('安全与权限：没包时说明不锁；档位可视化仍说没做', () => {
     page({ section: 'security' });
+    expect(screen.getByText(/没有企业策略包/)).toBeTruthy();
     expect(screen.getByText(/还没做好/)).toBeTruthy();
+  });
+
+  it('超期策略包显示设计原句（含恢复路径）', () => {
+    page({
+      section: 'security',
+      access: {
+        ...ACCESS,
+        policyPack: {
+          status: 'expired',
+          message: '安全策略已过期，已切换为只读模式。请连接企业网络以更新。',
+          disableShare: false,
+          disableSlots: false,
+          disabledProfiles: [],
+        },
+      },
+    });
+    expect(
+      screen.getByText('安全策略已过期，已切换为只读模式。请连接企业网络以更新。'),
+    ).toBeTruthy();
   });
 });

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS memberships (
   user_id TEXT NOT NULL,
   tenant_id TEXT NOT NULL,
   role TEXT NOT NULL,
+  quota_class TEXT NOT NULL DEFAULT 'default',
   created_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, tenant_id)
 );
@@ -92,7 +93,33 @@ CREATE TABLE IF NOT EXISTS quota_accounts (
   user_id TEXT NOT NULL,
   tokens_limit INTEGER NOT NULL,
   tokens_used INTEGER NOT NULL DEFAULT 0,
+  quota_override INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (tenant_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS quota_classes (
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  tokens_limit INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS signing_keys (
+  kid TEXT PRIMARY KEY,
+  public_pem TEXT NOT NULL,
+  public_jwk_json TEXT NOT NULL,
+  private_pem_enc TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS policy_packs (
+  tenant_id TEXT PRIMARY KEY,
+  payload_json TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  kid TEXT NOT NULL,
+  issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  actor_user_id TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS identity_audit (
