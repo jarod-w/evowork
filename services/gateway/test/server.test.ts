@@ -310,3 +310,81 @@ describe('POST /v1/responses —— 内核唯一会调的端点', () => {
     expect(logText).toContain('gateway.request.completed');
   });
 });
+
+describe('hosted 转发（D11）', () => {
+  const HOSTED: ModelRegistryEntry = { ...MODEL, id: 'evowork/hosted-flash' };
+
+  function hostedLookup() {
+    const resolve = (m: ModelRegistryEntry): ResolvedModel => ({
+      ...m,
+      credentialSource: 'hosted',
+      layer: 'tenant',
+    });
+    return {
+      find: (id: string) => (id === HOSTED.id ? resolve(HOSTED) : undefined),
+      list: () => [resolve(HOSTED)],
+    };
+  }
+
+  it('没带 JWT / 上游时 hosted 模型是 401 not_signed_in，不回落到本机 key', async () => {
+    const server = createGatewayServer({
+      models: hostedLookup(),
+      providers: { deepseek: provider([]) },
+      configFor: () => ({ baseUrl: 'https://should-not-hit.invalid/v1', apiKey: 'sk-local' }),
+      authenticate: () => true,
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${address.port}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({
+        model: HOSTED.id,
+        input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: '你好' }] }],
+      }),
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('not_signed_in');
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('带转发配置时打到云端，不走本机 configFor', async () => {
+    let hitLocal = false;
+    let forwarded = false;
+    const server = createGatewayServer({
+      models: hostedLookup(),
+      providers: { deepseek: provider([]) },
+      configFor: () => {
+        hitLocal = true;
+        return { baseUrl: 'https://should-not-hit.invalid/v1', apiKey: 'sk-local' };
+      },
+      authenticate: () => true,
+      hostedForward: {
+        upstreamBaseUrl: 'https://cloud.example/v1',
+        accessJwt: 'access-jwt',
+        fetchImpl: (async () => {
+          forwarded = true;
+          return new Response('{"id":"resp_1"}', {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }) as typeof fetch,
+      },
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${address.port}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({
+        model: HOSTED.id,
+        input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: '你好' }] }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(forwarded).toBe(true);
+    expect(hitLocal).toBe(false);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});

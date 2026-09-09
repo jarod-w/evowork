@@ -17,6 +17,7 @@
     "start": "node --experimental-strip-types src/main.ts"
   },
   "dependencies": {
+    "@evowork/account": "workspace:*",
     "@evowork/logging": "workspace:*"
   },
   "devDependencies": {

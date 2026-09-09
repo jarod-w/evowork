@@ -97,6 +97,15 @@ export {
 } from './providers/types.js';
 export { createGatewayServer, type ServerOptions } from './server.js';
 export {
+  ACCESS_JWT_ENV,
+  AUTH_MODE_ENV,
+  encodeTenantModels,
+  parseTenantModels,
+  TENANT_MODELS_ENV,
+  UPSTREAM_BASE_URL_ENV,
+} from './tenant-models.js';
+export { forwardHosted, hostedResponsesUrl } from './forward.js';
+export {
   chunksFromCompletion,
   createTranslator,
   type ChatChunk,
