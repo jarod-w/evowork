@@ -100,9 +100,8 @@ evowork/
   docs/                  设计与功能文档（唯一真源，改架构先改这里）
   apps/
     desktop/             桌面壳 + 三栏 UI（侧边栏/对话区/结果区）；Q1=A 后它同时是本机服务的宿主
-    web/                 【云端】账号页 + 租户管理端 + 分享页（Q32=B 的密码表单**只在这里**）。
-                         **M10b 才有内容**，现在这一格是空的 —— 登记在此是因为 Q37=B 之后
-                         「管理端」必须有个落点，而客户端里**没有管理界面**（11 §13.1）
+    web/                 【云端】账号页 + 租户管理端（Q32=B 的密码表单**只在这里**）。
+                         分享页（Q41）尚未实现，跟分享上传走。
   services/              L3 服务层。Q1=A：下面前五个随桌面 App 在**本机**常驻，后两个在**云端**
     kernel-adapter/      【本机】app-server JSON-RPC v2 适配层（M2a）—— **K2 边界的唯一实现处**
     store/               【本机】本机 sqlite **16 张表** + 两个迁移器 + 状态投影 + automation/artifact/project 三个 repo（M2a，见 09 §4）
@@ -113,11 +112,12 @@ evowork/
     policy/              【本机】安全与策略（M4）：三级路径策略 · profile 文案 · 命令风险 · 并发预算 · 审计链 · **四个 hook 的决策**
     artifacts/           【本机】产物识别（三信号）· 分享授权与上传 · 资料库视图 · fs 监听（M8，D6/Q10）
     gateway/             【云端】Responses API 网关（M1，K4；Q2=必须支持国内模型 → 全量适配）
-    identity/            【云端】账号 · 租户 · 配额 · 审计汇总 · 签名策略包下发 —— **尚未开始**
+    identity/            【云端】账号 · 租户 · 配额 · 计量 · 默认模型（M10b）。策略包签发随 M10c
   packages/              跨层共享库（只放"被两层以上使用、复制会造成语义分裂"的东西）
     protocol/            app-server v2 的类型与传输（手写子集 = 依赖面的声明）
     logging/             结构化日志：正文字段在序列化层被过滤（Q14「不落盘」的实现处）
     tokens/              01 §2 的 design token（前端与 charts 技能共用）
+    account/             账号协议：JWT 验签 · PKCE · 计量类型（无网络、无存储）
   ext/                   L2 Rust 扩展 crate（extension-api contributor）
   plugins/               L2 随产品分发的插件包
     skills/              办公产物技能：documents / spreadsheets / presentations / charts
