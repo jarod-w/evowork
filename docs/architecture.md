@@ -488,7 +488,7 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 ### 7.5 前端
 
 - 视图切换不用 router：`MainView` 八个值（`task` / `library` / `automations` / `audit` / `projects` / `catalog` / `settings` / `more`）+ `activeTaskId` + `settingsSection`。
-  侧边栏六个入口（新建任务 · 项目 · 专家·技能·连接器 · 自动化 · 资料库 · 更多），「更多」是菜单，项直接落到设置页的某个分区（`settings:models` 这种形式）。
+  侧边栏六个入口（新建任务 · 项目 · 技能·连接器 · 自动化 · 资料库 · 更多），「更多」是菜单，项直接落到设置页的某个分区（`settings:models` 这种形式）。
   设置页是**一页多分区**，不是六个视图。**没有页面的入口也必须在 `NAV_TO_VIEW` 里出现**（`UnbuiltPage` 如实说没做，不是白屏）；「助理」入口 2026-09-07 整个下架（方案留在 02 §4.2）。
 - 样式**零字面量**：颜色与 px 只能来自 [packages/tokens](../packages/tokens/)，由 eslint 规则在渲染层文件上强制。
   组件只能来自 01 §5 的清单（现 **35** 个；第 33 ProgressBar · 34 Dialog / ItemCard · 35 SecretInput 都是先登记再实现）。
@@ -604,7 +604,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 2 | K3 的四个扩展点用了两个 | 技能包 ✅ · hooks ✅ · MCP server ❌（`plugins/connectors/` 空，Q9 本期只做 browser/，连它也没开始）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
 | 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
 | 4 | 第 ② 层签名策略包已接（M10c） | identity ES256 签 payload 原文 → 桌面验签后写 `~/.evowork/requirements.toml`。无包 / 未登录不锁 BYOK。超期只读，文案见 11 §8。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
-| 5 | 专家角色包为空 | `plugins/agents/` 空目录，总纲提到的"100+ 角色"一个都没有；「专家·技能·连接器」页是 `UnbuiltPage` |
+| 5 | 专家角色包为空 | `plugins/agents/` 空目录，总纲提到的"100+ 角色"一个都没有；「技能·连接器」页是 `UnbuiltPage` |
 | 6 | 解析管道的 office / ocr 档**没有解析器** | [ingest/src/parsers/](../services/ingest/src/parsers/) 只有 `builtin.ts` 与 `zip.ts`；三档运行时探测与安装器都在，但**拖入 docx/pdf 仍拿不到解析内容**，只以原始文件引用。等 M4 的受限子进程接线 |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |
 | 8 | 表数口径 | `TABLES` 里是 **15** 张（6 投影 + 9 权威），第 16 张是迁移器自建的 `meta`。CLAUDE.md §3 与 status.md 写"16 张"含 meta；`.cursor/rules/apps-desktop.mdc` 仍写"32 个组件"（现为 35） |

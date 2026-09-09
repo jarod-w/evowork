@@ -469,7 +469,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
 describe('侧边栏的六个入口都要有落点', () => {
   /*
    * 2026-09-06 之前：`app.tsx` 只挂了 Home / TaskWorkspace / Sidebar，
-   * `onNavSelect` 没人传 —— 项目 / 专家·技能·连接器 / 自动化 / 资料库 / 更多
+   * `onNavSelect` 没人传 —— 项目 / 技能·连接器 / 自动化 / 资料库 / 更多
    * **点了没有任何反应**。用户看到的是一个六个菜单项、五个是死的应用，
    * 而"点了没反应"与"坏了"在界面上完全无法区分。
    */
@@ -546,8 +546,8 @@ describe('侧边栏的六个入口都要有落点', () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /专家·技能·连接器/ }));
-    expect(await screen.findByText('专家·技能·连接器还没做好')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /技能·连接器/ }));
+    expect(await screen.findByText('技能·连接器还没做好')).toBeTruthy();
     // 并且告诉用户现在该怎么办（在**说明文字里**找，侧边栏那一项同名）
     expect(screen.getByText(/已经随产品分发并可用/)).toBeTruthy();
   });

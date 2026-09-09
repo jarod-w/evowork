@@ -185,7 +185,7 @@ export interface SidebarProps {
 export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
   { id: 'new-task', label: '新建任务', icon: 'new-task' },
   { id: 'projects', label: '项目', icon: 'project' },
-  { id: 'catalog', label: '专家·技能·连接器', icon: 'catalog' },
+  { id: 'catalog', label: '技能·连接器', icon: 'catalog' },
   { id: 'automations', label: '自动化', icon: 'automation' },
   { id: 'library', label: '资料库', icon: 'library' },
   { id: 'more', label: '更多', icon: 'more', trailing: '灵感' },
