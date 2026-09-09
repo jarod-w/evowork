@@ -180,8 +180,11 @@ export function main(): void {
   if (tenant.dropped > 0) {
     logger.warn('gateway.boot.tenant_models_dropped', { itemCount: tenant.dropped });
   }
+  const accessJwt = env(ACCESS_JWT_ENV) ?? '';
+  const upstreamBaseUrl = env(UPSTREAM_BASE_URL_ENV) ?? '';
+  const canForward = accessJwt !== '' && upstreamBaseUrl !== '';
   const models = availableModelRegistry().list();
-  if (models.length === 0) {
+  if (models.length === 0 && !canForward) {
     // 没有任何厂商密钥就别假装能服务：起一个"看起来正常但每次请求都失败"的网关，
     // 会让排查从"网关没配密钥"变成"模型为什么总是报错"
     logger.error('gateway.boot.no_models', { reason: 'NO_PROVIDER_KEYS' });
@@ -200,9 +203,6 @@ export function main(): void {
     process.exitCode = 1;
     return;
   }
-
-  const accessJwt = env(ACCESS_JWT_ENV) ?? '';
-  const upstreamBaseUrl = env(UPSTREAM_BASE_URL_ENV) ?? '';
 
   const server = createGatewayServer({
     // 「真的能选的那一份」。**不要在这里重新组合** —— 见 `availableModelRegistry`

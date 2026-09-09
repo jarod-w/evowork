@@ -6,11 +6,17 @@
 import { createLogger, memorySink } from '@evowork/logging';
 import { describe, expect, it } from 'vitest';
 
-import { forwardHosted, hostedResponsesUrl } from '../src/forward.js';
+import { forwardHosted, hostedModelsUrl, hostedResponsesUrl } from '../src/forward.js';
 
 describe('hostedResponsesUrl', () => {
   it('base 已经以 /v1 结尾时只补 /responses', () => {
     expect(hostedResponsesUrl('https://id.example/v1')).toBe('https://id.example/v1/responses');
+  });
+
+  it('models 端点同样只补一次 /v1', () => {
+    expect(hostedModelsUrl('https://gw.corp.example/v1')).toBe(
+      'https://gw.corp.example/v1/evowork/models',
+    );
   });
 });
 

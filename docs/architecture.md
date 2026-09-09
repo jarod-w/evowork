@@ -47,8 +47,8 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
        │ ② stdio      │ ⑤ 子进程         │ ④ 受限子进程        │ ⑦ HTTPS（装扩展）
        │ JSON-RPC v2  │ + 进程环境注入    │                    │
 ┌──────┴──────────┐ ┌─┴────────────────┐ ┌┴──────────────┐ ┌──┴─────────────────┐
-│ codex-app-server│ │ 本机网关（mode=   │ │ 技能 render.py │ │ python-build-      │
-│ 内核 · 常驻 1 个 │ │ local 时随 App 起）│ │ 解析器子进程   │ │ standalone + wheels│
+│ codex-app-server│ │ 本机网关（D11 常驻）│ │ 技能 render.py │ │ python-build-      │
+│ 内核 · 常驻 1 个 │ │ hosted/private 转发 │ │ 解析器子进程   │ │ standalone + wheels│
 │ 只读 · 不改      │ │ 密钥只在它的环境里 │ │ office/ocr 档  │ │ （K6 登记的出网）   │
 └──────┬──────────┘ └─┬────────────────┘ └───────────────┘ └────────────────────┘
        │ ③ 内核 spawn 短命 hook 进程（stdin/stdout 各一行 JSON）→ 追加 ~/.evowork/audit.jsonl
@@ -227,19 +227,24 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
   [usage.ts](../services/gateway/src/translate/usage.ts)。
 - 三个端点，零框架依赖（理由是企业私有部署包要过客户合规）：
   `POST /v1/responses` · `GET /v1/evowork/models` · `GET /healthz|/readyz`。
-- **网关在哪由 `~/.evowork/app.toml` 的 `mode` 决定，不从 URL 反推**（D11 / [app-config.ts](../apps/desktop/src/main/app-config.ts)）：
-  `local` → 宿主把它作为**子进程**拉起（[gateway-process.ts](../apps/desktop/src/main/gateway-process.ts)），等到端口在听才算起来，退出时回收；
-  `hosted` / `private` → 不起本机进程。`isLocalGateway()` 的 URL 反推退役为**一次性兼容**（老装机的 `config.toml` 已有非 loopback 地址而 `app.toml` 不存在时推一次并写回）。
+- **本机网关常驻**（D11 / [app-config.ts](../apps/desktop/src/main/app-config.ts)）：
+  内核 `base_url` 恒为 loopback；宿主把它作为**子进程**拉起（[gateway-process.ts](../apps/desktop/src/main/gateway-process.ts)），
+  等到端口在听才算起来，退出时回收。`app.toml` 的 `mode` 描述的是**默认模型的上游在哪**，
+  不是"网关在哪"。`isLocalGateway()` 的 URL 反推退役为**一次性兼容**（老装机的 `config.toml`
+  已有非 loopback 地址而 `app.toml` 不存在时推一次写成 `private` 并写回，随后把内核 URL 改回 loopback）。
+  hosted 模型转到 identity `/v1/responses`（带 access JWT）；private 未登录用本机静态 token
+  转到 `upstream_base_url`（11 §12 第 7 条：不要求我们的账号）。
 - **密钥的流向只有一个方向**：渲染层 →（一次 IPC）→ 主进程 → `safeStorage` → `secrets.bin`；用时解密后**经进程环境注入网关子进程**，
   网关只从进程环境读密钥，不读配置文件、不落盘（[model-access.ts](../apps/desktop/src/main/model-access.ts)）。
   自定义模型的密钥每把单独一个 `EVOWORK_CUSTOM_KEY_<n>` 变量，元数据 JSON 里只有变量名 —— 一次"打印下配置"不会 N 把同时泄漏。
 - 模型目录是**四层合并**（[layers.ts](../services/gateway/src/layers.ts)）：② 企业覆盖 > ②' 租户默认（M10b）> ③ 本机自定义 > ① 内置元数据。
   被停用的模型**留在列表里带原因**；每条带 `credentialSource`（`byok` / `hosted` / `private`），下拉里显示 —— 它同时回答"花谁的钱"与"数据过谁的境"。
   **模型下拉的真源是这个端点，不是内核的 `model/list`**（F24：内核不知道哪家密钥配好了，且不配 catalog 时会列 OpenAI 型号）。
-- **鉴权默认拒绝所有请求**（`staticTokenAuth` 常量时间比对）。`mode=local` 时宿主自签令牌进密钥库并传给内核与网关；企业形态要用户提供。
+- **鉴权默认拒绝所有请求**（`staticTokenAuth` 常量时间比对）。本机子进程始终用宿主自签的静态 token
+  给内核；云端 JWT 只出现在转发头 `EVOWORK_ACCESS_JWT` 里，**不把本机子进程改成 `AUTH_MODE=hosted`**。
 - 错误码映射不是锦上添花：内核对**映射不上的错误一律当可重试**，于是"模型不存在"会被重试到上限。
   映射表与内核的分流逻辑对照见 [providers/registry.ts](../services/gateway/src/providers/registry.ts) 头注释。
-- **D11 的"内核 base_url 恒为 loopback"现在只成立一半**：`mode=local` 成立；`private` 仍是内核直连客户网关，本机网关的**转发模式随 M10b**。
+- **D11 已落地**：内核 `base_url` 恒为 loopback；hosted / private 都经本机网关转发。
 
 ### ⑥ 产物分享上传：本机内容离开设备的唯一常规通道
 
@@ -598,7 +603,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 1 | **内核签出领先断言基线 89 个提交** | `../codex` HEAD = `7769bccbb2`（2026-09-07），[kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `89a4eec6da`（2026-09-05 复核）。`node scripts/kernel-drift.mjs --no-fetch` 在实际签出上跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3 / F7 / F8 / F14 / F16 行号漂了），断言本身没坏，但 CLAUDE.md §1 与 status.md 记的"当前签出 `89a4eec6da`"在这台机器上已不成立。F17–F25 九条**没有进断言文件**（当前 17 条），只在 [设计集 README §4](design/README.md) 里 |
 | 2 | K3 的四个扩展点用了两个 | 技能包 ✅ · hooks ✅ · MCP server ❌（`plugins/connectors/` 空，Q9 本期只做 browser/，连它也没开始）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
 | 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
-| 4 | D11「内核 base_url 恒为 loopback」只成立一半 | `mode=local` 成立；`mode=private` 仍是内核直连客户网关；本机网关的**转发模式**（hosted 上游）随 M10b。`layers.ts` 的第 ②' 层与 `MODEL_POLICY_ENV` 的第 ② 层形状已定、来源未接（②' 等云端目录端点，② 等 M10c 签名策略包） |
+| 4 | 第 ② 层签名策略包未接 | `layers.ts` 的第 ② 层形状已定、来源随 M10c 签名策略包。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
 | 5 | 专家角色包为空 | `plugins/agents/` 空目录，总纲提到的"100+ 角色"一个都没有；「专家·技能·连接器」页是 `UnbuiltPage` |
 | 6 | 解析管道的 office / ocr 档**没有解析器** | [ingest/src/parsers/](../services/ingest/src/parsers/) 只有 `builtin.ts` 与 `zip.ts`；三档运行时探测与安装器都在，但**拖入 docx/pdf 仍拿不到解析内容**，只以原始文件引用。等 M4 的受限子进程接线 |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |

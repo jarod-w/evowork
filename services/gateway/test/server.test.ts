@@ -387,4 +387,101 @@ describe('hosted 转发（D11）', () => {
     expect(hitLocal).toBe(false);
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
+
+  it('本机 registry 没有的模型，有上游时仍转发（private 客户网关的目录）', async () => {
+    let forwardedTo = '';
+    const server = createGatewayServer({
+      models: {
+        find: () => undefined,
+        list: () => [],
+      },
+      providers: { deepseek: provider([]) },
+      configFor: () => ({ baseUrl: 'https://should-not-hit.invalid/v1', apiKey: 'sk-local' }),
+      authenticate: () => true,
+      hostedForward: {
+        upstreamBaseUrl: 'https://gw.corp.example/v1',
+        accessJwt: 'corp-token',
+        fetchImpl: (async (url) => {
+          forwardedTo = String(url);
+          return new Response('{"id":"resp_corp"}', {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }) as typeof fetch,
+      },
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${address.port}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({
+        model: 'corp/default-flash',
+        input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: '你好' }] }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(forwardedTo).toBe('https://gw.corp.example/v1/responses');
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('目录把上游的条目合进来，丢掉带 apiKey 的', async () => {
+    const server = createGatewayServer({
+      models: {
+        find: () => undefined,
+        list: () => [],
+      },
+      providers: { deepseek: provider([]) },
+      configFor: () => ({ baseUrl: 'https://should-not-hit.invalid/v1', apiKey: 'sk-local' }),
+      authenticate: () => true,
+      hostedForward: {
+        upstreamBaseUrl: 'https://gw.corp.example/v1',
+        accessJwt: 'corp-token',
+        fetchImpl: (async () =>
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'corp/default-flash',
+                  displayName: '默认',
+                  provider: 'deepseek',
+                  upstreamModel: 'deepseek-v4-flash',
+                  tier: 'standard',
+                  capabilities: MODEL.capabilities,
+                  verified: false,
+                  unverified: [],
+                  notes: '',
+                  notices: [],
+                  credentialSource: 'byok',
+                  layer: 'builtin',
+                },
+                {
+                  id: 'corp/leak',
+                  displayName: '漏',
+                  provider: 'deepseek',
+                  upstreamModel: 'x',
+                  capabilities: MODEL.capabilities,
+                  apiKey: 'sk-no',
+                },
+              ],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )) as typeof fetch,
+      },
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${address.port}/v1/evowork/models`, {
+      headers: { authorization: 'Bearer good-token' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: readonly { id: string; credentialSource: string; layer: string }[];
+    };
+    expect(body.data.map((e) => e.id)).toEqual(['corp/default-flash']);
+    expect(body.data[0]?.credentialSource).toBe('hosted');
+    expect(body.data[0]?.layer).toBe('tenant');
+    expect(JSON.stringify(body)).not.toContain('apiKey');
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
 });

@@ -219,9 +219,10 @@ node dist/gateway/main.js
 桌面 App 的模型下拉也读这个地址 —— 它是从同一个 `config.toml` 里取的，
 所以只要改一处，内核与下拉会一起跟着走（见 `main/model-catalog.ts`）。
 
-> **起不起本机网关看的不是这个地址**（2026-09-08 / D11）：判据是
-> `~/.evowork/app.toml` 的 `mode`（`local` = 起）。老装机没有那个文件时，
-> App 会按 `base_url` 反推**一次**并写回 `app.toml`，之后不再推断。
+> **本机网关常驻**（2026-09-08 / D11）：内核 `base_url` 恒为 loopback。
+> `~/.evowork/app.toml` 的 `mode` 描述的是默认模型的上游在哪，不是"起不起本机网关"。
+> 老装机没有那个文件时，App 会按 `base_url` 反推**一次**并写回 `app.toml`，
+> 随后把内核 URL 改回 loopback。
 
 密钥多了之后放一个只有自己能读的文件更省事（**在仓库之外**）：
 

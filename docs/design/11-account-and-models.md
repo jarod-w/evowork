@@ -476,13 +476,10 @@ CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」在这一块�
 
 按 CLAUDE.md §9.1「断言写后果，不写实现」—— 每条都说清"改坏了会怎样"：
 
-> **实现状态（2026-09-08，M10a 完成后）**：**第 2 · 5 · 6 · 8 · 9 · 11 条已有测试守着**
-> （`apps/desktop/test/secret-store.test.ts` · `model-access.test.ts` · `app-config.test.ts` ·
-> `settings.test.tsx` · `services/gateway/test/layers.test.ts` · `services/store/test/schema-no-tenancy.test.ts`）。
-> 第 8 条**只成立一半**：`mode` 已是权威、URL 反推已退役为一次性兼容，但"内核看到的
-> `base_url` 恒为 loopback"要等 M10b 的本机网关转发模式（`private` 形态现在仍是内核直连客户网关）。
-> **第 1 · 3 · 4 · 7 · 10 · 12 · 13 · 14 · 15 · 16 条都需要账号或托管形态，随 M10b / M10c** ——
-> 不要因为"M10a 做完了"就把它们当成已经验过。
+> **实现状态（2026-09-08，M10b）**：**第 2 · 5 · 6 · 8 · 9 · 11 条由 M10a 守着**；
+> **第 1 · 3 · 4 · 7 · 10 · 12 · 13 · 14 · 15 · 16 · 17 · 18 · 19 · 20 · 22 条由本段守着**。
+> 第 8 条现已完整：`mode` 是权威，内核 `base_url` 恒为 loopback，private 经本机网关转发。
+> **第 21 条（Q41 分享页）不在本段。**
 
 | # | 断言 | 改坏了的表现 |
 | --- | --- | --- |

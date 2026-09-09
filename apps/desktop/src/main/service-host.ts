@@ -633,7 +633,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     if (!options.gatewayEntryPath) return;
     gateway = startLocalGateway({
       baseUrl: gatewayBaseUrl,
-      // D11：起不起看 `app.toml` 的 mode，**不看 URL**（`gateway-process.ts` 的头注释）
+      // D11：本机网关常驻。`runsLocalGateway` 恒为 true。
       runsLocally: modelAccess.runsLocalGateway,
       entryPath: options.gatewayEntryPath,
       ...(gatewayToken ? { token: gatewayToken } : {}),

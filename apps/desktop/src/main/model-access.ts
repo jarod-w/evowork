@@ -30,9 +30,11 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
 import {
+  ACCESS_JWT_ENV,
+  CUSTOM_MODELS_ENV,
   encodeCustomModels,
   MODEL_POLICY_ENV,
-  CUSTOM_MODELS_ENV,
+  UPSTREAM_BASE_URL_ENV,
   validateCustomModel,
   type CustomModelSpec,
   type ProviderId,
@@ -301,6 +303,9 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
   function env(): NodeJS.ProcessEnv {
     const secrets = withoutAccountSecrets(store.toEnv());
     const specs = customSpecs();
+    const localToken = token();
+    const privateUpstream =
+      config.mode === 'private' && config.upstreamBaseUrl ? config.upstreamBaseUrl : undefined;
     return {
       ...deps.baseEnv,
       // 旧明文文件（只在密钥库不可用时非空）—— 让密钥库里的值盖住它，见 `legacyEnv`
@@ -313,7 +318,15 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
         allowCustomModels: policy.allowCustomModels,
         ...(policy.reason ? { reason: policy.reason } : {}),
       }),
-      ...(token() ? { EVOWORK_GATEWAY_TOKEN: token() as string } : {}),
+      ...(localToken ? { EVOWORK_GATEWAY_TOKEN: localToken } : {}),
+      /*
+       * D11：private 的上游在客户机房。内核已经改打 loopback，本机网关必须把
+       * 这台机器原来直连的那把静态 token + URL 转发出去，否则老装机升级后
+       * 一个模型都发不出。hosted 未登录不得写这两项（11 §12 第 14 条）。
+       * 登录后 `account.gatewayInject` 会盖成 JWT + identity origin。
+       */
+      ...(privateUpstream ? { [UPSTREAM_BASE_URL_ENV]: privateUpstream } : {}),
+      ...(privateUpstream && localToken ? { [ACCESS_JWT_ENV]: localToken } : {}),
     };
   }
 

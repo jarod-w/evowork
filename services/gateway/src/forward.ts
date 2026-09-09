@@ -23,11 +23,20 @@ export interface ForwardResult {
   readonly body: ReadableStream<Uint8Array> | null;
 }
 
-export function hostedResponsesUrl(upstreamBaseUrl: string): string {
+export function hostedEndpoint(upstreamBaseUrl: string, path: string): string {
   const base = upstreamBaseUrl.replace(/\/+$/, '');
-  if (base.endsWith('/v1')) return `${base}/responses`;
-  if (base.endsWith('/responses')) return base;
-  return `${base}/v1/responses`;
+  const suffix = path.replace(/^\/+/, '');
+  if (base.endsWith(`/${suffix}`)) return base;
+  if (base.endsWith('/v1')) return `${base}/${suffix}`;
+  return `${base}/v1/${suffix}`;
+}
+
+export function hostedResponsesUrl(upstreamBaseUrl: string): string {
+  return hostedEndpoint(upstreamBaseUrl, 'responses');
+}
+
+export function hostedModelsUrl(upstreamBaseUrl: string): string {
+  return hostedEndpoint(upstreamBaseUrl, 'evowork/models');
 }
 
 export async function forwardHosted(req: ForwardRequest): Promise<ForwardResult> {

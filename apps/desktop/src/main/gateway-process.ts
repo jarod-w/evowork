@@ -9,23 +9,15 @@
  * 模型目录改了、代码与 dmg 都是新的，而界面上还是旧列表 ——
  * 因为那个进程是几小时前起的，模型表在它的内存里。
  *
- * ## 为什么是"看情况起"而不是"总是起"
+ * ## D11 之后它是常驻的
  *
- * 网关的位置是部署选择（build-and-deploy §5.1 的拓扑 A / B），不是产品决定：
+ * 内核的 `base_url` 恒为 loopback。本机网关按 model id 决定上游：
+ * BYOK 直连厂商，hosted 转到我们的云，private 转到客户机房那台。
+ * `runsLocally` 在产品路径上恒为 true（`model-access.ts`）。
  *
- *   · **拓扑 A**（个人 / 试点 / 离网）：网关随 App 在本机跑，厂商 key 在用户机器上。
- *   · **拓扑 B**（生产的最小面，Q14 选的这条）：网关在服务器上，用户只有一个 token。
- *
- * 所以这里要一个明确的判据。**2026-09-08（M10a / D11）改了判据的来源**：
- * 从"`base_url` 指向哪儿"（URL 反推）改成 `runsLocally` —— 由 `app.toml` 的
- * `mode` 决定，宿主传进来。理由见 `app-config.ts` 的头注释：Q36=A 之后
- * 同一台机器上可以同时有 BYOK 与托管两种上游，而"云端托管"与"企业私有"的
- * base_url 都不是 loopback，**但令牌来源、密钥归属、登录目标 IdP 全都不同** ——
- * 一个从 URL 反推出来的布尔值分不开这两者，分错的表现是一个 401。
- *
- * 判据错了的后果不变（这就是它必须显式的原因）：企业部署的机器上多一个占着 8787、
- * 拿不到任何厂商 key、每次请求都失败的进程，而那台机器的用户会看到"连不上网关"，
- * 然后去查那个**根本不该存在**的本机进程。
+ * 函数仍接受 `runsLocally: false` 作为测试逃生口 —— 产品代码不再走那条。
+ * 以前"企业部署不该起本机进程"的判断已经不成立：不起的话内核打 loopback
+ * 会 ECONNREFUSED，而真正的上游在别人的机器上。
  *
  * ## 起不来不是致命错误
  *
@@ -38,7 +30,7 @@ import { existsSync } from 'node:fs';
 
 import { errorFields, type Logger } from '@evowork/logging';
 
-import { CUSTOM_MODELS_ENV, TENANT_MODELS_ENV } from '@evowork/gateway';
+import { CUSTOM_MODELS_ENV, TENANT_MODELS_ENV, UPSTREAM_BASE_URL_ENV } from '@evowork/gateway';
 
 import { envHasProviderKey, PROVIDER_KEY_ENV } from './gateway-env.js';
 
@@ -89,11 +81,9 @@ export interface GatewayProcessOptions {
   /** 内核 `config.toml` 里的 `base_url`。**只用来取端口** —— 起不起看 `runsLocally` */
   readonly baseUrl: string;
   /**
-   * 本机该不该跑网关。真源是 `app.toml` 的 `mode`（`local` = true），由宿主传进来。
+   * 本机该不该跑网关。产品路径恒为 true（D11）。`false` 只留给测试。
    *
-   * **必填**，不给默认值：默认成 true 会让企业部署的机器多起一个必然失败的进程，
-   * 默认成 false 会让个人用户一个模型都发不出去 —— 两个方向都错，
-   * 而"忘了传"这件事必须在编译期就红。
+   * **必填**，不给默认值：忘了传必须在编译期就红。
    */
   readonly runsLocally: boolean;
   /** 网关单文件产物的绝对路径（打包时在 `Resources/gateway/main.js`） */
@@ -162,7 +152,8 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
    */
   const hasCustomModels = (env[CUSTOM_MODELS_ENV] ?? '').trim().length > 2;
   const hasTenantModels = (env[TENANT_MODELS_ENV] ?? '').trim().length > 2;
-  if (!envHasProviderKey(env) && !hasCustomModels && !hasTenantModels) {
+  const hasPrivateUpstream = (env[UPSTREAM_BASE_URL_ENV] ?? '').trim().length > 0;
+  if (!envHasProviderKey(env) && !hasCustomModels && !hasTenantModels && !hasPrivateUpstream) {
     options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
     return {
       ...noop,
