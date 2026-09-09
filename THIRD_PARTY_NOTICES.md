@@ -6,35 +6,12 @@
 
 ## 1. 执行内核（随产品分发）
 
-EvoWork 把 `openai/codex` 当作**不可变的执行内核**，桌面安装包内含其编译产物（Q1=A / D9）。
-
-| 项 | 值 |
-|---|---|
-| 项目 | openai/codex |
-| 许可证 | Apache License 2.0 |
-| 签出 | `728cb12fe5` |
-| LICENSE 首行 | Apache License |
-
-**分发义务（Apache-2.0 §4）**：
-
-1. 安装包内保留 `LICENSE` 原文与 `NOTICE`（若存在）；
-2. 修改过的文件需标注（本项目的修改全部集中在 `patches/evowork/`，见 K1 与 `scripts/patch-budget.mjs`）；
-3. **不得使用 Codex / OpenAI 商标**做产品标识（K5，且 Apache-2.0 §6 本身不授予商标许可）。
-
-内核 `NOTICE` 原文：
-
-```text
-OpenAI Codex
-Copyright 2025 OpenAI
-
-This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
-Copyright (c) 2016-2022 Florian Dehau
-Copyright (c) 2023-2025 The Ratatui Developers
-```
+⚠️ 未找到内核签出（`/codex`），本节无法生成。
+设 `EVOWORK_KERNEL_DIR` 后重跑。
 
 ## 2. 运行时依赖（npm，生产依赖）
 
-共 112 个包。
+共 113 个包。
 
 ### ⚠️ 需要法务单独看的许可证
 
@@ -54,6 +31,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | `@iconify/types` | 2.0.0 | MIT |
 | `@iconify/utils` | 3.1.5 | MIT |
 | `@mermaid-js/parser` | 1.2.1 | MIT |
+| `@noble/hashes` | 1.8.0 | MIT |
 | `@types/d3` | 7.4.3 | MIT |
 | `@types/d3-array` | 3.2.2 | MIT |
 | `@types/d3-axis` | 3.0.6 | MIT |

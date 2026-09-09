@@ -16,7 +16,9 @@ function countRows(store: Store): number {
     .all() as { name: string }[];
   let total = 0;
   for (const table of tables) {
-    const row = store.db.prepare(`SELECT COUNT(*) AS n FROM "${table.name}"`).get() as { n: number };
+    const row = store.db.prepare(`SELECT COUNT(*) AS n FROM "${table.name}"`).get() as {
+      n: number;
+    };
     total += Number(row.n);
   }
   return total;
@@ -32,7 +34,18 @@ describe('登出不删本机数据（Q39）', () => {
                                version, source_signal, file_state, created_at)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run('art_keep', join(dir, 'out.docx'), 'document', 'docx', '本地产物', 'create', 1, 'SKILL_REPORT', 'PRESENT', 1);
+      .run(
+        'art_keep',
+        join(dir, 'out.docx'),
+        'document',
+        'docx',
+        '本地产物',
+        'create',
+        1,
+        'SKILL_REPORT',
+        'PRESENT',
+        1,
+      );
     const before = countRows(store);
     expect(before).toBeGreaterThan(0);
 

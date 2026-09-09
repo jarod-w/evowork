@@ -1097,11 +1097,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             );
           }}
           onRevokeDevice={(deviceId) => {
-            void bridge.revokeDevice({ deviceId }).then(() =>
-              bridge.listDevices().then(() =>
-                bridge.getModelAccess().then((r) => setModelAccess(r.view)),
-              ),
-            );
+            void bridge
+              .revokeDevice({ deviceId })
+              .then(() =>
+                bridge
+                  .listDevices()
+                  .then(() => bridge.getModelAccess().then((r) => setModelAccess(r.view))),
+              );
           }}
           onOpenAccountWeb={(path) => {
             void bridge.openAccountWeb({ path });

@@ -38,8 +38,11 @@ describe('ES256 JWT', () => {
     const pair = generateEs256KeyPair();
     const token = signAccessToken(pair.privatePem, claims({ exp: 1_700_000_100 }), pair.kid);
     expect(
-      verifyAccessToken(token, { publicPem: pair.publicPem, nowSec: 1_700_000_200, clockSkewSec: 60 })
-        .ok,
+      verifyAccessToken(token, {
+        publicPem: pair.publicPem,
+        nowSec: 1_700_000_200,
+        clockSkewSec: 60,
+      }).ok,
     ).toBe(false);
   });
 
@@ -47,9 +50,9 @@ describe('ES256 JWT', () => {
     const pair = generateEs256KeyPair();
     const token = signAccessToken(pair.privatePem, claims(), pair.kid);
     const tampered = `${token.slice(0, -4)}AAAA`;
-    expect(verifyAccessToken(tampered, { publicPem: pair.publicPem, nowSec: 1_700_000_010 })).toEqual(
-      { ok: false, reason: 'bad-sig' },
-    );
+    expect(
+      verifyAccessToken(tampered, { publicPem: pair.publicPem, nowSec: 1_700_000_010 }),
+    ).toEqual({ ok: false, reason: 'bad-sig' });
   });
 
   it('别人的密钥验不过', () => {

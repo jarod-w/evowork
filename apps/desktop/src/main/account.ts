@@ -17,11 +17,7 @@ import {
   UPSTREAM_BASE_URL_ENV,
   type ModelRegistryEntry,
 } from '@evowork/gateway';
-import {
-  codeChallengeS256,
-  generateCodeVerifier,
-  parseAccessClaims,
-} from '@evowork/account';
+import { codeChallengeS256, generateCodeVerifier, parseAccessClaims } from '@evowork/account';
 import type { Logger } from '@evowork/logging';
 
 import type { DeviceView } from '../shared/ipc.js';

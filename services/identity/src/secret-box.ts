@@ -26,8 +26,7 @@ export function decryptSecret(master: Buffer, packed: string): string {
   if (!ivB || !tagB || !ctB) throw new Error('密文损坏');
   const decipher = createDecipheriv('aes-256-gcm', master, Buffer.from(ivB, 'base64url'));
   decipher.setAuthTag(Buffer.from(tagB, 'base64url'));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ctB, 'base64url')),
-    decipher.final(),
-  ]).toString('utf8');
+  return Buffer.concat([decipher.update(Buffer.from(ctB, 'base64url')), decipher.final()]).toString(
+    'utf8',
+  );
 }

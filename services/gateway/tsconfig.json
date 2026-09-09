@@ -6,8 +6,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../../packages/logging" },
-    { "path": "../../packages/account" }
-  ]
+  "references": [{ "path": "../../packages/logging" }, { "path": "../../packages/account" }]
 }

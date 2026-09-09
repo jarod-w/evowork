@@ -500,11 +500,14 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
     json(res, 404, { error: { message: `未知端点：${path}`, code: 'not-found' } });
   }
 
-  function actorFrom(req: IncomingMessage): { sub: string; tenant: string; role: string } | undefined {
+  function actorFrom(
+    req: IncomingMessage,
+  ): { sub: string; tenant: string; role: string } | undefined {
     const token = bearer(req.headers.authorization);
     if (token) {
       const result = verifyAccessToken(token, { publicPem: keys.publicPem });
-      if (result.ok) return { sub: result.claims.sub, tenant: result.claims.tenant, role: result.claims.role };
+      if (result.ok)
+        return { sub: result.claims.sub, tenant: result.claims.tenant, role: result.claims.role };
     }
     const cookie = req.headers.cookie ?? '';
     const match = /(?:^|; )session=([^;]+)/.exec(cookie);

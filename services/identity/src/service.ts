@@ -114,10 +114,12 @@ export function createIdentity(deps: IdentityDeps) {
 
   function issueRefresh(userId: string, deviceId: string): string {
     const raw = randomSecret();
-    deps.db.prepare(
-      `INSERT INTO refresh_tokens (id, user_id, device_id, token_hash, expires_at, revoked_at)
+    deps.db
+      .prepare(
+        `INSERT INTO refresh_tokens (id, user_id, device_id, token_hash, expires_at, revoked_at)
        VALUES (?, ?, ?, ?, ?, NULL)`,
-    ).run(newId('rt'), userId, deviceId, sha256Hex(raw), now() + REFRESH_TTL_SEC * 1000);
+      )
+      .run(newId('rt'), userId, deviceId, sha256Hex(raw), now() + REFRESH_TTL_SEC * 1000);
     return raw;
   }
 
@@ -127,18 +129,19 @@ export function createIdentity(deps: IdentityDeps) {
     meta: { name?: string; platform?: string },
   ): void {
     const existing = deps.db.prepare(`SELECT id FROM devices WHERE id = ?`).get(deviceId) as
-      | { id: string }
-      | undefined;
+      { id: string } | undefined;
     if (existing) {
       deps.db
         .prepare(`UPDATE devices SET last_seen_at = ?, revoked_at = NULL WHERE id = ?`)
         .run(now(), deviceId);
       return;
     }
-    deps.db.prepare(
-      `INSERT INTO devices (id, user_id, name, platform, last_seen_at, revoked_at)
+    deps.db
+      .prepare(
+        `INSERT INTO devices (id, user_id, name, platform, last_seen_at, revoked_at)
        VALUES (?, ?, ?, ?, ?, NULL)`,
-    ).run(deviceId, userId, meta.name ?? 'device', meta.platform ?? 'unknown', now());
+      )
+      .run(deviceId, userId, meta.name ?? 'device', meta.platform ?? 'unknown', now());
   }
 
   function failLogin(identifier: string): never {
@@ -177,18 +180,22 @@ export function createIdentity(deps: IdentityDeps) {
         .prepare(`INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)`)
         .run(tenantId, config.tenantName, now());
       const userId = newId('usr');
-      deps.db.prepare(
-        `INSERT INTO users (id, email, phone, password_hash, email_verified, must_change_password, created_at)
-         VALUES (?, ?, ?, ?, 1, 1, ?)`,
-      ).run(
-        userId,
-        config.email ?? null,
-        config.phone ?? null,
-        hashPassword(config.password, deps.argon),
-        now(),
-      );
       deps.db
-        .prepare(`INSERT INTO memberships (user_id, tenant_id, role, created_at) VALUES (?, ?, 'admin', ?)`)
+        .prepare(
+          `INSERT INTO users (id, email, phone, password_hash, email_verified, must_change_password, created_at)
+         VALUES (?, ?, ?, ?, 1, 1, ?)`,
+        )
+        .run(
+          userId,
+          config.email ?? null,
+          config.phone ?? null,
+          hashPassword(config.password, deps.argon),
+          now(),
+        );
+      deps.db
+        .prepare(
+          `INSERT INTO memberships (user_id, tenant_id, role, created_at) VALUES (?, ?, 'admin', ?)`,
+        )
         .run(userId, tenantId, now());
       return { created: true, tenantId };
     },
@@ -198,15 +205,19 @@ export function createIdentity(deps: IdentityDeps) {
         throw new IdentityError('conflict', '这个邮箱已经注册过。');
       }
       const userId = newId('usr');
-      deps.db.prepare(
-        `INSERT INTO users (id, email, phone, password_hash, email_verified, must_change_password, created_at)
+      deps.db
+        .prepare(
+          `INSERT INTO users (id, email, phone, password_hash, email_verified, must_change_password, created_at)
          VALUES (?, ?, NULL, ?, 0, 0, ?)`,
-      ).run(userId, input.email, hashPassword(input.password, deps.argon), now());
+        )
+        .run(userId, input.email, hashPassword(input.password, deps.argon), now());
       const token = randomSecret();
-      deps.db.prepare(
-        `INSERT INTO email_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at)
+      deps.db
+        .prepare(
+          `INSERT INTO email_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at)
          VALUES (?, ?, 'verify', ?, ?, NULL)`,
-      ).run(newId('em'), userId, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
+        )
+        .run(newId('em'), userId, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
       void deps.mailer.send({ to: input.email, template: 'verify', token });
       return { userId };
     },
@@ -217,8 +228,7 @@ export function createIdentity(deps: IdentityDeps) {
           `SELECT id, user_id, expires_at, consumed_at FROM email_tokens WHERE token_hash = ? AND purpose = 'verify'`,
         )
         .get(sha256Hex(token)) as
-        | { id: string; user_id: string; expires_at: number; consumed_at: number | null }
-        | undefined;
+        { id: string; user_id: string; expires_at: number; consumed_at: number | null } | undefined;
       if (!row || row.consumed_at !== null) throw new IdentityError('not-found', '验证链接无效。');
       if (row.expires_at < now()) throw new IdentityError('expired', '验证链接已过期。');
       deps.db.prepare(`UPDATE email_tokens SET consumed_at = ? WHERE id = ?`).run(now(), row.id);
@@ -230,10 +240,12 @@ export function createIdentity(deps: IdentityDeps) {
       // 不暴露「这个邮箱在不在」—— 没用户也假装发出去了
       if (!user?.email) return;
       const token = randomSecret();
-      deps.db.prepare(
-        `INSERT INTO email_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at)
+      deps.db
+        .prepare(
+          `INSERT INTO email_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at)
          VALUES (?, ?, 'reset', ?, ?, NULL)`,
-      ).run(newId('em'), user.id, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
+        )
+        .run(newId('em'), user.id, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
       void deps.mailer.send({ to: user.email, template: 'reset', token });
     },
 
@@ -243,8 +255,7 @@ export function createIdentity(deps: IdentityDeps) {
           `SELECT id, user_id, expires_at, consumed_at FROM email_tokens WHERE token_hash = ? AND purpose = 'reset'`,
         )
         .get(sha256Hex(token)) as
-        | { id: string; user_id: string; expires_at: number; consumed_at: number | null }
-        | undefined;
+        { id: string; user_id: string; expires_at: number; consumed_at: number | null } | undefined;
       if (!row || row.consumed_at !== null) throw new IdentityError('not-found', '重置链接无效。');
       if (row.expires_at < now()) throw new IdentityError('expired', '重置链接已过期。');
       deps.db.prepare(`UPDATE email_tokens SET consumed_at = ? WHERE id = ?`).run(now(), row.id);
@@ -255,8 +266,7 @@ export function createIdentity(deps: IdentityDeps) {
 
     changePassword(userId: string, current: string, next: string): void {
       const user = deps.db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as
-        | UserRow
-        | undefined;
+        UserRow | undefined;
       if (!user || !verifyPassword(current, user.password_hash)) {
         throw new IdentityError('invalid-credentials', '当前密码不对。');
       }
@@ -333,17 +343,19 @@ export function createIdentity(deps: IdentityDeps) {
         throw new IdentityError('invalid-redirect', '桌面登录只能回调到本机 loopback。');
       }
       const code = randomSecret();
-      deps.db.prepare(
-        `INSERT INTO auth_codes (id, user_id, device_id, challenge, redirect_uri, expires_at, consumed_at)
+      deps.db
+        .prepare(
+          `INSERT INTO auth_codes (id, user_id, device_id, challenge, redirect_uri, expires_at, consumed_at)
          VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-      ).run(
-        sha256Hex(code),
-        input.userId,
-        input.deviceId,
-        input.challenge,
-        input.redirectUri,
-        now() + AUTH_CODE_TTL_MS,
-      );
+        )
+        .run(
+          sha256Hex(code),
+          input.userId,
+          input.deviceId,
+          input.challenge,
+          input.redirectUri,
+          now() + AUTH_CODE_TTL_MS,
+        );
       return { code };
     },
 
@@ -382,7 +394,12 @@ export function createIdentity(deps: IdentityDeps) {
       const mem = membership(user.id);
       touchDevice(user.id, input.deviceId, {});
       return {
-        accessToken: issueAccess(user, input.deviceId, mem?.role ?? 'member', mem?.tenant_id ?? 'none'),
+        accessToken: issueAccess(
+          user,
+          input.deviceId,
+          mem?.role ?? 'member',
+          mem?.tenant_id ?? 'none',
+        ),
         refreshToken: issueRefresh(user.id, input.deviceId),
       };
     },
@@ -402,35 +419,51 @@ export function createIdentity(deps: IdentityDeps) {
           }
         | undefined;
       if (!row || row.revoked_at !== null) {
-        throw new IdentityError('expired', '登录已过期，请重新登录。这台电脑上的任务和产物不受影响。');
+        throw new IdentityError(
+          'expired',
+          '登录已过期，请重新登录。这台电脑上的任务和产物不受影响。',
+        );
       }
       if (row.expires_at < now()) {
-        throw new IdentityError('expired', '登录已过期，请重新登录。这台电脑上的任务和产物不受影响。');
+        throw new IdentityError(
+          'expired',
+          '登录已过期，请重新登录。这台电脑上的任务和产物不受影响。',
+        );
       }
       const device = deps.db
         .prepare(`SELECT revoked_at FROM devices WHERE id = ?`)
         .get(row.device_id) as { revoked_at: number | null } | undefined;
       if (device?.revoked_at !== null && device?.revoked_at !== undefined) {
-        throw new IdentityError('expired', '登录已过期，请重新登录。这台电脑上的任务和产物不受影响。');
+        throw new IdentityError(
+          'expired',
+          '登录已过期，请重新登录。这台电脑上的任务和产物不受影响。',
+        );
       }
       deps.db.prepare(`UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?`).run(now(), row.id);
       const user = deps.db.prepare(`SELECT * FROM users WHERE id = ?`).get(row.user_id) as UserRow;
       const mem = membership(user.id);
       touchDevice(user.id, row.device_id, {});
       return {
-        accessToken: issueAccess(user, row.device_id, mem?.role ?? 'member', mem?.tenant_id ?? 'none'),
+        accessToken: issueAccess(
+          user,
+          row.device_id,
+          mem?.role ?? 'member',
+          mem?.tenant_id ?? 'none',
+        ),
         refreshToken: issueRefresh(user.id, row.device_id),
       };
     },
 
     revokeDevice(actorId: string, deviceId: string): void {
-      const device = deps.db
-        .prepare(`SELECT user_id FROM devices WHERE id = ?`)
-        .get(deviceId) as { user_id: string } | undefined;
-      if (!device || device.user_id !== actorId) throw new IdentityError('not-found', '没有这个设备。');
+      const device = deps.db.prepare(`SELECT user_id FROM devices WHERE id = ?`).get(deviceId) as
+        { user_id: string } | undefined;
+      if (!device || device.user_id !== actorId)
+        throw new IdentityError('not-found', '没有这个设备。');
       deps.db.prepare(`UPDATE devices SET revoked_at = ? WHERE id = ?`).run(now(), deviceId);
       deps.db
-        .prepare(`UPDATE refresh_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`)
+        .prepare(
+          `UPDATE refresh_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+        )
         .run(now(), deviceId);
     },
 
@@ -463,8 +496,7 @@ export function createIdentity(deps: IdentityDeps) {
 
     deleteAccount(userId: string, password: string): void {
       const user = deps.db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as
-        | UserRow
-        | undefined;
+        UserRow | undefined;
       if (!user || !verifyPassword(password, user.password_hash)) {
         throw new IdentityError('invalid-credentials', '密码不对。');
       }
@@ -472,7 +504,9 @@ export function createIdentity(deps: IdentityDeps) {
       if (mem?.role === 'admin' && adminCount(mem.tenant_id) <= 1) {
         throw new IdentityError('last-admin', '最后一名管理员不能注销自己。请先把管理员授给别人。');
       }
-      deps.db.prepare(`UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ?`).run(now(), userId);
+      deps.db
+        .prepare(`UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ?`)
+        .run(now(), userId);
       deps.db.prepare(`UPDATE devices SET revoked_at = ? WHERE user_id = ?`).run(now(), userId);
       deps.db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(userId);
       deps.db.prepare(`DELETE FROM memberships WHERE user_id = ?`).run(userId);
@@ -484,8 +518,7 @@ export function createIdentity(deps: IdentityDeps) {
       const actor = membership(actorId);
       if (actor?.role !== 'admin') throw new IdentityError('forbidden', '只有管理员能授予管理员。');
       const target = deps.db.prepare(`SELECT id FROM users WHERE id = ?`).get(targetUserId) as
-        | { id: string }
-        | undefined;
+        { id: string } | undefined;
       if (!target) throw new IdentityError('not-registered', '对方还没有注册。');
       const other = membership(targetUserId);
       if (other && other.tenant_id !== actor.tenant_id) {
@@ -502,9 +535,11 @@ export function createIdentity(deps: IdentityDeps) {
           )
           .run(targetUserId, actor.tenant_id, now());
       }
-      deps.db.prepare(
-        `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id) VALUES (?, ?, ?, 'grant-admin', ?)`,
-      ).run(newId('aud'), now(), actorId, targetUserId);
+      deps.db
+        .prepare(
+          `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id) VALUES (?, ?, ?, 'grant-admin', ?)`,
+        )
+        .run(newId('aud'), now(), actorId, targetUserId);
     },
 
     revokeAdmin(actorId: string, targetUserId: string): void {
@@ -520,17 +555,18 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db
         .prepare(`UPDATE memberships SET role = 'member' WHERE user_id = ? AND tenant_id = ?`)
         .run(targetUserId, actor.tenant_id);
-      deps.db.prepare(
-        `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id) VALUES (?, ?, ?, 'revoke-admin', ?)`,
-      ).run(newId('aud'), now(), actorId, targetUserId);
+      deps.db
+        .prepare(
+          `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id) VALUES (?, ?, ?, 'revoke-admin', ?)`,
+        )
+        .run(newId('aud'), now(), actorId, targetUserId);
     },
 
     addMember(actorId: string, targetUserId: string): void {
       const actor = membership(actorId);
       if (actor?.role !== 'admin') throw new IdentityError('forbidden', '只有管理员能加成员。');
       const target = deps.db.prepare(`SELECT id FROM users WHERE id = ?`).get(targetUserId) as
-        | { id: string }
-        | undefined;
+        { id: string } | undefined;
       if (!target) throw new IdentityError('not-registered', '对方还没有注册。');
       const other = membership(targetUserId);
       if (other && other.tenant_id !== actor.tenant_id) {
@@ -554,7 +590,12 @@ export function createIdentity(deps: IdentityDeps) {
            FROM memberships m JOIN users u ON u.id = m.user_id
            WHERE m.tenant_id = ?`,
         )
-        .all(actor.tenant_id) as { id: string; email: string | null; phone: string | null; role: Role }[];
+        .all(actor.tenant_id) as {
+        id: string;
+        email: string | null;
+        phone: string | null;
+        role: Role;
+      }[];
       return rows.map((row) => ({
         id: row.id,
         ...(row.email ? { email: row.email } : {}),
@@ -582,36 +623,40 @@ export function createIdentity(deps: IdentityDeps) {
         .get(actor.tenant_id, input.modelId) as { id: string } | undefined;
       const enc = encryptSecret(deps.masterKey, input.apiKey);
       if (existing) {
-        deps.db.prepare(
-          `UPDATE hosted_models SET display_name = ?, provider = ?, upstream_model = ?, adapter = ?, base_url = ?, api_key_enc = ?
+        deps.db
+          .prepare(
+            `UPDATE hosted_models SET display_name = ?, provider = ?, upstream_model = ?, adapter = ?, base_url = ?, api_key_enc = ?
            WHERE id = ?`,
-        ).run(
+          )
+          .run(
+            input.displayName,
+            input.provider,
+            input.upstreamModel,
+            input.adapter,
+            input.baseUrl,
+            enc,
+            existing.id,
+          );
+        return { id: existing.id };
+      }
+      const id = newId('mdl');
+      deps.db
+        .prepare(
+          `INSERT INTO hosted_models (id, tenant_id, model_id, display_name, provider, upstream_model, adapter, base_url, api_key_enc, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          actor.tenant_id,
+          input.modelId,
           input.displayName,
           input.provider,
           input.upstreamModel,
           input.adapter,
           input.baseUrl,
           enc,
-          existing.id,
+          now(),
         );
-        return { id: existing.id };
-      }
-      const id = newId('mdl');
-      deps.db.prepare(
-        `INSERT INTO hosted_models (id, tenant_id, model_id, display_name, provider, upstream_model, adapter, base_url, api_key_enc, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        id,
-        actor.tenant_id,
-        input.modelId,
-        input.displayName,
-        input.provider,
-        input.upstreamModel,
-        input.adapter,
-        input.baseUrl,
-        enc,
-        now(),
-      );
       return { id };
     },
 
@@ -640,7 +685,10 @@ export function createIdentity(deps: IdentityDeps) {
     },
 
     /** 云端网关内部：带上游。不进客户端契约。 */
-    internalUpstream(tenantId: string, modelId: string): { baseUrl: string; apiKey: string } | undefined {
+    internalUpstream(
+      tenantId: string,
+      modelId: string,
+    ): { baseUrl: string; apiKey: string } | undefined {
       const row = deps.db
         .prepare(
           `SELECT base_url, api_key_enc FROM hosted_models WHERE tenant_id = ? AND model_id = ?`,
@@ -701,24 +749,26 @@ export function createIdentity(deps: IdentityDeps) {
       tokensCached: number;
       durationMs: number;
     }): void {
-      deps.db.prepare(
-        `INSERT INTO metering (day, tenant, model, provider, tokens_in, tokens_out, tokens_cached, duration_ms)
+      deps.db
+        .prepare(
+          `INSERT INTO metering (day, tenant, model, provider, tokens_in, tokens_out, tokens_cached, duration_ms)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(day, tenant, model, provider) DO UPDATE SET
            tokens_in = tokens_in + excluded.tokens_in,
            tokens_out = tokens_out + excluded.tokens_out,
            tokens_cached = tokens_cached + excluded.tokens_cached,
            duration_ms = duration_ms + excluded.duration_ms`,
-      ).run(
-        day.day,
-        day.tenant,
-        day.model,
-        day.provider,
-        day.tokensIn,
-        day.tokensOut,
-        day.tokensCached,
-        day.durationMs,
-      );
+        )
+        .run(
+          day.day,
+          day.tenant,
+          day.model,
+          day.provider,
+          day.tokensIn,
+          day.tokensOut,
+          day.tokensCached,
+          day.durationMs,
+        );
     },
 
     quota(userId: string): { used: number; limit: number } | undefined {
@@ -736,10 +786,12 @@ export function createIdentity(deps: IdentityDeps) {
     setQuota(actorId: string, targetUserId: string, limit: number): void {
       const actor = membership(actorId);
       if (actor?.role !== 'admin') throw new IdentityError('forbidden', '只有管理员能配额度。');
-      deps.db.prepare(
-        `INSERT INTO quota_accounts (tenant_id, user_id, tokens_limit, tokens_used) VALUES (?, ?, ?, 0)
+      deps.db
+        .prepare(
+          `INSERT INTO quota_accounts (tenant_id, user_id, tokens_limit, tokens_used) VALUES (?, ?, ?, 0)
          ON CONFLICT(tenant_id, user_id) DO UPDATE SET tokens_limit = excluded.tokens_limit`,
-      ).run(actor.tenant_id, targetUserId, limit);
+        )
+        .run(actor.tenant_id, targetUserId, limit);
     },
 
     me(userId: string): {

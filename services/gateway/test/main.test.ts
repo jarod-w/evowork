@@ -12,11 +12,7 @@ const SAVED = { ...process.env };
 
 beforeEach(() => {
   for (const key of Object.keys(process.env)) {
-    if (
-      key.endsWith('_API_KEY') ||
-      key.endsWith('_BASE_URL') ||
-      key === 'EVOWORK_TENANT_MODELS'
-    ) {
+    if (key.endsWith('_API_KEY') || key.endsWith('_BASE_URL') || key === 'EVOWORK_TENANT_MODELS') {
       delete process.env[key];
     }
   }
@@ -124,7 +120,7 @@ describe('鉴权', () => {
   });
 });
 
-describe('第 ②\' 层租户目录', () => {
+describe("第 ②' 层租户目录", () => {
   it('没有厂商密钥时，租户模型仍然出现，且标 hosted', () => {
     process.env.EVOWORK_TENANT_MODELS = JSON.stringify([
       {
@@ -150,6 +146,10 @@ describe('第 ②\' 层租户目录', () => {
         apiKey: 'sk-no',
       },
     ]);
-    expect(availableModelRegistry().list().some((m) => m.id === 'evowork/leak')).toBe(false);
+    expect(
+      availableModelRegistry()
+        .list()
+        .some((m) => m.id === 'evowork/leak'),
+    ).toBe(false);
   });
 });

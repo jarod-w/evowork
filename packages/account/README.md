@@ -4,10 +4,10 @@
 
 三个消费者共用这一份类型与密码学帮助函数：
 
-| 消费者 | 用它做什么 |
-| --- | --- |
-| `services/identity` | 签发 access JWT 与授权码 |
-| `services/gateway` | 验签（托管形态的 `authenticate`） |
+| 消费者                | 用它做什么                          |
+| --------------------- | ----------------------------------- |
+| `services/identity`   | 签发 access JWT 与授权码            |
+| `services/gateway`    | 验签（托管形态的 `authenticate`）   |
 | `apps/desktop` 主进程 | PKCE challenge / 校验 loopback 回调 |
 
 **为什么在 `packages/` 而不是任何一层**：CLAUDE.md §3 —— 被两层以上使用、复制会造成语义分裂。此前模型目录端点是 server.ts 里的内联字面量，消费侧只能照抄一份类型，两边各自都能编译，改一个字段名就在运行时静默断掉。JWT claims 是同一条缝。

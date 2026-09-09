@@ -14,11 +14,7 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-import {
-  CLOCK_SKEW_SEC,
-  parseAccessClaims,
-  type AccessClaims,
-} from './claims.js';
+import { CLOCK_SKEW_SEC, parseAccessClaims, type AccessClaims } from './claims.js';
 
 export const JWT_ALG = 'ES256';
 export const JWT_TYP = 'JWT';
@@ -75,17 +71,16 @@ export type VerifyResult =
   | { readonly ok: false; readonly reason: VerifyFailure };
 
 export type VerifyFailure =
-  | 'malformed'
-  | 'bad-alg'
-  | 'bad-kid'
-  | 'bad-sig'
-  | 'expired'
-  | 'not-yet'
-  | 'bad-claims';
+  'malformed' | 'bad-alg' | 'bad-kid' | 'bad-sig' | 'expired' | 'not-yet' | 'bad-claims';
 
 export function verifyAccessToken(token: string, options: VerifyOptions): VerifyResult {
   const parts = token.split('.');
-  if (parts.length !== 3 || parts[0] === undefined || parts[1] === undefined || parts[2] === undefined) {
+  if (
+    parts.length !== 3 ||
+    parts[0] === undefined ||
+    parts[1] === undefined ||
+    parts[2] === undefined
+  ) {
     return { ok: false, reason: 'malformed' };
   }
   let header: unknown;

@@ -81,7 +81,10 @@ export function parseMeteringDay(input: unknown): MeteringDay | undefined {
 }
 
 function asCount(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+  return typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0
     ? value
     : undefined;
 }

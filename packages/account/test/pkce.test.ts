@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  codeChallengeS256,
-  generateCodeVerifier,
-  verifyCodeChallenge,
-} from '../src/pkce.js';
+import { codeChallengeS256, generateCodeVerifier, verifyCodeChallenge } from '../src/pkce.js';
 
 describe('PKCE S256', () => {
   it('同一个 verifier 两次算出同一个 challenge', () => {

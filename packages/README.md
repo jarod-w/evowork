@@ -3,12 +3,12 @@
 CLAUDE.md §3 的目录树里原本没有这一层。加它的理由是**有三样东西同时被两层以上使用**，
 放进任何一层都会造成反向依赖：
 
-| 包                       | 被谁用                                                                               | 为什么不能放在使用者那一层                                 |
-| ------------------------ | ------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| [`protocol/`](protocol/) | `services/kernel-adapter`（本机）· EvoWork CLI（Q13）                                | 它是 K2 边界的类型与传输层，适配层与 CLI 都要用            |
-| [`logging/`](logging/)   | `services/*` 全部 + `apps/desktop` 主进程                                            | Q14 的「不落盘正文」必须是**同一份**实现，两份就会有一份漏 |
-| [`tokens/`](tokens/)     | `apps/desktop` 渲染层 + `apps/web` + `plugins/skills/charts`                         | 前端与技能包都要读同一套 token，谁也不该依赖谁             |
-| [`account/`](account/)   | `services/identity` · `services/gateway` · `apps/desktop` 主进程                     | JWT claims / PKCE / 计量类型必须是同一份，复制会在运行时静默断 |
+| 包                       | 被谁用                                                           | 为什么不能放在使用者那一层                                     |
+| ------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------- |
+| [`protocol/`](protocol/) | `services/kernel-adapter`（本机）· EvoWork CLI（Q13）            | 它是 K2 边界的类型与传输层，适配层与 CLI 都要用                |
+| [`logging/`](logging/)   | `services/*` 全部 + `apps/desktop` 主进程                        | Q14 的「不落盘正文」必须是**同一份**实现，两份就会有一份漏     |
+| [`tokens/`](tokens/)     | `apps/desktop` 渲染层 + `apps/web` + `plugins/skills/charts`     | 前端与技能包都要读同一套 token，谁也不该依赖谁                 |
+| [`account/`](account/)   | `services/identity` · `services/gateway` · `apps/desktop` 主进程 | JWT claims / PKCE / 计量类型必须是同一份，复制会在运行时静默断 |
 
 **判据**：只有"被两层以上使用、且复制一份会造成语义分裂"的东西才进这里。
 只被一处使用的工具函数留在使用处 —— 这里不是 utils 垃圾场。

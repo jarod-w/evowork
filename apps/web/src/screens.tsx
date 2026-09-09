@@ -92,7 +92,13 @@ export function SignInPage(props: { readonly search: string; readonly onSignedIn
       <p>密码只在这个页面输入。客户端进程里没有密码框。</p>
       <form onSubmit={(e) => void onSubmit(e)}>
         <Field label="邮箱或手机号" name="identifier" autoComplete="username" required />
-        <Field label="密码" name="password" type="password" autoComplete="current-password" required />
+        <Field
+          label="密码"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
         {error ? <p className="ew-error">{error}</p> : null}
         <div className="ew-actions">
           <button type="submit">登录</button>
@@ -191,12 +197,20 @@ export function ResetPage(props: { readonly search: string }) {
       <h1>重置密码</h1>
       <form onSubmit={(e) => void onSubmit(e)}>
         {token ? (
-          <Field label="新密码" name="password" type="password" autoComplete="new-password" required />
+          <Field
+            label="新密码"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            required
+          />
         ) : (
           <Field label="邮箱" name="email" type="email" autoComplete="email" required />
         )}
         {error ? <p className="ew-error">{error}</p> : null}
-        {ok ? <p className="ew-ok">{token ? '密码已更新。' : '如果该邮箱存在，我们已发出重置邮件。'}</p> : null}
+        {ok ? (
+          <p className="ew-ok">{token ? '密码已更新。' : '如果该邮箱存在，我们已发出重置邮件。'}</p>
+        ) : null}
         <div className="ew-actions">
           <button type="submit">{token ? '更新密码' : '发送重置邮件'}</button>
         </div>
@@ -248,7 +262,9 @@ export function AccountHome(props: { readonly onDelete: () => void }) {
         </p>
       ) : null}
       <p>没有充值或升级入口。</p>
-      {session.mustChangePassword ? <p className="ew-error">请先修改引导密码后再使用管理端。</p> : null}
+      {session.mustChangePassword ? (
+        <p className="ew-error">请先修改引导密码后再使用管理端。</p>
+      ) : null}
       <h2>已登录的设备</h2>
       <ul>
         {devices.map((device) => (
@@ -296,7 +312,13 @@ export function AccountDeletePage(props: { readonly onDone: () => void }) {
       <h1>注销账号</h1>
       <p>注销只删除云端登录凭据。你电脑上的任务和产物不会被删。</p>
       <form onSubmit={(e) => void onSubmit(e)}>
-        <Field label="再输入一次密码" name="password" type="password" autoComplete="current-password" required />
+        <Field
+          label="再输入一次密码"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
         {error ? <p className="ew-error">{error}</p> : null}
         <div className="ew-actions">
           <button type="submit">确认注销</button>
@@ -418,11 +440,19 @@ export function AdminPage() {
               <td>{member.role}</td>
               <td>
                 {member.role === 'admin' ? (
-                  <button type="button" data-tone="ghost" onClick={() => void grant(member.id, 'revoke')}>
+                  <button
+                    type="button"
+                    data-tone="ghost"
+                    onClick={() => void grant(member.id, 'revoke')}
+                  >
                     收回管理员
                   </button>
                 ) : (
-                  <button type="button" data-tone="ghost" onClick={() => void grant(member.id, 'grant')}>
+                  <button
+                    type="button"
+                    data-tone="ghost"
+                    onClick={() => void grant(member.id, 'grant')}
+                  >
                     授予管理员
                   </button>
                 )}

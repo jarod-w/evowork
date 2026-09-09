@@ -25,9 +25,7 @@ describe('登录表单', () => {
 
   it('PKCE 回调只接受 loopback redirect_uri', () => {
     expect(
-      parsePkce(
-        '?code_challenge=abc&redirect_uri=http://evil.example/cb&state=s&device_id=dev',
-      ),
+      parsePkce('?code_challenge=abc&redirect_uri=http://evil.example/cb&state=s&device_id=dev'),
     ).toBeUndefined();
     expect(
       parsePkce(

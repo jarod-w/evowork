@@ -255,7 +255,9 @@ function ModelsSection(props: SettingsPageProps) {
 
       <SectionHeader title="现在可以选的模型" />
       {access.signedIn ? null : (
-        <p className="ew-settings-note">登录后可使用管理员配置的默认模型。未登录时不会向我们的云请求目录。</p>
+        <p className="ew-settings-note">
+          登录后可使用管理员配置的默认模型。未登录时不会向我们的云请求目录。
+        </p>
       )}
       {access.models.length === 0 ? (
         <EmptyState
@@ -486,8 +488,7 @@ function UsageSection(props: SettingsPageProps) {
       {props.access?.signedIn && props.access.quotaLimit !== undefined ? (
         <p className="ew-settings-note">
           本月托管额度：已用 {props.access.quotaUsed ?? 0} / {props.access.quotaLimit} tokens。
-          {props.access.quotaLimit > 0 &&
-          (props.access.quotaUsed ?? 0) >= props.access.quotaLimit
+          {props.access.quotaLimit > 0 && (props.access.quotaUsed ?? 0) >= props.access.quotaLimit
             ? '额度已用完，不会自动换成其他模型。'
             : null}
         </p>

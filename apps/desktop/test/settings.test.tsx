@@ -207,7 +207,9 @@ describe('账号（M10b）', () => {
         ...ACCESS,
         signedIn: true,
         role: 'admin',
-        devices: [{ id: 'dev_a', name: '这台电脑', platform: 'linux', lastSeenAt: 1, revoked: false }],
+        devices: [
+          { id: 'dev_a', name: '这台电脑', platform: 'linux', lastSeenAt: 1, revoked: false },
+        ],
       },
     });
     expect(screen.getByText(/都不会删掉它们/)).toBeTruthy();

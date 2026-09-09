@@ -29,14 +29,20 @@ describe('identity schema 没有内容面', () => {
   });
 
   it('service.ts 的 AdminMember / PublicModel 没有那些字段', () => {
-    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/service.ts'), 'utf8');
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/service.ts'),
+      'utf8',
+    );
     expect(/readonly prompt/.test(src)).toBe(false);
     expect(/readonly threadId/.test(src)).toBe(false);
     expect(/readonly artifact/.test(src)).toBe(false);
   });
 
   it('邮件通道没有短信发送路径（11 §12 第 19 条）', () => {
-    const mailer = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/mailer.ts'), 'utf8');
+    const mailer = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/mailer.ts'),
+      'utf8',
+    );
     expect(mailer).not.toMatch(/twilio|sendSms|sms\.send/i);
     expect(mailer).toContain('不发送短信');
   });
