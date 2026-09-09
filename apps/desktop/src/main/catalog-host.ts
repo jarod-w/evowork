@@ -377,7 +377,7 @@ function walkFiles(
   } catch {
     return [];
   }
-  const out: { relativePath: string; text?: string }[] = [];
+  const out: { relativePath: string; text?: string | undefined }[] = [];
   for (const name of names) {
     if (name === 'node_modules' || name === '.git') continue;
     const childRel = rel === '' ? name : join(rel, name);

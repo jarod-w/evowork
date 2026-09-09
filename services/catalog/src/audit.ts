@@ -84,7 +84,7 @@ export function auditSkillFiles(files: readonly AuditFile[]): AuditResult {
         detail: `${file.relativePath} 会执行命令或脚本。`,
       });
     }
-    if (text !== '' && LIMITED_NET.test(text) && level !== 'p2') {
+    if (text !== '' && LIMITED_NET.test(text) && rank(level) < 2) {
       raise('p1', {
         code: 'limited-network',
         detail: `${file.relativePath} 声明了有限网络访问。`,
@@ -92,7 +92,7 @@ export function auditSkillFiles(files: readonly AuditFile[]): AuditResult {
     }
   }
 
-  if (level === 'p2' && worst === undefined) {
+  if (rank(level) >= 2 && worst === undefined) {
     worst = '它声明的能力面超出了工作空间内的读写。';
   }
 

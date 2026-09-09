@@ -178,9 +178,9 @@ export function patchMcpServersToml(
     readonly args?: readonly string[] | undefined;
     readonly url?: string | undefined;
     readonly transport: ConnectorTransport;
-  },
+  }[],
 ): string {
-  let body = stripMcpServerSections(toml).trimEnd();
+  const body = stripMcpServerSections(toml).trimEnd();
   const trusted = servers.filter((s) => s.command !== undefined || s.url !== undefined);
   if (trusted.length === 0) return body === '' ? '' : `${body}\n`;
   const blocks = trusted.map((s) => renderMcpBlock(s));
