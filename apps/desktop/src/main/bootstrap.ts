@@ -81,6 +81,8 @@ export interface ElectronApi {
    * `openProjectFolder` 静默什么都不做 —— 见 `service-host.ts` 的 `openPath` 选项。
    */
   readonly openPath?: ((path: string) => Promise<string>) | undefined;
+  /** 系统浏览器。PKCE 登录与「打开管理端」都走这里，渲染进程自己不能出网 */
+  readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   /**
    * `safeStorage`（Q34=A / M10a）—— 厂商密钥与令牌的加密。
    *
@@ -208,6 +210,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
           },
         }
       : {}),
+    ...(electron.openExternal ? { openExternal: electron.openExternal } : {}),
     emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
   });
 

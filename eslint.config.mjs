@@ -58,7 +58,10 @@ export default tseslint.config(
 
   // 组件文件：token-only 样式（01 §9）
   {
-    files: ['apps/desktop/src/renderer/**/*.{ts,tsx}'],
+    files: ['apps/desktop/src/renderer/**/*.{ts,tsx}', 'apps/web/src/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
     rules: {
       '@evowork/no-style-literals': 'error',
     },

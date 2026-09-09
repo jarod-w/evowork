@@ -71,7 +71,10 @@ export function parseAppConfig(text: string): AppConfig {
     const u = /^upstream_base_url\s*=\s*["']([^"']*)["']/.exec(line);
     if (u?.[1] && u[1].trim() !== '') upstream = u[1].trim();
   }
-  return { mode, ...(upstream !== undefined ? { upstreamBaseUrl: upstream } : {}) };
+  return {
+    mode,
+    ...(mode === 'private' && upstream !== undefined ? { upstreamBaseUrl: upstream } : {}),
+  };
 }
 
 export function serializeAppConfig(config: AppConfig): string {

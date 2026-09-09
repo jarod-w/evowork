@@ -33,7 +33,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 │  React 19 · 应用外壳 + 侧边栏 + 8 个主视图 · Visualizer(沙箱 iframe)             │
 │  contextIsolation=true · nodeIntegration=false · sandbox=true                 │
 └───────────────────────────────┬──────────────────────────────────────────────┘
-                    ① preload contextBridge：5 个订阅 + 36 个动作 + 1 条审批请求，**无 ipcRenderer**
+                    ① preload contextBridge：5 个订阅 + 41 个动作 + 1 条审批请求，**无 ipcRenderer**
 ┌───────────────────────────────┴──────────────────────────────────────────────┐
 │  Electron 主进程 = 本机服务宿主                                                │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
@@ -47,15 +47,15 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
        │ ② stdio      │ ⑤ 子进程         │ ④ 受限子进程        │ ⑦ HTTPS（装扩展）
        │ JSON-RPC v2  │ + 进程环境注入    │                    │
 ┌──────┴──────────┐ ┌─┴────────────────┐ ┌┴──────────────┐ ┌──┴─────────────────┐
-│ codex-app-server│ │ 本机网关（mode=   │ │ 技能 render.py │ │ python-build-      │
-│ 内核 · 常驻 1 个 │ │ local 时随 App 起）│ │ 解析器子进程   │ │ standalone + wheels│
+│ codex-app-server│ │ 本机网关（D11 常驻）│ │ 技能 render.py │ │ python-build-      │
+│ 内核 · 常驻 1 个 │ │ hosted/private 转发 │ │ 解析器子进程   │ │ standalone + wheels│
 │ 只读 · 不改      │ │ 密钥只在它的环境里 │ │ office/ocr 档  │ │ （K6 登记的出网）   │
 └──────┬──────────┘ └─┬────────────────┘ └───────────────┘ └────────────────────┘
        │ ③ 内核 spawn 短命 hook 进程（stdin/stdout 各一行 JSON）→ 追加 ~/.evowork/audit.jsonl
        │   pre_tool_use · permission_request · post_tool_use · session_end     └─ 宿主搬进 audit_log 表
        │
-       │ 内核唯一的模型出网：{base_url}/responses，**base_url 恒指本机网关（mode=local）**
-       └────────────────────────────────▶ ② 本机网关 ─────────────────────────────┐
+       │ 内核唯一的模型出网：{base_url}/responses，**base_url 恒为本机 loopback**（D11）
+       └────────────────────────────────▶ ② 本机网关 ── hosted 模型再转到 identity /v1/responses ─┐
 ════════════════════════════════════════════════════════════════════ 设备边界 ══╪═══
                                                                                 ▼
                                     ┌──────────────────────────────────────────────┐
@@ -63,8 +63,8 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
                                     │ （Chat 协议；网关做 Responses↔Chat 全量翻译）     │
                                     └──────────────────────────────────────────────┘
 ┌────────────────────────────┐   ⑥ 分享上传：**逐次授权后**才发生，默认关闭
-│ 分享托管 / identity / apps/web │◀──────  云端一侧**尚未存在**，`upload.ts` 也还没有调用方（§10）
-│        （均未建）             │
+│ identity + apps/web（账号/管理）│◀──────  分享托管仍未接；`upload.ts` 还没有调用方（§10）
+│ JWT · 租户默认模型 · 计量      │
 └────────────────────────────┘
 ```
 
@@ -89,6 +89,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | --- | --- | --- | --- |
 | `@evowork/protocol` | [packages/protocol](../packages/protocol/) | app-server JSON-RPC v2 的**手写子集**：帧、方法清单、类型 | [methods.ts](../packages/protocol/src/methods.ts) = 依赖面的声明 |
 | `@evowork/logging` | [packages/logging](../packages/logging/) | 结构化日志；Q14「不落盘正文」的实现处 | [fields.ts](../packages/logging/src/fields.ts) 字段白名单（M10a 加了 `credentialSource` / `authMode` / `secretStore` / `quotaClass` / `tenantId`；**刻意不注册 `userId` 与 `password`**） |
+| `@evowork/account` | [packages/account](../packages/account/) | JWT 验签 · PKCE · 计量类型。无网络、无存储 | [jwt.ts](../packages/account/src/jwt.ts) · [claims.ts](../packages/account/src/claims.ts) |
 | `@evowork/tokens` | [packages/tokens](../packages/tokens/) | design token + 对比度断言 + CSS 变量生成 | [contrast.ts](../packages/tokens/src/contrast.ts) |
 | `@evowork/kernel-adapter` | [services/kernel-adapter](../services/kernel-adapter/) | **K2 边界的唯一实现处**：会话/心跳/重启/恢复/能力降级/事件定序/审批/场景展开/**就地起名**/**产品身份** | [adapter.ts](../services/kernel-adapter/src/adapter.ts) · [title.ts](../services/kernel-adapter/src/title.ts) · [identity.ts](../services/kernel-adapter/src/identity.ts) |
 | `@evowork/store` | [services/store](../services/store/) | 本机 sqlite：两类表 · 两个迁移器 · 状态派生 · 投影 · automation/artifact/project/audit 四个 repo | [schema.ts](../services/store/src/schema.ts) · [repositories.ts](../services/store/src/repositories.ts) |
@@ -98,7 +99,9 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/policy` | [services/policy](../services/policy/) | 路径三级策略 · 命令风险 · 预算并发 · 审计链 · **四个 hook 的决策** | [paths.ts](../services/policy/src/paths.ts) · [hooks/contract.ts](../services/policy/src/hooks/contract.ts) |
 | `@evowork/projects` | [services/projects](../services/projects/) | 「项目」（= 总纲的空间）的判定与视图逻辑：归属、卡片、文件树排序。**不做 I/O** | [membership.ts](../services/projects/src/membership.ts) · [cards.ts](../services/projects/src/cards.ts) |
 | `@evowork/artifacts` | [services/artifacts](../services/artifacts/) | 产物识别（三信号）· 版本 · fs 对账 watcher · 分享授权与上传 · 资料库视图 | [recognize.ts](../services/artifacts/src/recognize.ts) · [watcher.ts](../services/artifacts/src/watcher.ts) |
-| `@evowork/gateway` | [services/gateway](../services/gateway/) | Responses↔Chat 全量翻译 · 三家 provider · 错误映射 · SSE · **模型表四层合并** · **自定义模型的线上形状** | [pipeline.ts](../services/gateway/src/pipeline.ts) · [layers.ts](../services/gateway/src/layers.ts) · [custom-models.ts](../services/gateway/src/custom-models.ts) |
+| `@evowork/gateway` | [services/gateway](../services/gateway/) | Responses↔Chat 全量翻译 · 三家 provider · 错误映射 · SSE · **模型表四层合并** · **托管转发** | [pipeline.ts](../services/gateway/src/pipeline.ts) · [forward.ts](../services/gateway/src/forward.ts) · [tenant-models.ts](../services/gateway/src/tenant-models.ts) |
+| `@evowork/identity` | [services/identity](../services/identity/) | 云端账号 · 租户 · 默认模型 · 计量。无内容面 | [service.ts](../services/identity/src/service.ts) · [http.ts](../services/identity/src/http.ts) |
+| `@evowork/web` | [apps/web](../apps/web/) | 账号页与租户管理端。密码表单只在这里。**没有分享页** | [screens.tsx](../apps/web/src/screens.tsx) |
 | `@evowork/desktop` | [apps/desktop](../apps/desktop/) | Electron 壳 + 本机服务宿主 + 全部 UI | [service-host.ts](../apps/desktop/src/main/service-host.ts) · [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) · [model-access.ts](../apps/desktop/src/main/model-access.ts) |
 | `@evowork/eslint-plugin` | [tools/eslint-plugin-evowork](../tools/eslint-plugin-evowork/) | 把 K2 与 token-only 两条纪律做成会失败的规则 | [no-kernel-internals.js](../tools/eslint-plugin-evowork/src/no-kernel-internals.js) |
 
@@ -107,8 +110,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·
 [scripts/](../scripts/) 门禁与雷达 · [build/](../build/) 打包配置 + **`build/kernel/<os>-<arch>/` 随包的内核二进制**（当前只有 `mac-arm64`）。
 
-**尚无实现**：`services/identity`（云端账号，只有 README）· `apps/web`（账号页 · 管理端 · 分享页，只有 README，**M10b 才有内容**）·
-`ext/`（Rust contributor，只有 README）· `plugins/agents/` · `plugins/connectors/`（均为空目录）。见 §10。
+**尚无实现**：`ext/`（Rust contributor，只有 README）· `plugins/agents/` · `plugins/connectors/`（均为空目录）· `apps/web` 的分享页（Q41）。见 §10。
 
 ### 2.1 依赖图（实测自各包 `package.json`）
 
@@ -157,7 +159,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | --- | --- | --- |
 | L4 前端 | [apps/desktop/src/renderer/](../apps/desktop/src/renderer/) | 只认 IPC 频道，不认协议方法名。渲染层 import 服务层时**只许走子路径导出**（barrel 会带进 `node:*`，vite 构建直接炸） |
 | L3 本机服务 | `services/{kernel-adapter,store,scheduler,ingest,policy,artifacts,projects,runtime-installer}` + `apps/desktop/src/main/{model-access,secret-store,app-config,custom-models,audit-ingest}.ts` | 同进程模块，宿主是 Electron 主进程。后五个文件放在 desktop 而不是 `services/`：它们要 `safeStorage` / `dialog` / `shell` 这些 Electron API（以注入方式接收，本身不 import electron） |
-| L3′ 云端 | `services/gateway`（已建；**mode=local 时它作为 App 子进程在本机跑**）· `services/identity` · `apps/web`（均未建） | 网关是独立进程 / 独立部署单元，同一份代码两种形态 |
+| L3′ 云端 | `services/gateway`（本机子进程 + 云端同一份）· `services/identity` · `apps/web`（账号/管理；分享页未做） | 网关与 identity 都是独立进程 |
 | L2 扩展包 | `plugins/{skills,hooks}`（已建）· `plugins/{agents,connectors}` · `ext/`（未建） | K3 的四个扩展点用了两个 |
 | L1 内核 | `../codex`，**只读**；随包二进制在 `build/kernel/` | 补丁预算 5 文件 / 500 行，当前用了 0 |
 
@@ -225,19 +227,24 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
   [usage.ts](../services/gateway/src/translate/usage.ts)。
 - 三个端点，零框架依赖（理由是企业私有部署包要过客户合规）：
   `POST /v1/responses` · `GET /v1/evowork/models` · `GET /healthz|/readyz`。
-- **网关在哪由 `~/.evowork/app.toml` 的 `mode` 决定，不从 URL 反推**（D11 / [app-config.ts](../apps/desktop/src/main/app-config.ts)）：
-  `local` → 宿主把它作为**子进程**拉起（[gateway-process.ts](../apps/desktop/src/main/gateway-process.ts)），等到端口在听才算起来，退出时回收；
-  `hosted` / `private` → 不起本机进程。`isLocalGateway()` 的 URL 反推退役为**一次性兼容**（老装机的 `config.toml` 已有非 loopback 地址而 `app.toml` 不存在时推一次并写回）。
+- **本机网关常驻**（D11 / [app-config.ts](../apps/desktop/src/main/app-config.ts)）：
+  内核 `base_url` 恒为 loopback；宿主把它作为**子进程**拉起（[gateway-process.ts](../apps/desktop/src/main/gateway-process.ts)），
+  等到端口在听才算起来，退出时回收。`app.toml` 的 `mode` 描述的是**默认模型的上游在哪**，
+  不是"网关在哪"。`isLocalGateway()` 的 URL 反推退役为**一次性兼容**（老装机的 `config.toml`
+  已有非 loopback 地址而 `app.toml` 不存在时推一次写成 `private` 并写回，随后把内核 URL 改回 loopback）。
+  hosted 模型转到 identity `/v1/responses`（带 access JWT）；private 未登录用本机静态 token
+  转到 `upstream_base_url`（11 §12 第 7 条：不要求我们的账号）。
 - **密钥的流向只有一个方向**：渲染层 →（一次 IPC）→ 主进程 → `safeStorage` → `secrets.bin`；用时解密后**经进程环境注入网关子进程**，
   网关只从进程环境读密钥，不读配置文件、不落盘（[model-access.ts](../apps/desktop/src/main/model-access.ts)）。
   自定义模型的密钥每把单独一个 `EVOWORK_CUSTOM_KEY_<n>` 变量，元数据 JSON 里只有变量名 —— 一次"打印下配置"不会 N 把同时泄漏。
 - 模型目录是**四层合并**（[layers.ts](../services/gateway/src/layers.ts)）：② 企业覆盖 > ②' 租户默认（M10b）> ③ 本机自定义 > ① 内置元数据。
   被停用的模型**留在列表里带原因**；每条带 `credentialSource`（`byok` / `hosted` / `private`），下拉里显示 —— 它同时回答"花谁的钱"与"数据过谁的境"。
   **模型下拉的真源是这个端点，不是内核的 `model/list`**（F24：内核不知道哪家密钥配好了，且不配 catalog 时会列 OpenAI 型号）。
-- **鉴权默认拒绝所有请求**（`staticTokenAuth` 常量时间比对）。`mode=local` 时宿主自签令牌进密钥库并传给内核与网关；企业形态要用户提供。
+- **鉴权默认拒绝所有请求**（`staticTokenAuth` 常量时间比对）。本机子进程始终用宿主自签的静态 token
+  给内核；云端 JWT 只出现在转发头 `EVOWORK_ACCESS_JWT` 里，**不把本机子进程改成 `AUTH_MODE=hosted`**。
 - 错误码映射不是锦上添花：内核对**映射不上的错误一律当可重试**，于是"模型不存在"会被重试到上限。
   映射表与内核的分流逻辑对照见 [providers/registry.ts](../services/gateway/src/providers/registry.ts) 头注释。
-- **D11 的"内核 base_url 恒为 loopback"现在只成立一半**：`mode=local` 成立；`private` 仍是内核直连客户网关，本机网关的**转发模式随 M10b**。
+- **D11 已落地**：内核 `base_url` 恒为 loopback；hosted / private 都经本机网关转发。
 
 ### ⑥ 产物分享上传：本机内容离开设备的唯一常规通道
 
@@ -595,8 +602,8 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | --- | --- | --- |
 | 1 | **内核签出领先断言基线 89 个提交** | `../codex` HEAD = `7769bccbb2`（2026-09-07），[kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `89a4eec6da`（2026-09-05 复核）。`node scripts/kernel-drift.mjs --no-fetch` 在实际签出上跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3 / F7 / F8 / F14 / F16 行号漂了），断言本身没坏，但 CLAUDE.md §1 与 status.md 记的"当前签出 `89a4eec6da`"在这台机器上已不成立。F17–F25 九条**没有进断言文件**（当前 17 条），只在 [设计集 README §4](design/README.md) 里 |
 | 2 | K3 的四个扩展点用了两个 | 技能包 ✅ · hooks ✅ · MCP server ❌（`plugins/connectors/` 空，Q9 本期只做 browser/，连它也没开始）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
-| 3 | 云端只有网关，且它现在主要以本机子进程形态在跑 | `services/identity` · `apps/web` 只有 README。§4 通道 ⑥ 的**云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
-| 4 | D11「内核 base_url 恒为 loopback」只成立一半 | `mode=local` 成立；`mode=private` 仍是内核直连客户网关；本机网关的**转发模式**（hosted 上游）随 M10b。`layers.ts` 的第 ②' 层与 `MODEL_POLICY_ENV` 的第 ② 层形状已定、来源未接（②' 等云端目录端点，② 等 M10c 签名策略包） |
+| 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
+| 4 | 第 ② 层签名策略包未接 | `layers.ts` 的第 ② 层形状已定、来源随 M10c 签名策略包。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
 | 5 | 专家角色包为空 | `plugins/agents/` 空目录，总纲提到的"100+ 角色"一个都没有；「专家·技能·连接器」页是 `UnbuiltPage` |
 | 6 | 解析管道的 office / ocr 档**没有解析器** | [ingest/src/parsers/](../services/ingest/src/parsers/) 只有 `builtin.ts` 与 `zip.ts`；三档运行时探测与安装器都在，但**拖入 docx/pdf 仍拿不到解析内容**，只以原始文件引用。等 M4 的受限子进程接线 |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |

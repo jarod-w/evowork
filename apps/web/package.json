@@ -1,0 +1,27 @@
+{
+  "name": "@evowork/web",
+  "version": "0.0.1",
+  "private": true,
+  "description": "账号页与租户管理端（云端，M10b）。密码表单只在这里。",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/tokens": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jsdom": "^27.0.0",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}

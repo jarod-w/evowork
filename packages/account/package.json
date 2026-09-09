@@ -1,0 +1,21 @@
+{
+  "name": "@evowork/account",
+  "version": "0.0.0",
+  "private": true,
+  "description": "账号协议：JWT 验签 · PKCE · 计量类型。无网络、无存储、无 Electron（11 §5.3）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

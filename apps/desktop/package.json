@@ -21,6 +21,7 @@
     "@evowork/runtime-installer": "workspace:*",
     "@evowork/artifacts": "workspace:*",
     "@evowork/gateway": "workspace:*",
+    "@evowork/account": "workspace:*",
     "@evowork/logging": "workspace:*",
     "@evowork/protocol": "workspace:*",
     "@evowork/store": "workspace:*",

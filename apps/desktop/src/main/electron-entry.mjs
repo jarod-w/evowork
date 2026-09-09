@@ -83,6 +83,7 @@ bootstrap({
     showOpenDialog: (options) => dialog.showOpenDialog(options),
     // 「项目」页的「打开文件夹」（清单 §4.5）。同样只有主进程能调 shell
     openPath: (path) => shell.openPath(path),
+    openExternal: (url) => shell.openExternal(url),
     /*
      * 密钥加密（Q34=A / M10a）。**只有主进程有 safeStorage**。
      *

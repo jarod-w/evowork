@@ -11,6 +11,8 @@
  */
 import { createLogger, jsonLinesSink } from '@evowork/logging';
 
+import { jwtAuth } from '@evowork/account';
+
 import {
   createModelRegistryFrom,
   P0_MODELS,
@@ -30,6 +32,13 @@ import { mergeModelLayers, type ResolvedModel } from './layers.js';
 import { DEFAULT_BASE_URL, PROVIDERS } from './providers/registry.js';
 import type { ProviderConfig } from './providers/types.js';
 import { createGatewayServer } from './server.js';
+import {
+  ACCESS_JWT_ENV,
+  AUTH_MODE_ENV,
+  parseTenantModels,
+  TENANT_MODELS_ENV,
+  UPSTREAM_BASE_URL_ENV,
+} from './tenant-models.js';
 
 function env(name: string): string | undefined {
   const value = process.env[name];
@@ -106,13 +115,12 @@ export function customModelSpecs(): {
 export function availableModelRegistry(): CapabilityLookup<ResolvedModel> {
   const { specs } = customModelSpecs();
   const policy = parseModelPolicy(env(MODEL_POLICY_ENV));
+  const tenant = parseTenantModels(env(TENANT_MODELS_ENV));
   return createModelRegistryFrom(
     mergeModelLayers({
       builtin: P0_MODELS,
       custom: specs.map(toRegistryEntry),
-      // ②' 租户默认模型随 M10b —— 这里显式留空而不是省略，是为了让"它还没接"
-      // 在代码里看得见（省略等于让下一个人以为已经接了）
-      tenant: [],
+      tenant: tenant.specs,
       policy: {
         disabledModelIds: policy.disabledModelIds,
         allowCustomModels: policy.allowCustomModels,
@@ -168,15 +176,29 @@ export function main(): void {
     // 读不懂的策略包**按锁处理**（见 `parseModelPolicy`），但必须报出来
     logger.error('gateway.boot.policy_malformed', { reason: 'MALFORMED_MODEL_POLICY' });
   }
+  const tenant = parseTenantModels(env(TENANT_MODELS_ENV));
+  if (tenant.dropped > 0) {
+    logger.warn('gateway.boot.tenant_models_dropped', { itemCount: tenant.dropped });
+  }
+  const accessJwt = env(ACCESS_JWT_ENV) ?? '';
+  const upstreamBaseUrl = env(UPSTREAM_BASE_URL_ENV) ?? '';
+  const canForward = accessJwt !== '' && upstreamBaseUrl !== '';
   const models = availableModelRegistry().list();
-  if (models.length === 0) {
+  if (models.length === 0 && !canForward) {
     // 没有任何厂商密钥就别假装能服务：起一个"看起来正常但每次请求都失败"的网关，
     // 会让排查从"网关没配密钥"变成"模型为什么总是报错"
     logger.error('gateway.boot.no_models', { reason: 'NO_PROVIDER_KEYS' });
     process.exitCode = 1;
     return;
   }
-  if (tokens.length === 0) {
+  const authMode = env(AUTH_MODE_ENV) ?? 'local';
+  const jwtPem = env('EVOWORK_JWT_PUBLIC_PEM');
+  if (authMode === 'hosted' && !jwtPem) {
+    logger.error('gateway.boot.no_jwks', { reason: 'NO_JWT_PUBLIC_PEM', authMode: 'hosted' });
+    process.exitCode = 1;
+    return;
+  }
+  if (authMode !== 'hosted' && tokens.length === 0) {
     logger.error('gateway.boot.no_tokens', { reason: 'NO_AUTH_TOKENS' });
     process.exitCode = 1;
     return;
@@ -188,7 +210,9 @@ export function main(): void {
     providers: PROVIDERS,
     configFor: buildConfigResolver(specs),
     logger,
-    authenticate: staticTokenAuth(tokens),
+    authenticate:
+      authMode === 'hosted' && jwtPem ? jwtAuth({ publicPem: jwtPem }) : staticTokenAuth(tokens),
+    ...(accessJwt && upstreamBaseUrl ? { hostedForward: { upstreamBaseUrl, accessJwt } } : {}),
   });
 
   server.listen(port, host, () => {

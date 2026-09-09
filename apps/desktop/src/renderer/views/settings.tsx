@@ -82,6 +82,10 @@ export interface SettingsPageProps {
   readonly onSecretFallback: (accept: boolean) => void;
   readonly onProbe: (modelId: string) => void;
   readonly onPreferences: (input: { taskTokenBudget?: number; concurrencyLimit?: number }) => void;
+  readonly onLogin?: () => void;
+  readonly onLogout?: () => void;
+  readonly onRevokeDevice?: (deviceId: string) => void;
+  readonly onOpenAccountWeb?: (path: string) => void;
 }
 
 export function SettingsPage(props: SettingsPageProps) {
@@ -99,7 +103,15 @@ export function SettingsPage(props: SettingsPageProps) {
       </nav>
       <div className="ew-settings-body">
         {props.refusal !== undefined ? <Banner tone="danger">{props.refusal}</Banner> : null}
-        {props.section === 'account' ? <AccountSection access={props.access} /> : null}
+        {props.section === 'account' ? (
+          <AccountSection
+            access={props.access}
+            onLogin={props.onLogin}
+            onLogout={props.onLogout}
+            onRevokeDevice={props.onRevokeDevice}
+            onOpenAccountWeb={props.onOpenAccountWeb}
+          />
+        ) : null}
         {props.section === 'models' ? <ModelsSection {...props} /> : null}
         {props.section === 'usage' ? <UsageSection {...props} /> : null}
         {props.section === 'data' ? <DataSection /> : null}
@@ -113,22 +125,84 @@ export function SettingsPage(props: SettingsPageProps) {
 }
 
 /**
- * 账号（阶段 2 才有内容）。
+ * 账号（11 §5.5）。
  *
- * 现在**如实说是本机模式**，并且把 Q31=A 那句话写出来 —— 11 §5.5 要求它不能让
- * 用户自己推断：任务与产物属于这台电脑，不随账号切换。
+ * 登录走系统浏览器，所以这一页没有密码框。注销要再输密码，只给一个跳 WEB 的入口。
  */
-function AccountSection({ access }: { readonly access: ModelAccessView | null }) {
+function AccountSection({
+  access,
+  onLogin,
+  onLogout,
+  onRevokeDevice,
+  onOpenAccountWeb,
+}: {
+  readonly access: ModelAccessView | null;
+  readonly onLogin?: (() => void) | undefined;
+  readonly onLogout?: (() => void) | undefined;
+  readonly onRevokeDevice?: ((deviceId: string) => void) | undefined;
+  readonly onOpenAccountWeb?: ((path: string) => void) | undefined;
+}) {
+  const signedIn = access?.signedIn === true;
   return (
     <section className="ew-settings-section">
       <SectionHeader title="账号" />
-      {access?.signedIn ? null : (
-        <Banner tone="info">当前为本机模式，无需登录。你自己的模型密钥只保存在这台电脑上。</Banner>
+      {signedIn ? (
+        <>
+          <p className="ew-settings-note">
+            已登录。任务、产物和自动化仍然保存在<strong>这台电脑上</strong>
+            ，退出登录或注销账号都不会删掉它们。
+          </p>
+          {access?.role === 'admin' ? (
+            <p className="ew-settings-note">
+              你是这个租户的管理员。管理端在浏览器里，客户端没有管理界面。
+              {onOpenAccountWeb ? (
+                <>
+                  {' '}
+                  <PillButton onClick={() => onOpenAccountWeb('/admin')}>打开管理端</PillButton>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+          <div className="ew-settings-actions">
+            {onLogout ? <PillButton onClick={onLogout}>退出登录</PillButton> : null}
+            {onOpenAccountWeb ? (
+              <PillButton onClick={() => onOpenAccountWeb('/account/delete')}>
+                在浏览器中注销账号
+              </PillButton>
+            ) : null}
+          </div>
+          <SectionHeader title="已登录的设备" />
+          {(access.devices ?? []).length === 0 ? (
+            <p className="ew-settings-note">还没有设备列表。打开这一页时会从账号服务拉取。</p>
+          ) : (
+            <ul className="ew-settings-note">
+              {access.devices?.map((device) => (
+                <li key={device.id}>
+                  {device.name} · {device.platform}
+                  {device.revoked ? '（已吊销）' : null}
+                  {!device.revoked && onRevokeDevice ? (
+                    <>
+                      {' '}
+                      <PillButton onClick={() => onRevokeDevice(device.id)}>吊销</PillButton>
+                    </>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <>
+          <Banner tone="info">
+            当前为本机模式，无需登录。你自己的模型密钥只保存在这台电脑上。
+          </Banner>
+          <p className="ew-settings-note">
+            任务、产物和自动化保存在<strong>这台电脑上</strong>，不随账号切换。
+            登录只用于解锁托管的模型额度。
+          </p>
+          {onLogin ? <PillButton onClick={onLogin}>在浏览器中登录</PillButton> : null}
+        </>
       )}
-      <p className="ew-settings-note">
-        任务、产物和自动化保存在<strong>这台电脑上</strong>，不随账号切换。
-        登录只用于解锁托管的模型额度与分享功能（还没做好）。
-      </p>
     </section>
   );
 }
@@ -180,6 +254,11 @@ function ModelsSection(props: SettingsPageProps) {
       ))}
 
       <SectionHeader title="现在可以选的模型" />
+      {access.signedIn ? null : (
+        <p className="ew-settings-note">
+          登录后可使用管理员配置的默认模型。未登录时不会向我们的云请求目录。
+        </p>
+      )}
       {access.models.length === 0 ? (
         <EmptyState
           title="还没有可用的模型"
@@ -406,6 +485,16 @@ function UsageSection(props: SettingsPageProps) {
   return (
     <section className="ew-settings-section">
       <SectionHeader title="用量与预算" />
+      {props.access?.signedIn && props.access.quotaLimit !== undefined ? (
+        <p className="ew-settings-note">
+          本月托管额度：已用 {props.access.quotaUsed ?? 0} / {props.access.quotaLimit} tokens。
+          {props.access.quotaLimit > 0 && (props.access.quotaUsed ?? 0) >= props.access.quotaLimit
+            ? '额度已用完，不会自动换成其他模型。'
+            : null}
+        </p>
+      ) : (
+        <p className="ew-settings-note">托管额度在登录之后显示。自定义模型的调用不上报、不计量。</p>
+      )}
       <label className="ew-field">
         <span>单个任务的 token 硬预算（留空 = 不限）</span>
         <input

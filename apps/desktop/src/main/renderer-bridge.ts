@@ -67,6 +67,8 @@ import type {
   ModelAccessMutationResult,
   ModelCatalogResult,
   ModelProbeResult,
+  AccountActionResult,
+  DeviceView,
   OpenTaskInput,
   OpenTaskResult,
   PreferencesInput,
@@ -289,6 +291,19 @@ export interface RendererBridgeOptions {
   /** 设置页「用量与预算」的两个数（Q11 的阶段 1） */
   readonly preferencePorts?:
     { read(): PreferencesView; write(input: PreferencesInput): PreferencesView } | undefined;
+  /**
+   * 账号（M10b）。没给时每个动作如实说这个版本做不了登录，
+   * 而不是弹出一个点了没反应的「登录」。
+   */
+  readonly accountPorts?:
+    | {
+        startLogin(): Promise<AccountActionResult>;
+        logout(): Promise<AccountActionResult>;
+        listDevices(): Promise<readonly DeviceView[]>;
+        revokeDevice(deviceId: string): Promise<AccountActionResult>;
+        openWeb(path: string): Promise<AccountActionResult>;
+      }
+    | undefined;
   /**
    * 打开系统目录选择框（首运行第②步）。
    *
@@ -798,6 +813,42 @@ export function createRendererActions(options: RendererBridgeOptions) {
     setPreferences(input: PreferencesInput): Promise<PreferencesView> {
       return Promise.resolve(
         options.preferencePorts?.write(input) ?? { concurrencyComputed: 1, concurrencyLimit: 1 },
+      );
+    },
+
+    startLogin(): Promise<AccountActionResult> {
+      return (
+        options.accountPorts?.startLogin() ??
+        Promise.resolve({ ok: false, refused: '这个版本还不能登录账号。' })
+      );
+    },
+
+    logout(): Promise<AccountActionResult> {
+      return (
+        options.accountPorts?.logout() ??
+        Promise.resolve({ ok: false, refused: '这个版本还不能退出登录。' })
+      );
+    },
+
+    listDevices(): Promise<readonly DeviceView[]> {
+      return options.accountPorts?.listDevices() ?? Promise.resolve([]);
+    },
+
+    async revokeDevice(input: { readonly deviceId: string }): Promise<AccountActionResult> {
+      return (
+        options.accountPorts?.revokeDevice(input.deviceId) ?? {
+          ok: false,
+          refused: '这个版本还不能吊销设备。',
+        }
+      );
+    },
+
+    async openAccountWeb(input: { readonly path: string }): Promise<AccountActionResult> {
+      return (
+        options.accountPorts?.openWeb(input.path) ?? {
+          ok: false,
+          refused: '这个版本没有账号页。',
+        }
       );
     },
 

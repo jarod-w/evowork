@@ -10,7 +10,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { CUSTOM_MODELS_ENV, MODEL_POLICY_ENV } from '@evowork/gateway';
+import {
+  ACCESS_JWT_ENV,
+  CUSTOM_MODELS_ENV,
+  MODEL_POLICY_ENV,
+  UPSTREAM_BASE_URL_ENV,
+} from '@evowork/gateway';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createModelAccess, parseModelPolicyToml } from '../src/main/model-access.js';
@@ -230,16 +235,29 @@ describe('拓扑与令牌（D11）', () => {
     expect(m.env().EVOWORK_GATEWAY_TOKEN).toBe(token);
   });
 
-  it('`private`：**不签**令牌，也不起本机网关 —— 那台网关在客户机房', () => {
+  it('`private`：本机网关仍然起（D11：内核永远打 loopback），并自签本机令牌', () => {
     writeFileSync(
       join(dir, 'app.toml'),
       '[gateway]\nmode = "private"\nupstream_base_url = "https://gw.corp.example/v1"\n',
     );
     const m = access();
-    expect(m.runsLocalGateway).toBe(false);
+    expect(m.runsLocalGateway).toBe(true);
     expect(m.upstreamBaseUrl).toBe('https://gw.corp.example/v1');
-    // 自己编一个只会让下拉 401，而真正的网关在别人的机器上
-    expect(m.token()).toBeUndefined();
+    expect(m.token()).toBeTruthy();
+    const env = m.env();
+    expect(env[UPSTREAM_BASE_URL_ENV]).toBe('https://gw.corp.example/v1');
+    expect(env[ACCESS_JWT_ENV]).toBe(m.token());
+    expect(env.EVOWORK_AUTH_MODE).toBeUndefined();
+  });
+
+  it('`hosted`：未登录不把我们的云写进网关环境（11 §12 第 14 条）', () => {
+    writeFileSync(join(dir, 'app.toml'), '[gateway]\nmode = "hosted"\n');
+    const m = access();
+    expect(m.runsLocalGateway).toBe(true);
+    const env = m.env();
+    expect(env[UPSTREAM_BASE_URL_ENV]).toBeUndefined();
+    expect(env[ACCESS_JWT_ENV]).toBeUndefined();
+    expect(env.EVOWORK_AUTH_MODE).toBeUndefined();
   });
 
   it('进程环境里的令牌优先（开发时从终端起、企业用 launchd 注入）', () => {
@@ -293,7 +311,7 @@ describe('视图', () => {
     expect(view.providers.every((p) => !p.saved)).toBe(true);
   });
 
-  it('阶段 1 恒为未登录 —— 如实说，而不是显示一个点了没反应的「登录」', () => {
+  it('model-access 这一层不感知账号；signedIn 由宿主叠 account.decorate()', () => {
     expect(access().view(EMPTY_CATALOG).signedIn).toBe(false);
   });
 

@@ -125,7 +125,16 @@ export const RENDERER_ACTIONS = Object.freeze([
   'setSecretFallback',
   /** 连通性检查：真的发一次最小请求 —— 只看目录里有没有这个 id 证明不了密钥是对的 */
   'probeModel',
-  /** 单任务预算与并发上限（Q11 的阶段 1；托管额度随 M10b） */
+  /**
+   * 账号（M10b）。**没有 password 参数**（Q33=A）：登录走系统浏览器。
+   * 注销账号要再输密码，只走 WEB（Q39）。
+   */
+  'startLogin',
+  'logout',
+  'listDevices',
+  'revokeDevice',
+  'openAccountWeb',
+  /** 单任务预算与并发上限（Q11 的阶段 1；托管额度随账号叠在视图上） */
   'getPreferences',
   'setPreferences',
 ] as const);

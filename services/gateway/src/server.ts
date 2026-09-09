@@ -15,7 +15,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { errorFields, type Logger } from '@evowork/logging';
 
 import type { CapabilityLookup } from './capabilities.js';
-import { MODELS_ENDPOINT_PATH, toCatalogEntry, type ModelCatalogResponse } from './catalog.js';
+import {
+  mergeCatalog,
+  MODELS_ENDPOINT_PATH,
+  parseRemoteCatalog,
+  toCatalogEntry,
+  type ModelCatalogResponse,
+} from './catalog.js';
+import { forwardHosted, hostedModelsUrl } from './forward.js';
 import type { ResolvedModel } from './layers.js';
 import { ModelNotConfiguredError, runPipeline, type PipelineDeps } from './pipeline.js';
 import { toSseData, type ResponsesRequest } from './protocol.js';
@@ -37,6 +44,17 @@ export interface ServerOptions extends PipelineDeps {
    * 默认**拒绝所有请求** —— 一个默认放行的网关一旦被误部署到公网，代价是别人用我们的额度。
    */
   readonly authenticate?: (authorization: string | undefined) => Promise<boolean> | boolean;
+  /**
+   * hosted 模型的转发（D11）。本机网关常驻时，内核仍打 loopback；
+   * 标了 `credentialSource = hosted` 的请求转到云端，**不走本机厂商 key**。
+   */
+  readonly hostedForward?:
+    | {
+        readonly upstreamBaseUrl: string;
+        readonly accessJwt: string;
+        readonly fetchImpl?: typeof fetch;
+      }
+    | undefined;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' } as const;
@@ -80,9 +98,12 @@ export function createGatewayServer(options: ServerOptions): Server {
        * 已经把没配密钥的厂商筛掉了。这一点是模型下拉不走内核 `model/list` 的决定性理由
        * （F24，见 `catalog.ts` 的头注释）：内核不知道哪家有密钥。
        *
+       * `mode=private` 时本机 registry 可能是空的，真正的目录在客户机房那台网上。
+       * 有转发配置就拉一份合进来；上游挂了不把本机目录拖死。
+       *
        * 形状由 `catalog.ts` 的具名类型定义，消费侧 import 同一个类型。
        */
-      const body: ModelCatalogResponse = { data: options.models.list().map(toCatalogEntry) };
+      const body: ModelCatalogResponse = { data: await catalogEntries() };
       res.writeHead(200, JSON_HEADERS);
       res.end(JSON.stringify(body));
       return;
@@ -104,6 +125,71 @@ export function createGatewayServer(options: ServerOptions): Server {
   function unauthorized(res: ServerResponse): void {
     res.writeHead(401, JSON_HEADERS);
     res.end(JSON.stringify({ error: { message: '鉴权失败', code: 'unauthorized' } }));
+  }
+
+  function forwardReady(): boolean {
+    const fwd = options.hostedForward;
+    return Boolean(fwd && fwd.accessJwt !== '' && fwd.upstreamBaseUrl !== '');
+  }
+
+  async function catalogEntries(): Promise<ModelCatalogResponse['data']> {
+    const local = options.models.list().map(toCatalogEntry);
+    const fwd = options.hostedForward;
+    if (!fwd || !forwardReady()) return local;
+    try {
+      const fetchImpl = fwd.fetchImpl ?? fetch;
+      const res = await fetchImpl(hostedModelsUrl(fwd.upstreamBaseUrl), {
+        headers: { authorization: `Bearer ${fwd.accessJwt}` },
+      });
+      if (!res.ok) return local;
+      return mergeCatalog(local, parseRemoteCatalog(await res.json()));
+    } catch {
+      return local;
+    }
+  }
+
+  async function pipeForward(
+    req: IncomingMessage,
+    res: ServerResponse,
+    raw: string,
+    model: string,
+    fwd: NonNullable<ServerOptions['hostedForward']>,
+  ): Promise<void> {
+    const abortFwd = new AbortController();
+    req.on('aborted', () => abortFwd.abort());
+    try {
+      const out = await forwardHosted({
+        upstreamBaseUrl: fwd.upstreamBaseUrl,
+        accessJwt: fwd.accessJwt,
+        body: raw,
+        signal: abortFwd.signal,
+        logger,
+        ...(safeToken(model) ? { model: safeToken(model) } : {}),
+        ...(fwd.fetchImpl ? { fetchImpl: fwd.fetchImpl } : {}),
+      });
+      res.writeHead(out.status, {
+        'content-type': out.contentType,
+        'cache-control': 'no-cache, no-transform',
+        'x-accel-buffering': 'no',
+      });
+      if (out.body) {
+        const reader = out.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) res.write(Buffer.from(value));
+        }
+      }
+      res.end();
+    } catch (err) {
+      logger?.error('gateway.forward.failed', errorFields(err));
+      if (!res.headersSent) {
+        res.writeHead(502, JSON_HEADERS);
+        res.end(JSON.stringify({ error: { message: '转发托管模型失败' } }));
+      } else {
+        res.end();
+      }
+    }
   }
 
   async function handleResponses(
@@ -144,7 +230,8 @@ export function createGatewayServer(options: ServerOptions): Server {
      *
      * 拒绝的话用 `denied` 的原文，不改写：它已经是一句能直接显示给用户的话。
      */
-    const denied = options.models.find(request.model)?.denied;
+    const resolved = options.models.find(request.model);
+    const denied = resolved?.denied;
     if (denied !== undefined) {
       logger?.warn('gateway.request.denied_model', {
         model: safeToken(request.model),
@@ -152,6 +239,24 @@ export function createGatewayServer(options: ServerOptions): Server {
       });
       res.writeHead(403, JSON_HEADERS);
       res.end(JSON.stringify({ error: { message: denied, code: 'model_denied' } }));
+      return;
+    }
+
+    if (resolved?.credentialSource === 'hosted' || (resolved === undefined && forwardReady())) {
+      const fwd = options.hostedForward;
+      if (!fwd || !forwardReady()) {
+        res.writeHead(401, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              message: '这个模型需要登录后使用。',
+              code: 'not_signed_in',
+            },
+          }),
+        );
+        return;
+      }
+      await pipeForward(req, res, raw, request.model, fwd);
       return;
     }
 

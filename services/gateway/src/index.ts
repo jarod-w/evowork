@@ -54,7 +54,9 @@ export {
   type ResolvedModel,
 } from './layers.js';
 export {
+  mergeCatalog,
   MODELS_ENDPOINT_PATH,
+  parseRemoteCatalog,
   toCatalogEntry,
   type ModelCatalogEntry,
   type ModelCatalogResponse,
@@ -96,6 +98,15 @@ export {
   type UpstreamResponse,
 } from './providers/types.js';
 export { createGatewayServer, type ServerOptions } from './server.js';
+export {
+  ACCESS_JWT_ENV,
+  AUTH_MODE_ENV,
+  encodeTenantModels,
+  parseTenantModels,
+  TENANT_MODELS_ENV,
+  UPSTREAM_BASE_URL_ENV,
+} from './tenant-models.js';
+export { forwardHosted, hostedEndpoint, hostedModelsUrl, hostedResponsesUrl } from './forward.js';
 export {
   chunksFromCompletion,
   createTranslator,

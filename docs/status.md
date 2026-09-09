@@ -50,7 +50,9 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P3-3** M8 可视化等 | 🟢 | **Visualizer**（fence 识别 · SVG 白名单清洗 · chart spec 校验 · 沙箱 iframe）· 产物识别三信号与版本 · 分享授权流（Q10 六条规则）· 资料库视图与两种删除语义 · 本机磁盘占用 · **资料库三栏 UI 已落地** · **产物 watcher 已接宿主**（轮询 + 对账，不是内核 `fs/watch`，`local-services.ts`）· mermaid 已随包并代码分割 | **分享整条链路没接**（见 §6 更正：`createShare` / `createUploader` 无调用方，云端端点不存在，「我分享的」表格与撤销按钮无数据）· 资料库的「我的资料」树 / 添加资料 / 团队空间 / 删除对话框都是 UI 壳，`app.tsx` 只传了 `rows` · 全文检索是前端 `filterRows`，没走 FTS 管线 · **结果区产物面板未挂**（M2 ①）· 分享页（Q41）随 `apps/web` |
 | **P3-2** M9 打包 | 🟢 | Electron 入口 · electron-builder 配置（三平台 + 差量更新）· macOS entitlements · **体积预算与档位边界检查**（R10）· **无证书时降级为未签名并把标注写进文件名**（U4）· **打包驱动 `scripts/package.mjs`**（把 package-plan 的四条规则接上）· **2026-09-06：macOS arm64 真实打包跑通并启动验证** | 签名公证（卡 P0-5 证书）· 自动更新服务端 · EvoWork CLI 随包（Q13）· 应用图标（现在用的是 Electron 默认图标）· Windows / Linux 未在真机打过 |
 
-| **P3.5-1** M10a 模型管理 | 🟢 | **密钥库**（`safeStorage` → `secrets.bin` 密文；两个明文文件一次性迁移后改名 `.migrated`；钥匙串不可用时显式二选一、**不静默写明文**）· **`app.toml` 的 `mode`**（拓扑权威，URL 反推退役为一次性兼容）· **模型表四层合并**（② > ②' > ③ > ①，被停用的模型留在列表里带原因）· **自定义模型**（`models.toml` + 必选协议适配类型 + 每条一把独立密钥槽）· **设置页**（六个分区，两个如实说没做）· `SecretInput`（01 §5.35）· 连通性检查 · 单任务预算与并发上限 | ②' 租户默认模型（随 M10b）· 本机网关的转发模式（随 M10b，所以"内核 base_url 恒为 loopback"现在只成立一半）· **真机上的钥匙串（U6）** —— 2026-09-08 已用真实 DeepSeek key 把整条链路跑通（见 §3），但那台机器没有 keyring，验到的是"不可用时的兜底分支"而不是 `safeStorage` 本身 |
+| **P3.5-1** M10a 模型管理 | 🟢 | **密钥库**（`safeStorage` → `secrets.bin` 密文；两个明文文件一次性迁移后改名 `.migrated`；钥匙串不可用时显式二选一、**不静默写明文**）· **`app.toml` 的 `mode`**（拓扑权威，URL 反推退役为一次性兼容）· **模型表四层合并**（② > ②' > ③ > ①，被停用的模型留在列表里带原因）· **自定义模型**（`models.toml` + 必选协议适配类型 + 每条一把独立密钥槽）· **设置页**（六个分区，两个如实说没做）· `SecretInput`（01 §5.35）· 连通性检查 · 单任务预算与并发上限 | **真机上的钥匙串（U6）** —— 2026-09-08 已用真实 DeepSeek key 把整条链路跑通（见 §3），但那台机器没有 keyring，验到的是"不可用时的兜底分支"而不是 `safeStorage` 本身 |
+
+| **P3.5-2** M10b 账号 | 🟢 | **`packages/account`**（JWT ES256 · PKCE · 计量类型，无 `threadId`）· **`services/identity`**（邮箱密码 + 邮件验证 · 种子管理员 · 授予/收回 admin · 注销 · 设备吊销 · 租户默认模型 · 计量 · `/v1/responses` 代理）· **本机网关转发**（`credentialSource=hosted` 转到 identity，不落盘）· **D11**（本机网关常驻，内核 `base_url` 恒为 loopback）· **桌面 PKCE**（系统浏览器 + loopback；IPC 无 `password`）· **`apps/web/`** 账号页与管理端 MVP | 分享页（Q41）不在本段 · 支付不做（Q42）· 第二个客户租户不做 · 生产发信仍是开发期 stderr 通道 · **外部前置**（域名 / 发信域 / 云上部署）未解除 |
 
 图例：✅ 完成 · 🟢 核心完成，剩余项已列 · 🟡 部分 · ⬜ 未开始
 
@@ -63,10 +65,13 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | `packages/protocol` | app-server JSON-RPC v2 的手写子集 + NDJSON 双向分发（**K2 边界的类型面**） | 20 |
 | `packages/logging` | Q14「不落盘正文」的实现处：**没有接受自由字符串的日志入口** + 字段注册表（M10a 新增 `credentialSource` / `authMode` / `secretStore` / `quotaClass` / `tenantId`；**刻意不注册 `userId` 与 `password`**）+ 泄露检测 | 30 |
 | `packages/tokens` | 01 §2 的 design token + 对比度自动化断言 + CSS 变量生成 | 24 |
+| `packages/account` | 账号协议：JWT ES256 验签 · PKCE · 计量类型（**无 `threadId` / `password`**） | （见该包 test/） |
 | `services/store` | 16 张本机 sqlite 表（含「项目」的 `project_local` / `project_root` 两张权威表）· 投影/权威两个迁移器（**第 3 版删掉 automation 的 `tenant_id` / `owner_id`，D10**）· 状态派生 · FTS5 trigram · **schema 归属列扫描** | 68 |
 | `services/kernel-adapter` | **K2 边界的唯一实现处**：会话 · 心跳 · 退避重启 · 会话恢复 · 能力探测与降级 · 事件流三消费者定序 · 审批双策略 · 场景展开 · 内核进程启动器 | 98 |
-| `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 · **模型表四层合并（`layers.ts`）与自定义模型的线上形状（`custom-models.ts`，宿主与网关共用）** | 106 |
-| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **密钥库（`secret-store.ts`）· 拓扑（`app-config.ts`）· 模型接入状态机（`model-access.ts`）· 自定义模型文件（`custom-models.ts`）· 设置页（`views/settings.tsx`）** | 522 |
+| `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 · **模型表四层合并** · **托管转发（M10b）** | （含 forward / tenant-models） |
+| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **密钥库** · **拓扑** · **模型接入** · **设置页** · **账号 PKCE（M10b）** | （含 account / settings） |
+| `services/identity` | 云端账号 · 租户 · 默认模型 · 计量 · `/v1/responses` 代理（D9 无内容） | （见该包 test/） |
+| `apps/web` | 账号页与租户管理端。密码表单只在这里。**没有分享页** | （见该包 test/） |
 | `services/artifacts` | 产物识别（三信号 + 版本 + 重定位）· 分享授权（Q10）· 资料库视图与磁盘占用 | 26 |
 | `services/scheduler` | 定时调度：cron（时区 + DST）· misfire 补偿 · 失败语义 · 设备迁移 · 自然语言解析 | 54 |
 | `services/policy` | 安全与策略：三级路径策略 · profile 文案 · 命令风险 · 并发与预算 · guardian 映射 · 审计与链式哈希 · 平台能力 · **四个 hook 的决策** | 64 |
@@ -391,7 +396,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 
 | 事项 | 卡在 | 影响 |
 | --- | --- | --- |
-| ~~**网关令牌与密钥的正式机制**~~ | ✅ **已关闭（2026-09-08）** | Q34=A 落地在 **M10a**：厂商密钥与网关令牌都进 `safeStorage`（密文 `~/.evowork/secrets.bin`），`gateway.env` / `gateway-token` 首次启动导入后改名 `.migrated`。**两条没被这次覆盖的**：① 钥匙串不可用的机器（无 keyring 的 Linux）仍读旧的 `gateway.env` —— 那是刻意的，否则升级会让老机器静默失去密钥；② refresh token 的存放随 M10b（identity 还没有）。**2026-09-08 用真实 DeepSeek key 把「设置页动作 → 密钥库 → 网关子进程 → 上游」整条链路跑通了**（§3 有细节）；但真机上的钥匙串行为仍**没实测过** —— 那次跑在无 keyring 的机器上，走的是明文兜底分支（U6，见 §5）|
+| ~~**网关令牌与密钥的正式机制**~~ | ✅ **已关闭（2026-09-08）** | Q34=A 落地在 **M10a**：厂商密钥与网关令牌都进 `safeStorage`（密文 `~/.evowork/secrets.bin`），`gateway.env` / `gateway-token` 首次启动导入后改名 `.migrated`。refresh token 进同一把密钥库（`EVOWORK_ACCOUNT_REFRESH`，M10b）。钥匙串不可用的机器仍读旧的 `gateway.env` —— 那是刻意的，否则升级会让老机器静默失去密钥。**2026-09-08 用真实 DeepSeek key 把「设置页动作 → 密钥库 → 网关子进程 → 上游」整条链路跑通了**（§3 有细节）；但真机上的钥匙串行为仍**没实测过** —— 那次跑在无 keyring 的机器上，走的是明文兜底分支（U6，见 §5）|
 | **P0-5 代码签名证书** | 外部采购 | M9 打包只能出未签名产物；U4 无法证伪 |
 | **U1 GLM 产物质量** | 需要人工评分（08 §5.4 的三个任务），不是技术阻塞 | 若不达标应换旗舰档，**不靠加模板硬扛**（总纲原话）。这个结论越晚拿到，返工面越大 |
 | **U3 misfire 真机体验** | 需要真机关机一夜 | M5 的文案与补偿策略无法确认 |
@@ -404,10 +409,11 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 1. ~~P2-1 M3~~ **已完成**（2026-09-05）。Q22「第 12 周内测」的交付面（M0 + M1 + M2a + M2 + M3）至此在代码层面齐了 —— 缺的是 U1 的人工评分。
 2. ~~P2-2 M4~~ **核心已完成**（2026-09-05）。剩 Windows 隔离结论（U5，需真机）与策略包签名下发（R11）。
 3. ~~P3-1 M5~~ **核心已完成**（2026-09-05），内核接线与列表页也在（2026-09-06）。**但 2026-09-09 对账发现产品里建不出自动化**（表单没挂、没有 create IPC、repo 没有 insert），这条在 §1 降回 🟡 —— 补齐它是让整个 M5 从"测试里成立"变成"用户能用"的最短一步。剩 `wake_system`。
-4. ~~P3-3 M8~~ **核心已完成**（2026-09-05）。mermaid 接线与资料库三栏 UI 都已落地。剩分享的宿主接线与云端端点（随 M10b 的 `apps/web`）、资料库的资料树 / 删除 / 分享数据接线、结果区面板挂载。
+4. ~~P3-3 M8~~ **核心已完成**（2026-09-05）。mermaid 接线与资料库三栏 UI 都已落地。剩分享的宿主接线与云端端点（Q41 分享页随分享上传，不在 M10b）、资料库的资料树 / 删除 / 分享数据接线、结果区面板挂载。
 5. ~~P3-2 M9 打包~~ **macOS 侧已跑通**（2026-09-06）。剩签名公证（卡 P0-5 证书，U4）、应用图标、以及 Windows / Linux 的真机打包。
 6. ~~P3.5-1 M10a 模型管理~~ **已完成并用真实 DeepSeek key 实测**（2026-09-08，四段结论见 §3）。§4 的第一个卡住项就此关闭。**剩下一条未证伪的断言（U6）**：`safeStorage` 本身没验过 —— 那次实测跑在 headless、无 keyring 的机器上，走的是"不可用 → 用户显式选明文"分支（**该分支行为完全符合设计**）。要验的三件事只有真机能给：① macOS 首次加密会不会弹钥匙串授权框、② 换 OS 账号后解密失败的表现是不是"请重新填密钥"而不是崩、③ 一台**真的没有 keyring 的 Linux** 上 `isEncryptionAvailable()` 与 `getSelectedStorageBackend()` 到底返回什么（我们按 `basic_text` = 不可用处理，那是照文档写的）。
-7. **下一段是 M10b（账号）**，但它卡在 §10.1 的外部前置（域名备案 · 发信域 · 云上部署环境 · 法务文本）—— 建议与 P0-5 的证书采购同期启动，因为 ICP 备案以月计。
+7. ~~**M10b 账号**~~ **核心已落地**（2026-09-08）：identity + WEB 账号/管理端 + 本机网关转发 + 桌面 PKCE。**外部前置未解除**（域名备案 · 发信域 · 云上部署环境 · 法务文本）。分享页（Q41）跟分享上传走，不在本段。
+8. 下一段是 **M10c**（配额策略 · 签名策略包下发）。
 
 ---
 
@@ -447,10 +453,10 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **05 专家·技能·连接器** | 整页（§2–§5）· **browser MCP 连接器不存在**（`plugins/connectors/` 只有 `.gitkeep`，Q9 的唯一一个也没做）· 专家 `plugins/agents/` 空 · 技能安装 / 自定义 UI（§3.3–3.4）· 发现应用抽屉（§6） | `plugins/connectors/` · `plugins/agents/` |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 「我分享的」/ 删除对话框 —— **UI 壳全有，`app.tsx` 只传了 `rows`** · §3.4 全文检索是前端 `filterRows`，没接 ingest 的 FTS | `library.tsx` vs `app.tsx` |
 | **07 自动化** | B · `wake_system` 只有勾选框（服务层与宿主无任何唤醒钩子）· 「迁移到本机」有设备层语义没有动作 · 试跑 / 立即运行无入口 · **`scheduler/README.md`「还没做的」第一条已过期**（内核接线在 `local-services.ts` 已做，文档该改） | `automations.tsx` · `services/scheduler/README.md:60` |
-| **08 产物与解析** | D · office / ocr **解析器文件不存在**（`parsers/` 只有 `builtin.ts` `zip.ts`）· OCR 档安装 · 结果区产物面板（A）· 分享页随 `apps/web` | `services/ingest/src/parsers/` |
-| **10 安全与权限 UX** | 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 空）· §7 设置页「安全与权限」是空态 · §8 签名策略包下发（本机能读 `requirements.toml` 作企业层，没有云端签发）· D8 的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `services/identity/` · `ext/` |
+| **08 产物与解析** | D · office / ocr **解析器文件不存在**（`parsers/` 只有 `builtin.ts` `zip.ts`）· OCR 档安装 · 结果区产物面板（A）· 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
+| **10 安全与权限 UX** | 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」是空态 · §8 签名策略包下发（本机能读 `requirements.toml` 作企业层，没有云端签发）· D8 的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `services/identity/` · `ext/` |
 
-**仓内为空、但设计依赖的目录**：`apps/web/` · `services/identity/` · `ext/` · `plugins/connectors/` · `plugins/agents/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。
+**仓内为空、但设计依赖的目录**：`ext/` · `plugins/connectors/` · `plugins/agents/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。`apps/web/` 与 `services/identity/` 已有实现；分享页仍未做。
 
 **对账时发现的文档滞后**（文档说没做、其实做了，已在本文件订正）：scheduler↔内核接线 · 资料库三栏 UI · 产物 watcher（轮询）· 审计页可达 · 组件 35 个全有。
 **反向的**（文档说做了、其实没有）：分享上传（§6 已更正）· 自动化"UI 已完成"（表单没挂）。

@@ -4,13 +4,14 @@
  * 这组断言守的是**"起不起"这个判断本身** —— 它做错的两种方式代价都不小：
  *   · 该起不起 → 用户看到"连不上网关"，而网关就在他机器上、只是没人拉起来
  *     （2026-09-06 真发生过：改了模型目录，界面还是旧列表，因为进程是几小时前起的）；
- *   · 不该起却起 → 企业部署的机器上多一个占着 8787、拿不到任何厂商 key 的进程，
- *     每次请求都失败，而用户会去查一个**根本不该存在**的东西。
+ *   · D11 之后 private / hosted 也该起：内核恒打 loopback，不起就是 ECONNREFUSED。
  */
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+
+import { TENANT_MODELS_ENV, UPSTREAM_BASE_URL_ENV } from '@evowork/gateway';
 
 import { isLocalGateway, portOf, startLocalGateway } from '../src/main/gateway-process.js';
 
@@ -52,7 +53,7 @@ describe('起不起本机网关：判据是 app.toml 的 mode（D11）', () => {
     expect(isLocalGateway('http://0.0.0.0:8787/v1')).toBe(false);
   });
 
-  it('`runsLocally: false` 时不起进程，且**不给用户任何提示**（网关在服务器上是正常部署）', () => {
+  it('`runsLocally: false` 时不起进程（函数逃生口；产品路径恒为 true）', () => {
     const { spawnFn } = fakeSpawn();
     const gw = startLocalGateway({
       baseUrl: 'https://gateway.example.com/v1',
@@ -84,6 +85,32 @@ describe('起不起本机网关：判据是 app.toml 的 mode（D11）', () => {
     if (gw.result.started || gw.result.reason === 'REMOTE') throw new Error('unreachable');
     expect(gw.result.reason).toBe('NO_KEYS');
     expect(gw.result.notice).toContain('密钥');
+  });
+
+  it('只有租户默认模型、一家厂商密钥都没配时仍然起网关（登录后的托管形态）', () => {
+    const { spawnFn } = fakeSpawn();
+    const gw = startLocalGateway({
+      baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
+      entryPath: entry(),
+      env: { [TENANT_MODELS_ENV]: '[{"id":"evowork/hosted-flash"}]' },
+      spawnFn,
+    });
+    expect(gw.result.started).toBe(true);
+    expect(spawnFn).toHaveBeenCalled();
+  });
+
+  it('只有客户机房上游 URL、一家密钥都没配时仍然起（private 未登录，11 §12 第 7 条）', () => {
+    const { spawnFn } = fakeSpawn();
+    const gw = startLocalGateway({
+      baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
+      entryPath: entry(),
+      env: { [UPSTREAM_BASE_URL_ENV]: 'https://gw.corp.example/v1' },
+      spawnFn,
+    });
+    expect(gw.result.started).toBe(true);
+    expect(spawnFn).toHaveBeenCalled();
   });
 
   it('产物不在时说"安装包不完整"，不说"连不上"', () => {

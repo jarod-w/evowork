@@ -483,7 +483,9 @@
 
 **机制化**：① `mode` 是权威、上游 URL 由它派生，`isLocalGateway()` 的 URL 反推退役为**一次性兼容读取**（老装机反推一次并写回 `app.toml`，之后不再推断）② 客户端收到的模型目录条目类型里没有 `apiKey`，hosted 条目也没有上游 `baseUrl` ③ 本机网关的转发模式复用 Q14 的不落盘检查，不开例外。
 
-**实现状态（2026-09-08）**：①②已随 **M10a** 落地（`app.toml` + 目录条目的 `credentialSource`）；③ 的**转发模式随 M10b**（那时才有 hosted 上游可转发）—— 在此之前 `mode = private` 仍是内核直连客户网关，`base_url` 恒为 loopback 的那一半要等 M10b 才完全成立。**不要把它当成已经实现的保证。**
+**实现状态（2026-09-08 / M10b）**：①②③均已落地。本机网关常驻；hosted 转到 identity `/v1/responses`；
+`mode=private` 把 `upstream_base_url` 注入本机网关，未登录用静态 token 转发（不要求我们的账号）。
+老装机的非 loopback `config.toml` 只被反推一次并写回 `app.toml`，随后内核 URL 改回 loopback。
 
 ---
 

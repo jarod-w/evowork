@@ -12,7 +12,9 @@ const SAVED = { ...process.env };
 
 beforeEach(() => {
   for (const key of Object.keys(process.env)) {
-    if (key.endsWith('_API_KEY') || key.endsWith('_BASE_URL')) delete process.env[key];
+    if (key.endsWith('_API_KEY') || key.endsWith('_BASE_URL') || key === 'EVOWORK_TENANT_MODELS') {
+      delete process.env[key];
+    }
   }
 });
 
@@ -110,5 +112,44 @@ describe('鉴权', () => {
     const auth = staticTokenAuth([]);
     expect(auth('Bearer anything')).toBe(false);
     expect(auth(undefined)).toBe(false);
+  });
+
+  it('私有部署继续用静态 token，不要求账号（11 §12 第 7 条）', () => {
+    const auth = staticTokenAuth(['corp-token']);
+    expect(auth('Bearer corp-token')).toBe(true);
+  });
+});
+
+describe("第 ②' 层租户目录", () => {
+  it('没有厂商密钥时，租户模型仍然出现，且标 hosted', () => {
+    process.env.EVOWORK_TENANT_MODELS = JSON.stringify([
+      {
+        id: 'evowork/hosted-flash',
+        displayName: '托管',
+        provider: 'deepseek',
+        upstreamModel: 'deepseek-v4-flash',
+      },
+    ]);
+    const listed = availableModelRegistry().list();
+    const hosted = listed.find((m) => m.id === 'evowork/hosted-flash');
+    expect(hosted?.credentialSource).toBe('hosted');
+    expect(hosted?.layer).toBe('tenant');
+  });
+
+  it('带 apiKey 的租户条目进不了目录', () => {
+    process.env.EVOWORK_TENANT_MODELS = JSON.stringify([
+      {
+        id: 'evowork/leak',
+        displayName: '漏',
+        provider: 'deepseek',
+        upstreamModel: 'x',
+        apiKey: 'sk-no',
+      },
+    ]);
+    expect(
+      availableModelRegistry()
+        .list()
+        .some((m) => m.id === 'evowork/leak'),
+    ).toBe(false);
   });
 });

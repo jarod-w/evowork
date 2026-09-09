@@ -85,6 +85,64 @@ export interface ModelCatalogResponse {
 }
 
 /**
+ * 把上游网关的目录应答收成我们的线上形状。
+ *
+ * 出现 `apiKey` / `baseUrl` 的条目丢掉（11 §12 第 13 条）。
+ * 远程条目一律标 `hosted` + `layer=tenant`：本机 registry 里没有它们，
+ * 请求要走转发，不能被看成 BYOK 去碰本机密钥。
+ */
+export function parseRemoteCatalog(json: unknown): readonly ModelCatalogEntry[] {
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) return [];
+  const data = (json as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+  const providers: readonly ProviderId[] = ['deepseek', 'moonshot', 'zhipu', 'private'];
+  const out: ModelCatalogEntry[] = [];
+  for (const item of data) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    if ('apiKey' in rec || 'baseUrl' in rec) continue;
+    const id = typeof rec.id === 'string' ? rec.id : '';
+    const provider = providers.find((p) => p === rec.provider);
+    const upstreamModel = typeof rec.upstreamModel === 'string' ? rec.upstreamModel : '';
+    const displayName = typeof rec.displayName === 'string' ? rec.displayName : id;
+    if (!id || !provider || !upstreamModel) continue;
+    const capabilities = rec.capabilities;
+    if (capabilities === null || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+      continue;
+    }
+    out.push({
+      id,
+      displayName,
+      provider,
+      upstreamModel,
+      tier: rec.tier === 'flagship' || rec.tier === 'light' ? rec.tier : 'standard',
+      capabilities: capabilities as ModelCapabilities,
+      verified: rec.verified === true,
+      unverified: Array.isArray(rec.unverified)
+        ? (rec.unverified.filter((k) => typeof k === 'string') as ModelCatalogEntry['unverified'])
+        : [],
+      notes: typeof rec.notes === 'string' ? rec.notes : '',
+      notices: Array.isArray(rec.notices)
+        ? rec.notices.filter((n): n is string => typeof n === 'string')
+        : [],
+      credentialSource: 'hosted',
+      layer: 'tenant',
+      ...(typeof rec.denied === 'string' ? { denied: rec.denied } : {}),
+    });
+  }
+  return out;
+}
+
+/** 本机条目优先；远程同 id 的丢掉。 */
+export function mergeCatalog(
+  local: readonly ModelCatalogEntry[],
+  remote: readonly ModelCatalogEntry[],
+): readonly ModelCatalogEntry[] {
+  const ids = new Set(local.map((entry) => entry.id));
+  return [...local, ...remote.filter((entry) => !ids.has(entry.id))];
+}
+
+/**
  * 注册表条目 → 线上形状。
  *
  * `verified` **如实透出**：未经真实 endpoint 验证的能力位不该在 UI 上看起来像已验证的。

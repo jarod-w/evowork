@@ -6,6 +6,9 @@
       "path": "packages/logging"
     },
     {
+      "path": "packages/account"
+    },
+    {
       "path": "packages/protocol"
     },
     {
@@ -37,6 +40,9 @@
     },
     {
       "path": "services/gateway"
+    },
+    {
+      "path": "services/identity"
     },
     {
       "path": "apps/desktop/tsconfig.main.json"

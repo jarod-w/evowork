@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { P0_MODELS } from '../src/capabilities.js';
-import { toCatalogEntry } from '../src/catalog.js';
+import { mergeCatalog, parseRemoteCatalog, toCatalogEntry } from '../src/catalog.js';
 import type { ResolvedModel } from '../src/layers.js';
 
 function resolved(over: Partial<ResolvedModel> = {}): ResolvedModel {
@@ -49,5 +49,51 @@ describe('目录条目不带密钥、不带上游', () => {
     expect(entry.credentialSource).toBe('byok');
     expect(JSON.stringify(entry)).not.toContain('apiKey');
     expect(entry).not.toHaveProperty('baseUrl');
+  });
+});
+
+describe('远程目录', () => {
+  it('带 apiKey 的条目丢掉，其余改标 hosted', () => {
+    const remote = parseRemoteCatalog({
+      data: [
+        {
+          id: 'corp/a',
+          displayName: 'A',
+          provider: 'deepseek',
+          upstreamModel: 'x',
+          capabilities: P0_MODELS[0]!.capabilities,
+          credentialSource: 'byok',
+          layer: 'builtin',
+        },
+        {
+          id: 'corp/leak',
+          displayName: '漏',
+          provider: 'deepseek',
+          upstreamModel: 'x',
+          capabilities: P0_MODELS[0]!.capabilities,
+          apiKey: 'sk-no',
+        },
+      ],
+    });
+    expect(remote.map((e) => e.id)).toEqual(['corp/a']);
+    expect(remote[0]?.credentialSource).toBe('hosted');
+    expect(remote[0]?.layer).toBe('tenant');
+  });
+
+  it('本机同 id 的条目优先', () => {
+    const local = [toCatalogEntry(resolved({ id: 'same' }))];
+    const remote = parseRemoteCatalog({
+      data: [
+        {
+          id: 'same',
+          displayName: '远程',
+          provider: 'deepseek',
+          upstreamModel: 'x',
+          capabilities: P0_MODELS[0]!.capabilities,
+        },
+      ],
+    });
+    expect(mergeCatalog(local, remote)).toHaveLength(1);
+    expect(mergeCatalog(local, remote)[0]?.displayName).toBe(local[0]?.displayName);
   });
 });

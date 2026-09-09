@@ -48,8 +48,17 @@ describe('解析', () => {
   });
 
   it('写出来的能被自己读回去（改一处格式不会静默失效）', () => {
-    const config = { mode: 'hosted' as const, upstreamBaseUrl: 'https://api.example/v1' };
+    const config = { mode: 'private' as const, upstreamBaseUrl: 'https://gw.corp.example/v1' };
     expect(parseAppConfig(serializeAppConfig(config))).toEqual(config);
+  });
+
+  it('hosted / local 的手填 upstream_base_url 无效（11 §3.2）', () => {
+    expect(
+      parseAppConfig('[gateway]\nmode = "hosted"\nupstream_base_url = "https://evil.example/v1"\n'),
+    ).toEqual({ mode: 'hosted' });
+    expect(
+      parseAppConfig('[gateway]\nmode = "local"\nupstream_base_url = "https://evil.example/v1"\n'),
+    ).toEqual({ mode: 'local' });
   });
 });
 
