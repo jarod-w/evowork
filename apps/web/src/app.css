@@ -1,0 +1,98 @@
+/*
+ * 账号页样式。只允许 var(--token)（01 §9）。
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-cjk);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+.ew-web {
+  max-width: var(--layout-content-column);
+  margin: 0 auto;
+  padding: var(--space-32) var(--space-24);
+}
+.ew-web-nav {
+  display: flex;
+  gap: var(--space-12);
+  margin-bottom: var(--space-24);
+}
+.ew-web-nav a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.ew-web-nav a:hover {
+  color: var(--text-primary);
+}
+.ew-web h1 {
+  font-size: var(--font-title-1-size);
+  font-weight: var(--font-title-1-weight);
+  margin: 0 0 var(--space-16);
+}
+.ew-web h2 {
+  font-size: var(--font-title-2-size);
+  font-weight: var(--font-title-2-weight);
+  margin: var(--space-24) 0 var(--space-12);
+}
+.ew-web p,
+.ew-web li {
+  color: var(--text-secondary);
+}
+.ew-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-12);
+}
+.ew-field input,
+.ew-field select {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: var(--space-8) var(--space-12);
+}
+.ew-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  margin-top: var(--space-16);
+}
+.ew-web button {
+  font: inherit;
+  color: var(--text-inverse);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: var(--space-8) var(--space-16);
+  cursor: pointer;
+}
+.ew-web button[data-tone='ghost'] {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+}
+.ew-error {
+  color: var(--danger-text);
+}
+.ew-ok {
+  color: var(--success);
+}
+.ew-web table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ew-web th,
+.ew-web td {
+  text-align: left;
+  padding: var(--space-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
