@@ -99,10 +99,15 @@ export function Menu({ items, onSelect, ariaLabel, activeId, emptyHint }: MenuPr
               {item.description ? (
                 <span className="ew-menu-description">{item.description}</span>
               ) : null}
+              {/*
+               * 原因必须进这一列，不能当 `.ew-menu-item` 的横向 flex 兄弟。
+               * 中文的 min-content 是一字宽：标签 `flex: 1` 吃掉整行后，
+               * 右侧原因会按字折成一列，叠在「evowork-full」这类标签上。
+               */}
+              {item.disabled && item.disabledReason ? (
+                <span className="ew-menu-reason">{item.disabledReason}</span>
+              ) : null}
             </span>
-            {item.disabled && item.disabledReason ? (
-              <span className="ew-menu-reason">{item.disabledReason}</span>
-            ) : null}
             {item.shortcut ? <span className="ew-menu-shortcut">{item.shortcut}</span> : null}
             {item.checked ? (
               <span className="ew-menu-check" aria-hidden="true">

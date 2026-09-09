@@ -364,7 +364,9 @@ ComposerShell   --r-xl · --bg-sunken · --border-subtle · --shadow-md · paddi
 
 `--r-lg`，`--bg-surface`，`--border-subtle`，`--shadow-lg`，内边距 6，最小宽 180。
 菜单项高 30，`--r-sm`，内边距 0 8：图标 16 + 8 + `label` + 弹性 + 可选快捷键（`caption`/`--text-tertiary`）或勾选 14。分组间 1px `--border-subtle` 分割 + 上下 4 间距。危险项文字 `--danger`。
-禁用项：`--text-tertiary` + 不可点，**右侧必须给出禁用原因**（如权限被企业策略锁定，10 §2.3）。
+禁用项：`--text-tertiary` + 不可点，**必须给出禁用原因**（如权限被企业策略锁定，10 §2.3）。
+原因写在标签下方、与 `description` 同一列 —— 180 宽的菜单里中文原因若作为右侧 flex 兄弟，`min-content` 是一字宽，会按字折成一列叠在标签上。
+Popover 锚在触发器下方（`top: 100%` / `left: 0`），`align=end` 时靠右。
 
 ### 5.20 ItemCard（技能 / 连接器 / 专家 / 应用 通用）
 

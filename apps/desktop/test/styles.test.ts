@@ -303,3 +303,54 @@ describe('侧边栏选中行铺满整行（01 §5.3 / §5.5）', () => {
     expect(anchor).toContain('width: 100%');
   });
 });
+
+/*
+ * 中文在横向 flex 里的 min-content 是一字宽。标签 `flex: 1` 吃掉整行之后，
+ * 右侧的说明 / 禁用原因 / 附件名会按字折成一列，叠在标签上 ——
+ * 「更多」菜单、「权限」下拉、账号页 Banner 都是这个。jsdom 量不出布局，钉在 CSS。
+ */
+describe('中文在横向 flex 里不会按字折成一列', () => {
+  it('Popover 锚在触发器下方，不跟触发器抢同一行', () => {
+    const rule = /\.ew-popover\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('top: 100%');
+    expect(rule).toContain('left: 0');
+    const end = /\.ew-popover\[data-align='end'\]\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(end).toContain('left: auto');
+    expect(end).toContain('right: 0');
+  });
+
+  it('设置页显式 row，不被 .ew-page 的 column 盖掉（11 §4.4 两栏）', () => {
+    const rule = /\.ew-settings\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('flex-direction: row');
+  });
+
+  it('Banner 拉满内容列，正文 min-width: 0 —— 否则 margin:auto 缩成一颗居中胶囊', () => {
+    const banner = /\.ew-banner\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(banner).toContain('width: 100%');
+    const text = /\.ew-banner-text\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(text).toContain('min-width: 0');
+  });
+
+  it('禁用原因自己能折行，不作为横向 flex 兄弟被挤成一字宽', () => {
+    const reason = /\.ew-menu-reason\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(reason).toContain('min-width: 0');
+    expect(reason).toContain('overflow-wrap: break-word');
+  });
+
+  it('附件名省略号，不跟尺寸/移除按钮抢宽度', () => {
+    const rule = /\.ew-attachment-name\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('min-width: 0');
+    expect(rule).toContain('text-overflow: ellipsis');
+  });
+
+  it('「工作空间之外」不收缩 —— 它是路径旁边的警告，缩成一列字等于没写', () => {
+    const rule = /\.ew-changed-file-outside\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('flex-shrink: 0');
+  });
+
+  it('Composer 底栏的下拉标签单行省略，不按字折', () => {
+    const rule = /\.ew-inline-select-label\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('white-space: nowrap');
+    expect(rule).toContain('min-width: 0');
+  });
+});

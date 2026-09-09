@@ -164,6 +164,10 @@ describe('底栏三个选择器（03 §4.5）', () => {
     const locked = screen.getByRole('menuitem', { name: /企业档/ });
     expect((locked as HTMLButtonElement).disabled).toBe(true);
     expect(locked.textContent).toContain('已被企业策略锁定');
+    // 原因在标签列里：放成横向 flex 兄弟时中文会按字折成一列，叠在「evowork-full」上
+    expect(
+      locked.querySelector('.ew-menu-label')?.querySelector('.ew-menu-reason')?.textContent,
+    ).toContain('已被企业策略锁定');
   });
 
   it('**选完全访问要过二次确认**，且说清只对当前任务生效', () => {

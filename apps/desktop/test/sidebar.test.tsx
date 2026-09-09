@@ -212,6 +212,19 @@ describe('一级导航选中态（02 §2）', () => {
   });
 });
 
+describe('「更多」菜单的禁用原因（01 §5.19）', () => {
+  it('原因在标签这一列里，不跟标签抢同一行', () => {
+    renderSidebar();
+    const more = document.querySelector('.ew-more-anchor .ew-nav-item');
+    expect(more).not.toBeNull();
+    fireEvent.click(more as HTMLElement);
+    const item = screen.getByRole('menuitem', { name: /设备与同步/ });
+    const reason = item.querySelector('.ew-menu-reason');
+    expect(reason?.textContent).toContain('跨设备同步本期不做');
+    expect(item.querySelector('.ew-menu-label')?.contains(reason)).toBe(true);
+  });
+});
+
 describe('本机磁盘占用（Q17：不是云配额）', () => {
   it('动作是「清理」而不是「升级」', () => {
     const onCleanup = vi.fn();
