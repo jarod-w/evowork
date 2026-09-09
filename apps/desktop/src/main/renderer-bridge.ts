@@ -62,6 +62,8 @@ import type {
   AuditDataView,
   AutomationsDataView,
   CaseView,
+  CatalogDataView,
+  CatalogMutationResult,
   DirEntryView,
   LibraryDataView,
   ModelAccessMutationResult,
@@ -89,6 +91,22 @@ import type {
   TaskRowView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
+import {
+  addConnector,
+  createExpert,
+  emptyCatalog,
+  installSkill,
+  missingPortsResult,
+  readCatalog,
+  removeConnectorAction,
+  removeExpert,
+  trustConnectorAction,
+  uninstallSkill,
+  type AddConnectorInput,
+  type CatalogPorts,
+  type CreateExpertInput,
+  type InstallSkillInput,
+} from './catalog-host.js';
 
 /** 增量能安全累加的两个通道：它们的 item 都用 `text` 承载正文。 */
 const TEXT_DELTA_FIELD: Readonly<Record<string, string | undefined>> = {
@@ -339,6 +357,11 @@ export interface RendererBridgeOptions {
     | undefined;
   /** 「项目」页的 I/O 端口。没给时那十个动作如实返回空/失败，不抛错 */
   readonly projectPorts?: ProjectPorts | undefined;
+  /**
+   * 技能 · 连接器目录的 I/O。没给时八个动作如实返回空/失败，不抛错。
+   * 判定在 `@evowork/catalog`；这里只接线。
+   */
+  readonly catalogPorts?: CatalogPorts | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -1409,6 +1432,56 @@ export function createRendererActions(options: RendererBridgeOptions) {
           .filter((row): row is ProjectionRow => row !== undefined)
           .map((row) => toTaskRow(row, at)),
       });
+    },
+
+    /* ── 技能 · 连接器（05）───────────────────────────────────────── */
+
+    getCatalog(): Promise<CatalogDataView> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(emptyCatalog());
+      return Promise.resolve(readCatalog(ports));
+    },
+
+    async installSkill(input: InstallSkillInput): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return missingPortsResult();
+      return installSkill(ports, input);
+    },
+
+    uninstallSkill(input: { readonly id: string }): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return Promise.resolve(uninstallSkill(ports, input.id));
+    },
+
+    addConnector(input: AddConnectorInput): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return Promise.resolve(addConnector(ports, input));
+    },
+
+    trustConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return Promise.resolve(trustConnectorAction(ports, input.id));
+    },
+
+    removeConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return Promise.resolve(removeConnectorAction(ports, input.id));
+    },
+
+    createExpert(input: CreateExpertInput): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return Promise.resolve(createExpert(ports, input));
+    },
+
+    removeExpert(input: { readonly id: string }): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return Promise.resolve(removeExpert(ports, input.id));
     },
   };
 }

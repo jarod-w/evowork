@@ -21,6 +21,7 @@
     { "path": "../../services/scheduler" },
     { "path": "../../services/policy" },
     { "path": "../../services/projects" },
+    { "path": "../../services/catalog" },
     { "path": "../../services/ingest" },
     { "path": "../../services/artifacts" },
     { "path": "../../services/gateway" }

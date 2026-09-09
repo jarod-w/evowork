@@ -1,0 +1,21 @@
+{
+  "name": "@evowork/catalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "技能 / 连接器 / 专家目录的判定与视图（05）。不做 Electron I/O。",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

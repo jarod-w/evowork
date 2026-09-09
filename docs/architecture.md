@@ -33,7 +33,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 │  React 19 · 应用外壳 + 侧边栏 + 8 个主视图 · Visualizer(沙箱 iframe)             │
 │  contextIsolation=true · nodeIntegration=false · sandbox=true                 │
 └───────────────────────────────┬──────────────────────────────────────────────┘
-                    ① preload contextBridge：5 个订阅 + 41 个动作 + 1 条审批请求，**无 ipcRenderer**
+                    ① preload contextBridge：5 个订阅 + 49 个动作 + 1 条审批请求，**无 ipcRenderer**
 ┌───────────────────────────────┴──────────────────────────────────────────────┐
 │  Electron 主进程 = 本机服务宿主                                                │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
@@ -98,6 +98,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/runtime-installer` | [services/runtime-installer](../services/runtime-installer/) | 办公扩展（自包含 CPython + 六个钉死版本的包 + 中文字体）的按需安装；**K6 登记：唯一为装扩展而出网的包** | [install.ts](../services/runtime-installer/src/install.ts) · [manifest.ts](../services/runtime-installer/src/manifest.ts) |
 | `@evowork/policy` | [services/policy](../services/policy/) | 路径三级策略 · 命令风险 · 预算并发 · 审计链 · **四个 hook 的决策** | [paths.ts](../services/policy/src/paths.ts) · [hooks/contract.ts](../services/policy/src/hooks/contract.ts) |
 | `@evowork/projects` | [services/projects](../services/projects/) | 「项目」（= 总纲的空间）的判定与视图逻辑：归属、卡片、文件树排序。**不做 I/O** | [membership.ts](../services/projects/src/membership.ts) · [cards.ts](../services/projects/src/cards.ts) |
+| `@evowork/catalog` | [services/catalog](../services/catalog/) | 技能 / 连接器 / 专家目录的判定与视图：P0/P1/P2 静态审计、来源标注、信任态。**不做 I/O** | [audit.ts](../services/catalog/src/audit.ts) · [skills.ts](../services/catalog/src/skills.ts) · [connectors.ts](../services/catalog/src/connectors.ts) |
 | `@evowork/artifacts` | [services/artifacts](../services/artifacts/) | 产物识别（三信号）· 版本 · fs 对账 watcher · 分享授权与上传 · 资料库视图 | [recognize.ts](../services/artifacts/src/recognize.ts) · [watcher.ts](../services/artifacts/src/watcher.ts) |
 | `@evowork/gateway` | [services/gateway](../services/gateway/) | Responses↔Chat 全量翻译 · 三家 provider · 错误映射 · SSE · **模型表四层合并** · **托管转发** | [pipeline.ts](../services/gateway/src/pipeline.ts) · [forward.ts](../services/gateway/src/forward.ts) · [tenant-models.ts](../services/gateway/src/tenant-models.ts) |
 | `@evowork/identity` | [services/identity](../services/identity/) | 云端账号 · 租户 · 默认模型 · 计量。无内容面 | [service.ts](../services/identity/src/service.ts) · [http.ts](../services/identity/src/http.ts) |
@@ -105,12 +106,13 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/desktop` | [apps/desktop](../apps/desktop/) | Electron 壳 + 本机服务宿主 + 全部 UI | [service-host.ts](../apps/desktop/src/main/service-host.ts) · [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) · [model-access.ts](../apps/desktop/src/main/model-access.ts) |
 | `@evowork/eslint-plugin` | [tools/eslint-plugin-evowork](../tools/eslint-plugin-evowork/) | 把 K2 与 token-only 两条纪律做成会失败的规则 | [no-kernel-internals.js](../tools/eslint-plugin-evowork/src/no-kernel-internals.js) |
 
-**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架）·
+**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）·
 [plugins/hooks/evowork-policy/](../plugins/hooks/evowork-policy/) 策略包的 I/O 壳 ·
+[plugins/connectors/browser/](../plugins/connectors/browser/) 官方 browser MCP（Q9）·
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·
 [scripts/](../scripts/) 门禁与雷达 · [build/](../build/) 打包配置 + **`build/kernel/<os>-<arch>/` 随包的内核二进制**（当前只有 `mac-arm64`）。
 
-**尚无实现**：`ext/`（Rust contributor，只有 README）· `plugins/agents/` · `plugins/connectors/`（均为空目录）· `apps/web` 的分享页（Q41）。见 §10。
+**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· `apps/web` 的分享页（Q41）。见 §10。
 
 ### 2.1 依赖图（实测自各包 `package.json`）
 
@@ -149,7 +151,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
    （scheduler 需要的适配层能力用**结构类型** `TaskRunner` 表达，见 [kernel-bridge.ts](../services/scheduler/src/kernel-bridge.ts)）。
 3. **`gateway` 不依赖除 logging 外的任何内部包** —— 它要能独立部署成一个文件（见 §8）。
    反过来，`desktop` 依赖 `gateway` 是为了共用**类型与校验**（`CustomModelSpec` / `validateCustomModel` / 四层合并），不是为了在进程内跑它。
-4. **`projects` 只依赖 `policy`**（路径硬拦截：`~/.ssh` 不能被设成空间根），`runtime-installer` 只依赖 `ingest`（复用运行时探测与档位文案）。
+4. **`projects` 只依赖 `policy`**（路径硬拦截：`~/.ssh` 不能被设成空间根），`catalog` **无内部依赖**，`runtime-installer` 只依赖 `ingest`（复用运行时探测与档位文案）。
 
 ---
 
@@ -158,9 +160,9 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | 总纲的层 | 代码里是什么 | 备注 |
 | --- | --- | --- |
 | L4 前端 | [apps/desktop/src/renderer/](../apps/desktop/src/renderer/) | 只认 IPC 频道，不认协议方法名。渲染层 import 服务层时**只许走子路径导出**（barrel 会带进 `node:*`，vite 构建直接炸） |
-| L3 本机服务 | `services/{kernel-adapter,store,scheduler,ingest,policy,artifacts,projects,runtime-installer}` + `apps/desktop/src/main/{model-access,secret-store,app-config,custom-models,audit-ingest}.ts` | 同进程模块，宿主是 Electron 主进程。后五个文件放在 desktop 而不是 `services/`：它们要 `safeStorage` / `dialog` / `shell` 这些 Electron API（以注入方式接收，本身不 import electron） |
+| L3 本机服务 | `services/{kernel-adapter,store,scheduler,ingest,policy,artifacts,projects,catalog,runtime-installer}` + `apps/desktop/src/main/{model-access,secret-store,app-config,custom-models,audit-ingest,catalog-host}.ts` | 同进程模块，宿主是 Electron 主进程。desktop 里那几份要 Electron API 或以注入方式接收 I/O；`catalog` 与 `projects` 一样**不做 I/O** |
 | L3′ 云端 | `services/gateway`（本机子进程 + 云端同一份）· `services/identity` · `apps/web`（账号/管理；分享页未做） | 网关与 identity 都是独立进程 |
-| L2 扩展包 | `plugins/{skills,hooks}`（已建）· `plugins/{agents,connectors}` · `ext/`（未建） | K3 的四个扩展点用了两个 |
+| L2 扩展包 | `plugins/{skills,hooks}`（已建）· `plugins/connectors/browser`（stdio MCP）· `plugins/agents/`（空，不预置角色）· `ext/`（未建） | K3 的四个扩展点用了三个（MCP 只做了 browser） |
 | L1 内核 | `../codex`，**只读**；随包二进制在 `build/kernel/` | 补丁预算 5 文件 / 500 行，当前用了 0 |
 
 ---
@@ -174,7 +176,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 - 实现：[preload/index.ts](../apps/desktop/src/preload/index.ts) ↔ [service-host.ts](../apps/desktop/src/main/service-host.ts) 的 `IPC` + [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) 的 `createRendererActions`。
   契约类型在 [shared/ipc.ts](../apps/desktop/src/shared/ipc.ts)，**两侧共用一份** —— 2026-09-06 之前三处各写一份、各自能编译、合起来是断的。
 - 渲染进程能做的**全部事情**：订阅 `uiEvent` / `notice` / `degrade` / `pendingApprovals` / `runtimeProgress` 五个频道；
-  调用 `RENDERER_ACTIONS` 里的 **36 个动作**（任务 7 · 模型目录与接入 2 · 三个目录页 3 · 引导与工作空间 3 · 办公扩展 2 · 项目 10 · 设置页 9）；
+  调用 `RENDERER_ACTIONS` 里的 **49 个动作**（任务 7 · 模型目录与接入 2 · 三个目录页 3 · 引导与工作空间 3 · 办公扩展 2 · 项目 10 · 设置页 7 · 账号 5 · 偏好 2 · 技能·连接器 8）；
   另有一条主进程→渲染进程的审批**请求**频道 `askApproval`。
 - `ipcRenderer` 本身**绝不暴露** —— 暴露它等于把整个 IPC 面交出去，之后每次"临时加个频道"都会绕过这里。
 - **动作清单与实现逐项相等**由 `bootstrap.test.ts` 钉住（`RENDERER_ACTIONS` ↔ `ServiceHost['actions']`）。这条约束是被一次真实故障换来的：主进程只注册了审批一个 handler，界面上"回车没反应"且一行报错都没有。
@@ -601,10 +603,10 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | # | 偏差 | 实测 |
 | --- | --- | --- |
 | 1 | **内核签出领先断言基线 89 个提交** | `../codex` HEAD = `7769bccbb2`（2026-09-07），[kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `89a4eec6da`（2026-09-05 复核）。`node scripts/kernel-drift.mjs --no-fetch` 在实际签出上跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3 / F7 / F8 / F14 / F16 行号漂了），断言本身没坏，但 CLAUDE.md §1 与 status.md 记的"当前签出 `89a4eec6da`"在这台机器上已不成立。F17–F25 九条**没有进断言文件**（当前 17 条），只在 [设计集 README §4](design/README.md) 里 |
-| 2 | K3 的四个扩展点用了两个 | 技能包 ✅ · hooks ✅ · MCP server ❌（`plugins/connectors/` 空，Q9 本期只做 browser/，连它也没开始）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
+| 2 | K3 的四个扩展点用了三个 | 技能包 ✅ · hooks ✅ · MCP server 仅 `plugins/connectors/browser/`（Q9 本期只做这一个，不铺国内目录）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
 | 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
 | 4 | 第 ② 层签名策略包已接（M10c） | identity ES256 签 payload 原文 → 桌面验签后写 `~/.evowork/requirements.toml`。无包 / 未登录不锁 BYOK。超期只读，文案见 11 §8。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
-| 5 | 专家角色包为空 | `plugins/agents/` 空目录，总纲提到的"100+ 角色"一个都没有；「技能·连接器」页是 `UnbuiltPage` |
+| 5 | 专家角色包为空 | `plugins/agents/` 不预置角色（编造 100+ 专家等于铺演示数据）。用户可在「技能·连接器 → 专家」新建，或把 TOML 放到 `~/.evowork/agents/`。信任连接器只写 `config.toml`，**不假装有 live reload** |
 | 6 | 解析管道的 office / ocr 档**没有解析器** | [ingest/src/parsers/](../services/ingest/src/parsers/) 只有 `builtin.ts` 与 `zip.ts`；三档运行时探测与安装器都在，但**拖入 docx/pdf 仍拿不到解析内容**，只以原始文件引用。等 M4 的受限子进程接线 |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |
 | 8 | 表数口径 | `TABLES` 里是 **15** 张（6 投影 + 9 权威），第 16 张是迁移器自建的 `meta`。CLAUDE.md §3 与 status.md 写"16 张"含 meta；`.cursor/rules/apps-desktop.mdc` 仍写"32 个组件"（现为 35） |

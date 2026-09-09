@@ -79,4 +79,19 @@ describe('暴露面', () => {
       expect(RENDERER_ACTIONS).toContain(action);
     }
   });
+
+  it('八个目录动作都暴露给渲染层 —— 少一个的表现是「点了没反应」', () => {
+    for (const action of [
+      'getCatalog',
+      'installSkill',
+      'uninstallSkill',
+      'addConnector',
+      'trustConnector',
+      'removeConnector',
+      'createExpert',
+      'removeExpert',
+    ]) {
+      expect(RENDERER_ACTIONS).toContain(action);
+    }
+  });
 });

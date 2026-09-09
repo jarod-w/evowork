@@ -85,6 +85,7 @@ import {
   toApprovalView,
   type RendererActions,
 } from './renderer-bridge.js';
+import { createFsCatalogPorts } from './catalog-host.js';
 import { BUILTIN_CASES } from './showcase.js';
 
 /** `~/.evowork/` 的布局（09 §7）。 */
@@ -276,6 +277,11 @@ export interface ServiceHostOptions {
    * 给了才会在首次运行时装配置模板 —— 见 `ensureKernelConfig`。
    */
   readonly configDir?: string;
+  /**
+   * 随包 `plugins/`（技能 / 连接器 / 专家）。打包后在 `process.resourcesPath/plugins`。
+   * 没给时官方目录是空的 —— 不假装有办公技能。
+   */
+  readonly pluginsDir?: string | undefined;
   /** 注入进程环境，便于测试 */
   readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
@@ -806,6 +812,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         await writeFile(path, content, 'utf8');
       },
     },
+    catalogPorts: createFsCatalogPorts({
+      pluginsDir: options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
+      userRoot: options.paths.home,
+      kernelHome: options.paths.kernelHome,
+    }),
     pageData: {
       /*
        * C2：不能喂 `listAllPresent()`——那个 feed 只挑 `PRESENT`、按 200 条封顶，
