@@ -1,0 +1,27 @@
+{
+  "name": "@evowork/identity",
+  "version": "0.0.0",
+  "private": true,
+  "description": "云端账号 · 租户 · 默认模型 · 计量。数据面只有身份与计量，无内容（D9 / D10）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "start": "node --experimental-strip-types src/main.ts"
+  },
+  "dependencies": {
+    "@evowork/account": "workspace:*",
+    "@evowork/logging": "workspace:*",
+    "@noble/hashes": "^1.8.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

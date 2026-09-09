@@ -1,0 +1,12 @@
+{
+  "// 说明": "测试文件的类型检查。与 tsconfig.json 分开是因为 composite 项目要产出 .d.ts，而测试不该进 dist。",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
