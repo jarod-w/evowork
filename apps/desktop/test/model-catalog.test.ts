@@ -18,6 +18,7 @@ import {
   fetchModelCatalog,
   parseGatewayBaseUrl,
   readGatewayBaseUrl,
+  rewriteEvoworkBaseUrl,
   toModelOption,
   waitUntilGatewayReady,
 } from '../src/main/model-catalog.js';
@@ -67,6 +68,16 @@ describe('网关地址：真源是内核的 config.toml（防两处漂移）', (
       'http://127.0.0.1:9999/v1',
     );
     expect(readGatewayBaseUrl(dir, {})).toBe('http://127.0.0.1:8791/v1');
+  });
+
+  it('D11：远端 base_url 被改写成 loopback，其它段不动', () => {
+    const { text, changed } = rewriteEvoworkBaseUrl(
+      CONFIG.replace('http://127.0.0.1:8791/v1', 'https://gateway.corp.example/v1'),
+      DEFAULT_GATEWAY_BASE_URL,
+    );
+    expect(changed).toBe(true);
+    expect(parseGatewayBaseUrl(text)).toBe(DEFAULT_GATEWAY_BASE_URL);
+    expect(text).toContain('https://someone-elses-gateway.example/v1');
   });
 });
 

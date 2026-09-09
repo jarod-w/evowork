@@ -89,6 +89,35 @@ export function parseGatewayBaseUrl(configToml: string): string | undefined {
   return undefined;
 }
 
+/**
+ * 把 `[model_providers.evowork].base_url` 写成 loopback（D11）。
+ *
+ * 必须发生在 app.toml 的一次性反推**之后**：老装机的远端 URL 先写进
+ * `upstream_base_url`，再把内核配置改回本机，否则那次反推的输入就丢了。
+ */
+export function rewriteEvoworkBaseUrl(
+  configToml: string,
+  loopback: string,
+): { readonly text: string; readonly changed: boolean } {
+  let inSection = false;
+  let changed = false;
+  const lines = configToml.split('\n').map((raw) => {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[')) {
+      inSection = trimmed === '[model_providers.evowork]';
+      return raw;
+    }
+    if (!inSection || trimmed.startsWith('#')) return raw;
+    const match = /^base_url\s*=\s*["']([^"']+)["']/.exec(trimmed);
+    if (match?.[1] && match[1] !== loopback) {
+      changed = true;
+      return raw.replace(match[1], loopback);
+    }
+    return raw;
+  });
+  return { text: lines.join('\n'), changed };
+}
+
 export interface FetchCatalogOptions {
   readonly baseUrl: string;
   /** 网关访问令牌。没有令牌时**不发请求** —— 必然 401，多一次超时没有意义 */

@@ -116,6 +116,11 @@ export interface EvoworkBridge {
   probeModel(input: { modelId: string }): Promise<ModelProbeResult>;
   getPreferences(): Promise<PreferencesView>;
   setPreferences(input: PreferencesInput): Promise<PreferencesView>;
+  startLogin(): Promise<{ ok: boolean; refused?: string }>;
+  logout(): Promise<{ ok: boolean; refused?: string }>;
+  listDevices(): Promise<readonly import('../shared/ipc.js').DeviceView[]>;
+  revokeDevice(input: { deviceId: string }): Promise<{ ok: boolean; refused?: string }>;
+  openAccountWeb(input: { path: string }): Promise<{ ok: boolean; refused?: string }>;
   /*
    * 三个目录式页面各自一个动作。**按需拉，不并进 getStartup** ——
    * 它们读的是本机 sqlite，且绝大多数会话里用户根本不会打开资料库。
@@ -1073,6 +1078,34 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onPreferences={(input) => {
             void bridge.setPreferences(input).then(setPreferences);
           }}
+          onLogin={() => {
+            void bridge.startLogin().then((result) => {
+              if (!result.ok) setSettingsRefusal(result.refused);
+              else setSettingsRefusal(undefined);
+              void bridge.getModelAccess().then((r) => {
+                setModelAccess(r.view);
+                setModels(r.view.models);
+              });
+            });
+          }}
+          onLogout={() => {
+            void bridge.logout().then(() =>
+              bridge.getModelAccess().then((r) => {
+                setModelAccess(r.view);
+                setModels(r.view.models);
+              }),
+            );
+          }}
+          onRevokeDevice={(deviceId) => {
+            void bridge.revokeDevice({ deviceId }).then(() =>
+              bridge.listDevices().then(() =>
+                bridge.getModelAccess().then((r) => setModelAccess(r.view)),
+              ),
+            );
+          }}
+          onOpenAccountWeb={(path) => {
+            void bridge.openAccountWeb({ path });
+          }}
           library={library}
           automations={automations}
           audit={audit}
@@ -1183,6 +1216,10 @@ function MainPage(props: {
   ) => void;
   readonly onProbe: (modelId: string) => void;
   readonly onPreferences: (input: PreferencesInput) => void;
+  readonly onLogin: () => void;
+  readonly onLogout: () => void;
+  readonly onRevokeDevice: (deviceId: string) => void;
+  readonly onOpenAccountWeb: (path: string) => void;
   readonly library: LibraryDataView | null;
   readonly automations: AutomationsDataView | null;
   readonly audit: AuditDataView | null;
@@ -1273,6 +1310,10 @@ function MainPage(props: {
           }
           onProbe={props.onProbe}
           onPreferences={props.onPreferences}
+          onLogin={props.onLogin}
+          onLogout={props.onLogout}
+          onRevokeDevice={props.onRevokeDevice}
+          onOpenAccountWeb={props.onOpenAccountWeb}
         />
       );
 

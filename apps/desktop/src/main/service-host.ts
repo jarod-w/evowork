@@ -23,7 +23,7 @@
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
 import type { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
 import { join } from 'node:path';
@@ -49,18 +49,27 @@ import { createAuditRepo, openStore, readMeta, writeMeta, type Store } from '@ev
 import type {
   CustomModelInput,
   ModelAccessMutationResult,
+  ModelAccessView,
   ModelCatalogResult,
   ModelProbeResult,
   PreferencesInput,
   PreferencesView,
   SaveProviderKeyInput,
 } from '../shared/ipc.js';
+import { createAccountSession, originsFromEnv } from './account.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
-import { startLocalGateway, type GatewayProcess } from './gateway-process.js';
+import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
 import { createModelAccess, probeModel, type ModelAccess } from './model-access.js';
 import { NO_KEYRING_NOTICE, type SafeStorageLike } from './secret-store.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
-import { fetchModelCatalog, readGatewayBaseUrl, waitUntilGatewayReady } from './model-catalog.js';
+import {
+  DEFAULT_GATEWAY_BASE_URL,
+  fetchModelCatalog,
+  parseGatewayBaseUrl,
+  readGatewayBaseUrl,
+  rewriteEvoworkBaseUrl,
+  waitUntilGatewayReady,
+} from './model-catalog.js';
 import {
   createEventTranslator,
   createRendererActions,
@@ -280,6 +289,8 @@ export interface ServiceHostOptions {
   readonly pickDirectory?: () => Promise<string | undefined>;
   /** 在访达 / 资源管理器里打开一个目录。由 M9 入口注入 `shell.openPath` */
   readonly openPath?: ((path: string) => Promise<void>) | undefined;
+  /** 系统浏览器（Q33=A 的 PKCE 登录）。没给时登录动作会如实失败 */
+  readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   /**
    * 本机网关 listen 最多等多久。测试里假 spawn 不会真的听端口，传 0 跳过。
    * 不传 = 8 秒（见 `waitUntilGatewayReady`）。
@@ -392,13 +403,52 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       reason: 'LEGACY_URL',
     });
   }
+  /*
+   * 反推完成后再把内核 base_url 改回 loopback。顺序不能反：远端 URL 是
+   * `upstream_base_url` 的输入，先改掉就丢了。
+   */
+  const kernelConfigPath = join(options.paths.kernelHome, 'config.toml');
+  if (existsSync(kernelConfigPath) && !(baseEnv.EVOWORK_GATEWAY_URL ?? '').trim()) {
+    const text = readFileSync(kernelConfigPath, 'utf8');
+    const current = parseGatewayBaseUrl(text);
+    if (current && !isLocalGateway(current)) {
+      const rewritten = rewriteEvoworkBaseUrl(text, DEFAULT_GATEWAY_BASE_URL);
+      if (rewritten.changed) {
+        try {
+          writeFileSync(kernelConfigPath, rewritten.text, 'utf8');
+          logger.info('desktop.kernel_config.loopback', { reason: 'D11' });
+        } catch {
+          /* 写不进不阻塞启动 */
+        }
+      }
+    }
+  }
   logger.info('desktop.model_access.ready', {
     authMode: modelAccess.mode,
     secretStore: modelAccess.secretBackend,
   });
-  const gatewayBaseUrl = modelAccess.upstreamBaseUrl;
-  let gatewayRuntimeEnv = modelAccess.env();
+  const fromKernel = readGatewayBaseUrl(options.paths.kernelHome, baseEnv);
+  const gatewayBaseUrl = isLocalGateway(fromKernel) ? fromKernel : DEFAULT_GATEWAY_BASE_URL;
+  const account = createAccountSession({
+    ...originsFromEnv(baseEnv),
+    vault: modelAccess.accountVault,
+    readFlag: (key) => readMeta(store.db, key),
+    writeFlag: (key, value) => writeMeta(store.db, key, value),
+    openExternal: options.openExternal ?? (async () => undefined),
+    logger,
+    ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+  });
+  const composeGatewayEnv = (): NodeJS.ProcessEnv => ({
+    ...modelAccess.env(),
+    ...account.gatewayInject(),
+  });
+  let gatewayRuntimeEnv = composeGatewayEnv();
   let gatewayToken = modelAccess.token();
+
+  const accessView = (catalog: ModelCatalogResult): ModelAccessView => ({
+    ...modelAccess.view(catalog),
+    ...account.decorate(),
+  });
 
   const readInstructions = (file: string): string | undefined => {
     // `config/modes/*.md` 随产品分发（取代原 P3 补丁，F1）
@@ -605,7 +655,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 重起之前**重新算一遍环境**：密钥刚从库里解密出来，自定义模型刚写进文件。
    */
   const restartGateway = async (): Promise<ModelCatalogResult> => {
-    gatewayRuntimeEnv = modelAccess.env();
+    gatewayRuntimeEnv = composeGatewayEnv();
     gatewayToken = modelAccess.token();
     gateway?.stop();
     gateway = undefined;
@@ -782,10 +832,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
     /** 设置页「模型接入」的六个动作（11 §4.4）。都在这里落地，渲染层只拿视图 */
     modelAccessPorts: {
-      read: async (): Promise<ModelAccessMutationResult> => ({
-        ok: true,
-        view: modelAccess.view(await readModelCatalog()),
-      }),
+      read: async (): Promise<ModelAccessMutationResult> => {
+        if (account.signedIn()) await account.listDevices();
+        return { ok: true, view: accessView(await readModelCatalog()) };
+      },
       saveProviderKey: async (input: SaveProviderKeyInput): Promise<ModelAccessMutationResult> => {
         const ok = modelAccess.saveProviderKey(input);
         if (!ok) {
@@ -796,34 +846,34 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
               modelAccess.secretBackend === 'unavailable'
                 ? NO_KEYRING_NOTICE
                 : '这个厂商不在内置名单里。',
-            view: modelAccess.view(await readModelCatalog()),
+            view: accessView(await readModelCatalog()),
           };
         }
         logger.info('desktop.provider_keys.saved', { itemCount: 1 });
-        return { ok: true, view: modelAccess.view(await restartGateway()) };
+        return { ok: true, view: accessView(await restartGateway()) };
       },
       clearProviderKey: async (providerId: string): Promise<ModelAccessMutationResult> => {
         const ok = modelAccess.clearProviderKey(providerId);
         return {
           ok,
           ...(ok ? {} : { refused: '这把密钥本来就没有保存。' }),
-          view: modelAccess.view(await restartGateway()),
+          view: accessView(await restartGateway()),
         };
       },
       addCustomModel: async (input: CustomModelInput): Promise<ModelAccessMutationResult> => {
         const refused = modelAccess.addCustomModel(input);
         if (refused !== undefined) {
           // `refused` 是一句要显示给用户的话，不是错误码（同 ProjectMutationResult）
-          return { ok: false, refused, view: modelAccess.view(await readModelCatalog()) };
+          return { ok: false, refused, view: accessView(await readModelCatalog()) };
         }
-        return { ok: true, view: modelAccess.view(await restartGateway()) };
+        return { ok: true, view: accessView(await restartGateway()) };
       },
       removeCustomModel: async (id: string): Promise<ModelAccessMutationResult> => {
         const ok = modelAccess.removeCustomModel(id);
         return {
           ok,
           ...(ok ? {} : { refused: '没有这个自定义模型。' }),
-          view: modelAccess.view(await restartGateway()),
+          view: accessView(await restartGateway()),
         };
       },
       setPlaintextFallback: async (accept: boolean): Promise<ModelAccessMutationResult> => {
@@ -844,7 +894,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
             text: '密钥保存方式已改。**重启 EvoWork 之后**才能发出新任务 —— 当前的内核进程还没有拿到网关令牌。',
           });
         }
-        return { ok: true, view: modelAccess.view(catalog) };
+        return { ok: true, view: accessView(catalog) };
       },
       probe: async (modelId: string): Promise<ModelProbeResult> =>
         probeModel({
@@ -860,6 +910,21 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       read: (): PreferencesView => readPreferences(),
       write: (input: PreferencesInput): PreferencesView => writePreferences(input),
     },
+    accountPorts: {
+      startLogin: async () => {
+        const result = await account.startLogin();
+        if (result.ok) await restartGateway();
+        return result;
+      },
+      logout: async () => {
+        await account.logout();
+        await restartGateway();
+        return { ok: true };
+      },
+      listDevices: () => account.listDevices(),
+      revokeDevice: (deviceId: string) => account.revokeDevice(deviceId),
+      openWeb: (path: string) => account.openWeb(path),
+    },
   });
 
   return {
@@ -872,6 +937,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     reconcileIntervalMs: RECONCILE_INTERVAL_MS,
 
     async start() {
+      /*
+       * 已登录才 restore（会打 identity）。未登录时 vault 里没有 refresh，
+       * restore 立刻返回，**零出网**（11 §12 第 14 条）。
+       */
+      await account.restore();
+      gatewayRuntimeEnv = composeGatewayEnv();
       /*
        * 网关**在内核之前起**：内核握手之后随时可能发第一个请求，
        * 而网关起来要几百毫秒。反过来的话第一次发消息有概率打在还没监听的端口上，

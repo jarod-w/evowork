@@ -137,6 +137,11 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     setSecretFallback: vi.fn(async () => ({ ok: true, view: ACCESS })),
     probeModel: vi.fn(async () => ({ ok: true, message: '通了：这个模型现在可以用。' })),
     getPreferences: vi.fn(async () => ({ concurrencyComputed: 3, concurrencyLimit: 3 })),
+    startLogin: vi.fn(async () => ({ ok: true })),
+    logout: vi.fn(async () => ({ ok: true })),
+    listDevices: vi.fn(async () => []),
+    revokeDevice: vi.fn(async () => ({ ok: true })),
+    openAccountWeb: vi.fn(async () => ({ ok: true })),
     setPreferences: vi.fn(async () => ({ concurrencyComputed: 3, concurrencyLimit: 2 })),
     ...over,
   };

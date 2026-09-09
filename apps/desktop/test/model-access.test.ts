@@ -230,16 +230,15 @@ describe('拓扑与令牌（D11）', () => {
     expect(m.env().EVOWORK_GATEWAY_TOKEN).toBe(token);
   });
 
-  it('`private`：**不签**令牌，也不起本机网关 —— 那台网关在客户机房', () => {
+  it('`private`：本机网关仍然起（D11：内核永远打 loopback），并自签本机令牌', () => {
     writeFileSync(
       join(dir, 'app.toml'),
       '[gateway]\nmode = "private"\nupstream_base_url = "https://gw.corp.example/v1"\n',
     );
     const m = access();
-    expect(m.runsLocalGateway).toBe(false);
+    expect(m.runsLocalGateway).toBe(true);
     expect(m.upstreamBaseUrl).toBe('https://gw.corp.example/v1');
-    // 自己编一个只会让下拉 401，而真正的网关在别人的机器上
-    expect(m.token()).toBeUndefined();
+    expect(m.token()).toBeTruthy();
   });
 
   it('进程环境里的令牌优先（开发时从终端起、企业用 launchd 注入）', () => {

@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
+import { TENANT_MODELS_ENV } from '@evowork/gateway';
+
 import { isLocalGateway, portOf, startLocalGateway } from '../src/main/gateway-process.js';
 
 function fakeSpawn() {
@@ -84,6 +86,19 @@ describe('起不起本机网关：判据是 app.toml 的 mode（D11）', () => {
     if (gw.result.started || gw.result.reason === 'REMOTE') throw new Error('unreachable');
     expect(gw.result.reason).toBe('NO_KEYS');
     expect(gw.result.notice).toContain('密钥');
+  });
+
+  it('只有租户默认模型、一家厂商密钥都没配时仍然起网关（登录后的托管形态）', () => {
+    const { spawnFn } = fakeSpawn();
+    const gw = startLocalGateway({
+      baseUrl: 'http://127.0.0.1:8787/v1',
+      runsLocally: true,
+      entryPath: entry(),
+      env: { [TENANT_MODELS_ENV]: '[{"id":"evowork/hosted-flash"}]' },
+      spawnFn,
+    });
+    expect(gw.result.started).toBe(true);
+    expect(spawnFn).toHaveBeenCalled();
   });
 
   it('产物不在时说"安装包不完整"，不说"连不上"', () => {

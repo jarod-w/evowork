@@ -13,6 +13,7 @@
   "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"],
   "references": [
     { "path": "../../packages/logging" },
+    { "path": "../../packages/account" },
     { "path": "../../packages/protocol" },
     { "path": "../../packages/tokens" },
     { "path": "../../services/store" },
@@ -21,6 +22,7 @@
     { "path": "../../services/policy" },
     { "path": "../../services/projects" },
     { "path": "../../services/ingest" },
-    { "path": "../../services/artifacts" }
+    { "path": "../../services/artifacts" },
+    { "path": "../../services/gateway" }
   ]
 }

@@ -73,6 +73,7 @@ console.log('\n③ 打包可独立运行的入口（esbuild）');
  */
 const BUNDLES = [
   { entry: 'services/gateway/src/main.ts', out: 'dist/gateway/main.js', format: 'esm' },
+  { entry: 'services/identity/src/main.ts', out: 'dist/identity/main.js', format: 'esm' },
   {
     entry: 'apps/desktop/src/main/bootstrap.ts',
     out: 'apps/desktop/dist/main/bootstrap.bundle.js',
@@ -122,6 +123,7 @@ run('pnpm', ['--filter', '@evowork/desktop', 'run', 'build']);
 
 console.log('\n✅ 构建完成。产物：');
 console.log('   dist/gateway/main.js                             网关（单文件，可直接 node 运行）');
+console.log('   dist/identity/main.js                            账号服务（云端，不进桌面包）');
 console.log('   apps/desktop/dist/renderer/                      渲染层（vite）');
 console.log('   apps/desktop/dist/main/electron-entry.mjs        Electron 入口');
 console.log('   apps/desktop/dist/main/bootstrap.bundle.js       主进程（单文件）');

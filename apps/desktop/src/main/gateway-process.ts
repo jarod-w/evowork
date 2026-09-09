@@ -38,7 +38,7 @@ import { existsSync } from 'node:fs';
 
 import { errorFields, type Logger } from '@evowork/logging';
 
-import { CUSTOM_MODELS_ENV } from '@evowork/gateway';
+import { CUSTOM_MODELS_ENV, TENANT_MODELS_ENV } from '@evowork/gateway';
 
 import { envHasProviderKey, PROVIDER_KEY_ENV } from './gateway-env.js';
 
@@ -161,7 +161,8 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
    * 那位用户会看到"一家密钥都没配"，而他明明刚在设置页加过一个模型。
    */
   const hasCustomModels = (env[CUSTOM_MODELS_ENV] ?? '').trim().length > 2;
-  if (!envHasProviderKey(env) && !hasCustomModels) {
+  const hasTenantModels = (env[TENANT_MODELS_ENV] ?? '').trim().length > 2;
+  if (!envHasProviderKey(env) && !hasCustomModels && !hasTenantModels) {
     options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
     return {
       ...noop,

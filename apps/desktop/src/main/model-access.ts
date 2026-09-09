@@ -48,6 +48,7 @@ import type {
   SaveProviderKeyInput,
 } from '../shared/ipc.js';
 import { resolveAppConfig, type GatewayMode } from './app-config.js';
+import { ACCOUNT_SECRET_PREFIX, type AccountVault } from './account.js';
 import {
   assignKeyEnv,
   DEFAULT_CUSTOM_CAPABILITIES,
@@ -161,14 +162,16 @@ export interface ModelAccess {
   /** 拓扑是被 URL 反推出来的（老装机）。宿主据此记一条日志 —— 静默反推在排查时看不见 */
   readonly inferredMode: boolean;
   readonly secretBackend: SecretStore['backend'];
-  /** 本机网关该不该起（**由 mode 决定，不看 URL** —— D11 的机制化第①条） */
+  /** 本机网关该不该起。D11 之后恒为 true：内核 base_url 永远是 loopback */
   readonly runsLocalGateway: boolean;
-  /** 目录端点与内核都用它。`private` 时是客户机房那台 */
+  /** 默认模型的上游。`private` 时是客户机房那台；内核看不到这个值 */
   readonly upstreamBaseUrl: string;
-  /** 网关访问令牌。`local` 时没有就现签一个（用户不该知道有这么个东西） */
+  /** 网关访问令牌。本机网关常驻，没有就现签一个（用户不该知道有这么个东西） */
   token(): string | undefined;
   /** 网关子进程与内核的环境（密钥、自定义模型、策略）。**每次重启都重新算** */
   env(): NodeJS.ProcessEnv;
+  /** 账号 refresh 与厂商密钥共用密钥库，由 `account.ts` 读写 */
+  readonly accountVault: AccountVault;
   /** 设置页要画的一切。`catalog` 由宿主刚拉的那一份传进来，不在这里再发一次请求 */
   view(catalog: ModelCatalogResult): ModelAccessView;
   saveProviderKey(input: SaveProviderKeyInput): boolean;
@@ -262,7 +265,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
     ? parseModelPolicyToml(safeRead(deps.paths.requirements))
     : { disabledModelIds: [], allowCustomModels: true };
 
-  const runsLocalGateway = config.mode === 'local';
+  const runsLocalGateway = true;
   const upstreamBaseUrl =
     config.mode === 'private' && config.upstreamBaseUrl
       ? config.upstreamBaseUrl
@@ -278,11 +281,9 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
     const legacy = legacyEnv[GATEWAY_TOKEN_SECRET]?.trim();
     if (legacy) return legacy;
     /*
-     * ② 本机拓扑下现签一个。**只在 `local` 时签**：企业部署的令牌是 identity
-     * 或客户自己发的，我们自己编一个只会让下拉 401，而真正的网关在别人的机器上
-     * （`gateway-env.ts` 的 `ensureGatewayTokenFile` 已经预见过这一点）。
+     * ② 本机网关常驻（D11）：内核永远打 loopback，所以这里总是自签一把给内核用的
+     * 静态 token。云端 JWT 是另一回事，走 `account.ts`，不写进这个密钥槽。
      */
-    if (!runsLocalGateway) return undefined;
     if (!store.available) return undefined;
     const minted = randomBytes(24).toString('base64url');
     if (!store.set(GATEWAY_TOKEN_SECRET, minted)) return undefined;
@@ -298,13 +299,13 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
   }
 
   function env(): NodeJS.ProcessEnv {
-    const secrets = store.toEnv();
+    const secrets = withoutAccountSecrets(store.toEnv());
     const specs = customSpecs();
     return {
       ...deps.baseEnv,
       // 旧明文文件（只在密钥库不可用时非空）—— 让密钥库里的值盖住它，见 `legacyEnv`
       ...legacyEnv,
-      // 密钥：**解密之后只进子进程环境**，不落盘
+      // 密钥：**解密之后只进子进程环境**，不落盘。账号 refresh 不在这里（见 withoutAccountSecrets）
       ...secrets,
       ...(specs.length > 0 ? { [CUSTOM_MODELS_ENV]: encodeCustomModels(specs) } : {}),
       [MODEL_POLICY_ENV]: JSON.stringify({
@@ -342,6 +343,11 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
     upstreamBaseUrl,
     token,
     env,
+    accountVault: {
+      get: (name) => store.toEnv()[name] ?? legacyEnv[name],
+      set: (name, value) => store.set(name, value),
+      remove: (name) => store.remove(name),
+    },
 
     view(catalog) {
       const described = new Map(store.describe().map((d) => [d.name, d.last4]));
@@ -371,7 +377,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
               lockedReason:
                 policy.reason ?? '你所在组织要求使用统一配置的模型，这台电脑上不能自己添加模型。',
             }),
-        // 账号随 M10b。**如实说是本机模式**，而不是显示一个点了没反应的「登录」
+        // 账号会话由 `account.ts` 叠上来。这里如实是未登录，避免本模块去出网。
         signedIn: false,
         ...(catalog.unavailable !== undefined ? { catalogUnavailable: catalog.unavailable } : {}),
       };
@@ -469,6 +475,13 @@ function safeRead(path: string): string {
 function envLast4(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed !== '' ? trimmed.slice(-4) : undefined;
+}
+
+/** 账号 refresh 与厂商密钥共用密钥库，但不能进网关子进程环境。 */
+function withoutAccountSecrets(env: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter(([key]) => !key.startsWith(ACCOUNT_SECRET_PREFIX)),
+  );
 }
 
 /**

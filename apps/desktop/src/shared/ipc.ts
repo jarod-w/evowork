@@ -480,10 +480,31 @@ export interface ModelAccessView {
   /** 企业锁了自定义模型（第②层）。false 时「添加模型」禁用**并给原因**，不隐藏 */
   readonly allowCustomModels: boolean;
   readonly lockedReason?: string | undefined;
-  /** 阶段 1 恒为 false（账号随 M10b）。页面据此显示「当前为本机模式，无需登录」 */
+  /**
+   * 是否已登录我们的账号。未登录时首页仍可用（Q30=A）。
+   * 登录只解锁托管模型，不把本机任务搬到云上（11 §5.5）。
+   */
   readonly signedIn: boolean;
+  readonly role?: 'member' | 'admin' | undefined;
+  readonly devices?: readonly DeviceView[] | undefined;
+  readonly quotaUsed?: number | undefined;
+  readonly quotaLimit?: number | undefined;
   /** 网关目录读不到时的原因。与 `ModelCatalogResult.unavailable` 同一句话 */
   readonly catalogUnavailable?: string | undefined;
+}
+
+/** 一台已登录设备（Q40）。吊销权威在 identity，两端走同一条 API。 */
+export interface DeviceView {
+  readonly id: string;
+  readonly name: string;
+  readonly platform: string;
+  readonly lastSeenAt: number;
+  readonly revoked: boolean;
+}
+
+export interface AccountActionResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
 }
 
 /**

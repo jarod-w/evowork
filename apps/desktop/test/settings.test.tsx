@@ -184,11 +184,37 @@ describe('模型接入', () => {
   });
 });
 
-describe('账号（阶段 1）', () => {
-  it('如实说是本机模式，并写明数据不随账号切换（Q31=A 要求不让用户自己推断）', () => {
-    page({ section: 'account' });
+describe('账号（M10b）', () => {
+  it('未登录显示登录入口，没有密码框（Q33=A）', () => {
+    const onLogin = vi.fn();
+    page({ section: 'account', onLogin });
     expect(screen.getByText(/当前为本机模式，无需登录/)).toBeTruthy();
     expect(screen.getByText(/不随账号切换/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '在浏览器中登录' })).toBeTruthy();
+    expect(screen.queryByLabelText(/密码/)).toBeNull();
+  });
+
+  it('已登录写明退出登录不删本机数据，并给出注销走浏览器的入口（Q39）', () => {
+    const onLogout = vi.fn();
+    const onOpenAccountWeb = vi.fn();
+    const onRevokeDevice = vi.fn();
+    page({
+      section: 'account',
+      onLogout,
+      onOpenAccountWeb,
+      onRevokeDevice,
+      access: {
+        ...ACCESS,
+        signedIn: true,
+        role: 'admin',
+        devices: [{ id: 'dev_a', name: '这台电脑', platform: 'linux', lastSeenAt: 1, revoked: false }],
+      },
+    });
+    expect(screen.getByText(/都不会删掉它们/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开管理端' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '在浏览器中注销账号' })).toBeTruthy();
+    expect(screen.queryByText(/充值|升级套餐|购买额度/)).toBeNull();
+    expect(screen.getByText(/这台电脑/)).toBeTruthy();
   });
 });
 
@@ -205,6 +231,15 @@ describe('用量与预算（Q11 的阶段 1）', () => {
     page({ section: 'usage' });
     expect(screen.getByText(/暂停并问你/)).toBeTruthy();
     expect(screen.getByText(/不会自动换成更便宜的模型/)).toBeTruthy();
+  });
+
+  it('托管额度用尽时没有充值或升级入口（Q42）', () => {
+    page({
+      section: 'usage',
+      access: { ...ACCESS, signedIn: true, quotaUsed: 10, quotaLimit: 10 },
+    });
+    expect(screen.getByText(/不会自动换成其他模型/)).toBeTruthy();
+    expect(screen.queryByText(/充值|升级套餐|购买额度/)).toBeNull();
   });
 
   it('并发下拉最多到机器算出来的那个数 —— 只能往下调', () => {
