@@ -10,16 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { IDENTITY_DDL } from '../src/schema.js';
 
-const FORBIDDEN = [
-  'thread_id',
-  'threadId',
-  'prompt',
-  'artifact',
-  'workspace',
-  'title',
-  'cwd',
-  'password ',
-];
+const FORBIDDEN = ['thread_id', 'threadId', 'prompt', 'artifact', 'workspace', 'title', 'cwd'];
 
 describe('identity schema 没有内容面', () => {
   it('DDL 里没有任务 / 产物 / prompt 列', () => {

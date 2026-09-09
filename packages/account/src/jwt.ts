@@ -20,10 +20,21 @@ export const JWT_ALG = 'ES256';
 export const JWT_TYP = 'JWT';
 export const DEFAULT_KID = 'evowork-1';
 
+/** JWK 公钥。不用 DOM 的 `JsonWebKey`，这个包的 tsconfig 只有 node types。 */
+export interface PublicJwk {
+  readonly kty?: string;
+  readonly crv?: string;
+  readonly x?: string;
+  readonly y?: string;
+  readonly kid?: string;
+  readonly alg?: string;
+  readonly use?: string;
+}
+
 export interface Es256KeyPair {
   readonly privatePem: string;
   readonly publicPem: string;
-  readonly jwk: JsonWebKey;
+  readonly jwk: PublicJwk;
   readonly kid: string;
 }
 
@@ -35,7 +46,7 @@ export interface JwtHeader {
 
 export function generateEs256KeyPair(kid: string = DEFAULT_KID): Es256KeyPair {
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
-  const jwk = publicKey.export({ format: 'jwk' }) as JsonWebKey;
+  const jwk = publicKey.export({ format: 'jwk' }) as PublicJwk;
   return {
     privatePem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
     publicPem: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
@@ -60,7 +71,7 @@ export function signAccessToken(
 
 export interface VerifyOptions {
   readonly publicPem?: string | undefined;
-  readonly jwk?: JsonWebKey | undefined;
+  readonly jwk?: PublicJwk | undefined;
   readonly nowSec?: number | undefined;
   readonly clockSkewSec?: number | undefined;
   readonly expectedKid?: string | undefined;
@@ -133,7 +144,12 @@ export function verifyAccessToken(token: string, options: VerifyOptions): Verify
 function publicKeyFrom(options: VerifyOptions): KeyObject | undefined {
   try {
     if (options.publicPem) return createPublicKey(options.publicPem);
-    if (options.jwk) return createPublicKey({ key: options.jwk, format: 'jwk' });
+    if (options.jwk) {
+      return createPublicKey({
+        key: options.jwk,
+        format: 'jwk',
+      } as Parameters<typeof createPublicKey>[0]);
+    }
   } catch {
     return undefined;
   }
@@ -145,7 +161,7 @@ function b64urlJson(value: unknown): string {
 }
 
 export interface Jwks {
-  readonly keys: readonly JsonWebKey[];
+  readonly keys: readonly PublicJwk[];
 }
 
 export function toJwks(pair: Es256KeyPair): Jwks {

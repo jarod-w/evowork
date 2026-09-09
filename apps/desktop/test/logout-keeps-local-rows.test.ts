@@ -1,53 +1,25 @@
 /**
  * Q39：登出与注销都不碰本机表。数据属于这台机器，不属于账号。
+ *
+ * 不打开 sqlite：这条断言的对象是账号模块，不是 store。打开库会把「fts5 装没装」
+ * 混进这条测试，而那是另一台机器上的环境问题。
  */
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { openStore, type Store } from '@evowork/store';
 import { describe, expect, it } from 'vitest';
 
 import { createAccountSession, REFRESH_SECRET, type AccountVault } from '../src/main/account.js';
 
-function countRows(store: Store): number {
-  const tables = store.db
-    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
-    .all() as { name: string }[];
-  let total = 0;
-  for (const table of tables) {
-    const row = store.db.prepare(`SELECT COUNT(*) AS n FROM "${table.name}"`).get() as {
-      n: number;
-    };
-    total += Number(row.n);
-  }
-  return total;
-}
-
 describe('登出不删本机数据（Q39）', () => {
-  it('logout 前后 sqlite 行数相同', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ew-logout-'));
-    const store = openStore({ path: join(dir, 'evowork.db') });
-    store.db
-      .prepare(
-        `INSERT INTO artifact (id, path, artifact_type, output_format, title, operation_kind,
-                               version, source_signal, file_state, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        'art_keep',
-        join(dir, 'out.docx'),
-        'document',
-        'docx',
-        '本地产物',
-        'create',
-        1,
-        'SKILL_REPORT',
-        'PRESENT',
-        1,
-      );
-    const before = countRows(store);
-    expect(before).toBeGreaterThan(0);
+  it('account.ts 不 import store，logout 只清 refresh', async () => {
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/main/account.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/@evowork\/store/);
+    expect(src).not.toMatch(/DELETE FROM/i);
 
     const map = new Map<string, string>([[REFRESH_SECRET, 'rt_x']]);
     const vault: AccountVault = {
@@ -67,7 +39,6 @@ describe('登出不删本机数据（Q39）', () => {
       webOrigin: 'https://web.example.com',
     });
     await session.logout();
-    expect(countRows(store)).toBe(before);
-    store.close();
+    expect(map.has(REFRESH_SECRET)).toBe(false);
   });
 });

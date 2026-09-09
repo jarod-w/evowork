@@ -105,12 +105,14 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
         json(res, 400, { error: { message: '需要账号和密码', code: 'bad-request' } });
         return;
       }
+      const deviceName = str(body.deviceName);
+      const platform = str(body.platform);
       const out = identity.login({
         identifier,
         password,
         deviceId,
-        ...(str(body.deviceName) ? { deviceName: str(body.deviceName) } : {}),
-        ...(str(body.platform) ? { platform: str(body.platform) } : {}),
+        ...(deviceName ? { deviceName } : {}),
+        ...(platform ? { platform } : {}),
       });
       const session = identity.createSession(out.userId);
       res.setHeader('set-cookie', `session=${session}; Path=/; HttpOnly; SameSite=Lax`);
@@ -209,6 +211,22 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       return;
     }
 
+    if (req.method === 'GET' && path === '/v1/internal/upstream') {
+      if (!options.internalToken || req.headers['x-evowork-internal'] !== options.internalToken) {
+        json(res, 401, { error: { message: '鉴权失败', code: 'unauthorized' } });
+        return;
+      }
+      const tenant = url.searchParams.get('tenant') ?? '';
+      const model = url.searchParams.get('model') ?? '';
+      const up = identity.internalUpstream(tenant, model);
+      if (!up) {
+        json(res, 404, { error: { message: '没有这个模型', code: 'not-found' } });
+        return;
+      }
+      json(res, 200, up);
+      return;
+    }
+
     const actor = actorFrom(req);
     if (!actor) {
       json(res, 401, { error: { message: '鉴权失败', code: 'unauthorized' } });
@@ -303,22 +321,6 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
         return;
       }
       await adminRoute(req, res, path, actor.sub);
-      return;
-    }
-
-    if (req.method === 'GET' && path === '/v1/internal/upstream') {
-      if (!options.internalToken || req.headers['x-evowork-internal'] !== options.internalToken) {
-        json(res, 401, { error: { message: '鉴权失败', code: 'unauthorized' } });
-        return;
-      }
-      const tenant = url.searchParams.get('tenant') ?? '';
-      const model = url.searchParams.get('model') ?? '';
-      const up = identity.internalUpstream(tenant, model);
-      if (!up) {
-        json(res, 404, { error: { message: '没有这个模型', code: 'not-found' } });
-        return;
-      }
-      json(res, 200, up);
       return;
     }
 

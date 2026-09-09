@@ -33,15 +33,16 @@ export function hostedResponsesUrl(upstreamBaseUrl: string): string {
 export async function forwardHosted(req: ForwardRequest): Promise<ForwardResult> {
   const started = Date.now();
   const fetchImpl = req.fetchImpl ?? fetch;
-  const res = await fetchImpl(hostedResponsesUrl(req.upstreamBaseUrl), {
+  const init: RequestInit = {
     method: 'POST',
     headers: {
       authorization: `Bearer ${req.accessJwt}`,
       'content-type': 'application/json',
     },
     body: req.body,
-    signal: req.signal,
-  });
+    ...(req.signal ? { signal: req.signal } : {}),
+  };
+  const res = await fetchImpl(hostedResponsesUrl(req.upstreamBaseUrl), init);
   req.logger?.info('gateway.forward.completed', {
     statusCode: res.status,
     durationMs: Date.now() - started,

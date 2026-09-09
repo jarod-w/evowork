@@ -82,7 +82,9 @@ describe('未登录不出网', () => {
 describe('PKCE 登录', () => {
   it('打开系统浏览器，用授权码换票；refresh 进密钥库，access JWT 只留内存', async () => {
     const vault = memoryVault();
-    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+    const bodies: string[] = [];
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(typeof init?.body === 'string' ? init.body : '');
       const url = String(input);
       if (url.endsWith('/v1/oauth/token')) {
         return new Response(
@@ -149,10 +151,7 @@ describe('PKCE 登录', () => {
     expect(injected[UPSTREAM_BASE_URL_ENV]).toBe('https://id.example.com');
     expect(injected[TENANT_MODELS_ENV]).toContain('evowork/hosted-flash');
     expect(injected[TENANT_MODELS_ENV]).not.toContain('apiKey');
-    const bodies = fetchFn.mock.calls
-      .map((call) => (call[1] as { body?: string } | undefined)?.body ?? '')
-      .join('\n');
-    expect(bodies).not.toContain('password');
+    expect(bodies.join('\n')).not.toContain('password');
   });
 });
 

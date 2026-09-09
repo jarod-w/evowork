@@ -102,7 +102,12 @@ export async function api<T>(
   if (session && !headers.has('authorization')) {
     headers.set('authorization', `Bearer ${session.accessToken}`);
   }
-  const res = await fetch(`${identityOrigin()}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${identityOrigin()}${path}`, { ...init, headers });
+  } catch {
+    return { ok: false, error: { message: '连不上账号服务', code: 'network' }, status: 0 };
+  }
   const text = await res.text();
   let body: unknown = {};
   if (text !== '') {

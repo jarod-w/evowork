@@ -28,6 +28,7 @@ export {
   type Es256KeyPair,
   type Jwks,
   type JwtHeader,
+  type PublicJwk,
   type VerifyFailure,
   type VerifyOptions,
   type VerifyResult,

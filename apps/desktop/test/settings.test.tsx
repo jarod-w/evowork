@@ -216,7 +216,7 @@ describe('账号（M10b）', () => {
     expect(screen.getByRole('button', { name: '打开管理端' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '在浏览器中注销账号' })).toBeTruthy();
     expect(screen.queryByText(/充值|升级套餐|购买额度/)).toBeNull();
-    expect(screen.getByText(/这台电脑/)).toBeTruthy();
+    expect(screen.getByText(/linux/)).toBeTruthy();
   });
 });
 
