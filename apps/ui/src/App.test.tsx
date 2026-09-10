@@ -757,7 +757,8 @@ describe('automation pane (A-8)', () => {
       }),
     )
     const createCall = rpc.mock.calls.find((call) => call[0] === 'trigger.create')
-    const spec = (createCall?.[1] as TriggerCreateParams).spec
+    if (!createCall) throw new Error('expected trigger.create to have been called')
+    const spec = (createCall[1] as TriggerCreateParams).spec
     expect(spec.kind).toBe('once')
     if (spec.kind === 'once') {
       expect(spec.at_ms).toBe(new Date('2026-09-14T08:00').getTime())
