@@ -2,6 +2,7 @@
 
 > 上游：[总纲 §6.3 / §6.4 / §6.5](../evowork-on-codex-design.md)· D4 · K7 · Q5 · Q9 · [清单 §8 / §9 / §10](../agent-platform-feature-list.md)
 > UI 基线：截图 2（技能 Tab）、截图 3（连接器 Tab）。组件引用 [01 §5](01-ui-design-system.md)。
+> 侧边栏入口文案 **2026-09-09** 改为「技能·连接器」（去掉「专家」）；页内仍是三 Tab，专家 Tab 见 §5。
 
 ## 1. 为什么三者合一个页面
 

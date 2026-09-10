@@ -24,6 +24,8 @@ import type {
   CustomModelInput,
   AuditDataView,
   AutomationsDataView,
+  CatalogDataView,
+  CatalogMutationResult,
   DirEntryView,
   LibraryDataView,
   ModelAccessMutationResult,
@@ -54,6 +56,13 @@ import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { resolveModelChoice } from './model-selection.js';
 import { AuditPage, type AuditRow } from './views/audit.js';
+import {
+  CatalogPage,
+  DiscoverDrawer,
+  SKILL_CREATOR_PROMPT,
+  type CatalogPageProps,
+  type CatalogTab,
+} from './views/catalog.js';
 import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
@@ -146,6 +155,35 @@ export interface EvoworkBridge {
   }): Promise<readonly DirEntryView[]>;
   readAgentsMemo(input: { id: string }): Promise<AgentsMemoView>;
   writeAgentsMemo(input: { id: string; content: string }): Promise<WriteAgentsMemoResult>;
+  /*
+   * 技能 · 连接器（05）。与三个目录式页面同一条理由：**按需拉，不并进 getStartup**。
+   */
+  getCatalog(): Promise<CatalogDataView>;
+  installSkill(input: {
+    kind: 'directory' | 'git';
+    path?: string | undefined;
+    url?: string | undefined;
+    acknowledge?: boolean | undefined;
+    confirmName?: string | undefined;
+  }): Promise<CatalogMutationResult>;
+  uninstallSkill(input: { id: string }): Promise<CatalogMutationResult>;
+  addConnector(input: {
+    name: string;
+    transport: 'stdio' | 'sse' | 'http';
+    command?: string | undefined;
+    args?: string | undefined;
+    url?: string | undefined;
+  }): Promise<CatalogMutationResult>;
+  trustConnector(input: { id: string }): Promise<CatalogMutationResult>;
+  removeConnector(input: { id: string }): Promise<CatalogMutationResult>;
+  createExpert(input: {
+    name: string;
+    description: string;
+    category: string;
+    sampleTasks: string;
+    instructions?: string | undefined;
+  }): Promise<CatalogMutationResult>;
+  removeExpert(input: { id: string }): Promise<CatalogMutationResult>;
   /**
    * 打开系统目录选择框（首运行第②步）。**选完会立刻建成一个空间**——只有首运行
    * 该调它，别处（比如「新建空间」对话框）要用下面纯选目录的 `pickProjectDirectory`，
@@ -317,6 +355,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [projectMemo, setProjectMemo] = useState<AgentsMemoView>({ exists: false, content: '' });
   /** 上一次动作被拒绝的原话。**显示出来**，不吞掉 */
   const [projectRefusal, setProjectRefusal] = useState<string | undefined>(undefined);
+  const [catalog, setCatalog] = useState<CatalogDataView | null>(null);
+  const [catalogTab, setCatalogTab] = useState<CatalogTab>('skills');
+  const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
 
   useEffect(() => {
     const offs = [
@@ -616,6 +658,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .listProjects()
         .then(setProjects)
         .catch(() => setProjects(null));
+    if (view === 'catalog' || discoverOpen)
+      void bridge
+        .getCatalog()
+        .then(setCatalog)
+        .catch(() => setCatalog(null));
     if (view === 'settings') {
       /*
        * 设置页也是每次进都重拉：密钥可能刚在引导里填过、企业策略包可能刚更新过。
@@ -634,7 +681,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then(setPreferences)
         .catch(() => setPreferences(null));
     }
-  }, [view, activeProjectId, bridge]);
+  }, [view, activeProjectId, bridge, discoverOpen]);
 
   /**
    * 进详情页时拉三份数据：概览、根目录一层、空间记忆。
@@ -733,6 +780,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     return result.path;
   }, [bridge]);
 
+  /** 技能「从目录安装」复用同一个选择框，拒绝理由要落在目录页，不落到项目页。 */
+  const pickCatalogDirectory = useCallback(async () => {
+    const result = await bridge.pickProjectDirectory();
+    if (result.refused) {
+      setCatalogRefusal(result.refused);
+      return undefined;
+    }
+    return result.path;
+  }, [bridge]);
+
   /**
    * 02 §4.3：跳首页并**预选该工作空间**。
    * 首页下拉在 Task 9 之后读的就是 `project_local`，所以这里只是选中一个已有项，
@@ -820,6 +877,39 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ]);
     }
   }, [bridge, draft, activeTaskId, scenarioId, modelId, workspaceId]);
+
+  const startTaskWithText = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setDiscoverOpen(false);
+      setView('task');
+      try {
+        const { threadId } = await bridge.send({
+          text: trimmed,
+          scenarioId,
+          ...(modelId !== undefined ? { modelId } : {}),
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+        });
+        setActiveTaskId(threadId);
+      } catch (err: unknown) {
+        setNotices((prev) => [
+          ...prev,
+          {
+            tone: 'danger',
+            text: `没能发出去：${err instanceof Error ? err.message : String(err)}`,
+          },
+        ]);
+      }
+    },
+    [bridge, scenarioId, modelId, workspaceId],
+  );
+
+  const applyCatalogResult = useCallback((result: CatalogMutationResult): CatalogMutationResult => {
+    setCatalog(result.catalog);
+    setCatalogRefusal(result.refused);
+    return result;
+  }, []);
 
   const scenarios: readonly Scenario[] = useMemo(
     () =>
@@ -1044,6 +1134,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setView('settings');
           }
         }}
+        onDiscover={() => setDiscoverOpen(true)}
         onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
         onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
         brandName={startup?.appName}
@@ -1148,7 +1239,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onImportProject={importProject}
           onRenameProject={renameProject}
           onRemoveProject={removeProject}
-          onPickDirectory={pickProjectDirectory}
+          onPickDirectory={view === 'catalog' ? pickCatalogDirectory : pickProjectDirectory}
+          catalog={catalog}
+          catalogTab={catalogTab}
+          onCatalogTab={setCatalogTab}
+          {...(catalogRefusal !== undefined ? { catalogRefusal } : {})}
+          onInstallSkill={async (input) => applyCatalogResult(await bridge.installSkill(input))}
+          onUninstallSkill={async (id) => applyCatalogResult(await bridge.uninstallSkill({ id }))}
+          onAddConnector={async (input) => applyCatalogResult(await bridge.addConnector(input))}
+          onTrustConnector={async (id) => applyCatalogResult(await bridge.trustConnector({ id }))}
+          onRemoveConnector={async (id) => applyCatalogResult(await bridge.removeConnector({ id }))}
+          onCreateExpert={async (input) => applyCatalogResult(await bridge.createExpert(input))}
+          onRemoveExpert={async (id) => applyCatalogResult(await bridge.removeExpert({ id }))}
+          onUsePrompt={(prompt) => void startTaskWithText(prompt)}
+          onWriteSkill={() => void startTaskWithText(SKILL_CREATOR_PROMPT)}
         />
       ) : activeTaskId === null ? (
         <Home
@@ -1193,6 +1297,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
         />
       )}
+      {discoverOpen ? (
+        <DiscoverDrawer
+          apps={catalog?.apps ?? []}
+          onClose={() => setDiscoverOpen(false)}
+          onUse={(prompt) => void startTaskWithText(prompt)}
+          onManage={() => {
+            setDiscoverOpen(false);
+            setCatalogTab('skills');
+            setView('catalog');
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1200,16 +1316,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
 /**
  * 目录式页面的分发。
  *
- * ## 为什么没有页面的入口也要在这里出现
- *
- * 02 §1 的 6 个入口是产品骨架，其中一个（专家·技能·连接器）
- * 与「更多」现在**还没有页面**。在此之前它们的表现是**点了没有任何反应** ——
- * 用户看到的是一个有六个菜单项、其中两个是死的应用，而"点了没反应"
- * 与"坏了"在界面上完全无法区分。
- *
- * 所以这里给它们一个如实说明的空页：**说清是没做，不是坏了**
- * （CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」的同一条）。
- * 页面做好之后把它加进这个 switch，这段自然消失。
+ * 02 §1 的 6 个入口是产品骨架。「更多」现在还没有本体页，给一个如实说明的空页。
  */
 function MainPage(props: {
   readonly view: MainView;
@@ -1262,6 +1369,19 @@ function MainPage(props: {
   readonly onRenameProject: (input: { id: string; name: string }) => void;
   readonly onRemoveProject: (id: string) => void;
   readonly onPickDirectory: () => Promise<string | undefined>;
+  readonly catalog: CatalogDataView | null;
+  readonly catalogTab: CatalogTab;
+  readonly onCatalogTab: (tab: CatalogTab) => void;
+  readonly catalogRefusal?: string | undefined;
+  readonly onInstallSkill: CatalogPageProps['onInstallSkill'];
+  readonly onUninstallSkill: CatalogPageProps['onUninstallSkill'];
+  readonly onAddConnector: CatalogPageProps['onAddConnector'];
+  readonly onTrustConnector: CatalogPageProps['onTrustConnector'];
+  readonly onRemoveConnector: CatalogPageProps['onRemoveConnector'];
+  readonly onCreateExpert: CatalogPageProps['onCreateExpert'];
+  readonly onRemoveExpert: CatalogPageProps['onRemoveExpert'];
+  readonly onUsePrompt: (prompt: string) => void;
+  readonly onWriteSkill: () => void;
 }) {
   switch (props.view) {
     /*
@@ -1364,6 +1484,26 @@ function MainPage(props: {
         />
       );
 
+    case 'catalog':
+      return (
+        <CatalogPage
+          data={props.catalog}
+          tab={props.catalogTab}
+          onTab={props.onCatalogTab}
+          {...(props.catalogRefusal !== undefined ? { refusal: props.catalogRefusal } : {})}
+          onInstallSkill={props.onInstallSkill}
+          onUninstallSkill={props.onUninstallSkill}
+          onAddConnector={props.onAddConnector}
+          onTrustConnector={props.onTrustConnector}
+          onRemoveConnector={props.onRemoveConnector}
+          onCreateExpert={props.onCreateExpert}
+          onRemoveExpert={props.onRemoveExpert}
+          onPickDirectory={props.onPickDirectory}
+          onUsePrompt={props.onUsePrompt}
+          onWriteSkill={props.onWriteSkill}
+        />
+      );
+
     default:
       return <UnbuiltPage view={props.view} />;
   }
@@ -1371,10 +1511,6 @@ function MainPage(props: {
 
 /** 02 §1 里已有入口、但页面还没做的那几个。**说清是没做**，不留一个空白主区。 */
 const UNBUILT_COPY: Readonly<Record<string, { title: string; hint: string }>> = {
-  catalog: {
-    title: '专家·技能·连接器还没做好',
-    hint: '办公技能（文档 / 表格 / 幻灯片 / 图表）已经随产品分发并可用，只是还没有这个管理界面。',
-  },
   more: { title: '这里还没有内容', hint: '设置、通知与灵感会陆续放到这里。' },
 };
 

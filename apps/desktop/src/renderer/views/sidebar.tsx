@@ -157,6 +157,8 @@ export interface SidebarProps {
    * 让菜单直接说出要去哪个分区，比让 app 再猜一次少一处映射。
    */
   readonly onMoreSelect?: ((id: string) => void) | undefined;
+  /** 「发现应用」抽屉（05 §6）。不给则 chip 保持禁用并说本期未开放 */
+  readonly onDiscover?: (() => void) | undefined;
   readonly onNotifications?: (() => void) | undefined;
   readonly onDevices?: (() => void) | undefined;
   /** Q18 的 `sidebar-promo` 插槽。**默认关闭**，且只渲染静态内容 */
@@ -185,7 +187,7 @@ export interface SidebarProps {
 export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
   { id: 'new-task', label: '新建任务', icon: 'new-task' },
   { id: 'projects', label: '项目', icon: 'project' },
-  { id: 'catalog', label: '专家·技能·连接器', icon: 'catalog' },
+  { id: 'catalog', label: '技能·连接器', icon: 'catalog' },
   { id: 'automations', label: '自动化', icon: 'automation' },
   { id: 'library', label: '资料库', icon: 'library' },
   { id: 'more', label: '更多', icon: 'more', trailing: '灵感' },
@@ -323,7 +325,11 @@ export function Sidebar(props: SidebarProps) {
       {/* 01 §3.3 品牌行 */}
       <div className="ew-sidebar-brand">
         <span className="ew-brand-name">{props.brandName ?? BRAND.appName}</span>
-        <AppSwitcherChip label="发现应用" icon={renderIcon('compass')} />
+        <AppSwitcherChip
+          label="发现应用"
+          icon={renderIcon('compass')}
+          {...(props.onDiscover !== undefined ? { onClick: props.onDiscover } : {})}
+        />
       </div>
 
       {searchOpen ? (

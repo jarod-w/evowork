@@ -681,3 +681,89 @@ export interface WriteAgentsMemoResult {
   readonly ok: boolean;
   readonly refused?: string | undefined;
 }
+
+/**
+ * 技能 · 连接器目录（05）。与 `getLibrary` 同一条纪律：**按需拉，不并进 getStartup**。
+ *
+ * 渲染层只看这些字段。连接器的环境变量**值**不在这里（只有名），
+ * 密钥不会进 XSS 面。
+ */
+export interface CatalogItemView {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly category: string;
+  readonly source: 'official' | 'private' | 'local' | 'git';
+  readonly sourceLabel: string;
+  readonly installed: boolean;
+  readonly featured: boolean;
+  readonly riskLevel: 'p0' | 'p1' | 'p2';
+  readonly riskLabel: string;
+  readonly findings: readonly string[];
+  readonly worstCase?: string | undefined;
+  readonly defaultPrompt?: string | undefined;
+}
+
+export interface ConnectorView {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: 'official' | 'custom';
+  readonly transport: 'stdio' | 'sse' | 'http';
+  readonly command?: string | undefined;
+  readonly args?: readonly string[] | undefined;
+  readonly url?: string | undefined;
+  readonly envKeys?: readonly string[] | undefined;
+  readonly trusted: boolean;
+  readonly status:
+    'untrusted' | 'disconnected' | 'connected' | 'needs-auth' | 'failed' | 'disabled';
+  readonly category: 'browser' | 'custom';
+  readonly toolCount?: number | undefined;
+  readonly toolPolicy: Readonly<Record<string, 'approve' | 'allow'>>;
+  readonly failureSummary?: string | undefined;
+  readonly disabledReason?: string | undefined;
+}
+
+export interface CatalogExpertView {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly source: 'official' | 'local';
+  readonly category: string;
+  readonly sampleTasks: readonly string[];
+  readonly instructions?: string | undefined;
+}
+
+export interface CatalogAppView {
+  readonly id: string;
+  readonly kind: 'skill' | 'connector';
+  readonly displayName: string;
+  readonly description: string;
+  readonly category: string;
+  readonly defaultPrompt?: string | undefined;
+}
+
+export interface CatalogDataView {
+  readonly skills: readonly CatalogItemView[];
+  readonly connectors: readonly ConnectorView[];
+  readonly experts: readonly CatalogExpertView[];
+  readonly apps: readonly CatalogAppView[];
+}
+
+/**
+ * 目录增删改的结果。`refused` 是一句要显示给用户的话，不是错误码。
+ * `needsConfirm` = 审计要人看过再装，此时还没有拷目录。
+ */
+export interface CatalogMutationResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+  readonly needsConfirm?: boolean | undefined;
+  readonly audit?:
+    | {
+        readonly skillId: string;
+        readonly level: string;
+        readonly findings: readonly string[];
+        readonly worstCase?: string | undefined;
+      }
+    | undefined;
+  readonly catalog: CatalogDataView;
+}

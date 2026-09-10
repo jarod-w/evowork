@@ -152,6 +152,8 @@ export interface BootstrapOptions {
   readonly rendererHtmlPath: string;
   /** 随包的 `config/` 目录。首次运行时内核配置从这里装（见 `ensureKernelConfig`） */
   readonly configDir?: string | undefined;
+  /** 随包 `plugins/`。开发时是仓库根下那份，打包后在 Resources/plugins */
+  readonly pluginsDir?: string | undefined;
   /** 注入以便测试；默认用真的宿主 */
   readonly createHost?:
     ((options: Parameters<typeof createServiceHost>[0]) => ServiceHost) | undefined;
@@ -188,6 +190,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       : {}),
     appVersion: electron.app.getVersion(),
     ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
+    ...(options.pluginsDir !== undefined ? { pluginsDir: options.pluginsDir } : {}),
     /*
      * 目录选择框。`showOpenDialog` 是可选注入，缺了就**没有这个能力**（返回 undefined），
      * 而不是崩 —— 测试里不需要真开一个系统对话框。

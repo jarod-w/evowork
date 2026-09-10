@@ -53,6 +53,9 @@ importers:
       '@evowork/artifacts':
         specifier: workspace:*
         version: link:../../services/artifacts
+      '@evowork/catalog':
+        specifier: workspace:*
+        version: link:../../services/catalog
       '@evowork/gateway':
         specifier: workspace:*
         version: link:../../services/gateway
@@ -191,6 +194,12 @@ importers:
       '@evowork/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
+
+  services/catalog:
     devDependencies:
       vitest:
         specifier: ^3.2.4

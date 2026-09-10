@@ -11,6 +11,7 @@ import type { Adapter } from '@evowork/kernel-adapter';
 import { openStore } from '@evowork/store';
 
 import type {
+  CatalogDataView,
   ModelAccessView,
   ModelCatalogResult,
   ModelOptionView,
@@ -31,6 +32,54 @@ const STARTUP: StartupInfo = {
   onboarded: true,
   tasks: [],
 };
+
+function sampleCatalog(): CatalogDataView {
+  const skills = (
+    [
+      ['documents', '文档', '生成文档'],
+      ['spreadsheets', '表格', '生成表格'],
+      ['presentations', '幻灯片', '生成幻灯片'],
+      ['charts', '图表', '画一张图'],
+    ] as const
+  ).map(([id, name, description]) => ({
+    id,
+    name,
+    description,
+    category: '办公',
+    source: 'official' as const,
+    sourceLabel: '官方内置',
+    installed: true,
+    featured: true,
+    riskLevel: 'p1' as const,
+    riskLabel: '需注意',
+    findings: ['会执行脚本'],
+    defaultPrompt: `用${name}`,
+  }));
+  return {
+    skills,
+    connectors: [
+      {
+        id: 'browser',
+        name: '浏览器',
+        kind: 'official',
+        transport: 'stdio',
+        trusted: false,
+        status: 'untrusted',
+        category: 'browser',
+        toolPolicy: {},
+      },
+    ],
+    experts: [],
+    apps: skills.map((s) => ({
+      id: `skill:${s.id}`,
+      kind: 'skill' as const,
+      displayName: s.name,
+      description: s.description,
+      category: s.category,
+      defaultPrompt: s.defaultPrompt,
+    })),
+  };
+}
 
 /** 网关目录里的两个模型。**能力位刻意不同** —— 下拉要能画出"这个不支持读图"。 */
 const MODELS: readonly ModelOptionView[] = [
@@ -125,6 +174,14 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     listProjectDir: vi.fn(async () => []),
     readAgentsMemo: vi.fn(async () => ({ exists: false, content: '' })),
     writeAgentsMemo: vi.fn(async () => ({ ok: true })),
+    getCatalog: vi.fn(async () => sampleCatalog()),
+    installSkill: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    uninstallSkill: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    addConnector: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    trustConnector: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    removeConnector: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    createExpert: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    removeExpert: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
     /*
      * 设置页（M10a）。默认是**这台机器的常见状态**：钥匙串可用、配了一家密钥、
      * 没有自定义模型、未登录（Q30=A 下未登录是常态而不是待修复状态）。
@@ -469,7 +526,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
 describe('侧边栏的六个入口都要有落点', () => {
   /*
    * 2026-09-06 之前：`app.tsx` 只挂了 Home / TaskWorkspace / Sidebar，
-   * `onNavSelect` 没人传 —— 项目 / 专家·技能·连接器 / 自动化 / 资料库 / 更多
+   * `onNavSelect` 没人传 —— 项目 / 技能·连接器 / 自动化 / 资料库 / 更多
    * **点了没有任何反应**。用户看到的是一个六个菜单项、五个是死的应用，
    * 而"点了没反应"与"坏了"在界面上完全无法区分。
    */
@@ -542,14 +599,33 @@ describe('侧边栏的六个入口都要有落点', () => {
    * 还没做的页面**说清是没做**，不留一个空白主区
    * （CLAUDE.md §9.1：降级、跳过、认不出来都要如实说）。
    */
-  it('还没做的入口给出说明，而不是什么都不发生', async () => {
+  it('技能·连接器页是真目录，不是「还没做好」', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /专家·技能·连接器/ }));
-    expect(await screen.findByText('专家·技能·连接器还没做好')).toBeTruthy();
-    // 并且告诉用户现在该怎么办（在**说明文字里**找，侧边栏那一项同名）
-    expect(screen.getByText(/已经随产品分发并可用/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /技能·连接器/ }));
+    expect(await screen.findByRole('tab', { name: '技能' })).toBeTruthy();
+    expect((await screen.findAllByText('文档')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('技能·连接器还没做好')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: '专家' }));
+    expect(await screen.findByText('还没有专家')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: '连接器' }));
+    expect(await screen.findByText(/官方连接器目录将在后续版本提供/)).toBeTruthy();
+  });
+
+  it('发现应用抽屉列出已装技能，管理全部回到技能 Tab', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '发现应用' }));
+    expect(await screen.findByRole('dialog', { name: '发现应用' })).toBeTruthy();
+    expect(screen.getByText('文档')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '管理全部 →' }));
+    expect(await screen.findByRole('tab', { name: '技能' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '发现应用' })).toBeNull();
   });
 
   /*

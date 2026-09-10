@@ -127,6 +127,7 @@ bootstrap({
     ? join(resourceRoot, 'gateway', 'main.js')
     : join(repoRoot, 'dist/gateway/main.js'),
   configDir: isPackaged ? join(resourceRoot, 'config') : join(repoRoot, 'config'),
+  pluginsDir: join(resourceRoot, 'plugins'),
   preloadPath: join(import.meta.dirname, '../preload/index.bundle.cjs'),
   rendererHtmlPath: join(import.meta.dirname, '../renderer/index.html'),
   // 只有"开发者真的起了 vite"才连它。与随包资源在哪**无关**（见文件头）

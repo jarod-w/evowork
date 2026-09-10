@@ -2839,3 +2839,97 @@ textarea {
   width: 100%;
   min-width: 0;
 }
+
+/* ─────────────────────────── 技能 · 连接器（05）─────────────────────────── */
+
+.ew-catalog-add {
+  position: relative;
+}
+.ew-catalog-caption {
+  margin: 0 0 var(--space-12);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+.ew-catalog-findings {
+  margin: 0 0 var(--space-12);
+  padding-left: var(--space-20);
+  color: var(--text-secondary);
+}
+.ew-catalog-worst {
+  color: var(--danger);
+}
+.ew-catalog-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+.ew-catalog-detail-title {
+  margin: 0;
+  font-size: var(--font-title-1-size);
+  font-weight: var(--font-title-1-weight);
+}
+.ew-catalog-detail-desc,
+.ew-catalog-detail-meta {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.ew-catalog-detail-actions {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ew-catalog-muted {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+}
+.ew-catalog-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+.ew-catalog-instructions {
+  margin: 0;
+  padding: var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+.ew-dialog-input {
+  font: inherit;
+  padding: var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.ew-discover-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+  background: var(--bg-scrim);
+}
+.ew-discover-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--layout-sidebar-width);
+  width: var(--layout-discover-drawer-width);
+  padding: var(--space-16);
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+}
+.ew-discover-manage {
+  margin-top: var(--space-16);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  cursor: pointer;
+}
