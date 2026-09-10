@@ -6,6 +6,7 @@ use evo_protocol::budget::BudgetSpec;
 use evo_protocol::rpc::{
     BlobGetResult, CaughtUpFrame, ClientStreamFrame, EventFrame, HelloFrame, RpcRequest,
     RpcResponse, RunCreateResult, RunEventsResult, RunGetResult, RunListResult,
+    TriggerDryrunResult, TriggerListResult, TriggerView,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -44,7 +45,7 @@ async fn spawn_server_with(
         Arc::new(LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()))),
     )
     .unwrap();
-    let state = AppState::new(runtime, TOKEN, "0.1.0-test");
+    let state = AppState::new(runtime, TOKEN, "0.1.0-test").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -393,4 +394,195 @@ async fn ws_without_token_is_rejected() {
     let ws_url = base.replacen("http://", "ws://", 1) + "/v1/events?token=wrong";
     let result = tokio_tungstenite::connect_async(&ws_url).await;
     assert!(result.is_err(), "bad token must not upgrade");
+}
+
+#[tokio::test]
+async fn trigger_create_list_delete_roundtrip() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let created = rpc(
+        &base,
+        "trigger.create",
+        serde_json::json!({
+            "name": "周一出表",
+            "intent": "把账龄表做出来",
+            "spec": { "kind": "once", "at_ms": 4_000_000_000_000u64 }
+        }),
+    )
+    .await;
+    let view: TriggerView = serde_json::from_value(created.result.unwrap()).unwrap();
+    assert_eq!(view.name, "周一出表");
+    assert_eq!(
+        view.kind,
+        evo_protocol::events::lifecycle::TriggerKind::Schedule
+    );
+    assert_eq!(view.next_fire_ms, Some(4_000_000_000_000));
+    assert!(!view.paused);
+
+    let listed = rpc(&base, "trigger.list", serde_json::json!({})).await;
+    let list: TriggerListResult = serde_json::from_value(listed.result.unwrap()).unwrap();
+    assert_eq!(list.triggers.len(), 1);
+    assert_eq!(list.triggers[0].trigger_id, view.trigger_id);
+
+    let deleted = rpc(
+        &base,
+        "trigger.delete",
+        serde_json::json!({ "trigger_id": view.trigger_id.as_str() }),
+    )
+    .await;
+    assert_eq!(deleted.result.unwrap()["deleted"], true);
+
+    let listed = rpc(&base, "trigger.list", serde_json::json!({})).await;
+    let list: TriggerListResult = serde_json::from_value(listed.result.unwrap()).unwrap();
+    assert!(list.triggers.is_empty());
+}
+
+#[tokio::test]
+async fn trigger_dryrun_of_an_overdue_once_does_not_start_a_run() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let created = rpc(
+        &base,
+        "trigger.create",
+        serde_json::json!({
+            "name": "overdue",
+            "intent": "把账龄表做出来",
+            "spec": { "kind": "once", "at_ms": 0 }
+        }),
+    )
+    .await;
+    let view: TriggerView = serde_json::from_value(created.result.unwrap()).unwrap();
+
+    let dry = rpc(
+        &base,
+        "trigger.dryrun",
+        serde_json::json!({ "trigger_id": view.trigger_id.as_str() }),
+    )
+    .await;
+    let report: TriggerDryrunResult = serde_json::from_value(dry.result.unwrap()).unwrap();
+    assert!(
+        report.would_fire_now,
+        "at_ms=0 is in the past; dryrun must say it would fire"
+    );
+
+    let listed = rpc(&base, "run.list", serde_json::json!({})).await;
+    let runs: RunListResult = serde_json::from_value(listed.result.unwrap()).unwrap();
+    assert!(
+        runs.runs.is_empty(),
+        "dryrun must not start a run, got {:?}",
+        runs.runs
+    );
+}
+
+#[tokio::test]
+async fn trigger_zero_interval_is_invalid_params() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let res = rpc(
+        &base,
+        "trigger.create",
+        serde_json::json!({
+            "name": "bad",
+            "intent": "x",
+            "spec": { "kind": "interval", "every_ms": 0 }
+        }),
+    )
+    .await;
+    let err = res.error.unwrap();
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("every_ms"));
+}
+
+#[tokio::test]
+async fn trigger_delete_unknown_is_not_found() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let res = rpc(
+        &base,
+        "trigger.delete",
+        serde_json::json!({ "trigger_id": "t-missing" }),
+    )
+    .await;
+    let err = res.error.unwrap();
+    assert_eq!(err.code, -32004);
+}
+
+#[tokio::test]
+async fn webhook_post_starts_a_run_with_trigger_kind_webhook() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let created = rpc(
+        &base,
+        "trigger.create",
+        serde_json::json!({
+            "name": "hook",
+            "intent": "把账龄表做出来",
+            "spec": { "kind": "webhook" }
+        }),
+    )
+    .await;
+    let view: TriggerView = serde_json::from_value(created.result.unwrap()).unwrap();
+    let hook_path = view
+        .hook_path
+        .expect("webhook create must return hook_path");
+
+    let res = client()
+        .post(format!("{base}{hook_path}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), reqwest::StatusCode::OK);
+    let started: RunCreateResult = res.json().await.unwrap();
+    assert_eq!(started.status, "completed");
+
+    let events = rpc(
+        &base,
+        "run.events",
+        serde_json::json!({ "run_id": started.run_id.as_str(), "from_seq": 0 }),
+    )
+    .await;
+    let bundle: RunEventsResult = serde_json::from_value(events.result.unwrap()).unwrap();
+    let created = bundle
+        .events
+        .iter()
+        .find_map(|e| match &e.body {
+            EventBody::RunCreated(c) => Some(c),
+            _ => None,
+        })
+        .expect("webhook must write run.created");
+    assert_eq!(
+        created.trigger.kind,
+        evo_protocol::events::lifecycle::TriggerKind::Webhook
+    );
+    assert_eq!(created.trigger.reference, view.trigger_id.as_str());
+}
+
+#[tokio::test]
+async fn webhook_unknown_secret_is_404_without_bearer() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let res = client()
+        .post(format!("{base}/v1/hooks/no-such-secret"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), reqwest::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn paused_webhook_returns_409() {
+    let (base, _dir) = spawn_server(FINISH_FIXTURES).await;
+    let created = rpc(
+        &base,
+        "trigger.create",
+        serde_json::json!({
+            "name": "hook",
+            "intent": "把账龄表做出来",
+            "spec": { "kind": "webhook" },
+            "paused": true
+        }),
+    )
+    .await;
+    let view: TriggerView = serde_json::from_value(created.result.unwrap()).unwrap();
+    let hook_path = view.hook_path.unwrap();
+    let res = client()
+        .post(format!("{base}{hook_path}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), reqwest::StatusCode::CONFLICT);
 }

@@ -83,6 +83,16 @@ pub enum DaemonError {
         question_id: String,
         option_id: String,
     },
+    #[error("trigger {0} is not found")]
+    UnknownTrigger(String),
+    #[error("trigger {0} is paused")]
+    TriggerPaused(String),
+    #[error("trigger {0} still has a running run")]
+    TriggerBusy(String),
+    #[error("trigger store: {0}")]
+    TriggerStore(#[from] crate::trigger::TriggerStoreError),
+    #[error("trigger store mutex poisoned")]
+    TriggerStorePoisoned,
 }
 
 /// 一个 `clarify` 计划里的一个选项，解析自模型输出的 JSON——**不是**
@@ -268,6 +278,10 @@ impl Runtime {
         &self.config
     }
 
+    pub fn now_ms(&self) -> u64 {
+        self.clock.now_ms()
+    }
+
     pub fn events(
         &self,
         run_id: &RunId,
@@ -318,11 +332,36 @@ impl Runtime {
         intent_text: &str,
         source: &str,
     ) -> Result<RunOutcome, DaemonError> {
+        self.start_with_trigger(
+            run_id,
+            intent_text,
+            TriggerRef {
+                kind: TriggerKind::Manual,
+                reference: source.into(),
+            },
+        )
+        .await
+    }
+
+    /// 起一条 run，并把 `run.created.trigger` 写成调用方给的值。
+    /// 手动入口继续走 [`Self::start_from`]（kind=manual）；调度器与
+    /// webhook 走这里，kind 是 schedule / webhook，reference 是 trigger id。
+    pub async fn start_with_trigger(
+        &mut self,
+        run_id: &RunId,
+        intent_text: &str,
+        trigger: TriggerRef,
+    ) -> Result<RunOutcome, DaemonError> {
+        let actor = match trigger.kind {
+            TriggerKind::Manual => Actor::Runtime,
+            _ => Actor::Trigger(trigger.reference.clone()),
+        };
+        let source = trigger.reference.clone();
         let state = RunState::new(run_id);
 
         let state = self.emit(
             &state,
-            Actor::Runtime,
+            actor.clone(),
             EventBody::RunCreated(RunCreated {
                 run_id: run_id.clone(),
                 parent_run_id: None,
@@ -331,10 +370,7 @@ impl Runtime {
                     kind: "user".into(),
                     id: self.config.principal.clone(),
                 },
-                trigger: TriggerRef {
-                    kind: TriggerKind::Manual,
-                    reference: source.into(),
-                },
+                trigger,
                 budget: self.config.budget,
                 labels: Default::default(),
             }),
@@ -347,12 +383,12 @@ impl Runtime {
                 .put(BlobClass::Content, "text/plain", intent_text.as_bytes())?;
         let state = self.emit(
             &state,
-            Actor::Runtime,
+            actor,
             EventBody::IntentDeclared(IntentDeclared {
                 intent_ref: intent_ref.clone(),
                 char_len: intent_text.chars().count() as u64,
                 lang: "zh".to_owned(),
-                source: source.to_owned(),
+                source,
             }),
         )?;
 

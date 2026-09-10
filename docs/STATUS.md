@@ -427,6 +427,7 @@ adapter 与用友 MCP 之前。** 其余按依赖排。
 |---|---|---|
 | **协议层**：**daemon 二进制** + HTTP `/v1/rpc` + WS `/v1/events` + `ts-rs` 生成 `packages/protocol` + CI-5 | **已落地**（档一） | `cargo run -p evo-daemon`；token 在 `{data_dir}/client.toml`。未接线的 RPC 方法返回 `not implemented`。`run.create mode=dry_run` 同样未实现 |
 | **UI 本体** | **已落地**（档三） | Inbox / 时间线 / 审批卡 / 产物区 / 成本 / 预算提额。事件流投影，不轮询。`blob.get` 取澄清文案与产物正文。`budget.amend` 提额。时间线可筛治理事件与检查点。审批卡含「已过期」（P0-4） |
+| **A-8 定时 + webhook 触发** | **已落地**（2026-09-10） | `trigger.create` / `list` / `delete` / `dryrun`；daemon 每秒扫到期项并 `start_with_trigger`（kind=`schedule`）。Webhook 是本机 `POST /v1/hooks/{secret}`，不是公网入口。UI「自动化」页进页拉一次 list，不轮询。调度在 daemon 进程，不在 UI。**不**保证机器开机 / LaunchDaemon。`file` / `condition` 仍拒绝 |
 | **真 DeepSeek adapter** | 未开始 | key 已到位。原「排在协议层之后」→ **现排在 UI 之后**。P0-1 已在档二接通，真 adapter 落地时模型会看见澄清答案 |
 | **用友 MCP Server（A-9）** | 未开始 | 账号已到位。原「排在协议层之后」→ **现排在 UI 之后**。它是第二个 executor，落地时 P1-6（`Executor` trait 层没有污点约束）必须一并做 |
 | A-13 溯源引用 | 未开始 | 等用友 MCP 接上（`cite` 锚点已在事件里，但没有真实单据可引） |

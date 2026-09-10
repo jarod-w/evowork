@@ -108,7 +108,11 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(model),
         Arc::new(LocalExecutor::new(Arc::new(WorkspaceOnlySandbox::new()))),
     )?;
-    let state = AppState::new(runtime, token.clone(), env!("CARGO_PKG_VERSION"));
+    let state = AppState::new(runtime, token.clone(), env!("CARGO_PKG_VERSION"))?;
+    let scheduler = state.clone();
+    tokio::spawn(async move {
+        evo_daemon::run_scheduler(scheduler).await;
+    });
 
     let listener = TcpListener::bind(bind).await?;
     let actual = listener.local_addr()?;

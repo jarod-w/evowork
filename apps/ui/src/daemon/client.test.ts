@@ -237,6 +237,26 @@ describe('createDaemonClient()', () => {
       expect(fetchImpl.mock.calls.length).toBe(callCountBefore)
     })
 
+    it('trigger.list stays allowed in read-only; trigger.create does not', async () => {
+      const fetchImpl = fakeFetch((url) => {
+        if (url.endsWith('/v1/hello')) return Promise.resolve(jsonResponse(helloFrame('99.0')))
+        return Promise.resolve(jsonResponse({ id: 1, result: { triggers: [] } }))
+      })
+      const client = createDaemonClient({ baseUrl: 'http://localhost:4000', token: 't', fetchImpl })
+      await client.hello()
+      expect(client.getStatus().readOnly).toBe(true)
+
+      const callCountBefore = fetchImpl.mock.calls.length
+      await expect(client.rpc('trigger.list', {})).resolves.toEqual({ triggers: [] })
+      expect(fetchImpl.mock.calls.length).toBeGreaterThan(callCountBefore)
+
+      const afterList = fetchImpl.mock.calls.length
+      await expect(
+        client.rpc('trigger.create', { name: 'x', intent: 'y', spec: { kind: 'webhook' } }),
+      ).rejects.toThrow(DaemonReadOnlyError)
+      expect(fetchImpl.mock.calls.length).toBe(afterList)
+    })
+
     it('a major-version mismatch still allows an allowlisted read method through', async () => {
       const fetchImpl = fakeFetch((url) => {
         if (url.endsWith('/v1/hello')) return Promise.resolve(jsonResponse(helloFrame('99.0')))
