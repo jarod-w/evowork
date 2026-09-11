@@ -492,6 +492,7 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 - 视图切换不用 router：`MainView` 八个值（`task` / `library` / `automations` / `audit` / `projects` / `catalog` / `settings` / `more`）+ `activeTaskId` + `settingsSection`。
   侧边栏六个入口（新建任务 · 项目 · 技能·连接器 · 自动化 · 资料库 · 更多），「更多」是菜单，项直接落到设置页的某个分区（`settings:models` 这种形式）。
   设置页是**一页多分区**，不是六个视图。**没有页面的入口也必须在 `NAV_TO_VIEW` 里出现**（`UnbuiltPage` 如实说没做，不是白屏）；「助理」入口 2026-09-07 整个下架（方案留在 02 §4.2）。
+  **以上是 2026-09-09 的当前代码形状，不是新版目标。** 2026-09-11 Approved UI 要求后续把项目与最近任务分区、入口统一为“插件”、移除“发现应用/更多”的重复或空壳入口，并隐藏未接通动作；实现完成前以 [status.md §6.1](status.md) 跟踪差距。
 - 样式**零字面量**：颜色与 px 只能来自 [packages/tokens](../packages/tokens/)，由 eslint 规则在渲染层文件上强制。
   组件只能来自 01 §5 的清单（现 **35** 个；第 33 ProgressBar · 34 Dialog / ItemCard · 35 SecretInput 都是先登记再实现）。
 - 渲染层 import 服务层**只许走子路径导出**（barrel 会带进 `node:crypto` / `node:child_process`，vite 直接失败），`styles.test.ts` 扫源码拦这类导入。

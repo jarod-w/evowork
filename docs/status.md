@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-09（第 17 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-11（第 18 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
@@ -9,6 +9,8 @@
 > **第 17 次是一次对账**：把 [设计集 01–11](design/README.md) 逐篇对着代码过了一遍，没有新功能落地；
 > 改动是 §1 的「未完成」列补齐、§6 的一处**错误更正**（分享上传此前被写成"已接"，实际没有调用方）、
 > 以及新增 §6.1「按设计文档列的未完成项」。
+>
+> **第 18 次是 UI 方案评审回写，没有新功能落地**：[类 ChatGPT UI 设计方案](chatgpt-like-ui-design.md) 已标记 `Approved v0.5`，并回写设计集 01–08。已定目标包括：对话优先、项目与最近任务分区、一级入口统一为“插件”、结果工作区按意图打开、未接通入口从主路径隐藏、首页不设案例墙或运营位；暗色主题不在当前范围。下文“已完成”仍只表示当前代码事实，不能把文档获批当成实现完成。
 
 ## 一句话
 
@@ -43,7 +45,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P0-6** M0 可行性 | 🟡 | 结构化生成链路、Q14 不落盘的可审计手段、三家协议语义 | GLM 产物质量人工评分（U1）· misfire 真机体验（U3） |
 | **P1-1** M1 网关 | 🟢 | Responses↔Chat 全量翻译 · 三家 provider · 错误码映射 · 用量规范化 · SSE · 能力端点 · Q14 不落盘 · **三家真实 endpoint 实测** | 企业私有部署包 · `maxContextTokens` 实测 · 长压测 |
 | **P1-2** M2a 服务层 | 🟢 | 协议层 · 16 张本机表 + 两个迁移器 · 适配层（会话/心跳/重启/恢复/降级/事件流/审批/场景） | automation 相关表的写入方（等 M5）· 产物索引写入方（等 M8） |
-| **P1-3** M2 前端 | 🟢 | token 层 · **35 个组件全部有实现**（2026-09-09 逐个核对 01 §5.1–5.35）· 19 类 Item · 四类审批卡 · 三栏工作台 · 首页与 Composer · 任务列表与六组筛选 · 变更视图组件 · Electron 引导与 preload · 本机服务宿主 · **2026-09-06：应用外壳与侧边栏骨架（01 §3.1–3.3）· 线性图标集 · IPC 动作接线（清单与实现逐项相等由测试钉住）· 回车→建任务→切页实测通过 · 模型选择器端到端接通** · **2026-09-07：`openTask` 拉历史 · 项目页落地 · 「助理」入口整个下架**（方案保留在 02 §4.2）· **2026-09-08：设置页六分区** · **2026-09-09：技能·连接器三 Tab + 发现应用抽屉 + 官方 browser MCP** | **2026-09-09 对账后按严重度排**：① **结果区四视图永远是空态** —— `TaskWorkspace` 有 `resultPanel` 插槽，`app.tsx` 从没传过；`ChangesView` 组件有单测但没挂上去 ② **侧边栏行操作九项只接了 `archive` / `delete`**（且是从投影表移除，没调内核归档），重命名 / 移动 / 打开文件夹 / 在此空间新建 / 分享 / 复制链接 / 分叉七项落到 `rowAction` 后只记一条 `unimplemented` 日志，**菜单里看起来能点** ③ **AgentMessage 是纯文本**（`ew-markdown` 只 `{block.text}`），04 §5.1 写的是 Markdown 全量渲染 ④ **时间范围筛选 UI 存在但不生效**（`sidebar.tsx` 的 `matched` 没按 `filter.range` 过滤）⑤ Composer 的 `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音都是"组件支持、宿主没传"（`mentionCandidates` / `slashCommands` / `onAttach` / `queued` / `micAvailable` 在 `app.tsx` 里一个都没接）⑥ 通知中心与设备中心（`UserFooter` 有回调，没人传）· 全局 ⌘K · deeplink `evowork://` · 虚拟滚动 · 自动滚动「↓ 有新内容」· Toast（`ToastStack` 写了，实际用的是 `Banner`）· 暗色主题的产品内切换（只跟系统偏好）⑦ 「更多」本体页仍是 `UnbuiltPage` |
+| **P1-3** M2 前端 | 🟢 | token 层 · **35 个组件全部有实现**（2026-09-09 逐个核对 01 §5.1–5.35）· 19 类 Item · 四类审批卡 · 三栏工作台 · 首页与 Composer · 任务列表与六组筛选 · 变更视图组件 · Electron 引导与 preload · 本机服务宿主 · **2026-09-06：应用外壳与侧边栏骨架（01 §3.1–3.3）· 线性图标集 · IPC 动作接线（清单与实现逐项相等由测试钉住）· 回车→建任务→切页实测通过 · 模型选择器端到端接通** · **2026-09-07：`openTask` 拉历史 · 项目页落地 · 「助理」入口整个下架**（方案保留在 02 §4.2）· **2026-09-08：设置页六分区** · **2026-09-09：现有“技能·连接器”三 Tab + “发现应用”抽屉 + 官方 browser MCP** | **Approved UI 尚未实现；2026-09-09 对账问题仍成立**：① **结果区四视图永远是空态** —— `TaskWorkspace` 有 `resultPanel` 插槽，`app.tsx` 从没传过；`ChangesView` 组件有单测但没挂上去 ② **侧边栏行操作九项只接了 `archive` / `delete`**（且是从投影表移除，没调内核归档），其余七项只记 `unimplemented` 日志；按新版设计应先隐藏，接通后再显示 ③ **AgentMessage 是纯文本**，未做 Markdown 全量渲染 ④ **时间范围筛选 UI 存在但不生效** ⑤ Composer 的 `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音均未由宿主传入 ⑥ 通知中心与设备中心 · 全局 ⌘K · deeplink · 虚拟滚动 · 自动滚动提示 · Toast 尚未接通 ⑦ 现有首页、侧栏项目/任务组织、插件命名、“发现应用”入口和“更多”空页尚未按 Approved 方案重组 |
 | **P2-1** M3 办公技能与解析 | 🟢 | **四个技能全部完成**（documents / spreadsheets / presentations / charts，共用一套骨架）· **本机解析管道**（识别 / 六道闸门 / 内置解析器 / zip / 注入载荷）· **三档运行时探测** · **办公扩展 App 内安装器**（2026-09-07，`services/runtime-installer`） | office / ocr 档的**实际解析器一个都没有**（`ingest/src/parsers/` 只有 `builtin.ts` 与 `zip.ts`；接口已定，等 M4 的受限子进程）—— 所以拖入 docx/pdf 仍只以原始文件引用 · **附件根本没接到 Composer**（M2 ⑤）· OCR 档的安装（安装器只装 office 档，`pytesseract` 缺） |
 | **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测）· **2026-09-06：审计链路接通**（hook → `audit.jsonl` → `audit_log` 表 → 审计页 + 导出，从「更多」可达）· **2026-09-09：签名策略包下发（R11 / M10c）** | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 设置页「安全与权限」分区仍没有 10 §7 的本机安全能力页（现在只展示策略包状态）· 任务页的预算进度条与耗尽双动作只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验过 · Ask 模式在 `ToolContributor` 层过滤写工具（D8，`ext/` 还是空的）· **Windows 隔离强度结论（见 U5）** |
 | **P3-1** M5 自动化 | 🟡 | **带命名时区的 cron**（含 DST 两个边界）· misfire 三策略与落库顺序 · 失败分类与自动暂停 · 设备绑定与迁移 · 自然语言触发解析（不调模型）· 调度循环 · **与内核的接线已接**（`local-services.ts` 的 `createKernelBridge` + `startScheduler`；`scheduler/README.md` 的「还没做的」第一条已过期）· 列表页与执行历史 UI · 表单组件 `AutomationForm`（含 misfire / wake / 试跑文案） | **2026-09-09 降为 🟡，因为产品里没有任何一条路能建出一个自动化**：`AutomationForm` 写好了但**没有任何地方渲染它**，`RENDERER_ACTIONS` 里只有只读的 `getAutomations`，`createAutomationRepo` **没有 insert automation 方法**（测试用裸 SQL 插）。列表、历史、misfire、连败暂停全部只能对着测试数据成立 · `wake_system` 只有表单勾选框，服务层与宿主没有任何 `powerMonitor` / 唤醒钩子（09 §6.3 的"唤醒直接触发扫描"没做，靠分钟 tick）· 「迁移到本机」有设备层语义、没有 UI/IPC 动作 · 试跑 / 立即运行没有入口 |
@@ -449,11 +451,11 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 
 | 篇 | 未做 / 半做 | 证据 |
 | --- | --- | --- |
-| **01 设计系统** | 暗色主题的产品内切换（只有 `prefers-color-scheme`，没有设置项写 `data-theme`）· `ToastStack` 写了没用，通知走 `Banner` · 吉祥物 / 应用图标仍是 Electron 默认 · §8 无系统化 a11y 验收 | `packages/tokens/src/css.ts` · `sidebar.tsx` · `app.tsx` · `build/` |
-| **02 信息架构** | 「更多」本体页是 `UnbuiltPage`（灵感 / 指南 / 设备 / 更新四项禁用并给了原因）· 通知中心与设备中心（`UserFooter` 回调没人传）· §6 快捷键只有 ⌥1–8 与 ⌘I，没有 ⌘K / ⌘N / ⌘F · §7 全局搜索 · §8 deeplink `evowork://` | `app.tsx` `UnbuiltPage` · `sidebar.tsx` `MORE_MENU` |
-| **03 首页与 Composer** | `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音 —— **组件全部支持，`app.tsx` 一个都没传**（`mentionCandidates` · `slashCommands` · `onAttach` · `queued` · `micAvailable`）· §5 案例包 toml 目录空（靠 `BUILTIN_CASES`）· 运营位开启时 `titlebar-promo` 是空 `div` · 回合失败已有顶部 `Banner`，缺的是对话流内的失败 item | `composer.tsx` vs `app.tsx` · `config/showcase/.gitkeep` |
-| **04 任务工作台** | A · C · **AgentMessage 是纯文本**（`ew-markdown` 只渲染 `{block.text}`，不是 Markdown）· **时间范围筛选 UI 有但 `matched` 不按 `filter.range` 过滤** · 标题栏无对话内搜索 / 分享 / 历史 · 自动滚动与「↓ 有新内容」· 排队区 / 中断转向 / 子任务侧滑未端到端 · 虚拟滚动 | `item-renderers.tsx` · `sidebar.tsx` `matched` · `task-workspace.tsx` |
-| **05 技能·连接器** | 企业私有源 / SkillHub（Q5 不做）· 内核 MCP 握手后的「已连接 · N 个工具」（信任后只写 config.toml，**不假装 live reload**）· 预置专家包（故意不编 100 个）· OAuth / 工具级「自动允许」逐项改 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx` |
+| **01 设计系统** | Approved 三种骨架与侧栏结构尚未实现 · `ToastStack` 写了没用，通知走 `Banner` · 应用图标仍是 Electron 默认 · §8 无系统化 a11y 验收 | `packages/tokens/src/css.ts` · `sidebar.tsx` · `app.tsx` · `build/` |
+| **02 信息架构** | 项目/最近任务独立分区、统一用户菜单和“插件”一级入口尚未实现 · 通知中心与设备中心（接通前按设计隐藏）· 快捷键缺 ⌘K / ⌘⇧O / ⌘F · 全局搜索 · deeplink `evowork://` | `app.tsx` `UnbuiltPage` · `sidebar.tsx` `MORE_MENU` |
+| **03 首页与 Composer** | Approved 的克制首页尚未实现；当前仍有场景分段、案例和旧 slot 骨架 · `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音组件能力未由 `app.tsx` 传入 · 回合失败缺对话流内 item | `composer.tsx` vs `app.tsx` · `config/showcase/.gitkeep` |
+| **04 任务工作台** | A · C · **AgentMessage 是纯文本** · **时间范围筛选 UI 有但不生效** · 意图驱动结果区尚未接线 · 自动滚动与“↓ 有新内容” · 排队区 / 中断转向 / 子任务侧滑未端到端 · 虚拟滚动 | `item-renderers.tsx` · `sidebar.tsx` `matched` · `task-workspace.tsx` |
+| **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx` |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 「我分享的」/ 删除对话框 —— **UI 壳全有，`app.tsx` 只传了 `rows`** · §3.4 全文检索是前端 `filterRows`，没接 ingest 的 FTS | `library.tsx` vs `app.tsx` |
 | **07 自动化** | B · `wake_system` 只有勾选框（服务层与宿主无任何唤醒钩子）· 「迁移到本机」有设备层语义没有动作 · 试跑 / 立即运行无入口 · **`scheduler/README.md`「还没做的」第一条已过期**（内核接线在 `local-services.ts` 已做，文档该改） | `automations.tsx` · `services/scheduler/README.md:60` |
 | **08 产物与解析** | D · office / ocr **解析器文件不存在**（`parsers/` 只有 `builtin.ts` `zip.ts`）· OCR 档安装 · 结果区产物面板（A）· 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |

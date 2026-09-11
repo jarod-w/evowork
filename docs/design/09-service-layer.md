@@ -350,7 +350,6 @@ CREATE UNIQUE INDEX ix_run_idem ON automation_run(automation_id, fire_time);  --
   evowork.db             ← §4
   scenarios/             ← 场景包（03 §2.2）
   modes/                 ← craft.md / plan.md / ask.md（README §4.1，取代 P3 补丁）
-  slots.toml             ← 运营位开关（03 §6）
   library/               ← 我的资料
   library-cache/         ← 团队空间缓存
   assistant/             ← 助理会话的 cwd（02 §4.2）

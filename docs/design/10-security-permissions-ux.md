@@ -264,7 +264,6 @@ Q1=A 削弱了服务端强制拦截（D9 的代价之一）。落法：
 | 禁用某些权限档           | `requirements.toml` → `permissionProfile/list` 返回 `allowed: false`（§2.1，内核原生支持） |
 | 只允许管理员配置的 hooks | `allow_managed_hooks_only`（总纲 §3.7）                                                    |
 | 禁用分享                 | 策略包开关（08 §7 规则 6）                                                                 |
-| 禁用运营位               | 策略包开关（01 §7.4）                                                                      |
 | 限制可用模型             | 网关侧 + 本机 `config.toml` 双重                                                           |
 | 强制审计上报             | 策略包开关                                                                                 |
 
