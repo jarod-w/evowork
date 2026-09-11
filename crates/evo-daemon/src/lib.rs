@@ -10,11 +10,12 @@ pub mod http;
 pub mod replay;
 pub mod runtime;
 pub mod test_support;
+pub mod trigger;
 
 pub use casegen::generate_case;
-pub use clock::{Clock, FixedClock, RealClock};
+pub use clock::{Clock, FixedClock, FrozenClock, RealClock};
 pub use config::DaemonConfig;
-pub use http::{AppState, router, serve};
+pub use http::{AppState, router, run_scheduler, serve};
 pub use replay::{
     CliReplayReport, Mismatch, ReplayOutcome, SnapshotRejected, VerifyReport, cli_replay,
     replay_to, replay_to_checked, verify,

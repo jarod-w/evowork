@@ -8,6 +8,10 @@ import type {
   RunCreateParams,
   RunCreateResult,
   ServerStreamFrame,
+  TriggerCreateParams,
+  TriggerDryrunResult,
+  TriggerListResult,
+  TriggerView,
 } from '@evowork/protocol'
 
 import { createDaemonClient } from './daemon/client'
@@ -41,6 +45,7 @@ import { StatusBar } from './workspace/StatusBar'
 import { Timeline } from './workspace/Timeline'
 import { useBlobTexts } from './workspace/useBlobTexts'
 import { ApprovalCard } from './workspace/ApprovalCard'
+import { Automation } from './workspace/Automation'
 
 /**
  * Build-time settings, i.e. how the browser/dev entry has always been
@@ -157,6 +162,10 @@ export default function App({ client, createClient, storage, platform }: AppProp
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [pane, setPane] = useState<'tasks' | 'automation'>('tasks')
+  const [triggers, setTriggers] = useState<TriggerView[]>([])
+  const [triggerRefresh, setTriggerRefresh] = useState(0)
+  const [dryruns, setDryruns] = useState<Record<string, TriggerDryrunResult>>({})
 
   // Bootstrap: resolve the shell, then the daemon settings, in that
   // order -- reading `~/.evowork/client.toml` is a platform capability,
@@ -205,6 +214,8 @@ export default function App({ client, createClient, storage, platform }: AppProp
     setView(emptyWorkspace())
     setDaemonStatus({ connected: false, readOnly: false, protocolVersion: null })
     setSelectedRunId(null)
+    setTriggers([])
+    setDryruns({})
 
     let cancelled = false
     let sub: { unsubscribe(): void } | null = null
@@ -218,6 +229,12 @@ export default function App({ client, createClient, storage, platform }: AppProp
           if (frame.op !== 'event') return
           const event: Event = frame.event
           setView((prev) => applyEvent(prev, event))
+          if (
+            event.body.kind === 'run.created' &&
+            (event.body.trigger.kind === 'schedule' || event.body.trigger.kind === 'webhook')
+          ) {
+            setTriggerRefresh((n) => n + 1)
+          }
         })
       })
       .catch((err: unknown) => {
@@ -230,6 +247,22 @@ export default function App({ client, createClient, storage, platform }: AppProp
       sub?.unsubscribe()
     }
   }, [daemonClient])
+
+  useEffect(() => {
+    if (pane !== 'automation' || !daemonClient || !daemonStatus.connected) return
+    let cancelled = false
+    daemonClient
+      .rpc<Record<string, never>, TriggerListResult>('trigger.list', {})
+      .then((result) => {
+        if (!cancelled) setTriggers(result.triggers ?? [])
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setActionError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [pane, daemonClient, daemonStatus.connected, triggerRefresh])
 
   const selected: RunView | undefined = view.runs.find((run) => run.runId === selectedRunId) ?? view.runs[0]
   const selectedId = selected?.runId ?? null
@@ -372,6 +405,43 @@ export default function App({ client, createClient, storage, platform }: AppProp
     )
   }
 
+  function onCreateTrigger(params: TriggerCreateParams) {
+    void runAction(async () => {
+      await requireClient().rpc<TriggerCreateParams, TriggerView>('trigger.create', params)
+      setTriggerRefresh((n) => n + 1)
+    })
+  }
+
+  function onDeleteTrigger(triggerId: string) {
+    void runAction(async () => {
+      await requireClient().rpc('trigger.delete', { trigger_id: triggerId })
+      setTriggerRefresh((n) => n + 1)
+    })
+  }
+
+  function onSetTriggerPaused(trigger: TriggerView, paused: boolean) {
+    void runAction(async () => {
+      await requireClient().rpc<TriggerCreateParams, TriggerView>('trigger.create', {
+        trigger_id: trigger.trigger_id,
+        name: trigger.name,
+        intent: trigger.intent,
+        spec: trigger.spec,
+        paused,
+      })
+      setTriggerRefresh((n) => n + 1)
+    })
+  }
+
+  function onDryrunTrigger(triggerId: string) {
+    void runAction(async () => {
+      const report = await requireClient().rpc<{ trigger_id: string }, TriggerDryrunResult>(
+        'trigger.dryrun',
+        { trigger_id: triggerId },
+      )
+      setDryruns((prev) => ({ ...prev, [triggerId]: report }))
+    })
+  }
+
   return (
     <div className="app">
       <header className="top">
@@ -409,6 +479,24 @@ export default function App({ client, createClient, storage, platform }: AppProp
 
       <div className="layout">
         <aside>
+          <nav className="side-nav" aria-label="工作区">
+            <button
+              type="button"
+              data-testid="nav-tasks"
+              className={pane === 'tasks' ? 'active' : ''}
+              onClick={() => setPane('tasks')}
+            >
+              任务
+            </button>
+            <button
+              type="button"
+              data-testid="nav-automation"
+              className={pane === 'automation' ? 'active' : ''}
+              onClick={() => setPane('automation')}
+            >
+              自动化
+            </button>
+          </nav>
           <Inbox
             items={view.inbox}
             runs={view.runs}
@@ -416,7 +504,10 @@ export default function App({ client, createClient, storage, platform }: AppProp
             blobTexts={blobTexts}
             readOnly={readOnly}
             busy={busy}
-            onSelectRun={setSelectedRunId}
+            onSelectRun={(id) => {
+              setSelectedRunId(id)
+              setPane('tasks')
+            }}
             onDecide={onDecide}
             onAnswer={onAnswer}
             onAmendBudget={onAmendBudget}
@@ -432,7 +523,10 @@ export default function App({ client, createClient, storage, platform }: AppProp
                     <button
                       type="button"
                       className={run.runId === selectedId ? 'active' : ''}
-                      onClick={() => setSelectedRunId(run.runId)}
+                      onClick={() => {
+                        setSelectedRunId(run.runId)
+                        setPane('tasks')
+                      }}
                     >
                       <code>{run.runId}</code>
                       <span>{runStatusLabel(run.status)}</span>
@@ -461,7 +555,20 @@ export default function App({ client, createClient, storage, platform }: AppProp
             />
           ) : null}
 
-          {selected ? (
+          {pane === 'automation' ? (
+            <Automation
+              connected={daemonStatus.connected}
+              readOnly={readOnly}
+              busy={busy}
+              triggers={triggers}
+              daemonBaseUrl={config?.baseUrl ?? DEFAULT_DAEMON_URL}
+              dryruns={dryruns}
+              onCreate={onCreateTrigger}
+              onDelete={onDeleteTrigger}
+              onSetPaused={onSetTriggerPaused}
+              onDryrun={onDryrunTrigger}
+            />
+          ) : selected ? (
             <>
               <div className="run-head">
                 <h2>

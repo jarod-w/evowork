@@ -1,7 +1,14 @@
 import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { Event, EventBody, HelloFrame, ServerStreamFrame } from '@evowork/protocol'
+import type {
+  Event,
+  EventBody,
+  HelloFrame,
+  ServerStreamFrame,
+  TriggerCreateParams,
+  TriggerView,
+} from '@evowork/protocol'
 
 import App from './App'
 import type { DaemonClient, DaemonClientStatus, DaemonSubscription } from './daemon/client'
@@ -663,3 +670,150 @@ describe('daemon connection settings (P0-17)', () => {
     unmount()
   })
 })
+
+describe('automation pane (A-8)', () => {
+  it('does not call trigger.list until the automation tab is opened', async () => {
+    const rpc = vi.fn().mockResolvedValue({ triggers: [] })
+    const { client } = stubClient({ onRpc: rpc })
+    const { host, unmount } = render(<App client={client} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(rpc).not.toHaveBeenCalled()
+    expect(host.querySelector('[data-testid="automation"]')).toBeNull()
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="nav-automation"]')?.click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rpc).toHaveBeenCalledWith('trigger.list', {})
+    expect(host.querySelector('[data-testid="automation-empty"]')?.textContent).toContain(
+      '还没有定时任务',
+    )
+    unmount()
+  })
+
+  it('creates a once trigger through daemonClient.rpc, then lists it', async () => {
+    const stored: TriggerView[] = []
+    const rpc = vi.fn(async (method: string, params: unknown) => {
+      if (method === 'trigger.list') return { triggers: [...stored] }
+      if (method === 'trigger.create') {
+        const p = params as TriggerCreateParams
+        const view: TriggerView = {
+          trigger_id: 't-1',
+          name: p.name,
+          intent: p.intent,
+          kind: 'schedule',
+          spec: p.spec,
+          paused: false,
+          created_ms: 1,
+          next_fire_ms: p.spec.kind === 'once' ? p.spec.at_ms : undefined,
+        }
+        stored.splice(0, stored.length, view)
+        return view
+      }
+      return {}
+    })
+    const { client } = stubClient({ onRpc: rpc })
+    const { host, unmount } = render(<App client={client} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="nav-automation"]')?.click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const name = host.querySelector<HTMLInputElement>('[data-testid="automation-name"]')!
+    const intent = host.querySelector<HTMLTextAreaElement>('[data-testid="automation-intent"]')!
+    const onceAt = host.querySelector<HTMLInputElement>('[data-testid="automation-once-at"]')!
+    await act(async () => {
+      setInputValue(name, '周一出表')
+      const intentSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      if (!intentSetter) throw new Error('textarea value setter missing')
+      intentSetter.call(intent, '把账龄表做出来')
+      intent.dispatchEvent(new Event('input', { bubbles: true }))
+      setInputValue(onceAt, '2026-09-14T08:00')
+    })
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="automation-submit"]')?.click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(rpc).toHaveBeenCalledWith(
+      'trigger.create',
+      expect.objectContaining({
+        name: '周一出表',
+        intent: '把账龄表做出来',
+        spec: expect.objectContaining({ kind: 'once' }),
+      }),
+    )
+    const createCall = rpc.mock.calls.find((call) => call[0] === 'trigger.create')
+    if (!createCall) throw new Error('expected trigger.create to have been called')
+    const spec = (createCall[1] as TriggerCreateParams).spec
+    expect(spec.kind).toBe('once')
+    if (spec.kind === 'once') {
+      expect(spec.at_ms).toBe(new Date('2026-09-14T08:00').getTime())
+    }
+    expect(host.querySelector('[data-testid="automation-list"]')?.textContent).toContain('周一出表')
+    unmount()
+  })
+
+  it('deletes a listed trigger through trigger.delete, not a local splice', async () => {
+    const stored: TriggerView[] = [
+      {
+        trigger_id: 't-keep',
+        name: 'keep',
+        intent: 'x',
+        kind: 'webhook',
+        spec: { kind: 'webhook' },
+        paused: false,
+        created_ms: 1,
+        hook_path: '/v1/hooks/abc',
+      },
+    ]
+    const rpc = vi.fn(async (method: string, params: unknown) => {
+      if (method === 'trigger.list') return { triggers: [...stored] }
+      if (method === 'trigger.delete') {
+        const id = (params as { trigger_id: string }).trigger_id
+        const idx = stored.findIndex((t) => t.trigger_id === id)
+        if (idx >= 0) stored.splice(idx, 1)
+        return { deleted: true }
+      }
+      return {}
+    })
+    const { client } = stubClient({ onRpc: rpc })
+    const { host, unmount } = render(<App client={client} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="nav-automation"]')?.click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(host.querySelector('[data-testid="automation-list"]')?.textContent).toContain('keep')
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="automation-delete"]')?.click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(rpc).toHaveBeenCalledWith('trigger.delete', { trigger_id: 't-keep' })
+    expect(host.querySelector('[data-testid="automation-empty"]')).toBeTruthy()
+    unmount()
+  })
+})
+

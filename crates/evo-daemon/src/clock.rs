@@ -57,3 +57,40 @@ impl Clock for FixedClock {
         "seed-fixed".to_owned()
     }
 }
+
+/// 测试用。`now_ms` 不自己往前走——调度测试要的是「现在是 T，到期的
+/// 触发器会不会醒」，不是每次读时钟都 +1s。`FixedClock` 做不到这一点。
+pub struct FrozenClock {
+    ms: std::sync::atomic::AtomicU64,
+}
+
+impl FrozenClock {
+    pub fn new(ms: u64) -> Self {
+        Self {
+            ms: std::sync::atomic::AtomicU64::new(ms),
+        }
+    }
+
+    pub fn set(&self, ms: u64) {
+        self.ms.store(ms, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn advance(&self, delta_ms: u64) {
+        self.ms
+            .fetch_add(delta_ms, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Clock for FrozenClock {
+    fn now_ms(&self) -> u64 {
+        self.ms.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn now_rfc3339(&self) -> String {
+        format!("epoch-ms:{}", self.now_ms())
+    }
+
+    fn seed(&self) -> String {
+        format!("seed:{}", self.now_ms())
+    }
+}

@@ -8,7 +8,8 @@ use crate::budget::BudgetSpec;
 use crate::effect::EffectClass;
 use crate::events::accounting::Currency;
 use crate::events::effect::ExecutionMode;
-use crate::ids::{ApprovalId, RunId};
+use crate::events::lifecycle::TriggerKind;
+use crate::ids::{ApprovalId, RunId, TriggerId};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -347,6 +348,112 @@ pub struct BlobGetResult {
     pub text: String,
 }
 
+/// 触发器怎么醒。这是 RPC 载荷，不是 Run Log 事件——跑起来的那一条
+/// run 只在 `run.created.trigger` 里留 kind + reference，定义本身活在
+/// daemon 的 `triggers.sqlite`。
+///
+/// `file` / `condition` 在 [`TriggerKind`] 上有位，create 拒绝它们：A-8
+/// 只接通定时与一个 webhook，没有假装已经在听文件或指标。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TriggerSpec {
+    Once {
+        at_ms: u64,
+    },
+    Interval {
+        every_ms: u64,
+    },
+    Daily {
+        hour: u8,
+        minute: u8,
+        #[serde(default)]
+        tz_offset_minutes: i16,
+    },
+    Weekly {
+        /// 0 = Monday … 6 = Sunday.
+        weekday: u8,
+        hour: u8,
+        minute: u8,
+        #[serde(default)]
+        tz_offset_minutes: i16,
+    },
+    Monthly {
+        /// 1–31. Months that do not have this day are skipped (31 in
+        /// February → March 31), not clamped.
+        day: u8,
+        hour: u8,
+        minute: u8,
+        #[serde(default)]
+        tz_offset_minutes: i16,
+    },
+    Webhook,
+}
+
+impl TriggerSpec {
+    pub fn trigger_kind(&self) -> TriggerKind {
+        match self {
+            Self::Webhook => TriggerKind::Webhook,
+            _ => TriggerKind::Schedule,
+        }
+    }
+}
+
+/// `trigger.create`。带 `trigger_id` 时是更新已有记录（暂停、改 spec），
+/// 不带则新建。pause 没有单独的 RPC 方法——协议目录只有 create / list /
+/// delete / dryrun 四个，更新走这一个入口。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TriggerCreateParams {
+    pub name: String,
+    pub intent: String,
+    pub spec: TriggerSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_id: Option<TriggerId>,
+}
+
+/// 一条触发器在 list / create 里的形状。`hook_path` 只在 webhook 上有，
+/// 是相对 daemon 根的路径（含 secret）：UI 拿自己的 `baseUrl` 拼完整 URL。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TriggerView {
+    pub trigger_id: TriggerId,
+    pub name: String,
+    pub intent: String,
+    pub kind: TriggerKind,
+    pub spec: TriggerSpec,
+    pub paused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_fire_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_id: Option<RunId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_fired_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hook_path: Option<String>,
+    pub created_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TriggerListResult {
+    pub triggers: Vec<TriggerView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TriggerIdParams {
+    pub trigger_id: TriggerId,
+}
+
+/// `trigger.dryrun` 只报告「现在会不会醒、下次何时醒」，**不**起 run。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TriggerDryrunResult {
+    pub trigger_id: TriggerId,
+    pub would_fire_now: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_fire_ms: Option<u64>,
+    pub intent: String,
+    pub paused: bool,
+}
+
 /// 06 §3 列出的全部方法。实现方按这个清单接线；未接线的返回
 /// [`RPC_METHOD_NOT_FOUND`]。
 pub const RPC_METHODS: &[&str] = &[
@@ -407,5 +514,28 @@ mod tests {
             RPC_METHODS.contains(&"budget.amend"),
             "漏登记的方法走 unknown，UI 会当成根本没这能力"
         );
+    }
+
+    #[test]
+    fn trigger_methods_are_in_the_method_catalog() {
+        for method in [
+            "trigger.create",
+            "trigger.list",
+            "trigger.delete",
+            "trigger.dryrun",
+        ] {
+            assert!(
+                RPC_METHODS.contains(&method),
+                "{method} 漏登记会走 unknown，UI 会当成根本没这能力"
+            );
+        }
+    }
+
+    #[test]
+    fn trigger_spec_webhook_roundtrips_as_kind_tag() {
+        let spec = TriggerSpec::Webhook;
+        let v = serde_json::to_value(&spec).unwrap();
+        assert_eq!(v, serde_json::json!({"kind": "webhook"}));
+        assert_eq!(serde_json::from_value::<TriggerSpec>(v).unwrap(), spec);
     }
 }

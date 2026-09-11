@@ -63,6 +63,12 @@ POST /v1/rpc     { "id": 1, "method": "run.create", "params": {...} }
 | `policy.get` | 当前生效策略（放权分级的展示） | A-10 |
 | `eval.run` | 跑评测集 | 4.7 / 出场判据 7.1-4 |
 
+`trigger.create` 的 `spec` 是内部 tagged 的 `TriggerSpec`：`once` / `interval` / `daily` / `weekly` / `monthly` / `webhook`。带 `trigger_id` 时是更新（暂停、改 spec），不带则新建——协议目录没有第五个方法。`dryrun` 只报告现在会不会醒，不起 run。
+
+Webhook 另有一条 HTTP `POST /v1/hooks/{secret}`，用 secret 当凭据，不走 Bearer。这是本机 daemon 的入口，不是公网接收端；文件变更与条件触发仍未接通。
+
+调度循环跑在 daemon 进程里（每秒扫一次到期的 `once`/`interval`/`daily`/`weekly`/`monthly`）。本层**不**保证机器开机，也**不**保证 LaunchDaemon 把进程拉起来。
+
 `eval.run` 放进产品协议而不是一个独立脚本，是有理由的：**4.7 要求「POC 验收当天客户问准确率多少时，能当场跑一遍给客户看」**。它在 UI 里有一个按钮，比 SSH 上去敲命令有说服力得多，且成本几乎为零（runner 本来就要写）。
 
 ---

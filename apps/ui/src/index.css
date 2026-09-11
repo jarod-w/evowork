@@ -101,7 +101,8 @@ button {
 .inbox-jump,
 .run-list button,
 .event-row,
-.timeline-filters button {
+.timeline-filters button,
+.automation-form button {
   border: 1px solid var(--ink);
   background: var(--ink);
   color: var(--paper);
@@ -175,6 +176,27 @@ main {
   color: var(--ink);
   border-color: var(--line);
   font-size: 0.8rem;
+}
+
+.side-nav {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.side-nav button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.side-nav button.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
 }
 
 .inbox-jump:hover,
@@ -537,4 +559,67 @@ code {
   background: var(--paper);
   color: var(--ink);
   font-family: inherit;
+}
+
+.automation h2 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 1.15rem;
+  color: var(--ink);
+}
+
+.automation-form {
+  margin: 1rem 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.automation-form h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.automation-form label,
+.automation-inline label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.automation-form input,
+.automation-form textarea,
+.automation-form select {
+  border: 1px solid var(--line);
+  padding: 0.35rem;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.automation-inline {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.automation-inline label {
+  flex: 1;
+}
+
+.automation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trigger-card {
+  margin-bottom: 0.85rem;
+}
+
+.trigger-card header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
 }

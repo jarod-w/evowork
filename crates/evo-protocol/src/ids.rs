@@ -37,7 +37,8 @@ string_id!(
     LeaseId,
     ExecutorId,
     ArtifactId,
-    CheckpointId
+    CheckpointId,
+    TriggerId
 );
 
 #[cfg(test)]

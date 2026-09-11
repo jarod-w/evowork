@@ -7,8 +7,11 @@
 
 use crate::replay::replay_to;
 use crate::runtime::{DaemonError, RunOutcome, Runtime};
+use crate::trigger::{
+    TriggerRecord, TriggerStore, next_fire_ms, random_hook_secret, trigger_db_path, validate_spec,
+};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -17,21 +20,24 @@ use evo_gateway::ManifestRegistry;
 use evo_kernel::{AwaitReason, RunStatus};
 use evo_protocol::events::accounting::CostCharged;
 use evo_protocol::events::effect::ExecutionMode;
+use evo_protocol::events::lifecycle::{TriggerKind, TriggerRef};
 use evo_protocol::rpc::{
     ApprovalDecideParams, BlobGetParams, BlobGetResult, BudgetAmendParams, CaughtUpFrame,
     ClarificationAnswerParams, ClientStreamFrame, CostQueryParams, CostQueryResult, EventFrame,
     HelloFrame, PolicyGetResult, RPC_INTERNAL, RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND,
     RPC_METHODS, RPC_NOT_FOUND, RpcRequest, RpcResponse, RunCreateParams, RunCreateResult,
     RunEventsParams, RunEventsResult, RunGetResult, RunIdParams, RunListResult, ToolListItem,
-    ToolListResult, ToolManifestParams, ToolManifestResult,
+    ToolListResult, ToolManifestParams, ToolManifestResult, TriggerCreateParams,
+    TriggerDryrunResult, TriggerIdParams, TriggerListResult, TriggerSpec,
 };
-use evo_protocol::{Actor, BlobRef, Currency, Event, EventBody, RunId};
+use evo_protocol::{Actor, BlobRef, Currency, Event, EventBody, RunId, TriggerId};
 use evo_runlog::{RunLog, RunLogError};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, broadcast};
 use tower_http::cors::CorsLayer;
@@ -41,6 +47,7 @@ const EVENT_BUS_CAPACITY: usize = 1024;
 #[derive(Clone)]
 pub struct AppState {
     runtime: Arc<Mutex<Runtime>>,
+    triggers: Arc<std::sync::Mutex<TriggerStore>>,
     event_tx: broadcast::Sender<Event>,
     token: String,
     db_path: PathBuf,
@@ -49,18 +56,25 @@ pub struct AppState {
     policy_toml: String,
     daemon_ver: String,
     next_run: Arc<AtomicU64>,
+    next_trigger: Arc<AtomicU64>,
 }
 
 impl AppState {
-    pub fn new(runtime: Runtime, token: impl Into<String>, daemon_ver: impl Into<String>) -> Self {
+    pub fn new(
+        runtime: Runtime,
+        token: impl Into<String>,
+        daemon_ver: impl Into<String>,
+    ) -> Result<Self, DaemonError> {
         let (event_tx, _) = broadcast::channel(EVENT_BUS_CAPACITY);
         let runtime = runtime.with_event_sink(event_tx.clone());
         let db_path = runtime.config().db_path.clone();
         let blob_root = runtime.config().blob_root.clone();
         let tools_toml = runtime.config().tools_toml.clone();
         let policy_toml = runtime.config().policy_toml.clone();
-        Self {
+        let triggers = TriggerStore::open(&trigger_db_path(&db_path))?;
+        Ok(Self {
             runtime: Arc::new(Mutex::new(runtime)),
+            triggers: Arc::new(std::sync::Mutex::new(triggers)),
             event_tx,
             token: token.into(),
             db_path,
@@ -69,7 +83,8 @@ impl AppState {
             policy_toml,
             daemon_ver: daemon_ver.into(),
             next_run: Arc::new(AtomicU64::new(1)),
-        }
+            next_trigger: Arc::new(AtomicU64::new(1)),
+        })
     }
 
     fn open_log(&self) -> Result<RunLog, DaemonError> {
@@ -84,6 +99,114 @@ impl AppState {
             .unwrap_or(0);
         RunId::from(format!("r-{ms}-{n}"))
     }
+
+    fn alloc_trigger_id(&self) -> TriggerId {
+        let n = self.next_trigger.fetch_add(1, Ordering::SeqCst);
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        TriggerId::from(format!("t-{ms}-{n}"))
+    }
+
+    fn lock_triggers(&self) -> Result<std::sync::MutexGuard<'_, TriggerStore>, DaemonError> {
+        self.triggers
+            .lock()
+            .map_err(|_| DaemonError::TriggerStorePoisoned)
+    }
+
+    /// 本层保证调度循环跑在 daemon 进程里，不在 UI。不保证机器开机，
+    /// 也不保证有人用 LaunchDaemon 把本进程拉起来（那是装机前提）。
+    pub async fn fire_due(&self) -> Result<Vec<RunId>, DaemonError> {
+        let now_ms = self.runtime.lock().await.now_ms();
+        let due = {
+            let store = self.lock_triggers()?;
+            store.due(now_ms)?
+        };
+        let mut fired = Vec::new();
+        for rec in due {
+            match self.fire_record(rec.id.clone(), now_ms).await {
+                Ok(result) => fired.push(result.run_id),
+                Err(DaemonError::TriggerBusy(_) | DaemonError::TriggerPaused(_)) => {}
+                Err(DaemonError::UnknownTrigger(_)) => {}
+                Err(e) => eprintln!("evo-daemon scheduler: {e}"),
+            }
+        }
+        Ok(fired)
+    }
+
+    async fn fire_record(
+        &self,
+        trigger_id: TriggerId,
+        now_ms: u64,
+    ) -> Result<RunCreateResult, DaemonError> {
+        let run_id = self.alloc_run_id();
+        let (intent, kind) = {
+            let store = self.lock_triggers()?;
+            let mut rec = store
+                .get(&trigger_id)?
+                .ok_or_else(|| DaemonError::UnknownTrigger(trigger_id.to_string()))?;
+            if rec.paused {
+                return Err(DaemonError::TriggerPaused(trigger_id.to_string()));
+            }
+            if let Some(prev) = &rec.last_run_id
+                && self.last_run_active(prev)?
+            {
+                return Err(DaemonError::TriggerBusy(trigger_id.to_string()));
+            }
+            rec.last_run_id = Some(run_id.clone());
+            store.update(&rec)?;
+            (rec.intent.clone(), rec.kind())
+        };
+
+        let mut rt = self.runtime.lock().await;
+        let outcome = rt
+            .start_with_trigger(
+                &run_id,
+                &intent,
+                TriggerRef {
+                    kind,
+                    reference: trigger_id.to_string(),
+                },
+            )
+            .await?;
+        drop(rt);
+
+        {
+            let store = self.lock_triggers()?;
+            if let Some(mut rec) = store.get(&trigger_id)? {
+                rec.last_fired_ms = Some(now_ms);
+                rec.next_fire_ms = match &rec.spec {
+                    TriggerSpec::Once { .. } | TriggerSpec::Webhook => None,
+                    TriggerSpec::Interval { .. } => next_fire_ms(&rec.spec, now_ms),
+                    _ => next_fire_ms(&rec.spec, now_ms.saturating_add(1)),
+                };
+                store.update(&rec)?;
+            }
+        }
+
+        let state = outcome.into_state();
+        Ok(RunCreateResult {
+            run_id,
+            status: status_str(state.status),
+            last_seq: state.last_seq,
+        })
+    }
+
+    fn last_run_active(&self, run_id: &RunId) -> Result<bool, DaemonError> {
+        let log = self.open_log()?;
+        if log.last_seq(run_id)?.is_none() {
+            return Ok(false);
+        }
+        match replay_to(&log, run_id, None, true) {
+            Ok(state) => Ok(matches!(
+                state.status,
+                RunStatus::Running | RunStatus::Suspended
+            )),
+            // 解不开就当还在跑：宁可漏一次也不对着同一条定义连发。
+            Err(_) => Ok(true),
+        }
+    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -91,12 +214,25 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/hello", get(hello))
         .route("/v1/rpc", post(rpc))
         .route("/v1/events", get(events_ws))
+        .route("/v1/hooks/{secret}", post(webhook_fire))
         .layer(CorsLayer::very_permissive())
         .with_state(state)
 }
 
 pub async fn serve(listener: TcpListener, state: AppState) -> std::io::Result<()> {
     axum::serve(listener, router(state)).await
+}
+
+/// 每秒扫一次到期的定时触发器。挂在 daemon 进程上，与 UI 是否开着无关。
+pub async fn run_scheduler(state: AppState) {
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        if let Err(e) = state.fire_due().await {
+            eprintln!("evo-daemon scheduler: {e}");
+        }
+    }
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
@@ -305,6 +441,10 @@ async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "tool.list" => tool_list(state, params),
         "tool.manifest" => tool_manifest(state, params),
         "policy.get" => policy_get(state, params),
+        "trigger.create" => trigger_create(state, params).await,
+        "trigger.list" => trigger_list(state, params),
+        "trigger.delete" => trigger_delete(state, params),
+        "trigger.dryrun" => trigger_dryrun(state, params).await,
         other if RPC_METHODS.contains(&other) => Err(RpcFail {
             code: RPC_METHOD_NOT_FOUND,
             message: format!("not implemented: {other}"),
@@ -328,7 +468,9 @@ struct RpcFail {
 impl From<DaemonError> for RpcFail {
     fn from(err: DaemonError) -> Self {
         match &err {
-            DaemonError::UnknownApproval(_) | DaemonError::UnknownClarification(_) => Self {
+            DaemonError::UnknownApproval(_)
+            | DaemonError::UnknownClarification(_)
+            | DaemonError::UnknownTrigger(_) => Self {
                 code: RPC_NOT_FOUND,
                 message: err.to_string(),
             },
@@ -341,6 +483,12 @@ impl From<DaemonError> for RpcFail {
                 message: err.to_string(),
             },
         }
+    }
+}
+
+impl From<crate::trigger::TriggerStoreError> for RpcFail {
+    fn from(err: crate::trigger::TriggerStoreError) -> Self {
+        DaemonError::from(err).into()
     }
 }
 
@@ -633,4 +781,163 @@ fn policy_get(state: &AppState, _raw: serde_json::Value) -> Result<serde_json::V
         policy_toml: state.policy_toml.clone(),
     })
     .expect("PolicyGetResult 必须可序列化"))
+}
+
+async fn trigger_create(
+    state: &AppState,
+    raw: serde_json::Value,
+) -> Result<serde_json::Value, RpcFail> {
+    let p: TriggerCreateParams = params(raw)?;
+    if p.name.trim().is_empty() || p.intent.trim().is_empty() {
+        return Err(RpcFail {
+            code: RPC_INVALID_PARAMS,
+            message: "name and intent must be non-empty".into(),
+        });
+    }
+    validate_spec(&p.spec).map_err(|message| RpcFail {
+        code: RPC_INVALID_PARAMS,
+        message,
+    })?;
+    let now_ms = state.runtime.lock().await.now_ms();
+
+    let rec = if let Some(id) = p.trigger_id {
+        let store = state.lock_triggers()?;
+        let mut rec = store
+            .get(&id)?
+            .ok_or_else(|| DaemonError::UnknownTrigger(id.to_string()))?;
+        rec.name = p.name.trim().to_owned();
+        rec.intent = p.intent.trim().to_owned();
+        let spec_changed = rec.spec != p.spec;
+        if spec_changed {
+            rec.spec = p.spec;
+            rec.next_fire_ms = next_fire_ms(&rec.spec, now_ms);
+        }
+        if matches!(rec.spec, TriggerSpec::Webhook) {
+            if rec.hook_secret.is_none() {
+                rec.hook_secret = Some(random_hook_secret()?);
+            }
+        } else if spec_changed {
+            rec.hook_secret = None;
+        }
+        if let Some(paused) = p.paused {
+            rec.paused = paused;
+        }
+        store.update(&rec)?;
+        rec
+    } else {
+        let hook_secret = match &p.spec {
+            TriggerSpec::Webhook => Some(random_hook_secret()?),
+            _ => None,
+        };
+        let rec = TriggerRecord {
+            id: state.alloc_trigger_id(),
+            name: p.name.trim().to_owned(),
+            intent: p.intent.trim().to_owned(),
+            spec: p.spec.clone(),
+            paused: p.paused.unwrap_or(false),
+            hook_secret,
+            next_fire_ms: next_fire_ms(&p.spec, now_ms),
+            last_run_id: None,
+            last_fired_ms: None,
+            created_ms: now_ms,
+        };
+        state.lock_triggers()?.insert(&rec)?;
+        rec
+    };
+
+    Ok(serde_json::to_value(rec.view()).expect("TriggerView 必须可序列化"))
+}
+
+fn trigger_list(state: &AppState, raw: serde_json::Value) -> Result<serde_json::Value, RpcFail> {
+    let _: serde_json::Value = params(raw).unwrap_or(serde_json::json!({}));
+    let store = state.lock_triggers()?;
+    let triggers = store.list()?.into_iter().map(|rec| rec.view()).collect();
+    Ok(serde_json::to_value(TriggerListResult { triggers })
+        .expect("TriggerListResult 必须可序列化"))
+}
+
+fn trigger_delete(state: &AppState, raw: serde_json::Value) -> Result<serde_json::Value, RpcFail> {
+    let p: TriggerIdParams = params(raw)?;
+    let deleted = state.lock_triggers()?.delete(&p.trigger_id)?;
+    if !deleted {
+        return Err(DaemonError::UnknownTrigger(p.trigger_id.to_string()).into());
+    }
+    Ok(serde_json::json!({ "deleted": true }))
+}
+
+async fn trigger_dryrun(
+    state: &AppState,
+    raw: serde_json::Value,
+) -> Result<serde_json::Value, RpcFail> {
+    let p: TriggerIdParams = params(raw)?;
+    let now_ms = state.runtime.lock().await.now_ms();
+    let rec = state
+        .lock_triggers()?
+        .get(&p.trigger_id)?
+        .ok_or_else(|| DaemonError::UnknownTrigger(p.trigger_id.to_string()))?;
+    let busy = match &rec.last_run_id {
+        Some(run_id) => state.last_run_active(run_id)?,
+        None => false,
+    };
+    let due = rec.next_fire_ms.is_some_and(|t| t <= now_ms) || rec.kind() == TriggerKind::Webhook;
+    let would_fire_now = !rec.paused && !busy && due;
+    Ok(serde_json::to_value(TriggerDryrunResult {
+        trigger_id: rec.id,
+        would_fire_now,
+        next_fire_ms: rec.next_fire_ms,
+        intent: rec.intent,
+        paused: rec.paused,
+    })
+    .expect("TriggerDryrunResult 必须可序列化"))
+}
+
+async fn webhook_fire(
+    State(state): State<AppState>,
+    Path(secret): Path<String>,
+) -> Result<Json<RunCreateResult>, (StatusCode, Json<serde_json::Value>)> {
+    if secret.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "not found" })),
+        ));
+    }
+    let trigger_id = {
+        let store = state.lock_triggers().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
+        match store.get_by_secret(&secret) {
+            Ok(Some(rec)) => rec.id,
+            Ok(None) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": "not found" })),
+                ));
+            }
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                ));
+            }
+        }
+    };
+    let now_ms = state.runtime.lock().await.now_ms();
+    match state.fire_record(trigger_id, now_ms).await {
+        Ok(result) => Ok(Json(result)),
+        Err(DaemonError::UnknownTrigger(_)) => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "not found" })),
+        )),
+        Err(DaemonError::TriggerPaused(_) | DaemonError::TriggerBusy(_)) => Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "unavailable" })),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )),
+    }
 }
