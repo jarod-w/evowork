@@ -89,6 +89,12 @@ importers:
       '@evowork/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      dompurify:
+        specifier: ^3.4.14
+        version: 3.4.14
+      marked:
+        specifier: ^16.4.2
+        version: 16.4.2
       mermaid:
         specifier: ^11.17.2
         version: 11.17.2

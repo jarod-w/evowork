@@ -15,6 +15,8 @@
  * 3. **`Reasoning` 在模型无推理能力时整体不渲染**（04 §5.2 #3），**不留空壳**。
  *    这条与网关的能力声明（D2）配对：网关说没有，前端就不画那个折叠区。
  */
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
 import { useState, type ReactNode } from 'react';
 
 import { Badge, StatusDot } from './primitives.js';
@@ -94,6 +96,69 @@ function joined(item: RenderItem, key: string): string {
   if (Array.isArray(value))
     return value.filter((v): v is string => typeof v === 'string').join('\n\n');
   return '';
+}
+
+const MARKDOWN_TAGS = [
+  'a',
+  'blockquote',
+  'br',
+  'code',
+  'del',
+  'em',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'input',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'strong',
+  'table',
+  'tbody',
+  'td',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+] as const;
+
+const MARKDOWN_ATTRIBUTES = [
+  'checked',
+  'class',
+  'disabled',
+  'href',
+  'rel',
+  'target',
+  'title',
+  'type',
+] as const;
+
+/**
+ * Agent 输出是不可信输入：先按 GFM 解析，再把结果收敛到消息区真正需要的标签与属性。
+ *
+ * 这里不允许图片标签。Markdown 图片会隐式发起网络请求，与 K6 的「出网必须显式授权」
+ * 冲突；真正的生成图片由 `ImageGeneration` item 展示，不走正文 Markdown。
+ */
+function renderMarkdown(markdown: string): { readonly __html: string } {
+  const parsed = marked.parse(markdown, {
+    async: false,
+    breaks: true,
+    gfm: true,
+  });
+  const html = typeof parsed === 'string' ? parsed : '';
+  return {
+    __html: DOMPurify.sanitize(html, {
+      ALLOWED_ATTR: [...MARKDOWN_ATTRIBUTES],
+      ALLOWED_TAGS: [...MARKDOWN_TAGS],
+      ALLOW_DATA_ATTR: false,
+      SANITIZE_NAMED_PROPS: true,
+    }),
+  };
 }
 
 function Collapsible({
@@ -184,7 +249,7 @@ export function ItemRenderer({
     // ② AgentMessage —— Markdown 全量渲染；三类受控 fence 交给 Visualizer（04 §7）
     case 'agentMessage': {
       /*
-       * 三类受控 fence 交给 Visualizer（04 §5.2 #2 / §7），其余按纯文本。
+       * 三类受控 fence 交给 Visualizer（04 §5.2 #2 / §7），其他围栏按不可执行代码块显示。
        *
        * **多图叙事按顺序纵向排列，不做轮播**（04 §7 最后一段）：
        * 对话流里的横向轮播会丢上下文 —— 用户看第二张图时看不到第一张。
@@ -194,9 +259,12 @@ export function ItemRenderer({
         <div className="ew-item ew-item-agent" data-kind={kind}>
           {blocks.map((block, index) =>
             block.kind === 'text' ? (
-              <div key={index} className="ew-markdown">
-                {block.text}
-              </div>
+              <div
+                key={index}
+                className="ew-markdown"
+                // 解析后的 HTML 已由 DOMPurify 按 Markdown 专用白名单清洗。
+                dangerouslySetInnerHTML={renderMarkdown(block.text)}
+              />
             ) : (
               <Visualizer
                 key={index}

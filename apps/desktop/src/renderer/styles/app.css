@@ -574,6 +574,116 @@ textarea {
 
 .ew-markdown {
   color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.ew-markdown > :first-child {
+  margin-top: 0;
+}
+.ew-markdown > :last-child {
+  margin-bottom: 0;
+}
+.ew-markdown p,
+.ew-markdown ul,
+.ew-markdown ol,
+.ew-markdown blockquote,
+.ew-markdown table,
+.ew-markdown pre {
+  margin: 0 0 var(--space-12);
+}
+.ew-markdown h1,
+.ew-markdown h2,
+.ew-markdown h3,
+.ew-markdown h4,
+.ew-markdown h5,
+.ew-markdown h6 {
+  margin: var(--space-20) 0 var(--space-8);
+  color: var(--text-primary);
+}
+.ew-markdown h1 {
+  font-size: var(--font-title-1-size);
+  line-height: var(--font-title-1-line);
+  font-weight: var(--font-title-1-weight);
+}
+.ew-markdown h2,
+.ew-markdown h3 {
+  font-size: var(--font-title-2-size);
+  line-height: var(--font-title-2-line);
+  font-weight: var(--font-title-2-weight);
+}
+.ew-markdown h4,
+.ew-markdown h5,
+.ew-markdown h6 {
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  font-weight: var(--font-label-weight);
+}
+.ew-markdown ul,
+.ew-markdown ol {
+  padding-left: var(--space-24);
+}
+.ew-markdown li + li {
+  margin-top: var(--space-4);
+}
+.ew-markdown li > p {
+  margin: 0;
+}
+.ew-markdown li.task-list-item {
+  list-style: none;
+}
+.ew-markdown input[type='checkbox'] {
+  margin: 0 var(--space-6) 0 0;
+  accent-color: var(--accent);
+}
+.ew-markdown blockquote {
+  padding-left: var(--space-12);
+  border-left: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.ew-markdown code {
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  background: var(--bg-sunken);
+  border-radius: var(--r-xs);
+  padding: 0 var(--space-4);
+}
+.ew-markdown pre {
+  overflow: auto;
+  padding: var(--space-12);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+}
+.ew-markdown pre code {
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+.ew-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.ew-markdown th,
+.ew-markdown td {
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-default);
+  text-align: left;
+  white-space: nowrap;
+}
+.ew-markdown th {
+  background: var(--bg-sunken);
+  font-weight: var(--font-label-weight);
+}
+.ew-markdown a {
+  color: var(--accent-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: var(--space-2);
+}
+.ew-markdown hr {
+  margin: var(--space-20) 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .ew-item-summary {

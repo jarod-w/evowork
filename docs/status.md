@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-12（第 19 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-12（第 20 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
@@ -12,9 +12,11 @@
 >
 > **第 18 次是 UI 方案评审回写，没有新功能落地**：[类 ChatGPT UI 设计方案](chatgpt-like-ui-design.md) 已标记 `Approved v0.5`，并回写设计集 01–08。已定目标包括：对话优先、项目与最近任务分区、一级入口统一为“插件”、结果工作区按意图打开、未接通入口从主路径隐藏、首页不设案例墙或运营位；暗色主题不在当前范围。下文“已完成”仍只表示当前代码事实，不能把文档获批当成实现完成。
 >
-> **第 19 次开始落地 Approved UI**：阶段 A 的外壳与主路径已经完成第一轮重组。首页收敛为问候、Composer 和最多四条上下文建议；侧栏分成项目、最近任务和工具入口；“技能·连接器 / 发现应用”统一为“插件 / 使用插件”；Composer 的资料库、插件和高级权限进入渐进披露菜单；未接通的任务行操作从界面移除；结果工作区不再因首个结果自动展开；生成的主题 CSS 固定为浅色。发送、连续对话、停止、继续及现有项目/插件页面的数据链路保持不变。阶段 B、C 仍未开始。
+> **第 19 次开始落地 Approved UI**：阶段 A 的外壳与主路径已经完成第一轮重组。首页收敛为问候、Composer 和最多四条上下文建议；侧栏分成项目、最近任务和工具入口；“技能·连接器 / 发现应用”统一为“插件 / 使用插件”；Composer 的资料库、插件和高级权限进入渐进披露菜单；未接通的任务行操作从界面移除；结果工作区不再因首个结果自动展开；生成的主题 CSS 固定为浅色。发送、连续对话、停止、继续及现有项目/插件页面的数据链路保持不变。阶段 C 仍未开始。
 >
 > **同日修复两处真窗口回归**：连续的 Reasoning / Command / Tool item 现在先归并为 Codex 式组级过程摘要，默认不挂载内部推理、命令和输出，长命令的二级摘要也限制为单行；macOS `hiddenInset` 标题栏只在 Darwin 下为三颗交通灯留位，EvoWork 品牌名不再与窗口控件重叠。
+>
+> **第 20 次开始阶段 B**：AgentMessage 不再按纯文本显示，改为 GFM Markdown 渲染，标题、强调、列表、任务列表、表格、引用、链接、行内代码与代码围栏均有对应排版；渲染结果经过标签/属性白名单清洗，Markdown 图片不加载（避免正文触发未授权出网），三类受控 fence 仍交给 Visualizer。
 
 ## 一句话
 
@@ -31,8 +33,8 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | 指标 | 值 |
 | --- | --- |
 | 门禁 | `pnpm run check` 全绿：prettier · eslint（含 K2 边界规则）· tsc（含测试）· vitest · K1 补丁预算 |
-| 依赖 | Electron **44.2.0**（`--version` 实测可运行）· mermaid 11.17（**已代码分割**：主 chunk 244KB，mermaid 683KB 独立）· 办公扩展**有了 App 内安装器**（2026-09-07，`services/runtime-installer`）。实测：干净 HOME 从零联网装 **66 秒**通过（含“搬走目录再跑”的可搬运检查）；本机打的离线包在干净 HOME 上**离线装 41.7 秒**通过（下载函数被换成一被调用就炸）。四个技能用系统 python3 调用时 re-exec 兜底实测生效，docx/xlsx/pptx/图表四种产物已生成并回读验证；图表中文用扩展自带的 Noto Sans SC 渲染正常。**OCR 档仍未装**（`pytesseract` 缺失），扫描件走不通 |
-| 测试 | **1450 个通过、2 个跳过**（2026-09-12 实测 `vitest run`，104 个文件）。跳过的是 runtime-installer 的两条联网端到端安装测试；办公技能的实际 docx / xlsx / pptx / png 生成分支本次均已运行并通过。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
+| 依赖 | Electron **44.2.0**（`--version` 实测可运行）· mermaid 11.17（**已代码分割**）· Markdown 使用 marked 16.4 + DOMPurify 3.4；2026-09-12 渲染层实测构建：主 chunk 415KB、mermaid core 614KB 独立 · 办公扩展**有了 App 内安装器**（2026-09-07，`services/runtime-installer`）。实测：干净 HOME 从零联网装 **66 秒**通过（含“搬走目录再跑”的可搬运检查）；本机打的离线包在干净 HOME 上**离线装 41.7 秒**通过（下载函数被换成一被调用就炸）。四个技能用系统 python3 调用时 re-exec 兜底实测生效，docx/xlsx/pptx/图表四种产物已生成并回读验证；图表中文用扩展自带的 Noto Sans SC 渲染正常。**OCR 档仍未装**（`pytesseract` 缺失），扫描件走不通 |
+| 测试 | **1452 个通过、2 个跳过**（2026-09-12 实测 `vitest run`，104 个文件）。跳过的是 runtime-installer 的两条联网端到端安装测试；办公技能的实际 docx / xlsx / pptx / png 生成分支本次均已运行并通过。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
 | 源码 | 约 35.8k 行（不含测试）+ 20.0k 行测试 |
 | 内核补丁 | **0 个文件 / 0 行**（预算 5 / 500）—— 设计判定只剩 P4 品牌字符串一项待落 |
 | 内核基线 | 断言基线 `89a4eec6da`（2026-09-04，F1–F16 的 17 条机器断言在此复核）。**本机实际签出已是 `7769bccbb2`（2026-09-07），领先 89 个提交**；2026-09-09 `kernel-drift --no-fetch` 跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3/F7/F8/F14/F16 行号漂了，断言没坏）。F17–F25 九条只在设计集 README §4 里，**没进 `kernel-assertions.json`** |
@@ -49,7 +51,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P0-6** M0 可行性 | 🟡 | 结构化生成链路、Q14 不落盘的可审计手段、三家协议语义 | GLM 产物质量人工评分（U1）· misfire 真机体验（U3） |
 | **P1-1** M1 网关 | 🟢 | Responses↔Chat 全量翻译 · 三家 provider · 错误码映射 · 用量规范化 · SSE · 能力端点 · Q14 不落盘 · **三家真实 endpoint 实测** | 企业私有部署包 · `maxContextTokens` 实测 · 长压测 |
 | **P1-2** M2a 服务层 | 🟢 | 协议层 · 16 张本机表 + 两个迁移器 · 适配层（会话/心跳/重启/恢复/降级/事件流/审批/场景） | automation 相关表的写入方（等 M5）· 产物索引写入方（等 M8） |
-| **P1-3** M2 前端 | 🟢 | token 层 · **35 个组件全部有实现**（2026-09-09 逐个核对 01 §5.1–5.35）· 19 类 Item · 四类审批卡 · 三栏工作台 · 首页与 Composer · 任务列表与六组筛选 · 变更视图组件 · Electron 引导与 preload · 本机服务宿主 · **2026-09-06：应用外壳与侧边栏骨架（01 §3.1–3.3）· 线性图标集 · IPC 动作接线（清单与实现逐项相等由测试钉住）· 回车→建任务→切页实测通过 · 模型选择器端到端接通** · **2026-09-07：`openTask` 拉历史 · 项目页落地 · 「助理」入口整个下架**（方案保留在 02 §4.2）· **2026-09-08：设置页六分区** · **2026-09-09：现有“技能·连接器”三 Tab + “发现应用”抽屉 + 官方 browser MCP** · **2026-09-12：Approved UI 阶段 A 第一轮**（克制首页、侧栏项目/最近任务分区、Composer 渐进披露、插件命名统一、未接通任务操作隐藏、结果区按意图打开、仅浅色主题）· **同日：过程 item 组级默认折叠 + macOS 交通灯避让** | ① **结果区四视图仍未接线** —— `TaskWorkspace` 有 `resultPanel` 插槽，`app.tsx` 从没传过；`ChangesView` 组件有单测但没挂上去 ② **AgentMessage 是纯文本**，未做 Markdown 全量渲染 ③ **时间范围筛选 UI 存在但不生效** ④ Composer 的 `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音均未由宿主传入 ⑤ 通知中心与设备中心 · 全局 ⌘K · deeplink · 虚拟滚动 · 自动滚动提示 · Toast 尚未接通 |
+| **P1-3** M2 前端 | 🟢 | token 层 · **35 个组件全部有实现**（2026-09-09 逐个核对 01 §5.1–5.35）· 19 类 Item · 四类审批卡 · 三栏工作台 · 首页与 Composer · 任务列表与六组筛选 · 变更视图组件 · Electron 引导与 preload · 本机服务宿主 · **2026-09-06：应用外壳与侧边栏骨架（01 §3.1–3.3）· 线性图标集 · IPC 动作接线（清单与实现逐项相等由测试钉住）· 回车→建任务→切页实测通过 · 模型选择器端到端接通** · **2026-09-07：`openTask` 拉历史 · 项目页落地 · 「助理」入口整个下架**（方案保留在 02 §4.2）· **2026-09-08：设置页六分区** · **2026-09-09：现有“技能·连接器”三 Tab + “发现应用”抽屉 + 官方 browser MCP** · **2026-09-12：Approved UI 阶段 A 第一轮**（克制首页、侧栏项目/最近任务分区、Composer 渐进披露、插件命名统一、未接通任务操作隐藏、结果区按意图打开、仅浅色主题）· **同日：过程 item 组级默认折叠 + macOS 交通灯避让 + AgentMessage GFM Markdown 与白名单清洗** | ① **结果区四视图仍未接线** —— `TaskWorkspace` 有 `resultPanel` 插槽，`app.tsx` 从没传过；`ChangesView` 组件有单测但没挂上去 ② **代码围栏已有块级排版，语法着色未接** ③ **时间范围筛选 UI 存在但不生效** ④ Composer 的 `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音均未由宿主传入 ⑤ 通知中心与设备中心 · 全局 ⌘K · deeplink · 虚拟滚动 · 自动滚动提示 · Toast 尚未接通 |
 | **P2-1** M3 办公技能与解析 | 🟢 | **四个技能全部完成**（documents / spreadsheets / presentations / charts，共用一套骨架）· **本机解析管道**（识别 / 六道闸门 / 内置解析器 / zip / 注入载荷）· **三档运行时探测** · **办公扩展 App 内安装器**（2026-09-07，`services/runtime-installer`） | office / ocr 档的**实际解析器一个都没有**（`ingest/src/parsers/` 只有 `builtin.ts` 与 `zip.ts`；接口已定，等 M4 的受限子进程）—— 所以拖入 docx/pdf 仍只以原始文件引用 · **附件根本没接到 Composer**（M2 ⑤）· OCR 档的安装（安装器只装 office 档，`pytesseract` 缺） |
 | **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测）· **2026-09-06：审计链路接通**（hook → `audit.jsonl` → `audit_log` 表 → 审计页 + 导出，从「更多」可达）· **2026-09-09：签名策略包下发（R11 / M10c）** | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 设置页「安全与权限」分区仍没有 10 §7 的本机安全能力页（现在只展示策略包状态）· 任务页的预算进度条与耗尽双动作只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验过 · Ask 模式在 `ToolContributor` 层过滤写工具（D8，`ext/` 还是空的）· **Windows 隔离强度结论（见 U5）** |
 | **P3-1** M5 自动化 | 🟡 | **带命名时区的 cron**（含 DST 两个边界）· misfire 三策略与落库顺序 · 失败分类与自动暂停 · 设备绑定与迁移 · 自然语言触发解析（不调模型）· 调度循环 · **与内核的接线已接**（`local-services.ts` 的 `createKernelBridge` + `startScheduler`；`scheduler/README.md` 的「还没做的」第一条已过期）· 列表页与执行历史 UI · 表单组件 `AutomationForm`（含 misfire / wake / 试跑文案） | **2026-09-09 降为 🟡，因为产品里没有任何一条路能建出一个自动化**：`AutomationForm` 写好了但**没有任何地方渲染它**，`RENDERER_ACTIONS` 里只有只读的 `getAutomations`，`createAutomationRepo` **没有 insert automation 方法**（测试用裸 SQL 插）。列表、历史、misfire、连败暂停全部只能对着测试数据成立 · `wake_system` 只有表单勾选框，服务层与宿主没有任何 `powerMonitor` / 唤醒钩子（09 §6.3 的"唤醒直接触发扫描"没做，靠分钟 tick）· 「迁移到本机」有设备层语义、没有 UI/IPC 动作 · 试跑 / 立即运行没有入口 |
@@ -77,7 +79,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | `services/store` | 16 张本机 sqlite 表（含「项目」的 `project_local` / `project_root` 两张权威表）· 投影/权威两个迁移器（**第 3 版删掉 automation 的 `tenant_id` / `owner_id`，D10**）· 状态派生 · FTS5 trigram · **schema 归属列扫描** | 68 |
 | `services/kernel-adapter` | **K2 边界的唯一实现处**：会话 · 心跳 · 退避重启 · 会话恢复 · 能力探测与降级 · 事件流三消费者定序 · 审批双策略 · 场景展开 · 内核进程启动器 | 98 |
 | `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 · **模型表四层合并** · **托管转发（M10b）** | （含 forward / tenant-models） |
-| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **密钥库** · **拓扑** · **模型接入** · **设置页** · **账号 PKCE（M10b）** | （含 account / settings） |
+| `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **AgentMessage GFM Markdown + 白名单清洗** · **密钥库** · **拓扑** · **模型接入** · **设置页** · **账号 PKCE（M10b）** | （含 account / settings） |
 | `services/identity` | 云端账号 · 租户 · 默认模型 · 计量 · `/v1/responses` 代理（D9 无内容） | （见该包 test/） |
 | `apps/web` | 账号页与租户管理端。密码表单只在这里。**没有分享页** | （见该包 test/） |
 | `services/artifacts` | 产物识别（三信号 + 版本 + 重定位）· 分享授权（Q10）· 资料库视图与磁盘占用 | 26 |
@@ -458,7 +460,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **01 设计系统** | Approved 三种骨架与侧栏结构尚未实现 · `ToastStack` 写了没用，通知走 `Banner` · 应用图标仍是 Electron 默认 · §8 无系统化 a11y 验收 | `packages/tokens/src/css.ts` · `sidebar.tsx` · `app.tsx` · `build/` |
 | **02 信息架构** | 项目/最近任务独立分区、统一用户菜单和“插件”一级入口尚未实现 · 通知中心与设备中心（接通前按设计隐藏）· 快捷键缺 ⌘K / ⌘⇧O / ⌘F · 全局搜索 · deeplink `evowork://` | `app.tsx` `UnbuiltPage` · `sidebar.tsx` `MORE_MENU` |
 | **03 首页与 Composer** | Approved 的克制首页尚未实现；当前仍有场景分段、案例和旧 slot 骨架 · `@` 候选 / `/` 命令 / 附件 / 排队追问 / 语音组件能力未由 `app.tsx` 传入 · 回合失败缺对话流内 item | `composer.tsx` vs `app.tsx` · `config/showcase/.gitkeep` |
-| **04 任务工作台** | A · C · **AgentMessage 是纯文本** · **时间范围筛选 UI 有但不生效** · 意图驱动结果区尚未接线 · 自动滚动与“↓ 有新内容” · 排队区 / 中断转向 / 子任务侧滑未端到端 · 虚拟滚动 | `item-renderers.tsx` · `sidebar.tsx` `matched` · `task-workspace.tsx` |
+| **04 任务工作台** | A · C · **代码围栏未做语法着色** · **时间范围筛选 UI 有但不生效** · 意图驱动结果区尚未接线 · 自动滚动与“↓ 有新内容” · 排队区 / 中断转向 / 子任务侧滑未端到端 · 虚拟滚动 | `item-renderers.tsx` · `sidebar.tsx` `matched` · `task-workspace.tsx` |
 | **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx` |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 「我分享的」/ 删除对话框 —— **UI 壳全有，`app.tsx` 只传了 `rows`** · §3.4 全文检索是前端 `filterRows`，没接 ingest 的 FTS | `library.tsx` vs `app.tsx` |
 | **07 自动化** | B · `wake_system` 只有勾选框（服务层与宿主无任何唤醒钩子）· 「迁移到本机」有设备层语义没有动作 · 试跑 / 立即运行无入口 · **`scheduler/README.md`「还没做的」第一条已过期**（内核接线在 `local-services.ts` 已做，文档该改） | `automations.tsx` · `services/scheduler/README.md:60` |

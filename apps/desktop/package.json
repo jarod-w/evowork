@@ -27,6 +27,8 @@
     "@evowork/protocol": "workspace:*",
     "@evowork/store": "workspace:*",
     "@evowork/tokens": "workspace:*",
+    "dompurify": "^3.4.14",
+    "marked": "^16.4.2",
     "mermaid": "^11.17.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

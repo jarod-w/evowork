@@ -71,6 +71,62 @@ describe('未知 item：**绝不静默丢弃**（04 §5.2 最后一段，R2 的�
   });
 });
 
+describe('AgentMessage：生成内容按 Markdown 格式化（04 §5.2 #2）', () => {
+  it('渲染标题、强调、列表、表格、任务列表与代码，不把 Markdown 标记原样显示', () => {
+    const { container } = renderItem({
+      id: 'i-markdown',
+      type: 'agentMessage',
+      text: [
+        '## 交付物',
+        '',
+        '**结构**清晰，包含 `content.json`。',
+        '',
+        '- 第一项',
+        '- [x] 已校验',
+        '',
+        '| 文件 | 页数 |',
+        '| --- | ---: |',
+        '| PPT | 24 |',
+        '',
+        '```json',
+        '{"ok": true}',
+        '```',
+      ].join('\n'),
+    });
+
+    expect(screen.getByRole('heading', { name: '交付物', level: 2 })).toBeTruthy();
+    expect(screen.getByText('结构').tagName).toBe('STRONG');
+    expect(screen.getByText('content.json').tagName).toBe('CODE');
+    expect(screen.getByText('第一项').closest('li')).not.toBeNull();
+    expect(screen.getByRole('checkbox')).toHaveProperty('checked', true);
+    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: '页数' })).toBeTruthy();
+    expect(container.querySelector('.ew-visualizer-code')?.textContent).toContain('{"ok": true}');
+    expect(container.textContent).not.toContain('**结构**');
+  });
+
+  it('清洗 Markdown 中夹带的可执行 HTML，但保留安全格式', () => {
+    const { container } = renderItem({
+      id: 'i-safe-markdown',
+      type: 'agentMessage',
+      text: [
+        '<script>window.pwned = true</script><strong onclick="window.pwned=true">安全正文</strong>',
+        '',
+        '[危险链接](javascript:window.pwned=true)',
+        '',
+        '![远程图片](https://example.com/tracker.png)',
+      ].join('\n'),
+    });
+
+    expect(container.querySelector('script')).toBeNull();
+    expect(screen.getByText('安全正文').tagName).toBe('STRONG');
+    expect(screen.getByText('安全正文').getAttribute('onclick')).toBeNull();
+    expect(screen.getByText('危险链接').getAttribute('href')).toBeNull();
+    // 正文 Markdown 不得靠 img 标签隐式出网；图片由 ImageGeneration item 展示。
+    expect(container.querySelector('img')).toBeNull();
+  });
+});
+
 describe('Reasoning：模型无推理能力时**整体不渲染，不留空壳**（04 §5.2 #3）', () => {
   it('有能力 → 渲染折叠行', () => {
     const { container } = renderItem({
