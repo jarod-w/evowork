@@ -1,6 +1,6 @@
 {
   "name": "@evowork/desktop",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "author": "EvoWork",
   "description": "桌面壳 + 三栏 UI（Electron + React + Vite）；Q1=A 后它同时是本机服务的宿主",
