@@ -64,7 +64,7 @@ textarea {
   justify-content: center;
   width: var(--space-48);
   padding-top: var(--space-12);
-  background: var(--bg-sidebar);
+  background: var(--bg-app);
 }
 
 /* 目录式页面（02 §1 的一级入口）：标题栏带高度留白 + 内容列 800 居中 */
@@ -312,7 +312,7 @@ textarea {
 }
 
 /* 设计 §6.2：窄窗口的结果区覆盖对话，不继续把正文挤窄。 */
-@media (max-width: 1179px) {
+@media (width < 1180px) {
   .ew-result-pane {
     position: absolute;
     inset: 0 0 0 auto;

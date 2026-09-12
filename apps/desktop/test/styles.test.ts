@@ -117,6 +117,7 @@ describe('CSS 只用 token（01 §9 验收项 1）', () => {
       '720px', // 03 §3.1：窗口高 < 720 时 Hero 降级，保证 Composer 不被挤出首屏
       '860px', // 01 §3.1：< 860 不支持（= LAYOUT.unsupportedWidth）
       '1024px', // 01 §3.1：最小窗口宽（= LAYOUT.minWindowWidth）
+      '1180px', // 类 ChatGPT UI §6.2：结果区从这一档开始覆盖对话
     ]);
     const used = [...code.matchAll(/@media[^{]+/g)].flatMap(
       (m) => (m[0].match(/(?<![\w-])(\d+(?:\.\d+)?)px\b/g) ?? []) as string[],
