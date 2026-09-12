@@ -10,14 +10,14 @@
  *
  * 四条来自文档的布局与行为约束：
  *
- * 1. **结果区默认收起**（`⌘I` 切换），**首次产生产物或文件变更时自动展开一次**，
- *    之后尊重用户的开合状态（04 §1）。
+ * 1. **结果区默认收起**（`⌘I` 切换），由用户点击内容或「打开结果」展开；
+ *    普通文件变更不会机械地抢开面板（类 ChatGPT UI 方案 C4）。
  * 2. **自动滚动只在用户已在底部时跟随**；用户上滑后停止跟随并显示「↓ 有新内容」（04 §5.1）。
  * 3. **状态不能只读 `ThreadStatus`**（04 §3.2 / F7）—— 状态由适配层的投影表给出，
  *    这里只渲染。
  * 4. **审批卡内联在时间线上**（不是模态），同时顶部有 `z-400` 吸顶条（04 §5.3 / 10 §3.5）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   ApprovalCard,
@@ -86,7 +86,7 @@ export interface TaskWorkspaceProps {
     answer: { optionId?: string; text?: string },
   ) => void | undefined;
   readonly itemContext: ItemRenderContext;
-  /** 有产物或文件变更时结果区自动展开一次（04 §1） */
+  /** 有可展示结果时才显示「打开结果」入口。 */
   readonly hasResults?: boolean | undefined;
   /** 顶部提示（04 §8：断连 / 上下文将满 / 预算耗尽 / 路径失效） */
   readonly notices?: readonly {
@@ -116,27 +116,19 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const view = STATUS_VIEW[props.status];
   const [resultOpen, setResultOpen] = useState(false);
   const [resultTab, setResultTab] = useState<ResultPane>('artifacts');
-  const autoOpenedRef = useRef(false);
-
-  // 04 §1：首次产生产物或文件变更时**自动展开一次**，之后尊重用户的开合状态
-  useEffect(() => {
-    if (props.hasResults && !autoOpenedRef.current) {
-      autoOpenedRef.current = true;
-      setResultOpen(true);
-    }
-  }, [props.hasResults]);
 
   // ⌘I 切换结果区（02 §6）
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'i') {
         event.preventDefault();
+        if (!props.hasResults && !props.resultPanel) return;
         setResultOpen((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [props.hasResults, props.resultPanel]);
 
   const approvalsById = useMemo(
     () => new Map(props.pendingApprovals.map((a) => [a.id, a])),
@@ -147,12 +139,22 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     <div className="ew-task-workspace" data-result-open={resultOpen ? 'true' : 'false'}>
       <header className="ew-title-bar">
         <h1 className="ew-task-title">{props.title ?? '未命名任务'}</h1>
-        <StatusDot tone={view.tone} breathing={view.breathing} />
-        <Badge variant={view.badge}>{view.label}</Badge>
+        {props.status === 'running' ||
+        props.status === 'planning' ||
+        props.status === 'pending' ||
+        props.status === 'failed' ||
+        props.status === 'interrupted' ? (
+          <>
+            <StatusDot tone={view.tone} breathing={view.breathing} />
+            <Badge variant={view.badge}>{view.label}</Badge>
+          </>
+        ) : null}
         <div className="ew-title-bar-actions">
-          <PillButton variant="ghost" onClick={() => setResultOpen((v) => !v)}>
-            {resultOpen ? '隐藏详情面板' : '显示详情面板'}
-          </PillButton>
+          {props.hasResults || props.resultPanel ? (
+            <PillButton variant="ghost" onClick={() => setResultOpen((v) => !v)}>
+              {resultOpen ? '关闭结果' : '打开结果'}
+            </PillButton>
+          ) : null}
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 /**
  * 任务工作台（04）的行为约束。
  *
- * 盯的是文档里带"必须/默认/自动"的四条：结果区默认收起且首次有产物时自动展开一次、
+ * 盯的是文档里带"必须/默认"的四条：结果区默认收起并按需打开、
  * 状态文案与 01 §6.1 一致（含"已中断"这一态）、审批卡内联而非模态、
  * 空态给出下一步动作。
  */
@@ -69,16 +69,18 @@ describe('结果区（04 §1）', () => {
     );
   });
 
-  it('首次有产物时**自动展开一次**', () => {
+  it('有结果时仍保持收起，并提供明确入口', () => {
     const { container } = renderWorkspace({ hasResults: true });
-    expect(container.querySelector('.ew-result-pane')).not.toBeNull();
+    expect(container.querySelector('.ew-result-pane')).toBeNull();
+    expect(screen.getByRole('button', { name: '打开结果' })).toBeTruthy();
   });
 
-  it('自动展开后**尊重用户的开合状态** —— 用户关掉就不再自动打开', () => {
+  it('用户打开和关闭结果区，不被内容变化抢开', () => {
     const { container, rerender, props } = renderWorkspace({ hasResults: true });
+    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     expect(container.querySelector('.ew-result-pane')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '隐藏详情面板' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
     expect(container.querySelector('.ew-result-pane')).toBeNull();
 
     // 又来了一个产物：不该把面板重新弹开（那会打断用户）
@@ -88,6 +90,7 @@ describe('结果区（04 §1）', () => {
 
   it('结果区四视图用**浅色**分段控件（01 §5.10：决定已装内容怎么看）', () => {
     const { container } = renderWorkspace({ hasResults: true });
+    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     const segmented = container.querySelector('.ew-segmented');
     expect(segmented?.getAttribute('data-variant')).toBe('light');
     for (const label of ['产物', '文件', '变更', '浏览器']) {
@@ -96,7 +99,7 @@ describe('结果区（04 §1）', () => {
   });
 
   it('⌘I 切换结果区（02 §6）', () => {
-    const { container } = renderWorkspace();
+    const { container } = renderWorkspace({ hasResults: true });
     fireEvent.keyDown(window, { key: 'i', metaKey: true });
     expect(container.querySelector('.ew-result-pane')).not.toBeNull();
     fireEvent.keyDown(window, { key: 'i', metaKey: true });
@@ -105,8 +108,16 @@ describe('结果区（04 §1）', () => {
 
   it('无产物时的空态解释什么算产物（04 §8）', () => {
     renderWorkspace({ hasResults: true });
+    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     expect(screen.getByText('还没有产物')).toBeTruthy();
     expect(screen.getByText(/文档、表格、幻灯片等交付物/)).toBeTruthy();
+  });
+
+  it('没有可展示结果时不显示空面板入口，快捷键也不会打开', () => {
+    const { container } = renderWorkspace();
+    expect(screen.queryByRole('button', { name: '打开结果' })).toBeNull();
+    fireEvent.keyDown(window, { key: 'i', metaKey: true });
+    expect(container.querySelector('.ew-result-pane')).toBeNull();
   });
 });
 

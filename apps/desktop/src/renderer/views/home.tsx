@@ -8,26 +8,15 @@
  * "什么时候清理草稿""草稿算不算并发"两个问题。这个组件因此没有任何"新建"的副作用 ——
  * 它只把输入攒起来，交给 `onSend`。
  *
- * ## 场景 ≠ 工作模式
- *
- * 03 §2.1：场景回答"我在做哪一类活"，工作模式回答"你能动手到什么程度"，两者正交。
- * 所以场景在 Hero 下面用**深色** SegmentedControl（01 §5.10：决定页面装什么），
- * 而模式在 Composer 底栏的 InlineSelect 里。把它们合成一个控件会产生 9 种组合的解释负担。
+ * 新版首页遵循 ChatGPT 式的克制空态：一句问候、Composer、少量上下文建议。
+ * 场景仍然作为任务默认值存在，但不再作为首屏的一排常驻导航；建议只取当前场景，
+ * 用户开始输入后立即消失，让输入本身成为唯一视觉中心。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 
 import { Composer, type ComposerProps, type SelectOption } from '../components/composer.js';
 import { renderIcon } from '../components/icons.js';
-import {
-  Banner,
-  CaseCard,
-  FilterChipRow,
-  IconButton,
-  PillButton,
-  ScenarioChip,
-  SectionHeader,
-  SegmentedControl,
-} from '../components/primitives.js';
+import { Banner, FilterChipRow, ScenarioChip } from '../components/primitives.js';
 
 export interface ScenarioChipSpec {
   readonly label: string;
@@ -72,11 +61,11 @@ export const DEFAULT_SLOTS: SlotConfig = Object.freeze({
   titlebarPromo: false,
   activityPopover: false,
   sidebarPromo: false,
-  showcase: true,
+  showcase: false,
 });
 
-/** 03 §3.2：最多渲染 8 个 chip，其余走横向滚动。快捷键 ⌥1–⌥8。 */
-export const MAX_CHIPS = 8;
+/** 类 ChatGPT 空白首页只保留少量建议；快捷键与可见项一一对应。 */
+export const MAX_CHIPS = 4;
 
 export interface HomeProps {
   readonly heroLine: string;
@@ -107,7 +96,6 @@ export interface HomeProps {
 export function Home(props: HomeProps) {
   const slots = { ...DEFAULT_SLOTS, ...(props.slots ?? {}) };
   const scenario = props.scenarios.find((s) => s.id === props.scenarioId) ?? props.scenarios[0];
-  const [showcaseClosed, setShowcaseClosed] = useState(false);
   const { onChange } = props;
 
   const writePrompt = useCallback(
@@ -138,10 +126,6 @@ export function Home(props: HomeProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [chips, writePrompt, onPickFile]);
 
-  const cases = (props.cases ?? []).filter(
-    (c) => c.scenarioId === undefined || c.scenarioId === scenario?.id,
-  );
-
   return (
     <div className="ew-home">
       {/* Q18：插槽只渲染静态内容。这里连 onClick 埋点都不接 —— 接了就等于开了回传通道 */}
@@ -156,72 +140,31 @@ export function Home(props: HomeProps) {
           </Banner>
         ))}
 
-        <h1 className="ew-hero">{props.heroLine}</h1>
+        <div className="ew-home-primary">
+          <h1 className="ew-hero">{props.heroLine}</h1>
 
-        {/* 深色变体：**决定页面装什么**（01 §5.9 / §5.10 的硬规则） */}
-        <SegmentedControl
-          variant="dark"
-          ariaLabel="场景"
-          value={scenario?.id ?? ''}
-          items={props.scenarios.map((s) => ({
-            id: s.id,
-            label: s.name,
-            icon: renderIcon(s.icon),
-          }))}
-          onChange={props.onScenarioChange}
-        />
+          <Composer {...props.composer} value={props.value} onChange={props.onChange} />
 
-        <FilterChipRow ariaLabel="场景推荐">
-          {chips.map((chip, index) => (
-            <ScenarioChip
-              key={chip.label}
-              label={chip.label}
-              icon={renderIcon(chip.icon)}
-              shortcut={index < MAX_CHIPS ? `⌥${index + 1}` : undefined}
-              onClick={() => {
-                writePrompt(chip.prompt);
-                if (chip.requiresFile) props.onPickFile?.();
-              }}
-            />
-          ))}
-        </FilterChipRow>
-
-        <Composer {...props.composer} value={props.value} onChange={props.onChange} />
-
-        {slots.showcase && !showcaseClosed && cases.length > 0 ? (
-          <section className="ew-showcase" aria-label="最佳实践案例">
-            <SectionHeader
-              title="不知道做什么，试试最佳实践案例"
-              actions={
-                <>
-                  <PillButton
-                    variant="ghost"
-                    icon={renderIcon('refresh')}
-                    onClick={props.onShuffleCases}
-                  >
-                    换一批
-                  </PillButton>
-                  <IconButton
-                    label="关闭案例区"
-                    icon={renderIcon('close')}
-                    onClick={() => setShowcaseClosed(true)}
-                  />
-                </>
-              }
-            />
-            <div className="ew-case-grid">
-              {cases.slice(0, 4).map((item) => (
-                <CaseCard
-                  key={item.id}
-                  title={item.title}
-                  cover={item.cover}
-                  icon={renderIcon('image')}
-                  onClick={() => writePrompt(item.prompt)}
+          {props.value.trim() === '' && chips.length > 0 ? (
+            <FilterChipRow ariaLabel="快捷建议">
+              {chips.map((chip, index) => (
+                <ScenarioChip
+                  key={chip.label}
+                  label={chip.label}
+                  icon={renderIcon(chip.icon)}
+                  shortcut={index < MAX_CHIPS ? `⌥${index + 1}` : undefined}
+                  onClick={() => {
+                    writePrompt(chip.prompt);
+                    if (chip.requiresFile) props.onPickFile?.();
+                  }}
                 />
               ))}
-            </div>
-          </section>
-        ) : null}
+            </FilterChipRow>
+          ) : null}
+        </div>
+
+        {/* 兼容企业策略插槽配置；新版主路径不再渲染案例墙。 */}
+        {slots.showcase ? <div className="ew-slot" data-slot="showcase" hidden /> : null}
       </div>
     </div>
   );

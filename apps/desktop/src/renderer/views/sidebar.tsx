@@ -23,7 +23,6 @@ import { BRAND } from '@evowork/tokens';
 import { renderIcon } from '../components/icons.js';
 import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
 import {
-  AppSwitcherChip,
   FilterChip,
   IconButton,
   NavItem,
@@ -134,6 +133,9 @@ export interface SidebarProps {
   readonly diskUsagePercent?: number | undefined;
   readonly onCleanup?: (() => void) | undefined;
   readonly onNewTask?: (() => void) | undefined;
+  readonly projects?: readonly { readonly id: string; readonly name: string }[] | undefined;
+  readonly selectedProjectId?: string | undefined;
+  readonly onProjectSelect?: ((id: string) => void) | undefined;
   readonly nav?: readonly {
     readonly id: string;
     readonly label: string;
@@ -157,8 +159,6 @@ export interface SidebarProps {
    * 让菜单直接说出要去哪个分区，比让 app 再猜一次少一处映射。
    */
   readonly onMoreSelect?: ((id: string) => void) | undefined;
-  /** 「发现应用」抽屉（05 §6）。不给则 chip 保持禁用并说本期未开放 */
-  readonly onDiscover?: (() => void) | undefined;
   readonly onNotifications?: (() => void) | undefined;
   readonly onDevices?: (() => void) | undefined;
   /** Q18 的 `sidebar-promo` 插槽。**默认关闭**，且只渲染静态内容 */
@@ -186,11 +186,9 @@ export interface SidebarProps {
  */
 export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
   { id: 'new-task', label: '新建任务', icon: 'new-task' },
-  { id: 'projects', label: '项目', icon: 'project' },
-  { id: 'catalog', label: '技能·连接器', icon: 'catalog' },
+  { id: 'catalog', label: '插件', icon: 'catalog' },
   { id: 'automations', label: '自动化', icon: 'automation' },
   { id: 'library', label: '资料库', icon: 'library' },
-  { id: 'more', label: '更多', icon: 'more', trailing: '灵感' },
 ];
 
 /**
@@ -278,6 +276,8 @@ export function Sidebar(props: SidebarProps) {
   const closeMenu = useCallback(() => setMenuFor(null), []);
 
   const nav = props.nav ?? MAIN_NAV;
+  const primaryNav = nav.filter((item) => item.id === 'new-task');
+  const utilityNav = nav.filter((item) => item.id !== 'new-task' && item.id !== 'more');
   /*
    * 选中映射由宿主传入（02 §2）：首页 → new-task；目录页 → 对应 id；
    * `/tasks/:id`、设置、审计 → 不传，不点亮任何一级导航。
@@ -289,8 +289,9 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <nav className="ew-sidebar" aria-label="侧边栏">
-      {/* 01 §3.2 标题栏带：折叠 / 搜索 / 筛选三个 IconButton，macOS 上让开交通灯 */}
+      {/* 类 ChatGPT 顶栏：品牌与高频动作在同一行。 */}
       <div className="ew-sidebar-titlebar">
+        <span className="ew-brand-name">{props.brandName ?? BRAND.appName}</span>
         <IconButton
           label="折叠侧边栏"
           icon={renderIcon('panel-left')}
@@ -322,16 +323,6 @@ export function Sidebar(props: SidebarProps) {
         </span>
       </div>
 
-      {/* 01 §3.3 品牌行 */}
-      <div className="ew-sidebar-brand">
-        <span className="ew-brand-name">{props.brandName ?? BRAND.appName}</span>
-        <AppSwitcherChip
-          label="发现应用"
-          icon={renderIcon('compass')}
-          {...(props.onDiscover !== undefined ? { onClick: props.onDiscover } : {})}
-        />
-      </div>
-
       {searchOpen ? (
         <SearchInput
           ariaLabel="搜索任务"
@@ -341,57 +332,44 @@ export function Sidebar(props: SidebarProps) {
         />
       ) : null}
 
-      <div className="ew-sidebar-nav">
-        {nav.map((item) =>
-          /*
-           * 「更多」是**一个 Menu，不是一个页面**（02 §4.7）：它聚合二级入口。
-           *
-           * 在此之前它点了会切到一个「这里还没有内容」的空页 —— 而它下面的
-           * 「设置」现在真的有了（M10a）。已实现的项直接跳，没实现的项
-           * **禁用并给原因**（`MenuItemSpec.disabled` + `disabledReason`），
-           * 不静默移除：一个消失的菜单项与一个没做的功能无法区分。
-           */
-          item.id === 'more' ? (
-            <span key={item.id} className="ew-more-anchor">
-              <NavItem
-                label={item.label}
-                icon={renderIcon(item.icon)}
-                trailing={item.trailing}
-                count={item.count}
-                selected={moreOpen || item.id === activeNavId}
-                onClick={() => setMoreOpen((v) => !v)}
-              />
-              <Popover open={moreOpen} onClose={() => setMoreOpen(false)} align="start">
-                <Menu
-                  ariaLabel="更多"
-                  items={MORE_MENU}
-                  onSelect={(id) => {
-                    setMoreOpen(false);
-                    props.onMoreSelect?.(id);
-                  }}
-                />
-              </Popover>
-            </span>
-          ) : (
-            <NavItem
-              key={item.id}
-              label={item.label}
-              icon={renderIcon(item.icon)}
-              trailing={item.trailing}
-              count={item.count}
-              selected={item.id === activeNavId}
-              onClick={() => {
-                if (item.id === 'new-task') props.onNewTask?.();
-                props.onNavSelect?.(item.id);
-              }}
-            />
-          ),
-        )}
+      <div className="ew-sidebar-nav ew-sidebar-primary-nav">
+        {primaryNav.map((item) => (
+          <NavItem
+            key={item.id}
+            label={item.label}
+            icon={renderIcon(item.icon)}
+            selected={item.id === activeNavId}
+            onClick={() => {
+              props.onNewTask?.();
+              props.onNavSelect?.(item.id);
+            }}
+          />
+        ))}
       </div>
+
+      <section className="ew-sidebar-projects" aria-label="项目">
+        <div className="ew-sidebar-subhead">
+          <button type="button" onClick={() => props.onNavSelect?.('projects')}>
+            项目
+          </button>
+          <button type="button" onClick={() => props.onNavSelect?.('projects')}>
+            查看全部
+          </button>
+        </div>
+        {(props.projects ?? []).slice(0, 3).map((project) => (
+          <NavItem
+            key={project.id}
+            label={project.name}
+            icon={renderIcon('project')}
+            selected={project.id === props.selectedProjectId}
+            onClick={() => props.onProjectSelect?.(project.id)}
+          />
+        ))}
+      </section>
 
       <div className="ew-sidebar-tasks">
         <SidebarSectionHeader
-          label="任务"
+          label="最近任务"
           count={topLevel.length}
           {...(filtering ? { filteredCount: matched.length } : {})}
           collapsed={collapsed}
@@ -479,6 +457,20 @@ export function Sidebar(props: SidebarProps) {
         ) : null}
       </div>
 
+      <div className="ew-sidebar-nav ew-sidebar-utility-nav">
+        {utilityNav.map((item) => (
+          <NavItem
+            key={item.id}
+            label={item.label}
+            icon={renderIcon(item.icon)}
+            trailing={item.trailing}
+            count={item.count}
+            selected={item.id === activeNavId}
+            onClick={() => props.onNavSelect?.(item.id)}
+          />
+        ))}
+      </div>
+
       {/* 01 §3.3：任务列表是唯一的滚动区，运营位与用户区吸底 */}
       <div className="ew-sidebar-bottom">
         {props.promo ? (
@@ -498,15 +490,28 @@ export function Sidebar(props: SidebarProps) {
         ) : null}
 
         {props.user ? (
-          <UserFooter
-            name={props.user.name}
-            version={props.user.version}
-            unreadCount={props.user.unread}
-            notificationIcon={renderIcon('bell')}
-            deviceIcon={renderIcon('devices')}
-            onNotifications={props.onNotifications}
-            onDevices={props.onDevices}
-          />
+          <span className="ew-user-menu-anchor">
+            <UserFooter
+              name={props.user.name}
+              version={props.user.version}
+              unreadCount={props.user.unread}
+              notificationIcon={renderIcon('bell')}
+              deviceIcon={renderIcon('devices')}
+              onMenu={() => setMoreOpen((value) => !value)}
+              onNotifications={props.onNotifications}
+              onDevices={props.onDevices}
+            />
+            <Popover open={moreOpen} onClose={() => setMoreOpen(false)} align="start">
+              <Menu
+                ariaLabel="用户菜单"
+                items={MORE_MENU}
+                onSelect={(id) => {
+                  setMoreOpen(false);
+                  props.onMoreSelect?.(id);
+                }}
+              />
+            </Popover>
+          </span>
         ) : null}
       </div>
 
@@ -535,25 +540,10 @@ export function Sidebar(props: SidebarProps) {
 }
 
 /** 04 §3.3 的行操作菜单。分享标注"需要授权"，与"复制链接"（不上传）区分开。 */
-export function rowMenuItems(task: TaskRow): readonly MenuItemSpec[] {
-  const pinned = task.sectionId === PINNED_SECTION;
+export function rowMenuItems(_task: TaskRow): readonly MenuItemSpec[] {
   return [
-    { id: pinned ? 'unpin' : 'pin', label: pinned ? '取消置顶' : '置顶', group: 'a' },
-    { id: 'rename', label: '重命名', group: 'a' },
-    { id: 'move', label: '移动到分组…', group: 'a' },
-    { id: 'reveal', label: '打开所在文件夹', group: 'b' },
-    { id: 'new-in-workspace', label: '在此空间新建任务', group: 'b' },
-    {
-      id: 'share',
-      label: '分享任务…',
-      // Q10：默认关闭 + 逐次授权。菜单里就说清"要先授权"，避免点了才发现有个模态
-      description: '需要你先授权上传，链接有有效期',
-      group: 'c',
-    },
-    { id: 'copy-link', label: '复制任务链接', description: '本机链接，不上传', group: 'c' },
-    { id: 'fork', label: '从中途分叉', group: 'c' },
-    { id: 'archive', label: '归档', group: 'd' },
-    { id: 'delete', label: '删除', danger: true, group: 'd' },
+    { id: 'archive', label: '归档', group: 'a' },
+    { id: 'delete', label: '删除', danger: true, group: 'a' },
   ];
 }
 

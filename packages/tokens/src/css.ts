@@ -9,9 +9,6 @@
  *   → `prefers-contrast: more` / `[data-contrast=high]`（只覆盖三个边框 token）
  */
 import {
-  DARK_HIGH_CONTRAST_BORDERS,
-  DARK_NEUTRAL,
-  DARK_SEMANTIC,
   FONT_STACK,
   LAYOUT,
   LIGHT_HIGH_CONTRAST_BORDERS,
@@ -55,7 +52,7 @@ export function toCssVariables(): string {
 
   return `/* 由 packages/tokens 生成，不要手改。数值真源是 docs/design/01-ui-design-system.md §2。 */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
 ${block(LIGHT_NEUTRAL)}
 
@@ -72,21 +69,6 @@ ${block(MOTION)}
   --font-mono: ${FONT_STACK.mono};
 }
 
-/* 暗色：同一套 token 名反相，**保留暖偏**（01 §4.5） */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-${block(DARK_NEUTRAL)}
-
-${block(DARK_SEMANTIC)}
-  }
-}
-
-:root[data-theme='dark'] {
-${block(DARK_NEUTRAL)}
-
-${block(DARK_SEMANTIC)}
-}
-
 /* 高对比模式：**只覆盖三个边框 token**，不改布局、圆角、字号（01 §8.3） */
 @media (prefers-contrast: more) {
   :root:not([data-contrast='normal']) {
@@ -96,17 +78,6 @@ ${block(LIGHT_HIGH_CONTRAST_BORDERS)}
 
 :root[data-contrast='high'] {
 ${block(LIGHT_HIGH_CONTRAST_BORDERS)}
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light'])[data-contrast='high'],
-  :root:not([data-theme='light']) {
-    /* 暗色下的高对比边框（01 §8.3 脚注） */
-  }
-}
-
-:root[data-theme='dark'][data-contrast='high'] {
-${block(DARK_HIGH_CONTRAST_BORDERS)}
 }
 
 /* prefers-reduced-motion 下动效归零并保留最终态（01 §2.7） */

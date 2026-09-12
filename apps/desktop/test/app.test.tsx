@@ -209,9 +209,11 @@ describe('首页不创建 Thread（03 §1）', () => {
   it('刚打开时在首页，且**还没有任何任务**', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
-    await waitFor(() => expect(screen.getByRole('tab', { name: '日常办公' })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '有什么可以帮忙的？' })).toBeTruthy(),
+    );
     expect(bridge.send).not.toHaveBeenCalled();
-    expect(screen.getByText('EvoWork，我帮你')).toBeTruthy();
+    expect(screen.getByText('有什么可以帮忙的？')).toBeTruthy();
   });
 
   it('发送第一条消息后才建任务并切到任务页', async () => {
@@ -231,7 +233,7 @@ describe('首页不创建 Thread（03 §1）', () => {
       }),
     );
     // 切到任务页：首页的 Hero 不在了
-    await waitFor(() => expect(screen.queryByText('EvoWork，我帮你')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('有什么可以帮忙的？')).toBeNull());
   });
 
   it('在任务页里发送带上 threadId（不会又建一个新任务）', async () => {
@@ -240,7 +242,7 @@ describe('首页不创建 Thread（03 §1）', () => {
     await waitFor(() => screen.getByLabelText('需求输入'));
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '第一条' } });
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
-    await waitFor(() => expect(screen.queryByText('EvoWork，我帮你')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('有什么可以帮忙的？')).toBeNull());
 
     // 任务页底部是**同一个** Composer（03 §4.6），再发一条要带上 threadId
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '第二条' } });
@@ -573,7 +575,7 @@ describe('侧边栏的六个入口都要有落点', () => {
     ).toBeNull();
   });
 
-  it('点「资料库」点亮的是「资料库」，从「更多」进设置则哪一项都不点亮', async () => {
+  it('点「资料库」点亮的是「资料库」，从用户菜单进设置则哪一项都不点亮', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
@@ -585,7 +587,7 @@ describe('侧边栏的六个入口都要有落点', () => {
       screen.getByRole('button', { name: '新建任务' }).getAttribute('aria-current'),
     ).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
     await waitFor(() => expect(bridge.getModelAccess).toHaveBeenCalled());
     // 02 §2：`/settings/*` 不点亮任何一级导航（从「更多」进入）
@@ -599,11 +601,11 @@ describe('侧边栏的六个入口都要有落点', () => {
    * 还没做的页面**说清是没做**，不留一个空白主区
    * （CLAUDE.md §9.1：降级、跳过、认不出来都要如实说）。
    */
-  it('技能·连接器页是真目录，不是「还没做好」', async () => {
+  it('插件页是真目录，不是「还没做好」', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /技能·连接器/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '插件' }));
     expect(await screen.findByRole('tab', { name: '技能' })).toBeTruthy();
     expect((await screen.findAllByText('文档')).length).toBeGreaterThan(0);
     expect(screen.queryByText('技能·连接器还没做好')).toBeNull();
@@ -615,17 +617,24 @@ describe('侧边栏的六个入口都要有落点', () => {
     expect(await screen.findByText(/官方连接器目录将在后续版本提供/)).toBeTruthy();
   });
 
-  it('发现应用抽屉列出已装技能，管理全部回到技能 Tab', async () => {
+  it('Composer 的「使用插件」列出已装技能，选中后只填入不自动发送', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '发现应用' }));
-    expect(await screen.findByRole('dialog', { name: '发现应用' })).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用插件/ }));
+    expect(await screen.findByRole('dialog', { name: '使用插件' })).toBeTruthy();
     expect(screen.getByText('文档')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: '管理全部 →' }));
+    fireEvent.click(screen.getByText('文档').closest('[role="button"]') as HTMLElement);
+    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).not.toBe('');
+    expect(bridge.send).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用插件/ }));
+    fireEvent.click(screen.getByRole('button', { name: '管理插件 →' }));
     expect(await screen.findByRole('tab', { name: '技能' })).toBeTruthy();
-    expect(screen.queryByRole('dialog', { name: '发现应用' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '使用插件' })).toBeNull();
   });
 
   /*
@@ -975,7 +984,7 @@ describe('项目页接线（Task 13）', () => {
     // 下拉触发按钮的可及名固定是"选择工作空间"（`aria-label`），选中的项文字在按钮内部，
     // 所以用 getByLabelText 拿到按钮本体再看它的文本，而不是按可及名去找"季度汇报"
     expect(await screen.findByLabelText('需求输入')).toBeTruthy();
-    expect(screen.getByLabelText('选择工作空间').textContent).toContain('季度汇报');
+    expect(screen.getByLabelText('选择项目').textContent).toContain('季度汇报');
   });
 
   it('projects-changed 事件到达时刷新列表 —— 但本机增删不等它', async () => {
@@ -1198,17 +1207,17 @@ describe('项目页接线（Task 13）', () => {
 /*
  * ── 设置页的入口与接线（M10a）──
  *
- * 「更多」在 02 §4.7 里是**一个菜单**，而它此前点开是一个「这里还没有内容」的空页。
+ * 二级管理入口统一放在左下用户菜单，不再占用一个「更多」一级导航。
  * 现在它下面的「设置」真的有了，所以这组断言守两件事：菜单里的项能到达设置页，
  * 以及**设置页改完密钥之后 Composer 的下拉跟着变**（两处用的是同一份目录 ——
  * 各拉一次的话，"设置里明明有这个模型、下拉里却没有"会变成一次没人能复现的排查）。
  */
 describe('设置页（11 §4.4）', () => {
-  it('「更多」是菜单而不是页面，选「设置」到达模型接入分区', async () => {
+  it('用户菜单中的「设置」到达模型接入分区', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
-    await waitFor(() => screen.getByRole('button', { name: /更多/ }));
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    await waitFor(() => screen.getByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
     await waitFor(() => expect(bridge.getModelAccess).toHaveBeenCalled());
     expect(screen.getByRole('navigation', { name: '设置分类' })).toBeTruthy();
@@ -1218,8 +1227,8 @@ describe('设置页（11 §4.4）', () => {
   it('菜单里没做的项**禁用并给原因**，不静默移除', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
-    await waitFor(() => screen.getByRole('button', { name: /更多/ }));
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    await waitFor(() => screen.getByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
     const item = screen.getByRole('menuitem', { name: /设备与同步/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
     expect(screen.getByText(/跨设备同步本期不做/)).toBeTruthy();
@@ -1233,8 +1242,8 @@ describe('设置页（11 §4.4）', () => {
       })),
     });
     render(<App bridge={bridge} />);
-    await waitFor(() => screen.getByRole('button', { name: /更多/ }));
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    await waitFor(() => screen.getByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
     await waitFor(() => screen.getByLabelText('Kimi（Moonshot） API 密钥'));
 

@@ -162,6 +162,7 @@ export const SPACE = [2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64] as const;
 /** 排版（01 §2.6）。中文行高不低于字号 ×1.5。 */
 export const TYPE = {
   display: { size: 36, line: 44, weight: 700, tracking: '-.02em' },
+  hero: { size: 28, line: 36, weight: 600 },
   'title-1': { size: 20, line: 28, weight: 700 },
   'title-2': { size: 17, line: 24, weight: 600 },
   'body-lg': { size: 15, line: 24, weight: 400 },

@@ -132,7 +132,10 @@ textarea {
   .ew-sidebar {
     width: var(--space-64);
   }
-  .ew-sidebar-brand,
+  .ew-sidebar .ew-brand-name,
+  .ew-sidebar-projects,
+  .ew-sidebar-section-header,
+  .ew-task-item-tail,
   .ew-nav-label,
   .ew-nav-trailing,
   .ew-user-text {
@@ -992,19 +995,18 @@ textarea {
   gap: var(--space-8);
 }
 .ew-composer-shell {
-  padding: var(--space-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-xl);
-  background: var(--bg-sunken);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-2xl);
+  background: var(--bg-surface);
   box-shadow: var(--shadow-md);
   min-height: var(--layout-composer-collapsed-height);
   max-height: var(--layout-composer-max-height);
 }
 .ew-composer-input-card {
   position: relative;
-  padding: var(--space-16) var(--space-12);
-  border-radius: var(--r-lg);
-  background: var(--bg-surface);
+  padding: var(--space-16);
+  border-radius: inherit;
+  background: transparent;
 }
 .ew-composer-textarea {
   width: 100%;
@@ -1030,8 +1032,15 @@ textarea {
 .ew-composer-tool-row {
   display: flex;
   align-items: center;
-  gap: var(--space-8);
+  gap: var(--space-4);
   height: var(--layout-segmented-track-height);
+}
+.ew-composer-add-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.ew-composer-tool-spacer {
+  flex: 1;
 }
 .ew-composer-attach,
 .ew-composer-mic {
@@ -1080,7 +1089,8 @@ textarea {
   align-items: center;
   gap: var(--space-8);
   min-height: var(--space-40);
-  padding: 0 var(--space-8);
+  padding: var(--space-8) var(--space-16);
+  border-top: 1px solid var(--border-subtle);
   overflow: visible;
 }
 
@@ -1331,15 +1341,19 @@ textarea {
   justify-content: flex-end;
   gap: var(--space-8);
   height: var(--layout-title-bar-height);
-  padding: 0 var(--space-12);
+  padding: 0 var(--space-8);
   /* 无边框窗口下这条带子是拖拽区；按钮自己再改回 no-drag */
   -webkit-app-region: drag;
 }
 .ew-sidebar-titlebar button {
   -webkit-app-region: no-drag;
 }
+.ew-sidebar-titlebar .ew-brand-name {
+  margin-right: auto;
+  padding-left: var(--space-8);
+}
 
-/* §3.3 品牌行：logo + 名称 + 「发现应用」chip */
+/* 品牌行保留为兼容样式；新版侧栏把品牌名合入顶部栏。 */
 .ew-sidebar-brand {
   display: flex;
   align-items: center;
@@ -1397,6 +1411,40 @@ textarea {
   flex-direction: column;
   gap: calc(var(--layout-nav-rhythm) - var(--layout-nav-item-height));
   padding: var(--space-8) 0;
+}
+.ew-sidebar-primary-nav {
+  padding-top: var(--space-4);
+}
+.ew-sidebar-utility-nav {
+  padding: var(--space-8) 0 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ew-sidebar-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-8) 0;
+}
+.ew-sidebar-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--layout-nav-item-height);
+  padding: 0 var(--space-8);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-sidebar-subhead button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  cursor: pointer;
+}
+.ew-sidebar-subhead button:hover {
+  color: var(--text-primary);
 }
 
 /* §3.3：任务列表是唯一的滚动区 */
@@ -1465,6 +1513,26 @@ textarea {
   height: var(--layout-user-footer-height);
   padding: 0 var(--space-8);
   border-top: 1px solid var(--border-subtle);
+}
+.ew-user-menu-anchor {
+  position: relative;
+  display: block;
+}
+.ew-user-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-user-menu-trigger:hover .ew-user-name {
+  color: var(--accent-strong);
 }
 .ew-avatar {
   display: inline-flex;
@@ -1939,6 +2007,17 @@ textarea {
   font-family: var(--font-cjk);
   font-size: var(--font-body-size);
 }
+.ew-home > .ew-content-column {
+  justify-content: center;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.ew-home-primary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+  width: 100%;
+}
 /*
  * Hero 与场景切换**居中**，其余（chips / Composer / 案例区）左对齐撑满内容列。
  * 截图 1 就是这个不对称的排布：居中的是"这个产品是什么"，左对齐的是"你可以做什么"。
@@ -1946,19 +2025,15 @@ textarea {
 .ew-home .ew-hero {
   text-align: center;
 }
-.ew-home .ew-segmented {
-  align-self: center;
-}
 .ew-hero {
-  margin: var(--space-48) 0 var(--space-24);
-  font-size: var(--font-display-size);
-  line-height: var(--font-display-line);
-  font-weight: var(--font-display-weight);
+  margin: 0;
+  font-size: var(--font-hero-size);
+  line-height: var(--font-hero-line);
+  font-weight: var(--font-hero-weight);
 }
 /* 窗口高 < 720 时 Hero 降级，保证 Composer 不被挤出首屏（03 §3.1） */
 @media (max-height: 720px) {
   .ew-hero {
-    margin-top: var(--space-24);
     font-size: var(--font-title-1-size);
     line-height: var(--font-title-1-line);
   }
@@ -2821,21 +2896,14 @@ textarea {
   color: var(--text-tertiary);
 }
 
-/*
- * 「更多」是一个菜单而不是一页（02 §4.7）：给它一个定位锚点。
- * 必须是纵向 flex，否则里面的 NavItem 按内容收缩，选中灰只盖住「更多 灵感」那半截。
- */
-.ew-more-anchor {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-}
-.ew-more-anchor .ew-popover {
+/* 用户菜单从左下角向上展开，保持在侧栏宽度内。 */
+.ew-user-menu-anchor .ew-popover {
+  top: auto;
+  bottom: 100%;
   left: 0;
   right: 0;
 }
-.ew-more-anchor .ew-menu {
+.ew-user-menu-anchor .ew-menu {
   width: 100%;
   min-width: 0;
 }

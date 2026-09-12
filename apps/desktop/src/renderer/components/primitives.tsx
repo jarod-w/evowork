@@ -237,6 +237,7 @@ export function UserFooter({
   unreadCount,
   notificationIcon,
   deviceIcon,
+  onMenu,
   onNotifications,
   onDevices,
 }: {
@@ -245,19 +246,27 @@ export function UserFooter({
   readonly unreadCount?: number | undefined;
   readonly notificationIcon?: ReactNode | undefined;
   readonly deviceIcon?: ReactNode | undefined;
+  readonly onMenu?: (() => void) | undefined;
   readonly onNotifications?: (() => void) | undefined;
   readonly onDevices?: (() => void) | undefined;
 }) {
   const unread = unreadCount !== undefined && unreadCount > 0;
   return (
     <div className="ew-user-footer">
-      <span className="ew-avatar" aria-hidden="true">
-        {name.slice(0, 1)}
-      </span>
-      <span className="ew-user-text">
-        <span className="ew-user-name">{name}</span>
-        <span className="ew-user-version">{version}</span>
-      </span>
+      <button
+        type="button"
+        className="ew-user-menu-trigger"
+        aria-label={`${name} 菜单`}
+        onClick={onMenu}
+      >
+        <span className="ew-avatar" aria-hidden="true">
+          {name.slice(0, 1)}
+        </span>
+        <span className="ew-user-text">
+          <span className="ew-user-name">{name}</span>
+          <span className="ew-user-version">{version}</span>
+        </span>
+      </button>
       <span className="ew-user-actions">
         <span className="ew-notify-anchor" data-unread={unread ? 'true' : undefined}>
           <IconButton

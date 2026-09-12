@@ -878,32 +878,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [bridge, draft, activeTaskId, scenarioId, modelId, workspaceId]);
 
-  const startTaskWithText = useCallback(
-    async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      setDiscoverOpen(false);
-      setView('task');
-      try {
-        const { threadId } = await bridge.send({
-          text: trimmed,
-          scenarioId,
-          ...(modelId !== undefined ? { modelId } : {}),
-          ...(workspaceId !== undefined ? { workspaceId } : {}),
-        });
-        setActiveTaskId(threadId);
-      } catch (err: unknown) {
-        setNotices((prev) => [
-          ...prev,
-          {
-            tone: 'danger',
-            text: `没能发出去：${err instanceof Error ? err.message : String(err)}`,
-          },
-        ]);
-      }
-    },
-    [bridge, scenarioId, modelId, workspaceId],
-  );
+  const prepareTaskWithText = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setDiscoverOpen(false);
+    setActiveTaskId(null);
+    setView('task');
+    setDraft(trimmed);
+  }, []);
 
   const applyCatalogResult = useCallback((result: CatalogMutationResult): CatalogMutationResult => {
     setCatalog(result.catalog);
@@ -974,6 +956,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       overrides: { model: modelOverridden },
       onResetOverride: (key: 'model' | 'permission' | 'mode') => {
         if (key === 'model') setModelOverridden(false);
+      },
+      onOpenLibrary: () => setView('library'),
+      onOpenPlugins: () => setDiscoverOpen(true),
+      onManagePlugins: () => {
+        setCatalogTab('skills');
+        setView('catalog');
       },
       ...(modelAccess?.policyPack?.status === 'expired' && modelAccess.policyPack.message
         ? { sendLockedReason: modelAccess.policyPack.message }
@@ -1118,6 +1106,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setActiveTaskId(null);
           setView('task');
         }}
+        projects={(startup?.workspaces ?? []).map((project) => ({
+          id: project.id,
+          name: project.name,
+        }))}
+        selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
+        onProjectSelect={(id) => {
+          setActiveProjectId(id);
+          setView('projects');
+        }}
         onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
         /*
          * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
@@ -1134,7 +1131,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setView('settings');
           }
         }}
-        onDiscover={() => setDiscoverOpen(true)}
         onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
         onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
         brandName={startup?.appName}
@@ -1251,12 +1247,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onRemoveConnector={async (id) => applyCatalogResult(await bridge.removeConnector({ id }))}
           onCreateExpert={async (input) => applyCatalogResult(await bridge.createExpert(input))}
           onRemoveExpert={async (id) => applyCatalogResult(await bridge.removeExpert({ id }))}
-          onUsePrompt={(prompt) => void startTaskWithText(prompt)}
-          onWriteSkill={() => void startTaskWithText(SKILL_CREATOR_PROMPT)}
+          onUsePrompt={prepareTaskWithText}
+          onWriteSkill={() => prepareTaskWithText(SKILL_CREATOR_PROMPT)}
         />
       ) : activeTaskId === null ? (
         <Home
-          heroLine={`${startup?.appName ?? 'EvoWork'}，我帮你`}
+          heroLine="有什么可以帮忙的？"
           scenarios={scenarios}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
@@ -1301,7 +1297,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         <DiscoverDrawer
           apps={catalog?.apps ?? []}
           onClose={() => setDiscoverOpen(false)}
-          onUse={(prompt) => void startTaskWithText(prompt)}
+          onUse={prepareTaskWithText}
           onManage={() => {
             setDiscoverOpen(false);
             setCatalogTab('skills');

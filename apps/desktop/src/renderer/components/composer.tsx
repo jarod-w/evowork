@@ -22,11 +22,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
-import { Menu, InlineSelect, ModelSelect, type ModelOption } from './menu.js';
+import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
 import { Badge, Banner, PillButton } from './primitives.js';
 import { ModelAccessFields, type ProviderKeyId, type ProviderKeys } from '../views/onboarding.js';
 
-export const COMPOSER_PLACEHOLDER = '今天帮你做些什么？  @ 引用对话文件，/ 调用技能与指令';
+export const COMPOSER_PLACEHOLDER = '输入需求，或描述你想完成的工作';
 
 /** 03 §4.4：K6/Q3 的对外表达点。**这句话必须为真**，改它之前先改 08 §4。 */
 export const LOCAL_PARSE_PROMISE = '文件在本机解析，原始文件不上传。';
@@ -166,6 +166,10 @@ export interface ComposerProps {
   /** 本机并发已满（Q11：3）→ 发送按钮变「排队中（前面 N 个）」 */
   readonly queuePosition?: number | undefined;
   readonly onAttach?: (() => void) | undefined;
+  /** `+` 菜单中的已接通入口；未提供的动作不会显示。 */
+  readonly onOpenLibrary?: (() => void) | undefined;
+  readonly onOpenPlugins?: (() => void) | undefined;
+  readonly onManagePlugins?: (() => void) | undefined;
   /**
    * 策略包超期只读（R11 / 11 §8）。有值时禁用发送并显示这句话。
    * 与 `modelUnavailable` 分开：那条是「检查模型接入」，这条是连企业网更新策略。
@@ -216,6 +220,8 @@ export function Composer(props: ComposerProps) {
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [dangerPending, setDangerPending] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   /**
    * Ask 模式把权限锁成只读；切回 Craft/Plan 时**恢复用户上一次的选择**（03 §4.5）。
@@ -453,14 +459,100 @@ export function Composer(props: ComposerProps) {
           ) : null}
 
           <div className="ew-composer-tool-row">
-            <button
-              type="button"
-              className="ew-composer-attach"
-              aria-label="添加附件"
-              onClick={props.onAttach}
-            >
-              {renderIcon('plus')}
-            </button>
+            <span className="ew-composer-add-anchor">
+              <button
+                type="button"
+                className="ew-composer-attach"
+                aria-label="添加内容"
+                aria-expanded={addOpen}
+                onClick={() => setAddOpen((value) => !value)}
+              >
+                {renderIcon('plus')}
+              </button>
+              <Popover open={addOpen} onClose={() => setAddOpen(false)}>
+                <Menu
+                  ariaLabel="添加内容"
+                  items={[
+                    ...(props.onAttach
+                      ? [
+                          {
+                            id: 'attach',
+                            label: '添加本地文件',
+                            description: LOCAL_PARSE_PROMISE,
+                            group: 'content',
+                          },
+                        ]
+                      : []),
+                    ...(props.onOpenLibrary
+                      ? [
+                          {
+                            id: 'library',
+                            label: '打开资料库',
+                            description: '查找本机资料与产物',
+                            group: 'content',
+                          },
+                        ]
+                      : []),
+                    ...(props.onOpenPlugins
+                      ? [
+                          {
+                            id: 'use-plugins',
+                            label: '使用插件',
+                            description: '选择已安装的技能、连接器或专家',
+                            group: 'plugins',
+                          },
+                        ]
+                      : []),
+                    ...(props.onManagePlugins
+                      ? [
+                          {
+                            id: 'manage-plugins',
+                            label: '管理插件',
+                            group: 'plugins',
+                          },
+                        ]
+                      : []),
+                    {
+                      id: 'advanced',
+                      label: advancedOpen ? '收起更多选项' : '更多选项',
+                      description: '权限与高级执行设置',
+                      group: 'advanced',
+                    },
+                  ]}
+                  onSelect={(id) => {
+                    setAddOpen(false);
+                    if (id === 'attach') props.onAttach?.();
+                    if (id === 'library') props.onOpenLibrary?.();
+                    if (id === 'use-plugins') props.onOpenPlugins?.();
+                    if (id === 'manage-plugins') props.onManagePlugins?.();
+                    if (id === 'advanced') setAdvancedOpen((value) => !value);
+                  }}
+                />
+              </Popover>
+            </span>
+
+            <InlineSelect
+              ariaLabel="工作模式"
+              icon={renderIcon('sparkle')}
+              placeholder="Craft"
+              value={mode}
+              options={MODE_OPTIONS}
+              overridden={props.overrides?.mode}
+              onResetOverride={() => props.onResetOverride?.('mode')}
+              onChange={(id) => props.onModeChange?.(id as ModeId)}
+            />
+
+            <InlineSelect
+              ariaLabel="选择项目"
+              icon={renderIcon('folder')}
+              placeholder="选择项目"
+              value={props.workspaceId}
+              options={props.workspaces ?? []}
+              emptyHint="还没有项目。任务会在默认目录里运行，也可以先从侧栏创建项目。"
+              onChange={(id) => props.onWorkspaceChange?.(id)}
+            />
+
+            <span className="ew-composer-tool-spacer" />
 
             {props.models ? (
               <ModelSelect
@@ -496,51 +588,26 @@ export function Composer(props: ComposerProps) {
           </div>
         </div>
 
-        <div className="ew-composer-footer">
-          {/*
-           * 一个空间都没有时，下拉里是**一句说明**而不是空白浮层。
-           *
-           * 2026-09-06 用户报的「点"选择工作空间"后不能正常显示」就是空白浮层：
-           * `ew-menu` 有内边距和阴影，零个选项时渲染成一个盖住 Footer 的白盒子，
-           * 看起来像界面坏了。这句话同时回答"那我的任务跑在哪"——不说的话，
-           * 用户只知道选不了，不知道会发生什么。
-           */}
-          <InlineSelect
-            ariaLabel="选择工作空间"
-            icon={renderIcon('folder')}
-            placeholder="选择工作空间"
-            value={props.workspaceId}
-            options={props.workspaces ?? []}
-            emptyHint="还没有工作空间。任务会在默认目录里跑，你也可以先在「项目」里建一个。"
-            onChange={(id) => props.onWorkspaceChange?.(id)}
-          />
-          <InlineSelect
-            ariaLabel="权限"
-            icon={renderIcon('shield')}
-            placeholder="默认权限"
-            value={props.permissionId}
-            options={permissionOptions}
-            disabled={mode === 'ask'}
-            disabledReason="Ask 模式固定为只读"
-            overridden={props.overrides?.permission}
-            onResetOverride={() => props.onResetOverride?.('permission')}
-            onChange={(id) => {
-              // 10 §2：完全访问必须过一次二次确认，且**只对当前任务生效**
-              if (id === DANGER_PROFILE) setDangerPending(id);
-              else props.onPermissionChange?.(id);
-            }}
-          />
-          <InlineSelect
-            ariaLabel="工作模式"
-            icon={renderIcon('sparkle')}
-            placeholder="Craft 你说我做"
-            value={mode}
-            options={MODE_OPTIONS}
-            overridden={props.overrides?.mode}
-            onResetOverride={() => props.onResetOverride?.('mode')}
-            onChange={(id) => props.onModeChange?.(id as ModeId)}
-          />
-        </div>
+        {advancedOpen ? (
+          <div className="ew-composer-footer" aria-label="更多选项">
+            <InlineSelect
+              ariaLabel="权限"
+              icon={renderIcon('shield')}
+              placeholder="默认权限"
+              value={props.permissionId}
+              options={permissionOptions}
+              disabled={mode === 'ask'}
+              disabledReason="Ask 模式固定为只读"
+              overridden={props.overrides?.permission}
+              onResetOverride={() => props.onResetOverride?.('permission')}
+              onChange={(id) => {
+                // 10 §2：完全访问必须过一次二次确认，且**只对当前任务生效**
+                if (id === DANGER_PROFILE) setDangerPending(id);
+                else props.onPermissionChange?.(id);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
 
       {/* 04 §5.5：两者的差别必须在 UI 上说清，不能只靠开关名字 */}

@@ -21,9 +21,6 @@ import {
 } from '../src/contrast.js';
 import { toCssVariables } from '../src/css.js';
 import {
-  DARK_HIGH_CONTRAST_BORDERS,
-  DARK_NEUTRAL,
-  DARK_SEMANTIC,
   LIGHT_HIGH_CONTRAST_BORDERS,
   LIGHT_NEUTRAL,
   LIGHT_SEMANTIC,
@@ -266,61 +263,6 @@ describe('边框：一个必须正面承认的取舍（01 §8.3）', () => {
   });
 });
 
-describe('暗色主题（01 §4.5）', () => {
-  it('正文文字达标', () => {
-    const cases: ContrastCase[] = [
-      {
-        name: 'dark text-primary on bg-app',
-        foreground: DARK_NEUTRAL['text-primary'],
-        background: DARK_NEUTRAL['bg-app'],
-        min: REQUIREMENT.text,
-      },
-      {
-        name: 'dark text-primary on bg-surface',
-        foreground: DARK_NEUTRAL['text-primary'],
-        background: DARK_NEUTRAL['bg-surface'],
-        min: REQUIREMENT.text,
-      },
-      {
-        name: 'dark text-secondary on bg-surface',
-        foreground: DARK_NEUTRAL['text-secondary'],
-        background: DARK_NEUTRAL['bg-surface'],
-        min: REQUIREMENT.text,
-      },
-    ];
-    const results = check(cases);
-    expect(
-      results.filter((r) => !r.pass),
-      formatReport(results),
-    ).toEqual([]);
-  });
-
-  it('层级主要由 bg-surface 与 bg-canvas 的明度差承担，描边只做收边（§4.5）', () => {
-    const surfaceVsCanvas = contrastRatio(DARK_NEUTRAL['bg-surface'], DARK_NEUTRAL['bg-canvas']);
-    const borderVsSurface = contrastRatio(
-      DARK_NEUTRAL['border-default'],
-      DARK_NEUTRAL['bg-surface'],
-    );
-    // 描边只有 1.x，撑不起层级 —— 这正是文档说"层级靠明度差"的原因
-    expect(borderVsSurface).toBeLessThan(1.6);
-    expect(surfaceVsCanvas).toBeGreaterThan(1.05);
-  });
-
-  it('暗色的 accent 在 bg-surface 上达标（§4.5 记录 6.13）', () => {
-    const actual = contrastRatio(DARK_SEMANTIC.accent, DARK_NEUTRAL['bg-surface']);
-    expect(actual).toBeGreaterThanOrEqual(REQUIREMENT.text);
-    expect(Math.abs(actual - 6.13)).toBeLessThan(0.2);
-  });
-
-  it('暗色高对比模式把边框提到文档记录的档位（§8.3 脚注）', () => {
-    const def = contrastRatio(
-      DARK_HIGH_CONTRAST_BORDERS['border-default'],
-      DARK_NEUTRAL['bg-surface'],
-    );
-    expect(Math.abs(def - 2.75)).toBeLessThan(0.25);
-  });
-});
-
 describe('尺度 token（01 §2.5–2.6）', () => {
   it('**间距刻度不含 10 / 14 / 18 / 22**（01 §2.5 的硬规则）', () => {
     for (const forbidden of [10, 14, 18, 22]) {
@@ -341,11 +283,12 @@ describe('尺度 token（01 §2.5–2.6）', () => {
 });
 
 describe('CSS 变量生成（一份数值，不手写第二份）', () => {
-  it('生成的 CSS 覆盖三层：浅色 → 暗色 → 高对比', () => {
+  it('本期只生成浅色与高对比模式，不跟随系统暗色', () => {
     const css = toCssVariables();
     expect(css).toContain('--bg-app: #F2F1EE');
-    expect(css).toContain('prefers-color-scheme: dark');
-    expect(css).toContain("[data-theme='dark']");
+    expect(css).toContain('color-scheme: light');
+    expect(css).not.toContain('prefers-color-scheme: dark');
+    expect(css).not.toContain("[data-theme='dark']");
     expect(css).toContain('prefers-contrast: more');
     // 高对比只覆盖三个边框 token，不该出现别的 token 名
     const highContrastBlock = css.slice(css.indexOf("[data-contrast='high']"));

@@ -150,17 +150,9 @@ describe('可见页上报（04 §3.4 第②步）', () => {
 });
 
 describe('行操作（04 §3.3）', () => {
-  it('菜单把「分享」与「复制链接」区分开 —— 一个上传，一个不上传（Q10）', () => {
+  it('只显示已经接通的归档与删除，不暴露无效操作', () => {
     const items = rowMenuItems(task({ id: 't1' }));
-    const share = items.find((i) => i.id === 'share');
-    const copy = items.find((i) => i.id === 'copy-link');
-    expect(share?.description).toContain('授权');
-    expect(copy?.description).toContain('不上传');
-  });
-
-  it('已置顶的行显示「取消置顶」', () => {
-    expect(rowMenuItems(task({ id: 't1', sectionId: PINNED_SECTION }))[0]?.id).toBe('unpin');
-    expect(rowMenuItems(task({ id: 't1' }))[0]?.id).toBe('pin');
+    expect(items.map((item) => item.id)).toEqual(['archive', 'delete']);
   });
 
   it('删除是危险项，且**二次确认说清不删工作空间文件**', () => {
@@ -188,8 +180,19 @@ describe('行操作（04 §3.3）', () => {
     const onRowAction = vi.fn();
     renderSidebar({ tasks: [task({ id: 't1', title: '季度汇报' })], onRowAction });
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
-    fireEvent.click(screen.getByRole('menuitem', { name: '从中途分叉' }));
-    expect(onRowAction).toHaveBeenCalledWith('fork', 't1');
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档' }));
+    expect(onRowAction).toHaveBeenCalledWith('archive', 't1');
+  });
+});
+
+describe('项目与插件入口', () => {
+  it('项目作为独立分区显示，插件使用统一名称', () => {
+    const onProjectSelect = vi.fn();
+    renderSidebar({ projects: [{ id: 'p1', name: '季度汇报' }], onProjectSelect });
+    expect(screen.getByRole('button', { name: '插件' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '季度汇报' }));
+    expect(onProjectSelect).toHaveBeenCalledWith('p1');
+    expect(screen.queryByText('发现应用')).toBeNull();
   });
 });
 
@@ -214,10 +217,8 @@ describe('一级导航选中态（02 §2）', () => {
 
 describe('「更多」菜单的禁用原因（01 §5.19）', () => {
   it('原因在标签这一列里，不跟标签抢同一行', () => {
-    renderSidebar();
-    const more = document.querySelector('.ew-more-anchor .ew-nav-item');
-    expect(more).not.toBeNull();
-    fireEvent.click(more as HTMLElement);
+    renderSidebar({ user: { name: '小王', version: 'v1' } });
+    fireEvent.click(screen.getByRole('button', { name: '小王 菜单' }));
     const item = screen.getByRole('menuitem', { name: /设备与同步/ });
     const reason = item.querySelector('.ew-menu-reason');
     expect(reason?.textContent).toContain('跨设备同步本期不做');

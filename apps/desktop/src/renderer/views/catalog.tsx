@@ -1088,17 +1088,17 @@ export function DiscoverDrawer(props: {
       <aside
         className="ew-discover-drawer"
         role="dialog"
-        aria-label="发现应用"
+        aria-label="使用插件"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="ew-page-title-bar">
-          <h1 className="ew-catalog-detail-title">发现应用</h1>
+          <h1 className="ew-catalog-detail-title">使用插件</h1>
           <GhostButton label="关闭" onClick={props.onClose} />
         </div>
         {props.apps.length === 0 ? (
           <EmptyState
-            title="还没有可发现的应用"
-            hint="装一个带展示信息的技能，或信任一个连接器，就会出现在这里。"
+            title="还没有可用的插件"
+            hint="安装技能、信任连接器或创建专家后，就能从这里使用。"
           />
         ) : (
           <div className="ew-projects-grid">
@@ -1116,7 +1116,7 @@ export function DiscoverDrawer(props: {
           </div>
         )}
         <button type="button" className="ew-discover-manage" onClick={props.onManage}>
-          管理全部 →
+          管理插件 →
         </button>
       </aside>
     </div>

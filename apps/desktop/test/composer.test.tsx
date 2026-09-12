@@ -48,6 +48,11 @@ function type(text: string) {
   return box;
 }
 
+function openAdvanced() {
+  fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: /更多选项/ }));
+}
+
 describe('触发补全（03 §4.2 / §4.3）', () => {
   it('`@` 在任意位置都触发', () => {
     expect(detectTrigger('看一下 @Q3', 9)?.kind).toBe('@');
@@ -144,7 +149,7 @@ describe('附件与本机解析（03 §4.4，K6/Q3 的对外表达点）', () =>
   });
 });
 
-describe('底栏三个选择器（03 §4.5）', () => {
+describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
   const permissions = [
     { id: ':workspace', label: '默认可写', allowed: true },
     { id: READ_ONLY_PROFILE, label: '只读', allowed: true },
@@ -159,6 +164,7 @@ describe('底栏三个选择器（03 §4.5）', () => {
 
   it('**`allowed:false` 的档位渲染为禁用并显示原因，不隐藏**（F4 / 10 §2）', () => {
     renderComposer({ permissions, permissionId: ':workspace' });
+    openAdvanced();
     fireEvent.click(screen.getByRole('button', { name: '权限' }));
 
     const locked = screen.getByRole('menuitem', { name: /企业档/ });
@@ -173,6 +179,7 @@ describe('底栏三个选择器（03 §4.5）', () => {
   it('**选完全访问要过二次确认**，且说清只对当前任务生效', () => {
     const onPermissionChange = vi.fn();
     renderComposer({ permissions, permissionId: ':workspace', onPermissionChange });
+    openAdvanced();
     fireEvent.click(screen.getByRole('button', { name: '权限' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
 
@@ -189,6 +196,7 @@ describe('底栏三个选择器（03 §4.5）', () => {
   it('取消二次确认就什么都不变', () => {
     const onPermissionChange = vi.fn();
     renderComposer({ permissions, permissionId: ':workspace', onPermissionChange });
+    openAdvanced();
     fireEvent.click(screen.getByRole('button', { name: '权限' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
@@ -200,6 +208,7 @@ describe('底栏三个选择器（03 §4.5）', () => {
     renderComposer({ permissions, permissionId: ':workspace', mode: 'ask', onPermissionChange });
     expect(onPermissionChange).toHaveBeenCalledWith(READ_ONLY_PROFILE);
 
+    openAdvanced();
     const trigger = screen.getByRole('button', { name: '权限' });
     expect((trigger as HTMLButtonElement).disabled).toBe(true);
     expect(trigger.getAttribute('title')).toBe('Ask 模式固定为只读');
@@ -245,6 +254,32 @@ describe('底栏三个选择器（03 §4.5）', () => {
       />,
     );
     expect(onPermissionChange).toHaveBeenLastCalledWith(':workspace');
+  });
+
+  it('常显工作模式与项目，权限收在更多选项里', () => {
+    renderComposer({ workspaces: [{ id: 'p1', label: '季度汇报' }] });
+    expect(screen.getByRole('button', { name: '工作模式' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '选择项目' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '权限' })).toBeNull();
+    openAdvanced();
+    expect(screen.getByRole('button', { name: '权限' })).toBeTruthy();
+  });
+});
+
+describe('添加内容菜单', () => {
+  it('只显示已经接通的入口，并把插件使用与管理分开', () => {
+    const onOpenPlugins = vi.fn();
+    const onManagePlugins = vi.fn();
+    renderComposer({ onOpenPlugins, onManagePlugins });
+
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    expect(screen.queryByRole('menuitem', { name: /添加本地文件/ })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用插件/ }));
+    expect(onOpenPlugins).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /管理插件/ }));
+    expect(onManagePlugins).toHaveBeenCalled();
   });
 });
 
@@ -366,12 +401,12 @@ describe('降级必须显式（03 §8 / D2）', () => {
    */
   it('一个工作空间都没有时，下拉里是一句说明而不是空白浮层', () => {
     renderComposer({ workspaces: [] });
-    fireEvent.click(screen.getByRole('button', { name: '选择工作空间' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择项目' }));
 
-    const menu = screen.getByRole('menu', { name: '选择工作空间' });
+    const menu = screen.getByRole('menu', { name: '选择项目' });
     // 关键断言：菜单**不是空的**（空盒子就是那个 bug）
     expect(menu.textContent?.trim()).not.toBe('');
-    expect(menu.textContent).toContain('还没有工作空间');
+    expect(menu.textContent).toContain('还没有项目');
     // 而且说清了后果：不说的话用户只知道选不了，不知道任务会跑在哪
     expect(menu.textContent).toContain('默认目录');
     expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
@@ -383,7 +418,7 @@ describe('降级必须显式（03 §8 / D2）', () => {
       workspaces: [{ id: 'p1', label: '周报', description: '/Users/x/work/weekly' }],
       onWorkspaceChange,
     });
-    fireEvent.click(screen.getByRole('button', { name: '选择工作空间' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择项目' }));
     const item = screen.getByRole('menuitem', { name: /周报/ });
     expect(item.textContent).toContain('/Users/x/work/weekly');
     fireEvent.click(item);
@@ -428,14 +463,13 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
 });
 
 describe('占位文案（03 §4.1）', () => {
-  it('两个入口都在占位里说了', () => {
+  it('保持简短，不在占位文案里堆工具说明', () => {
     renderComposer();
     // 用属性值比对而不是 getByPlaceholderText：后者会把连续空格归一化，
     // 而这里的两段之间**刻意**是两个空格（截图如此）
     expect(screen.getByLabelText('需求输入').getAttribute('placeholder')).toBe(
       COMPOSER_PLACEHOLDER,
     );
-    expect(COMPOSER_PLACEHOLDER).toContain('@ 引用');
-    expect(COMPOSER_PLACEHOLDER).toContain('/ 调用技能');
+    expect(COMPOSER_PLACEHOLDER).toBe('输入需求，或描述你想完成的工作');
   });
 });

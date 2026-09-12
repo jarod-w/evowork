@@ -274,7 +274,7 @@ describe('主内容区的每个根类都要参与 .ew-app 的 flex 布局', () =
 });
 
 /*
- * 「更多」包在定位锚点里、「任务」行包在 Popover 锚点里，都不再是 sidebar-nav
+ * 用户菜单包在定位锚点里、「任务」行包在 Popover 锚点里，都不再是 sidebar-nav
  * 的直接 flex 子项。按钮默认按内容收缩，选中灰就只盖住文字那一半 ——
  * 用户看到的是主区已经换页、侧边栏高亮却是半截胶囊。
  * jsdom 量不出布局，所以钉在 CSS 上。
@@ -286,11 +286,10 @@ describe('侧边栏选中行铺满整行（01 §5.3 / §5.5）', () => {
     expect(rule).toContain('box-sizing: border-box');
   });
 
-  it('「更多」的锚点是纵向 flex，里面的 NavItem 才能被拉满', () => {
-    const rule = /\.ew-more-anchor\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
-    expect(rule).toContain('display: flex');
-    expect(rule).toContain('flex-direction: column');
-    expect(rule).toContain('width: 100%');
+  it('用户菜单有定位锚点，浮层不会脱离侧栏', () => {
+    const rule = /\.ew-user-menu-anchor\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('position: relative');
+    expect(rule).toContain('display: block');
   });
 
   it('任务行同样拉满，选中灰不会停在标题那一半', () => {
