@@ -303,6 +303,18 @@ describe('侧边栏选中行铺满整行（01 §5.3 / §5.5）', () => {
   });
 });
 
+describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
+  it('只在 macOS 标记下插入固定占位，品牌名不会压到三颗交通灯上', () => {
+    const rule =
+      /html\[data-platform='macos'\]\s+\.ew-sidebar-titlebar::before\s*\{([^}]*)\}/.exec(
+        code,
+      )?.[1] ?? '';
+    expect(rule).toContain("content: ''");
+    expect(rule).toContain('flex: none');
+    expect(rule).toContain('width: var(--space-40)');
+  });
+});
+
 /*
  * 中文在横向 flex 里的 min-content 是一字宽。标签 `flex: 1` 吃掉整行之后，
  * 右侧的说明 / 禁用原因 / 附件名会按字折成一列，叠在标签上 ——

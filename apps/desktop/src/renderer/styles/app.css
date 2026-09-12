@@ -592,6 +592,19 @@ textarea {
   color: var(--text-primary);
 }
 
+.ew-process-chevron {
+  flex: none;
+}
+.ew-process-chevron .ew-icon {
+  width: var(--layout-icon-size-xs);
+  height: var(--layout-icon-size-xs);
+}
+.ew-process-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
 .ew-item-body {
   padding-left: var(--space-16);
   border-left: 1px solid var(--border-subtle);
@@ -604,7 +617,6 @@ textarea {
   text-align: center;
 }
 
-.ew-command,
 .ew-command-output,
 .ew-json {
   font-family: var(--font-mono);
@@ -612,6 +624,16 @@ textarea {
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
+}
+.ew-command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .ew-command-output,
 .ew-json {
@@ -1344,6 +1366,12 @@ textarea {
   padding: 0 var(--space-8);
   /* 无边框窗口下这条带子是拖拽区；按钮自己再改回 no-drag */
   -webkit-app-region: drag;
+}
+/* hiddenInset 的交通灯浮在内容上；品牌从第三颗灯的右侧开始，窄时由自身省略。 */
+html[data-platform='macos'] .ew-sidebar-titlebar::before {
+  content: '';
+  flex: none;
+  width: var(--space-40);
 }
 .ew-sidebar-titlebar button {
   -webkit-app-region: no-drag;

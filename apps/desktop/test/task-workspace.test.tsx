@@ -121,6 +121,69 @@ describe('结果区（04 §1）', () => {
   });
 });
 
+describe('思考与执行过程（04 §5.1–§5.2）', () => {
+  it('连续过程项默认收进一个组，主动展开前不挂载推理、命令和输出', () => {
+    const { container } = renderWorkspace({
+      items: [
+        {
+          id: 'reasoning-1',
+          type: 'reasoning',
+          completed: true,
+          durationSeconds: 2,
+          content: ['先分析表结构'],
+        },
+        {
+          id: 'command-1',
+          type: 'commandExecution',
+          completed: true,
+          command: 'python render.py',
+          output: 'rendered 12 slides',
+          exitCode: 0,
+        },
+      ],
+    });
+
+    const group = screen.getByRole('button', { name: '已思考 2 秒' });
+    expect(group.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[data-kind="reasoning"]')).toBeNull();
+    expect(screen.queryByText(/python render\.py/)).toBeNull();
+    expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
+
+    fireEvent.click(group);
+    expect(container.querySelector('[data-kind="reasoning"]')).not.toBeNull();
+    expect(screen.getByText(/python render\.py/)).toBeTruthy();
+    // 命令自己的输出仍保持第二层折叠，不会因展开过程组直接灌满屏幕。
+    expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
+  });
+
+  it('结论消息会切断过程组，且始终直接显示', () => {
+    renderWorkspace({
+      items: [
+        { id: 'reasoning-1', type: 'reasoning', completed: true },
+        { id: 'answer-1', type: 'agentMessage', completed: true, text: 'PPT 已完成' },
+        { id: 'command-1', type: 'commandExecution', completed: true, command: 'open result' },
+      ],
+    });
+
+    expect(screen.getByText('PPT 已完成')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /已思考不到 1 秒|处理过程/ })).toHaveLength(2);
+    expect(screen.queryByText(/open result/)).toBeNull();
+  });
+
+  it('模型无推理能力或企业隐藏策略时，不留下空的过程组', () => {
+    const { container } = renderWorkspace({
+      items: [
+        { id: 'reasoning-1', type: 'reasoning', completed: true },
+        { id: 'hook-1', type: 'hookPrompt', completed: true, text: '内部策略' },
+      ],
+      itemContext: { reasoningAvailable: false, hidePolicyPrompts: true },
+    });
+
+    expect(container.querySelector('.ew-process-group')).toBeNull();
+    expect(screen.queryByRole('button', { name: /思考|处理过程/ })).toBeNull();
+  });
+});
+
 describe('审批：**内联在时间线上，不是模态**（04 §5.3）', () => {
   const approval: ApprovalViewModel = {
     id: 'apv_1',
