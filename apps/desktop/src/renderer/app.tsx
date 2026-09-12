@@ -487,14 +487,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  /** 侧栏项目行要在进入详情前显示目录失效；不能等用户先打开项目页才拉。 */
-  useEffect(() => {
-    void bridge
-      .listProjects()
-      .then(setProjects)
-      .catch(() => setProjects(null));
-  }, [bridge]);
-
   /**
    * 模型下拉（03 §4.5「启动时 + 手动刷新」）。
    *
@@ -1142,59 +1134,53 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         </div>
       ) : (
         <Sidebar
-        tasks={tasks}
-        sections={[]}
-        selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
-        activeNavId={navIdForView(view, activeTaskId)}
-        onSelect={(id) => {
-          setActiveTaskId(id);
-          setView('task');
-        }}
-        onNewTask={() => {
-          setActiveTaskId(null);
-          setView('task');
-        }}
-        projects={
-          projects?.projects.map((project) => ({
+          tasks={tasks}
+          sections={[]}
+          selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
+          activeNavId={navIdForView(view, activeTaskId)}
+          onSelect={(id) => {
+            setActiveTaskId(id);
+            setView('task');
+          }}
+          onNewTask={() => {
+            setActiveTaskId(null);
+            setView('task');
+          }}
+          projects={(startup?.workspaces ?? []).map((project) => ({
             id: project.id,
             name: project.name,
             rootMissing: project.rootMissing,
-          })) ??
-          (startup?.workspaces ?? []).map((project) => ({
-            id: project.id,
-            name: project.name,
-          }))
-        }
-        selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
-        onProjectSelect={(id) => {
-          setActiveProjectId(id);
-          setView('projects');
-        }}
-        onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
-        /*
-         * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
-         * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
-         */
-        onMoreSelect={(id) => {
-          if (id === 'audit') {
-            setView('audit');
-            return;
-          }
-          const [page, section] = id.split(':');
-          if (page === 'settings') {
-            setSettingsSection((section ?? 'models') as SettingsSection);
-            setView('settings');
-          }
-        }}
-        onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
-        onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
-        onToggleCollapse={() => setSidebarCollapsed(true)}
-        searchOpen={sidebarSearchOpen}
-        onSearchOpenChange={setSidebarSearchOpen}
-        brandName={startup?.appName}
-        {...(startup
-          ? { user: { name: startup.userName, version: `v${startup.appVersion}` } }
-          : {})}
+          }))}
+          selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
+          onProjectSelect={(id) => {
+            setActiveProjectId(id);
+            setView('projects');
+          }}
+          onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
+          /*
+           * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
+           * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
+           */
+          onMoreSelect={(id) => {
+            if (id === 'audit') {
+              setView('audit');
+              return;
+            }
+            const [page, section] = id.split(':');
+            if (page === 'settings') {
+              setSettingsSection((section ?? 'models') as SettingsSection);
+              setView('settings');
+            }
+          }}
+          onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
+          onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
+          onToggleCollapse={() => setSidebarCollapsed(true)}
+          searchOpen={sidebarSearchOpen}
+          onSearchOpenChange={setSidebarSearchOpen}
+          brandName={startup?.appName}
+          {...(startup
+            ? { user: { name: startup.userName, version: `v${startup.appVersion}` } }
+            : {})}
         />
       )}
 

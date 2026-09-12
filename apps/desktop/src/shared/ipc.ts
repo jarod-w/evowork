@@ -105,6 +105,8 @@ export interface WorkspaceView {
   readonly id: string;
   readonly name: string;
   readonly path?: string | undefined;
+  /** 根目录已失效；侧栏在用户进入任务或详情前就要给出警告。 */
+  readonly rootMissing?: boolean | undefined;
 }
 
 export interface CaseView {

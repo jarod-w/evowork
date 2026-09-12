@@ -136,11 +136,12 @@ export interface SidebarProps {
   readonly onCleanup?: (() => void) | undefined;
   readonly onNewTask?: (() => void) | undefined;
   readonly projects?:
-    readonly {
-      readonly id: string;
-      readonly name: string;
-      readonly rootMissing?: boolean | undefined;
-    }[] | undefined;
+    | readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly rootMissing?: boolean | undefined;
+      }[]
+    | undefined;
   readonly selectedProjectId?: string | undefined;
   readonly onProjectSelect?: ((id: string) => void) | undefined;
   readonly nav?: readonly {

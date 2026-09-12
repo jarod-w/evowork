@@ -1426,6 +1426,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
           id: row.id,
           name: row.name,
           ...(row.roots[0] !== undefined ? { path: row.roots[0] } : {}),
+          ...(options.projectPorts && toCard(row, options.projectPorts).rootMissing
+            ? { rootMissing: true }
+            : {}),
         })),
         tasks: adapter
           .listTasks({})
