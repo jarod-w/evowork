@@ -16,7 +16,14 @@ const DETAIL: ProjectDetailView = {
   rootDisplay: '~/w/q3',
   rootMissing: false,
   tasks: [
-    { id: 't1', title: '写周报', status: 'completed', timeLabel: '2 小时前', sectionId: 'recent' },
+    {
+      id: 't1',
+      title: '写周报',
+      status: 'completed',
+      timeLabel: '2 小时前',
+      updatedAt: Date.now(),
+      sectionId: 'recent',
+    },
   ],
   fileActions: [{ id: 'a1', name: 'report.docx', action: 'document', at: 1_700_000_000_000 }],
   automations: [{ id: 'au1', name: '每周一汇总', schedule: '0 9 * * 1', status: 'ACTIVE' }],

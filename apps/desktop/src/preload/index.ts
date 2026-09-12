@@ -56,6 +56,9 @@ export const RENDERER_ACTIONS = Object.freeze([
    * 的事件流里，重启后再点已完成任务，不调这一步就是空对话。
    */
   'openTask',
+  /** 当前任务的产物，以及从索引中校验后交给系统打开的动作。 */
+  'getTaskResults',
+  'openResultFile',
   'getStartup',
   // 模型下拉（03 §4.5「启动时 + 手动刷新」）。与 getStartup 分开是因为它是一次网络调用，
   // 失败方式与"本机服务起不来"完全不同（见 main/model-catalog.ts 的头注释）

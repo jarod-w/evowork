@@ -41,6 +41,8 @@ export interface TaskRow {
   readonly title: string | null;
   readonly status: TaskStatus;
   readonly timeLabel: string;
+  /** 最近活动时间（毫秒）；筛选只读这个事实字段，不反向解析 `timeLabel`。 */
+  readonly updatedAt: number;
   /** `threadSection` 的 id。内置 pinned 分区即置顶（总纲 §6.1，不额外做 is_pinned） */
   readonly sectionId: string;
   /** 非空 = 子任务，**不进顶层列表**（04 §3.2） */
@@ -133,7 +135,13 @@ export interface SidebarProps {
   readonly diskUsagePercent?: number | undefined;
   readonly onCleanup?: (() => void) | undefined;
   readonly onNewTask?: (() => void) | undefined;
-  readonly projects?: readonly { readonly id: string; readonly name: string }[] | undefined;
+  readonly projects?:
+    | readonly {
+        readonly id: string;
+        readonly name: string;
+        readonly rootMissing?: boolean | undefined;
+      }[]
+    | undefined;
   readonly selectedProjectId?: string | undefined;
   readonly onProjectSelect?: ((id: string) => void) | undefined;
   readonly nav?: readonly {
@@ -148,6 +156,8 @@ export interface SidebarProps {
   /** 品牌名（K5：换品牌只改 token，布局零改动）。缺省用 BRAND.appName */
   readonly brandName?: string | undefined;
   readonly onToggleCollapse?: (() => void) | undefined;
+  readonly searchOpen?: boolean | undefined;
+  readonly onSearchOpenChange?: ((open: boolean) => void) | undefined;
   /** 用户区（01 §5.7）。不给就不渲染 —— 未登录时那一块本来就没有内容 */
   readonly user?:
     | { readonly name: string; readonly version: string; readonly unread?: number | undefined }
@@ -233,7 +243,7 @@ const DEFAULT_PAGE_SIZE = 30;
 
 export function Sidebar(props: SidebarProps) {
   const [search, setSearch] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [localSearchOpen, setLocalSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState<TaskFilter>(EMPTY_FILTER);
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -241,6 +251,12 @@ export function Sidebar(props: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const pageSize = props.pageSize ?? DEFAULT_PAGE_SIZE;
+  const [visibleCount, setVisibleCount] = useState(pageSize);
+  const searchOpen = props.searchOpen ?? localSearchOpen;
+  const setSearchOpen = (open: boolean): void => {
+    setLocalSearchOpen(open);
+    props.onSearchOpenChange?.(open);
+  };
 
   // 04 §3.2：子任务不进顶层列表
   const topLevel = useMemo(
@@ -253,6 +269,10 @@ export function Sidebar(props: SidebarProps) {
     return topLevel.filter((task) => {
       if (q && !(task.title ?? '').toLowerCase().includes(q)) return false;
       if (filter.statuses.length > 0 && !filter.statuses.includes(task.status)) return false;
+      if (filter.range !== 'all') {
+        const days = filter.range === 'today' ? 1 : filter.range === '7d' ? 7 : 30;
+        if (task.updatedAt < Date.now() - days * 24 * 60 * 60 * 1000) return false;
+      }
       if (filter.cwd !== undefined && task.cwd !== filter.cwd) return false;
       if (filter.modelProvider !== undefined && task.modelProvider !== filter.modelProvider)
         return false;
@@ -263,7 +283,8 @@ export function Sidebar(props: SidebarProps) {
     });
   }, [topLevel, search, filter]);
 
-  const visible = useMemo(() => matched.slice(0, pageSize), [matched, pageSize]);
+  useEffect(() => setVisibleCount(pageSize), [pageSize, search, filter]);
+  const visible = useMemo(() => matched.slice(0, visibleCount), [matched, visibleCount]);
 
   // 只报可见页（04 §3.4）：把这里改成 matched 就会在"筛出 800 条"时打爆内核
   const onVisibleChange = props.onVisibleChange;
@@ -303,7 +324,7 @@ export function Sidebar(props: SidebarProps) {
           label={searchOpen ? '收起搜索框' : '打开搜索框'}
           icon={renderIcon('search')}
           selected={searchOpen}
-          onClick={() => setSearchOpen((v) => !v)}
+          onClick={() => setSearchOpen(!searchOpen)}
         />
         <span className="ew-filter-anchor">
           <IconButton
@@ -359,7 +380,7 @@ export function Sidebar(props: SidebarProps) {
         {(props.projects ?? []).slice(0, 3).map((project) => (
           <NavItem
             key={project.id}
-            label={project.name}
+            label={project.rootMissing ? `${project.name}（目录不可用）` : project.name}
             icon={renderIcon('project')}
             selected={project.id === props.selectedProjectId}
             onClick={() => props.onProjectSelect?.(project.id)}
@@ -367,7 +388,18 @@ export function Sidebar(props: SidebarProps) {
         ))}
       </section>
 
-      <div className="ew-sidebar-tasks">
+      <div
+        className="ew-sidebar-tasks"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          if (
+            node.scrollHeight - node.scrollTop - node.clientHeight <= 1 &&
+            visibleCount < matched.length
+          ) {
+            setVisibleCount((count) => Math.min(count + pageSize, matched.length));
+          }
+        }}
+      >
         <SidebarSectionHeader
           label="最近任务"
           count={topLevel.length}
@@ -434,7 +466,7 @@ export function Sidebar(props: SidebarProps) {
 
             {matched.length > visible.length ? (
               <p className="ew-task-list-more">
-                还有 {matched.length - visible.length} 条，滚动加载
+                还有 {matched.length - visible.length} 条，向下滚动继续加载
               </p>
             ) : null}
           </div>

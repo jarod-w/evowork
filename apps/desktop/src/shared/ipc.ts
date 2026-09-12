@@ -18,6 +18,8 @@ export interface TaskRowView {
   readonly title: string | null;
   readonly status: TaskStatusView;
   readonly timeLabel: string;
+  /** 最近活动时间（毫秒）。侧栏时间范围筛选必须读真实时间，不能解析展示文案。 */
+  readonly updatedAt: number;
   readonly sectionId: string;
   readonly parentThreadId?: string | null | undefined;
   readonly hasArtifacts?: boolean | undefined;
@@ -103,6 +105,8 @@ export interface WorkspaceView {
   readonly id: string;
   readonly name: string;
   readonly path?: string | undefined;
+  /** 根目录已失效；侧栏在用户进入任务或详情前就要给出警告。 */
+  readonly rootMissing?: boolean | undefined;
 }
 
 export interface CaseView {
@@ -244,6 +248,17 @@ export interface OpenTaskResult {
    * 没有这条 = 列表就是完整历史（哪怕长度为 0：这个任务真的还没有消息）。
    */
   readonly incomplete?: string | undefined;
+}
+
+/** 右侧结果工作区只取当前任务的产物，不复用全局资料库视图。 */
+export interface TaskResultsView {
+  readonly artifacts: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly path: string;
+    readonly artifactType: string;
+    readonly version: number;
+  }[];
 }
 
 /* ─────────────────── 三个目录式页面的数据（02 §1 的一级入口）─────────────────── */

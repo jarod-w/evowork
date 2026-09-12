@@ -142,6 +142,8 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     rowAction: vi.fn(async () => undefined),
     refreshVisible: vi.fn(async () => undefined),
     openTask: vi.fn(async () => ({ items: [] })),
+    getTaskResults: vi.fn(async () => ({ artifacts: [] })),
+    openResultFile: vi.fn(async () => undefined),
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
     applyModelAccess: vi.fn(async () => ({ models: MODELS })),
@@ -271,6 +273,7 @@ describe('事件接线', () => {
         title: '季度汇报',
         status: 'running',
         timeLabel: '刚刚',
+        updatedAt: Date.now(),
         sectionId: 'ungrouped',
       },
     });
@@ -283,9 +286,117 @@ describe('事件接线', () => {
     await waitFor(() => expect(emit.ui).toBeDefined());
     emit.ui?.({
       type: 'task-created',
-      task: { id: 't9', title: 'x', status: 'idle', timeLabel: '刚刚', sectionId: 'ungrouped' },
+      task: {
+        id: 't9',
+        title: 'x',
+        status: 'idle',
+        timeLabel: '刚刚',
+        updatedAt: Date.now(),
+        sectionId: 'ungrouped',
+      },
     });
     await waitFor(() => expect(bridge.refreshVisible).toHaveBeenCalledWith(['t9']));
+  });
+});
+
+describe('全局快捷键与侧栏折叠', () => {
+  it('⌘K 打开搜索，⌘⇧O 回到新任务，⌘\\ 可折叠并恢复侧栏', async () => {
+    const { bridge, emit } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'task-created',
+      task: {
+        id: 't1',
+        title: '旧任务',
+        status: 'completed',
+        timeLabel: '刚刚',
+        updatedAt: Date.now(),
+        sectionId: 'ungrouped',
+      },
+    });
+    fireEvent.click(await screen.findByText('旧任务'));
+
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(screen.getByLabelText('搜索任务')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'o', metaKey: true, shiftKey: true });
+    expect(await screen.findByText('有什么可以帮忙的？')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true });
+    expect(screen.queryByLabelText('侧边栏')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }));
+    expect(screen.getByLabelText('侧边栏')).toBeTruthy();
+  });
+});
+
+describe('结果工作区真实接线', () => {
+  const resultTask = {
+    id: 't-result',
+    title: '生成季度报告',
+    status: 'completed' as const,
+    timeLabel: '刚刚',
+    updatedAt: Date.now(),
+    sectionId: 'ungrouped',
+    cwd: '/Users/x/q3',
+  };
+
+  it('按任务读取产物，打开结果后可交给系统打开文件', async () => {
+    const openResultFile = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      getTaskResults: vi.fn(async () => ({
+        artifacts: [
+          {
+            id: 'a1',
+            name: '季度报告.docx',
+            path: '/Users/x/q3/季度报告.docx',
+            artifactType: 'document',
+            version: 2,
+          },
+        ],
+      })),
+      openResultFile,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开结果' }));
+    fireEvent.click(await screen.findByRole('button', { name: /季度报告\.docx/ }));
+    expect(openResultFile).toHaveBeenCalledWith({ artifactId: 'a1' });
+  });
+
+  it('时间线的文件变更可直接跳到完整 diff，并按任务记住选中 Tab', async () => {
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'item',
+      taskId: resultTask.id,
+      item: {
+        id: 'change-1',
+        type: 'fileChange',
+        changes: [
+          {
+            path: 'report.md',
+            added: 2,
+            removed: 1,
+            diff: '@@ -1 +1 @@\n-old\n+new',
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看完整变更' }));
+    expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText(/-old/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
+    expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
   });
 });
 
@@ -311,6 +422,7 @@ describe('点开已完成任务要看到历史（不是「还没有消息」）'
             title: '介绍一下自己',
             status: 'completed',
             timeLabel: '25 分钟前',
+            updatedAt: Date.now(),
             sectionId: 'ungrouped',
           },
         ],
@@ -350,6 +462,7 @@ describe('点开已完成任务要看到历史（不是「还没有消息」）'
             title: '先点这个',
             status: 'completed',
             timeLabel: '1 小时前',
+            updatedAt: Date.now(),
             sectionId: 'ungrouped',
           },
           {
@@ -357,6 +470,7 @@ describe('点开已完成任务要看到历史（不是「还没有消息」）'
             title: '再点这个',
             status: 'completed',
             timeLabel: '刚刚',
+            updatedAt: Date.now(),
             sectionId: 'ungrouped',
           },
         ],
@@ -501,6 +615,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
         title: '上周的周报',
         status: 'completed',
         timeLabel: '2 天前',
+        updatedAt: Date.now(),
         sectionId: 'ungrouped',
         modelId: 'evowork/kimi-k3',
       },
@@ -1188,6 +1303,7 @@ describe('项目页接线（Task 13）', () => {
             title: '季度评审',
             status: 'completed' as const,
             timeLabel: '昨天',
+            updatedAt: Date.now(),
             sectionId: 'x',
           },
         ],

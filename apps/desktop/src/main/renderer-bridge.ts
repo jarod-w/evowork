@@ -89,6 +89,7 @@ import type {
   SendInput,
   StartupInfo,
   TaskRowView,
+  TaskResultsView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import {
@@ -150,6 +151,7 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
     title: displayTitle(row),
     status: row.derived_status,
     timeLabel: timeLabel(row.recency_at ?? row.updated_at, now),
+    updatedAt: row.recency_at ?? row.updated_at ?? row.created_at ?? 0,
     sectionId: row.section_id ?? 'ungrouped',
     parentThreadId: row.parent_thread_id,
     hasArtifacts: row.artifact_count > 0,
@@ -943,6 +945,42 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
     },
 
+    /** 当前任务产物：按 path 折到最新版本，只展示仍存在的文件。 */
+    async getTaskResults(input: { readonly threadId: string }): Promise<TaskResultsView> {
+      const artifacts = options.pageData?.listArtifacts() ?? [];
+      const latestByPath = new Map<string, (typeof artifacts)[number]>();
+      for (const artifact of artifacts) {
+        if (artifact.threadId !== input.threadId) continue;
+        const current = latestByPath.get(artifact.path);
+        if (current === undefined || artifact.version > current.version) {
+          latestByPath.set(artifact.path, artifact);
+        }
+      }
+      return {
+        artifacts: [...latestByPath.values()]
+          .filter((artifact) => artifact.fileState === 'PRESENT')
+          .map((artifact) => ({
+            id: artifact.id,
+            name: artifact.title || basename(artifact.path),
+            path: artifact.path,
+            artifactType: artifact.artifactType,
+            version: artifact.version,
+          })),
+      };
+    },
+
+    /**
+     * 只接受产物 id，再从本机索引取路径。渲染进程不能借这个动作打开任意路径。
+     */
+    async openResultFile(input: { readonly artifactId: string }): Promise<void> {
+      const artifact = (options.pageData?.listArtifacts() ?? []).find(
+        (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
+      );
+      if (!artifact) throw new Error('这个产物已经不存在。');
+      if (!options.projectPorts) throw new Error(NO_PORTS);
+      await options.projectPorts.openFolder(artifact.path);
+    },
+
     /**
      * 资料库（06 §3）。**本机产物索引，不出网**（Q17：不做云盘）。
      *
@@ -1425,6 +1463,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
           id: row.id,
           name: row.name,
           ...(row.roots[0] !== undefined ? { path: row.roots[0] } : {}),
+          ...(options.projectPorts && toCard(row, options.projectPorts).rootMissing
+            ? { rootMissing: true }
+            : {}),
         })),
         tasks: adapter
           .listTasks({})

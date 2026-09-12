@@ -22,6 +22,7 @@ function task(over: Partial<TaskRow> & { id: string }): TaskRow {
     title: `任务 ${over.id}`,
     status: 'completed',
     timeLabel: '1天前',
+    updatedAt: Date.now(),
     sectionId: 'ungrouped',
     ...over,
   };
@@ -110,6 +111,21 @@ describe('搜索与筛选（04 §3.4）', () => {
     expect(screen.getByText('(2 / 3)')).toBeTruthy();
   });
 
+  it('时间范围读取真实时间戳，选择后结果数量真实变化', () => {
+    const now = Date.now();
+    renderSidebar({
+      tasks: [
+        task({ id: 'recent', title: '今天的任务', updatedAt: now }),
+        task({ id: 'old', title: '两周前的任务', updatedAt: now - 14 * 24 * 60 * 60 * 1000 }),
+      ],
+    });
+    fireEvent.click(screen.getByLabelText('筛选任务'));
+    fireEvent.click(screen.getByRole('checkbox', { name: '7 天' }));
+    expect(screen.getByText('今天的任务')).toBeTruthy();
+    expect(screen.queryByText('两周前的任务')).toBeNull();
+    expect(screen.getByText('(1 / 2)')).toBeTruthy();
+  });
+
   it('筛空时的空态给出下一步，不写「暂无数据」', () => {
     renderSidebar({ tasks });
     fireEvent.click(screen.getByLabelText('打开搜索框'));
@@ -145,7 +161,24 @@ describe('可见页上报（04 §3.4 第②步）', () => {
 
     const reported = onVisibleChange.mock.calls.at(-1)?.[0] as string[];
     expect(reported).toHaveLength(30);
-    expect(screen.getByText('还有 70 条，滚动加载')).toBeTruthy();
+    expect(screen.getByText('还有 70 条，向下滚动继续加载')).toBeTruthy();
+  });
+
+  it('滚动到底部增量挂载下一页，并继续上报有界可见集', () => {
+    const onVisibleChange = vi.fn();
+    const many = Array.from({ length: 65 }, (_, i) => task({ id: `t${i}` }));
+    const { container } = renderSidebar({ tasks: many, onVisibleChange, pageSize: 30 });
+    const scroller = container.querySelector('.ew-sidebar-tasks') as HTMLElement;
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 100 },
+      clientHeight: { value: 50 },
+      scrollTop: { value: 50, writable: true },
+    });
+    fireEvent.scroll(scroller);
+
+    const reported = onVisibleChange.mock.calls.at(-1)?.[0] as string[];
+    expect(reported).toHaveLength(60);
+    expect(screen.getByText('还有 5 条，向下滚动继续加载')).toBeTruthy();
   });
 });
 
@@ -193,6 +226,20 @@ describe('项目与插件入口', () => {
     fireEvent.click(screen.getByRole('button', { name: '季度汇报' }));
     expect(onProjectSelect).toHaveBeenCalledWith('p1');
     expect(screen.queryByText('发现应用')).toBeNull();
+  });
+
+  it('项目目录失效时在侧栏行直接警告', () => {
+    renderSidebar({ projects: [{ id: 'p1', name: '季度汇报', rootMissing: true }] });
+    expect(screen.getByRole('button', { name: '季度汇报（目录不可用）' })).toBeTruthy();
+  });
+});
+
+describe('手动折叠', () => {
+  it('折叠按钮调用宿主，由宿主保留恢复入口', () => {
+    const onToggleCollapse = vi.fn();
+    renderSidebar({ onToggleCollapse });
+    fireEvent.click(screen.getByRole('button', { name: '折叠侧边栏' }));
+    expect(onToggleCollapse).toHaveBeenCalledOnce();
   });
 });
 

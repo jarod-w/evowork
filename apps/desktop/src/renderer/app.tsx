@@ -47,13 +47,17 @@ import type {
   SendInput,
   StartupInfo,
   TaskRowView,
+  TaskResultsView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
-import { Banner, EmptyState } from './components/primitives.js';
+import { Banner, EmptyState, IconButton } from './components/primitives.js';
+import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
+import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
+import { TreeItem } from './components/panels.js';
 import { resolveModelChoice } from './model-selection.js';
 import { AuditPage, type AuditRow } from './views/audit.js';
 import {
@@ -79,7 +83,7 @@ import { ProjectDetailPage } from './views/project-detail.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
-import { TaskWorkspace } from './views/task-workspace.js';
+import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge {
@@ -96,6 +100,8 @@ export interface EvoworkBridge {
   refreshVisible(ids: readonly string[]): Promise<void>;
   /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
   openTask(input: { threadId: string }): Promise<OpenTaskResult>;
+  getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
+  openResultFile(input: { artifactId: string }): Promise<void>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
   /**
@@ -359,6 +365,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('skills');
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
   const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const [taskResults, setTaskResults] = useState<Readonly<Record<string, TaskResultsView>>>({});
+  const [taskFiles, setTaskFiles] = useState<Readonly<Record<string, readonly DirEntryView[]>>>({});
+  const [resultUi, setResultUi] = useState<
+    Readonly<Record<string, { readonly open: boolean; readonly tab: ResultPane }>>
+  >({});
+  const [diffScope, setDiffScope] = useState<DiffScope>('thread');
 
   useEffect(() => {
     const offs = [
@@ -455,6 +469,34 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setFailure(err instanceof Error ? err.message : String(err));
       });
   }, [bridge]);
+
+  /*
+   * 全局快捷键只负责跨页面导航；文本输入自己的 Enter / Esc 仍由 Composer 处理。
+   * `event.code === 'Backslash'` 避免不同键盘布局下 `event.key` 变成其他字符。
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.shiftKey && event.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        setActiveTaskId(null);
+        setView('task');
+        return;
+      }
+      if (!event.shiftKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSidebarCollapsed(false);
+        setSidebarSearchOpen(true);
+        return;
+      }
+      if (!event.shiftKey && event.code === 'Backslash') {
+        event.preventDefault();
+        setSidebarCollapsed((collapsed) => !collapsed);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   /**
    * 模型下拉（03 §4.5「启动时 + 手动刷新」）。
@@ -628,6 +670,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       cancelled = true;
     };
   }, [activeTaskId, bridge]);
+
+  /** 结果区数据按任务读取；产物来自索引，文件来自该任务所属项目的根目录。 */
+  useEffect(() => {
+    if (activeTaskId === null) return;
+    const threadId = activeTaskId;
+    void bridge
+      .getTaskResults({ threadId })
+      .then((result) => setTaskResults((prev) => ({ ...prev, [threadId]: result })))
+      .catch(() => setTaskResults((prev) => ({ ...prev, [threadId]: { artifacts: [] } })));
+
+    const cwd = tasks.find((task) => task.id === threadId)?.cwd;
+    const project = startup?.workspaces.find((workspace) => workspace.path === cwd);
+    if (!project) {
+      setTaskFiles((prev) => ({ ...prev, [threadId]: [] }));
+      return;
+    }
+    void bridge
+      .listProjectDir({ id: project.id })
+      .then((entries) => setTaskFiles((prev) => ({ ...prev, [threadId]: entries })))
+      .catch(() => setTaskFiles((prev) => ({ ...prev, [threadId]: [] })));
+  }, [activeTaskId, bridge, startup, tasks]);
 
   /**
    * 进到某一页时才去拉它的数据。
@@ -931,6 +994,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   const active = tasks.find((t) => t.id === activeTaskId);
+  const currentItems = activeTaskId === null ? [] : (itemsByTask[activeTaskId] ?? []);
+  const currentResults =
+    activeTaskId === null ? { artifacts: [] } : (taskResults[activeTaskId] ?? { artifacts: [] });
+  const currentFiles = activeTaskId === null ? [] : (taskFiles[activeTaskId] ?? []);
+  const changedFiles = useMemo(() => changedFilesFromItems(currentItems), [currentItems]);
+  const activeResultUi =
+    activeTaskId === null
+      ? { open: false, tab: 'artifacts' as ResultPane }
+      : (resultUi[activeTaskId] ?? { open: false, tab: 'artifacts' as ResultPane });
+  const updateResultUi = useCallback(
+    (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
+      if (activeTaskId === null) return;
+      setResultUi((prev) => ({
+        ...prev,
+        [activeTaskId]: { ...activeResultUi, ...patch },
+      }));
+    },
+    [activeTaskId, activeResultUi],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -1093,51 +1175,65 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
 
   return (
     <div className="ew-app">
-      <Sidebar
-        tasks={tasks}
-        sections={[]}
-        selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
-        activeNavId={navIdForView(view, activeTaskId)}
-        onSelect={(id) => {
-          setActiveTaskId(id);
-          setView('task');
-        }}
-        onNewTask={() => {
-          setActiveTaskId(null);
-          setView('task');
-        }}
-        projects={(startup?.workspaces ?? []).map((project) => ({
-          id: project.id,
-          name: project.name,
-        }))}
-        selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
-        onProjectSelect={(id) => {
-          setActiveProjectId(id);
-          setView('projects');
-        }}
-        onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
-        /*
-         * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
-         * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
-         */
-        onMoreSelect={(id) => {
-          if (id === 'audit') {
-            setView('audit');
-            return;
-          }
-          const [page, section] = id.split(':');
-          if (page === 'settings') {
-            setSettingsSection((section ?? 'models') as SettingsSection);
-            setView('settings');
-          }
-        }}
-        onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
-        onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
-        brandName={startup?.appName}
-        {...(startup
-          ? { user: { name: startup.userName, version: `v${startup.appVersion}` } }
-          : {})}
-      />
+      {sidebarCollapsed ? (
+        <div className="ew-sidebar-restore">
+          <IconButton
+            label="展开侧边栏"
+            icon={renderIcon('panel-left')}
+            onClick={() => setSidebarCollapsed(false)}
+          />
+        </div>
+      ) : (
+        <Sidebar
+          tasks={tasks}
+          sections={[]}
+          selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
+          activeNavId={navIdForView(view, activeTaskId)}
+          onSelect={(id) => {
+            setActiveTaskId(id);
+            setView('task');
+          }}
+          onNewTask={() => {
+            setActiveTaskId(null);
+            setView('task');
+          }}
+          projects={(startup?.workspaces ?? []).map((project) => ({
+            id: project.id,
+            name: project.name,
+            rootMissing: project.rootMissing,
+          }))}
+          selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
+          onProjectSelect={(id) => {
+            setActiveProjectId(id);
+            setView('projects');
+          }}
+          onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
+          /*
+           * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
+           * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
+           */
+          onMoreSelect={(id) => {
+            if (id === 'audit') {
+              setView('audit');
+              return;
+            }
+            const [page, section] = id.split(':');
+            if (page === 'settings') {
+              setSettingsSection((section ?? 'models') as SettingsSection);
+              setView('settings');
+            }
+          }}
+          onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
+          onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
+          onToggleCollapse={() => setSidebarCollapsed(true)}
+          searchOpen={sidebarSearchOpen}
+          onSearchOpenChange={setSidebarSearchOpen}
+          brandName={startup?.appName}
+          {...(startup
+            ? { user: { name: startup.userName, version: `v${startup.appVersion}` } }
+            : {})}
+        />
+      )}
 
       {view !== 'task' ? (
         <MainPage
@@ -1277,15 +1373,83 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         />
       ) : (
         <TaskWorkspace
+          taskId={activeTaskId}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}
-          items={itemsByTask[activeTaskId] ?? []}
+          items={currentItems}
           pendingApprovals={approvals}
           onDecide={(id, decision) => void bridge.decideApproval({ id, decision })}
           itemContext={{
             reasoningAvailable: true,
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
             mermaid: MERMAID,
+            onOpenResult: (tab) => updateResultUi({ open: true, tab }),
+          }}
+          hasResults={
+            currentResults.artifacts.length > 0 ||
+            currentFiles.length > 0 ||
+            changedFiles.length > 0
+          }
+          resultOpen={activeResultUi.open}
+          resultTab={activeResultUi.tab}
+          onResultOpenChange={(open) => updateResultUi({ open })}
+          onResultTabChange={(tab) => updateResultUi({ tab })}
+          resultPanels={{
+            artifacts:
+              currentResults.artifacts.length > 0 ? (
+                <ul className="ew-result-artifacts">
+                  {currentResults.artifacts.map((artifact) => (
+                    <li key={artifact.id}>
+                      <button
+                        type="button"
+                        className="ew-result-artifact"
+                        onClick={() => {
+                          void bridge
+                            .openResultFile({ artifactId: artifact.id })
+                            .catch((error: unknown) =>
+                              setNotices((prev) => [
+                                ...prev,
+                                {
+                                  tone: 'warning',
+                                  text: `打不开产物：${error instanceof Error ? error.message : String(error)}`,
+                                },
+                              ]),
+                            );
+                        }}
+                      >
+                        <span>{artifact.name}</span>
+                        <span>版本 {artifact.version}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title="还没有产物" hint="任务生成的交付文件会出现在这里。" />
+              ),
+            files:
+              currentFiles.length > 0 ? (
+                <div className="ew-result-files">
+                  {currentFiles.map((entry) => (
+                    <TreeItem
+                      key={entry.path}
+                      label={entry.name}
+                      muted={entry.noisy}
+                      icon={entry.isDirectory ? renderIcon('folder') : undefined}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="没有项目文件" hint="把任务放进项目后可在这里浏览根目录。" />
+              ),
+            changes: (
+              <ChangesView files={changedFiles} scope={diffScope} onScopeChange={setDiffScope} />
+            ),
+            browser: (
+              <EmptyState
+                title="没有浏览器预览"
+                hint="任务产生本地网页或 HTML 预览后才会在这里显示。"
+              />
+            ),
           }}
           notices={notices}
           historyLoading={historyLoading}
@@ -1550,4 +1714,24 @@ export function applyHistory(
     return fromLive === undefined ? item : (mergeItem([item], fromLive)[0] ?? fromLive);
   });
   return [...merged, ...live.filter((item) => !historyIds.has(item.id))];
+}
+
+/** 把时间线里的 FileChange 投影成完整变更视图；未知 diff 如实留空，不编造内容。 */
+export function changedFilesFromItems(items: readonly RenderItem[]): readonly ChangedFile[] {
+  const files = new Map<string, ChangedFile>();
+  for (const item of items) {
+    if (item.type !== 'fileChange' || !Array.isArray(item.changes)) continue;
+    const itemDiff = typeof item.diff === 'string' ? item.diff : '';
+    for (const raw of item.changes as readonly Record<string, unknown>[]) {
+      if (typeof raw.path !== 'string' || raw.path === '') continue;
+      files.set(raw.path, {
+        path: raw.path,
+        added: typeof raw.added === 'number' ? raw.added : 0,
+        removed: typeof raw.removed === 'number' ? raw.removed : 0,
+        diff: typeof raw.diff === 'string' ? raw.diff : itemDiff,
+        ...(raw.outsideWorkspace === true ? { outsideWorkspace: true } : {}),
+      });
+    }
+  }
+  return [...files.values()];
 }
