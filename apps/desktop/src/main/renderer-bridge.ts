@@ -89,6 +89,7 @@ import type {
   SendInput,
   StartupInfo,
   TaskRowView,
+  TaskResultsView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import {
@@ -942,6 +943,42 @@ export function createRendererActions(options: RendererBridgeOptions) {
           incomplete: `读不到这个任务的完整历史：${reason}`,
         };
       }
+    },
+
+    /** 当前任务产物：按 path 折到最新版本，只展示仍存在的文件。 */
+    async getTaskResults(input: { readonly threadId: string }): Promise<TaskResultsView> {
+      const artifacts = options.pageData?.listArtifacts() ?? [];
+      const latestByPath = new Map<string, (typeof artifacts)[number]>();
+      for (const artifact of artifacts) {
+        if (artifact.threadId !== input.threadId) continue;
+        const current = latestByPath.get(artifact.path);
+        if (current === undefined || artifact.version > current.version) {
+          latestByPath.set(artifact.path, artifact);
+        }
+      }
+      return {
+        artifacts: [...latestByPath.values()]
+          .filter((artifact) => artifact.fileState === 'PRESENT')
+          .map((artifact) => ({
+            id: artifact.id,
+            name: artifact.title || basename(artifact.path),
+            path: artifact.path,
+            artifactType: artifact.artifactType,
+            version: artifact.version,
+          })),
+      };
+    },
+
+    /**
+     * 只接受产物 id，再从本机索引取路径。渲染进程不能借这个动作打开任意路径。
+     */
+    async openResultFile(input: { readonly artifactId: string }): Promise<void> {
+      const artifact = (options.pageData?.listArtifacts() ?? []).find(
+        (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
+      );
+      if (!artifact) throw new Error('这个产物已经不存在。');
+      if (!options.projectPorts) throw new Error(NO_PORTS);
+      await options.projectPorts.openFolder(artifact.path);
     },
 
     /**

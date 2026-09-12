@@ -238,6 +238,7 @@ textarea {
   display: flex;
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 
 .ew-conversation {
@@ -268,6 +269,58 @@ textarea {
   flex-direction: column;
   gap: var(--space-12);
   overflow-y: auto;
+}
+.ew-result-body {
+  flex: 1;
+  min-height: 0;
+}
+.ew-result-artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-result-artifact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  width: 100%;
+  min-height: var(--layout-data-table-row-height);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-result-artifact:hover {
+  background: var(--bg-hover);
+}
+.ew-result-artifact span:last-child {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+}
+.ew-result-files {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 设计 §6.2：窄窗口的结果区覆盖对话，不继续把正文挤窄。 */
+@media (max-width: 1179px) {
+  .ew-result-pane {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: var(--z-drawer);
+    width: var(--layout-middle-max);
+    max-width: 100%;
+    box-shadow: var(--shadow-lg);
+  }
 }
 
 /* ─────────────────────────── 基础件（01 §5）─────────────────────────── */

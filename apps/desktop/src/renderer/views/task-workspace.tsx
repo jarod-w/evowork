@@ -183,6 +183,7 @@ function ProcessGroup({
 }
 
 export interface TaskWorkspaceProps {
+  readonly taskId?: string | undefined;
   readonly title: string | null;
   readonly status: TaskStatus;
   readonly items: readonly RenderItem[];
@@ -203,6 +204,11 @@ export interface TaskWorkspaceProps {
     readonly onAction?: (() => void) | undefined;
   }[];
   readonly resultPanel?: React.ReactNode | undefined;
+  readonly resultPanels?: Readonly<Partial<Record<ResultPane, React.ReactNode>>> | undefined;
+  readonly resultOpen?: boolean | undefined;
+  readonly resultTab?: ResultPane | undefined;
+  readonly onResultOpenChange?: ((open: boolean) => void) | undefined;
+  readonly onResultTabChange?: ((tab: ResultPane) => void) | undefined;
   /**
    * 对话区底部的 Composer。
    *
@@ -221,8 +227,18 @@ export interface TaskWorkspaceProps {
 
 export function TaskWorkspace(props: TaskWorkspaceProps) {
   const view = STATUS_VIEW[props.status];
-  const [resultOpen, setResultOpen] = useState(false);
-  const [resultTab, setResultTab] = useState<ResultPane>('artifacts');
+  const [localResultOpen, setLocalResultOpen] = useState(false);
+  const [localResultTab, setLocalResultTab] = useState<ResultPane>('artifacts');
+  const resultOpen = props.resultOpen ?? localResultOpen;
+  const resultTab = props.resultTab ?? localResultTab;
+  const setResultOpen = (open: boolean): void => {
+    setLocalResultOpen(open);
+    props.onResultOpenChange?.(open);
+  };
+  const setResultTab = (tab: ResultPane): void => {
+    setLocalResultTab(tab);
+    props.onResultTabChange?.(tab);
+  };
 
   // ⌘I 切换结果区（02 §6）
   useEffect(() => {
@@ -230,12 +246,12 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'i') {
         event.preventDefault();
         if (!props.hasResults && !props.resultPanel) return;
-        setResultOpen((v) => !v);
+        setResultOpen(!resultOpen);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [props.hasResults, props.resultPanel]);
+  }, [props.hasResults, props.resultPanel, resultOpen]);
 
   const approvalsById = useMemo(
     () => new Map(props.pendingApprovals.map((a) => [a.id, a])),
@@ -259,7 +275,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
         ) : null}
         <div className="ew-title-bar-actions">
           {props.hasResults || props.resultPanel ? (
-            <PillButton variant="ghost" onClick={() => setResultOpen((v) => !v)}>
+            <PillButton variant="ghost" onClick={() => setResultOpen(!resultOpen)}>
               {resultOpen ? '关闭结果' : '打开结果'}
             </PillButton>
           ) : null}
@@ -346,7 +362,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               onChange={(id) => setResultTab(id as ResultPane)}
             />
             <div className="ew-result-body" data-pane={resultTab}>
-              {props.resultPanel ?? (
+              {props.resultPanels?.[resultTab] ?? props.resultPanel ?? (
                 <EmptyState
                   title="还没有产物"
                   hint="文档、表格、幻灯片等交付物生成后会自动收集到这里。"

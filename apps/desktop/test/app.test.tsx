@@ -142,6 +142,8 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     rowAction: vi.fn(async () => undefined),
     refreshVisible: vi.fn(async () => undefined),
     openTask: vi.fn(async () => ({ items: [] })),
+    getTaskResults: vi.fn(async () => ({ artifacts: [] })),
+    openResultFile: vi.fn(async () => undefined),
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
     applyModelAccess: vi.fn(async () => ({ models: MODELS })),
@@ -325,6 +327,76 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(screen.queryByLabelText('侧边栏')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }));
     expect(screen.getByLabelText('侧边栏')).toBeTruthy();
+  });
+});
+
+describe('结果工作区真实接线', () => {
+  const resultTask = {
+    id: 't-result',
+    title: '生成季度报告',
+    status: 'completed' as const,
+    timeLabel: '刚刚',
+    updatedAt: Date.now(),
+    sectionId: 'ungrouped',
+    cwd: '/Users/x/q3',
+  };
+
+  it('按任务读取产物，打开结果后可交给系统打开文件', async () => {
+    const openResultFile = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      getTaskResults: vi.fn(async () => ({
+        artifacts: [
+          {
+            id: 'a1',
+            name: '季度报告.docx',
+            path: '/Users/x/q3/季度报告.docx',
+            artifactType: 'document',
+            version: 2,
+          },
+        ],
+      })),
+      openResultFile,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开结果' }));
+    fireEvent.click(await screen.findByRole('button', { name: /季度报告\.docx/ }));
+    expect(openResultFile).toHaveBeenCalledWith({ artifactId: 'a1' });
+  });
+
+  it('时间线的文件变更可直接跳到完整 diff，并按任务记住选中 Tab', async () => {
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'item',
+      taskId: resultTask.id,
+      item: {
+        id: 'change-1',
+        type: 'fileChange',
+        changes: [
+          {
+            path: 'report.md',
+            added: 2,
+            removed: 1,
+            diff: '@@ -1 +1 @@\n-old\n+new',
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看完整变更' }));
+    expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText(/-old/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
+    expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
   });
 });
 

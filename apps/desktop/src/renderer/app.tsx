@@ -47,6 +47,7 @@ import type {
   SendInput,
   StartupInfo,
   TaskRowView,
+  TaskResultsView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
@@ -55,6 +56,8 @@ import { Banner, EmptyState, IconButton } from './components/primitives.js';
 import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
+import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
+import { TreeItem } from './components/panels.js';
 import { resolveModelChoice } from './model-selection.js';
 import { AuditPage, type AuditRow } from './views/audit.js';
 import {
@@ -80,7 +83,7 @@ import { ProjectDetailPage } from './views/project-detail.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
-import { TaskWorkspace } from './views/task-workspace.js';
+import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge {
@@ -97,6 +100,8 @@ export interface EvoworkBridge {
   refreshVisible(ids: readonly string[]): Promise<void>;
   /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
   openTask(input: { threadId: string }): Promise<OpenTaskResult>;
+  getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
+  openResultFile(input: { artifactId: string }): Promise<void>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
   /**
@@ -362,6 +367,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const [taskResults, setTaskResults] = useState<Readonly<Record<string, TaskResultsView>>>({});
+  const [taskFiles, setTaskFiles] = useState<Readonly<Record<string, readonly DirEntryView[]>>>({});
+  const [resultUi, setResultUi] = useState<
+    Readonly<Record<string, { readonly open: boolean; readonly tab: ResultPane }>>
+  >({});
+  const [diffScope, setDiffScope] = useState<DiffScope>('thread');
 
   useEffect(() => {
     const offs = [
@@ -659,6 +670,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       cancelled = true;
     };
   }, [activeTaskId, bridge]);
+
+  /** 结果区数据按任务读取；产物来自索引，文件来自该任务所属项目的根目录。 */
+  useEffect(() => {
+    if (activeTaskId === null) return;
+    const threadId = activeTaskId;
+    void bridge
+      .getTaskResults({ threadId })
+      .then((result) => setTaskResults((prev) => ({ ...prev, [threadId]: result })))
+      .catch(() => setTaskResults((prev) => ({ ...prev, [threadId]: { artifacts: [] } })));
+
+    const cwd = tasks.find((task) => task.id === threadId)?.cwd;
+    const project = startup?.workspaces.find((workspace) => workspace.path === cwd);
+    if (!project) {
+      setTaskFiles((prev) => ({ ...prev, [threadId]: [] }));
+      return;
+    }
+    void bridge
+      .listProjectDir({ id: project.id })
+      .then((entries) => setTaskFiles((prev) => ({ ...prev, [threadId]: entries })))
+      .catch(() => setTaskFiles((prev) => ({ ...prev, [threadId]: [] })));
+  }, [activeTaskId, bridge, startup, tasks]);
 
   /**
    * 进到某一页时才去拉它的数据。
@@ -962,6 +994,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   const active = tasks.find((t) => t.id === activeTaskId);
+  const currentItems = activeTaskId === null ? [] : (itemsByTask[activeTaskId] ?? []);
+  const currentResults =
+    activeTaskId === null ? { artifacts: [] } : (taskResults[activeTaskId] ?? { artifacts: [] });
+  const currentFiles = activeTaskId === null ? [] : (taskFiles[activeTaskId] ?? []);
+  const changedFiles = useMemo(() => changedFilesFromItems(currentItems), [currentItems]);
+  const activeResultUi =
+    activeTaskId === null
+      ? { open: false, tab: 'artifacts' as ResultPane }
+      : (resultUi[activeTaskId] ?? { open: false, tab: 'artifacts' as ResultPane });
+  const updateResultUi = useCallback(
+    (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
+      if (activeTaskId === null) return;
+      setResultUi((prev) => ({
+        ...prev,
+        [activeTaskId]: { ...activeResultUi, ...patch },
+      }));
+    },
+    [activeTaskId, activeResultUi],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -1322,15 +1373,83 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         />
       ) : (
         <TaskWorkspace
+          taskId={activeTaskId}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}
-          items={itemsByTask[activeTaskId] ?? []}
+          items={currentItems}
           pendingApprovals={approvals}
           onDecide={(id, decision) => void bridge.decideApproval({ id, decision })}
           itemContext={{
             reasoningAvailable: true,
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
             mermaid: MERMAID,
+            onOpenResult: (tab) => updateResultUi({ open: true, tab }),
+          }}
+          hasResults={
+            currentResults.artifacts.length > 0 ||
+            currentFiles.length > 0 ||
+            changedFiles.length > 0
+          }
+          resultOpen={activeResultUi.open}
+          resultTab={activeResultUi.tab}
+          onResultOpenChange={(open) => updateResultUi({ open })}
+          onResultTabChange={(tab) => updateResultUi({ tab })}
+          resultPanels={{
+            artifacts:
+              currentResults.artifacts.length > 0 ? (
+                <ul className="ew-result-artifacts">
+                  {currentResults.artifacts.map((artifact) => (
+                    <li key={artifact.id}>
+                      <button
+                        type="button"
+                        className="ew-result-artifact"
+                        onClick={() => {
+                          void bridge
+                            .openResultFile({ artifactId: artifact.id })
+                            .catch((error: unknown) =>
+                              setNotices((prev) => [
+                                ...prev,
+                                {
+                                  tone: 'warning',
+                                  text: `打不开产物：${error instanceof Error ? error.message : String(error)}`,
+                                },
+                              ]),
+                            );
+                        }}
+                      >
+                        <span>{artifact.name}</span>
+                        <span>版本 {artifact.version}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title="还没有产物" hint="任务生成的交付文件会出现在这里。" />
+              ),
+            files:
+              currentFiles.length > 0 ? (
+                <div className="ew-result-files">
+                  {currentFiles.map((entry) => (
+                    <TreeItem
+                      key={entry.path}
+                      label={entry.name}
+                      muted={entry.noisy}
+                      icon={entry.isDirectory ? renderIcon('folder') : undefined}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="没有项目文件" hint="把任务放进项目后可在这里浏览根目录。" />
+              ),
+            changes: (
+              <ChangesView files={changedFiles} scope={diffScope} onScopeChange={setDiffScope} />
+            ),
+            browser: (
+              <EmptyState
+                title="没有浏览器预览"
+                hint="任务产生本地网页或 HTML 预览后才会在这里显示。"
+              />
+            ),
           }}
           notices={notices}
           historyLoading={historyLoading}
@@ -1595,4 +1714,24 @@ export function applyHistory(
     return fromLive === undefined ? item : (mergeItem([item], fromLive)[0] ?? fromLive);
   });
   return [...merged, ...live.filter((item) => !historyIds.has(item.id))];
+}
+
+/** 把时间线里的 FileChange 投影成完整变更视图；未知 diff 如实留空，不编造内容。 */
+export function changedFilesFromItems(items: readonly RenderItem[]): readonly ChangedFile[] {
+  const files = new Map<string, ChangedFile>();
+  for (const item of items) {
+    if (item.type !== 'fileChange' || !Array.isArray(item.changes)) continue;
+    const itemDiff = typeof item.diff === 'string' ? item.diff : '';
+    for (const raw of item.changes as readonly Record<string, unknown>[]) {
+      if (typeof raw.path !== 'string' || raw.path === '') continue;
+      files.set(raw.path, {
+        path: raw.path,
+        added: typeof raw.added === 'number' ? raw.added : 0,
+        removed: typeof raw.removed === 'number' ? raw.removed : 0,
+        diff: typeof raw.diff === 'string' ? raw.diff : itemDiff,
+        ...(raw.outsideWorkspace === true ? { outsideWorkspace: true } : {}),
+      });
+    }
+  }
+  return [...files.values()];
 }

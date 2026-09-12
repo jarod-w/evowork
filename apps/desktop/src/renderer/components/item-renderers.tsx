@@ -42,6 +42,9 @@ export interface ItemRenderContext {
   readonly hidePolicyPrompts?: boolean | undefined;
   readonly onFork?: ((itemId: string) => void) | undefined;
   readonly onOpenSubAgent?: ((threadId: string) => void) | undefined;
+  /** 时间线的轻量卡跳到右侧完整视图。 */
+  readonly onOpenResult?:
+    ((pane: 'artifacts' | 'files' | 'changes' | 'browser') => void) | undefined;
   /**
    * Visualizer 的三个可选依赖（04 §7）。
    *
@@ -382,6 +385,15 @@ export function ItemRenderer({
               </li>
             ))}
           </ul>
+          {context.onOpenResult ? (
+            <button
+              type="button"
+              className="ew-item-action"
+              onClick={() => context.onOpenResult?.('changes')}
+            >
+              查看完整变更
+            </button>
+          ) : null}
         </div>
       );
     }
@@ -451,6 +463,15 @@ export function ItemRenderer({
           ) : (
             <div className="ew-generated-image ew-image-pending">正在生成图片…</div>
           )}
+          {source && context.onOpenResult ? (
+            <button
+              type="button"
+              className="ew-item-action"
+              onClick={() => context.onOpenResult?.('artifacts')}
+            >
+              在结果区打开
+            </button>
+          ) : null}
         </div>
       );
     }

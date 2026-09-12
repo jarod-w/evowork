@@ -250,6 +250,17 @@ export interface OpenTaskResult {
   readonly incomplete?: string | undefined;
 }
 
+/** 右侧结果工作区只取当前任务的产物，不复用全局资料库视图。 */
+export interface TaskResultsView {
+  readonly artifacts: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly path: string;
+    readonly artifactType: string;
+    readonly version: number;
+  }[];
+}
+
 /* ─────────────────── 三个目录式页面的数据（02 §1 的一级入口）─────────────────── */
 
 /**
