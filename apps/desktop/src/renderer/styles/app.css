@@ -56,6 +56,17 @@ textarea {
   min-width: 0;
 }
 
+/* 手动折叠后的稳定恢复入口；它占用窄轨道，不覆盖任务顶栏内容。 */
+.ew-sidebar-restore {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: center;
+  width: var(--space-48);
+  padding-top: var(--space-12);
+  background: var(--bg-sidebar);
+}
+
 /* 目录式页面（02 §1 的一级入口）：标题栏带高度留白 + 内容列 800 居中 */
 .ew-page {
   display: flex;

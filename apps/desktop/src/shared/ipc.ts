@@ -18,6 +18,8 @@ export interface TaskRowView {
   readonly title: string | null;
   readonly status: TaskStatusView;
   readonly timeLabel: string;
+  /** 最近活动时间（毫秒）。侧栏时间范围筛选必须读真实时间，不能解析展示文案。 */
+  readonly updatedAt: number;
   readonly sectionId: string;
   readonly parentThreadId?: string | null | undefined;
   readonly hasArtifacts?: boolean | undefined;

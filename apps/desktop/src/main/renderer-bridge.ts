@@ -150,6 +150,7 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
     title: displayTitle(row),
     status: row.derived_status,
     timeLabel: timeLabel(row.recency_at ?? row.updated_at, now),
+    updatedAt: row.recency_at ?? row.updated_at ?? row.created_at ?? 0,
     sectionId: row.section_id ?? 'ungrouped',
     parentThreadId: row.parent_thread_id,
     hasArtifacts: row.artifact_count > 0,

@@ -51,7 +51,8 @@ import type {
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
-import { Banner, EmptyState } from './components/primitives.js';
+import { Banner, EmptyState, IconButton } from './components/primitives.js';
+import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { resolveModelChoice } from './model-selection.js';
@@ -359,6 +360,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('skills');
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
   const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
 
   useEffect(() => {
     const offs = [
@@ -454,6 +457,42 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
          */
         setFailure(err instanceof Error ? err.message : String(err));
       });
+  }, [bridge]);
+
+  /*
+   * 全局快捷键只负责跨页面导航；文本输入自己的 Enter / Esc 仍由 Composer 处理。
+   * `event.code === 'Backslash'` 避免不同键盘布局下 `event.key` 变成其他字符。
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.shiftKey && event.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        setActiveTaskId(null);
+        setView('task');
+        return;
+      }
+      if (!event.shiftKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSidebarCollapsed(false);
+        setSidebarSearchOpen(true);
+        return;
+      }
+      if (!event.shiftKey && event.code === 'Backslash') {
+        event.preventDefault();
+        setSidebarCollapsed((collapsed) => !collapsed);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /** 侧栏项目行要在进入详情前显示目录失效；不能等用户先打开项目页才拉。 */
+  useEffect(() => {
+    void bridge
+      .listProjects()
+      .then(setProjects)
+      .catch(() => setProjects(null));
   }, [bridge]);
 
   /**
@@ -1093,7 +1132,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
 
   return (
     <div className="ew-app">
-      <Sidebar
+      {sidebarCollapsed ? (
+        <div className="ew-sidebar-restore">
+          <IconButton
+            label="展开侧边栏"
+            icon={renderIcon('panel-left')}
+            onClick={() => setSidebarCollapsed(false)}
+          />
+        </div>
+      ) : (
+        <Sidebar
         tasks={tasks}
         sections={[]}
         selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
@@ -1106,10 +1154,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setActiveTaskId(null);
           setView('task');
         }}
-        projects={(startup?.workspaces ?? []).map((project) => ({
-          id: project.id,
-          name: project.name,
-        }))}
+        projects={
+          projects?.projects.map((project) => ({
+            id: project.id,
+            name: project.name,
+            rootMissing: project.rootMissing,
+          })) ??
+          (startup?.workspaces ?? []).map((project) => ({
+            id: project.id,
+            name: project.name,
+          }))
+        }
         selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
         onProjectSelect={(id) => {
           setActiveProjectId(id);
@@ -1133,11 +1188,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }}
         onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
         onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
+        onToggleCollapse={() => setSidebarCollapsed(true)}
+        searchOpen={sidebarSearchOpen}
+        onSearchOpenChange={setSidebarSearchOpen}
         brandName={startup?.appName}
         {...(startup
           ? { user: { name: startup.userName, version: `v${startup.appVersion}` } }
           : {})}
-      />
+        />
+      )}
 
       {view !== 'task' ? (
         <MainPage

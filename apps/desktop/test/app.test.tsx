@@ -271,6 +271,7 @@ describe('事件接线', () => {
         title: '季度汇报',
         status: 'running',
         timeLabel: '刚刚',
+        updatedAt: Date.now(),
         sectionId: 'ungrouped',
       },
     });
@@ -283,9 +284,47 @@ describe('事件接线', () => {
     await waitFor(() => expect(emit.ui).toBeDefined());
     emit.ui?.({
       type: 'task-created',
-      task: { id: 't9', title: 'x', status: 'idle', timeLabel: '刚刚', sectionId: 'ungrouped' },
+      task: {
+        id: 't9',
+        title: 'x',
+        status: 'idle',
+        timeLabel: '刚刚',
+        updatedAt: Date.now(),
+        sectionId: 'ungrouped',
+      },
     });
     await waitFor(() => expect(bridge.refreshVisible).toHaveBeenCalledWith(['t9']));
+  });
+});
+
+describe('全局快捷键与侧栏折叠', () => {
+  it('⌘K 打开搜索，⌘⇧O 回到新任务，⌘\\ 可折叠并恢复侧栏', async () => {
+    const { bridge, emit } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'task-created',
+      task: {
+        id: 't1',
+        title: '旧任务',
+        status: 'completed',
+        timeLabel: '刚刚',
+        updatedAt: Date.now(),
+        sectionId: 'ungrouped',
+      },
+    });
+    fireEvent.click(await screen.findByText('旧任务'));
+
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(screen.getByLabelText('搜索任务')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'o', metaKey: true, shiftKey: true });
+    expect(await screen.findByText('有什么可以帮忙的？')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true });
+    expect(screen.queryByLabelText('侧边栏')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }));
+    expect(screen.getByLabelText('侧边栏')).toBeTruthy();
   });
 });
 
@@ -311,6 +350,7 @@ describe('点开已完成任务要看到历史（不是「还没有消息」）'
             title: '介绍一下自己',
             status: 'completed',
             timeLabel: '25 分钟前',
+            updatedAt: Date.now(),
             sectionId: 'ungrouped',
           },
         ],
@@ -350,6 +390,7 @@ describe('点开已完成任务要看到历史（不是「还没有消息」）'
             title: '先点这个',
             status: 'completed',
             timeLabel: '1 小时前',
+            updatedAt: Date.now(),
             sectionId: 'ungrouped',
           },
           {
@@ -357,6 +398,7 @@ describe('点开已完成任务要看到历史（不是「还没有消息」）'
             title: '再点这个',
             status: 'completed',
             timeLabel: '刚刚',
+            updatedAt: Date.now(),
             sectionId: 'ungrouped',
           },
         ],
@@ -501,6 +543,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
         title: '上周的周报',
         status: 'completed',
         timeLabel: '2 天前',
+        updatedAt: Date.now(),
         sectionId: 'ungrouped',
         modelId: 'evowork/kimi-k3',
       },
@@ -1188,6 +1231,7 @@ describe('项目页接线（Task 13）', () => {
             title: '季度评审',
             status: 'completed' as const,
             timeLabel: '昨天',
+            updatedAt: Date.now(),
             sectionId: 'x',
           },
         ],
