@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AutomationForm,
   AutomationHistory,
+  AutomationsPage,
   describeRunStatus,
   FIXED_BEHAVIOR_NOTICE,
   MISFIRE_COPY,
@@ -72,6 +73,68 @@ describe('**配置时就要说清的三件事**', () => {
   it('定时任务的预算是必填项，且说清为什么（07 §8-3）', () => {
     render(<Harness />);
     expect(screen.getByText(/没人在旁边看着的时候/)).toBeTruthy();
+  });
+});
+
+describe('自动化列表的执行摘要', () => {
+  it('优先显示下次运行、绑定设备、最近结果与启用状态', () => {
+    render(
+      <AutomationsPage
+        deviceName="MacBook-Pro-J"
+        rows={[
+          {
+            id: 'a1',
+            name: '每日周报',
+            status: 'ACTIVE',
+            schedule: '0 9 * * 1-5',
+            timezone: 'Asia/Shanghai',
+            ownedByThisDevice: true,
+            nextFireAt: Date.parse('2026-09-07T01:00:00Z'),
+          },
+        ]}
+        runs={{
+          a1: [
+            {
+              id: 'r1',
+              fireTime: NOW,
+              status: 'SUCCEEDED',
+              trigger: 'SCHEDULED',
+              threadId: 't1',
+            },
+          ],
+        }}
+      />,
+    );
+    const row = screen.getByRole('button', { name: /每日周报/ });
+    expect(row.textContent).toContain('启用中');
+    expect(row.textContent).toContain('下次运行：');
+    expect(row.textContent).toContain('绑定设备：MacBook-Pro-J');
+    expect(row.textContent).toContain('最近结果：成功');
+  });
+
+  it('历史里的成功结果只在有关联任务时提供打开动作', () => {
+    const onOpenTask = vi.fn();
+    const { rerender } = render(
+      <AutomationHistory
+        name="每日周报"
+        timezone="UTC"
+        rows={[{ id: 'r1', fireTime: NOW, status: 'SUCCEEDED', trigger: 'SCHEDULED' }]}
+        onOpenTask={onOpenTask}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '查看任务' })).toBeNull();
+    rerender(
+      <AutomationHistory
+        name="每日周报"
+        timezone="UTC"
+        rows={[
+          { id: 'r2', fireTime: NOW, status: 'SUCCEEDED', trigger: 'SCHEDULED', threadId: 't2' },
+        ]}
+        onOpenTask={onOpenTask}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '查看任务' }));
+    expect(onOpenTask).toHaveBeenCalledWith('t2');
   });
 });
 

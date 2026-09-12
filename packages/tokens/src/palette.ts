@@ -205,6 +205,12 @@ export const LAYOUT = {
   middleWidth: 272,
   middleMin: 240,
   middleMax: 360,
+  /** 结果工作区：01 §3.1，默认按主窗口 42%，拖动范围 420–720。 */
+  resultPaneDefault: 560,
+  resultPaneMin: 420,
+  resultPaneMax: 720,
+  /** 键盘调整宽度时每次移动一个基础间距。 */
+  resultPaneStep: 24,
   /** 全局硬约束：截图 1 的 4×191+3×12 与截图 2 的 3×258+2×12 都等于 800 */
   contentColumn: 800,
   titleBarHeight: 52,
@@ -218,9 +224,9 @@ export const LAYOUT = {
   gridGap: 12,
   dataTableHeaderHeight: 40,
   dataTableRowHeight: 48,
-  minWindowWidth: 1024,
-  /** < 860 不支持（桌面应用，无移动端形态） */
-  unsupportedWidth: 860,
+  minWindowWidth: 900,
+  /** 低于最小宽度时改用抽屉与单列，不承诺手机端形态。 */
+  unsupportedWidth: 900,
 
   /*
    * 以下是 01 §5 各组件的固定尺寸。它们进 token 而不是写在 CSS 里，理由与其他 token 一样：

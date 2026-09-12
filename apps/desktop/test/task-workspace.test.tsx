@@ -122,7 +122,7 @@ describe('结果区（04 §1）', () => {
 });
 
 describe('思考与执行过程（04 §5.1–§5.2）', () => {
-  it('连续过程项默认收进一个组，主动展开前不挂载推理、命令和输出', () => {
+  it('连续过程项按语义分组，主动展开前不挂载推理、命令和输出', () => {
     const { container } = renderWorkspace({
       items: [
         {
@@ -143,15 +143,18 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
       ],
     });
 
-    const group = screen.getByRole('button', { name: '已思考 2 秒' });
-    expect(group.getAttribute('aria-expanded')).toBe('false');
+    const thinking = screen.getByRole('button', { name: /思考与计划.*分析任务.*2 秒/ });
+    const operations = screen.getByRole('button', { name: /操作.*python render\.py/ });
+    expect(thinking.getAttribute('aria-expanded')).toBe('false');
+    expect(operations.getAttribute('aria-expanded')).toBe('false');
     expect(container.querySelector('[data-kind="reasoning"]')).toBeNull();
-    expect(screen.queryByText(/python render\.py/)).toBeNull();
+    expect(container.querySelector('[data-kind="commandExecution"]')).toBeNull();
     expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
 
-    fireEvent.click(group);
+    fireEvent.click(thinking);
     expect(container.querySelector('[data-kind="reasoning"]')).not.toBeNull();
-    expect(screen.getByText(/python render\.py/)).toBeTruthy();
+    fireEvent.click(operations);
+    expect(container.querySelector('[data-kind="commandExecution"]')).not.toBeNull();
     // 命令自己的输出仍保持第二层折叠，不会因展开过程组直接灌满屏幕。
     expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
   });
@@ -166,8 +169,9 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
     });
 
     expect(screen.getByText('PPT 已完成')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /已思考不到 1 秒|处理过程/ })).toHaveLength(2);
-    expect(screen.queryByText(/open result/)).toBeNull();
+    expect(screen.getByRole('button', { name: /思考与计划.*分析任务/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /操作.*open result/ })).toBeTruthy();
+    expect(screen.getByText('open result')).toBeTruthy();
   });
 
   it('模型无推理能力或企业隐藏策略时，不留下空的过程组', () => {
@@ -262,5 +266,67 @@ describe('流式区的无障碍（01 §8.1）', () => {
     const { container } = renderWorkspace();
     const column = container.querySelector('.ew-content-column');
     expect(column?.getAttribute('aria-live')).toBe('polite');
+  });
+});
+
+describe('2.7.3–2.7.5 补齐项', () => {
+  it('过程时间线归入五类，并在折叠行保留当前动作与状态', () => {
+    renderWorkspace({
+      items: [
+        { id: 'r', type: 'reasoning', completed: true, content: ['分析需求'] },
+        { id: 'c', type: 'commandExecution', completed: false, command: 'pnpm test' },
+        { id: 'f', type: 'fileChange', completed: true, changes: [{ path: 'a.ts' }] },
+        { id: 's', type: 'subAgentActivity', completed: true, agentRole: '研究员' },
+        { id: 'i', type: 'imageGeneration', completed: true, prompt: '封面' },
+      ],
+    });
+
+    for (const label of ['思考与计划', '操作', '变更', '协作', '产物']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeTruthy();
+    }
+    expect(screen.getByRole('button', { name: /操作.*pnpm test.*进行中/ })).toBeTruthy();
+  });
+
+  it('回合失败留在时间线并提供重试和设置入口；停止显示可继续分隔线', () => {
+    const onRetry = vi.fn();
+    const onOpenSettings = vi.fn();
+    renderWorkspace({
+      status: 'interrupted',
+      turnFailure: { summary: '模型暂时不可用', onRetry, onOpenSettings },
+    });
+
+    expect(screen.getByText('已停止，可在下方继续')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('模型暂时不可用');
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开模型设置' }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it('长时间线先只挂载末尾分段，可按需加载更早内容', () => {
+    const items = Array.from({ length: 130 }, (_, index): RenderItem => ({
+      id: `m-${index}`,
+      type: 'agentMessage',
+      completed: true,
+      text: `消息 ${index}`,
+    }));
+    renderWorkspace({ items });
+    expect(screen.queryByText('消息 0')).toBeNull();
+    expect(screen.getByText('消息 129')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /加载更早内容/ }));
+    expect(screen.getByText('消息 0')).toBeTruthy();
+  });
+
+  it('结果区可用键盘调宽，Esc 关闭后焦点回到入口', () => {
+    renderWorkspace({ hasResults: true });
+    const trigger = screen.getByRole('button', { name: '打开结果' });
+    fireEvent.click(trigger);
+    const separator = screen.getByRole('separator', { name: '调整结果区宽度' });
+    expect(separator.getAttribute('aria-valuenow')).toBe('560');
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    expect(separator.getAttribute('aria-valuenow')).toBe('584');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('separator', { name: '调整结果区宽度' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });

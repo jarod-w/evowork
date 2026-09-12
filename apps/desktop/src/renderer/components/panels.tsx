@@ -251,6 +251,16 @@ export function DataTable<Row extends { readonly id: string }>({
             key={row.id}
             data-selected={row.id === selectedId ? 'true' : undefined}
             onClick={onRowClick ? () => onRowClick(row) : undefined}
+            tabIndex={onRowClick ? 0 : undefined}
+            onKeyDown={
+              onRowClick
+                ? (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    onRowClick(row);
+                  }
+                : undefined
+            }
           >
             {columns.map((column) => (
               <td key={column.id} data-align={column.align}>

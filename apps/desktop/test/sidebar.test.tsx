@@ -202,7 +202,7 @@ describe('行操作（04 §3.3）', () => {
     // 点了删除**还没删**
     expect(onRowAction).not.toHaveBeenCalled();
     const dialog = screen.getByRole('alertdialog', { name: '删除任务' });
-    expect(dialog.textContent).toContain('工作空间里的文件不会被删除');
+    expect(dialog.textContent).toContain('项目目录中的文件不会被删除');
     expect(dialog.textContent).toContain('/w/a');
 
     fireEvent.click(screen.getByRole('button', { name: '删除任务' }));
@@ -262,14 +262,11 @@ describe('一级导航选中态（02 §2）', () => {
   });
 });
 
-describe('「更多」菜单的禁用原因（01 §5.19）', () => {
-  it('原因在标签这一列里，不跟标签抢同一行', () => {
+describe('「更多」菜单只暴露已接通能力', () => {
+  it('不显示设备与同步等尚未接通的入口', () => {
     renderSidebar({ user: { name: '小王', version: 'v1' } });
     fireEvent.click(screen.getByRole('button', { name: '小王 菜单' }));
-    const item = screen.getByRole('menuitem', { name: /设备与同步/ });
-    const reason = item.querySelector('.ew-menu-reason');
-    expect(reason?.textContent).toContain('跨设备同步本期不做');
-    expect(item.querySelector('.ew-menu-label')?.contains(reason)).toBe(true);
+    expect(screen.queryByRole('menuitem', { name: /设备与同步/ })).toBeNull();
   });
 });
 

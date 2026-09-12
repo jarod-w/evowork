@@ -156,7 +156,7 @@ export function Library(props: LibraryProps) {
   return (
     <div className="ew-library">
       <nav className="ew-library-panel" aria-label="资料库导航">
-        <PanelHeader title="资料库" actions={<IconButton label="资料库公告" icon="📣" />} />
+        <PanelHeader title="资料库" />
 
         <PanelNavItem
           label="搜索"
@@ -177,26 +177,39 @@ export function Library(props: LibraryProps) {
           onClick={() => setNav('artifacts')}
         />
 
-        <TreeSectionHeader label="我的资料" onAdd={props.onAddMyFile} addLabel="添加资料" />
-        {(props.myFiles ?? []).map((node) => (
-          <TreeItem key={node.id} label={node.label} icon={node.icon} depth={node.depth ?? 0} />
-        ))}
-
-        <TreeSectionHeader label="团队空间" onAdd={props.onSubscribeTeam} addLabel="订阅团队空间" />
-        {(props.teamSpaces ?? []).map((node) => (
-          <TreeItem key={node.id} label={node.label} icon={node.icon} depth={node.depth ?? 0} />
-        ))}
-        {(props.teamSpaces ?? []).length === 0 ? (
-          // Q19：只读订阅。没订阅时说清它是只读的，避免用户以为能往里放东西
-          <p className="ew-library-hint">团队空间是只读的：订阅之后可以查看，但不能改。</p>
+        {props.myFiles !== undefined || props.onAddMyFile !== undefined ? (
+          <>
+            <TreeSectionHeader label="我的资料" onAdd={props.onAddMyFile} addLabel="添加资料" />
+            {(props.myFiles ?? []).map((node) => (
+              <TreeItem key={node.id} label={node.label} icon={node.icon} depth={node.depth ?? 0} />
+            ))}
+          </>
         ) : null}
 
-        {usage ? (
+        {props.teamSpaces !== undefined || props.onSubscribeTeam !== undefined ? (
+          <>
+            <TreeSectionHeader
+              label="团队空间"
+              onAdd={props.onSubscribeTeam}
+              addLabel="订阅团队空间"
+            />
+            {(props.teamSpaces ?? []).map((node) => (
+              <TreeItem key={node.id} label={node.label} icon={node.icon} depth={node.depth ?? 0} />
+            ))}
+            {(props.teamSpaces ?? []).length === 0 ? (
+              <p className="ew-library-hint">团队空间是只读的：订阅之后可以查看，但不能改。</p>
+            ) : null}
+          </>
+        ) : null}
+
+        {usage && props.onCleanup ? (
           <QuotaFooter
             usedLabel={usage.label}
             percent={usage.percent}
             onCleanup={props.onCleanup}
           />
+        ) : usage ? (
+          <p className="ew-library-hint">{usage.label}</p>
         ) : null}
       </nav>
 
@@ -206,7 +219,7 @@ export function Library(props: LibraryProps) {
           {nav === 'search' ? (
             <SearchInput
               ariaLabel="搜索资料"
-              placeholder="搜索文件名与正文"
+              placeholder="搜索文件名"
               value={query}
               onChange={setQuery}
             />
@@ -216,7 +229,9 @@ export function Library(props: LibraryProps) {
               variant="light"
               ariaLabel="最近视图"
               value={tab}
-              items={RECENT_TABS.map((t) => ({ id: t.id, label: t.label }))}
+              items={RECENT_TABS.filter(
+                (item) => item.id !== 'shared-by-me' || props.shares !== undefined,
+              ).map((item) => ({ id: item.id, label: item.label }))}
               onChange={(id) => setTab(id as RecentTab)}
             />
           ) : null}
@@ -239,16 +254,20 @@ export function Library(props: LibraryProps) {
             columns={columns}
             rows={rows}
             onRowClick={props.onOpen}
-            rowActions={(row) => (
-              <IconButton
-                label={`删除 ${row.name}`}
-                icon="🗑"
-                onClick={() => {
-                  setPendingDelete(row);
-                  setAlsoDeleteFile(false);
-                }}
-              />
-            )}
+            {...(props.onDelete
+              ? {
+                  rowActions: (row: LibraryRow) => (
+                    <IconButton
+                      label={`删除 ${row.name}`}
+                      icon="🗑"
+                      onClick={() => {
+                        setPendingDelete(row);
+                        setAlsoDeleteFile(false);
+                      }}
+                    />
+                  ),
+                }
+              : {})}
             emptyState={
               <EmptyState
                 title={query ? '没有匹配的资料' : '这里还没有东西'}
@@ -262,7 +281,7 @@ export function Library(props: LibraryProps) {
           />
         )}
 
-        {!props.tipDismissed ? (
+        {!props.tipDismissed && props.onDismissTip ? (
           <TipBanner
             title="资料库能帮你做什么"
             icon="◆"
@@ -272,8 +291,8 @@ export function Library(props: LibraryProps) {
                 body: '任务生成的文档、表格、幻灯片会自动进「本地产物」，跨任务也能找到。',
               },
               {
-                title: '全文搜索在本机',
-                body: '搜索覆盖文件名与正文，索引建在本机，内容不出网。',
+                title: '按文件名查找',
+                body: '当前搜索只匹配文件名；正文索引接通后会再明确开放。',
               },
             ]}
             onDismiss={props.onDismissTip}

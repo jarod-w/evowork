@@ -39,6 +39,20 @@ describe('fence 识别', () => {
   });
 });
 
+describe('普通代码高亮', () => {
+  it('把关键字、字符串、数字和注释切成纯文本 token', () => {
+    const { container } = render(
+      <Visualizer block={{ kind: 'code', language: 'ts', source: 'const answer = 42; // safe' }} />,
+    );
+    expect(container.querySelector('[data-syntax="keyword"]')?.textContent).toBe('const');
+    expect(container.querySelector('[data-syntax="number"]')?.textContent).toBe('42');
+    expect(container.querySelector('[data-syntax="comment"]')?.textContent).toBe('// safe');
+    expect(container.querySelector('.ew-visualizer-code')?.getAttribute('data-language')).toBe(
+      'ts',
+    );
+  });
+});
+
 describe('SVG 清洗：白名单，不是黑名单', () => {
   it('删掉 script', () => {
     const cleaned = sanitizeSvg(

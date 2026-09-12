@@ -43,6 +43,7 @@ import {
 } from '@evowork/projects';
 import type { Logger } from '@evowork/logging';
 import type { ThreadItem } from '@evowork/protocol';
+import { nextFire } from '@evowork/scheduler/cron.js';
 import {
   createProjectRepo,
   readMeta,
@@ -124,6 +125,15 @@ export function timeLabel(at: number | null, now: number): string {
   if (diff < 60 * minute) return `${Math.floor(diff / minute)} 分钟前`;
   if (diff < 24 * 60 * minute) return `${Math.floor(diff / (60 * minute))} 小时前`;
   return `${Math.floor(diff / (24 * 60 * minute))} 天前`;
+}
+
+/** 损坏的旧 cron 只影响这一行的「下次运行」，不能拖垮整张自动化列表。 */
+function safeNextFire(schedule: string, now: number, timezone: string): number | undefined {
+  try {
+    return nextFire(schedule, now, timezone);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -1035,17 +1045,23 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const automations = raw.map((a) => {
         const id = String(a.id ?? '');
         runs[id] = data.listRuns(id).map(toRunView);
+        const schedule = String(a.schedule ?? '');
+        const timezone = String(a.timezone ?? '');
+        const status = String(a.status ?? 'ACTIVE');
+        const nextFireAt =
+          status === 'ACTIVE' ? safeNextFire(schedule, now(), timezone) : undefined;
         return {
           id,
           name: String(a.name ?? ''),
-          status: String(a.status ?? 'ACTIVE'),
-          schedule: String(a.schedule ?? ''),
-          timezone: String(a.timezone ?? ''),
+          status,
+          schedule,
+          timezone,
           // Q15：别的设备建的只读 + 可「迁移到本机」，判据是 device_id
           ownedByThisDevice: String(a.deviceId ?? a.device_id ?? '') === data.deviceId,
           ...(typeof a.consecutiveFailures === 'number'
             ? { consecutiveFailures: a.consecutiveFailures }
             : {}),
+          ...(nextFireAt !== undefined ? { nextFireAt } : {}),
         };
       });
       return Promise.resolve({ automations, runs, deviceName: data.deviceName });
@@ -1302,12 +1318,20 @@ export function createRendererActions(options: RendererBridgeOptions) {
             (p) => typeof p === 'string' && root !== '' && isUnderRoot(root, p, ports.home),
           );
         })
-        .map((raw) => ({
-          id: String(raw.id ?? ''),
-          name: String(raw.name ?? ''),
-          schedule: String(raw.schedule ?? ''),
-          status: String(raw.status ?? ''),
-        }));
+        .map((raw) => {
+          const schedule = String(raw.schedule ?? '');
+          const timezone = String(raw.timezone ?? '');
+          const status = String(raw.status ?? '');
+          const nextFireAt =
+            status === 'ACTIVE' ? safeNextFire(schedule, now(), timezone) : undefined;
+          return {
+            id: String(raw.id ?? ''),
+            name: String(raw.name ?? ''),
+            schedule,
+            status,
+            ...(nextFireAt !== undefined ? { nextFireAt } : {}),
+          };
+        });
 
       return Promise.resolve({
         id: row.id,
@@ -1622,6 +1646,12 @@ export function toRunView(
       : {}),
     ...((num('artifactCount') ?? num('artifact_count'))
       ? { artifactCount: num('artifactCount') ?? num('artifact_count') }
+      : {}),
+    ...((str('threadId') ?? str('thread_id'))
+      ? { threadId: str('threadId') ?? str('thread_id') }
+      : {}),
+    ...((str('errorSummary') ?? str('error_summary'))
+      ? { errorSummary: str('errorSummary') ?? str('error_summary') }
       : {}),
   };
 }

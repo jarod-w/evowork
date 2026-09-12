@@ -313,6 +313,8 @@ export interface AutomationRunView {
   readonly durationMs?: number | undefined;
   readonly tokenUsage?: number | undefined;
   readonly artifactCount?: number | undefined;
+  readonly threadId?: string | undefined;
+  readonly errorSummary?: string | undefined;
 }
 
 export interface AutomationsDataView {

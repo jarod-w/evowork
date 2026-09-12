@@ -63,17 +63,18 @@ function renderPage(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ProjectDetailPage', () => {
-  it('中栏同时有任务与文件两个分区', () => {
+  it('用四个页签分开任务、文件、项目说明与自动化', () => {
     renderPage();
-    expect(screen.getByText(/任务 \(1\)/)).toBeTruthy();
-    // 用 role 精确定位「文件」分区头的折叠按钮，而不是裸文本 ——
-    // 主区「最近的文件动作」表格的列头恰好也叫「文件」，裸文本查找会两处都命中
-    expect(screen.getByRole('button', { name: '文件' })).toBeTruthy();
+    for (const label of ['任务', '文件', '项目说明', '自动化']) {
+      expect(screen.getByRole('tab', { name: label })).toBeTruthy();
+    }
     expect(screen.getByText('写周报')).toBeTruthy();
+    expect(screen.queryByText('src')).toBeNull();
   });
 
   it('噪声目录仍然列出来 —— 隐藏会让人以为生成的文件丢了', () => {
     renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: '文件' }));
     // 不止是"有文字出现"：还要落在真正的树节点上，且标记为弱化而不是被过滤掉。
     // 如果实现把 noisy 目录整行从列表里去掉，getByText 会直接抛错；
     // 如果实现"渲染了但没走 muted 弱化路径"，下面的 data-muted 断言会失败 ——
@@ -100,6 +101,7 @@ describe('ProjectDetailPage', () => {
         ],
       },
     });
+    fireEvent.click(screen.getByRole('tab', { name: '文件' }));
 
     fireEvent.click(screen.getByText('src'));
     // 展开哪层读哪层：只对被点的那个目录发起一次请求
@@ -121,6 +123,7 @@ describe('ProjectDetailPage', () => {
   it('点文件不触发展开', () => {
     const onExpand = vi.fn();
     renderPage({ onExpand });
+    fireEvent.click(screen.getByRole('tab', { name: '文件' }));
     fireEvent.click(screen.getByText('readme.txt'));
     expect(onExpand).not.toHaveBeenCalled();
   });
@@ -128,43 +131,50 @@ describe('ProjectDetailPage', () => {
   it('文件分区头有刷新按钮 —— 不接 fs 监听，就不能假装是实时的', () => {
     const onRefreshTree = vi.fn();
     renderPage({ onRefreshTree });
+    fireEvent.click(screen.getByRole('tab', { name: '文件' }));
     fireEvent.click(screen.getByLabelText('刷新文件树'));
     expect(onRefreshTree).toHaveBeenCalled();
   });
 
-  it('主区把最近的文件动作与绑定的自动化都列出来', () => {
+  it('文件与自动化分别在对应页签中显示', () => {
     renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: '文件' }));
     expect(screen.getByText('report.docx')).toBeTruthy();
+    expect(screen.queryByText('每周一汇总')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: '自动化' }));
     expect(screen.getByText('每周一汇总')).toBeTruthy();
   });
 
-  it('路径失效时出横幅，且「在此空间新建任务」禁用并给原因', () => {
+  it('路径失效时出横幅，且「在项目中新建任务」禁用并给原因', () => {
     renderPage({ detail: { ...DETAIL, rootMissing: true } });
     expect(screen.getByText(/路径已失效/)).toBeTruthy();
-    const button = screen.getByText('在此空间新建任务').closest('button');
+    const button = screen.getByText('在项目中新建任务').closest('button');
     expect(button?.getAttribute('disabled')).not.toBeNull();
     expect(button?.getAttribute('title')).toBeTruthy();
   });
 
-  it('AGENTS.md 不存在时说"还没有"并仍可创建 —— 与"内容是空的"不是一回事', () => {
+  it('项目说明不存在时说"还没有"并仍可创建 —— 与"内容是空的"不是一回事', () => {
     renderPage({ memo: { exists: false, content: '' } });
-    expect(screen.getByText(/还没有空间记忆/)).toBeTruthy();
-    expect(screen.getByLabelText('空间记忆')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: '项目说明' }));
+    expect(screen.getByText(/还没有项目说明/)).toBeTruthy();
+    expect(screen.getByLabelText('项目说明')).toBeTruthy();
   });
 
   it('AGENTS.md 存在但内容为空时，不能说成"还没有" —— 那是用户自己清空的', () => {
     // 如果实现只看 content === '' 而忽略 exists，这条会和上一条一样冒出「还没有空间记忆」，
     // 从而暴露"没有真的区分 exists"这个 bug。
     renderPage({ memo: { exists: true, content: '' } });
-    expect(screen.queryByText(/还没有空间记忆/)).toBeNull();
-    expect(screen.getByLabelText('空间记忆')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: '项目说明' }));
+    expect(screen.queryByText(/还没有项目说明/)).toBeNull();
+    expect(screen.getByLabelText('项目说明')).toBeTruthy();
   });
 
   it('保存后给出「已保存」反馈 —— 没有反馈用户会反复点', async () => {
     const onSaveMemo = vi.fn(async () => ({ ok: true }));
     renderPage({ onSaveMemo });
-    fireEvent.change(screen.getByLabelText('空间记忆'), { target: { value: '新内容' } });
-    fireEvent.click(screen.getByText('保存'));
+    fireEvent.click(screen.getByRole('tab', { name: '项目说明' }));
+    fireEvent.change(screen.getByLabelText('项目说明'), { target: { value: '新内容' } });
+    fireEvent.click(screen.getByText('保存项目说明'));
     await waitFor(() => expect(screen.getByText('已保存')).toBeTruthy());
     expect(onSaveMemo).toHaveBeenCalledWith('新内容');
   });
@@ -179,14 +189,15 @@ describe('ProjectDetailPage', () => {
   it('写被拒时不显示「已保存」，而是把拒绝理由摆出来', async () => {
     const onSaveMemo = vi.fn(async () => ({ ok: false, refused: '磁盘空间不足，没能保存。' }));
     renderPage({ onSaveMemo });
-    fireEvent.change(screen.getByLabelText('空间记忆'), { target: { value: '新内容' } });
-    fireEvent.click(screen.getByText('保存'));
+    fireEvent.click(screen.getByRole('tab', { name: '项目说明' }));
+    fireEvent.change(screen.getByLabelText('项目说明'), { target: { value: '新内容' } });
+    fireEvent.click(screen.getByText('保存项目说明'));
     await waitFor(() => expect(screen.getByText('磁盘空间不足，没能保存。')).toBeTruthy());
     expect(screen.queryByText('已保存')).toBeNull();
   });
 
   it('一个任务都没有时中栏说清是空的，而不是一片留白', () => {
     renderPage({ detail: { ...DETAIL, tasks: [] } });
-    expect(screen.getByText(/这个空间还没有任务/)).toBeTruthy();
+    expect(screen.getByText(/这个项目还没有任务/)).toBeTruthy();
   });
 });

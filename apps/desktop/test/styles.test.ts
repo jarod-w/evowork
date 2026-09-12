@@ -115,9 +115,9 @@ describe('CSS 只用 token（01 §9 验收项 1）', () => {
   it('媒体查询的断点只能来自文档给过的值', () => {
     const documented = new Set([
       '720px', // 03 §3.1：窗口高 < 720 时 Hero 降级，保证 Composer 不被挤出首屏
-      '860px', // 01 §3.1：< 860 不支持（= LAYOUT.unsupportedWidth）
-      '1024px', // 01 §3.1：最小窗口宽（= LAYOUT.minWindowWidth）
+      '900px', // 类 ChatGPT UI §6.2：侧边栏抽屉与单列管理页（= LAYOUT.minWindowWidth）
       '1180px', // 类 ChatGPT UI §6.2：结果区从这一档开始覆盖对话
+      '1440px', // 类 ChatGPT UI §6.2：宽屏三栏进入完整比例
     ]);
     const used = [...code.matchAll(/@media[^{]+/g)].flatMap(
       (m) => (m[0].match(/(?<![\w-])(\d+(?:\.\d+)?)px\b/g) ?? []) as string[],
@@ -332,8 +332,8 @@ describe('中文在横向 flex 里不会按字折成一列', () => {
   });
 
   it('设置页显式 row，不被 .ew-page 的 column 盖掉（11 §4.4 两栏）', () => {
-    const rule = /\.ew-settings\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
-    expect(rule).toContain('flex-direction: row');
+    const rules = [...code.matchAll(/\.ew-settings\s*\{([^}]*)\}/g)].map((match) => match[1]);
+    expect(rules.some((rule) => rule?.includes('flex-direction: row'))).toBe(true);
   });
 
   it('Banner 拉满内容列，正文 min-width: 0 —— 否则 margin:auto 缩成一颗居中胶囊', () => {

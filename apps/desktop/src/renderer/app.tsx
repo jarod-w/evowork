@@ -15,7 +15,7 @@
  * 建好回一个 id，这里再切过去。所以"当前在哪个页面"就是 `activeTaskId` 是不是 null，
  * 不需要 router。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AgentsMemoView,
@@ -57,7 +57,13 @@ import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
-import { TreeItem } from './components/panels.js';
+import { FileTree } from './components/file-tree.js';
+import {
+  shouldAutoDismiss,
+  ToastStack,
+  TOAST_AUTO_DISMISS_MS,
+  type ToastSpec,
+} from './components/panels.js';
 import { resolveModelChoice } from './model-selection.js';
 import { AuditPage, type AuditRow } from './views/audit.js';
 import {
@@ -288,6 +294,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [notices, setNotices] = useState<
     readonly { tone: 'info' | 'warning' | 'danger'; text: string }[]
   >([]);
+  const [turnFailures, setTurnFailures] = useState<
+    Readonly<Record<string, { readonly summary: string }>>
+  >({});
+  const [toasts, setToasts] = useState<readonly ToastSpec[]>([]);
+  const toastCounter = useRef(0);
   const [startup, setStartup] = useState<StartupInfo | null>(null);
   const [scenarioId, setScenarioId] = useState('office');
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
@@ -374,6 +385,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   >({});
   const [diffScope, setDiffScope] = useState<DiffScope>('thread');
 
+  const dismissToast = useCallback((id: string) => {
+    setToasts((previous) => previous.filter((toast) => toast.id !== id));
+  }, []);
+
+  const pushToast = useCallback((toast: Omit<ToastSpec, 'id'>): void => {
+    toastCounter.current += 1;
+    const withId: ToastSpec = { ...toast, id: `toast-${toastCounter.current}` };
+    setToasts((previous) => [withId, ...previous]);
+    if (shouldAutoDismiss(withId)) {
+      window.setTimeout(() => {
+        setToasts((previous) => previous.filter((item) => item.id !== withId.id));
+      }, TOAST_AUTO_DISMISS_MS);
+    }
+  }, []);
+
   useEffect(() => {
     const offs = [
       bridge.onUiEvent((event) => {
@@ -387,15 +413,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
            * 不改写、不归类：`connection refused` 与 `401` 对用户是完全不同的两件事，
            * 归成一句"模型调用失败"就等于把唯一的线索删掉了。
            */
-          setNotices((prev) => [
-            ...prev,
-            {
-              tone: 'danger',
-              text: event.details
-                ? `这一回合失败了：${event.message}（${event.details}）`
-                : `这一回合失败了：${event.message}`,
+          setTurnFailures((previous) => ({
+            ...previous,
+            [event.taskId]: {
+              summary: event.details ? `${event.message}（${event.details}）` : event.message,
             },
-          ]);
+          }));
           return;
         }
         if (event.type === 'task-updated') {
@@ -410,7 +433,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 : t,
             ),
           );
-          if (event.status) setRunning(event.status === 'running');
+          if (event.status) {
+            setRunning(event.status === 'running');
+            if (event.status === 'running') {
+              setTurnFailures((previous) => {
+                const next = { ...previous };
+                delete next[event.taskId];
+                return next;
+              });
+            }
+          }
           return;
         }
         if (event.type === 'projects-changed') {
@@ -775,10 +807,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 重拉是第二次往返，可能被稍后到达的 `listProjects` 结果反超，画面回退成没改之前的样子。
    * `refused` 永远跟着一起设：成功时 `result.refused` 是 undefined，正好清掉上一次的拒绝提示。
    */
-  const applyMutation = useCallback((result: ProjectMutationResult) => {
-    setProjects({ projects: result.projects });
-    setProjectRefusal(result.refused);
-  }, []);
+  const applyMutation = useCallback(
+    (result: ProjectMutationResult) => {
+      setProjects({ projects: result.projects });
+      setProjectRefusal(result.refused);
+      pushToast(
+        result.ok
+          ? { tone: 'success', text: '项目已更新。' }
+          : { tone: 'danger', text: result.refused ?? '项目操作没有完成。' },
+      );
+    },
+    [pushToast],
+  );
 
   const createProject = useCallback(
     (input: { name: string; path: string }) => {
@@ -904,15 +944,23 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       return bridge
         .writeAgentsMemo({ id, content })
         .then((result) => {
-          if (result.ok) setProjectMemo({ exists: true, content });
+          if (result.ok) {
+            setProjectMemo({ exists: true, content });
+            pushToast({ tone: 'success', text: '项目说明已保存。' });
+          } else {
+            pushToast({ tone: 'danger', text: result.refused ?? '项目说明没有保存。' });
+          }
           return result;
         })
-        .catch((): WriteAgentsMemoResult => ({
-          ok: false,
-          refused: '没能保存空间记忆，稍后再试。',
-        }));
+        .catch((): WriteAgentsMemoResult => {
+          pushToast({ tone: 'danger', text: '没能保存项目说明，稍后再试。' });
+          return {
+            ok: false,
+            refused: '没能保存项目说明，稍后再试。',
+          };
+        });
     },
-    [activeProjectId, bridge],
+    [activeProjectId, bridge, pushToast],
   );
 
   const send = useCallback(async () => {
@@ -941,6 +989,32 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [bridge, draft, activeTaskId, scenarioId, modelId, workspaceId]);
 
+  const retryCurrentTurn = useCallback(async () => {
+    if (activeTaskId === null) return;
+    const text = lastUserMessageText(itemsByTask[activeTaskId] ?? []);
+    if (!text) {
+      pushToast({ tone: 'warning', text: '找不到上一条需求，请在输入框里重新发送。' });
+      return;
+    }
+    setTurnFailures((previous) => {
+      const next = { ...previous };
+      delete next[activeTaskId];
+      return next;
+    });
+    try {
+      await bridge.send({
+        threadId: activeTaskId,
+        text,
+        scenarioId,
+        ...(modelId !== undefined ? { modelId } : {}),
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      });
+    } catch (error: unknown) {
+      const summary = error instanceof Error ? error.message : String(error);
+      setTurnFailures((previous) => ({ ...previous, [activeTaskId]: { summary } }));
+    }
+  }, [activeTaskId, bridge, itemsByTask, modelId, pushToast, scenarioId, workspaceId]);
+
   const prepareTaskWithText = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -950,11 +1024,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setDraft(trimmed);
   }, []);
 
-  const applyCatalogResult = useCallback((result: CatalogMutationResult): CatalogMutationResult => {
-    setCatalog(result.catalog);
-    setCatalogRefusal(result.refused);
-    return result;
-  }, []);
+  const applyCatalogResult = useCallback(
+    (result: CatalogMutationResult): CatalogMutationResult => {
+      setCatalog(result.catalog);
+      setCatalogRefusal(result.refused);
+      pushToast(
+        result.ok
+          ? { tone: 'success', text: '插件设置已更新。' }
+          : { tone: 'danger', text: result.refused ?? '插件操作没有完成。' },
+      );
+      return result;
+    },
+    [pushToast],
+  );
 
   const scenarios: readonly Scenario[] = useMemo(
     () =>
@@ -1309,6 +1391,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setActiveTaskId(id);
             setView('task');
           }}
+          onOpenLibraryRow={(id) => {
+            void bridge.openResultFile({ artifactId: id }).catch((error: unknown) =>
+              pushToast({
+                tone: 'danger',
+                text: `打不开资料：${error instanceof Error ? error.message : String(error)}`,
+              }),
+            );
+          }}
           onCloseProject={() => setActiveProjectId(null)}
           onOpenProject={(id) => setActiveProjectId(id)}
           onExpandDir={expandProjectDir}
@@ -1428,16 +1518,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               ),
             files:
               currentFiles.length > 0 ? (
-                <div className="ew-result-files">
-                  {currentFiles.map((entry) => (
-                    <TreeItem
-                      key={entry.path}
-                      label={entry.name}
-                      muted={entry.noisy}
-                      icon={entry.isDirectory ? renderIcon('folder') : undefined}
-                    />
-                  ))}
-                </div>
+                <FileTree entries={currentFiles} ariaLabel="结果区项目文件" />
               ) : (
                 <EmptyState title="没有项目文件" hint="把任务放进项目后可在这里浏览根目录。" />
               ),
@@ -1452,6 +1533,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             ),
           }}
           notices={notices}
+          {...(turnFailures[activeTaskId]
+            ? {
+                turnFailure: {
+                  summary: turnFailures[activeTaskId].summary,
+                  onRetry: () => void retryCurrentTurn(),
+                  onOpenSettings: () => {
+                    setSettingsSection('models');
+                    setView('settings');
+                  },
+                },
+              }
+            : {})}
           historyLoading={historyLoading}
           onNewTask={() => setActiveTaskId(null)}
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
@@ -1469,6 +1562,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
         />
       ) : null}
+      <p className="ew-window-size-hint" role="status">
+        窗口较窄，建议放大窗口获得完整布局
+      </p>
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
@@ -1514,6 +1611,7 @@ function MainPage(props: {
   readonly projectMemo: AgentsMemoView;
   readonly projectRefusal: string | undefined;
   readonly onOpenTask: (threadId: string) => void;
+  readonly onOpenLibraryRow: (artifactId: string) => void;
   readonly onCloseProject: () => void;
   readonly onOpenProject: (id: string) => void;
   readonly onExpandDir: (path: string) => void;
@@ -1558,6 +1656,7 @@ function MainPage(props: {
         <Library
           rows={(props.library?.rows ?? []) as readonly LibraryRow[]}
           {...(props.library?.diskUsage ? { diskUsage: props.library.diskUsage } : {})}
+          onOpen={(row) => props.onOpenLibraryRow(row.id)}
         />
       );
 
@@ -1567,6 +1666,7 @@ function MainPage(props: {
           rows={props.automations?.automations ?? []}
           runs={props.automations?.runs ?? {}}
           deviceName={props.automations?.deviceName ?? '这台电脑'}
+          onOpenTask={props.onOpenTask}
         />
       );
 
@@ -1695,6 +1795,20 @@ export function mergeItem(
   const next = [...items];
   next[index] = incoming;
   return next;
+}
+
+/** 重试只复用最近一条纯文本需求；结构化引用仍留在历史里，不猜测如何重新编码。 */
+export function lastUserMessageText(items: readonly RenderItem[]): string | undefined {
+  for (const item of [...items].reverse()) {
+    if (item.type !== 'userMessage' || !Array.isArray(item.content)) continue;
+    const value = (item.content as { type?: string; text?: string }[])
+      .filter((part) => part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text as string)
+      .join('\n')
+      .trim();
+    if (value) return value;
+  }
+  return undefined;
 }
 
 /**

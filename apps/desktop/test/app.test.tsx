@@ -400,6 +400,51 @@ describe('结果工作区真实接线', () => {
   });
 });
 
+describe('回合失败留在任务时间线', () => {
+  it('显示内核原始原因，并能用上一条需求重试当前任务', async () => {
+    const send = vi.fn(async () => ({ threadId: 't-failed' }));
+    const task = {
+      id: 't-failed',
+      title: '失败任务',
+      status: 'failed' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      openTask: vi.fn(async () => ({
+        items: [
+          {
+            id: 'u1',
+            type: 'userMessage',
+            completed: true,
+            content: [{ type: 'text', text: '继续生成报告' }],
+          },
+        ],
+      })),
+      send,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('失败任务'));
+    expect(await screen.findByText('继续生成报告')).toBeTruthy();
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'turn-failed',
+      taskId: 't-failed',
+      message: '模型暂时不可用',
+      details: '上游超时',
+    });
+    expect(await screen.findByText(/模型暂时不可用（上游超时）/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId: 't-failed', text: '继续生成报告' }),
+      ),
+    );
+  });
+});
+
 describe('点开已完成任务要看到历史（不是「还没有消息」）', () => {
   it('点侧边栏一行会调 openTask，并把条目画进对话区', async () => {
     const openTask = vi.fn(async () => ({
@@ -648,6 +693,7 @@ describe('侧边栏的六个入口都要有落点', () => {
    * 而"点了没反应"与"坏了"在界面上完全无法区分。
    */
   it('点「资料库」进资料库页，并去拉那一页的数据', async () => {
+    const openResultFile = vi.fn(async () => undefined);
     const getLibrary = vi.fn(async () => ({
       rows: [
         {
@@ -661,12 +707,14 @@ describe('侧边栏的六个入口都要有落点', () => {
         },
       ],
     }));
-    const { bridge } = fakeBridge({ getLibrary });
+    const { bridge } = fakeBridge({ getLibrary, openResultFile });
     render(<App bridge={bridge} />);
 
     fireEvent.click(await screen.findByRole('button', { name: /资料库/ }));
     expect(await screen.findByText('季度汇报.pptx')).toBeTruthy();
     expect(getLibrary).toHaveBeenCalled();
+    fireEvent.click(screen.getByText('季度汇报.pptx').closest('tr') as HTMLElement);
+    expect(openResultFile).toHaveBeenCalledWith({ artifactId: 'a1' });
   });
 
   it('点「自动化」进自动化页；一条都没有时说清"绑这台电脑、关机不跑"', async () => {
@@ -951,8 +999,10 @@ describe('项目页接线（Task 13）', () => {
     await waitFor(() => expect(readProjectDetail).toHaveBeenCalledWith({ id: 'p1' }));
     expect(listProjectDir).toHaveBeenCalledWith({ id: 'p1' });
     expect(readAgentsMemo).toHaveBeenCalledWith({ id: 'p1' });
+    fireEvent.click(await screen.findByRole('tab', { name: '文件' }));
     expect(await screen.findByText('src')).toBeTruthy();
-    expect((screen.getByLabelText('空间记忆') as HTMLTextAreaElement).value).toBe('先看 README');
+    fireEvent.click(await screen.findByRole('tab', { name: '项目说明' }));
+    expect((screen.getByLabelText('项目说明') as HTMLTextAreaElement).value).toBe('先看 README');
   });
 
   it('新建被拒时把原话显示出来 —— 不是静默什么都不发生', async () => {
@@ -970,10 +1020,10 @@ describe('项目页接线（Task 13）', () => {
     render(<App bridge={bridge} />);
 
     fireEvent.click(await screen.findByText('项目'));
-    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
 
     // 空态里那个「新建空间」→ 对话框 → 选目录 → 创建
-    fireEvent.click(screen.getAllByText('新建空间')[1] as HTMLElement);
+    fireEvent.click(screen.getAllByText('新建项目')[1] as HTMLElement);
     fireEvent.click(screen.getByText('选择目录'));
     await waitFor(() =>
       expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/Users/li/.ssh'),
@@ -983,7 +1033,7 @@ describe('项目页接线（Task 13）', () => {
     await waitFor(() =>
       expect(createProject).toHaveBeenCalledWith({ name: '.ssh', path: '/Users/li/.ssh' }),
     );
-    expect(await screen.findByText(/被安全策略拦下了/)).toBeTruthy();
+    expect((await screen.findAllByText(/被安全策略拦下了/)).length).toBeGreaterThan(0);
   });
 
   it('新建成功后直接用返回的新列表刷新 —— 不再多调一次 listProjects', async () => {
@@ -1002,7 +1052,7 @@ describe('项目页接线（Task 13）', () => {
     fireEvent.click(await screen.findByText('项目'));
     await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getAllByText('新建空间')[0] as HTMLElement);
+    fireEvent.click(screen.getAllByText('新建项目')[0] as HTMLElement);
     fireEvent.click(screen.getByText('选择目录'));
     await waitFor(() =>
       expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/Users/li/w/q3'),
@@ -1065,9 +1115,9 @@ describe('项目页接线（Task 13）', () => {
     render(<App bridge={bridge} />);
 
     fireEvent.click(await screen.findByText('项目'));
-    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
 
-    fireEvent.click(screen.getAllByText('新建空间')[1] as HTMLElement);
+    fireEvent.click(screen.getAllByText('新建项目')[1] as HTMLElement);
     fireEvent.click(screen.getByText('选择目录'));
     await waitFor(() =>
       expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/w/picked'),
@@ -1079,7 +1129,7 @@ describe('项目页接线（Task 13）', () => {
     expect((await realActions.listProjects()).projects).toHaveLength(1);
   });
 
-  it('「在此空间新建任务」把首页的工作空间预选上 —— 否则跳过去还得再选一次', async () => {
+  it('「在此项目新建任务」把首页的项目预选上 —— 否则跳过去还得再选一次', async () => {
     const { bridge } = fakeBridge({
       getStartup: async () => ({
         ...STARTUP,
@@ -1092,7 +1142,7 @@ describe('项目页接线（Task 13）', () => {
     fireEvent.click(await screen.findByText('项目'));
     await screen.findByText('季度汇报');
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
-    fireEvent.click(screen.getByText('在此空间新建任务'));
+    fireEvent.click(screen.getByText('在此项目新建任务'));
 
     // 回到首页（需求输入框在），且工作空间下拉上真的选中了这个空间 ——
     // 只断言回到了首页而不断言选中项，"点了没换页"与"换页了但没选中"这两种坏法都会被漏掉。
@@ -1167,7 +1217,7 @@ describe('项目页接线（Task 13）', () => {
     fireEvent.click(screen.getByText('移除'));
 
     await waitFor(() => expect(removeProject).toHaveBeenCalledWith({ id: 'p1' }));
-    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
   });
 
   it('「导入现有文件夹」直接调 importProject，不弹对话框', async () => {
@@ -1179,14 +1229,14 @@ describe('项目页接线（Task 13）', () => {
     render(<App bridge={bridge} />);
 
     fireEvent.click(await screen.findByText('项目'));
-    await waitFor(() => expect(screen.getByText(/还没有工作空间/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
     fireEvent.click(screen.getAllByText('导入现有文件夹')[0] as HTMLElement);
 
     await waitFor(() => expect(importProject).toHaveBeenCalled());
     expect(await screen.findByText('季度汇报')).toBeTruthy();
   });
 
-  it('列表里「打开所在文件夹」按 id 调用；详情页里的同名按钮不用传 id 也对得上当前空间', async () => {
+  it('列表与详情里的打开文件夹都能对上当前项目', async () => {
     const openProjectFolder = vi.fn(async () => undefined);
     const { bridge } = fakeBridge({
       listProjects: async () => ({ projects: [PROJECT_CARD] }),
@@ -1204,7 +1254,7 @@ describe('项目页接线（Task 13）', () => {
     openProjectFolder.mockClear();
     fireEvent.click(screen.getByText('季度汇报'));
     await screen.findByText('~/w/q3', { selector: 'p' });
-    fireEvent.click(screen.getByText('打开所在文件夹'));
+    fireEvent.click(screen.getByText('打开文件夹'));
     await waitFor(() => expect(openProjectFolder).toHaveBeenCalledWith({ id: 'p1' }));
   });
 
@@ -1223,6 +1273,7 @@ describe('项目页接线（Task 13）', () => {
 
     fireEvent.click(await screen.findByText('项目'));
     fireEvent.click(await screen.findByText('季度汇报'));
+    fireEvent.click(await screen.findByRole('tab', { name: '文件' }));
     await screen.findByText('src');
     expect(listProjectDir).toHaveBeenCalledWith({ id: 'p1' });
 
@@ -1248,9 +1299,10 @@ describe('项目页接线（Task 13）', () => {
 
     fireEvent.click(await screen.findByText('项目'));
     fireEvent.click(await screen.findByText('季度汇报'));
-    const textarea = await screen.findByLabelText('空间记忆');
+    fireEvent.click(await screen.findByRole('tab', { name: '项目说明' }));
+    const textarea = await screen.findByLabelText('项目说明');
     fireEvent.change(textarea, { target: { value: '新的长期指令' } });
-    fireEvent.click(screen.getByText('保存'));
+    fireEvent.click(screen.getByText('保存项目说明'));
 
     await waitFor(() =>
       expect(writeAgentsMemo).toHaveBeenCalledWith({ id: 'p1', content: '新的长期指令' }),
@@ -1281,13 +1333,14 @@ describe('项目页接线（Task 13）', () => {
 
     fireEvent.click(await screen.findByText('项目'));
     fireEvent.click(await screen.findByText('季度汇报'));
-    const textarea = await screen.findByLabelText('空间记忆');
+    fireEvent.click(await screen.findByRole('tab', { name: '项目说明' }));
+    const textarea = await screen.findByLabelText('项目说明');
     fireEvent.change(textarea, { target: { value: '新的长期指令' } });
-    fireEvent.click(screen.getByText('保存'));
+    fireEvent.click(screen.getByText('保存项目说明'));
 
     await waitFor(() => expect(writeAgentsMemo).toHaveBeenCalled());
     // 拒绝理由要能看见——不是吞掉之后一片安静
-    expect(await screen.findByText(/没能保存/)).toBeTruthy();
+    expect((await screen.findAllByText(/没能保存/)).length).toBeGreaterThan(0);
     expect(screen.queryByText('已保存')).toBeNull();
   });
 
@@ -1340,14 +1393,12 @@ describe('设置页（11 §4.4）', () => {
     expect(screen.getByText('已保存 · ****3f9a')).toBeTruthy();
   });
 
-  it('菜单里没做的项**禁用并给原因**，不静默移除', async () => {
+  it('菜单里没接通的设备与同步入口不显示', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
     await waitFor(() => screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
-    const item = screen.getByRole('menuitem', { name: /设备与同步/ }) as HTMLButtonElement;
-    expect(item.disabled).toBe(true);
-    expect(screen.getByText(/跨设备同步本期不做/)).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /设备与同步/ })).toBeNull();
   });
 
   it('在设置页保存密钥后，Composer 的模型下拉用的是同一份新目录', async () => {

@@ -44,7 +44,7 @@ export interface ProjectsPageProps {
   readonly refusal?: string | undefined;
 }
 
-const MISSING_REASON = '这个空间的路径已失效，先重新指定再新建任务。';
+const MISSING_REASON = '这个项目的路径已失效，先重新指定再新建任务。';
 
 type Pending =
   | { readonly kind: 'create' }
@@ -87,12 +87,12 @@ export function ProjectsPage(props: ProjectsPageProps) {
         <SearchInput
           value={query}
           onChange={setQuery}
-          placeholder="搜索空间"
-          ariaLabel="搜索空间"
+          placeholder="搜索项目"
+          ariaLabel="搜索项目"
         />
         <PillButton onClick={props.onImport}>导入现有文件夹</PillButton>
         <PillButton variant="accent" onClick={() => openDialog({ kind: 'create' })}>
-          新建空间
+          新建项目
         </PillButton>
       </div>
 
@@ -101,12 +101,12 @@ export function ProjectsPage(props: ProjectsPageProps) {
 
         {props.projects.length === 0 ? (
           <EmptyState
-            title="还没有工作空间"
-            hint="工作空间是任务实际运行的目录。新建一个，或者把已有的文件夹导进来。"
+            title="还没有项目"
+            hint="项目把任务、说明和本地目录放在一起。新建一个，或者导入已有文件夹。"
             action={
               <div className="ew-projects-empty-actions">
                 <PillButton variant="accent" onClick={() => openDialog({ kind: 'create' })}>
-                  新建空间
+                  新建项目
                 </PillButton>
                 <PillButton onClick={props.onImport}>导入现有文件夹</PillButton>
               </div>
@@ -152,7 +152,7 @@ export function ProjectsPage(props: ProjectsPageProps) {
                         items={[
                           {
                             id: 'new-task',
-                            label: '在此空间新建任务',
+                            label: '在此项目新建任务',
                             disabled: project.rootMissing,
                             // `Menu` 在禁用但没给原因时**直接抛错**（`assertDisabledHasReason`），
                             // 所以这两个字段必须成对出现
@@ -191,7 +191,7 @@ export function ProjectsPage(props: ProjectsPageProps) {
 
       {pending?.kind === 'create' ? (
         <Dialog
-          title="新建空间"
+          title="新建项目"
           confirmLabel="创建"
           confirmDisabled={draftPath === ''}
           onCancel={closeDialog}
@@ -231,7 +231,7 @@ export function ProjectsPage(props: ProjectsPageProps) {
 
       {pending?.kind === 'rename' ? (
         <Dialog
-          title="给空间改名"
+          title="给项目改名"
           confirmLabel="保存"
           confirmDisabled={draftName.trim() === ''}
           onCancel={closeDialog}
@@ -267,7 +267,7 @@ export function ProjectsPage(props: ProjectsPageProps) {
            * 说反了用户丢文件 —— 而"移除"这个词本身完全可以被理解成删除。
            */}
           「{pending.project.name}」会从这个列表消失，但<strong>不会删除</strong>磁盘上的任何文件。
-          这个空间里已经完成的任务与产物索引也都保留。
+          这个项目里已经完成的任务与产物索引也都保留。
         </Dialog>
       ) : null}
     </div>

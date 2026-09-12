@@ -16,7 +16,7 @@
  *   `allowsAcceptForSession` 判定，前端不自己判断。
  * · **Cancel 与 Decline 要分清**：前者结束整个动作，后者只拒绝这一次、agent 可换路。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Badge, PillButton } from './primitives.js';
 
@@ -99,6 +99,7 @@ export function ApprovalCard({
   approval,
   onDecide,
   onAnswer,
+  autoFocus = true,
 }: {
   readonly approval: ApprovalViewModel;
   readonly onDecide: (decision: ApprovalDecision) => void;
@@ -106,17 +107,35 @@ export function ApprovalCard({
     readonly optionId?: string;
     readonly text?: string;
   }) => void | undefined;
+  readonly autoFocus?: boolean | undefined;
 }) {
   const [draft, setDraft] = useState('');
+  const [technicalOpen, setTechnicalOpen] = useState(false);
+  const cardRef = useRef<HTMLElement | null>(null);
   const isQuestion = approval.kind === 'userInput';
   const dangerous = (approval.changes ?? []).some((c) => c.kind === 'delete');
 
+  useEffect(() => {
+    if (autoFocus) cardRef.current?.focus();
+  }, [autoFocus]);
+
+  const impact =
+    approval.kind === 'command'
+      ? '将运行一条本机命令'
+      : approval.kind === 'fileChange'
+        ? `将改动 ${(approval.changes ?? []).length} 个文件`
+        : approval.kind === 'permissions'
+          ? '将扩大这个任务可访问的范围'
+          : '需要你的回答才能继续';
+
   return (
     <section
+      ref={cardRef}
       className="ew-approval-card"
       // 10 §8.1：审批卡用 role="alertdialog" 且焦点自动落到卡上
       role="alertdialog"
       aria-label={isQuestion ? '需要你回答' : '需要你确认'}
+      tabIndex={-1}
       data-kind={approval.kind}
       data-tone={dangerous ? 'danger' : 'warning'}
     >
@@ -130,27 +149,6 @@ export function ApprovalCard({
           <Badge variant="neutral">已等待 {Math.floor(approval.waitedMs / 60_000)} 分钟</Badge>
         ) : null}
       </header>
-
-      {approval.kind === 'command' ? <CommandBody approval={approval} /> : null}
-      {approval.kind === 'fileChange' ? <FileChangeBody approval={approval} /> : null}
-
-      {approval.kind === 'permissions' ? (
-        <div className="ew-approval-permissions">
-          <ul>
-            {(approval.paths ?? []).map((entry, index) => (
-              <li key={`p${index}`}>
-                {entry.path} · {entry.access}
-              </li>
-            ))}
-            {(approval.networkTargets ?? []).map((target, index) => (
-              <li key={`n${index}`}>{target} · HTTPS</li>
-            ))}
-          </ul>
-          {approval.purpose ? (
-            <p className="ew-approval-purpose">用途：{approval.purpose}</p>
-          ) : null}
-        </div>
-      ) : null}
 
       {isQuestion ? (
         <div className="ew-approval-question">
@@ -179,11 +177,38 @@ export function ApprovalCard({
         </div>
       ) : (
         <>
+          <div className="ew-approval-impact">
+            <span className="ew-approval-step">影响</span>
+            <strong>{impact}</strong>
+          </div>
+          <div className="ew-approval-scope">
+            <span className="ew-approval-step">范围</span>
+            {approval.kind === 'command' ? (
+              <p>{approval.cwd ? `目录：${approval.cwd}` : '当前项目目录'}</p>
+            ) : null}
+            {approval.kind === 'fileChange' ? <FileChangeBody approval={approval} /> : null}
+            {approval.kind === 'permissions' ? (
+              <ul>
+                {(approval.paths ?? []).map((entry, index) => (
+                  <li key={`p${index}`}>
+                    {entry.path} · {entry.access}
+                  </li>
+                ))}
+                {(approval.networkTargets ?? []).map((target, index) => (
+                  <li key={`n${index}`}>{target} · HTTPS</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
           {/* 「为什么需要确认」是必填的（10 §3.2）。缺失时**显式说明缺失** ——
               留空会让用户以为这次审批没有理由，那正是"让用户瞎点"的开始 */}
           <p className="ew-approval-reason">
-            为什么需要确认：
-            {approval.reason ?? '（执行内核没有给出理由 —— 这本身值得警惕，建议先拒绝）'}
+            <span className="ew-approval-step">原因</span>
+            {(approval.kind === 'permissions'
+              ? (approval.purpose ?? approval.reason)
+              : approval.reason) ??
+              approval.purpose ??
+              '执行内核没有给出理由 —— 这本身值得警惕，建议先拒绝。'}
           </p>
           <footer className="ew-approval-actions">
             {/* 范围最小化：默认按钮是"允许这一次"（10 §3.4） */}
@@ -199,6 +224,19 @@ export function ApprovalCard({
               结束这个动作
             </PillButton>
           </footer>
+          {approval.kind === 'command' ? (
+            <div className="ew-approval-technical">
+              <button
+                type="button"
+                className="ew-item-action"
+                aria-expanded={technicalOpen}
+                onClick={() => setTechnicalOpen((value) => !value)}
+              >
+                {technicalOpen ? '收起技术详情' : '查看技术详情'}
+              </button>
+              {technicalOpen ? <CommandBody approval={approval} /> : null}
+            </div>
+          ) : null}
         </>
       )}
     </section>

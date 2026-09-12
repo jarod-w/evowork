@@ -38,15 +38,14 @@ function renderLibrary(over: Partial<LibraryProps> = {}) {
   return render(<Library rows={rows} {...over} />);
 }
 
-describe('三栏骨架（截图 4 复刻）', () => {
-  it('中栏三个导航项 + 两个树分区', () => {
+describe('三栏骨架与真实能力', () => {
+  it('中栏保留已接通导航，未接通的树分区隐藏', () => {
     renderLibrary();
     for (const label of ['搜索', '最近', '本地产物']) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
-    // 「我的资料」既是树分区名，也是行的"位置"列取值 —— 用分区的按钮定位，不用文本
-    expect(screen.getByRole('button', { name: '我的资料' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '团队空间' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '我的资料' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '团队空间' })).toBeNull();
   });
 
   it('「最近」用**浅色**分段控件（决定已装内容怎么看，01 §5.10）', () => {
@@ -57,12 +56,12 @@ describe('三栏骨架（截图 4 复刻）', () => {
   it('**「与我共享」不渲染**（Q19：只读订阅，收件箱不做）', () => {
     renderLibrary();
     expect(screen.getByRole('tab', { name: '最近访问' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '我分享的' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '我分享的' })).toBeNull();
     expect(screen.queryByRole('tab', { name: '与我共享' })).toBeNull();
   });
 
-  it('没订阅团队空间时说清它是只读的', () => {
-    renderLibrary();
+  it('只有接入团队空间能力后才显示只读说明', () => {
+    renderLibrary({ teamSpaces: [] });
     expect(screen.getByText(/团队空间是只读的/)).toBeTruthy();
   });
 
@@ -90,7 +89,7 @@ describe('**所有者列在全是「我」时自动隐藏**（06 §3.3）', () =
 
 describe('**两种删除的语义不同**（写反了用户会丢文件）', () => {
   it('「我的资料」= 真删磁盘文件，且说清不进回收站、不给"同时删文件"选项', () => {
-    renderLibrary();
+    renderLibrary({ onDelete: vi.fn() });
     fireEvent.click(screen.getByLabelText('删除 笔记.md'));
 
     const dialog = screen.getByRole('alertdialog');
@@ -164,6 +163,7 @@ describe('本机磁盘占用（Q17：不是云配额）', () => {
         indexBytes: 1e8,
         diskFreeBytes: 50e9,
       },
+      onCleanup: vi.fn(),
     });
     expect(screen.getByText(/本机占用/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '清理' })).toBeTruthy();
@@ -173,6 +173,15 @@ describe('本机磁盘占用（Q17：不是云配额）', () => {
 });
 
 describe('筛选与搜索', () => {
+  it('可打开的资料行支持键盘 Enter', () => {
+    const onOpen = vi.fn();
+    renderLibrary({ onOpen });
+    const row = screen.getByText('Q3汇报.pptx').closest('tr') as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
+  });
+
   it('类型筛选按 artifact_type 与扩展名', () => {
     renderLibrary();
     fireEvent.click(screen.getByRole('button', { name: '类型筛选' }));

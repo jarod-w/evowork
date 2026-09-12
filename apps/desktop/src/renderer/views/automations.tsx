@@ -366,6 +366,8 @@ export interface RunRow {
   readonly durationMs?: number | undefined;
   readonly tokenUsage?: number | undefined;
   readonly artifactCount?: number | undefined;
+  readonly threadId?: string | undefined;
+  readonly errorSummary?: string | undefined;
 }
 
 /** 07 §5.2 的映射表。**跳过与漏跑不是失败**，Badge 与文案都要区分开。 */
@@ -427,7 +429,7 @@ export function AutomationHistory({
   readonly timezone: string;
   readonly paused?: boolean | undefined;
   readonly onResume?: (() => void) | undefined;
-  readonly onOpenTask?: ((runId: string) => void) | undefined;
+  readonly onOpenTask?: ((threadId: string) => void) | undefined;
 }) {
   const stats = summarizeRuns(rows);
 
@@ -463,9 +465,20 @@ export function AutomationHistory({
       header: '结果',
       render: (row) =>
         row.status === 'SUCCEEDED' ? (
-          <PillButton variant="ghost" onClick={() => onOpenTask?.(row.id)}>
-            {row.artifactCount ? `${row.artifactCount} 个产物 · 查看任务` : '查看任务'}
-          </PillButton>
+          row.threadId ? (
+            <PillButton
+              variant="ghost"
+              onClick={() => {
+                if (row.threadId) onOpenTask?.(row.threadId);
+              }}
+            >
+              {row.artifactCount ? `${row.artifactCount} 个产物 · 查看任务` : '查看任务'}
+            </PillButton>
+          ) : (
+            <span className="ew-run-result-muted">已完成，没有关联任务</span>
+          )
+        ) : row.status === 'FAILED' ? (
+          <span>{row.errorSummary ?? describeRunStatus(row).text}</span>
         ) : (
           <span className="ew-run-result-muted">—</span>
         ),
@@ -536,6 +549,7 @@ export interface AutomationListRow {
   /** Q15：别的设备建的**只读**，且可「迁移到本机」 */
   readonly ownedByThisDevice: boolean;
   readonly consecutiveFailures?: number | undefined;
+  readonly nextFireAt?: number | undefined;
 }
 
 /** 状态 → 徽标。**「已暂停」与「自动暂停」是两件事**，不能合并。 */
@@ -563,7 +577,7 @@ export function AutomationsPage(props: {
   readonly rows: readonly AutomationListRow[];
   readonly runs: Readonly<Record<string, readonly RunRow[]>>;
   readonly deviceName: string;
-  readonly onOpenTask?: ((runId: string) => void) | undefined;
+  readonly onOpenTask?: ((threadId: string) => void) | undefined;
 }) {
   const [selectedId, setSelectedId] = useState<string | undefined>(props.rows[0]?.id);
   const selected = props.rows.find((r) => r.id === selectedId) ?? props.rows[0];
@@ -585,6 +599,8 @@ export function AutomationsPage(props: {
         <ul className="ew-automation-list">
           {props.rows.map((row) => {
             const status = describeAutomationStatus(row);
+            const latestRun = props.runs[row.id]?.[0];
+            const latestStatus = latestRun ? describeRunStatus(latestRun) : undefined;
             return (
               <li key={row.id}>
                 <button
@@ -595,7 +611,21 @@ export function AutomationsPage(props: {
                 >
                   <span className="ew-automation-name">{row.name}</span>
                   <Badge variant={status.badge}>{status.text}</Badge>
-                  <code className="ew-automation-schedule">{row.schedule}</code>
+                  <span className="ew-automation-facts">
+                    <span>
+                      下次运行：
+                      {row.nextFireAt === undefined
+                        ? row.status === 'ACTIVE'
+                          ? '未计算'
+                          : '已暂停'
+                        : formatInZone(row.nextFireAt, row.timezone)}
+                    </span>
+                    <span>绑定设备：{props.deviceName}</span>
+                    <span>最近结果：{latestStatus?.text ?? '还没有运行记录'}</span>
+                  </span>
+                  <code className="ew-automation-schedule" aria-label="执行计划">
+                    {row.schedule}
+                  </code>
                   {/* Q15：不是这台电脑建的就说清楚，别让用户点了编辑才发现改不了 */}
                   {row.ownedByThisDevice ? null : (
                     <Badge variant="neutral">在别的设备上创建，只读</Badge>

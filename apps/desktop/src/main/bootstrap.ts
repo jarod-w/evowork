@@ -118,11 +118,11 @@ export const WINDOW_SECURITY = Object.freeze({
   webviewTag: false,
 });
 
-/** 01 §3.1：最小窗口 1024 宽。 */
+/** 类 ChatGPT UI §6.2：900 以下进入抽屉布局，因此窗口至少保留 900 宽。 */
 export const WINDOW_SIZE = Object.freeze({
   width: 1280,
   height: 800,
-  minWidth: 1024,
+  minWidth: 900,
   minHeight: 640,
 });
 

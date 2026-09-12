@@ -213,30 +213,6 @@ export const MORE_MENU: readonly MenuItemSpec[] = [
   { id: 'settings:usage', label: '用量与预算' },
   { id: 'audit', label: '用量与审计' },
   { id: 'settings:about', label: '关于' },
-  {
-    id: 'inspiration',
-    label: '灵感 / 案例库',
-    disabled: true,
-    disabledReason: '完整案例库还没做好；首页下方已经有官方最佳实践的入口。',
-  },
-  {
-    id: 'guide',
-    label: '使用指南',
-    disabled: true,
-    disabledReason: '还没写。现在能查的是引导里的五步说明。',
-  },
-  {
-    id: 'devices',
-    label: '设备与同步',
-    disabled: true,
-    disabledReason: '跨设备同步本期不做（Q17 / Q19）。自动化的设备归属在自动化页里看。',
-  },
-  {
-    id: 'update',
-    label: '检查更新',
-    disabled: true,
-    disabledReason: '自动更新还没接上，现在需要手动下载新版本。',
-  },
 ];
 
 const DEFAULT_PAGE_SIZE = 30;
@@ -552,7 +528,7 @@ export function Sidebar(props: SidebarProps) {
           <p className="ew-delete-confirm-title">删除「{confirmDelete.title ?? '未命名任务'}」？</p>
           {/* 04 §3.3 要求说清这一句。答案是"不删" */}
           <p className="ew-delete-confirm-body">
-            只删除这个任务的对话记录。<strong>工作空间里的文件不会被删除</strong>
+            只删除这个任务的对话记录。<strong>项目目录中的文件不会被删除</strong>
             {confirmDelete.cwd ? `（${confirmDelete.cwd}）` : ''}。
           </p>
           <PillButton onClick={() => setConfirmDelete(null)}>取消</PillButton>

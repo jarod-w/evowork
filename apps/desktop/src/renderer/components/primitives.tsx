@@ -267,16 +267,22 @@ export function UserFooter({
           <span className="ew-user-version">{version}</span>
         </span>
       </button>
-      <span className="ew-user-actions">
-        <span className="ew-notify-anchor" data-unread={unread ? 'true' : undefined}>
-          <IconButton
-            label={unread ? `通知中心（${unreadCount} 条未读）` : '通知中心'}
-            icon={notificationIcon ?? '🔔'}
-            onClick={onNotifications}
-          />
+      {onNotifications || onDevices ? (
+        <span className="ew-user-actions">
+          {onNotifications ? (
+            <span className="ew-notify-anchor" data-unread={unread ? 'true' : undefined}>
+              <IconButton
+                label={unread ? `通知中心（${unreadCount} 条未读）` : '通知中心'}
+                icon={notificationIcon ?? '🔔'}
+                onClick={onNotifications}
+              />
+            </span>
+          ) : null}
+          {onDevices ? (
+            <IconButton label="设备中心" icon={deviceIcon ?? '🖥'} onClick={onDevices} />
+          ) : null}
         </span>
-        <IconButton label="设备中心" icon={deviceIcon ?? '🖥'} onClick={onDevices} />
-      </span>
+      ) : null}
     </div>
   );
 }

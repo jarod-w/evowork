@@ -80,10 +80,10 @@ describe('ProjectsPage', () => {
     expect(screen.getByText(/路径已失效/)).toBeTruthy();
   });
 
-  it('失效空间的「在此空间新建任务」禁用**并给原因** —— 不静默灰掉', () => {
+  it('失效项目的「在此项目新建任务」禁用**并给原因** —— 不静默灰掉', () => {
     renderPage([BROKEN]);
     fireEvent.click(screen.getByLabelText('旧方案 的更多操作'));
-    const item = screen.getByText('在此空间新建任务').closest('button');
+    const item = screen.getByText('在此项目新建任务').closest('button');
     expect(item?.getAttribute('disabled')).not.toBeNull();
     expect(item?.getAttribute('title')).toContain('路径');
   });
@@ -116,10 +116,10 @@ describe('ProjectsPage', () => {
     expect(onRemove).toHaveBeenCalledWith('p1');
   });
 
-  it('空态说清"还没有空间"并直接给两个动作 —— 不是一句"暂无数据"', () => {
+  it('空态说清"还没有项目"并直接给两个动作 —— 不是一句"暂无数据"', () => {
     renderPage([]);
-    expect(screen.getByText(/还没有工作空间/)).toBeTruthy();
-    expect(screen.getAllByText('新建空间').length).toBeGreaterThan(0);
+    expect(screen.getByText(/还没有项目/)).toBeTruthy();
+    expect(screen.getAllByText('新建项目').length).toBeGreaterThan(0);
     expect(screen.getAllByText('导入现有文件夹').length).toBeGreaterThan(0);
   });
 
@@ -161,13 +161,13 @@ describe('ProjectsPage', () => {
     expect((screen.getByLabelText('名称') as HTMLInputElement).value).toBe('季度汇报');
   });
 
-  it('打开某张卡的 ⋯ 菜单后，从标题栏新建空间会顺手关掉它 —— 不留孤儿菜单', () => {
+  it('打开某张卡的 ⋯ 菜单后，从标题栏新建项目会顺手关掉它 —— 不留孤儿菜单', () => {
     renderPage([OK, BROKEN]);
     // 打开季度汇报卡的菜单
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
     expect(screen.getByText('从列表移除')).toBeTruthy();
     // 不经过菜单，直接从标题栏打开「新建空间」对话框
-    fireEvent.click(screen.getAllByText('新建空间')[0]!);
+    fireEvent.click(screen.getAllByText('新建项目')[0]!);
     expect(screen.getByRole('dialog')).toBeTruthy();
     // 菜单必须已经被关掉，而不是被对话框盖住却还开着
     expect(screen.queryByText('从列表移除')).toBeNull();
