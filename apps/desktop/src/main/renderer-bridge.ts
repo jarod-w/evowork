@@ -807,12 +807,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
       /*
        * 工作空间 id → cwd。**在这里翻译**，渲染层只拿 id（见 `SendInput.workspaceId`）。
        *
+       * 真源是本机 `project_local`（D-P1），不是内核 `project/list`。UI 传的是
+       * 本机 id（`p-…`）；内核 catalog 的 id 是镜像成功才有的 `kernel_id`，
+       * 两边对不上。查 catalog 的后果是：选了项目也建不出带 cwd 的任务，
+       * 侧栏只能把它丢进「最近」，项目页永远是空的。
+       *
        * 选了一个没有 root 的空间时 `path` 是 undefined —— 此时**不设 cwd**，
        * 让任务落在默认目录，而不是传一个 undefined 进 `thread/start` 假装设过。
        */
-      const cwd = input.workspaceId
-        ? adapter.catalog()?.workspaces.find((w) => w.id === input.workspaceId)?.path
-        : undefined;
+      const cwd = input.workspaceId ? rootOf(input.workspaceId) : undefined;
 
       // 用户手选的模型是优先级最高的一档（03 §2.4：场景默认 → 模式 → 用户显式选择）
       const overrides =

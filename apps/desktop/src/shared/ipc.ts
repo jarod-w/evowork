@@ -224,8 +224,8 @@ export interface SendInput {
   /**
    * 用户选的工作空间。主进程把它翻成 `overrides.cwd`（任务在哪个目录里跑）。
    *
-   * 翻译放在主进程而不是这里传路径：渲染层不该持有绝对路径，
-   * 而 id → path 的对应只有拿过 catalog 的那一侧知道。
+   * 翻译放在主进程而不是这里传路径：渲染层不该持有绝对路径。
+   * id → path 的真源是本机 `project_local`（D-P1），不是内核 catalog。
    */
   readonly workspaceId?: string | undefined;
   /** 已由本机附件管道或结构化补全生成的输入。主进程会再次校验形状。 */

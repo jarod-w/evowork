@@ -545,6 +545,32 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(adapter.setTaskSettings).not.toHaveBeenCalled();
   });
 
+  /**
+   * 在项目里新建任务必须把本机项目根写成 cwd。查内核 catalog 会永远找不到：
+   * UI 拿的是 `project_local.id`，catalog 里是镜像后的 `kernel_id`。
+   * 对不上的后果就是任务没有 cwd，只出现在「最近」，项目页显示还没有任务。
+   */
+  it('选了本机项目时把项目根交给 createTask，即使内核 catalog 对不上这个 id', async () => {
+    const adapter = fakeAdapter({
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      catalog: vi.fn(() => ({
+        workspaces: [{ id: 'kernel-other', name: 'evowork', path: '/kernel/wrong' }],
+      })),
+      mirrorProjectCreate: vi.fn(async () => 'kernel-other'),
+    });
+    const actions = makeActions({ adapter, projectPorts: ports() });
+    const created = await actions.createProject({ name: 'evowork', path: '/w/evowork' });
+    const id = created.projects[0]?.id ?? '';
+
+    await actions.send({ text: '整理一个文档', workspaceId: id });
+
+    expect(adapter.createTask).toHaveBeenCalledWith({
+      input: [{ type: 'text', text: '整理一个文档' }],
+      overrides: { cwd: '/w/evowork' },
+    });
+  });
+
   it('没有配置模型目录读取方时**说清楚**，不是回一个空列表假装没有模型', async () => {
     const adapter = { createTask: vi.fn(), sendMessage: vi.fn() } as unknown as Adapter;
     const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
