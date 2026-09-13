@@ -1018,7 +1018,6 @@ textarea {
   cursor: pointer;
   padding: 0;
 }
-.ew-item-actions,
 .ew-automation-actions {
   display: flex;
   flex-wrap: wrap;

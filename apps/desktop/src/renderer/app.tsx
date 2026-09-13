@@ -1757,24 +1757,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
             mermaid: MERMAID,
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
-            onCopy: (text) => {
-              void navigator.clipboard?.writeText(text);
-              pushToast({ tone: 'success', text: '已复制消息。' });
-            },
-            onRetry: (text, kind) => {
-              if (kind === 'agentMessage') {
-                void retryCurrentTurn();
-                return;
-              }
-              void bridge.send({
-                threadId: activeTaskId,
-                text,
-                scenarioId,
-                ...(modelId ? { modelId } : {}),
-                ...(workspaceId ? { workspaceId } : {}),
-              });
-            },
-            onFork: (_itemId, turnId) => void forkTask(turnId),
           }}
           artifacts={currentResults.artifacts}
           onOpenArtifact={(id) => {

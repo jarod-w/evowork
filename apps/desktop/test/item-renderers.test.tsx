@@ -326,11 +326,22 @@ describe('UserMessage：@ 引用成块显示（03 §4.2 的 token 在历史里�
     expect(within(mentions[0] as HTMLElement).getByText('presentations')).toBeTruthy();
   });
 
-  it('提供分叉回调时显示「从此处分叉」（04 §5.2 #1）', () => {
-    const onFork = vi.fn();
-    renderItem({ id: 'i1', type: 'userMessage', content: [] }, { onFork });
-    fireEvent.click(screen.getByRole('button', { name: '从此处分叉' }));
-    expect(onFork).toHaveBeenCalledWith('i1');
+  it('时间线不展示复制、重发、分叉，避免打断阅读', () => {
+    renderItem({
+      id: 'i1',
+      type: 'userMessage',
+      content: [{ type: 'text', text: '直接修这个缺陷' }],
+    });
+    expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '重新发送此消息' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '从此处分叉' })).toBeNull();
+  });
+
+  it('助手消息同样不展示复制、重新生成、分叉', () => {
+    renderItem({ id: 'i2', type: 'agentMessage', text: '先按仓库规范读相关文件。' });
+    expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '重新生成回复' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '从此处分叉' })).toBeNull();
   });
 
   /**

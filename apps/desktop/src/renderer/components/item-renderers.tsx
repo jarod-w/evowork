@@ -40,9 +40,6 @@ export interface ItemRenderContext {
   readonly reasoningAvailable: boolean;
   /** 企业策略可配置隐藏 HookPrompt（04 §5.2 #15），但审计日志始终记录 */
   readonly hidePolicyPrompts?: boolean | undefined;
-  readonly onFork?: ((itemId: string, turnId?: string) => void) | undefined;
-  readonly onCopy?: ((text: string) => void) | undefined;
-  readonly onRetry?: ((text: string, kind: 'userMessage' | 'agentMessage') => void) | undefined;
   readonly onOpenSubAgent?: ((threadId: string) => void) | undefined;
   /** 时间线的轻量卡跳到右侧完整视图。 */
   readonly onOpenResult?:
@@ -208,48 +205,6 @@ const PLAN_STEP_LABEL: Readonly<Record<string, string>> = {
   completed: '已完成',
 };
 
-function MessageActions({
-  text: value,
-  item,
-  context,
-}: {
-  readonly text: string;
-  readonly item: RenderItem;
-  readonly context: ItemRenderContext;
-}) {
-  if (!value && !context.onFork) return null;
-  const turnId = typeof item._turnId === 'string' ? item._turnId : undefined;
-  return (
-    <div className="ew-item-actions" aria-label="消息操作">
-      {value && context.onCopy ? (
-        <button type="button" className="ew-item-action" onClick={() => context.onCopy?.(value)}>
-          复制
-        </button>
-      ) : null}
-      {value && context.onRetry ? (
-        <button
-          type="button"
-          className="ew-item-action"
-          onClick={() => context.onRetry?.(value, item.type as 'userMessage' | 'agentMessage')}
-        >
-          {item.type === 'userMessage' ? '重新发送此消息' : '重新生成回复'}
-        </button>
-      ) : null}
-      {context.onFork ? (
-        <button
-          type="button"
-          className="ew-item-action"
-          onClick={() =>
-            turnId === undefined ? context.onFork?.(item.id) : context.onFork?.(item.id, turnId)
-          }
-        >
-          从此处分叉
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
 export function ItemRenderer({
   item,
   context,
@@ -280,14 +235,6 @@ export function ItemRenderer({
               ),
             )}
           </div>
-          <MessageActions
-            text={content
-              .filter((part) => part.type === 'text')
-              .map((part) => part.text ?? '')
-              .join('\n')}
-            item={item}
-            context={context}
-          />
         </div>
       );
     }
@@ -301,7 +248,6 @@ export function ItemRenderer({
        * 对话流里的横向轮播会丢上下文 —— 用户看第二张图时看不到第一张。
        */
       const blocks = parseFences(text(item, 'text'));
-      const message = text(item, 'text');
       return (
         <div className="ew-item ew-item-agent" data-kind={kind}>
           {blocks.map((block, index) =>
@@ -323,7 +269,6 @@ export function ItemRenderer({
               />
             ),
           )}
-          <MessageActions text={message} item={item} context={context} />
         </div>
       );
     }
