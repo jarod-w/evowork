@@ -321,6 +321,13 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
     expect(rule).toContain('flex: none');
     expect(rule).toContain('width: var(--space-40)');
   });
+
+  it('任务顶栏是窗口拖拽区，按钮自己改回可点', () => {
+    const bar = /\.ew-title-bar\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(bar).toContain('-webkit-app-region: drag');
+    const buttons = /\.ew-title-bar button\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(buttons).toContain('-webkit-app-region: no-drag');
+  });
 });
 
 /*

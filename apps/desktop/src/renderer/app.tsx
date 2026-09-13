@@ -1249,20 +1249,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [activeTaskId, pushToast, updateResultUi],
   );
-
-  const forkTask = useCallback(
-    async (lastTurnId?: string) => {
-      if (!activeTaskId || !bridge.forkTask) return;
-      const result = await bridge.forkTask({
-        threadId: activeTaskId,
-        ...(lastTurnId ? { lastTurnId } : {}),
-      });
-      setActiveTaskId(result.threadId);
-      setView('task');
-      pushToast({ tone: 'success', text: '已创建分支任务。' });
-    },
-    [activeTaskId, bridge, pushToast],
-  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -1763,34 +1749,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             if (bridge.readResultPreview)
               void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
             else void bridge.openResultFile({ artifactId: id });
-          }}
-          onRename={() => {
-            if (!bridge.renameTask) return;
-            const name = window.prompt('新的任务名称', active?.title ?? '');
-            if (!name?.trim()) return;
-            void bridge.renameTask({ threadId: activeTaskId, name: name.trim() }).then((ok) => {
-              if (ok)
-                setTasks((previous) =>
-                  previous.map((task) =>
-                    task.id === activeTaskId ? { ...task, title: name.trim() } : task,
-                  ),
-                );
-            });
-          }}
-          onForkTask={() => void forkTask()}
-          onArchive={() => {
-            if (!bridge.archiveTask) return;
-            void bridge.archiveTask({ threadId: activeTaskId }).then(() => {
-              setTasks((previous) => previous.filter((task) => task.id !== activeTaskId));
-              setActiveTaskId(null);
-            });
-          }}
-          onDelete={() => {
-            if (!bridge.deleteTask || !window.confirm('确定删除这个任务？此操作无法撤销。')) return;
-            void bridge.deleteTask({ threadId: activeTaskId }).then(() => {
-              setTasks((previous) => previous.filter((task) => task.id !== activeTaskId));
-              setActiveTaskId(null);
-            });
           }}
           hasResults={
             currentResults.artifacts.length > 0 ||

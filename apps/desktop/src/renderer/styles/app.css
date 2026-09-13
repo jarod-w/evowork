@@ -213,6 +213,11 @@ textarea {
   padding: 0 var(--space-20);
   /* 标题栏带无背景色、无下边框（01 §3.2）—— 它继承各栏底色 */
   background: transparent;
+  /* 无边框窗口下这条带子是拖拽区；按钮自己再改回 no-drag */
+  -webkit-app-region: drag;
+}
+.ew-title-bar button {
+  -webkit-app-region: no-drag;
 }
 
 .ew-task-title {

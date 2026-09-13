@@ -318,10 +318,6 @@ export interface TaskWorkspaceProps {
    */
   readonly composer?: React.ReactNode | undefined;
   readonly onNewTask?: (() => void) | undefined;
-  readonly onRename?: (() => void) | undefined;
-  readonly onForkTask?: (() => void) | undefined;
-  readonly onArchive?: (() => void) | undefined;
-  readonly onDelete?: (() => void) | undefined;
   readonly artifacts?: readonly {
     readonly id: string;
     readonly name: string;
@@ -449,10 +445,6 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           </>
         ) : null}
         <div className="ew-title-bar-actions">
-          {props.onRename ? <PillButton onClick={props.onRename}>重命名</PillButton> : null}
-          {props.onForkTask ? <PillButton onClick={props.onForkTask}>分叉</PillButton> : null}
-          {props.onArchive ? <PillButton onClick={props.onArchive}>归档</PillButton> : null}
-          {props.onDelete ? <PillButton onClick={props.onDelete}>删除</PillButton> : null}
           {props.hasResults || props.resultPanel ? (
             <button
               ref={resultTriggerRef}

@@ -443,6 +443,7 @@ describe('结果工作区真实接线', () => {
       },
     });
 
+    fireEvent.click(await screen.findByRole('button', { name: /处理过程/ }));
     fireEvent.click(await screen.findByRole('button', { name: '查看完整变更' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText(/-old/)).toBeTruthy();

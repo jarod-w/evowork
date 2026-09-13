@@ -120,6 +120,16 @@ describe('结果区（04 §1）', () => {
     fireEvent.keyDown(window, { key: 'i', metaKey: true });
     expect(container.querySelector('.ew-result-pane')).toBeNull();
   });
+
+  it('顶栏不展示重命名、分叉、归档、删除；归档删除仍在侧栏任务菜单', () => {
+    renderWorkspace({ hasResults: true, title: '季度汇报 PPT' });
+    expect(screen.getByRole('heading', { name: '季度汇报 PPT' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开结果' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重命名' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '分叉' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '归档' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+  });
 });
 
 describe('思考与执行过程（04 §5.1–§5.2）', () => {
