@@ -73,6 +73,9 @@ export const TABLES: readonly TableSpec[] = [
          budget_limit     INTEGER,
          share_id         TEXT,
          first_message    TEXT,
+         -- 标题是谁给的：derived（第一条消息截出来）/ artifact（产物显示名）/ user（改过名）。
+         -- NULL 等同 derived。存在的唯一理由是**后来者不许盖过用户**（见 ThreadProjection.setTitle）
+         title_source     TEXT,
          parent_thread_id TEXT,
          created_at       INTEGER,
          updated_at       INTEGER,

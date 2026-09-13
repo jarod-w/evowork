@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { openStore, createAutomationRepo, type Store } from '@evowork/store';
+import { openStore, createAutomationRepo, type Store, type TitleSource } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createLocalServices, displayPath } from '../src/main/local-services.js';
@@ -75,6 +75,18 @@ function seedAutomation(over: Record<string, unknown> = {}): void {
     );
 }
 
+/**
+ * 一条最小的投影行。
+ *
+ * 产物起名要改的是**一个已经存在的任务**，而 `title_source` 写的是 `UPDATE` ——
+ * 没有行时它影响 0 行且不报错。不建这条行的话，"第一个产物赢"会一路绿灯地失效。
+ */
+function seedThread(threadId: string): void {
+  store.db
+    .prepare(`INSERT INTO thread_projection (thread_id, derived_status) VALUES (?, 'running')`)
+    .run(threadId);
+}
+
 function fakeAdapter() {
   const calls: string[] = [];
   return {
@@ -88,6 +100,16 @@ function fakeAdapter() {
         calls.push('setBudget');
       }),
       interrupt: vi.fn(async () => undefined),
+      /*
+       * 产物起名走这条。**真实的 `setTaskName` 会顺手写 `title_source`**，
+       * 而覆盖判断读的就是那一列 —— 假的不写的话，「第一个产物赢」永远测不出来
+       * （第二条上报会看到 `derived` 而再次改名，测试却是绿的）。
+       */
+      setTaskName: vi.fn(async (threadId: string, name: string, source: TitleSource) => {
+        calls.push(`setTaskName:${name}`);
+        store.threads.setTitleSource(threadId, source);
+        return true;
+      }),
     },
   };
 }
@@ -241,6 +263,84 @@ describe('文件变化 ↔ 产物索引', () => {
     expect(rows[0]?.artifact_type).toBe('chart');
     expect(rows[0]?.title).toBe('季度毛利率');
     expect(rows[0]?.source_signal).toBe('SKILL_REPORT');
+    services.stop();
+  });
+
+  /*
+   * 产物给任务起名（08 §2.2 的信号 ① 的副产物）。
+   *
+   * 这几条是**接线**的断言：`taskTitleFromArtifact` 的规则已经在 artifacts 包里测过，
+   * 这里测的是"它真的被调用了、结果真的写回了内核、而且没盖掉不该盖的东西"。
+   * 少了这一层，两个模块各自都对，合起来一次改名也不会发生。
+   */
+  it('技能上报的显示名成为任务标题 —— 零额外模型调用、零新增出网', () => {
+    const { services, adapter } = make();
+    seedThread('t1');
+    const path = join(dir, 'work', 'Q3经营分析.docx');
+    writeFileSync(path, 'v1');
+    services.watchWorkspace(join(dir, 'work'), 't1');
+
+    services.reportArtifact({
+      skill: 'documents',
+      path,
+      outputFormat: 'docx',
+      operationKind: 'create',
+      title: 'Q3 经营分析',
+    });
+
+    expect(adapter.setTaskName).toHaveBeenCalledWith('t1', 'Q3 经营分析', 'artifact');
+    services.stop();
+  });
+
+  it('**第一个产物赢** —— 三个产物让标题在侧边栏里跳三次比平庸的标题更糟', () => {
+    const { services, adapter } = make();
+    seedThread('t1');
+    services.watchWorkspace(join(dir, 'work'), 't1');
+
+    for (const [name, title] of [
+      ['a.docx', '先产出的文档'],
+      ['b.pptx', '后产出的幻灯片'],
+    ] as const) {
+      const path = join(dir, 'work', name);
+      writeFileSync(path, name);
+      services.reportArtifact({
+        skill: 'documents',
+        path,
+        outputFormat: name.split('.')[1] as string,
+        operationKind: 'create',
+        title,
+      });
+    }
+
+    expect(adapter.setTaskName).toHaveBeenCalledTimes(1);
+    expect(adapter.setTaskName).toHaveBeenCalledWith('t1', '先产出的文档', 'artifact');
+    services.stop();
+  });
+
+  /*
+   * **用户改过的名字不许被产物盖掉。**
+   *
+   * 这是 `title_source` 这一列存在的全部理由：内核只有一个 `Thread.name`，
+   * 它分不出名字是谁写的。少了这条判断，用户改完名、任务再产出一个文件就被改回去，
+   * 而且不报任何错 —— 用户只会觉得"改名没保存住"。
+   */
+  it('用户改过名字之后，产物不再动它', () => {
+    const { services, adapter } = make();
+    seedThread('t1');
+    services.watchWorkspace(join(dir, 'work'), 't1');
+    expect(store.threads.setTitleSource('t1', 'user')).toBe(true);
+
+    const path = join(dir, 'work', 'Q3经营分析.docx');
+    writeFileSync(path, 'v1');
+    services.reportArtifact({
+      skill: 'documents',
+      path,
+      outputFormat: 'docx',
+      operationKind: 'create',
+      title: 'Q3 经营分析',
+    });
+
+    expect(adapter.setTaskName).not.toHaveBeenCalled();
     services.stop();
   });
 

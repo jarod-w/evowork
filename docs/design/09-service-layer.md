@@ -189,6 +189,7 @@ app-server 的通知（`common.rs:1853-1920`）分发到三个消费者，**顺�
 CREATE TABLE thread_projection (
   thread_id        TEXT PRIMARY KEY,
   title            TEXT,
+  title_source     TEXT,            -- derived|artifact|user（04 §3.5）。NULL 等同 derived
   cwd              TEXT,
   project_id       TEXT,
   section_id       TEXT,
@@ -224,6 +225,12 @@ CREATE INDEX ix_tp_auto    ON thread_projection(automation_id, created_at DESC);
 （03 §1），所以它很短暂，但 `thread/fork` / `thread/resume` 之后都会出现。
 不给它名字的话，它只能被塞进 `running` 或 `completed`，**两种都是谎话**；
 UI 上它对应 04 §8 的"任务无消息（刚创建）"空态。
+
+**`title_source` 是个例外**：`title` 的真源是内核，但内核只有一个 `Thread.name`，
+它分不出这个名字是截出来的、产物给的、还是用户改的（04 §3.5 的三个来源）。
+这一列就是那个区分，真源只在这里。缺了它的表现是**用户改完名、任务再产出一个文件就被改回去**，
+而且不报任何错。覆盖规则在 `canOverrideTitle`，**不是一个秩比较** ——
+用户永远能写（改第二次名要生效），产物只盖 `derived`（第一个产物赢）。
 
 **权威性规则**：`title` / `cwd` / `archived` 的真源是内核，投影表只是缓存 —— 筛选时先用投影表选出 id 集合，再拉权威字段渲染（04 §3.4，注意那里对"怎么拉"有一处修订）。`derived_status` 及其后的字段真源是投影表。
 

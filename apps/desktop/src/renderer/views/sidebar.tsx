@@ -23,6 +23,7 @@ import { BRAND } from '@evowork/tokens';
 import { renderIcon } from '../components/icons.js';
 import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
 import {
+  Dialog,
   FilterChip,
   IconButton,
   NavItem,
@@ -120,6 +121,11 @@ export interface SidebarProps {
   readonly selectedId?: string | undefined;
   readonly onSelect?: ((id: string) => void) | undefined;
   readonly onRowAction?: ((action: RowAction, id: string) => void) | undefined;
+  /**
+   * 改名。**不走 `onRowAction`**：那条路只传 id，而改名还要带上新名字，
+   * 塞进去会让每个调用方都得先判一次 action 才知道第三个参数有没有意义。
+   */
+  readonly onRenameTask?: ((id: string, name: string) => void) | undefined;
   /** 内容命中（`thread/search` exp）。与标题命中分组显示（04 §3.4） */
   readonly contentMatches?: readonly {
     readonly id: string;
@@ -232,6 +238,18 @@ export function Sidebar(props: SidebarProps) {
   const [filter, setFilter] = useState<TaskFilter>(EMPTY_FILTER);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<TaskRow | null>(null);
+  /*
+   * 改名的草稿与目标行分开存：对话框开着的时候列表还在刷新（任务在跑），
+   * 把草稿挂在 `renaming` 这个对象上的话，每一次刷新都会把用户正在输的字冲掉。
+   */
+  const [renaming, setRenaming] = useState<TaskRow | null>(null);
+  const [draftName, setDraftName] = useState('');
+
+  function startRename(task: TaskRow): void {
+    setRenaming(task);
+    // 预填当前标题：多数改名是**微调**一个自动起的名字，不是从头写
+    setDraftName(task.title ?? '');
+  }
   const [collapsed, setCollapsed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -485,6 +503,7 @@ export function Sidebar(props: SidebarProps) {
                         onMenuToggle={() => setMenuFor(task.id === menuFor ? null : task.id)}
                         onMenuClose={closeMenu}
                         onDelete={setConfirmDelete}
+                        onRename={startRename}
                         onAction={props.onRowAction}
                       />
                     </li>
@@ -531,6 +550,7 @@ export function Sidebar(props: SidebarProps) {
                         onMenuToggle={() => setMenuFor(task.id === menuFor ? null : task.id)}
                         onMenuClose={closeMenu}
                         onDelete={setConfirmDelete}
+                        onRename={startRename}
                         onAction={props.onRowAction}
                       />
                     </li>
@@ -614,6 +634,28 @@ export function Sidebar(props: SidebarProps) {
         ) : null}
       </div>
 
+      {renaming ? (
+        <Dialog
+          title="给任务改名"
+          confirmLabel="保存"
+          confirmDisabled={draftName.trim() === ''}
+          onCancel={() => setRenaming(null)}
+          onConfirm={() => {
+            props.onRenameTask?.(renaming.id, draftName.trim());
+            setRenaming(null);
+          }}
+        >
+          <label className="ew-dialog-field">
+            名称
+            <input
+              aria-label="名称"
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+            />
+          </label>
+        </Dialog>
+      ) : null}
+
       {confirmDelete ? (
         <div className="ew-delete-confirm" role="alertdialog" aria-label="删除任务">
           <p className="ew-delete-confirm-title">删除「{confirmDelete.title ?? '未命名任务'}」？</p>
@@ -646,6 +688,7 @@ function TaskRowEntry({
   onMenuToggle,
   onMenuClose,
   onDelete,
+  onRename,
   onAction,
 }: {
   readonly task: TaskRow;
@@ -655,6 +698,7 @@ function TaskRowEntry({
   readonly onMenuToggle: () => void;
   readonly onMenuClose: () => void;
   readonly onDelete: (task: TaskRow) => void;
+  readonly onRename: (task: TaskRow) => void;
   readonly onAction?: ((action: RowAction, id: string) => void) | undefined;
 }) {
   return (
@@ -686,6 +730,10 @@ function TaskRowEntry({
               onDelete(task);
               return;
             }
+            if (action === 'rename') {
+              onRename(task);
+              return;
+            }
             onAction?.(action as RowAction, task.id);
           }}
         />
@@ -697,6 +745,12 @@ function TaskRowEntry({
 /** 04 §3.3 的行操作菜单。分享标注"需要授权"，与"复制链接"（不上传）区分开。 */
 export function rowMenuItems(_task: TaskRow): readonly MenuItemSpec[] {
   return [
+    /*
+     * 改名排在第一个，因为标题现在是**自动**来的：先从第一条消息截，再被产物的
+     * 显示名盖一次。自动起的名字必须有一个人工纠正入口 —— 否则一个起错的标题
+     * 就永远错下去，而这比"标题是用户自己的原话被截断"更糟。
+     */
+    { id: 'rename', label: '改名', group: 'a' },
     { id: 'archive', label: '归档', group: 'a' },
     { id: 'delete', label: '删除', danger: true, group: 'a' },
   ];

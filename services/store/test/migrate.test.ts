@@ -62,7 +62,8 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     for (const t of [...PROJECTION_TABLES, ...AUTHORITATIVE_TABLES]) {
       expect(names).toContain(t.name);
     }
-    expect(readMeta(store.db, 'schema_version_projection')).toBe('1');
+    // 投影类现在是第 2 版：建表 + title_source（标题是谁给的）
+    expect(readMeta(store.db, 'schema_version_projection')).toBe('2');
     // 权威类现在是第 3 版：建表 + 工作空间收敛 + 删 automation 的租户列（D10）
     expect(readMeta(store.db, 'schema_version_authoritative')).toBe('3');
     store.close();
@@ -133,8 +134,13 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       .prepare(`INSERT INTO thread_projection(thread_id, derived_status) VALUES('t1','completed')`)
       .run();
 
+    /*
+     * 版本号取一个**远大于清单**的值：`applyMigrations` 会跳过 `version <= from`，
+     * 而库刚被 `openStore` 迁到最新版。用「最新版 + 1」会在每次加迁移时静默失效 ——
+     * 这条断言会变成"什么都没测"，而且一路绿灯。
+     */
     const failing: Migration = {
-      version: 2,
+      version: 999,
       summary: '故意失败的投影迁移',
       up: () => {
         throw new Error('boom');

@@ -35,7 +35,7 @@ import {
   type UserInput,
 } from '@evowork/protocol';
 import { errorFields, type Logger } from '@evowork/logging';
-import type { ProjectionRow, Store, ThreadFilter } from '@evowork/store';
+import type { ProjectionRow, Store, ThreadFilter, TitleSource } from '@evowork/store';
 
 import {
   assertDegradationCoverage,
@@ -213,11 +213,32 @@ export function createAdapter(options: AdapterOptions) {
    *
    * 空名字**在这里就挡掉**：内核对空名回 `invalid_request`
    * （`thread_processor.rs:1788` 的 `normalize_thread_name`），送过去只是换一种方式失败。
+   *
+   * ## `source` 为什么必填
+   *
+   * 内核只有一个 `Thread.name`，它分不出这个名字是截出来的、产物给的、还是用户改的。
+   * 三者的优先级不同（`canOverrideTitle`），所以**谁写谁报**，记在投影表的
+   * `title_source` 上。写内核成功之后才记 —— 先记会在失败时留下一条谎。
+   *
+   * 覆盖判断**不在这里**：这个函数是"把名字写下去"，由调用方决定该不该写。
+   * 放进来的话，用户改名也要先过一遍优先级，而那正是唯一不该被拦的一条。
    */
-  async function setTaskName(threadId: string, name: string): Promise<boolean> {
+  async function setTaskName(
+    threadId: string,
+    name: string,
+    source: TitleSource,
+  ): Promise<boolean> {
     if (name.trim() === '') return false;
     try {
       await session.peer.request(METHOD.threadSetName, { threadId, name });
+      /*
+       * 投影行还不存在时这一步写不进去（`UPDATE` 影响 0 行、不报错）。
+       * 名字**已经写进内核了**，所以这次改名是成功的 —— 但来源丢了，
+       * 下一个产物会再改一次名。不留痕的话没人能解释那次多余的改名。
+       */
+      if (!store.threads.setTitleSource(threadId, source)) {
+        logger?.warn('adapter.title_source.no_row', { threadId });
+      }
       return true;
     } catch (err: unknown) {
       // 起名失败不影响任务本身，但**要留痕**：否则"为什么还是未命名"没有任何线索
@@ -456,7 +477,7 @@ export function createAdapter(options: AdapterOptions) {
        * 不该把一个已经跑起来的任务变成"创建失败"（见 `setTaskName`）。
        */
       const title = deriveTaskTitle(args.input);
-      if (title !== undefined) await setTaskName(threadId, title);
+      if (title !== undefined) await setTaskName(threadId, title, 'derived');
 
       return { threadId, turn: turnResponse.turn, degradations: expanded.degradations };
     },

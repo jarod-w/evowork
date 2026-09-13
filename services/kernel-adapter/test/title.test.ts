@@ -68,3 +68,56 @@ describe('从第一条需求派生任务标题', () => {
     expect(deriveTaskTitle([{ type: 'text', text: '   \n\t \n ' }])).toBeUndefined();
   });
 });
+
+/*
+ * 客套占的是**标题预算**，不是排版。
+ *
+ * 24 字里被「麻烦帮我」吃掉 4 个，代价是真正的主语被挤到省略号后面 ——
+ * 这正是 Claude Code 那条提示词要砍请求动词的理由，这里用规则做掉能做的那半。
+ */
+describe('剥掉客套', () => {
+  it('去掉礼貌前缀', () => {
+    expect(titleFromText('帮我把 data/ 下的三张表合并')).toBe('把 data/ 下的三张表合并');
+    expect(titleFromText('请问能不能做一个季度汇报的 PPT')).toBe('做一个季度汇报的 PPT');
+  });
+
+  it('叠起来的客套一起剥（「麻烦帮我」是两层）', () => {
+    expect(titleFromText('麻烦帮我看看迁移器有没有问题')).toBe('看看迁移器有没有问题');
+  });
+
+  it('去掉句末标点', () => {
+    expect(titleFromText('标题是如何产生的?')).toBe('标题是如何产生的');
+  });
+
+  /*
+   * **只砍框架，不砍内容动词。**
+   *
+   * 模型能砍 generate / fix 是因为它知道剩下的是什么；规则不知道。
+   * 这两条断言守的就是那条边界 —— 谁想"再智能一点"，会先撞到它们。
+   */
+  it('内容动词留着 —— 砍错一个动词是把标题变成谎话', () => {
+    expect(titleFromText('生成一份季度汇报 pptx')).toBe('生成一份季度汇报 pptx');
+    expect(titleFromText('删除上季度的归档')).toBe('删除上季度的归档');
+  });
+
+  it('「请求」不是客套 —— 否则「请求参数怎么传」会变成「求参数怎么传」', () => {
+    expect(titleFromText('请求参数怎么传')).toBe('请求参数怎么传');
+    expect(titleFromText('请假流程是什么')).toBe('请假流程是什么');
+  });
+
+  it('整句都是客套时不起名，而不是留下一个空标题', () => {
+    expect(titleFromText('帮我')).toBeUndefined();
+    expect(titleFromText('请问？')).toBeUndefined();
+  });
+
+  /* 剥在截断**之前**：否则「麻烦帮我」占掉的 4 个字再也拿不回来 */
+  it('先剥后截 —— 省下来的字数用在正文上', () => {
+    const body = '把'.repeat(TITLE_MAX_CHARS);
+    expect(titleFromText(`帮我${body}`)).toBe(body);
+  });
+
+  /* 截断加的省略号不能被句末标点规则吃掉（两者顺序反了就会） */
+  it('截断产生的省略号留着', () => {
+    expect(titleFromText('把'.repeat(TITLE_MAX_CHARS + 5))).toMatch(/…$/);
+  });
+});

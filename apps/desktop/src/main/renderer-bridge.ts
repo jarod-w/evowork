@@ -1044,11 +1044,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
       });
     },
 
+    /**
+     * 用户改名（04 §3.3）。**标成 `'user'`** —— 从此产物命名不再碰它。
+     *
+     * 少了这个标记，用户改完名字，任务再产出一个文件就被改回去了，
+     * 而且不报任何错：内核只有一个 `Thread.name`，它分不出是谁写的。
+     */
     async renameTask(input: {
       readonly threadId: string;
       readonly name: string;
     }): Promise<boolean> {
-      return adapter.setTaskName(input.threadId, input.name.trim());
+      return adapter.setTaskName(input.threadId, input.name.trim(), 'user');
     },
 
     async forkTask(input: {

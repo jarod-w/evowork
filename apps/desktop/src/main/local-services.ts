@@ -25,6 +25,7 @@ import { join, relative } from 'node:path';
 import {
   createArtifactWatcher,
   createPollingFileSystem,
+  taskTitleFromArtifact,
   type ArtifactRecord,
   type IndexPort,
 } from '@evowork/artifacts';
@@ -40,6 +41,7 @@ import {
 } from '@evowork/runtime-installer';
 import { createKernelBridge, createScheduler, type AutomationDefinition } from '@evowork/scheduler';
 import {
+  canOverrideTitle,
   createArtifactRepo,
   createAutomationRepo,
   type ArtifactRow,
@@ -168,6 +170,33 @@ export function createLocalServices(options: LocalServicesOptions) {
     options.logger?.info('artifacts.watch.started', { pathKind: 'workspace' });
   }
 
+  /**
+   * 产物给任务起名（`taskTitleFromArtifact`）。
+   *
+   * **不 await**：这是一次装饰性的改名，产物索引不该为它多等一次 JSON-RPC 往返。
+   * `setTaskName` 自己吞掉失败并留日志，所以这里只兜住 promise 本身。
+   *
+   * 覆盖判断在 `canOverrideTitle` 里（用户改过名字就不再动）——
+   * 读的是**当前**的 `title_source`，不是上报时的，所以并发的两条上报里
+   * 第二条会看到第一条写下的 `'artifact'` 而放弃。
+   */
+  function renameTaskAfter(record: ArtifactRecord | undefined): void {
+    if (!record) return;
+    const candidate = taskTitleFromArtifact(record);
+    if (!candidate) return;
+    if (!canOverrideTitle(options.store.threads.titleSourceOf(candidate.threadId), 'artifact')) {
+      return;
+    }
+    void options.adapter
+      .setTaskName(candidate.threadId, candidate.title, 'artifact')
+      .then((ok) => {
+        if (ok) options.logger?.info('artifacts.task_renamed', { threadId: candidate.threadId });
+      })
+      .catch(() => {
+        /* setTaskName 内部已经记过日志；这里只是不让 promise 裸奔 */
+      });
+  }
+
   /* ── 办公扩展：探测 + 安装（08 §4）───────────────────────────── */
 
   /**
@@ -271,10 +300,10 @@ export function createLocalServices(options: LocalServicesOptions) {
         // 没在盯的目录里产出的产物：先建一个 watcher 再上报，否则这条记录之后无人维护
         const parent = report.path.slice(0, report.path.lastIndexOf('/'));
         watchWorkspace(parent, report.threadId);
-        watchers.get(parent)?.ingestSkillReport(report);
+        renameTaskAfter(watchers.get(parent)?.ingestSkillReport(report));
         return;
       }
-      watcher.ingestSkillReport(report);
+      renameTaskAfter(watcher.ingestSkillReport(report));
     },
 
     /** 内核退出：在跑的定时任务全判 ENVIRONMENT（不计连败）。 */

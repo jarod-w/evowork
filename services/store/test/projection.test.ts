@@ -2,6 +2,7 @@ import type { Thread, ThreadStatus } from '@evowork/protocol';
 import { describe, expect, it } from 'vitest';
 
 import { deriveStatus, STATUS_LABEL } from '../src/derive-status.js';
+import { canOverrideTitle } from '../src/projection.js';
 import { DERIVED_STATUS } from '../src/schema.js';
 import { openStore, type Store } from '../src/store.js';
 
@@ -326,6 +327,58 @@ describe('排序稳定性', () => {
       const second = store.threads.queryThreadIds();
       expect(first).toEqual(['t-a', 't-b', 't-c']);
       expect(second).toEqual(first);
+    });
+  });
+});
+
+/**
+ * 标题来源的覆盖规则。
+ *
+ * 这一列存在的全部理由是**产物命名不许盖掉用户改的名字** —— 内核只有一个
+ * `Thread.name`，它分不出是谁写的，所以漏掉这条判断的表现是"用户改完名，
+ * 任务再产出一个文件就被改回去"，而且不报任何错。
+ */
+describe('canOverrideTitle', () => {
+  it('用户永远能写 —— 包括改第二次名（所以这里不是一个秩比较）', () => {
+    expect(canOverrideTitle('derived', 'user')).toBe(true);
+    expect(canOverrideTitle('artifact', 'user')).toBe(true);
+    expect(canOverrideTitle('user', 'user')).toBe(true);
+  });
+
+  it('产物只盖截出来的标题，**不盖用户的，也不盖另一个产物的**', () => {
+    expect(canOverrideTitle('derived', 'artifact')).toBe(true);
+    expect(canOverrideTitle(null, 'artifact')).toBe(true);
+    expect(canOverrideTitle('user', 'artifact')).toBe(false);
+    // 第一个产物赢：第二个产物再改一次，标题就在侧边栏里跳
+    expect(canOverrideTitle('artifact', 'artifact')).toBe(false);
+  });
+
+  it('截出来的标题只在没人写过时写 —— 它是创建那一刻的兜底', () => {
+    expect(canOverrideTitle(null, 'derived')).toBe(true);
+    expect(canOverrideTitle('derived', 'derived')).toBe(false);
+    expect(canOverrideTitle('artifact', 'derived')).toBe(false);
+  });
+});
+
+describe('setTitleSource', () => {
+  /*
+   * 行不存在时 `UPDATE` 影响 0 行**且不报错**。返回值是唯一能发现它的东西 ——
+   * 写不进去的后果是"第一个产物赢"退化成"每个产物都赢"。
+   */
+  it('投影行不存在时返回 false，而不是假装写成功了', () => {
+    withStore((store) => {
+      expect(store.threads.setTitleSource('nope', 'artifact')).toBe(false);
+      expect(store.threads.titleSourceOf('nope')).toBeNull();
+    });
+  });
+
+  it('写进去之后读得回来', () => {
+    withStore((store) => {
+      store.threads.upsertFromThread(thread({ id: 't1' }));
+      // 新建的行还没有来源 —— 等同 derived（老库里的行也是 NULL）
+      expect(store.threads.titleSourceOf('t1')).toBeNull();
+      expect(store.threads.setTitleSource('t1', 'user')).toBe(true);
+      expect(store.threads.titleSourceOf('t1')).toBe('user');
     });
   });
 });

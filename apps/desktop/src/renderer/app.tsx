@@ -1536,6 +1536,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               if (activeTaskId === id) setActiveTaskId(null);
             });
           }}
+          /*
+           * 改名先落到本地列表再发请求：内核会回一条 `thread/name/updated`，
+           * 但那要一次往返。等它的话用户会看到自己刚改的名字"没反应"。
+           * 请求失败时下一次 `thread/list` 校正会把它改回去（04 §3.4 第②步）。
+           */
+          onRenameTask={(id, name) => {
+            setTasks((previous) =>
+              previous.map((task) => (task.id === id ? { ...task, title: name } : task)),
+            );
+            void bridge.renameTask?.({ threadId: id, name });
+          }}
           onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
           onToggleCollapse={() => setSidebarCollapsed(true)}
           searchOpen={false}

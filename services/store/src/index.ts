@@ -32,9 +32,11 @@ export {
 } from './migrate.js';
 export {
   ThreadProjection,
+  canOverrideTitle,
   type ProjectionRow,
   type ThreadFilter,
   type ThreadOrigin,
+  type TitleSource,
 } from './projection.js';
 export {
   AUTHORITATIVE_TABLES,

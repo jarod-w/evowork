@@ -17,6 +17,42 @@ import { deriveStatus } from './derive-status.js';
 import type { SqliteLike } from './migrate.js';
 import type { DerivedStatus } from './schema.js';
 
+/**
+ * 标题是谁给的（09 §4.1 的补充）。
+ *
+ * 三个来源按"越晚出现越准"排列，但**只能往上覆盖，不能往下**：
+ *
+ * | 值 | 谁写的 | 什么时候 |
+ * |---|---|---|
+ * | `derived` | `titleFromText` 从第一条消息截的 | 任务创建时 |
+ * | `artifact` | 产物的显示名（`mark_artifact --title`） | 第一个产物落地时 |
+ * | `user` | 用户自己改的 | 行操作「改名」 |
+ *
+ * 没有这一列的话，产物命名会盖掉用户刚改过的名字，而且**不报任何错** ——
+ * 内核只有一个 `Thread.name` 字段，它分不出这三者。
+ */
+export type TitleSource = 'derived' | 'artifact' | 'user';
+
+/**
+ * `next` 能不能盖掉 `current`。`current` 为 NULL 时按 `derived` 算（老库里的行都是 NULL）。
+ *
+ * **不是一个秩比较** —— 三个来源的覆盖规则各不相同，用一个数字排序表达不了：
+ *
+ * - `user` 永远能写。改第二次名字必须生效，所以"同级不许覆盖"在这里是错的。
+ * - `artifact` 只盖 `derived`。**第一个产物赢**：一个任务产出三个文件时，
+ *   标题在侧边栏里跳三次比一个平庸的标题更糟，而且用户会以为出了错。
+ * - `derived` 只在没人写过时写。它是创建那一刻的兜底，此后任何来源都比它新。
+ *
+ * 这三条是 `title_source` 这一列存在的全部理由，所以判断写在这里而不是调用方 ——
+ * 散在三处的话，漏一处的表现是"用户改的名字被悄悄改回去"，不报任何错。
+ */
+export function canOverrideTitle(current: TitleSource | null, next: TitleSource): boolean {
+  const from = current ?? 'derived';
+  if (next === 'user') return true;
+  if (next === 'artifact') return from === 'derived';
+  return current === null;
+}
+
 export interface ProjectionRow {
   thread_id: string;
   title: string | null;
@@ -41,6 +77,8 @@ export interface ProjectionRow {
   budget_limit: number | null;
   share_id: string | null;
   first_message: string | null;
+  /** 标题来源。NULL 等同 `'derived'`（老库里的行都是 NULL） */
+  title_source: TitleSource | null;
   parent_thread_id: string | null;
   created_at: number | null;
   updated_at: number | null;
@@ -99,6 +137,7 @@ const COLUMNS = [
   'budget_limit',
   'share_id',
   'first_message',
+  'title_source',
   'parent_thread_id',
   'created_at',
   'updated_at',
@@ -181,6 +220,26 @@ export class ThreadProjection {
         toMs(thread.recencyAt ?? thread.updatedAt),
       );
     return derived;
+  }
+
+  /**
+   * 记下标题是谁给的。**只在 `thread/name/set` 成功之后调** ——
+   * 内核是标题的真源，这一列只是"内核那个字符串的来历"，先写它会留下一条谎。
+   *
+   * **返回是否真的写进去了。** 投影行不存在时 `UPDATE` 影响 0 行却不报错，
+   * 而后果是"第一个产物赢"变成"每个产物都赢"：写不进 `'artifact'`，
+   * 下一条上报读到的还是 `derived`，于是标题一路被顶。调用方必须处理 false。
+   */
+  setTitleSource(threadId: string, source: TitleSource, now = Date.now()): boolean {
+    const result = this.db
+      .prepare(`UPDATE thread_projection SET title_source = ?, updated_at = ? WHERE thread_id = ?`)
+      .run(source, now, threadId) as { changes?: number } | undefined;
+    return (result?.changes ?? 0) > 0;
+  }
+
+  /** 当前标题的来源。行不存在时按 `derived` 算 —— 那时还没人给过名字。 */
+  titleSourceOf(threadId: string): TitleSource | null {
+    return this.get(threadId)?.title_source ?? null;
   }
 
   /** `thread/status/changed`（09 §3.4）。 */

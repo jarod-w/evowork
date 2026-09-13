@@ -45,7 +45,40 @@ function createTables(tables: readonly TableSpec[]): Migration {
   };
 }
 
-export const PROJECTION_MIGRATIONS: readonly Migration[] = [createTables(PROJECTION_TABLES)];
+/**
+ * 表上有没有这一列。
+ *
+ * 加列的迁移必须问一次：**全新库**在第 1 版就按最新 DDL 建了表（列已经在），
+ * 而**老库**要靠 ALTER 补。不问就得用 try/catch 吞掉「duplicate column name」，
+ * 那样真正的失败（磁盘只读、表不存在）也会被一起吞掉。
+ */
+function hasColumn(db: SqliteLike, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name?: string }[];
+  return rows.some((row) => row.name === column);
+}
+
+/**
+ * 投影第 2 版：`thread_projection.title_source`（标题是谁给的）。
+ *
+ * `CREATE TABLE IF NOT EXISTS` 对已建过表的库什么都不做，所以只改 DDL 的话，
+ * 开发机上一切正常，用户升级后第一次写投影就 `no such column: title_source`。
+ *
+ * 失败不必兜底：投影类迁移失败的处理是**丢弃重建**，重建走的就是带这一列的最新 DDL
+ * —— 代价只是这台机器上的标题来源要重新积累（下一次改名 / 下一个产物就补回来）。
+ */
+const addTitleSource: Migration = {
+  version: 2,
+  summary: '加 thread_projection.title_source（产物命名不许盖掉用户改的名字）',
+  up: (db) => {
+    if (hasColumn(db, 'thread_projection', 'title_source')) return;
+    db.exec(`ALTER TABLE thread_projection ADD COLUMN title_source TEXT`);
+  },
+};
+
+export const PROJECTION_MIGRATIONS: readonly Migration[] = [
+  createTables(PROJECTION_TABLES),
+  addTitleSource,
+];
 
 /**
  * 首运行选的工作空间原本存在 `meta` 的这个键里（一个 JSON 路径数组）。

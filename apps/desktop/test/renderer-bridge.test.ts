@@ -48,6 +48,7 @@ function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
     budget_limit: null,
     share_id: null,
     first_message: null,
+    title_source: null,
     parent_thread_id: null,
     created_at: 1,
     updated_at: 1,
@@ -551,6 +552,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
    * 对不上的后果就是任务没有 cwd，只出现在「最近」，项目页显示还没有任务。
    */
   it('选了本机项目时把项目根交给 createTask，即使内核 catalog 对不上这个 id', async () => {
+    // 局部假替身：这几个方法只用到返回值里的一两个字段，按本文件其余各处的写法放宽
     const adapter = fakeAdapter({
       createTask: vi.fn(async () => ({ threadId: 'new-1' })),
       sendMessage: vi.fn(async () => ({ queued: false })),
@@ -558,7 +560,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
         workspaces: [{ id: 'kernel-other', name: 'evowork', path: '/kernel/wrong' }],
       })),
       mirrorProjectCreate: vi.fn(async () => 'kernel-other'),
-    });
+    } as unknown as Partial<Adapter>);
     const actions = makeActions({ adapter, projectPorts: ports() });
     const created = await actions.createProject({ name: 'evowork', path: '/w/evowork' });
     const id = created.projects[0]?.id ?? '';

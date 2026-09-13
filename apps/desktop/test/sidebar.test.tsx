@@ -215,9 +215,43 @@ describe('可见页上报（04 §3.4 第②步）', () => {
 });
 
 describe('行操作（04 §3.3）', () => {
-  it('只显示已经接通的归档与删除，不暴露无效操作', () => {
+  it('只显示已经接通的改名、归档与删除，不暴露无效操作', () => {
     const items = rowMenuItems(task({ id: 't1' }));
-    expect(items.map((item) => item.id)).toEqual(['archive', 'delete']);
+    expect(items.map((item) => item.id)).toEqual(['rename', 'archive', 'delete']);
+  });
+
+  /*
+   * **标题是自动来的，所以必须有人工纠正入口。**
+   *
+   * 先从第一条消息截（`kernel-adapter/src/title.ts`），再被产物的显示名盖一次
+   * （`artifacts/src/task-title.ts`）。两者都可能起错，而起错的自动标题比
+   * "用户自己的原话被截断"更糟 —— 用户认不出那是自己的任务。
+   */
+  it('改名开对话框、预填当前标题，保存后把新名字往上传', () => {
+    const onRenameTask = vi.fn();
+    renderSidebar({ tasks: [task({ id: 't1', title: '季度汇报' })], onRenameTask });
+
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '改名' }));
+
+    const input = screen.getByLabelText('名称') as HTMLInputElement;
+    // 多数改名是微调一个自动起的名字，空着让用户重打一遍是白费
+    expect(input.value).toBe('季度汇报');
+
+    fireEvent.change(input, { target: { value: 'Q3 经营分析' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onRenameTask).toHaveBeenCalledWith('t1', 'Q3 经营分析');
+  });
+
+  it('空名字存不下去 —— 内核也会拒绝它', () => {
+    const onRenameTask = vi.fn();
+    renderSidebar({ tasks: [task({ id: 't1', title: '季度汇报' })], onRenameTask });
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '改名' }));
+
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '   ' } });
+    expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onRenameTask).not.toHaveBeenCalled();
   });
 
   it('删除是危险项，且**二次确认说清不删工作空间文件**', () => {
