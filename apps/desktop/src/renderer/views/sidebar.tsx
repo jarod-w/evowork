@@ -147,6 +147,10 @@ export interface SidebarProps {
     | undefined;
   readonly selectedProjectId?: string | undefined;
   readonly onProjectSelect?: ((id: string) => void) | undefined;
+  /** 侧栏「+」：不切页，直接打开创建项目框。 */
+  readonly onProjectCreate?: (() => void) | undefined;
+  /** 项目「⋯」菜单里的导入动作。 */
+  readonly onProjectImport?: (() => void) | undefined;
   readonly nav?: readonly {
     readonly id: string;
     readonly label: string;
@@ -230,6 +234,7 @@ export function Sidebar(props: SidebarProps) {
   const [confirmDelete, setConfirmDelete] = useState<TaskRow | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const pageSize = props.pageSize ?? DEFAULT_PAGE_SIZE;
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const searchOpen = props.searchOpen ?? localSearchOpen;
@@ -410,11 +415,55 @@ export function Sidebar(props: SidebarProps) {
           ))}
         </div>
 
-        <section className="ew-sidebar-projects" aria-label="项目">
+        <section
+          className="ew-sidebar-projects"
+          aria-label="项目"
+          data-active={activeNavId === 'projects' ? 'true' : 'false'}
+        >
           <div className="ew-sidebar-subhead">
-            <button type="button" onClick={() => props.onNavSelect?.('projects')}>
+            <button
+              className="ew-sidebar-projects-link"
+              type="button"
+              onClick={() => props.onNavSelect?.('projects')}
+            >
               项目
             </button>
+            <span className="ew-sidebar-project-actions">
+              <span className="ew-sidebar-project-menu-anchor">
+                <IconButton
+                  label="项目更多操作"
+                  icon={<span aria-hidden="true">⋯</span>}
+                  selected={projectMenuOpen}
+                  onClick={() => setProjectMenuOpen((open) => !open)}
+                />
+                <Popover
+                  open={projectMenuOpen}
+                  onClose={() => setProjectMenuOpen(false)}
+                  align="end"
+                >
+                  <Menu
+                    ariaLabel="项目操作"
+                    items={[
+                      { id: 'view-all', label: '查看所有项目' },
+                      { id: 'import', label: '导入现有文件夹' },
+                    ]}
+                    onSelect={(id) => {
+                      setProjectMenuOpen(false);
+                      if (id === 'view-all') props.onNavSelect?.('projects');
+                      if (id === 'import') props.onProjectImport?.();
+                    }}
+                  />
+                </Popover>
+              </span>
+              <IconButton
+                label="创建项目"
+                icon={<span aria-hidden="true">＋</span>}
+                onClick={() => {
+                  setProjectMenuOpen(false);
+                  props.onProjectCreate?.();
+                }}
+              />
+            </span>
           </div>
           {projectGroups.map(({ project, tasks: projectTasks }) => (
             <div key={project.id} className="ew-sidebar-project-group">

@@ -1029,6 +1029,42 @@ describe('项目页接线（Task 13）', () => {
     expect(screen.queryByText('项目页还没做好')).toBeNull();
   });
 
+  it('侧栏 + 直接打开创建框，创建成功后新项目立刻出现在左侧', async () => {
+    let created = false;
+    const getStartup = vi.fn(async () => ({
+      ...STARTUP,
+      workspaces: created ? [{ id: 'p1', name: '季度汇报', path: '/Users/li/w/q3' }] : [],
+    }));
+    const createProject = vi.fn(async () => {
+      created = true;
+      return { ok: true, projects: [PROJECT_CARD] };
+    });
+    const { bridge } = fakeBridge({
+      getStartup,
+      createProject,
+      pickProjectDirectory: vi.fn(async () => ({ path: '/Users/li/w/q3' })),
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByRole('heading', { name: '有什么可以帮忙的？' });
+    fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
+    expect(screen.getByRole('dialog', { name: '创建项目' })).toBeTruthy();
+
+    fireEvent.click(screen.getByText('选择目录'));
+    await waitFor(() =>
+      expect((screen.getByLabelText('目录') as HTMLInputElement).value).toBe('/Users/li/w/q3'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '季度汇报' })).toBeTruthy());
+    expect(createProject).toHaveBeenCalledWith({
+      name: 'q3',
+      path: '/Users/li/w/q3',
+    });
+    // 首次启动一次，创建成功后再校正一次侧栏工作空间快照。
+    expect(getStartup).toHaveBeenCalledTimes(2);
+  });
+
   it('点卡片进详情页，且详情是单独拉的 —— 列表里没有文件树与记忆', async () => {
     const readProjectDetail = vi.fn(async () => PROJECT_DETAIL);
     const listProjectDir = vi.fn(async () => [

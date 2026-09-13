@@ -1878,16 +1878,35 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-secondary);
   font-size: var(--font-caption-size);
 }
-.ew-sidebar-subhead button {
+.ew-sidebar-projects-link {
+  flex: 1;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--text-tertiary);
   font: inherit;
+  text-align: left;
   cursor: pointer;
 }
-.ew-sidebar-subhead button:hover {
+.ew-sidebar-projects-link:hover {
   color: var(--text-primary);
+}
+.ew-sidebar-project-actions {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.ew-sidebar-projects:hover .ew-sidebar-project-actions,
+.ew-sidebar-projects:focus-within .ew-sidebar-project-actions,
+.ew-sidebar-projects[data-active='true'] .ew-sidebar-project-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ew-sidebar-project-menu-anchor {
+  position: relative;
 }
 
 /* §3.3：任务列表是唯一的滚动区 */

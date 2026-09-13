@@ -265,6 +265,33 @@ describe('项目与插件入口', () => {
     expect(screen.getByRole('button', { name: '季度汇报（目录不可用）' })).toBeTruthy();
   });
 
+  it('点「项目」后同一行提供 ⋯ 与 +，+ 直接请求创建项目', () => {
+    const onNavSelect = vi.fn();
+    const onProjectCreate = vi.fn();
+    renderSidebar({ activeNavId: 'projects', onNavSelect, onProjectCreate });
+
+    fireEvent.click(screen.getByRole('button', { name: '项目' }));
+    expect(onNavSelect).toHaveBeenCalledWith('projects');
+    expect(screen.getByRole('button', { name: '项目更多操作' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
+    expect(onProjectCreate).toHaveBeenCalledOnce();
+  });
+
+  it('项目 ⋯ 菜单可以查看全部或导入已有文件夹', () => {
+    const onNavSelect = vi.fn();
+    const onProjectImport = vi.fn();
+    renderSidebar({ onNavSelect, onProjectImport });
+
+    fireEvent.click(screen.getByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '导入现有文件夹' }));
+    expect(onProjectImport).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
+    expect(onNavSelect).toHaveBeenCalledWith('projects');
+  });
+
   it('项目内任务嵌在对应项目下，且不会在「最近」中重复出现', () => {
     renderSidebar({
       projects: [

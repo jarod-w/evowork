@@ -44,6 +44,13 @@ export interface ProjectsPageProps {
   readonly refusal?: string | undefined;
 }
 
+export interface CreateProjectDialogProps {
+  readonly onCreate: (input: { readonly name: string; readonly path: string }) => void;
+  /** 只选择目录，不提前创建项目；返回 undefined 表示用户取消。 */
+  readonly onPickDirectory: () => Promise<string | undefined>;
+  readonly onCancel: () => void;
+}
+
 const MISSING_REASON = '这个项目的路径已失效，先重新指定再新建任务。';
 
 type Pending =
@@ -57,7 +64,6 @@ export function ProjectsPage(props: ProjectsPageProps) {
   const [pending, setPending] = useState<Pending>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
-  const [draftPath, setDraftPath] = useState('');
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -77,7 +83,6 @@ export function ProjectsPage(props: ProjectsPageProps) {
   const closeDialog = () => {
     setPending(null);
     setDraftName('');
-    setDraftPath('');
   };
 
   return (
@@ -190,43 +195,11 @@ export function ProjectsPage(props: ProjectsPageProps) {
       </div>
 
       {pending?.kind === 'create' ? (
-        <Dialog
-          title="新建项目"
-          confirmLabel="创建"
-          confirmDisabled={draftPath === ''}
+        <CreateProjectDialog
+          onCreate={props.onCreate}
+          onPickDirectory={props.onPickDirectory}
           onCancel={closeDialog}
-          onConfirm={() => {
-            props.onCreate({ name: draftName, path: draftPath });
-            closeDialog();
-          }}
-        >
-          <label className="ew-dialog-field">
-            名称
-            <input
-              aria-label="名称"
-              value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
-            />
-          </label>
-          <label className="ew-dialog-field">
-            目录
-            <input aria-label="目录" value={draftPath} readOnly />
-          </label>
-          <PillButton
-            onClick={() => {
-              void props.onPickDirectory().then((picked) => {
-                if (picked === undefined) return;
-                setDraftPath(picked);
-                // 名字没填过就按目录名预填 —— 绝大多数情况下这就是用户想要的
-                if (draftName === '') {
-                  setDraftName(picked.slice(picked.lastIndexOf('/') + 1) || picked);
-                }
-              });
-            }}
-          >
-            选择目录
-          </PillButton>
-        </Dialog>
+        />
       ) : null}
 
       {pending?.kind === 'rename' ? (
@@ -271,5 +244,55 @@ export function ProjectsPage(props: ProjectsPageProps) {
         </Dialog>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 项目页与侧边栏共用同一份创建流程。
+ *
+ * 目录选择必须保持“纯选择”语义：用户按下最后的「创建项目」之前，不能提前落库。
+ * 组件在关闭时卸载，因此草稿不会从项目页泄漏到侧边栏入口，或反过来。
+ */
+export function CreateProjectDialog(props: CreateProjectDialogProps) {
+  const [name, setName] = useState('');
+  const [path, setPath] = useState('');
+
+  return (
+    <Dialog
+      title="创建项目"
+      confirmLabel="创建"
+      confirmDisabled={path === ''}
+      onCancel={props.onCancel}
+      onConfirm={() => {
+        props.onCreate({ name, path });
+        props.onCancel();
+      }}
+    >
+      <label className="ew-dialog-field">
+        项目名称
+        <input
+          aria-label="名称"
+          placeholder="项目名称"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <label className="ew-dialog-field">
+        源文件夹
+        <input aria-label="目录" value={path} readOnly />
+      </label>
+      <PillButton
+        onClick={() => {
+          void props.onPickDirectory().then((picked) => {
+            if (picked === undefined) return;
+            setPath(picked);
+            // 名字没填过就按目录名预填 —— 绝大多数情况下这就是用户想要的
+            if (name === '') setName(picked.slice(picked.lastIndexOf('/') + 1) || picked);
+          });
+        }}
+      >
+        选择目录
+      </PillButton>
+    </Dialog>
   );
 }

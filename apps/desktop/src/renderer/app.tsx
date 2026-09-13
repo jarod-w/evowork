@@ -97,7 +97,7 @@ import {
 } from './views/onboarding.js';
 import { ProjectDetailPage } from './views/project-detail.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
-import { ProjectsPage } from './views/projects.js';
+import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskSearchPage } from './views/task-search.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
@@ -406,6 +406,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
   const [taskResults, setTaskResults] = useState<Readonly<Record<string, TaskResultsView>>>({});
   const [taskFiles, setTaskFiles] = useState<Readonly<Record<string, readonly DirEntryView[]>>>({});
   const [resultUi, setResultUi] = useState<
@@ -905,13 +906,28 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     (result: ProjectMutationResult) => {
       setProjects({ projects: result.projects });
       setProjectRefusal(result.refused);
+      if (result.ok) {
+        /*
+         * 项目页卡片吃 mutation 返回值，侧栏/Composer 则吃 startup.workspaces。
+         * 成功后只把后者的工作空间快照校正回来；不重拉 listProjects，避免旧响应
+         * 反超刚完成的 mutation，也避免“创建成功但左侧仍没有”的假完成。
+         */
+        void bridge
+          .getStartup()
+          .then((info) =>
+            setStartup((previous) =>
+              previous === null ? info : { ...previous, workspaces: info.workspaces },
+            ),
+          )
+          .catch(() => undefined);
+      }
       pushToast(
         result.ok
           ? { tone: 'success', text: '项目已更新。' }
           : { tone: 'danger', text: result.refused ?? '项目操作没有完成。' },
       );
     },
-    [pushToast],
+    [bridge, pushToast],
   );
 
   const createProject = useCallback(
@@ -1510,6 +1526,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setActiveProjectId(id);
             setView('projects');
           }}
+          onProjectCreate={() => setProjectCreateOpen(true)}
+          onProjectImport={importProject}
           onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
           /*
            * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
@@ -1899,6 +1917,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setCatalogTab('skills');
             setView('catalog');
           }}
+        />
+      ) : null}
+      {projectCreateOpen ? (
+        <CreateProjectDialog
+          onCreate={createProject}
+          onPickDirectory={pickProjectDirectory}
+          onCancel={() => setProjectCreateOpen(false)}
         />
       ) : null}
       <p className="ew-window-size-hint" role="status">
