@@ -78,50 +78,29 @@ const RESULT_TABS = [
 ] as const;
 
 /**
- * 04 §5.2 的五类过程块里，会被收进「思考过程」组的协议条目。
- *
- * 未知类型故意不在这里：上游新增 item 时仍要直接露出「新类型事件」这一行，
- * 否则 R2 的防线会被外层折叠悄悄吃掉。
+ * 会被收进「处理过程」组的协议条目。未知类型故意不在这里：上游新增 item
+ * 时仍要直接露出「新类型事件」这一行，否则 R2 的防线会被外层折叠悄悄吃掉。
  */
-export type ProcessKind = 'thinking' | 'operations' | 'changes' | 'collaboration' | 'artifacts';
-
-export const PROCESS_GROUPS: Readonly<
-  Record<ProcessKind, { readonly label: string; readonly itemTypes: readonly string[] }>
-> = Object.freeze({
-  thinking: {
-    label: '思考与计划',
-    itemTypes: ['reasoning', 'plan', 'contextCompaction'],
-  },
-  operations: {
-    label: '操作',
-    itemTypes: [
-      'commandExecution',
-      'mcpToolCall',
-      'dynamicToolCall',
-      'functionCallOutput',
-      'webSearch',
-      'imageView',
-      'sleep',
-    ],
-  },
-  changes: {
-    label: '变更',
-    itemTypes: ['fileChange', 'enteredReviewMode', 'exitedReviewMode'],
-  },
-  collaboration: {
-    label: '协作',
-    itemTypes: ['subAgentActivity', 'collabAgentToolCall', 'hookPrompt'],
-  },
-  artifacts: {
-    label: '产物',
-    itemTypes: ['imageGeneration'],
-  },
-});
-
-const PROCESS_KIND_BY_TYPE = new Map<string, ProcessKind>(
-  (Object.entries(PROCESS_GROUPS) as [ProcessKind, (typeof PROCESS_GROUPS)[ProcessKind]][]).flatMap(
-    ([kind, group]) => group.itemTypes.map((type) => [type, kind]),
-  ),
+export const PROCESS_ITEM_TYPES = Object.freeze(
+  new Set([
+    'reasoning',
+    'plan',
+    'contextCompaction',
+    'commandExecution',
+    'mcpToolCall',
+    'dynamicToolCall',
+    'functionCallOutput',
+    'webSearch',
+    'imageView',
+    'sleep',
+    'fileChange',
+    'enteredReviewMode',
+    'exitedReviewMode',
+    'subAgentActivity',
+    'collabAgentToolCall',
+    'hookPrompt',
+    'imageGeneration',
+  ]),
 );
 
 type TimelineEntry =
@@ -129,40 +108,67 @@ type TimelineEntry =
   | {
       readonly kind: 'process';
       readonly key: string;
-      readonly processKind: ProcessKind;
       readonly items: readonly RenderItem[];
     };
 
-/** 连续的过程项合成一个稳定分组；结论性消息会自然切断前后两个过程。 */
+function isProcessItem(item: RenderItem): boolean {
+  return PROCESS_ITEM_TYPES.has(item.type);
+}
+
+function isTurnBoundary(item: RenderItem): boolean {
+  return item.type === 'userMessage' || (!isProcessItem(item) && item.type !== 'agentMessage');
+}
+
+/**
+ * 同一回合的思考、操作、变更与中间回复收成一个过程组；最终助手回复和用户消息
+ * 直接铺开。中间 `agentMessage` 若还跟着过程项，就不是结论，不能切断分组。
+ */
 export function groupTimelineItems(items: readonly RenderItem[]): readonly TimelineEntry[] {
   const entries: TimelineEntry[] = [];
-  let processItems: RenderItem[] = [];
-  let processKind: ProcessKind | undefined;
-
-  const flush = (): void => {
-    const first = processItems[0];
-    if (!first || processKind === undefined) return;
-    entries.push({ kind: 'process', key: first.id, processKind, items: processItems });
-    processItems = [];
-    processKind = undefined;
-  };
-
-  for (const item of items) {
-    const nextKind = PROCESS_KIND_BY_TYPE.get(item.type);
-    if (nextKind !== undefined) {
-      if (processKind !== undefined && processKind !== nextKind) flush();
-      processKind = nextKind;
-      processItems.push(item);
+  let index = 0;
+  while (index < items.length) {
+    const item = items[index];
+    if (!item) break;
+    if (isTurnBoundary(item)) {
+      entries.push({ kind: 'item', item });
+      index += 1;
       continue;
     }
-    flush();
-    entries.push({ kind: 'item', item });
+
+    const run: RenderItem[] = [];
+    while (index < items.length) {
+      const next = items[index];
+      if (!next || isTurnBoundary(next)) break;
+      run.push(next);
+      index += 1;
+    }
+
+    let lastProcess = -1;
+    for (let cursor = run.length - 1; cursor >= 0; cursor -= 1) {
+      const candidate = run[cursor];
+      if (candidate && isProcessItem(candidate)) {
+        lastProcess = cursor;
+        break;
+      }
+    }
+    if (lastProcess < 0) {
+      for (const visible of run) entries.push({ kind: 'item', item: visible });
+      continue;
+    }
+
+    const folded = run.slice(0, lastProcess + 1);
+    const first = folded[0];
+    if (first) entries.push({ kind: 'process', key: first.id, items: folded });
+    for (const visible of run.slice(lastProcess + 1)) entries.push({ kind: 'item', item: visible });
   }
-  flush();
   return entries;
 }
 
 function itemLabel(item: RenderItem): string {
+  if (item.type === 'agentMessage') {
+    const text = typeof item.text === 'string' ? item.text.trim().split('\n')[0] : '';
+    return text || '整理回复';
+  }
   if (item.type === 'reasoning') return '分析任务';
   if (item.type === 'plan') {
     const steps = Array.isArray(item.steps)
@@ -188,7 +194,7 @@ export interface ProcessSummary {
   readonly detail?: string | undefined;
 }
 
-export function summarizeProcess(kind: ProcessKind, items: readonly RenderItem[]): ProcessSummary {
+export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
   const latest = items.at(-1) as RenderItem;
   const failed = items.some(
     (item) =>
@@ -216,7 +222,7 @@ export function summarizeProcess(kind: ProcessKind, items: readonly RenderItem[]
         : `${items.length} 项`;
 
   return {
-    label: PROCESS_GROUPS[kind].label,
+    label: '处理过程',
     action: itemLabel(latest),
     status: needsUser ? '需要你处理' : failed ? '失败' : running ? '进行中' : '已完成',
     detail,
@@ -224,35 +230,28 @@ export function summarizeProcess(kind: ProcessKind, items: readonly RenderItem[]
 }
 
 /**
- * Codex 式组级 disclosure：默认只见一行状态，用户主动展开后才挂载内部推理、
- * 命令与工具输出。不是用 CSS 遮住——折叠时长输出根本不进 DOM。
+ * Cursor 式组级 disclosure：默认只见一行「处理过程」，用户点开后才挂载思考、
+ * 命令、中间回复与工具输出。不是用 CSS 遮住——折叠时长输出根本不进 DOM。
  */
 function ProcessGroup({
-  kind,
   items,
   context,
 }: {
-  readonly kind: ProcessKind;
   readonly items: readonly RenderItem[];
   readonly context: ItemRenderContext;
 }) {
-  const [expanded, setExpanded] = useState(
-    kind === 'changes' ||
-      kind === 'artifacts' ||
-      items.some((item) => item.type === 'plan' || item.type === 'contextCompaction'),
-  );
+  const [expanded, setExpanded] = useState(false);
   const visibleItems = items.filter(
     (item) =>
       !(item.type === 'reasoning' && !context.reasoningAvailable) &&
       !(item.type === 'hookPrompt' && context.hidePolicyPrompts),
   );
   if (visibleItems.length === 0) return null;
-  const summary = summarizeProcess(kind, visibleItems);
+  const summary = summarizeProcess(visibleItems);
 
   return (
     <div
       className="ew-item ew-process-group"
-      data-process-kind={kind}
       data-expanded={expanded ? 'true' : 'false'}
       role="group"
       aria-label={`${summary.label}：${summary.action}，${summary.status}`}
@@ -533,12 +532,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               entry.kind === 'item' ? (
                 <ItemRenderer key={entry.item.id} item={entry.item} context={props.itemContext} />
               ) : (
-                <ProcessGroup
-                  key={entry.key}
-                  kind={entry.processKind}
-                  items={entry.items}
-                  context={props.itemContext}
-                />
+                <ProcessGroup key={entry.key} items={entry.items} context={props.itemContext} />
               ),
             )}
 
