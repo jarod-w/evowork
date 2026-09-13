@@ -322,6 +322,37 @@ describe('事件接线', () => {
 });
 
 describe('全局快捷键与侧栏折叠', () => {
+  it('侧栏确认删除后调用权威删除链路，并立即从任务列表移除', async () => {
+    const rowAction = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 'delete-me',
+            title: '待删除任务',
+            status: 'completed',
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      rowAction,
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText('待删除任务');
+    fireEvent.click(screen.getByLabelText('待删除任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除任务' }));
+
+    await waitFor(() =>
+      expect(rowAction).toHaveBeenCalledWith({ action: 'delete', threadId: 'delete-me' }),
+    );
+    await waitFor(() => expect(screen.queryByText('待删除任务')).toBeNull());
+  });
+
   it('⌘K 打开搜索，⌘⇧O 回到新任务，⌘\\ 可折叠并恢复侧栏', async () => {
     const { bridge, emit } = fakeBridge();
     render(<App bridge={bridge} />);

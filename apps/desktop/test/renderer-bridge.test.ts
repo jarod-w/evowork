@@ -416,6 +416,22 @@ describe('时间戳只到"天"（01 §5.5）', () => {
   });
 });
 
+describe('侧栏任务动作', () => {
+  it('删除和归档必须改内核权威任务，不能只移除本地投影', async () => {
+    const adapter = fakeAdapter({
+      archiveTask: vi.fn(async () => undefined),
+      deleteTask: vi.fn(async () => undefined),
+    });
+    const actions = makeActions({ adapter });
+
+    await actions.rowAction({ action: 'archive', threadId: 'archived-1' });
+    await actions.rowAction({ action: 'delete', threadId: 'deleted-1' });
+
+    expect(adapter.archiveTask).toHaveBeenCalledWith('archived-1');
+    expect(adapter.deleteTask).toHaveBeenCalledWith('deleted-1');
+  });
+});
+
 describe('send：首页不创建 Thread（03 §1）', () => {
   const base = { appName: 'EvoWork', appVersion: '0.0.0' };
 

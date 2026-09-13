@@ -1526,7 +1526,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               setView('settings');
             }
           }}
-          onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
+          onRowAction={(action, id) => {
+            void bridge.rowAction({ action, threadId: id }).then(() => {
+              setTasks((previous) => previous.filter((task) => task.id !== id));
+              if (activeTaskId === id) setActiveTaskId(null);
+            });
+          }}
           onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
           onToggleCollapse={() => setSidebarCollapsed(true)}
           searchOpen={false}

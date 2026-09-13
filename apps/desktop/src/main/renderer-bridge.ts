@@ -991,15 +991,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return Promise.resolve();
     },
 
-    /**
-     * 行操作（04 §3.3）。
-     *
-     * **本期只接了不需要内核参与的那几个**，其余如实记一条日志并返回 ——
-     * 悄悄什么都不做会让用户以为点错了位置（09 §3.3 的同一条纪律）。
-     */
+    /** 行操作（04 §3.3）。任务的权威真源在内核，不能只改本地投影。 */
     async rowAction(input: RowActionInput): Promise<void> {
-      if (input.action === 'archive' || input.action === 'delete') {
-        store.threads.remove(input.threadId);
+      if (input.action === 'archive') {
+        await adapter.archiveTask(input.threadId);
+        return;
+      }
+      if (input.action === 'delete') {
+        await adapter.deleteTask(input.threadId);
         return;
       }
       options.logger?.info('desktop.row_action.unimplemented', { reason: input.action });
