@@ -168,6 +168,23 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
         style_run(paragraph.add_run(text), spec)
         return paragraph
 
+    def set_outline_level(paragraph, level: int) -> None:
+        """给标题段落写大纲级别（`heading.level` 从 1 起，`w:outlineLvl` 从 0 起）。
+
+        没有它，目录域即使按 F9 也是空的：域里的 `\\u` 开关按**大纲级别**收条目，
+        而模板用的是直接格式化，直接格式化的标题并不自带大纲级别。
+        Word 的导航窗格同样读这个属性。
+
+        只写结构、不改外观 —— 字号与间距仍由模板直接格式化，两者互不覆盖。
+        """
+        pPr = paragraph._p.get_or_add_pPr()
+        outline = OxmlElement("w:outlineLvl")
+        outline.set(qn("w:val"), str(level - 1))
+        # pPr 的子元素顺序由 schema 定死，outlineLvl 必须排在 rPr 之前
+        pPr.insert_element_before(
+            outline, "w:divId", "w:cnfStyle", "w:rPr", "w:sectPr", "w:pPrChange"
+        )
+
     def add_toc_field() -> None:
         """插入 TOC 域。python-docx 没有现成 API，只能拼 XML。"""
         paragraph = document.add_paragraph()
@@ -203,7 +220,8 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
     for block in content["blocks"]:
         kind = block["block"]
         if kind == "heading":
-            add_paragraph(block["text"], styles[f"h{block['level']}"])
+            level = block["level"]
+            set_outline_level(add_paragraph(block["text"], styles[f"h{level}"]), level)
         elif kind == "paragraph":
             add_paragraph(block["text"], styles["body"])
         elif kind == "quote":

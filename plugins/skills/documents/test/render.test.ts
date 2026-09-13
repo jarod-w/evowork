@@ -59,6 +59,19 @@ function run(
   );
 }
 
+/** docx 就是个 zip，直接把主文档 XML 读出来断言 —— 比解 docx 的库更贴契约。 */
+function readDocumentXml(out: string): string {
+  return execFileSync('python3', [
+    '-c',
+    [
+      'import sys,zipfile',
+      'z=zipfile.ZipFile(sys.argv[1])',
+      'print(z.read("word/document.xml").decode("utf-8"))',
+    ].join('\n'),
+    out,
+  ]).toString();
+}
+
 describe('结构化生成：先校验再渲染（08 §5.3）', () => {
   it('合法内容通过校验（不需要办公扩展）', () => {
     const result = run(DOC, 'x.docx', ['--validate-only']);
@@ -180,18 +193,22 @@ describe('装了办公扩展时真的产出 docx', () => {
     expect(run(DOC, 'doc.docx').status).toBe(EXIT.ok);
     expect(readFileSync(out).subarray(0, 2).toString('latin1')).toBe('PK');
 
-    const xml = execFileSync('python3', [
-      '-c',
-      [
-        'import sys,zipfile',
-        'z=zipfile.ZipFile(sys.argv[1])',
-        'print(z.read("word/document.xml").decode("utf-8"))',
-      ].join('\n'),
-      out,
-    ]).toString();
+    const xml = readDocumentXml(out);
     // TOC 是一个域（field），不是一段文字 —— 这正是要在文档里跟用户解释的那件事
     expect(xml).toContain('TOC');
     expect(xml).toContain('F9');
+  });
+
+  // 目录域的 `\u` 开关按大纲级别收条目。只写直接格式化的标题不带大纲级别，
+  // 结果就是用户按了 F9 目录仍然是空的 —— 生成时不报错，只有打开文档才发现
+  it.runIf(hasDocx)('每个标题都带大纲级别（否则目录域按 F9 也刷不出内容）', () => {
+    const out = join(dir, 'outline.docx');
+    expect(run(DOC, 'outline.docx').status).toBe(EXIT.ok);
+
+    const xml = readDocumentXml(out);
+    const levels = [...xml.matchAll(/<w:outlineLvl w:val="(\d+)"\/>/g)].map((m) => Number(m[1]));
+    // DOC 里两个标题：h1「总体情况」→ 0，h2「下一步」→ 1；"目录" 这个标签不算标题
+    expect(levels).toEqual([0, 1]);
   });
 });
 
