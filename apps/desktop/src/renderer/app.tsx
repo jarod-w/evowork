@@ -1502,6 +1502,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           projects={(startup?.workspaces ?? []).map((project) => ({
             id: project.id,
             name: project.name,
+            path: project.path,
             rootMissing: project.rootMissing,
           }))}
           selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}

@@ -1741,9 +1741,11 @@ textarea {
   display: flex;
   flex-direction: column;
   flex: none;
+  box-sizing: border-box;
   width: var(--layout-sidebar-width);
   height: 100%;
   padding: 0 var(--space-8) var(--space-8);
+  border-right: 1px solid var(--border-subtle);
   background: var(--bg-app);
   overflow: hidden;
 }
@@ -1751,9 +1753,8 @@ textarea {
 /*
  * 01 §3.2 标题栏带：高 52，无背景色、无下边框（继承侧边栏底色）。
  *
- * 三个图标**右对齐**而不是接着交通灯排 —— §3.2 给的中心 x 是 161/197/233，
- * 而 260 - 233 - 14 = 13 正好是右内边距。右对齐同时解决了 Windows/Linux 上
- * 窗口控件跑到右上角的情况：那时交通灯占位为 0，左对齐会让三个图标突然贴到最左边。
+ * 折叠按钮右对齐；品牌、搜索和筛选下沉到下一行。这样交通灯区域保持纯窗口控制区，
+ * Windows/Linux 没有左侧交通灯时也不会改变品牌行的水平起点。
  */
 .ew-sidebar-titlebar {
   display: flex;
@@ -1765,21 +1766,17 @@ textarea {
   /* 无边框窗口下这条带子是拖拽区；按钮自己再改回 no-drag */
   -webkit-app-region: drag;
 }
-/* hiddenInset 的交通灯浮在内容上；品牌从第三颗灯的右侧开始，窄时由自身省略。 */
+/* hiddenInset 的交通灯浮在内容上；占位留在左侧，折叠按钮停在右侧。 */
 html[data-platform='macos'] .ew-sidebar-titlebar::before {
   content: '';
   flex: none;
   width: var(--space-40);
+  margin-right: auto;
 }
 .ew-sidebar-titlebar button {
   -webkit-app-region: no-drag;
 }
-.ew-sidebar-titlebar .ew-brand-name {
-  margin-right: auto;
-  padding-left: var(--space-8);
-}
-
-/* 品牌行保留为兼容样式；新版侧栏把品牌名合入顶部栏。 */
+/* 品牌与搜索单独成行，和系统交通灯之间保持清楚的上下层级。 */
 .ew-sidebar-brand {
   display: flex;
   align-items: center;
@@ -1788,15 +1785,30 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   padding: 0 var(--space-8);
 }
 .ew-brand-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--font-title-2-size);
   line-height: var(--font-title-2-line);
   font-weight: var(--font-title-2-weight);
   letter-spacing: -0.01em;
+}
+.ew-brand-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ew-brand-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-tertiary);
+}
+.ew-brand-chevron .ew-icon {
+  width: var(--layout-chevron-size);
+  height: var(--layout-chevron-size);
 }
 
 /* §5.2 AppSwitcherChip */
@@ -1839,18 +1851,23 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   padding: var(--space-8) 0;
 }
 .ew-sidebar-primary-nav {
-  padding-top: var(--space-4);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .ew-sidebar-utility-nav {
-  padding: var(--space-8) 0 0;
-  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-24) 0 var(--space-12);
 }
 
 .ew-sidebar-projects {
   display: flex;
   flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12) 0 var(--space-16);
+}
+.ew-sidebar-project-group {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-8) 0;
 }
 .ew-sidebar-subhead {
   display: flex;
@@ -1878,6 +1895,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-width: thin;
 }
 .ew-sidebar-bottom {
   display: flex;
@@ -2060,7 +2078,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   align-items: center;
   gap: var(--space-4);
   height: var(--layout-nav-item-height);
-  padding: 0 var(--space-20);
+  padding: 0 var(--space-8);
 }
 .ew-sidebar-section-toggle {
   display: flex;
@@ -2098,6 +2116,10 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   padding: 0;
   list-style: none;
 }
+.ew-sidebar-project-task-list {
+  /* 子任务标题与项目行的文字起点对齐：24 图标位 + 4 间距。 */
+  padding-left: calc(var(--space-24) + var(--space-4));
+}
 .ew-task-row-anchor {
   position: relative;
   display: flex;
@@ -2129,6 +2151,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   background: transparent;
   color: inherit;
   font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 .ew-task-item-title {
@@ -2137,6 +2160,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 /*
  * 时间戳与 ⋯ 同位叠放：悬停时互换而**行宽不变**（01 §5.5）。
@@ -2149,6 +2173,12 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   justify-content: flex-end;
   width: var(--space-48);
   padding-right: var(--space-8);
+}
+.ew-sidebar .ew-task-item-tail {
+  width: var(--space-24);
+}
+.ew-sidebar .ew-task-item-time {
+  display: none;
 }
 .ew-task-item-tail .ew-icon-button {
   position: absolute;

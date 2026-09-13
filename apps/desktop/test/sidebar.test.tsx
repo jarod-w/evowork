@@ -50,7 +50,7 @@ describe('分组结构（04 §3.1）', () => {
     expect(screen.getByLabelText('已置顶')).toBeTruthy();
   });
 
-  it('用户分区按传入顺序排，未分组垫底', () => {
+  it('用户分区按传入顺序排，普通最近任务不再多套一层「未分组」标题', () => {
     renderSidebar({
       sections: [{ id: 'weekly', name: '周报' }],
       tasks: [
@@ -60,7 +60,8 @@ describe('分组结构（04 §3.1）', () => {
       ],
     });
     const names = [...document.querySelectorAll('.ew-task-group-name')].map((n) => n.textContent);
-    expect(names).toEqual(['📌 置顶', '周报', '未分组']);
+    expect(names).toEqual(['📌 置顶', '周报']);
+    expect(screen.getByText('任务 t1')).toBeTruthy();
   });
 
   it('**子任务不出现在顶层列表**（04 §3.2）', () => {
@@ -74,6 +75,22 @@ describe('分组结构（04 §3.1）', () => {
     expect(screen.queryByText('子任务')).toBeNull();
     // 计数也要不含子任务，否则「任务 (2)」与看到的一行对不上
     expect(screen.getByText('(1)')).toBeTruthy();
+  });
+
+  it('完成任务保持纯文本左对齐，只有进行中等需关注状态显示状态点', () => {
+    const { container } = renderSidebar({
+      tasks: [
+        task({ id: 'done', title: '已完成', status: 'completed' }),
+        task({ id: 'running', title: '进行中', status: 'running' }),
+      ],
+    });
+    expect(
+      screen.getByText('已完成').closest('.ew-task-item')?.querySelector('.ew-status-dot'),
+    ).toBeNull();
+    expect(
+      screen.getByText('进行中').closest('.ew-task-item')?.querySelector('.ew-status-dot'),
+    ).not.toBeNull();
+    expect(container.querySelectorAll('.ew-status-dot')).toHaveLength(1);
   });
 });
 
@@ -180,6 +197,21 @@ describe('可见页上报（04 §3.4 第②步）', () => {
     expect(reported).toHaveLength(60);
     expect(screen.getByText('还有 5 条，向下滚动继续加载')).toBeTruthy();
   });
+
+  it('项目预览每组最多上报 5 条，项目历史再多也不会触发无界 thread/read', () => {
+    const onVisibleChange = vi.fn();
+    const tasks = Array.from({ length: 100 }, (_, i) =>
+      task({ id: `project-${i}`, cwd: '/work/evowork' }),
+    );
+    renderSidebar({
+      tasks,
+      projects: [{ id: 'p1', name: 'evowork', path: '/work/evowork' }],
+      onVisibleChange,
+    });
+
+    const reported = onVisibleChange.mock.calls.at(-1)?.[0] as string[];
+    expect(reported).toHaveLength(5);
+  });
 });
 
 describe('行操作（04 §3.3）', () => {
@@ -231,6 +263,27 @@ describe('项目与插件入口', () => {
   it('项目目录失效时在侧栏行直接警告', () => {
     renderSidebar({ projects: [{ id: 'p1', name: '季度汇报', rootMissing: true }] });
     expect(screen.getByRole('button', { name: '季度汇报（目录不可用）' })).toBeTruthy();
+  });
+
+  it('项目内任务嵌在对应项目下，且不会在「最近」中重复出现', () => {
+    renderSidebar({
+      projects: [
+        { id: 'p1', name: 'evowork', path: '/work/evowork' },
+        { id: 'p2', name: 'aigateway', path: '/work/aigateway' },
+      ],
+      tasks: [
+        task({ id: 'project-task', title: '调整侧栏布局', cwd: '/work/evowork' }),
+        task({ id: 'recent-task', title: '独立任务' }),
+      ],
+    });
+
+    const project = screen
+      .getByRole('button', { name: 'evowork' })
+      .closest('.ew-sidebar-project-group');
+    expect(project).not.toBeNull();
+    expect(within(project as HTMLElement).getByText('调整侧栏布局')).toBeTruthy();
+    expect(screen.getAllByText('调整侧栏布局')).toHaveLength(1);
+    expect(screen.getByText('独立任务')).toBeTruthy();
   });
 });
 

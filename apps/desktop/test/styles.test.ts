@@ -302,6 +302,13 @@ describe('侧边栏选中行铺满整行（01 §5.3 / §5.5）', () => {
     expect(anchor).toContain('flex-direction: column');
     expect(anchor).toContain('width: 100%');
   });
+
+  it('任务标题明确靠左，不继承 button 的居中对齐', () => {
+    const main = /\.ew-task-item-main\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(main).toContain('text-align: left');
+    const title = /\.ew-task-item-title\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(title).toContain('text-align: left');
+  });
 });
 
 describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {

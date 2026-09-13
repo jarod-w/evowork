@@ -127,7 +127,8 @@ export interface SidebarProps {
     readonly excerpt: string;
   }[];
   /**
-   * 当前可见的任务 id（上界 = 一页）。宿主用它做**有界的**权威字段校正（04 §3.4 第②步）。
+   * 当前挂载的任务 id（上界 = 一页最近任务 + 3 个项目各 5 条预览）。
+   * 宿主用它做**有界的**权威字段校正（04 §3.4 第②步）。
    */
   readonly onVisibleChange?: ((ids: readonly string[]) => void) | undefined;
   readonly pageSize?: number | undefined;
@@ -139,6 +140,8 @@ export interface SidebarProps {
     | readonly {
         readonly id: string;
         readonly name: string;
+        /** 项目根路径。侧栏据此把任务嵌到所属项目下，不靠名称猜归属。 */
+        readonly path?: string | undefined;
         readonly rootMissing?: boolean | undefined;
       }[]
     | undefined;
@@ -178,7 +181,7 @@ export interface SidebarProps {
 }
 
 /**
- * 02 §1 的一级信息架构：**6 个固定入口 + 1 个动态任务区**。
+ * 02 §1 的一级信息架构：**4 个固定入口 + 项目/任务动态区**。
  *
  * 写死在这里而不是由调用方传，是因为它就是固定的 —— 02 §1 的那张表是产品的骨架，
  * 不是配置。传进来只会让"侧边栏有哪几项"变成一个各页面各答一次的问题。
@@ -196,8 +199,8 @@ export interface SidebarProps {
  */
 export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
   { id: 'new-task', label: '新建任务', icon: 'new-task' },
-  { id: 'catalog', label: '插件', icon: 'catalog' },
   { id: 'automations', label: '自动化', icon: 'automation' },
+  { id: 'catalog', label: '插件', icon: 'catalog' },
   { id: 'library', label: '资料库', icon: 'library' },
 ];
 
@@ -216,6 +219,7 @@ export const MORE_MENU: readonly MenuItemSpec[] = [
 ];
 
 const DEFAULT_PAGE_SIZE = 30;
+const PROJECT_TASK_LIMIT = 5;
 
 export function Sidebar(props: SidebarProps) {
   const [search, setSearch] = useState('');
@@ -260,13 +264,41 @@ export function Sidebar(props: SidebarProps) {
   }, [topLevel, search, filter]);
 
   useEffect(() => setVisibleCount(pageSize), [pageSize, search, filter]);
-  const visible = useMemo(() => matched.slice(0, visibleCount), [matched, visibleCount]);
+  const visibleProjects = useMemo(() => (props.projects ?? []).slice(0, 3), [props.projects]);
+  const projectGroups = useMemo(
+    () =>
+      visibleProjects.map((project) => ({
+        project,
+        tasks:
+          project.path === undefined
+            ? []
+            : matched.filter((task) => task.cwd === project.path).slice(0, PROJECT_TASK_LIMIT),
+      })),
+    [matched, visibleProjects],
+  );
+  const visibleProjectPaths = useMemo(
+    () => new Set(visibleProjects.flatMap((project) => project.path ?? [])),
+    [visibleProjects],
+  );
+  const recentMatched = useMemo(
+    () => matched.filter((task) => task.cwd === undefined || !visibleProjectPaths.has(task.cwd)),
+    [matched, visibleProjectPaths],
+  );
+  const visible = useMemo(
+    () => recentMatched.slice(0, visibleCount),
+    [recentMatched, visibleCount],
+  );
+  const displayed = useMemo(
+    () => [...projectGroups.flatMap((group) => group.tasks), ...visible],
+    [projectGroups, visible],
+  );
 
-  // 只报可见页（04 §3.4）：把这里改成 matched 就会在"筛出 800 条"时打爆内核
+  // 只报侧栏真实挂载的行：项目预览（每组最多 5 条）+「最近」的可见页。
+  // 把这里改成 matched 会在"筛出 800 条"时打爆内核。
   const onVisibleChange = props.onVisibleChange;
   useEffect(() => {
-    onVisibleChange?.(visible.map((t) => t.id));
-  }, [visible, onVisibleChange]);
+    onVisibleChange?.(displayed.map((t) => t.id));
+  }, [displayed, onVisibleChange]);
 
   const grouped = useMemo(() => groupBySection(visible, props.sections), [visible, props.sections]);
   const filtering = isFilterActive(filter) || search.trim() !== '';
@@ -286,14 +318,22 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <nav className="ew-sidebar" aria-label="侧边栏">
-      {/* 类 ChatGPT 顶栏：品牌与高频动作在同一行。 */}
+      {/* macOS 窗口控制区：品牌另起一行，避免和交通灯挤在一起。 */}
       <div className="ew-sidebar-titlebar">
-        <span className="ew-brand-name">{props.brandName ?? BRAND.appName}</span>
         <IconButton
           label="折叠侧边栏"
           icon={renderIcon('panel-left')}
           onClick={props.onToggleCollapse}
         />
+      </div>
+
+      <div className="ew-sidebar-brand">
+        <span className="ew-brand-name">
+          <span className="ew-brand-label">{props.brandName ?? BRAND.appName}</span>
+          <span className="ew-brand-chevron" aria-hidden="true">
+            {renderIcon('chevron-down')}
+          </span>
+        </span>
         <IconButton
           // 与下面 SearchInput 的无障碍名区分开：两个都叫「搜索任务」时，
           // 读屏用户听到的是两个同名控件，而测试里也定位不到唯一元素
@@ -344,40 +384,70 @@ export function Sidebar(props: SidebarProps) {
         ))}
       </div>
 
-      <section className="ew-sidebar-projects" aria-label="项目">
-        <div className="ew-sidebar-subhead">
-          <button type="button" onClick={() => props.onNavSelect?.('projects')}>
-            项目
-          </button>
-          <button type="button" onClick={() => props.onNavSelect?.('projects')}>
-            查看全部
-          </button>
-        </div>
-        {(props.projects ?? []).slice(0, 3).map((project) => (
-          <NavItem
-            key={project.id}
-            label={project.rootMissing ? `${project.name}（目录不可用）` : project.name}
-            icon={renderIcon('project')}
-            selected={project.id === props.selectedProjectId}
-            onClick={() => props.onProjectSelect?.(project.id)}
-          />
-        ))}
-      </section>
-
       <div
         className="ew-sidebar-tasks"
         onScroll={(event) => {
           const node = event.currentTarget;
           if (
             node.scrollHeight - node.scrollTop - node.clientHeight <= 1 &&
-            visibleCount < matched.length
+            visibleCount < recentMatched.length
           ) {
-            setVisibleCount((count) => Math.min(count + pageSize, matched.length));
+            setVisibleCount((count) => Math.min(count + pageSize, recentMatched.length));
           }
         }}
       >
+        <div className="ew-sidebar-nav ew-sidebar-utility-nav">
+          {utilityNav.map((item) => (
+            <NavItem
+              key={item.id}
+              label={item.label}
+              icon={renderIcon(item.icon)}
+              trailing={item.trailing}
+              count={item.count}
+              selected={item.id === activeNavId}
+              onClick={() => props.onNavSelect?.(item.id)}
+            />
+          ))}
+        </div>
+
+        <section className="ew-sidebar-projects" aria-label="项目">
+          <div className="ew-sidebar-subhead">
+            <button type="button" onClick={() => props.onNavSelect?.('projects')}>
+              项目
+            </button>
+          </div>
+          {projectGroups.map(({ project, tasks: projectTasks }) => (
+            <div key={project.id} className="ew-sidebar-project-group">
+              <NavItem
+                label={project.rootMissing ? `${project.name}（目录不可用）` : project.name}
+                icon={renderIcon('folder')}
+                selected={project.id === props.selectedProjectId}
+                onClick={() => props.onProjectSelect?.(project.id)}
+              />
+              {projectTasks.length > 0 ? (
+                <ul className="ew-task-list ew-sidebar-project-task-list">
+                  {projectTasks.map((task) => (
+                    <li key={task.id}>
+                      <TaskRowEntry
+                        task={task}
+                        selected={task.id === props.selectedId}
+                        menuOpen={menuFor === task.id}
+                        onSelect={props.onSelect}
+                        onMenuToggle={() => setMenuFor(task.id === menuFor ? null : task.id)}
+                        onMenuClose={closeMenu}
+                        onDelete={setConfirmDelete}
+                        onAction={props.onRowAction}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ))}
+        </section>
+
         <SidebarSectionHeader
-          label="最近任务"
+          label="最近"
           count={topLevel.length}
           {...(filtering ? { filteredCount: matched.length } : {})}
           collapsed={collapsed}
@@ -396,38 +466,24 @@ export function Sidebar(props: SidebarProps) {
           <div className="ew-task-groups">
             {grouped.map((group) => (
               <div key={group.id} className="ew-task-group">
-                <p className="ew-task-group-name">
-                  {group.id === PINNED_SECTION ? '📌 置顶' : group.name}
-                </p>
+                {group.id === UNGROUPED_SECTION ? null : (
+                  <p className="ew-task-group-name">
+                    {group.id === PINNED_SECTION ? '📌 置顶' : group.name}
+                  </p>
+                )}
                 <ul className="ew-task-list">
                   {group.tasks.map((task) => (
                     <li key={task.id}>
-                      <span className="ew-task-row-anchor">
-                        <TaskListItem
-                          title={task.title ?? '未命名任务'}
-                          time={task.timeLabel}
-                          tone={STATUS_VIEW[task.status].tone}
-                          breathing={STATUS_VIEW[task.status].breathing}
-                          pinned={task.sectionId === PINNED_SECTION}
-                          selected={task.id === props.selectedId}
-                          onClick={() => props.onSelect?.(task.id)}
-                          onMore={() => setMenuFor(task.id === menuFor ? null : task.id)}
-                        />
-                        <Popover open={menuFor === task.id} onClose={closeMenu} align="end">
-                          <Menu
-                            ariaLabel={`${task.title ?? '未命名任务'} 的操作`}
-                            items={rowMenuItems(task)}
-                            onSelect={(action) => {
-                              closeMenu();
-                              if (action === 'delete') {
-                                setConfirmDelete(task);
-                                return;
-                              }
-                              props.onRowAction?.(action as RowAction, task.id);
-                            }}
-                          />
-                        </Popover>
-                      </span>
+                      <TaskRowEntry
+                        task={task}
+                        selected={task.id === props.selectedId}
+                        menuOpen={menuFor === task.id}
+                        onSelect={props.onSelect}
+                        onMenuToggle={() => setMenuFor(task.id === menuFor ? null : task.id)}
+                        onMenuClose={closeMenu}
+                        onDelete={setConfirmDelete}
+                        onAction={props.onRowAction}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -440,9 +496,9 @@ export function Sidebar(props: SidebarProps) {
               </p>
             ) : null}
 
-            {matched.length > visible.length ? (
+            {recentMatched.length > visible.length ? (
               <p className="ew-task-list-more">
-                还有 {matched.length - visible.length} 条，向下滚动继续加载
+                还有 {recentMatched.length - visible.length} 条，向下滚动继续加载
               </p>
             ) : null}
           </div>
@@ -463,20 +519,6 @@ export function Sidebar(props: SidebarProps) {
             </ul>
           </div>
         ) : null}
-      </div>
-
-      <div className="ew-sidebar-nav ew-sidebar-utility-nav">
-        {utilityNav.map((item) => (
-          <NavItem
-            key={item.id}
-            label={item.label}
-            icon={renderIcon(item.icon)}
-            trailing={item.trailing}
-            count={item.count}
-            selected={item.id === activeNavId}
-            onClick={() => props.onNavSelect?.(item.id)}
-          />
-        ))}
       </div>
 
       {/* 01 §3.3：任务列表是唯一的滚动区，运营位与用户区吸底 */}
@@ -544,6 +586,62 @@ export function Sidebar(props: SidebarProps) {
         </div>
       ) : null}
     </nav>
+  );
+}
+
+function TaskRowEntry({
+  task,
+  selected,
+  menuOpen,
+  onSelect,
+  onMenuToggle,
+  onMenuClose,
+  onDelete,
+  onAction,
+}: {
+  readonly task: TaskRow;
+  readonly selected: boolean;
+  readonly menuOpen: boolean;
+  readonly onSelect?: ((id: string) => void) | undefined;
+  readonly onMenuToggle: () => void;
+  readonly onMenuClose: () => void;
+  readonly onDelete: (task: TaskRow) => void;
+  readonly onAction?: ((action: RowAction, id: string) => void) | undefined;
+}) {
+  return (
+    <span className="ew-task-row-anchor">
+      <TaskListItem
+        title={task.title ?? '未命名任务'}
+        time={task.timeLabel}
+        tone={STATUS_VIEW[task.status].tone}
+        breathing={STATUS_VIEW[task.status].breathing}
+        showStatus={
+          task.status === 'running' ||
+          task.status === 'pending' ||
+          task.status === 'planning' ||
+          task.status === 'failed' ||
+          task.status === 'interrupted'
+        }
+        pinned={task.sectionId === PINNED_SECTION}
+        selected={selected}
+        onClick={() => onSelect?.(task.id)}
+        onMore={onMenuToggle}
+      />
+      <Popover open={menuOpen} onClose={onMenuClose} align="end">
+        <Menu
+          ariaLabel={`${task.title ?? '未命名任务'} 的操作`}
+          items={rowMenuItems(task)}
+          onSelect={(action) => {
+            onMenuClose();
+            if (action === 'delete') {
+              onDelete(task);
+              return;
+            }
+            onAction?.(action as RowAction, task.id);
+          }}
+        />
+      </Popover>
+    </span>
   );
 }
 

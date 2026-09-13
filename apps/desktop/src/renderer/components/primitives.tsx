@@ -529,6 +529,7 @@ export function TaskListItem({
   time,
   tone,
   breathing,
+  showStatus = true,
   pinned,
   selected,
   onClick,
@@ -538,6 +539,7 @@ export function TaskListItem({
   readonly time: string;
   readonly tone: 'accent' | 'info' | 'warning' | 'danger' | 'muted';
   readonly breathing?: boolean | undefined;
+  readonly showStatus?: boolean | undefined;
   readonly pinned?: boolean | undefined;
   readonly selected?: boolean | undefined;
   readonly onClick?: (() => void) | undefined;
@@ -546,7 +548,7 @@ export function TaskListItem({
   return (
     <div className="ew-task-item" data-selected={selected ? 'true' : undefined}>
       <button type="button" className="ew-task-item-main" onClick={onClick}>
-        <StatusDot tone={tone} breathing={breathing} />
+        {showStatus ? <StatusDot tone={tone} breathing={breathing} /> : null}
         {pinned ? (
           <span className="ew-task-pin" aria-label="已置顶">
             📌
