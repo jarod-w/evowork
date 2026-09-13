@@ -81,6 +81,7 @@ describe('自动化列表的执行摘要', () => {
     render(
       <AutomationsPage
         deviceName="MacBook-Pro-J"
+        workspaceOptions={[]}
         rows={[
           {
             id: 'a1',

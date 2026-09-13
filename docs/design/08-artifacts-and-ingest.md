@@ -271,6 +271,12 @@ mark_artifact --operation-kind create --expected-output-count 1 --output-format 
 
 产物卡的预览缩略：docx/pptx/pdf 取首页渲染图（由技能生成时顺带导出）、xlsx 取首屏表格截图、chart/image 直接用图。**生不成缩略图就用类型图标**，不做懒加载渲染（会拖慢结果区）。
 
+> **当前实现边界（2026-09-13）**：任务切换时从权威产物索引加载结果，
+> 对话流显示轻量产物卡并可打开结果区。文本/代码、图片、PDF 和 HTML 使用本机只读预览；
+> docx/xlsx/pptx 等不支持的格式如实交给系统应用，不伪装为应用内预览。
+> HTML 预览使用空 sandbox、`no-referrer` 和限制性 CSP，不执行脚本、不加载远程资源。
+> 当前结果刷新为懒加载，不应写成 `fs/watch` 已接通。
+
 ---
 
 ## 7. 分享（Q10 的完整流程）

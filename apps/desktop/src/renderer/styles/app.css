@@ -320,6 +320,37 @@ textarea {
   color: var(--text-tertiary);
   font-size: var(--font-caption-size);
 }
+.ew-result-preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-height: 0;
+}
+.ew-file-preview-frame {
+  width: 100%;
+  min-height: var(--layout-visualizer-frame-height);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+}
+.ew-file-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+}
+.ew-file-preview-text pre {
+  max-height: calc(var(--space-64) * 9);
+  margin: 0;
+  padding: var(--space-12);
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+}
 .ew-result-files {
   display: flex;
   flex-direction: column;
@@ -986,6 +1017,37 @@ textarea {
   font: inherit;
   cursor: pointer;
   padding: 0;
+}
+.ew-item-actions,
+.ew-automation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+.ew-timeline-artifacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--layout-middle-min), 1fr));
+  gap: var(--space-8);
+}
+.ew-timeline-artifact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-timeline-artifact:hover {
+  background: var(--bg-hover);
+}
+.ew-timeline-artifact > span {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
 }
 
 .ew-turn-failure {
@@ -2878,6 +2940,43 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   gap: var(--space-16);
   max-width: var(--layout-content-column);
   padding: var(--space-20);
+}
+.ew-automation-actions {
+  padding: var(--space-8) 0;
+}
+
+/* 独立任务搜索：标题与正文命中都在主内容区展示。 */
+.ew-task-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-task-search-results button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4) var(--space-12);
+  width: 100%;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-task-search-results button:hover {
+  background: var(--bg-hover);
+}
+.ew-task-search-results span {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+}
+.ew-task-search-results small {
+  color: var(--text-tertiary);
 }
 .ew-field {
   display: flex;

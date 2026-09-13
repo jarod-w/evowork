@@ -41,7 +41,7 @@ export interface RenderItemView {
   readonly [key: string]: unknown;
 }
 
-/** 主进程推给渲染进程的 UI 事件。**渲染层只认这三种**。 */
+/** 主进程推给渲染进程的语义化 UI 事件。 */
 export type RendererEvent =
   | { readonly type: 'task-created'; readonly task: TaskRowView }
   | {
@@ -228,6 +228,55 @@ export interface SendInput {
    * 而 id → path 的对应只有拿过 catalog 的那一侧知道。
    */
   readonly workspaceId?: string | undefined;
+  /** 已由本机附件管道或结构化补全生成的输入。主进程会再次校验形状。 */
+  readonly references?: readonly ComposerReferenceView[] | undefined;
+  /** 运行中发送时，true = 立即插话；false/缺省 = 排队。 */
+  readonly steer?: boolean | undefined;
+}
+
+export type ComposerReferenceView =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'mention'; readonly name: string; readonly path: string }
+  | { readonly type: 'skill'; readonly name: string; readonly path: string }
+  | { readonly type: 'localImage'; readonly name: string; readonly path: string };
+
+export interface ComposerAttachmentView {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: 'image' | 'document' | 'code' | 'archive';
+  readonly sizeLabel: string;
+  readonly state: 'ready' | 'failed';
+  readonly error?: string | undefined;
+  /** 成功解析/复制后发给内核的结构化输入；绝不把文档全文塞进消息。 */
+  readonly references: readonly ComposerReferenceView[];
+  /** 解析失败时仍可使用的原始文件引用。 */
+  readonly rawReference?: ComposerReferenceView | undefined;
+}
+
+export interface ComposerContextView {
+  readonly mentions: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly category: 'file' | 'skill' | 'library';
+    readonly insertAs: 'mention' | 'skill';
+    readonly path: string;
+  }[];
+  readonly commands: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly kind: 'skill' | 'local';
+  }[];
+}
+
+export interface QueuedInputView {
+  readonly id: string;
+  readonly text: string;
+}
+
+export interface TaskSearchHitView {
+  readonly task: TaskRowView;
+  /** 标题或可见消息正文的命中片段。 */
+  readonly snippet: string;
 }
 
 /**
@@ -259,6 +308,14 @@ export interface TaskResultsView {
     readonly artifactType: string;
     readonly version: number;
   }[];
+}
+
+export interface FilePreviewView {
+  readonly name: string;
+  readonly kind: 'text' | 'html' | 'image' | 'pdf' | 'unsupported';
+  readonly content?: string | undefined;
+  readonly truncated?: boolean | undefined;
+  readonly message?: string | undefined;
 }
 
 /* ─────────────────── 三个目录式页面的数据（02 §1 的一级入口）─────────────────── */
@@ -300,6 +357,32 @@ export interface AutomationRowView {
   readonly ownedByThisDevice: boolean;
   readonly consecutiveFailures?: number | undefined;
   readonly nextFireAt?: number | undefined;
+  readonly prompt: string;
+  readonly workspaces: readonly string[];
+  readonly misfirePolicy: 'FIRE_ONCE_ON_WAKE' | 'FIRE_ALL' | 'DROP';
+  readonly catchupWindowHours: number;
+  readonly wakeSystem: boolean;
+  readonly budgetLimit: number;
+}
+
+export interface AutomationMutationInput {
+  readonly id?: string | undefined;
+  readonly name: string;
+  readonly prompt: string;
+  readonly workspaces: readonly string[];
+  readonly schedule: string;
+  readonly timezone: string;
+  readonly misfirePolicy: 'FIRE_ONCE_ON_WAKE' | 'FIRE_ALL' | 'DROP';
+  readonly catchupWindowHours: number;
+  readonly wakeSystem: boolean;
+  readonly budgetLimit: number;
+  readonly testRun: boolean;
+}
+
+export interface AutomationMutationResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+  readonly data: AutomationsDataView;
 }
 
 export interface AutomationRunView {

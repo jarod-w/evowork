@@ -42,7 +42,7 @@ import {
   type ThreadLite,
 } from '@evowork/projects';
 import type { Logger } from '@evowork/logging';
-import type { ThreadItem } from '@evowork/protocol';
+import type { ThreadItem, UserInput } from '@evowork/protocol';
 import { nextFire } from '@evowork/scheduler/cron.js';
 import {
   createProjectRepo,
@@ -59,14 +59,19 @@ import type {
   ApprovalDecisionInput,
   ApprovalView,
   ApplyModelAccessInput,
+  AutomationMutationInput,
+  AutomationMutationResult,
   CustomModelInput,
   AuditDataView,
   AutomationsDataView,
   CaseView,
   CatalogDataView,
   CatalogMutationResult,
+  ComposerAttachmentView,
+  ComposerContextView,
   DirEntryView,
   LibraryDataView,
+  FilePreviewView,
   ModelAccessMutationResult,
   ModelCatalogResult,
   ModelProbeResult,
@@ -89,8 +94,10 @@ import type {
   RuntimeStatusView,
   SendInput,
   StartupInfo,
+  TaskSearchHitView,
   TaskRowView,
   TaskResultsView,
+  QueuedInputView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import {
@@ -242,6 +249,7 @@ export interface ProjectPorts {
   readonly openFolder: (path: string) => Promise<void>;
   /** 读不到（不存在、没权限）返回 undefined —— 不要把它和空文件混为一谈 */
   readonly readTextFile: (path: string) => Promise<string | undefined>;
+  readonly readBinaryFile: (path: string) => Promise<Uint8Array | undefined>;
   readonly writeTextFile: (path: string, content: string) => Promise<void>;
 }
 
@@ -374,6 +382,19 @@ export interface RendererBridgeOptions {
    * 判定在 `@evowork/catalog`；这里只接线。
    */
   readonly catalogPorts?: CatalogPorts | undefined;
+  readonly attachmentPorts?:
+    | {
+        pick(workspaceRoot: string): Promise<readonly ComposerAttachmentView[]>;
+      }
+    | undefined;
+  readonly automationPorts?:
+    | {
+        save(input: AutomationMutationInput & { readonly id: string }): void;
+        setStatus(id: string, status: 'ACTIVE' | 'PAUSED'): void;
+        migrate(id: string): void;
+        run(id: string, test: boolean): Promise<void>;
+      }
+    | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -510,7 +531,6 @@ export function createEventTranslator(store: Store, now: () => number) {
        */
       case 'projects-changed':
         return [{ type: 'projects-changed' }];
-
       default:
         // 其余事件在当前 UI 上没有落点。适配层已经落库并记过日志，这里不再重复
         return [];
@@ -575,6 +595,46 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
   const cards = (ports: ProjectPorts): readonly ProjectCardView[] =>
     projects.list().map((row) => toCard(row, ports));
+
+  const automationsData = (): AutomationsDataView => {
+    const data = options.pageData;
+    if (!data) return { automations: [], runs: {}, deviceName: '这台电脑' };
+    const runs: Record<string, AutomationsDataView['runs'][string]> = {};
+    const automations = data.listAutomations().map((a) => {
+      const id = String(a.id ?? '');
+      runs[id] = data.listRuns(id).map(toRunView);
+      const schedule = String(a.schedule ?? '');
+      const timezone = String(a.timezone ?? '');
+      const status = String(a.status ?? 'ACTIVE');
+      const nextFireAt = status === 'ACTIVE' ? safeNextFire(schedule, now(), timezone) : undefined;
+      return {
+        id,
+        name: String(a.name ?? ''),
+        status,
+        schedule,
+        timezone,
+        prompt: String(a.prompt ?? ''),
+        workspaces: Array.isArray(a.workspaces)
+          ? a.workspaces.filter((path): path is string => typeof path === 'string')
+          : [],
+        misfirePolicy: (['FIRE_ONCE_ON_WAKE', 'FIRE_ALL', 'DROP'] as const).includes(
+          a.misfirePolicy as never,
+        )
+          ? (a.misfirePolicy as 'FIRE_ONCE_ON_WAKE')
+          : 'FIRE_ONCE_ON_WAKE',
+        catchupWindowHours:
+          typeof a.catchupWindowMs === 'number' ? Math.max(1, a.catchupWindowMs / 3_600_000) : 24,
+        wakeSystem: a.wakeSystem === true,
+        budgetLimit: typeof a.budgetLimit === 'number' ? a.budgetLimit : 10_000,
+        ownedByThisDevice: String(a.deviceId ?? a.device_id ?? '') === data.deviceId,
+        ...(typeof a.consecutiveFailures === 'number'
+          ? { consecutiveFailures: a.consecutiveFailures }
+          : {}),
+        ...(nextFireAt !== undefined ? { nextFireAt } : {}),
+      };
+    });
+    return { automations, runs, deviceName: data.deviceName };
+  };
 
   /** 空间的根目录。没有 root 的空间返回 undefined —— 它做不了任何需要 cwd 的事 */
   const rootOf = (id: string): string | undefined => projects.get(id)?.roots[0];
@@ -719,12 +779,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
   return {
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
-    async send(input: SendInput): Promise<{ threadId: string }> {
+    async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
       const locked = options.policyPorts?.readOnlyReason();
       if (locked) throw new Error(locked);
       const text = input.text.trim();
-      if (text === '') throw new Error('空需求');
-      const content = [{ type: 'text' as const, text }];
+      const references: UserInput[] = (input.references ?? [])
+        .filter((reference) =>
+          reference.type === 'text'
+            ? reference.text.trim() !== ''
+            : reference.path.trim() !== '' &&
+              reference.name.trim() !== '' &&
+              ['mention', 'skill', 'localImage'].includes(reference.type),
+        )
+        .map((reference) =>
+          reference.type === 'text'
+            ? { type: 'text' as const, text: reference.text }
+            : reference.type === 'localImage'
+              ? { type: 'localImage' as const, path: reference.path }
+              : { type: reference.type, name: reference.name, path: reference.path },
+        );
+      if (text === '' && references.length === 0) throw new Error('空需求');
+      const content: UserInput[] = [
+        ...(text ? [{ type: 'text' as const, text }] : []),
+        ...references,
+      ];
 
       /*
        * 工作空间 id → cwd。**在这里翻译**，渲染层只拿 id（见 `SendInput.workspaceId`）。
@@ -757,12 +835,13 @@ export function createRendererActions(options: RendererBridgeOptions) {
         if (input.modelId !== undefined) {
           adapter.setTaskSettings(input.threadId, { model: input.modelId });
         }
-        await adapter.sendMessage({
+        const sent = await adapter.sendMessage({
           threadId: input.threadId,
           input: content,
           ...(overrides ? { overrides } : {}),
+          ...(input.steer ? { steer: true } : {}),
         });
-        return { threadId: input.threadId };
+        return { threadId: input.threadId, ...(sent.queued ? { queued: true } : {}) };
       }
       const created = await adapter.createTask({
         input: content,
@@ -955,6 +1034,128 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
     },
 
+    async searchTasks(input: { readonly query: string }): Promise<readonly TaskSearchHitView[]> {
+      const hits = await adapter.searchTasks(input.query);
+      return hits.flatMap((hit) => {
+        const row = store.threads.get(hit.threadId);
+        return row ? [{ task: toTaskRow(row, now()), snippet: hit.snippet }] : [];
+      });
+    },
+
+    async renameTask(input: {
+      readonly threadId: string;
+      readonly name: string;
+    }): Promise<boolean> {
+      return adapter.setTaskName(input.threadId, input.name.trim());
+    },
+
+    async forkTask(input: {
+      readonly threadId: string;
+      readonly lastTurnId?: string | undefined;
+    }): Promise<{ readonly threadId: string }> {
+      return { threadId: await adapter.forkTask(input.threadId, input.lastTurnId) };
+    },
+
+    async archiveTask(input: { readonly threadId: string }): Promise<void> {
+      await adapter.archiveTask(input.threadId);
+    },
+
+    async deleteTask(input: { readonly threadId: string }): Promise<void> {
+      await adapter.deleteTask(input.threadId);
+    },
+
+    async listQueuedInputs(input: {
+      readonly threadId: string;
+    }): Promise<readonly QueuedInputView[]> {
+      const queued = await adapter.listQueuedInputs(input.threadId);
+      return queued.map((entry) => ({
+        id: entry.id,
+        text:
+          entry.input
+            .filter((part): part is Extract<UserInput, { type: 'text' }> => part.type === 'text')
+            .map((part) => part.text)
+            .join('\n') || '结构化引用',
+      }));
+    },
+
+    async removeQueuedInput(input: {
+      readonly threadId: string;
+      readonly id: string;
+    }): Promise<boolean> {
+      return adapter.removeQueuedInput(input.threadId, input.id);
+    },
+
+    async getComposerContext(input: {
+      readonly workspaceId?: string | undefined;
+    }): Promise<ComposerContextView> {
+      const mentions: ComposerContextView['mentions'][number][] = [];
+      const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      const ports = options.projectPorts;
+      if (root && ports) {
+        const realRoot = await realRootOf(ports, root);
+        if (realRoot) {
+          for (const entry of await ports.readDir(realRoot)) {
+            if (entry.isDirectory) continue;
+            mentions.push({
+              id: `file:${entry.name}`,
+              label: entry.name,
+              category: 'file',
+              insertAs: 'mention',
+              path: `${realRoot.replace(/\/$/, '')}/${entry.name}`,
+            });
+          }
+        }
+      }
+      for (const artifact of options.pageData?.listArtifacts() ?? []) {
+        if (artifact.fileState !== 'PRESENT') continue;
+        mentions.push({
+          id: `library:${artifact.id}`,
+          label: artifact.title || basename(artifact.path),
+          category: 'library',
+          insertAs: 'mention',
+          path: artifact.path,
+        });
+      }
+      const catalog = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
+      for (const skill of catalog.skills.filter((entry) => entry.installed)) {
+        const base =
+          skill.source === 'official'
+            ? options.catalogPorts?.pluginsDir
+            : options.catalogPorts?.userRoot;
+        if (!base) continue;
+        const path =
+          skill.source === 'official'
+            ? `${base.replace(/\/$/, '')}/skills/${skill.id}`
+            : `${base.replace(/\/$/, '')}/skills/${skill.id}`;
+        mentions.push({
+          id: `skill:${skill.id}`,
+          label: skill.name,
+          category: 'skill',
+          insertAs: 'skill',
+          path,
+        });
+      }
+      return {
+        mentions,
+        commands: [
+          { id: 'new-task', label: '新建任务', kind: 'local' },
+          { id: 'clear', label: '清空输入', kind: 'local' },
+          ...mentions
+            .filter((entry) => entry.category === 'skill')
+            .map((entry) => ({ id: entry.id, label: entry.label, kind: 'skill' as const })),
+        ],
+      };
+    },
+
+    async pickAttachments(input: {
+      readonly workspaceId?: string | undefined;
+    }): Promise<readonly ComposerAttachmentView[]> {
+      const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      if (!root) throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');
+      if (!options.attachmentPorts) throw new Error('这个构建没有接本地附件选择器。');
+      return options.attachmentPorts.pick(root);
+    },
+
     /** 当前任务产物：按 path 折到最新版本，只展示仍存在的文件。 */
     async getTaskResults(input: { readonly threadId: string }): Promise<TaskResultsView> {
       const artifacts = options.pageData?.listArtifacts() ?? [];
@@ -989,6 +1190,42 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!artifact) throw new Error('这个产物已经不存在。');
       if (!options.projectPorts) throw new Error(NO_PORTS);
       await options.projectPorts.openFolder(artifact.path);
+    },
+
+    async readResultPreview(input: { readonly artifactId: string }): Promise<FilePreviewView> {
+      const artifact = (options.pageData?.listArtifacts() ?? []).find(
+        (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
+      );
+      if (!artifact || !options.projectPorts) {
+        return { name: '产物', kind: 'unsupported', message: '这个产物已经不存在。' };
+      }
+      const bytes = await options.projectPorts.readBinaryFile(artifact.path);
+      return bytes
+        ? previewFromBytes(artifact.path, artifact.title || basename(artifact.path), bytes)
+        : { name: artifact.title, kind: 'unsupported', message: '文件现在读不到。' };
+    },
+
+    async readProjectFilePreview(input: {
+      readonly projectId: string;
+      readonly path: string;
+    }): Promise<FilePreviewView> {
+      const ports = options.projectPorts;
+      const root = rootOf(input.projectId);
+      if (!ports || !root)
+        return { name: basename(input.path), kind: 'unsupported', message: NO_PORTS };
+      const realRoot = await realRootOf(ports, root);
+      const real = await safeRealpath(ports, input.path);
+      if (!realRoot || !real || !isUnderRoot(realRoot, real, ports.home)) {
+        return {
+          name: basename(input.path),
+          kind: 'unsupported',
+          message: '这个文件不在项目目录内。',
+        };
+      }
+      const bytes = await ports.readBinaryFile(real);
+      return bytes
+        ? previewFromBytes(real, basename(real), bytes)
+        : { name: basename(real), kind: 'unsupported', message: '文件现在读不到。' };
     },
 
     /**
@@ -1037,34 +1274,56 @@ export function createRendererActions(options: RendererBridgeOptions) {
      * 只列启用的话，"我的定时任务怎么不跑了"没有任何入口。
      */
     async getAutomations(): Promise<AutomationsDataView> {
-      const data = options.pageData;
-      if (!data) return Promise.resolve({ automations: [], runs: {}, deviceName: '这台电脑' });
+      return Promise.resolve(automationsData());
+    },
 
-      const raw = data.listAutomations();
-      const runs: Record<string, AutomationsDataView['runs'][string]> = {};
-      const automations = raw.map((a) => {
-        const id = String(a.id ?? '');
-        runs[id] = data.listRuns(id).map(toRunView);
-        const schedule = String(a.schedule ?? '');
-        const timezone = String(a.timezone ?? '');
-        const status = String(a.status ?? 'ACTIVE');
-        const nextFireAt =
-          status === 'ACTIVE' ? safeNextFire(schedule, now(), timezone) : undefined;
+    async saveAutomation(input: AutomationMutationInput): Promise<AutomationMutationResult> {
+      if (!options.automationPorts) {
+        return { ok: false, refused: '这个构建没有接自动化服务。', data: automationsData() };
+      }
+      const name = input.name.trim();
+      const prompt = input.prompt.trim();
+      if (!name || !prompt || !input.schedule.trim() || input.budgetLimit < 1000) {
         return {
-          id,
-          name: String(a.name ?? ''),
-          status,
-          schedule,
-          timezone,
-          // Q15：别的设备建的只读 + 可「迁移到本机」，判据是 device_id
-          ownedByThisDevice: String(a.deviceId ?? a.device_id ?? '') === data.deviceId,
-          ...(typeof a.consecutiveFailures === 'number'
-            ? { consecutiveFailures: a.consecutiveFailures }
-            : {}),
-          ...(nextFireAt !== undefined ? { nextFireAt } : {}),
+          ok: false,
+          refused: '名称、任务描述、执行时间和至少 1000 tokens 的预算都要填写。',
+          data: automationsData(),
         };
-      });
-      return Promise.resolve({ automations, runs, deviceName: data.deviceName });
+      }
+      const id = input.id ?? `auto-${now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      options.automationPorts.save({ ...input, id, name, prompt });
+      if (input.testRun) await options.automationPorts.run(id, true);
+      return { ok: true, data: automationsData() };
+    },
+
+    async setAutomationStatus(input: {
+      readonly id: string;
+      readonly status: 'ACTIVE' | 'PAUSED';
+    }): Promise<AutomationMutationResult> {
+      if (!options.automationPorts) {
+        return { ok: false, refused: '这个构建没有接自动化服务。', data: automationsData() };
+      }
+      options.automationPorts.setStatus(input.id, input.status);
+      return { ok: true, data: automationsData() };
+    },
+
+    async migrateAutomation(input: { readonly id: string }): Promise<AutomationMutationResult> {
+      if (!options.automationPorts) {
+        return { ok: false, refused: '这个构建没有接自动化服务。', data: automationsData() };
+      }
+      options.automationPorts.migrate(input.id);
+      return { ok: true, data: automationsData() };
+    },
+
+    async runAutomation(input: {
+      readonly id: string;
+      readonly test?: boolean | undefined;
+    }): Promise<AutomationMutationResult> {
+      if (!options.automationPorts) {
+        return { ok: false, refused: '这个构建没有接自动化服务。', data: automationsData() };
+      }
+      await options.automationPorts.run(input.id, input.test === true);
+      return { ok: true, data: automationsData() };
     },
 
     /**
@@ -1603,6 +1862,84 @@ function extensionOf(path: string): string | undefined {
   const name = basename(path);
   const cut = name.lastIndexOf('.');
   return cut > 0 ? name.slice(cut + 1).toLowerCase() : undefined;
+}
+
+const PREVIEW_TEXT_BYTES = 1_000_000;
+
+/** 本机文件预览：只读受信路径，HTML 由渲染层放进无脚本 sandbox。 */
+export function previewFromBytes(path: string, name: string, bytes: Uint8Array): FilePreviewView {
+  const extension = extensionOf(path) ?? '';
+  const slice = bytes.subarray(0, PREVIEW_TEXT_BYTES);
+  const truncated = bytes.byteLength > slice.byteLength;
+  if (extension === 'html' || extension === 'htm') {
+    return {
+      name,
+      kind: 'html',
+      content: new TextDecoder('utf-8').decode(slice),
+      ...(truncated ? { truncated: true } : {}),
+    };
+  }
+  const imageMime: Readonly<Record<string, string | undefined>> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+  };
+  const mime = imageMime[extension];
+  if (mime) {
+    return {
+      name,
+      kind: 'image',
+      content: `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`,
+    };
+  }
+  if (extension === 'pdf') {
+    return {
+      name,
+      kind: 'pdf',
+      content: `data:application/pdf;base64,${Buffer.from(bytes).toString('base64')}`,
+    };
+  }
+  if (
+    [
+      'txt',
+      'md',
+      'markdown',
+      'json',
+      'csv',
+      'tsv',
+      'js',
+      'jsx',
+      'ts',
+      'tsx',
+      'css',
+      'scss',
+      'py',
+      'rs',
+      'go',
+      'java',
+      'xml',
+      'yaml',
+      'yml',
+      'toml',
+      'sql',
+      'sh',
+    ].includes(extension)
+  ) {
+    return {
+      name,
+      kind: 'text',
+      content: new TextDecoder('utf-8').decode(slice),
+      ...(truncated ? { truncated: true } : {}),
+    };
+  }
+  return {
+    name,
+    kind: 'unsupported',
+    message: '这种文件暂不支持内嵌预览，可以用系统应用打开。',
+  };
 }
 
 /**

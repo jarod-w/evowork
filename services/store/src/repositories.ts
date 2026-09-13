@@ -26,6 +26,7 @@ export interface AutomationRow {
   readonly status: 'ACTIVE' | 'PAUSED';
   readonly misfirePolicy: 'FIRE_ONCE_ON_WAKE' | 'FIRE_ALL' | 'DROP';
   readonly catchupWindowMs: number;
+  readonly wakeSystem: boolean;
   readonly consecutiveFailures: number;
   readonly lastFireTime?: number | undefined;
   readonly validFrom?: number | undefined;
@@ -44,6 +45,7 @@ interface RawAutomation {
   status: string;
   misfire_policy: string;
   catchup_window_ms: number;
+  wake_system: number;
   consecutive_failures: number;
   last_fire_time: number | null;
   valid_from: number | null;
@@ -63,6 +65,7 @@ function toAutomation(raw: RawAutomation): AutomationRow {
     status: raw.status === 'PAUSED' ? 'PAUSED' : 'ACTIVE',
     misfirePolicy: raw.misfire_policy as AutomationRow['misfirePolicy'],
     catchupWindowMs: raw.catchup_window_ms,
+    wakeSystem: raw.wake_system === 1,
     consecutiveFailures: raw.consecutive_failures,
     ...(raw.last_fire_time === null ? {} : { lastFireTime: raw.last_fire_time }),
     ...(raw.valid_from === null ? {} : { validFrom: raw.valid_from }),
@@ -88,11 +91,62 @@ export function createAutomationRepo(db: SqliteLike) {
      * 暂停与连败自动暂停的那些 —— 恰恰是它们需要用户去处理（Q8：连败 3 次自动 PAUSE）。
      * 隐藏它们等于让"我的定时任务怎么不跑了"没有任何入口。
      */
-    listAll(deviceId: string): readonly AutomationRow[] {
+    listAll(_deviceId?: string): readonly AutomationRow[] {
       const rows = db
-        .prepare('SELECT * FROM automation WHERE device_id = ? ORDER BY created_at DESC')
-        .all(deviceId) as RawAutomation[];
+        .prepare('SELECT * FROM automation ORDER BY created_at DESC')
+        .all() as RawAutomation[];
       return rows.map(toAutomation);
+    },
+
+    save(
+      automation: Omit<AutomationRow, 'consecutiveFailures' | 'lastFireTime'> & {
+        readonly consecutiveFailures?: number;
+        readonly lastFireTime?: number | undefined;
+      },
+      now = Date.now(),
+    ): void {
+      db.prepare(
+        `INSERT INTO automation
+           (id, name, device_id, prompt, workspaces, schedule, timezone, status,
+            consecutive_failures, misfire_policy, catchup_window_ms, wake_system,
+            budget_limit, last_fire_time, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           device_id = excluded.device_id,
+           prompt = excluded.prompt,
+           workspaces = excluded.workspaces,
+           schedule = excluded.schedule,
+           timezone = excluded.timezone,
+           status = excluded.status,
+           misfire_policy = excluded.misfire_policy,
+           catchup_window_ms = excluded.catchup_window_ms,
+           wake_system = excluded.wake_system,
+           budget_limit = excluded.budget_limit,
+           updated_at = excluded.updated_at`,
+      ).run(
+        automation.id,
+        automation.name,
+        automation.deviceId,
+        automation.prompt,
+        JSON.stringify(automation.workspaces),
+        automation.schedule,
+        automation.timezone,
+        automation.status,
+        automation.consecutiveFailures ?? 0,
+        automation.misfirePolicy,
+        automation.catchupWindowMs,
+        automation.wakeSystem ? 1 : 0,
+        automation.budgetLimit,
+        automation.lastFireTime ?? null,
+        now,
+        now,
+      );
+    },
+
+    remove(id: string): void {
+      db.prepare('DELETE FROM automation_run WHERE automation_id = ?').run(id);
+      db.prepare('DELETE FROM automation WHERE id = ?').run(id);
     },
 
     listActive(deviceId: string): readonly AutomationRow[] {

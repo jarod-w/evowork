@@ -109,6 +109,8 @@ export interface ComposerProps {
   readonly mentionCandidates?: readonly MentionCandidate[] | undefined;
   readonly slashCommands?: readonly SlashCommand[] | undefined;
   readonly onRunLocalCommand?: ((id: string) => void) | undefined;
+  readonly onInsertReference?: ((candidate: MentionCandidate) => void) | undefined;
+  readonly onRunSkillCommand?: ((id: string) => void) | undefined;
 
   readonly workspaces?: readonly SelectOption[] | undefined;
   readonly workspaceId?: string | undefined;
@@ -244,7 +246,10 @@ export function Composer(props: ComposerProps) {
   }, [mode]);
 
   const parsing = parsingCount(attachments);
-  const empty = props.value.trim() === '' && attachments.length === 0;
+  // 解析失败的附件还没有可发送内容；用户选择「以原始文件引用」后才会变成 ready。
+  // 否则按钮看似可用，App 层却会因为没有文本或结构化引用而什么都不做。
+  const empty =
+    props.value.trim() === '' && !attachments.some((attachment) => attachment.state === 'ready');
   const blockedByModel = props.modelUnavailable !== undefined;
   const sendDisabled =
     empty || parsing > 0 || blockedByModel || props.sendLockedReason !== undefined;
@@ -658,6 +663,8 @@ export function Composer(props: ComposerProps) {
       props.onRunLocalCommand?.(chosen.id);
       return;
     }
+    if ('category' in chosen) props.onInsertReference?.(chosen);
+    else props.onRunSkillCommand?.(chosen.id);
     insertCompletion(chosen.label);
   }
 }

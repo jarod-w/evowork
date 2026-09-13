@@ -280,6 +280,28 @@ describe('事件接线', () => {
     await waitFor(() => expect(screen.getByText('季度汇报')).toBeTruthy());
   });
 
+  it('后台任务进入运行态不会把当前任务的 Composer 误切成中断按钮', async () => {
+    const current = {
+      id: 'current',
+      title: '当前任务',
+      status: 'idle' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [current] }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('当前任务'));
+    await waitFor(() => expect(screen.getByRole('button', { name: '发送' })).toBeTruthy());
+
+    emit.ui?.({ type: 'task-updated', taskId: 'background', status: 'running' });
+
+    expect(screen.queryByRole('button', { name: '中断' })).toBeNull();
+    expect(screen.getByRole('button', { name: '发送' })).toBeTruthy();
+  });
+
   it('可见页变化往主进程报（04 §3.4 第②步）', async () => {
     const { bridge, emit } = fakeBridge();
     render(<App bridge={bridge} />);
@@ -1099,6 +1121,7 @@ describe('项目页接线（Task 13）', () => {
         readDir: async () => [],
         openFolder: async () => {},
         readTextFile: async () => undefined,
+        readBinaryFile: async () => undefined,
         writeTextFile: async () => {},
       },
     });

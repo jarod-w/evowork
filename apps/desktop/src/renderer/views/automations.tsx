@@ -550,6 +550,12 @@ export interface AutomationListRow {
   readonly ownedByThisDevice: boolean;
   readonly consecutiveFailures?: number | undefined;
   readonly nextFireAt?: number | undefined;
+  readonly prompt?: string | undefined;
+  readonly workspaces?: readonly string[] | undefined;
+  readonly misfirePolicy?: MisfirePolicy | undefined;
+  readonly catchupWindowHours?: number | undefined;
+  readonly wakeSystem?: boolean | undefined;
+  readonly budgetLimit?: number | undefined;
 }
 
 /** 状态 → 徽标。**「已暂停」与「自动暂停」是两件事**，不能合并。 */
@@ -566,29 +572,61 @@ export function describeAutomationStatus(row: AutomationListRow): {
   return { badge: 'neutral', text: row.status };
 }
 
-/**
- * 自动化页：左边列表、右边选中那条的执行历史。
- *
- * 表单（`AutomationForm`）不在这里 —— 它是"新建/编辑"的流程，由列表页的
- * 「新建」进入。先把**看得见现有任务**这件事接通：07 §5 的执行历史
- * 是用户唯一能回答"它到底跑没跑"的地方，而在此之前这一页根本打不开。
- */
+/** 列表、创建/编辑、试跑、迁移和执行历史的完整闭环。 */
 export function AutomationsPage(props: {
   readonly rows: readonly AutomationListRow[];
   readonly runs: Readonly<Record<string, readonly RunRow[]>>;
   readonly deviceName: string;
+  readonly workspaceOptions: readonly { readonly id: string; readonly label: string }[];
   readonly onOpenTask?: ((threadId: string) => void) | undefined;
+  readonly onSave?: ((draft: AutomationDraft, id?: string) => Promise<boolean>) | undefined;
+  readonly onStatus?: ((id: string, status: 'ACTIVE' | 'PAUSED') => Promise<void>) | undefined;
+  readonly onMigrate?: ((id: string) => Promise<void>) | undefined;
+  readonly onRun?: ((id: string, test: boolean) => Promise<void>) | undefined;
 }) {
   const [selectedId, setSelectedId] = useState<string | undefined>(props.rows[0]?.id);
+  const [editingId, setEditingId] = useState<string | null | undefined>(undefined);
+  const [draft, setDraft] = useState<AutomationDraft>(() => emptyAutomationDraft());
   const selected = props.rows.find((r) => r.id === selectedId) ?? props.rows[0];
 
-  if (props.rows.length === 0) {
+  const beginCreate = (): void => {
+    setDraft(emptyAutomationDraft(props.workspaceOptions[0]?.id));
+    setEditingId(null);
+  };
+  const beginEdit = (row: AutomationListRow): void => {
+    setDraft({
+      name: row.name,
+      prompt: row.prompt ?? '',
+      workspaces: row.workspaces ?? [],
+      schedule: row.schedule,
+      timezone: row.timezone,
+      misfirePolicy: row.misfirePolicy ?? 'FIRE_ONCE_ON_WAKE',
+      catchupWindowHours: row.catchupWindowHours ?? 24,
+      wakeSystem: row.wakeSystem ?? false,
+      budgetLimit: row.budgetLimit ?? 10_000,
+      testRun: false,
+    });
+    setEditingId(row.id);
+  };
+
+  if (editingId !== undefined) {
     return (
-      <div className="ew-page">
-        <EmptyState
-          title="还没有定时任务"
-          hint={`定时任务绑定创建它的这台电脑（${props.deviceName}），关机期间不会执行。`}
-        />
+      <div className="ew-page ew-automations-page">
+        <div className="ew-content-column">
+          <PanelHeader title={editingId === null ? '新建自动化' : '编辑自动化'} />
+          <AutomationForm
+            draft={draft}
+            onChange={setDraft}
+            deviceName={props.deviceName}
+            workspaceOptions={props.workspaceOptions}
+            onCancel={() => setEditingId(undefined)}
+            onSubmit={() => {
+              void props.onSave?.(draft, editingId ?? undefined).then((ok) => {
+                if (ok) setEditingId(undefined);
+              });
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -596,6 +634,20 @@ export function AutomationsPage(props: {
   return (
     <div className="ew-page ew-automations-page">
       <div className="ew-content-column">
+        <PanelHeader
+          title="自动化"
+          actions={
+            <PillButton variant="accent" onClick={beginCreate}>
+              新建自动化
+            </PillButton>
+          }
+        />
+        {props.rows.length === 0 ? (
+          <EmptyState
+            title="还没有定时任务"
+            hint={`定时任务绑定创建它的这台电脑（${props.deviceName}），关机期间不会执行。`}
+          />
+        ) : null}
         <ul className="ew-automation-list">
           {props.rows.map((row) => {
             const status = describeAutomationStatus(row);
@@ -637,15 +689,60 @@ export function AutomationsPage(props: {
         </ul>
 
         {selected ? (
-          <AutomationHistory
-            name={selected.name}
-            rows={props.runs[selected.id] ?? []}
-            timezone={selected.timezone}
-            paused={selected.status !== 'ACTIVE'}
-            {...(props.onOpenTask ? { onOpenTask: props.onOpenTask } : {})}
-          />
+          <>
+            <div className="ew-automation-actions" aria-label="自动化操作">
+              {selected.ownedByThisDevice ? (
+                <>
+                  <PillButton onClick={() => beginEdit(selected)}>编辑</PillButton>
+                  <PillButton onClick={() => void props.onRun?.(selected.id, false)}>
+                    立即运行
+                  </PillButton>
+                  <PillButton onClick={() => void props.onRun?.(selected.id, true)}>
+                    试跑
+                  </PillButton>
+                  <PillButton
+                    onClick={() =>
+                      void props.onStatus?.(
+                        selected.id,
+                        selected.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE',
+                      )
+                    }
+                  >
+                    {selected.status === 'ACTIVE' ? '暂停' : '恢复'}
+                  </PillButton>
+                </>
+              ) : (
+                <PillButton variant="accent" onClick={() => void props.onMigrate?.(selected.id)}>
+                  迁移到本机
+                </PillButton>
+              )}
+            </div>
+            <AutomationHistory
+              name={selected.name}
+              rows={props.runs[selected.id] ?? []}
+              timezone={selected.timezone}
+              paused={selected.status !== 'ACTIVE'}
+              onResume={() => void props.onStatus?.(selected.id, 'ACTIVE')}
+              {...(props.onOpenTask ? { onOpenTask: props.onOpenTask } : {})}
+            />
+          </>
         ) : null}
       </div>
     </div>
   );
+}
+
+function emptyAutomationDraft(workspace?: string): AutomationDraft {
+  return {
+    name: '',
+    prompt: '',
+    workspaces: workspace ? [workspace] : [],
+    schedule: '0 9 * * 1-5',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai',
+    misfirePolicy: 'FIRE_ONCE_ON_WAKE',
+    catchupWindowHours: 24,
+    wakeSystem: false,
+    budgetLimit: 10_000,
+    testRun: true,
+  };
 }

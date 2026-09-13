@@ -9,6 +9,7 @@ export interface FileTreeProps {
   readonly childrenOf?: Readonly<Record<string, readonly DirEntryView[]>> | undefined;
   readonly onExpand?: ((path: string) => void) | undefined;
   readonly onRefresh?: (() => void) | undefined;
+  readonly onFileOpen?: ((entry: DirEntryView) => void) | undefined;
   readonly ariaLabel?: string | undefined;
 }
 
@@ -23,6 +24,7 @@ export function FileTree({
   childrenOf = {},
   onExpand,
   onRefresh,
+  onFileOpen,
   ariaLabel = '项目文件',
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -61,6 +63,7 @@ export function FileTree({
             expanded={expanded}
             childrenOf={childrenOf}
             onToggle={toggle}
+            onFileOpen={onFileOpen}
           />
         ))}
       </div>
@@ -74,12 +77,14 @@ function FileTreeNode({
   expanded,
   childrenOf,
   onToggle,
+  onFileOpen,
 }: {
   readonly entry: DirEntryView;
   readonly depth: number;
   readonly expanded: ReadonlySet<string>;
   readonly childrenOf: Readonly<Record<string, readonly DirEntryView[]>>;
   readonly onToggle: (entry: DirEntryView) => void;
+  readonly onFileOpen?: ((entry: DirEntryView) => void) | undefined;
 }) {
   const isOpen = expanded.has(entry.path);
   return (
@@ -89,7 +94,7 @@ function FileTreeNode({
         depth={depth}
         muted={entry.noisy}
         icon={entry.isDirectory ? (isOpen ? '📂' : '📁') : '📄'}
-        onClick={() => onToggle(entry)}
+        onClick={() => (entry.isDirectory ? onToggle(entry) : onFileOpen?.(entry))}
       />
       {isOpen
         ? (childrenOf[entry.path] ?? []).map((child) => (
@@ -100,6 +105,7 @@ function FileTreeNode({
               expanded={expanded}
               childrenOf={childrenOf}
               onToggle={onToggle}
+              onFileOpen={onFileOpen}
             />
           ))
         : null}

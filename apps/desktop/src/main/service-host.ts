@@ -33,7 +33,7 @@ import {
 } from 'node:fs';
 import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
-import { join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 
 import {
   createAdapter,
@@ -50,6 +50,7 @@ import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
  * 否则用户会看到"上限 3"而第 2 个任务就开始排队。
  */
 import { applyUserPreference, computeConcurrencyLimit } from '@evowork/policy';
+import { createIngest, type IngestOutcome } from '@evowork/ingest';
 import { BRAND } from '@evowork/tokens';
 import { createAuditRepo, openStore, readMeta, writeMeta, type Store } from '@evowork/store';
 
@@ -63,6 +64,9 @@ import type {
   PreferencesInput,
   PreferencesView,
   SaveProviderKeyInput,
+  ComposerAttachmentView,
+  ComposerReferenceView,
+  AutomationMutationInput,
 } from '../shared/ipc.js';
 import { createAccountSession, originsFromEnv } from './account.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
@@ -302,6 +306,8 @@ export interface ServiceHostOptions {
    * 而干净机器上内核一个 project 都没有。
    */
   readonly pickDirectory?: () => Promise<string | undefined>;
+  /** Composer 的本地文件选择框。返回空数组表示用户取消。 */
+  readonly pickFiles?: () => Promise<readonly string[]>;
   /** 在访达 / 资源管理器里打开一个目录。由 M9 入口注入 `shell.openPath` */
   readonly openPath?: ((path: string) => Promise<void>) | undefined;
   /** 系统浏览器（Q33=A 的 PKCE 登录）。没给时登录动作会如实失败 */
@@ -332,6 +338,66 @@ export interface ServiceHost {
   stop(): Promise<void>;
   /** 对账定时器（09 §4.1：启动时 + 每 10 分钟一次） */
   readonly reconcileIntervalMs: number;
+}
+
+function attachmentFromOutcome(
+  outcome: IngestOutcome,
+  id: string,
+  originalPath: string,
+): ComposerAttachmentView {
+  const kind =
+    outcome.kind === 'image'
+      ? ('image' as const)
+      : outcome.kind === 'code'
+        ? ('code' as const)
+        : outcome.kind === 'zip'
+          ? ('archive' as const)
+          : ('document' as const);
+  if (outcome.status === 'parsed' || outcome.status === 'passthrough') {
+    const references: ComposerReferenceView[] = outcome.injection.map((item) =>
+      item.type === 'text'
+        ? { type: 'text', text: item.text }
+        : item.type === 'localImage'
+          ? { type: 'localImage', name: outcome.fileName, path: item.path }
+          : { type: 'mention', name: item.name, path: item.path },
+    );
+    return {
+      id,
+      name: outcome.fileName,
+      kind,
+      sizeLabel: '已保存到项目',
+      state: 'ready',
+      references,
+    };
+  }
+  if (outcome.status === 'runtime-missing' || outcome.status === 'unparsed') {
+    const original =
+      outcome.status === 'runtime-missing'
+        ? originalPath
+        : join(
+            outcome.uploadDir,
+            `original${extname(outcome.fileName).toLocaleLowerCase() || '.bin'}`,
+          );
+    return {
+      id,
+      name: outcome.fileName,
+      kind,
+      sizeLabel: outcome.status === 'runtime-missing' ? '可以原文件引用' : '已保存到项目',
+      state: 'failed',
+      error: outcome.message,
+      references: [],
+      rawReference: { type: 'mention', name: outcome.fileName, path: original },
+    };
+  }
+  return {
+    id,
+    name: outcome.fileName,
+    kind,
+    sizeLabel: '未添加',
+    state: 'failed',
+    error: outcome.rejection.message,
+    references: [],
+  };
 }
 
 /** IPC 频道名。渲染进程只认这几个，不认协议方法名（K2）。 */
@@ -539,6 +605,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 适配层的事件是**任务视角**，渲染层要的是**组件视角**，翻译在 renderer-bridge 里
     onUiEvent: (event) => {
       for (const mapped of translate(event)) options.emitToRenderer(IPC.uiEvent, mapped);
+      if (event.type === 'turn-completed') {
+        void adapter.startNextQueued(event.threadId).catch((error: unknown) => {
+          logger.warn('desktop.queue.start_failed', {
+            errorClass: error instanceof Error ? error.name : 'UnknownError',
+          });
+        });
+      }
     },
     onNotice: (notice: SessionNotice) => options.emitToRenderer(IPC.notice, notice),
     // 降级一律显式（09 §3.3）：推给 UI，让它在设置里列出"当前不可用的能力"
@@ -750,6 +823,95 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     return readPreferences();
   };
 
+  let uploadSequence = 0;
+  let attachmentSequence = 0;
+  const attachmentPorts = {
+    pick: async (workspaceRoot: string): Promise<readonly ComposerAttachmentView[]> => {
+      const paths = (await options.pickFiles?.()) ?? [];
+      if (paths.length === 0) return [];
+      const ingest = createIngest({
+        probe: services.probe,
+        store: {
+          createUploadDir: (slug, at) => {
+            uploadSequence += 1;
+            const pad = (value: number): string => String(value).padStart(2, '0');
+            const stamp =
+              `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-` +
+              `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
+            const dir = join(workspaceRoot, 'uploads', `${stamp}-${slug}-${uploadSequence}`);
+            mkdirSync(dir, { recursive: true });
+            return `${dir}/`;
+          },
+          writeFile: (dir, relativePath, bytes) => writeFileSync(join(dir, relativePath), bytes),
+          writeText: (dir, relativePath, text) =>
+            writeFileSync(join(dir, relativePath), text, 'utf8'),
+        },
+      });
+      const attachments: ComposerAttachmentView[] = [];
+      for (const path of paths) {
+        let bytes: Uint8Array;
+        try {
+          bytes = readFileSync(path);
+        } catch {
+          attachmentSequence += 1;
+          attachments.push({
+            id: `attachment-${attachmentSequence}`,
+            name: basename(path),
+            kind: 'document',
+            sizeLabel: '未添加',
+            state: 'failed',
+            error: '文件现在读不到，可能已被移动或没有读取权限。',
+            references: [],
+          });
+          continue;
+        }
+        const outcomes = await ingest.ingest([{ fileName: basename(path), bytes }]);
+        for (const outcome of outcomes) {
+          attachmentSequence += 1;
+          attachments.push(
+            attachmentFromOutcome(outcome, `attachment-${attachmentSequence}`, path),
+          );
+        }
+      }
+      return attachments;
+    },
+  };
+
+  const automationPorts = {
+    save: (input: AutomationMutationInput & { readonly id: string }): void => {
+      const existing = services.automations.get(input.id);
+      services.automations.save({
+        id: input.id,
+        name: input.name,
+        prompt: input.prompt,
+        deviceId: store.deviceId,
+        schedule: input.schedule,
+        timezone: input.timezone,
+        // 编辑暂停中的规则不能顺带恢复；状态只由明确的暂停/恢复动作修改。
+        status: existing?.status ?? 'ACTIVE',
+        misfirePolicy: input.misfirePolicy,
+        catchupWindowMs: input.catchupWindowHours * 3_600_000,
+        wakeSystem: input.wakeSystem,
+        budgetLimit: input.budgetLimit,
+        workspaces: input.workspaces,
+      });
+    },
+    setStatus: (id: string, status: 'ACTIVE' | 'PAUSED'): void => {
+      services.automations.updateAutomation(id, {
+        status,
+        ...(status === 'ACTIVE' ? { consecutiveFailures: 0 } : {}),
+      });
+    },
+    migrate: (id: string): void => {
+      services.automations.updateAutomation(id, { deviceId: store.deviceId });
+    },
+    run: async (id: string, test: boolean): Promise<void> => {
+      const automation = services.automations.get(id);
+      if (!automation) throw new Error('找不到这条自动化。');
+      await services.scheduler.fire(automation, Date.now(), test ? 'MANUAL_TEST' : 'MANUAL');
+    },
+  };
+
   const actions = createRendererActions({
     adapter,
     store,
@@ -763,6 +925,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 办公扩展的探测与安装（08 §4）。本机服务里已经有一份带缓存的探针，
     // 安装成功后由它自己 invalidate —— 这里只是把入口交给渲染层
     officeRuntime: services.officeRuntime,
+    attachmentPorts,
+    automationPorts,
     /*
      * 「项目」页的 I/O。真正读盘的只有这几行 —— 判定全在 `@evowork/projects` 里，
      * 所以"越界了怎么办"是可单测的，而不是埋在这段 fs 调用中间。
@@ -804,6 +968,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       readTextFile: async (path) => {
         try {
           return await readFile(path, 'utf8');
+        } catch {
+          return undefined;
+        }
+      },
+      readBinaryFile: async (path) => {
+        try {
+          return await readFile(path);
         } catch {
           return undefined;
         }

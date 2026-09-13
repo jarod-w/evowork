@@ -123,6 +123,7 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
     readDir: async () => [{ name: 'src', isDirectory: true }],
     openFolder: async () => {},
     readTextFile: async () => undefined,
+    readBinaryFile: async () => undefined,
     writeTextFile: async () => {},
     ...overrides,
   };

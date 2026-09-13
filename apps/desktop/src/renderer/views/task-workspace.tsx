@@ -319,6 +319,17 @@ export interface TaskWorkspaceProps {
    */
   readonly composer?: React.ReactNode | undefined;
   readonly onNewTask?: (() => void) | undefined;
+  readonly onRename?: (() => void) | undefined;
+  readonly onForkTask?: (() => void) | undefined;
+  readonly onArchive?: (() => void) | undefined;
+  readonly onDelete?: (() => void) | undefined;
+  readonly artifacts?: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly artifactType: string;
+    readonly version: number;
+  }[];
+  readonly onOpenArtifact?: ((id: string) => void) | undefined;
   /**
    * 正在拉历史。为 true 时不显示「还没有消息」—— 那是刚创建的空态（04 §8），
    * 已完成任务加载中画那句等于撒谎。
@@ -439,6 +450,10 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           </>
         ) : null}
         <div className="ew-title-bar-actions">
+          {props.onRename ? <PillButton onClick={props.onRename}>重命名</PillButton> : null}
+          {props.onForkTask ? <PillButton onClick={props.onForkTask}>分叉</PillButton> : null}
+          {props.onArchive ? <PillButton onClick={props.onArchive}>归档</PillButton> : null}
+          {props.onDelete ? <PillButton onClick={props.onDelete}>删除</PillButton> : null}
           {props.hasResults || props.resultPanel ? (
             <button
               ref={resultTriggerRef}
@@ -526,6 +541,23 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                 />
               ),
             )}
+
+            {props.items.length > 0 && (props.artifacts ?? []).length > 0 ? (
+              <section className="ew-timeline-artifacts" aria-label="任务产物">
+                {(props.artifacts ?? []).map((artifact) => (
+                  <button
+                    key={artifact.id}
+                    type="button"
+                    className="ew-timeline-artifact"
+                    onClick={() => props.onOpenArtifact?.(artifact.id)}
+                  >
+                    <span className="ew-timeline-artifact-kind">{artifact.artifactType}</span>
+                    <strong>{artifact.name}</strong>
+                    <span>版本 {artifact.version} · 打开预览</span>
+                  </button>
+                ))}
+              </section>
+            ) : null}
 
             {props.status === 'interrupted' ? (
               <div className="ew-item ew-item-divider" role="separator">

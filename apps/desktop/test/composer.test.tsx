@@ -142,6 +142,18 @@ describe('附件与本机解析（03 §4.4，K6/Q3 的对外表达点）', () =>
     expect(onReferAsRaw).toHaveBeenCalledWith('a1');
   });
 
+  it('只有失败附件且没有正文时禁止发送，选择原始引用后才可发送', () => {
+    const { rerender } = render(
+      <Harness over={{ attachments: [{ ...parsing, state: 'failed', error: '读不到内容' }] }} />,
+    );
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
+
+    rerender(<Harness over={{ attachments: [{ ...parsing, state: 'ready' }] }} />);
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
   it('parsingCount 只数解析中的', () => {
     expect(
       parsingCount([parsing, { ...parsing, id: 'a2', state: 'ready' }, { ...parsing, id: 'a3' }]),

@@ -21,13 +21,19 @@ import type {
   AgentsMemoView,
   ApprovalView,
   ApplyModelAccessInput,
+  AutomationMutationInput,
+  AutomationMutationResult,
   CustomModelInput,
   AuditDataView,
   AutomationsDataView,
   CatalogDataView,
   CatalogMutationResult,
+  ComposerAttachmentView,
+  ComposerContextView,
+  ComposerReferenceView,
   DirEntryView,
   LibraryDataView,
+  FilePreviewView,
   ModelAccessMutationResult,
   ModelAccessView,
   ModelCatalogResult,
@@ -40,24 +46,28 @@ import type {
   PreferencesInput,
   PreferencesView,
   ProjectsDataView,
+  QueuedInputView,
   RendererEvent,
   RuntimeInstallResultView,
   RuntimeProgressView,
   RuntimeStatusView,
   SendInput,
   StartupInfo,
+  TaskSearchHitView,
   TaskRowView,
   TaskResultsView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
 import { Composer, type ModeId, type SelectOption } from './components/composer.js';
+import type { Attachment, MentionCandidate, SlashCommand } from './components/composer.js';
 import { Banner, EmptyState, IconButton } from './components/primitives.js';
 import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
 import { FileTree } from './components/file-tree.js';
+import { FilePreview } from './components/file-preview.js';
 import {
   shouldAutoDismiss,
   ToastStack,
@@ -89,6 +99,7 @@ import { ProjectDetailPage } from './views/project-detail.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
+import { TaskSearchPage } from './views/task-search.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
@@ -98,7 +109,7 @@ export interface EvoworkBridge {
   onPendingApprovals(handler: (approvals: readonly ApprovalView[]) => void): () => void;
   onDegrade(handler: (report: { degradation?: { userVisible: string } }) => void): () => void;
   /** 发送一条需求。没有 threadId 时由主进程新建任务并回 id（03 §1） */
-  send(input: SendInput): Promise<{ threadId: string }>;
+  send(input: SendInput): Promise<{ threadId: string; queued?: boolean }>;
   interrupt(threadId: string): Promise<void>;
   decideApproval(input: { id: string; decision: ApprovalDecision }): Promise<void>;
   rowAction(input: { action: RowAction; threadId: string }): Promise<void>;
@@ -106,8 +117,19 @@ export interface EvoworkBridge {
   refreshVisible(ids: readonly string[]): Promise<void>;
   /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
   openTask(input: { threadId: string }): Promise<OpenTaskResult>;
+  searchTasks?(input: { query: string }): Promise<readonly TaskSearchHitView[]>;
+  renameTask?(input: { threadId: string; name: string }): Promise<boolean>;
+  forkTask?(input: { threadId: string; lastTurnId?: string }): Promise<{ threadId: string }>;
+  archiveTask?(input: { threadId: string }): Promise<void>;
+  deleteTask?(input: { threadId: string }): Promise<void>;
+  listQueuedInputs?(input: { threadId: string }): Promise<readonly { id: string; text: string }[]>;
+  removeQueuedInput?(input: { threadId: string; id: string }): Promise<boolean>;
   getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
   openResultFile(input: { artifactId: string }): Promise<void>;
+  readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
+  readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
+  getComposerContext?(input: { workspaceId?: string }): Promise<ComposerContextView>;
+  pickAttachments?(input: { workspaceId?: string }): Promise<readonly ComposerAttachmentView[]>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
   /**
@@ -148,6 +170,13 @@ export interface EvoworkBridge {
    */
   getLibrary(): Promise<LibraryDataView>;
   getAutomations(): Promise<AutomationsDataView>;
+  saveAutomation?(input: AutomationMutationInput): Promise<AutomationMutationResult>;
+  setAutomationStatus?(input: {
+    id: string;
+    status: 'ACTIVE' | 'PAUSED';
+  }): Promise<AutomationMutationResult>;
+  migrateAutomation?(input: { id: string }): Promise<AutomationMutationResult>;
+  runAutomation?(input: { id: string; test?: boolean }): Promise<AutomationMutationResult>;
   getAudit(): Promise<AuditDataView>;
   /*
    * 「项目」页（02 §4.3）。与三个目录式页面同一条理由：**按需拉，不并进 getStartup** ——
@@ -234,6 +263,7 @@ type MainView =
   | 'audit'
   | 'projects'
   | 'catalog'
+  | 'search'
   /** 设置（11 §4.4）。**一页多分区**，分区由 `settingsSection` 决定 —— 不是六个视图 */
   | 'settings'
   | 'more';
@@ -304,7 +334,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<ModeId>('craft');
   const [draft, setDraft] = useState('');
-  const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [models, setModels] = useState<readonly ModelOptionView[]>([]);
   const [modelId, setModelId] = useState<string | undefined>(undefined);
@@ -377,13 +406,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [taskResults, setTaskResults] = useState<Readonly<Record<string, TaskResultsView>>>({});
   const [taskFiles, setTaskFiles] = useState<Readonly<Record<string, readonly DirEntryView[]>>>({});
   const [resultUi, setResultUi] = useState<
     Readonly<Record<string, { readonly open: boolean; readonly tab: ResultPane }>>
   >({});
   const [diffScope, setDiffScope] = useState<DiffScope>('thread');
+  const [attachments, setAttachments] = useState<readonly ComposerAttachmentView[]>([]);
+  const [references, setReferences] = useState<readonly ComposerReferenceView[]>([]);
+  const [composerContext, setComposerContext] = useState<ComposerContextView>({
+    mentions: [],
+    commands: [],
+  });
+  const [queuedByTask, setQueuedByTask] = useState<
+    Readonly<Record<string, readonly QueuedInputView[]>>
+  >({});
+  const [steer, setSteer] = useState(false);
+  const [previewByTask, setPreviewByTask] = useState<Readonly<Record<string, FilePreviewView>>>({});
+  const [resultDismissed, setResultDismissed] = useState<Readonly<Record<string, boolean>>>({});
 
   const dismissToast = useCallback((id: string) => {
     setToasts((previous) => previous.filter((toast) => toast.id !== id));
@@ -434,7 +474,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             ),
           );
           if (event.status) {
-            setRunning(event.status === 'running');
+            if (bridge.listQueuedInputs) {
+              void bridge
+                .listQueuedInputs({ threadId: event.taskId })
+                .then((queued) =>
+                  setQueuedByTask((previous) => ({ ...previous, [event.taskId]: queued })),
+                );
+            }
             if (event.status === 'running') {
               setTurnFailures((previous) => {
                 const next = { ...previous };
@@ -517,8 +563,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }
       if (!event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setSidebarCollapsed(false);
-        setSidebarSearchOpen(true);
+        setView('search');
         return;
       }
       if (!event.shiftKey && event.code === 'Backslash') {
@@ -703,6 +748,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
   }, [activeTaskId, bridge]);
 
+  /** 任务切换时同步它所属的项目、补全候选与排队追问。 */
+  useEffect(() => {
+    const cwd =
+      activeTaskId === null ? undefined : tasks.find((task) => task.id === activeTaskId)?.cwd;
+    const taskWorkspace = startup?.workspaces.find((workspace) => workspace.path === cwd);
+    if (taskWorkspace) setWorkspaceId(taskWorkspace.id);
+    const contextWorkspaceId = taskWorkspace?.id ?? workspaceId;
+    if (bridge.getComposerContext) {
+      void bridge
+        .getComposerContext({ ...(contextWorkspaceId ? { workspaceId: contextWorkspaceId } : {}) })
+        .then(setComposerContext)
+        .catch(() => setComposerContext({ mentions: [], commands: [] }));
+    }
+    if (activeTaskId !== null && bridge.listQueuedInputs) {
+      const threadId = activeTaskId;
+      void bridge
+        .listQueuedInputs({ threadId })
+        .then((queued) => setQueuedByTask((previous) => ({ ...previous, [threadId]: queued })));
+    }
+  }, [activeTaskId, bridge, startup, tasks, workspaceId]);
+
   /** 结果区数据按任务读取；产物来自索引，文件来自该任务所属项目的根目录。 */
   useEffect(() => {
     if (activeTaskId === null) return;
@@ -723,6 +789,34 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .then((entries) => setTaskFiles((prev) => ({ ...prev, [threadId]: entries })))
       .catch(() => setTaskFiles((prev) => ({ ...prev, [threadId]: [] })));
   }, [activeTaskId, bridge, startup, tasks]);
+
+  /** 明确在交付结果的回合完成后自动展开；用户关过一次就尊重其选择。 */
+  useEffect(() => {
+    if (activeTaskId === null || resultDismissed[activeTaskId]) return;
+    const result = taskResults[activeTaskId];
+    if (!result || result.artifacts.length === 0) return;
+    const items = itemsByTask[activeTaskId] ?? [];
+    if (!shouldAutoOpenResult(items)) return;
+    const latest = result.artifacts[0];
+    if (!latest) return;
+    if (bridge.readResultPreview) {
+      void bridge.readResultPreview({ artifactId: latest.id }).then((preview) => {
+        setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
+        setResultUi((previous) => ({
+          ...previous,
+          [activeTaskId]: {
+            open: true,
+            tab: preview.kind === 'html' ? 'browser' : 'artifacts',
+          },
+        }));
+      });
+      return;
+    }
+    setResultUi((previous) => ({
+      ...previous,
+      [activeTaskId]: { open: true, tab: 'artifacts' },
+    }));
+  }, [activeTaskId, bridge, itemsByTask, resultDismissed, taskResults]);
 
   /**
    * 进到某一页时才去拉它的数据。
@@ -963,9 +1057,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [activeProjectId, bridge, pushToast],
   );
 
+  const active = tasks.find((task) => task.id === activeTaskId);
+  // 运行态必须来自当前任务。后台自动化或另一个任务的状态事件不能把当前 Composer
+  // 误切成“停止/插话”模式。
+  const running = active?.status === 'running' || active?.status === 'pending';
+
   const send = useCallback(async () => {
     const text = draft.trim();
-    if (!text) return;
+    const attachmentReferences = attachments.flatMap((attachment) => attachment.references);
+    const outgoingReferences = [...references, ...attachmentReferences];
+    if (!text && outgoingReferences.length === 0) return;
     setDraft('');
     try {
       const { threadId } = await bridge.send({
@@ -977,8 +1078,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         ...(modelId !== undefined ? { modelId } : {}),
         // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
         ...(workspaceId !== undefined ? { workspaceId } : {}),
+        ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
+        ...(running ? { steer } : {}),
       });
       setActiveTaskId(threadId);
+      setAttachments([]);
+      setReferences([]);
+      if (bridge.listQueuedInputs) {
+        const queue = await bridge.listQueuedInputs({ threadId });
+        setQueuedByTask((previous) => ({ ...previous, [threadId]: queue }));
+      }
     } catch (err: unknown) {
       // 发送失败要把草稿还回去 —— 清空输入框又什么都没发生，用户会以为消息丢了
       setDraft(text);
@@ -987,7 +1096,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         { tone: 'danger', text: `没能发出去：${err instanceof Error ? err.message : String(err)}` },
       ]);
     }
-  }, [bridge, draft, activeTaskId, scenarioId, modelId, workspaceId]);
+  }, [
+    bridge,
+    draft,
+    attachments,
+    references,
+    activeTaskId,
+    scenarioId,
+    modelId,
+    workspaceId,
+    running,
+    steer,
+  ]);
 
   const retryCurrentTurn = useCallback(async () => {
     if (activeTaskId === null) return;
@@ -1075,11 +1195,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [startup],
   );
 
-  const active = tasks.find((t) => t.id === activeTaskId);
   const currentItems = activeTaskId === null ? [] : (itemsByTask[activeTaskId] ?? []);
   const currentResults =
     activeTaskId === null ? { artifacts: [] } : (taskResults[activeTaskId] ?? { artifacts: [] });
   const currentFiles = activeTaskId === null ? [] : (taskFiles[activeTaskId] ?? []);
+  const currentPreview = activeTaskId === null ? undefined : previewByTask[activeTaskId];
+  const activeProject = startup?.workspaces.find((workspace) => workspace.path === active?.cwd);
   const changedFiles = useMemo(() => changedFilesFromItems(currentItems), [currentItems]);
   const activeResultUi =
     activeTaskId === null
@@ -1095,6 +1216,37 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [activeTaskId, activeResultUi],
   );
+
+  const showPreview = useCallback(
+    async (load: () => Promise<FilePreviewView>) => {
+      if (activeTaskId === null) return;
+      try {
+        const preview = await load();
+        setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
+        updateResultUi({ open: true, tab: preview.kind === 'html' ? 'browser' : 'artifacts' });
+      } catch (error: unknown) {
+        pushToast({
+          tone: 'danger',
+          text: `读不到预览：${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    },
+    [activeTaskId, pushToast, updateResultUi],
+  );
+
+  const forkTask = useCallback(
+    async (lastTurnId?: string) => {
+      if (!activeTaskId || !bridge.forkTask) return;
+      const result = await bridge.forkTask({
+        threadId: activeTaskId,
+        ...(lastTurnId ? { lastTurnId } : {}),
+      });
+      setActiveTaskId(result.threadId);
+      setView('task');
+      pushToast({ tone: 'success', text: '已创建分支任务。' });
+    },
+    [activeTaskId, bridge, pushToast],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -1102,6 +1254,69 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onInterrupt: () => {
         if (activeTaskId) void bridge.interrupt(activeTaskId);
       },
+      attachments: attachments as readonly Attachment[],
+      onAttach: bridge.pickAttachments
+        ? () => {
+            void bridge
+              .pickAttachments?.({ ...(workspaceId ? { workspaceId } : {}) })
+              .then((picked) => setAttachments((previous) => [...previous, ...picked]));
+          }
+        : undefined,
+      onRemoveAttachment: (id: string) =>
+        setAttachments((previous) => previous.filter((attachment) => attachment.id !== id)),
+      onReferAsRaw: (id: string) =>
+        setAttachments((previous) =>
+          previous.map((attachment) =>
+            attachment.id === id && attachment.rawReference
+              ? { ...attachment, state: 'ready', references: [attachment.rawReference] }
+              : attachment,
+          ),
+        ),
+      mentionCandidates: composerContext.mentions as readonly MentionCandidate[],
+      slashCommands: composerContext.commands as readonly SlashCommand[],
+      onInsertReference: (candidate: MentionCandidate) => {
+        if (!candidate.path) return;
+        const reference: ComposerReferenceView =
+          candidate.insertAs === 'skill'
+            ? { type: 'skill', name: candidate.label, path: candidate.path }
+            : { type: 'mention', name: candidate.label, path: candidate.path };
+        setReferences((previous) => [
+          ...previous.filter(
+            (existing) => !('path' in existing) || existing.path !== candidate.path,
+          ),
+          reference,
+        ]);
+      },
+      onRunSkillCommand: (id: string) => {
+        const candidate = composerContext.mentions.find(
+          (mention) => mention.insertAs === 'skill' && mention.id === id,
+        );
+        if (candidate)
+          setReferences((previous) => [
+            ...previous,
+            { type: 'skill', name: candidate.label, path: candidate.path },
+          ]);
+      },
+      onRunLocalCommand: (id: string) => {
+        if (id === 'clear') setDraft('');
+        if (id === 'new-task') {
+          setActiveTaskId(null);
+          setView('task');
+        }
+      },
+      queued: activeTaskId ? (queuedByTask[activeTaskId] ?? []) : [],
+      onQueueRemove: (id: string) => {
+        if (!activeTaskId || !bridge.removeQueuedInput) return;
+        void bridge.removeQueuedInput({ threadId: activeTaskId, id }).then((removed) => {
+          if (removed)
+            setQueuedByTask((previous) => ({
+              ...previous,
+              [activeTaskId]: (previous[activeTaskId] ?? []).filter((item) => item.id !== id),
+            }));
+        });
+      },
+      steer,
+      onSteerChange: setSteer,
       workspaces,
       workspaceId,
       onWorkspaceChange: setWorkspaceId,
@@ -1170,6 +1385,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       modelApplying,
       modelUnavailableReason,
       modelAccess,
+      attachments,
+      composerContext,
+      queuedByTask,
+      steer,
+      workspaceId,
     ],
   );
 
@@ -1308,8 +1528,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onRowAction={(action, id) => void bridge.rowAction({ action, threadId: id })}
           onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
           onToggleCollapse={() => setSidebarCollapsed(true)}
-          searchOpen={sidebarSearchOpen}
-          onSearchOpenChange={setSidebarSearchOpen}
+          searchOpen={false}
+          onSearchOpenChange={(open) => {
+            if (open) setView('search');
+          }}
           brandName={startup?.appName}
           {...(startup
             ? { user: { name: startup.userName, version: `v${startup.appVersion}` } }
@@ -1379,6 +1601,42 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           library={library}
           automations={automations}
+          automationWorkspaces={(startup?.workspaces ?? [])
+            .filter((workspace) => Boolean(workspace.path))
+            .map((workspace) => ({ id: workspace.path as string, label: workspace.name }))}
+          onSaveAutomation={async (input) => {
+            if (!bridge.saveAutomation) return false;
+            const result = await bridge.saveAutomation(input);
+            setAutomations(result.data);
+            pushToast({
+              tone: result.ok ? 'success' : 'danger',
+              text: result.ok ? '自动化已保存。' : (result.refused ?? '自动化没有保存。'),
+            });
+            return result.ok;
+          }}
+          onAutomationStatus={async (id, status) => {
+            if (!bridge.setAutomationStatus) return;
+            const result = await bridge.setAutomationStatus({ id, status });
+            setAutomations(result.data);
+          }}
+          onMigrateAutomation={async (id) => {
+            if (!bridge.migrateAutomation) return;
+            const result = await bridge.migrateAutomation({ id });
+            setAutomations(result.data);
+          }}
+          onRunAutomation={async (id, test) => {
+            if (!bridge.runAutomation) return;
+            const result = await bridge.runAutomation({ id, test });
+            setAutomations(result.data);
+            pushToast({
+              tone: result.ok ? 'success' : 'danger',
+              text: result.ok
+                ? test
+                  ? '试跑已开始。'
+                  : '已立即运行。'
+                : (result.refused ?? '没能启动。'),
+            });
+          }}
           audit={audit}
           projects={projects}
           activeProjectId={activeProjectId}
@@ -1391,6 +1649,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setActiveTaskId(id);
             setView('task');
           }}
+          onTaskSearch={(query) => bridge.searchTasks?.({ query }) ?? Promise.resolve([])}
           onOpenLibraryRow={(id) => {
             void bridge.openResultFile({ artifactId: id }).catch((error: unknown) =>
               pushToast({
@@ -1474,6 +1733,58 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
             mermaid: MERMAID,
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
+            onCopy: (text) => {
+              void navigator.clipboard?.writeText(text);
+              pushToast({ tone: 'success', text: '已复制消息。' });
+            },
+            onRetry: (text, kind) => {
+              if (kind === 'agentMessage') {
+                void retryCurrentTurn();
+                return;
+              }
+              void bridge.send({
+                threadId: activeTaskId,
+                text,
+                scenarioId,
+                ...(modelId ? { modelId } : {}),
+                ...(workspaceId ? { workspaceId } : {}),
+              });
+            },
+            onFork: (_itemId, turnId) => void forkTask(turnId),
+          }}
+          artifacts={currentResults.artifacts}
+          onOpenArtifact={(id) => {
+            if (bridge.readResultPreview)
+              void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
+            else void bridge.openResultFile({ artifactId: id });
+          }}
+          onRename={() => {
+            if (!bridge.renameTask) return;
+            const name = window.prompt('新的任务名称', active?.title ?? '');
+            if (!name?.trim()) return;
+            void bridge.renameTask({ threadId: activeTaskId, name: name.trim() }).then((ok) => {
+              if (ok)
+                setTasks((previous) =>
+                  previous.map((task) =>
+                    task.id === activeTaskId ? { ...task, title: name.trim() } : task,
+                  ),
+                );
+            });
+          }}
+          onForkTask={() => void forkTask()}
+          onArchive={() => {
+            if (!bridge.archiveTask) return;
+            void bridge.archiveTask({ threadId: activeTaskId }).then(() => {
+              setTasks((previous) => previous.filter((task) => task.id !== activeTaskId));
+              setActiveTaskId(null);
+            });
+          }}
+          onDelete={() => {
+            if (!bridge.deleteTask || !window.confirm('确定删除这个任务？此操作无法撤销。')) return;
+            void bridge.deleteTask({ threadId: activeTaskId }).then(() => {
+              setTasks((previous) => previous.filter((task) => task.id !== activeTaskId));
+              setActiveTaskId(null);
+            });
           }}
           hasResults={
             currentResults.artifacts.length > 0 ||
@@ -1482,55 +1793,77 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }
           resultOpen={activeResultUi.open}
           resultTab={activeResultUi.tab}
-          onResultOpenChange={(open) => updateResultUi({ open })}
+          onResultOpenChange={(open) => {
+            setResultDismissed((previous) => ({ ...previous, [activeTaskId]: !open }));
+            updateResultUi({ open });
+          }}
           onResultTabChange={(tab) => updateResultUi({ tab })}
           resultPanels={{
             artifacts:
               currentResults.artifacts.length > 0 ? (
-                <ul className="ew-result-artifacts">
-                  {currentResults.artifacts.map((artifact) => (
-                    <li key={artifact.id}>
-                      <button
-                        type="button"
-                        className="ew-result-artifact"
-                        onClick={() => {
-                          void bridge
-                            .openResultFile({ artifactId: artifact.id })
-                            .catch((error: unknown) =>
-                              setNotices((prev) => [
-                                ...prev,
-                                {
-                                  tone: 'warning',
-                                  text: `打不开产物：${error instanceof Error ? error.message : String(error)}`,
-                                },
-                              ]),
-                            );
-                        }}
-                      >
-                        <span>{artifact.name}</span>
-                        <span>版本 {artifact.version}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <div className="ew-result-preview-stack">
+                  <ul className="ew-result-artifacts">
+                    {currentResults.artifacts.map((artifact) => (
+                      <li key={artifact.id}>
+                        <button
+                          type="button"
+                          className="ew-result-artifact"
+                          onClick={() =>
+                            bridge.readResultPreview
+                              ? void showPreview(() =>
+                                  bridge.readResultPreview!({ artifactId: artifact.id }),
+                                )
+                              : void bridge.openResultFile({ artifactId: artifact.id })
+                          }
+                        >
+                          <span>{artifact.name}</span>
+                          <span>版本 {artifact.version}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {currentPreview && currentPreview.kind !== 'html' ? (
+                    <FilePreview preview={currentPreview} />
+                  ) : null}
+                </div>
               ) : (
                 <EmptyState title="还没有产物" hint="任务生成的交付文件会出现在这里。" />
               ),
             files:
               currentFiles.length > 0 ? (
-                <FileTree entries={currentFiles} ariaLabel="结果区项目文件" />
+                <div className="ew-result-preview-stack">
+                  <FileTree
+                    entries={currentFiles}
+                    ariaLabel="结果区项目文件"
+                    onFileOpen={(entry) => {
+                      if (activeProject && bridge.readProjectFilePreview)
+                        void showPreview(() =>
+                          bridge.readProjectFilePreview!({
+                            projectId: activeProject.id,
+                            path: entry.path,
+                          }),
+                        );
+                    }}
+                  />
+                  {currentPreview && currentPreview.kind !== 'html' ? (
+                    <FilePreview preview={currentPreview} />
+                  ) : null}
+                </div>
               ) : (
                 <EmptyState title="没有项目文件" hint="把任务放进项目后可在这里浏览根目录。" />
               ),
             changes: (
               <ChangesView files={changedFiles} scope={diffScope} onScopeChange={setDiffScope} />
             ),
-            browser: (
-              <EmptyState
-                title="没有浏览器预览"
-                hint="任务产生本地网页或 HTML 预览后才会在这里显示。"
-              />
-            ),
+            browser:
+              currentPreview?.kind === 'html' ? (
+                <FilePreview preview={currentPreview} />
+              ) : (
+                <EmptyState
+                  title="没有浏览器预览"
+                  hint="任务产生本地网页或 HTML 预览后才会在这里显示。"
+                />
+              ),
           }}
           notices={notices}
           {...(turnFailures[activeTaskId]
@@ -1602,6 +1935,11 @@ function MainPage(props: {
   readonly onOpenAccountWeb: (path: string) => void;
   readonly library: LibraryDataView | null;
   readonly automations: AutomationsDataView | null;
+  readonly automationWorkspaces: readonly { readonly id: string; readonly label: string }[];
+  readonly onSaveAutomation: (input: AutomationMutationInput) => Promise<boolean>;
+  readonly onAutomationStatus: (id: string, status: 'ACTIVE' | 'PAUSED') => Promise<void>;
+  readonly onMigrateAutomation: (id: string) => Promise<void>;
+  readonly onRunAutomation: (id: string, test: boolean) => Promise<void>;
   readonly audit: AuditDataView | null;
   readonly projects: ProjectsDataView | null;
   readonly activeProjectId: string | null;
@@ -1611,6 +1949,7 @@ function MainPage(props: {
   readonly projectMemo: AgentsMemoView;
   readonly projectRefusal: string | undefined;
   readonly onOpenTask: (threadId: string) => void;
+  readonly onTaskSearch: (query: string) => Promise<readonly TaskSearchHitView[]>;
   readonly onOpenLibraryRow: (artifactId: string) => void;
   readonly onCloseProject: () => void;
   readonly onOpenProject: (id: string) => void;
@@ -1666,9 +2005,17 @@ function MainPage(props: {
           rows={props.automations?.automations ?? []}
           runs={props.automations?.runs ?? {}}
           deviceName={props.automations?.deviceName ?? '这台电脑'}
+          workspaceOptions={props.automationWorkspaces}
           onOpenTask={props.onOpenTask}
+          onSave={(draft, id) => props.onSaveAutomation({ ...draft, ...(id ? { id } : {}) })}
+          onStatus={props.onAutomationStatus}
+          onMigrate={props.onMigrateAutomation}
+          onRun={props.onRunAutomation}
         />
       );
+
+    case 'search':
+      return <TaskSearchPage onSearch={props.onTaskSearch} onOpenTask={props.onOpenTask} />;
 
     case 'audit':
       return (
@@ -1848,4 +2195,15 @@ export function changedFilesFromItems(items: readonly RenderItem[]): readonly Ch
     }
   }
   return [...files.values()];
+}
+
+/** 只在助手明确交付/邀请预览时自动打开，普通文件变更不抢焦点。 */
+export function shouldAutoOpenResult(items: readonly RenderItem[]): boolean {
+  const latest = [...items]
+    .reverse()
+    .find((item) => item.type === 'agentMessage' && typeof item.text === 'string');
+  if (!latest || typeof latest.text !== 'string') return false;
+  return /(?:已生成|已完成|交付|打开预览|请查看|预览|generated|ready to review|open (?:the )?preview)/i.test(
+    latest.text,
+  );
 }

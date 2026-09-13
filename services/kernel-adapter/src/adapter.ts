@@ -114,6 +114,16 @@ export interface TaskListItem {
   readonly fromAutomation: boolean;
 }
 
+export interface TaskSearchResult {
+  readonly threadId: string;
+  readonly snippet: string;
+}
+
+export interface QueuedInput {
+  readonly id: string;
+  readonly input: readonly UserInput[];
+}
+
 export interface AdapterOptions {
   readonly store: Store;
   /**
@@ -190,6 +200,9 @@ export function createAdapter(options: AdapterOptions) {
   });
 
   let catalog: Catalog | undefined;
+  /** 实验队列不可用时的本机兜底。内容只活在进程内，不冒充任务历史。 */
+  const localQueues = new Map<string, QueuedInput[]>();
+  let queueSequence = 0;
 
   /**
    * 重命名任务（04 §3.3 的行操作，也是新任务自动起名的落点）。
@@ -450,6 +463,59 @@ export function createAdapter(options: AdapterOptions) {
 
     setTaskName,
 
+    async searchTasks(searchTerm: string): Promise<readonly TaskSearchResult[]> {
+      const term = searchTerm.trim();
+      if (!term) return [];
+      const response = await callExperimental<{
+        readonly data?: readonly { readonly thread?: Thread; readonly snippet?: string }[];
+      }>(
+        EXPERIMENTAL_METHOD.threadSearch,
+        { searchTerm: term, limit: 100, sortKey: 'recency_at', sortDirection: 'desc' },
+        () => ({ data: [] }),
+      );
+      const hits: TaskSearchResult[] = [];
+      for (const hit of response.data ?? []) {
+        if (!hit.thread) continue;
+        store.threads.upsertFromThread(hit.thread);
+        hits.push({ threadId: hit.thread.id, snippet: hit.snippet ?? hit.thread.name ?? '' });
+      }
+      // 实验搜索不可用时，标题搜索仍然可用；不把摘要缓存伪装成正文命中。
+      if (hits.length === 0) {
+        const lower = term.toLocaleLowerCase();
+        for (const id of store.threads.queryThreadIds({ topLevelOnly: true })) {
+          const row = store.threads.get(id);
+          if ((row?.title ?? '').toLocaleLowerCase().includes(lower)) {
+            hits.push({ threadId: id, snippet: row?.title ?? '' });
+          }
+        }
+      }
+      return hits;
+    },
+
+    async forkTask(threadId: string, lastTurnId?: string): Promise<string> {
+      const response = await session.peer.request<{ readonly thread: Thread }>(METHOD.threadFork, {
+        threadId,
+        ...(lastTurnId ? { lastTurnId } : {}),
+        excludeTurns: true,
+      });
+      store.threads.upsertFromThread(response.thread);
+      session.openThreads.add(response.thread.id);
+      return response.thread.id;
+    },
+
+    async archiveTask(threadId: string): Promise<void> {
+      await session.peer.request(METHOD.threadArchive, { threadId });
+      store.threads.setArchived(threadId, true, now());
+      session.openThreads.delete(threadId);
+    },
+
+    async deleteTask(threadId: string): Promise<void> {
+      await session.peer.request(METHOD.threadDelete, { threadId });
+      store.threads.remove(threadId);
+      session.openThreads.delete(threadId);
+      localQueues.delete(threadId);
+    },
+
     /**
      * 在已有任务里发消息。
      *
@@ -469,11 +535,18 @@ export function createAdapter(options: AdapterOptions) {
       const running = row?.derived_status === 'running' || row?.derived_status === 'pending';
 
       if (running && !args.steer) {
-        const queued = await callExperimental<boolean>(
+        const id = `q-${now().toString(36)}-${(queueSequence += 1).toString(36)}`;
+        const queued = await callExperimental<
+          { readonly queuedSubmission?: { readonly id?: string } } | false
+        >(
           EXPERIMENTAL_METHOD.threadQueueAdd,
-          { threadId: args.threadId, input: args.input },
+          { threadId: args.threadId, input: args.input, clientUserMessageId: id },
           () => false,
         );
+        if (queued === false) {
+          const current = localQueues.get(args.threadId) ?? [];
+          localQueues.set(args.threadId, [...current, { id, input: args.input }]);
+        }
         return { queued: queued !== false, degradations: [] };
       }
 
@@ -509,6 +582,84 @@ export function createAdapter(options: AdapterOptions) {
       session.openThreads.add(args.threadId);
       await session.peer.request(METHOD.turnStart, expanded.params);
       return { queued: false, degradations: expanded.degradations };
+    },
+
+    async listQueuedInputs(threadId: string): Promise<readonly QueuedInput[]> {
+      const response = await callExperimental<{
+        readonly data?: readonly { readonly id?: string; readonly input?: readonly UserInput[] }[];
+      }>(EXPERIMENTAL_METHOD.threadQueueList, { threadId, limit: 100 }, () => ({ data: [] }));
+      const remote = (response.data ?? [])
+        .filter((entry): entry is { readonly id: string; readonly input?: readonly UserInput[] } =>
+          Boolean(entry.id),
+        )
+        .map((entry) => ({ id: entry.id, input: entry.input ?? [] }));
+      return [...remote, ...(localQueues.get(threadId) ?? [])];
+    },
+
+    async removeQueuedInput(threadId: string, id: string): Promise<boolean> {
+      const local = localQueues.get(threadId) ?? [];
+      if (local.some((entry) => entry.id === id)) {
+        localQueues.set(
+          threadId,
+          local.filter((entry) => entry.id !== id),
+        );
+        return true;
+      }
+      const response = await callExperimental<{ readonly deleted?: boolean }>(
+        EXPERIMENTAL_METHOD.threadQueueDelete,
+        { threadId, queuedSubmissionId: id },
+        () => ({ deleted: false }),
+      );
+      return response.deleted === true;
+    },
+
+    /**
+     * 当前回合结束后启动下一条排队输入。
+     *
+     * `thread/queue/add` **只入队，不会自动执行**；内核队列必须显式调用
+     * `thread/queue/start`。此前这里只消费本机降级队列，导致实验队列可用时
+     * 用户能看到“已排队”，但那条输入永远不会开始。
+     */
+    async startNextQueued(threadId: string): Promise<void> {
+      const remote = await callExperimental<{
+        readonly data?: readonly { readonly id?: string }[];
+      }>(EXPERIMENTAL_METHOD.threadQueueList, { threadId, limit: 1 }, () => ({ data: [] }));
+      const remoteId = remote.data?.[0]?.id;
+      if (remoteId) {
+        await callExperimental(
+          EXPERIMENTAL_METHOD.threadQueueStart,
+          { threadId, queuedSubmissionId: remoteId },
+          () => undefined,
+        );
+        return;
+      }
+
+      const queued = localQueues.get(threadId) ?? [];
+      const next = queued[0];
+      if (!next) return;
+      const row = store.threads.get(threadId);
+      const scenario =
+        scenarios.find((candidate) => candidate.id === row?.scenario_id) ??
+        scenarios.find((candidate) => candidate.default) ??
+        scenarios[0];
+      if (!scenario) return;
+      const expanded = expandTurnStart({
+        threadId,
+        input: next.input,
+        scenario,
+        overrides: {
+          ...(row?.mode_id ? { modeId: row.mode_id as ModeId } : {}),
+          ...(row?.permission_id ? { permissions: row.permission_id } : {}),
+          ...(row?.model ? { model: row.model } : {}),
+        },
+        readInstructions: options.readInstructions ?? (() => undefined),
+        collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
+        permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+      });
+      session.openThreads.add(threadId);
+      await session.peer.request(METHOD.turnStart, expanded.params);
+      // 请求成功后再移除；失败时保留，避免一次暂时故障把用户排队的输入吞掉。
+      localQueues.set(threadId, queued.slice(1));
     },
 
     /** 中断（04 §5.5）。 */
@@ -654,7 +805,11 @@ function itemFromListEntry(entry: ThreadItemEntry | ThreadItem | unknown): Threa
   const nested = rec.item;
   if (nested && typeof nested === 'object') {
     const item = nested as ThreadItem;
-    if (typeof item.id === 'string' && typeof item.type === 'string') return item;
+    if (typeof item.id === 'string' && typeof item.type === 'string') {
+      return typeof rec.turnId === 'string' && item.type === 'userMessage'
+        ? ({ ...item, _turnId: rec.turnId } as unknown as ThreadItem)
+        : item;
+    }
   }
   if (typeof rec.id === 'string' && typeof rec.type === 'string' && rec.item === undefined) {
     return rec as ThreadItem;

@@ -71,7 +71,9 @@ export interface ElectronApi {
    */
   readonly showOpenDialog?:
     | ((options: {
-        properties: readonly ('openDirectory' | 'createDirectory')[];
+        properties: readonly (
+          'openDirectory' | 'createDirectory' | 'openFile' | 'multiSelections'
+        )[];
       }) => Promise<{ canceled: boolean; filePaths: readonly string[] }>)
     | undefined;
   /**
@@ -202,6 +204,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
               properties: ['openDirectory', 'createDirectory'],
             });
             return r && !r.canceled ? r.filePaths[0] : undefined;
+          },
+          pickFiles: async (): Promise<readonly string[]> => {
+            const r = await electron.showOpenDialog?.({
+              properties: ['openFile', 'multiSelections'],
+            });
+            return r && !r.canceled ? r.filePaths : [];
           },
         }
       : {}),

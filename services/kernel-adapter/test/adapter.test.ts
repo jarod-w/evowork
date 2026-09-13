@@ -282,7 +282,13 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
       threadId,
       status: { active: { activeFlags: [] } },
     });
-    server.handlers.set('thread/queue/add', () => ({ ok: true }));
+    server.handlers.set('thread/queue/add', (ctx) => ({
+      queuedSubmission: {
+        id: 'queued-1',
+        input: ctx.params.input,
+        clientUserMessageId: ctx.params.clientUserMessageId,
+      },
+    }));
 
     const result = await adapter.sendMessage({
       threadId,
@@ -291,6 +297,29 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
     expect(result.queued).toBe(true);
     expect(server.received.map((r) => r.method)).toContain('thread/queue/add');
+  });
+
+  it('内核队列在当前回合结束后显式 start —— add 本身不会自动执行', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    server.handlers.set('thread/queue/list', () => ({
+      data: [
+        {
+          id: 'queued-1',
+          input: [{ type: 'text', text: '下一条' }],
+          clientUserMessageId: 'client-1',
+        },
+      ],
+      nextCursor: null,
+    }));
+    server.handlers.set('thread/queue/start', () => ({
+      turn: makeTurn({ id: 'turn-queued', status: 'inProgress' }),
+    }));
+
+    await adapter.startNextQueued(threadId);
+
+    const start = server.received.find((request) => request.method === 'thread/queue/start');
+    expect(start?.params).toEqual({ threadId, queuedSubmissionId: 'queued-1' });
   });
 
   it('`thread/queue/*` 不可用 → 退回本机队列（09 §3.3），**不报错**', async () => {
@@ -313,6 +342,34 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     expect(adapter.degradations().map((d) => d.degradation?.userVisible)).toContain(
       '排队仍可用（队列只在这台电脑上）。',
     );
+  });
+
+  it('本机队列启动失败时保留输入，成功后才移除', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { active: { activeFlags: [] } },
+    });
+    server.removeMethod('thread/queue/add');
+    await adapter.sendMessage({
+      threadId,
+      input: [{ type: 'text', text: '不能丢的下一条' }],
+    });
+
+    server.handlers.set('turn/start', () => {
+      throw new Error('temporary failure');
+    });
+    await expect(adapter.startNextQueued(threadId)).rejects.toThrow('turn/start 失败');
+    expect(await adapter.listQueuedInputs(threadId)).toMatchObject([
+      { input: [{ type: 'text', text: '不能丢的下一条' }] },
+    ]);
+
+    server.handlers.set('turn/start', () => ({
+      turn: makeTurn({ id: 'turn-local', status: 'inProgress' }),
+    }));
+    await adapter.startNextQueued(threadId);
+    expect(await adapter.listQueuedInputs(threadId)).toEqual([]);
   });
 
   it('「立即插话」走 turn/steer 而不是入队（默认排队，04 §5.5）', async () => {

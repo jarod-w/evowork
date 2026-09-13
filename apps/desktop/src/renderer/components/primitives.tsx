@@ -568,11 +568,13 @@ export function SearchInput({
   onChange,
   placeholder,
   ariaLabel,
+  autoFocus,
 }: {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly placeholder: string;
   readonly ariaLabel: string;
+  readonly autoFocus?: boolean | undefined;
 }) {
   return (
     <div className="ew-search-input">
@@ -584,6 +586,7 @@ export function SearchInput({
         aria-label={ariaLabel}
         placeholder={placeholder}
         value={value}
+        autoFocus={autoFocus}
         onChange={(event) => onChange(event.target.value)}
       />
       {value ? (
