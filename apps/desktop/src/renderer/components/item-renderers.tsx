@@ -54,6 +54,11 @@ export interface ItemRenderContext {
   readonly renderChart?: ((spec: ChartSpec) => ReactNode) | undefined;
   readonly prefersDark?: boolean | undefined;
   readonly onSaveFence?: ((block: FenceBlock) => void) | undefined;
+  /**
+   * 挂在「处理过程」组里时，推理正文随组一起展开：用户点一次组标题就能看见
+   * 思考内容，不必再点「推理过程」。命令输出仍保持二次折叠。
+   */
+  readonly nestedInProcessGroup?: boolean | undefined;
 }
 
 /** 04 §5.2 的"默认"列：过程性折叠、结论性展开。 */
@@ -296,7 +301,7 @@ export function ItemRenderer({
       return (
         <Collapsible
           kind={kind}
-          defaultExpanded={defaultExpanded}
+          defaultExpanded={Boolean(context.nestedInProcessGroup) || defaultExpanded}
           summary={seconds !== undefined ? `已思考 ${seconds} 秒` : done ? '推理过程' : '思考中…'}
         >
           <div className="ew-reasoning-body">{body}</div>

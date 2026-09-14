@@ -179,8 +179,35 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
     expect(screen.getByText('先看看工作空间里有什么可用的项目信息。')).toBeTruthy();
     expect(container.querySelector('[data-kind="reasoning"]')).not.toBeNull();
     expect(container.querySelector('[data-kind="commandExecution"]')).not.toBeNull();
+    // 点开过程组就能看见推理正文，不必再点「推理过程」。
+    expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('先分析表结构');
     // 命令自己的输出仍保持第二层折叠，不会因展开过程组直接灌满屏幕。
     expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
+  });
+
+  it('生成中展开过程组并挂上推理正文，用户不用干等一行摘要', () => {
+    renderWorkspace({
+      status: 'running',
+      items: [{ id: 'reasoning-1', type: 'reasoning', text: '先盘任务目标' }],
+    });
+
+    const process = screen.getByRole('button', { name: /处理过程/ });
+    expect(process.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('先盘任务目标');
+  });
+
+  it('groupTimelineItems 即使回复先到，也把处理过程放在最终回复上面', () => {
+    const entries = groupTimelineItems([
+      { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: '整理文档' }] },
+      { id: 'a1', type: 'agentMessage', completed: true, text: '这是结论' },
+      { id: 'r1', type: 'reasoning', completed: true },
+    ]);
+
+    expect(entries.map((entry) => entry.kind)).toEqual(['item', 'process', 'item']);
+    expect(entries[1]?.kind === 'process' ? entries[1].items.map((item) => item.id) : []).toEqual([
+      'r1',
+    ]);
+    expect(entries[2]?.kind === 'item' ? entries[2].item.id : '').toBe('a1');
   });
 
   it('没有后续过程时，助手回复始终直接显示', () => {
@@ -311,8 +338,8 @@ describe('流式区的无障碍（01 §8.1）', () => {
 });
 
 describe('2.7.3–2.7.5 补齐项', () => {
-  it('同一回合的过程事件收成一个折叠行，并保留当前动作与状态', () => {
-    renderWorkspace({
+  it('同一回合的过程事件收成一组，生成中展开并保留当前动作与状态', () => {
+    const { container } = renderWorkspace({
       items: [
         { id: 'r', type: 'reasoning', completed: true, content: ['分析需求'] },
         { id: 'c', type: 'commandExecution', completed: false, command: 'pnpm test' },
@@ -324,9 +351,9 @@ describe('2.7.3–2.7.5 补齐项', () => {
 
     const process = screen.getByRole('button', { name: /处理过程.*生成图片.*进行中/ });
     expect(screen.getAllByRole('button', { name: /处理过程/ })).toHaveLength(1);
-    expect(process.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('button', { name: /思考与计划/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^操作/ })).toBeNull();
+    expect(process.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('[data-kind="imageGeneration"]')).not.toBeNull();
+    expect(screen.getByText('a.ts')).toBeTruthy();
   });
 
   it('回合失败留在时间线并提供重试和设置入口；停止显示可继续分隔线', () => {

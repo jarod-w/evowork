@@ -156,10 +156,16 @@ export function groupTimelineItems(items: readonly RenderItem[]): readonly Timel
       continue;
     }
 
-    const folded = run.slice(0, lastProcess + 1);
+    /*
+     * 过程组始终画在该回合最终回复之上。回复 item 若先到（思考条目要等
+     * `output_item.done` 才出现），仍把过程组提前，避免「处理过程」掉到答案下面。
+     */
+    const firstProcess = run.findIndex((candidate) => isProcessItem(candidate));
+    const folded = run.slice(firstProcess, lastProcess + 1);
+    const answers = [...run.slice(0, firstProcess), ...run.slice(lastProcess + 1)];
     const first = folded[0];
     if (first) entries.push({ kind: 'process', key: first.id, items: folded });
-    for (const visible of run.slice(lastProcess + 1)) entries.push({ kind: 'item', item: visible });
+    for (const visible of answers) entries.push({ kind: 'item', item: visible });
   }
   return entries;
 }
@@ -230,8 +236,8 @@ export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
 }
 
 /**
- * Cursor 式组级 disclosure：默认只见一行「处理过程」，用户点开后才挂载思考、
- * 命令、中间回复与工具输出。不是用 CSS 遮住——折叠时长输出根本不进 DOM。
+ * Cursor 式组级 disclosure：生成中展开，让思考与当前动作可见；完成后收成
+ * 一行「处理过程」。不是用 CSS 遮住——折叠时长输出根本不进 DOM。
  */
 function ProcessGroup({
   items,
@@ -240,14 +246,18 @@ function ProcessGroup({
   readonly items: readonly RenderItem[];
   readonly context: ItemRenderContext;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const visibleItems = items.filter(
     (item) =>
       !(item.type === 'reasoning' && !context.reasoningAvailable) &&
       !(item.type === 'hookPrompt' && context.hidePolicyPrompts),
   );
+  const running = visibleItems.some((item) => item.completed !== true);
+  /** undefined = 跟随运行态（生成中展开、完成后收起）；boolean = 用户点过。 */
+  const [userExpanded, setUserExpanded] = useState<boolean | undefined>(undefined);
+  const expanded = userExpanded ?? running;
   if (visibleItems.length === 0) return null;
   const summary = summarizeProcess(visibleItems);
+  const itemContext: ItemRenderContext = { ...context, nestedInProcessGroup: true };
 
   return (
     <div
@@ -260,7 +270,7 @@ function ProcessGroup({
         type="button"
         className="ew-item-summary ew-process-summary"
         aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => setUserExpanded((value) => !(value ?? running))}
       >
         <span className="ew-process-chevron" aria-hidden="true">
           {renderIcon(expanded ? 'chevron-down' : 'chevron-right')}
@@ -274,7 +284,7 @@ function ProcessGroup({
       {expanded ? (
         <div className="ew-item-body ew-process-body">
           {visibleItems.map((item) => (
-            <ItemRenderer key={item.id} item={item} context={context} />
+            <ItemRenderer key={item.id} item={item} context={itemContext} />
           ))}
         </div>
       ) : null}

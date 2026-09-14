@@ -452,6 +452,7 @@ describe('结果工作区真实接线', () => {
       item: {
         id: 'change-1',
         type: 'fileChange',
+        completed: true,
         changes: [
           {
             path: 'report.md',

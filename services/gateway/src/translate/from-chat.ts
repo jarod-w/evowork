@@ -114,6 +114,21 @@ export function createTranslator(options: TranslatorOptions) {
     if (!reasoningItem) {
       const outputIndex = nextOutputIndex++;
       reasoningItem = { itemId: itemId('rsn', outputIndex), outputIndex, text: '' };
+      /*
+       * 必须先发 `output_item.added`。内核只在这条上建立 active item，
+       * 随后的 `reasoning_summary_*` 才有地方挂；只发 part/delta 的话
+       * 内核记一条 "without active item"，前端在思考阶段就什么都看不到。
+       */
+      events.push({
+        type: EVENT.outputItemAdded,
+        output_index: outputIndex,
+        item: {
+          type: 'reasoning',
+          id: reasoningItem.itemId,
+          summary: [],
+          encrypted_content: null,
+        } satisfies ResponseItem,
+      });
       events.push({
         type: EVENT.reasoningSummaryPartAdded,
         item_id: reasoningItem.itemId,

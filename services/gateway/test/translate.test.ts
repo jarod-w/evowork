@@ -260,6 +260,21 @@ describe('③ reasoning：有就映射，**没有就留空，不得伪造**（D2
     expect(reasoningDone.item.encrypted_content).toBeNull();
   });
 
+  it('思维链先发 output_item.added，内核才有 active item 能把增量推到 UI', () => {
+    const { events } = run([
+      { choices: [{ delta: { reasoning_content: '先看表头，' } }] },
+      { choices: [{ delta: { content: '好的' } }] },
+    ]);
+    const added = events.filter((e) => e.type === EVENT.outputItemAdded) as {
+      item: { type: string };
+    }[];
+    expect(added[0]?.item.type).toBe('reasoning');
+    expect(added[1]?.item.type).toBe('message');
+    expect(events.findIndex((e) => e.type === EVENT.outputItemAdded)).toBeLessThan(
+      events.findIndex((e) => e.type === EVENT.reasoningSummaryTextDelta),
+    );
+  });
+
   it('没有思维链 → **一个 reasoning 事件都不发**（不留空壳）', () => {
     const { events } = run(
       [{ choices: [{ delta: { content: '好的' }, finish_reason: 'stop' }] }],

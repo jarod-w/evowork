@@ -909,6 +909,12 @@ textarea {
 .ew-process-group {
   min-width: 0;
 }
+.ew-reasoning-body {
+  margin: 0;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .ew-item-body {
   padding-left: var(--space-16);

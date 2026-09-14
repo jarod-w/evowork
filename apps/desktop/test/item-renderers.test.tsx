@@ -186,6 +186,14 @@ describe('Reasoning：模型无推理能力时**整体不渲染，不留空壳**
     expect(body?.textContent).toContain('再决定怎么分组');
   });
 
+  it('挂在处理过程组里时推理正文直接可见，不必再点一次', () => {
+    renderItem(
+      { id: 'i1', type: 'reasoning', completed: true, content: ['先看表头'] },
+      { nestedInProcessGroup: true },
+    );
+    expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('先看表头');
+  });
+
   it('没有 content 时退回 summary 数组', () => {
     renderItem({ id: 'i1', type: 'reasoning', completed: true, summary: ['盘一下表结构'] });
     fireEvent.click(screen.getByRole('button', { name: /推理过程/ }));
