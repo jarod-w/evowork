@@ -286,6 +286,14 @@ describe('新建任务首页的输入框固定在内容列底部', () => {
   });
 });
 
+describe('Composer 折叠态按内容收紧', () => {
+  it('外壳不设固定最小高度，工具行下方不会留下空白', () => {
+    const shellRule = /\.ew-composer-shell\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(shellRule).not.toContain('min-height');
+    expect(shellRule).toContain('max-height: var(--layout-composer-max-height)');
+  });
+});
+
 /*
  * 用户菜单包在定位锚点里、「任务」行包在 Popover 锚点里，都不再是 sidebar-nav
  * 的直接 flex 子项。按钮默认按内容收缩，选中灰就只盖住文字那一半 ——

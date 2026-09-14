@@ -290,8 +290,7 @@ export const LAYOUT = {
   segmentedTrackHeight: 36,
   /** §5.13 SendButton（圆形） */
   sendButtonSize: 32,
-  /** §5.13 Composer：折叠态 180，自增至 396 后内部滚动 */
-  composerCollapsedHeight: 180,
+  /** §5.13 Composer：折叠态随内容收紧，自增至 396 后内部滚动 */
   composerMaxHeight: 396,
   /** 03 §4.4 附件缩略卡 */
   attachmentHeight: 56,

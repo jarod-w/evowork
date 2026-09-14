@@ -311,7 +311,7 @@ ComposerShell   --r-xl · --bg-surface · --border-subtle · --shadow-md · padd
 └ ToolRow       高 36：[+ 添加] [模式 ▾] [项目 ▾] ··· [模型 ▾] [SendButton 32]
 ```
 
-整体高度：折叠态 180（截图 1 实测），随输入自增至 396 后内部滚动。
+整体高度：折叠态随输入区与工具行内容收紧，不在工具行下方保留固定留白；随输入自增至 396 后内部滚动。
 
 - `SendButton`：32 圆形。空输入时 `--bg-selected` + `--text-tertiary`（禁用）；有内容时 `--bg-inverse` + `--text-inverse`；执行中变为方形停止图标 + `--danger`（= 中断，04 §5.8）。
 - 权限、预算、记忆等高级项进入“更多选项”；`ModelSelect` 见 5.15。

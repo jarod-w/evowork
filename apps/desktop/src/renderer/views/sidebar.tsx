@@ -303,6 +303,10 @@ export function Sidebar(props: SidebarProps) {
     () => new Set(visibleProjects.flatMap((project) => project.path ?? [])),
     [visibleProjects],
   );
+  const recentTopLevel = useMemo(
+    () => topLevel.filter((task) => task.cwd === undefined || !visibleProjectPaths.has(task.cwd)),
+    [topLevel, visibleProjectPaths],
+  );
   const recentMatched = useMemo(
     () => matched.filter((task) => task.cwd === undefined || !visibleProjectPaths.has(task.cwd)),
     [matched, visibleProjectPaths],
@@ -516,8 +520,8 @@ export function Sidebar(props: SidebarProps) {
 
         <SidebarSectionHeader
           label="最近"
-          count={topLevel.length}
-          {...(filtering ? { filteredCount: matched.length } : {})}
+          count={recentTopLevel.length}
+          {...(filtering ? { filteredCount: recentMatched.length } : {})}
           collapsed={collapsed}
           onToggle={() => setCollapsed((v) => !v)}
           {...(filtering

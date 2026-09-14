@@ -1419,7 +1419,6 @@ textarea {
   border-radius: var(--r-2xl);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
-  min-height: var(--layout-composer-collapsed-height);
   max-height: var(--layout-composer-max-height);
 }
 .ew-composer-input-card {

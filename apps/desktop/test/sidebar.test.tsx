@@ -346,6 +346,22 @@ describe('项目与插件入口', () => {
     expect(screen.getAllByText('调整侧栏布局')).toHaveLength(1);
     expect(screen.getByText('独立任务')).toBeTruthy();
   });
+
+  it('「最近」的计数只包含未归属项目的任务，删掉最后一条后归零', () => {
+    const project = { id: 'p1', name: 'evowork', path: '/work/evowork' };
+    const projectTask = task({ id: 'project-task', title: '项目任务', cwd: project.path });
+    const recentTask = task({ id: 'recent-task', title: '独立任务' });
+    const { rerender } = renderSidebar({
+      projects: [project],
+      tasks: [projectTask, recentTask],
+    });
+
+    expect(screen.getByText('(1)')).toBeTruthy();
+
+    rerender(<Sidebar projects={[project]} tasks={[projectTask]} sections={[]} />);
+    expect(screen.getByText('(0)')).toBeTruthy();
+    expect(screen.queryByText('独立任务')).toBeNull();
+  });
 });
 
 describe('手动折叠', () => {
