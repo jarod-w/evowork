@@ -1218,10 +1218,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const currentPreview = activeTaskId === null ? undefined : previewByTask[activeTaskId];
   const activeProject = startup?.workspaces.find((workspace) => workspace.path === active?.cwd);
   const changedFiles = useMemo(() => changedFilesFromItems(currentItems), [currentItems]);
+  const hasCurrentResults =
+    currentResults.artifacts.length > 0 || currentFiles.length > 0 || changedFiles.length > 0;
   const activeResultUi =
     activeTaskId === null
       ? { open: false, tab: 'artifacts' as ResultPane }
-      : (resultUi[activeTaskId] ?? { open: false, tab: 'artifacts' as ResultPane });
+      : (resultUi[activeTaskId] ?? {
+          open: hasCurrentResults,
+          tab: 'artifacts' as ResultPane,
+        });
   const updateResultUi = useCallback(
     (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
       if (activeTaskId === null) return;
@@ -1761,11 +1766,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
             else void bridge.openResultFile({ artifactId: id });
           }}
-          hasResults={
-            currentResults.artifacts.length > 0 ||
-            currentFiles.length > 0 ||
-            changedFiles.length > 0
-          }
+          hasResults={hasCurrentResults}
           resultOpen={activeResultUi.open}
           resultTab={activeResultUi.tab}
           onResultOpenChange={(open) => {

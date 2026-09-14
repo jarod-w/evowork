@@ -18,6 +18,7 @@
  */
 import {
   EXPERIMENTAL_METHOD,
+  JsonRpcCallError,
   METHOD,
   type ExperimentalFeature,
   type PermissionProfileSummary,
@@ -29,6 +30,7 @@ import {
   type ThreadItemEntry,
   type ThreadItemsListResponse,
   type ThreadListResponse,
+  type ThreadReadResponse,
   type ThreadStartResponse,
   type Turn,
   type TurnStartResponse,
@@ -247,14 +249,18 @@ export function createAdapter(options: AdapterOptions) {
     }
   }
 
-  /** 重启后补齐：对每个打开的 thread 做 `thread/resume` + `thread/items/list`（09 §1 / §5）。 */
+  /** 重启后补齐：恢复 thread 后重新读取历史（09 §1 / §5）。 */
   async function recoverOpenThreads(): Promise<number> {
     let recovered = 0;
     for (const threadId of session.openThreads) {
       try {
         await session.peer.request(METHOD.threadResume, { threadId });
-        // 拉全量 item 后由前端按 item_id 去重合并（09 §5 第三行：事件丢失的兜底）
-        await session.peer.request(METHOD.threadItemsList, { threadId });
+        // 拉全量 item 后由前端按 item_id 去重合并（09 §5 第三行：事件丢失的兜底）。
+        // 某些存储后端尚未实现分页接口，要走 thread/read 的兼容路径。
+        await listAllThreadItemsWithFallback(
+          (method, params) => session.peer.request(method, params),
+          threadId,
+        );
         recovered += 1;
       } catch (err) {
         logger?.warn('adapter.recover.failed', { threadId, ...errorFields(err) });
@@ -691,7 +697,7 @@ export function createAdapter(options: AdapterOptions) {
     /**
      * 打开任务（04 §9：< 300ms 出内容）。
      *
-     * 先返回投影表缓存的摘要让 UI 立刻渲染，再用 `thread/items/list` 校正 ——
+     * 先返回投影表缓存的摘要让 UI 立刻渲染，再用分页历史校正 ——
      * 摘要**不是权威副本**（09 §4.2），所以调用方必须用第二个返回值覆盖第一个。
      *
      * 内核默认一页 25 条、上限 100（`THREAD_ITEMS_DEFAULT_LIMIT` /
@@ -706,7 +712,7 @@ export function createAdapter(options: AdapterOptions) {
       const cached = store.readItemDigest(threadId);
       const items = (async () => {
         await session.peer.request(METHOD.threadResume, { threadId }).catch(() => undefined);
-        return listAllThreadItems(
+        return listAllThreadItemsWithFallback(
           (method, params) => session.peer.request(method, params),
           threadId,
         );
@@ -859,4 +865,31 @@ async function listAllThreadItems(
     cursor = next;
   }
   return items;
+}
+
+/**
+ * `thread/items/list` 已进入协议，但内核会在当前 ThreadStore 不支持分页时回 -32601。
+ * 这不是“任务没有历史”，而是该后端仍要求用兼容的 `thread/read(includeTurns)` 一次性读取。
+ * 只对 method-not-found 回退；连接中断、损坏响应等真实故障仍原样交给 UI。
+ */
+async function listAllThreadItemsWithFallback(
+  request: <T>(method: string, params?: unknown) => Promise<T>,
+  threadId: string,
+): Promise<readonly ThreadItem[]> {
+  try {
+    return await listAllThreadItems(request, threadId);
+  } catch (err: unknown) {
+    if (!(err instanceof JsonRpcCallError) || !err.isMethodNotFound) throw err;
+    const response = await request<ThreadReadResponse>(METHOD.threadRead, {
+      threadId,
+      includeTurns: true,
+    });
+    return response.thread.turns.flatMap((turn) =>
+      turn.items.map((item) =>
+        item.type === 'userMessage'
+          ? ({ ...item, _turnId: turn.id } as unknown as ThreadItem)
+          : item,
+      ),
+    );
+  }
 }

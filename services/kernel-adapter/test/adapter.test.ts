@@ -531,6 +531,45 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     // 包装对象没有顶层 type —— 不解开会让对话区整页空白
     expect(listed.every((item) => typeof item.type === 'string')).toBe(true);
   });
+
+  it('thread/items/list 不受当前存储支持时，用 thread/read 补回完整历史', async () => {
+    await adapter.start();
+    server.removeMethod('thread/items/list');
+    server.handlers.set('thread/read', (ctx) => ({
+      thread: makeThread({
+        id: String(ctx.params.threadId),
+        turns: [
+          makeTurn({
+            id: 'turn-1',
+            items: [
+              { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: '问题' }] },
+              { id: 'a1', type: 'agentMessage', text: '完整回答' },
+            ],
+          }),
+        ],
+      }),
+    }));
+
+    const { items } = await adapter.openTask('t1');
+
+    await expect(items).resolves.toEqual([
+      {
+        id: 'u1',
+        type: 'userMessage',
+        content: [{ type: 'text', text: '问题' }],
+        _turnId: 'turn-1',
+      },
+      { id: 'a1', type: 'agentMessage', text: '完整回答' },
+    ]);
+    expect(server.received).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: 'thread/read',
+          params: expect.objectContaining({ threadId: 't1', includeTurns: true }),
+        }),
+      ]),
+    );
+  });
 });
 
 describe('预算（Q11：用内核的 ThreadGoal.budget，不自建）', () => {

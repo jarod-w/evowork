@@ -10,7 +10,7 @@
  *
  * 四条来自文档的布局与行为约束：
  *
- * 1. **结果区默认收起**（`⌘I` 切换），由用户点击内容或「打开结果」展开；
+ * 1. **有结果时默认显示**（`⌘I` 切换），用户手动收起后不再被内容变化抢开；
  *    普通文件变更不会机械地抢开面板（类 ChatGPT UI 方案 C4）。
  * 2. **自动滚动只在用户已在底部时跟随**；用户上滑后停止跟随并显示「↓ 有新内容」（04 §5.1）。
  * 3. **状态不能只读 `ThreadStatus`**（04 §3.2 / F7）—— 状态由适配层的投影表给出，
@@ -345,9 +345,11 @@ const BOTTOM_THRESHOLD = 64;
 
 export function TaskWorkspace(props: TaskWorkspaceProps) {
   const view = STATUS_VIEW[props.status];
-  const [localResultOpen, setLocalResultOpen] = useState(false);
+  /** undefined = 尚未表达偏好，跟随“有结果就默认显示”；boolean = 尊重用户选择。 */
+  const [localResultOpen, setLocalResultOpen] = useState<boolean | undefined>(undefined);
   const [localResultTab, setLocalResultTab] = useState<ResultPane>('artifacts');
-  const resultOpen = props.resultOpen ?? localResultOpen;
+  const resultOpen =
+    props.resultOpen ?? localResultOpen ?? Boolean(props.hasResults || props.resultPanel);
   const resultTab = props.resultTab ?? localResultTab;
   const [visibleCount, setVisibleCount] = useState(TIMELINE_PAGE_SIZE);
   const [hasNewContent, setHasNewContent] = useState(false);
@@ -386,6 +388,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     setVisibleCount(TIMELINE_PAGE_SIZE);
     followOutputRef.current = true;
     setHasNewContent(false);
+    setLocalResultOpen(undefined);
   }, [props.taskId]);
 
   const lastItemId = props.items.at(-1)?.id;

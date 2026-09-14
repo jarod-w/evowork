@@ -394,7 +394,7 @@ describe('结果工作区真实接线', () => {
     cwd: '/Users/x/q3',
   };
 
-  it('按任务读取产物，打开结果后可交给系统打开文件', async () => {
+  it('按任务读取产物，结果默认显示并可交给系统打开文件', async () => {
     const openResultFile = vi.fn(async () => undefined);
     const { bridge } = fakeBridge({
       getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
@@ -414,7 +414,7 @@ describe('结果工作区真实接线', () => {
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('生成季度报告'));
 
-    fireEvent.click(await screen.findByRole('button', { name: '打开结果' }));
+    expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: /季度报告\.docx/ }));
     expect(openResultFile).toHaveBeenCalledWith({ artifactId: 'a1' });
   });

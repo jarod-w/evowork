@@ -321,6 +321,16 @@ export interface ThreadListResponse {
   readonly backwardsCursor?: string | null;
 }
 
+export interface ThreadReadParams {
+  readonly threadId: string;
+  /** 兼容不支持历史分页的内核存储后端；新后端优先使用 thread/items/list。 */
+  readonly includeTurns?: boolean;
+}
+
+export interface ThreadReadResponse {
+  readonly thread: Thread;
+}
+
 export interface ThreadItemsListParams {
   readonly threadId: string;
   readonly cursor?: string;

@@ -1,7 +1,7 @@
 /**
  * 任务工作台（04）的行为约束。
  *
- * 盯的是文档里带"必须/默认"的四条：结果区默认收起并按需打开、
+ * 盯的是文档里带"必须/默认"的四条：有结果时默认显示且可手动收起、
  * 状态文案与 01 §6.1 一致（含"已中断"这一态）、审批卡内联而非模态、
  * 空态给出下一步动作。
  */
@@ -62,7 +62,7 @@ describe('状态视觉规范（01 §6.1）', () => {
 });
 
 describe('结果区（04 §1）', () => {
-  it('**默认收起**', () => {
+  it('没有可展示结果时默认不显示', () => {
     const { container } = renderWorkspace();
     expect(container.querySelector('.ew-result-pane')).toBeNull();
     expect(container.querySelector('.ew-task-workspace')?.getAttribute('data-result-open')).toBe(
@@ -70,28 +70,27 @@ describe('结果区（04 §1）', () => {
     );
   });
 
-  it('有结果时仍保持收起，并提供明确入口', () => {
+  it('有结果时默认显示，并提供明确的收起入口', () => {
     const { container } = renderWorkspace({ hasResults: true });
-    expect(container.querySelector('.ew-result-pane')).toBeNull();
-    expect(screen.getByRole('button', { name: '打开结果' })).toBeTruthy();
+    expect(container.querySelector('.ew-result-pane')).not.toBeNull();
+    expect(screen.getByRole('button', { name: '关闭结果' })).toBeTruthy();
   });
 
-  it('用户打开和关闭结果区，不被内容变化抢开', () => {
+  it('用户关闭和重新打开结果区，关闭后不被内容变化抢开', () => {
     const { container, rerender, props } = renderWorkspace({ hasResults: true });
-    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
-    expect(container.querySelector('.ew-result-pane')).not.toBeNull();
-
     fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
     expect(container.querySelector('.ew-result-pane')).toBeNull();
 
     // 又来了一个产物：不该把面板重新弹开（那会打断用户）
     rerender(<TaskWorkspace {...props} hasResults={true} />);
     expect(container.querySelector('.ew-result-pane')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
+    expect(container.querySelector('.ew-result-pane')).not.toBeNull();
   });
 
   it('结果区四视图用**浅色**分段控件（01 §5.10：决定已装内容怎么看）', () => {
     const { container } = renderWorkspace({ hasResults: true });
-    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     const segmented = container.querySelector('.ew-segmented');
     expect(segmented?.getAttribute('data-variant')).toBe('light');
     for (const label of ['产物', '文件', '变更', '浏览器']) {
@@ -102,14 +101,13 @@ describe('结果区（04 §1）', () => {
   it('⌘I 切换结果区（02 §6）', () => {
     const { container } = renderWorkspace({ hasResults: true });
     fireEvent.keyDown(window, { key: 'i', metaKey: true });
-    expect(container.querySelector('.ew-result-pane')).not.toBeNull();
-    fireEvent.keyDown(window, { key: 'i', metaKey: true });
     expect(container.querySelector('.ew-result-pane')).toBeNull();
+    fireEvent.keyDown(window, { key: 'i', metaKey: true });
+    expect(container.querySelector('.ew-result-pane')).not.toBeNull();
   });
 
   it('无产物时的空态解释什么算产物（04 §8）', () => {
     renderWorkspace({ hasResults: true });
-    fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     expect(screen.getByText('还没有产物')).toBeTruthy();
     expect(screen.getByText(/文档、表格、幻灯片等交付物/)).toBeTruthy();
   });
@@ -124,7 +122,7 @@ describe('结果区（04 §1）', () => {
   it('顶栏不展示重命名、分叉、归档、删除；归档删除仍在侧栏任务菜单', () => {
     renderWorkspace({ hasResults: true, title: '季度汇报 PPT' });
     expect(screen.getByRole('heading', { name: '季度汇报 PPT' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '打开结果' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '关闭结果' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '重命名' })).toBeNull();
     expect(screen.queryByRole('button', { name: '分叉' })).toBeNull();
     expect(screen.queryByRole('button', { name: '归档' })).toBeNull();
@@ -363,8 +361,7 @@ describe('2.7.3–2.7.5 补齐项', () => {
 
   it('结果区可用键盘调宽，Esc 关闭后焦点回到入口', () => {
     renderWorkspace({ hasResults: true });
-    const trigger = screen.getByRole('button', { name: '打开结果' });
-    fireEvent.click(trigger);
+    const trigger = screen.getByRole('button', { name: '关闭结果' });
     const separator = screen.getByRole('separator', { name: '调整结果区宽度' });
     expect(separator.getAttribute('aria-valuenow')).toBe('560');
     fireEvent.keyDown(separator, { key: 'ArrowLeft' });
