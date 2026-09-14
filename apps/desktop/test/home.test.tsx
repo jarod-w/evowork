@@ -60,6 +60,13 @@ describe('克制的空白首页（类 ChatGPT UI §8）', () => {
     expect(screen.getByRole('button', { name: /文档处理/ })).toBeTruthy();
   });
 
+  it('输入框是首页主内容的最后一项，快捷建议不会把它挤离底部', () => {
+    render(<Harness />);
+    const primary = document.querySelector('.ew-home-primary');
+    const composer = document.querySelector('.ew-composer');
+    expect(primary?.lastElementChild).toBe(composer);
+  });
+
   it('**chip 只写入 Composer，不发送**（03 §3.2）', () => {
     const onSend = vi.fn();
     render(<Harness over={{ composer: { onSend } }} />);

@@ -143,8 +143,6 @@ export function Home(props: HomeProps) {
         <div className="ew-home-primary">
           <h1 className="ew-hero">{props.heroLine}</h1>
 
-          <Composer {...props.composer} value={props.value} onChange={props.onChange} />
-
           {props.value.trim() === '' && chips.length > 0 ? (
             <FilterChipRow ariaLabel="快捷建议">
               {chips.map((chip, index) => (
@@ -161,6 +159,8 @@ export function Home(props: HomeProps) {
               ))}
             </FilterChipRow>
           ) : null}
+
+          <Composer {...props.composer} value={props.value} onChange={props.onChange} />
         </div>
 
         {/* 兼容企业策略插槽配置；新版主路径不再渲染案例墙。 */}

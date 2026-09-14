@@ -2483,14 +2483,16 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-size: var(--font-body-size);
 }
 .ew-home > .ew-content-column {
-  justify-content: center;
   min-height: 100%;
+  padding-bottom: var(--space-24);
   box-sizing: border-box;
 }
 .ew-home-primary {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--space-20);
+  min-height: 0;
   width: 100%;
 }
 /*
@@ -2498,6 +2500,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
  * 截图 1 就是这个不对称的排布：居中的是"这个产品是什么"，左对齐的是"你可以做什么"。
  */
 .ew-home .ew-hero {
+  margin-block: auto;
   text-align: center;
 }
 .ew-hero {

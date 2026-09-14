@@ -274,6 +274,18 @@ describe('主内容区的每个根类都要参与 .ew-app 的 flex 布局', () =
   });
 });
 
+describe('新建任务首页的输入框固定在内容列底部', () => {
+  it('首页主区吃满剩余高度，标题用弹性空间居中', () => {
+    const primaryRule = /\.ew-home-primary\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    const heroRule = /\.ew-home \.ew-hero\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+
+    expect(primaryRule, '首页主区没有吃满内容列，Composer 无法落到底部').toContain('flex: 1');
+    expect(heroRule, '标题上下没有弹性留白，Composer 会跟着标题停在页面中部').toContain(
+      'margin-block: auto',
+    );
+  });
+});
+
 /*
  * 用户菜单包在定位锚点里、「任务」行包在 Popover 锚点里，都不再是 sidebar-nav
  * 的直接 flex 子项。按钮默认按内容收缩，选中灰就只盖住文字那一半 ——
