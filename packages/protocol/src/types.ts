@@ -331,6 +331,11 @@ export interface ThreadReadResponse {
   readonly thread: Thread;
 }
 
+/** thread/resume 返回字段很多；历史兼容路径只依赖 thread。 */
+export interface ThreadResumeResponse {
+  readonly thread: Thread;
+}
+
 export interface ThreadItemsListParams {
   readonly threadId: string;
   readonly cursor?: string;

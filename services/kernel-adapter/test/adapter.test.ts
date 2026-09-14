@@ -535,6 +535,10 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
   it('thread/items/list 不受当前存储支持时，用 thread/read 补回完整历史', async () => {
     await adapter.start();
     server.removeMethod('thread/items/list');
+    // resume 本身不可用时才需要最后一级 thread/read 兼容路径。
+    server.handlers.set('thread/resume', () => {
+      throw new Error('resume unavailable');
+    });
     server.handlers.set('thread/read', (ctx) => ({
       thread: makeThread({
         id: String(ctx.params.threadId),
@@ -569,6 +573,32 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
         }),
       ]),
     );
+  });
+
+  it('分页接口不可用时优先使用 resume 已返回的历史，不再触发会失败的 thread/read', async () => {
+    await adapter.start();
+    server.removeMethod('thread/items/list');
+    server.handlers.set('thread/resume', (ctx) => ({
+      thread: makeThread({
+        id: String(ctx.params.threadId),
+        turns: [
+          makeTurn({
+            id: 'turn-from-resume',
+            items: [{ id: 'a1', type: 'agentMessage', text: '恢复时已经拿到的完整回答' }],
+          }),
+        ],
+      }),
+    }));
+    server.handlers.set('thread/read', () => {
+      throw new Error('failed to read thread');
+    });
+
+    const { items } = await adapter.openTask('t1');
+
+    await expect(items).resolves.toEqual([
+      { id: 'a1', type: 'agentMessage', text: '恢复时已经拿到的完整回答' },
+    ]);
+    expect(server.received.filter((request) => request.method === 'thread/read')).toHaveLength(0);
   });
 });
 

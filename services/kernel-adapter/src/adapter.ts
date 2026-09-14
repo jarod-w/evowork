@@ -31,6 +31,7 @@ import {
   type ThreadItemsListResponse,
   type ThreadListResponse,
   type ThreadReadResponse,
+  type ThreadResumeResponse,
   type ThreadStartResponse,
   type Turn,
   type TurnStartResponse,
@@ -254,12 +255,15 @@ export function createAdapter(options: AdapterOptions) {
     let recovered = 0;
     for (const threadId of session.openThreads) {
       try {
-        await session.peer.request(METHOD.threadResume, { threadId });
+        const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
+          threadId,
+        });
         // 拉全量 item 后由前端按 item_id 去重合并（09 §5 第三行：事件丢失的兜底）。
         // 某些存储后端尚未实现分页接口，要走 thread/read 的兼容路径。
         await listAllThreadItemsWithFallback(
           (method, params) => session.peer.request(method, params),
           threadId,
+          resumed.thread.turns,
         );
         recovered += 1;
       } catch (err) {
@@ -711,10 +715,13 @@ export function createAdapter(options: AdapterOptions) {
       session.openThreads.add(threadId);
       const cached = store.readItemDigest(threadId);
       const items = (async () => {
-        await session.peer.request(METHOD.threadResume, { threadId }).catch(() => undefined);
+        const resumed = await session.peer
+          .request<ThreadResumeResponse>(METHOD.threadResume, { threadId })
+          .catch(() => undefined);
         return listAllThreadItemsWithFallback(
           (method, params) => session.peer.request(method, params),
           threadId,
+          resumed?.thread.turns,
         );
       })();
       return { cached, items };
@@ -875,21 +882,26 @@ async function listAllThreadItems(
 async function listAllThreadItemsWithFallback(
   request: <T>(method: string, params?: unknown) => Promise<T>,
   threadId: string,
+  resumedTurns?: readonly Turn[],
 ): Promise<readonly ThreadItem[]> {
   try {
     return await listAllThreadItems(request, threadId);
   } catch (err: unknown) {
     if (!(err instanceof JsonRpcCallError) || !err.isMethodNotFound) throw err;
+    if (resumedTurns && resumedTurns.length > 0) return itemsFromTurns(resumedTurns);
     const response = await request<ThreadReadResponse>(METHOD.threadRead, {
       threadId,
       includeTurns: true,
     });
-    return response.thread.turns.flatMap((turn) =>
-      turn.items.map((item) =>
-        item.type === 'userMessage'
-          ? ({ ...item, _turnId: turn.id } as unknown as ThreadItem)
-          : item,
-      ),
-    );
+    return itemsFromTurns(response.thread.turns);
   }
+}
+
+/** 保留 userMessage 的回合归属，让历史加载后的过程分组与实时事件一致。 */
+function itemsFromTurns(turns: readonly Turn[]): readonly ThreadItem[] {
+  return turns.flatMap((turn) =>
+    turn.items.map((item) =>
+      item.type === 'userMessage' ? ({ ...item, _turnId: turn.id } as unknown as ThreadItem) : item,
+    ),
+  );
 }
