@@ -151,7 +151,14 @@ export function createEventRouter(options: EventRouterOptions) {
       const p = params as { thread?: Thread };
       if (!p.thread) return [];
       const status = store.threads.upsertFromThread(p.thread);
-      onUiEvent({ type: 'task-created', threadId: p.thread.id, title: p.thread.name ?? null });
+      const row = store.threads.get(p.thread.id);
+      // 展示标题读投影表，不读这张可能尚未命名的快照。createTask 已经用第一条
+      // 需求写过 first_message / title 时，这里必须把那个名字带给 UI。
+      onUiEvent({
+        type: 'task-created',
+        threadId: p.thread.id,
+        title: row?.title ?? p.thread.name ?? null,
+      });
       onUiEvent({ type: 'task-status', threadId: p.thread.id, status });
       return [];
     },

@@ -242,6 +242,27 @@ describe('新建任务（03 §4.6）', () => {
     // 内核回的 thread/name/updated 走事件路由落进投影表（title 的真源是内核，09 §4.1）
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(store.threads.get(threadId)?.title).toBe('把 data/ 下的三张表合并成季度汇总');
+    expect(store.threads.get(threadId)?.first_message).toBe('把 data/ 下的三张表合并成季度汇总');
+    expect(ui).toEqual(
+      expect.arrayContaining([
+        { type: 'task-created', threadId, title: '把 data/ 下的三张表合并成季度汇总' },
+      ]),
+    );
+  });
+
+  it('迟到的 thread/started（name 为空）不能把刚起的标题抹掉', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      input: [{ type: 'text', text: '你认为学播音的去英国读怎么样' }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.threads.get(threadId)?.title).toBe('你认为学播音的去英国读怎么样');
+
+    server.notify('thread/started', {
+      thread: makeThread({ id: threadId, name: null, preview: '' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.threads.get(threadId)?.title).toBe('你认为学播音的去英国读怎么样');
   });
 
   it('起名不了就不起（只有附件的任务不发 thread/name/set）', async () => {

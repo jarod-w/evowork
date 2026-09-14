@@ -445,7 +445,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const offs = [
       bridge.onUiEvent((event) => {
         if (event.type === 'task-created') {
-          setTasks((prev) => [event.task, ...prev.filter((t) => t.id !== event.task.id)]);
+          setTasks((prev) => {
+            const existing = prev.find((task) => task.id === event.task.id);
+            const task =
+              existing?.title && !event.task.title
+                ? { ...event.task, title: existing.title }
+                : event.task;
+            return [task, ...prev.filter((t) => t.id !== task.id)];
+          });
           return;
         }
         if (event.type === 'turn-failed') {

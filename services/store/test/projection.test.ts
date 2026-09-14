@@ -147,6 +147,24 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
     });
   });
 
+  it('内核快照 name 为空时不把已经起好的标题抹掉', () => {
+    withStore((store) => {
+      store.threads.upsertFromThread(thread({ name: '你认为学播音的去英国读怎么样' }));
+      store.threads.upsertFromThread(thread({ name: null, preview: '' }));
+      expect(store.threads.get('t1')?.title).toBe('你认为学播音的去英国读怎么样');
+    });
+  });
+
+  it('创建时写入的 first_message 不被空 preview 覆盖', () => {
+    withStore((store) => {
+      store.threads.upsertFromThread(thread({ preview: '' }), {
+        firstMessage: '你认为学播音的去英国读怎么样',
+      });
+      store.threads.upsertFromThread(thread({ preview: '' }));
+      expect(store.threads.get('t1')?.first_message).toBe('你认为学播音的去英国读怎么样');
+    });
+  });
+
   it('applyTurnCompleted 是三个终态**唯一的来源**', () => {
     withStore((store) => {
       store.threads.upsertFromThread(thread({ status: ACTIVE }));
@@ -379,6 +397,16 @@ describe('setTitleSource', () => {
       expect(store.threads.titleSourceOf('t1')).toBeNull();
       expect(store.threads.setTitleSource('t1', 'user')).toBe(true);
       expect(store.threads.titleSourceOf('t1')).toBe('user');
+    });
+  });
+
+  it('applyTitle 同时写入标题和来源；行不存在时返回 false', () => {
+    withStore((store) => {
+      expect(store.threads.applyTitle('nope', '周报', 'derived')).toBe(false);
+      store.threads.upsertFromThread(thread({ id: 't1' }));
+      expect(store.threads.applyTitle('t1', '周报', 'derived')).toBe(true);
+      expect(store.threads.get('t1')?.title).toBe('周报');
+      expect(store.threads.titleSourceOf('t1')).toBe('derived');
     });
   });
 });

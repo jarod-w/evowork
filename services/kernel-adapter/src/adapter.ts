@@ -239,9 +239,10 @@ export function createAdapter(options: AdapterOptions) {
        * 名字**已经写进内核了**，所以这次改名是成功的 —— 但来源丢了，
        * 下一个产物会再改一次名。不留痕的话没人能解释那次多余的改名。
        */
-      if (!store.threads.setTitleSource(threadId, source)) {
+      if (!store.threads.applyTitle(threadId, name, source)) {
         logger?.warn('adapter.title_source.no_row', { threadId });
       }
+      options.onUiEvent?.({ type: 'task-renamed', threadId, title: name });
       return true;
     } catch (err: unknown) {
       // 起名失败不影响任务本身，但**要留痕**：否则"为什么还是未命名"没有任何线索
@@ -471,10 +472,20 @@ export function createAdapter(options: AdapterOptions) {
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
       });
 
+      const title = deriveTaskTitle(args.input);
+      const firstMessage = args.input
+        .filter((part): part is Extract<UserInput, { type: 'text' }> => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n')
+        .trim();
+
       store.threads.upsertFromThread(started.thread, {
         ...expanded.origin,
         ...(args.automationId ? { automationId: args.automationId } : {}),
+        ...(firstMessage !== '' ? { firstMessage } : {}),
       });
+      // 侧边栏不必等 `thread/started`：那条通知的 name 是 null，而且可能晚于命名。
+      options.onUiEvent?.({ type: 'task-created', threadId, title: title ?? null });
 
       const turnResponse = await session.peer.request<TurnStartResponse>(
         METHOD.turnStart,
@@ -486,7 +497,6 @@ export function createAdapter(options: AdapterOptions) {
        * 让第一个字慢一次往返。失败也不抛 —— 一个装饰性字段没写上，
        * 不该把一个已经跑起来的任务变成"创建失败"（见 `setTaskName`）。
        */
-      const title = deriveTaskTitle(args.input);
       if (title !== undefined) await setTaskName(threadId, title, 'derived');
 
       return { threadId, turn: turnResponse.turn, degradations: expanded.degradations };

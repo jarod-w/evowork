@@ -93,6 +93,12 @@ export interface ThreadOrigin {
   readonly permissionId?: string;
   readonly automationId?: string;
   readonly budgetLimit?: number;
+  /**
+   * 第一条需求正文。内核在 `thread/started` 时 `preview` 还是空的，
+   * 不在创建当下记下来，展示层就只能显示「未命名任务」，直到重启
+   * 走 `thread/list` 才拿得到 preview。
+   */
+  readonly firstMessage?: string;
 }
 
 export interface ThreadFilter {
@@ -160,6 +166,9 @@ export class ThreadProjection {
    * 只覆盖**内核权威**的字段（title / cwd / archived / model / 时间戳 / section / project），
    * 不动 EvoWork 自己的字段（scenario / mode / budget / artifact_count）——
    * 否则每次对账都会把用户在任务里改过的模式冲掉。
+   *
+   * `title` 例外：内核快照里 `name` 为 null 时保留已有标题。`thread/started`
+   * 在 `thread/name/set` 之前发出，那张快照的 name 永远是空的。
    */
   upsertFromThread(thread: Thread, origin: ThreadOrigin = {}): DerivedStatus {
     const existing = this.get(thread.id);
@@ -181,7 +190,9 @@ export class ThreadProjection {
            budget_limit, first_message, parent_thread_id, created_at, updated_at, recency_at
          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(thread_id) DO UPDATE SET
-           title = excluded.title,
+           -- 内核 thread/started 在命名之前发出，name 是 null。
+           -- 用它覆盖会把已经起好的标题抹掉，重启走 thread/list 又回来。
+           title = COALESCE(excluded.title, thread_projection.title),
            cwd = excluded.cwd,
            project_id = excluded.project_id,
            section_id = excluded.section_id,
@@ -213,7 +224,7 @@ export class ThreadProjection {
         thread.model ?? null,
         origin.automationId ?? null,
         origin.budgetLimit ?? null,
-        thread.preview || null,
+        origin.firstMessage ?? (thread.preview || null),
         thread.parentThreadId ?? null,
         toMs(thread.createdAt),
         toMs(thread.updatedAt),
@@ -234,6 +245,20 @@ export class ThreadProjection {
     const result = this.db
       .prepare(`UPDATE thread_projection SET title_source = ?, updated_at = ? WHERE thread_id = ?`)
       .run(source, now, threadId) as { changes?: number } | undefined;
+    return (result?.changes ?? 0) > 0;
+  }
+
+  /**
+   * `thread/name/set` 成功之后立刻写下标题。通知 `thread/name/updated` 是
+   * 响应之后才发的；等它的话，中间插进来的 `thread/started`（name=null）
+   * 会把这一行重新变成未命名。
+   */
+  applyTitle(threadId: string, title: string, source: TitleSource, now = Date.now()): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE thread_projection SET title = ?, title_source = ?, updated_at = ? WHERE thread_id = ?`,
+      )
+      .run(title, source, now, threadId) as { changes?: number } | undefined;
     return (result?.changes ?? 0) > 0;
   }
 

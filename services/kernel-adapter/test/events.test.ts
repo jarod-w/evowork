@@ -70,6 +70,22 @@ describe('09 §3.4 的分发表逐行', () => {
     ]);
   });
 
+  it('thread/started 的快照没有名字时，沿用投影表里已经起好的标题', () => {
+    router.handle(NOTIFICATION.threadStarted, {
+      thread: makeThread({ id: 't1', name: '你认为学播音的去英国读怎么样' }),
+    });
+    ui = [];
+    router.handle(NOTIFICATION.threadStarted, {
+      thread: makeThread({ id: 't1', name: null, preview: '' }),
+    });
+    expect(store.threads.get('t1')?.title).toBe('你认为学播音的去英国读怎么样');
+    expect(ui[0]).toEqual({
+      type: 'task-created',
+      threadId: 't1',
+      title: '你认为学播音的去英国读怎么样',
+    });
+  });
+
   it('thread/status/changed → 更新状态，待处理时**发通知**（用户可能在别的页面）', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     effects = [];

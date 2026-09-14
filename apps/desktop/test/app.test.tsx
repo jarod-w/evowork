@@ -280,6 +280,26 @@ describe('事件接线', () => {
     await waitFor(() => expect(screen.getByText('季度汇报')).toBeTruthy());
   });
 
+  it('后到的未命名 task-created 不能把已经显示的标题冲掉', async () => {
+    const { bridge, emit } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    const row = {
+      id: 't9',
+      title: '你认为学播音的去英国读怎么样' as string | null,
+      status: 'running' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    emit.ui?.({ type: 'task-created', task: row });
+    await waitFor(() => expect(screen.getByText('你认为学播音的去英国读怎么样')).toBeTruthy());
+
+    emit.ui?.({ type: 'task-created', task: { ...row, title: null } });
+    await waitFor(() => expect(screen.getByText('你认为学播音的去英国读怎么样')).toBeTruthy());
+    expect(screen.queryByText('未命名任务')).toBeNull();
+  });
+
   it('后台任务进入运行态不会把当前任务的 Composer 误切成中断按钮', async () => {
     const current = {
       id: 'current',
