@@ -170,38 +170,13 @@ export function groupTimelineItems(items: readonly RenderItem[]): readonly Timel
   return entries;
 }
 
-function itemLabel(item: RenderItem): string {
-  if (item.type === 'agentMessage') {
-    const text = typeof item.text === 'string' ? item.text.trim().split('\n')[0] : '';
-    return text || '整理回复';
-  }
-  if (item.type === 'reasoning') return '分析任务';
-  if (item.type === 'plan') {
-    const steps = Array.isArray(item.steps)
-      ? (item.steps as { step?: string; status?: string }[])
-      : [];
-    return steps.find((step) => step.status === 'in_progress')?.step ?? '整理计划';
-  }
-  if (item.type === 'commandExecution') return String(item.command || '运行命令');
-  if (item.type === 'webSearch') return `搜索 ${String(item.query || '资料')}`;
-  if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall')
-    return String(item.toolName || item.name || '调用工具');
-  if (item.type === 'fileChange') return '更新文件';
-  if (item.type === 'subAgentActivity' || item.type === 'collabAgentToolCall')
-    return String(item.agentRole || item.nickname || '处理子任务');
-  if (item.type === 'imageGeneration') return '生成图片';
-  return '处理任务';
-}
-
 export interface ProcessSummary {
   readonly label: string;
-  readonly action: string;
   readonly status: '进行中' | '已完成' | '失败' | '需要你处理';
   readonly detail?: string | undefined;
 }
 
 export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
-  const latest = items.at(-1) as RenderItem;
   const failed = items.some(
     (item) =>
       item.type === 'commandExecution' && typeof item.exitCode === 'number' && item.exitCode !== 0,
@@ -229,7 +204,6 @@ export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
 
   return {
     label: '处理过程',
-    action: itemLabel(latest),
     status: needsUser ? '需要你处理' : failed ? '失败' : running ? '进行中' : '已完成',
     detail,
   };
@@ -264,7 +238,7 @@ function ProcessGroup({
       className="ew-item ew-process-group"
       data-expanded={expanded ? 'true' : 'false'}
       role="group"
-      aria-label={`${summary.label}：${summary.action}，${summary.status}`}
+      aria-label={`${summary.label}，${summary.status}`}
     >
       <button
         type="button"
@@ -276,7 +250,6 @@ function ProcessGroup({
           {renderIcon(expanded ? 'chevron-down' : 'chevron-right')}
         </span>
         <span className="ew-process-kind">{summary.label}</span>
-        <span className="ew-process-action">{summary.action}</span>
         <span className="ew-process-meta">
           {summary.status} · {summary.detail}
         </span>

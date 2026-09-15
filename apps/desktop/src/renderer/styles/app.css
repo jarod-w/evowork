@@ -894,15 +894,9 @@ textarea {
   color: var(--text-primary);
   font-weight: var(--font-label-weight);
 }
-.ew-process-action {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .ew-process-meta {
   flex: none;
+  margin-inline-start: auto;
   color: var(--text-secondary);
   font-size: var(--font-caption-size);
 }

@@ -174,6 +174,8 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
     expect(container.querySelector('[data-kind="reasoning"]')).toBeNull();
     expect(container.querySelector('[data-kind="commandExecution"]')).toBeNull();
     expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
+    // 折叠行只留「处理过程」和状态/耗时，不把命令贴在标题后面。
+    expect(process.textContent).not.toContain('python render.py');
 
     fireEvent.click(process);
     expect(screen.getByText('先看看工作空间里有什么可用的项目信息。')).toBeTruthy();
@@ -253,6 +255,36 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
 
     expect(container.querySelector('.ew-process-group')).toBeNull();
     expect(screen.queryByRole('button', { name: /思考|处理过程/ })).toBeNull();
+  });
+
+  it('折叠行不展示原始命令，只留「处理过程」和状态', () => {
+    renderWorkspace({
+      items: [
+        {
+          id: 'command-1',
+          type: 'commandExecution',
+          completed: true,
+          command:
+            "/bin/bash -lc 'cd /Users/wangli/develop/evowork/evowork && ls __pycache__; git status'",
+          exitCode: 1,
+          durationSeconds: 76,
+        },
+        {
+          id: 'answer-1',
+          type: 'agentMessage',
+          completed: true,
+          text: '脚本写好了',
+        },
+      ],
+    });
+
+    const process = screen.getByRole('button', { name: /处理过程/ });
+    expect(process.getAttribute('aria-expanded')).toBe('false');
+    expect(process.textContent).toMatch(/处理过程/);
+    expect(process.textContent).toMatch(/失败/);
+    expect(process.textContent).not.toContain('/bin/bash');
+    expect(process.textContent).not.toContain('git status');
+    expect(screen.queryByText(/\/bin\/bash/)).toBeNull();
   });
 });
 
@@ -338,7 +370,7 @@ describe('流式区的无障碍（01 §8.1）', () => {
 });
 
 describe('2.7.3–2.7.5 补齐项', () => {
-  it('同一回合的过程事件收成一组，生成中展开并保留当前动作与状态', () => {
+  it('同一回合的过程事件收成一组，生成中展开并保留状态', () => {
     const { container } = renderWorkspace({
       items: [
         { id: 'r', type: 'reasoning', completed: true, content: ['分析需求'] },
@@ -349,9 +381,11 @@ describe('2.7.3–2.7.5 补齐项', () => {
       ],
     });
 
-    const process = screen.getByRole('button', { name: /处理过程.*生成图片.*进行中/ });
+    const process = screen.getByRole('button', { name: /处理过程.*进行中/ });
     expect(screen.getAllByRole('button', { name: /处理过程/ })).toHaveLength(1);
     expect(process.getAttribute('aria-expanded')).toBe('true');
+    expect(process.textContent).not.toContain('生成图片');
+    expect(process.textContent).not.toContain('pnpm test');
     expect(container.querySelector('[data-kind="imageGeneration"]')).not.toBeNull();
     expect(screen.getByText('a.ts')).toBeTruthy();
   });
