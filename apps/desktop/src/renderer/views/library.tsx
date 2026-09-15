@@ -85,6 +85,8 @@ export interface LibraryTreeNode {
 
 export interface LibraryProps {
   readonly rows: readonly LibraryRow[];
+  /** 从全局搜索的「搜索文件」进入时直接落在搜索视图。 */
+  readonly initialNav?: LibraryNav | undefined;
   readonly shares?: readonly ShareRow[] | undefined;
   readonly myFiles?: readonly LibraryTreeNode[] | undefined;
   readonly teamSpaces?: readonly LibraryTreeNode[] | undefined;
@@ -112,7 +114,7 @@ const TYPE_FILTERS: readonly TypeFilter[] = [
 ];
 
 export function Library(props: LibraryProps) {
-  const [nav, setNav] = useState<LibraryNav>('recent');
+  const [nav, setNav] = useState<LibraryNav>(props.initialNav ?? 'recent');
   const [tab, setTab] = useState<RecentTab>('recent');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<TypeFilter>('all');

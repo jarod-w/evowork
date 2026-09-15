@@ -86,7 +86,7 @@ import {
 import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
-import { Library } from './views/library.js';
+import { Library, type LibraryNav } from './views/library.js';
 import {
   Onboarding,
   ONBOARDING_STEPS,
@@ -99,7 +99,7 @@ import { ProjectDetailPage } from './views/project-detail.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
-import { TaskSearchPage } from './views/task-search.js';
+import { TaskSearchPalette } from './views/task-search.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
@@ -263,7 +263,6 @@ type MainView =
   | 'audit'
   | 'projects'
   | 'catalog'
-  | 'search'
   /** 设置（11 §4.4）。**一页多分区**，分区由 `settingsSection` 决定 —— 不是六个视图 */
   | 'settings'
   | 'more';
@@ -406,6 +405,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [libraryInitialNav, setLibraryInitialNav] = useState<LibraryNav>('recent');
   const [projectCreateOpen, setProjectCreateOpen] = useState(false);
   const [taskResults, setTaskResults] = useState<Readonly<Record<string, TaskResultsView>>>({});
   const [taskFiles, setTaskFiles] = useState<Readonly<Record<string, readonly DirEntryView[]>>>({});
@@ -565,13 +566,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       if (!event.metaKey && !event.ctrlKey) return;
       if (event.shiftKey && event.key.toLowerCase() === 'o') {
         event.preventDefault();
+        setSearchOpen(false);
         setActiveTaskId(null);
         setView('task');
         return;
       }
       if (!event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setView('search');
+        setSearchOpen(true);
         return;
       }
       if (!event.shiftKey && event.code === 'Backslash') {
@@ -953,6 +955,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .then(applyMutation)
       .catch(() => undefined);
   }, [bridge, applyMutation]);
+
+  const searchTasks = useCallback(
+    (query: string) => bridge.searchTasks?.({ query }) ?? Promise.resolve([]),
+    [bridge],
+  );
 
   const renameProject = useCallback(
     (input: { id: string; name: string }) => {
@@ -1526,7 +1533,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           onProjectCreate={() => setProjectCreateOpen(true)}
           onProjectImport={importProject}
-          onNavSelect={(id) => setView(NAV_TO_VIEW[id] ?? 'task')}
+          onNavSelect={(id) => {
+            if (id === 'library') setLibraryInitialNav('recent');
+            setView(NAV_TO_VIEW[id] ?? 'task');
+          }}
           /*
            * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
            * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
@@ -1563,7 +1573,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onToggleCollapse={() => setSidebarCollapsed(true)}
           searchOpen={false}
           onSearchOpenChange={(open) => {
-            if (open) setView('search');
+            if (open) setSearchOpen(true);
           }}
           brandName={startup?.appName}
           {...(startup
@@ -1633,6 +1643,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             void bridge.openAccountWeb({ path });
           }}
           library={library}
+          libraryInitialNav={libraryInitialNav}
           automations={automations}
           automationWorkspaces={(startup?.workspaces ?? [])
             .filter((workspace) => Boolean(workspace.path))
@@ -1682,7 +1693,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setActiveTaskId(id);
             setView('task');
           }}
-          onTaskSearch={(query) => bridge.searchTasks?.({ query }) ?? Promise.resolve([])}
           onOpenLibraryRow={(id) => {
             void bridge.openResultFile({ artifactId: id }).catch((error: unknown) =>
               pushToast({
@@ -1866,6 +1876,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
         />
       )}
+      {searchOpen ? (
+        <TaskSearchPalette
+          tasks={tasks}
+          workspaces={startup?.workspaces ?? []}
+          onSearch={searchTasks}
+          onClose={() => setSearchOpen(false)}
+          onOpenTask={(id) => {
+            setActiveTaskId(id);
+            setView('task');
+          }}
+          onNewChat={() => {
+            setActiveTaskId(null);
+            setView('task');
+          }}
+          onOpenFolder={importProject}
+          onSearchFiles={() => {
+            setLibraryInitialNav('search');
+            setView('library');
+          }}
+        />
+      ) : null}
       {discoverOpen ? (
         <DiscoverDrawer
           apps={catalog?.apps ?? []}
@@ -1924,6 +1955,7 @@ function MainPage(props: {
   readonly onRevokeDevice: (deviceId: string) => void;
   readonly onOpenAccountWeb: (path: string) => void;
   readonly library: LibraryDataView | null;
+  readonly libraryInitialNav: LibraryNav;
   readonly automations: AutomationsDataView | null;
   readonly automationWorkspaces: readonly { readonly id: string; readonly label: string }[];
   readonly onSaveAutomation: (input: AutomationMutationInput) => Promise<boolean>;
@@ -1939,7 +1971,6 @@ function MainPage(props: {
   readonly projectMemo: AgentsMemoView;
   readonly projectRefusal: string | undefined;
   readonly onOpenTask: (threadId: string) => void;
-  readonly onTaskSearch: (query: string) => Promise<readonly TaskSearchHitView[]>;
   readonly onOpenLibraryRow: (artifactId: string) => void;
   readonly onCloseProject: () => void;
   readonly onOpenProject: (id: string) => void;
@@ -1983,6 +2014,8 @@ function MainPage(props: {
     case 'library':
       return (
         <Library
+          key={props.libraryInitialNav}
+          initialNav={props.libraryInitialNav}
           rows={(props.library?.rows ?? []) as readonly LibraryRow[]}
           {...(props.library?.diskUsage ? { diskUsage: props.library.diskUsage } : {})}
           onOpen={(row) => props.onOpenLibraryRow(row.id)}
@@ -2003,9 +2036,6 @@ function MainPage(props: {
           onRun={props.onRunAutomation}
         />
       );
-
-    case 'search':
-      return <TaskSearchPage onSearch={props.onTaskSearch} onOpenTask={props.onOpenTask} />;
 
     case 'audit':
       return (

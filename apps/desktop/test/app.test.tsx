@@ -4,7 +4,7 @@
  * 盯两件事：**首页不创建 Thread**（发送后才有任务、才切页），
  * 以及流式增量按 id 合并 —— 后者做错的表现是同一条消息在对话里出现两次。
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Adapter } from '@evowork/kernel-adapter';
@@ -391,15 +391,74 @@ describe('全局快捷键与侧栏折叠', () => {
     fireEvent.click(await screen.findByText('旧任务'));
 
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
-    expect(screen.getByLabelText('搜索任务')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: '搜索聊天' })).toBeTruthy();
+    expect(screen.getByRole('searchbox', { name: '搜索聊天' })).toBeTruthy();
 
     fireEvent.keyDown(window, { key: 'o', metaKey: true, shiftKey: true });
     expect(await screen.findByText('有什么可以帮忙的？')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '搜索聊天' })).toBeNull();
 
     fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true });
     expect(screen.queryByLabelText('侧边栏')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }));
     expect(screen.getByLabelText('侧边栏')).toBeTruthy();
+  });
+
+  it('点搜索按钮打开覆盖当前界面的面板，先显示最近聊天与快捷操作', async () => {
+    const searchTasks = vi.fn(async () => [
+      {
+        task: {
+          id: 't-search',
+          title: '搜索命中的聊天',
+          status: 'completed' as const,
+          timeLabel: '刚刚',
+          updatedAt: Date.now(),
+          sectionId: 'ungrouped',
+          cwd: '/Users/x/evowork',
+        },
+        snippet: '正文里的搜索命中片段',
+      },
+    ]);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        workspaces: [{ id: 'p1', name: 'evowork', path: '/Users/x/evowork' }],
+        tasks: [
+          {
+            id: 't-recent',
+            title: '最近的聊天',
+            status: 'running',
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+            cwd: '/Users/x/evowork',
+          },
+        ],
+      }),
+      searchTasks,
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText('最近的聊天');
+    fireEvent.click(screen.getByLabelText('打开搜索框'));
+
+    const dialog = screen.getByRole('dialog', { name: '搜索聊天' });
+    expect(within(dialog).getByText('最近的聊天')).toBeTruthy();
+    expect(within(dialog).getByText('evowork')).toBeTruthy();
+    expect(within(dialog).getByText('新聊天')).toBeTruthy();
+    expect(within(dialog).getByText('打开文件夹')).toBeTruthy();
+    expect(within(dialog).getByText('搜索文件')).toBeTruthy();
+    // 浮层打开时，当前首页没有被搜索页替换。
+    expect(screen.getByText('有什么可以帮忙的？')).toBeTruthy();
+
+    fireEvent.change(within(dialog).getByLabelText('搜索聊天'), {
+      target: { value: '片段' },
+    });
+    await waitFor(() => expect(searchTasks).toHaveBeenCalledWith({ query: '片段' }));
+    expect(await within(dialog).findByText('搜索命中的聊天')).toBeTruthy();
+
+    fireEvent.keyDown(within(dialog).getByLabelText('搜索聊天'), { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '搜索聊天' })).toBeNull();
   });
 });
 
