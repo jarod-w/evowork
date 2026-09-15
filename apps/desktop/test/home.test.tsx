@@ -52,6 +52,13 @@ function Harness({ over }: { over?: Partial<HomeProps> }) {
 }
 
 describe('克制的空白首页（类 ChatGPT UI §8）', () => {
+  it('顶部保留独立的窗口拖拽带', () => {
+    render(<Harness />);
+    expect(
+      document.querySelector('.ew-home')?.firstElementChild?.classList.contains('ew-home-titlebar'),
+    ).toBe(true);
+  });
+
   it('首屏直接显示问候和输入框，不再显示常驻场景导航', () => {
     render(<Harness />);
     expect(screen.getByRole('heading', { name: 'EvoWork，我帮你' })).toBeTruthy();

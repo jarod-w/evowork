@@ -128,6 +128,9 @@ export function Home(props: HomeProps) {
 
   return (
     <div className="ew-home">
+      {/* hiddenInset 没有系统标题栏；这条空白带负责把首页顶部交给窗口拖动。 */}
+      <div className="ew-home-titlebar" aria-hidden="true" />
+
       {/* Q18：插槽只渲染静态内容。这里连 onClick 埋点都不接 —— 接了就等于开了回传通道 */}
       {slots.titlebarPromo ? <div className="ew-slot" data-slot="titlebar-promo" /> : null}
 

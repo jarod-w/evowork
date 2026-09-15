@@ -348,6 +348,17 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
     const buttons = /\.ew-title-bar button\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
     expect(buttons).toContain('-webkit-app-region: no-drag');
   });
+
+  it('空白首页顶部同样是窗口拖拽区，且不会把内容列撑出一屏', () => {
+    const titlebar = /\.ew-home-titlebar\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(titlebar).toContain('height: var(--layout-title-bar-height)');
+    expect(titlebar).toContain('-webkit-app-region: drag');
+
+    const content = /\.ew-home\s*>\s*\.ew-content-column\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(content).toContain('flex: 1');
+    expect(content).toContain('min-height: 0');
+    expect(content).not.toContain('min-height: 100%');
+  });
 });
 
 /*

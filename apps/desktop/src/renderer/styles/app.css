@@ -2474,6 +2474,8 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 /* ─────────────────────────── 首页（03）─────────────────────────── */
 
 .ew-home {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   overflow-y: auto;
   background: var(--bg-canvas);
@@ -2481,8 +2483,14 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-family: var(--font-cjk);
   font-size: var(--font-body-size);
 }
+.ew-home-titlebar {
+  flex: none;
+  height: var(--layout-title-bar-height);
+  -webkit-app-region: drag;
+}
 .ew-home > .ew-content-column {
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
   padding-bottom: var(--space-24);
   box-sizing: border-box;
 }
