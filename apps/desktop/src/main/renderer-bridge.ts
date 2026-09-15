@@ -16,6 +16,8 @@
  * （连报错都没有：`void send()` 把 rejection 吞了）。
  * 它一直没被发现，是因为这条链路从来没有被真正拉起来过。
  */
+import { resolve } from 'node:path';
+
 import {
   titleFromText,
   type Adapter,
@@ -270,6 +272,7 @@ export interface RendererBridgeOptions {
           readonly path: string;
           readonly title: string;
           readonly artifactType: string;
+          readonly sourceSignal?: string | undefined;
           /** 生成 / 修改。「最近的文件动作」那一列问的是这个 */
           readonly operationKind: string;
           readonly version: number;
@@ -1170,9 +1173,16 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const latestByPath = new Map<string, (typeof artifacts)[number]>();
       for (const artifact of artifacts) {
         if (artifact.threadId !== input.threadId) continue;
-        const current = latestByPath.get(artifact.path);
+        // WORKSPACE/HOOK_SCAN 只证明“磁盘上有这个文件”，不证明“这个任务生成了它”。
+        // 旧实现把首次工作区扫描标成 HOOK_SCAN 并顺手写上当前 threadId；在结果区继续接受
+        // 这些旧行，会让修复升级后仍看到 README/package.json 等历史污染。
+        if (artifact.sourceSignal === 'HOOK_SCAN') continue;
+        // 同一绝对文件可能从 FileChange 与技能上报拿到带 `.`/`..` 的不同写法。
+        // 展示层再按规范化路径兜底折叠，避免一份文件出现多张卡。
+        const key = resolve(artifact.path);
+        const current = latestByPath.get(key);
         if (current === undefined || artifact.version > current.version) {
-          latestByPath.set(artifact.path, artifact);
+          latestByPath.set(key, artifact);
         }
       }
       return {

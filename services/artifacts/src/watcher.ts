@@ -52,16 +52,24 @@ export interface WatcherOptions {
   readonly newId: () => string;
   readonly threadId?: string | undefined;
   readonly turnId?: string | undefined;
+  readonly automationId?: string | undefined;
   /** 对账间隔。默认 10 分钟，与任务列表的对账同一个节奏（09 §4.1） */
   readonly reconcileIntervalMs?: number | undefined;
 }
 
 export const DEFAULT_RECONCILE_INTERVAL_MS = 10 * 60_000;
 
+export interface ArtifactProvenance {
+  readonly threadId?: string | undefined;
+  readonly turnId?: string | undefined;
+  readonly automationId?: string | undefined;
+}
+
 export function createArtifactWatcher(options: WatcherOptions) {
-  const context = (): RecognizeContext => ({
-    threadId: options.threadId,
-    turnId: options.turnId,
+  const context = (provenance?: ArtifactProvenance, inheritDefaults = true): RecognizeContext => ({
+    threadId: provenance?.threadId ?? (inheritDefaults ? options.threadId : undefined),
+    turnId: provenance?.turnId ?? (inheritDefaults ? options.turnId : undefined),
+    automationId: provenance?.automationId ?? (inheritDefaults ? options.automationId : undefined),
     now: options.now,
     newId: options.newId,
     statFile: (path) => options.fs.stat(path),
@@ -69,7 +77,12 @@ export function createArtifactWatcher(options: WatcherOptions) {
   });
 
   /** 一个文件变化 → 可能的一条索引记录。 */
-  function ingestPath(path: string, kind: 'add' | 'modify' | 'delete'): void {
+  function ingestPath(
+    path: string,
+    kind: 'add' | 'modify' | 'delete',
+    provenance?: ArtifactProvenance,
+  ): void {
+    baseline.delete(path);
     if (kind === 'delete') {
       const existing = options.index.latestFor(path);
       // 08 §8：文件被外部删除 → 标 MISSING，**不删索引条目**
@@ -77,7 +90,23 @@ export function createArtifactWatcher(options: WatcherOptions) {
       if (existing) options.index.setFileState(existing.id, 'MISSING');
       return;
     }
-    apply(recognize({ signal: 'FILE_CHANGE', path, kind }, context()));
+    apply(recognize({ signal: 'FILE_CHANGE', path, kind }, context(provenance)));
+  }
+
+  /**
+   * 轮询与定期对账只能证明“磁盘变了”，不能证明“是哪个任务生成的”。
+   *
+   * 它因此只作为无归属的兜底信号；真正的任务归属来自内核 FileChange item，随后会以
+   * 更高优先级把这条记录订正。把轮询回调直接当 FILE_CHANGE 会让当前任务认领用户原有文件。
+   */
+  function ingestScannedPath(path: string, kind: 'add' | 'modify' | 'delete'): void {
+    baseline.delete(path);
+    if (kind === 'delete') {
+      const existing = options.index.latestFor(path);
+      if (existing) options.index.setFileState(existing.id, 'MISSING');
+      return;
+    }
+    apply(recognize({ signal: 'HOOK_SCAN', path }, context(undefined, false)));
   }
 
   /**
@@ -92,15 +121,23 @@ export function createArtifactWatcher(options: WatcherOptions) {
     const indexed = options.index.listPresent(root);
     const indexedPaths = new Set(indexed.map((record) => record.path));
 
+    // `start()` 时已经存在、且此前不在索引里的文件只是工作空间基线，不是本次任务的产物。
+    // 只有它们的内容后来发生变化时，才从基线移除并作为新信号处理。
+    for (const [path, hash] of baseline) {
+      const current = options.fs.stat(path)?.contentHash;
+      if (current === undefined || current !== hash) baseline.delete(path);
+    }
+    const discoverable = onDisk.filter((path) => !baseline.has(path));
+
     // ① 磁盘上有、索引里没有 → 补进去（丢掉的 add 事件）
     let added = 0;
-    for (const path of onDisk) {
+    for (const path of discoverable) {
       if (indexedPaths.has(path)) continue;
-      if (apply(recognize({ signal: 'HOOK_SCAN', path }, context()))) added += 1;
+      if (apply(recognize({ signal: 'HOOK_SCAN', path }, context(undefined, false)))) added += 1;
     }
 
     // ② 索引里有、磁盘上没有 → 先按内容哈希在"新出现的文件"里找它
-    const candidates = onDisk
+    const candidates = discoverable
       .filter((path) => !indexedPaths.has(path))
       .map((path) => ({ path, hash: options.fs.stat(path)?.contentHash }))
       .filter((entry): entry is { path: string; hash: string } => entry.hash !== undefined)
@@ -137,12 +174,24 @@ export function createArtifactWatcher(options: WatcherOptions) {
 
   const stops: (() => void)[] = [];
   let timer: ReturnType<typeof setInterval> | undefined;
+  const baseline = new Map<string, string>();
 
   return {
-    /** 开始盯一个工作空间：先对账一次，再订阅变化。 */
+    /**
+     * 开始盯一个工作空间：先记住已有文件作为基线，再维护已入库产物的状态。
+     *
+     * “打开任务”不是“生成了工作空间里所有文件”。初次扫描若直接补录，会把 README、
+     * package.json、tsconfig 等已有文件全部错误归到当前任务。
+     */
     start(root: string): void {
+      const indexed = new Set(options.index.listPresent(root).map((record) => record.path));
+      for (const path of options.fs.listFiles(root)) {
+        if (isIgnored(path) || indexed.has(path)) continue;
+        const hash = options.fs.stat(path)?.contentHash;
+        if (hash !== undefined) baseline.set(path, hash);
+      }
       reconcile(root);
-      stops.push(options.fs.watch(root, ingestPath));
+      stops.push(options.fs.watch(root, ingestScannedPath));
       if (timer === undefined) {
         timer = setInterval(
           () => reconcile(root),
@@ -154,14 +203,18 @@ export function createArtifactWatcher(options: WatcherOptions) {
     reconcile,
     ingestPath,
     /** 技能显式上报（信号 ①）走这条 —— 它带着扩展名推不出来的类型信息 */
-    ingestSkillReport(report: {
-      readonly skill: string;
-      readonly path: string;
-      readonly outputFormat: string;
-      readonly operationKind: 'create' | 'edit';
-      readonly title?: string | undefined;
-    }): ArtifactRecord | undefined {
-      const outcome = recognize({ signal: 'SKILL_REPORT', ...report }, context());
+    ingestSkillReport(
+      report: {
+        readonly skill: string;
+        readonly path: string;
+        readonly outputFormat: string;
+        readonly operationKind: 'create' | 'edit';
+        readonly title?: string | undefined;
+      },
+      provenance?: ArtifactProvenance,
+    ): ArtifactRecord | undefined {
+      baseline.delete(report.path);
+      const outcome = recognize({ signal: 'SKILL_REPORT', ...report }, context(provenance));
       return apply(outcome) ? (outcome as { record: ArtifactRecord }).record : undefined;
     },
     stop(): void {

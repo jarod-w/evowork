@@ -251,6 +251,59 @@ describe('启动顺序：**先开库、再起内核**（09 §4.6 的直接后果
   });
 });
 
+describe('FileChange → 产物索引', () => {
+  it('只收录 item 点名的生成文件，不把工作区基线整批归给当前任务', async () => {
+    host = makeHost();
+    const workspace = join(dir, 'work');
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(join(workspace, 'README.md'), 'existing');
+    writeFileSync(join(workspace, 'package.json'), '{}');
+    writeFileSync(join(workspace, 'report.docx'), 'generated');
+    await host.start();
+
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'thread/started',
+      params: {
+        thread: {
+          id: 't1',
+          sessionId: 's1',
+          preview: 'x',
+          ephemeral: false,
+          modelProvider: 'evowork',
+          createdAt: 1,
+          updatedAt: 1,
+          status: 'running',
+          cwd: workspace,
+          turns: [],
+          name: '生成报告',
+        },
+      },
+    });
+    await new Promise((done) => setImmediate(done));
+
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'item/completed',
+      params: {
+        threadId: 't1',
+        item: {
+          id: 'fc1',
+          type: 'fileChange',
+          changes: [{ path: 'report.docx', kind: 'add' }],
+        },
+      },
+    });
+    await new Promise((done) => setImmediate(done));
+
+    const rows = host.store.db.prepare('SELECT path, thread_id FROM artifact').all() as {
+      path: string;
+      thread_id: string | null;
+    }[];
+    expect(rows).toEqual([{ path: join(workspace, 'report.docx'), thread_id: 't1' }]);
+  });
+});
+
 describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名）', () => {
   it('内核通知 → 语义化 UI 事件推给渲染进程', async () => {
     host = makeHost();

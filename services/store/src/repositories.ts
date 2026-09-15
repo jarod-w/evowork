@@ -536,9 +536,13 @@ export function createArtifactRepo(db: SqliteLike) {
     update(record: ArtifactRow): void {
       db.prepare(
         `UPDATE artifact
-            SET artifact_type = ?, output_format = ?, title = ?, operation_kind = ?, source_signal = ?
+            SET thread_id = ?, turn_id = ?, automation_id = ?, artifact_type = ?, output_format = ?,
+                title = ?, operation_kind = ?, source_signal = ?
           WHERE id = ?`,
       ).run(
+        record.threadId ?? null,
+        record.turnId ?? null,
+        record.automationId ?? null,
         record.artifactType,
         record.outputFormat,
         record.title,

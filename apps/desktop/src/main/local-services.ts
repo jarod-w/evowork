@@ -20,7 +20,7 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
 import {
   createArtifactWatcher,
@@ -154,20 +154,27 @@ export function createLocalServices(options: LocalServicesOptions) {
   });
 
   const watchers = new Map<string, ReturnType<typeof createArtifactWatcher>>();
+  const workspaceThreads = new Map<string, string>();
   let artifactSeq = 0;
 
   function watchWorkspace(root: string, threadId?: string): void {
-    if (watchers.has(root)) return;
+    const canonicalRoot = normalize(resolve(root));
+    if (threadId) workspaceThreads.set(canonicalRoot, threadId);
+    if (watchers.has(canonicalRoot)) return;
     const watcher = createArtifactWatcher({
       fs,
       index,
       now,
       newId: () => `af_${now()}_${(artifactSeq += 1)}`,
-      ...(threadId ? { threadId } : {}),
     });
-    watcher.start(root);
-    watchers.set(root, watcher);
+    watcher.start(canonicalRoot);
+    watchers.set(canonicalRoot, watcher);
     options.logger?.info('artifacts.watch.started', { pathKind: 'workspace' });
+  }
+
+  function isInside(root: string, path: string): boolean {
+    const rel = relative(root, path);
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
   }
 
   /**
@@ -285,6 +292,31 @@ export function createLocalServices(options: LocalServicesOptions) {
     /** 打开任务时开始盯它的工作空间；关掉任务不停 —— 产物可能在后台继续生成。 */
     watchWorkspace,
 
+    /**
+     * 内核 FileChange item 是“这个任务改了哪些文件”的权威信号。
+     *
+     * 必须逐条喂给识别器，不能只拿它当成“开始全盘扫描”的提示；后者会把工作区里原有的
+     * README/package.json 等全部算成当前任务的产物。
+     */
+    ingestFileChanges(
+      root: string,
+      threadId: string,
+      changes: readonly { readonly path: string; readonly kind?: string | undefined }[],
+    ): void {
+      const canonicalRoot = normalize(resolve(root));
+      watchWorkspace(canonicalRoot, threadId);
+      const watcher = watchers.get(canonicalRoot);
+      if (!watcher) return;
+      for (const change of changes) {
+        const path = normalize(
+          isAbsolute(change.path) ? resolve(change.path) : resolve(canonicalRoot, change.path),
+        );
+        if (!isInside(canonicalRoot, path)) continue;
+        const kind = change.kind === 'delete' ? 'delete' : change.kind === 'add' ? 'add' : 'modify';
+        watcher.ingestPath(path, kind, { threadId });
+      }
+    },
+
     /** 技能上报（信号 ①）。宿主从 `EVOWORK_ARTIFACT_LOG` 或 socket 收到后调这里。 */
     reportArtifact(report: {
       readonly skill: string;
@@ -294,16 +326,21 @@ export function createLocalServices(options: LocalServicesOptions) {
       readonly title?: string | undefined;
       readonly threadId?: string | undefined;
     }): void {
-      const root = [...watchers.keys()].find((path) => report.path.startsWith(path));
+      const artifactPath = normalize(resolve(report.path));
+      const normalizedReport = { ...report, path: artifactPath };
+      const root = [...watchers.keys()].find((path) => isInside(path, artifactPath));
       const watcher = watchers.get(root ?? '');
       if (!watcher) {
         // 没在盯的目录里产出的产物：先建一个 watcher 再上报，否则这条记录之后无人维护
-        const parent = report.path.slice(0, report.path.lastIndexOf('/'));
+        const parent = dirname(artifactPath);
         watchWorkspace(parent, report.threadId);
-        renameTaskAfter(watchers.get(parent)?.ingestSkillReport(report));
+        renameTaskAfter(
+          watchers.get(parent)?.ingestSkillReport(normalizedReport, { threadId: report.threadId }),
+        );
         return;
       }
-      renameTaskAfter(watcher.ingestSkillReport(report));
+      const threadId = report.threadId ?? (root ? workspaceThreads.get(root) : undefined);
+      renameTaskAfter(watcher.ingestSkillReport(normalizedReport, { threadId }));
     },
 
     /** 内核退出：在跑的定时任务全判 ENVIRONMENT（不计连败）。 */
@@ -320,6 +357,7 @@ export function createLocalServices(options: LocalServicesOptions) {
       tick = undefined;
       for (const watcher of watchers.values()) watcher.stop();
       watchers.clear();
+      workspaceThreads.clear();
       bridge.dispose();
     },
   };

@@ -144,6 +144,11 @@ export function recognize(signal: RecognitionSignal, context: RecognizeContext):
         kind: 'corrected',
         record: {
           ...previous,
+          // 低优先级扫描可能先建了一条“无归属”记录。随后内核的 FileChange 或技能上报
+          // 到达时，除了类型/标题，也要把真正的任务归属补上；否则结果区永远看不到它。
+          ...(context.threadId ? { threadId: context.threadId } : {}),
+          ...(context.turnId ? { turnId: context.turnId } : {}),
+          ...(context.automationId ? { automationId: context.automationId } : {}),
           artifactType,
           sourceSignal: signal.signal,
           ...(signal.signal === 'SKILL_REPORT'

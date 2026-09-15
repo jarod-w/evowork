@@ -221,22 +221,41 @@ describe('scheduler ↔ 内核', () => {
 });
 
 describe('文件变化 ↔ 产物索引', () => {
-  it('盯住一个工作空间 → 里面的产物进索引', () => {
+  it('盯住一个工作空间只建立基线，原有文件不冒充当前任务产物', () => {
     const { services } = make();
     writeFileSync(join(dir, 'work', 'report.docx'), 'v1');
+    writeFileSync(join(dir, 'work', 'package.json'), '{}');
     services.watchWorkspace(join(dir, 'work'), 't1');
 
-    const rows = store.db.prepare('SELECT * FROM artifact').all() as { artifact_type: string }[];
-    expect(rows.map((r) => r.artifact_type)).toEqual(['document']);
+    expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(0);
     services.stop();
   });
 
-  it('中间产物不进索引', () => {
+  it('FileChange 只收录任务实际生成的文件，中间产物仍不进索引', () => {
     const { services } = make();
     mkdirSync(join(dir, 'work', 'uploads', 'x'), { recursive: true });
     writeFileSync(join(dir, 'work', 'uploads', 'x', 'content.md'), 'parsed');
     writeFileSync(join(dir, 'work', 'report.docx'), 'v1');
     services.watchWorkspace(join(dir, 'work'), 't1');
+    services.ingestFileChanges(join(dir, 'work'), 't1', [
+      { path: 'uploads/x/content.md', kind: 'add' },
+      { path: './report.docx', kind: 'add' },
+    ]);
+
+    expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(1);
+    services.stop();
+  });
+
+  it('同一文件的相对路径与绝对路径写法会规范化，不产生重复记录', () => {
+    const { services } = make();
+    const path = join(dir, 'work', 'report.docx');
+    writeFileSync(path, 'v1');
+    services.watchWorkspace(join(dir, 'work'), 't1');
+
+    services.ingestFileChanges(join(dir, 'work'), 't1', [
+      { path: './report.docx', kind: 'add' },
+      { path, kind: 'modify' },
+    ]);
 
     expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(1);
     services.stop();
@@ -365,11 +384,14 @@ describe('文件变化 ↔ 产物索引', () => {
     const path = join(dir, 'work', 'report.docx');
     writeFileSync(path, 'v1');
     services.watchWorkspace(join(dir, 'work'), 't1');
+    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: 'add' }]);
 
     rmSync(path);
-    // 对账（watcher 内部同一个函数；这里直接再盯一次同一个目录会被去重，所以用 repo 验状态）
-    const before = store.db.prepare('SELECT * FROM artifact').all();
-    expect(before).toHaveLength(1);
+    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: 'delete' }]);
+    const rows = store.db.prepare('SELECT file_state FROM artifact').all() as {
+      file_state: string;
+    }[];
+    expect(rows).toEqual([{ file_state: 'MISSING' }]);
     services.stop();
   });
 });

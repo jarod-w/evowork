@@ -659,9 +659,21 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       return;
     }
     if (effect.kind === 'artifact-scan' && effect.threadId) {
-      // 信号 ②：`FileChange` item。真正的识别在 watcher 里，这里只保证那个目录被盯着
+      // 信号 ②：`FileChange` item。逐条传递路径与动作，不能把“这个任务改了文件”退化成
+      // “扫描整个工作区”——那会把任务开始前就存在的配置文件也认领为产物。
       const cwd = store.threads.get(effect.threadId)?.cwd;
-      if (cwd) services.watchWorkspace(cwd, effect.threadId);
+      const item = effect.item as
+        | {
+            readonly type?: string;
+            readonly changes?: readonly {
+              readonly path: string;
+              readonly kind?: string | undefined;
+            }[];
+          }
+        | undefined;
+      if (cwd && item?.type === 'fileChange') {
+        services.ingestFileChanges(cwd, effect.threadId, item.changes ?? []);
+      }
     }
   }
 

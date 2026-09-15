@@ -130,6 +130,44 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
   };
 }
 
+describe('任务产物结果', () => {
+  it('排除旧版全盘扫描污染，并按规范化绝对路径只保留一份', async () => {
+    const base = {
+      title: 'report.docx',
+      artifactType: 'document',
+      operationKind: 'create',
+      version: 1,
+      fileState: 'PRESENT' as const,
+      threadId: 't1',
+      createdAt: 1,
+    };
+    const actions = makeActions({
+      pageData: {
+        listArtifacts: () => [
+          { ...base, id: 'strong', path: '/w/out/report.docx', sourceSignal: 'FILE_CHANGE' },
+          {
+            ...base,
+            id: 'same-file-alias',
+            path: '/w/out/./report.docx',
+            sourceSignal: 'SKILL_REPORT',
+          },
+          { ...base, id: 'old-scan', path: '/w/README.md', sourceSignal: 'HOOK_SCAN' },
+        ],
+        listAutomations: () => [],
+        listRuns: () => [],
+        listAudit: () => [],
+        auditOldestAt: () => undefined,
+        deviceId: 'd1',
+        deviceName: '这台电脑',
+      },
+    });
+
+    const result = await actions.getTaskResults({ threadId: 't1' });
+    expect(result.artifacts).toHaveLength(1);
+    expect(result.artifacts[0]?.path).toBe('/w/out/report.docx');
+  });
+});
+
 describe('事件翻译：适配层的任务视角 → 渲染层的组件视角', () => {
   it('task-created 带上整行数据 —— 渲染层拿不到 store，自己补不出这一行', () => {
     const translate = createEventTranslator(

@@ -81,6 +81,17 @@ function harness(files: Record<string, string>) {
 }
 
 describe('对账补上丢掉的事件（`fs.watch` 一定会丢）', () => {
+  it('start 把工作区已有文件当基线，后续对账也不会把它们认成任务产物', () => {
+    const { watcher, records } = harness({
+      '/w/README.md': 'existing',
+      '/w/package.json': '{}',
+    });
+    watcher.start('/w');
+    watcher.reconcile('/w');
+    expect(records).toHaveLength(0);
+    watcher.stop();
+  });
+
   it('磁盘上有、索引里没有 → 补进索引', () => {
     const { watcher, records } = harness({ '/w/report.docx': 'v1', '/w/data.csv': 'a,b' });
     const stats = watcher.reconcile('/w');
@@ -157,6 +168,7 @@ describe('技能显式上报（信号 ①）走单独入口', () => {
     expect(records).toHaveLength(1); // 没有 v2
     expect(records[0]?.artifactType).toBe('chart');
     expect(records[0]?.version).toBe(1);
+    expect(records[0]?.threadId).toBe('t1');
     expect(corrected?.sourceSignal).toBe('SKILL_REPORT');
   });
 
