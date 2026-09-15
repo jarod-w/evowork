@@ -7,7 +7,7 @@
  *   · 钥匙串不可用时两个选项并列（不替用户选）；
  *   · 并发上限只能往下调（机器就是资源上限）。
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SecretInput } from '../src/renderer/components/primitives.js';
@@ -97,7 +97,23 @@ describe('SecretInput（01 §5.35）', () => {
   });
 });
 
-describe('模型接入', () => {
+describe('模型', () => {
+  it('账号下面的入口与页面标题都叫「模型」，不再暴露旧名称「模型接入」', () => {
+    page();
+    const account = screen.getByRole('button', { name: '账号' });
+    const models = screen.getByRole('button', { name: '模型' });
+    expect(account.nextElementSibling).toBe(models);
+    expect(screen.getByRole('heading', { name: '模型' })).toBeTruthy();
+    expect(screen.queryByText('模型接入')).toBeNull();
+  });
+
+  it('主区先展示附件式的自定义模型卡片，并如实标出实际配置文件', () => {
+    page();
+    expect(screen.getByRole('heading', { name: '自定义模型' })).toBeTruthy();
+    expect(screen.getByText(/~\/\.evowork\/models\.toml/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '添加模型' })).toBeTruthy();
+  });
+
   it('列出内置三家与它们的已保存状态（没配的也列出来）', () => {
     page();
     expect(screen.getByText('已保存 · ****3f9a')).toBeTruthy();
@@ -158,17 +174,22 @@ describe('模型接入', () => {
     expect(screen.getByText('你所在组织要求统一配置。')).toBeTruthy();
   });
 
-  it('添加自定义模型：**协议适配类型没选就不能提交**', () => {
+  it('添加模型：**提供商没选就不能提交**，endpoint 方言不能靠猜', () => {
     page();
     fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
-    fireEvent.change(screen.getByPlaceholderText('my/llm'), { target: { value: 'my/llm' } });
-    fireEvent.change(screen.getByPlaceholderText('qwen3-max'), { target: { value: 'q' } });
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'qwen3-max' } });
     fireEvent.change(screen.getByPlaceholderText('https://example.com/v1'), {
       target: { value: 'https://example.com/v1' },
     });
     fireEvent.change(screen.getByLabelText('API 密钥'), { target: { value: 'sk-x' } });
-    // 四个字段都填了，但协议适配类型还没选
-    expect((screen.getByRole('button', { name: '添加' }) as HTMLButtonElement).disabled).toBe(true);
+    // 其余字段都填了，但提供商还没选
+    expect(
+      (
+        within(screen.getByRole('dialog')).getByRole('button', {
+          name: '保存',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it('连通性检查会把结论显示出来（说清是"发了一次请求"的结果）', () => {

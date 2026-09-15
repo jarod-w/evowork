@@ -3572,6 +3572,83 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   min-width: 0;
 }
 
+.ew-settings-model-card {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+.ew-settings-model-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-16) var(--space-20);
+}
+.ew-settings-model-card-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  font-weight: var(--font-label-weight);
+}
+.ew-settings-model-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border-subtle);
+  list-style: none;
+}
+.ew-settings-model-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--layout-data-table-row-height);
+  padding: var(--space-12) var(--space-20);
+}
+.ew-settings-model-row + .ew-settings-model-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.ew-settings-model-icon {
+  color: var(--text-secondary);
+}
+.ew-settings-model-icon .ew-icon {
+  width: var(--layout-icon-size);
+  height: var(--layout-icon-size);
+}
+.ew-settings-model-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ew-settings-model-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.ew-settings-model-name .ew-mono,
+.ew-settings-model-copy .ew-settings-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ew-settings-model-actions {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+}
+.ew-settings-model-empty {
+  margin: 0;
+  padding: var(--space-16) var(--space-20);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+}
+.ew-dialog .ew-field + .ew-field {
+  margin-top: var(--space-12);
+}
+
 /* 01 §5.35 SecretInput：已保存态不渲染输入框（一个空框旁写着「已保存」读起来像没保存上） */
 .ew-secret-row,
 .ew-secret-saved {

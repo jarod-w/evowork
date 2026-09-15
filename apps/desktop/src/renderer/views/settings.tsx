@@ -16,6 +16,7 @@
  */
 import { useState } from 'react';
 
+import { renderIcon } from '../components/icons.js';
 import { InlineSelect } from '../components/menu.js';
 import { DataTable, PanelNavItem, type Column } from '../components/panels.js';
 import {
@@ -23,6 +24,7 @@ import {
   Banner,
   Dialog,
   EmptyState,
+  IconButton,
   PillButton,
   SectionHeader,
   SecretInput,
@@ -41,7 +43,7 @@ export const SETTINGS_SECTIONS: readonly {
   readonly label: string;
 }[] = [
   { id: 'account', label: '账号' },
-  { id: 'models', label: '模型接入' },
+  { id: 'models', label: '模型' },
   { id: 'usage', label: '用量与预算' },
   { id: 'data', label: '数据管理' },
   { id: 'security', label: '安全与权限' },
@@ -209,11 +211,11 @@ function AccountSection({
 function ModelsSection(props: SettingsPageProps) {
   const [adding, setAdding] = useState(false);
   const access = props.access;
-  if (!access) return <EmptyState title="正在读取模型接入状态…" hint="" />;
+  if (!access) return <EmptyState title="正在读取模型状态…" hint="" />;
 
   return (
     <section className="ew-settings-section">
-      <SectionHeader title="模型接入" />
+      <SectionHeader title="模型" />
 
       {/* 钥匙串不可用：**两个选项并列，不替用户选**（11 §4.3） */}
       {access.secretNotice !== undefined ? (
@@ -233,6 +235,67 @@ function ModelsSection(props: SettingsPageProps) {
       {access.catalogUnavailable !== undefined ? (
         <Banner tone="danger">{access.catalogUnavailable}</Banner>
       ) : null}
+
+      <div className="ew-settings-model-card">
+        <div className="ew-settings-model-card-head">
+          <div>
+            <h3 className="ew-settings-model-card-title">自定义模型</h3>
+            <p className="ew-settings-note">
+              添加后会自动写入本机 <span className="ew-mono">~/.evowork/models.toml</span>
+            </p>
+          </div>
+          <PillButton
+            variant="accent"
+            disabled={!access.allowCustomModels}
+            disabledReason={access.lockedReason}
+            onClick={() => setAdding(true)}
+          >
+            添加模型
+          </PillButton>
+        </div>
+
+        {/* 企业锁了自定义模型：**说清是组织策略**，否则用户会去翻一个已经被锁掉的入口 */}
+        {access.allowCustomModels ? null : (
+          <Banner tone="warning">{access.lockedReason ?? '你所在组织不允许自己添加模型。'}</Banner>
+        )}
+        {access.customModels.length === 0 ? (
+          <p className="ew-settings-model-empty">
+            还没有自定义模型。可添加兼容 DeepSeek、Kimi、GLM 或 OpenAI Chat 协议的 endpoint。
+          </p>
+        ) : (
+          <ul className="ew-settings-model-list">
+            {access.customModels.map((model) => (
+              <li key={model.id} className="ew-settings-model-row">
+                <span className="ew-settings-model-icon" aria-hidden="true">
+                  {renderIcon('sparkle')}
+                </span>
+                <div className="ew-settings-model-copy">
+                  <div className="ew-settings-model-name">
+                    <span className="ew-mono">{model.id}</span>
+                    <Badge variant="neutral">自定义</Badge>
+                  </div>
+                  <span className="ew-settings-note">
+                    {model.provider} · {model.baseUrl}
+                    {model.keySaved ? ` · 密钥已保存 ****${model.keyLast4 ?? '****'}` : ' · 缺密钥'}
+                  </span>
+                </div>
+                <div className="ew-settings-model-actions">
+                  <IconButton
+                    label={`检查 ${model.id} 连接`}
+                    icon={renderIcon('link')}
+                    onClick={() => props.onProbe(model.id)}
+                  />
+                  <IconButton
+                    label={`删除 ${model.id}`}
+                    icon={renderIcon('trash')}
+                    onClick={() => props.onRemoveCustomModel(model.id)}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <p className="ew-settings-note">
         密钥存放位置：<strong>{BACKEND_LABEL[access.secretBackend] ?? access.secretBackend}</strong>
@@ -271,43 +334,6 @@ function ModelsSection(props: SettingsPageProps) {
         />
       )}
       {props.probeResult !== undefined ? <Banner tone="info">{props.probeResult}</Banner> : null}
-
-      <SectionHeader
-        title="自定义模型"
-        actions={
-          <PillButton
-            variant="accent"
-            disabled={!access.allowCustomModels}
-            disabledReason={access.lockedReason}
-            onClick={() => setAdding(true)}
-          >
-            添加模型
-          </PillButton>
-        }
-      />
-      {/* 企业锁了自定义模型：**说清是组织策略**，否则用户会去翻一个已经被锁掉的入口 */}
-      {access.allowCustomModels ? null : (
-        <Banner tone="warning">{access.lockedReason ?? '你所在组织不允许自己添加模型。'}</Banner>
-      )}
-      {access.customModels.length === 0 ? (
-        <p className="ew-settings-note">
-          还没有自定义模型。任何兼容 DeepSeek / Kimi / GLM / OpenAI 协议的 endpoint 都可以加进来，
-          密钥同样只保存在这台电脑上。
-        </p>
-      ) : (
-        <ul className="ew-settings-list">
-          {access.customModels.map((model) => (
-            <li key={model.id} className="ew-settings-list-row">
-              <span className="ew-mono">{model.id}</span>
-              <span className="ew-settings-note">
-                {model.provider} · {model.baseUrl}
-                {model.keySaved ? ` · 密钥已保存 ****${model.keyLast4 ?? '****'}` : ' · 缺密钥'}
-              </span>
-              <PillButton onClick={() => props.onRemoveCustomModel(model.id)}>删除</PillButton>
-            </li>
-          ))}
-        </ul>
-      )}
 
       {adding ? (
         <AddCustomModelDialog
@@ -383,72 +409,51 @@ function AddCustomModelDialog({
   readonly onCancel: () => void;
   readonly onConfirm: (input: CustomModelInput) => void;
 }) {
-  const [id, setId] = useState('');
-  const [upstream, setUpstream] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
   const [provider, setProvider] = useState<string | undefined>(undefined);
   const [apiKey, setApiKey] = useState('');
+  const [modelName, setModelName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
 
   const ready =
-    id.trim() !== '' &&
-    upstream.trim() !== '' &&
-    baseUrl.trim() !== '' &&
     provider !== undefined &&
-    apiKey.trim() !== '';
+    apiKey.trim() !== '' &&
+    modelName.trim() !== '' &&
+    baseUrl.trim() !== '';
 
   return (
     <Dialog
-      title="添加自定义模型"
-      confirmLabel="添加"
+      title="添加模型"
+      confirmLabel="保存"
       confirmDisabled={!ready}
       onCancel={onCancel}
       onConfirm={() =>
         onConfirm({
-          id: id.trim(),
+          id: `${provider ?? 'custom'}/${modelName.trim()}`,
+          displayName: modelName.trim(),
           provider: provider ?? '',
-          upstreamModel: upstream.trim(),
+          upstreamModel: modelName.trim(),
           baseUrl: baseUrl.trim(),
           apiKey: apiKey.trim(),
         })
       }
     >
-      <label className="ew-field">
-        <span>在 EvoWork 里的 id（任务里用它指定模型）</span>
-        <input value={id} onChange={(e) => setId(e.target.value)} placeholder="my/llm" />
-      </label>
-      <label className="ew-field">
-        <span>上游真实模型名</span>
-        <input
-          value={upstream}
-          onChange={(e) => setUpstream(e.target.value)}
-          placeholder="qwen3-max"
-        />
-      </label>
-      <label className="ew-field">
-        <span>endpoint 地址</span>
-        <input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://example.com/v1"
-        />
-      </label>
       <div className="ew-field">
-        <span>协议适配类型（必选）</span>
+        <span>提供商（兼容协议 API）</span>
         <InlineSelect
-          ariaLabel="协议适配类型"
-          placeholder="选一个"
+          ariaLabel="提供商"
+          placeholder="选择提供商"
           value={provider}
           options={[
-            { id: 'deepseek', label: 'DeepSeek 兼容' },
-            { id: 'moonshot', label: 'Kimi（Moonshot）兼容' },
-            { id: 'zhipu', label: 'GLM（智谱）兼容' },
-            { id: 'private', label: 'OpenAI Chat 兼容 / 私有' },
+            { id: 'deepseek', label: 'DeepSeek API' },
+            { id: 'moonshot', label: 'Kimi（Moonshot）API' },
+            { id: 'zhipu', label: 'GLM（智谱）API' },
+            { id: 'private', label: '其他 OpenAI Chat 兼容 API' },
           ]}
-          onChange={setProvider}
+          onChange={(next) => {
+            setProvider(next);
+            setBaseUrl(PROVIDER_BASE_URL[next] ?? '');
+          }}
         />
-        <p className="ew-field-hint">
-          不同 endpoint 的流式与工具调用格式不一样，这个猜不出来 —— 选错了的表现是回复是空的。
-        </p>
       </div>
       <label className="ew-field">
         <span>API 密钥</span>
@@ -460,13 +465,36 @@ function AddCustomModelDialog({
           onChange={(e) => setApiKey(e.target.value)}
         />
       </label>
+      <label className="ew-field">
+        <span>模型名称</span>
+        <input
+          aria-label="模型名称"
+          value={modelName}
+          onChange={(e) => setModelName(e.target.value)}
+          placeholder="qwen3-max"
+        />
+      </label>
+      <label className="ew-field">
+        <span>endpoint 地址</span>
+        <input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder="https://example.com/v1"
+        />
+      </label>
       <p className="ew-field-hint">
-        能力徽标（推理 / 读图 / 并行工具）默认按<strong>最保守</strong>的一档记，
-        因为我们没有实测过这个 endpoint。填错的代价由你承担，所以不替你乐观。
+        不同提供商的流式与工具调用格式不同，必须明确选择；模型能力默认按最保守的一档记录， 因为这个
+        endpoint 尚未经过 EvoWork 实测。
       </p>
     </Dialog>
   );
 }
+
+const PROVIDER_BASE_URL: Readonly<Record<string, string>> = Object.freeze({
+  deepseek: 'https://api.deepseek.com',
+  moonshot: 'https://api.moonshot.cn/v1',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+});
 
 /**
  * 用量与预算（Q11 的阶段 1）。
