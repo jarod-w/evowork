@@ -17,7 +17,7 @@
 import { useState } from 'react';
 
 import { renderIcon } from '../components/icons.js';
-import { InlineSelect } from '../components/menu.js';
+import { InlineSelect, Menu, Popover } from '../components/menu.js';
 import { DataTable, PanelNavItem, type Column } from '../components/panels.js';
 import {
   Badge,
@@ -31,8 +31,12 @@ import {
 } from '../components/primitives.js';
 import type {
   CustomModelInput,
+  CustomModelTestInput,
+  CustomModelUpdateInput,
+  CustomModelView,
   ModelAccessView,
   ModelOptionView,
+  ModelProbeResult,
   PreferencesView,
 } from '../../shared/ipc.js';
 
@@ -79,7 +83,18 @@ export interface SettingsPageProps {
   readonly onSaveProviderKey: (providerId: string, apiKey: string) => void;
   readonly onClearProviderKey: (providerId: string) => void;
   readonly onAddCustomModel: (input: CustomModelInput) => void;
+  /** 改一条已存在的（行内铅笔）。留空的密钥字段 = 不动已存的那把 */
+  readonly onUpdateCustomModel: (input: CustomModelUpdateInput) => void;
   readonly onRemoveCustomModel: (id: string) => void;
+  /**
+   * 保存之前的「测试连接」。**返回 Promise 而不是走统一的 `onModelAccessAction`**：
+   * 它不改任何本机状态，结果要回到弹窗里那一行，而不是页顶的横幅。
+   */
+  readonly onTestCustomModel: (input: CustomModelTestInput) => Promise<ModelProbeResult>;
+  /** 在访达里打开 `models.toml` 所在目录。没注入 `shell` 时缺席，链接**禁用** */
+  readonly onOpenModelsFolder?: (() => void) | undefined;
+  /** 「查看文档」。渲染层只递 provider id，URL 白名单在主进程（11 §6.3） */
+  readonly onOpenProviderDocs?: ((provider: string) => void) | undefined;
   readonly onSecretFallback: (accept: boolean) => void;
   readonly onProbe: (modelId: string) => void;
   readonly onPreferences: (input: { taskTokenBudget?: number; concurrencyLimit?: number }) => void;
@@ -208,10 +223,38 @@ function AccountSection({
   );
 }
 
+/**
+ * 「模型」一屏（11 §4.4）。
+ *
+ * ## 常态下这一页**只有那张自定义模型卡**
+ *
+ * 2026-09-16 按设计附件重做：主区就是「自定义模型」卡 —— 说明文字里带上真实落盘路径、
+ * 右上角「添加模型」、每行三个动作（改 · 测连通 · 删）。其余几段
+ * （内置厂商密钥 · 四层合并结果 · 密钥存放位置 · 上游形态）**只在它们有话要说时出现**：
+ *
+ * | 段 | 什么时候出现 | 为什么不能一直摆着 |
+ * |---|---|---|
+ * | 内置厂商密钥 | 那一家**已经存过**密钥（引导里填的） | 一直摆着就是三个空框，而新加模型现在走「添加模型」这一个门 |
+ * | 合并结果表 | 有卡片之外的模型（托管默认模型 / 被策略停用的） | 全是自定义模型时它逐行重复卡片 |
+ * | 密钥存放位置 | 钥匙串**不可用或已降级成明文** | 正常存在钥匙串里时这一行没有信息量 |
+ * | 上游形态 | `mode ≠ local`（云端或私有网关） | 本机模式是常态，说一遍等于没说 |
+ *
+ * **它们是条件显示，不是删掉**：明文兜底、被企业停用的模型、托管默认模型这三件事
+ * 一旦发生就必须看得见（11 §4.1 / §4.3 的「不隐藏」）。删掉的只有"没有内容时的占位"。
+ */
 function ModelsSection(props: SettingsPageProps) {
-  const [adding, setAdding] = useState(false);
+  /** `'new'` = 添加；一条 `CustomModelView` = 改那条 */
+  const [editing, setEditing] = useState<'new' | CustomModelView | undefined>(undefined);
   const access = props.access;
   if (!access) return <EmptyState title="正在读取模型状态…" hint="" />;
+
+  const customIds = new Set(access.customModels.map((model) => model.id));
+  // 卡片之外还有哪些模型：托管默认模型、配了密钥的内置三家、被策略停用的
+  const otherModels = access.models.filter((model) => !customIds.has(model.id));
+  const savedProviders = access.providers.filter((provider) => provider.saved);
+  // 钥匙串正常时不必解释密钥存哪；明文与不可用**必须**说（11 §4.3）
+  const secretsDegraded =
+    access.secretBackend === 'plaintext-fallback' || access.secretBackend === 'unavailable';
 
   return (
     <section className="ew-settings-section">
@@ -241,14 +284,27 @@ function ModelsSection(props: SettingsPageProps) {
           <div>
             <h3 className="ew-settings-model-card-title">自定义模型</h3>
             <p className="ew-settings-note">
-              添加后会自动写入本机 <span className="ew-mono">~/.evowork/models.toml</span>
+              模型添加后会自动写入到本地{' '}
+              {/*
+               * 路径由宿主给（`modelsFilePath`），不在这里拼死：`EVOWORK_HOME` 可以被
+               * 覆盖，而这一行说的是"你加的东西写到哪去了"—— 写错了比不写更糟。
+               */}
+              <button
+                type="button"
+                className="ew-inline-link"
+                title="在访达 / 资源管理器里打开它所在的目录"
+                onClick={props.onOpenModelsFolder}
+                disabled={props.onOpenModelsFolder === undefined}
+              >
+                {access.modelsFilePath ?? '~/.evowork/models.toml'}
+              </button>{' '}
+              文件中
             </p>
           </div>
           <PillButton
-            variant="accent"
             disabled={!access.allowCustomModels}
             disabledReason={access.lockedReason}
-            onClick={() => setAdding(true)}
+            onClick={() => setEditing('new')}
           >
             添加模型
           </PillButton>
@@ -271,15 +327,29 @@ function ModelsSection(props: SettingsPageProps) {
                 </span>
                 <div className="ew-settings-model-copy">
                   <div className="ew-settings-model-name">
-                    <span className="ew-mono">{model.id}</span>
-                    <Badge variant="neutral">自定义</Badge>
+                    <span className="ew-settings-model-id">{model.id}</span>
+                    {/*
+                     * 「自定义」在这里同时是一句免责声明：这条 endpoint 的能力位是用户
+                     * 自己填的，我们没实测过（11 §4.1 的 `verified`）。
+                     */}
+                    <span className="ew-settings-model-kind">自定义</span>
                   </div>
-                  <span className="ew-settings-note">
-                    {model.provider} · {model.baseUrl}
-                    {model.keySaved ? ` · 密钥已保存 ****${model.keyLast4 ?? '****'}` : ' · 缺密钥'}
-                  </span>
+                  {/*
+                   * 缺密钥是**用户必须知道**的一条：这条模型在下拉里看着正常、
+                   * 发出去 401。正常那条不显示第二行，行高与附件一致。
+                   */}
+                  {model.keySaved ? null : (
+                    <span className="ew-settings-model-warn">
+                      这条还没有密钥，发出去会被上游拒绝 —— 点铅笔补一把。
+                    </span>
+                  )}
                 </div>
                 <div className="ew-settings-model-actions">
+                  <IconButton
+                    label={`修改 ${model.id}`}
+                    icon={renderIcon('pencil')}
+                    onClick={() => setEditing(model)}
+                  />
                   <IconButton
                     label={`检查 ${model.id} 连接`}
                     icon={renderIcon('link')}
@@ -297,51 +367,79 @@ function ModelsSection(props: SettingsPageProps) {
         )}
       </div>
 
-      <p className="ew-settings-note">
-        密钥存放位置：<strong>{BACKEND_LABEL[access.secretBackend] ?? access.secretBackend}</strong>
-        。上游形态：<strong>{MODE_LABEL[access.mode] ?? access.mode}</strong>。
-      </p>
-
-      <SectionHeader title="内置厂商" />
-      {access.providers.map((provider) => (
-        <SecretInput
-          key={provider.id}
-          label={`${provider.label} API 密钥`}
-          saved={provider.saved}
-          last4={provider.last4}
-          disabled={access.secretBackend === 'unavailable'}
-          onSave={(value) => props.onSaveProviderKey(provider.id, value)}
-          onClear={provider.saved ? () => props.onClearProviderKey(provider.id) : undefined}
-        />
-      ))}
-
-      <SectionHeader title="现在可以选的模型" />
-      {access.signedIn ? null : (
+      {/* 明文兜底必须**看起来就是一种降级**（11 §4.3）；存在钥匙串里时不占版面 */}
+      {secretsDegraded ? (
         <p className="ew-settings-note">
-          登录后可使用管理员配置的默认模型。未登录时不会向我们的云请求目录。
+          密钥存放位置：
+          <strong>{BACKEND_LABEL[access.secretBackend] ?? access.secretBackend}</strong>。
+        </p>
+      ) : null}
+      {access.mode === 'local' ? null : (
+        <p className="ew-settings-note">
+          上游形态：<strong>{MODE_LABEL[access.mode] ?? access.mode}</strong>。
         </p>
       )}
-      {access.models.length === 0 ? (
-        <EmptyState
-          title="还没有可用的模型"
-          hint="填入上面任意一家的密钥，或添加一个自定义模型。"
-        />
-      ) : (
-        <DataTable
-          rows={access.models}
-          columns={modelColumns(props.onProbe)}
-          ariaLabel="可用模型"
-        />
+
+      {/*
+       * 内置三家里**已经存过密钥**的那几把（引导第 ④ 步填的）。
+       *
+       * 没存过的不列：新加模型现在走「添加模型」这一个门（附件的形态），
+       * 三个常年空着的框只会让人以为那才是正路。已存的必须留一个入口 ——
+       * 否则引导里填错一把 key 之后，用户在界面上没有任何地方能改它。
+       */}
+      {savedProviders.length === 0 ? null : (
+        <>
+          <SectionHeader title="内置厂商密钥" />
+          <p className="ew-settings-note">这些是引导时填过的。要再加一家，用上面的「添加模型」。</p>
+          {savedProviders.map((provider) => (
+            <SecretInput
+              key={provider.id}
+              label={`${provider.label} API 密钥`}
+              saved={provider.saved}
+              last4={provider.last4}
+              disabled={access.secretBackend === 'unavailable'}
+              onSave={(value) => props.onSaveProviderKey(provider.id, value)}
+              onClear={() => props.onClearProviderKey(provider.id)}
+            />
+          ))}
+        </>
+      )}
+
+      {/*
+       * 卡片之外的模型（托管默认模型 · 内置三家 · 被策略停用的）。
+       * **被停用的那一行要留在表里**（11 §4.1）：消失的东西无法被排查。
+       */}
+      {otherModels.length === 0 ? null : (
+        <>
+          <SectionHeader title="其他可用模型" />
+          {access.signedIn ? null : (
+            <p className="ew-settings-note">
+              登录后可使用管理员配置的默认模型。未登录时不会向我们的云请求目录。
+            </p>
+          )}
+          <DataTable
+            rows={otherModels}
+            columns={modelColumns(props.onProbe)}
+            ariaLabel="可用模型"
+          />
+        </>
       )}
       {props.probeResult !== undefined ? <Banner tone="info">{props.probeResult}</Banner> : null}
 
-      {adding ? (
-        <AddCustomModelDialog
-          onCancel={() => setAdding(false)}
-          onConfirm={(input) => {
+      {editing !== undefined ? (
+        <CustomModelDialog
+          model={editing === 'new' ? undefined : editing}
+          onCancel={() => setEditing(undefined)}
+          onAdd={(input) => {
             props.onAddCustomModel(input);
-            setAdding(false);
+            setEditing(undefined);
           }}
+          onUpdate={(input) => {
+            props.onUpdateCustomModel(input);
+            setEditing(undefined);
+          }}
+          onTest={props.onTestCustomModel}
+          onOpenDocs={props.onOpenProviderDocs}
         />
       ) : null}
     </section>
@@ -401,99 +499,306 @@ function modelColumns(onProbe: (id: string) => void): readonly Column<ModelOptio
   ];
 }
 
-/** 添加自定义模型。**协议适配类型必选** —— endpoint 说哪种方言猜不出来（11 §4.1）。 */
-function AddCustomModelDialog({
+/**
+ * 「添加模型」/「修改模型」弹窗（11 §4.4 的附件形态）。
+ *
+ * 四件事按用户填的顺序排：**供应商 → API Key（可当场测）→ 模型名称 → endpoint**。
+ *
+ * ## 三处与附件不同，都是因为我们的模型不是"套餐里选一个"
+ *
+ * 1. **模型名称是可输入的组合框**，不是纯下拉：BYOK 的 endpoint 上有哪些模型
+ *    我们无从枚举，写死一张表的代价是厂商明天发了新型号就加不进来。
+ *    下拉里只放**我们真的实测过的**那几个（Q16 的 P0 三家，2026-09-05 探针），其余自己填。
+ * 2. **endpoint 地址只在需要时出现**：三家内置供应商的地址是已知的（与网关同一张表），
+ *    「其他 OpenAI 兼容」必须问。改一条已经指向自建代理的模型时那一行也会出现 ——
+ *    藏起来就等于在保存时**静默把用户的地址改回官方**。
+ * 3. **「查看文档」按供应商跳**（我们没有自己的 endpoint 文档）。URL 白名单在主进程，
+ *    这里只递 provider id（11 §6.3 登记的出网路径）。
+ *
+ * ## 这里的明文开关不违反 01 §5.35
+ *
+ * 那一条禁的是**已保存密钥的读回**（`SecretInput` 没有小眼睛，也没有读回路径）。
+ * 这个框里的明文是用户此刻正在打的字，本来就在渲染层 —— 开关默认关，只为让人确认
+ * 自己粘对了。改模型时留空 = 沿用已存的那把，我们仍然只显示后四位。
+ */
+function CustomModelDialog({
+  model,
   onCancel,
-  onConfirm,
+  onAdd,
+  onUpdate,
+  onTest,
+  onOpenDocs,
 }: {
+  /** 缺席 = 添加；有值 = 改这一条 */
+  readonly model?: CustomModelView | undefined;
   readonly onCancel: () => void;
-  readonly onConfirm: (input: CustomModelInput) => void;
+  readonly onAdd: (input: CustomModelInput) => void;
+  readonly onUpdate: (input: CustomModelUpdateInput) => void;
+  readonly onTest?: ((input: CustomModelTestInput) => Promise<ModelProbeResult>) | undefined;
+  readonly onOpenDocs?: ((provider: string) => void) | undefined;
 }) {
-  const [provider, setProvider] = useState<string | undefined>(undefined);
+  const [provider, setProvider] = useState<string | undefined>(model?.provider);
   const [apiKey, setApiKey] = useState('');
-  const [modelName, setModelName] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
+  const [revealKey, setRevealKey] = useState(false);
+  const [modelName, setModelName] = useState(model?.upstreamModel ?? '');
+  const [baseUrl, setBaseUrl] = useState(model?.baseUrl ?? '');
+  const [testMessage, setTestMessage] = useState<string | undefined>(undefined);
+
+  const trimmedName = modelName.trim();
+  const trimmedKey = apiKey.trim();
+  const trimmedUrl = baseUrl.trim();
+  const keyOnFile = model?.keySaved ?? false;
+  /*
+   * endpoint 那一行什么时候露出来（见头注释第 2 条）：
+   * 「其他」必须问；已经不是官方地址的也要露出来，否则保存会把它改回官方。
+   */
+  const showEndpoint =
+    provider === 'private' ||
+    (provider !== undefined && trimmedUrl !== '' && trimmedUrl !== PROVIDER_BASE_URL[provider]);
+  const suggestions = provider !== undefined ? (PROVIDER_MODELS[provider] ?? []) : [];
 
   const ready =
     provider !== undefined &&
-    apiKey.trim() !== '' &&
-    modelName.trim() !== '' &&
-    baseUrl.trim() !== '';
+    trimmedName !== '' &&
+    trimmedUrl !== '' &&
+    // 改的时候不要求重填密钥（留空 = 沿用已存的那把）
+    (trimmedKey !== '' || keyOnFile);
+  const canTest = ready && onTest !== undefined;
+
+  const docsRefusal =
+    onOpenDocs === undefined
+      ? '这个版本不能打开外部文档。'
+      : provider === undefined
+        ? '先选一个供应商。'
+        : provider === 'private'
+          ? '这是你自己的 endpoint，我们没有它的文档。'
+          : undefined;
 
   return (
     <Dialog
-      title="添加模型"
+      title={model ? '修改模型' : '添加模型'}
       confirmLabel="保存"
       confirmDisabled={!ready}
+      closable
       onCancel={onCancel}
-      onConfirm={() =>
-        onConfirm({
-          id: `${provider ?? 'custom'}/${modelName.trim()}`,
-          displayName: modelName.trim(),
-          provider: provider ?? '',
-          upstreamModel: modelName.trim(),
-          baseUrl: baseUrl.trim(),
-          apiKey: apiKey.trim(),
-        })
-      }
+      onConfirm={() => {
+        if (!ready) return;
+        const id = `${provider}/${trimmedName}`;
+        if (model) {
+          onUpdate({
+            previousId: model.id,
+            id,
+            displayName: trimmedName,
+            provider,
+            upstreamModel: trimmedName,
+            baseUrl: trimmedUrl,
+            // 留空 = 不动已存的那把（协议里就是这个语义）
+            ...(trimmedKey !== '' ? { apiKey: trimmedKey } : {}),
+          });
+          return;
+        }
+        onAdd({
+          id,
+          displayName: trimmedName,
+          provider,
+          upstreamModel: trimmedName,
+          baseUrl: trimmedUrl,
+          apiKey: trimmedKey,
+        });
+      }}
     >
       <div className="ew-field">
-        <span>提供商（兼容协议 API）</span>
+        <div className="ew-field-head">
+          <span>供应商（仅支持 OpenAI 兼容协议 API）</span>
+          <button
+            type="button"
+            className="ew-inline-link"
+            disabled={docsRefusal !== undefined}
+            title={docsRefusal ?? '在系统浏览器里打开这家的 API 文档'}
+            onClick={() => {
+              if (provider !== undefined) onOpenDocs?.(provider);
+            }}
+          >
+            查看文档
+            <span className="ew-inline-link-icon" aria-hidden="true">
+              {renderIcon('arrow-up-right')}
+            </span>
+          </button>
+        </div>
         <InlineSelect
-          ariaLabel="提供商"
-          placeholder="选择提供商"
+          field
+          ariaLabel="供应商"
+          placeholder="选择供应商"
           value={provider}
+          icon={renderIcon('model')}
           options={[
             { id: 'deepseek', label: 'DeepSeek API' },
             { id: 'moonshot', label: 'Kimi（Moonshot）API' },
             { id: 'zhipu', label: 'GLM（智谱）API' },
-            { id: 'private', label: '其他 OpenAI Chat 兼容 API' },
+            { id: 'private', label: '其他 OpenAI 兼容 API' },
           ]}
           onChange={(next) => {
             setProvider(next);
+            // 换供应商就换地址：留着上一家的地址是"看着填对了、发过去 404"
             setBaseUrl(PROVIDER_BASE_URL[next] ?? '');
+            setTestMessage(undefined);
           }}
         />
       </div>
-      <label className="ew-field">
-        <span>API 密钥</span>
-        <input
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
-      </label>
-      <label className="ew-field">
+
+      <div className="ew-field">
+        <span>API Key</span>
+        <div className="ew-field-row">
+          <span className="ew-field-secret">
+            <input
+              type={revealKey ? 'text' : 'password'}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="API Key"
+              value={apiKey}
+              placeholder={
+                keyOnFile
+                  ? `已保存 · ****${model?.keyLast4 ?? '****'}（留空则不改）`
+                  : '输入你的 API Key'
+              }
+              onChange={(event) => {
+                setApiKey(event.target.value);
+                setTestMessage(undefined);
+              }}
+            />
+            <IconButton
+              label={revealKey ? '隐藏 API Key' : '显示 API Key'}
+              icon={renderIcon(revealKey ? 'eye' : 'eye-off')}
+              onClick={() => setRevealKey((value) => !value)}
+            />
+          </span>
+          <PillButton
+            disabled={!canTest}
+            disabledReason={
+              onTest === undefined ? '这个版本不能测试连接。' : '先选供应商、填模型名与密钥。'
+            }
+            onClick={() => {
+              if (!canTest || provider === undefined) return;
+              // 说清这一下会花钱（同「检查」按钮的口径）
+              setTestMessage('正在测…（会向上游发一次极小的请求）');
+              void onTest({
+                provider,
+                baseUrl: trimmedUrl,
+                upstreamModel: trimmedName,
+                ...(trimmedKey !== '' ? { apiKey: trimmedKey } : {}),
+                // 留空时用这条已存模型的密钥 —— 明文只在主进程里出现
+                ...(model ? { modelId: model.id } : {}),
+              })
+                .then((result) => setTestMessage(result.message))
+                .catch(() => setTestMessage('测试没跑起来。'));
+            }}
+          >
+            测试连接
+          </PillButton>
+        </div>
+        {/* 结果原样显示：通了、密钥不对、模型名不存在是三件不同的事 */}
+        {testMessage !== undefined ? <p className="ew-field-hint">{testMessage}</p> : null}
+      </div>
+
+      <div className="ew-field">
         <span>模型名称</span>
-        <input
-          aria-label="模型名称"
+        <ModelNameCombo
           value={modelName}
-          onChange={(e) => setModelName(e.target.value)}
-          placeholder="qwen3-max"
+          suggestions={suggestions}
+          onChange={(next) => {
+            setModelName(next);
+            setTestMessage(undefined);
+          }}
         />
-      </label>
-      <label className="ew-field">
-        <span>endpoint 地址</span>
-        <input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://example.com/v1"
-        />
-      </label>
-      <p className="ew-field-hint">
-        不同提供商的流式与工具调用格式不同，必须明确选择；模型能力默认按最保守的一档记录， 因为这个
-        endpoint 尚未经过 EvoWork 实测。
-      </p>
+      </div>
+
+      {showEndpoint ? (
+        <label className="ew-field">
+          <span>endpoint 地址</span>
+          <input
+            value={baseUrl}
+            placeholder="https://example.com/v1"
+            onChange={(event) => {
+              setBaseUrl(event.target.value);
+              setTestMessage(undefined);
+            }}
+          />
+        </label>
+      ) : null}
     </Dialog>
   );
 }
 
+/**
+ * 模型名称：可输入 + 可从"实测过的"里挑（见 `CustomModelDialog` 头注释第 1 条）。
+ *
+ * 没有建议可挑时 chevron **禁用并给原因**（01 §5.19 / §6.3），
+ * 而不是给一个点开是空盒子的下拉。
+ */
+function ModelNameCombo({
+  value,
+  suggestions,
+  onChange,
+}: {
+  readonly value: string;
+  readonly suggestions: readonly string[];
+  readonly onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="ew-field-combo">
+      <input
+        aria-label="模型名称"
+        value={value}
+        spellCheck={false}
+        placeholder="上游真实的模型名"
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <IconButton
+        label="选择实测过的模型名"
+        icon={renderIcon('chevron-down')}
+        disabled={suggestions.length === 0}
+        disabledReason="这一家我们没有实测过的模型名，直接填你 endpoint 上的那个。"
+        onClick={() => setOpen((next) => !next)}
+      />
+      <Popover open={open} onClose={() => setOpen(false)} align="end">
+        <Menu
+          ariaLabel="实测过的模型名"
+          items={suggestions.map((name) => ({ id: name, label: name }))}
+          onSelect={(name) => {
+            setOpen(false);
+            onChange(name);
+          }}
+        />
+      </Popover>
+    </span>
+  );
+}
+
+/**
+ * 内置供应商的 endpoint 地址。
+ *
+ * **与网关那张表必须一致**（`services/gateway/src/providers/registry.ts` 的
+ * `DEFAULT_BASE_URL`）：两处不一致时，设置页测得通、真跑起来 404。
+ * 2026-09-16 对齐时改掉了 deepseek 少一个 `/v1` 的那条。
+ */
 const PROVIDER_BASE_URL: Readonly<Record<string, string>> = Object.freeze({
-  deepseek: 'https://api.deepseek.com',
+  deepseek: 'https://api.deepseek.com/v1',
   moonshot: 'https://api.moonshot.cn/v1',
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+});
+
+/**
+ * 模型名称下拉里的建议值：**只放我们真的实测过的那几个**（Q16 的 P0 三家，
+ * 2026-09-05 探针，能力位见 `services/gateway/src/capabilities.ts` 的 `P0_MODELS`）。
+ *
+ * 不写成"这家所有的模型"：那张表一定会过期，而过期的下拉比没有下拉更糟 ——
+ * 用户会以为列表里没有的型号就是不支持。
+ */
+const PROVIDER_MODELS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  deepseek: ['deepseek-v4-flash'],
+  moonshot: ['kimi-k3'],
+  zhipu: ['glm-5.3-flash'],
 });
 
 /**

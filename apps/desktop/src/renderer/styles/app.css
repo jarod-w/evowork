@@ -1390,6 +1390,42 @@ textarea {
   color: var(--text-tertiary);
   cursor: not-allowed;
 }
+/*
+ * §5.14 的 `field` 变体（2026-09-16）：表单里的整行下拉。
+ *
+ * Footer 里那枚 24 高的透明胶囊放进"上面顶着标签"的字段里，看起来不像可填的框 ——
+ * 用户会绕过它去找输入框。所以这里换成与 `.ew-field input` 同一套边框、圆角与内边距：
+ * **同一个组件，只换触发器的外形**。
+ */
+.ew-inline-select[data-field='true'] {
+  display: flex;
+  width: 100%;
+}
+.ew-inline-select-trigger[data-field='true'] {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  padding: var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.ew-inline-select-trigger[data-field='true'][data-placeholder='true'] {
+  color: var(--text-tertiary);
+}
+.ew-inline-select-trigger[data-field='true'] .ew-inline-select-label {
+  flex: 1;
+  text-align: left;
+}
+/* 下拉与字段同宽：一个比字段窄的浮层看起来像挂在旁边的东西 */
+.ew-inline-select[data-field='true'] .ew-popover {
+  left: 0;
+  right: 0;
+}
+.ew-inline-select[data-field='true'] .ew-menu {
+  width: 100%;
+}
 /* 03 §2.5：4px 圆点表示「已被你改过」 */
 .ew-override-dot {
   width: var(--space-4);
@@ -3639,6 +3675,107 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   padding: var(--space-16) var(--space-20);
   border-top: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
+}
+/* 附件形态：模型名一行读得清，「自定义」是它旁边的次要标注而不是一枚徽标 */
+.ew-settings-model-id {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ew-settings-model-kind {
+  flex: none;
+  color: var(--text-tertiary);
+}
+/* 缺密钥：文字用 -text 变体（01 §2.2：基色写文字不达标） */
+.ew-settings-model-warn {
+  color: var(--warning-text);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+/* 正文里的链接式按钮（落盘路径 · 查看文档）。看起来是链接，行为是按钮 */
+.ew-inline-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ew-inline-link:disabled {
+  color: var(--text-tertiary);
+  text-decoration: none;
+  cursor: not-allowed;
+}
+.ew-inline-link-icon .ew-icon {
+  width: var(--layout-chevron-size);
+  height: var(--layout-chevron-size);
+}
+/* 字段标签行右侧挂一个动作（「查看文档 ↗」）。那个链接不加下划线，图标已经在说它跳出去 */
+.ew-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.ew-field-head .ew-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  text-decoration: none;
+}
+/* 输入框 + 右侧按钮（「测试连接」） */
+.ew-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+/*
+ * 框内带一个图标按钮的输入框：API Key 的明文开关、模型名称的建议下拉。
+ * 边框画在外壳上而不是 input 上，否则框里会出现两条边。
+ */
+.ew-field-secret,
+.ew-field-combo {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-right: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+}
+.ew-field-secret:focus-within,
+.ew-field-combo:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--space-2) var(--focus-ring);
+}
+.ew-field .ew-field-secret input,
+.ew-field .ew-field-combo input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+.ew-field .ew-field-secret input:focus,
+.ew-field .ew-field-combo input:focus {
+  box-shadow: none;
+}
+.ew-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.ew-dialog-head .ew-dialog-title {
+  margin-bottom: 0;
 }
 .ew-dialog .ew-field + .ew-field {
   margin-top: var(--space-12);

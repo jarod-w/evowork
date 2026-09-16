@@ -64,6 +64,8 @@ import type {
   AutomationMutationInput,
   AutomationMutationResult,
   CustomModelInput,
+  CustomModelTestInput,
+  CustomModelUpdateInput,
   AuditDataView,
   AutomationsDataView,
   CaseView,
@@ -325,9 +327,14 @@ export interface RendererBridgeOptions {
         saveProviderKey(input: SaveProviderKeyInput): Promise<ModelAccessMutationResult>;
         clearProviderKey(providerId: string): Promise<ModelAccessMutationResult>;
         addCustomModel(input: CustomModelInput): Promise<ModelAccessMutationResult>;
+        updateCustomModel(input: CustomModelUpdateInput): Promise<ModelAccessMutationResult>;
         removeCustomModel(id: string): Promise<ModelAccessMutationResult>;
         setPlaintextFallback(accept: boolean): Promise<ModelAccessMutationResult>;
         probe(modelId: string): Promise<ModelProbeResult>;
+        /** 保存之前的「测试连接」。不改本机状态，所以没有 `view` 返回 */
+        testCustomModel(input: CustomModelTestInput): Promise<ModelProbeResult>;
+        openModelsFolder(): Promise<void>;
+        openProviderDocs(provider: string): Promise<AccountActionResult>;
       }
     | undefined;
   /** 设置页「用量与预算」的两个数（Q11 的阶段 1） */
@@ -915,10 +922,43 @@ export function createRendererActions(options: RendererBridgeOptions) {
         : unavailableModelAccess('这个版本还不能添加自定义模型。');
     },
 
+    async updateCustomModel(input: CustomModelUpdateInput): Promise<ModelAccessMutationResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.updateCustomModel(input)
+        : unavailableModelAccess('这个版本还不能修改自定义模型。');
+    },
+
     async removeCustomModel(input: { readonly id: string }): Promise<ModelAccessMutationResult> {
       return options.modelAccessPorts
         ? options.modelAccessPorts.removeCustomModel(input.id)
         : unavailableModelAccess('这个版本还不能删除自定义模型。');
+    },
+
+    /**
+     * 保存之前的「测试连接」。
+     *
+     * 与 `probeModel` 分开而不是加一个可选参数：那一个检查的是**已经保存**的模型，
+     * 这一个检查的是用户此刻填在弹窗里的东西 —— 失败时要说的话也不一样
+     * （"网关拒绝了令牌"与"上游拒绝了你这把密钥"是两件事）。
+     */
+    async testCustomModel(input: CustomModelTestInput): Promise<ModelProbeResult> {
+      return options.modelAccessPorts
+        ? options.modelAccessPorts.testCustomModel(input)
+        : { ok: false, message: '这个版本不能测试连接。' };
+    },
+
+    /** 设置页那一行「models.toml」的链接。没有注入 `openPath` 时什么都不做（M9 之前） */
+    async openModelsFolder(): Promise<void> {
+      await options.modelAccessPorts?.openModelsFolder();
+    },
+
+    async openProviderDocs(input: { readonly provider: string }): Promise<AccountActionResult> {
+      return (
+        options.modelAccessPorts?.openProviderDocs(input.provider) ?? {
+          ok: false,
+          refused: '这个版本不能打开外部文档。',
+        }
+      );
     },
 
     /** 用户对"钥匙串不可用"的选择（11 §4.3）。**只有他自己能做这个决定** */

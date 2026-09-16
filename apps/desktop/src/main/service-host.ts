@@ -33,7 +33,7 @@ import {
 } from 'node:fs';
 import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
-import { basename, extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 
 import {
   createAdapter,
@@ -55,7 +55,10 @@ import { BRAND } from '@evowork/tokens';
 import { createAuditRepo, openStore, readMeta, writeMeta, type Store } from '@evowork/store';
 
 import type {
+  AccountActionResult,
   CustomModelInput,
+  CustomModelTestInput,
+  CustomModelUpdateInput,
   ModelAccessMutationResult,
   ModelAccessView,
   ModelCatalogResult,
@@ -71,7 +74,12 @@ import type {
 import { createAccountSession, originsFromEnv } from './account.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
 import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
-import { createModelAccess, probeModel, type ModelAccess } from './model-access.js';
+import {
+  createModelAccess,
+  probeModel,
+  PROVIDER_DOCS_URL,
+  type ModelAccess,
+} from './model-access.js';
 import { EMPTY_POLICY_VIEW, syncEnterprisePolicy, type PolicyPackView } from './policy-pack.js';
 import { NO_KEYRING_NOTICE, type SafeStorageLike } from './secret-store.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
@@ -473,6 +481,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     kernelBaseUrl,
     readFlag: (key) => readMeta(store.db, key),
     writeFlag: (key, value) => writeMeta(store.db, key, value),
+    ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
   });
   if (modelAccess.inferredMode) {
     /*
@@ -1095,6 +1104,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         }
         return { ok: true, view: accessView(await restartGateway()) };
       },
+      updateCustomModel: async (
+        input: CustomModelUpdateInput,
+      ): Promise<ModelAccessMutationResult> => {
+        const refused = modelAccess.updateCustomModel(input);
+        if (refused !== undefined) {
+          return { ok: false, refused, view: accessView(await readModelCatalog()) };
+        }
+        return { ok: true, view: accessView(await restartGateway()) };
+      },
       removeCustomModel: async (id: string): Promise<ModelAccessMutationResult> => {
         const ok = modelAccess.removeCustomModel(id);
         return {
@@ -1102,6 +1120,25 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           ...(ok ? {} : { refused: '没有这个自定义模型。' }),
           view: accessView(await restartGateway()),
         };
+      },
+      /**
+       * 保存之前的「测试连接」。**不重起网关、不改任何本机状态** ——
+       * 它只是替用户发一次请求，所以失败不该留下痕迹。
+       */
+      testCustomModel: (input: CustomModelTestInput): Promise<ModelProbeResult> =>
+        modelAccess.testCustomModel(input),
+      /** 在访达 / 资源管理器里打开 `models.toml` 所在的目录（设置页那一行的链接） */
+      openModelsFolder: async (): Promise<void> => {
+        await options.openPath?.(dirname(options.paths.modelsFile));
+      },
+      /** 「查看文档」。URL 白名单在 `model-access.ts`，渲染层只说 provider id */
+      openProviderDocs: async (provider: string): Promise<AccountActionResult> => {
+        const url = PROVIDER_DOCS_URL[provider];
+        if (!url) {
+          return { ok: false, refused: '这一项没有可跳转的官方文档。' };
+        }
+        await options.openExternal?.(url);
+        return { ok: true };
       },
       setPlaintextFallback: async (accept: boolean): Promise<ModelAccessMutationResult> => {
         const hadToken = gatewayToken !== undefined;

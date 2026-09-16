@@ -138,7 +138,14 @@ export const RENDERER_ACTIONS = Object.freeze([
   'saveProviderKey',
   'clearProviderKey',
   'addCustomModel',
+  'updateCustomModel',
   'removeCustomModel',
+  /** 保存之前的「测试连接」：密钥进来一次，回来只有 ok 与一句话 */
+  'testCustomModel',
+  /** 设置页那一行「models.toml」的链接 —— 在访达里打开它所在的目录 */
+  'openModelsFolder',
+  /** 「查看文档」。**渲染层只递 provider id**，URL 白名单在主进程（11 §6.3） */
+  'openProviderDocs',
   /** 钥匙串不可用时用户的选择（明文保存 / 不保存）。**不替他选**（11 §4.3） */
   'setSecretFallback',
   /** 连通性检查：真的发一次最小请求 —— 只看目录里有没有这个 id 证明不了密钥是对的 */
