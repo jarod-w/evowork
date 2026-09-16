@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -147,6 +148,31 @@ describe('技能扫描', () => {
       name: 'charts',
       description: '画图',
     });
+  });
+
+  it('随包 ui-design 进官方目录：中文展示名、无脚本、对外不含 Codex / OpenAI', () => {
+    const root = join(fileURLToPath(new URL('.', import.meta.url)), '../../../plugins/skills');
+    const skills = listSkills({ official: root, user: '/nope' }, nodeCatalogIo);
+    const skill = skills.find((s) => s.id === 'ui-design');
+    expect(skill?.name).toBe('界面设计');
+    expect(skill?.interface.category).toBe('设计');
+    expect(skill?.source).toBe('official');
+    expect(skill?.audit.level).toBe('p0');
+    const files = [
+      'SKILL.md',
+      'interface.json',
+      'assets/ui-tokens.css',
+      'references/foundations.md',
+      'references/patterns.md',
+      'references/output-style.md',
+      'references/implementation.md',
+    ];
+    const blob = files
+      .map((file) => readFileSync(join(root, 'ui-design', file), 'utf8'))
+      .join('\n');
+    expect(blob).not.toMatch(/Codex|OpenAI|ChatGPT/i);
+    expect(blob).toContain('--ew-ui-bg-canvas');
+    expect(blob).not.toContain('--codex-');
   });
 });
 

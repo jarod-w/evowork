@@ -11,7 +11,7 @@ mode              = "craft"
 instructions_file = "modes/craft-design.md"
 budget_limit      = 400000
 
-skills              = ["charts"]
+skills              = ["charts", "ui-design"]
 connectors          = []
 experts_recommended = []
 
@@ -24,3 +24,8 @@ prompt = "围绕这个主题给我几个方案："
 label  = "配图"
 icon   = "image"
 prompt = "帮我生成一张配图："
+
+[[chips]]
+label  = "设计界面"
+icon   = "layout"
+prompt = "按工作台视觉语言设计这个界面："

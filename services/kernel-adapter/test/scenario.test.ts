@@ -240,6 +240,12 @@ describe('场景包（03 §2.2）', () => {
     expect(OFFICE.skills).toEqual(['documents', 'spreadsheets', 'presentations', 'charts']);
   });
 
+  it('design 场景带上界面设计技能，不把它算进办公四件套', () => {
+    const design = BUILTIN_SCENARIOS.find((s) => s.id === 'design');
+    expect(design?.skills).toEqual(['charts', 'ui-design']);
+    expect(design?.chips?.map((c) => c.label)).toEqual(['出几个方案', '配图', '设计界面']);
+  });
+
   it('三个模式的权限 profile 与 10 §2.2 的目录一致', () => {
     expect(MODES.craft.permissions).toBe('evowork-workspace');
     expect(MODES.plan.permissions).toBe('evowork-plan');

@@ -1,0 +1,233 @@
+/* Dense desktop workbench tokens. Practical abstraction, not a trademark kit. */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --ew-ui-font-ui:
+    -apple-system-body, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica,
+    Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --ew-ui-font-code:
+    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --ew-ui-bg-canvas: #ffffff;
+  --ew-ui-bg-sidebar: #f9f9f9;
+  --ew-ui-bg-subtle: #f3f3f3;
+  --ew-ui-bg-hover: #ededed;
+  --ew-ui-bg-elevated: #ffffff;
+  --ew-ui-text-primary: #0d0d0d;
+  --ew-ui-text-secondary: #414141;
+  --ew-ui-text-tertiary: #8f8f8f;
+  --ew-ui-border: rgb(13 13 13 / 8%);
+  --ew-ui-border-strong: rgb(13 13 13 / 14%);
+  --ew-ui-focus: #0169cc;
+  --ew-ui-info: #0169cc;
+  --ew-ui-success: #008635;
+  --ew-ui-warning: #923b0f;
+  --ew-ui-danger: #ba2623;
+
+  --ew-ui-space-1: 4px;
+  --ew-ui-space-2: 8px;
+  --ew-ui-space-3: 12px;
+  --ew-ui-space-4: 16px;
+  --ew-ui-space-5: 20px;
+  --ew-ui-space-6: 24px;
+  --ew-ui-space-8: 32px;
+
+  --ew-ui-radius-xs: 4px;
+  --ew-ui-radius-sm: 6px;
+  --ew-ui-radius-md: 8px;
+  --ew-ui-radius-lg: 12px;
+  --ew-ui-radius-xl: 16px;
+  --ew-ui-radius-composer: 22px;
+  --ew-ui-radius-pill: 9999px;
+
+  --ew-ui-shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --ew-ui-shadow-md: 0 2px 4px -1px rgb(0 0 0 / 8%);
+  --ew-ui-shadow-popover: 0 3px 8px rgb(0 0 0 / 6%), 0 0 20px rgb(0 0 0 / 5%);
+  --ew-ui-shadow-composer:
+    0 0 0 1px rgb(0 0 0 / 4%), 0 2px 8px rgb(0 0 0 / 4%), 0 4px 40px 8px rgb(0 0 0 / 2%);
+
+  --ew-ui-sidebar-width: 275px;
+  --ew-ui-thread-width: 48rem;
+  --ew-ui-artifact-width: 56rem;
+  --ew-ui-toolbar-height: 52px;
+  --ew-ui-pane-toolbar-height: 40px;
+  --ew-ui-control-sm: 28px;
+  --ew-ui-control-md: 32px;
+  --ew-ui-control-lg: 36px;
+
+  --ew-ui-duration-fast: 150ms;
+  --ew-ui-duration-layout: 300ms;
+  --ew-ui-ease-enter: cubic-bezier(0.19, 1, 0.22, 1);
+  --ew-ui-ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --ew-ui-ease-exit: cubic-bezier(0.8, 0, 0.4, 1);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --ew-ui-bg-canvas: #0d0d0d;
+  --ew-ui-bg-sidebar: #101010;
+  --ew-ui-bg-subtle: #181818;
+  --ew-ui-bg-hover: #212121;
+  --ew-ui-bg-elevated: #181818;
+  --ew-ui-text-primary: #ffffff;
+  --ew-ui-text-secondary: #afafaf;
+  --ew-ui-text-tertiary: #8f8f8f;
+  --ew-ui-border: rgb(255 255 255 / 8%);
+  --ew-ui-border-strong: rgb(255 255 255 / 14%);
+  --ew-ui-focus: #339cff;
+  --ew-ui-info: #339cff;
+  --ew-ui-success: #40c977;
+  --ew-ui-warning: #ff8549;
+  --ew-ui-danger: #fa423e;
+  --ew-ui-shadow-sm: 0 1px 2px rgb(0 0 0 / 20%);
+  --ew-ui-shadow-md: 0 2px 6px rgb(0 0 0 / 24%);
+  --ew-ui-shadow-popover: 0 8px 24px rgb(0 0 0 / 32%);
+  --ew-ui-shadow-composer: inset 0 0 1px rgb(255 255 255 / 20%), 0 8px 32px rgb(0 0 0 / 28%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --ew-ui-bg-canvas: #0d0d0d;
+    --ew-ui-bg-sidebar: #101010;
+    --ew-ui-bg-subtle: #181818;
+    --ew-ui-bg-hover: #212121;
+    --ew-ui-bg-elevated: #181818;
+    --ew-ui-text-primary: #ffffff;
+    --ew-ui-text-secondary: #afafaf;
+    --ew-ui-text-tertiary: #8f8f8f;
+    --ew-ui-border: rgb(255 255 255 / 8%);
+    --ew-ui-border-strong: rgb(255 255 255 / 14%);
+    --ew-ui-focus: #339cff;
+    --ew-ui-info: #339cff;
+    --ew-ui-success: #40c977;
+    --ew-ui-warning: #ff8549;
+    --ew-ui-danger: #fa423e;
+    --ew-ui-shadow-sm: 0 1px 2px rgb(0 0 0 / 20%);
+    --ew-ui-shadow-md: 0 2px 6px rgb(0 0 0 / 24%);
+    --ew-ui-shadow-popover: 0 8px 24px rgb(0 0 0 / 32%);
+    --ew-ui-shadow-composer: inset 0 0 1px rgb(255 255 255 / 20%), 0 8px 32px rgb(0 0 0 / 28%);
+  }
+}
+
+.ew-ui {
+  min-width: 0;
+  color: var(--ew-ui-text-primary);
+  background: var(--ew-ui-bg-canvas);
+  font: 400 14px/1.5 var(--ew-ui-font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.ew-shell {
+  display: grid;
+  grid-template-columns:
+    clamp(240px, var(--ew-ui-sidebar-width), min(520px, calc(100vw - 320px)))
+    minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.ew-sidebar {
+  min-width: 0;
+  overflow: auto;
+  background: var(--ew-ui-bg-sidebar);
+  border-inline-end: 1px solid var(--ew-ui-border);
+}
+
+.ew-work,
+.ew-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.ew-panel {
+  border-inline-start: 1px solid var(--ew-ui-border);
+  background: var(--ew-ui-bg-canvas);
+}
+
+.ew-toolbar {
+  display: flex;
+  align-items: center;
+  min-height: var(--ew-ui-toolbar-height);
+  padding-inline: var(--ew-ui-space-4);
+  gap: var(--ew-ui-space-2);
+  border-block-end: 1px solid var(--ew-ui-border);
+}
+
+.ew-thread {
+  width: min(100%, var(--ew-ui-thread-width));
+  margin-inline: auto;
+  padding: var(--ew-ui-space-6) var(--ew-ui-space-4) 120px;
+}
+
+.ew-composer {
+  width: min(calc(100% - 32px), var(--ew-ui-thread-width));
+  min-height: 44px;
+  margin-inline: auto;
+  border: 1px solid var(--ew-ui-border-strong);
+  border-radius: var(--ew-ui-radius-composer);
+  background: var(--ew-ui-bg-elevated);
+  box-shadow: var(--ew-ui-shadow-composer);
+}
+
+.ew-control {
+  min-width: var(--ew-ui-control-md);
+  min-height: var(--ew-ui-control-md);
+  border: 0;
+  border-radius: var(--ew-ui-radius-md);
+  color: inherit;
+  background: transparent;
+}
+
+.ew-control:hover {
+  background: var(--ew-ui-bg-hover);
+}
+
+.ew-control:focus-visible,
+.ew-composer:focus-within {
+  outline: 2px solid var(--ew-ui-focus);
+  outline-offset: 2px;
+}
+
+.ew-code {
+  overflow: auto;
+  border: 1px solid var(--ew-ui-border);
+  border-radius: var(--ew-ui-radius-md);
+  background: var(--ew-ui-bg-subtle);
+  font: 400 13px/1.55 var(--ew-ui-font-code);
+  tab-size: 2;
+}
+
+@media (max-width: 1099px) {
+  .ew-shell {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ew-sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 759px) {
+  .ew-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ew-panel {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ew-ui *,
+  .ew-ui *::before,
+  .ew-ui *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

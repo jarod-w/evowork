@@ -120,7 +120,7 @@ evowork/
     account/             账号协议：JWT 验签 · PKCE · 计量类型 · 策略包签名（无网络、无存储）
   ext/                   L2 Rust 扩展 crate（extension-api contributor）
   plugins/               L2 随产品分发的插件包
-    skills/              办公产物技能：documents / spreadsheets / presentations / charts
+    skills/              办公产物技能 documents / spreadsheets / presentations / charts + 界面设计 ui-design
     agents/              专家角色 *.toml（agent-roles 格式）
     connectors/          MCP server 集合。**本期只做 browser/**（Q9：国内生态集成推 v2）
     hooks/               策略包 `evowork-policy/`：四个事件的 I/O 壳，**决策在 `services/policy`**（放脚本里就测不了）

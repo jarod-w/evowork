@@ -2,7 +2,7 @@
 
 | 目录                         | 内容                                                                      | 里程碑 |
 | ---------------------------- | ------------------------------------------------------------------------- | ------ |
-| [`skills/`](skills/)         | 四个办公产物技能：documents / spreadsheets / presentations / charts       | M3     |
+| [`skills/`](skills/)         | 四个办公产物技能 + `ui-design`（桌面工作台界面设计，指令包，无渲染脚本）  | M3     |
 | [`agents/`](agents/)         | 专家角色 `*.toml`（`agent-roles` 格式 + EvoWork 的 `[interface]` 展示段） | M7     |
 | [`connectors/`](connectors/) | MCP server 集合。**本期只做 `browser/`**（Q9）                            | M6     |
 | [`hooks/`](hooks/)           | 策略包：审计 · 配额 · 合规                                                | M4     |

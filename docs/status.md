@@ -1,6 +1,6 @@
 # 开发状态
 
-> **更新于 2026-09-14（第 27 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-16（第 28 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
@@ -51,6 +51,10 @@
 > **第 27 次修复生成过程可见性**：网关在思维链增量前补发 `output_item.added`，内核才有
 > active item 把推理推到 UI。过程组运行中展开、点开即可看到推理正文（不必再点「推理过程」），
 > 且始终画在该回合最终回复之上。自动测试已覆盖；尚未做新一轮真窗口 E2E。
+>
+> **第 28 次加入官方 `ui-design` 技能**：桌面工作台界面设计指令包（SKILL.md + 参考 +
+> token CSS，无脚本）。目录展示名为「界面设计」，分类「设计」；对外文案不含 Codex / OpenAI。
+> 设计创意场景默认启用它，并多一条「设计界面」建议。办公四件套不变。尚未做新一轮真窗口 E2E。
 
 ## 一句话
 
@@ -123,6 +127,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | `services/catalog` | 技能 / 连接器 / 专家目录：SKILL.md 解析 · P0/P1/P2 静态审计（不执行脚本）· 连接器信任态 · 专家 TOML。**不做 I/O** | （见该包 test/） |
 | `plugins/skills/_shared` | 四个技能共用的骨架：退出码 · 校验与"报错不含用户内容" · 产物上报 · 运行时文案 | （由各技能覆盖） |
 | `plugins/skills/{documents,spreadsheets,presentations,charts}` | 四个办公技能：Schema + 模板 + 渲染器 + 产物上报 | 56 |
+| `plugins/skills/ui-design` | 桌面工作台界面设计技能（SKILL.md + 参考 + token CSS；无脚本，P0） | （目录扫描） |
 | `apps/desktop` 的 `visualizer.tsx` | **R5 的落点**：fence 识别 · SVG 白名单清洗 · chart spec 校验 · 沙箱 iframe | 20 |
 | `plugins/hooks/evowork-policy` | 策略包（K3 第三个扩展点）：四个事件的 I/O 壳，决策在 `services/policy` | （由 policy 覆盖） |
 | `tools/eslint-plugin-evowork` | K2 边界规则 + token-only 样式规则（把 CLAUDE.md 的纪律机器化） | 2 |

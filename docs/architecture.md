@@ -106,7 +106,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/desktop` | [apps/desktop](../apps/desktop/) | Electron 壳 + 本机服务宿主 + 全部 UI | [service-host.ts](../apps/desktop/src/main/service-host.ts) · [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) · [model-access.ts](../apps/desktop/src/main/model-access.ts) |
 | `@evowork/eslint-plugin` | [tools/eslint-plugin-evowork](../tools/eslint-plugin-evowork/) | 把 K2 与 token-only 两条纪律做成会失败的规则 | [no-kernel-internals.js](../tools/eslint-plugin-evowork/src/no-kernel-internals.js) |
 
-**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）·
+**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）+ `ui-design`（指令包，无渲染脚本）·
 [plugins/hooks/evowork-policy/](../plugins/hooks/evowork-policy/) 策略包的 I/O 壳 ·
 [plugins/connectors/browser/](../plugins/connectors/browser/) 官方 browser MCP（Q9）·
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·
