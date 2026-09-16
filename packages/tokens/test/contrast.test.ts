@@ -37,11 +37,10 @@ describe('计算本身（WCAG 2.1）', () => {
     expect(contrastRatio('#123456', '#123456')).toBe(1);
   });
 
-  it('半透明色先压到底色上再算 —— 否则悬停态的数会是错的', () => {
-    // --bg-hover 是 rgba；直接解析会把 alpha 丢掉
+  it('半透明色先压到底色上再算 —— 否则发丝边框的数会是错的', () => {
     const flattened = contrastRatio(L['text-primary'], L['bg-app']);
     expect(flattened).toBeGreaterThan(10);
-    expect(parseColor('rgba(29,29,27,.045)')).toEqual({ r: 29, g: 29, b: 27 });
+    expect(parseColor('rgba(13,13,13,.08)')).toEqual({ r: 13, g: 13, b: 13 });
   });
 
   it('支持 #RGB 缩写', () => {
@@ -74,22 +73,22 @@ describe('文本档（01 §8.1）', () => {
       foreground: L['text-secondary'],
       background: L['bg-surface'],
       min: REQUIREMENT.text,
-      documented: 5.18,
+      documented: 10.21,
     },
     {
-      // 只剩 0.09 余量：侧边栏与中栏的次要文字**不得再调浅**，也不得叠加透明度
+      // 余量充足（9.70）；仍不得叠加透明度把对比度压到 4.5 以下
       name: '--text-secondary on --bg-app',
       foreground: L['text-secondary'],
       background: L['bg-app'],
       min: REQUIREMENT.text,
-      documented: 4.59,
+      documented: 9.7,
     },
     {
       name: '--text-inverse on --bg-inverse（深色分段控件）',
       foreground: L['text-inverse'],
       background: L['bg-inverse'],
       min: REQUIREMENT.text,
-      documented: 16.9,
+      documented: 19.44,
     },
   ];
 
@@ -109,39 +108,27 @@ describe('文本档（01 §8.1）', () => {
     }
   });
 
-  it('`--text-secondary on --bg-app` 的余量小于 0.15 —— 这条约束是活的', () => {
-    // 这个断言的作用是**提醒**：一旦有人把 --text-secondary 调浅一点，
-    // 它会先于"对比度不达标"报错，并指出这是 01 §8.1 明写的不可再浅
+  it('`--text-secondary` 必须保持正文对比度', () => {
     const actual = contrastRatio(L['text-secondary'], L['bg-app']);
     expect(actual).toBeGreaterThanOrEqual(REQUIREMENT.text);
-    expect(actual - REQUIREMENT.text).toBeLessThan(0.15);
   });
 
   it('**`--text-tertiary` 不满足任何文本要求** —— 只能用于非必要信息', () => {
     const onApp = contrastRatio(L['text-tertiary'], L['bg-app']);
     const onSurface = contrastRatio(L['text-tertiary'], L['bg-surface']);
-    // 01 §8.2 记录 2.50–2.82
+    // 01 §8.2 记录 3.07–3.23
     expect(onApp).toBeLessThan(REQUIREMENT.text);
     expect(onApp).toBeGreaterThan(2.4);
-    expect(onSurface).toBeLessThan(3);
+    expect(onSurface).toBeLessThan(REQUIREMENT.text);
   });
 });
 
-describe('语义色：**基色不能写文字，必须用 -text 变体**（01 §2.2 最容易被忽略的一条）', () => {
-  it('基色在 -weak 底上全部不达标（这就是为什么需要 -text 变体）', () => {
-    const bases: [string, string, string, number][] = [
-      ['--warning', S.warning, S['warning-weak'], 2.64],
-      ['--info', S.info, S['info-weak'], 3.61],
-      ['--danger', S.danger, S['danger-weak'], 3.8],
-    ];
-    for (const [name, fg, bg, documented] of bases) {
-      const actual = contrastRatio(fg, bg);
-      expect(actual, `${name} 居然达标了？那 01 §2.2 的结论要重写`).toBeLessThan(REQUIREMENT.text);
-      expect(
-        Math.abs(actual - documented),
-        `${name} 实测 ${actual}，文档记 ${documented}`,
-      ).toBeLessThan(0.06);
-    }
+describe('语义色：**文字必须用 -text 变体**（01 §2.2）', () => {
+  it('图形基色里至少 `--accent` 与 `--success` 在 -weak 底上不够写正文', () => {
+    expect(contrastRatio(S.accent, S['accent-weak'])).toBeLessThan(REQUIREMENT.text);
+    expect(Math.abs(contrastRatio(S.accent, S['accent-weak']) - 2.82)).toBeLessThan(0.06);
+    expect(contrastRatio(S.success, S['success-weak'])).toBeLessThan(REQUIREMENT.text);
+    expect(Math.abs(contrastRatio(S.success, S['success-weak']) - 4.18)).toBeLessThan(0.06);
   });
 
   it('-text / -strong 变体在 -weak 底与白底上都达标', () => {
@@ -151,56 +138,63 @@ describe('语义色：**基色不能写文字，必须用 -text 变体**（01 §
         foreground: S['accent-strong'],
         background: S['accent-weak'],
         min: REQUIREMENT.text,
-        documented: 5.7,
+        documented: 5.74,
       },
       {
         name: 'accent-strong on white',
         foreground: S['accent-strong'],
         background: '#FFFFFF',
         min: REQUIREMENT.text,
-        documented: 6.4,
+        documented: 6.44,
       },
       {
         name: 'info-text on info-weak',
         foreground: S['info-text'],
         background: S['info-weak'],
         min: REQUIREMENT.text,
-        documented: 5.78,
+        documented: 7.74,
       },
       {
         name: 'info-text on white',
         foreground: S['info-text'],
         background: '#FFFFFF',
         min: REQUIREMENT.text,
-        documented: 6.6,
+        documented: 8.83,
+      },
+      {
+        name: 'success-text on success-weak',
+        foreground: S['success-text'],
+        background: S['success-weak'],
+        min: REQUIREMENT.text,
+        documented: 5.94,
       },
       {
         name: 'warning-text on warning-weak',
         foreground: S['warning-text'],
         background: S['warning-weak'],
         min: REQUIREMENT.text,
-        documented: 5.14,
+        documented: 6.39,
       },
       {
         name: 'warning-text on white',
         foreground: S['warning-text'],
         background: '#FFFFFF',
         min: REQUIREMENT.text,
-        documented: 5.7,
+        documented: 7.36,
       },
       {
         name: 'danger-text on danger-weak',
         foreground: S['danger-text'],
         background: S['danger-weak'],
         min: REQUIREMENT.text,
-        documented: 5.93,
+        documented: 7.07,
       },
       {
         name: 'danger-text on white',
         foreground: S['danger-text'],
         background: '#FFFFFF',
         min: REQUIREMENT.text,
-        documented: 6.8,
+        documented: 8.12,
       },
     ];
     const results = check(cases);
@@ -225,18 +219,18 @@ describe('边框：一个必须正面承认的取舍（01 §8.3）', () => {
     const def = contrastRatio(L['border-default'], L['bg-surface']);
     const strong = contrastRatio(L['border-strong'], L['bg-surface']);
 
-    // 01 §8.2 记录：1.39 / 1.68（subtle 更低）
+    // 01 §8.2 记录：1.30 / 1.36（subtle 更低）
     expect(def).toBeLessThan(REQUIREMENT.nonText);
-    expect(Math.abs(def - 1.39)).toBeLessThan(0.05);
-    expect(Math.abs(strong - 1.68)).toBeLessThan(0.05);
+    expect(Math.abs(def - 1.3)).toBeLessThan(0.05);
+    expect(Math.abs(strong - 1.36)).toBeLessThan(0.05);
     expect(subtle).toBeLessThan(def);
   });
 
   it('**高对比模式下 `--border-default` 必须 ≥ 3.0**（§8.3 的达标点）', () => {
     const actual = contrastRatio(LIGHT_HIGH_CONTRAST_BORDERS['border-default'], L['bg-surface']);
     expect(actual).toBeGreaterThanOrEqual(REQUIREMENT.nonText);
-    // 01 §8.3 记录 3.51
-    expect(Math.abs(actual - 3.51)).toBeLessThan(0.06);
+    // 01 §8.3 记录 3.45
+    expect(Math.abs(actual - 3.45)).toBeLessThan(0.06);
   });
 
   it('高对比模式的三个值单调递增（subtle < default < strong）', () => {
@@ -248,18 +242,18 @@ describe('边框：一个必须正面承认的取舍（01 §8.3）', () => {
   });
 
   it('聚焦环达标 —— 它是键盘用户的主要定位手段（§8.3 第 2 条）', () => {
-    // 01 §8.3 记录 3.16，那是**不透明** accent 的值
+    // 01 §8.3 记录 5.39，那是不透明技能蓝
     const actual = contrastRatio(S['focus-ring'], L['bg-surface']);
     expect(actual).toBeGreaterThanOrEqual(REQUIREMENT.nonText);
-    expect(Math.abs(actual - 3.16)).toBeLessThan(0.05);
+    expect(Math.abs(actual - 5.39)).toBeLessThan(0.05);
   });
 
   it('**不能改回 `accent @ 40%`** —— 那样只有 1.54，环就看不见了', () => {
     // 这个断言存在的意义是把"为什么 focus-ring 不是半透明"这件事钉在代码里。
     // 01 §2.2 原先写的是 40%，而 §8.3 又声称达标 —— 两句不能同时成立（已回写文档）。
-    const withAlpha = contrastRatio('rgba(47,163,122,.4)', L['bg-surface']);
+    const withAlpha = contrastRatio('rgba(1,105,204,.4)', L['bg-surface']);
     expect(withAlpha).toBeLessThan(2);
-    expect(Math.abs(withAlpha - 1.54)).toBeLessThan(0.05);
+    expect(Math.abs(withAlpha - 1.85)).toBeLessThan(0.05);
   });
 });
 
@@ -285,7 +279,7 @@ describe('尺度 token（01 §2.5–2.6）', () => {
 describe('CSS 变量生成（一份数值，不手写第二份）', () => {
   it('本期只生成浅色与高对比模式，不跟随系统暗色', () => {
     const css = toCssVariables();
-    expect(css).toContain('--bg-app: #F2F1EE');
+    expect(css).toContain('--bg-app: #f9f9f9');
     expect(css).toContain('color-scheme: light');
     expect(css).not.toContain('prefers-color-scheme: dark');
     expect(css).not.toContain("[data-theme='dark']");
@@ -309,7 +303,10 @@ describe('CSS 变量生成（一份数值，不手写第二份）', () => {
     expect(css).not.toContain('--space-14:');
   });
 
-  it('内容列 800 作为 layout token 存在（01 §3.1 的全局硬约束）', () => {
-    expect(toCssVariables()).toContain('--layout-content-column: 800px');
+  it('对话列 768 作为 layout token 存在（01 §3.1）', () => {
+    const css = toCssVariables();
+    expect(css).toContain('--layout-content-column: 768px');
+    expect(css).toContain('--layout-sidebar-width: 275px');
+    expect(css).toContain('--r-composer: 22px');
   });
 });

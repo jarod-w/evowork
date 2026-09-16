@@ -4,9 +4,11 @@
  * 生成而不是手写 `.css`，是为了让**只有一份数值**：手写一份 CSS 加一份 TS 常量，
  * 两份一定会分叉，而分叉的表现是"某个组件的颜色跟别的差一点"——没人会去查为什么。
  *
- * 三层覆盖（01 §4.5 / §8.3）：
- *   `:root`（浅色）→ `prefers-color-scheme: dark` / `[data-theme=dark]`（暗色）
+ * 三层覆盖（01 §4.2 / §8.3）：
+ *   `:root`（浅色）
  *   → `prefers-contrast: more` / `[data-contrast=high]`（只覆盖三个边框 token）
+ *
+ * 暗色值在 palette 的 DARK_* 里，**不写进这份 CSS**（C7）。
  */
 import {
   FONT_STACK,

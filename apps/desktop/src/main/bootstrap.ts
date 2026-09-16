@@ -120,12 +120,12 @@ export const WINDOW_SECURITY = Object.freeze({
   webviewTag: false,
 });
 
-/** 类 ChatGPT UI §6.2：900 以下进入抽屉布局，因此窗口至少保留 900 宽。 */
+/** 01 §3.1：480 以下进入单栏紧凑布局，窗口仍可缩到该尺寸。 */
 export const WINDOW_SIZE = Object.freeze({
   width: 1280,
-  height: 800,
-  minWidth: 900,
-  minHeight: 640,
+  height: 820,
+  minWidth: 480,
+  minHeight: 600,
 });
 
 /**

@@ -4,7 +4,7 @@
  * ```
  * ┌──────────┬────────────────────────────────┬──────────────────┐
  * │ 侧边栏    │ 对话区                          │ 结果区（可折叠）  │
- * │ 260      │ flex · 内容列 800 居中           │ 360–560 可拖拽    │
+ * │ 275      │ flex · 内容列 768 居中           │ 42% · 420–720     │
  * └──────────┴────────────────────────────────┴──────────────────┘
  * ```
  *
@@ -297,7 +297,7 @@ export interface TaskWorkspaceProps {
    *
    * 03 §4.6 要的是"输入框留在原地、周围长出了对话" —— 所以任务页与首页用的是
    * **同一个组件**，由外面传进来而不是这里再造一个。这里只负责它的位置：
-   * 贴在对话区底部、随内容列 800 居中。
+   * 贴在对话区底部、随内容列 768 居中。
    */
   readonly composer?: React.ReactNode | undefined;
   readonly onNewTask?: (() => void) | undefined;
@@ -479,7 +479,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
             </Banner>
           ))}
 
-          {/* 内容列 800 居中（01 §3.1 的全局硬约束） */}
+          {/* 内容列 768 居中（01 §3.1） */}
           <div
             className="ew-content-column"
             role="feed"

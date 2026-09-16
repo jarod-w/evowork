@@ -10,49 +10,48 @@
  * 组件里再出现字面量就会被 lint 拦下。
  */
 
-// ─────────────────────────── 中性色（暖灰基调，01 §2.1）───────────────────────────
+// ─────────────────────────── 中性色（冷灰工作台层，01 §2.1）───────────────────────────
 //
-// 截图的底色不是纯灰，带黄绿暖偏。暗色反相时也要**保留暖偏**（+4° 黄，避免冷蓝）。
+// 数值对齐 plugins/skills/ui-design 2026-09-16 基线。暗色值收录在 DARK_*，
+// 产品 CSS **不注入**（C7）。
 
 export const LIGHT_NEUTRAL = {
-  'bg-app': '#F2F1EE',
-  'bg-canvas': '#FCFCFA',
-  'bg-surface': '#FFFFFF',
-  'bg-sunken': '#F7F6F3',
-  'bg-hover': 'rgba(29,29,27,.045)',
-  'bg-active': 'rgba(29,29,27,.075)',
-  'bg-selected': '#E9E8E4',
-  'bg-inverse': '#1D1D1B',
-  /** 01 §5.34 Dialog 的遮罩层。仓库里在此之前没有全屏模态，这是第一个需要它的组件 */
-  'bg-scrim': 'rgba(29,29,27,.45)',
-  'text-primary': '#1F1F1D',
-  'text-secondary': '#6E6D68',
-  'text-tertiary': '#9B9A94',
-  'text-inverse': '#FFFFFF',
-  'border-subtle': '#E7E6E1',
-  'border-default': '#DCDBD5',
-  'border-strong': '#C9C8C1',
+  'bg-app': '#f9f9f9',
+  'bg-canvas': '#ffffff',
+  'bg-surface': '#ffffff',
+  'bg-sunken': '#f3f3f3',
+  'bg-hover': '#ededed',
+  'bg-active': '#dfdfdf',
+  'bg-selected': '#ededed',
+  'bg-inverse': '#0d0d0d',
+  /** 01 §5.34 Dialog 的遮罩层。 */
+  'bg-scrim': 'rgba(13,13,13,.45)',
+  'text-primary': '#0d0d0d',
+  'text-secondary': '#414141',
+  'text-tertiary': '#8f8f8f',
+  'text-inverse': '#ffffff',
+  'border-subtle': 'rgba(13,13,13,.08)',
+  'border-default': 'rgba(13,13,13,.12)',
+  'border-strong': 'rgba(13,13,13,.14)',
 } as const;
 
 export const DARK_NEUTRAL = {
-  'bg-app': '#191917',
-  'bg-canvas': '#1F1F1D',
-  'bg-surface': '#262624',
-  'bg-sunken': '#212120',
-  'bg-hover': 'rgba(240,239,234,.06)',
-  'bg-active': 'rgba(240,239,234,.10)',
-  'bg-selected': '#33332F',
-  // 反转后选中的分段控件变浅底深字
-  'bg-inverse': '#F2F1EE',
-  /** 暗色下遮罩用更深的黑，理由同其他暗色 token：底色本身已经暗，遮罩还要压得住它 */
-  'bg-scrim': 'rgba(10,10,9,.6)',
-  'text-primary': '#F0EFEA',
-  'text-secondary': '#A8A7A0',
-  'text-tertiary': '#77766F',
-  'text-inverse': '#1D1D1B',
-  'border-subtle': '#2F2F2C',
-  'border-default': '#3A3A36',
-  'border-strong': '#4A4A45',
+  'bg-app': '#101010',
+  'bg-canvas': '#0d0d0d',
+  'bg-surface': '#181818',
+  'bg-sunken': '#181818',
+  'bg-hover': '#212121',
+  'bg-active': '#303030',
+  'bg-selected': '#212121',
+  'bg-inverse': '#ffffff',
+  'bg-scrim': 'rgba(0,0,0,.6)',
+  'text-primary': '#ffffff',
+  'text-secondary': '#afafaf',
+  'text-tertiary': '#8f8f8f',
+  'text-inverse': '#0d0d0d',
+  'border-subtle': 'rgba(255,255,255,.08)',
+  'border-default': 'rgba(255,255,255,.12)',
+  'border-strong': 'rgba(255,255,255,.14)',
 } as const;
 
 // ─────────────────────────── 品牌与语义色（01 §2.2）───────────────────────────
@@ -64,57 +63,51 @@ export const LIGHT_SEMANTIC = {
   accent: '#2FA37A',
   'accent-weak': '#E8F5EE',
   'accent-strong': '#1B6B4F',
-  info: '#3B7DD8',
-  'info-weak': '#E9F1FC',
-  success: '#2FA37A',
-  'success-weak': '#E8F5EE',
-  warning: '#C98A16',
-  'warning-weak': '#FBF2DE',
-  danger: '#D24B3E',
+  info: '#0169cc',
+  'info-weak': '#E8F1FA',
+  success: '#008635',
+  'success-weak': '#E6F5EC',
+  warning: '#923b0f',
+  'warning-weak': '#F8EDE6',
+  danger: '#ba2623',
   'danger-weak': '#FBECEA',
 
   /**
    * 语义色的**文字变体**（01 §2.2，必需不可省）。
    *
-   * 上面四个基色是**图形色**（圆点、边条、进度填充），对比度只够非文本用途。
-   * 任何文字都必须用下面的加深变体 —— `--warning` 在 `--warning-weak` 上只有 2.64:1。
-   * 这是 01 里「最容易被忽略、后果最直接」的一条，所以测试对它逐个钉住。
+   * 基色首先是图形色。文字必须走这些变体 —— 即使 `--info` / `--warning` /
+   * `--danger` 在当前浅色板上碰巧 ≥4.5。`--success` 在 `-weak` 上只有 4.18，
+   * `--accent` 只有 2.82。
    */
-  'info-text': '#225CAC',
-  'warning-text': '#895E0F',
-  'danger-text': '#A53227',
+  'info-text': '#014A8F',
+  'success-text': '#006B2A',
+  'warning-text': '#923b0f',
+  'danger-text': '#9A1F1C',
 
   /**
-   * 聚焦环。**不透明的 accent**，不是 `accent @ 40%`（2026-09-05 修订，已回写 01）。
-   *
-   * 01 §2.2 把它定义成「`--accent` @ 40%」，而 §8.3 又说它「对 `--bg-surface` 3.16 : 1，达标」——
-   * 两句不能同时成立：40% 压在白底上实测只有 **1.54**，3.16 是**不透明** accent 的值。
-   *
-   * 按 §8.3 第 2 条的意图取不透明：那一条说聚焦态是「键盘用户的主要定位手段」，
-   * 一个 1.54 : 1 的环达不到"能定位"这个要求。这是本轮唯一一处**改了 token 数值**的修订，
-   * 因此在测试里同时钉住 3.16（现状）与 1.54（说明为什么不能改回 40%）。
+   * 聚焦环。不透明的技能蓝，不是品牌绿，也不是 `focus @ 40%`。
+   * 40% 压在白底上实测 1.85；不透明对 `--bg-surface` 为 5.39。
    */
-  'focus-ring': '#2FA37A',
+  'focus-ring': '#0169cc',
 } as const;
 
 export const DARK_SEMANTIC = {
   accent: '#41B891',
   'accent-weak': '#18302A',
   'accent-strong': '#41B891',
-  info: '#6FA5EA',
+  info: '#339cff',
   'info-weak': '#16233A',
-  success: '#41B891',
+  success: '#40c977',
   'success-weak': '#18302A',
-  warning: '#E0A93C',
+  warning: '#ff8549',
   'warning-weak': '#33270F',
-  danger: '#E4695C',
+  danger: '#fa423e',
   'danger-weak': '#3A1E1B',
-  // 暗色下 -text 变体改用**提亮**版（01 §4.5）
-  'info-text': '#9BC2F2',
-  'warning-text': '#EBC474',
-  'danger-text': '#F0958B',
-  // 暗色下用提亮的 accent（与 --accent 同值），理由同浅色：环必须能被看见
-  'focus-ring': '#41B891',
+  'info-text': '#339cff',
+  'success-text': '#40c977',
+  'warning-text': '#ff8549',
+  'danger-text': '#fa423e',
+  'focus-ring': '#339cff',
 } as const;
 
 /**
@@ -124,66 +117,69 @@ export const DARK_SEMANTIC = {
  * 不是第二套设计。在 `prefers-contrast: more` 与设置项「高对比度」下都生效。
  */
 export const LIGHT_HIGH_CONTRAST_BORDERS = {
-  'border-subtle': '#A3A29B',
-  'border-default': '#8A8981',
-  'border-strong': '#6E6D68',
+  'border-subtle': '#A3A3A3',
+  'border-default': '#8A8A8A',
+  'border-strong': '#5D5D5D',
 } as const;
 
 export const DARK_HIGH_CONTRAST_BORDERS = {
-  'border-subtle': '#5A5A54',
-  'border-default': '#6A6961',
-  'border-strong': '#A8A7A0',
+  'border-subtle': '#5A5A5A',
+  'border-default': '#8A8A8A',
+  'border-strong': '#AFAFAF',
 } as const;
 
 // ─────────────────────────── 尺度（01 §2.3–2.8）───────────────────────────
 
-/** 圆角（01 §2.3） */
+/** 圆角（01 §2.3）。`--r-composer 22` 是单行输入特例，不进入间距刻度。 */
 export const RADIUS = {
-  xs: 6,
-  sm: 8,
-  md: 10,
+  xs: 4,
+  sm: 6,
+  md: 8,
   lg: 12,
   xl: 16,
-  '2xl': 20,
+  '2xl': 24,
+  composer: 22,
   full: 999,
 } as const;
 
-/** 阴影（01 §2.4）。静态卡片用 xs，悬停才升到 md —— 不要一上来就打重阴影。 */
+/** 阴影（01 §2.4）。窗格靠发丝线；弹层、菜单、Composer 才给深度。 */
 export const SHADOW = {
-  xs: '0 1px 2px rgba(24,24,20,.05)',
-  sm: '0 1px 3px rgba(24,24,20,.06), 0 1px 2px rgba(24,24,20,.04)',
-  md: '0 4px 12px rgba(24,24,20,.08), 0 1px 3px rgba(24,24,20,.05)',
-  lg: '0 12px 32px rgba(24,24,20,.12), 0 2px 8px rgba(24,24,20,.06)',
+  xs: '0 1px 2px -1px rgb(0 0 0 / 8%)',
+  sm: '0 1px 2px -1px rgb(0 0 0 / 8%)',
+  md: '0 2px 4px -1px rgb(0 0 0 / 8%)',
+  lg: '0 3px 8px rgb(0 0 0 / 6%), 0 0 20px rgb(0 0 0 / 5%)',
+  composer: '0 0 0 1px rgb(0 0 0 / 4%), 0 2px 8px rgb(0 0 0 / 4%), 0 4px 40px 8px rgb(0 0 0 / 2%)',
 } as const;
 
 /** 间距刻度（01 §2.5）。**不允许 10 / 14 / 18 / 22 这类中间值。** */
 export const SPACE = [2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64] as const;
 
-/** 排版（01 §2.6）。中文行高不低于字号 ×1.5。 */
+/** 排版（01 §2.6）。正文档 `body` 行高不低于字号 ×1.5。 */
 export const TYPE = {
-  display: { size: 36, line: 44, weight: 700, tracking: '-.02em' },
-  hero: { size: 28, line: 36, weight: 600 },
-  'title-1': { size: 20, line: 28, weight: 700 },
-  'title-2': { size: 17, line: 24, weight: 600 },
-  'body-lg': { size: 15, line: 24, weight: 400 },
-  label: { size: 13, line: 20, weight: 500 },
-  body: { size: 13, line: 20, weight: 400 },
+  display: { size: 28, line: 34, weight: 600 },
+  hero: { size: 28, line: 34, weight: 600 },
+  'title-1': { size: 20, line: 28, weight: 600 },
+  'title-2': { size: 18, line: 24, weight: 600 },
+  'body-lg': { size: 16, line: 24, weight: 400 },
+  label: { size: 13, line: 18, weight: 500 },
+  body: { size: 14, line: 21, weight: 400 },
   caption: { size: 12, line: 16, weight: 400 },
-  micro: { size: 11, line: 14, weight: 500 },
+  micro: { size: 11, line: 16, weight: 500 },
 } as const;
 
 export const FONT_STACK = {
   cjk: '"PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans CJK SC", -apple-system, "Segoe UI", Roboto, sans-serif',
-  mono: '"SF Mono", "JetBrains Mono", Menlo, Consolas, monospace',
+  mono: 'ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
 } as const;
 
 /** 动效（01 §2.7）。`prefers-reduced-motion` 下全部归零并保留最终态。 */
 export const MOTION = {
-  'dur-fast': '120ms',
+  'dur-fast': '150ms',
   'dur-base': '180ms',
-  'dur-slow': '280ms',
-  'ease-out': 'cubic-bezier(.2,.8,.2,1)',
-  'ease-inout': 'cubic-bezier(.4,0,.2,1)',
+  'dur-slow': '300ms',
+  'ease-out': 'cubic-bezier(.19, 1, .22, 1)',
+  'ease-inout': 'cubic-bezier(.65, 0, .35, 1)',
+  'ease-exit': 'cubic-bezier(.8, 0, .4, 1)',
 } as const;
 
 /** 层级（01 §2.8） */
@@ -199,9 +195,13 @@ export const Z = {
   dragGhost: 600,
 } as const;
 
-/** 布局（01 §3.1）。内容列 800 是全局硬约束。 */
+/** 布局（01 §3.1）。对话列 768 是散文上限；宽产物可到 896。 */
 export const LAYOUT = {
-  sidebarWidth: 260,
+  sidebarWidth: 275,
+  sidebarMin: 240,
+  sidebarMax: 520,
+  /** 侧栏 clamp 上限：min(520, 100vw - 本值)，避免把工作区挤没。 */
+  sidebarViewportGutter: 320,
   middleWidth: 272,
   middleMin: 240,
   middleMax: 360,
@@ -211,11 +211,11 @@ export const LAYOUT = {
   resultPaneMax: 720,
   /** 键盘调整宽度时每次移动一个基础间距。 */
   resultPaneStep: 24,
-  /** 全局硬约束：截图 1 的 4×191+3×12 与截图 2 的 3×258+2×12 都等于 800 */
-  contentColumn: 800,
+  contentColumn: 768,
+  artifactColumn: 896,
   titleBarHeight: 52,
   navItemHeight: 28,
-  navRhythm: 33,
+  navRhythm: 32,
   panelNavRhythm: 32,
   itemCardWidth: 258,
   itemCardHeight: 112,
@@ -224,9 +224,12 @@ export const LAYOUT = {
   gridGap: 12,
   dataTableHeaderHeight: 40,
   dataTableRowHeight: 48,
-  minWindowWidth: 900,
+  minWindowWidth: 480,
+  minWindowHeight: 600,
+  defaultWindowWidth: 1280,
+  defaultWindowHeight: 820,
   /** 低于最小宽度时改用抽屉与单列，不承诺手机端形态。 */
-  unsupportedWidth: 900,
+  unsupportedWidth: 480,
 
   /*
    * 以下是 01 §5 各组件的固定尺寸。它们进 token 而不是写在 CSS 里，理由与其他 token 一样：
@@ -241,8 +244,10 @@ export const LAYOUT = {
   /** §5.7 UserFooter 与其头像 */
   userFooterHeight: 62,
   avatarSize: 28,
-  /** §5.6 PromoCard 宽 = 侧边栏内容宽（260 - 8×2） */
-  sidebarContentWidth: 244,
+  /** §5.6 PromoCard 宽 = 侧边栏内容宽（275 - 8×2） */
+  sidebarContentWidth: 259,
+  /** §5.13 Composer 最小外高 */
+  composerMinHeight: 44,
   /*
    * 图标尺寸。§5 各处点名给了 20 / 16 / 15 / 14 / 12 五档（§5.1 图标 20、§5.20 图标 28
    * 是卡片专用），进 token 的理由与其他尺寸一样：§5 是数值真源，写死在 SVG 里就是第二份。

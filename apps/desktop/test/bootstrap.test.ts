@@ -122,10 +122,12 @@ describe('窗口安全参数（R5）', () => {
     });
   });
 
-  it('最小窗口宽 900（类 ChatGPT UI §6.2）', async () => {
+  it('最小窗口 480×600（01 §1 / §4.2）', async () => {
     await boot();
-    expect(windowOptions?.minWidth).toBe(900);
-    expect(WINDOW_SIZE.minWidth).toBe(900);
+    expect(windowOptions?.minWidth).toBe(480);
+    expect(windowOptions?.minHeight).toBe(600);
+    expect(WINDOW_SIZE.minWidth).toBe(480);
+    expect(WINDOW_SIZE.height).toBe(820);
   });
 
   it('**外链一律不在应用窗口里打开** —— 应用窗口带 preload，等于把桥交出去', async () => {
