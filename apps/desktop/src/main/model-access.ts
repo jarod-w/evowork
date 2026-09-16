@@ -28,6 +28,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 import {
   ACCESS_JWT_ENV,
@@ -43,6 +44,8 @@ import type { Logger } from '@evowork/logging';
 
 import type {
   CustomModelInput,
+  CustomModelTestInput,
+  CustomModelUpdateInput,
   ModelAccessView,
   ModelCatalogResult,
   ModelProbeResult,
@@ -79,6 +82,20 @@ export const KEY_PROVIDERS: readonly {
   { id: 'zhipu', label: 'GLM（智谱）', env: 'ZHIPU_API_KEY' },
 ];
 
+/**
+ * 「添加模型」弹窗里「查看文档」跳到哪（11 §4.4）。
+ *
+ * **白名单在主进程，渲染层只说 provider id**：让渲染层递 URL 等于给它开一个
+ * "用系统浏览器打开任意地址"的口子。这是一条出网路径（用户点才发生），登记在 11 §6.3。
+ * `private`（其他 OpenAI 兼容 endpoint）故意不在表里 —— 那是用户自己的机器，
+ * 我们没有文档可跳，界面上那个链接会**禁用并说明原因**，不给一个点了没反应的链接。
+ */
+export const PROVIDER_DOCS_URL: Readonly<Record<string, string>> = Object.freeze({
+  deepseek: 'https://api-docs.deepseek.com/',
+  moonshot: 'https://platform.moonshot.cn/docs/api/chat',
+  zhipu: 'https://open.bigmodel.cn/dev/api',
+});
+
 /** 网关访问令牌在密钥库里的名字。与内核读的那个环境变量同名，少一次映射。 */
 export const GATEWAY_TOKEN_SECRET = 'EVOWORK_GATEWAY_TOKEN';
 
@@ -105,6 +122,8 @@ export interface ModelAccessDeps {
   readonly kernelBaseUrl: string;
   readonly readFlag: (key: string) => string | undefined;
   readonly writeFlag: (key: string, value: string) => void;
+  /** 「测试连接」用的 fetch（测试里注入）。**只有那一个动作出网**，见 11 §6.3 */
+  readonly fetchFn?: typeof fetch | undefined;
 }
 
 /** 第②层（企业覆盖）在本机的落点。M10c 接上签名下发通道时只换来源。 */
@@ -179,7 +198,14 @@ export interface ModelAccess {
   saveProviderKey(input: SaveProviderKeyInput): boolean;
   clearProviderKey(providerId: string): boolean;
   addCustomModel(input: CustomModelInput): string | undefined;
+  /** 改一条已存在的。返回拒绝的理由（一句给用户看的话），`undefined` = 改成功了 */
+  updateCustomModel(input: CustomModelUpdateInput): string | undefined;
   removeCustomModel(id: string): boolean;
+  /**
+   * 保存之前的「测试连接」。**直接向上游发**，不经本机网关 ——
+   * 网关只认已经进过 env 的模型，而这一刻这条模型还不存在。
+   */
+  testCustomModel(input: CustomModelTestInput): Promise<ModelProbeResult>;
   /** 用户对"钥匙串不可用"的选择（11 §4.3）。选明文之后要重建密钥库 */
   setPlaintextFallback(accept: boolean): void;
 }
@@ -387,6 +413,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
           };
         }),
         models: catalog.models,
+        modelsFilePath: displayPath(deps.paths.modelsFile),
         allowCustomModels: policy.allowCustomModels,
         ...(policy.allowCustomModels
           ? {}
@@ -459,6 +486,73 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
       return undefined;
     },
 
+    /**
+     * 改一条已存在的（设置页每行的铅笔）。
+     *
+     * **原地覆盖，不是"删了再加"**：后者会换掉 `keyEnv` 槽位，而用户没重填密钥时
+     * 那把旧密钥已经跟着 `removeCustomModel` 删了 —— 一次"改地址"会变成"模型没密钥了"。
+     * 原地改也让 id 改名保持在一次写盘里：中途失败不会留下零条或两条。
+     */
+    updateCustomModel(input) {
+      const policy = readPolicy();
+      if (!policy.allowCustomModels) {
+        return policy.reason ?? '你所在组织要求使用统一配置的模型，这台电脑上不能自己添加模型。';
+      }
+      const index = models.models.findIndex((m) => m.id === input.previousId);
+      const target = models.models[index];
+      if (index < 0 || !target) return '这条自定义模型已经不在了，刷新一下再试。';
+      const refusal = validateCustomModel(input);
+      if (refusal) return refusal;
+      if (input.id !== input.previousId && models.models.some((m) => m.id === input.id)) {
+        return `已经有一个叫「${input.id}」的模型了，换个名字或先删掉它。`;
+      }
+      const apiKey = (input.apiKey ?? '').trim();
+      // 密钥缺席 = 沿用已存的那把。但"从来没存上过"时不能就这么放过：
+      // 那样存下来的是一条看着正常、发过去 401 的模型（同 addCustomModel 的理由）
+      if (apiKey === '' && !store.has(target.keyEnv)) {
+        return '填上这个 endpoint 的 API 密钥。';
+      }
+      if (apiKey !== '') {
+        if (!store.available) return NO_KEYRING_NOTICE;
+        // 先存密钥再写文件，与 addCustomModel 同一条顺序纪律
+        if (!store.set(target.keyEnv, apiKey)) return NO_KEYRING_NOTICE;
+      }
+      const record: CustomModelRecord = {
+        ...target,
+        id: input.id,
+        displayName: (input.displayName ?? '').trim() || input.id,
+        provider: input.provider as ProviderId,
+        upstreamModel: input.upstreamModel,
+        baseUrl: input.baseUrl,
+      };
+      const next = [...models.models];
+      next[index] = record;
+      writeModelsFile(deps.paths.modelsFile, next);
+      models = { models: next, dropped: 0 };
+      return undefined;
+    },
+
+    testCustomModel(input) {
+      const typed = (input.apiKey ?? '').trim();
+      // 编辑态没重填密钥时用那条模型已存的那把 —— 明文只在主进程里出现
+      const stored =
+        typed === '' && input.modelId !== undefined
+          ? (() => {
+              const target = models.models.find((m) => m.id === input.modelId);
+              // `toEnv()` 是主进程解密密钥的唯一入口（见 secret-store 的头注释）——
+              // 不给这个模块加一个 `get(name)`：那正好是"把明文交给 UI"的形状
+              return target ? store.toEnv()[target.keyEnv] : undefined;
+            })()
+          : undefined;
+      return testUpstreamChat({
+        baseUrl: input.baseUrl,
+        upstreamModel: input.upstreamModel,
+        apiKey: typed !== '' ? typed : (stored ?? ''),
+        ...(input.authHeader !== undefined ? { authHeader: input.authHeader } : {}),
+        ...(deps.fetchFn ? { fetchFn: deps.fetchFn } : {}),
+      });
+    },
+
     removeCustomModel(id) {
       const target = models.models.find((m) => m.id === id);
       if (!target) return false;
@@ -490,6 +584,18 @@ function safeRead(path: string): string {
   }
 }
 
+/**
+ * 给用户看的路径：家目录缩成 `~`。
+ *
+ * 只做这一步替换 —— 设置页那一行的作用是"你加的东西写到哪去了"，
+ * 一条 `/Users/someone/.evowork/models.toml` 读起来更像一条日志。
+ * 家目录不在前缀里（`EVOWORK_HOME` 被指到别处）时**原样显示**，不硬拗成 `~`。
+ */
+function displayPath(path: string): string {
+  const home = homedir();
+  return home !== '' && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
 function envLast4(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed !== '' ? trimmed.slice(-4) : undefined;
@@ -500,6 +606,82 @@ function withoutAccountSecrets(env: Record<string, string>): Record<string, stri
   return Object.fromEntries(
     Object.entries(env).filter(([key]) => !key.startsWith(ACCOUNT_SECRET_PREFIX)),
   );
+}
+
+/**
+ * 保存之前的「测试连接」（「添加模型」弹窗里 API Key 旁边那个按钮）。
+ *
+ * **它绕过本机网关直接打上游**，与 `probeModel` 是两条不同的路：网关只认已经进过
+ * 它进程环境的模型，而这一刻这条模型还没保存。路径 `{baseUrl}/chat/completions`
+ * 与网关里四个 provider 用的是同一条（`services/gateway/src/providers/registry.ts`）——
+ * 拼法不一致的话，这里"测通了"而真跑起来 404，比不测更糟。
+ *
+ * **不回显上游响应体**：它可能带诊断信息与账号细节（同 `probeModel` 的纪律）。
+ * 只把状态码翻成一句能指向下一步的话。
+ */
+export async function testUpstreamChat(options: {
+  readonly baseUrl: string;
+  readonly upstreamModel: string;
+  readonly apiKey: string;
+  /** 自定义鉴权头（Q29 保留的配置项）。给了就整条覆盖 Authorization */
+  readonly authHeader?: string | undefined;
+  readonly fetchFn?: typeof fetch | undefined;
+  readonly timeoutMs?: number | undefined;
+}): Promise<ModelProbeResult> {
+  const refusal = validateCustomModel({
+    // id 在这一步还没定（用户可能刚填了一半），只校验发请求真正需要的三样
+    id: 'probe',
+    provider: 'private',
+    baseUrl: options.baseUrl,
+    upstreamModel: options.upstreamModel,
+  });
+  if (refusal) return { ok: false, message: refusal };
+  if (options.apiKey.trim() === '') return { ok: false, message: '先填上 API Key 再测。' };
+
+  const fetchFn = options.fetchFn ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
+  try {
+    const response = await fetchFn(`${options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        ...(options.authHeader
+          ? { authorization: options.authHeader }
+          : { authorization: `Bearer ${options.apiKey}` }),
+        'content-type': 'application/json',
+      },
+      signal: controller.signal,
+      // 一 token 上限、一句 ping：这次调用要花钱，所以花得越少越好
+      body: JSON.stringify({
+        model: options.upstreamModel,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+    });
+    if (response.ok) return { ok: true, message: '通了：这把密钥能调用这个模型。' };
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: `上游拒绝了这把密钥（${response.status}）。` };
+    }
+    if (response.status === 404) {
+      return { ok: false, message: '上游没有这个模型名（404）。检查模型名称与 endpoint 地址。' };
+    }
+    if (response.status === 402 || response.status === 429) {
+      // 密钥是对的，只是这一刻不能用 —— 这两件事对用户的下一步完全不同
+      return {
+        ok: false,
+        message: `密钥能过，但上游现在不接（${response.status}：余额或限流）。`,
+      };
+    }
+    return {
+      ok: false,
+      message: `没通：上游返回 ${response.status}。密钥不对或 endpoint 填错时都是这个结果。`,
+    };
+  } catch {
+    return { ok: false, message: '没通：连不上这个 endpoint，或者超时了。' };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

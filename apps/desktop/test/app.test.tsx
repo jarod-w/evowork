@@ -192,7 +192,11 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     saveProviderKey: vi.fn(async () => ({ ok: true, view: ACCESS })),
     clearProviderKey: vi.fn(async () => ({ ok: true, view: ACCESS })),
     addCustomModel: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    updateCustomModel: vi.fn(async () => ({ ok: true, view: ACCESS })),
     removeCustomModel: vi.fn(async () => ({ ok: true, view: ACCESS })),
+    testCustomModel: vi.fn(async () => ({ ok: true, message: '通了：这把密钥能调用这个模型。' })),
+    openModelsFolder: vi.fn(async () => undefined),
+    openProviderDocs: vi.fn(async () => ({ ok: true })),
     setSecretFallback: vi.fn(async () => ({ ok: true, view: ACCESS })),
     probeModel: vi.fn(async () => ({ ok: true, message: '通了：这个模型现在可以用。' })),
     getPreferences: vi.fn(async () => ({ concurrencyComputed: 3, concurrencyLimit: 3 })),
@@ -1583,9 +1587,15 @@ describe('设置页（11 §4.4）', () => {
     await waitFor(() => screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
-    await waitFor(() => screen.getByLabelText('Kimi（Moonshot） API 密钥'));
+    /*
+     * 设置页的「内置厂商密钥」只列**已经存过**的那几把（11 §4.4，2026-09-16 的附件形态），
+     * 所以这里走 DeepSeek 那一条：它是已保存态，要先点「更换」才出现输入框
+     * （01 §5.35：已保存态不渲染空输入框）。
+     */
+    await waitFor(() => screen.getByRole('button', { name: '更换' }));
+    fireEvent.click(screen.getByRole('button', { name: '更换' }));
 
-    fireEvent.change(screen.getByLabelText('Kimi（Moonshot） API 密钥'), {
+    fireEvent.change(screen.getByLabelText('DeepSeek API 密钥'), {
       target: { value: 'sk-new' },
     });
     fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0] as HTMLElement);

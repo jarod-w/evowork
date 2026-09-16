@@ -184,6 +184,224 @@ describe('自定义模型（第③层）', () => {
   });
 });
 
+describe('改一条自定义模型（设置页的铅笔，11 §4.4）', () => {
+  const BASE = {
+    id: 'my/llm',
+    provider: 'private' as const,
+    upstreamModel: 'qwen3-max',
+    baseUrl: 'https://example.com/v1',
+    apiKey: SECRET,
+  };
+
+  /** 那一条模型的密钥槽位（`env()` 里的变量名）。改名之后它必须还是同一个 */
+  function keyEnvOf(m: ReturnType<typeof access>): string {
+    return (JSON.parse(m.env()[CUSTOM_MODELS_ENV] as string) as { keyEnv: string }[])[0]
+      ?.keyEnv as string;
+  }
+
+  it('改地址时**不要求重填密钥**，而且那把密钥还在（原地改，不是删了再加）', () => {
+    const m = access();
+    m.addCustomModel(BASE);
+    const keyEnv = keyEnvOf(m);
+
+    expect(
+      m.updateCustomModel({
+        previousId: 'my/llm',
+        id: 'my/llm',
+        provider: 'private',
+        upstreamModel: 'qwen3-max',
+        baseUrl: 'https://proxy.internal/v1',
+      }),
+    ).toBeUndefined();
+    // 槽位没换 + 密钥没丢：删了再加会让"改个地址"变成"模型没密钥了"
+    expect(keyEnvOf(m)).toBe(keyEnv);
+    expect(m.env()[keyEnv]).toBe(SECRET);
+    expect(m.view(EMPTY_CATALOG).customModels[0]?.baseUrl).toBe('https://proxy.internal/v1');
+  });
+
+  it('改名 = 改 id，仍然只有一条（不会留下改名前那一条）', () => {
+    const m = access();
+    m.addCustomModel(BASE);
+    expect(
+      m.updateCustomModel({
+        previousId: 'my/llm',
+        id: 'private/qwen3-plus',
+        provider: 'private',
+        upstreamModel: 'qwen3-plus',
+        baseUrl: BASE.baseUrl,
+      }),
+    ).toBeUndefined();
+    const models = m.view(EMPTY_CATALOG).customModels;
+    expect(models).toHaveLength(1);
+    expect(models[0]?.id).toBe('private/qwen3-plus');
+  });
+
+  it('改成一个已经存在的 id 会被拒（同 addCustomModel：不静默覆盖别人）', () => {
+    const m = access();
+    m.addCustomModel(BASE);
+    m.addCustomModel({ ...BASE, id: 'my/other' });
+    expect(
+      m.updateCustomModel({
+        previousId: 'my/other',
+        id: 'my/llm',
+        provider: 'private',
+        upstreamModel: 'x',
+        baseUrl: BASE.baseUrl,
+      }),
+    ).toContain('已经有一个');
+  });
+
+  it('给了新密钥就整条覆盖，**旧的读不回来了**', () => {
+    const m = access();
+    m.addCustomModel(BASE);
+    m.updateCustomModel({
+      previousId: 'my/llm',
+      id: 'my/llm',
+      provider: 'private',
+      upstreamModel: BASE.upstreamModel,
+      baseUrl: BASE.baseUrl,
+      apiKey: 'sk-rotated-0000',
+    });
+    expect(m.env()[keyEnvOf(m)]).toBe('sk-rotated-0000');
+    expect(JSON.stringify(m.view(EMPTY_CATALOG))).not.toContain('sk-rotated-0000');
+  });
+
+  it('那一条本来就没存上密钥、这次又留空 → 拒绝，而不是存出一条发过去 401 的模型', () => {
+    const m = access();
+    m.addCustomModel(BASE);
+    // 模拟"密钥丢了"（换了 OS 账号、secrets.bin 没了）：直接把文件里那条留着、库清空
+    const keyEnv = keyEnvOf(m);
+    writeFileSync(join(dir, 'secrets.bin'), '', 'utf8');
+    const reopened = access();
+    expect(reopened.env()[keyEnv]).toBeUndefined();
+    expect(
+      reopened.updateCustomModel({
+        previousId: 'my/llm',
+        id: 'my/llm',
+        provider: 'private',
+        upstreamModel: BASE.upstreamModel,
+        baseUrl: BASE.baseUrl,
+      }),
+    ).toContain('API 密钥');
+  });
+
+  it('那一条已经不在了（另一个窗口删掉了）→ 说清要刷新，不新建一条', () => {
+    const m = access();
+    expect(
+      m.updateCustomModel({
+        previousId: 'gone/model',
+        id: 'gone/model',
+        provider: 'private',
+        upstreamModel: 'x',
+        baseUrl: BASE.baseUrl,
+      }),
+    ).toContain('已经不在了');
+    expect(m.view(EMPTY_CATALOG).customModels).toEqual([]);
+  });
+});
+
+describe('保存之前的「测试连接」（11 §4.4）', () => {
+  const BASE = {
+    id: 'my/llm',
+    provider: 'private' as const,
+    upstreamModel: 'qwen3-max',
+    baseUrl: 'https://example.com/v1',
+    apiKey: SECRET,
+  };
+
+  it('打的是上游的 `/chat/completions`，**不经本机网关** —— 这条模型还没进网关的环境', async () => {
+    const calls: { url: string; auth: string | undefined; body: string }[] = [];
+    const m = access({
+      fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        calls.push({
+          url: String(url),
+          auth: headers.get('authorization') ?? undefined,
+          body: String(init?.body ?? ''),
+        });
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    const result = await m.testCustomModel({
+      provider: 'private',
+      baseUrl: 'https://example.com/v1',
+      upstreamModel: 'qwen3-max',
+      apiKey: SECRET,
+    });
+    expect(result.ok).toBe(true);
+    expect(calls[0]?.url).toBe('https://example.com/v1/chat/completions');
+    expect(calls[0]?.auth).toBe(`Bearer ${SECRET}`);
+    // 一 token 上限：这一下是真花钱的（同「检查」按钮的口径）
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toMatchObject({ max_tokens: 1 });
+  });
+
+  it('编辑时留空密钥 → 用那条已存模型的那把（明文只在主进程里出现）', async () => {
+    let sent: string | undefined;
+    const m = access({
+      fetchFn: (async (_url: string | URL | Request, init?: RequestInit) => {
+        sent = new Headers(init?.headers).get('authorization') ?? undefined;
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    m.addCustomModel(BASE);
+
+    await m.testCustomModel({
+      provider: 'private',
+      baseUrl: BASE.baseUrl,
+      upstreamModel: BASE.upstreamModel,
+      modelId: 'my/llm',
+    });
+    expect(sent).toBe(`Bearer ${SECRET}`);
+  });
+
+  it('401 与 404 说的是两件不同的事（密钥不对 vs 模型名不对）', async () => {
+    const status = { code: 401 };
+    const m = access({
+      fetchFn: (async () =>
+        new Response('{"error":"内部诊断信息"}', {
+          status: status.code,
+        })) as unknown as typeof fetch,
+    });
+    const unauthorized = await m.testCustomModel({
+      provider: 'private',
+      baseUrl: BASE.baseUrl,
+      upstreamModel: 'x',
+      apiKey: SECRET,
+    });
+    expect(unauthorized.message).toContain('拒绝了这把密钥');
+    // 上游的响应体**不回显**：它可能带诊断信息与账号细节
+    expect(unauthorized.message).not.toContain('内部诊断信息');
+
+    status.code = 404;
+    const missing = await m.testCustomModel({
+      provider: 'private',
+      baseUrl: BASE.baseUrl,
+      upstreamModel: 'x',
+      apiKey: SECRET,
+    });
+    expect(missing.message).toContain('没有这个模型名');
+  });
+
+  it('endpoint 不是合法 URL 时**不发请求**，直接把那句话给回去', async () => {
+    let called = false;
+    const m = access({
+      fetchFn: (async () => {
+        called = true;
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    const result = await m.testCustomModel({
+      provider: 'private',
+      baseUrl: 'not-a-url',
+      upstreamModel: 'x',
+      apiKey: SECRET,
+    });
+    expect(result.ok).toBe(false);
+    expect(called).toBe(false);
+  });
+});
+
 describe('第②层：企业策略复用 requirements.toml 这条已有通道', () => {
   it('解析 `[models]` 段的三个键', () => {
     const policy = parseModelPolicyToml(

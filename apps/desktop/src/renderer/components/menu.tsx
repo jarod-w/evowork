@@ -200,6 +200,15 @@ export interface InlineSelectProps {
   readonly onResetOverride?: (() => void) | undefined;
   /** 等宽字族显示（ModelSelect 用，01 §5.15） */
   readonly mono?: boolean | undefined;
+  /**
+   * 表单里的整行形态（01 §5.14 的 `field` 变体，2026-09-16 补）。
+   *
+   * Footer 里的 InlineSelect 是一枚 24 高的透明胶囊 —— 放进"供应商 / 模型名称"这种
+   * 上面顶着标签的字段里，它看起来不像一个可填的框，用户会去找输入框。
+   * 变体而不是新组件：打开的浮层、键盘、占位文案、禁用原因全都一样，
+   * 差的只是触发器的外形（Q24 的"受控扩展"）。
+   */
+  readonly field?: boolean | undefined;
   /** 一项都没有时显示的话（见 `MenuProps.emptyHint`）。**不给就用通用兜底，绝不留空盒子** */
   readonly emptyHint?: string | undefined;
 }
@@ -212,7 +221,11 @@ export function InlineSelect(props: InlineSelectProps) {
   const close = useCallback(() => setOpen(false), []);
 
   return (
-    <span className="ew-inline-select" data-open={open ? 'true' : undefined}>
+    <span
+      className="ew-inline-select"
+      data-open={open ? 'true' : undefined}
+      data-field={props.field ? 'true' : undefined}
+    >
       <button
         type="button"
         className="ew-inline-select-trigger"
@@ -224,6 +237,7 @@ export function InlineSelect(props: InlineSelectProps) {
         title={props.disabled ? props.disabledReason : undefined}
         data-placeholder={selected ? undefined : 'true'}
         data-mono={props.mono ? 'true' : undefined}
+        data-field={props.field ? 'true' : undefined}
         onClick={() => setOpen((v) => !v)}
       >
         {props.icon ? (

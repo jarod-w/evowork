@@ -26,6 +26,8 @@
 import { useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
+import { renderIcon } from './icons.js';
+
 export interface IconButtonProps {
   /** 无障碍名。**必填** —— 图标按钮没有可见文字，缺了它屏幕阅读器只会读"按钮" */
   readonly label: string;
@@ -982,6 +984,7 @@ export function Dialog({
   cancelLabel = '取消',
   variant = 'default',
   confirmDisabled,
+  closable,
   onConfirm,
   onCancel,
 }: {
@@ -992,6 +995,14 @@ export function Dialog({
   /** danger：破坏性动作。用 `alertdialog` 而不是 `dialog` */
   readonly variant?: 'default' | 'danger' | undefined;
   readonly confirmDisabled?: boolean | undefined;
+  /**
+   * 标题行右侧的 ✕（01 §5.34，2026-09-16 补）。
+   *
+   * **只给"填表"这类模态**：它与「取消」是同一个动作，多一个出口对一屏要填四个字段的
+   * 弹窗是省事；而破坏性确认里多一个"看起来无害"的关闭口子只会增加误关的机会，
+   * 所以 `variant="danger"` 时**即使传了也不画**。
+   */
+  readonly closable?: boolean | undefined;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {
@@ -1008,7 +1019,12 @@ export function Dialog({
           if (event.key === 'Escape') onCancel();
         }}
       >
-        <p className="ew-dialog-title">{title}</p>
+        <div className="ew-dialog-head">
+          <p className="ew-dialog-title">{title}</p>
+          {closable && variant !== 'danger' ? (
+            <IconButton label="关闭" icon={renderIcon('close')} onClick={onCancel} />
+          ) : null}
+        </div>
         <div className="ew-dialog-body">{children}</div>
         <div className="ew-dialog-actions">
           <PillButton onClick={onCancel}>{cancelLabel}</PillButton>

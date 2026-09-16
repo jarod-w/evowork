@@ -577,6 +577,13 @@ export interface ModelAccessView {
    * 就会变成一次没人能复现的排查。
    */
   readonly models: readonly ModelOptionView[];
+  /**
+   * 自定义模型元数据文件的显示路径（第③层落盘处，11 §4.1）。
+   *
+   * 由宿主给而不是渲染层拼死：`EVOWORK_HOME` 可以被覆盖（企业部署、测试），
+   * 而这一行是我们对用户说"你加的东西写到哪去了"——**写错了比不写更糟**。
+   */
+  readonly modelsFilePath?: string | undefined;
   /** 企业锁了自定义模型（第②层）。false 时「添加模型」禁用**并给原因**，不隐藏 */
   readonly allowCustomModels: boolean;
   readonly lockedReason?: string | undefined;
@@ -650,6 +657,50 @@ export interface CustomModelInput {
   readonly parallelToolCalls?: boolean | undefined;
   readonly promptCache?: boolean | undefined;
   readonly maxContextTokens?: number | undefined;
+}
+
+/**
+ * 改一条已经存在的自定义模型（设置页每行的铅笔，11 §4.4）。
+ *
+ * **`apiKey` 可以缺席**：编辑 endpoint 或模型名时不该逼用户重新贴一次密钥 ——
+ * 那会把"改个地址"变成"先去翻密钥"，而用户常常已经没有那份明文了。
+ * 缺席 = 沿用已存的那把；给了值 = 整条覆盖（延续「密钥只朝一个方向走」）。
+ *
+ * `previousId` 与 `id` 分开是因为 id 由 `provider/模型名` 拼出来，改模型名就等于改 id ——
+ * 合成一个字段的话，"改名"与"新增一条"在协议层就分不开了。
+ */
+export interface CustomModelUpdateInput {
+  /** 改之前的 id（要找的那一条） */
+  readonly previousId: string;
+  readonly id: string;
+  readonly displayName?: string | undefined;
+  readonly provider: string;
+  readonly upstreamModel: string;
+  readonly baseUrl: string;
+  /** 缺席或空串 = **不动已保存的那把密钥** */
+  readonly apiKey?: string | undefined;
+  readonly authHeader?: string | undefined;
+}
+
+/**
+ * 保存之前的「测试连接」（11 §4.4 的附件式弹窗）。
+ *
+ * **它与 `probeModel` 是两件事**：`probeModel` 走本机网关，只能检查**已经保存**的模型；
+ * 这一个直接按用户此刻填的 provider / endpoint / 模型名向上游发一次最小请求，
+ * 为的是让"密钥贴错了"在保存之前就暴露 —— 保存之后才发现的代价是
+ * 一条看起来正常、发过去 401 的模型（`addCustomModel` 里"先存密钥再写文件"是同一条理由）。
+ *
+ * 密钥同样只朝一个方向走：进来一次，结果里只有 ok 与一句话，**不回传**。
+ */
+export interface CustomModelTestInput {
+  readonly provider: string;
+  readonly baseUrl: string;
+  readonly upstreamModel: string;
+  /** 缺席或空串 = 用 `modelId` 那条已保存的密钥（编辑态不要求重填） */
+  readonly apiKey?: string | undefined;
+  /** 编辑态：用哪一条已存自定义模型的密钥 */
+  readonly modelId?: string | undefined;
+  readonly authHeader?: string | undefined;
 }
 
 /**

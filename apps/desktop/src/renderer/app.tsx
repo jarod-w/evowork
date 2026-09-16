@@ -24,6 +24,8 @@ import type {
   AutomationMutationInput,
   AutomationMutationResult,
   CustomModelInput,
+  CustomModelTestInput,
+  CustomModelUpdateInput,
   AuditDataView,
   AutomationsDataView,
   CatalogDataView,
@@ -154,7 +156,12 @@ export interface EvoworkBridge {
   }): Promise<ModelAccessMutationResult>;
   clearProviderKey(input: { providerId: string }): Promise<ModelAccessMutationResult>;
   addCustomModel(input: CustomModelInput): Promise<ModelAccessMutationResult>;
+  updateCustomModel(input: CustomModelUpdateInput): Promise<ModelAccessMutationResult>;
   removeCustomModel(input: { id: string }): Promise<ModelAccessMutationResult>;
+  /** 保存之前的「测试连接」。不改本机状态，所以**不返回 view** */
+  testCustomModel(input: CustomModelTestInput): Promise<ModelProbeResult>;
+  openModelsFolder(): Promise<void>;
+  openProviderDocs(input: { provider: string }): Promise<{ ok: boolean; refused?: string }>;
   setSecretFallback(input: { accept: boolean }): Promise<ModelAccessMutationResult>;
   probeModel(input: { modelId: string }): Promise<ModelProbeResult>;
   getPreferences(): Promise<PreferencesView>;
@@ -1602,6 +1609,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               setModels(result.view.models);
             });
           }}
+          onTestCustomModel={(input) => bridge.testCustomModel(input)}
+          onOpenModelsFolder={() => void bridge.openModelsFolder()}
+          onOpenProviderDocs={(provider) => {
+            void bridge.openProviderDocs({ provider }).then((result) => {
+              // 打不开就把原因显示出来，不做成一个点了没反应的链接
+              if (!result.ok) setSettingsRefusal(result.refused);
+            });
+          }}
           onProbe={(modelId) => {
             setProbeResult('正在检查…（会向上游发一次极小的请求）');
             void bridge
@@ -1949,6 +1964,13 @@ function MainPage(props: {
     run: (bridge: EvoworkBridge) => Promise<ModelAccessMutationResult>,
   ) => void;
   readonly onProbe: (modelId: string) => void;
+  /**
+   * 「测试连接」走**自己的一条路**而不是 `onModelAccessAction`：它不改本机状态，
+   * 结果要回到弹窗里那一行（页顶横幅在模态后面，用户看不见）。
+   */
+  readonly onTestCustomModel: (input: CustomModelTestInput) => Promise<ModelProbeResult>;
+  readonly onOpenModelsFolder: () => void;
+  readonly onOpenProviderDocs: (provider: string) => void;
   readonly onPreferences: (input: PreferencesInput) => void;
   readonly onLogin: () => void;
   readonly onLogout: () => void;
@@ -2065,9 +2087,15 @@ function MainPage(props: {
             props.onModelAccessAction((b) => b.clearProviderKey({ providerId }))
           }
           onAddCustomModel={(input) => props.onModelAccessAction((b) => b.addCustomModel(input))}
+          onUpdateCustomModel={(input) =>
+            props.onModelAccessAction((b) => b.updateCustomModel(input))
+          }
           onRemoveCustomModel={(id) =>
             props.onModelAccessAction((b) => b.removeCustomModel({ id }))
           }
+          onTestCustomModel={props.onTestCustomModel}
+          onOpenModelsFolder={props.onOpenModelsFolder}
+          onOpenProviderDocs={props.onOpenProviderDocs}
           onSecretFallback={(accept) =>
             props.onModelAccessAction((b) => b.setSecretFallback({ accept }))
           }
