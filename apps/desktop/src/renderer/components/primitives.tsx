@@ -71,7 +71,7 @@ export type BadgeVariant = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
  * 01 §5.30 Badge：高 18，`--r-full`，`micro`。
  *
  * **底用 `-weak`、字用 `-text` 变体**（01 §2.2）—— 用基色写文字会直接失败
- * （`--warning` 在 `--warning-weak` 上只有 2.64:1）。这条约束由 CSS 保证，
+ * （`--success` 在 `--success-weak` 上只有 4.18:1）。这条约束由 CSS 保证，
  * 组件只负责选 variant。
  */
 export function Badge({

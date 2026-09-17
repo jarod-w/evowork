@@ -36,7 +36,7 @@ textarea {
   font-family: inherit;
 }
 
-/* 01 §3.1 骨架 A：侧边栏 260 + 主内容区 flex */
+/* 01 §3.1 骨架 A：侧边栏 275（clamp 240–520）+ 主内容区 flex */
 .ew-app {
   display: flex;
   height: 100%;
@@ -67,7 +67,7 @@ textarea {
   background: var(--bg-app);
 }
 
-/* 目录式页面（02 §1 的一级入口）：标题栏带高度留白 + 内容列 800 居中 */
+/* 目录式页面（02 §1 的一级入口）：标题栏带高度留白 + 内容列 768 居中 */
 .ew-page {
   display: flex;
   flex-direction: column;
@@ -247,7 +247,7 @@ textarea {
   position: relative;
 }
 
-/* 内容列 800 居中，左右各留 ≥28（01 §3.1 的全局硬约束） */
+/* 内容列 768 居中（01 §3.1 散文上限） */
 .ew-content-column {
   max-width: var(--layout-content-column);
   margin: 0 auto;
@@ -361,16 +361,8 @@ textarea {
   flex-direction: column;
 }
 
-/* 1180–1439：保持并排，但允许结果区缩到管理中栏上限。 */
-@media (1180px <= width < 1440px) {
-  .ew-result-pane {
-    width: 36%;
-    min-width: var(--layout-middle-max);
-  }
-}
-
-/* 900–1179：结果区覆盖对话，不继续把正文挤窄。 */
-@media (width < 1180px) {
+/* ≥1100：三区可并存。760–1099：结果区覆盖对话。 */
+@media (width < 1100px) {
   .ew-result-pane {
     position: absolute;
     inset: 0 0 0 auto;
@@ -386,8 +378,8 @@ textarea {
   display: none;
 }
 
-/* <900：侧栏成为覆盖式抽屉，管理页改成单列。 */
-@media (width < 900px) {
+/* <760：侧栏成为覆盖式抽屉，管理页改成单列。 */
+@media (width < 760px) {
   .ew-sidebar {
     position: absolute;
     inset: 0 auto 0 0;
@@ -416,6 +408,9 @@ textarea {
   .ew-tip-cards {
     grid-template-columns: 1fr;
   }
+}
+
+@media (width < 480px) {
   .ew-window-size-hint {
     display: block;
     position: fixed;
@@ -527,7 +522,7 @@ textarea {
 }
 .ew-badge[data-variant='success'] {
   background: var(--success-weak);
-  color: var(--accent-strong);
+  color: var(--success-text);
 }
 .ew-badge[data-variant='warning'] {
   background: var(--warning-weak);
@@ -1451,10 +1446,11 @@ textarea {
   gap: var(--space-8);
 }
 .ew-composer-shell {
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-2xl);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-composer);
   background: var(--bg-surface);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-composer);
+  min-height: var(--layout-composer-min-height);
   max-height: var(--layout-composer-max-height);
 }
 .ew-composer-input-card {
@@ -1777,7 +1773,11 @@ textarea {
   flex-direction: column;
   flex: none;
   box-sizing: border-box;
-  width: var(--layout-sidebar-width);
+  width: clamp(
+    var(--layout-sidebar-min),
+    var(--layout-sidebar-width),
+    min(var(--layout-sidebar-max), calc(100vw - var(--layout-sidebar-viewport-gutter)))
+  );
   height: 100%;
   padding: 0 var(--space-8) var(--space-8);
   border-right: 1px solid var(--border-subtle);
@@ -2614,12 +2614,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-size: var(--font-micro-size);
 }
 .ew-diff-added {
-  /*
-   * 用 accent-strong 而不是 success：01 §2.2 给了 info / warning / danger 三个文字变体，
-   * 唯独没有 success-text —— 因为 `--success` 与 `--accent` 是同一个值，
-   * 它的文字变体就是 `--accent-strong`。这里不是将就，是同一个色的正确用法。
-   */
-  color: var(--accent-strong);
+  color: var(--success-text);
   font-size: var(--font-caption-size);
 }
 .ew-diff-removed {
@@ -3536,7 +3531,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   margin-top: var(--space-8);
 }
 .ew-project-memo-saved {
-  color: var(--success);
+  color: var(--success-text);
 }
 .ew-panel-empty {
   margin: var(--space-8) var(--space-12);
@@ -3562,7 +3557,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-  /* 与其余页面同一条硬约束（01 §3.1 的 800 内容列） */
+  /* 与其余页面同一条可读性上限（01 §3.1 的 768 内容列） */
   max-width: var(--layout-content-column);
   min-width: 0;
   flex: 1;
@@ -3837,7 +3832,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-secondary);
 }
 .ew-catalog-worst {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .ew-catalog-detail {
   display: flex;

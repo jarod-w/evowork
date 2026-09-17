@@ -114,10 +114,10 @@ describe('CSS 只用 token（01 §9 验收项 1）', () => {
    */
   it('媒体查询的断点只能来自文档给过的值', () => {
     const documented = new Set([
+      '480px', // 01 §4.2：低于此提示放大窗口
       '720px', // 03 §3.1：窗口高 < 720 时 Hero 降级，保证 Composer 不被挤出首屏
-      '900px', // 类 ChatGPT UI §6.2：侧边栏抽屉与单列管理页（= LAYOUT.minWindowWidth）
-      '1180px', // 类 ChatGPT UI §6.2：结果区从这一档开始覆盖对话
-      '1440px', // 类 ChatGPT UI §6.2：宽屏三栏进入完整比例
+      '760px', // 01 §4.2：侧栏改为抽屉、管理页单列
+      '1100px', // 01 §4.2：低于此结果区覆盖对话
     ]);
     const used = [...code.matchAll(/@media[^{]+/g)].flatMap(
       (m) => (m[0].match(/(?<![\w-])(\d+(?:\.\d+)?)px\b/g) ?? []) as string[],
@@ -287,10 +287,11 @@ describe('新建任务首页的输入框固定在内容列底部', () => {
 });
 
 describe('Composer 折叠态按内容收紧', () => {
-  it('外壳不设固定最小高度，工具行下方不会留下空白', () => {
+  it('外壳有 44 的最小外高，工具行仍随内容收紧', () => {
     const shellRule = /\.ew-composer-shell\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
-    expect(shellRule).not.toContain('min-height');
+    expect(shellRule).toContain('min-height: var(--layout-composer-min-height)');
     expect(shellRule).toContain('max-height: var(--layout-composer-max-height)');
+    expect(shellRule).toContain('border-radius: var(--r-composer)');
   });
 });
 
