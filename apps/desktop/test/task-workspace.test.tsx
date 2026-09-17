@@ -257,7 +257,7 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
     expect(screen.queryByRole('button', { name: /思考|处理过程/ })).toBeNull();
   });
 
-  it('折叠行不展示原始命令，只留「处理过程」和状态', () => {
+  it('中间命令失败但回合最终完成时，过程不误报为整体失败', () => {
     renderWorkspace({
       items: [
         {
@@ -281,7 +281,8 @@ describe('思考与执行过程（04 §5.1–§5.2）', () => {
     const process = screen.getByRole('button', { name: /处理过程/ });
     expect(process.getAttribute('aria-expanded')).toBe('false');
     expect(process.textContent).toMatch(/处理过程/);
-    expect(process.textContent).toMatch(/失败/);
+    expect(process.textContent).toMatch(/已完成/);
+    expect(process.textContent).not.toMatch(/失败/);
     expect(process.textContent).not.toContain('/bin/bash');
     expect(process.textContent).not.toContain('git status');
     expect(screen.queryByText(/\/bin\/bash/)).toBeNull();
@@ -366,6 +367,23 @@ describe('流式区的无障碍（01 §8.1）', () => {
     const { container } = renderWorkspace();
     const column = container.querySelector('.ew-content-column');
     expect(column?.getAttribute('aria-live')).toBe('polite');
+  });
+});
+
+describe('生成中的 Composer 定位', () => {
+  it('输入框在滚动区外独立占位，流式内容增高不会把它上下推动', () => {
+    const { container } = renderWorkspace({
+      composer: <div data-testid="composer">Composer</div>,
+      items: [{ id: 'r1', type: 'reasoning', text: '正在生成报告' }],
+    });
+    const conversation = container.querySelector('.ew-conversation');
+    const scroller = container.querySelector('.ew-conversation-scroll');
+    const composer = container.querySelector('.ew-conversation-composer');
+
+    expect(scroller).not.toBeNull();
+    expect(conversation?.children).toContain(scroller);
+    expect(conversation?.children).toContain(composer);
+    expect(scroller?.contains(composer)).toBe(false);
   });
 });
 

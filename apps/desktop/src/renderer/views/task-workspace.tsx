@@ -177,10 +177,6 @@ export interface ProcessSummary {
 }
 
 export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
-  const failed = items.some(
-    (item) =>
-      item.type === 'commandExecution' && typeof item.exitCode === 'number' && item.exitCode !== 0,
-  );
   const needsUser = items.some(
     (item) => item.needsUserAction === true || item.status === 'pending',
   );
@@ -204,7 +200,13 @@ export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
 
   return {
     label: '处理过程',
-    status: needsUser ? '需要你处理' : failed ? '失败' : running ? '进行中' : '已完成',
+    /*
+     * 命令非零退出是一次操作的结果，不是整个回合的终态。模型经常会
+     * 换一条路重试并最终成功；在这里用“任意命令失败”概括整个处理过程，
+     * 就会出现“报告已生成，但界面说失败”。真正的回合失败由 turnFailure 卡片
+     * 和任务状态表达；单个命令的退出码仍在展开的操作详情里如实显示。
+     */
+    status: needsUser ? '需要你处理' : running ? '进行中' : '已完成',
     detail,
   };
 }
@@ -337,7 +339,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [visibleCount, setVisibleCount] = useState(TIMELINE_PAGE_SIZE);
   const [hasNewContent, setHasNewContent] = useState(false);
   const [resultWidth, setResultWidth] = useState<number | undefined>(undefined);
-  const conversationRef = useRef<HTMLElement | null>(null);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const resultTriggerRef = useRef<HTMLButtonElement | null>(null);
   const setResultOpen = (open: boolean): void => {
@@ -446,147 +448,150 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
       </header>
 
       <div className="ew-workspace-body">
-        <main
-          ref={conversationRef}
-          className="ew-conversation"
-          aria-label="对话区"
-          onScroll={(event) => {
-            const node = event.currentTarget;
-            followOutputRef.current =
-              node.scrollHeight - node.scrollTop - node.clientHeight <= BOTTOM_THRESHOLD;
-            if (followOutputRef.current) setHasNewContent(false);
-          }}
-        >
-          {/* z-400 吸顶条（10 §3.5）：用户可能在别的页面，回来时要能立刻看到有待确认 */}
-          <PendingApprovalBar
-            count={props.pendingApprovals.length}
-            onJump={() => {
-              document.querySelector('.ew-approval-card')?.scrollIntoView({ block: 'center' });
-            }}
-          />
-
-          {(props.notices ?? []).map((notice, index) => (
-            <Banner
-              key={index}
-              tone={notice.tone}
-              action={
-                notice.actionLabel ? (
-                  <PillButton onClick={notice.onAction}>{notice.actionLabel}</PillButton>
-                ) : undefined
-              }
-            >
-              {notice.text}
-            </Banner>
-          ))}
-
-          {/* 内容列 768 居中（01 §3.1） */}
+        <main className="ew-conversation" aria-label="对话区">
           <div
-            className="ew-content-column"
-            role="feed"
-            aria-live="polite"
-            aria-busy={props.status === 'running' || props.status === 'planning'}
+            ref={conversationRef}
+            className="ew-conversation-scroll"
+            onScroll={(event) => {
+              const node = event.currentTarget;
+              followOutputRef.current =
+                node.scrollHeight - node.scrollTop - node.clientHeight <= BOTTOM_THRESHOLD;
+              if (followOutputRef.current) setHasNewContent(false);
+            }}
           >
-            {hiddenItemCount > 0 ? (
-              <PillButton onClick={() => setVisibleCount((count) => count + TIMELINE_PAGE_SIZE)}>
-                加载更早内容（还有 {hiddenItemCount} 项）
-              </PillButton>
-            ) : null}
-            {props.items.length === 0 &&
-            props.pendingApprovals.length === 0 &&
-            !props.historyLoading &&
-            props.status === 'idle' ? (
-              <EmptyState
-                title="输入你的第一个需求"
-                hint="这个任务还没有消息。说清你要什么产物，我直接做出来。"
+            {/* z-400 吸顶条（10 §3.5）：用户可能在别的页面，回来时要能立刻看到有待确认 */}
+            <PendingApprovalBar
+              count={props.pendingApprovals.length}
+              onJump={() => {
+                document.querySelector('.ew-approval-card')?.scrollIntoView({ block: 'center' });
+              }}
+            />
+
+            {(props.notices ?? []).map((notice, index) => (
+              <Banner
+                key={index}
+                tone={notice.tone}
                 action={
-                  props.onNewTask ? (
-                    <PillButton onClick={props.onNewTask}>新建任务</PillButton>
+                  notice.actionLabel ? (
+                    <PillButton onClick={notice.onAction}>{notice.actionLabel}</PillButton>
                   ) : undefined
                 }
-              />
-            ) : null}
-
-            {timeline.map((entry) =>
-              entry.kind === 'item' ? (
-                <ItemRenderer key={entry.item.id} item={entry.item} context={props.itemContext} />
-              ) : (
-                <ProcessGroup key={entry.key} items={entry.items} context={props.itemContext} />
-              ),
-            )}
-
-            {props.items.length > 0 && (props.artifacts ?? []).length > 0 ? (
-              <section className="ew-timeline-artifacts" aria-label="任务产物">
-                {(props.artifacts ?? []).map((artifact) => (
-                  <button
-                    key={artifact.id}
-                    type="button"
-                    className="ew-timeline-artifact"
-                    onClick={() => props.onOpenArtifact?.(artifact.id)}
-                  >
-                    <span className="ew-timeline-artifact-kind">{artifact.artifactType}</span>
-                    <strong>{artifact.name}</strong>
-                    <span>版本 {artifact.version} · 打开预览</span>
-                  </button>
-                ))}
-              </section>
-            ) : null}
-
-            {props.status === 'interrupted' ? (
-              <div className="ew-item ew-item-divider" role="separator">
-                <span>已停止，可在下方继续</span>
-              </div>
-            ) : null}
-
-            {props.turnFailure ? (
-              <section className="ew-turn-failure" role="alert" aria-label="回合失败">
-                <strong>这一回合失败了</strong>
-                <p>{props.turnFailure.summary}</p>
-                <div className="ew-turn-failure-actions">
-                  {props.turnFailure.onRetry ? (
-                    <PillButton variant="accent" onClick={props.turnFailure.onRetry}>
-                      重试
-                    </PillButton>
-                  ) : null}
-                  {props.turnFailure.onOpenSettings ? (
-                    <PillButton onClick={props.turnFailure.onOpenSettings}>打开模型设置</PillButton>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-
-            {/* 审批卡内联在时间线上（04 §5.3），不是模态 */}
-            {[...approvalsById.values()].map((approval) => (
-              <ApprovalCard
-                key={approval.id}
-                approval={approval}
-                autoFocus={approval.id === props.pendingApprovals[0]?.id}
-                onDecide={(decision) => props.onDecide(approval.id, decision)}
-                {...(props.onAnswer
-                  ? { onAnswer: (answer) => props.onAnswer?.(approval.id, answer) }
-                  : {})}
-              />
+              >
+                {notice.text}
+              </Banner>
             ))}
+
+            {/* 内容列 768 居中（01 §3.1） */}
+            <div
+              className="ew-content-column"
+              role="feed"
+              aria-live="polite"
+              aria-busy={props.status === 'running' || props.status === 'planning'}
+            >
+              {hiddenItemCount > 0 ? (
+                <PillButton onClick={() => setVisibleCount((count) => count + TIMELINE_PAGE_SIZE)}>
+                  加载更早内容（还有 {hiddenItemCount} 项）
+                </PillButton>
+              ) : null}
+              {props.items.length === 0 &&
+              props.pendingApprovals.length === 0 &&
+              !props.historyLoading &&
+              props.status === 'idle' ? (
+                <EmptyState
+                  title="输入你的第一个需求"
+                  hint="这个任务还没有消息。说清你要什么产物，我直接做出来。"
+                  action={
+                    props.onNewTask ? (
+                      <PillButton onClick={props.onNewTask}>新建任务</PillButton>
+                    ) : undefined
+                  }
+                />
+              ) : null}
+
+              {timeline.map((entry) =>
+                entry.kind === 'item' ? (
+                  <ItemRenderer key={entry.item.id} item={entry.item} context={props.itemContext} />
+                ) : (
+                  <ProcessGroup key={entry.key} items={entry.items} context={props.itemContext} />
+                ),
+              )}
+
+              {props.items.length > 0 && (props.artifacts ?? []).length > 0 ? (
+                <section className="ew-timeline-artifacts" aria-label="任务产物">
+                  {(props.artifacts ?? []).map((artifact) => (
+                    <button
+                      key={artifact.id}
+                      type="button"
+                      className="ew-timeline-artifact"
+                      onClick={() => props.onOpenArtifact?.(artifact.id)}
+                    >
+                      <span className="ew-timeline-artifact-kind">{artifact.artifactType}</span>
+                      <strong>{artifact.name}</strong>
+                      <span>版本 {artifact.version} · 打开预览</span>
+                    </button>
+                  ))}
+                </section>
+              ) : null}
+
+              {props.status === 'interrupted' ? (
+                <div className="ew-item ew-item-divider" role="separator">
+                  <span>已停止，可在下方继续</span>
+                </div>
+              ) : null}
+
+              {props.turnFailure ? (
+                <section className="ew-turn-failure" role="alert" aria-label="回合失败">
+                  <strong>这一回合失败了</strong>
+                  <p>{props.turnFailure.summary}</p>
+                  <div className="ew-turn-failure-actions">
+                    {props.turnFailure.onRetry ? (
+                      <PillButton variant="accent" onClick={props.turnFailure.onRetry}>
+                        重试
+                      </PillButton>
+                    ) : null}
+                    {props.turnFailure.onOpenSettings ? (
+                      <PillButton onClick={props.turnFailure.onOpenSettings}>
+                        打开模型设置
+                      </PillButton>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {/* 审批卡内联在时间线上（04 §5.3），不是模态 */}
+              {[...approvalsById.values()].map((approval) => (
+                <ApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  autoFocus={approval.id === props.pendingApprovals[0]?.id}
+                  onDecide={(decision) => props.onDecide(approval.id, decision)}
+                  {...(props.onAnswer
+                    ? { onAnswer: (answer) => props.onAnswer?.(approval.id, answer) }
+                    : {})}
+                />
+              ))}
+            </div>
+
+            {hasNewContent ? (
+              <button
+                type="button"
+                className="ew-new-content"
+                onClick={() => {
+                  const node = conversationRef.current;
+                  if (node) node.scrollTop = node.scrollHeight;
+                  followOutputRef.current = true;
+                  setHasNewContent(false);
+                }}
+              >
+                ↓ 有新内容
+              </button>
+            ) : null}
           </div>
 
           {props.composer ? (
             <div className="ew-conversation-composer">
               <div className="ew-content-column">{props.composer}</div>
             </div>
-          ) : null}
-
-          {hasNewContent ? (
-            <button
-              type="button"
-              className="ew-new-content"
-              onClick={() => {
-                const node = conversationRef.current;
-                if (node) node.scrollTop = node.scrollHeight;
-                followOutputRef.current = true;
-                setHasNewContent(false);
-              }}
-            >
-              ↓ 有新内容
-            </button>
           ) : null}
         </main>
 

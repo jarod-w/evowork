@@ -507,6 +507,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }
           return;
         }
+        if (event.type === 'task-results-updated') {
+          /*
+           * 产物 watcher 在回合进行中写表，而旧逻辑只在“切换任务”时读一次。
+           * 结果是文件已经在磁盘上，右侧仍显示“还没有产物”，直到用户切走再切回。
+           * 这里重读该任务的权威索引；后台任务也可以更新自己的缓存，不会抢当前页。
+           */
+          void bridge
+            .getTaskResults({ threadId: event.taskId })
+            .then((result) => {
+              setTaskResults((previous) => ({ ...previous, [event.taskId]: result }));
+            })
+            .catch(() => undefined);
+          return;
+        }
         if (event.type === 'projects-changed') {
           /*
            * 内核那一侧变了（另一个客户端建了 project）。**只在这一页时才拉** ——

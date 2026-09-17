@@ -66,6 +66,8 @@ export interface LocalServicesOptions {
    * 连续更新几分钟。混用的话界面上会堆出几十条"正在下载 3%…4%…"。
    */
   readonly onRuntimeProgress?: ((progress: RuntimeProgressView) => void) | undefined;
+  /** 产物真正入库后通知宿主刷新该任务的结果区。 */
+  readonly onArtifactChanged?: ((threadId: string) => void) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -156,6 +158,9 @@ export function createLocalServices(options: LocalServicesOptions) {
   const watchers = new Map<string, ReturnType<typeof createArtifactWatcher>>();
   const workspaceThreads = new Map<string, string>();
   let artifactSeq = 0;
+  let artifactReportLog: string | undefined;
+  let artifactReportOffset = 0;
+  let artifactReportTimer: ReturnType<typeof setInterval> | undefined;
 
   function watchWorkspace(root: string, threadId?: string): void {
     const canonicalRoot = normalize(resolve(root));
@@ -202,6 +207,96 @@ export function createLocalServices(options: LocalServicesOptions) {
       .catch(() => {
         /* setTaskName 内部已经记过日志；这里只是不让 promise 裸奔 */
       });
+  }
+
+  function announceArtifact(record: ArtifactRecord | undefined): void {
+    if (record?.threadId) options.onArtifactChanged?.(record.threadId);
+  }
+
+  function reportArtifact(report: {
+    readonly skill: string;
+    readonly path: string;
+    readonly outputFormat: string;
+    readonly operationKind: 'create' | 'edit';
+    readonly title?: string | undefined;
+    readonly threadId?: string | undefined;
+  }): void {
+    const artifactPath = normalize(resolve(report.path));
+    const normalizedReport = { ...report, path: artifactPath };
+    const root = [...watchers.keys()].find((path) => isInside(path, artifactPath));
+    const watcher = watchers.get(root ?? '');
+    if (!watcher) {
+      // 没在盯的目录里产出的产物：先建一个 watcher 再上报，否则这条记录之后无人维护
+      const parent = dirname(artifactPath);
+      watchWorkspace(parent, report.threadId);
+      const record = watchers
+        .get(parent)
+        ?.ingestSkillReport(normalizedReport, { threadId: report.threadId });
+      renameTaskAfter(record);
+      announceArtifact(record);
+      return;
+    }
+    const threadId = report.threadId ?? (root ? workspaceThreads.get(root) : undefined);
+    const record = watcher.ingestSkillReport(normalizedReport, { threadId });
+    renameTaskAfter(record);
+    announceArtifact(record);
+  }
+
+  /**
+   * 技能上报是 JSONL。按字节偏移量只消费完整行，避免刚好在写入中间读到
+   * 半个 UTF-8 字符或半条 JSON。损坏行只记分类，不把路径/标题写进日志。
+   */
+  function flushArtifactReports(fallbackThreadId?: string): number {
+    const path = artifactReportLog;
+    if (!path || !existsSync(path)) return 0;
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(path);
+    } catch {
+      return 0;
+    }
+    if (bytes.length < artifactReportOffset) artifactReportOffset = 0;
+    const pending = bytes.subarray(artifactReportOffset);
+    const lastNewline = pending.lastIndexOf(10);
+    if (lastNewline < 0) return 0;
+    const chunk = pending.subarray(0, lastNewline + 1).toString('utf8');
+    artifactReportOffset += lastNewline + 1;
+
+    let accepted = 0;
+    for (const line of chunk.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const raw = JSON.parse(line) as Record<string, unknown>;
+        if (
+          raw.kind !== 'artifact.mark' ||
+          typeof raw.skill !== 'string' ||
+          typeof raw.path !== 'string' ||
+          typeof raw.outputFormat !== 'string' ||
+          (raw.operationKind !== 'create' && raw.operationKind !== 'edit')
+        ) {
+          options.logger?.warn('artifacts.report.invalid', { reason: 'INVALID_RECORD' });
+          continue;
+        }
+        const fallbackCwd = fallbackThreadId
+          ? options.store.threads.get(fallbackThreadId)?.cwd
+          : undefined;
+        const canUseFallback = Boolean(
+          fallbackThreadId && fallbackCwd && isInside(normalize(resolve(fallbackCwd)), raw.path),
+        );
+        reportArtifact({
+          skill: raw.skill,
+          path: raw.path,
+          outputFormat: raw.outputFormat,
+          operationKind: raw.operationKind,
+          ...(typeof raw.title === 'string' ? { title: raw.title } : {}),
+          ...(canUseFallback ? { threadId: fallbackThreadId } : {}),
+        });
+        accepted += 1;
+      } catch {
+        options.logger?.warn('artifacts.report.invalid', { reason: 'INVALID_JSON' });
+      }
+    }
+    return accepted;
   }
 
   /* ── 办公扩展：探测 + 安装（08 §4）───────────────────────────── */
@@ -313,35 +408,27 @@ export function createLocalServices(options: LocalServicesOptions) {
         );
         if (!isInside(canonicalRoot, path)) continue;
         const kind = change.kind === 'delete' ? 'delete' : change.kind === 'add' ? 'add' : 'modify';
-        watcher.ingestPath(path, kind, { threadId });
+        announceArtifact(watcher.ingestPath(path, kind, { threadId }));
       }
     },
 
     /** 技能上报（信号 ①）。宿主从 `EVOWORK_ARTIFACT_LOG` 或 socket 收到后调这里。 */
-    reportArtifact(report: {
-      readonly skill: string;
-      readonly path: string;
-      readonly outputFormat: string;
-      readonly operationKind: 'create' | 'edit';
-      readonly title?: string | undefined;
-      readonly threadId?: string | undefined;
-    }): void {
-      const artifactPath = normalize(resolve(report.path));
-      const normalizedReport = { ...report, path: artifactPath };
-      const root = [...watchers.keys()].find((path) => isInside(path, artifactPath));
-      const watcher = watchers.get(root ?? '');
-      if (!watcher) {
-        // 没在盯的目录里产出的产物：先建一个 watcher 再上报，否则这条记录之后无人维护
-        const parent = dirname(artifactPath);
-        watchWorkspace(parent, report.threadId);
-        renameTaskAfter(
-          watchers.get(parent)?.ingestSkillReport(normalizedReport, { threadId: report.threadId }),
-        );
-        return;
-      }
-      const threadId = report.threadId ?? (root ? workspaceThreads.get(root) : undefined);
-      renameTaskAfter(watcher.ingestSkillReport(normalizedReport, { threadId }));
+    reportArtifact,
+
+    /**
+     * 把技能的 `mark_artifact` 上报文件接入产物服务。启动时跳过历史行：
+     * 它们已入库，重放只会把旧任务错绑到当前回合。
+     */
+    startArtifactReports(path: string, intervalMs = 250): void {
+      artifactReportLog = path;
+      artifactReportOffset = existsSync(path) ? statSync(path).size : 0;
+      if (artifactReportTimer) clearInterval(artifactReportTimer);
+      artifactReportTimer = setInterval(() => flushArtifactReports(), intervalMs);
+      if (typeof artifactReportTimer.unref === 'function') artifactReportTimer.unref();
     },
+
+    /** 回合结束前同步冲掉已写完的上报，确保 UI 随后重读时已经看得到。 */
+    flushArtifactReports,
 
     /** 内核退出：在跑的定时任务全判 ENVIRONMENT（不计连败）。 */
     onKernelExit(): void {
@@ -358,6 +445,8 @@ export function createLocalServices(options: LocalServicesOptions) {
       for (const watcher of watchers.values()) watcher.stop();
       watchers.clear();
       workspaceThreads.clear();
+      if (artifactReportTimer) clearInterval(artifactReportTimer);
+      artifactReportTimer = undefined;
       bridge.dispose();
     },
   };

@@ -81,16 +81,16 @@ export function createArtifactWatcher(options: WatcherOptions) {
     path: string,
     kind: 'add' | 'modify' | 'delete',
     provenance?: ArtifactProvenance,
-  ): void {
+  ): ArtifactRecord | undefined {
     baseline.delete(path);
     if (kind === 'delete') {
       const existing = options.index.latestFor(path);
       // 08 §8：文件被外部删除 → 标 MISSING，**不删索引条目**
       // （用户可能只是挪走了；而且"重新生成"要靠这条记录里的来源信息）
       if (existing) options.index.setFileState(existing.id, 'MISSING');
-      return;
+      return undefined;
     }
-    apply(recognize({ signal: 'FILE_CHANGE', path, kind }, context(provenance)));
+    return apply(recognize({ signal: 'FILE_CHANGE', path, kind }, context(provenance)));
   }
 
   /**
@@ -160,16 +160,16 @@ export function createArtifactWatcher(options: WatcherOptions) {
   }
 
   /** 把识别结果落库。返回是否真的写了一条。 */
-  function apply(outcome: ReturnType<typeof recognize>): boolean {
+  function apply(outcome: ReturnType<typeof recognize>): ArtifactRecord | undefined {
     if (outcome.kind === 'inserted' || outcome.kind === 'superseded') {
       options.index.insert(outcome.record);
-      return true;
+      return outcome.record;
     }
     if (outcome.kind === 'corrected') {
       options.index.update(outcome.record);
-      return true;
+      return outcome.record;
     }
-    return false;
+    return undefined;
   }
 
   const stops: (() => void)[] = [];
@@ -215,7 +215,7 @@ export function createArtifactWatcher(options: WatcherOptions) {
     ): ArtifactRecord | undefined {
       baseline.delete(report.path);
       const outcome = recognize({ signal: 'SKILL_REPORT', ...report }, context(provenance));
-      return apply(outcome) ? (outcome as { record: ArtifactRecord }).record : undefined;
+      return apply(outcome);
     },
     stop(): void {
       for (const stop of stops.splice(0)) stop();

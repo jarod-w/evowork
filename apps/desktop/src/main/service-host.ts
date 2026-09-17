@@ -66,6 +66,7 @@ import type {
   PolicyPackStatusView,
   PreferencesInput,
   PreferencesView,
+  RendererEvent,
   SaveProviderKeyInput,
   ComposerAttachmentView,
   ComposerReferenceView,
@@ -140,6 +141,8 @@ export interface EvoworkPaths {
    * 让审计被静默吞掉，而那正是审计最不该发生的失败方式。
    */
   readonly auditLog: string;
+  /** 办公技能 `mark_artifact` 写入的 JSONL，由本机产物服务追加消费。 */
+  readonly artifactLog: string;
   /**
    * 内核的家目录（`~/.evowork/kernel/`）。
    *
@@ -165,6 +168,7 @@ export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
     appConfig: join(root, 'app.toml'),
     modelsFile: join(root, 'models.toml'),
     auditLog: join(root, 'audit.jsonl'),
+    artifactLog: join(root, 'artifacts.jsonl'),
     kernelHome: join(root, 'kernel'),
   };
 }
@@ -606,6 +610,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
          */
         extraEnv: {
           EVOWORK_AUDIT_LOG: options.paths.auditLog,
+          EVOWORK_ARTIFACT_LOG: options.paths.artifactLog,
           ...(gatewayToken ? { EVOWORK_GATEWAY_TOKEN: gatewayToken } : {}),
         },
         ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
@@ -613,6 +618,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     // 适配层的事件是**任务视角**，渲染层要的是**组件视角**，翻译在 renderer-bridge 里
     onUiEvent: (event) => {
+      if (event.type === 'turn-started') {
+        const cwd = store.threads.get(event.threadId)?.cwd;
+        if (cwd) services.watchWorkspace(cwd, event.threadId);
+      }
+      if (event.type === 'turn-completed') {
+        // `mark_artifact` 在命令结束前已同步追加完整 JSON 行。先入库再通知 UI，
+        // 否则 UI 立刻重读时会撞上“文件已生成，产物表还是空的”窗口。
+        services.flushArtifactReports(event.threadId);
+      }
       for (const mapped of translate(event)) options.emitToRenderer(IPC.uiEvent, mapped);
       if (event.type === 'turn-completed') {
         void adapter.startNextQueued(event.threadId).catch((error: unknown) => {
@@ -693,8 +707,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 安装进度单独一个频道：它要在同一个位置连续更新几分钟，
     // 走 notice 的话界面上会堆出几十条"正在下载 3%…4%…"
     onRuntimeProgress: (progress) => options.emitToRenderer(IPC.runtimeProgress, progress),
+    onArtifactChanged: (threadId) =>
+      options.emitToRenderer(IPC.uiEvent, {
+        type: 'task-results-updated',
+        taskId: threadId,
+      } satisfies RendererEvent),
     logger,
   });
+  services.startArtifactReports(options.paths.artifactLog);
 
   let reconcileTimer: ReturnType<typeof setInterval> | undefined;
   /** 本机网关子进程（拓扑 A）。网关在服务器上时它一直是 undefined */

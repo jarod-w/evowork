@@ -583,6 +583,45 @@ describe('回合失败留在任务时间线', () => {
   });
 });
 
+describe('生成后的产物刷新', () => {
+  it('宿主通知产物已入库后重读当前任务，不用切走再切回才看到', async () => {
+    const task = {
+      id: 't-report',
+      title: '分析报告',
+      status: 'running' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const getTaskResults = vi
+      .fn()
+      .mockResolvedValueOnce({ artifacts: [] })
+      .mockResolvedValueOnce({
+        artifacts: [
+          {
+            id: 'artifact-1',
+            name: '分析报告.docx',
+            path: '/workspace/分析报告.docx',
+            artifactType: 'document',
+            version: 1,
+          },
+        ],
+      });
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      getTaskResults,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('分析报告'));
+    await waitFor(() => expect(getTaskResults).toHaveBeenCalledTimes(1));
+
+    emit.ui?.({ type: 'task-results-updated', taskId: 't-report' } as never);
+
+    expect(await screen.findByRole('button', { name: /分析报告\.docx/ })).toBeTruthy();
+    expect(getTaskResults).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('点开已完成任务要看到历史（不是「还没有消息」）', () => {
   it('点侧边栏一行会调 openTask，并把条目画进对话区', async () => {
     const openTask = vi.fn(async () => ({

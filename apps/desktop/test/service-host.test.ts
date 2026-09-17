@@ -223,6 +223,9 @@ describe('启动顺序：**先开库、再起内核**（09 §4.6 的直接后果
     await host.start();
 
     expect(spawnFn.mock.calls[0]?.[0]).toBe('/fake/codex-app-server');
+    expect(spawnFn.mock.calls[0]?.[2].env).toMatchObject({
+      EVOWORK_ARTIFACT_LOG: resolvePaths(dir).artifactLog,
+    });
     // 宿主**不知道**内核的环境变量叫什么 —— 那是 createSpawnLauncher 的知识（K2 边界）。
     // 直接扫源码：这条断言的对象是"这个文件里不该出现那个名字"，
     // 而 lint 规则已经在管它 —— 这里是第二道，确保重构时不会悄悄搬回来
@@ -301,6 +304,76 @@ describe('FileChange → 产物索引', () => {
       thread_id: string | null;
     }[];
     expect(rows).toEqual([{ path: join(workspace, 'report.docx'), thread_id: 't1' }]);
+  });
+
+  it('mark_artifact 上报在回合结束前入库，并立即通知界面重读产物', async () => {
+    host = makeHost();
+    const workspace = join(dir, 'work');
+    mkdirSync(workspace, { recursive: true });
+    await host.start();
+
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'thread/started',
+      params: {
+        thread: {
+          id: 't-report',
+          sessionId: 's-report',
+          preview: 'x',
+          ephemeral: false,
+          modelProvider: 'evowork',
+          createdAt: 1,
+          updatedAt: 1,
+          status: 'running',
+          cwd: workspace,
+          turns: [],
+          name: '生成报告',
+        },
+      },
+    });
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'turn/started',
+      params: { threadId: 't-report', turn: { id: 'turn-report', status: 'inProgress' } },
+    });
+    await new Promise((done) => setImmediate(done));
+
+    const report = join(workspace, '分析报告.docx');
+    writeFileSync(report, 'generated report');
+    writeFileSync(
+      resolvePaths(dir).artifactLog,
+      `${JSON.stringify({
+        kind: 'artifact.mark',
+        skill: 'documents',
+        operationKind: 'create',
+        expectedOutputCount: 1,
+        outputFormat: 'docx',
+        title: '分析报告',
+        path: report,
+      })}\n`,
+    );
+    emitted = [];
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: {
+        threadId: 't-report',
+        turn: { id: 'turn-report', status: 'completed' },
+      },
+    });
+    await new Promise((done) => setImmediate(done));
+
+    await expect(host.actions.getTaskResults({ threadId: 't-report' })).resolves.toMatchObject({
+      artifacts: [{ name: '分析报告', path: report }],
+    });
+    expect(
+      emitted.some(
+        (event) =>
+          event.channel === IPC.uiEvent &&
+          (event.payload as { type?: string; taskId?: string }).type === 'task-results-updated' &&
+          (event.payload as { taskId?: string }).taskId === 't-report',
+      ),
+    ).toBe(true);
   });
 });
 

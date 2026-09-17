@@ -65,6 +65,11 @@ export type RendererEvent =
       readonly details?: string | undefined;
     }
   /**
+   * 任务的产物索引刚刚变了。只送“哪个任务”，具体数据仍由
+   * `getTaskResults` 重读，避免在事件载荷里复制另一份产物视图。
+   */
+  | { readonly type: 'task-results-updated'; readonly taskId: string }
+  /**
    * 「项目」那一侧变了（另一个客户端建了/删了 project）。
    * 只在停在项目列表页时才据此重拉——本机自己的增删动作直接返回新列表，不等这条事件。
    */
