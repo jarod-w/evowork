@@ -1253,8 +1253,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const currentPreview = activeTaskId === null ? undefined : previewByTask[activeTaskId];
   const activeProject = startup?.workspaces.find((workspace) => workspace.path === active?.cwd);
   const changedFiles = useMemo(() => changedFilesFromItems(currentItems), [currentItems]);
-  const hasCurrentResults =
-    currentResults.artifacts.length > 0 || currentFiles.length > 0 || changedFiles.length > 0;
+  // 项目目录里的既有文件只是「文件」Tab 可浏览的数据，不是当前任务的结果信号。
+  // 否则一发送消息、任务进入 processing，目录读取完成就会把结果区提前撑开。
+  // 只有任务产物索引或本轮 FileChange 才能证明这次确实产生/修改了文件。
+  const hasCurrentResults = currentResults.artifacts.length > 0 || changedFiles.length > 0;
   const activeResultUi =
     activeTaskId === null
       ? { open: false, tab: 'artifacts' as ResultPane }

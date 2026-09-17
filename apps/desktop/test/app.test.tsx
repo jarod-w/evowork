@@ -477,6 +477,48 @@ describe('结果工作区真实接线', () => {
     cwd: '/Users/x/q3',
   };
 
+  it('发送后仅进入处理中时不因项目既有文件显示结果区', async () => {
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        workspaces: [{ id: 'p1', name: '季度汇报', path: '/Users/x/q3' }],
+      }),
+      listProjectDir: vi.fn(async () => [
+        {
+          name: '已有资料.docx',
+          path: '/Users/x/q3/已有资料.docx',
+          isDirectory: false,
+          noisy: false,
+        },
+      ]),
+    });
+    vi.mocked(bridge.send).mockImplementation(async () => {
+      emit.ui?.({
+        type: 'task-created',
+        task: {
+          id: 't-processing',
+          title: '整理季度资料',
+          status: 'running',
+          timeLabel: '刚刚',
+          updatedAt: Date.now(),
+          sectionId: 'ungrouped',
+          cwd: '/Users/x/q3',
+        },
+      });
+      return { threadId: 't-processing' };
+    });
+
+    render(<App bridge={bridge} />);
+    fireEvent.change(await screen.findByLabelText('需求输入'), {
+      target: { value: '整理季度资料' },
+    });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+
+    await waitFor(() => expect(bridge.listProjectDir).toHaveBeenCalledWith({ id: 'p1' }));
+    expect(screen.queryByRole('button', { name: '关闭结果' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '打开结果' })).toBeNull();
+  });
+
   it('按任务读取产物，结果默认显示并可交给系统打开文件', async () => {
     const openResultFile = vi.fn(async () => undefined);
     const { bridge } = fakeBridge({
@@ -527,6 +569,7 @@ describe('结果工作区真实接线', () => {
       },
     });
 
+    expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: /处理过程/ }));
     fireEvent.click(await screen.findByRole('button', { name: '查看完整变更' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
