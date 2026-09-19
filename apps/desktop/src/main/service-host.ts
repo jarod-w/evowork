@@ -298,6 +298,11 @@ export interface ServiceHostOptions {
    * 没给时官方目录是空的 —— 不假装有办公技能。
    */
   readonly pluginsDir?: string | undefined;
+  /**
+   * 随基础包带的 Noto Sans SC（打包后在 `process.resourcesPath/office/`）。
+   * 给了，办公扩展安装就不再去 GitHub 拉字体。
+   */
+  readonly bundledFontPath?: string | undefined;
   /** 注入进程环境，便于测试 */
   readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
@@ -712,6 +717,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         type: 'task-results-updated',
         taskId: threadId,
       } satisfies RendererEvent),
+    ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
     logger,
   });
   services.startArtifactReports(options.paths.artifactLog);

@@ -503,7 +503,7 @@ export interface RuntimeStatusView {
   readonly missing: readonly string[];
   /** 这台机器支不支持（架构没有对应的运行时时为 false） */
   readonly supported: boolean;
-  /** 要下多少（如 "约 43 MB"）。不支持的平台上不填 */
+  /** 要下多少（如 "约 25 MB"）。不支持的平台上不填 */
   readonly downloadSize?: string | undefined;
 }
 

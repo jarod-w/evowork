@@ -157,6 +157,15 @@ export const FONT_ASSET: RemoteAsset = Object.freeze({
   bytes: 17_772_300,
 });
 
+/**
+ * 随基础包分发的那份可变字体（R10 的例外：客户机器上不了 GitHub raw）。
+ *
+ * 打包进 `extraResources/office/`，安装时拷出来再切 `wght=400`。
+ * 离线包用同一个文件名。URL 只留给未打包的开发机当兜底。
+ */
+export const FONT_BUNDLE_NAME = 'NotoSansSC.ttf';
+export const FONT_BUNDLE_RELATIVE_PATH = `build/office/${FONT_BUNDLE_NAME}`;
+
 /** 装完之后留在 `fonts/` 里的那份（静态实例）。`charts` 按这个家族名查找。 */
 export const FONT_FAMILY = 'Noto Sans SC';
 export const FONT_FILE_NAME = 'NotoSansSC-Regular.ttf';
@@ -165,6 +174,10 @@ export const FONT_WEIGHT_AXIS = 'wght=400';
 export const FONT_LICENSE = 'SIL Open Font License 1.1';
 
 /** 下载总量（用于进度条与"要下多少"的文案）。**按 triple 算，不是一个常数**。 */
-export function totalDownloadBytes(triple: string): number {
-  return (PYTHON_ASSETS[triple]?.bytes ?? 0) + FONT_ASSET.bytes;
+export function totalDownloadBytes(
+  triple: string,
+  options: { readonly includeFont?: boolean } = {},
+): number {
+  const python = PYTHON_ASSETS[triple]?.bytes ?? 0;
+  return options.includeFont === false ? python : python + FONT_ASSET.bytes;
 }

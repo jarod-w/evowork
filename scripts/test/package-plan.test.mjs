@@ -26,9 +26,13 @@ describe('三档运行时的边界（08 §4 / R10）', () => {
     expect(result.message).toContain('按需下载');
   });
 
-  it('干净的基础包通过', () => {
+  it('干净的基础包通过，中文字体随基础包走不算越界', () => {
     expect(
-      checkTierPlacement(['dist/main/index.js', 'resources/plugins/skills/charts/SKILL.md']).ok,
+      checkTierPlacement([
+        'dist/main/index.js',
+        'resources/plugins/skills/charts/SKILL.md',
+        'resources/office/NotoSansSC.ttf',
+      ]).ok,
     ).toBe(true);
   });
 

@@ -12,7 +12,7 @@ import {
   type InstallProgress,
   type RunFn,
 } from '../src/install.js';
-import { FONT_FILE_NAME, PIP_INDEX_URL } from '../src/manifest.js';
+import { FONT_ASSET, FONT_FILE_NAME, PIP_INDEX_URL } from '../src/manifest.js';
 
 let home: string;
 
@@ -124,6 +124,52 @@ describe('安装成功的那条路', () => {
     expect(index).toBeGreaterThan(-1);
     expect(pip![index + 1]).toBe(PIP_INDEX_URL);
     expect(pip).not.toContain('--no-index');
+  });
+
+  /**
+   * 客户机器上不了 GitHub raw。随包字体必须让下载器根本碰不到那条 URL，
+   * 否则失败信息会写成「连不上下载地址」，看起来像网络问题。
+   */
+  it('给了随包字体就不去 GitHub 拉字体', async () => {
+    const font = join(home, 'NotoSansSC.ttf');
+    writeFileSync(font, 'bundled-font');
+    const urls: string[] = [];
+    const tracking = (async (asset, dest) => {
+      urls.push(asset.url);
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, 'fake');
+    }) as unknown as typeof fakeDownload;
+
+    const result = await installOfficeRuntime({
+      ...base(makeRun()),
+      bundledFontPath: font,
+      downloadFn: tracking,
+    });
+
+    expect(result.ok, result.ok ? '' : result.message).toBe(true);
+    expect(urls).not.toContain(FONT_ASSET.url);
+  });
+
+  it('随包字体路径指到空处：报 FONT，不改去 GitHub', async () => {
+    const urls: string[] = [];
+    const tracking = (async (asset, dest) => {
+      urls.push(asset.url);
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, 'fake');
+    }) as unknown as typeof fakeDownload;
+
+    const result = await installOfficeRuntime({
+      ...base(makeRun()),
+      bundledFontPath: join(home, 'missing-font.ttf'),
+      downloadFn: tracking,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure).toBe('FONT');
+      expect(result.message).toContain('安装包');
+    }
+    expect(urls).not.toContain(FONT_ASSET.url);
   });
 
   /**

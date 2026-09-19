@@ -438,12 +438,12 @@ pnpm run package    # = node scripts/package.mjs；--dry-run 只跑前置检查
 | --- | --- | --- |
 | `planSigning`（U4） | 缺任一 secret → 整体不签名，`-unsigned` 进**文件名**，并显式 `mac.identity=null` | 静默产出一个名字看起来像正式包的未签名 dmg；或摸到钥匙串里任意一张证书签出一个没打算签的包 |
 | `checkTierPlacement`（08 §4） | 对**解压后的 .app** 扫文件名，拦办公库混进基础包 | 安装包悄悄胖 200MB，等用户下载时才发现 |
-| `checkSizeBudget`（R10） | 对**安装包**（dmg/exe/AppImage/deb）比 220MB 预算 | 同上 |
+| `checkSizeBudget`（R10） | 对**安装包**（dmg/exe/AppImage/deb）比 240MB 预算 | 同上 |
 | 前置检查 | 四个入口产物 + 内核二进制 + 执行位 | 对着空 dist 也会**成功**，产出一个白屏或秒退的应用 |
 
 体积口径是**安装包**不是解压后的 .app：R10 与 08 §4 约束的是"用户下载多少"
 （原话「首次下载 300MB+ 挡在体验前面」）。.app 一定更大 —— Electron 的 framework
-单独就 250MB 上下，拿它去比 220MB 会永远红，而那个红不指向任何可以做的事。
+单独就 250MB 上下，拿它去比 240MB 会永远红，而那个红不指向任何可以做的事。
 
 `files` 里有一条 `!node_modules`：三个入口都是自包含产物（§3.1），运行时唯一的外部
 require 是 `electron` 本身，而 electron-builder 默认会把整棵生产依赖树塞进 `app.asar` ——
@@ -452,7 +452,7 @@ require 是 `electron` 本身，而 electron-builder 默认会把整棵生产依
 **将来引入原生模块（`.node`）时必须把它加回来**，那种依赖打不进 bundle。
 
 **2026-09-06 的真实数字**（macOS arm64，Electron 44.2.0 + 217MB 内核二进制）：
-dmg / zip 各 **197MB**，对 220MB 预算只剩 23MB 余量。内核 release 档带着符号
+dmg / zip 各 **197MB**（2026-09-06 口径，**尚未计入** 2026-09-19 随包的 ~18MB 中文字体），对 240MB 预算仍有余量。内核 release 档带着符号
 （`strip = false`，上游注释说留给打包阶段归档后再剥），真要压体积第一刀应该切在那里。
 
 ### 5.5 首次运行

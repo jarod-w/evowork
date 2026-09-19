@@ -12,6 +12,7 @@
  * 其余全部照常受约束。装上 electron 之后可以原样改名成 .ts。
  */
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 /*
@@ -57,6 +58,15 @@ const kernelCheckout = join(repoRoot, '..', 'codex');
  * 而这两次跑的是同一个产物。
  */
 const resourceRoot = isPackaged ? process.resourcesPath : repoRoot;
+const officeFontPath = isPackaged
+  ? join(resourceRoot, 'office', 'NotoSansSC.ttf')
+  : join(repoRoot, 'build/office/NotoSansSC.ttf');
+/*
+ * 打包后这份必须在：漏了就让安装器报「安装包里没有中文字体」，不要改去 GitHub
+ * （客户机器上 GitHub raw 同样打不开）。未打包时文件在仓库里才传路径，
+ * 否则安装器回落到下载，方便还没拉这份二进制的开发机。
+ */
+const bundledFontPath = isPackaged || existsSync(officeFontPath) ? officeFontPath : undefined;
 
 /*
  * **不要在这里用顶层 await。**
@@ -132,6 +142,7 @@ bootstrap({
     : join(repoRoot, 'dist/gateway/main.js'),
   configDir: isPackaged ? join(resourceRoot, 'config') : join(repoRoot, 'config'),
   pluginsDir: join(resourceRoot, 'plugins'),
+  ...(bundledFontPath !== undefined ? { bundledFontPath } : {}),
   preloadPath: join(import.meta.dirname, '../preload/index.bundle.cjs'),
   rendererHtmlPath: join(import.meta.dirname, '../renderer/index.html'),
   // 只有"开发者真的起了 vite"才连它。与随包资源在哪**无关**（见文件头）

@@ -84,3 +84,16 @@ describe('办公解析脚本会进主进程产物（M3）', () => {
     expect(read('src/main/service-host.ts')).toContain('createOfficeParser');
   });
 });
+
+describe('中文字体随基础包分发（R10 例外）', () => {
+  it('electron-builder 把字体打进 extraResources —— 漏了客户点安装会去打 GitHub', () => {
+    const yml = readFileSync(resolve(APP_ROOT, '../../build/electron-builder.yml'), 'utf8');
+    expect(yml).toContain('build/office/NotoSansSC.ttf');
+    expect(yml).toContain('office/NotoSansSC.ttf');
+  });
+
+  it('入口把随包字体路径交给安装器，打包漏了也不改去 GitHub', () => {
+    expect(read('src/main/electron-entry.mjs')).toContain('bundledFontPath');
+    expect(read('src/main/electron-entry.mjs')).toContain('office/NotoSansSC.ttf');
+  });
+});

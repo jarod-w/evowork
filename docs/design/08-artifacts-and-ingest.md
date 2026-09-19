@@ -208,7 +208,7 @@ artifact
 | 六个包从哪来                      | pip `--index-url` 钉死清华源 `https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple`。不走默认 PyPI；离线时 `--no-index --find-links` |
 | 为什么不用 `uv venv`              | 它建出来的目录**不可搬运** —— `bin/python` 是指向 `~/.local/share/uv/python/...` 的绝对符号链接（2026-09-06 实测）。客户机器上没有那个目标，拷过去就是死链，随包分发与离线包都不成立 |
 | 装在哪                            | `~/.evowork/runtime/office/`，解释器摊平到根下（unix `bin/python3`、windows `python.exe`）。可用 `EVOWORK_OFFICE_PYTHON` 覆盖 |
-| 中文字体                          | **随扩展装一份 Noto Sans SC**（OFL）到 `<扩展根>/fonts/`。此前 `charts` 的提示写着"请安装办公扩展（它带中文字体）"而扩展里一个字体都没有 —— macOS/Windows 靠系统字体侥幸能过，裸 Linux 与精简 Windows 镜像过不了 |
+| 中文字体                          | **随基础包分发**一份 Noto Sans SC（OFL）到 extraResources `office/`，安装时拷进 `<扩展根>/fonts/` 并切 `wght=400`。客户机器上不了 GitHub raw，所以不再按需下载。此前 `charts` 的提示写着"请安装办公扩展（它带中文字体）"而扩展里一个字体都没有 —— macOS/Windows 靠系统字体侥幸能过，裸 Linux 与精简 Windows 镜像过不了 |
 | 字体为什么要切静态实例            | 下载的是可变字体，matplotlib 会把它登记成 **weight 100**（实测警告 `Failed to find font weight normal, now using 100`），图表标题明显偏细。安装时用 fontTools（matplotlib 自带依赖）切 `wght=400`，约 9 秒 |
 | 原子性                            | 全程装在 `office.staging/`，**验收通过才 rename**。半截目录会被探针判成"装好了"，然后每次生成都以奇怪的方式失败       |
 | 验收标准                          | 不是"文件都在"：用装出来的解释器真的 import 六个模块，并让 matplotlib 真的登记出 `Noto Sans SC` 这个家族名 —— 与 `charts` 找字体走同一条路 |

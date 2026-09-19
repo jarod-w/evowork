@@ -156,6 +156,8 @@ export interface BootstrapOptions {
   readonly configDir?: string | undefined;
   /** 随包 `plugins/`。开发时是仓库根下那份，打包后在 Resources/plugins */
   readonly pluginsDir?: string | undefined;
+  /** 随基础包带的 Noto Sans SC。打包后在 Resources/office/ */
+  readonly bundledFontPath?: string | undefined;
   /** 注入以便测试；默认用真的宿主 */
   readonly createHost?:
     ((options: Parameters<typeof createServiceHost>[0]) => ServiceHost) | undefined;
@@ -193,6 +195,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     appVersion: electron.app.getVersion(),
     ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
     ...(options.pluginsDir !== undefined ? { pluginsDir: options.pluginsDir } : {}),
+    ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
     /*
      * 目录选择框。`showOpenDialog` 是可选注入，缺了就**没有这个能力**（返回 undefined），
      * 而不是崩 —— 测试里不需要真开一个系统对话框。

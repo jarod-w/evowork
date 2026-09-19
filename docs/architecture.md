@@ -259,7 +259,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 
 ### ⑦ 办公扩展下载：唯一为装扩展而出网的路径（K6 登记）
 
-- [services/runtime-installer](../services/runtime-installer/)：从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的 URL + 校验和下载 CPython 与中文字体，六个 python 包由 pip 从清华镜像（`--index-url`）安装，装进 `~/.evowork/runtime/office/`，
+- [services/runtime-installer](../services/runtime-installer/)：从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的 URL + 校验和下载 CPython，六个 python 包由 pip 从清华镜像（`--index-url`）安装，中文字体从随包的 `Resources/office/NotoSansSC.ttf` 拷出再切静态实例，装进 `~/.evowork/runtime/office/`，
   装完做"搬走目录再跑"的可搬运检查，然后 `probe.invalidate()` 重探。
 - 用户在 App 里点「现在安装」（引导第 ④ 步 / 设置页）才触发；进度经 `runtimeProgress` 频道推送，文案真源在安装器包里。
 - 离线机器用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打），此时下载函数**一被调用就炸**（测试如此构造）。
@@ -532,7 +532,7 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 入口把两件事拆开：`app.isPackaged`（随包资源在哪）与 `EVOWORK_DEV`（连不连 vite）。未打包时按**入口文件**定位仓库根，不看 `process.cwd()`。
 ESM 入口**不顶层 await** `whenReady()`（与 Electron 的 `ready` 互相等 → 进程活着、零个 Helper、一行输出都没有）。
 
-分发（M9，配置在 [build/](../build/)）：electron-builder 三平台 + 差量更新 + macOS entitlements；内核二进制从 `build/kernel/<os>-<arch>/` 进 `extraResources`；
+分发（M9，配置在 [build/](../build/)）：electron-builder 三平台 + 差量更新 + macOS entitlements；内核二进制从 `build/kernel/<os>-<arch>/` 进 `extraResources`，中文字体从 `build/office/NotoSansSC.ttf` 进 `Resources/office/`；
 `electron` 装在仓库根（electron-builder 检测到 pnpm workspace 后从根解析版本）；`app.asar` 排除 `node_modules`（三个入口都是自包含 bundle）。
 [package-plan.mjs](../scripts/package-plan.mjs) 守两件事 —— **体积预算与档位边界**（防止 office/ocr 档混进基础包），
 以及**缺任一签名 secret 就整体降级为未签名并把标注写进文件名**（半签名的产物看起来像正式包）。

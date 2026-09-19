@@ -75,7 +75,7 @@ export interface OnboardingProps {
    * 更糟：用户会反复点，然后以为是网络问题。
    */
   readonly runtimeSupported?: boolean | undefined;
-  /** 要下多少（如 "约 43 MB"）。**按平台算**，linux x64 是 macOS 的四倍 */
+  /** 要下多少（如 "约 25 MB"）。**按平台算**，linux x64 是 macOS 的四倍 */
   readonly runtimeDownloadSize?: string | undefined;
   /** 正在装时的进度。`undefined` = 没在装 */
   readonly runtimeProgress?:

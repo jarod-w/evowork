@@ -35,6 +35,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   createWriteStream,
   existsSync,
   mkdirSync,
@@ -269,13 +270,18 @@ async function main() {
     return 1;
   }
 
-  /* ③ 字体 */
+  /* ③ 字体 —— 优先用仓库里随基础包走的那份，避免打包机也去打 GitHub */
   console.log('  ③ 中文字体 …');
-  const fontSha = await download(
-    manifest.font.url,
-    join(out, 'NotoSansSC.ttf'),
-    manifest.font.sha256,
-  );
+  const bundledFont = join(REPO_ROOT, 'build/office/NotoSansSC.ttf');
+  const fontDest = join(out, 'NotoSansSC.ttf');
+  let fontSha;
+  if (existsSync(bundledFont) && sha256Of(bundledFont) === manifest.font.sha256) {
+    copyFileSync(bundledFont, fontDest);
+    fontSha = manifest.font.sha256;
+    console.log('     使用仓库里随包的那份');
+  } else {
+    fontSha = await download(manifest.font.url, fontDest, manifest.font.sha256);
+  }
 
   /* ④ 清单 —— 让收到包的人知道自己拿到的是什么 */
   writeFileSync(

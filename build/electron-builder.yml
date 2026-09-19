@@ -2,8 +2,10 @@
 #
 # 三条与设计直接相关的配置，不是模板抄来的：
 #   · `extraResources.kernel` —— 内核二进制随包（K2：我们只跟它说 JSON-RPC，但它得在）
-#   · **解析运行时不在这里** —— 08 §4 决定按需下载而非全量随包，
+#   · **Python 办公运行时不在这里** —— 08 §4 决定按需下载而非全量随包，
 #     否则安装包 +300MB 会挡在首次体验前面（R10）
+#   · **中文字体在这里** —— Noto Sans SC 约 18MB。客户机器上不了 GitHub raw，
+#     按需下载会让「现在安装」卡在拉字体；Python 解释器仍按需下
 #   · 公证与签名**只在有 secrets 时启用**，否则产出标注「未签名」的包（U4）
 appId: com.evowork.desktop
 productName: EvoWork
@@ -45,6 +47,10 @@ extraResources:
   # 企业把网关部署在服务器上时它照样在包里，只是永远不执行（判据在 gateway-process.ts）。
   - from: dist/gateway
     to: gateway
+  # 中文字体。客户机器访问不了 GitHub raw，所以从按需下载里拆出来随基础包走。
+  # Python 解释器与六个包仍按需下载（08 §4 / R10）。
+  - from: build/office/NotoSansSC.ttf
+    to: office/NotoSansSC.ttf
 
 mac:
   category: public.app-category.productivity

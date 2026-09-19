@@ -1,7 +1,13 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   FONT_ASSET,
+  FONT_BUNDLE_RELATIVE_PATH,
   FONT_FILE_NAME,
   FONT_WEIGHT_AXIS,
   PIP_INDEX_URL,
@@ -12,6 +18,8 @@ import {
   totalDownloadBytes,
   TRIPLE_BY_PLATFORM,
 } from '../src/manifest.js';
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 describe('清单：每一项都能被下载并校验', () => {
   it('支持的每个平台都有对应的 python 资产 —— 否则那台机器上按钮点了没反应', () => {
@@ -38,6 +46,13 @@ describe('清单：每一项都能被下载并校验', () => {
   it('字体钉在 commit 上，不指向 main —— main 是移动靶，Google 一更新全体用户同时装不上', () => {
     expect(FONT_ASSET.url).toMatch(/raw\.githubusercontent\.com\/google\/fonts\/[0-9a-f]{40}\//);
     expect(FONT_ASSET.url).not.toContain('/main/');
+  });
+
+  it('仓库里有一份与清单哈希一致的随包字体 —— 漏了 dmg 里就没有，客户会去打 GitHub', () => {
+    const path = join(REPO_ROOT, FONT_BUNDLE_RELATIVE_PATH);
+    expect(existsSync(path), FONT_BUNDLE_RELATIVE_PATH).toBe(true);
+    const hash = createHash('sha256').update(readFileSync(path)).digest('hex');
+    expect(hash).toBe(FONT_ASSET.sha256);
   });
 
   /**
@@ -81,5 +96,13 @@ describe('清单：每一项都能被下载并校验', () => {
     expect(linux).toBeGreaterThan(mac);
     // 不认识的 triple 不该崩，返回的是"只有字体"这个显然偏小的值
     expect(totalDownloadBytes('nope')).toBe(FONT_ASSET.bytes);
+  });
+
+  it('随包字体之后下载量只剩 python —— 文案再写 43MB 就是把已经在 dmg 里的字体又算了一遍', () => {
+    const triple = 'aarch64-apple-darwin';
+    expect(totalDownloadBytes(triple, { includeFont: false })).toBe(PYTHON_ASSETS[triple]?.bytes);
+    expect(totalDownloadBytes(triple, { includeFont: false })).toBeLessThan(
+      totalDownloadBytes(triple),
+    );
   });
 });

@@ -15,10 +15,12 @@
  *   node scripts/package.mjs --dry-run    # 只跑前置检查，不真打包
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { readManifest } from './build-office-bundle.mjs';
 import { artifactName, checkSizeBudget, checkTierPlacement, planSigning } from './package-plan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -71,6 +73,20 @@ if (!existsSync(kernelBin)) {
 } else if (OS_KEY !== 'win' && !(statSync(kernelBin).mode & 0o111)) {
   // 拷贝丢执行位这件事只在用户双击应用时才表现出来
   problems.push(`${relative(ROOT, kernelBin)} 没有执行位 —— chmod +x`);
+}
+
+// ── 前置检查 ③：随包中文字体 ────────────────────────────────────────────
+const fontPath = join(ROOT, 'build/office/NotoSansSC.ttf');
+if (!existsSync(fontPath)) {
+  problems.push(
+    '缺中文字体 build/office/NotoSansSC.ttf —— 它随基础包分发，漏了客户点「现在安装」会去打 GitHub',
+  );
+} else {
+  const actual = createHash('sha256').update(readFileSync(fontPath)).digest('hex');
+  const expected = readManifest().font.sha256;
+  if (actual !== expected) {
+    problems.push(`build/office/NotoSansSC.ttf 的 sha256 与清单不符（${actual} ≠ ${expected}）`);
+  }
 }
 
 if (problems.length > 0) {
@@ -154,7 +170,7 @@ if (OS_KEY === 'mac' && existsSync(appDir)) {
  *
  * 口径来自 R10 与 08 §4 的原话（「首次下载 300MB+ 挡在体验前面」「安装包 +100–300MB」）——
  * 约束的是用户下载多少。解压后的 .app 一定更大：Electron 的 framework 单独就 250MB 上下，
- * 拿它去比 220MB 会永远红，而那个红不指向任何可以做的事。
+ * 拿它去比 240MB 会永远红，而那个红不指向任何可以做的事。
  */
 const installers = readdirSync(outDir).filter((f) => /\.(dmg|exe|AppImage|deb)$/.test(f));
 for (const f of installers) {

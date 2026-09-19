@@ -69,6 +69,10 @@ export interface LocalServicesOptions {
   /** 产物真正入库后通知宿主刷新该任务的结果区。 */
   readonly onArtifactChanged?: ((threadId: string) => void) | undefined;
   readonly now?: (() => number) | undefined;
+  /**
+   * 随基础包带的 Noto Sans SC。有这份，安装就不再去 GitHub 拉字体。
+   */
+  readonly bundledFontPath?: string | undefined;
 }
 
 /** 产物索引的 `IndexPort` 由 store 的 repo 实现 —— 两边的形状本来就一样。 */
@@ -326,12 +330,16 @@ export function createLocalServices(options: LocalServicesOptions) {
     status: (): RuntimeStatusView => {
       const missing = RUNTIME_TIERS.office.probeModules.filter((m) => !probe.hasModule(m));
       const triple = TRIPLE_BY_PLATFORM[`${process.arch}-${process.platform}`];
+      const fontBundled =
+        options.bundledFontPath !== undefined && existsSync(options.bundledFontPath);
       return {
         installed: missing.length === 0,
         missing,
         supported: triple !== undefined,
         ...(triple !== undefined
-          ? { downloadSize: `约 ${Math.round(totalDownloadBytes(triple) / 1_000_000)} MB` }
+          ? {
+              downloadSize: `约 ${Math.round(totalDownloadBytes(triple, { includeFont: !fontBundled }) / 1_000_000)} MB`,
+            }
           : {}),
       };
     },
@@ -341,6 +349,9 @@ export function createLocalServices(options: LocalServicesOptions) {
         ...(options.logger ? { logger: options.logger } : {}),
         ...(process.env.EVOWORK_OFFICE_BUNDLE
           ? { bundleDir: process.env.EVOWORK_OFFICE_BUNDLE }
+          : {}),
+        ...(options.bundledFontPath !== undefined
+          ? { bundledFontPath: options.bundledFontPath }
           : {}),
         onProgress: (p) =>
           options.onRuntimeProgress?.({

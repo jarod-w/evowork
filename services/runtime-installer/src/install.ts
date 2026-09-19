@@ -2,7 +2,7 @@
  * 办公扩展的安装编排（08 §4「按需下载」的实现处）。
  *
  * ```
- * ① 下 python 发行版 → ② 解包 → ③ pip 装六个包 → ④ 下字体并切静态实例 → ⑤ 验收 → ⑥ 原子换入
+ * ① 下 python 发行版 → ② 解包 → ③ pip 装六个包 → ④ 拷随包字体并切静态实例 → ⑤ 验收 → ⑥ 原子换入
  * ```
  *
  * ## 在此之前这里是空的
@@ -38,6 +38,7 @@ import { errorFields, type Logger } from '@evowork/logging';
 import { downloadAsset, DownloadError } from './download.js';
 import {
   FONT_ASSET,
+  FONT_BUNDLE_NAME,
   FONT_FAMILY,
   FONT_FILE_NAME,
   FONT_WEIGHT_AXIS,
@@ -163,6 +164,13 @@ export interface InstallOptions {
    * ```
    */
   readonly bundleDir?: string | undefined;
+  /**
+   * 随基础包带的可变字体（`build/office/NotoSansSC.ttf` → extraResources）。
+   *
+   * 有这份就不去 GitHub 拉字体。缺文件时**不要静默改去下载**：
+   * 打包漏了这份，客户机器上 GitHub 同样打不开，失败信息必须指向安装包。
+   */
+  readonly bundledFontPath?: string | undefined;
   /** 注入以便测试。**默认是真的下载 / 真的起进程** */
   readonly downloadFn?: typeof downloadAsset | undefined;
   readonly runFn?: RunFn | undefined;
@@ -231,7 +239,8 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
   try {
     /* ① python 发行版 —— 下载或从离线包取 */
     const archive = join(staging, 'python.tar.gz');
-    const totalBytes = totalDownloadBytes(triple);
+    const fontFromDisk = options.bundleDir !== undefined || options.bundledFontPath !== undefined;
+    const totalBytes = totalDownloadBytes(triple, { includeFont: !fontFromDisk });
     if (options.bundleDir !== undefined) {
       const local = join(options.bundleDir, `python-${triple}.tar.gz`);
       if (!existsSync(local)) {
@@ -299,15 +308,25 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
     }
     report('install-packages', 1);
 
-    /* ④ 字体：下载可变字体 → 切成 wght=400 的静态实例 */
+    /* ④ 字体：随包 / 离线包拷贝，否则才下载；再切成 wght=400 的静态实例 */
     const fonts = fontsDir(staging);
     await mkdir(fonts, { recursive: true });
     const variable = join(fonts, 'NotoSansSC-Variable.ttf');
-    if (options.bundleDir !== undefined) {
-      const local = join(options.bundleDir, 'NotoSansSC.ttf');
-      if (!existsSync(local)) return fail('FONT', '离线包里没有中文字体（缺 NotoSansSC.ttf）。');
-      report('download-font', 1, '使用离线包');
-      await copyLocal(local, variable);
+    const localFont =
+      options.bundleDir !== undefined
+        ? join(options.bundleDir, FONT_BUNDLE_NAME)
+        : options.bundledFontPath;
+    if (localFont !== undefined) {
+      if (!existsSync(localFont)) {
+        return fail(
+          'FONT',
+          options.bundleDir !== undefined
+            ? `离线包里没有中文字体（缺 ${FONT_BUNDLE_NAME}）。`
+            : '安装包里没有中文字体。请重新安装 EvoWork。',
+        );
+      }
+      report('download-font', 1, options.bundleDir !== undefined ? '使用离线包' : '使用随包字体');
+      await copyLocal(localFont, variable);
     } else {
       try {
         await download(FONT_ASSET, variable, {
