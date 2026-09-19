@@ -146,7 +146,7 @@ export interface StartupInfo {
    * 走没走过首次引导（02 §9）。
    *
    * 落在 `meta` 表而不是渲染层的 localStorage：换个窗口、清个缓存都不该让
-   * 用户再走一遍五步引导，而"这台机器配好了没有"本来就是本机状态。
+   * 用户再走一遍四步引导，而"这台机器配好了没有"本来就是本机状态。
    */
   readonly onboarded: boolean;
 }

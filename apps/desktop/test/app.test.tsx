@@ -1131,7 +1131,7 @@ describe('首次引导（02 §9）', () => {
     render(<App bridge={bridge} />);
     // 引导在，主界面不在
     await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeNull());
-    expect(screen.getByText(/第 1 \/ 5 步/)).toBeTruthy();
+    expect(screen.getByText(/第 1 \/ 4 步/)).toBeTruthy();
   });
 
   it('走过引导就直接进主界面', async () => {
@@ -1142,7 +1142,7 @@ describe('首次引导（02 §9）', () => {
 
   /*
    * **落 `meta` 表，不是渲染层的 localStorage**：换个窗口、清个缓存都不该让
-   * 用户再走一遍五步引导，而"这台机器配好了没有"本来就是本机状态。
+   * 用户再走一遍四步引导，而"这台机器配好了没有"本来就是本机状态。
    */
   it('走完引导调 completeOnboarding 并进主界面', async () => {
     const completeOnboarding = vi.fn(async () => undefined);
@@ -1153,8 +1153,8 @@ describe('首次引导（02 §9）', () => {
     render(<App bridge={bridge} />);
 
     // 直接跳到最后一步（每一步的必填校验由 onboarding.test 覆盖）
-    await screen.findByText(/第 1 \/ 5 步/);
-    for (let i = 0; i < 5; i += 1) {
+    await screen.findByText(/第 1 \/ 4 步/);
+    for (let i = 0; i < 4; i += 1) {
       const next = screen.queryByRole('button', { name: /下一步|开始使用/ });
       if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
     }
@@ -1181,7 +1181,7 @@ describe('首次引导（02 §9）', () => {
     render(<App bridge={bridge} />);
 
     // 从欢迎屏进到"选一个工作空间"这一步
-    await screen.findByText(/第 1 \/ 5 步/);
+    await screen.findByText(/第 1 \/ 4 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 
     fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
@@ -1204,7 +1204,7 @@ describe('首次引导（02 §9）', () => {
     });
     render(<App bridge={bridge} />);
 
-    await screen.findByText(/第 1 \/ 5 步/);
+    await screen.findByText(/第 1 \/ 4 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 
     const pick = await screen.findByRole('button', { name: '选择文件夹' });

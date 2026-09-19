@@ -3,7 +3,7 @@
  *
  * 这组测试盯的是**做错了会让用户丢东西或被骗**的地方，不是"输入框能不能打字"：
  * `/` 的行首约束、解析中禁止发送、本机解析承诺的文案、Ask 模式与权限的联动、
- * 被企业策略锁定的档位不能隐藏、完全访问的二次确认、模型不可用时不静默降级。
+ * 未接通的权限选择器不得出现、模型不可用时不静默降级。
  */
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
@@ -12,7 +12,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   Composer,
   COMPOSER_PLACEHOLDER,
-  DANGER_PROFILE,
   LOCAL_PARSE_PROMISE,
   READ_ONLY_PROFILE,
   detectTrigger,
@@ -46,11 +45,6 @@ function type(text: string) {
   const box = screen.getByLabelText('需求输入');
   fireEvent.change(box, { target: { value: text, selectionStart: text.length } });
   return box;
-}
-
-function openAdvanced() {
-  fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: /更多选项/ }));
 }
 
 describe('触发补全（03 §4.2 / §4.3）', () => {
@@ -165,65 +159,19 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
   const permissions = [
     { id: ':workspace', label: '默认可写', allowed: true },
     { id: READ_ONLY_PROFILE, label: '只读', allowed: true },
-    { id: DANGER_PROFILE, label: '完全访问', allowed: true },
-    {
-      id: 'enterprise-locked',
-      label: '企业档',
-      allowed: false,
-      disabledReason: '已被企业策略锁定',
-    },
   ];
 
-  it('**`allowed:false` 的档位渲染为禁用并显示原因，不隐藏**（F4 / 10 §2）', () => {
+  it('权限选择器暂不展示 —— 选了也不会进 turn/start', () => {
     renderComposer({ permissions, permissionId: ':workspace' });
-    openAdvanced();
-    fireEvent.click(screen.getByRole('button', { name: '权限' }));
-
-    const locked = screen.getByRole('menuitem', { name: /企业档/ });
-    expect((locked as HTMLButtonElement).disabled).toBe(true);
-    expect(locked.textContent).toContain('已被企业策略锁定');
-    // 原因在标签列里：放成横向 flex 兄弟时中文会按字折成一列，叠在「evowork-full」上
-    expect(
-      locked.querySelector('.ew-menu-label')?.querySelector('.ew-menu-reason')?.textContent,
-    ).toContain('已被企业策略锁定');
+    expect(screen.queryByRole('button', { name: '权限' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    expect(screen.queryByRole('menuitem', { name: /更多选项/ })).toBeNull();
   });
 
-  it('**选完全访问要过二次确认**，且说清只对当前任务生效', () => {
-    const onPermissionChange = vi.fn();
-    renderComposer({ permissions, permissionId: ':workspace', onPermissionChange });
-    openAdvanced();
-    fireEvent.click(screen.getByRole('button', { name: '权限' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
-
-    // 还没生效
-    expect(onPermissionChange).not.toHaveBeenCalled();
-    const dialog = screen.getByRole('alertdialog', { name: '确认使用完全访问' });
-    expect(dialog.textContent).toContain('仅对当前任务生效');
-    expect(dialog.textContent).toContain('可读写这台电脑上的任意文件');
-
-    fireEvent.click(screen.getByRole('button', { name: '我明白，仍然使用' }));
-    expect(onPermissionChange).toHaveBeenCalledWith(DANGER_PROFILE);
-  });
-
-  it('取消二次确认就什么都不变', () => {
-    const onPermissionChange = vi.fn();
-    renderComposer({ permissions, permissionId: ':workspace', onPermissionChange });
-    openAdvanced();
-    fireEvent.click(screen.getByRole('button', { name: '权限' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
-    expect(onPermissionChange).not.toHaveBeenCalled();
-  });
-
-  it('**Ask 模式把权限锁成只读**并给出原因', () => {
+  it('**Ask 模式把权限锁成只读**', () => {
     const onPermissionChange = vi.fn();
     renderComposer({ permissions, permissionId: ':workspace', mode: 'ask', onPermissionChange });
     expect(onPermissionChange).toHaveBeenCalledWith(READ_ONLY_PROFILE);
-
-    openAdvanced();
-    const trigger = screen.getByRole('button', { name: '权限' });
-    expect((trigger as HTMLButtonElement).disabled).toBe(true);
-    expect(trigger.getAttribute('title')).toBe('Ask 模式固定为只读');
   });
 
   it('切回 Craft **恢复用户上一次的选择**，而不是回落到默认值', () => {
@@ -268,13 +216,11 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(onPermissionChange).toHaveBeenLastCalledWith(':workspace');
   });
 
-  it('常显工作模式与项目，权限收在更多选项里', () => {
+  it('常显工作模式与项目', () => {
     renderComposer({ workspaces: [{ id: 'p1', label: '季度汇报' }] });
     expect(screen.getByRole('button', { name: '工作模式' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '选择项目' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '权限' })).toBeNull();
-    openAdvanced();
-    expect(screen.getByRole('button', { name: '权限' })).toBeTruthy();
   });
 });
 

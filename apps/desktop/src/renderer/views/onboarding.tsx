@@ -23,9 +23,9 @@
 /*
  * **深路径，不走两个包的 barrel。**
  *
- * `@evowork/ingest` 的 index 会带出 `probe.ts`（`node:child_process` / `node:fs` / `node:os`），
- * `@evowork/policy` 的会带出 `audit.ts`（`node:crypto`）—— 渲染进程是浏览器环境，
- * vite 打包时直接失败。这两个文件本身是纯的（一份常量表、一组文案），深路径拿它们没有代价。
+ * `@evowork/ingest` 的 index 会带出 `probe.ts`（`node:child_process` / `node:fs` / `node:os`）
+ * —— 渲染进程是浏览器环境，vite 打包时直接失败。这个文件本身是纯的（一份常量表），
+ * 深路径拿它没有代价。
  *
  * 这条在这一页被挂进 `app.tsx` 之前看不见：它从没进过渲染层的 bundle。
  */
@@ -275,4 +275,3 @@ export function blockingReason(props: {
   // 第 ③ 步**不阻塞**（R10）：可跳过是它的设计要求，不是妥协
   return undefined;
 }
-

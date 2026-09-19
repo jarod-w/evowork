@@ -167,11 +167,6 @@ function OnboardingHarness({ over = {} }: { over?: Partial<OnboardingProps> }) {
       step={step}
       onStepChange={setStep}
       workspaces={[]}
-      permissionProfiles={[
-        { id: 'evowork-workspace', allowed: true },
-        { id: 'evowork-ask', allowed: true },
-        { id: 'evowork-full', allowed: true },
-      ]}
       runtimeInstalled={false}
       {...over}
     />
@@ -194,9 +189,9 @@ describe('首运行第 ① 屏：Q3 的对外表达，**措辞不可夸大**', (
   });
 });
 
-describe('五步引导（02 §9）', () => {
-  it('五步齐全，顺序与设计一致', () => {
-    expect(ONBOARDING_STEPS).toEqual(['welcome', 'workspace', 'permissions', 'runtime', 'done']);
+describe('四步引导（02 §9）', () => {
+  it('四步齐全，顺序与设计一致', () => {
+    expect(ONBOARDING_STEPS).toEqual(['welcome', 'workspace', 'runtime', 'done']);
   });
 
   it('**没选工作空间时「下一步」禁用并给原因**（01 §6.3）', () => {
@@ -221,10 +216,13 @@ describe('五步引导（02 §9）', () => {
     expect(screen.queryByText('接入模型')).toBeNull();
   });
 
-  it('权限这一步**不给「完全访问」** —— 它要单独确认且只对当次任务生效', () => {
-    render(<OnboardingHarness over={{ step: 'permissions' }} />);
-    expect(screen.queryByRole('tab', { name: '完全访问' })).toBeNull();
-    expect(screen.getByText(/不在这里设/)).toBeTruthy();
+  it('没有「默认权限」这一步 —— 选了也不会进 turn/start', () => {
+    expect(ONBOARDING_STEPS.includes('permissions' as (typeof ONBOARDING_STEPS)[number])).toBe(
+      false,
+    );
+    render(<OnboardingHarness over={{ step: 'workspace', workspaces: ['/w'] }} />);
+    expect(screen.queryByText('默认权限')).toBeNull();
+    expect(screen.queryByText('完全访问')).toBeNull();
   });
 });
 

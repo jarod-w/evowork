@@ -94,6 +94,7 @@ export const MODE_OPTIONS: readonly SelectOption[] = [
 
 /** Ask 模式固定用的权限档位（D8：只读沙箱 + 不审批 + 过滤写工具）。 */
 export const READ_ONLY_PROFILE = ':read-only';
+/** 完全访问。接通 `send()` 的 permissionId 后，选择器要用这个 id 做二次确认。 */
 export const DANGER_PROFILE = ':danger-full-access';
 
 export interface ComposerProps {
@@ -211,7 +212,6 @@ export function Composer(props: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [dangerPending, setDangerPending] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   /**
@@ -271,16 +271,6 @@ export function Composer(props: ComposerProps) {
   );
 
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, props.value.split('\n').length));
-
-  const permissionOptions = (props.permissions ?? []).map((p) => ({
-    id: p.id,
-    label: p.label,
-    ...(p.description !== undefined ? { description: p.description } : {}),
-    // F4 的 allowed=false：禁用 + 给原因，**不隐藏**
-    ...(p.allowed === false
-      ? { disabled: true, disabledReason: p.disabledReason ?? '已被企业策略锁定' }
-      : {}),
-  }));
 
   return (
     <section className="ew-composer" aria-label="输入区" data-run-state={runState}>
@@ -459,6 +449,10 @@ export function Composer(props: ComposerProps) {
                 {renderIcon('plus')}
               </button>
               <Popover open={addOpen} onClose={() => setAddOpen(false)}>
+                {/*
+                 * 「更多选项 / 权限」暂不进菜单：`bridge.send` 还不传
+                 * permissionId，选了也不会进 turn/start。接上后再加回来。
+                 */}
                 <Menu
                   ariaLabel="添加内容"
                   items={[
@@ -501,12 +495,6 @@ export function Composer(props: ComposerProps) {
                           },
                         ]
                       : []),
-                    {
-                      id: 'advanced',
-                      label: advancedOpen ? '收起更多选项' : '更多选项',
-                      description: '权限与高级执行设置',
-                      group: 'advanced',
-                    },
                   ]}
                   onSelect={(id) => {
                     setAddOpen(false);
@@ -514,7 +502,6 @@ export function Composer(props: ComposerProps) {
                     if (id === 'library') props.onOpenLibrary?.();
                     if (id === 'use-plugins') props.onOpenPlugins?.();
                     if (id === 'manage-plugins') props.onManagePlugins?.();
-                    if (id === 'advanced') setAdvancedOpen((value) => !value);
                   }}
                 />
               </Popover>
@@ -576,27 +563,6 @@ export function Composer(props: ComposerProps) {
             />
           </div>
         </div>
-
-        {advancedOpen ? (
-          <div className="ew-composer-footer" aria-label="更多选项">
-            <InlineSelect
-              ariaLabel="权限"
-              icon={renderIcon('shield')}
-              placeholder="默认权限"
-              value={props.permissionId}
-              options={permissionOptions}
-              disabled={mode === 'ask'}
-              disabledReason="Ask 模式固定为只读"
-              overridden={props.overrides?.permission}
-              onResetOverride={() => props.onResetOverride?.('permission')}
-              onChange={(id) => {
-                // 10 §2：完全访问必须过一次二次确认，且**只对当前任务生效**
-                if (id === DANGER_PROFILE) setDangerPending(id);
-                else props.onPermissionChange?.(id);
-              }}
-            />
-          </div>
-        ) : null}
       </div>
 
       {/* 04 §5.5：两者的差别必须在 UI 上说清，不能只靠开关名字 */}
@@ -609,28 +575,6 @@ export function Composer(props: ComposerProps) {
           />
           立即插话
         </label>
-      ) : null}
-
-      {dangerPending ? (
-        <div className="ew-danger-confirm" role="alertdialog" aria-label="确认使用完全访问">
-          <p className="ew-danger-confirm-title">完全访问意味着什么</p>
-          <ul className="ew-danger-confirm-list">
-            <li>可读写这台电脑上的任意文件，不限于工作空间</li>
-            <li>可访问网络，不受域名白名单限制</li>
-            <li>命令不再逐条向你确认</li>
-          </ul>
-          <p className="ew-danger-confirm-scope">仅对当前任务生效，不改变全局默认。</p>
-          <PillButton onClick={() => setDangerPending(null)}>取消</PillButton>
-          <PillButton
-            variant="accent"
-            onClick={() => {
-              props.onPermissionChange?.(dangerPending);
-              setDangerPending(null);
-            }}
-          >
-            我明白，仍然使用
-          </PillButton>
-        </div>
       ) : null}
     </section>
   );
