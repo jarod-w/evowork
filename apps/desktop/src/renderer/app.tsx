@@ -43,6 +43,7 @@ import type {
   ModelOptionView,
   ModelUnavailableReason,
   OpenTaskResult,
+  PickAttachmentsInput,
   ProjectDetailView,
   ProjectMutationResult,
   PreferencesInput,
@@ -124,7 +125,7 @@ export interface EvoworkBridge {
   readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
   readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
   getComposerContext?(input: { workspaceId?: string }): Promise<ComposerContextView>;
-  pickAttachments?(input: { workspaceId?: string }): Promise<readonly ComposerAttachmentView[]>;
+  pickAttachments?(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
   /**
@@ -439,6 +440,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }, TOAST_AUTO_DISMISS_MS);
     }
   }, []);
+  const reportFailure = useCallback(
+    (error: unknown, fallback: string): void => {
+      pushToast({ tone: 'danger', text: actionErrorText(error, fallback) });
+    },
+    [pushToast],
+  );
 
   useEffect(() => {
     const offs = [
@@ -825,16 +832,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       };
     });
     if (!shouldAutoOpenResult(itemsByTask[activeTaskId] ?? []) || !bridge.readResultPreview) return;
-    void bridge.readResultPreview({ artifactId: latest.id }).then((preview) => {
-      setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
-      setResultUi((previous) => ({
-        ...previous,
-        [activeTaskId]: {
-          open: true,
-          tab: preview.kind === 'html' ? 'browser' : (previous[activeTaskId]?.tab ?? 'artifacts'),
-        },
-      }));
-    });
+    void bridge
+      .readResultPreview({ artifactId: latest.id })
+      .then((preview) => {
+        setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
+        setResultUi((previous) => ({
+          ...previous,
+          [activeTaskId]: {
+            open: true,
+            tab: preview.kind === 'html' ? 'browser' : (previous[activeTaskId]?.tab ?? 'artifacts'),
+          },
+        }));
+      })
+      .catch(() => undefined);
   }, [activeTaskId, bridge, itemsByTask, resultDismissed, taskResults]);
 
   /**
@@ -953,17 +963,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       void bridge
         .createProject(input)
         .then(applyMutation)
-        .catch(() => undefined);
+        .catch((error: unknown) => reportFailure(error, '项目没有创建。'));
     },
-    [bridge, applyMutation],
+    [bridge, applyMutation, reportFailure],
   );
 
   const importProject = useCallback(() => {
     void bridge
       .importProject()
       .then(applyMutation)
-      .catch(() => undefined);
-  }, [bridge, applyMutation]);
+      .catch((error: unknown) => reportFailure(error, '项目没有导入。'));
+  }, [bridge, applyMutation, reportFailure]);
 
   const searchTasks = useCallback(
     (query: string) => bridge.searchTasks?.({ query }) ?? Promise.resolve([]),
@@ -975,9 +985,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       void bridge
         .renameProject(input)
         .then(applyMutation)
-        .catch(() => undefined);
+        .catch((error: unknown) => reportFailure(error, '项目没有改名。'));
     },
-    [bridge, applyMutation],
+    [bridge, applyMutation, reportFailure],
   );
 
   const removeProject = useCallback(
@@ -985,16 +995,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       void bridge
         .removeProject({ id })
         .then(applyMutation)
-        .catch(() => undefined);
+        .catch((error: unknown) => reportFailure(error, '项目没有移除。'));
     },
-    [bridge, applyMutation],
+    [bridge, applyMutation, reportFailure],
   );
 
   const openProjectFolder = useCallback(
     (id: string) => {
-      void bridge.openProjectFolder({ id });
+      void bridge
+        .openProjectFolder({ id })
+        .catch((error: unknown) => reportFailure(error, '打不开这个文件夹。'));
     },
-    [bridge],
+    [bridge, reportFailure],
   );
 
   /*
@@ -1008,23 +1020,33 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * （Task 9 那个"点了没反应"的坑）。
    */
   const pickProjectDirectory = useCallback(async () => {
-    const result = await bridge.pickProjectDirectory();
-    if (result.refused) {
-      setProjectRefusal(result.refused);
+    try {
+      const result = await bridge.pickProjectDirectory();
+      if (result.refused) {
+        setProjectRefusal(result.refused);
+        return undefined;
+      }
+      return result.path;
+    } catch (error: unknown) {
+      reportFailure(error, '没能选择目录。');
       return undefined;
     }
-    return result.path;
-  }, [bridge]);
+  }, [bridge, reportFailure]);
 
   /** 技能「从目录安装」复用同一个选择框，拒绝理由要落在目录页，不落到项目页。 */
   const pickCatalogDirectory = useCallback(async () => {
-    const result = await bridge.pickProjectDirectory();
-    if (result.refused) {
-      setCatalogRefusal(result.refused);
+    try {
+      const result = await bridge.pickProjectDirectory();
+      if (result.refused) {
+        setCatalogRefusal(result.refused);
+        return undefined;
+      }
+      return result.path;
+    } catch (error: unknown) {
+      reportFailure(error, '没能选择目录。');
       return undefined;
     }
-    return result.path;
-  }, [bridge]);
+  }, [bridge, reportFailure]);
 
   /**
    * 02 §4.3：跳首页并**预选该工作空间**。
@@ -1067,8 +1089,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 又是 `.then(() => setSaved(true))` 不看结果，两边合起来就是"写失败也显示已保存"。
    *
    * `.catch` 是防御性的第二道：`writeAgentsMemo` 内部已经把 `ports.writeTextFile`
-   * 包了 try/catch，正常不会走到这里，但这个文件里**别的每一个** bridge 调用
-   * 都有自己的 `.catch`（IPC 本身也可能失败），这里不该是唯一的例外。
+   * 包了 try/catch，正常不会走到这里；但 IPC 本身仍可能失败，不接住就是点了没反应。
    */
   const saveProjectMemo = useCallback(
     (content: string): Promise<WriteAgentsMemoResult> => {
@@ -1196,6 +1217,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [pushToast],
   );
+  const emptyCatalogView = useMemo(
+    (): CatalogDataView => ({ skills: [], connectors: [], experts: [], apps: [] }),
+    [],
+  );
+  const runCatalogMutation = useCallback(
+    async (run: () => Promise<CatalogMutationResult>): Promise<CatalogMutationResult> => {
+      try {
+        return applyCatalogResult(await run());
+      } catch (error: unknown) {
+        return applyCatalogResult({
+          ok: false,
+          refused: actionErrorText(error, '插件操作没有完成。'),
+          catalog: catalog ?? emptyCatalogView,
+        });
+      }
+    },
+    [applyCatalogResult, catalog, emptyCatalogView],
+  );
 
   const scenarios: readonly Scenario[] = useMemo(
     () =>
@@ -1283,23 +1322,40 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     (id: string) => {
       if (bridge.readResultPreview)
         void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
-      else void bridge.openResultFile({ artifactId: id });
+      else
+        void bridge
+          .openResultFile({ artifactId: id })
+          .catch((error: unknown) => reportFailure(error, '打不开这个产物。'));
     },
-    [bridge, showPreview],
+    [bridge, reportFailure, showPreview],
   );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
       runState: (running ? 'running' : 'idle') as 'running' | 'idle',
       onInterrupt: () => {
-        if (activeTaskId) void bridge.interrupt(activeTaskId);
+        if (!activeTaskId) return;
+        void bridge
+          .interrupt(activeTaskId)
+          .catch((error: unknown) => reportFailure(error, '没能停下。'));
       },
       attachments: attachments as readonly Attachment[],
       onAttach: bridge.pickAttachments
         ? () => {
+            /*
+             * 失败必须说出来。以前 `void` 掉 rejection，未选项目时主进程抛错、
+             * 选择器根本打不开，表现就是「点了添加本地文件没反应」。
+             */
             void bridge
-              .pickAttachments?.({ ...(workspaceId ? { workspaceId } : {}) })
-              .then((picked) => setAttachments((previous) => [...previous, ...picked]));
+              .pickAttachments?.({
+                ...(workspaceId ? { workspaceId } : {}),
+                ...(activeTaskId ? { threadId: activeTaskId } : {}),
+              })
+              .then((picked) => {
+                if (picked.length === 0) return;
+                setAttachments((previous) => [...previous, ...picked]);
+              })
+              .catch((error: unknown) => reportFailure(error, '没能添加本地文件。'));
           }
         : undefined,
       onRemoveAttachment: (id: string) =>
@@ -1347,13 +1403,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       queued: activeTaskId ? (queuedByTask[activeTaskId] ?? []) : [],
       onQueueRemove: (id: string) => {
         if (!activeTaskId || !bridge.removeQueuedInput) return;
-        void bridge.removeQueuedInput({ threadId: activeTaskId, id }).then((removed) => {
-          if (removed)
-            setQueuedByTask((previous) => ({
-              ...previous,
-              [activeTaskId]: (previous[activeTaskId] ?? []).filter((item) => item.id !== id),
-            }));
-        });
+        void bridge
+          .removeQueuedInput({ threadId: activeTaskId, id })
+          .then((removed) => {
+            if (removed)
+              setQueuedByTask((previous) => ({
+                ...previous,
+                [activeTaskId]: (previous[activeTaskId] ?? []).filter((item) => item.id !== id),
+              }));
+          })
+          .catch((error: unknown) => reportFailure(error, '没能从队列里移除。'));
       },
       steer,
       onSteerChange: setSteer,
@@ -1434,6 +1493,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       queuedByTask,
       steer,
       workspaceId,
+      reportFailure,
     ],
   );
 
@@ -1471,18 +1531,26 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
            * 「下一步」永远是灰的 —— 整个应用打不开（2026-09-06 实测撞到）。
            */
           onPickWorkspace={() => {
-            void bridge.pickWorkspace().then((r) => {
-              if (r.path) {
-                setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
-                return;
-              }
-              /*
-               * 只有"被拒"才提示，取消不提示（`r.refused` 是 undefined 时什么都不做）——
-               * 这正是本条修复要的区分：拒绝要如实说，取消不需要多此一举打扰用户。
-               */
-              if (r.refused)
-                setNotices((prev) => [...prev, { tone: 'warning', text: r.refused as string }]);
-            });
+            void bridge
+              .pickWorkspace()
+              .then((r) => {
+                if (r.path) {
+                  setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
+                  return;
+                }
+                /*
+                 * 只有"被拒"才提示，取消不提示（`r.refused` 是 undefined 时什么都不做）——
+                 * 这正是本条修复要的区分：拒绝要如实说，取消不需要多此一举打扰用户。
+                 */
+                if (r.refused)
+                  setNotices((prev) => [...prev, { tone: 'warning', text: r.refused as string }]);
+              })
+              .catch((error: unknown) => {
+                setNotices((prev) => [
+                  ...prev,
+                  { tone: 'danger', text: actionErrorText(error, '没能选择目录。') },
+                ]);
+              });
           }}
           /*
            * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，
@@ -1499,9 +1567,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onInstallRuntime={() => void installRuntime()}
           onSkipRuntime={() => setOnboardingStep('done')}
           onFinish={() => {
-            void bridge.completeOnboarding().then(() => {
-              setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
-            });
+            void bridge
+              .completeOnboarding()
+              .then(() => {
+                setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
+              })
+              .catch((error: unknown) => {
+                setNotices((prev) => [
+                  ...prev,
+                  { tone: 'danger', text: actionErrorText(error, '没能完成引导。') },
+                ]);
+              });
           }}
         />
       </div>
@@ -1565,10 +1641,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             }
           }}
           onRowAction={(action, id) => {
-            void bridge.rowAction({ action, threadId: id }).then(() => {
-              setTasks((previous) => previous.filter((task) => task.id !== id));
-              if (activeTaskId === id) setActiveTaskId(null);
-            });
+            void bridge
+              .rowAction({ action, threadId: id })
+              .then(() => {
+                setTasks((previous) => previous.filter((task) => task.id !== id));
+                if (activeTaskId === id) setActiveTaskId(null);
+              })
+              .catch((error: unknown) =>
+                reportFailure(
+                  error,
+                  action === 'delete' ? '没能删除这个任务。' : '没能归档这个任务。',
+                ),
+              );
           }}
           /*
            * 改名先落到本地列表再发请求：内核会回一条 `thread/name/updated`，
@@ -1579,7 +1663,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setTasks((previous) =>
               previous.map((task) => (task.id === id ? { ...task, title: name } : task)),
             );
-            void bridge.renameTask?.({ threadId: id, name });
+            void bridge
+              .renameTask?.({ threadId: id, name })
+              .catch((error: unknown) => reportFailure(error, '没能改名。'));
           }}
           onVisibleChange={(ids) => void bridge.refreshVisible(ids)}
           onToggleCollapse={() => setSidebarCollapsed(true)}
@@ -1606,19 +1692,28 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {...(settingsRefusal !== undefined ? { settingsRefusal } : {})}
           {...(probeResult !== undefined ? { probeResult } : {})}
           onModelAccessAction={(run) => {
-            void run(bridge).then((result) => {
-              applyAccessView(result.view);
-              // 拒绝的原话要显示出来；成功时把上一次的拒绝清掉
-              setSettingsRefusal(result.refused);
-            });
+            void run(bridge)
+              .then((result) => {
+                applyAccessView(result.view);
+                // 拒绝的原话要显示出来；成功时把上一次的拒绝清掉
+                setSettingsRefusal(result.refused);
+              })
+              .catch((error: unknown) => reportFailure(error, '设置没有保存。'));
           }}
           onTestCustomModel={(input) => bridge.testCustomModel(input)}
-          onOpenModelsFolder={() => void bridge.openModelsFolder()}
+          onOpenModelsFolder={() =>
+            void bridge
+              .openModelsFolder()
+              .catch((error: unknown) => reportFailure(error, '打不开模型配置目录。'))
+          }
           onOpenProviderDocs={(provider) => {
-            void bridge.openProviderDocs({ provider }).then((result) => {
-              // 打不开就把原因显示出来，不做成一个点了没反应的链接
-              if (!result.ok) setSettingsRefusal(result.refused);
-            });
+            void bridge
+              .openProviderDocs({ provider })
+              .then((result) => {
+                // 打不开就把原因显示出来，不做成一个点了没反应的链接
+                if (!result.ok) setSettingsRefusal(result.refused);
+              })
+              .catch((error: unknown) => reportFailure(error, '打不开外部文档。'));
           }}
           onProbe={(modelId) => {
             setProbeResult('正在检查…（会向上游发一次极小的请求）');
@@ -1628,23 +1723,35 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .catch(() => setProbeResult('检查没跑起来。'));
           }}
           onPreferences={(input) => {
-            void bridge.setPreferences(input).then(setPreferences);
+            void bridge
+              .setPreferences(input)
+              .then(setPreferences)
+              .catch((error: unknown) => reportFailure(error, '偏好没有保存。'));
           }}
           onLogin={() => {
-            void bridge.startLogin().then((result) => {
-              if (!result.ok) setSettingsRefusal(result.refused);
-              else setSettingsRefusal(undefined);
-              void bridge.getModelAccess().then((r) => {
-                applyAccessView(r.view);
-              });
-            });
+            void bridge
+              .startLogin()
+              .then((result) => {
+                if (!result.ok) setSettingsRefusal(result.refused);
+                else setSettingsRefusal(undefined);
+                void bridge
+                  .getModelAccess()
+                  .then((r) => {
+                    applyAccessView(r.view);
+                  })
+                  .catch((error: unknown) => reportFailure(error, '没能刷新账号状态。'));
+              })
+              .catch((error: unknown) => reportFailure(error, '没能开始登录。'));
           }}
           onLogout={() => {
-            void bridge.logout().then(() =>
-              bridge.getModelAccess().then((r) => {
-                applyAccessView(r.view);
-              }),
-            );
+            void bridge
+              .logout()
+              .then(() =>
+                bridge.getModelAccess().then((r) => {
+                  applyAccessView(r.view);
+                }),
+              )
+              .catch((error: unknown) => reportFailure(error, '没能退出登录。'));
           }}
           onRevokeDevice={(deviceId) => {
             void bridge
@@ -1653,10 +1760,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 bridge
                   .listDevices()
                   .then(() => bridge.getModelAccess().then((r) => setModelAccess(r.view))),
-              );
+              )
+              .catch((error: unknown) => reportFailure(error, '没能吊销这台设备。'));
           }}
           onOpenAccountWeb={(path) => {
-            void bridge.openAccountWeb({ path });
+            void bridge
+              .openAccountWeb({ path })
+              .then((result) => {
+                if (!result.ok)
+                  pushToast({
+                    tone: 'danger',
+                    text: result.refused ?? '打不开账号页。',
+                  });
+              })
+              .catch((error: unknown) => reportFailure(error, '打不开账号页。'));
           }}
           library={library}
           libraryInitialNav={libraryInitialNav}
@@ -1666,36 +1783,62 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             .map((workspace) => ({ id: workspace.path as string, label: workspace.name }))}
           onSaveAutomation={async (input) => {
             if (!bridge.saveAutomation) return false;
-            const result = await bridge.saveAutomation(input);
-            setAutomations(result.data);
-            pushToast({
-              tone: result.ok ? 'success' : 'danger',
-              text: result.ok ? '自动化已保存。' : (result.refused ?? '自动化没有保存。'),
-            });
-            return result.ok;
+            try {
+              const result = await bridge.saveAutomation(input);
+              setAutomations(result.data);
+              pushToast({
+                tone: result.ok ? 'success' : 'danger',
+                text: result.ok ? '自动化已保存。' : (result.refused ?? '自动化没有保存。'),
+              });
+              return result.ok;
+            } catch (error: unknown) {
+              reportFailure(error, '自动化没有保存。');
+              return false;
+            }
           }}
           onAutomationStatus={async (id, status) => {
             if (!bridge.setAutomationStatus) return;
-            const result = await bridge.setAutomationStatus({ id, status });
-            setAutomations(result.data);
+            try {
+              const result = await bridge.setAutomationStatus({ id, status });
+              setAutomations(result.data);
+              if (!result.ok)
+                pushToast({
+                  tone: 'danger',
+                  text: result.refused ?? '自动化状态没有更新。',
+                });
+            } catch (error: unknown) {
+              reportFailure(error, '自动化状态没有更新。');
+            }
           }}
           onMigrateAutomation={async (id) => {
             if (!bridge.migrateAutomation) return;
-            const result = await bridge.migrateAutomation({ id });
-            setAutomations(result.data);
+            try {
+              const result = await bridge.migrateAutomation({ id });
+              setAutomations(result.data);
+              pushToast({
+                tone: result.ok ? 'success' : 'danger',
+                text: result.ok ? '已迁移到本机。' : (result.refused ?? '没能迁移。'),
+              });
+            } catch (error: unknown) {
+              reportFailure(error, '没能迁移。');
+            }
           }}
           onRunAutomation={async (id, test) => {
             if (!bridge.runAutomation) return;
-            const result = await bridge.runAutomation({ id, test });
-            setAutomations(result.data);
-            pushToast({
-              tone: result.ok ? 'success' : 'danger',
-              text: result.ok
-                ? test
-                  ? '试跑已开始。'
-                  : '已立即运行。'
-                : (result.refused ?? '没能启动。'),
-            });
+            try {
+              const result = await bridge.runAutomation({ id, test });
+              setAutomations(result.data);
+              pushToast({
+                tone: result.ok ? 'success' : 'danger',
+                text: result.ok
+                  ? test
+                    ? '试跑已开始。'
+                    : '已立即运行。'
+                  : (result.refused ?? '没能启动。'),
+              });
+            } catch (error: unknown) {
+              reportFailure(error, '没能启动。');
+            }
           }}
           audit={audit}
           projects={projects}
@@ -1744,13 +1887,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           catalogTab={catalogTab}
           onCatalogTab={setCatalogTab}
           {...(catalogRefusal !== undefined ? { catalogRefusal } : {})}
-          onInstallSkill={async (input) => applyCatalogResult(await bridge.installSkill(input))}
-          onUninstallSkill={async (id) => applyCatalogResult(await bridge.uninstallSkill({ id }))}
-          onAddConnector={async (input) => applyCatalogResult(await bridge.addConnector(input))}
-          onTrustConnector={async (id) => applyCatalogResult(await bridge.trustConnector({ id }))}
-          onRemoveConnector={async (id) => applyCatalogResult(await bridge.removeConnector({ id }))}
-          onCreateExpert={async (input) => applyCatalogResult(await bridge.createExpert(input))}
-          onRemoveExpert={async (id) => applyCatalogResult(await bridge.removeExpert({ id }))}
+          onInstallSkill={async (input) => runCatalogMutation(() => bridge.installSkill(input))}
+          onUninstallSkill={async (id) => runCatalogMutation(() => bridge.uninstallSkill({ id }))}
+          onAddConnector={async (input) => runCatalogMutation(() => bridge.addConnector(input))}
+          onTrustConnector={async (id) => runCatalogMutation(() => bridge.trustConnector({ id }))}
+          onRemoveConnector={async (id) => runCatalogMutation(() => bridge.removeConnector({ id }))}
+          onCreateExpert={async (input) => runCatalogMutation(() => bridge.createExpert(input))}
+          onRemoveExpert={async (id) => runCatalogMutation(() => bridge.removeExpert({ id }))}
           onUsePrompt={prepareTaskWithText}
           onWriteSkill={() => prepareTaskWithText(SKILL_CREATOR_PROMPT)}
         />
@@ -1786,7 +1929,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           status={active?.status ?? 'idle'}
           items={currentItems}
           pendingApprovals={approvals}
-          onDecide={(id, decision) => void bridge.decideApproval({ id, decision })}
+          onDecide={(id, decision) =>
+            void bridge
+              .decideApproval({ id, decision })
+              .catch((error: unknown) => reportFailure(error, '没能提交这项审批。'))
+          }
           itemContext={{
             reasoningAvailable: true,
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
@@ -2165,6 +2312,14 @@ function UnbuiltPage({ view }: { readonly view: MainView }) {
       </div>
     </div>
   );
+}
+
+/**
+ * 用户点了之后 IPC 失败时要说出来的那句话。
+ * 空 message 或非 Error 时用 fallback，避免 Toast 里出现空白或 `[object Object]`。
+ */
+export function actionErrorText(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim() !== '' ? error.message : fallback;
 }
 
 /** 流式增量按 id 合并（04 §5.1）。导出是为了单独测"同 id 覆盖、新 id 追加"。 */

@@ -83,6 +83,7 @@ import type {
   DeviceView,
   OpenTaskInput,
   OpenTaskResult,
+  PickAttachmentsInput,
   PreferencesInput,
   PreferencesView,
   PolicyPackStatusView,
@@ -947,9 +948,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
         : { ok: false, message: '这个版本不能测试连接。' };
     },
 
-    /** 设置页那一行「models.toml」的链接。没有注入 `openPath` 时什么都不做（M9 之前） */
+    /** 设置页那一行「models.toml」的链接。没接打开能力时要说出来，不能点了没反应。 */
     async openModelsFolder(): Promise<void> {
-      await options.modelAccessPorts?.openModelsFolder();
+      if (!options.modelAccessPorts) throw new Error('这个版本不能打开模型配置目录。');
+      await options.modelAccessPorts.openModelsFolder();
     },
 
     async openProviderDocs(input: { readonly provider: string }): Promise<AccountActionResult> {
@@ -1198,10 +1200,19 @@ export function createRendererActions(options: RendererBridgeOptions) {
       };
     },
 
-    async pickAttachments(input: {
-      readonly workspaceId?: string | undefined;
-    }): Promise<readonly ComposerAttachmentView[]> {
-      const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+    async pickAttachments(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]> {
+      /*
+       * 落盘根必须是这次任务能读到的目录（08 §3.5：uploads/ 在工作空间内，
+       * 沙箱才放行）。选了项目用项目根；没选则用当前任务已经在跑的 cwd。
+       * 两者都没有才拒绝 —— 不能静默写到别处，agent 读不到等于没附上。
+       */
+      const fromProject = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      const fromTask = input.threadId
+        ? (store.threads.get(input.threadId)?.cwd ?? undefined)
+        : undefined;
+      const root =
+        fromProject ??
+        (typeof fromTask === 'string' && fromTask.trim() !== '' ? fromTask : undefined);
       if (!root) throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');
       if (!options.attachmentPorts) throw new Error('这个构建没有接本地附件选择器。');
       return options.attachmentPorts.pick(root);
@@ -1586,8 +1597,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
     async openProjectFolder(input: { readonly id: string }): Promise<void> {
       const ports = options.projectPorts;
+      if (!ports) throw new Error(NO_PORTS);
       const root = rootOf(input.id);
-      if (!ports || root === undefined) return;
+      if (root === undefined) throw new Error('找不到这个项目的文件夹。');
       await ports.openFolder(root);
     },
 

@@ -377,6 +377,37 @@ describe('全局快捷键与侧栏折叠', () => {
     await waitFor(() => expect(screen.queryByText('待删除任务')).toBeNull());
   });
 
+  it('删除任务失败时任务还在，并把原因说出来', async () => {
+    const rowAction = vi.fn(async () => {
+      throw new Error('内核拒绝删除。');
+    });
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 'delete-me',
+            title: '待删除任务',
+            status: 'completed' as const,
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      rowAction,
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText('待删除任务');
+    fireEvent.click(screen.getByLabelText('待删除任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除任务' }));
+
+    expect(await screen.findByText('内核拒绝删除。')).toBeTruthy();
+    expect(screen.getByText('待删除任务')).toBeTruthy();
+  });
+
   it('⌘K 打开搜索，⌘⇧O 回到新任务，⌘\\ 可折叠并恢复侧栏', async () => {
     const { bridge, emit } = fakeBridge();
     render(<App bridge={bridge} />);
@@ -1078,6 +1109,82 @@ describe('侧边栏的六个入口都要有落点', () => {
     expect(screen.queryByRole('dialog', { name: '使用插件' })).toBeNull();
   });
 
+  it('已有任务未选项目时，添加本地文件仍打开选择器', async () => {
+    const pickAttachments = vi.fn(async () => [
+      {
+        id: 'a1',
+        name: '周报.docx',
+        kind: 'document' as const,
+        sizeLabel: '12 KB',
+        state: 'ready' as const,
+        references: [
+          { type: 'mention' as const, name: '周报.docx', path: '/w/uploads/x/周报.docx' },
+        ],
+      },
+    ]);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 't1',
+            title: 'hello. 介绍一下自己',
+            status: 'completed' as const,
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+            cwd: '/Users/x/default',
+          },
+        ],
+      }),
+      pickAttachments,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('hello. 介绍一下自己'));
+    fireEvent.click(await screen.findByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /添加本地文件/ }));
+    await waitFor(() => expect(pickAttachments).toHaveBeenCalledWith({ threadId: 't1' }));
+    expect(await screen.findByText('周报.docx')).toBeTruthy();
+  });
+
+  it('首页未选项目就添加本地文件时说明原因，不静默没反应', async () => {
+    const pickAttachments = vi.fn(async () => {
+      throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');
+    });
+    const { bridge } = fakeBridge({ pickAttachments });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /添加本地文件/ }));
+    expect(await screen.findByText(/先选择一个项目/)).toBeTruthy();
+  });
+
+  it('中断失败时说明原因，不让停止按钮变成没反应', async () => {
+    const interrupt = vi.fn(async () => {
+      throw new Error('内核没有响应。');
+    });
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 't-run',
+            title: '正在跑',
+            status: 'running' as const,
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      interrupt,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('正在跑'));
+    fireEvent.click(await screen.findByRole('button', { name: '中断' }));
+    await waitFor(() => expect(interrupt).toHaveBeenCalledWith('t-run'));
+    expect(await screen.findByText('内核没有响应。')).toBeTruthy();
+  });
+
   /*
    * 「助理」2026-09-07 下架（02 §4.2 标注，方案保留）。
    *
@@ -1571,6 +1678,22 @@ describe('项目页接线（Task 13）', () => {
     await screen.findByText('~/w/q3', { selector: 'p' });
     fireEvent.click(screen.getByText('打开文件夹'));
     await waitFor(() => expect(openProjectFolder).toHaveBeenCalledWith({ id: 'p1' }));
+  });
+
+  it('打开文件夹失败时说明原因，不静默没反应', async () => {
+    const openProjectFolder = vi.fn(async () => {
+      throw new Error('找不到这个项目的文件夹。');
+    });
+    const { bridge } = fakeBridge({
+      listProjects: async () => ({ projects: [PROJECT_CARD] }),
+      openProjectFolder,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('项目'));
+    await screen.findByText('季度汇报');
+    fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
+    fireEvent.click(screen.getByText('打开所在文件夹'));
+    expect(await screen.findByText('找不到这个项目的文件夹。')).toBeTruthy();
   });
 
   it('详情页展开目录懒加载子项；刷新按钮重拉根目录', async () => {

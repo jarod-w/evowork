@@ -239,6 +239,18 @@ export interface SendInput {
   readonly steer?: boolean | undefined;
 }
 
+/**
+ * 选择本机附件。渲染层只传 id，落盘根目录由主进程翻译。
+ *
+ * 未选项目时不能直接抛掉：任务已经在某个 cwd 里跑（内核默认目录或上次
+ * 选过的项目），附件必须落到**那个**目录的 `uploads/`，agent 才能读到。
+ * 首页还没有任务、也没选项目时才拒绝，并且要把原因送回渲染层。
+ */
+export interface PickAttachmentsInput {
+  readonly workspaceId?: string | undefined;
+  readonly threadId?: string | undefined;
+}
+
 export type ComposerReferenceView =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'mention'; readonly name: string; readonly path: string }

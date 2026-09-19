@@ -1004,7 +1004,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         }
       },
       openFolder: async (path) => {
-        await options.openPath?.(path);
+        if (!options.openPath) throw new Error('这个版本不能打开文件夹。');
+        await options.openPath(path);
       },
       readTextFile: async (path) => {
         try {
@@ -1150,7 +1151,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         modelAccess.testCustomModel(input),
       /** 在访达 / 资源管理器里打开 `models.toml` 所在的目录（设置页那一行的链接） */
       openModelsFolder: async (): Promise<void> => {
-        await options.openPath?.(dirname(options.paths.modelsFile));
+        if (!options.openPath) throw new Error('这个版本不能打开模型配置目录。');
+        await options.openPath(dirname(options.paths.modelsFile));
       },
       /** 「查看文档」。URL 白名单在 `model-access.ts`，渲染层只说 provider id */
       openProviderDocs: async (provider: string): Promise<AccountActionResult> => {

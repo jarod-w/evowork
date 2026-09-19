@@ -80,7 +80,7 @@ export interface ElectronApi {
    * 在访达 / 资源管理器里打开一个目录（「项目」页的「打开文件夹」，清单 §4.5）。
    *
    * 同样只有主进程能调 `shell.openPath`，所以走同一条注入路径。没有它时
-   * `openProjectFolder` 静默什么都不做 —— 见 `service-host.ts` 的 `openPath` 选项。
+   * `openProjectFolder` 必须把原因送回渲染层，不能静默成功。
    */
   readonly openPath?: ((path: string) => Promise<string>) | undefined;
   /** 系统浏览器。PKCE 登录与「打开管理端」都走这里，渲染进程自己不能出网 */
@@ -217,7 +217,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     ...(electron.openPath
       ? {
           openPath: async (path: string): Promise<void> => {
-            await electron.openPath?.(path);
+            /*
+             * `shell.openPath` 失败时**不抛**，而是 resolve 成一句错误。
+             * 丢掉这句话，访达打不开时上层全是成功路径，表现又是「点了没反应」。
+             */
+            const error = await electron.openPath?.(path);
+            if (error) throw new Error(error);
           },
         }
       : {}),

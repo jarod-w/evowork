@@ -239,6 +239,14 @@ describe('添加内容菜单', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /管理插件/ }));
     expect(onManagePlugins).toHaveBeenCalled();
   });
+
+  it('点「添加本地文件」调用 onAttach', () => {
+    const onAttach = vi.fn();
+    renderComposer({ onAttach });
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /添加本地文件/ }));
+    expect(onAttach).toHaveBeenCalled();
+  });
 });
 
 describe('发送按钮的五个态（03 §4.6）', () => {

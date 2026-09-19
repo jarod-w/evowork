@@ -168,6 +168,71 @@ describe('任务产物结果', () => {
   });
 });
 
+describe('添加本地文件', () => {
+  it('未选项目时用当前任务的 cwd，不把选择器拦在打开之前', async () => {
+    const store = memoryStore();
+    store.db
+      .prepare(
+        `INSERT INTO thread_projection (thread_id, derived_status, cwd) VALUES (?, 'idle', ?)`,
+      )
+      .run('t1', '/w/task');
+    const pick = vi.fn(async (root: string) => {
+      expect(root).toBe('/w/task');
+      return [];
+    });
+    const actions = makeActions({ store, attachmentPorts: { pick } });
+
+    await expect(actions.pickAttachments({ threadId: 't1' })).resolves.toEqual([]);
+    expect(pick).toHaveBeenCalledWith('/w/task');
+  });
+
+  it('选了项目时用项目根，不改去任务 cwd', async () => {
+    const store = memoryStore();
+    store.db
+      .prepare(
+        `INSERT INTO thread_projection (thread_id, derived_status, cwd) VALUES (?, 'idle', ?)`,
+      )
+      .run('t1', '/w/task');
+    const pick = vi.fn(async () => []);
+    const actions = makeActions({
+      store,
+      attachmentPorts: { pick },
+      projectPorts: ports(),
+    });
+    const created = await actions.createProject({ name: '季度汇报', path: '/w/project' });
+    const projectId = created.projects[0]?.id ?? '';
+
+    await actions.pickAttachments({ workspaceId: projectId, threadId: 't1' });
+    expect(pick).toHaveBeenCalledWith('/w/project');
+  });
+
+  it('首页既没有项目也没有任务时拒绝，好让界面把原因说出来', async () => {
+    const pick = vi.fn(async () => []);
+    const actions = makeActions({ attachmentPorts: { pick } });
+    await expect(actions.pickAttachments({})).rejects.toThrow(/先选择一个项目/);
+    expect(pick).not.toHaveBeenCalled();
+  });
+});
+
+describe('打开文件夹不能假装成功', () => {
+  it('找不到项目根时拒绝，好让界面把原因说出来', async () => {
+    const actions = makeActions({ projectPorts: ports() });
+    await expect(actions.openProjectFolder({ id: 'missing' })).rejects.toThrow(
+      /找不到这个项目的文件夹/,
+    );
+  });
+
+  it('这个构建没接文件系统时也要说出来，不能点了没反应', async () => {
+    const actions = makeActions();
+    await expect(actions.openProjectFolder({ id: 'p1' })).rejects.toThrow(/项目功能不可用/);
+  });
+
+  it('打开模型配置目录没接能力时拒绝', async () => {
+    const actions = makeActions();
+    await expect(actions.openModelsFolder()).rejects.toThrow(/不能打开模型配置目录/);
+  });
+});
+
 describe('事件翻译：适配层的任务视角 → 渲染层的组件视角', () => {
   it('task-created 带上整行数据 —— 渲染层拿不到 store，自己补不出这一行', () => {
     const translate = createEventTranslator(

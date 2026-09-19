@@ -79,8 +79,12 @@ bootstrap({
     },
     createWindow: (options) => new BrowserWindow(options),
     ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
-    // 首运行第②步的目录选择框。**只有主进程能开系统对话框**
-    showOpenDialog: (options) => dialog.showOpenDialog(options),
+    // 首运行第②步 / Composer「添加本地文件」。挂到当前窗口上，否则 macOS
+    // 上无主对话框会落到应用后面，表现同样是「点了没反应」。
+    showOpenDialog: (options) => {
+      const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options);
+    },
     // 「项目」页的「打开文件夹」（清单 §4.5）。同样只有主进程能调 shell
     openPath: (path) => shell.openPath(path),
     openExternal: (url) => shell.openExternal(url),
