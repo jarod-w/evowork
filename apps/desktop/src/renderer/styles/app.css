@@ -3818,12 +3818,6 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-secondary);
 }
 
-/* 被企业策略停用的模型**留在表里**，划除 + 弱化（11 §4.1：消失的东西无法被排查） */
-.ew-mono[data-denied='true'] {
-  text-decoration: line-through;
-  color: var(--text-tertiary);
-}
-
 /* 用户菜单从左下角向上展开，保持在侧栏宽度内。 */
 .ew-user-menu-anchor .ew-popover {
   top: auto;

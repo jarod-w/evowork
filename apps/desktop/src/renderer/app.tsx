@@ -2096,12 +2096,6 @@ function MainPage(props: {
           appVersion={props.appVersion}
           {...(props.settingsRefusal !== undefined ? { refusal: props.settingsRefusal } : {})}
           {...(props.probeResult !== undefined ? { probeResult: props.probeResult } : {})}
-          onSaveProviderKey={(providerId, apiKey) =>
-            props.onModelAccessAction((b) => b.saveProviderKey({ providerId, apiKey }))
-          }
-          onClearProviderKey={(providerId) =>
-            props.onModelAccessAction((b) => b.clearProviderKey({ providerId }))
-          }
           onAddCustomModel={(input) => props.onModelAccessAction((b) => b.addCustomModel(input))}
           onUpdateCustomModel={(input) =>
             props.onModelAccessAction((b) => b.updateCustomModel(input))

@@ -64,10 +64,11 @@ export const PROVIDER_KEY_FIELDS: readonly {
  *
  * ## 为什么这里不是 01 §5.35 的 `SecretInput`
  *
- * 那个组件是**一家一保存**（每个字段自带「保存」「清除」），设置页用的是它。
+ * 那个组件是**一家一保存**（每个字段自带「保存」「清除」）。
  * 引导这一步是"三家一起填、按下一步一次提交"，换成 SecretInput 会变成
  * 三个独立的保存动作 + 一个还要再按一次的「下一步」—— 首次使用时那是多余的一步。
- * 已保存态、更换、清除这些事在设置页做（那里才有它们的语境）。
+ * 引导里填的这把密钥之后**没有设置页入口可改**（11 §4.4.1，2026-09-19）：
+ * 设置 → 模型只剩「添加模型」。填错了只能重跑引导，或另加一条自定义模型。
  */
 export function ModelAccessFields(props: {
   readonly values: ProviderKeys;
@@ -90,8 +91,8 @@ export function ModelAccessFields(props: {
         </label>
       ))}
       <p className="ew-field-hint">
-        至少填一家。密钥存进这台电脑的<strong>系统钥匙串</strong>，不会上传； 之后在「设置 →
-        模型接入」里可以更换或清除，也可以在那里添加自定义模型。
+        至少填一家。密钥存进这台电脑的<strong>系统钥匙串</strong>，不会上传。之后要再加一家，去「设置
+        → 模型」用「添加模型」。
       </p>
     </div>
   );

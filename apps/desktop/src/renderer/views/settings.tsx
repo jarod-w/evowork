@@ -12,22 +12,20 @@
  *
  * `ModelAccessView` 的类型里就没有密钥字段（见 `shared/ipc.ts`），
  * 所以"设置页会不会泄漏密钥"这个问题在类型层面已经回答了。
- * 这一页只需要把**已保存 · 后四位**这件事呈现得让人看懂。
+ * 这一页只画自定义模型。引导里填过的内置密钥不在这里出现（11 §4.4.1）。
  */
 import { useState } from 'react';
 
 import { renderIcon } from '../components/icons.js';
 import { InlineSelect, Menu, Popover } from '../components/menu.js';
-import { DataTable, PanelNavItem, type Column } from '../components/panels.js';
+import { PanelNavItem } from '../components/panels.js';
 import {
-  Badge,
   Banner,
   Dialog,
   EmptyState,
   IconButton,
   PillButton,
   SectionHeader,
-  SecretInput,
 } from '../components/primitives.js';
 import type {
   CustomModelInput,
@@ -35,7 +33,6 @@ import type {
   CustomModelUpdateInput,
   CustomModelView,
   ModelAccessView,
-  ModelOptionView,
   ModelProbeResult,
   PreferencesView,
 } from '../../shared/ipc.js';
@@ -53,13 +50,6 @@ export const SETTINGS_SECTIONS: readonly {
   { id: 'security', label: '安全与权限' },
   { id: 'about', label: '关于与更新' },
 ];
-
-/** 凭据来源 → 人话（11 §4.2）。**它回答"花谁的钱、数据过谁的境"**，所以要看得懂。 */
-export const CREDENTIAL_LABEL: Readonly<Record<string, string>> = Object.freeze({
-  byok: '你的密钥',
-  hosted: '由管理员配置',
-  private: '私有 endpoint',
-});
 
 /** 密钥存在哪 → 人话（11 §4.3）。明文兜底必须**看起来就是一种降级**。 */
 export const BACKEND_LABEL: Readonly<Record<string, string>> = Object.freeze({
@@ -80,8 +70,6 @@ export interface SettingsPageProps {
   /** 上一次动作被拒绝的原话。**显示出来**，不吞掉 */
   readonly refusal?: string | undefined;
   readonly probeResult?: string | undefined;
-  readonly onSaveProviderKey: (providerId: string, apiKey: string) => void;
-  readonly onClearProviderKey: (providerId: string) => void;
   readonly onAddCustomModel: (input: CustomModelInput) => void;
   /** 改一条已存在的（行内铅笔）。留空的密钥字段 = 不动已存的那把 */
   readonly onUpdateCustomModel: (input: CustomModelUpdateInput) => void;
@@ -226,21 +214,22 @@ function AccountSection({
 /**
  * 「模型」一屏（11 §4.4）。
  *
- * ## 常态下这一页**只有那张自定义模型卡**
+ * ## 这一页**只有那张自定义模型卡**
  *
- * 2026-09-16 按设计附件重做：主区就是「自定义模型」卡 —— 说明文字里带上真实落盘路径、
- * 右上角「添加模型」、每行三个动作（改 · 测连通 · 删）。其余几段
- * （内置厂商密钥 · 四层合并结果 · 密钥存放位置 · 上游形态）**只在它们有话要说时出现**：
+ * 2026-09-19 按设计附件收口：主区就是「自定义模型」卡 —— 说明文字里带上真实落盘路径、
+ * 右上角「添加模型」、每行三个动作（改 · 测连通 · 删）。原先跟在后面的两段
+ * （内置厂商密钥 · 四层合并结果表）**已经删掉**，代价记在 11 §4.4.1：
+ * 引导里填错的内置密钥只能重跑引导，被企业停用的模型在这一页不再列出。
  *
- * | 段 | 什么时候出现 | 为什么不能一直摆着 |
+ * 剩下两行仍是**条件显示**，它们各自只有一行字，且不出现在常态：
+ *
+ * | 行 | 什么时候出现 | 为什么不能一直摆着 |
  * |---|---|---|
- * | 内置厂商密钥 | 那一家**已经存过**密钥（引导里填的） | 一直摆着就是三个空框，而新加模型现在走「添加模型」这一个门 |
- * | 合并结果表 | 有卡片之外的模型（托管默认模型 / 被策略停用的） | 全是自定义模型时它逐行重复卡片 |
  * | 密钥存放位置 | 钥匙串**不可用或已降级成明文** | 正常存在钥匙串里时这一行没有信息量 |
  * | 上游形态 | `mode ≠ local`（云端或私有网关） | 本机模式是常态，说一遍等于没说 |
  *
- * **它们是条件显示，不是删掉**：明文兜底、被企业停用的模型、托管默认模型这三件事
- * 一旦发生就必须看得见（11 §4.1 / §4.3 的「不隐藏」）。删掉的只有"没有内容时的占位"。
+ * 这两行不能跟着一起删：明文兜底**必须看起来就是一种降级**（11 §4.3），
+ * 云端 / 私有网关必须说清「数据过谁的境」。
  */
 function ModelsSection(props: SettingsPageProps) {
   /** `'new'` = 添加；一条 `CustomModelView` = 改那条 */
@@ -248,10 +237,6 @@ function ModelsSection(props: SettingsPageProps) {
   const access = props.access;
   if (!access) return <EmptyState title="正在读取模型状态…" hint="" />;
 
-  const customIds = new Set(access.customModels.map((model) => model.id));
-  // 卡片之外还有哪些模型：托管默认模型、配了密钥的内置三家、被策略停用的
-  const otherModels = access.models.filter((model) => !customIds.has(model.id));
-  const savedProviders = access.providers.filter((provider) => provider.saved);
   // 钥匙串正常时不必解释密钥存哪；明文与不可用**必须**说（11 §4.3）
   const secretsDegraded =
     access.secretBackend === 'plaintext-fallback' || access.secretBackend === 'unavailable';
@@ -380,50 +365,6 @@ function ModelsSection(props: SettingsPageProps) {
         </p>
       )}
 
-      {/*
-       * 内置三家里**已经存过密钥**的那几把（引导第 ④ 步填的）。
-       *
-       * 没存过的不列：新加模型现在走「添加模型」这一个门（附件的形态），
-       * 三个常年空着的框只会让人以为那才是正路。已存的必须留一个入口 ——
-       * 否则引导里填错一把 key 之后，用户在界面上没有任何地方能改它。
-       */}
-      {savedProviders.length === 0 ? null : (
-        <>
-          <SectionHeader title="内置厂商密钥" />
-          <p className="ew-settings-note">这些是引导时填过的。要再加一家，用上面的「添加模型」。</p>
-          {savedProviders.map((provider) => (
-            <SecretInput
-              key={provider.id}
-              label={`${provider.label} API 密钥`}
-              saved={provider.saved}
-              last4={provider.last4}
-              disabled={access.secretBackend === 'unavailable'}
-              onSave={(value) => props.onSaveProviderKey(provider.id, value)}
-              onClear={() => props.onClearProviderKey(provider.id)}
-            />
-          ))}
-        </>
-      )}
-
-      {/*
-       * 卡片之外的模型（托管默认模型 · 内置三家 · 被策略停用的）。
-       * **被停用的那一行要留在表里**（11 §4.1）：消失的东西无法被排查。
-       */}
-      {otherModels.length === 0 ? null : (
-        <>
-          <SectionHeader title="其他可用模型" />
-          {access.signedIn ? null : (
-            <p className="ew-settings-note">
-              登录后可使用管理员配置的默认模型。未登录时不会向我们的云请求目录。
-            </p>
-          )}
-          <DataTable
-            rows={otherModels}
-            columns={modelColumns(props.onProbe)}
-            ariaLabel="可用模型"
-          />
-        </>
-      )}
       {props.probeResult !== undefined ? <Banner tone="info">{props.probeResult}</Banner> : null}
 
       {editing !== undefined ? (
@@ -451,53 +392,6 @@ const MODE_LABEL: Readonly<Record<string, string>> = Object.freeze({
   hosted: '默认模型来自 EvoWork 云端',
   private: '默认模型来自你所在组织的私有网关',
 });
-
-/**
- * 模型表的列。
- *
- * **被停用的那一行仍然在表里**（11 §4.1），显示成划除 + 原因；
- * 隐藏它会让用户去问客服"我明明配了密钥为什么没有"。
- */
-function modelColumns(onProbe: (id: string) => void): readonly Column<ModelOptionView>[] {
-  return [
-    {
-      id: 'label',
-      header: '模型',
-      render: (row) => (
-        <span className="ew-mono" data-denied={row.denied ? 'true' : undefined}>
-          {row.label}
-        </span>
-      ),
-    },
-    {
-      id: 'credential',
-      header: '凭据',
-      render: (row) => (
-        <Badge variant={row.credentialSource === 'byok' ? 'neutral' : 'info'}>
-          {CREDENTIAL_LABEL[row.credentialSource] ?? row.credentialSource}
-        </Badge>
-      ),
-    },
-    {
-      id: 'verified',
-      header: '能力实测',
-      // 自定义模型的能力位是用户手填的声明 —— **不能显示成我们验过了**
-      render: (row) => (row.verified ? '已实测' : '未实测（手填）'),
-    },
-    {
-      id: 'state',
-      header: '状态',
-      render: (row) =>
-        row.denied !== undefined ? (
-          <Badge variant="danger">{row.denied}</Badge>
-        ) : (
-          <PillButton variant="ghost" onClick={() => onProbe(row.id)}>
-            检查
-          </PillButton>
-        ),
-    },
-  ];
-}
 
 /**
  * 「添加模型」/「修改模型」弹窗（11 §4.4 的附件形态）。

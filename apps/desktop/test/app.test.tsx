@@ -1700,7 +1700,7 @@ describe('设置页（11 §4.4）', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
     await waitFor(() => expect(bridge.getModelAccess).toHaveBeenCalled());
     expect(screen.getByRole('navigation', { name: '设置分类' })).toBeTruthy();
-    expect(screen.getByText('已保存 · ****3f9a')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '自定义模型' })).toBeTruthy();
   });
 
   it('菜单里没接通的设备与同步入口不显示', async () => {
@@ -1711,9 +1711,9 @@ describe('设置页（11 §4.4）', () => {
     expect(screen.queryByRole('menuitem', { name: /设备与同步/ })).toBeNull();
   });
 
-  it('在设置页保存密钥后，Composer 的模型下拉用的是同一份新目录', async () => {
+  it('在设置页加完模型后，Composer 的模型下拉用的是同一份新目录', async () => {
     const { bridge } = fakeBridge({
-      saveProviderKey: vi.fn(async () => ({
+      addCustomModel: vi.fn(async () => ({
         ok: true,
         view: { ...ACCESS, models: [{ ...MODELS[0]!, id: 'evowork/new', label: 'new/model' }] },
       })),
@@ -1723,18 +1723,19 @@ describe('设置页（11 §4.4）', () => {
     fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
     /*
-     * 设置页的「内置厂商密钥」只列**已经存过**的那几把（11 §4.4，2026-09-16 的附件形态），
-     * 所以这里走 DeepSeek 那一条：它是已保存态，要先点「更换」才出现输入框
-     * （01 §5.35：已保存态不渲染空输入框）。
+     * 这一页只有「自定义模型」卡（11 §4.4.1，2026-09-19 收口），加模型是唯一的写入动作，
+     * 所以这条端到端就走它：目录是不是同一份，只有跨页面才看得出来。
      */
-    await waitFor(() => screen.getByRole('button', { name: '更换' }));
-    fireEvent.click(screen.getByRole('button', { name: '更换' }));
-
-    fireEvent.change(screen.getByLabelText('DeepSeek API 密钥'), {
-      target: { value: 'sk-new' },
-    });
-    fireEvent.click(screen.getAllByRole('button', { name: '保存' })[0] as HTMLElement);
-    await waitFor(() => expect(bridge.saveProviderKey).toHaveBeenCalled());
+    await waitFor(() => screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-new' } });
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'deepseek-v4' } });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }) as HTMLElement,
+    );
+    await waitFor(() => expect(bridge.addCustomModel).toHaveBeenCalled());
 
     // 回到首页：下拉里应该是设置页刚返回的那一份
     fireEvent.click(screen.getByRole('button', { name: '新建任务' }));

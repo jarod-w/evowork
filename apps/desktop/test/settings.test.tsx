@@ -2,8 +2,8 @@
  * 设置页（11 §4.4）与 01 §5.35 SecretInput。
  *
  * 这一屏的断言都是**后果**而不是布局：
- *   · 已保存态不能显示成一个空输入框（读起来像没保存上）；
- *   · 被企业停用的模型**留在表里**（消失的东西无法被排查）；
+ *   · SecretInput 已保存态不能显示成一个空输入框（组件本身仍保留，设置页暂时不用）；
+ *   · 引导填过密钥时这一页仍然只有那张自定义模型卡（11 §4.4.1）；
  *   · 钥匙串不可用时两个选项并列（不替用户选）；
  *   · 并发上限只能往下调（机器就是资源上限）。
  */
@@ -64,8 +64,6 @@ function page(over: Partial<SettingsPageProps> = {}) {
     preferences: { concurrencyComputed: 3, concurrencyLimit: 3 },
     appName: 'EvoWork',
     appVersion: '0.0.1',
-    onSaveProviderKey: vi.fn(),
-    onClearProviderKey: vi.fn(),
     onAddCustomModel: vi.fn(),
     onUpdateCustomModel: vi.fn(),
     onRemoveCustomModel: vi.fn(),
@@ -215,12 +213,23 @@ describe('模型', () => {
     expect(screen.queryByText(/上游形态/)).toBeNull();
   });
 
-  it('内置厂商只列**已经存过**的那几把（新加一家走「添加模型」）', () => {
-    page();
-    // 引导里填过 DeepSeek：必须留一个能改能清的入口，否则填错了没处改
-    expect(screen.getByText('已保存 · ****3f9a')).toBeTruthy();
-    // Kimi 没填过：不再摆一个空框（那会让人以为这才是加模型的正路）
-    expect(screen.queryByLabelText('Kimi（Moonshot） API 密钥')).toBeNull();
+  /*
+   * 引导里填过 DeepSeek、目录里也有那条内置模型时，这一页**仍然只有那张卡**。
+   * 代价是已知的（11 §4.4.1，2026-09-19）：内置密钥只能重跑引导改，
+   * 被企业停用的模型不在这一页列出。这条断言就是为了让"又长回来"变红。
+   */
+  it('引导里填过密钥、目录里有内置模型时，这一页仍然只有那张卡', () => {
+    page({
+      access: {
+        ...ACCESS,
+        models: [model(), model({ id: 'x/y', label: 'x/y', credentialSource: 'hosted' })],
+      },
+    });
+    expect(screen.getByRole('heading', { name: '自定义模型' })).toBeTruthy();
+    expect(screen.queryByText('内置厂商密钥')).toBeNull();
+    expect(screen.queryByText('已保存 · ****3f9a')).toBeNull();
+    expect(screen.queryByText('其他可用模型')).toBeNull();
+    expect(screen.queryByRole('table', { name: '可用模型' })).toBeNull();
   });
 
   it('钥匙串不可用：两个选项**并列**，不替用户选', () => {
@@ -235,47 +244,6 @@ describe('模型', () => {
     expect(props.onSecretFallback).toHaveBeenCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: /不保存/ }));
     expect(props.onSecretFallback).toHaveBeenCalledWith(false);
-  });
-
-  it('每条模型都标凭据来源（它回答"花谁的钱、数据过谁的境"）', () => {
-    page({
-      access: {
-        ...ACCESS,
-        models: [model(), model({ id: 'x/y', label: 'x/y', credentialSource: 'hosted' })],
-      },
-    });
-    expect(screen.getByText('你的密钥')).toBeTruthy();
-    expect(screen.getByText('由管理员配置')).toBeTruthy();
-  });
-
-  it('被企业停用的模型**仍然在表里**，带原因、且没有「检查」按钮', () => {
-    page({
-      access: { ...ACCESS, models: [model({ denied: '这个模型已被你所在组织停用。' })] },
-    });
-    expect(screen.getByText('deepseek/deepseek-v4-flash')).toBeTruthy();
-    expect(screen.getByText('这个模型已被你所在组织停用。')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '检查' })).toBeNull();
-  });
-
-  it('自定义模型的能力位标「未实测（手填）」 —— 那是用户的声明，不是我们的结论', () => {
-    page({ access: { ...ACCESS, models: [model({ verified: false, layer: 'custom' })] } });
-    expect(screen.getByText('未实测（手填）')).toBeTruthy();
-  });
-
-  it('卡片已经逐行列出的模型不在下面重复一遍（全是自定义模型时那张表整段消失）', () => {
-    page({
-      access: {
-        ...ACCESS,
-        customModels: [custom()],
-        models: [
-          model({
-            id: 'deepseek/deepseek-v4-flash-0731',
-            label: 'deepseek/deepseek-v4-flash-0731',
-          }),
-        ],
-      },
-    });
-    expect(screen.queryByRole('table', { name: '可用模型' })).toBeNull();
   });
 
   it('企业锁了自定义模型：按钮禁用**并给原因**，不隐藏入口', () => {
@@ -450,9 +418,14 @@ describe('模型', () => {
   });
 
   it('连通性检查会把结论显示出来（说清是"发了一次请求"的结果）', () => {
-    const props = page({ probeResult: '通了：这个模型现在可以用。' });
-    fireEvent.click(screen.getByRole('button', { name: '检查' }));
-    expect(props.onProbe).toHaveBeenCalledWith('evowork/deepseek-v4-flash');
+    const props = page({
+      probeResult: '通了：这个模型现在可以用。',
+      access: { ...ACCESS, customModels: [custom()] },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '检查 deepseek/deepseek-v4-flash-0731 连接' }),
+    );
+    expect(props.onProbe).toHaveBeenCalledWith('deepseek/deepseek-v4-flash-0731');
     expect(screen.getByText('通了：这个模型现在可以用。')).toBeTruthy();
   });
 
