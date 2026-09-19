@@ -118,6 +118,17 @@ export const REQUIREMENTS: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * 六个包的 pip 索引。在线安装与打离线包都走这里，**不走默认 PyPI**。
+ *
+ * 国内直连 `pypi.org` 经常超时或被公司代理拦下，表现是引导页点了「现在安装」
+ * 之后卡在「正在安装文档处理组件」。清华源是 HTTPS 的 PEP 503 simple 索引，
+ * 包版本仍由上面的 `REQUIREMENTS` 钉死，换镜像不会换成另一套环境。
+ *
+ * 离线路径（`EVOWORK_OFFICE_BUNDLE`）不读这个地址，走 `--no-index --find-links`。
+ */
+export const PIP_INDEX_URL = 'https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple';
+
+/**
  * 中文字体。**它是扩展的一部分，不是"希望系统里刚好有"**。
  *
  * `plugins/skills/charts` 会在画图前探测中文字体，探不到就停下来报错而不是画一张方框图。

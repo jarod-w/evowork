@@ -8,7 +8,7 @@
  *
  * 这一条不同：它按**显式意图**开关（`EVOWORK_INSTALL_E2E=1`），而且每次跑都在一个
  * 全新的临时 HOME 上从零装 —— 它验的就是干净机器。默认不跑只是因为它要下 ~180MB、
- * 耗时几分钟，放进 `pnpm run check` 会让每次提交都去拖一遍 GitHub 和 PyPI。
+ * 耗时几分钟，放进 `pnpm run check` 会让每次提交都去拖一遍 GitHub 和清华镜像。
  *
  * 上游资产变了（清单过期、GitHub 改布局）只有这条能发现，所以**发版前必须跑它**：
  * ```bash
@@ -118,7 +118,7 @@ describe.runIf(enabled)('真机安装（EVOWORK_INSTALL_E2E=1 才跑）', () => 
  * ```
  *
  * 这条与上面那条**验的不是同一件事**：上面验"能不能从网上装出来"，
- * 这条验"离线包是不是真的够用"。企业机器上不去 GitHub 与 PyPI，
+ * 这条验"离线包是不是真的够用"。企业机器上不去 GitHub 与清华镜像，
  * 而离线包缺一个 wheel 的表现是在**客户机器上**装到一半失败。
  */
 const bundleDir = process.env.EVOWORK_OFFICE_BUNDLE;

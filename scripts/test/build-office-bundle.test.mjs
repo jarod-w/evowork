@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FONT_ASSET,
+  PIP_INDEX_URL,
   PYTHON_RELEASE,
   PYTHON_VERSION,
   REQUIREMENTS,
@@ -41,6 +42,10 @@ describe('离线包脚本与清单是同一份事实', () => {
   it('字体地址与哈希读得对 —— 读错的话离线包里是一份校验不过的字体', () => {
     expect(parsed.font.url).toBe(FONT_ASSET.url);
     expect(parsed.font.sha256).toBe(FONT_ASSET.sha256);
+  });
+
+  it('pip 索引与清单是同一份清华源 —— 读错就会去默认 PyPI 打离线包', () => {
+    expect(parsed.pipIndexUrl).toBe(PIP_INDEX_URL);
   });
 
   /**

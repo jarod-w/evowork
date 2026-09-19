@@ -12,7 +12,7 @@ import {
   type InstallProgress,
   type RunFn,
 } from '../src/install.js';
-import { FONT_FILE_NAME } from '../src/manifest.js';
+import { FONT_FILE_NAME, PIP_INDEX_URL } from '../src/manifest.js';
 
 let home: string;
 
@@ -111,6 +111,22 @@ describe('安装成功的那条路', () => {
   });
 
   /**
+   * 国内直连默认 PyPI 经常超时，失败看起来像「没装上扩展」。
+   * 索引必须钉在清单里的清华源，不能指望本机 pip.conf 碰巧配了镜像。
+   */
+  it('在线安装 pip 走清华源，不把默认 PyPI 当索引', async () => {
+    const run = makeRun();
+    await installOfficeRuntime(base(run));
+
+    const pip = run.calls.find((c) => c.includes('pip'));
+    expect(pip).toBeDefined();
+    const index = pip!.indexOf('--index-url');
+    expect(index).toBeGreaterThan(-1);
+    expect(pip![index + 1]).toBe(PIP_INDEX_URL);
+    expect(pip).not.toContain('--no-index');
+  });
+
+  /**
    * 原子换入：升级时旧目录不能出现"删了还没换上"的空窗 ——
    * 那个窗口里正在跑的技能会以"没装扩展"失败。
    */
@@ -148,6 +164,7 @@ describe('每一种失败都说人话，而且说的是不同的话', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.failure).toBe('PACKAGES');
+    expect(result.message).toContain('清华源');
     expect(result.message).toContain('离线');
   });
 
@@ -252,7 +269,7 @@ describe('离线安装（企业部署）', () => {
     if (result.ok) expect(result.offline).toBe(true);
   });
 
-  it('pip 走 --no-index --find-links，不去 PyPI', async () => {
+  it('pip 走 --no-index --find-links，不去清华源也不去 PyPI', async () => {
     const run = makeRun();
     await installOfficeRuntime({ ...base(run), bundleDir: makeBundle() });
 
@@ -260,6 +277,7 @@ describe('离线安装（企业部署）', () => {
     expect(pip).toBeDefined();
     expect(pip).toContain('--no-index');
     expect(pip).toContain('--find-links');
+    expect(pip).not.toContain('--index-url');
   });
 
   it('离线包缺东西时说清缺哪个文件，别让管理员去猜', async () => {

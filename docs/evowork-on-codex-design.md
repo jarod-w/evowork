@@ -421,7 +421,7 @@
 | 项       | 内容                                                                                                                    |
 | -------- | ----------------------------------------------------------------------------------------------------------------------- |
 | 触发     | **只有用户在引导第 ④ 步或提示里点「安装」时**。没有任何自动/后台下载                                                      |
-| 去哪     | `github.com`（python-build-standalone 发行版、Noto Sans SC 字体）· `pypi.org`（六个 python 包的 wheel）                   |
+| 去哪     | `github.com`（python-build-standalone 发行版、Noto Sans SC 字体）· `mirrors.tuna.tsinghua.edu.cn`（六个 python 包的 wheel，清华 PyPI 镜像） |
 | 带什么   | **只有 GET，不带任何用户内容** —— 没有 prompt、文件名、任务 id、机器标识、遥测。它只下载，不上传                          |
 | 完整性   | python 与字体都带 `sha256` 钉死校验，不过就整包失败并删除；版本全部钉死，两个用户装出来的环境逐字相同                     |
 | 出口     | 实现集中在 `services/runtime-installer`（**唯一为此出网的包**）。`services/ingest` 因此保持"整个 src 目录扫不出出网调用" |

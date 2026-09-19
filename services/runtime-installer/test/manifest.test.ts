@@ -4,6 +4,7 @@ import {
   FONT_ASSET,
   FONT_FILE_NAME,
   FONT_WEIGHT_AXIS,
+  PIP_INDEX_URL,
   PYTHON_ASSETS,
   PYTHON_RELEASE,
   PYTHON_VERSION,
@@ -61,6 +62,11 @@ describe('清单：每一项都能被下载并校验', () => {
     for (const requirement of REQUIREMENTS) {
       expect(requirement).toMatch(/^[a-z0-9-]+==\d+\.\d+(\.\d+)?$/);
     }
+  });
+
+  it('六个包的 pip 索引是清华源的 simple API，不是默认 PyPI', () => {
+    expect(PIP_INDEX_URL).toBe('https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple');
+    expect(PIP_INDEX_URL.startsWith('https://')).toBe(true);
   });
 
   it('字体切的是 wght=400 的静态实例：可变字体会被 matplotlib 登记成 weight 100（偏细）', () => {

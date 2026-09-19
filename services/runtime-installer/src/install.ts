@@ -41,6 +41,7 @@ import {
   FONT_FAMILY,
   FONT_FILE_NAME,
   FONT_WEIGHT_AXIS,
+  PIP_INDEX_URL,
   PYTHON_ASSETS,
   REQUIREMENTS,
   totalDownloadBytes,
@@ -103,7 +104,7 @@ export interface InstallProgress {
  *   · `UNSUPPORTED_PLATFORM` —— 换机器（或等我们支持）
  *   · `DOWNLOAD` / `CHECKSUM` —— 换网络重试 / 用离线包
  *   · `EXTRACT` / `DISK` —— 清磁盘
- *   · `PACKAGES` —— 多半是公司代理挡了 PyPI
+ *   · `PACKAGES` —— 多半是公司代理挡了清华 PyPI 镜像
  *   · `VERIFY` —— 装完了但不能用，这是 bug，要看日志
  *   · `BUSY` —— 已经在装了，别点第二次
  */
@@ -275,7 +276,7 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
     }
 
     /* ③ pip 装六个包 */
-    report('install-packages', 0, offline ? '从离线包安装' : '从 PyPI 安装');
+    report('install-packages', 0, offline ? '从离线包安装' : '从清华镜像安装');
     const pip = await run(
       python,
       [
@@ -287,7 +288,7 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
         '--no-warn-script-location',
         ...(options.bundleDir !== undefined
           ? ['--no-index', '--find-links', join(options.bundleDir, 'wheels')]
-          : []),
+          : ['--index-url', PIP_INDEX_URL]),
         ...REQUIREMENTS,
       ],
       { ...(options.signal ? { signal: options.signal } : {}) },
@@ -566,7 +567,7 @@ function fromDownloadError(err: unknown, log: Logger | undefined): InstallResult
 /**
  * pip 失败时说人话。
  *
- * 最常见的两种是**公司代理挡了 PyPI**和**磁盘满了**，它们在 stderr 里有明显特征。
+ * 最常见的两种是**公司代理挡了清华镜像**和**磁盘满了**，它们在 stderr 里有明显特征。
  * 认不出来时**如实给退出码**，不编一个原因 —— 编错方向会让人往完全不相干的地方查。
  */
 function pipMessage(result: RunResult, offline: boolean): string {
@@ -575,7 +576,7 @@ function pipMessage(result: RunResult, offline: boolean): string {
     return '离线包里的组件不完整，装不上。请让管理员重新打一份离线包。';
   }
   if (/proxy|ssl|certificate|tlsv1|connection|timed out|network/.test(stderr)) {
-    return '连不上 Python 包镜像（PyPI）。公司网络常会拦截它 —— 换个网络重试，或者用离线安装包。';
+    return '连不上 Python 包镜像（清华源）。公司网络常会拦截它 —— 换个网络重试，或者用离线安装包。';
   }
   if (/no space left|disk full/.test(stderr)) {
     return '磁盘空间不够，装不下办公扩展（需要约 400MB）。清理一些空间再试。';
@@ -593,7 +594,8 @@ const defaultRun: RunFn = (file, args, options) =>
         ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}),
         ...(options?.signal ? { signal: options.signal } : {}),
         maxBuffer: 16 * 1024 * 1024,
-        // pip 会读一堆 PIP_* 环境变量；照搬父进程的环境是对的（企业镜像源就配在那里）
+        // 索引由 `--index-url` 钉死（清华源），不跟本机 pip.conf 走。
+        // 仍继承父进程环境：公司代理 / 自定义 CA 配在 HTTP_PROXY、SSL_CERT_FILE 上。
       },
       (err, stdout, stderr) => {
         /*

@@ -13,7 +13,7 @@
  * ## 这里出网到哪
  *
  *   · `github.com` / `objects.githubusercontent.com` —— python 发行版与字体
- *   · `pypi.org` / `files.pythonhosted.org` —— pip 装那六个包（在 `install.ts` 里由 pip 发起）
+ *   · `mirrors.tuna.tsinghua.edu.cn` —— pip 装那六个包（在 `install.ts` 里由 pip 发起）
  *
  * **它只下载、不上传**：请求里没有用户内容，没有机器标识，没有遥测。企业不许出网时走
  * 离线包（`EVOWORK_OFFICE_BUNDLE`），那条路径一个字节都不出网。

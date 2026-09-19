@@ -21,7 +21,7 @@
  *
  * ## 为什么需要它
  *
- * 很多企业机器上不去 GitHub 与 PyPI（这不是假设：`pipMessage` 里"公司代理挡了 PyPI"
+ * 很多企业机器上不去 GitHub 与清华 PyPI 镜像（这不是假设：`pipMessage` 里"公司代理挡了清华源"
  * 是安装失败里最常见的一类）。没有离线包的话，这些机器上 Word / Excel / PPT / PDF
  * **永远不可用**，而且没有任何出路。
  *
@@ -98,6 +98,7 @@ export function readManifest() {
   return {
     pythonVersion: pick('PYTHON_VERSION'),
     pythonRelease: pick('PYTHON_RELEASE'),
+    pipIndexUrl: pick('PIP_INDEX_URL'),
     requirements,
     triples,
     pythonSha,
@@ -252,6 +253,8 @@ async function main() {
         '--only-binary=:all:',
         '--python-version',
         `${major}.${minor}`,
+        '--index-url',
+        manifest.pipIndexUrl,
         ...platformFlags,
         ...manifest.requirements,
       ],

@@ -205,6 +205,7 @@ artifact
 | 决定                              | 内容                                                                                                             |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | python 从哪来                     | **python-build-standalone 的 `install_only` 构建**（自带 pip）。钉死 3.12.14+20260901，六个平台各有 sha256           |
+| 六个包从哪来                      | pip `--index-url` 钉死清华源 `https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple`。不走默认 PyPI；离线时 `--no-index --find-links` |
 | 为什么不用 `uv venv`              | 它建出来的目录**不可搬运** —— `bin/python` 是指向 `~/.local/share/uv/python/...` 的绝对符号链接（2026-09-06 实测）。客户机器上没有那个目标，拷过去就是死链，随包分发与离线包都不成立 |
 | 装在哪                            | `~/.evowork/runtime/office/`，解释器摊平到根下（unix `bin/python3`、windows `python.exe`）。可用 `EVOWORK_OFFICE_PYTHON` 覆盖 |
 | 中文字体                          | **随扩展装一份 Noto Sans SC**（OFL）到 `<扩展根>/fonts/`。此前 `charts` 的提示写着"请安装办公扩展（它带中文字体）"而扩展里一个字体都没有 —— macOS/Windows 靠系统字体侥幸能过，裸 Linux 与精简 Windows 镜像过不了 |

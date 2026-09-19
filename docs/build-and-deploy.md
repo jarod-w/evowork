@@ -178,7 +178,7 @@ EVOWORK_INSTALL_E2E=1 npx vitest run --project runtime-installer -t "干净 HOME
 四个技能在缺模块时会**自动换到这个解释器重跑**；两边都没有时以退出码 3 + 可操作提示结束，
 不会产出坏文件。
 
-#### 企业离线部署（上不了 GitHub / PyPI 的机器）
+#### 企业离线部署（上不了 GitHub / 清华镜像的机器）
 
 在一台**有网**的机器上打包，把整个目录下发给客户：
 
@@ -501,7 +501,7 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | `require('electron')` 报 "failed to install correctly" | pnpm 拦了 postinstall，运行时才发现 | `pnpm rebuild electron`；确认 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 里有它 |
 | 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 在 App 里点「现在安装」（§3.3）；或用 `EVOWORK_OFFICE_PYTHON` 指定已装好的解释器 |
 | 安装卡在 0% 不动 | 连接停滞。**60 秒收不到数据就会自己失败并给出原因**，不会一直挂着 | 换个网络重试，或用离线包（§3.3） |
-| 安装报"连不上 Python 包镜像（PyPI）" | 公司代理拦了 PyPI（最常见的一类失败） | 用离线包（§3.3）。也可以给 pip 配企业镜像源后重试 |
+| 安装报"连不上 Python 包镜像（清华源）" | 公司代理拦了清华 PyPI 镜像（最常见的一类失败） | 用离线包（§3.3） |
 | 安装报"下载到的文件与预期不符" | 中间设备改写了响应，或这个 EvoWork 版本的清单已过期 | **不要重试**（内容不对不是运气问题）：换网络，或用离线包 |
 | 图表里的中文变方框 | 扩展没装，或字体没被加载 | 装办公扩展 —— 它带一份 Noto Sans SC。装了仍报错时按提示装一款系统中文字体 |
 | 内核 stderr 报 `could not find bubblewrap` | Linux 沙箱组件没装 | `apt install bubblewrap`。不装它会回落到自带的那个，**不阻断启动**，所以容易被当成噪音漏掉 |
