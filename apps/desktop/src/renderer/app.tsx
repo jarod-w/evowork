@@ -89,14 +89,7 @@ import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
 import { Library, type LibraryNav } from './views/library.js';
-import {
-  Onboarding,
-  ONBOARDING_STEPS,
-  EMPTY_PROVIDER_KEYS,
-  type OnboardingStep,
-  type ProviderKeyId,
-  type ProviderKeys,
-} from './views/onboarding.js';
+import { Onboarding, ONBOARDING_STEPS, type OnboardingStep } from './views/onboarding.js';
 import { ProjectDetailPage } from './views/project-detail.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
@@ -349,8 +342,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [modelUnavailableReason, setModelUnavailableReason] = useState<
     ModelUnavailableReason | undefined
   >(undefined);
-  const [providerKeys, setProviderKeys] = useState<ProviderKeys>(EMPTY_PROVIDER_KEYS);
-  const [modelApplying, setModelApplying] = useState(false);
   /** 选中的工作空间（EvoWork 的「空间」= 内核的 Project + cwd）。主进程负责翻成 cwd */
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
   const [view, setView] = useState<MainView>('task');
@@ -631,29 +622,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [bridge, applyCatalog]);
 
-  const checkModelAccess = useCallback(async () => {
-    const input: ApplyModelAccessInput = {
-      ...(providerKeys.deepseek.trim() ? { deepseekApiKey: providerKeys.deepseek.trim() } : {}),
-      ...(providerKeys.moonshot.trim() ? { moonshotApiKey: providerKeys.moonshot.trim() } : {}),
-      ...(providerKeys.zhipu.trim() ? { zhipuApiKey: providerKeys.zhipu.trim() } : {}),
-    };
-    const hasKeys = Object.keys(input).length > 0;
-    setModelApplying(true);
-    try {
-      if (hasKeys) {
-        applyCatalog(await bridge.applyModelAccess(input));
-      } else {
-        await loadModels();
-      }
-    } catch (err: unknown) {
-      setModels([]);
-      setModelUnavailable(`读不到可用模型：${err instanceof Error ? err.message : String(err)}`);
-      setModelUnavailableReason(undefined);
-    } finally {
-      setModelApplying(false);
-    }
-  }, [bridge, providerKeys, applyCatalog, loadModels]);
-
   useEffect(() => {
     void loadModels();
   }, [loadModels]);
@@ -885,7 +853,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .catch(() => setCatalog(null));
     if (view === 'settings') {
       /*
-       * 设置页也是每次进都重拉：密钥可能刚在引导里填过、企业策略包可能刚更新过。
+       * 设置页也是每次进都重拉：密钥可能刚在「添加模型」里填过、企业策略包可能刚更新过。
        * `getModelAccess` 顺带读一次网关目录，所以它会花几百毫秒 ——
        * 这就是它不并进 `getStartup` 的理由（同 `listModels`）。
        */
@@ -1399,20 +1367,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         : {}),
       /*
        * 03 §8：模型不可用 → danger 条 + 禁用发送，**不换一个模型继续**。
-       * 「检查模型接入」重新拉一次列表 —— 用户通常是去把网关起起来了再回来点它。
+       * 没配模型：下一动作是去设置页添加，再 fetch 一次解决不了。
+       * 网关暂时没起来：下一动作是「检查模型接入」重新拉列表。
        */
       ...(modelUnavailable !== undefined
         ? {
             modelUnavailable: {
               text: modelUnavailable,
               ...(modelUnavailableReason !== undefined ? { reason: modelUnavailableReason } : {}),
-              onFix: () => void checkModelAccess(),
-            },
-            modelAccess: {
-              values: providerKeys,
-              onChange: (id: ProviderKeyId, value: string) =>
-                setProviderKeys((prev) => ({ ...prev, [id]: value })),
-              applying: modelApplying,
+              ...(modelUnavailableReason === 'no-keys'
+                ? {
+                    onFix: (): void => {
+                      setSettingsSection('models');
+                      setView('settings');
+                    },
+                    fixLabel: '去设置添加模型',
+                  }
+                : {
+                    onFix: (): void => {
+                      void loadModels();
+                    },
+                  }),
             },
           }
         : {}),
@@ -1432,9 +1407,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       modelOverridden,
       modelUnavailable,
       loadModels,
-      checkModelAccess,
-      providerKeys,
-      modelApplying,
       modelUnavailableReason,
       modelAccess,
       attachments,
@@ -1446,8 +1418,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   /*
-   * 首次引导（02 §9）。**盖住整个界面** —— 它要拿到工作空间与权限档位的答案，
-   * 而这两件事决定后面每个任务在哪跑、能动什么。走完落 `meta` 表，不再出现。
+   * 首次引导（02 §9）。**盖住整个界面** —— 它要拿到工作空间的答案，
+   * 这件事决定后面每个任务在哪跑。走完落 `meta` 表，不再出现。
+   * 权限档位暂时不在这里问：选了也不会进 `turn/start`。
    *
    * `startup === null` 时不显示：那时我们还不知道走没走过，
    * 闪一下引导再消失比晚半秒更糟。
@@ -1491,18 +1464,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 setNotices((prev) => [...prev, { tone: 'warning', text: r.refused as string }]);
             });
           }}
-          permissionProfiles={(startup.permissions ?? []).map((p) => ({
-            id: p.id,
-            allowed: p.allowed,
-            ...(p.description !== undefined ? { description: p.description } : {}),
-          }))}
-          permissionId={permissionId}
-          onPermissionChange={setPermissionId}
-          modelStatus={modelUnavailable ? 'failed' : models.length > 0 ? 'ok' : 'unchecked'}
-          {...(modelUnavailable !== undefined ? { modelError: modelUnavailable } : {})}
-          onCheckModel={() => void checkModelAccess()}
-          providerKeys={providerKeys}
-          onProviderKeyChange={(id, value) => setProviderKeys((prev) => ({ ...prev, [id]: value }))}
           /*
            * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，
            * 因为下载器没实现 —— 那时"如实说"是唯一诚实的选择。现在它实现了，

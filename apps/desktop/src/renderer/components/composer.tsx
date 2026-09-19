@@ -24,7 +24,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
 import { Badge, Banner, PillButton } from './primitives.js';
-import { ModelAccessFields, type ProviderKeyId, type ProviderKeys } from '../views/onboarding.js';
 
 export const COMPOSER_PLACEHOLDER = '输入需求，或描述你想完成的工作';
 
@@ -135,23 +134,14 @@ export interface ComposerProps {
   readonly onInterrupt?: (() => void) | undefined;
   readonly onAddBudget?: (() => void) | undefined;
 
-  /** 模型不可用（网关不通 / 未登录）。**不静默降级**（03 §8） */
+  /** 模型不可用（网关不通 / 未登录 / 没配模型）。**不静默降级**（03 §8） */
   readonly modelUnavailable?:
     | {
         readonly text: string;
         readonly reason?: string | undefined;
         readonly onFix?: () => void;
-      }
-    | undefined;
-  /**
-   * 没配厂商密钥时就地录入。只在 `reason === 'no-keys'` 时出现 ——
-   * 「连不上」该重试，「没密钥」再 fetch 一次解决不了。
-   */
-  readonly modelAccess?:
-    | {
-        readonly values: ProviderKeys;
-        readonly onChange: (id: ProviderKeyId, value: string) => void;
-        readonly applying?: boolean | undefined;
+        /** 缺省是「检查模型接入」。没配模型时改成「去设置添加模型」 */
+        readonly fixLabel?: string | undefined;
       }
     | undefined;
   /** 网关声明模型不支持音频输入时隐藏麦克风，而不是点了报错（03 §4.7） */
@@ -223,7 +213,6 @@ export function Composer(props: ComposerProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [dangerPending, setDangerPending] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   /**
    * Ask 模式把权限锁成只读；切回 Craft/Plan 时**恢复用户上一次的选择**（03 §4.5）。
@@ -303,19 +292,14 @@ export function Composer(props: ComposerProps) {
           tone="danger"
           action={
             props.modelUnavailable.onFix ? (
-              <PillButton onClick={props.modelUnavailable.onFix}>检查模型接入</PillButton>
+              <PillButton onClick={props.modelUnavailable.onFix}>
+                {props.modelUnavailable.fixLabel ?? '检查模型接入'}
+              </PillButton>
             ) : undefined
           }
         >
           {props.modelUnavailable.text}
         </Banner>
-      ) : null}
-      {props.modelUnavailable?.reason === 'no-keys' && props.modelAccess ? (
-        <ModelAccessFields
-          values={props.modelAccess.values}
-          onChange={props.modelAccess.onChange}
-          disabled={props.modelAccess.applying}
-        />
       ) : null}
 
       {/* 04 §5.4 排队区 */}

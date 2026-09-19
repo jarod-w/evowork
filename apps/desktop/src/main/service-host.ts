@@ -1056,7 +1056,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     cases: BUILTIN_CASES,
     readModelCatalog,
     /*
-     * 引导第④步与首页「检查模型接入」共用（三家一起填）。
+     * 一次收下三家内置厂商密钥并拉起网关。界面不再调用这条（引导不收密钥，
+     * 设置页走「添加模型」）；测试与兼容路径仍走这里。
      *
      * **M10a 之后它写的是密钥库，不再写 `gateway.env`** —— 明文文件那条路已经退役
      * （Q34=A）。密钥库不可用时**不静默写明文**：如实返回那段说明，让用户去设置页

@@ -261,7 +261,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 
 - [services/runtime-installer](../services/runtime-installer/)：从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的 URL + 校验和下载 CPython 与 wheels，装进 `~/.evowork/runtime/office/`，
   装完做"搬走目录再跑"的可搬运检查，然后 `probe.invalidate()` 重探。
-- 用户在 App 里点「现在安装」（引导第 ⑤ 步 / 设置页）才触发；进度经 `runtimeProgress` 频道推送，文案真源在安装器包里。
+- 用户在 App 里点「现在安装」（引导第 ④ 步 / 设置页）才触发；进度经 `runtimeProgress` 频道推送，文案真源在安装器包里。
 - 离线机器用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打），此时下载函数**一被调用就炸**（测试如此构造）。
 - 它不在 `services/ingest` 里，是为了让那边的 K6 扫描（`fetch(` / `node:http`）能覆盖整个 `src/` 目录而不留口子。
 

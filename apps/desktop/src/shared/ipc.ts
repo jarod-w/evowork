@@ -204,8 +204,8 @@ export interface ModelCatalogResult {
   readonly models: readonly ModelOptionView[];
   readonly unavailable?: string | undefined;
   /**
-   * 为什么不可用。渲染层据此决定下一步：没密钥就给录入框，连不上就只给重试。
-   * 只给文案的话，「检查模型接入」对没配密钥的用户永远是再 fetch 一次失败。
+   * 为什么不可用。渲染层据此决定下一步：没模型就去设置页添加，连不上就只给重试。
+   * 只给文案的话，「检查模型接入」对没配模型的用户永远是再 fetch 一次失败。
    */
   readonly reason?: ModelUnavailableReason | undefined;
 }
@@ -516,9 +516,10 @@ export interface RuntimeInstallResultView {
 }
 
 /**
- * 用户在引导或首页填的厂商密钥。空字符串 = 这一家没改。
+ * 用户填的厂商密钥。空字符串 = 这一家没改。
  *
- * 主进程写进 `~/.evowork/gateway.env` 之后立刻拉起本机网关。
+ * 主进程写进密钥库之后立刻拉起本机网关。界面已经不走这条 IPC（引导不收密钥，
+ * 设置页走「添加模型」）；测试与兼容路径仍用。
  * **渲染层不会再读到这些值** —— 密钥只走这一次 IPC，不回传、不进日志。
  */
 export interface ApplyModelAccessInput {

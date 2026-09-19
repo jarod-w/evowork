@@ -155,7 +155,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     completeOnboarding: vi.fn(async () => undefined),
     /*
      * 办公扩展（08 §4）。默认"支持但没装" —— 这是**干净机器上的真实初始状态**，
-     * 也是引导第 ⑤ 步唯一有内容可渲染的状态。默认成"装好了"会让那一屏在
+     * 也是引导第 ④ 步唯一有内容可渲染的状态。默认成"装好了"会让那一屏在
      * 绝大多数测试里退化成一句"已经装好了"，等于没测。
      */
     getRuntimeStatus: vi.fn(async () => ({
@@ -900,7 +900,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
     expect(bridge.send).not.toHaveBeenCalled();
   });
 
-  it('没配密钥时给出录入框，不是只让人再点一次「检查模型接入」', async () => {
+  it('没配模型时指向设置页添加，不是就地录入三家密钥', async () => {
     const { bridge } = fakeBridge({
       listModels: vi.fn(async (): Promise<ModelCatalogResult> => ({
         models: [],
@@ -909,7 +909,12 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
       })),
     });
     render(<App bridge={bridge} />);
-    await waitFor(() => expect(screen.getByText('DeepSeek API 密钥')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '去设置添加模型' })).toBeTruthy(),
+    );
+    expect(screen.queryByText('DeepSeek API 密钥')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '去设置添加模型' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: '自定义模型' })).toBeTruthy());
   });
 
   /**
@@ -1126,7 +1131,7 @@ describe('首次引导（02 §9）', () => {
     render(<App bridge={bridge} />);
     // 引导在，主界面不在
     await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeNull());
-    expect(screen.getByText(/第 1 \/ 6 步/)).toBeTruthy();
+    expect(screen.getByText(/第 1 \/ 5 步/)).toBeTruthy();
   });
 
   it('走过引导就直接进主界面', async () => {
@@ -1148,7 +1153,7 @@ describe('首次引导（02 §9）', () => {
     render(<App bridge={bridge} />);
 
     // 直接跳到最后一步（每一步的必填校验由 onboarding.test 覆盖）
-    await screen.findByText(/第 1 \/ 6 步/);
+    await screen.findByText(/第 1 \/ 5 步/);
     for (let i = 0; i < 5; i += 1) {
       const next = screen.queryByRole('button', { name: /下一步|开始使用/ });
       if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
@@ -1176,7 +1181,7 @@ describe('首次引导（02 §9）', () => {
     render(<App bridge={bridge} />);
 
     // 从欢迎屏进到"选一个工作空间"这一步
-    await screen.findByText(/第 1 \/ 6 步/);
+    await screen.findByText(/第 1 \/ 5 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 
     fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
@@ -1199,7 +1204,7 @@ describe('首次引导（02 §9）', () => {
     });
     render(<App bridge={bridge} />);
 
-    await screen.findByText(/第 1 \/ 6 步/);
+    await screen.findByText(/第 1 \/ 5 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 
     const pick = await screen.findByRole('button', { name: '选择文件夹' });

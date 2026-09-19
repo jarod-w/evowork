@@ -2,13 +2,18 @@
  * 首次运行与授权引导（02 §9）。
  *
  * ```
- * ① 欢迎 + 隐私说明   ② 选工作空间   ③ 权限默认值
- * ④ 模型接入          ⑤ 解析运行时（可跳过）   ⑥ 完成
+ * ① 欢迎 + 隐私说明   ② 选工作空间   ③ 解析运行时（可跳过）   ④ 完成
  * ```
+ *
+ * 「权限默认值」暂时不进引导：选了既不写 `default_permissions`，也不进 `turn/start`，
+ * 实际任务始终用场景包的 `evowork-workspace`。接上发送链路后再加回来。
+ *
+ * 模型不在引导里配：走完之后去「设置 → 模型」添加。没配模型时 Composer 顶部会挡住发送，
+ * 不会静默换一个（03 §8）。
  *
  * ## 两条把这一页从"走过场"变成"有用"的规则
  *
- * 1. **第 ⑤ 步必须允许跳过并明确后果**（02 §9 / R10）。300MB 下载挡在首次体验前面
+ * 1. **第 ③ 步必须允许跳过并明确后果**（02 §9 / R10）。300MB 下载挡在首次体验前面
  *    会让人在还没看到产品之前就流失。所以它是"可跳过 + 说清跳过之后哪类文件用不了"，
  *    而不是"建议安装"。
  * 2. **第 ① 屏的措辞不得夸大**。它是 Q3 承诺的对外表达，要与网关的不落盘承诺（Q14）一致 ——
@@ -25,84 +30,14 @@
  * 这条在这一页被挂进 `app.tsx` 之前看不见：它从没进过渲染层的 bundle。
  */
 import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
-import { toProfileOptions, type ProtocolProfile } from '@evowork/policy/profiles.js';
 
-import {
-  Banner,
-  EmptyState,
-  PillButton,
-  ProgressBar,
-  SegmentedControl,
-} from '../components/primitives.js';
+import { Banner, EmptyState, PillButton, ProgressBar } from '../components/primitives.js';
 
-export type OnboardingStep = 'welcome' | 'workspace' | 'permissions' | 'model' | 'runtime' | 'done';
-
-export type ProviderKeyId = 'deepseek' | 'moonshot' | 'zhipu';
-
-export type ProviderKeys = Record<ProviderKeyId, string>;
-
-export const EMPTY_PROVIDER_KEYS: ProviderKeys = Object.freeze({
-  deepseek: '',
-  moonshot: '',
-  zhipu: '',
-});
-
-export const PROVIDER_KEY_FIELDS: readonly {
-  readonly id: ProviderKeyId;
-  readonly label: string;
-}[] = [
-  { id: 'deepseek', label: 'DeepSeek API 密钥' },
-  { id: 'moonshot', label: 'Kimi API 密钥' },
-  { id: 'zhipu', label: 'GLM API 密钥' },
-];
-
-/**
- * 厂商密钥录入。引导第④步和首页「连不上网关」共用。
- *
- * Q1=A：从访达启动的应用读不到 shell 环境，必须在界面里收下密钥。
- * 密钥只走一次 IPC，**写进系统钥匙串**（M10a / Q34=A），不回传、不进日志。
- *
- * ## 为什么这里不是 01 §5.35 的 `SecretInput`
- *
- * 那个组件是**一家一保存**（每个字段自带「保存」「清除」）。
- * 引导这一步是"三家一起填、按下一步一次提交"，换成 SecretInput 会变成
- * 三个独立的保存动作 + 一个还要再按一次的「下一步」—— 首次使用时那是多余的一步。
- * 引导里填的这把密钥之后**没有设置页入口可改**（11 §4.4.1，2026-09-19）：
- * 设置 → 模型只剩「添加模型」。填错了只能重跑引导，或另加一条自定义模型。
- */
-export function ModelAccessFields(props: {
-  readonly values: ProviderKeys;
-  readonly onChange: (id: ProviderKeyId, value: string) => void;
-  readonly disabled?: boolean | undefined;
-}) {
-  return (
-    <div className="ew-model-access">
-      {PROVIDER_KEY_FIELDS.map((field) => (
-        <label key={field.id} className="ew-field">
-          <span>{field.label}</span>
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            value={props.values[field.id]}
-            disabled={props.disabled}
-            onChange={(event) => props.onChange(field.id, event.target.value)}
-          />
-        </label>
-      ))}
-      <p className="ew-field-hint">
-        至少填一家。密钥存进这台电脑的<strong>系统钥匙串</strong>，不会上传。之后要再加一家，去「设置
-        → 模型」用「添加模型」。
-      </p>
-    </div>
-  );
-}
+export type OnboardingStep = 'welcome' | 'workspace' | 'runtime' | 'done';
 
 export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   'welcome',
   'workspace',
-  'permissions',
-  'model',
   'runtime',
   'done',
 ];
@@ -110,8 +45,6 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
 export const STEP_TITLE: Readonly<Record<OnboardingStep, string>> = Object.freeze({
   welcome: '欢迎使用 EvoWork',
   workspace: '选一个工作空间',
-  permissions: '默认权限',
-  model: '接入模型',
   runtime: '文档解析组件',
   done: '好了',
 });
@@ -132,14 +65,6 @@ export interface OnboardingProps {
   readonly onStepChange: (step: OnboardingStep) => void;
   readonly workspaces: readonly string[];
   readonly onPickWorkspace?: (() => void) | undefined;
-  readonly permissionProfiles: readonly ProtocolProfile[];
-  readonly permissionId?: string | undefined;
-  readonly onPermissionChange?: ((id: string) => void) | undefined;
-  readonly modelStatus: 'unchecked' | 'checking' | 'ok' | 'failed';
-  readonly modelError?: string | undefined;
-  readonly onCheckModel?: (() => void) | undefined;
-  readonly providerKeys?: ProviderKeys | undefined;
-  readonly onProviderKeyChange?: ((id: ProviderKeyId, value: string) => void) | undefined;
   readonly gatewayUrl?: string | undefined;
   readonly onGatewayUrlChange?: ((url: string) => void) | undefined;
   readonly runtimeInstalled: boolean;
@@ -176,8 +101,6 @@ export function Onboarding(props: OnboardingProps) {
 
         {props.step === 'welcome' ? <Welcome /> : null}
         {props.step === 'workspace' ? <Workspace {...props} /> : null}
-        {props.step === 'permissions' ? <Permissions {...props} /> : null}
-        {props.step === 'model' ? <Model {...props} /> : null}
         {props.step === 'runtime' ? <Runtime {...props} /> : null}
         {props.step === 'done' ? <Done /> : null}
 
@@ -233,61 +156,6 @@ function Workspace(props: OnboardingProps) {
   );
 }
 
-function Permissions(props: OnboardingProps) {
-  const options = toProfileOptions(props.permissionProfiles);
-  return (
-    <div className="ew-onboarding-body">
-      <p>这决定 agent 默认能做到什么程度。每个任务都可以单独改。</p>
-      <SegmentedControl
-        variant="light"
-        ariaLabel="默认权限"
-        value={props.permissionId ?? 'evowork-workspace'}
-        items={options
-          .filter((option) => option.allowed && option.id !== 'evowork-full')
-          .map((option) => ({ id: option.id, label: option.name }))}
-        onChange={(id) => props.onPermissionChange?.(id)}
-      />
-      <p className="ew-field-hint">
-        {
-          options.find((option) => option.id === (props.permissionId ?? 'evowork-workspace'))
-            ?.summary
-        }
-      </p>
-      {/* 完全访问不在这一步给：它要过二次确认，且只对单个任务生效（10 §2.2） */}
-      <p className="ew-field-hint">
-        「完全访问」不在这里设 —— 它需要单独确认，而且只对当次任务生效。
-      </p>
-    </div>
-  );
-}
-
-function Model(props: OnboardingProps) {
-  const keys = props.providerKeys ?? EMPTY_PROVIDER_KEYS;
-  return (
-    <div className="ew-onboarding-body">
-      <p>EvoWork 在这台电脑上跑模型网关。至少填一家厂商的 API 密钥，然后点「检查连通性」。</p>
-      <ModelAccessFields
-        values={keys}
-        onChange={(id, value) => props.onProviderKeyChange?.(id, value)}
-        disabled={props.modelStatus === 'checking'}
-      />
-
-      <PillButton variant="accent" onClick={props.onCheckModel}>
-        {props.modelStatus === 'checking' ? '检查中…' : '检查连通性'}
-      </PillButton>
-
-      {props.modelStatus === 'ok' ? <Banner tone="info">连上了，可以用。</Banner> : null}
-      {props.modelStatus === 'failed' ? (
-        // 不静默降级到别的模型（03 §8）：这里就把话说死
-        <Banner tone="danger">
-          {props.modelError ?? '连不上这个网关。'}没有可用的模型时任务发不出去， EvoWork
-          不会自动换一个模型。
-        </Banner>
-      ) : null}
-    </div>
-  );
-}
-
 function Runtime(props: OnboardingProps) {
   const office = RUNTIME_TIERS.office;
   const installing = props.runtimeProgress !== undefined;
@@ -337,7 +205,7 @@ function Runtime(props: OnboardingProps) {
             <PillButton variant="accent" onClick={props.onInstallRuntime}>
               {props.runtimeError !== undefined ? '重试安装' : '现在安装'}
             </PillButton>
-            {/* R10：必须允许跳过，且**明确后果** —— 不是"建议安装" */}
+            {/* R10：必须允许跳过，且**明确后果** —— 不是"建议安装"（现在是第 ③ 步） */}
             <PillButton onClick={props.onSkipRuntime}>以后再说</PillButton>
           </div>
           <p className="ew-field-hint">
@@ -353,7 +221,10 @@ function Runtime(props: OnboardingProps) {
 function Done() {
   return (
     <div className="ew-onboarding-body">
-      <p>可以开始了。第一个任务建议先让它读点东西，比如「看看这个目录里有什么」。</p>
+      <p>
+        可以开始了。模型在「设置 →
+        模型」里添加，配好之后就能发任务。第一个任务建议先让它读点东西，比如「看看这个目录里有什么」。
+      </p>
     </div>
   );
 }
@@ -397,31 +268,11 @@ function Footer(props: OnboardingProps & { readonly index: number }) {
 export function blockingReason(props: {
   readonly step: OnboardingStep;
   readonly workspaces: readonly string[];
-  readonly modelStatus: OnboardingProps['modelStatus'];
 }): string | undefined {
   if (props.step === 'workspace' && props.workspaces.length === 0) {
     return '先选一个工作空间 —— EvoWork 只能读写你选中的目录。';
   }
-  if (props.step === 'model' && props.modelStatus !== 'ok') {
-    return '先确认模型能连上，否则第一个任务就会失败。';
-  }
-  // 第 ⑤ 步**不阻塞**（R10）：可跳过是它的设计要求，不是妥协
+  // 第 ③ 步**不阻塞**（R10）：可跳过是它的设计要求，不是妥协
   return undefined;
 }
 
-/** 首运行完成后写入的默认值（02 §9 第 ⑥ 步：Composer 已预选刚建的工作空间）。 */
-export interface OnboardingResult {
-  readonly workspaces: readonly string[];
-  readonly defaultPermissionId: string;
-  readonly gatewayUrl?: string | undefined;
-  readonly officeRuntimeInstalled: boolean;
-}
-
-export function toResult(props: OnboardingProps): OnboardingResult {
-  return {
-    workspaces: props.workspaces,
-    defaultPermissionId: props.permissionId ?? 'evowork-workspace',
-    ...(props.gatewayUrl ? { gatewayUrl: props.gatewayUrl } : {}),
-    officeRuntimeInstalled: props.runtimeInstalled,
-  };
-}

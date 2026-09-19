@@ -198,7 +198,7 @@ artifact
 
 ### 4.1 安装器（2026-09-07 落地）
 
-在此之前这一节只有决策没有实现：引导第 ⑤ 步的 `runtimeInstalled` 硬编码 `false`，
+在此之前这一节只有决策没有实现：引导解析组件那一步的 `runtimeInstalled` 硬编码 `false`，
 安装按钮没有回调，**任何一台干净机器上 Word / Excel / PPT / PDF 都不可用**，
 唯一的装法是让用户自己装 uv 再敲两条命令。实现处 `services/runtime-installer`。
 

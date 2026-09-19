@@ -172,7 +172,6 @@ function OnboardingHarness({ over = {} }: { over?: Partial<OnboardingProps> }) {
         { id: 'evowork-ask', allowed: true },
         { id: 'evowork-full', allowed: true },
       ]}
-      modelStatus="unchecked"
       runtimeInstalled={false}
       {...over}
     />
@@ -195,16 +194,9 @@ describe('首运行第 ① 屏：Q3 的对外表达，**措辞不可夸大**', (
   });
 });
 
-describe('六步引导（02 §9）', () => {
-  it('六步齐全，顺序与设计一致', () => {
-    expect(ONBOARDING_STEPS).toEqual([
-      'welcome',
-      'workspace',
-      'permissions',
-      'model',
-      'runtime',
-      'done',
-    ]);
+describe('五步引导（02 §9）', () => {
+  it('五步齐全，顺序与设计一致', () => {
+    expect(ONBOARDING_STEPS).toEqual(['welcome', 'workspace', 'permissions', 'runtime', 'done']);
   });
 
   it('**没选工作空间时「下一步」禁用并给原因**（01 §6.3）', () => {
@@ -221,20 +213,12 @@ describe('六步引导（02 §9）', () => {
     );
   });
 
-  it('模型连不上时挡住，并说清**不会自动换一个模型**（03 §8）', () => {
-    render(<OnboardingHarness over={{ step: 'model', modelStatus: 'failed' }} />);
-    expect(screen.getByRole('alert').textContent).toContain('不会自动换一个模型');
-    expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-  });
-
-  it('第④步收的是厂商密钥 —— 从访达启动读不到 shell 环境变量', () => {
-    render(<OnboardingHarness over={{ step: 'model' }} />);
-    expect(screen.getByText('DeepSeek API 密钥')).toBeTruthy();
-    expect(screen.getByText('Kimi API 密钥')).toBeTruthy();
-    expect(screen.getByText('GLM API 密钥')).toBeTruthy();
-    expect(screen.queryByText('模型网关地址')).toBeNull();
+  it('没有「接入模型」这一步 —— 模型在设置里配', () => {
+    expect(ONBOARDING_STEPS.includes('model' as (typeof ONBOARDING_STEPS)[number])).toBe(false);
+    render(<OnboardingHarness over={{ step: 'runtime', workspaces: ['/w'] }} />);
+    expect(screen.getByRole('heading', { name: '文档解析组件' })).toBeTruthy();
+    expect(screen.queryByText('DeepSeek API 密钥')).toBeNull();
+    expect(screen.queryByText('接入模型')).toBeNull();
   });
 
   it('权限这一步**不给「完全访问」** —— 它要单独确认且只对当次任务生效', () => {
@@ -244,11 +228,9 @@ describe('六步引导（02 §9）', () => {
   });
 });
 
-describe('**第 ⑤ 步必须可跳过，且说清后果**（R10）', () => {
+describe('**第 ④ 步必须可跳过，且说清后果**（R10）', () => {
   it('跳过不被阻塞', () => {
-    expect(
-      blockingReason({ step: 'runtime', workspaces: ['/w'], modelStatus: 'ok' }),
-    ).toBeUndefined();
+    expect(blockingReason({ step: 'runtime', workspaces: ['/w'] })).toBeUndefined();
   });
 
   it('给两个出路，且说清跳过之后哪类文件用不了', () => {

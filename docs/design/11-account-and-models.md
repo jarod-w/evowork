@@ -26,7 +26,7 @@
 
 | 能力 | 落在哪 | 性质 |
 | --- | --- | --- |
-| 厂商密钥录入 | 引导第④步的三个输入框（[onboarding.tsx:54-56](../../apps/desktop/src/renderer/views/onboarding.tsx#L54-L56)）→ 一次 IPC（[ipc.ts:395](../../apps/desktop/src/shared/ipc.ts#L395) 的 `ApplyModelAccessInput`）→ 写 `~/.evowork/gateway.env` | **明文文件，权限 600**。[gateway-env.ts:14](../../apps/desktop/src/main/gateway-env.ts#L14) 自己写着"这是过渡方案" |
+| 厂商密钥录入 | **已从引导删除**（2026-09-19）。现仅「设置 → 模型 → 添加模型」。兼容 IPC `applyModelAccess` 仍可一次写三家内置密钥 | 密钥库（Q34）；`gateway.env` 明文过渡方案已退役 |
 | 网关访问令牌 | `~/.evowork/gateway-token`，本机拓扑下**宿主自己签**（[gateway-env.ts:140](../../apps/desktop/src/main/gateway-env.ts#L140) 的 `ensureGatewayTokenFile`） | 同一档过渡方案。路径定义在 [service-host.ts:77](../../apps/desktop/src/main/service-host.ts#L77) |
 | 网关鉴权 | `staticTokenAuth()` 常量时间比对（[gateway/src/main.ts:83](../../services/gateway/src/main.ts#L83)），挂在 [server.ts:31](../../services/gateway/src/server.ts#L31) 的 `authenticate` 钩子上 | 钩子形状是对的（注释已写「云端托管形态下换成 identity 服务的校验」），**缺的是那个实现** |
 | 可用模型 | **硬编码**在 `services/gateway/src/capabilities.ts` 的 `P0_MODELS`（三条：deepseek-v4-flash / kimi-k3 / glm-flash），按"env 里有没有那家密钥"过滤（[main.ts:60-62](../../services/gateway/src/main.ts#L60-L62) 的 `availableModels()`） | **只读**。用户能选，不能管 |
@@ -174,7 +174,7 @@ readonly credentialSource: 'byok' | 'hosted' | 'private';
 
 | 删掉的段 | 原先的作用 | 删掉的代价（已知，产品确认接受） |
 | --- | --- | --- |
-| 内置厂商密钥（`SecretInput`，只列已存过的） | 改 / 清引导第 ④ 步填的那把 key | **引导里填错的内置密钥在界面上没有入口可改**，只能重跑引导。同一家也可以用「添加模型」另配一条自定义模型绕过去 |
+| 内置厂商密钥（`SecretInput`，只列已存过的） | 改 / 清引导里填的那把 key | **引导已不再收密钥**（2026-09-19）。内置三家只能用「添加模型」配成自定义条目。`applyModelAccess` IPC 仍在，界面没有入口 |
 | 四层合并结果表（§4.1） | 列卡片之外的模型：托管默认模型 · 被策略停用的 · 配了密钥的内置三家 | **被企业停用的模型不在这一页出现**，§4.1「不隐藏」在设置页这一侧不再成立；Composer 的模型下拉也只有可用项，所以停用原因当前**在 UI 上无处可见**。阶段 2 接托管默认模型时要重新给它一个落点 |
 
 剩下两行仍是条件显示，它们各自只有一行字：
@@ -281,21 +281,19 @@ mode = local    → staticTokenAuth(自签)  ← 保留，不动
 
 ### 5.4 未登录路径（Q30=A 的落法）
 
-Q30 已决策为 **A（未登录可用，但只能用自定义模型）**，引导里两条路**并列摆放，不是先后**：
+Q30 已决策为 **A（未登录可用，但只能用自定义模型）**。引导**不再收模型密钥**（2026-09-19）：走完五步之后去「设置 → 模型」添加。阶段 2 登录上线后，设置页账号分区与「添加模型」并列，不是引导里的二选一：
 
 ```
-引导第④步（现在是"填三家密钥"）改为二选一：
-
   ┌ 用我自己的模型密钥 ────────┐   ┌ 登录 EvoWork 账号 ──────────┐
-  │ 密钥只存这台电脑            │   │ 无需自备密钥，用托管额度     │
-  │ 不需要注册，也不需要联网登录 │   │ 可跨设备用同一份额度与分享   │
+  │ 设置 → 模型 → 添加模型     │   │ 无需自备密钥，用托管额度     │
+  │ 密钥只存这台电脑            │   │ 可跨设备用同一份额度与分享   │
+  │ 不需要注册，也不需要联网登录 │   │                             │
   └ → 上游 A                   ┘   └ → 上游 B                    ┘
-                        「稍后再说」（可跳过，进 App 后 Composer 顶部有 danger 条）
 ```
 
 **右边那张卡不列具体的默认模型** —— 未登录时客户端对我们的云零请求（§13.4），所以它只能说明"有这个类别"，说不出有哪几个。
 
-跳过时的行为已有现成落点：`ModelCatalogResult.reason = 'no-keys'` → Composer 顶部 danger 条 + 录入框（[ipc.ts:170-186](../../apps/desktop/src/shared/ipc.ts#L170-L186) 与 [03 §8](03-home-and-composer.md)）。新增一种 `reason = 'not-signed-in'`：**下一步动作是"登录"而不是"填密钥"**，这正是那个枚举存在的理由（"只给文案的话，「检查模型接入」对没配密钥的用户永远是再 fetch 一次失败"）。
+没配模型时的行为：`ModelCatalogResult.reason = 'no-keys'` → Composer 顶部 danger 条 + 「去设置添加模型」（[ipc.ts](../../apps/desktop/src/shared/ipc.ts) 与 [03 §8](03-home-and-composer.md)）。新增一种 `reason = 'not-signed-in'`：**下一步动作是"登录"而不是"去设置"**，这正是那个枚举存在的理由（"只给文案的话，「检查模型接入」对没配模型的用户永远是再 fetch 一次失败"）。
 
 **这个 reason 只在"未登录**且**一个自定义模型都没有"时给**：未登录但配了自己的密钥 = 产品完全可用（Q30=A 的字面意思），此时报它就是误报，而误报一次就足以让"本地优先"这句话在用户那里失效。
 
@@ -842,4 +840,6 @@ refresh 已经绑 `device_id`（§5.2）。吊销 = identity 把该 `device_id` 
 
 「测试连接」从 `POST {baseUrl}/chat/completions` 改成 `GET {baseUrl}/models`：启用条件不再包含模型名，成功时把 id 列表填进「模型名称」下拉。落盘仍是 `~/.evowork/models.toml`。§4.4 / §6.3 已回写。
 
-设置 → 模型**删掉「内置厂商密钥」与「四层合并结果表」两段**（原为条件显示），这一页只剩「自定义模型」卡。产品确认接受两项代价：引导里填错的内置密钥没有界面入口可改；被企业停用的模型不再显示（§4.4.1 记了细节与阶段 2 的补法）。`SecretInput`（01 §5.35）因此暂时没有调用方，组件保留。
+设置 → 模型**删掉「内置厂商密钥」与「四层合并结果表」两段**（原为条件显示），这一页只剩「自定义模型」卡。产品确认接受两项代价：引导不再收密钥（同日稍后把引导「接入模型」整步删掉，见下条）；被企业停用的模型不再显示（§4.4.1 记了细节与阶段 2 的补法）。`SecretInput`（01 §5.35）因此暂时没有调用方，组件保留。
+
+**同日稍后**：引导从六步收成五步，删掉「接入模型」。模型只在「设置 → 模型」配。没配时 Composer 顶部 danger 条给「去设置添加模型」，不再就地录入三家密钥。§4.4.1 / §5.4 / 02 §9 / 03 §8 已回写。

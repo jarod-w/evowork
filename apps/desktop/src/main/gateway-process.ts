@@ -42,7 +42,7 @@ import { envHasProviderKey, PROVIDER_KEY_ENV } from './gateway-env.js';
  */
 export const GATEWAY_NO_KEYS_NOTICE =
   '本机网关没有启动：一家模型厂商的密钥都没有配置，也没有自定义模型，现在发不出任务。' +
-  '在「设置 → 模型接入」里填入 DeepSeek / Kimi / GLM 至少一家的密钥，或添加一个自定义模型。';
+  '去「设置 → 模型」添加一个自定义模型。没有可用的模型时任务发不出去，EvoWork 不会自动换一个模型。';
 
 /**
  * `base_url` 是不是指向本机。
