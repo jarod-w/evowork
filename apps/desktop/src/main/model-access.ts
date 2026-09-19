@@ -202,7 +202,7 @@ export interface ModelAccess {
   updateCustomModel(input: CustomModelUpdateInput): string | undefined;
   removeCustomModel(id: string): boolean;
   /**
-   * 保存之前的「测试连接」。**直接向上游发**，不经本机网关 ——
+   * 保存之前的「测试连接」。**直接向上游发 GET /models**，不经本机网关 ——
    * 网关只认已经进过 env 的模型，而这一刻这条模型还不存在。
    */
   testCustomModel(input: CustomModelTestInput): Promise<ModelProbeResult>;
@@ -544,9 +544,8 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
               return target ? store.toEnv()[target.keyEnv] : undefined;
             })()
           : undefined;
-      return testUpstreamChat({
+      return testUpstreamModels({
         baseUrl: input.baseUrl,
-        upstreamModel: input.upstreamModel,
         apiKey: typed !== '' ? typed : (stored ?? ''),
         ...(input.authHeader !== undefined ? { authHeader: input.authHeader } : {}),
         ...(deps.fetchFn ? { fetchFn: deps.fetchFn } : {}),
@@ -608,80 +607,148 @@ function withoutAccountSecrets(env: Record<string, string>): Record<string, stri
   );
 }
 
+/** 上游 `/models` 名单的硬上限。下拉不能是无界的。 */
+const UPSTREAM_MODELS_CAP = 200;
+
 /**
  * 保存之前的「测试连接」（「添加模型」弹窗里 API Key 旁边那个按钮）。
  *
  * **它绕过本机网关直接打上游**，与 `probeModel` 是两条不同的路：网关只认已经进过
- * 它进程环境的模型，而这一刻这条模型还没保存。路径 `{baseUrl}/chat/completions`
- * 与网关里四个 provider 用的是同一条（`services/gateway/src/providers/registry.ts`）——
- * 拼法不一致的话，这里"测通了"而真跑起来 404，比不测更糟。
+ * 它进程环境的模型，而这一刻这条模型还没保存。路径 `{baseUrl}/models` 与网关里
+ * 四个 provider 的 `DEFAULT_BASE_URL` 拼在一起（内置三家已经带 `/v1` 或 `/v4`）——
+ * 拼法不一致的话，这里拉到了名单、真跑起来 404，比不测更糟。
+ *
+ * 不要求模型名：名单就是这一下要拉回来填进下拉的东西。GET 不消耗补全 token。
  *
  * **不回显上游响应体**：它可能带诊断信息与账号细节（同 `probeModel` 的纪律）。
- * 只把状态码翻成一句能指向下一步的话。
+ * 只把状态码翻成一句能指向下一步的话，外加解析出来的 id 列表。
  */
-export async function testUpstreamChat(options: {
+export async function testUpstreamModels(options: {
   readonly baseUrl: string;
-  readonly upstreamModel: string;
   readonly apiKey: string;
   /** 自定义鉴权头（Q29 保留的配置项）。给了就整条覆盖 Authorization */
   readonly authHeader?: string | undefined;
   readonly fetchFn?: typeof fetch | undefined;
   readonly timeoutMs?: number | undefined;
 }): Promise<ModelProbeResult> {
-  const refusal = validateCustomModel({
-    // id 在这一步还没定（用户可能刚填了一半），只校验发请求真正需要的三样
-    id: 'probe',
-    provider: 'private',
-    baseUrl: options.baseUrl,
-    upstreamModel: options.upstreamModel,
-  });
-  if (refusal) return { ok: false, message: refusal };
+  const endpointRefusal = validateUpstreamEndpoint(options.baseUrl);
+  if (endpointRefusal) return { ok: false, message: endpointRefusal };
   if (options.apiKey.trim() === '') return { ok: false, message: '先填上 API Key 再测。' };
 
   const fetchFn = options.fetchFn ?? fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   try {
-    const response = await fetchFn(`${options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
+    const response = await fetchFn(`${options.baseUrl.replace(/\/$/, '')}/models`, {
+      method: 'GET',
       headers: {
         ...(options.authHeader
           ? { authorization: options.authHeader }
           : { authorization: `Bearer ${options.apiKey}` }),
-        'content-type': 'application/json',
+        accept: 'application/json',
       },
       signal: controller.signal,
-      // 一 token 上限、一句 ping：这次调用要花钱，所以花得越少越好
-      body: JSON.stringify({
-        model: options.upstreamModel,
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 1,
-        stream: false,
-      }),
     });
-    if (response.ok) return { ok: true, message: '通了：这把密钥能调用这个模型。' };
     if (response.status === 401 || response.status === 403) {
       return { ok: false, message: `上游拒绝了这把密钥（${response.status}）。` };
     }
     if (response.status === 404) {
-      return { ok: false, message: '上游没有这个模型名（404）。检查模型名称与 endpoint 地址。' };
+      return {
+        ok: false,
+        message: '上游没有 /models 列表（404）。请手动填写模型名，或检查 endpoint 地址。',
+      };
     }
     if (response.status === 402 || response.status === 429) {
-      // 密钥是对的，只是这一刻不能用 —— 这两件事对用户的下一步完全不同
       return {
         ok: false,
         message: `密钥能过，但上游现在不接（${response.status}：余额或限流）。`,
       };
     }
-    return {
-      ok: false,
-      message: `没通：上游返回 ${response.status}。密钥不对或 endpoint 填错时都是这个结果。`,
-    };
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: `没通：上游返回 ${response.status}。密钥不对或 endpoint 填错时都是这个结果。`,
+      };
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return {
+        ok: false,
+        message: '密钥能过，但上游返回的不是模型列表。请手动填写模型名。',
+      };
+    }
+    const models = parseOpenAiModelsList(payload);
+    if (models === undefined) {
+      return {
+        ok: false,
+        message: '密钥能过，但上游返回的不是模型列表。请手动填写模型名。',
+      };
+    }
+    if (models.length === 0) {
+      return { ok: true, message: '通了，但上游没有返回模型名。请手动填写。', models };
+    }
+    if (models.length >= UPSTREAM_MODELS_CAP) {
+      return {
+        ok: true,
+        message: `通了：上游返回了 ${models.length} 个模型（已截断）。`,
+        models,
+      };
+    }
+    return { ok: true, message: `通了：上游返回了 ${models.length} 个模型。`, models };
   } catch {
     return { ok: false, message: '没通：连不上这个 endpoint，或者超时了。' };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * OpenAI 兼容的 `{ data: [{ id }] }`。对不上就返回 `undefined`，不猜别的形状 ——
+ * 猜错会把一串无关字段填进下拉，比空列表更糟。
+ */
+export function parseOpenAiModelsList(payload: unknown): string[] | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return undefined;
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of data) {
+    const id = modelIdOf(item).trim();
+    if (id === '' || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= UPSTREAM_MODELS_CAP) break;
+  }
+  return ids;
+}
+
+function modelIdOf(item: unknown): string {
+  if (typeof item === 'string') return item;
+  if (
+    typeof item === 'object' &&
+    item !== null &&
+    typeof (item as { id?: unknown }).id === 'string'
+  ) {
+    return (item as { id: string }).id;
+  }
+  return '';
+}
+
+function validateUpstreamEndpoint(baseUrl: string): string | undefined {
+  const trimmed = baseUrl.trim();
+  if (trimmed === '') return '填上这个模型的 endpoint 地址。';
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return 'endpoint 地址不是一个合法的 URL。';
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return 'endpoint 只能是 http 或 https。';
+  }
+  return undefined;
 }
 
 /**

@@ -140,7 +140,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'addCustomModel',
   'updateCustomModel',
   'removeCustomModel',
-  /** 保存之前的「测试连接」：密钥进来一次，回来只有 ok 与一句话 */
+  /** 保存之前的「测试连接」：密钥进来一次，回来只有 ok、一句话、模型 id 列表 */
   'testCustomModel',
   /** 设置页那一行「models.toml」的链接 —— 在访达里打开它所在的目录 */
   'openModelsFolder',

@@ -691,16 +691,15 @@ export interface CustomModelUpdateInput {
  * 保存之前的「测试连接」（11 §4.4 的附件式弹窗）。
  *
  * **它与 `probeModel` 是两件事**：`probeModel` 走本机网关，只能检查**已经保存**的模型；
- * 这一个直接按用户此刻填的 provider / endpoint / 模型名向上游发一次最小请求，
- * 为的是让"密钥贴错了"在保存之前就暴露 —— 保存之后才发现的代价是
- * 一条看起来正常、发过去 401 的模型（`addCustomModel` 里"先存密钥再写文件"是同一条理由）。
+ * 这一个直接按用户此刻填的 provider / endpoint 向上游发 `GET {baseUrl}/models`，
+ * 为的是让"密钥贴错了"在保存之前就暴露，并把「模型名称」下拉换成上游此刻的名单。
+ * 不要求先填模型名 —— 名单就是这一下要拉回来的东西。
  *
- * 密钥同样只朝一个方向走：进来一次，结果里只有 ok 与一句话，**不回传**。
+ * 密钥同样只朝一个方向走：进来一次，结果里只有 ok、一句话、模型 id 列表，**不回传密钥**。
  */
 export interface CustomModelTestInput {
   readonly provider: string;
   readonly baseUrl: string;
-  readonly upstreamModel: string;
   /** 缺席或空串 = 用 `modelId` 那条已保存的密钥（编辑态不要求重填） */
   readonly apiKey?: string | undefined;
   /** 编辑态：用哪一条已存自定义模型的密钥 */
@@ -721,10 +720,17 @@ export interface ModelAccessMutationResult {
   readonly view: ModelAccessView;
 }
 
-/** 连通性检查的结果。**说清是哪一侧的问题**，不给原始响应体 */
+/**
+ * 连通性检查 / 「测试连接」的结果。**说清是哪一侧的问题**，不给原始响应体。
+ *
+ * `models` 只在「测试连接」拉到上游 `/models` 名单时出现；设置页行内「检查」
+ * 走本机网关，不会带这个字段。
+ */
 export interface ModelProbeResult {
   readonly ok: boolean;
   readonly message: string;
+  /** 上游 `GET /models` 返回的 id。缺席 = 这次没有名单（失败，或走的是网关检查） */
+  readonly models?: readonly string[] | undefined;
 }
 
 /**

@@ -18,7 +18,11 @@ import {
 } from '@evowork/gateway';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createModelAccess, parseModelPolicyToml } from '../src/main/model-access.js';
+import {
+  createModelAccess,
+  parseModelPolicyToml,
+  parseOpenAiModelsList,
+} from '../src/main/model-access.js';
 import type { SafeStorageLike } from '../src/main/secret-store.js';
 import type { ModelCatalogResult } from '../src/shared/ipc.js';
 
@@ -309,31 +313,32 @@ describe('保存之前的「测试连接」（11 §4.4）', () => {
     apiKey: SECRET,
   };
 
-  it('打的是上游的 `/chat/completions`，**不经本机网关** —— 这条模型还没进网关的环境', async () => {
-    const calls: { url: string; auth: string | undefined; body: string }[] = [];
+  it('打的是上游的 GET `/models`，**不经本机网关** —— 这条模型还没进网关的环境', async () => {
+    const calls: { url: string; method: string | undefined; auth: string | undefined }[] = [];
     const m = access({
       fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
         const headers = new Headers(init?.headers);
         calls.push({
           url: String(url),
+          method: init?.method,
           auth: headers.get('authorization') ?? undefined,
-          body: String(init?.body ?? ''),
         });
-        return new Response('{}', { status: 200 });
+        return new Response(JSON.stringify({ data: [{ id: 'qwen3-max' }, { id: 'qwen3-plus' }] }), {
+          status: 200,
+        });
       }) as unknown as typeof fetch,
     });
 
     const result = await m.testCustomModel({
       provider: 'private',
       baseUrl: 'https://example.com/v1',
-      upstreamModel: 'qwen3-max',
       apiKey: SECRET,
     });
     expect(result.ok).toBe(true);
-    expect(calls[0]?.url).toBe('https://example.com/v1/chat/completions');
+    expect(result.models).toEqual(['qwen3-max', 'qwen3-plus']);
+    expect(calls[0]?.url).toBe('https://example.com/v1/models');
+    expect(calls[0]?.method).toBe('GET');
     expect(calls[0]?.auth).toBe(`Bearer ${SECRET}`);
-    // 一 token 上限：这一下是真花钱的（同「检查」按钮的口径）
-    expect(JSON.parse(calls[0]?.body ?? '{}')).toMatchObject({ max_tokens: 1 });
   });
 
   it('编辑时留空密钥 → 用那条已存模型的那把（明文只在主进程里出现）', async () => {
@@ -341,7 +346,7 @@ describe('保存之前的「测试连接」（11 §4.4）', () => {
     const m = access({
       fetchFn: (async (_url: string | URL | Request, init?: RequestInit) => {
         sent = new Headers(init?.headers).get('authorization') ?? undefined;
-        return new Response('{}', { status: 200 });
+        return new Response(JSON.stringify({ data: [{ id: 'qwen3-max' }] }), { status: 200 });
       }) as unknown as typeof fetch,
     });
     m.addCustomModel(BASE);
@@ -349,13 +354,12 @@ describe('保存之前的「测试连接」（11 §4.4）', () => {
     await m.testCustomModel({
       provider: 'private',
       baseUrl: BASE.baseUrl,
-      upstreamModel: BASE.upstreamModel,
       modelId: 'my/llm',
     });
     expect(sent).toBe(`Bearer ${SECRET}`);
   });
 
-  it('401 与 404 说的是两件不同的事（密钥不对 vs 模型名不对）', async () => {
+  it('401 与 404 说的是两件不同的事（密钥不对 vs 没有 /models 列表）', async () => {
     const status = { code: 401 };
     const m = access({
       fetchFn: (async () =>
@@ -366,21 +370,20 @@ describe('保存之前的「测试连接」（11 §4.4）', () => {
     const unauthorized = await m.testCustomModel({
       provider: 'private',
       baseUrl: BASE.baseUrl,
-      upstreamModel: 'x',
       apiKey: SECRET,
     });
     expect(unauthorized.message).toContain('拒绝了这把密钥');
     // 上游的响应体**不回显**：它可能带诊断信息与账号细节
     expect(unauthorized.message).not.toContain('内部诊断信息');
+    expect(unauthorized.models).toBeUndefined();
 
     status.code = 404;
     const missing = await m.testCustomModel({
       provider: 'private',
       baseUrl: BASE.baseUrl,
-      upstreamModel: 'x',
       apiKey: SECRET,
     });
-    expect(missing.message).toContain('没有这个模型名');
+    expect(missing.message).toContain('没有 /models 列表');
   });
 
   it('endpoint 不是合法 URL 时**不发请求**，直接把那句话给回去', async () => {
@@ -394,11 +397,17 @@ describe('保存之前的「测试连接」（11 §4.4）', () => {
     const result = await m.testCustomModel({
       provider: 'private',
       baseUrl: 'not-a-url',
-      upstreamModel: 'x',
       apiKey: SECRET,
     });
     expect(result.ok).toBe(false);
     expect(called).toBe(false);
+  });
+
+  it('对不上 OpenAI `{ data: [{ id }] }` 形状时不猜，让用户手填', () => {
+    expect(parseOpenAiModelsList({ models: ['x'] })).toBeUndefined();
+    expect(parseOpenAiModelsList({ data: [{ id: 'a' }, { id: 'a' }, { name: 'skip' }] })).toEqual([
+      'a',
+    ]);
   });
 });
 

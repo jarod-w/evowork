@@ -330,6 +330,17 @@ describe('模型', () => {
     expect(screen.getByPlaceholderText('https://example.com/v1')).toBeTruthy();
   });
 
+  it('选「其他 OpenAI 兼容」时没填 endpoint，「测试连接」仍禁用并说原因', () => {
+    page();
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '其他 OpenAI 兼容 API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-x' } });
+    const button = screen.getByRole('button', { name: '测试连接' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain('先填 endpoint 地址');
+  });
+
   it('API Key 的明文开关默认关着（旁边可能坐着别人），且只作用于**正在打的那个值**', () => {
     page();
     fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
@@ -348,27 +359,52 @@ describe('模型', () => {
     fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     fireEvent.click(screen.getByRole('button', { name: '供应商' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
-    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'deepseek-v4' } });
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-wrong' } });
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
-    expect(onTestCustomModel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: 'deepseek',
-        upstreamModel: 'deepseek-v4',
-        apiKey: 'sk-wrong',
-      }),
-    );
+    expect(onTestCustomModel).toHaveBeenCalledWith({
+      provider: 'deepseek',
+      apiKey: 'sk-wrong',
+      baseUrl: 'https://api.deepseek.com/v1',
+    });
     expect(
       await within(screen.getByRole('dialog')).findByText('上游拒绝了这把密钥（401）。'),
     ).toBeTruthy();
   });
 
-  it('测试连接在填全之前禁用**并给原因**（一次空请求的结果只会让人更困惑）', () => {
+  it('填完 API Key 之后「测试连接」可点 —— 不要求先填模型名（名单就是这一下要拉的）', () => {
     page();
     fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     const button = screen.getByRole('button', { name: '测试连接' }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toContain('先选供应商');
+    expect(button.title).toContain('先选一个供应商');
+
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain('先填上 API Key');
+
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-x' } });
+    expect(button.disabled).toBe(false);
+  });
+
+  it('测试连接拉回的名单填进「模型名称」下拉', async () => {
+    const onTestCustomModel = vi.fn(async () => ({
+      ok: true,
+      message: '通了：上游返回了 2 个模型。',
+      models: ['deepseek-v4-flash', 'deepseek-chat'],
+    }));
+    page({ onTestCustomModel });
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-x' } });
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+    expect(
+      await within(screen.getByRole('dialog')).findByText('通了：上游返回了 2 个模型。'),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '选择上游返回的模型名' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'deepseek-chat' }));
+    expect((screen.getByLabelText('模型名称') as HTMLInputElement).value).toBe('deepseek-chat');
   });
 
   it('「查看文档」按供应商跳；没选供应商时禁用并说原因', () => {
@@ -396,18 +432,14 @@ describe('模型', () => {
     );
   });
 
-  it('模型名称的下拉只放**实测过的**那几个，没有可挑的时候 chevron 禁用并给原因', () => {
+  it('模型名称下拉在测过之前禁用；测完才能从上游名单里挑', () => {
     page();
     fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
-    // 还没选供应商 → 没有建议
-    expect(
-      (screen.getByRole('button', { name: '选择实测过的模型名' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
-    fireEvent.click(screen.getByRole('button', { name: '选择实测过的模型名' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'deepseek-v4-flash' }));
-    expect((screen.getByLabelText('模型名称') as HTMLInputElement).value).toBe('deepseek-v4-flash');
+    const chevron = screen.getByRole('button', {
+      name: '选择上游返回的模型名',
+    }) as HTMLButtonElement;
+    expect(chevron.disabled).toBe(true);
+    expect(chevron.title).toContain('先测试连接');
   });
 
   it('弹窗右上角的 ✕ 与「取消」是同一个动作', () => {

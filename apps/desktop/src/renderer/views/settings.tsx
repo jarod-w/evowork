@@ -506,14 +506,17 @@ function modelColumns(onProbe: (id: string) => void): readonly Column<ModelOptio
  *
  * ## 三处与附件不同，都是因为我们的模型不是"套餐里选一个"
  *
- * 1. **模型名称是可输入的组合框**，不是纯下拉：BYOK 的 endpoint 上有哪些模型
- *    我们无从枚举，写死一张表的代价是厂商明天发了新型号就加不进来。
- *    下拉里只放**我们真的实测过的**那几个（Q16 的 P0 三家，2026-09-05 探针），其余自己填。
+ * 1. **模型名称是可输入的组合框**，不是纯下拉：点「测试连接」之后，下拉里换成
+ *    上游 `GET {baseUrl}/models` 返回的名单。测之前 chevron 禁用 —— 写死一张
+ *    过期的表比没有下拉更糟。仍允许手填：有的 endpoint 没有 `/models`。
  * 2. **endpoint 地址只在需要时出现**：三家内置供应商的地址是已知的（与网关同一张表），
  *    「其他 OpenAI 兼容」必须问。改一条已经指向自建代理的模型时那一行也会出现 ——
  *    藏起来就等于在保存时**静默把用户的地址改回官方**。
  * 3. **「查看文档」按供应商跳**（我们没有自己的 endpoint 文档）。URL 白名单在主进程，
  *    这里只递 provider id（11 §6.3 登记的出网路径）。
+ *
+ * 「测试连接」**不要求先填模型名**：启用条件是供应商 + API Key（「其他」还要有
+ * endpoint）。名单就是这一下要拉回来的东西。
  *
  * ## 这里的明文开关不违反 01 §5.35
  *
@@ -543,6 +546,9 @@ function CustomModelDialog({
   const [modelName, setModelName] = useState(model?.upstreamModel ?? '');
   const [baseUrl, setBaseUrl] = useState(model?.baseUrl ?? '');
   const [testMessage, setTestMessage] = useState<string | undefined>(undefined);
+  /** 点「测试连接」之后上游返回的名单。换供应商 / 密钥 / 地址就作废。 */
+  const [fetchedModels, setFetchedModels] = useState<readonly string[]>([]);
+  const [testing, setTesting] = useState(false);
 
   const trimmedName = modelName.trim();
   const trimmedKey = apiKey.trim();
@@ -555,7 +561,6 @@ function CustomModelDialog({
   const showEndpoint =
     provider === 'private' ||
     (provider !== undefined && trimmedUrl !== '' && trimmedUrl !== PROVIDER_BASE_URL[provider]);
-  const suggestions = provider !== undefined ? (PROVIDER_MODELS[provider] ?? []) : [];
 
   const ready =
     provider !== undefined &&
@@ -563,7 +568,21 @@ function CustomModelDialog({
     trimmedUrl !== '' &&
     // 改的时候不要求重填密钥（留空 = 沿用已存的那把）
     (trimmedKey !== '' || keyOnFile);
-  const canTest = ready && onTest !== undefined;
+  const hasKey = trimmedKey !== '' || keyOnFile;
+  const canTest =
+    onTest !== undefined && provider !== undefined && hasKey && trimmedUrl !== '' && !testing;
+  const testRefusal =
+    onTest === undefined
+      ? '这个版本不能测试连接。'
+      : provider === undefined
+        ? '先选一个供应商。'
+        : trimmedUrl === ''
+          ? '先填 endpoint 地址。'
+          : !hasKey
+            ? '先填上 API Key。'
+            : testing
+              ? '正在拉取上游模型列表…'
+              : undefined;
 
   const docsRefusal =
     onOpenDocs === undefined
@@ -642,6 +661,7 @@ function CustomModelDialog({
             // 换供应商就换地址：留着上一家的地址是"看着填对了、发过去 404"
             setBaseUrl(PROVIDER_BASE_URL[next] ?? '');
             setTestMessage(undefined);
+            setFetchedModels([]);
           }}
         />
       </div>
@@ -664,6 +684,7 @@ function CustomModelDialog({
               onChange={(event) => {
                 setApiKey(event.target.value);
                 setTestMessage(undefined);
+                setFetchedModels([]);
               }}
             />
             <IconButton
@@ -674,29 +695,34 @@ function CustomModelDialog({
           </span>
           <PillButton
             disabled={!canTest}
-            disabledReason={
-              onTest === undefined ? '这个版本不能测试连接。' : '先选供应商、填模型名与密钥。'
-            }
+            disabledReason={testRefusal}
             onClick={() => {
-              if (!canTest || provider === undefined) return;
-              // 说清这一下会花钱（同「检查」按钮的口径）
-              setTestMessage('正在测…（会向上游发一次极小的请求）');
+              if (!canTest || provider === undefined || onTest === undefined) return;
+              setTesting(true);
+              setTestMessage('正在拉取上游模型列表…');
               void onTest({
                 provider,
                 baseUrl: trimmedUrl,
-                upstreamModel: trimmedName,
                 ...(trimmedKey !== '' ? { apiKey: trimmedKey } : {}),
                 // 留空时用这条已存模型的密钥 —— 明文只在主进程里出现
                 ...(model ? { modelId: model.id } : {}),
               })
-                .then((result) => setTestMessage(result.message))
-                .catch(() => setTestMessage('测试没跑起来。'));
+                .then((result) => {
+                  const names = result.models ?? [];
+                  setFetchedModels(names);
+                  if (modelName.trim() === '' && names.length === 1) {
+                    setModelName(names[0] ?? '');
+                  }
+                  setTestMessage(result.message);
+                })
+                .catch(() => setTestMessage('测试没跑起来。'))
+                .finally(() => setTesting(false));
             }}
           >
             测试连接
           </PillButton>
         </div>
-        {/* 结果原样显示：通了、密钥不对、模型名不存在是三件不同的事 */}
+        {/* 结果原样显示：通了、密钥不对、没有 /models 是三件不同的事 */}
         {testMessage !== undefined ? <p className="ew-field-hint">{testMessage}</p> : null}
       </div>
 
@@ -704,7 +730,7 @@ function CustomModelDialog({
         <span>模型名称</span>
         <ModelNameCombo
           value={modelName}
-          suggestions={suggestions}
+          suggestions={fetchedModels}
           onChange={(next) => {
             setModelName(next);
             setTestMessage(undefined);
@@ -721,6 +747,7 @@ function CustomModelDialog({
             onChange={(event) => {
               setBaseUrl(event.target.value);
               setTestMessage(undefined);
+              setFetchedModels([]);
             }}
           />
         </label>
@@ -730,9 +757,9 @@ function CustomModelDialog({
 }
 
 /**
- * 模型名称：可输入 + 可从"实测过的"里挑（见 `CustomModelDialog` 头注释第 1 条）。
+ * 模型名称：可输入 + 可从上游 `/models` 名单里挑（见 `CustomModelDialog` 头注释第 1 条）。
  *
- * 没有建议可挑时 chevron **禁用并给原因**（01 §5.19 / §6.3），
+ * 还没测过、或上游没返回名单时 chevron **禁用并给原因**（01 §5.19 / §6.3），
  * 而不是给一个点开是空盒子的下拉。
  */
 function ModelNameCombo({
@@ -755,15 +782,15 @@ function ModelNameCombo({
         onChange={(event) => onChange(event.target.value)}
       />
       <IconButton
-        label="选择实测过的模型名"
+        label="选择上游返回的模型名"
         icon={renderIcon('chevron-down')}
         disabled={suggestions.length === 0}
-        disabledReason="这一家我们没有实测过的模型名，直接填你 endpoint 上的那个。"
+        disabledReason="先测试连接，从上游拉取模型名。"
         onClick={() => setOpen((next) => !next)}
       />
       <Popover open={open} onClose={() => setOpen(false)} align="end">
         <Menu
-          ariaLabel="实测过的模型名"
+          ariaLabel="上游返回的模型名"
           items={suggestions.map((name) => ({ id: name, label: name }))}
           onSelect={(name) => {
             setOpen(false);
@@ -786,19 +813,6 @@ const PROVIDER_BASE_URL: Readonly<Record<string, string>> = Object.freeze({
   deepseek: 'https://api.deepseek.com/v1',
   moonshot: 'https://api.moonshot.cn/v1',
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-});
-
-/**
- * 模型名称下拉里的建议值：**只放我们真的实测过的那几个**（Q16 的 P0 三家，
- * 2026-09-05 探针，能力位见 `services/gateway/src/capabilities.ts` 的 `P0_MODELS`）。
- *
- * 不写成"这家所有的模型"：那张表一定会过期，而过期的下拉比没有下拉更糟 ——
- * 用户会以为列表里没有的型号就是不支持。
- */
-const PROVIDER_MODELS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  deepseek: ['deepseek-v4-flash'],
-  moonshot: ['kimi-k3'],
-  zhipu: ['glm-5.3-flash'],
 });
 
 /**
