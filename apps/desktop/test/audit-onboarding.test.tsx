@@ -194,11 +194,17 @@ describe('四步引导（02 §9）', () => {
     expect(ONBOARDING_STEPS).toEqual(['welcome', 'workspace', 'runtime', 'done']);
   });
 
-  it('**没选工作空间时「下一步」禁用并给原因**（01 §6.3）', () => {
+  it('第 ② 步对外叫「项目」，不叫「工作空间」（UI-GAP-22）', () => {
+    render(<OnboardingHarness over={{ step: 'workspace' }} />);
+    expect(screen.getByRole('heading', { name: '选一个项目' })).toBeTruthy();
+    expect(screen.queryByText(/工作空间/)).toBeNull();
+  });
+
+  it('**没选项目时「下一步」禁用并给原因**（01 §6.3）', () => {
     render(<OnboardingHarness over={{ step: 'workspace' }} />);
     const next = screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement;
     expect(next.disabled).toBe(true);
-    expect(next.getAttribute('title')).toContain('先选一个工作空间');
+    expect(next.getAttribute('title')).toContain('先选一个项目');
   });
 
   it('选了之后可以继续', () => {
@@ -288,7 +294,7 @@ describe('办公扩展安装的三种状态各自可辨认', () => {
       <OnboardingHarness
         over={{
           step: 'runtime',
-          runtimeError: '连不上 Python 包镜像（PyPI）。公司网络常会拦截它 —— 换个网络重试。',
+          runtimeError: '连不上 Python 包镜像（清华源）。公司网络常会拦截它 —— 换个网络重试。',
         }}
       />,
     );

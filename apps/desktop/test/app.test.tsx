@@ -1273,6 +1273,94 @@ describe('首次引导（02 §9）', () => {
   });
 
   /*
+   * 02 §9：选目录 → 写入首个 project → 进首页时 Composer 已预选。
+   *
+   * 项目页吃 `listProjects()`，侧栏和 Composer 吃 `startup.workspaces`。
+   * 引导结束若只把 `onboarded` 翻成 true、不把刚建的项目写回这份快照，
+   * 项目页看得到、对话框却说「还没有项目」，第一条任务也会落到默认目录。
+   */
+  it('走完引导后首页已列出并预选刚建的项目（02 §9）', async () => {
+    const PROJECT = {
+      id: 'p1',
+      name: 'AI_COMPANY',
+      path: '/Users/wangli/Desktop/AI_COMPANY',
+    };
+    let onboarded = false;
+    let workspaces: StartupInfo['workspaces'] = [];
+    const getStartup = vi.fn(async () => ({
+      ...STARTUP,
+      onboarded,
+      workspaces,
+    }));
+    const pickWorkspace = vi.fn(async () => {
+      workspaces = [PROJECT];
+      return { path: PROJECT.path };
+    });
+    const completeOnboarding = vi.fn(async () => {
+      onboarded = true;
+    });
+    const { bridge } = fakeBridge({ getStartup, pickWorkspace, completeOnboarding });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText(/第 1 \/ 4 步/);
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
+    expect(await screen.findByText(PROJECT.path)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    fireEvent.click(screen.getByRole('button', { name: '以后再说' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始使用' }));
+
+    await waitFor(() => expect(completeOnboarding).toHaveBeenCalled());
+    expect(await screen.findByLabelText('需求输入')).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByLabelText('选择项目').textContent).toContain('AI_COMPANY'),
+    );
+    expect(screen.getByRole('button', { name: 'AI_COMPANY' })).toBeTruthy();
+    await screen.findByLabelText('选择模型');
+
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '看看这个目录' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: '看看这个目录',
+          workspaceId: 'p1',
+        }),
+      ),
+    );
+  });
+
+  it('机器上只有一个项目时 Composer 直接预选，不留「选择项目」空占位', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        workspaces: [{ id: 'p1', name: 'AI_COMPANY', path: '/Users/wangli/Desktop/AI_COMPANY' }],
+      }),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('选择项目').textContent).toContain('AI_COMPANY'),
+    );
+  });
+
+  it('有多个项目时不擅自选一个 —— 用户得自己挑任务跑在哪', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        workspaces: [
+          { id: 'p1', name: '甲', path: '/a' },
+          { id: 'p2', name: '乙', path: '/b' },
+        ],
+      }),
+    });
+    render(<App bridge={bridge} />);
+    const button = await screen.findByLabelText('选择项目');
+    expect(button.textContent).not.toContain('甲');
+    expect(button.textContent).not.toContain('乙');
+    expect(button.textContent).toContain('选择项目');
+  });
+
+  /*
    * 首运行第②步选中一个被安全策略拦下的目录（如 `~/.ssh`）时，`pickWorkspace`
    * 带回的 `refused` 必须真的出现在界面上，而不是被 `app.tsx` 里的
    * `if (r.path) …` 悄悄吞掉——那正是这条缺陷本来的样子：按钮点了，
@@ -1287,7 +1375,7 @@ describe('首次引导（02 §9）', () => {
     });
     render(<App bridge={bridge} />);
 
-    // 从欢迎屏进到"选一个工作空间"这一步
+    // 从欢迎屏进到「选一个项目」这一步
     await screen.findByText(/第 1 \/ 4 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
 
@@ -1395,6 +1483,10 @@ describe('项目页接线（Task 13）', () => {
     });
     // 首次启动一次，创建成功后再校正一次侧栏工作空间快照。
     expect(getStartup).toHaveBeenCalledTimes(2);
+    // 这是机器上唯一的项目：下拉不能继续显示「选择项目」，否则发出去的任务没有 cwd。
+    await waitFor(() =>
+      expect(screen.getByLabelText('选择项目').textContent).toContain('季度汇报'),
+    );
   });
 
   it('点卡片进详情页，且详情是单独拉的 —— 列表里没有文件树与记忆', async () => {

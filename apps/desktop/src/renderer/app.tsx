@@ -59,6 +59,7 @@ import type {
   TaskSearchHitView,
   TaskRowView,
   TaskResultsView,
+  WorkspaceView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
@@ -314,6 +315,28 @@ const PERMISSION_LABEL: Readonly<Record<string, string>> = {
   ':danger-full-access': '完全访问',
 };
 
+/**
+ * 首页 Composer 该预选哪个项目（02 §9）。
+ *
+ * 已选且还在列表里 → 保持。引导刚选的路径 → 用它。只剩一个项目 → 直接用。
+ * 多个且用户没选过 → 不擅自挑，下拉保持「选择项目」。
+ */
+function preferredWorkspaceId(
+  workspaces: readonly WorkspaceView[],
+  pickedPaths: readonly string[],
+  current: string | undefined,
+): string | undefined {
+  if (current !== undefined && workspaces.some((workspace) => workspace.id === current)) {
+    return current;
+  }
+  for (let index = pickedPaths.length - 1; index >= 0; index -= 1) {
+    const path = pickedPaths[index];
+    const match = workspaces.find((workspace) => workspace.path === path);
+    if (match) return match.id;
+  }
+  return workspaces.length === 1 ? workspaces[0]?.id : undefined;
+}
+
 export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [tasks, setTasks] = useState<readonly TaskRowView[]>([]);
   const [itemsByTask, setItemsByTask] = useState<Readonly<Record<string, readonly RenderItem[]>>>(
@@ -360,11 +383,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     ONBOARDING_STEPS[0] as OnboardingStep,
   );
   /**
-   * 引导里已选的工作空间。
+   * 引导里已选的项目路径。
    *
-   * 单独一份 state 而不是选完重拉 `getStartup`：选完要立刻能点「下一步」，
+   * 单独一份 state 而不是选完才等 `getStartup`：选完要立刻能点「下一步」，
    * 而为了看到刚选的目录重拉一次整个启动数据，中间那半秒按钮还是灰的 ——
-   * 用户会以为没选上，再点一次。
+   * 用户会以为没选上，再点一次。快照仍会在后台校正，供首页下拉使用。
    */
   const [pickedWorkspaces, setPickedWorkspaces] = useState<readonly string[]>([]);
   /**
@@ -575,6 +598,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setFailure(err instanceof Error ? err.message : String(err));
       });
   }, [bridge]);
+
+  /*
+   * 项目列表变了就校正 Composer 的选中项：引导刚建的、侧栏新建的唯一项目，
+   * 以及「在此项目新建任务」留下的选择。删掉当前项后若还剩一个，改选剩下那个。
+   */
+  useEffect(() => {
+    const next = preferredWorkspaceId(startup?.workspaces ?? [], pickedWorkspaces, workspaceId);
+    if (next !== workspaceId) setWorkspaceId(next);
+  }, [startup, pickedWorkspaces, workspaceId]);
 
   /*
    * 全局快捷键只负责跨页面导航；文本输入自己的 Enter / Esc 仍由 Composer 处理。
@@ -1498,7 +1530,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   /*
-   * 首次引导（02 §9）。**盖住整个界面** —— 它要拿到工作空间的答案，
+   * 首次引导（02 §9）。**盖住整个界面** —— 它要拿到项目目录的答案，
    * 这件事决定后面每个任务在哪跑。走完落 `meta` 表，不再出现。
    * 权限档位暂时不在这里问：选了也不会进 `turn/start`。
    *
@@ -1526,7 +1558,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             ...pickedWorkspaces.filter((p) => !startup.workspaces.some((w) => w.path === p)),
           ]}
           /*
-           * **这一步是硬门槛**：`blockingReason` 要求至少一个工作空间，
+           * **这一步是硬门槛**：`blockingReason` 要求至少一个项目，
            * 而干净机器上内核一个 project 都没有。不接这个回调的话，
            * 「下一步」永远是灰的 —— 整个应用打不开（2026-09-06 实测撞到）。
            */
@@ -1536,6 +1568,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then((r) => {
                 if (r.path) {
                   setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
+                  /*
+                   * 选完立刻校正侧栏/Composer 用的快照，不等走完引导。
+                   * 「下一步」仍由 `pickedWorkspaces` 点亮，不把按钮灰着等到这次往返。
+                   */
+                  void bridge
+                    .getStartup()
+                    .then((info) =>
+                      setStartup((previous) =>
+                        previous === null ? info : { ...previous, workspaces: info.workspaces },
+                      ),
+                    )
+                    .catch(() => undefined);
                   return;
                 }
                 /*
@@ -1569,8 +1613,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onFinish={() => {
             void bridge
               .completeOnboarding()
-              .then(() => {
-                setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
+              .then(async () => {
+                try {
+                  const info = await bridge.getStartup();
+                  setStartup(info);
+                } catch {
+                  setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
+                }
               })
               .catch((error: unknown) => {
                 setNotices((prev) => [

@@ -2,7 +2,7 @@
  * 首次运行与授权引导（02 §9）。
  *
  * ```
- * ① 欢迎 + 隐私说明   ② 选工作空间   ③ 解析运行时（可跳过）   ④ 完成
+ * ① 欢迎 + 隐私说明   ② 选项目   ③ 解析运行时（可跳过）   ④ 完成
  * ```
  *
  * 「权限默认值」暂时不进引导：选了既不写 `default_permissions`，也不进 `turn/start`，
@@ -44,7 +44,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
 
 export const STEP_TITLE: Readonly<Record<OnboardingStep, string>> = Object.freeze({
   welcome: '欢迎使用 EvoWork',
-  workspace: '选一个工作空间',
+  workspace: '选一个项目',
   runtime: '文档解析组件',
   done: '好了',
 });
@@ -270,7 +270,7 @@ export function blockingReason(props: {
   readonly workspaces: readonly string[];
 }): string | undefined {
   if (props.step === 'workspace' && props.workspaces.length === 0) {
-    return '先选一个工作空间 —— EvoWork 只能读写你选中的目录。';
+    return '先选一个项目 —— EvoWork 只能读写你选中的目录。';
   }
   // 第 ③ 步**不阻塞**（R10）：可跳过是它的设计要求，不是妥协
   return undefined;
