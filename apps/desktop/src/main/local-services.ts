@@ -157,14 +157,23 @@ export function createLocalServices(options: LocalServicesOptions) {
 
   const watchers = new Map<string, ReturnType<typeof createArtifactWatcher>>();
   const workspaceThreads = new Map<string, string>();
+  /** 最近一次 turn 的任务。桌面等 cwd 之外的上报 JSONL 里没有 threadId，靠这个认领。 */
+  let lastActiveThreadId: string | undefined;
   let artifactSeq = 0;
   let artifactReportLog: string | undefined;
   let artifactReportOffset = 0;
   let artifactReportTimer: ReturnType<typeof setInterval> | undefined;
 
+  function canonicalPath(path: string): string {
+    return normalize(resolve(path));
+  }
+
   function watchWorkspace(root: string, threadId?: string): void {
-    const canonicalRoot = normalize(resolve(root));
-    if (threadId) workspaceThreads.set(canonicalRoot, threadId);
+    const canonicalRoot = canonicalPath(root);
+    if (threadId) {
+      workspaceThreads.set(canonicalRoot, threadId);
+      lastActiveThreadId = threadId;
+    }
     if (watchers.has(canonicalRoot)) return;
     const watcher = createArtifactWatcher({
       fs,
@@ -180,6 +189,25 @@ export function createLocalServices(options: LocalServicesOptions) {
   function isInside(root: string, path: string): boolean {
     const rel = relative(root, path);
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  }
+
+  /**
+   * 给一份绝对路径找到（或建）对应 watcher。产物经常写到 cwd 之外
+   * （用户指定的桌面目录），不能因为「不在当前工作空间里」就丢掉。
+   */
+  function watcherFor(
+    path: string,
+    threadId?: string,
+  ): ReturnType<typeof createArtifactWatcher> | undefined {
+    const artifactPath = canonicalPath(path);
+    const existingRoot = [...watchers.keys()].find((root) => isInside(root, artifactPath));
+    if (existingRoot) {
+      if (threadId) workspaceThreads.set(existingRoot, threadId);
+      return watchers.get(existingRoot);
+    }
+    const parent = canonicalPath(dirname(artifactPath));
+    watchWorkspace(parent, threadId);
+    return watchers.get(parent);
   }
 
   /**
@@ -221,23 +249,11 @@ export function createLocalServices(options: LocalServicesOptions) {
     readonly title?: string | undefined;
     readonly threadId?: string | undefined;
   }): void {
-    const artifactPath = normalize(resolve(report.path));
+    const artifactPath = canonicalPath(report.path);
     const normalizedReport = { ...report, path: artifactPath };
-    const root = [...watchers.keys()].find((path) => isInside(path, artifactPath));
-    const watcher = watchers.get(root ?? '');
-    if (!watcher) {
-      // 没在盯的目录里产出的产物：先建一个 watcher 再上报，否则这条记录之后无人维护
-      const parent = dirname(artifactPath);
-      watchWorkspace(parent, report.threadId);
-      const record = watchers
-        .get(parent)
-        ?.ingestSkillReport(normalizedReport, { threadId: report.threadId });
-      renameTaskAfter(record);
-      announceArtifact(record);
-      return;
-    }
-    const threadId = report.threadId ?? (root ? workspaceThreads.get(root) : undefined);
-    const record = watcher.ingestSkillReport(normalizedReport, { threadId });
+    const threadId = report.threadId ?? lastActiveThreadId;
+    const watcher = watcherFor(artifactPath, threadId);
+    const record = watcher?.ingestSkillReport(normalizedReport, { threadId });
     renameTaskAfter(record);
     announceArtifact(record);
   }
@@ -277,19 +293,17 @@ export function createLocalServices(options: LocalServicesOptions) {
           options.logger?.warn('artifacts.report.invalid', { reason: 'INVALID_RECORD' });
           continue;
         }
-        const fallbackCwd = fallbackThreadId
-          ? options.store.threads.get(fallbackThreadId)?.cwd
-          : undefined;
-        const canUseFallback = Boolean(
-          fallbackThreadId && fallbackCwd && isInside(normalize(resolve(fallbackCwd)), raw.path),
-        );
         reportArtifact({
           skill: raw.skill,
           path: raw.path,
           outputFormat: raw.outputFormat,
           operationKind: raw.operationKind,
           ...(typeof raw.title === 'string' ? { title: raw.title } : {}),
-          ...(canUseFallback ? { threadId: fallbackThreadId } : {}),
+          // JSONL 本身没有 threadId。路径在 cwd 里时 watcher 能认领；写到桌面等
+          // cwd 之外时必须用当前回合，否则索引有记录、结果区仍是空的。
+          ...((fallbackThreadId ?? lastActiveThreadId)
+            ? { threadId: fallbackThreadId ?? lastActiveThreadId }
+            : {}),
         });
         accepted += 1;
       } catch {
@@ -398,15 +412,14 @@ export function createLocalServices(options: LocalServicesOptions) {
       threadId: string,
       changes: readonly { readonly path: string; readonly kind?: string | undefined }[],
     ): void {
-      const canonicalRoot = normalize(resolve(root));
+      const canonicalRoot = canonicalPath(root);
       watchWorkspace(canonicalRoot, threadId);
-      const watcher = watchers.get(canonicalRoot);
-      if (!watcher) return;
       for (const change of changes) {
-        const path = normalize(
-          isAbsolute(change.path) ? resolve(change.path) : resolve(canonicalRoot, change.path),
+        const path = canonicalPath(
+          isAbsolute(change.path) ? change.path : join(canonicalRoot, change.path),
         );
-        if (!isInside(canonicalRoot, path)) continue;
+        const watcher = watcherFor(path, threadId);
+        if (!watcher) continue;
         const kind = change.kind === 'delete' ? 'delete' : change.kind === 'add' ? 'add' : 'modify';
         announceArtifact(watcher.ingestPath(path, kind, { threadId }));
       }

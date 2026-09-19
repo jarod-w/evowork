@@ -306,6 +306,7 @@ export interface TaskWorkspaceProps {
   readonly artifacts?: readonly {
     readonly id: string;
     readonly name: string;
+    readonly path?: string | undefined;
     readonly artifactType: string;
     readonly version: number;
   }[];

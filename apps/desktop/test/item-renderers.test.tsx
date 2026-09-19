@@ -125,6 +125,30 @@ describe('AgentMessage：生成内容按 Markdown 格式化（04 §5.2 #2）', (
     // 正文 Markdown 不得靠 img 标签隐式出网；图片由 ImageGeneration item 展示。
     expect(container.querySelector('img')).toBeNull();
   });
+
+  it('正文里与产物同名的文件可点开，而不是一排不能点的代码', () => {
+    const onOpenArtifact = vi.fn();
+    renderItem(
+      {
+        id: 'i-files',
+        type: 'agentMessage',
+        text: ['已生成文件', '', '- `美股市场日报_2026-09-18.docx` — 完整日报'].join('\n'),
+      },
+      {
+        artifacts: [
+          {
+            id: 'a1',
+            name: '美股市场日报_2026-09-18.docx',
+            path: '/Users/x/Desktop/美股市场日报_2026-09-18.docx',
+          },
+        ],
+        onOpenArtifact,
+      },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '美股市场日报_2026-09-18.docx' }));
+    expect(onOpenArtifact).toHaveBeenCalledWith('a1');
+  });
 });
 
 describe('Reasoning：模型无推理能力时**整体不渲染，不留空壳**（04 §5.2 #3）', () => {

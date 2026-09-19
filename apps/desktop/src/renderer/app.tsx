@@ -821,32 +821,32 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .catch(() => setTaskFiles((prev) => ({ ...prev, [threadId]: [] })));
   }, [activeTaskId, bridge, startup, tasks]);
 
-  /** 明确在交付结果的回合完成后自动展开；用户关过一次就尊重其选择。 */
+  /** 有产物就展开结果区；用户关过一次就尊重其选择。 */
   useEffect(() => {
     if (activeTaskId === null || resultDismissed[activeTaskId]) return;
     const result = taskResults[activeTaskId];
     if (!result || result.artifacts.length === 0) return;
-    const items = itemsByTask[activeTaskId] ?? [];
-    if (!shouldAutoOpenResult(items)) return;
     const latest = result.artifacts[0];
     if (!latest) return;
-    if (bridge.readResultPreview) {
-      void bridge.readResultPreview({ artifactId: latest.id }).then((preview) => {
-        setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
-        setResultUi((previous) => ({
-          ...previous,
-          [activeTaskId]: {
-            open: true,
-            tab: preview.kind === 'html' ? 'browser' : 'artifacts',
-          },
-        }));
-      });
-      return;
-    }
-    setResultUi((previous) => ({
-      ...previous,
-      [activeTaskId]: { open: true, tab: 'artifacts' },
-    }));
+    setResultUi((previous) => {
+      const current = previous[activeTaskId];
+      if (current?.open === true) return previous;
+      return {
+        ...previous,
+        [activeTaskId]: { open: true, tab: current?.tab ?? 'artifacts' },
+      };
+    });
+    if (!shouldAutoOpenResult(itemsByTask[activeTaskId] ?? []) || !bridge.readResultPreview) return;
+    void bridge.readResultPreview({ artifactId: latest.id }).then((preview) => {
+      setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
+      setResultUi((previous) => ({
+        ...previous,
+        [activeTaskId]: {
+          open: true,
+          tab: preview.kind === 'html' ? 'browser' : (previous[activeTaskId]?.tab ?? 'artifacts'),
+        },
+      }));
+    });
   }, [activeTaskId, bridge, itemsByTask, resultDismissed, taskResults]);
 
   /**
@@ -1290,6 +1290,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }
     },
     [activeTaskId, pushToast, updateResultUi],
+  );
+  const openArtifact = useCallback(
+    (id: string) => {
+      if (bridge.readResultPreview)
+        void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
+      else void bridge.openResultFile({ artifactId: id });
+    },
+    [bridge, showPreview],
   );
   const composer = useMemo(
     () => ({
@@ -1807,13 +1815,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
             mermaid: MERMAID,
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
+            artifacts: currentResults.artifacts,
+            onOpenArtifact: openArtifact,
           }}
           artifacts={currentResults.artifacts}
-          onOpenArtifact={(id) => {
-            if (bridge.readResultPreview)
-              void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
-            else void bridge.openResultFile({ artifactId: id });
-          }}
+          onOpenArtifact={openArtifact}
           hasResults={hasCurrentResults}
           resultOpen={activeResultUi.open}
           resultTab={activeResultUi.tab}
@@ -1832,13 +1838,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                         <button
                           type="button"
                           className="ew-result-artifact"
-                          onClick={() =>
-                            bridge.readResultPreview
-                              ? void showPreview(() =>
-                                  bridge.readResultPreview!({ artifactId: artifact.id }),
-                                )
-                              : void bridge.openResultFile({ artifactId: artifact.id })
-                          }
+                          onClick={() => openArtifact(artifact.id)}
                         >
                           <span>{artifact.name}</span>
                           <span>版本 {artifact.version}</span>

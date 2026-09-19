@@ -823,6 +823,19 @@ textarea {
   border-radius: var(--r-xs);
   padding: 0 var(--space-4);
 }
+.ew-markdown-file {
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  background: var(--bg-sunken);
+  border: 0;
+  border-radius: var(--r-xs);
+  padding: 0 var(--space-4);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+.ew-markdown-file:hover {
+  background: var(--bg-hover);
+}
 .ew-markdown pre {
   overflow: auto;
   padding: var(--space-12);

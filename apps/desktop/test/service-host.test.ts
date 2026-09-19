@@ -375,6 +375,78 @@ describe('FileChange → 产物索引', () => {
       ),
     ).toBe(true);
   });
+
+  it('写到工作空间之外的 mark_artifact 仍归当前任务并通知界面', async () => {
+    host = makeHost();
+    const workspace = join(dir, 'work');
+    const desktop = join(dir, 'Desktop', '美股日报');
+    mkdirSync(workspace, { recursive: true });
+    mkdirSync(desktop, { recursive: true });
+    await host.start();
+
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'thread/started',
+      params: {
+        thread: {
+          id: 't-desktop',
+          sessionId: 's-desktop',
+          preview: 'x',
+          ephemeral: false,
+          modelProvider: 'evowork',
+          createdAt: 1,
+          updatedAt: 1,
+          status: 'running',
+          cwd: workspace,
+          turns: [],
+          name: '生成报告',
+        },
+      },
+    });
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'turn/started',
+      params: { threadId: 't-desktop', turn: { id: 'turn-desktop', status: 'inProgress' } },
+    });
+    await new Promise((done) => setImmediate(done));
+
+    const report = join(desktop, '美股市场日报.docx');
+    writeFileSync(report, 'generated report');
+    writeFileSync(
+      resolvePaths(dir).artifactLog,
+      `${JSON.stringify({
+        kind: 'artifact.mark',
+        skill: 'documents',
+        operationKind: 'create',
+        expectedOutputCount: 1,
+        outputFormat: 'docx',
+        title: '美股市场日报',
+        path: report,
+      })}\n`,
+    );
+    emitted = [];
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: {
+        threadId: 't-desktop',
+        turn: { id: 'turn-desktop', status: 'completed' },
+      },
+    });
+    await new Promise((done) => setImmediate(done));
+
+    await expect(host.actions.getTaskResults({ threadId: 't-desktop' })).resolves.toMatchObject({
+      artifacts: [{ name: '美股市场日报', path: report }],
+    });
+    expect(
+      emitted.some(
+        (event) =>
+          event.channel === IPC.uiEvent &&
+          (event.payload as { type?: string; taskId?: string }).type === 'task-results-updated' &&
+          (event.payload as { taskId?: string }).taskId === 't-desktop',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名）', () => {

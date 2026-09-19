@@ -35,6 +35,12 @@ export interface RenderItem {
   readonly [key: string]: unknown;
 }
 
+export interface MarkdownArtifact {
+  readonly id: string;
+  readonly name: string;
+  readonly path?: string | undefined;
+}
+
 export interface ItemRenderContext {
   /** 模型是否有推理能力（来自网关的能力声明，D2）。false 时 Reasoning 整体不渲染 */
   readonly reasoningAvailable: boolean;
@@ -44,6 +50,9 @@ export interface ItemRenderContext {
   /** 时间线的轻量卡跳到右侧完整视图。 */
   readonly onOpenResult?:
     ((pane: 'artifacts' | 'files' | 'changes' | 'browser') => void) | undefined;
+  /** 当前任务已索引的产物。正文里同名文件会变成可点开的入口。 */
+  readonly artifacts?: readonly MarkdownArtifact[] | undefined;
+  readonly onOpenArtifact?: ((id: string) => void) | undefined;
   /**
    * Visualizer 的三个可选依赖（04 §7）。
    *
@@ -151,21 +160,77 @@ const MARKDOWN_ATTRIBUTES = [
  * 这里不允许图片标签。Markdown 图片会隐式发起网络请求，与 K6 的「出网必须显式授权」
  * 冲突；真正的生成图片由 `ImageGeneration` item 展示，不走正文 Markdown。
  */
-function renderMarkdown(markdown: string): { readonly __html: string } {
+function fileLabel(path: string): string {
+  const parts = path.split(/[/\\]/);
+  return parts[parts.length - 1] ?? path;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * 把已经清洗过的 Markdown 里、与当前任务产物同名的行内代码换成按钮。
+ *
+ * 模型交付文件时习惯写成 `` `报告.docx` ``，清洗后只是一排灰底代码，点不了。
+ * 按钮是我们事后加的，不进白名单——模型写不出来。
+ */
+export function linkArtifactNamesInMarkdown(
+  html: string,
+  artifacts: readonly MarkdownArtifact[],
+): string {
+  const labels = artifacts
+    .flatMap((artifact) => {
+      const names = [artifact.name];
+      if (artifact.path) names.push(fileLabel(artifact.path));
+      return names
+        .filter((name, index, all) => name.length >= 4 && all.indexOf(name) === index)
+        .map((name) => ({ id: artifact.id, name }));
+    })
+    .sort((a, b) => b.name.length - a.name.length);
+  if (labels.length === 0) return html;
+  const parts = html.split(/(<pre\b[\s\S]*?<\/pre>)/i);
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      let next = part;
+      for (const label of labels) {
+        const pattern = new RegExp(`<code>${escapeRegExp(label.name)}</code>`, 'g');
+        next = next.replace(
+          pattern,
+          `<button type="button" class="ew-markdown-file" data-artifact-id="${escapeHtml(label.id)}">${escapeHtml(label.name)}</button>`,
+        );
+      }
+      return next;
+    })
+    .join('');
+}
+
+function renderMarkdown(
+  markdown: string,
+  artifacts: readonly MarkdownArtifact[] = [],
+): { readonly __html: string } {
   const parsed = marked.parse(markdown, {
     async: false,
     breaks: true,
     gfm: true,
   });
   const html = typeof parsed === 'string' ? parsed : '';
-  return {
-    __html: DOMPurify.sanitize(html, {
-      ALLOWED_ATTR: [...MARKDOWN_ATTRIBUTES],
-      ALLOWED_TAGS: [...MARKDOWN_TAGS],
-      ALLOW_DATA_ATTR: false,
-      SANITIZE_NAMED_PROPS: true,
-    }),
-  };
+  const sanitized = DOMPurify.sanitize(html, {
+    ALLOWED_ATTR: [...MARKDOWN_ATTRIBUTES],
+    ALLOWED_TAGS: [...MARKDOWN_TAGS],
+    ALLOW_DATA_ATTR: false,
+    SANITIZE_NAMED_PROPS: true,
+  });
+  return { __html: linkArtifactNamesInMarkdown(sanitized, artifacts) };
 }
 
 function Collapsible({
@@ -253,6 +318,7 @@ export function ItemRenderer({
        * 对话流里的横向轮播会丢上下文 —— 用户看第二张图时看不到第一张。
        */
       const blocks = parseFences(text(item, 'text'));
+      const artifacts = context.artifacts ?? [];
       return (
         <div className="ew-item ew-item-agent" data-kind={kind}>
           {blocks.map((block, index) =>
@@ -261,7 +327,20 @@ export function ItemRenderer({
                 key={index}
                 className="ew-markdown"
                 // 解析后的 HTML 已由 DOMPurify 按 Markdown 专用白名单清洗。
-                dangerouslySetInnerHTML={renderMarkdown(block.text)}
+                dangerouslySetInnerHTML={renderMarkdown(
+                  block.text,
+                  context.onOpenArtifact ? artifacts : [],
+                )}
+                onClick={(event) => {
+                  const target =
+                    event.target instanceof Element
+                      ? event.target.closest('[data-artifact-id]')
+                      : null;
+                  const id = target?.getAttribute('data-artifact-id');
+                  if (!id) return;
+                  event.preventDefault();
+                  context.onOpenArtifact?.(id);
+                }}
               />
             ) : (
               <Visualizer

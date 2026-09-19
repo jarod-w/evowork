@@ -662,6 +662,59 @@ describe('生成后的产物刷新', () => {
 
     expect(await screen.findByRole('button', { name: /分析报告\.docx/ })).toBeTruthy();
     expect(getTaskResults).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
+  });
+
+  it('交付文案里的文件名可点开，并展开结果区', async () => {
+    const task = {
+      id: 't-report',
+      title: '分析报告',
+      status: 'running' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const artifact = {
+      id: 'artifact-1',
+      name: '分析报告.docx',
+      path: '/workspace/分析报告.docx',
+      artifactType: 'document',
+      version: 1,
+    };
+    const getTaskResults = vi
+      .fn()
+      .mockResolvedValueOnce({ artifacts: [] })
+      .mockResolvedValue({ artifacts: [artifact] });
+    const readResultPreview = vi.fn(async () => ({
+      name: '分析报告.docx',
+      kind: 'unsupported' as const,
+      message: '用系统应用打开',
+    }));
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      getTaskResults,
+      readResultPreview,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('分析报告'));
+    await waitFor(() => expect(getTaskResults).toHaveBeenCalledTimes(1));
+
+    emit.ui?.({
+      type: 'item',
+      taskId: 't-report',
+      item: {
+        id: 'm1',
+        type: 'agentMessage',
+        text: '已生成文件\n\n- `分析报告.docx` — 完整报告',
+      },
+    });
+    emit.ui?.({ type: 'task-results-updated', taskId: 't-report' } as never);
+
+    expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '分析报告.docx' }));
+    await waitFor(() =>
+      expect(readResultPreview).toHaveBeenCalledWith({ artifactId: 'artifact-1' }),
+    );
   });
 });
 

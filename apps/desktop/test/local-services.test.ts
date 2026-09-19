@@ -394,6 +394,57 @@ describe('文件变化 ↔ 产物索引', () => {
     expect(rows).toEqual([{ file_state: 'MISSING' }]);
     services.stop();
   });
+
+  it('写到工作空间之外的文件仍归当前任务，结果区才找得到', () => {
+    const { services } = make();
+    const desktop = join(dir, 'Desktop', '美股日报');
+    mkdirSync(desktop, { recursive: true });
+    const path = join(desktop, '美股市场日报.docx');
+    writeFileSync(path, 'v1');
+    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: 'add' }]);
+
+    const rows = store.db.prepare('SELECT path, thread_id FROM artifact').all() as {
+      path: string;
+      thread_id: string | null;
+    }[];
+    expect(rows).toEqual([{ path, thread_id: 't1' }]);
+    services.stop();
+  });
+
+  it('技能上报写到 cwd 之外时仍绑当前任务，并通知界面重读', () => {
+    const changed: string[] = [];
+    mkdirSync(join(dir, 'work'), { recursive: true });
+    const { adapter } = fakeAdapter();
+    const services = createLocalServices({
+      store,
+      adapter: adapter as unknown as Parameters<typeof createLocalServices>[0]['adapter'],
+      notify: () => undefined,
+      now: () => NOW,
+      onArtifactChanged: (threadId) => changed.push(threadId),
+    });
+    seedThread('t1');
+    const desktop = join(dir, 'Desktop', 'out');
+    mkdirSync(desktop, { recursive: true });
+    const path = join(desktop, '分析报告.docx');
+    writeFileSync(path, 'v1');
+    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.reportArtifact({
+      skill: 'documents',
+      path,
+      outputFormat: 'docx',
+      operationKind: 'create',
+      title: '分析报告',
+    });
+
+    const rows = store.db.prepare('SELECT path, thread_id FROM artifact').all() as {
+      path: string;
+      thread_id: string | null;
+    }[];
+    expect(rows).toEqual([{ path, thread_id: 't1' }]);
+    expect(changed).toEqual(['t1']);
+    services.stop();
+  });
 });
 
 describe('路径展示', () => {
