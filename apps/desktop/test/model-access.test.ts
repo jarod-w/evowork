@@ -558,5 +558,6 @@ describe('视图', () => {
       reason: 'unreachable',
     });
     expect(view.catalogUnavailable).toBe('连不上模型网关');
+    expect(view.catalogReason).toBe('unreachable');
   });
 });

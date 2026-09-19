@@ -1746,4 +1746,91 @@ describe('设置页（11 §4.4）', () => {
     fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
     await waitFor(() => expect(screen.getByText('new/model')).toBeTruthy());
   });
+
+  /**
+   * 两个模块各自对、合起来错：`addCustomModel` 已经把新目录写进 view.models，
+   * 但首页的 danger 条来自启动时那次 `listModels` 的 `unavailable`。
+   * 只同步下拉、不清那条，就是「设置里明明有模型、输入框上头还说发不出任务」。
+   *
+   * 顺带守住：场景包里的 `evowork/deepseek-v4-flash` 不在自定义目录里时，
+   * 默认就是配置的第一个模型，不弹「场景默认不可用」。
+   */
+  it('加完自定义模型后，首页不再说网关没起，默认用配置的第一个模型', async () => {
+    const noKeys = '本机网关没有启动：一家模型厂商的密钥都没有配置，也没有自定义模型';
+    const added: ModelOptionView = {
+      id: 'moonshot/kimi-k3',
+      label: 'moonshot/kimi-k3',
+      provider: 'moonshot',
+      capabilities: [],
+      notices: [],
+      credentialSource: 'byok',
+      verified: true,
+    };
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        scenarios: [
+          {
+            id: 'office',
+            name: '日常办公',
+            chips: [],
+            defaults: { modelId: 'evowork/deepseek-v4-flash' },
+          },
+        ],
+      }),
+      listModels: vi.fn(async (): Promise<ModelCatalogResult> => ({
+        models: [],
+        reason: 'no-keys',
+        unavailable: noKeys,
+      })),
+      getModelAccess: vi.fn(async () => ({
+        ok: true,
+        view: {
+          ...ACCESS,
+          models: [],
+          catalogUnavailable: noKeys,
+          catalogReason: 'no-keys' as const,
+        },
+      })),
+      addCustomModel: vi.fn(async () => ({
+        ok: true,
+        view: {
+          ...ACCESS,
+          customModels: [
+            {
+              id: added.id,
+              displayName: added.label,
+              provider: 'moonshot',
+              upstreamModel: 'kimi-k3',
+              baseUrl: 'https://api.moonshot.cn/v1',
+              keySaved: true,
+            },
+          ],
+          models: [added],
+        },
+      })),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(screen.getByText(noKeys)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    await waitFor(() => screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Kimi（Moonshot）API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-kimi' } });
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'kimi-k3' } });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }) as HTMLElement,
+    );
+    await waitFor(() => expect(bridge.addCustomModel).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('选择模型').textContent).toContain('moonshot/kimi-k3'),
+    );
+    expect(screen.queryByText(/本机网关没有启动/)).toBeNull();
+    expect(screen.queryByText(/场景默认的模型/)).toBeNull();
+  });
 });

@@ -424,6 +424,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
         // 账号会话由 `account.ts` 叠上来。这里如实是未登录，避免本模块去出网。
         signedIn: false,
         ...(catalog.unavailable !== undefined ? { catalogUnavailable: catalog.unavailable } : {}),
+        ...(catalog.reason !== undefined ? { catalogReason: catalog.reason } : {}),
       };
     },
 

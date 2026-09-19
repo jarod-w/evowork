@@ -1,8 +1,8 @@
 /**
  * 下拉里选中哪一个（`renderer/model-selection.ts`）。
  *
- * 全部四条都指向同一件事：**换模型这件事永远不许悄悄发生**。
- * 用户以为在用 A、实际在用 B，账单与产物质量都不一样（U1 未关闭）。
+ * 盯两件事：用户自己选过的模型不许悄悄换掉；场景包里的型号不在目录里时，
+ * 第一个可用的模型就是这台机器上的默认（Q30），不要再弹「场景默认不可用」。
  */
 import { describe, expect, it } from 'vitest';
 
@@ -26,43 +26,41 @@ const MODELS = [
   model('evowork/kimi-k3', 'moonshot/kimi-k3'),
 ];
 
-describe('选中项：用户已选 > 场景默认 > 第一个可用', () => {
+describe('选中项：用户已选 > 场景偏好（目录里有才算）> 第一个可用', () => {
   it('用户显式选过就一直用他选的 —— 切场景也不改回去（03 §2.5）', () => {
     expect(resolveModelChoice(MODELS, 'evowork/kimi-k3', 'evowork/deepseek-v4-flash').modelId).toBe(
       'evowork/kimi-k3',
     );
   });
 
-  it('用户没选过时用场景默认值', () => {
+  it('用户没选过时用场景偏好（目录里有才算）', () => {
     expect(resolveModelChoice(MODELS, undefined, 'evowork/kimi-k3').modelId).toBe(
       'evowork/kimi-k3',
     );
   });
 
-  it('场景也没给默认值时用第一个可用的', () => {
+  it('场景也没给偏好时用第一个可用的', () => {
     expect(resolveModelChoice(MODELS, undefined, undefined).modelId).toBe(
       'evowork/deepseek-v4-flash',
     );
   });
 
   /**
-   * **这一条是这个文件存在的理由。**
-   *
-   * 场景默认值写在随包的 `config/scenarios/*.toml` 里，而"哪些模型可用"取决于
-   * 网关配了哪几家的密钥 —— 两者必然会对不上（例如只配了 Kimi 的密钥）。
-   * 此时换一个是对的，**但必须说出来**：静默换模型正是 03 §8 与 D2 禁止的那件事。
+   * Q30 未登录只能用自定义模型。场景包里写着 `evowork/deepseek-v4-flash`，
+   * 那是托管偏好，不是这台机器上用户配过的东西。目录里没有它时，第一个
+   * 配置的模型**就是**默认 —— 再弹「场景默认不可用」是在陈述一件用户从未配置过的事。
    */
-  it('场景默认的模型不在可用列表里 → 换一个**并且给出一句话**', () => {
+  it('场景偏好不在可用列表里 → 用第一个配置的模型，不弹「场景默认不可用」', () => {
     const choice = resolveModelChoice(MODELS, undefined, 'evowork/不存在的模型');
     expect(choice.modelId).toBe('evowork/deepseek-v4-flash');
-    expect(choice.notice).toContain('不存在的模型');
-    expect(choice.notice).toContain('deepseek/deepseek-v4-flash');
+    expect(choice.notice).toBeUndefined();
   });
 
-  it('用户选的那个也可能消失（网关重启后少了一家密钥）—— 同样要换并说明', () => {
+  it('用户选的那个消失了（网关重启后少了一家密钥）—— 换一个并且说出来', () => {
     const choice = resolveModelChoice(MODELS, 'evowork/glm-flash', 'evowork/glm-flash');
     expect(choice.modelId).toBe('evowork/deepseek-v4-flash');
-    expect(choice.notice).toBeTruthy();
+    expect(choice.notice).toContain('evowork/glm-flash');
+    expect(choice.notice).toContain('deepseek/deepseek-v4-flash');
   });
 
   it('一个模型都没有时不挑 —— 挑一个不存在的 id 只会让失败晚一步发生', () => {

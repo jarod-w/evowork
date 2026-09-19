@@ -607,9 +607,28 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    */
   const applyCatalog = useCallback((result: ModelCatalogResult) => {
     setModels(result.models);
-    setModelUnavailable(result.unavailable);
-    setModelUnavailableReason(result.reason);
+    setModelUnavailable(result.models.length > 0 ? undefined : result.unavailable);
+    setModelUnavailableReason(result.models.length > 0 ? undefined : result.reason);
   }, []);
+
+  /**
+   * 设置页改完密钥 / 自定义模型后，Composer 必须用**同一份**目录。
+   * 只写下拉、不把 `unavailable` 清掉，就是截图里那种：下拉里已经有模型，
+   * 输入框上头还写着「本机网关没有启动」。
+   *
+   * 有可用模型时 danger 条必须消失（11 §13.4）：未登录但配了自定义模型 = 完全可用。
+   */
+  const applyAccessView = useCallback(
+    (view: ModelAccessView) => {
+      setModelAccess(view);
+      applyCatalog({
+        models: view.models,
+        ...(view.catalogUnavailable !== undefined ? { unavailable: view.catalogUnavailable } : {}),
+        ...(view.catalogReason !== undefined ? { reason: view.catalogReason } : {}),
+      });
+    },
+    [applyCatalog],
+  );
 
   const loadModels = useCallback(async () => {
     try {
@@ -666,9 +685,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, [bridge]);
 
   /**
-   * 选中项跟着「列表 + 场景默认值 + 用户已选」三者走。
+   * 选中项跟着「列表 + 场景偏好 + 用户已选」三者走。
    *
-   * 场景默认的模型不在列表里时会换一个并**说出来** —— 见 `resolveModelChoice`。
+   * 用户自己选过的模型不在列表里时会换一个并**说出来** —— 见 `resolveModelChoice`。
+   * 场景包里的型号不在目录里不算配错：第一个可用的模型就是这台机器上的默认。
    * 那条提示只在换掉的那一次插入，不会每次渲染都堆一条：`notice` 只有在
    * 选中项真的发生变化时才会被消费。
    */
@@ -860,7 +880,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       void bridge
         .getModelAccess()
         .then((result) => {
-          setModelAccess(result.view);
+          applyAccessView(result.view);
           setSettingsRefusal(result.refused);
         })
         .catch(() => setModelAccess(null));
@@ -869,7 +889,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then(setPreferences)
         .catch(() => setPreferences(null));
     }
-  }, [view, activeProjectId, bridge, discoverOpen]);
+  }, [view, activeProjectId, bridge, discoverOpen, applyAccessView]);
 
   /**
    * 进详情页时拉三份数据：概览、根目录一层、空间记忆。
@@ -1587,11 +1607,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {...(probeResult !== undefined ? { probeResult } : {})}
           onModelAccessAction={(run) => {
             void run(bridge).then((result) => {
-              setModelAccess(result.view);
+              applyAccessView(result.view);
               // 拒绝的原话要显示出来；成功时把上一次的拒绝清掉
               setSettingsRefusal(result.refused);
-              // 设置页改了密钥/模型之后，Composer 的下拉也要跟着变（同一份数据）
-              setModels(result.view.models);
             });
           }}
           onTestCustomModel={(input) => bridge.testCustomModel(input)}
@@ -1617,16 +1635,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               if (!result.ok) setSettingsRefusal(result.refused);
               else setSettingsRefusal(undefined);
               void bridge.getModelAccess().then((r) => {
-                setModelAccess(r.view);
-                setModels(r.view.models);
+                applyAccessView(r.view);
               });
             });
           }}
           onLogout={() => {
             void bridge.logout().then(() =>
               bridge.getModelAccess().then((r) => {
-                setModelAccess(r.view);
-                setModels(r.view.models);
+                applyAccessView(r.view);
               }),
             );
           }}

@@ -610,6 +610,12 @@ export interface ModelAccessView {
   readonly policyPack?: PolicyPackStatusView | undefined;
   /** 网关目录读不到时的原因。与 `ModelCatalogResult.unavailable` 同一句话 */
   readonly catalogUnavailable?: string | undefined;
+  /**
+   * 与 `catalogUnavailable` 配套的原因码。设置页改完模型后，Composer 必须
+   * 用这一份清掉「网关没启动」——只同步 `models`、不清 danger 条，就是
+   * 「设置里明明有模型、首页还说发不出任务」那种合起来才错的状态。
+   */
+  readonly catalogReason?: ModelUnavailableReason | undefined;
 }
 
 /** 设置页与 Composer 看到的策略包折叠结果。没有 payload / 签名。 */
