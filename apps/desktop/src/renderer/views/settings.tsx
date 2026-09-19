@@ -401,8 +401,9 @@ const MODE_LABEL: Readonly<Record<string, string>> = Object.freeze({
  * ## 三处与附件不同，都是因为我们的模型不是"套餐里选一个"
  *
  * 1. **模型名称是可输入的组合框**，不是纯下拉：点「测试连接」之后，下拉里换成
- *    上游 `GET {baseUrl}/models` 返回的名单。测之前 chevron 禁用 —— 写死一张
- *    过期的表比没有下拉更糟。仍允许手填：有的 endpoint 没有 `/models`。
+ *    上游 `GET {baseUrl}/models` 返回的名单。测完点输入框或右侧箭头都能展开；
+ *    测之前 chevron 禁用 —— 写死一张过期的表比没有下拉更糟。仍允许手填：有的
+ *    endpoint 没有 `/models`。
  * 2. **endpoint 地址只在需要时出现**：三家内置供应商的地址是已知的（与网关同一张表），
  *    「其他 OpenAI 兼容」必须问。改一条已经指向自建代理的模型时那一行也会出现 ——
  *    藏起来就等于在保存时**静默把用户的地址改回官方**。
@@ -654,7 +655,8 @@ function CustomModelDialog({
  * 模型名称：可输入 + 可从上游 `/models` 名单里挑（见 `CustomModelDialog` 头注释第 1 条）。
  *
  * 还没测过、或上游没返回名单时 chevron **禁用并给原因**（01 §5.19 / §6.3），
- * 而不是给一个点开是空盒子的下拉。
+ * 而不是给一个点开是空盒子的下拉。测完之后点输入框本身也展开名单 —— 组合框的
+ * 可点区域是整行，不是右侧那枚 28×28 的箭头。
  */
 function ModelNameCombo({
   value,
@@ -666,14 +668,25 @@ function ModelNameCombo({
   readonly onChange: (next: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const showSuggestions = (): void => {
+    if (suggestions.length > 0) setOpen(true);
+  };
   return (
-    <span className="ew-field-combo">
+    <span
+      className="ew-field-combo"
+      onClick={(event) => {
+        // 箭头自己 toggle；点输入区 / 外壳才展开。冒泡到这里会把「点箭头关闭」抵消掉。
+        if ((event.target as HTMLElement).closest('button')) return;
+        showSuggestions();
+      }}
+    >
       <input
         aria-label="模型名称"
         value={value}
         spellCheck={false}
         placeholder="上游真实的模型名"
         onChange={(event) => onChange(event.target.value)}
+        onFocus={showSuggestions}
       />
       <IconButton
         label="选择上游返回的模型名"

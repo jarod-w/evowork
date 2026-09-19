@@ -375,6 +375,26 @@ describe('模型', () => {
     expect((screen.getByLabelText('模型名称') as HTMLInputElement).value).toBe('deepseek-chat');
   });
 
+  it('测完之后点模型名称输入框也能打开上游名单，不必点右侧箭头', async () => {
+    const onTestCustomModel = vi.fn(async () => ({
+      ok: true,
+      message: '通了：上游返回了 2 个模型。',
+      models: ['deepseek-v4-flash', 'deepseek-chat'],
+    }));
+    page({ onTestCustomModel });
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-x' } });
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+    expect(
+      await within(screen.getByRole('dialog')).findByText('通了：上游返回了 2 个模型。'),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('模型名称'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'deepseek-v4-flash' }));
+    expect((screen.getByLabelText('模型名称') as HTMLInputElement).value).toBe('deepseek-v4-flash');
+  });
+
   it('「查看文档」按供应商跳；没选供应商时禁用并说原因', () => {
     const onOpenProviderDocs = vi.fn();
     page({ onOpenProviderDocs });
