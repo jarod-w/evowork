@@ -67,8 +67,7 @@ export function runtimeMissingMessage(tier: RuntimeTier, what: string): string {
  *
  * 两种情形要分开说，因为用户能做的事不同：
  *
- *   · `hasParser: false` —— 这个版本还没接上解析器（当前就是这个状态，
- *     `ExternalParser` 要等 M4 的受限子进程）。用户**做什么都没用**，所以不能暗示他去装东西；
+ *   · `hasParser: false` —— 宿主没注入解析器。用户**做什么都没用**，所以不能暗示他去装东西；
  *   · `hasParser: true`  —— 解析器在，但这个文件没解出来（加密 PDF、损坏的 docx……）。
  *     换个文件或者用原始文件引用是有意义的动作。
  */

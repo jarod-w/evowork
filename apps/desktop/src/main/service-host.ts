@@ -50,7 +50,7 @@ import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
  * 否则用户会看到"上限 3"而第 2 个任务就开始排队。
  */
 import { applyUserPreference, computeConcurrencyLimit } from '@evowork/policy';
-import { createIngest, type IngestOutcome } from '@evowork/ingest';
+import { createIngest, createOfficeParser, type IngestOutcome } from '@evowork/ingest';
 import { BRAND } from '@evowork/tokens';
 import { createAuditRepo, openStore, readMeta, writeMeta, type Store } from '@evowork/store';
 
@@ -872,6 +872,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       if (paths.length === 0) return [];
       const ingest = createIngest({
         probe: services.probe,
+        externalParser: createOfficeParser({
+          interpreter: services.probe.interpreter(),
+        }),
         store: {
           createUploadDir: (slug, at) => {
             uploadSequence += 1;

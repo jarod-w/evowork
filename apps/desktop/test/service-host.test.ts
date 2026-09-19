@@ -234,6 +234,8 @@ describe('启动顺序：**先开库、再起内核**（09 §4.6 的直接后果
       'utf8',
     );
     expect(hostSource).not.toContain('CODEX_' + 'HOME');
+    // 忘了注入解析器的表现：办公扩展装好了，拖入 docx 仍显示「解析失败」
+    expect(hostSource).toContain('createOfficeParser');
   });
 
   it('对账失败不阻塞启动（投影表是投影类，真源在内核，可以晚点补）', async () => {

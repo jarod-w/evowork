@@ -111,6 +111,21 @@ for (const bundle of BUNDLES) {
   console.log(`   ${bundle.entry} → ${bundle.out}`);
 }
 
+/*
+ * 办公解析脚本必须躺在主进程产物旁边。esbuild 只打包 JS；漏拷的表现是
+ * 开发时（vitest 从 src/ 加载 office.py）解析成功，装好的 App 拖入 docx
+ * 永远「解析失败」。Python 读不了 asar 里的文件，运行时还会再物化一份。
+ */
+const OFFICE_PARSER = 'services/ingest/src/parsers/office.py';
+const OFFICE_PARSER_DEST = 'apps/desktop/dist/main/office.py';
+if (!existsSync(join(ROOT, OFFICE_PARSER))) {
+  console.error(`找不到 ${OFFICE_PARSER}。办公解析脚本必须随主进程一起带走。`);
+  process.exit(1);
+}
+mkdirSync(dirname(join(ROOT, OFFICE_PARSER_DEST)), { recursive: true });
+copyFileSync(join(ROOT, OFFICE_PARSER), join(ROOT, OFFICE_PARSER_DEST));
+console.log(`   ${OFFICE_PARSER} → ${OFFICE_PARSER_DEST}`);
+
 console.log('\n④ 打包渲染层');
 /*
  * 用 pnpm --filter 而不是直接跑 `node node_modules/vite/bin/vite.js`。

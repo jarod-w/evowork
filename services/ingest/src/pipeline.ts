@@ -17,6 +17,7 @@
  *    但 UI 要说明"上传的文件会保存到工作空间"（08 §3.5）。
  * 3. **解析进程不出网**。内置解析器是纯计算；外部解析器由 `ExternalParser` 注入，
  *    其实现必须在受限子进程里跑（网络关闭）—— 强制点在 M4 的沙箱，这里是接口约束。
+ *    办公档的实现是 `createOfficeParser`：宿主注入解释器，跑 `parsers/office.py`。
  */
 
 import { detectKind, extensionOf } from './detect.js';

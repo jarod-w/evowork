@@ -34,6 +34,7 @@ src/
   pipeline.ts        编排：识别 → 闸门 → 落盘 → 解析 → 注入
   parsers/
     builtin.ts       基础包：txt / md / csv / tsv / json
+    office.ts / .py  办公扩展：docx / xlsx / pptx / pdf / rtf（宿主注入，跑办公扩展的解释器）
     zip.ts           最小 zip 读取器（自己写，因为这条路径是安全敏感的）
 ```
 
@@ -49,8 +50,7 @@ src/
 
 ## 还没做的
 
-- **office / ocr 档的实际解析器**（python-docx / openpyxl / python-pptx / pdfplumber / tesseract）：
-  接口是 `ExternalParser`，宿主注入。它必须在**受限子进程**里跑且网络关闭 ——
-  强制点在 M4 的沙箱，这里只是接口约束。
-- 扩展包的下载与安装编排（M9 打包时与更新通道一起做）。
+- **OCR 档的实际解析器**（扫描件 / `pdf-scanned`）：办公档的 `createOfficeParser` 已接
+  python-docx / openpyxl / python-pptx / pdfplumber；扫描件仍要 tesseract，安装器还没装 OCR 档。
+- 解析进程的 seatbelt / landlock（M4）。当前会摘掉代理环境变量，真正断网仍等沙箱接线。
 - 解析结果进资料库全文索引（第 ⑥ 步，M8）。

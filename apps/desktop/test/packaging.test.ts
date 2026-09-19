@@ -71,7 +71,16 @@ describe('从访达启动也能拿到厂商密钥（M9 + M10a）', () => {
 
   it('钥匙串不可用时仍读旧的 gateway.env —— 不静默让老机器失去密钥', () => {
     // 迁移要求密钥库可用；不可用时**不迁移、不改名、继续读**（见 model-access 的 legacyEnv）
-    expect(read('src/main/model-access.ts')).toContain('parseGatewayEnv');
     expect(read('src/main/gateway-env.ts')).toContain('DEEPSEEK_API_KEY');
+    expect(read('src/main/model-access.ts')).toContain('parseGatewayEnv');
+  });
+});
+
+describe('办公解析脚本会进主进程产物（M3）', () => {
+  it('构建把 office.py 拷到 dist/main —— 漏了装好的 App 拖入 docx 永远解析失败', () => {
+    const build = readFileSync(resolve(APP_ROOT, '../../scripts/build.mjs'), 'utf8');
+    expect(build).toContain('services/ingest/src/parsers/office.py');
+    expect(build).toContain('apps/desktop/dist/main/office.py');
+    expect(read('src/main/service-host.ts')).toContain('createOfficeParser');
   });
 });

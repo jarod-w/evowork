@@ -173,7 +173,7 @@ describe('运行时缺失时给两个出路（03 §8），**没有云端兜底**
   });
 
   /**
-   * 解析器压根没接上（当前就是这个状态：`ExternalParser` 等 M4 的受限子进程）。
+   * 解析器没接上（宿主忘了注入 `externalParser`）。
    * 此时更不能提"安装"——装什么都不会让这条路通。
    */
   it('这个版本没有外部解析器时，文案不暗示用户去装东西', async () => {
@@ -304,13 +304,13 @@ describe('K6：这个模块里**没有出网路径**', () => {
      * 2026-09-07 把办公扩展的下载器放进**另一个包**（`services/runtime-installer`）
      * 而不是放进这里，正是为了让这条扫描能收紧成整个目录。
      */
-    const files = readdirSync(srcDir, { recursive: true, encoding: 'utf8' }).filter((f) =>
-      f.endsWith('.ts'),
+    const files = readdirSync(srcDir, { recursive: true, encoding: 'utf8' }).filter(
+      (f) => f.endsWith('.ts') || f.endsWith('.py'),
     );
     expect(files.length, '一个文件都没扫到说明路径错了，而不是"都合规"').toBeGreaterThan(5);
     for (const file of files) {
       const source = readFileSync(join(srcDir, file), 'utf8').replace(
-        /\/\*[\s\S]*?\*\/|\/\/.*/g,
+        /\/\*[\s\S]*?\*\/|\/\/.*|#.*$/gm,
         '',
       );
       for (const forbidden of [
