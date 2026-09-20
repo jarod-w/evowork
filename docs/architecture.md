@@ -112,7 +112,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·
 [scripts/](../scripts/) 门禁与雷达 · [build/](../build/) 打包配置 + **`build/kernel/<os>-<arch>/` 随包的内核二进制**（当前只有 `mac-arm64`）。
 
-**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· `apps/web` 的分享页（Q41）。见 §10。
+**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· `apps/web` 的分享页（Q41）与**改密页**（`/v1/password` 无调用方，Q38 的种子管理员因此进不了管理端 —— [11 §13.10](design/11-account-and-models.md)）· 企业私有源索引的管理面（**Q44 未决策**）。见 §10。
 
 ### 2.1 依赖图（实测自各包 `package.json`）
 
