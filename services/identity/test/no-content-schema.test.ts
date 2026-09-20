@@ -19,7 +19,7 @@ describe('identity schema 没有内容面', () => {
     expect(hits, `identity DDL 出现了内容面列：${hits.join(', ')}`).toEqual([]);
   });
 
-  it('service.ts 的 AdminMember / PublicModel 没有那些字段', () => {
+  it('service.ts 的管理端类型没有任务 / 产物 / prompt，用量类型没有按天字段', () => {
     const src = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), '../src/service.ts'),
       'utf8',
@@ -27,6 +27,14 @@ describe('identity schema 没有内容面', () => {
     expect(/readonly prompt/.test(src)).toBe(false);
     expect(/readonly threadId/.test(src)).toBe(false);
     expect(/readonly artifact/.test(src)).toBe(false);
+    const usageStart = src.indexOf('export interface AdminUsage {');
+    expect(usageStart).toBeGreaterThan(0);
+    const usageBlock = src.slice(usageStart, src.indexOf('}', usageStart) + 1);
+    expect(usageBlock).toMatch(/tenantUsed/);
+    expect(usageBlock).not.toMatch(/\bdays\?:/);
+    expect(usageBlock).not.toMatch(/\bseries\?:/);
+    expect(usageBlock).not.toMatch(/\bbyDay\?:/);
+    expect(src).not.toMatch(/GROUP BY\s+([A-Za-z_]+\.)?day\b/i);
   });
 
   it('邮件通道没有短信发送路径（11 §12 第 19 条）', () => {

@@ -9,10 +9,13 @@ import {
   finishDesktopPkce,
   parsePkce,
   readSession,
+  syncSessionFromMe,
   writeSession,
   type AdminMember,
+  type AdminUsage,
   type DeviceRow,
-  type PolicyPackEnvelopeView,
+  type IdentityAuditView,
+  type PolicyPackView,
   type PublicModel,
   type QuotaClassView,
   type QuotaView,
@@ -46,6 +49,36 @@ function formData(e: FormEvent<HTMLFormElement>): Record<string, string> {
     if (typeof value === 'string') out[key] = value;
   }
   return out;
+}
+
+function formatUnixMs(at: number): string {
+  const ms = at < 1_000_000_000_000 ? at * 1000 : at;
+  return new Date(ms).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+}
+
+function who(row: { email?: string | undefined; phone?: string | undefined }): string {
+  return row.email ?? row.phone ?? '—';
+}
+
+function packActor(pack: PolicyPackView): string {
+  return pack.actorEmail ?? pack.actorPhone ?? '—';
+}
+
+function auditActionLabel(action: string): string {
+  switch (action) {
+    case 'grant-admin':
+      return '授予管理员';
+    case 'revoke-admin':
+      return '收回管理员';
+    case 'update-model-key':
+      return '更新默认模型密钥';
+    case 'issue-policy-pack':
+      return '签发策略包';
+    case 'revoke-policy-pack':
+      return '撤销策略包';
+    default:
+      return action;
+  }
 }
 
 export function SignInPage(props: { readonly search: string; readonly onSignedIn: () => void }) {
@@ -221,7 +254,74 @@ export function ResetPage(props: { readonly search: string }) {
   );
 }
 
-export function AccountHome(props: { readonly onDelete: () => void }) {
+export function ChangePasswordForm(props: { readonly onChanged?: () => void }) {
+  const [error, setError] = useState<string | undefined>();
+  const [ok, setOk] = useState(false);
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const body = formData(e);
+    const out = await api('/v1/password', {
+      method: 'POST',
+      body: JSON.stringify({ current: body.current, next: body.next }),
+    });
+    if (!out.ok) {
+      setError(out.error.message);
+      setOk(false);
+      return;
+    }
+    const session = await syncSessionFromMe();
+    if (!session || session.mustChangePassword) {
+      setError('改密已提交，但账号服务仍要求修改密码。请刷新后再试。');
+      return;
+    }
+    setError(undefined);
+    setOk(true);
+    props.onChanged?.();
+  }
+
+  return (
+    <form onSubmit={(e) => void onSubmit(e)}>
+      <Field
+        label="当前密码"
+        name="current"
+        type="password"
+        autoComplete="current-password"
+        required
+      />
+      <Field label="新密码" name="next" type="password" autoComplete="new-password" required />
+      {error ? <p className="ew-error">{error}</p> : null}
+      {ok ? <p className="ew-ok">密码已更新。</p> : null}
+      <div className="ew-actions">
+        <button type="submit">更新密码</button>
+      </div>
+    </form>
+  );
+}
+
+export function PasswordChangePage(props: { readonly onChanged?: () => void }) {
+  const session = readSession();
+  if (!session) {
+    return (
+      <section>
+        <h1>修改密码</h1>
+        <p>请先登录。</p>
+      </section>
+    );
+  }
+  return (
+    <section>
+      <h1>修改密码</h1>
+      <p>引导账号第一次登录必须改密。改完之前不能做管理动作。</p>
+      <ChangePasswordForm {...(props.onChanged ? { onChanged: props.onChanged } : {})} />
+    </section>
+  );
+}
+
+export function AccountHome(props: {
+  readonly onDelete: () => void;
+  readonly onPassword: () => void;
+}) {
   const session = readSession();
   const [quota, setQuota] = useState<QuotaView | undefined>();
   const [devices, setDevices] = useState<readonly DeviceRow[]>([]);
@@ -265,7 +365,12 @@ export function AccountHome(props: { readonly onDelete: () => void }) {
       ) : null}
       <p>没有充值或升级入口。</p>
       {session.mustChangePassword ? (
-        <p className="ew-error">请先修改引导密码后再使用管理端。</p>
+        <p className="ew-error">
+          请先修改引导密码后再使用管理端。{' '}
+          <button type="button" data-tone="ghost" onClick={props.onPassword}>
+            去改密
+          </button>
+        </p>
       ) : null}
       <h2>已登录的设备</h2>
       <ul>
@@ -283,6 +388,9 @@ export function AccountHome(props: { readonly onDelete: () => void }) {
       </ul>
       {error ? <p className="ew-error">{error}</p> : null}
       <div className="ew-actions">
+        <button type="button" data-tone="ghost" onClick={props.onPassword}>
+          修改密码
+        </button>
         <button type="button" data-tone="ghost" onClick={props.onDelete}>
           注销账号
         </button>
@@ -330,12 +438,35 @@ export function AccountDeletePage(props: { readonly onDone: () => void }) {
   );
 }
 
-export function AdminPage() {
-  const session = readSession();
+function PolicyPackReadable(props: { readonly pack: PolicyPackView }) {
+  const pack = props.pack;
+  return (
+    <ul>
+      <li>停用模型：{pack.disabledModels.length > 0 ? pack.disabledModels.join('、') : '无'}</li>
+      <li>
+        停用权限档：{pack.disabledProfiles.length > 0 ? pack.disabledProfiles.join('、') : '无'}
+      </li>
+      <li>自定义模型：{pack.allowCustom ? '允许' : '已锁定'}</li>
+      <li>有效期至 {formatUnixMs(pack.expiresAt)}</li>
+      {pack.graceUntil !== undefined ? <li>宽限至 {formatUnixMs(pack.graceUntil)}</li> : null}
+      {pack.reason ? <li>原因：{pack.reason}</li> : null}
+      <li>只允许管理员 hooks：{pack.allowManagedHooksOnly ? '是' : '否'}</li>
+      <li>禁用分享：{pack.disableShare ? '是' : '否'}</li>
+      <li>禁用运营位：{pack.disableSlots ? '是' : '否'}</li>
+      <li>强制审计：{pack.forceAudit ? '是' : '否'}</li>
+    </ul>
+  );
+}
+
+export function AdminPage(props: { readonly onSessionChanged?: () => void }) {
+  const [session, setSession] = useState(readSession);
   const [members, setMembers] = useState<readonly AdminMember[]>([]);
   const [models, setModels] = useState<readonly PublicModel[]>([]);
   const [classes, setClasses] = useState<readonly QuotaClassView[]>([]);
-  const [pack, setPack] = useState<PolicyPackEnvelopeView | null>(null);
+  const [currentPack, setCurrentPack] = useState<PolicyPackView | null>(null);
+  const [packHistory, setPackHistory] = useState<readonly PolicyPackView[]>([]);
+  const [audit, setAudit] = useState<readonly IdentityAuditView[]>([]);
+  const [usage, setUsage] = useState<AdminUsage | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [ok, setOk] = useState<string | undefined>();
 
@@ -347,19 +478,45 @@ export function AdminPage() {
     if (modelsOut.ok) setModels(modelsOut.data.models);
     const classesOut = await api<{ classes: QuotaClassView[] }>('/v1/admin/quota-classes');
     if (classesOut.ok) setClasses(classesOut.data.classes);
-    const packOut = await api<{ pack: PolicyPackEnvelopeView | null }>('/v1/admin/policy-pack');
-    if (packOut.ok) setPack(packOut.data.pack);
+    const packOut = await api<{
+      current: PolicyPackView | null;
+      history: PolicyPackView[];
+    }>('/v1/admin/policy-pack');
+    if (packOut.ok) {
+      setCurrentPack(packOut.data.current);
+      setPackHistory(packOut.data.history);
+    }
+    const auditOut = await api<{ events: IdentityAuditView[] }>('/v1/admin/audit');
+    if (auditOut.ok) setAudit(auditOut.data.events);
+    const usageOut = await api<AdminUsage>('/v1/admin/usage');
+    if (usageOut.ok) setUsage(usageOut.data);
   }
 
   useEffect(() => {
+    if (!session || session.role !== 'admin' || session.mustChangePassword) return;
     void reload();
-  }, []);
+  }, [session]);
 
   if (!session || session.role !== 'admin') {
     return (
       <section>
         <h1>管理端</h1>
         <p>需要租户管理员。</p>
+      </section>
+    );
+  }
+
+  if (session.mustChangePassword) {
+    return (
+      <section>
+        <h1>租户管理</h1>
+        <p>引导账号必须先改密。改完之前不能配模型、加成员、改额度或签发策略包。</p>
+        <ChangePasswordForm
+          onChanged={() => {
+            setSession(readSession());
+            props.onSessionChanged?.();
+          }}
+        />
       </section>
     );
   }
@@ -381,7 +538,7 @@ export function AdminPage() {
     const body = formData(e);
     const out = await api('/v1/admin/members', {
       method: 'POST',
-      body: JSON.stringify({ userId: body.userId }),
+      body: JSON.stringify({ email: body.email }),
     });
     if (!out.ok) setError(out.error.message);
     else {
@@ -414,15 +571,18 @@ export function AdminPage() {
     }
   }
 
-  async function setQuota(e: FormEvent<HTMLFormElement>) {
+  async function setQuota(e: FormEvent<HTMLFormElement>, userId: string) {
     e.preventDefault();
     const body = formData(e);
     const out = await api('/v1/admin/quota', {
       method: 'POST',
-      body: JSON.stringify({ userId: body.userId, limit: Number(body.limit) }),
+      body: JSON.stringify({ userId, limit: Number(body.limit) }),
     });
     if (!out.ok) setError(out.error.message);
-    else setOk('已更新额度上限');
+    else {
+      setOk('已更新额度上限');
+      await reload();
+    }
   }
 
   async function saveClass(e: FormEvent<HTMLFormElement>) {
@@ -440,12 +600,12 @@ export function AdminPage() {
     }
   }
 
-  async function assignClass(e: FormEvent<HTMLFormElement>) {
+  async function assignClass(e: FormEvent<HTMLFormElement>, userId: string) {
     e.preventDefault();
     const body = formData(e);
     const out = await api('/v1/admin/quota-class', {
       method: 'POST',
-      body: JSON.stringify({ userId: body.userId, quotaClass: body.quotaClass }),
+      body: JSON.stringify({ userId, quotaClass: body.quotaClass }),
     });
     if (!out.ok) setError(out.error.message);
     else {
@@ -487,6 +647,15 @@ export function AdminPage() {
     }
   }
 
+  async function revokePack() {
+    const out = await api('/v1/admin/policy-pack/revoke', { method: 'POST', body: '{}' });
+    if (!out.ok) setError(out.error.message);
+    else {
+      setOk('已撤销当前策略包。');
+      await reload();
+    }
+  }
+
   return (
     <section>
       <h1>租户管理</h1>
@@ -501,40 +670,64 @@ export function AdminPage() {
             <th>用户</th>
             <th>角色</th>
             <th>配额班级</th>
-            <th></th>
+            <th>动作</th>
           </tr>
         </thead>
         <tbody>
           {members.map((member) => (
             <tr key={member.id}>
-              <td>{member.email ?? member.phone ?? member.id}</td>
+              <td>{who(member)}</td>
               <td>{member.role}</td>
               <td>{member.quotaClass}</td>
               <td>
-                {member.role === 'admin' ? (
-                  <button
-                    type="button"
-                    data-tone="ghost"
-                    onClick={() => void grant(member.id, 'revoke')}
-                  >
-                    收回管理员
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    data-tone="ghost"
-                    onClick={() => void grant(member.id, 'grant')}
-                  >
-                    授予管理员
-                  </button>
-                )}
+                <div className="ew-row-actions">
+                  {member.role === 'admin' ? (
+                    <button
+                      type="button"
+                      data-tone="ghost"
+                      onClick={() => void grant(member.id, 'revoke')}
+                    >
+                      收回管理员
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-tone="ghost"
+                      onClick={() => void grant(member.id, 'grant')}
+                    >
+                      授予管理员
+                    </button>
+                  )}
+                  <form onSubmit={(e) => void setQuota(e, member.id)}>
+                    <input
+                      name="limit"
+                      inputMode="numeric"
+                      aria-label={`${who(member)} 的额度上限`}
+                    />
+                    <button type="submit">设额度</button>
+                  </form>
+                  <form onSubmit={(e) => void assignClass(e, member.id)}>
+                    <select
+                      name="quotaClass"
+                      defaultValue={member.quotaClass}
+                      aria-label={`${who(member)} 的配额班级`}
+                    >
+                      {classes.map((cls) => (
+                        <option key={cls.name} value={cls.name}>
+                          {cls.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="submit">分配班级</button>
+                  </form>
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <form onSubmit={(e) => void addMember(e)}>
-        <Field label="已注册用户 id" name="userId" required />
+        <Field label="已注册用户的邮箱" name="email" type="email" required />
         <div className="ew-actions">
           <button type="submit">加入租户</button>
         </div>
@@ -569,18 +762,11 @@ export function AdminPage() {
         </div>
       </form>
 
-      <h2>每人额度</h2>
-      <p>只配上限，不收款。没有充值。每人覆盖优先于班级默认。</p>
-      <form onSubmit={(e) => void setQuota(e)}>
-        <Field label="用户 id" name="userId" required />
-        <Field label="token 上限（0 = 不限）" name="limit" required />
-        <div className="ew-actions">
-          <button type="submit">保存额度</button>
-        </div>
-      </form>
-
       <h2>配额班级</h2>
-      <p>JWT 的 quotaClass 来自班级。default 上限 0 = 不限。</p>
+      <p>
+        JWT 的 quotaClass 来自班级。default 上限 0 =
+        不限。每人覆盖在成员表行内设置，只配上限，不收款。没有充值。
+      </p>
       <ul>
         {classes.map((cls) => (
           <li key={cls.name}>
@@ -595,17 +781,63 @@ export function AdminPage() {
           <button type="submit">保存班级</button>
         </div>
       </form>
-      <form onSubmit={(e) => void assignClass(e)}>
-        <Field label="用户 id" name="userId" required />
-        <Field label="班级名" name="quotaClass" required />
-        <div className="ew-actions">
-          <button type="submit">分配班级</button>
-        </div>
-      </form>
+
+      <h2>用量</h2>
+      <p>当期租户总量：{usage ? `${usage.tenantUsed} tokens` : '—'}。按人当期累计如下。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>当期累计</th>
+            <th>上限</th>
+            <th>班级</th>
+            <th>是否耗尽</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(usage?.members ?? []).map((row) => (
+            <tr key={row.id}>
+              <td>{who(row)}</td>
+              <td>{row.used}</td>
+              <td>{row.limit <= 0 ? '不限' : row.limit}</td>
+              <td>{row.quotaClass}</td>
+              <td>{row.exhausted ? '已耗尽' : '未耗尽'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       <h2>签名策略包</h2>
       <p>下发到每台设备，写入 requirements.toml。模型锁定复用第②层，不另开通道。超期后设备只读。</p>
-      {pack ? <p>当前包 kid={pack.kid}。签名与原文在设备上校验。</p> : <p>还没有签发过策略包。</p>}
+      {currentPack ? (
+        <>
+          <p>
+            当前生效包由 {packActor(currentPack)} 签发。kid={currentPack.kid}。
+          </p>
+          <PolicyPackReadable pack={currentPack} />
+          <div className="ew-actions">
+            <button type="button" data-tone="ghost" onClick={() => void revokePack()}>
+              撤销当前策略包
+            </button>
+          </div>
+        </>
+      ) : (
+        <p>还没有生效中的策略包。</p>
+      )}
+      <h3>签发历史</h3>
+      {packHistory.length === 0 ? (
+        <p>没有签发记录。</p>
+      ) : (
+        <ul>
+          {packHistory.map((pack) => (
+            <li key={pack.id}>
+              {formatUnixMs(pack.issuedAt)} · {packActor(pack)} · {pack.revoked ? '已撤销' : '有效'}{' '}
+              · 自定义模型{pack.allowCustom ? '允许' : '已锁定'} · 停用模型{' '}
+              {pack.disabledModels.length > 0 ? pack.disabledModels.join('、') : '无'}
+            </li>
+          ))}
+        </ul>
+      )}
       <form onSubmit={(e) => void issuePack(e)}>
         <Field label="有效天数" name="expiresInDays" required />
         <Field label="宽限天数（可空）" name="graceInDays" />
@@ -636,6 +868,32 @@ export function AdminPage() {
           <button type="submit">签发策略包</button>
         </div>
       </form>
+
+      <h2>管理动作审计</h2>
+      <p>谁在何时授予或收回了管理员、改了默认模型密钥、签发或撤销了策略包。这里没有任务或产物。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>动作</th>
+            <th>操作人</th>
+            <th>对象</th>
+          </tr>
+        </thead>
+        <tbody>
+          {audit.map((row) => (
+            <tr key={`${row.at}-${row.action}-${row.targetRef ?? row.targetEmail ?? ''}`}>
+              <td>{formatUnixMs(row.at)}</td>
+              <td>{auditActionLabel(row.action)}</td>
+              <td>{who({ email: row.actorEmail, phone: row.actorPhone })}</td>
+              <td>
+                {who({ email: row.targetEmail, phone: row.targetPhone })}
+                {row.targetRef ? ` · ${row.targetRef}` : ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }

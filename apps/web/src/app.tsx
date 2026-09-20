@@ -9,6 +9,7 @@ import {
   AccountDeletePage,
   AccountHome,
   AdminPage,
+  PasswordChangePage,
   ResetPage,
   SignInPage,
   SignUpPage,
@@ -28,8 +29,10 @@ export function routeOf(path: string): string {
 
 export function App(props: AppProps = {}) {
   const [path, setPath] = useState(() => routeOf(props.initialPath ?? window.location.pathname));
+  const [sessionRev, setSessionRev] = useState(0);
   const search = props.initialSearch ?? window.location.search;
   const session = readSession();
+  void sessionRev;
 
   useEffect(() => {
     const onPop = () => setPath(routeOf(window.location.pathname));
@@ -41,6 +44,10 @@ export function App(props: AppProps = {}) {
     const url = next.startsWith('/') ? next : `/${next}`;
     window.history.pushState({}, '', url);
     setPath(routeOf(url.split('?')[0] ?? url));
+  }
+
+  function onSessionChanged() {
+    setSessionRev((n) => n + 1);
   }
 
   return (
@@ -105,12 +112,23 @@ export function App(props: AppProps = {}) {
         <VerifyPage search={search} />
       ) : path === '/reset' ? (
         <ResetPage search={search} />
+      ) : path === '/account/password' ? (
+        <PasswordChangePage
+          onChanged={() => {
+            onSessionChanged();
+            const next = readSession();
+            go(next?.role === 'admin' && !next.mustChangePassword ? '/admin' : '/account');
+          }}
+        />
       ) : path === '/account/delete' ? (
         <AccountDeletePage onDone={() => go('/signin')} />
       ) : path === '/account' ? (
-        <AccountHome onDelete={() => go('/account/delete')} />
+        <AccountHome
+          onDelete={() => go('/account/delete')}
+          onPassword={() => go('/account/password')}
+        />
       ) : path === '/admin' ? (
-        <AdminPage />
+        <AdminPage onSessionChanged={onSessionChanged} />
       ) : (
         <SignInPage
           search={search}

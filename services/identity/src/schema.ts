@@ -113,13 +113,15 @@ CREATE TABLE IF NOT EXISTS signing_keys (
 );
 
 CREATE TABLE IF NOT EXISTS policy_packs (
-  tenant_id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   signature TEXT NOT NULL,
   kid TEXT NOT NULL,
   issued_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
-  actor_user_id TEXT NOT NULL
+  actor_user_id TEXT NOT NULL,
+  revoked_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS identity_audit (
@@ -127,7 +129,8 @@ CREATE TABLE IF NOT EXISTS identity_audit (
   at INTEGER NOT NULL,
   actor_user_id TEXT NOT NULL,
   action TEXT NOT NULL,
-  target_user_id TEXT
+  target_user_id TEXT,
+  target_ref TEXT
 );
 
 CREATE TABLE IF NOT EXISTS login_attempts (

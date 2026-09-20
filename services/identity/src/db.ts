@@ -33,10 +33,40 @@ export function migrateIdentityDb(db: SqliteLike): void {
     // 已有行都是 setQuota 写的每人上限，不是班级默认。
     db.exec(`UPDATE quota_accounts SET quota_override = 1`);
   }
+  if (!hasColumn(db, 'identity_audit', 'target_ref')) {
+    db.exec(`ALTER TABLE identity_audit ADD COLUMN target_ref TEXT`);
+  }
+  migratePolicyPacks(db);
   db.exec(
     `INSERT OR IGNORE INTO quota_classes (tenant_id, name, tokens_limit)
      SELECT id, 'default', 0 FROM tenants`,
   );
+}
+
+function migratePolicyPacks(db: SqliteLike): void {
+  if (!hasColumn(db, 'policy_packs', 'id')) {
+    db.exec(`CREATE TABLE policy_packs_v2 (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      kid TEXT NOT NULL,
+      issued_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      revoked_at INTEGER
+    )`);
+    db.exec(`INSERT INTO policy_packs_v2
+      (id, tenant_id, payload_json, signature, kid, issued_at, expires_at, actor_user_id, revoked_at)
+      SELECT 'ppk_' || tenant_id, tenant_id, payload_json, signature, kid, issued_at, expires_at, actor_user_id, NULL
+      FROM policy_packs`);
+    db.exec(`DROP TABLE policy_packs`);
+    db.exec(`ALTER TABLE policy_packs_v2 RENAME TO policy_packs`);
+    return;
+  }
+  if (!hasColumn(db, 'policy_packs', 'revoked_at')) {
+    db.exec(`ALTER TABLE policy_packs ADD COLUMN revoked_at INTEGER`);
+  }
 }
 
 function hasColumn(db: SqliteLike, table: string, column: string): boolean {
