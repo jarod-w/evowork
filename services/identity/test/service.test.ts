@@ -401,4 +401,150 @@ describe('签名策略包', () => {
       envelope.payloadJson,
     );
   });
+
+  it('签发历史可回读，撤销后成员拿不到包', () => {
+    const { identity } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    identity.issuePolicyPack(admin.userId, {
+      expiresInDays: 30,
+      allowCustom: false,
+      disabledModels: ['evowork/kimi-k3'],
+    });
+    identity.issuePolicyPack(admin.userId, {
+      expiresInDays: 7,
+      allowCustom: true,
+      disabledProfiles: ['danger-full-access'],
+    });
+    const listed = identity.listPolicyPacks(admin.userId);
+    expect(listed.history).toHaveLength(2);
+    expect(listed.current?.allowCustom).toBe(true);
+    expect(listed.current?.disabledProfiles).toEqual(['danger-full-access']);
+    expect(listed.current?.disabledModels).toEqual([]);
+    identity.revokePolicyPack(admin.userId);
+    expect(identity.currentPolicyPack(admin.tenantId ?? '')).toBeUndefined();
+    expect(identity.listPolicyPacks(admin.userId).current).toBeNull();
+    expect(identity.listPolicyPacks(admin.userId).history).toHaveLength(2);
+    expect(identity.listPolicyPacks(admin.userId).history.every((row) => row.revoked)).toBe(true);
+  });
+});
+
+describe('按邮箱加人（Q38）', () => {
+  it('已注册用户能按邮箱进租户；未注册拒绝', () => {
+    const { identity, mail } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    expect(() => identity.addMemberByEmail(admin.userId, 'nope@example.com')).toThrow(/还没有注册/);
+    identity.signup({ email: 'user@example.com', password: 'user-pass-1' });
+    identity.verifyEmail(mail.sent.find((m) => m.to === 'user@example.com')!.token);
+    const user = identity.login({
+      identifier: 'user@example.com',
+      password: 'user-pass-1',
+      deviceId: 'dev_u',
+    });
+    identity.addMemberByEmail(admin.userId, 'user@example.com');
+    expect(identity.me(user.userId).tenantId).toBe(admin.tenantId);
+    expect(identity.me(user.userId).role).toBe('member');
+  });
+});
+
+describe('身份面审计', () => {
+  it('授予 admin、改默认模型 key、签发策略包都有记录，且没有任务字段', () => {
+    const { identity } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    const signed = identity.signup({ email: 'peer@example.com', password: 'peer-pass-1' });
+    identity.grantAdmin(admin.userId, signed.userId);
+    identity.upsertHostedModel(admin.userId, {
+      modelId: 'evowork/hosted-flash',
+      displayName: '托管',
+      provider: 'deepseek',
+      upstreamModel: 'deepseek-v4-flash',
+      adapter: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-secret',
+    });
+    identity.issuePolicyPack(admin.userId, { expiresInDays: 30 });
+    const events = identity.listAudit(admin.userId);
+    expect(events.map((row) => row.action)).toEqual(
+      expect.arrayContaining(['issue-policy-pack', 'update-model-key', 'grant-admin']),
+    );
+    expect(events).toHaveLength(3);
+    const grant = events.find((row) => row.action === 'grant-admin');
+    expect(grant?.actorEmail).toBe('admin@example.com');
+    expect(grant?.targetEmail).toBe('peer@example.com');
+    expect(JSON.stringify(events)).not.toMatch(/threadId|prompt|artifact/);
+  });
+});
+
+describe('管理端用量（Q43=A）', () => {
+  it('只给租户总量与按人当期累计，即使 metering 有多天也不按天分组', () => {
+    const { identity } = id();
+    identity.bootstrap({
+      email: 'admin@example.com',
+      password: 'change-me',
+      tenantName: 'default',
+    });
+    const admin = identity.login({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'dev_a',
+    });
+    identity.setQuota(admin.userId, admin.userId, 100);
+    identity.addQuotaUsage(admin.userId, 40);
+    identity.recordMetering({
+      day: '2026-09-01',
+      tenant: admin.tenantId ?? '',
+      model: 'evowork/hosted-flash',
+      provider: 'deepseek',
+      tokensIn: 1,
+      tokensOut: 2,
+      tokensCached: 0,
+      durationMs: 10,
+    });
+    identity.recordMetering({
+      day: '2026-09-02',
+      tenant: admin.tenantId ?? '',
+      model: 'evowork/hosted-flash',
+      provider: 'deepseek',
+      tokensIn: 3,
+      tokensOut: 4,
+      tokensCached: 0,
+      durationMs: 10,
+    });
+    const usage = identity.adminUsage(admin.userId);
+    expect(usage.tenantUsed).toBe(40);
+    expect(usage.members).toHaveLength(1);
+    expect(usage.members[0]?.used).toBe(40);
+    expect(usage.members[0]?.limit).toBe(100);
+    expect(usage.members[0]?.exhausted).toBe(false);
+    expect(usage).not.toHaveProperty('days');
+    expect(usage).not.toHaveProperty('series');
+    expect(usage.members[0]).not.toHaveProperty('byDay');
+    expect(JSON.stringify(usage)).not.toMatch(/2026-09-0/);
+  });
 });

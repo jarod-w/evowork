@@ -102,7 +102,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/artifacts` | [services/artifacts](../services/artifacts/) | 产物识别（三信号）· 版本 · fs 对账 watcher · 分享授权与上传 · 资料库视图 | [recognize.ts](../services/artifacts/src/recognize.ts) · [watcher.ts](../services/artifacts/src/watcher.ts) |
 | `@evowork/gateway` | [services/gateway](../services/gateway/) | Responses↔Chat 全量翻译 · 三家 provider · 错误映射 · SSE · **模型表四层合并** · **托管转发** | [pipeline.ts](../services/gateway/src/pipeline.ts) · [forward.ts](../services/gateway/src/forward.ts) · [tenant-models.ts](../services/gateway/src/tenant-models.ts) |
 | `@evowork/identity` | [services/identity](../services/identity/) | 云端账号 · 租户 · 默认模型 · 计量。无内容面 | [service.ts](../services/identity/src/service.ts) · [http.ts](../services/identity/src/http.ts) |
-| `@evowork/web` | [apps/web](../apps/web/) | 账号页与租户管理端。密码表单只在这里。**没有分享页** | [screens.tsx](../apps/web/src/screens.tsx) |
+| `@evowork/web` | [apps/web](../apps/web/) | 账号页与租户管理端。密码表单只在这里。**有改密页**。**没有分享页** | [screens.tsx](../apps/web/src/screens.tsx) |
 | `@evowork/desktop` | [apps/desktop](../apps/desktop/) | Electron 壳 + 本机服务宿主 + 全部 UI | [service-host.ts](../apps/desktop/src/main/service-host.ts) · [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) · [model-access.ts](../apps/desktop/src/main/model-access.ts) |
 | `@evowork/eslint-plugin` | [tools/eslint-plugin-evowork](../tools/eslint-plugin-evowork/) | 把 K2 与 token-only 两条纪律做成会失败的规则 | [no-kernel-internals.js](../tools/eslint-plugin-evowork/src/no-kernel-internals.js) |
 
@@ -112,7 +112,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·
 [scripts/](../scripts/) 门禁与雷达 · [build/](../build/) 打包配置 + **`build/kernel/<os>-<arch>/` 随包的内核二进制**（当前只有 `mac-arm64`）。
 
-**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· `apps/web` 的分享页（Q41）与**改密页**（`/v1/password` 无调用方，Q38 的种子管理员因此进不了管理端 —— [11 §13.10](design/11-account-and-models.md)）· 企业私有源索引的管理面（**Q44 未决策**）。见 §10。
+**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· `apps/web` 的分享页（Q41）· 企业私有源索引的管理面（**Q44 未决策**）。见 §10。
 
 ### 2.1 依赖图（实测自各包 `package.json`）
 

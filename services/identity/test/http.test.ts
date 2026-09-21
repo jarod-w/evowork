@@ -167,4 +167,74 @@ describe('identity HTTP', () => {
     expect(body.pack?.payloadJson).toBe(envelope.payloadJson);
     expect(JSON.stringify(body)).not.toMatch(/apiKey/);
   });
+
+  it('改密前管理端 403；改密后能进（11 §12 第 23 条）', async () => {
+    await start();
+    const login = await fetch(`${baseUrl}/v1/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        identifier: 'admin@example.com',
+        password: 'change-me',
+        deviceId: 'dev_gate',
+      }),
+    });
+    const tokens = (await login.json()) as { accessToken: string; mustChangePassword: boolean };
+    expect(tokens.mustChangePassword).toBe(true);
+    const blocked = await fetch(`${baseUrl}/v1/admin/members`, {
+      headers: { authorization: `Bearer ${tokens.accessToken}` },
+    });
+    expect(blocked.status).toBe(403);
+    expect(((await blocked.json()) as { error: { code: string } }).error.code).toBe(
+      'must-change-password',
+    );
+    await fetch(`${baseUrl}/v1/password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${tokens.accessToken}`,
+      },
+      body: JSON.stringify({ current: 'change-me', next: 'new-pass-1' }),
+    });
+    const me = await fetch(`${baseUrl}/v1/me`, {
+      headers: { authorization: `Bearer ${tokens.accessToken}` },
+    });
+    expect(((await me.json()) as { mustChangePassword: boolean }).mustChangePassword).toBe(false);
+    const allowed = await fetch(`${baseUrl}/v1/admin/members`, {
+      headers: { authorization: `Bearer ${tokens.accessToken}` },
+    });
+    expect(allowed.status).toBe(200);
+  });
+
+  it('管理端用量即使带 groupBy=day 也不返回按天序列（Q43=A）', async () => {
+    await start();
+    const login = await fetch(`${baseUrl}/v1/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        identifier: 'admin@example.com',
+        password: 'change-me',
+        deviceId: 'dev_usage',
+      }),
+    });
+    const tokens = (await login.json()) as { accessToken: string };
+    await fetch(`${baseUrl}/v1/password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${tokens.accessToken}`,
+      },
+      body: JSON.stringify({ current: 'change-me', next: 'new-pass-1' }),
+    });
+    const res = await fetch(`${baseUrl}/v1/admin/usage?groupBy=day`, {
+      headers: { authorization: `Bearer ${tokens.accessToken}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toHaveProperty('tenantUsed');
+    expect(body).toHaveProperty('members');
+    expect(body).not.toHaveProperty('days');
+    expect(body).not.toHaveProperty('series');
+    expect(JSON.stringify(body)).not.toMatch(/byDay/);
+  });
 });

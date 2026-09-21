@@ -8,7 +8,12 @@ export {
   createIdentity,
   IdentityError,
   type AdminMember,
+  type AdminPolicyPackView,
+  type AdminUsage,
+  type AdminUsageMember,
   type Identity,
+  type IdentityAuditAction,
+  type IdentityAuditRow,
   type IdentityDeps,
   type PublicModel,
 } from './service.js';

@@ -58,10 +58,48 @@ export interface QuotaClassView {
   readonly tokensLimit: number;
 }
 
-export interface PolicyPackEnvelopeView {
-  readonly payloadJson: string;
-  readonly signature: string;
+export interface PolicyPackView {
+  readonly id: string;
   readonly kid: string;
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+  readonly graceUntil?: number;
+  readonly disabledModels: readonly string[];
+  readonly disabledProfiles: readonly string[];
+  readonly allowCustom: boolean;
+  readonly reason?: string;
+  readonly allowManagedHooksOnly: boolean;
+  readonly disableShare: boolean;
+  readonly disableSlots: boolean;
+  readonly forceAudit: boolean;
+  readonly revoked: boolean;
+  readonly actorEmail?: string;
+  readonly actorPhone?: string;
+}
+
+export interface IdentityAuditView {
+  readonly at: number;
+  readonly action: string;
+  readonly actorEmail?: string;
+  readonly actorPhone?: string;
+  readonly targetEmail?: string;
+  readonly targetPhone?: string;
+  readonly targetRef?: string;
+}
+
+export interface AdminUsageMember {
+  readonly id: string;
+  readonly email?: string;
+  readonly phone?: string;
+  readonly used: number;
+  readonly limit: number;
+  readonly quotaClass: string;
+  readonly exhausted: boolean;
+}
+
+export interface AdminUsage {
+  readonly tenantUsed: number;
+  readonly members: readonly AdminUsageMember[];
 }
 
 export interface ApiError {
@@ -92,6 +130,24 @@ export function writeSession(session: Session): void {
 
 export function clearSession(): void {
   sessionStorage.removeItem(SESSION_KEY);
+}
+
+export async function syncSessionFromMe(): Promise<Session | undefined> {
+  const session = readSession();
+  if (!session) return undefined;
+  const out = await api<{
+    role: Role;
+    mustChangePassword: boolean;
+  }>('/v1/me');
+  if (!out.ok) return session;
+  const next: Session = {
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    role: out.data.role,
+    mustChangePassword: out.data.mustChangePassword,
+  };
+  writeSession(next);
+  return next;
 }
 
 export function parsePkce(search: string): PkceQuery | undefined {

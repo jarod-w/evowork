@@ -41,6 +41,11 @@ body {
   font-weight: var(--font-title-2-weight);
   margin: var(--space-24) 0 var(--space-12);
 }
+.ew-web h3 {
+  font-size: var(--font-body-size);
+  font-weight: var(--font-title-2-weight);
+  margin: var(--space-16) 0 var(--space-8);
+}
 .ew-web p,
 .ew-web li {
   color: var(--text-secondary);
@@ -95,4 +100,24 @@ body {
   text-align: left;
   padding: var(--space-8);
   border-bottom: 1px solid var(--border-subtle);
+}
+.ew-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+.ew-row-actions form {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+}
+.ew-row-actions input,
+.ew-row-actions select {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: var(--space-8) var(--space-12);
 }

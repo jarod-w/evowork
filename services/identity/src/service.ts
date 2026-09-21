@@ -5,6 +5,7 @@ import {
   ACCESS_TTL_SEC,
   POLICY_PACK_SCHEMA_VER,
   REFRESH_TTL_SEC,
+  parsePolicyPackPayload,
   signAccessToken,
   signPolicyPack,
   verifyCodeChallenge,
@@ -127,6 +128,57 @@ export function createIdentity(deps: IdentityDeps) {
       throw new IdentityError('forbidden', '只有管理员能做这个操作。');
     }
     return actor;
+  }
+
+  function recordAudit(
+    actorId: string,
+    action: IdentityAuditAction,
+    extras?: { readonly targetUserId?: string; readonly targetRef?: string },
+  ): void {
+    deps.db
+      .prepare(
+        `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id, target_ref)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        newId('aud'),
+        now(),
+        actorId,
+        action,
+        extras?.targetUserId ?? null,
+        extras?.targetRef ?? null,
+      );
+  }
+
+  function packRowToView(row: {
+    id: string;
+    payload_json: string;
+    kid: string;
+    issued_at: number;
+    expires_at: number;
+    revoked_at: number | null;
+    actor_email: string | null;
+    actor_phone: string | null;
+  }): AdminPolicyPackView {
+    const payload = parsePolicyPackPayload(row.payload_json);
+    return {
+      id: row.id,
+      kid: row.kid,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at,
+      ...(payload?.graceUntil !== undefined ? { graceUntil: payload.graceUntil } : {}),
+      disabledModels: payload?.models.disabled ?? [],
+      disabledProfiles: payload?.disabledProfiles ?? [],
+      allowCustom: payload?.models.allowCustom ?? true,
+      ...(payload?.models.reason ? { reason: payload.models.reason } : {}),
+      allowManagedHooksOnly: payload?.allowManagedHooksOnly ?? false,
+      disableShare: payload?.disableShare ?? false,
+      disableSlots: payload?.disableSlots ?? false,
+      forceAudit: payload?.forceAudit ?? false,
+      revoked: row.revoked_at !== null,
+      ...(row.actor_email ? { actorEmail: row.actor_email } : {}),
+      ...(row.actor_phone ? { actorPhone: row.actor_phone } : {}),
+    };
   }
 
   function issueAccess(user: UserRow, deviceId: string, role: Role, tenant: string): string {
@@ -572,11 +624,7 @@ export function createIdentity(deps: IdentityDeps) {
           )
           .run(targetUserId, actor.tenant_id, now());
       }
-      deps.db
-        .prepare(
-          `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id) VALUES (?, ?, ?, 'grant-admin', ?)`,
-        )
-        .run(newId('aud'), now(), actorId, targetUserId);
+      recordAudit(actorId, 'grant-admin', { targetUserId });
     },
 
     revokeAdmin(actorId: string, targetUserId: string): void {
@@ -592,11 +640,7 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db
         .prepare(`UPDATE memberships SET role = 'member' WHERE user_id = ? AND tenant_id = ?`)
         .run(targetUserId, actor.tenant_id);
-      deps.db
-        .prepare(
-          `INSERT INTO identity_audit (id, at, actor_user_id, action, target_user_id) VALUES (?, ?, ?, 'revoke-admin', ?)`,
-        )
-        .run(newId('aud'), now(), actorId, targetUserId);
+      recordAudit(actorId, 'revoke-admin', { targetUserId });
     },
 
     addMember(actorId: string, targetUserId: string): void {
@@ -616,6 +660,12 @@ export function createIdentity(deps: IdentityDeps) {
           )
           .run(targetUserId, actor.tenant_id, now());
       }
+    },
+
+    addMemberByEmail(actorId: string, email: string): void {
+      const target = findUserByIdentifier(email);
+      if (!target) throw new IdentityError('not-registered', '对方还没有注册。');
+      this.addMember(actorId, target.id);
     },
 
     listMembers(actorId: string): readonly AdminMember[] {
@@ -676,6 +726,7 @@ export function createIdentity(deps: IdentityDeps) {
             enc,
             existing.id,
           );
+        recordAudit(actorId, 'update-model-key', { targetRef: input.modelId });
         return { id: existing.id };
       }
       const id = newId('mdl');
@@ -696,6 +747,7 @@ export function createIdentity(deps: IdentityDeps) {
           enc,
           now(),
         );
+      recordAudit(actorId, 'update-model-key', { targetRef: input.modelId });
       return { id };
     },
 
@@ -911,7 +963,14 @@ export function createIdentity(deps: IdentityDeps) {
       ) {
         throw new IdentityError('invalid', '有效期天数必须是 1–3650。');
       }
-      const issuedAt = Math.floor(now() / 1000);
+      const issuedAtBase = Math.floor(now() / 1000);
+      const latest = deps.db
+        .prepare(`SELECT MAX(issued_at) AS m FROM policy_packs WHERE tenant_id = ?`)
+        .get(actor.tenant_id) as { m: number | null } | undefined;
+      const issuedAt =
+        latest?.m !== null && latest?.m !== undefined && latest.m >= issuedAtBase
+          ? latest.m + 1
+          : issuedAtBase;
       const expiresAt = issuedAt + input.expiresInDays * 86_400;
       const graceUntil =
         input.graceInDays !== undefined &&
@@ -940,20 +999,20 @@ export function createIdentity(deps: IdentityDeps) {
         },
         deps.keys.kid,
       );
+      const packId = newId('ppk');
+      deps.db
+        .prepare(
+          `UPDATE policy_packs SET revoked_at = ? WHERE tenant_id = ? AND revoked_at IS NULL`,
+        )
+        .run(now(), actor.tenant_id);
       deps.db
         .prepare(
           `INSERT INTO policy_packs
-             (tenant_id, payload_json, signature, kid, issued_at, expires_at, actor_user_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(tenant_id) DO UPDATE SET
-             payload_json = excluded.payload_json,
-             signature = excluded.signature,
-             kid = excluded.kid,
-             issued_at = excluded.issued_at,
-             expires_at = excluded.expires_at,
-             actor_user_id = excluded.actor_user_id`,
+             (id, tenant_id, payload_json, signature, kid, issued_at, expires_at, actor_user_id, revoked_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         )
         .run(
+          packId,
           actor.tenant_id,
           envelope.payloadJson,
           envelope.signature,
@@ -962,15 +1021,123 @@ export function createIdentity(deps: IdentityDeps) {
           expiresAt,
           actorId,
         );
+      recordAudit(actorId, 'issue-policy-pack', { targetRef: packId });
       return envelope;
     },
 
     currentPolicyPack(tenantId: string): PolicyPackEnvelope | undefined {
       const row = deps.db
-        .prepare(`SELECT payload_json, signature, kid FROM policy_packs WHERE tenant_id = ?`)
+        .prepare(
+          `SELECT payload_json, signature, kid FROM policy_packs
+           WHERE tenant_id = ? AND revoked_at IS NULL
+           ORDER BY issued_at DESC, rowid DESC LIMIT 1`,
+        )
         .get(tenantId) as { payload_json: string; signature: string; kid: string } | undefined;
       if (!row) return undefined;
       return { payloadJson: row.payload_json, signature: row.signature, kid: row.kid };
+    },
+
+    listPolicyPacks(actorId: string): {
+      current: AdminPolicyPackView | null;
+      history: readonly AdminPolicyPackView[];
+    } {
+      const actor = requireAdmin(actorId);
+      const rows = deps.db
+        .prepare(
+          `SELECT p.id, p.payload_json, p.kid, p.issued_at, p.expires_at, p.revoked_at,
+                  p.rowid AS pack_rowid,
+                  u.email AS actor_email, u.phone AS actor_phone
+           FROM policy_packs p
+           LEFT JOIN users u ON u.id = p.actor_user_id
+           WHERE p.tenant_id = ?
+           ORDER BY p.issued_at DESC, p.rowid DESC`,
+        )
+        .all(actor.tenant_id) as {
+        id: string;
+        payload_json: string;
+        kid: string;
+        issued_at: number;
+        expires_at: number;
+        revoked_at: number | null;
+        pack_rowid: number;
+        actor_email: string | null;
+        actor_phone: string | null;
+      }[];
+      const history = rows.map(packRowToView);
+      const current = history.find((row) => !row.revoked) ?? null;
+      return { current, history };
+    },
+
+    revokePolicyPack(actorId: string): void {
+      const actor = requireAdmin(actorId);
+      const row = deps.db
+        .prepare(
+          `SELECT id FROM policy_packs
+           WHERE tenant_id = ? AND revoked_at IS NULL
+           ORDER BY issued_at DESC, rowid DESC LIMIT 1`,
+        )
+        .get(actor.tenant_id) as { id: string } | undefined;
+      if (!row) throw new IdentityError('not-found', '没有可撤销的策略包。');
+      deps.db.prepare(`UPDATE policy_packs SET revoked_at = ? WHERE id = ?`).run(now(), row.id);
+      recordAudit(actorId, 'revoke-policy-pack', { targetRef: row.id });
+    },
+
+    listAudit(actorId: string): readonly IdentityAuditRow[] {
+      const actor = requireAdmin(actorId);
+      const rows = deps.db
+        .prepare(
+          `SELECT a.at, a.action, a.target_ref,
+                  actor.email AS actor_email, actor.phone AS actor_phone,
+                  target.email AS target_email, target.phone AS target_phone
+           FROM identity_audit a
+           JOIN users actor ON actor.id = a.actor_user_id
+           LEFT JOIN users target ON target.id = a.target_user_id
+           WHERE a.actor_user_id IN (SELECT user_id FROM memberships WHERE tenant_id = ?)
+           ORDER BY a.at DESC, a.rowid DESC
+           LIMIT 200`,
+        )
+        .all(actor.tenant_id) as {
+        at: number;
+        action: IdentityAuditAction;
+        target_ref: string | null;
+        actor_email: string | null;
+        actor_phone: string | null;
+        target_email: string | null;
+        target_phone: string | null;
+      }[];
+      return rows.map((row) => ({
+        at: row.at,
+        action: row.action,
+        ...(row.actor_email ? { actorEmail: row.actor_email } : {}),
+        ...(row.actor_phone ? { actorPhone: row.actor_phone } : {}),
+        ...(row.target_email ? { targetEmail: row.target_email } : {}),
+        ...(row.target_phone ? { targetPhone: row.target_phone } : {}),
+        ...(row.target_ref ? { targetRef: row.target_ref } : {}),
+      }));
+    },
+
+    /**
+     * 管理端用量：租户当期总量 + 按人当期累计。
+     * **不**查 metering、**不**按天分组（Q43=A）。
+     */
+    adminUsage(actorId: string): AdminUsage {
+      const members = this.listMembers(actorId);
+      const rows: AdminUsageMember[] = members.map((member) => {
+        const q = effectiveQuota(member.id) ?? { used: 0, limit: 0 };
+        return {
+          id: member.id,
+          ...(member.email ? { email: member.email } : {}),
+          ...(member.phone ? { phone: member.phone } : {}),
+          used: q.used,
+          limit: q.limit,
+          quotaClass: member.quotaClass,
+          exhausted: q.limit > 0 && q.used >= q.limit,
+        };
+      });
+      return {
+        tenantUsed: rows.reduce((sum, row) => sum + row.used, 0),
+        members: rows,
+      };
     },
   };
 }
@@ -984,6 +1151,57 @@ export interface AdminMember {
   readonly phone?: string | undefined;
   readonly role: Role;
   readonly quotaClass: string;
+}
+
+/** 策略包的人类可读投影。没有任务 / 产物 / prompt。 */
+export interface AdminPolicyPackView {
+  readonly id: string;
+  readonly kid: string;
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+  readonly graceUntil?: number | undefined;
+  readonly disabledModels: readonly string[];
+  readonly disabledProfiles: readonly string[];
+  readonly allowCustom: boolean;
+  readonly reason?: string | undefined;
+  readonly allowManagedHooksOnly: boolean;
+  readonly disableShare: boolean;
+  readonly disableSlots: boolean;
+  readonly forceAudit: boolean;
+  readonly revoked: boolean;
+  readonly actorEmail?: string | undefined;
+  readonly actorPhone?: string | undefined;
+}
+
+export type IdentityAuditAction =
+  'grant-admin' | 'revoke-admin' | 'update-model-key' | 'issue-policy-pack' | 'revoke-policy-pack';
+
+/** 身份面审计。没有任务 / 产物 / prompt。 */
+export interface IdentityAuditRow {
+  readonly at: number;
+  readonly action: IdentityAuditAction;
+  readonly actorEmail?: string | undefined;
+  readonly actorPhone?: string | undefined;
+  readonly targetEmail?: string | undefined;
+  readonly targetPhone?: string | undefined;
+  readonly targetRef?: string | undefined;
+}
+
+/** 按人当期累计。没有按天字段。 */
+export interface AdminUsageMember {
+  readonly id: string;
+  readonly email?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly used: number;
+  readonly limit: number;
+  readonly quotaClass: string;
+  readonly exhausted: boolean;
+}
+
+/** 管理端用量。没有 days / series / byDay。 */
+export interface AdminUsage {
+  readonly tenantUsed: number;
+  readonly members: readonly AdminUsageMember[];
 }
 
 /** 客户端目录条目。类型上没有 apiKey / baseUrl。 */

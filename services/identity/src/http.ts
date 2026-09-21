@@ -416,9 +416,16 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       return;
     }
     if (req.method === 'POST' && path === '/v1/admin/members') {
-      const targetUserId = str((await readJson(req)).userId);
+      const body = await readJson(req);
+      const email = str(body.email);
+      const targetUserId = str(body.userId);
+      if (email) {
+        identity.addMemberByEmail(actorId, email);
+        json(res, 200, { ok: true });
+        return;
+      }
       if (!targetUserId) {
-        json(res, 400, { error: { message: '需要 userId', code: 'bad-request' } });
+        json(res, 400, { error: { message: '需要已注册用户的邮箱', code: 'bad-request' } });
         return;
       }
       identity.addMember(actorId, targetUserId);
@@ -536,11 +543,21 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       json(res, 200, { ok: true });
       return;
     }
+    if (req.method === 'GET' && path === '/v1/admin/audit') {
+      json(res, 200, { events: identity.listAudit(actorId) });
+      return;
+    }
+    if (req.method === 'GET' && path === '/v1/admin/usage') {
+      json(res, 200, identity.adminUsage(actorId));
+      return;
+    }
     if (req.method === 'GET' && path === '/v1/admin/policy-pack') {
-      const me = identity.me(actorId);
-      json(res, 200, {
-        pack: me.tenantId ? (identity.currentPolicyPack(me.tenantId) ?? null) : null,
-      });
+      json(res, 200, identity.listPolicyPacks(actorId));
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/policy-pack/revoke') {
+      identity.revokePolicyPack(actorId);
+      json(res, 200, { ok: true });
       return;
     }
     if (req.method === 'POST' && path === '/v1/admin/policy-pack') {
