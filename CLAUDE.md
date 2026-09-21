@@ -6,7 +6,7 @@ EvoWork 是全场景职场 AI 智能体工作台：用一句话下达需求，�
 
 单一真源，别在本文件里重复它们的内容：
 
-- [docs/evowork-on-codex-design.md](docs/evowork-on-codex-design.md) —— 架构、决策 D1–D9、上游补丁清单、里程碑 M0–M9、风险 R1–R11、**产品决策记录 Q1–Q29（2026-09-03 与 09-05 已全部决策，无开放项，见第 10 章）**、内核代码路径索引（附录 A）
+- [docs/evowork-on-codex-design.md](docs/evowork-on-codex-design.md) —— 架构、决策 D1–D9、上游补丁清单、里程碑 M0–M9、风险 R1–R11、**产品决策记录（第 10 章；Q45 已把 Composer 三档改为审批模式，Q44 仍是唯一开放项）**、内核代码路径索引（附录 A）
 - [docs/agent-platform-feature-list.md](docs/agent-platform-feature-list.md) —— 功能点清单（需求基线）
 - [docs/agent-platform-implementation-summary.md](docs/agent-platform-implementation-summary.md) —— 端云协同架构的观察与推断
 - [docs/status.md](docs/status.md) —— **当前开发状态**：做到哪了、什么验过了、什么卡住了。**接手前先读它**
@@ -56,7 +56,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 
 违反其中任何一条，代价都不是「代码丑」，而是每次上游 rebase 都要重付一遍。
 
-**K1 · 内核不可变。** 不在 `../codex` 里直接改代码。确实无法用扩展点实现时，改动必须落成 `patches/evowork/*.patch`，每个补丁配一份说明「为什么扩展点做不到」。硬上限：**≤ 5 个文件、≤ 500 行**（工作区任务 `evowork: 内核补丁清单自检` 可查）。当前设计判定真正需要打补丁的**只剩 P4（对外可见品牌字符串）一项**，其余全部靠配置绕过 —— 原 P3（`ask.md` 模式模板）已删除：F1 实测 `turn/start.collaborationMode.settings.developer_instructions` 可纯配置实现 Ask 模式，指令文本随 EvoWork 分发在 `config/modes/*.md`，不进内核仓库。
+**K1 · 内核不可变。** 不在 `../codex` 里直接改代码。确实无法用扩展点实现时，改动必须落成 `patches/evowork/*.patch`，每个补丁配一份说明「为什么扩展点做不到」。硬上限：**≤ 5 个文件、≤ 500 行**（工作区任务 `evowork: 内核补丁清单自检` 可查）。当前设计判定真正需要打补丁的**只剩 P4（对外可见品牌字符串）一项**，其余全部靠配置绕过 —— 原 P3（`ask.md` 模式模板）已删除：F1 实测 `turn/start.collaborationMode.settings.developer_instructions` 可纯配置注入模式指令，文本随 EvoWork 分发在 `config/modes/*.md`，不进内核仓库。Q45 之后 Composer 主路径只下发 craft 指令。
 
 **K2 · 唯一边界是 app-server JSON-RPC v2。** 前端与服务层只说这个协议，不链接 Rust、不调 SDK 内部、不读内核的 sqlite/rollout 文件。协议定义在 `../codex/codex-rs/app-server-protocol/src/protocol/v2/`。初始化时声明 `capabilities.experimentalApi = true` 才能用 `project/*`、`thread/queue/*`、`goal`、timeline 等实验方法；实验方法一律在服务层收一层适配，不让前端直接依赖。
 
@@ -171,8 +171,8 @@ evowork/
 | 消息 / 回合 | Turn / Item | `thread/turns/list`、`thread/items/list` |
 | 子任务 | Subagent Thread | `parentThreadId` / `ancestorThreadId` |
 | 产物 | 工作空间里的文件 | 文件系统是真源，服务层只存索引（D6） |
-| Craft / Plan / Ask | CollaborationMode + 权限 profile | Ask = 只读沙箱 + 不审批 + 过滤写工具，**不新增枚举值**（D8） |
-| 「规划中」状态 | 无对应 | 服务层按 mode + 是否有 `plan` item 派生 |
+| 请求批准 / 帮我批准 / 完全访问 | `permissions` + `approvalPolicy` + `approvalsReviewer` | Q45。Composer 一级模式。**代码未跟**（仍显示 Craft/Plan/Ask，发送走 `evowork-workspace`） |
+| 「规划中」状态 | 无对应 | 服务层按是否有 `plan` item 派生（Q45：不看协作模式） |
 
 ---
 
@@ -239,7 +239,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 
 ## 8. 已定的产品决策 —— 照着做，别再当成开放问题
 
-设计文档第 10 章的 **Q1–Q29 全部决策完毕**（Q1–Q16 于 2026-09-03，Q17–Q29 于 2026-09-05）。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3](docs/evowork-on-codex-design.md)：
+设计文档第 10 章的 **Q1–Q29、Q45 已决策**。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3 / §10.1.5](docs/evowork-on-codex-design.md)：
 
 | 决策 | 结论 | 写码时意味着什么 |
 |---|---|---|
@@ -258,7 +258,8 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | **Q17 个人云盘** | **不做** | 资料库的配额条显示**本机磁盘占用**（产物 + 解析缓存 + 索引），动作是「清理」不是「升级」；别加第五项云端数据面职责 |
 | Q18 运营位 | **本版首页与侧栏不设置运营位**、不做积分体系 | 2026-09-11 UI 评审覆盖原“保留插槽”方案；未来如需建设必须另立需求并重新评审隐私与数据边界 |
 | Q19 团队空间 | **只读订阅** | 复用「企业私有源索引」这一条云端职责，不新增；写入方向走 Q10 分享通道。「与我共享」收件箱不做 |
-| **Q20 助理** | **一个常驻的特殊 Thread** | 固定 cwd `~/.evowork/assistant/`、默认 Ask、不进任务列表、可 `thread/fork` 升级；别为它自建会话存储 |
+| **Q20 助理** | **一个常驻的特殊 Thread** | 固定 cwd `~/.evowork/assistant/`、内部只读（`evowork-ask`）、不进任务列表、可 `thread/fork` 升级；别为它自建会话存储。入口仍下架 |
+| **Q45 Composer 主模式** | **请求批准 / 帮我批准 / 完全访问** | 前端传 `modeId`，适配层展开为 `permissions` + `approvalPolicy` + `approvalsReviewer`。帮我批准未接通时禁用并给原因，**不静默降级**。**代码未跟** |
 | **Q23 桌面壳** | **Electron** | 不用 Tauri（体积优势被随包 Python 运行时抹平，而侧载子进程/自动更新/公证的成熟度 Electron 更高） |
 | **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 35 个）；**出现清单外的组件先补进 01** |
 | **Q25 品牌** | 代码与文档统一 **EvoWork** | WorkBuddy 只是候选对外名；品牌层 = `--accent` 系列 + appName + logo + mascot 四项 token |

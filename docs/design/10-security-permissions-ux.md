@@ -30,14 +30,14 @@
 
 | id                  | extends               | 面向用户的名字 | 一句话说明（UI 直接显示）              | 用在                   |
 | ------------------- | --------------------- | -------------- | -------------------------------------- | ---------------------- |
-| `evowork-ask`       | `:read-only`          | 只读           | 只能查看文件，不能修改，也不联网       | Ask 模式（D8）         |
-| `evowork-plan`      | `:read-only`          | 只读 + 联网    | 可以查看文件和上网查资料，不能修改文件 | Plan 模式              |
-| `evowork-workspace` | `:workspace`          | **默认权限**   | 可以在这个工作空间里读写文件、执行命令 | Craft 模式（默认）     |
-| `evowork-full`      | `:danger-full-access` | 完全访问       | 可以读写这台电脑上的任何文件并联网     | 需二次确认，仅当前任务 |
+| `evowork-ask`       | `:read-only`          | 只读           | 只能查看文件，不能修改，也不联网       | 内部：Q20 助理（不进 Composer） |
+| `evowork-plan`      | `:read-only`          | 只读 + 联网    | 可以查看文件和上网查资料，不能修改文件 | 内部保留，不进 Composer         |
+| `evowork-workspace` | `:workspace`          | **请求批准**   | 工作空间内可读写；外部文件与联网要问你 | Composer 默认档（Q45）          |
+| `evowork-full`      | `:danger-full-access` | 完全访问       | 可以读写这台电脑上的文件并联网         | Composer 第三档；需二次确认     |
 
-**「默认权限」这个名字直接对应截图 1 的「默认权限 ∨」** —— 截图给的就是 profile 选择器，不需要发明新控件（03 §4.5）。
+Composer **不再另设「默认权限 ∨」下拉**（Q45）。三档已经是 profile + 审批策略的合体，选择器规格见 §2.4。
 
-id → 中文名与说明的映射表由 EvoWork 维护（协议返回的 `description` 是英文且面向开发者）。规则：**已知 id 用我们的文案，未知 id（企业自定义）用协议返回的 `description`**，缺失则显示 id 本身 —— 不隐藏未知 profile。
+id → 中文名与说明的映射表由 EvoWork 维护（协议返回的 `description` 是英文且面向开发者）。规则：**已知 id 用我们的文案，未知 id（企业自定义）用协议返回的 `description`**，缺失则显示 id 本身 —— 不隐藏未知 profile。企业自定义项出现在审批档菜单底部，不另开控件。
 
 ### 2.3 敏感目录（清单 §14）
 
@@ -52,6 +52,26 @@ id → 中文名与说明的映射表由 EvoWork 维护（协议返回的 `descr
 **硬拦截清单对 `evowork-full` 也生效**是刻意的：用户点"完全访问"是为了让 agent 装个依赖、改个系统外的项目文件，不是为了让它读走 SSH 私钥。把这条做成不可绕过，比在审批卡上写警告有效得多。
 
 清单 §14 的"个人文件操作（桌面、下载、文档等）有严格的安全策略"就是第二行。
+
+### 2.4 Composer 审批三档（Q45）
+
+Composer 常显选择器控制「这次任务里，模型动手前要不要问你」。三项不是协作风格，不要再用 Craft / Plan / Ask 当标签。
+
+| `modeId`            | 名字     | 一句话（UI 直接显示）                         | `permissions`       | `approvalPolicy` | `approvalsReviewer` | 二次确认 |
+| ------------------- | -------- | --------------------------------------------- | ------------------- | ---------------- | ------------------- | -------- |
+| `request-approval`  | 请求批准 | 编辑工作空间外的文件或使用互联网时询问你      | `evowork-workspace` | `onRequest`      | `user`              | 无       |
+| `approve-for-me`    | 帮我批准 | 仅对检测到的风险操作请求批准                  | `evowork-workspace` | `onRequest`      | `auto_review`       | 无       |
+| `full-access`       | 完全访问 | 可以读写这台电脑上的文件并联网                | `evowork-full`      | `never`          | `user`              | 要       |
+
+对应内核：`turn/start.permissions`（F5，与 `sandboxPolicy` 互斥）· `turn/start.approvalPolicy` · `turn/start.approvalsReviewer`（`v2/turn.rs:218`，取值 `user` / `auto_review`）。`collaborationMode.mode` 三档都是 `default`，指令共用 `config/modes/craft.md`。
+
+**硬规则**：
+
+1. 默认「请求批准」。
+2. 帮我批准依赖 Guardian 自动审查。`approvalsReviewer` 不可用或功能未开时，该项 `allowed: false`，原因「安全自动审查还没接通」—— **不隐藏，也不许当成请求批准发出去**（不静默降级）。接通后，低/中风险自动过（10 §4 的 Low/Medium 映射），High 升级为审批卡且不提供「本次任务内都允许」，Critical 仍拒绝。
+3. 完全访问必须二次确认，文案列出最坏后果，并写明 **10 §2.3 的硬拦截仍然生效**（不要抄「电脑上的任何文件」这种会让用户以为 SSH 私钥也能读的句子）。确认只对当前任务生效。Windows 按 §7 停用并给原因。
+4. 不再另设权限下拉。企业自定义 profile 附在同一菜单底部；未知 id 显示 id 本身。
+5. **当前未接线**：`bridge.send` 还不传 `modeId`。在发送链路接上之前，Composer 不得先改成这三项标签 —— 选了不生效比没有选择器更糟。
 
 ---
 

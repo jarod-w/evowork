@@ -55,8 +55,8 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 
 前端不直接调 app-server，而是调适配层暴露的语义化 API。四个理由：
 
-1. **收敛实验方法**（D3 的"在服务层做一层适配收敛"）。当前用到的实验方法：`project/*`、`thread/queue/*`、`thread/search`、`thread/searchOccurrences`、`thread/memoryMode/set`、`memory/reset`、`turn/start.collaborationMode`、`turn/start.permissions`、`turn/start.additionalContext`、`thread/list.projectId`、`thread/list.parentThreadId`、`thread/list.ancestorThreadId`、`thread/realtime/*`、`collaborationMode/list`、`thread/timeline/list`。**上游任一变更只改适配层一处。**
-2. **展开 EvoWork 概念**：场景/模式 → `collaborationMode` + `permissions` + `model`（03 §2.4）。
+1. **收敛实验方法**（D3 的"在服务层做一层适配收敛"）。当前用到的实验方法：`project/*`、`thread/queue/*`、`thread/search`、`thread/searchOccurrences`、`thread/memoryMode/set`、`memory/reset`、`turn/start.collaborationMode`、`turn/start.permissions`、`turn/start.approvalsReviewer`、`turn/start.additionalContext`、`thread/list.projectId`、`thread/list.parentThreadId`、`thread/list.ancestorThreadId`、`thread/realtime/*`、`collaborationMode/list`、`thread/timeline/list`。**上游任一变更只改适配层一处。**
+2. **展开 EvoWork 概念**：场景/审批档 → `permissions` + `approvalPolicy` + `approvalsReviewer` + `collaborationMode`（03 §2.4，Q45）。
 3. **合并数据源**：任务列表 = `thread/list` + 本机投影表；产物 = 本机索引。
 4. **降级与兜底**：实验方法不可用时（上游移除或未开启）走兜底路径而不是白屏。
 
@@ -118,8 +118,9 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 | `project/*`                           | **本机 `project_local` / `project_root` 两张权威表是真源**，内核只做尽力镜像；镜像失败不影响任何功能 | 无。新建的空间只在这台电脑上可见（`project/create` 不可用时）    |
 | `thread/queue/*`                      | 前端本地队列：执行中的输入先存本机，`turn/completed` 后自动发送                          | 队列不可跨客户端可见（单客户端场景无影响）                                   |
 | `thread/search` / `searchOccurrences` | 只做标题搜索（`thread/list?searchTerm`）+ 本机投影表缓存的消息摘要                       | 对话内搜索能力下降，需明确提示「内容搜索暂不可用」                           |
-| `turn/start.collaborationMode`        | 退回 `turn/start.model` + `effort`，developer instructions 通过 `additionalContext` 注入 | Ask 模式的指令强度下降 → 此时**必须**依赖 `ToolContributor` 过滤写工具（D8） |
+| `turn/start.collaborationMode`        | 退回 `turn/start.model` + `effort`，developer instructions 通过 `additionalContext` 注入 | 执行指令强度下降；Q45 三档的审批策略不受此项影响                         |
 | `turn/start.permissions`              | 退回 `sandboxPolicy`（两者互斥，F5）                                                     | 企业自定义 profile 不可用，只能用三个内置档                                  |
+| `turn/start.approvalsReviewer`        | 帮我批准标 `allowed: false`，原因「安全自动审查还没接通」                                | **不静默当成请求批准**（Q45）                                                |
 | `thread/memoryMode/set`               | 全局记忆开关代替任务级开关                                                               | 精度下降，需在设置里说明                                                     |
 | `thread/realtime/*`                   | 隐藏麦克风按钮                                                                           | 语音不可用（03 §4.7）                                                        |
 | `collaborationMode/list`              | **不调用**（F3：只返回两个内置项，对 UI 无用）                                           | 无                                                                           |
@@ -137,16 +138,14 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 新增 `project/update`（改名的镜像）。按本节的配对约束，它在降级表里必须有条目，
 `assertDegradationCoverage()` 在适配层启动时钉着这件事。
 
-**三条实现约束（2026-09-05 落地 M2a 时补）**：
+**三条实现约束（2026-09-05 落地 M2a 时补；Q45 增一条）**：
 
 1. **降级表与实验方法清单是配对的**：新增一个实验方法就必须给它一条兜底，否则"上游哪天删了它
    → UI 白屏且没人知道为什么"。这条约束已做成代码里的断言（`assertDegradationCoverage()`，
    适配层启动时执行、测试里也钉着），不靠人记。
-2. **`turn/start.collaborationMode` 的降级必须连带做另一件事**：退回 `model + effort` 后
-   Ask 模式的指令强度下降，此时**必须**依赖 `ToolContributor` 过滤写工具（D8）。
-   降级表里这一条带 `mustAlsoDo` 字段，不是提醒而是硬要求 —— 只靠沙箱的 Ask 模式会让模型
-   反复尝试写再失败，那正是 D8 要避免的体验。
-3. **探测失败 ≠ 不可用**：若探测时内核刚起来还没就绪（不是 -32601），能力保持 `unknown`
+2. **`turn/start.collaborationMode` 的降级不再挡 Composer 主路径**（Q45：三档都走 `ModeKind::Default` + craft 指令）。若将来内部只读路径（Q20 助理）恢复，那条路径退回 `model + effort` 后仍必须依赖 `ToolContributor` 过滤写工具，只靠沙箱会让模型反复尝试再失败。
+3. **`turn/start.approvalsReviewer` 缺失时禁止把帮我批准发出去**（Q45）。降级表里这一条带 `mustAlsoDo`：UI 禁用该项并给原因，不得改成 `user` 继续发。
+4. **探测失败 ≠ 不可用**：若探测时内核刚起来还没就绪（不是 -32601），能力保持 `unknown`
    而不是判成 `unavailable`。误判会**永久关掉一个其实可用的能力**，且用户没有恢复入口。
 
 ### 3.4 事件流 → UI 状态
