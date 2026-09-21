@@ -5,13 +5,12 @@ profile **本体**定义在 `config.toml` 的 `[permissions.*]`（内核解析�
 
 | id                  | extends               | 面向用户的名字 | 一句话说明（UI 直接显示）              | 用在                   |
 | ------------------- | --------------------- | -------------- | -------------------------------------- | ---------------------- |
-| `evowork-ask`       | `:read-only`          | 只读           | 只能查看文件，不能修改，也不联网       | Ask 模式（D8）         |
-| `evowork-plan`      | `:read-only`          | 只读 + 联网    | 可以查看文件和上网查资料，不能修改文件 | Plan 模式              |
-| `evowork-workspace` | `:workspace`          | **默认权限**   | 可以在这个工作空间里读写文件、执行命令 | Craft 模式（默认）     |
-| `evowork-full`      | `:danger-full-access` | 完全访问       | 可以读写这台电脑上的任何文件并联网     | 需二次确认，仅当前任务 |
+| `evowork-ask`       | `:read-only`          | 只读           | 只能查看文件，不能修改，也不联网       | 内部：Q20 助理         |
+| `evowork-plan`      | `:read-only`          | 只读 + 联网    | 可以查看文件和上网查资料，不能修改文件 | 内部保留，不进 Composer |
+| `evowork-workspace` | `:workspace`          | **请求批准**   | 工作空间内可读写；外部文件与联网要问你 | Composer 默认档（Q45） |
+| `evowork-full`      | `:danger-full-access` | 完全访问       | 可以读写这台电脑上的文件并联网         | Composer 第三档；二次确认 |
 
-「默认权限」这个名字直接对应截图 1 的「默认权限 ∨」—— 截图给的就是 profile 选择器，
-不需要发明新控件（03 §4.5）。
+Composer 不再另设「默认权限 ∨」下拉（Q45：请求批准 / 帮我批准 / 完全访问 已经是 profile + 审批的合体）。
 
 ## 三条硬规则（10 §2）
 

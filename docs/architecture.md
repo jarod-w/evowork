@@ -277,8 +277,9 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
         │
         ├─ workspaceId → overrides.cwd（id→path 只有主进程知道，渲染层不持有绝对路径）
         ├─ modelId → overrides.model，并写进任务级设置（下一回合生效，不追溯）
-        ├─ scenario.ts: 场景 + 模式 + 覆盖 → turn/start 参数
-        │    Ask/Plan/Craft 用 collaborationMode.settings.developer_instructions 表达（snake_case，F22）
+        ├─ scenario.ts: 场景 + 审批档 + 覆盖 → turn/start 参数
+        │    Q45 要把 Composer 三档展开为 permissions + approvalPolicy + approvalsReviewer
+        │    **代码未跟**：仍按 Craft/Plan/Ask 写 collaborationMode.developer_instructions（snake_case，F22）
         │    指令文本来自 ~/.evowork/modes/*.md（首次运行装入，F23；**不新增内核枚举值**，D8/F1）
         ▼
    kernel-adapter ──thread/start{cwd, baseInstructions, config}──▶ 内核 ──turn/start{input}──▶ 本机网关 ──▶ 模型
@@ -463,7 +464,7 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 （`experimentalFeature/list` 返回的是内核运行时功能开关，与"某个实验协议方法在不在"无关 —— F18）。
 区分 -32601（上游删了方法 → 降级）与 -32600（我们没声明 `experimentalApi` → **自己的 bug，必须响亮失败**）。
 每条降级都带一句**给用户看的话**，UI 必须显示，不许假装正常；部分降级还带 `mustAlsoDo`
-（例：`collaborationMode` 不可用时必须靠 `ToolContributor` 过滤写工具，否则 Ask 模式名存实亡）。
+（例：`approvalsReviewer` 不可用时帮我批准必须禁用并给原因，不得静默当成请求批准）。
 
 同一条纪律的其他落点：模型能力缺失（下拉里灰色划除，不隐藏）· 被企业停用的模型（留在列表里带原因）· 未知权限 profile（显示 id 本身）·
 办公扩展没装（说清缺哪几个模块）· `safeStorage` 不可用（让用户选，不静默写明文）· Windows 隔离强度未知（停用完全访问并给原因页）·
@@ -552,7 +553,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
   audit.jsonl           hook 追加的审计记录，宿主搬进 audit_log 后截断
   config.toml           `resolvePaths` 里仍有这个条目，但**没有任何读写方** —— 内核只读 kernel/config.toml（F21）
   requirements.toml
-  modes/                Craft/Plan/Ask 的指令片段（首次运行装入，已存在不覆盖）
+  modes/                执行指令片段（craft.md 进 Composer 三档；plan.md / ask.md 仅内部。首次运行装入，已存在不覆盖）
   scenarios/            场景包
   logs/
   kernel/               = 内核家目录。config.toml **在这里**（F21），宿主只知道"内核的家在这儿"，
@@ -604,7 +605,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | # | 偏差 | 实测 |
 | --- | --- | --- |
 | 1 | **内核签出领先断言基线 89 个提交** | `../codex` HEAD = `7769bccbb2`（2026-09-07），[kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `89a4eec6da`（2026-09-05 复核）。`node scripts/kernel-drift.mjs --no-fetch` 在实际签出上跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3 / F7 / F8 / F14 / F16 行号漂了），断言本身没坏，但 CLAUDE.md §1 与 status.md 记的"当前签出 `89a4eec6da`"在这台机器上已不成立。F17–F25 九条**没有进断言文件**（当前 17 条），只在 [设计集 README §4](design/README.md) 里 |
-| 2 | K3 的四个扩展点用了三个 | 技能包 ✅ · hooks ✅ · MCP server 仅 `plugins/connectors/browser/`（Q9 本期只做这一个，不铺国内目录）· Rust contributor ❌（`ext/` 只有 README；D8 说 Ask 模式要在 `ToolContributor` 层过滤写工具，这条还没落） |
+| 2 | K3 的四个扩展点用了三个 | 技能包 ✅ · hooks ✅ · MCP server 仅 `plugins/connectors/browser/`（Q9 本期只做这一个，不铺国内目录）· Rust contributor ❌（`ext/` 只有 README；内部只读路径若恢复仍要 `ToolContributor` 过滤写工具，Q45 后这条不再挡 Composer） |
 | 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
 | 4 | 第 ② 层签名策略包已接（M10c） | identity ES256 签 payload 原文 → 桌面验签后写 `~/.evowork/requirements.toml`。无包 / 未登录不锁 BYOK。超期只读，文案见 11 §8。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
 | 5 | 专家角色包为空 | `plugins/agents/` 不预置角色（编造 100+ 专家等于铺演示数据）。用户可在「技能·连接器 → 专家」新建，或把 TOML 放到 `~/.evowork/agents/`。信任连接器只写 `config.toml`，**不假装有 live reload** |

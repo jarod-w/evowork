@@ -23,7 +23,7 @@ Q23 = Electron，Q24 = React + TS + Vite，32 个组件全自建、不引 UI 库
 |---|---|---|
 | `bootstrap.ts` `WINDOW_SECURITY` | 五项安全参数（R5） | 开发期无症状，被注入那天出事 |
 | `composer.tsx` `detectTrigger` | `/` 只在行首触发 | `~/work/a.md` 弹出技能菜单 |
-| `composer.tsx` Ask 联动 | 切回 Craft 恢复**上一次**权限 | 每次进出 Ask 都要重选 |
+| `composer.tsx` Ask 联动 | ~~切回 Craft 恢复上一次权限~~ | **Q45：选择器改为审批三档。** 完全访问要二次确认；帮我批准未接通时禁用。不要先改标签再接线 |
 | `sidebar.tsx` `onVisibleChange` | 只报可见页 | 筛出 800 条变成 800 次 `thread/read` |
 | `changes-view.tsx` `REVERT_COPY` | 撤销动磁盘、回滚不动 | 文案拼反 → 用户丢文件 |
 | `app.tsx` `mergeItem` | 同 id 覆盖且保持原位置 | 流式更新时消息跳到末尾 |

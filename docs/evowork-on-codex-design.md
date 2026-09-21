@@ -4,11 +4,11 @@
 
 | 项               | 内容                                                                                                                                                                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 版本             | v0.5（Q1–Q29 全部决策 + Approved UI 方案回写）                                                                                                                                                    |
-| 日期             | 2026-09-11（v0.4 于 2026-09-05，v0.5 回写 UI 评审结论）                                                                                                                                          |
+| 版本             | v0.6（Q45 Composer 一级模式改为审批三档）                                                                                                                                                         |
+| 日期             | 2026-09-21（v0.5 于 2026-09-11 回写 UI 评审；v0.4 于 2026-09-05）                                                                                                                                 |
 | 作者             | li.wang                                                                                                                                                                                          |
-| 状态             | **已确认** —— 第 10 章 Q1–Q29 全部决策完毕，**无开放项**。Q29（是否有自建推理服务）结论为"无"，网关保留配置项不排期                                                                              |
-| 本轮决策（v0.5） | Q17=**不做个人云盘** · Q18=**本版首页与侧栏不设置运营位** · Q19=**团队空间只读订阅** · Q20=**助理 = 常驻特殊 Thread**（**入口于 2026-09-07 下架，方案保留**）· UI 交互以 [Approved 方案](chatgpt-like-ui-design.md) 为准                                               |
+| 状态             | **已确认** —— Q1–Q29、Q45 已决策。**当前唯一开放项仍是 Q44**（企业私有源索引的管理面）。Q45 **只改了文档，代码未跟**                                                                                |
+| 本轮决策（v0.6） | **Q45**：Composer 常显模式从 Craft / Plan / Ask 换成 **请求批准 / 帮我批准 / 完全访问**。清单第三章的三项不再作为用户可选项；D8「不新增 ModeKind 枚举」仍成立                                                                 |
 | 评估基线         | `openai/codex` main 分支 @ **`89a4eec6da`（2026-09-04）**；F1–F16 十六条内核断言已于 2026-09-05 在此提交上重新实测，同日实现 M2a 时新增 **F17 / F18**（两条推翻了详细设计 09 §3.2–3.3 的机制描述，已回写）。见 [详细设计集 README §4](design/README.md)；本文附录 A 的路径按此基线核对 |
 | 输入文档         | `agent-platform-feature-list.md`（EvoWork 功能点清单）· [详细设计集 01–10](design/README.md)                                                                                                     |
 
@@ -68,17 +68,29 @@
 | 多模态任务处理              | [改造]     | 见 §3.5                                                   | 文档/PPT/表格产物技能不在仓库                                   |
 | 结果可交付                  | **[自建]** | `core-plugins/src/artifact_operation.rs` **仅作约定参考** | 内核既无生成逻辑，其识别逻辑也用不上：见 D6 的 v0.4 修订（F10） |
 
-### 3.2 工作模式（清单第三章）
+### 3.2 工作模式（清单第三章 → Q45 审批三档）
 
-| 清单能力          | 状态   | codex 对应                                                                                                                                                                   |
-| ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Craft（你说我做） | [复用] | `collaboration-mode-templates/templates/default.md` + `SandboxPolicy::WorkspaceWrite`                                                                                        |
-| Plan（先想再做）  | [复用] | `collaboration-mode-templates/templates/plan.md`                                                                                                                             |
-| Ask（只谈不动）   | [改造] | 无现成模式，= 命名权限 profile `evowork-ask`（只读 + 无网络）+ `AskForApproval::Never` + 由 `turn/start.collaborationMode.settings.developer_instructions` 下发 ask 指令文本 |
+清单第三章原来的 Craft / Plan / Ask 是协作风格。**Q45（2026-09-21）把 Composer 一级模式换成审批松紧**，对齐内核已有的权限 profile + `AskForApproval` + `ApprovalsReviewer`，不再让用户先选「先想还是先做」。
 
-> 相关定义：`codex-rs/protocol/src/protocol.rs`（`AskForApproval` / `SandboxPolicy`）、`codex-rs/protocol/src/config_types.rs:673`（`ModeKind`，仅 `Plan | Default`）。
+| 现产品档（Q45）     | 状态   | 内核对应                                                                                                                                                                                                 |
+| ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 请求批准（默认）    | [复用] | `permissions: evowork-workspace` + `approvalPolicy: onRequest` + `approvalsReviewer: user`                                                                                                               |
+| 帮我批准            | [复用] | 同上，但 `approvalsReviewer: auto_review`（`turn.rs:218`；Guardian 自动审查，只把判定为风险的动作交给人）                                                                                                  |
+| 完全访问            | [复用] | `permissions: evowork-full`（`:danger-full-access`）+ `approvalPolicy: never` + 二次确认；**硬拦截清单仍生效**（§6.11 / 10 §2.3）                                                                          |
+
+清单原三项的下落：
+
+| 清单能力          | Q45 之后                                                                                                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Craft（你说我做） | 不再作为一级模式。三档的 `collaborationMode` 都走 `ModeKind::Default` + `config/modes/craft.md`（执行指令），默认档是「请求批准」                                   |
+| Plan（先想再做）  | 不再作为一级模式。内核 `Plan` item 仍渲染；「规划中」只按是否存在 `plan` item 派生，不靠用户先选 Plan                                                              |
+| Ask（只谈不动）   | 不再作为一级模式。`evowork-ask` 与 `config/modes/ask.md` 保留给 Q20 助理（入口仍下架）；Composer 不提供只读讨论档                                                   |
+
+> 相关定义：`codex-rs/protocol/src/protocol.rs`（`AskForApproval` / `SandboxPolicy`）、`codex-rs/protocol/src/config_types.rs:673`（`ModeKind`，仅 `Plan | Default`）、`app-server-protocol/src/protocol/v2/shared.rs:244-249`（`ApprovalsReviewer = user \| auto_review`）、`v2/turn.rs:218`（`turn/start.approvals_reviewer`）。
 >
-> **v0.4 修订（依据 F1，M1）**：Ask 模式**不需要新增 `ask.md` 内核模板**，因此 §7 的 P3 补丁已删除。指令文本随 EvoWork 分发在 `config/modes/ask.md`，每次 `turn/start` 由适配层拼进 `collaboration_mode.settings.developer_instructions`（该字段注释明示它优先于 model / reasoning_effort / developer instructions，`app-server-protocol/src/protocol/v2/turn.rs:243-251`）。仍需保留的是 D8 里「在 `ToolContributor` 层过滤写工具」那条 —— 它是 `ext/` 扩展，不是补丁。
+> **v0.4 修订（依据 F1，M1）仍成立**：不需要给内核加 `ask.md` 模板，P3 补丁保持删除。Q45 之后 Composer 主路径甚至不再下发 ask 指令。
+>
+> **v0.6 修订（Q45）**：D8「不新增 ModeKind 枚举」不变；变的是用户面对的三档语义。`ext/` 里「Ask 要在 ToolContributor 层过滤写工具」降为内部只读路径的要求，不再挡 Composer 主路径。
 
 ### 3.3 任务管理与对话（清单第四、五章）
 
@@ -399,11 +411,21 @@
 
 **理由**：从最近提交（Guardian 证据保留、token budgeting 默认开关、`update_plan` 改为 opt-in）看，核心 API 仍在快速变动。补丁面越小，跟随成本越低。
 
-### D8 —— Ask 模式用权限组合实现，不新增模式类型
+### D8 —— Composer 三档用权限组合实现，不新增模式类型
 
-**决策**：`Ask` = `SandboxPolicy::ReadOnly { network_access: false }` + `AskForApproval::Never` + 一份新的 `ask.md` developer instructions。通过 `turn/start` 的 `permissions` profile 切换。
+**决策（v0.4）**：`Ask` = `SandboxPolicy::ReadOnly { network_access: false }` + `AskForApproval::Never` + `ask.md` developer instructions。通过 `turn/start` 的 `permissions` profile 切换，**不新增 `ModeKind` 枚举**。
 
-**理由**：避免动 `CollaborationMode` 枚举（属于 protocol，改动会波及 schema 与 SDK 生成）。
+**决策（v0.6 / Q45）**：Composer 一级模式改为「请求批准 / 帮我批准 / 完全访问」。三档全部映射到 `ModeKind::Default`，差别只在 `permissions` + `approvalPolicy` + `approvalsReviewer`。**仍不新增内核枚举。** Craft / Plan / Ask 不再作为用户可选项。
+
+| 档         | `permissions`       | `approvalPolicy` | `approvalsReviewer` | 用户确认                         |
+| ---------- | ------------------- | ---------------- | ------------------- | -------------------------------- |
+| 请求批准   | `evowork-workspace` | `onRequest`      | `user`              | 无                               |
+| 帮我批准   | `evowork-workspace` | `onRequest`      | `auto_review`       | 无；未接通时禁用并给原因         |
+| 完全访问   | `evowork-full`      | `never`          | `user`              | 二次确认，仅当前任务；硬拦截仍生效 |
+
+Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` 保留为内部能力（Q20 助理若恢复入口可继续用）。Plan 协作模式同样下架；`Plan` item 与「规划中」只按是否存在 plan item 派生。
+
+**理由**：避免动 `CollaborationMode` 枚举（属于 protocol，改动会波及 schema 与 SDK 生成）。审批三档内核已经有现成字段，EvoWork 只做展开与文案。
 
 ### D9 —— 部署形态 = 纯本地桌面应用，云端只做「不得不联网的四件事」
 
@@ -511,22 +533,22 @@
 | 已完成   | `turn/completed` status = completed         |
 | 失败     | `turn/completed` status = failed            |
 | 待处理   | 有 pending approval 或 `request_user_input` |
-| 规划中   | collaborationMode = plan 且未确认           |
+| 规划中   | 存在未完成的 `plan` item（Q45：不再绑定已下架的 Plan 协作模式） |
 | 已归档   | `thread/archive`                            |
 
-> 注：清单的"规划中"在 codex 里不是独立状态，需服务层根据 mode + 是否存在 `plan` item 派生。
+> 注：清单的"规划中"在 codex 里不是独立状态。Q45 之后只按是否存在 `plan` item 派生，不看 Composer 选了哪一档。
 
-### 6.2 工作模式
+### 6.2 工作模式（Q45：审批三档）
 
-三份 developer instructions 模板 + 三套权限 profile：
+Composer 常显三项，全部走 `ModeKind::Default` + `config/modes/craft.md`（执行指令），**不新增内核枚举**（D8）：
 
 ```
-craft:  default.md  + workspace-write  + on-request approval
-plan:   plan.md     + read-only        + never approval
-ask:    ask.md(新)  + read-only        + never approval + 禁用所有写工具
+请求批准:  evowork-workspace + onRequest + reviewer=user
+帮我批准:  evowork-workspace + onRequest + reviewer=auto_review
+完全访问:  evowork-full      + never     + reviewer=user + 二次确认
 ```
 
-Ask 模式需在 `ToolContributor` 层过滤掉写类工具（不只靠沙箱，避免模型反复尝试后报错的体验问题）。
+`config/modes/{plan,ask}.md` 与 `evowork-ask` / `evowork-plan` 保留为内部能力，不进一级选择器。内部只读路径若恢复（Q20 助理），仍应在 `ToolContributor` 层过滤写工具，避免模型反复尝试再失败。
 
 ### 6.3 技能与市场
 
@@ -856,7 +878,7 @@ EvoWork 需新增的 Hooks 策略包：
 | 🟡 Q17 | 是否提供个人云端存储？（截图 4 的「880.1 KB / 5.0 GB + 升级」） | **不做个人云盘**。配额条改为展示**本机磁盘占用**（产物 + 解析缓存 + 索引），右侧动作是「清理」而不是「升级」                                                                                                                                            | 它换来的用户价值（跨设备取文件）远小于它打破的隐私叙事：个人云存储会成为 D9 之外的**第五项云端数据面职责**，与 K6 / Q1=A 直接冲突，且"升级"意味着存储商业化。真要跨设备，Q10 的逐次授权分享通道够用     | [06 §3.5](design/06-library.md)                                                   |
 | 🟡 Q18 | 是否做积分 / 成长 / 运营位？                                    | **2026-09-11 UI 评审更新：本版首页与侧栏不设置运营位，也不保留主路径 slot。** 未来如需积分或运营系统，必须另立需求并重新评审隐私与数据边界                                                                                                  | 对话优先的首页不应被常驻运营内容占用；已有空 slot 不能绕过产品评审形成隐性范围                                                                                                                                 | [01 §7.3](design/01-ui-design-system.md)、[03 §5](design/03-home-and-composer.md) |
 | 🟡 Q19 | 「团队空间」是只读订阅还是双向协作？                            | **只读订阅**。复用 D9 已批准的「企业私有源索引」这条云端职责，把它从技能分发扩展到资料分发（同一通道、同一签名校验、同一信任模型）；写入方向仍走 Q10 的逐次授权。**「与我共享」收件箱 v1 不做**（Tab 不渲染）                                           | 这是唯一能既保住 D9、又让「团队空间」不是空壳的形态。双向协作 = 用户内容常态上云，直接推翻 D9，另需多端一致性、冲突合并、权限模型与审计，是独立产品级投入                                               | [06 §4](design/06-library.md)                                                     |
-| 🟡 Q20 | 「助理」与「任务」的关系？                                      | **一个常驻的特殊 Thread**：固定 cwd（`~/.evowork/assistant/`）、默认 Ask 模式、**不进任务列表**、可 `thread/fork` 升级为正式任务。token 消耗**计入**配额与预算，但在用量视图里单列一项「助理」。**2026-09-07：入口本期下架**（方案不作废，见 02 §4.2）—— 这条链路一行未实现，留着入口只能给一个「还没做好」的空页                                                          | 任务列表、产物、审批、预算这四套机制全部挂在 Thread 上；助理若自建会话存储，就要把四套机制各做一遍且与 D6/Q11 口径分裂。做成特殊 Thread 后天然拥有排队、中断、搜索、压缩、记忆能力，增量近零            | [02 §4.2](design/02-information-architecture.md)                                  |
+| 🟡 Q20 | 「助理」与「任务」的关系？                                      | **一个常驻的特殊 Thread**：固定 cwd（`~/.evowork/assistant/`）、内部只读（`evowork-ask`，不进 Composer 三档）、**不进任务列表**、可 `thread/fork` 升级为正式任务。token 消耗**计入**配额与预算，但在用量视图里单列一项「助理」。**2026-09-07：入口本期下架**（方案不作废，见 02 §4.2）—— 这条链路一行未实现，留着入口只能给一个「还没做好」的空页                                                          | 任务列表、产物、审批、预算这四套机制全部挂在 Thread 上；助理若自建会话存储，就要把四套机制各做一遍且与 D6/Q11 口径分裂。做成特殊 Thread 后天然拥有排队、中断、搜索、压缩、记忆能力，增量近零            | [02 §4.2](design/02-information-architecture.md)                                  |
 
 ### 10.1.2 三条截图与已定决策的冲突（决策已明确，UI 必须如实降级）
 
@@ -911,6 +933,20 @@ EvoWork 需新增的 Hooks 策略包：
 | --- | --- | --- |
 | Q43 | ✅ 2026-09-20 | 管理端的用量**只给租户总量 + 按人当期累计，不给按人按天曲线** —— 时间序列就是一条成员作息时间线，会把 Q35=A 在类型层做到的"装不了内容"在图表层拼回来 |
 | **Q44** | ❓ **未决策 —— 当前唯一开放项** | **企业私有源索引（D9 云端职责第二项）的管理面做到哪一层**：推荐"只注册源与签名密钥，内容留在企业侧"。若做成"管理端可上传并浏览文件树"，它与企业云盘的差别只剩措辞，Q17 刚砍掉的存储面会从管理侧长回来。**开着期间不要先建 `/admin/sources`** |
+
+### 10.1.5 Composer 主模式 Q45（2026-09-21）
+
+| #      | 问题                                              | 决策                                                                                                                                                                                                                                                                                                                                 | 为什么这样定                                                                                                                                                                                                                          | 展开在                                                                                         |
+| ------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 🟡 Q45 | Composer 常显三项继续用 Craft / Plan / Ask 吗？   | **不用。** 换成 **请求批准 / 帮我批准 / 完全访问**。三档控制「动手前要不要问你」，不控制「先规划 / 只讨论」。默认「请求批准」。完全访问要二次确认、仅当前任务，硬拦截仍生效。帮我批准依赖 `turn/start.approvalsReviewer = auto_review`；未接通时**禁用并给原因，不隐藏、不静默降成请求批准**。清单第三章与 D8 的 Ask 一级模式从 Composer 下架。 | 用户截图对照的就是内核审批三档，不是协作风格。Craft/Plan/Ask 把「想不想动手」和「问不问你」绑在同一个选择器里，而真正要选的是后者。内核已经有 `permissions` + `AskForApproval` + `ApprovalsReviewer`，不必再发明一套 ModeKind。     | [03 §4.5](design/03-home-and-composer.md)、[10 §2.4](design/10-security-permissions-ux.md)、D8 |
+
+**写码时意味着什么**（**尚未实现**，先改文档）：
+
+1. Composer 常显选择器三项改为上表；**不再另设权限下拉**（三档已经是权限 + 审批的合体）。企业自定义 `[permissions.<id>]` 出现在同一菜单底部，未知 id 不隐藏（10 §2.2）。
+2. 前端仍只传 `{scenarioId, modeId, overrides}`。`modeId` 为 `request-approval` / `approve-for-me` / `full-access`。适配层展开为 `permissions` + `approvalPolicy` + `approvalsReviewer`，`collaborationMode.mode` 固定 `default`。
+3. `bridge.send` **必须**把 `modeId` 带进 `turn/start`。当前发送链路不传 `permissionId`，任务始终用场景包 `evowork-workspace` —— 这是 Q45 的实现前置，不能让用户选一个看起来生效、实际没用的档位。
+4. 帮我批准在 `approvalsReviewer` 不可用或 Guardian 未开时：`allowed: false` + 「安全自动审查还没接通」，**禁止**当成请求批准发出去。
+5. 完全访问在 Windows 隔离未知/不足时按 10 §7 停用并给原因页（Q26），不静默降级。
 
 ### 10.2 决策落地后要盯的三件事
 

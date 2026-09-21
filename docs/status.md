@@ -1,10 +1,18 @@
 # 开发状态
 
-> **更新于 2026-09-20（第 42 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-21（第 43 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **第 43 次是一次产品决策回写，没有代码改动**：Composer 一级模式从 Craft / Plan / Ask
+> 改为 **请求批准 / 帮我批准 / 完全访问**（[总纲 Q45 / D8 v0.6](evowork-on-codex-design.md)）。
+> 三项的内核展开已经写进 [10 §2.4](design/10-security-permissions-ux.md) 与 [03 §4.5](design/03-home-and-composer.md)。
+> **代码仍显示 Craft / Plan / Ask，且 `bridge.send` 不传 `modeId`**，运行中每条任务都还是
+> 场景包 `evowork-workspace` + `approval_policy = on-request`（效果接近「请求批准」，但不能切换）。
+> 帮我批准依赖 `turn/start.approvalsReviewer = auto_review`，完全访问依赖 `evowork-full` + 二次确认；
+> 两档都还没有发送路径。接上之前不要先改 Composer 标签。Q44 仍是唯一开放项。
 >
 > **第 42 次落地 P3.5-4「WEB 缺口收口」**：`/account/password` 调 `/v1/password`；
 > `mustChangePassword` 为真时管理端只渲染改密，成功后用 `/v1/me` 翻本地会话。
@@ -179,7 +187,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P1-2** M2a 服务层 | 🟢 | 协议层 · 16 张本机表 + 两个迁移器 · 适配层（会话/心跳/重启/恢复/降级/事件流/审批/场景/搜索/队列）· automation 与产物写入方 | — |
 | **P1-3** M2 前端 | 🟢 | token 层 · **35 个组件全部有实现**（2026-09-09 逐个核对 01 §5.1–5.35）· 19 类 Item · 四类审批卡 · 三栏工作台 · 首页与 Composer · 任务列表与六组筛选 · 变更视图组件 · Electron 引导与 preload · 本机服务宿主 · **2026-09-06：应用外壳与侧边栏骨架（01 §3.1–3.3）· 线性图标集 · IPC 动作接线（清单与实现逐项相等由测试钉住）· 回车→建任务→切页实测通过 · 模型选择器端到端接通** · **2026-09-07：`openTask` 拉历史 · 项目页落地 · 「助理」入口整个下架**（方案保留在 02 §4.2）· **2026-09-08：设置页六分区** · **2026-09-09：现有“技能·连接器”三 Tab + “发现应用”抽屉 + 官方 browser MCP** · **2026-09-12：Approved UI 阶段 A–D 主体**（克制首页、侧栏、GFM 时间线、结果区、项目四 Tab、资料库、响应式与 a11y）· **2026-09-13：UI 方案主路径收口**（结构化引用与附件、运行中队列/插话、任务与消息动作、独立搜索、文本/图片/PDF/HTML 预览、自动化管理闭环） | 语音 · deeplink · 队列编辑/重排 · 搜索高级筛选与单消息定位 · 项目文件递归模糊候选 · 拖拽/粘贴附件 |
 | **P2-1** M3 办公技能与解析 | 🟢 | **四个技能全部完成**（documents / spreadsheets / presentations / charts，共用一套骨架）· **本机解析管道**（识别 / 六道闸门 / 内置解析器 / zip / 注入载荷）· **三档运行时探测** · **办公扩展 App 内安装器**（2026-09-07，`services/runtime-installer`）· 附件选择已接 Composer 与宿主 · **2026-09-19：办公档解析器接通**（`createOfficeParser` + `office.py`，docx / xlsx / pptx / pdf 文本层 / rtf） | OCR 档（扫描件 / `pytesseract`，安装器只装 office 档）· 解析子进程的 seatbelt / landlock（M4） |
-| **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测）· **2026-09-06：审计链路接通**（hook → `audit.jsonl` → `audit_log` 表 → 审计页 + 导出，从「更多」可达）· **2026-09-09：签名策略包下发（R11 / M10c）** | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 设置页「安全与权限」分区仍没有 10 §7 的本机安全能力页（现在只展示策略包状态）· 任务页的预算进度条与耗尽双动作只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验过 · Ask 模式在 `ToolContributor` 层过滤写工具（D8，`ext/` 还是空的）· **Windows 隔离强度结论（见 U5）** |
+| **P2-2** M4 安全与策略 | 🟢 | 三级路径策略（硬拦截对完全访问也生效）· 权限 profile 文案与平台限制 · 命令风险四维判定 · 并发与预算闸门 · guardian 映射 · 审计记录与链式哈希 · **hooks 策略包**（四个事件，决策可测）· **2026-09-06：审计链路接通**（hook → `audit.jsonl` → `audit_log` 表 → 审计页 + 导出，从「更多」可达）· **2026-09-09：签名策略包下发（R11 / M10c）** | 沙箱层的实际接线（seatbelt/landlock 由内核提供，需在 turn/start 上验证）· 设置页「安全与权限」分区仍没有 10 §7 的本机安全能力页（现在只展示策略包状态）· 任务页的预算进度条与耗尽双动作只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验过 · **Q45 审批三档未接线** · 内部只读路径的 Ask `ToolContributor`（`ext/` 还是空的，不再挡 Composer）· **Windows 隔离强度结论（见 U5）** |
 | **P3-1** M5 自动化 | 🟢 | **带命名时区的 cron**（含 DST 两个边界）· misfire 三策略与落库顺序 · 失败分类与自动暂停 · 设备绑定与迁移 · 自然语言触发解析（不调模型）· 调度循环与内核接线 · 列表与历史 · **直接创建、编辑、暂停/恢复、删除、迁移、试跑和立即运行的实际页面/IPC/repo 闭环** | `wake_system` 的 OS 唤醒钩子 · 从既有任务转自动化入口 · U3 真机体验 |
 | **P3-3** M8 可视化等 | 🟢 | **Visualizer**（fence 识别 · SVG 白名单清洗 · chart spec 校验 · 沙箱 iframe）· 产物识别三信号与版本 · 分享授权流（Q10 六条规则）· 资料库视图与两种删除语义 · 本机磁盘占用 · **资料库三栏 UI 已落地** · **产物 watcher 已接宿主**（轮询 + 对账，不是内核 `fs/watch`，`local-services.ts`）· mermaid 已随包并代码分割 · **任务时间线产物卡与结果区本机预览已接** | **分享整条链路没接**（见 §6 更正：`createShare` / `createUploader` 无调用方，云端端点不存在，「我分享的」表格与撤销按钮无数据）· 资料库的「我的资料」树 / 添加资料 / 团队空间 / 删除对话框仍无完整宿主动作 · 全文检索是前端 `filterRows`，没走 FTS 管线 · 分享页（Q41）随 `apps/web` |
 | **P3-2** M9 打包 | 🟢 | Electron 入口 · electron-builder 配置（三平台 + 差量更新）· macOS entitlements · **体积预算与档位边界检查**（R10）· **无证书时降级为未签名并把标注写进文件名**（U4）· **打包驱动 `scripts/package.mjs`**（把 package-plan 的四条规则接上）· **2026-09-06：macOS arm64 真实打包跑通并启动验证** | 签名公证（卡 P0-5 证书）· 自动更新服务端 · EvoWork CLI 随包（Q13）· 应用图标（现在用的是 Electron 默认图标）· Windows / Linux 未在真机打过 |
@@ -566,7 +574,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **需要外部条件** | GLM 产物质量评分（U1）· misfire 真机（U3）· 签名公证（U4）· Windows 隔离（U5）· **`safeStorage` 真机行为（U6，含一台没有 keyring 的 Linux）** · **M10b 的域名备案与发信域** | 人 / 真机 / 证书 / 备案 |
 | ~~需要装依赖~~ | ✅ **不再需要人装**：办公扩展 2026-09-07 起由 App 内的安装器装（`services/runtime-installer`），用户点一个按钮；离线机器用 `EVOWORK_OFFICE_BUNDLE`。`electron` 44 · `mermaid` 11 随包 | — |
 | 需要接线 | ✅ **已接**：scheduler↔内核 · 自动化创建/编辑/运行↔权威表与调度器 · 产物 watcher（轮询 + 对账）↔产物索引 · Composer 附件↔本机 ingest · 办公档解析器↔办公扩展解释器 · 队列↔回合完成后的显式 start · 四个技能↔办公运行时 · 安装器↔引导与探针 · hook 审计 JSONL↔`audit_log` 表 | **仍未接**：分享上传与云端托管端点；OCR 解析器↔扫描件；`wake_system`↔OS 唤醒事件 |
-| 还没画的 UI | ✅ **已完成**：资料库三栏 · 自动化列表/历史/编辑 · 用量与审计页 · 首运行四步引导 · 项目列表与详情 · 设置页 · 插件三 Tab · 可见队列 · 结果区四视图。组件清单现为 **35** 个，且都有实现 | 剩：通知中心、设备中心，以及已明确列出的队列编辑/重排、搜索高级筛选等非主路径；权限选择器待 `send()` 接线后再加回引导与 Composer |
+| 还没画的 UI | ✅ **已完成**：资料库三栏 · 自动化列表/历史/编辑 · 用量与审计页 · 首运行四步引导 · 项目列表与详情 · 设置页 · 插件三 Tab · 可见队列 · 结果区四视图。组件清单现为 **35** 个，且都有实现 | 剩：通知中心、设备中心，以及已明确列出的队列编辑/重排、搜索高级筛选等非主路径；**Q45 审批三档待 `send()` 接线后才能换 Composer 标签** |
 
 前两类不是写代码能解决的；后两类是纯工作量，且各自的**约束与判据都已经写进对应包的 README 与测试**。
 
@@ -588,13 +596,13 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | --- | --- | --- |
 | **01 设计系统** | token/断点已改走工作台数值；侧栏拖动手柄未做（clamp 已接）· 应用图标仍是 Electron 默认 | `packages/tokens/src/palette.ts` · `app.css` · `bootstrap.ts` · `build/` |
 | **02 信息架构** | 通知中心与设备中心（接通前已隐藏）· deeplink `evowork://` | `app.tsx` · `sidebar.tsx` |
-| **03 首页与 Composer** | 语音 · 拖拽/粘贴附件 · 项目文件递归模糊候选 · 队列编辑/重排 · 除 `/清空`、`/新建任务` 外的本地命令 | `composer.tsx` · `app.tsx` |
+| **03 首页与 Composer** | 语音 · 拖拽/粘贴附件 · 项目文件递归模糊候选 · 队列编辑/重排 · 除 `/清空`、`/新建任务` 外的本地命令 · **Q45 审批三档未接线**（仍显示 Craft/Plan/Ask，`send()` 不传 `modeId`） | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
 | **04 任务工作台** | C · 搜索高级筛选与单消息定位 · 队列编辑/重排 · 子任务侧滑未端到端（**§3.5 任务标题三来源已接通**，2026-09-13） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` |
 | **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx` |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 分享 / 删除仍无宿主动作，当前均按真实能力隐藏 · §3.4 正文 FTS 未接，界面已明确只搜文件名 | `library.tsx` vs `app.tsx` |
 | **07 自动化** | `wake_system` 只有数据字段，没有 OS 唤醒钩子 · 从任务转自动化入口未接 · U3 仍待真机 | `automations.tsx` · `services/scheduler/README.md` |
 | **08 产物与解析** | D · OCR 档解析器与安装 · 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
-| **10 安全与权限 UX** | 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· D8 的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` |
+| **10 安全与权限 UX** | **Q45 三档未接线** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· 内部只读路径的 Ask `ToolContributor`（`ext/` 空；Q45 后不再挡 Composer 主路径） | `settings.tsx` · `ext/` · `composer.tsx` |
 | **11 账号与模型**（WEB 侧，2026-09-20） | 分享页 `/s/<share-id>`（Q41，跟 D 同一切片；**不读账号会话、不带 `authorization` 头**，第 25 条尚无测试）· 企业私有源索引的管理面（**Q44 未决策 —— 当前唯一开放项**，推荐"只注册源、不托管内容"） | `apps/web/src/app.tsx` · 细则 [11 §13.10](design/11-account-and-models.md) |
 
 **仓内为空、但设计依赖的目录**：`ext/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。`plugins/agents/` 故意不预置角色。`apps/web/` 与 `services/identity/` 已有实现；**分享页仍未做**（见上表第 11 篇）。改密页已于 P3.5-4 落地。

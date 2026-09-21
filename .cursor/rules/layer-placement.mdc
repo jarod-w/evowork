@@ -26,5 +26,6 @@ alwaysApply: false
 | Q26 | macOS 首发；Windows 隔离不足时标 `allowed:false` 并给原因页，不静默降级 |
 | Q27 | 前端不得直连实验方法 |
 | Q29 | 不为自建推理排期；网关保留私有 endpoint 配置项即可 |
+| **Q45** | Composer 一级模式是请求批准 / 帮我批准 / 完全访问。`send()` 必须传 `modeId`。帮我批准未接通时禁用并给原因，禁止静默降成请求批准 |
 
 `services/identity` **尚未开始**。云端只有 D9 的四件事；不要给它加内容数据面。

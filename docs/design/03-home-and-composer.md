@@ -1,6 +1,6 @@
 # 03 · 首页与输入区
 
-> 上游：[总纲 §6.2](../evowork-on-codex-design.md)（工作模式）· D8 · [清单 §3 / §5.1 / §5.3](../agent-platform-feature-list.md)
+> 上游：[总纲 §6.2](../evowork-on-codex-design.md)（审批三档，Q45）· D8 · [清单 §3 / §5.1 / §5.3](../agent-platform-feature-list.md)
 > UI 基线：[类 ChatGPT UI 设计方案](../chatgpt-like-ui-design.md)（Approved）。组件引用 [01 §5](01-ui-design-system.md)。
 
 ## 1. 页面结构
@@ -24,17 +24,17 @@
 
 ### 2.1 它是什么，不是什么
 
-“日常办公 / 代码开发 / 设计创意”保留为**内部场景配置**，不是首页必须先选的一级控件，也不是总纲 §6.2 的工作模式（Craft / Plan / Ask）。两者正交：
+“日常办公 / 代码开发 / 设计创意”保留为**内部场景配置**，不是首页必须先选的一级控件，也不是总纲 §6.2 的审批三档（Q45：请求批准 / 帮我批准 / 完全访问）。两者正交：
 
-|            | 场景                                                               | 工作模式                                               |
-| ---------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
-| 回答的问题 | 「我在做哪一类活」                                                 | 「你能动手到什么程度」                                 |
-| 影响       | 默认模型、默认权限、启用技能集、提示片段、推荐 chips、默认工作空间 | developer instructions、沙箱与审批策略、写工具是否可用 |
-| 数量       | 3（可扩展）                                                        | 3（固定，D8）                                          |
-| 位置       | 默认不常显；用于生成上下文建议与新任务默认值                     | Composer 工具行（03 §4.5）                             |
-| 内核对应   | 无 —— 纯 EvoWork 概念，展开后落到 `turn/start` 参数                | `ModeKind` + 权限 profile                              |
+|            | 场景                                                               | 审批档（Composer 一级模式，Q45）                         |
+| ---------- | ------------------------------------------------------------------ | -------------------------------------------------------- |
+| 回答的问题 | 「我在做哪一类活」                                                 | 「动手前要不要问你」                                     |
+| 影响       | 默认模型、启用技能集、提示片段、推荐 chips、默认工作空间           | `permissions` + `approvalPolicy` + `approvalsReviewer`   |
+| 数量       | 3（可扩展）                                                        | 3（固定，D8 / Q45）                                      |
+| 位置       | 默认不常显；用于生成上下文建议与新任务默认值                       | Composer 工具行（03 §4.5）                               |
+| 内核对应   | 无 —— 纯 EvoWork 概念，展开后落到 `turn/start` 参数                | 命名 profile + 审批策略；`ModeKind` 固定 `default`       |
 
-把它们做成一个控件会产生 3×3 = 9 种组合的解释负担，且"设计创意 + Ask"这种组合本身合理（只讨论方案不产图），不该被合并掉。
+不要把场景和审批档做成一个控件。Craft / Plan / Ask 不再出现在 Composer 上。
 
 ### 2.2 数据模型
 
@@ -52,7 +52,7 @@ default       = true
 model         = "evowork/deepseek-v4-flash"   # 可被用户在 ModelSelect 里覆盖
 reasoning_effort = "medium"
 permissions   = "evowork-workspace"            # config.toml 的 [permissions.<id>]
-mode          = "craft"                        # 默认工作模式
+mode          = "request-approval"            # 默认审批档（Q45；实现未接前代码仍写 craft）
 instructions_file = "modes/craft-office.md"    # 拼进 developer_instructions
 
 # 影响可用能力
@@ -81,41 +81,43 @@ prompt = "分析这份数据并给出可视化："
 
 - 场景目录由 **EvoWork 服务层持有**，不试图注册进内核；
 - 每次 `turn/start` 由适配层把场景 + 模式 + 用户覆盖项**展开为完整参数**下发；
-- 前端不调 `collaborationMode/list`（它只会返回 Plan/Default 两项，对 UI 无用）。
+- 前端不调 `collaborationMode/list`（它只会返回 plan/default 两项，对 UI 无用）。
 
 这条是"能放外面就不放里面"（CLAUDE.md §4）的正例：零内核改动、零补丁。
 
 ### 2.4 展开规则（场景 + 模式 + 用户覆盖 → `turn/start`）
 
-优先级从低到高：**场景默认值 → 工作模式 → 用户在 Composer 里的显式选择**。
+优先级从低到高：**场景默认值 → 审批档 → 用户在 Composer 里的显式选择**。
 
 ```jsonc
-// 场景=office, 模式=craft, 用户改了模型
+// 场景=office, 档=请求批准, 用户改了模型
 {
     "threadId": "...",
     "input": [/* … */],
     "cwd": "/Users/x/work/weekly",
     "collaborationMode": {
-        "mode": "default", // craft/ask → default；plan → plan（F2：只有两个枚举值）
+        "mode": "default", // Q45：三档都走 default（F2：只有 plan | default）
         "settings": {
-            "model": "evowork/glm-flash", // 用户覆盖胜出
+            "model": "evowork/glm-flash",
             "reasoning_effort": "medium",
-            "developer_instructions": "<场景片段 + 模式片段 拼接>",
+            "developer_instructions": "<craft 片段 + 场景片段 拼接>",
         },
     },
-    "permissions": "evowork-workspace", // 命名 profile；不与 sandboxPolicy 同传（F5）
+    "permissions": "evowork-workspace",
+    "approvalPolicy": "onRequest",
+    "approvalsReviewer": "user"
 }
 ```
 
-- `collaborationMode` 与 `permissions` 都是实验字段，经 09 §3 适配层调用，前端只传语义化的 `{scenarioId, modeId, overrides}`。
-- `developer_instructions` 的拼接顺序固定为 **模式片段在前、场景片段在后**（场景更具体，后写的优先），并在末尾附加运行时上下文（当前日期、工作空间路径、可用技能清单摘要）。
-- 模式片段文件：`config/modes/{craft,plan,ask}.md`。**它们不进内核仓库** —— 这是 README §4.1 里 P3 补丁得以取消的原因。
+- `collaborationMode`、`permissions`、`approvalsReviewer` 都经 09 §3 适配层调用，前端只传语义化的 `{scenarioId, modeId, overrides}`。`modeId` 为 `request-approval` / `approve-for-me` / `full-access`。
+- `developer_instructions` 的拼接顺序固定为 **craft 片段在前、场景片段在后**，并在末尾附加运行时上下文（当前日期、工作空间路径、可用技能清单摘要）。三档共用 `config/modes/craft.md`；`plan.md` / `ask.md` 不进 Composer。
+- 模式片段文件仍放在 `config/modes/`，**不进内核仓库**（P3 补丁保持删除）。
 - **产品身份不在 `developer_instructions` 里。** 那一层只叠加，盖不住内核写死的「You are a coding agent running in the Codex CLI」。身份走同一次建任务的 `thread/start.baseInstructions`（F25，`config/prompts/base-instructions.md` 是内核 `default.md` 的 fork，只改身份段）。相对路径的 `model_instructions_file` 按 cwd 解析，不能写进配置模板。系统技能 `openai-docs` 按名字关掉：它把「you / this app」绑到 Codex 文档上。
 
 ### 2.5 场景配置的交互
 
 - 首页不提供常驻场景切换器。系统可以根据最近项目、附件类型和本机配置选择建议与默认值，但不得自动发送或在用户不知情时提升权限。
-- 用户通过建议、插件或项目入口开始时，可携带 `scenarioId` 作为默认参数；用户在 Composer 明确选择的模型、模式、项目和权限始终优先。
+- 用户通过建议、插件或项目入口开始时，可携带 `scenarioId` 作为默认参数；用户在 Composer 明确选择的模型、审批档和项目始终优先。
 - 场景偏好只在本机保存，不跨设备同步（Q1=A）。
 - 已存在任务不受场景建议变化影响：场景只在 thread 创建时决定初值，之后由任务自身设置接管（04 §4）。
 
@@ -191,28 +193,26 @@ prompt = "分析这份数据并给出可视化："
 Composer 工具行按使用频率分层：
 
 ```
-[+ 添加] [⚡ Craft ▾] [📁 项目：季度汇报 ▾] ··· [模型名 ▾] [发送]
+[+ 添加] [请求批准 ▾] [📁 项目：季度汇报 ▾] ··· [模型名 ▾] [发送]
 ```
 
 | 层级 | 内容 | 规则 |
 | --- | --- | --- |
 | 常显 | 添加、当前模型、发送/停止 | 完成任务所需的最小集合 |
-| 次级 | 工作模式、项目 | 可显示当前值，空间不足时收入菜单 |
-| 高级 | 权限、预算、记忆、连接器策略 | 收入“更多选项”，危险权限仍需二次确认 |
+| 次级 | 审批档、项目 | 可显示当前值，空间不足时收入菜单 |
+| 高级 | 预算、记忆、连接器策略 | 收入“更多选项”。**不再另设权限下拉**（Q45：三档已经是权限 + 审批的合体） |
 
 | 选择器 | 数据源 | 选项 | 默认 |
 | --- | --- | --- | --- |
-| 项目 | `project/list` (exp) + 最近使用 | 已有项目 · “选择文件夹…” · “临时目录（不保存）” | 场景或最近项目；无则未选 |
-| 权限 | **`permissionProfile/list`**，返回 `{id, description, allowed}`（README F4） | `:workspace` · `:read-only` · `:danger-full-access` · 企业自定义项 | 场景默认；位于更多选项 |
-| 模式 | 静态三项 | Craft 你说我做 · Plan 先想后做 · Ask 只谈不做 | 场景默认 |
+| 项目 | 本机 `project_local` + 最近使用 | 已有项目 · “选择文件夹…” · “临时目录（不保存）” | 场景或最近项目；无则未选 |
+| 审批档 | 静态三项 + 企业自定义 profile 附在菜单底部 | 请求批准 · 帮我批准 · 完全访问 | 请求批准 |
 
-**权限选择器的三条硬规则**（对齐 10 §2）：
+三项的展开与文案见 [10 §2.4](10-security-permissions-ux.md)。硬规则：
 
-1. `allowed = false` 的项**渲染为禁用并显示原因**（「已被企业策略锁定」），不隐藏 —— 用户需要知道存在这个档位但自己不能选。
-2. 选择 `:danger-full-access` 必须过一次二次确认模态，文案列出它意味着什么（可读写全盘、可访问网络），确认后仅对**当前任务**生效，不改全局默认。
-3. 权限描述文案直接用协议返回的 `description`（内核已本地化不了中文的话，由适配层做 id→中文文案映射表，见 10 §2.2）。
-
-**模式选择器的联动**：选 Ask 时，权限选择器自动切到只读并置为禁用（tooltip：「Ask 模式固定为只读」）；切回 Craft/Plan 时恢复用户上一次的权限选择。这避免了"Ask 模式 + 完全访问"这种自相矛盾的组合。
+1. `allowed = false` 的项**渲染为禁用并显示原因**，不隐藏（帮我批准未接通、完全访问被 Windows 停用、企业策略锁定，都走这条）。
+2. 选择「完全访问」必须过一次二次确认模态，文案列出可读写文件并联网，**同时写明硬拦截清单仍然生效**；确认后仅对**当前任务**生效，不改全局默认。完全访问按钮用危险色，不包装成“更强模式”。
+3. 帮我批准在 `approvalsReviewer: auto_review` 不可用时禁用，**禁止静默当成请求批准发出去**。
+4. 未知企业自定义 profile 显示 id 本身，不隐藏（10 §2.2）。
 
 ### 4.6 发送与执行中
 
@@ -226,12 +226,15 @@ Composer 工具行按使用频率分层：
 
 发送后：`thread/start` → `turn/start` → 路由到 `/tasks/:id`。首页 Composer 的所有状态（文本、附件、选择器）迁移到任务页 Composer，用户视觉上是"输入框留在原地、周围长出了对话"。
 
-**当前实现边界（2026-09-19）**：真实页面已接附件选择与本机解析、
+**当前实现边界（2026-09-21）**：真实页面已接附件选择与本机解析、
 `Mention` / `Skill` 结构化输入、本地 `/清空` 与 `/新建任务`、可见队列删除和
 “立即插话”。项目文件候选目前来自项目根目录第一层并在本地过滤；递归模糊搜索、
 拖拽/粘贴附件和其余本地命令仍是本节规格，不应写成已接通。
-**权限选择器暂时不进 Composer**：`bridge.send` 还不传 `permissionId`，选了也不会进
-`turn/start`，任务始终用场景包的 `evowork-workspace`。接上发送链路后再加回来。
+**Q45 审批三档尚未接线**：Composer 仍显示 Craft / Plan / Ask；`bridge.send` 不传
+`modeId` / `permissionId`，任务始终用场景包的 `evowork-workspace` + 全局
+`approval_policy = on-request`（效果接近「请求批准」，但不能切换）。
+帮我批准与完全访问都还没有发送路径。接上后再把选择器换成三档；在此之前
+**不要**先改文案让用户以为已经能选。
 
 内核 `thread/queue/add` 只负责入队，不会自动执行。桌面宿主在当前回合完成后显式调用
 `thread/queue/start`；实验队列不可用时使用进程内队列，并且仅在后续

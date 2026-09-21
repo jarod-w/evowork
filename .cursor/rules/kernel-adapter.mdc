@@ -8,6 +8,9 @@ alwaysApply: false
 
 这是 K2 的唯一实现处。`project/*`、`thread/queue/*`、`turn/start.collaborationMode`
 等实验方法只在这里出现一次。前端只传 `{scenarioId, modeId, overrides}`，由这里展开。
+`modeId` 为 `request-approval` / `approve-for-me` / `full-access`（Q45），展开成
+`permissions` + `approvalPolicy` + `approvalsReviewer`。帮我批准在
+`approvalsReviewer` 不可用时必须禁用，禁止改成 `user` 发出去。
 
 - 用 `experimentalFeature/list` 的**实际返回**决定 UI，不硬编码「实验方法一定可用」。
   缺失时走 09 §3.3 降级表，且降级一律显式。
