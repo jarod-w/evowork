@@ -52,7 +52,7 @@ default       = true
 model         = "evowork/deepseek-v4-flash"   # 可被用户在 ModelSelect 里覆盖
 reasoning_effort = "medium"
 permissions   = "evowork-workspace"            # config.toml 的 [permissions.<id>]
-mode          = "request-approval"            # 默认审批档（Q45；实现未接前代码仍写 craft）
+mode          = "request-approval"            # 默认审批档（Q45）
 instructions_file = "modes/craft-office.md"    # 拼进 developer_instructions
 
 # 影响可用能力
@@ -230,11 +230,9 @@ Composer 工具行按使用频率分层：
 `Mention` / `Skill` 结构化输入、本地 `/清空` 与 `/新建任务`、可见队列删除和
 “立即插话”。项目文件候选目前来自项目根目录第一层并在本地过滤；递归模糊搜索、
 拖拽/粘贴附件和其余本地命令仍是本节规格，不应写成已接通。
-**Q45 审批三档尚未接线**：Composer 仍显示 Craft / Plan / Ask；`bridge.send` 不传
-`modeId` / `permissionId`，任务始终用场景包的 `evowork-workspace` + 全局
-`approval_policy = on-request`（效果接近「请求批准」，但不能切换）。
-帮我批准与完全访问都还没有发送路径。接上后再把选择器换成三档；在此之前
-**不要**先改文案让用户以为已经能选。
+**Q45 审批三档已接线**：Composer 显示请求批准 / 帮我批准 / 完全访问；`bridge.send`
+带 `modeId`，适配层展开为 `permissions` + `approvalPolicy` + `approvalsReviewer`。
+`auto_review` 只在单元测试里对假 app-server 验过，没有对着真实内核跑过。
 
 内核 `thread/queue/add` 只负责入队，不会自动执行。桌面宿主在当前回合完成后显式调用
 `thread/queue/start`；实验队列不可用时使用进程内队列，并且仅在后续

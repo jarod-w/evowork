@@ -13,7 +13,7 @@ default = true
 model             = "evowork/deepseek-v4-flash"
 reasoning_effort  = "medium"
 permissions       = "evowork-workspace"
-mode              = "craft"
+mode              = "request-approval"
 instructions_file = "modes/craft-office.md"
 # 定时任务强制硬预算（07 §8-3）；交互式任务用它做默认值
 budget_limit      = 400000

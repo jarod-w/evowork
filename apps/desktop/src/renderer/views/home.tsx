@@ -36,7 +36,7 @@ export interface Scenario {
   readonly defaults: {
     readonly modelId?: string | undefined;
     readonly permissionId?: string | undefined;
-    readonly mode?: 'craft' | 'plan' | 'ask' | undefined;
+    readonly mode?: 'request-approval' | 'approve-for-me' | 'full-access' | undefined;
     readonly workspaceId?: string | undefined;
   };
 }
@@ -178,20 +178,20 @@ export function Home(props: HomeProps) {
  *
  * 规则：**用户显式改过的控件保留用户的值**，其余回落到新场景默认值。
  * 抽成纯函数是因为这条规则有四个入参、三个出参，混在组件里没法单独验；
- * 而它错了的表现（"我明明选了 Ask，换个场景就变回 Craft"）用户一定会撞上。
+ * 而它错了的表现（"我明明选了帮我批准，换个场景就变回请求批准"）用户一定会撞上。
  */
 export function applyScenarioDefaults(
   scenario: Scenario,
   current: {
     modelId?: string | undefined;
     permissionId?: string | undefined;
-    mode?: 'craft' | 'plan' | 'ask' | undefined;
+    mode?: 'request-approval' | 'approve-for-me' | 'full-access' | undefined;
   },
   overrides: Readonly<Partial<Record<'model' | 'permission' | 'mode', boolean>>>,
 ): {
   modelId?: string | undefined;
   permissionId?: string | undefined;
-  mode?: 'craft' | 'plan' | 'ask' | undefined;
+  mode?: 'request-approval' | 'approve-for-me' | 'full-access' | undefined;
 } {
   return {
     modelId: overrides.model ? current.modelId : scenario.defaults.modelId,

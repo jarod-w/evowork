@@ -2,7 +2,7 @@
  * Composer（03 §4）。
  *
  * 这组测试盯的是**做错了会让用户丢东西或被骗**的地方，不是"输入框能不能打字"：
- * `/` 的行首约束、解析中禁止发送、本机解析承诺的文案、Ask 模式与权限的联动、
+ * `/` 的行首约束、解析中禁止发送、本机解析承诺的文案、Q45 审批三档、
  * 未接通的权限选择器不得出现、模型不可用时不静默降级。
  */
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -10,10 +10,12 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  AUTO_REVIEW_UNAVAILABLE_REASON,
   Composer,
   COMPOSER_PLACEHOLDER,
+  FULL_ACCESS_CONFIRM,
   LOCAL_PARSE_PROMISE,
-  READ_ONLY_PROFILE,
+  composerModeOptions,
   detectTrigger,
   parsingCount,
   type ComposerProps,
@@ -158,69 +160,100 @@ describe('附件与本机解析（03 §4.4，K6/Q3 的对外表达点）', () =>
 describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
   const permissions = [
     { id: ':workspace', label: '默认可写', allowed: true },
-    { id: READ_ONLY_PROFILE, label: '只读', allowed: true },
+    { id: ':read-only', label: '只读', allowed: true },
   ];
 
-  it('权限选择器暂不展示 —— 选了也不会进 turn/start', () => {
+  it('权限选择器暂不展示 —— 审批三档已经是权限 + 审批的合体（Q45）', () => {
     renderComposer({ permissions, permissionId: ':workspace' });
     expect(screen.queryByRole('button', { name: '权限' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
     expect(screen.queryByRole('menuitem', { name: /更多选项/ })).toBeNull();
   });
 
-  it('**Ask 模式把权限锁成只读**', () => {
-    const onPermissionChange = vi.fn();
-    renderComposer({ permissions, permissionId: ':workspace', mode: 'ask', onPermissionChange });
-    expect(onPermissionChange).toHaveBeenCalledWith(READ_ONLY_PROFILE);
-  });
-
-  it('切回 Craft **恢复用户上一次的选择**，而不是回落到默认值', () => {
-    const onPermissionChange = vi.fn();
-    const { rerender } = render(
-      <Composer
-        value=""
-        onChange={() => {}}
-        onSend={() => {}}
-        permissions={permissions}
-        permissionId=":workspace"
-        mode="craft"
-        onPermissionChange={onPermissionChange}
-      />,
-    );
-    // 进 Ask：记住 :workspace，锁成只读
-    rerender(
-      <Composer
-        value=""
-        onChange={() => {}}
-        onSend={() => {}}
-        permissions={permissions}
-        permissionId=":workspace"
-        mode="ask"
-        onPermissionChange={onPermissionChange}
-      />,
-    );
-    expect(onPermissionChange).toHaveBeenLastCalledWith(READ_ONLY_PROFILE);
-
-    // 切回 Craft：恢复 :workspace
-    rerender(
-      <Composer
-        value=""
-        onChange={() => {}}
-        onSend={() => {}}
-        permissions={permissions}
-        permissionId={READ_ONLY_PROFILE}
-        mode="craft"
-        onPermissionChange={onPermissionChange}
-      />,
-    );
-    expect(onPermissionChange).toHaveBeenLastCalledWith(':workspace');
-  });
-
-  it('常显工作模式与项目', () => {
+  it('常显审批档与项目，不再显示 Craft / Plan / Ask', () => {
     renderComposer({ workspaces: [{ id: 'p1', label: '季度汇报' }] });
-    expect(screen.getByRole('button', { name: '工作模式' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '审批档' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '选择项目' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '权限' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '工作模式' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '审批档' }));
+    expect(screen.getByRole('menuitem', { name: /^请求批准/ })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /^帮我批准/ })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /^完全访问/ })).toBeTruthy();
+    expect(screen.getByText('编辑工作空间外的文件或使用互联网时询问你')).toBeTruthy();
+    expect(screen.getByText('仅对检测到的风险操作请求批准')).toBeTruthy();
+    expect(screen.getByText('可以读写这台电脑上的文件并联网')).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /^Craft$/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /^Plan$/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /^Ask$/ })).toBeNull();
+    expect(screen.queryByText('任何文件')).toBeNull();
+  });
+});
+
+describe('审批三档（Q45 / 10 §2.4）', () => {
+  it('默认请求批准', () => {
+    renderComposer();
+    expect(screen.getByRole('button', { name: '审批档' }).textContent).toContain('请求批准');
+  });
+
+  it('帮我批准未接通时仍出现在菜单里，禁用并给出原因，点了不会改档', () => {
+    const onModeChange = vi.fn();
+    renderComposer({
+      onModeChange,
+      modeOptions: composerModeOptions({ approvalsReviewerAvailable: false }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: '审批档' }));
+    const item = screen.getByRole('menuitem', { name: /帮我批准/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    expect(item.textContent).toContain(AUTO_REVIEW_UNAVAILABLE_REASON);
+    expect(onModeChange).not.toHaveBeenCalled();
+  });
+
+  it('完全访问未确认时不改档、也不发送', () => {
+    const onModeChange = vi.fn();
+    const onSend = vi.fn();
+    renderComposer({ value: '装个依赖', onModeChange }, onSend);
+    fireEvent.click(screen.getByRole('button', { name: '审批档' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
+
+    expect(onModeChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: FULL_ACCESS_CONFIRM.title })).toBeTruthy();
+    expect(screen.getByText(FULL_ACCESS_CONFIRM.writes)).toBeTruthy();
+    expect(screen.getByText(FULL_ACCESS_CONFIRM.network)).toBeTruthy();
+    expect(screen.getByText(FULL_ACCESS_CONFIRM.hardBlock)).toBeTruthy();
+    expect(screen.queryByText(/电脑上的任何文件/)).toBeNull();
+
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(onModeChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '审批档' }).textContent).toContain('请求批准');
+  });
+
+  it('确认完全访问只对当前任务改档', () => {
+    const onModeChange = vi.fn();
+    renderComposer({ onModeChange });
+    fireEvent.click(screen.getByRole('button', { name: '审批档' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
+    fireEvent.click(screen.getByRole('button', { name: FULL_ACCESS_CONFIRM.confirmLabel }));
+    expect(onModeChange).toHaveBeenCalledWith('full-access');
+  });
+
+  it('Windows 停用完全访问时该项可见、禁用，原因来自 platform.ts', () => {
+    const reason = '这台机器上的隔离强度还没有评估结论，出于谨慎已暂时停用完全访问';
+    renderComposer({
+      modeOptions: composerModeOptions({
+        fullAccessAllowed: false,
+        fullAccessDisabledReason: reason,
+      }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: '审批档' }));
+    const item = screen.getByRole('menuitem', { name: /完全访问/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    expect(item.textContent).toContain(reason);
   });
 });
 

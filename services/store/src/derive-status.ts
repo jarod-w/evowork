@@ -21,7 +21,7 @@ export interface DeriveInput {
   readonly lastTurnStatus?: TurnStatus | null;
   /** 归档是内核的权威字段 */
   readonly archived?: boolean;
-  /** 工作模式：plan 模式下未确认的计划算"规划中" */
+  /** 审批档。Q45 之后「规划中」只看有没有未确认的 plan item，不看 Composer 选了哪一档。 */
   readonly modeId?: string | null;
   readonly hasPlanItem?: boolean;
   readonly planConfirmed?: boolean;
@@ -59,10 +59,10 @@ export function deriveStatus(input: DeriveInput): DerivedStatus {
 
   if (input.threadStatus === 'systemError') return 'failed';
 
-  // 规划中：mode=plan 且有 plan item 且用户尚未确认执行。
-  // 注意它排在 last_turn_status 之后判断会出错 —— plan 模式下产出计划的那个回合本身是
+  // 规划中：有 plan item 且用户尚未确认执行（Q45：不绑定已下架的 Plan 协作模式）。
+  // 注意它排在 last_turn_status 之后判断会出错 —— 产出计划的那个回合本身是
   // completed，所以若先看 last_turn_status，"规划中"永远不会出现。
-  if (input.modeId === 'plan' && input.hasPlanItem && !input.planConfirmed) {
+  if (input.hasPlanItem && !input.planConfirmed) {
     return 'planning';
   }
 

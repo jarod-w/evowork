@@ -19,9 +19,15 @@ describe('降级表覆盖面（09 §3.3）', () => {
     }
   });
 
-  it('collaborationMode 的降级带 mustAlsoDo：Ask 模式必须靠 ToolContributor 兜住（D8）', () => {
+  it('collaborationMode 的降级带 mustAlsoDo：内部只读路径仍靠 ToolContributor（D8）', () => {
     const d = FIELD_DEGRADATION['turn/start.collaborationMode'];
     expect(d.mustAlsoDo).toContain('ToolContributor');
+  });
+
+  it('approvalsReviewer 缺失时禁止把帮我批准发出去（Q45）', () => {
+    const d = FIELD_DEGRADATION['turn/start.approvalsReviewer'];
+    expect(d.mustAlsoDo).toContain('不得把 approvalsReviewer 改成 user');
+    expect(d.userVisible).toContain('帮我批准不可用');
   });
 
   it('探测清单只含无副作用、无需上下文的方法', () => {

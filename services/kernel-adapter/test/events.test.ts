@@ -214,7 +214,7 @@ describe('09 §3.4 的分发表逐行', () => {
 
   it('turn/plan/updated → 存快照并派生「规划中」', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
-    store.threads.setTaskSettings('t1', { modeId: 'plan' });
+    store.threads.setTaskSettings('t1', { modeId: 'request-approval' });
     router.handle(NOTIFICATION.turnPlanUpdated, {
       threadId: 't1',
       turnId: 'turn1',

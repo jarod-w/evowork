@@ -180,6 +180,7 @@ export interface InlineSelectOption {
   readonly disabled?: boolean | undefined;
   readonly disabledReason?: string | undefined;
   readonly group?: string | undefined;
+  readonly danger?: boolean | undefined;
 }
 
 export interface InlineSelectProps {
@@ -238,6 +239,7 @@ export function InlineSelect(props: InlineSelectProps) {
         data-placeholder={selected ? undefined : 'true'}
         data-mono={props.mono ? 'true' : undefined}
         data-field={props.field ? 'true' : undefined}
+        data-danger={selected?.danger ? 'true' : undefined}
         onClick={() => setOpen((v) => !v)}
       >
         {props.icon ? (
@@ -273,6 +275,7 @@ export function InlineSelect(props: InlineSelectProps) {
             disabled: o.disabled,
             disabledReason: o.disabledReason,
             group: o.group,
+            danger: o.danger,
           }))}
           onSelect={(chosen) => {
             close();

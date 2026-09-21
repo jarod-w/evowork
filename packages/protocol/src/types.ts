@@ -222,6 +222,8 @@ export interface ThreadStartParams {
   readonly permissions?: string;
   readonly sandbox?: 'readOnly' | 'workspaceWrite' | 'dangerFullAccess';
   readonly approvalPolicy?: AskForApproval;
+  /** Q45：`user` 自己批 / `auto_review` Guardian 先审。与 `TurnStartParams` 同字段。 */
+  readonly approvalsReviewer?: ApprovalsReviewer;
   readonly projectId?: string;
   /**
    * F25：整段替换内核写死的模型底稿（「You are a coding agent running in the Codex CLI」）。
@@ -246,7 +248,14 @@ export interface ThreadStartResponse {
 
 export type AskForApproval = 'untrusted' | 'onFailure' | 'onRequest' | 'never' | 'granular';
 
-/** F2：`ModeKind` 只有两个值 —— Craft/Ask 都映射到 `default`，Plan 映射到 `plan`（D8）。 */
+/**
+ * Q45：谁来批 `onRequest` 的动作。
+ * 内核 `ApprovalsReviewer = user | auto_review`（`v2/shared.rs`）。
+ * Composer「帮我批准」就是 `auto_review`；未接通时不得改成 `user` 发出去。
+ */
+export type ApprovalsReviewer = 'user' | 'auto_review';
+
+/** F2：`ModeKind` 只有两个值。Q45 三档全部映射到 `default`，不新增枚举（D8）。 */
 export type ModeKind = 'plan' | 'default';
 
 /**
@@ -282,6 +291,8 @@ export interface TurnStartParams {
   /** F5：不与 `sandboxPolicy` 同传 */
   readonly permissions?: string;
   readonly approvalPolicy?: AskForApproval;
+  /** Q45：请求批准=`user`，帮我批准=`auto_review`。手写子集，与内核字段对齐。 */
+  readonly approvalsReviewer?: ApprovalsReviewer;
   readonly model?: string;
   readonly effort?: string;
   readonly collaborationMode?: CollaborationMode;

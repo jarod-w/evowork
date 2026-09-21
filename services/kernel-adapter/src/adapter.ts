@@ -51,6 +51,8 @@ import { KernelSession, type KernelSessionOptions, type SessionNotice } from './
 import {
   BUILTIN_SCENARIOS,
   expandTurnStart,
+  resolveModeId,
+  assertModeSendable,
   MODES,
   type ComposerOverrides,
   type ModeId,
@@ -442,11 +444,10 @@ export function createAdapter(options: AdapterOptions) {
         scenarios[0];
       if (!scenario) throw new Error('没有可用的场景包');
 
-      const modeId = args.overrides?.modeId ?? scenario.mode ?? 'craft';
+      const reviewerAvailable = capabilities.isUsable('turn/start.approvalsReviewer');
+      const modeId = resolveModeId(args.overrides?.modeId ?? scenario.mode);
+      assertModeSendable(modeId, reviewerAvailable);
       const mode = MODES[modeId];
-      const permissions = mode.lockPermissions
-        ? mode.permissions
-        : (args.overrides?.permissions ?? scenario.permissions ?? mode.permissions);
 
       const started = await session.peer.request<ThreadStartResponse>(METHOD.threadStart, {
         ...(args.overrides?.cwd ? { cwd: args.overrides.cwd } : {}),
@@ -454,7 +455,9 @@ export function createAdapter(options: AdapterOptions) {
           ? { model: args.overrides?.model ?? scenario.model }
           : {}),
         // F5：permissions 与 sandbox 互斥，只传一个
-        permissions,
+        permissions: mode.permissions,
+        approvalPolicy: mode.approvalPolicy,
+        approvalsReviewer: mode.approvalsReviewer,
         // F25：整段替换内核底稿。developer_instructions 盖不住「你是谁」
         ...(options.baseInstructions ? { baseInstructions: options.baseInstructions } : {}),
         config: DISABLE_OPENAI_DOCS_CONFIG,
@@ -470,6 +473,7 @@ export function createAdapter(options: AdapterOptions) {
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+        approvalsReviewerAvailable: reviewerAvailable,
       });
 
       const title = deriveTaskTitle(args.input);
@@ -610,7 +614,7 @@ export function createAdapter(options: AdapterOptions) {
         input: args.input,
         scenario,
         overrides: {
-          ...(row?.mode_id ? { modeId: row.mode_id as ModeId } : {}),
+          ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
           ...(row?.permission_id ? { permissions: row.permission_id } : {}),
           ...(row?.model ? { model: row.model } : {}),
           ...args.overrides,
@@ -618,6 +622,7 @@ export function createAdapter(options: AdapterOptions) {
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+        approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
       });
 
       session.openThreads.add(args.threadId);
@@ -689,13 +694,14 @@ export function createAdapter(options: AdapterOptions) {
         input: next.input,
         scenario,
         overrides: {
-          ...(row?.mode_id ? { modeId: row.mode_id as ModeId } : {}),
+          ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
           ...(row?.permission_id ? { permissions: row.permission_id } : {}),
           ...(row?.model ? { model: row.model } : {}),
         },
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+        approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
       });
       session.openThreads.add(threadId);
       await session.peer.request(METHOD.turnStart, expanded.params);

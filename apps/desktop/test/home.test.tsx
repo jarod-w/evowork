@@ -24,14 +24,18 @@ const OFFICE: Scenario = {
     { label: '文档处理', prompt: '帮我处理这些文档：', requiresFile: true },
     { label: '数据分析及可视化', prompt: '分析这份数据并给出可视化：' },
   ],
-  defaults: { modelId: 'evowork/deepseek-v4-flash', permissionId: ':workspace', mode: 'craft' },
+  defaults: {
+    modelId: 'evowork/deepseek-v4-flash',
+    permissionId: ':workspace',
+    mode: 'request-approval',
+  },
 };
 
 const CODE: Scenario = {
   id: 'code',
   name: '代码开发',
   chips: [{ label: '读一个仓库', prompt: '读一下这个仓库：' }],
-  defaults: { modelId: 'evowork/glm-flash', permissionId: ':read-only', mode: 'plan' },
+  defaults: { modelId: 'evowork/glm-flash', permissionId: ':read-only', mode: 'full-access' },
 };
 
 function Harness({ over }: { over?: Partial<HomeProps> }) {
@@ -105,26 +109,26 @@ describe('场景切换时的取值（03 §2.5）', () => {
   it('**用户改过的控件保留用户的值**，其余回落新场景默认值', () => {
     const next = applyScenarioDefaults(
       CODE,
-      { modelId: 'evowork/kimi', permissionId: ':workspace', mode: 'ask' },
+      { modelId: 'evowork/kimi', permissionId: ':workspace', mode: 'approve-for-me' },
       { model: true },
     );
     // 模型是用户改过的 → 保留
     expect(next.modelId).toBe('evowork/kimi');
     // 权限和模式没改过 → 跟着新场景走
     expect(next.permissionId).toBe(':read-only');
-    expect(next.mode).toBe('plan');
+    expect(next.mode).toBe('full-access');
   });
 
   it('一个都没改过时整组回落', () => {
     const next = applyScenarioDefaults(
       CODE,
-      { modelId: 'x', permissionId: 'y', mode: 'craft' },
+      { modelId: 'x', permissionId: 'y', mode: 'request-approval' },
       {},
     );
     expect(next).toEqual({
       modelId: 'evowork/glm-flash',
       permissionId: ':read-only',
-      mode: 'plan',
+      mode: 'full-access',
     });
   });
 });

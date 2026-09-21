@@ -147,13 +147,17 @@ export const DEGRADATION: Readonly<Record<string, Degradation>> = Object.freeze(
 export const FIELD_DEGRADATION = Object.freeze({
   'turn/start.collaborationMode': {
     fallback: '退回 turn/start.model + effort，developer instructions 通过 additionalContext 注入',
-    userVisible: 'Ask 模式的指令强度下降。',
-    mustAlsoDo:
-      '**必须**依赖 ToolContributor 过滤写工具（D8）——否则 Ask 模式只剩沙箱这一层，模型会反复尝试写再失败',
+    userVisible: '执行指令强度下降。审批三档不受此项影响。',
+    mustAlsoDo: '内部只读路径（Q20 助理）若恢复，仍必须依赖 ToolContributor 过滤写工具（D8）',
   },
   'turn/start.permissions': {
     fallback: '退回 sandboxPolicy（两者互斥，F5）',
     userVisible: '企业自定义权限档不可用，只能用三个内置档。',
+  },
+  'turn/start.approvalsReviewer': {
+    fallback: '帮我批准标 allowed:false，原因「安全自动审查还没接通」',
+    userVisible: '帮我批准不可用。不会改成请求批准发出去。',
+    mustAlsoDo: 'UI 禁用该项并给原因，不得把 approvalsReviewer 改成 user 继续发（Q45）',
   },
 } satisfies Record<string, Degradation>);
 

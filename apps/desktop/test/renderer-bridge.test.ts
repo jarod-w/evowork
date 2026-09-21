@@ -518,6 +518,11 @@ describe('时间戳只到"天"（01 §5.5）', () => {
   it('没有 cwd 时不塞一个 undefined 字段进去', () => {
     expect(toTaskRow(row({ cwd: null }), 1)).not.toHaveProperty('cwd');
   });
+
+  it('任务行带上 modeId，打开旧任务时审批档才能跟着走', () => {
+    expect(toTaskRow(row({ mode_id: 'full-access' }), 1).modeId).toBe('full-access');
+    expect(toTaskRow(row({ mode_id: null }), 1)).not.toHaveProperty('modeId');
+  });
 });
 
 describe('侧栏任务动作', () => {
@@ -613,6 +618,41 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       overrides: { model: 'evowork/kimi-k3' },
     });
     expect(adapter.setTaskSettings).toHaveBeenCalledWith('new-1', { model: 'evowork/kimi-k3' });
+  });
+
+  it('新任务里手选审批档：展开进 turn/start **并且**落进任务级设置', async () => {
+    const adapter = {
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      setTaskSettings: vi.fn(),
+    } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    await actions.send({ text: '做个周报', modeId: 'request-approval' });
+
+    expect(adapter.createTask).toHaveBeenCalledWith({
+      input: [{ type: 'text', text: '做个周报' }],
+      overrides: { modeId: 'request-approval' },
+    });
+    expect(adapter.setTaskSettings).toHaveBeenCalledWith('new-1', { modeId: 'request-approval' });
+  });
+
+  it('已有任务里换审批档：同样两件事都做', async () => {
+    const adapter = {
+      createTask: vi.fn(async () => ({ threadId: 'new-1' })),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      setTaskSettings: vi.fn(),
+    } as unknown as Adapter;
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+
+    await actions.send({ threadId: 't1', text: '放开权限', modeId: 'full-access' });
+
+    expect(adapter.setTaskSettings).toHaveBeenCalledWith('t1', { modeId: 'full-access' });
+    expect(adapter.sendMessage).toHaveBeenCalledWith({
+      threadId: 't1',
+      input: [{ type: 'text', text: '放开权限' }],
+      overrides: { modeId: 'full-access' },
+    });
   });
 
   it('已有任务里换模型：同样两件事都做', async () => {
@@ -1362,6 +1402,17 @@ describe('工作空间只有一处真源（spec §2.2）', () => {
     const startup = await actions.getStartup();
     expect(startup.workspaces.map((w) => w.name)).toEqual(['季度汇报']);
     expect(startup.workspaces[0]?.path).toBe('/w/q3');
+  });
+
+  it('getStartup 带上帮我批准可用性与 Windows 完全访问停用原因（Q45 / Q26）', async () => {
+    const actions = makeActions({
+      platform: 'win32',
+      approvalsReviewerAvailable: false,
+    });
+    const startup = await actions.getStartup();
+    expect(startup.approvalsReviewerAvailable).toBe(false);
+    expect(startup.fullAccessAllowed).toBe(false);
+    expect(startup.fullAccessDisabledReason).toContain('还没有评估结论');
   });
 
   it('pickWorkspace 选完就建成空间 —— 首运行第②步选的目录必须活到下次启动', async () => {

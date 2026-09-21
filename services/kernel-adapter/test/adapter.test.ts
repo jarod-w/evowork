@@ -83,7 +83,11 @@ describe('启动序列（09 §3.2）', () => {
       false,
     );
     expect(catalog.scenarios.map((s) => s.id)).toEqual(['office', 'code', 'design']);
-    expect(catalog.modes.map((m) => m.id)).toEqual(['craft', 'plan', 'ask']);
+    expect(catalog.modes.map((m) => m.id)).toEqual([
+      'request-approval',
+      'approve-for-me',
+      'full-access',
+    ]);
   });
 
   it('内核在握手后立刻发审批请求也有人接（F14 的窗口期）', async () => {
@@ -185,18 +189,20 @@ describe('新建任务（03 §4.6）', () => {
 
     const row = store.threads.get(result.threadId);
     expect(row?.scenario_id).toBe('office');
-    expect(row?.mode_id).toBe('craft');
+    expect(row?.mode_id).toBe('request-approval');
     expect(row?.permission_id).toBe('evowork-workspace');
 
-    // turn/start 带上了展开后的 collaborationMode（F1）
+    // turn/start 带上了展开后的 collaborationMode（F1）+ Q45 三字段
     const turnStart = server.received.find((r) => r.method === 'turn/start');
     expect(turnStart?.params.collaborationMode).toMatchObject({
       mode: 'default',
       // F22：snake_case。写成 camelCase 内核会静默丢掉它，产品因此失去自己的身份
       settings: { developer_instructions: '你可以动手。' },
     });
-    // F5：permissions 与 sandbox 不同传
     expect(turnStart?.params.permissions).toBe('evowork-workspace');
+    expect(turnStart?.params.approvalPolicy).toBe('onRequest');
+    expect(turnStart?.params.approvalsReviewer).toBe('user');
+    // F5：permissions 与 sandbox 不同传
     expect(turnStart?.params.sandboxPolicy).toBeUndefined();
 
     // F25：产品身份走 thread/start.baseInstructions，不是 developer_instructions
@@ -207,14 +213,47 @@ describe('新建任务（03 §4.6）', () => {
     });
   });
 
-  it('Ask 模式的任务：权限锁到只读，指令来自 config（无需内核补丁，F1）', async () => {
+  it('帮我批准：turn/start 带 evowork-workspace + onRequest + auto_review', async () => {
     await adapter.start();
     await adapter.createTask({
-      input: [{ type: 'text', text: '这个项目是怎么组织的？' }],
-      overrides: { modeId: 'ask', permissions: 'evowork-full' },
+      input: [{ type: 'text', text: '帮我批' }],
+      overrides: { modeId: 'approve-for-me' },
+    });
+    const turnStart = server.received.find((r) => r.method === 'turn/start');
+    expect(turnStart?.params.permissions).toBe('evowork-workspace');
+    expect(turnStart?.params.approvalPolicy).toBe('onRequest');
+    expect(turnStart?.params.approvalsReviewer).toBe('auto_review');
+    expect(turnStart?.params.sandboxPolicy).toBeUndefined();
+    expect(turnStart?.params.collaborationMode).toMatchObject({ mode: 'default' });
+  });
+
+  it('完全访问任务：thread/start 与 turn/start 都带 evowork-full + never', async () => {
+    await adapter.start();
+    await adapter.createTask({
+      input: [{ type: 'text', text: '装个依赖' }],
+      overrides: { modeId: 'full-access' },
     });
     const threadStart = server.received.find((r) => r.method === 'thread/start');
-    expect(threadStart?.params.permissions).toBe('evowork-ask');
+    expect(threadStart?.params.permissions).toBe('evowork-full');
+    expect(threadStart?.params.approvalPolicy).toBe('never');
+    expect(threadStart?.params.approvalsReviewer).toBe('user');
+    const turnStart = server.received.find((r) => r.method === 'turn/start');
+    expect(turnStart?.params.permissions).toBe('evowork-full');
+    expect(turnStart?.params.approvalPolicy).toBe('never');
+    expect(turnStart?.params.approvalsReviewer).toBe('user');
+  });
+
+  it('帮我批准在 reviewer 不可用时建不出任务，也不改成请求批准', async () => {
+    await adapter.start();
+    adapter.capabilities.markUnavailable('turn/start.approvalsReviewer', 'NOT_ON_WIRE');
+    await expect(
+      adapter.createTask({
+        input: [{ type: 'text', text: '帮我批' }],
+        overrides: { modeId: 'approve-for-me' },
+      }),
+    ).rejects.toThrow('安全自动审查还没接通');
+    expect(server.received.some((r) => r.method === 'thread/start')).toBe(false);
+    expect(server.received.some((r) => r.method === 'turn/start')).toBe(false);
   });
 
   /*
@@ -413,9 +452,9 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
       input: [{ type: 'text', text: 'x' }],
-      overrides: { modeId: 'craft' },
+      overrides: { modeId: 'request-approval' },
     });
-    adapter.setTaskSettings(threadId, { modeId: 'plan' });
+    adapter.setTaskSettings(threadId, { modeId: 'full-access' });
     adapter.events.handle('turn/completed', {
       threadId,
       turn: makeTurn({ id: 'turn1', status: 'completed' }),
@@ -424,8 +463,11 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     await adapter.sendMessage({ threadId, input: [{ type: 'text', text: '继续' }] });
 
     const last = server.received.filter((r) => r.method === 'turn/start').at(-1);
-    // 任务级设置生效：模式已经是 plan
-    expect(last?.params.collaborationMode).toMatchObject({ mode: 'plan' });
+    // 任务级设置生效：档已经是完全访问
+    expect(last?.params.permissions).toBe('evowork-full');
+    expect(last?.params.approvalPolicy).toBe('never');
+    expect(last?.params.approvalsReviewer).toBe('user');
+    expect(last?.params.collaborationMode).toMatchObject({ mode: 'default' });
   });
 
   it('中断走 turn/interrupt（04 §5.5）', async () => {

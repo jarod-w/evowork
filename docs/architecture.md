@@ -272,14 +272,15 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 ### 5.1 首次发送一条需求
 
 ```
-渲染层 Composer ──send({text, scenarioId?, modelId?, workspaceId?})──▶ 主进程
+渲染层 Composer ──send({text, scenarioId?, modelId?, modeId?, workspaceId?})──▶ 主进程
    （首页不创建 Thread —— 发第一条消息时才建，建好回 id，前端据此切页）
         │
         ├─ workspaceId → overrides.cwd（id→path 只有主进程知道，渲染层不持有绝对路径）
         ├─ modelId → overrides.model，并写进任务级设置（下一回合生效，不追溯）
+        ├─ modeId → overrides.modeId，同样写进任务级设置（Q45 审批三档）
         ├─ scenario.ts: 场景 + 审批档 + 覆盖 → turn/start 参数
-        │    Q45 要把 Composer 三档展开为 permissions + approvalPolicy + approvalsReviewer
-        │    **代码未跟**：仍按 Craft/Plan/Ask 写 collaborationMode.developer_instructions（snake_case，F22）
+        │    三档展开为 permissions + approvalPolicy + approvalsReviewer
+        │    collaborationMode.mode 一律 default；developer_instructions 来自 craft.md（snake_case，F22）
         │    指令文本来自 ~/.evowork/modes/*.md（首次运行装入，F23；**不新增内核枚举值**，D8/F1）
         ▼
    kernel-adapter ──thread/start{cwd, baseInstructions, config}──▶ 内核 ──turn/start{input}──▶ 本机网关 ──▶ 模型

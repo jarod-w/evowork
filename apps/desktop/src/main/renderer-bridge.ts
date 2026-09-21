@@ -33,7 +33,12 @@ import {
  * 那个包的 `node:crypto` 依赖在这一侧完全没问题。渲染层拿不到它
  * （浏览器环境），所以由这里经 IPC 送过去 —— 一个真源，两条路径。
  */
-import { classifyPath, RETENTION_DAYS, RETENTION_WARNING_DAYS } from '@evowork/policy';
+import {
+  classifyPath,
+  describeCapability,
+  RETENTION_DAYS,
+  RETENTION_WARNING_DAYS,
+} from '@evowork/policy';
 import {
   buildProjectCard,
   ellipsizeMiddle,
@@ -179,8 +184,9 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
     hasArtifacts: row.artifact_count > 0,
     source: row.automation_id ? 'automation' : 'manual',
     ...(row.cwd !== null ? { cwd: row.cwd } : {}),
-    // 打开旧任务时下拉要显示它自己的模型（见 `TaskRowView.modelId`）
+    // 打开旧任务时下拉要显示它自己的模型 / 审批档
     ...(row.model !== null ? { modelId: row.model } : {}),
+    ...(row.mode_id !== null ? { modeId: row.mode_id } : {}),
   };
 }
 
@@ -298,6 +304,15 @@ export interface RendererBridgeOptions {
   readonly appName: string;
   readonly appVersion: string;
   readonly userName?: string | undefined;
+  /**
+   * 本机平台。用来停用 Windows 上的完全访问（Q26）。
+   * 测试注入；真跑时读 `process.platform`。
+   */
+  readonly platform?: 'darwin' | 'win32' | 'linux' | undefined;
+  /**
+   * `turn/start.approvalsReviewer` 是否能下发。测试注入；真跑时读适配层能力表。
+   */
+  readonly approvalsReviewerAvailable?: boolean | undefined;
   /** 随包分发的案例池（03 §5）。真源是 `config/showcase/*.toml`，缺省用内置兜底 */
   readonly cases?: readonly CaseView[] | undefined;
   /**
@@ -828,26 +843,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
        */
       const cwd = input.workspaceId ? rootOf(input.workspaceId) : undefined;
 
-      // 用户手选的模型是优先级最高的一档（03 §2.4：场景默认 → 模式 → 用户显式选择）
+      // 用户手选的模型 / 审批档是优先级最高的一档（03 §2.4：场景默认 → 档 → 用户显式选择）
       const overrides =
-        input.modelId !== undefined || cwd
+        input.modelId !== undefined || input.modeId !== undefined || cwd
           ? {
               ...(input.modelId !== undefined ? { model: input.modelId } : {}),
+              ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
               ...(cwd ? { cwd } : {}),
             }
           : undefined;
 
       if (input.threadId !== undefined) {
         /*
-         * 已有任务里换模型：**先落任务级设置，再发这一回合**。
+         * 已有任务里换模型或审批档：**先落任务级设置，再发这一回合**。
          *
          * 两件事都要做。只发不存的话，下一回合 `sendMessage` 会从投影表读回旧的
-         * `row.model`，用户切了模型只在这一轮生效、下一轮又悄悄换回去；
-         * 只存不发的话，这一轮还是旧模型 —— 而用户刚刚就是为了这一轮才切的。
+         * `row.model` / `row.mode_id`，用户切了只在这一轮生效、下一轮又悄悄换回去；
+         * 只存不发的话，这一轮还是旧值 —— 而用户刚刚就是为了这一轮才切的。
          * （04 §4：任务级设置下一次 `turn/start` 生效，**不追溯已发生的回合**。）
          */
-        if (input.modelId !== undefined) {
-          adapter.setTaskSettings(input.threadId, { model: input.modelId });
+        if (input.modelId !== undefined || input.modeId !== undefined) {
+          adapter.setTaskSettings(input.threadId, {
+            ...(input.modelId !== undefined ? { model: input.modelId } : {}),
+            ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
+          });
         }
         const sent = await adapter.sendMessage({
           threadId: input.threadId,
@@ -862,9 +881,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ...(input.scenarioId !== undefined ? { scenarioId: input.scenarioId } : {}),
         ...(overrides ? { overrides } : {}),
       });
-      // 新任务同样要落库：否则这个任务的第二条消息就回落到场景默认模型
-      if (input.modelId !== undefined) {
-        adapter.setTaskSettings(created.threadId, { model: input.modelId });
+      // 新任务同样要落库：否则这个任务的第二条消息就回落到场景默认
+      if (input.modelId !== undefined || input.modeId !== undefined) {
+        adapter.setTaskSettings(created.threadId, {
+          ...(input.modelId !== undefined ? { model: input.modelId } : {}),
+          ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
+        });
       }
       return { threadId: created.threadId };
     },
@@ -1767,6 +1789,18 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async getStartup(): Promise<StartupInfo> {
       const catalog = adapter.catalog();
       const at = now();
+      const platform =
+        options.platform ??
+        (process.platform === 'darwin' ||
+        process.platform === 'win32' ||
+        process.platform === 'linux'
+          ? process.platform
+          : 'linux');
+      const capability = describeCapability(platform);
+      const reviewerAvailable =
+        options.approvalsReviewerAvailable ??
+        adapter.capabilities?.isUsable('turn/start.approvalsReviewer') ??
+        true;
       return Promise.resolve({
         appName: options.appName,
         appVersion: options.appVersion,
@@ -1825,6 +1859,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
           .map((t) => store.threads.get(t.threadId))
           .filter((row): row is ProjectionRow => row !== undefined)
           .map((row) => toTaskRow(row, at)),
+        approvalsReviewerAvailable: reviewerAvailable,
+        fullAccessAllowed: capability.fullAccessAllowed,
+        ...(capability.fullAccessDisabledReason
+          ? { fullAccessDisabledReason: capability.fullAccessDisabledReason }
+          : {}),
       });
     },
 
