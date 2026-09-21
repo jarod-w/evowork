@@ -104,7 +104,7 @@ prompt = "分析这份数据并给出可视化："
         },
     },
     "permissions": "evowork-workspace",
-    "approvalPolicy": "onRequest",
+    "approvalPolicy": "on-request",
     "approvalsReviewer": "user"
 }
 ```

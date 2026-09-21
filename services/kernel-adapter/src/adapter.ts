@@ -455,7 +455,7 @@ export function createAdapter(options: AdapterOptions) {
           ? { model: args.overrides?.model ?? scenario.model }
           : {}),
         // F5：permissions 与 sandbox 互斥，只传一个
-        permissions: mode.permissions,
+        permissions: mode.kernelPermissions,
         approvalPolicy: mode.approvalPolicy,
         approvalsReviewer: mode.approvalsReviewer,
         // F25：整段替换内核底稿。developer_instructions 盖不住「你是谁」

@@ -8,7 +8,7 @@ profile **本体**定义在 `config.toml` 的 `[permissions.*]`（内核解析�
 | `evowork-ask`       | `:read-only`          | 只读           | 只能查看文件，不能修改，也不联网       | 内部：Q20 助理            |
 | `evowork-plan`      | `:read-only`          | 只读 + 联网    | 可以查看文件和上网查资料，不能修改文件 | 内部保留，不进 Composer   |
 | `evowork-workspace` | `:workspace`          | **请求批准**   | 工作空间内可读写；外部文件与联网要问你 | Composer 默认档（Q45）    |
-| `evowork-full`      | `:danger-full-access` | 完全访问       | 可以读写这台电脑上的文件并联网         | Composer 第三档；二次确认 |
+| `evowork-full`      | （产品 id，不进 config.toml） | 完全访问 | 可以读写这台电脑上的文件并联网 | 线上传内置 `:danger-full-access` |
 
 Composer 不再另设「默认权限 ∨」下拉（Q45：请求批准 / 帮我批准 / 完全访问 已经是 profile + 审批的合体）。
 

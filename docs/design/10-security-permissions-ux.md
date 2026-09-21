@@ -33,7 +33,7 @@
 | `evowork-ask`       | `:read-only`          | 只读           | 只能查看文件，不能修改，也不联网       | 内部：Q20 助理（不进 Composer） |
 | `evowork-plan`      | `:read-only`          | 只读 + 联网    | 可以查看文件和上网查资料，不能修改文件 | 内部保留，不进 Composer         |
 | `evowork-workspace` | `:workspace`          | **请求批准**   | 工作空间内可读写；外部文件与联网要问你 | Composer 默认档（Q45）          |
-| `evowork-full`      | `:danger-full-access` | 完全访问       | 可以读写这台电脑上的文件并联网         | Composer 第三档；需二次确认     |
+| `evowork-full`      | （不建命名档）        | 完全访问       | 可以读写这台电脑上的文件并联网         | 产品 id。线上传内置 `:danger-full-access`：内核不让命名档 `extends` 这个内置档 |
 
 Composer **不再另设「默认权限 ∨」下拉**（Q45）。三档已经是 profile + 审批策略的合体，选择器规格见 §2.4。
 
@@ -59,9 +59,9 @@ Composer 常显选择器控制「这次任务里，模型动手前要不要问�
 
 | `modeId`            | 名字     | 一句话（UI 直接显示）                         | `permissions`       | `approvalPolicy` | `approvalsReviewer` | 二次确认 |
 | ------------------- | -------- | --------------------------------------------- | ------------------- | ---------------- | ------------------- | -------- |
-| `request-approval`  | 请求批准 | 编辑工作空间外的文件或使用互联网时询问你      | `evowork-workspace` | `onRequest`      | `user`              | 无       |
-| `approve-for-me`    | 帮我批准 | 仅对检测到的风险操作请求批准                  | `evowork-workspace` | `onRequest`      | `auto_review`       | 无       |
-| `full-access`       | 完全访问 | 可以读写这台电脑上的文件并联网                | `evowork-full`      | `never`          | `user`              | 要       |
+| `request-approval`  | 请求批准 | 编辑工作空间外的文件或使用互联网时询问你      | `evowork-workspace` | `on-request` | `user`              | 无       |
+| `approve-for-me`    | 帮我批准 | 仅对检测到的风险操作请求批准                  | `evowork-workspace` | `on-request` | `auto_review`       | 无       |
+| `full-access`       | 完全访问 | 可以读写这台电脑上的文件并联网                | `:danger-full-access` | `never`    | `user`              | 要       |
 
 对应内核：`turn/start.permissions`（F5，与 `sandboxPolicy` 互斥）· `turn/start.approvalPolicy` · `turn/start.approvalsReviewer`（`v2/turn.rs:218`，取值 `user` / `auto_review`）。`collaborationMode.mode` 三档都是 `default`，指令共用 `config/modes/craft.md`。
 

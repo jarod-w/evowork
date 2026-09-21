@@ -246,10 +246,18 @@ export interface ThreadStartResponse {
   readonly cwd: string;
 }
 
-export type AskForApproval = 'untrusted' | 'onFailure' | 'onRequest' | 'never' | 'granular';
+/**
+ * 内核 `AskForApproval` 的线上值是 **kebab-case**
+ * （`app-server-protocol/src/protocol/v2/shared.rs` 的 `rename_all = "kebab-case"`）。
+ *
+ * 写成 `onRequest` 时 `thread/start` 直接 -32600：
+ * `unknown variant onRequest, expected one of untrusted, on-request, granular, never`。
+ * `on-failure` 在当前内核枚举里不存在。`granular` 是带字段的实验变体，这条类型不装它。
+ */
+export type AskForApproval = 'untrusted' | 'on-request' | 'never';
 
 /**
- * Q45：谁来批 `onRequest` 的动作。
+ * Q45：谁来批 `on-request` 的动作。
  * 内核 `ApprovalsReviewer = user | auto_review`（`v2/shared.rs`）。
  * Composer「帮我批准」就是 `auto_review`；未接通时不得改成 `user` 发出去。
  */

@@ -52,10 +52,11 @@ describe('展开优先级：场景默认值 → 审批档 → 用户显式选择
     expect(MODES['full-access'].kernelMode).toBe('default');
   });
 
-  it('请求批准 → evowork-workspace + onRequest + user', () => {
+  it('请求批准 → evowork-workspace + on-request + user', () => {
     const result = expandTurnStart({ ...base, overrides: { modeId: 'request-approval' } });
+    // 内核 AskForApproval 是 kebab-case。onRequest 会让 thread/start 回 -32600。
     expect(result.params.permissions).toBe('evowork-workspace');
-    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalPolicy).toBe('on-request');
     expect(result.params.approvalsReviewer).toBe('user');
     expect(result.origin.modeId).toBe('request-approval');
     expect(result.origin.permissionId).toBe('evowork-workspace');
@@ -64,15 +65,17 @@ describe('展开优先级：场景默认值 → 审批档 → 用户显式选择
   it('帮我批准 → 同样的权限与策略，但 reviewer=auto_review', () => {
     const result = expandTurnStart({ ...base, overrides: { modeId: 'approve-for-me' } });
     expect(result.params.permissions).toBe('evowork-workspace');
-    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalPolicy).toBe('on-request');
     expect(result.params.approvalsReviewer).toBe('auto_review');
   });
 
-  it('完全访问 → evowork-full + never + user', () => {
+  it('完全访问下发内置档，投影表仍记 evowork-full', () => {
     const result = expandTurnStart({ ...base, overrides: { modeId: 'full-access' } });
-    expect(result.params.permissions).toBe('evowork-full');
+    // 命名档不能 extends :danger-full-access，发出去就是 -32600。
+    expect(result.params.permissions).toBe(':danger-full-access');
     expect(result.params.approvalPolicy).toBe('never');
     expect(result.params.approvalsReviewer).toBe('user');
+    expect(result.origin.permissionId).toBe('evowork-full');
   });
 
   it('权限由审批档决定，用户另传的 permissions 不能把完全访问偷运进来', () => {
@@ -214,7 +217,7 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
     expect(result.params.collaborationMode).toBeUndefined();
     expect(result.params.model).toBe('deepseek-v4-flash');
     expect(result.params.effort).toBe('medium');
-    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalPolicy).toBe('on-request');
     expect(result.params.approvalsReviewer).toBe('user');
     expect(result.degradations[0]).toContain('审批三档');
   });
@@ -240,7 +243,7 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
       permissionsFieldAvailable: false,
     });
     expect(result.params.permissions).toBeUndefined();
-    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalPolicy).toBe('on-request');
     expect(result.params.approvalsReviewer).toBe('user');
     expect('sandboxPolicy' in result.params).toBe(false);
     expect(result.degradations.some((d) => d.includes('企业自定义权限档'))).toBe(true);

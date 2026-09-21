@@ -37,7 +37,18 @@ export interface ModeDefinition {
   readonly summary: string;
   /** Q45：三档都走 `default`，不新增 ModeKind（D8） */
   readonly kernelMode: ModeKind;
+  /** 产品 id，落投影表，给策略与文案用。不是发给内核的那个字符串。 */
   readonly permissions: string;
+  /**
+   * `thread/start` / `turn/start` 的 `permissions`。
+   *
+   * 完全访问必须是内置 `:danger-full-access`。命名档
+   * `extends = ":danger-full-access"` 会被内核拒绝
+   * （`core/src/config/permissions.rs` 的 `extensible_builtin_parent_profile`
+   * 只认 `:read-only` 与 `:workspace`），`thread/start` 回 -32600。
+   * 2026-09-22 对本机 `/Applications/EvoWork.app` 里的 app-server 实测。
+   */
+  readonly kernelPermissions: string;
   readonly approvalPolicy: AskForApproval;
   readonly approvalsReviewer: ApprovalsReviewer;
   /** developer instructions 片段。三档共用 craft.md；ask.md / plan.md 不进 Composer */
@@ -51,7 +62,8 @@ export const MODES: Readonly<Record<ModeId, ModeDefinition>> = Object.freeze({
     summary: '编辑工作空间外的文件或使用互联网时询问你',
     kernelMode: 'default',
     permissions: 'evowork-workspace',
-    approvalPolicy: 'onRequest',
+    kernelPermissions: 'evowork-workspace',
+    approvalPolicy: 'on-request',
     approvalsReviewer: 'user',
     instructionsFile: 'modes/craft.md',
   },
@@ -61,7 +73,8 @@ export const MODES: Readonly<Record<ModeId, ModeDefinition>> = Object.freeze({
     summary: '仅对检测到的风险操作请求批准',
     kernelMode: 'default',
     permissions: 'evowork-workspace',
-    approvalPolicy: 'onRequest',
+    kernelPermissions: 'evowork-workspace',
+    approvalPolicy: 'on-request',
     approvalsReviewer: 'auto_review',
     instructionsFile: 'modes/craft.md',
   },
@@ -71,6 +84,7 @@ export const MODES: Readonly<Record<ModeId, ModeDefinition>> = Object.freeze({
     summary: '可以读写这台电脑上的文件并联网',
     kernelMode: 'default',
     permissions: 'evowork-full',
+    kernelPermissions: ':danger-full-access',
     approvalPolicy: 'never',
     approvalsReviewer: 'user',
     instructionsFile: 'modes/craft.md',
@@ -264,6 +278,7 @@ export function expandTurnStart(ctx: ExpandContext): ExpandResult {
   const mode = MODES[modeId];
   const degradations: string[] = [];
   const permissionId = mode.permissions;
+  const kernelPermissions = mode.kernelPermissions;
 
   const model = overrides.model ?? ctx.scenario.model;
   const effort = overrides.reasoningEffort ?? ctx.scenario.reasoningEffort;
@@ -300,7 +315,7 @@ export function expandTurnStart(ctx: ExpandContext): ExpandResult {
     // 降级时才把 model / effort 放到顶层：collaborationMode 存在时它优先，
     // 同时传两份只会让"到底哪个生效"变成一个需要读内核代码才能回答的问题
     ...(collaborationMode ? {} : { ...(model ? { model } : {}), ...(effort ? { effort } : {}) }),
-    ...(permissionsFieldAvailable ? { permissions: permissionId } : {}),
+    ...(permissionsFieldAvailable ? { permissions: kernelPermissions } : {}),
     approvalPolicy: mode.approvalPolicy,
     approvalsReviewer: mode.approvalsReviewer,
   };

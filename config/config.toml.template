@@ -50,13 +50,18 @@ network_access = true
 extends = ":workspace"
 # 默认权限：可以在这个工作空间里读写文件、执行命令
 
-[permissions.evowork-full]
-extends = ":danger-full-access"
-# 完全访问：需二次确认，仅对当前任务生效。
-# **注意**：10 §2.3 的硬拦截清单（系统目录 / 密钥凭据 / EvoWork 自身配置）
-# 对这个档位**同样生效**，由 pre_tool_use hook 实现，不可绕过。
+# 完全访问不在这里建命名档。
+# 内核的 extensible_builtin_parent_profile 只允许继承 :read-only 与 :workspace。
+# `extends = ":danger-full-access"` 会让每一次选中该档的 thread/start 回
+# -32600：`permissions profile evowork-full cannot extend unsupported built-in profile`。
+# 适配层对「完全访问」直接传内置 `:danger-full-access`（关掉沙箱）。
+# 硬拦截清单（10 §2.3）仍由 pre_tool_use hook 执行，不看这个 profile id。
 
 # ─────────────────────────── 审批与沙箱 ───────────────────────────
+
+# 定义了 [permissions.*] 却不设这一项时，不带 permissions 的 thread/start 会被拒：
+# `config defines [permissions] profiles but does not set default_permissions`。
+default_permissions = "evowork-workspace"
 
 approval_policy = "on-request"
 

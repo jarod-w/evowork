@@ -74,9 +74,9 @@
 
 | 现产品档（Q45）     | 状态   | 内核对应                                                                                                                                                                                                 |
 | ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 请求批准（默认）    | [复用] | `permissions: evowork-workspace` + `approvalPolicy: onRequest` + `approvalsReviewer: user`                                                                                                               |
+| 请求批准（默认）    | [复用] | `permissions: evowork-workspace` + `approvalPolicy: on-request` + `approvalsReviewer: user`（`AskForApproval` 是 kebab-case；`onRequest` 会被内核以 -32600 拒绝）                                      |
 | 帮我批准            | [复用] | 同上，但 `approvalsReviewer: auto_review`（`turn.rs:218`；Guardian 自动审查，只把判定为风险的动作交给人）                                                                                                  |
-| 完全访问            | [复用] | `permissions: evowork-full`（`:danger-full-access`）+ `approvalPolicy: never` + 二次确认；**硬拦截清单仍生效**（§6.11 / 10 §2.3）                                                                          |
+| 完全访问            | [复用] | 线上 `permissions: :danger-full-access`（命名档不能 `extends` 这个内置档，否则 -32600）+ `approvalPolicy: never` + 二次确认；产品 id 仍记 `evowork-full`。**硬拦截清单仍生效**（§6.11 / 10 §2.3） |
 
 清单原三项的下落：
 
@@ -419,9 +419,9 @@
 
 | 档         | `permissions`       | `approvalPolicy` | `approvalsReviewer` | 用户确认                         |
 | ---------- | ------------------- | ---------------- | ------------------- | -------------------------------- |
-| 请求批准   | `evowork-workspace` | `onRequest`      | `user`              | 无                               |
-| 帮我批准   | `evowork-workspace` | `onRequest`      | `auto_review`       | 无；未接通时禁用并给原因         |
-| 完全访问   | `evowork-full`      | `never`          | `user`              | 二次确认，仅当前任务；硬拦截仍生效 |
+| 请求批准   | `evowork-workspace`      | `on-request` | `user`              | 无                               |
+| 帮我批准   | `evowork-workspace`      | `on-request` | `auto_review`       | 无；未接通时禁用并给原因         |
+| 完全访问   | `:danger-full-access`    | `never`      | `user`              | 二次确认，仅当前任务；硬拦截仍生效。投影表记 `evowork-full` |
 
 Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` 保留为内部能力（Q20 助理若恢复入口可继续用）。Plan 协作模式同样下架；`Plan` item 与「规划中」只按是否存在 plan item 派生。
 
@@ -543,9 +543,10 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 Composer 常显三项，全部走 `ModeKind::Default` + `config/modes/craft.md`（执行指令），**不新增内核枚举**（D8）：
 
 ```
-请求批准:  evowork-workspace + onRequest + reviewer=user
-帮我批准:  evowork-workspace + onRequest + reviewer=auto_review
-完全访问:  evowork-full      + never     + reviewer=user + 二次确认
+请求批准:  evowork-workspace + on-request + reviewer=user
+帮我批准:  evowork-workspace + on-request + reviewer=auto_review
+完全访问:  :danger-full-access + never + reviewer=user + 二次确认
+（产品 id 仍是 evowork-full。命名档不能 extends 这个内置档。）
 ```
 
 `config/modes/{plan,ask}.md` 与 `evowork-ask` / `evowork-plan` 保留为内部能力，不进一级选择器。内部只读路径若恢复（Q20 助理），仍应在 `ToolContributor` 层过滤写工具，避免模型反复尝试再失败。
