@@ -114,19 +114,20 @@ export const FULL_ACCESS_CONFIRM = {
   confirmLabel: '仅当前任务使用完全访问',
   writes: '读写这台电脑上的文件（工作空间内外）',
   network: '使用互联网',
-  hardBlock:
-    '系统目录、密钥与凭据、EvoWork 自身配置仍会被拦截，完全访问也不能绕过。',
+  hardBlock: '系统目录、密钥与凭据、EvoWork 自身配置仍会被拦截，完全访问也不能绕过。',
   scope: '这次确认只对当前任务生效，不会改掉默认档。',
 } as const;
 
 /**
  * Composer 审批三档。帮我批准 / 完全访问可按能力置灰，禁用项仍出现在菜单里。
  */
-export function composerModeOptions(input: {
-  readonly approvalsReviewerAvailable?: boolean | undefined;
-  readonly fullAccessAllowed?: boolean | undefined;
-  readonly fullAccessDisabledReason?: string | undefined;
-} = {}): readonly SelectOption[] {
+export function composerModeOptions(
+  input: {
+    readonly approvalsReviewerAvailable?: boolean | undefined;
+    readonly fullAccessAllowed?: boolean | undefined;
+    readonly fullAccessDisabledReason?: string | undefined;
+  } = {},
+): readonly SelectOption[] {
   const reviewerOk = input.approvalsReviewerAvailable !== false;
   const fullOk = input.fullAccessAllowed !== false;
   return MODE_OPTIONS.map((option) => {
@@ -137,8 +138,7 @@ export function composerModeOptions(input: {
       return {
         ...option,
         allowed: false,
-        disabledReason:
-          input.fullAccessDisabledReason ?? '当前系统的隔离能力有限，已停用完全访问',
+        disabledReason: input.fullAccessDisabledReason ?? '当前系统的隔离能力有限，已停用完全访问',
       };
     }
     return { ...option, allowed: true };

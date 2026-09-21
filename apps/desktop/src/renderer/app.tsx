@@ -63,7 +63,12 @@ import type {
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
-import { Composer, composerModeOptions, type ModeId, type SelectOption } from './components/composer.js';
+import {
+  Composer,
+  composerModeOptions,
+  type ModeId,
+  type SelectOption,
+} from './components/composer.js';
 import type { Attachment, MentionCandidate, SlashCommand } from './components/composer.js';
 import { Banner, EmptyState, IconButton } from './components/primitives.js';
 import { renderIcon } from './components/icons.js';

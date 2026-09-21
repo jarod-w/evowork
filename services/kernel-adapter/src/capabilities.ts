@@ -148,8 +148,7 @@ export const FIELD_DEGRADATION = Object.freeze({
   'turn/start.collaborationMode': {
     fallback: '退回 turn/start.model + effort，developer instructions 通过 additionalContext 注入',
     userVisible: '执行指令强度下降。审批三档不受此项影响。',
-    mustAlsoDo:
-      '内部只读路径（Q20 助理）若恢复，仍必须依赖 ToolContributor 过滤写工具（D8）',
+    mustAlsoDo: '内部只读路径（Q20 助理）若恢复，仍必须依赖 ToolContributor 过滤写工具（D8）',
   },
   'turn/start.permissions': {
     fallback: '退回 sandboxPolicy（两者互斥，F5）',

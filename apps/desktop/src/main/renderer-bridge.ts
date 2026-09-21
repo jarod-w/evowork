@@ -33,7 +33,12 @@ import {
  * 那个包的 `node:crypto` 依赖在这一侧完全没问题。渲染层拿不到它
  * （浏览器环境），所以由这里经 IPC 送过去 —— 一个真源，两条路径。
  */
-import { classifyPath, describeCapability, RETENTION_DAYS, RETENTION_WARNING_DAYS } from '@evowork/policy';
+import {
+  classifyPath,
+  describeCapability,
+  RETENTION_DAYS,
+  RETENTION_WARNING_DAYS,
+} from '@evowork/policy';
 import {
   buildProjectCard,
   ellipsizeMiddle,

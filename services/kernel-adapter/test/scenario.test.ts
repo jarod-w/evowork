@@ -118,11 +118,7 @@ describe('帮我批准不可用时禁止发出去（Q45）', () => {
 
   it('Composer 菜单把帮我批准标成禁用并给出原因，不隐藏', () => {
     const options = composerModeAvailability({ approvalsReviewerAvailable: false });
-    expect(options.map((o) => o.id)).toEqual([
-      'request-approval',
-      'approve-for-me',
-      'full-access',
-    ]);
+    expect(options.map((o) => o.id)).toEqual(['request-approval', 'approve-for-me', 'full-access']);
     const approve = options.find((o) => o.id === 'approve-for-me');
     expect(approve?.allowed).toBe(false);
     expect(approve?.disabledReason).toBe(AUTO_REVIEW_UNAVAILABLE_REASON);
@@ -282,9 +278,7 @@ describe('场景包（03 §2.2）', () => {
 
   it('三档文案与 10 §2.4 逐字一致', () => {
     expect(MODES['request-approval'].label).toBe('请求批准');
-    expect(MODES['request-approval'].summary).toBe(
-      '编辑工作空间外的文件或使用互联网时询问你',
-    );
+    expect(MODES['request-approval'].summary).toBe('编辑工作空间外的文件或使用互联网时询问你');
     expect(MODES['approve-for-me'].label).toBe('帮我批准');
     expect(MODES['approve-for-me'].summary).toBe('仅对检测到的风险操作请求批准');
     expect(MODES['full-access'].label).toBe('完全访问');

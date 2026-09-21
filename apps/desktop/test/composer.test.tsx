@@ -178,9 +178,9 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(screen.queryByRole('button', { name: '工作模式' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '审批档' }));
-    expect(screen.getByRole('menuitem', { name: /请求批准/ })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /帮我批准/ })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /完全访问/ })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /^请求批准/ })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /^帮我批准/ })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /^完全访问/ })).toBeTruthy();
     expect(screen.getByText('编辑工作空间外的文件或使用互联网时询问你')).toBeTruthy();
     expect(screen.getByText('仅对检测到的风险操作请求批准')).toBeTruthy();
     expect(screen.getByText('可以读写这台电脑上的文件并联网')).toBeTruthy();

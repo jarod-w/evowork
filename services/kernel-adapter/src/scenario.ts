@@ -132,10 +132,7 @@ export function composerModeAvailability(input: {
 /**
  * 帮我批准在 `approvalsReviewer` 不可用时**拒绝展开**，不许改成 `user` 发出去（Q45）。
  */
-export function assertModeSendable(
-  modeId: ModeId,
-  approvalsReviewerAvailable: boolean,
-): void {
+export function assertModeSendable(modeId: ModeId, approvalsReviewerAvailable: boolean): void {
   if (modeId === 'approve-for-me' && !approvalsReviewerAvailable) {
     throw new Error(AUTO_REVIEW_UNAVAILABLE_REASON);
   }
