@@ -1405,6 +1405,9 @@ textarea {
 .ew-inline-select-trigger[data-placeholder='true'] {
   color: var(--text-tertiary);
 }
+.ew-inline-select-trigger[data-danger='true'] {
+  color: var(--danger-text);
+}
 .ew-inline-select-trigger[data-mono='true'] {
   font-family: var(--font-mono);
 }

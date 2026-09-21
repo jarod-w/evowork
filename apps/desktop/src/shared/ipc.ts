@@ -33,6 +33,8 @@ export interface TaskRowView {
    * 「不静默换模型」这条在这里同样成立。
    */
   readonly modelId?: string | undefined;
+  /** 这个任务上一次用的审批档（Q45）。打开旧任务时选择器要显示它，并跟着发出去。 */
+  readonly modeId?: string | undefined;
 }
 
 export interface RenderItemView {
@@ -88,7 +90,7 @@ export interface ScenarioView {
   readonly defaults: {
     readonly modelId?: string | undefined;
     readonly permissionId?: string | undefined;
-    readonly mode?: 'craft' | 'plan' | 'ask' | undefined;
+    readonly mode?: 'request-approval' | 'approve-for-me' | 'full-access' | undefined;
   };
 }
 
@@ -149,6 +151,14 @@ export interface StartupInfo {
    * 用户再走一遍四步引导，而"这台机器配好了没有"本来就是本机状态。
    */
   readonly onboarded: boolean;
+  /**
+   * `turn/start.approvalsReviewer` 能否下发。false 时 Composer 把「帮我批准」
+   * 标成禁用并给原因，发送路径也会拒绝这个档（Q45：不静默降成请求批准）。
+   */
+  readonly approvalsReviewerAvailable?: boolean | undefined;
+  /** Windows 隔离不足/未知时停用完全访问（Q26 / 10 §7），原因给 UI 原样显示。 */
+  readonly fullAccessAllowed?: boolean | undefined;
+  readonly fullAccessDisabledReason?: string | undefined;
 }
 
 /**
@@ -226,6 +236,11 @@ export interface SendInput {
    * 用户切了模型、下一轮又悄悄换回场景默认值。
    */
   readonly modelId?: string | undefined;
+  /**
+   * 用户选的审批档（Q45）。主进程把它翻成 `overrides.modeId` 并写入任务级设置，
+   * 与 `modelId` 同一条纪律：只发不存则下一轮悄悄换回去。
+   */
+  readonly modeId?: 'request-approval' | 'approve-for-me' | 'full-access' | undefined;
   /**
    * 用户选的工作空间。主进程把它翻成 `overrides.cwd`（任务在哪个目录里跑）。
    *

@@ -236,6 +236,7 @@ describe('首页不创建 Thread（03 §1）', () => {
         scenarioId: 'office',
         // 场景没给默认模型 → 用列表里第一个可用的（resolveModelChoice）
         modelId: 'evowork/deepseek-v4-flash',
+        modeId: 'request-approval',
       }),
     );
     // 切到任务页：首页的 Hero 不在了
@@ -259,6 +260,7 @@ describe('首页不创建 Thread（03 §1）', () => {
         text: '第二条',
         scenarioId: 'office',
         modelId: 'evowork/deepseek-v4-flash',
+        modeId: 'request-approval',
       }),
     );
   });
@@ -899,7 +901,72 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
         text: '做个周报',
         scenarioId: 'office',
         modelId: 'evowork/kimi-k3',
+        modeId: 'request-approval',
       }),
+    );
+  });
+
+  it('选「帮我批准」后发出去的是这个档，不是场景默认的请求批准', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('审批档'));
+
+    fireEvent.click(screen.getByLabelText('审批档'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /帮我批准/ }));
+
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '做个周报' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(
+        expect.objectContaining({ text: '做个周报', modeId: 'approve-for-me' }),
+      ),
+    );
+  });
+
+  it('帮我批准未接通时不能发出这个档', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, approvalsReviewerAvailable: false }),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('审批档'));
+
+    fireEvent.click(screen.getByLabelText('审批档'));
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('menuitem', { name: /帮我批准/ }) as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '做个周报' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(
+        expect.objectContaining({ text: '做个周报', modeId: 'request-approval' }),
+      ),
+    );
+  });
+
+  it('完全访问未确认时不发出这个档', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('审批档'));
+
+    fireEvent.click(screen.getByLabelText('审批档'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
+    expect(screen.getByRole('alertdialog', { name: '开启完全访问？' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '装个依赖' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(bridge.send).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(
+        expect.objectContaining({ text: '装个依赖', modeId: 'request-approval' }),
+      ),
     );
   });
 

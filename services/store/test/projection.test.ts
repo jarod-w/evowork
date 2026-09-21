@@ -74,12 +74,15 @@ describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
     expect(deriveStatus({ threadStatus: 'systemError' })).toBe('failed');
   });
 
-  it('规划中：plan 模式 + 有计划 + 未确认', () => {
-    const base = { threadStatus: 'idle' as ThreadStatus, modeId: 'plan', hasPlanItem: true };
+  it('规划中：有计划 + 未确认（Q45：不看 Composer 档）', () => {
+    const base = {
+      threadStatus: 'idle' as ThreadStatus,
+      modeId: 'request-approval',
+      hasPlanItem: true,
+    };
     expect(deriveStatus(base)).toBe('planning');
     expect(deriveStatus({ ...base, planConfirmed: true })).toBe('idle');
-    // craft 模式即使有计划也不是"规划中"
-    expect(deriveStatus({ ...base, modeId: 'craft' })).toBe('idle');
+    expect(deriveStatus({ ...base, modeId: 'full-access' })).toBe('planning');
     // 没有计划时也不是
     expect(deriveStatus({ ...base, hasPlanItem: false })).toBe('idle');
   });
@@ -90,7 +93,7 @@ describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
       deriveStatus({
         threadStatus: 'idle',
         lastTurnStatus: 'completed',
-        modeId: 'plan',
+        modeId: 'request-approval',
         hasPlanItem: true,
         planConfirmed: false,
       }),
@@ -117,7 +120,7 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
     withStore((store) => {
       const derived = store.threads.upsertFromThread(
         thread({ name: '季度汇报 PPT', status: ACTIVE }),
-        { scenarioId: 'office', modeId: 'craft', permissionId: 'evowork-workspace' },
+        { scenarioId: 'office', modeId: 'request-approval', permissionId: 'evowork-workspace' },
       );
       expect(derived).toBe('running');
 
@@ -125,7 +128,7 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
       expect(row?.title).toBe('季度汇报 PPT');
       expect(row?.cwd).toBe('/Users/x/work/weekly');
       expect(row?.scenario_id).toBe('office');
-      expect(row?.mode_id).toBe('craft');
+      expect(row?.mode_id).toBe('request-approval');
       expect(row?.derived_status).toBe('running');
       // 内核给的是**秒**，我们统一存毫秒
       expect(row?.created_at).toBe(1_757_000_000_000);
@@ -134,15 +137,18 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
 
   it('重复 upsert 不覆盖 EvoWork 自己的字段（否则对账会冲掉用户改过的模式）', () => {
     withStore((store) => {
-      store.threads.upsertFromThread(thread(), { scenarioId: 'office', modeId: 'craft' });
-      // 用户在任务里把模式改成了 plan
-      store.threads.setTaskSettings('t1', { modeId: 'plan', budgetLimit: 200_000 });
+      store.threads.upsertFromThread(thread(), {
+        scenarioId: 'office',
+        modeId: 'request-approval',
+      });
+      // 用户在任务里把档改成了完全访问
+      store.threads.setTaskSettings('t1', { modeId: 'full-access', budgetLimit: 200_000 });
       // 一次对账（不带 origin）
       store.threads.upsertFromThread(thread({ name: '新标题' }));
 
       const row = store.threads.get('t1');
       expect(row?.title).toBe('新标题'); // 内核权威字段被更新
-      expect(row?.mode_id).toBe('plan'); // EvoWork 字段保留
+      expect(row?.mode_id).toBe('full-access'); // EvoWork 字段保留
       expect(row?.budget_limit).toBe(200_000);
     });
   });
@@ -192,7 +198,7 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
 
   it('plan → 确认执行 的状态流转', () => {
     withStore((store) => {
-      store.threads.upsertFromThread(thread(), { modeId: 'plan' });
+      store.threads.upsertFromThread(thread(), { modeId: 'request-approval' });
       expect(store.threads.applyPlanUpdated('t1', true)).toBe('planning');
       store.threads.markPlanConfirmed('t1');
       expect(store.threads.applyStatusChanged('t1', ACTIVE)).toBe('running');

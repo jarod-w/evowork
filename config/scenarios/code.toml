@@ -7,7 +7,7 @@ order   = 20
 model             = "evowork/deepseek-v4-flash"
 reasoning_effort  = "high"
 permissions       = "evowork-workspace"
-mode              = "craft"
+mode              = "request-approval"
 instructions_file = "modes/craft-code.md"
 budget_limit      = 600000
 

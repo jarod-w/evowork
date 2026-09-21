@@ -7,9 +7,8 @@
  * 1. **`/` 必须在行首才触发**（03 §4.3）。不加这条，`~/work/a.md` 里的斜杠会弹菜单。
  * 2. **解析中禁止发送**（03 §4.4），且文案要说清"在本机解析" —— 这是 K6/Q3 的对外表达点，
  *    而它必须为真：08 §4 保证没有云端兜底路径。
- * 3. **Ask 模式固定只读**（03 §4.5）。权限选择器被联动锁死并给出原因，
- *    切回 Craft/Plan 时恢复用户上一次的选择 —— 不是回落到默认值，那会让用户重选一遍。
- * 4. **`allowed:false` 的权限档位渲染为禁用并显示原因，不隐藏**（10 §2 / F4）。
+ * 3. **完全访问必须二次确认**（10 §2.4）。不确认就不改档、也不发送。
+ * 4. **`allowed:false` 的档位渲染为禁用并显示原因，不隐藏**（10 §2 / F4）。
  * 5. **模型不可用时不静默降级**（03 §8）：插 danger 提示条 + 禁用发送，而不是换一个模型继续。
  *
  * ## 为什么不用 contentEditable
@@ -19,11 +18,11 @@
  * "底层同时维护 text + textElements"。所以这里用 `<textarea>` 存文本、
  * 用 `mentions` 数组存结构，渲染时叠一层 token 显示层。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
-import { Badge, Banner, PillButton } from './primitives.js';
+import { Badge, Banner, Dialog, PillButton } from './primitives.js';
 
 export const COMPOSER_PLACEHOLDER = '输入需求，或描述你想完成的工作';
 
@@ -81,21 +80,70 @@ export interface SelectOption {
   /** F4：`permissionProfile/list` 返回的 `allowed`。false 时禁用并给原因，不隐藏 */
   readonly allowed?: boolean | undefined;
   readonly disabledReason?: string | undefined;
+  /** 完全访问用危险色，不包装成"更强模式"（10 §2.4） */
+  readonly danger?: boolean | undefined;
 }
 
 export type ComposerRunState = 'idle' | 'running' | 'over-budget';
-export type ModeId = 'craft' | 'plan' | 'ask';
+export type ModeId = 'request-approval' | 'approve-for-me' | 'full-access';
 
+export const AUTO_REVIEW_UNAVAILABLE_REASON = '安全自动审查还没接通';
+
+/** 10 §2.4 三项。一句话原样显示。 */
 export const MODE_OPTIONS: readonly SelectOption[] = [
-  { id: 'craft', label: 'Craft 你说我做' },
-  { id: 'plan', label: 'Plan 先想后做' },
-  { id: 'ask', label: 'Ask 只谈不做' },
+  {
+    id: 'request-approval',
+    label: '请求批准',
+    description: '编辑工作空间外的文件或使用互联网时询问你',
+  },
+  {
+    id: 'approve-for-me',
+    label: '帮我批准',
+    description: '仅对检测到的风险操作请求批准',
+  },
+  {
+    id: 'full-access',
+    label: '完全访问',
+    description: '可以读写这台电脑上的文件并联网',
+    danger: true,
+  },
 ];
 
-/** Ask 模式固定用的权限档位（D8：只读沙箱 + 不审批 + 过滤写工具）。 */
-export const READ_ONLY_PROFILE = ':read-only';
-/** 完全访问。接通 `send()` 的 permissionId 后，选择器要用这个 id 做二次确认。 */
-export const DANGER_PROFILE = ':danger-full-access';
+export const FULL_ACCESS_CONFIRM = {
+  title: '开启完全访问？',
+  confirmLabel: '仅当前任务使用完全访问',
+  writes: '读写这台电脑上的文件（工作空间内外）',
+  network: '使用互联网',
+  hardBlock:
+    '系统目录、密钥与凭据、EvoWork 自身配置仍会被拦截，完全访问也不能绕过。',
+  scope: '这次确认只对当前任务生效，不会改掉默认档。',
+} as const;
+
+/**
+ * Composer 审批三档。帮我批准 / 完全访问可按能力置灰，禁用项仍出现在菜单里。
+ */
+export function composerModeOptions(input: {
+  readonly approvalsReviewerAvailable?: boolean | undefined;
+  readonly fullAccessAllowed?: boolean | undefined;
+  readonly fullAccessDisabledReason?: string | undefined;
+} = {}): readonly SelectOption[] {
+  const reviewerOk = input.approvalsReviewerAvailable !== false;
+  const fullOk = input.fullAccessAllowed !== false;
+  return MODE_OPTIONS.map((option) => {
+    if (option.id === 'approve-for-me' && !reviewerOk) {
+      return { ...option, allowed: false, disabledReason: AUTO_REVIEW_UNAVAILABLE_REASON };
+    }
+    if (option.id === 'full-access' && !fullOk) {
+      return {
+        ...option,
+        allowed: false,
+        disabledReason:
+          input.fullAccessDisabledReason ?? '当前系统的隔离能力有限，已停用完全访问',
+      };
+    }
+    return { ...option, allowed: true };
+  });
+}
 
 export interface ComposerProps {
   readonly value: string;
@@ -122,6 +170,11 @@ export interface ComposerProps {
 
   readonly mode?: ModeId | undefined;
   readonly onModeChange?: ((mode: ModeId) => void) | undefined;
+  /**
+   * 审批三档。不传时用 `composerModeOptions()` 的默认三项。
+   * 调用方把「帮我批准未接通 / Windows 停用完全访问」编进 `allowed:false`。
+   */
+  readonly modeOptions?: readonly SelectOption[] | undefined;
 
   readonly models?: readonly ModelOption[] | undefined;
   readonly modelId?: string | undefined;
@@ -208,31 +261,13 @@ const MAX_ROWS = 12;
 export function Composer(props: ComposerProps) {
   const attachments = props.attachments ?? [];
   const runState = props.runState ?? 'idle';
-  const mode = props.mode ?? 'craft';
+  const mode = props.mode ?? 'request-approval';
+  const modeOptions = props.modeOptions ?? composerModeOptions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
-
-  /**
-   * Ask 模式把权限锁成只读；切回 Craft/Plan 时**恢复用户上一次的选择**（03 §4.5）。
-   * 记住的是"进 Ask 之前那个值"，不是场景默认值 —— 回落到默认值等于让用户重选一遍。
-   */
-  const beforeAskRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (mode === 'ask') {
-      if (beforeAskRef.current === undefined) beforeAskRef.current = props.permissionId;
-      if (props.permissionId !== READ_ONLY_PROFILE) props.onPermissionChange?.(READ_ONLY_PROFILE);
-    } else if (beforeAskRef.current !== undefined) {
-      const restore = beforeAskRef.current;
-      beforeAskRef.current = undefined;
-      if (restore !== undefined && restore !== props.permissionId)
-        props.onPermissionChange?.(restore);
-    }
-    // 依赖里**只有 mode**：这个 effect 只应在模式变化时跑。
-    // 把 permissionId 加进去会让"恢复"动作自己触发的变化再跑一遍，
-    // 表现是切回 Craft 后权限值抖动一次。
-  }, [mode]);
+  const [confirmFullAccess, setConfirmFullAccess] = useState(false);
 
   const parsing = parsingCount(attachments);
   // 解析失败的附件还没有可发送内容；用户选择「以原始文件引用」后才会变成 ready。
@@ -241,7 +276,11 @@ export function Composer(props: ComposerProps) {
     props.value.trim() === '' && !attachments.some((attachment) => attachment.state === 'ready');
   const blockedByModel = props.modelUnavailable !== undefined;
   const sendDisabled =
-    empty || parsing > 0 || blockedByModel || props.sendLockedReason !== undefined;
+    empty ||
+    parsing > 0 ||
+    blockedByModel ||
+    props.sendLockedReason !== undefined ||
+    confirmFullAccess;
 
   const candidates = useMemo(() => {
     if (!trigger) return [];
@@ -508,14 +547,27 @@ export function Composer(props: ComposerProps) {
             </span>
 
             <InlineSelect
-              ariaLabel="工作模式"
+              ariaLabel="审批档"
               icon={renderIcon('sparkle')}
-              placeholder="Craft"
+              placeholder="请求批准"
               value={mode}
-              options={MODE_OPTIONS}
+              options={modeOptions.map((option) => ({
+                id: option.id,
+                label: option.label,
+                description: option.description,
+                disabled: option.allowed === false,
+                disabledReason: option.disabledReason,
+                danger: option.danger,
+              }))}
               overridden={props.overrides?.mode}
               onResetOverride={() => props.onResetOverride?.('mode')}
-              onChange={(id) => props.onModeChange?.(id as ModeId)}
+              onChange={(id) => {
+                if (id === 'full-access') {
+                  setConfirmFullAccess(true);
+                  return;
+                }
+                props.onModeChange?.(id as ModeId);
+              }}
             />
 
             <InlineSelect
@@ -575,6 +627,26 @@ export function Composer(props: ComposerProps) {
           />
           立即插话
         </label>
+      ) : null}
+
+      {confirmFullAccess ? (
+        <Dialog
+          title={FULL_ACCESS_CONFIRM.title}
+          variant="danger"
+          confirmLabel={FULL_ACCESS_CONFIRM.confirmLabel}
+          onCancel={() => setConfirmFullAccess(false)}
+          onConfirm={() => {
+            setConfirmFullAccess(false);
+            props.onModeChange?.('full-access');
+          }}
+        >
+          <p className="ew-danger-confirm-scope">{FULL_ACCESS_CONFIRM.scope}</p>
+          <ul className="ew-danger-confirm-list">
+            <li>{FULL_ACCESS_CONFIRM.writes}</li>
+            <li>{FULL_ACCESS_CONFIRM.network}</li>
+          </ul>
+          <p className="ew-danger-confirm-scope">{FULL_ACCESS_CONFIRM.hardBlock}</p>
+        </Dialog>
       ) : null}
     </section>
   );

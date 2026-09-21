@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AUTO_REVIEW_UNAVAILABLE_REASON,
   BUILTIN_SCENARIOS,
+  composerModeAvailability,
   composeInstructions,
   expandTurnStart,
   MODES,
+  resolveModeId,
   type Scenario,
 } from '../src/scenario.js';
 
@@ -19,7 +22,14 @@ const FRAGMENTS: Record<string, string> = {
 
 const read = (file: string): string | undefined => FRAGMENTS[file];
 
-describe('展开优先级：场景默认值 → 工作模式 → 用户显式选择（03 §2.4）', () => {
+const base = {
+  threadId: 't1',
+  input: [] as const,
+  scenario: OFFICE,
+  readInstructions: read,
+};
+
+describe('展开优先级：场景默认值 → 审批档 → 用户显式选择（03 §2.4）', () => {
   it('用户覆盖胜出', () => {
     const result = expandTurnStart({
       threadId: 't1',
@@ -31,71 +41,97 @@ describe('展开优先级：场景默认值 → 工作模式 → 用户显式选
     expect(result.params.collaborationMode?.settings?.model).toBe('glm-5.3-flash');
   });
 
-  it('craft / ask 都映射到内核的 `default`，plan 映射到 `plan`（F2：只有两个枚举值）', () => {
-    const base = {
-      threadId: 't1',
-      input: [] as const,
-      scenario: OFFICE,
-      readInstructions: read,
-    };
-    expect(
-      expandTurnStart({ ...base, overrides: { modeId: 'craft' } }).params.collaborationMode?.mode,
-    ).toBe('default');
-    expect(
-      expandTurnStart({ ...base, overrides: { modeId: 'ask' } }).params.collaborationMode?.mode,
-    ).toBe('default');
-    expect(
-      expandTurnStart({ ...base, overrides: { modeId: 'plan' } }).params.collaborationMode?.mode,
-    ).toBe('plan');
+  it('Q45 三档都映射到内核的 `default`，不新增 ModeKind（D8 / F2）', () => {
+    for (const modeId of ['request-approval', 'approve-for-me', 'full-access'] as const) {
+      expect(
+        expandTurnStart({ ...base, overrides: { modeId } }).params.collaborationMode?.mode,
+      ).toBe('default');
+    }
+    expect(MODES['request-approval'].kernelMode).toBe('default');
+    expect(MODES['approve-for-me'].kernelMode).toBe('default');
+    expect(MODES['full-access'].kernelMode).toBe('default');
   });
 
-  it('**Ask 模式固定只读**：用户选的权限被忽略（03 §4.5 的模式联动）', () => {
-    const result = expandTurnStart({
-      threadId: 't1',
-      input: [],
-      scenario: OFFICE,
-      overrides: { modeId: 'ask', permissions: 'evowork-full' },
-      readInstructions: read,
-    });
-    expect(result.params.permissions).toBe('evowork-ask');
-    expect(result.origin.permissionId).toBe('evowork-ask');
+  it('请求批准 → evowork-workspace + onRequest + user', () => {
+    const result = expandTurnStart({ ...base, overrides: { modeId: 'request-approval' } });
+    expect(result.params.permissions).toBe('evowork-workspace');
+    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalsReviewer).toBe('user');
+    expect(result.origin.modeId).toBe('request-approval');
+    expect(result.origin.permissionId).toBe('evowork-workspace');
   });
 
-  it('非 Ask 模式尊重用户的权限选择', () => {
-    const result = expandTurnStart({
-      threadId: 't1',
-      input: [],
-      scenario: OFFICE,
-      overrides: { modeId: 'craft', permissions: 'evowork-full' },
-      readInstructions: read,
-    });
+  it('帮我批准 → 同样的权限与策略，但 reviewer=auto_review', () => {
+    const result = expandTurnStart({ ...base, overrides: { modeId: 'approve-for-me' } });
+    expect(result.params.permissions).toBe('evowork-workspace');
+    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalsReviewer).toBe('auto_review');
+  });
+
+  it('完全访问 → evowork-full + never + user', () => {
+    const result = expandTurnStart({ ...base, overrides: { modeId: 'full-access' } });
     expect(result.params.permissions).toBe('evowork-full');
+    expect(result.params.approvalPolicy).toBe('never');
+    expect(result.params.approvalsReviewer).toBe('user');
+  });
+
+  it('权限由审批档决定，用户另传的 permissions 不能把完全访问偷运进来', () => {
+    const result = expandTurnStart({
+      ...base,
+      overrides: { modeId: 'request-approval', permissions: 'evowork-full' },
+    });
+    expect(result.params.permissions).toBe('evowork-workspace');
   });
 
   it('**不与 sandboxPolicy 同传**（F5：两者互斥）', () => {
-    const result = expandTurnStart({
-      threadId: 't1',
-      input: [],
-      scenario: OFFICE,
-      readInstructions: read,
-    });
+    const result = expandTurnStart(base);
     expect(result.params.permissions).toBeDefined();
     expect('sandboxPolicy' in result.params).toBe(false);
     expect('sandbox' in result.params).toBe(false);
+  });
+
+  it('缺省档是请求批准', () => {
+    expect(expandTurnStart(base).origin.modeId).toBe('request-approval');
+    expect(OFFICE.mode).toBe('request-approval');
+  });
+});
+
+describe('帮我批准不可用时禁止发出去（Q45）', () => {
+  it('reviewer 不可用 → 抛出「安全自动审查还没接通」，不改成 user', () => {
+    expect(() =>
+      expandTurnStart({
+        ...base,
+        overrides: { modeId: 'approve-for-me' },
+        approvalsReviewerAvailable: false,
+      }),
+    ).toThrow(AUTO_REVIEW_UNAVAILABLE_REASON);
+  });
+
+  it('reviewer 不可用时，请求批准仍然能发，且 reviewer 是 user', () => {
+    const result = expandTurnStart({
+      ...base,
+      overrides: { modeId: 'request-approval' },
+      approvalsReviewerAvailable: false,
+    });
+    expect(result.params.approvalsReviewer).toBe('user');
+  });
+
+  it('Composer 菜单把帮我批准标成禁用并给出原因，不隐藏', () => {
+    const options = composerModeAvailability({ approvalsReviewerAvailable: false });
+    expect(options.map((o) => o.id)).toEqual([
+      'request-approval',
+      'approve-for-me',
+      'full-access',
+    ]);
+    const approve = options.find((o) => o.id === 'approve-for-me');
+    expect(approve?.allowed).toBe(false);
+    expect(approve?.disabledReason).toBe(AUTO_REVIEW_UNAVAILABLE_REASON);
   });
 });
 
 describe('developer_instructions 拼接（03 §2.4）', () => {
   it('**模式片段在前、场景片段在后**（场景更具体，后写的优先）', () => {
-    const text = composeInstructions(
-      {
-        threadId: 't1',
-        input: [],
-        scenario: OFFICE,
-        readInstructions: read,
-      },
-      MODES.craft,
-    );
+    const text = composeInstructions(base, MODES['request-approval']);
     const modeIdx = text?.indexOf('你可以动手') ?? -1;
     const scenarioIdx = text?.indexOf('这是办公场景') ?? -1;
     expect(modeIdx).toBeGreaterThanOrEqual(0);
@@ -105,22 +141,18 @@ describe('developer_instructions 拼接（03 §2.4）', () => {
   it('末尾附运行时上下文（日期 / 工作空间 / 可用技能）', () => {
     const text = composeInstructions(
       {
-        threadId: 't1',
-        input: [],
-        scenario: OFFICE,
-        readInstructions: read,
+        ...base,
         runtime: {
           today: '2026-09-05',
           workspacePath: '/Users/x/work/weekly',
           availableSkills: ['presentations', 'spreadsheets'],
         },
       },
-      MODES.craft,
+      MODES['request-approval'],
     );
     expect(text).toContain('2026-09-05');
     expect(text).toContain('/Users/x/work/weekly');
     expect(text).toContain('presentations');
-    // 运行时上下文在最后
     expect((text ?? '').lastIndexOf('2026-09-05')).toBeGreaterThan(
       (text ?? '').indexOf('这是办公场景'),
     );
@@ -129,23 +161,22 @@ describe('developer_instructions 拼接（03 §2.4）', () => {
   it('片段文件缺失时不报错（config 可能没装全），只是指令更短', () => {
     const text = composeInstructions(
       { threadId: 't1', input: [], scenario: OFFICE, readInstructions: () => undefined },
-      MODES.ask,
+      MODES['request-approval'],
     );
     expect(text).toBeUndefined();
   });
 
-  it('Ask 模式的指令来自 config/modes/ask.md —— **不需要内核补丁**（F1，P3 已删）', () => {
-    const result = expandTurnStart({
-      threadId: 't1',
-      input: [],
-      scenario: OFFICE,
-      overrides: { modeId: 'ask' },
-      readInstructions: read,
-    });
-    expect(result.params.collaborationMode?.settings?.developer_instructions).toContain(
-      '不要修改任何文件',
-    );
-    expect(MODES.ask.instructionsFile).toBe('modes/ask.md');
+  it('三档共用 craft.md，ask.md 不进 Composer 主路径', () => {
+    for (const modeId of ['request-approval', 'approve-for-me', 'full-access'] as const) {
+      const result = expandTurnStart({ ...base, overrides: { modeId } });
+      expect(result.params.collaborationMode?.settings?.developer_instructions).toContain(
+        '你可以动手',
+      );
+      expect(result.params.collaborationMode?.settings?.developer_instructions).not.toContain(
+        '不要修改任何文件',
+      );
+      expect(MODES[modeId].instructionsFile).toBe('modes/craft.md');
+    }
   });
 });
 
@@ -153,7 +184,7 @@ describe('developer_instructions 拼接（03 §2.4）', () => {
  * F22：`Settings` 是 v2 里唯一没有 `rename_all` 的结构体，线上字段名就是 snake_case，
  * 而它也不 `deny_unknown_fields` —— 写成 camelCase 的后果**不是报错，是被静默丢掉**。
  *
- * 丢掉的那段指令是 Craft/Ask 怎么干活。产品名是另一层：`thread/start.baseInstructions`
+ * 丢掉的那段指令是怎么干活。产品名是另一层：`thread/start.baseInstructions`
  * （F25）。写错时两层都丢，用户问「介绍一下你自己」会得到 Codex CLI（K5）。
  */
 describe('F22：settings 的字段名是 snake_case', () => {
@@ -174,12 +205,12 @@ describe('F22：settings 的字段名是 snake_case', () => {
 });
 
 describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么"', () => {
-  it('collaborationMode 不可用 → 退回 model + effort，并报出 D8 的硬要求', () => {
+  it('collaborationMode 不可用 → 退回 model + effort，审批字段仍在', () => {
     const result = expandTurnStart({
       threadId: 't1',
       input: [],
       scenario: { ...OFFICE, model: 'deepseek-v4-flash', reasoningEffort: 'medium' },
-      overrides: { modeId: 'ask' },
+      overrides: { modeId: 'request-approval' },
       readInstructions: read,
       collaborationModeAvailable: false,
     });
@@ -187,7 +218,9 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
     expect(result.params.collaborationMode).toBeUndefined();
     expect(result.params.model).toBe('deepseek-v4-flash');
     expect(result.params.effort).toBe('medium');
-    expect(result.degradations[0]).toContain('ToolContributor');
+    expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalsReviewer).toBe('user');
+    expect(result.degradations[0]).toContain('审批三档');
   });
 
   it('可用时**不同时**传顶层 model —— 免得"到底哪个生效"要去读内核代码', () => {
@@ -202,7 +235,7 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
     expect(result.params.model).toBeUndefined();
   });
 
-  it('permissions 字段不可用 → 退回审批策略并显式报降级', () => {
+  it('permissions 字段不可用 → 仍下发审批字段，且不含 sandboxPolicy', () => {
     const result = expandTurnStart({
       threadId: 't1',
       input: [],
@@ -212,6 +245,8 @@ describe('降级（09 §3.3）—— 必须显式，且带上"还必须做什么
     });
     expect(result.params.permissions).toBeUndefined();
     expect(result.params.approvalPolicy).toBe('onRequest');
+    expect(result.params.approvalsReviewer).toBe('user');
+    expect('sandboxPolicy' in result.params).toBe(false);
     expect(result.degradations.some((d) => d.includes('企业自定义权限档'))).toBe(true);
   });
 });
@@ -232,7 +267,6 @@ describe('场景包（03 §2.2）', () => {
       '个人工作台',
       '幻灯片',
     ]);
-    // 「文档处理」需要文件（03 §3.2：同时打开文件选择器）
     expect(OFFICE.chips?.[0]?.requiresFile).toBe(true);
   });
 
@@ -246,11 +280,16 @@ describe('场景包（03 §2.2）', () => {
     expect(design?.chips?.map((c) => c.label)).toEqual(['出几个方案', '配图', '设计界面']);
   });
 
-  it('三个模式的权限 profile 与 10 §2.2 的目录一致', () => {
-    expect(MODES.craft.permissions).toBe('evowork-workspace');
-    expect(MODES.plan.permissions).toBe('evowork-plan');
-    expect(MODES.ask.permissions).toBe('evowork-ask');
-    expect(MODES.ask.lockPermissions).toBe(true);
+  it('三档文案与 10 §2.4 逐字一致', () => {
+    expect(MODES['request-approval'].label).toBe('请求批准');
+    expect(MODES['request-approval'].summary).toBe(
+      '编辑工作空间外的文件或使用互联网时询问你',
+    );
+    expect(MODES['approve-for-me'].label).toBe('帮我批准');
+    expect(MODES['approve-for-me'].summary).toBe('仅对检测到的风险操作请求批准');
+    expect(MODES['full-access'].label).toBe('完全访问');
+    expect(MODES['full-access'].summary).toBe('可以读写这台电脑上的文件并联网');
+    expect(MODES['full-access'].summary).not.toContain('任何文件');
   });
 
   it('origin 带出投影表需要的 EvoWork 字段', () => {
@@ -258,14 +297,21 @@ describe('场景包（03 §2.2）', () => {
       threadId: 't1',
       input: [],
       scenario: { ...OFFICE, budgetLimit: 200_000 },
-      overrides: { modeId: 'plan' },
+      overrides: { modeId: 'full-access' },
       readInstructions: read,
     });
     expect(result.origin).toEqual({
       scenarioId: 'office',
-      modeId: 'plan',
-      permissionId: 'evowork-workspace',
+      modeId: 'full-access',
+      permissionId: 'evowork-full',
       budgetLimit: 200_000,
     });
+  });
+
+  it('旧的 craft / plan / ask 任务行收成请求批准，不把帮我批准降级', () => {
+    expect(resolveModeId('craft')).toBe('request-approval');
+    expect(resolveModeId('plan')).toBe('request-approval');
+    expect(resolveModeId('ask')).toBe('request-approval');
+    expect(resolveModeId('approve-for-me')).toBe('approve-for-me');
   });
 });

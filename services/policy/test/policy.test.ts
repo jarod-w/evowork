@@ -128,9 +128,11 @@ describe('权限 profile 的文案（10 §2.2）', () => {
     expect(toProfileOptions(protocolProfiles)[0]?.requiresConfirmation).toBe(false);
   });
 
-  it('三个模式各有默认 profile（D8）', () => {
+  it('三个审批档各有默认 profile（Q45）；Ask 只留给内部只读路径', () => {
+    expect(MODE_PROFILE['request-approval']).toBe('evowork-workspace');
+    expect(MODE_PROFILE['approve-for-me']).toBe('evowork-workspace');
+    expect(MODE_PROFILE['full-access']).toBe('evowork-full');
     expect(MODE_PROFILE.ask).toBe('evowork-ask');
-    expect(MODE_PROFILE.craft).toBe('evowork-workspace');
   });
 
   it('平台限制**把档位标灰并给原因**，而不是删掉它（Q26）', () => {

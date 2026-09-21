@@ -63,7 +63,7 @@ import type {
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
-import { Composer, type ModeId, type SelectOption } from './components/composer.js';
+import { Composer, composerModeOptions, type ModeId, type SelectOption } from './components/composer.js';
 import type { Attachment, MentionCandidate, SlashCommand } from './components/composer.js';
 import { Banner, EmptyState, IconButton } from './components/primitives.js';
 import { renderIcon } from './components/icons.js';
@@ -355,7 +355,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [startup, setStartup] = useState<StartupInfo | null>(null);
   const [scenarioId, setScenarioId] = useState('office');
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
-  const [mode, setMode] = useState<ModeId>('craft');
+  const [mode, setMode] = useState<ModeId>('request-approval');
   const [draft, setDraft] = useState('');
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [models, setModels] = useState<readonly ModelOptionView[]>([]);
@@ -763,6 +763,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     // 把 tasks 加进去会让每一次流式更新（任务行随时在变）都重置一遍下拉
   }, [activeTaskId]);
 
+  useEffect(() => {
+    if (activeTaskId === null) return;
+    const taskMode = tasks.find((t) => t.id === activeTaskId)?.modeId;
+    if (
+      taskMode !== 'request-approval' &&
+      taskMode !== 'approve-for-me' &&
+      taskMode !== 'full-access'
+    ) {
+      return;
+    }
+    if (taskMode === mode) return;
+    setMode(taskMode);
+  }, [activeTaskId]);
+
   /**
    * 切到某个任务时拉它的历史（04 §9）。
    *
@@ -1168,6 +1182,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
         // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
         ...(modelId !== undefined ? { modelId } : {}),
+        ...(mode !== undefined ? { modeId: mode } : {}),
         // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
         ...(workspaceId !== undefined ? { workspaceId } : {}),
         ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
@@ -1196,6 +1211,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     activeTaskId,
     scenarioId,
     modelId,
+    mode,
     workspaceId,
     running,
     steer,
@@ -1219,13 +1235,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         text,
         scenarioId,
         ...(modelId !== undefined ? { modelId } : {}),
+        ...(mode !== undefined ? { modeId: mode } : {}),
         ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
     } catch (error: unknown) {
       const summary = error instanceof Error ? error.message : String(error);
       setTurnFailures((previous) => ({ ...previous, [activeTaskId]: { summary } }));
     }
-  }, [activeTaskId, bridge, itemsByTask, modelId, pushToast, scenarioId, workspaceId]);
+  }, [activeTaskId, bridge, itemsByTask, modelId, mode, pushToast, scenarioId, workspaceId]);
 
   const prepareTaskWithText = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -1456,6 +1473,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onPermissionChange: setPermissionId,
       mode,
       onModeChange: setMode,
+      modeOptions: composerModeOptions({
+        approvalsReviewerAvailable: startup?.approvalsReviewerAvailable,
+        fullAccessAllowed: startup?.fullAccessAllowed,
+        fullAccessDisabledReason: startup?.fullAccessDisabledReason,
+      }),
       models,
       modelId,
       onModelChange: (id: string) => {
@@ -1526,6 +1548,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       steer,
       workspaceId,
       reportFailure,
+      startup,
     ],
   );
 

@@ -86,10 +86,13 @@ export function toProfileOptions(
   });
 }
 
-/** 工作模式 → 默认 profile（D8：Ask = 只读沙箱，不新增 ModeKind 枚举）。 */
-export const MODE_PROFILE: Readonly<Record<'craft' | 'plan' | 'ask', string>> = Object.freeze({
-  craft: 'evowork-workspace',
-  plan: 'evowork-plan',
+/** 工作模式 → 默认 profile（Q45：三项审批档；Ask 只留给 Q20 助理内部路径）。 */
+export const MODE_PROFILE: Readonly<
+  Record<'request-approval' | 'approve-for-me' | 'full-access' | 'ask', string>
+> = Object.freeze({
+  'request-approval': 'evowork-workspace',
+  'approve-for-me': 'evowork-workspace',
+  'full-access': 'evowork-full',
   ask: 'evowork-ask',
 });
 

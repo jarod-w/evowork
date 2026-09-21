@@ -36,7 +36,7 @@ export interface TaskRunner {
       readonly cwd?: string;
       readonly model?: string;
       readonly permissions?: string;
-      readonly modeId?: 'craft' | 'plan' | 'ask';
+      readonly modeId?: 'request-approval' | 'approve-for-me' | 'full-access';
     };
     readonly automationId?: string;
   }): Promise<{ threadId: string }>;
