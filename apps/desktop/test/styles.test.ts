@@ -368,13 +368,19 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
  * 「更多」菜单、「权限」下拉、账号页 Banner 都是这个。jsdom 量不出布局，钉在 CSS。
  */
 describe('中文在横向 flex 里不会按字折成一列', () => {
-  it('Popover 锚在触发器下方，不跟触发器抢同一行', () => {
+  it('Popover 用窗口坐标定位，并按可用空间向上/向下翻转', () => {
     const rule = /\.ew-popover\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
-    expect(rule).toContain('top: 100%');
-    expect(rule).toContain('left: 0');
-    const end = /\.ew-popover\[data-align='end'\]\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
-    expect(end).toContain('left: auto');
-    expect(end).toContain('right: 0');
+    expect(rule).toContain('position: fixed');
+    expect(rule).toContain('top: var(--ew-popover-anchor-y)');
+    expect(rule).toContain('left: var(--ew-popover-left)');
+    const top = /\.ew-popover\[data-side='top'\]\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(top).toContain('transform: translateY(-100%)');
+  });
+
+  it('Popover 内容在可视区域内限高滚动，菜单再长也不会丢掉末尾项', () => {
+    const rule = /\.ew-popover\s*>\s*\*\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(rule).toContain('max-height: var(--ew-popover-available-height)');
+    expect(rule).toContain('overflow-y: auto');
   });
 
   it('设置页显式 row，不被 .ew-page 的 column 盖掉（11 §4.4 两栏）', () => {

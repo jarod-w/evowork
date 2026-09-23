@@ -12,7 +12,15 @@
  * 但运行时会在开发期报出来（见 `assertDisabledHasReason`）。理由是权限档位这类项，
  * 用户需要知道"存在这一档但我不能选"，隐藏会让人以为产品没这个能力。
  */
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export interface MenuItemSpec {
   readonly id: string;
@@ -139,6 +147,87 @@ export function Popover({
   readonly align?: 'start' | 'end' | undefined;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+
+  /*
+   * 浮层不能永远 `top: 100%`：Composer 固定在窗口底部，审批档又有三行说明，
+   * 向下展开会直接被窗口裁掉。这里在同一个 Popover 里做边界碰撞处理，所以模型、
+   * 项目、插件、侧栏行操作等所有复用者一起得到修复，而不是给 Composer 写特例。
+   *
+   * 仍然不做 portal：DOM 归属与点外部关闭逻辑保持原样；只把视觉定位改成 viewport
+   * 坐标，并在滚动、缩放、窗口变化和菜单内容变化时重新测量。
+   */
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const popover = ref.current;
+    const anchor = popover?.parentElement;
+    if (!popover || !anchor) return undefined;
+
+    const readSpace = (name: string, fallback: number): number => {
+      const parsed = Number.parseFloat(
+        window.getComputedStyle(document.documentElement).getPropertyValue(name),
+      );
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    const reposition = (): void => {
+      const anchorRect = anchor.getBoundingClientRect();
+      const popoverRect = popover.getBoundingClientRect();
+      const content = popover.firstElementChild as HTMLElement | null;
+      const contentRect = content?.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+      const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+      const gap = readSpace('--space-4', 4);
+      const gutter = readSpace('--space-8', 8);
+      const naturalHeight = Math.max(
+        popoverRect.height,
+        contentRect?.height ?? 0,
+        content?.scrollHeight ?? 0,
+      );
+      const naturalWidth = Math.max(
+        popoverRect.width,
+        contentRect?.width ?? 0,
+        content?.scrollWidth ?? 0,
+      );
+      const spaceBelow = Math.max(0, viewportHeight - anchorRect.bottom - gap - gutter);
+      const spaceAbove = Math.max(0, anchorRect.top - gap - gutter);
+      const side = naturalHeight <= spaceBelow || spaceBelow >= spaceAbove ? 'bottom' : 'top';
+      const availableHeight = side === 'top' ? spaceAbove : spaceBelow;
+      const availableWidth = Math.max(0, viewportWidth - gutter * 2);
+      const renderedWidth = Math.min(naturalWidth, availableWidth);
+      const preferredLeft = align === 'end' ? anchorRect.right - renderedWidth : anchorRect.left;
+      const rightmostLeft = Math.max(gutter, viewportWidth - gutter - renderedWidth);
+      const left = Math.min(Math.max(preferredLeft, gutter), rightmostLeft);
+
+      popover.dataset.side = side;
+      popover.style.setProperty(
+        '--ew-popover-anchor-y',
+        `${side === 'top' ? anchorRect.top : anchorRect.bottom}px`,
+      );
+      popover.style.setProperty('--ew-popover-left', `${left}px`);
+      popover.style.setProperty('--ew-popover-available-height', `${availableHeight}px`);
+      popover.style.setProperty('--ew-popover-available-width', `${availableWidth}px`);
+      popover.style.setProperty('--ew-popover-anchor-width', `${anchorRect.width}px`);
+      popover.dataset.positioned = 'true';
+    };
+
+    reposition();
+    window.addEventListener('resize', reposition);
+    document.addEventListener('scroll', reposition, true);
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(() => {
+            reposition();
+          });
+    resizeObserver?.observe(anchor);
+    resizeObserver?.observe(popover);
+
+    return () => {
+      window.removeEventListener('resize', reposition);
+      document.removeEventListener('scroll', reposition, true);
+      resizeObserver?.disconnect();
+    };
+  }, [align, open]);
 
   useEffect(() => {
     if (!open) return undefined;

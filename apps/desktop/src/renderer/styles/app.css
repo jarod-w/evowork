@@ -1224,15 +1224,33 @@ textarea {
 /* ─────────────────────── Menu / Popover / InlineSelect（01 §5.14 / §5.15 / §5.19）─────────────────────── */
 
 .ew-popover {
-  position: absolute;
-  top: 100%;
-  left: 0;
+  position: fixed;
+  top: var(--ew-popover-anchor-y);
+  left: var(--ew-popover-left);
   z-index: var(--z-popover);
+  max-width: var(--ew-popover-available-width);
+  visibility: hidden;
+}
+.ew-popover[data-positioned='true'] {
+  visibility: visible;
+}
+.ew-popover[data-side='bottom'] {
   margin-top: var(--space-4);
 }
-.ew-popover[data-align='end'] {
-  left: auto;
-  right: 0;
+.ew-popover[data-side='top'] {
+  margin-top: calc(-1 * var(--space-4));
+  transform: translateY(-100%);
+}
+/*
+ * 任意 Popover 内容都必须留在窗口内。菜单过长时在浮层内部滚动，不能让最后几项
+ * 掉到窗口外；FilterPanel 也复用同一条边界。动态数值由 menu.tsx 根据锚点位置写入。
+ */
+.ew-popover > * {
+  box-sizing: border-box;
+  max-width: var(--ew-popover-available-width);
+  max-height: var(--ew-popover-available-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .ew-menu {
@@ -1333,7 +1351,7 @@ textarea {
  */
 .ew-model-menu {
   min-width: var(--layout-model-menu-min-width);
-  max-height: var(--layout-model-menu-max-height);
+  max-height: min(var(--layout-model-menu-max-height), var(--ew-popover-available-height));
   overflow-y: auto;
 }
 .ew-model-menu .ew-menu-item {
@@ -1445,8 +1463,7 @@ textarea {
 }
 /* 下拉与字段同宽：一个比字段窄的浮层看起来像挂在旁边的东西 */
 .ew-inline-select[data-field='true'] .ew-popover {
-  left: 0;
-  right: 0;
+  width: var(--ew-popover-anchor-width);
 }
 .ew-inline-select[data-field='true'] .ew-menu {
   width: 100%;
@@ -3816,12 +3833,9 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-secondary);
 }
 
-/* 用户菜单从左下角向上展开，保持在侧栏宽度内。 */
+/* 用户菜单由通用边界算法决定向上/向下，宽度仍与侧栏里的触发区域一致。 */
 .ew-user-menu-anchor .ew-popover {
-  top: auto;
-  bottom: 100%;
-  left: 0;
-  right: 0;
+  width: var(--ew-popover-anchor-width);
 }
 .ew-user-menu-anchor .ew-menu {
   width: 100%;
