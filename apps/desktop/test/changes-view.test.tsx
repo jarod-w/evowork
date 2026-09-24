@@ -36,6 +36,14 @@ describe('文件列表与 diff', () => {
     expect(screen.getByText(/1\.2\.3\.4/)).toBeTruthy();
   });
 
+  it('从时间线路由进来时直接选中对应文件的 diff', () => {
+    renderView({ selectedPath: '/etc/hosts' });
+    expect(screen.getByText(/1\.2\.3\.4/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /\/etc\/hosts/ }).getAttribute('data-selected')).toBe(
+      'true',
+    );
+  });
+
   it('范围与视图两个切换都用**浅色**分段控件（决定已装内容怎么看）', () => {
     renderView();
     const variants = [...document.querySelectorAll('.ew-segmented')].map((n) =>

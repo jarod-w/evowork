@@ -111,6 +111,7 @@ import type {
   TaskSearchHitView,
   TaskRowView,
   TaskResultsView,
+  TaskFilePreviewInput,
   QueuedInputView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
@@ -393,7 +394,8 @@ export interface ProjectPorts {
   readonly openFolder: (path: string) => Promise<void>;
   /** 读不到（不存在、没权限）返回 undefined —— 不要把它和空文件混为一谈 */
   readonly readTextFile: (path: string) => Promise<string | undefined>;
-  readonly readBinaryFile: (path: string) => Promise<Uint8Array | undefined>;
+  /** 超过 maxBytes 或不是普通文件时返回 undefined，避免预览动作把主进程内存撑满。 */
+  readonly readBinaryFile: (path: string, maxBytes: number) => Promise<Uint8Array | undefined>;
   readonly writeTextFile: (path: string, content: string) => Promise<void>;
 }
 
@@ -1597,10 +1599,45 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!artifact || !options.projectPorts) {
         return { name: '产物', kind: 'unsupported', message: '这个产物已经不存在。' };
       }
-      const bytes = await options.projectPorts.readBinaryFile(artifact.path);
+      const bytes = await options.projectPorts.readBinaryFile(artifact.path, PREVIEW_FILE_BYTES);
       return bytes
         ? previewFromBytes(artifact.path, artifact.title || basename(artifact.path), bytes)
         : { name: artifact.title, kind: 'unsupported', message: '文件现在读不到。' };
+    },
+
+    /**
+     * FileChange 的路径不是授权凭据。只以任务投影里的 cwd 为根读取，并在解析软链后
+     * 再检查一次真实路径，避免 `../`、绝对路径和工作区内软链逃逸。
+     */
+    async readTaskFilePreview(input: TaskFilePreviewInput): Promise<FilePreviewView> {
+      const name = basename(input.path) || '文件';
+      const ports = options.projectPorts;
+      const cwd = store.threads.get(input.threadId)?.cwd;
+      if (!ports || typeof cwd !== 'string' || cwd.trim() === '') {
+        return { name, kind: 'unsupported', message: '这个任务没有可读取的工作空间。' };
+      }
+
+      const realRoot = await realRootOf(ports, cwd);
+      if (!realRoot) {
+        return { name, kind: 'unsupported', message: '任务工作空间现在不可用。' };
+      }
+      const requested = resolve(realRoot, input.path);
+      const lexical = resolveChildPath(realRoot, requested, ports.home);
+      if (!lexical) {
+        return {
+          name,
+          kind: 'unsupported',
+          message: '为保护本机文件，只能预览任务工作空间内的文件。',
+        };
+      }
+      const real = await safeRealpath(ports, lexical);
+      if (!real || !isUnderRoot(realRoot, real, ports.home)) {
+        return { name, kind: 'unsupported', message: '文件不存在，或它指向任务工作空间之外。' };
+      }
+      const bytes = await ports.readBinaryFile(real, PREVIEW_FILE_BYTES);
+      return bytes
+        ? previewFromBytes(real, basename(real), bytes)
+        : { name: basename(real), kind: 'unsupported', message: '文件现在读不到。' };
     },
 
     async readProjectFilePreview(input: {
@@ -1620,7 +1657,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           message: '这个文件不在项目目录内。',
         };
       }
-      const bytes = await ports.readBinaryFile(real);
+      const bytes = await ports.readBinaryFile(real, PREVIEW_FILE_BYTES);
       return bytes
         ? previewFromBytes(real, basename(real), bytes)
         : { name: basename(real), kind: 'unsupported', message: '文件现在读不到。' };
@@ -2295,6 +2332,8 @@ function extensionOf(path: string): string | undefined {
 }
 
 const PREVIEW_TEXT_BYTES = 1_000_000;
+/** 图片/PDF 也以内存 data URL 预览；统一封顶，拒绝无界读盘。 */
+const PREVIEW_FILE_BYTES = 25_000_000;
 
 /** 本机文件预览：只读受信路径，HTML 由渲染层放进无脚本 sandbox。 */
 export function previewFromBytes(path: string, name: string, bytes: Uint8Array): FilePreviewView {

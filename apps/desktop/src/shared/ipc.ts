@@ -380,6 +380,17 @@ export interface FilePreviewView {
   readonly message?: string | undefined;
 }
 
+/**
+ * 从任务时间线打开一个文件变更。
+ *
+ * `path` 来自内核事件，仍是不可信输入；主进程必须用 `threadId` 找回权威 cwd，
+ * 再做规范化、realpath 与工作空间边界复核后才能读盘。
+ */
+export interface TaskFilePreviewInput {
+  readonly threadId: string;
+  readonly path: string;
+}
+
 /* ─────────────────── 三个目录式页面的数据（02 §1 的一级入口）─────────────────── */
 
 /**

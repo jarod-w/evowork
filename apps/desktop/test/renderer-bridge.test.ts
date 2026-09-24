@@ -171,6 +171,76 @@ describe('任务产物结果', () => {
   });
 });
 
+describe('FileChange 路径 → 安全读取 → 应用内预览', () => {
+  function storeWithTask(cwd: string | null = '/w/task'): Store {
+    const store = memoryStore();
+    store.db
+      .prepare(
+        `INSERT INTO thread_projection (thread_id, derived_status, cwd) VALUES (?, 'idle', ?)`,
+      )
+      .run('t1', cwd);
+    return store;
+  }
+
+  it('相对路径以任务 cwd 为根，并读取 realpath 复核后的文件', async () => {
+    const readBinaryFile = vi.fn(async () => new TextEncoder().encode('# 报告'));
+    const actions = makeActions({
+      store: storeWithTask(),
+      projectPorts: ports({ readBinaryFile }),
+    });
+
+    await expect(
+      actions.readTaskFilePreview({ threadId: 't1', path: 'out/report.md' }),
+    ).resolves.toEqual(
+      expect.objectContaining({ name: 'report.md', kind: 'text', content: '# 报告' }),
+    );
+    expect(readBinaryFile).toHaveBeenCalledWith('/w/task/out/report.md', 25_000_000);
+  });
+
+  it('拒绝 ../ 与工作空间外绝对路径，越界时根本不读盘', async () => {
+    const readBinaryFile = vi.fn(async () => new Uint8Array());
+    const actions = makeActions({
+      store: storeWithTask(),
+      projectPorts: ports({ readBinaryFile }),
+    });
+
+    for (const path of ['../secret.txt', '/Users/li/.ssh/config']) {
+      const preview = await actions.readTaskFilePreview({ threadId: 't1', path });
+      expect(preview.kind).toBe('unsupported');
+      expect(preview.message).toMatch(/只能预览任务工作空间内/);
+    }
+    expect(readBinaryFile).not.toHaveBeenCalled();
+  });
+
+  it('工作空间里的软链若实际指向外部，复核 realpath 后拒绝读取', async () => {
+    const readBinaryFile = vi.fn(async () => new Uint8Array());
+    const actions = makeActions({
+      store: storeWithTask(),
+      projectPorts: ports({
+        realpath: async (path) => (path === '/w/task/link.txt' ? '/Users/li/.ssh/config' : path),
+        readBinaryFile,
+      }),
+    });
+
+    const preview = await actions.readTaskFilePreview({ threadId: 't1', path: 'link.txt' });
+    expect(preview.kind).toBe('unsupported');
+    expect(preview.message).toMatch(/指向任务工作空间之外/);
+    expect(readBinaryFile).not.toHaveBeenCalled();
+  });
+
+  it('任务没有 cwd 时不把任意路径当成可读文件', async () => {
+    const readBinaryFile = vi.fn(async () => new Uint8Array());
+    const actions = makeActions({
+      store: storeWithTask(null),
+      projectPorts: ports({ readBinaryFile }),
+    });
+
+    const preview = await actions.readTaskFilePreview({ threadId: 't1', path: '/tmp/report.md' });
+    expect(preview.message).toMatch(/没有可读取的工作空间/);
+    expect(readBinaryFile).not.toHaveBeenCalled();
+  });
+});
+
 describe('添加本地文件', () => {
   it('未选项目时用当前任务的 cwd，不把选择器拦在打开之前', async () => {
     const store = memoryStore();
@@ -328,7 +398,9 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       channel: 'commandOutput',
       delta: Array.from({ length: 510 }, (_, index) => `line-${index}`).join('\n'),
     });
-    const output = (out[0] as { item: { output: string } }).item.output;
+    const event = out[0];
+    const output =
+      event?.type === 'item' && typeof event.item.output === 'string' ? event.item.output : '';
     expect(output.split('\n')).toHaveLength(500);
     expect(output).not.toContain('line-0\n');
     expect(output).toContain('line-509');

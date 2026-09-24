@@ -1010,6 +1010,17 @@ textarea {
   font-family: var(--font-mono);
   font-size: var(--font-caption-size);
 }
+.ew-change-path-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  text-align: left;
+  cursor: pointer;
+}
+.ew-change-path-button:hover {
+  text-decoration: underline;
+}
 
 .ew-generated-image {
   max-width: 100%;

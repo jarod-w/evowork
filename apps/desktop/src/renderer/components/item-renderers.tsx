@@ -53,6 +53,8 @@ export interface ItemRenderContext {
   /** 当前任务已索引的产物。正文里同名文件会变成可点开的入口。 */
   readonly artifacts?: readonly MarkdownArtifact[] | undefined;
   readonly onOpenArtifact?: ((id: string) => void) | undefined;
+  /** 新增文件打开安全预览；修改/删除文件打开对应 diff。 */
+  readonly onOpenChangedFile?: ((path: string, kind: string) => void) | undefined;
   /**
    * Visualizer 的三个可选依赖（04 §7）。
    *
@@ -560,7 +562,19 @@ export function ItemRenderer({
           <ul className="ew-change-list">
             {changes.map((change, index) => (
               <li key={index} data-change-kind={change.kind ?? 'modify'}>
-                <span className="ew-change-path">{change.path}</span>
+                {context.onOpenChangedFile ? (
+                  <button
+                    type="button"
+                    className="ew-change-path ew-change-path-button"
+                    onClick={() =>
+                      context.onOpenChangedFile?.(change.path, change.kind ?? 'modify')
+                    }
+                  >
+                    {change.path}
+                  </button>
+                ) : (
+                  <span className="ew-change-path">{change.path}</span>
+                )}
                 {change.added !== undefined || change.removed !== undefined ? (
                   <span className="ew-change-stat">
                     +{change.added ?? 0}/-{change.removed ?? 0}

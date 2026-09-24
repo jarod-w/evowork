@@ -319,6 +319,21 @@ describe('FileChange：**默认展开**，且带 +n/-m 统计（04 §5.2 #6）',
     expect(screen.getByText('/w/report.docx')).toBeTruthy();
     expect(screen.getByText('+12/-0')).toBeTruthy();
   });
+
+  it('文件路径是动作入口，并把变更类型原样交给路由层', () => {
+    const onOpenChangedFile = vi.fn();
+    renderItem(
+      {
+        id: 'i1',
+        type: 'fileChange',
+        changes: [{ path: 'out/report.md', kind: 'add' }],
+      },
+      { onOpenChangedFile },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'out/report.md' }));
+    expect(onOpenChangedFile).toHaveBeenCalledWith('out/report.md', 'add');
+  });
 });
 
 describe('Plan：三态步骤（04 §5.2 #4）', () => {

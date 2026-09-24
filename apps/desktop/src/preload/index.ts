@@ -75,6 +75,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'getTaskResults',
   'openResultFile',
   'readResultPreview',
+  'readTaskFilePreview',
   'readProjectFilePreview',
   'getComposerContext',
   'pickAttachments',

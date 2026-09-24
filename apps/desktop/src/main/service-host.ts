@@ -34,7 +34,7 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { lstat, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lstat, open as openFile, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 
@@ -1117,11 +1117,24 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           return undefined;
         }
       },
-      readBinaryFile: async (path) => {
+      readBinaryFile: async (path, maxBytes) => {
+        let file: Awaited<ReturnType<typeof openFile>> | undefined;
         try {
-          return await readFile(path);
+          file = await openFile(path, 'r');
+          const info = await file.stat();
+          if (!info.isFile() || info.size > maxBytes) return undefined;
+          const bytes = Buffer.alloc(info.size);
+          let offset = 0;
+          while (offset < bytes.byteLength) {
+            const chunk = await file.read(bytes, offset, bytes.byteLength - offset, offset);
+            if (chunk.bytesRead === 0) break;
+            offset += chunk.bytesRead;
+          }
+          return bytes.subarray(0, offset);
         } catch {
           return undefined;
+        } finally {
+          await file?.close().catch(() => undefined);
         }
       },
       writeTextFile: async (path, content) => {

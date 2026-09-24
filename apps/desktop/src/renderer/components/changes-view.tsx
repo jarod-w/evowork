@@ -14,7 +14,7 @@
  * 把这两句写死在组件里而不是交给调用方传文案，是因为这正是用户不敢点的地方：
  * 文案一旦由调用方拼，早晚会有一处拼反，而拼反的代价是用户丢文件。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { EmptyState, PillButton, SegmentedControl } from './primitives.js';
 
@@ -24,6 +24,7 @@ export interface ChangedFile {
   readonly removed: number;
   /** 统一 diff 文本（`turn/diff/updated` 的片段） */
   readonly diff: string;
+  readonly kind?: string | undefined;
   readonly outsideWorkspace?: boolean | undefined;
 }
 
@@ -50,6 +51,8 @@ export interface ChangesViewProps {
   readonly files: readonly ChangedFile[];
   readonly scope: DiffScope;
   readonly onScopeChange: (scope: DiffScope) => void;
+  /** 从时间线点某个修改/删除路径时，直接选中它的 diff。 */
+  readonly selectedPath?: string | undefined;
   readonly onRevert?: ((path: string) => void) | undefined;
   readonly onRollback?: ((path: string) => void) | undefined;
 }
@@ -63,6 +66,12 @@ export function ChangesView(props: ChangesViewProps) {
     () => props.files.find((f) => f.path === selected) ?? props.files[0],
     [props.files, selected],
   );
+
+  useEffect(() => {
+    if (props.selectedPath && props.files.some((file) => file.path === props.selectedPath)) {
+      setSelected(props.selectedPath);
+    }
+  }, [props.files, props.selectedPath]);
 
   if (props.files.length === 0) {
     return (

@@ -510,7 +510,9 @@ export function createEventRouter(options: EventRouterOptions) {
         // 未识别通知：记形状（不记正文）+ 让 UI 显示一行，绝不静默丢弃（R2 / 04 §5.2）
         store.recordUnknownEvent(method, params, now());
         const threadId =
-          params && typeof params === 'object' && typeof (params as { threadId?: unknown }).threadId === 'string'
+          params &&
+          typeof params === 'object' &&
+          typeof (params as { threadId?: unknown }).threadId === 'string'
             ? (params as { threadId: string }).threadId
             : undefined;
         onUiEvent({ type: 'unknown-event', method, ...(threadId ? { threadId } : {}) });

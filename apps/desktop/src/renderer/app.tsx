@@ -60,6 +60,7 @@ import type {
   TaskSearchHitView,
   TaskRowView,
   TaskResultsView,
+  TaskFilePreviewInput,
   WorkspaceView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
@@ -145,6 +146,7 @@ export interface EvoworkBridge {
   getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
   openResultFile(input: { artifactId: string }): Promise<void>;
   readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
+  readTaskFilePreview?(input: TaskFilePreviewInput): Promise<FilePreviewView>;
   readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
   getComposerContext?(input: { workspaceId?: string }): Promise<ComposerContextView>;
   pickAttachments?(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]>;
@@ -474,6 +476,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   >({});
   const [steer, setSteer] = useState(false);
   const [previewByTask, setPreviewByTask] = useState<Readonly<Record<string, FilePreviewView>>>({});
+  const [selectedChangeByTask, setSelectedChangeByTask] = useState<
+    Readonly<Record<string, string>>
+  >({});
   const [resultDismissed, setResultDismissed] = useState<Readonly<Record<string, boolean>>>({});
 
   const dismissToast = useCallback((id: string) => {
@@ -1530,12 +1535,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, [activeTaskId, bridge, currentItems, currentTurnId, pushToast, reportFailure]);
 
   const showPreview = useCallback(
-    async (load: () => Promise<FilePreviewView>) => {
+    async (load: () => Promise<FilePreviewView>, pane: ResultPane = 'artifacts') => {
       if (activeTaskId === null) return;
       try {
         const preview = await load();
         setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
-        updateResultUi({ open: true, tab: preview.kind === 'html' ? 'browser' : 'artifacts' });
+        updateResultUi({ open: true, tab: preview.kind === 'html' ? 'browser' : pane });
       } catch (error: unknown) {
         pushToast({
           tone: 'danger',
@@ -1555,6 +1560,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           .catch((error: unknown) => reportFailure(error, '打不开这个产物。'));
     },
     [bridge, reportFailure, showPreview],
+  );
+  const openChangedFile = useCallback(
+    (path: string, kind: string) => {
+      if (activeTaskId === null) return;
+      const threadId = activeTaskId;
+      if (kind !== 'add' || !bridge.readTaskFilePreview) {
+        setSelectedChangeByTask((previous) => ({ ...previous, [threadId]: path }));
+        updateResultUi({ open: true, tab: 'changes' });
+        return;
+      }
+      void showPreview(() => bridge.readTaskFilePreview!({ threadId, path }), 'files');
+    },
+    [activeTaskId, bridge, showPreview, updateResultUi],
   );
   const composer = useMemo(
     () => ({
@@ -2249,6 +2267,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
             artifacts: currentResults.artifacts,
             onOpenArtifact: openArtifact,
+            onOpenChangedFile: openChangedFile,
             onOpenSubAgent: (threadId) => {
               setActiveTaskId(threadId);
               setView('task');
@@ -2290,21 +2309,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 <EmptyState title="还没有产物" hint="任务生成的交付文件会出现在这里。" />
               ),
             files:
-              currentFiles.length > 0 ? (
+              currentFiles.length > 0 || (currentPreview && currentPreview.kind !== 'html') ? (
                 <div className="ew-result-preview-stack">
-                  <FileTree
-                    entries={currentFiles}
-                    ariaLabel="结果区项目文件"
-                    onFileOpen={(entry) => {
-                      if (activeProject && bridge.readProjectFilePreview)
-                        void showPreview(() =>
-                          bridge.readProjectFilePreview!({
-                            projectId: activeProject.id,
-                            path: entry.path,
-                          }),
-                        );
-                    }}
-                  />
+                  {currentFiles.length > 0 ? (
+                    <FileTree
+                      entries={currentFiles}
+                      ariaLabel="结果区项目文件"
+                      onFileOpen={(entry) => {
+                        if (activeProject && bridge.readProjectFilePreview)
+                          void showPreview(
+                            () =>
+                              bridge.readProjectFilePreview!({
+                                projectId: activeProject.id,
+                                path: entry.path,
+                              }),
+                            'files',
+                          );
+                      }}
+                    />
+                  ) : null}
                   {currentPreview && currentPreview.kind !== 'html' ? (
                     <FilePreview preview={currentPreview} />
                   ) : null}
@@ -2317,6 +2340,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 files={changedFiles}
                 scope={diffScope}
                 onScopeChange={setDiffScope}
+                selectedPath={selectedChangeByTask[activeTaskId]}
                 {...(currentTurnId !== undefined && bridge.revertTask
                   ? { onRollback: () => void rollbackCurrentTurn() }
                   : {})}
@@ -2749,6 +2773,7 @@ export function changedFilesFromItems(
         added: typeof raw.added === 'number' ? raw.added : 0,
         removed: typeof raw.removed === 'number' ? raw.removed : 0,
         diff: typeof raw.diff === 'string' ? raw.diff : itemDiff,
+        ...(typeof raw.kind === 'string' ? { kind: raw.kind } : {}),
         ...(raw.outsideWorkspace === true ? { outsideWorkspace: true } : {}),
       });
     }

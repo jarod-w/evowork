@@ -152,6 +152,11 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     openTask: vi.fn(async () => ({ items: [] })),
     getTaskResults: vi.fn(async () => ({ artifacts: [] })),
     openResultFile: vi.fn(async () => undefined),
+    readTaskFilePreview: vi.fn(async () => ({
+      name: 'file.txt',
+      kind: 'text' as const,
+      content: '',
+    })),
     getStartup: async () => STARTUP,
     listModels: vi.fn(async () => ({ models: MODELS })),
     applyModelAccess: vi.fn(async () => ({ models: MODELS })),
@@ -675,13 +680,50 @@ describe('结果工作区真实接线', () => {
 
     expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: /处理过程/ }));
-    fireEvent.click(await screen.findByRole('button', { name: '查看完整变更' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'report.md' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText(/-old/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
     fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('点击新增文件路径后按任务身份安全读取，并在应用内打开文件预览', async () => {
+    const readTaskFilePreview = vi.fn(async () => ({
+      name: 'report.md',
+      kind: 'text' as const,
+      content: '# 新增报告',
+    }));
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      readTaskFilePreview,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'item',
+      taskId: resultTask.id,
+      item: {
+        id: 'change-add',
+        type: 'fileChange',
+        completed: true,
+        changes: [{ path: 'out/report.md', kind: 'add', added: 1, removed: 0 }],
+      },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /处理过程/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'out/report.md' }));
+
+    await waitFor(() =>
+      expect(readTaskFilePreview).toHaveBeenCalledWith({
+        threadId: resultTask.id,
+        path: 'out/report.md',
+      }),
+    );
+    expect(screen.getByRole('tab', { name: '文件' }).getAttribute('aria-selected')).toBe('true');
+    expect(await screen.findByText('# 新增报告')).toBeTruthy();
   });
 });
 
