@@ -107,8 +107,12 @@ func identity(_ app: NSRunningApplication) -> String? {
         let matches = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []).filter { entry in
             guard entry[kCGWindowOwnerPID as String] as? Int32 == app.processIdentifier,
                   entry[kCGWindowLayer as String] as? Int == 0,
-                  let bounds = entry[kCGWindowBounds as String] as? CFDictionary,
-                  let rect = CGRect(dictionaryRepresentation: bounds) else { return false }
+                  let bounds = entry[kCGWindowBounds as String] as? [String: Any],
+                  let x = bounds["X"] as? NSNumber,
+                  let y = bounds["Y"] as? NSNumber,
+                  let width = bounds["Width"] as? NSNumber,
+                  let height = bounds["Height"] as? NSNumber else { return false }
+            let rect = CGRect(x: x.doubleValue, y: y.doubleValue, width: width.doubleValue, height: height.doubleValue)
             return abs(rect.origin.x - origin.x) < 1 && abs(rect.origin.y - origin.y) < 1 && abs(rect.width - size.width) < 1 && abs(rect.height - size.height) < 1
         }
         guard matches.count == 1, let number = matches[0][kCGWindowNumber as String] as? Int else { try fail("WINDOW_NOT_FOUND") }
