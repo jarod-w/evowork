@@ -1,12 +1,12 @@
 # 开发状态
 
-> **更新于 2026-09-24（第 52 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-24（第 53 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
-> **当前实现进度以本文末尾“Computer Use 第二批实现”为准**：已进入实现，尚不能启用；下列第 47–52 次记录为历史决策状态。
+> **第 53 次：电脑操控已部分实现，尚不能启用。** MCP/桌面接线、授权 UI 与删除 API 已接入；Helper 为未编译源码。剩余项与关闭条件统一见 [设计 12 §17](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24)。下列第 47–52 次为历史决策状态。
 
 > **第 52 次完成电脑操控产品决策**：CU-Q6 选择 A，Computer Use 对所有终端/命令行前端和
 > System Settings 整个 App 硬禁止，任何授权档不可覆盖；命令走受控 shell，系统设置交还用户。
@@ -254,7 +254,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P3.5-3** M10c 企业面 | 🟢 | **配额班级**（`quota_classes` + JWT `quotaClass`；每人覆盖仍走 `setQuota`；用尽不自动换模型）· **签名策略包**（identity ES256 签 payload 原文 · 密钥落库跨重启 · `GET /v1/policy-pack` · 桌面验签后写 `requirements.toml` · 超期只读 + 11 §8 原句）· WEB 管理端签发 / 班级 | 企业 OIDC SSO 不在本段（等客户 IdP）· 10 §7 本机安全能力页仍未做 · 生产发信仍是 stderr |
 
 | **P3.5-4** WEB 缺口收口 | 🟢 | **改密页** `/account/password`（调 `/v1/password`；`mustChangePassword` 时管理端只渲染改密；成功后 `/v1/me` 翻会话）· **成员行内动作**（设额度 / 分配班级 / 授予收回 admin；加人只按邮箱）· **策略包**可读 payload + 历史 + 撤销 · **身份面审计** · **管理端用量聚合**（Q43=A，不按天分组） | 分享页（Q41 / 第 25 条）跟分享上传走 · 企业私有源索引管理面等 Q44 |
-| **新增 · 电脑操控** | ⬜ | 设计完成，**CU-Q1–CU-Q6 全部确认**：macOS 14.4+、随包默认关闭、持久 App 授权、浏览器 CDP 优先、AX/截图随任务留存、终端/系统设置硬禁止 | **CU-M0–CU-M4 全部未实现**：原生 Helper、`cua_repl` MCP、应用授权与策略、browser 路由、留存/真实删除、硬禁止 App 识别、UI、签名打包及真机验收。Windows/Linux 驱动不在首版 |
+| **新增 · 电脑操控** | 🟡 | 协议/状态机、MCP/宿主接线、授权 UI、删除 API 已实现；Helper 源码与构建入口已加入 | **尚不可用**：原生编译/完整动作、可信上下文与企业策略、browser 回退、留存查看/完整删除、签名/TCC/实机验收待完成，见 [12 §17](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24)；Windows/Linux 不在首版 |
 
 图例：✅ 完成 · 🟢 核心完成，剩余项已列 · 🟡 部分 · ⬜ 未开始
 
@@ -653,14 +653,14 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **01 设计系统** | token/断点已改走工作台数值；侧栏拖动手柄未做（clamp 已接）· 应用图标仍是 Electron 默认 | `packages/tokens/src/palette.ts` · `app.css` · `bootstrap.ts` · `build/` |
 | **02 信息架构** | 通知中心与设备中心（接通前已隐藏）· deeplink `evowork://` | `app.tsx` · `sidebar.tsx` |
 | **03 首页与 Composer** | 语音 · 拖拽/粘贴附件 · 项目文件递归模糊候选 · 队列编辑/重排 · 除 `/清空`、`/新建任务` 外的本地命令 | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
-| **04 任务工作台** | C · 搜索高级筛选与单消息定位 · 队列编辑/重排 · 子任务侧滑未端到端（**§3.5 任务标题三来源已接通**，2026-09-13）· CU-Q5 要求的电脑操控留存提示/查看与真实删除未接；当前“删除”只移除投影记录 | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
+| **04 任务工作台** | C · 搜索高级筛选与单消息定位 · 队列编辑/重排 · 子任务侧滑未端到端（**§3.5 任务标题三来源已接通**，2026-09-13）· CU-Q5 的首次留存同意与删除 API 已接；内容查看/留存标记及真实 MCP blob、索引、导出/备份删除验收未完成（CU-R8/R9） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
 | **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 · CU-Q4 的 browser→Computer Use 路由、策略继承与受控回退未接 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx`；Computer Use 规格见 [12](design/12-computer-use.md) |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 分享 / 删除仍无宿主动作，当前均按真实能力隐藏 · §3.4 正文 FTS 未接，界面已明确只搜文件名 | `library.tsx` vs `app.tsx` |
 | **07 自动化** | `wake_system` 只有数据字段，没有 OS 唤醒钩子 · 从任务转自动化入口未接 · U3 仍待真机 | `automations.tsx` · `services/scheduler/README.md` |
 | **08 产物与解析** | D · OCR 档解析器与安装 · 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
-| **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· CU-Q5 的任务内容与结构化审计分离尚未实现 · 内部只读路径的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` · `composer.tsx` |
+| **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· Computer Use 审计已只写元数据；真实 AX/截图留存与删除闭环未验（CU-R8） · 内部只读路径的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` · `composer.tsx` |
 | **11 账号与模型**（WEB 侧，2026-09-20） | 分享页 `/s/<share-id>`（Q41，跟 D 同一切片；**不读账号会话、不带 `authorization` 头**，第 25 条尚无测试）· 企业私有源索引的管理面（**Q44 未决策 —— 原 Q 系列的唯一开放项**，推荐"只注册源、不托管内容"） | `apps/web/src/app.tsx` · 细则 [11 §13.10](design/11-account-and-models.md) |
-| **12 电脑操控** | **基础实施中，尚不可用。** 已有 11 工具 schema/入参校验、观测状态失效/预算、准入策略纯函数及 hook 临时拒绝闸门。Helper、MCP server、可信任务来源/授权接线、browser 回退、AX/截图留存/真实删除、动作执行/中断、UI、签名打包和真机矩阵均待实现。Windows/Linux 不在首版 | `services/computer-use/` · `services/policy/src/computer-use.ts`；默认关闭，未注册 MCP，现有 dmg 不含 Helper；规格见 [12](design/12-computer-use.md) |
+| **12 电脑操控** | **部分实现，发布关闭。** 剩余工作分为待实现与已有代码待验证，逐项见 [12 §17 的 CU-R1–CU-R11](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24)。不得以协议/宿主单测替代原生与签名实机验收 | `services/computer-use/` · `apps/computer-use-macos/` · 桌面 host/UI；`releaseVerified=false`，无可用工具 |
 
 **2026-09-24 电脑操控基础验证**：新增协议/状态机 21 项与准入/hook 10 项测试。`pnpm run check` 在沙箱外通过（1678 passed / 2 skipped；运行时安装 e2e 的既有条件跳过），许可检查通过，内核补丁仍为 0。沙箱内的子进程/loopback 测试曾因 `EPERM` 失败，沙箱外重跑通过；这不是 macOS Helper、TCC、真实删除或电脑操控端到端验收。另修复了已有权限文案表格的格式检查问题，许可清单仅同步当前内核提交号。
 
@@ -712,3 +712,5 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 - 验收脚本：`scripts/verify-computer-use-deletion.mjs`；原生限制见 `apps/computer-use-macos/README.md`。内核源码未修改。
 
 本批验证：`pnpm run check` 通过（1696 项通过，2 项运行时安装 e2e 条件跳过）；随后新增的 2 项授权 UI 测试与宿主测试共 26 项通过。Linux 构建及第三方许可检查通过；内核补丁 0。最后的缓存竞态/Helper 停止修复另补桌面类型检查与 lint；原生编译和实机验收不在这些结果中。
+
+剩余工作按 [设计 12 §17](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24) 的 CU-R1–CU-R11 跟踪；原生编译、双向认证、完整动作和存储删除为优先前置，所有发布阻塞项验收前保持关闭。
