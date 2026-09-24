@@ -534,6 +534,7 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 > `executeJavaScript` 取 `#root` 的 innerHTML 长度与 `typeof window.evowork` ——
 > 这两个数字直接区分开"JS 没加载"、"加载了但渲染为空"、"渲染了但 preload 桥没通"。
 | 装好的应用启动即报找不到内核 | `build/kernel/` 下的目录名写成了 `darwin-arm64`。`extraResources` 匹配不到时**不报错**，只拷一个空目录 | 用 `mac-arm64`（§5.2）；`pnpm run package` 会先拦这一条 |
+| 装到另一台 Mac 提示「已损坏，无法打开」，要把应用移到废纸篓 | 未签名包（U4）经 Chrome 下载会被打上隔离标记；`identity=null` 还会留下 Electron 残签，`spctl` 报 `code has no resources`。系统把这两件事说成「已损坏」 | 打包侧 `afterPack` 会补完整 ad-hoc 签名。对方机器仍要先清隔离：`xattr -cr /Applications/EvoWork.app`（或对着 dmg 同样做）。右键打开在新系统上不够。正式分发卡 P0-5 证书 |
 | 策略 hook 看起来没生效 | 忘了 vendor 步骤，hook 找不到实现会**放行并往 stderr 报错** | 跑 `pnpm run build`；真正的兜底在沙箱层，不在 hook 上 |
 
 ---

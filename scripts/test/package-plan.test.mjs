@@ -82,6 +82,12 @@ describe('签名：没有证书就产出未签名包（U4）', () => {
   it('Linux 不需要签名 secrets', () => {
     expect(planSigning({}, 'linux').sign).toBe(true);
   });
+
+  it('未签名降级把「已损坏」与 xattr 写进打包警告 —— 对方机器上那句不指向文件坏了', () => {
+    const plan = planSigning({}, 'mac');
+    expect(plan.message).toContain('已损坏');
+    expect(plan.message).toContain('xattr -cr');
+  });
 });
 
 describe('策略包的 vendor 步骤', () => {

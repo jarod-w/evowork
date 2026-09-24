@@ -85,6 +85,13 @@ describe('办公解析脚本会进主进程产物（M3）', () => {
   });
 });
 
+describe('未签名 mac 包会补 ad-hoc 签名（U4）', () => {
+  it('electron-builder 在打 dmg 前跑 afterPack —— 漏了别的 Mac 报「已损坏」', () => {
+    const yml = readFileSync(resolve(APP_ROOT, '../../build/electron-builder.yml'), 'utf8');
+    expect(yml).toContain('afterPack: ./scripts/after-pack.mjs');
+  });
+});
+
 describe('中文字体随基础包分发（R10 例外）', () => {
   it('electron-builder 把字体打进 extraResources —— 漏了客户点安装会去打 GitHub', () => {
     const yml = readFileSync(resolve(APP_ROOT, '../../build/electron-builder.yml'), 'utf8');

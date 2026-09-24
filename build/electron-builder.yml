@@ -52,6 +52,10 @@ extraResources:
   - from: build/office/NotoSansSC.ttf
     to: office/NotoSansSC.ttf
 
+# 未签名时 afterPack 会 ad-hoc 重签 .app（见 scripts/after-pack.mjs）。
+# 缺这一步，identity=null 留下的 Electron 残签会让别的 Mac 报「已损坏」。
+afterPack: ./scripts/after-pack.mjs
+
 mac:
   extraResources:
     - from: build/computer-use/EvoWork Computer Use.app

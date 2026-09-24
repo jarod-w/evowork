@@ -99,7 +99,7 @@ export function planSigning(env, platform) {
     // 标注必须进**文件名**，否则没人会注意到（U4 的替代方案原话是"产物标注未签名"）
     suffix: '-unsigned',
     missing,
-    message: `缺少 ${missing.join('、')}，本次产出未签名包（U4）。安装时系统会拦截，仅供内部验证。`,
+    message: `缺少 ${missing.join('、')}，本次产出未签名包（U4）。另一台 Mac 经浏览器下载后会提示「已损坏」，先 xattr -cr 清隔离标记；正式分发需要 Developer ID 与公证。`,
   };
 }
 
