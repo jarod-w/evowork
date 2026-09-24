@@ -370,6 +370,20 @@ describe('流式区的无障碍（01 §8.1）', () => {
   });
 });
 
+describe('流式输出跟随', () => {
+  it('同一个 item id 的正文增长时仍滚到底部', () => {
+    const first = [{ id: 'a1', type: 'agentMessage', text: '你' }];
+    const view = renderWorkspace({ items: first });
+    const scroller = view.container.querySelector('.ew-conversation-scroll') as HTMLDivElement;
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 640 });
+    scroller.scrollTop = 0;
+    view.rerender(
+      <TaskWorkspace {...view.props} items={[{ id: 'a1', type: 'agentMessage', text: '你好' }]} />,
+    );
+    expect(scroller.scrollTop).toBe(640);
+  });
+});
+
 describe('生成中的 Composer 定位', () => {
   it('输入框在滚动区外独立占位，流式内容增高不会把它上下推动', () => {
     const { container } = renderWorkspace({

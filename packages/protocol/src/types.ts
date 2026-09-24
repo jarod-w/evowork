@@ -434,7 +434,7 @@ export interface ThreadStatusChangedNotification {
 }
 export interface ThreadNameUpdatedNotification {
   readonly threadId: string;
-  readonly name?: string | null;
+  readonly threadName?: string | null;
 }
 export interface TurnStartedNotification {
   readonly threadId: string;

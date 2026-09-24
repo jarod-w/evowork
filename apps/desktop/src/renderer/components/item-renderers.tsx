@@ -375,6 +375,7 @@ function Divider({ kind, children }: { readonly kind: string; readonly children:
 
 const PLAN_STEP_LABEL: Readonly<Record<string, string>> = {
   pending: '待办',
+  inProgress: '进行中',
   in_progress: '进行中',
   completed: '已完成',
 };
@@ -508,7 +509,7 @@ export function ItemRenderer({
                     variant={
                       step.status === 'completed'
                         ? 'success'
-                        : step.status === 'in_progress'
+                        : step.status === 'inProgress' || step.status === 'in_progress'
                           ? 'info'
                           : 'neutral'
                     }
@@ -599,6 +600,9 @@ export function ItemRenderer({
             </>
           }
         >
+          {text(item, 'progress') ? (
+            <p className="ew-tool-progress">{text(item, 'progress')}</p>
+          ) : null}
           <pre className="ew-json">{JSON.stringify(item.arguments ?? {}, null, 2)}</pre>
         </Collapsible>
       );

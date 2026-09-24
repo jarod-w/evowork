@@ -377,7 +377,6 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     setLocalResultOpen(undefined);
   }, [props.taskId]);
 
-  const lastItemId = props.items.at(-1)?.id;
   const failureSummary = props.turnFailure?.summary;
   useEffect(() => {
     const node = conversationRef.current;
@@ -388,7 +387,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     } else {
       setHasNewContent(true);
     }
-  }, [props.items.length, lastItemId, props.pendingApprovals.length, failureSummary]);
+  }, [props.items, props.pendingApprovals.length, failureSummary]);
 
   const approvalsById = useMemo(
     () => new Map(props.pendingApprovals.map((a) => [a.id, a])),

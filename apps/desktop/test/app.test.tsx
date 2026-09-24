@@ -18,7 +18,14 @@ import type {
   RendererEvent,
   StartupInfo,
 } from '../src/shared/ipc.js';
-import { App, applyHistory, mergeItem, type EvoworkBridge } from '../src/renderer/app.js';
+import {
+  App,
+  applyHistory,
+  changedFilesFromItems,
+  lastUserMessageRequest,
+  mergeItem,
+  type EvoworkBridge,
+} from '../src/renderer/app.js';
 import { createRendererActions } from '../src/main/renderer-bridge.js';
 
 const STARTUP: StartupInfo = {
@@ -932,6 +939,54 @@ describe('流式增量按 id 合并（04 §5.1）', () => {
       { id: 'a1', type: 'agentMessage', text: '答（还在流）' },
       { id: 'a2', type: 'agentMessage', text: '刚到的一句' },
     ]);
+  });
+});
+
+describe('任务输出恢复', () => {
+  it('重试会无损带回 mention / skill / localImage 引用', () => {
+    expect(
+      lastUserMessageRequest([
+        {
+          id: 'u1',
+          type: 'userMessage',
+          content: [
+            { type: 'text', text: '分析这些材料' },
+            { type: 'mention', name: '表格', path: '/w/a.xlsx' },
+            { type: 'skill', name: 'spreadsheets', path: '/skills/spreadsheets' },
+            { type: 'localImage', path: '/w/chart.png' },
+          ],
+        },
+      ]),
+    ).toEqual({
+      text: '分析这些材料',
+      references: [
+        { type: 'mention', name: '表格', path: '/w/a.xlsx' },
+        { type: 'skill', name: 'spreadsheets', path: '/skills/spreadsheets' },
+        { type: 'localImage', name: 'chart.png', path: '/w/chart.png' },
+      ],
+    });
+  });
+
+  it('本回合 Changes 只取匹配 turnId 的文件，并用聚合 diff 补增量窗口', () => {
+    const files = changedFilesFromItems(
+      [
+        {
+          id: 'f1',
+          type: 'fileChange',
+          _turnId: 'old',
+          changes: [{ path: 'old.md', diff: '+old' }],
+        },
+        {
+          id: 'f2',
+          type: 'fileChange',
+          _turnId: 'new',
+          changes: [{ path: 'new.md', diff: '+new' }],
+        },
+      ],
+      'new',
+      'diff --git a/live.md b/live.md\n--- a/live.md\n+++ b/live.md\n@@ -0,0 +1 @@\n+live',
+    );
+    expect(files.map((file) => file.path)).toEqual(['new.md', 'live.md']);
   });
 });
 

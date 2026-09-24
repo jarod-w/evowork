@@ -189,10 +189,10 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
           : typeof raw.output === 'string'
             ? tailCommandOutput(raw.output)
             : '';
-      return { ...base, output } as RenderItemView;
+      return { ...base, output } as unknown as RenderItemView;
     }
     case 'functionCallOutput':
-      return { ...base, output: stringifyOutput(raw.output) } as RenderItemView;
+      return { ...base, output: stringifyOutput(raw.output) } as unknown as RenderItemView;
     case 'hookPrompt': {
       const fragments = Array.isArray(raw.fragments)
         ? raw.fragments.filter(
@@ -213,13 +213,13 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
         ...base,
         text: fragments.map((fragment) => fragment.text).join('\n\n'),
         hookName: hookNames.join(', '),
-      } as RenderItemView;
+      } as unknown as RenderItemView;
     }
     case 'sleep':
       return {
         ...base,
         ...(typeof raw.durationMs === 'number' ? { durationSeconds: raw.durationMs / 1000 } : {}),
-      } as RenderItemView;
+      } as unknown as RenderItemView;
     case 'imageGeneration': {
       const savedPath = typeof raw.savedPath === 'string' ? raw.savedPath : '';
       const result = typeof raw.result === 'string' ? raw.result : '';
@@ -227,7 +227,7 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
         ...base,
         path: savedPath || (result ? `data:image/png;base64,${result}` : ''),
         prompt: typeof raw.revisedPrompt === 'string' ? raw.revisedPrompt : '',
-      } as RenderItemView;
+      } as unknown as RenderItemView;
     }
     case 'subAgentActivity':
       return {
@@ -239,7 +239,7 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
             : typeof raw.kind === 'string'
               ? raw.kind
               : '',
-      } as RenderItemView;
+      } as unknown as RenderItemView;
     case 'collabAgentToolCall': {
       const receiver = Array.isArray(raw.receiverThreadIds)
         ? raw.receiverThreadIds.find((id): id is string => typeof id === 'string')
@@ -248,7 +248,7 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
         ...base,
         childThreadId: receiver ?? '',
         agentRole: typeof raw.tool === 'string' ? raw.tool : '',
-      } as RenderItemView;
+      } as unknown as RenderItemView;
     }
     case 'fileChange': {
       const changes = Array.isArray(raw.changes)
@@ -259,7 +259,7 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
             return { ...record, ...diffStats(diff) };
           })
         : [];
-      return { ...base, changes } as RenderItemView;
+      return { ...base, changes } as unknown as RenderItemView;
     }
     default:
       return base as RenderItemView;
@@ -725,11 +725,10 @@ export function createEventTranslator(store: Store, now: () => number) {
         const itemId = displayId(event.itemId);
         const held = streaming.get(itemId);
         if (!held) return [];
-        const item = {
-          ...held.item,
-          ...event.patch,
-          ...(event.turnId ? { _turnId: event.turnId } : {}),
-        };
+        const item = normalizeThreadItem(
+          { ...held.item, ...event.patch, id: itemId } as unknown as ThreadItem,
+          event.turnId,
+        ) as unknown as Record<string, unknown>;
         streaming.set(itemId, { ...held, item });
         return [{ type: 'item', taskId: held.taskId, item: item as unknown as RenderItemView }];
       }
@@ -1342,6 +1341,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return Promise.resolve();
     },
 
+    async revertTask(input: {
+      readonly threadId: string;
+      readonly beforeTurnId: string;
+    }): Promise<void> {
+      if (!input.threadId.trim() || !input.beforeTurnId.trim()) throw new Error('缺少要回滚的回合');
+      await adapter.revertTask(input.threadId, input.beforeTurnId);
+    },
+
     /** 行操作（04 §3.3）。任务的权威真源在内核，不能只改本地投影。 */
     async rowAction(input: RowActionInput): Promise<void> {
       if (input.action === 'archive') {
@@ -1372,15 +1379,32 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async openTask(input: OpenTaskInput): Promise<OpenTaskResult> {
       const threadId = input.threadId?.trim();
       if (!threadId) throw new Error('没有任务 id');
-      const { cached, items } = await adapter.openTask(threadId);
+      const { cached, items, latestTurn } = await adapter.openTask(threadId);
+      const turn = await latestTurn;
+      const turnFields = turn
+        ? {
+            latestTurnId: turn.id,
+            ...(turn.status === 'failed' && turn.error
+              ? {
+                  turnFailure: {
+                    message: turn.error.message,
+                    ...(turn.error.additionalDetails
+                      ? { details: turn.error.additionalDetails }
+                      : {}),
+                  },
+                }
+              : {}),
+          }
+        : {};
       try {
         const listed = await items;
-        return { items: listed.map(toHistoryItem) };
+        return { items: listed.map(toHistoryItem), ...turnFields };
       } catch (err: unknown) {
         const reason = err instanceof Error ? err.message : String(err);
         return {
           items: cached.map(digestToRenderItem),
           incomplete: `读不到这个任务的完整历史：${reason}`,
+          ...turnFields,
         };
       }
     },

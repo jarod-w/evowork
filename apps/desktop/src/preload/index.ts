@@ -55,6 +55,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'send',
   'setTaskMode',
   'interrupt',
+  'revertTask',
   'decideApproval',
   'rowAction',
   'refreshVisible',

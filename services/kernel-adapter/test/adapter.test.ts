@@ -477,6 +477,15 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     await adapter.interrupt(threadId);
     expect(server.received.map((r) => r.method)).toContain('turn/interrupt');
   });
+
+  it('对话回滚传 beforeTurnId，且不冒充磁盘文件撤销', async () => {
+    await adapter.start();
+    await adapter.revertTask('thread-1', 'turn-3');
+    expect(server.received.at(-1)).toMatchObject({
+      method: 'thread/revert',
+      params: { threadId: 'thread-1', beforeTurnId: 'turn-3' },
+    });
+  });
 });
 
 describe('任务列表与筛选（04 §3.4）', () => {
@@ -539,6 +548,26 @@ describe('任务列表与筛选（04 §3.4）', () => {
 });
 
 describe('打开任务（04 §9：< 300ms 出内容）', () => {
+  it('同时读取最近回合，让重启后仍能恢复失败原因与本回合范围', async () => {
+    await adapter.start();
+    server.handlers.set('thread/turns/list', () => ({
+      data: [
+        makeTurn({
+          id: 'turn-failed',
+          status: 'failed',
+          error: { message: '模型网关拒绝连接', additionalDetails: 'ECONNREFUSED' },
+        }),
+      ],
+      nextCursor: null,
+    }));
+    const { latestTurn } = await adapter.openTask('t1');
+    await expect(latestTurn).resolves.toMatchObject({
+      id: 'turn-failed',
+      status: 'failed',
+      error: { message: '模型网关拒绝连接' },
+    });
+  });
+
   it('先给缓存摘要，再用 thread/items/list 校正', async () => {
     await adapter.start();
     store.putItemDigest({
@@ -571,6 +600,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
       id: 'i1',
       type: 'agentMessage',
       text: '好的，我先读表头，然后分组计算',
+      _turnId: 'turn_1',
     });
   });
 
@@ -627,7 +657,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
         content: [{ type: 'text', text: '问题' }],
         _turnId: 'turn-1',
       },
-      { id: 'a1', type: 'agentMessage', text: '完整回答' },
+      { id: 'a1', type: 'agentMessage', text: '完整回答', _turnId: 'turn-1' },
     ]);
     expect(server.received).toEqual(
       expect.arrayContaining([
@@ -660,7 +690,12 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     const { items } = await adapter.openTask('t1');
 
     await expect(items).resolves.toEqual([
-      { id: 'a1', type: 'agentMessage', text: '恢复时已经拿到的完整回答' },
+      {
+        id: 'a1',
+        type: 'agentMessage',
+        text: '恢复时已经拿到的完整回答',
+        _turnId: 'turn-from-resume',
+      },
     ]);
     expect(server.received.filter((request) => request.method === 'thread/read')).toHaveLength(0);
   });

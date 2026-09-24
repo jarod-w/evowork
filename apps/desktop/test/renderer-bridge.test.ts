@@ -18,6 +18,8 @@ import {
   createEventTranslator,
   createRendererActions,
   fullAccessApprovalReply,
+  normalizeThreadItem,
+  tailCommandOutput,
   timeLabel,
   toTaskRow,
   type ProjectPorts,
@@ -279,6 +281,59 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
     ]);
   });
 
+  it('计划通知与随后到达的 plan item 合并成同一行', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(
+      translate({
+        type: 'plan-updated',
+        threadId: 't1',
+        turnId: 'turn1',
+        steps: [{ step: '读表头', status: 'pending' }],
+      })[0],
+    ).toMatchObject({ item: { id: 'turn-plan:turn1', steps: [{ step: '读表头' }] } });
+    expect(
+      translate({
+        type: 'item-started',
+        threadId: 't1',
+        turnId: 'turn1',
+        item: { id: 'wire-plan', type: 'plan', text: '先读表头' } as never,
+      })[0],
+    ).toMatchObject({
+      item: { id: 'turn-plan:turn1', text: '先读表头', steps: [{ step: '读表头' }] },
+    });
+  });
+
+  it('命令输出增量写入 output，并只保留尾部 500 行', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    translate({
+      type: 'item-started',
+      threadId: 't1',
+      item: {
+        id: 'cmd1',
+        type: 'commandExecution',
+        command: 'run',
+        aggregatedOutput: null,
+      } as never,
+    });
+    const out = translate({
+      type: 'item-delta',
+      threadId: 't1',
+      itemId: 'cmd1',
+      channel: 'commandOutput',
+      delta: Array.from({ length: 510 }, (_, index) => `line-${index}`).join('\n'),
+    });
+    const output = (out[0] as { item: { output: string } }).item.output;
+    expect(output.split('\n')).toHaveLength(500);
+    expect(output).not.toContain('line-0\n');
+    expect(output).toContain('line-509');
+  });
+
   it('没见过 item-started 的增量**不猜形状**，等 item-completed 给完整条目', () => {
     const translate = createEventTranslator(
       fakeStore(() => row()),
@@ -314,6 +369,12 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       }),
     ).toEqual([
       {
+        type: 'turn-completed',
+        taskId: 't1',
+        turnId: 'r1',
+        status: 'failed',
+      },
+      {
         type: 'turn-failed',
         taskId: 't1',
         message: '连不上模型网关',
@@ -329,10 +390,10 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
     );
     expect(
       translate({ type: 'turn-completed', threadId: 't1', turnId: 'r1', status: 'completed' }),
-    ).toEqual([]);
+    ).toEqual([{ type: 'turn-completed', taskId: 't1', turnId: 'r1', status: 'completed' }]);
     expect(
       translate({ type: 'turn-completed', threadId: 't1', turnId: 'r2', status: 'failed' }),
-    ).toEqual([]);
+    ).toEqual([{ type: 'turn-completed', taskId: 't1', turnId: 'r2', status: 'failed' }]);
   });
 
   /*
@@ -426,12 +487,13 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
         taskId: 't1',
         item: { id: 'r1', type: 'reasoning', completed: true, durationSeconds: 3 },
       },
+      { type: 'turn-completed', taskId: 't1', turnId: 'x', status: 'interrupted' },
     ]);
 
     // t2 还挂着（它属于另一个任务，可能正跑着）—— 再收一次也不该重复吐出 r1
     expect(
       translate({ type: 'turn-completed', threadId: 't1', turnId: 'y', status: 'completed' }),
-    ).toEqual([]);
+    ).toEqual([{ type: 'turn-completed', taskId: 't1', turnId: 'y', status: 'completed' }]);
   });
 
   it('失败的回合先收摊再报原因，两条都不丢', () => {
@@ -451,7 +513,7 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       status: 'failed',
       error: { message: '连不上模型网关' },
     });
-    expect(out.map((e) => e.type)).toEqual(['item', 'turn-failed']);
+    expect(out.map((e) => e.type)).toEqual(['item', 'turn-completed', 'turn-failed']);
   });
 
   it('第一条消息没有内核名字时，行标题回退到第一条消息', () => {
@@ -506,6 +568,57 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
   });
 });
 
+describe('真实 app-server wire item 的归一化', () => {
+  it('把命令、图片、hook、sleep、subagent 与函数输出翻成 UI 字段', () => {
+    expect(
+      normalizeThreadItem({
+        id: 'c1',
+        type: 'commandExecution',
+        command: 'pwd',
+        aggregatedOutput: '/work\n',
+        durationMs: 12,
+      } as never),
+    ).toMatchObject({ output: '/work\n', durationMs: 12 });
+    expect(
+      normalizeThreadItem({
+        id: 'g1',
+        type: 'imageGeneration',
+        revisedPrompt: '一只猫',
+        result: 'cG5n',
+      } as never),
+    ).toMatchObject({ prompt: '一只猫', path: 'data:image/png;base64,cG5n' });
+    expect(
+      normalizeThreadItem({
+        id: 'h1',
+        type: 'hookPrompt',
+        fragments: [{ text: '遵守策略', hookRunId: 'policy' }],
+      } as never),
+    ).toMatchObject({ text: '遵守策略', hookName: 'policy' });
+    expect(
+      normalizeThreadItem({ id: 's1', type: 'sleep', durationMs: 2500 } as never),
+    ).toMatchObject({ durationSeconds: 2.5 });
+    expect(
+      normalizeThreadItem({
+        id: 'a1',
+        type: 'subAgentActivity',
+        agentThreadId: 'child',
+        agentPath: 'reviewer',
+      } as never),
+    ).toMatchObject({ childThreadId: 'child', agentRole: 'reviewer' });
+    expect(
+      normalizeThreadItem({
+        id: 'f1',
+        type: 'functionCallOutput',
+        output: [{ type: 'text', text: 'ok' }],
+      } as never),
+    ).toMatchObject({ output: expect.stringContaining('"text": "ok"') });
+  });
+
+  it('tailCommandOutput 对短输出不改写', () => {
+    expect(tailCommandOutput('a\nb')).toBe('a\nb');
+  });
+});
+
 describe('时间戳只到"天"（01 §5.5）', () => {
   it('再细就要每分钟重渲染整张任务列表', () => {
     const now = 10 * 24 * 60 * 60_000;
@@ -539,6 +652,13 @@ describe('侧栏任务动作', () => {
 
     expect(adapter.archiveTask).toHaveBeenCalledWith('archived-1');
     expect(adapter.deleteTask).toHaveBeenCalledWith('deleted-1');
+  });
+
+  it('对话回滚把明确的 beforeTurnId 交给适配层', async () => {
+    const adapter = fakeAdapter({ revertTask: vi.fn(async () => undefined) });
+    const actions = makeActions({ adapter });
+    await actions.revertTask({ threadId: 't1', beforeTurnId: 'turn3' });
+    expect(adapter.revertTask).toHaveBeenCalledWith('t1', 'turn3');
   });
 });
 
@@ -764,6 +884,12 @@ describe('send：首页不创建 Thread（03 §1）', () => {
           },
           { id: 'a1', type: 'agentMessage' as const, text: '完整回答' },
         ]),
+        latestTurn: Promise.resolve({
+          id: 'turn-failed',
+          items: [],
+          status: 'failed' as const,
+          error: { message: '模型网关拒绝连接', additionalDetails: 'ECONNREFUSED' },
+        }),
       })),
     } as unknown as Adapter;
     const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
@@ -779,6 +905,10 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       { id: 'a1', type: 'agentMessage', text: '完整回答', completed: true },
     ]);
     expect(ok.incomplete).toBeUndefined();
+    expect(ok).toMatchObject({
+      latestTurnId: 'turn-failed',
+      turnFailure: { message: '模型网关拒绝连接', details: 'ECONNREFUSED' },
+    });
 
     adapter.openTask = vi.fn(async () => ({
       cached: [
@@ -792,6 +922,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
         },
       ],
       items: Promise.reject(new Error('connection refused')),
+      latestTurn: Promise.resolve(undefined),
     }));
     const fallback = await actions.openTask({ threadId: 't1' });
     expect(fallback.items).toEqual([

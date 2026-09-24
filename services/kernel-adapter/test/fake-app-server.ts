@@ -96,6 +96,8 @@ export class FakeAppServer {
       thread: makeThread({ id: String(ctx.params.threadId ?? 'thread_0') }),
     }));
     this.handlers.set('thread/items/list', () => ({ data: [] }));
+    this.handlers.set('thread/turns/list', () => ({ data: [], nextCursor: null }));
+    this.handlers.set('thread/revert', () => ({}));
     this.handlers.set('thread/read', (ctx) => ({
       thread: makeThread({ id: String(ctx.params.threadId ?? 'thread_0') }),
     }));

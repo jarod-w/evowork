@@ -5,8 +5,8 @@
  *
  * ## 撤销与回滚的二次确认必须说清"会不会动磁盘上的文件"
  *
- * 04 §6.3 对 `thread/revert` / `thread/rollback` 只写了"二次确认并说清影响范围"，
- * 而在 Q1=A（纯本地）下这句话有一个具体答案，且两个动作的答案不一样：
+ * 当前内核的 `thread/revert` 只回滚持久化对话，明确不碰本地文件。
+ * 磁盘级撤销只有调用方提供真实实现时才显示按钮；不能拿对话回滚冒充：
  *
  *   · **撤销某次变更** = 把那次文件改动从磁盘上退回去 → **会动磁盘**
  *   · **回滚到某个回合** = 把对话退回那一刻 → **只动对话，不碰磁盘**
@@ -123,12 +123,16 @@ export function ChangesView(props: ChangesViewProps) {
         <div className="ew-diff" data-layout={layout}>
           <pre className="ew-diff-body">{current.diff}</pre>
           <div className="ew-diff-actions">
-            <PillButton onClick={() => setConfirm({ kind: 'revert', path: current.path })}>
-              撤销这次变更
-            </PillButton>
-            <PillButton onClick={() => setConfirm({ kind: 'rollback', path: current.path })}>
-              回滚到这个回合
-            </PillButton>
+            {props.onRevert ? (
+              <PillButton onClick={() => setConfirm({ kind: 'revert', path: current.path })}>
+                撤销这次变更
+              </PillButton>
+            ) : null}
+            {props.onRollback ? (
+              <PillButton onClick={() => setConfirm({ kind: 'rollback', path: current.path })}>
+                回滚到这个回合
+              </PillButton>
+            ) : null}
           </div>
         </div>
       ) : null}

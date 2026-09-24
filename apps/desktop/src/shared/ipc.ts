@@ -350,6 +350,10 @@ export interface OpenTaskInput {
 
 export interface OpenTaskResult {
   readonly items: readonly RenderItemView[];
+  /** 最近回合；用于恢复“本回合”范围与失败原因，不把模型错误正文落进本机投影表。 */
+  readonly latestTurnId?: string | undefined;
+  readonly turnFailure?:
+    { readonly message: string; readonly details?: string | undefined } | undefined;
   /**
    * 权威列表没拉到时，items 是快显缓存（可能只有摘要），这条是给用户看的原因。
    * 没有这条 = 列表就是完整历史（哪怕长度为 0：这个任务真的还没有消息）。

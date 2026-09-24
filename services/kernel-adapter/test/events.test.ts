@@ -218,7 +218,8 @@ describe('09 §3.4 的分发表逐行', () => {
     router.handle(NOTIFICATION.turnPlanUpdated, {
       threadId: 't1',
       turnId: 'turn1',
-      steps: [{ step: '读表头', status: 'pending' }],
+      explanation: '先确认结构',
+      plan: [{ step: '读表头', status: 'pending' }],
     });
     expect(store.threads.get('t1')?.derived_status).toBe('planning');
     expect(ui.map((e) => e.type)).toContain('plan-updated');
@@ -230,7 +231,9 @@ describe('09 §3.4 的分发表逐行', () => {
       turnId: 'turn1',
       diff: 'x'.repeat(1000),
     });
-    expect(ui).toEqual([{ type: 'diff-updated', threadId: 't1', turnId: 'turn1' }]);
+    expect(ui).toEqual([
+      { type: 'diff-updated', threadId: 't1', turnId: 'turn1', diff: 'x'.repeat(1000) },
+    ]);
     // 库里没有任何 diff 的痕迹
     const dump = JSON.stringify(store.db.prepare('SELECT * FROM item_digest').all());
     expect(dump).not.toContain('xxxx');
@@ -261,6 +264,42 @@ describe('09 §3.4 的分发表逐行', () => {
     });
     const summary = store.readItemDigest('t1')[0]?.summary ?? '';
     expect(summary.length).toBeLessThanOrEqual(80);
+  });
+
+  it('userMessage 摘要读取真实 content，而不是不存在的 text 字段', () => {
+    router.handle(NOTIFICATION.itemCompleted, {
+      threadId: 't1',
+      turnId: 'turn1',
+      item: { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: '合并三张表' }] },
+    });
+    expect(store.readItemDigest('t1')[0]?.summary).toBe('合并三张表');
+  });
+
+  it('文件 patch 与 MCP 进度作为 item 更新上送，不等 completed 才显示', () => {
+    router.handle(NOTIFICATION.itemFileChangePatchUpdated, {
+      threadId: 't1',
+      turnId: 'turn1',
+      itemId: 'f1',
+      changes: [{ path: 'report.md', kind: 'update', diff: '+ok' }],
+    });
+    router.handle(NOTIFICATION.itemMcpToolCallProgress, {
+      threadId: 't1',
+      turnId: 'turn1',
+      itemId: 'm1',
+      message: '正在读取',
+    });
+    expect(ui).toEqual([
+      expect.objectContaining({
+        type: 'item-updated',
+        itemId: 'f1',
+        patch: { changes: expect.any(Array) },
+      }),
+      expect.objectContaining({
+        type: 'item-updated',
+        itemId: 'm1',
+        patch: { progress: '正在读取' },
+      }),
+    ]);
   });
 
   it('流式增量**不落库**，只发 UI（04 §5.1：按 item id 合并）', () => {
@@ -327,7 +366,7 @@ describe('未识别通知（R2 雷达 + 04 §5.2 最后一段）', () => {
     expect(rows[0]?.method).toBe('item/brandNewKind');
     expect(rows[0]?.shape).toBe('text:string|threadId:string');
     expect(JSON.stringify(rows)).not.toContain('鹏程');
-    expect(ui).toEqual([{ type: 'unknown-event', method: 'item/brandNewKind' }]);
+    expect(ui).toEqual([{ type: 'unknown-event', method: 'item/brandNewKind', threadId: 't1' }]);
   });
 
   it('一条坏通知不该让整个事件流停下来', () => {

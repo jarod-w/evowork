@@ -210,7 +210,9 @@ export function createAdapter(options: AdapterOptions) {
     onUnhandledNotification: (method, params) => {
       store.recordUnknownEvent(method, params, now());
       const threadId =
-        params && typeof params === 'object' && typeof (params as { threadId?: unknown }).threadId === 'string'
+        params &&
+        typeof params === 'object' &&
+        typeof (params as { threadId?: unknown }).threadId === 'string'
           ? (params as { threadId: string }).threadId
           : undefined;
       options.onUiEvent?.({ type: 'unknown-event', method, ...(threadId ? { threadId } : {}) });
@@ -759,6 +761,11 @@ export function createAdapter(options: AdapterOptions) {
       await session.peer.request(METHOD.turnInterrupt, { threadId });
     },
 
+    /** 把持久化对话截到某回合之前；内核明确保证它不改工作区文件。 */
+    async revertTask(threadId: string, beforeTurnId: string): Promise<void> {
+      await session.peer.request(METHOD.threadRevert, { threadId, beforeTurnId });
+    },
+
     /**
      * 打开任务（04 §9：< 300ms 出内容）。
      *
@@ -772,20 +779,31 @@ export function createAdapter(options: AdapterOptions) {
     async openTask(threadId: string): Promise<{
       readonly cached: ReturnType<Store['readItemDigest']>;
       readonly items: Promise<readonly ThreadItem[]>;
+      readonly latestTurn: Promise<Turn | undefined>;
     }> {
       session.openThreads.add(threadId);
       const cached = store.readItemDigest(threadId);
+      const resumed = session.peer
+        .request<ThreadResumeResponse>(METHOD.threadResume, { threadId })
+        .catch(() => undefined);
       const items = (async () => {
-        const resumed = await session.peer
-          .request<ThreadResumeResponse>(METHOD.threadResume, { threadId })
-          .catch(() => undefined);
+        const response = await resumed;
         return listAllThreadItemsWithFallback(
           (method, params) => session.peer.request(method, params),
           threadId,
-          resumed?.thread.turns,
+          response?.thread.turns,
         );
       })();
-      return { cached, items };
+      const latestTurn = session.peer
+        .request<{ readonly data?: readonly Turn[] }>(METHOD.threadTurnsList, {
+          threadId,
+          limit: 1,
+          sortDirection: 'desc',
+          itemsView: 'summary',
+        })
+        .then(async (response) => response.data?.[0] ?? (await resumed)?.thread.turns.at(-1))
+        .catch(async () => (await resumed)?.thread.turns.at(-1));
+      return { cached, items, latestTurn };
     },
 
     closeTask(threadId: string): void {

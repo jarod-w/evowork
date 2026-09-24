@@ -54,6 +54,12 @@ describe('文件列表与 diff', () => {
 });
 
 describe('撤销与回滚的二次确认（04 §6.3）', () => {
+  it('没有真实实现时不显示会确认后无响应的动作', () => {
+    renderView();
+    expect(screen.queryByRole('button', { name: '撤销这次变更' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '回滚到这个回合' })).toBeNull();
+  });
+
   it('**撤销说清会动磁盘**', () => {
     const onRevert = vi.fn();
     renderView({ onRevert });

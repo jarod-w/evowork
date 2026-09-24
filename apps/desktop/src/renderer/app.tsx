@@ -123,6 +123,7 @@ export interface EvoworkBridge {
     modeId: 'request-approval' | 'approve-for-me' | 'full-access';
   }): Promise<void>;
   interrupt(threadId: string): Promise<void>;
+  revertTask?(input: { threadId: string; beforeTurnId: string }): Promise<void>;
   decideApproval(input: {
     id: string;
     decision: ApprovalDecision;
@@ -458,6 +459,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     Readonly<Record<string, { readonly open: boolean; readonly tab: ResultPane }>>
   >({});
   const [diffScope, setDiffScope] = useState<DiffScope>('thread');
+  const [latestTurnByTask, setLatestTurnByTask] = useState<Readonly<Record<string, string>>>({});
+  const [turnDiffByTask, setTurnDiffByTask] = useState<
+    Readonly<Record<string, { readonly turnId: string; readonly diff: string }>>
+  >({});
   const [attachments, setAttachments] = useState<readonly ComposerAttachmentView[]>([]);
   const [references, setReferences] = useState<readonly ComposerReferenceView[]>([]);
   const [composerContext, setComposerContext] = useState<ComposerContextView>({
@@ -513,6 +518,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setResultUi(remove);
           setResultDismissed(remove);
           setTurnFailures(remove);
+          setLatestTurnByTask(remove);
+          setTurnDiffByTask(remove);
           setApprovals((previous) =>
             previous.filter((approval) => approval.threadId !== event.taskId),
           );
@@ -541,6 +548,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             [event.taskId]: {
               summary: event.details ? `${event.message}（${event.details}）` : event.message,
             },
+          }));
+          return;
+        }
+        if (event.type === 'turn-started' || event.type === 'turn-completed') {
+          setLatestTurnByTask((previous) => ({
+            ...previous,
+            [event.taskId]: event.turnId,
+          }));
+          return;
+        }
+        if (event.type === 'turn-diff') {
+          setTurnDiffByTask((previous) => ({
+            ...previous,
+            [event.taskId]: { turnId: event.turnId, diff: event.diff },
           }));
           return;
         }
@@ -840,10 +861,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .openTask({ threadId })
       .then((result) => {
         if (cancelled || deletedTaskIds.current.has(threadId)) return;
+        const latestTurnId =
+          result.latestTurnId ??
+          [...result.items].reverse().find((item) => typeof item._turnId === 'string')?._turnId;
+        if (typeof latestTurnId === 'string') {
+          setLatestTurnByTask((previous) => ({ ...previous, [threadId]: latestTurnId }));
+        }
         setItemsByTask((prev) => ({
           ...prev,
           [threadId]: applyHistory(prev[threadId] ?? [], result.items as readonly RenderItem[]),
         }));
+        setTurnFailures((previous) => {
+          const next = { ...previous };
+          if (result.turnFailure) {
+            next[threadId] = {
+              summary: result.turnFailure.details
+                ? `${result.turnFailure.message}（${result.turnFailure.details}）`
+                : result.turnFailure.message,
+            };
+          } else delete next[threadId];
+          return next;
+        });
         const incomplete = result.incomplete;
         if (incomplete) {
           setNotices((prev) => [...prev, { tone: 'warning', text: incomplete }]);
@@ -1307,9 +1345,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
 
   const retryCurrentTurn = useCallback(async () => {
     if (activeTaskId === null) return;
-    const text = lastUserMessageText(itemsByTask[activeTaskId] ?? []);
-    if (!text) {
-      pushToast({ tone: 'warning', text: '找不到上一条需求，请在输入框里重新发送。' });
+    const request = lastUserMessageRequest(itemsByTask[activeTaskId] ?? []);
+    if (!request) {
+      pushToast({
+        tone: 'warning',
+        text: '上一条需求含当前无法安全重放的输入，请在输入框里确认后重新发送。',
+      });
       return;
     }
     setTurnFailures((previous) => {
@@ -1320,7 +1361,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     try {
       await bridge.send({
         threadId: activeTaskId,
-        text,
+        text: request.text,
+        ...(request.references.length > 0 ? { references: request.references } : {}),
         scenarioId,
         ...(modelId !== undefined ? { modelId } : {}),
         ...(mode !== undefined ? { modeId: mode } : {}),
@@ -1415,7 +1457,23 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const currentFiles = activeTaskId === null ? [] : (taskFiles[activeTaskId] ?? []);
   const currentPreview = activeTaskId === null ? undefined : previewByTask[activeTaskId];
   const activeProject = startup?.workspaces.find((workspace) => workspace.path === active?.cwd);
-  const changedFiles = useMemo(() => changedFilesFromItems(currentItems), [currentItems]);
+  const reasoningAvailable =
+    models
+      .find((model) => model.id === modelId)
+      ?.capabilities.find((capability) => capability.id === 'reasoning')?.available ?? true;
+  const currentTurnId = activeTaskId === null ? undefined : latestTurnByTask[activeTaskId];
+  const currentTurnDiff = activeTaskId === null ? undefined : turnDiffByTask[activeTaskId];
+  const changedFiles = useMemo(
+    () =>
+      changedFilesFromItems(
+        currentItems,
+        diffScope === 'turn' ? currentTurnId : undefined,
+        diffScope === 'turn' && currentTurnDiff?.turnId === currentTurnId
+          ? currentTurnDiff?.diff
+          : undefined,
+      ),
+    [currentItems, currentTurnDiff, currentTurnId, diffScope],
+  );
   // 项目目录里的既有文件只是「文件」Tab 可浏览的数据，不是当前任务的结果信号。
   // 否则一发送消息、任务进入 processing，目录读取完成就会把结果区提前撑开。
   // 只有任务产物索引或本轮 FileChange 才能证明这次确实产生/修改了文件。
@@ -1437,6 +1495,39 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [activeTaskId, activeResultUi],
   );
+  const rollbackCurrentTurn = useCallback(async () => {
+    if (activeTaskId === null || currentTurnId === undefined || !bridge.revertTask) return;
+    const threadId = activeTaskId;
+    const beforeTurnId = currentTurnId;
+    const first = currentItems.findIndex((item) => item._turnId === beforeTurnId);
+    const retained = first < 0 ? currentItems : currentItems.slice(0, first);
+    const previousTurnId = [...retained]
+      .reverse()
+      .find((item) => typeof item._turnId === 'string')?._turnId;
+    try {
+      await bridge.revertTask({ threadId, beforeTurnId });
+      setItemsByTask((previous) => ({ ...previous, [threadId]: retained }));
+      setLatestTurnByTask((previous) => {
+        const next = { ...previous };
+        if (typeof previousTurnId === 'string') next[threadId] = previousTurnId;
+        else delete next[threadId];
+        return next;
+      });
+      setTurnDiffByTask((previous) => {
+        const next = { ...previous };
+        delete next[threadId];
+        return next;
+      });
+      setTurnFailures((previous) => {
+        const next = { ...previous };
+        delete next[threadId];
+        return next;
+      });
+      pushToast({ tone: 'success', text: '对话已回滚；磁盘文件没有改动。' });
+    } catch (error: unknown) {
+      reportFailure(error, '没能回滚这个回合。');
+    }
+  }, [activeTaskId, bridge, currentItems, currentTurnId, pushToast, reportFailure]);
 
   const showPreview = useCallback(
     async (load: () => Promise<FilePreviewView>) => {
@@ -2152,12 +2243,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .catch((error: unknown) => reportFailure(error, '没能提交这项审批。'))
           }
           itemContext={{
-            reasoningAvailable: true,
+            reasoningAvailable,
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
             mermaid: MERMAID,
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
             artifacts: currentResults.artifacts,
             onOpenArtifact: openArtifact,
+            onOpenSubAgent: (threadId) => {
+              setActiveTaskId(threadId);
+              setView('task');
+            },
           }}
           artifacts={currentResults.artifacts}
           onOpenArtifact={openArtifact}
@@ -2218,7 +2313,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 <EmptyState title="没有项目文件" hint="把任务放进项目后可在这里浏览根目录。" />
               ),
             changes: (
-              <ChangesView files={changedFiles} scope={diffScope} onScopeChange={setDiffScope} />
+              <ChangesView
+                files={changedFiles}
+                scope={diffScope}
+                onScopeChange={setDiffScope}
+                {...(currentTurnId !== undefined && bridge.revertTask
+                  ? { onRollback: () => void rollbackCurrentTurn() }
+                  : {})}
+              />
             ),
             browser:
               currentPreview?.kind === 'html' ? (
@@ -2550,18 +2652,43 @@ export function mergeItem(
   return next;
 }
 
-/** 重试只复用最近一条纯文本需求；结构化引用仍留在历史里，不猜测如何重新编码。 */
-export function lastUserMessageText(items: readonly RenderItem[]): string | undefined {
+function basename(path: string): string {
+  return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
+}
+
+/** 重试必须保留原需求的结构化引用；遇到不能无损重建的输入时明确拒绝自动重放。 */
+export function lastUserMessageRequest(
+  items: readonly RenderItem[],
+): { readonly text: string; readonly references: readonly ComposerReferenceView[] } | undefined {
   for (const item of [...items].reverse()) {
     if (item.type !== 'userMessage' || !Array.isArray(item.content)) continue;
-    const value = (item.content as { type?: string; text?: string }[])
-      .filter((part) => part.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text as string)
-      .join('\n')
-      .trim();
-    if (value) return value;
+    const texts: string[] = [];
+    const references: ComposerReferenceView[] = [];
+    let unsupported = false;
+    for (const raw of item.content as readonly Record<string, unknown>[]) {
+      if (raw.type === 'text' && typeof raw.text === 'string') texts.push(raw.text);
+      else if (
+        raw.type === 'mention' &&
+        typeof raw.name === 'string' &&
+        typeof raw.path === 'string'
+      )
+        references.push({ type: 'mention', name: raw.name, path: raw.path });
+      else if (raw.type === 'skill' && typeof raw.name === 'string' && typeof raw.path === 'string')
+        references.push({ type: 'skill', name: raw.name, path: raw.path });
+      else if (raw.type === 'localImage' && typeof raw.path === 'string')
+        references.push({ type: 'localImage', name: basename(raw.path), path: raw.path });
+      else unsupported = true;
+    }
+    const text = texts.join('\n').trim();
+    if (!unsupported && (text || references.length > 0)) return { text, references };
+    if (unsupported) return undefined;
   }
   return undefined;
+}
+
+/** 兼容只需要摘要文本的调用点；真正的重试走 `lastUserMessageRequest`。 */
+export function lastUserMessageText(items: readonly RenderItem[]): string | undefined {
+  return lastUserMessageRequest(items)?.text || undefined;
 }
 
 /**
@@ -2583,11 +2710,37 @@ export function applyHistory(
   return [...merged, ...live.filter((item) => !historyIds.has(item.id))];
 }
 
-/** 把时间线里的 FileChange 投影成完整变更视图；未知 diff 如实留空，不编造内容。 */
-export function changedFilesFromItems(items: readonly RenderItem[]): readonly ChangedFile[] {
+function changedFilesFromUnifiedDiff(diff: string): readonly ChangedFile[] {
+  if (!diff) return [];
+  const sections = diff.split(/(?=^diff --git )/m).filter(Boolean);
+  return sections.flatMap((section) => {
+    const gitHeader = section.match(/^diff --git a\/(.+?) b\/(.+)$/m);
+    const plusHeader = section.match(/^\+\+\+ (?:b\/)?(.+)$/m);
+    const path = gitHeader?.[2] ?? plusHeader?.[1];
+    if (!path || path === '/dev/null') return [];
+    let added = 0;
+    let removed = 0;
+    for (const line of section.split('\n')) {
+      if (line.startsWith('+') && !line.startsWith('+++')) added += 1;
+      if (line.startsWith('-') && !line.startsWith('---')) removed += 1;
+    }
+    return [{ path, added, removed, diff: section }];
+  });
+}
+
+/**
+ * 把时间线里的 FileChange 投影成完整变更视图。
+ * 指定 turnId 时只看该回合；聚合 diff 用来补足尚未收到 FileChange 完整快照的窗口。
+ */
+export function changedFilesFromItems(
+  items: readonly RenderItem[],
+  turnId?: string,
+  aggregateDiff?: string,
+): readonly ChangedFile[] {
   const files = new Map<string, ChangedFile>();
   for (const item of items) {
     if (item.type !== 'fileChange' || !Array.isArray(item.changes)) continue;
+    if (turnId !== undefined && item._turnId !== turnId) continue;
     const itemDiff = typeof item.diff === 'string' ? item.diff : '';
     for (const raw of item.changes as readonly Record<string, unknown>[]) {
       if (typeof raw.path !== 'string' || raw.path === '') continue;
@@ -2599,6 +2752,10 @@ export function changedFilesFromItems(items: readonly RenderItem[]): readonly Ch
         ...(raw.outsideWorkspace === true ? { outsideWorkspace: true } : {}),
       });
     }
+  }
+  for (const file of changedFilesFromUnifiedDiff(aggregateDiff ?? '')) {
+    const existing = files.get(file.path);
+    files.set(file.path, existing?.diff ? existing : file);
   }
   return [...files.values()];
 }
