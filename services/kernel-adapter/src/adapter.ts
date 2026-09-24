@@ -26,12 +26,15 @@ import {
   type ProjectDeleteParams,
   type ProjectUpdateParams,
   type Thread,
+  type ThreadGoal,
+  type ThreadGoalStatus,
   type ThreadItem,
   type ThreadItemEntry,
   type ThreadItemsListResponse,
   type ThreadListResponse,
   type ThreadReadResponse,
   type ThreadResumeResponse,
+  type ThreadSearchOccurrence,
   type ThreadStartResponse,
   type Turn,
   type TurnStartResponse,
@@ -128,6 +131,8 @@ export interface QueuedInput {
   readonly id: string;
   readonly input: readonly UserInput[];
 }
+
+export type { ThreadGoal, ThreadGoalStatus, ThreadSearchOccurrence };
 
 export interface AdapterOptions {
   readonly store: Store;
@@ -582,11 +587,28 @@ export function createAdapter(options: AdapterOptions) {
       return hits;
     },
 
-    async forkTask(threadId: string, lastTurnId?: string): Promise<string> {
+    async searchTaskOccurrences(
+      threadId: string,
+      searchTerm: string,
+    ): Promise<readonly ThreadSearchOccurrence[]> {
+      const term = searchTerm.trim();
+      if (!term) return [];
+      const response = await callExperimental<{
+        readonly data?: readonly ThreadSearchOccurrence[];
+      }>(
+        EXPERIMENTAL_METHOD.threadSearchOccurrences,
+        { threadId, searchTerm: term, limit: 100 },
+        () => ({ data: [] }),
+      );
+      return response.data ?? [];
+    },
+
+    async forkTask(threadId: string, lastTurnId?: string, ephemeral = false): Promise<string> {
       const response = await session.peer.request<{ readonly thread: Thread }>(METHOD.threadFork, {
         threadId,
         ...(lastTurnId ? { lastTurnId } : {}),
         excludeTurns: true,
+        ...(ephemeral ? { ephemeral: true } : {}),
       });
       store.threads.upsertFromThread(response.thread);
       session.openThreads.add(response.thread.id);
@@ -704,6 +726,47 @@ export function createAdapter(options: AdapterOptions) {
         () => ({ deleted: false }),
       );
       return response.deleted === true;
+    },
+
+    async updateQueuedInput(threadId: string, id: string, text: string): Promise<boolean> {
+      const input: readonly UserInput[] = [{ type: 'text', text }];
+      const local = localQueues.get(threadId) ?? [];
+      const localIndex = local.findIndex((entry) => entry.id === id);
+      if (localIndex >= 0) {
+        localQueues.set(
+          threadId,
+          local.map((entry, index) => (index === localIndex ? { ...entry, input } : entry)),
+        );
+        return true;
+      }
+      const response = await callExperimental<{ readonly queuedSubmission?: unknown } | false>(
+        EXPERIMENTAL_METHOD.threadQueueUpdate,
+        { threadId, queuedSubmissionId: id, input },
+        () => false,
+      );
+      return response !== false;
+    },
+
+    async reorderQueuedInputs(threadId: string, ids: readonly string[]): Promise<boolean> {
+      const local = localQueues.get(threadId) ?? [];
+      const localById = new Map(local.map((entry) => [entry.id, entry]));
+      const localIds = ids.filter((id) => localById.has(id));
+      if (localIds.length > 0) {
+        const mentioned = new Set(localIds);
+        localQueues.set(threadId, [
+          ...localIds.map((id) => localById.get(id)!).filter(Boolean),
+          ...local.filter((entry) => !mentioned.has(entry.id)),
+        ]);
+      }
+
+      const remoteIds = ids.filter((id) => !localById.has(id));
+      if (remoteIds.length === 0) return true;
+      const response = await callExperimental<{ readonly reordered?: boolean } | false>(
+        EXPERIMENTAL_METHOD.threadQueueReorder,
+        { threadId, queuedSubmissionIds: remoteIds },
+        () => false,
+      );
+      return response !== false && response.reordered !== false;
     },
 
     /**
@@ -828,9 +891,50 @@ export function createAdapter(options: AdapterOptions) {
       });
     },
 
-    /** 设定预算（Q11：用内核的 `ThreadGoal.budget`，不自建）。 */
+    async getGoal(threadId: string): Promise<ThreadGoal | undefined> {
+      const response = await session.peer.request<{ readonly goal?: ThreadGoal | null }>(
+        METHOD.threadGoalGet,
+        { threadId },
+      );
+      return response.goal ?? undefined;
+    },
+
+    async setGoal(
+      threadId: string,
+      changes: {
+        readonly objective?: string;
+        readonly status?: ThreadGoalStatus;
+        readonly tokenBudget?: number | null;
+      },
+    ): Promise<ThreadGoal | undefined> {
+      const response = await session.peer.request<{ readonly goal?: ThreadGoal }>(
+        METHOD.threadGoalSet,
+        { threadId, ...changes },
+      );
+      return response.goal;
+    },
+
+    async clearGoal(threadId: string): Promise<void> {
+      await session.peer.request(METHOD.threadGoalClear, { threadId });
+      store.threads.setTaskSettings(threadId, { budgetLimit: null });
+    },
+
+    /** 设定预算（Q11：用内核的 `ThreadGoal.tokenBudget`，不自建）。 */
     async setBudget(threadId: string, budget: number): Promise<void> {
-      await session.peer.request(METHOD.threadGoalSet, { threadId, budget });
+      const currentResponse = await session.peer.request<{ readonly goal?: ThreadGoal | null }>(
+        METHOD.threadGoalGet,
+        { threadId },
+      );
+      await session.peer.request(METHOD.threadGoalSet, {
+        threadId,
+        ...(!currentResponse.goal
+          ? {
+              objective: store.threads.get(threadId)?.first_message?.trim() || '完成当前任务',
+              status: 'active' as const,
+            }
+          : {}),
+        tokenBudget: budget,
+      });
       store.threads.setTaskSettings(threadId, { budgetLimit: budget });
     },
 

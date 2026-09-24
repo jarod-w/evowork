@@ -14,6 +14,7 @@
 import {
   NOTIFICATION,
   type Thread,
+  type ThreadGoal,
   type ThreadItem,
   type ThreadStatus,
   type ThreadTokenUsage,
@@ -92,6 +93,7 @@ export type UiEvent =
       readonly usage: ThreadTokenUsage;
     }
   | { readonly type: 'queue-changed'; readonly threadId: string }
+  | { readonly type: 'task-goal-changed'; readonly threadId: string; readonly goal?: ThreadGoal }
   | { readonly type: 'skills-changed' }
   | { readonly type: 'connectors-changed' }
   | { readonly type: 'projects-changed' }
@@ -391,6 +393,23 @@ export function createEventRouter(options: EventRouterOptions) {
       const p = params as { threadId?: string };
       if (!p.threadId) return [];
       onUiEvent({ type: 'queue-changed', threadId: p.threadId });
+      return [];
+    },
+
+    [NOTIFICATION.threadGoalUpdated]: (params) => {
+      const p = params as { threadId?: string; goal?: ThreadGoal };
+      const threadId = p.threadId ?? p.goal?.threadId;
+      if (!threadId || !p.goal) return [];
+      store.threads.setTaskSettings(threadId, { budgetLimit: p.goal.tokenBudget ?? null });
+      onUiEvent({ type: 'task-goal-changed', threadId, goal: p.goal });
+      return [{ kind: 'budget-check', threadId }];
+    },
+
+    [NOTIFICATION.threadGoalCleared]: (params) => {
+      const p = params as { threadId?: string };
+      if (!p.threadId) return [];
+      store.threads.setTaskSettings(p.threadId, { budgetLimit: null });
+      onUiEvent({ type: 'task-goal-changed', threadId: p.threadId });
       return [];
     },
 

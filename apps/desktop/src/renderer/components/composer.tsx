@@ -214,6 +214,8 @@ export interface ComposerProps {
   /** 04 §5.4 排队追问 */
   readonly queued?: readonly { readonly id: string; readonly text: string }[] | undefined;
   readonly onQueueRemove?: ((id: string) => void) | undefined;
+  readonly onQueueUpdate?: ((id: string, text: string) => void) | undefined;
+  readonly onQueueMove?: ((id: string, direction: -1 | 1) => void) | undefined;
   /** 04 §5.5「立即插话」：开启时走 `turn/steer` 而非入队。**默认排队** */
   readonly steer?: boolean | undefined;
   readonly onSteerChange?: ((steer: boolean) => void) | undefined;
@@ -221,6 +223,7 @@ export interface ComposerProps {
   /** 本机并发已满（Q11：3）→ 发送按钮变「排队中（前面 N 个）」 */
   readonly queuePosition?: number | undefined;
   readonly onAttach?: (() => void) | undefined;
+  readonly onFilesAdded?: ((files: readonly File[]) => void) | undefined;
   /** `+` 菜单中的已接通入口；未提供的动作不会显示。 */
   readonly onOpenLibrary?: (() => void) | undefined;
   readonly onOpenPlugins?: (() => void) | undefined;
@@ -353,9 +356,44 @@ export function Composer(props: ComposerProps) {
         <div className="ew-queue" aria-label="排队中的追问">
           <p className="ew-queue-title">排队中 ({(props.queued ?? []).length})</p>
           <ul className="ew-queue-list">
-            {(props.queued ?? []).map((q) => (
+            {(props.queued ?? []).map((q, index, queued) => (
               <li key={q.id}>
                 <span className="ew-queue-text">{q.text}</span>
+                {props.onQueueMove ? (
+                  <>
+                    <button
+                      type="button"
+                      className="ew-queue-remove"
+                      aria-label={`上移排队项：${q.text}`}
+                      disabled={index === 0}
+                      onClick={() => props.onQueueMove?.(q.id, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="ew-queue-remove"
+                      aria-label={`下移排队项：${q.text}`}
+                      disabled={index === queued.length - 1}
+                      onClick={() => props.onQueueMove?.(q.id, 1)}
+                    >
+                      ↓
+                    </button>
+                  </>
+                ) : null}
+                {props.onQueueUpdate ? (
+                  <button
+                    type="button"
+                    className="ew-queue-remove"
+                    aria-label={`编辑排队项：${q.text}`}
+                    onClick={() => {
+                      const next = window.prompt('编辑排队中的输入', q.text);
+                      if (next?.trim()) props.onQueueUpdate?.(q.id, next.trim());
+                    }}
+                  >
+                    ✎
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="ew-queue-remove"
@@ -370,7 +408,18 @@ export function Composer(props: ComposerProps) {
         </div>
       ) : null}
 
-      <div className="ew-composer-shell">
+      <div
+        className="ew-composer-shell"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          const files = [...event.dataTransfer.files];
+          if (files.length === 0) return;
+          event.preventDefault();
+          props.onFilesAdded?.(files);
+        }}
+      >
         <div className="ew-composer-input-card">
           {attachments.length > 0 ? (
             <>
@@ -423,6 +472,12 @@ export function Composer(props: ComposerProps) {
                 event.target.value,
                 event.target.selectionStart ?? event.target.value.length,
               );
+            }}
+            onPaste={(event) => {
+              const files = [...event.clipboardData.files];
+              if (files.length === 0) return;
+              event.preventDefault();
+              props.onFilesAdded?.(files);
             }}
             onKeyDown={(event) => {
               if (trigger && candidates.length > 0) {

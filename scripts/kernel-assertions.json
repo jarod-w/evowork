@@ -8,8 +8,8 @@
     "needle 找不到才算失败（BROKEN），那意味着断言本身可能已被上游推翻。"
   ],
   "baseline": {
-    "commit": "89a4eec6da",
-    "verifiedAt": "2026-09-05",
+    "commit": "d583e73c4d12",
+    "verifiedAt": "2026-09-24",
     "previousBaselines": [
       "728cb12fe5 (2026-09-03, 详细设计集 v0.1)",
       "1c1e17782a (2026-08-31, 总纲 v0.1)"
@@ -39,8 +39,8 @@
       "summary": "collaborationMode/list 返回硬编码 builtins（仅 plan + default），不读 config → 场景包必须自建",
       "file": "codex-rs/models-manager/src/collaboration_mode_presets.rs",
       "needle": "pub fn builtin_collaboration_mode_presets",
-      "line": 16,
-      "mustContain": ["vec![plan_preset(), default_preset()]"],
+      "line": 6,
+      "mustContain": ["mode: Some(ModeKind::Plan)", "mode: Some(ModeKind::Default)"],
       "impact": "总纲 §3.8（场景包 [自建]）· 设计 03 §2.3 · 09 §3.3"
     },
     {

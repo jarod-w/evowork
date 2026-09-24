@@ -20,6 +20,8 @@
 import { LAYOUT } from '@evowork/tokens';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { TaskGoalView } from '../../shared/ipc.js';
+
 import {
   ApprovalCard,
   PendingApprovalBar,
@@ -218,9 +220,11 @@ export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
 function ProcessGroup({
   items,
   context,
+  focusItemId,
 }: {
   readonly items: readonly RenderItem[];
   readonly context: ItemRenderContext;
+  readonly focusItemId?: string | undefined;
 }) {
   const visibleItems = items.filter(
     (item) =>
@@ -230,7 +234,8 @@ function ProcessGroup({
   const running = visibleItems.some((item) => item.completed !== true);
   /** undefined = 跟随运行态（生成中展开、完成后收起）；boolean = 用户点过。 */
   const [userExpanded, setUserExpanded] = useState<boolean | undefined>(undefined);
-  const expanded = userExpanded ?? running;
+  const expanded =
+    userExpanded ?? (running || visibleItems.some((item) => item.id === focusItemId));
   if (visibleItems.length === 0) return null;
   const summary = summarizeProcess(visibleItems);
   const itemContext: ItemRenderContext = { ...context, nestedInProcessGroup: true };
@@ -259,7 +264,9 @@ function ProcessGroup({
       {expanded ? (
         <div className="ew-item-body ew-process-body">
           {visibleItems.map((item) => (
-            <ItemRenderer key={item.id} item={item} context={itemContext} />
+            <div key={item.id} data-task-item-id={item.id}>
+              <ItemRenderer item={item} context={itemContext} />
+            </div>
           ))}
         </div>
       ) : null}
@@ -303,6 +310,13 @@ export interface TaskWorkspaceProps {
    */
   readonly composer?: React.ReactNode | undefined;
   readonly onNewTask?: (() => void) | undefined;
+  readonly goal?: TaskGoalView | undefined;
+  readonly onGoalSave?:
+    ((input: { objective: string; tokenBudget?: number | null }) => void) | undefined;
+  readonly onGoalStatus?: ((status: TaskGoalView['status']) => void) | undefined;
+  readonly onGoalClear?: (() => void) | undefined;
+  readonly onFork?: ((ephemeral: boolean) => void) | undefined;
+  readonly focusItemId?: string | undefined;
   readonly artifacts?: readonly {
     readonly id: string;
     readonly name: string;
@@ -340,6 +354,15 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [visibleCount, setVisibleCount] = useState(TIMELINE_PAGE_SIZE);
   const [hasNewContent, setHasNewContent] = useState(false);
   const [resultWidth, setResultWidth] = useState<number | undefined>(undefined);
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [goalObjective, setGoalObjective] = useState(props.goal?.objective ?? '');
+  const [goalBudget, setGoalBudget] = useState(
+    props.goal?.tokenBudget == null ? '' : String(props.goal.tokenBudget),
+  );
+  const parsedGoalBudget = goalBudget === '' ? null : Number(goalBudget);
+  const goalCanSave =
+    goalObjective.trim() !== '' &&
+    (parsedGoalBudget === null || (Number.isFinite(parsedGoalBudget) && parsedGoalBudget > 0));
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const resultTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -376,6 +399,27 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     setHasNewContent(false);
     setLocalResultOpen(undefined);
   }, [props.taskId]);
+
+  useEffect(() => {
+    setGoalObjective(props.goal?.objective ?? '');
+    setGoalBudget(props.goal?.tokenBudget == null ? '' : String(props.goal.tokenBudget));
+  }, [props.goal]);
+
+  useEffect(() => {
+    for (const node of document.querySelectorAll<HTMLElement>('[data-search-focus]')) {
+      node.removeAttribute('data-search-focus');
+    }
+    if (!props.focusItemId) return;
+    const index = props.items.findIndex((item) => item.id === props.focusItemId);
+    if (index >= 0) setVisibleCount(Math.max(TIMELINE_PAGE_SIZE, props.items.length - index));
+    window.setTimeout(() => {
+      const target = [...document.querySelectorAll<HTMLElement>('[data-task-item-id]')].find(
+        (node) => node.dataset.taskItemId === props.focusItemId,
+      );
+      target?.scrollIntoView({ block: 'center' });
+      target?.setAttribute('data-search-focus', 'true');
+    }, 0);
+  }, [props.focusItemId, props.items]);
 
   const failureSummary = props.turnFailure?.summary;
   useEffect(() => {
@@ -433,6 +477,29 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           </>
         ) : null}
         <div className="ew-title-bar-actions">
+          {props.onGoalSave ? (
+            <button
+              type="button"
+              className="ew-pill-button"
+              onClick={() => setGoalOpen((value) => !value)}
+            >
+              {props.goal ? '目标与预算' : '设置目标'}
+            </button>
+          ) : null}
+          {props.onFork ? (
+            <>
+              <button
+                type="button"
+                className="ew-pill-button"
+                onClick={() => props.onFork?.(false)}
+              >
+                分叉
+              </button>
+              <button type="button" className="ew-pill-button" onClick={() => props.onFork?.(true)}>
+                旁聊
+              </button>
+            </>
+          ) : null}
           {props.hasResults || props.resultPanel ? (
             <button
               ref={resultTriggerRef}
@@ -446,6 +513,53 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           ) : null}
         </div>
       </header>
+
+      {goalOpen ? (
+        <section className="ew-task-goal" aria-label="长任务目标">
+          <input
+            aria-label="任务目标"
+            value={goalObjective}
+            placeholder="这个长任务最终要完成什么？"
+            onChange={(event) => setGoalObjective(event.target.value)}
+          />
+          <input
+            aria-label="Token 预算"
+            type="number"
+            min={1}
+            value={goalBudget}
+            placeholder="Token 预算（可选）"
+            onChange={(event) => setGoalBudget(event.target.value)}
+          />
+          <PillButton
+            variant="accent"
+            disabled={!goalCanSave}
+            onClick={() =>
+              props.onGoalSave?.({
+                objective: goalObjective.trim(),
+                tokenBudget: parsedGoalBudget,
+              })
+            }
+          >
+            保存
+          </PillButton>
+          {props.goal ? (
+            <>
+              <span>
+                {props.goal.tokensUsed.toLocaleString()} tokens · {props.goal.timeUsedSeconds}s ·{' '}
+                {props.goal.status}
+              </span>
+              <PillButton
+                onClick={() =>
+                  props.onGoalStatus?.(props.goal?.status === 'paused' ? 'active' : 'paused')
+                }
+              >
+                {props.goal.status === 'paused' ? '继续' : '暂停'}
+              </PillButton>
+              <PillButton onClick={props.onGoalClear}>清除目标</PillButton>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="ew-workspace-body">
         <main className="ew-conversation" aria-label="对话区">
@@ -510,9 +624,16 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
 
               {timeline.map((entry) =>
                 entry.kind === 'item' ? (
-                  <ItemRenderer key={entry.item.id} item={entry.item} context={props.itemContext} />
+                  <div key={entry.item.id} data-task-item-id={entry.item.id}>
+                    <ItemRenderer item={entry.item} context={props.itemContext} />
+                  </div>
                 ) : (
-                  <ProcessGroup key={entry.key} items={entry.items} context={props.itemContext} />
+                  <ProcessGroup
+                    key={entry.key}
+                    items={entry.items}
+                    context={props.itemContext}
+                    focusItemId={props.focusItemId}
+                  />
                 ),
               )}
 

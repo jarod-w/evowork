@@ -203,6 +203,33 @@ describe('包装层：不依赖办公扩展', () => {
     await parser.parse({ kind: 'xlsx', absolutePath: original, timeoutMs: 10_000 });
     expect(readFileSync(seen, 'utf8')).toBe(String(MARKDOWN_ROW_LIMIT));
   });
+
+  it('预览模式把解包资源写进临时目录，不污染源文件旁边', async () => {
+    const original = join(dir, 'original.docx');
+    writeFileSync(original, minimalDocx());
+    const seen = join(dir, 'out-dir.txt');
+    const stub = writeStub(
+      'preview.py',
+      [
+        'import argparse, json',
+        'from pathlib import Path',
+        'p = argparse.ArgumentParser()',
+        "p.add_argument('--kind'); p.add_argument('--input'); p.add_argument('--out-dir')",
+        "p.add_argument('--result'); p.add_argument('--row-limit')",
+        'args = p.parse_args()',
+        `Path(${JSON.stringify(seen)}).write_text(args.out_dir)`,
+        'Path(args.result).write_text(json.dumps({"markdown":"x","meta":{"parser":"office-docx","parserVersion":"1","chars":1,"tables":0,"confidence":1},"assets":[]}))',
+      ].join('\n'),
+    );
+    const parser = createOfficeParser({
+      interpreter: 'python3',
+      scriptPath: stub,
+      assetOutput: 'temporary',
+    });
+    await parser.parse({ kind: 'docx', absolutePath: original, timeoutMs: 10_000 });
+    expect(readFileSync(seen, 'utf8')).not.toBe(dirname(original));
+    expect(readFileSync(seen, 'utf8')).toContain('evowork-office-parse-');
+  });
 });
 
 describe('真解析：装了扩展就出正文，没装就承认没解出来', () => {

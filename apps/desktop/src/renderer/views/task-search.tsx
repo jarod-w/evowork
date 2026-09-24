@@ -39,7 +39,7 @@ export function TaskSearchPalette(props: {
   readonly tasks: readonly TaskRowView[];
   readonly workspaces: readonly WorkspaceView[];
   readonly onSearch: (query: string) => Promise<readonly TaskSearchHitView[]>;
-  readonly onOpenTask: (id: string) => void;
+  readonly onOpenTask: (id: string, query?: string) => void;
   readonly onNewChat: () => void;
   readonly onOpenFolder: () => void;
   readonly onSearchFiles: () => void;
@@ -114,7 +114,7 @@ export function TaskSearchPalette(props: {
       const chat = chats[index];
       if (chat) {
         props.onClose();
-        props.onOpenTask(chat.task.id);
+        props.onOpenTask(chat.task.id, query.trim() || undefined);
         return;
       }
       const action = QUICK_ACTIONS[index - chats.length];

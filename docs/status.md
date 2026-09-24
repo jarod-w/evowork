@@ -226,7 +226,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | 测试 | **1703 个通过、2 个跳过**（2026-09-24 实测，112 个文件，其中 1 个文件因联网 e2e 条件跳过）。跳过的是 runtime-installer 的两条联网端到端安装测试。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
 | 源码 | 约 35.8k 行（不含测试）+ 20.0k 行测试 |
 | 内核补丁 | **0 个文件 / 0 行**（预算 5 / 500）—— 设计判定只剩 P4 品牌字符串一项待落 |
-| 内核基线 | 断言基线 `89a4eec6da`（2026-09-04，F1–F16 的 17 条机器断言在此复核）。**本机实际签出已是 `7769bccbb2`（2026-09-07），领先 89 个提交**；2026-09-09 `kernel-drift --no-fetch` 跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3/F7/F8/F14/F16 行号漂了，断言没坏）。F17–F25 九条只在设计集 README §4 里，**没进 `kernel-assertions.json`** |
+| 内核基线 | 断言基线 `d583e73c4d12`（2026-09-24）。本轮已重新核对 Goal（`tokenBudget` + 6 状态）、Queue update/reorder、searchOccurrences 与 `thread/goal/cleared`；F3 检测器也已跟随上游实现重写，不再把“仍只有 Plan + Default”误报为断言破坏。F17–F25 九条仍只在设计集 README §4 里，待后续纳入机器断言。 |
 
 ---
 
@@ -614,7 +614,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 1. ~~P2-1 M3~~ **已完成**（2026-09-05）。Q22「第 12 周内测」的交付面（M0 + M1 + M2a + M2 + M3）至此在代码层面齐了 —— 缺的是 U1 的人工评分。
 2. ~~P2-2 M4~~ **核心已完成**（2026-09-05）。剩 Windows 隔离结论（U5，需真机）。策略包签名下发（R11）已随 M10c 落地。
 3. ~~P3-1 M5~~ **核心与产品入口均已完成**（2026-09-13）：直接创建、编辑、暂停/恢复、删除、迁移、试跑和立即运行已接权威表与调度器。剩 `wake_system`、从任务转自动化和 U3 真机体验。
-4. ~~P3-3 M8~~ **核心与任务结果预览已完成**（2026-09-24）。mermaid、资料库三栏、时间线产物卡及文本/图片/PDF/HTML 本机只读预览均已落地；`FileChange` 新增路径可点击，并在以任务真实 `cwd` 为边界、复核软链后进入应用内预览，修改/删除路径进入对应 diff。剩分享的宿主接线与云端端点（Q41 分享页随分享上传，不在 M10b），以及资料库的资料树 / 删除 / 分享数据接线。
+4. ~~P3-3 M8~~ **核心与任务结果预览已完成**（2026-09-24）。mermaid、资料库三栏、时间线产物卡、文本/源码/Markdown/Office/图片/PDF/HTML 本机只读预览与文本批注均已落地；`FileChange` 路径可点击，并在以任务真实 `cwd` 为边界、复核软链后进入应用内预览或 diff。剩分享的宿主接线与云端端点，以及资料库的资料树 / 删除 / 分享数据接线。
 5. ~~P3-2 M9 打包~~ **macOS 侧已跑通**（2026-09-06）。剩签名公证（卡 P0-5 证书，U4）、应用图标、以及 Windows / Linux 的真机打包。
 6. ~~P3.5-1 M10a 模型管理~~ **已完成并用真实 DeepSeek key 实测**（2026-09-08，四段结论见 §3）。§4 的第一个卡住项就此关闭。**剩下一条未证伪的断言（U6）**：`safeStorage` 本身没验过 —— 那次实测跑在 headless、无 keyring 的机器上，走的是"不可用 → 用户显式选明文"分支（**该分支行为完全符合设计**）。要验的三件事只有真机能给：① macOS 首次加密会不会弹钥匙串授权框、② 换 OS 账号后解密失败的表现是不是"请重新填密钥"而不是崩、③ 一台**真的没有 keyring 的 Linux** 上 `isEncryptionAvailable()` 与 `getSelectedStorageBackend()` 到底返回什么（我们按 `basic_text` = 不可用处理，那是照文档写的）。
 7. ~~**M10b 账号**~~ **核心已落地**（2026-09-08）：identity + WEB 账号/管理端 + 本机网关转发 + 桌面 PKCE。**外部前置未解除**（域名备案 · 发信域 · 云上部署环境 · 法务文本）。分享页（Q41）跟分享上传走，不在本段。
@@ -652,19 +652,28 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | --- | --- | --- |
 | **01 设计系统** | token/断点已改走工作台数值；侧栏拖动手柄未做（clamp 已接）· 应用图标仍是 Electron 默认 | `packages/tokens/src/palette.ts` · `app.css` · `bootstrap.ts` · `build/` |
 | **02 信息架构** | 通知中心与设备中心（接通前已隐藏）· deeplink `evowork://` | `app.tsx` · `sidebar.tsx` |
-| **03 首页与 Composer** | 语音 · 拖拽/粘贴附件 · 项目文件递归模糊候选 · 队列编辑/重排 · 除 `/清空`、`/新建任务` 外的本地命令 | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
-| **04 任务工作台** | C · 搜索高级筛选与单消息定位 · 队列编辑/重排 · 子任务侧滑未端到端（**§3.5 任务标题三来源已接通**，2026-09-13）· CU-Q5 的首次留存同意与删除 API 已接；内容查看/留存标记及真实 MCP blob、索引、导出/备份删除验收未完成（CU-R8/R9） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
+| **03 首页与 Composer** | 语音 · 除 `/清空`、`/新建任务` 外的本地命令（拖拽/粘贴附件、项目文件递归候选、队列编辑/重排已接） | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
+| **04 任务工作台** | C · 搜索高级筛选 · 子任务侧滑未端到端（单消息定位、Goal/预算、暂停/继续、分叉/旁聊、队列编辑/重排已接）· CU-Q5 的首次留存同意与删除 API 已接；内容查看/留存标记及真实 MCP blob、索引、导出/备份删除验收未完成（CU-R8/R9） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
 | **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 · CU-Q4 的 browser→Computer Use 路由、策略继承与受控回退未接 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx`；Computer Use 规格见 [12](design/12-computer-use.md) |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 分享 / 删除仍无宿主动作，当前均按真实能力隐藏 · §3.4 正文 FTS 未接，界面已明确只搜文件名 | `library.tsx` vs `app.tsx` |
 | **07 自动化** | `wake_system` 只有数据字段，没有 OS 唤醒钩子 · 从任务转自动化入口未接 · U3 仍待真机 | `automations.tsx` · `services/scheduler/README.md` |
-| **08 产物与解析** | D · OCR 档解析器与安装 · 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
-| **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· Computer Use 审计已只写元数据；真实 AX/截图留存与删除闭环未验（CU-R8） · 内部只读路径的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` · `composer.tsx` |
+| **08 产物与解析** | D · OCR 档解析器与安装 · 图片/PDF 区域型批注（当前可批注整个文件，文本/Markdown/Office 可带选中引文）· 分享页跟分享上传走 | `services/ingest/src/parsers/` · `file-preview.tsx` |
+| **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · Goal/预算已端到端接通，但仍缺独立进度条与耗尽后的“加预算/收束”双动作 · §6 云端审计摘要 · §7 本机安全能力页 · Computer Use 真实 AX/截图留存与删除闭环未验（CU-R8） · 内部只读路径的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` · `composer.tsx` |
 | **11 账号与模型**（WEB 侧，2026-09-20） | 分享页 `/s/<share-id>`（Q41，跟 D 同一切片；**不读账号会话、不带 `authorization` 头**，第 25 条尚无测试）· 企业私有源索引的管理面（**Q44 未决策 —— 原 Q 系列的唯一开放项**，推荐"只注册源、不托管内容"） | `apps/web/src/app.tsx` · 细则 [11 §13.10](design/11-account-and-models.md) |
 | **12 电脑操控** | **部分实现，发布关闭。** 剩余工作分为待实现与已有代码待验证，逐项见 [12 §17 的 CU-R1–CU-R11](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24)。不得以协议/宿主单测替代原生与签名实机验收 | `services/computer-use/` · `apps/computer-use-macos/` · 桌面 host/UI；`releaseVerified=false`，无可用工具 |
 
 **2026-09-24 电脑操控基础验证**：新增协议/状态机 21 项与准入/hook 10 项测试。`pnpm run check` 在沙箱外通过（1678 passed / 2 skipped；运行时安装 e2e 的既有条件跳过），许可检查通过，内核补丁仍为 0。沙箱内的子进程/loopback 测试曾因 `EPERM` 失败，沙箱外重跑通过；这不是 macOS Helper、TCC、真实删除或电脑操控端到端验收。另修复了已有权限文案表格的格式检查问题，许可清单仅同步当前内核提交号。
 
 **仓内为空、但设计依赖的目录**：`ext/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。`plugins/agents/` 故意不预置角色。`apps/web/` 与 `services/identity/` 已有实现；**分享页仍未做**（见上表第 11 篇）。改密页已于 P3.5-4 落地。
+
+### 6.2 本轮明确延后的任务流工作（2026-09-24）
+
+本轮只做 P0 内核协议重新对齐，以及 P1 的富产物预览/批注、长任务控制面、文件/上下文导航。下列保留在后续队列，不混入本次实现：
+
+1. **P1 收尾**：子任务侧滑详情；图片/PDF 区域坐标批注；Goal 可视化进度条与预算耗尽双动作；搜索的日期/状态/项目高级筛选。
+2. **P2 工程工作流**：原生代码评审、行内评论、worktree/分支创建与 PR 链路。
+3. **P2 浏览器与系统集成**：真实应用内浏览器（不只是 sandbox HTML）、通知中心、deeplink、分享/上传、Remote/多设备。
+4. **P3 扩展能力**：OCR 扫描件、语音输入、资料库正文 FTS/团队空间、OS 唤醒自动化。
 
 **2026-09-13 订正**：结果区正文/HTML/PDF/图片预览、独立搜索、结构化引用、
 运行中队列/插话、任务与消息动作、自动化创建与编辑均已接；分享上传仍未接。

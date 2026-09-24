@@ -216,7 +216,7 @@ export function linkArtifactNamesInMarkdown(
     .join('');
 }
 
-function renderMarkdown(
+export function renderMarkdown(
   markdown: string,
   artifacts: readonly MarkdownArtifact[] = [],
 ): { readonly __html: string } {

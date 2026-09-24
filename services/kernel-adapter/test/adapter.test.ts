@@ -405,6 +405,28 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     );
   });
 
+  it('本机降级队列可编辑与重排', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { active: { activeFlags: [] } },
+    });
+    server.removeMethod('thread/queue/add');
+    await adapter.sendMessage({ threadId, input: [{ type: 'text', text: '第一条' }] });
+    await adapter.sendMessage({ threadId, input: [{ type: 'text', text: '第二条' }] });
+    const initial = await adapter.listQueuedInputs(threadId);
+    const first = initial[0];
+    const second = initial[1];
+    expect(first && second).toBeTruthy();
+    await adapter.updateQueuedInput(threadId, first!.id, '修改后');
+    await adapter.reorderQueuedInputs(threadId, [second!.id, first!.id]);
+    expect(await adapter.listQueuedInputs(threadId)).toMatchObject([
+      { id: second!.id, input: [{ type: 'text', text: '第二条' }] },
+      { id: first!.id, input: [{ type: 'text', text: '修改后' }] },
+    ]);
+  });
+
   it('本机队列启动失败时保留输入，成功后才移除', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
@@ -701,14 +723,41 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
   });
 });
 
-describe('预算（Q11：用内核的 ThreadGoal.budget，不自建）', () => {
+describe('目标与预算（Q11：用内核的 ThreadGoal.tokenBudget，不自建）', () => {
   it('setBudget 调 thread/goal/set 并同步投影表', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     await adapter.setBudget(threadId, 200_000);
     const call = server.received.find((r) => r.method === 'thread/goal/set');
-    expect(call?.params).toMatchObject({ threadId, budget: 200_000 });
+    expect(call?.params).toMatchObject({
+      threadId,
+      objective: 'x',
+      status: 'active',
+      tokenBudget: 200_000,
+    });
+    expect(call?.params).not.toHaveProperty('budget');
     expect(store.threads.get(threadId)?.budget_limit).toBe(200_000);
+  });
+});
+
+describe('搜索命中定位', () => {
+  it('保留 itemId 与命中区间，供 UI 滚动到单条消息', async () => {
+    server.handlers.set('thread/searchOccurrences', () => ({
+      data: [
+        {
+          turnId: 'turn-1',
+          itemId: 'item-9',
+          snippet: '已生成季度报告',
+          snippetMatchRange: { start: 3, end: 7 },
+          turnCursor: 'cursor-1',
+        },
+      ],
+      nextCursor: null,
+    }));
+    await adapter.start();
+    await expect(adapter.searchTaskOccurrences('t1', '季度')).resolves.toMatchObject([
+      { turnId: 'turn-1', itemId: 'item-9', snippetMatchRange: { start: 3, end: 7 } },
+    ]);
   });
 });
 

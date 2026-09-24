@@ -85,6 +85,7 @@ export type RendererEvent =
    * `getTaskResults` 重读，避免在事件载荷里复制另一份产物视图。
    */
   | { readonly type: 'task-results-updated'; readonly taskId: string }
+  | { readonly type: 'task-goal-changed'; readonly taskId: string }
   /**
    * 「项目」那一侧变了（另一个客户端建了/删了 project）。
    * 只在停在项目列表页时才据此重拉——本机自己的增删动作直接返回新列表，不等这条事件。
@@ -331,6 +332,31 @@ export interface QueuedInputView {
   readonly text: string;
 }
 
+export interface TaskGoalView {
+  readonly threadId: string;
+  readonly objective: string;
+  readonly status: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete';
+  readonly tokenBudget: number | null;
+  readonly tokensUsed: number;
+  readonly timeUsedSeconds: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface TaskSearchOccurrenceView {
+  readonly turnId: string;
+  readonly itemId: string;
+  readonly snippet: string;
+  readonly matchStart: number;
+  readonly matchEnd: number;
+}
+
+export interface DroppedAttachmentInput {
+  readonly workspaceId?: string | undefined;
+  readonly threadId?: string | undefined;
+  readonly files: readonly { readonly name: string; readonly bytes: Uint8Array }[];
+}
+
 export interface TaskSearchHitView {
   readonly task: TaskRowView;
   /** 标题或可见消息正文的命中片段。 */
@@ -374,8 +400,9 @@ export interface TaskResultsView {
 
 export interface FilePreviewView {
   readonly name: string;
-  readonly kind: 'text' | 'html' | 'image' | 'pdf' | 'unsupported';
+  readonly kind: 'text' | 'source' | 'markdown' | 'html' | 'image' | 'pdf' | 'unsupported';
   readonly content?: string | undefined;
+  readonly language?: string | undefined;
   readonly truncated?: boolean | undefined;
   readonly message?: string | undefined;
 }

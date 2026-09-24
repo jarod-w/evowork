@@ -192,7 +192,7 @@ describe('FileChange 路径 → 安全读取 → 应用内预览', () => {
     await expect(
       actions.readTaskFilePreview({ threadId: 't1', path: 'out/report.md' }),
     ).resolves.toEqual(
-      expect.objectContaining({ name: 'report.md', kind: 'text', content: '# 报告' }),
+      expect.objectContaining({ name: 'report.md', kind: 'markdown', content: '# 报告' }),
     );
     expect(readBinaryFile).toHaveBeenCalledWith('/w/task/out/report.md', 25_000_000);
   });
@@ -253,7 +253,10 @@ describe('添加本地文件', () => {
       expect(root).toBe('/w/task');
       return [];
     });
-    const actions = makeActions({ store, attachmentPorts: { pick } });
+    const actions = makeActions({
+      store,
+      attachmentPorts: { pick, ingest: vi.fn(async () => []) },
+    });
 
     await expect(actions.pickAttachments({ threadId: 't1' })).resolves.toEqual([]);
     expect(pick).toHaveBeenCalledWith('/w/task');
@@ -269,7 +272,7 @@ describe('添加本地文件', () => {
     const pick = vi.fn(async () => []);
     const actions = makeActions({
       store,
-      attachmentPorts: { pick },
+      attachmentPorts: { pick, ingest: vi.fn(async () => []) },
       projectPorts: ports(),
     });
     const created = await actions.createProject({ name: '季度汇报', path: '/w/project' });
@@ -281,7 +284,9 @@ describe('添加本地文件', () => {
 
   it('首页既没有项目也没有任务时拒绝，好让界面把原因说出来', async () => {
     const pick = vi.fn(async () => []);
-    const actions = makeActions({ attachmentPorts: { pick } });
+    const actions = makeActions({
+      attachmentPorts: { pick, ingest: vi.fn(async () => []) },
+    });
     await expect(actions.pickAttachments({})).rejects.toThrow(/先选择一个项目/);
     expect(pick).not.toHaveBeenCalled();
   });

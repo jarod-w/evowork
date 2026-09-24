@@ -102,7 +102,20 @@ export class FakeAppServer {
       thread: makeThread({ id: String(ctx.params.threadId ?? 'thread_0') }),
     }));
     this.handlers.set('thread/list', () => ({ data: [], nextCursor: null }));
-    this.handlers.set('thread/goal/set', () => ({}));
+    this.handlers.set('thread/goal/get', () => ({ goal: null }));
+    this.handlers.set('thread/goal/set', (ctx) => ({
+      goal: {
+        threadId: ctx.params.threadId,
+        objective: ctx.params.objective ?? '完成当前任务',
+        status: ctx.params.status ?? 'active',
+        tokenBudget: ctx.params.tokenBudget ?? null,
+        tokensUsed: 0,
+        timeUsedSeconds: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    }));
+    this.handlers.set('thread/goal/clear', () => ({}));
     /*
      * `thread/name/set` 照抄内核的**两个**行为，因为它们各自都藏过一个缺陷：
      *

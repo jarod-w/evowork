@@ -1,8 +1,8 @@
 /**
  * EvoWork 用到的 app-server 方法清单 —— **同时是依赖面的声明**。
  *
- * 内核共有 158 个客户端请求方法、82 个服务端通知、9 个服务端请求（2026-09-05 @ `89a4eec6da` 实测）。
- * 这里只列我们真正调用的那些。这么做的收益是 R2 的影响面可见：上游改了不在这张表里的东西，
+ * 基线于 2026-09-24 @ `d583e73c4d12` 重新核对。这里只列我们真正调用的方法。
+ * 这么做的收益是 R2 的影响面可见：上游改了不在这张表里的东西，
  * 与我们无关；改了表里的，`scripts/kernel-drift.mjs` 与类型检查会指出来。
  *
  * `EXPERIMENTAL` 标记来自内核源码里的 `#[experimental("…")]` 属性。它决定两件事：
@@ -40,7 +40,7 @@ export const METHOD = {
   turnSteer: 'turn/steer',
   turnInterrupt: 'turn/interrupt',
 
-  // 目标与预算（Q11：不自建，用内核的 ThreadGoal.budget）
+  // 目标与预算（Q11：不自建，用内核的 ThreadGoal.tokenBudget）
   threadGoalSet: 'thread/goal/set',
   threadGoalGet: 'thread/goal/get',
   threadGoalClear: 'thread/goal/clear',
@@ -149,6 +149,7 @@ export const NOTIFICATION = {
   threadTokenUsageUpdated: 'thread/tokenUsage/updated',
   threadQueueChanged: 'thread/queue/changed',
   threadGoalUpdated: 'thread/goal/updated',
+  threadGoalCleared: 'thread/goal/cleared',
   turnStarted: 'turn/started',
   turnCompleted: 'turn/completed',
   turnDiffUpdated: 'turn/diff/updated',

@@ -4,7 +4,8 @@
  * **手写而不是从内核生成**（见本包 README）：内核能用 `ts-rs` 导出全量类型，但那会丢掉
  * 「我们依赖协议的哪一部分」这条信息。手写子集的清单本身就是依赖面。
  *
- * 所有形状于 2026-09-05 在 `89a4eec6da` 上对照 Rust 定义写成；带 F 编号的地方是
+ * 基础形状于 2026-09-05 在 `89a4eec6da` 上对照 Rust 定义写成；任务目标、
+ * 队列与搜索形状于 2026-09-24 在 `d583e73c4d12` 上重新核对。带 F 编号的地方是
  * docs/design/README.md §4 里有实测记录的断言，改动前先看那里。
  *
  * 约定：内核**多数**结构体用 serde `rename_all = "camelCase"`，所以线上字段一般是 camelCase。
@@ -102,6 +103,30 @@ export interface Thread {
   readonly name?: string | null;
   readonly turns: readonly Turn[];
   readonly extra?: Record<string, never> | null;
+}
+
+// ────────────────────────────── 目标与定位 ──────────────────────────────
+
+export type ThreadGoalStatus =
+  'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete';
+
+export interface ThreadGoal {
+  readonly threadId: string;
+  readonly objective: string;
+  readonly status: ThreadGoalStatus;
+  readonly tokenBudget: number | null;
+  readonly tokensUsed: number;
+  readonly timeUsedSeconds: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface ThreadSearchOccurrence {
+  readonly turnId: string;
+  readonly itemId: string;
+  readonly snippet: string;
+  readonly snippetMatchRange: { readonly start: number; readonly end: number };
+  readonly turnCursor: string;
 }
 
 // ─────────────────────────────── 用户输入 ───────────────────────────────

@@ -82,6 +82,7 @@ import type {
   ComposerAttachmentView,
   ComposerContextView,
   DirEntryView,
+  DroppedAttachmentInput,
   LibraryDataView,
   FilePreviewView,
   ModelAccessMutationResult,
@@ -109,6 +110,8 @@ import type {
   SetTaskModeInput,
   StartupInfo,
   TaskSearchHitView,
+  TaskSearchOccurrenceView,
+  TaskGoalView,
   TaskRowView,
   TaskResultsView,
   TaskFilePreviewInput,
@@ -550,7 +553,17 @@ export interface RendererBridgeOptions {
   readonly attachmentPorts?:
     | {
         pick(workspaceRoot: string): Promise<readonly ComposerAttachmentView[]>;
+        ingest(
+          workspaceRoot: string,
+          files: readonly { readonly name: string; readonly bytes: Uint8Array }[],
+        ): Promise<readonly ComposerAttachmentView[]>;
       }
+    | undefined;
+  readonly officePreview?:
+    | ((
+        path: string,
+        kind: 'docx' | 'xlsx' | 'pptx' | 'rtf',
+      ) => Promise<{ readonly markdown: string; readonly note?: string | undefined } | undefined>)
     | undefined;
   readonly automationPorts?:
     | {
@@ -779,6 +792,8 @@ export function createEventTranslator(store: Store, now: () => number) {
        */
       case 'projects-changed':
         return [{ type: 'projects-changed' }];
+      case 'task-goal-changed':
+        return [{ type: 'task-goal-changed', taskId: event.threadId }];
       default:
         // 其余事件在当前 UI 上没有落点。适配层已经落库并记过日志，这里不再重复
         return [];
@@ -941,6 +956,37 @@ export function createRendererActions(options: RendererBridgeOptions) {
     if (realRoot === undefined || !isUnderRoot(realRoot, realRoot, ports.home)) return undefined;
     const verdict = classifyPath(realRoot, { workspaceRoot: realRoot, home: ports.home });
     return verdict.verdict === 'hard-block' ? undefined : realRoot;
+  };
+
+  const previewFile = async (
+    ports: ProjectPorts,
+    path: string,
+    name: string,
+  ): Promise<FilePreviewView> => {
+    const extension = extensionOf(path);
+    if (
+      options.officePreview &&
+      (extension === 'docx' || extension === 'xlsx' || extension === 'pptx' || extension === 'rtf')
+    ) {
+      const parsed = await options.officePreview(path, extension);
+      if (parsed) {
+        return {
+          name,
+          kind: 'markdown',
+          content: parsed.markdown,
+          ...(parsed.note ? { message: parsed.note } : {}),
+        };
+      }
+      return {
+        name,
+        kind: 'unsupported',
+        message: '本机 Office 预览扩展不可用，或文件无法解析。',
+      };
+    }
+    const bytes = await ports.readBinaryFile(path, PREVIEW_FILE_BYTES);
+    return bytes
+      ? previewFromBytes(path, name, bytes)
+      : { name, kind: 'unsupported', message: '文件现在读不到。' };
   };
 
   /**
@@ -1419,6 +1465,20 @@ export function createRendererActions(options: RendererBridgeOptions) {
       });
     },
 
+    async searchTaskOccurrences(input: {
+      readonly threadId: string;
+      readonly query: string;
+    }): Promise<readonly TaskSearchOccurrenceView[]> {
+      const occurrences = await adapter.searchTaskOccurrences(input.threadId, input.query);
+      return occurrences.map((entry) => ({
+        turnId: entry.turnId,
+        itemId: entry.itemId,
+        snippet: entry.snippet,
+        matchStart: entry.snippetMatchRange.start,
+        matchEnd: entry.snippetMatchRange.end,
+      }));
+    },
+
     /**
      * 用户改名（04 §3.3）。**标成 `'user'`** —— 从此产物命名不再碰它。
      *
@@ -1435,8 +1495,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async forkTask(input: {
       readonly threadId: string;
       readonly lastTurnId?: string | undefined;
+      readonly ephemeral?: boolean | undefined;
     }): Promise<{ readonly threadId: string }> {
-      return { threadId: await adapter.forkTask(input.threadId, input.lastTurnId) };
+      return {
+        threadId: await adapter.forkTask(
+          input.threadId,
+          input.lastTurnId,
+          input.ephemeral === true,
+        ),
+      };
     },
 
     async archiveTask(input: { readonly threadId: string }): Promise<void> {
@@ -1462,11 +1529,49 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }));
     },
 
+    async updateQueuedInput(input: {
+      readonly threadId: string;
+      readonly id: string;
+      readonly text: string;
+    }): Promise<boolean> {
+      return adapter.updateQueuedInput(input.threadId, input.id, input.text);
+    },
+
+    async reorderQueuedInputs(input: {
+      readonly threadId: string;
+      readonly ids: readonly string[];
+    }): Promise<boolean> {
+      return adapter.reorderQueuedInputs(input.threadId, input.ids);
+    },
+
     async removeQueuedInput(input: {
       readonly threadId: string;
       readonly id: string;
     }): Promise<boolean> {
       return adapter.removeQueuedInput(input.threadId, input.id);
+    },
+
+    async getTaskGoal(input: { readonly threadId: string }): Promise<TaskGoalView | undefined> {
+      return adapter.getGoal(input.threadId);
+    },
+
+    async setTaskGoal(input: {
+      readonly threadId: string;
+      readonly objective?: string | undefined;
+      readonly status?: TaskGoalView['status'] | undefined;
+      readonly tokenBudget?: number | null | undefined;
+    }): Promise<TaskGoalView | undefined> {
+      const { threadId } = input;
+      const changes = {
+        ...(input.objective !== undefined ? { objective: input.objective } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.tokenBudget !== undefined ? { tokenBudget: input.tokenBudget } : {}),
+      };
+      return adapter.setGoal(threadId, changes);
+    },
+
+    async clearTaskGoal(input: { readonly threadId: string }): Promise<void> {
+      await adapter.clearGoal(input.threadId);
     },
 
     async getComposerContext(input: {
@@ -1478,15 +1583,35 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (root && ports) {
         const realRoot = await realRootOf(ports, root);
         if (realRoot) {
-          for (const entry of await ports.readDir(realRoot)) {
-            if (entry.isDirectory) continue;
-            mentions.push({
-              id: `file:${entry.name}`,
-              label: entry.name,
-              category: 'file',
-              insertAs: 'mention',
-              path: `${realRoot.replace(/\/$/, '')}/${entry.name}`,
-            });
+          const pending: { path: string; relative: string; depth: number }[] = [
+            { path: realRoot, relative: '', depth: 0 },
+          ];
+          let scannedDirectories = 0;
+          while (pending.length > 0 && mentions.length < 500 && scannedDirectories < 500) {
+            const current = pending.shift();
+            if (!current) break;
+            scannedDirectories += 1;
+            for (const entry of await ports.readDir(current.path)) {
+              if (entry.name === '.git' || entry.name === 'node_modules') continue;
+              const absolute = `${current.path.replace(/\/$/, '')}/${entry.name}`;
+              const relative = current.relative ? `${current.relative}/${entry.name}` : entry.name;
+              if (await safeIsSymlink(ports, absolute)) continue;
+              if (entry.isDirectory) {
+                if (current.depth < 8 && pending.length + scannedDirectories < 500)
+                  pending.push({ path: absolute, relative, depth: current.depth + 1 });
+                continue;
+              }
+              const real = await safeRealpath(ports, absolute);
+              if (!real || !isUnderRoot(realRoot, real, ports.home)) continue;
+              mentions.push({
+                id: `file:${relative}`,
+                label: relative,
+                category: 'file',
+                insertAs: 'mention',
+                path: real,
+              });
+              if (mentions.length >= 500) break;
+            }
           }
         }
       }
@@ -1549,6 +1674,21 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return options.attachmentPorts.pick(root);
     },
 
+    async ingestAttachments(
+      input: DroppedAttachmentInput,
+    ): Promise<readonly ComposerAttachmentView[]> {
+      const fromProject = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      const fromTask = input.threadId
+        ? (store.threads.get(input.threadId)?.cwd ?? undefined)
+        : undefined;
+      const root =
+        fromProject ??
+        (typeof fromTask === 'string' && fromTask.trim() !== '' ? fromTask : undefined);
+      if (!root) throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');
+      if (!options.attachmentPorts) throw new Error('这个构建没有接本地附件解析器。');
+      return options.attachmentPorts.ingest(root, input.files);
+    },
+
     /** 当前任务产物：按 path 折到最新版本，只展示仍存在的文件。 */
     async getTaskResults(input: { readonly threadId: string }): Promise<TaskResultsView> {
       const artifacts = options.pageData?.listArtifacts() ?? [];
@@ -1599,10 +1739,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!artifact || !options.projectPorts) {
         return { name: '产物', kind: 'unsupported', message: '这个产物已经不存在。' };
       }
-      const bytes = await options.projectPorts.readBinaryFile(artifact.path, PREVIEW_FILE_BYTES);
-      return bytes
-        ? previewFromBytes(artifact.path, artifact.title || basename(artifact.path), bytes)
-        : { name: artifact.title, kind: 'unsupported', message: '文件现在读不到。' };
+      return previewFile(
+        options.projectPorts,
+        artifact.path,
+        artifact.title || basename(artifact.path),
+      );
     },
 
     /**
@@ -1634,10 +1775,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!real || !isUnderRoot(realRoot, real, ports.home)) {
         return { name, kind: 'unsupported', message: '文件不存在，或它指向任务工作空间之外。' };
       }
-      const bytes = await ports.readBinaryFile(real, PREVIEW_FILE_BYTES);
-      return bytes
-        ? previewFromBytes(real, basename(real), bytes)
-        : { name: basename(real), kind: 'unsupported', message: '文件现在读不到。' };
+      return previewFile(ports, real, basename(real));
     },
 
     async readProjectFilePreview(input: {
@@ -1657,10 +1795,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           message: '这个文件不在项目目录内。',
         };
       }
-      const bytes = await ports.readBinaryFile(real, PREVIEW_FILE_BYTES);
-      return bytes
-        ? previewFromBytes(real, basename(real), bytes)
-        : { name: basename(real), kind: 'unsupported', message: '文件现在读不到。' };
+      return previewFile(ports, real, basename(real));
     },
 
     /**
@@ -2399,8 +2534,14 @@ export function previewFromBytes(path: string, name: string, bytes: Uint8Array):
   ) {
     return {
       name,
-      kind: 'text',
+      kind:
+        extension === 'md' || extension === 'markdown'
+          ? 'markdown'
+          : extension === 'txt'
+            ? 'text'
+            : 'source',
       content: new TextDecoder('utf-8').decode(slice),
+      ...(!['md', 'markdown', 'txt'].includes(extension) ? { language: extension } : {}),
       ...(truncated ? { truncated: true } : {}),
     };
   }

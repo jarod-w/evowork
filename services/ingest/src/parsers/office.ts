@@ -36,6 +36,8 @@ export interface OfficeParserOptions {
   readonly scriptPath?: string | undefined;
   /** 覆盖 `execFile`，测试里用来注入假进程而不碰真 Python */
   readonly run?: typeof execFile | undefined;
+  /** 预览不应在源文件旁写解包资源；导入管道则保留原有行为。 */
+  readonly assetOutput?: 'source' | 'temporary' | undefined;
 }
 
 export function resolveOfficeParserScript(fromUrl = import.meta.url): string | undefined {
@@ -129,7 +131,7 @@ export function createOfficeParser(options: OfficeParserOptions = {}): ExternalP
             '--input',
             input.absolutePath,
             '--out-dir',
-            dirname(input.absolutePath),
+            options.assetOutput === 'temporary' ? workDir : dirname(input.absolutePath),
             '--result',
             resultPath,
             '--row-limit',

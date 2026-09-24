@@ -957,39 +957,65 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   let uploadSequence = 0;
   let attachmentSequence = 0;
+  const ingestAttachments = async (
+    workspaceRoot: string,
+    files: readonly { readonly name: string; readonly bytes: Uint8Array; readonly path?: string }[],
+  ): Promise<readonly ComposerAttachmentView[]> => {
+    const ingest = createIngest({
+      probe: services.probe,
+      externalParser: createOfficeParser({ interpreter: services.probe.interpreter() }),
+      store: {
+        createUploadDir: (slug, at) => {
+          uploadSequence += 1;
+          const pad = (value: number): string => String(value).padStart(2, '0');
+          const stamp =
+            `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-` +
+            `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
+          const dir = join(workspaceRoot, 'uploads', `${stamp}-${slug}-${uploadSequence}`);
+          mkdirSync(dir, { recursive: true });
+          return `${dir}/`;
+        },
+        writeFile: (dir, relativePath, bytes) => writeFileSync(join(dir, relativePath), bytes),
+        writeText: (dir, relativePath, text) =>
+          writeFileSync(join(dir, relativePath), text, 'utf8'),
+      },
+    });
+    const attachments: ComposerAttachmentView[] = [];
+    for (const file of files) {
+      const outcomes = await ingest.ingest([{ fileName: file.name, bytes: file.bytes }]);
+      for (const outcome of outcomes) {
+        attachmentSequence += 1;
+        let originalPath = file.path;
+        if (!originalPath && outcome.status === 'runtime-missing') {
+          uploadSequence += 1;
+          const dir = join(workspaceRoot, 'uploads', `dropped-${Date.now()}-${uploadSequence}`);
+          mkdirSync(dir, { recursive: true });
+          originalPath = join(dir, `original${extname(file.name).toLocaleLowerCase() || '.bin'}`);
+          writeFileSync(originalPath, file.bytes);
+        }
+        attachments.push(
+          attachmentFromOutcome(
+            outcome,
+            `attachment-${attachmentSequence}`,
+            originalPath ?? file.name,
+          ),
+        );
+      }
+    }
+    return attachments;
+  };
   const attachmentPorts = {
     pick: async (workspaceRoot: string): Promise<readonly ComposerAttachmentView[]> => {
       const paths = (await options.pickFiles?.()) ?? [];
       if (paths.length === 0) return [];
-      const ingest = createIngest({
-        probe: services.probe,
-        externalParser: createOfficeParser({
-          interpreter: services.probe.interpreter(),
-        }),
-        store: {
-          createUploadDir: (slug, at) => {
-            uploadSequence += 1;
-            const pad = (value: number): string => String(value).padStart(2, '0');
-            const stamp =
-              `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-` +
-              `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
-            const dir = join(workspaceRoot, 'uploads', `${stamp}-${slug}-${uploadSequence}`);
-            mkdirSync(dir, { recursive: true });
-            return `${dir}/`;
-          },
-          writeFile: (dir, relativePath, bytes) => writeFileSync(join(dir, relativePath), bytes),
-          writeText: (dir, relativePath, text) =>
-            writeFileSync(join(dir, relativePath), text, 'utf8'),
-        },
-      });
-      const attachments: ComposerAttachmentView[] = [];
+      const files: { name: string; bytes: Uint8Array; path: string }[] = [];
+      const failures: ComposerAttachmentView[] = [];
       for (const path of paths) {
-        let bytes: Uint8Array;
         try {
-          bytes = readFileSync(path);
+          files.push({ name: basename(path), bytes: readFileSync(path), path });
         } catch {
           attachmentSequence += 1;
-          attachments.push({
+          failures.push({
             id: `attachment-${attachmentSequence}`,
             name: basename(path),
             kind: 'document',
@@ -998,19 +1024,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
             error: '文件现在读不到，可能已被移动或没有读取权限。',
             references: [],
           });
-          continue;
-        }
-        const outcomes = await ingest.ingest([{ fileName: basename(path), bytes }]);
-        for (const outcome of outcomes) {
-          attachmentSequence += 1;
-          attachments.push(
-            attachmentFromOutcome(outcome, `attachment-${attachmentSequence}`, path),
-          );
         }
       }
-      return attachments;
+      return [...failures, ...(await ingestAttachments(workspaceRoot, files))];
     },
+    ingest: (
+      workspaceRoot: string,
+      files: readonly { readonly name: string; readonly bytes: Uint8Array }[],
+    ) => ingestAttachments(workspaceRoot, files),
   };
+  const officePreviewParser = createOfficeParser({ assetOutput: 'temporary' });
 
   const automationPorts = {
     save: (input: AutomationMutationInput & { readonly id: string }): void => {
@@ -1069,6 +1092,19 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 办公扩展的探测与安装（08 §4）。本机服务里已经有一份带缓存的探针，
     // 安装成功后由它自己 invalidate —— 这里只是把入口交给渲染层
     officeRuntime: services.officeRuntime,
+    officePreview: async (path, kind) => {
+      const parsed = await officePreviewParser.parse({
+        kind,
+        absolutePath: path,
+        timeoutMs: 20_000,
+      });
+      return parsed
+        ? {
+            markdown: parsed.markdown,
+            ...(parsed.meta.note ? { note: parsed.meta.note } : {}),
+          }
+        : undefined;
+    },
     attachmentPorts,
     automationPorts,
     /*

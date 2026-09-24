@@ -365,6 +365,71 @@ textarea {
   font-family: var(--font-mono);
   font-size: var(--font-caption-size);
 }
+.ew-file-preview-text [data-token='comment'] {
+  color: var(--text-tertiary);
+}
+.ew-file-preview-text [data-token='string'] {
+  color: var(--success-text);
+}
+.ew-file-preview-text [data-token='number'] {
+  color: var(--warning-text);
+}
+.ew-file-preview-text [data-token='keyword'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ew-file-preview-toolbar,
+.ew-task-goal {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-file-preview-toolbar {
+  justify-content: space-between;
+  margin-bottom: var(--space-8);
+}
+.ew-file-preview-markdown {
+  max-height: calc(var(--space-64) * 9);
+  overflow: auto;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+}
+.ew-file-annotation {
+  display: grid;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+}
+.ew-file-annotation blockquote {
+  max-height: 8rem;
+  margin: 0;
+  overflow: auto;
+  color: var(--text-secondary);
+}
+.ew-file-annotation textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+.ew-task-goal {
+  flex-wrap: wrap;
+  padding: var(--space-8) var(--space-16);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.ew-task-goal input:first-child {
+  min-width: min(28rem, 55vw);
+  flex: 1;
+}
+[data-task-item-id][data-search-focus='true'] {
+  border-radius: var(--r-md);
+  outline: var(--space-2) solid var(--accent);
+  outline-offset: var(--space-4);
+}
 .ew-result-files {
   display: flex;
   flex-direction: column;

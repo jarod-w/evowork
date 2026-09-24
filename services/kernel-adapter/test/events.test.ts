@@ -338,6 +338,30 @@ describe('09 §3.4 的分发表逐行', () => {
     expect(effects).toEqual([{ kind: 'budget-check', threadId: 't1' }]);
   });
 
+  it('Goal 更新/清除同步预算投影并通知 UI', () => {
+    router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
+    ui = [];
+    effects = [];
+    const goal = {
+      threadId: 't1',
+      objective: '完成发布',
+      status: 'active' as const,
+      tokenBudget: 12_000,
+      tokensUsed: 800,
+      timeUsedSeconds: 30,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    router.handle(NOTIFICATION.threadGoalUpdated, { threadId: 't1', goal });
+    expect(store.threads.get('t1')?.budget_limit).toBe(12_000);
+    expect(ui).toEqual([{ type: 'task-goal-changed', threadId: 't1', goal }]);
+    expect(effects).toEqual([{ kind: 'budget-check', threadId: 't1' }]);
+
+    router.handle(NOTIFICATION.threadGoalCleared, { threadId: 't1' });
+    expect(store.threads.get('t1')?.budget_limit).toBeNull();
+    expect(ui.at(-1)).toEqual({ type: 'task-goal-changed', threadId: 't1' });
+  });
+
   it('归档 / 取消归档 / 删除', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     router.handle(NOTIFICATION.threadArchived, { threadId: 't1' });
@@ -393,6 +417,8 @@ describe('未识别通知（R2 雷达 + 04 §5.2 最后一段）', () => {
       NOTIFICATION.itemCompleted,
       NOTIFICATION.itemAgentMessageDelta,
       NOTIFICATION.threadQueueChanged,
+      NOTIFICATION.threadGoalUpdated,
+      NOTIFICATION.threadGoalCleared,
       NOTIFICATION.threadTokenUsageUpdated,
       NOTIFICATION.skillsChanged,
       NOTIFICATION.mcpServerStartupStatusUpdated,

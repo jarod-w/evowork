@@ -58,6 +58,8 @@ import type {
   SendInput,
   StartupInfo,
   TaskSearchHitView,
+  TaskSearchOccurrenceView,
+  TaskGoalView,
   TaskRowView,
   TaskResultsView,
   TaskFilePreviewInput,
@@ -137,12 +139,30 @@ export interface EvoworkBridge {
   /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
   openTask(input: { threadId: string }): Promise<OpenTaskResult>;
   searchTasks?(input: { query: string }): Promise<readonly TaskSearchHitView[]>;
+  searchTaskOccurrences?(input: {
+    threadId: string;
+    query: string;
+  }): Promise<readonly TaskSearchOccurrenceView[]>;
   renameTask?(input: { threadId: string; name: string }): Promise<boolean>;
-  forkTask?(input: { threadId: string; lastTurnId?: string }): Promise<{ threadId: string }>;
+  forkTask?(input: {
+    threadId: string;
+    lastTurnId?: string;
+    ephemeral?: boolean;
+  }): Promise<{ threadId: string }>;
   archiveTask?(input: { threadId: string }): Promise<void>;
   deleteTask?(input: { threadId: string }): Promise<void>;
   listQueuedInputs?(input: { threadId: string }): Promise<readonly { id: string; text: string }[]>;
+  updateQueuedInput?(input: { threadId: string; id: string; text: string }): Promise<boolean>;
+  reorderQueuedInputs?(input: { threadId: string; ids: readonly string[] }): Promise<boolean>;
   removeQueuedInput?(input: { threadId: string; id: string }): Promise<boolean>;
+  getTaskGoal?(input: { threadId: string }): Promise<TaskGoalView | undefined>;
+  setTaskGoal?(input: {
+    threadId: string;
+    objective?: string;
+    status?: TaskGoalView['status'];
+    tokenBudget?: number | null;
+  }): Promise<TaskGoalView | undefined>;
+  clearTaskGoal?(input: { threadId: string }): Promise<void>;
   getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
   openResultFile(input: { artifactId: string }): Promise<void>;
   readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
@@ -150,6 +170,11 @@ export interface EvoworkBridge {
   readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
   getComposerContext?(input: { workspaceId?: string }): Promise<ComposerContextView>;
   pickAttachments?(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]>;
+  ingestAttachments?(input: {
+    workspaceId?: string;
+    threadId?: string;
+    files: readonly { name: string; bytes: Uint8Array }[];
+  }): Promise<readonly ComposerAttachmentView[]>;
   /** 首页要渲染的一切，一次给全（场景 · 权限档位 · 案例池 · 已有任务） */
   getStartup(): Promise<StartupInfo>;
   /**
@@ -474,6 +499,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [queuedByTask, setQueuedByTask] = useState<
     Readonly<Record<string, readonly QueuedInputView[]>>
   >({});
+  const [goalsByTask, setGoalsByTask] = useState<
+    Readonly<Record<string, TaskGoalView | undefined>>
+  >({});
+  const [focusItemId, setFocusItemId] = useState<string | undefined>(undefined);
   const [steer, setSteer] = useState(false);
   const [previewByTask, setPreviewByTask] = useState<Readonly<Record<string, FilePreviewView>>>({});
   const [selectedChangeByTask, setSelectedChangeByTask] = useState<
@@ -506,6 +535,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const offs = [
       bridge.onUiEvent((event) => {
         if ('taskId' in event && deletedTaskIds.current.has(event.taskId)) return;
+        if (event.type === 'task-goal-changed') {
+          if (bridge.getTaskGoal) {
+            void bridge
+              .getTaskGoal({ threadId: event.taskId })
+              .then((goal) =>
+                setGoalsByTask((previous) => ({ ...previous, [event.taskId]: goal })),
+              );
+          }
+          return;
+        }
         if (event.type === 'task-removed') {
           deletedTaskIds.current.add(event.taskId);
           setTasks((previous) => previous.filter((task) => task.id !== event.taskId));
@@ -932,6 +971,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             deletedTaskIds.current.has(threadId) ? previous : { ...previous, [threadId]: queued },
           ),
         );
+    }
+    if (activeTaskId !== null && bridge.getTaskGoal) {
+      const threadId = activeTaskId;
+      void bridge.getTaskGoal({ threadId }).then((goal) => {
+        if (!deletedTaskIds.current.has(threadId))
+          setGoalsByTask((previous) => ({ ...previous, [threadId]: goal }));
+      });
     }
   }, [activeTaskId, bridge, startup, tasks, workspaceId]);
 
@@ -1574,6 +1620,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [activeTaskId, bridge, showPreview, updateResultUi],
   );
+  const annotatePreview = useCallback(
+    (annotation: { fileName: string; quote?: string; comment: string }) => {
+      const block = [
+        `针对文件「${annotation.fileName}」的批注：`,
+        annotation.quote ? `> ${annotation.quote.replace(/\n/g, '\n> ')}` : '',
+        annotation.comment,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      setDraft((previous) => (previous.trim() ? `${previous}\n\n${block}` : block));
+    },
+    [],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -1601,6 +1660,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 setAttachments((previous) => [...previous, ...picked]);
               })
               .catch((error: unknown) => reportFailure(error, '没能添加本地文件。'));
+          }
+        : undefined,
+      onFilesAdded: bridge.ingestAttachments
+        ? (files: readonly File[]) => {
+            void Promise.all(
+              files.map(async (file) => ({
+                name: file.name,
+                bytes: new Uint8Array(await file.arrayBuffer()),
+              })),
+            )
+              .then((payload) =>
+                bridge.ingestAttachments?.({
+                  ...(workspaceId ? { workspaceId } : {}),
+                  ...(activeTaskId ? { threadId: activeTaskId } : {}),
+                  files: payload,
+                }),
+              )
+              .then((picked) => {
+                if (picked?.length) setAttachments((previous) => [...previous, ...picked]);
+              })
+              .catch((error: unknown) => reportFailure(error, '没能添加拖入的文件。'));
           }
         : undefined,
       onRemoveAttachment: (id: string) =>
@@ -1659,6 +1739,43 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           })
           .catch((error: unknown) => reportFailure(error, '没能从队列里移除。'));
       },
+      onQueueUpdate: bridge.updateQueuedInput
+        ? (id: string, text: string) => {
+            if (!activeTaskId) return;
+            const threadId = activeTaskId;
+            void bridge
+              .updateQueuedInput?.({ threadId, id, text })
+              .then((updated) => {
+                if (updated)
+                  setQueuedByTask((previous) => ({
+                    ...previous,
+                    [threadId]: (previous[threadId] ?? []).map((item) =>
+                      item.id === id ? { ...item, text } : item,
+                    ),
+                  }));
+              })
+              .catch((error: unknown) => reportFailure(error, '没能更新排队项。'));
+          }
+        : undefined,
+      onQueueMove: bridge.reorderQueuedInputs
+        ? (id: string, direction: -1 | 1) => {
+            if (!activeTaskId) return;
+            const threadId = activeTaskId;
+            const queue = [...(queuedByTask[threadId] ?? [])];
+            const from = queue.findIndex((item) => item.id === id);
+            const to = from + direction;
+            if (from < 0 || to < 0 || to >= queue.length) return;
+            const [moved] = queue.splice(from, 1);
+            if (!moved) return;
+            queue.splice(to, 0, moved);
+            void bridge
+              .reorderQueuedInputs?.({ threadId, ids: queue.map((item) => item.id) })
+              .then((reordered) => {
+                if (reordered) setQueuedByTask((previous) => ({ ...previous, [threadId]: queue }));
+              })
+              .catch((error: unknown) => reportFailure(error, '没能调整队列顺序。'));
+          }
+        : undefined,
       steer,
       onSteerChange: setSteer,
       workspaces,
@@ -2243,6 +2360,71 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           taskId={activeTaskId}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}
+          goal={goalsByTask[activeTaskId]}
+          focusItemId={focusItemId}
+          onGoalSave={
+            bridge.setTaskGoal
+              ? (input) => {
+                  const threadId = activeTaskId;
+                  void bridge
+                    .setTaskGoal?.({
+                      threadId,
+                      ...input,
+                      status: goalsByTask[threadId]?.status ?? 'active',
+                    })
+                    .then((goal) =>
+                      setGoalsByTask((previous) => ({ ...previous, [threadId]: goal })),
+                    )
+                    .catch((error: unknown) => reportFailure(error, '没能保存任务目标。'));
+                }
+              : undefined
+          }
+          onGoalStatus={
+            bridge.setTaskGoal
+              ? (status) => {
+                  const threadId = activeTaskId;
+                  void bridge
+                    .setTaskGoal?.({ threadId, status })
+                    .then((goal) =>
+                      setGoalsByTask((previous) => ({ ...previous, [threadId]: goal })),
+                    )
+                    .catch((error: unknown) => reportFailure(error, '没能更新任务状态。'));
+                }
+              : undefined
+          }
+          onGoalClear={
+            bridge.clearTaskGoal
+              ? () => {
+                  const threadId = activeTaskId;
+                  void bridge
+                    .clearTaskGoal?.({ threadId })
+                    .then(() =>
+                      setGoalsByTask((previous) => ({ ...previous, [threadId]: undefined })),
+                    )
+                    .catch((error: unknown) => reportFailure(error, '没能清除任务目标。'));
+                }
+              : undefined
+          }
+          onFork={
+            bridge.forkTask
+              ? (ephemeral) => {
+                  void bridge
+                    .forkTask?.({
+                      threadId: activeTaskId,
+                      ...(latestTurnByTask[activeTaskId]
+                        ? { lastTurnId: latestTurnByTask[activeTaskId] }
+                        : {}),
+                      ...(ephemeral ? { ephemeral: true } : {}),
+                    })
+                    .then((result) => {
+                      if (!result) return;
+                      setActiveTaskId(result.threadId);
+                      setView('task');
+                    })
+                    .catch((error: unknown) => reportFailure(error, '没能分叉这个任务。'));
+                }
+              : undefined
+          }
           items={currentItems}
           pendingApprovals={approvals}
           onDecide={(id, decision) =>
@@ -2302,7 +2484,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                     ))}
                   </ul>
                   {currentPreview && currentPreview.kind !== 'html' ? (
-                    <FilePreview preview={currentPreview} />
+                    <FilePreview preview={currentPreview} onAnnotate={annotatePreview} />
                   ) : null}
                 </div>
               ) : (
@@ -2329,7 +2511,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                     />
                   ) : null}
                   {currentPreview && currentPreview.kind !== 'html' ? (
-                    <FilePreview preview={currentPreview} />
+                    <FilePreview preview={currentPreview} onAnnotate={annotatePreview} />
                   ) : null}
                 </div>
               ) : (
@@ -2348,7 +2530,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             ),
             browser:
               currentPreview?.kind === 'html' ? (
-                <FilePreview preview={currentPreview} />
+                <FilePreview preview={currentPreview} onAnnotate={annotatePreview} />
               ) : (
                 <EmptyState
                   title="没有浏览器预览"
@@ -2380,9 +2562,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           workspaces={startup?.workspaces ?? []}
           onSearch={searchTasks}
           onClose={() => setSearchOpen(false)}
-          onOpenTask={(id) => {
+          onOpenTask={(id, query) => {
             setActiveTaskId(id);
             setView('task');
+            setFocusItemId(undefined);
+            if (query && bridge.searchTaskOccurrences) {
+              void bridge
+                .searchTaskOccurrences({ threadId: id, query })
+                .then((occurrences) => setFocusItemId(occurrences[0]?.itemId));
+            }
           }}
           onNewChat={() => {
             setActiveTaskId(null);
