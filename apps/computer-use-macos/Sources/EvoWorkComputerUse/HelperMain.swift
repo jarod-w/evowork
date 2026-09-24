@@ -3,6 +3,7 @@ import ApplicationServices
 import ScreenCaptureKit
 import Security
 import Darwin
+import EvoWorkComputerUsePolicy
 
 // 单一权限主体；不启动网络服务，不读取模型参数以外的文件，不写屏幕正文日志。
 let frameLimit = 16 * 1024 * 1024
@@ -104,18 +105,8 @@ func identity(_ app: NSRunningApplication) -> String? {
         guard let origin = pointValue(ax(win, kAXPositionAttribute)), let size = sizeValue(ax(win, kAXSizeAttribute)), size.width > 0, size.height > 0,
               ax(win, kAXMinimizedAttribute) as? Bool != true else { try fail("WINDOW_NOT_FOUND") }
         // CG 窗口号绑定 AX bounds；多窗口重叠导致不唯一时直接拒绝。
-        let matches = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []).filter { entry in
-            guard entry[kCGWindowOwnerPID as String] as? Int32 == app.processIdentifier,
-                  entry[kCGWindowLayer as String] as? Int == 0,
-                  let bounds = entry[kCGWindowBounds as String] as? [String: Any],
-                  let x = bounds["X"] as? NSNumber,
-                  let y = bounds["Y"] as? NSNumber,
-                  let width = bounds["Width"] as? NSNumber,
-                  let height = bounds["Height"] as? NSNumber else { return false }
-            let rect = CGRect(x: x.doubleValue, y: y.doubleValue, width: width.doubleValue, height: height.doubleValue)
-            return abs(rect.origin.x - origin.x) < 1 && abs(rect.origin.y - origin.y) < 1 && abs(rect.width - size.width) < 1 && abs(rect.height - size.height) < 1
-        }
-        guard matches.count == 1, let number = matches[0][kCGWindowNumber as String] as? Int else { try fail("WINDOW_NOT_FOUND") }
+        let matches = matchingWindowNumbers(CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [], processID: app.processIdentifier, origin: origin, size: size)
+        guard matches.count == 1, let number = matches.first else { try fail("WINDOW_NOT_FOUND") }
         return (win, ["app": app.bundleIdentifier!, "processId": Int(app.processIdentifier), "windowId": String(number), "x": origin.x, "y": origin.y, "width": size.width, "height": size.height, "scale": 1])
     }
     func tree(_ root: AXUIElement) -> String {
@@ -250,12 +241,17 @@ func identity(_ app: NSRunningApplication) -> String? {
                 event.setIntegerValueField(.eventSourceUserData, value: syntheticMarker); event.post(tap: .cghidEventTap)
             }
         case "select_text":
-            guard let selected, let value = ax(selected, kAXValueAttribute) as? String, let text = params["text"] as? String, !text.isEmpty, params["mode"] as? String == "replace" else { try fail("POLICY_DENIED") }
-            let prefix = params["prefix"] as? String ?? "", suffix = params["suffix"] as? String ?? ""
-            let source = value as NSString, needle = prefix + text + suffix
-            let match = source.range(of: needle)
-            guard match.location != NSNotFound, source.range(of: needle, options: [], range: NSRange(location: match.location + match.length, length: source.length - match.location - match.length)).location == NSNotFound else { try fail("ELEMENT_NOT_FOUND") }
-            var range = CFRange(location: match.location + (prefix as NSString).length, length: (text as NSString).length)
+            guard let selected, let value = ax(selected, kAXValueAttribute) as? String,
+                  let text = params["text"] as? String, !text.isEmpty,
+                  let mode = params["mode"] as? String, mode == "replace" || mode == "extend" else { try fail("POLICY_DENIED") }
+            var previous: CFRange?
+            if mode == "extend" {
+                guard let current = ax(selected, kAXSelectedTextRangeAttribute), CFGetTypeID(current) == AXValueGetTypeID() else { try fail("ELEMENT_NOT_FOUND") }
+                var range = CFRange()
+                guard AXValueGetValue(unsafeBitCast(current, to: AXValue.self), .cfRange, &range) else { try fail("ELEMENT_NOT_FOUND") }
+                previous = range
+            }
+            guard var range = selectedTextRange(value: value, text: text, prefix: params["prefix"] as? String ?? "", suffix: params["suffix"] as? String ?? "", mode: mode, existing: previous) else { try fail("ELEMENT_NOT_FOUND") }
             guard let axRange = AXValueCreate(.cfRange, &range), AXUIElementSetAttributeValue(selected, kAXSelectedTextRangeAttribute as CFString, axRange) == .success else { try fail("ELEMENT_NOT_FOUND") }
         case "scroll", "drag":
             // 坐标回退需独立验收：不以未经验证的坐标替代 AX 动作。

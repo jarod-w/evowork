@@ -8,7 +8,11 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 if (process.platform !== 'darwin') throw new Error('Helper 必须在 macOS 14.4+ / Xcode SDK 上构建');
 const version = JSON.parse(readFileSync(join(root, 'apps/desktop/package.json'), 'utf8')).version;
 const source = join(root, 'apps/computer-use-macos');
-execFileSync('swift', ['build', '-c', 'release', '--package-path', source], { stdio: 'inherit' });
+execFileSync(
+  'swift',
+  ['build', '-c', 'release', '--product', 'EvoWorkComputerUse', '--package-path', source],
+  { stdio: 'inherit' },
+);
 const bin = execFileSync(
   'swift',
   ['build', '-c', 'release', '--package-path', source, '--show-bin-path'],
