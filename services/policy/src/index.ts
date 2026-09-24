@@ -5,5 +5,6 @@ export * from './limits.js';
 export * from './paths.js';
 export * from './platform.js';
 export * from './profiles.js';
+export * from './computer-use.js';
 export * from './hooks/contract.js';
 export * from './hooks/handlers.js';

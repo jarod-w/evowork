@@ -14,6 +14,7 @@
 import { analyzeCommand, type CommandRisk } from '../execpolicy.js';
 import { pathDigest, summarizeCommand, type AuditRecord } from '../audit.js';
 import { classifyPath, type PathContext } from '../paths.js';
+import { isComputerUseTool } from '../computer-use.js';
 import {
   allow,
   deny,
@@ -78,6 +79,24 @@ export function extractCommand(toolInput: Record<string, unknown>): string | und
 }
 
 export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): HookResult {
+  if (isComputerUseTool(input.tool_name)) {
+    return {
+      output: deny('PreToolUse', 'POLICY_DENIED：电脑操控的宿主授权链尚未就绪'),
+      audit: [
+        {
+          occurredAt: env.now(),
+          action: 'permission.decided',
+          threadId: input.session_id,
+          turnId: input.turn_id,
+          itemId: input.tool_use_id,
+          toolName: 'cua_repl',
+          approvalResult: 'decline',
+          decidedBy: 'policy',
+          actionSummary: 'POLICY_DENIED',
+        },
+      ],
+    };
+  }
   const context: PathContext = {
     workspaceRoot: input.cwd,
     home: env.home,

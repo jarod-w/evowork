@@ -1,6 +1,6 @@
 # 12 · 电脑操控（Computer Use）设计
 
-> 状态：**设计决策已确认；CU-Q1–CU-Q6 全部完成，待实施**
+> 状态：**实施中：协议/状态机/策略基础已落地；原生链路与验收未完成**
 > 日期：2026-09-24
 > 适用基线：EvoWork `5fdde4147650b3b146ec8a4a78c1815f89fbad5b`；Codex `ee6814bfa4889fe9b2b3dcc9cc8bdd91effa8ab8`
 > 关联文档：[总纲](../evowork-on-codex-design.md) · [服务层](09-service-layer.md) · [安全与权限 UX](10-security-permissions-ux.md) · [插件](05-experts-skills-connectors.md)

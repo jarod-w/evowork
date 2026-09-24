@@ -12,7 +12,7 @@ EvoWork 把 `openai/codex` 当作**不可变的执行内核**，桌面安装包�
 |---|---|
 | 项目 | openai/codex |
 | 许可证 | Apache License 2.0 |
-| 签出 | `ee6814bfa4` |
+| 签出 | `4891c4e35f` |
 | LICENSE 首行 | Apache License |
 
 **分发义务（Apache-2.0 §4）**：

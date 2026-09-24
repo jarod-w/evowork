@@ -658,7 +658,9 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **08 产物与解析** | D · OCR 档解析器与安装 · 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
 | **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· CU-Q5 的任务内容与结构化审计分离尚未实现 · 内部只读路径的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` · `composer.tsx` |
 | **11 账号与模型**（WEB 侧，2026-09-20） | 分享页 `/s/<share-id>`（Q41，跟 D 同一切片；**不读账号会话、不带 `authorization` 头**，第 25 条尚无测试）· 企业私有源索引的管理面（**Q44 未决策 —— 原 Q 系列的唯一开放项**，推荐"只注册源、不托管内容"） | `apps/web/src/app.tsx` · 细则 [11 §13.10](design/11-account-and-models.md) |
-| **12 电脑操控** | **整项未实现，CU-Q1–CU-Q6 已全部确认。** CU-M0–CU-M4 的 Helper、11 个工具、授权存储/撤销、browser 回退、AX/截图留存/真实删除、终端/系统设置提前硬拒绝、动作审批/中断、UI、签名打包和真机矩阵均待实现。Windows/Linux 驱动明确不在首版 | 当前仓库没有 `apps/computer-use-macos/`、`services/computer-use/` 或 `plugins/connectors/computer-use/`；现有 dmg 也未包含相关组件；规格见 [12](design/12-computer-use.md) |
+| **12 电脑操控** | **基础实施中，尚不可用。** 已有 11 工具 schema/入参校验、观测状态失效/预算、准入策略纯函数及 hook 临时拒绝闸门。Helper、MCP server、可信任务来源/授权接线、browser 回退、AX/截图留存/真实删除、动作执行/中断、UI、签名打包和真机矩阵均待实现。Windows/Linux 不在首版 | `services/computer-use/` · `services/policy/src/computer-use.ts`；默认关闭，未注册 MCP，现有 dmg 不含 Helper；规格见 [12](design/12-computer-use.md) |
+
+**2026-09-24 电脑操控基础验证**：新增协议/状态机 21 项与准入/hook 10 项测试。`pnpm run check` 在沙箱外通过（1678 passed / 2 skipped；运行时安装 e2e 的既有条件跳过），许可检查通过，内核补丁仍为 0。沙箱内的子进程/loopback 测试曾因 `EPERM` 失败，沙箱外重跑通过；这不是 macOS Helper、TCC、真实删除或电脑操控端到端验收。另修复了已有权限文案表格的格式检查问题，许可清单仅同步当前内核提交号。
 
 **仓内为空、但设计依赖的目录**：`ext/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。`plugins/agents/` 故意不预置角色。`apps/web/` 与 `services/identity/` 已有实现；**分享页仍未做**（见上表第 11 篇）。改密页已于 P3.5-4 落地。
 

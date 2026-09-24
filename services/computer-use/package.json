@@ -1,0 +1,25 @@
+{
+  "name": "@evowork/computer-use",
+  "version": "0.0.0",
+  "private": true,
+  "description": "\u7535\u8111\u64cd\u63a7\u56fa\u5b9a\u5de5\u5177\u534f\u8bae\u4e0e\u56de\u5408\u72b6\u6001\u673a",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*.js": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

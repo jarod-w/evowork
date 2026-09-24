@@ -1,0 +1,8 @@
+# EvoWork 自有策略；不写入内核 config.toml。宿主接线完成前不加载、不启用。
+enabled = false
+default_app_access = "deny"
+allow_persistent_approval = true
+allow_locked_computer_use = false
+max_write_actions_per_turn = 100
+
+# 硬禁止由 services/policy 维护，不允许用本文件覆盖。

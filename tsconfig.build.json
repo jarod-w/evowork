@@ -49,6 +49,9 @@
     },
     {
       "path": "apps/desktop/tsconfig.main.json"
+    },
+    {
+      "path": "services/computer-use"
     }
   ]
 }
