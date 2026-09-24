@@ -1,10 +1,37 @@
 # 开发状态
 
-> **更新于 2026-09-24（第 46 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-24（第 52 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **第 52 次完成电脑操控产品决策**：CU-Q6 选择 A，Computer Use 对所有终端/命令行前端和
+> System Settings 整个 App 硬禁止，任何授权档不可覆盖；命令走受控 shell，系统设置交还用户。
+> 至此 CU-Q1–CU-Q6 全部确认，但策略识别、提前拒绝和验收测试尚未实现，电脑操控仍是 ⬜ 未开始。
+>
+> **第 51 次确认电脑操控的内容留存**：CU-Q5 选择 A，AX 正文与截图随本机任务历史留存，
+> 首次使用前明确告知；结构化审计仍不保存正文。归档不会删除这些内容，真正删除任务必须同时清除
+> rollout、图片/blob 与索引。当前侧栏“删除”只移除投影记录，因此不满足这条语义；存储、查看和
+> 真实删除链路均未实现。
+>
+> **第 50 次确认电脑操控的浏览器边界**：CU-Q4 采纳 A，普通网页优先 browser connector；
+> 只有浏览器 chrome、扩展页、原生文件选择器/权限弹窗或 CDP 不可用时才回退 Computer Use。
+> origin、上传、下载、提交和数据外发拒绝必须跨通道继承。当前 browser MCP 已有，但路由、策略继承
+> 与 Computer Use 回退均未实现。
+>
+> **第 49 次确认电脑操控的 App 授权范围**：CU-Q3 选择 A，允许用户对某 App 选择“始终允许”。
+> 持久化的只是 App 准入，不会跳过发送、删除、上传等动作审批；授权只存本机、可撤销，硬禁止和
+> 企业对具体 App 的 deny 仍优先。当前授权存储、设置页和策略接线均未实现。
+>
+> **第 48 次确认电脑操控的分发形态**：CU-Q2 采纳 A，原生 Helper 与 `cua_repl` MCP server
+> 将随 macOS 基础包分发，但能力默认关闭；安装时不申请 TCC 权限，首次明确使用时才引导授权。
+> 当前安装包仍未包含这些组件，因此这条是已确认的交付约束，不是已完成功能。
+>
+> **第 47 次确认电脑操控的首发平台范围**：CU-Q1 采纳 A，首版仅支持 macOS 14.4+。
+> 电脑操控目前只有设计，CU-M0–CU-M4 的 Helper、MCP、策略、UI、打包和真机验收均未实现；
+> Windows UIA 驱动与 Linux Wayland/X11 驱动明确不进入首版，已分别登记为后续工作，不能把
+> 跨平台协议占位描述成现有能力。详见 [12](design/12-computer-use.md)。
 >
 > **第 46 次修复所有 Popover 的窗口边界**：截图里的 Composer 固定在窗口底部，审批档
 > 仍写死 `top: 100%`，所以「帮我批准」之后的菜单项落到窗口外。现在共用 Popover 会按
@@ -187,8 +214,8 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 模型表变成四层合并、设置页上线。**§4 的第一个卡住项就此关闭。**
 **Q16 三家模型全部对真实 endpoint 实测过**，并因此改出三个真缺陷。
 
-剩下的工作主要是：真机与证书（U3/U4/U5/U6）· 人工评分（U1）·
-分享/外部解析/系统唤醒等尚未接通的边界，以及少量非主路径 UI。
+剩下的工作主要是：电脑操控 CU-M0–CU-M4（首版 macOS 14.4+）· 真机与证书（U3/U4/U5/U6）·
+人工评分（U1）· 分享/外部解析/系统唤醒等尚未接通的边界，以及少量非主路径 UI。
 
 | 指标 | 值 |
 | --- | --- |
@@ -225,6 +252,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | **P3.5-3** M10c 企业面 | 🟢 | **配额班级**（`quota_classes` + JWT `quotaClass`；每人覆盖仍走 `setQuota`；用尽不自动换模型）· **签名策略包**（identity ES256 签 payload 原文 · 密钥落库跨重启 · `GET /v1/policy-pack` · 桌面验签后写 `requirements.toml` · 超期只读 + 11 §8 原句）· WEB 管理端签发 / 班级 | 企业 OIDC SSO 不在本段（等客户 IdP）· 10 §7 本机安全能力页仍未做 · 生产发信仍是 stderr |
 
 | **P3.5-4** WEB 缺口收口 | 🟢 | **改密页** `/account/password`（调 `/v1/password`；`mustChangePassword` 时管理端只渲染改密；成功后 `/v1/me` 翻会话）· **成员行内动作**（设额度 / 分配班级 / 授予收回 admin；加人只按邮箱）· **策略包**可读 payload + 历史 + 撤销 · **身份面审计** · **管理端用量聚合**（Q43=A，不按天分组） | 分享页（Q41 / 第 25 条）跟分享上传走 · 企业私有源索引管理面等 Q44 |
+| **新增 · 电脑操控** | ⬜ | 设计完成，**CU-Q1–CU-Q6 全部确认**：macOS 14.4+、随包默认关闭、持久 App 授权、浏览器 CDP 优先、AX/截图随任务留存、终端/系统设置硬禁止 | **CU-M0–CU-M4 全部未实现**：原生 Helper、`cua_repl` MCP、应用授权与策略、browser 路由、留存/真实删除、硬禁止 App 识别、UI、签名打包及真机验收。Windows/Linux 驱动不在首版 |
 
 图例：✅ 完成 · 🟢 核心完成，剩余项已列 · 🟡 部分 · ⬜ 未开始
 
@@ -604,7 +632,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 
 前两类不是写代码能解决的；后两类是纯工作量，且各自的**约束与判据都已经写进对应包的 README 与测试**。
 
-### 6.1 设计集 01–10 与代码逐篇对账（2026-09-13）
+### 6.1 设计集 01–12 与代码逐篇对账（2026-09-24）
 
 上面几张表按里程碑说，这里按**设计文档**说 —— 方便拿着某一篇设计去问"这篇写的东西现在到底做到哪"。
 只列**文档写了、代码没做或做了一半**的；都做了的不重复。对账用的证据是文件路径，改完对应文件就把这一行删掉。
@@ -623,13 +651,14 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | **01 设计系统** | token/断点已改走工作台数值；侧栏拖动手柄未做（clamp 已接）· 应用图标仍是 Electron 默认 | `packages/tokens/src/palette.ts` · `app.css` · `bootstrap.ts` · `build/` |
 | **02 信息架构** | 通知中心与设备中心（接通前已隐藏）· deeplink `evowork://` | `app.tsx` · `sidebar.tsx` |
 | **03 首页与 Composer** | 语音 · 拖拽/粘贴附件 · 项目文件递归模糊候选 · 队列编辑/重排 · 除 `/清空`、`/新建任务` 外的本地命令 | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
-| **04 任务工作台** | C · 搜索高级筛选与单消息定位 · 队列编辑/重排 · 子任务侧滑未端到端（**§3.5 任务标题三来源已接通**，2026-09-13） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` |
-| **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx` |
+| **04 任务工作台** | C · 搜索高级筛选与单消息定位 · 队列编辑/重排 · 子任务侧滑未端到端（**§3.5 任务标题三来源已接通**，2026-09-13）· CU-Q5 要求的电脑操控留存提示/查看与真实删除未接；当前“删除”只移除投影记录 | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
+| **05 插件** | 左侧与页面仍叫“技能·连接器”，“发现应用”仍是另一个入口，尚未统一为“插件 / 使用插件” · 内核 MCP 握手后的实时连接状态未接通（信任后只写 config.toml）· OAuth / 工具级策略未接通 · CU-Q4 的 browser→Computer Use 路由、策略继承与受控回退未接 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx`；Computer Use 规格见 [12](design/12-computer-use.md) |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 分享 / 删除仍无宿主动作，当前均按真实能力隐藏 · §3.4 正文 FTS 未接，界面已明确只搜文件名 | `library.tsx` vs `app.tsx` |
 | **07 自动化** | `wake_system` 只有数据字段，没有 OS 唤醒钩子 · 从任务转自动化入口未接 · U3 仍待真机 | `automations.tsx` · `services/scheduler/README.md` |
 | **08 产物与解析** | D · OCR 档解析器与安装 · 分享页跟分享上传走（不在 M10b） | `services/ingest/src/parsers/` |
-| **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· 内部只读路径的 Ask `ToolContributor`（`ext/` 空；Q45 后不再挡 Composer 主路径） | `settings.tsx` · `ext/` · `composer.tsx` |
-| **11 账号与模型**（WEB 侧，2026-09-20） | 分享页 `/s/<share-id>`（Q41，跟 D 同一切片；**不读账号会话、不带 `authorization` 头**，第 25 条尚无测试）· 企业私有源索引的管理面（**Q44 未决策 —— 当前唯一开放项**，推荐"只注册源、不托管内容"） | `apps/web/src/app.tsx` · 细则 [11 §13.10](design/11-account-and-models.md) |
+| **10 安全与权限 UX** | **`auto_review` 未对着真实内核验证** · 任务页预算进度条与耗尽双动作（只有 Composer 的 `over-budget` 态，`thread/goal` 未端到端验）· §6 云端审计摘要（identity 有身份面审计，无任务审计）· §7 设置页「安全与权限」没有本机安全能力页（现展示策略包状态）· CU-Q5 的任务内容与结构化审计分离尚未实现 · 内部只读路径的 Ask `ToolContributor`（`ext/` 空） | `settings.tsx` · `ext/` · `composer.tsx` |
+| **11 账号与模型**（WEB 侧，2026-09-20） | 分享页 `/s/<share-id>`（Q41，跟 D 同一切片；**不读账号会话、不带 `authorization` 头**，第 25 条尚无测试）· 企业私有源索引的管理面（**Q44 未决策 —— 原 Q 系列的唯一开放项**，推荐"只注册源、不托管内容"） | `apps/web/src/app.tsx` · 细则 [11 §13.10](design/11-account-and-models.md) |
+| **12 电脑操控** | **整项未实现，CU-Q1–CU-Q6 已全部确认。** CU-M0–CU-M4 的 Helper、11 个工具、授权存储/撤销、browser 回退、AX/截图留存/真实删除、终端/系统设置提前硬拒绝、动作审批/中断、UI、签名打包和真机矩阵均待实现。Windows/Linux 驱动明确不在首版 | 当前仓库没有 `apps/computer-use-macos/`、`services/computer-use/` 或 `plugins/connectors/computer-use/`；现有 dmg 也未包含相关组件；规格见 [12](design/12-computer-use.md) |
 
 **仓内为空、但设计依赖的目录**：`ext/` · `config/showcase/` · `config/permissions/`（都只有 README 或 `.gitkeep`）。`plugins/agents/` 故意不预置角色。`apps/web/` 与 `services/identity/` 已有实现；**分享页仍未做**（见上表第 11 篇）。改密页已于 P3.5-4 落地。
 

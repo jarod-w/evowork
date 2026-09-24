@@ -615,6 +615,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 8 | 表数口径 | `TABLES` 里是 **15** 张（6 投影 + 9 权威），第 16 张是迁移器自建的 `meta`。CLAUDE.md §3 与 status.md 写"16 张"含 meta；`.cursor/rules/apps-desktop.mdc` 仍写"32 个组件"（现为 35） |
 | 9 | 随包内核只有一个平台 | `build/kernel/` 下只有 `mac-arm64/`；Windows / Linux 的二进制要在 CI 里构建后放进对应目录，`scripts/package.mjs` 缺它时会拒绝打包 |
 | 10 | 桌面壳有若干 UI 声明了但没接 | 侧边栏**行操作只接了 `archive` / `delete`**（且两者都是从投影表移除，没调内核的归档），`rename` / `move` / `reveal` / `new-in-workspace` / `share` / `copy-link` / `fork` 七项落到 `rowAction` 后只记一条 `desktop.row_action.unimplemented` 日志（[renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts)）；「更多」菜单里 `inspiration` / `guide` / `devices` / `update` 四项禁用并给原因；`@` 候选与语音输入没有数据源。菜单项本身都如实说"还没做"，但**行菜单里的七项看起来是能点的** |
+| 11 | 电脑操控尚未进入当前架构 | CU-Q1–CU-Q6 已全部确认；但 `apps/computer-use-macos/`、`services/computer-use/`、`plugins/connectors/computer-use/` 均不存在，当前 App 和安装包没有 Helper、MCP 工具、授权、browser 路由、留存/真实删除、终端与 System Settings 提前硬拒绝、权限页或控制状态条。现有任务“删除”只移除投影记录，不满足 CU-Q5；完整目标架构见 [12](design/12-computer-use.md) |
 
 另有若干"还没被证伪的断言"（GLM 产物质量 · misfire 真机体验 · 签名公证链路 · Windows 隔离强度 · `safeStorage` 真机行为），
 它们是**结论层面**的空白而不是架构层面的，见 [work-priority §10](work-priority.md) 与 [status.md §3](status.md)。

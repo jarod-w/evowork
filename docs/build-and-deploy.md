@@ -483,6 +483,23 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | **签名证书** | Apple Developer ID + 公证 · Windows 代码签名 | 卡 P0-5，见 §7 与 U4。缺任一 secret 时 `package.mjs` 整体降级为未签名并标注进文件名 |
 | 内核构建的时间与磁盘 | 首次约 40 分钟、`target/` 涨到 7.7 GB（§2.1） | 别在 CI 里给它设 30 分钟超时 |
 
+### 5.8 电脑操控辅助组件（未实现）
+
+CU-Q1、CU-Q2 已于 2026-09-24 确认：电脑操控首版仅支持 **macOS 14.4+**；原生 Helper 与
+`cua_repl` MCP server **随基础包分发，但能力默认关闭**。当前安装包尚未包含这些组件或对应权限说明，
+不能把现有 dmg 描述为支持电脑操控。
+
+后续 macOS 包需把自建 Helper 与 MCP server 作为 `extraResources` 随主 App 一起分发，并满足：固定 bundle id、
+与主 App 相同 Team ID、整组签名与公证、协议版本绑定、20 MB 增量预算以及 TCC 首次授权/升级保留/
+撤权恢复真机测试。`package.mjs` 应在目标声明启用 Computer Use 时校验两项组件存在、版本匹配且签名一致；
+不得在首次使用时临时联网下载，也不得把 OpenAI 的 `@oai/sky`、Computer Use App 或品牌资产放入安装包。
+
+安装完成后配置保持 `enabled=false`，不自动启动控制会话，也不主动申请 Accessibility 或 Screen Recording。
+只有用户首次明确使用时才展示数据去向并引导系统授权；企业 requirements 可以继续把能力锁为不可启用。
+
+Windows 的 UIA/输入注入/代码签名和 Linux 的 Wayland/X11/门户权限均为后续独立工作；三平台现有
+electron-builder 目标并不代表电脑操控已跨平台可用。详细边界见 [12 §11–§13](design/12-computer-use.md)。
+
 ---
 
 ## 6. 排障
@@ -536,6 +553,7 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | 网关的水平扩展与长压测 | 只跑过单实例；`maxContextTokens` 也仍未实测 | M1 剩余项 |
 | 自动更新服务端 | `publish` 配置已就位，服务端没建 | §5.3 · M9 |
 | 办公扩展的下载编排 | 没实现；§3.3 现在是手工建 venv | §5.3 · M9 |
+| 电脑操控 Helper/MCP 的签名、随包分发与 TCC 升级行为 | CU-M0–CU-M4 尚未实施；CU-Q1、CU-Q2 已确认 macOS 14.4+、随基础包但默认关闭 | §5.8 · 12 §11–§13 |
 
 已验证的：
 

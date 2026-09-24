@@ -109,9 +109,13 @@
 | 移动到项目      | 更新任务的 `projectId`                | 已接通时显示                                               |
 | 打开所在文件夹  | 本机 shell                             | 使用 `thread.cwd`                                         |
 | 归档            | `thread/archive`                       | 归档后从列表消失，去“数据管理”                             |
-| 删除            | `thread/delete`                        | 二次确认，且必须说明不会删除项目文件                       |
+| 删除            | `thread/delete`                        | 二次确认，且必须说明不会删除项目文件；若任务含电脑操控内容，必须同时清除 AX/截图所在 rollout、blob 与索引（CU-Q5=A） |
 
 主路径只展示端到端接通的操作。分享、复制链接、分叉等动作在链路接通前隐藏，不得保留点击后只记录 `unimplemented` 的菜单项。
+
+**电脑操控留存的删除语义**：归档只改变可见性，继续保留 AX 正文与截图。任务“删除”只有在底层历史、
+图片/blob 和索引都被实际清除后才能报告成功；仅删除 EvoWork 投影表记录不满足 CU-Q5=A。实现必须用
+临时测试内容做磁盘前后扫描，证明任务不可通过重启、恢复或搜索重新出现。
 
 “保存到项目”通常不是一个动作——Q1=A 下任务天生在真实目录执行。若任务使用临时目录，该菜单项才出现，语义为“移动到正式项目”（移动目录 + 更新 `cwd` + 重建产物索引路径）。
 
@@ -253,7 +257,7 @@
 | 4   | `Plan`                                      | 展开         | 步骤清单卡：每步 `pending / in_progress / completed` 三态图标 + 文案。数据来自 `turn/plan/updated`（`v2/turn.rs:528-533`）。有未完成步骤时卡底部提供「确认执行 / 修改计划」（Q45：不再绑定已下架的 Plan 协作模式） |
 | 5   | `CommandExecution`                          | 折叠         | 一行：`$ 命令`（等宽，超长中截）+ 状态点 + 耗时 + 退出码。展开显示输出（`outputDelta` 流式追加，尾部 500 行滚动窗口）。含 `TerminalInteraction` 时提供输入框（交互式命令）                               |
 | 6   | `FileChange`                                | **展开**     | 变更卡：文件路径 + `+n/-m` 统计 + 折叠的 diff（首屏最多 40 行，超出「查看完整变更」跳结果区变更视图）。数据增量来自 `item/fileChange/patchUpdated`                                                       |
-| 7   | `McpToolCall`                               | 折叠         | 一行：连接器图标 + `server.tool` + 状态 + 耗时。展开显示入参/出参 JSON（折叠树）。进度来自 `item/mcpToolCall/progress`                                                                                   |
+| 7   | `McpToolCall`                               | 折叠         | 一行：连接器图标 + `server.tool` + 状态 + 耗时。一般工具展开显示入参/出参 JSON（折叠树）；`cua_repl.get_app_state` 改用“已读取 <App> · 内容已保存到此任务”，AX/截图默认不展开，用户主动点击后才查看（CU-Q5=A）。进度来自 `item/mcpToolCall/progress` |
 | 8   | `DynamicToolCall`                           | 折叠         | 同上，但工具由扩展贡献（`ToolContributor`）。图标取自扩展声明                                                                                                                                            |
 | 9   | `FunctionCallOutput`                        | 折叠         | 通常并入其对应调用项显示，不单独占行；无法关联时以「工具返回」独立折叠行呈现                                                                                                                             |
 | 10  | `WebSearch`                                 | 折叠         | 一行「搜索：<query>」+ 结果条数；展开为结果列表（标题 + 域名 + 摘要），点击在内置浏览器打开（§6.4）                                                                                                      |
