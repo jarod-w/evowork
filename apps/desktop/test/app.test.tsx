@@ -1226,9 +1226,10 @@ describe('侧边栏的六个入口都要有落点', () => {
     fireEvent.click(await screen.findByRole('button', { name: '添加内容' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /使用插件/ }));
     expect(await screen.findByRole('dialog', { name: '使用插件' })).toBeTruthy();
-    expect(screen.getByText('文档')).toBeTruthy();
+    const skill = await screen.findByRole('menuitem', { name: /文档/ });
+    expect(skill.textContent).toContain('生成文档');
 
-    fireEvent.click(screen.getByText('文档').closest('[role="button"]') as HTMLElement);
+    fireEvent.click(skill);
     expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).not.toBe('');
     expect(bridge.send).not.toHaveBeenCalled();
 

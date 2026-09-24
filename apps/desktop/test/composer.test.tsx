@@ -273,6 +273,66 @@ describe('添加内容菜单', () => {
     expect(onManagePlugins).toHaveBeenCalled();
   });
 
+  it('「使用插件」锚在添加按钮上，选中后只交出提示、不发送', () => {
+    const onUsePlugin = vi.fn();
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        onOpenPlugins: () => {},
+        onManagePlugins: () => {},
+        onUsePlugin,
+        plugins: [
+          {
+            id: 'charts',
+            displayName: '图表',
+            description: '生成图表（svg / png）。当需要把数据画出来时使用。',
+            category: '办公',
+            defaultPrompt: '用图表',
+          },
+        ],
+      },
+      onSend,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用插件/ }));
+
+    const dialog = screen.getByRole('dialog', { name: '使用插件' });
+    const anchor = screen.getByRole('button', { name: '添加内容' }).parentElement;
+    expect(anchor?.contains(dialog)).toBe(true);
+    expect(dialog.textContent).toContain('生成图表（svg / png）。当需要把数据画出来时使用。');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /图表/ }));
+    expect(onUsePlugin).toHaveBeenCalledWith('用图表');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '使用插件' })).toBeNull();
+  });
+
+  it('点「关闭」收起使用插件，不把提示写进输入框', () => {
+    const onUsePlugin = vi.fn();
+    renderComposer({
+      onOpenPlugins: () => {},
+      onUsePlugin,
+      plugins: [
+        {
+          id: 'charts',
+          displayName: '图表',
+          description: '生成图表',
+          category: '办公',
+          defaultPrompt: '用图表',
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用插件/ }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+
+    expect(screen.queryByRole('dialog', { name: '使用插件' })).toBeNull();
+    expect(onUsePlugin).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toBe('');
+  });
+
   it('点「添加本地文件」调用 onAttach', () => {
     const onAttach = vi.fn();
     renderComposer({ onAttach });

@@ -88,7 +88,6 @@ import { resolveModelChoice } from './model-selection.js';
 import { AuditPage, type AuditRow } from './views/audit.js';
 import {
   CatalogPage,
-  DiscoverDrawer,
   SKILL_CREATOR_PROMPT,
   type CatalogPageProps,
   type CatalogTab,
@@ -445,7 +444,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [catalog, setCatalog] = useState<CatalogDataView | null>(null);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('skills');
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
-  const [discoverOpen, setDiscoverOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [libraryInitialNav, setLibraryInitialNav] = useState<LibraryNav>('recent');
@@ -989,7 +987,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .listProjects()
         .then(setProjects)
         .catch(() => setProjects(null));
-    if (view === 'catalog' || discoverOpen)
+    if (view === 'catalog')
       void bridge
         .getCatalog()
         .then(setCatalog)
@@ -1016,7 +1014,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then(setPreferences)
         .catch(() => setPreferences(null));
     }
-  }, [view, activeProjectId, bridge, discoverOpen, applyAccessView]);
+  }, [view, activeProjectId, bridge, applyAccessView]);
 
   /**
    * 进详情页时拉三份数据：概览、根目录一层、空间记忆。
@@ -1318,7 +1316,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const prepareTaskWithText = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    setDiscoverOpen(false);
     setActiveTaskId(null);
     setView('task');
     setDraft(trimmed);
@@ -1561,7 +1558,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         if (key === 'model') setModelOverridden(false);
       },
       onOpenLibrary: () => setView('library'),
-      onOpenPlugins: () => setDiscoverOpen(true),
+      plugins: catalog?.apps,
+      onUsePlugin: prepareTaskWithText,
+      onOpenPlugins: () => {
+        void bridge
+          .getCatalog()
+          .then(setCatalog)
+          .catch(() => setCatalog((current) => current ?? emptyCatalogView));
+      },
       onManagePlugins: () => {
         setCatalogTab('skills');
         setView('catalog');
@@ -1620,6 +1624,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       workspaceId,
       reportFailure,
       startup,
+      catalog,
+      prepareTaskWithText,
+      emptyCatalogView,
     ],
   );
 
@@ -2239,18 +2246,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onSearchFiles={() => {
             setLibraryInitialNav('search');
             setView('library');
-          }}
-        />
-      ) : null}
-      {discoverOpen ? (
-        <DiscoverDrawer
-          apps={catalog?.apps ?? []}
-          onClose={() => setDiscoverOpen(false)}
-          onUse={prepareTaskWithText}
-          onManage={() => {
-            setDiscoverOpen(false);
-            setCatalogTab('skills');
-            setView('catalog');
           }}
         />
       ) : null}

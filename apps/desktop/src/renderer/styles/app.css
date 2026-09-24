@@ -3924,30 +3924,65 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   background: var(--bg-surface);
   color: var(--text-primary);
 }
-.ew-discover-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-drawer);
-  background: var(--bg-scrim);
-}
-.ew-discover-drawer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--layout-sidebar-width);
+/*
+ * 05 §6「使用插件」选择器。锚在 Composer 的「+」上，由 Popover 负责避开窗口边缘。
+ * 不要再做成贴侧栏的整屏抽屉：抽屉宽装不下三列项目卡，文字会被裁掉，下面还空出一列白。
+ */
+.ew-plugin-picker {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   width: var(--layout-discover-drawer-width);
-  padding: var(--space-16);
-  overflow-y: auto;
+  max-width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
   background: var(--bg-surface);
-  border-right: 1px solid var(--border-default);
   box-shadow: var(--shadow-lg);
+  /*
+   * 无边框窗口的标题栏是拖拽区。选择器升到那一条上时，不声明 no-drag 的话
+   * 「关闭」的点击会被窗口拖动吃掉（和标题栏按钮同一条规矩）。
+   */
+  -webkit-app-region: no-drag;
 }
-.ew-discover-manage {
-  margin-top: var(--space-16);
-  padding: 0;
+.ew-plugin-picker button {
+  -webkit-app-region: no-drag;
+}
+.ew-plugin-picker-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-8) 0 var(--space-12);
+}
+.ew-plugin-picker-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-body-lg-size);
+  font-weight: var(--font-body-lg-weight);
+}
+.ew-plugin-picker .ew-menu {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ew-plugin-picker .ew-menu-item {
+  align-items: flex-start;
+  height: auto;
+  padding-block: var(--space-8);
+}
+.ew-plugin-picker .ew-menu-description {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ew-plugin-picker-manage {
+  margin: 0;
+  padding: var(--space-8) var(--space-12) var(--space-12);
   border: 0;
   background: transparent;
   color: var(--accent-strong);
   font: inherit;
+  text-align: left;
   cursor: pointer;
 }

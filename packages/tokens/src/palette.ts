@@ -287,7 +287,7 @@ export const LAYOUT = {
   /** §5.34 Dialog：常规宽 420，内容多时撑到 520 */
   dialogWidth: 420,
   dialogMaxWidth: 520,
-  /** 05 §6「发现应用」抽屉 */
+  /** 05 §6 Composer「使用插件」选择器宽。锚在「+」上，不是整屏抽屉。 */
   discoverDrawerWidth: 420,
   /** §5.14 InlineSelect */
   inlineSelectHeight: 24,

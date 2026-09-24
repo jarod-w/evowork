@@ -22,7 +22,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
-import { Badge, Banner, Dialog, PillButton } from './primitives.js';
+import { Badge, Banner, Dialog, GhostButton, PillButton } from './primitives.js';
 
 export const COMPOSER_PLACEHOLDER = '输入需求，或描述你想完成的工作';
 
@@ -145,6 +145,15 @@ export function composerModeOptions(
   });
 }
 
+/** 05 §6：选择器只消费已经能用的插件，不负责安装。 */
+export interface ComposerPlugin {
+  readonly id: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly category: string;
+  readonly defaultPrompt?: string | undefined;
+}
+
 export interface ComposerProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
@@ -217,6 +226,13 @@ export interface ComposerProps {
   readonly onOpenPlugins?: (() => void) | undefined;
   readonly onManagePlugins?: (() => void) | undefined;
   /**
+   * 已安装、可信、当前可用的插件。`undefined` 表示目录还在读；
+   * 空数组表示读完了但没有可选项（05 §6）。
+   */
+  readonly plugins?: readonly ComposerPlugin[] | undefined;
+  /** 选中后只把默认提示写入输入框，不发送。 */
+  readonly onUsePlugin?: ((prompt: string) => void) | undefined;
+  /**
    * 策略包超期只读（R11 / 11 §8）。有值时禁用发送并显示这句话。
    * 与 `modelUnavailable` 分开：那条是「检查模型接入」，这条是连企业网更新策略。
    */
@@ -267,6 +283,7 @@ export function Composer(props: ComposerProps) {
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [confirmFullAccess, setConfirmFullAccess] = useState(false);
 
   const parsing = parsingCount(attachments);
@@ -482,8 +499,11 @@ export function Composer(props: ComposerProps) {
                 type="button"
                 className="ew-composer-attach"
                 aria-label="添加内容"
-                aria-expanded={addOpen}
-                onClick={() => setAddOpen((value) => !value)}
+                aria-expanded={addOpen || pluginsOpen}
+                onClick={() => {
+                  setPluginsOpen(false);
+                  setAddOpen((value) => !value);
+                }}
               >
                 {renderIcon('plus')}
               </button>
@@ -539,9 +559,34 @@ export function Composer(props: ComposerProps) {
                     setAddOpen(false);
                     if (id === 'attach') props.onAttach?.();
                     if (id === 'library') props.onOpenLibrary?.();
-                    if (id === 'use-plugins') props.onOpenPlugins?.();
+                    if (id === 'use-plugins') {
+                      setPluginsOpen(true);
+                      props.onOpenPlugins?.();
+                    }
                     if (id === 'manage-plugins') props.onManagePlugins?.();
                   }}
+                />
+              </Popover>
+              {/*
+               * 05 §6：锚在「+」上的轻量选择器。以前是贴着固定侧栏宽度的整屏抽屉，
+               * 里面又套了三列项目卡，卡片会被抽屉裁掉，下面还空出一整列白。
+               */}
+              <Popover open={pluginsOpen} onClose={() => setPluginsOpen(false)}>
+                <PluginPicker
+                  plugins={props.plugins}
+                  onClose={() => setPluginsOpen(false)}
+                  onUse={(prompt) => {
+                    setPluginsOpen(false);
+                    props.onUsePlugin?.(prompt);
+                  }}
+                  onManage={
+                    props.onManagePlugins
+                      ? () => {
+                          setPluginsOpen(false);
+                          props.onManagePlugins?.();
+                        }
+                      : undefined
+                  }
                 />
               </Popover>
             </span>
@@ -739,5 +784,50 @@ function SendButton({
     >
       {parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : renderIcon('arrow-up')}
     </button>
+  );
+}
+
+const PLUGIN_PICKER_EMPTY = '还没有可用的插件。安装技能、信任连接器或创建专家后，就能从这里使用。';
+
+function pluginPrompt(plugin: ComposerPlugin): string {
+  return plugin.defaultPrompt ?? `使用「${plugin.displayName}」协助接下来的任务。`;
+}
+
+/** 05 §6：列出可直接使用的插件。定位由外层 Popover 负责，这里只画内容。 */
+function PluginPicker(props: {
+  readonly plugins: readonly ComposerPlugin[] | undefined;
+  readonly onClose: () => void;
+  readonly onUse: (prompt: string) => void;
+  readonly onManage?: (() => void) | undefined;
+}) {
+  return (
+    <div className="ew-plugin-picker" role="dialog" aria-label="使用插件">
+      <div className="ew-plugin-picker-bar">
+        <p className="ew-plugin-picker-title">使用插件</p>
+        <GhostButton label="关闭" onClick={props.onClose} />
+      </div>
+      {props.plugins === undefined ? (
+        <p className="ew-menu-empty">正在读取…</p>
+      ) : (
+        <Menu
+          ariaLabel="可用插件"
+          emptyHint={PLUGIN_PICKER_EMPTY}
+          items={props.plugins.map((plugin) => ({
+            id: plugin.id,
+            label: plugin.displayName,
+            description: `${plugin.category} · ${plugin.description}`,
+          }))}
+          onSelect={(id) => {
+            const plugin = props.plugins?.find((item) => item.id === id);
+            if (plugin) props.onUse(pluginPrompt(plugin));
+          }}
+        />
+      )}
+      {props.onManage ? (
+        <button type="button" className="ew-plugin-picker-manage" onClick={props.onManage}>
+          管理插件 →
+        </button>
+      ) : null}
+    </div>
   );
 }
