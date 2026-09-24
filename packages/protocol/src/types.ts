@@ -544,3 +544,27 @@ export interface ProjectUpdateParams {
 export interface ProjectDeleteParams {
   readonly projectId: string;
 }
+
+/** MCP form elicitation：只依赖单字段枚举子集；其它模式保守拒绝。 */
+export interface McpElicitationParams {
+  readonly threadId: string;
+  readonly turnId: string | null;
+  readonly serverName: string;
+  readonly mode: string;
+  readonly message: string;
+  readonly requestedSchema?: {
+    readonly type: 'object';
+    readonly properties: Readonly<
+      Record<
+        string,
+        { readonly type: string; readonly enum?: readonly string[]; readonly title?: string }
+      >
+    >;
+    readonly required?: readonly string[];
+  };
+}
+export interface McpElicitationResponse {
+  readonly action: 'accept' | 'decline' | 'cancel';
+  readonly content: Record<string, unknown> | null;
+  readonly _meta: Record<string, unknown> | null;
+}

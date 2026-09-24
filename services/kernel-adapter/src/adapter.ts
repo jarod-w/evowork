@@ -176,7 +176,16 @@ export function createAdapter(options: AdapterOptions) {
 
   const events = createEventRouter({
     store,
-    onUiEvent: (event) => options.onUiEvent?.(event),
+    onUiEvent: (event) => {
+      if (event.type === 'task-removed') {
+        session.openThreads.delete(event.threadId);
+        localQueues.delete(event.threadId);
+        approvals.cancel((a) => a.threadId === event.threadId);
+      }
+      if (event.type === 'turn-completed')
+        approvals.cancel((a) => a.kind === 'mcp' && a.threadId === event.threadId);
+      options.onUiEvent?.(event);
+    },
     ...(options.onSideEffect ? { onSideEffect: options.onSideEffect } : {}),
     ...(logger ? { logger } : {}),
     now,
@@ -363,7 +372,37 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async stop(): Promise<void> {
+      approvals.cancel(() => true);
       await session.stop();
+    },
+
+    async requestComputerUseConsent(approval: PendingApproval): Promise<ApprovalReply> {
+      const row = store.threads.get(approval.threadId);
+      if (
+        !row ||
+        row.automation_id ||
+        row.parent_thread_id ||
+        row.last_turn_id !== approval.turnId ||
+        row.derived_status !== 'running'
+      )
+        return { decision: 'decline' };
+      const result = await approvals.handle('mcpServer/elicitation/request', {
+        ...approval.params,
+        threadId: approval.threadId,
+        turnId: approval.turnId,
+      });
+      const latest = store.threads.get(approval.threadId);
+      if (!latest || latest.last_turn_id !== approval.turnId || latest.derived_status !== 'running')
+        return { decision: 'cancel' };
+      const content = result.content as Record<string, unknown> | null;
+      return {
+        decision:
+          result.action === 'accept' ? 'accept' : result.action === 'cancel' ? 'cancel' : 'decline',
+        ...(typeof content?.scope === 'string' ? { optionId: content.scope } : {}),
+      };
+    },
+    cancelComputerUseApprovals(): void {
+      approvals.cancel((a) => a.kind === 'mcp' && a.params.serverName === 'cua_repl');
     },
 
     catalog(): Catalog | undefined {
@@ -555,10 +594,12 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async deleteTask(threadId: string): Promise<void> {
+      approvals.cancel((a) => a.threadId === threadId);
       await session.peer.request(METHOD.threadDelete, { threadId });
       store.threads.remove(threadId);
       session.openThreads.delete(threadId);
       localQueues.delete(threadId);
+      options.onUiEvent?.({ type: 'task-removed', threadId });
     },
 
     /**

@@ -31,7 +31,8 @@
     "marked": "^16.4.2",
     "mermaid": "^11.17.2",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@evowork/computer-use": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

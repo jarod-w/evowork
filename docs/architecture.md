@@ -630,3 +630,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
    混进来会让这张表从"会失败的检查清单"退化成"愿望清单"，而那正是它想避免的东西。
 4. **§10 只增不藏。** 偏差被修掉时删掉那一行并在 commit message 里说明；发现新偏差就加一行。
 5. 引用内核代码用 `path:line` 并**当场核对**（行号会漂）。
+
+## Computer Use 接线（2026-09-24，未开放发布）
+
+`cua_repl` stdio MCP → 带令牌/递增序号的私有 Unix socket → 桌面宿主 → 签名校验后的原生 Helper 私有 stdio。宿主使用 kernel-adapter 的任务上下文与审批路由，renderer 只暴露启停、撤权、状态订阅等语义动作。原生源码与 macOS 打包入口已加入，但发布标记强制关闭；不能把 Linux 构建通过描述成 macOS 能力可用。具体限制见 status.md 的第二批实现记录。

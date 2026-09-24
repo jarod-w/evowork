@@ -1,3 +1,4 @@
+import type { ComputerUseStatusView } from '../../shared/ipc.js';
 /**
  * 设置页（11 §4.4，M10a）—— 02 §2 路由表里那个 `/settings/*` 的实现。
  *
@@ -61,6 +62,12 @@ export const BACKEND_LABEL: Readonly<Record<string, string>> = Object.freeze({
 });
 
 export interface SettingsPageProps {
+  readonly computerUse?: ComputerUseStatusView | null | undefined;
+  readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
+  readonly onComputerUseStop?: (() => void) | undefined;
+  readonly onComputerUseRevoke?: ((appId?: string) => void) | undefined;
+  readonly onComputerUseSettings?: (() => void) | undefined;
+
   readonly section: SettingsSection;
   readonly onSection: (section: SettingsSection) => void;
   readonly access: ModelAccessView | null;
@@ -119,7 +126,7 @@ export function SettingsPage(props: SettingsPageProps) {
         {props.section === 'models' ? <ModelsSection {...props} /> : null}
         {props.section === 'usage' ? <UsageSection {...props} /> : null}
         {props.section === 'data' ? <DataSection /> : null}
-        {props.section === 'security' ? <SecuritySection access={props.access} /> : null}
+        {props.section === 'security' ? <SecuritySection {...props} /> : null}
         {props.section === 'about' ? (
           <AboutSection appName={props.appName} appVersion={props.appVersion} />
         ) : null}
@@ -803,7 +810,8 @@ function DataSection() {
 }
 
 /** 安全与权限：策略包状态是 M10c 接上的；档位可视化仍如实说没做。 */
-function SecuritySection({ access }: { readonly access: ModelAccessView | null }) {
+function SecuritySection(props: SettingsPageProps) {
+  const { access, computerUse: cu } = props;
   const pack = access?.policyPack;
   const statusLine =
     pack?.status === 'expired'
@@ -824,6 +832,34 @@ function SecuritySection({ access }: { readonly access: ModelAccessView | null }
       ) : (
         <p className="ew-settings-note">{statusLine}</p>
       )}
+      <SectionHeader title="电脑操控" />
+      <p className="ew-settings-note" role="status">
+        {cu?.message ?? '此版本尚未接通电脑操控状态。'}
+      </p>
+      <div className="ew-approval-actions">
+        <PillButton
+          disabled={!cu || ['unsupported', 'unverified', 'component-error'].includes(cu.state)}
+          onClick={() => props.onComputerUseEnabled?.(!cu?.enabled)}
+        >
+          {cu?.enabled ? '关闭电脑操控' : '启用电脑操控'}
+        </PillButton>
+        {cu?.state === 'permission-required' ? (
+          <PillButton onClick={props.onComputerUseSettings}>打开系统权限设置</PillButton>
+        ) : null}
+        {cu?.enabled ? <PillButton onClick={props.onComputerUseStop}>停止控制</PillButton> : null}
+      </div>
+      {(cu?.grants ?? []).map((grant) => (
+        <p key={grant.appId}>
+          {grant.appId} · {grant.allowed ? '允许' : '拒绝'}{' '}
+          <PillButton onClick={() => props.onComputerUseRevoke?.(grant.appId)}>撤销授权</PillButton>
+        </p>
+      ))}
+      {cu && cu.grants.length > 0 ? (
+        <PillButton onClick={() => props.onComputerUseRevoke?.()}>清除所有应用授权</PillButton>
+      ) : null}
+      <p className="ew-settings-note">
+        清除应用授权不会删除任务历史。界面文字和必要截图随任务留存；归档不删除。删除本机任务不能撤回模型提供方已经收到的数据。
+      </p>
       <EmptyState
         title="权限档位的可视化设置还没做好"
         hint="档位本身可用：在首页 Composer 底部选，或在引导第③步设默认值。企业禁用的档会留在列表里并给出原因。"

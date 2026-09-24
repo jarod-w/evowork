@@ -17,7 +17,7 @@
 import { SERVER_REQUEST } from '@evowork/protocol';
 import type { Logger } from '@evowork/logging';
 
-export type ApprovalKind = 'command' | 'fileChange' | 'permissions' | 'userInput';
+export type ApprovalKind = 'command' | 'fileChange' | 'permissions' | 'userInput' | 'mcp';
 
 export type ApprovalDecision =
   /** 允许这一次 */
@@ -92,6 +92,7 @@ const KIND_BY_METHOD: Readonly<Record<string, ApprovalKind>> = {
   [SERVER_REQUEST.fileChangeRequestApproval]: 'fileChange',
   [SERVER_REQUEST.permissionsRequestApproval]: 'permissions',
   [SERVER_REQUEST.toolRequestUserInput]: 'userInput',
+  [SERVER_REQUEST.mcpServerElicitation]: 'mcp',
 };
 
 /**
@@ -100,7 +101,28 @@ const KIND_BY_METHOD: Readonly<Record<string, ApprovalKind>> = {
  * 审批类回复 `{ decision }`；追问类回复的是答案而不是决定 ——
  * 混用会让内核收到一个它不认识的形状，而那个错误要等到真实运行时才出现。
  */
-function toWireReply(kind: ApprovalKind, reply: ApprovalReply): Record<string, unknown> {
+function toWireReply(
+  kind: ApprovalKind,
+  reply: ApprovalReply,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  if (kind === 'mcp') {
+    const form = elicitationChoice(params);
+    const action =
+      reply.decision === 'cancel'
+        ? 'cancel'
+        : reply.decision === 'accept' &&
+            form &&
+            reply.optionId &&
+            form.options.includes(reply.optionId)
+          ? 'accept'
+          : 'decline';
+    return {
+      action,
+      content: action === 'accept' && form ? { [form.field]: reply.optionId } : null,
+      _meta: null,
+    };
+  }
   if (kind === 'userInput') {
     return {
       ...(reply.optionId ? { optionId: reply.optionId } : {}),
@@ -119,6 +141,7 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
   const pending = new Map<string, PendingApproval>();
   const timers = new Map<string, ReturnType<typeof setTimeout>[]>();
   let counter = 0;
+  const cancellations = new Map<string, (reply: ApprovalReply) => void>();
 
   function emitPending(): void {
     // 按到达顺序（10 §3.5：多个待审批按到达顺序逐个处理，**不做"全部允许"**）
@@ -139,6 +162,14 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
     const params = (rawParams ?? {}) as Record<string, unknown>;
     const threadId = typeof params.threadId === 'string' ? params.threadId : '';
     const unattended = threadId ? (options.isUnattended?.(threadId) ?? false) : false;
+    // CU 必须绑定活动回合，自动化不允许触发任何准入提示。
+    if (
+      kind === 'mcp' &&
+      params.serverName === 'cua_repl' &&
+      (unattended || !threadId || typeof params.turnId !== 'string')
+    ) {
+      return toWireReply(kind, { decision: 'decline' }, params);
+    }
     const id = `apv_${++counter}`;
 
     const approval: PendingApproval = {
@@ -165,6 +196,7 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
     let autoDeclined = false;
 
     const decided = new Promise<ApprovalReply>((resolve) => {
+      cancellations.set(id, resolve);
       stageTimers.push(
         setTimeoutFn(() => options.onTimeoutStage?.(approval, 'remind'), policy.remindAfterMs),
       );
@@ -190,7 +222,7 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
 
     try {
       const reply = await Promise.race([options.ask(approval), decided]);
-      return toWireReply(kind, reply);
+      return toWireReply(kind, reply, params);
     } catch (err) {
       // UI 侧出错（比如窗口被关掉）——**必须回复**，否则内核永远等下去。
       // 回 decline 而不是 accept：出错时选择不做，而不是选择做。
@@ -198,10 +230,11 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
         threadId: threadId || undefined,
         errorClass: err instanceof Error ? err.name : 'UnknownError',
       });
-      return toWireReply(kind, { decision: 'decline' });
+      return toWireReply(kind, { decision: 'decline' }, params);
     } finally {
       clearTimers(id);
       pending.delete(id);
+      cancellations.delete(id);
       emitPending();
       if (autoDeclined) {
         options.logger?.info('adapter.approval.resolved', {
@@ -219,6 +252,10 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
       return Object.keys(KIND_BY_METHOD);
     },
     handle,
+    cancel(predicate: (approval: PendingApproval) => boolean): void {
+      for (const approval of pending.values())
+        if (predicate(approval)) cancellations.get(approval.id)?.({ decision: 'cancel' });
+    },
     pendingList(): readonly PendingApproval[] {
       return [...pending.values()].sort((a, b) => a.receivedAtMs - b.receivedAtMs);
     },
@@ -240,3 +277,32 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
 }
 
 export type ApprovalRouter = ReturnType<typeof createApprovalRouter>;
+
+/** UI 与回复校验共用。仅支持一个必填 string enum，复杂表单不能被误接受。 */
+export function elicitationChoice(
+  params: Record<string, unknown>,
+): { field: string; options: string[] } | undefined {
+  if (params.mode !== 'form') return undefined;
+  const schema = params.requestedSchema;
+  if (!schema || typeof schema !== 'object') return undefined;
+  const s = schema as Record<string, unknown>;
+  if (s.type !== 'object' || !s.properties || typeof s.properties !== 'object') return undefined;
+  const entries = Object.entries(s.properties);
+  if (entries.length !== 1) return undefined;
+  const [field, raw] = entries[0]!;
+  if (field === '__proto__' || field === 'constructor' || !raw || typeof raw !== 'object')
+    return undefined;
+  const p = raw as Record<string, unknown>;
+  if (
+    p.type !== 'string' ||
+    !Array.isArray(p.enum) ||
+    p.enum.length < 1 ||
+    p.enum.length > 8 ||
+    !p.enum.every((value): value is string => typeof value === 'string' && value.length <= 100) ||
+    !Array.isArray(s.required) ||
+    s.required.length !== 1 ||
+    s.required[0] !== field
+  )
+    return undefined;
+  return { field, options: p.enum };
+}

@@ -53,7 +53,11 @@ export async function runHook(handlerName) {
   }
 
   const input = await readStdin();
-  const env = { home: homedir(), now: () => Date.now() };
+  const env = {
+    home: homedir(),
+    now: () => Date.now(),
+    computerUseAvailable: process.env.EVOWORK_CUA_HOST_READY === '1',
+  };
   const { output, audit } = policy[handlerName](input, env);
 
   const auditPath = process.env.EVOWORK_AUDIT_LOG;

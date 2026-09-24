@@ -571,3 +571,7 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 - 网关单文件启动 + 能力端点 401/200 + **对 DeepSeek 的端到端流式请求**
 - 四个办公技能真实产出 pptx / docx / xlsx / png（xlsx 里确认是 `=B2*C2` 而不是算好的数）
 - 策略 hook 加载 vendor 后正确拦截 `~/.ssh` · Electron 二进制 `--version` 可运行
+
+## Computer Use 构建状态（2026-09-24）
+
+Linux `pnpm run build` 已验证 MCP bundle 与桌面代码构建；不会构建 macOS Helper。macOS 分支调用 `node scripts/build-computer-use.mjs`（**当前环境未验过**），依赖本机 Swift/macOS SDK，组装独立 App 并随包带入。生成的 `release.json` 固定 `releaseVerified=false`，待正式签名、公证、TCC、用户中断与图文真实删除验收完成后再建立发布流程。原生详细缺口见 `apps/computer-use-macos/README.md`。

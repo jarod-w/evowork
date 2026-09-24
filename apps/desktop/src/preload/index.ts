@@ -20,6 +20,7 @@ export interface ContextBridgeLike {
 
 /** 渲染进程能订阅的频道。与 `service-host.ts` 的 `IPC` 一一对应。 */
 export const RENDERER_CHANNELS = Object.freeze({
+  computerUseStatus: 'evowork:computer-use-status',
   uiEvent: 'evowork:ui-event',
   notice: 'evowork:notice',
   degrade: 'evowork:degrade',
@@ -46,6 +47,11 @@ export const RENDERER_CHANNELS = Object.freeze({
  * 所以契约里没有多参数的动作。
  */
 export const RENDERER_ACTIONS = Object.freeze([
+  'getComputerUseStatus',
+  'setComputerUseEnabled',
+  'stopComputerUse',
+  'revokeComputerUseAccess',
+  'openComputerUseSettings',
   'send',
   'interrupt',
   'decideApproval',
@@ -186,6 +192,7 @@ export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): 
     };
 
   const api: Record<string, unknown> = {
+    onComputerUseStatus: subscribe(RENDERER_CHANNELS.computerUseStatus),
     onUiEvent: subscribe(RENDERER_CHANNELS.uiEvent),
     onNotice: subscribe(RENDERER_CHANNELS.notice),
     onDegrade: subscribe(RENDERER_CHANNELS.degrade),

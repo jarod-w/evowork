@@ -1,6 +1,6 @@
 # 12 · 电脑操控（Computer Use）设计
 
-> 状态：**实施中：协议/状态机/策略基础已落地；原生链路与验收未完成**
+> 状态：**实施中：协议、MCP、宿主授权与 UI 已落地；Helper 源码及发布验收未完成**
 > 日期：2026-09-24
 > 适用基线：EvoWork `5fdde4147650b3b146ec8a4a78c1815f89fbad5b`；Codex `ee6814bfa4889fe9b2b3dcc9cc8bdd91effa8ab8`
 > 关联文档：[总纲](../evowork-on-codex-design.md) · [服务层](09-service-layer.md) · [安全与权限 UX](10-security-permissions-ux.md) · [插件](05-experts-skills-connectors.md)
@@ -278,6 +278,14 @@ CU-Q5=A：`get_app_state` 返回的 AX 正文、选中文本和截图作为 MCP 
                 │ 0700 dir + token    │ 固定 11 工具，无 eval/shell/fs │
                 └─────────────────────┴───────────────────────────────┘
 ```
+
+### 4.0 实施接线补充（2026-09-24）
+
+本轮将本机认证 socket 放在 Electron 主进程：`cua_repl → 认证 Unix socket → 宿主准入/任务校验 → Helper 私有 stdio`。
+Helper 作为固定签名 App 内的可执行文件启动，stdio 由宿主独占，使用有上限的长度前缀帧。
+这样 MCP 无法持宿主 token 直接跳过准入调用原生动作；token 不传给 Helper。原生权限仍只归 Helper。
+这是 §4 图中传输拓扑的实施收紧，其余权限、生命周期和无网络边界不变。
+发布验证标记未通过时设置页拒绝启用；开发测试中的注入驱动不表示原生能力已通过验收。
 
 ### 4.1 为什么不让 MCP server 直接获得 Accessibility 权限
 
@@ -817,3 +825,11 @@ CU-Q1–CU-Q6 已于 2026-09-24 全部确认。下表保留原选项、最终决
 - 设置页如实展示能力状态；未安装、未授权、模型不支持、企业禁用都不伪装成“已就绪”。
 - 首次留存提示、任务历史查看与真实删除通过磁盘级验收；不能用投影表删行冒充删除。
 - `docs/status.md`、`docs/architecture.md`、构建部署文档和第三方许可清单在实现完成时同步回写。
+
+## 2026-09-24 · Computer Use 第二批实现（未开放发布）
+
+- 已实现本机 stdio MCP、私有 socket 长度帧/令牌/序号、桌面宿主准入与任务生命周期、MCP 选项审批、设置页启停/撤权和活动停止入口。应用授权绑定签名；自动化和子任务拒绝；结构化审计不保存图文正文。
+- 新增 macOS Swift Helper 源码与构建入口，包含 AX、窗口截图和部分写动作。当前 Linux 无 Swift/macOS SDK，原生源码未编译，签名、公证、TCC 和实机中断未验收。拖拽、滚动、坐标回退与扩展选择仍拒绝，浏览器回退尚未实现。
+- 构建强制 `releaseVerified=false`，默认关闭且不能启用。模型图像能力暂按不支持处理；模型凭据来源、企业细粒度策略与可信交互来源仍需完整接线。不能手工修改标记绕过验收。
+- 删除走现有内核 `thread/delete`，失败保留投影，成功清除任务投影/审批/渲染缓存。此前“侧栏仅删除投影”的描述已过时。本轮隔离探针通过注入的文字与内联 PNG 验证归档保留、删除后历史文件内容消失且任务不可读；尚不证明 MCP blob、索引、导出及备份均清除。
+- 验收脚本：`scripts/verify-computer-use-deletion.mjs`；原生限制见 `apps/computer-use-macos/README.md`。内核源码未修改。

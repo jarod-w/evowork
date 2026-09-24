@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Badge, PillButton } from './primitives.js';
 
-export type ApprovalKind = 'command' | 'fileChange' | 'permissions' | 'userInput';
+export type ApprovalKind = 'command' | 'fileChange' | 'permissions' | 'userInput' | 'mcp';
 export type ApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel';
 
 export interface ApprovalViewModel {
@@ -112,7 +112,7 @@ export function ApprovalCard({
   const [draft, setDraft] = useState('');
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
-  const isQuestion = approval.kind === 'userInput';
+  const isQuestion = approval.kind === 'userInput' || approval.kind === 'mcp';
   const dangerous = (approval.changes ?? []).some((c) => c.kind === 'delete');
 
   useEffect(() => {
@@ -161,6 +161,8 @@ export function ApprovalCard({
                 </PillButton>
               ))}
             </div>
+          ) : approval.kind === 'mcp' ? (
+            <p>此授权表单暂不支持，无法批准。</p>
           ) : (
             <>
               <textarea
@@ -174,6 +176,14 @@ export function ApprovalCard({
               </PillButton>
             </>
           )}
+          {approval.kind === 'mcp' ? (
+            <div className="ew-approval-actions">
+              <PillButton onClick={() => onDecide('decline')}>拒绝</PillButton>
+              <PillButton variant="ghost" onClick={() => onDecide('cancel')}>
+                取消
+              </PillButton>
+            </div>
+          ) : null}
         </div>
       ) : (
         <>

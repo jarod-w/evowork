@@ -31,6 +31,8 @@ function run(command, args, cwd = ROOT) {
   execFileSync(command, args, { cwd, stdio: 'inherit' });
 }
 
+if (process.platform === 'darwin') run('node', [join(ROOT, 'scripts/build-computer-use.mjs')]);
+
 console.log('① 编译 TypeScript（含声明文件）');
 run('node', [join(ROOT, 'node_modules/typescript/bin/tsc'), '--build', 'tsconfig.build.json']);
 
@@ -72,6 +74,11 @@ console.log('\n③ 打包可独立运行的入口（esbuild）');
  *     一直是个麻烦，打包之后它就只是一个普通文件。
  */
 const BUNDLES = [
+  {
+    entry: 'services/computer-use/src/mcp-main.ts',
+    out: 'plugins/connectors/computer-use/vendor/server.mjs',
+    format: 'esm',
+  },
   { entry: 'services/gateway/src/main.ts', out: 'dist/gateway/main.js', format: 'esm' },
   { entry: 'services/identity/src/main.ts', out: 'dist/identity/main.js', format: 'esm' },
   {

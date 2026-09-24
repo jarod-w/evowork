@@ -33,6 +33,7 @@ export interface HookResult {
 }
 
 export interface HookEnvironment {
+  readonly computerUseAvailable?: boolean;
   readonly home: string;
   readonly now: () => number;
   /** 额外被视为工作空间内的目录（`runtimeWorkspaceRoots`） */
@@ -79,7 +80,7 @@ export function extractCommand(toolInput: Record<string, unknown>): string | und
 }
 
 export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): HookResult {
-  if (isComputerUseTool(input.tool_name)) {
+  if (isComputerUseTool(input.tool_name) && !env.computerUseAvailable) {
     return {
       output: deny('PreToolUse', 'POLICY_DENIED：电脑操控的宿主授权链尚未就绪'),
       audit: [

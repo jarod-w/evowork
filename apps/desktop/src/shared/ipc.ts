@@ -45,6 +45,7 @@ export interface RenderItemView {
 
 /** 主进程推给渲染进程的语义化 UI 事件。 */
 export type RendererEvent =
+  | { readonly type: 'task-removed'; readonly taskId: string }
   | { readonly type: 'task-created'; readonly task: TaskRowView }
   | {
       readonly type: 'task-updated';
@@ -491,7 +492,8 @@ export interface RowActionInput {
 /** 审批卡的视图模型（10 §3.2）。适配层的 `params` 在主进程里被翻译成这些字段。 */
 export interface ApprovalView {
   readonly id: string;
-  readonly kind: 'command' | 'fileChange' | 'permissions' | 'userInput';
+  readonly kind: 'command' | 'fileChange' | 'permissions' | 'userInput' | 'mcp';
+  readonly options?: readonly { readonly id: string; readonly label?: string }[] | undefined;
   readonly threadId: string;
   readonly reason?: string | undefined;
   readonly command?: string | undefined;
@@ -962,4 +964,20 @@ export interface CatalogMutationResult {
       }
     | undefined;
   readonly catalog: CatalogDataView;
+}
+
+/** 电脑操控只暴露语义化状态与授权管理，不暴露 token/socket。 */
+export interface ComputerUseStatusView {
+  readonly enabled: boolean;
+  readonly state:
+    | 'disabled'
+    | 'unsupported'
+    | 'unverified'
+    | 'permission-required'
+    | 'ready'
+    | 'active'
+    | 'component-error';
+  readonly message: string;
+  readonly grants: readonly { appId: string; allowed: boolean }[];
+  readonly activeApp?: string | undefined;
 }

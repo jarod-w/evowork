@@ -56,6 +56,9 @@ importers:
       '@evowork/catalog':
         specifier: workspace:*
         version: link:../../services/catalog
+      '@evowork/computer-use':
+        specifier: workspace:*
+        version: link:../../services/computer-use
       '@evowork/gateway':
         specifier: workspace:*
         version: link:../../services/gateway

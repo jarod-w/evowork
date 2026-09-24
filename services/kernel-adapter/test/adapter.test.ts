@@ -906,3 +906,17 @@ describe('内核镜像：尽力而为，失败不降级（spec §2.3）', () => 
     });
   });
 });
+
+describe('真实删除只通过内核，失败不移除投影', () => {
+  it('内核拒绝删除时保留任务，成功才清理投影并发出删除事件', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'delete-test' }));
+    server.handlers.delete('thread/delete');
+    await expect(adapter.deleteTask('delete-test')).rejects.toThrow();
+    expect(store.threads.get('delete-test')).toBeDefined();
+    server.handlers.set('thread/delete', () => ({}));
+    await adapter.deleteTask('delete-test');
+    expect(store.threads.get('delete-test')).toBeUndefined();
+    expect(ui).toContainEqual({ type: 'task-removed', threadId: 'delete-test' });
+  });
+});

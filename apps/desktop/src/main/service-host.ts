@@ -1,3 +1,6 @@
+import { patchComputerUseConfig } from './computer-use-config.js';
+import { createComputerUseHost } from './computer-use-host.js';
+import { createNativeHelper, readComputerUseRelease } from './computer-use-helper.js';
 /**
  * 本机服务宿主（09 §1）。
  *
@@ -590,6 +593,67 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    */
   const approvalReplies = new Map<string, (reply: ApprovalReply) => void>();
 
+  const writeComputerUseConfig = (enabled: boolean): void => {
+    // 不支持的平台无需注册。macOS 默认禁用；启用后供下一条任务加载。
+    if (process.platform !== 'darwin' || !options.pluginsDir) return;
+    const content = existsSync(kernelConfigPath) ? readFileSync(kernelConfigPath, 'utf8') : '';
+    writeFileSync(
+      kernelConfigPath,
+      patchComputerUseConfig(
+        content,
+        process.execPath,
+        join(options.pluginsDir, 'connectors/computer-use/server.mjs'),
+        enabled,
+      ),
+      { mode: 0o600 },
+    );
+  };
+  writeComputerUseConfig(false);
+  const helperApp = join(
+    options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
+    '..',
+    'computer-use',
+    'EvoWork Computer Use.app',
+  );
+  const computerUse = createComputerUseHost({
+    root: options.paths.home,
+    platform: process.platform,
+    enabledChanged: writeComputerUseConfig,
+    releaseVerified: readComputerUseRelease(helperApp, options.appVersion),
+    helper: createNativeHelper(helperApp, options.appVersion, process.execPath),
+    context: (threadId) => {
+      const row = store.threads.get(threadId);
+      if (!row?.last_turn_id || row.derived_status !== 'running') return undefined;
+      return {
+        turnId: row.last_turn_id,
+        model: row.model ?? '未知模型',
+        credentialSource: '当前任务配置的模型凭据',
+        interactive: !row.automation_id,
+        root: !row.parent_thread_id,
+        imageSupported: false,
+        // 企业策略细项尚未接通前，只要有企业 requirements 就保守禁用。
+        enterpriseAllowed: !existsSync(options.paths.requirements),
+        persistentAllowed: true,
+      };
+    },
+    ask: (approval) => adapter.requestComputerUseConsent(approval),
+    cancelApprovals: () => adapter.cancelComputerUseApprovals(),
+    changed: (status) => options.emitToRenderer('evowork:computer-use-status', status),
+    audit: (record) => {
+      createAuditRepo(store.db).insertMany([
+        {
+          occurredAt: Date.now(),
+          action: 'tool.post',
+          threadId: record.threadId,
+          turnId: record.turnId,
+          toolName: record.toolName,
+          actionSummary: record.resultCode,
+          decidedBy: 'policy',
+        },
+      ]);
+    },
+  });
+
   const translate = createEventTranslator(store, () => Date.now());
 
   const adapter = createAdapter({
@@ -614,6 +678,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
          * 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**。
          */
         extraEnv: {
+          ...computerUse.environment,
+          EVOWORK_CUA_HOST_READY:
+            process.platform === 'darwin' && readComputerUseRelease(helperApp, options.appVersion)
+              ? '1'
+              : '0',
           EVOWORK_AUDIT_LOG: options.paths.auditLog,
           EVOWORK_ARTIFACT_LOG: options.paths.artifactLog,
           ...(gatewayToken ? { EVOWORK_GATEWAY_TOKEN: gatewayToken } : {}),
@@ -627,7 +696,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         const cwd = store.threads.get(event.threadId)?.cwd;
         if (cwd) services.watchWorkspace(cwd, event.threadId);
       }
+      if (event.type === 'task-removed') computerUse.endThread(event.threadId);
       if (event.type === 'turn-completed') {
+        computerUse.endTurn(event.threadId);
         // `mark_artifact` 在命令结束前已同步追加完整 JSON 行。先入库再通知 UI，
         // 否则 UI 立刻重读时会撞上“文件已生成，产物表还是空的”窗口。
         services.flushArtifactReports(event.threadId);
@@ -641,7 +712,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         });
       }
     },
-    onNotice: (notice: SessionNotice) => options.emitToRenderer(IPC.notice, notice),
+    onNotice: (notice: SessionNotice) => {
+      computerUse.stop();
+      options.emitToRenderer(IPC.notice, notice);
+    },
     // 降级一律显式（09 §3.3）：推给 UI，让它在设置里列出"当前不可用的能力"
     onDegrade: (report) => options.emitToRenderer(IPC.degrade, report),
     onPendingApprovalsChanged: (pending: readonly PendingApproval[]) =>
@@ -967,6 +1041,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     store,
     logger,
     resolveApproval,
+    computerUse,
+    openComputerUseSettings: async () => {
+      if (process.platform !== 'darwin' || !options.openExternal)
+        throw new Error('当前平台不能打开此权限设置。');
+      await options.openExternal(
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+      );
+    },
     /*
      * 选工作空间。**没注入选择器时返回 undefined**，由渲染层显示"选不了"，
      * 而不是抛一个"没有 handler"——后者在界面上就是点了没反应。
@@ -1336,6 +1418,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
 
     async stop() {
+      for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
+      approvalReplies.clear();
+      await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       // 网关先停：它没有状态也不写盘，留着只会占住端口，下次启动起不来
       gateway?.stop();

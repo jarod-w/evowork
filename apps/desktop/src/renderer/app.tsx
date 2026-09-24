@@ -1,3 +1,4 @@
+import type { ComputerUseStatusView } from '../shared/ipc.js';
 /**
  * 渲染进程的外壳：把首页、任务工作台、侧边栏接到主进程推来的事件上。
  *
@@ -106,6 +107,12 @@ import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge {
+  getComputerUseStatus?(): Promise<ComputerUseStatusView>;
+  setComputerUseEnabled?(input: { enabled: boolean }): Promise<ComputerUseStatusView>;
+  stopComputerUse?(): Promise<ComputerUseStatusView>;
+  revokeComputerUseAccess?(input: { appId?: string }): Promise<ComputerUseStatusView>;
+  openComputerUseSettings?(): Promise<void>;
+  onComputerUseStatus?(handler: (status: ComputerUseStatusView) => void): () => void;
   onUiEvent(handler: (event: RendererEvent) => void): () => void;
   onNotice(handler: (notice: { kind: string; text: string }) => void): () => void;
   onPendingApprovals(handler: (approvals: readonly ApprovalView[]) => void): () => void;
@@ -113,7 +120,12 @@ export interface EvoworkBridge {
   /** 发送一条需求。没有 threadId 时由主进程新建任务并回 id（03 §1） */
   send(input: SendInput): Promise<{ threadId: string; queued?: boolean }>;
   interrupt(threadId: string): Promise<void>;
-  decideApproval(input: { id: string; decision: ApprovalDecision }): Promise<void>;
+  decideApproval(input: {
+    id: string;
+    decision: ApprovalDecision;
+    optionId?: string;
+    answer?: string;
+  }): Promise<void>;
   rowAction(input: { action: RowAction; threadId: string }): Promise<void>;
   /** 04 §3.4 第②步：对可见页做有界的权威字段校正 */
   refreshVisible(ids: readonly string[]): Promise<void>;
@@ -343,6 +355,7 @@ function preferredWorkspaceId(
 }
 
 export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
+  const deletedTaskIds = useRef(new Set<string>());
   const [tasks, setTasks] = useState<readonly TaskRowView[]>([]);
   const [itemsByTask, setItemsByTask] = useState<Readonly<Record<string, readonly RenderItem[]>>>(
     {},
@@ -377,6 +390,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   /** 设置页的当前分区（11 §4.4）。「更多」菜单直接说要去哪个分区 */
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('models');
   const [modelAccess, setModelAccess] = useState<ModelAccessView | null>(null);
+  const [computerUse, setComputerUse] = useState<ComputerUseStatusView | null>(null);
+  useEffect(() => bridge.onComputerUseStatus?.(setComputerUse), [bridge]);
   const [preferences, setPreferences] = useState<PreferencesView | null>(null);
   /** 上一次设置页动作被拒绝的原话，以及连通性检查的结论。**都要显示出来** */
   const [settingsRefusal, setSettingsRefusal] = useState<string | undefined>(undefined);
@@ -478,7 +493,31 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   useEffect(() => {
     const offs = [
       bridge.onUiEvent((event) => {
+        if ('taskId' in event && deletedTaskIds.current.has(event.taskId)) return;
+        if (event.type === 'task-removed') {
+          deletedTaskIds.current.add(event.taskId);
+          setTasks((previous) => previous.filter((task) => task.id !== event.taskId));
+          setActiveTaskId((previous) => (previous === event.taskId ? null : previous));
+          const remove = <T,>(previous: Readonly<Record<string, T>>) => {
+            const next = { ...previous };
+            delete next[event.taskId];
+            return next;
+          };
+          setItemsByTask(remove);
+          setTaskResults(remove);
+          setTaskFiles(remove);
+          setQueuedByTask(remove);
+          setPreviewByTask(remove);
+          setResultUi(remove);
+          setResultDismissed(remove);
+          setTurnFailures(remove);
+          setApprovals((previous) =>
+            previous.filter((approval) => approval.threadId !== event.taskId),
+          );
+          return;
+        }
         if (event.type === 'task-created') {
+          if (deletedTaskIds.current.has(event.task.id)) return;
           setTasks((prev) => {
             const existing = prev.find((task) => task.id === event.task.id);
             const task =
@@ -542,7 +581,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           void bridge
             .getTaskResults({ threadId: event.taskId })
             .then((result) => {
-              setTaskResults((previous) => ({ ...previous, [event.taskId]: result }));
+              if (!deletedTaskIds.current.has(event.taskId))
+                setTaskResults((previous) => ({ ...previous, [event.taskId]: result }));
             })
             .catch(() => undefined);
           return;
@@ -797,7 +837,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     void bridge
       .openTask({ threadId })
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled || deletedTaskIds.current.has(threadId)) return;
         setItemsByTask((prev) => ({
           ...prev,
           [threadId]: applyHistory(prev[threadId] ?? [], result.items as readonly RenderItem[]),
@@ -808,7 +848,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
+        if (cancelled || deletedTaskIds.current.has(threadId)) return;
         setNotices((prev) => [
           ...prev,
           {
@@ -842,7 +882,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       const threadId = activeTaskId;
       void bridge
         .listQueuedInputs({ threadId })
-        .then((queued) => setQueuedByTask((previous) => ({ ...previous, [threadId]: queued })));
+        .then((queued) =>
+          setQueuedByTask((previous) =>
+            deletedTaskIds.current.has(threadId) ? previous : { ...previous, [threadId]: queued },
+          ),
+        );
     }
   }, [activeTaskId, bridge, startup, tasks, workspaceId]);
 
@@ -852,19 +896,37 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const threadId = activeTaskId;
     void bridge
       .getTaskResults({ threadId })
-      .then((result) => setTaskResults((prev) => ({ ...prev, [threadId]: result })))
-      .catch(() => setTaskResults((prev) => ({ ...prev, [threadId]: { artifacts: [] } })));
+      .then((result) =>
+        setTaskResults((prev) =>
+          deletedTaskIds.current.has(threadId) ? prev : { ...prev, [threadId]: result },
+        ),
+      )
+      .catch(() =>
+        setTaskResults((prev) =>
+          deletedTaskIds.current.has(threadId) ? prev : { ...prev, [threadId]: { artifacts: [] } },
+        ),
+      );
 
     const cwd = tasks.find((task) => task.id === threadId)?.cwd;
     const project = startup?.workspaces.find((workspace) => workspace.path === cwd);
     if (!project) {
-      setTaskFiles((prev) => ({ ...prev, [threadId]: [] }));
+      setTaskFiles((prev) =>
+        deletedTaskIds.current.has(threadId) ? prev : { ...prev, [threadId]: [] },
+      );
       return;
     }
     void bridge
       .listProjectDir({ id: project.id })
-      .then((entries) => setTaskFiles((prev) => ({ ...prev, [threadId]: entries })))
-      .catch(() => setTaskFiles((prev) => ({ ...prev, [threadId]: [] })));
+      .then((entries) =>
+        setTaskFiles((prev) =>
+          deletedTaskIds.current.has(threadId) ? prev : { ...prev, [threadId]: entries },
+        ),
+      )
+      .catch(() =>
+        setTaskFiles((prev) =>
+          deletedTaskIds.current.has(threadId) ? prev : { ...prev, [threadId]: [] },
+        ),
+      );
   }, [activeTaskId, bridge, startup, tasks]);
 
   /** 有产物就展开结果区；用户关过一次就尊重其选择。 */
@@ -933,6 +995,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then(setCatalog)
         .catch(() => setCatalog(null));
     if (view === 'settings') {
+      void bridge
+        .getComputerUseStatus?.()
+        .then(setComputerUse)
+        .catch(() => setComputerUse(null));
       /*
        * 设置页也是每次进都重拉：密钥可能刚在「添加模型」里填过、企业策略包可能刚更新过。
        * `getModelAccess` 顺带读一次网关目录，所以它会花几百毫秒 ——
@@ -1757,12 +1823,49 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         />
       )}
 
+      {computerUse?.state === 'active' ? (
+        <div className="ew-approval-bar" role="status">
+          <span>{computerUse.message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void bridge.stopComputerUse?.().then(setComputerUse);
+            }}
+          >
+            停止控制
+          </button>
+        </div>
+      ) : null}
       {view !== 'task' ? (
         <MainPage
           view={view}
           settingsSection={settingsSection}
           onSettingsSection={setSettingsSection}
           modelAccess={modelAccess}
+          computerUse={computerUse}
+          onComputerUseEnabled={(enabled) => {
+            void bridge
+              .setComputerUseEnabled?.({ enabled })
+              .then(setComputerUse)
+              .catch((error: unknown) => reportFailure(error, '没能更新电脑操控状态。'));
+          }}
+          onComputerUseStop={() => {
+            void bridge
+              .stopComputerUse?.()
+              .then(setComputerUse)
+              .catch((error: unknown) => reportFailure(error, '没能停止电脑操控。'));
+          }}
+          onComputerUseRevoke={(appId) => {
+            void bridge
+              .revokeComputerUseAccess?.(appId ? { appId } : {})
+              .then(setComputerUse)
+              .catch((error: unknown) => reportFailure(error, '没能撤销应用授权。'));
+          }}
+          onComputerUseSettings={() => {
+            void bridge
+              .openComputerUseSettings?.()
+              .catch((error: unknown) => reportFailure(error, '没能打开系统设置。'));
+          }}
           preferences={preferences}
           appName={startup?.appName ?? 'EvoWork'}
           appVersion={startup?.appVersion ?? ''}
@@ -2011,6 +2114,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .decideApproval({ id, decision })
               .catch((error: unknown) => reportFailure(error, '没能提交这项审批。'))
           }
+          onAnswer={(id, answer) =>
+            void bridge
+              .decideApproval({
+                id,
+                decision: 'accept',
+                ...(answer.optionId ? { optionId: answer.optionId } : {}),
+                ...(answer.text ? { answer: answer.text } : {}),
+              })
+              .catch((error: unknown) => reportFailure(error, '没能提交这项审批。'))
+          }
           itemContext={{
             reasoningAvailable: true,
             // Visualizer 的真实 mermaid 渲染器。动态 import，第一次真要画图时才加载
@@ -2162,6 +2275,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  * 02 §1 的 6 个入口是产品骨架。「更多」现在还没有本体页，给一个如实说明的空页。
  */
 function MainPage(props: {
+  readonly computerUse?: ComputerUseStatusView | null | undefined;
+  readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
+  readonly onComputerUseStop?: (() => void) | undefined;
+  readonly onComputerUseRevoke?: ((appId?: string) => void) | undefined;
+  readonly onComputerUseSettings?: (() => void) | undefined;
+
   readonly view: MainView;
   readonly settingsSection: SettingsSection;
   readonly onSettingsSection: (section: SettingsSection) => void;
@@ -2292,6 +2411,11 @@ function MainPage(props: {
           section={props.settingsSection}
           onSection={props.onSettingsSection}
           access={props.modelAccess}
+          computerUse={props.computerUse}
+          onComputerUseEnabled={props.onComputerUseEnabled}
+          onComputerUseStop={props.onComputerUseStop}
+          onComputerUseRevoke={props.onComputerUseRevoke}
+          onComputerUseSettings={props.onComputerUseSettings}
           preferences={props.preferences}
           appName={props.appName}
           appVersion={props.appVersion}

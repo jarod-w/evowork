@@ -282,3 +282,75 @@ describe('审批日志不带正文（10 §6 的"不记什么"）', () => {
     expect(records[0]?.event).toBe('adapter.approval.received');
   });
 });
+
+describe('MCP elicitation 不套用 command decision 回复', () => {
+  const params = {
+    threadId: 't',
+    turnId: 'turn',
+    serverName: 'cua_repl',
+    mode: 'form',
+    message: '允许应用？',
+    requestedSchema: {
+      type: 'object',
+      properties: { scope: { type: 'string', enum: ['task', 'always'] } },
+      required: ['scope'],
+    },
+  };
+  it.each(['task', 'always'])('用户明确选择 %s 才发送结构化内容', async (optionId) => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'accept', optionId }) });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, params)).toEqual({
+      action: 'accept',
+      content: { scope: optionId },
+      _meta: null,
+    });
+  });
+  it.each(['decline', 'cancel'] as const)('%s 回复没有授权内容', async (decision) => {
+    const router = createApprovalRouter({ ask: async () => ({ decision, optionId: 'always' }) });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, params)).toEqual({
+      action: decision,
+      content: null,
+      _meta: null,
+    });
+  });
+  it('不能以普通 accept 或未知枚举值接受未支持表单', async () => {
+    const router = createApprovalRouter({
+      ask: async () => ({ decision: 'accept', optionId: 'injected' }),
+    });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, params)).toHaveProperty(
+      'action',
+      'decline',
+    );
+    expect(
+      await router.handle(SERVER_REQUEST.mcpServerElicitation, { ...params, mode: 'url' }),
+    ).toHaveProperty('action', 'decline');
+  });
+  it('无人值守或无回合不弹 CU 授权', async () => {
+    let asked = false;
+    const router = createApprovalRouter({
+      isUnattended: () => true,
+      ask: async () => {
+        asked = true;
+        return { decision: 'accept', optionId: 'always' };
+      },
+    });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, params)).toHaveProperty(
+      'action',
+      'decline',
+    );
+    expect(asked).toBe(false);
+  });
+  it('结束回合立即取消等待；后来的同意不再生效', async () => {
+    let resolve!: (reply: ApprovalReply) => void;
+    const router = createApprovalRouter({
+      ask: () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    });
+    const request = router.handle(SERVER_REQUEST.mcpServerElicitation, params);
+    router.cancel((a) => a.threadId === 't');
+    expect(await request).toEqual({ action: 'cancel', content: null, _meta: null });
+    resolve({ decision: 'accept', optionId: 'always' });
+    expect(router.pendingList()).toEqual([]);
+  });
+});

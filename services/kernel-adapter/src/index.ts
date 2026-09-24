@@ -23,6 +23,7 @@ export {
 } from './adapter.js';
 export {
   createApprovalRouter,
+  elicitationChoice,
   INTERACTIVE_POLICY,
   UNATTENDED_POLICY,
   type ApprovalDecision,

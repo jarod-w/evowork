@@ -256,3 +256,33 @@ describe('待确认吸顶条（10 §3.5）', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('电脑操控授权选项', () => {
+  it('按明确的授权范围回答，不出现通用的允许按钮', () => {
+    const onAnswer = vi.fn();
+    render(
+      <ApprovalCard
+        approval={approval({
+          kind: 'mcp',
+          options: [
+            { id: 'task', label: '仅本次任务' },
+            { id: 'always', label: '始终允许此应用' },
+          ],
+        })}
+        onDecide={() => {}}
+        onAnswer={onAnswer}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '仅本次任务' }));
+    expect(onAnswer).toHaveBeenCalledWith({ optionId: 'task' });
+    expect(screen.queryByRole('button', { name: '允许这一次' })).toBeNull();
+  });
+  it('不支持的表单只能拒绝或取消', () => {
+    const onDecide = vi.fn();
+    render(<ApprovalCard approval={approval({ kind: 'mcp' })} onDecide={onDecide} />);
+    expect(screen.getByText('此授权表单暂不支持，无法批准。')).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '拒绝' }));
+    expect(onDecide).toHaveBeenCalledWith('decline');
+  });
+});

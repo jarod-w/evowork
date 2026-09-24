@@ -32,6 +32,7 @@ describe('暴露面', () => {
         'onNotice',
         'onDegrade',
         'onPendingApprovals',
+        'onComputerUseStatus',
         // 办公扩展安装进度（08 §4）：装一次要几分钟，推送比轮询合适
         'onRuntimeProgress',
         ...RENDERER_ACTIONS,

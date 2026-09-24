@@ -1,3 +1,5 @@
+import type { ComputerUseHost } from './computer-use-host.js';
+import { elicitationChoice } from '@evowork/kernel-adapter';
 /**
  * 渲染进程能做的那几件事（`RENDERER_ACTIONS`），以及推给它的三种事件。
  *
@@ -299,6 +301,8 @@ export interface RendererBridgeOptions {
       }
     | undefined;
   /** 把用户的决定交回给挂起的审批（F14：审批是**服务端发起的请求**，必须有人回复） */
+  readonly openComputerUseSettings?: (() => Promise<void>) | undefined;
+  readonly computerUse?: ComputerUseHost | undefined;
   readonly resolveApproval?: ((id: string, reply: ApprovalReply) => void) | undefined;
   readonly logger?: Logger | undefined;
   readonly appName: string;
@@ -467,6 +471,10 @@ export function createEventTranslator(store: Store, now: () => number) {
 
   return function translate(event: UiEvent): readonly RendererEvent[] {
     switch (event.type) {
+      case 'task-removed':
+        for (const [id, held] of streaming)
+          if (held.taskId === event.threadId) streaming.delete(id);
+        return [{ type: 'task-removed', taskId: event.threadId }];
       case 'task-created': {
         const row = store.threads.get(event.threadId);
         if (!row) return [];
@@ -1048,7 +1056,35 @@ export function createRendererActions(options: RendererBridgeOptions) {
       );
     },
 
+    async getComputerUseStatus() {
+      return (
+        options.computerUse?.view() ?? {
+          enabled: false,
+          state: 'unsupported' as const,
+          message: '此版本不支持电脑操控。',
+          grants: [],
+        }
+      );
+    },
+    async setComputerUseEnabled(input: { enabled: boolean }) {
+      if (typeof input.enabled !== 'boolean') throw new Error('无效的启用参数');
+      return options.computerUse
+        ? options.computerUse.setEnabled(input.enabled)
+        : this.getComputerUseStatus();
+    },
+    async stopComputerUse() {
+      options.computerUse?.stop();
+      return this.getComputerUseStatus();
+    },
+    async revokeComputerUseAccess(input: { appId?: string }) {
+      return options.computerUse?.revoke(input.appId) ?? this.getComputerUseStatus();
+    },
+    async openComputerUseSettings() {
+      if (!options.openComputerUseSettings) throw new Error('当前版本不能打开权限设置。');
+      await options.openComputerUseSettings();
+    },
     async interrupt(threadId: string): Promise<void> {
+      options.computerUse?.endTurn(threadId);
       await adapter.interrupt(threadId);
     },
 
@@ -1068,6 +1104,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         return;
       }
       if (input.action === 'delete') {
+        options.computerUse?.endThread(input.threadId);
         await adapter.deleteTask(input.threadId);
         return;
       }
@@ -1136,6 +1173,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     async deleteTask(input: { readonly threadId: string }): Promise<void> {
+      options.computerUse?.endThread(input.threadId);
       await adapter.deleteTask(input.threadId);
     },
 
@@ -2171,6 +2209,23 @@ export function toApprovalView(
     ...(str('command') !== undefined ? { command: str('command') } : {}),
     ...(str('cwd') !== undefined ? { cwd: str('cwd') } : {}),
     ...(str('question') !== undefined ? { question: str('question') } : {}),
+    ...(approval.kind === 'mcp'
+      ? {
+          question: str('message') ?? '连接器请求授权',
+          options: (elicitationChoice(p)?.options ?? []).map((id) => ({
+            id,
+            label:
+              (
+                {
+                  task: '仅本次任务',
+                  always: '始终允许此应用',
+                  deny: '不允许',
+                  enable: '继续并启用',
+                } as Record<string, string>
+              )[id] ?? id,
+          })),
+        }
+      : {}),
     ...(changes ? { changes } : {}),
     allowAcceptForSession,
     waitedMs: Math.max(0, now - approval.receivedAtMs),

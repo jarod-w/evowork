@@ -53,6 +53,9 @@ extraResources:
     to: office/NotoSansSC.ttf
 
 mac:
+  extraResources:
+    - from: build/computer-use/EvoWork Computer Use.app
+      to: computer-use/EvoWork Computer Use.app
   category: public.app-category.productivity
   target:
     - dmg
