@@ -54,6 +54,19 @@ export type RendererEvent =
       readonly title?: string | null;
     }
   | { readonly type: 'item'; readonly taskId: string; readonly item: RenderItemView }
+  | { readonly type: 'turn-started'; readonly taskId: string; readonly turnId: string }
+  | {
+      readonly type: 'turn-completed';
+      readonly taskId: string;
+      readonly turnId: string;
+      readonly status: 'completed' | 'interrupted' | 'failed' | 'inProgress';
+    }
+  | {
+      readonly type: 'turn-diff';
+      readonly taskId: string;
+      readonly turnId: string;
+      readonly diff: string;
+    }
   /**
    * 回合失败，**带内核给的原因**。
    *

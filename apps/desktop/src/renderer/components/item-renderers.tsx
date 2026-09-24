@@ -497,26 +497,31 @@ export function ItemRenderer({
       const steps = Array.isArray(item.steps)
         ? (item.steps as { step: string; status: string }[])
         : [];
+      const planText = text(item, 'text');
       return (
         <div className="ew-item ew-item-plan" data-kind={kind}>
-          <ol className="ew-plan-steps">
-            {steps.map((step, index) => (
-              <li key={index} data-status={step.status}>
-                <Badge
-                  variant={
-                    step.status === 'completed'
-                      ? 'success'
-                      : step.status === 'in_progress'
-                        ? 'info'
-                        : 'neutral'
-                  }
-                >
-                  {PLAN_STEP_LABEL[step.status] ?? step.status}
-                </Badge>
-                <span>{step.step}</span>
-              </li>
-            ))}
-          </ol>
+          {steps.length > 0 ? (
+            <ol className="ew-plan-steps">
+              {steps.map((step, index) => (
+                <li key={index} data-status={step.status}>
+                  <Badge
+                    variant={
+                      step.status === 'completed'
+                        ? 'success'
+                        : step.status === 'in_progress'
+                          ? 'info'
+                          : 'neutral'
+                    }
+                  >
+                    {PLAN_STEP_LABEL[step.status] ?? step.status}
+                  </Badge>
+                  <span>{step.step}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="ew-markdown" dangerouslySetInnerHTML={renderMarkdown(planText)} />
+          )}
         </div>
       );
     }

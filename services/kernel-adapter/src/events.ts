@@ -47,8 +47,18 @@ export type UiEvent =
        */
       readonly error?: { readonly message: string; readonly details?: string } | undefined;
     }
-  | { readonly type: 'item-started'; readonly threadId: string; readonly item: ThreadItem }
-  | { readonly type: 'item-completed'; readonly threadId: string; readonly item: ThreadItem }
+  | {
+      readonly type: 'item-started';
+      readonly threadId: string;
+      readonly turnId?: string;
+      readonly item: ThreadItem;
+    }
+  | {
+      readonly type: 'item-completed';
+      readonly threadId: string;
+      readonly turnId?: string;
+      readonly item: ThreadItem;
+    }
   | {
       readonly type: 'item-delta';
       readonly threadId: string;
@@ -56,8 +66,26 @@ export type UiEvent =
       readonly channel: 'agentMessage' | 'plan' | 'reasoning' | 'commandOutput';
       readonly delta: string;
     }
-  | { readonly type: 'plan-updated'; readonly threadId: string; readonly hasSteps: boolean }
-  | { readonly type: 'diff-updated'; readonly threadId: string; readonly turnId: string }
+  | {
+      readonly type: 'plan-updated';
+      readonly threadId: string;
+      readonly turnId: string;
+      readonly explanation?: string;
+      readonly steps: readonly { readonly step: string; readonly status: string }[];
+    }
+  | {
+      readonly type: 'diff-updated';
+      readonly threadId: string;
+      readonly turnId: string;
+      readonly diff: string;
+    }
+  | {
+      readonly type: 'item-updated';
+      readonly threadId: string;
+      readonly turnId?: string;
+      readonly itemId: string;
+      readonly patch: Readonly<Record<string, unknown>>;
+    }
   | {
       readonly type: 'token-usage';
       readonly threadId: string;
@@ -77,6 +105,7 @@ export type UiEvent =
       /** 上游新增的、我们还不认识的事件（04 §5.2 最后一段：绝不静默丢弃） */
       readonly type: 'unknown-event';
       readonly method: string;
+      readonly threadId?: string;
     };
 
 /** 流式增量的四个通道（04 §5.1：按 item id 合并，60fps 节流由前端做）。 */
@@ -128,7 +157,18 @@ export function createEventRouter(options: EventRouterOptions) {
     switch (item.type) {
       case 'userMessage':
       case 'agentMessage': {
-        const text = typeof item.text === 'string' ? item.text : '';
+        const text =
+          item.type === 'userMessage' && Array.isArray(item.content)
+            ? item.content
+                .filter(
+                  (part): part is { readonly type: 'text'; readonly text: string } =>
+                    part.type === 'text' && typeof part.text === 'string',
+                )
+                .map((part) => part.text)
+                .join('\n')
+            : typeof item.text === 'string'
+              ? item.text
+              : '';
         // 摘要长度上限刻意很短：它是"快显"用的，不是内容副本。
         // 顺带也把它挡在"投影表变成正文仓库"这条路之外。
         return text.slice(0, 80) || null;
@@ -264,32 +304,59 @@ export function createEventRouter(options: EventRouterOptions) {
     },
 
     [NOTIFICATION.turnPlanUpdated]: (params) => {
-      const p = params as { threadId?: string; steps?: unknown[] };
-      if (!p.threadId) return [];
-      const hasSteps = Array.isArray(p.steps) && p.steps.length > 0;
+      const p = params as {
+        threadId?: string;
+        turnId?: string;
+        explanation?: string | null;
+        plan?: readonly { readonly step: string; readonly status: string }[];
+      };
+      if (!p.threadId || !p.turnId) return [];
+      const steps = Array.isArray(p.plan) ? p.plan : [];
+      const hasSteps = steps.length > 0;
       const status = store.threads.applyPlanUpdated(p.threadId, hasSteps, now());
-      onUiEvent({ type: 'plan-updated', threadId: p.threadId, hasSteps });
+      onUiEvent({
+        type: 'plan-updated',
+        threadId: p.threadId,
+        turnId: p.turnId,
+        steps,
+        ...(typeof p.explanation === 'string' ? { explanation: p.explanation } : {}),
+      });
       onUiEvent({ type: 'task-status', threadId: p.threadId, status });
       return [];
     },
 
     [NOTIFICATION.turnDiffUpdated]: (params) => {
-      const p = params as { threadId?: string; turnId?: string };
+      const p = params as { threadId?: string; turnId?: string; diff?: string };
       if (!p.threadId || !p.turnId) return [];
       // 不落库：聚合 diff 可能很大，而它随时可以从 turn/diff/updated 再拿一次（09 §3.4）
-      onUiEvent({ type: 'diff-updated', threadId: p.threadId, turnId: p.turnId });
+      onUiEvent({
+        type: 'diff-updated',
+        threadId: p.threadId,
+        turnId: p.turnId,
+        diff: p.diff ?? '',
+      });
       return [];
     },
 
     [NOTIFICATION.itemStarted]: (params) => {
-      const p = params as { threadId?: string; item?: ThreadItem };
+      const p = params as { threadId?: string; turnId?: string; item?: ThreadItem };
       if (!p.threadId || !p.item) return [];
-      onUiEvent({ type: 'item-started', threadId: p.threadId, item: p.item });
+      onUiEvent({
+        type: 'item-started',
+        threadId: p.threadId,
+        ...(p.turnId ? { turnId: p.turnId } : {}),
+        item: p.item,
+      });
       return [];
     },
 
     [NOTIFICATION.itemCompleted]: (params) => {
-      const p = params as { threadId?: string; item?: ThreadItem; completedAtMs?: number };
+      const p = params as {
+        threadId?: string;
+        turnId?: string;
+        item?: ThreadItem;
+        completedAtMs?: number;
+      };
       if (!p.threadId || !p.item) return [];
       store.putItemDigest({
         threadId: p.threadId,
@@ -299,7 +366,12 @@ export function createEventRouter(options: EventRouterOptions) {
         summary: summarize(p.item),
         createdAt: p.completedAtMs ?? now(),
       });
-      onUiEvent({ type: 'item-completed', threadId: p.threadId, item: p.item });
+      onUiEvent({
+        type: 'item-completed',
+        threadId: p.threadId,
+        ...(p.turnId ? { turnId: p.turnId } : {}),
+        item: p.item,
+      });
       // FileChange → 产物识别的信号 ②（08 §2.2）
       return p.item.type === 'fileChange'
         ? [{ kind: 'artifact-scan', threadId: p.threadId, item: p.item }]
@@ -358,6 +430,42 @@ export function createEventRouter(options: EventRouterOptions) {
       onUiEvent({ type: 'kernel-warning', text: p.message ?? '执行内核报告了一个警告' });
       return [];
     },
+
+    [NOTIFICATION.itemFileChangePatchUpdated]: (params) => {
+      const p = params as {
+        threadId?: string;
+        turnId?: string;
+        itemId?: string;
+        changes?: readonly unknown[];
+      };
+      if (!p.threadId || !p.itemId) return [];
+      onUiEvent({
+        type: 'item-updated',
+        threadId: p.threadId,
+        ...(p.turnId ? { turnId: p.turnId } : {}),
+        itemId: p.itemId,
+        patch: { changes: Array.isArray(p.changes) ? p.changes : [] },
+      });
+      return [];
+    },
+
+    [NOTIFICATION.itemMcpToolCallProgress]: (params) => {
+      const p = params as {
+        threadId?: string;
+        turnId?: string;
+        itemId?: string;
+        message?: string;
+      };
+      if (!p.threadId || !p.itemId) return [];
+      onUiEvent({
+        type: 'item-updated',
+        threadId: p.threadId,
+        ...(p.turnId ? { turnId: p.turnId } : {}),
+        itemId: p.itemId,
+        patch: { progress: p.message ?? '' },
+      });
+      return [];
+    },
   };
 
   // 流式增量（09 §3.4：不落库，只更新 UI）
@@ -401,7 +509,11 @@ export function createEventRouter(options: EventRouterOptions) {
       if (!handler) {
         // 未识别通知：记形状（不记正文）+ 让 UI 显示一行，绝不静默丢弃（R2 / 04 §5.2）
         store.recordUnknownEvent(method, params, now());
-        onUiEvent({ type: 'unknown-event', method });
+        const threadId =
+          params && typeof params === 'object' && typeof (params as { threadId?: unknown }).threadId === 'string'
+            ? (params as { threadId: string }).threadId
+            : undefined;
+        onUiEvent({ type: 'unknown-event', method, ...(threadId ? { threadId } : {}) });
         logger?.warn('adapter.event.unknown', { method });
         return [];
       }

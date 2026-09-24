@@ -131,11 +131,140 @@ import {
   type InstallSkillInput,
 } from './catalog-host.js';
 
-/** 增量能安全累加的两个通道：它们的 item 都用 `text` 承载正文。 */
+/** 增量通道在渲染模型里的承载字段。 */
 const TEXT_DELTA_FIELD: Readonly<Record<string, string | undefined>> = {
   agentMessage: 'text',
+  plan: 'text',
   reasoning: 'text',
+  commandOutput: 'output',
 };
+
+const COMMAND_OUTPUT_LINE_LIMIT = 500;
+
+/** 命令输出只保留尾部 500 行，避免长时间任务把渲染进程内存持续撑大。 */
+export function tailCommandOutput(value: string): string {
+  const lines = value.split('\n');
+  return lines.length <= COMMAND_OUTPUT_LINE_LIMIT
+    ? value
+    : lines.slice(-COMMAND_OUTPUT_LINE_LIMIT).join('\n');
+}
+
+function stringifyOutput(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function diffStats(diff: string): { readonly added: number; readonly removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) removed += 1;
+  }
+  return { added, removed };
+}
+
+/**
+ * app-server 的 wire item → 稳定的渲染 item。
+ *
+ * UI 不直接猜内核字段名；所有兼容翻译集中在这条边界，历史与实时事件也走同一路径。
+ */
+export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderItemView {
+  const raw = item as unknown as Record<string, unknown> & { id: string; type: string };
+  const base: Record<string, unknown> = {
+    ...raw,
+    ...(turnId ? { _turnId: turnId } : {}),
+  };
+
+  switch (raw.type) {
+    case 'commandExecution': {
+      const output =
+        typeof raw.aggregatedOutput === 'string'
+          ? tailCommandOutput(raw.aggregatedOutput)
+          : typeof raw.output === 'string'
+            ? tailCommandOutput(raw.output)
+            : '';
+      return { ...base, output } as RenderItemView;
+    }
+    case 'functionCallOutput':
+      return { ...base, output: stringifyOutput(raw.output) } as RenderItemView;
+    case 'hookPrompt': {
+      const fragments = Array.isArray(raw.fragments)
+        ? raw.fragments.filter(
+            (fragment): fragment is { readonly text: string; readonly hookRunId?: string } =>
+              Boolean(fragment) &&
+              typeof fragment === 'object' &&
+              typeof (fragment as { text?: unknown }).text === 'string',
+          )
+        : [];
+      const hookNames = [
+        ...new Set(
+          fragments
+            .map((fragment) => fragment.hookRunId)
+            .filter((value): value is string => typeof value === 'string' && value !== ''),
+        ),
+      ];
+      return {
+        ...base,
+        text: fragments.map((fragment) => fragment.text).join('\n\n'),
+        hookName: hookNames.join(', '),
+      } as RenderItemView;
+    }
+    case 'sleep':
+      return {
+        ...base,
+        ...(typeof raw.durationMs === 'number' ? { durationSeconds: raw.durationMs / 1000 } : {}),
+      } as RenderItemView;
+    case 'imageGeneration': {
+      const savedPath = typeof raw.savedPath === 'string' ? raw.savedPath : '';
+      const result = typeof raw.result === 'string' ? raw.result : '';
+      return {
+        ...base,
+        path: savedPath || (result ? `data:image/png;base64,${result}` : ''),
+        prompt: typeof raw.revisedPrompt === 'string' ? raw.revisedPrompt : '',
+      } as RenderItemView;
+    }
+    case 'subAgentActivity':
+      return {
+        ...base,
+        childThreadId: typeof raw.agentThreadId === 'string' ? raw.agentThreadId : '',
+        agentRole:
+          typeof raw.agentPath === 'string'
+            ? raw.agentPath
+            : typeof raw.kind === 'string'
+              ? raw.kind
+              : '',
+      } as RenderItemView;
+    case 'collabAgentToolCall': {
+      const receiver = Array.isArray(raw.receiverThreadIds)
+        ? raw.receiverThreadIds.find((id): id is string => typeof id === 'string')
+        : undefined;
+      return {
+        ...base,
+        childThreadId: receiver ?? '',
+        agentRole: typeof raw.tool === 'string' ? raw.tool : '',
+      } as RenderItemView;
+    }
+    case 'fileChange': {
+      const changes = Array.isArray(raw.changes)
+        ? raw.changes.map((change) => {
+            if (!change || typeof change !== 'object') return change;
+            const record = change as Record<string, unknown>;
+            const diff = typeof record.diff === 'string' ? record.diff : '';
+            return { ...record, ...diffStats(diff) };
+          })
+        : [];
+      return { ...base, changes } as RenderItemView;
+    }
+    default:
+      return base as RenderItemView;
+  }
+}
 
 /** 相对时间（01 §5.5 的时间戳位）。**只到"天"**，再细就要每分钟重渲染整张列表。 */
 export function timeLabel(at: number | null, now: number): string {
@@ -463,6 +592,11 @@ export function createEventTranslator(store: Store, now: () => number) {
     string,
     { taskId: string; item: Record<string, unknown>; startedAtMs: number }
   >();
+  /** plan 通知没有 itemId：用 turnId 合并，并把随后到达的 wire itemId 指向同一行。 */
+  const displayIdByWireId = new Map<string, string>();
+  let unknownSequence = 0;
+
+  const displayId = (wireId: string): string => displayIdByWireId.get(wireId) ?? wireId;
 
   /** 完成时把"跑完了"与（能量到的话）耗时贴到条目上。见 `StreamCompletionFields`。 */
   function completionFields(itemId: string): StreamCompletionFields {
@@ -486,6 +620,8 @@ export function createEventTranslator(store: Store, now: () => number) {
       }
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
+      case 'turn-started':
+        return [{ type: 'turn-started', taskId: event.threadId, turnId: event.turnId }];
       case 'turn-completed': {
         /*
          * 回合结束时**收尾还挂着的条目**。
@@ -507,9 +643,16 @@ export function createEventTranslator(store: Store, now: () => number) {
         }
 
         // 成功的回合不用说什么；失败的必须说清楚（03 §8 / 09 §3.3「降级一律显式」）
-        if (event.status !== 'failed' || !event.error) return stale;
+        const completed: RendererEvent = {
+          type: 'turn-completed',
+          taskId: event.threadId,
+          turnId: event.turnId,
+          status: event.status,
+        };
+        if (event.status !== 'failed' || !event.error) return [...stale, completed];
         return [
           ...stale,
+          completed,
           {
             type: 'turn-failed',
             taskId: event.threadId,
@@ -528,40 +671,106 @@ export function createEventTranslator(store: Store, now: () => number) {
         return [{ type: 'task-updated', taskId: event.threadId, title }];
       }
       case 'item-started': {
-        const item = event.item as unknown as Record<string, unknown> & {
-          id: string;
-          type: string;
-        };
-        streaming.set(item.id, {
+        const normalized = normalizeThreadItem(event.item, event.turnId);
+        const wireId = event.item.id;
+        const itemId =
+          event.item.type === 'plan' && event.turnId ? `turn-plan:${event.turnId}` : wireId;
+        if (itemId !== wireId) displayIdByWireId.set(wireId, itemId);
+        const held = streaming.get(itemId);
+        const item = { ...held?.item, ...normalized, id: itemId };
+        streaming.set(itemId, {
           taskId: event.threadId,
-          item: { ...item },
-          startedAtMs: now(),
+          item,
+          startedAtMs: held?.startedAtMs ?? now(),
         });
-        return [{ type: 'item', taskId: event.threadId, item }];
+        return [{ type: 'item', taskId: event.threadId, item: item as unknown as RenderItemView }];
       }
       case 'item-completed': {
-        const item = event.item as unknown as Record<string, unknown> & {
-          id: string;
-          type: string;
+        const wireId = event.item.id;
+        const itemId = displayId(wireId);
+        const normalized = normalizeThreadItem(event.item, event.turnId);
+        const held = streaming.get(itemId);
+        // 完成事件的完整快照优先，但通知独有的 plan steps / progress 不能被冲掉。
+        const completed = {
+          ...held?.item,
+          ...normalized,
+          id: itemId,
+          ...completionFields(itemId),
         };
-        const completed = { ...item, ...completionFields(item.id) };
-        streaming.delete(item.id);
+        streaming.delete(itemId);
+        displayIdByWireId.delete(wireId);
         return [
           { type: 'item', taskId: event.threadId, item: completed as unknown as RenderItemView },
         ];
       }
+      case 'plan-updated': {
+        const itemId = `turn-plan:${event.turnId}`;
+        const held = streaming.get(itemId);
+        const item = {
+          ...held?.item,
+          id: itemId,
+          type: 'plan',
+          _turnId: event.turnId,
+          steps: event.steps,
+          ...(event.explanation ? { explanation: event.explanation } : {}),
+        };
+        streaming.set(itemId, {
+          taskId: event.threadId,
+          item,
+          startedAtMs: held?.startedAtMs ?? now(),
+        });
+        return [{ type: 'item', taskId: event.threadId, item: item as RenderItemView }];
+      }
+      case 'item-updated': {
+        const itemId = displayId(event.itemId);
+        const held = streaming.get(itemId);
+        if (!held) return [];
+        const item = {
+          ...held.item,
+          ...event.patch,
+          ...(event.turnId ? { _turnId: event.turnId } : {}),
+        };
+        streaming.set(itemId, { ...held, item });
+        return [{ type: 'item', taskId: held.taskId, item: item as unknown as RenderItemView }];
+      }
       case 'item-delta': {
         const field = TEXT_DELTA_FIELD[event.channel];
-        const held = streaming.get(event.itemId);
+        const itemId = displayId(event.itemId);
+        const held = streaming.get(itemId);
         // 没见过 item-started 的增量不猜形状：等 item-completed 给出完整条目
         if (field === undefined || held === undefined) return [];
+        const nextValue = `${String(held.item[field] ?? '')}${event.delta}`;
         const merged = {
           ...held.item,
-          [field]: `${String(held.item[field] ?? '')}${event.delta}`,
+          [field]: event.channel === 'commandOutput' ? tailCommandOutput(nextValue) : nextValue,
         };
-        streaming.set(event.itemId, { ...held, item: merged });
+        streaming.set(itemId, { ...held, item: merged });
         return [{ type: 'item', taskId: held.taskId, item: merged as unknown as RenderItemView }];
       }
+      case 'diff-updated':
+        return [
+          {
+            type: 'turn-diff',
+            taskId: event.threadId,
+            turnId: event.turnId,
+            diff: event.diff,
+          },
+        ];
+      case 'unknown-event':
+        return event.threadId
+          ? [
+              {
+                type: 'item',
+                taskId: event.threadId,
+                item: {
+                  id: `unknown:${unknownSequence++}`,
+                  type: event.method,
+                  method: event.method,
+                  completed: true,
+                },
+              },
+            ]
+          : [];
       /*
        * 另一个客户端建了/删了 project（内核那一侧变了）。
        * `app.tsx` 只在停在「项目」列表页时才据此重拉 —— 本机自己的增删
@@ -2016,7 +2225,7 @@ export function fullAccessApprovalReply(approval: PendingApproval): ApprovalRepl
  * 的墙钟时间，渲染层据此说「推理过程」而不是永远停在「思考中…」。
  */
 export function toHistoryItem(item: ThreadItem): RenderItemView {
-  return { ...(item as unknown as RenderItemView), completed: true };
+  return { ...normalizeThreadItem(item), completed: true };
 }
 
 /** 快显缓存 → 能画出来的条目。摘要不是正文副本（09 §4.2），只在权威列表失败时用。 */

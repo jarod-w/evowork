@@ -188,7 +188,7 @@ export interface AgentMessageItem extends ThreadItemBase {
 
 export interface PlanItem extends ThreadItemBase {
   readonly type: 'plan';
-  readonly steps?: readonly { readonly step: string; readonly status: string }[];
+  readonly text: string;
 }
 
 export interface CommandExecutionItem extends ThreadItemBase {
@@ -197,6 +197,8 @@ export interface CommandExecutionItem extends ThreadItemBase {
   readonly cwd?: string;
   readonly exitCode?: number | null;
   readonly status?: string;
+  readonly aggregatedOutput?: string | null;
+  readonly durationMs?: number | null;
 }
 
 export interface FileChangeItem extends ThreadItemBase {
@@ -445,7 +447,8 @@ export interface TurnCompletedNotification {
 export interface TurnPlanUpdatedNotification {
   readonly threadId: string;
   readonly turnId: string;
-  readonly steps?: readonly { readonly step: string; readonly status: string }[];
+  readonly explanation?: string | null;
+  readonly plan: readonly { readonly step: string; readonly status: string }[];
 }
 export interface TurnDiffUpdatedNotification {
   readonly threadId: string;

@@ -209,7 +209,11 @@ export function createAdapter(options: AdapterOptions) {
     // 它是"上游改了什么"的唯一线索，不该取决于谁构造了 session
     onUnhandledNotification: (method, params) => {
       store.recordUnknownEvent(method, params, now());
-      options.onUiEvent?.({ type: 'unknown-event', method });
+      const threadId =
+        params && typeof params === 'object' && typeof (params as { threadId?: unknown }).threadId === 'string'
+          ? (params as { threadId: string }).threadId
+          : undefined;
+      options.onUiEvent?.({ type: 'unknown-event', method, ...(threadId ? { threadId } : {}) });
     },
   });
 
@@ -897,7 +901,7 @@ function itemFromListEntry(entry: ThreadItemEntry | ThreadItem | unknown): Threa
   if (nested && typeof nested === 'object') {
     const item = nested as ThreadItem;
     if (typeof item.id === 'string' && typeof item.type === 'string') {
-      return typeof rec.turnId === 'string' && item.type === 'userMessage'
+      return typeof rec.turnId === 'string'
         ? ({ ...item, _turnId: rec.turnId } as unknown as ThreadItem)
         : item;
     }
@@ -954,11 +958,9 @@ async function listAllThreadItemsWithFallback(
   }
 }
 
-/** 保留 userMessage 的回合归属，让历史加载后的过程分组与实时事件一致。 */
+/** 保留每个 item 的回合归属：过程分组、单回合 diff 与回滚都依赖它。 */
 function itemsFromTurns(turns: readonly Turn[]): readonly ThreadItem[] {
   return turns.flatMap((turn) =>
-    turn.items.map((item) =>
-      item.type === 'userMessage' ? ({ ...item, _turnId: turn.id } as unknown as ThreadItem) : item,
-    ),
+    turn.items.map((item) => ({ ...item, _turnId: turn.id }) as unknown as ThreadItem),
   );
 }
