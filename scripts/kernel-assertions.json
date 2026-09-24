@@ -178,6 +178,99 @@
       "impact": "总纲 K7 · 设计 05 §6"
     },
     {
+      "id": "F17",
+      "summary": "初始化完成通知的方法名由 camelCase 规则生成 initialized，不是 notifications/initialized",
+      "file": "codex-rs/app-server-protocol/src/protocol/common.rs",
+      "needle": "client_notification_definitions! {",
+      "line": 2053,
+      "scopeLines": { "before": 0, "after": 2 },
+      "mustContain": ["Initialized,"],
+      "mustNotContain": ["notifications/initialized"],
+      "impact": "设计 09 §3.2；适配层握手通知"
+    },
+    {
+      "id": "F18",
+      "summary": "实验方法门禁来自 initialize.experimentalApi；缺少能力声明是 invalid request，不是方法降级",
+      "file": "codex-rs/app-server/src/message_processor.rs",
+      "needle": "if let Some(reason) = codex_request.experimental_reason()",
+      "line": 968,
+      "scopeLines": { "before": 0, "after": 5 },
+      "mustContain": [
+        "!session.experimental_api_enabled()",
+        "invalid_request(experimental_required_message(reason))"
+      ],
+      "impact": "设计 09 §3.2–§3.3；-32600 必须响亮失败"
+    },
+    {
+      "id": "F19",
+      "summary": "PreToolUse hook：deny 要非空原因、ask 不支持、updatedInput 只随 allow 生效",
+      "file": "codex-rs/hooks/src/engine/output_parser.rs",
+      "needle": "fn unsupported_pre_tool_use_hook_specific_output",
+      "line": 441,
+      "scopeLines": { "before": 0, "after": 72 },
+      "mustContain": [
+        "updatedInput without permissionDecision:allow",
+        "unsupported permissionDecision:ask",
+        "permissionDecision:deny without a non-empty permissionDecisionReason"
+      ],
+      "impact": "设计 10 §3.2；策略 hook 契约"
+    },
+    {
+      "id": "F20",
+      "summary": "CollaborationMode.Settings.model 是必填 String，不是 Option",
+      "file": "codex-rs/protocol/src/config_types.rs",
+      "needle": "pub struct Settings {",
+      "line": 780,
+      "scopeLines": { "before": 1, "after": 4 },
+      "mustContain": ["pub model: String"],
+      "mustNotContain": ["pub model: Option<"],
+      "impact": "设计 03 §2.4；场景兜底必须带 model"
+    },
+    {
+      "id": "F21",
+      "summary": "命名权限档依赖内核 config.toml 的 [permissions] 表",
+      "file": "codex-rs/core/src/config/permissions.rs",
+      "needle": "default_permissions requires a `[permissions]` table",
+      "line": 348,
+      "impact": "首次运行必须安装 config.toml 模板"
+    },
+    {
+      "id": "F22",
+      "summary": "CollaborationMode.Settings 没有 camelCase 重命名，字段按 snake_case 序列化",
+      "file": "codex-rs/protocol/src/config_types.rs",
+      "needle": "pub struct Settings {",
+      "line": 780,
+      "scopeLines": { "before": 2, "after": 4 },
+      "mustContain": ["pub reasoning_effort:", "pub developer_instructions:"],
+      "mustNotContain": ["rename_all", "developerInstructions", "reasoningEffort"],
+      "impact": "K5 身份指令必须用 snake_case 下发"
+    },
+    {
+      "id": "F23",
+      "summary": "随包 modes 指令由桌面宿主安装到内核实际读取目录",
+      "root": "repo",
+      "file": "apps/desktop/src/main/service-host.ts",
+      "needle": "export function ensureModeInstructions",
+      "line": 246,
+      "scopeLines": { "before": 0, "after": 16 },
+      "mustContain": ["paths.modes", "copyFileSync"],
+      "impact": "干净机器不能静默丢失 developer_instructions"
+    },
+    {
+      "id": "F24",
+      "summary": "model_catalog_json 存在时使用 StaticModelsManager；缺失时走 OpenAI 远端目录",
+      "file": "codex-rs/model-provider/src/provider.rs",
+      "needle": "match config_model_catalog {",
+      "line": 551,
+      "scopeLines": { "before": 0, "after": 18 },
+      "mustContain": [
+        "StaticModelsManager::new",
+        "OpenAiModelsEndpoint::new",
+        "OpenAiModelsManager::new"
+      ],
+      "impact": "模型下拉真源必须是 EvoWork 网关，不直接用 model/list"
+    },
+    {
       "id": "F25",
       "summary": "thread/start.base_instructions 整段替换模型底稿（developer_instructions 盖不住 Codex CLI 身份）",
       "file": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",

@@ -345,6 +345,55 @@ describe('顶部提示条（04 §8）', () => {
   });
 });
 
+describe('长任务控制面', () => {
+  const goal = {
+    threadId: 't1',
+    objective: '完成季度报告',
+    status: 'active' as const,
+    tokenBudget: 10_000,
+    tokensUsed: 8_200,
+    timeUsedSeconds: 120,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+
+  it('目标预算持续显示进度，超过 80% 使用 warning', () => {
+    const { container } = renderWorkspace({ goal, onGoalSave: vi.fn() });
+    expect(screen.getByLabelText('Token 预算使用比例').getAttribute('value')).toBe('82');
+    expect(container.querySelector('.ew-goal-progress')?.getAttribute('data-tone')).toBe('warning');
+  });
+
+  it('预算耗尽提供追加预算与结束任务两个动作', () => {
+    const onGoalSave = vi.fn();
+    const onGoalStatus = vi.fn();
+    renderWorkspace({
+      goal: { ...goal, status: 'budgetLimited', tokensUsed: 10_000 },
+      onGoalSave,
+      onGoalStatus,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '追加预算' }));
+    expect(onGoalSave).toHaveBeenCalledWith({
+      objective: '完成季度报告',
+      tokenBudget: 12_500,
+      status: 'active',
+    });
+    fireEvent.click(screen.getByRole('button', { name: '结束任务' }));
+    expect(onGoalStatus).toHaveBeenCalledWith('complete');
+  });
+
+  it('子任务从侧滑详情进入对应任务', () => {
+    const onOpenSubtask = vi.fn();
+    renderWorkspace({
+      subtasks: [{ id: 'child-1', title: '整理数据', status: 'running', timeLabel: '刚刚' }],
+      onOpenSubtask,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '子任务 1' }));
+    expect(screen.getByRole('complementary', { name: '子任务详情' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /整理数据/ }));
+    expect(onOpenSubtask).toHaveBeenCalledWith('child-1');
+  });
+});
+
 describe('空态（01 §4.3：文案必须给出下一步动作）', () => {
   it('新任务的空态给出下一步，而不是"暂无数据"', () => {
     const onNewTask = vi.fn();

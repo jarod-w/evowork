@@ -312,10 +312,22 @@ export interface TaskWorkspaceProps {
   readonly onNewTask?: (() => void) | undefined;
   readonly goal?: TaskGoalView | undefined;
   readonly onGoalSave?:
-    ((input: { objective: string; tokenBudget?: number | null }) => void) | undefined;
+    | ((input: {
+        objective: string;
+        tokenBudget?: number | null;
+        status?: TaskGoalView['status'];
+      }) => void)
+    | undefined;
   readonly onGoalStatus?: ((status: TaskGoalView['status']) => void) | undefined;
   readonly onGoalClear?: (() => void) | undefined;
   readonly onFork?: ((ephemeral: boolean) => void) | undefined;
+  readonly subtasks?: readonly {
+    readonly id: string;
+    readonly title: string | null;
+    readonly status: TaskStatus;
+    readonly timeLabel: string;
+  }[];
+  readonly onOpenSubtask?: ((threadId: string) => void) | undefined;
   readonly focusItemId?: string | undefined;
   readonly artifacts?: readonly {
     readonly id: string;
@@ -355,6 +367,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [hasNewContent, setHasNewContent] = useState(false);
   const [resultWidth, setResultWidth] = useState<number | undefined>(undefined);
   const [goalOpen, setGoalOpen] = useState(false);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
   const [goalObjective, setGoalObjective] = useState(props.goal?.objective ?? '');
   const [goalBudget, setGoalBudget] = useState(
     props.goal?.tokenBudget == null ? '' : String(props.goal.tokenBudget),
@@ -363,6 +376,13 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const goalCanSave =
     goalObjective.trim() !== '' &&
     (parsedGoalBudget === null || (Number.isFinite(parsedGoalBudget) && parsedGoalBudget > 0));
+  const goalProgress =
+    props.goal?.tokenBudget == null || props.goal.tokenBudget <= 0
+      ? undefined
+      : Math.min(100, (props.goal.tokensUsed / props.goal.tokenBudget) * 100);
+  const goalExhausted =
+    props.goal?.status === 'budgetLimited' ||
+    (props.goal?.tokenBudget != null && props.goal.tokensUsed >= props.goal.tokenBudget);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const resultTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -398,6 +418,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     followOutputRef.current = true;
     setHasNewContent(false);
     setLocalResultOpen(undefined);
+    setSubtasksOpen(false);
   }, [props.taskId]);
 
   useEffect(() => {
@@ -500,6 +521,15 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               </button>
             </>
           ) : null}
+          {(props.subtasks ?? []).length > 0 ? (
+            <button
+              type="button"
+              className="ew-pill-button"
+              onClick={() => setSubtasksOpen((value) => !value)}
+            >
+              子任务 {props.subtasks?.length}
+            </button>
+          ) : null}
           {props.hasResults || props.resultPanel ? (
             <button
               ref={resultTriggerRef}
@@ -513,6 +543,46 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           ) : null}
         </div>
       </header>
+
+      {props.goal && goalProgress !== undefined ? (
+        <section
+          className="ew-goal-progress"
+          data-tone={goalProgress >= 80 ? 'warning' : 'accent'}
+          aria-label="任务预算进度"
+        >
+          <div className="ew-goal-progress-copy">
+            <span>{props.goal.objective}</span>
+            <span>
+              {props.goal.tokensUsed.toLocaleString()} / {props.goal.tokenBudget?.toLocaleString()}{' '}
+              tokens（{Math.round(goalProgress)}%）
+            </span>
+          </div>
+          <progress max={100} value={goalProgress} aria-label="Token 预算使用比例" />
+          {goalExhausted ? (
+            <div className="ew-goal-exhausted" role="alert">
+              <span>预算已耗尽，任务已暂停。</span>
+              <PillButton
+                variant="accent"
+                onClick={() => {
+                  if (!props.goal?.tokenBudget) return;
+                  const increment = Math.max(1_000, Math.ceil(props.goal.tokenBudget * 0.25));
+                  props.onGoalSave?.({
+                    objective: props.goal.objective,
+                    tokenBudget: Math.max(
+                      props.goal.tokenBudget + increment,
+                      props.goal.tokensUsed + 1_000,
+                    ),
+                    status: 'active',
+                  });
+                }}
+              >
+                追加预算
+              </PillButton>
+              <PillButton onClick={() => props.onGoalStatus?.('complete')}>结束任务</PillButton>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {goalOpen ? (
         <section className="ew-task-goal" aria-label="长任务目标">
@@ -559,6 +629,43 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
             </>
           ) : null}
         </section>
+      ) : null}
+
+      {subtasksOpen ? (
+        <aside className="ew-subtask-drawer" aria-label="子任务详情">
+          <header>
+            <div>
+              <strong>子任务</strong>
+              <span>{props.subtasks?.length ?? 0} 个</span>
+            </div>
+            <button
+              type="button"
+              className="ew-pill-button"
+              aria-label="关闭子任务详情"
+              onClick={() => setSubtasksOpen(false)}
+            >
+              关闭
+            </button>
+          </header>
+          <ul>
+            {(props.subtasks ?? []).map((subtask) => {
+              const subtaskStatus = STATUS_VIEW[subtask.status];
+              return (
+                <li key={subtask.id}>
+                  <button type="button" onClick={() => props.onOpenSubtask?.(subtask.id)}>
+                    <span>
+                      <StatusDot tone={subtaskStatus.tone} breathing={subtaskStatus.breathing} />
+                      <strong>{subtask.title ?? '未命名子任务'}</strong>
+                    </span>
+                    <small>
+                      {subtaskStatus.label} · {subtask.timeLabel}
+                    </small>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
       ) : null}
 
       <div className="ew-workspace-body">

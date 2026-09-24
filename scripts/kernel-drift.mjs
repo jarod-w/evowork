@@ -8,7 +8,7 @@
  *      子目录上（app-server-protocol / extension-api / hooks / skills / core-plugins /
  *      protocol / collaboration-mode-templates）。总提交数没有意义 —— 一天 50 个提交里
  *      49 个改 TUI 与我们无关，剩下 1 个改 v2 协议才是要看的。
- *   ② **断言复核**：把 scripts/kernel-assertions.json（= 设计文档 F 编号的机器孪生）逐条
+ *   ② **断言复核**：把 scripts/kernel-assertions.json（= 设计文档 F1–F25 的机器孪生）逐条
  *      在**当前签出**上重跑。行号漂移只报不failed；needle 消失或枚举变体数变化才算 BROKEN。
  *   ③ **补丁试合并**：patches/evowork/*.patch 能否干净地打到 origin/main 上（K1、D7）。
  *      现在补丁清单只剩 P4，所以通常是空跑 —— 但这个 job 必须在**有补丁之前**就存在，
@@ -167,6 +167,22 @@ function lineOf(source, needle) {
   return source.slice(0, idx).split('\n').length;
 }
 
+/**
+ * Some protocol facts depend on the absence of an attribute or on two nearby
+ * branches. Checking the whole file would create false positives as the file
+ * grows, so assertions may constrain content checks to a small line window
+ * around their primary needle.
+ */
+function assertionScope(source, needle, scopeLines) {
+  if (!scopeLines) return source;
+  const lines = source.split('\n');
+  const index = lines.findIndex((line) => line.includes(needle));
+  if (index < 0) return '';
+  const before = Math.max(0, Number(scopeLines.before ?? 0));
+  const after = Math.max(0, Number(scopeLines.after ?? 0));
+  return lines.slice(Math.max(0, index - before), index + after + 1).join('\n');
+}
+
 function checkAssertions() {
   const manifest = JSON.parse(
     readFileSync(join(REPO_ROOT, 'scripts/kernel-assertions.json'), 'utf8'),
@@ -174,12 +190,13 @@ function checkAssertions() {
   const results = [];
 
   for (const a of manifest.assertions) {
-    const abs = join(KERNEL_DIR, a.file);
+    const root = a.root === 'repo' ? REPO_ROOT : KERNEL_DIR;
+    const abs = join(root, a.file);
     if (!existsSync(abs)) {
       results.push({
         id: a.id,
         status: 'BROKEN',
-        detail: `文件不存在：${a.file}`,
+        detail: `文件不存在：${a.root === 'repo' ? 'repo:' : ''}${a.file}`,
         summary: a.summary,
         impact: a.impact,
       });
@@ -193,11 +210,12 @@ function checkAssertions() {
       problems.push(`needle 不存在：\`${a.needle}\``);
     }
 
+    const scope = assertionScope(src, a.needle, a.scopeLines);
     for (const must of a.mustContain ?? []) {
-      if (!src.includes(must)) problems.push(`mustContain 缺失：\`${must}\``);
+      if (!scope.includes(must)) problems.push(`mustContain 缺失：\`${must}\``);
     }
     for (const mustNot of a.mustNotContain ?? []) {
-      if (src.includes(mustNot))
+      if (scope.includes(mustNot))
         problems.push(`mustNotContain 命中（上游新增了它）：\`${mustNot}\``);
     }
     if (a.enumVariants) {

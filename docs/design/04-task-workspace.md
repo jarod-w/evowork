@@ -227,7 +227,7 @@
 | 切换权限 profile | `turn/start.permissions`（F5：不与 `sandboxPolicy` 同传）     |
 | 切换模型         | `turn/start.model`                                            |
 | 记忆开关         | `thread/memoryMode/set` (exp) —— 直接满足清单 §5.4 的隐私诉求 |
-| 设定预算         | `thread/goal/set` 的 `budget`（Q11，10 §5）                   |
+| 设定预算         | `thread/goal/set` 的 `tokenBudget`（Q11，10 §5）              |
 | 压缩上下文       | `thread/compact/start`，并在流里插入 `ContextCompaction` item |
 | 回滚 / 撤销      | `thread/rollback` / `thread/revert`（§6.3）                   |
 

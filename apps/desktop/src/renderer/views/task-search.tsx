@@ -1,9 +1,61 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { TaskRowView, TaskSearchHitView, WorkspaceView } from '../../shared/ipc.js';
+import type {
+  TaskRowView,
+  TaskSearchHitView,
+  TaskStatusView,
+  WorkspaceView,
+} from '../../shared/ipc.js';
 import { renderIcon } from '../components/icons.js';
 
 const MAX_CHAT_RESULTS = 9;
+
+export interface TaskSearchFilters {
+  readonly status: TaskStatusView | '';
+  readonly workspacePath: string;
+  readonly updatedWithin: 'day' | 'week' | 'month' | '';
+}
+
+const EMPTY_FILTERS: TaskSearchFilters = {
+  status: '',
+  workspacePath: '',
+  updatedWithin: '',
+};
+
+const STATUS_OPTIONS: readonly { value: TaskStatusView; label: string }[] = [
+  { value: 'running', label: '进行中' },
+  { value: 'pending', label: '待你确认' },
+  { value: 'planning', label: '规划中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'failed', label: '失败' },
+  { value: 'interrupted', label: '已中断' },
+  { value: 'idle', label: '未开始' },
+  { value: 'archived', label: '已归档' },
+];
+
+const UPDATED_WITHIN_MS = {
+  day: 24 * 60 * 60 * 1_000,
+  week: 7 * 24 * 60 * 60 * 1_000,
+  month: 30 * 24 * 60 * 60 * 1_000,
+} as const;
+
+export function filterTaskSearchRows(
+  rows: readonly TaskSearchHitView[],
+  filters: TaskSearchFilters,
+  now = Date.now(),
+): readonly TaskSearchHitView[] {
+  return rows.filter(({ task }) => {
+    if (filters.status && task.status !== filters.status) return false;
+    if (filters.workspacePath) {
+      const root = filters.workspacePath.replace(/[\\/]+$/, '').replaceAll('\\', '/');
+      const cwd = (task.cwd ?? '').replaceAll('\\', '/');
+      if (cwd !== root && !cwd.startsWith(`${root}/`)) return false;
+    }
+    if (filters.updatedWithin && task.updatedAt < now - UPDATED_WITHIN_MS[filters.updatedWithin])
+      return false;
+    return true;
+  });
+}
 
 type QuickActionId = 'new-chat' | 'open-folder' | 'search-files';
 
@@ -23,7 +75,16 @@ function shortcutPrefix(): string {
 }
 
 function workspaceLabel(task: TaskRowView, workspaces: readonly WorkspaceView[]): string {
-  const workspace = workspaces.find((candidate) => candidate.path === task.cwd);
+  const workspace = [...workspaces]
+    .filter((candidate) => candidate.path)
+    .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))
+    .find((candidate) => {
+      const root = candidate.path?.replace(/[\\/]+$/, '').replaceAll('\\', '/');
+      const cwd = task.cwd?.replaceAll('\\', '/');
+      return (
+        root !== undefined && cwd !== undefined && (cwd === root || cwd.startsWith(`${root}/`))
+      );
+    });
   if (workspace) return workspace.name;
   if (!task.cwd) return '本机';
   return task.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? '本机';
@@ -49,6 +110,8 @@ export function TaskSearchPalette(props: {
   const [hits, setHits] = useState<readonly TaskSearchHitView[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<TaskSearchFilters>(EMPTY_FILTERS);
   // `autoFocus` 在 effect 前执行；这里必须在 render 阶段记住触发器，否则记下来的会是输入框自己。
   const restoreFocus = useRef<HTMLElement | null>(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -92,11 +155,16 @@ export function TaskSearchPalette(props: {
     () =>
       props.tasks
         .filter((task) => task.parentThreadId == null)
-        .slice(0, MAX_CHAT_RESULTS)
         .map((task) => ({ task, snippet: '' })),
     [props.tasks],
   );
-  const chats = query.trim() ? hits : recent;
+  const chats = useMemo(
+    () => filterTaskSearchRows(query.trim() ? hits : recent, filters).slice(0, MAX_CHAT_RESULTS),
+    [filters, hits, query, recent],
+  );
+  const activeFilterCount = [filters.status, filters.workspacePath, filters.updatedWithin].filter(
+    Boolean,
+  ).length;
   const itemCount = chats.length + QUICK_ACTIONS.length;
 
   const runQuickAction = useCallback(
@@ -174,7 +242,92 @@ export function TaskSearchPalette(props: {
             onChange={(event) => setQuery(event.target.value)}
             autoFocus
           />
+          <button
+            type="button"
+            className="ew-pill-button"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+          </button>
         </label>
+
+        {filtersOpen ? (
+          <section className="ew-search-filters" aria-label="高级搜索筛选">
+            <label>
+              <span>状态</span>
+              <select
+                aria-label="按状态筛选"
+                value={filters.status}
+                onChange={(event) => {
+                  setFilters((current) => ({
+                    ...current,
+                    status: event.target.value as TaskSearchFilters['status'],
+                  }));
+                  setSelectedIndex(0);
+                }}
+              >
+                <option value="">全部状态</option>
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>项目</span>
+              <select
+                aria-label="按项目筛选"
+                value={filters.workspacePath}
+                onChange={(event) => {
+                  setFilters((current) => ({ ...current, workspacePath: event.target.value }));
+                  setSelectedIndex(0);
+                }}
+              >
+                <option value="">全部项目</option>
+                {props.workspaces
+                  .filter((workspace) => workspace.path)
+                  .map((workspace) => (
+                    <option key={workspace.id} value={workspace.path}>
+                      {workspace.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              <span>更新时间</span>
+              <select
+                aria-label="按更新时间筛选"
+                value={filters.updatedWithin}
+                onChange={(event) => {
+                  setFilters((current) => ({
+                    ...current,
+                    updatedWithin: event.target.value as TaskSearchFilters['updatedWithin'],
+                  }));
+                  setSelectedIndex(0);
+                }}
+              >
+                <option value="">不限时间</option>
+                <option value="day">最近 24 小时</option>
+                <option value="week">最近 7 天</option>
+                <option value="month">最近 30 天</option>
+              </select>
+            </label>
+            {activeFilterCount > 0 ? (
+              <button
+                type="button"
+                className="ew-pill-button"
+                onClick={() => {
+                  setFilters(EMPTY_FILTERS);
+                  setSelectedIndex(0);
+                }}
+              >
+                清除筛选
+              </button>
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="ew-search-palette-content">
           <div className="ew-search-palette-section-title">
@@ -215,8 +368,8 @@ export function TaskSearchPalette(props: {
             </ul>
           ) : !loading ? (
             <p className="ew-search-palette-empty">
-              {query.trim()
-                ? '没有找到匹配的聊天，换一个关键词试试。'
+              {query.trim() || activeFilterCount > 0
+                ? '没有找到匹配的聊天，调整关键词或筛选条件试试。'
                 : '还没有聊天，新建一个就能开始。'}
             </p>
           ) : null}

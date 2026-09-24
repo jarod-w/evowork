@@ -127,7 +127,7 @@ evowork/
   config/                config.toml 模板 · requirements.toml · 权限 profile · 模式模板
   patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；**当前为空**）
   build/                 M9 打包：electron-builder 配置 · entitlements。**是源码不是产物**
-  scripts/               漂移雷达（含 F1–F16 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
+  scripts/               漂移雷达（含 F1–F25 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
   tools/                 开发期工具（eslint 规则：K2 边界 + token-only 样式）
 ```
 
@@ -200,7 +200,7 @@ evowork/
 pnpm run check                    # 格式 · lint（含 K2 边界规则）· 类型（含测试）· 测试 · K1 补丁预算
 pnpm run build                    # 四步装配：tsc → 复制入口与 vendor → esbuild 三个入口 → vite 渲染层
 pnpm run test -- --project store  # 只跑一个包
-node scripts/kernel-drift.mjs     # 上游漂移 + F1–F16 断言机器复核
+node scripts/kernel-drift.mjs     # 上游漂移 + F1–F25 断言机器复核
 
 # 拿到某家模型的 key 之后跑一次，把能力表里的 verified 变成有依据的值（U2）
 EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
@@ -250,7 +250,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | Q8 定时任务 | SKIP + 不自动重试 + 连败 3 次自动 PAUSE | scheduler 数据模型已定型（设计文档 §6.9） |
 | Q9 国内生态集成 | **本期不做** | connectors 只做 browser/；别去写飞书/企微/钉钉/腾讯文档 |
 | Q10 产物分享 | 显式授权后上传，默认关闭 + 有效期 | 任何上传动作都要有逐次授权入口 |
-| Q11 并发与预算 | 单用户 3 并行（按本机资源下调）+ 单任务硬预算 + 超预算暂停询问 | 用 `ThreadGoal.budget` 与 `subagent_start` hook，别自建 |
+| Q11 并发与预算 | 单用户 3 并行（按本机资源下调）+ 单任务硬预算 + 超预算暂停询问 | 用 `ThreadGoal.tokenBudget` 与 `subagent_start` hook，别自建 |
 | Q13 CLI | 保留，独立品牌「EvoWork CLI」 | CLI 的命令名/帮助文案属于 K5 的对外可见字符串 |
 | **Q14 网关托管** | 云端统一托管为主 + 企业私有部署包；**网关不落盘 prompt 与响应体** | 网关的日志、APM trace（span attribute）、错误上报三条路径都不许带正文，只记 token 数/时延/错误码 |
 | **Q15 多设备** | automation 绑定创建它的设备，其他设备只读 + 可「迁移到本机」，离线超 7 天提示迁移 | scheduler 要有 `device_id`；迁移时重置 misfire 基准，否则新设备一上线就补一堆历史触发 |

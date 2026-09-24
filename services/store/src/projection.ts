@@ -115,6 +115,8 @@ export interface ThreadFilter {
   readonly archived?: boolean;
   /** 只看顶层任务：子任务不出现在顶层列表（04 §3.2） */
   readonly topLevelOnly?: boolean;
+  /** 只看某个任务的直接子任务（04 §3.7）。 */
+  readonly parentThreadId?: string;
   readonly limit?: number;
   readonly offset?: number;
 }
@@ -438,6 +440,10 @@ export class ThreadProjection {
       where.push('archived = 0');
     }
     if (filter.topLevelOnly) where.push('parent_thread_id IS NULL');
+    if (filter.parentThreadId !== undefined) {
+      where.push('parent_thread_id = ?');
+      params.push(filter.parentThreadId);
+    }
 
     const limit = filter.limit ?? 200;
     const offset = filter.offset ?? 0;

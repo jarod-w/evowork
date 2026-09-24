@@ -37,6 +37,7 @@ import type {
   DirEntryView,
   LibraryDataView,
   FilePreviewView,
+  FileAnnotationView,
   ModelAccessMutationResult,
   ModelAccessView,
   ModelCatalogResult,
@@ -138,6 +139,7 @@ export interface EvoworkBridge {
   refreshVisible(ids: readonly string[]): Promise<void>;
   /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
   openTask(input: { threadId: string }): Promise<OpenTaskResult>;
+  listSubtasks?(input: { threadId: string }): Promise<readonly TaskRowView[]>;
   searchTasks?(input: { query: string }): Promise<readonly TaskSearchHitView[]>;
   searchTaskOccurrences?(input: {
     threadId: string;
@@ -501,6 +503,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   >({});
   const [goalsByTask, setGoalsByTask] = useState<
     Readonly<Record<string, TaskGoalView | undefined>>
+  >({});
+  const [subtasksByTask, setSubtasksByTask] = useState<
+    Readonly<Record<string, readonly TaskRowView[]>>
   >({});
   const [focusItemId, setFocusItemId] = useState<string | undefined>(undefined);
   const [steer, setSteer] = useState(false);
@@ -980,6 +985,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       });
     }
   }, [activeTaskId, bridge, startup, tasks, workspaceId]);
+
+  useEffect(() => {
+    if (activeTaskId === null || !bridge.listSubtasks) return;
+    const threadId = activeTaskId;
+    void bridge
+      .listSubtasks({ threadId })
+      .then((subtasks) => setSubtasksByTask((previous) => ({ ...previous, [threadId]: subtasks })))
+      .catch((error: unknown) => reportFailure(error, '没能读取子任务。'));
+  }, [activeTaskId, bridge, reportFailure]);
 
   /** 结果区数据按任务读取；产物来自索引，文件来自该任务所属项目的根目录。 */
   useEffect(() => {
@@ -1620,19 +1634,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [activeTaskId, bridge, showPreview, updateResultUi],
   );
-  const annotatePreview = useCallback(
-    (annotation: { fileName: string; quote?: string; comment: string }) => {
-      const block = [
-        `针对文件「${annotation.fileName}」的批注：`,
-        annotation.quote ? `> ${annotation.quote.replace(/\n/g, '\n> ')}` : '',
-        annotation.comment,
-      ]
-        .filter(Boolean)
-        .join('\n\n');
-      setDraft((previous) => (previous.trim() ? `${previous}\n\n${block}` : block));
-    },
-    [],
-  );
+  const annotatePreview = useCallback((annotation: FileAnnotationView) => {
+    const region = annotation.region
+      ? [
+          annotation.region.page === undefined ? '' : `第 ${annotation.region.page} 页`,
+          `区域 x=${annotation.region.x}%, y=${annotation.region.y}%, 宽=${annotation.region.width}%, 高=${annotation.region.height}%`,
+        ]
+          .filter(Boolean)
+          .join('，')
+      : '';
+    const block = [
+      `针对文件「${annotation.fileName}」的批注：`,
+      annotation.quote ? `> ${annotation.quote.replace(/\n/g, '\n> ')}` : '',
+      region,
+      annotation.comment,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    setDraft((previous) => (previous.trim() ? `${previous}\n\n${block}` : block));
+  }, []);
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -2370,7 +2390,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                     .setTaskGoal?.({
                       threadId,
                       ...input,
-                      status: goalsByTask[threadId]?.status ?? 'active',
+                      status: input.status ?? goalsByTask[threadId]?.status ?? 'active',
                     })
                     .then((goal) =>
                       setGoalsByTask((previous) => ({ ...previous, [threadId]: goal })),
@@ -2425,6 +2445,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 }
               : undefined
           }
+          subtasks={
+            subtasksByTask[activeTaskId] ??
+            tasks.filter((task) => task.parentThreadId === activeTaskId)
+          }
+          onOpenSubtask={(threadId) => {
+            const subtask = (subtasksByTask[activeTaskId] ?? []).find(
+              (task) => task.id === threadId,
+            );
+            if (subtask)
+              setTasks((previous) => [subtask, ...previous.filter((task) => task.id !== threadId)]);
+            setActiveTaskId(threadId);
+            setView('task');
+          }}
           items={currentItems}
           pendingApprovals={approvals}
           onDecide={(id, decision) =>

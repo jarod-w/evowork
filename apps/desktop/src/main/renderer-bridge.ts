@@ -1457,6 +1457,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
     },
 
+    /** 子任务不进顶层任务列表；详情抽屉从投影表按 parentThreadId 单独读取。 */
+    async listSubtasks(input: { readonly threadId: string }): Promise<readonly TaskRowView[]> {
+      return store.threads
+        .queryThreadIds({ parentThreadId: input.threadId })
+        .map((id) => store.threads.get(id))
+        .filter((row): row is ProjectionRow => row !== undefined)
+        .map((row) => toTaskRow(row, now()));
+    },
+
     async searchTasks(input: { readonly query: string }): Promise<readonly TaskSearchHitView[]> {
       const hits = await adapter.searchTasks(input.query);
       return hits.flatMap((hit) => {

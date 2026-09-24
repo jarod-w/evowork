@@ -171,6 +171,27 @@ describe('任务产物结果', () => {
   });
 });
 
+describe('子任务详情', () => {
+  it('按 parentThreadId 返回直接子任务，不混入顶层与其他任务的子任务', async () => {
+    const store = memoryStore();
+    const insert = store.db.prepare(
+      `INSERT INTO thread_projection
+       (thread_id, title, derived_status, parent_thread_id, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    insert.run('parent', '父任务', 'running', null, 1);
+    insert.run('child-1', '整理数据', 'completed', 'parent', 2);
+    insert.run('child-2', '生成图表', 'running', 'parent', 3);
+    insert.run('other-child', '其他子任务', 'running', 'other-parent', 4);
+    const actions = makeActions({ store });
+
+    await expect(actions.listSubtasks({ threadId: 'parent' })).resolves.toEqual([
+      expect.objectContaining({ id: 'child-2', parentThreadId: 'parent' }),
+      expect.objectContaining({ id: 'child-1', parentThreadId: 'parent' }),
+    ]);
+  });
+});
+
 describe('FileChange 路径 → 安全读取 → 应用内预览', () => {
   function storeWithTask(cwd: string | null = '/w/task'): Store {
     const store = memoryStore();

@@ -71,7 +71,7 @@
 
 CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表是本轮为写这套文档而实测的结论，路径相对 `../codex/codex-rs/`。**✅ = 总纲判断成立；⚠️ = 需修订总纲**。
 
-> **2026-09-24 增量复核**：Goal 已是 `tokenBudget` 且状态为 `active / paused / blocked / usageLimited / budgetLimited / complete`；队列已有 update/reorder；搜索已有 `thread/searchOccurrences`；通知增加 `thread/goal/cleared`。F3 的代码已重写为显式构造两个 preset，但“只有 Plan + Default”结论不变；机器断言已改为核对两个 `ModeKind`，避免被实现重写误报。
+> **2026-09-25 增量复核**：Goal 已是 `tokenBudget` 且状态为 `active / paused / blocked / usageLimited / budgetLimited / complete`；队列已有 update/reorder；搜索已有 `thread/searchOccurrences`；通知增加 `thread/goal/cleared`。F3 的代码已重写为显式构造两个 preset，但“只有 Plan + Default”结论不变；机器断言已改为核对两个 `ModeKind`，并把 F17–F25 全部纳入漂移雷达（含锚点局部范围与仓内接线检查）。
 
 > **2026-09-05 复核结论**：内核已从 v0.1 的基线 `728cb12fe5` 前进 **53 个提交**到 `89a4eec6da`。**F1–F16 十六条全部仍然成立**，无一条被推翻。变化只有行号与两处细节；此外 M2a 的实现过程新增了 **F17 / F18** 两条（表格末尾），它们**推翻了 09 §3.2 第 4–5 步与 §3.3 的机制描述** —— 这两条不是靠读文档发现的，是写适配层时被内核的实际行为纠正的：
 >

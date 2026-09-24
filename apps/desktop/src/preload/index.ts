@@ -64,6 +64,7 @@ export const RENDERER_ACTIONS = Object.freeze([
    * 的事件流里，重启后再点已完成任务，不调这一步就是空对话。
    */
   'openTask',
+  'listSubtasks',
   'searchTasks',
   'searchTaskOccurrences',
   'renameTask',

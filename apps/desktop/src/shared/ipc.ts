@@ -407,6 +407,23 @@ export interface FilePreviewView {
   readonly message?: string | undefined;
 }
 
+/** 预览内的局部批注坐标。百分比坐标不依赖窗口缩放，也不泄露本机绝对路径。 */
+export interface FileAnnotationRegion {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  /** PDF 页码从 1 开始；图片没有页码。 */
+  readonly page?: number | undefined;
+}
+
+export interface FileAnnotationView {
+  readonly fileName: string;
+  readonly quote?: string | undefined;
+  readonly region?: FileAnnotationRegion | undefined;
+  readonly comment: string;
+}
+
 /**
  * 从任务时间线打开一个文件变更。
  *

@@ -195,6 +195,7 @@ textarea {
 }
 
 .ew-task-workspace {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -353,6 +354,25 @@ textarea {
   height: auto;
   border-radius: var(--r-md);
 }
+.ew-file-region-surface {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+.ew-file-region-layer {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.ew-file-region-selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: var(--space-2) solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg-selected);
+  pointer-events: none;
+}
 .ew-file-preview-text pre {
   max-height: calc(var(--space-64) * 9);
   margin: 0;
@@ -384,6 +404,90 @@ textarea {
   align-items: center;
   gap: var(--space-8);
 }
+.ew-goal-progress {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-20) var(--space-8);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.ew-goal-progress-copy {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-16);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-goal-progress progress {
+  width: 100%;
+  height: var(--space-6);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--r-full);
+  accent-color: var(--accent);
+}
+.ew-goal-progress[data-tone='warning'] progress {
+  accent-color: var(--warning);
+}
+.ew-goal-exhausted {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--warning-text);
+}
+.ew-goal-exhausted > span {
+  margin-right: auto;
+}
+.ew-subtask-drawer {
+  position: absolute;
+  inset: var(--layout-title-bar-height) 0 0 auto;
+  z-index: var(--z-drawer);
+  width: var(--layout-result-pane-min);
+  max-width: 100%;
+  padding: var(--space-16);
+  overflow-y: auto;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+.ew-subtask-drawer > header,
+.ew-subtask-drawer > header > div,
+.ew-subtask-drawer li button > span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-subtask-drawer > header {
+  justify-content: space-between;
+}
+.ew-subtask-drawer > header span,
+.ew-subtask-drawer small {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+}
+.ew-subtask-drawer ul {
+  display: grid;
+  gap: var(--space-8);
+  margin: var(--space-16) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-subtask-drawer li button {
+  display: grid;
+  gap: var(--space-6);
+  width: 100%;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ew-subtask-drawer li button:hover {
+  background: var(--bg-hover);
+}
 .ew-file-preview-toolbar {
   justify-content: space-between;
   margin-bottom: var(--space-8);
@@ -414,6 +518,16 @@ textarea {
 .ew-file-annotation textarea {
   min-height: 5rem;
   resize: vertical;
+}
+.ew-file-annotation-page {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-file-annotation-page input {
+  width: calc(var(--space-64) + var(--space-16));
 }
 .ew-task-goal {
   flex-wrap: wrap;
@@ -3221,6 +3335,32 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 }
 .ew-search-palette-input input::placeholder {
   color: var(--text-tertiary);
+}
+.ew-search-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-20);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+}
+.ew-search-filters label {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-search-filters select {
+  min-width: 0;
+  height: var(--layout-nav-rhythm);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
 }
 .ew-search-palette-content {
   overflow-y: auto;
