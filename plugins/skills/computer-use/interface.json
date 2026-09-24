@@ -1,0 +1,6 @@
+{
+  "displayName": "电脑操控",
+  "category": "工具",
+  "brandColor": "#0169cc",
+  "defaultPrompt": "操作我当前允许的桌面应用完成这项任务"
+}

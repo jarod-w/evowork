@@ -8,9 +8,10 @@ const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-function setup(verified = true) {
-  const root = mkdtempSync(join(tmpdir(), 'ew-cu-test-'));
-  roots.push(root);
+function setup(verified = true, nestedRoot = '') {
+  const temporary = mkdtempSync(join(tmpdir(), 'ew-cu-test-'));
+  roots.push(temporary);
+  const root = join(temporary, nestedRoot);
   let context = {
     turnId: 'turn',
     model: 'model',
@@ -190,5 +191,16 @@ describe('电脑操控宿主边界', () => {
     expect(existsSync(socket)).toBe(true);
     await s.host.close();
     expect(existsSync(socket)).toBe(false);
+  });
+  it('用户数据路径过长时仍能启动短路径私有 socket', async () => {
+    const s = setup(true, 'long-user-profile-'.repeat(5));
+    try {
+      expect(s.host.environment.EVOWORK_CUA_SOCKET).toMatch(/^\/tmp\/ew-cua-/);
+      expect((await s.host.setEnabled(true)).state).toBe('ready');
+      expect(existsSync(s.host.environment.EVOWORK_CUA_SOCKET)).toBe(true);
+    } finally {
+      await s.host.close();
+    }
+    expect(existsSync(s.host.environment.EVOWORK_CUA_SOCKET)).toBe(false);
   });
 });

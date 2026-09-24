@@ -665,8 +665,10 @@ export function Sidebar(props: SidebarProps) {
           <p className="ew-delete-confirm-title">删除「{confirmDelete.title ?? '未命名任务'}」？</p>
           {/* 04 §3.3 要求说清这一句。答案是"不删" */}
           <p className="ew-delete-confirm-body">
-            只删除这个任务的对话记录。<strong>项目目录中的文件不会被删除</strong>
-            {confirmDelete.cwd ? `（${confirmDelete.cwd}）` : ''}。
+            归档只隐藏任务并保留历史；删除会清除本机任务历史，包括随任务保存的电脑操控界面文字和截图。
+            <strong>项目目录中的文件不会被删除</strong>
+            {confirmDelete.cwd ? `（${confirmDelete.cwd}）` : ''}
+            ；已导出、备份或发送给模型提供方的外部副本也不会被撤回。
           </p>
           <PillButton onClick={() => setConfirmDelete(null)}>取消</PillButton>
           <PillButton

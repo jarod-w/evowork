@@ -410,6 +410,69 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(screen.getByText('待删除任务')).toBeTruthy();
   });
 
+  it('任务删除后，迟到的电脑操控历史与 Item 事件不会重建留存内容', async () => {
+    let resolveHistory:
+      | ((value: { items: readonly { id: string; type: string; text: string }[] }) => void)
+      | undefined;
+    const openTask = vi.fn(
+      () =>
+        new Promise<{ items: readonly { id: string; type: string; text: string }[] }>((resolve) => {
+          resolveHistory = resolve;
+        }),
+    );
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 'delete-me',
+            title: '待删除任务',
+            status: 'completed',
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      openTask,
+    });
+    render(<App bridge={bridge} />);
+    await screen.findByText('待删除任务');
+    fireEvent.click(screen.getByText('待删除任务'));
+    await waitFor(() => expect(openTask).toHaveBeenCalledWith({ threadId: 'delete-me' }));
+
+    emit.ui?.({ type: 'task-removed', taskId: 'delete-me' });
+    resolveHistory?.({
+      items: [{ id: 'late-history', type: 'agentMessage', text: '迟到历史正文' }],
+    });
+    emit.ui?.({
+      type: 'item',
+      taskId: 'delete-me',
+      item: {
+        id: 'late-cua',
+        type: 'mcpToolCall',
+        server: 'cua_repl',
+        tool: 'get_app_state',
+        result: { content: [{ type: 'text', text: '迟到截图正文' }] },
+      },
+    });
+    emit.ui?.({
+      type: 'task-created',
+      task: {
+        id: 'delete-me',
+        title: '待删除任务',
+        status: 'completed',
+        timeLabel: '刚刚',
+        updatedAt: Date.now(),
+        sectionId: 'ungrouped',
+      },
+    });
+
+    await waitFor(() => expect(screen.queryByText('待删除任务')).toBeNull());
+    expect(screen.queryByText('迟到历史正文')).toBeNull();
+    expect(screen.queryByText('迟到截图正文')).toBeNull();
+  });
+
   it('⌘K 打开搜索，⌘⇧O 回到新任务，⌘\\ 可折叠并恢复侧栏', async () => {
     const { bridge, emit } = fakeBridge();
     render(<App bridge={bridge} />);

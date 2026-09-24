@@ -174,6 +174,18 @@ describe('技能扫描', () => {
     expect(blob).toContain('--ew-ui-bg-canvas');
     expect(blob).not.toContain('--codex-');
   });
+
+  it('随包 computer-use 技能可发现，且保持无脚本的 P0 权限面', () => {
+    const root = join(fileURLToPath(new URL('.', import.meta.url)), '../../../plugins/skills');
+    const skill = listSkills({ official: root, user: '/nope' }, nodeCatalogIo).find(
+      (entry) => entry.id === 'computer-use',
+    );
+    expect(skill?.name).toBe('电脑操控');
+    expect(skill?.interface.category).toBe('工具');
+    expect(skill?.source).toBe('official');
+    expect(skill?.audit.level).toBe('p0');
+    expect(skill?.description).toContain('macOS 桌面应用');
+  });
 });
 
 describe('连接器目录', () => {

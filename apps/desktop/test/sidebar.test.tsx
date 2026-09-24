@@ -268,6 +268,10 @@ describe('行操作（04 §3.3）', () => {
     // 点了删除**还没删**
     expect(onRowAction).not.toHaveBeenCalled();
     const dialog = screen.getByRole('alertdialog', { name: '删除任务' });
+    expect(within(dialog).getByText(/归档只隐藏任务并保留历史/)).toBeTruthy();
+    expect(within(dialog).getByText(/电脑操控界面文字和截图/)).toBeTruthy();
+    expect(within(dialog).getByText(/项目目录中的文件不会被删除/)).toBeTruthy();
+    expect(within(dialog).getByText(/外部副本也不会被撤回/)).toBeTruthy();
     expect(dialog.textContent).toContain('项目目录中的文件不会被删除');
     expect(dialog.textContent).toContain('/w/a');
 

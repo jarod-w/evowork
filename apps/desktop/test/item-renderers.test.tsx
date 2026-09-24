@@ -71,6 +71,57 @@ describe('未知 item：**绝不静默丢弃**（04 §5.2 最后一段，R2 的�
   });
 });
 
+describe('Computer Use MCP：正文留存但默认隐藏（12 §17 CU-R9）', () => {
+  it('识别内核真实 tool 字段，不渲染输入参数，用户主动查看后才显示 AX 与截图', () => {
+    const png = 'iVBORw0KGgo=';
+    const { container } = renderItem({
+      id: 'cua-1',
+      type: 'mcpToolCall',
+      server: 'cua_repl',
+      tool: 'get_app_state',
+      arguments: { app: 'com.apple.TextEdit', secret: '不得显示的输入' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ state_id: 'state-1', text: '[1] AXTextArea value=保存正文' }),
+          },
+          { type: 'image', mimeType: 'image/png', data: png },
+        ],
+      },
+    });
+
+    const summary = screen.getByRole('button', { name: /电脑操控 · get_app_state/ });
+    fireEvent.click(summary);
+    expect(screen.getByText(/读取的界面内容已保存到此任务/)).toBeTruthy();
+    expect(container.textContent).not.toContain('不得显示的输入');
+    expect(container.textContent).not.toContain('保存正文');
+    expect(container.querySelector('img')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看保存内容' }));
+    expect(screen.getByText(/AXTextArea value=保存正文/)).toBeTruthy();
+    expect(screen.getByRole('img', { name: '保存的应用窗口截图' }).getAttribute('src')).toBe(
+      `data:image/png;base64,${png}`,
+    );
+    expect(container.textContent).not.toContain('不得显示的输入');
+  });
+
+  it('写动作不回显输入正文', () => {
+    const { container } = renderItem({
+      id: 'cua-2',
+      type: 'mcpToolCall',
+      server: 'cua_repl',
+      tool: 'type_text',
+      arguments: { text: '机密输入' },
+      result: { content: [{ type: 'text', text: JSON.stringify({ ok: true }) }] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /电脑操控 · type_text/ }));
+    expect(screen.getByText(/输入与操作参数默认隐藏/)).toBeTruthy();
+    expect(container.textContent).not.toContain('机密输入');
+    expect(screen.queryByRole('button', { name: '查看保存内容' })).toBeNull();
+  });
+});
+
 describe('AgentMessage：生成内容按 Markdown 格式化（04 §5.2 #2）', () => {
   it('渲染标题、强调、列表、表格、任务列表与代码，不把 Markdown 标记原样显示', () => {
     const { container } = renderItem({

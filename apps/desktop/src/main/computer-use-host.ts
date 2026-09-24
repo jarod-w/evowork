@@ -81,8 +81,15 @@ export interface ComputerUseHostOptions {
 /** 宿主是唯一准入边界；这里从不相信工具 arguments 内的来源、许可或模型信息。 */
 export function createComputerUseHost(options: ComputerUseHostOptions) {
   const token = randomBytes(32).toString('hex');
-  const directory = join(options.root, 'run', `${process.pid}-${randomUUID()}`);
-  const socketPath = join(directory, 'computer-use.sock');
+  // macOS 的 Unix socket 路径有约 104 字节上限；用户目录及测试 tmpdir 可能很长。
+  // 随机隔离由目录权限和启动 token 共同保护，不需要在路径里放完整 UUID。
+  const sessionDirectory = `ew-cua-${process.pid}-${randomBytes(6).toString('hex')}`;
+  const preferred = join(options.root, 'run', sessionDirectory);
+  const directory =
+    Buffer.byteLength(join(preferred, 'cua.sock')) < 104
+      ? preferred
+      : join('/tmp', sessionDirectory);
+  const socketPath = join(directory, 'cua.sock');
   const grantsPath = join(options.root, 'computer-use-grants.json');
   let grants: Record<string, Grant> = Object.create(null) as Record<string, Grant>;
   try {

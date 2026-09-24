@@ -260,6 +260,110 @@ function Collapsible({
   );
 }
 
+interface McpContentBlock {
+  readonly type?: unknown;
+  readonly text?: unknown;
+  readonly data?: unknown;
+  readonly mimeType?: unknown;
+}
+
+function mcpContent(item: RenderItem): readonly McpContentBlock[] {
+  const result = item.result;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return [];
+  const content = (result as { content?: unknown }).content;
+  return Array.isArray(content)
+    ? content.filter(
+        (block): block is McpContentBlock =>
+          Boolean(block) && typeof block === 'object' && !Array.isArray(block),
+      )
+    : [];
+}
+
+function computerUseState(item: RenderItem): {
+  readonly stateText?: string | undefined;
+  readonly screenshot?: string | undefined;
+} {
+  let stateText: string | undefined;
+  let screenshot: string | undefined;
+  for (const block of mcpContent(item)) {
+    if (block.type === 'text' && typeof block.text === 'string') {
+      try {
+        const parsed = JSON.parse(block.text) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const candidate = (parsed as { text?: unknown }).text;
+          if (typeof candidate === 'string') stateText = candidate;
+        }
+      } catch {
+        // Computer Use 的结构化正文只能来自它自己的 JSON 结果；不回显任意错误文本。
+      }
+    }
+    if (
+      block.type === 'image' &&
+      typeof block.data === 'string' &&
+      block.data !== '' &&
+      block.mimeType === 'image/png'
+    )
+      screenshot = `data:image/png;base64,${block.data}`;
+  }
+  return { stateText, screenshot };
+}
+
+function ComputerUseMcpItem({
+  item,
+  name,
+  defaultExpanded,
+}: {
+  readonly item: RenderItem;
+  readonly name: string;
+  readonly defaultExpanded: boolean;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const state = computerUseState(item);
+  const savedRead = name === 'get_app_state' && (state.stateText || state.screenshot);
+  return (
+    <Collapsible
+      kind="mcpToolCall"
+      defaultExpanded={defaultExpanded}
+      summary={
+        <>
+          <StatusDot tone="muted" />
+          <span>电脑操控 · {name}</span>
+        </>
+      }
+    >
+      <div className="ew-computer-use-record">
+        <p>
+          {savedRead
+            ? '读取的界面内容已保存到此任务。输入与操作参数默认隐藏。'
+            : '电脑操控记录已保存到此任务。输入与操作参数默认隐藏。'}
+        </p>
+        {savedRead ? (
+          <button
+            type="button"
+            className="ew-item-action"
+            aria-expanded={revealed}
+            onClick={() => setRevealed((value) => !value)}
+          >
+            {revealed ? '隐藏保存内容' : '查看保存内容'}
+          </button>
+        ) : null}
+        {revealed ? (
+          <div className="ew-computer-use-content">
+            {state.stateText ? <pre className="ew-json">{state.stateText}</pre> : null}
+            {state.screenshot ? (
+              <img
+                className="ew-computer-use-screenshot"
+                src={state.screenshot}
+                alt="保存的应用窗口截图"
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Collapsible>
+  );
+}
+
 /** 一行分隔线样式的 item（04 §5.2 #16–18）。 */
 function Divider({ kind, children }: { readonly kind: string; readonly children: ReactNode }) {
   return (
@@ -475,8 +579,10 @@ export function ItemRenderer({
     // ⑦⑧ McpToolCall / DynamicToolCall —— 折叠一行：图标 + server.tool + 状态 + 耗时
     case 'mcpToolCall':
     case 'dynamicToolCall': {
-      const name = text(item, 'toolName') || text(item, 'name') || '工具调用';
+      const name = text(item, 'tool') || text(item, 'toolName') || text(item, 'name') || '工具调用';
       const server = text(item, 'server');
+      if (kind === 'mcpToolCall' && server === 'cua_repl')
+        return <ComputerUseMcpItem item={item} name={name} defaultExpanded={defaultExpanded} />;
       return (
         <Collapsible
           kind={kind}
