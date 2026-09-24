@@ -17,6 +17,7 @@ import { createArtifactRepo, openStore, type ProjectionRow, type Store } from '@
 import {
   createEventTranslator,
   createRendererActions,
+  fullAccessApprovalReply,
   timeLabel,
   toTaskRow,
   type ProjectPorts,
@@ -797,6 +798,49 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       { id: 'i1', type: 'agentMessage', completed: true, text: '缓存里的一句' },
     ]);
     expect(fallback.incomplete).toContain('connection refused');
+  });
+});
+
+describe('运行中切换审批档', () => {
+  it('切到完全访问会立即落任务设置，并放行该任务已挂起的命令审批', async () => {
+    const setTaskSettings = vi.fn();
+    const resolveApproval = vi.fn();
+    const approval = {
+      id: 'apv_1',
+      kind: 'command' as const,
+      threadId: 't1',
+      params: {},
+      receivedAtMs: 1,
+      unattended: false,
+    };
+    const actions = makeActions({
+      platform: 'darwin',
+      adapter: fakeAdapter({ setTaskSettings }),
+      resolveApproval,
+      pendingApprovals: () => [approval],
+    });
+
+    await actions.setTaskMode({ threadId: 't1', modeId: 'full-access' });
+
+    expect(setTaskSettings).toHaveBeenCalledWith('t1', { modeId: 'full-access' });
+    expect(resolveApproval).toHaveBeenCalledWith('apv_1', {
+      decision: 'accept',
+    });
+  });
+
+  it('完全访问只自动处理命令和文件，不替用户回答追问或连接器授权', () => {
+    const base = {
+      id: 'apv_1',
+      threadId: 't1',
+      params: {},
+      receivedAtMs: 1,
+      unattended: false,
+    };
+    expect(fullAccessApprovalReply({ ...base, kind: 'fileChange' })).toEqual({
+      decision: 'accept',
+    });
+    expect(fullAccessApprovalReply({ ...base, kind: 'userInput' })).toBeUndefined();
+    expect(fullAccessApprovalReply({ ...base, kind: 'mcp' })).toBeUndefined();
   });
 });
 

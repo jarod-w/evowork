@@ -137,6 +137,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     onPendingApprovals: () => () => undefined,
     onDegrade: () => () => undefined,
     send: vi.fn(async () => ({ threadId: 't1' })),
+    setTaskMode: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => undefined),
     decideApproval: vi.fn(async () => undefined),
     rowAction: vi.fn(async () => undefined),
@@ -1030,6 +1031,27 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
       expect(bridge.send).toHaveBeenCalledWith(
         expect.objectContaining({ text: '装个依赖', modeId: 'request-approval' }),
       ),
+    );
+  });
+
+  it('任务发出后切到完全访问，会立即把新档位交给主进程', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('需求输入'));
+
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '抓取行情' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() => expect(bridge.send).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByLabelText('审批档'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /完全访问/ }));
+    fireEvent.click(screen.getByRole('button', { name: '仅当前任务使用完全访问' }));
+
+    await waitFor(() =>
+      expect(bridge.setTaskMode).toHaveBeenCalledWith({
+        threadId: 't1',
+        modeId: 'full-access',
+      }),
     );
   });
 

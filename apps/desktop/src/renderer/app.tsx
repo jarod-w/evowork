@@ -118,6 +118,10 @@ export interface EvoworkBridge {
   onDegrade(handler: (report: { degradation?: { userVisible: string } }) => void): () => void;
   /** 发送一条需求。没有 threadId 时由主进程新建任务并回 id（03 §1） */
   send(input: SendInput): Promise<{ threadId: string; queued?: boolean }>;
+  setTaskMode(input: {
+    threadId: string;
+    modeId: 'request-approval' | 'approve-for-me' | 'full-access';
+  }): Promise<void>;
   interrupt(threadId: string): Promise<void>;
   decideApproval(input: {
     id: string;
@@ -1286,6 +1290,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     steer,
   ]);
 
+  const changeMode = useCallback(
+    (nextMode: ModeId) => {
+      const previousMode = mode;
+      setMode(nextMode);
+      if (activeTaskId === null) return;
+      const threadId = activeTaskId;
+      void bridge.setTaskMode({ threadId, modeId: nextMode }).catch((error: unknown) => {
+        // 只回滚这一次失败的选择；若用户已经又切了一档，不覆盖他更新的决定。
+        setMode((current) => (current === nextMode ? previousMode : current));
+        reportFailure(error, '没能切换审批档。');
+      });
+    },
+    [activeTaskId, bridge, mode, reportFailure],
+  );
+
   const retryCurrentTurn = useCallback(async () => {
     if (activeTaskId === null) return;
     const text = lastUserMessageText(itemsByTask[activeTaskId] ?? []);
@@ -1540,7 +1559,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       permissionId,
       onPermissionChange: setPermissionId,
       mode,
-      onModeChange: setMode,
+      onModeChange: changeMode,
       modeOptions: composerModeOptions({
         approvalsReviewerAvailable: startup?.approvalsReviewerAvailable,
         fullAccessAllowed: startup?.fullAccessAllowed,
@@ -1624,6 +1643,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       workspaceId,
       reportFailure,
       startup,
+      changeMode,
       catalog,
       prepareTaskWithText,
       emptyCatalogView,

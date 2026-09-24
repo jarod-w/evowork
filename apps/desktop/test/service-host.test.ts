@@ -543,6 +543,54 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
     });
   });
 
+  it('回合启动后切到完全访问，随后到达的命令审批不再重复询问', async () => {
+    host = makeHost();
+    await host.start();
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'thread/started',
+      params: {
+        thread: {
+          id: 't1',
+          sessionId: 's1',
+          preview: 'x',
+          ephemeral: false,
+          modelProvider: 'evowork',
+          createdAt: 1,
+          updatedAt: 1,
+          status: 'idle',
+          cwd: '/w',
+          turns: [],
+          name: '行情报告',
+        },
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await host.actions.setTaskMode({ threadId: 't1', modeId: 'full-access' });
+    emitted = [];
+
+    child.requestClient(9003, 'item/commandExecution/requestApproval', {
+      threadId: 't1',
+      itemId: 'i1',
+      command: 'curl https://example.com',
+      reason: '需要联网',
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        child.received.some((line) => {
+          const message = JSON.parse(line) as { id?: number };
+          return message.id === 9003;
+        }),
+      ).toBe(true),
+    );
+    const reply = child.received
+      .map((line) => JSON.parse(line) as { id?: number; result?: { decision?: string } })
+      .find((message) => message.id === 9003);
+    expect(reply?.result?.decision).toBe('accept');
+    expect(emitted.some((event) => event.channel === IPC.askApproval)).toBe(false);
+  });
+
   it('降级显式推给 UI（09 §3.3：不假装正常）', async () => {
     host = makeHost();
     // 让能力探测失败成 method-not-found

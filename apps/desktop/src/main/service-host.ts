@@ -98,6 +98,7 @@ import {
 import {
   createEventTranslator,
   createRendererActions,
+  fullAccessApprovalReply,
   toApprovalView,
   type RendererActions,
 } from './renderer-bridge.js';
@@ -592,6 +593,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 用户点的那一条永远对不上挂起的那一条。
    */
   const approvalReplies = new Map<string, (reply: ApprovalReply) => void>();
+  const pendingApprovalById = new Map<string, PendingApproval>();
 
   const writeComputerUseConfig = (enabled: boolean): void => {
     // 不支持的平台无需注册。macOS 默认禁用；启用后供下一条任务加载。
@@ -725,14 +727,22 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       ),
     // 审批最终落在用户身上（F14）。渲染进程不回复时这个 Promise 就一直悬着 ——
     // 那是正确的：交互式任务**不自动拒绝**（10 §3.6），超时策略在适配层里
-    askApproval: (approval) =>
-      new Promise((resolve) => {
+    askApproval: (approval) => {
+      // 档位可能在回合启动后才切成完全访问。`turn/start` 的旧策略不会追溯更新，
+      // 因此在客户端审批边界补齐当前回合；硬拦截在策略层更早发生，不会走到这里。
+      if (store.threads.get(approval.threadId)?.mode_id === 'full-access') {
+        const reply = fullAccessApprovalReply(approval);
+        if (reply) return Promise.resolve(reply);
+      }
+      return new Promise((resolve) => {
         approvalReplies.set(approval.id, resolve);
+        pendingApprovalById.set(approval.id, approval);
         options.emitToRenderer(
           IPC.askApproval,
           toApprovalView(approval, adapter.allowsAcceptForSession(approval), Date.now()),
         );
-      }),
+      });
+    },
     onSideEffect: (effect) => {
       // 副作用的落点：通知中心、并发计数、预算闸门、产物识别、automation_run。
       logger.debug('desktop.side_effect', { reason: effect.kind.toUpperCase().replace(/-/g, '_') });
@@ -808,6 +818,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       return;
     }
     approvalReplies.delete(id);
+    pendingApprovalById.delete(id);
     pending(reply);
   };
 
@@ -1041,6 +1052,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     store,
     logger,
     resolveApproval,
+    pendingApprovals: () => [...pendingApprovalById.values()],
     computerUse,
     openComputerUseSettings: async () => {
       if (process.platform !== 'darwin' || !options.openExternal)
@@ -1420,6 +1432,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     async stop() {
       for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
       approvalReplies.clear();
+      pendingApprovalById.clear();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       // 网关先停：它没有状态也不写盘，留着只会占住端口，下次启动起不来

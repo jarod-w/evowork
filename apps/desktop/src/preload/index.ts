@@ -53,6 +53,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'revokeComputerUseAccess',
   'openComputerUseSettings',
   'send',
+  'setTaskMode',
   'interrupt',
   'decideApproval',
   'rowAction',

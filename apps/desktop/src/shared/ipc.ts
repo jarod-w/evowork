@@ -256,6 +256,18 @@ export interface SendInput {
 }
 
 /**
+ * 已创建任务的审批档切换。
+ *
+ * 与 `SendInput.modeId` 分开：用户可能在一个回合已经运行、甚至正等审批时才切档，
+ * 此时没有第二条消息可供携带设置。主进程会把设置用于后续回合；切到完全访问时，
+ * 还会放行当前任务里普通的命令与文件审批。
+ */
+export interface SetTaskModeInput {
+  readonly threadId: string;
+  readonly modeId: 'request-approval' | 'approve-for-me' | 'full-access';
+}
+
+/**
  * 选择本机附件。渲染层只传 id，落盘根目录由主进程翻译。
  *
  * 未选项目时不能直接抛掉：任务已经在某个 cwd 里跑（内核默认目录或上次

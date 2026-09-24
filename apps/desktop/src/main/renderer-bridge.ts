@@ -22,6 +22,7 @@ import { resolve } from 'node:path';
 
 import {
   titleFromText,
+  isModeId,
   type Adapter,
   type ApprovalDecision,
   type ApprovalReply,
@@ -105,6 +106,7 @@ import type {
   SaveProviderKeyInput,
   RuntimeStatusView,
   SendInput,
+  SetTaskModeInput,
   StartupInfo,
   TaskSearchHitView,
   TaskRowView,
@@ -304,6 +306,8 @@ export interface RendererBridgeOptions {
   readonly openComputerUseSettings?: (() => Promise<void>) | undefined;
   readonly computerUse?: ComputerUseHost | undefined;
   readonly resolveApproval?: ((id: string, reply: ApprovalReply) => void) | undefined;
+  /** 当前仍悬着的审批。切到完全访问时只处理同一任务里的命令与文件审批。 */
+  readonly pendingApprovals?: (() => readonly PendingApproval[]) | undefined;
   readonly logger?: Logger | undefined;
   readonly appName: string;
   readonly appVersion: string;
@@ -897,6 +901,38 @@ export function createRendererActions(options: RendererBridgeOptions) {
         });
       }
       return { threadId: created.threadId };
+    },
+
+    async setTaskMode(input: SetTaskModeInput): Promise<void> {
+      if (!isModeId(input.modeId)) throw new Error('未知的审批档。');
+      if (!input.threadId.trim()) throw new Error('缺少任务 id。');
+
+      if (input.modeId === 'full-access') {
+        const platform =
+          options.platform ??
+          (process.platform === 'darwin' ||
+          process.platform === 'win32' ||
+          process.platform === 'linux'
+            ? process.platform
+            : 'linux');
+        const capability = describeCapability(platform);
+        if (!capability.fullAccessAllowed) {
+          throw new Error(capability.fullAccessDisabledReason ?? '这台设备不能开启完全访问。');
+        }
+        const disabled = options.policyPorts?.status().disabledProfiles ?? [];
+        if (disabled.includes('evowork-full') || disabled.includes(':danger-full-access')) {
+          throw new Error('管理员策略已停用完全访问。');
+        }
+      }
+
+      // 先落设置，再处理挂起审批：askApproval 在两者之间到达时也会看到 full-access。
+      adapter.setTaskSettings(input.threadId, { modeId: input.modeId });
+      if (input.modeId !== 'full-access') return;
+      for (const approval of options.pendingApprovals?.() ?? []) {
+        if (approval.threadId !== input.threadId) continue;
+        const reply = fullAccessApprovalReply(approval);
+        if (reply) options.resolveApproval?.(approval.id, reply);
+      }
     },
 
     /**
@@ -1958,6 +1994,20 @@ export function createRendererActions(options: RendererBridgeOptions) {
 }
 
 export type RendererActions = ReturnType<typeof createRendererActions>;
+
+/**
+ * 运行中切到完全访问时可自动处理的审批。
+ *
+ * 只覆盖完全访问本来就承诺的命令与文件操作。追问、连接器表单与独立的权限申请
+ * 仍交给用户，避免把“完全访问本机”扩大成“替用户回答任何问题”。
+ */
+export function fullAccessApprovalReply(approval: PendingApproval): ApprovalReply | undefined {
+  if (approval.unattended) return undefined;
+  if (approval.kind !== 'command' && approval.kind !== 'fileChange') return undefined;
+  // 逐次放行而不是写入内核的 session 级永久 grant：用户随后切回“请求批准”时，
+  // 新到达的动作必须重新询问，不能被一次旧的完全访问选择继续放行。
+  return { decision: 'accept' };
+}
 
 /**
  * 历史条目一律标成已完成。
