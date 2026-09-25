@@ -24,7 +24,12 @@ import {
   toTaskRow,
   type ProjectPorts,
 } from '../src/main/renderer-bridge.js';
-import { ensureKernelConfig, ensurePaths, resolvePaths } from '../src/main/service-host.js';
+import {
+  ensureKernelConfig,
+  ensurePaths,
+  migrateMultiAgentV2Config,
+  resolvePaths,
+} from '../src/main/service-host.js';
 
 function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
   return {
@@ -797,7 +802,31 @@ describe('真实 app-server wire item 的归一化', () => {
         agentThreadId: 'child',
         agentPath: 'reviewer',
       } as never),
-    ).toMatchObject({ childThreadId: 'child', agentRole: 'reviewer' });
+    ).toMatchObject({
+      childThreadId: 'child',
+      agentPath: 'reviewer',
+      agentRole: 'reviewer',
+    });
+    expect(
+      normalizeThreadItem({
+        id: 'a2',
+        type: 'collabAgentToolCall',
+        tool: 'sendMessage',
+        status: 'inProgress',
+        senderThreadId: 'root',
+        receiverThreadIds: ['child-1', 'child-2'],
+        prompt: '分别核对两组数据',
+        agentsStates: { 'child-1': 'working', 'child-2': 'idle' },
+      } as never),
+    ).toMatchObject({
+      childThreadId: 'child-1',
+      senderThreadId: 'root',
+      receiverThreadIds: ['child-1', 'child-2'],
+      collaborationTool: 'sendMessage',
+      collaborationStatus: 'inProgress',
+      messagePreview: '分别核对两组数据',
+      agentStates: { 'child-1': 'working', 'child-2': 'idle' },
+    });
     expect(
       normalizeThreadItem({
         id: 'f1',
@@ -909,6 +938,57 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     });
     // 第二条**没有**又建一个任务
     expect(adapter.createTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('子代理追问永远回到根任务，再由 V2 协作工具路由', async () => {
+    const adapter = {
+      createTask: vi.fn(),
+      sendMessage: vi.fn(async () => ({ queued: false })),
+      setTaskSettings: vi.fn(),
+    } as unknown as Adapter;
+    const rows = new Map([
+      ['root', row({ thread_id: 'root', parent_thread_id: null })],
+      ['child', row({ thread_id: 'child', parent_thread_id: 'root' })],
+      ['grandchild', row({ thread_id: 'grandchild', parent_thread_id: 'child' })],
+    ]);
+    const actions = createRendererActions({
+      ...base,
+      adapter,
+      store: fakeStore((id) => rows.get(id)),
+    });
+
+    await expect(
+      actions.send({ threadId: 'grandchild', text: '继续核对第二组数据', steer: true }),
+    ).resolves.toEqual({ threadId: 'root' });
+    expect(adapter.sendMessage).toHaveBeenCalledWith({
+      threadId: 'root',
+      input: [
+        {
+          type: 'text',
+          text: expect.stringMatching(
+            /子代理 grandchild[\s\S]*list_agents[\s\S]*send_message[\s\S]*followup_task[\s\S]*继续核对第二组数据/,
+          ),
+        },
+      ],
+      steer: true,
+    });
+    expect(adapter.setTaskSettings).not.toHaveBeenCalled();
+  });
+
+  it('子代理谱系缺失时拒绝直接发送，避免绕过 V2 thread/input 禁令', async () => {
+    const adapter = { sendMessage: vi.fn() } as unknown as Adapter;
+    const actions = createRendererActions({
+      ...base,
+      adapter,
+      store: fakeStore((id) =>
+        id === 'child' ? row({ thread_id: 'child', parent_thread_id: 'missing' }) : undefined,
+      ),
+    });
+
+    await expect(actions.send({ threadId: 'child', text: '继续' })).rejects.toThrow(
+      '找不到子代理的根任务',
+    );
+    expect(adapter.sendMessage).not.toHaveBeenCalled();
   });
 
   it('策略包超期时 send 抛出设计原句，不建任务', async () => {
@@ -1235,6 +1315,53 @@ describe('首次运行装内核配置', () => {
     const paths = resolvePaths(dir);
     ensurePaths(paths);
     expect(ensureKernelConfig(paths, join(dir, 'nope.toml'))).toBe(false);
+  });
+
+  it('随包模板把根键放在首个 TOML table 前，并显式启用完整 V2', () => {
+    const template = readFileSync(join(process.cwd(), 'config', 'config.toml.template'), 'utf8');
+    const firstTable = template.search(/^\s*\[/m);
+    expect(template.indexOf('default_permissions = "evowork-workspace"')).toBeLessThan(firstTable);
+    expect(template.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
+    expect(template).toContain('[features.multi_agent_v2]');
+    expect(template).toContain('enabled = true');
+    expect(template).toContain('max_concurrent_threads_per_session = 4');
+    expect(template).toContain('wait_agent_enabled = true');
+    expect(template).toContain('non_code_mode_only = false');
+  });
+
+  it('已有安装幂等迁移到 V2，同时保留无关企业配置', () => {
+    const input = `model_provider = "enterprise"\n\n[features.multi_agent_v2]\nenabled = false\nnon_code_mode_only = true\n\n[permissions.custom]\nextends = ":read-only"\n`;
+    const first = migrateMultiAgentV2Config(input);
+    expect(first.changed).toBe(true);
+    expect(first.text).toContain('model_provider = "enterprise"');
+    expect(first.text).toContain('enabled = true');
+    expect(first.text).toContain('max_concurrent_threads_per_session = 4');
+    expect(first.text).toContain('wait_agent_enabled = true');
+    expect(first.text).toContain('non_code_mode_only = false');
+    expect(first.text).toContain('[permissions.custom]');
+    expect(migrateMultiAgentV2Config(first.text)).toEqual({ text: first.text, changed: false });
+  });
+
+  it('把旧式 features 布尔开关升级成 V2 配置表，避免 TOML 同名冲突', () => {
+    const migrated = migrateMultiAgentV2Config(
+      '[features]\nweb_search = true\nmulti_agent_v2 = false\n',
+    );
+    expect(migrated.text).toContain('[features]\nweb_search = true');
+    expect(migrated.text).not.toMatch(/^multi_agent_v2\s*=/m);
+    expect(migrated.text).toContain('[features.multi_agent_v2]');
+    expect(migrated.text).toContain('enabled = true');
+  });
+
+  it('修复早期模板把根级权限键误放进 permissions 子表的问题', () => {
+    const migrated = migrateMultiAgentV2Config(
+      'model_provider = "evowork"\n\n[permissions.evowork-workspace]\nextends = ":workspace"\ndefault_permissions = "evowork-workspace"\napproval_policy = "on-request"\n',
+    );
+    const firstTable = migrated.text.indexOf('[permissions.evowork-workspace]');
+    expect(migrated.text.indexOf('default_permissions = "evowork-workspace"')).toBeLessThan(
+      firstTable,
+    );
+    expect(migrated.text.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
+    expect(migrateMultiAgentV2Config(migrated.text).changed).toBe(false);
   });
 });
 

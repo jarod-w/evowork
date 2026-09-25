@@ -263,8 +263,8 @@
 | 10  | `WebSearch`                                 | 折叠         | 一行「搜索：<query>」+ 结果条数；展开为结果列表（标题 + 域名 + 摘要），点击在内置浏览器打开（§6.4）                                                                                                      |
 | 11  | `ImageGeneration`                           | 展开         | 图片卡（最大宽 640，点击放大 lightbox）+ 提示词折叠 + 「保存到产物」。对应总纲 §6.8 复用 `ext/image-generation`                                                                                          |
 | 12  | `ImageView`                                 | 折叠         | 「已查看图片：<文件名>」+ 缩略图 64                                                                                                                                                                      |
-| 13  | `SubAgentActivity`                          | 折叠         | 子任务卡：专家/角色名 + 状态 + token 用量 + 「查看子任务详情」（打开子 thread 的只读侧滑）。这是清单 §9「多角色协作」的可视化                                                                            |
-| 14  | `CollabAgentToolCall`                       | 折叠         | 同 13，用于父子 agent 之间的显式调用                                                                                                                                                                     |
+| 13  | `SubAgentActivity`                          | 折叠         | 子任务卡：完整 agent path + 活动类型 + 「查看子任务详情」（打开子 thread 的只读视图）。这是清单 §9「多角色协作」的可视化                                                                                 |
+| 14  | `CollabAgentToolCall`                       | 折叠         | 协作调用卡：动作、状态、发送者、全部接收者和消息摘要。`spawn_agent` / `send_message` / `followup_task` / `wait_agent` / `interrupt_agent` / `list_agents` 必须原样保留语义，不把多接收者压成第一项             |
 | 15  | `HookPrompt`                                | 折叠         | 「策略注入」行 + 来源 hook 名。**企业策略可配置为隐藏**（避免暴露内部策略文本），但审计日志始终记录（10 §6）                                                                                             |
 | 16  | `ContextCompaction`                         | 展开（单行） | 分隔线样式：「—— 已压缩前 42 轮对话以节省上下文 ——」+ 「查看被压缩的内容」                                                                                                                               |
 | 17  | `EnteredReviewMode` / 18 `ExitedReviewMode` | 展开（单行） | 分隔线：「进入安全审查」/「审查完成」。配合 guardian-v2（10 §4）                                                                                                                                         |
@@ -311,7 +311,18 @@ README F14：审批是**服务端发起的请求**，前端必须实现可回复
 
 ### 5.6 子任务
 
-父任务流里以 `SubAgentActivity` 折叠卡呈现（§5.2 #13）。点击展开只读侧滑面板，内容 = 子 thread 的完整 item 流（`thread/items/list?threadId=<child>`）。谱系查询用 `thread/list?ancestorThreadId=` (exp)。并发上限与预算闸门在 10 §5。
+父任务流里以 `SubAgentActivity` 折叠卡呈现（§5.2 #13）。点击后进入子 thread 的完整 item 流（`thread/read` / `thread/items/list`），但这条时间线是**只读视图**：用户不能用普通 `turn/start` / `turn/steer` 直接改写子代理。子视图中的“继续交代”由桌面宿主送回根任务，再由根代理通过 `followup_task`（空闲子代理）或 `send_message`（运行中子代理）路由；嵌套子代理也必须逐级追溯到根任务，不能只发给直接父 thread。谱系查询用 `thread/list?ancestorThreadId=` (exp)。并发上限与预算闸门在 10 §5。
+
+#### 5.6.1 上下文与文件的共享边界
+
+对齐现行 ChatGPT/Codex 多代理语义时，必须把两种“共享”分开：
+
+- **工作区共享**：同一任务树里的代理看到同一个 checkout / worktree，文件修改立即互相可见；并发写同一文件仍可能冲突，不等于事务式协作。
+- **上下文按代理隔离**：每个代理拥有独立对话历史和独立压缩周期；`spawn_agent` 的 `fork_turns` 只在创建时复制全部、零条或最近 N 轮，不会在创建后持续同步“共同记忆”。
+- **后续信息靠显式消息**：父子或兄弟代理通过 `send_message` 传递运行中补充，通过 `followup_task` 重新唤醒已空闲代理；最终结果回到发起它的父代理，再由根代理汇总给用户。
+- **谱系可见**：UI 与本机投影至少保留 canonical agent path、sender、全部 recipients、消息种类与状态；不能只显示角色昵称，也不能把多接收者压成一个 `childThreadId`。
+
+内核配置必须显式启用 `[features.multi_agent_v2]`，并把 `non_code_mode_only = false`，使上述六个 V2 协作动作在 Craft / Plan / Ask 中保持同一语义。首次安装写模板；已有安装由宿主做幂等、定向迁移，不覆盖网关、权限等企业配置。
 
 ---
 

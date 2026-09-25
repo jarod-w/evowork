@@ -71,7 +71,7 @@
 
 CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表是本轮为写这套文档而实测的结论，路径相对 `../codex/codex-rs/`。**✅ = 总纲判断成立；⚠️ = 需修订总纲**。
 
-> **2026-09-25 增量复核**：Goal 已是 `tokenBudget` 且状态为 `active / paused / blocked / usageLimited / budgetLimited / complete`；队列已有 update/reorder；搜索已有 `thread/searchOccurrences`；通知增加 `thread/goal/cleared`。F3 的代码已重写为显式构造两个 preset，但“只有 Plan + Default”结论不变；机器断言已改为核对两个 `ModeKind`，并把 F17–F25 全部纳入漂移雷达（含锚点局部范围与仓内接线检查）。
+> **2026-09-25 增量复核**：Goal 已是 `tokenBudget` 且状态为 `active / paused / blocked / usageLimited / budgetLimited / complete`；队列已有 update/reorder；搜索已有 `thread/searchOccurrences`；通知增加 `thread/goal/cleared`。F3 的代码已重写为显式构造两个 preset，但“只有 Plan + Default”结论不变；机器断言已改为核对两个 `ModeKind`，并把 F17–F29 全部纳入漂移雷达（含锚点局部范围与仓内接线检查）。F26–F29 钉住多代理 V2 默认关闭、子代理禁止 app-server 直接输入、`fork_turns` 快照与两类后续消息的唤醒语义。
 
 > **2026-09-05 复核结论**：内核已从 v0.1 的基线 `728cb12fe5` 前进 **53 个提交**到 `89a4eec6da`。**F1–F16 十六条全部仍然成立**，无一条被推翻。变化只有行号与两处细节；此外 M2a 的实现过程新增了 **F17 / F18** 两条（表格末尾），它们**推翻了 09 §3.2 第 4–5 步与 §3.3 的机制描述** —— 这两条不是靠读文档发现的，是写适配层时被内核的实际行为纠正的：
 >
@@ -108,6 +108,10 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 | **F23** | `config/modes/*.md` 与 `config.toml.template` 一样，随包分发但**没人安装** —— `readInstructions` 读的是 `~/.evowork/modes/`，那个目录在干净机器上不存在 | 我们这侧：`service-host.ts` 的 `ensureModeInstructions` | ⚠️ 与 F21 同一类缺陷（内容随包、无人安装），但后果不同：F21 是任务建不出来（响亮），这条是**指令为空**（完全静默）。空的 `developer_instructions` 是合法值，所以没有任何一层会报错 |
 | **F24** | 内核的 `model/list` **不能当模型下拉的数据源**。三条，第一条是决定性的：① 它不知道**哪家厂商的密钥配好了**（那是网关的知识），会把连不上的模型也列出来；② 不配 `model_catalog_json` 时它走 `OpenAiModelsManager` + `OpenAiModelsEndpoint`，返回的是 **OpenAI 的型号清单** —— 对外可见的品牌字符串（K5）+ 一条没登记的出网路径（K6）；③ 它的 `Model` 结构里与我们的能力徽标对得上的只有 `input_modalities`，reasoning / parallelToolCalls / promptCache 都没有。**配了 `model_catalog_json` 则换成 `StaticModelsManager`，完全取代内置与远端 catalog** —— 这是把内核的模型清单收归 EvoWork 的正规路子，本期未用上（下拉直接读网关） | `model-provider/src/provider.rs:444-466`（有无 config catalog 的两条分支）· `core/src/config/mod.rs:962-964`（"replaces the bundled catalog"）· `:3961`（加载）· `app-server/src/models.rs:13-24`（`model/list` 的实现） | ⚠️ **03 §7 与 09 §3.2 第 6 步写错了**，已回写：模型下拉的真源改为网关的 `GET /v1/evowork/models`。②③ 是**读码断言**（2026-09-06，未实测）；①是实测的：接下拉时发现网关自己也有同一类缺陷（`availableModels()` 被当成 `createModelRegistry` 的 `extra` 传进去，导致没配密钥的厂商被原样加回来且每条重复一次），修法见 `services/gateway/src/main.ts` 的 `availableModelRegistry` |
 | **F25** | **`thread/start.baseInstructions` 整段替换模型底稿**，不是叠加。`developer_instructions` 盖不住「You are a coding agent running in the Codex CLI」。另：`config.toml` 的 `model_instructions_file` 相对路径按 **cwd** 解析，不能写进随包模板 | `app-server-protocol/src/protocol/v2/thread.rs:104`（`ThreadStartParams.base_instructions`）· `config/src/config_toml.rs:249-253`（`model_instructions_file` 注释）· `core/src/config/mod.rs:3906-3918`（覆盖顺序：thread 传入 → 文件 → `instructions`） | 🚨 **K5 的第二层破口**（F22/F23 是第一层：developer 指令没送进去）。2026-09-07 用户问「介绍一下自己」，回答同时带了 Codex CLI（底稿）和 Craft（developer）—— 两层都生效，模型听系统底稿的产品名。不打 P4 补丁，走官方接口。系统技能 `openai-docs` 另关：它把「you / this app」绑到 Codex 文档上 |
+| **F26** | `multi_agent_v2` 已是 stable，但 `default_enabled: false`；不显式配置就仍回落到 V1 | `features/src/lib.rs:1319-1323` | 🚨 首次模板与已有安装都必须启用 `[features.multi_agent_v2]`；只改模板不能修复升级用户 |
+| **F27** | V2 的 thread-spawn 子代理禁止 app-server 直接输入，错误为 `direct app-server input is not allowed for multi-agent v2 sub-agents` | `app-server/src/request_processors/thread_input.rs:9-34` | 🚨 子代理时间线必须只读；用户追问先回根任务，再由根代理使用 `send_message` / `followup_task` 路由 |
+| **F28** | V2 `spawn_agent.fork_turns` 默认 `all`，可设 `none` / 最近 N 轮；工具返回 canonical agent path | `core/src/tools/handlers/multi_agents_spec.rs:646-768` | ✅ 上下文是创建时快照，不是持续共享；UI 必须保留 agent path |
+| **F29** | `send_message` 与 `followup_task` 共用消息通道；后者使用 `TriggerTurn` 唤醒目标，前者只向运行中代理送达 | `core/src/tools/handlers/multi_agents_v2/message_tool.rs:41-95` | ✅ 运行中补充走 `send_message`，空闲/完成后的追加走 `followup_task` |
 
 ### 4.1 F1 的直接收益：补丁清单从 P3+P4 缩到只有 P4
 

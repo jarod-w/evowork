@@ -407,6 +407,32 @@ describe('SubAgentActivity：子任务卡（清单 §9 多角色协作的可视�
   });
 });
 
+describe('CollabAgentToolCall：显式代理消息', () => {
+  it('显示动作、状态、发送者、全部接收者与消息，并可逐个打开', () => {
+    const onOpenSubAgent = vi.fn();
+    renderItem(
+      {
+        id: 'i1',
+        type: 'collabAgentToolCall',
+        collaborationTool: 'sendMessage',
+        collaborationStatus: 'inProgress',
+        senderThreadId: 'root',
+        receiverThreadIds: ['child-1', 'child-2'],
+        messagePreview: '分别核对两组数据',
+      },
+      { onOpenSubAgent },
+    );
+    const summary = screen.getByRole('button', { name: /发送消息/ });
+    expect(summary.textContent).toContain('进行中');
+    fireEvent.click(summary);
+    expect(screen.getByText('发送者：root')).toBeTruthy();
+    expect(screen.getByText('接收者：child-1、child-2')).toBeTruthy();
+    expect(screen.getByText('分别核对两组数据')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '查看 child-2' }));
+    expect(onOpenSubAgent).toHaveBeenCalledWith('child-2');
+  });
+});
+
 describe('UserMessage：@ 引用成块显示（03 §4.2 的 token 在历史里保真）', () => {
   it('文本与 mention 分别渲染', () => {
     renderItem({

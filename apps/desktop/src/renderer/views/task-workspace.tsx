@@ -278,6 +278,16 @@ export interface TaskWorkspaceProps {
   readonly taskId?: string | undefined;
   readonly title: string | null;
   readonly status: TaskStatus;
+  /** 子代理 thread 的时间线只读；继续交代会经根代理的 V2 协作通道转发。 */
+  readonly subagentContext?:
+    | {
+        readonly parentThreadId: string;
+        readonly parentTitle?: string | undefined;
+        readonly rootThreadId?: string | undefined;
+        readonly rootTitle?: string | undefined;
+        readonly onOpenRoot?: (() => void) | undefined;
+      }
+    | undefined;
   readonly items: readonly RenderItem[];
   readonly pendingApprovals: readonly ApprovalViewModel[];
   readonly onDecide: (id: string, decision: ApprovalDecision) => void;
@@ -687,6 +697,23 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                 document.querySelector('.ew-approval-card')?.scrollIntoView({ block: 'center' });
               }}
             />
+
+            {props.subagentContext ? (
+              <Banner
+                tone="info"
+                action={
+                  props.subagentContext.onOpenRoot ? (
+                    <PillButton onClick={props.subagentContext.onOpenRoot}>返回根任务</PillButton>
+                  ) : undefined
+                }
+              >
+                这是子代理的只读时间线。下方追加的要求会先发送到
+                {props.subagentContext.rootTitle
+                  ? `根任务「${props.subagentContext.rootTitle}」`
+                  : '根任务'}
+                ，再由它通过协作通道转给当前子代理；上下文不会自动持续共享。
+              </Banner>
+            ) : null}
 
             {(props.notices ?? []).map((notice, index) => (
               <Banner

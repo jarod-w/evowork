@@ -373,6 +373,23 @@ function navIdForView(view: MainView, activeTaskId: string | null): string | und
   return VIEW_TO_NAV[view];
 }
 
+/** UI 操作（停止、队列、附件、设置）始终归根任务；子代理时间线只负责查看。 */
+export function rootTaskFor(
+  tasks: readonly TaskRowView[],
+  taskId: string | null,
+): TaskRowView | undefined {
+  let current = tasks.find((task) => task.id === taskId);
+  const seen = new Set<string>();
+  while (current?.parentThreadId) {
+    if (seen.has(current.id)) return undefined;
+    seen.add(current.id);
+    const parent = tasks.find((task) => task.id === current?.parentThreadId);
+    if (!parent) return undefined;
+    current = parent;
+  }
+  return current;
+}
+
 declare global {
   interface Window {
     readonly evowork?: EvoworkBridge;
@@ -938,7 +955,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    */
   useEffect(() => {
     if (activeTaskId === null) return;
-    const taskModel = tasks.find((t) => t.id === activeTaskId)?.modelId;
+    const taskModel = rootTaskFor(tasks, activeTaskId)?.modelId;
     if (taskModel === undefined || taskModel === modelId) return;
     setModelId(taskModel);
     setModelOverridden(true);
@@ -948,7 +965,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
 
   useEffect(() => {
     if (activeTaskId === null) return;
-    const taskMode = tasks.find((t) => t.id === activeTaskId)?.modeId;
+    const taskMode = rootTaskFor(tasks, activeTaskId)?.modeId;
     if (
       taskMode !== 'request-approval' &&
       taskMode !== 'approve-for-me' &&
@@ -1035,7 +1052,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .catch(() => setComposerContext({ mentions: [], commands: [] }));
     }
     if (activeTaskId !== null && bridge.listQueuedInputs) {
-      const threadId = activeTaskId;
+      const threadId = rootTaskFor(tasks, activeTaskId)?.id ?? activeTaskId;
       void bridge
         .listQueuedInputs({ threadId })
         .then((queued) =>
@@ -1409,9 +1426,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   const active = tasks.find((task) => task.id === activeTaskId);
+  const activeRoot = rootTaskFor(tasks, activeTaskId);
+  const interactionTaskId = activeRoot?.id ?? activeTaskId;
+  const isSubagent = Boolean(active?.parentThreadId);
   // 运行态必须来自当前任务。后台自动化或另一个任务的状态事件不能把当前 Composer
   // 误切成“停止/插话”模式。
-  const running = active?.status === 'running' || active?.status === 'pending';
+  const running = activeRoot?.status === 'running' || activeRoot?.status === 'pending';
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -1470,15 +1490,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     (nextMode: ModeId) => {
       const previousMode = mode;
       setMode(nextMode);
-      if (activeTaskId === null) return;
-      const threadId = activeTaskId;
+      if (interactionTaskId === null) return;
+      const threadId = interactionTaskId;
       void bridge.setTaskMode({ threadId, modeId: nextMode }).catch((error: unknown) => {
         // 只回滚这一次失败的选择；若用户已经又切了一档，不覆盖他更新的决定。
         setMode((current) => (current === nextMode ? previousMode : current));
         reportFailure(error, '没能切换审批档。');
       });
     },
-    [activeTaskId, bridge, mode, reportFailure],
+    [bridge, interactionTaskId, mode, reportFailure],
   );
 
   const retryCurrentTurn = useCallback(async () => {
@@ -1742,9 +1762,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onSend: () => void send(),
       runState: (running ? 'running' : 'idle') as 'running' | 'idle',
       onInterrupt: () => {
-        if (!activeTaskId) return;
+        if (!interactionTaskId) return;
         void bridge
-          .interrupt(activeTaskId)
+          .interrupt(interactionTaskId)
           .catch((error: unknown) => reportFailure(error, '没能停下。'));
       },
       attachments: attachments as readonly Attachment[],
@@ -1757,7 +1777,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             void bridge
               .pickAttachments?.({
                 ...(workspaceId ? { workspaceId } : {}),
-                ...(activeTaskId ? { threadId: activeTaskId } : {}),
+                ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
               })
               .then((picked) => {
                 if (picked.length === 0) return;
@@ -1777,7 +1797,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then((payload) =>
                 bridge.ingestAttachments?.({
                   ...(workspaceId ? { workspaceId } : {}),
-                  ...(activeTaskId ? { threadId: activeTaskId } : {}),
+                  ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
                   files: payload,
                 }),
               )
@@ -1836,24 +1856,26 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }
         if (id === 'new-task') beginNewTask();
       },
-      queued: activeTaskId ? (queuedByTask[activeTaskId] ?? []) : [],
+      queued: interactionTaskId ? (queuedByTask[interactionTaskId] ?? []) : [],
       onQueueRemove: (id: string) => {
-        if (!activeTaskId || !bridge.removeQueuedInput) return;
+        if (!interactionTaskId || !bridge.removeQueuedInput) return;
         void bridge
-          .removeQueuedInput({ threadId: activeTaskId, id })
+          .removeQueuedInput({ threadId: interactionTaskId, id })
           .then((removed) => {
             if (removed)
               setQueuedByTask((previous) => ({
                 ...previous,
-                [activeTaskId]: (previous[activeTaskId] ?? []).filter((item) => item.id !== id),
+                [interactionTaskId]: (previous[interactionTaskId] ?? []).filter(
+                  (item) => item.id !== id,
+                ),
               }));
           })
           .catch((error: unknown) => reportFailure(error, '没能从队列里移除。'));
       },
       onQueueUpdate: bridge.updateQueuedInput
         ? (id: string, text: string) => {
-            if (!activeTaskId) return;
-            const threadId = activeTaskId;
+            if (!interactionTaskId) return;
+            const threadId = interactionTaskId;
             const queuedReferences = (queuedByTask[threadId] ?? []).find(
               (item) => item.id === id,
             )?.references;
@@ -1878,8 +1900,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         : undefined,
       onQueueMove: bridge.reorderQueuedInputs
         ? (id: string, direction: -1 | 1) => {
-            if (!activeTaskId) return;
-            const threadId = activeTaskId;
+            if (!interactionTaskId) return;
+            const threadId = interactionTaskId;
             const queue = [...(queuedByTask[threadId] ?? [])];
             const from = queue.findIndex((item) => item.id === id);
             const to = from + direction;
@@ -1998,6 +2020,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       send,
       running,
       activeTaskId,
+      interactionTaskId,
       bridge,
       workspaces,
       workspaceId,
@@ -2527,10 +2550,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           taskId={activeTaskId}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}
+          {...(isSubagent && active?.parentThreadId
+            ? {
+                subagentContext: {
+                  parentThreadId: active.parentThreadId,
+                  parentTitle:
+                    tasks.find((task) => task.id === active.parentThreadId)?.title ?? undefined,
+                  rootThreadId: activeRoot?.id,
+                  rootTitle: activeRoot?.title ?? undefined,
+                  onOpenRoot: activeRoot
+                    ? () => {
+                        setActiveTaskId(activeRoot.id);
+                        setView('task');
+                      }
+                    : undefined,
+                },
+              }
+            : {})}
           goal={goalsByTask[activeTaskId]}
           focusItemId={focusItemId}
           onGoalSave={
-            bridge.setTaskGoal
+            !isSubagent && bridge.setTaskGoal
               ? (input) => {
                   const threadId = activeTaskId;
                   void bridge
@@ -2547,7 +2587,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               : undefined
           }
           onGoalStatus={
-            bridge.setTaskGoal
+            !isSubagent && bridge.setTaskGoal
               ? (status) => {
                   const threadId = activeTaskId;
                   void bridge
@@ -2560,7 +2600,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               : undefined
           }
           onGoalClear={
-            bridge.clearTaskGoal
+            !isSubagent && bridge.clearTaskGoal
               ? () => {
                   const threadId = activeTaskId;
                   void bridge
@@ -2573,7 +2613,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               : undefined
           }
           onFork={
-            bridge.forkTask
+            !isSubagent && bridge.forkTask
               ? (ephemeral) => {
                   void bridge
                     .forkTask?.({
@@ -2647,6 +2687,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             onOpenArtifact: openArtifact,
             onOpenChangedFile: openChangedFile,
             onOpenSubAgent: (threadId) => {
+              const subtask = Object.values(subtasksByTask)
+                .flat()
+                .find((task) => task.id === threadId);
+              if (subtask)
+                setTasks((previous) => [
+                  subtask,
+                  ...previous.filter((task) => task.id !== threadId),
+                ]);
               setActiveTaskId(threadId);
               setView('task');
             },

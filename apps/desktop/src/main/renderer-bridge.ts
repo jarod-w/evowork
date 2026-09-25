@@ -238,21 +238,25 @@ export function normalizeThreadItem(item: ThreadItem, turnId?: string): RenderIt
       return {
         ...base,
         childThreadId: typeof raw.agentThreadId === 'string' ? raw.agentThreadId : '',
-        agentRole:
-          typeof raw.agentPath === 'string'
-            ? raw.agentPath
-            : typeof raw.kind === 'string'
-              ? raw.kind
-              : '',
+        agentPath: typeof raw.agentPath === 'string' ? raw.agentPath : '',
+        activityKind: typeof raw.kind === 'string' ? raw.kind : '',
+        // 兼容旧渲染字段；新 UI 读 agentPath / activityKind。
+        agentRole: typeof raw.agentPath === 'string' ? raw.agentPath : '',
       } as unknown as RenderItemView;
     case 'collabAgentToolCall': {
-      const receiver = Array.isArray(raw.receiverThreadIds)
-        ? raw.receiverThreadIds.find((id): id is string => typeof id === 'string')
-        : undefined;
+      const receiverThreadIds = Array.isArray(raw.receiverThreadIds)
+        ? raw.receiverThreadIds.filter((id): id is string => typeof id === 'string')
+        : [];
       return {
         ...base,
-        childThreadId: receiver ?? '',
-        agentRole: typeof raw.tool === 'string' ? raw.tool : '',
+        childThreadId: receiverThreadIds[0] ?? '',
+        senderThreadId: typeof raw.senderThreadId === 'string' ? raw.senderThreadId : '',
+        receiverThreadIds,
+        collaborationTool: typeof raw.tool === 'string' ? raw.tool : '',
+        collaborationStatus: typeof raw.status === 'string' ? raw.status : '',
+        messagePreview: typeof raw.prompt === 'string' ? raw.prompt : '',
+        agentStates:
+          raw.agentsStates && typeof raw.agentsStates === 'object' ? raw.agentsStates : {},
       } as unknown as RenderItemView;
     }
     case 'fileChange': {
@@ -814,6 +818,28 @@ export function createRendererActions(options: RendererBridgeOptions) {
   const { adapter, store } = options;
   const now = options.now ?? (() => Date.now());
 
+  /**
+   * V2 子代理不接受 app-server 的直接用户输入。沿 parent_thread_id 一直追到根；
+   * 缺父行或出现环都拒绝发送，绝不能悄悄退回“直接写子 thread”。
+   */
+  function collaborationRoot(threadId: string): { rootThreadId: string; isSubagent: boolean } {
+    let current = threadId;
+    let isSubagent = false;
+    const seen = new Set<string>();
+    for (;;) {
+      if (seen.has(current)) throw new Error('子代理谱系存在循环，无法安全发送。');
+      seen.add(current);
+      const row = store.threads.get(current);
+      if (row?.parent_thread_id == null) {
+        if (isSubagent && row === undefined)
+          throw new Error('找不到子代理的根任务，无法安全发送。');
+        return { rootThreadId: current, isSubagent };
+      }
+      isSubagent = true;
+      current = row.parent_thread_id;
+    }
+  }
+
   async function catalogWithKernelSkills(): Promise<CatalogDataView> {
     const base = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
     if (typeof adapter.listSkills !== 'function') return base;
@@ -1166,7 +1192,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
               : { type: reference.type, name: reference.name, path: reference.path },
         );
       if (text === '' && references.length === 0) throw new Error('空需求');
-      const content: UserInput[] = [
+      let content: UserInput[] = [
         ...(text ? [{ type: 'text' as const, text }] : []),
         ...references,
       ];
@@ -1195,6 +1221,21 @@ export function createRendererActions(options: RendererBridgeOptions) {
           : undefined;
 
       if (input.threadId !== undefined) {
+        const route = collaborationRoot(input.threadId);
+        const targetThreadId = route.rootThreadId;
+        if (route.isSubagent) {
+          content = [
+            {
+              type: 'text',
+              text:
+                `用户正在只读查看子代理 ${input.threadId}，并向它追加要求。` +
+                '请先用 list_agents 判断该子代理状态：运行中用 send_message，空闲或已完成用 followup_task；' +
+                '等待结果后在本根任务中汇总。\n\n' +
+                (text || '后续要求包含在随本消息附带的结构化引用中。'),
+            },
+            ...references,
+          ];
+        }
         /*
          * 已有任务里换模型或审批档：**先落任务级设置，再发这一回合**。
          *
@@ -1204,18 +1245,18 @@ export function createRendererActions(options: RendererBridgeOptions) {
          * （04 §4：任务级设置下一次 `turn/start` 生效，**不追溯已发生的回合**。）
          */
         if (input.modelId !== undefined || input.modeId !== undefined) {
-          adapter.setTaskSettings(input.threadId, {
+          adapter.setTaskSettings(targetThreadId, {
             ...(input.modelId !== undefined ? { model: input.modelId } : {}),
             ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
           });
         }
         const sent = await adapter.sendMessage({
-          threadId: input.threadId,
+          threadId: targetThreadId,
           input: content,
           ...(overrides ? { overrides } : {}),
           ...(input.steer ? { steer: true } : {}),
         });
-        return { threadId: input.threadId, ...(sent.queued ? { queued: true } : {}) };
+        return { threadId: targetThreadId, ...(sent.queued ? { queued: true } : {}) };
       }
       const created = await adapter.createTask({
         input: content,

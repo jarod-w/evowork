@@ -762,6 +762,40 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     });
   });
 
+  it('重启读取时保留协作动作的发送者、全部接收者、状态与消息', async () => {
+    await adapter.start();
+    server.handlers.set('thread/items/list', () => ({
+      data: [
+        {
+          turnId: 'turn-collab',
+          item: {
+            id: 'collab-1',
+            type: 'collabAgentToolCall',
+            tool: 'sendMessage',
+            status: 'completed',
+            senderThreadId: 'root',
+            receiverThreadIds: ['child-1', 'child-2'],
+            prompt: '分别复核',
+            agentsStates: { 'child-1': 'idle', 'child-2': 'idle' },
+          },
+        },
+      ],
+      nextCursor: null,
+    }));
+
+    const { items } = await adapter.openTask('root');
+    await expect(items).resolves.toEqual([
+      expect.objectContaining({
+        id: 'collab-1',
+        type: 'collabAgentToolCall',
+        senderThreadId: 'root',
+        receiverThreadIds: ['child-1', 'child-2'],
+        prompt: '分别复核',
+        _turnId: 'turn-collab',
+      }),
+    ]);
+  });
+
   it('按页拉完，不把包装对象当成消息', async () => {
     await adapter.start();
     server.handlers.set('thread/items/list', (ctx) => {

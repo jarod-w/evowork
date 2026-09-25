@@ -278,6 +278,60 @@
       "line": 104,
       "mustContain": ["pub developer_instructions: Option<String>"],
       "impact": "K5 身份覆盖走官方接口，不打 P4 · 设计 03 §2.4"
+    },
+    {
+      "id": "F26",
+      "summary": "multi_agent_v2 虽为 stable 但默认关闭，产品配置必须显式启用",
+      "file": "codex-rs/features/src/lib.rs",
+      "needle": "id: Feature::MultiAgentV2,",
+      "line": 1319,
+      "scopeLines": { "before": 1, "after": 4 },
+      "mustContain": ["key: \"multi_agent_v2\"", "stage: Stage::Stable", "default_enabled: false"],
+      "impact": "设计 04 §5.6.1；首次模板与已有配置迁移都不可省"
+    },
+    {
+      "id": "F27",
+      "summary": "V2 子代理禁止 app-server 直接输入，后续消息必须由根代理协作工具路由",
+      "file": "codex-rs/app-server/src/request_processors/thread_input.rs",
+      "needle": "direct app-server input is not allowed for multi-agent v2 sub-agents",
+      "line": 9,
+      "scopeLines": { "before": 2, "after": 18 },
+      "mustContain": [
+        "can_accept_direct_input",
+        "MultiAgentVersion::V2",
+        "SubAgentSource::ThreadSpawn"
+      ],
+      "impact": "设计 04 §5.6；子代理视图只读，追问经 send_message / followup_task"
+    },
+    {
+      "id": "F28",
+      "summary": "V2 spawn_agent 用 fork_turns 控制创建时上下文快照，默认 all，并返回 canonical agent path",
+      "file": "codex-rs/core/src/tools/handlers/multi_agents_spec.rs",
+      "needle": "\"fork_turns\".to_string(),",
+      "line": 646,
+      "scopeLines": { "before": 8, "after": 130 },
+      "mustContain": [
+        "Defaults to `all`",
+        "canonical task name",
+        "final answer will be provided to you",
+        "fork_turns=\"none\"",
+        "fork_turns=\"all\""
+      ],
+      "impact": "设计 04 §5.6.1；上下文只在 spawn 时按 all/none/N 复制，不是持续共享"
+    },
+    {
+      "id": "F29",
+      "summary": "send_message 与 followup_task 共用消息流，只有后者以 TriggerTurn 唤醒空闲代理",
+      "file": "codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs",
+      "needle": "Handles the shared MultiAgentV2 message flow",
+      "line": 41,
+      "scopeLines": { "before": 2, "after": 55 },
+      "mustContain": [
+        "MessageDeliveryMode",
+        "MessageDeliveryMode::TriggerTurn",
+        "AgentInput::Message"
+      ],
+      "impact": "设计 04 §5.6；运行中 send_message，空闲 followup_task"
     }
   ]
 }

@@ -230,6 +230,95 @@ export function ensureKernelConfig(paths: EvoworkPaths, templatePath: string): b
   return true;
 }
 
+const MULTI_AGENT_V2_SETTINGS = [
+  ['enabled', 'true'],
+  ['max_concurrent_threads_per_session', '4'],
+  ['wait_agent_enabled', 'true'],
+  ['non_code_mode_only', 'false'],
+] as const;
+
+/**
+ * 把已有安装定向迁移到内核 V2 协作协议。
+ *
+ * 不能靠更新模板：`ensureKernelConfig` 刻意不覆盖已有配置。这里仅修改
+ * `features.multi_agent_v2`，保留企业网关、权限、hooks 与所有无关注释；旧版
+ * `[features] multi_agent_v2 = false` 必须先移除，否则 TOML 里同名值与子表冲突。
+ */
+export function migrateMultiAgentV2Config(text: string): { text: string; changed: boolean } {
+  const hadTrailingNewline = text.endsWith('\n');
+  const lines = text.split(/\r?\n/);
+  if (hadTrailingNewline) lines.pop();
+
+  let currentSection = '';
+  const withoutLegacy: string[] = [];
+  const misplacedRootSettings: string[] = [];
+  for (const line of lines) {
+    const section = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
+    if (section !== null) currentSection = section[1]?.trim() ?? '';
+    if (
+      currentSection === 'features' &&
+      /^\s*multi_agent_v2\s*=\s*(?:true|false)\s*(?:#.*)?$/.test(line)
+    ) {
+      continue;
+    }
+    if (currentSection !== '' && /^\s*(?:default_permissions|approval_policy)\s*=/.test(line)) {
+      // 早期模板误以为空行会退出 TOML table；把这两个已存在的值原样移回根。
+      misplacedRootSettings.push(line.trim());
+      continue;
+    }
+    withoutLegacy.push(line);
+  }
+
+  if (misplacedRootSettings.length > 0) {
+    const firstSection = withoutLegacy.findIndex((line) => /^\s*\[[^\]]+\]/.test(line));
+    const insertion = firstSection < 0 ? withoutLegacy.length : firstSection;
+    const rootKeys = new Set(
+      withoutLegacy
+        .slice(0, insertion)
+        .flatMap((line) => /^\s*([a-z_]+)\s*=/.exec(line)?.[1] ?? []),
+    );
+    const settings = misplacedRootSettings.filter((line) => {
+      const key = /^([a-z_]+)\s*=/.exec(line)?.[1];
+      return key !== undefined && !rootKeys.has(key);
+    });
+    if (settings.length > 0) withoutLegacy.splice(insertion, 0, ...settings, '');
+  }
+
+  const sectionStart = withoutLegacy.findIndex((line) =>
+    /^\s*\[features\.multi_agent_v2\]\s*(?:#.*)?$/.test(line),
+  );
+  if (sectionStart < 0) {
+    while (withoutLegacy.at(-1)?.trim() === '') withoutLegacy.pop();
+    if (withoutLegacy.length > 0) withoutLegacy.push('');
+    withoutLegacy.push('[features.multi_agent_v2]');
+    for (const [key, value] of MULTI_AGENT_V2_SETTINGS) withoutLegacy.push(`${key} = ${value}`);
+  } else {
+    let sectionEnd = withoutLegacy.length;
+    for (let index = sectionStart + 1; index < withoutLegacy.length; index += 1) {
+      if (/^\s*\[[^\]]+\]/.test(withoutLegacy[index] ?? '')) {
+        sectionEnd = index;
+        break;
+      }
+    }
+    for (const [key, value] of MULTI_AGENT_V2_SETTINGS) {
+      const keyPattern = new RegExp(`^\\s*${key}\\s*=`);
+      const index = withoutLegacy.findIndex(
+        (line, lineIndex) =>
+          lineIndex > sectionStart && lineIndex < sectionEnd && keyPattern.test(line),
+      );
+      if (index >= 0) {
+        withoutLegacy[index] = `${key} = ${value}`;
+      } else {
+        withoutLegacy.splice(sectionEnd, 0, `${key} = ${value}`);
+        sectionEnd += 1;
+      }
+    }
+  }
+
+  const migrated = `${withoutLegacy.join('\n')}\n`;
+  return { text: migrated, changed: migrated !== text };
+}
+
 /**
  * 首次运行时把随包的**模式指令**装进 `~/.evowork/modes/`。
  *
@@ -468,13 +557,17 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const kernelConfigPath = join(options.paths.kernelHome, 'config.toml');
   if (existsSync(kernelConfigPath)) {
     try {
-      const migrated = removeRetiredDefaultModel(readFileSync(kernelConfigPath, 'utf8'));
-      if (migrated.changed) {
-        writeFileSync(kernelConfigPath, migrated.text, 'utf8');
+      const retiredModel = removeRetiredDefaultModel(readFileSync(kernelConfigPath, 'utf8'));
+      const multiAgentV2 = migrateMultiAgentV2Config(retiredModel.text);
+      if (retiredModel.changed || multiAgentV2.changed) {
+        writeFileSync(kernelConfigPath, multiAgentV2.text, 'utf8');
+      }
+      if (retiredModel.changed) {
         logger.info('desktop.kernel_config.retired_model_removed', {});
       }
+      if (multiAgentV2.changed) logger.info('desktop.kernel_config.multi_agent_v2_migrated', {});
     } catch {
-      logger.warn('desktop.kernel_config.retired_model_migration_failed', { reason: 'IO' });
+      logger.warn('desktop.kernel_config.migration_failed', { reason: 'IO' });
     }
   }
 

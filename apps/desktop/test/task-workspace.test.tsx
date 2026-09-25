@@ -392,6 +392,23 @@ describe('长任务控制面', () => {
     fireEvent.click(screen.getByRole('button', { name: /整理数据/ }));
     expect(onOpenSubtask).toHaveBeenCalledWith('child-1');
   });
+
+  it('子代理时间线明确只读，并把继续交代说明为根任务协作路由', () => {
+    const onOpenRoot = vi.fn();
+    renderWorkspace({
+      subagentContext: {
+        parentThreadId: 'parent-1',
+        rootThreadId: 'root-1',
+        rootTitle: '总任务',
+        onOpenRoot,
+      },
+    });
+    expect(screen.getByText(/子代理的只读时间线/)).toBeTruthy();
+    expect(screen.getByText(/根任务「总任务」/)).toBeTruthy();
+    expect(screen.getByText(/上下文不会自动持续共享/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '返回根任务' }));
+    expect(onOpenRoot).toHaveBeenCalledOnce();
+  });
 });
 
 describe('空态（01 §4.3：文案必须给出下一步动作）', () => {

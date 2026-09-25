@@ -116,6 +116,36 @@ function joined(item: RenderItem, key: string): string {
   return '';
 }
 
+function stringList(item: RenderItem, key: string): readonly string[] {
+  const value = item[key];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+const COLLAB_TOOL_LABEL: Readonly<Record<string, string>> = {
+  spawnAgent: '创建子代理',
+  spawn_agent: '创建子代理',
+  sendMessage: '发送消息',
+  send_message: '发送消息',
+  followupTask: '继续子任务',
+  followup_task: '继续子任务',
+  waitAgent: '等待代理',
+  wait_agent: '等待代理',
+  interruptAgent: '中断代理',
+  interrupt_agent: '中断代理',
+  listAgents: '查看代理',
+  list_agents: '查看代理',
+};
+
+const COLLAB_STATUS_LABEL: Readonly<Record<string, string>> = {
+  inProgress: '进行中',
+  in_progress: '进行中',
+  completed: '已完成',
+  failed: '失败',
+  interrupted: '已中断',
+};
+
 const MARKDOWN_TAGS = [
   'a',
   'blockquote',
@@ -701,11 +731,11 @@ export function ItemRenderer({
         />
       );
 
-    // ⑬⑭ SubAgentActivity / CollabAgentToolCall —— 子任务卡（清单 §9 多角色协作的可视化）
-    case 'subAgentActivity':
-    case 'collabAgentToolCall': {
+    // ⑬ SubAgentActivity —— canonical path 与活动类型必须分开显示。
+    case 'subAgentActivity': {
       const childThreadId = text(item, 'threadId') || text(item, 'childThreadId');
-      const role = text(item, 'agentRole') || text(item, 'nickname') || '子任务';
+      const path = text(item, 'agentPath') || text(item, 'agentRole') || '子任务';
+      const activity = text(item, 'activityKind');
       const tokens = typeof item.tokenUsage === 'number' ? item.tokenUsage : undefined;
       return (
         <Collapsible
@@ -713,7 +743,8 @@ export function ItemRenderer({
           defaultExpanded={defaultExpanded}
           summary={
             <>
-              <span>{role}</span>
+              <span>{path}</span>
+              {activity ? <span>{activity}</span> : null}
               {tokens !== undefined ? (
                 <span className="ew-token-usage">{tokens} tokens</span>
               ) : null}
@@ -729,6 +760,40 @@ export function ItemRenderer({
               查看子任务详情
             </button>
           ) : null}
+        </Collapsible>
+      );
+    }
+
+    // ⑭ CollabAgentToolCall —— 保留动作、状态、方向、消息与全部接收者。
+    case 'collabAgentToolCall': {
+      const tool = text(item, 'collaborationTool') || text(item, 'tool');
+      const status = text(item, 'collaborationStatus') || text(item, 'status');
+      const sender = text(item, 'senderThreadId');
+      const receivers = stringList(item, 'receiverThreadIds');
+      const prompt = text(item, 'messagePreview') || text(item, 'prompt');
+      const toolLabel = (COLLAB_TOOL_LABEL[tool] ?? tool) || '代理协作';
+      const statusLabel = (COLLAB_STATUS_LABEL[status] ?? status) || '状态未知';
+      return (
+        <Collapsible
+          kind={kind}
+          defaultExpanded={defaultExpanded}
+          summary={`${toolLabel} · ${statusLabel}`}
+        >
+          <div className="ew-collab-direction">
+            <span>发送者：{sender || '根代理'}</span>
+            <span>接收者：{receivers.length > 0 ? receivers.join('、') : '无指定接收者'}</span>
+          </div>
+          {prompt ? <p className="ew-collab-message">{prompt}</p> : null}
+          {receivers.map((threadId) => (
+            <button
+              key={threadId}
+              type="button"
+              className="ew-item-action"
+              onClick={() => context.onOpenSubAgent?.(threadId)}
+            >
+              查看 {threadId}
+            </button>
+          ))}
         </Collapsible>
       );
     }

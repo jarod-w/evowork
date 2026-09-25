@@ -19,6 +19,11 @@
 
 model_provider = "evowork"
 
+# 这两项是**根键**，必须放在第一个 `[table]` 之前。TOML 进入表后不能再靠空行回到根；
+# 若把它们写在 `[permissions.evowork-workspace]` 之后，内核会判整份配置无效并回退默认值。
+default_permissions = "evowork-workspace"
+approval_policy = "on-request"
+
 [model_providers.evowork]
 name = "EvoWork Gateway"
 # 云端托管：https://gateway.evowork.example/v1
@@ -58,11 +63,19 @@ extends = ":workspace"
 
 # ─────────────────────────── 审批与沙箱 ───────────────────────────
 
-# 定义了 [permissions.*] 却不设这一项时，不带 permissions 的 thread/start 会被拒：
-# `config defines [permissions] profiles but does not set default_permissions`。
-default_permissions = "evowork-workspace"
+# `default_permissions` 与 `approval_policy` 已放在文件顶部的根表；不要移进本段的
+# `[permissions.*]` 子表。定义 profiles 却缺根级 default 时，内核会拒绝加载整份配置。
 
-approval_policy = "on-request"
+# ─────────────────────────── 多代理协作（04 §5.6） ───────────────────────────
+#
+# 上游默认仍关闭 V2，并默认只给非代码模式暴露这组工具。EvoWork 的 Craft / Plan / Ask
+# 必须使用同一套 `spawn_agent` / `send_message` / `followup_task` 语义，所以这里显式固定。
+# 4 条活动 thread 包含根代理，即最多 3 个并发子代理，与产品预算闸门一致。
+[features.multi_agent_v2]
+enabled = true
+max_concurrent_threads_per_session = 4
+wait_agent_enabled = true
+non_code_mode_only = false
 
 # ─────────────────────────── Hooks 策略包（M4 / §6.11） ───────────────────────────
 # 由 plugins/hooks/ 提供，安装时按平台写入绝对路径。

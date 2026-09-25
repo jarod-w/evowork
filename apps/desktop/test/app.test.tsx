@@ -25,8 +25,56 @@ import {
   lastUserMessageRequest,
   mergeItem,
   reconcileComposerReferences,
+  rootTaskFor,
   type EvoworkBridge,
 } from '../src/renderer/app.js';
+
+describe('子代理交互归属根任务', () => {
+  it('沿完整父链解析根任务，缺链或循环时不猜', () => {
+    const tasks = [
+      {
+        id: 'root',
+        title: '根任务',
+        status: 'running' as const,
+        timeLabel: '刚刚',
+        updatedAt: 3,
+        sectionId: 'ungrouped',
+      },
+      {
+        id: 'child',
+        title: '子任务',
+        status: 'running' as const,
+        timeLabel: '刚刚',
+        updatedAt: 2,
+        sectionId: 'ungrouped',
+        parentThreadId: 'root',
+      },
+      {
+        id: 'grandchild',
+        title: '孙任务',
+        status: 'idle' as const,
+        timeLabel: '刚刚',
+        updatedAt: 1,
+        sectionId: 'ungrouped',
+        parentThreadId: 'child',
+      },
+    ];
+    expect(rootTaskFor(tasks, 'grandchild')?.id).toBe('root');
+    expect(
+      rootTaskFor(
+        [
+          ...tasks,
+          {
+            ...tasks[0]!,
+            id: 'orphan',
+            parentThreadId: 'missing',
+          },
+        ],
+        'orphan',
+      ),
+    ).toBeUndefined();
+  });
+});
 import { createRendererActions } from '../src/main/renderer-bridge.js';
 
 const STARTUP: StartupInfo = {
