@@ -70,6 +70,25 @@ describe('09 §3.4 的分发表逐行', () => {
     ]);
   });
 
+  it('ephemeral 旁聊只推实时状态，不写持久投影或摘要', () => {
+    router.handle(NOTIFICATION.threadStarted, {
+      thread: makeThread({ id: 'side-chat', ephemeral: true }),
+    });
+    router.handle(NOTIFICATION.itemCompleted, {
+      threadId: 'side-chat',
+      turnId: 'turn-side',
+      item: { id: 'answer-side', type: 'agentMessage', text: '临时回答' },
+    });
+
+    expect(store.threads.get('side-chat')).toBeUndefined();
+    expect(store.readItemDigest('side-chat')).toEqual([]);
+    expect(ui).toContainEqual({ type: 'task-status', threadId: 'side-chat', status: 'idle' });
+    expect(ui.some((event) => event.type === 'task-created')).toBe(false);
+    expect(ui).toContainEqual(
+      expect.objectContaining({ type: 'item-completed', threadId: 'side-chat' }),
+    );
+  });
+
   it('thread/started 的快照没有名字时，沿用投影表里已经起好的标题', () => {
     router.handle(NOTIFICATION.threadStarted, {
       thread: makeThread({ id: 't1', name: '你认为学播音的去英国读怎么样' }),

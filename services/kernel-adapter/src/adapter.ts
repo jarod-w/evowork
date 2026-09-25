@@ -178,9 +178,16 @@ export function createAdapter(options: AdapterOptions) {
   const now = options.now ?? (() => Date.now());
   const scenarios = options.scenarios ?? BUILTIN_SCENARIOS;
   const capabilities = new CapabilityRegistry((report) => options.onDegrade?.(report));
+  /**
+   * 「旁聊」对应的 ephemeral fork 只存在于当前内核进程，不能走持久任务的
+   * read/delete/list 协议。缓存 fork 响应既让打开动作有明确分流，也避免它混进投影表。
+   */
+  const ephemeralThreads = new Map<string, Thread>();
+  const ephemeralThreadIds = new Set<string>();
 
   const events = createEventRouter({
     store,
+    ephemeralThreadIds,
     onUiEvent: (event) => {
       if (event.type === 'task-removed') {
         session.openThreads.delete(event.threadId);
@@ -384,6 +391,8 @@ export function createAdapter(options: AdapterOptions) {
 
     async stop(): Promise<void> {
       approvals.cancel(() => true);
+      ephemeralThreads.clear();
+      ephemeralThreadIds.clear();
       await session.stop();
     },
 
@@ -445,7 +454,9 @@ export function createAdapter(options: AdapterOptions) {
     /** 第 ② 步：对当前可见页拉权威元数据。有界（默认 30 条）。 */
     async refreshAuthoritative(threadIds: readonly string[]): Promise<number> {
       const pageSize = options.authoritativePageSize ?? 30;
-      const page = threadIds.slice(0, pageSize);
+      const page = threadIds
+        .filter((threadId) => !ephemeralThreadIds.has(threadId))
+        .slice(0, pageSize);
       const results = await Promise.allSettled(
         page.map((threadId) =>
           session.peer.request<{ thread: Thread }>(METHOD.threadRead, { threadId }),
@@ -610,12 +621,24 @@ export function createAdapter(options: AdapterOptions) {
         excludeTurns: true,
         ...(ephemeral ? { ephemeral: true } : {}),
       });
-      store.threads.upsertFromThread(response.thread);
+      if (response.thread.ephemeral) {
+        ephemeralThreads.set(response.thread.id, response.thread);
+        ephemeralThreadIds.add(response.thread.id);
+      } else {
+        store.threads.upsertFromThread(response.thread);
+      }
       session.openThreads.add(response.thread.id);
       return response.thread.id;
     },
 
     async archiveTask(threadId: string): Promise<void> {
+      if (ephemeralThreads.delete(threadId)) {
+        ephemeralThreadIds.delete(threadId);
+        session.openThreads.delete(threadId);
+        localQueues.delete(threadId);
+        options.onUiEvent?.({ type: 'task-removed', threadId });
+        return;
+      }
       await session.peer.request(METHOD.threadArchive, { threadId });
       store.threads.setArchived(threadId, true, now());
       session.openThreads.delete(threadId);
@@ -623,6 +646,13 @@ export function createAdapter(options: AdapterOptions) {
 
     async deleteTask(threadId: string): Promise<void> {
       approvals.cancel((a) => a.threadId === threadId);
+      if (ephemeralThreads.delete(threadId)) {
+        ephemeralThreadIds.delete(threadId);
+        session.openThreads.delete(threadId);
+        localQueues.delete(threadId);
+        options.onUiEvent?.({ type: 'task-removed', threadId });
+        return;
+      }
       await session.peer.request(METHOD.threadDelete, { threadId });
       store.threads.remove(threadId);
       session.openThreads.delete(threadId);
@@ -845,6 +875,15 @@ export function createAdapter(options: AdapterOptions) {
       readonly latestTurn: Promise<Turn | undefined>;
     }> {
       session.openThreads.add(threadId);
+      const ephemeral = ephemeralThreads.get(threadId);
+      if (ephemeral) {
+        const turns = ephemeral.turns ?? [];
+        return {
+          cached: [],
+          items: Promise.resolve(itemsFromTurns(turns)),
+          latestTurn: Promise.resolve(turns.at(-1)),
+        };
+      }
       const cached = store.readItemDigest(threadId);
       const resumed = session.peer
         .request<ThreadResumeResponse>(METHOD.threadResume, { threadId })

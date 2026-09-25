@@ -358,6 +358,90 @@ describe('事件接线', () => {
     });
     await waitFor(() => expect(bridge.refreshVisible).toHaveBeenCalledWith(['t9']));
   });
+
+  it('旁聊继承当前时间线并作为当前窗口的临时任务打开', async () => {
+    const customModel = {
+      ...(MODELS[0] as ModelOptionView),
+      id: 'deepseek/deepseek-flash',
+      label: 'deepseek/deepseek-flash',
+    };
+    const source = {
+      id: 'source',
+      title: '源任务',
+      status: 'completed' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+      modelId: customModel.id,
+    };
+    const forkTask = vi.fn(async () => ({
+      threadId: 'side-chat',
+      task: { ...source, id: 'side-chat', title: '源任务 · 旁聊', status: 'idle' as const },
+    }));
+    const openTask = vi.fn(async ({ threadId }: { threadId: string }) => ({
+      items:
+        threadId === 'source' ? [{ id: 'answer-1', type: 'agentMessage', text: '已有回答' }] : [],
+    }));
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [source] }),
+      listModels: vi.fn(async () => ({ models: [customModel] })),
+      forkTask,
+      openTask,
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('源任务'));
+    await screen.findByText('已有回答');
+    fireEvent.click(screen.getByRole('button', { name: '旁聊' }));
+
+    await waitFor(() =>
+      expect(forkTask).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId: 'source', ephemeral: true }),
+      ),
+    );
+    expect((await screen.findAllByText('源任务 · 旁聊')).length).toBeGreaterThan(0);
+    expect(screen.getByText('已有回答')).toBeTruthy();
+    expect(screen.queryByText(/evowork\/deepseek-v4-flash.*当前不可用/)).toBeNull();
+    await waitFor(() => expect(openTask).toHaveBeenCalledWith({ threadId: 'side-chat' }));
+  });
+
+  it('新建任务会清掉旧任务的读取错误与模型回退提示，并恢复可用默认模型', async () => {
+    const customModel = {
+      ...(MODELS[0] as ModelOptionView),
+      id: 'deepseek/deepseek-flash',
+      label: 'deepseek/deepseek-flash',
+    };
+    const brokenTask = {
+      id: 'broken-task',
+      title: '旧任务',
+      status: 'completed' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+      modelId: 'evowork/deepseek-v4-flash',
+    };
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [brokenTask] }),
+      listModels: vi.fn(async () => ({ models: [customModel] })),
+      openTask: vi.fn(async () => ({
+        items: [],
+        incomplete: '读不到这个任务的完整历史：thread/read 失败（code -32600）',
+      })),
+    });
+    render(<App bridge={bridge} />);
+
+    fireEvent.click(await screen.findByText('旧任务'));
+    expect(await screen.findByText(/evowork\/deepseek-v4-flash.*当前不可用/)).toBeTruthy();
+    expect(await screen.findByText(/thread\/read 失败.*-32600/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /新建任务/ }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/evowork\/deepseek-v4-flash.*当前不可用/)).toBeNull();
+      expect(screen.queryByText(/thread\/read 失败.*-32600/)).toBeNull();
+      expect(screen.getByLabelText('选择模型').textContent).toContain('deepseek/deepseek-flash');
+    });
+  });
 });
 
 describe('全局快捷键与侧栏折叠', () => {

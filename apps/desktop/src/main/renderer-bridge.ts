@@ -1505,13 +1505,26 @@ export function createRendererActions(options: RendererBridgeOptions) {
       readonly threadId: string;
       readonly lastTurnId?: string | undefined;
       readonly ephemeral?: boolean | undefined;
-    }): Promise<{ readonly threadId: string }> {
+    }): Promise<{ readonly threadId: string; readonly task?: TaskRowView }> {
+      const source = store.threads.get(input.threadId);
+      const ephemeral = input.ephemeral === true;
+      const threadId = await adapter.forkTask(input.threadId, input.lastTurnId, ephemeral);
+      const timestamp = options.now?.() ?? Date.now();
+      const sourceTitle = displayTitle(source);
       return {
-        threadId: await adapter.forkTask(
-          input.threadId,
-          input.lastTurnId,
-          input.ephemeral === true,
-        ),
+        threadId,
+        ...(ephemeral && source
+          ? {
+              task: {
+                ...toTaskRow(source, timestamp),
+                id: threadId,
+                title: sourceTitle ? `${sourceTitle} · 旁聊` : '旁聊',
+                status: 'idle' as const,
+                timeLabel: '刚刚',
+                updatedAt: timestamp,
+              },
+            }
+          : {}),
       };
     },
 

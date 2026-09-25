@@ -758,6 +758,34 @@ describe('侧栏任务动作', () => {
     await actions.revertTask({ threadId: 't1', beforeTurnId: 'turn3' });
     expect(adapter.revertTask).toHaveBeenCalledWith('t1', 'turn3');
   });
+
+  it('旁聊返回一条只供当前窗口使用的任务行，并继承源任务的真实模型', async () => {
+    const adapter = fakeAdapter({ forkTask: vi.fn(async () => 'side-chat') });
+    const source = row({
+      thread_id: 'source',
+      title: '季度汇报',
+      model: 'deepseek/deepseek-flash',
+      derived_status: 'completed',
+    });
+    const actions = makeActions({
+      adapter,
+      store: fakeStore((id) => (id === 'source' ? source : undefined)),
+      now: () => 2,
+    });
+
+    await expect(
+      actions.forkTask({ threadId: 'source', lastTurnId: 'turn-1', ephemeral: true }),
+    ).resolves.toEqual({
+      threadId: 'side-chat',
+      task: expect.objectContaining({
+        id: 'side-chat',
+        title: '季度汇报 · 旁聊',
+        status: 'idle',
+        modelId: 'deepseek/deepseek-flash',
+      }),
+    });
+    expect(adapter.forkTask).toHaveBeenCalledWith('source', 'turn-1', true);
+  });
 });
 
 describe('send：首页不创建 Thread（03 §1）', () => {

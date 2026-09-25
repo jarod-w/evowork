@@ -150,7 +150,7 @@ export interface EvoworkBridge {
     threadId: string;
     lastTurnId?: string;
     ephemeral?: boolean;
-  }): Promise<{ threadId: string }>;
+  }): Promise<{ threadId: string; task?: TaskRowView }>;
   archiveTask?(input: { threadId: string }): Promise<void>;
   deleteTask?(input: { threadId: string }): Promise<void>;
   listQueuedInputs?(input: { threadId: string }): Promise<readonly { id: string; text: string }[]>;
@@ -396,7 +396,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<readonly ApprovalView[]>([]);
   const [notices, setNotices] = useState<
-    readonly { tone: 'info' | 'warning' | 'danger'; text: string }[]
+    readonly {
+      tone: 'info' | 'warning' | 'danger';
+      text: string;
+      /** 只属于当前任务；进入新任务时不应把旧任务的故障继续挂在首页。 */
+      scope?: 'task';
+    }[]
   >([]);
   const [turnFailures, setTurnFailures] = useState<
     Readonly<Record<string, { readonly summary: string }>>
@@ -535,6 +540,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [pushToast],
   );
+
+  /**
+   * 进入真正的「新任务」状态。
+   *
+   * 旧任务的历史读取错误、发送错误和任务级模型选择都不能泄漏到新任务首页；
+   * 全局故障（例如网关降级、启动失败）仍然保留，因为换任务并不能解决它们。
+   */
+  const beginNewTask = useCallback(() => {
+    setActiveTaskId(null);
+    setModelOverridden(false);
+    setNotices((previous) => previous.filter((notice) => notice.scope !== 'task'));
+    setFocusItemId(undefined);
+    setSearchOpen(false);
+    setView('task');
+  }, []);
 
   useEffect(() => {
     const offs = [
@@ -734,9 +754,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       if (!event.metaKey && !event.ctrlKey) return;
       if (event.shiftKey && event.key.toLowerCase() === 'o') {
         event.preventDefault();
-        setSearchOpen(false);
-        setActiveTaskId(null);
-        setView('task');
+        beginNewTask();
         return;
       }
       if (!event.shiftKey && event.key.toLowerCase() === 'k') {
@@ -751,7 +769,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [beginNewTask]);
 
   /**
    * 模型下拉（03 §4.5「启动时 + 手动刷新」）。
@@ -859,7 +877,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     if (choice.modelId === modelId) return;
     setModelId(choice.modelId);
     const notice = choice.notice;
-    if (notice) setNotices((prev) => [...prev, { tone: 'warning', text: notice }]);
+    if (notice) setNotices((prev) => [...prev, { tone: 'warning', text: notice, scope: 'task' }]);
     // modelId 不进依赖：它是这个 effect 的输出，进去会让"换一个"再触发一次自己
   }, [models, modelOverridden, scenarioDefaultModel]);
 
@@ -933,7 +951,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         });
         const incomplete = result.incomplete;
         if (incomplete) {
-          setNotices((prev) => [...prev, { tone: 'warning', text: incomplete }]);
+          setNotices((prev) => [...prev, { tone: 'warning', text: incomplete, scope: 'task' }]);
         }
       })
       .catch((err: unknown) => {
@@ -943,6 +961,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {
             tone: 'warning',
             text: `读不到这个任务的历史：${err instanceof Error ? err.message : String(err)}`,
+            scope: 'task',
           },
         ]);
       })
@@ -1275,12 +1294,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 首页下拉在 Task 9 之后读的就是 `project_local`，所以这里只是选中一个已有项，
    * 不新增任何机制。
    */
-  const newTaskInProject = useCallback((id: string) => {
-    setWorkspaceId(id);
-    setActiveProjectId(null);
-    setActiveTaskId(null);
-    setView('task');
-  }, []);
+  const newTaskInProject = useCallback(
+    (id: string) => {
+      setWorkspaceId(id);
+      setActiveProjectId(null);
+      beginNewTask();
+    },
+    [beginNewTask],
+  );
 
   const expandProjectDir = useCallback(
     (path: string) => {
@@ -1376,7 +1397,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       setDraft(text);
       setNotices((prev) => [
         ...prev,
-        { tone: 'danger', text: `没能发出去：${err instanceof Error ? err.message : String(err)}` },
+        {
+          tone: 'danger',
+          text: `没能发出去：${err instanceof Error ? err.message : String(err)}`,
+          scope: 'task',
+        },
       ]);
     }
   }, [
@@ -1439,13 +1464,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [activeTaskId, bridge, itemsByTask, modelId, mode, pushToast, scenarioId, workspaceId]);
 
-  const prepareTaskWithText = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    setActiveTaskId(null);
-    setView('task');
-    setDraft(trimmed);
-  }, []);
+  const prepareTaskWithText = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      beginNewTask();
+      setDraft(trimmed);
+    },
+    [beginNewTask],
+  );
 
   const applyCatalogResult = useCallback(
     (result: CatalogMutationResult): CatalogMutationResult => {
@@ -1740,10 +1767,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       },
       onRunLocalCommand: (id: string) => {
         if (id === 'clear') setDraft('');
-        if (id === 'new-task') {
-          setActiveTaskId(null);
-          setView('task');
-        }
+        if (id === 'new-task') beginNewTask();
       },
       queued: activeTaskId ? (queuedByTask[activeTaskId] ?? []) : [],
       onQueueRemove: (id: string) => {
@@ -2020,10 +2044,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             setActiveTaskId(id);
             setView('task');
           }}
-          onNewTask={() => {
-            setActiveTaskId(null);
-            setView('task');
-          }}
+          onNewTask={beginNewTask}
           projects={(startup?.workspaces ?? []).map((project) => ({
             id: project.id,
             name: project.name,
@@ -2438,6 +2459,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                     })
                     .then((result) => {
                       if (!result) return;
+                      if (ephemeral) {
+                        const transientTask = result.task;
+                        if (transientTask) {
+                          setTasks((previous) => [
+                            transientTask,
+                            ...previous.filter((task) => task.id !== result.threadId),
+                          ]);
+                        }
+                        // 分页历史模式下 ephemeral fork 必须 `excludeTurns:true`，响应里不会
+                        // 带复制出的 turns。旁聊的可见上下文直接继承当前已加载时间线；内核
+                        // 自己仍持有完整上下文，后续实时事件会继续追加到这份副本。
+                        setItemsByTask((previous) => ({
+                          ...previous,
+                          [result.threadId]: currentItems,
+                        }));
+                      }
                       setActiveTaskId(result.threadId);
                       setView('task');
                     })
@@ -2585,7 +2622,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               }
             : {})}
           historyLoading={historyLoading}
-          onNewTask={() => setActiveTaskId(null)}
+          onNewTask={beginNewTask}
           composer={<Composer {...composer} value={draft} onChange={setDraft} />}
         />
       )}
@@ -2605,10 +2642,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 .then((occurrences) => setFocusItemId(occurrences[0]?.itemId));
             }
           }}
-          onNewChat={() => {
-            setActiveTaskId(null);
-            setView('task');
-          }}
+          onNewChat={beginNewTask}
           onOpenFolder={importProject}
           onSearchFiles={() => {
             setLibraryInitialNav('search');

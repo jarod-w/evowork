@@ -992,6 +992,31 @@ describe('内核镜像：尽力而为，失败不降级（spec §2.3）', () => 
 });
 
 describe('真实删除只通过内核，失败不移除投影', () => {
+  it('旁聊不落投影，打开/刷新/删除都不调用持久 thread 协议', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'source' }));
+    server.handlers.set('thread/fork', () => ({
+      thread: makeThread({ id: 'side-chat', ephemeral: true, turns: [] }),
+    }));
+
+    const threadId = await adapter.forkTask('source', undefined, true);
+    expect(threadId).toBe('side-chat');
+    expect(store.threads.get(threadId)).toBeUndefined();
+
+    const protocolCallsBeforeOpen = server.received.length;
+    const opened = await adapter.openTask(threadId);
+    expect(await opened.items).toEqual([]);
+    expect(await opened.latestTurn).toBeUndefined();
+    expect(server.received).toHaveLength(protocolCallsBeforeOpen);
+
+    await expect(adapter.refreshAuthoritative([threadId])).resolves.toBe(0);
+    expect(server.received).toHaveLength(protocolCallsBeforeOpen);
+
+    await adapter.deleteTask(threadId);
+    expect(server.received.some((request) => request.method === 'thread/delete')).toBe(false);
+    expect(ui).toContainEqual({ type: 'task-removed', threadId });
+  });
+
   it('内核拒绝删除时保留任务，成功才清理投影并发出删除事件', async () => {
     await adapter.start();
     store.threads.upsertFromThread(makeThread({ id: 'delete-test' }));

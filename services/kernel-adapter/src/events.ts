@@ -21,7 +21,7 @@ import {
   type Turn,
 } from '@evowork/protocol';
 import type { Logger } from '@evowork/logging';
-import type { DerivedStatus, Store } from '@evowork/store';
+import { deriveStatus, type DerivedStatus, type Store } from '@evowork/store';
 
 /** 前端消费的语义化事件。**不包含协议方法名** —— 前端不该知道那些（K2）。 */
 export type UiEvent =
@@ -132,6 +132,8 @@ export interface EventRouterOptions {
   readonly onSideEffect?: (effect: SideEffect) => void;
   readonly logger?: Logger;
   readonly now?: () => number;
+  /** 适配层与事件路由共享的进程内旁聊集合；省略时由路由自己持有。 */
+  readonly ephemeralThreadIds?: Set<string>;
 }
 
 type Handler = (params: unknown) => SideEffect[];
@@ -145,6 +147,15 @@ type Handler = (params: unknown) => SideEffect[];
 export function createEventRouter(options: EventRouterOptions) {
   const { store, onUiEvent, logger } = options;
   const now = options.now ?? (() => Date.now());
+  /**
+   * `ephemeral` thread 只活在当前 app-server 进程里：不能 `thread/read`、不能
+   * `thread/delete`，也不会出现在 `thread/list`。把它写进持久投影会制造一条永远
+   * 无法校正的“幽灵任务”，正是「旁聊后 read/delete 都报 -32600」的根因。
+   *
+   * 这里仍把实时事件送给 UI，但所有落库动作都跳过；关闭时适配层会清掉共享集合。
+   */
+  const ephemeralThreadIds = options.ephemeralThreadIds ?? new Set<string>();
+  const ephemeralLastTurnStatus = new Map<string, Turn['status']>();
   /** thread → 已落库的 item 序号。item_digest 的 seq 需要单调递增 */
   const seqByThread = new Map<string, number>();
 
@@ -192,6 +203,15 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.threadStarted]: (params) => {
       const p = params as { thread?: Thread };
       if (!p.thread) return [];
+      if (p.thread.ephemeral) {
+        ephemeralThreadIds.add(p.thread.id);
+        onUiEvent({
+          type: 'task-status',
+          threadId: p.thread.id,
+          status: deriveStatus({ threadStatus: p.thread.status }),
+        });
+        return [];
+      }
       const status = store.threads.upsertFromThread(p.thread);
       const row = store.threads.get(p.thread.id);
       // 展示标题读投影表，不读这张可能尚未命名的快照。createTask 已经用第一条
@@ -208,7 +228,13 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.threadStatusChanged]: (params) => {
       const p = params as { threadId?: string; status?: ThreadStatus };
       if (!p.threadId || p.status === undefined) return [];
-      const status = store.threads.applyStatusChanged(p.threadId, p.status, now());
+      const ephemeral = ephemeralThreadIds.has(p.threadId);
+      const status = ephemeral
+        ? deriveStatus({
+            threadStatus: p.status,
+            lastTurnStatus: ephemeralLastTurnStatus.get(p.threadId) ?? null,
+          })
+        : store.threads.applyStatusChanged(p.threadId, p.status, now());
       onUiEvent({ type: 'task-status', threadId: p.threadId, status });
       // 待处理时发通知（09 §3.4）：用户可能在别的页面，甚至不在 App 里（10 §3.5）
       return status === 'pending' ? [{ kind: 'notify', reason: 'PENDING_APPROVAL' }] : [];
@@ -225,16 +251,26 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.threadNameUpdated]: (params) => {
       const p = params as { threadId?: string; threadName?: string | null };
       if (!p.threadId) return [];
-      store.db
-        .prepare('UPDATE thread_projection SET title = ?, updated_at = ? WHERE thread_id = ?')
-        .run(p.threadName ?? null, now(), p.threadId);
+      if (!ephemeralThreadIds.has(p.threadId)) {
+        store.db
+          .prepare('UPDATE thread_projection SET title = ?, updated_at = ? WHERE thread_id = ?')
+          .run(p.threadName ?? null, now(), p.threadId);
+      }
       onUiEvent({ type: 'task-renamed', threadId: p.threadId, title: p.threadName ?? null });
-      return [{ kind: 'index-title', threadId: p.threadId }];
+      return ephemeralThreadIds.has(p.threadId)
+        ? []
+        : [{ kind: 'index-title', threadId: p.threadId }];
     },
 
     [NOTIFICATION.threadArchived]: (params) => {
       const p = params as { threadId?: string };
       if (!p.threadId) return [];
+      if (ephemeralThreadIds.has(p.threadId)) {
+        ephemeralThreadIds.delete(p.threadId);
+        ephemeralLastTurnStatus.delete(p.threadId);
+        onUiEvent({ type: 'task-removed', threadId: p.threadId });
+        return [];
+      }
       const status = store.threads.setArchived(p.threadId, true, now());
       onUiEvent({ type: 'task-status', threadId: p.threadId, status });
       return [];
@@ -243,6 +279,7 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.threadUnarchived]: (params) => {
       const p = params as { threadId?: string };
       if (!p.threadId) return [];
+      if (ephemeralThreadIds.has(p.threadId)) return [];
       const status = store.threads.setArchived(p.threadId, false, now());
       onUiEvent({ type: 'task-status', threadId: p.threadId, status });
       return [];
@@ -251,7 +288,12 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.threadDeleted]: (params) => {
       const p = params as { threadId?: string };
       if (!p.threadId) return [];
-      store.threads.remove(p.threadId);
+      if (ephemeralThreadIds.has(p.threadId)) {
+        ephemeralThreadIds.delete(p.threadId);
+        ephemeralLastTurnStatus.delete(p.threadId);
+      } else {
+        store.threads.remove(p.threadId);
+      }
       onUiEvent({ type: 'task-removed', threadId: p.threadId });
       return [];
     },
@@ -266,7 +308,11 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.turnCompleted]: (params) => {
       const p = params as { threadId?: string; turn?: Turn };
       if (!p.threadId || !p.turn) return [];
-      const status = store.threads.applyTurnCompleted(p.threadId, p.turn, now());
+      const ephemeral = ephemeralThreadIds.has(p.threadId);
+      if (ephemeral) ephemeralLastTurnStatus.set(p.threadId, p.turn.status);
+      const status = ephemeral
+        ? deriveStatus({ lastTurnStatus: p.turn.status })
+        : store.threads.applyTurnCompleted(p.threadId, p.turn, now());
       const failure = p.turn.error;
       onUiEvent({
         type: 'turn-completed',
@@ -294,7 +340,7 @@ export function createEventRouter(options: EventRouterOptions) {
         },
       ];
       // 来自定时任务的回合要落 automation_run（09 §3.4 第 7 行）
-      const row = store.threads.get(p.threadId);
+      const row = ephemeral ? undefined : store.threads.get(p.threadId);
       if (row?.automation_id) {
         effects.push({
           kind: 'automation-run-finished',
@@ -315,7 +361,12 @@ export function createEventRouter(options: EventRouterOptions) {
       if (!p.threadId || !p.turnId) return [];
       const steps = Array.isArray(p.plan) ? p.plan : [];
       const hasSteps = steps.length > 0;
-      const status = store.threads.applyPlanUpdated(p.threadId, hasSteps, now());
+      const status = ephemeralThreadIds.has(p.threadId)
+        ? deriveStatus({
+            lastTurnStatus: ephemeralLastTurnStatus.get(p.threadId) ?? null,
+            hasPlanItem: hasSteps,
+          })
+        : store.threads.applyPlanUpdated(p.threadId, hasSteps, now());
       onUiEvent({
         type: 'plan-updated',
         threadId: p.threadId,
@@ -360,14 +411,17 @@ export function createEventRouter(options: EventRouterOptions) {
         completedAtMs?: number;
       };
       if (!p.threadId || !p.item) return [];
-      store.putItemDigest({
-        threadId: p.threadId,
-        seq: nextSeq(p.threadId),
-        itemId: p.item.id,
-        itemType: p.item.type,
-        summary: summarize(p.item),
-        createdAt: p.completedAtMs ?? now(),
-      });
+      const ephemeral = ephemeralThreadIds.has(p.threadId);
+      if (!ephemeral) {
+        store.putItemDigest({
+          threadId: p.threadId,
+          seq: nextSeq(p.threadId),
+          itemId: p.item.id,
+          itemType: p.item.type,
+          summary: summarize(p.item),
+          createdAt: p.completedAtMs ?? now(),
+        });
+      }
       onUiEvent({
         type: 'item-completed',
         threadId: p.threadId,
@@ -375,7 +429,7 @@ export function createEventRouter(options: EventRouterOptions) {
         item: p.item,
       });
       // FileChange → 产物识别的信号 ②（08 §2.2）
-      return p.item.type === 'fileChange'
+      return !ephemeral && p.item.type === 'fileChange'
         ? [{ kind: 'artifact-scan', threadId: p.threadId, item: p.item }]
         : [];
     },
@@ -383,10 +437,11 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.threadTokenUsageUpdated]: (params) => {
       const p = params as { threadId?: string; tokenUsage?: ThreadTokenUsage };
       if (!p.threadId || !p.tokenUsage) return [];
-      store.threads.applyTokenUsage(p.threadId, p.tokenUsage, now());
+      const ephemeral = ephemeralThreadIds.has(p.threadId);
+      if (!ephemeral) store.threads.applyTokenUsage(p.threadId, p.tokenUsage, now());
       onUiEvent({ type: 'token-usage', threadId: p.threadId, usage: p.tokenUsage });
       // 预算闸门（Q11 / 10 §5）：耗尽要暂停并询问，不自动降级
-      return [{ kind: 'budget-check', threadId: p.threadId }];
+      return ephemeral ? [] : [{ kind: 'budget-check', threadId: p.threadId }];
     },
 
     [NOTIFICATION.threadQueueChanged]: (params) => {
@@ -400,15 +455,18 @@ export function createEventRouter(options: EventRouterOptions) {
       const p = params as { threadId?: string; goal?: ThreadGoal };
       const threadId = p.threadId ?? p.goal?.threadId;
       if (!threadId || !p.goal) return [];
-      store.threads.setTaskSettings(threadId, { budgetLimit: p.goal.tokenBudget ?? null });
+      const ephemeral = ephemeralThreadIds.has(threadId);
+      if (!ephemeral)
+        store.threads.setTaskSettings(threadId, { budgetLimit: p.goal.tokenBudget ?? null });
       onUiEvent({ type: 'task-goal-changed', threadId, goal: p.goal });
-      return [{ kind: 'budget-check', threadId }];
+      return ephemeral ? [] : [{ kind: 'budget-check', threadId }];
     },
 
     [NOTIFICATION.threadGoalCleared]: (params) => {
       const p = params as { threadId?: string };
       if (!p.threadId) return [];
-      store.threads.setTaskSettings(p.threadId, { budgetLimit: null });
+      if (!ephemeralThreadIds.has(p.threadId))
+        store.threads.setTaskSettings(p.threadId, { budgetLimit: null });
       onUiEvent({ type: 'task-goal-changed', threadId: p.threadId });
       return [];
     },
