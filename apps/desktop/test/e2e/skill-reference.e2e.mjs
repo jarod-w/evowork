@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
 
 import { bootstrap, createServiceHost } from '../../dist/main/bootstrap.bundle.js';
+import { seedMemorySummary } from '../../../../services/kernel-adapter/test-support/memory-fixture.mjs';
 
 function stage(message) {
   process.stdout.write(`__EVOWORK_DESKTOP_E2E_STAGE__${message}\n`);
@@ -24,6 +25,7 @@ mkdirSync(workspace, { recursive: true });
 
 let heldResponse;
 let responseCount = 0;
+const responseBodies = [];
 const gateway = createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
   if (request.method === 'GET' && url.pathname === '/v1/evowork/models') {
@@ -63,44 +65,49 @@ const gateway = createServer((request, response) => {
     response.writeHead(404).end();
     return;
   }
-  request.resume();
-  responseCount += 1;
-  response.writeHead(200, {
-    'content-type': 'text/event-stream; charset=utf-8',
-    'cache-control': 'no-cache',
-    connection: 'keep-alive',
-  });
-  const id = `resp_${responseCount}`;
-  const itemId = `msg_${responseCount}`;
-  sendEvent(response, { type: 'response.created', response: { id } });
-  sendEvent(response, {
-    type: 'response.output_item.added',
-    output_index: 0,
-    item: { type: 'message', id: itemId, role: 'assistant', content: [] },
-  });
-  sendEvent(response, {
-    type: 'response.output_text.delta',
-    item_id: itemId,
-    output_index: 0,
-    content_index: 0,
-    delta: `E2E response ${responseCount}`,
-  });
-  const finish = () => {
-    sendEvent(response, {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'message',
-        id: itemId,
-        role: 'assistant',
-        content: [{ type: 'output_text', text: `E2E response ${responseCount}` }],
-      },
+  const chunks = [];
+  request.on('data', (chunk) => chunks.push(chunk));
+  request.on('end', () => {
+    responseBodies.push(Buffer.concat(chunks).toString('utf8'));
+    responseCount += 1;
+    const currentResponse = responseCount;
+    response.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
     });
-    sendEvent(response, { type: 'response.completed', response: { id, end_turn: true } });
-    response.end('data: [DONE]\n\n');
-  };
-  if (responseCount === 1) heldResponse = finish;
-  else finish();
+    const id = `resp_${currentResponse}`;
+    const itemId = `msg_${currentResponse}`;
+    sendEvent(response, { type: 'response.created', response: { id } });
+    sendEvent(response, {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { type: 'message', id: itemId, role: 'assistant', content: [] },
+    });
+    sendEvent(response, {
+      type: 'response.output_text.delta',
+      item_id: itemId,
+      output_index: 0,
+      content_index: 0,
+      delta: `E2E response ${currentResponse}`,
+    });
+    const finish = () => {
+      sendEvent(response, {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'message',
+          id: itemId,
+          role: 'assistant',
+          content: [{ type: 'output_text', text: `E2E response ${currentResponse}` }],
+        },
+      });
+      sendEvent(response, { type: 'response.completed', response: { id, end_turn: true } });
+      response.end('data: [DONE]\n\n');
+    };
+    if (currentResponse === 1) heldResponse = finish;
+    else finish();
+  });
 });
 
 function sendEvent(response, event) {
@@ -239,17 +246,11 @@ exporter = "none"
     if (!disabledMemory.ok || disabledMemory.view.generateMemories) {
       throw new Error('真实 app-server 没有保存记忆生成开关。');
     }
-    const enabledMemory = await evaluate(
-      `window.evowork.setMemorySettings(${JSON.stringify({
-        enabled: true,
-        useMemories: true,
-        generateMemories: true,
-      })})`,
-    );
-    if (!enabledMemory.ok || !enabledMemory.view.generateMemories) {
-      throw new Error('真实 app-server 没有重新启用记忆生成。');
-    }
     stage('memory-settings-verified');
+
+    // 只在测试里写入内核 fixture；生产代码仍只经 app-server 读取和控制记忆。
+    const memoryMarker = 'EVOWORK_MEMORY_P1_MARKER';
+    seedMemorySummary(kernelHome, memoryMarker);
 
     const project = await evaluate(
       `window.evowork.createProject(${JSON.stringify({ name: 'E2E', path: workspace })})`,
@@ -278,6 +279,20 @@ exporter = "none"
     );
     await waitFor(() => heldResponse, '模型请求没有到达测试网关');
     stage('first-request-held');
+    if (!responseBodies[0]?.includes(memoryMarker)) {
+      throw new Error('真实 app-server 没有把本地记忆注入新任务的模型请求。');
+    }
+    const enabledMemory = await evaluate(
+      `window.evowork.setMemorySettings(${JSON.stringify({
+        enabled: true,
+        useMemories: true,
+        generateMemories: true,
+        currentThreadId: first.threadId,
+      })})`,
+    );
+    if (!enabledMemory.ok || !enabledMemory.view.generateMemories) {
+      throw new Error('真实 app-server 没有重新启用记忆生成。');
+    }
     const taskMemoryOff = await evaluate(
       `window.evowork.setTaskMemoryMode(${JSON.stringify({ threadId: first.threadId, enabled: false })})`,
     );
@@ -383,6 +398,7 @@ exporter = "none"
         skillPath: skill.path,
         queuedEditPreserved: true,
         memorySettingsVerified: true,
+        memoryInjectionVerified: true,
         memoryTaskControlsVerified: true,
         recoveredAfterPid: crashedPid,
         responses: responseCount,

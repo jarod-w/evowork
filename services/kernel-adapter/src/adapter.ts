@@ -144,6 +144,8 @@ export interface MemorySettings {
   readonly generateMemories: boolean;
   readonly disableOnExternalContext: boolean;
   readonly statusSupported: boolean;
+  readonly resetSupported: boolean;
+  readonly taskModeSupported: boolean;
   readonly consolidatedThreads: number;
   readonly ready: boolean;
 }
@@ -343,7 +345,9 @@ export function createAdapter(options: AdapterOptions) {
   ): Promise<T> {
     if (!capabilities.isUsable(method)) return fallback();
     try {
-      return await session.peer.request<T>(method, params);
+      const result = await session.peer.request<T>(method, params);
+      capabilities.markAvailable(method);
+      return result;
     } catch (err) {
       const classified = capabilities.classifyFailure(method, err);
       if (classified.degraded) {
@@ -388,6 +392,8 @@ export function createAdapter(options: AdapterOptions) {
       generateMemories: memories.generate_memories !== false,
       disableOnExternalContext: memories.disable_on_external_context === true,
       statusSupported: status.supported !== false,
+      resetSupported: capabilities.isUsable(EXPERIMENTAL_METHOD.memoryReset),
+      taskModeSupported: capabilities.isUsable(EXPERIMENTAL_METHOD.threadMemoryModeSet),
       consolidatedThreads: status.v2ConsolidatedThreads,
       ready: status.v2Ready,
     };

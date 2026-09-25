@@ -67,6 +67,8 @@ const MEMORY: MemorySettingsView = {
   generateMemories: true,
   disableOnExternalContext: true,
   statusSupported: true,
+  resetSupported: true,
+  taskModeSupported: true,
   consolidatedThreads: 4,
   ready: true,
 };
@@ -133,6 +135,18 @@ describe('个性化记忆', () => {
     expect(screen.getByText(/AGENTS.md 和任务历史不会被删除/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '确认清空' }));
     expect(props.onResetMemories).toHaveBeenCalled();
+  });
+
+  it('内核缺少实验方法时显式禁用对应控件', () => {
+    page({
+      section: 'personalization',
+      memory: { ...MEMORY, resetSupported: false, taskModeSupported: false },
+    });
+    expect(
+      (screen.getByRole('button', { name: '清空全部本地记忆' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText(/输入区将使用全局设置/)).toBeTruthy();
+    expect(screen.getByText(/不支持清空全部本地记忆/)).toBeTruthy();
   });
 });
 

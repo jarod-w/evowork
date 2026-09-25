@@ -301,6 +301,8 @@ describe('本地记忆（当前 Codex 基线）', () => {
       generateMemories: true,
       disableOnExternalContext: true,
       statusSupported: true,
+      resetSupported: true,
+      taskModeSupported: true,
       consolidatedThreads: 4,
       ready: true,
     });
@@ -349,6 +351,19 @@ describe('本地记忆（当前 Codex 基线）', () => {
 
     expect(server.threadMemoryModes.get('thread-1')).toBe('disabled');
     expect(server.memoryResetCount).toBe(1);
+  });
+
+  it('实验方法被上游移除时把能力降级暴露给 UI', async () => {
+    server.removeMethod('memory/reset');
+    server.removeMethod('thread/memoryMode/set');
+    await adapter.start();
+
+    await expect(adapter.resetMemories()).resolves.toBe(false);
+    await expect(adapter.setThreadMemoryMode('thread-1', false)).resolves.toBe(false);
+    await expect(adapter.getMemorySettings()).resolves.toMatchObject({
+      resetSupported: false,
+      taskModeSupported: false,
+    });
   });
 });
 

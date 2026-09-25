@@ -489,7 +489,7 @@ footer{
           <tr><td><strong>本机调度不可靠</strong>：关机 / 休眠 / 多设备导致定时任务漏跑或重复跑（Q1=A 派生）</td><td class="sev">高</td><td class="sev">高</td><td>misfire 补偿窗口 + 设备绑定 + 可选系统唤醒；前端如实展示"下次执行 / 上次跳过原因"，不承诺云端级 SLA</td></tr>
           <tr><td><strong>桌面分发成本</strong>：内核二进制 + 解析运行时（+100–300MB）、三平台签名公证、自动更新（Q1=A 派生）</td><td class="sev">中</td><td class="sev">高</td><td>单列 M9；解析运行时按需下载而非全量随包；升级走差量包</td></tr>
           <tr><td><strong>治理弱化</strong>：企业策略无法在服务端强制拦截，只能下发到每台设备（Q1=A 派生）</td><td class="sev">中</td><td class="sev">中</td><td>策略包签名 + 启动校验 + requirements.toml / allow_managed_hooks_only；离线超期降级为只读</td></tr>
-          <tr><td>隐私承诺与云端能力（分享链接、云记忆）冲突</td><td class="sev">高</td><td class="sev">低</td><td>Q1=A + Q3 硬约束已把执行面留在本机；剩余出网点只有分享链接与云记忆，均默认关闭并逐次授权</td></tr>
+          <tr><td>隐私承诺与云端能力（分享链接、云端多模态）冲突</td><td class="sev">高</td><td class="sev">低</td><td>Q1=A + Q3 硬约束已把执行面留在本机；本机 Codex 记忆不与 ChatGPT 云端记忆同步，剩余新增出网点只有分享链接</td></tr>
           <tr><td>上游 API 快速变动，rebase 成本失控</td><td class="sev">高</td><td class="sev">中</td><td>补丁清单化；CI 每日试合并；必要时在稳定 tag 冻结</td></tr>
           <tr><td>模型能力不足导致产物质量差（PPT 排版、图表美观）</td><td class="sev">中</td><td class="sev">高</td><td>技能内置模板库，压缩模型自由度</td></tr>
           <tr><td>Visualizer 渲染模型生成的 HTML 引入 XSS</td><td class="sev">高</td><td class="sev">中</td><td>独立 origin 的 iframe + 严格 CSP 白名单</td></tr>

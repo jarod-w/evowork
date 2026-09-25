@@ -1483,11 +1483,19 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     async resetMemories(): Promise<MemoryMutationResult> {
-      const reset = await adapter.resetMemories();
-      const view = await adapter.getMemorySettings();
-      return reset
-        ? { ok: true, view }
-        : { ok: false, refused: '当前内核不支持清空本地记忆。', view };
+      try {
+        const reset = await adapter.resetMemories();
+        const view = await adapter.getMemorySettings();
+        return reset
+          ? { ok: true, view }
+          : { ok: false, refused: '当前内核不支持清空本地记忆。', view };
+      } catch (error: unknown) {
+        options.logger?.warn('desktop.memories.reset_failed', {
+          errorClass: error instanceof Error ? error.name : 'UnknownError',
+        });
+        const view = await adapter.getMemorySettings();
+        return { ok: false, refused: '本地记忆没有清空，稍后再试。', view };
+      }
     },
 
     startLogin(): Promise<AccountActionResult> {

@@ -1235,6 +1235,34 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [view, activeProjectId, bridge, applyAccessView]);
 
+  // Codex 在后台整理记忆；个性化页打开时自动跟进，不要求用户退出再进。
+  useEffect(() => {
+    if (
+      view !== 'settings' ||
+      settingsSection !== 'personalization' ||
+      !memorySettings?.enabled ||
+      !memorySettings.statusSupported ||
+      memorySettings.ready ||
+      !bridge.getMemorySettings
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void bridge
+        .getMemorySettings?.()
+        .then(setMemorySettingsView)
+        .catch(() => undefined);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [
+    bridge,
+    memorySettings?.enabled,
+    memorySettings?.ready,
+    memorySettings?.statusSupported,
+    settingsSection,
+    view,
+  ]);
+
   /**
    * 进详情页时拉三份数据：概览、根目录一层、空间记忆。
    *
@@ -1544,6 +1572,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setTaskMemoryModes((current) =>
             current[threadId] === enabled ? { ...current, [threadId]: previous } : current,
           );
+          void bridge
+            .getMemorySettings?.()
+            .then(setMemorySettingsView)
+            .catch(() => undefined);
           reportFailure(error, '没能更新当前任务的记忆设置。');
         });
     },
@@ -2035,7 +2067,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setCatalogTab('skills');
         setView('catalog');
       },
-      ...(interactionTaskId && memorySettings?.enabled
+      ...(interactionTaskId && memorySettings?.enabled && memorySettings.taskModeSupported
         ? {
             memoryEnabled: taskMemoryModes[interactionTaskId] ?? memorySettings.generateMemories,
             onMemoryEnabledChange: changeTaskMemoryMode,
@@ -2399,6 +2431,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then((result) => {
                 setMemorySettingsView(result.view);
                 setSettingsRefusal(result.refused);
+                if (result.ok && interactionTaskId) {
+                  setTaskMemoryModes((current) => ({
+                    ...current,
+                    [interactionTaskId]: result.view.enabled && result.view.generateMemories,
+                  }));
+                }
               })
               .catch((error: unknown) => reportFailure(error, '记忆设置没有保存。'));
           }}

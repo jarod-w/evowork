@@ -204,7 +204,19 @@ function MemorySection(props: SettingsPageProps) {
       <p className="ew-settings-note">
         含网页或连接器等外部上下文的任务默认不参与提取，避免把不可信内容沉淀为长期上下文。当前任务也可在输入区单独选择“不贡献记忆”。
       </p>
-      <PillButton onClick={() => setConfirmReset(true)}>清空全部本地记忆</PillButton>
+      {!memory.taskModeSupported ? (
+        <p className="ew-settings-note" role="status">
+          当前内核不支持按任务设置记忆，输入区将使用全局设置。
+        </p>
+      ) : null}
+      <PillButton disabled={!memory.resetSupported} onClick={() => setConfirmReset(true)}>
+        清空全部本地记忆
+      </PillButton>
+      {!memory.resetSupported ? (
+        <p className="ew-settings-note" role="status">
+          当前内核不支持清空全部本地记忆。
+        </p>
+      ) : null}
       {confirmReset ? (
         <Dialog
           title="清空全部本地记忆？"

@@ -894,6 +894,10 @@ export interface MemorySettingsView {
   readonly generateMemories: boolean;
   readonly disableOnExternalContext: boolean;
   readonly statusSupported: boolean;
+  /** 内核协议是否仍提供“清空全部”；不可用时设置页必须禁用入口。 */
+  readonly resetSupported: boolean;
+  /** 内核协议是否仍提供任务级覆盖；不可用时输入区退回全局设置。 */
+  readonly taskModeSupported: boolean;
   readonly consolidatedThreads: number;
   readonly ready: boolean;
 }
