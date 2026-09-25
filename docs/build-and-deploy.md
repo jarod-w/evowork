@@ -1,7 +1,7 @@
 # 编译与部署手册
 
-> **更新于 2026-09-05**。本文里的每条命令都在本机实际跑过；**跑不通的地方会写明"没验过"**，
-> 不写"应该可以"。上游内核与本仓库分开写，因为它们的工具链、构建时长、失败方式完全不同。
+> **更新于 2026-09-26**。命令本身的实测记录仍以各节标注的日期为准；本节之后若和 [status.md](status.md) 冲突，以 status 的验收凭据为准。
+> **跑不通的地方会写明「没验过」**，不写「应该可以」。上游内核与本仓库分开写，因为它们的工具链、构建时长、失败方式完全不同。
 
 两个项目的关系见 [CLAUDE.md](../CLAUDE.md) 第 1 节：`../codex` 是**只读的执行内核**，
 本仓库是产品。产品需要内核的一个二进制（`codex-app-server`），两者只通过 JSON-RPC 说话（K2）。
@@ -311,9 +311,8 @@ EVOWORK_GATEWAY_URL=http://127.0.0.1:8791/v1 ./node_modules/.bin/electron …
 下拉里列出的是网关**真的配了密钥**的那些模型（F24）。网关没起时下拉是空的，
 Composer 顶部给一条 danger 提示并**禁用发送** —— 03 §8：模型不可用要在发送之前就说。
 
-> **这是过渡方案。** 明文文件不满足"密钥不落盘"的本意。终态有两条候选、都还没决策：
-> Electron `safeStorage` 存进系统钥匙串 + 设置页录入，或由 identity 服务签发短期令牌
-> （Q14 的原设计，但 identity 尚未开始）。见 [status.md §4](status.md)。
+> 上面的明文文件是过渡路径。正式机制已经落地：厂商密钥与本机网关令牌进 `safeStorage`（`~/.evowork/secrets.bin`，M10a）。
+> identity 服务也已经有实现（M10b），本机网关把 hosted 模型转到它。钥匙串在真机上的行为仍是 U6，见 [status.md §3](status.md)。
 
 > **以 root 运行时** Electron 需要 `--no-sandbox`，否则直接 `FATAL ... Running as root is not supported`。
 > 这是容器/CI 里的常见情况；正常桌面环境不需要它，**也不该加**。
@@ -334,7 +333,7 @@ Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端�
 | --- | --- | --- | --- |
 | **A · 零服务器** | 无。网关作为本机进程随桌面 App 起，监听 `127.0.0.1` | 个人 · 试点 · 完全离网的私有环境 | **厂商 API key 落在用户机器上**，没有集中计量与配额 —— Q14 选"云端托管为主"正是为了托管密钥 |
 | **B · 一台服务器 + 一个静态桶** | 网关（§5.2）· 静态文件源（§5.3） | 团队 · 生产的最小面。**推荐的起点** | 要管 TLS 与 token 发放；配额仍是静态 token 粒度 |
-| **C · 完整企业形态** | B + identity · 分享托管 · 私有源索引 · 策略包下发 | 多租户 · 企业合规 | 这四样**现在一个都没建**（§5.6） |
+| **C · 完整企业形态** | B + identity · 分享托管 · 私有源索引 · 策略包下发 | 多租户 · 企业合规 | identity 与签名策略包已有代码；分享托管和私有源管理面还没有（§5.6，Q44 未决策） |
 
 **为什么网关省不掉**：内核只认 Responses API —— `wire_api = "chat"` 已被上游移除
 （`model-provider-info/src/lib.rs:57`，2026-09-05 在签出 `728cb12fe5` 上核对），
@@ -343,12 +342,16 @@ Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端�
 
 用户机器上跑的是执行面的**全部**：agent 循环、沙箱、文档解析、定时调度、产物索引、
 策略与审计，没有一样在服务端（进程图见 [architecture.md §1](architecture.md)）。
-全仓库非测试代码里的出网调用点只有两处，这就是数据面的全部：
+2026-09-05 写过「非测试代码只有两处出网」。那个说法已经不够。当前至少有这些数据面出口（行号会漂，以文件为准）：
 
 | 出网点 | 谁在发 | 什么时候 |
 | --- | --- | --- |
-| [providers/registry.ts:115](../services/gateway/src/providers/registry.ts) | **网关**（不是用户机器） | 每次模型调用；prompt 过境但不落盘（Q14） |
-| [artifacts/src/upload.ts:85](../services/artifacts/src/upload.ts) | 桌面 App | 仅在逐次授权的分享上传时。**当前产品代码里没有调用方**，见 §5.6 |
+| [services/gateway/src/providers/registry.ts](../services/gateway/src/providers/registry.ts) | **网关** | 每次模型调用；prompt 过境但不落盘（Q14） |
+| [services/runtime-installer/src/download.ts](../services/runtime-installer/src/download.ts) | 桌面 App | 用户点「现在安装」时下载 Python。中文字体已随包，不再为字体出网 |
+| [apps/desktop/src/main/model-access.ts](../apps/desktop/src/main/model-access.ts) | 桌面 App | 用户点「测试连接」时直连上游 `GET /models`，不经本机网关 |
+| [services/artifacts/src/upload.ts](../services/artifacts/src/upload.ts) | 桌面 App | 分享上传。**产品代码里没有调用方**，见 §5.6 |
+
+登录走系统浏览器打开 identity，不在上表的进程内 `fetch` 里。电脑操控通道本身不出网。
 
 ### 5.2 网关（唯一必须的服务端组件）
 
@@ -403,7 +406,7 @@ PrivateTmp=yes
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
 | 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://updates.evowork.example/${channel}` | 配置已就位，**服务端没建**。一个对象存储桶即可；不做自动更新就手工分发安装包 |
-| 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
+| 按需下载的办公扩展（`office` 档） | 08 §4 的三档运行时 | App 内安装器已接（§3.3）：python-build-standalone + 清华源六个包。中文字体随基础包。**OCR 档仍没有安装与解析器**。自动更新桶仍未建 |
 
 这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
 
@@ -461,17 +464,16 @@ dmg / zip 各 **197MB**（2026-09-06 口径，**尚未计入** 2026-09-19 随包
 解析组件（**可跳过**）→ 完成。权限默认值暂时不进引导（选了也不会进 `turn/start`）。
 模型不在引导里配：进 App 后去「设置 → 模型」添加自定义模型（密钥进系统钥匙串）。
 
-### 5.6 现在还不需要部署的四件事
+### 5.6 云端四件事，现在各到哪
 
-D9 给云端留了四类职责，除模型网关外的其余部分**都还没有实现**。不写清这一点的后果是
-按 C 拓扑去准备机器，然后发现没有东西可以装上去。
+D9 给云端留了四类职责。不写清哪些已经有代码、哪些还不能部署，就会按 C 拓扑去准备机器，然后发现没有东西可以装上去。
 
 | 组件 | D9 里的职责 | 实际状态 | 不部署它的影响 |
 | --- | --- | --- | --- |
-| identity | 账号 · 租户 · 配额 · 授权 | `services/identity/` 只有一份 README | 网关退回静态 token（`staticTokenAuth`）。试点够用，但**没有按用户的配额与审计** |
-| 分享托管 | 产物分享（Q10），`/v1/shares` | 客户端 [upload.ts](../services/artifacts/src/upload.ts) 已实现，但 `createUploader` 在产品代码里**没有调用方**；服务端没写 | 分享功能整体不可用。这也意味着**当前形态下本机内容不会离开设备**（除模型调用） |
-| 企业私有源索引 | 技能 / 插件分发（Q5：无公开市场） | 未建；`plugins/connectors/` 只有 `.gitkeep`（Q9 本期不做） | 扩展只能随包分发 |
-| 签名策略包下发 | 审计汇总 · 策略下发（R11） | 未建。策略与审计链在本机（`services/policy`）已实现 | 企业无法在服务端强制拦截 —— 这正是 D9 明确列出的代价 |
+| identity | 账号 · 租户 · 配额 · 授权 | `services/identity` 与 `apps/web` 已有邮箱密码、管理端、计量和 `/v1/responses` 代理。生产发信仍是开发期 stderr。域名、发信域和云上环境未解除 | 不部署时本机继续用 BYOK 与静态 token。hosted 模型没有上游可转 |
+| 分享托管 | 产物分享（Q10），`/v1/shares` | 客户端 [upload.ts](../services/artifacts/src/upload.ts) 已实现，但 `createUploader` 在产品代码里**没有调用方**；服务端没写。分享页也没有 | 分享功能整体不可用。本机内容除模型调用外不会从这条通道离开 |
+| 企业私有源索引 | 技能 / 插件分发（Q5：无公开市场） | 管理面未建，等 Q44。本机已有随包技能、browser MCP 和电脑操控 MCP 壳；公开远程市场未开放 | 扩展仍以随包和本机/工作区源为主 |
+| 签名策略包下发 | 策略下发（R11） | identity 签发、桌面验签后写 `requirements.toml` 已接。云端审计摘要仍未做 | 不部署 identity 时，企业无法把签名策略包发到设备 |
 
 ### 5.7 不是"服务器"，但绕不开的基础设施
 
@@ -483,11 +485,13 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | **签名证书** | Apple Developer ID + 公证 · Windows 代码签名 | 卡 P0-5，见 §7 与 U4。缺任一 secret 时 `package.mjs` 整体降级为未签名并标注进文件名 |
 | 内核构建的时间与磁盘 | 首次约 40 分钟、`target/` 涨到 7.7 GB（§2.1） | 别在 CI 里给它设 30 分钟超时 |
 
-### 5.8 电脑操控辅助组件（未实现）
+### 5.8 电脑操控辅助组件（代码在，不能启用）
 
 CU-Q1、CU-Q2 已于 2026-09-24 确认：电脑操控首版仅支持 **macOS 14.4+**；原生 Helper 与
-`cua_repl` MCP server **随基础包分发，但能力默认关闭**。当前安装包尚未包含这些组件或对应权限说明，
-不能把现有 dmg 描述为支持电脑操控。
+`cua_repl` MCP server 的目标是随基础包分发，但能力默认关闭。仓库里已有 Helper 源码、
+`scripts/build-computer-use.mjs` 和 macOS `extraResources` 拷贝项。构建把 `releaseVerified` 写成 false，
+桌面因此拒绝启用。不能把现有 dmg 或「配置里有这条拷贝」描述成电脑操控可用。
+一次 macOS 打包要带上 Helper，必须先在那台机器上跑过 Helper 构建；Windows / Linux 目标没有这条资源。
 
 后续 macOS 包需把自建 Helper 与 MCP server 作为 `extraResources` 随主 App 一起分发，并满足：固定 bundle id、
 与主 App 相同 Team ID、整组签名与公证、协议版本绑定、20 MB 增量预算以及 TCC 首次授权/升级保留/
@@ -527,7 +531,7 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 | 打包出的 App 双击没反应：主进程活着、**零个 Helper 子进程**、stderr 一行不打 | 主进程 bundle 在 `import` 阶段就抛了 —— `bootstrap()` 从没执行，窗口从没创建，而 Electron 的主进程没有窗口也不会自己退。**2026-09-06 真踩到过一次**：`services/store` 用 `node:sqlite`，而当时钉的 Electron 33 带的是 Node 20.18.3，没有这个内置模块（已随 Electron 升到 44 解决，见 §1） | `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "import('./apps/desktop/dist/main/bootstrap.bundle.js').catch(e=>console.log(e.code,e.message))"` 会把真正的错误打出来。判"起没起来"别看进程在不在，看 `pgrep -f 'EvoWork Helper'` 有没有子进程 |
 | 内核启动即退，且**什么都没说** | 内核要求它的家目录（`~/.evowork/kernel/`）**已存在**，它不会自己建；而我们默认丢弃内核 stderr（launcher.ts 写了为什么） | `createServiceHost` 里的 `ensurePaths` 负责建。手工排查时先 `ls ~/.evowork/` |
 | 窗口正常打开、标题栏正常，**整页全白**，主进程日志一切正常 | 打包后走 `loadFile`（file://），而 vite 默认 `base: '/'` 生成的 `<script src="/assets/…">` 在 file:// 下指向**文件系统根目录** | `vite.config.ts` 里 `base: './'`；`apps/desktop/test/packaging.test.ts` 钉住了。排查手法见下方 |
-| 界面出来了，但一操作就报 `No handler registered for 'evowork:xxx'` | `bootstrap` 只注册了 `askApproval`，preload 声明的六个渲染动作一个都没接 —— M2 的接线缺口，**不是打包问题** | 未修，见 [status.md](status.md) |
+| 界面出来了，但一操作就报 `No handler registered for 'evowork:xxx'` | 2026-09-06 的接线缺口：`bootstrap` 当时只注册了审批。现在按 `RENDERER_ACTIONS` 逐项注册，并由测试钉住与实现相等 | 若仍出现，是新增动作没有同步到 `ServiceHost['actions']`，不是「整条 IPC 没接」 |
 
 > **怎么查渲染层**：主进程日志看不到渲染进程里的事。给 `BrowserWindow` 挂
 > `console-message` / `did-fail-load` / `did-finish-load`，并在 `did-finish-load` 里
@@ -553,8 +557,8 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 | 网关放到服务器上：`HOST=0.0.0.0` + 反向代理终止 TLS | 只跑过明文 `127.0.0.1` 的前台进程 | §5.2 |
 | 网关的水平扩展与长压测 | 只跑过单实例；`maxContextTokens` 也仍未实测 | M1 剩余项 |
 | 自动更新服务端 | `publish` 配置已就位，服务端没建 | §5.3 · M9 |
-| 办公扩展的下载编排 | 没实现；§3.3 现在是手工建 venv | §5.3 · M9 |
-| 电脑操控 Helper/MCP 的签名、随包分发与 TCC 升级行为 | CU-M0–CU-M4 尚未实施；CU-Q1、CU-Q2 已确认 macOS 14.4+、随基础包但默认关闭 | §5.8 · 12 §11–§13 |
+| 办公扩展 OCR 档 | office 档安装器已接；扫描件解析器和 `pytesseract` 没有 | §3.3 · status.md |
+| 电脑操控 Helper 的签名、TCC 与启用 | 源码、release 装配和 macOS 拷贝项在；`releaseVerified=false`，不能启用 | §5.8 · 12 §17 |
 
 已验证的：
 
