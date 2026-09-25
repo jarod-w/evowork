@@ -675,6 +675,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const adapter = createAdapter({
     store,
     logger,
+    ...(options.pluginsDir ? { skillRoots: [join(options.pluginsDir, 'skills')] } : {}),
     readInstructions,
     ...(baseInstructions ? { baseInstructions } : {}),
     sessionOptions: {

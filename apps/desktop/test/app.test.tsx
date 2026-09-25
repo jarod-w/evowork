@@ -24,6 +24,7 @@ import {
   changedFilesFromItems,
   lastUserMessageRequest,
   mergeItem,
+  reconcileComposerReferences,
   type EvoworkBridge,
 } from '../src/renderer/app.js';
 import { createRendererActions } from '../src/main/renderer-bridge.js';
@@ -151,6 +152,20 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     refreshVisible: vi.fn(async () => undefined),
     openTask: vi.fn(async () => ({ items: [] })),
     getTaskResults: vi.fn(async () => ({ artifacts: [] })),
+    getComposerContext: vi.fn(async () => ({
+      mentions: sampleCatalog().skills.map((skill) => ({
+        id: `skill:/skills/${skill.id}/SKILL.md`,
+        label: skill.name,
+        name: skill.id,
+        category: 'skill' as const,
+        insertAs: 'skill' as const,
+        path: `/skills/${skill.id}/SKILL.md`,
+      })),
+      commands: [
+        { id: 'new-task', label: '新建任务', kind: 'local' as const },
+        { id: 'clear', label: '清空输入', kind: 'local' as const },
+      ],
+    })),
     openResultFile: vi.fn(async () => undefined),
     readTaskFilePreview: vi.fn(async () => ({
       name: 'file.txt',
@@ -192,6 +207,9 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     getCatalog: vi.fn(async () => sampleCatalog()),
     installSkill: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
     uninstallSkill: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    setSkillEnabled: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    installPluginBundle: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
+    uninstallPluginBundle: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
     addConnector: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
     trustConnector: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
     removeConnector: vi.fn(async () => ({ ok: true, catalog: sampleCatalog() })),
@@ -1064,6 +1082,42 @@ describe('流式增量按 id 合并（04 §5.1）', () => {
       { id: 'u1', type: 'userMessage', text: '问' },
       { id: 'a1', type: 'agentMessage', text: '答（还在流）' },
       { id: 'a2', type: 'agentMessage', text: '刚到的一句' },
+    ]);
+  });
+});
+
+describe('Composer 可见 token 与结构化引用一致', () => {
+  const candidates = [
+    {
+      id: 'skill:/skills/presentations/SKILL.md',
+      label: '演示文稿',
+      name: 'presentations',
+      category: 'skill' as const,
+      insertAs: 'skill' as const,
+      path: '/skills/presentations/SKILL.md',
+    },
+    {
+      id: 'file:/w/Q3.xlsx',
+      label: 'Q3.xlsx',
+      category: 'file' as const,
+      insertAs: 'mention' as const,
+      path: '/w/Q3.xlsx',
+    },
+  ];
+  const references = [
+    { type: 'skill' as const, name: 'presentations', path: '/skills/presentations/SKILL.md' },
+    { type: 'mention' as const, name: 'Q3.xlsx', path: '/w/Q3.xlsx' },
+  ];
+
+  it('保留仍有 `$技能` / `@文件` token 的引用', () => {
+    expect(
+      reconcileComposerReferences('用 $演示文稿 处理 @Q3.xlsx ', references, candidates),
+    ).toEqual(references);
+  });
+
+  it('删除可见 token 时同步删除后台结构化引用', () => {
+    expect(reconcileComposerReferences('只处理 @Q3.xlsx ', references, candidates)).toEqual([
+      references[1],
     ]);
   });
 });

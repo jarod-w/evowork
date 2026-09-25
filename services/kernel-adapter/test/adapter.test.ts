@@ -51,6 +51,7 @@ beforeEach(() => {
     store,
     // 适配层测试不依赖网关目录；用一个明确测试模型模拟宿主已完成运行时解析。
     scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
+    skillRoots: ['/opt/evowork/skills'],
     sessionOptions: {
       launcher: server.launcher(),
       clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
@@ -79,6 +80,10 @@ describe('启动序列（09 §3.2）', () => {
     expect(methods.slice(0, 2)).toEqual(['initialize', 'initialized']);
     expect(methods).toContain('permissionProfile/list');
     expect(methods).toContain('experimentalFeature/list');
+    expect(methods).toContain('skills/extraRoots/set');
+    expect(server.received.find((r) => r.method === 'skills/extraRoots/set')?.params).toEqual({
+      extraRoots: ['/opt/evowork/skills'],
+    });
     expect(methods).toContain('project/list'); // 能力探测
 
     // F4：allowed=false 的档位要保留在目录里（企业策略置灰，而不是隐藏）
@@ -91,6 +96,112 @@ describe('启动序列（09 §3.2）', () => {
       'approve-for-me',
       'full-access',
     ]);
+  });
+
+  it('按工作区读取技能并保留内部名、精确 SKILL.md 路径、作用域与解析错误', async () => {
+    server.handlers.set('skills/list', (ctx) => ({
+      data: [
+        {
+          cwd: (ctx.params.cwds as string[])[0],
+          skills: [
+            {
+              name: 'release-notes',
+              description: '生成发布说明',
+              path: '/opt/evowork/skills/release-notes/SKILL.md',
+              scope: 'system',
+              enabled: true,
+              interface: { displayName: '发布说明' },
+            },
+          ],
+          errors: [{ path: '/broken/SKILL.md', message: '缺少 frontmatter' }],
+        },
+      ],
+    }));
+    await adapter.start();
+
+    const result = await adapter.listSkills(['/workspace'], true);
+
+    expect(result.data[0]?.skills[0]).toMatchObject({
+      name: 'release-notes',
+      path: '/opt/evowork/skills/release-notes/SKILL.md',
+      scope: 'system',
+      enabled: true,
+    });
+    expect(result.data[0]?.errors).toEqual([
+      { path: '/broken/SKILL.md', message: '缺少 frontmatter' },
+    ]);
+    expect(server.received.findLast((r) => r.method === 'skills/list')?.params).toEqual({
+      cwds: ['/workspace'],
+      forceReload: true,
+    });
+  });
+
+  it('文件补全走 app-server 模糊搜索并复用取消 token', async () => {
+    server.handlers.set('fuzzyFileSearch', (ctx) => ({
+      files: [
+        {
+          root: (ctx.params.roots as string[])[0],
+          path: 'docs/roadmap.md',
+          match_type: 'file',
+          file_name: 'roadmap.md',
+          score: 91,
+          indices: [5, 6],
+        },
+      ],
+    }));
+    await adapter.start();
+
+    const result = await adapter.searchFiles('road', ['/workspace'], 'composer:/workspace');
+
+    expect(result.files[0]?.path).toBe('docs/roadmap.md');
+    expect(server.received.findLast((r) => r.method === 'fuzzyFileSearch')?.params).toEqual({
+      query: 'road',
+      roots: ['/workspace'],
+      cancellationToken: 'composer:/workspace',
+    });
+  });
+
+  it('技能启停使用精确路径选择器并返回最终有效状态', async () => {
+    await adapter.start();
+
+    await expect(
+      adapter.setSkillEnabled({
+        path: '/skills/presentations/SKILL.md',
+        name: 'presentations',
+        enabled: false,
+      }),
+    ).resolves.toBe(false);
+    expect(server.received.findLast((r) => r.method === 'skills/config/write')?.params).toEqual({
+      path: '/skills/presentations/SKILL.md',
+      name: 'presentations',
+      enabled: false,
+    });
+  });
+
+  it('套件生命周期只查询本机/工作区市场，并把安装卸载交给 app-server', async () => {
+    await adapter.start();
+
+    await adapter.listPluginBundles(['/workspace']);
+    await adapter.installPluginBundle({
+      marketplacePath: '/marketplace',
+      pluginName: 'office-suite',
+    });
+    await adapter.uninstallPluginBundle('office-suite@local');
+
+    expect(server.received.findLast((r) => r.method === 'plugin/list')?.params).toEqual({
+      cwds: ['/workspace'],
+      marketplaceKinds: ['local', 'workspace-directory'],
+      forceRefetch: false,
+    });
+    expect(server.received.findLast((r) => r.method === 'plugin/install')?.params).toEqual({
+      marketplacePath: '/marketplace',
+      remoteMarketplaceName: null,
+      installAttemptId: null,
+      pluginName: 'office-suite',
+    });
+    expect(server.received.findLast((r) => r.method === 'plugin/uninstall')?.params).toEqual({
+      pluginId: 'office-suite@local',
+    });
   });
 
   it('内核在握手后立刻发审批请求也有人接（F14 的窗口期）', async () => {
@@ -436,11 +547,19 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     const first = initial[0];
     const second = initial[1];
     expect(first && second).toBeTruthy();
-    await adapter.updateQueuedInput(threadId, first!.id, '修改后');
+    await adapter.updateQueuedInput(threadId, first!.id, '修改后', [
+      { type: 'skill', name: 'presentations', path: '/skills/presentations/SKILL.md' },
+    ]);
     await adapter.reorderQueuedInputs(threadId, [second!.id, first!.id]);
     expect(await adapter.listQueuedInputs(threadId)).toMatchObject([
       { id: second!.id, input: [{ type: 'text', text: '第二条' }] },
-      { id: first!.id, input: [{ type: 'text', text: '修改后' }] },
+      {
+        id: first!.id,
+        input: [
+          { type: 'text', text: '修改后' },
+          { type: 'skill', name: 'presentations', path: '/skills/presentations/SKILL.md' },
+        ],
+      },
     ]);
   });
 

@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react';
 
 import type {
+  CatalogBundleView,
   CatalogDataView,
   CatalogExpertView,
   CatalogItemView,
@@ -43,6 +44,16 @@ export interface CatalogPageProps {
     confirmName?: string;
   }) => Promise<CatalogMutationResult>;
   readonly onUninstallSkill: (id: string) => Promise<CatalogMutationResult>;
+  readonly onSetSkillEnabled: (input: {
+    path: string;
+    name: string;
+    enabled: boolean;
+  }) => Promise<CatalogMutationResult>;
+  readonly onInstallBundle: (input: {
+    marketplacePath: string;
+    pluginName: string;
+  }) => Promise<CatalogMutationResult>;
+  readonly onUninstallBundle: (pluginId: string) => Promise<CatalogMutationResult>;
   readonly onAddConnector: (input: {
     name: string;
     transport: 'stdio' | 'sse' | 'http';
@@ -280,6 +291,11 @@ export function CatalogPage(props: CatalogPageProps) {
 
       <div className="ew-content-column">
         {props.refusal ? <p className="ew-projects-refusal">{props.refusal}</p> : null}
+        {(data?.skillErrors ?? []).map((error) => (
+          <p key={`${error.path}:${error.message}`} className="ew-projects-refusal">
+            技能加载失败：{error.path}（{error.message}）
+          </p>
+        ))}
 
         {selectedSkill ? (
           <SkillDetail
@@ -288,6 +304,16 @@ export function CatalogPage(props: CatalogPageProps) {
             onUse={() => {
               if (selectedSkill.defaultPrompt) props.onUsePrompt(selectedSkill.defaultPrompt);
             }}
+            onSetEnabled={
+              selectedSkill.skillPath
+                ? (enabled) =>
+                    void props.onSetSkillEnabled({
+                      path: selectedSkill.skillPath!,
+                      name: selectedSkill.id,
+                      enabled,
+                    })
+                : undefined
+            }
             onUninstall={
               selectedSkill.source === 'official'
                 ? undefined
@@ -341,6 +367,10 @@ export function CatalogPage(props: CatalogPageProps) {
             query={query}
             onSelect={(id) => setSelected({ kind: 'skill', id })}
             onWrite={props.onWriteSkill}
+            bundles={data?.bundles ?? []}
+            bundleErrors={data?.bundleErrors ?? []}
+            onInstallBundle={props.onInstallBundle}
+            onUninstallBundle={props.onUninstallBundle}
           />
         ) : props.tab === 'connectors' ? (
           <ConnectorsGrid
@@ -694,6 +724,10 @@ function SkillsGrid({
   query,
   onSelect,
   onWrite,
+  bundles,
+  bundleErrors,
+  onInstallBundle,
+  onUninstallBundle,
 }: {
   readonly featured: readonly CatalogItemView[];
   readonly visible: readonly CatalogItemView[];
@@ -706,6 +740,10 @@ function SkillsGrid({
   readonly query: string;
   readonly onSelect: (id: string) => void;
   readonly onWrite: () => void;
+  readonly bundles: readonly CatalogBundleView[];
+  readonly bundleErrors: readonly { readonly path: string; readonly message: string }[];
+  readonly onInstallBundle: CatalogPageProps['onInstallBundle'];
+  readonly onUninstallBundle: CatalogPageProps['onUninstallBundle'];
 }) {
   if (bundleTab === 'bundles') {
     return (
@@ -719,10 +757,53 @@ function SkillsGrid({
             { id: 'bundles', label: '套件' },
           ]}
         />
-        <EmptyState
-          title="还没有套件"
-          hint="套件是包含多技能 / MCP / hooks 的分发单元。企业私有源下发后会出现在这里。"
-        />
+        {bundleErrors.map((error) => (
+          <p key={`${error.path}:${error.message}`} className="ew-projects-refusal">
+            {error.path}：{error.message}
+          </p>
+        ))}
+        {bundles.length === 0 ? (
+          <EmptyState
+            title="还没有套件"
+            hint="套件是包含多技能 / MCP / hooks 的分发单元。EvoWork 当前只读取本机与工作区市场。"
+          />
+        ) : (
+          <div className="ew-projects-grid">
+            {bundles.map((bundle) => (
+              <ItemCard
+                key={bundle.id}
+                name={bundle.name}
+                description={bundle.description}
+                badges={[
+                  bundle.marketplaceName,
+                  bundle.category,
+                  bundle.installed ? (bundle.enabled ? '已启用' : '已停用') : '未安装',
+                  ...(bundle.version ? [bundle.version] : []),
+                ]}
+                tone={bundle.available ? 'default' : 'warning'}
+                action={
+                  bundle.installed ? (
+                    <PillButton onClick={() => void onUninstallBundle(bundle.id)}>卸载</PillButton>
+                  ) : bundle.available && bundle.marketplacePath ? (
+                    <PillButton
+                      variant="accent"
+                      onClick={() =>
+                        void onInstallBundle({
+                          marketplacePath: bundle.marketplacePath!,
+                          pluginName: bundle.pluginName,
+                        })
+                      }
+                    >
+                      安装
+                    </PillButton>
+                  ) : (
+                    <span className="ew-catalog-muted">{bundle.disabledReason ?? '不可安装'}</span>
+                  )
+                }
+              />
+            ))}
+          </div>
+        )}
       </>
     );
   }
@@ -921,11 +1002,13 @@ function SkillDetail({
   onBack,
   onUse,
   onUninstall,
+  onSetEnabled,
 }: {
   readonly skill: CatalogItemView;
   readonly onBack: () => void;
   readonly onUse: () => void;
   readonly onUninstall?: (() => void) | undefined;
+  readonly onSetEnabled?: ((enabled: boolean) => void) | undefined;
 }) {
   return (
     <div className="ew-catalog-detail">
@@ -935,6 +1018,11 @@ function SkillDetail({
       <p className="ew-catalog-detail-meta">
         {skill.sourceLabel} · {skill.riskLabel} · {skill.category}
       </p>
+      {skill.scope ? (
+        <p className="ew-catalog-detail-meta">
+          作用域：{skill.scope} · {skill.enabled === false ? '已停用' : '已启用'}
+        </p>
+      ) : null}
       {skill.findings.length > 0 ? (
         <ul className="ew-catalog-findings">
           {skill.findings.map((f) => (
@@ -944,6 +1032,11 @@ function SkillDetail({
       ) : null}
       {skill.worstCase ? <p className="ew-catalog-worst">{skill.worstCase}</p> : null}
       <div className="ew-catalog-detail-actions">
+        {onSetEnabled ? (
+          <PillButton onClick={() => onSetEnabled(skill.enabled === false)}>
+            {skill.enabled === false ? '启用' : '停用'}
+          </PillButton>
+        ) : null}
         {skill.defaultPrompt ? (
           <PillButton variant="accent" onClick={onUse}>
             用它新建任务
@@ -1067,4 +1160,4 @@ function statusBadge(c: ConnectorView): string {
 }
 
 export const SKILL_CREATOR_PROMPT =
-  '请用 skill-creator 帮我写一个新技能。先问我这个技能要做什么、会读写哪些路径、要不要出网。写完把 SKILL.md 放到当前工作空间，不要执行里面的脚本。';
+  '帮我写一个新技能。先确认它要解决的重复任务和必要权限；完成后放到当前项目的 .agents/skills 目录，校验并告诉我精确路径。';

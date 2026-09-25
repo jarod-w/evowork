@@ -18,7 +18,7 @@
  * "底层同时维护 text + textElements"。所以这里用 `<textarea>` 存文本、
  * 用 `mentions` 数组存结构，渲染时叠一层 token 显示层。
  */
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
@@ -50,6 +50,8 @@ export type MentionCategory = 'file' | 'upload' | 'skill' | 'library';
 export interface MentionCandidate {
   readonly id: string;
   readonly label: string;
+  /** 技能的协议内部名；非技能候选可省略。 */
+  readonly name?: string | undefined;
   readonly category: MentionCategory;
   /** 插入到 `UserInput` 时的形态：技能是 `Skill`，其余是 `Mention`（03 §4.2） */
   readonly insertAs: 'mention' | 'skill';
@@ -148,6 +150,7 @@ export function composerModeOptions(
 /** 05 §6：选择器只消费已经能用的插件，不负责安装。 */
 export interface ComposerPlugin {
   readonly id: string;
+  readonly kind: 'skill' | 'connector';
   readonly displayName: string;
   readonly description: string;
   readonly category: string;
@@ -164,6 +167,7 @@ export interface ComposerProps {
   readonly onReferAsRaw?: ((id: string) => void) | undefined;
 
   readonly mentionCandidates?: readonly MentionCandidate[] | undefined;
+  readonly onSearchMentions?: ((query: string) => Promise<readonly MentionCandidate[]>) | undefined;
   readonly slashCommands?: readonly SlashCommand[] | undefined;
   readonly onRunLocalCommand?: ((id: string) => void) | undefined;
   readonly onInsertReference?: ((candidate: MentionCandidate) => void) | undefined;
@@ -233,8 +237,8 @@ export interface ComposerProps {
    * 空数组表示读完了但没有可选项（05 §6）。
    */
   readonly plugins?: readonly ComposerPlugin[] | undefined;
-  /** 选中后只把默认提示写入输入框，不发送。 */
-  readonly onUsePlugin?: ((prompt: string) => void) | undefined;
+  /** 选中后把精确插件引用与默认提示交给外层，不发送。 */
+  readonly onUsePlugin?: ((plugin: ComposerPlugin, prompt: string) => void) | undefined;
   /**
    * 策略包超期只读（R11 / 11 §8）。有值时禁用发送并显示这句话。
    * 与 `modelUnavailable` 分开：那条是「检查模型接入」，这条是连企业网更新策略。
@@ -242,9 +246,9 @@ export interface ComposerProps {
   readonly sendLockedReason?: string | undefined;
 }
 
-/** 触发中的补全菜单：`@` 补全或行首 `/` 命令。 */
+/** 触发中的补全菜单：`@` 统一发现、`$` 显式技能、行首 `/` 本地命令。 */
 interface Trigger {
-  readonly kind: '@' | '/';
+  readonly kind: '@' | '$' | '/';
   /** 触发字符在 `value` 中的下标 */
   readonly start: number;
   readonly query: string;
@@ -260,7 +264,7 @@ export function detectTrigger(value: string, caret: number): Trigger | null {
   for (let i = caret - 1; i >= 0; i -= 1) {
     const ch = value[i] as string;
     if (ch === '\n' || ch === ' ') break;
-    if (ch === '@' || ch === '/') {
+    if (ch === '@' || ch === '$' || ch === '/') {
       // `/` 必须在行首（前面只能是字符串开头或换行）。否则 `~/work/a.md` 会误触发
       if (ch === '/' && i !== 0 && value[i - 1] !== '\n') break;
       return { kind: ch, start: i, query: value.slice(i + 1, caret) };
@@ -288,6 +292,29 @@ export function Composer(props: ComposerProps) {
   const [addOpen, setAddOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [confirmFullAccess, setConfirmFullAccess] = useState(false);
+  const [searchedMentions, setSearchedMentions] = useState<readonly MentionCandidate[]>([]);
+
+  useEffect(() => {
+    if (trigger?.kind !== '@' || trigger.query.trim() === '' || !props.onSearchMentions) {
+      setSearchedMentions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void props
+        .onSearchMentions?.(trigger.query)
+        .then((items) => {
+          if (!cancelled) setSearchedMentions(items);
+        })
+        .catch(() => {
+          if (!cancelled) setSearchedMentions([]);
+        });
+    }, 80);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [props.onSearchMentions, trigger]);
 
   const parsing = parsingCount(attachments);
   // 解析失败的附件还没有可发送内容；用户选择「以原始文件引用」后才会变成 ready。
@@ -306,12 +333,23 @@ export function Composer(props: ComposerProps) {
     if (!trigger) return [];
     const q = trigger.query.toLowerCase();
     if (trigger.kind === '@') {
+      const byId = new Map(
+        [...(props.mentionCandidates ?? []), ...searchedMentions].map((candidate) => [
+          candidate.id,
+          candidate,
+        ]),
+      );
+      return [...byId.values()].filter((c) => c.label.toLowerCase().includes(q)).slice(0, 8);
+    }
+    if (trigger.kind === '$') {
       return (props.mentionCandidates ?? [])
-        .filter((c) => c.label.toLowerCase().includes(q))
+        .filter((c) => c.category === 'skill' && c.label.toLowerCase().includes(q))
         .slice(0, 8);
     }
-    return (props.slashCommands ?? []).filter((c) => c.label.toLowerCase().includes(q)).slice(0, 8);
-  }, [trigger, props.mentionCandidates, props.slashCommands]);
+    return (props.slashCommands ?? [])
+      .filter((c) => c.kind === 'local' && c.label.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [trigger, props.mentionCandidates, props.slashCommands, searchedMentions]);
 
   const syncTrigger = useCallback((value: string, caret: number) => {
     setTrigger(detectTrigger(value, caret));
@@ -319,11 +357,11 @@ export function Composer(props: ComposerProps) {
   }, []);
 
   const insertCompletion = useCallback(
-    (label: string) => {
+    (label: string, prefix?: '@' | '$' | '/') => {
       if (!trigger) return;
       const before = props.value.slice(0, trigger.start);
       const after = props.value.slice(trigger.start + 1 + trigger.query.length);
-      props.onChange(`${before}${trigger.kind}${label} ${after}`);
+      props.onChange(`${before}${prefix ?? trigger.kind}${label} ${after}`);
       setTrigger(null);
     },
     [trigger, props],
@@ -522,7 +560,9 @@ export function Composer(props: ComposerProps) {
           {trigger && candidates.length > 0 ? (
             <div className="ew-completion" data-kind={trigger.kind === '@' ? 'mention' : 'command'}>
               <Menu
-                ariaLabel={trigger.kind === '@' ? '引用候选' : '技能与指令'}
+                ariaLabel={
+                  trigger.kind === '@' ? '引用候选' : trigger.kind === '$' ? '技能候选' : '本地指令'
+                }
                 activeId={candidates[activeIndex]?.id}
                 items={candidates.map((c) =>
                   'category' in c
@@ -630,9 +670,9 @@ export function Composer(props: ComposerProps) {
                 <PluginPicker
                   plugins={props.plugins}
                   onClose={() => setPluginsOpen(false)}
-                  onUse={(prompt) => {
+                  onUse={(plugin, prompt) => {
                     setPluginsOpen(false);
-                    props.onUsePlugin?.(prompt);
+                    props.onUsePlugin?.(plugin, prompt);
                   }}
                   onManage={
                     props.onManagePlugins
@@ -765,7 +805,10 @@ export function Composer(props: ComposerProps) {
     }
     if ('category' in chosen) props.onInsertReference?.(chosen);
     else props.onRunSkillCommand?.(chosen.id);
-    insertCompletion(chosen.label);
+    insertCompletion(
+      chosen.label,
+      'category' in chosen && chosen.category === 'skill' ? '$' : undefined,
+    );
   }
 }
 
@@ -852,7 +895,7 @@ function pluginPrompt(plugin: ComposerPlugin): string {
 function PluginPicker(props: {
   readonly plugins: readonly ComposerPlugin[] | undefined;
   readonly onClose: () => void;
-  readonly onUse: (prompt: string) => void;
+  readonly onUse: (plugin: ComposerPlugin, prompt: string) => void;
   readonly onManage?: (() => void) | undefined;
 }) {
   return (
@@ -874,7 +917,7 @@ function PluginPicker(props: {
           }))}
           onSelect={(id) => {
             const plugin = props.plugins?.find((item) => item.id === id);
-            if (plugin) props.onUse(pluginPrompt(plugin));
+            if (plugin) props.onUse(plugin, pluginPrompt(plugin));
           }}
         />
       )}

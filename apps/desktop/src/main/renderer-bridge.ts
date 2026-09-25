@@ -81,6 +81,7 @@ import type {
   CatalogMutationResult,
   ComposerAttachmentView,
   ComposerContextView,
+  ComposerReferenceView,
   DirEntryView,
   DroppedAttachmentInput,
   LibraryDataView,
@@ -598,7 +599,7 @@ export interface StreamCompletionFields {
  * 适配层事件 → 渲染层事件。
  *
  * 返回数组而不是单个：一条 `task-created` 在渲染层要同时给出整行数据，
- * 而有些适配层事件（`skills-changed` 这类）在当前 UI 上没有落点 —— 返回空数组，
+ * 而有些适配层事件在当前 UI 上没有落点 —— 返回空数组，
  * **不是丢弃**：它们已经在适配层落过库、记过日志了。
  */
 export function createEventTranslator(store: Store, now: () => number) {
@@ -792,6 +793,8 @@ export function createEventTranslator(store: Store, now: () => number) {
        */
       case 'projects-changed':
         return [{ type: 'projects-changed' }];
+      case 'skills-changed':
+        return [{ type: 'skills-changed' }];
       case 'task-goal-changed':
         return [{ type: 'task-goal-changed', taskId: event.threadId }];
       default:
@@ -810,6 +813,75 @@ export function createEventTranslator(store: Store, now: () => number) {
 export function createRendererActions(options: RendererBridgeOptions) {
   const { adapter, store } = options;
   const now = options.now ?? (() => Date.now());
+
+  async function catalogWithKernelSkills(): Promise<CatalogDataView> {
+    const base = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
+    if (typeof adapter.listSkills !== 'function') return base;
+    const [listed, pluginCatalog] = await Promise.all([
+      adapter.listSkills([]),
+      typeof adapter.listPluginBundles === 'function'
+        ? adapter.listPluginBundles([]).catch(() => ({
+            marketplaces: [],
+            marketplaceLoadErrors: [],
+            featuredPluginIds: [],
+          }))
+        : Promise.resolve({
+            marketplaces: [],
+            marketplaceLoadErrors: [],
+            featuredPluginIds: [],
+          }),
+    ]);
+    const entry = listed.data[0];
+    const byName = new Map((entry?.skills ?? []).map((skill) => [skill.name, skill]));
+    const skills = base.skills.map((skill) => {
+      const kernel = byName.get(skill.id);
+      return kernel
+        ? {
+            ...skill,
+            enabled: kernel.enabled,
+            scope: kernel.scope,
+            skillPath: kernel.path,
+          }
+        : skill;
+    });
+    const disabled = new Set(
+      skills.filter((skill) => skill.enabled === false).map((skill) => `skill:${skill.id}`),
+    );
+    return {
+      ...base,
+      skills,
+      apps: base.apps.filter((app) => !disabled.has(app.id)),
+      bundles: pluginCatalog.marketplaces.flatMap((marketplace) =>
+        marketplace.plugins.map((plugin) => ({
+          id: plugin.id,
+          name: plugin.interface?.displayName ?? plugin.name,
+          pluginName: plugin.name,
+          description:
+            plugin.interface?.shortDescription ?? plugin.interface?.longDescription ?? plugin.name,
+          category: plugin.interface?.category ?? '套件',
+          marketplaceName: marketplace.interface?.displayName ?? marketplace.name,
+          ...(marketplace.path ? { marketplacePath: marketplace.path } : {}),
+          installed: plugin.installed,
+          enabled: plugin.enabled,
+          ...((plugin.localVersion ?? plugin.version)
+            ? { version: plugin.localVersion ?? plugin.version ?? undefined }
+            : {}),
+          available:
+            plugin.installPolicy !== 'NOT_AVAILABLE' && plugin.availability !== 'DISABLED_BY_ADMIN',
+          ...(plugin.disabledReason ? { disabledReason: plugin.disabledReason } : {}),
+        })),
+      ),
+      ...(pluginCatalog.marketplaceLoadErrors.length
+        ? {
+            bundleErrors: pluginCatalog.marketplaceLoadErrors.map((error) => ({
+              path: error.marketplacePath,
+              message: error.message,
+            })),
+          }
+        : {}),
+      ...(entry?.errors.length ? { skillErrors: entry.errors } : {}),
+    };
+  }
 
   const projects = createProjectRepo(store.db);
 
@@ -1549,6 +1621,16 @@ export function createRendererActions(options: RendererBridgeOptions) {
             .filter((part): part is Extract<UserInput, { type: 'text' }> => part.type === 'text')
             .map((part) => part.text)
             .join('\n') || '结构化引用',
+        references: entry.input
+          .filter(
+            (part): part is Extract<UserInput, { type: 'mention' | 'skill' | 'localImage' }> =>
+              part.type === 'mention' || part.type === 'skill' || part.type === 'localImage',
+          )
+          .map((part) =>
+            part.type === 'localImage'
+              ? { type: 'localImage' as const, name: basename(part.path), path: part.path }
+              : part,
+          ),
       }));
     },
 
@@ -1556,8 +1638,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
       readonly threadId: string;
       readonly id: string;
       readonly text: string;
+      readonly references?: readonly ComposerReferenceView[] | undefined;
     }): Promise<boolean> {
-      return adapter.updateQueuedInput(input.threadId, input.id, input.text);
+      return adapter.updateQueuedInput(
+        input.threadId,
+        input.id,
+        input.text,
+        (input.references ?? []).filter((part) => part.type !== 'text'),
+      );
     },
 
     async reorderQueuedInputs(input: {
@@ -1603,40 +1691,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const mentions: ComposerContextView['mentions'][number][] = [];
       const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
       const ports = options.projectPorts;
+      let skillCwd: string | undefined;
       if (root && ports) {
         const realRoot = await realRootOf(ports, root);
-        if (realRoot) {
-          const pending: { path: string; relative: string; depth: number }[] = [
-            { path: realRoot, relative: '', depth: 0 },
-          ];
-          let scannedDirectories = 0;
-          while (pending.length > 0 && mentions.length < 500 && scannedDirectories < 500) {
-            const current = pending.shift();
-            if (!current) break;
-            scannedDirectories += 1;
-            for (const entry of await ports.readDir(current.path)) {
-              if (entry.name === '.git' || entry.name === 'node_modules') continue;
-              const absolute = `${current.path.replace(/\/$/, '')}/${entry.name}`;
-              const relative = current.relative ? `${current.relative}/${entry.name}` : entry.name;
-              if (await safeIsSymlink(ports, absolute)) continue;
-              if (entry.isDirectory) {
-                if (current.depth < 8 && pending.length + scannedDirectories < 500)
-                  pending.push({ path: absolute, relative, depth: current.depth + 1 });
-                continue;
-              }
-              const real = await safeRealpath(ports, absolute);
-              if (!real || !isUnderRoot(realRoot, real, ports.home)) continue;
-              mentions.push({
-                id: `file:${relative}`,
-                label: relative,
-                category: 'file',
-                insertAs: 'mention',
-                path: real,
-              });
-              if (mentions.length >= 500) break;
-            }
-          }
-        }
+        if (realRoot) skillCwd = realRoot;
       }
       for (const artifact of options.pageData?.listArtifacts() ?? []) {
         if (artifact.fileState !== 'PRESENT') continue;
@@ -1648,35 +1706,58 @@ export function createRendererActions(options: RendererBridgeOptions) {
           path: artifact.path,
         });
       }
-      const catalog = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
-      for (const skill of catalog.skills.filter((entry) => entry.installed)) {
-        const base =
-          skill.source === 'official'
-            ? options.catalogPorts?.pluginsDir
-            : options.catalogPorts?.userRoot;
-        if (!base) continue;
-        const path =
-          skill.source === 'official'
-            ? `${base.replace(/\/$/, '')}/skills/${skill.id}`
-            : `${base.replace(/\/$/, '')}/skills/${skill.id}`;
+      const listed = await adapter.listSkills(skillCwd ? [skillCwd] : []);
+      const skillEntry =
+        (skillCwd ? listed.data.find((entry) => entry.cwd === skillCwd) : undefined) ??
+        listed.data[0];
+      for (const skill of skillEntry?.skills ?? []) {
+        if (!skill.enabled) continue;
         mentions.push({
-          id: `skill:${skill.id}`,
-          label: skill.name,
+          id: `skill:${skill.path}`,
+          label: skill.interface?.displayName ?? skill.name,
+          name: skill.name,
           category: 'skill',
           insertAs: 'skill',
-          path,
+          path: skill.path,
+          description:
+            skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description,
+          scope: skill.scope,
         });
       }
       return {
         mentions,
+        ...(skillEntry?.errors.length ? { skillErrors: skillEntry.errors } : {}),
         commands: [
           { id: 'new-task', label: '新建任务', kind: 'local' },
           { id: 'clear', label: '清空输入', kind: 'local' },
-          ...mentions
-            .filter((entry) => entry.category === 'skill')
-            .map((entry) => ({ id: entry.id, label: entry.label, kind: 'skill' as const })),
         ],
       };
+    },
+
+    async searchComposerMentions(input: {
+      readonly workspaceId?: string | undefined;
+      readonly query: string;
+    }): Promise<ComposerContextView['mentions']> {
+      const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      const ports = options.projectPorts;
+      if (!root || !ports || !input.query.trim()) return [];
+      const realRoot = await realRootOf(ports, root);
+      if (!realRoot) return [];
+      const response = await adapter.searchFiles(input.query, [realRoot], `composer:${realRoot}`);
+      return response.files.flatMap((match) => {
+        const absolute = resolve(match.root, match.path);
+        if (!isUnderRoot(realRoot, absolute, ports.home)) return [];
+        const label = match.path.replace(/^\.\//, '');
+        return [
+          {
+            id: `file:${absolute}`,
+            label: match.match_type === 'directory' ? `${label}/` : label,
+            category: 'file' as const,
+            insertAs: 'mention' as const,
+            path: absolute,
+          },
+        ];
+      });
     },
 
     async pickAttachments(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]> {
@@ -2378,9 +2459,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     /* ── 技能 · 连接器（05）───────────────────────────────────────── */
 
     getCatalog(): Promise<CatalogDataView> {
-      const ports = options.catalogPorts;
-      if (!ports) return Promise.resolve(emptyCatalog());
-      return Promise.resolve(readCatalog(ports));
+      return catalogWithKernelSkills();
     },
 
     async installSkill(input: InstallSkillInput): Promise<CatalogMutationResult> {
@@ -2393,6 +2472,61 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const ports = options.catalogPorts;
       if (!ports) return Promise.resolve(missingPortsResult());
       return Promise.resolve(uninstallSkill(ports, input.id));
+    },
+
+    async setSkillEnabled(input: {
+      readonly path: string;
+      readonly name: string;
+      readonly enabled: boolean;
+    }): Promise<CatalogMutationResult> {
+      try {
+        const effective = await adapter.setSkillEnabled(input);
+        const catalog = await catalogWithKernelSkills();
+        return {
+          ok: effective === input.enabled,
+          ...(effective === input.enabled
+            ? {}
+            : { refused: '技能启停被更高优先级的管理策略覆盖。' }),
+          catalog,
+        };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          refused: error instanceof Error ? error.message : '没能更新技能状态。',
+          catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()),
+        };
+      }
+    },
+
+    async installPluginBundle(input: {
+      readonly marketplacePath: string;
+      readonly pluginName: string;
+    }): Promise<CatalogMutationResult> {
+      try {
+        await adapter.installPluginBundle(input);
+        return { ok: true, catalog: await catalogWithKernelSkills() };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          refused: error instanceof Error ? error.message : '套件没有安装。',
+          catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()),
+        };
+      }
+    },
+
+    async uninstallPluginBundle(input: {
+      readonly pluginId: string;
+    }): Promise<CatalogMutationResult> {
+      try {
+        await adapter.uninstallPluginBundle(input.pluginId);
+        return { ok: true, catalog: await catalogWithKernelSkills() };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          refused: error instanceof Error ? error.message : '套件没有卸载。',
+          catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()),
+        };
+      }
     },
 
     addConnector(input: AddConnectorInput): Promise<CatalogMutationResult> {

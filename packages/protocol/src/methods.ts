@@ -57,7 +57,13 @@ export const METHOD = {
   permissionProfileList: 'permissionProfile/list',
   experimentalFeatureList: 'experimentalFeature/list',
   skillsList: 'skills/list',
+  skillsExtraRootsSet: 'skills/extraRoots/set',
+  skillsConfigWrite: 'skills/config/write',
+  fuzzyFileSearch: 'fuzzyFileSearch',
   pluginInstalled: 'plugin/installed',
+  pluginList: 'plugin/list',
+  pluginInstall: 'plugin/install',
+  pluginUninstall: 'plugin/uninstall',
   mcpServerStatusList: 'mcpServerStatus/list',
 
   // 文件系统（工作空间文件视图，04 §6.2）

@@ -141,6 +141,112 @@ export type UserInput =
   | { readonly type: 'skill'; readonly name: string; readonly path: string }
   | { readonly type: 'mention'; readonly name: string; readonly path: string };
 
+// ─────────────────────────────── 技能 ───────────────────────────────
+
+/** `skills/list` 的稳定协议形状；路径始终指向具体的 `SKILL.md`。 */
+export type SkillScope = 'user' | 'repo' | 'system' | 'admin';
+
+export interface SkillInterface {
+  readonly displayName?: string;
+  readonly shortDescription?: string;
+  readonly iconSmall?: string;
+  readonly iconLarge?: string;
+  readonly iconSmallUrl?: string;
+  readonly iconLargeUrl?: string;
+  readonly brandColor?: string;
+  readonly defaultPrompt?: string;
+}
+
+export interface SkillMetadata {
+  readonly name: string;
+  readonly description: string;
+  readonly shortDescription?: string;
+  readonly interface?: SkillInterface;
+  readonly dependencies?: {
+    readonly tools: readonly {
+      readonly type: string;
+      readonly value: string;
+      readonly description?: string;
+      readonly transport?: string;
+      readonly command?: string;
+      readonly url?: string;
+    }[];
+  };
+  readonly path: string;
+  readonly scope: SkillScope;
+  readonly enabled: boolean;
+  readonly pluginId?: string | null;
+}
+
+export interface SkillErrorInfo {
+  readonly path: string;
+  readonly message: string;
+}
+
+export interface SkillsListEntry {
+  readonly cwd: string;
+  readonly skills: readonly SkillMetadata[];
+  readonly errors: readonly SkillErrorInfo[];
+}
+
+export interface SkillsListResponse {
+  readonly data: readonly SkillsListEntry[];
+}
+
+export interface FuzzyFileSearchResult {
+  readonly root: string;
+  readonly path: string;
+  readonly match_type: 'file' | 'directory';
+  readonly file_name: string;
+  readonly score: number;
+  readonly indices: readonly number[] | null;
+}
+
+export interface FuzzyFileSearchResponse {
+  readonly files: readonly FuzzyFileSearchResult[];
+}
+
+export interface PluginSummary {
+  readonly id: string;
+  readonly remotePluginId?: string | null;
+  readonly version?: string | null;
+  readonly localVersion?: string | null;
+  readonly name: string;
+  readonly source: Readonly<Record<string, unknown>>;
+  readonly installed: boolean;
+  readonly enabled: boolean;
+  readonly installPolicy: 'NOT_AVAILABLE' | 'AVAILABLE' | 'INSTALLED_BY_DEFAULT';
+  readonly authPolicy: 'ON_INSTALL' | 'ON_USE';
+  readonly availability?: 'AVAILABLE' | 'DISABLED_BY_ADMIN';
+  readonly disabledReason?: string | null;
+  readonly interface?: {
+    readonly displayName?: string | null;
+    readonly shortDescription?: string | null;
+    readonly longDescription?: string | null;
+    readonly developerName?: string | null;
+    readonly category?: string | null;
+    readonly capabilities?: readonly string[];
+    readonly defaultPrompt?: readonly string[] | null;
+  } | null;
+  readonly keywords?: readonly string[];
+}
+
+export interface PluginMarketplaceEntry {
+  readonly name: string;
+  readonly path?: string | null;
+  readonly interface?: { readonly displayName?: string | null } | null;
+  readonly plugins: readonly PluginSummary[];
+}
+
+export interface PluginListResponse {
+  readonly marketplaces: readonly PluginMarketplaceEntry[];
+  readonly marketplaceLoadErrors: readonly {
+    readonly marketplacePath: string;
+    readonly message: string;
+  }[];
+  readonly featuredPluginIds: readonly string[];
+}
+
 // ─────────────────────────────── 条目（19 类，F13）───────────────────────────────
 
 /**

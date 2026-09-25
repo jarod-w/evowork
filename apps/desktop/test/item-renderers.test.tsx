@@ -5,7 +5,7 @@
  * 默认折叠/展开、未知类型不丢弃、无推理能力时不留空壳、企业策略可隐藏策略注入。
  * DOM 结构会随视觉调整而变，那些约束不会。
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -421,7 +421,8 @@ describe('UserMessage：@ 引用成块显示（03 §4.2 的 token 在历史里�
     expect(screen.getByText('按这个模板做：')).toBeTruthy();
     const mentions = document.querySelectorAll('.ew-mention');
     expect(mentions).toHaveLength(2);
-    expect(within(mentions[0] as HTMLElement).getByText('presentations')).toBeTruthy();
+    expect(mentions[0]?.textContent).toBe('$presentations');
+    expect(mentions[1]?.textContent).toBe('@Q3.xlsx');
   });
 
   it('时间线不展示复制、重发、分叉，避免打断阅读', () => {

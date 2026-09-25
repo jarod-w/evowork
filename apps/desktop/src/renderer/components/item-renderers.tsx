@@ -396,7 +396,7 @@ export function ItemRenderer({
     // ① UserMessage —— 右对齐块，含 @ token 与附件缩略卡
     case 'userMessage': {
       const content = Array.isArray(item.content)
-        ? (item.content as { type: string; text?: string; name?: string }[])
+        ? (item.content as { type: string; text?: string; name?: string; path?: string }[])
         : [];
       return (
         <div className="ew-item ew-item-user" data-kind={kind}>
@@ -406,7 +406,19 @@ export function ItemRenderer({
                 <p key={index}>{part.text}</p>
               ) : (
                 // @ 引用与技能在输入框里是不可分割的 token（03 §4.2），历史里同样成块显示
-                <span key={index} className="ew-mention" data-mention-kind={part.type}>
+                <span
+                  key={index}
+                  className="ew-mention"
+                  data-mention-kind={part.type}
+                  title={
+                    part.type === 'skill'
+                      ? `已调用技能${part.path ? `：${part.path}` : ''}`
+                      : part.type === 'mention'
+                        ? `已绑定引用${part.path ? `：${part.path}` : ''}`
+                        : undefined
+                  }
+                >
+                  {part.type === 'skill' ? '$' : part.type === 'mention' ? '@' : ''}
                   {part.name ?? part.type}
                 </span>
               ),

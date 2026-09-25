@@ -86,6 +86,8 @@ export type RendererEvent =
    */
   | { readonly type: 'task-results-updated'; readonly taskId: string }
   | { readonly type: 'task-goal-changed'; readonly taskId: string }
+  /** 技能目录变化；Composer 据此重读内核清单，不保留陈旧路径。 */
+  | { readonly type: 'skills-changed' }
   /**
    * 「项目」那一侧变了（另一个客户端建了/删了 project）。
    * 只在停在项目列表页时才据此重拉——本机自己的增删动作直接返回新列表，不等这条事件。
@@ -316,10 +318,15 @@ export interface ComposerContextView {
   readonly mentions: readonly {
     readonly id: string;
     readonly label: string;
+    /** 内核解析用的精确技能名；展示名可以本地化，不能拿来替代它。 */
+    readonly name?: string;
     readonly category: 'file' | 'skill' | 'library';
     readonly insertAs: 'mention' | 'skill';
     readonly path: string;
+    readonly description?: string;
+    readonly scope?: 'user' | 'repo' | 'system' | 'admin';
   }[];
+  readonly skillErrors?: readonly { readonly path: string; readonly message: string }[];
   readonly commands: readonly {
     readonly id: string;
     readonly label: string;
@@ -330,6 +337,8 @@ export interface ComposerContextView {
 export interface QueuedInputView {
   readonly id: string;
   readonly text: string;
+  /** 编辑正文时原样带回，避免把技能/文件引用悄悄抹掉。 */
+  readonly references: readonly ComposerReferenceView[];
 }
 
 export interface TaskGoalView {
@@ -986,6 +995,10 @@ export interface CatalogItemView {
   readonly findings: readonly string[];
   readonly worstCase?: string | undefined;
   readonly defaultPrompt?: string | undefined;
+  readonly enabled?: boolean | undefined;
+  readonly scope?: 'user' | 'repo' | 'system' | 'admin' | undefined;
+  /** `skills/config/write` 的精确选择器。 */
+  readonly skillPath?: string | undefined;
 }
 
 export interface ConnectorView {
@@ -1026,11 +1039,29 @@ export interface CatalogAppView {
   readonly defaultPrompt?: string | undefined;
 }
 
+export interface CatalogBundleView {
+  readonly id: string;
+  readonly name: string;
+  readonly pluginName: string;
+  readonly description: string;
+  readonly category: string;
+  readonly marketplaceName: string;
+  readonly marketplacePath?: string | undefined;
+  readonly installed: boolean;
+  readonly enabled: boolean;
+  readonly version?: string | undefined;
+  readonly available: boolean;
+  readonly disabledReason?: string | undefined;
+}
+
 export interface CatalogDataView {
   readonly skills: readonly CatalogItemView[];
   readonly connectors: readonly ConnectorView[];
   readonly experts: readonly CatalogExpertView[];
   readonly apps: readonly CatalogAppView[];
+  readonly bundles?: readonly CatalogBundleView[];
+  readonly bundleErrors?: readonly { readonly path: string; readonly message: string }[];
+  readonly skillErrors?: readonly { readonly path: string; readonly message: string }[];
 }
 
 /**

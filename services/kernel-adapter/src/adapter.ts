@@ -21,10 +21,13 @@ import {
   JsonRpcCallError,
   METHOD,
   type ExperimentalFeature,
+  type FuzzyFileSearchResponse,
   type PermissionProfileSummary,
+  type PluginListResponse,
   type ProjectCreateParams,
   type ProjectDeleteParams,
   type ProjectUpdateParams,
+  type SkillsListResponse,
   type Thread,
   type ThreadGoal,
   type ThreadGoalStatus,
@@ -136,6 +139,8 @@ export type { ThreadGoal, ThreadGoalStatus, ThreadSearchOccurrence };
 
 export interface AdapterOptions {
   readonly store: Store;
+  /** 由宿主提供的只读技能根；握手后注册，内核重启时自动重放。 */
+  readonly skillRoots?: readonly string[];
   /**
    * 会话参数。**适配层自己建 session**，不接受外部传入一个建好的。
    *
@@ -224,7 +229,10 @@ export function createAdapter(options: AdapterOptions) {
 
   const session = new KernelSession({
     ...options.sessionOptions,
-    recover: async () => recoverOpenThreads(),
+    recover: async () => {
+      await registerSkillRoots();
+      return recoverOpenThreads();
+    },
     ...(options.onNotice ? { onNotice: options.onNotice } : {}),
     // R2 雷达：未识别的通知记形状（不记正文）。接在这里而不是让调用方自己接 ——
     // 它是"上游改了什么"的唯一线索，不该取决于谁构造了 session
@@ -312,6 +320,14 @@ export function createAdapter(options: AdapterOptions) {
     return recovered;
   }
 
+  async function registerSkillRoots(): Promise<void> {
+    const extraRoots = [
+      ...new Set((options.skillRoots ?? []).filter((root) => root.trim() !== '')),
+    ];
+    if (extraRoots.length === 0) return;
+    await session.peer.request(METHOD.skillsExtraRootsSet, { extraRoots });
+  }
+
   /** 带降级的实验方法调用：失败即定性并走兜底（09 §3.3）。 */
   async function callExperimental<T>(
     method: string,
@@ -362,6 +378,7 @@ export function createAdapter(options: AdapterOptions) {
       }
 
       await session.start();
+      await registerSkillRoots();
 
       const [profiles, features] = await Promise.all([
         session.peer.request<{ data: PermissionProfileSummary[] }>(
@@ -436,6 +453,75 @@ export function createAdapter(options: AdapterOptions) {
 
     catalog(): Catalog | undefined {
       return catalog;
+    },
+
+    /** 以 app-server 的发现结果为唯一事实源，避免 UI 自己猜技能名和路径。 */
+    async listSkills(
+      cwds: readonly string[] = [],
+      forceReload = false,
+    ): Promise<SkillsListResponse> {
+      return session.peer.request<SkillsListResponse>(METHOD.skillsList, {
+        ...(cwds.length > 0 ? { cwds: [...cwds] } : {}),
+        ...(forceReload ? { forceReload: true } : {}),
+      });
+    },
+
+    /** 文件补全由内核的并行索引完成；同一 token 的前一请求会被取消。 */
+    async searchFiles(
+      query: string,
+      roots: readonly string[],
+      cancellationToken?: string,
+    ): Promise<FuzzyFileSearchResponse> {
+      if (!query.trim() || roots.length === 0) return { files: [] };
+      return session.peer.request<FuzzyFileSearchResponse>(METHOD.fuzzyFileSearch, {
+        query,
+        roots: [...roots],
+        cancellationToken: cancellationToken ?? null,
+      });
+    },
+
+    async setSkillEnabled(input: {
+      readonly path?: string;
+      readonly name?: string;
+      readonly enabled: boolean;
+    }): Promise<boolean> {
+      if (!input.path && !input.name) throw new Error('启停技能需要 path 或 name');
+      const response = await session.peer.request<{ readonly effectiveEnabled: boolean }>(
+        METHOD.skillsConfigWrite,
+        {
+          path: input.path ?? null,
+          name: input.name ?? null,
+          enabled: input.enabled,
+        },
+      );
+      return response.effectiveEnabled;
+    },
+
+    /**
+     * 套件目录只读本地与工作区源。公开远程市场尚未通过产品/合规决策，不能顺手打开。
+     */
+    async listPluginBundles(cwds: readonly string[] = []): Promise<PluginListResponse> {
+      return session.peer.request<PluginListResponse>(METHOD.pluginList, {
+        cwds: cwds.length > 0 ? [...cwds] : null,
+        marketplaceKinds: ['local', 'workspace-directory'],
+        forceRefetch: false,
+      });
+    },
+
+    async installPluginBundle(input: {
+      readonly marketplacePath: string;
+      readonly pluginName: string;
+    }): Promise<void> {
+      await session.peer.request(METHOD.pluginInstall, {
+        marketplacePath: input.marketplacePath,
+        remoteMarketplaceName: null,
+        installAttemptId: null,
+        pluginName: input.pluginName,
+      });
+    },
+
+    async uninstallPluginBundle(pluginId: string): Promise<void> {
+      await session.peer.request(METHOD.pluginUninstall, { pluginId });
     },
 
     /**
@@ -769,8 +855,16 @@ export function createAdapter(options: AdapterOptions) {
       return response.deleted === true;
     },
 
-    async updateQueuedInput(threadId: string, id: string, text: string): Promise<boolean> {
-      const input: readonly UserInput[] = [{ type: 'text', text }];
+    async updateQueuedInput(
+      threadId: string,
+      id: string,
+      text: string,
+      references: readonly UserInput[] = [],
+    ): Promise<boolean> {
+      const input: readonly UserInput[] = [
+        ...(text.trim() ? [{ type: 'text' as const, text }] : []),
+        ...references.filter((part) => part.type !== 'text'),
+      ];
       const local = localQueues.get(threadId) ?? [];
       const localIndex = local.findIndex((entry) => entry.id === id);
       if (localIndex >= 0) {

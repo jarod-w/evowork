@@ -73,6 +73,25 @@ export class FakeAppServer {
         { name: 'unified_exec', stage: 'stable', enabled: true },
       ],
     }));
+    this.handlers.set('skills/extraRoots/set', () => ({}));
+    this.handlers.set('skills/list', (ctx) => ({
+      data: ((ctx.params.cwds as readonly string[] | undefined) ?? ['/w']).map((cwd) => ({
+        cwd,
+        skills: [],
+        errors: [],
+      })),
+    }));
+    this.handlers.set('fuzzyFileSearch', () => ({ files: [] }));
+    this.handlers.set('skills/config/write', (ctx) => ({
+      effectiveEnabled: Boolean(ctx.params.enabled),
+    }));
+    this.handlers.set('plugin/list', () => ({
+      marketplaces: [],
+      marketplaceLoadErrors: [],
+      featuredPluginIds: [],
+    }));
+    this.handlers.set('plugin/install', () => ({ authPolicy: 'ON_USE', appsNeedingAuth: [] }));
+    this.handlers.set('plugin/uninstall', () => ({}));
     this.handlers.set('project/list', () => ({ data: [] }));
     this.handlers.set('thread/start', (ctx) => {
       const threadId = `thread_${this.received.length}`;

@@ -34,6 +34,9 @@ function renderPage(over: Partial<CatalogDataView> = {}) {
       onTab={() => undefined}
       onInstallSkill={async () => ({ ok: true, catalog: data })}
       onUninstallSkill={async () => ({ ok: true, catalog: data })}
+      onSetSkillEnabled={async () => ({ ok: true, catalog: data })}
+      onInstallBundle={async () => ({ ok: true, catalog: data })}
+      onUninstallBundle={async () => ({ ok: true, catalog: data })}
       onAddConnector={async () => ({ ok: true, catalog: data })}
       onTrustConnector={async () => ({ ok: true, catalog: data })}
       onRemoveConnector={async () => ({ ok: true, catalog: data })}
@@ -60,6 +63,9 @@ describe('CatalogPage', () => {
         onTab={() => undefined}
         onInstallSkill={async () => ({ ok: true, catalog: EMPTY })}
         onUninstallSkill={async () => ({ ok: true, catalog: EMPTY })}
+        onSetSkillEnabled={async () => ({ ok: true, catalog: EMPTY })}
+        onInstallBundle={async () => ({ ok: true, catalog: EMPTY })}
+        onUninstallBundle={async () => ({ ok: true, catalog: EMPTY })}
         onAddConnector={async () => ({ ok: true, catalog: EMPTY })}
         onTrustConnector={async () => ({ ok: true, catalog: EMPTY })}
         onRemoveConnector={async () => ({ ok: true, catalog: EMPTY })}
@@ -85,6 +91,9 @@ describe('CatalogPage', () => {
         onTab={() => undefined}
         onInstallSkill={async () => ({ ok: true, catalog: EMPTY })}
         onUninstallSkill={async () => ({ ok: true, catalog: EMPTY })}
+        onSetSkillEnabled={async () => ({ ok: true, catalog: EMPTY })}
+        onInstallBundle={async () => ({ ok: true, catalog: EMPTY })}
+        onUninstallBundle={async () => ({ ok: true, catalog: EMPTY })}
         onAddConnector={async () => ({ ok: true, catalog: EMPTY })}
         onTrustConnector={async () => ({ ok: true, catalog: EMPTY })}
         onRemoveConnector={async () => ({ ok: true, catalog: EMPTY })}

@@ -55,6 +55,10 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     expect(detectTrigger('@', 1)).toEqual({ kind: '@', start: 0, query: '' });
   });
 
+  it('`$` 显式触发技能', () => {
+    expect(detectTrigger('请用 $pres', 8)).toEqual({ kind: '$', start: 3, query: 'pres' });
+  });
+
   it('**`/` 只在行首触发** —— 否则 `~/work/a.md` 里的斜杠会弹菜单', () => {
     expect(detectTrigger('/ppt', 4)?.kind).toBe('/');
     expect(detectTrigger('读一下\n/表格', 7)?.kind).toBe('/');
@@ -80,7 +84,46 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     expect(onChange).toHaveBeenLastCalledWith('@Q3.xlsx ');
   });
 
-  it('**本地指令与技能在菜单里可区分**，且本地指令不进输入框', () => {
+  it('从 `@` 统一发现中选技能时改写为 `$技能`，并保留结构化引用', () => {
+    const onChange = vi.fn();
+    const onInsertReference = vi.fn();
+    renderComposer({
+      onChange,
+      onInsertReference,
+      mentionCandidates: [
+        {
+          id: 's1',
+          label: '演示文稿',
+          name: 'presentations',
+          category: 'skill',
+          insertAs: 'skill',
+        },
+      ],
+    });
+    type('@演示');
+    fireEvent.click(screen.getByRole('menuitem', { name: /演示文稿/ }));
+    expect(onChange).toHaveBeenLastCalledWith('$演示文稿 ');
+    expect(onInsertReference).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'presentations' }),
+    );
+  });
+
+  it('`$` 菜单只出现技能，选择后插入 `$技能`', () => {
+    const onChange = vi.fn();
+    renderComposer({
+      onChange,
+      mentionCandidates: [
+        { id: 'f1', label: 'presentations.md', category: 'file', insertAs: 'mention' },
+        { id: 's1', label: 'presentations', category: 'skill', insertAs: 'skill' },
+      ],
+    });
+    type('$pres');
+    expect(screen.queryByRole('menuitem', { name: /presentations\.md/ })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: /^presentations/ }));
+    expect(onChange).toHaveBeenLastCalledWith('$presentations ');
+  });
+
+  it('`/` 只展示本地指令，且不进输入框', () => {
     const onRunLocalCommand = vi.fn();
     const onChange = vi.fn();
     renderComposer({
@@ -284,6 +327,7 @@ describe('添加内容菜单', () => {
         plugins: [
           {
             id: 'charts',
+            kind: 'skill',
             displayName: '图表',
             description: '生成图表（svg / png）。当需要把数据画出来时使用。',
             category: '办公',
@@ -303,7 +347,7 @@ describe('添加内容菜单', () => {
     expect(dialog.textContent).toContain('生成图表（svg / png）。当需要把数据画出来时使用。');
 
     fireEvent.click(screen.getByRole('menuitem', { name: /图表/ }));
-    expect(onUsePlugin).toHaveBeenCalledWith('用图表');
+    expect(onUsePlugin).toHaveBeenCalledWith(expect.objectContaining({ id: 'charts' }), '用图表');
     expect(onSend).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: '使用插件' })).toBeNull();
   });
@@ -316,6 +360,7 @@ describe('添加内容菜单', () => {
       plugins: [
         {
           id: 'charts',
+          kind: 'skill',
           displayName: '图表',
           description: '生成图表',
           category: '办公',

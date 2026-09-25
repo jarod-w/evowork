@@ -133,6 +133,94 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
   };
 }
 
+describe('Composer 技能上下文', () => {
+  it('以内核技能清单为真源，保留内部名与精确 SKILL.md 路径', async () => {
+    const adapter = fakeAdapter({
+      listSkills: vi.fn(async () => ({
+        data: [
+          {
+            cwd: '/w',
+            skills: [
+              {
+                name: 'presentations',
+                description: '制作演示文稿',
+                path: '/opt/evowork/skills/presentations/SKILL.md',
+                scope: 'system' as const,
+                enabled: true,
+                interface: { displayName: '演示文稿' },
+              },
+              {
+                name: 'disabled-skill',
+                description: '禁用技能',
+                path: '/skills/disabled/SKILL.md',
+                scope: 'user' as const,
+                enabled: false,
+              },
+            ],
+            errors: [{ path: '/skills/broken/SKILL.md', message: 'frontmatter 无效' }],
+          },
+        ],
+      })),
+    });
+    const actions = makeActions({ adapter });
+
+    const context = await actions.getComposerContext({});
+
+    expect(context.mentions).toEqual([
+      expect.objectContaining({
+        label: '演示文稿',
+        name: 'presentations',
+        path: '/opt/evowork/skills/presentations/SKILL.md',
+        scope: 'system',
+      }),
+    ]);
+    expect(context.skillErrors).toEqual([
+      { path: '/skills/broken/SKILL.md', message: 'frontmatter 无效' },
+    ]);
+    expect(context.commands.every((command) => command.kind === 'local')).toBe(true);
+  });
+
+  it('文件候选按输入异步走内核模糊搜索，不预扫 500 个目录', async () => {
+    const adapter = fakeAdapter({
+      listSkills: vi.fn(async () => ({ data: [{ cwd: '/w/project', skills: [], errors: [] }] })),
+      searchFiles: vi.fn(async () => ({
+        files: [
+          {
+            root: '/w/project',
+            path: 'docs/roadmap.md',
+            match_type: 'file' as const,
+            file_name: 'roadmap.md',
+            score: 99,
+            indices: [5],
+          },
+        ],
+      })),
+    });
+    const projectPorts = ports({
+      rootExists: (path) => path === '/w/project',
+      realpath: async (path) => path,
+      readDir: vi.fn(async () => {
+        throw new Error('不应递归扫描');
+      }),
+    });
+    const actions = makeActions({ adapter, projectPorts });
+    const created = await actions.createProject({ name: '项目', path: '/w/project' });
+    const id = created.projects[0]!.id;
+
+    await expect(actions.getComposerContext({ workspaceId: id })).resolves.toBeTruthy();
+    const candidates = await actions.searchComposerMentions({ workspaceId: id, query: 'road' });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        label: 'docs/roadmap.md',
+        path: '/w/project/docs/roadmap.md',
+      }),
+    ]);
+    expect(adapter.searchFiles).toHaveBeenCalledWith('road', ['/w/project'], 'composer:/w/project');
+    expect(projectPorts.readDir).not.toHaveBeenCalled();
+  });
+});
+
 describe('任务产物结果', () => {
   it('排除旧版全盘扫描污染，并按规范化绝对路径只保留一份', async () => {
     const base = {
@@ -643,11 +731,18 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       () => 0,
     );
     const noop: UiEvent[] = [
-      { type: 'skills-changed' },
       { type: 'rate-limits-updated' },
       { type: 'queue-changed', threadId: 't1' },
     ];
     for (const event of noop) expect(translate(event)).toEqual([]);
+  });
+
+  it('skills-changed 触发 Composer 重读技能清单', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(translate({ type: 'skills-changed' })).toEqual([{ type: 'skills-changed' }]);
   });
 
   /*

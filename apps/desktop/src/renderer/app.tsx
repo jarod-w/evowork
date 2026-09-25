@@ -74,7 +74,12 @@ import {
   type ModeId,
   type SelectOption,
 } from './components/composer.js';
-import type { Attachment, MentionCandidate, SlashCommand } from './components/composer.js';
+import type {
+  Attachment,
+  ComposerPlugin,
+  MentionCandidate,
+  SlashCommand,
+} from './components/composer.js';
 import { Banner, EmptyState, IconButton } from './components/primitives.js';
 import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
@@ -153,8 +158,13 @@ export interface EvoworkBridge {
   }): Promise<{ threadId: string; task?: TaskRowView }>;
   archiveTask?(input: { threadId: string }): Promise<void>;
   deleteTask?(input: { threadId: string }): Promise<void>;
-  listQueuedInputs?(input: { threadId: string }): Promise<readonly { id: string; text: string }[]>;
-  updateQueuedInput?(input: { threadId: string; id: string; text: string }): Promise<boolean>;
+  listQueuedInputs?(input: { threadId: string }): Promise<readonly QueuedInputView[]>;
+  updateQueuedInput?(input: {
+    threadId: string;
+    id: string;
+    text: string;
+    references?: readonly ComposerReferenceView[];
+  }): Promise<boolean>;
   reorderQueuedInputs?(input: { threadId: string; ids: readonly string[] }): Promise<boolean>;
   removeQueuedInput?(input: { threadId: string; id: string }): Promise<boolean>;
   getTaskGoal?(input: { threadId: string }): Promise<TaskGoalView | undefined>;
@@ -171,6 +181,10 @@ export interface EvoworkBridge {
   readTaskFilePreview?(input: TaskFilePreviewInput): Promise<FilePreviewView>;
   readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
   getComposerContext?(input: { workspaceId?: string }): Promise<ComposerContextView>;
+  searchComposerMentions?(input: {
+    workspaceId?: string;
+    query: string;
+  }): Promise<ComposerContextView['mentions']>;
   pickAttachments?(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]>;
   ingestAttachments?(input: {
     workspaceId?: string;
@@ -260,6 +274,16 @@ export interface EvoworkBridge {
     confirmName?: string | undefined;
   }): Promise<CatalogMutationResult>;
   uninstallSkill(input: { id: string }): Promise<CatalogMutationResult>;
+  setSkillEnabled(input: {
+    path: string;
+    name: string;
+    enabled: boolean;
+  }): Promise<CatalogMutationResult>;
+  installPluginBundle(input: {
+    marketplacePath: string;
+    pluginName: string;
+  }): Promise<CatalogMutationResult>;
+  uninstallPluginBundle(input: { pluginId: string }): Promise<CatalogMutationResult>;
   addConnector(input: {
     name: string;
     transport: 'stdio' | 'sse' | 'http';
@@ -549,6 +573,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    */
   const beginNewTask = useCallback(() => {
     setActiveTaskId(null);
+    setDraft('');
+    setReferences([]);
+    setAttachments([]);
     setModelOverridden(false);
     setNotices((previous) => previous.filter((notice) => notice.scope !== 'task'));
     setFocusItemId(undefined);
@@ -692,6 +719,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }
           return;
         }
+        if (event.type === 'skills-changed') {
+          if (bridge.getComposerContext) {
+            void bridge
+              .getComposerContext({ ...(workspaceId ? { workspaceId } : {}) })
+              .then((context) => {
+                setComposerContext(context);
+                const skillErrors = context.skillErrors;
+                if (skillErrors?.length) {
+                  setNotices((previous) => [
+                    ...previous,
+                    {
+                      tone: 'warning',
+                      text: `有 ${skillErrors.length} 个技能无法加载：${skillErrors[0]?.message ?? '格式无效'}`,
+                    },
+                  ]);
+                }
+              })
+              .catch((error: unknown) => reportFailure(error, '没能刷新技能列表。'));
+          }
+          return;
+        }
         setItemsByTask((prev) => ({
           ...prev,
           // 流式增量按 id 合并（04 §5.1）：同 id 的后来者覆盖前者
@@ -711,7 +759,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     return () => offs.forEach((off) => off());
     // `view` 进依赖：`onUiEvent` 的 handler 闭包里读它判断 projects-changed 要不要重拉，
     // 不进依赖的话闭包会永远拿着订阅那一刻的旧 view，切页后事件处理逻辑就是过期的
-  }, [bridge, view]);
+  }, [bridge, reportFailure, view, workspaceId]);
 
   useEffect(() => {
     void bridge
@@ -1680,6 +1728,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .join('\n\n');
     setDraft((previous) => (previous.trim() ? `${previous}\n\n${block}` : block));
   }, []);
+  const changeDraft = useCallback(
+    (next: string) => {
+      setDraft(next);
+      setReferences((previous) =>
+        reconcileComposerReferences(next, previous, composerContext.mentions),
+      );
+    },
+    [composerContext.mentions],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -1741,12 +1798,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           ),
         ),
       mentionCandidates: composerContext.mentions as readonly MentionCandidate[],
+      onSearchMentions: bridge.searchComposerMentions
+        ? (query: string) =>
+            bridge.searchComposerMentions!({
+              query,
+              ...(workspaceId ? { workspaceId } : {}),
+            }) as Promise<readonly MentionCandidate[]>
+        : undefined,
       slashCommands: composerContext.commands as readonly SlashCommand[],
       onInsertReference: (candidate: MentionCandidate) => {
         if (!candidate.path) return;
         const reference: ComposerReferenceView =
           candidate.insertAs === 'skill'
-            ? { type: 'skill', name: candidate.label, path: candidate.path }
+            ? { type: 'skill', name: candidate.name ?? candidate.label, path: candidate.path }
             : { type: 'mention', name: candidate.label, path: candidate.path };
         setReferences((previous) => [
           ...previous.filter(
@@ -1762,11 +1826,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         if (candidate)
           setReferences((previous) => [
             ...previous,
-            { type: 'skill', name: candidate.label, path: candidate.path },
+            { type: 'skill', name: candidate.name ?? candidate.label, path: candidate.path },
           ]);
       },
       onRunLocalCommand: (id: string) => {
-        if (id === 'clear') setDraft('');
+        if (id === 'clear') {
+          setDraft('');
+          setReferences([]);
+        }
         if (id === 'new-task') beginNewTask();
       },
       queued: activeTaskId ? (queuedByTask[activeTaskId] ?? []) : [],
@@ -1787,8 +1854,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         ? (id: string, text: string) => {
             if (!activeTaskId) return;
             const threadId = activeTaskId;
+            const queuedReferences = (queuedByTask[threadId] ?? []).find(
+              (item) => item.id === id,
+            )?.references;
             void bridge
-              .updateQueuedInput?.({ threadId, id, text })
+              .updateQueuedInput?.({
+                threadId,
+                id,
+                text,
+                ...(queuedReferences ? { references: queuedReferences } : {}),
+              })
               .then((updated) => {
                 if (updated)
                   setQueuedByTask((previous) => ({
@@ -1848,7 +1923,37 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       },
       onOpenLibrary: () => setView('library'),
       plugins: catalog?.apps,
-      onUsePlugin: prepareTaskWithText,
+      onUsePlugin: (plugin: ComposerPlugin, prompt: string) => {
+        if (plugin.kind === 'skill') {
+          const internalName = plugin.id.replace(/^skill:/, '');
+          const candidate = composerContext.mentions.find(
+            (mention) => mention.category === 'skill' && mention.name === internalName,
+          );
+          if (!candidate) {
+            pushToast({
+              tone: 'danger',
+              text: `技能「${plugin.displayName}」尚未被内核加载，请检查技能格式。`,
+            });
+            return;
+          }
+          beginNewTask();
+          setDraft(`$${candidate.label} ${prompt}`.trim());
+          setReferences([
+            {
+              type: 'skill',
+              name: candidate.name ?? internalName,
+              path: candidate.path,
+            },
+          ]);
+          return;
+        }
+        const connectorId = plugin.id.replace(/^connector:/, '');
+        beginNewTask();
+        setDraft(`@${plugin.displayName} ${prompt}`.trim());
+        setReferences([
+          { type: 'mention', name: plugin.displayName, path: `mcp://${connectorId}` },
+        ]);
+      },
       onOpenPlugins: () => {
         void bridge
           .getCatalog()
@@ -2364,13 +2469,33 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {...(catalogRefusal !== undefined ? { catalogRefusal } : {})}
           onInstallSkill={async (input) => runCatalogMutation(() => bridge.installSkill(input))}
           onUninstallSkill={async (id) => runCatalogMutation(() => bridge.uninstallSkill({ id }))}
+          onSetSkillEnabled={async (input) =>
+            runCatalogMutation(() => bridge.setSkillEnabled(input))
+          }
+          onInstallBundle={async (input) =>
+            runCatalogMutation(() => bridge.installPluginBundle(input))
+          }
+          onUninstallBundle={async (pluginId) =>
+            runCatalogMutation(() => bridge.uninstallPluginBundle({ pluginId }))
+          }
           onAddConnector={async (input) => runCatalogMutation(() => bridge.addConnector(input))}
           onTrustConnector={async (id) => runCatalogMutation(() => bridge.trustConnector({ id }))}
           onRemoveConnector={async (id) => runCatalogMutation(() => bridge.removeConnector({ id }))}
           onCreateExpert={async (input) => runCatalogMutation(() => bridge.createExpert(input))}
           onRemoveExpert={async (id) => runCatalogMutation(() => bridge.removeExpert({ id }))}
           onUsePrompt={prepareTaskWithText}
-          onWriteSkill={() => prepareTaskWithText(SKILL_CREATOR_PROMPT)}
+          onWriteSkill={() => {
+            const creator = composerContext.mentions.find(
+              (mention) => mention.category === 'skill' && mention.name === 'skill-creator',
+            );
+            if (!creator) {
+              pushToast({ tone: 'danger', text: '技能创作器尚未被内核加载，请查看技能错误。' });
+              return;
+            }
+            beginNewTask();
+            setDraft(`$${creator.label} ${SKILL_CREATOR_PROMPT}`);
+            setReferences([{ type: 'skill', name: 'skill-creator', path: creator.path }]);
+          }}
         />
       ) : activeTaskId === null ? (
         <Home
@@ -2382,7 +2507,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           notices={notices}
           composer={composer}
           value={draft}
-          onChange={setDraft}
+          onChange={changeDraft}
           {...(modelAccess?.policyPack?.disableSlots
             ? {
                 slots: {
@@ -2624,7 +2749,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             : {})}
           historyLoading={historyLoading}
           onNewTask={beginNewTask}
-          composer={<Composer {...composer} value={draft} onChange={setDraft} />}
+          composer={<Composer {...composer} value={draft} onChange={changeDraft} />}
         />
       )}
       {searchOpen ? (
@@ -2749,6 +2874,9 @@ function MainPage(props: {
   readonly catalogRefusal?: string | undefined;
   readonly onInstallSkill: CatalogPageProps['onInstallSkill'];
   readonly onUninstallSkill: CatalogPageProps['onUninstallSkill'];
+  readonly onSetSkillEnabled: CatalogPageProps['onSetSkillEnabled'];
+  readonly onInstallBundle: CatalogPageProps['onInstallBundle'];
+  readonly onUninstallBundle: CatalogPageProps['onUninstallBundle'];
   readonly onAddConnector: CatalogPageProps['onAddConnector'];
   readonly onTrustConnector: CatalogPageProps['onTrustConnector'];
   readonly onRemoveConnector: CatalogPageProps['onRemoveConnector'];
@@ -2882,6 +3010,9 @@ function MainPage(props: {
           {...(props.catalogRefusal !== undefined ? { refusal: props.catalogRefusal } : {})}
           onInstallSkill={props.onInstallSkill}
           onUninstallSkill={props.onUninstallSkill}
+          onSetSkillEnabled={props.onSetSkillEnabled}
+          onInstallBundle={props.onInstallBundle}
+          onUninstallBundle={props.onUninstallBundle}
           onAddConnector={props.onAddConnector}
           onTrustConnector={props.onTrustConnector}
           onRemoveConnector={props.onRemoveConnector}
@@ -2971,6 +3102,35 @@ export function lastUserMessageRequest(
 /** 兼容只需要摘要文本的调用点；真正的重试走 `lastUserMessageRequest`。 */
 export function lastUserMessageText(items: readonly RenderItem[]): string | undefined {
   return lastUserMessageRequest(items)?.text || undefined;
+}
+
+/**
+ * 文本里的可见 token 是结构化引用的删除手柄：用户删掉 `@文件` / `$技能` 后，
+ * 对应引用也必须消失，不能继续在后台悄悄发送。
+ */
+export function reconcileComposerReferences(
+  value: string,
+  references: readonly ComposerReferenceView[],
+  candidates: ComposerContextView['mentions'],
+): readonly ComposerReferenceView[] {
+  return references.filter((reference) => {
+    if (reference.type !== 'mention' && reference.type !== 'skill') return true;
+    const candidate = candidates.find((item) => item.path === reference.path);
+    const labels = new Set([reference.name, candidate?.label].filter(Boolean) as string[]);
+    const prefix = reference.type === 'skill' ? '$' : '@';
+    return [...labels].some((label) => hasVisibleReferenceToken(value, prefix, label));
+  });
+}
+
+function hasVisibleReferenceToken(value: string, prefix: '@' | '$', label: string): boolean {
+  const token = `${prefix}${label}`;
+  let offset = value.indexOf(token);
+  while (offset >= 0) {
+    const next = value[offset + token.length];
+    if (next === undefined || /\s|[.,!?;:，。！？；：、）)\]}]/u.test(next)) return true;
+    offset = value.indexOf(token, offset + token.length);
+  }
+  return false;
 }
 
 /**
