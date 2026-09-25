@@ -159,11 +159,13 @@ function MemorySection(props: SettingsPageProps) {
   };
   const status = !memory.enabled
     ? '本地记忆已关闭。'
-    : !memory.statusSupported
-      ? '当前内核不提供记忆准备进度；设置仍然有效。'
-      : memory.ready
-        ? `记忆已就绪，已整理 ${memory.consolidatedThreads} 个任务。`
-        : `正在学习，已整理 ${memory.consolidatedThreads} 个任务。`;
+    : memory.version === 'v1'
+      ? '当前记忆管线（V1）不提供整理进度；使用与生成设置仍然有效。'
+      : !memory.statusSupported
+        ? '当前内核不提供记忆准备进度；设置仍然有效。'
+        : memory.ready
+          ? `记忆已就绪，已整理 ${memory.consolidatedThreads} 个任务。`
+          : `正在学习，已整理 ${memory.consolidatedThreads} 个任务。`;
 
   return (
     <section className="ew-settings-section">

@@ -230,6 +230,8 @@ exporter = "none"
     const initialMemory = await evaluate('window.evowork.getMemorySettings()');
     if (
       !initialMemory.enabled ||
+      initialMemory.version !== 'v1' ||
+      initialMemory.statusSupported ||
       !initialMemory.useMemories ||
       !initialMemory.generateMemories ||
       !initialMemory.disableOnExternalContext

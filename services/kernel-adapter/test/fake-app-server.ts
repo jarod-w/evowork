@@ -44,8 +44,15 @@ export class FakeAppServer {
   readonly received: { method: string; params: Record<string, unknown> }[] = [];
   readonly threadMemoryModes = new Map<string, string>();
   memoryResetCount = 0;
-  memoryConfig = {
+  memoryConfig: {
+    enabled: boolean;
+    version?: 'v1' | 'v2';
+    useMemories: boolean;
+    generateMemories: boolean;
+    disableOnExternalContext: boolean;
+  } = {
     enabled: true,
+    version: 'v2',
     useMemories: true,
     generateMemories: true,
     disableOnExternalContext: true,
@@ -109,6 +116,7 @@ export class FakeAppServer {
       config: {
         features: { memories: this.memoryConfig.enabled },
         memories: {
+          version: this.memoryConfig.version,
           use_memories: this.memoryConfig.useMemories,
           generate_memories: this.memoryConfig.generateMemories,
           disable_on_external_context: this.memoryConfig.disableOnExternalContext,

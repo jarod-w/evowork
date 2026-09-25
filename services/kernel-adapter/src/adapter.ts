@@ -140,6 +140,7 @@ export interface QueuedInput {
 /** 设置页消费的记忆状态。内容本身仍由内核管理，不越过 K2 读取生成文件。 */
 export interface MemorySettings {
   readonly enabled: boolean;
+  readonly version: 'v1' | 'v2';
   readonly useMemories: boolean;
   readonly generateMemories: boolean;
   readonly disableOnExternalContext: boolean;
@@ -375,19 +376,23 @@ export function createAdapter(options: AdapterOptions) {
     const features = record(config.features);
     const memories = record(config.memories);
     const enabled = features.memories === true;
-    const status = enabled
-      ? await callExperimental<{
-          readonly v2ConsolidatedThreads: number;
-          readonly v2Ready: boolean;
-          readonly supported?: boolean;
-        }>(EXPERIMENTAL_METHOD.memoryStatus, {}, () => ({
-          v2ConsolidatedThreads: 0,
-          v2Ready: false,
-          supported: false,
-        }))
-      : { v2ConsolidatedThreads: 0, v2Ready: false, supported: true };
+    // 上游缺省仍是 V1；`memory/status` 只统计 V2，不能把它当成通用准备状态。
+    const version = memories.version === 'v2' ? 'v2' : 'v1';
+    const status =
+      enabled && version === 'v2'
+        ? await callExperimental<{
+            readonly v2ConsolidatedThreads: number;
+            readonly v2Ready: boolean;
+            readonly supported?: boolean;
+          }>(EXPERIMENTAL_METHOD.memoryStatus, {}, () => ({
+            v2ConsolidatedThreads: 0,
+            v2Ready: false,
+            supported: false,
+          }))
+        : { v2ConsolidatedThreads: 0, v2Ready: false, supported: version === 'v2' };
     return {
       enabled,
+      version,
       useMemories: memories.use_memories !== false,
       generateMemories: memories.generate_memories !== false,
       disableOnExternalContext: memories.disable_on_external_context === true,

@@ -63,6 +63,7 @@ const ACCESS: ModelAccessView = {
 
 const MEMORY: MemorySettingsView = {
   enabled: true,
+  version: 'v2',
   useMemories: true,
   generateMemories: true,
   disableOnExternalContext: true,
@@ -107,6 +108,15 @@ describe('个性化记忆', () => {
       (screen.getByRole('checkbox', { name: '启用本地记忆' }) as HTMLInputElement).checked,
     ).toBe(true);
     expect(screen.getByText('记忆已就绪，已整理 4 个任务。')).toBeTruthy();
+  });
+
+  it('V1 明确说明没有整理进度，不伪装成永远在学习', () => {
+    page({
+      section: 'personalization',
+      memory: { ...MEMORY, version: 'v1', statusSupported: false, ready: false },
+    });
+    expect(screen.getByText(/记忆管线（V1）不提供整理进度/)).toBeTruthy();
+    expect(screen.queryByText(/正在学习/)).toBeNull();
   });
 
   it('使用与生成分开保存，关闭总开关后从属项不可编辑', () => {

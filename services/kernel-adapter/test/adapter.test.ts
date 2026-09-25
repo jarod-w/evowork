@@ -297,6 +297,7 @@ describe('本地记忆（当前 Codex 基线）', () => {
 
     await expect(adapter.getMemorySettings()).resolves.toEqual({
       enabled: true,
+      version: 'v2',
       useMemories: true,
       generateMemories: true,
       disableOnExternalContext: true,
@@ -311,6 +312,20 @@ describe('本地记忆（当前 Codex 基线）', () => {
       cwd: null,
     });
     expect(server.received.some((r) => r.method === 'memory/status')).toBe(true);
+  });
+
+  it('V1 不请求只统计 V2 的 memory/status', async () => {
+    server.memoryConfig.version = 'v1';
+    await adapter.start();
+
+    await expect(adapter.getMemorySettings()).resolves.toMatchObject({
+      enabled: true,
+      version: 'v1',
+      statusSupported: false,
+      consolidatedThreads: 0,
+      ready: false,
+    });
+    expect(server.received.some((r) => r.method === 'memory/status')).toBe(false);
   });
 
   it('全局设置热重载，并把生成开关应用到当前任务', async () => {

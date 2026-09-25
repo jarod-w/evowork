@@ -611,12 +611,12 @@ EvoWork 只在“默认开启”上按本产品决策偏离上游的默认关闭
 | 使用已有记忆 | `memories.use_memories`，只影响后续新任务是否注入已提取上下文 |
 | 生成新记忆 | `memories.generate_memories`；当前任务可用 `thread/memoryMode/set` 单独覆盖 |
 | 外部上下文保护 | `memories.disable_on_external_context = true`；网页、MCP/连接器等外部上下文默认不进入提取 |
-| 准备状态与清空 | `memory/status` 只提供整理进度；`memory/reset` 清空全部本机记忆 |
+| 准备状态与清空 | `memory/status` 只提供 V2 整理进度；V1 不请求/轮询该方法；`memory/reset` 清空全部本机记忆 |
 | 项目长期指令 | `AGENTS.md` 层级加载；它是项目指导文件，不是自动学习记忆 |
 | 历史检索 | `thread/searchOccurrences`，与记忆注入是不同能力 |
 
 当前 app-server **没有**记忆正文的 list/read/write/edit/delete 协议。因此产品入口在
-「设置 → 个性化」：总开关、使用、生成、准备状态、清空全部；任务输入区提供“贡献记忆 / 不贡献记忆”。
+「设置 → 个性化」：总开关、使用、生成、清空全部；V2 额外显示准备状态，V1 明确说明当前协议不提供进度。任务输入区提供“贡献记忆 / 不贡献记忆”。
 不实现「长期记忆」条目列表、逐条编辑/删除、对话内「已记住 + 撤销」等无法由协议兑现的界面。
 生成文件是内核内部状态，EvoWork 不直接读取。ChatGPT Web 的云端记忆与本机 Codex 记忆分离，
 本期不提供同步开关或 `MemoryBackend` 远端实现。

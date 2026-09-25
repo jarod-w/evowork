@@ -890,6 +890,8 @@ export interface PreferencesInput {
 /** 本地 Codex 记忆的有效设置与后台准备状态。记忆正文不穿过 IPC。 */
 export interface MemorySettingsView {
   readonly enabled: boolean;
+  /** 当前内核实际选择的记忆管线；`memory/status` 目前只描述 V2。 */
+  readonly version: 'v1' | 'v2';
   readonly useMemories: boolean;
   readonly generateMemories: boolean;
   readonly disableOnExternalContext: boolean;
