@@ -887,6 +887,36 @@ export interface PreferencesInput {
   readonly concurrencyLimit?: number | undefined;
 }
 
+/** 本地 Codex 记忆的有效设置与后台准备状态。记忆正文不穿过 IPC。 */
+export interface MemorySettingsView {
+  readonly enabled: boolean;
+  readonly useMemories: boolean;
+  readonly generateMemories: boolean;
+  readonly disableOnExternalContext: boolean;
+  readonly statusSupported: boolean;
+  readonly consolidatedThreads: number;
+  readonly ready: boolean;
+}
+
+export interface MemorySettingsInput {
+  readonly enabled: boolean;
+  readonly useMemories: boolean;
+  readonly generateMemories: boolean;
+  /** 有当前任务时同步更新它是否贡献记忆；使用既有记忆只对后续新任务生效。 */
+  readonly currentThreadId?: string | undefined;
+}
+
+export interface MemoryMutationResult {
+  readonly ok: boolean;
+  readonly refused?: string | undefined;
+  readonly view: MemorySettingsView;
+}
+
+export interface SetTaskMemoryModeInput {
+  readonly threadId: string;
+  readonly enabled: boolean;
+}
+
 /* ─────────────────────────── 项目（02 §4.3）─────────────────────────── */
 
 /**

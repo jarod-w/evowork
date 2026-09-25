@@ -54,6 +54,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'openComputerUseSettings',
   'send',
   'setTaskMode',
+  'setTaskMemoryMode',
   'interrupt',
   'revertTask',
   'decideApproval',
@@ -180,6 +181,9 @@ export const RENDERER_ACTIONS = Object.freeze([
   /** 单任务预算与并发上限（Q11 的阶段 1；托管额度随账号叠在视图上） */
   'getPreferences',
   'setPreferences',
+  'getMemorySettings',
+  'setMemorySettings',
+  'resetMemories',
   /*
    * 技能 · 连接器（05）。与 `getLibrary` 同一条理由：读的是本机磁盘，
    * 只在用户点进那一页（或打开「发现应用」）时才需要，**不并进 getStartup**。

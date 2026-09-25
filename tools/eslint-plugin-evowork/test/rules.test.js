@@ -15,9 +15,9 @@ describe('no-kernel-internals（K2 边界纪律）', () => {
       valid: [
         // 正路：说协议
         { code: `await rpc.request('thread/list', { limit: 30 });` },
-        // 记忆的三个协议方法名里含 "memories"/"memory"，它们是**正路**，不能被规则打掉
-        { code: `await rpc.request('memories/read', {});` },
-        { code: `await rpc.request('memories/write', { entry });` },
+        // 当前记忆协议是**正路**，不能被规则打掉
+        { code: `await rpc.request('memory/status', {});` },
+        { code: `await rpc.request('thread/memoryMode/set', { threadId, mode: 'disabled' });` },
         { code: `await rpc.request('memory/reset', {});` },
         // 变量名/注释里提到这些概念不算破线（规则只看字符串与成员访问）
         { code: `const rolloutTraceEnabled = true;` },

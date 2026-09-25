@@ -60,4 +60,4 @@ const marker = stdout.split(/\r?\n/).findLast((line) => line.startsWith('__EVOWO
 if (!marker) throw new Error('桌面 E2E 没有返回验收结果。');
 const result = JSON.parse(marker.slice('__EVOWORK_DESKTOP_E2E__'.length));
 if (result.ok !== true) throw new Error(`桌面 E2E 未通过：${JSON.stringify(result)}`);
-console.log('✅ 真实 app-server + Electron 技能引用 E2E 通过');
+console.log('✅ 真实 app-server + Electron 技能引用 / 记忆控制 E2E 通过');

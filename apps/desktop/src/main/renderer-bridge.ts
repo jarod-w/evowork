@@ -90,6 +90,9 @@ import type {
   ModelAccessMutationResult,
   ModelCatalogResult,
   ModelProbeResult,
+  MemoryMutationResult,
+  MemorySettingsInput,
+  MemorySettingsView,
   AccountActionResult,
   DeviceView,
   OpenTaskInput,
@@ -110,6 +113,7 @@ import type {
   RuntimeStatusView,
   SendInput,
   SetTaskModeInput,
+  SetTaskMemoryModeInput,
   StartupInfo,
   TaskSearchHitView,
   TaskSearchOccurrenceView,
@@ -1454,6 +1458,36 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return Promise.resolve(
         options.preferencePorts?.write(input) ?? { concurrencyComputed: 1, concurrencyLimit: 1 },
       );
+    },
+
+    getMemorySettings(): Promise<MemorySettingsView> {
+      return adapter.getMemorySettings();
+    },
+
+    async setMemorySettings(input: MemorySettingsInput): Promise<MemoryMutationResult> {
+      try {
+        const view = await adapter.updateMemorySettings(input);
+        return { ok: true, view };
+      } catch (error: unknown) {
+        options.logger?.warn('desktop.memories.settings_failed', {
+          errorClass: error instanceof Error ? error.name : 'UnknownError',
+        });
+        const view = await adapter.getMemorySettings();
+        return { ok: false, refused: '没能保存记忆设置，稍后再试。', view };
+      }
+    },
+
+    async setTaskMemoryMode(input: SetTaskMemoryModeInput): Promise<{ readonly ok: boolean }> {
+      if (!input.threadId.trim()) return { ok: false };
+      return { ok: await adapter.setThreadMemoryMode(input.threadId, input.enabled) };
+    },
+
+    async resetMemories(): Promise<MemoryMutationResult> {
+      const reset = await adapter.resetMemories();
+      const view = await adapter.getMemorySettings();
+      return reset
+        ? { ok: true, view }
+        : { ok: false, refused: '当前内核不支持清空本地记忆。', view };
     },
 
     startLogin(): Promise<AccountActionResult> {

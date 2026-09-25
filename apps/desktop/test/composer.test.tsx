@@ -267,6 +267,20 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(screen.queryByRole('menuitem', { name: /^Ask$/ })).toBeNull();
     expect(screen.queryByText('任何文件')).toBeNull();
   });
+
+  it('已有任务可单独关闭贡献记忆；新任务不显示一个尚无目标 thread 的开关', () => {
+    const onMemoryEnabledChange = vi.fn();
+    const { unmount } = renderComposer({ memoryEnabled: true, onMemoryEnabledChange });
+    const memory = screen.getByRole('button', { name: '任务记忆' });
+    expect(memory.textContent).toContain('贡献记忆');
+    fireEvent.click(memory);
+    fireEvent.click(screen.getByRole('menuitem', { name: /^不贡献记忆/ }));
+    expect(onMemoryEnabledChange).toHaveBeenCalledWith(false);
+
+    unmount();
+    renderComposer();
+    expect(screen.queryByRole('button', { name: '任务记忆' })).toBeNull();
+  });
 });
 
 describe('审批三档（Q45 / 10 §2.4）', () => {

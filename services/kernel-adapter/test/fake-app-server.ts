@@ -42,6 +42,14 @@ export class FakeAppServer {
 
   /** 收到的请求（method 序列），用于断言握手顺序等 */
   readonly received: { method: string; params: Record<string, unknown> }[] = [];
+  readonly threadMemoryModes = new Map<string, string>();
+  memoryResetCount = 0;
+  memoryConfig = {
+    enabled: true,
+    useMemories: true,
+    generateMemories: true,
+    disableOnExternalContext: true,
+  };
   /** 方法处理器。未注册的方法回 -32601（正好用来测降级） */
   readonly handlers = new Map<string, FakeHandler>();
   /** 启动次数，用于断言退避重启 */
@@ -97,6 +105,47 @@ export class FakeAppServer {
       authorizationUrl: 'https://auth.example/authorize',
     }));
     this.handlers.set('config/mcpServer/reload', () => ({}));
+    this.handlers.set('config/read', () => ({
+      config: {
+        features: { memories: this.memoryConfig.enabled },
+        memories: {
+          use_memories: this.memoryConfig.useMemories,
+          generate_memories: this.memoryConfig.generateMemories,
+          disable_on_external_context: this.memoryConfig.disableOnExternalContext,
+        },
+      },
+      origins: {},
+    }));
+    this.handlers.set('config/batchWrite', (ctx) => {
+      for (const raw of (ctx.params.edits as readonly Record<string, unknown>[] | undefined) ??
+        []) {
+        const key = raw.keyPath;
+        if (key === 'features.memories') this.memoryConfig.enabled = Boolean(raw.value);
+        if (key === 'memories.use_memories') this.memoryConfig.useMemories = Boolean(raw.value);
+        if (key === 'memories.generate_memories')
+          this.memoryConfig.generateMemories = Boolean(raw.value);
+        if (key === 'memories.disable_on_external_context')
+          this.memoryConfig.disableOnExternalContext = Boolean(raw.value);
+      }
+      return {
+        status: 'ok',
+        version: 'fake-v1',
+        filePath: '/fake/config.toml',
+        overriddenMetadata: null,
+      };
+    });
+    this.handlers.set('memory/status', () => ({
+      v2ConsolidatedThreads: 4,
+      v2Ready: true,
+    }));
+    this.handlers.set('memory/reset', () => {
+      this.memoryResetCount += 1;
+      return {};
+    });
+    this.handlers.set('thread/memoryMode/set', (ctx) => {
+      this.threadMemoryModes.set(String(ctx.params.threadId), String(ctx.params.mode));
+      return {};
+    });
     this.handlers.set('project/list', () => ({ data: [] }));
     this.handlers.set('thread/start', (ctx) => {
       const threadId = `thread_${this.received.length}`;

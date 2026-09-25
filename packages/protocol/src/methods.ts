@@ -67,16 +67,14 @@ export const METHOD = {
   mcpServerStatusList: 'mcpServerStatus/list',
   mcpServerOauthLogin: 'mcpServer/oauth/login',
   mcpServerReload: 'config/mcpServer/reload',
+  configRead: 'config/read',
+  configBatchWrite: 'config/batchWrite',
 
   // 文件系统（工作空间文件视图，04 §6.2）
   fsReadDirectory: 'fs/readDirectory',
   fsReadFile: 'fs/readFile',
   fsWatch: 'fs/watch',
   fsUnwatch: 'fs/unwatch',
-
-  // 记忆（09 §2：只走协议，不读文件）
-  memoriesRead: 'memories/read',
-  memoriesWrite: 'memories/write',
 
   // 审批与守护
   threadApproveGuardianDeniedAction: 'thread/approveGuardianDeniedAction',
@@ -107,6 +105,7 @@ export const EXPERIMENTAL_METHOD = {
   threadTimelineList: 'thread/timeline/list',
 
   threadMemoryModeSet: 'thread/memoryMode/set',
+  memoryStatus: 'memory/status',
   memoryReset: 'memory/reset',
 
   threadRealtimeStart: 'thread/realtime/start',

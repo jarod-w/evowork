@@ -12,7 +12,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SecretInput } from '../src/renderer/components/primitives.js';
 import { SettingsPage, type SettingsPageProps } from '../src/renderer/views/settings.js';
-import type { CustomModelView, ModelAccessView, ModelOptionView } from '../src/shared/ipc.js';
+import type {
+  CustomModelView,
+  MemorySettingsView,
+  ModelAccessView,
+  ModelOptionView,
+} from '../src/shared/ipc.js';
 
 function model(over: Partial<ModelOptionView> = {}): ModelOptionView {
   return {
@@ -56,12 +61,23 @@ const ACCESS: ModelAccessView = {
   signedIn: false,
 };
 
+const MEMORY: MemorySettingsView = {
+  enabled: true,
+  useMemories: true,
+  generateMemories: true,
+  disableOnExternalContext: true,
+  statusSupported: true,
+  consolidatedThreads: 4,
+  ready: true,
+};
+
 function page(over: Partial<SettingsPageProps> = {}) {
   const props: SettingsPageProps = {
     section: 'models',
     onSection: vi.fn(),
     access: ACCESS,
     preferences: { concurrencyComputed: 3, concurrencyLimit: 3 },
+    memory: MEMORY,
     appName: 'EvoWork',
     appVersion: '0.0.1',
     onAddCustomModel: vi.fn(),
@@ -73,11 +89,52 @@ function page(over: Partial<SettingsPageProps> = {}) {
     onSecretFallback: vi.fn(),
     onProbe: vi.fn(),
     onPreferences: vi.fn(),
+    onMemorySettings: vi.fn(),
+    onResetMemories: vi.fn(),
     ...over,
   };
   render(<SettingsPage {...props} />);
   return props;
 }
+
+describe('个性化记忆', () => {
+  it('显示 Codex 当前支持的全局开关与准备状态', () => {
+    page({ section: 'personalization' });
+    expect(screen.getByRole('heading', { name: '个性化' })).toBeTruthy();
+    expect(
+      (screen.getByRole('checkbox', { name: '启用本地记忆' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(screen.getByText('记忆已就绪，已整理 4 个任务。')).toBeTruthy();
+  });
+
+  it('使用与生成分开保存，关闭总开关后从属项不可编辑', () => {
+    const props = page({ section: 'personalization' });
+    fireEvent.click(screen.getByRole('checkbox', { name: '允许任务生成新记忆' }));
+    expect(props.onMemorySettings).toHaveBeenCalledWith({
+      enabled: true,
+      useMemories: true,
+      generateMemories: false,
+    });
+
+    page({ section: 'personalization', memory: { ...MEMORY, enabled: false } });
+    expect(
+      (
+        screen
+          .getAllByRole('checkbox', { name: '在新任务中使用已有记忆' })
+          .at(-1) as HTMLInputElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it('清空全部记忆需要确认，并说明不会删除项目规则与任务历史', () => {
+    const props = page({ section: 'personalization' });
+    fireEvent.click(screen.getByRole('button', { name: '清空全部本地记忆' }));
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    expect(screen.getByText(/AGENTS.md 和任务历史不会被删除/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '确认清空' }));
+    expect(props.onResetMemories).toHaveBeenCalled();
+  });
+});
 
 describe('SecretInput（01 §5.35）', () => {
   it('已保存态显示后四位，**并且没有输入框** —— 空框旁写着「已保存」读起来像没保存上', () => {

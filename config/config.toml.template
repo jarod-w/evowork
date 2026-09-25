@@ -66,6 +66,20 @@ extends = ":workspace"
 # `default_permissions` 与 `approval_policy` 已放在文件顶部的根表；不要移进本段的
 # `[permissions.*]` 子表。定义 profiles 却缺根级 default 时，内核会拒绝加载整份配置。
 
+# ─────────────────────────── 本地记忆（06 §5） ───────────────────────────
+#
+# EvoWork 默认启用本机 Codex 记忆。项目规则仍写进 AGENTS.md；这里的记忆只负责
+# 从既有任务中提取可复用上下文。使用与生成分开控制，设置页可随时关闭。
+[features]
+memories = true
+
+[memories]
+use_memories = true
+generate_memories = true
+# EvoWork 经常使用 Web / MCP。含外部上下文的任务默认不进入记忆提取，避免把
+# 不可信网页指令或连接器内容沉淀成长期上下文。
+disable_on_external_context = true
+
 # ─────────────────────────── 多代理协作（04 §5.6） ───────────────────────────
 #
 # 上游默认仍关闭 V2，并默认只给非代码模式暴露这组工具。EvoWork 的 Craft / Plan / Ask

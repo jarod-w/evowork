@@ -139,6 +139,14 @@ async function run() {
     const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}/v1`;
     const kernelHome = join(e2eHome, '.evowork', 'kernel');
     mkdirSync(kernelHome, { recursive: true });
+    // 单独成段，既清楚表达这是协议配置，也避免边界 lint 把同一模板里的 URL 误判成记忆目录。
+    const memoryConfig = `[features]
+memories = true
+
+[memories]
+use_memories = true
+generate_memories = true
+disable_on_external_context = true`;
     writeFileSync(
       join(kernelHome, 'config.toml'),
       `model_provider = "evowork"
@@ -154,6 +162,8 @@ extends = ":workspace"
 
 default_permissions = "evowork-workspace"
 approval_policy = "never"
+
+${memoryConfig}
 
 [otel]
 environment = "test"
@@ -210,6 +220,37 @@ exporter = "none"
     true;
   `);
 
+    const initialMemory = await evaluate('window.evowork.getMemorySettings()');
+    if (
+      !initialMemory.enabled ||
+      !initialMemory.useMemories ||
+      !initialMemory.generateMemories ||
+      !initialMemory.disableOnExternalContext
+    ) {
+      throw new Error(`真实 app-server 没有读到默认记忆设置：${JSON.stringify(initialMemory)}`);
+    }
+    const disabledMemory = await evaluate(
+      `window.evowork.setMemorySettings(${JSON.stringify({
+        enabled: true,
+        useMemories: true,
+        generateMemories: false,
+      })})`,
+    );
+    if (!disabledMemory.ok || disabledMemory.view.generateMemories) {
+      throw new Error('真实 app-server 没有保存记忆生成开关。');
+    }
+    const enabledMemory = await evaluate(
+      `window.evowork.setMemorySettings(${JSON.stringify({
+        enabled: true,
+        useMemories: true,
+        generateMemories: true,
+      })})`,
+    );
+    if (!enabledMemory.ok || !enabledMemory.view.generateMemories) {
+      throw new Error('真实 app-server 没有重新启用记忆生成。');
+    }
+    stage('memory-settings-verified');
+
     const project = await evaluate(
       `window.evowork.createProject(${JSON.stringify({ name: 'E2E', path: workspace })})`,
     );
@@ -237,6 +278,18 @@ exporter = "none"
     );
     await waitFor(() => heldResponse, '模型请求没有到达测试网关');
     stage('first-request-held');
+    const taskMemoryOff = await evaluate(
+      `window.evowork.setTaskMemoryMode(${JSON.stringify({ threadId: first.threadId, enabled: false })})`,
+    );
+    const taskMemoryOn = await evaluate(
+      `window.evowork.setTaskMemoryMode(${JSON.stringify({ threadId: first.threadId, enabled: true })})`,
+    );
+    if (!taskMemoryOff.ok || !taskMemoryOn.ok) {
+      throw new Error('真实 app-server 不支持任务级记忆开关。');
+    }
+    const resetMemory = await evaluate('window.evowork.resetMemories()');
+    if (!resetMemory.ok) throw new Error('真实 app-server 没有清空本地记忆。');
+    stage('memory-task-controls-verified');
     await waitFor(
       () =>
         evaluate(
@@ -329,6 +382,8 @@ exporter = "none"
         threadId: first.threadId,
         skillPath: skill.path,
         queuedEditPreserved: true,
+        memorySettingsVerified: true,
+        memoryTaskControlsVerified: true,
         recoveredAfterPid: crashedPid,
         responses: responseCount,
       })}\n`,

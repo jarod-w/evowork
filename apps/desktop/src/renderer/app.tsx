@@ -44,6 +44,9 @@ import type {
   ModelProbeResult,
   ModelOptionView,
   ModelUnavailableReason,
+  MemoryMutationResult,
+  MemorySettingsInput,
+  MemorySettingsView,
   OpenTaskResult,
   PickAttachmentsInput,
   ProjectDetailView,
@@ -131,6 +134,7 @@ export interface EvoworkBridge {
     threadId: string;
     modeId: 'request-approval' | 'approve-for-me' | 'full-access';
   }): Promise<void>;
+  setTaskMemoryMode?(input: { threadId: string; enabled: boolean }): Promise<{ ok: boolean }>;
   interrupt(threadId: string): Promise<void>;
   revertTask?(input: { threadId: string; beforeTurnId: string }): Promise<void>;
   decideApproval(input: {
@@ -225,6 +229,9 @@ export interface EvoworkBridge {
   probeModel(input: { modelId: string }): Promise<ModelProbeResult>;
   getPreferences(): Promise<PreferencesView>;
   setPreferences(input: PreferencesInput): Promise<PreferencesView>;
+  getMemorySettings?(): Promise<MemorySettingsView>;
+  setMemorySettings?(input: MemorySettingsInput): Promise<MemoryMutationResult>;
+  resetMemories?(): Promise<MemoryMutationResult>;
   startLogin(): Promise<{ ok: boolean; refused?: string }>;
   logout(): Promise<{ ok: boolean; refused?: string }>;
   listDevices(): Promise<readonly import('../shared/ipc.js').DeviceView[]>;
@@ -478,6 +485,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [computerUse, setComputerUse] = useState<ComputerUseStatusView | null>(null);
   useEffect(() => bridge.onComputerUseStatus?.(setComputerUse), [bridge]);
   const [preferences, setPreferences] = useState<PreferencesView | null>(null);
+  const [memorySettings, setMemorySettingsView] = useState<MemorySettingsView | null>(null);
+  const [taskMemoryModes, setTaskMemoryModes] = useState<Readonly<Record<string, boolean>>>({});
   /** 上一次设置页动作被拒绝的原话，以及连通性检查的结论。**都要显示出来** */
   const [settingsRefusal, setSettingsRefusal] = useState<string | undefined>(undefined);
   const [probeResult, setProbeResult] = useState<string | undefined>(undefined);
@@ -1219,6 +1228,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .getPreferences()
         .then(setPreferences)
         .catch(() => setPreferences(null));
+      void bridge
+        .getMemorySettings?.()
+        .then(setMemorySettingsView)
+        .catch(() => setMemorySettingsView(null));
     }
   }, [view, activeProjectId, bridge, applyAccessView]);
 
@@ -1514,6 +1527,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       });
     },
     [bridge, interactionTaskId, mode, reportFailure],
+  );
+
+  const changeTaskMemoryMode = useCallback(
+    (enabled: boolean) => {
+      if (!interactionTaskId || !bridge.setTaskMemoryMode) return;
+      const threadId = interactionTaskId;
+      const previous = taskMemoryModes[threadId] ?? memorySettings?.generateMemories ?? true;
+      setTaskMemoryModes((current) => ({ ...current, [threadId]: enabled }));
+      void bridge
+        .setTaskMemoryMode({ threadId, enabled })
+        .then((result) => {
+          if (!result.ok) throw new Error('当前内核不支持任务级记忆控制');
+        })
+        .catch((error: unknown) => {
+          setTaskMemoryModes((current) =>
+            current[threadId] === enabled ? { ...current, [threadId]: previous } : current,
+          );
+          reportFailure(error, '没能更新当前任务的记忆设置。');
+        });
+    },
+    [bridge, interactionTaskId, memorySettings?.generateMemories, reportFailure, taskMemoryModes],
   );
 
   const retryCurrentTurn = useCallback(async () => {
@@ -2001,6 +2035,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setCatalogTab('skills');
         setView('catalog');
       },
+      ...(interactionTaskId && memorySettings?.enabled
+        ? {
+            memoryEnabled: taskMemoryModes[interactionTaskId] ?? memorySettings.generateMemories,
+            onMemoryEnabledChange: changeTaskMemoryMode,
+          }
+        : {}),
       ...(modelAccess?.policyPack?.status === 'expired' && modelAccess.policyPack.message
         ? { sendLockedReason: modelAccess.policyPack.message }
         : {}),
@@ -2060,6 +2100,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       catalog,
       prepareTaskWithText,
       emptyCatalogView,
+      memorySettings,
+      taskMemoryModes,
+      changeTaskMemoryMode,
     ],
   );
 
@@ -2304,6 +2347,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .catch((error: unknown) => reportFailure(error, '没能打开系统设置。'));
           }}
           preferences={preferences}
+          memory={memorySettings}
           appName={startup?.appName ?? 'EvoWork'}
           appVersion={startup?.appVersion ?? ''}
           {...(settingsRefusal !== undefined ? { settingsRefusal } : {})}
@@ -2344,6 +2388,32 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .setPreferences(input)
               .then(setPreferences)
               .catch((error: unknown) => reportFailure(error, '偏好没有保存。'));
+          }}
+          onMemorySettings={(input) => {
+            if (!bridge.setMemorySettings) return;
+            void bridge
+              .setMemorySettings({
+                ...input,
+                ...(interactionTaskId ? { currentThreadId: interactionTaskId } : {}),
+              })
+              .then((result) => {
+                setMemorySettingsView(result.view);
+                setSettingsRefusal(result.refused);
+              })
+              .catch((error: unknown) => reportFailure(error, '记忆设置没有保存。'));
+          }}
+          onResetMemories={() => {
+            if (!bridge.resetMemories) return;
+            void bridge
+              .resetMemories()
+              .then((result) => {
+                setMemorySettingsView(result.view);
+                pushToast({
+                  tone: result.ok ? 'success' : 'danger',
+                  text: result.ok ? '本地记忆已清空。' : (result.refused ?? '本地记忆没有清空。'),
+                });
+              })
+              .catch((error: unknown) => reportFailure(error, '本地记忆没有清空。'));
           }}
           onLogin={() => {
             void bridge
@@ -2877,6 +2947,7 @@ function MainPage(props: {
   readonly onSettingsSection: (section: SettingsSection) => void;
   readonly modelAccess: ModelAccessView | null;
   readonly preferences: PreferencesView | null;
+  readonly memory: MemorySettingsView | null;
   readonly appName: string;
   readonly appVersion: string;
   readonly settingsRefusal?: string | undefined;
@@ -2899,6 +2970,8 @@ function MainPage(props: {
   readonly onOpenModelsFolder: () => void;
   readonly onOpenProviderDocs: (provider: string) => void;
   readonly onPreferences: (input: PreferencesInput) => void;
+  readonly onMemorySettings: (input: MemorySettingsInput) => void;
+  readonly onResetMemories: () => void;
   readonly onLogin: () => void;
   readonly onLogout: () => void;
   readonly onRevokeDevice: (deviceId: string) => void;
@@ -3015,6 +3088,7 @@ function MainPage(props: {
           onComputerUseRevoke={props.onComputerUseRevoke}
           onComputerUseSettings={props.onComputerUseSettings}
           preferences={props.preferences}
+          memory={props.memory}
           appName={props.appName}
           appVersion={props.appVersion}
           {...(props.settingsRefusal !== undefined ? { refusal: props.settingsRefusal } : {})}
@@ -3034,6 +3108,8 @@ function MainPage(props: {
           }
           onProbe={props.onProbe}
           onPreferences={props.onPreferences}
+          onMemorySettings={props.onMemorySettings}
+          onResetMemories={props.onResetMemories}
           onLogin={props.onLogin}
           onLogout={props.onLogout}
           onRevokeDevice={props.onRevokeDevice}

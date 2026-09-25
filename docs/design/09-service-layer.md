@@ -43,7 +43,7 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 | --------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
 | 直接读内核的 thread sqlite 来做状态筛选 | `thread/list` 没有状态过滤（README F8），直接读表最快 | ❌ 禁止。用自己的投影表（§4.1）。内核的表结构不是契约，rebase 就会碎 |
 | 直接读 rollout JSONL 做全文搜索         | `thread/searchOccurrences` 是实验方法                 | ❌ 禁止。用实验方法 + 适配层兜底（§3.3）                             |
-| 直接读 `CODEX_HOME/memories` 文件       | 记忆界面要展示条目                                    | ❌ 禁止。用 `memories/read`                                          |
+| 直接读 `CODEX_HOME/memories` 文件       | 想展示或修改记忆正文                                  | ❌ 禁止。当前 app-server 不暴露正文；只用配置 API、`memory/status` / `memory/reset` |
 
 唯一允许直接碰的文件系统对象是**工作空间内的文件**（那是用户的文件，不是内核的内部状态）与**EvoWork 自己的目录**。
 
@@ -55,7 +55,7 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 
 前端不直接调 app-server，而是调适配层暴露的语义化 API。四个理由：
 
-1. **收敛实验方法**（D3 的"在服务层做一层适配收敛"）。当前用到的实验方法：`project/*`、`thread/queue/*`、`thread/search`、`thread/searchOccurrences`、`thread/memoryMode/set`、`memory/reset`、`turn/start.collaborationMode`、`turn/start.permissions`、`turn/start.approvalsReviewer`、`turn/start.additionalContext`、`thread/list.projectId`、`thread/list.parentThreadId`、`thread/list.ancestorThreadId`、`thread/realtime/*`、`collaborationMode/list`、`thread/timeline/list`。**上游任一变更只改适配层一处。**
+1. **收敛实验方法**（D3 的"在服务层做一层适配收敛"）。当前用到的实验方法：`project/*`、`thread/queue/*`、`thread/search`、`thread/searchOccurrences`、`thread/memoryMode/set`、`memory/status`、`memory/reset`、`turn/start.collaborationMode`、`turn/start.permissions`、`turn/start.approvalsReviewer`、`turn/start.additionalContext`、`thread/list.projectId`、`thread/list.parentThreadId`、`thread/list.ancestorThreadId`、`thread/realtime/*`、`collaborationMode/list`、`thread/timeline/list`。**上游任一变更只改适配层一处。**
 2. **展开 EvoWork 概念**：场景/审批档 → `permissions` + `approvalPolicy` + `approvalsReviewer` + `collaborationMode`（03 §2.4，Q45）。
 3. **合并数据源**：任务列表 = `thread/list` + 本机投影表；产物 = 本机索引。
 4. **降级与兜底**：实验方法不可用时（上游移除或未开启）走兜底路径而不是白屏。
@@ -122,6 +122,8 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 | `turn/start.permissions`              | 退回 `sandboxPolicy`（两者互斥，F5）                                                     | 企业自定义 profile 不可用，只能用三个内置档                                  |
 | `turn/start.approvalsReviewer`        | 帮我批准标 `allowed: false`，原因「安全自动审查还没接通」                                | **不静默当成请求批准**（Q45）                                                |
 | `thread/memoryMode/set`               | 全局记忆开关代替任务级开关                                                               | 精度下降，需在设置里说明                                                     |
+| `memory/status`                       | 设置仍可修改，不显示后台整理进度                                                         | 显示「暂时读不到记忆准备状态」                                               |
+| `memory/reset`                        | 不提供清空动作                                                                           | 显示「清空全部记忆暂不可用」                                                 |
 | `thread/realtime/*`                   | 隐藏麦克风按钮                                                                           | 语音不可用（03 §4.7）                                                        |
 | `collaborationMode/list`              | **不调用**（F3：只返回两个内置项，对 UI 无用）                                           | 无                                                                           |
 

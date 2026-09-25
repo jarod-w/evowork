@@ -189,6 +189,10 @@ export interface ComposerProps {
    */
   readonly modeOptions?: readonly SelectOption[] | undefined;
 
+  /** 当前任务是否会贡献新的本地记忆。未创建任务时不显示。 */
+  readonly memoryEnabled?: boolean | undefined;
+  readonly onMemoryEnabledChange?: ((enabled: boolean) => void) | undefined;
+
   readonly models?: readonly ModelOption[] | undefined;
   readonly modelId?: string | undefined;
   readonly onModelChange?: ((id: string) => void) | undefined;
@@ -747,6 +751,20 @@ export function Composer(props: ComposerProps) {
               emptyHint="还没有项目。任务会在默认目录里运行，也可以先从侧栏创建项目。"
               onChange={(id) => props.onWorkspaceChange?.(id)}
             />
+
+            {props.memoryEnabled !== undefined ? (
+              <InlineSelect
+                ariaLabel="任务记忆"
+                icon={renderIcon('sparkle')}
+                placeholder="贡献记忆"
+                value={props.memoryEnabled ? 'enabled' : 'disabled'}
+                options={[
+                  { id: 'enabled', label: '贡献记忆', description: '任务结束后可提取可复用上下文' },
+                  { id: 'disabled', label: '不贡献记忆', description: '只对当前任务生效' },
+                ]}
+                onChange={(id) => props.onMemoryEnabledChange?.(id === 'enabled')}
+              />
+            ) : null}
 
             <span className="ew-composer-tool-spacer" />
 

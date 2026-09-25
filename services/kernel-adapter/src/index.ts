@@ -18,6 +18,7 @@ export {
   type Adapter,
   type AdapterOptions,
   type Catalog,
+  type MemorySettings,
   type TaskListItem,
   type Workspace,
 } from './adapter.js';

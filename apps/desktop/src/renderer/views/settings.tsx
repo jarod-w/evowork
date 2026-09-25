@@ -35,10 +35,13 @@ import type {
   CustomModelView,
   ModelAccessView,
   ModelProbeResult,
+  MemorySettingsInput,
+  MemorySettingsView,
   PreferencesView,
 } from '../../shared/ipc.js';
 
-export type SettingsSection = 'account' | 'models' | 'usage' | 'data' | 'security' | 'about';
+export type SettingsSection =
+  'account' | 'models' | 'personalization' | 'usage' | 'data' | 'security' | 'about';
 
 export const SETTINGS_SECTIONS: readonly {
   readonly id: SettingsSection;
@@ -46,6 +49,7 @@ export const SETTINGS_SECTIONS: readonly {
 }[] = [
   { id: 'account', label: '账号' },
   { id: 'models', label: '模型' },
+  { id: 'personalization', label: '个性化' },
   { id: 'usage', label: '用量与预算' },
   { id: 'data', label: '数据管理' },
   { id: 'security', label: '安全与权限' },
@@ -72,6 +76,7 @@ export interface SettingsPageProps {
   readonly onSection: (section: SettingsSection) => void;
   readonly access: ModelAccessView | null;
   readonly preferences: PreferencesView | null;
+  readonly memory: MemorySettingsView | null;
   readonly appName: string;
   readonly appVersion: string;
   /** 上一次动作被拒绝的原话。**显示出来**，不吞掉 */
@@ -93,6 +98,8 @@ export interface SettingsPageProps {
   readonly onSecretFallback: (accept: boolean) => void;
   readonly onProbe: (modelId: string) => void;
   readonly onPreferences: (input: { taskTokenBudget?: number; concurrencyLimit?: number }) => void;
+  readonly onMemorySettings: (input: MemorySettingsInput) => void;
+  readonly onResetMemories: () => void;
   readonly onLogin?: () => void;
   readonly onLogout?: () => void;
   readonly onRevokeDevice?: (deviceId: string) => void;
@@ -124,6 +131,7 @@ export function SettingsPage(props: SettingsPageProps) {
           />
         ) : null}
         {props.section === 'models' ? <ModelsSection {...props} /> : null}
+        {props.section === 'personalization' ? <MemorySection {...props} /> : null}
         {props.section === 'usage' ? <UsageSection {...props} /> : null}
         {props.section === 'data' ? <DataSection /> : null}
         {props.section === 'security' ? <SecuritySection {...props} /> : null}
@@ -132,6 +140,86 @@ export function SettingsPage(props: SettingsPageProps) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** Codex 本机记忆。内容由内核管理，产品只呈现受支持的控制与准备状态。 */
+function MemorySection(props: SettingsPageProps) {
+  const [confirmReset, setConfirmReset] = useState(false);
+  const memory = props.memory;
+  if (!memory) return <EmptyState title="正在读取记忆设置…" hint="" />;
+
+  const update = (next: Partial<MemorySettingsInput>): void => {
+    props.onMemorySettings({
+      enabled: memory.enabled,
+      useMemories: memory.useMemories,
+      generateMemories: memory.generateMemories,
+      ...next,
+    });
+  };
+  const status = !memory.enabled
+    ? '本地记忆已关闭。'
+    : !memory.statusSupported
+      ? '当前内核不提供记忆准备进度；设置仍然有效。'
+      : memory.ready
+        ? `记忆已就绪，已整理 ${memory.consolidatedThreads} 个任务。`
+        : `正在学习，已整理 ${memory.consolidatedThreads} 个任务。`;
+
+  return (
+    <section className="ew-settings-section">
+      <SectionHeader title="个性化" />
+      <p className="ew-settings-note">
+        EvoWork 默认启用本机 Codex 记忆，在后续新任务里使用已提取的可复用上下文。项目长期规则仍写在
+        AGENTS.md；这里不会把记忆正文暴露给界面。
+      </p>
+      <label className="ew-checkbox">
+        <input
+          type="checkbox"
+          checked={memory.enabled}
+          onChange={(event) => update({ enabled: event.target.checked })}
+        />
+        <span>启用本地记忆</span>
+      </label>
+      <label className="ew-checkbox">
+        <input
+          type="checkbox"
+          checked={memory.useMemories}
+          disabled={!memory.enabled}
+          onChange={(event) => update({ useMemories: event.target.checked })}
+        />
+        <span>在新任务中使用已有记忆</span>
+      </label>
+      <label className="ew-checkbox">
+        <input
+          type="checkbox"
+          checked={memory.generateMemories}
+          disabled={!memory.enabled}
+          onChange={(event) => update({ generateMemories: event.target.checked })}
+        />
+        <span>允许任务生成新记忆</span>
+      </label>
+      <p className="ew-settings-note" role="status">
+        {status}
+      </p>
+      <p className="ew-settings-note">
+        含网页或连接器等外部上下文的任务默认不参与提取，避免把不可信内容沉淀为长期上下文。当前任务也可在输入区单独选择“不贡献记忆”。
+      </p>
+      <PillButton onClick={() => setConfirmReset(true)}>清空全部本地记忆</PillButton>
+      {confirmReset ? (
+        <Dialog
+          title="清空全部本地记忆？"
+          confirmLabel="确认清空"
+          variant="danger"
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => {
+            setConfirmReset(false);
+            props.onResetMemories();
+          }}
+        >
+          <p>这会删除 Codex 已提取的全部本地记忆，项目里的 AGENTS.md 和任务历史不会被删除。</p>
+        </Dialog>
+      ) : null}
+    </section>
   );
 }
 

@@ -137,6 +137,17 @@ export interface QueuedInput {
   readonly input: readonly UserInput[];
 }
 
+/** 设置页消费的记忆状态。内容本身仍由内核管理，不越过 K2 读取生成文件。 */
+export interface MemorySettings {
+  readonly enabled: boolean;
+  readonly useMemories: boolean;
+  readonly generateMemories: boolean;
+  readonly disableOnExternalContext: boolean;
+  readonly statusSupported: boolean;
+  readonly consolidatedThreads: number;
+  readonly ready: boolean;
+}
+
 export type { ThreadGoal, ThreadGoalStatus, ThreadSearchOccurrence };
 
 export interface AdapterOptions {
@@ -352,6 +363,36 @@ export function createAdapter(options: AdapterOptions) {
     }
   }
 
+  async function readMemorySettings(): Promise<MemorySettings> {
+    const response = await session.peer.request<{
+      readonly config?: Readonly<Record<string, unknown>>;
+    }>(METHOD.configRead, { includeLayers: false, cwd: null });
+    const config = record(response.config);
+    const features = record(config.features);
+    const memories = record(config.memories);
+    const enabled = features.memories === true;
+    const status = enabled
+      ? await callExperimental<{
+          readonly v2ConsolidatedThreads: number;
+          readonly v2Ready: boolean;
+          readonly supported?: boolean;
+        }>(EXPERIMENTAL_METHOD.memoryStatus, {}, () => ({
+          v2ConsolidatedThreads: 0,
+          v2Ready: false,
+          supported: false,
+        }))
+      : { v2ConsolidatedThreads: 0, v2Ready: false, supported: true };
+    return {
+      enabled,
+      useMemories: memories.use_memories !== false,
+      generateMemories: memories.generate_memories !== false,
+      disableOnExternalContext: memories.disable_on_external_context === true,
+      statusSupported: status.supported !== false,
+      consolidatedThreads: status.v2ConsolidatedThreads,
+      ready: status.v2Ready,
+    };
+  }
+
   return {
     session,
     capabilities,
@@ -449,6 +490,67 @@ export function createAdapter(options: AdapterOptions) {
 
     catalog(): Catalog | undefined {
       return catalog;
+    },
+
+    async getMemorySettings(): Promise<MemorySettings> {
+      return readMemorySettings();
+    },
+
+    /** 与 Codex `/memories` 相同：保存全局设置，并把“是否生成”立即应用到当前任务。 */
+    async updateMemorySettings(input: {
+      readonly enabled: boolean;
+      readonly useMemories: boolean;
+      readonly generateMemories: boolean;
+      readonly currentThreadId?: string | undefined;
+    }): Promise<MemorySettings> {
+      await session.peer.request(METHOD.configBatchWrite, {
+        edits: [
+          { keyPath: 'features.memories', value: input.enabled, mergeStrategy: 'replace' },
+          {
+            keyPath: 'memories.use_memories',
+            value: input.useMemories,
+            mergeStrategy: 'replace',
+          },
+          {
+            keyPath: 'memories.generate_memories',
+            value: input.generateMemories,
+            mergeStrategy: 'replace',
+          },
+          {
+            keyPath: 'memories.disable_on_external_context',
+            value: true,
+            mergeStrategy: 'replace',
+          },
+        ],
+        filePath: null,
+        expectedVersion: null,
+        reloadUserConfig: true,
+      });
+      if (input.currentThreadId) {
+        await callExperimental(
+          EXPERIMENTAL_METHOD.threadMemoryModeSet,
+          {
+            threadId: input.currentThreadId,
+            mode: input.enabled && input.generateMemories ? 'enabled' : 'disabled',
+          },
+          () => undefined,
+        );
+      }
+      return readMemorySettings();
+    },
+
+    async setThreadMemoryMode(threadId: string, enabled: boolean): Promise<boolean> {
+      return callExperimental(
+        EXPERIMENTAL_METHOD.threadMemoryModeSet,
+        { threadId, mode: enabled ? 'enabled' : 'disabled' },
+        () => false,
+      ).then((result) => result !== false);
+    },
+
+    async resetMemories(): Promise<boolean> {
+      return callExperimental(EXPERIMENTAL_METHOD.memoryReset, undefined, () => false).then(
+        (result) => result !== false,
+      );
     },
 
     /** 以 app-server 的发现结果为唯一事实源，避免 UI 自己猜技能名和路径。 */
@@ -1155,6 +1257,10 @@ export function createAdapter(options: AdapterOptions) {
 }
 
 export type Adapter = ReturnType<typeof createAdapter>;
+
+function record(value: unknown): Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
 
 /** 内核 `THREAD_ITEMS_MAX_LIMIT`（app-server `thread_processor.rs`）。 */
 const ITEM_LIST_PAGE_SIZE = 100;

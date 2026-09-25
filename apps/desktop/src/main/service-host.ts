@@ -319,6 +319,60 @@ export function migrateMultiAgentV2Config(text: string): { text: string; changed
   return { text: migrated, changed: migrated !== text };
 }
 
+const MEMORY_DEFAULTS = [
+  ['features', 'memories', 'true'],
+  ['memories', 'use_memories', 'true'],
+  ['memories', 'generate_memories', 'true'],
+  ['memories', 'disable_on_external_context', 'true'],
+] as const;
+
+/**
+ * 给已有安装补上本地记忆默认值。
+ *
+ * 这里只补缺失项，用户或企业已经明确写下的 `false` 一律保留。`[features]` 必须
+ * 插在 `[features.*]` 子表之前；把父表追加到子表之后会生成非法 TOML。
+ */
+export function migrateMemoriesConfig(text: string): { text: string; changed: boolean } {
+  const hadTrailingNewline = text.endsWith('\n');
+  const lines = text.split(/\r?\n/);
+  if (hadTrailingNewline) lines.pop();
+  let changed = false;
+
+  for (const [sectionName, key, value] of MEMORY_DEFAULTS) {
+    const sectionStart = lines.findIndex((line) => {
+      const section = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
+      return section?.[1]?.trim() === sectionName;
+    });
+    if (sectionStart < 0) {
+      const firstChild = lines.findIndex((line) =>
+        new RegExp(`^\\s*\\[${sectionName.replace('.', '\\.')}\\.`).test(line),
+      );
+      const insertion = firstChild < 0 ? lines.length : firstChild;
+      const block = [`[${sectionName}]`, `${key} = ${value}`, ''];
+      if (insertion === lines.length && lines.at(-1)?.trim() !== '') block.unshift('');
+      lines.splice(insertion, 0, ...block);
+      changed = true;
+      continue;
+    }
+
+    let sectionEnd = lines.length;
+    for (let index = sectionStart + 1; index < lines.length; index += 1) {
+      if (/^\s*\[[^\]]+\]/.test(lines[index] ?? '')) {
+        sectionEnd = index;
+        break;
+      }
+    }
+    const keyPattern = new RegExp(`^\\s*${key}\\s*=`);
+    if (lines.slice(sectionStart + 1, sectionEnd).some((line) => keyPattern.test(line))) continue;
+    lines.splice(sectionEnd, 0, `${key} = ${value}`);
+    changed = true;
+  }
+
+  let output = lines.join('\n');
+  if (hadTrailingNewline) output += '\n';
+  return { text: output, changed };
+}
+
 /**
  * 首次运行时把随包的**模式指令**装进 `~/.evowork/modes/`。
  *
@@ -559,13 +613,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     try {
       const retiredModel = removeRetiredDefaultModel(readFileSync(kernelConfigPath, 'utf8'));
       const multiAgentV2 = migrateMultiAgentV2Config(retiredModel.text);
-      if (retiredModel.changed || multiAgentV2.changed) {
-        writeFileSync(kernelConfigPath, multiAgentV2.text, 'utf8');
+      const memories = migrateMemoriesConfig(multiAgentV2.text);
+      if (retiredModel.changed || multiAgentV2.changed || memories.changed) {
+        writeFileSync(kernelConfigPath, memories.text, 'utf8');
       }
       if (retiredModel.changed) {
         logger.info('desktop.kernel_config.retired_model_removed', {});
       }
       if (multiAgentV2.changed) logger.info('desktop.kernel_config.multi_agent_v2_migrated', {});
+      if (memories.changed) logger.info('desktop.kernel_config.memories_defaults_migrated', {});
     } catch {
       logger.warn('desktop.kernel_config.migration_failed', { reason: 'IO' });
     }

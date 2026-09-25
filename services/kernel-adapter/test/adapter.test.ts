@@ -291,6 +291,67 @@ describe('启动序列（09 §3.2）', () => {
   });
 });
 
+describe('本地记忆（当前 Codex 基线）', () => {
+  it('通过 config/read + memory/status 读取有效设置，不读取内核记忆文件', async () => {
+    await adapter.start();
+
+    await expect(adapter.getMemorySettings()).resolves.toEqual({
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      disableOnExternalContext: true,
+      statusSupported: true,
+      consolidatedThreads: 4,
+      ready: true,
+    });
+    expect(server.received.findLast((r) => r.method === 'config/read')?.params).toEqual({
+      includeLayers: false,
+      cwd: null,
+    });
+    expect(server.received.some((r) => r.method === 'memory/status')).toBe(true);
+  });
+
+  it('全局设置热重载，并把生成开关应用到当前任务', async () => {
+    await adapter.start();
+
+    const view = await adapter.updateMemorySettings({
+      enabled: true,
+      useMemories: true,
+      generateMemories: false,
+      currentThreadId: 'thread-memory',
+    });
+
+    expect(view.generateMemories).toBe(false);
+    expect(view.disableOnExternalContext).toBe(true);
+    expect(server.received.findLast((r) => r.method === 'config/batchWrite')?.params).toEqual({
+      edits: [
+        { keyPath: 'features.memories', value: true, mergeStrategy: 'replace' },
+        { keyPath: 'memories.use_memories', value: true, mergeStrategy: 'replace' },
+        { keyPath: 'memories.generate_memories', value: false, mergeStrategy: 'replace' },
+        {
+          keyPath: 'memories.disable_on_external_context',
+          value: true,
+          mergeStrategy: 'replace',
+        },
+      ],
+      filePath: null,
+      expectedVersion: null,
+      reloadUserConfig: true,
+    });
+    expect(server.threadMemoryModes.get('thread-memory')).toBe('disabled');
+  });
+
+  it('支持单任务覆盖与清空全部本地记忆', async () => {
+    await adapter.start();
+
+    await expect(adapter.setThreadMemoryMode('thread-1', false)).resolves.toBe(true);
+    await expect(adapter.resetMemories()).resolves.toBe(true);
+
+    expect(server.threadMemoryModes.get('thread-1')).toBe('disabled');
+    expect(server.memoryResetCount).toBe(1);
+  });
+});
+
 describe('工作空间（EvoWork 的「空间」= Project + cwd）', () => {
   it('catalog 带上 project/list 的结果，只取第一个 root 作为 cwd', async () => {
     server.handlers.set('project/list', () => ({

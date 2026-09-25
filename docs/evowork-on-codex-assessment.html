@@ -361,9 +361,9 @@ footer{
 
         <tbody>
           <tr class="grp"><td colspan="4">第七 / 十一 / 十二章 · 记忆 · 可视化 · 自动化</td></tr>
-          <tr><td>用户级本地记忆</td><td><span class="chip r">复用</span></td><td><code>memories/{read,write}</code></td><td>目录 <code>CODEX_HOME/memories</code>，可按任务开关写入</td></tr>
-          <tr><td>工作空间记忆</td><td><span class="chip r">复用</span></td><td><code>AGENTS.md</code> 层级加载 + <code>ext/history-notes</code></td><td>—</td></tr>
-          <tr><td>云端记忆</td><td><span class="chip a">改造</span></td><td><code>MemoryBackend</code> trait</td><td>远端实现需自建；Q1=A + Q3 下默认关闭，只同步条目不同步原文</td></tr>
+          <tr><td>Codex 本机记忆</td><td><span class="chip r">复用</span></td><td><code>config/read</code>、<code>memory/status</code>、<code>memory/reset</code></td><td>使用与生成分开控制，可按任务关闭贡献；不直接读取生成文件</td></tr>
+          <tr><td>项目长期指令</td><td><span class="chip r">复用</span></td><td><code>AGENTS.md</code> 层级加载</td><td>与自动学习记忆分离</td></tr>
+          <tr><td>ChatGPT 云端记忆</td><td><span class="chip s">不接入</span></td><td>ChatGPT Web 独立能力</td><td>与本机 Codex 记忆分离，EvoWork 当前不提供同步</td></tr>
           <tr><td>定时执行 / Automations</td><td><span class="chip b">自建</span></td><td>—</td><td>全仓库无任何 cron / scheduler</td></tr>
           <tr><td>可视化 SVG / Chart.js</td><td><span class="chip b">自建</span></td><td>—</td><td>本属前端职责</td></tr>
         </tbody>

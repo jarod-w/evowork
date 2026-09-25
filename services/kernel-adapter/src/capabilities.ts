@@ -116,9 +116,13 @@ export const DEGRADATION: Readonly<Record<string, Degradation>> = Object.freeze(
     fallback: '用全局记忆开关代替任务级开关',
     userVisible: '记忆开关只能全局设置，不能按任务设置。',
   },
+  [EXPERIMENTAL_METHOD.memoryStatus]: {
+    fallback: '设置仍可修改，但不显示后台记忆整合进度',
+    userVisible: '暂时读不到记忆准备状态。',
+  },
   [EXPERIMENTAL_METHOD.memoryReset]: {
     fallback: '无（不提供清空全部记忆）',
-    userVisible: '「清空全部记忆」暂不可用，可逐条删除。',
+    userVisible: '「清空全部记忆」暂不可用。',
   },
   [EXPERIMENTAL_METHOD.threadRealtimeStart]: {
     fallback: '隐藏麦克风按钮',

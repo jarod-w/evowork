@@ -152,9 +152,9 @@
 
 | 清单能力                    | 状态       | codex 对应                                                                               |
 | --------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| 用户级本地记忆              | [复用]     | `memories/read`、`memories/write`、`ext/memories/src/local/`；目录 `CODEX_HOME/memories` |
-| 工作空间记忆                | [复用]     | `AGENTS.md` 层级加载 + `ext/history-notes`                                               |
-| 云端记忆                    | [改造]     | backend 是 trait，远端实现需自建；**Q1=A + Q3 下默认关闭**，见 §6.6                      |
+| Codex 本机记忆              | [复用]     | `[features] memories`；`config/read` / `config/batchWrite`；`memory/status` / `memory/reset` |
+| 项目长期指令                | [复用]     | `AGENTS.md` 层级加载；与自动提取的记忆是两套独立机制                                      |
+| ChatGPT 云端记忆            | [不接入]   | ChatGPT Web 与本机 Codex 记忆相互独立；EvoWork 当前不伪装成可同步的 `MemoryBackend`          |
 | 历史对话检索                | [复用]     | `thread/searchOccurrences` + `thread/list`                                               |
 | **定时执行 / Automations**  | **[自建]** | **全仓库无 cron/scheduler，零基础**                                                      |
 | 可视化（SVG/HTML/Chart.js） | [自建]     | 无渲染层（本属前端职责）                                                                 |
@@ -600,18 +600,23 @@ evowork-connectors/
 
 OAuth 令牌存 `codex-rs/secrets` + `keyring-store`，不落明文配置。
 
-### 6.6 记忆系统
+### 6.6 记忆系统（以当前 ChatGPT / Codex 基线为准）
 
-| 层级       | 实现                                                                                                                                                       |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 用户级本地 | `CODEX_HOME/memories`（沿用 codex 结构，`memory/reset` API 可清空）                                                                                        |
-| 工作空间级 | `AGENTS.md` 层级加载 + `ext/history-notes` 日志/笔记                                                                                                       |
-| 云端       | 实现 `MemoryBackend` trait 的远端版本（`ext/memories/src/backend.rs`）；**Q1=A + Q3 硬约束下默认关闭**，开启需显式授权，且只同步结构化记忆条目、不同步原文 |
-| 会话内检索 | `thread/searchOccurrences`                                                                                                                                 |
+| 能力 | 实现 |
+| ---- | ---- |
+| 总开关 | `[features] memories = true`，EvoWork 首装与旧安装缺省都开启；已有显式 `false` 不覆盖 |
+| 使用已有记忆 | `memories.use_memories`，只影响后续新任务是否注入已提取上下文 |
+| 生成新记忆 | `memories.generate_memories`；当前任务可用 `thread/memoryMode/set` 单独覆盖 |
+| 外部上下文保护 | `memories.disable_on_external_context = true`；网页、MCP/连接器等外部上下文默认不进入提取 |
+| 准备状态与清空 | `memory/status` 只提供整理进度；`memory/reset` 清空全部本机记忆 |
+| 项目长期指令 | `AGENTS.md` 层级加载；它是项目指导文件，不是自动学习记忆 |
+| 历史检索 | `thread/searchOccurrences`，与记忆注入是不同能力 |
 
-> `thread/memoryMode/set` 可按任务开关记忆写入，直接满足隐私诉求。
-
-**v0.4 修订（依据 06 §5）**：记忆必须有**用户可见、可编辑的界面入口**，否则"隐私可控"只是配置项而非体验。落点两处：① 资料库「我的资料」下的固定节点「长期记忆」——条目列表，可查看 / 编辑 / 删除单条，`memory/reset` (exp) 对应「清空全部」；② agent 每次写入用户级记忆，**在对话流里插入一条可见单行 item**（「已记住：<摘要>」+「撤销」）—— 不做静默记忆。云端记忆默认关闭，因此**不为它做一级入口**。
+当前 app-server **没有**记忆正文的 list/read/write/edit/delete 协议。因此产品入口在
+「设置 → 个性化」：总开关、使用、生成、准备状态、清空全部；任务输入区提供“贡献记忆 / 不贡献记忆”。
+不实现「长期记忆」条目列表、逐条编辑/删除、对话内「已记住 + 撤销」等无法由协议兑现的界面。
+生成文件是内核内部状态，EvoWork 不直接读取。ChatGPT Web 的云端记忆与本机 Codex 记忆分离，
+本期不提供同步开关或 `MemoryBackend` 远端实现。
 
 ### 6.7 产物系统与文档解析
 
@@ -998,7 +1003,7 @@ EvoWork 需新增的 Hooks 策略包：
 | 专家角色               | `codex-rs/agent-roles`                                                                  |
 | MCP                    | `codex-rs/mcp-server`、`codex-rs/rmcp-client`、`codex-rs/ext/mcp`                       |
 | 连接器（ChatGPT 绑定） | `codex-rs/connectors/src/lib.rs:484`                                                    |
-| 记忆                   | `codex-rs/memories/{read,write}`、`codex-rs/ext/memories`                               |
+| 记忆                   | `codex-rs/memories`、app-server `memory/status` / `memory/reset`、`thread/memoryMode/set` |
 | 图片生成               | `codex-rs/ext/image-generation`                                                         |
 | 目标与预算             | `codex-rs/ext/goal`                                                                     |
 | 安全审查               | `codex-rs/ext/guardian-v2`                                                              |

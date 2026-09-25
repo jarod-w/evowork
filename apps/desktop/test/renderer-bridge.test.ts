@@ -32,6 +32,7 @@ import {
 import {
   ensureKernelConfig,
   ensurePaths,
+  migrateMemoriesConfig,
   migrateMultiAgentV2Config,
   resolvePaths,
 } from '../src/main/service-host.js';
@@ -1459,6 +1460,9 @@ describe('首次运行装内核配置', () => {
     expect(template).toContain('max_concurrent_threads_per_session = 4');
     expect(template).toContain('wait_agent_enabled = true');
     expect(template).toContain('non_code_mode_only = false');
+    expect(template).toContain('[features]\nmemories = true');
+    expect(template).toContain('[memories]\nuse_memories = true\ngenerate_memories = true');
+    expect(template).toContain('disable_on_external_context = true');
   });
 
   it('已有安装幂等迁移到 V2，同时保留无关企业配置', () => {
@@ -1494,6 +1498,32 @@ describe('首次运行装内核配置', () => {
     );
     expect(migrated.text.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
     expect(migrateMultiAgentV2Config(migrated.text).changed).toBe(false);
+  });
+
+  it('给已有安装补齐记忆默认值，但保留用户显式关闭的选择', () => {
+    const migrated = migrateMemoriesConfig(
+      '[features]\nmemories = false\n\n[memories]\ngenerate_memories = false\n',
+    );
+    expect(migrated.text).toContain('memories = false');
+    expect(migrated.text).toContain('generate_memories = false');
+    expect(migrated.text).toContain('use_memories = true');
+    expect(migrated.text).toContain('disable_on_external_context = true');
+    expect(migrateMemoriesConfig(migrated.text)).toEqual({ text: migrated.text, changed: false });
+  });
+
+  it('缺少 features 父表时插在 features 子表之前，保持 TOML 合法', () => {
+    const migrated = migrateMemoriesConfig(
+      '[features.multi_agent_v2]\nenabled = true\n\n[permissions.workspace]\nextends = ":workspace"\n',
+    );
+    expect(migrated.text.indexOf('[features]')).toBeLessThan(
+      migrated.text.indexOf('[features.multi_agent_v2]'),
+    );
+  });
+
+  it('不因迁移凭空改变文件末尾换行', () => {
+    const input =
+      '[features]\nmemories = true\n\n[memories]\nuse_memories = true\ngenerate_memories = true\ndisable_on_external_context = true';
+    expect(migrateMemoriesConfig(input)).toEqual({ text: input, changed: false });
   });
 });
 

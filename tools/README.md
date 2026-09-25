@@ -12,5 +12,6 @@
 | `no-style-literals`   | 组件里零字面量颜色与 px                                                         | 01 §9 验收项 1               |
 
 **误报比漏报更危险**：一旦规则误报，人会整片 `eslint-disable`，那时真正的破线也一起放行了。
-所以 `no-kernel-internals` 对 `memories` / `rollout` 这类**同时是协议方法名的词**只在**路径形态**下报错
-（`memories/read` 是正路，`~/.evowork/kernel/memories` 是歧路）。规则自己的测试就钉着这条区分。
+所以 `no-kernel-internals` 对 `memories` / `rollout` 这类可能出现在内核路径里的词只在**路径形态**下报错
+（`memory/status` / `memory/reset` 是正路，`~/.evowork/kernel/memories` 是歧路）。当前 app-server
+不暴露记忆正文列表，因此界面也不绕过协议直接读生成文件。规则自己的测试就钉着这条区分。

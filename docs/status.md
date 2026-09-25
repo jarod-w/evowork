@@ -1,10 +1,19 @@
 # 开发状态
 
-> **更新于 2026-09-25（第 58 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-25（第 59 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **第 59 次按当前 ChatGPT / Codex 基线完成记忆 P0。** EvoWork 首装默认写入
+> `[features] memories = true`，旧安装只补缺失项、不覆盖用户或企业显式 `false`；使用已有记忆、
+> 生成新记忆分开控制，含外部网页/MCP 上下文的任务默认不进入提取。设置页新增「个性化」，通过
+> `config/read` / `config/batchWrite`、`memory/status` / `memory/reset` 展示有效设置、准备状态与清空确认；
+> Composer 通过 `thread/memoryMode/set` 控制当前任务是否贡献记忆。移除了文档中不存在的
+> `memories/read` / `memories/write`、正文条目列表、逐条编辑/撤销和本机/ChatGPT 云端自动同步承诺。
+> 记忆正文仍由内核管理，EvoWork 不读取 `CODEX_HOME/memories`。协议适配、迁移、设置 UI 与真实
+> app-server + Electron E2E 已纳入自动验收。
 >
 > **第 58 次修复协议通知泄漏进对话时间线。** `thread/settings/updated` 是任务生效配置通知，
 > 不是 `ThreadItem`；此前它被“未知通知”兜底伪装成未知条目，因而在对话中显示原始 JSON，

@@ -8,7 +8,7 @@
  *
  *   ① 直接读内核的 thread sqlite 做状态筛选   → 必须用自己的投影表
  *   ② 直接读 rollout JSONL 做全文搜索        → 必须用 thread/searchOccurrences + 兜底
- *   ③ 直接读 CODEX_HOME/memories 文件        → 必须用 memories/read
+ *   ③ 直接读 CODEX_HOME/memories 文件        → 只用配置与 memory/status/reset API
  *
  * 判定方式是**字符串字面量与成员访问**，不是模块图：破 K2 的典型写法是
  * `fs.readFile(path.join(process.env.CODEX_HOME, 'memories/...'))`，它不 import 任何东西。
@@ -21,9 +21,8 @@
  * 内核内部状态的痕迹。分两类，因为它们的误报面完全不同：
  *
  *   · `pathOnly: true`  —— 词本身是**协议方法名的一部分**，只有出现在路径里才算破线。
- *     典型：`memories/read` 是唯一正确的记忆读法（09 §2 原话），而
- *     `~/.evowork/kernel/memories` 是绕过协议。同一个词，一个是正路一个是歧路，
- *     只靠词形分不开，必须看它是不是路径。
+ *     典型：`memory/status` 是正确的协议调用，而 `~/.evowork/kernel/memories`
+ *     是绕过协议。当前 app-server 不暴露记忆正文列表。
  *   · `pathOnly: false` —— 内核的表名/库名，出现在任何位置（尤其 SQL 字符串里）都算破线。
  */
 const KERNEL_STATE_PATTERNS = [
@@ -53,7 +52,7 @@ const FORBIDDEN_IMPORT_RE = /(^|\/)codex-rs\/|^@openai\/codex(-|\/|$)|(^|\/)code
 
 const PROTOCOL_ADVICE =
   '改走 app-server JSON-RPC v2（K2）。状态筛选用本机投影表（09 §4.1），' +
-  '内容搜索用 thread/searchOccurrences，记忆用 memories/read。';
+  '内容搜索用 thread/searchOccurrences；记忆只用配置 API 与 memory/status/reset。';
 
 /** @type {import('eslint').Rule.RuleModule} */
 export const noKernelInternals = {
