@@ -47,6 +47,8 @@ export interface AutomationDefinition {
   /** 07 §8-3：定时任务**强制**硬预算 */
   readonly budgetLimit: number;
   readonly workspaces: readonly string[];
+  /** 无人值守任务必须固定到一个明确模型，不能在执行时静默换档。 */
+  readonly modelId?: string | undefined;
 }
 
 export interface RunRecord {

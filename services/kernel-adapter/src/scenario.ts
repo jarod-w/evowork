@@ -343,10 +343,8 @@ export function expandTurnStart(ctx: ExpandContext): ExpandResult {
 /**
  * v1 的三个场景（03 §2.2，与截图一致）。真源是 `config/scenarios/*.toml`，这里是兜底默认值。
  *
- * **`model` 不能省。** 内核对 `turn/start` 要求这个字段，缺了直接回
- * `Invalid request: missing field \`model\``——而在 UI 上那就是"回车之后任务建出来了、
- * 但一句话都没有"。第一版这里漏了它（toml 里有、代码兜底里没有），
- * 于是**在读 toml 那步落地之前，兜底路径永远起不了一个回合**。
+ * 模型不属于场景内容。调用方必须先从实时可用目录里解析出模型，再通过
+ * `ComposerOverrides.model` 显式传入；否则下架一个型号就会让所有场景一起失效。
  */
 export const BUILTIN_SCENARIOS: readonly Scenario[] = [
   {
@@ -355,7 +353,6 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
     icon: 'cup',
     order: 10,
     default: true,
-    model: 'evowork/deepseek-v4-flash',
     reasoningEffort: 'medium',
     mode: 'request-approval',
     permissions: 'evowork-workspace',
@@ -376,7 +373,6 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
     name: '代码开发',
     icon: 'code',
     order: 20,
-    model: 'evowork/deepseek-v4-flash',
     reasoningEffort: 'high',
     mode: 'request-approval',
     permissions: 'evowork-workspace',
@@ -393,7 +389,6 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
     name: '设计创意',
     icon: 'palette',
     order: 30,
-    model: 'evowork/deepseek-v4-flash',
     reasoningEffort: 'medium',
     mode: 'request-approval',
     permissions: 'evowork-workspace',

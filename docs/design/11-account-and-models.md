@@ -29,7 +29,7 @@
 | 厂商密钥录入 | **已从引导删除**（2026-09-19）。现仅「设置 → 模型 → 添加模型」。兼容 IPC `applyModelAccess` 仍可一次写三家内置密钥 | 密钥库（Q34）；`gateway.env` 明文过渡方案已退役 |
 | 网关访问令牌 | `~/.evowork/gateway-token`，本机拓扑下**宿主自己签**（[gateway-env.ts:140](../../apps/desktop/src/main/gateway-env.ts#L140) 的 `ensureGatewayTokenFile`） | 同一档过渡方案。路径定义在 [service-host.ts:77](../../apps/desktop/src/main/service-host.ts#L77) |
 | 网关鉴权 | `staticTokenAuth()` 常量时间比对（[gateway/src/main.ts:83](../../services/gateway/src/main.ts#L83)），挂在 [server.ts:31](../../services/gateway/src/server.ts#L31) 的 `authenticate` 钩子上 | 钩子形状是对的（注释已写「云端托管形态下换成 identity 服务的校验」），**缺的是那个实现** |
-| 可用模型 | **硬编码**在 `services/gateway/src/capabilities.ts` 的 `P0_MODELS`（三条：deepseek-v4-flash / kimi-k3 / glm-flash），按"env 里有没有那家密钥"过滤（[main.ts:60-62](../../services/gateway/src/main.ts#L60-L62) 的 `availableModels()`） | **只读**。用户能选，不能管 |
+| 可用模型 | 内置的当前型号与用户自定义模型经网关目录合并；场景不再硬编码具体型号，Composer 从实时目录解析选择 | 设置页可管理自定义模型；已下架型号不会继续成为产品默认值 |
 | 模型下拉 | `GET /v1/evowork/models` → [model-catalog.ts](../../apps/desktop/src/main/model-catalog.ts) 翻译成 `ModelOptionView` → Composer（F24） | 已端到端接通并实测过 |
 | 拓扑判断 | `isLocalGateway(baseUrl)`（[gateway-process.ts:49](../../apps/desktop/src/main/gateway-process.ts#L49)）决定要不要起子进程、要不要自签令牌 | **隐式推断** |
 | 账号 | 无。`services/identity/` 只有一份 README | 未开始 |

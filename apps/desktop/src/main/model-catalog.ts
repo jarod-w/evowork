@@ -32,6 +32,32 @@ import type { ModelCatalogResult, ModelOptionView } from '../shared/ipc.js';
 
 /** 网关地址的兜底值。与 `config/config.toml.template` 里的 `base_url` 一致。 */
 export const DEFAULT_GATEWAY_BASE_URL = 'http://127.0.0.1:8787/v1';
+export const RETIRED_DEFAULT_MODELS = new Set(['evowork/deepseek-v4-flash']);
+
+/**
+ * 清掉旧版本写进内核配置的产品默认模型。
+ *
+ * 只处理 TOML 顶层、且值精确命中已下架列表的 `model`；用户或企业配置的其他型号、
+ * provider 段里的字段一律不碰。EvoWork 的每次 turn/start 都会显式传入实时目录解析出的
+ * 模型，因此这里不再需要一个会随供应商下架而失效的全局型号。
+ */
+export function removeRetiredDefaultModel(configToml: string): {
+  readonly text: string;
+  readonly changed: boolean;
+} {
+  let topLevel = true;
+  let changed = false;
+  const lines = configToml.split('\n').filter((raw) => {
+    const line = raw.trim();
+    if (line.startsWith('[')) topLevel = false;
+    if (!topLevel || line.startsWith('#')) return true;
+    const match = /^model\s*=\s*["']([^"']+)["']\s*$/.exec(line);
+    if (!match?.[1] || !RETIRED_DEFAULT_MODELS.has(match[1])) return true;
+    changed = true;
+    return false;
+  });
+  return { text: lines.join('\n'), changed };
+}
 
 /** 网关不通时给用户看的话。**不猜原因**，只说清后果与下一步。 */
 export const GATEWAY_UNREACHABLE =

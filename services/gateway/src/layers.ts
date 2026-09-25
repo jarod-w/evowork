@@ -100,7 +100,7 @@ export interface ModelLayers {
  * 四层合并。返回的顺序 = 各 id 第一次出现的顺序（下拉不该因为一次覆盖而跳动）。
  *
  * 覆盖时**只换条目、不换位置**，与 `createModelRegistryFrom` 同一条：
- * 企业用私有 endpoint 覆盖 `evowork/deepseek-v4-flash` 是真实场景，
+ * 企业用私有 endpoint 覆盖某个内置型号是实际场景，
  * 而位置跳动会让用户以为列表里少了一个。
  */
 export function mergeModelLayers(layers: ModelLayers): readonly ResolvedModel[] {

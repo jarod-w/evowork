@@ -26,9 +26,9 @@ describe('配置解析（全部来自环境变量，不落盘）', () => {
   it('**只注册密钥齐了的厂商** —— 让不可用的模型出现在下拉里再报错更糟', () => {
     expect(availableModels()).toHaveLength(0);
 
-    process.env.DEEPSEEK_API_KEY = 'sk-deepseek';
+    process.env.MOONSHOT_API_KEY = 'sk-moonshot';
     const models = availableModels();
-    expect(models.every((m) => m.provider === 'deepseek')).toBe(true);
+    expect(models.every((m) => m.provider === 'moonshot')).toBe(true);
     expect(models.length).toBeGreaterThan(0);
     expect(models.length).toBeLessThan(P0_MODELS.length);
   });
@@ -44,37 +44,35 @@ describe('配置解析（全部来自环境变量，不落盘）', () => {
    * 拿到一个上游 401。而"只列真的能用的"正是桌面 App 的下拉信任这个端点的理由（F24）。
    */
   it('端点列出的就是密钥齐了的那些 —— **没配密钥的不许出现，也不许重复**', () => {
-    process.env.DEEPSEEK_API_KEY = 'sk-deepseek';
+    process.env.MOONSHOT_API_KEY = 'sk-moonshot';
     const listed = availableModelRegistry().list();
 
-    expect(listed.every((m) => m.provider === 'deepseek')).toBe(true);
-    expect(listed.some((m) => m.provider === 'moonshot')).toBe(false);
+    expect(listed.every((m) => m.provider === 'moonshot')).toBe(true);
+    expect(listed.some((m) => m.provider === 'deepseek')).toBe(false);
     expect(listed.some((m) => m.provider === 'zhipu')).toBe(false);
     expect(new Set(listed.map((m) => m.id)).size).toBe(listed.length);
     expect(listed).toHaveLength(availableModels().length);
   });
 
-  it('三家密钥都配上时三家都在，且仍然不重复', () => {
+  it('密钥都配上时只列当前仍存在的内置型号，且不重复', () => {
     process.env.DEEPSEEK_API_KEY = 'sk-a';
     process.env.MOONSHOT_API_KEY = 'sk-b';
     process.env.ZHIPU_API_KEY = 'sk-c';
     const listed = availableModelRegistry().list();
 
-    expect(new Set(listed.map((m) => m.provider))).toEqual(
-      new Set(['deepseek', 'moonshot', 'zhipu']),
-    );
+    expect(new Set(listed.map((m) => m.provider))).toEqual(new Set(['moonshot', 'zhipu']));
     expect(new Set(listed.map((m) => m.id)).size).toBe(listed.length);
-    // 用户点名要的三个都在（需求：deepseek-v4-flash · kimi-k3 · glm-5.3-flash）
     expect(listed.map((m) => m.upstreamModel)).toEqual(
-      expect.arrayContaining(['deepseek-v4-flash', 'kimi-k3', 'glm-5.3-flash']),
+      expect.arrayContaining(['kimi-k3', 'glm-5.3-flash']),
     );
+    expect(listed.map((m) => m.upstreamModel)).not.toContain('deepseek-v4-flash');
   });
 
   it('base url 可被环境变量覆盖（企业私有部署，Q14）', () => {
-    process.env.DEEPSEEK_API_KEY = 'sk-x';
-    process.env.DEEPSEEK_BASE_URL = 'https://internal.corp/v1';
+    process.env.MOONSHOT_API_KEY = 'sk-x';
+    process.env.MOONSHOT_BASE_URL = 'https://internal.corp/v1';
     const resolve = buildConfigResolver();
-    const model = P0_MODELS.find((m) => m.provider === 'deepseek')!;
+    const model = P0_MODELS.find((m) => m.provider === 'moonshot')!;
     expect(resolve(model).baseUrl).toBe('https://internal.corp/v1');
   });
 

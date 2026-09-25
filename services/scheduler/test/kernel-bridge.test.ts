@@ -24,9 +24,15 @@ const automation: AutomationDefinition = {
   consecutiveFailures: 0,
   budgetLimit: 50_000,
   workspaces: ['/w/weekly'],
+  modelId: 'deepseek/deepseek-flash',
 };
 
-function harness(over: { workspaceExists?: (path: string) => boolean } = {}) {
+function harness(
+  over: {
+    workspaceExists?: (path: string) => boolean;
+    isModelAvailable?: (modelId: string) => Promise<boolean>;
+  } = {},
+) {
   const calls: string[] = [];
   const runs: (RunRecord & { startedAt: number })[] = [];
   const finished: unknown[] = [];
@@ -64,6 +70,7 @@ function harness(over: { workspaceExists?: (path: string) => boolean } = {}) {
     notify: (text) => notices.push(text),
     now: () => NOW,
     ...(over.workspaceExists ? { workspaceExists: over.workspaceExists } : {}),
+    ...(over.isModelAvailable ? { isModelAvailable: over.isModelAvailable } : {}),
   });
   return { bridge, runner, calls, runs, finished, patches, notices };
 }
@@ -86,7 +93,7 @@ describe('起一次定时执行', () => {
       expect.objectContaining({
         input: [{ type: 'text', text: '把本周的进展整理成一份周报' }],
         automationId: 'a1',
-        overrides: { cwd: '/w/weekly' },
+        overrides: { cwd: '/w/weekly', model: 'deepseek/deepseek-flash' },
       }),
     );
     bridge.dispose();
@@ -104,6 +111,20 @@ describe('起一次定时执行', () => {
     await expect(bridge.ports.startRun(automation, NOW)).rejects.toThrow();
     expect(runner.createTask).not.toHaveBeenCalled();
     expect(finished[0]).toMatchObject({ status: 'FAILED', failureClass: 'ENVIRONMENT' });
+    bridge.dispose();
+  });
+
+  it('固定模型已下架时暂停自动化，不静默换模型', async () => {
+    const { bridge, runner, finished, patches, notices } = harness({
+      isModelAvailable: async () => false,
+    });
+    await expect(bridge.ports.startRun(automation, NOW)).rejects.toThrow(
+      'automation-model-unavailable',
+    );
+    expect(runner.createTask).not.toHaveBeenCalled();
+    expect(patches).toContainEqual({ status: 'PAUSED' });
+    expect(finished[0]).toMatchObject({ status: 'FAILED', failureClass: 'MODEL' });
+    expect(notices[0]).toContain('重新选择模型');
     bridge.dispose();
   });
 });

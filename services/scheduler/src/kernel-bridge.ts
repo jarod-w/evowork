@@ -77,6 +77,8 @@ export interface BridgeOptions {
   readonly now?: (() => number) | undefined;
   /** 工作空间在不在。路径失效是 `ENVIRONMENT` 类失败（不计连败） */
   readonly workspaceExists?: ((path: string) => boolean) | undefined;
+  /** 每次执行前查实时目录；模型下架时暂停，避免无人值守地静默改用别的模型。 */
+  readonly isModelAvailable?: ((modelId: string) => Promise<boolean>) | undefined;
   readonly logger?: Logger | undefined;
 }
 
@@ -102,6 +104,24 @@ export function createKernelBridge(options: BridgeOptions) {
     updateAutomation: (id, patch) => options.store.updateAutomation(id, patch),
 
     async startRun(automation, fireTime) {
+      const modelId = automation.modelId?.trim();
+      const modelAvailable = modelId
+        ? ((await options.isModelAvailable?.(modelId)) ?? true)
+        : false;
+      if (!modelId || !modelAvailable) {
+        const summary = modelId
+          ? `自动化固定的模型「${modelId}」当前不可用`
+          : '自动化还没有选择模型';
+        options.store.updateAutomation(automation.id, { status: 'PAUSED' });
+        options.notify(`「${automation.name}」已暂停：${summary}。编辑它并重新选择模型后再恢复。`);
+        finish(automation, fireTime, undefined, {
+          ok: false,
+          failureClass: 'MODEL',
+          summary,
+        });
+        throw new Error('automation-model-unavailable');
+      }
+
       // ① 工作空间不在 → 直接判 ENVIRONMENT，不去起 thread
       const missing = (automation.workspaces ?? []).filter(
         (path) => !(options.workspaceExists?.(path) ?? true),
@@ -120,6 +140,7 @@ export function createKernelBridge(options: BridgeOptions) {
         input: [{ type: 'text', text: automation.prompt }],
         automationId: automation.id,
         overrides: {
+          model: modelId,
           ...(automation.workspaces[0] ? { cwd: automation.workspaces[0] } : {}),
         },
       });

@@ -799,18 +799,10 @@ describe('真实上游形状（DeepSeek，2026-09-05 实测）', () => {
   });
 });
 
-describe('能力声明（Q16 三家）', () => {
-  /*
-   * Q16 定的是**三家**（DeepSeek / Kimi / GLM），不是几个型号 ——
-   * 2026-09-06 下架两个 DeepSeek 型号之后，要守住的仍然是"三家一家不少"。
-   * 按型号数量断言会让"删一个型号"看起来像"违反了 Q16"，而 Q16 没这么说。
-   */
-  it('P0 名单覆盖 Q16 决策的三家，一家不少', () => {
-    expect([...new Set(P0_MODELS.map((m) => m.provider))].sort()).toEqual([
-      'deepseek',
-      'moonshot',
-      'zhipu',
-    ]);
+describe('能力声明（当前内置型号）', () => {
+  it('已下架的 DeepSeek 型号不再出现在运行时目录', () => {
+    expect(P0_MODELS.map((model) => model.id)).not.toContain('evowork/deepseek-v4-flash');
+    expect([...new Set(P0_MODELS.map((m) => m.provider))].sort()).toEqual(['moonshot', 'zhipu']);
   });
 
   /**
@@ -831,28 +823,20 @@ describe('能力声明（Q16 三家）', () => {
     }
   });
 
-  it('**Q16 的三家全部实测过**（2026-09-05 三把 key 到位后）', () => {
+  it('当前内置型号全部实测过', () => {
     const providers = new Set(P0_MODELS.filter((m) => m.verified).map((m) => m.provider));
-    expect([...providers].sort()).toEqual(['deepseek', 'moonshot', 'zhipu']);
+    expect([...providers].sort()).toEqual(['moonshot', 'zhipu']);
   });
 
   it('验过的模型必须给日期，并如实列出仍未实测的能力键', () => {
     const verified = P0_MODELS.filter((m) => m.verified);
-    // 2026-09-06 下架 deepseek-chat / deepseek-reasoner 后剩三条（见 capabilities.ts 头注释）
-    expect(verified.length, 'deepseek-v4-flash + Kimi + GLM').toBe(3);
+    expect(verified.length, 'Kimi + GLM').toBe(2);
     for (const model of verified) {
       expect(model.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       // 上下文长度要塞满才能测，探针不做 —— 所以它必须还在未验证列表里
       expect(model.unverified, `${model.id}`).toContain('maxContextTokens');
       expect(model.notes).toContain('实测');
     }
-  });
-
-  it('**deepseek-v4-flash 是推理模型** —— 名字里的 flash 骗过了第一版能力表', () => {
-    const flash = P0_MODELS.find((m) => m.id === 'evowork/deepseek-v4-flash');
-    // 实测 18 帧里 15 帧是 reasoning_content。标成 false 会让 from-chat 把推理段整块丢掉
-    expect(flash?.capabilities.reasoning).toBe(true);
-    expect(flash?.capabilities.parallelToolCalls).toBe(true);
   });
 
   /*
@@ -871,10 +855,11 @@ describe('能力声明（Q16 三家）', () => {
     }
   });
 
-  it('下架的两个 DeepSeek 型号不再出现在目录里（2026-09-06）', () => {
+  it('所有已下架的 DeepSeek 型号都不再出现在目录里', () => {
     const ids = P0_MODELS.map((m) => m.id);
     expect(ids).not.toContain('evowork/deepseek-chat');
     expect(ids).not.toContain('evowork/deepseek-reasoner');
+    expect(ids).not.toContain('evowork/deepseek-v4-flash');
   });
 
   it('GLM-5.3-flash 标为 light 档，且 notes 里写清它为什么在 P0 名单里（R4）', () => {
@@ -885,32 +870,14 @@ describe('能力声明（Q16 三家）', () => {
     expect(glm?.notes).toContain('产物质量本身仍未评估');
   });
 
-  /**
-   * 2026-09-05 三把 key 全到位后最反直觉的一条：**三家的当前主力型号全是推理模型**。
-   *
-   * 原表里三行写着 reasoning: false，依据是"旗舰档才推理、flash 是轻量档"这种直觉。
-   * 实测下来 kimi-k3、glm-5.3-flash、deepseek-v4-flash 都吐 reasoning_content，
-   * 而且占了绝大多数帧（GLM 是 65 帧里 64 帧）。
-   *
-   * 标错不会报错：`from-chat.ts` 会走"上游给了思维链但能力表说没有"分支，
-   * **推理段整块不显示**，用户只觉得这模型不动脑子。
-   */
-  it('三家当前主力型号都是推理模型（实测推翻了按名字猜的那一版）', () => {
-    for (const id of ['evowork/kimi-k3', 'evowork/glm-flash', 'evowork/deepseek-v4-flash']) {
+  it('当前内置型号都是推理模型（以实测为准）', () => {
+    for (const id of ['evowork/kimi-k3', 'evowork/glm-flash']) {
       const model = P0_MODELS.find((m) => m.id === id);
       expect(model?.capabilities.reasoning, `${id} 实测吐 reasoning_content`).toBe(true);
     }
   });
 
-  /**
-   * imageInput 的三种结局正好是 D2「降级必须显式」的三个档：
-   * Kimi / GLM 真能看图；deepseek-v4-flash **接受请求但看不见**（HTTP 200 + "无法识别"）。
-   * 第三种最危险 —— 它不报错，所以只能靠能力表拦在前面。
-   */
-  it('deepseek-v4-flash 的 imageInput 是 false：它不报错，但看不见', () => {
-    const flash = P0_MODELS.find((m) => m.id === 'evowork/deepseek-v4-flash');
-    expect(flash?.capabilities.imageInput).toBe(false);
-    expect(flash?.notes).toContain('看不见');
+  it('当前内置型号都支持图片输入', () => {
     expect(P0_MODELS.find((m) => m.id === 'evowork/kimi-k3')?.capabilities.imageInput).toBe(true);
     expect(P0_MODELS.find((m) => m.id === 'evowork/glm-flash')?.capabilities.imageInput).toBe(true);
   });

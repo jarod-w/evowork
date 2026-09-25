@@ -44,6 +44,7 @@ function seedAutomation(over: Record<string, unknown> = {}): void {
     catchup_window_ms: 86_400_000,
     consecutive_failures: 0,
     budget_limit: 50_000,
+    model: 'deepseek/deepseek-flash',
     workspaces: JSON.stringify([join(dir, 'work')]),
     ...over,
   } as Record<string, unknown>;
@@ -54,8 +55,8 @@ function seedAutomation(over: Record<string, unknown> = {}): void {
     .prepare(
       `INSERT INTO automation
         (id, name, prompt, device_id, schedule, timezone, status, misfire_policy,
-         catchup_window_ms, consecutive_failures, budget_limit, workspaces, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         catchup_window_ms, consecutive_failures, budget_limit, model, workspaces, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       row.id,
@@ -69,6 +70,7 @@ function seedAutomation(over: Record<string, unknown> = {}): void {
       row.catchup_window_ms,
       row.consecutive_failures,
       row.budget_limit,
+      row.model,
       row.workspaces,
       NOW,
       NOW,
@@ -131,7 +133,7 @@ function make(overrides: { now?: () => number } = {}) {
 describe('scheduler ↔ 内核', () => {
   it('启动时做 misfire 扫描：**先落一条 MISSED，再补跑**（07 §8-1）', async () => {
     seedAutomation();
-    const { services, calls } = make();
+    const { services, calls, adapter } = make();
     await services.startScheduler(60_000);
 
     const runs = createAutomationRepo(store.db).listRuns('a1');
@@ -139,6 +141,11 @@ describe('scheduler ↔ 内核', () => {
     const statuses = runs.map((r) => r.status);
     expect(statuses).toContain('MISSED');
     expect(calls).toEqual(['createTask', 'setBudget']);
+    expect(adapter.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        overrides: expect.objectContaining({ model: 'deepseek/deepseek-flash' }),
+      }),
+    );
     services.stop();
   });
 

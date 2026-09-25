@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAdapter, type Adapter } from '../src/adapter.js';
 import type { CapabilityReport } from '../src/capabilities.js';
 import type { UiEvent } from '../src/events.js';
+import { BUILTIN_SCENARIOS } from '../src/scenario.js';
 import { FakeAppServer, makeThread, makeTurn } from './fake-app-server.js';
 
 let store: Store;
@@ -48,6 +49,8 @@ beforeEach(() => {
   timers = immediateTimers();
   adapter = createAdapter({
     store,
+    // 适配层测试不依赖网关目录；用一个明确测试模型模拟宿主已完成运行时解析。
+    scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
     sessionOptions: {
       launcher: server.launcher(),
       clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
@@ -176,6 +179,20 @@ describe('工作空间（EvoWork 的「空间」= Project + cwd）', () => {
 });
 
 describe('新建任务（03 §4.6）', () => {
+  it('没有解析出可用模型时在创建 thread 前拒绝', async () => {
+    await adapter.start();
+    const before = server.received.filter((request) => request.method === 'thread/start').length;
+    await expect(
+      adapter.createTask({
+        input: [{ type: 'text', text: '做个周报' }],
+        overrides: { model: '' },
+      }),
+    ).rejects.toThrow('没有可用模型');
+    expect(server.received.filter((request) => request.method === 'thread/start')).toHaveLength(
+      before,
+    );
+  });
+
   it('thread/start → turn/start，且投影表记下 EvoWork 的初值', async () => {
     await adapter.start();
     const result = await adapter.createTask({
@@ -791,6 +808,7 @@ describe('崩溃恢复的端到端（09 §1）', () => {
     const notices: string[] = [];
     const withRecovery = createAdapter({
       store,
+      scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
       sessionOptions: {
         launcher: server.launcher(),
         clientInfo: { name: 'evowork-desktop', version: '0.0.0' },

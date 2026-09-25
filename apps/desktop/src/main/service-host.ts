@@ -92,6 +92,7 @@ import {
   fetchModelCatalog,
   parseGatewayBaseUrl,
   readGatewayBaseUrl,
+  removeRetiredDefaultModel,
   rewriteEvoworkBaseUrl,
   waitUntilGatewayReady,
 } from './model-catalog.js';
@@ -463,6 +464,20 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     if (modes > 0) logger.info('desktop.mode_instructions.installed', { itemCount: modes });
   }
 
+  // 旧版本把已下架型号写成了全局默认。只迁移这一个精确值，不覆盖其他用户/企业配置。
+  const kernelConfigPath = join(options.paths.kernelHome, 'config.toml');
+  if (existsSync(kernelConfigPath)) {
+    try {
+      const migrated = removeRetiredDefaultModel(readFileSync(kernelConfigPath, 'utf8'));
+      if (migrated.changed) {
+        writeFileSync(kernelConfigPath, migrated.text, 'utf8');
+        logger.info('desktop.kernel_config.retired_model_removed', {});
+      }
+    } catch {
+      logger.warn('desktop.kernel_config.retired_model_migration_failed', { reason: 'IO' });
+    }
+  }
+
   // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
   const store = openStore({ path: options.paths.db, logger });
 
@@ -510,7 +525,6 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 反推完成后再把内核 base_url 改回 loopback。顺序不能反：远端 URL 是
    * `upstream_base_url` 的输入，先改掉就丢了。
    */
-  const kernelConfigPath = join(options.paths.kernelHome, 'config.toml');
   if (existsSync(kernelConfigPath) && !(baseEnv.EVOWORK_GATEWAY_URL ?? '').trim()) {
     const text = readFileSync(kernelConfigPath, 'utf8');
     const current = parseGatewayBaseUrl(text);
@@ -789,6 +803,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     }
   }
 
+  const automationCatalog: { read?: () => Promise<ModelCatalogResult> } = {};
   const services = createLocalServices({
     store,
     adapter,
@@ -802,6 +817,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         taskId: threadId,
       } satisfies RendererEvent),
     ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
+    isModelAvailable: async (modelId) => {
+      const catalog = await automationCatalog.read?.();
+      return catalog?.models.some((model) => model.id === modelId) ?? false;
+    },
     logger,
   });
   services.startArtifactReports(options.paths.artifactLog);
@@ -865,6 +884,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     }
     return fetchModelCatalog(catalogFetchOptions());
   };
+  automationCatalog.read = readModelCatalog;
 
   const launchLocalGateway = (): void => {
     if (!options.gatewayEntryPath) return;
@@ -1052,6 +1072,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         wakeSystem: input.wakeSystem,
         budgetLimit: input.budgetLimit,
         workspaces: input.workspaces,
+        modelId: input.modelId,
       });
     },
     setStatus: (id: string, status: 'ACTIVE' | 'PAUSED'): void => {

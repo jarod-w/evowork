@@ -2255,6 +2255,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           automationWorkspaces={(startup?.workspaces ?? [])
             .filter((workspace) => Boolean(workspace.path))
             .map((workspace) => ({ id: workspace.path as string, label: workspace.name }))}
+          automationModels={models.map((model) => ({ id: model.id, label: model.label }))}
           onSaveAutomation={async (input) => {
             if (!bridge.saveAutomation) return false;
             try {
@@ -2712,6 +2713,7 @@ function MainPage(props: {
   readonly libraryInitialNav: LibraryNav;
   readonly automations: AutomationsDataView | null;
   readonly automationWorkspaces: readonly { readonly id: string; readonly label: string }[];
+  readonly automationModels: readonly { readonly id: string; readonly label: string }[];
   readonly onSaveAutomation: (input: AutomationMutationInput) => Promise<boolean>;
   readonly onAutomationStatus: (id: string, status: 'ACTIVE' | 'PAUSED') => Promise<void>;
   readonly onMigrateAutomation: (id: string) => Promise<void>;
@@ -2783,6 +2785,7 @@ function MainPage(props: {
           runs={props.automations?.runs ?? {}}
           deviceName={props.automations?.deviceName ?? '这台电脑'}
           workspaceOptions={props.automationWorkspaces}
+          modelOptions={props.automationModels}
           onOpenTask={props.onOpenTask}
           onSave={(draft, id) => props.onSaveAutomation({ ...draft, ...(id ? { id } : {}) })}
           onStatus={props.onAutomationStatus}

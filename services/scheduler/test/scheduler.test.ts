@@ -284,6 +284,7 @@ describe('调度循环', () => {
     consecutiveFailures: 0,
     budgetLimit: 100_000,
     workspaces: ['/w'],
+    modelId: 'deepseek/deepseek-flash',
   };
 
   function ports(over: Partial<Parameters<typeof createScheduler>[0]> = {}) {

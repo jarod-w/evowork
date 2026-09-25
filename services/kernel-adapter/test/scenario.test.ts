@@ -255,6 +255,7 @@ describe('场景包（03 §2.2）', () => {
     expect(BUILTIN_SCENARIOS.map((s) => s.id)).toEqual(['office', 'code', 'design']);
     expect(BUILTIN_SCENARIOS.filter((s) => s.default)).toHaveLength(1);
     expect(OFFICE.default).toBe(true);
+    expect(BUILTIN_SCENARIOS.every((scenario) => scenario.model === undefined)).toBe(true);
   });
 
   it('office 的 5 个 chips 与截图一致，且 chip 只写入 Composer 不发送（prompt 以冒号结尾）', () => {

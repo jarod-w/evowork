@@ -73,6 +73,7 @@ export interface LocalServicesOptions {
    * 随基础包带的 Noto Sans SC。有这份，安装就不再去 GitHub 拉字体。
    */
   readonly bundledFontPath?: string | undefined;
+  readonly isModelAvailable?: ((modelId: string) => Promise<boolean>) | undefined;
 }
 
 /** 产物索引的 `IndexPort` 由 store 的 repo 实现 —— 两边的形状本来就一样。 */
@@ -145,6 +146,7 @@ export function createLocalServices(options: LocalServicesOptions) {
     notify: options.notify,
     now,
     workspaceExists: (path) => existsSync(path),
+    ...(options.isModelAvailable ? { isModelAvailable: options.isModelAvailable } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
   });
 

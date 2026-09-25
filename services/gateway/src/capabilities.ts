@@ -69,18 +69,8 @@ export type ProviderId = 'deepseek' | 'moonshot' | 'zhipu' | 'private';
  * 或标 true（把一个没测过的数字说成测过了）。所以改成 `verifiedAt` + `unverified` 列表：
  * **说清验过什么、没验什么**。能力端点把这两个字段一起吐给前端与运维。
  *
- * ## 2026-09-06：`deepseek-chat` 与 `deepseek-reasoner` 已下架
- *
- * 两条都在 2026-09-05 对真实 endpoint 实测通过（记录留在总纲 §D2 的实测表里，
- * **不要因为条目没了就把那段删掉** —— 它是"探针发现了三处与假设不符"的证据）。
- * 下架是产品决定：DeepSeek 一家在下拉里占三行，而 `deepseek-v4-flash` 在能力位上
- * 是前两者的超集（推理 + 并行工具 + cache），留着另外两条只是让用户多做两次没有
- * 分辨依据的选择。
- *
- * 下架**连带改了场景默认模型**（`config/scenarios/*.toml` 与 `scenario.ts` 的内置副本
- * 都指向 `evowork/deepseek-v4-flash`）：漏改的话 `resolveModelChoice` 每次启动都会
- * 弹一条"场景默认的模型当前不可用，已改用…"——功能上对，但那句话是说给
- * 配置出错的用户听的，不该由一次下架来触发。
+ * 已下架型号的实测记录保留在总纲 §D2；运行时目录只列当前仍存在的型号。
+ * 场景不再绑定具体模型，避免以后每次模型下架都同时修改三份场景配置。
  */
 export interface ModelRegistryEntry extends ModelEntry {
   /**
@@ -103,40 +93,6 @@ export interface ModelRegistryEntry extends ModelEntry {
 }
 
 export const P0_MODELS: readonly ModelRegistryEntry[] = [
-  {
-    /*
-     * 2026-09-05 探针发现的型号：**它是个推理模型**，尽管名字里带 flash。
-     *
-     * 这条记下来是因为它推翻了一个很自然的假设："带 flash 的是轻量非推理档"。
-     * 实测 18 帧里 15 帧是 reasoning_content —— 如果按名字猜着填 reasoning: false，
-     * `from-chat.ts` 会走进"上游给了思维链但能力表说没有"的分支：
-     * 推理区整块不显示，而用户只会觉得"这个模型怎么想都不想就答"。
-     */
-    id: 'evowork/deepseek-v4-flash',
-    provider: 'deepseek',
-    upstreamModel: 'deepseek-v4-flash',
-    displayName: 'DeepSeek V4 Flash',
-    tier: 'standard',
-    verified: true,
-    verifiedAt: '2026-09-05',
-    unverified: ['maxContextTokens'],
-    notes:
-      '快档推理模型。2026-09-05 实测：流式 65 帧里 44 帧 reasoning_content、21 帧 content；' +
-      '并行工具调用成立（index 0/1 两个函数）；usage 帧**同时带 choices 与 finish_reason**' +
-      '（与 OpenAI 的空 choices 不同，`from-chat.ts` 先取 usage 再遍历 choices，两者都不丢）。' +
-      '**图片：接受请求形状但看不见** —— 发一张 32×32 纯红图，它 HTTP 200 然后回"无法识别"。' +
-      '所以 imageInput 标 false：这是三家里唯一"不报错但也看不见"的，' +
-      '标 true 的代价是用户传了图、等了半天、拿到一句无法识别（D2「降级必须显式」）。',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: true,
-      promptCache: true,
-      imageInput: false,
-      maxContextTokens: 128_000,
-    },
-  },
   {
     id: 'evowork/kimi-k3',
     provider: 'moonshot',
@@ -228,7 +184,7 @@ export interface CapabilityLookup<T extends ModelRegistryEntry = ModelRegistryEn
  * 两个函数各自都是对的（过滤对、组合对），合起来是错的
  * （CLAUDE.md §9.1）。这个缺陷在此之前看不见，因为没有任何 UI 消费过 `list()`。
  *
- * **同 id 后来者覆盖前者**（企业用私有 endpoint 覆盖 `evowork/deepseek-v4-flash` 是真实场景），
+ * **同 id 后来者覆盖前者**（企业用私有 endpoint 覆盖某个内置型号是实际场景），
  * 位置保持第一次出现时的位置 —— 下拉的顺序不该因为一次覆盖而跳动。
  */
 export function createModelRegistryFrom<T extends ModelRegistryEntry>(

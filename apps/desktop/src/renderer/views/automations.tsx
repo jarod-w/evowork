@@ -58,6 +58,7 @@ export interface AutomationDraft {
   readonly catchupWindowHours: number;
   readonly wakeSystem: boolean;
   readonly budgetLimit: number;
+  readonly modelId: string;
   readonly testRun: boolean;
 }
 
@@ -89,6 +90,7 @@ export interface AutomationFormProps {
   readonly onChange: (draft: AutomationDraft) => void;
   readonly deviceName: string;
   readonly workspaceOptions: readonly { readonly id: string; readonly label: string }[];
+  readonly modelOptions: readonly { readonly id: string; readonly label: string }[];
   readonly onSubmit?: (() => void) | undefined;
   readonly onCancel?: (() => void) | undefined;
   readonly now?: number | undefined;
@@ -141,6 +143,20 @@ export function AutomationForm(props: AutomationFormProps) {
           options={props.workspaceOptions}
           onChange={(id) => onChange({ ...draft, workspaces: [id] })}
         />
+      </div>
+
+      <div className="ew-field">
+        <span>模型</span>
+        <InlineSelect
+          ariaLabel="自动化模型"
+          placeholder="选择模型"
+          value={draft.modelId || undefined}
+          options={props.modelOptions}
+          onChange={(modelId) => onChange({ ...draft, modelId })}
+        />
+        <span className="ew-field-hint">
+          自动化会固定使用这个模型；模型下架时会暂停，不会静默换成别的模型。
+        </span>
       </div>
 
       {/* ── 触发编辑器：三档递进（07 §3.3）── */}
@@ -556,6 +572,7 @@ export interface AutomationListRow {
   readonly catchupWindowHours?: number | undefined;
   readonly wakeSystem?: boolean | undefined;
   readonly budgetLimit?: number | undefined;
+  readonly modelId?: string | undefined;
 }
 
 /** 状态 → 徽标。**「已暂停」与「自动暂停」是两件事**，不能合并。 */
@@ -578,6 +595,7 @@ export function AutomationsPage(props: {
   readonly runs: Readonly<Record<string, readonly RunRow[]>>;
   readonly deviceName: string;
   readonly workspaceOptions: readonly { readonly id: string; readonly label: string }[];
+  readonly modelOptions: readonly { readonly id: string; readonly label: string }[];
   readonly onOpenTask?: ((threadId: string) => void) | undefined;
   readonly onSave?: ((draft: AutomationDraft, id?: string) => Promise<boolean>) | undefined;
   readonly onStatus?: ((id: string, status: 'ACTIVE' | 'PAUSED') => Promise<void>) | undefined;
@@ -586,11 +604,13 @@ export function AutomationsPage(props: {
 }) {
   const [selectedId, setSelectedId] = useState<string | undefined>(props.rows[0]?.id);
   const [editingId, setEditingId] = useState<string | null | undefined>(undefined);
-  const [draft, setDraft] = useState<AutomationDraft>(() => emptyAutomationDraft());
+  const [draft, setDraft] = useState<AutomationDraft>(() =>
+    emptyAutomationDraft(props.workspaceOptions[0]?.id, props.modelOptions[0]?.id),
+  );
   const selected = props.rows.find((r) => r.id === selectedId) ?? props.rows[0];
 
   const beginCreate = (): void => {
-    setDraft(emptyAutomationDraft(props.workspaceOptions[0]?.id));
+    setDraft(emptyAutomationDraft(props.workspaceOptions[0]?.id, props.modelOptions[0]?.id));
     setEditingId(null);
   };
   const beginEdit = (row: AutomationListRow): void => {
@@ -604,6 +624,7 @@ export function AutomationsPage(props: {
       catchupWindowHours: row.catchupWindowHours ?? 24,
       wakeSystem: row.wakeSystem ?? false,
       budgetLimit: row.budgetLimit ?? 10_000,
+      modelId: row.modelId ?? '',
       testRun: false,
     });
     setEditingId(row.id);
@@ -619,6 +640,7 @@ export function AutomationsPage(props: {
             onChange={setDraft}
             deviceName={props.deviceName}
             workspaceOptions={props.workspaceOptions}
+            modelOptions={props.modelOptions}
             onCancel={() => setEditingId(undefined)}
             onSubmit={() => {
               void props.onSave?.(draft, editingId ?? undefined).then((ok) => {
@@ -732,7 +754,7 @@ export function AutomationsPage(props: {
   );
 }
 
-function emptyAutomationDraft(workspace?: string): AutomationDraft {
+function emptyAutomationDraft(workspace?: string, modelId?: string): AutomationDraft {
   return {
     name: '',
     prompt: '',
@@ -743,6 +765,7 @@ function emptyAutomationDraft(workspace?: string): AutomationDraft {
     catchupWindowHours: 24,
     wakeSystem: false,
     budgetLimit: 10_000,
+    modelId: modelId ?? '',
     testRun: true,
   };
 }

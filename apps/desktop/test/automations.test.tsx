@@ -34,6 +34,7 @@ const DRAFT: AutomationDraft = {
   catchupWindowHours: 24,
   wakeSystem: false,
   budgetLimit: 50_000,
+  modelId: 'deepseek/deepseek-flash',
   testRun: true,
 };
 
@@ -45,6 +46,7 @@ function Harness({ over = {} }: { over?: Partial<AutomationDraft> }) {
       onChange={setDraft}
       deviceName="MacBook-Pro-J"
       workspaceOptions={[{ id: '/w/weekly', label: 'weekly' }]}
+      modelOptions={[{ id: 'deepseek/deepseek-flash', label: 'deepseek/deepseek-flash' }]}
       now={NOW}
     />
   );
@@ -74,6 +76,12 @@ describe('**配置时就要说清的三件事**', () => {
     render(<Harness />);
     expect(screen.getByText(/没人在旁边看着的时候/)).toBeTruthy();
   });
+
+  it('固定保存模型，并说明下架时会暂停而不是静默切换', () => {
+    render(<Harness />);
+    expect(screen.getByLabelText('自动化模型').textContent).toContain('deepseek/deepseek-flash');
+    expect(screen.getByText(/模型下架时会暂停/)).toBeTruthy();
+  });
 });
 
 describe('自动化列表的执行摘要', () => {
@@ -82,6 +90,7 @@ describe('自动化列表的执行摘要', () => {
       <AutomationsPage
         deviceName="MacBook-Pro-J"
         workspaceOptions={[]}
+        modelOptions={[]}
         rows={[
           {
             id: 'a1',

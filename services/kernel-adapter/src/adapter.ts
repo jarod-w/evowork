@@ -170,6 +170,15 @@ export interface AdapterOptions {
   readonly authoritativePageSize?: number;
 }
 
+export const NO_AVAILABLE_MODEL_MESSAGE =
+  '没有可用模型。请先在「设置 → 模型」添加或启用一个模型，再开始任务。';
+
+function requireResolvedModel(model: string | undefined): string {
+  const resolved = model?.trim();
+  if (!resolved) throw new Error(NO_AVAILABLE_MODEL_MESSAGE);
+  return resolved;
+}
+
 export function createAdapter(options: AdapterOptions) {
   // 启动即检查「每个实验方法都有降级路径」——缺一条就等于给未来留一次白屏
   assertDegradationCoverage();
@@ -504,6 +513,7 @@ export function createAdapter(options: AdapterOptions) {
         scenarios.find((s) => s.default) ??
         scenarios[0];
       if (!scenario) throw new Error('没有可用的场景包');
+      const model = requireResolvedModel(args.overrides?.model ?? scenario.model);
 
       const reviewerAvailable = capabilities.isUsable('turn/start.approvalsReviewer');
       const modeId = resolveModeId(args.overrides?.modeId ?? scenario.mode);
@@ -512,9 +522,7 @@ export function createAdapter(options: AdapterOptions) {
 
       const started = await session.peer.request<ThreadStartResponse>(METHOD.threadStart, {
         ...(args.overrides?.cwd ? { cwd: args.overrides.cwd } : {}),
-        ...((args.overrides?.model ?? scenario.model)
-          ? { model: args.overrides?.model ?? scenario.model }
-          : {}),
+        model,
         // F5：permissions 与 sandbox 互斥，只传一个
         permissions: mode.kernelPermissions,
         approvalPolicy: mode.approvalPolicy,
@@ -530,7 +538,7 @@ export function createAdapter(options: AdapterOptions) {
         threadId,
         input: args.input,
         scenario,
-        ...(args.overrides ? { overrides: args.overrides } : {}),
+        overrides: { ...args.overrides, model },
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
@@ -708,16 +716,19 @@ export function createAdapter(options: AdapterOptions) {
         scenarios[0];
       if (!scenario) throw new Error('没有可用的场景包');
 
+      const overrides: ComposerOverrides = {
+        ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
+        ...(row?.permission_id ? { permissions: row.permission_id } : {}),
+        ...(row?.model ? { model: row.model } : {}),
+        ...args.overrides,
+      };
+      requireResolvedModel(overrides.model ?? scenario.model);
+
       const expanded = expandTurnStart({
         threadId: args.threadId,
         input: args.input,
         scenario,
-        overrides: {
-          ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
-          ...(row?.permission_id ? { permissions: row.permission_id } : {}),
-          ...(row?.model ? { model: row.model } : {}),
-          ...args.overrides,
-        },
+        overrides,
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
@@ -829,15 +840,17 @@ export function createAdapter(options: AdapterOptions) {
         scenarios.find((candidate) => candidate.default) ??
         scenarios[0];
       if (!scenario) return;
+      const overrides: ComposerOverrides = {
+        ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
+        ...(row?.permission_id ? { permissions: row.permission_id } : {}),
+        ...(row?.model ? { model: row.model } : {}),
+      };
+      requireResolvedModel(overrides.model ?? scenario.model);
       const expanded = expandTurnStart({
         threadId,
         input: next.input,
         scenario,
-        overrides: {
-          ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
-          ...(row?.permission_id ? { permissions: row.permission_id } : {}),
-          ...(row?.model ? { model: row.model } : {}),
-        },
+        overrides,
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),

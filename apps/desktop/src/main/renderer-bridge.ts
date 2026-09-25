@@ -889,6 +889,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           typeof a.catchupWindowMs === 'number' ? Math.max(1, a.catchupWindowMs / 3_600_000) : 24,
         wakeSystem: a.wakeSystem === true,
         budgetLimit: typeof a.budgetLimit === 'number' ? a.budgetLimit : 10_000,
+        ...(typeof a.modelId === 'string' ? { modelId: a.modelId } : {}),
         ownedByThisDevice: String(a.deviceId ?? a.device_id ?? '') === data.deviceId,
         ...(typeof a.consecutiveFailures === 'number'
           ? { consecutiveFailures: a.consecutiveFailures }
@@ -1875,10 +1876,16 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
       const name = input.name.trim();
       const prompt = input.prompt.trim();
-      if (!name || !prompt || !input.schedule.trim() || input.budgetLimit < 1000) {
+      if (
+        !name ||
+        !prompt ||
+        !input.schedule.trim() ||
+        !input.modelId.trim() ||
+        input.budgetLimit < 1000
+      ) {
         return {
           ok: false,
-          refused: '名称、任务描述、执行时间和至少 1000 tokens 的预算都要填写。',
+          refused: '名称、任务描述、执行时间、模型和至少 1000 tokens 的预算都要填写。',
           data: automationsData(),
         };
       }

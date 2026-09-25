@@ -24,5 +24,6 @@ sharing_enabled = false
 slots_enabled = false
 # 强制审计上报（只上报摘要，无内容 —— D9）
 audit_upload = true
-# 可用模型白名单（网关侧 + 本机双重）
-allowed_models = ["evowork/deepseek-v4-flash"]
+# 可用模型白名单（网关侧 + 本机双重）。由管理员填写当前实际部署的模型，
+# 模板不绑定某个可能下架的型号。
+# allowed_models = ["company/model-id"]

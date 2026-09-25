@@ -33,6 +33,8 @@ export interface AutomationRow {
   readonly validUntil?: number | undefined;
   readonly budgetLimit: number;
   readonly workspaces: readonly string[];
+  /** 自动化是无人值守的，必须固定模型；旧数据可能尚未迁移，所以读取时允许缺席。 */
+  readonly modelId?: string | undefined;
 }
 
 interface RawAutomation {
@@ -52,6 +54,7 @@ interface RawAutomation {
   valid_until: number | null;
   budget_limit: number;
   workspaces: string;
+  model: string | null;
 }
 
 function toAutomation(raw: RawAutomation): AutomationRow {
@@ -72,6 +75,7 @@ function toAutomation(raw: RawAutomation): AutomationRow {
     ...(raw.valid_until === null ? {} : { validUntil: raw.valid_until }),
     budgetLimit: raw.budget_limit,
     workspaces: JSON.parse(raw.workspaces) as string[],
+    ...(raw.model === null ? {} : { modelId: raw.model }),
   };
 }
 
@@ -109,8 +113,8 @@ export function createAutomationRepo(db: SqliteLike) {
         `INSERT INTO automation
            (id, name, device_id, prompt, workspaces, schedule, timezone, status,
             consecutive_failures, misfire_policy, catchup_window_ms, wake_system,
-            budget_limit, last_fire_time, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            budget_limit, model, last_fire_time, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            device_id = excluded.device_id,
@@ -123,6 +127,7 @@ export function createAutomationRepo(db: SqliteLike) {
            catchup_window_ms = excluded.catchup_window_ms,
            wake_system = excluded.wake_system,
            budget_limit = excluded.budget_limit,
+           model = excluded.model,
            updated_at = excluded.updated_at`,
       ).run(
         automation.id,
@@ -138,6 +143,7 @@ export function createAutomationRepo(db: SqliteLike) {
         automation.catchupWindowMs,
         automation.wakeSystem ? 1 : 0,
         automation.budgetLimit,
+        automation.modelId ?? null,
         automation.lastFireTime ?? null,
         now,
         now,

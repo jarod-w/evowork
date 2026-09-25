@@ -18,6 +18,7 @@ import {
   fetchModelCatalog,
   parseGatewayBaseUrl,
   readGatewayBaseUrl,
+  removeRetiredDefaultModel,
   rewriteEvoworkBaseUrl,
   toModelOption,
   waitUntilGatewayReady,
@@ -36,6 +37,19 @@ wire_api = "responses"
 [model_providers.other]
 base_url = "https://someone-elses-gateway.example/v1"
 `;
+
+describe('迁移已下架的产品默认模型', () => {
+  it('只删除顶层精确匹配的旧默认，不改用户模型或 provider 段', () => {
+    const migrated = removeRetiredDefaultModel(CONFIG);
+    expect(migrated.changed).toBe(true);
+    expect(migrated.text).not.toContain('model = "evowork/deepseek-v4-flash"');
+    expect(migrated.text).toContain('model_provider = "evowork"');
+    expect(migrated.text).toContain('base_url = "http://127.0.0.1:8791/v1"');
+
+    const custom = removeRetiredDefaultModel('model = "deepseek/deepseek-flash"\n');
+    expect(custom).toEqual({ text: 'model = "deepseek/deepseek-flash"\n', changed: false });
+  });
+});
 
 describe('网关地址：真源是内核的 config.toml（防两处漂移）', () => {
   let dir: string;

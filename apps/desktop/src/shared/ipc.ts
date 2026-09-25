@@ -480,6 +480,7 @@ export interface AutomationRowView {
   readonly catchupWindowHours: number;
   readonly wakeSystem: boolean;
   readonly budgetLimit: number;
+  readonly modelId?: string | undefined;
 }
 
 export interface AutomationMutationInput {
@@ -493,6 +494,7 @@ export interface AutomationMutationInput {
   readonly catchupWindowHours: number;
   readonly wakeSystem: boolean;
   readonly budgetLimit: number;
+  readonly modelId: string;
   readonly testRun: boolean;
 }
 
