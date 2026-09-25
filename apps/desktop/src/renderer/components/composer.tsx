@@ -18,7 +18,7 @@
  * "底层同时维护 text + textElements"。所以这里用 `<textarea>` 存文本、
  * 用 `mentions` 数组存结构，渲染时叠一层 token 显示层。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
@@ -287,6 +287,7 @@ export function Composer(props: ComposerProps) {
   const mode = props.mode ?? 'request-approval';
   const modeOptions = props.modeOptions ?? composerModeOptions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const completionListId = useId();
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
@@ -339,7 +340,18 @@ export function Composer(props: ComposerProps) {
           candidate,
         ]),
       );
-      return [...byId.values()].filter((c) => c.label.toLowerCase().includes(q)).slice(0, 8);
+      return [...byId.values()]
+        .filter((c) => c.label.toLowerCase().includes(q))
+        .map((candidate, order) => ({
+          candidate,
+          order,
+          prefix: candidate.label.toLowerCase().startsWith(q),
+        }))
+        .sort(
+          (left, right) => Number(right.prefix) - Number(left.prefix) || left.order - right.order,
+        )
+        .map(({ candidate }) => candidate)
+        .slice(0, 8);
     }
     if (trigger.kind === '$') {
       return (props.mentionCandidates ?? [])
@@ -350,6 +362,10 @@ export function Composer(props: ComposerProps) {
       .filter((c) => c.kind === 'local' && c.label.toLowerCase().includes(q))
       .slice(0, 8);
   }, [trigger, props.mentionCandidates, props.slashCommands, searchedMentions]);
+
+  useEffect(() => {
+    setActiveIndex((index) => (index < candidates.length ? index : 0));
+  }, [candidates.length]);
 
   const syncTrigger = useCallback((value: string, caret: number) => {
     setTrigger(detectTrigger(value, caret));
@@ -501,6 +517,15 @@ export function Composer(props: ComposerProps) {
             ref={textareaRef}
             className="ew-composer-textarea"
             aria-label="需求输入"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={Boolean(trigger && candidates.length > 0)}
+            aria-controls={trigger && candidates.length > 0 ? completionListId : undefined}
+            aria-activedescendant={
+              trigger && candidates[activeIndex]
+                ? `${completionListId}-option-${activeIndex}`
+                : undefined
+            }
             placeholder={COMPOSER_PLACEHOLDER}
             rows={rows}
             value={props.value}
@@ -560,6 +585,9 @@ export function Composer(props: ComposerProps) {
           {trigger && candidates.length > 0 ? (
             <div className="ew-completion" data-kind={trigger.kind === '@' ? 'mention' : 'command'}>
               <Menu
+                id={completionListId}
+                semanticRole="listbox"
+                itemId={(_item, index) => `${completionListId}-option-${index}`}
                 ariaLabel={
                   trigger.kind === '@' ? '引用候选' : trigger.kind === '$' ? '技能候选' : '本地指令'
                 }

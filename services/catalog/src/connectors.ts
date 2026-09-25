@@ -160,6 +160,20 @@ export function trustConnector(store: ConnectorStore, id: string): ConnectorStor
   return upsertConnector(store, { ...existing, trusted: true });
 }
 
+export function setConnectorToolPolicy(
+  store: ConnectorStore,
+  id: string,
+  tool: string,
+  policy: ToolPolicy | undefined,
+): ConnectorStore {
+  const existing = store.connectors.find((c) => c.id === id);
+  if (existing === undefined) return store;
+  const toolPolicy = { ...existing.toolPolicy };
+  if (policy === undefined) delete toolPolicy[tool];
+  else toolPolicy[tool] = policy;
+  return upsertConnector(store, { ...existing, toolPolicy });
+}
+
 export function slugConnectorName(name: string): string {
   const slug = name
     .trim()
@@ -198,6 +212,7 @@ function renderMcpBlock(s: {
   readonly args?: readonly string[] | undefined;
   readonly url?: string | undefined;
   readonly transport: ConnectorTransport;
+  readonly toolPolicy?: Readonly<Record<string, ToolPolicy>>;
 }): string {
   const lines = [`[mcp_servers.${escapeTomlKey(s.id)}]`];
   if (s.transport === 'stdio' && s.command !== undefined) {
@@ -207,6 +222,15 @@ function renderMcpBlock(s: {
     }
   } else if (s.url !== undefined) {
     lines.push(`url = ${tomlString(s.url)}`);
+  }
+  for (const [tool, policy] of Object.entries(s.toolPolicy ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    lines.push(
+      '',
+      `[mcp_servers.${escapeTomlKey(s.id)}.tools.${escapeTomlKey(tool)}]`,
+      `approval_mode = ${tomlString(policy === 'approve' ? 'prompt' : 'approve')}`,
+    );
   }
   return lines.join('\n');
 }

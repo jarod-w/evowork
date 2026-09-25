@@ -16,6 +16,7 @@ import {
   missingPortsResult,
   readCatalog,
   removeConnectorAction,
+  setConnectorToolPolicyAction,
   trustConnectorAction,
   uninstallSkill,
 } from '../src/main/catalog-host.js';
@@ -228,6 +229,34 @@ describe('连接器信任只落配置、不启动进程', () => {
     expect(browser?.trusted).toBe(false);
     expect(readFileSync(join(root, 'kernel', 'config.toml'), 'utf8')).not.toMatch(
       /mcp_servers\.browser/,
+    );
+  });
+
+  it('逐工具权限写入内核原生 approval_mode，恢复默认时删除覆盖', () => {
+    const p = ports();
+    addConnector(p, { name: '日历', transport: 'http', url: 'https://mcp.example.test' });
+    const id = readCatalog(p).connectors.find((c) => c.name === '日历')?.id as string;
+    trustConnectorAction(p, id);
+
+    expect(
+      setConnectorToolPolicyAction(p, { id, tool: 'create_event', policy: 'approve' }).ok,
+    ).toBe(true);
+    let toml = readFileSync(join(root, 'kernel', 'config.toml'), 'utf8');
+    expect(toml).toContain(`[mcp_servers."${id}".tools.create_event]`);
+    expect(toml).toContain('approval_mode = "prompt"');
+
+    setConnectorToolPolicyAction(p, { id, tool: 'create_event', policy: 'allow' });
+    toml = readFileSync(join(root, 'kernel', 'config.toml'), 'utf8');
+    expect(toml).toContain('approval_mode = "approve"');
+
+    const reset = setConnectorToolPolicyAction(p, {
+      id,
+      tool: 'create_event',
+      policy: 'default',
+    });
+    expect(reset.catalog.connectors.find((c) => c.id === id)?.toolPolicy).toEqual({});
+    expect(readFileSync(join(root, 'kernel', 'config.toml'), 'utf8')).not.toContain(
+      'tools.create_event',
     );
   });
 });

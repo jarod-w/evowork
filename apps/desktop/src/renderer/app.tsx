@@ -292,6 +292,12 @@ export interface EvoworkBridge {
     url?: string | undefined;
   }): Promise<CatalogMutationResult>;
   trustConnector(input: { id: string }): Promise<CatalogMutationResult>;
+  authorizeConnector(input: { id: string }): Promise<CatalogMutationResult>;
+  setConnectorToolPolicy(input: {
+    id: string;
+    tool: string;
+    policy: 'default' | 'approve' | 'allow';
+  }): Promise<CatalogMutationResult>;
   removeConnector(input: { id: string }): Promise<CatalogMutationResult>;
   createExpert(input: {
     name: string;
@@ -754,6 +760,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 }
               })
               .catch((error: unknown) => reportFailure(error, '没能刷新技能列表。'));
+          }
+          return;
+        }
+        if (event.type === 'connectors-changed') {
+          if (view === 'catalog') {
+            void bridge
+              .getCatalog()
+              .then(setCatalog)
+              .catch(() => undefined);
           }
           return;
         }
@@ -2503,6 +2518,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }
           onAddConnector={async (input) => runCatalogMutation(() => bridge.addConnector(input))}
           onTrustConnector={async (id) => runCatalogMutation(() => bridge.trustConnector({ id }))}
+          onAuthorizeConnector={async (id) =>
+            runCatalogMutation(() => bridge.authorizeConnector({ id }))
+          }
+          onSetConnectorToolPolicy={async (input) =>
+            runCatalogMutation(() => bridge.setConnectorToolPolicy(input))
+          }
           onRemoveConnector={async (id) => runCatalogMutation(() => bridge.removeConnector({ id }))}
           onCreateExpert={async (input) => runCatalogMutation(() => bridge.createExpert(input))}
           onRemoveExpert={async (id) => runCatalogMutation(() => bridge.removeExpert({ id }))}
@@ -2927,6 +2948,8 @@ function MainPage(props: {
   readonly onUninstallBundle: CatalogPageProps['onUninstallBundle'];
   readonly onAddConnector: CatalogPageProps['onAddConnector'];
   readonly onTrustConnector: CatalogPageProps['onTrustConnector'];
+  readonly onAuthorizeConnector: CatalogPageProps['onAuthorizeConnector'];
+  readonly onSetConnectorToolPolicy: CatalogPageProps['onSetConnectorToolPolicy'];
   readonly onRemoveConnector: CatalogPageProps['onRemoveConnector'];
   readonly onCreateExpert: CatalogPageProps['onCreateExpert'];
   readonly onRemoveExpert: CatalogPageProps['onRemoveExpert'];
@@ -3063,6 +3086,8 @@ function MainPage(props: {
           onUninstallBundle={props.onUninstallBundle}
           onAddConnector={props.onAddConnector}
           onTrustConnector={props.onTrustConnector}
+          onAuthorizeConnector={props.onAuthorizeConnector}
+          onSetConnectorToolPolicy={props.onSetConnectorToolPolicy}
           onRemoveConnector={props.onRemoveConnector}
           onCreateExpert={props.onCreateExpert}
           onRemoveExpert={props.onRemoveExpert}

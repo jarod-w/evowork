@@ -5,8 +5,7 @@
  * 改内核 `config.toml` 的 mcp_servers 段。
  *
  * **不执行**被审计目录里的脚本（05 §3.3）。审计喂的是文件名与文本。
- * 信任连接器只落配置，**不启动** MCP 进程；新任务才会读到这份 config.toml，
- * 本层不假装有 `mcpServer/reload`。
+ * 本层只落配置；调用方负责通过 app-server 的 `config/mcpServer/reload` 应用变更。
  */
 import { spawn } from 'node:child_process';
 import {
@@ -37,6 +36,7 @@ import {
   renderAgentToml,
   riskLabel,
   serializeConnectorStore,
+  setConnectorToolPolicy,
   slugExpert,
   slugConnectorName,
   SOURCE_MARKER_FILE,
@@ -92,6 +92,12 @@ export interface AddConnectorInput {
   readonly command?: string | undefined;
   readonly args?: string | undefined;
   readonly url?: string | undefined;
+}
+
+export interface SetConnectorToolPolicyInput {
+  readonly id: string;
+  readonly tool: string;
+  readonly policy: 'default' | 'approve' | 'allow';
 }
 
 export interface CreateExpertInput {
@@ -257,6 +263,27 @@ export function removeConnectorAction(ports: CatalogPorts, id: string): CatalogM
     return mutation(ports, false, '没有这个连接器。');
   }
   store = removeConnector(store, id);
+  writeStore(ports, store);
+  writeMcpConfig(ports, store);
+  return mutation(ports, true);
+}
+
+export function setConnectorToolPolicyAction(
+  ports: CatalogPorts,
+  input: SetConnectorToolPolicyInput,
+): CatalogMutationResult {
+  const tool = input.tool.trim();
+  if (tool === '') return mutation(ports, false, '工具名不能为空。');
+  let store = ensureOfficialBrowser(readStore(ports), officialBrowser(ports));
+  const connector = store.connectors.find((c) => c.id === input.id);
+  if (!connector) return mutation(ports, false, '没有这个连接器。');
+  if (!connector.trusted) return mutation(ports, false, '请先信任并启用这个连接器。');
+  store = setConnectorToolPolicy(
+    store,
+    input.id,
+    tool,
+    input.policy === 'default' ? undefined : input.policy,
+  );
   writeStore(ports, store);
   writeMcpConfig(ports, store);
   return mutation(ports, true);

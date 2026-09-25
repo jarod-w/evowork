@@ -192,6 +192,8 @@ export const RENDERER_ACTIONS = Object.freeze([
   'uninstallPluginBundle',
   'addConnector',
   'trustConnector',
+  'authorizeConnector',
+  'setConnectorToolPolicy',
   'removeConnector',
   'createExpert',
   'removeExpert',

@@ -63,31 +63,46 @@ export interface MenuProps {
    * 这与 01 §5.19「禁用项要给出原因」是同一条纪律：**空也要给出原因**。
    */
   readonly emptyHint?: string | undefined;
+  /** 补全候选用 listbox/option；普通操作菜单保持 menu/menuitem。 */
+  readonly semanticRole?: 'menu' | 'listbox' | undefined;
+  readonly id?: string | undefined;
+  readonly itemId?: ((item: MenuItemSpec, index: number) => string) | undefined;
 }
 
 /**
  * 纯粹的菜单**内容**，不含浮层定位 —— 定位由外面的 `Popover` 或行内容器负责。
  * 拆开是因为 `@` 补全菜单锚在光标上、行操作菜单锚在按钮上，定位方式不同但内容一样。
  */
-export function Menu({ items, onSelect, ariaLabel, activeId, emptyHint }: MenuProps) {
+export function Menu({
+  items,
+  onSelect,
+  ariaLabel,
+  activeId,
+  emptyHint,
+  semanticRole = 'menu',
+  id,
+  itemId,
+}: MenuProps) {
   assertDisabledHasReason(items);
   let lastGroup: string | undefined;
   return (
-    <div className="ew-menu" role="menu" aria-label={ariaLabel}>
+    <div className="ew-menu" role={semanticRole} aria-label={ariaLabel} id={id}>
       {/* 空菜单不是一个空盒子（见 `MenuProps.emptyHint`） */}
       {items.length === 0 ? (
         <p className="ew-menu-empty" role="note">
           {emptyHint ?? '没有可选项。'}
         </p>
       ) : null}
-      {items.map((item) => {
+      {items.map((item, index) => {
         const newGroup = lastGroup !== undefined && item.group !== lastGroup;
         lastGroup = item.group;
         return (
           <button
             key={item.id}
+            id={itemId?.(item, index)}
             type="button"
-            role="menuitem"
+            role={semanticRole === 'listbox' ? 'option' : 'menuitem'}
+            aria-selected={semanticRole === 'listbox' ? item.id === activeId : undefined}
             className="ew-menu-item"
             data-group-start={newGroup ? 'true' : undefined}
             data-danger={item.danger ? 'true' : undefined}

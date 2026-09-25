@@ -92,6 +92,11 @@ export class FakeAppServer {
     }));
     this.handlers.set('plugin/install', () => ({ authPolicy: 'ON_USE', appsNeedingAuth: [] }));
     this.handlers.set('plugin/uninstall', () => ({}));
+    this.handlers.set('mcpServerStatus/list', () => ({ data: [], nextCursor: null }));
+    this.handlers.set('mcpServer/oauth/login', () => ({
+      authorizationUrl: 'https://auth.example/authorize',
+    }));
+    this.handlers.set('config/mcpServer/reload', () => ({}));
     this.handlers.set('project/list', () => ({ data: [] }));
     this.handlers.set('thread/start', (ctx) => {
       const threadId = `thread_${this.received.length}`;

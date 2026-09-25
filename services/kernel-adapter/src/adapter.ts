@@ -22,6 +22,8 @@ import {
   METHOD,
   type ExperimentalFeature,
   type FuzzyFileSearchResponse,
+  type McpServerOauthLoginResponse,
+  type McpServerStatusListResponse,
   type PermissionProfileSummary,
   type PluginListResponse,
   type ProjectCreateParams,
@@ -524,6 +526,27 @@ export function createAdapter(options: AdapterOptions) {
       await session.peer.request(METHOD.pluginUninstall, { pluginId });
     },
 
+    async listMcpServerStatuses(threadId?: string): Promise<McpServerStatusListResponse> {
+      return session.peer.request<McpServerStatusListResponse>(METHOD.mcpServerStatusList, {
+        detail: 'toolsAndAuthOnly',
+        ...(threadId ? { threadId } : {}),
+      });
+    },
+
+    async startMcpServerOauthLogin(
+      name: string,
+      threadId?: string,
+    ): Promise<McpServerOauthLoginResponse> {
+      return session.peer.request<McpServerOauthLoginResponse>(METHOD.mcpServerOauthLogin, {
+        name,
+        ...(threadId ? { threadId } : {}),
+      });
+    },
+
+    async reloadMcpServers(): Promise<void> {
+      await session.peer.request(METHOD.mcpServerReload, undefined);
+    },
+
     /**
      * 任务列表（04 §3.4）。
      *
@@ -905,26 +928,14 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     /**
-     * 当前回合结束后启动下一条排队输入。
+     * 当前回合结束后启动下一条**本机降级队列**输入。
      *
-     * `thread/queue/add` **只入队，不会自动执行**；内核队列必须显式调用
-     * `thread/queue/start`。此前这里只消费本机降级队列，导致实验队列可用时
-     * 用户能看到“已排队”，但那条输入永远不会开始。
+     * 当前 app-server 的持久队列由 queue extension 在 thread idle 生命周期中自动
+     * 出队。这里若同时调用 `thread/queue/start`，会与内核的自动出队竞争：通知先到、
+     * idle 状态稍后落定时请求会报“仍有 active turn”，并产生一次假失败。
+     * `thread/queue/add` 降级时才由 EvoWork 自己持有输入，因此只消费 `localQueues`。
      */
     async startNextQueued(threadId: string): Promise<void> {
-      const remote = await callExperimental<{
-        readonly data?: readonly { readonly id?: string }[];
-      }>(EXPERIMENTAL_METHOD.threadQueueList, { threadId, limit: 1 }, () => ({ data: [] }));
-      const remoteId = remote.data?.[0]?.id;
-      if (remoteId) {
-        await callExperimental(
-          EXPERIMENTAL_METHOD.threadQueueStart,
-          { threadId, queuedSubmissionId: remoteId },
-          () => undefined,
-        );
-        return;
-      }
-
       const queued = localQueues.get(threadId) ?? [];
       const next = queued[0];
       if (!next) return;

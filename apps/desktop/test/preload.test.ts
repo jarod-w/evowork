@@ -81,13 +81,15 @@ describe('暴露面', () => {
     }
   });
 
-  it('八个目录动作都暴露给渲染层 —— 少一个的表现是「点了没反应」', () => {
+  it('目录动作都暴露给渲染层 —— 少一个的表现是「点了没反应」', () => {
     for (const action of [
       'getCatalog',
       'installSkill',
       'uninstallSkill',
       'addConnector',
       'trustConnector',
+      'authorizeConnector',
+      'setConnectorToolPolicy',
       'removeConnector',
       'createExpert',
       'removeExpert',

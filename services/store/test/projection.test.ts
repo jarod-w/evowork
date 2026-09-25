@@ -185,6 +185,18 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
     });
   });
 
+  it('turn/started 立即标为运行中，不等待后续 status/changed', () => {
+    withStore((store) => {
+      store.threads.upsertFromThread(thread());
+      expect(store.threads.applyTurnStarted('t1', 'turn-live')).toBe('running');
+      expect(store.threads.get('t1')).toMatchObject({
+        derived_status: 'running',
+        last_turn_status: 'inProgress',
+        last_turn_id: 'turn-live',
+      });
+    });
+  });
+
   it('applyStatusChanged 在 pending / running 之间正确切换', () => {
     withStore((store) => {
       store.threads.upsertFromThread(thread({ status: ACTIVE }));

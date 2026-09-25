@@ -21,6 +21,7 @@ export {
   patchMcpServersToml,
   removeConnector,
   serializeConnectorStore,
+  setConnectorToolPolicy,
   slugConnectorName,
   trustConnector,
   upsertConnector,

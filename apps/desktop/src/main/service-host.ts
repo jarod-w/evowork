@@ -1186,6 +1186,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   };
 
   const actions = createRendererActions({
+    ...(options.openExternal ? { openExternal: options.openExternal } : {}),
     adapter,
     store,
     logger,

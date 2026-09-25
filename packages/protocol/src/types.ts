@@ -206,6 +206,36 @@ export interface FuzzyFileSearchResponse {
   readonly files: readonly FuzzyFileSearchResult[];
 }
 
+export type McpAuthStatus = 'unknown' | 'unsupported' | 'notLoggedIn' | 'bearerToken' | 'oAuth';
+
+export type McpServerConnectionStatus =
+  | 'notStarted'
+  | 'starting'
+  | 'connected'
+  | 'authenticationRequired'
+  | 'failed'
+  | 'cancelled'
+  | 'disabled';
+
+/** `mcpServerStatus/list` 中桌面端真正消费的稳定子集。 */
+export interface McpServerStatus {
+  readonly name: string;
+  readonly runtimeStatus: McpServerConnectionStatus | null;
+  readonly pluginId: string | null;
+  readonly tools: Readonly<Record<string, unknown>>;
+  readonly toolsError: string | null;
+  readonly authStatus: McpAuthStatus;
+}
+
+export interface McpServerStatusListResponse {
+  readonly data: readonly McpServerStatus[];
+  readonly nextCursor: string | null;
+}
+
+export interface McpServerOauthLoginResponse {
+  readonly authorizationUrl: string;
+}
+
 export interface PluginSummary {
   readonly id: string;
   readonly remotePluginId?: string | null;

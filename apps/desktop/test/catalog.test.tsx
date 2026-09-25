@@ -25,12 +25,15 @@ const EMPTY: CatalogDataView = {
   apps: [],
 };
 
-function renderPage(over: Partial<CatalogDataView> = {}) {
+function renderPage(
+  over: Partial<CatalogDataView> = {},
+  tab: 'experts' | 'skills' | 'connectors' = 'skills',
+) {
   const data = { ...EMPTY, ...over };
   render(
     <CatalogPage
       data={data}
-      tab="skills"
+      tab={tab}
       onTab={() => undefined}
       onInstallSkill={async () => ({ ok: true, catalog: data })}
       onUninstallSkill={async () => ({ ok: true, catalog: data })}
@@ -39,6 +42,8 @@ function renderPage(over: Partial<CatalogDataView> = {}) {
       onUninstallBundle={async () => ({ ok: true, catalog: data })}
       onAddConnector={async () => ({ ok: true, catalog: data })}
       onTrustConnector={async () => ({ ok: true, catalog: data })}
+      onAuthorizeConnector={async () => ({ ok: true, catalog: data })}
+      onSetConnectorToolPolicy={async () => ({ ok: true, catalog: data })}
       onRemoveConnector={async () => ({ ok: true, catalog: data })}
       onCreateExpert={async () => ({ ok: true, catalog: data })}
       onRemoveExpert={async () => ({ ok: true, catalog: data })}
@@ -68,6 +73,8 @@ describe('CatalogPage', () => {
         onUninstallBundle={async () => ({ ok: true, catalog: EMPTY })}
         onAddConnector={async () => ({ ok: true, catalog: EMPTY })}
         onTrustConnector={async () => ({ ok: true, catalog: EMPTY })}
+        onAuthorizeConnector={async () => ({ ok: true, catalog: EMPTY })}
+        onSetConnectorToolPolicy={async () => ({ ok: true, catalog: EMPTY })}
         onRemoveConnector={async () => ({ ok: true, catalog: EMPTY })}
         onCreateExpert={async () => ({ ok: true, catalog: EMPTY })}
         onRemoveExpert={async () => ({ ok: true, catalog: EMPTY })}
@@ -83,6 +90,34 @@ describe('CatalogPage', () => {
     expect(screen.getByText('待信任 · 添加后还没有启动')).toBeTruthy();
   });
 
+  it('连接器详情显示 OAuth 状态和逐工具权限', () => {
+    renderPage(
+      {
+        connectors: [
+          {
+            id: 'calendar',
+            name: '日历',
+            kind: 'custom',
+            transport: 'http',
+            url: 'https://mcp.example.test',
+            trusted: true,
+            status: 'needs-auth',
+            category: 'custom',
+            authStatus: 'notLoggedIn',
+            tools: ['search_events'],
+            toolCount: 1,
+            toolPolicy: {},
+          },
+        ],
+      },
+      'connectors',
+    );
+    fireEvent.click(screen.getByText('日历'));
+    expect(screen.getByText('授权状态：尚未授权')).toBeTruthy();
+    expect(screen.getByText('search_events')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '去授权' })).toBeTruthy();
+  });
+
   it('专家 Tab 空态不预置角色包', () => {
     render(
       <CatalogPage
@@ -96,6 +131,8 @@ describe('CatalogPage', () => {
         onUninstallBundle={async () => ({ ok: true, catalog: EMPTY })}
         onAddConnector={async () => ({ ok: true, catalog: EMPTY })}
         onTrustConnector={async () => ({ ok: true, catalog: EMPTY })}
+        onAuthorizeConnector={async () => ({ ok: true, catalog: EMPTY })}
+        onSetConnectorToolPolicy={async () => ({ ok: true, catalog: EMPTY })}
         onRemoveConnector={async () => ({ ok: true, catalog: EMPTY })}
         onCreateExpert={async () => ({ ok: true, catalog: EMPTY })}
         onRemoveExpert={async () => ({ ok: true, catalog: EMPTY })}

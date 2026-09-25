@@ -285,6 +285,31 @@ export class ThreadProjection {
   }
 
   /**
+   * `turn/started` 已足以证明任务正在运行，不能等稍后才到的
+   * `thread/status/changed`。否则两条通知之间发送的输入会把投影里的 `idle`
+   * 当成真相，直接再开一个回合而不是入队。
+   */
+  applyTurnStarted(threadId: string, turnId: string, now = Date.now()): DerivedStatus {
+    const row = this.get(threadId);
+    const derived = deriveStatus({
+      threadStatus: { active: { activeFlags: [] } },
+      lastTurnStatus: 'inProgress',
+      archived: row?.archived === 1,
+      modeId: row?.mode_id ?? null,
+      hasPlanItem: row?.has_plan_item === 1,
+      planConfirmed: row?.plan_confirmed === 1,
+    });
+    this.#patch(threadId, {
+      derived_status: derived,
+      last_turn_status: 'inProgress',
+      last_turn_id: turnId,
+      updated_at: now,
+      recency_at: now,
+    });
+    return derived;
+  }
+
+  /**
    * `turn/completed`（09 §3.4）—— **这是"已完成 / 失败 / 已中断"三态唯一的来源**。
    * 内核的 `ThreadStatus` 里没有它们（F7），不记在这里就永远推不出来。
    */

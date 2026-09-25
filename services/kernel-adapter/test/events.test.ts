@@ -124,6 +124,24 @@ describe('09 §3.4 的分发表逐行', () => {
     expect(effects).toEqual([]);
   });
 
+  it('turn/started 先把投影标成运行中，保证紧随其后的输入会入队', () => {
+    router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
+    ui = [];
+    router.handle(NOTIFICATION.turnStarted, {
+      threadId: 't1',
+      turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
+    });
+    expect(store.threads.get('t1')).toMatchObject({
+      derived_status: 'running',
+      last_turn_status: 'inProgress',
+      last_turn_id: 'turn-live',
+    });
+    expect(ui).toEqual([
+      { type: 'task-status', threadId: 't1', status: 'running' },
+      { type: 'turn-started', threadId: 't1', turnId: 'turn-live' },
+    ]);
+  });
+
   it('thread/name/updated → 更新标题 + 触发全文索引更新', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     effects = [];

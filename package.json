@@ -19,6 +19,7 @@
     "build:renderer": "pnpm --filter @evowork/desktop run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:desktop-e2e": "pnpm run build && node scripts/desktop-skills-e2e.mjs",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run check:kernel-budget",
     "check:kernel-budget": "node scripts/patch-budget.mjs",
     "kernel:drift": "node scripts/kernel-drift.mjs",

@@ -301,6 +301,10 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.turnStarted]: (params) => {
       const p = params as { threadId?: string; turn?: Turn };
       if (!p.threadId || !p.turn) return [];
+      if (!ephemeralThreadIds.has(p.threadId)) {
+        const status = store.threads.applyTurnStarted(p.threadId, p.turn.id, now());
+        onUiEvent({ type: 'task-status', threadId: p.threadId, status });
+      }
       onUiEvent({ type: 'turn-started', threadId: p.threadId, turnId: p.turn.id });
       return [{ kind: 'concurrency', delta: 1 }];
     },

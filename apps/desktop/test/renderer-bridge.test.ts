@@ -15,6 +15,11 @@ import type { Adapter, UiEvent } from '@evowork/kernel-adapter';
 import { createArtifactRepo, openStore, type ProjectionRow, type Store } from '@evowork/store';
 
 import {
+  addConnector,
+  createFsCatalogPorts,
+  trustConnectorAction,
+} from '../src/main/catalog-host.js';
+import {
   createEventTranslator,
   createRendererActions,
   fullAccessApprovalReply,
@@ -223,6 +228,125 @@ describe('Composer 技能上下文', () => {
     ]);
     expect(adapter.searchFiles).toHaveBeenCalledWith('road', ['/w/project'], 'composer:/w/project');
     expect(projectPorts.readDir).not.toHaveBeenCalled();
+  });
+});
+
+describe('连接器实时状态与授权', () => {
+  it('把 app-server 的授权、工具和失败状态合并进本机目录', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ew-connector-live-'));
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(root, 'plugins'),
+      userRoot: join(root, 'user'),
+      kernelHome: join(root, 'kernel'),
+    });
+    addConnector(catalogPorts, {
+      name: '日历',
+      transport: 'http',
+      url: 'https://mcp.example.test',
+    });
+    const id = readFileSync(join(root, 'user', 'connectors.json'), 'utf8').match(
+      /"id": "([^"]+)"/,
+    )?.[1] as string;
+    trustConnectorAction(catalogPorts, id);
+    const adapter = fakeAdapter({
+      listSkills: vi.fn(async () => ({ data: [] })),
+      listPluginBundles: vi.fn(async () => ({
+        marketplaces: [],
+        marketplaceLoadErrors: [],
+        featuredPluginIds: [],
+      })),
+      listMcpServerStatuses: vi.fn(async () => ({
+        data: [
+          {
+            name: id,
+            runtimeStatus: 'authenticationRequired' as const,
+            pluginId: null,
+            tools: { search_events: {} },
+            toolsError: null,
+            authStatus: 'notLoggedIn' as const,
+          },
+        ],
+        nextCursor: null,
+      })),
+    });
+
+    const catalog = await makeActions({ adapter, catalogPorts }).getCatalog();
+    expect(catalog.connectors.find((connector) => connector.id === id)).toMatchObject({
+      status: 'needs-auth',
+      authStatus: 'notLoggedIn',
+      tools: ['search_events'],
+      toolCount: 1,
+    });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('OAuth 只把 app-server 返回的地址交给主进程系统浏览器', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ew-connector-oauth-'));
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(root, 'plugins'),
+      userRoot: join(root, 'user'),
+      kernelHome: join(root, 'kernel'),
+    });
+    addConnector(catalogPorts, {
+      name: '日历',
+      transport: 'http',
+      url: 'https://mcp.example.test',
+    });
+    const id = readFileSync(join(root, 'user', 'connectors.json'), 'utf8').match(
+      /"id": "([^"]+)"/,
+    )?.[1] as string;
+    trustConnectorAction(catalogPorts, id);
+    const openExternal = vi.fn(async () => undefined);
+    const startMcpServerOauthLogin = vi.fn(async () => ({
+      authorizationUrl: 'https://auth.example/authorize',
+    }));
+    const actions = makeActions({
+      adapter: fakeAdapter({
+        startMcpServerOauthLogin,
+        listSkills: vi.fn(async () => ({ data: [] })),
+        listPluginBundles: vi.fn(async () => ({
+          marketplaces: [],
+          marketplaceLoadErrors: [],
+          featuredPluginIds: [],
+        })),
+        listMcpServerStatuses: vi.fn(async () => ({ data: [], nextCursor: null })),
+      }),
+      catalogPorts,
+      openExternal,
+    });
+
+    const result = await actions.authorizeConnector({ id });
+    expect(result.ok).toBe(true);
+    expect(startMcpServerOauthLogin).toHaveBeenCalledWith(id);
+    expect(openExternal).toHaveBeenCalledWith('https://auth.example/authorize');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('未信任连接器不能绕过目录动作直接发起 OAuth', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ew-connector-oauth-untrusted-'));
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(root, 'plugins'),
+      userRoot: join(root, 'user'),
+      kernelHome: join(root, 'kernel'),
+    });
+    addConnector(catalogPorts, {
+      name: '未信任日历',
+      transport: 'http',
+      url: 'https://mcp.example.test',
+    });
+    const id = readFileSync(join(root, 'user', 'connectors.json'), 'utf8').match(
+      /"id": "([^"]+)"/,
+    )?.[1] as string;
+    const startMcpServerOauthLogin = vi.fn();
+    const result = await makeActions({
+      adapter: fakeAdapter({ startMcpServerOauthLogin }),
+      catalogPorts,
+      openExternal: vi.fn(),
+    }).authorizeConnector({ id });
+
+    expect(result).toMatchObject({ ok: false, refused: '请先信任并启用这个连接器。' });
+    expect(startMcpServerOauthLogin).not.toHaveBeenCalled();
+    rmSync(root, { recursive: true, force: true });
   });
 });
 
@@ -748,6 +872,14 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       () => 0,
     );
     expect(translate({ type: 'skills-changed' })).toEqual([{ type: 'skills-changed' }]);
+  });
+
+  it('连接器启动与 OAuth 状态变化会刷新目录', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(translate({ type: 'connectors-changed' })).toEqual([{ type: 'connectors-changed' }]);
   });
 
   /*

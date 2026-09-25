@@ -65,6 +65,8 @@ export const METHOD = {
   pluginInstall: 'plugin/install',
   pluginUninstall: 'plugin/uninstall',
   mcpServerStatusList: 'mcpServerStatus/list',
+  mcpServerOauthLogin: 'mcpServer/oauth/login',
+  mcpServerReload: 'config/mcpServer/reload',
 
   // 文件系统（工作空间文件视图，04 §6.2）
   fsReadDirectory: 'fs/readDirectory',

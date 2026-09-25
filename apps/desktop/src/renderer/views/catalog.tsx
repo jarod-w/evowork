@@ -62,6 +62,12 @@ export interface CatalogPageProps {
     url?: string;
   }) => Promise<CatalogMutationResult>;
   readonly onTrustConnector: (id: string) => Promise<CatalogMutationResult>;
+  readonly onAuthorizeConnector: (id: string) => Promise<CatalogMutationResult>;
+  readonly onSetConnectorToolPolicy: (input: {
+    id: string;
+    tool: string;
+    policy: 'default' | 'approve' | 'allow';
+  }) => Promise<CatalogMutationResult>;
   readonly onRemoveConnector: (id: string) => Promise<CatalogMutationResult>;
   readonly onCreateExpert: (input: {
     name: string;
@@ -296,6 +302,11 @@ export function CatalogPage(props: CatalogPageProps) {
             技能加载失败：{error.path}（{error.message}）
           </p>
         ))}
+        {(data?.connectorErrors ?? []).map((error) => (
+          <p key={error} className="ew-projects-refusal">
+            连接器状态读取失败：{error}
+          </p>
+        ))}
 
         {selectedSkill ? (
           <SkillDetail
@@ -330,6 +341,10 @@ export function CatalogPage(props: CatalogPageProps) {
             connector={selectedConnector}
             onBack={() => setSelected(null)}
             onTrust={() => setPending({ kind: 'trust', connector: selectedConnector })}
+            onAuthorize={() => void props.onAuthorizeConnector(selectedConnector.id)}
+            onSetToolPolicy={(tool, policy) =>
+              void props.onSetConnectorToolPolicy({ id: selectedConnector.id, tool, policy })
+            }
             onRemove={() =>
               setPending({
                 kind: 'remove-connector',
@@ -1056,11 +1071,15 @@ function ConnectorDetail({
   connector,
   onBack,
   onTrust,
+  onAuthorize,
+  onSetToolPolicy,
   onRemove,
 }: {
   readonly connector: ConnectorView;
   readonly onBack: () => void;
   readonly onTrust: () => void;
+  readonly onAuthorize: () => void;
+  readonly onSetToolPolicy: (tool: string, policy: 'default' | 'approve' | 'allow') => void;
   readonly onRemove: () => void;
 }) {
   return (
@@ -1081,18 +1100,62 @@ function ConnectorDetail({
       {connector.disabledReason ? (
         <p className="ew-catalog-worst">{connector.disabledReason}</p>
       ) : null}
+      {connector.authStatus ? (
+        <p className="ew-catalog-detail-meta">
+          授权状态：{connectorAuthText(connector.authStatus)}
+        </p>
+      ) : null}
+      {(connector.tools ?? []).length > 0 ? (
+        <>
+          <SectionHeader title="工具权限" />
+          <p className="ew-catalog-detail-desc">
+            默认按工具风险判断；也可以逐项要求确认或直接允许。
+          </p>
+          <div className="ew-catalog-samples">
+            {(connector.tools ?? []).map((tool) => (
+              <label key={tool} className="ew-dialog-field">
+                <code>{tool}</code>
+                <select
+                  className="ew-dialog-input"
+                  value={connector.toolPolicy[tool] ?? 'default'}
+                  onChange={(event) =>
+                    onSetToolPolicy(tool, event.target.value as 'default' | 'approve' | 'allow')
+                  }
+                >
+                  <option value="default">默认（按工具风险）</option>
+                  <option value="approve">每次确认</option>
+                  <option value="allow">直接允许</option>
+                </select>
+              </label>
+            ))}
+          </div>
+        </>
+      ) : null}
       <div className="ew-catalog-detail-actions">
         {connector.trusted ? null : (
           <PillButton variant="accent" onClick={onTrust}>
             信任并启用
           </PillButton>
         )}
+        {connector.status === 'needs-auth' ? (
+          <PillButton variant="accent" onClick={onAuthorize}>
+            去授权
+          </PillButton>
+        ) : null}
         <PillButton onClick={onRemove}>
           {connector.id === 'browser' ? '取消信任' : '移除'}
         </PillButton>
       </div>
     </div>
   );
+}
+
+function connectorAuthText(status: NonNullable<ConnectorView['authStatus']>): string {
+  if (status === 'notLoggedIn') return '尚未授权';
+  if (status === 'oAuth') return 'OAuth 已授权';
+  if (status === 'bearerToken') return '已配置访问令牌';
+  if (status === 'unsupported') return '不需要 OAuth';
+  return '状态未知';
 }
 
 function ExpertDetail({

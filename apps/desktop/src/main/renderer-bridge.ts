@@ -78,6 +78,7 @@ import type {
   AutomationsDataView,
   CaseView,
   CatalogDataView,
+  ConnectorView,
   CatalogMutationResult,
   ComposerAttachmentView,
   ComposerContextView,
@@ -127,6 +128,7 @@ import {
   missingPortsResult,
   readCatalog,
   removeConnectorAction,
+  setConnectorToolPolicyAction,
   removeExpert,
   trustConnectorAction,
   uninstallSkill,
@@ -134,6 +136,7 @@ import {
   type CatalogPorts,
   type CreateExpertInput,
   type InstallSkillInput,
+  type SetConnectorToolPolicyInput,
 } from './catalog-host.js';
 
 /** 增量通道在渲染模型里的承载字段。 */
@@ -555,6 +558,8 @@ export interface RendererBridgeOptions {
    * 判定在 `@evowork/catalog`；这里只接线。
    */
   readonly catalogPorts?: CatalogPorts | undefined;
+  /** OAuth 授权地址只能由主进程交给系统浏览器。 */
+  readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   readonly attachmentPorts?:
     | {
         pick(workspaceRoot: string): Promise<readonly ComposerAttachmentView[]>;
@@ -799,6 +804,8 @@ export function createEventTranslator(store: Store, now: () => number) {
         return [{ type: 'projects-changed' }];
       case 'skills-changed':
         return [{ type: 'skills-changed' }];
+      case 'connectors-changed':
+        return [{ type: 'connectors-changed' }];
       case 'task-goal-changed':
         return [{ type: 'task-goal-changed', taskId: event.threadId }];
       default:
@@ -843,7 +850,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
   async function catalogWithKernelSkills(): Promise<CatalogDataView> {
     const base = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
     if (typeof adapter.listSkills !== 'function') return base;
-    const [listed, pluginCatalog] = await Promise.all([
+    const [listed, pluginCatalog, connectorStatus] = await Promise.all([
       adapter.listSkills([]),
       typeof adapter.listPluginBundles === 'function'
         ? adapter.listPluginBundles([]).catch(() => ({
@@ -856,6 +863,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
             marketplaceLoadErrors: [],
             featuredPluginIds: [],
           }),
+      typeof adapter.listMcpServerStatuses === 'function'
+        ? adapter
+            .listMcpServerStatuses()
+            .then((value) => ({ value, error: undefined }))
+            .catch((error: unknown) => ({
+              value: { data: [], nextCursor: null },
+              error: error instanceof Error ? error.message : '连接器状态读取失败。',
+            }))
+        : Promise.resolve({ value: { data: [], nextCursor: null }, error: undefined }),
     ]);
     const entry = listed.data[0];
     const byName = new Map((entry?.skills ?? []).map((skill) => [skill.name, skill]));
@@ -873,9 +889,38 @@ export function createRendererActions(options: RendererBridgeOptions) {
     const disabled = new Set(
       skills.filter((skill) => skill.enabled === false).map((skill) => `skill:${skill.id}`),
     );
+    const statusByName = new Map(connectorStatus.value.data.map((status) => [status.name, status]));
+    const connectors = base.connectors.map((connector) => {
+      if (!connector.trusted) return connector;
+      const live = statusByName.get(connector.id);
+      if (!live) return connector;
+      const tools = Object.keys(live.tools).sort((a, b) => a.localeCompare(b));
+      const status: ConnectorView['status'] =
+        live.authStatus === 'notLoggedIn' || live.runtimeStatus === 'authenticationRequired'
+          ? 'needs-auth'
+          : live.runtimeStatus === 'disabled'
+            ? 'disabled'
+            : live.toolsError ||
+                live.runtimeStatus === 'failed' ||
+                live.runtimeStatus === 'cancelled'
+              ? 'failed'
+              : live.runtimeStatus === 'connected' || tools.length > 0
+                ? 'connected'
+                : 'disconnected';
+      return {
+        ...connector,
+        status,
+        tools,
+        toolCount: tools.length,
+        authStatus: live.authStatus,
+        ...(live.runtimeStatus ? { runtimeStatus: live.runtimeStatus } : {}),
+        ...(live.toolsError ? { failureSummary: live.toolsError } : {}),
+      };
+    });
     return {
       ...base,
       skills,
+      connectors,
       apps: base.apps.filter((app) => !disabled.has(app.id)),
       bundles: pluginCatalog.marketplaces.flatMap((marketplace) =>
         marketplace.plugins.map((plugin) => ({
@@ -906,6 +951,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           }
         : {}),
       ...(entry?.errors.length ? { skillErrors: entry.errors } : {}),
+      ...(connectorStatus.error ? { connectorErrors: [connectorStatus.error] } : {}),
     };
   }
 
@@ -2576,16 +2622,60 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return Promise.resolve(addConnector(ports, input));
     },
 
-    trustConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
+    async trustConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
-      if (!ports) return Promise.resolve(missingPortsResult());
-      return Promise.resolve(trustConnectorAction(ports, input.id));
+      if (!ports) return missingPortsResult();
+      const result = trustConnectorAction(ports, input.id);
+      if (!result.ok) return result;
+      await adapter.reloadMcpServers();
+      return { ...result, catalog: await catalogWithKernelSkills() };
     },
 
-    removeConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
+    async removeConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
-      if (!ports) return Promise.resolve(missingPortsResult());
-      return Promise.resolve(removeConnectorAction(ports, input.id));
+      if (!ports) return missingPortsResult();
+      const result = removeConnectorAction(ports, input.id);
+      if (!result.ok) return result;
+      await adapter.reloadMcpServers();
+      return { ...result, catalog: await catalogWithKernelSkills() };
+    },
+
+    async setConnectorToolPolicy(
+      input: SetConnectorToolPolicyInput,
+    ): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return missingPortsResult();
+      const result = setConnectorToolPolicyAction(ports, input);
+      if (!result.ok) return result;
+      await adapter.reloadMcpServers();
+      return { ...result, catalog: await catalogWithKernelSkills() };
+    },
+
+    async authorizeConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return missingPortsResult();
+      if (!options.openExternal) {
+        return { ...missingPortsResult(), refused: '这个版本不能打开系统浏览器完成授权。' };
+      }
+      const connector = readCatalog(ports).connectors.find(
+        (candidate) => candidate.id === input.id,
+      );
+      if (!connector)
+        return { ok: false, refused: '没有这个连接器。', catalog: readCatalog(ports) };
+      if (!connector.trusted) {
+        return { ok: false, refused: '请先信任并启用这个连接器。', catalog: readCatalog(ports) };
+      }
+      try {
+        const response = await adapter.startMcpServerOauthLogin(input.id);
+        await options.openExternal(response.authorizationUrl);
+        return { ok: true, catalog: await catalogWithKernelSkills() };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          refused: error instanceof Error ? error.message : '没有启动连接器授权。',
+          catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()),
+        };
+      }
     },
 
     createExpert(input: CreateExpertInput): Promise<CatalogMutationResult> {

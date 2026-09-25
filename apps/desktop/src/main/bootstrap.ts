@@ -19,6 +19,9 @@ import { join } from 'node:path';
 import { RENDERER_ACTIONS } from '../preload/index.js';
 import { createServiceHost, resolvePaths, type ServiceHost } from './service-host.js';
 
+/** 真窗口 E2E 注入可观察 launcher；生产入口仍直接使用 `bootstrap`。 */
+export { createServiceHost } from './service-host.js';
+
 /** 只声明我们真正用到的那部分 Electron API。 */
 export interface ElectronWindow {
   readonly webContents: {

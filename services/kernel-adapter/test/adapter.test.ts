@@ -204,6 +204,42 @@ describe('启动序列（09 §3.2）', () => {
     });
   });
 
+  it('连接器状态、OAuth 与重载使用 app-server 稳定协议', async () => {
+    server.handlers.set('mcpServerStatus/list', (ctx) => {
+      expect(ctx.params).toEqual({ detail: 'toolsAndAuthOnly', threadId: 'thread-1' });
+      return {
+        data: [
+          {
+            name: 'calendar',
+            runtimeStatus: 'authenticationRequired',
+            pluginId: null,
+            tools: { search: {} },
+            toolsError: null,
+            authStatus: 'notLoggedIn',
+          },
+        ],
+        nextCursor: null,
+      };
+    });
+    server.handlers.set('mcpServer/oauth/login', (ctx) => {
+      expect(ctx.params).toEqual({ name: 'calendar', threadId: 'thread-1' });
+      return { authorizationUrl: 'https://auth.example/calendar' };
+    });
+    await adapter.start();
+
+    await expect(adapter.listMcpServerStatuses('thread-1')).resolves.toMatchObject({
+      data: [{ name: 'calendar', authStatus: 'notLoggedIn' }],
+    });
+    await expect(adapter.startMcpServerOauthLogin('calendar', 'thread-1')).resolves.toEqual({
+      authorizationUrl: 'https://auth.example/calendar',
+    });
+    await adapter.reloadMcpServers();
+
+    expect(server.received.findLast((r) => r.method === 'config/mcpServer/reload')?.params).toEqual(
+      {},
+    );
+  });
+
   it('内核在握手后立刻发审批请求也有人接（F14 的窗口期）', async () => {
     const asked: string[] = [];
     const withApproval = createAdapter({
@@ -488,7 +524,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     expect(server.received.map((r) => r.method)).toContain('thread/queue/add');
   });
 
-  it('内核队列在当前回合结束后显式 start —— add 本身不会自动执行', async () => {
+  it('内核队列由 queue extension 自动出队，不与本机降级队列重复启动', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     server.handlers.set('thread/queue/list', () => ({
@@ -507,8 +543,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
     await adapter.startNextQueued(threadId);
 
-    const start = server.received.find((request) => request.method === 'thread/queue/start');
-    expect(start?.params).toEqual({ threadId, queuedSubmissionId: 'queued-1' });
+    expect(server.received.some((request) => request.method === 'thread/queue/start')).toBe(false);
   });
 
   it('`thread/queue/*` 不可用 → 退回本机队列（09 §3.3），**不报错**', async () => {

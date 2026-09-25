@@ -88,6 +88,8 @@ export type RendererEvent =
   | { readonly type: 'task-goal-changed'; readonly taskId: string }
   /** 技能目录变化；Composer 据此重读内核清单，不保留陈旧路径。 */
   | { readonly type: 'skills-changed' }
+  /** MCP 启动或 OAuth 状态变化；目录页重读权威运行态。 */
+  | { readonly type: 'connectors-changed' }
   /**
    * 「项目」那一侧变了（另一个客户端建了/删了 project）。
    * 只在停在项目列表页时才据此重拉——本机自己的增删动作直接返回新列表，不等这条事件。
@@ -1015,7 +1017,19 @@ export interface ConnectorView {
     'untrusted' | 'disconnected' | 'connected' | 'needs-auth' | 'failed' | 'disabled';
   readonly category: 'browser' | 'custom';
   readonly toolCount?: number | undefined;
+  readonly tools?: readonly string[] | undefined;
   readonly toolPolicy: Readonly<Record<string, 'approve' | 'allow'>>;
+  readonly authStatus?:
+    'unknown' | 'unsupported' | 'notLoggedIn' | 'bearerToken' | 'oAuth' | undefined;
+  readonly runtimeStatus?:
+    | 'notStarted'
+    | 'starting'
+    | 'connected'
+    | 'authenticationRequired'
+    | 'failed'
+    | 'cancelled'
+    | 'disabled'
+    | undefined;
   readonly failureSummary?: string | undefined;
   readonly disabledReason?: string | undefined;
 }
@@ -1062,6 +1076,7 @@ export interface CatalogDataView {
   readonly bundles?: readonly CatalogBundleView[];
   readonly bundleErrors?: readonly { readonly path: string; readonly message: string }[];
   readonly skillErrors?: readonly { readonly path: string; readonly message: string }[];
+  readonly connectorErrors?: readonly string[];
 }
 
 /**

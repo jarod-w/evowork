@@ -80,8 +80,43 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
       ],
     });
     type('@Q3');
-    fireEvent.click(screen.getByRole('menuitem', { name: /Q3.xlsx/ }));
+    fireEvent.click(screen.getByRole('option', { name: /Q3.xlsx/ }));
     expect(onChange).toHaveBeenLastCalledWith('@Q3.xlsx ');
+  });
+
+  it('补全使用 combobox/listbox 语义，方向键同步读屏高亮项', () => {
+    renderComposer({
+      mentionCandidates: [
+        { id: 'f1', label: 'Q3.xlsx', category: 'file', insertAs: 'mention' },
+        { id: 's1', label: 'Q3 skill', category: 'skill', insertAs: 'skill' },
+      ],
+    });
+    const box = type('@Q3');
+    const listbox = screen.getByRole('listbox', { name: '引用候选' });
+    const options = screen.getAllByRole('option');
+    expect(box.getAttribute('aria-expanded')).toBe('true');
+    expect(box.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(options[0]?.getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    expect(options[1]?.getAttribute('aria-selected')).toBe('true');
+    expect(box.getAttribute('aria-activedescendant')).toBe(options[1]?.id);
+  });
+
+  it('`@` 查询优先展示前缀命中，并保持同分候选原有顺序', () => {
+    renderComposer({
+      mentionCandidates: [
+        { id: 'f1', label: 'my report.xlsx', category: 'file', insertAs: 'mention' },
+        { id: 'f2', label: 'report-final.xlsx', category: 'file', insertAs: 'mention' },
+        { id: 'f3', label: 'report-old.xlsx', category: 'file', insertAs: 'mention' },
+      ],
+    });
+    type('@report');
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      expect.stringContaining('report-final.xlsx'),
+      expect.stringContaining('report-old.xlsx'),
+      expect.stringContaining('my report.xlsx'),
+    ]);
   });
 
   it('从 `@` 统一发现中选技能时改写为 `$技能`，并保留结构化引用', () => {
@@ -101,7 +136,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
       ],
     });
     type('@演示');
-    fireEvent.click(screen.getByRole('menuitem', { name: /演示文稿/ }));
+    fireEvent.click(screen.getByRole('option', { name: /演示文稿/ }));
     expect(onChange).toHaveBeenLastCalledWith('$演示文稿 ');
     expect(onInsertReference).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'presentations' }),
@@ -118,8 +153,8 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
       ],
     });
     type('$pres');
-    expect(screen.queryByRole('menuitem', { name: /presentations\.md/ })).toBeNull();
-    fireEvent.click(screen.getByRole('menuitem', { name: /^presentations/ }));
+    expect(screen.queryByRole('option', { name: /presentations\.md/ })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: /^presentations/ }));
     expect(onChange).toHaveBeenLastCalledWith('$presentations ');
   });
 
@@ -137,7 +172,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     type('/清');
     expect(screen.getByText('本地指令 · 不发送给模型')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('menuitem', { name: /清空/ }));
+    fireEvent.click(screen.getByRole('option', { name: /清空/ }));
     expect(onRunLocalCommand).toHaveBeenCalledWith('clear');
     // 触发文本被清掉，而不是把 `/清空` 当提示词发出去
     expect(onChange).toHaveBeenLastCalledWith('');
