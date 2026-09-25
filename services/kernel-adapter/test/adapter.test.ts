@@ -980,13 +980,27 @@ describe('通知驱动 UI（09 §3.4 的端到端）', () => {
     expect(JSON.stringify(ui)).not.toContain('thread/started');
   });
 
-  it('未识别的通知记形状 + 让 UI 显示一行（R2 雷达）', async () => {
+  it('未识别的通知只记形状，不进入对话 UI（R2 雷达）', async () => {
     await adapter.start();
     server.notify('item/brandNewKind', { threadId: 't1', payload: {} });
     await new Promise((r) => setImmediate(r));
 
     const rows = store.db.prepare('SELECT method FROM unknown_event').all() as { method: string }[];
     expect(rows.map((r) => r.method)).toContain('item/brandNewKind');
+    expect(ui).toEqual([]);
+  });
+
+  it('thread/settings/updated 被明确消费，不进入未知事件或对话 UI', async () => {
+    await adapter.start();
+    server.notify('thread/settings/updated', {
+      threadId: 't1',
+      threadSettings: { model: 'test/model', approvalPolicy: 'on-request' },
+    });
+    await new Promise((r) => setImmediate(r));
+
+    const rows = store.db.prepare('SELECT method FROM unknown_event').all() as { method: string }[];
+    expect(rows).toEqual([]);
+    expect(ui).toEqual([]);
   });
 });
 

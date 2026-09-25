@@ -154,6 +154,8 @@ export const NOTIFICATION = {
   threadClosed: 'thread/closed',
   threadReverted: 'thread/reverted',
   threadCompacted: 'thread/compacted',
+  /** 当前任务的生效配置变化；它是状态通知，不是对话条目。 */
+  threadSettingsUpdated: 'thread/settings/updated',
   threadTokenUsageUpdated: 'thread/tokenUsage/updated',
   threadQueueChanged: 'thread/queue/changed',
   threadGoalUpdated: 'thread/goal/updated',

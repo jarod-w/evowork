@@ -237,16 +237,10 @@ export function createAdapter(options: AdapterOptions) {
     },
     ...(options.onNotice ? { onNotice: options.onNotice } : {}),
     // R2 雷达：未识别的通知记形状（不记正文）。接在这里而不是让调用方自己接 ——
-    // 它是"上游改了什么"的唯一线索，不该取决于谁构造了 session
+    // 它是"上游改了什么"的唯一线索，不该取决于谁构造了 session。
+    // 通知不是 ThreadItem：这里只留诊断记录，不能把协议噪声塞进对话时间线。
     onUnhandledNotification: (method, params) => {
       store.recordUnknownEvent(method, params, now());
-      const threadId =
-        params &&
-        typeof params === 'object' &&
-        typeof (params as { threadId?: unknown }).threadId === 'string'
-          ? (params as { threadId: string }).threadId
-          : undefined;
-      options.onUiEvent?.({ type: 'unknown-event', method, ...(threadId ? { threadId } : {}) });
     },
   });
 

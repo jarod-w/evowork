@@ -102,12 +102,6 @@ export type UiEvent =
   | {
       readonly type: 'kernel-warning';
       readonly text: string;
-    }
-  | {
-      /** 上游新增的、我们还不认识的事件（04 §5.2 最后一段：绝不静默丢弃） */
-      readonly type: 'unknown-event';
-      readonly method: string;
-      readonly threadId?: string;
     };
 
 /** 流式增量的四个通道（04 §5.1：按 item id 合并，60fps 节流由前端做）。 */
@@ -475,6 +469,14 @@ export function createEventRouter(options: EventRouterOptions) {
       return [];
     },
 
+    /*
+     * 生效配置会在 thread/start、turn/start 或运行中改档后通知客户端。
+     * 当前模型/审批档在发起动作时已经写入本机投影；这条通知不产生新的对话内容，
+     * 更不能伪装成 ThreadItem 塞进时间线。先把它明确纳入订阅面，后续若要支持
+     * 多客户端设置同步，应在这里更新任务投影，而不是改对话渲染器。
+     */
+    [NOTIFICATION.threadSettingsUpdated]: () => [],
+
     [NOTIFICATION.skillsChanged]: () => {
       onUiEvent({ type: 'skills-changed' });
       return [];
@@ -588,15 +590,11 @@ export function createEventRouter(options: EventRouterOptions) {
     handle(method: string, params: unknown): SideEffect[] {
       const handler = handlers[method];
       if (!handler) {
-        // 未识别通知：记形状（不记正文）+ 让 UI 显示一行，绝不静默丢弃（R2 / 04 §5.2）
+        /*
+         * 未识别的协议通知记形状（不记正文），供 R2 漂移雷达排查，但不进入对话区。
+         * 04 §5.2 要求展示的是未知 ThreadItem；通知和条目不是同一种协议对象。
+         */
         store.recordUnknownEvent(method, params, now());
-        const threadId =
-          params &&
-          typeof params === 'object' &&
-          typeof (params as { threadId?: unknown }).threadId === 'string'
-            ? (params as { threadId: string }).threadId
-            : undefined;
-        onUiEvent({ type: 'unknown-event', method, ...(threadId ? { threadId } : {}) });
         logger?.warn('adapter.event.unknown', { method });
         return [];
       }

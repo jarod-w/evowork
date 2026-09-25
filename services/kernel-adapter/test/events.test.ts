@@ -416,8 +416,8 @@ describe('09 §3.4 的分发表逐行', () => {
   });
 });
 
-describe('未识别通知（R2 雷达 + 04 §5.2 最后一段）', () => {
-  it('记形状（不记正文）+ 让 UI 显示一行，**绝不静默丢弃**', () => {
+describe('未识别通知（R2 漂移雷达）', () => {
+  it('记形状（不记正文），但不把协议通知伪装成对话条目', () => {
     router.handle('item/brandNewKind', { threadId: 't1', text: '帮我分析鹏程公司的账款' });
 
     const rows = store.db.prepare('SELECT method, shape FROM unknown_event').all() as {
@@ -427,7 +427,18 @@ describe('未识别通知（R2 雷达 + 04 §5.2 最后一段）', () => {
     expect(rows[0]?.method).toBe('item/brandNewKind');
     expect(rows[0]?.shape).toBe('text:string|threadId:string');
     expect(JSON.stringify(rows)).not.toContain('鹏程');
-    expect(ui).toEqual([{ type: 'unknown-event', method: 'item/brandNewKind', threadId: 't1' }]);
+    expect(ui).toEqual([]);
+  });
+
+  it('thread/settings/updated 是已知状态通知，不进时间线也不记成协议漂移', () => {
+    router.handle(NOTIFICATION.threadSettingsUpdated, {
+      threadId: 't1',
+      threadSettings: { model: 'test/model', approvalPolicy: 'on-request' },
+    });
+
+    const rows = store.db.prepare('SELECT method FROM unknown_event').all();
+    expect(rows).toEqual([]);
+    expect(ui).toEqual([]);
   });
 
   it('一条坏通知不该让整个事件流停下来', () => {
@@ -456,6 +467,7 @@ describe('未识别通知（R2 雷达 + 04 §5.2 最后一段）', () => {
       NOTIFICATION.threadQueueChanged,
       NOTIFICATION.threadGoalUpdated,
       NOTIFICATION.threadGoalCleared,
+      NOTIFICATION.threadSettingsUpdated,
       NOTIFICATION.threadTokenUsageUpdated,
       NOTIFICATION.skillsChanged,
       NOTIFICATION.mcpServerStartupStatusUpdated,

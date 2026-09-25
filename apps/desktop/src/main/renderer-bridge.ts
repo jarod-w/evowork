@@ -619,7 +619,6 @@ export function createEventTranslator(store: Store, now: () => number) {
   >();
   /** plan 通知没有 itemId：用 turnId 合并，并把随后到达的 wire itemId 指向同一行。 */
   const displayIdByWireId = new Map<string, string>();
-  let unknownSequence = 0;
 
   const displayId = (wireId: string): string => displayIdByWireId.get(wireId) ?? wireId;
 
@@ -780,21 +779,6 @@ export function createEventTranslator(store: Store, now: () => number) {
             diff: event.diff,
           },
         ];
-      case 'unknown-event':
-        return event.threadId
-          ? [
-              {
-                type: 'item',
-                taskId: event.threadId,
-                item: {
-                  id: `unknown:${unknownSequence++}`,
-                  type: event.method,
-                  method: event.method,
-                  completed: true,
-                },
-              },
-            ]
-          : [];
       /*
        * 另一个客户端建了/删了 project（内核那一侧变了）。
        * `app.tsx` 只在停在「项目」列表页时才据此重拉 —— 本机自己的增删
