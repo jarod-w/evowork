@@ -8,21 +8,12 @@
  *
  * 这里的断言都绑在 **token 与窗口尺寸**上，不绑魔数：规则失效会红，调间距不会误报。
  */
+import { horizontalOverflow, resizeWindow, silentlyClippedText } from './assertions.mjs';
 import { expect, test } from './fixtures.mjs';
 
 /** 两个矩形有没有相交 */
 function overlaps(a, b) {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-}
-
-/** 改窗口大小要改**原生窗口**：Electron 里 setViewportSize 不管用 */
-async function resizeWindow(electronApp, width, height) {
-  await electronApp.evaluate(
-    ({ BrowserWindow }, size) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height);
-    },
-    { width, height },
-  );
 }
 
 test('macOS：交通灯的位置是留出来的，品牌名不会被压住', async ({ page }) => {
@@ -99,13 +90,40 @@ test('三个断点下都不出现横向滚动条', async ({ page, electronApp })
      * 容 1px 是亚像素取整，不是给溢出留口子。
      */
     await expect
-      .poll(
-        () =>
-          page.evaluate(
-            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          ),
-        { message: `窗口 ${width}px 时页面横向被撑破` },
-      )
+      .poll(() => horizontalOverflow(page), {
+        message: `窗口 ${width}px 时页面横向被撑破`,
+      })
       .toBeLessThanOrEqual(1);
   }
+});
+
+test('被裁掉的文字要么有省略号，要么悬停能看到全文', async ({ page, electronApp }) => {
+  /*
+   * **硬裁是无声的**：名字从中间断掉，用户不知道自己看到的是半个。
+   * 仓库里为这件事专门写过注释（`menu.tsx`：不复用 `ew-menu-label`，
+   * 因为 `text-overflow: ellipsis` 对 flex 容器里的匿名文本不生效，
+   * 名字会被硬裁掉而不是给出省略号）—— 那次是靠截图发现的。
+   *
+   * 判据：内容真的超出了容器（`scrollWidth > clientWidth`）且被 `overflow: hidden` 挡住时，
+   * 必须**至少**给一条出路 —— 省略号（看得出来还有）或 `title`（悬停看得到全文）。
+   * 两条都没有才算违规。
+   */
+  // 窄窗口最容易裁：先缩到最小断点再看
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.setSize(460, 800);
+  });
+
+  const { examined, bad: clipped } = await silentlyClippedText(page);
+
+  /*
+   * **自证**：扫不到候选的话这条断言什么都没证明，而且会无声地绿。
+   * 界面改到没有一个「装着文字且 overflow: hidden」的元素时，应该是这条红，
+   * 而不是它继续假装在守着。
+   */
+  expect(examined, '一个候选元素都没扫到 —— 这条断言此刻什么都没在守').toBeGreaterThan(0);
+
+  expect(
+    clipped,
+    '这些文字被硬裁了，既没有省略号也没有 title —— 用户看到的是半个词，而且不知道',
+  ).toEqual([]);
 });

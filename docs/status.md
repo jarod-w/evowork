@@ -12,6 +12,12 @@
 > 灰掉的「下一步」要说明原因、走完 reload 不再回来）· 换模型后**网关收到的 model 字段**真的变了 ·
 > macOS 交通灯底下不许有内容 · 三个断点不出横向滚动条。与断言型 E2E 共用 `harness/boot.mjs`，
 > 差别只有一个 `show` 参数。
+> ①b **又三条旅程 + L2 续**：资料库 / 自动化 / 设置（**七个分区**，不是 P1-3 里记的六个 ——
+> 「关于与更新」是后加的；断言写成「声明的分区与渲染出来的逐项相等」+ 每个都点得开）；
+> L2 新增**高对比度只改那三个边框 token、别的一个都不动**（`css.ts` 头注释里「只覆盖三个」
+> 这句话此前没有任何东西验证）· **焦点可见**（jsdom 没有 `:focus-visible`）·
+> **被无声硬裁的文字**必须有省略号或 title（`menu.tsx` 为这件事写过注释，那次是靠截图发现的）。
+> 三个视图各自跑同一组几何体检 —— 一个视图的列宽写死了，别的视图一点事都没有。
 > ② **打包产物冒烟**（`scripts/verify-packaged-app.mjs`）：内核二进制在不在、可不可执行、
 > 是不是占位；plugins/config/gateway/字体是不是空目录；Info.plist 里有没有 Codex/OpenAI（K5）；
 > 签成了什么；**打包后的 .app 真的能起来并渲染出引导**。`package.mjs` 的四条检查全在打包之前，
@@ -28,8 +34,12 @@
 > 两条断言**做过证伪**（改坏会红、改回会绿）：许可门禁、交通灯留位。
 > **没验过的**：`.github/workflows/ui.yml` 从没在 CI 上跑过 —— macOS runner 有没有 GUI 会话、
 > 内核编译耗时、Electron 二进制下载三件事只有第一次真跑才知道（文件头写着同样的警告）。
-> **顺带记两条落差**：`packages/tokens` 里**没有暗色**（01 §4.5 描述了暗色，实现不在），
-> 所以暗色回归无从测起；`html[data-platform='macos'] .ew-sidebar-titlebar::before` 的
+> **一条要更正的**（上一版写错了）：`packages/tokens` 里**有暗色**（`DARK_NEUTRAL` /
+> `DARK_SEMANTIC` / `DARK_HIGH_CONTRAST_BORDERS`），不写进产品 CSS 是 **C7 的决定**
+> （01 §250：「本版只设计和验收浅色…token 包可以收录，但产品 CSS 不跟随
+> `prefers-color-scheme`，也不提供主题开关」），不是落差。写错的原因是 `grep "dark"`
+> 大小写敏感，漏掉了全大写的常量名。**暗色回归确实无从测起，但理由是「本版不做」而不是「没实现」。**
+> **顺带记一条真落差**：`html[data-platform='macos'] .ew-sidebar-titlebar::before` 的
 > `width: var(--space-40)` **目前是惰性的** —— 改成 0 之后几何一个像素都不变，
 > 真正在推挤的是同一条规则里的 `margin-right: auto`。
 >
