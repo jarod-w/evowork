@@ -91,6 +91,12 @@ disable_on_external_context = true`;
       kernelHome,
       `model_provider = "evowork"
 
+# 这两项是根键，必须放在第一个方括号表头之前（与 config.toml.template 同一条纪律）。
+# TOML 进入表之后不能再靠空行回到根：写在 [permissions.evowork-workspace] 后面，
+# 它们就成了那张表的键，既不报错也不生效 —— 2026-09-26 这两份 e2e 都踩着。
+default_permissions = "evowork-workspace"
+approval_policy = "never"
+
 [model_providers.evowork]
 name = "E2E Gateway"
 base_url = "${gatewayBaseUrl}"
@@ -99,9 +105,6 @@ env_key = "EVOWORK_GATEWAY_TOKEN"
 
 [permissions.evowork-workspace]
 extends = ":workspace"
-
-default_permissions = "evowork-workspace"
-approval_policy = "never"
 
 ${memoryConfig}
 
