@@ -1386,6 +1386,11 @@ textarea {
 .ew-approval-changes li[data-outside='true'] {
   color: var(--warning-text);
 }
+/* 清单拿不到时的说明。用 warning 而不是 secondary：它是一句需要被看见的话 */
+.ew-approval-changes-unknown {
+  margin: 0;
+  color: var(--warning-text);
+}
 .ew-approval-actions {
   display: flex;
   gap: var(--space-8);

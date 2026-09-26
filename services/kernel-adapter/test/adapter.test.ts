@@ -268,6 +268,138 @@ describe('启动序列（09 §3.2）', () => {
     await withApproval.stop();
   });
 
+  /*
+   * 文件改动审批：内核**只给 itemId 不给清单**，要从 item 流里按 id 反查
+   * （`tui/src/app/file_change_approvals.rs:1-5` 把这条写成了注释）。
+   * 这整条链路以前是断的 —— 卡片读 `params.changes`，而内核从不发这个字段，
+   * 于是每次都笃定地写着「将改动 0 个文件」。
+   */
+  it('文件改动审批按 itemId 反查出清单，并标出工作空间之外的文件', async () => {
+    const seen: (readonly unknown[] | undefined)[] = [];
+    const withApproval = createAdapter({
+      store,
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+        heartbeatIntervalMs: 10 ** 9,
+      },
+      askApproval: async (a) => {
+        seen.push(a.fileChanges);
+        return { decision: 'accept' };
+      },
+    });
+    await withApproval.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1', cwd: '/w' }));
+
+    // item 先到（内核就是这个顺序：清单已经画在时间线上了），审批后到
+    server.notify('item/started', {
+      threadId: 't1',
+      turnId: 'turn-1',
+      item: {
+        type: 'fileChange',
+        id: 'call-1',
+        changes: [
+          { path: '/w/report.docx', kind: { type: 'add' }, diff: '大段正文' },
+          { path: '/etc/hosts', kind: { type: 'delete' }, diff: '大段正文' },
+        ],
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await server.requestClient('item/fileChange/requestApproval', {
+      threadId: 't1',
+      turnId: 'turn-1',
+      itemId: 'call-1',
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual([
+      { path: '/w/report.docx', kind: 'add', outsideWorkspace: false },
+      // `kind` 是带 tag 的对象，不解开的话删除既不会标红也不会被拦在
+      // 「本次会话都允许」之外
+      { path: '/etc/hosts', kind: 'delete', outsideWorkspace: true },
+    ]);
+    // **diff 不进审批链路**：卡片不画正文，在缓存入口就丢掉（Q14）
+    expect(JSON.stringify(seen[0])).not.toContain('大段正文');
+    await withApproval.stop();
+  });
+
+  /*
+   * 查不到清单必须是 `undefined`（= 不知道），不能退成 `[]`（= 一个都不改）。
+   * 两者在卡片上是两句完全不同的话。
+   */
+  it('反查不到时 fileChanges 是 undefined，不是空数组', async () => {
+    const seen: (readonly unknown[] | undefined)[] = [];
+    const withApproval = createAdapter({
+      store,
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+        heartbeatIntervalMs: 10 ** 9,
+      },
+      askApproval: async (a) => {
+        seen.push(a.fileChanges);
+        return { decision: 'decline' };
+      },
+    });
+    await withApproval.start();
+
+    await server.requestClient('item/fileChange/requestApproval', {
+      threadId: 't1',
+      turnId: 'turn-1',
+      itemId: 'never-seen',
+    });
+
+    expect(seen).toEqual([undefined]);
+    await withApproval.stop();
+  });
+
+  it('回合结束后这份清单就不再留着（审批只发生在回合进行中）', async () => {
+    const seen: (readonly unknown[] | undefined)[] = [];
+    const withApproval = createAdapter({
+      store,
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+        heartbeatIntervalMs: 10 ** 9,
+      },
+      askApproval: async (a) => {
+        seen.push(a.fileChanges);
+        return { decision: 'decline' };
+      },
+    });
+    await withApproval.start();
+    server.notify('item/started', {
+      threadId: 't1',
+      turnId: 'turn-1',
+      item: {
+        type: 'fileChange',
+        id: 'call-1',
+        changes: [{ path: '/w/a', kind: { type: 'add' } }],
+      },
+    });
+    server.notify('turn/completed', {
+      threadId: 't1',
+      turn: makeTurn({ id: 'turn-1', status: 'completed' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await server.requestClient('item/fileChange/requestApproval', {
+      threadId: 't1',
+      turnId: 'turn-1',
+      itemId: 'call-1',
+    });
+
+    expect(seen).toEqual([undefined]);
+    await withApproval.stop();
+  });
+
   it('没有提供 askApproval 时一律 decline —— 没人能确认时选择不做', async () => {
     await adapter.start();
     const reply = await server.requestClient('item/fileChange/requestApproval', {

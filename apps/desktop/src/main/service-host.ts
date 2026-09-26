@@ -958,10 +958,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       const item = effect.item as
         | {
             readonly type?: string;
-            readonly changes?: readonly {
-              readonly path: string;
-              readonly kind?: string | undefined;
-            }[];
+            // kind 是 `PatchChangeKind`（带 tag 的对象），解码在 ingestFileChanges 里
+            readonly changes?: readonly { readonly path: string; readonly kind?: unknown }[];
           }
         | undefined;
       if (cwd && item?.type === 'fileChange') {

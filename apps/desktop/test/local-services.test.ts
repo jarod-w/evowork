@@ -245,8 +245,8 @@ describe('文件变化 ↔ 产物索引', () => {
     writeFileSync(join(dir, 'work', 'report.docx'), 'v1');
     services.watchWorkspace(join(dir, 'work'), 't1');
     services.ingestFileChanges(join(dir, 'work'), 't1', [
-      { path: 'uploads/x/content.md', kind: 'add' },
-      { path: './report.docx', kind: 'add' },
+      { path: 'uploads/x/content.md', kind: { type: 'add' } },
+      { path: './report.docx', kind: { type: 'add' } },
     ]);
 
     expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(1);
@@ -260,8 +260,8 @@ describe('文件变化 ↔ 产物索引', () => {
     services.watchWorkspace(join(dir, 'work'), 't1');
 
     services.ingestFileChanges(join(dir, 'work'), 't1', [
-      { path: './report.docx', kind: 'add' },
-      { path, kind: 'modify' },
+      { path: './report.docx', kind: { type: 'add' } },
+      { path, kind: { type: 'update' } },
     ]);
 
     expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(1);
@@ -386,15 +386,21 @@ describe('文件变化 ↔ 产物索引', () => {
     services.stop();
   });
 
+  /*
+   * `kind` 是内核的 `PatchChangeKind`，**一个带 tag 的对象**。
+   * 以前这里传的是裸字符串 'delete' —— 那个形状内核从不发，
+   * 而线上真正收到 `{type:'delete'}` 时比较恒假，删除被记成了「修改」，
+   * 资料库里就留着一条指向已删文件的记录。
+   */
   it('文件被删 → 标 MISSING，索引条目保留', () => {
     const { services } = make();
     const path = join(dir, 'work', 'report.docx');
     writeFileSync(path, 'v1');
     services.watchWorkspace(join(dir, 'work'), 't1');
-    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: 'add' }]);
+    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: { type: 'add' } }]);
 
     rmSync(path);
-    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: 'delete' }]);
+    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: { type: 'delete' } }]);
     const rows = store.db.prepare('SELECT file_state FROM artifact').all() as {
       file_state: string;
     }[];
@@ -409,7 +415,7 @@ describe('文件变化 ↔ 产物索引', () => {
     const path = join(desktop, '美股市场日报.docx');
     writeFileSync(path, 'v1');
     services.watchWorkspace(join(dir, 'work'), 't1');
-    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: 'add' }]);
+    services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: { type: 'add' } }]);
 
     const rows = store.db.prepare('SELECT path, thread_id FROM artifact').all() as {
       path: string;

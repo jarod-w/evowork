@@ -272,17 +272,20 @@ describe('「本次任务内都允许」的可用条件（10 §3.3）', () => {
     };
   }
 
+  /*
+   * 判定依据是 `fileChanges`（适配层按 itemId 反查来的），**不是 `params.changes`** ——
+   * 内核的审批 RPC 从不发那个字段。这几条以前自己往 params 里塞一个内核不会发的形状，
+   * 于是测试全绿而线上恒为 false：文件改动的「本次会话都允许」一次都没出现过。
+   */
   it('批量变更**不提供** —— 一次点击放开整个会话的写权限风险过高', () => {
     const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
     expect(
       router.allowsAcceptForSession(
         approval({
-          params: {
-            changes: [
-              { path: '/w/a.txt', kind: 'add' },
-              { path: '/w/b.txt', kind: 'add' },
-            ],
-          },
+          fileChanges: [
+            { path: '/w/a.txt', kind: 'add', outsideWorkspace: false },
+            { path: '/w/b.txt', kind: 'add', outsideWorkspace: false },
+          ],
         }),
       ),
     ).toBe(false);
@@ -292,7 +295,7 @@ describe('「本次任务内都允许」的可用条件（10 §3.3）', () => {
     const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
     expect(
       router.allowsAcceptForSession(
-        approval({ params: { changes: [{ path: '/w/a.txt', kind: 'add' }] } }),
+        approval({ fileChanges: [{ path: '/w/a.txt', kind: 'add', outsideWorkspace: false }] }),
       ),
     ).toBe(true);
   });
@@ -301,9 +304,15 @@ describe('「本次任务内都允许」的可用条件（10 §3.3）', () => {
     const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
     expect(
       router.allowsAcceptForSession(
-        approval({ params: { changes: [{ path: '/w/a.txt', kind: 'delete' }] } }),
+        approval({ fileChanges: [{ path: '/w/a.txt', kind: 'delete', outsideWorkspace: false }] }),
       ),
     ).toBe(false);
+  });
+
+  /* 不知道改了什么，就不能一键放开 —— 查不到时倒向保守，和以前的表现一致。 */
+  it('清单查不到时不提供', () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
+    expect(router.allowsAcceptForSession(approval({}))).toBe(false);
   });
 
   it('命令审批可以提供（它的范围是"这条命令"，不是"整个工作空间的写权限"）', () => {

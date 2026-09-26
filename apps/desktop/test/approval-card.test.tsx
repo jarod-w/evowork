@@ -101,7 +101,8 @@ describe('文件变更审批卡（10 §3.3）', () => {
           kind: 'fileChange',
           changes: [
             { path: '/w/report.docx', kind: 'add' },
-            { path: '/etc/config.json', kind: 'modify', outsideWorkspace: true },
+            // 内核只有 add / delete / update 三种（`PatchChangeKind`），没有 modify
+            { path: '/etc/config.json', kind: 'update', outsideWorkspace: true },
           ],
           allowAcceptForSession: false,
         })}
@@ -112,6 +113,32 @@ describe('文件变更审批卡（10 §3.3）', () => {
     expect(items[0]?.textContent).toContain('/etc/config.json');
     expect(items[0]?.getAttribute('data-outside')).toBe('true');
     expect(items[0]?.textContent).toContain('工作空间之外');
+  });
+
+  /*
+   * 内核的审批 RPC 只给 itemId、不给清单，要从 item 流里反查。反查不到时
+   * **不能说「将改动 0 个文件」** —— 那是一句会让用户放松警惕的假话。
+   */
+  it('清单拿不到时明说拿不到，而不是显示「0 个文件」', () => {
+    render(
+      <ApprovalCard
+        approval={approval({ kind: 'fileChange', allowAcceptForSession: false })}
+        onDecide={() => {}}
+      />,
+    );
+    expect(screen.getByText(/拿不到这次的改动清单/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('将改动 0 个文件');
+  });
+
+  it('确实一个文件都不改时，画的是空清单而不是「拿不到」', () => {
+    render(
+      <ApprovalCard
+        approval={approval({ kind: 'fileChange', changes: [], allowAcceptForSession: false })}
+        onDecide={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/拿不到这次的改动清单/)).toBeNull();
+    expect(document.body.textContent).toContain('将改动 0 个文件');
   });
 
   it('删除操作单独着色并标注（10 §3.3：删除不折叠、单独着色）', () => {

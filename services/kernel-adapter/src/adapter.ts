@@ -21,6 +21,9 @@ import {
   EXPERIMENTAL_METHOD,
   JsonRpcCallError,
   METHOD,
+  fileChangeKind,
+  fileChangeMovePath,
+  type FileUpdateChange,
   type ExperimentalFeature,
   type FuzzyFileSearchResponse,
   type McpServerOauthLoginResponse,
@@ -55,7 +58,12 @@ import {
   type CapabilityReport,
 } from './capabilities.js';
 import { createEventRouter, type SideEffect, type UiEvent } from './events.js';
-import { createApprovalRouter, type ApprovalReply, type PendingApproval } from './approvals.js';
+import {
+  createApprovalRouter,
+  type ApprovalFileChange,
+  type ApprovalReply,
+  type PendingApproval,
+} from './approvals.js';
 import { KernelSession, type KernelSessionOptions, type SessionNotice } from './session.js';
 import {
   BUILTIN_SCENARIOS,
@@ -202,6 +210,19 @@ function requireResolvedModel(model: string | undefined): string {
 }
 
 /**
+ * 这个路径在不在任务的工作空间里（10 §3.3：外面的要标注并排最前）。
+ *
+ * 路径比较只看前缀，不解析符号链接：审批卡是**提示**不是闸门，
+ * 真正的拦截在 `services/policy` 的三级路径策略里。宁可多标一个「工作空间之外」，
+ * 也不能因为解析失败就当它在里面。
+ */
+function isOutsideWorkspace(path: string, cwd: string | undefined): boolean {
+  if (!cwd) return false; // 不知道工作空间在哪就不作论断
+  const root = cwd.endsWith('/') ? cwd : `${cwd}/`;
+  return path !== cwd && !path.startsWith(root);
+}
+
+/**
  * 回合在我们发出中断请求的路上自己结束了。
  *
  * 内核把这一种和「参数不合法」一起归进 -32600（`turn_processor.rs:1619`），
@@ -236,6 +257,82 @@ export function createAdapter(options: AdapterOptions) {
    */
   const activeTurns = new Map<string, string>();
   /**
+   * `fileChange` item 的改动清单，按 itemId 记着，给文件改动审批卡反查用。
+   *
+   * 内核的审批 RPC **只给 id 不给清单**，要求客户端自己从 item 流里找回来
+   * （`tui/src/app/file_change_approvals.rs:1-5` 把这件事写成了注释）。
+   * item 先到、审批后到，所以这里只需要记住最近的那些。
+   *
+   * **只留 path / kind / 是否在工作空间外，`diff` 在入口就丢掉** ——
+   * 卡片不画正文，而丢掉它意味着文件内容根本不进审批链路（Q14），
+   * 缓存也从"几 MB 的 diff"变成"每条几十字节"。
+   */
+  const fileChangeItems = new Map<
+    string,
+    { readonly threadId: string; readonly turnId?: string; readonly changes: ApprovalFileChange[] }
+  >();
+  /** 上限只为兜底：正常路径上 `turn-completed` 就清了。超了按插入序扔最老的。 */
+  const FILE_CHANGE_CACHE_CAP = 512;
+
+  function rememberFileChanges(event: {
+    readonly threadId: string;
+    readonly turnId?: string;
+    readonly item: ThreadItem;
+  }): void {
+    if (event.item.type !== 'fileChange') return;
+    const raw = (event.item as { changes?: readonly FileUpdateChange[] }).changes;
+    if (!Array.isArray(raw)) return;
+    const cwd = store.threads.get(event.threadId)?.cwd ?? undefined;
+    const changes = raw
+      .filter((change) => typeof change?.path === 'string' && change.path !== '')
+      .map((change) => {
+        const movePath = fileChangeMovePath(change.kind);
+        return {
+          path: change.path,
+          kind: fileChangeKind(change.kind),
+          outsideWorkspace: isOutsideWorkspace(change.path, cwd),
+          ...(movePath ? { movePath } : {}),
+        };
+      });
+    if (fileChangeItems.size >= FILE_CHANGE_CACHE_CAP) {
+      const oldest = fileChangeItems.keys().next();
+      if (!oldest.done) fileChangeItems.delete(oldest.value);
+    }
+    fileChangeItems.set(event.item.id, {
+      threadId: event.threadId,
+      ...(event.turnId ? { turnId: event.turnId } : {}),
+      changes,
+    });
+  }
+
+  /**
+   * 反查审批涉及的文件改动。**查不到返回 undefined**（= 没查到），
+   * 绝不退成空数组（= 一个文件都不改）。
+   *
+   * `turnId` 只作过滤：内核对启动期请求会给空串，那时按内核 TUI 的做法当通配
+   * （`thread_events.rs:533-535`）。
+   */
+  function forgetFileChanges(
+    match: (entry: { readonly threadId: string; readonly turnId?: string }) => boolean,
+  ): void {
+    for (const [itemId, entry] of fileChangeItems) {
+      if (match(entry)) fileChangeItems.delete(itemId);
+    }
+  }
+
+  function lookupFileChanges(input: {
+    readonly threadId: string;
+    readonly turnId?: string;
+    readonly itemId?: string;
+  }): readonly ApprovalFileChange[] | undefined {
+    if (!input.itemId) return undefined;
+    const entry = fileChangeItems.get(input.itemId);
+    if (!entry || entry.threadId !== input.threadId) return undefined;
+    if (input.turnId && entry.turnId && entry.turnId !== input.turnId) return undefined;
+    return entry.changes;
+  }
+
+  /**
    * 进程重启后内存里的活动回合就没了，而投影表还记得 —— 关掉 App 再打开、回合仍在跑
    * 的那条路径上，它是唯一的来源。拿不到就返回 undefined，由调用方退到启动期中断。
    */
@@ -255,12 +352,22 @@ export function createAdapter(options: AdapterOptions) {
         session.openThreads.delete(event.threadId);
         localQueues.delete(event.threadId);
         activeTurns.delete(event.threadId);
+        forgetFileChanges((entry) => entry.threadId === event.threadId);
         approvals.cancel((a) => a.threadId === event.threadId);
       }
       if (event.type === 'turn-started') activeTurns.set(event.threadId, event.turnId);
+      // 审批只发生在回合进行中，所以回合结束就可以把这一份清单扔掉
       if (event.type === 'turn-completed') {
         activeTurns.delete(event.threadId);
+        forgetFileChanges(
+          (entry) =>
+            entry.threadId === event.threadId &&
+            (entry.turnId === undefined || entry.turnId === event.turnId),
+        );
         approvals.cancel((a) => a.kind === 'mcp' && a.threadId === event.threadId);
+      }
+      if (event.type === 'item-started' || event.type === 'item-completed') {
+        rememberFileChanges(event);
       }
       options.onUiEvent?.(event);
     },
@@ -272,6 +379,7 @@ export function createAdapter(options: AdapterOptions) {
   const approvals = createApprovalRouter({
     ask: options.askApproval ?? (async () => ({ decision: 'decline' as const })),
     isUnattended: (threadId) => Boolean(store.threads.get(threadId)?.automation_id),
+    lookupFileChanges,
     ...(options.onPendingApprovalsChanged
       ? { onPendingChanged: options.onPendingApprovalsChanged }
       : {}),

@@ -29,6 +29,21 @@ export type ApprovalDecision =
   /** 结束整个动作 */
   | 'cancel';
 
+/**
+ * 审批卡要展示的一条文件改动。
+ *
+ * **不带 diff**：卡片只画路径、动作与「是否在工作空间之外」，
+ * 在这个边界就把正文丢掉，文件内容根本不进入审批链路（Q14）。
+ */
+export interface ApprovalFileChange {
+  readonly path: string;
+  readonly kind: 'add' | 'delete' | 'update' | undefined;
+  /** 10 §3.3：工作空间之外的文件要标注并排在最前 */
+  readonly outsideWorkspace: boolean;
+  /** 重命名的目标路径 */
+  readonly movePath?: string;
+}
+
 export interface PendingApproval {
   readonly id: string;
   readonly kind: ApprovalKind;
@@ -37,6 +52,14 @@ export interface PendingApproval {
   readonly itemId?: string;
   /** 原始 params，交给 UI 渲染审批卡（10 §3.2–3.4） */
   readonly params: Record<string, unknown>;
+  /**
+   * 文件改动清单。**内核的审批 RPC 不带它**，由适配层按 `itemId` 反查
+   * （见 `FileChangeRequestApprovalParams` 的注释）。
+   *
+   * `undefined` 是第三种状态：**没查到**，不是"零个文件"。
+   * 两者必须分开 —— 以前合并成 `?? []`，卡片就笃定地写着「将改动 0 个文件」。
+   */
+  readonly fileChanges?: readonly ApprovalFileChange[] | undefined;
   readonly receivedAtMs: number;
   /** 是否是无人值守的定时任务（决定超时策略） */
   readonly unattended: boolean;
@@ -81,6 +104,15 @@ export interface ApprovalRouterOptions {
     approval: PendingApproval,
     stage: 'remind' | 'escalate' | 'auto-decline',
   ) => void;
+  /**
+   * 按 `itemId` 反查这次审批涉及的文件改动。查不到返回 undefined ——
+   * **不要返回空数组**，那等于说"一个文件都不改"。
+   */
+  readonly lookupFileChanges?: (input: {
+    readonly threadId: string;
+    readonly turnId?: string;
+    readonly itemId?: string;
+  }) => readonly ApprovalFileChange[] | undefined;
   readonly logger?: Logger;
   readonly now?: () => number;
   readonly setTimeoutFn?: typeof setTimeout;
@@ -212,13 +244,25 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
     }
     const id = `apv_${++counter}`;
 
+    const turnId = typeof params.turnId === 'string' ? params.turnId : undefined;
+    const itemId = typeof params.itemId === 'string' ? params.itemId : undefined;
+    const fileChanges =
+      kind === 'fileChange'
+        ? options.lookupFileChanges?.({
+            threadId,
+            ...(turnId ? { turnId } : {}),
+            ...(itemId ? { itemId } : {}),
+          })
+        : undefined;
+
     const approval: PendingApproval = {
       id,
       kind,
       threadId,
-      ...(typeof params.turnId === 'string' ? { turnId: params.turnId } : {}),
-      ...(typeof params.itemId === 'string' ? { itemId: params.itemId } : {}),
+      ...(turnId ? { turnId } : {}),
+      ...(itemId ? { itemId } : {}),
       params,
+      ...(fileChanges ? { fileChanges } : {}),
       receivedAtMs: now(),
       unattended,
     };
@@ -306,12 +350,15 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
      */
     allowsAcceptForSession(approval: PendingApproval): boolean {
       if (approval.kind !== 'fileChange') return approval.kind === 'command';
-      const changes = approval.params.changes;
-      if (!Array.isArray(changes)) return false;
-      if (changes.length !== 1) return false;
-      const only = changes[0] as { kind?: string; path?: string } | undefined;
+      /*
+       * 用反查来的清单，不是 `params.changes` —— 内核从不发那个字段，
+       * 于是这里曾经**恒为 false**：文件改动的「本次会话都允许」一次都没出现过。
+       * 查不到时仍然返回 false：不知道改了什么，就不能一键放开。
+       */
+      const changes = approval.fileChanges;
+      if (!changes || changes.length !== 1) return false;
       // 删除操作不给（10 §3.3：删除单独着色且不折叠，更不该被一键放开）
-      return only?.kind !== 'delete';
+      return changes[0]?.kind !== 'delete';
     },
   };
 }

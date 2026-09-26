@@ -29,6 +29,7 @@ export {
   UNATTENDED_POLICY,
   type ApprovalDecision,
   type ApprovalKind,
+  type ApprovalFileChange,
   type ApprovalReply,
   type ApprovalRouter,
   type ApprovalRouterOptions,

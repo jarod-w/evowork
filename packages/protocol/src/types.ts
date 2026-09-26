@@ -362,9 +362,44 @@ export interface CommandExecutionItem extends ThreadItemBase {
   readonly durationMs?: number | null;
 }
 
+/**
+ * **是个带 tag 的对象，不是字符串**：`{ "type": "delete" }`
+ * （`v2/PatchChangeKind.ts`，Rust 侧是内部 tag 的 enum）。
+ *
+ * 写成 `kind?: string` 的代价已经付过三次：审批卡的删除不标红、
+ * 「本次会话都允许」把删除当普通改动、产物索引把删除记成「修改」。
+ * 三处都不报错 —— `'{"type":"delete"}' === 'delete'` 只是 false 而已。
+ * 要拿那个字符串一律走 `fileChangeKind()`。
+ */
+export type PatchChangeKind =
+  | { readonly type: 'add' }
+  | { readonly type: 'delete' }
+  | { readonly type: 'update'; readonly move_path?: string | null };
+
+export interface FileUpdateChange {
+  readonly path: string;
+  readonly kind: PatchChangeKind;
+  /** **文件正文**。不进日志、不落盘、不往审批链路里带（Q14） */
+  readonly diff?: string;
+}
+
+/** 解开 `PatchChangeKind`。认不出来返回 undefined —— 不猜成 'update'。 */
+export function fileChangeKind(kind: unknown): 'add' | 'delete' | 'update' | undefined {
+  if (!kind || typeof kind !== 'object') return undefined;
+  const type = (kind as { type?: unknown }).type;
+  return type === 'add' || type === 'delete' || type === 'update' ? type : undefined;
+}
+
+/** 重命名的目标路径（`kind.type === 'update'` 时才可能有）。 */
+export function fileChangeMovePath(kind: unknown): string | undefined {
+  if (fileChangeKind(kind) !== 'update') return undefined;
+  const movePath = (kind as { move_path?: unknown }).move_path;
+  return typeof movePath === 'string' && movePath !== '' ? movePath : undefined;
+}
+
 export interface FileChangeItem extends ThreadItemBase {
   readonly type: 'fileChange';
-  readonly changes?: readonly { readonly path: string; readonly kind?: string }[];
+  readonly changes?: readonly FileUpdateChange[];
 }
 
 export type ThreadItem =
@@ -672,21 +707,45 @@ export interface CommandExecutionRequestApprovalParams {
   readonly [key: string]: unknown;
 }
 
+/**
+ * **不带文件清单。** core 的事件本身是带 `changes` 的
+ * （`core/src/session/mod.rs:2912-2919`），是 app-server 转换时故意丢掉的
+ * （`bespoke_event_handling.rs:641-652`）—— 内核期望客户端按 `itemId`
+ * 去 `item/started` / `item/completed` 里反查那个 `fileChange` item，
+ * 它自己的 TUI 就是这么做的（`tui/src/app/file_change_approvals.rs:1-5`）。
+ *
+ * 这里曾经写着 `changes?`，于是审批卡每次都理直气壮地说「将改动 0 个文件」。
+ * 反查在 `services/kernel-adapter` 里做，结果挂在 `PendingApproval.fileChanges`。
+ */
 export interface FileChangeRequestApprovalParams {
   readonly threadId: string;
   readonly turnId?: string;
   readonly itemId: string;
-  readonly changes?: readonly { readonly path: string; readonly kind?: string }[];
   readonly reason?: string;
+  /** 智能体请求把这个根下的写权限放开到本会话结束（内核标注为 UNSTABLE） */
+  readonly grantRoot?: string | null;
   readonly [key: string]: unknown;
+}
+
+/**
+ * 字段是 **`questions[]`**，不是 `question`；选项 **没有 id**，身份就是 `label`
+ * （`v2/item.rs:1744-1753`、`ToolRequestUserInputOption { label, description }`）。
+ */
+export interface ToolRequestUserInputQuestion {
+  readonly id: string;
+  readonly header?: string;
+  readonly question?: string;
+  readonly isOther?: boolean;
+  readonly isSecret?: boolean;
+  readonly options?: readonly { readonly label: string; readonly description?: string }[] | null;
 }
 
 export interface ToolRequestUserInputParams {
   readonly threadId: string;
   readonly turnId?: string;
   readonly itemId: string;
-  readonly question?: string;
-  readonly options?: readonly { readonly id: string; readonly label?: string }[];
+  readonly questions?: readonly ToolRequestUserInputQuestion[];
+  readonly isBlocking?: boolean;
   readonly [key: string]: unknown;
 }
 

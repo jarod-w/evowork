@@ -3010,12 +3010,20 @@ export function toApprovalView(
   const p = approval.params;
   const str = (key: string): string | undefined =>
     typeof p[key] === 'string' ? (p[key] as string) : undefined;
-  const changes = Array.isArray(p.changes)
-    ? (p.changes as readonly Record<string, unknown>[]).map((c) => ({
-        path: String(c.path ?? ''),
-        ...(typeof c.kind === 'string' ? { kind: c.kind } : {}),
-      }))
-    : undefined;
+  /*
+   * 文件清单来自 `approval.fileChanges`（适配层按 itemId 反查的），
+   * **不是 `params.changes`** —— 内核的审批 RPC 根本不带那个字段
+   * （`bespoke_event_handling.rs:641-652` 转换时丢掉了）。
+   * 读那里的结果是卡片永远说「将改动 0 个文件」。
+   *
+   * `undefined` 原样传下去：它是"没查到"，和"零个文件"是两回事。
+   */
+  const changes = approval.fileChanges?.map((change) => ({
+    path: change.path,
+    ...(change.kind ? { kind: change.kind } : {}),
+    ...(change.outsideWorkspace ? { outsideWorkspace: true } : {}),
+    ...(change.movePath ? { movePath: change.movePath } : {}),
+  }));
 
   return {
     id: approval.id,

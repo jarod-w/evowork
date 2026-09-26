@@ -31,11 +31,13 @@ export interface ApprovalViewModel {
   readonly reason?: string | undefined;
   readonly command?: string | undefined;
   readonly cwd?: string | undefined;
+  /** `undefined` = 没查到清单，`[]` = 确实一个文件都不改。两者画法不同 */
   readonly changes?:
     | readonly {
         readonly path: string;
-        readonly kind?: string | undefined;
+        readonly kind?: 'add' | 'delete' | 'update' | undefined;
         readonly outsideWorkspace?: boolean | undefined;
+        readonly movePath?: string | undefined;
       }[]
     | undefined;
   readonly paths?: readonly { readonly path: string; readonly access: string }[] | undefined;
@@ -74,8 +76,16 @@ function CommandBody({ approval }: { readonly approval: ApprovalViewModel }) {
 }
 
 function FileChangeBody({ approval }: { readonly approval: ApprovalViewModel }) {
+  /*
+   * 拿不到清单是**第三种状态**，不是"零个文件"。
+   * 内核的审批 RPC 只给 itemId，清单要从 item 流里反查；反查不到时
+   * 说实话比编一个「0 个文件」强得多 —— 后者会让用户以为这次审批无关紧要。
+   */
+  if (!approval.changes) {
+    return <p className="ew-approval-changes-unknown">拿不到这次的改动清单，请谨慎确认。</p>;
+  }
   // 工作空间外的文件用 --warning 标注并**排在最前**（10 §3.3）
-  const changes = [...(approval.changes ?? [])].sort(
+  const changes = [...approval.changes].sort(
     (a, b) => Number(b.outsideWorkspace ?? false) - Number(a.outsideWorkspace ?? false),
   );
   return (
@@ -87,6 +97,7 @@ function FileChangeBody({ approval }: { readonly approval: ApprovalViewModel }) 
           data-kind={change.kind}
         >
           <span className="ew-change-path">{change.path}</span>
+          {change.movePath ? <span className="ew-change-path">→ {change.movePath}</span> : null}
           {change.kind === 'delete' ? <Badge variant="danger">删除</Badge> : null}
           {change.outsideWorkspace ? <Badge variant="warning">工作空间之外</Badge> : null}
         </li>
@@ -114,6 +125,10 @@ export function ApprovalCard({
   const cardRef = useRef<HTMLElement | null>(null);
   const isQuestion = approval.kind === 'userInput' || approval.kind === 'mcp';
   const dangerous = (approval.changes ?? []).some((c) => c.kind === 'delete');
+  // 清单没查到时按"不知道改了什么"说，不说"0 个文件"
+  const fileImpact = approval.changes
+    ? `将改动 ${approval.changes.length} 个文件`
+    : '将改动文件（清单未知）';
 
   useEffect(() => {
     if (autoFocus) cardRef.current?.focus();
@@ -123,7 +138,7 @@ export function ApprovalCard({
     approval.kind === 'command'
       ? '将运行一条本机命令'
       : approval.kind === 'fileChange'
-        ? `将改动 ${(approval.changes ?? []).length} 个文件`
+        ? fileImpact
         : approval.kind === 'permissions'
           ? '将扩大这个任务可访问的范围'
           : '需要你的回答才能继续';

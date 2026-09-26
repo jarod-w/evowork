@@ -596,8 +596,20 @@ export interface ApprovalView {
   readonly command?: string | undefined;
   readonly cwd?: string | undefined;
   readonly question?: string | undefined;
+  /**
+   * 文件改动清单。**`undefined` = 没查到，`[]` = 确实一个文件都不改** ——
+   * 两者必须分开：内核的审批 RPC 不带清单（要按 itemId 反查），
+   * 以前合并成「0 个文件」，卡片就在用户面前说了一句笃定的假话。
+   */
   readonly changes?:
-    readonly { readonly path: string; readonly kind?: string | undefined }[] | undefined;
+    | readonly {
+        readonly path: string;
+        readonly kind?: 'add' | 'delete' | 'update' | undefined;
+        /** 10 §3.3：工作空间之外的要标注并排最前 */
+        readonly outsideWorkspace?: boolean | undefined;
+        readonly movePath?: string | undefined;
+      }[]
+    | undefined;
   /** 由适配层决定（10 §3.3：批量变更**不给**「本次任务内都允许」） */
   readonly allowAcceptForSession: boolean;
   readonly waitedMs?: number | undefined;

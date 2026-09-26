@@ -30,6 +30,7 @@ import {
   type IndexPort,
 } from '@evowork/artifacts';
 import type { Adapter } from '@evowork/kernel-adapter';
+import { fileChangeKind } from '@evowork/protocol';
 import type { Logger } from '@evowork/logging';
 import { createRuntimeProbe } from '@evowork/ingest';
 import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
@@ -420,10 +421,16 @@ export function createLocalServices(options: LocalServicesOptions) {
      * 必须逐条喂给识别器，不能只拿它当成“开始全盘扫描”的提示；后者会把工作区里原有的
      * README/package.json 等全部算成当前任务的产物。
      */
+    /*
+     * `change.kind` 是 **`PatchChangeKind`**，一个带 tag 的对象 `{ type: 'delete' }`，
+     * 不是字符串。以前这里拿它跟 `'delete'` / `'add'` 比，永远不相等，
+     * 于是**删除被记成了「修改」** —— 产物索引里那条记录不会被标 MISSING（08 §8），
+     * 资料库里就留着一个指向已删文件的条目。走 `fileChangeKind()` 解。
+     */
     ingestFileChanges(
       root: string,
       threadId: string,
-      changes: readonly { readonly path: string; readonly kind?: string | undefined }[],
+      changes: readonly { readonly path: string; readonly kind?: unknown }[],
     ): void {
       const canonicalRoot = canonicalPath(root);
       watchWorkspace(canonicalRoot, threadId);
@@ -433,7 +440,8 @@ export function createLocalServices(options: LocalServicesOptions) {
         );
         const watcher = watcherFor(path, threadId);
         if (!watcher) continue;
-        const kind = change.kind === 'delete' ? 'delete' : change.kind === 'add' ? 'add' : 'modify';
+        const decoded = fileChangeKind(change.kind);
+        const kind = decoded === 'delete' ? 'delete' : decoded === 'add' ? 'add' : 'modify';
         announceArtifact(watcher.ingestPath(path, kind, { threadId }));
       }
     },
