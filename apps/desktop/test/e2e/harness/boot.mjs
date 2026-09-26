@@ -5,8 +5,9 @@
  * （四个 Electron 接缝 + 四条路径 + 宿主环境），抄漏一处的表现不是报错，而是
  * 「窗口起来了但少一条链路」—— 而断言写在别的文件里，不会指向这儿。
  *
- * 第 2 步把驱动换成 Playwright（从进程外点 DOM）时改的是驱动侧，这个文件原样保留。
- * 那时只有一处要动：窗口现在是 `show: false`，真交互（焦点 / hover / 布局）要把它显示出来。
+ * 驱动方式有两种，共用这个文件：断言型 E2E（`*.e2e.mjs`，经 preload 桥说话，窗口隐藏）
+ * 与真交互 UI 测试（`ui/*.spec.mjs`，Playwright 从进程外点 DOM，窗口显示）。
+ * 区别只是 `show` 这一个参数 —— 启动链路两边一模一样，这正是拆出这个文件的目的。
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -58,6 +59,7 @@ export async function bootApp({
   hostEnv = {},
   preloadTimeoutMs = 15_000,
   captureKernelProcess = false,
+  show = false,
 }) {
   /*
    * 拿到内核子进程才杀得掉它（`skill-reference` 靠 SIGKILL 验「崩了会自己起来」）。
@@ -86,7 +88,12 @@ export async function bootApp({
         getVersion: () => app.getVersion(),
         getPath: () => home,
       },
-      createWindow: (options) => new BrowserWindow({ ...options, show: false }),
+      /*
+       * 断言型 E2E 用隐藏窗口就够（它只经 preload 桥说话）；**真交互必须显示出来** ——
+       * 焦点、hover、滚动进视野这些动作在隐藏窗口上语义不同，Playwright 的
+       * actionability 检查会一直等不到「可点击」。
+       */
+      createWindow: (options) => new BrowserWindow({ ...options, show }),
       ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
       openExternal: async () => undefined,
     },

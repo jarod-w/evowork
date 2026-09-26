@@ -49,3 +49,8 @@ plugins/hooks/*/vendor/
 plugins/connectors/*/vendor/
 apps/computer-use-macos/.build/
 build/computer-use/
+
+# Playwright 的失败产物（截图 · trace · 页面快照）。它们是**证据**不是源码：
+# 只在某次失败的那台机器上有意义，提交进来只会让下一次 diff 变噪音。
+test-results/
+playwright-report/
