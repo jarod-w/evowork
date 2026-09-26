@@ -23,4 +23,27 @@ export default defineConfig({
   expect: { timeout: 20_000 },
 
   reporter: [['list']],
+
+  /*
+   * 两个 project：
+   *   `fake` —— 默认。假网关，不需要任何密钥，`pnpm run test:ui` 跑的就是它。
+   *   `real` —— 真网关 + 真厂商。**只有真模型答得出来的问题**放这里
+   *             （比如「介绍一下自己」会不会说漏内核品牌）。要密钥，所以单独一条命令。
+   *
+   * 分开不是为了"可选"，是因为两者**能证伪的东西不一样**：假网关能把模型摆布成
+   * 任何样子，真模型才会说出我们没教过它的话。
+   */
+  projects: [
+    {
+      name: 'fake',
+      testIgnore: '**/*.real.spec.mjs',
+    },
+    {
+      name: 'real',
+      testMatch: '**/*.real.spec.mjs',
+      use: { realModel: true },
+      // 真厂商比假网关慢一个量级
+      timeout: 300_000,
+    },
+  ],
 });

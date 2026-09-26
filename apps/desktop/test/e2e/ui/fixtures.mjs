@@ -30,6 +30,18 @@ const KERNEL =
     platform() === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
   );
 
+/** 真模型模式要密钥。缺了就当场停下 —— 而不是跳过，跳过会被当成"验过了"。 */
+function requireKey() {
+  const key = process.env.EVOWORK_UI_MODEL_KEY;
+  if (!key) {
+    throw new Error(
+      '真模型 UI 测试需要 EVOWORK_UI_MODEL_KEY（厂商密钥）。\n' +
+        '例：EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real',
+    );
+  }
+  return key;
+}
+
 export const test = base.extend({
   /**
    * 保留首次引导。用 `test.use({ keepOnboarding: true })` 打开。
@@ -37,7 +49,15 @@ export const test = base.extend({
    */
   keepOnboarding: [false, { option: true }],
 
-  electronApp: async ({ keepOnboarding }, use) => {
+  /**
+   * 用真网关 + 真厂商跑。由 `playwright.config.mjs` 的 `real` project 打开。
+   *
+   * **没有密钥就报错，不跳过** —— 跳过的测试会让人以为验过了（CLAUDE.md §9.1）。
+   * 密钥只经环境变量传进子进程：不写盘、不进日志、不提交。
+   */
+  realModel: [false, { option: true }],
+
+  electronApp: async ({ keepOnboarding, realModel }, use) => {
     if (!existsSync(KERNEL)) {
       // 不跳过：缺内核就是没验证，而"跳过的测试"会让人以为验过了（CLAUDE.md §9.1）
       throw new Error(`找不到真实 app-server：${KERNEL}。先构建或设置 EVOWORK_APP_SERVER。`);
@@ -59,6 +79,7 @@ export const test = base.extend({
         EVOWORK_E2E_REPO_ROOT: ROOT,
         EVOWORK_APP_SERVER: KERNEL,
         ...(keepOnboarding ? { EVOWORK_UI_KEEP_ONBOARDING: '1' } : {}),
+        ...(realModel ? { EVOWORK_UI_REAL_MODEL: '1', EVOWORK_UI_MODEL_KEY: requireKey() } : {}),
       },
       timeout: 120_000,
     });
