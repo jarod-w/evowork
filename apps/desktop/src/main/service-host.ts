@@ -1682,7 +1682,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         });
       });
       reconcileTimer = setInterval(() => {
-        void adapter.reconcile().catch(() => undefined);
+        /*
+         * 以前这里是 `.catch(() => undefined)`。对账失败确实不该打断别的事，
+         * 但**完全不吭声**意味着它每十分钟失败一次也没人知道 ——
+         * `sortKey` 写错枚举值那个缺陷就是这么藏了下来。
+         */
+        void adapter.reconcile().catch((err: unknown) => {
+          logger.warn('desktop.reconcile.failed', {
+            errorClass: err instanceof Error ? err.name : 'UnknownError',
+          });
+        });
         /*
          * 顺带搬一次审计。
          *

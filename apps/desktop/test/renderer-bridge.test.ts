@@ -26,6 +26,7 @@ import {
   normalizeThreadItem,
   tailCommandOutput,
   timeLabel,
+  toApprovalView,
   toTaskRow,
   type ProjectPorts,
 } from '../src/main/renderer-bridge.js';
@@ -2148,5 +2149,72 @@ describe('工作空间只有一处真源（spec §2.2）', () => {
 
     const startup = await actions.getStartup();
     expect(startup.workspaces).toHaveLength(0);
+  });
+});
+
+/*
+ * 追问审批卡的字段名是 **`questions[]`**，不是 `question`
+ * （`v2/item.rs:1744-1753`）。读错不会报错，表现是卡片写着「需要你回答」、
+ * 底下一个字都没有 —— 用户只能对着一个空框猜。
+ */
+describe('审批卡视图对得上内核的字段名', () => {
+  const base = {
+    id: 'apv_1',
+    kind: 'userInput' as const,
+    threadId: 't1',
+    receivedAtMs: 0,
+    unattended: false,
+  };
+
+  it('追问的问题与选项来自 questions[0]', () => {
+    const view = toApprovalView(
+      {
+        ...base,
+        params: {
+          threadId: 't1',
+          turnId: 'turn1',
+          itemId: 'i1',
+          isBlocking: true,
+          questions: [
+            {
+              id: 'q_quarter',
+              header: '数据范围',
+              question: '用哪个季度的数据？',
+              isOther: false,
+              isSecret: false,
+              options: [
+                { label: '2026Q1', description: '' },
+                { label: '2026Q2', description: '' },
+              ],
+            },
+          ],
+        },
+      },
+      false,
+      0,
+    );
+
+    expect(view.question).toBe('用哪个季度的数据？');
+    // 选项没有 id，身份就是 label —— 回答也是按这个字符串回去的
+    expect(view.options).toEqual([
+      { id: '2026Q1', label: '2026Q1' },
+      { id: '2026Q2', label: '2026Q2' },
+    ]);
+  });
+
+  it('自由作答的追问没有选项，但问题仍要出得来', () => {
+    const view = toApprovalView(
+      {
+        ...base,
+        params: {
+          threadId: 't1',
+          questions: [{ id: 'q1', question: '收件人是谁？', options: null }],
+        },
+      },
+      false,
+      0,
+    );
+    expect(view.question).toBe('收件人是谁？');
+    expect(view.options).toBeUndefined();
   });
 });

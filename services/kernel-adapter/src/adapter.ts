@@ -17,6 +17,7 @@
  * 已按 CLAUDE.md §9 回写 04 §3.4。
  */
 import {
+  ERROR_CODE,
   EXPERIMENTAL_METHOD,
   JsonRpcCallError,
   METHOD,
@@ -200,6 +201,21 @@ function requireResolvedModel(model: string | undefined): string {
   return resolved;
 }
 
+/**
+ * 回合在我们发出中断请求的路上自己结束了。
+ *
+ * 内核把这一种和「参数不合法」一起归进 -32600（`turn_processor.rs:1619`），
+ * 只能靠 message 区分；那句文案是内核里写死的常量，不含正文。
+ * 认不出来时**宁可报错**：把真实故障当成"已经停了"，表现就是点停止没反应。
+ */
+function isTurnAlreadyOver(err: unknown): boolean {
+  return (
+    err instanceof JsonRpcCallError &&
+    err.code === ERROR_CODE.invalidRequest &&
+    err.rpcMessage.includes('no active turn to interrupt')
+  );
+}
+
 export function createAdapter(options: AdapterOptions) {
   // 启动即检查「每个实验方法都有降级路径」——缺一条就等于给未来留一次白屏
   assertDegradationCoverage();
@@ -214,6 +230,22 @@ export function createAdapter(options: AdapterOptions) {
    */
   const ephemeralThreads = new Map<string, Thread>();
   const ephemeralThreadIds = new Set<string>();
+  /**
+   * 每个任务当前在跑的回合 id。中断必须带它（见 `interrupt`），而协议里唯一会说出
+   * 这个 id 的地方就是 `turn/started` 通知 —— 不在这里接住，点「停止」时就无从谈起。
+   */
+  const activeTurns = new Map<string, string>();
+  /**
+   * 进程重启后内存里的活动回合就没了，而投影表还记得 —— 关掉 App 再打开、回合仍在跑
+   * 的那条路径上，它是唯一的来源。拿不到就返回 undefined，由调用方退到启动期中断。
+   */
+  function activeTurnId(threadId: string): string | undefined {
+    const live = activeTurns.get(threadId);
+    if (live) return live;
+    const row = store.threads.get(threadId);
+    if (row?.last_turn_status !== 'inProgress') return undefined;
+    return row.last_turn_id ?? undefined;
+  }
 
   const events = createEventRouter({
     store,
@@ -222,10 +254,14 @@ export function createAdapter(options: AdapterOptions) {
       if (event.type === 'task-removed') {
         session.openThreads.delete(event.threadId);
         localQueues.delete(event.threadId);
+        activeTurns.delete(event.threadId);
         approvals.cancel((a) => a.threadId === event.threadId);
       }
-      if (event.type === 'turn-completed')
+      if (event.type === 'turn-started') activeTurns.set(event.threadId, event.turnId);
+      if (event.type === 'turn-completed') {
+        activeTurns.delete(event.threadId);
         approvals.cancel((a) => a.kind === 'mcp' && a.threadId === event.threadId);
+      }
       options.onUiEvent?.(event);
     },
     ...(options.onSideEffect ? { onSideEffect: options.onSideEffect } : {}),
@@ -703,7 +739,7 @@ export function createAdapter(options: AdapterOptions) {
     async reconcile(): Promise<{ upserted: number; removed: number }> {
       const response = await session.peer.request<ThreadListResponse>(METHOD.threadList, {
         limit: 200,
-        sortKey: 'recencyAt',
+        sortKey: 'recency_at',
         useStateDbOnly: true,
       });
       const threads = response.data ?? [];
@@ -902,7 +938,23 @@ export function createAdapter(options: AdapterOptions) {
       const row = store.threads.get(args.threadId);
       const running = row?.derived_status === 'running' || row?.derived_status === 'pending';
 
-      if (running && !args.steer) {
+      if (running) {
+        /*
+         * 「立即插话」必须带 `expectedTurnId` —— 它是内核的活动回合前置条件
+         * （`v2/turn.rs:312-314`），而且**不接受空串**（`turn_processor.rs:1038`）：
+         * 与 `turn/interrupt` 的启动期中断不同，这里没有"不知道就先发"的退路。
+         * 漏掉它的表现和当初的中断一模一样 —— 勾了插话就永远发不出去（-32600）。
+         */
+        const steerTurnId = args.steer ? activeTurnId(args.threadId) : undefined;
+        if (args.steer && steerTurnId) {
+          await session.peer.request(METHOD.turnSteer, {
+            threadId: args.threadId,
+            input: args.input,
+            expectedTurnId: steerTurnId,
+          });
+          return { queued: false, degradations: [] };
+        }
+
         const id = `q-${now().toString(36)}-${(queueSequence += 1).toString(36)}`;
         const queued = await callExperimental<
           { readonly queuedSubmission?: { readonly id?: string } } | false
@@ -915,15 +967,16 @@ export function createAdapter(options: AdapterOptions) {
           const current = localQueues.get(args.threadId) ?? [];
           localQueues.set(args.threadId, [...current, { id, input: args.input }]);
         }
-        return { queued: queued !== false, degradations: [] };
-      }
-
-      if (running && args.steer) {
-        await session.peer.request(METHOD.turnSteer, {
-          threadId: args.threadId,
-          input: args.input,
-        });
-        return { queued: false, degradations: [] };
+        /*
+         * 想插话但没有可插的回合（任务是 active 的，回合却还没起来）：内核那边
+         * `turn/steer` 也只会回 "no active turn to steer"。**改为排队而不是丢掉**，
+         * 并把这次改道说出来 —— 用户勾了插话却被排队，不说就是静默降级。
+         */
+        return {
+          queued: queued !== false,
+          degradations:
+            args.steer && !steerTurnId ? ['当前没有可插话的回合，这条输入已改为排队。'] : [],
+        };
       }
 
       const scenario =
@@ -1074,9 +1127,43 @@ export function createAdapter(options: AdapterOptions) {
       localQueues.set(threadId, queued.slice(1));
     },
 
-    /** 中断（04 §5.5）。 */
+    /**
+     * 中断（04 §5.5）。
+     *
+     * **`turnId` 是必填的**：内核的 `TurnInterruptParams` 两个字段都没有 `Option`
+     * （`app-server-protocol/src/protocol/v2/turn.rs:327-330`），少一个就在反序列化阶段
+     * 被打回 -32600 `Invalid request: missing field \`turnId\``。表现是**「停止」永远点不动**，
+     * 而 Q14 让 `rpcMessage` 不进 `Error.message`，用户只看得到一个裸错误码 ——
+     * 所以失败时至少要把 JSON-RPC code 记下来，否则下次还是只能靠猜。
+     *
+     * 空串是内核定义的「启动期中断」：跳过活动回合校验、提交同一个 `Op::Interrupt`
+     * 后立刻应答（`turn_processor.rs:1599`、`1635`）。回合还没开始（`turn/started` 没到）
+     * 时只能用它。带真实 `turnId` 时内核**等到 `TurnAborted` 才应答**，
+     * 因此那条路径上 Promise resolve 意味着真的停住了。
+     */
     async interrupt(threadId: string): Promise<void> {
-      await session.peer.request(METHOD.turnInterrupt, { threadId });
+      const turnId = activeTurnId(threadId) ?? '';
+      try {
+        await session.peer.request(METHOD.turnInterrupt, { threadId, turnId });
+      } catch (err) {
+        // 回合在请求路上自己结束了 —— 用户要的「停下」已经达成，再报一次错
+        // 只会让人以为没停住，然后再点一次，凑出一串重复的报错。
+        // 空串是合法的中断参数，却不是合法的 id 字段值 —— 直接记会被字段表判成畸形，
+        // 在 throw 档位上让日志本身成为第二个故障。
+        const turnField = turnId ? { turnId } : {};
+        if (isTurnAlreadyOver(err)) {
+          activeTurns.delete(threadId);
+          logger?.info('adapter.interrupt.already_stopped', { threadId, ...turnField });
+          return;
+        }
+        logger?.warn('adapter.interrupt.failed', {
+          threadId,
+          ...turnField,
+          ...errorFields(err),
+          ...(err instanceof JsonRpcCallError ? { reason: `rpc_${err.code}` } : {}),
+        });
+        throw err;
+      }
     },
 
     /** 把持久化对话截到某回合之前；内核明确保证它不改工作区文件。 */

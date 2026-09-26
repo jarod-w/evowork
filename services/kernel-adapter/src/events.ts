@@ -97,7 +97,12 @@ export type UiEvent =
   | { readonly type: 'skills-changed' }
   | { readonly type: 'connectors-changed' }
   | { readonly type: 'projects-changed' }
-  | { readonly type: 'workspace-files-changed'; readonly threadId?: string }
+  | {
+      readonly type: 'workspace-files-changed';
+      /** `fs/watch` 订阅 id。归属任务要靠它反查 —— 这条通知里没有 threadId */
+      readonly watchId?: string;
+      readonly paths: readonly string[];
+    }
   | { readonly type: 'rate-limits-updated' }
   | {
       readonly type: 'kernel-warning';
@@ -492,11 +497,21 @@ export function createEventRouter(options: EventRouterOptions) {
       return [];
     },
 
+    /*
+     * `FsChangedNotification` 是 `{ watchId, changedPaths }`（`v2/fs.rs:199-204`）——
+     * **没有 `threadId`**。以前这里读 `p.threadId`，永远是 undefined。
+     *
+     * 目前它是死路：产物监听用的是 `services/artifacts` 自己的 fs 抽象，
+     * 我们从不发 `fs/watch`，所以这条通知根本不会来。留着读错的字段比没有还糟 ——
+     * 将来真接上 `fs/watch` 的人会以为 threadId 是有的。
+     * 归属要靠 `watchId` 反查（订阅时我们自己记），不是从这条通知里读。
+     */
     [NOTIFICATION.fsChanged]: (params) => {
-      const p = params as { threadId?: string };
+      const p = params as { watchId?: string; changedPaths?: readonly string[] };
       onUiEvent({
         type: 'workspace-files-changed',
-        ...(p.threadId ? { threadId: p.threadId } : {}),
+        ...(p.watchId ? { watchId: p.watchId } : {}),
+        paths: Array.isArray(p.changedPaths) ? p.changedPaths : [],
       });
       return [];
     },

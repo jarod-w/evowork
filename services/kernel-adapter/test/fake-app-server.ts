@@ -33,6 +33,22 @@ export type FakeHandler = (ctx: FakeHandlerContext) => unknown;
  */
 export const NO_REPLY = Symbol('fake-app-server:no-reply');
 
+/**
+ * 处理器抛出它 = 回一个**指定 code** 的错误。
+ *
+ * 普通 `throw` 一律变成 -32603，而客户端对错误码是分情况处理的（-32601 触发降级、
+ * -32600 里还分"参数不合法"与"没有活动回合"）。区分不出来，那些分支就没法测。
+ */
+export class FakeRpcError extends Error {
+  override readonly name = 'FakeRpcError';
+  constructor(
+    readonly code: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export class FakeAppServer {
   #stdoutHandlers: ((chunk: string) => void)[] = [];
   #exitHandlers: ((info: { code: number | null; signal: string | null }) => void)[] = [];
@@ -171,8 +187,40 @@ export class FakeAppServer {
       turn: makeTurn({ id: `turn_${this.received.length}`, status: 'inProgress' }),
       threadId: ctx.params.threadId,
     }));
-    this.handlers.set('turn/interrupt', () => ({}));
-    this.handlers.set('turn/steer', () => ({}));
+    /*
+     * 内核的 `TurnInterruptParams` 两个字段都没有 `Option`
+     * （`app-server-protocol/src/protocol/v2/turn.rs:327-330`），少一个在反序列化阶段
+     * 就被打回 -32600。假内核不照做的代价已经付过一次：适配层只传了 `threadId`，
+     * 测试照样全绿，而用户那边「停止」从来没成功过。
+     */
+    this.handlers.set('turn/interrupt', (ctx) => {
+      if (typeof ctx.params.threadId !== 'string' || typeof ctx.params.turnId !== 'string') {
+        throw new FakeRpcError(
+          ERROR_CODE.invalidRequest,
+          'Invalid request: missing field `turnId`',
+        );
+      }
+      return {};
+    });
+    /*
+     * 同上：`expectedTurnId` 是必填的活动回合前置条件，而且内核**额外拒绝空串**
+     * （`turn_processor.rs:1038`）。这两条都照做，否则漏传一样测不出来。
+     */
+    this.handlers.set('turn/steer', (ctx) => {
+      if (typeof ctx.params.threadId !== 'string' || !Array.isArray(ctx.params.input)) {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: bad turn/steer params');
+      }
+      if (typeof ctx.params.expectedTurnId !== 'string') {
+        throw new FakeRpcError(
+          ERROR_CODE.invalidRequest,
+          'Invalid request: missing field `expectedTurnId`',
+        );
+      }
+      if (ctx.params.expectedTurnId === '') {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'expectedTurnId must not be empty');
+      }
+      return { turnId: ctx.params.expectedTurnId };
+    });
     this.handlers.set('thread/resume', (ctx) => ({
       thread: makeThread({ id: String(ctx.params.threadId ?? 'thread_0') }),
     }));
@@ -182,7 +230,28 @@ export class FakeAppServer {
     this.handlers.set('thread/read', (ctx) => ({
       thread: makeThread({ id: String(ctx.params.threadId ?? 'thread_0') }),
     }));
-    this.handlers.set('thread/list', () => ({ data: [], nextCursor: null }));
+    /*
+     * `sortKey` / `sortDirection` 是枚举，内核认不出来就整个请求打回 -32600
+     * —— 而不是"忽略这个字段"。`ThreadSortKey` 是 **snake_case**
+     * （`v2/thread.rs:1506`），和协议里其余的驼峰不一样，正是最容易写错的那种。
+     */
+    this.handlers.set('thread/list', (ctx) => {
+      const sortKey = ctx.params.sortKey;
+      if (
+        sortKey !== undefined &&
+        !['created_at', 'updated_at', 'recency_at', 'section_position'].includes(String(sortKey))
+      ) {
+        throw new FakeRpcError(
+          ERROR_CODE.invalidRequest,
+          `Invalid request: unknown variant \`${String(sortKey)}\`, expected one of \`created_at\`, \`updated_at\`, \`recency_at\`, \`section_position\``,
+        );
+      }
+      const dir = ctx.params.sortDirection;
+      if (dir !== undefined && !['asc', 'desc'].includes(String(dir))) {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: bad sortDirection');
+      }
+      return { data: [], nextCursor: null };
+    });
     this.handlers.set('thread/goal/get', () => ({ goal: null }));
     this.handlers.set('thread/goal/set', (ctx) => ({
       goal: {
@@ -321,7 +390,7 @@ export class FakeAppServer {
         jsonrpc: '2.0',
         id: message.id,
         error: {
-          code: ERROR_CODE.internalError,
+          code: err instanceof FakeRpcError ? err.code : ERROR_CODE.internalError,
           message: err instanceof Error ? err.message : 'fake error',
         },
       });

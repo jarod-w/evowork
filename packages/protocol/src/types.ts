@@ -473,7 +473,16 @@ export interface TurnStartResponse {
   readonly turn: Turn;
 }
 
-export type ThreadSortKey = 'createdAt' | 'updatedAt' | 'recencyAt' | 'sectionPosition';
+/**
+ * **snake_case**，和这个文件里其余的驼峰不一样：`ThreadSortKey` 带的是
+ * `#[serde(rename_all = "snake_case")]`（`v2/thread.rs:1506`），
+ * 生成的绑定是 `"created_at" | "updated_at" | "recency_at" | "section_position"`。
+ *
+ * 写成驼峰不会被静默丢掉（它是个枚举，不是可选字段），而是让整个
+ * `thread/list` 请求在反序列化阶段被打回 -32600 —— 也就是一致性校正（09 §4.1）
+ * 每次都失败，而调用方 catch 掉之后**什么都看不出来**。
+ */
+export type ThreadSortKey = 'created_at' | 'updated_at' | 'recency_at' | 'section_position';
 
 /**
  * F8：**没有状态过滤，也没有日期区间过滤**。这就是 `thread_projection` 表存在的理由。

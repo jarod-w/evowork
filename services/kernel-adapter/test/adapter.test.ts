@@ -5,7 +5,8 @@
  * 发一条消息真的会先 `thread/start` 再 `turn/start`、筛选真的走投影表而不是全量拉、
  * 实验方法不可用时真的走了兜底、审批真的在 start 之前就有人接。
  */
-import { ERROR_CODE, EXPERIMENTAL_METHOD } from '@evowork/protocol';
+import { ERROR_CODE, EXPERIMENTAL_METHOD, JsonRpcCallError } from '@evowork/protocol';
+import { createLogger, memorySink } from '@evowork/logging';
 import { openStore, type Store } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -13,7 +14,7 @@ import { createAdapter, type Adapter } from '../src/adapter.js';
 import type { CapabilityReport } from '../src/capabilities.js';
 import type { UiEvent } from '../src/events.js';
 import { BUILTIN_SCENARIOS } from '../src/scenario.js';
-import { FakeAppServer, makeThread, makeTurn } from './fake-app-server.js';
+import { FakeAppServer, FakeRpcError, makeThread, makeTurn } from './fake-app-server.js';
 
 let store: Store;
 let server: FakeAppServer;
@@ -717,7 +718,42 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     expect(await adapter.listQueuedInputs(threadId)).toEqual([]);
   });
 
-  it('「立即插话」走 turn/steer 而不是入队（默认排队，04 §5.5）', async () => {
+  /*
+   * `expectedTurnId` 是内核的活动回合前置条件（`v2/turn.rs:312-314`），漏了就是 -32600，
+   * 表现和当初的「停止」一样：勾了插话永远发不出去。
+   */
+  it('「立即插话」走 turn/steer 而不是入队，并带上当前回合（默认排队，04 §5.5）', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { active: { activeFlags: [] } },
+    });
+    server.notify('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const sent = await adapter.sendMessage({
+      threadId,
+      input: [{ type: 'text', text: '停一下，换个角度' }],
+      steer: true,
+    });
+
+    expect(sent).toEqual({ queued: false, degradations: [] });
+    expect(server.received.at(-1)).toMatchObject({
+      method: 'turn/steer',
+      params: { threadId, expectedTurnId: 'turn-live' },
+    });
+  });
+
+  /*
+   * 任务是 active 的、回合却还没起来：内核那边 `turn/steer` 也只会回
+   * "no active turn to steer"，而且它**不收空串**。这时改为排队，
+   * 但**必须说出来** —— 用户勾了插话却被排队，不说就是静默降级。
+   */
+  it('没有可插话的回合时改为排队，并说明改了道', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
@@ -725,12 +761,16 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
       status: { active: { activeFlags: [] } },
     });
 
-    await adapter.sendMessage({
+    const sent = await adapter.sendMessage({
       threadId,
       input: [{ type: 'text', text: '停一下，换个角度' }],
       steer: true,
     });
-    expect(server.received.map((r) => r.method)).toContain('turn/steer');
+
+    expect(server.received.some((r) => r.method === 'turn/steer')).toBe(false);
+    // 这条输入没被丢掉 —— 它在队列里（实验队列不可用时是本机队列，两者都算排上了）
+    expect(await adapter.listQueuedInputs(threadId)).toHaveLength(1);
+    expect(sent.degradations).toHaveLength(1);
   });
 
   it('空闲任务发消息 = 新的 turn，且沿用任务自身的设置（04 §4.3）', async () => {
@@ -755,11 +795,90 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     expect(last?.params.collaborationMode).toMatchObject({ mode: 'default' });
   });
 
-  it('中断走 turn/interrupt（04 §5.5）', async () => {
+  /*
+   * 这一组守的是同一件事：**`turn/interrupt` 必须带 `turnId`**。
+   * 漏掉它内核连参数都反序列化不了（-32600），表现是「停止」按钮永远点不动 ——
+   * 而当初的断言只看了 method 名，一个字段都没验。
+   */
+  it('中断走 turn/interrupt，并带上当前在跑的回合（04 §5.5）', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    server.notify('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     await adapter.interrupt(threadId);
-    expect(server.received.map((r) => r.method)).toContain('turn/interrupt');
+
+    expect(server.received.at(-1)).toMatchObject({
+      method: 'turn/interrupt',
+      params: { threadId, turnId: 'turn-live' },
+    });
+  });
+
+  /*
+   * 回合还没开始（`turn/started` 没到）时没有 id 可带。空串是内核定义的
+   * 「启动期中断」，提交的是同一个 `Op::Interrupt`；**不能因此就不发请求**，
+   * 那正是用户等得最不耐烦、最想按停止的时候。
+   */
+  it('回合还没开始时用空 turnId（内核的启动期中断）', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+
+    await adapter.interrupt(threadId);
+
+    expect(server.received.at(-1)).toMatchObject({
+      method: 'turn/interrupt',
+      params: { threadId, turnId: '' },
+    });
+  });
+
+  /*
+   * 回合结束后内存里的活动回合就清了 —— 再点停止要退回空串，
+   * 而不是拿一个已经终结的 id 去换一句 "no active turn to interrupt"。
+   */
+  it('回合结束后不再拿旧 turnId 去中断', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    server.notify('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
+    });
+    server.notify('turn/completed', {
+      threadId,
+      turn: makeTurn({ id: 'turn-live', status: 'completed' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await adapter.interrupt(threadId);
+
+    expect(server.received.at(-1)?.params.turnId).toBe('');
+  });
+
+  /*
+   * 回合在请求路上自己跑完了：用户要的「停下」已经达成，**不能再抛错**——
+   * 抛了用户就会再点一次，然后收获第二个一模一样的报错弹窗。
+   */
+  it('内核说"没有活动回合"时当作已经停了，不往上抛', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    server.handlers.set('turn/interrupt', () => {
+      throw new FakeRpcError(ERROR_CODE.invalidRequest, 'no active turn to interrupt');
+    });
+
+    await expect(adapter.interrupt(threadId)).resolves.toBeUndefined();
+  });
+
+  /* 其余 -32600（比如参数形状不对）是我们自己的 bug，必须响亮地失败。 */
+  it('其他中断失败照样往上抛', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    server.handlers.set('turn/interrupt', () => {
+      throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: missing field `turnId`');
+    });
+
+    await expect(adapter.interrupt(threadId)).rejects.toBeInstanceOf(JsonRpcCallError);
   });
 
   it('对话回滚传 beforeTurnId，且不冒充磁盘文件撤销', async () => {
@@ -828,6 +947,21 @@ describe('任务列表与筛选（04 §3.4）', () => {
     // 用 useStateDbOnly 避免全量扫 rollout（09 §4.1 明写）
     const call = server.received.find((r) => r.method === 'thread/list');
     expect(call?.params.useStateDbOnly).toBe(true);
+    /*
+     * **snake_case**，和协议里其余的驼峰不一样（`ThreadSortKey` 带
+     * `rename_all = "snake_case"`）。写成 `recencyAt` 不是"这个字段被忽略"，
+     * 而是整个请求被打回 -32600 —— 也就是对账每次都失败。
+     */
+    expect(call?.params.sortKey).toBe('recency_at');
+  });
+
+  /*
+   * 上面那条把 `thread/list` 处理器换掉了，绕过了假内核的枚举校验 ——
+   * 而当初的缺陷正是这么藏住的。这一条走**默认处理器**，让校验真的跑一遍。
+   */
+  it('对账的参数过得了内核的枚举校验（不换处理器）', async () => {
+    await adapter.start();
+    await expect(adapter.reconcile()).resolves.toEqual({ upserted: 0, removed: 0 });
   });
 });
 
@@ -1296,6 +1430,54 @@ describe('内核镜像：尽力而为，失败不降级（spec §2.3）', () => 
       expect(dump).not.toContain(secretPath);
       expect(dump).not.toContain(secretName);
       expect(records.some((r) => r.fields.method === 'project/create')).toBe(true);
+
+      await loggedAdapter.stop();
+    });
+
+    /*
+     * 中断失败要留下线索（用户那边只看得到一个裸错误码），而**留线索本身不能再炸一次**：
+     * 启动期中断的 `turnId` 是空串 —— 它是合法的协议参数，却不是合法的 id 字段值。
+     * 只有拿真 logger（throw 档）跑才验得到这条，假 logger 什么都不校验。
+     */
+    it('中断的日志字段过得了字段表，空 turnId 也不例外', async () => {
+      const sink = memorySink();
+      const loggedAdapter = createAdapter({
+        store,
+        scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
+        sessionOptions: {
+          launcher: server.launcher(),
+          clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+          setTimeoutFn: timers.setTimeoutFn,
+          clearTimeoutFn: timers.clearTimeoutFn,
+          heartbeatIntervalMs: 10 ** 9,
+        },
+        logger: createLogger({ service: 'kernel-adapter', sink, onViolation: 'throw' }),
+      });
+      await loggedAdapter.start();
+      const { threadId } = await loggedAdapter.createTask({
+        input: [{ type: 'text', text: 'x' }],
+      });
+
+      server.handlers.set('turn/interrupt', () => {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'no active turn to interrupt');
+      });
+      await loggedAdapter.interrupt(threadId);
+
+      server.handlers.set('turn/interrupt', () => {
+        throw new FakeRpcError(
+          ERROR_CODE.invalidRequest,
+          'Invalid request: missing field `turnId`',
+        );
+      });
+      await expect(loggedAdapter.interrupt(threadId)).rejects.toThrow();
+
+      const interrupts = sink.records.filter((r) => r.event.startsWith('adapter.interrupt.'));
+      expect(interrupts.map((r) => r.event)).toEqual([
+        'adapter.interrupt.already_stopped',
+        'adapter.interrupt.failed',
+      ]);
+      // 这个码就是附件里那个 -32600；错误码是唯一进得了日志的分类依据。
+      expect(interrupts.at(-1)?.fields.reason).toBe('rpc_-32600');
 
       await loggedAdapter.stop();
     });

@@ -2969,6 +2969,39 @@ export function toAuditView(raw: Record<string, unknown>): AuditDataView['record
  * **`reason` 缺失时不编一个** —— 审批卡自己会显式说明"没有给出原因"，
  * 而这正是我们希望在内核少给字段时看到的表现。
  */
+/**
+ * `ToolRequestUserInputParams.questions[0]` → 审批卡的问题与选项。
+ *
+ * 问题文本用 `question`；`header` 是一行短标签（卡片没有放它的位置，先不显示，
+ * 也不拼进正文 —— 拼出来的是一句谁都没写过的话）。
+ */
+function toUserInputQuestionView(params: Record<string, unknown>): {
+  question?: string;
+  options?: { id: string; label?: string }[];
+} {
+  const questions = Array.isArray(params.questions)
+    ? (params.questions as readonly Record<string, unknown>[])
+    : [];
+  const first = questions[0];
+  if (!first) return {};
+  const question = typeof first.question === 'string' ? first.question : undefined;
+  /*
+   * `ToolRequestUserInputOption` 是 `{ label, description }` —— **没有 id**。
+   * 选项的身份就是它的 `label`，而回答也是按字符串回去的
+   * （`ToolRequestUserInputAnswer { answers: string[] }`）。
+   * 所以这里把 label 同时当 id 用，而不是凭空造一个内核不认识的编号。
+   */
+  const options = Array.isArray(first.options)
+    ? (first.options as readonly Record<string, unknown>[])
+        .filter((option) => typeof option.label === 'string' && option.label !== '')
+        .map((option) => ({ id: option.label as string, label: option.label as string }))
+    : [];
+  return {
+    ...(question !== undefined ? { question } : {}),
+    ...(options.length > 0 ? { options } : {}),
+  };
+}
+
 export function toApprovalView(
   approval: PendingApproval,
   allowAcceptForSession: boolean,
@@ -2992,6 +3025,15 @@ export function toApprovalView(
     ...(str('command') !== undefined ? { command: str('command') } : {}),
     ...(str('cwd') !== undefined ? { cwd: str('cwd') } : {}),
     ...(str('question') !== undefined ? { question: str('question') } : {}),
+    /*
+     * 追问的字段是 **`questions[]`**，不是 `question`
+     * （`v2/item.rs:1744-1753`：`ToolRequestUserInputParams { questions, is_blocking, ... }`）。
+     * 读错的表现是卡片标题写着「需要你回答」、下面**一个字都没有**，
+     * 选项也不出现 —— 用户只能对着一个空框猜。
+     *
+     * 只取第一个：卡片当前就只画一个问题。多问题得先改卡，不能在这里把它们拼成一段话。
+     */
+    ...(approval.kind === 'userInput' ? toUserInputQuestionView(p) : {}),
     ...(approval.kind === 'mcp'
       ? {
           question: str('message') ?? '连接器请求授权',

@@ -124,10 +124,50 @@ function toWireReply(
     };
   }
   if (kind === 'userInput') {
+    /*
+     * 内核要的是**按问题 id 归位的答案**：
+     * `ToolRequestUserInputResponse { answers: { [id]: { answers: [...] } } }`
+     * （`v2/item.rs:1744-1753` 的 `questions` 与它对称）。
+     *
+     * 回一个裸 `answer` / `optionId` 不会报错 —— 内核 `unwrap_or_else` 兜一个空 map
+     * （`bespoke_event_handling.rs:1676-1681`），于是用户填了什么，工具都收不到，
+     * 而两边都不出声。这正是"写错了不报错"最贵的那一种。
+     *
+     * 只答第一个问题：审批卡当前也只画一个（`approval-card.tsx` 的 `question`/`options`）。
+     * 多问题要一起答，得先让那张卡支持，不能在这里假装答全了。
+     */
+    const questions = Array.isArray(params.questions)
+      ? (params.questions as readonly Record<string, unknown>[])
+      : [];
+    const questionId = typeof questions[0]?.id === 'string' ? (questions[0].id as string) : '';
+    const value = reply.optionId ?? reply.answer;
+    if (!questionId || !value || reply.decision === 'cancel') return { answers: {} };
+    return { answers: { [questionId]: { answers: [value] } } };
+  }
+  if (kind === 'permissions') {
+    /*
+     * 内核要的是**授予了什么**，不是"同不同意"：
+     * `PermissionsRequestApprovalResponse { permissions, scope, strictAutoReview? }`
+     * （`v2/permissions.rs:799-807`）。
+     *
+     * 回 `{ decision }` 同样不报错 —— 兜底是一个空 profile
+     * （`bespoke_event_handling.rs:1874-1882`），于是「允许」和「拒绝」给出的东西一样多：
+     * 都是零。用户点了允许，智能体还是被挡住，而界面上看不出任何异常。
+     *
+     * 同意 = 把请求里的 profile 原样回授。**这里不做裁剪**：内核随后会拿它与
+     * 环境的策略上下文求交（同文件 `granted_permissions` 那几行），
+     * 我们再削一刀只会得到一个谁也说不清的结果。
+     */
+    const requested = (params.permissions ?? {}) as Record<string, unknown>;
+    const accepted = reply.decision === 'accept' || reply.decision === 'acceptForSession';
     return {
-      ...(reply.optionId ? { optionId: reply.optionId } : {}),
-      ...(reply.answer ? { answer: reply.answer } : {}),
-      ...(reply.optionId || reply.answer ? {} : { decision: reply.decision }),
+      permissions: accepted
+        ? {
+            ...(requested.network ? { network: requested.network } : {}),
+            ...(requested.fileSystem ? { fileSystem: requested.fileSystem } : {}),
+          }
+        : {},
+      scope: reply.decision === 'acceptForSession' ? 'session' : 'turn',
     };
   }
   return { decision: reply.decision };

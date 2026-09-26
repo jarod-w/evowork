@@ -43,28 +43,90 @@ describe('审批必须回复（F14：内核会一直等）', () => {
     expect(reply).toEqual({ decision: 'accept' });
   });
 
-  it('追问卡回的是答案而不是决定（形状不同，混用内核不认）', async () => {
+  /*
+   * 追问的回复是**按问题 id 归位的答案**：`{ answers: { [id]: { answers: [...] } } }`
+   * （`v2/item.rs:1744-1753`）。回一个裸 `answer` 不会报错 —— 内核兜一个空 map
+   * （`bespoke_event_handling.rs:1676-1681`），用户填的东西工具一个字都收不到。
+   */
+  it('追问回的是按问题 id 归位的答案，不是裸 answer', async () => {
     const router = createApprovalRouter({
       ask: async () => ({ decision: 'accept', answer: '用 2026Q2 的数据' }),
     });
     const reply = await router.handle(SERVER_REQUEST.toolRequestUserInput, {
       threadId: 't1',
       itemId: 'i1',
-      question: '用哪个季度的数据？',
+      questions: [{ id: 'q_quarter', question: '用哪个季度的数据？', options: null }],
     });
-    expect(reply).toEqual({ answer: '用 2026Q2 的数据' });
+    expect(reply).toEqual({ answers: { q_quarter: { answers: ['用 2026Q2 的数据'] } } });
   });
 
-  it('选项式追问回 optionId', async () => {
+  /* 选项没有 id，身份就是 label（`ToolRequestUserInputOption { label, description }`）。 */
+  it('选项式追问回选中项的 label', async () => {
     const router = createApprovalRouter({
-      ask: async () => ({ decision: 'accept', optionId: 'q2' }),
+      ask: async () => ({ decision: 'accept', optionId: '2026Q2' }),
     });
     const reply = await router.handle(SERVER_REQUEST.toolRequestUserInput, {
       threadId: 't1',
       itemId: 'i1',
-      options: [{ id: 'q1' }, { id: 'q2' }],
+      questions: [
+        {
+          id: 'q_quarter',
+          question: '用哪个季度？',
+          options: [
+            { label: '2026Q1', description: '' },
+            { label: '2026Q2', description: '' },
+          ],
+        },
+      ],
     });
-    expect(reply).toEqual({ optionId: 'q2' });
+    expect(reply).toEqual({ answers: { q_quarter: { answers: ['2026Q2'] } } });
+  });
+
+  it('答不上来时回空 map，而不是把 decision 塞进去', async () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'decline' }) });
+    const reply = await router.handle(SERVER_REQUEST.toolRequestUserInput, {
+      threadId: 't1',
+      itemId: 'i1',
+      questions: [{ id: 'q1', question: '?', options: null }],
+    });
+    expect(reply).toEqual({ answers: {} });
+  });
+
+  /*
+   * 权限审批回的是**授予了什么**（`{ permissions, scope }`，`v2/permissions.rs:799-807`），
+   * 不是"同不同意"。回 `{ decision }` 同样不报错 —— 兜底是空 profile，
+   * 于是「允许」和「拒绝」给出的东西一样多：都是零。
+   */
+  it('权限审批：允许 = 把请求里的 profile 原样回授', async () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
+    const requested = { network: { enabled: true }, fileSystem: { read: ['/w'], write: null } };
+    const reply = await router.handle(SERVER_REQUEST.permissionsRequestApproval, {
+      threadId: 't1',
+      itemId: 'i1',
+      permissions: requested,
+    });
+    // 不在这里裁剪：内核随后会与环境策略求交，我们再削一刀结果就没人说得清了
+    expect(reply).toEqual({ permissions: requested, scope: 'turn' });
+  });
+
+  it('权限审批：拒绝 = 空 profile（不是 decision: decline）', async () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'decline' }) });
+    const reply = await router.handle(SERVER_REQUEST.permissionsRequestApproval, {
+      threadId: 't1',
+      itemId: 'i1',
+      permissions: { network: { enabled: true }, fileSystem: null },
+    });
+    expect(reply).toEqual({ permissions: {}, scope: 'turn' });
+  });
+
+  it('权限审批：本次会话都允许 → scope=session', async () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'acceptForSession' }) });
+    const reply = await router.handle(SERVER_REQUEST.permissionsRequestApproval, {
+      threadId: 't1',
+      itemId: 'i1',
+      permissions: { network: { enabled: true }, fileSystem: null },
+    });
+    expect(reply).toEqual({ permissions: { network: { enabled: true } }, scope: 'session' });
   });
 
   it('**UI 侧出错时也必须回复**，且回 decline（出错时选择不做，而不是选择做）', async () => {
