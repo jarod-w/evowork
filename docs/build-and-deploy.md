@@ -117,7 +117,7 @@ just codex                    # TUI，看内核原生行为
 
 ```bash
 pnpm install        # pnpm 10 默认拦 install script，electron 已在 onlyBuiltDependencies 里
-pnpm run check      # 格式 · lint · 类型（含测试）· 840 个测试 · K1 补丁预算
+pnpm run check      # 格式 · lint · 类型（含测试）· 测试 · K1 补丁预算 · 协议形状 · 许可清单（要 ../codex 在位）
 pnpm run build      # 见下
 ```
 

@@ -21,9 +21,10 @@
     "test:watch": "vitest",
     "test:desktop-e2e": "pnpm run build && node scripts/desktop-skills-e2e.mjs",
     "test:ui": "playwright test",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run check:kernel-budget && pnpm run check:kernel-contract",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run check:kernel-budget && pnpm run check:kernel-contract && pnpm run check:notices",
     "check:kernel-budget": "node scripts/patch-budget.mjs",
     "check:kernel-contract": "node scripts/kernel-contract.mjs",
+    "check:notices": "node scripts/gen-third-party-notices.mjs --check",
     "kernel:drift": "node scripts/kernel-drift.mjs",
     "notices": "node scripts/gen-third-party-notices.mjs",
     "package": "node scripts/package.mjs"

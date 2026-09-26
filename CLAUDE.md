@@ -84,7 +84,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 |---|---|---|
 | K1（补丁预算） | `scripts/patch-budget.mjs`，进 `pnpm run check` | 「超出 K1 上限」 |
 | K2（唯一边界） | eslint `@evowork/no-kernel-internals` | 「只有 `services/kernel-adapter` 可以引用 `CODEX_HOME`」—— 它把 launcher 从桌面壳里赶了出来 |
-| K5（品牌） | `scripts/gen-third-party-notices.mjs --check` | 依赖树与 NOTICES 不一致 |
+| K5（品牌） | `scripts/gen-third-party-notices.mjs --check`，**2026-09-26 起进 `pnpm run check`** | 依赖树与 NOTICES 不一致 |
 | K6（不出网） | `services/ingest/test/pipeline.test.ts` 扫 **整个 `src/` 目录**里的 `fetch` / `node:http` | 「解析管道里不该出现 fetch(」——**云端兜底是结构上不存在，不是"默认关闭"**。2026-09-07 从"手工列的文件名单"收紧成整目录：办公扩展的下载器被放进了另一个包（`services/runtime-installer`），这里就不必留口子 |
 | Q14（不落盘正文） | `packages/logging` 的类型 + 字段注册表 + 泄露检测 | 没有接受自由字符串的日志入口；未注册的字段被**静默丢掉** |
 | 01 §9（token-only） | eslint `@evowork/no-style-literals` + `test/styles.test.ts` 扫 CSS | 「组件里不许出现颜色字面量」—— 它拦下过 mermaid 主题的硬编码兜底色 |
@@ -197,7 +197,8 @@ evowork/
 
 ```bash
 # ── 本仓库（改代码前后各跑一次，它是唯一的验收口径）──
-pnpm run check                    # 格式 · lint（含 K2 边界规则）· 类型（含测试）· 测试 · K1 补丁预算
+pnpm run check                    # 格式 · lint（含 K2 边界规则）· 类型（含测试）· 测试 · K1 补丁预算 · 协议形状 · 许可清单
+                                  # 许可清单那步要 `../codex` 在位（它要读内核的 LICENSE）；CI 没有签出，所以那边只当 warning
 pnpm run build                    # 四步装配：tsc → 复制入口与 vendor → esbuild 三个入口 → vite 渲染层
 pnpm run test -- --project store  # 只跑一个包
 node scripts/kernel-drift.mjs     # 上游漂移 + F1–F25 断言机器复核
