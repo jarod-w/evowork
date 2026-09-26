@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { createModelRegistry, type ModelRegistryEntry } from '../src/capabilities.js';
 import { ModelNotConfiguredError, runPipeline } from '../src/pipeline.js';
 import { EVENT, type ResponsesRequest } from '../src/protocol.js';
+import { UPSTREAM_DISCONNECTED } from '../src/idle.js';
 import { KERNEL_ERROR, type Provider } from '../src/providers/types.js';
 
 /** 一个可脚本化的上游：给它 SSE 行，它就照着回。 */
@@ -155,14 +156,24 @@ describe('完整链路', () => {
     expect(events.some((e) => e.type === EVENT.failed)).toBe(true);
   });
 
-  it('上游不可达 → 显式失败并给用户能看懂的话（不静默换模型）', async () => {
+  it('上游不可达 → 显式失败、**内核会自动重试**、且这句话能到用户眼前（不静默换模型）', async () => {
     const provider = fakeProvider({ throwOnSend: true });
     const events = await collect(runPipeline(request(), { requestId: 'req_1' }, deps(provider)));
     const failed = events.find((e) => e.type === EVENT.failed) as unknown as {
       response: { error: { message: string; code: string } };
     };
-    expect(failed.response.error.code).toBe('server_is_overloaded');
-    expect(failed.response.error.message).toContain('稍后重试');
+    /*
+     * 这个 code 决定了两件事，而**两件都不是"我们内部怎么分类"**：
+     *   ① 内核重不重试 —— 认不出来的 code → `Retryable` → 退避重试；
+     *      而 `server_is_overloaded` 是**终止**的（`protocol/src/error.rs:402`）。
+     *   ② 用户看不看得到上一行这句话 —— `ServerOverloaded` 会把 message 丢掉，
+     *      换成内核写死的 "Selected model is at capacity. Please try a different model."。
+     * 所以断言的不是字符串本身，是"连不上要能自动再试，试完要说人话"。
+     */
+    expect(failed.response.error.code).toBe(UPSTREAM_DISCONNECTED);
+    expect(failed.response.error.message).toContain('连不上模型服务');
+    // 口气是"已经试过了"——这句话只在重试用完之后才显示，写成"请稍后重试"是在撒谎
+    expect(failed.response.error.message).toContain('重试多次仍未成功');
   });
 
   it('未配置的模型 → 抛错，**不回落到别的模型**（03 §8）', async () => {
@@ -313,15 +324,13 @@ describe('上游不说话时，发现它的必须是网关', () => {
     };
     expect(failed).toBeDefined();
     /*
-     * **这个 code 决定的是"用户能不能看到上一行那句话"**，不是我们内部怎么分类。
-     * `invalid_prompt` 是内核唯一"终止 + 原样显示 message"的通道（见管道里的长注释）；
-     * 换成 `server_is_overloaded` 的话用户看到的是内核那句
-     * "Selected model is at capacity. Please try a different model."，
-     * 一次上游卡死会被说成"模型满了，换一个吧"。
+     * **卡死的连接要能自动再试**（2026-09-26 的产品决策），所以这里是内核认不出来的
+     * code → `Retryable{message}`：退避重试，用完了再把这句中文给用户。
+     * 换成 `server_is_overloaded` 的话两头都输：既不重试，显示的又是内核那句
+     * "Selected model is at capacity."——一次上游卡死被说成"模型满了，换一个吧"。
      */
-    expect(failed.response.error.code).toBe('invalid_prompt');
-    expect(failed.response.error.message).toContain('中断');
-    expect(failed.response.error.message).toContain('重试');
+    expect(failed.response.error.code).toBe(UPSTREAM_DISCONNECTED);
+    expect(failed.response.error.message).toContain('重试多次仍未成功');
     // 上游必须被真的掐断：只报失败不掐，那条请求还在上游那边计费
     expect(signal?.aborted).toBe(true);
   });

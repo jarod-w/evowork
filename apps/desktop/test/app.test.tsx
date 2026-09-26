@@ -922,6 +922,38 @@ describe('回合失败留在任务时间线', () => {
       ),
     );
   });
+
+  it('内核重试期间显示「正在重新连接」，**下一条内容一到就撤掉**', async () => {
+    const task = {
+      id: 't-retry',
+      title: '重连任务',
+      status: 'running' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      openTask: vi.fn(async () => ({ items: [] })),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('重连任务'));
+    await waitFor(() => expect(emit.ui).toBeDefined());
+
+    emit.ui?.({ type: 'turn-retrying', taskId: 't-retry', attempt: 1, maxAttempts: 2 });
+    expect(await screen.findByText(/正在尝试重新连接（1\/2）/)).toBeTruthy();
+
+    /*
+     * 内核**不会**专门说"我重连上了"——它只是继续吐字。所以"又有内容进来"
+     * 就是那次重连成功的唯一信号；不接这个信号，这行字会一直挂到回合结束。
+     */
+    emit.ui?.({
+      type: 'item',
+      taskId: 't-retry',
+      item: { id: 'a1', type: 'agentMessage', completed: false, text: '好的，我继续。' },
+    });
+    await waitFor(() => expect(screen.queryByText(/正在尝试重新连接/)).toBeNull());
+  });
 });
 
 describe('生成后的产物刷新', () => {

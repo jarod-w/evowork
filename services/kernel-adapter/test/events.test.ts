@@ -410,6 +410,41 @@ describe('09 §3.4 的分发表逐行', () => {
     expect(ui.at(-1)).toEqual({ type: 'task-removed', threadId: 't1' });
   });
 
+  it('内核在重试 → 说出来。**不说的后果是十分钟空白**，而不是报错', () => {
+    router.handle(NOTIFICATION.error, {
+      threadId: 't1',
+      turnId: 'turn-1',
+      willRetry: true,
+      error: { message: 'Reconnecting... 2/5' },
+    });
+    expect(ui).toEqual([
+      { type: 'turn-retrying', threadId: 't1', turnId: 'turn-1', attempt: 2, maxAttempts: 5 },
+    ]);
+  });
+
+  it('解不出次数就不显示次数 —— 编一个错的"2/5"比没有更糟', () => {
+    // 内核的另一条分支发的是这句（`responses_retry.rs:84`），里面没有数字
+    router.handle(NOTIFICATION.error, {
+      threadId: 't1',
+      turnId: 'turn-1',
+      willRetry: true,
+      error: { message: 'Reconnecting... waiting for network' },
+    });
+    expect(ui).toEqual([{ type: 'turn-retrying', threadId: 't1', turnId: 'turn-1' }]);
+  });
+
+  it('willRetry=false 不报 —— 回合的最终失败走 turn/completed，报两遍是两种说法', () => {
+    router.handle(NOTIFICATION.error, {
+      threadId: 't1',
+      turnId: 'turn-1',
+      willRetry: false,
+      error: { message: '与模型服务的连接中断，重试多次仍未成功。' },
+    });
+    expect(ui).toEqual([]);
+    // 也不该被当成"未识别通知"记进漂移表：它是我们认识且刻意不转发的
+    expect(store.db.prepare('SELECT method FROM unknown_event').all()).toEqual([]);
+  });
+
   it('内核 warning 要显示给用户 —— 「不落盘」不等于「不显示」', () => {
     router.handle(NOTIFICATION.warning, { message: '工作空间里有软链接指向外部目录' });
     expect(ui).toEqual([{ type: 'kernel-warning', text: '工作空间里有软链接指向外部目录' }]);

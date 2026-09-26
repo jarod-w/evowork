@@ -115,6 +115,9 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 | **F30** | 内核**显式忽略** `response.in_progress`（与 `content_part.added` 等一起走 `trace!` 分支，不产生任何 `ResponseEvent`）——所以网关可以拿它当心跳帧：能让内核的空闲计时器重来，又到不了前端 | `codex-api/src/sse/responses.rs:531-542` | ✅ **2026-09-26 用真实 app-server E2E 实测**（把心跳帧混进假网关的流：回合照常完成，时间线上没有它）。SSE 注释行（`: ping`）**不行** —— 注释不派发事件，`stream.next()` 不返回，计时器也就不会重来 |
 | **F31** | 内核读 SSE 的循环是 `timeout(idle_timeout, stream.next())`，**默认 300 秒一帧都没收到就判整个回合失败**，错误文案是 `stream disconnected before completion: idle timeout waiting for SSE`；它映射成 `CodexErr::Stream`，还会自动重试 5 次 | `codex-api/src/sse/responses.rs:591`（计时）· `:612`（错误）· `model-provider-info/src/lib.rs:63`（`DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000`）· `core/src/responses_retry.rs:50` + `protocol/src/error.rs:379-420`（`Stream` 可重试） | 🚨 **2026-09-26 真机上发生过**：kimi-k3 的回合以这句英文告终。网关有好几段「活着但一帧都不发」的时间（上游在想、思维链被能力表挡掉、工具调用参数要攒完整才发得出去），加起来超过 300 秒就是这个结果。修法两件：① 网关心跳（F30）② 网关自己先一步判上游死掉并给中文原因 |
 
+| **F32** | `response.failed` 里**内核认不出来的 `code`** → `Retryable{message}` → `CodexErr::Stream`：按退避自动重试，重试用完后把 message 显示给用户 | `codex-api/src/sse/responses.rs:462-469` | ✅ 网关的 `UPSTREAM_DISCONNECTED` 走的就是这条 |
+| **F33** | `CodexErrorDetails::Stream(..)` 可重试（`backoff`），而 **`ServerOverloaded` 是终止态**（`retry_delay → None`）且 Display 是写死的 "Selected model is at capacity. Please try a different model." | `protocol/src/error.rs:379-420` | 🚨 **2026-09-26 三处已改**：网关原来用 `server_is_overloaded` 表示「连不上 / 断流 / 厂商 5xx」—— 既不重试，又把我们写给用户的中文换成那句英文。最该重试的三种故障因此一次都没重试过 |
+
 ### 4.1 F1 的直接收益：补丁清单从 P3+P4 缩到只有 P4
 
 总纲 §7 结论是「真正的代码补丁只有 P3/P4」。F1 实测后 **P3 也可以去掉**：

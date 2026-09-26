@@ -336,23 +336,63 @@ const MEMORY_DEFAULTS = [
 ] as const;
 
 /**
+ * 重试预算（2026-09-26）。**上游断了要自动重试，但不能试到天荒地老。**
+ *
+ * 内核默认重试 5 次（`model-provider-info/src/lib.rs:64`），而我们这条链路上
+ * 一次重试的代价不是"再发一个 HTTP 请求"：**整段上下文会重新发给上游**，
+ * 而"上游卡死"这一种还要先等满网关的看门狗（120 秒）才判定。
+ * 5 次 × 120 秒 ≈ 十分钟 + 五倍 token；2 次是"抖一下能救回来"与
+ * "别把用户和预算都耗光"之间的取舍（Q11）。
+ */
+const STREAM_RETRY_DEFAULTS = [['model_providers.evowork', 'stream_max_retries', '2']] as const;
+
+/**
  * 给已有安装补上本地记忆默认值。
  *
  * 这里只补缺失项，用户或企业已经明确写下的 `false` 一律保留。`[features]` 必须
  * 插在 `[features.*]` 子表之前；把父表追加到子表之后会生成非法 TOML。
  */
 export function migrateMemoriesConfig(text: string): { text: string; changed: boolean } {
+  return ensureSectionDefaults(text, MEMORY_DEFAULTS, { createMissingSection: true });
+}
+
+/**
+ * 给已有安装补上重试预算。
+ *
+ * **段不在就不补**（与记忆那条的区别）：没有 `[model_providers.evowork]` 说明这台机器
+ * 指向的根本不是我们的网关（企业私有部署会改名），给它凭空造一个只有一个键的
+ * provider 段，是往一份我们并不了解的配置里塞东西。
+ *
+ * 光改模板不行：`ensureKernelConfig` 刻意不覆盖已有配置，所以**已装的用户永远读不到新模板**
+ * —— 这正是 F26 那次（`multi_agent_v2` 只改模板没修升级用户）的教训。
+ */
+export function migrateStreamRetryBudget(text: string): { text: string; changed: boolean } {
+  return ensureSectionDefaults(text, STREAM_RETRY_DEFAULTS, { createMissingSection: false });
+}
+
+/**
+ * 往 TOML 里补缺失的配置项。**只补缺失的，用户或企业显式写过的值一律不动。**
+ *
+ * 两条迁移共用它：抄第二份的代价不是多几十行，而是两份会慢慢长歪 ——
+ * 比如一份修了"键已存在就跳过"，另一份没修，于是某台机器上企业的设置每次启动被改回默认。
+ */
+function ensureSectionDefaults(
+  text: string,
+  defaults: readonly (readonly [string, string, string])[],
+  options: { readonly createMissingSection: boolean },
+): { text: string; changed: boolean } {
   const hadTrailingNewline = text.endsWith('\n');
   const lines = text.split(/\r?\n/);
   if (hadTrailingNewline) lines.pop();
   let changed = false;
 
-  for (const [sectionName, key, value] of MEMORY_DEFAULTS) {
+  for (const [sectionName, key, value] of defaults) {
     const sectionStart = lines.findIndex((line) => {
       const section = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
       return section?.[1]?.trim() === sectionName;
     });
     if (sectionStart < 0) {
+      if (!options.createMissingSection) continue;
       const firstChild = lines.findIndex((line) =>
         new RegExp(`^\\s*\\[${sectionName.replace('.', '\\.')}\\.`).test(line),
       );
@@ -631,14 +671,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       const retiredModel = removeRetiredDefaultModel(readFileSync(kernelConfigPath, 'utf8'));
       const multiAgentV2 = migrateMultiAgentV2Config(retiredModel.text);
       const memories = migrateMemoriesConfig(multiAgentV2.text);
-      if (retiredModel.changed || multiAgentV2.changed || memories.changed) {
-        writeFileSync(kernelConfigPath, memories.text, 'utf8');
+      const retries = migrateStreamRetryBudget(memories.text);
+      if (retiredModel.changed || multiAgentV2.changed || memories.changed || retries.changed) {
+        writeFileSync(kernelConfigPath, retries.text, 'utf8');
       }
       if (retiredModel.changed) {
         logger.info('desktop.kernel_config.retired_model_removed', {});
       }
       if (multiAgentV2.changed) logger.info('desktop.kernel_config.multi_agent_v2_migrated', {});
       if (memories.changed) logger.info('desktop.kernel_config.memories_defaults_migrated', {});
+      if (retries.changed) logger.info('desktop.kernel_config.stream_retries_migrated', {});
     } catch {
       logger.warn('desktop.kernel_config.migration_failed', { reason: 'IO' });
     }

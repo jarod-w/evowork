@@ -35,6 +35,7 @@ import {
   ensurePaths,
   migrateMemoriesConfig,
   migrateMultiAgentV2Config,
+  migrateStreamRetryBudget,
   resolvePaths,
 } from '../src/main/service-host.js';
 
@@ -1499,6 +1500,29 @@ describe('首次运行装内核配置', () => {
     );
     expect(migrated.text.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
     expect(migrateMultiAgentV2Config(migrated.text).changed).toBe(false);
+  });
+
+  it('给已有安装补上重试预算 —— 只改模板的话，已装的用户永远读不到它（F26 的教训）', () => {
+    const before = '[model_providers.evowork]\nbase_url = "http://127.0.0.1:8787/v1"\n';
+    const migrated = migrateStreamRetryBudget(before);
+    expect(migrated.changed).toBe(true);
+    expect(migrated.text).toContain('stream_max_retries = 2');
+    // 幂等：每次启动都跑一遍，不能每次都改写文件
+    expect(migrateStreamRetryBudget(migrated.text)).toEqual({
+      text: migrated.text,
+      changed: false,
+    });
+  });
+
+  it('企业自己写过的重试次数不覆盖', () => {
+    const before = '[model_providers.evowork]\nstream_max_retries = 8\n';
+    expect(migrateStreamRetryBudget(before)).toEqual({ text: before, changed: false });
+  });
+
+  it('**没有这个 provider 段就不补** —— 不往一份我们不了解的配置里凭空造段', () => {
+    // 企业私有部署会把 provider 改名；给它造一个只有一个键的 evowork 段是无中生有
+    const before = '[model_providers.acme]\nbase_url = "https://gw.acme.internal/v1"\n';
+    expect(migrateStreamRetryBudget(before)).toEqual({ text: before, changed: false });
   });
 
   it('给已有安装补齐记忆默认值，但保留用户显式关闭的选择', () => {

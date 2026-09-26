@@ -22,6 +22,8 @@ import {
   createModelAccess,
   parseModelPolicyToml,
   parseOpenAiModelsList,
+  probeModel,
+  probeVerdictFromLine,
 } from '../src/main/model-access.js';
 import type { SafeStorageLike } from '../src/main/secret-store.js';
 import type { ModelCatalogResult } from '../src/shared/ipc.js';
@@ -505,6 +507,61 @@ describe('保存之前的「测试连接」（11 §4.4）', () => {
     expect(parseOpenAiModelsList({ data: [{ id: 'a' }, { id: 'a' }, { name: 'skip' }] })).toEqual([
       'a',
     ]);
+  });
+});
+
+describe('「检查」按钮：200 不等于通了', () => {
+  /**
+   * 网关把**模型层面的失败放在流里**（`response.failed`），HTTP 仍然是 200。
+   * 只看状态码的话，密钥错、模型不存在、上游断了，全都会被回答成"通了" ——
+   * 用户要到真实任务里才发现。这与 CLAUDE.md §7 里 `verify-provider.mjs`
+   * 那句"只看状态码会判错"是同一条教训。
+   */
+  function sse(...frames: readonly string[]): Response {
+    return new Response(frames.map((f) => `data: ${f}\n\n`).join(''), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  }
+
+  it('流里是 response.failed → 没通，而且用流里那句中文', async () => {
+    const result = await probeModel({
+      baseUrl: 'http://127.0.0.1:8787/v1',
+      token: 'gw-token',
+      modelId: 'evowork/x',
+      fetchFn: (async () =>
+        sse(
+          JSON.stringify({ type: 'response.created', response: { id: 'r1' } }),
+          JSON.stringify({
+            type: 'response.failed',
+            response: { id: 'r1', error: { code: 'invalid_prompt', message: '密钥无效（401）。' } },
+          }),
+        )) as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('密钥无效');
+  });
+
+  it('模型真的开口了 → 通了', async () => {
+    const result = await probeModel({
+      baseUrl: 'http://127.0.0.1:8787/v1',
+      token: 'gw-token',
+      modelId: 'evowork/x',
+      fetchFn: (async () =>
+        sse(
+          JSON.stringify({ type: 'response.created', response: { id: 'r1' } }),
+          JSON.stringify({ type: 'response.output_text.delta', delta: '好' }),
+        )) as unknown as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('`created` 和心跳都不算结论 —— 失败流也是以 created 开头的', () => {
+    expect(probeVerdictFromLine('data: {"type":"response.created"}')).toBeUndefined();
+    expect(probeVerdictFromLine('data: {"type":"response.in_progress"}')).toBeUndefined();
+    expect(probeVerdictFromLine('data: [DONE]')).toBeUndefined();
+    // 坏帧不作结论：一帧读不懂就判"没通"会把偶发的上游脏数据变成误报
+    expect(probeVerdictFromLine('data: {不是 JSON')).toBeUndefined();
   });
 });
 

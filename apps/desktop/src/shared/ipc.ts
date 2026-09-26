@@ -81,6 +81,19 @@ export type RendererEvent =
       readonly details?: string | undefined;
     }
   /**
+   * 内核正在为这个回合重试上游请求。**不是失败**，也不是一条对话条目 ——
+   * 它是一行会被下一个动静顶掉的状态，所以单独一种事件，不进时间线的 item 流。
+   *
+   * 没有它的表现：内核退避重试期间界面上一个字都没有，用户看着转圈，
+   * 而那段沉默最长是 `stream_max_retries` × 一个上游超时。
+   */
+  | {
+      readonly type: 'turn-retrying';
+      readonly taskId: string;
+      readonly attempt?: number | undefined;
+      readonly maxAttempts?: number | undefined;
+    }
+  /**
    * 任务的产物索引刚刚变了。只送“哪个任务”，具体数据仍由
    * `getTaskResults` 重读，避免在事件载荷里复制另一份产物视图。
    */

@@ -13,10 +13,10 @@
  * | `context_length_exceeded` | 压缩上下文后重试 |
  * | `insufficient_quota` | 停下来告诉用户（不重试） |
  * | `rate_limit_exceeded` | `RateLimitExceeded`，按 `resets_at` 退避 |
- * | `server_is_overloaded` / `slow_down` | `ServerOverloaded` |
+ * | `server_is_overloaded` | `ServerOverloaded` —— **终止（不重试）且丢掉 message**，界面上显示内核写死的"模型满了，换一个吧" |
  * | **`invalid_prompt` / `bio_policy`** | **`InvalidRequest{message}` —— 永久错误，不重试，把 message 给用户** |
  * | `misalignment_policy_violation` | 策略违规，专用文案 |
- * | 其他 | `Retryable` —— **会重试** |
+ * | 其他（认不出来的） | `Retryable{message}` → `CodexErr::Stream` —— **会退避重试，且重试用完后把 message 给用户**。「上游断了」这一类走的就是这条（`idle.ts` 的 `UPSTREAM_DISCONNECTED`） |
  *
  * 倒数第二行是这段代码存在的理由：**映射不上的错误会被内核当成"可重试"**。
  * 于是一个"模型不存在"的永久性错误会被重试到上限，用户看到的是任务卡了很久然后失败。
@@ -32,6 +32,7 @@ import {
   type ProviderConfig,
   type UpstreamResponse,
 } from './types.js';
+import { UPSTREAM_DISCONNECTED } from '../idle.js';
 import type { ChatRequest } from '../translate/to-chat.js';
 
 /** 从上游错误体里挖出 message / code，容忍三家各自的嵌套形状。 */
@@ -95,7 +96,16 @@ function mapCommonError(
     // ①不重试 ②把 message 原样给用户 的通道 —— 而"密钥无效"这条消息用户必须看到
     return { code: 'invalid_prompt', message };
   }
-  if (isRetryableStatus(status)) return { code: 'server_is_overloaded', message };
+  if (isRetryableStatus(status)) {
+    /*
+     * 5xx 是**最该重试**的一类，而 `server_is_overloaded` 在内核里恰恰是**终止**的
+     * （`protocol/src/error.rs:402` 落在 `retry_delay → None`），还会把 message 换成
+     * "Selected model is at capacity. Please try a different model."。
+     * 一个厂商侧的 500 因此既不重试、显示的原因也是错的。换成内核认不出来的 code →
+     * `Retryable{message}`：自动退避重试，用完了再把上游这句原话给用户。
+     */
+    return { code: UPSTREAM_DISCONNECTED, message };
+  }
   return { message, ...(code ? { code } : {}), ...(type ? { type } : {}) };
 }
 

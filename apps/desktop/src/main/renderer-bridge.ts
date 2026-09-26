@@ -689,6 +689,15 @@ export function createEventTranslator(store: Store, now: () => number) {
           },
         ];
       }
+      case 'turn-retrying':
+        return [
+          {
+            type: 'turn-retrying',
+            taskId: event.threadId,
+            ...(event.attempt !== undefined ? { attempt: event.attempt } : {}),
+            ...(event.maxAttempts !== undefined ? { maxAttempts: event.maxAttempts } : {}),
+          },
+        ];
       case 'task-renamed': {
         /*
          * 名字被**清空**时（内核发一条不带 `threadName` 的通知）不能直接把标题设成 null：

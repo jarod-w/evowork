@@ -381,6 +381,21 @@ const VIEW_TO_NAV: Readonly<Partial<Record<MainView, string>>> = {
   more: 'more',
 };
 
+/**
+ * 从「按任务 id 存的表」里去掉一个任务，返回 setState 的 updater。
+ *
+ * **没这个任务时原样返回上一个对象**：它会被挂在每一条流式增量上，
+ * 每次都造一个新对象等于每来一个字就让整棵树重渲染一次。
+ */
+function dropTask<T>(taskId: string) {
+  return (previous: Readonly<Record<string, T>>): Readonly<Record<string, T>> => {
+    if (!(taskId in previous)) return previous;
+    const next = { ...previous };
+    delete next[taskId];
+    return next;
+  };
+}
+
 function navIdForView(view: MainView, activeTaskId: string | null): string | undefined {
   if (view === 'task' && activeTaskId !== null) return undefined;
   return VIEW_TO_NAV[view];
@@ -459,6 +474,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   >([]);
   const [turnFailures, setTurnFailures] = useState<
     Readonly<Record<string, { readonly summary: string }>>
+  >({});
+  /**
+   * 正在重试的回合。**不是失败**，所以不能塞进 `turnFailures` ——
+   * 它是一行会被下一个动静顶掉的状态：内核重试成功就继续吐字，用完了才变成失败卡。
+   */
+  const [turnRetries, setTurnRetries] = useState<
+    Readonly<Record<string, { readonly attempt?: number; readonly maxAttempts?: number }>>
   >({});
   const [toasts, setToasts] = useState<readonly ToastSpec[]>([]);
   const toastCounter = useRef(0);
@@ -679,11 +701,23 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }));
           return;
         }
+        if (event.type === 'turn-retrying') {
+          setTurnRetries((previous) => ({
+            ...previous,
+            [event.taskId]: {
+              ...(event.attempt !== undefined ? { attempt: event.attempt } : {}),
+              ...(event.maxAttempts !== undefined ? { maxAttempts: event.maxAttempts } : {}),
+            },
+          }));
+          return;
+        }
         if (event.type === 'turn-started' || event.type === 'turn-completed') {
           setLatestTurnByTask((previous) => ({
             ...previous,
             [event.taskId]: event.turnId,
           }));
+          // 重试成功也好、彻底失败也好，这一行都该消失：它只描述"正在重连"
+          setTurnRetries(dropTask(event.taskId));
           return;
         }
         if (event.type === 'turn-diff') {
@@ -781,6 +815,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }
           return;
         }
+        // 又有内容进来了 = 那次重连成功了，提示该撤掉（内核不会专门说"我重连好了"）
+        setTurnRetries(dropTask(event.taskId));
         setItemsByTask((prev) => ({
           ...prev,
           // 流式增量按 id 合并（04 §5.1）：同 id 的后来者覆盖前者
@@ -2913,6 +2949,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               ),
           }}
           notices={notices}
+          {...(turnRetries[activeTaskId] ? { turnRetry: turnRetries[activeTaskId] } : {})}
           {...(turnFailures[activeTaskId]
             ? {
                 turnFailure: {

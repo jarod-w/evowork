@@ -167,7 +167,12 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export function main(): void {
-  const port = Number(env('PORT') ?? 8787);
+  /*
+   * `Number('8787 ')` 能过，`Number('8787x')` 是 NaN —— 而 `listen(NaN)` 是**同步抛**
+   * `ERR_SOCKET_BAD_PORT`（实测），不走下面那个 `server.on('error')`。
+   * 于是一个拼错的 PORT 不会留下 `gateway.boot.bind_failed`，宿主只看到"启动后立刻退出"。
+   */
+  const port = numberEnv('PORT') ?? 8787;
   const host = env('HOST') ?? '127.0.0.1';
   const tokens = (env('EVOWORK_GATEWAY_TOKENS') ?? '').split(',').filter((t) => t.length > 0);
 

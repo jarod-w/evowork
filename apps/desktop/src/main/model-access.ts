@@ -760,6 +760,74 @@ function validateUpstreamEndpoint(baseUrl: string): string | undefined {
 }
 
 /**
+ * 从探针响应的头几帧里读出结论。
+ *
+ * 判据（与 `services/gateway/src/protocol.ts` 的 `EVENT` 一一对应）：
+ *   · `response.failed`  → 没通，**用流里那句话**（它是网关写给用户看的中文）；
+ *   · 任何内容事件       → 通了（模型真的开始说话了）；
+ *   · `created` / 心跳   → 不算结论，继续读 —— 失败流也是以 `created` 开头的。
+ *
+ * 读不出结论就按"通了"处理：整条流都没有 `failed` 而请求又是 200，
+ * 再苛刻下去就会把网络慢误报成密钥错。真正的上限是外面那个 abort 计时器。
+ */
+async function readProbeVerdict(response: Response): Promise<ModelProbeResult> {
+  const body = response.body;
+  if (!body) return { ok: true, message: '通了：这个模型现在可以用。' };
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+  // 只读开头一小段：结论一定在前几帧，读多了就是在替用户烧 token
+  const MAX_BYTES = 64 * 1024;
+  let seen = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done || seen > MAX_BYTES) break;
+    if (!value) continue;
+    seen += value.length;
+    buffered += decoder.decode(value, { stream: true });
+    let cut = buffered.indexOf('\n');
+    while (cut >= 0) {
+      const line = buffered.slice(0, cut).trim();
+      buffered = buffered.slice(cut + 1);
+      cut = buffered.indexOf('\n');
+      const verdict = probeVerdictFromLine(line);
+      if (verdict) {
+        reader.releaseLock();
+        return verdict;
+      }
+    }
+  }
+  reader.releaseLock();
+  return { ok: true, message: '通了：这个模型现在可以用。' };
+}
+
+/** 一行 SSE → 结论。不是结论就返回 undefined。**导出是为了逐条测判据**。 */
+export function probeVerdictFromLine(line: string): ModelProbeResult | undefined {
+  if (!line.startsWith('data:')) return undefined;
+  const payload = line.slice(5).trim();
+  if (payload === '' || payload === '[DONE]') return undefined;
+  let event: { type?: string; response?: { error?: { message?: string } } };
+  try {
+    event = JSON.parse(payload) as typeof event;
+  } catch {
+    return undefined;
+  }
+  if (event.type === 'response.failed') {
+    const message = event.response?.error?.message;
+    return {
+      ok: false,
+      message: message && message.trim() !== '' ? message : '没通：模型拒绝了这次调用。',
+    };
+  }
+  // `created` 与心跳都不算数：失败流同样以 created 开头，心跳只说明连接活着
+  if (event.type === 'response.created' || event.type === 'response.in_progress') return undefined;
+  if (typeof event.type === 'string' && event.type.startsWith('response.')) {
+    return { ok: true, message: '通了：这个模型现在可以用。' };
+  }
+  return undefined;
+}
+
+/**
  * 连通性检查（设置页的「检查」按钮）。
  *
  * **它真的发一次请求，而且要说清这一点**：只查"目录里有没有这个 id"证明不了
@@ -797,9 +865,21 @@ export async function probeModel(options: {
       }),
     });
     if (response.status === 200) {
-      // 不读完流：目的只是确认上游接受了这次调用（读完等于多烧几十个 token）
-      await response.body?.cancel();
-      return { ok: true, message: '通了：这个模型现在可以用。' };
+      /*
+       * **200 不等于通了。**
+       *
+       * 网关把模型层面的失败放在**流里**（`response.failed`），HTTP 仍然是 200：
+       * 密钥不对、模型不存在、上游断了，全都长这样。只看状态码的话，
+       * 用户会拿到一句"通了"，然后在真实任务里失败 —— 这正是 CLAUDE.md §7
+       * 说 `verify-provider.mjs` 时那句"只看状态码会判错"。
+       * （网关补了心跳之后还多一种：上游一直不回话时，200 的响应头会先由心跳写出来。）
+       *
+       * 所以读到**第一帧有结论的事件**为止：`created` 与心跳都不算结论，
+       * 因为失败流同样以 `created` 开头。读完就 cancel，不把整个回合烧完。
+       */
+      const verdict = await readProbeVerdict(response);
+      await response.body?.cancel().catch(() => undefined);
+      return verdict;
     }
     if (response.status === 401) {
       return { ok: false, message: '网关拒绝了访问令牌（401）。' };

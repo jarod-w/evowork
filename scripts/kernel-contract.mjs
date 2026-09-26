@@ -168,6 +168,14 @@ const INCOMING = {
   'fs/changed': ['watchId', 'changedPaths'],
   'account/rateLimits/updated': [],
   warning: ['message'],
+  /*
+   * 重试通知。`willRetry: true` = 内核在自动重试，**回合还没失败**；
+   * 不订阅它的后果是退避重试期间界面上一片空白（2026-09-26）。
+   * 字段是 snake_case 在 Rust 里、camelCase 在线上（`v2/notification.rs` 的 ErrorNotification）,
+   * 写成 `will_retry` 读到的是 undefined —— 而 undefined !== true 会让这条通知被静默丢掉，
+   * 恰好和"没订阅"长得一模一样。
+   */
+  error: ['error', 'willRetry', 'threadId', 'turnId'],
   'item/fileChange/patchUpdated': ['threadId', 'turnId', 'itemId', 'changes'],
   'item/mcpToolCall/progress': ['threadId', 'itemId'],
   'item/agentMessage/delta': ['threadId', 'itemId', 'delta'],

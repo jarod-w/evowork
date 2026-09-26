@@ -16,6 +16,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { UPSTREAM_DISCONNECTED } from '../src/idle.js';
 import { DEEPSEEK, MOONSHOT, ZHIPU, extractError } from '../src/providers/registry.js';
 
 describe('错误体解析：三家三种形状（2026-09-05 实测）', () => {
@@ -79,8 +80,14 @@ describe('可重试与配额类错误保持原样', () => {
     expect(DEEPSEEK.mapError(402, {}).code).toBe('insufficient_quota');
   });
 
-  it('5xx → server_is_overloaded', () => {
-    expect(DEEPSEEK.mapError(503, {}).code).toBe('server_is_overloaded');
+  it('5xx → 内核会**重试**的那一类，而不是"模型满了，换一个吧"', () => {
+    /*
+     * 5xx 是最该重试的一类。`server_is_overloaded` 看着贴切，实际是内核里的**终止**态
+     * （`protocol/src/error.rs:402`）且会丢掉 message —— 用它等于"厂商抖一下就整回合失败，
+     * 还告诉用户去换模型"。认不出来的 code 才落到 `Retryable{message}`。
+     */
+    expect(DEEPSEEK.mapError(503, {}).code).toBe(UPSTREAM_DISCONNECTED);
+    expect(DEEPSEEK.mapError(503, {}).code).not.toBe('server_is_overloaded');
   });
 
   it('上下文超限走 context_length_exceeded（内核会压缩后重试，不该被当成永久错误）', () => {

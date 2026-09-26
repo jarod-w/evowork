@@ -53,10 +53,34 @@ export async function raceIdle<T>(pending: Promise<T>, ms: number): Promise<T | 
   }
 }
 
-/** 看门狗掐断时给用户的话。两条上游只有主语不同，别各写各的。 */
+/**
+ * 看门狗掐断时给用户的话。两条上游只有主语不同，别各写各的。
+ *
+ * **这句话只有在内核把重试用完之后才会显示**（见 `UPSTREAM_DISCONNECTED`），
+ * 所以它的口气是"已经试过了"，不是"马上给你再试一次"——
+ * 重试**进行中**的那句在适配层（`error` 通知 + `willRetry`），两句不能写成同一句。
+ */
 export function stalledMessage(source: '模型服务' | '云端网关', budgetMs: number): string {
   return (
-    `${source}已有 ${Math.round(budgetMs / 1000)} 秒没有返回任何内容，这次请求已中断。` +
-    `可以点「重试」再来一次，或到设置里换一个模型。`
+    `${source}已有 ${Math.round(budgetMs / 1000)} 秒没有返回任何内容，重试多次仍未成功。` +
+    `可以再点一次「重试」，或到设置里换一个模型。`
   );
 }
+
+/**
+ * 「上游断了」这一类失败给内核的 `error.code`。
+ *
+ * **它故意是内核认不出来的值**，因为内核认得的那几个都不合用
+ * （`sse/responses.rs:427-470` + `protocol/src/error.rs:379-420`，2026-09-26 核对）：
+ *   · `server_is_overloaded` → `ServerOverloaded`：**终止、丢掉 message**，
+ *     界面上变成内核那句 "Selected model is at capacity. Please try a different model."——
+ *     与"连接断了"毫无关系，还把用户往"换个模型"上引；
+ *   · `invalid_prompt` → `InvalidRequest{message}`：原样显示 message，但**永不重试**；
+ *   · **认不出来的 code** → `Retryable{message}` → `CodexErr::Stream(message)`：
+ *     内核按退避自动重试（次数由 `stream_max_retries` 定），用完了才把 message 给用户。
+ *
+ * 第三条正是我们要的：断流、5xx、上游卡死都是瞬时故障，值得自动再试；
+ * 而重试过程**不能是静默的** —— 内核每次重试都会发 `error` + `willRetry: true`，
+ * 适配层必须把它显示出来（这两件事是一起做的，只做一半就是"转圈十分钟"）。
+ */
+export const UPSTREAM_DISCONNECTED = 'upstream_disconnected';

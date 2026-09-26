@@ -355,6 +355,26 @@
       "scopeLines": { "before": 2, "after": 30 },
       "mustContain": ["idle timeout waiting for SSE"],
       "impact": "网关必须自己保证连接上一直有帧（server.ts 的心跳）+ 自己先一步判上游死掉（pipeline 的看门狗）"
+    },
+    {
+      "id": "F32",
+      "summary": "response.failed 里内核认不出来的 code → Retryable{message}（认得的 rate_limit_exceeded / slow_down 走 RateLimitExceeded）",
+      "file": "codex-rs/codex-api/src/sse/responses.rs",
+      "needle": "_ => ApiError::Retryable { message, delay },",
+      "line": 468,
+      "scopeLines": { "before": 6, "after": 2 },
+      "mustContain": ["rate_limit_exceeded", "try_parse_retry_after"],
+      "impact": "网关的 UPSTREAM_DISCONNECTED 走的就是这个兜底分支：断流/5xx/上游卡死要能自动重试，且 message 要留给用户"
+    },
+    {
+      "id": "F33",
+      "summary": "Stream(..) 可重试（退避）而 ServerOverloaded 是终止态 —— 这决定了网关该用哪个 error.code",
+      "file": "codex-rs/protocol/src/error.rs",
+      "needle": "| CodexErrorDetails::ServerOverloaded",
+      "line": 402,
+      "scopeLines": { "before": 2, "after": 22 },
+      "mustContain": ["=> None,", "CodexErrorDetails::Stream(..)", "backoff(retry_count)"],
+      "impact": "用 server_is_overloaded 的后果是**既不重试、又把我们写给用户的话换成内核那句英文**（2026-09-26 三处已改）"
     }
   ]
 }

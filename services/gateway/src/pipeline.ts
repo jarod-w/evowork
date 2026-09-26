@@ -20,6 +20,7 @@ import {
   raceIdle,
   stalledMessage,
   STALLED,
+  UPSTREAM_DISCONNECTED,
 } from './idle.js';
 import { EVENT, type ResponsesEvent, type ResponsesRequest } from './protocol.js';
 import type { Provider, ProviderConfig } from './providers/types.js';
@@ -146,8 +147,10 @@ export async function* runPipeline(
   } catch (err) {
     log?.error('gateway.upstream.unreachable', errorFields(err));
     yield* translator.fail({
-      code: 'server_is_overloaded',
-      message: '模型服务暂时不可达，请稍后重试。',
+      // 连不上是典型的瞬时故障 → 让内核自动重试（见 `UPSTREAM_DISCONNECTED`）。
+      // 这句话只有重试用完才会被显示，所以写的是"试过了"的口气
+      code: UPSTREAM_DISCONNECTED,
+      message: '连不上模型服务，重试多次仍未成功。检查一下网络，或到设置里换一个模型。',
     });
     return;
   }
@@ -195,23 +198,19 @@ export async function* runPipeline(
           durationMs: now() - startedAt,
         });
         /*
-         * 用 `invalid_prompt` 而不是 `server_is_overloaded`，是为了让**这句话能到用户眼前**。
+         * **可重试**（`UPSTREAM_DISCONNECTED` 那里写了为什么是这个 code）。
          *
-         * 内核对三个候选的处理（`sse/responses.rs:427-470` + `protocol/src/error.rs:379-420`，
-         * 2026-09-26 对 `d583e73c4d` 核对）：
-         *   · `server_is_overloaded` → `ServerOverloaded`：**终止且丢掉 message**，
-         *     界面上显示的是内核自己的那句 "Selected model is at capacity."——
-         *     与"上游不说话了"毫无关系，还把用户往"换个模型"上引；
-         *   · 认不出来的 code → `Retryable{message}` → `CodexErr::Stream`：会自动重试 5 次，
-         *     每次都要等满一个看门狗周期，用户对着转圈等十分钟才看到原因；
-         *   · `invalid_prompt` → `InvalidRequest{message}`：终止、**原样显示 message**。
+         * 2026-09-26 第一版选的是终止（`invalid_prompt`），理由是"重试期间界面一片空白，
+         * 用户要对着转圈等十分钟"。那个理由已经不成立：适配层现在会把内核的
+         * `error` + `willRetry` 显示成「上游断了，正在尝试重新连接（2/5）」，
+         * 而「停止」按钮也在同一天被修好了。剩下的就是一个朴素事实 ——
+         * **卡死的连接重来一次经常就好了**，而让用户手点一次没有任何额外信息量。
          *
-         * 语义上它当然不是"prompt 不合法"（registry.ts 里 401/403/404 也借了这条通道，
-         * 理由相同）。选它是因为这次失败里唯一有价值的东西就是这句解释：
-         * 界面上本来就有「重试」，一次点击远好过十分钟的静默重试。
+         * 代价是真的：每次重试都会把整段上下文重发给上游（Q11 的预算），
+         * 最坏是 `stream_max_retries` × 这个 budget。config 模板因此把重试次数从 5 降到 2。
          */
         yield* translator.fail({
-          code: 'invalid_prompt',
+          code: UPSTREAM_DISCONNECTED,
           message: stalledMessage('模型服务', budget),
         });
         return;
@@ -259,8 +258,9 @@ export async function* runPipeline(
   } catch (err) {
     log?.error('gateway.stream.aborted', errorFields(err));
     yield* translator.fail({
-      code: 'server_is_overloaded',
-      message: '与模型服务的连接中断，请稍后重试。',
+      code: UPSTREAM_DISCONNECTED,
+      message:
+        '与模型服务的连接中断，重试多次仍未成功。可以再点一次「重试」，或到设置里换一个模型。',
     });
     return;
   } finally {

@@ -107,6 +107,21 @@ export type UiEvent =
   | {
       readonly type: 'kernel-warning';
       readonly text: string;
+    }
+  | {
+      /**
+       * 内核正在为这个回合重试上游请求（`error` 通知 + `willRetry: true`）。
+       *
+       * 它**不是**失败：回合还在跑，成功了就继续吐字。存在的唯一理由是
+       * 那段等待本来是完全静默的 —— 内核最多重试 `stream_max_retries` 次、
+       * 每次都要等满一个超时，而界面上什么都没有。
+       */
+      readonly type: 'turn-retrying';
+      readonly threadId: string;
+      readonly turnId: string;
+      /** 第几次 / 一共几次。内核的文案里有就解出来，没有就不显示 */
+      readonly attempt?: number;
+      readonly maxAttempts?: number;
     };
 
 /** 流式增量的四个通道（04 §5.1：按 item id 合并，60fps 节流由前端做）。 */
@@ -143,6 +158,28 @@ type Handler = (params: unknown) => SideEffect[];
  * 分成 `handle(method, params)` 与 `attach(session)` 两层，是为了让**每一条映射规则都能
  * 被单独测**，而不必起一个内核进程。09 §3.4 那张表有 17 行，逐行测才有意义。
  */
+/**
+ * 从内核的重试文案里解出「第几次 / 一共几次」。
+ *
+ * 内核发的是 `Reconnecting... 2/5`（`core/src/responses_retry.rs:125`），但同一条通知
+ * 在另一条分支上是 `Reconnecting... waiting for network`（没有数字）。所以这里
+ * **解不出来就不显示次数**，绝不编一个 —— 界面上一个错的"2/5"比没有更糟。
+ * 我们不直接显示内核那句英文：文案要中文，且不出现内核的品牌口径（K5）。
+ */
+function retryAttempts(message: string | undefined): {
+  attempt?: number;
+  maxAttempts?: number;
+} {
+  const matched = /(\d{1,3})\s*\/\s*(\d{1,3})/.exec(message ?? '');
+  if (!matched) return {};
+  const attempt = Number(matched[1]);
+  const maxAttempts = Number(matched[2]);
+  if (!Number.isFinite(attempt) || !Number.isFinite(maxAttempts) || maxAttempts < attempt) {
+    return {};
+  }
+  return { attempt, maxAttempts };
+}
+
 export function createEventRouter(options: EventRouterOptions) {
   const { store, onUiEvent, logger } = options;
   const now = options.now ?? (() => Date.now());
@@ -518,6 +555,34 @@ export function createEventRouter(options: EventRouterOptions) {
 
     [NOTIFICATION.accountRateLimitsUpdated]: () => {
       onUiEvent({ type: 'rate-limits-updated' });
+      return [];
+    },
+
+    /**
+     * 内核在重试上游请求。
+     *
+     * **只处理 `willRetry: true`。** 为 false 的那条是回合的最终失败，而最终失败
+     * 已经由 `turn/completed`（`turn.status === 'failed'` + `turn.error`）走完了整条路 ——
+     * 再报一次的结果是同一件事在界面上出现两遍，而且两遍的文案还不一样。
+     *
+     * 不订阅这条通知的后果不是报错，是**十分钟的空白**：内核退避重试期间
+     * 既没有 item、也没有状态变化，用户只能看着转圈（2026-09-26 那张截图的前半段）。
+     */
+    [NOTIFICATION.error]: (params) => {
+      const p = params as {
+        threadId?: string;
+        turnId?: string;
+        willRetry?: boolean;
+        error?: { message?: string };
+      };
+      if (p.willRetry !== true || !p.threadId || !p.turnId) return [];
+      const attempts = retryAttempts(p.error?.message);
+      onUiEvent({
+        type: 'turn-retrying',
+        threadId: p.threadId,
+        turnId: p.turnId,
+        ...attempts,
+      });
       return [];
     },
 

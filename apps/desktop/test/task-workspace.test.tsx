@@ -504,6 +504,22 @@ describe('2.7.3–2.7.5 补齐项', () => {
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
 
+  it('重试中是一行状态，不是失败卡 —— 回合还在跑，读屏也不该被打断', () => {
+    renderWorkspace({ status: 'running', turnRetry: { attempt: 2, maxAttempts: 5 } });
+
+    const line = screen.getByRole('status');
+    expect(line.textContent).toContain('上游断了，正在尝试重新连接');
+    // 次数是给用户的"它在推进、而且有尽头"——没有它，五分钟的转圈和死机没区别
+    expect(line.textContent).toContain('2/5');
+    // **不能**是 alert：那会让读屏打断当前朗读，而且这不是错误
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('解不出次数时只说事，不编数字', () => {
+    renderWorkspace({ status: 'running', turnRetry: {} });
+    expect(screen.getByRole('status').textContent).toBe('上游断了，正在尝试重新连接');
+  });
+
   it('长时间线先只挂载末尾分段，可按需加载更早内容', () => {
     const items = Array.from({ length: 130 }, (_, index): RenderItem => ({
       id: `m-${index}`,

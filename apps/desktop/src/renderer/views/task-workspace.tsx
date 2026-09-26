@@ -352,6 +352,13 @@ export interface TaskWorkspaceProps {
    * 已完成任务加载中画那句等于撒谎。
    */
   readonly historyLoading?: boolean | undefined;
+  /**
+   * 内核正在为这个回合重试上游请求。**在失败卡之前**显示，两者不会同时出现：
+   * 重试成功就被下一条内容顶掉，重试用完才变成失败卡。
+   */
+  readonly turnRetry?:
+    | { readonly attempt?: number | undefined; readonly maxAttempts?: number | undefined }
+    | undefined;
   /** 回合失败要落在对应时间线位置，而不是只出现在全局提示条。 */
   readonly turnFailure?:
     | {
@@ -791,6 +798,23 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               {props.status === 'interrupted' ? (
                 <div className="ew-item ew-item-divider" role="separator">
                   <span>已停止，可在下方继续</span>
+                </div>
+              ) : null}
+
+              {props.turnRetry ? (
+                /*
+                 * 用和「已停止，可在下方继续」同一种分隔行，而不是新做一个组件：
+                 * 它要表达的东西是一样的 —— 一行会被下一个动静顶掉的状态。
+                 * `role="status"` 而不是 `alert`：这不是错误，读屏也不该打断当前朗读。
+                 */
+                <div className="ew-item ew-item-divider" role="status">
+                  <span>
+                    上游断了，正在尝试重新连接
+                    {props.turnRetry.attempt !== undefined &&
+                    props.turnRetry.maxAttempts !== undefined
+                      ? `（${props.turnRetry.attempt}/${props.turnRetry.maxAttempts}）`
+                      : ''}
+                  </span>
                 </div>
               ) : null}
 

@@ -24,6 +24,7 @@ const workspace = join(e2eHome, 'workspace');
 mkdirSync(workspace, { recursive: true });
 
 let heldResponse;
+let failUpstream = false;
 let responseCount = 0;
 const responseBodies = [];
 const gateway = createServer((request, response) => {
@@ -71,6 +72,33 @@ const gateway = createServer((request, response) => {
     responseBodies.push(Buffer.concat(chunks).toString('utf8'));
     responseCount += 1;
     const currentResponse = responseCount;
+    if (failUpstream) {
+      /*
+       * 「上游断了」的样子：HTTP 200 + 流里一条 `response.failed`。
+       * `upstream_disconnected` 是内核**认不出来**的 code，因此落到 `Retryable{message}`
+       * （F32）—— 内核会退避重试，并在重试用完后把这条 message 显示给用户。
+       */
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+      });
+      sendEvent(response, {
+        type: 'response.created',
+        response: { id: `resp_${currentResponse}` },
+      });
+      sendEvent(response, {
+        type: 'response.failed',
+        response: {
+          id: `resp_${currentResponse}`,
+          error: {
+            code: 'upstream_disconnected',
+            message: '与模型服务的连接中断，重试多次仍未成功。',
+          },
+        },
+      });
+      response.end('data: [DONE]\n\n');
+      return;
+    }
     response.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache',
@@ -412,9 +440,73 @@ exporter = "none"
       throw new Error('内核重启后历史或技能根没有恢复。');
     }
 
+    /*
+     * ── 上游断了：内核自动重试 + 界面说出来（2026-09-26 的产品决策）──
+     *
+     * 这一段是**整条链路唯一能被真内核证伪的地方**：
+     *   ① 我们发的 `error.code` 真的落进了内核的"可重试"分支（F32），而不是终止；
+     *   ② 内核重试时发的 `error` + `willRetry` 真的一路到了渲染层（适配层刚订阅它）；
+     *   ③ 重试用完之后，**网关写给用户的那句中文真的显示出来了**
+     *      —— 这正是换掉 `server_is_overloaded` 的全部理由（F33）。
+     * 读源码能读出前两条的形状，读不出它们串起来是否成立。
+     */
+    failUpstream = true;
+    const beforeRetry = responseCount;
+    const retryTask = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '断线重连自检',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-retrying' && event.taskId === ${JSON.stringify(retryTask.threadId)})`,
+        ),
+      '内核在重试，界面却什么都没收到（适配层没订阅 error 通知时就是这个样子）',
+      20_000,
+    );
+    // 真的重试了：同一个回合把网关打了不止一次
+    await waitFor(
+      () => responseCount >= beforeRetry + 2,
+      '内核没有重试上游请求 —— error.code 大概率落到了"终止"那一支',
+      20_000,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-failed' && event.taskId === ${JSON.stringify(retryTask.threadId)})`,
+        ),
+      '重试用完之后没有把失败告诉用户',
+      30_000,
+    );
+    const retryAttempts = responseCount - beforeRetry;
+    /*
+     * 重试要**有尽头**，但尽头不是 `stream_max_retries` 那个数。
+     *
+     * 2026-09-26 实测：设成 2 时一个回合打了 **5～6 次**上游（默认 5 时是 **11 次**）——
+     * 内核在重试用完之后还会**切一次传输通道并把计数清零**
+     * （`core/src/responses_retry.rs:95-111`），于是真实上限大约是设置值的两倍多。
+     * 只读代码会以为是 1+2=3；这条断言的存在就是为了让那个误差被测出来而不是被假设掉。
+     */
+    if (retryAttempts < 2 || retryAttempts > 8) {
+      throw new Error(`重试次数不对：一个回合打了 ${retryAttempts} 次上游（预期 2–8）。`);
+    }
+    const failures = await evaluate(
+      `JSON.stringify(window.__e2eEvents.filter((event) => event.type === 'turn-failed'))`,
+    );
+    if (!failures.includes('重试多次仍未成功')) {
+      throw new Error('重试用完后，网关写给用户的那句话没有到达界面（message 被内核吃掉了）。');
+    }
+    stage('upstream-retry-verified');
+
     process.stdout.write(
       `__EVOWORK_DESKTOP_E2E__${JSON.stringify({
         ok: true,
+        upstreamRetryAttempts: retryAttempts,
         threadId: first.threadId,
         skillPath: skill.path,
         queuedEditPreserved: true,

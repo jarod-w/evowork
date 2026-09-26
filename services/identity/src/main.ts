@@ -15,6 +15,14 @@ function env(name: string): string | undefined {
   return value && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+/** 数值型环境变量。读不懂就当没给 —— 见 `port` 处的注释。 */
+function numberEnv(name: string): number | undefined {
+  const raw = env(name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 export function main(): void {
   const logger = createLogger({
     service: 'identity',
@@ -44,7 +52,8 @@ export function main(): void {
     tenantId: boot.tenantId,
     reason: boot.created ? 'BOOTSTRAP' : 'EXISTING',
   });
-  const port = Number(env('PORT') ?? 8788);
+  // NaN 的 PORT 会让 `listen()` 同步抛，日志里什么都不剩（与网关同一条，见那边的注释）
+  const port = numberEnv('PORT') ?? 8788;
   const host = env('HOST') ?? '127.0.0.1';
   const server = createIdentityServer({
     identity,
