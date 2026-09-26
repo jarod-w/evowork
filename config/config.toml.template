@@ -19,8 +19,16 @@
 
 model_provider = "evowork"
 
-# 这两项是**根键**，必须放在第一个 `[table]` 之前。TOML 进入表后不能再靠空行回到根；
-# 若把它们写在 `[permissions.evowork-workspace]` 之后，内核会判整份配置无效并回退默认值。
+# 这两项是**根键**，必须放在第一个 `[table]` 之前。TOML 进入表后不能再靠空行回到根。
+#
+# 写错的后果**不是"回退默认值"，是每一次 `thread/start` 都失败**（2026-09-26 拿真 app-server
+# 对这份模板实测：把这两行挪到 `[permissions.evowork-workspace]` 之后，thread/start 回 -32600
+# `failed to load configuration: config defines [permissions] profiles but does not set
+# default_permissions`；挪回来立刻就能建任务）。
+#
+# 附带一条容易误导人的事实：两份 E2E 的手写配置长期是错的写法却能跑 —— 不是内核宽容，
+# 是**宿主的迁移把它们悄悄挪回了根**（`service-host.ts` 的 misplacedRootSettings）。
+# 也就是说"跑得起来"证明不了这份配置是对的。
 default_permissions = "evowork-workspace"
 approval_policy = "on-request"
 
