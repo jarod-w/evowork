@@ -297,6 +297,14 @@ export function Composer(props: ComposerProps) {
   const [addOpen, setAddOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [confirmFullAccess, setConfirmFullAccess] = useState(false);
+  /*
+   * 正在编辑的排队项。**不能用 `window.prompt`** —— Electron 直接抛
+   * 「prompt() is not supported.」，于是点 ✎ 之后什么都不会发生，而界面上没有任何提示。
+   * 2026-09-26 由真窗口测试点出来；组件测试不点它，断言型 E2E 走的是
+   * `updateQueuedInput` 这条桥，两边都碰不到这颗按钮。
+   * 用 Dialog 与任务重命名保持同一套做法（sidebar.tsx 的「名称」）。
+   */
+  const [editingQueued, setEditingQueued] = useState<{ id: string; text: string } | null>(null);
   const [searchedMentions, setSearchedMentions] = useState<readonly MentionCandidate[]>([]);
 
   useEffect(() => {
@@ -444,10 +452,7 @@ export function Composer(props: ComposerProps) {
                     type="button"
                     className="ew-queue-remove"
                     aria-label={`编辑排队项：${q.text}`}
-                    onClick={() => {
-                      const next = window.prompt('编辑排队中的输入', q.text);
-                      if (next?.trim()) props.onQueueUpdate?.(q.id, next.trim());
-                    }}
+                    onClick={() => setEditingQueued({ id: q.id, text: q.text })}
                   >
                     ✎
                   </button>
@@ -813,6 +818,32 @@ export function Composer(props: ComposerProps) {
           />
           立即插话
         </label>
+      ) : null}
+
+      {editingQueued ? (
+        <Dialog
+          title="编辑排队中的输入"
+          confirmLabel="保存"
+          confirmDisabled={editingQueued.text.trim() === ''}
+          onCancel={() => setEditingQueued(null)}
+          onConfirm={() => {
+            props.onQueueUpdate?.(editingQueued.id, editingQueued.text.trim());
+            setEditingQueued(null);
+          }}
+        >
+          <label className="ew-dialog-field">
+            内容
+            <input
+              aria-label="排队项内容"
+              value={editingQueued.text}
+              onChange={(event) =>
+                setEditingQueued((current) =>
+                  current ? { ...current, text: event.target.value } : current,
+                )
+              }
+            />
+          </label>
+        </Dialog>
       ) : null}
 
       {confirmFullAccess ? (

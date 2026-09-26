@@ -595,6 +595,32 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
     expect(onQueueRemove).toHaveBeenCalledWith('q1');
   });
 
+  /**
+   * **「编辑排队项」不许用 `window.prompt`。**
+   *
+   * Electron 根本不实现它 —— 调用直接抛「prompt() is not supported.」，
+   * 于是用户点 ✎ 之后**什么都不会发生**，界面上也没有任何提示。
+   * 2026-09-26 由真窗口测试点出来：组件测试当时不点这颗按钮，而断言型 E2E 走的是
+   * `updateQueuedInput` 那条桥，两边都碰不到它。
+   *
+   * 所以这条断言钉的是**机制**（用应用内对话框、且绝不碰 `prompt`），不只是结果 ——
+   * 改回 `prompt` 的话结果在 jsdom 里看着也能对（jsdom 有这个函数），只有 Electron 里才炸。
+   */
+  it('「编辑排队项」走应用内对话框，绝不调 window.prompt（Electron 里它直接抛错）', () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
+    const onQueueUpdate = vi.fn();
+    renderComposer({ queued: [{ id: 'q1', text: '再加一页封面' }], onQueueUpdate });
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑排队项：再加一页封面' }));
+    const field = screen.getByRole('textbox', { name: '排队项内容' });
+    fireEvent.change(field, { target: { value: '改成两页封面' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(onQueueUpdate).toHaveBeenCalledWith('q1', '改成两页封面');
+    expect(prompt, 'window.prompt 在 Electron 里会抛错，这条路不能走').not.toHaveBeenCalled();
+    prompt.mockRestore();
+  });
+
   it('「立即插话」只在执行中出现，且 tooltip 说清它与排队的差别', () => {
     const { rerender } = render(
       <Composer value="" onChange={() => {}} onSend={() => {}} runState="idle" />,
