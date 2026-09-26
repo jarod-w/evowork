@@ -25,6 +25,16 @@ mkdirSync(workspace, { recursive: true });
 
 let heldResponse;
 let failUpstream = false;
+/**
+ * 下一次模型请求怎么答（一次性）。
+ *
+ * 真模型的行为没法脚本化，而「停止 / 插话 / 追问」这三条链路都要求模型在**特定时刻**
+ * 做特定的事。所以由测试逐次指定："这一次把流挂住"、"这一次调这个工具"。
+ * 用完即清，后面的请求回到默认的"正常回一句话"。
+ */
+let nextScript;
+/** 被挂住的那条响应；收尾时要放行，不然进程退不掉 */
+let releaseHeld;
 let responseCount = 0;
 const responseBodies = [];
 const gateway = createServer((request, response) => {
@@ -72,6 +82,56 @@ const gateway = createServer((request, response) => {
     responseBodies.push(Buffer.concat(chunks).toString('utf8'));
     responseCount += 1;
     const currentResponse = responseCount;
+    if (nextScript) {
+      const script = nextScript;
+      nextScript = undefined;
+      const id = `resp_${currentResponse}`;
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+      });
+      sendEvent(response, { type: 'response.created', response: { id } });
+      if (script.kind === 'hold') {
+        // 回一句话就**挂着不收尾** —— 回合会一直"在跑"，正好用来点停止 / 插话
+        sendEvent(response, {
+          type: 'response.output_item.added',
+          output_index: 0,
+          item: { type: 'message', id: `msg_${currentResponse}`, role: 'assistant', content: [] },
+        });
+        sendEvent(response, {
+          type: 'response.output_text.delta',
+          item_id: `msg_${currentResponse}`,
+          output_index: 0,
+          content_index: 0,
+          delta: '正在写……',
+        });
+        releaseHeld = () => {
+          sendEvent(response, {
+            type: 'response.completed',
+            response: { id, end_turn: true },
+          });
+          response.end('data: [DONE]\n\n');
+          releaseHeld = undefined;
+        };
+        return;
+      }
+      // 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它
+      sendEvent(response, {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'function_call',
+          id: `fc_${currentResponse}`,
+          name: script.tool,
+          arguments: JSON.stringify(script.args),
+          call_id: `call_${currentResponse}`,
+        },
+      });
+      // `end_turn: false`：工具调用之后回合还要继续
+      sendEvent(response, { type: 'response.completed', response: { id, end_turn: false } });
+      response.end('data: [DONE]\n\n');
+      return;
+    }
     if (failUpstream) {
       /*
        * 「上游断了」的样子：HTTP 200 + 流里一条 `response.failed`。
@@ -450,6 +510,161 @@ exporter = "none"
      *      —— 这正是换掉 `server_is_overloaded` 的全部理由（F33）。
      * 读源码能读出前两条的形状，读不出它们串起来是否成立。
      */
+    /*
+     * ── 协议边界的四条链路（356a93f / 8f20cbb 只对**假内核**验过）──
+     *
+     * 那几处缺陷的共同点是"假内核收什么都说好"：漏一个必填字段会被真内核
+     * 打回 -32600，回复形状不对则**连错都不报**，内核 `unwrap_or_else` 兜一个默认值。
+     * 所以这一段全部用真 app-server 跑，而且**断言的是后果**（停下来了没有、
+     * 插的话有没有进到模型请求里、答案有没有到工具），不是"发出去了没有"。
+     */
+    await evaluate(
+      `window.__e2eApprovals = []; window.evowork.onPendingApprovals((list) => { window.__e2eApprovals = list; }); true`,
+    );
+
+    // ① 停止：`turn/interrupt` 少了 turnId 的话内核只回 -32600，按钮永远点不动
+    nextScript = { kind: 'hold' };
+    const stopTask = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '写一份很长的报告',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-started' && event.taskId === ${JSON.stringify(stopTask.threadId)})`,
+        ),
+      '回合没有开始，停不了',
+      20_000,
+    );
+    // 真内核**等到 TurnAborted 才应答**这个请求 —— 它能返回本身就是这条链路通了
+    await evaluate(`window.evowork.interrupt(${JSON.stringify(stopTask.threadId)})`);
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-completed' && event.taskId === ${JSON.stringify(stopTask.threadId)} && event.status === 'interrupted')`,
+        ),
+      '「停止」没有真的停下这个回合',
+      20_000,
+    );
+    if (releaseHeld) releaseHeld();
+    stage('interrupt-verified');
+
+    // ② 立即插话：`turn/steer` 少了 expectedTurnId 同样是 -32600
+    nextScript = { kind: 'hold' };
+    const steerTask = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '列个提纲',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-started' && event.taskId === ${JSON.stringify(steerTask.threadId)})`,
+        ),
+      '回合没有开始，插不了话',
+      20_000,
+    );
+    const steerMarker = '插话：只要三条';
+    const steerResult = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        threadId: steerTask.threadId,
+        text: steerMarker,
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+        steer: true,
+      })})`,
+    );
+    if (steerResult?.notes?.length) {
+      // 适配层在"没有活动回合"时会改成排队并说明 —— 那说明这条链路没走成
+      throw new Error(`立即插话被改成了排队：${JSON.stringify(steerResult.notes)}`);
+    }
+    if (releaseHeld) releaseHeld();
+    await waitFor(
+      () => responseBodies.some((body) => body.includes(steerMarker)),
+      '插话的内容没有进到模型请求里（expectedTurnId 不对时内核直接打回）',
+      20_000,
+    );
+    stage('steer-verified');
+
+    /*
+     * ③ 追问与权限审批：**在产品当前配置下走不到**，所以这里钉住"走不到"这件事。
+     *
+     * 356a93f 修的两处回复形状（追问按问题 id 归位、权限回 `{permissions, scope}`）
+     * 都是对的，但它们伺候的两条链路今天都发不起来：
+     *   · `request_user_input` **只在 Plan 模式可用**（`tools/src/tool_config.rs:17-26`
+     *     + `config_types.rs:700`），而 EvoWork 三档模式全是 `kernelMode: 'default'`；
+     *     另一条路 `default_mode_request_user_input` 是 UnderDevelopment、默认关。
+     *   · `request_permissions` 工具要 `Feature::RequestPermissionsTool`
+     *     （`features/src/lib.rs:1219`，UnderDevelopment、默认关），所以根本不在工具清单里。
+     *
+     * 断言写成"现在是走不到的"而不是跳过：哪天内核把这两个开关翻过来，
+     * 或者我们加了 Plan 模式，这条会**红**，那时候才轮到去验那两张卡真的能用。
+     * 跳过的写法在那一天什么都不会说。
+     */
+    nextScript = {
+      tool: 'request_user_input',
+      args: {
+        questions: [
+          {
+            id: 'fmt',
+            header: '交付格式',
+            question: '这份东西要 PPT 还是文档？',
+            options: [
+              { label: 'PPT（推荐）', description: '适合汇报' },
+              { label: '文档', description: '适合存档' },
+            ],
+          },
+        ],
+      },
+    };
+    const askTask = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '先问我一个问题再动手',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-completed' && event.taskId === ${JSON.stringify(askTask.threadId)})`,
+        ),
+      '追问那一轮没有跑完',
+      30_000,
+    );
+    const toolOutput = (responseBodies.at(-1) ?? '').includes('request_user_input is unavailable')
+      ? 'unavailable-in-default-mode'
+      : 'ran';
+    if (toolOutput !== 'unavailable-in-default-mode') {
+      throw new Error(
+        'request_user_input 现在能跑了 —— 追问审批卡因此变成活路径，去验一遍它的 questions[] 与逐题答案（356a93f 只对假内核验过）。',
+      );
+    }
+    const approvalsAfterAsk = await evaluate(`window.__e2eApprovals.length`);
+    if (approvalsAfterAsk !== 0) {
+      throw new Error('追问竟然弹出了审批卡 —— 与上面那条互相矛盾，说明判据写错了。');
+    }
+    const offeredTools = JSON.parse(responseBodies[0] ?? '{}').tools ?? [];
+    if (offeredTools.some((tool) => tool?.name === 'request_permissions')) {
+      throw new Error(
+        'request_permissions 进工具清单了 —— 权限审批卡因此变成活路径，去验一遍它回的 {permissions, scope}（同上，只对假内核验过）。',
+      );
+    }
+    stage('approval-paths-pinned');
+
     failUpstream = true;
     const beforeRetry = responseCount;
     const retryTask = await evaluate(
