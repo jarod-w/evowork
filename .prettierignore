@@ -37,3 +37,8 @@ plugins/hooks/*/vendor/
 .superpowers/
 
 plugins/connectors/*/vendor/
+
+# 内核线上形状的判别式清单：由 scripts/kernel-contract.mjs --write 生成，
+# 并由同一个脚本逐字节比对新鲜度。交给 prettier 会让两道门互相打架
+# （生成 → prettier 重排 → 新鲜度检查失败），与 THIRD_PARTY_NOTICES 同理。
+packages/protocol/src/kernel-wire.generated.ts

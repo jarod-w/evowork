@@ -25,7 +25,13 @@
  *   ② 递归解析 `app-server-protocol/src` 下的全部 `.rs` 结构体，按 `Option<>` / `#[serde(default)]` /
  *      `rename_all` / `rename` 判定每个字段**在线上是否必填、线上叫什么名字**；
  *   ③ 解析枚举，拿到每个变体**在线上的拼法**（snake_case / camelCase / kebab-case / 显式 rename）；
- *   ④ 把下面 `OUTGOING` 这张表逐条对过去。
+ *   ④ 把下面 `OUTGOING` 这张表逐条对过去；
+ *   ⑤ **再往下一层**：`checkIncoming` 只验通知的顶层字段名在不在，字段**装的值**是什么
+ *      形状它不看 —— 2026-09-26 的 `ThreadStatus` 就从这儿钻过去了（内部标签联合被写成
+ *      裸字符串 + 嵌套对象，而字段名那一层全对）。所以 `checkMirrored` 做两件事：
+ *      凡是经我们读的字段传进来的内核枚举都必须登记（镜像或写明理由的豁免），
+ *      且把它们的线上变体生成进 `packages/protocol/src/kernel-wire.generated.ts`，
+ *      **由 tsc 证明我们的类型接受那些形状**。
  *
  * ## 为什么是一张手写的表，而不是去解析我们的 TS
  *
@@ -36,13 +42,15 @@
  * 的引用，少一条就失败 —— 新增一个调用点必须在这里登记。
  *
  * 用法：
- *   node scripts/kernel-contract.mjs            # 人读的报告
+ *   node scripts/kernel-contract.mjs                  # 人读的报告
  *   node scripts/kernel-contract.mjs --json
+ *   node scripts/kernel-contract.mjs --write          # 重新生成线上形状的判别式清单
+ *   node scripts/kernel-contract.mjs --debug-reachable # 列出经我们读的字段传进来的内核枚举
  *   EVOWORK_KERNEL_DIR=/path/to/codex node scripts/kernel-contract.mjs
  *
  * 退出码：0 = 全部对得上；1 = 有对不上的；2 = 读不到内核（本地没签出时**不失败**，只提示）。
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -186,6 +194,43 @@ const INCOMING = {
 };
 
 /**
+ * 我们在 `packages/protocol` 里**手写镜像**的内核枚举。
+ *
+ * `checkIncoming` 只看通知的顶层字段名在不在，**字段装的值是什么形状它不看**。
+ * 2026-09-26 的 `ThreadStatus` 就从这一层钻过去了：`thread/status/changed` 的
+ * `threadId` / `status` 两个名字全对，而 `status` 的编码（内部标签联合 vs 裸字符串）
+ * 我们四个变体全写错 —— 后果是运行中的任务在投影里变成 `interrupted`、追问不入队。
+ *
+ * 这里登记的每一个，都会被生成进 `packages/protocol/src/kernel-wire.generated.ts`，
+ * **由 tsc 去证明我们的类型接受内核真实发出的形状**。为什么不在这里解析我们的 TS：
+ * 本文件头注释那条理由 —— 正则读 TS 会误报，而会误报的检查最后一定被关掉。
+ * 让类型检查器当裁判，既没有误报，也不用维护第二套解析。
+ */
+const MIRRORED_ENUMS = {
+  ThreadStatus: 'ThreadStatus',
+  TurnStatus: 'TurnStatus',
+  PatchChangeKind: 'PatchChangeKind',
+  ThreadItem: 'ThreadItem',
+};
+
+/**
+ * 经我们读的字段传进来、但**我们刻意不建模**的内核枚举。每条都要写清为什么。
+ *
+ * 豁免不是"先放着" —— 它是一句承诺：**我们不按这个枚举的变体分支**。
+ * 哪天代码开始 `=== 'xxx'` 地比较它的取值，就该从这里挪进上面那张表。
+ */
+const MIRRORED_EXEMPT = {
+  CodexErrorInfo:
+    '只透传给日志与错误文案，不按变体分支。18 个变体，建模等于把内核的错误分类抄一遍（R2：它还在动）',
+  SessionSource: '只读 thread 摘要里的其余字段，不看来源分类',
+  ThreadSource: '同上',
+  ThreadHistoryMode: '不读它 —— 历史模式由我们自己的会话恢复逻辑决定（09 §3.2）',
+  TurnItemsView:
+    '我们**发**它（`thread/turns/list` 的 `itemsView`），出站那条已经在 OUTGOING 里验过',
+  TurnPlanStepStatus: '计划步骤状态直接渲染成文案，不按变体分支',
+};
+
+/**
  * 我们从服务端请求的 **params** 里读哪些字段。
  *
  * 审批卡画错就是从这里开始的：读 `params.question`（内核发的是 `questions`）→
@@ -296,6 +341,7 @@ function attributesAbove(lines, index) {
 function parseProtocol() {
   const structs = new Map();
   const enums = new Map();
+  const enumMeta = new Map();
   for (const file of rustFiles(PROTOCOL_SRC)) {
     const lines = readFileSync(file, 'utf8').split('\n');
     for (let i = 0; i < lines.length; i += 1) {
@@ -347,10 +393,28 @@ function parseProtocol() {
         structs.set(structMatch[1], { fields, opaque: false });
       } else {
         const variants = [];
+        const variantShapes = [];
         let pending = [];
+        let inVariant = null;
         for (const raw of body) {
           const s = raw.trim();
           if (!s || s.startsWith('//')) continue;
+          // 结构体式变体的花括号体：逐字段收，`}` 收尾
+          if (inVariant) {
+            if (s.startsWith('}')) {
+              inVariant = null;
+              continue;
+            }
+            if (s.startsWith('#[')) continue;
+            const f = /^(\w+)\s*:\s*(.+?),?$/.exec(s);
+            if (f) {
+              inVariant.fields.push({
+                wire: fieldWire(f[1], inVariant.renameAll ?? renameAll),
+                rust: f[2].trim(),
+              });
+            }
+            continue;
+          }
           if (s.startsWith('#[')) {
             pending.push(s);
             continue;
@@ -363,13 +427,30 @@ function parseProtocol() {
           const variantAttrs = pending.join(' ');
           pending = [];
           const rename = /\brename\s*=\s*"([^"]+)"/.exec(variantAttrs)?.[1];
-          variants.push(rename ?? variantWire(vm[1], renameAll));
+          const wire = rename ?? variantWire(vm[1], renameAll);
+          variants.push(wire);
+          const shape = {
+            wire,
+            fields: [],
+            tuple: vm[2] === '(',
+            renameAll: /rename_all\s*=\s*"([^"]+)"/.exec(variantAttrs)?.[1],
+          };
+          variantShapes.push(shape);
+          if (vm[2] === '{') inVariant = shape;
         }
         enums.set(enumMatch[1], variants);
+        enumMeta.set(enumMatch[1], {
+          // serde 的三种标签方式。**这一层此前没人看** —— 2026-09-26 的 `ThreadStatus`
+          // 就是内部标签联合被我们写成了裸字符串 + 嵌套对象，而字段名那一层全对。
+          tag: /serde\([^)]*\btag\s*=\s*"([^"]+)"/.exec(attrs)?.[1],
+          content: /serde\([^)]*\bcontent\s*=\s*"([^"]+)"/.exec(attrs)?.[1],
+          untagged: /serde\([^)]*\buntagged\b/.test(attrs),
+          variants: variantShapes,
+        });
       }
     }
   }
-  return { structs, enums };
+  return { structs, enums, enumMeta };
 }
 
 /** 方法名 → 参数/响应结构体名。三张宏表（请求 / 服务端请求 / 通知）用的是同一种写法。 */
@@ -500,6 +581,139 @@ function checkIncoming({ structs, notifications }, problems) {
   }
 }
 
+/**
+ * 经**我们读的字段**传进来的内核枚举，逐个列出来。
+ *
+ * `checkIncoming` 只验通知的顶层字段名在不在，**那个字段装的值是什么形状，它不看**。
+ * 2026-09-26 的 `ThreadStatus` 正是从这一层钻过去的：`thread/status/changed` 的
+ * `threadId` / `status` 两个名字全对，而 `status` 的编码（内部标签联合）我们写错了，
+ * 于是运行中的任务在投影里变成 `interrupted`，追问不入队。
+ */
+function reachableEnums({ structs, enums, notifications }) {
+  const hits = new Map();
+  const note = (name, where) => {
+    if (!enums.has(name)) return;
+    if (!hits.has(name)) hits.set(name, []);
+    hits.get(name).push(where);
+  };
+  for (const [method, reads] of Object.entries(INCOMING)) {
+    const structName = notifications.get(method);
+    if (!structName) continue;
+    for (const field of reads) {
+      const rust = rustTypeOf(structs, structName, field);
+      if (rust) note(rust, `${method}.${field}`);
+      // 再下探一层：字段是结构体时，它自己的字段里也可能有枚举
+      const nested = structs.get(rust ?? '');
+      if (nested && !nested.opaque) {
+        for (const f of nested.fields) {
+          const t = rustTypeOf(structs, rust, f.wire);
+          if (t) note(t, `${method}.${field}.${f.wire}`);
+        }
+      }
+    }
+  }
+  return hits;
+}
+
+const GENERATED = join(REPO_ROOT, 'packages/protocol/src/kernel-wire.generated.ts');
+
+/**
+ * 从内核的枚举定义生成「线上判别式清单」，交给 tsc 去验。
+ *
+ * 两种形状分开处理：
+ *   · **内部标签联合**（`#[serde(tag = "t")]`）→ 用 `Discriminant<T>` 把**我们自己类型**里的
+ *     判别式取出来，再把内核的变体名往里赋值。我们要是换了判别键（或者压根没用联合），
+ *     `Discriminant<T>` 会塌成 `never`，非空数组当场赋不进去 —— 这正是 `ThreadStatus`
+ *     当初的失败形状。少一个变体同样红。
+ *   · **外部标签的纯单元枚举** → 线上就是裸字符串，直接 `T[]`。
+ *
+ * 带载荷的变体**不构造完整字面量**：那要给每个必填字段编一个值，编错了就是误报。
+ * 判别式这一层已经够抓这一类缺陷，而且不会错。
+ */
+function generateWireSamples({ enums, enumMeta }) {
+  const out = [
+    '// 由 `node scripts/kernel-contract.mjs --write` 从内核源码生成，**不要手改**。',
+    '//',
+    '// 它的作用不是被谁 import，而是让 `tsc` 证明：我们手写的协议类型',
+    '// 接受内核**真实发出**的那些形状。改内核签出后重新生成即可。',
+    '//',
+    `// 内核签出：${kernelHead()}`,
+    '',
+    'import type {',
+  ];
+  const names = Object.values(MIRRORED_ENUMS).sort();
+  for (const n of names) out.push(`  ${n},`);
+  out.push("} from './types.js';", '');
+  out.push('/** 从一个内部标签联合里取出它的判别式取值。我们没用联合时它是 `never`。 */');
+  out.push('type Discriminant<T> = T extends { readonly type: infer K } ? K : never;', '');
+
+  for (const [rustName, tsName] of Object.entries(MIRRORED_ENUMS)) {
+    const variants = enums.get(rustName);
+    const meta = enumMeta.get(rustName) ?? {};
+    if (!variants) continue;
+    const list = variants.map((v) => `'${v}'`).join(', ');
+    const constName = rustName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
+    if (meta.tag === 'type') {
+      out.push(`/** 内核 \`${rustName}\`：内部标签联合，判别键 \`type\`。 */`);
+      out.push(`export const ${constName}_VARIANTS: Discriminant<${tsName}>[] = [${list}];`);
+    } else if (meta.tag || meta.untagged) {
+      out.push(
+        `// 内核 \`${rustName}\` 的标签方式是 ${meta.untagged ? 'untagged' : `tag=${meta.tag}`}，`,
+      );
+      out.push('// 生成器目前只处理 `tag = "type"` 与纯单元枚举。要覆盖它请先扩生成器。');
+    } else {
+      out.push(`/** 内核 \`${rustName}\`：外部标签的单元枚举，线上是裸字符串。 */`);
+      out.push(`export const ${constName}_VARIANTS: ${tsName}[] = [${list}];`);
+    }
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+/** 内核当前签出，写进生成文件的头部 —— 生成物要说得清自己是从哪来的。 */
+function kernelHead() {
+  const head = join(KERNEL_DIR, '.git/HEAD');
+  try {
+    const ref = readFileSync(head, 'utf8').trim();
+    const m = /^ref: (.+)$/.exec(ref);
+    if (!m) return ref.slice(0, 12);
+    return readFileSync(join(KERNEL_DIR, '.git', m[1]), 'utf8')
+      .trim()
+      .slice(0, 12);
+  } catch {
+    return '未知';
+  }
+}
+
+/**
+ * 两件事：① 可达的内核枚举都登记了吗 ② 生成文件是不是最新的。
+ *
+ * ① 这条规则本身就会自动抓到当初的 `ThreadStatus` —— 它经
+ * `thread/status/changed.status` 传进来，而当时它既不在镜像表也不在豁免表里。
+ */
+function checkMirrored(parsed, problems) {
+  const hits = reachableEnums(parsed);
+  for (const [name, where] of hits) {
+    if (MIRRORED_ENUMS[name] || MIRRORED_EXEMPT[name]) continue;
+    problems.push({
+      method: where[0],
+      kind: 'unpinned-enum',
+      detail:
+        `内核枚举 \`${name}\` 经这个字段传进来，但既没镜像也没豁免 —— ` +
+        '它的线上形状没有任何东西在守 —— `ThreadStatus` 当初就是这么错过去的',
+    });
+  }
+  const want = generateWireSamples(parsed);
+  const have = existsSync(GENERATED) ? readFileSync(GENERATED, 'utf8') : '';
+  if (have !== want) {
+    problems.push({
+      method: 'kernel-wire.generated.ts',
+      kind: 'stale-generated',
+      detail: '内核的变体清单变了。跑 `node scripts/kernel-contract.mjs --write` 重新生成',
+    });
+  }
+}
+
 function checkReplies({ structs, requests }, problems) {
   for (const [method, sends] of Object.entries(REPLIES)) {
     const entry = requests.get(method);
@@ -601,13 +815,28 @@ function main() {
     process.exit(0);
   }
 
-  const { structs, enums } = parseProtocol();
+  const { structs, enums, enumMeta } = parseProtocol();
   const { requests, notifications } = parseMethodTables();
+  if (process.argv.includes('--write')) {
+    writeFileSync(GENERATED, generateWireSamples({ structs, enums, enumMeta, notifications }));
+    console.log(`✅ 已生成 ${GENERATED.replace(REPO_ROOT + '/', '')}`);
+    process.exit(0);
+  }
   const problems = [];
+  if (process.argv.includes('--debug-reachable')) {
+    const hits = reachableEnums({ structs, enums, notifications });
+    for (const [name, where] of [...hits].sort()) {
+      const meta = enumMeta.get(name) ?? {};
+      const style = meta.untagged ? 'untagged' : meta.tag ? `tag=${meta.tag}` : 'external';
+      console.log(`${name}  [${style}]  变体 ${enums.get(name).length}  ← ${where[0]}`);
+    }
+    process.exit(0);
+  }
   checkOutgoing({ structs, enums, requests }, problems);
   checkIncoming({ structs, notifications }, problems);
   checkReplies({ structs, requests }, problems);
   checkRequestReads({ structs, requests }, problems);
+  checkMirrored({ structs, enums, enumMeta, notifications }, problems);
   checkCoverage(methodConstants(), problems);
 
   if (json) {
@@ -616,7 +845,8 @@ function main() {
     console.log('\n# 协议形状自检（K2）\n');
     console.log(
       `请求 ${Object.keys(OUTGOING).length} 个 · 通知 ${Object.keys(INCOMING).length} 条 · ` +
-        `回复 ${Object.keys(REPLIES).length} 个 · 内核结构体 ${structs.size} 个\n`,
+        `回复 ${Object.keys(REPLIES).length} 个 · 镜像枚举 ${Object.keys(MIRRORED_ENUMS).length} 个` +
+        `（豁免 ${Object.keys(MIRRORED_EXEMPT).length}）· 内核结构体 ${structs.size} 个\n`,
     );
     if (problems.length === 0) {
       console.log('✅ 我们发的形状和内核接受的形状一致。\n');
