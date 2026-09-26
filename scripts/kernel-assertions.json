@@ -332,6 +332,29 @@
         "AgentInput::Message"
       ],
       "impact": "设计 04 §5.6；运行中 send_message，空闲 followup_task"
+    },
+    {
+      "id": "F30",
+      "summary": "内核显式忽略 response.in_progress（走 trace! 分支，不产生任何 ResponseEvent）→ 网关可以用它当心跳帧",
+      "file": "codex-rs/codex-api/src/sse/responses.rs",
+      "needle": "\"codex.response.metadata\"",
+      "line": 531,
+      "scopeLines": { "before": 2, "after": 14 },
+      "mustContain": [
+        "\"response.in_progress\"",
+        "trace!(\"unhandled responses event: {}\", event.kind)"
+      ],
+      "impact": "services/gateway 的 EVENT.inProgress 心跳；2026-09-26 已用真实 app-server E2E 实测（帧进流里，回合照常完成，时间线上不出现它）"
+    },
+    {
+      "id": "F31",
+      "summary": "内核读 SSE 的循环有空闲超时：默认 300s 一帧都没收到就发 idle timeout waiting for SSE，整个回合失败",
+      "file": "codex-rs/codex-api/src/sse/responses.rs",
+      "needle": "response = timeout(idle_timeout, stream.next()) => response,",
+      "line": 591,
+      "scopeLines": { "before": 2, "after": 30 },
+      "mustContain": ["idle timeout waiting for SSE"],
+      "impact": "网关必须自己保证连接上一直有帧（server.ts 的心跳）+ 自己先一步判上游死掉（pipeline 的看门狗）"
     }
   ]
 }

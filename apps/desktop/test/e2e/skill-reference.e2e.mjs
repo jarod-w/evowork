@@ -78,7 +78,16 @@ const gateway = createServer((request, response) => {
     });
     const id = `resp_${currentResponse}`;
     const itemId = `msg_${currentResponse}`;
+    /*
+     * 心跳帧（F30）。真网关在"活着但没东西可发"时会往流里塞它，靠它让内核那个
+     * 300 秒的空闲计时器重来（F31）。这里把它混进 E2E 的假网关，是为了让
+     * **真内核**替我们证明两件事：① 它不会因为这个类型报错 ② 它不会把它变成
+     * 时间线上的一条 item（下面那些对话断言就是证据）。
+     * 读源码只能读到"它在忽略清单里"，这条才是实测。
+     */
+    sendEvent(response, { type: 'response.in_progress', response: { id } });
     sendEvent(response, { type: 'response.created', response: { id } });
+    sendEvent(response, { type: 'response.in_progress', response: { id } });
     sendEvent(response, {
       type: 'response.output_item.added',
       output_index: 0,
@@ -92,6 +101,7 @@ const gateway = createServer((request, response) => {
       delta: `E2E response ${currentResponse}`,
     });
     const finish = () => {
+      sendEvent(response, { type: 'response.in_progress', response: { id } });
       sendEvent(response, {
         type: 'response.output_item.done',
         output_index: 0,
@@ -366,6 +376,15 @@ exporter = "none"
     const beforeRestartText = JSON.stringify(beforeRestart);
     if (!beforeRestartText.includes(editedText) || !beforeRestartText.includes(skill.path)) {
       throw new Error('完成后的真实任务历史没有保留编辑文本和技能引用。');
+    }
+    /*
+     * F30 的实测面：心跳帧（上面假网关发的 `response.in_progress`）**不能**变成
+     * 时间线上的条目。内核的状态枚举是 camelCase（`inProgress`），带下划线的
+     * `in_progress` 只可能来自那个事件类型本身 —— 出现了就说明忽略清单不再成立，
+     * 而那意味着真网关的心跳会在每个任务里刷出一串垃圾条目。
+     */
+    if (beforeRestartText.includes('in_progress')) {
+      throw new Error('心跳帧进了时间线：F30（内核忽略 response.in_progress）已被上游推翻。');
     }
     stage('queue-history-verified');
 

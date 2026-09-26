@@ -257,6 +257,163 @@ describe('完整链路', () => {
   });
 });
 
+describe('上游不说话时，发现它的必须是网关', () => {
+  /**
+   * 一个会"卡住"的上游：先按脚本吐几行，然后一直挂着，直到被 abort 才抛。
+   *
+   * 最后那段是照 undici 的真实行为写的：`fetch` 的流在 abort 之后会 reject。
+   * 这条测试因此同时守着一件不显眼的事 —— 看门狗放弃那一片之后**必须接住它的拒绝**，
+   * 否则就是一个没人接的 promise rejection，而那在 Node 里是直接把网关进程带走。
+   */
+  function stallingProvider(script: {
+    readonly lines?: readonly string[];
+    readonly gapMs?: number;
+    readonly seen?: (signal: AbortSignal | undefined) => void;
+  }): Provider {
+    return {
+      id: 'stall',
+      async send(_request, _config, signal) {
+        script.seen?.(signal);
+        return {
+          status: 200,
+          headers: {},
+          lines: (async function* () {
+            for (const line of script.lines ?? []) {
+              if (script.gapMs) await new Promise((r) => setTimeout(r, script.gapMs));
+              yield line;
+            }
+            await new Promise((_resolve, reject) => {
+              signal?.addEventListener('abort', () => reject(new Error('aborted')));
+            });
+          })(),
+        };
+      },
+      mapError: (_status, body) => ({ message: String(body) }),
+    };
+  }
+
+  it('上游一个字都不回 → 网关自己判失败，给的是**能显示给用户的中文原因**，不是内核那句 idle timeout', async () => {
+    let signal: AbortSignal | undefined;
+    const provider = stallingProvider({
+      seen: (s) => {
+        signal = s;
+      },
+    });
+
+    const events = await collect(
+      runPipeline(
+        request(),
+        { requestId: 'req_1' },
+        { ...deps(provider), upstreamFirstChunkMs: 20, upstreamIdleMs: 20 },
+      ),
+    );
+
+    const failed = events.find((e) => e.type === EVENT.failed) as unknown as {
+      response: { error: { code: string; message: string } };
+    };
+    expect(failed).toBeDefined();
+    /*
+     * **这个 code 决定的是"用户能不能看到上一行那句话"**，不是我们内部怎么分类。
+     * `invalid_prompt` 是内核唯一"终止 + 原样显示 message"的通道（见管道里的长注释）；
+     * 换成 `server_is_overloaded` 的话用户看到的是内核那句
+     * "Selected model is at capacity. Please try a different model."，
+     * 一次上游卡死会被说成"模型满了，换一个吧"。
+     */
+    expect(failed.response.error.code).toBe('invalid_prompt');
+    expect(failed.response.error.message).toContain('中断');
+    expect(failed.response.error.message).toContain('重试');
+    // 上游必须被真的掐断：只报失败不掐，那条请求还在上游那边计费
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('首片的预算比流中途宽 —— 慢的首个 token 不该被当成"连接死了"', async () => {
+    const provider = stallingProvider({
+      lines: [`data: ${JSON.stringify({ choices: [{ delta: { content: '好的' } }] })}`],
+      gapMs: 40,
+    });
+
+    const events = await collect(
+      runPipeline(
+        request(),
+        { requestId: 'req_1' },
+        // 首片给 2 秒、流中途只给 10ms：第一片等了 40ms 仍然要收下
+        { ...deps(provider), upstreamFirstChunkMs: 2_000, upstreamIdleMs: 10 },
+      ),
+    );
+
+    expect(events.map((e) => e.type)).toContain(EVENT.outputTextDelta);
+    // 第一片之后上游就哑了 → 这时才轮到那个 10ms 的预算
+    expect(events.at(-1)?.type).toBe(EVENT.failed);
+  });
+
+  it('看门狗关掉（0）时行为与从前一致：一直等下去', async () => {
+    const provider = stallingProvider({
+      lines: [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '好的' }, finish_reason: 'stop' }] })}`,
+        'data: [DONE]',
+      ],
+      gapMs: 30,
+    });
+
+    const events = await collect(
+      runPipeline(
+        request(),
+        { requestId: 'req_1' },
+        { ...deps(provider), upstreamFirstChunkMs: 0, upstreamIdleMs: 0 },
+      ),
+    );
+    expect(events.at(-1)?.type).toBe(EVENT.completed);
+  });
+
+  it('提前离开时上游迭代器被关掉（`for await` 本来替我们做的那一下）', async () => {
+    let closed = false;
+    const provider: Provider = {
+      id: 'closes',
+      async send() {
+        return {
+          status: 200,
+          headers: {},
+          lines: (async function* () {
+            try {
+              yield `data: ${JSON.stringify({ choices: [{ delta: { content: '好的' } }] })}`;
+              // 上游还有的是话要说，但我们会在 [DONE] 那一帧提前离开
+              yield 'data: [DONE]';
+              yield `data: ${JSON.stringify({ choices: [{ delta: { content: '还没完' } }] })}`;
+            } finally {
+              closed = true;
+            }
+          })(),
+        };
+      },
+      mapError: (_status, body) => ({ message: String(body) }),
+    };
+
+    await collect(runPipeline(request(), { requestId: 'req_1' }, deps(provider)));
+
+    /*
+     * 关不掉的后果不是报错，是**慢性泄漏**：每一次提前离开都留一条还开着的上游连接
+     * （真实 provider 里那是一个没取消的 fetch body）。
+     */
+    expect(closed).toBe(true);
+  });
+
+  it('停掉之后日志里记的是原因与等了多久，没有正文', async () => {
+    const sink = memorySink();
+    const logger = createLogger({ service: 'gateway', level: 'debug', sink });
+    await collect(
+      runPipeline(
+        request(),
+        { requestId: 'req_1' },
+        { ...deps(stallingProvider({})), logger, upstreamFirstChunkMs: 20, upstreamIdleMs: 20 },
+      ),
+    );
+    const text = sink.text();
+    expect(text).toContain('gateway.stream.stalled');
+    expect(text).toContain('UPSTREAM_IDLE');
+    expect(text).not.toContain('鹏程');
+  });
+});
+
 describe('Q14：不落盘 prompt 与响应体（M0 §10.2 第 2 条的可审计手段）', () => {
   it('一次完整请求跑完，日志里查不到 prompt / instructions / 回复 / 工具参数的 8 字片段', async () => {
     const sink = memorySink();

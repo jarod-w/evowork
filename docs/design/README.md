@@ -112,6 +112,8 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 | **F27** | V2 的 thread-spawn 子代理禁止 app-server 直接输入，错误为 `direct app-server input is not allowed for multi-agent v2 sub-agents` | `app-server/src/request_processors/thread_input.rs:9-34` | 🚨 子代理时间线必须只读；用户追问先回根任务，再由根代理使用 `send_message` / `followup_task` 路由 |
 | **F28** | V2 `spawn_agent.fork_turns` 默认 `all`，可设 `none` / 最近 N 轮；工具返回 canonical agent path | `core/src/tools/handlers/multi_agents_spec.rs:646-768` | ✅ 上下文是创建时快照，不是持续共享；UI 必须保留 agent path |
 | **F29** | `send_message` 与 `followup_task` 共用消息通道；后者使用 `TriggerTurn` 唤醒目标，前者只向运行中代理送达 | `core/src/tools/handlers/multi_agents_v2/message_tool.rs:41-95` | ✅ 运行中补充走 `send_message`，空闲/完成后的追加走 `followup_task` |
+| **F30** | 内核**显式忽略** `response.in_progress`（与 `content_part.added` 等一起走 `trace!` 分支，不产生任何 `ResponseEvent`）——所以网关可以拿它当心跳帧：能让内核的空闲计时器重来，又到不了前端 | `codex-api/src/sse/responses.rs:531-542` | ✅ **2026-09-26 用真实 app-server E2E 实测**（把心跳帧混进假网关的流：回合照常完成，时间线上没有它）。SSE 注释行（`: ping`）**不行** —— 注释不派发事件，`stream.next()` 不返回，计时器也就不会重来 |
+| **F31** | 内核读 SSE 的循环是 `timeout(idle_timeout, stream.next())`，**默认 300 秒一帧都没收到就判整个回合失败**，错误文案是 `stream disconnected before completion: idle timeout waiting for SSE`；它映射成 `CodexErr::Stream`，还会自动重试 5 次 | `codex-api/src/sse/responses.rs:591`（计时）· `:612`（错误）· `model-provider-info/src/lib.rs:63`（`DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000`）· `core/src/responses_retry.rs:50` + `protocol/src/error.rs:379-420`（`Stream` 可重试） | 🚨 **2026-09-26 真机上发生过**：kimi-k3 的回合以这句英文告终。网关有好几段「活着但一帧都不发」的时间（上游在想、思维链被能力表挡掉、工具调用参数要攒完整才发得出去），加起来超过 300 秒就是这个结果。修法两件：① 网关心跳（F30）② 网关自己先一步判上游死掉并给中文原因 |
 
 ### 4.1 F1 的直接收益：补丁清单从 P3+P4 缩到只有 P4
 

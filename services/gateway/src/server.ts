@@ -25,7 +25,7 @@ import {
 import { forwardHosted, hostedModelsUrl } from './forward.js';
 import type { ResolvedModel } from './layers.js';
 import { ModelNotConfiguredError, runPipeline, type PipelineDeps } from './pipeline.js';
-import { toSseData, type ResponsesRequest } from './protocol.js';
+import { EVENT, keepAliveEvent, toSseData, type ResponsesRequest } from './protocol.js';
 
 export interface ServerOptions extends PipelineDeps {
   /**
@@ -55,14 +55,115 @@ export interface ServerOptions extends PipelineDeps {
         readonly fetchImpl?: typeof fetch;
       }
     | undefined;
+  /**
+   * 两帧之间最多允许安静多久，超过就补一帧心跳（`EVENT.inProgress`）。默认 15 秒。
+   *
+   * 上限由内核定死：它 300 秒收不到任何一帧就判
+   * `stream disconnected before completion: idle timeout waiting for SSE`
+   * 并让整个回合失败。15 秒留了 20 倍余量，代价是一个几十字节的帧。
+   * `0` 关掉心跳（只有测试会这么用）。
+   */
+  readonly heartbeatMs?: number;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' } as const;
+
+const SSE_HEADERS = {
+  'content-type': 'text/event-stream; charset=utf-8',
+  'cache-control': 'no-cache, no-transform',
+  connection: 'keep-alive',
+  // 关掉代理层缓冲：否则流式会被攒成一整块，用户看到的是"卡很久然后一次全出来"
+  'x-accel-buffering': 'no',
+} as const;
+
+/** 默认心跳间隔。见 `ServerOptions.heartbeatMs` 里为什么是这个数量级。 */
+const DEFAULT_HEARTBEAT_MS = 15_000;
+
+interface SseStream {
+  /** 写一帧（或一段原样转发的字节）。顺便把心跳计时器归零 */
+  write(chunk: string | Buffer): void;
+  /** 记下 response id，让后面的心跳帧带上它 */
+  useResponseId(id: string): void;
+  /** 停表。回合结束、连接断开、出错都要调 —— 漏掉就是一个永远在跳的定时器 */
+  stop(): void;
+}
+
+/**
+ * 一条 SSE 响应的写出口，**自带心跳**。
+ *
+ * 心跳的判据是「距上一次往这个连接写东西过去了多久」，而不是「上游多久没来消息」。
+ * 这两者在网关里经常不一致，而**不一致的那段时间正是回合会失败的时间**：
+ * 上游一个字一个字地吐工具调用参数时，网关每一片都在收，却要等参数攒完整
+ * 才发得出 `output_item.done`（`translate/from-chat.ts` 的硬顺序约束）——
+ * 对内核来说这段时间和"网关死了"没有区别。
+ *
+ * `openHead` 给了就表示"响应头还没写"：第一帧或第一次心跳来的时候才写。
+ * 这样 `ModelNotConfiguredError` 那条路仍然能回 400 而不是 200 + 空流。
+ */
+function startSseStream(
+  res: ServerResponse,
+  heartbeatMs: number,
+  openHead?: () => void,
+): SseStream {
+  let responseId: string | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let opened = openHead === undefined;
+
+  const open = (): void => {
+    if (opened) return;
+    opened = true;
+    openHead?.();
+  };
+  const stop = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const arm = (): void => {
+    stop();
+    if (heartbeatMs <= 0) return;
+    timer = setTimeout(beat, heartbeatMs);
+    // 心跳不该成为"进程退不掉"的理由
+    timer.unref?.();
+  };
+  const dead = (): boolean => res.writableEnded || res.destroyed;
+  const beat = (): void => {
+    if (dead()) {
+      stop();
+      return;
+    }
+    open();
+    res.write(toSseData(keepAliveEvent(responseId)));
+    arm();
+  };
+
+  /*
+   * 连接没了就停表。
+   *
+   * 用户中断一个回合时，上游那边可能还要一会儿才收到取消 —— 这中间这个定时器
+   * 会一直往一个已经销毁的 socket 上写。`res.write()` 在那种情况下会往 `res`
+   * 上扔 'error'，而没人听的 'error' 事件在 Node 里是直接把进程带走的。
+   */
+  res.on('close', stop);
+  arm();
+  return {
+    write(chunk) {
+      if (dead()) return;
+      open();
+      res.write(chunk);
+      arm();
+    },
+    useResponseId(id) {
+      responseId = id;
+    },
+    stop,
+  };
+}
 
 export function createGatewayServer(options: ServerOptions): Server {
   const logger = options.logger;
   const maxBodyBytes = options.maxBodyBytes ?? 32 * 1024 * 1024;
   const authenticate = options.authenticate ?? (() => false);
+  const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
 
   return createServer((req, res) => {
     void handle(req, res).catch((err: unknown) => {
@@ -172,13 +273,26 @@ export function createGatewayServer(options: ServerOptions): Server {
         'cache-control': 'no-cache, no-transform',
         'x-accel-buffering': 'no',
       });
-      if (out.body) {
-        const reader = out.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) res.write(Buffer.from(value));
+      // 转发也要心跳：云端网关停在半路时，内核看到的症状与本机停在半路一模一样。
+      // 非 SSE 的响应（错误体）不插帧 —— 那会把一份 JSON 变成解析不了的东西
+      const stream = out.contentType.includes('text/event-stream')
+        ? startSseStream(res, heartbeatMs)
+        : undefined;
+      try {
+        if (out.body) {
+          const reader = out.body.getReader();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              const buf = Buffer.from(value);
+              if (stream) stream.write(buf);
+              else res.write(buf);
+            }
+          }
         }
+      } finally {
+        stream?.stop();
       }
       res.end();
     } catch (err) {
@@ -267,42 +381,39 @@ export function createGatewayServer(options: ServerOptions): Server {
       if (!res.writableEnded) abort.abort();
     });
 
+    /**
+     * **响应头等到第一帧（或第一次心跳）才写。**
+     *
+     * `runPipeline` 是 generator，它的同步校验（模型是否配置）要等到第一次 `next()`
+     * 才会执行。若先写 200 再迭代，"未配置的模型"会变成**一个 200 + 空 SSE 流** ——
+     * 内核那边的表现是任务静默地什么都没发生，而 HTTP 状态码是成功的。
+     * 这个 bug 是被 server 测试抓到的，代价（把写头交给 `startSseStream`）
+     * 远小于它的排查成本。那个同步校验是在同一个微任务里抛出来的，
+     * 心跳（宏任务）抢不到它前面。
+     */
+    const stream = startSseStream(res, heartbeatMs, () => res.writeHead(200, SSE_HEADERS));
     try {
       const events = runPipeline(request, { requestId, signal: abort.signal }, options);
-
-      /**
-       * **先取第一个事件，再写响应头。**
-       *
-       * `runPipeline` 是 generator，它的同步校验（模型是否配置）要等到第一次 `next()`
-       * 才会执行。若先写 200 再迭代，"未配置的模型"会变成**一个 200 + 空 SSE 流** ——
-       * 内核那边的表现是任务静默地什么都没发生，而 HTTP 状态码是成功的。
-       * 这个 bug 是被 server 测试抓到的，代价（多一行 await）远小于它的排查成本。
-       */
       const iterator = events[Symbol.asyncIterator]();
-      const first = await iterator.next();
 
-      res.writeHead(200, {
-        'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-cache, no-transform',
-        connection: 'keep-alive',
-        // 关掉代理层缓冲：否则流式会被攒成一整块，用户看到的是"卡很久然后一次全出来"
-        'x-accel-buffering': 'no',
-      });
-
-      if (!first.done) {
-        res.write(toSseData(first.value));
-        for (
-          let next = await iterator.next();
-          !next.done && !res.writableEnded;
-          next = await iterator.next()
-        ) {
-          res.write(toSseData(next.value));
+      for (
+        let next = await iterator.next();
+        !next.done && !res.writableEnded;
+        next = await iterator.next()
+      ) {
+        // 心跳帧带上 response id：内核不看，但一份自相矛盾的流更难排查
+        if (next.value.type === EVENT.created) {
+          const id = (next.value as { response?: { id?: unknown } }).response?.id;
+          if (typeof id === 'string') stream.useResponseId(id);
         }
+        stream.write(toSseData(next.value));
       }
       // 内核的 SSE 解析以 `[DONE]` 或流结束为终止条件；两者都发以兼容
-      if (!res.writableEnded) res.write('data: [DONE]\n\n');
+      stream.write('data: [DONE]\n\n');
+      stream.stop();
       res.end();
     } catch (err) {
+      stream.stop();
       if (err instanceof ModelNotConfiguredError) {
         logger?.warn('gateway.request.unknown_model', { model: safeToken(err.modelId) });
         res.writeHead(400, JSON_HEADERS);

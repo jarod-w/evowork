@@ -45,6 +45,20 @@ function env(name: string): string | undefined {
   return value && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+/**
+ * 数值型环境变量。**读不懂就当没给**，用默认值。
+ *
+ * 这几个变量全是超时，而 `Number('300s')` 是 `NaN`、`setTimeout(fn, NaN)` 立刻就跑 ——
+ * 一个拼错的环境变量会把"五分钟超时"变成"每次请求立即中断"，
+ * 而现场看到的只是"这台机器上模型全都用不了"。
+ */
+function numberEnv(name: string): number | undefined {
+  const raw = env(name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 /** 每家的密钥从环境变量取。**缺失的厂商不注册进模型表** —— 让它出现在下拉里再报错更糟。 */
 const KEY_ENV: Readonly<Record<string, string>> = {
   deepseek: 'DEEPSEEK_API_KEY',
@@ -73,7 +87,7 @@ export function buildConfigResolver(
 ): (model: ModelRegistryEntry) => ProviderConfig {
   const byId = new Map(customs.map((spec) => [spec.id, spec]));
   return (model) => {
-    const timeoutMs = Number(env('GATEWAY_UPSTREAM_TIMEOUT_MS') ?? 300_000);
+    const timeoutMs = numberEnv('GATEWAY_UPSTREAM_TIMEOUT_MS') ?? 300_000;
     const custom = byId.get(model.id);
     if (custom) return customModelConfig(custom, process.env, timeoutMs);
     const apiKey = env(KEY_ENV[model.provider] ?? '') ?? '';
@@ -204,12 +218,23 @@ export function main(): void {
     return;
   }
 
+  /*
+   * 两个超时的旋钮（默认值在 `server.ts` / `pipeline.ts` 里，**不在这儿抄一份**）：
+   *   · `GATEWAY_SSE_HEARTBEAT_MS` —— 多久没往内核写东西就补一帧心跳
+   *   · `GATEWAY_UPSTREAM_IDLE_MS` —— 上游安静多久算这条流死了
+   * 留成环境变量是因为它们的合适值与上游厂商有关，而私有部署改不了我们的代码。
+   */
+  const heartbeatMs = numberEnv('GATEWAY_SSE_HEARTBEAT_MS');
+  const upstreamIdleMs = numberEnv('GATEWAY_UPSTREAM_IDLE_MS');
+
   const server = createGatewayServer({
     // 「真的能选的那一份」。**不要在这里重新组合** —— 见 `availableModelRegistry`
     models: createModelRegistryFrom(models),
     providers: PROVIDERS,
     configFor: buildConfigResolver(specs),
     logger,
+    ...(heartbeatMs !== undefined ? { heartbeatMs } : {}),
+    ...(upstreamIdleMs !== undefined ? { upstreamIdleMs } : {}),
     authenticate:
       authMode === 'hosted' && jwtPem ? jwtAuth({ publicPem: jwtPem }) : staticTokenAuth(tokens),
     ...(accessJwt && upstreamBaseUrl ? { hostedForward: { upstreamBaseUrl, accessJwt } } : {}),

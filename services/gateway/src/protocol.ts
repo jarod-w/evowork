@@ -126,6 +126,26 @@ export const EVENT = {
   completed: 'response.completed',
   failed: 'response.failed',
   incomplete: 'response.incomplete',
+  /**
+   * 心跳帧。**内容上什么都不表示，存在的意义是让内核重新计时。**
+   *
+   * 内核读 SSE 的那个循环是 `timeout(idle_timeout, stream.next())`
+   * （`codex-api/src/sse/responses.rs:591`，2026-09-26 对 `d583e73c4d` 核对）：
+   * **默认 300 秒内没有收到任何一帧**就发 `idle timeout waiting for SSE`（`:612`），
+   * 整个回合以「这一回合失败了」告终 —— 上游明明还活着也一样。
+   *
+   * 而网关有好几段"活着但一帧都不发"的时间：上游在想（思维链被能力表挡掉时）、
+   * 上游在逐字吐工具调用参数（`arguments` 要攒完整才能发 `output_item.done`，
+   * 见 `translate/from-chat.ts`）、上游连接半死不活。这些时间加起来超过 300 秒，
+   * 用户看到的就是一句英文的 `idle timeout waiting for SSE`。
+   *
+   * `response.in_progress` 在内核的**显式忽略清单**里（`responses.rs:537`），
+   * 走的是 `trace!` 那条分支：不产生任何 `ResponseEvent`、到不了前端、但让
+   * `stream.next()` 返回一次，于是那个 300 秒的计时器从头开始。
+   * 它也是 Responses API 本身就有的事件类型 —— 比自造一个 `evowork.keepalive`
+   * 更不容易在上游演进中被判成畸形帧。
+   */
+  inProgress: 'response.in_progress',
   /** 网关自己的诊断事件。内核会忽略它（兜底分支只记日志），**到不了前端** */
   evoworkDegraded: 'evowork.degraded',
 } as const;
@@ -195,4 +215,20 @@ export type ResponsesEvent =
 /** 一条 SSE 行对（`data:` + 空行）。内核用标准 SSE 解析。 */
 export function toSseData(event: ResponsesEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * 心跳帧（见 `EVENT.inProgress`）。
+ *
+ * **不能用 SSE 注释行（`: ping`）**：注释在 SSE 规范里不派发事件，内核那边
+ * `stream.next()` 根本不会返回，`timeout()` 的计时器也就不会重来 ——
+ * 一个看起来在发东西、实际上什么都没解决的心跳是最坏的结果。
+ *
+ * `responseId` 在第一帧（`response.created`）之前还不存在，这时就不带 ——
+ * 内核不看这个字段，而**编一个后面会变的 id** 比不带更糟。
+ */
+export function keepAliveEvent(responseId?: string): ResponsesEvent {
+  return responseId === undefined
+    ? { type: EVENT.inProgress }
+    : { type: EVENT.inProgress, response: { id: responseId } };
 }

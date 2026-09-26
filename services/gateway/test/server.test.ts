@@ -73,6 +73,33 @@ function provider(lines: readonly string[]): Provider {
   };
 }
 
+/**
+ * 一个收下请求就再也不说话的上游（直到被 abort）。模拟"上游在想 / 连接半死"。
+ *
+ * 手写迭代器而不是 `async function*`：一个**永远不 yield** 的 generator 写出来就是
+ * `require-yield` 的 lint 错误，而"永远不 yield"正是这里要模拟的东西。
+ */
+function silentProvider(): Provider {
+  return {
+    id: 'silent',
+    async send(_request, _config, signal) {
+      return {
+        status: 200,
+        headers: {},
+        lines: {
+          [Symbol.asyncIterator]: () => ({
+            next: () =>
+              new Promise<IteratorResult<string>>((_resolve, reject) => {
+                signal?.addEventListener('abort', () => reject(new Error('aborted')));
+              }),
+          }),
+        },
+      };
+    },
+    mapError: (_status, body) => ({ message: String(body) }),
+  };
+}
+
 let baseUrl: string;
 let close: () => Promise<void>;
 const sink = memorySink();
@@ -81,15 +108,22 @@ async function start(
   opts: {
     readonly lines?: readonly string[];
     readonly authenticate?: (a?: string) => boolean;
+    /** 用一个永远不说话的上游（测心跳） */
+    readonly silent?: boolean;
+    readonly heartbeatMs?: number;
   } = {},
 ) {
   const server = createGatewayServer({
     models: registry(MODEL),
-    providers: { deepseek: provider(opts.lines ?? []) },
+    providers: { deepseek: opts.silent ? silentProvider() : provider(opts.lines ?? []) },
     configFor: () => ({ baseUrl: 'https://upstream.invalid/v1', apiKey: 'sk-test' }),
     logger: createLogger({ service: 'gateway', sink }),
     authenticate: opts.authenticate ?? ((auth) => auth === 'Bearer good-token'),
     newResponseId: () => 'resp_test',
+    ...(opts.heartbeatMs !== undefined ? { heartbeatMs: opts.heartbeatMs } : {}),
+    // 看门狗在这一层不该插手：这几条测的是 HTTP 层的心跳
+    upstreamFirstChunkMs: 0,
+    upstreamIdleMs: 0,
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;
@@ -308,6 +342,73 @@ describe('POST /v1/responses —— 内核唯一会调的端点', () => {
     expect(logText).not.toContain('鹏程');
     expect(logText).not.toContain('三张表');
     expect(logText).toContain('gateway.request.completed');
+  });
+});
+
+describe('心跳：内核那边的 300 秒空闲计时器', () => {
+  /**
+   * 这一组守的是一个**已经在真机上发生过**的失败：
+   * 界面上弹出「这一回合失败了 / stream disconnected before completion: idle timeout
+   * waiting for SSE」。那句话是内核发的 —— 它读 SSE 的循环是
+   * `timeout(idle_timeout, stream.next())`，默认 300 秒一帧都没收到就判这一回合失败
+   * （`codex-api/src/sse/responses.rs:591/612`，2026-09-26 对 `d583e73c4d` 核对）。
+   *
+   * 而网关有好几段"活着但一帧都不发"的时间：上游在想、思维链被能力表挡掉、
+   * 工具调用参数要攒完整才发得出去。所以**必须由网关保证连接上一直有帧在走**。
+   */
+  it('上游一直不说话时，连接上仍然有帧在走（否则内核 300 秒后判这一回合失败）', async () => {
+    await start({ silent: true, heartbeatMs: 20 });
+
+    const ac = new AbortController();
+    const res = await fetch(`${baseUrl}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({ model: MODEL.id, input: [], stream: true }),
+      signal: ac.signal,
+    });
+
+    // 响应头本身也是心跳写出来的：上游还没回第一片，但内核已经知道连接活着
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    while (!text.includes('response.in_progress')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    // 内核对这个类型的处理是"显式忽略"（responses.rs:537）：不产生任何事件、
+    // 到不了前端，但让 `stream.next()` 返回一次 —— 空闲计时器因此重新开始
+    expect(text).toContain('"type":"response.in_progress"');
+    ac.abort();
+  });
+
+  it('真的有内容时不插心跳（心跳只填空白，不污染正常的流）', async () => {
+    await start({
+      heartbeatMs: 5_000,
+      lines: [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '好的' }, finish_reason: 'stop' }] })}`,
+        'data: [DONE]',
+      ],
+    });
+    const res = await fetch(`${baseUrl}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({ model: MODEL.id, input: [], stream: true }),
+    });
+    expect(await res.text()).not.toContain('response.in_progress');
+  });
+
+  it('心跳再快也抢不到"未配置的模型"前面 —— 那仍然是 400，不是 200 + 空流', async () => {
+    await start({ silent: true, heartbeatMs: 1 });
+    const res = await fetch(`${baseUrl}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({ model: 'evowork/nope', input: [] }),
+    });
+    expect(res.status).toBe(400);
   });
 });
 
