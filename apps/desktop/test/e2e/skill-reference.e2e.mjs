@@ -24,7 +24,19 @@ const workspace = join(e2eHome, 'workspace');
 mkdirSync(workspace, { recursive: true });
 
 let heldResponse;
-let failUpstream = false;
+let heldTaken = false;
+/**
+ * 第一条需求里的一段字。**用它来认领"哪个请求是这个回合的"**，而不是"第一个请求"。
+ *
+ * 内核在一次会话里并不是只发我们这一个模型请求（prewarm、记忆提取都可能先到），
+ * 于是 `responseBodies[0]` 有时根本不是那个回合 —— 表现就是"记忆没注入"这种
+ * 偶发失败：断言看错了请求，而被看的那个请求确实没有记忆标记。
+ */
+const TURN_MARKER = '创建一个测试技能';
+/** 还要让上游失败几次（0 = 正常回答）。计数而不是开关：重试之后必须能成功，才测得到用量。 */
+let failUpstream = 0;
+/** 成功那一次要报的用量。内核的 token 账就是从这里来的 */
+const RETRY_USAGE = { input_tokens: 1234, output_tokens: 56, total_tokens: 1290 };
 /**
  * 下一次模型请求怎么答（一次性）。
  *
@@ -132,7 +144,8 @@ const gateway = createServer((request, response) => {
       response.end('data: [DONE]\n\n');
       return;
     }
-    if (failUpstream) {
+    if (failUpstream > 0) {
+      failUpstream -= 1;
       /*
        * 「上游断了」的样子：HTTP 200 + 流里一条 `response.failed`。
        * `upstream_disconnected` 是内核**认不出来**的 code，因此落到 `Retryable{message}`
@@ -200,11 +213,19 @@ const gateway = createServer((request, response) => {
           content: [{ type: 'output_text', text: `E2E response ${currentResponse}` }],
         },
       });
-      sendEvent(response, { type: 'response.completed', response: { id, end_turn: true } });
+      sendEvent(response, {
+        type: 'response.completed',
+        response: { id, end_turn: true, usage: RETRY_USAGE },
+      });
       response.end('data: [DONE]\n\n');
     };
-    if (currentResponse === 1) heldResponse = finish;
-    else finish();
+    // 按内容认领这个回合的请求（见 `TURN_MARKER`），不按到达顺序
+    if (!heldTaken && responseBodies.at(-1)?.includes(TURN_MARKER)) {
+      heldTaken = true;
+      heldResponse = finish;
+    } else {
+      finish();
+    }
   });
 });
 
@@ -379,7 +400,8 @@ exporter = "none"
     );
     await waitFor(() => heldResponse, '模型请求没有到达测试网关');
     stage('first-request-held');
-    if (!responseBodies[0]?.includes(memoryMarker)) {
+    const turnBody = responseBodies.find((body) => body.includes(TURN_MARKER));
+    if (!turnBody?.includes(memoryMarker)) {
       throw new Error('真实 app-server 没有把本地记忆注入新任务的模型请求。');
     }
     const enabledMemory = await evaluate(
@@ -788,7 +810,9 @@ exporter = "none"
     if (approvalsAfterAsk !== 0) {
       throw new Error('追问竟然弹出了审批卡 —— 与上面那条互相矛盾，说明判据写错了。');
     }
-    const offeredTools = JSON.parse(responseBodies[0] ?? '{}').tools ?? [];
+    // 同上：挑**带工具清单**的那个请求，不是第一个（第一个可能是 prewarm）
+    const withTools = responseBodies.find((body) => body.includes('"tools"'));
+    const offeredTools = JSON.parse(withTools ?? '{}').tools ?? [];
     if (offeredTools.some((tool) => tool?.name === 'request_permissions')) {
       throw new Error(
         'request_permissions 进工具清单了 —— 权限审批卡因此变成活路径，去验一遍它回的 {permissions, scope}（同上，只对假内核验过）。',
@@ -796,7 +820,8 @@ exporter = "none"
     }
     stage('approval-paths-pinned');
 
-    failUpstream = true;
+    // 大到不会误伤，但存在 —— 目的只是让 goal 存在，好读 tokensUsed
+    failUpstream = 99;
     const beforeRetry = responseCount;
     const retryTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
@@ -848,6 +873,57 @@ exporter = "none"
       throw new Error('重试用完后，网关写给用户的那句话没有到达界面（message 被内核吃掉了）。');
     }
     stage('upstream-retry-verified');
+
+    /*
+     * ⑥ **重试会不会把 token 账算乱**（2026-09-26 补）。
+     *
+     * 重试对用户是花钱的：每一次都把整段上下文重发一遍。所以要分清两件事 ——
+     *   · **重复计**：同一次回合被记了好几遍 → 预算会提前把人拦住；
+     *   · **漏计**：失败那几次完全不进账 → 预算拦不住实际已经花掉的钱（Q11 的硬预算失真）。
+     * 这里让上游先失败两次再成功，然后读 goal 的 `tokensUsed`：
+     * 它等于**一次**成功的用量，说明没有重复计，也说明失败那两次一个 token 都没记上。
+     *
+     * 后者不是实现能修的：用量只在最后一帧里，流断了就没有那一帧 —— 编一个数比不记更糟。
+     */
+    failUpstream = 2;
+    const budgetTask = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '重试记账自检',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await evaluate(
+      `window.evowork.setTaskGoal(${JSON.stringify({
+        threadId: budgetTask.threadId,
+        objective: '重试记账自检',
+        tokenBudget: 1_000_000,
+      })})`,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-completed' && event.taskId === ${JSON.stringify(budgetTask.threadId)} && event.status === 'completed')`,
+        ),
+      '失败两次之后那一轮没有成功收尾（重试没能救回来）',
+      60_000,
+    );
+    // `executeJavaScript` 求的是**表达式**：顶层 await 会直接报 "Script failed to execute"。
+    // 这里让它拿到那个 Promise，由 Electron 侧 resolve。
+    const goal = await evaluate(
+      `window.evowork.getTaskGoal(${JSON.stringify({ threadId: budgetTask.threadId })})`,
+    );
+    const tokensUsed = goal?.tokensUsed ?? 0;
+    const once = RETRY_USAGE.input_tokens + RETRY_USAGE.output_tokens;
+    // 允许内核另算一点（它自己也会发请求），但不能是"成功那次的整数倍"
+    if (tokensUsed < once || tokensUsed >= once * 2) {
+      throw new Error(
+        `重试把 token 账算乱了：记了 ${tokensUsed}，一次成功是 ${once}（≥2 倍 = 重复计，0 = 完全没记）。`,
+      );
+    }
+    stage(`retry-accounting-verified used=${tokensUsed} once=${once}`);
 
     process.stdout.write(
       `__EVOWORK_DESKTOP_E2E__${JSON.stringify({

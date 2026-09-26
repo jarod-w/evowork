@@ -180,6 +180,33 @@ function retryAttempts(message: string | undefined): {
   return { attempt, maxAttempts };
 }
 
+/**
+ * 内核给的失败文案里，有几条**不能直接端给用户**。
+ *
+ * 典型是上下文超限：内核写的是
+ * `Codex ran out of room in the model's context window. Start a new thread or clear earlier
+ * history before retrying.`（`protocol/src/error.rs`）—— 一句英文，而且带着 **Codex** 这个
+ * 对外不该出现的品牌（K5）。它不是我们能在网关侧改掉的：这句话是内核自己生成的。
+ *
+ * 但内核**同时**给了结构化的 `codexErrorInfo`（`v2/shared.rs:77`，unit 变体序列化成
+ * camelCase 字符串），所以这里按那个码换我们自己的话，**不去匹配英文原文** ——
+ * 匹配文案的话，上游改一个词我们就静默失效。
+ *
+ * 认不出来的码一律原样透出：内核的原话再难看，也比我们编一句盖掉真实原因强（03 §8）。
+ */
+function userFacingFailure(failure: {
+  readonly message: string;
+  readonly codexErrorInfo?: unknown;
+}): string {
+  const code = typeof failure.codexErrorInfo === 'string' ? failure.codexErrorInfo : undefined;
+  switch (code) {
+    case 'contextWindowExceeded':
+      return '这个任务的上下文已经装不下了。新建一个任务继续，或者把要点整理成一段话重新开始。';
+    default:
+      return failure.message;
+  }
+}
+
 export function createEventRouter(options: EventRouterOptions) {
   const { store, onUiEvent, logger } = options;
   const now = options.now ?? (() => Date.now());
@@ -364,7 +391,7 @@ export function createEventRouter(options: EventRouterOptions) {
         ...(failure
           ? {
               error: {
-                message: failure.message,
+                message: userFacingFailure(failure),
                 ...(failure.additionalDetails ? { details: failure.additionalDetails } : {}),
               },
             }

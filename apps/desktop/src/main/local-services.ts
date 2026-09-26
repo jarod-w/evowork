@@ -386,21 +386,45 @@ export function createLocalServices(options: LocalServicesOptions) {
      * 分钟粒度就够：cron 的最小单位就是分钟，而更细的 tick 只会在笔记本上白耗电。
      */
     async startScheduler(intervalMs = 60_000): Promise<void> {
-      for (const automation of automations.listActive(options.store.deviceId)) {
-        const definition = automation as unknown as AutomationDefinition;
+      /** 补偿一个 automation 错过的触发（先写 MISSED 再补跑，顺序在 scheduler 里定死）。 */
+      const catchUp = async (definition: AutomationDefinition): Promise<void> => {
         const plan = scheduler.scanOnStart(definition);
         await scheduler.applyMisfirePlan(definition, plan).catch((err: unknown) => {
           options.logger?.warn('scheduler.catchup.failed', {
             errorClass: err instanceof Error ? err.name : 'UnknownError',
           });
         });
+      };
+
+      for (const automation of automations.listActive(options.store.deviceId)) {
+        await catchUp(automation as unknown as AutomationDefinition);
       }
 
+      let lastTickAt = now();
       tick = setInterval(() => {
         void (async () => {
           const at = now();
+          /*
+           * **合盖睡一觉要当成一次"重新开机"。**
+           *
+           * `setInterval` 在系统睡眠期间不跑，也不会醒来后把错过的那些补上 ——
+           * Node 只会触发一次。而下面那段只看"下一次触发是不是落在这一分钟里"，
+           * 于是睡过去的那次**既没有 MISSED 记录、也没有补跑，就这么没了**：
+           * misfire 的全套逻辑此前只在 `startScheduler` 开头跑过一次，
+           * 也就是**只有重启 App 才补得上**。合盖两小时比关机一夜常见得多。
+           *
+           * 判据是"两拍之间隔得太久"，不是"系统报告了唤醒" —— 后者要平台事件，
+           * 而时钟自己就说明了问题（同一条判据也覆盖改系统时间、虚拟机挂起）。
+           */
+          const jumped = at - lastTickAt > intervalMs * 1.5;
+          lastTickAt = at;
           for (const automation of automations.listActive(options.store.deviceId)) {
             const definition = automation as unknown as AutomationDefinition;
+            if (jumped) {
+              // 补偿这一段空窗；`planMisfire` 算到 now 为止，所以不用再走下面那条
+              await catchUp(definition);
+              continue;
+            }
             const next = scheduler.nextWakeup(definition);
             // 到点了才触发：`nextWakeup` 给的是"下一次"，落在这一分钟里就跑
             if (next !== undefined && next <= at + intervalMs && next > at - intervalMs) {

@@ -410,6 +410,44 @@ describe('09 §3.4 的分发表逐行', () => {
     expect(ui.at(-1)).toEqual({ type: 'task-removed', threadId: 't1' });
   });
 
+  it('上下文超限：换成中文、且不把 **Codex** 这个品牌端给用户（K5）', () => {
+    router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
+    router.handle(NOTIFICATION.turnCompleted, {
+      threadId: 't1',
+      turn: {
+        id: 'turn-1',
+        status: 'failed',
+        error: {
+          // 内核自己生成的原文（`protocol/src/error.rs`），我们在网关侧改不掉
+          message:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          codexErrorInfo: 'contextWindowExceeded',
+        },
+      },
+    });
+    const failed = ui.find((e) => e.type === 'turn-completed' && e.status === 'failed') as {
+      error?: { message: string };
+    };
+    expect(failed.error?.message).toContain('上下文已经装不下');
+    expect(failed.error?.message).not.toContain('Codex');
+  });
+
+  it('认不出来的失败码原样透出 —— 编一句盖掉真实原因更糟（03 §8）', () => {
+    router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
+    router.handle(NOTIFICATION.turnCompleted, {
+      threadId: 't1',
+      turn: {
+        id: 'turn-1',
+        status: 'failed',
+        error: { message: '上游返回了 402：余额不足', codexErrorInfo: 'somethingNewUpstream' },
+      },
+    });
+    const failed = ui.find((e) => e.type === 'turn-completed' && e.status === 'failed') as {
+      error?: { message: string };
+    };
+    expect(failed.error?.message).toBe('上游返回了 402：余额不足');
+  });
+
   it('内核在重试 → 说出来。**不说的后果是十分钟空白**，而不是报错', () => {
     router.handle(NOTIFICATION.error, {
       threadId: 't1',

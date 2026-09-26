@@ -149,6 +149,50 @@ describe('scheduler ↔ 内核', () => {
     services.stop();
   });
 
+  it('**合盖睡一觉醒来要补跑** —— 只在启动时补的话，那次触发就这么没了', async () => {
+    /*
+     * 这条守的是一个"没有任何征兆"的丢失：系统睡眠期间 `setInterval` 不跑，
+     * 醒来只触发一次，而按点判断（"下一次是不是落在这一分钟里"）算的是**从现在起**
+     * 的下一次 —— 睡过去的那次既不会补跑，也不会留下 MISSED 记录。
+     * 此前 misfire 补偿**只在 startScheduler 开头跑过一次**，也就是只有重启 App 才补得上。
+     */
+    // 上次触发是昨天 9:00，现在是 9:05（还没到今天 9:00 之后的下一拍）
+    seedAutomation({ last_fire_time: NOW - 86_400_000 });
+    vi.useFakeTimers();
+    try {
+      let clock = NOW;
+      const { services } = make({ now: () => clock });
+      await services.startScheduler(60_000);
+      const repo = createAutomationRepo(store.db);
+      const missedFire = Date.parse('2026-09-06T09:00:00Z');
+      // 醒来之前，那次触发还没到，自然没有任何记录
+      expect(repo.listRuns('a1').some((r) => r.fire_time === missedFire)).toBe(false);
+
+      /*
+       * 合盖一天一夜：定时器只会醒来触发**一拍**，而墙上时钟跳过了一整个触发点
+       * （cron 是每天 9:00）。跳的幅度必须真的跨过一次触发 —— 只跳两小时的话
+       * 下一次本来就在明天，什么都不该发生，那样测不出这条缺陷。
+       */
+      clock += 25 * 60 * 60 * 1000;
+      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      /*
+       * 断言的是**那次触发被处理了**（留下记录 + 一条补跑），不是"又建了一个任务"：
+       * 上一条补跑还在 RUNNING 时，这一条会按 Q8 SKIP 掉 —— 那是对的，
+       * 不该因此把这条测试写成"必须再建一个任务"。
+       * 修之前这里一条记录都没有：那次触发**无声无息地消失了**。
+       */
+      // `listRuns` 给的是原始行（snake_case），不是视图
+      const afterWake = repo.listRuns('a1').filter((r) => r.fire_time === missedFire);
+      expect(afterWake.map((r) => r.status)).toContain('MISSED');
+      expect(afterWake.map((r) => r.trigger)).toContain('CATCHUP');
+      services.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('**先设预算再让它跑** —— 顺序反了就有一段没有预算保护的窗口', async () => {
     seedAutomation();
     const { services, adapter, calls } = make();
