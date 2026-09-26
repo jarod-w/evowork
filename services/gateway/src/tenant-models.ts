@@ -5,6 +5,7 @@
  * 真要转发时，本机网关把整段请求转到 `EVOWORK_UPSTREAM_BASE_URL`，由**云端网关**持 key。
  */
 import type { ModelRegistryEntry, ProviderId } from './capabilities.js';
+import { ALL_CAPABILITY_KEYS, findKnownModel } from './known-models.js';
 
 export const TENANT_MODELS_ENV = 'EVOWORK_TENANT_MODELS';
 export const UPSTREAM_BASE_URL_ENV = 'EVOWORK_UPSTREAM_BASE_URL';
@@ -46,16 +47,26 @@ export function parseTenantModels(raw: string | undefined): {
       dropped += 1;
       continue;
     }
+    /*
+     * **能力位不在这段 JSON 里**（`encodeTenantModels` 就没发），所以只能在这里定。
+     *
+     * 2026-09-26 之前这里写死"三个高级能力全 false" —— 与 ③ 层当时那个保守默认
+     * 同一个毛病：租户管理员配了一条 `moonshot/kimi-k3`，用户拿到的是一条不会读图的
+     * Kimi K3。认得出来的型号按能力表走，认不出来的才保持"什么都不承诺"。
+     */
+    const known = findKnownModel(provider, upstreamModel);
     specs.push({
       id,
       provider,
       upstreamModel,
       displayName,
-      tier: rec.tier === 'flagship' || rec.tier === 'light' ? rec.tier : 'standard',
-      verified: rec.verified === true,
-      unverified: [],
-      notes: typeof rec.notes === 'string' ? rec.notes : '',
-      capabilities: {
+      tier:
+        known?.tier ?? (rec.tier === 'flagship' || rec.tier === 'light' ? rec.tier : 'standard'),
+      verified: known ? known.evidence === 'probe' : rec.verified === true,
+      ...(known?.verifiedAt !== undefined ? { verifiedAt: known.verifiedAt } : {}),
+      unverified: known?.unverified ?? ALL_CAPABILITY_KEYS,
+      notes: known?.notes ?? (typeof rec.notes === 'string' ? rec.notes : ''),
+      capabilities: known?.capabilities ?? {
         streaming: true,
         toolCalls: true,
         parallelToolCalls: false,

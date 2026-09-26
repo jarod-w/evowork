@@ -680,7 +680,12 @@ describe('真实上游形状（DeepSeek，2026-09-05 实测）', () => {
     expect(completed.response?.usage?.input_tokens).toBe(9);
   });
 
-  it('**三家给了三种 cache 写法**，少认一种的表现是"这家永远 0 命中"', () => {
+  /*
+   * 2026-09-26 复测订正了这条断言的**名字**（三条路并非一家一条）：
+   * DeepSeek 与 Kimi 命中时**同时**给顶层与嵌套两种写法。断言本身没变 ——
+   * 它守的是"三条路都认"，而那在两种形状并存之后仍然是对的。
+   */
+  it('**cache 有三种写法，三条路都得认**，少认一种的表现是"这家永远 0 命中"', () => {
     const cases = [
       {
         name: 'DeepSeek',
@@ -715,6 +720,26 @@ describe('真实上游形状（DeepSeek，2026-09-05 实测）', () => {
       // 0 是"不支持 cache"的合法取值，所以漏读一种写法不会有人发现
       expect(completed.response?.usage?.input_tokens_details?.cached_tokens, name).toBe(64);
     }
+  });
+
+  it('**`cache_write_tokens` 不是命中**：写入缓存不等于命中缓存（2026-09-26 实测 Kimi 未命中时给的就是它）', () => {
+    const { events } = run([
+      {
+        choices: [{ index: 0, delta: { content: 'x' }, finish_reason: 'stop' }],
+        // Kimi 首次调用的真实形状：只有 cache_write_tokens，没有 cached_tokens
+        usage: {
+          prompt_tokens: 1_024,
+          completion_tokens: 5,
+          total_tokens: 1_029,
+          prompt_tokens_details: { cache_write_tokens: 1_024 },
+        },
+      },
+    ]);
+    const completed = events.at(-1) as {
+      response?: { usage?: { input_tokens_details?: { cached_tokens: number } } };
+    };
+    // 读成命中的话，用户在**第一次**调用就会看到满额命中，而那是最贵的那一次
+    expect(completed.response?.usage?.input_tokens_details?.cached_tokens).toBe(0);
   });
 
   it('cache 口径走 prompt_cache_hit_tokens / prompt_cache_miss_tokens（不是 OpenAI 的 details）', () => {

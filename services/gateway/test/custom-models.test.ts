@@ -17,6 +17,7 @@ import {
   validateCustomModel,
   type CustomModelSpec,
 } from '../src/custom-models.js';
+import { KNOWN_MODELS } from '../src/known-models.js';
 
 const SPEC: CustomModelSpec = {
   id: 'my/llm',
@@ -76,11 +77,57 @@ describe('线上形状：密钥不在那个 JSON 里', () => {
     expect(parseCustomModels('{{{').dropped).toBe(1);
   });
 
-  it('自定义模型的能力位**一律标未实测** —— 那是用户的声明，不是我们的结论', () => {
+  it('表外的自定义模型能力位**一律标未实测** —— 那是用户的声明，不是我们的结论', () => {
     const registry = toRegistryEntry(SPEC);
     expect(registry.verified).toBe(false);
     expect(registry.unverified).toContain('reasoning');
     expect(registry.notes).toContain('没有经过实测');
+  });
+
+  /*
+   * 2026-09-26：用户自己加的 `moonshot/kimi-k3` 在下拉里不会读图，而内置目录里的
+   * 同一个型号会 —— 能力位当时有两条互不相通的来路（`P0_MODELS` vs 保守默认）。
+   * **同一个型号不该因为从哪一层进来而改变结论**，这三条守的是这件事。
+   */
+  it('认得出来的型号按能力表走，不被"自定义 = 什么都不承诺"盖掉', () => {
+    const registry = toRegistryEntry({
+      ...SPEC,
+      id: 'moonshot/kimi-k3',
+      provider: 'moonshot',
+      upstreamModel: 'kimi-k3',
+    });
+    expect(registry.capabilities.imageInput).toBe(true);
+    expect(registry.capabilities.reasoning).toBe(true);
+    // 实测过的就说实测过，并带上日期
+    expect(registry.verified).toBe(true);
+    expect(registry.verifiedAt).toBe('2026-09-05');
+  });
+
+  /*
+   * 不钉死"某个型号是只读过文档的"：那会让这条断言随一次实测就失效
+   * （deepseek-flash 2026-09-26 就从 vendor-doc 变成了 probe）。
+   * 它真正要守的是**`verified` 跟着 `evidence` 走**，对整张表成立。
+   */
+  it('`verified` 由证据来源决定：实测过的才给日期，只读过文档的不给', () => {
+    for (const known of KNOWN_MODELS) {
+      const registry = toRegistryEntry({
+        ...SPEC,
+        id: `${known.provider}/${known.upstreamModel}`,
+        provider: known.provider,
+        upstreamModel: known.upstreamModel,
+      });
+      expect(registry.capabilities, known.upstreamModel).toEqual(known.capabilities);
+      expect(registry.verified, known.upstreamModel).toBe(known.evidence === 'probe');
+      if (known.evidence !== 'probe') {
+        expect(registry.verifiedAt, known.upstreamModel).toBeUndefined();
+      }
+    }
+  });
+
+  it('`private` 的同名模型不沾官方能力位 —— 那个 endpoint 后面是什么我们不知道', () => {
+    const registry = toRegistryEntry({ ...SPEC, upstreamModel: 'kimi-k3' });
+    expect(registry.capabilities.imageInput).toBe(false);
+    expect(registry.verified).toBe(false);
   });
 
   it('上游配置的密钥来自它自己的那个变量（两条 private 模型不会共用一把 key）', () => {

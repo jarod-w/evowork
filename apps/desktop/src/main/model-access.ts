@@ -56,7 +56,7 @@ import { resolveAppConfig, type GatewayMode } from './app-config.js';
 import { ACCOUNT_SECRET_PREFIX, type AccountVault } from './account.js';
 import {
   assignKeyEnv,
-  DEFAULT_CUSTOM_CAPABILITIES,
+  capabilitiesFor,
   readModelsFile,
   writeModelsFile,
   type CustomModelRecord,
@@ -462,8 +462,8 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
         upstreamModel: input.upstreamModel,
         baseUrl: input.baseUrl,
         keyEnv,
-        capabilities: {
-          ...DEFAULT_CUSTOM_CAPABILITIES,
+        // 认得出来的型号按能力表，认不出来的才落到保守默认 + 调用方声明
+        capabilities: capabilitiesFor(input.provider, input.upstreamModel, {
           ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
           ...(input.imageInput !== undefined ? { imageInput: input.imageInput } : {}),
           ...(input.parallelToolCalls !== undefined
@@ -473,7 +473,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
           ...(input.maxContextTokens !== undefined && input.maxContextTokens > 0
             ? { maxContextTokens: Math.floor(input.maxContextTokens) }
             : {}),
-        },
+        }),
       };
       /*
        * **先存密钥再写文件。** 反过来的话，密钥存失败会留下一条"有模型没密钥"的记录，
@@ -525,6 +525,13 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
         provider: input.provider as ProviderId,
         upstreamModel: input.upstreamModel,
         baseUrl: input.baseUrl,
+        /*
+         * **改了型号就重算能力位**，不能 `...target` 一路带过来。
+         * 「把 `deepseek-v4-flash` 改成 `deepseek-flash`」是用户升级型号的常规动作，
+         * 而沿用旧能力位的表现是：新型号能读图，界面上却仍然划着「读图」。
+         * 反方向更糟 —— 从能读图的型号改到不能读图的，会留下一个标着能读图的模型。
+         */
+        capabilities: capabilitiesFor(input.provider, input.upstreamModel, target.capabilities),
       };
       const next = [...models.models];
       next[index] = record;

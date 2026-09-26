@@ -14,6 +14,10 @@
  * 用法：
  *   EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
  *     --base https://api.deepseek.com --model deepseek-v4-flash
+ *
+ * 可选开关：
+ *   --reasoning true   这个型号**应该**吐 reasoning_content（断言的是"与能力表一致"）
+ *   --image true       这个型号**应该**能读图（走 ⑤ 那一节，见下）
  */
 import { argv, env, exit } from 'node:process';
 
@@ -227,6 +231,165 @@ async function readSse(response) {
     );
     const finish = chunks.map((c) => c?.choices?.[0]?.finish_reason).filter(Boolean);
     record('③ finish_reason = tool_calls', finish.includes('tool_calls'), finish.join(',') || '无');
+  }
+}
+
+/*
+ * ── ③b 并行工具调用：一次给出两个 tool_call ─────────────────────────
+ *
+ * 这一节是 2026-09-26 补的。`parallelToolCalls` 是能力表里**唯一一项没人验过、
+ * 却三家都写着 true** 的能力位 —— ③ 只给了一个工具，拿到一个 tool_call 什么也证明不了。
+ *
+ * 标错的后果不对称：标 false 而上游支持，网关白做一次串行化（慢，但对）；
+ * 标 true 而上游不支持，`from-chat.ts` 会按"同一帧里有多个 index"去重组参数，
+ * 而上游其实是分两轮给的 —— 那是会错的那一侧。
+ */
+{
+  const response = await post(
+    {
+      messages: [{ role: 'user', content: '北京现在天气怎么样？另外现在几点？两件事都用工具查。' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: '查询某个城市的天气',
+            parameters: {
+              type: 'object',
+              properties: { city: { type: 'string' } },
+              required: ['city'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'get_time',
+            description: '查询当前时间',
+            parameters: { type: 'object', properties: { tz: { type: 'string' } } },
+          },
+        },
+      ],
+      tool_choice: 'auto',
+      parallel_tool_calls: true,
+      max_tokens: 512,
+    },
+    { stream: true },
+  );
+  const { chunks } = await readSse(response);
+  const calls = new Map();
+  for (const chunk of chunks) {
+    for (const call of chunk?.choices?.[0]?.delta?.tool_calls ?? []) {
+      if (call?.function?.name) calls.set(call.index, call.function.name);
+    }
+  }
+  record(
+    '③b 一轮里给出两个 tool_call（parallelToolCalls 能力位的依据）',
+    calls.size >= 2,
+    `${calls.size} 个 index：${[...calls.values()].join(', ') || '无'}`,
+  );
+}
+
+/*
+ * ── ⑥ prompt cache **命中**时字段叫什么 ──────────────────────────────
+ *
+ * ① / ② 只证明了"usage 里有 cache 相关字段"，而那是**未命中**时的形状。
+ * 三家的命中字段各不相同（`prompt_cache_hit_tokens` / 嵌套 `prompt_tokens_details.cached_tokens`
+ * / 顶层 `cached_tokens`），`translate/usage.ts` 依次读这三条路 ——
+ * 读不到时**如实报 0**，而 0 是"不支持 cache"的合法取值，**所以漏读不会有人发现**
+ * （2026-09-05 Kimi 的缓存命中永远显示 0 就是这么来的）。
+ *
+ * 判据只能是同一段长 prompt 发两次，看第二次哪条路非零。
+ */
+{
+  // 固定前缀要够长（Kimi 要求 > 256 token 才进缓存），内容本身无意义
+  const filler = '这是一段用于填满 prompt cache 最小长度的固定文本，内容本身没有意义。'.repeat(60);
+  const messages = [
+    { role: 'system', content: filler },
+    { role: 'user', content: '只回答一个字：好。' },
+  ];
+  const paths = (usage) => ({
+    'prompt_cache_hit_tokens（顶层）': usage?.prompt_cache_hit_tokens,
+    'prompt_tokens_details.cached_tokens（嵌套）': usage?.prompt_tokens_details?.cached_tokens,
+    'cached_tokens（顶层）': usage?.cached_tokens,
+  });
+  const ask = async () => {
+    const res = await post({ messages, max_tokens: 16 });
+    const body = await res.json().catch(() => null);
+    return body?.usage ?? null;
+  };
+  await ask();
+  const usage = await ask();
+  if (usage) {
+    console.log(`   第二次 usage 字段：${Object.keys(usage).join(', ')}`);
+    if (usage.prompt_tokens_details) {
+      console.log(`   prompt_tokens_details：${shape(usage.prompt_tokens_details)}`);
+    }
+    const hit = Object.entries(paths(usage)).filter(([, v]) => typeof v === 'number' && v > 0);
+    record(
+      '⑥ 第二次同 prompt 报出 cache 命中，且落在我们会读的那三条路之一',
+      hit.length > 0,
+      hit.length > 0
+        ? hit.map(([k, v]) => `${k}=${v}`).join(' · ')
+        : '三条路都读不到 —— 用量视图会把命中如实报成 0，而那看起来像"不支持 cache"',
+    );
+  } else {
+    record('⑥ 第二次同 prompt 报出 cache 命中', false, '拿不到 usage');
+  }
+}
+
+/*
+ * ── ⑤ 图片输入：**"收下了"不算，"看见了"才算** ──────────────────────
+ *
+ * 这一节是 2026-09-26 补的，起因是一条能力位缺陷（status.md 同日那节）。
+ * 它单独存在的理由写在 D2：**`imageInput` 有三种结局，不是两种** ——
+ * 真能看 · 明确拒绝 · **接受请求但看不见**。第三种（deepseek-v4-flash 实测如此）
+ * HTTP 200、无报错、回一句"无法识别"，所以**只看状态码的探针会把它判成支持**。
+ *
+ * 判据因此只能是模型答没答对颜色：发一张 32×32 纯红 PNG，问它什么颜色。
+ * 答不上来 = 看不见，无论 HTTP 多少。
+ *
+ * 仍然不打印正文（文件头那条约束）：只报匹配到的那个颜色词与字符数。
+ */
+{
+  const expectImage = args.get('image') === 'true';
+  if (expectImage) {
+    // 32×32 纯红 PNG（96 字节）。选纯色是因为判据必须是**一个词**，不能是"描述得合理"
+    const RED_PNG =
+      'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAJ0lEQVR42u3NsQkAAAjAsP7/' +
+      'tF7hIASyp6lTCQQCgUAgEAgEgi/BAjLD/C5w/SM9AAAAAElFTkSuQmCC';
+    const response = await post({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: '这张图是什么颜色？只回答颜色名。' },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${RED_PNG}` } },
+          ],
+        },
+      ],
+      // 推理型号会把小预算全花在思维链上，给 512 是为了让它有机会真的回话（D2 那条观察）
+      max_tokens: 512,
+    });
+    const ok = response.ok;
+    record('⑤ 带图请求没被拒', ok, `status=${response.status}`);
+    if (ok) {
+      const body = await response.json().catch(() => null);
+      const text = body?.choices?.[0]?.message?.content ?? '';
+      const hit = /红|red|crimson|scarlet/i.exec(typeof text === 'string' ? text : '');
+      record(
+        '⑤ **模型真的看见了**（答出纯红图的颜色）',
+        hit !== null,
+        hit
+          ? `命中「${hit[0]}」`
+          : `没提到颜色（回了 ${String(text).length} 字）—— 这就是"收下但看不见"`,
+      );
+    } else {
+      const body = await response.json().catch(() => null);
+      console.log(`   拒绝的错误体形状：${shape(body)}`);
+    }
+  } else {
+    console.log('⏭️  ⑤ 图片输入：未加 --image true，跳过');
   }
 }
 

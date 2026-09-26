@@ -32,14 +32,33 @@ export interface ChatUsage {
   /**
    * Kimi：**顶层** `cached_tokens`（实测 2026-09-05，流式的 usage 帧里）。
    *
-   * 三家给了三种写法：DeepSeek 用 `prompt_cache_hit_tokens`、GLM 用嵌套的
-   * `prompt_tokens_details.cached_tokens`、Kimi 用顶层 `cached_tokens`。
+   * 三条路都得认，因为三家各有各的写法：DeepSeek 的 `prompt_cache_hit_tokens`、
+   * 嵌套的 `prompt_tokens_details.cached_tokens`、Kimi 的顶层 `cached_tokens`。
    * 少认一种的后果不是报错，而是**这家的 cache 命中永远显示 0** ——
    * 而 0 是"不支持 cache"的合法取值，所以没人会发现它是漏读。
+   *
+   * **2026-09-26 复测订正**：这三条路**不是互斥的**。原注释写成"三家给了三种写法"，
+   * 像是一家一条；实际上 DeepSeek 与 Kimi 命中时都**同时**给顶层与嵌套两种
+   * （同 prompt 发两次，DeepSeek 896 / Kimi 1024，两处一致）。读取顺序因此无所谓正确性，
+   * 但"一家一条"这个印象会让下一个人以为可以按厂商只读一条 —— 那才是会错的改法。
    */
   readonly cached_tokens?: number;
-  /** OpenAI 兼容层常见的嵌套形状（GLM 实测走这个） */
-  readonly prompt_tokens_details?: { readonly cached_tokens?: number };
+  /**
+   * OpenAI 兼容层常见的嵌套形状（GLM 实测走这个；DeepSeek / Kimi 2026-09-26 复测也有）。
+   *
+   * **`cache_write_tokens` 不在这里，也不该被当成命中**：Kimi 未命中时给的正是它
+   * （写入缓存的 token 数）。把写入读成命中，用量视图会在第一次调用就显示"命中"。
+   */
+  readonly prompt_tokens_details?: {
+    readonly cached_tokens?: number;
+    /**
+     * **声明它，正是为了不读它。** Kimi 未命中时给的就是这个字段
+     * （2026-09-26 实测，首次调用 1024）。类型里缺席的话，
+     * 下一个人看到上游 usage 里有个带 cache 的数就会顺手接上 `??` ——
+     * 而那会让用户在**第一次**调用（最贵的那次）看到满额命中。
+     */
+    readonly cache_write_tokens?: number;
+  };
   readonly completion_tokens_details?: { readonly reasoning_tokens?: number };
 }
 

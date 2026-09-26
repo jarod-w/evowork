@@ -204,6 +204,7 @@ P0-5 签名资质（1–3 周外部等待）───────────→
 | U4  | 三平台签名 / 公证链路可用（M9）                                         | P0-5 的证书                                       | CI 里签名步骤存在但在无 secrets 时跳过，产物标注「未签名」                                                                              |
 | U5  | Windows 的隔离强度足以支撑 `evowork-full`（Q6 / Q26 / 10 §7） | 一台 Windows 机器 + 对 `windows-sandbox-rs` 的实测 | `platform.ts` 把两种结论的行为都实现好，由 `WINDOWS_ISOLATION` 常量选择；**当前是 `unknown`，按保守侧走**（停用完全访问 + 能力页如实说还没评估）。默认按「足够」走的话，结论一旦是「不足」，中间这段时间 Windows 用户是在未知隔离强度下跑完全访问 |
 
+| ~~U7~~ | ~~`deepseek-flash` 的能力位（尤其 `imageInput`）与厂商文档一致~~ | — | **✅ 2026-09-26 用真实 key 实测通过**（`deepseek-flash` 与 `kimi-k3` 各 23 条全通过，两家都答出纯红图的"红"）。剩余未验证项只有 `maxContextTokens`。同一轮**订正了一条 cache 口径**，见 §10.1 |
 | U6  | `safeStorage` 在真机上的行为（M10a / Q34=A）                             | 三台真机（macOS · Windows · **一台没有 keyring 的 Linux**） | 两层替代：① 测试里注入一个假 `safeStorage`，覆盖"可用 / 不可用 / `basic_text` / 解不开"四种分支的**我们这一侧**行为；② **2026-09-08 用真实 DeepSeek key 把整条链路跑通过一次**（密钥库 → 网关子进程 → 上游，见 [status §3](status.md)），但那台机器无 keyring，所以走的是明文兜底分支 —— 验到的是"不可用时怎么办"，不是钥匙串本身。**真机那一侧仍证明不了**：首次加密会不会弹授权框、换 OS 账号后解密失败的表现、以及没有 keyring 时那两个方法到底返回什么 |
 
 **U1 / U3 / U4 / U5 / U6 都不允许因为"代码写完了"而被勾掉**：勾掉它们的唯一凭据是上表第 3 列列出的那件事真的发生过。
@@ -218,11 +219,17 @@ P0-5 签名资质（1–3 周外部等待）───────────→
 |---|---|---|
 | ✅ **R7 的可审计手段**（总纲 §10.2 第 2 条） | 「不落盘正文」做成了三层：接口形状（**没有**接受自由字符串的日志入口）· 字段注册表（只有注册过的字段名 + 符合形状的值能进）· 8 字滑窗泄露检测。网关跑一次完整请求后对日志逐段断言 prompt / instructions / 回复 / 工具参数均无泄露，且**上游把请求 echo 进错误消息**这条最常见的泄露形态也被覆盖 | `packages/logging` + `services/gateway/test/pipeline.test.ts` 的 Q14 组 |
 | ✅ **结构化生成的渲染侧**（R4 的一半） | 模型只需填一份受 JSON Schema 约束的内容 JSON；校验失败会指出"哪一页哪个字段"，且**只列它声明的那个 layout 的问题**（08 §5.3 只给模型一次修正机会，所以消息必须精确）。这证明的是**渲染侧不背锅**，**不是**模型达标 —— 后者仍是 U1 | `plugins/skills/presentations` |
+| ✅ **U7：`deepseek-flash` 与 `kimi-k3` 的能力位** | 2026-09-26 用真实 key 各跑 23 条，全通过。**两家都真的能看图**（32×32 纯红图都答出"红"）—— 这正是用户报的那条缺陷要的依据。同一轮补了两节探针（并行工具调用 · cache **命中**时的字段名），并**订正一条口径**：`prompt_tokens_details.cached_tokens` 与顶层 `cached_tokens` **不是互斥的**，DeepSeek 与 Kimi 命中时两处都给；Kimi 未命中时给的是 `cache_write_tokens`，**写入不是命中**（已加回归测试）。剩余未验证项只有 `maxContextTokens` | `scripts/verify-provider.mjs` 的 ③b / ⑤ / ⑥ 三节 · `services/gateway/test/known-models.test.ts` · `translate.test.ts` 的 cache 组 |
 | ✅ **U2 整条：三家的流式 / 工具调用 / reasoning / cache / 图片语义** | 2026-09-05 拿到三把 key，用 `scripts/verify-provider.mjs` 逐家实测（DeepSeek 3 个型号 + kimi-k3 + glm-5.3-flash）。**改出三个真缺陷**：① Kimi 的 404 会被内核无限重试（错误体只有 `type` 没有 `code`，映射只看 `code`）② Kimi 的 cache 命中永远显示 0（它把命中数放在 usage 顶层的 `cached_tokens`）③ 三家主力型号**全是推理模型**，而能力表按直觉写了三个 `false`（标错会让推理段整块不显示）。全部已修 + 回归测试 + 回写总纲 D2 | `scripts/verify-provider.mjs` · `services/gateway/test/providers.test.ts` · `translate.test.ts` 的「真实上游形状」组 · 总纲 D2 的两张实测表 |
 
 > 前两条能在没有 API key 的情况下拿到，是因为它们本质上不依赖模型行为。
 > U2 依赖，所以它一直等到 key 到位 —— 而它一到位就产出了**三个会让用户遇到坏行为的缺陷**，
 > 三个都不会在单元测试里暴露（都是"不报错但行为错"）。这正是「未被证伪的断言必须可枚举」的价值。
+>
+> **U7 是同一条路径的第二次兑现**（2026-09-26）：它也一到位就订正了两处 ——
+> 一处是能力位（`deepseek-flash` 从"厂商文档说支持"变成"实测答出了颜色"），
+> 一处是 cache 口径的注释把三种写法说成了一家一条。后者不影响当前行为，
+> 但它会误导下一个人按厂商只读一条。
 >
 > **U1（GLM 产物质量）· U3（misfire 真机体验）· U4（签名公证）· U5（Windows 隔离强度）仍未证伪。**
 > 注意 U1 **没有**因为 GLM 跑通而被勾掉：这一轮验的是协议语义，不是它写 PPT 写得好不好。

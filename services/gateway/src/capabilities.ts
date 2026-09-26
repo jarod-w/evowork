@@ -24,6 +24,7 @@
  * | `promptCache` | 无缓存命中 | 用量视图里 cache 命中如实显示 0（10 §5.2） |
  * | `imageInput` | 不能收图片 | 附件区拒绝图片并说明"当前模型不支持图片输入"（03 §8） |
  */
+import { builtinModelEntries } from './known-models.js';
 
 export interface ModelCapabilities {
   readonly streaming: boolean;
@@ -92,57 +93,18 @@ export interface ModelRegistryEntry extends ModelEntry {
   readonly notes: string;
 }
 
-export const P0_MODELS: readonly ModelRegistryEntry[] = [
-  {
-    id: 'evowork/kimi-k3',
-    provider: 'moonshot',
-    upstreamModel: 'kimi-k3',
-    displayName: 'Kimi K3',
-    tier: 'flagship',
-    verified: true,
-    verifiedAt: '2026-09-05',
-    unverified: ['maxContextTokens'],
-    notes:
-      '2026-09-05 实测：**是推理模型**（64 帧里 61 帧 reasoning_content，原表按 K2 写的 false 已订正）；' +
-      '并行工具调用成立；**真的能看图**（32×32 纯红图答"红色"）；' +
-      'cache 计数在 usage 的**顶层 `cached_tokens`**，与另两家都不同；' +
-      '未知模型返回 404 且 **error 里没有 code、语义在 type** —— 这条暴露了错误映射的一个真缺陷（见 registry.ts）。',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: true,
-      promptCache: true,
-      imageInput: true,
-      maxContextTokens: 256_000,
-    },
-  },
-  {
-    id: 'evowork/glm-flash',
-    provider: 'zhipu',
-    upstreamModel: 'glm-5.3-flash',
-    displayName: 'GLM 5.3 Flash',
-    tier: 'light',
-    verified: true,
-    verifiedAt: '2026-09-05',
-    unverified: ['maxContextTokens'],
-    notes:
-      'Q16 把它列入 P0 是为了验证产物质量的**下限**（R4）——不达标就换旗舰档，**不靠加模板硬扛**（总纲原话）。' +
-      '2026-09-05 实测：**是推理模型**（65 帧里 64 帧 reasoning_content，原表 false 已订正）；' +
-      '并行工具调用成立；**能看图**（答"红色"）；cache 走嵌套的 prompt_tokens_details.cached_tokens；' +
-      '未知模型 400 + error.code="1214"（不在已知码表里，靠状态码兜底到 invalid_prompt）。' +
-      '**产物质量本身仍未评估**（U1）—— 这里验的是协议语义，不是它写得好不好。',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: true,
-      promptCache: true,
-      imageInput: true,
-      maxContextTokens: 128_000,
-    },
-  },
-];
+/**
+ * P0 三家里**当前仍在目录中**的型号（Q16）。
+ *
+ * **它是派生的，不是手写的** —— 真源是 `known-models.ts` 里那张按
+ * (协议适配类型, 上游模型名) 索引的表。2026-09-26 改成派生的理由写在那个文件头：
+ * 在此之前，同一个 `kimi-k3` 从内置目录进来能读图、被用户加成自定义模型就不能了，
+ * 因为能力位有两条互不相通的来路。
+ *
+ * 已下架型号的实测记录保留在 `known-models.ts`（以及总纲 §D2）；
+ * 目录里只列当前仍存在的型号 —— 下架 = 去掉那条的 `builtinId`，**不是删掉能力知识**。
+ */
+export const P0_MODELS: readonly ModelRegistryEntry[] = builtinModelEntries();
 
 /** 缺失能力的用户可见文案（03 §8 / 04 §5.2 #3）。 */
 export const CAPABILITY_COPY: Readonly<Record<keyof ModelCapabilities, string>> = Object.freeze({

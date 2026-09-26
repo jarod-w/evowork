@@ -21,6 +21,7 @@
  * 都是 N 把密钥同时泄漏。分开之后，日志里出现的是变量名。
  */
 import type { ModelCapabilities, ModelRegistryEntry, ProviderId } from './capabilities.js';
+import { ALL_CAPABILITY_KEYS, findKnownModel } from './known-models.js';
 import type { ProviderConfig } from './providers/types.js';
 
 /** 环境变量名。两侧共用常量，拼错就不会各拼各的。 */
@@ -101,8 +102,36 @@ export function validateCustomModel(input: {
   return undefined;
 }
 
-/** 没实测过的能力位一律**标未验证**：自定义模型我们没有任何依据说它验过（同 `verified` 的设计）。 */
+/**
+ * 一条自定义模型 → 注册表条目。
+ *
+ * ## 认得出来的型号按我们知道的写，认不出来的才"全都不承诺"
+ *
+ * 2026-09-26 之前这里无条件把 `verified` 写成 false、把七项能力全列进 `unverified`，
+ * 理由是"自定义模型我们没有任何依据说它验过"。对 `private`（其他 OpenAI 兼容 endpoint）
+ * 这话成立，对 `moonshot/kimi-k3` 不成立 —— 那条我们 2026-09-05 对着真实 endpoint
+ * 测过，结论就在 `known-models.ts` 里。用户把它加成自有密钥模型之后，
+ * 下拉里的「读图」却是灰色划除的：**同一个型号，换一层进来就失忆了**。
+ *
+ * 所以先查那张表：认得出来就用它的能力位与验证元数据（`evidence: 'vendor-doc'` 的
+ * 仍然是 `verified: false`，只是能力位不再被保守默认盖掉）；认不出来才保持原样。
+ */
 export function toRegistryEntry(spec: CustomModelSpec): ModelRegistryEntry {
+  const known = findKnownModel(spec.provider, spec.upstreamModel);
+  if (known) {
+    return {
+      id: spec.id,
+      provider: spec.provider,
+      upstreamModel: spec.upstreamModel,
+      displayName: spec.displayName,
+      tier: known.tier,
+      capabilities: known.capabilities,
+      verified: known.evidence === 'probe',
+      ...(known.verifiedAt !== undefined ? { verifiedAt: known.verifiedAt } : {}),
+      unverified: known.unverified,
+      notes: `这台电脑上自己添加的模型，用的是你自己的密钥。${known.notes}`,
+    };
+  }
   return {
     id: spec.id,
     provider: spec.provider,
@@ -111,18 +140,10 @@ export function toRegistryEntry(spec: CustomModelSpec): ModelRegistryEntry {
     tier: 'standard',
     capabilities: spec.capabilities,
     verified: false,
-    unverified: [
-      'streaming',
-      'toolCalls',
-      'parallelToolCalls',
-      'reasoning',
-      'promptCache',
-      'imageInput',
-      'maxContextTokens',
-    ],
+    unverified: ALL_CAPABILITY_KEYS,
     notes:
-      '这台电脑上自己添加的模型。能力位是添加时手填的，**没有经过实测** ——' +
-      '徽标显示的是你的声明，不是我们的验证结论。',
+      '这台电脑上自己添加的模型，而这个型号不在我们的能力表里。能力位是添加时手填的，' +
+      '**没有经过实测** —— 徽标显示的是你的声明，不是我们的验证结论。',
   };
 }
 

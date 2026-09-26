@@ -8,6 +8,7 @@
  * 文件分工：
  *   · `protocol.ts`            内核与网关之间的线上契约，含**三条会让整条流失败的硬约束**
  *   · `capabilities.ts`        能力声明（D2 语义矩阵 + Q16 三家），含"未验证"如实标注
+ *   · `known-models.ts`        **能力位的唯一真源**：按 (适配类型, 上游模型名) 索引，① 层与 ③ 层共用
  *   · `layers.ts`              模型注册表的四层与合并顺序（② > ②' > ③ > ①，11 §4.1）
  *   · `custom-models.ts`       第③层的线上形状（**宿主与网关共用**，密钥不进那个 JSON）
  *   · `catalog.ts`             模型下拉的线上契约（**桌面 App 与网关共用同一个类型**，F24）
@@ -31,6 +32,14 @@ export {
   type ModelRegistryEntry,
   type ProviderId,
 } from './capabilities.js';
+export {
+  ALL_CAPABILITY_KEYS,
+  builtinModelEntries,
+  findKnownModel,
+  KNOWN_MODELS,
+  type CapabilityEvidence,
+  type KnownModel,
+} from './known-models.js';
 export {
   CUSTOM_KEY_ENV_PREFIX,
   CUSTOM_MODELS_ENV,

@@ -202,9 +202,10 @@ pnpm run build                    # 四步装配：tsc → 复制入口与 vendo
 pnpm run test -- --project store  # 只跑一个包
 node scripts/kernel-drift.mjs     # 上游漂移 + F1–F25 断言机器复核
 
-# 拿到某家模型的 key 之后跑一次，把能力表里的 verified 变成有依据的值（U2）
+# 拿到某家模型的 key 之后跑一次，把能力表里的 verified 变成有依据的值（U2 / U7）
+# --image true 会发一张 32×32 纯红图问颜色：**答不出颜色 = 看不见**，只看状态码会判错
 EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
-  --base https://api.deepseek.com --model deepseek-v4-flash --reasoning true
+  --base https://api.deepseek.com --model deepseek-flash --reasoning true --image true
 
 code evowork.code-workspace                       # 打开多根工作区
 

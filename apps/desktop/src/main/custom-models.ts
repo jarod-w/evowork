@@ -22,10 +22,19 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
-import { CUSTOM_KEY_ENV_PREFIX, validateCustomModel, type CustomModelSpec } from '@evowork/gateway';
+import {
+  CUSTOM_KEY_ENV_PREFIX,
+  findKnownModel,
+  validateCustomModel,
+  type CustomModelSpec,
+} from '@evowork/gateway';
 import type { ModelCapabilities } from '@evowork/gateway';
 
-/** 自定义模型的能力位默认值：**只承诺最基本的两项**。 */
+/**
+ * **不在能力表里的**自定义模型的能力位默认值：只承诺最基本的两项。
+ *
+ * 认得出来的型号（`findKnownModel`）不走这里 —— 见 `capabilitiesFor`。
+ */
 export const DEFAULT_CUSTOM_CAPABILITIES: ModelCapabilities = Object.freeze({
   streaming: true,
   toolCalls: true,
@@ -40,6 +49,36 @@ export const DEFAULT_CUSTOM_CAPABILITIES: ModelCapabilities = Object.freeze({
   imageInput: false,
   maxContextTokens: 32_000,
 });
+
+/**
+ * 一条自定义模型该带什么能力位。
+ *
+ * **认得出来的型号以 `known-models.ts` 为准，认不出来的才用保守默认 + 用户声明。**
+ *
+ * 2026-09-26 的缺陷就出在这里缺了一层：设置页的「添加模型」对话框**根本没有能力位的
+ * 输入项**（11 §4.4 只问供应商 / 密钥 / 模型名 / endpoint），所以每一条自定义模型
+ * 存下来的都是 `DEFAULT_CUSTOM_CAPABILITIES` —— 用户加了 `moonshot/kimi-k3`，
+ * 拿到的是一条"不会读图、不会推理、不能并行调工具"的 Kimi K3。
+ *
+ * ## 为什么**读文件时也要再解析一次**，而不是只在写入时种一次
+ *
+ * 缺陷发生在先：用户机器上的 `models.toml` 里已经躺着 `image_input = false`。
+ * 只改写入路径的话，那两条要用户去删了重加才会好 —— 而他不会知道要这么做
+ * （界面上没有任何东西提示这个值是我们种的）。
+ *
+ * 覆盖掉文件里的值也不会抹掉"用户的声明"：那个对话框从来没让用户声明过能力位。
+ * 等到它真的有开关那天，这里要改成"用户显式改过的才压过表" —— 到时候文件里
+ * 需要多一个"这条是谁写的"的标记，而不是继续靠猜。
+ */
+export function capabilitiesFor(
+  provider: string,
+  upstreamModel: string,
+  declared?: Partial<ModelCapabilities> | undefined,
+): ModelCapabilities {
+  const known = findKnownModel(provider, upstreamModel);
+  if (known) return known.capabilities;
+  return { ...DEFAULT_CUSTOM_CAPABILITIES, ...declared };
+}
 
 /** 一条自定义模型在文件里的样子（= `CustomModelSpec`，只是 keyEnv 由我们分配）。 */
 export type CustomModelRecord = CustomModelSpec;
@@ -66,8 +105,8 @@ export function parseModelsToml(text: string): {
 
   const flush = (): void => {
     if (!current) return;
-    const capabilities: ModelCapabilities = {
-      ...DEFAULT_CUSTOM_CAPABILITIES,
+    // 认得出来的型号以能力表为准，文件里那几行只对表外的型号起作用（见 `capabilitiesFor`）
+    const capabilities = capabilitiesFor(current.provider ?? '', current.upstream_model ?? '', {
       ...(current.reasoning !== undefined ? { reasoning: current.reasoning === 'true' } : {}),
       ...(current.image_input !== undefined ? { imageInput: current.image_input === 'true' } : {}),
       ...(current.parallel_tool_calls !== undefined
@@ -80,7 +119,7 @@ export function parseModelsToml(text: string): {
       Number.isFinite(Number(current.max_context_tokens))
         ? { maxContextTokens: Number(current.max_context_tokens) }
         : {}),
-    };
+    });
     const record = {
       id: current.id ?? '',
       displayName: current.display_name ?? current.id ?? '',

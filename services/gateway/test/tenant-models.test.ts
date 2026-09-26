@@ -74,3 +74,19 @@ describe('租户目录：带密钥或上游地址的条目丢掉', () => {
     expect(encoded).not.toContain('sk-');
   });
 });
+
+describe('租户默认模型的能力位也走能力表', () => {
+  it("租户配的 kimi-k3 能读图 —— ②' 层不该是 ③ 层那个缺陷的第二份拷贝", () => {
+    const raw = JSON.stringify([
+      { id: 'evowork/kimi-k3', provider: 'moonshot', upstreamModel: 'kimi-k3' },
+    ]);
+    expect(parseTenantModels(raw).specs[0]?.capabilities.imageInput).toBe(true);
+  });
+
+  it('认不出来的型号仍然什么都不承诺', () => {
+    const raw = JSON.stringify([{ id: 't/x', provider: 'private', upstreamModel: 'x' }]);
+    const spec = parseTenantModels(raw).specs[0];
+    expect(spec?.capabilities.imageInput).toBe(false);
+    expect(spec?.unverified.length).toBeGreaterThanOrEqual(7);
+  });
+});

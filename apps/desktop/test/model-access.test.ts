@@ -188,6 +188,103 @@ describe('自定义模型（第③层）', () => {
   });
 });
 
+/**
+ * 2026-09-26 的缺陷：添加模型的对话框**没有能力位的输入项**（11 §4.4 只问供应商 /
+ * 密钥 / 模型名 / endpoint），于是每条自定义模型都带着"三个高级能力全 false"存下来。
+ * 用户加了 `moonshot/kimi-k3` 与 `deepseek/deepseek-flash`，两条都不会读图 ——
+ * 而 kimi-k3 能读图是我们自己实测出来的结论。
+ *
+ * 下面四条守的是：**能力位认得出来就别让保守默认盖掉，并且已经存坏的那些要自己好**。
+ */
+describe('自定义模型的能力位来自能力表（known-models）', () => {
+  function add(over: { provider: string; upstreamModel: string }) {
+    const m = access();
+    expect(
+      m.addCustomModel({
+        id: `${over.provider}/${over.upstreamModel}`,
+        provider: over.provider,
+        upstreamModel: over.upstreamModel,
+        baseUrl: 'https://example.com/v1',
+        apiKey: SECRET,
+      }),
+    ).toBeUndefined();
+    return JSON.parse(m.env()[CUSTOM_MODELS_ENV] as string) as {
+      capabilities: { imageInput: boolean; reasoning: boolean };
+    }[];
+  }
+
+  it('加一条 kimi-k3 就能读图 —— 同一个型号不该因为走哪一层而失忆', () => {
+    expect(
+      add({ provider: 'moonshot', upstreamModel: 'kimi-k3' })[0]?.capabilities.imageInput,
+    ).toBe(true);
+  });
+
+  it('加一条 deepseek-flash 也能读图（厂商视觉指南）', () => {
+    const spec = add({ provider: 'deepseek', upstreamModel: 'deepseek-flash' })[0];
+    expect(spec?.capabilities.imageInput).toBe(true);
+    expect(spec?.capabilities.reasoning).toBe(true);
+  });
+
+  it('表外的型号仍然走保守默认（我们对它确实一无所知）', () => {
+    expect(
+      add({ provider: 'private', upstreamModel: 'qwen3-max' })[0]?.capabilities.imageInput,
+    ).toBe(false);
+  });
+
+  it('**已经存坏的 models.toml 自己会好**：用户不会知道要删了重加', () => {
+    // 缺陷发生在先 —— 用户机器上躺着的就是这一份
+    writeFileSync(
+      join(dir, 'models.toml'),
+      [
+        '[[models]]',
+        'id = "moonshot/kimi-k3"',
+        'display_name = "kimi-k3"',
+        'provider = "moonshot"',
+        'upstream_model = "kimi-k3"',
+        'base_url = "https://api.moonshot.cn/v1"',
+        'key_env = "EVOWORK_CUSTOM_KEY_1"',
+        'reasoning = false',
+        'image_input = false',
+        'parallel_tool_calls = false',
+        'prompt_cache = false',
+        'max_context_tokens = 32000',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const specs = JSON.parse(access().env()[CUSTOM_MODELS_ENV] as string) as {
+      capabilities: { imageInput: boolean; maxContextTokens: number };
+    }[];
+    expect(specs[0]?.capabilities.imageInput).toBe(true);
+    expect(specs[0]?.capabilities.maxContextTokens).toBe(256_000);
+  });
+
+  it('把型号改成另一个就重算能力位，不沿用上一条的', () => {
+    const m = access();
+    m.addCustomModel({
+      id: 'deepseek/deepseek-flash',
+      provider: 'deepseek',
+      upstreamModel: 'deepseek-flash',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: SECRET,
+    });
+    // 改回那个"收下图却看不见"的老型号：徽标必须跟着变，否则用户发了图只会得到"我没看到"
+    expect(
+      m.updateCustomModel({
+        previousId: 'deepseek/deepseek-flash',
+        id: 'deepseek/deepseek-v4-flash',
+        provider: 'deepseek',
+        upstreamModel: 'deepseek-v4-flash',
+        baseUrl: 'https://api.deepseek.com/v1',
+      }),
+    ).toBeUndefined();
+    const specs = JSON.parse(m.env()[CUSTOM_MODELS_ENV] as string) as {
+      capabilities: { imageInput: boolean };
+    }[];
+    expect(specs[0]?.capabilities.imageInput).toBe(false);
+  });
+});
+
 describe('改一条自定义模型（设置页的铅笔，11 §4.4）', () => {
   const BASE = {
     id: 'my/llm',

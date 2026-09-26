@@ -363,6 +363,35 @@
 
 能力表用 `verified` / `verifiedAt` / `unverified` 三个字段区分"验过什么、没验什么"，并由能力端点透出。`maxContextTokens` 要塞满上下文才能测，五个型号都仍在 `unverified` 里。
 
+> **2026-09-26：能力表收敛成一张，并补进 `deepseek-flash`。** 用户在设置页加了
+> `deepseek/deepseek-flash` 与 `moonshot/kimi-k3`，两条在模型下拉里都把「读图」画成灰色划除 ——
+> 而 kimi-k3 能读图正是上表那次实测的结论。原因是能力位当时有三条来路
+> （① 层实测表 · ②' 层写死的常量 · ③ 层的保守默认），**后两条无条件把高级能力写成 false**，
+> 于是同一个型号换一层进来就失忆了。现在三层共用
+> [`services/gateway/src/known-models.ts`](../services/gateway/src/known-models.ts)
+> 这一张按 (协议适配类型, 上游模型名) 索引的表，`P0_MODELS` 从它派生；详见
+> [11 §4.1.1](design/11-account-and-models.md)。
+>
+> **`deepseek-flash` 与上表的 `deepseek-v4-flash` 不是同一个型号。** 前者是厂商文档
+> （api-docs.deepseek.com 的视觉指南，2026-09-26 核对）里**原生支持视觉**的那个，
+> 视觉能力最早以 `deepseek-v4-flash-vision-exp` 发布；后者就是上表"接受但看不见"的那个，
+> 仍然留在能力表里且 `imageInput: false` —— **下架的是目录条目，不是能力知识**。
+> 表里每条结论标 `evidence`：实测过的是 `probe` + 日期，只读过文档的是 `vendor-doc`
+> 且 `verified` 仍是 false（U2 的教训：文档说支持与真的能用能差出一个缺陷）。
+
+> **2026-09-26（同日稍后）：`deepseek-flash` 与 `kimi-k3` 实测收口，各 23 条全通过。**
+> **两家都真的能看图**（32×32 纯红图都答出"红"）—— 判据是答没答对颜色，不是 HTTP 200，
+> 因为"接受但看不见"回的也是 200。`deepseek-flash` 因此从 `vendor-doc` 升为
+> `probe`（2026-09-26），`unverified` 只剩 `maxContextTokens`。
+>
+> 同一轮给探针补了两节：**③b 并行工具调用**（`parallelToolCalls` 是三家都写着 true、
+> 却从没被测过的一项）与 **⑥ cache 命中时的字段名**（原来只验过未命中的形状）。
+> 并**订正上表的一处口径**：`cached_tokens` 的三种写法**不是一家一条** ——
+> DeepSeek 与 Kimi 命中时同时给顶层与嵌套两种（896 / 1024，两处一致）。
+> 按"一家一条"去改成按厂商只读一条，会在另一家上漏读，而漏读的表现是命中永远 0。
+> Kimi 未命中时给的是 `prompt_tokens_details.cache_write_tokens` —— **写入不是命中**，
+> 读错会让用户在第一次调用就看到满额命中。详见 [status.md](status.md) 同日第二节。
+
 > ⚠️ 风险：Responses API 的 reasoning/encrypted_content 语义在非 OpenAI 模型上无对应物，需设计降级策略。**降级必须显式**：网关在响应里标注能力缺失，前端据此隐藏对应 UI（如推理过程折叠区），而不是静默留白。
 
 ### D3 —— 前端只接 app-server JSON-RPC
