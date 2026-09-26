@@ -313,3 +313,103 @@ describe('电脑操控授权选项', () => {
     expect(onDecide).toHaveBeenCalledWith('decline');
   });
 });
+
+/*
+ * 内核的追问是**一组**问题（`ToolRequestUserInputParams.questions`），回复要按问题 id
+ * 归位。只画第一题、只答第一题的话，用户看不到第二题，工具收到一份残缺的 answers ——
+ * 而且两边都不报错。
+ */
+describe('追问审批卡（item/tool/requestUserInput）', () => {
+  const ask = (questions: unknown) =>
+    approval({ kind: 'userInput', questions, allowAcceptForSession: false } as never);
+
+  it('每一道题都画出来，一次提交全部答案', () => {
+    const answered: unknown[] = [];
+    render(
+      <ApprovalCard
+        approval={ask([
+          { id: 'q_quarter', question: '用哪个季度的数据？' },
+          { id: 'q_to', question: '发给谁？' },
+        ])}
+        onDecide={() => {}}
+        onAnswer={(a) => {
+          answered.push(a);
+        }}
+      />,
+    );
+    expect(screen.getByText('用哪个季度的数据？')).toBeTruthy();
+    // 第二道题以前根本不出现 —— 用户答不了它，也不知道它存在
+    expect(screen.getByText('发给谁？')).toBeTruthy();
+
+    const boxes = document.querySelectorAll('.ew-approval-answer');
+    expect(boxes).toHaveLength(2);
+    fireEvent.change(boxes[0]!, { target: { value: '2026Q2' } });
+    fireEvent.change(boxes[1]!, { target: { value: '张三' } });
+    fireEvent.click(screen.getByText('回答'));
+
+    expect(answered).toEqual([{ answers: { q_quarter: '2026Q2', q_to: '张三' } }]);
+  });
+
+  it('选项题回的是选中项的 label（内核的选项没有 id）', () => {
+    const answered: unknown[] = [];
+    render(
+      <ApprovalCard
+        approval={ask([
+          {
+            id: 'q1',
+            question: '用哪个季度？',
+            options: [{ label: '2026Q1' }, { label: '2026Q2' }],
+          },
+        ])}
+        onDecide={() => {}}
+        onAnswer={(a) => {
+          answered.push(a);
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByText('2026Q2'));
+    fireEvent.click(screen.getByText('回答'));
+    expect(answered).toEqual([{ answers: { q1: '2026Q2' } }]);
+  });
+
+  /*
+   * `isSecret` 的答案是密钥。明文 textarea 会让它出现在截图、录屏和肩后视线里 ——
+   * 跟 Q34「密钥不落明文盘」是同一条纪律的不同落点。
+   */
+  it('密钥题用不回显的输入框，且没有「看一眼」的入口', () => {
+    render(
+      <ApprovalCard
+        approval={ask([{ id: 'q_token', question: '粘贴访问令牌', isSecret: true }])}
+        onDecide={() => {}}
+        onAnswer={() => {}}
+      />,
+    );
+    const box = document.querySelector('.ew-approval-answer') as HTMLInputElement;
+    expect(box.tagName).toBe('INPUT');
+    expect(box.getAttribute('type')).toBe('password');
+    expect(box.getAttribute('autocomplete')).toBe('off');
+    expect(screen.queryByText(/显示|查看|看一眼/)).toBeNull();
+  });
+});
+
+/*
+ * `CommandExecutionApprovalKind = "command" | "writeStdin"`。后者是往**已经在跑的
+ * 进程**写输入，说成「将运行一条本机命令」是描述错了 —— 用户点的是一个他没看懂的东西。
+ */
+describe('命令审批卡分得清 command 与 writeStdin', () => {
+  it('writeStdin 不说成"运行一条命令"', () => {
+    render(
+      <ApprovalCard
+        approval={approval({ kind: 'command', commandKind: 'writeStdin' } as never)}
+        onDecide={() => {}}
+      />,
+    );
+    expect(document.body.textContent).toContain('将向正在运行的程序输入内容');
+    expect(document.body.textContent).not.toContain('将运行一条本机命令');
+  });
+
+  it('普通命令仍然是"运行一条本机命令"', () => {
+    render(<ApprovalCard approval={approval({ kind: 'command' })} onDecide={() => {}} />);
+    expect(document.body.textContent).toContain('将运行一条本机命令');
+  });
+});

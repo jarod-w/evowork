@@ -30,6 +30,15 @@ export interface ApprovalViewModel {
   /** 「为什么需要确认」——必填（10 §3.2）。缺它时组件会显式说明缺失，而不是留空 */
   readonly reason?: string | undefined;
   readonly command?: string | undefined;
+  readonly commandKind?: 'command' | 'writeStdin' | undefined;
+  readonly questions?:
+    | readonly {
+        readonly id: string;
+        readonly question: string;
+        readonly options?: readonly { readonly label: string }[] | undefined;
+        readonly isSecret?: boolean | undefined;
+      }[]
+    | undefined;
   readonly cwd?: string | undefined;
   /** `undefined` = 没查到清单，`[]` = 确实一个文件都不改。两者画法不同 */
   readonly changes?:
@@ -117,10 +126,14 @@ export function ApprovalCard({
   readonly onAnswer?: (answer: {
     readonly optionId?: string;
     readonly text?: string;
+    /** 追问的逐题答案（问题 id → 答案） */
+    readonly answers?: Readonly<Record<string, string>>;
   }) => void | undefined;
   readonly autoFocus?: boolean | undefined;
 }) {
   const [draft, setDraft] = useState('');
+  /** 追问的逐题草稿。密钥题的值只活在这里，不回显、不外传 */
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
   const isQuestion = approval.kind === 'userInput' || approval.kind === 'mcp';
@@ -136,7 +149,10 @@ export function ApprovalCard({
 
   const impact =
     approval.kind === 'command'
-      ? '将运行一条本机命令'
+      ? // writeStdin 是往**已经在跑的进程**写输入，说成"运行一条命令"是错的
+        approval.commandKind === 'writeStdin'
+        ? '将向正在运行的程序输入内容'
+        : '将运行一条本机命令'
       : approval.kind === 'fileChange'
         ? fileImpact
         : approval.kind === 'permissions'
@@ -167,28 +183,86 @@ export function ApprovalCard({
 
       {isQuestion ? (
         <div className="ew-approval-question">
-          <p>{approval.question}</p>
-          {(approval.options ?? []).length > 0 ? (
-            <div className="ew-approval-options">
-              {(approval.options ?? []).map((option) => (
-                <PillButton key={option.id} onClick={() => onAnswer?.({ optionId: option.id })}>
-                  {option.label ?? option.id}
-                </PillButton>
-              ))}
-            </div>
-          ) : approval.kind === 'mcp' ? (
-            <p>此授权表单暂不支持，无法批准。</p>
-          ) : (
+          {/*
+            内核的追问是**一组**问题，逐题作答后一起提交（回复要按问题 id 归位）。
+            `mcp` 是另一套协议（elicitation），仍走单问题 + 选项按钮那条路。
+          */}
+          {(approval.questions ?? []).length > 0 ? (
             <>
-              <textarea
-                className="ew-approval-answer"
-                aria-label="回答"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-              />
-              <PillButton variant="accent" onClick={() => onAnswer?.({ text: draft })}>
+              {(approval.questions ?? []).map((item) => (
+                <div key={item.id} className="ew-approval-one-question">
+                  <p>{item.question}</p>
+                  {(item.options ?? []).length > 0 ? (
+                    <div className="ew-approval-options">
+                      {(item.options ?? []).map((option) => (
+                        <PillButton
+                          key={option.label}
+                          data-selected={answers[item.id] === option.label ? 'true' : undefined}
+                          onClick={() =>
+                            setAnswers((previous) => ({ ...previous, [item.id]: option.label }))
+                          }
+                        >
+                          {option.label}
+                        </PillButton>
+                      ))}
+                    </div>
+                  ) : item.isSecret ? (
+                    /*
+                      答案是密钥：用 password 输入框，**没有小眼睛**（与 SecretInput 同一条
+                      纪律）。明文 textarea 会让它出现在截图、录屏与肩后视线里。
+                    */
+                    <input
+                      type="password"
+                      className="ew-approval-answer"
+                      aria-label={item.question || '回答'}
+                      autoComplete="off"
+                      value={answers[item.id] ?? ''}
+                      onChange={(event) =>
+                        setAnswers((previous) => ({ ...previous, [item.id]: event.target.value }))
+                      }
+                    />
+                  ) : (
+                    <textarea
+                      className="ew-approval-answer"
+                      aria-label={item.question || '回答'}
+                      value={answers[item.id] ?? ''}
+                      onChange={(event) =>
+                        setAnswers((previous) => ({ ...previous, [item.id]: event.target.value }))
+                      }
+                    />
+                  )}
+                </div>
+              ))}
+              <PillButton variant="accent" onClick={() => onAnswer?.({ answers })}>
                 回答
               </PillButton>
+            </>
+          ) : (
+            <>
+              <p>{approval.question}</p>
+              {(approval.options ?? []).length > 0 ? (
+                <div className="ew-approval-options">
+                  {(approval.options ?? []).map((option) => (
+                    <PillButton key={option.id} onClick={() => onAnswer?.({ optionId: option.id })}>
+                      {option.label ?? option.id}
+                    </PillButton>
+                  ))}
+                </div>
+              ) : approval.kind === 'mcp' ? (
+                <p>此授权表单暂不支持，无法批准。</p>
+              ) : (
+                <>
+                  <textarea
+                    className="ew-approval-answer"
+                    aria-label="回答"
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                  />
+                  <PillButton variant="accent" onClick={() => onAnswer?.({ text: draft })}>
+                    回答
+                  </PillButton>
+                </>
+              )}
             </>
           )}
           {approval.kind === 'mcp' ? (

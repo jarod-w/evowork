@@ -82,6 +82,40 @@ describe('审批必须回复（F14：内核会一直等）', () => {
     expect(reply).toEqual({ answers: { q_quarter: { answers: ['2026Q2'] } } });
   });
 
+  /* 内核发一组问题，就要收到一组答案 —— 只回第一题的话，其余的凭空消失且不报错。 */
+  it('一组追问逐题归位，全部带回去', async () => {
+    const router = createApprovalRouter({
+      ask: async () => ({
+        decision: 'accept',
+        answers: { q_quarter: '2026Q2', q_to: '张三' },
+      }),
+    });
+    const reply = await router.handle(SERVER_REQUEST.toolRequestUserInput, {
+      threadId: 't1',
+      itemId: 'i1',
+      questions: [
+        { id: 'q_quarter', question: '用哪个季度？' },
+        { id: 'q_to', question: '发给谁？' },
+      ],
+    });
+    expect(reply).toEqual({
+      answers: { q_quarter: { answers: ['2026Q2'] }, q_to: { answers: ['张三'] } },
+    });
+  });
+
+  /* 内核不认识的问题 id 不往回送：那只会在对面变成一条无人认领的答案。 */
+  it('不在问题列表里的 id 被丢掉', async () => {
+    const router = createApprovalRouter({
+      ask: async () => ({ decision: 'accept', answers: { q1: '好', 不存在: 'x' } }),
+    });
+    const reply = await router.handle(SERVER_REQUEST.toolRequestUserInput, {
+      threadId: 't1',
+      itemId: 'i1',
+      questions: [{ id: 'q1', question: '?' }],
+    });
+    expect(reply).toEqual({ answers: { q1: { answers: ['好'] } } });
+  });
+
   it('答不上来时回空 map，而不是把 decision 塞进去', async () => {
     const router = createApprovalRouter({ ask: async () => ({ decision: 'decline' }) });
     const reply = await router.handle(SERVER_REQUEST.toolRequestUserInput, {

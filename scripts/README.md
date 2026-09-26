@@ -4,9 +4,35 @@
 | ------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------ |
 | [`kernel-drift.mjs`](kernel-drift.mjs)                       | 上游漂移雷达：提交量与影响面 · **F1–F16 断言复核** · 补丁试合并 | 每日 job（`.github/workflows/kernel-drift.yml`）+ 每个 PR + 本地   |
 | [`kernel-assertions.json`](kernel-assertions.json)           | F1–F16 的**机器可读孪生体**                                     | 上面那个脚本读它                                                   |
+| [`kernel-contract.mjs`](kernel-contract.mjs)                 | K2 协议形状自检：我们发的 JSON 对不对得上内核真正接受的形状     | **`pnpm run check`** + CI                                          |
 | [`patch-budget.mjs`](patch-budget.mjs)                       | K1 补丁预算自检（≤5 文件 / ≤500 行 + 说明文件）                 | CI                                                                 |
 | [`gen-third-party-notices.mjs`](gen-third-party-notices.mjs) | 生成 / 校验 `THIRD_PARTY_NOTICES.md`（K5）                      | CI + 依赖变更时                                                    |
 | [`verify-provider.mjs`](verify-provider.mjs)                 | 用**真实 endpoint** 核对一家 provider 的流式语义（U2）          | 拿到某家 key 之后跑一次；**不进 `pnpm run check`**（要网络、要钱） |
+
+## 为什么形状要机器比对，而不是靠断言
+
+`kernel-assertions.json` 守的是「**我们已经知道要看的东西**还在不在」—— needle 式：
+某个字符串是否仍存在于某个内核文件里。它拦不住「内核新加了一个必填字段」
+或者「某个枚举换了拼法」，因为没人会为一个还不知道存在的字段写断言。
+
+2026-09-26 那次排查里，同一类缺陷有 **13 处**，`kernel-assertions.json` **一条都发现不了**：
+
+| 症状                                | 用户看到的                                              |
+| ----------------------------------- | ------------------------------------------------------- |
+| `turn/interrupt` 漏 `turnId`        | 「停止」按钮从来没成功过一次，弹窗里只有一个裸 `-32600` |
+| `thread/list` 的 `sortKey` 写成驼峰 | 一致性校正每十分钟失败一次，**而且没有任何日志**        |
+| 权限审批回错形状                    | 点「允许」和点「拒绝」授予的东西一样多：都是零          |
+
+前两种是 -32600；第三种更坏 —— 内核**根本不报错**，`unwrap_or_else` 兜个默认值继续跑。
+
+所以 `kernel-contract.mjs` 换一条路：**直接读内核的 Rust 结构体**，按
+`Option<>` / `#[serde(default)]` / `rename_all` / `rename` 算出每个字段在线上
+是否必填、叫什么名字，再和我们声明的形状逐条对。它不依赖任何我们手写的镜像，
+所以不会过期 —— 上游改字段名的那一刻，`pnpm run check` 就红。
+
+形状写在脚本里的 `OUTGOING` / `INCOMING` / `REPLIES` 三张表，而不是从 TS 里正则抠 ——
+**会误报的检查最后一定被关掉**。表和代码脱节由 `checkCoverage()` 兜：
+新增一个调用点却不登记，检查就失败。
 
 ## 为什么断言要有机器孪生体
 

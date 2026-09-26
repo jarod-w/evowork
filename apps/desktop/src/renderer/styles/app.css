@@ -1396,6 +1396,12 @@ textarea {
   gap: var(--space-8);
   flex-wrap: wrap;
 }
+/* 一组追问里的每一道题。题与题之间要分得开，否则读起来像一段话 */
+.ew-approval-one-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
 .ew-approval-answer {
   width: 100%;
   min-height: calc(var(--space-64) + var(--space-16));

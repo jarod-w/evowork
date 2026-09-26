@@ -579,6 +579,8 @@ export interface ApprovalDecisionInput {
   readonly decision: ApprovalDecisionView;
   readonly answer?: string | undefined;
   readonly optionId?: string | undefined;
+  /** 追问的逐题答案（问题 id → 答案）。内核要的就是这个形状 */
+  readonly answers?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface RowActionInput {
@@ -594,8 +596,28 @@ export interface ApprovalView {
   readonly threadId: string;
   readonly reason?: string | undefined;
   readonly command?: string | undefined;
+  /** `writeStdin` = 往运行中的进程写 stdin，不是启动一条命令 */
+  readonly commandKind?: 'command' | 'writeStdin' | undefined;
   readonly cwd?: string | undefined;
   readonly question?: string | undefined;
+  /**
+   * 追问（`item/tool/requestUserInput`）的问题列表。
+   *
+   * 内核发的是**数组**（`ToolRequestUserInputParams.questions`），而回复要按
+   * 问题 id 归位。只画第一个、只答第一个的话，用户根本看不到第二个问题，
+   * 工具收到的是一份残缺的 answers ——**而且两边都不报错**。
+   *
+   * `mcp` 那一类仍走上面的 `question` / `options`：它是另一套协议（elicitation）。
+   */
+  readonly questions?:
+    | readonly {
+        readonly id: string;
+        readonly question: string;
+        readonly options?: readonly { readonly label: string }[] | undefined;
+        /** 答案是密钥：输入框不回显，也不进任何日志（Q34 的同一条纪律） */
+        readonly isSecret?: boolean | undefined;
+      }[]
+    | undefined;
   /**
    * 文件改动清单。**`undefined` = 没查到，`[]` = 确实一个文件都不改** ——
    * 两者必须分开：内核的审批 RPC 不带清单（要按 itemId 反查），

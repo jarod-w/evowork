@@ -293,7 +293,7 @@ export interface TaskWorkspaceProps {
   readonly onDecide: (id: string, decision: ApprovalDecision) => void;
   readonly onAnswer?: (
     id: string,
-    answer: { optionId?: string; text?: string },
+    answer: { optionId?: string; text?: string; answers?: Readonly<Record<string, string>> },
   ) => void | undefined;
   readonly itemContext: ItemRenderContext;
   /** 有可展示结果时才显示「打开结果」入口。 */

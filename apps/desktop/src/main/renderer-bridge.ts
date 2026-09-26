@@ -1571,6 +1571,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         decision: input.decision as ApprovalDecision,
         ...(input.answer !== undefined ? { answer: input.answer } : {}),
         ...(input.optionId !== undefined ? { optionId: input.optionId } : {}),
+        ...(input.answers !== undefined ? { answers: input.answers } : {}),
       });
       return Promise.resolve();
     },
@@ -2970,36 +2971,46 @@ export function toAuditView(raw: Record<string, unknown>): AuditDataView['record
  * 而这正是我们希望在内核少给字段时看到的表现。
  */
 /**
- * `ToolRequestUserInputParams.questions[0]` → 审批卡的问题与选项。
+ * `ToolRequestUserInputParams.questions[]` → 审批卡的问题列表。
  *
- * 问题文本用 `question`；`header` 是一行短标签（卡片没有放它的位置，先不显示，
- * 也不拼进正文 —— 拼出来的是一句谁都没写过的话）。
+ * **全部带过去，不是只带第一个**：内核发的是数组，回复也要按问题 id 归位。
+ * 只画第一个的话，用户看不到第二个问题，工具收到一份残缺的 answers，
+ * 而两边都不报错。
+ *
+ * `ToolRequestUserInputOption` 是 `{ label, description }` —— **没有 id**，
+ * 选项的身份就是 `label`，回答也是按字符串回去的
+ * （`ToolRequestUserInputAnswer { answers: string[] }`）。
+ *
+ * `header` 是一行短标签，卡片没有放它的位置，先不显示 ——
+ * 也不拼进问题正文，拼出来的是一句谁都没写过的话。
  */
 function toUserInputQuestionView(params: Record<string, unknown>): {
-  question?: string;
-  options?: { id: string; label?: string }[];
+  questions?: {
+    id: string;
+    question: string;
+    options?: { label: string }[];
+    isSecret?: boolean;
+  }[];
 } {
-  const questions = Array.isArray(params.questions)
+  const raw = Array.isArray(params.questions)
     ? (params.questions as readonly Record<string, unknown>[])
     : [];
-  const first = questions[0];
-  if (!first) return {};
-  const question = typeof first.question === 'string' ? first.question : undefined;
-  /*
-   * `ToolRequestUserInputOption` 是 `{ label, description }` —— **没有 id**。
-   * 选项的身份就是它的 `label`，而回答也是按字符串回去的
-   * （`ToolRequestUserInputAnswer { answers: string[] }`）。
-   * 所以这里把 label 同时当 id 用，而不是凭空造一个内核不认识的编号。
-   */
-  const options = Array.isArray(first.options)
-    ? (first.options as readonly Record<string, unknown>[])
-        .filter((option) => typeof option.label === 'string' && option.label !== '')
-        .map((option) => ({ id: option.label as string, label: option.label as string }))
-    : [];
-  return {
-    ...(question !== undefined ? { question } : {}),
-    ...(options.length > 0 ? { options } : {}),
-  };
+  const questions = raw
+    .filter((q) => typeof q.id === 'string' && q.id !== '')
+    .map((q) => {
+      const options = Array.isArray(q.options)
+        ? (q.options as readonly Record<string, unknown>[])
+            .filter((option) => typeof option.label === 'string' && option.label !== '')
+            .map((option) => ({ label: option.label as string }))
+        : [];
+      return {
+        id: q.id as string,
+        question: typeof q.question === 'string' ? q.question : '',
+        ...(options.length > 0 ? { options } : {}),
+        ...(q.isSecret === true ? { isSecret: true } : {}),
+      };
+    });
+  return questions.length > 0 ? { questions } : {};
 }
 
 export function toApprovalView(
@@ -3031,6 +3042,12 @@ export function toApprovalView(
     threadId: approval.threadId,
     ...(str('reason') !== undefined ? { reason: str('reason') } : {}),
     ...(str('command') !== undefined ? { command: str('command') } : {}),
+    /*
+     * `CommandExecutionApprovalKind = "command" | "writeStdin"`：后者是**往一个
+     * 已经在跑的进程的 stdin 里写东西**，不是启动一条命令。以前一律按「将运行一条
+     * 本机命令」呈现 —— 描述错了的审批，用户点的是一个他没看懂的东西。
+     */
+    ...(str('kind') === 'writeStdin' ? { commandKind: 'writeStdin' as const } : {}),
     ...(str('cwd') !== undefined ? { cwd: str('cwd') } : {}),
     ...(str('question') !== undefined ? { question: str('question') } : {}),
     /*

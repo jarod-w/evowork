@@ -2166,7 +2166,29 @@ describe('审批卡视图对得上内核的字段名', () => {
     unattended: false,
   };
 
-  it('追问的问题与选项来自 questions[0]', () => {
+  it('一组追问全部带给卡片，不是只带第一道', () => {
+    const view = toApprovalView(
+      {
+        ...base,
+        params: {
+          threadId: 't1',
+          questions: [
+            { id: 'q1', question: '用哪个季度？', options: null },
+            { id: 'q2', question: '发给谁？', options: null, isSecret: false },
+            { id: 'q3', question: '粘贴令牌', options: null, isSecret: true },
+          ],
+        },
+      },
+      false,
+      0,
+    );
+    expect(view.questions?.map((q) => q.id)).toEqual(['q1', 'q2', 'q3']);
+    // isSecret 必须传下去：卡片据此换成不回显的输入框
+    expect(view.questions?.[2]?.isSecret).toBe(true);
+    expect(view.questions?.[1]?.isSecret).toBeUndefined();
+  });
+
+  it('追问的问题与选项来自 questions[]，而不是不存在的 params.question', () => {
     const view = toApprovalView(
       {
         ...base,
@@ -2194,12 +2216,9 @@ describe('审批卡视图对得上内核的字段名', () => {
       0,
     );
 
-    expect(view.question).toBe('用哪个季度的数据？');
-    // 选项没有 id，身份就是 label —— 回答也是按这个字符串回去的
-    expect(view.options).toEqual([
-      { id: '2026Q1', label: '2026Q1' },
-      { id: '2026Q2', label: '2026Q2' },
-    ]);
+    expect(view.questions?.[0]?.question).toBe('用哪个季度的数据？');
+    // 选项**没有 id**，身份就是 label —— 回答也是按这个字符串回去的
+    expect(view.questions?.[0]?.options).toEqual([{ label: '2026Q1' }, { label: '2026Q2' }]);
   });
 
   it('自由作答的追问没有选项，但问题仍要出得来', () => {
@@ -2214,7 +2233,7 @@ describe('审批卡视图对得上内核的字段名', () => {
       false,
       0,
     );
-    expect(view.question).toBe('收件人是谁？');
-    expect(view.options).toBeUndefined();
+    expect(view.questions?.[0]?.question).toBe('收件人是谁？');
+    expect(view.questions?.[0]?.options).toBeUndefined();
   });
 });

@@ -70,6 +70,11 @@ export interface ApprovalReply {
   /** 追问卡（`item/tool/requestUserInput`）的自由文本或选项 id */
   readonly answer?: string;
   readonly optionId?: string;
+  /**
+   * 追问的**逐题**答案（问题 id → 答案）。内核发的是一组问题、要的是一份按 id 归位的
+   * 答案表；只回一个裸 `answer` 的话，第二个问题的答案就凭空消失了，而且不报错。
+   */
+  readonly answers?: Readonly<Record<string, string>>;
 }
 
 export interface ApprovalTimeoutPolicy {
@@ -168,13 +173,25 @@ function toWireReply(
      * 只答第一个问题：审批卡当前也只画一个（`approval-card.tsx` 的 `question`/`options`）。
      * 多问题要一起答，得先让那张卡支持，不能在这里假装答全了。
      */
+    if (reply.decision === 'cancel') return { answers: {} };
     const questions = Array.isArray(params.questions)
       ? (params.questions as readonly Record<string, unknown>[])
       : [];
-    const questionId = typeof questions[0]?.id === 'string' ? (questions[0].id as string) : '';
-    const value = reply.optionId ?? reply.answer;
-    if (!questionId || !value || reply.decision === 'cancel') return { answers: {} };
-    return { answers: { [questionId]: { answers: [value] } } };
+    const ids = new Set(
+      questions.map((q) => q.id).filter((id): id is string => typeof id === 'string' && id !== ''),
+    );
+    const wire: Record<string, { answers: string[] }> = {};
+    // 逐题答案（卡片现在把每道题都画出来了）
+    for (const [id, value] of Object.entries(reply.answers ?? {})) {
+      if (ids.has(id) && value !== '') wire[id] = { answers: [value] };
+    }
+    // 兼容只给了一个答案的调用方（如自动拒绝路径）：落到第一道题上
+    if (Object.keys(wire).length === 0) {
+      const first = [...ids][0];
+      const value = reply.optionId ?? reply.answer;
+      if (first && value) wire[first] = { answers: [value] };
+    }
+    return { answers: wire };
   }
   if (kind === 'permissions') {
     /*

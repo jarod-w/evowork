@@ -2804,6 +2804,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 decision: 'accept',
                 ...(answer.optionId ? { optionId: answer.optionId } : {}),
                 ...(answer.text ? { answer: answer.text } : {}),
+                ...(answer.answers ? { answers: answer.answers } : {}),
               })
               .catch((error: unknown) => reportFailure(error, '没能提交这项审批。'))
           }
