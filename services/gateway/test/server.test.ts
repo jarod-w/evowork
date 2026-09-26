@@ -489,6 +489,57 @@ describe('hosted 转发（D11）', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
+  /**
+   * **心跳与看门狗必须一起上。**
+   *
+   * 2026-09-26 补心跳时只给了本机直连那条路看门狗，转发这条靠内核的 300 秒兜底。
+   * 心跳一上，那个兜底就没了 —— 云端停在半路时本机网关会一直跳心跳，
+   * 回合**永远转圈**。这条测的就是那个洞：云端不说话时，这一侧要自己收尾。
+   */
+  it('云端停在半路 → 本机网关自己收尾（心跳把内核的 300 秒兜底拆掉了，这里得补上）', async () => {
+    const server = createGatewayServer({
+      models: hostedLookup(),
+      providers: { deepseek: provider([]) },
+      configFor: () => ({ baseUrl: 'https://should-not-hit.invalid/v1', apiKey: 'sk-local' }),
+      authenticate: () => true,
+      heartbeatMs: 10,
+      upstreamIdleMs: 30,
+      upstreamFirstChunkMs: 30,
+      hostedForward: {
+        upstreamBaseUrl: 'https://cloud.example/v1',
+        accessJwt: 'access-jwt',
+        fetchImpl: (async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // 先给一帧真的，再也不说话 —— 云端"连接还开着但死了"的样子
+                controller.enqueue(
+                  new TextEncoder().encode('data: {"type":"response.created"}\n\n'),
+                );
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'text/event-stream' } },
+          )) as typeof fetch,
+      },
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const res = await fetch(`http://127.0.0.1:${address.port}/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer good-token' },
+      body: JSON.stringify({ model: HOSTED.id, input: [], stream: true }),
+    });
+
+    // 关键断言是**这一行会返回** —— 没有看门狗时它永远读不完
+    const text = await res.text();
+    expect(text).toContain('"type":"response.failed"');
+    expect(text).toContain('云端网关');
+    // 终止且能显示给用户的那条通道（见 pipeline.ts 的长注释）
+    expect(text).toContain('invalid_prompt');
+    expect(text.endsWith('data: [DONE]\n\n')).toBe(true);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
   it('本机 registry 没有的模型，有上游时仍转发（private 客户网关的目录）', async () => {
     let forwardedTo = '';
     const server = createGatewayServer({

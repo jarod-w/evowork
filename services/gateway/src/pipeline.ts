@@ -14,6 +14,13 @@ import {
   type DegradeReason,
   type ModelRegistryEntry,
 } from './capabilities.js';
+import {
+  DEFAULT_FIRST_CHUNK_MS,
+  DEFAULT_UPSTREAM_IDLE_MS,
+  raceIdle,
+  stalledMessage,
+  STALLED,
+} from './idle.js';
 import { EVENT, type ResponsesEvent, type ResponsesRequest } from './protocol.js';
 import type { Provider, ProviderConfig } from './providers/types.js';
 import { createTranslator, type ChatChunk } from './translate/from-chat.js';
@@ -27,7 +34,7 @@ export interface PipelineDeps {
   readonly now?: () => number;
   readonly newResponseId?: () => string;
   /**
-   * 上游**两片之间**最多允许安静多久。默认 120 秒，超过就判这条流已经死了。
+   * 上游**两片之间**最多允许安静多久（默认见 `idle.ts`）。超过就判这条流已经死了。
    *
    * 在这之前网关对"上游不说话"没有任何判断：`for await` 会一直等下去，
    * 而等到最后替我们做判断的是内核 —— 300 秒后它发
@@ -48,10 +55,6 @@ export interface PipelineDeps {
    */
   readonly upstreamFirstChunkMs?: number;
 }
-
-/** 见 `PipelineDeps.upstreamIdleMs` / `upstreamFirstChunkMs`。 */
-const DEFAULT_UPSTREAM_IDLE_MS = 120_000;
-const DEFAULT_FIRST_CHUNK_MS = 300_000;
 
 export interface PipelineRequestContext {
   readonly requestId: string;
@@ -209,9 +212,7 @@ export async function* runPipeline(
          */
         yield* translator.fail({
           code: 'invalid_prompt',
-          message:
-            `模型服务已有 ${Math.round(budget / 1000)} 秒没有返回任何内容，这次请求已中断。` +
-            `可以点「重试」再来一次，或到设置里换一个模型。`,
+          message: stalledMessage('模型服务', budget),
         });
         return;
       }
@@ -331,31 +332,6 @@ function safeCode(code: string | undefined): string | undefined {
 
 function defaultResponseId(): string {
   return `resp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
-
-/** 看门狗赢了这一轮的标记。用 Symbol 是为了与"上游真的回了一行"彻底分开。 */
-const STALLED = Symbol('upstream-idle');
-
-/**
- * 等这一片，但最多等 `ms`。超时返回 `STALLED`，**不取消 `pending`**（调用方决定怎么收拾）。
- *
- * `ms <= 0` 表示不看门，此时直接等 —— 与老行为一致。
- */
-async function raceIdle<T>(pending: Promise<T>, ms: number): Promise<T | typeof STALLED> {
-  if (ms <= 0) return pending;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      pending,
-      new Promise<typeof STALLED>((resolve) => {
-        timer = setTimeout(() => resolve(STALLED), ms);
-        timer.unref?.();
-      }),
-    ]);
-  } finally {
-    // 上游正常回了这一片时也要停表，否则一个长回合会攒下成千上万个定时器
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }
 
 /** 取 SSE 行的 data 载荷。非 data 行（注释、event:、空行）返回 undefined。 */

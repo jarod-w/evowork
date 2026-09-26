@@ -25,6 +25,13 @@ import {
 import { forwardHosted, hostedModelsUrl } from './forward.js';
 import type { ResolvedModel } from './layers.js';
 import { ModelNotConfiguredError, runPipeline, type PipelineDeps } from './pipeline.js';
+import {
+  DEFAULT_FIRST_CHUNK_MS,
+  DEFAULT_UPSTREAM_IDLE_MS,
+  raceIdle,
+  stalledMessage,
+  STALLED,
+} from './idle.js';
 import { EVENT, keepAliveEvent, toSseData, type ResponsesRequest } from './protocol.js';
 
 export interface ServerOptions extends PipelineDeps {
@@ -255,6 +262,7 @@ export function createGatewayServer(options: ServerOptions): Server {
     raw: string,
     model: string,
     fwd: NonNullable<ServerOptions['hostedForward']>,
+    requestId: string,
   ): Promise<void> {
     const abortFwd = new AbortController();
     req.on('aborted', () => abortFwd.abort());
@@ -265,6 +273,10 @@ export function createGatewayServer(options: ServerOptions): Server {
         body: raw,
         signal: abortFwd.signal,
         logger,
+        // 等头的那一段没有心跳护着，用与"等首片"同一个预算
+        ...(options.upstreamFirstChunkMs !== undefined
+          ? { headersTimeoutMs: options.upstreamFirstChunkMs }
+          : {}),
         ...(safeToken(model) ? { model: safeToken(model) } : {}),
         ...(fwd.fetchImpl ? { fetchImpl: fwd.fetchImpl } : {}),
       });
@@ -273,18 +285,58 @@ export function createGatewayServer(options: ServerOptions): Server {
         'cache-control': 'no-cache, no-transform',
         'x-accel-buffering': 'no',
       });
-      // 转发也要心跳：云端网关停在半路时，内核看到的症状与本机停在半路一模一样。
-      // 非 SSE 的响应（错误体）不插帧 —— 那会把一份 JSON 变成解析不了的东西
-      const stream = out.contentType.includes('text/event-stream')
-        ? startSseStream(res, heartbeatMs)
-        : undefined;
+      /*
+       * 转发也要心跳 **和看门狗**，而且两者必须一起上。
+       *
+       * 云端网关停在半路时，内核看到的症状与本机停在半路一模一样。心跳解决了
+       * "内核 300 秒判死"，但也把那个兜底拆掉了 —— 只有心跳没有看门狗的转发路径，
+       * 遇到一个不说话的云端就是**永远转圈**。所以这里与 `runPipeline` 用同一套判据。
+       *
+       * 非 SSE 的响应（错误体）不插帧 —— 那会把一份 JSON 变成解析不了的东西。
+       */
+      const isSse = out.contentType.includes('text/event-stream');
+      const stream = isSse ? startSseStream(res, heartbeatMs) : undefined;
+      const idleMs = options.upstreamIdleMs ?? DEFAULT_UPSTREAM_IDLE_MS;
+      const firstChunkMs = options.upstreamFirstChunkMs ?? DEFAULT_FIRST_CHUNK_MS;
       try {
         if (out.body) {
           const reader = out.body.getReader();
+          let sawChunk = false;
           for (;;) {
-            const { done, value } = await reader.read();
+            const budget = sawChunk ? idleMs : firstChunkMs;
+            // 非 SSE 的响应体没有心跳护着，但同样不该无限等：一份永远读不完的
+            // 错误体和一条卡死的流是同一件事
+            const step = await raceIdle(reader.read(), budget);
+            if (step === STALLED) {
+              abortFwd.abort();
+              logger?.warn('gateway.forward.stalled', {
+                reason: 'UPSTREAM_IDLE',
+                waitedMs: budget,
+                credentialSource: 'hosted',
+              });
+              if (stream) {
+                // 头已经写出去了，只能在流里说。`invalid_prompt` 是内核唯一
+                // "终止 + 原样显示 message"的通道（理由见 pipeline.ts 的长注释）
+                stream.write(
+                  toSseData({
+                    type: EVENT.failed,
+                    response: {
+                      id: `resp_fwd_${requestId}`,
+                      error: {
+                        code: 'invalid_prompt',
+                        message: stalledMessage('云端网关', budget),
+                      },
+                    },
+                  }),
+                );
+                stream.write('data: [DONE]\n\n');
+              }
+              break;
+            }
+            const { done, value } = step;
             if (done) break;
             if (value) {
+              sawChunk = true;
               const buf = Buffer.from(value);
               if (stream) stream.write(buf);
               else res.write(buf);
@@ -370,7 +422,7 @@ export function createGatewayServer(options: ServerOptions): Server {
         );
         return;
       }
-      await pipeForward(req, res, raw, request.model, fwd);
+      await pipeForward(req, res, raw, request.model, fwd, requestId);
       return;
     }
 
