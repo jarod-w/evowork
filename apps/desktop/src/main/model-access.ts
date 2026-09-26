@@ -193,6 +193,13 @@ export interface ModelAccess {
   env(): NodeJS.ProcessEnv;
   /** 账号 refresh 与厂商密钥共用密钥库，由 `account.ts` 读写 */
   readonly accountVault: AccountVault;
+  /**
+   * 用户自己加的模型（元数据，**不含密钥**）。
+   *
+   * 给内核的模型目录要用它：内核不认识我们的任何模型，不告诉它上下文有多大，
+   * 它就对**每一个**模型套用兜底的 272k（见 `ensureKernelModelCatalog`）。
+   */
+  customModels(): readonly CustomModelSpec[];
   /** 设置页要画的一切。`catalog` 由宿主刚拉的那一份传进来，不在这里再发一次请求 */
   view(catalog: ModelCatalogResult): ModelAccessView;
   saveProviderKey(input: SaveProviderKeyInput): boolean;
@@ -385,6 +392,13 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
     upstreamBaseUrl,
     token,
     env,
+    /**
+     * 用户自己加的模型（元数据，**不含密钥**）。
+     *
+     * 给内核的模型目录要用它（`ensureKernelModelCatalog`）：内核不认识我们的任何模型，
+     * 不给它上下文大小就会对**每一个**模型套用兜底的 272k。
+     */
+    customModels: customSpecs,
     accountVault: {
       get: (name) => store.toEnv()[name] ?? legacyEnv[name],
       set: (name, value) => store.set(name, value),

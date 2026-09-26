@@ -106,6 +106,12 @@ export {
   type ProviderConfig,
   type UpstreamResponse,
 } from './providers/types.js';
+export {
+  buildKernelModelCatalog,
+  type CatalogSource,
+  type KernelCatalogModel,
+  type KernelModelCatalog,
+} from './kernel-catalog.js';
 export { createGatewayServer, type ServerOptions } from './server.js';
 export {
   ACCESS_JWT_ENV,

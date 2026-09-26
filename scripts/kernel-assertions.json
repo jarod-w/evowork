@@ -375,6 +375,30 @@
       "scopeLines": { "before": 2, "after": 22 },
       "mustContain": ["=> None,", "CodexErrorDetails::Stream(..)", "backoff(retry_count)"],
       "impact": "用 server_is_overloaded 的后果是**既不重试、又把我们写给用户的话换成内核那句英文**（2026-09-26 三处已改）"
+    },
+    {
+      "id": "F34",
+      "summary": "未知型号套用兜底元数据，context_window 一律 272_000 —— 这就是我们必须给内核一份模型目录的理由",
+      "file": "codex-rs/models-manager/src/model_info.rs",
+      "needle": "pub fn model_info_from_slug",
+      "line": 99,
+      "scopeLines": { "before": 1, "after": 40 },
+      "mustContain": [
+        "This will use fallback model metadata",
+        "context_window: Some(272_000)",
+        "effective_context_window_percent: 95"
+      ],
+      "impact": "没有目录时 GLM（128k）永远等不到压缩、DeepSeek（1M）浪费七成多。这个数变了就要同步 services/gateway/src/kernel-catalog.ts 的头注释"
+    },
+    {
+      "id": "F35",
+      "summary": "模型目录的每条模型必须带 base_instructions 或 model_messages.instructions_template，否则整份配置加载失败",
+      "file": "codex-rs/protocol/src/openai_models.rs",
+      "needle": "pub fn deserialize_model_infos_with_legacy_base",
+      "line": 800,
+      "scopeLines": { "before": 1, "after": 40 },
+      "mustContain": ["is missing both", "instructions_template"],
+      "impact": "缺了它**所有任务都起不来**（thread/start -32600）。2026-09-26 第一版目录就栽在这条；我们填的是自己的产品身份底稿，不是内核那份带 Codex 的"
     }
   ]
 }

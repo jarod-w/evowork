@@ -5,7 +5,7 @@
  * 而适配层推给渲染层的又是**任务视角**的事件、渲染层认的是**组件视角**的。
  * 三处各自都有测试、合起来是断的 —— 所以这里测的全是"接缝"。
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -32,6 +32,7 @@ import {
 } from '../src/main/renderer-bridge.js';
 import {
   ensureKernelConfig,
+  ensureKernelModelCatalog,
   ensurePaths,
   migrateMemoriesConfig,
   migrateMultiAgentV2Config,
@@ -1500,6 +1501,77 @@ describe('首次运行装内核配置', () => {
     );
     expect(migrated.text.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
     expect(migrateMultiAgentV2Config(migrated.text).changed).toBe(false);
+  });
+
+  it('给内核写模型目录：**根键必须在第一个表之前**，否则整份配置会被判无效', () => {
+    const home = mkdtempSync(join(tmpdir(), 'evowork-catalog-'));
+    const paths = resolvePaths(home);
+    ensurePaths(paths);
+    const configPath = join(paths.kernelHome, 'config.toml');
+    writeFileSync(
+      configPath,
+      'model_provider = "evowork"\n\n[model_providers.evowork]\nbase_url = "http://127.0.0.1:8787/v1"\n',
+      'utf8',
+    );
+
+    const wrote = ensureKernelModelCatalog(
+      paths,
+      [{ id: 'evowork/glm-flash', displayName: 'GLM', maxContextTokens: 128_000 }],
+      '你是 EvoWork 的执行智能体。',
+    );
+    expect(wrote).toBe(true);
+
+    const text = readFileSync(configPath, 'utf8');
+    const keyAt = text.indexOf('model_catalog_json');
+    const firstTable = text.indexOf('[model_providers.evowork]');
+    // TOML 进了表就回不到根：写在表后面的话它是那张表的键，内核会判整份配置无效
+    expect(keyAt).toBeGreaterThanOrEqual(0);
+    expect(keyAt).toBeLessThan(firstTable);
+
+    const catalog = JSON.parse(readFileSync(join(paths.kernelHome, 'model-catalog.json'), 'utf8'));
+    expect(catalog.models[0].context_window).toBe(128_000);
+
+    // 每次启动重写：跑第二遍不会留下两行键
+    ensureKernelModelCatalog(
+      paths,
+      [{ id: 'evowork/glm-flash', displayName: 'GLM', maxContextTokens: 200_000 }],
+      '你是 EvoWork 的执行智能体。',
+    );
+    const again = readFileSync(configPath, 'utf8');
+    expect(again.split('model_catalog_json').length - 1).toBe(1);
+    expect(
+      JSON.parse(readFileSync(join(paths.kernelHome, 'model-catalog.json'), 'utf8')).models[0]
+        .context_window,
+    ).toBe(200_000);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('**生成不出来就什么都不写** —— 没有目录只是回到兜底，一份坏目录是全线停摆', () => {
+    const home = mkdtempSync(join(tmpdir(), 'evowork-catalog-empty-'));
+    const paths = resolvePaths(home);
+    ensurePaths(paths);
+    const configPath = join(paths.kernelHome, 'config.toml');
+    writeFileSync(configPath, 'model_provider = "evowork"\n', 'utf8');
+
+    // 一条上下文大小都不可信 → 不写键、不写文件
+    expect(
+      ensureKernelModelCatalog(
+        paths,
+        [{ id: 'a/b', displayName: 'B', maxContextTokens: 0 }],
+        '底稿',
+      ),
+    ).toBe(false);
+    // 没有底稿同样不写（内核会拒绝这份目录）
+    expect(
+      ensureKernelModelCatalog(
+        paths,
+        [{ id: 'a/b', displayName: 'B', maxContextTokens: 32_000 }],
+        undefined,
+      ),
+    ).toBe(false);
+    expect(readFileSync(configPath, 'utf8')).not.toContain('model_catalog_json');
+    expect(existsSync(join(paths.kernelHome, 'model-catalog.json'))).toBe(false);
+    rmSync(home, { recursive: true, force: true });
   });
 
   it('给已有安装补上重试预算 —— 只改模板的话，已装的用户永远读不到它（F26 的教训）', () => {

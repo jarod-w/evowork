@@ -39,6 +39,12 @@ import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 
 import {
+  buildKernelModelCatalog,
+  P0_MODELS,
+  toRegistryEntry,
+  type CatalogSource,
+} from '@evowork/gateway';
+import {
   createAdapter,
   createSpawnLauncher,
   type Adapter,
@@ -237,6 +243,54 @@ export function ensureKernelConfig(paths: EvoworkPaths, templatePath: string): b
   if (existsSync(target) || !existsSync(templatePath)) return false;
   copyFileSync(templatePath, target);
   return true;
+}
+
+/**
+ * 给内核写一份模型目录，并把 `model_catalog_json` 指向它。
+ *
+ * **每次启动重写**，不做"只补缺失项"那一套：这个值是机器相关的绝对路径，
+ * 而目录内容会随用户增删模型变化 —— 保留旧值只会让它指向一份过期的表。
+ *
+ * 为什么必须做这件事：内核不认识我们的任何模型（用户机器上的日志是
+ * `Unknown model … This will use fallback model metadata.`），于是**每一个**模型都按
+ * 兜底的 `context_window: 272_000` 对待，而压缩是按它的 95% 提前触发的。
+ * GLM 只有 128k —— 压缩永远等不到，厂商先拒；DeepSeek 1M 则浪费掉七成多。
+ *
+ * **生成不出来就什么都不写**：没有目录只是回到今天的行为，而一份坏目录会让内核
+ * 拒绝加载整份配置 —— 那是所有任务都起不来。
+ */
+export function ensureKernelModelCatalog(
+  paths: EvoworkPaths,
+  models: readonly CatalogSource[],
+  baseInstructions: string | undefined,
+): boolean {
+  const configPath = join(paths.kernelHome, 'config.toml');
+  if (!existsSync(configPath) || baseInstructions === undefined) return false;
+  const catalog = buildKernelModelCatalog(models, baseInstructions);
+  if (!catalog) return false;
+  const catalogPath = join(paths.kernelHome, 'model-catalog.json');
+  writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8');
+  const next = setRootKey(readFileSync(configPath, 'utf8'), 'model_catalog_json', catalogPath);
+  writeFileSync(configPath, next, 'utf8');
+  return true;
+}
+
+/**
+ * 设置一个 TOML **根键**。
+ *
+ * 根键必须出现在第一个 `[table]` 之前 —— TOML 进了表之后不能靠空行回到根，
+ * 而写错的后果不是这一个键失效，是**内核判整份配置无效并回退默认值**
+ * （`default_permissions` 就这么踩过一次，见 config.toml.template 的头注释）。
+ */
+function setRootKey(text: string, key: string, value: string): string {
+  const lines = text.split(/\r?\n/);
+  const kept = lines.filter((line) => !new RegExp(`^\\s*${key}\\s*=`).test(line));
+  const firstTable = kept.findIndex((line) => /^\s*\[/.test(line));
+  // TOML 的基本字符串与 JSON 同一套转义，Windows 路径里的反斜杠也能这么写
+  const entry = `${key} = ${JSON.stringify(value)}`;
+  if (firstTable < 0) kept.push(entry);
+  else kept.splice(firstTable, 0, entry, '');
+  return kept.join('\n');
 }
 
 const MULTI_AGENT_V2_SETTINGS = [
@@ -719,6 +773,46 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     writeFlag: (key, value) => writeMeta(store.db, key, value),
     ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
   });
+  /*
+   * 给内核写模型目录。**必须在内核启动之前** —— 它只在加载配置时读一次。
+   *
+   * 自定义模型的能力位走 `toRegistryEntry`（而不是用户 `models.toml` 里的原值）：
+   * 认得出的型号按能力表来，用户那份可能是早期写下的 32000（df4b5cd 那次的同一条理由）。
+   */
+  try {
+    const catalogModels: CatalogSource[] = [
+      ...P0_MODELS.map((model) => ({
+        id: model.id,
+        displayName: model.displayName,
+        maxContextTokens: model.capabilities.maxContextTokens,
+      })),
+      ...modelAccess.customModels().map((spec) => {
+        const resolved = toRegistryEntry(spec);
+        return {
+          id: resolved.id,
+          displayName: resolved.displayName,
+          maxContextTokens: resolved.capabilities.maxContextTokens,
+        };
+      }),
+    ];
+    if (
+      ensureKernelModelCatalog(
+        options.paths,
+        catalogModels,
+        readBaseInstructions(options.configDir),
+      )
+    ) {
+      logger.info('desktop.kernel_config.model_catalog_written', {
+        itemCount: catalogModels.length,
+      });
+    }
+  } catch (err) {
+    // 写不出来就算了：没有目录 = 回到内核的兜底值，而一份坏目录会让所有任务起不来
+    logger.warn('desktop.kernel_config.model_catalog_failed', {
+      errorClass: err instanceof Error ? err.name : 'UnknownError',
+    });
+  }
+
   if (modelAccess.inferredMode) {
     /*
      * 老装机：`app.toml` 不存在而内核的 base_url 指向别处，于是反推了一次（D11）。
