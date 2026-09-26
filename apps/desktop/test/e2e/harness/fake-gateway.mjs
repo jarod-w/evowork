@@ -124,6 +124,35 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
           };
           return;
         }
+        if (script.kind === 'text') {
+          /*
+           * 让模型回一段**指定的**正文。给 Visualizer 那几条旅程用：
+           * mermaid / evowork-chart / html 三类受控 fence 只有在真回合的
+           * assistant 消息里才会被渲染，而默认那句 `E2E response N` 里没有它们。
+           */
+          const itemId = `msg_${current}`;
+          sendEvent(response, {
+            type: 'response.output_item.added',
+            output_index: 0,
+            item: { type: 'message', id: itemId, role: 'assistant', content: [] },
+          });
+          sendEvent(response, {
+            type: 'response.output_item.done',
+            output_index: 0,
+            item: {
+              type: 'message',
+              id: itemId,
+              role: 'assistant',
+              content: [{ type: 'output_text', text: script.text }],
+            },
+          });
+          sendEvent(response, {
+            type: 'response.completed',
+            response: { id, end_turn: true, usage },
+          });
+          response.end('data: [DONE]\n\n');
+          return;
+        }
         // 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它
         sendEvent(response, {
           type: 'response.output_item.done',
@@ -240,7 +269,7 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
       return new Promise((resolve) => server.close(resolve));
     },
 
-    /** 下一次请求按这个剧本答：`{ kind: 'hold' }` 或 `{ tool, args }` */
+    /** 下一次请求按这个剧本答：`{ kind: 'hold' }` · `{ kind: 'text', text }` · `{ tool, args }` */
     scriptNext(script) {
       nextScript = script;
     },
