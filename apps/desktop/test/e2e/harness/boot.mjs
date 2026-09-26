@@ -60,6 +60,7 @@ export async function bootApp({
   preloadTimeoutMs = 15_000,
   captureKernelProcess = false,
   show = false,
+  showOpenDialog,
 }) {
   /*
    * 拿到内核子进程才杀得掉它（`skill-reference` 靠 SIGKILL 验「崩了会自己起来」）。
@@ -96,6 +97,14 @@ export async function bootApp({
       createWindow: (options) => new BrowserWindow({ ...options, show }),
       ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
       openExternal: async () => undefined,
+      /*
+       * 目录选择框。**只有主进程能开系统对话框**，所以它必须从这里注入 ——
+       * 不注入的后果不是"少个功能"：首运行会卡在「选一个项目」那一步
+       * （`blockingReason` 要求至少有一个工作空间，干净机器上一个都没有），
+       * 整个应用打不开（bootstrap.ts:70-74，2026-09-06 实测撞到）。
+       * 断言型 E2E 用不到它，因为它们从不经过引导。
+       */
+      ...(showOpenDialog ? { showOpenDialog } : {}),
     },
     appServerPath,
     configDir: join(repoRoot, 'config'),

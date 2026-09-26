@@ -26,6 +26,12 @@ if (!repoRoot || !appServerPath) throw new Error('UI 测试入口缺少仓库或
  */
 const TURN_MARKER = 'EVOWORK-UI-HOLD';
 
+/**
+ * 保留首次引导（`onboarding.spec.mjs` 用）。默认跳过 —— 别的旅程要测的东西在引导之后，
+ * 而引导会**盖住整个界面**（`startup.onboarded` 为假时 app.tsx 直接 return 引导视图）。
+ */
+const KEEP_ONBOARDING = process.env.EVOWORK_UI_KEEP_ONBOARDING === '1';
+
 const { home, workspace, kernelHome } = createE2EHome('evowork-ui-');
 const gateway = createFakeGateway({ turnMarker: TURN_MARKER });
 
@@ -36,7 +42,7 @@ const gateway = createFakeGateway({ turnMarker: TURN_MARKER });
  * 而 `undefined` 在下游往往**不报错**（第一版就栽在这儿：`new RegExp(undefined)`
  * 是空正则，什么都匹配，于是"标记没取到"一路装成通过，直到最后一步才炸）。
  */
-publishControls({ gateway, workspace, turnMarker: TURN_MARKER });
+publishControls({ gateway, workspace, turnMarker: TURN_MARKER, keptOnboarding: KEEP_ONBOARDING });
 
 async function main() {
   const gatewayBaseUrl = await gateway.listen();
@@ -73,6 +79,12 @@ exporter = "none"
     },
     show: true,
     captureKernelProcess: true,
+    /*
+     * 假的目录选择框：系统对话框 Playwright 点不到（它不是网页的一部分），
+     * 所以由主进程直接回答「用户选了这个目录」。被测的是**选完之后**的那一段
+     * —— 工作空间列进来没有、「下一步」解锁没有、引导走完会不会再回来。
+     */
+    showOpenDialog: async () => ({ canceled: false, filePaths: [workspace] }),
   });
 
   /*
@@ -85,15 +97,17 @@ exporter = "none"
    * 测试伸手进去就等于替产品决定「引导算走完了」是什么意思。
    * 写完要 reload：`startup` 是渲染层挂载时读一次的，不会自己回来看。
    */
-  await desktop.evaluate('window.evowork.completeOnboarding()');
-  await desktop.evaluate(
-    `window.evowork.createProject(${JSON.stringify({ name: 'UI', path: workspace })})`,
-  );
-  await desktop.window.webContents.reload();
-  await waitFor(
-    () => desktop.evaluate('Boolean(window.evowork)'),
-    'reload 之后 preload bridge 没有回来',
-  );
+  if (!KEEP_ONBOARDING) {
+    await desktop.evaluate('window.evowork.completeOnboarding()');
+    await desktop.evaluate(
+      `window.evowork.createProject(${JSON.stringify({ name: 'UI', path: workspace })})`,
+    );
+    await desktop.window.webContents.reload();
+    await waitFor(
+      () => desktop.evaluate('Boolean(window.evowork)'),
+      'reload 之后 preload bridge 没有回来',
+    );
+  }
 
   /*
    * 到此为止。**不退出、不断言** —— 窗口开着，Playwright 从进程外接手。

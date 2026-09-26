@@ -31,8 +31,13 @@ const KERNEL =
   );
 
 export const test = base.extend({
-  /* eslint-disable-next-line no-empty-pattern -- Playwright 夹具的签名就是这样 */
-  electronApp: async ({}, use) => {
+  /**
+   * 保留首次引导。用 `test.use({ keepOnboarding: true })` 打开。
+   * 默认跳过：别的旅程要测的东西都在引导之后，而引导会盖住整个界面。
+   */
+  keepOnboarding: [false, { option: true }],
+
+  electronApp: async ({ keepOnboarding }, use) => {
     if (!existsSync(KERNEL)) {
       // 不跳过：缺内核就是没验证，而"跳过的测试"会让人以为验过了（CLAUDE.md §9.1）
       throw new Error(`找不到真实 app-server：${KERNEL}。先构建或设置 EVOWORK_APP_SERVER。`);
@@ -49,14 +54,19 @@ export const test = base.extend({
       executablePath: require('electron'),
       args: [resolve(ROOT, 'apps/desktop/test/e2e/harness/ui-entry.mjs')],
       cwd: ROOT,
-      env: { ...parentEnv, EVOWORK_E2E_REPO_ROOT: ROOT, EVOWORK_APP_SERVER: KERNEL },
+      env: {
+        ...parentEnv,
+        EVOWORK_E2E_REPO_ROOT: ROOT,
+        EVOWORK_APP_SERVER: KERNEL,
+        ...(keepOnboarding ? { EVOWORK_UI_KEEP_ONBOARDING: '1' } : {}),
+      },
       timeout: 120_000,
     });
     await use(app);
     await app.close();
   },
 
-  page: async ({ electronApp }, use) => {
+  page: async ({ electronApp, keepOnboarding }, use) => {
     const page = await electronApp.firstWindow();
     /*
      * 先等入口把话说完（引导跳过、项目建好、控制面挂齐），再去碰界面。
@@ -72,7 +82,14 @@ export const test = base.extend({
      * 一次，太早拿到的 page 正对着一个马上要被替换掉的文档。
      * 输入框出现 = 引导过了、项目建好了、工作台真的渲染出来了。
      */
-    await page.getByLabel('需求输入').waitFor({ state: 'visible', timeout: 120_000 });
+    /*
+     * 等的东西按模式分：引导模式下界面上根本没有输入框（引导盖住了整个界面），
+     * 等它只会以一句「超时」告终，而真正的原因是"等错了东西"。
+     */
+    const ready = keepOnboarding
+      ? page.getByRole('heading', { name: '欢迎使用 EvoWork' })
+      : page.getByLabel('需求输入');
+    await ready.waitFor({ state: 'visible', timeout: 120_000 });
     await use(page);
   },
 });
