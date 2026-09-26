@@ -292,7 +292,7 @@ export class ThreadProjection {
   applyTurnStarted(threadId: string, turnId: string, now = Date.now()): DerivedStatus {
     const row = this.get(threadId);
     const derived = deriveStatus({
-      threadStatus: { active: { activeFlags: [] } },
+      threadStatus: { type: 'active', activeFlags: [] },
       lastTurnStatus: 'inProgress',
       archived: row?.archived === 1,
       modeId: row?.mode_id ?? null,
@@ -321,7 +321,7 @@ export class ThreadProjection {
     const row = this.get(threadId);
     const derived = deriveStatus({
       // turn 结束时内核尚未必发出 status/changed，这里按"不再 active"推
-      threadStatus: 'idle',
+      threadStatus: { type: 'idle' },
       lastTurnStatus: turn.status,
       archived: row?.archived === 1,
       modeId: row?.mode_id ?? null,

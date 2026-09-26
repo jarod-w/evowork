@@ -6,9 +6,9 @@ import { canOverrideTitle } from '../src/projection.js';
 import { DERIVED_STATUS } from '../src/schema.js';
 import { openStore, type Store } from '../src/store.js';
 
-const ACTIVE: ThreadStatus = { active: { activeFlags: [] } };
-const WAITING_APPROVAL: ThreadStatus = { active: { activeFlags: ['waitingOnApproval'] } };
-const WAITING_INPUT: ThreadStatus = { active: { activeFlags: ['waitingOnUserInput'] } };
+const ACTIVE: ThreadStatus = { type: 'active', activeFlags: [] };
+const WAITING_APPROVAL: ThreadStatus = { type: 'active', activeFlags: ['waitingOnApproval'] };
+const WAITING_INPUT: ThreadStatus = { type: 'active', activeFlags: ['waitingOnUserInput'] };
 
 function thread(over: Partial<Thread> = {}): Thread {
   return {
@@ -21,7 +21,7 @@ function thread(over: Partial<Thread> = {}): Thread {
     createdAt: 1_757_000_000,
     updatedAt: 1_757_000_100,
     recencyAt: 1_757_000_100,
-    status: 'idle',
+    status: { type: 'idle' },
     cwd: '/Users/x/work/weekly',
     turns: [],
     ...over,
@@ -40,20 +40,48 @@ function withStore(fn: (store: Store) => void): void {
 describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
   it('内核的 ThreadStatus 单独**推不出**已完成 / 失败 / 已中断（F7 的直接后果）', () => {
     // 只有实时状态、没有投影记录时，只能得出"还没开始"
-    expect(deriveStatus({ threadStatus: 'idle' })).toBe('idle');
+    /*
+     * **用内核真正发来的那串 JSON，不用对象字面量。**
+     *
+     * 这条守的是 2026-09-26 那个缺陷本身：我们手写的 `ThreadStatus` 四个变体全错
+     * （内核是 `#[serde(tag = "type")]` 的内部标签联合，`thread.rs:1645`），
+     * 而所有单测都用那套错类型造数据 —— **代码与测试互相印证，一起偏离内核**。
+     * 后果不是类型报错，是正在跑的任务在投影里变成 `interrupted`，
+     * 运行中追问因此不入队、直接另起一个回合。
+     *
+     * 所以这里走 `JSON.parse`：对象字面量会被我们自己的类型"带跑"，
+     * 而这条断言要挡的正是类型本身写错的情况。字符串取自真内核实测。
+     */
+    const wire = (text: string) => JSON.parse(text) as ThreadStatus;
+    expect(deriveStatus({ threadStatus: wire('{"type":"active","activeFlags":[]}') })).toBe(
+      'running',
+    );
+    expect(
+      deriveStatus({
+        threadStatus: wire('{"type":"active","activeFlags":["waitingOnApproval"]}'),
+      }),
+    ).toBe('pending');
+    expect(deriveStatus({ threadStatus: wire('{"type":"systemError"}') })).toBe('failed');
+    expect(deriveStatus({ threadStatus: wire('{"type":"idle"}') })).toBe('idle');
+
+    expect(deriveStatus({ threadStatus: { type: 'idle' } })).toBe('idle');
     // 加上投影表记的上一个回合结果，三个终态才出得来
-    expect(deriveStatus({ threadStatus: 'idle', lastTurnStatus: 'completed' })).toBe('completed');
-    expect(deriveStatus({ threadStatus: 'idle', lastTurnStatus: 'failed' })).toBe('failed');
-    expect(deriveStatus({ threadStatus: 'idle', lastTurnStatus: 'interrupted' })).toBe(
+    expect(deriveStatus({ threadStatus: { type: 'idle' }, lastTurnStatus: 'completed' })).toBe(
+      'completed',
+    );
+    expect(deriveStatus({ threadStatus: { type: 'idle' }, lastTurnStatus: 'failed' })).toBe(
+      'failed',
+    );
+    expect(deriveStatus({ threadStatus: { type: 'idle' }, lastTurnStatus: 'interrupted' })).toBe(
       'interrupted',
     );
   });
 
   it('未加载的历史任务恒为 notLoaded，此时结论只能来自投影表', () => {
-    expect(deriveStatus({ threadStatus: 'notLoaded', lastTurnStatus: 'completed' })).toBe(
+    expect(deriveStatus({ threadStatus: { type: 'notLoaded' }, lastTurnStatus: 'completed' })).toBe(
       'completed',
     );
-    expect(deriveStatus({ threadStatus: 'notLoaded' })).toBe('idle');
+    expect(deriveStatus({ threadStatus: { type: 'notLoaded' } })).toBe('idle');
   });
 
   it('「待处理」优先于「进行中」—— 它是唯一需要用户立刻行动的状态', () => {
@@ -71,12 +99,12 @@ describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
   });
 
   it('systemError → 失败', () => {
-    expect(deriveStatus({ threadStatus: 'systemError' })).toBe('failed');
+    expect(deriveStatus({ threadStatus: { type: 'systemError' } })).toBe('failed');
   });
 
   it('规划中：有计划 + 未确认（Q45：不看 Composer 档）', () => {
     const base = {
-      threadStatus: 'idle' as ThreadStatus,
+      threadStatus: { type: 'idle' } as ThreadStatus,
       modeId: 'request-approval',
       hasPlanItem: true,
     };
@@ -91,7 +119,7 @@ describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
     // 产出计划的那个回合本身是 completed；若先看 last_turn_status 就会报"已完成"
     expect(
       deriveStatus({
-        threadStatus: 'idle',
+        threadStatus: { type: 'idle' },
         lastTurnStatus: 'completed',
         modeId: 'request-approval',
         hasPlanItem: true,
@@ -101,7 +129,7 @@ describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
   });
 
   it('投影表说 inProgress 但内核说不 active → 已中断（内核重启过），不报"进行中"', () => {
-    expect(deriveStatus({ threadStatus: 'idle', lastTurnStatus: 'inProgress' })).toBe(
+    expect(deriveStatus({ threadStatus: { type: 'idle' }, lastTurnStatus: 'inProgress' })).toBe(
       'interrupted',
     );
   });
@@ -204,7 +232,7 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
       expect(store.threads.applyStatusChanged('t1', ACTIVE)).toBe('running');
       // 回到 idle 时，用投影表记着的 last_turn_status 得出终态
       store.threads.applyTurnCompleted('t1', { id: 'turn1', status: 'completed' });
-      expect(store.threads.applyStatusChanged('t1', 'idle')).toBe('completed');
+      expect(store.threads.applyStatusChanged('t1', { type: 'idle' })).toBe('completed');
     });
   });
 

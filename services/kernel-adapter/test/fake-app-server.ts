@@ -414,7 +414,7 @@ export function makeThread(over: Partial<Thread> = {}): Thread {
     createdAt: 1_757_000_000,
     updatedAt: 1_757_000_100,
     recencyAt: 1_757_000_100,
-    status: 'idle',
+    status: { type: 'idle' },
     cwd: '/w',
     turns: [],
     ...over,

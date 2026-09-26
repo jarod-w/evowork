@@ -28,9 +28,9 @@ export interface DeriveInput {
 }
 
 function activeFlags(status: ThreadStatus | null | undefined): readonly ThreadActiveFlag[] | null {
-  if (status && typeof status === 'object' && 'active' in status) {
-    return status.active.activeFlags ?? [];
-  }
+  // 内部标签联合：`{"type":"active","activeFlags":[...]}`。
+  // 曾经找的是嵌套的 `status.active` —— 那个键内核从来没发过，于是恒为 null。
+  if (status?.type === 'active') return status.activeFlags ?? [];
   return null;
 }
 
@@ -57,7 +57,7 @@ export function deriveStatus(input: DeriveInput): DerivedStatus {
     return 'running';
   }
 
-  if (input.threadStatus === 'systemError') return 'failed';
+  if (input.threadStatus?.type === 'systemError') return 'failed';
 
   // 规划中：有 plan item 且用户尚未确认执行（Q45：不绑定已下架的 Plan 协作模式）。
   // 注意它排在 last_turn_status 之后判断会出错 —— 产出计划的那个回合本身是

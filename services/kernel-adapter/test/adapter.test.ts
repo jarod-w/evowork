@@ -729,7 +729,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     // 让任务处于运行中
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
     server.handlers.set('thread/queue/add', (ctx) => ({
       queuedSubmission: {
@@ -775,7 +775,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
     server.removeMethod('thread/queue/add'); // → -32601
 
@@ -797,7 +797,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
     server.removeMethod('thread/queue/add');
     await adapter.sendMessage({ threadId, input: [{ type: 'text', text: '第一条' }] });
@@ -827,7 +827,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
     server.removeMethod('thread/queue/add');
     await adapter.sendMessage({
@@ -859,7 +859,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
     server.notify('turn/started', {
       threadId,
@@ -890,7 +890,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
 
     const sent = await adapter.sendMessage({
@@ -1410,7 +1410,7 @@ describe('实验方法门禁（K2）', () => {
     const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
     adapter.events.handle('thread/status/changed', {
       threadId,
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
 
     // 假内核把它作为 internalError 抛出（不是 -32601），因此不该被判成降级

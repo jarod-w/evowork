@@ -42,12 +42,23 @@ export interface InitializeResponse {
 
 // ─────────────────────────────── 线程与回合 ───────────────────────────────
 
-/** F7：`ThreadStatus` 只有这四种，**已完成 / 失败不在其中**（04 §2.1）。 */
+/**
+ * F7：`ThreadStatus` 只有这四种，**已完成 / 失败不在其中**（04 §2.1）。
+ *
+ * **它是内部标签联合**（`thread.rs:1645` 的 `#[serde(tag = "type", rename_all = "camelCase")]`），
+ * 线上形状是 `{"type":"idle"}` / `{"type":"active","activeFlags":[...]}` ——
+ * **不是**裸字符串，也不是 `{active:{...}}` 的嵌套对象。
+ *
+ * 2026-09-26 订正：此前四个变体全写错了。后果不是类型报错，而是
+ * `deriveStatus` 永远认不出"活动中"，于是正在跑的任务在投影里是 `interrupted`，
+ * 运行中追问因此不入队、直接另起一个回合。单测全绿是因为它们用这里的类型
+ * 造数据 —— 代码与测试互相印证，一起偏离内核。
+ */
 export type ThreadStatus =
-  | 'notLoaded'
-  | 'idle'
-  | 'systemError'
-  | { readonly active: { readonly activeFlags: readonly ThreadActiveFlag[] } };
+  | { readonly type: 'notLoaded' }
+  | { readonly type: 'idle' }
+  | { readonly type: 'systemError' }
+  | { readonly type: 'active'; readonly activeFlags: readonly ThreadActiveFlag[] };
 
 export type ThreadActiveFlag = 'waitingOnApproval' | 'waitingOnUserInput';
 

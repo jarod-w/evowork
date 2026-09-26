@@ -26,10 +26,24 @@
 > 回归钉在 `composer.test.tsx`，断言的是**机制**（绝不调 `prompt`）而不只是结果 ——
 > jsdom 有 `prompt` 而 Electron 没有，只钉结果在 jsdom 里永远是绿的。
 > **这颗按钮此前两边都碰不到**：组件测试不点它，断言型 E2E 走 `updateQueuedInput` 那条桥。
-> ⚠️ **一条未解的发现（没有写成断言）**：**运行中追问不进排队区** —— 界面上排队区始终不出现，
-> 而内核侧队列也是空的；同样参数经 preload 桥调用时 `send()` 会返回 `queued: true`。
-> 试过等 `turn-started`、等模型首片文字、带/不带 `workspaceId`，都没能让 UI 路径入队。
-> 根因未定位，所以**没有把它钉成断言** —— 钉一个坏行为比不钉更糟。下一个动这块的人从这里接。
+> ①d **追到底了：`ThreadStatus` 四个变体全写错，这是个 K2 边界上的缺陷。**
+> 「运行中追问不进排队区」的根因不在队列，在状态派生：内核的 `ThreadStatus` 是
+> **内部标签联合**（`thread.rs:1645` 的 `#[serde(tag = "type", rename_all = "camelCase")]`），
+> 线上形状是 `{"type":"active","activeFlags":[]}`；而 `packages/protocol` 把前三个变体写成了
+> **裸字符串**、第四个写成了 `{active:{...}}` 的**嵌套对象**。于是：
+> · `activeFlags()` 恒返回 null → `deriveStatus` 永远认不出"活动中"；
+> · 正在跑的任务在投影里派生成 **`interrupted`**（`last_turn_status` 还是 `inProgress`）；
+> · `sendMessage` 的排队判断只认 `running`/`pending`，于是追问走了**另起一个回合**那一支 ——
+>   既不进我们的队列，也到不了网关（内核把它排在活动回合之后）。
+> · `=== 'systemError'` 同样永远匹配不上，`failed` 派生不出来。
+> **为什么一直没被发现**：所有单测都用我们自己那套错类型造数据 ——
+> **代码与测试互相印证，一起偏离内核**；而 `scripts/kernel-contract.mjs` 只校验
+> 我们**发出去**的形状，**收进来的通知载荷不在它的覆盖面里**（这是个真实的守卫缺口）。
+> 已订正协议类型 + `deriveStatus` + `applyTurnStarted`/`applyTurnCompleted` 的内部构造 + 全部测试构造点。
+> 新增一条**独立于我们类型声明**的守卫：用 `JSON.parse` 喂真内核那串字节，
+> 对象字面量会被错类型带跑，而这条断言要挡的正是类型本身写错。
+> **做过证伪**：退回旧写法 4 条红（含这条新守卫），改回 77 条全绿。
+> 修好之后那条被迫砍掉的完整排队旅程写回来了：排队 → 调序 → 编辑 → 删除 → 放行后自动跑。
 > ② **打包产物冒烟**（`scripts/verify-packaged-app.mjs`）：内核二进制在不在、可不可执行、
 > 是不是占位；plugins/config/gateway/字体是不是空目录；Info.plist 里有没有 Codex/OpenAI（K5）；
 > 签成了什么；**打包后的 .app 真的能起来并渲染出引导**。`package.mjs` 的四条检查全在打包之前，

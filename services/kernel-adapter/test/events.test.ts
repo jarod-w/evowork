@@ -50,7 +50,7 @@ describe('顺序：落库 → UI → 副作用（09 §3.4，"落库优先是刻�
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     router.handle(NOTIFICATION.threadStatusChanged, {
       threadId: 't1',
-      status: { active: { activeFlags: ['waitingOnApproval'] } },
+      status: { type: 'active', activeFlags: ['waitingOnApproval'] },
     });
     // 假设此刻 UI 刷新（丢掉全部内存状态）
     ui = [];
@@ -110,7 +110,7 @@ describe('09 §3.4 的分发表逐行', () => {
     effects = [];
     router.handle(NOTIFICATION.threadStatusChanged, {
       threadId: 't1',
-      status: { active: { activeFlags: ['waitingOnUserInput'] } },
+      status: { type: 'active', activeFlags: ['waitingOnUserInput'] },
     });
     expect(store.threads.get('t1')?.derived_status).toBe('pending');
     expect(effects).toEqual([{ kind: 'notify', reason: 'PENDING_APPROVAL' }]);
@@ -119,7 +119,7 @@ describe('09 §3.4 的分发表逐行', () => {
     effects = [];
     router.handle(NOTIFICATION.threadStatusChanged, {
       threadId: 't1',
-      status: { active: { activeFlags: [] } },
+      status: { type: 'active', activeFlags: [] },
     });
     expect(effects).toEqual([]);
   });
