@@ -655,6 +655,21 @@ base instructions。模型在「你是谁」上听系统底稿。第二问「你
 2026-09-07 把新 asar 写进 `/Applications/EvoWork.app` 后再起一次：日志是
 `gateway.child.started itemCount=3`，不再是 `skipped reason=NO_KEYS`。
 
+### 再次启动报「本机网关启动后立刻退出了」（2026-09-26）
+
+第一次启动能发任务。退出后再开，Composer 顶部 danger 是「本机网关启动后立刻退出了，现在发不出任务。」历史任务还在，只是发不出去。
+
+当场核对：第一次拉起的 `EvoWork …/gateway/main.js` 父进程已经是 launchd，仍在听 `127.0.0.1:8787`。第二次启动的新进程一 bind 就以非 0 退出，宿主把 `exit` 写成上面那句话。
+
+两层原因叠在一起：
+
+1. `before-quit` 是 `void host.stop()`，Electron 不等。`stop()` 先 `await computerUse.close()`，网关 `stop()` 写在这个 await 之后。进程先退了，子进程变成孤儿，端口不释放。
+2. 网关自己接住 SIGTERM，`server.close()` 要等现有连接结束才退出。就算信号送到了，端口也不一定马上让出来。
+
+已改：`stop()` 在任何 await 之前 SIGKILL 收掉网关（无状态、不写盘）；父进程 `exit` 时再补一刀；下次启动如果端口上的进程命令行里带的是本次网关入口，先杀掉再拉起。认不出的程序占着端口则不动手，提示改成「端口被别的程序占着」。
+
+源码修了必须重新构建后再装。正在跑的 `/Applications/EvoWork.app` 仍是旧的，那只孤儿进程还在，不装新包的话再开一次还是同一句。
+
 ### 「项目」页真正接进 `app.tsx` 改出两个（2026-09-08）
 
 Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜像调用、十个 IPC 动作、

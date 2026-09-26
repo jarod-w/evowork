@@ -9,7 +9,7 @@
  * 配置全部来自环境变量，**不读配置文件也不落盘任何密钥**（K6 / Q14）。
  * `.env` 在 `.gitignore` 里；容器里用 secret 挂载。
  */
-import { createLogger, jsonLinesSink } from '@evowork/logging';
+import { createLogger, errorFields, jsonLinesSink } from '@evowork/logging';
 
 import { jwtAuth } from '@evowork/account';
 
@@ -215,6 +215,16 @@ export function main(): void {
     ...(accessJwt && upstreamBaseUrl ? { hostedForward: { upstreamBaseUrl, accessJwt } } : {}),
   });
 
+  /*
+   * 没人接 `error` 时，EADDRINUSE 是未捕获异常，进程照样以非 0 退出，
+   * 但原因只留在 stderr 里。宿主只记字节数，不记内容，于是界面上只剩
+   * 「启动后立刻退出了」。这里至少把错误码写进结构化日志。
+   */
+  server.on('error', (err: Error) => {
+    logger.error('gateway.boot.bind_failed', errorFields(err));
+    process.exit(1);
+  });
+
   server.listen(port, host, () => {
     logger.info('gateway.boot.listening', {
       // 端口不是秘密，但也不是"内容"——它是合法的运维字段
@@ -226,6 +236,13 @@ export function main(): void {
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
       logger.info('gateway.boot.shutdown', { reason: signal });
+      /*
+       * `server.close()` 要等现有连接结束才回调。内核那边的 keep-alive
+       * 不关的话，这个进程就一直占着端口。先拆连接，再给一个硬超时。
+       */
+      const force = setTimeout(() => process.exit(0), 500);
+      force.unref();
+      server.closeAllConnections();
       server.close(() => process.exit(0));
     });
   }

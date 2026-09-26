@@ -690,6 +690,69 @@ describe('从访达启动也能拿到厂商密钥', () => {
     expect(result.unavailable).toContain('密钥');
     expect(result.unavailable).not.toContain('连不上模型网关');
   });
+
+  it('再次启动先回收上次没退出的网关，再拉起新进程', async () => {
+    const entry = join(dir, 'gw-main.js');
+    writeFileSync(entry, '', 'utf8');
+    const gwChild = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      kill: vi.fn(),
+    };
+    const kernelChild = new FakeChild();
+    child = kernelChild;
+    const order: string[] = [];
+    const spawnFn = vi.fn((...args: unknown[]) => {
+      const argv = args[1];
+      if (Array.isArray(argv) && argv[0] === entry) {
+        order.push('spawn-gateway');
+        return gwChild;
+      }
+      order.push('spawn-kernel');
+      return kernelChild;
+    });
+    host = makeHost({
+      gatewayEntryPath: entry,
+      gatewayReadyTimeoutMs: 0,
+      env: { PATH: process.env.PATH ?? '', DEEPSEEK_API_KEY: 'sk-test' },
+      spawnFn: spawnFn as unknown as NonNullable<HostOptions['spawnFn']>,
+      reclaimPort: async () => {
+        order.push('reclaim');
+        return { status: 'reclaimed' };
+      },
+    });
+    await host.start();
+    const reclaimedAt = order.indexOf('reclaim');
+    const spawnedAt = order.indexOf('spawn-gateway');
+    expect(reclaimedAt).toBeGreaterThanOrEqual(0);
+    expect(spawnedAt).toBeGreaterThan(reclaimedAt);
+  });
+
+  it('端口被别的程序占着时不起网关，并说明是端口而不是「立刻退出」', async () => {
+    const entry = join(dir, 'gw-main.js');
+    writeFileSync(entry, '', 'utf8');
+    const kernelChild = new FakeChild();
+    child = kernelChild;
+    const spawnFn = vi.fn((...args: unknown[]) => {
+      const argv = args[1];
+      if (Array.isArray(argv) && argv[0] === entry) {
+        throw new Error('gateway must not spawn while a foreign process holds the port');
+      }
+      return kernelChild;
+    });
+    host = makeHost({
+      gatewayEntryPath: entry,
+      gatewayReadyTimeoutMs: 0,
+      env: { PATH: process.env.PATH ?? '', DEEPSEEK_API_KEY: 'sk-test' },
+      spawnFn: spawnFn as unknown as NonNullable<HostOptions['spawnFn']>,
+      reclaimPort: async () => ({ status: 'blocked' }),
+    });
+    await host.start();
+    const result = await host.actions.listModels();
+    expect(result.unavailable).toContain('端口');
+    expect(result.unavailable).not.toContain('立刻退出');
+  });
 });
 
 /*

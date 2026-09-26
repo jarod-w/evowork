@@ -261,6 +261,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   // macOS 首发（Q26），但"关掉最后一个窗口就退出"在三个平台上都是对的：
   // 这是一个本机服务宿主，留一个没有窗口的后台进程只会让人以为它挂了
   electron.app.on('window-all-closed', () => electron.app.quit());
+  /*
+   * 这里不等 `host.stop()`。Electron 收到 before-quit 之后就会继续退出，
+   * 所以 `stop()` 必须在它的第一个 await 之前把网关杀掉，否则子进程变成孤儿，
+   * 下次启动 bind 失败，界面就是「本机网关启动后立刻退出了」。
+   */
   electron.app.on('before-quit', () => void host.stop());
 
   return { window, host };

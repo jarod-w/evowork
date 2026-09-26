@@ -25,7 +25,7 @@
  * 所以这里**不抛**，只把失败原因交给宿主推成一条 notice ——
  * 与 `model-catalog.ts` 里"网关连不上不该把首页拖成白屏"是同一条判断。
  */
-import { spawn as nodeSpawn } from 'node:child_process';
+import { execFileSync, spawn as nodeSpawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
 import { errorFields, type Logger } from '@evowork/logging';
@@ -43,6 +43,13 @@ import { envHasProviderKey, PROVIDER_KEY_ENV } from './gateway-env.js';
 export const GATEWAY_NO_KEYS_NOTICE =
   '本机网关没有启动：一家模型厂商的密钥都没有配置，也没有自定义模型，现在发不出任务。' +
   '去「设置 → 模型」添加一个自定义模型。没有可用的模型时任务发不出去，EvoWork 不会自动换一个模型。';
+
+/**
+ * 端口上听着的不是我们上次留下的网关。
+ * 不能杀掉一个认不出来的进程，所以这里只说明端口被占，让用户自己去关。
+ */
+export const GATEWAY_PORT_IN_USE_NOTICE =
+  '本机网关要用的端口被别的程序占着，现在发不出任务。关掉占用它的程序后再重启 EvoWork。';
 
 /**
  * `base_url` 是不是指向本机。
@@ -100,6 +107,15 @@ export interface GatewayProcessOptions {
    */
   readonly spawnFn?: typeof nodeSpawn | undefined;
   /**
+   * 父进程退出时补一刀。
+   *
+   * `before-quit` 里是 `void host.stop()`，Electron **不会等**这个 Promise。
+   * 进程真的退了而 `stop()` 还停在第一个 `await` 上时，这里是唯一还能同步
+   * 杀掉子进程的地方 —— 漏了的话它会被 launchd 收养，继续占着端口。
+   * 测试注入它，避免把监听器挂到测试进程自己的 `exit` 上。
+   */
+  readonly onParentExit?: ((handler: () => void) => () => void) | undefined;
+  /**
    * 用哪个可执行文件跑它。
    *
    * 打包后是 Electron 自己（`process.execPath` + `ELECTRON_RUN_AS_NODE=1`）——
@@ -121,7 +137,67 @@ export type GatewayStartResult =
 
 export interface GatewayProcess {
   readonly result: GatewayStartResult;
+  /** 子进程已经结束。重起前要等它，否则新进程会撞上还没放开的端口。 */
+  readonly exited: Promise<void>;
   stop(): void;
+}
+
+/** 没拉起进程时的占位。`exited` 已经完成，调用方不用区分「没起」和「起了又退了」。 */
+function idleGateway(result: GatewayStartResult): GatewayProcess {
+  return { result, exited: Promise.resolve(), stop() {} };
+}
+
+export type GatewayPlan =
+  { readonly kind: 'skip'; readonly process: GatewayProcess } | { readonly kind: 'spawn' };
+
+/**
+ * 这次该不该拉起进程。
+ *
+ * 跟真正的 `spawn` 拆开，是因为「端口上还有上次的孤儿」这件事只能在
+ * **决定要 spawn 之后、真正 spawn 之前**处理：没配密钥时不该去动端口，
+ * 而 spawn 本身又不能是异步的（测试与 `result` 都假设它立刻返回）。
+ */
+export function planLocalGateway(options: GatewayProcessOptions): GatewayPlan {
+  const env = options.env ?? process.env;
+
+  if (!options.runsLocally) {
+    options.logger?.info('gateway.child.skipped', { reason: 'REMOTE' });
+    return { kind: 'skip', process: idleGateway({ started: false, reason: 'REMOTE' }) };
+  }
+
+  /*
+   * "有没有模型可服务"**不只看内置三家的密钥**（M10a）：只加了一条自定义模型、
+   * 三家一个都没配，是 Q30=A 下完全正常的一种用法。只看 `envHasProviderKey` 的话，
+   * 那位用户会看到"一家密钥都没配"，而他明明刚在设置页加过一个模型。
+   */
+  const hasCustomModels = (env[CUSTOM_MODELS_ENV] ?? '').trim().length > 2;
+  const hasTenantModels = (env[TENANT_MODELS_ENV] ?? '').trim().length > 2;
+  const hasPrivateUpstream = (env[UPSTREAM_BASE_URL_ENV] ?? '').trim().length > 0;
+  if (!envHasProviderKey(env) && !hasCustomModels && !hasTenantModels && !hasPrivateUpstream) {
+    options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
+    return {
+      kind: 'skip',
+      process: idleGateway({
+        started: false,
+        reason: 'NO_KEYS',
+        notice: GATEWAY_NO_KEYS_NOTICE,
+      }),
+    };
+  }
+
+  if (!existsSync(options.entryPath)) {
+    options.logger?.warn('gateway.child.skipped', { reason: 'NO_ENTRY' });
+    return {
+      kind: 'skip',
+      process: idleGateway({
+        started: false,
+        reason: 'NO_ENTRY',
+        notice: '本机网关的程序文件不在，现在发不出任务。这是安装包不完整，请重新安装 EvoWork。',
+      }),
+    };
+  }
+
+  return { kind: 'spawn' };
 }
 
 /**
@@ -136,48 +212,19 @@ export interface GatewayProcess {
  *   · `NO_ENTRY` —— 产物不在。开发时没跑 `pnpm run build`，或打包漏了 extraResources。
  */
 export function startLocalGateway(options: GatewayProcessOptions): GatewayProcess {
+  const plan = planLocalGateway(options);
+  if (plan.kind === 'skip') return plan.process;
+  return spawnLocalGateway(options);
+}
+
+function bindParentExit(handler: () => void): () => void {
+  process.on('exit', handler);
+  return () => process.removeListener('exit', handler);
+}
+
+function spawnLocalGateway(options: GatewayProcessOptions): GatewayProcess {
   const env = options.env ?? process.env;
-  const noop = { stop: () => undefined };
-
-  if (!options.runsLocally) {
-    // 正常部署，不提示用户；但记一条，否则"网关到底在哪"没有任何线索
-    options.logger?.info('gateway.child.skipped', { reason: 'REMOTE' });
-    return { ...noop, result: { started: false, reason: 'REMOTE' } };
-  }
-
-  /*
-   * "有没有模型可服务"**不只看内置三家的密钥**（M10a）：只加了一条自定义模型、
-   * 三家一个都没配，是 Q30=A 下完全正常的一种用法。只看 `envHasProviderKey` 的话，
-   * 那位用户会看到"一家密钥都没配"，而他明明刚在设置页加过一个模型。
-   */
-  const hasCustomModels = (env[CUSTOM_MODELS_ENV] ?? '').trim().length > 2;
-  const hasTenantModels = (env[TENANT_MODELS_ENV] ?? '').trim().length > 2;
-  const hasPrivateUpstream = (env[UPSTREAM_BASE_URL_ENV] ?? '').trim().length > 0;
-  if (!envHasProviderKey(env) && !hasCustomModels && !hasTenantModels && !hasPrivateUpstream) {
-    options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
-    return {
-      ...noop,
-      result: {
-        started: false,
-        reason: 'NO_KEYS',
-        notice: GATEWAY_NO_KEYS_NOTICE,
-      },
-    };
-  }
   const keys = PROVIDER_KEY_ENV.filter((name) => (env[name] ?? '').trim() !== '');
-
-  if (!existsSync(options.entryPath)) {
-    options.logger?.warn('gateway.child.skipped', { reason: 'NO_ENTRY' });
-    return {
-      ...noop,
-      result: {
-        started: false,
-        reason: 'NO_ENTRY',
-        notice: '本机网关的程序文件不在，现在发不出任务。这是安装包不完整，请重新安装 EvoWork。',
-      },
-    };
-  }
-
   const spawnFn = options.spawnFn ?? nodeSpawn;
 
   try {
@@ -213,19 +260,46 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
      */
     let result: GatewayStartResult = { started: true };
     let stopping = false;
+    let settleExit: () => void = () => undefined;
+    const exited = new Promise<void>((resolve) => {
+      settleExit = resolve;
+    });
     const markDead = (notice: string): void => {
       if (stopping || !result.started) return;
       result = { started: false, reason: 'SPAWN_FAILED', notice };
     };
+    /*
+     * SIGKILL，不是 SIGTERM。网关进程自己接住了 SIGTERM，要等 `server.close()`
+     * 把现有连接耗尽才退出 —— 父进程这时往往已经没了，端口就一直被占着。
+     * 网关无状态、不写盘，不需要这段优雅关闭。
+     */
+    let unsubscribe = (): void => undefined;
+    const killChild = (): void => {
+      if (stopping) return;
+      stopping = true;
+      unsubscribe();
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* 已经没了 */
+      }
+    };
+    unsubscribe = (options.onParentExit ?? bindParentExit)(killChild);
+    const finished = (): void => {
+      unsubscribe();
+      settleExit();
+    };
     child.on('error', (err: Error) => {
       options.logger?.warn('gateway.child.spawn_failed', errorFields(err));
       markDead('本机网关没能启动，现在发不出任务。重启 EvoWork 再试。');
+      finished();
     });
     child.on('exit', (code: number | null) => {
       options.logger?.warn('gateway.child.exited', { exitCode: code ?? -1, reason: 'EXIT' });
       if (code !== 0 && code !== null) {
         markDead('本机网关启动后立刻退出了，现在发不出任务。重启 EvoWork 再试。');
       }
+      finished();
     });
 
     // `itemCount` 而不是 `count`：字段注册表里没有 `count`，未注册的字段会被
@@ -235,25 +309,141 @@ export function startLocalGateway(options: GatewayProcessOptions): GatewayProces
       get result() {
         return result;
       },
-      stop: () => {
-        // 网关无状态、不写盘，SIGTERM 直接杀掉没有代价（不需要优雅关闭）
-        stopping = true;
-        try {
-          child.kill();
-        } catch {
-          /* 已经没了 */
-        }
-      },
+      exited,
+      stop: killChild,
     };
   } catch (err: unknown) {
     options.logger?.warn('gateway.child.spawn_failed', errorFields(err));
-    return {
-      ...noop,
-      result: {
-        started: false,
-        reason: 'SPAWN_FAILED',
-        notice: '本机网关没能启动，现在发不出任务。重启 EvoWork 再试。',
-      },
-    };
+    return idleGateway({
+      started: false,
+      reason: 'SPAWN_FAILED',
+      notice: '本机网关没能启动，现在发不出任务。重启 EvoWork 再试。',
+    });
   }
+}
+
+export interface PortListener {
+  readonly pid: number;
+  readonly command: string;
+}
+
+export type ReclaimResult =
+  { readonly status: 'clear' } | { readonly status: 'reclaimed' } | { readonly status: 'blocked' };
+
+/** 命令行里带的是这次要拉起的那个入口，才算「我们上次留下的网关」。 */
+function isOurGateway(command: string, entryPath: string): boolean {
+  return entryPath.length > 0 && command.includes(entryPath);
+}
+
+function listeningPids(port: number): readonly number[] {
+  if (process.platform === 'win32') {
+    const out = execFileSync('netstat', ['-ano', '-p', 'tcp'], {
+      encoding: 'utf8',
+      timeout: 2_000,
+      windowsHide: true,
+    });
+    const pids: number[] = [];
+    for (const line of out.split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 5 || parts[3] !== 'LISTENING') continue;
+      if (!(parts[1] ?? '').endsWith(`:${port}`)) continue;
+      const pid = Number(parts[4]);
+      if (pid > 1) pids.push(pid);
+    }
+    return pids;
+  }
+  const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
+    encoding: 'utf8',
+    timeout: 2_000,
+  });
+  return out
+    .split('\n')
+    .map((line) => Number(line.trim()))
+    .filter((pid) => pid > 1);
+}
+
+function commandOf(pid: number): string {
+  if (process.platform === 'win32') {
+    return execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+      ],
+      { encoding: 'utf8', timeout: 2_000, windowsHide: true },
+    ).trim();
+  }
+  return execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'command='], {
+    encoding: 'utf8',
+    timeout: 2_000,
+  }).trim();
+}
+
+/** 谁在听这个端口。查不到（没装 lsof、或上面根本没人）就当没有，让后面的 spawn 自己失败。 */
+export function listGatewayListeners(port: number): readonly PortListener[] {
+  try {
+    const seen = new Set<number>();
+    const listeners: PortListener[] = [];
+    for (const pid of listeningPids(port)) {
+      if (seen.has(pid)) continue;
+      seen.add(pid);
+      let command = '';
+      try {
+        command = commandOf(pid);
+      } catch {
+        command = '';
+      }
+      listeners.push({ pid, command });
+    }
+    return listeners;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 端口上如果还是上次没退出的网关，先杀掉它。
+ *
+ * 只动手条件是命令行里带本次的入口路径。别的程序占着同一端口时返回 `blocked`，
+ * 调用方据此告诉用户，而不是发一个 SIGKILL 给认不出来的进程。
+ */
+export async function reclaimStaleGateway(options: {
+  readonly port: number;
+  readonly entryPath: string;
+  readonly listListeners?: ((port: number) => readonly PortListener[]) | undefined;
+  readonly kill?: ((pid: number) => void) | undefined;
+  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+}): Promise<ReclaimResult> {
+  const listListeners = options.listListeners ?? listGatewayListeners;
+  const kill = options.kill ?? ((pid: number) => process.kill(pid, 'SIGKILL'));
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const others = listListeners(options.port).filter((listener) => listener.pid !== process.pid);
+  const stale = others.filter((listener) => isOurGateway(listener.command, options.entryPath));
+  /*
+   * 命令行没读到（ps 失败）不算「别的程序」：误报成端口被占会让一次本来能起来的
+   * 启动直接放弃。这种情况交给后面的 spawn，失败了仍是原来那句「立刻退出」。
+   */
+  const foreign = others.filter(
+    (listener) => listener.command !== '' && !isOurGateway(listener.command, options.entryPath),
+  );
+  if (foreign.length > 0) return { status: 'blocked' };
+  if (stale.length === 0) return { status: 'clear' };
+
+  const stalePids = new Set(stale.map((listener) => listener.pid));
+  for (const pid of stalePids) {
+    try {
+      kill(pid);
+    } catch {
+      /* 已经没了 */
+    }
+  }
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const stillThere = listListeners(options.port).some((listener) => stalePids.has(listener.pid));
+    if (!stillThere) return { status: 'reclaimed' };
+    await sleep(20);
+  }
+  return { status: 'reclaimed' };
 }

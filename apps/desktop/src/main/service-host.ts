@@ -77,7 +77,16 @@ import type {
 } from '../shared/ipc.js';
 import { createAccountSession, originsFromEnv } from './account.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
-import { isLocalGateway, startLocalGateway, type GatewayProcess } from './gateway-process.js';
+import {
+  GATEWAY_PORT_IN_USE_NOTICE,
+  isLocalGateway,
+  planLocalGateway,
+  portOf,
+  reclaimStaleGateway,
+  startLocalGateway,
+  type GatewayProcess,
+  type ReclaimResult,
+} from './gateway-process.js';
 import {
   createModelAccess,
   probeModel,
@@ -455,6 +464,14 @@ export interface ServiceHostOptions {
   readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
   readonly spawnFn?: typeof spawn;
+  /**
+   * 测试注入：端口上的残留进程怎么处理。
+   *
+   * 不传时扫本机监听者，只杀掉命令行里带本次网关入口的那个。
+   * 传了 `spawnFn` 又没传这个时不扫 —— 假子进程并不 bind，扫到的会是开发机上
+   * 真正还活着的网关，测试会把它杀掉或误报成「端口被占」。
+   */
+  readonly reclaimPort?: ((port: number, entryPath: string) => Promise<ReclaimResult>) | undefined;
   /**
    * Electron 的 `safeStorage`（Q34=A）。由 `bootstrap` 注入 —— 这个文件不 import electron。
    *
@@ -1036,18 +1053,49 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   };
   automationCatalog.read = readModelCatalog;
 
-  const launchLocalGateway = (): void => {
+  const gatewayProcessOptions = () => ({
+    baseUrl: gatewayBaseUrl,
+    // D11：本机网关常驻。`runsLocalGateway` 恒为 true。
+    runsLocally: modelAccess.runsLocalGateway,
+    entryPath: options.gatewayEntryPath ?? '',
+    ...(gatewayToken ? { token: gatewayToken } : {}),
+    env: gatewayRuntimeEnv,
+    ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
+    logger,
+  });
+
+  const launchLocalGateway = async (): Promise<void> => {
     if (!options.gatewayEntryPath) return;
-    gateway = startLocalGateway({
-      baseUrl: gatewayBaseUrl,
-      // D11：本机网关常驻。`runsLocalGateway` 恒为 true。
-      runsLocally: modelAccess.runsLocalGateway,
-      entryPath: options.gatewayEntryPath,
-      ...(gatewayToken ? { token: gatewayToken } : {}),
-      env: gatewayRuntimeEnv,
-      ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
-      logger,
-    });
+    const planned = gatewayProcessOptions();
+    const plan = planLocalGateway(planned);
+    if (plan.kind === 'skip') {
+      gateway = plan.process;
+      return;
+    }
+    /*
+     * 先回收，再 spawn。顺序反了的话，新进程 bind 失败立刻退出，
+     * 界面就是「本机网关启动后立刻退出了」——端口上其实还是上一只没退出的网关。
+     */
+    const reclaim = options.reclaimPort
+      ? await options.reclaimPort(portOf(planned.baseUrl), planned.entryPath)
+      : await reclaimStaleGateway({
+          port: portOf(planned.baseUrl),
+          entryPath: planned.entryPath,
+          ...(options.spawnFn ? { listListeners: () => [] } : {}),
+        });
+    if (reclaim.status === 'blocked') {
+      logger.warn('gateway.child.skipped', { reason: 'PORT_IN_USE' });
+      gateway = {
+        result: { started: false, reason: 'SPAWN_FAILED', notice: GATEWAY_PORT_IN_USE_NOTICE },
+        exited: Promise.resolve(),
+        stop() {},
+      };
+      return;
+    }
+    if (reclaim.status === 'reclaimed') {
+      logger.info('gateway.child.reclaimed', { reason: 'STALE_PROCESS' });
+    }
+    gateway = startLocalGateway(planned);
   };
 
   const awaitGatewayReady = async (): Promise<boolean> => {
@@ -1071,9 +1119,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const restartGateway = async (): Promise<ModelCatalogResult> => {
     gatewayRuntimeEnv = composeGatewayEnv();
     gatewayToken = modelAccess.token();
-    gateway?.stop();
+    const previous = gateway;
+    previous?.stop();
     gateway = undefined;
-    launchLocalGateway();
+    /*
+     * SIGKILL 发出去不等于端口已经让出来。不等的话，紧接着的 spawn 会因为
+     * EADDRINUSE 立刻退出，设置页保存密钥就变成「网关启动后立刻退出了」。
+     */
+    await Promise.race([
+      previous?.exited ?? Promise.resolve(),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+    await launchLocalGateway();
     const ready = await awaitGatewayReady();
     if (!ready) {
       return {
@@ -1571,7 +1628,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
        * 网关在别处（拓扑 B）时这里什么都不做，见 `startLocalGateway`。
        */
       if (options.gatewayEntryPath) {
-        launchLocalGateway();
+        await launchLocalGateway();
         // `REMOTE` 没有 notice：网关在服务器上是正常部署，不该提示任何东西
         if (gateway && !gateway.result.started && gateway.result.reason !== 'REMOTE') {
           options.emitToRenderer(IPC.notice, { kind: 'model', text: gateway.result.notice });
@@ -1651,14 +1708,22 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
 
     async stop() {
+      /*
+       * 网关必须在第一个 await 之前停。
+       *
+       * `before-quit` 是 `void host.stop()`，Electron 不等这个 Promise。
+       * 一旦停在 `computerUse.close()` 上，进程可能已经退了，而 `gateway.stop()`
+       * 还没跑到 —— 子进程被 launchd 收养，继续占着端口，下次启动就是
+       * 「本机网关启动后立刻退出了」。
+       */
+      const runningGateway = gateway;
+      runningGateway?.stop();
+      gateway = undefined;
       for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
       approvalReplies.clear();
       pendingApprovalById.clear();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
-      // 网关先停：它没有状态也不写盘，留着只会占住端口，下次启动起不来
-      gateway?.stop();
-      gateway = undefined;
       services.stop();
       await adapter.stop();
       store.close();
