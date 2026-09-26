@@ -151,6 +151,28 @@ describe('接线', () => {
   });
 
   /**
+   * **`EVOWORK_HOME` 能把整个数据根目录挪走。**
+   *
+   * 它存在的理由是"没有它就没法安全地验打包产物"：应用的家目录跟着 `$HOME` 走，
+   * 于是冒烟测试要么跑在用户的真实数据上（第一版真的跑上去了），要么改 `$HOME` ——
+   * 而改 `$HOME` 会让 macOS 找不到登录钥匙串，弹模态框把应用卡死在启动。
+   *
+   * 断言两条路径**都**跟着走：只挪 `home` 而 `kernelHome` 仍指向真实家目录的话，
+   * 表现是"数据隔离了但内核没有"，而那种半隔离比不隔离更难发现。
+   */
+  it('`EVOWORK_HOME` 覆盖数据根目录（企业部署与打包冒烟都靠它）', async () => {
+    const overridden = join(home, 'elsewhere', 'evowork-data');
+    process.env.EVOWORK_HOME = overridden;
+    try {
+      await boot();
+      expect(hostOptions.paths.home).toBe(overridden);
+      expect(hostOptions.paths.kernelHome).toBe(join(overridden, 'kernel'));
+    } finally {
+      delete process.env.EVOWORK_HOME;
+    }
+  });
+
+  /**
    * 这条守的是一次真实故障：preload 声明了六个动作，而这里只注册了审批一个。
    * 表现是**界面完全正常、回车没有任何反应** —— 渲染层用 `void send()` 发起调用，
    * `No handler registered for 'evowork:send'` 这个 rejection 无人接管，

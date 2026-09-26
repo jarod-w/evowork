@@ -175,7 +175,20 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   const { electron } = options;
   await electron.app.whenReady();
 
-  const paths = resolvePaths(join(electron.app.getPath('home'), '.evowork'));
+  /*
+   * 数据根目录。默认 `~/.evowork`，**`EVOWORK_HOME` 可以把它整个挪走**。
+   *
+   * 这个覆盖不是新主意：`shared/ipc.ts:762` 与 `model-access.ts:613` 的注释早就
+   * 按"它可以被覆盖（企业部署、测试）"在写了 —— 只是实现一直不在。
+   *
+   * 2026-09-26 补上它，因为**没有它就没法安全地验打包产物**：
+   * 应用的家目录跟着 `$HOME` 走，于是冒烟测试要么跑在用户的真实数据上，
+   * 要么改 `$HOME` —— 而改 `$HOME` 会让 macOS 找不到登录钥匙串，
+   * 弹一个模态框把应用整个卡住（实测撞到）。
+   */
+  const paths = resolvePaths(
+    process.env.EVOWORK_HOME ?? join(electron.app.getPath('home'), '.evowork'),
+  );
   const window = electron.createWindow({
     ...WINDOW_SIZE,
     ...(process.platform === 'darwin' ? WINDOW_CHROME : {}),
