@@ -67,6 +67,15 @@ export default tseslint.config(
     },
   },
 
+  // 真交互 UI 测试：`page.evaluate()` 的函数体跑在**渲染进程**里，
+  // 所以这些文件同时含 Node 代码与浏览器代码。只开全局，不放松别的规则。
+  {
+    files: ['apps/desktop/test/e2e/ui/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+  },
+
   // token 定义本身是字面量的唯一合法归宿（01 §2 是数值真源）
   {
     files: ['packages/tokens/**/*.ts'],
