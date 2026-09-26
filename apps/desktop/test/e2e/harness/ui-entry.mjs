@@ -33,7 +33,15 @@ const TURN_MARKER = 'EVOWORK-UI-HOLD';
 const KEEP_ONBOARDING = process.env.EVOWORK_UI_KEEP_ONBOARDING === '1';
 
 const { home, workspace, kernelHome } = createE2EHome('evowork-ui-');
-const gateway = createFakeGateway({ turnMarker: TURN_MARKER });
+/*
+ * **两个模型**：真交互测试里有一条要验「在界面上换一个模型，下一回合真的用它」，
+ * 而一个模型的下拉框点不出任何东西来。断言型 E2E 仍然是默认的一个。
+ */
+const UI_MODELS = [
+  { id: 'e2e-model', displayName: 'E2E Model' },
+  { id: 'e2e-model-alt', displayName: 'E2E Model Alt' },
+];
+const gateway = createFakeGateway({ turnMarker: TURN_MARKER, models: UI_MODELS });
 
 /*
  * **静态事实在启动之前就挂出去**，别等 `main()` 跑完。
@@ -42,7 +50,13 @@ const gateway = createFakeGateway({ turnMarker: TURN_MARKER });
  * 而 `undefined` 在下游往往**不报错**（第一版就栽在这儿：`new RegExp(undefined)`
  * 是空正则，什么都匹配，于是"标记没取到"一路装成通过，直到最后一步才炸）。
  */
-publishControls({ gateway, workspace, turnMarker: TURN_MARKER, keptOnboarding: KEEP_ONBOARDING });
+publishControls({
+  gateway,
+  workspace,
+  turnMarker: TURN_MARKER,
+  keptOnboarding: KEEP_ONBOARDING,
+  models: UI_MODELS,
+});
 
 async function main() {
   const gatewayBaseUrl = await gateway.listen();

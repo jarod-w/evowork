@@ -28,7 +28,37 @@ function sendEvent(response, event) {
  * **不能按到达顺序认**：内核在一次会话里不止发我们这一个模型请求（prewarm、
  * 记忆提取都可能先到），按「第一个请求」认会偶发看错请求，表现成「记忆没注入」。
  */
-export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE }) {
+/** 目录里一条模型。能力位对这些测试无所谓，但字段少一个前端就渲染不出来。 */
+function catalogEntry({ id, displayName }) {
+  return {
+    id,
+    displayName,
+    provider: 'private',
+    upstreamModel: id,
+    tier: 'standard',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: false,
+      promptCache: false,
+      imageInput: false,
+      maxContextTokens: 32_000,
+    },
+    verified: true,
+    verifiedAt: '2026-09-25',
+    unverified: [],
+    notes: 'desktop e2e',
+    notices: [],
+    credentialSource: 'private',
+    layer: 'custom',
+  };
+}
+
+/** 默认只发一个模型：断言型 E2E 一直是这么跑的，别因为 UI 测试要两个就把它改了。 */
+const DEFAULT_MODELS = Object.freeze([{ id: 'e2e-model', displayName: 'E2E Model' }]);
+
+export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = DEFAULT_MODELS }) {
   if (!turnMarker) throw new Error('假网关需要 turnMarker 才能认领回合请求。');
 
   /** 下一次模型请求怎么答（一次性） */
@@ -48,35 +78,7 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE }) {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     if (request.method === 'GET' && url.pathname === '/v1/evowork/models') {
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(
-        JSON.stringify({
-          data: [
-            {
-              id: 'e2e-model',
-              displayName: 'E2E Model',
-              provider: 'private',
-              upstreamModel: 'e2e-model',
-              tier: 'standard',
-              capabilities: {
-                streaming: true,
-                toolCalls: true,
-                parallelToolCalls: true,
-                reasoning: false,
-                promptCache: false,
-                imageInput: false,
-                maxContextTokens: 32_000,
-              },
-              verified: true,
-              verifiedAt: '2026-09-25',
-              unverified: [],
-              notes: 'desktop e2e',
-              notices: [],
-              credentialSource: 'private',
-              layer: 'custom',
-            },
-          ],
-        }),
-      );
+      response.end(JSON.stringify({ data: models.map(catalogEntry) }));
       return;
     }
     if (request.method !== 'POST' || url.pathname !== '/v1/responses') {
