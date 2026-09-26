@@ -3,14 +3,18 @@
  *
  * 真模型的行为没法脚本化，而「停止 / 插话 / 审批 / 断线重试」这几条链路都要求模型在
  * **特定时刻**做特定的事。所以由测试逐次指定：「这一次把流挂住」「这一次调这个工具」
- * 「这一次假装上游断了」。用完即清，后面的请求回到默认的「正常回一句话」。
+ * 「接下来 N 次假装上游断了」。用完即清，后面的请求回到默认的「正常回一句话」。
  *
- * 它同时是两条**内核实测面**的载体：心跳帧（F30）与可重试错误码（F32 / F33）——
- * 那两件事只有真 app-server 能证伪，而这个文件负责把它们喂进去。
+ * 它同时是几条**内核实测面**的载体：心跳帧（F30）、可重试错误码（F32 / F33）、
+ * 重试之后的 token 记账 —— 那些事只有真 app-server 能证伪，这个文件负责把它们喂进去。
  *
- * 与 `agent-loop.e2e.mjs` 的真网关是互补关系，不是替代：那条测真翻译层，这条测真内核。
+ * 与 `agent-loop.e2e.mjs` 的真网关是互补关系，不是替代：假的测**真内核**，
+ * 真的测**真翻译层**（`to-chat.ts` / `from-chat.ts`）。两条都要留。
  */
 import { createServer } from 'node:http';
+
+/** 成功那一次要报的用量。内核的 token 账就是从这里来的 */
+export const DEFAULT_USAGE = { input_tokens: 1234, output_tokens: 56, total_tokens: 1290 };
 
 function sendEvent(response, event) {
   response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -19,14 +23,21 @@ function sendEvent(response, event) {
 /**
  * 建一个假网关。返回的是**控制面**，不是 server：
  * 第 2 步要从进程外驱动它，露出去的必须是「让它这一次怎么答」这种动作。
+ *
+ * `turnMarker` 是第一条需求里的一段字，用来认领「哪个请求是那个回合的」——
+ * **不能按到达顺序认**：内核在一次会话里不止发我们这一个模型请求（prewarm、
+ * 记忆提取都可能先到），按「第一个请求」认会偶发看错请求，表现成「记忆没注入」。
  */
-export function createFakeGateway() {
+export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE }) {
+  if (!turnMarker) throw new Error('假网关需要 turnMarker 才能认领回合请求。');
+
   /** 下一次模型请求怎么答（一次性） */
   let nextScript;
-  /** 上游是否假装断线 */
-  let failUpstream = false;
-  /** 第一条响应的收尾函数：默认被扣住，等测试放行（用来造「运行中」的窗口） */
-  let finishFirstTurn;
+  /** 还要让上游失败几次（0 = 正常回答）。计数而不是开关：重试之后必须能成功，才测得到用量。 */
+  let failUpstream = 0;
+  /** 被认领的那个回合的收尾函数：扣住不发，等测试放行（用来造出「正在运行」的窗口） */
+  let claimedTurn;
+  let turnClaimed = false;
   /** 被 `kind: 'hold'` 挂住的那条响应的收尾函数；收尾时要放行，不然进程退不掉 */
   let releaseScriptedTurn;
   let requestCount = 0;
@@ -128,7 +139,8 @@ export function createFakeGateway() {
         response.end('data: [DONE]\n\n');
         return;
       }
-      if (failUpstream) {
+      if (failUpstream > 0) {
+        failUpstream -= 1;
         /*
          * 「上游断了」的样子：HTTP 200 + 流里一条 `response.failed`。
          * `upstream_disconnected` 是内核**认不出来**的 code，因此落到 `Retryable{message}`
@@ -196,11 +208,19 @@ export function createFakeGateway() {
             content: [{ type: 'output_text', text: `E2E response ${current}` }],
           },
         });
-        sendEvent(response, { type: 'response.completed', response: { id, end_turn: true } });
+        sendEvent(response, {
+          type: 'response.completed',
+          response: { id, end_turn: true, usage },
+        });
         response.end('data: [DONE]\n\n');
       };
-      if (current === 1) finishFirstTurn = finish;
-      else finish();
+      // 按内容认领这个回合的请求（见 `turnMarker`），不按到达顺序
+      if (!turnClaimed && requestBodies.at(-1)?.includes(turnMarker)) {
+        turnClaimed = true;
+        claimedTurn = finish;
+      } else {
+        finish();
+      }
     });
   });
 
@@ -222,22 +242,22 @@ export function createFakeGateway() {
     scriptNext(script) {
       nextScript = script;
     },
-    /** 从这一刻起，所有默认响应都假装上游断线 */
-    setFailUpstream(value) {
-      failUpstream = value;
+    /** 接下来 `times` 次默认响应假装上游断线；之后恢复正常回答 */
+    failNextUpstream(times) {
+      failUpstream = times;
     },
 
-    /** 第一条响应到了没有（它被默认扣住，用来造出「正在运行」的窗口） */
-    firstTurnHeld: () => Boolean(finishFirstTurn),
-    /** 放行第一条响应 */
-    finishFirstTurn() {
-      if (!finishFirstTurn) throw new Error('第一条响应还没到，放行不了。');
-      finishFirstTurn();
-      finishFirstTurn = undefined;
+    /** 带 `turnMarker` 的那个请求到了没有（它被扣住，用来造出「正在运行」的窗口） */
+    turnClaimed: () => Boolean(claimedTurn),
+    /** 放行被认领的那个回合 */
+    releaseClaimedTurn() {
+      if (!claimedTurn) throw new Error('那个回合的请求还没到，放行不了。');
+      claimedTurn();
+      claimedTurn = undefined;
     },
     /** 有没有一条被 `kind: 'hold'` 挂住的响应等着收尾 */
     scriptedTurnHeld: () => Boolean(releaseScriptedTurn),
-    /** 放行被挂住的那条；没有就什么都不做（调用点常在 try 之后，不该因此炸掉） */
+    /** 放行被挂住的那条；没有就什么都不做（调用点常在断言之后，不该因此炸掉） */
     releaseScriptedTurn() {
       if (releaseScriptedTurn) releaseScriptedTurn();
     },
@@ -245,5 +265,7 @@ export function createFakeGateway() {
     requestCount: () => requestCount,
     /** 活引用：断言要在后续请求到达后重新扫一遍 */
     requestBodies,
+    /** 成功那一次报的用量，断言 token 记账时要用 */
+    usage,
   };
 }

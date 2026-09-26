@@ -1,17 +1,25 @@
-import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+/**
+ * **技能引用 · 队列 · 审批 · 断线重试 · 重试记账**：在真 Electron 窗口 + 真 `codex-app-server`
+ * 上跑一遍。
+ *
+ * 启动那一段在 `harness/`（bootstrap 注入缝、假网关、临时 home、阶段标记），这个文件只剩
+ * **驱动与断言**。分开的理由见 `harness/README.md`：两者变化的原因不同 —— 驱动随产品走，
+ * 启动随内核与 Electron 走。第 2 步把驱动换成 Playwright 时只动这一侧。
+ */
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app } from 'electron';
 
-import { bootstrap, createServiceHost } from '../../dist/main/bootstrap.bundle.js';
 import { seedMemorySummary } from '../../../../services/kernel-adapter/test-support/memory-fixture.mjs';
+import { bootApp, createE2EHome, writeKernelConfig } from './harness/boot.mjs';
+import { createFakeGateway } from './harness/fake-gateway.mjs';
+import { createRunner, publishControls, waitFor } from './harness/runner.mjs';
 
-function stage(message) {
-  process.stdout.write(`__EVOWORK_DESKTOP_E2E_STAGE__${message}\n`);
-}
+const { stage, report } = createRunner({
+  stagePrefix: '__EVOWORK_DESKTOP_E2E_STAGE__',
+  resultPrefix: '__EVOWORK_DESKTOP_E2E__',
+});
 
 stage('module-loaded');
 
@@ -19,252 +27,58 @@ const repoRoot = process.env.EVOWORK_E2E_REPO_ROOT;
 const appServerPath = process.env.EVOWORK_APP_SERVER;
 if (!repoRoot || !appServerPath) throw new Error('桌面 E2E 缺少仓库或 app-server 路径。');
 
-const e2eHome = mkdtempSync(join(tmpdir(), 'evowork-desktop-e2e-'));
-const workspace = join(e2eHome, 'workspace');
-mkdirSync(workspace, { recursive: true });
+const { home, workspace, kernelHome } = createE2EHome('evowork-desktop-e2e-');
 
-let heldResponse;
-let heldTaken = false;
 /**
  * 第一条需求里的一段字。**用它来认领"哪个请求是这个回合的"**，而不是"第一个请求"。
  *
  * 内核在一次会话里并不是只发我们这一个模型请求（prewarm、记忆提取都可能先到），
- * 于是 `responseBodies[0]` 有时根本不是那个回合 —— 表现就是"记忆没注入"这种
- * 偶发失败：断言看错了请求，而被看的那个请求确实没有记忆标记。
+ * 于是"第一个请求"有时根本不是那个回合 —— 表现就是"记忆没注入"这种偶发失败：
+ * 断言看错了请求，而被看的那个请求确实没有记忆标记。认领逻辑在假网关里。
  */
 const TURN_MARKER = '创建一个测试技能';
-/** 还要让上游失败几次（0 = 正常回答）。计数而不是开关：重试之后必须能成功，才测得到用量。 */
-let failUpstream = 0;
-/** 成功那一次要报的用量。内核的 token 账就是从这里来的 */
-const RETRY_USAGE = { input_tokens: 1234, output_tokens: 56, total_tokens: 1290 };
-/**
- * 下一次模型请求怎么答（一次性）。
- *
- * 真模型的行为没法脚本化，而「停止 / 插话 / 追问」这三条链路都要求模型在**特定时刻**
- * 做特定的事。所以由测试逐次指定："这一次把流挂住"、"这一次调这个工具"。
- * 用完即清，后面的请求回到默认的"正常回一句话"。
- */
-let nextScript;
-/** 被挂住的那条响应；收尾时要放行，不然进程退不掉 */
-let releaseHeld;
-let responseCount = 0;
-const responseBodies = [];
-const gateway = createServer((request, response) => {
-  const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-  if (request.method === 'GET' && url.pathname === '/v1/evowork/models') {
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(
-      JSON.stringify({
-        data: [
-          {
-            id: 'e2e-model',
-            displayName: 'E2E Model',
-            provider: 'private',
-            upstreamModel: 'e2e-model',
-            tier: 'standard',
-            capabilities: {
-              streaming: true,
-              toolCalls: true,
-              parallelToolCalls: true,
-              reasoning: false,
-              promptCache: false,
-              imageInput: false,
-              maxContextTokens: 32_000,
-            },
-            verified: true,
-            verifiedAt: '2026-09-25',
-            unverified: [],
-            notes: 'desktop e2e',
-            notices: [],
-            credentialSource: 'private',
-            layer: 'custom',
-          },
-        ],
-      }),
-    );
-    return;
-  }
-  if (request.method !== 'POST' || url.pathname !== '/v1/responses') {
-    response.writeHead(404).end();
-    return;
-  }
-  const chunks = [];
-  request.on('data', (chunk) => chunks.push(chunk));
-  request.on('end', () => {
-    responseBodies.push(Buffer.concat(chunks).toString('utf8'));
-    responseCount += 1;
-    const currentResponse = responseCount;
-    if (nextScript) {
-      const script = nextScript;
-      nextScript = undefined;
-      const id = `resp_${currentResponse}`;
-      response.writeHead(200, {
-        'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-cache',
-      });
-      sendEvent(response, { type: 'response.created', response: { id } });
-      if (script.kind === 'hold') {
-        // 回一句话就**挂着不收尾** —— 回合会一直"在跑"，正好用来点停止 / 插话
-        sendEvent(response, {
-          type: 'response.output_item.added',
-          output_index: 0,
-          item: { type: 'message', id: `msg_${currentResponse}`, role: 'assistant', content: [] },
-        });
-        sendEvent(response, {
-          type: 'response.output_text.delta',
-          item_id: `msg_${currentResponse}`,
-          output_index: 0,
-          content_index: 0,
-          delta: '正在写……',
-        });
-        releaseHeld = () => {
-          sendEvent(response, {
-            type: 'response.completed',
-            response: { id, end_turn: true },
-          });
-          response.end('data: [DONE]\n\n');
-          releaseHeld = undefined;
-        };
-        return;
-      }
-      // 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它
-      sendEvent(response, {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'function_call',
-          id: `fc_${currentResponse}`,
-          name: script.tool,
-          arguments: JSON.stringify(script.args),
-          call_id: `call_${currentResponse}`,
-        },
-      });
-      // `end_turn: false`：工具调用之后回合还要继续
-      sendEvent(response, { type: 'response.completed', response: { id, end_turn: false } });
-      response.end('data: [DONE]\n\n');
-      return;
-    }
-    if (failUpstream > 0) {
-      failUpstream -= 1;
-      /*
-       * 「上游断了」的样子：HTTP 200 + 流里一条 `response.failed`。
-       * `upstream_disconnected` 是内核**认不出来**的 code，因此落到 `Retryable{message}`
-       * （F32）—— 内核会退避重试，并在重试用完后把这条 message 显示给用户。
-       */
-      response.writeHead(200, {
-        'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-cache',
-      });
-      sendEvent(response, {
-        type: 'response.created',
-        response: { id: `resp_${currentResponse}` },
-      });
-      sendEvent(response, {
-        type: 'response.failed',
-        response: {
-          id: `resp_${currentResponse}`,
-          error: {
-            code: 'upstream_disconnected',
-            message: '与模型服务的连接中断，重试多次仍未成功。',
-          },
-        },
-      });
-      response.end('data: [DONE]\n\n');
-      return;
-    }
-    response.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache',
-      connection: 'keep-alive',
-    });
-    const id = `resp_${currentResponse}`;
-    const itemId = `msg_${currentResponse}`;
-    /*
-     * 心跳帧（F30）。真网关在"活着但没东西可发"时会往流里塞它，靠它让内核那个
-     * 300 秒的空闲计时器重来（F31）。这里把它混进 E2E 的假网关，是为了让
-     * **真内核**替我们证明两件事：① 它不会因为这个类型报错 ② 它不会把它变成
-     * 时间线上的一条 item（下面那些对话断言就是证据）。
-     * 读源码只能读到"它在忽略清单里"，这条才是实测。
-     */
-    sendEvent(response, { type: 'response.in_progress', response: { id } });
-    sendEvent(response, { type: 'response.created', response: { id } });
-    sendEvent(response, { type: 'response.in_progress', response: { id } });
-    sendEvent(response, {
-      type: 'response.output_item.added',
-      output_index: 0,
-      item: { type: 'message', id: itemId, role: 'assistant', content: [] },
-    });
-    sendEvent(response, {
-      type: 'response.output_text.delta',
-      item_id: itemId,
-      output_index: 0,
-      content_index: 0,
-      delta: `E2E response ${currentResponse}`,
-    });
-    const finish = () => {
-      sendEvent(response, { type: 'response.in_progress', response: { id } });
-      sendEvent(response, {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'message',
-          id: itemId,
-          role: 'assistant',
-          content: [{ type: 'output_text', text: `E2E response ${currentResponse}` }],
-        },
-      });
-      sendEvent(response, {
-        type: 'response.completed',
-        response: { id, end_turn: true, usage: RETRY_USAGE },
-      });
-      response.end('data: [DONE]\n\n');
-    };
-    // 按内容认领这个回合的请求（见 `TURN_MARKER`），不按到达顺序
-    if (!heldTaken && responseBodies.at(-1)?.includes(TURN_MARKER)) {
-      heldTaken = true;
-      heldResponse = finish;
-    } else {
-      finish();
-    }
-  });
-});
-
-function sendEvent(response, event) {
-  response.write(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-function listen(server) {
-  return new Promise((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolveListen(server.address().port));
-  });
-}
-
-function waitFor(check, message, timeoutMs = 15_000) {
-  const started = Date.now();
-  return new Promise((resolveWait, reject) => {
-    const poll = async () => {
-      try {
-        const value = await check();
-        if (value) return resolveWait(value);
-      } catch {
-        // Renderer navigation and kernel restart both have short expected gaps.
-      }
-      if (Date.now() - started >= timeoutMs) return reject(new Error(message));
-      setTimeout(poll, 50);
-    };
-    void poll();
-  });
-}
+const gateway = createFakeGateway({ turnMarker: TURN_MARKER });
 
 let host;
+/**
+ * 等假网关安静下来（连续 `stableMs` 没有新请求）。
+ *
+ * 为什么需要它：内核在一个回合结束之后还会**继续发模型请求** —— 记忆提取、上一段没跑完的
+ * 重试，都会落到同一个假网关上。不等安静就读数，读到的是"当时恰好到了几条"，
+ * 断言因此时红时绿（2026-09-26 那条重试记账断言就是这么飘的）。
+ */
+async function quiesce(gateway, stableMs = 2_000, timeoutMs = 30_000) {
+  const started = Date.now();
+  let last = gateway.requestCount();
+  let lastChange = Date.now();
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const now = gateway.requestCount();
+    if (now !== last) {
+      last = now;
+      lastChange = Date.now();
+    }
+    if (Date.now() - lastChange >= stableMs) return;
+    if (Date.now() - started >= timeoutMs) {
+      /*
+       * **超时要响亮地失败，不能静默往下走。**
+       *
+       * 悄悄返回的话，后面数"这个任务打了几次"会数漏（还有在飞的请求没到），
+       * 断言以一个莫名其妙的数字失败，而真正的原因一个字都不会说 ——
+       * 那正是 CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」要挡的东西。
+       */
+      throw new Error(
+        `假网关 ${Math.round(timeoutMs / 1000)} 秒都没安静下来（仍在收请求），` +
+          '说明还有在飞的回合 —— 此时数出来的成功次数不作数。',
+      );
+    }
+  }
+}
+
 async function run() {
   try {
     stage('gateway-starting');
-    const gatewayPort = await listen(gateway);
-    const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}/v1`;
-    const kernelHome = join(e2eHome, '.evowork', 'kernel');
-    mkdirSync(kernelHome, { recursive: true });
+    const gatewayBaseUrl = await gateway.listen();
     // 单独成段，既清楚表达这是协议配置，也避免边界 lint 把同一模板里的 URL 误判成记忆目录。
     const memoryConfig = `[features]
 memories = true
@@ -273,8 +87,8 @@ memories = true
 use_memories = true
 generate_memories = true
 disable_on_external_context = true`;
-    writeFileSync(
-      join(kernelHome, 'config.toml'),
+    writeKernelConfig(
+      kernelHome,
       `model_provider = "evowork"
 
 [model_providers.evowork]
@@ -297,46 +111,22 @@ exporter = "none"
 `,
     );
 
-    let kernelChild;
     stage('bootstrap-starting');
-    const result = await bootstrap({
-      electron: {
-        app: {
-          whenReady: () => app.whenReady(),
-          on: (event, handler) => app.on(event, handler),
-          quit: () => app.quit(),
-          getVersion: () => app.getVersion(),
-          getPath: () => e2eHome,
-        },
-        createWindow: (options) => new BrowserWindow({ ...options, show: false }),
-        ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
-        openExternal: async () => undefined,
-      },
+    const desktop = await bootApp({
+      repoRoot,
       appServerPath,
-      configDir: join(repoRoot, 'config'),
-      pluginsDir: join(repoRoot, 'plugins'),
-      preloadPath: join(repoRoot, 'apps/desktop/dist/preload/index.bundle.cjs'),
-      rendererHtmlPath: join(repoRoot, 'apps/desktop/dist/renderer/index.html'),
-      createHost: (options) =>
-        createServiceHost({
-          ...options,
-          env: {
-            ...process.env,
-            EVOWORK_GATEWAY_TOKEN: 'e2e-token',
-            EVOWORK_GATEWAY_URL: gatewayBaseUrl,
-          },
-          spawnFn: (command, args, spawnOptions) => {
-            const child = spawn(command, args, spawnOptions);
-            if (command === appServerPath) kernelChild = child;
-            return child;
-          },
-        }),
+      home,
+      hostEnv: {
+        EVOWORK_GATEWAY_TOKEN: 'e2e-token',
+        EVOWORK_GATEWAY_URL: gatewayBaseUrl,
+      },
+      captureKernelProcess: true,
     });
     stage('bootstrap-complete');
-    host = result.host;
-    const window = result.window;
-    const evaluate = (source) => window.webContents.executeJavaScript(source, true);
-    await waitFor(() => evaluate('Boolean(window.evowork)'), 'preload bridge 没有加载');
+    host = desktop.host;
+    const evaluate = desktop.evaluate;
+    // 假网关的剧本也在主进程里：第 2 步从进程外驱动时，要的就是这个控制面
+    publishControls({ gateway });
     stage('preload-ready');
     await evaluate(`
     window.__e2eEvents = [];
@@ -398,9 +188,9 @@ exporter = "none"
         workspaceId,
       })})`,
     );
-    await waitFor(() => heldResponse, '模型请求没有到达测试网关');
+    await waitFor(() => gateway.turnClaimed(), '模型请求没有到达测试网关');
     stage('first-request-held');
-    const turnBody = responseBodies.find((body) => body.includes(TURN_MARKER));
+    const turnBody = gateway.requestBodies.find((body) => body.includes(TURN_MARKER));
     if (!turnBody?.includes(memoryMarker)) {
       throw new Error('真实 app-server 没有把本地记忆注入新任务的模型请求。');
     }
@@ -469,8 +259,7 @@ exporter = "none"
       throw new Error('队列编辑后文本或技能引用丢失。');
     }
 
-    heldResponse();
-    heldResponse = undefined;
+    gateway.releaseClaimedTurn();
     stage('first-request-released');
     await waitFor(
       () =>
@@ -498,8 +287,8 @@ exporter = "none"
     }
     stage('queue-history-verified');
 
-    const crashedPid = kernelChild?.pid;
-    kernelChild?.kill('SIGKILL');
+    const crashedPid = desktop.kernelPid();
+    desktop.killKernel();
     await waitFor(
       () => evaluate(`window.__e2eNotices.some((notice) => notice.kind === 'kernel-restarted')`),
       '真实 app-server 崩溃后没有自动恢复',
@@ -545,7 +334,7 @@ exporter = "none"
     );
 
     // ① 停止：`turn/interrupt` 少了 turnId 的话内核只回 -32600，按钮永远点不动
-    nextScript = { kind: 'hold' };
+    gateway.scriptNext({ kind: 'hold' });
     const stopTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
         text: '写一份很长的报告',
@@ -573,11 +362,11 @@ exporter = "none"
       '「停止」没有真的停下这个回合',
       20_000,
     );
-    if (releaseHeld) releaseHeld();
+    gateway.releaseScriptedTurn();
     stage('interrupt-verified');
 
     // ② 立即插话：`turn/steer` 少了 expectedTurnId 同样是 -32600
-    nextScript = { kind: 'hold' };
+    gateway.scriptNext({ kind: 'hold' });
     const steerTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
         text: '列个提纲',
@@ -611,9 +400,9 @@ exporter = "none"
       // 适配层在"没有活动回合"时会改成排队并说明 —— 那说明这条链路没走成
       throw new Error(`立即插话被改成了排队：${JSON.stringify(steerResult.notes)}`);
     }
-    if (releaseHeld) releaseHeld();
+    gateway.releaseScriptedTurn();
     await waitFor(
-      () => responseBodies.some((body) => body.includes(steerMarker)),
+      () => gateway.requestBodies.some((body) => body.includes(steerMarker)),
       '插话的内容没有进到模型请求里（expectedTurnId 不对时内核直接打回）',
       20_000,
     );
@@ -630,14 +419,14 @@ exporter = "none"
      * "我要越过沙箱"，内核在 on-request 档下必须问用户（`shell_spec.rs:235-256`）。
      */
     const approvedFile = join(workspace, 'approved-by-e2e.txt');
-    nextScript = {
+    gateway.scriptNext({
       tool: 'exec_command',
       args: {
         cmd: `printf EVOWORK-APPROVED > ${JSON.stringify(approvedFile)}`,
         sandbox_permissions: 'require_escalated',
         justification: '端到端测试：验证审批通过后命令真的会执行',
       },
-    };
+    });
     const approveTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
         text: '写一个需要我批准的文件',
@@ -688,11 +477,11 @@ exporter = "none"
      * 而用户就是靠这句话决定点不点允许的。
      *
      * 触发器要挑对路径：`:workspace` 档**本来就允许写临时目录**，
-     * 而 e2e 的工作区就在临时目录下 —— 第一次探测写到 `e2eHome` 时内核根本没问
+     * 而 e2e 的工作区就在临时目录下 —— 第一次探测写到 `home` 时内核根本没问
      * （那不是越权，是许可范围内）。所以这里写到仓库根：确确实实在工作区之外。
      */
     const outsideFile = join(repoRoot, '.evowork-e2e-file-change-probe.txt');
-    nextScript = {
+    gateway.scriptNext({
       tool: 'exec_command',
       args: {
         cmd: [
@@ -704,7 +493,7 @@ exporter = "none"
           'PATCH',
         ].join('\n'),
       },
-    };
+    });
     await evaluate(
       `window.evowork.send(${JSON.stringify({
         text: '改一个工作区外的文件',
@@ -762,7 +551,7 @@ exporter = "none"
      * 或者我们加了 Plan 模式，这条会**红**，那时候才轮到去验那两张卡真的能用。
      * 跳过的写法在那一天什么都不会说。
      */
-    nextScript = {
+    gateway.scriptNext({
       tool: 'request_user_input',
       args: {
         questions: [
@@ -777,7 +566,7 @@ exporter = "none"
           },
         ],
       },
-    };
+    });
     const askTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
         text: '先问我一个问题再动手',
@@ -796,7 +585,7 @@ exporter = "none"
       30_000,
     );
     // 搜**所有**请求体，不是最后一个：这一段后面还有别的回合，`at(-1)` 会指到别人身上
-    const toolOutput = responseBodies.some((body) =>
+    const toolOutput = gateway.requestBodies.some((body) =>
       body.includes('request_user_input is unavailable'),
     )
       ? 'unavailable-in-default-mode'
@@ -811,7 +600,7 @@ exporter = "none"
       throw new Error('追问竟然弹出了审批卡 —— 与上面那条互相矛盾，说明判据写错了。');
     }
     // 同上：挑**带工具清单**的那个请求，不是第一个（第一个可能是 prewarm）
-    const withTools = responseBodies.find((body) => body.includes('"tools"'));
+    const withTools = gateway.requestBodies.find((body) => body.includes('"tools"'));
     const offeredTools = JSON.parse(withTools ?? '{}').tools ?? [];
     if (offeredTools.some((tool) => tool?.name === 'request_permissions')) {
       throw new Error(
@@ -821,8 +610,8 @@ exporter = "none"
     stage('approval-paths-pinned');
 
     // 大到不会误伤，但存在 —— 目的只是让 goal 存在，好读 tokensUsed
-    failUpstream = 99;
-    const beforeRetry = responseCount;
+    gateway.failNextUpstream(99);
+    const beforeRetry = gateway.requestCount();
     const retryTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
         text: '断线重连自检',
@@ -842,7 +631,7 @@ exporter = "none"
     );
     // 真的重试了：同一个回合把网关打了不止一次
     await waitFor(
-      () => responseCount >= beforeRetry + 2,
+      () => gateway.requestCount() >= beforeRetry + 2,
       '内核没有重试上游请求 —— error.code 大概率落到了"终止"那一支',
       20_000,
     );
@@ -854,7 +643,7 @@ exporter = "none"
       '重试用完之后没有把失败告诉用户',
       30_000,
     );
-    const retryAttempts = responseCount - beforeRetry;
+    const retryAttempts = gateway.requestCount() - beforeRetry;
     /*
      * 重试要**有尽头**，但尽头不是 `stream_max_retries` 那个数。
      *
@@ -885,10 +674,17 @@ exporter = "none"
      *
      * 后者不是实现能修的：用量只在最后一帧里，流断了就没有那一帧 —— 编一个数比不记更糟。
      */
-    failUpstream = 2;
+    /*
+     * 先等网关安静下来：上一段（重试耗尽）的回合可能还在重试，而 `failNextUpstream`
+     * 是**全局计数**——它会被还在飞的那些请求吃掉，于是这一段的失败次数不是我以为的两次。
+     */
+    const accountingMarker = '重试记账自检';
+    await quiesce(gateway);
+    const beforeAccounting = gateway.requestCount();
+    gateway.failNextUpstream(2);
     const budgetTask = await evaluate(
       `window.evowork.send(${JSON.stringify({
-        text: '重试记账自检',
+        text: accountingMarker,
         scenarioId: 'code',
         modelId: 'e2e-model',
         modeId: 'request-approval',
@@ -898,7 +694,7 @@ exporter = "none"
     await evaluate(
       `window.evowork.setTaskGoal(${JSON.stringify({
         threadId: budgetTask.threadId,
-        objective: '重试记账自检',
+        objective: accountingMarker,
         tokenBudget: 1_000_000,
       })})`,
     );
@@ -916,36 +712,55 @@ exporter = "none"
       `window.evowork.getTaskGoal(${JSON.stringify({ threadId: budgetTask.threadId })})`,
     );
     const tokensUsed = goal?.tokensUsed ?? 0;
-    const once = RETRY_USAGE.input_tokens + RETRY_USAGE.output_tokens;
-    // 允许内核另算一点（它自己也会发请求），但不能是"成功那次的整数倍"
-    if (tokensUsed < once || tokensUsed >= once * 2) {
+    const once = gateway.usage.input_tokens + gateway.usage.output_tokens;
+    /*
+     * **按"这个任务实际成功了几次"算，不是写死一次。**
+     *
+     * 这条断言原先写成 `< once * 2`，结果三次观测里出现过 1290 / 2580 / 3870 ——
+     * 都是整数倍，说明账没算乱，是**这个 thread 上成功的模型请求不止一次**：
+     * 记忆提取（`generate_memories = true`）会在回合之后再发一次，而它是异步的，
+     * 落在读 goal 之前还是之后全看运气。写死一次的断言因此是偶发红。
+     *
+     * 所以先等安静，再数这个 thread 真正打了几次、其中几次被我们判失败 ——
+     * 剩下的就是成功次数。这样它仍然守住原来那两件事：
+     *   · `> once × 成功次数` = 同一次被记了两遍（**重复计**，预算会提前拦人）；
+     *   · `< once × 成功次数` = 有成功的请求没进账。
+     * 而"失败那几次一个 token 都没记"这条结论，正是由"成功次数 = 总次数 − 失败次数"体现的。
+     */
+    const attempts = gateway.requestBodies
+      .slice(beforeAccounting)
+      .filter((body) => body.includes(accountingMarker)).length;
+    const successes = attempts - 2;
+    if (successes < 1) {
+      throw new Error(`这个任务只打了 ${attempts} 次上游，重试没发生，这条断言无从谈起。`);
+    }
+    if (tokensUsed !== once * successes) {
       throw new Error(
-        `重试把 token 账算乱了：记了 ${tokensUsed}，一次成功是 ${once}（≥2 倍 = 重复计，0 = 完全没记）。`,
+        `重试把 token 账算乱了：记了 ${tokensUsed}，而这个任务成功了 ${successes} 次 × ${once}` +
+          `（多了 = 重复计，少了 = 有成功没进账；失败的那 2 次本来就不该进账）。`,
       );
     }
-    stage(`retry-accounting-verified used=${tokensUsed} once=${once}`);
+    stage(`retry-accounting-verified used=${tokensUsed} successes=${successes}`);
 
-    process.stdout.write(
-      `__EVOWORK_DESKTOP_E2E__${JSON.stringify({
-        ok: true,
-        upstreamRetryAttempts: retryAttempts,
-        threadId: first.threadId,
-        skillPath: skill.path,
-        queuedEditPreserved: true,
-        memorySettingsVerified: true,
-        memoryInjectionVerified: true,
-        memoryTaskControlsVerified: true,
-        recoveredAfterPid: crashedPid,
-        responses: responseCount,
-      })}\n`,
-    );
+    report({
+      ok: true,
+      upstreamRetryAttempts: retryAttempts,
+      threadId: first.threadId,
+      skillPath: skill.path,
+      queuedEditPreserved: true,
+      memorySettingsVerified: true,
+      memoryInjectionVerified: true,
+      memoryTaskControlsVerified: true,
+      recoveredAfterPid: crashedPid,
+      responses: gateway.requestCount(),
+    });
     await host.stop();
-    await new Promise((resolveClose) => gateway.close(resolveClose));
+    await gateway.close();
     app.exit(0);
   } catch (error) {
     console.error(error);
     if (host) await host.stop().catch(() => undefined);
-    await new Promise((resolveClose) => gateway.close(resolveClose));
+    await gateway.close();
     app.exit(1);
   }
 }

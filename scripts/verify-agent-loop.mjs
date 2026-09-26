@@ -55,9 +55,20 @@ if (!existsSync(resolve(root, 'dist/gateway/main.js'))) {
 
 // 与 desktop-skills-e2e 同一条理由：直接启动包里的二进制，超时才杀得干净
 const electron = require('electron');
+/*
+ * VS Code 的集成终端与扩展宿主会设 `ELECTRON_RUN_AS_NODE=1`（它自己就是 Electron 应用）。
+ * 原样继承给子进程后，Electron 会以**普通 Node** 启动，`electron` 这个 specifier 于是
+ * 解析到 npm 那个只导出二进制路径的壳 —— 入口第一行 `import { app } from 'electron'`
+ * 直接报 "does not provide an export named 'app'"。
+ *
+ * 那个报错看起来像代码坏了，其实是环境：同一份代码在普通终端里是好的。
+ * 2026-09-26 实测踩到一次，排查成本远大于这三行。
+ */
+const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+
 const child = spawn(electron, [resolve(root, 'apps/desktop/test/e2e/agent-loop.e2e.mjs')], {
   cwd: root,
-  env: { ...process.env, EVOWORK_E2E_REPO_ROOT: root, EVOWORK_APP_SERVER: kernel },
+  env: { ...parentEnv, EVOWORK_E2E_REPO_ROOT: root, EVOWORK_APP_SERVER: kernel },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
