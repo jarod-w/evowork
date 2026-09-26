@@ -259,9 +259,28 @@ export class KernelSession {
    * `server/diagnostics` 是实验方法，心跳不该依赖可能被降级的东西。
    */
   #startHeartbeat(): void {
+    // 重启路径会再调一次；不先停表的话两条心跳链会并存，误判次数跟着翻倍
+    this.#stopHeartbeat();
     const interval = this.options.heartbeatIntervalMs ?? 30_000;
     const tick = async (): Promise<void> => {
-      if (this.#phase !== 'ready' || this.#stopping) return;
+      if (this.#stopping) return;
+      if (this.#phase !== 'ready') {
+        /*
+         * 这一拍赶上了非 ready 的相位（启动中 / 退避重启中）：**跳过这次探测，
+         * 但要把下一拍排上**。
+         *
+         * 原先这里直接 return，而排下一拍的语句在函数末尾 —— 于是任何一次踩在
+         * 重启窗口里的心跳都会把整条链**永久停掉**。之后再进 ready 也不会有人重排
+         * （只有 `start()` / 重启成功那条路会重新 `#startHeartbeat()`），
+         * 而心跳停了意味着"进程活着但不回应"这种故障从此没人发现 ——
+         * 它恰恰是心跳唯一要抓的那一种。
+         */
+        this.#heartbeatTimer = (this.options.setTimeoutFn ?? setTimeout)(
+          () => void tick(),
+          interval,
+        );
+        return;
+      }
       const timeout = this.options.heartbeatTimeoutMs ?? 10_000;
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {

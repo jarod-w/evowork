@@ -22,6 +22,80 @@ export interface IdentityServerOptions {
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' } as const;
 
+/** 等上游响应头的上限。见 `proxyResponses` 里为什么只盖"等头"这一段。 */
+const UPSTREAM_HEADERS_TIMEOUT_MS = 300_000;
+
+/** 非流式响应最多缓冲多少 —— 用量要从里面取，但不能无上限地吃内存。 */
+const MAX_BUFFERED_BYTES = 1024 * 1024;
+
+interface RelayUsage {
+  readonly tokensIn: number;
+  readonly tokensOut: number;
+}
+
+/**
+ * 把上游的响应**边收边写**给下游，顺便把用量摘出来。
+ *
+ * 用量在流式响应里只出现在最后那条 `response.completed` 上，所以这里逐帧扫 ——
+ * 扫的是**结构**（`data:` 行里的 `response.usage`），正文一个字都不留、也不进日志（Q14）。
+ */
+async function relayUpstream(
+  upstream: Response,
+  res: ServerResponse,
+  contentType: string,
+): Promise<RelayUsage> {
+  const body = upstream.body;
+  if (!body) return { tokensIn: 0, tokensOut: 0 };
+
+  if (!contentType.includes('text/event-stream')) {
+    // 非流式（多半是错误体）：小、且用量在整份 JSON 里
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+      const buf = Buffer.from(chunk);
+      size += buf.length;
+      if (size <= MAX_BUFFERED_BYTES) chunks.push(buf);
+      res.write(buf);
+    }
+    return usageFromJson(Buffer.concat(chunks).toString('utf8'));
+  }
+
+  let usage: RelayUsage = { tokensIn: 0, tokensOut: 0 };
+  let pending = '';
+  const decoder = new TextDecoder();
+  for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+    res.write(Buffer.from(chunk));
+    pending += decoder.decode(chunk, { stream: true });
+    let cut = pending.indexOf('\n');
+    while (cut >= 0) {
+      const line = pending.slice(0, cut).trim();
+      pending = pending.slice(cut + 1);
+      cut = pending.indexOf('\n');
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '' || payload === '[DONE]') continue;
+      const found = usageFromJson(payload);
+      // 最后一条带用量的帧说了算（`response.completed`）
+      if (found.tokensIn > 0 || found.tokensOut > 0) usage = found;
+    }
+  }
+  return usage;
+}
+
+/** 从一份 JSON（整份响应，或一帧 SSE）里取用量。取不到就是 0。 */
+function usageFromJson(text: string): RelayUsage {
+  try {
+    const decoded = JSON.parse(text) as {
+      usage?: { input_tokens?: number; output_tokens?: number };
+      response?: { usage?: { input_tokens?: number; output_tokens?: number } };
+    };
+    const usage = decoded.response?.usage ?? decoded.usage;
+    return { tokensIn: usage?.input_tokens ?? 0, tokensOut: usage?.output_tokens ?? 0 };
+  } catch {
+    return { tokensIn: 0, tokensOut: 0 };
+  }
+}
+
 export function createIdentityServer(options: IdentityServerOptions): Server {
   const { identity, keys, logger } = options;
 
@@ -366,43 +440,58 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       ? `${up.baseUrl}/responses`
       : `${up.baseUrl.replace(/\/$/, '')}/v1/responses`;
     const started = Date.now();
-    const upstream = await fetch(target, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${up.apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(raw),
-    });
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    let tokensIn = 0;
-    let tokensOut = 0;
+    /*
+     * **等响应头的时间要有上限，读流的时间不能有。**
+     *
+     * 头还没回来时，下游（本机网关 → 内核）一个字节都还没收到；再往下内核对"等头"
+     * 没有任何超时，于是上游一个不回应的连接就是一个永远转圈的任务。拿到头就停表：
+     * 之后那条流可能合法地跑很久，掐它等于把长回合判死。
+     */
+    const headersAbort = new AbortController();
+    const headersTimer = setTimeout(() => headersAbort.abort(), UPSTREAM_HEADERS_TIMEOUT_MS);
+    headersTimer.unref?.();
+    let upstream: Response;
     try {
-      const decoded: unknown = JSON.parse(buf.toString('utf8'));
-      if (decoded && typeof decoded === 'object' && 'usage' in decoded) {
-        const usage = (decoded as { usage?: { input_tokens?: number; output_tokens?: number } })
-          .usage;
-        tokensIn = usage?.input_tokens ?? 0;
-        tokensOut = usage?.output_tokens ?? 0;
-      }
-    } catch {
-      /* 流式或非 JSON：只记请求次数，token 记 0 */
+      upstream = await fetch(target, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${up.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(raw),
+        signal: headersAbort.signal,
+      });
+    } finally {
+      clearTimeout(headersTimer);
     }
+    /*
+     * **边转发边计量，不要先读完再转发。**
+     *
+     * 原先这里是 `await upstream.arrayBuffer()`：整条响应读完才写回一个字节。
+     * 对托管模型来说那等于**完全没有流式** —— 用户在看到第一个字之前要等整段答案
+     * 生成完；而下游内核 300 秒收不到帧就判整个回合失败，长回合必死。
+     * 用量原先从整个 JSON 里取，现在从流里那条 `response.completed` 取，口径不变。
+     */
+    const contentType = upstream.headers.get('content-type') ?? 'application/json';
+    res.writeHead(upstream.status, {
+      'content-type': contentType,
+      'cache-control': 'no-cache, no-transform',
+      'x-accel-buffering': 'no',
+    });
+    const usage = await relayUpstream(upstream, res, contentType);
+
     identity.recordMetering({
       day: meteringDayUtc(Date.now()),
       tenant: actor.tenant,
       model,
       provider,
-      tokensIn,
-      tokensOut,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
       tokensCached: 0,
       durationMs: Date.now() - started,
     });
-    identity.addQuotaUsage(actor.sub, tokensIn + tokensOut);
-    res.writeHead(upstream.status, {
-      'content-type': upstream.headers.get('content-type') ?? 'application/json',
-    });
-    res.end(buf);
+    identity.addQuotaUsage(actor.sub, usage.tokensIn + usage.tokensOut);
+    res.end();
   }
 
   async function adminRoute(

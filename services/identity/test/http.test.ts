@@ -1,5 +1,7 @@
 import type { AddressInfo } from 'node:net';
 
+import { createServer } from 'node:http';
+
 import { generateEs256KeyPair } from '@evowork/account';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -236,5 +238,93 @@ describe('identity HTTP', () => {
     expect(body).not.toHaveProperty('days');
     expect(body).not.toHaveProperty('series');
     expect(JSON.stringify(body)).not.toMatch(/byDay/);
+  });
+
+  /**
+   * 托管模型这一跳**必须是边收边转**。
+   *
+   * 原先这里是 `await upstream.arrayBuffer()`：整条响应读完才写回第一个字节。
+   * 那对用户来说等于完全没有流式，而下游内核 300 秒收不到帧就判整个回合失败 ——
+   * 于是"答案越长越容易失败"。这条测试卡的就是那一点：**上游还没说完，
+   * 下游必须已经拿到字节了**。
+   */
+  it('托管转发是边收边转的，不是读完再转；用量从流里那条 completed 取', async () => {
+    let releaseUpstream = () => undefined;
+    const upstreamServer = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+      res.write(`data: ${JSON.stringify({ type: 'response.created' })}\n\n`);
+      // 先吐一帧就停住 —— 模拟"模型还在写"
+      releaseUpstream = () => {
+        res.write(
+          `data: ${JSON.stringify({
+            type: 'response.completed',
+            response: { id: 'r1', usage: { input_tokens: 40, output_tokens: 60 } },
+          })}\n\n`,
+        );
+        res.end('data: [DONE]\n\n');
+      };
+    });
+    await new Promise<void>((resolve) => upstreamServer.listen(0, '127.0.0.1', resolve));
+    const upstreamPort = (upstreamServer.address() as AddressInfo).port;
+
+    await start();
+    const login = await fetch(`${baseUrl}/v1/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        identifier: 'admin@example.com',
+        password: 'change-me',
+        deviceId: 'dev_stream',
+      }),
+    });
+    const tokens = (await login.json()) as { accessToken: string };
+    const auth = { authorization: `Bearer ${tokens.accessToken}` };
+    // 引导密码没改之前，管理端一律 403（与本文件其它用例同一条前置）
+    await fetch(`${baseUrl}/v1/password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...auth },
+      body: JSON.stringify({ current: 'change-me', next: 'new-pass-1' }),
+    });
+    const registered = await fetch(`${baseUrl}/v1/admin/models`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...auth },
+      body: JSON.stringify({
+        modelId: 'evowork/hosted-flash',
+        displayName: '托管',
+        provider: 'deepseek',
+        upstreamModel: 'deepseek-v4-flash',
+        adapter: 'deepseek',
+        baseUrl: `http://127.0.0.1:${upstreamPort}`,
+        apiKey: 'sk-stream-secret',
+      }),
+    });
+    expect(registered.status).toBe(200);
+
+    const relayed = await fetch(`${baseUrl}/v1/responses`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...auth },
+      body: JSON.stringify({ model: 'evowork/hosted-flash', input: [], stream: true }),
+    });
+    expect(relayed.status).toBe(200);
+
+    const reader = relayed.body!.getReader();
+    const firstChunk = await reader.read();
+    // **上游此刻还没说完**：读完再转的实现会卡在这一行直到超时
+    expect(new TextDecoder().decode(firstChunk.value)).toContain('response.created');
+
+    releaseUpstream();
+    let rest = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      rest += new TextDecoder().decode(value);
+    }
+    expect(rest).toContain('[DONE]');
+
+    // 用量原先从整份 JSON 里取；改成流式之后要从 `response.completed` 那帧取，口径不能丢
+    const quota = await fetch(`${baseUrl}/v1/quota`, { headers: auth });
+    expect(((await quota.json()) as { used: number }).used).toBe(100);
+
+    await new Promise<void>((resolve) => upstreamServer.close(() => resolve()));
   });
 });
