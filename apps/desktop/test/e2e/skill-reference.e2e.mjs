@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -598,6 +598,134 @@ exporter = "none"
     stage('steer-verified');
 
     /*
+     * ③ 命令审批：**产品里真正会弹的那张卡**。
+     *
+     * 8f20cbb / 356a93f 改的几处审批回复都只对假内核验过，而假内核收什么都说好 ——
+     * 回复形状不对时真内核**不报错**，`unwrap_or_else` 兜一个默认值。所以这里断言的不是
+     * "回复发出去了"，而是**点了允许之后那条命令真的跑了**（文件真的出现在磁盘上）。
+     *
+     * 触发器是确定性的：`sandbox_permissions: 'require_escalated'` 就是模型在说
+     * "我要越过沙箱"，内核在 on-request 档下必须问用户（`shell_spec.rs:235-256`）。
+     */
+    const approvedFile = join(workspace, 'approved-by-e2e.txt');
+    nextScript = {
+      tool: 'exec_command',
+      args: {
+        cmd: `printf EVOWORK-APPROVED > ${JSON.stringify(approvedFile)}`,
+        sandbox_permissions: 'require_escalated',
+        justification: '端到端测试：验证审批通过后命令真的会执行',
+      },
+    };
+    const approveTask = await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '写一个需要我批准的文件',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await waitFor(
+      () => evaluate(`window.__e2eApprovals.length > 0`),
+      '需要越权的命令没有弹出审批卡（on-request 档没生效，或审批请求没到渲染层）',
+      20_000,
+    );
+    const cardJson = await evaluate(`JSON.stringify(window.__e2eApprovals[0])`);
+    const card = JSON.parse(cardJson);
+    if (card.kind !== 'command' || !cardJson.includes('EVOWORK-APPROVED')) {
+      // 卡片上看不到要执行什么，用户就是在盲签
+      throw new Error(`审批卡没拿到命令本身：${cardJson}`);
+    }
+    await evaluate(
+      `window.evowork.decideApproval(${JSON.stringify({ id: card.id, decision: 'accept' })})`,
+    );
+    /*
+     * **这一行才是重点**：回复形状不对时内核会静默兜底，界面上"允许"和"拒绝"一个样。
+     * 文件出现在磁盘上，才证明这次授权真的落地了。
+     */
+    await waitFor(
+      () => existsSync(approvedFile) && readFileSync(approvedFile, 'utf8') === 'EVOWORK-APPROVED',
+      '点了「允许」，命令却没有真的执行',
+      20_000,
+    );
+    await waitFor(
+      () =>
+        evaluate(
+          `window.__e2eEvents.some((event) => event.type === 'turn-completed' && event.taskId === ${JSON.stringify(approveTask.threadId)})`,
+        ),
+      '审批之后那一轮没有收尾',
+      30_000,
+    );
+    stage('command-approval-verified');
+
+    /*
+     * ④ 文件改动审批：**另一张真正会弹的卡**，而它的清单是 8f20cbb 刚修好的。
+     *
+     * 内核的审批 RPC **只给 itemId、不给清单**，要从 item 流里按 id 反查；
+     * 修之前卡片永远显示"将改动 0 个文件" —— 在用户面前说一句笃定的假话，
+     * 而用户就是靠这句话决定点不点允许的。
+     *
+     * 触发器要挑对路径：`:workspace` 档**本来就允许写临时目录**，
+     * 而 e2e 的工作区就在临时目录下 —— 第一次探测写到 `e2eHome` 时内核根本没问
+     * （那不是越权，是许可范围内）。所以这里写到仓库根：确确实实在工作区之外。
+     */
+    const outsideFile = join(repoRoot, '.evowork-e2e-file-change-probe.txt');
+    nextScript = {
+      tool: 'exec_command',
+      args: {
+        cmd: [
+          "apply_patch <<'PATCH'",
+          '*** Begin Patch',
+          `*** Add File: ${outsideFile}`,
+          '+EVOWORK-PATCH',
+          '*** End Patch',
+          'PATCH',
+        ].join('\n'),
+      },
+    };
+    await evaluate(
+      `window.evowork.send(${JSON.stringify({
+        text: '改一个工作区外的文件',
+        scenarioId: 'code',
+        modelId: 'e2e-model',
+        modeId: 'request-approval',
+        workspaceId,
+      })})`,
+    );
+    await waitFor(
+      () => evaluate(`window.__e2eApprovals.some((a) => a.kind === 'fileChange')`),
+      '改工作区外的文件没有弹出审批卡',
+      20_000,
+    );
+    const patchCardJson = await evaluate(
+      `JSON.stringify(window.__e2eApprovals.find((a) => a.kind === 'fileChange'))`,
+    );
+    const patchCard = JSON.parse(patchCardJson);
+    /*
+     * `undefined` = 没查到，`[]` = 确实不改文件 —— 两者必须分开。
+     * 这条断言挂掉的两种样子都要能看出来：清单丢了（undefined），或者又变回了"0 个文件"。
+     */
+    if (!Array.isArray(patchCard.changes) || patchCard.changes.length === 0) {
+      throw new Error(`审批卡没有文件清单（这正是"将改动 0 个文件"那条缺陷）：${patchCardJson}`);
+    }
+    if (!patchCard.changes.some((c) => c.path.includes('.evowork-e2e-file-change-probe.txt'))) {
+      throw new Error(`清单里不是那个文件：${patchCardJson}`);
+    }
+    // 工作区之外要被标出来（10 §3.3）—— 用户凭这个标记决定要不要拦
+    if (!patchCard.changes.some((c) => c.outsideWorkspace === true)) {
+      throw new Error(`工作区之外的改动没有被标注：${patchCardJson}`);
+    }
+    await evaluate(
+      `window.evowork.decideApproval(${JSON.stringify({ id: patchCard.id, decision: 'decline' })})`,
+    );
+    // 拒绝要真的拦住：文件一个字节都不该落盘
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (existsSync(outsideFile)) {
+      throw new Error('点了「拒绝」，文件还是被写出去了');
+    }
+    stage('file-change-approval-verified');
+
+    /*
      * ③ 追问与权限审批：**在产品当前配置下走不到**，所以这里钉住"走不到"这件事。
      *
      * 356a93f 修的两处回复形状（追问按问题 id 归位、权限回 `{permissions, scope}`）
@@ -645,7 +773,10 @@ exporter = "none"
       '追问那一轮没有跑完',
       30_000,
     );
-    const toolOutput = (responseBodies.at(-1) ?? '').includes('request_user_input is unavailable')
+    // 搜**所有**请求体，不是最后一个：这一段后面还有别的回合，`at(-1)` 会指到别人身上
+    const toolOutput = responseBodies.some((body) =>
+      body.includes('request_user_input is unavailable'),
+    )
       ? 'unavailable-in-default-mode'
       : 'ran';
     if (toolOutput !== 'unavailable-in-default-mode') {
