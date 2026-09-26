@@ -1,0 +1,99 @@
+name: 真窗口 UI 测试
+
+# 断言型 E2E 与 Playwright 真交互测试 —— 两者都要**真 Electron 窗口 + 真 codex-app-server**。
+#
+# **为什么不挂在每个 PR 上**：它要一台 macOS runner 和一次内核编译（`codex-app-server`
+# 单 crate，冷缓存下以十分钟计）。挂在每个 PR 上的结果不是"更安全"，而是大家开始
+# 习惯性忽略红灯 —— 那比不跑更糟。所以每夜跑一次 + 需要时手动跑。
+#
+# **同一个理由让它不进 `pnpm run check`**：那道门每次改代码都要过，不该依赖外部产物。
+#
+# ⚠️ **这份工作流没有在 CI 上跑过**（2026-09-26 写下时）。它在本机等价地跑通了每一步，
+# 但以下三条只有第一次真跑才能证伪：
+#   · GitHub 托管的 macOS runner 有没有能开窗口的 GUI 会话（Electron 要它，Linux 上要 xvfb）
+#   · 内核单 crate 编译在 runner 上的真实耗时与缓存命中
+#   · `pnpm install` 后 Electron 二进制的下载（本仓库把它放进了 onlyBuiltDependencies）
+# 第一次跑完请把结论回写到这里，并把这段警告删掉。
+
+on:
+  schedule:
+    # 每天 02:00 UTC（北京时间 10:00）。比漂移雷达晚一小时，避免同时占 runner。
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    name: 真 Electron + 真内核
+    # arm64 runner：产物目录名必须是 mac-arm64（electron-builder 的 ${os}-${arch}）
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: evowork
+
+      # 内核只要一个 crate 的源码，但 cargo 需要完整工作区，所以浅签出整个仓库
+      - name: 签出执行内核（浅）
+        uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          path: codex
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evowork/pnpm-lock.yaml
+
+      # 工具链版本由内核自己的 rust-toolchain.toml 决定，这里不另指定
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: codex/codex-rs
+
+      # 只构建 app-server：内核工作区有 200+ 个 crate，我们只对话这一个进程（K2）。
+      # 用 debug 而不是 release：这里要的是"能跑"，而 release 编译慢得多。
+      - name: 构建 codex-app-server
+        working-directory: codex/codex-rs
+        run: cargo build -p codex-app-server
+
+      - name: 把内核放到打包约定的位置
+        working-directory: evowork
+        run: |
+          mkdir -p build/kernel/mac-arm64
+          cp ../codex/codex-rs/target/debug/codex-app-server build/kernel/mac-arm64/
+          chmod +x build/kernel/mac-arm64/codex-app-server
+
+      # Electron 二进制是必须的（渲染真窗口），所以**不能**设 ELECTRON_SKIP_BINARY_DOWNLOAD
+      - name: 安装依赖
+        working-directory: evowork
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建产品
+        working-directory: evowork
+        run: pnpm run build
+
+      # 断言型 E2E：协议、适配层、内核行为。经 preload 桥说话，窗口隐藏
+      - name: 断言型 E2E（真内核）
+        working-directory: evowork
+        run: pnpm run test:desktop-e2e
+
+      # 真交互：Playwright 从进程外点 DOM，窗口显示
+      - name: 真交互 UI 测试
+        working-directory: evowork
+        run: pnpm run test:ui
+
+      # 失败时把证据带出来：截图、trace、页面快照都在这儿
+      - name: 上传失败证据
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure
+          path: evowork/test-results/
+          retention-days: 7

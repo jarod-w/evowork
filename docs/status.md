@@ -1,10 +1,37 @@
 # 开发状态
 
-> **更新于 2026-09-26（第 69 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-09-26（第 70 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **第 70 次：自动化第一次真的去点这个界面，也第一次验了打包产物。**
+> ① **六条真交互旅程**（`apps/desktop/test/e2e/ui/`，Playwright `_electron` 从进程外点真 DOM）：
+> 输入→发送→运行态→中断 · 审批卡点允许后**命令真的写出文件** · 首次引导（两句隐私承诺都在、
+> 灰掉的「下一步」要说明原因、走完 reload 不再回来）· 换模型后**网关收到的 model 字段**真的变了 ·
+> macOS 交通灯底下不许有内容 · 三个断点不出横向滚动条。与断言型 E2E 共用 `harness/boot.mjs`，
+> 差别只有一个 `show` 参数。
+> ② **打包产物冒烟**（`scripts/verify-packaged-app.mjs`）：内核二进制在不在、可不可执行、
+> 是不是占位；plugins/config/gateway/字体是不是空目录；Info.plist 里有没有 Codex/OpenAI（K5）；
+> 签成了什么；**打包后的 .app 真的能起来并渲染出引导**。`package.mjs` 的四条检查全在打包之前，
+> 这是打包之后的第一道。
+> ③ **`EVOWORK_HOME` 补上了实现**。`shared/ipc.ts:762` 与 `model-access.ts:613` 的注释早就按
+> 「它可以被覆盖（企业部署、测试）」在写，但没有代码读它。补它的直接原因是**没有它就没法安全地
+> 验打包产物**：第一版冒烟用 `--user-data-dir` 隔离失败，**跑在了真实用户的数据上**；
+> 第二版改 `$HOME`，macOS 找不到登录钥匙串弹模态框把应用卡死。
+> ④ **许可清单进了门禁**：`pnpm run check` 现在第七步跑 `gen-third-party-notices --check`
+> （K5 此前是唯一一条守卫不会让任何东西失败的铁律，NOTICES 因此悄悄落后了一个内核修订）。
+> **代价：`check` 从此要求 `../codex` 在位。**
+> **验过的**：`pnpm run check`（1898 通过 / 2 跳过）· 断言型 E2E 21 阶段 · 六条 UI 旅程连跑多轮 ·
+> 打包产物冒烟 · **真模型回路**（kimi-k3，tools=6 / reasoning=1026）。
+> 两条断言**做过证伪**（改坏会红、改回会绿）：许可门禁、交通灯留位。
+> **没验过的**：`.github/workflows/ui.yml` 从没在 CI 上跑过 —— macOS runner 有没有 GUI 会话、
+> 内核编译耗时、Electron 二进制下载三件事只有第一次真跑才知道（文件头写着同样的警告）。
+> **顺带记两条落差**：`packages/tokens` 里**没有暗色**（01 §4.5 描述了暗色，实现不在），
+> 所以暗色回归无从测起；`html[data-platform='macos'] .ew-sidebar-titlebar::before` 的
+> `width: var(--space-40)` **目前是惰性的** —— 改成 0 之后几何一个像素都不变，
+> 真正在推挤的是同一条规则里的 `margin-right: auto`。
 >
 > **第 69 次：E2E 拆成「启动」与「驱动」两层，外加两条断言。** 两份真窗口 E2E 各抄了一份约 40 行的
 > 启动代码（四个 Electron 接缝 + 四条路径 + 宿主环境 + `waitFor` + 阶段标记），抄漏一处不会报错，
