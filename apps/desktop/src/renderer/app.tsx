@@ -35,7 +35,12 @@ import type {
   ComposerContextView,
   ComposerReferenceView,
   DirEntryView,
+  AccountActionResult,
   LibraryDataView,
+  ShareCreateInput,
+  ShareCreateResult,
+  ShareListView,
+  SharePlanResult,
   FilePreviewView,
   FileAnnotationView,
   ModelAccessMutationResult,
@@ -84,6 +89,7 @@ import type {
   SlashCommand,
 } from './components/composer.js';
 import { Banner, EmptyState, IconButton } from './components/primitives.js';
+import { ShareDialog, type SharePhase } from './components/share-dialog.js';
 import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
@@ -242,6 +248,14 @@ export interface EvoworkBridge {
    * 它们读的是本机 sqlite，且绝大多数会话里用户根本不会打开资料库。
    */
   getLibrary(): Promise<LibraryDataView>;
+  /*
+   * 分享（Q10 / 08 §7）。四条分开而不是一条 —— `prepareShare` **什么都不上传**，
+   * 合成一条会让"点开看看"与"已经传上去了"在这一层长得一样。
+   */
+  prepareShare?(input: { artifactId: string }): Promise<SharePlanResult>;
+  createShare?(input: ShareCreateInput): Promise<ShareCreateResult>;
+  revokeShare?(input: { shareId: string }): Promise<AccountActionResult>;
+  listShares?(): Promise<ShareListView>;
   getAutomations(): Promise<AutomationsDataView>;
   saveAutomation?(input: AutomationMutationInput): Promise<AutomationMutationResult>;
   setAutomationStatus?(input: {
@@ -564,6 +578,82 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [libraryInitialNav, setLibraryInitialNav] = useState<LibraryNav>('recent');
+  const [shares, setShares] = useState<ShareListView>({ rows: [] });
+  /**
+   * 分享模态的相位。
+   *
+   * `null` = 没打开。**打开着与没打开是两个显然不同的状态**，不是一个藏在组件里的布尔 ——
+   * 与 `Dialog` 自己那条注释同一条理由。
+   */
+  const [sharePhase, setSharePhase] = useState<SharePhase | null>(null);
+  const shareAbort = useRef<AbortController | null>(null);
+
+  /**
+   * 分享第 ① 步：叫出授权模态。
+   *
+   * **这一步不上传任何东西**。用户点「取消」时什么都没发生过 ——
+   * 这正是 Q10 规则 1「逐次授权」要的效果：每次都要重新看一遍要传什么。
+   */
+  async function openShare(artifactId: string) {
+    if (!bridge.prepareShare) {
+      pushToast({ tone: 'danger', text: '这个构建没有接分享服务。' });
+      return;
+    }
+    const out = await bridge.prepareShare({ artifactId });
+    if (!out.ok) {
+      // 企业策略停用、文件不在磁盘上 —— 都如实说原因，不弹一个空模态（01 §6.3）
+      pushToast({ tone: 'danger', text: out.refused });
+      return;
+    }
+    setSharePhase({ kind: 'authorize', plan: out.plan });
+  }
+
+  async function confirmShare(input: {
+    readonly ttl: ShareCreateInput['ttl'];
+    readonly accessCode: string | undefined;
+    readonly confirmed: boolean;
+  }) {
+    const phase = sharePhase;
+    if (!phase || phase.kind === 'done' || !bridge.createShare) return;
+    setSharePhase({ kind: 'uploading', plan: phase.plan });
+    shareAbort.current = new AbortController();
+    const out = await bridge.createShare({
+      artifactId: phase.plan.artifactId,
+      ttl: input.ttl,
+      ...(input.accessCode ? { accessCode: input.accessCode } : {}),
+      confirmed: input.confirmed,
+    });
+    shareAbort.current = null;
+    if (!out.ok) {
+      // 回到授权那一屏并带上原因：重试不必从头填一遍
+      setSharePhase({ kind: 'failed', plan: phase.plan, refused: out.refused });
+      return;
+    }
+    setSharePhase({ kind: 'done', url: out.url, expiresAt: out.expiresAt });
+    void bridge.listShares?.().then((next) => setShares(next ?? { rows: [] }));
+  }
+
+  function closeShare() {
+    // 取消要**真的中止请求**，不只是把模态关掉（08 §7.1）
+    shareAbort.current?.abort();
+    shareAbort.current = null;
+    setSharePhase(null);
+  }
+
+  async function revokeShare(shareId: string) {
+    if (!bridge.revokeShare) return;
+    const out = await bridge.revokeShare({ shareId });
+    pushToast({
+      tone: out.ok ? 'success' : 'danger',
+      text: out.ok ? '已撤销，链接立刻失效。' : (out.refused ?? '撤销失败。'),
+    });
+    void bridge.listShares?.().then((next) => setShares(next ?? { rows: [] }));
+  }
+
+  function copyShareLink(url: string) {
+    void navigator.clipboard?.writeText(url);
+    pushToast({ tone: 'success', text: '链接已复制。' });
+  }
   const [projectCreateOpen, setProjectCreateOpen] = useState(false);
   const [taskResults, setTaskResults] = useState<Readonly<Record<string, TaskResultsView>>>({});
   const [taskFiles, setTaskFiles] = useState<Readonly<Record<string, readonly DirEntryView[]>>>({});
@@ -1217,11 +1307,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 回到资料库看不到新产物 —— 而他没有任何理由知道要刷新。
    */
   useEffect(() => {
-    if (view === 'library')
+    if (view === 'library') {
       void bridge
         .getLibrary()
         .then(setLibrary)
         .catch(() => setLibrary(null));
+      // 「我分享的」与资料列表同一次进入拉：分开拉会让那个分区在切过去时空一下
+      void bridge
+        .listShares?.()
+        .then((next) => setShares(next ?? { rows: [] }))
+        .catch(() => setShares({ rows: [] }));
+    }
     if (view === 'automations') {
       void bridge
         .getAutomations()
@@ -2538,6 +2634,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           library={library}
           libraryInitialNav={libraryInitialNav}
+          shares={shares}
+          onShareArtifact={(id) => void openShare(id)}
+          onRevokeShare={(id) => void revokeShare(id)}
+          onCopyShareLink={copyShareLink}
           automations={automations}
           automationWorkspaces={(startup?.workspaces ?? [])
             .filter((workspace) => Boolean(workspace.path))
@@ -3001,6 +3101,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       <p className="ew-window-size-hint" role="status">
         窗口较窄，建议放大窗口获得完整布局
       </p>
+      {/*
+        分享授权模态挂在最外层，不挂在资料库里：**它是 Q10 那条"逐次授权"的入口**，
+        以后从任务时间线的产物卡上也会叫它 —— 挂进某一页会让第二个入口没法复用。
+      */}
+      {sharePhase ? (
+        <ShareDialog
+          phase={sharePhase}
+          onConfirm={(input) => void confirmShare(input)}
+          onCancel={closeShare}
+          onCopy={copyShareLink}
+        />
+      ) : null}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
@@ -3054,6 +3166,10 @@ function MainPage(props: {
   readonly onOpenAccountWeb: (path: string) => void;
   readonly library: LibraryDataView | null;
   readonly libraryInitialNav: LibraryNav;
+  readonly shares: ShareListView;
+  readonly onShareArtifact: (artifactId: string) => void;
+  readonly onRevokeShare: (shareId: string) => void;
+  readonly onCopyShareLink: (url: string) => void;
   readonly automations: AutomationsDataView | null;
   readonly automationWorkspaces: readonly { readonly id: string; readonly label: string }[];
   readonly automationModels: readonly { readonly id: string; readonly label: string }[];
@@ -3123,6 +3239,19 @@ function MainPage(props: {
           rows={(props.library?.rows ?? []) as readonly LibraryRow[]}
           {...(props.library?.diskUsage ? { diskUsage: props.library.diskUsage } : {})}
           onOpen={(row) => props.onOpenLibraryRow(row.id)}
+          shares={props.shares.rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            url: row.url,
+            expiresLabel: expiresLabelOf(row),
+            expiringSoon: row.state === 'expiring-soon',
+            accessCount: row.visitCount,
+            state: row.state,
+            hasPassword: row.hasPassword,
+          }))}
+          onShare={(row) => props.onShareArtifact(row.id)}
+          onRevokeShare={props.onRevokeShare}
+          onCopyShareLink={props.onCopyShareLink}
         />
       );
 
@@ -3274,8 +3403,42 @@ function UnbuiltPage({ view }: { readonly view: MainView }) {
  * 用户点了之后 IPC 失败时要说出来的那句话。
  * 空 message 或非 Error 时用 fallback，避免 Toast 里出现空白或 `[object Object]`。
  */
+/**
+ * 经 IPC 回来的拒绝被 Electron 包成这个样子，**内层还可能再套一层我们自己的错误类**：
+ *   `Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)`
+ */
+const IPC_WRAPPER = /^Error invoking remote method '[^']*':\s*/;
+
+/** 一眼就知道不是写给用户看的东西。命中任何一条就改用兜底文案。 */
+const INTERNAL_MARKERS: readonly RegExp[] = [
+  /Error invoking remote method/,
+  /\w+Error:/, // JsonRpcCallError / TransportClosedError / TypeError…
+  /\bcode -?\d{3,}\b/, // 裸 JSON-RPC 错误码
+  /\n\s*at\s/, // 堆栈
+];
+
+/**
+ * 动作失败时**给用户看的那句话**。
+ *
+ * `error.message` 不能原样显示。2026-09-27 的用户截图里，点「停止」失败之后弹出来的是
+ * `Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)`
+ * —— 它同时泄漏了内部通道名、内部错误类和裸错误码，而对用户没有任何可操作信息。
+ * 此前的实现是「有 message 就显示 message」，于是调用方精心写的兜底文案几乎永远轮不到。
+ *
+ * 规则：先剥掉 Electron 的包装；剩下的部分还带内部痕迹的话，就用**调用方为这个动作写的
+ * 兜底文案** —— 那是为这次失败写的人话，比任何通用改写都准。
+ *
+ * **不碰回合失败卡**：那条路（`turn-failed` 的 summary）是 03 §8 的明确决定 ——
+ * 把内核给的原因原样显示，因为 `connection refused` 与 `401` 对用户是不同的两件事。
+ * 两者的区别是：那边显示的是**内核写的原因**，这边泄漏的是**传输层的包装**。
+ */
 export function actionErrorText(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.trim() !== '' ? error.message : fallback;
+  const raw = error instanceof Error ? error.message.trim() : '';
+  if (raw === '') return fallback;
+  const unwrapped = raw.replace(IPC_WRAPPER, '').trim();
+  if (unwrapped === '') return fallback;
+  if (INTERNAL_MARKERS.some((re) => re.test(unwrapped))) return fallback;
+  return unwrapped;
 }
 
 /** 流式增量按 id 合并（04 §5.1）。导出是为了单独测"同 id 覆盖、新 id 追加"。 */
@@ -3437,4 +3600,20 @@ export function shouldAutoOpenResult(items: readonly RenderItem[]): boolean {
   return /(?:已生成|已完成|交付|打开预览|请查看|预览|generated|ready to review|open (?:the )?preview)/i.test(
     latest.text,
   );
+}
+
+/**
+ * 「我分享的」那一列的文案。
+ *
+ * 已撤销 / 已过期说的是**结果**而不是剩余时间 —— 一条已经失效的链接旁边写着
+ * "还有 3 小时"是这一页最容易出的错。
+ */
+function expiresLabelOf(row: ShareListView['rows'][number]): string {
+  if (row.state === 'revoked') return '已撤销';
+  if (row.state === 'expired') return '已过期';
+  const left = row.expiresAt - Date.now();
+  const hours = Math.floor(left / 3_600_000);
+  if (hours >= 24) return `还有 ${Math.floor(hours / 24)} 天`;
+  if (hours >= 1) return `还有 ${hours} 小时`;
+  return `不到 1 小时`;
 }

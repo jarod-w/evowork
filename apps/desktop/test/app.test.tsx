@@ -23,6 +23,7 @@ import {
   applyHistory,
   changedFilesFromItems,
   lastUserMessageRequest,
+  actionErrorText,
   mergeItem,
   reconcileComposerReferences,
   rootTaskFor,
@@ -1149,6 +1150,39 @@ describe('流式增量按 id 合并（04 §5.1）', () => {
     expect(mergeItem([a], b)).toEqual([a, b]);
     // 覆盖时**保持原位置**，否则流式更新会让消息在列表里跳到末尾
     expect(mergeItem([a, b], a2)).toEqual([a2, b]);
+  });
+});
+
+describe('动作失败时给用户看的那句话', () => {
+  /**
+   * **`Error invoking remote method ...` 不许到用户眼前。**
+   *
+   * 2026-09-27 的用户截图：点「停止」失败之后弹出来的错误条写着
+   * `Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)`
+   * —— 内部通道名、内部错误类、裸错误码三样齐全，而对用户没有任何可操作信息。
+   *
+   * 成因是旧实现「有 message 就显示 message」：调用方为每个动作写的兜底文案
+   * **几乎永远轮不到**。所以这里钉的是"轮得到"，不是"某个具体措辞"。
+   */
+  it('IPC 包装与内部错误类不许泄漏到错误条（2026-09-27 用户截图）', () => {
+    const fallback = '没能停下这个任务。';
+    const leaked = new Error(
+      "Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)",
+    );
+    expect(actionErrorText(leaked, fallback)).toBe(fallback);
+
+    // 单独一条：只剥包装不够 —— 剥完还剩内部错误类时也要退回兜底
+    expect(actionErrorText(new Error('JsonRpcCallError: 什么什么'), fallback)).toBe(fallback);
+    expect(actionErrorText(new Error('turn/interrupt 失败 (code -32600)'), fallback)).toBe(
+      fallback,
+    );
+    expect(actionErrorText(new Error('boom\n    at foo (bar.js:1:1)'), fallback)).toBe(fallback);
+
+    // **我们自己写给用户的那句话仍要显示** —— 否则这个修复会把有用的信息也一起吞掉
+    const ours = new Error('与模型服务的连接中断，重试多次仍未成功。');
+    expect(actionErrorText(ours, fallback)).toBe('与模型服务的连接中断，重试多次仍未成功。');
+    expect(actionErrorText(new Error('   '), fallback)).toBe(fallback);
+    expect(actionErrorText('不是 Error 对象', fallback)).toBe(fallback);
   });
 
   it('打开任务时权威历史是顺序真源，流式增量叠上去', () => {
