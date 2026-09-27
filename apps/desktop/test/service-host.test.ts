@@ -5,7 +5,15 @@
  * 先开库再起内核、库开不了就中止启动、崩溃后有恢复、UI 事件真的推给渲染进程、
  * 审批真的走到 UI 再回内核。这些只能在宿主这一层测 —— 拆开看每个模块都是对的。
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -842,5 +850,44 @@ describe('深链的队列，与「渲染层订阅了没有」这个信号（02 �
      * 都会把同一条深链再触发一遍 —— 用户看到的是自己没点过的跳转。
      */
     expect(await host.actions.takeDeeplink(), '领完没清掉，重新挂载会再触发一次').toBeNull();
+  });
+});
+
+/*
+ * 多选附件（08 §3.4）。这一组守的是宿主**把整批交给管道**：原来它一个一个地调，
+ * 数量闸门每次只看到 1 个，于是「单次最多 20 个」在桌面上从没生效过 ——
+ * 管道自己的测试是绿的，拆开看每一层都对。
+ */
+describe('Composer 一次选多个文件（真实宿主接线）', () => {
+  it('选 23 个：前 20 个就绪，后 3 个被拒并说明原因；读不到的那个如实失败，一个都不少', async () => {
+    const sourceDir = mkdtempSync(join(tmpdir(), 'evowork-picked-'));
+    const picked = Array.from({ length: 23 }, (_, i) => {
+      const path = join(sourceDir, `第${i + 1}份.txt`);
+      writeFileSync(path, `内容 ${i + 1}`, 'utf8');
+      return path;
+    });
+    const vanished = join(sourceDir, '已被移走.txt');
+    host = makeHost({ pickFiles: async () => [...picked, vanished] });
+    await host.start();
+    const projectDir = mkdtempSync(join(tmpdir(), 'evowork-multi-project-'));
+    const created = await host.actions.createProject({ name: 'multi', path: projectDir });
+    const workspaceId = created.projects[0]?.id;
+    expect(workspaceId).toBeDefined();
+
+    const attachments = await host.actions.pickAttachments({ workspaceId });
+    expect(attachments).toHaveLength(24);
+    const byName = new Map(attachments.map((a) => [a.name, a]));
+    expect(byName.get('已被移走.txt')?.error).toContain('读不到');
+    const ready = picked.slice(0, 20).map((path) => byName.get(path.split('/').pop() ?? ''));
+    expect(ready.every((a) => a?.state === 'ready')).toBe(true);
+    const refused = ['第21份.txt', '第22份.txt', '第23份.txt'].map((name) => byName.get(name));
+    for (const attachment of refused) {
+      expect(attachment?.state).toBe('failed');
+      expect(attachment?.error).toContain('另起一批');
+    }
+    // 被拒的不落盘：uploads/ 下只有前 20 个
+    expect(readdirSync(join(projectDir, 'uploads'))).toHaveLength(20);
+    rmSync(sourceDir, { recursive: true, force: true });
+    rmSync(projectDir, { recursive: true, force: true });
   });
 });

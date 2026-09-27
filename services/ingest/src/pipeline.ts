@@ -222,7 +222,9 @@ export function createIngest(options: IngestOptions) {
           fileName: file.fileName,
           uploadDir,
           result,
-          keyImages: result.assets.map((a) => `${uploadDir}${a}`),
+          // assets/ 里不全是图：xlsx 每个工作表会产一份 csv。把 csv 当 localImage 发给模型，
+          // 它拿到的是一张"读不出来的图"，那张表等于没附上
+          keyImages: result.assets.filter(isImageAsset).map((a) => `${uploadDir}${a}`),
         }),
       },
     ];
@@ -296,21 +298,42 @@ export function createIngest(options: IngestOptions) {
     return uploadDir;
   }
 
-  return {
-    /** 单次上传。会先过"数量"闸门，再逐个处理。 */
-    async ingest(files: readonly IngestFile[]): Promise<IngestOutcome[]> {
-      const countRejection = checkUploadCount(files.length);
-      if (countRejection) {
-        return files.slice(LIMITS.maxFilesPerUpload).map((file) => ({
-          status: 'rejected' as const,
-          fileName: file.fileName,
-          kind: 'unknown' as const,
-          rejection: countRejection,
-        }));
+  /**
+   * 单次上传，**按输入逐个分组**返回：第 i 组是第 i 个输入产出的结果（压缩包一组可能有多条）。
+   *
+   * 数量闸门是 08 §3.4 的「拒绝多余部分」：前 20 个照常处理，之后的每一个都拿到一条
+   * `rejected`。**每个输入都有结果** —— 原来的写法超限时只返回多余那几条的拒绝，
+   * 前 20 个既没处理也没有任何结果，在调用方眼里就是凭空消失了。
+   *
+   * 分组是给宿主用的：它要把结果对回原文件（原路径、读失败的那几个），
+   * 而压缩包会把一个输入展开成多条，拍平之后就对不回去了。宿主因此不必为了对得上
+   * 而一个一个地调 —— 那样数量闸门每次只看到 1，等于没有。
+   */
+  async function ingestEach(files: readonly IngestFile[]): Promise<IngestOutcome[][]> {
+    const countRejection = checkUploadCount(files.length);
+    const groups: IngestOutcome[][] = [];
+    for (const [index, file] of files.entries()) {
+      if (countRejection && index >= LIMITS.maxFilesPerUpload) {
+        groups.push([
+          {
+            status: 'rejected',
+            fileName: file.fileName,
+            kind: detectKind({ fileName: file.fileName, head: file.bytes.subarray(0, HEAD_BYTES) }),
+            rejection: countRejection,
+          },
+        ]);
+        continue;
       }
-      const outcomes: IngestOutcome[] = [];
-      for (const file of files) outcomes.push(...(await ingestOne(file)));
-      return outcomes;
+      groups.push(await ingestOne(file));
+    }
+    return groups;
+  }
+
+  return {
+    ingestEach,
+    /** 单次上传。与 `ingestEach` 同一套闸门，只是结果拍平。 */
+    async ingest(files: readonly IngestFile[]): Promise<IngestOutcome[]> {
+      return (await ingestEach(files)).flat();
     },
   };
 }
@@ -322,4 +345,10 @@ function safeListZipPaths(bytes: Uint8Array): readonly string[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+const IMAGE_ASSET = /\.(png|jpe?g|gif|webp|bmp)$/i;
+
+function isImageAsset(relativePath: string): boolean {
+  return IMAGE_ASSET.test(relativePath);
 }

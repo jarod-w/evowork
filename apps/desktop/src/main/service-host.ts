@@ -1526,8 +1526,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       },
     });
     const attachments: ComposerAttachmentView[] = [];
-    for (const file of files) {
-      const outcomes = await ingest.ingest([{ fileName: file.name, bytes: file.bytes }]);
+    // 整批一次交给管道：数量闸门（08 §3.4）只在那里判。逐个调的话它每次只看到 1 个，永远不拦
+    const groups = await ingest.ingestEach(
+      files.map((file) => ({ fileName: file.name, bytes: file.bytes })),
+    );
+    for (const [index, outcomes] of groups.entries()) {
+      const file = files[index];
+      if (!file) continue;
       for (const outcome of outcomes) {
         attachmentSequence += 1;
         let originalPath = file.path;

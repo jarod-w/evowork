@@ -113,6 +113,43 @@ describe('zip：先列后解', () => {
     expect(outcomes[0]?.kind).toBe('csv');
   });
 
+  it('一次多个文件：按输入分组返回，压缩包展开成多条也对得回是哪个输入', async () => {
+    const ingest = createIngest({ store: memoryStore(), probe: ALL_INSTALLED });
+    const groups = await ingest.ingestEach([
+      { fileName: '说明.txt', bytes: encode('第一份') },
+      { fileName: 'bundle.zip', bytes: makeZip({ 'a.csv': '名称,值\nA,1', 'b.txt': 'b' }) },
+      { fileName: '结尾.md', bytes: encode('# 第三份') },
+    ]);
+    // 宿主靠这个把结果对回原文件路径；拍平的话压缩包之后的每一个都会错位
+    expect(groups.map((group) => group.map((o) => o.fileName))).toEqual([
+      ['说明.txt'],
+      ['a.csv', 'b.txt'],
+      ['结尾.md'],
+    ]);
+  });
+
+  it('超过 20 个：前 20 个照常处理，多出来的每一个都**拿到拒绝**，没有哪个凭空消失', async () => {
+    const ingest = createIngest({ store: memoryStore(), probe: ALL_INSTALLED });
+    const files = Array.from({ length: 23 }, (_, i) => ({
+      fileName: `f${i + 1}.txt`,
+      bytes: encode(`第 ${i + 1} 份`),
+    }));
+    const outcomes = await ingest.ingest(files);
+    // 原来的写法只返回 3 条拒绝：前 20 个没处理、也没结果，用户看到的是文件"没加上"
+    expect(outcomes).toHaveLength(23);
+    expect(outcomes.slice(0, 20).every((o) => o.status === 'parsed')).toBe(true);
+    const rest = outcomes.slice(20);
+    expect(rest.map((o) => o.fileName)).toEqual(['f21.txt', 'f22.txt', 'f23.txt']);
+    for (const outcome of rest) {
+      expect(outcome.status).toBe('rejected');
+      if (outcome.status !== 'rejected') continue;
+      expect(outcome.rejection.code).toBe('TOO_MANY_FILES');
+      // 文案要说清哪些处理了、哪些没有，并给出路
+      expect(outcome.rejection.message).toContain('前 20 个照常处理');
+      expect(outcome.rejection.message).toContain('另起一批');
+    }
+  });
+
   it('路径穿越 → **整包**被拒（不是跳过那一条）', async () => {
     const store = memoryStore();
     const ingest = createIngest({ store, probe: ALL_INSTALLED });
@@ -156,6 +193,27 @@ describe('运行时缺失时给两个出路（03 §8），**没有云端兜底**
    * 结果是 2026-09-06 实测到的那个谎：用户装好办公扩展后拖入 docx，
    * 仍被告知去安装办公扩展 —— 而他唯一能做的动作（再装一遍）不会有任何效果。
    */
+  it('解析器产出的 csv 不当图片发给模型；图片照样作为关键页', async () => {
+    const ingest = createIngest({
+      store: memoryStore(),
+      probe: ALL_INSTALLED,
+      externalParser: {
+        parse: vi.fn(async () => ({
+          markdown: '# 预算\n\n| 项目 | 金额 |',
+          meta: { parser: 'office-xlsx', parserVersion: '1', chars: 12, tables: 1, confidence: 1 },
+          assets: ['assets/预算.csv', 'assets/img-1.png'],
+        })),
+      },
+    });
+    const [outcome] = await ingest.ingest([{ fileName: '预算.xlsx', bytes: encode('PK') }]);
+    if (outcome?.status !== 'parsed') throw new Error(`应该是 parsed，实际 ${outcome?.status}`);
+    const images = outcome.injection.filter((item) => item.type === 'localImage');
+    // 原来 csv 也进了 localImage：模型收到一张读不出来的"图"，那张表等于没附上
+    expect(images.map((item) => item.path)).toEqual([`${outcome.uploadDir}assets/img-1.png`]);
+    // csv 仍然能被 agent 读到：Mention 指向整个上传目录
+    expect(outcome.injection.at(-1)).toMatchObject({ type: 'mention', path: outcome.uploadDir });
+  });
+
   it('装了扩展但没解析出来 → unparsed，且**不劝用户去装已经装了的东西**', async () => {
     const ingest = createIngest({
       store: memoryStore(),

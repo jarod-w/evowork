@@ -58,7 +58,10 @@ export function checkUploadCount(count: number): GateRejection | undefined {
   if (count <= LIMITS.maxFilesPerUpload) return undefined;
   return {
     code: 'TOO_MANY_FILES',
-    message: `一次最多处理 ${LIMITS.maxFilesPerUpload} 个文件，这次选了 ${count} 个。分两批，或者把它们放进一个文件夹让我直接读。`,
+    message:
+      `一次最多处理 ${LIMITS.maxFilesPerUpload} 个文件，这次选了 ${count} 个：` +
+      `前 ${LIMITS.maxFilesPerUpload} 个照常处理，后面 ${count - LIMITS.maxFilesPerUpload} 个没有处理。` +
+      `把它们另起一批加进来，或者放进一个文件夹让我直接读。`,
   };
 }
 
