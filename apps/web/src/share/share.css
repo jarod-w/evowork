@@ -1,0 +1,234 @@
+/*
+ * 分享页的样式。**只允许 var(--token)**（01 §9 验收项 1），
+ * `test/styles.test.ts` 会把这份文件一起扫。
+ *
+ * 类名用 `sh-` 前缀而不是 `ew-`：这一页是独立 bundle，
+ * 两边的类名不共享，免得有人以为可以互相复用 —— 它们本来就不该互相 import。
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-cjk);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.sh-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sh-top {
+  height: var(--layout-title-bar-height);
+  padding: 0 var(--space-24);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+}
+
+.sh-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--font-label-size);
+  font-weight: var(--font-label-weight);
+}
+
+.sh-logo {
+  width: var(--space-24);
+  height: var(--space-24);
+}
+
+.sh-main {
+  flex-grow: 1;
+  width: var(--layout-content-column);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--space-48) var(--space-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+}
+
+.sh-card {
+  padding: var(--space-24);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.sh-invalid {
+  align-items: flex-start;
+}
+
+.sh-title {
+  margin: 0;
+  font-size: var(--font-title-1-size);
+  line-height: var(--font-title-1-line);
+  font-weight: var(--font-title-1-weight);
+}
+
+.sh-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.sh-name {
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  font-weight: var(--font-label-weight);
+  word-break: break-all;
+}
+
+.sh-name-dim {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-body-size);
+  word-break: break-all;
+}
+
+.sh-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.sh-badge {
+  height: var(--space-20);
+  padding: 0 var(--space-8);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-full);
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-size: var(--font-micro-size);
+  font-weight: var(--font-micro-weight);
+}
+
+.sh-lock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  background: var(--bg-sunken);
+  border-radius: var(--r-md);
+}
+
+.sh-label {
+  font-size: var(--font-label-size);
+  font-weight: var(--font-label-weight);
+}
+
+.sh-row {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.sh-input {
+  flex-grow: 1;
+  height: var(--space-40);
+  padding: 0 var(--space-12);
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+}
+
+.sh-input:focus-visible,
+.sh-btn:focus-visible {
+  outline: var(--space-2) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.sh-btn {
+  height: var(--space-40);
+  padding: 0 var(--space-16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: var(--font-body-size);
+  font-weight: var(--font-label-weight);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* 主按钮底用 --accent-strong：白字压 --accent 只有 3.16（01 §2.2） */
+.sh-primary {
+  background: var(--accent-strong);
+  color: var(--text-inverse);
+  border-color: transparent;
+}
+
+.sh-btn:disabled {
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+.sh-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.sh-preview {
+  width: 100%;
+  max-height: var(--layout-visualizer-frame-height);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  object-fit: contain;
+}
+
+.sh-muted {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.sh-error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.sh-foot {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-micro-size);
+  line-height: var(--font-micro-line);
+}

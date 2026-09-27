@@ -1,0 +1,26 @@
+{
+  "name": "@evowork/share",
+  "version": "0.0.0",
+  "private": true,
+  "description": "云端分享托管（D9 第三条职责）。这是云端唯一存内容的服务，所以它与 identity 分开",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "start": "node --experimental-strip-types src/main.ts"
+  },
+  "dependencies": {
+    "@evowork/account": "workspace:*",
+    "@evowork/logging": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

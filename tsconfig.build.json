@@ -48,6 +48,9 @@
       "path": "services/identity"
     },
     {
+      "path": "services/share"
+    },
+    {
       "path": "apps/desktop/tsconfig.main.json"
     },
     {
