@@ -75,8 +75,26 @@ pnpm --filter @evowork/share start
 `EVOWORK_SHARE_WEB_DIR` 指向 `apps/web` 的构建产物时，分享页与 API **同源**，省掉一层 CORS。
 开发期可以不给它，单独跑 `pnpm --filter @evowork/web dev` 并设 `VITE_SHARE_ORIGIN`。
 
-**没有 `EVOWORK_IDENTITY_PUBLIC_PEM` 就不启动**，不降级成「不鉴权」——
-那等于任何人都能往这里塞文件。
+**默认只听 `127.0.0.1`**（与 identity 一致），前面该有一层反代。确实要直接对外时显式设
+`EVOWORK_SHARE_HOST=0.0.0.0`。2026-09-27 之前是 `listen(port)` 不给地址，等于听所有网卡。
+
+**公钥没给、或给了但用不了，都不启动**（以退出码 1 结束）：
+
+| 情况                  | 日志                                        | 为什么不能放它起来                                                       |
+| --------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| 没给                  | `share.boot.no_public_key`                  | 验不了上传者 = 任何人都能往这里塞文件；**不降级成「不鉴权」**            |
+| 解析不了              | `share.boot.bad_public_key` · `unparseable` | 进程健康、端口在听，**每个合法上传都被 401**，在外面与「令牌不对」分不开 |
+| 不是 P-256 的 EC 公钥 | 同上 · `not-es256`                          | 同上：每次验签都失败                                                     |
+| 给的是私钥            | 同上 · `private-key`                        | 它其实验得过，但签发密钥不该出现在只验签的机器上                         |
+
+第二行不是假设：2026-09-27 部署时 systemd 的 `EnvironmentFile` 把不带引号值里的 `\n`
+吃成了 `n`，所有上传静默 401 而服务一切正常。**用 systemd 部署时公钥那一行要用单引号包住**：
+
+```ini
+EVOWORK_IDENTITY_PUBLIC_PEM='-----BEGIN PUBLIC KEY-----\nMFkw…\n-----END PUBLIC KEY-----'
+```
+
+体检本身在 `@evowork/account` 的 `checkEs256PublicPem`，网关验 JWT 时也该用它（见 §还缺什么）。
 
 ## 还缺什么
 
@@ -87,3 +105,8 @@ pnpm --filter @evowork/share start
    已经指过去了，桌面侧还没注册这个协议。
 3. **对象存储**：现在字节落本地磁盘。云上部署要换成对象存储，
    `ShareBlobs` 这个接口就是为换它留的。
+4. **网关有同一类缺陷**：`services/gateway/src/main.ts` 读 `EVOWORK_JWT_PUBLIC_PEM` 时只查
+   「有没有」，公钥坏了照样起来、`hosted` 模式下每个请求静默 401；而且它不做 `\n` 还原，
+   单行公钥在那边直接就是坏的。修法是启动时同样过一遍 `checkEs256PublicPem`。
+5. **不在 `scripts/build.mjs` 的打包清单里**：`pnpm run build` 不产出 `dist/share/main.js`，
+   部署时要手工 esbuild（参数与 identity 那一条相同）。
