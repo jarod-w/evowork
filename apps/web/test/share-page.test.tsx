@@ -242,3 +242,54 @@ describe('坏链接', () => {
     });
   });
 });
+
+/**
+ * 文件名从这一侧也出不去（08 §7.5）。
+ *
+ * `services/share/test/aborted-and-fragment.test.ts` 守的是服务端那一端：
+ * 由服务端自己说它收到了什么。这一组守**客户端**这一端 —— 因为泄漏最可能的写法
+ * 不是"把 fragment 发出去"（浏览器不会），而是有人把名字挪进查询参数或头里，
+ * 觉得只是换了个写法。那一刻服务端才开始收到它，而这条会先红。
+ */
+describe('文件名不离开这个浏览器', () => {
+  const NAME = '裁员名单.xlsx';
+  const url = `#${encodeURIComponent(NAME)}`;
+
+  it('取字节那一次的 URL 里没有任何查询参数，头里也没有名字', async () => {
+    const fetchMock = mockShare({
+      state: 'active',
+      meta: { ...ACTIVE_DOCX.meta, previewable: false },
+    });
+    render(<SharePage pathname={`/s/${ID}`} hash={url} />);
+    fireEvent.click(await screen.findByText('下载'));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/blob'))).toBe(true);
+    });
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/blob'));
+    const target = new URL(String(call?.[0]), 'http://x');
+    expect(target.search).toBe('');
+    expect(JSON.stringify([...new Headers(call?.[1]?.headers).entries()])).not.toContain(NAME);
+  });
+
+  it('整页对服务端发起的每一次请求都不带这个名字', async () => {
+    const fetchMock = mockShare({ state: 'active', meta: ACTIVE_DOCX.meta });
+    render(<SharePage pathname={`/s/${ID}`} hash={url} />);
+    await screen.findByText(NAME);
+    fireEvent.click(screen.getByText('下载'));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    });
+    for (const [input, init] of fetchMock.mock.calls) {
+      const seen = `${String(input)} ${String(init?.body ?? '')} ${JSON.stringify([
+        ...new Headers(init?.headers).entries(),
+      ])}`;
+      // 名字与它的百分号编码都不许出现 —— 编码过的同样是泄漏
+      expect(seen).not.toContain(NAME);
+      expect(seen).not.toContain(encodeURIComponent(NAME));
+    }
+    // 正向对照：这一页确实把名字显示出来了，所以上面不是"因为根本没有名字"而空过
+    expect(screen.getByText(NAME)).toBeTruthy();
+  });
+});
