@@ -1833,6 +1833,11 @@ textarea {
 .ew-attachment[data-state='failed'] {
   border-color: var(--danger);
 }
+.ew-attachment-error {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-caption-size);
+  color: var(--danger);
+}
 .ew-attachment-size,
 .ew-attachment-progress {
   flex-shrink: 0;

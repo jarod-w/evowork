@@ -41,8 +41,12 @@ export interface Attachment {
   /** 0–100，仅 `parsing` 时有意义 */
   readonly progress?: number | undefined;
   readonly error?: string | undefined;
-  /** 已选择"以原始文件引用"（解析失败后的备选出路，03 §4.4） */
-  readonly rawReference?: boolean | undefined;
+  /**
+   * 有值 = 这个失败还能「以原始文件引用」（03 §4.4）：原文件已落盘，agent 可以自己用 shell 读。
+   * 被闸门拒掉的（超大、超数量、坏压缩包）和读不到的没有这条路 —— 原文件根本没保存下来，
+   * 给它们画这个按钮，点了什么都不会发生。
+   */
+  readonly rawReference?: unknown;
 }
 
 export type MentionCategory = 'file' | 'upload' | 'skill' | 'library';
@@ -278,6 +282,25 @@ export function detectTrigger(value: string, caret: number): Trigger | null {
 }
 
 /** 03 §4.4：解析中的附件数量决定发送是否可用与提示文案。 */
+/**
+ * 失败附件的原因，**同一句话只说一次**。
+ *
+ * 附件条是定高、不换行的（放不下一句话），所以原因写在列表下面。以前原因哪儿都没画：
+ * 界面上只有一个「解析失败」，用户不知道是文件坏了、太大了、还是一次选多了。
+ * 按原因合并，是因为一次选 23 个时后 3 个拿到的是同一句「前 20 个照常处理…」。
+ */
+export function failureReasons(
+  attachments: readonly Attachment[],
+): readonly { readonly reason: string; readonly names: readonly string[] }[] {
+  const byReason = new Map<string, string[]>();
+  for (const attachment of attachments) {
+    if (attachment.state !== 'failed') continue;
+    const reason = attachment.error?.trim() || '这个文件没能添加。';
+    byReason.set(reason, [...(byReason.get(reason) ?? []), attachment.name]);
+  }
+  return [...byReason].map(([reason, names]) => ({ reason, names }));
+}
+
 export function parsingCount(attachments: readonly Attachment[]): number {
   return attachments.filter((a) => a.state === 'parsing').length;
 }
@@ -496,15 +519,17 @@ export function Composer(props: ComposerProps) {
                     ) : null}
                     {a.state === 'failed' ? (
                       <>
-                        <Badge variant="danger">解析失败</Badge>
+                        <Badge variant="danger">未添加</Badge>
                         {/* 失败不是死路：让 agent 自己用 shell 试（03 §4.4） */}
-                        <button
-                          type="button"
-                          className="ew-attachment-fallback"
-                          onClick={() => props.onReferAsRaw?.(a.id)}
-                        >
-                          以原始文件引用
-                        </button>
+                        {a.rawReference ? (
+                          <button
+                            type="button"
+                            className="ew-attachment-fallback"
+                            onClick={() => props.onReferAsRaw?.(a.id)}
+                          >
+                            以原始文件引用
+                          </button>
+                        ) : null}
                       </>
                     ) : null}
                     <button
@@ -518,6 +543,12 @@ export function Composer(props: ComposerProps) {
                   </li>
                 ))}
               </ul>
+              {failureReasons(attachments).map(({ reason, names }) => (
+                <p key={reason} className="ew-attachment-error" role="alert">
+                  {names.map((name) => `《${name}》`).join('')}
+                  {reason}
+                </p>
+              ))}
               <p className="ew-privacy-note">{LOCAL_PARSE_PROMISE}</p>
             </>
           ) : null}

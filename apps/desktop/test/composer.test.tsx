@@ -209,11 +209,29 @@ describe('附件与本机解析（03 §4.4，K6/Q3 的对外表达点）', () =>
     const onReferAsRaw = vi.fn();
     renderComposer({
       onReferAsRaw,
-      attachments: [{ ...parsing, state: 'failed', error: '加密的 PDF' }],
+      attachments: [
+        { ...parsing, state: 'failed', error: '加密的 PDF', rawReference: { path: 'x' } },
+      ],
     });
-    expect(screen.getByText('解析失败')).toBeTruthy();
+    expect(screen.getByText('未添加')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '以原始文件引用' }));
     expect(onReferAsRaw).toHaveBeenCalledWith('a1');
+  });
+
+  it('失败的**原因**画在界面上，同一句只说一次；原文件没保存的不给一个点了没反应的按钮', () => {
+    const tooMany = '一次最多处理 20 个文件，这次选了 22 个：前 20 个照常处理，后面 2 个没有处理。';
+    renderComposer({
+      attachments: [
+        { ...parsing, id: 'b1', name: 'f21.txt', state: 'failed', error: tooMany },
+        { ...parsing, id: 'b2', name: 'f22.txt', state: 'failed', error: tooMany },
+        { ...parsing, id: 'b3', name: '坏.zip', state: 'failed', error: '这个压缩包读不出来。' },
+      ],
+    });
+    // 以前只有一个「解析失败」：用户分不出是文件坏了还是一次选多了
+    const alerts = screen.getAllByRole('alert').map((node) => node.textContent);
+    expect(alerts).toEqual([`《f21.txt》《f22.txt》${tooMany}`, '《坏.zip》这个压缩包读不出来。']);
+    // 被闸门拒掉的没有落盘，也就没有「原始文件」可引用
+    expect(screen.queryByRole('button', { name: '以原始文件引用' })).toBeNull();
   });
 
   it('只有失败附件且没有正文时禁止发送，选择原始引用后才可发送', () => {
