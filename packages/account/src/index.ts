@@ -18,6 +18,7 @@ export {
   type Role,
 } from './claims.js';
 export {
+  checkEs256PublicPem,
   DEFAULT_KID,
   generateEs256KeyPair,
   JWT_ALG,
@@ -26,6 +27,8 @@ export {
   toJwks,
   verifyAccessToken,
   type Es256KeyPair,
+  type Es256PemCheck,
+  type Es256PemProblem,
   type Jwks,
   type JwtHeader,
   type PublicJwk,

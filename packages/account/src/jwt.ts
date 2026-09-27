@@ -156,6 +156,47 @@ function publicKeyFrom(options: VerifyOptions): KeyObject | undefined {
   return undefined;
 }
 
+export type Es256PemProblem = 'missing' | 'private-key' | 'unparseable' | 'not-es256';
+
+export type Es256PemCheck =
+  | { readonly ok: true; readonly pem: string }
+  | { readonly ok: false; readonly problem: Es256PemProblem };
+
+/**
+ * 验签方**启动时**对公钥的体检：它能不能拿来验我们签的令牌。
+ *
+ * 为什么要单独有这一步：`verifyAccessToken` 把公钥解析失败也当成一次普通的验签失败
+ * （上面 `publicKeyFrom` 吞掉异常 → `malformed`），调用方再一律回 401。于是公钥坏了的服务
+ * **照常启动、端口在听，每一个合法令牌都被拒**，在外面与"令牌不对"分不开。
+ * 2026-09-27 部署分享托管时真发生过：systemd 的 EnvironmentFile 把不带引号的值里的
+ * `\n` 吃成了 `n`，所有上传静默 401，而服务看起来一切正常。
+ *
+ * 所以这里判的是**那一类**"验不了"，不只是"解析不了"：
+ *   · `private-key` —— `createPublicKey` 会从私钥里导出公钥，于是它"能用"；
+ *     但那等于把签发密钥放到了只该验签的机器上，拿下那台机器就能签任意令牌
+ *   · `not-es256` —— 能解析但不是 P-256 的 EC 公钥（RSA、P-384…），每次验签都失败，
+ *     与坏公钥是同一个后果
+ */
+export function checkEs256PublicPem(pem: string | undefined): Es256PemCheck {
+  if (pem === undefined || pem.trim() === '') return { ok: false, problem: 'missing' };
+  try {
+    createPrivateKey(pem);
+    return { ok: false, problem: 'private-key' };
+  } catch {
+    // 不是私钥 —— 正是期望的
+  }
+  let key: KeyObject;
+  try {
+    key = createPublicKey(pem);
+  } catch {
+    return { ok: false, problem: 'unparseable' };
+  }
+  if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
+    return { ok: false, problem: 'not-es256' };
+  }
+  return { ok: true, pem };
+}
+
 function b64urlJson(value: unknown): string {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
