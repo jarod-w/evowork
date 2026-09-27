@@ -4,6 +4,11 @@
 
 跑法：`pnpm run test:ui`（需要 `build/kernel/<平台>/codex-app-server`，或设 `EVOWORK_APP_SERVER`）。
 
+**多附件旅程**（`attachments.spec.mjs` · `attachments.real.spec.mjs`）还要**办公扩展的 python**
+（默认 `~/.evowork/runtime/office/bin/python3`，或设 `EVOWORK_OFFICE_PYTHON`）：输入由
+`../harness/make-office-fixtures.py` 当场生成（带图的 docx / pptx 等）。缺了就报错，不跳过。
+系统文件框点不到，spec 把「用户多选了哪些」写进 `__evoworkE2E.pickedFiles`，由 `ui-entry.mjs` 作答。
+
 ## 和隔壁那些 `*.e2e.mjs` 的区别
 
 |          | `../*.e2e.mjs`                             | 这里                       |

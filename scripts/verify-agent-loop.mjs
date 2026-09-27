@@ -14,6 +14,10 @@
  *   EVOWORK_AGENT_LOOP_KEY=sk-... EVOWORK_AGENT_LOOP_MODEL=evowork/glm-flash \
  *     EVOWORK_AGENT_LOOP_KEY_ENV=ZHIPU_API_KEY node scripts/verify-agent-loop.mjs
  *
+ * `--spec <名字>` 换一条场景（`apps/desktop/test/e2e/<名字>.e2e.mjs`，默认 `agent-loop`）：
+ *   EVOWORK_AGENT_LOOP_KEY=sk-... EVOWORK_AGENT_LOOP_MODEL=evowork/deepseek-flash \
+ *     EVOWORK_AGENT_LOOP_KEY_ENV=DEEPSEEK_API_KEY node scripts/verify-agent-loop.mjs --spec multi-attachment
+ *
  * **密钥只经环境变量传给子进程**，不写配置文件、不进日志（K6 / Q14）。
  */
 import { spawn } from 'node:child_process';
@@ -66,7 +70,12 @@ const electron = require('electron');
  */
 const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
 
-const child = spawn(electron, [resolve(root, 'apps/desktop/test/e2e/agent-loop.e2e.mjs')], {
+const specFlag = process.argv.indexOf('--spec');
+const specName = specFlag >= 0 ? process.argv[specFlag + 1] : 'agent-loop';
+const spec = resolve(root, 'apps/desktop/test/e2e', `${specName ?? ''}.e2e.mjs`);
+if (!specName || !existsSync(spec)) throw new Error(`找不到场景：${spec}`);
+
+const child = spawn(electron, [spec], {
   cwd: root,
   env: { ...parentEnv, EVOWORK_E2E_REPO_ROOT: root, EVOWORK_APP_SERVER: kernel },
   stdio: ['ignore', 'pipe', 'pipe'],

@@ -148,7 +148,19 @@ exporter = "none"
      * 所以由主进程直接回答「用户选了这个目录」。被测的是**选完之后**的那一段
      * —— 工作空间列进来没有、「下一步」解锁没有、引导走完会不会再回来。
      */
-    showOpenDialog: async () => ({ canceled: false, filePaths: [workspace] }),
+    /*
+     * 同一个对话框还有第二种问法：Composer 的「添加本地文件」（`openFile + multiSelections`）。
+     * 用户在那里多选了哪些文件，由 spec 事先写进 `__evoworkE2E.pickedFiles`。
+     * 按问法分开答，是因为答错的表现不报错：把工作空间目录当成一个"文件"交回去，
+     * 附件条上只会多一个读不到的条目。没设就当用户点了取消。
+     */
+    showOpenDialog: async (options) => {
+      if (!options?.properties?.includes('multiSelections')) {
+        return { canceled: false, filePaths: [workspace] };
+      }
+      const picked = globalThis.__evoworkE2E?.pickedFiles ?? [];
+      return { canceled: picked.length === 0, filePaths: picked };
+    },
   });
 
   /*

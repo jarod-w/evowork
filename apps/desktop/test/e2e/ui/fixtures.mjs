@@ -4,10 +4,11 @@
  * 启动细节全在 `harness/ui-entry.mjs` 里（它跑在 Electron 主进程），这边只负责
  * 从**进程外**连上去。两侧的分工就是第 1 步拆出来的那条线。
  */
-import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { arch, platform } from 'node:os';
-import { resolve } from 'node:path';
+import { arch, homedir, platform } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { _electron as electron, expect, test as base } from '@playwright/test';
 
@@ -132,3 +133,51 @@ export const test = base.extend({
 });
 
 export { expect } from '@playwright/test';
+
+/**
+ * 生成多附件旅程的输入（`harness/make-office-fixtures.py`）：两张图的 docx、两张图的 pptx、
+ * xlsx、csv、png，每个文件藏一个只有它才有的事实。
+ *
+ * 要**办公扩展的 python**（它带着 python-docx / python-pptx / matplotlib 和中文字体）。
+ * 没装就报错而不是跳过 —— 同一个解释器也是 App 解析 docx / pptx 用的那个，
+ * 没有它，这条旅程能验的只剩 csv。
+ */
+export function makeOfficeFixtures(dir) {
+  const python =
+    process.env.EVOWORK_OFFICE_PYTHON ?? join(homedir(), '.evowork/runtime/office/bin/python3');
+  if (!existsSync(python)) {
+    throw new Error(
+      `找不到办公扩展的 python：${python}。先在 App 里安装办公扩展，或设 EVOWORK_OFFICE_PYTHON。`,
+    );
+  }
+  mkdirSync(dir, { recursive: true });
+  execFileSync(python, [
+    resolve(ROOT, 'apps/desktop/test/e2e/harness/make-office-fixtures.py'),
+    dir,
+  ]);
+  return OFFICE_FIXTURES.map((fixture) => ({ ...fixture, path: join(dir, fixture.file) }));
+}
+
+/** 每个文件里只有它才有的那个事实（与 make-office-fixtures.py 的文件头一致） */
+export const OFFICE_FIXTURES = Object.freeze([
+  {
+    file: '上半年销售报告.docx',
+    embeddedImages: 2,
+    needle: /915/,
+    what: 'docx 正文里的累计销售额',
+  },
+  {
+    file: 'Q3市场计划.pptx',
+    embeddedImages: 2,
+    needle: /45\s*%/,
+    what: 'pptx 饼图里的企业客户占比（只在图的像素里）',
+  },
+  { file: '市场预算.xlsx', embeddedImages: 0, needle: /80/, what: 'xlsx 预算合计' },
+  {
+    file: '渠道名单.csv',
+    embeddedImages: 0,
+    needle: /星河科技[\s\S]*云帆数据|云帆数据[\s\S]*星河科技/,
+    what: 'csv 渠道名',
+  },
+  { file: '走势图.png', embeddedImages: 0, needle: /成本/, what: 'png 图例' },
+]);
