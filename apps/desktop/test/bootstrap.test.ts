@@ -19,8 +19,8 @@ import {
   type ElectronApi,
   type ElectronWindow,
 } from '../src/main/bootstrap.js';
-import { RENDERER_ACTIONS } from '../src/preload/index.js';
-import { type ServiceHost } from '../src/main/service-host.js';
+import { RENDERER_ACTIONS, RENDERER_CHANNELS } from '../src/preload/index.js';
+import { IPC, type ServiceHost } from '../src/main/service-host.js';
 
 let home: string;
 let sent: { channel: string; payload: unknown }[];
@@ -28,7 +28,14 @@ let handlers: Map<string, (event: unknown, payload: unknown) => Promise<unknown>
 let windowOptions: BrowserWindowOptions | undefined;
 let navigate: ((event: { preventDefault(): void }, url: string) => void) | undefined;
 let openHandler: ((details: { url: string }) => { action: string }) | undefined;
+let registeredScheme: string | undefined;
+let openUrl: ((url: string) => void) | undefined;
+let secondInstance: ((argv: readonly string[]) => void) | undefined;
+/** 设了它，假 electron 就在 bootstrap 接线的同一刻把这条 URL 交出来（模拟 macOS 冷启动） */
+let earlyUrl: string | undefined;
+let subscribed = false;
 let hostOptions: Parameters<typeof import('../src/main/service-host.js').createServiceHost>[0];
+let queued: unknown[] = [];
 
 function fakeElectron(): ElectronApi {
   return {
@@ -38,6 +45,21 @@ function fakeElectron(): ElectronApi {
       quit: () => undefined,
       getVersion: () => '0.0.0-test',
       getPath: () => home,
+      setAsDefaultProtocolClient: (scheme) => {
+        registeredScheme = scheme;
+        return true;
+      },
+      /*
+       * **注册的那一刻就回调**，这不是为了省事 —— 它就是 macOS 的真实形状：
+       * 用户在应用没开着的时候点一条分享链接，系统的 `open-url` 会在 `whenReady`
+       * 之前就来，`electron-entry.mjs` 把它存着，等 bootstrap 接上来一次性交出去。
+       * 所以"接线的同一刻就收到一条 URL"是必然会发生的情况，不是边角。
+       */
+      onOpenUrl: (handler) => {
+        openUrl = handler;
+        if (earlyUrl) handler(earlyUrl);
+      },
+      onSecondInstance: (handler) => (secondInstance = handler),
     },
     createWindow: (options): ElectronWindow => {
       windowOptions = options;
@@ -71,7 +93,9 @@ function fakeHost(): ServiceHost {
       getStartup: vi.fn(async () => ({}) as never),
     } as unknown as ServiceHost['actions'],
     resolveApproval: vi.fn(),
-    queueDeeplink: vi.fn(),
+    queueDeeplink: vi.fn((delivery) => queued.push(delivery)),
+    // 渲染层挂载并订阅了事件没有 —— 深链推还是存，由它决定
+    rendererSubscribed: () => subscribed,
     deeplinkLookup: {
       hasTask: () => false,
       hasAutomation: () => false,
@@ -104,6 +128,12 @@ beforeEach(() => {
   windowOptions = undefined;
   navigate = undefined;
   openHandler = undefined;
+  registeredScheme = undefined;
+  openUrl = undefined;
+  secondInstance = undefined;
+  earlyUrl = undefined;
+  queued = [];
+  subscribed = false;
 });
 
 afterEach(() => rmSync(home, { recursive: true, force: true }));
@@ -199,5 +229,90 @@ describe('接线', () => {
     const { host } = await boot();
     await handlers.get('evowork:send')?.(null, { text: '做个周报' });
     expect(host.actions.send).toHaveBeenCalledWith({ text: '做个周报' });
+  });
+});
+
+describe('深链：推还是存（02 §8）', () => {
+  /*
+   * 这一组守的是一件**在 2026-09-27 之前是坏的**的事。
+   *
+   * 当时 `handleDeeplink` 的判据是一个叫 `cold` 的布尔：只有 argv 那条路传 true，
+   * `open-url` 一律直接推。在 Windows / Linux 上这是对的 —— 系统确实只用 argv。
+   * **在 macOS 上它是错的**：系统用 `open-url`，而用户在应用没开着的时候点一条分享链接，
+   * 那个事件会在 `whenReady` 之前就来。那同样是冷启动，只是不走 argv。
+   *
+   * 后果不是报错，是那条链接**无声地消失**——「点了什么都没发生」，
+   * 而那正是 02 §8 这条特性存在的理由。
+   */
+  it('注册的同一刻就到的 open-url 要存下来，不能推 —— 那时渲染层还没订阅', async () => {
+    earlyUrl = 'evowork://task/thr_early';
+    await boot();
+
+    expect(
+      sent.filter((m) => (m.payload as { type?: string }).type === 'deeplink'),
+      '早到的深链被推给了一个还没订阅事件的渲染层 —— 它会被丢掉，表现是「点了没反应」',
+    ).toEqual([]);
+    expect(queued, '早到的深链既没推也没存 —— 它就这么没了').toHaveLength(1);
+  });
+
+  it('渲染层订阅之后再来的 open-url 才走推，**而且推在渲染层真的在听的那个频道上**', async () => {
+    await boot();
+    subscribed = true;
+    openUrl?.('evowork://task/thr_live');
+
+    const pushed = sent.filter((m) => (m.payload as { type?: string }).type === 'deeplink');
+    expect(pushed, '应用开着的时候收到深链，应该立刻推给渲染层').toHaveLength(1);
+    /*
+     * **频道名单独断一次。** 这里原本硬编码 `'evowork:event'`，而渲染层监听的是
+     * `'evowork:ui-event'` —— 少三个字符，`send` 照常返回、不报错，
+     * 热路径上的每一条深链都掉进一个没有监听者的频道。
+     * 断 `RENDERER_CHANNELS.uiEvent` 而不是断字面量：那个常量是**渲染层这一侧的真源**。
+     */
+    expect(pushed[0]?.channel, '推到了一个渲染层没在听的频道上').toBe(RENDERER_CHANNELS.uiEvent);
+    expect(queued, '已经订阅了还往队列里存，渲染层不会再来领第二次').toEqual([]);
+  });
+
+  it('第二个实例递过来的 argv 走同一条判据', async () => {
+    await boot();
+    subscribed = true;
+    secondInstance?.(['/path/to/EvoWork', 'evowork://library/nod_second']);
+
+    expect(
+      sent.filter((m) => (m.payload as { type?: string }).type === 'deeplink'),
+      '第二个实例的 argv 没有被送到渲染层 —— 点链接唤起已开着的应用时什么都不会发生',
+    ).toHaveLength(1);
+  });
+
+  it('协议注册真的被调用了，而且注册的是 evowork', async () => {
+    await boot();
+    /*
+     * 这一条看着像废话，但它红过：真入口从来没提供 `setAsDefaultProtocolClient`，
+     * 而 bootstrap 用 `?.` 调它 —— **没提供就是静默跳过**。
+     * 这里钉的是 bootstrap 这一侧；真入口那一侧由 `electron-entry-port.test.ts` 守。
+     */
+    expect(registeredScheme).toBe('evowork');
+  });
+});
+
+describe('主进程与渲染层的频道名必须是同一个', () => {
+  /*
+   * 这两份常量各自都对，合起来才可能错 —— 而它们分别住在主进程与 preload 里，
+   * 没有任何类型把它们拴在一起。2026-09-27 正是这条缝让深链的热路径整条失效。
+   */
+  it('service-host 的 IPC 与 preload 的 RENDERER_CHANNELS 一一相等', () => {
+    for (const [name, channel] of Object.entries(RENDERER_CHANNELS)) {
+      const mine = (IPC as Record<string, string | undefined>)[name];
+      if (mine === undefined) continue; // preload 可以多几个（主进程不一定都发）
+      expect(mine, `频道 ${name} 两边对不上：主进程 ${mine} / 渲染层 ${channel}`).toBe(channel);
+    }
+  });
+
+  it('主进程发的每一个频道，渲染层都得在听', () => {
+    const heard = new Set(Object.values(RENDERER_CHANNELS));
+    const unheard = Object.entries(IPC).filter(([, channel]) => !heard.has(channel));
+    expect(
+      unheard.map(([name]) => name),
+      `这些频道主进程在发、渲染层没在听：${unheard.map(([, c]) => c).join(' / ')}`,
+    ).toEqual([]);
   });
 });

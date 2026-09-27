@@ -812,3 +812,35 @@ describe('C2：项目卡片的产物数要看完整版本链（真实宿主接�
     rmSync(projectDir, { recursive: true, force: true });
   });
 });
+
+describe('深链的队列，与「渲染层订阅了没有」这个信号（02 §8）', () => {
+  /*
+   * 这一组此前是两条**读源码的正则**（`deeplink.test.ts` 里断 bootstrap 的文本长什么样）。
+   * 正则能证明代码写成了某个样子，证明不了它**做了什么** —— 而 2026-09-27 那次改动
+   * 恰好把那个样子改掉了，于是正则红了，但行为其实是变对的。所以换成真的调一遍。
+   */
+  it('没人来领过之前，宿主说渲染层还没订阅', () => {
+    host = makeHost();
+    expect(
+      host.rendererSubscribed(),
+      '还没人领过就说订阅好了 —— 早到的深链会被推给一个空的渲染层，然后消失',
+    ).toBe(false);
+  });
+
+  it('存进去的那条能被领到，领完就没了，而且领这一次就是订阅上的信号', async () => {
+    host = makeHost();
+    host.queueDeeplink({ refused: '该任务不在本机，可能创建于其他设备。' });
+
+    expect(await host.actions.takeDeeplink()).toEqual({
+      refused: '该任务不在本机，可能创建于其他设备。',
+    });
+    expect(host.rendererSubscribed(), '领过一次之后还说没订阅，之后每条深链都会被存起来').toBe(
+      true,
+    );
+    /*
+     * 领完必须清掉：不清的话，渲染层每次重新挂载（热重载、`loadFile` 再来一次）
+     * 都会把同一条深链再触发一遍 —— 用户看到的是自己没点过的跳转。
+     */
+    expect(await host.actions.takeDeeplink(), '领完没清掉，重新挂载会再触发一次').toBeNull();
+  });
+});

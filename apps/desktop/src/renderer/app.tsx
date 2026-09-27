@@ -2493,6 +2493,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               });
           }}
         />
+        {/*
+         * **引导屏也要有 Toast 出口。**
+         *
+         * 这一支是 `return`，它此前只渲染 `notices` 与 `Onboarding` ——
+         * `ToastStack` 在下面那个主分支里，引导期间**永远到不了**。
+         * 于是任何在引导期间 `pushToast` 的东西都被无声吞掉。
+         *
+         * 最要命的那条正是深链：用户收到一条 `evowork://share/…`，点开，
+         * 应用第一次启动 → 引导屏 → 主进程把「这份产物不在这台电脑上」推过来 →
+         * 变成一个没有宿主的 toast → **什么都没发生**。
+         * 那恰好是 02 §8 规则 3（未知 ID 要给明确错误，不是空白页）要防的事，
+         * 而它在最可能发生的那个场景里是失效的。2026-09-27 在真 `.app` 上实测到。
+         */}
+        <ToastStack toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
   }

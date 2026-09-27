@@ -630,8 +630,20 @@ export interface ServiceHost {
    * 产物在 artifact 表、分享在 share 表。
    */
   readonly deeplinkLookup: DeeplinkLookup;
-  /** 冷启动时把深链存下来，等渲染层挂载后来领（见 `pendingDeeplink` 的注释）。 */
+  /** 渲染层还没订阅时把深链存下来，等它挂载后来领（见 `pendingDeeplink` 的注释）。 */
   queueDeeplink(delivery: DeeplinkDelivery): void;
+  /**
+   * 渲染层挂载并订阅事件了没有。
+   *
+   * **一条深链该推还是该存，由这个决定**（`bootstrap.ts` 的 `handleDeeplink`）。
+   * 判据是「渲染层来领过一次 `takeDeeplink`」：那个调用在 `app.tsx` 的挂载 effect 里，
+   * 而订阅 `onUiEvent` 的 effect 紧挨在它后面、同一次 commit 里同步跑完 ——
+   * 等这条 IPC 走到主进程，订阅一定已经在了。
+   *
+   * 所以 `app.tsx` 挂载时那一次 `takeDeeplink()` **不只是取值，它是信号**。
+   * 谁要删掉它，`app.test.tsx` 里那条会红。
+   */
+  rendererSubscribed(): boolean;
   start(): Promise<void>;
   stop(): Promise<void>;
   /** 对账定时器（09 §4.1：启动时 + 每 10 分钟一次） */
@@ -1177,12 +1189,17 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   /**
    * 冷启动时收到的那条深链，等渲染层来领（02 §8）。
    *
-   * **不能直接 `webContents.send`**：冷启动那一刻 React 还没挂载、还没订阅事件，
-   * 推过去就丢了 —— 表现正是这条特性要防的「点了链接什么都没发生」。
-   * 所以冷启动走**拉**：主进程存一条，渲染层挂载后来取一次。
-   * 热路径（macOS 的 `open-url`、第二个实例的 argv）那时候订阅已经在了，仍然走推。
+   * **不能直接 `webContents.send`**：渲染层还没挂载、还没订阅事件时推过去就丢了 ——
+   * 表现正是这条特性要防的「点了链接什么都没发生」。所以那一刻走**拉**：
+   * 主进程存一条，渲染层挂载后来取一次。
+   *
+   * **判据是"订阅了没有"，不是"是不是冷启动"。** 这两件事此前被当成一回事，
+   * 而在 macOS 上它们不是：用户在应用没开着的时候点一条分享链接，系统的 `open-url`
+   * 会在 `whenReady` **之前**就来 —— 那是一次冷启动，但它走的不是 argv 那条路，
+   * 而当时的代码把 `open-url` 一律当热路径推出去（2026-09-27 订正）。
    */
   let pendingDeeplink: DeeplinkDelivery | undefined;
+  let subscribed = false;
 
   /**
    * 分享（Q10 / 08 §7）的装配。
@@ -1873,6 +1890,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       write: (input: PreferencesInput): PreferencesView => writePreferences(input),
     },
     takeDeeplink: () => {
+      // 领这一次，同时也是「渲染层已经订阅了事件」的信号（见接口上 rendererSubscribed 的注释）
+      subscribed = true;
       const pending = pendingDeeplink;
       pendingDeeplink = undefined;
       return pending;
@@ -1921,6 +1940,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     queueDeeplink(delivery: DeeplinkDelivery) {
       pendingDeeplink = delivery;
     },
+    rendererSubscribed: () => subscribed,
 
     deeplinkLookup: {
       hasTask: (threadId: string) => store.threads.get(threadId) !== undefined,

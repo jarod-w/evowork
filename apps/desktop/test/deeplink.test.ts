@@ -169,30 +169,16 @@ describe('从命令行参数里挑深链（Windows / Linux）', () => {
   });
 });
 
-/**
- * 冷启动为什么不能推（`service-host.ts` 的 `pendingDeeplink`）。
+/*
+ * 「推还是存」那一组**搬走了**。
  *
- * 这一组守的是一个**看不见的**失败：冷启动那一刻 React 还没挂载、还没订阅事件，
- * `webContents.send` 推过去就丢了 —— 用户那一侧是"点了链接什么都没发生"，
- * 而日志里一切正常。所以冷启动走拉，热路径走推。
+ * 它原来是两条读 `bootstrap.ts` 源码的正则：断那一行长什么样、断 `if (cold)` 那一支
+ * 里有 `queueDeeplink`。正则能证明代码写成了某个样子，证明不了它做了什么 ——
+ * 2026-09-27 把判据从「是不是冷启动」换成「渲染层订阅了没有」之后（macOS 的
+ * `open-url` 会在 `whenReady` 之前就来，那也是冷启动但不走 argv），那两条正则红了，
+ * 而行为其实是**变对了**。一条会因为修对而红的测试，拦的是修复本身。
+ *
+ * 现在这件事由两处真的调一遍来守：
+ *   · `bootstrap.test.ts` 的「深链：推还是存」—— 早到的 URL 必须进队列而不是被推掉
+ *   · `service-host.test.ts` 的「深链的队列……」—— 领一次就没了，领这一次就是订阅信号
  */
-describe('冷启动走拉、热路径走推', () => {
-  it('bootstrap 冷启动那一次调的是 queueDeeplink，不是 send', () => {
-    const src = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../src/main/bootstrap.ts'),
-      'utf8',
-    );
-    // 冷启动那一行显式传了 cold=true
-    expect(src).toMatch(/handleDeeplink\(deeplinkFromArgv\(process\.argv\),\s*true\)/);
-    // 而 cold 那一支走 queue
-    expect(src).toMatch(/if \(cold\)[\s\S]{0,400}host\.queueDeeplink\(delivery\)/);
-  });
-
-  it('领一次就没了 —— 不清掉的话热重载会让它反复触发', () => {
-    const src = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../src/main/service-host.ts'),
-      'utf8',
-    );
-    expect(src).toMatch(/pendingDeeplink = undefined;/);
-  });
-});

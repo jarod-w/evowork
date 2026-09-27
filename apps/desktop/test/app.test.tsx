@@ -200,6 +200,9 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     decideApproval: vi.fn(async () => undefined),
     rowAction: vi.fn(async () => undefined),
     refreshVisible: vi.fn(async () => undefined),
+    // 真桥一直有它。默认给个空的：渲染层用 `?.` 调，不给的话大多数测试里它是个空操作，
+    // 而「挂载时领一次」正是主进程判断渲染层订阅好了没有的依据（02 §8）
+    takeDeeplink: vi.fn(async () => null),
     openTask: vi.fn(async () => ({ items: [] })),
     getTaskResults: vi.fn(async () => ({ artifacts: [] })),
     getComposerContext: vi.fn(async () => ({
@@ -2584,5 +2587,65 @@ describe('设置页（11 §4.4）', () => {
     );
     expect(screen.queryByText(/本机网关没有启动/)).toBeNull();
     expect(screen.queryByText(/场景默认的模型/)).toBeNull();
+  });
+});
+
+describe('深链：挂载时那一次 takeDeeplink（02 §8）', () => {
+  /*
+   * **这个调用不只是取值，它还是一个信号。**
+   *
+   * 主进程用「渲染层来领过没有」来决定一条深链该推还是该存
+   * （`service-host.ts` 的 `rendererSubscribed`）。删掉它，主进程会一直以为
+   * 渲染层还没订阅，于是**每一条深链都被存进队列**——而队列只在挂载时领一次，
+   * 应用开着的时候点链接就再也没有反应了。
+   *
+   * 那种故障没有任何报错，所以它需要一条自己的测试。
+   */
+  it('一挂载就去领一次，这是主进程判断「订阅好了」的唯一依据', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => expect(bridge.takeDeeplink).toHaveBeenCalled());
+  });
+
+  it('**引导屏上也要看得见** —— 那正是收到分享链接的人第一次启动的样子', async () => {
+    /*
+     * 这条在真 `.app` 上红过（2026-09-27）。
+     *
+     * 深链的拒绝文案走 `pushToast`，而 `ToastStack` 当时只渲染在主分支里；
+     * 引导那一支是个提前 `return`，到不了它。于是第一次启动时收到的每一条深链
+     * 都被无声吞掉 —— 而「收到分享链接 → 第一次打开应用」恰好是这个特性
+     * 最主要的使用场景，也是 02 §8 规则 3 要防的那个「什么都没发生」。
+     *
+     * 组件测试当时全绿，因为没有人在**没走完引导**的状态下试过深链。
+     */
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, onboarded: false }),
+      takeDeeplink: vi.fn(async () => ({
+        refused: '这份产物不在这台电脑上 —— 它是别人分享给你的，请用网页上的「下载」。',
+      })),
+    });
+    render(<App bridge={bridge} />);
+
+    // 先确认我们**确实**停在引导屏，否则这条会在主界面上空过
+    await waitFor(() => expect(screen.getByText('欢迎使用 EvoWork')).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByText('这份产物不在这台电脑上 —— 它是别人分享给你的，请用网页上的「下载」。'),
+      ).toBeTruthy(),
+    );
+  });
+
+  it('领回来的那条深链要真的被用上 —— 不是领了就扔', async () => {
+    /*
+     * 正向对照：上面那条只证明"调了"。一个 `takeDeeplink: () => undefined` 的空实现
+     * 同样能让它绿，而那时冷启动的链接照样是丢的。
+     */
+    const { bridge } = fakeBridge({
+      takeDeeplink: vi.fn(async () => ({ refused: '该任务不在本机，可能创建于其他设备。' })),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() =>
+      expect(screen.getByText('该任务不在本机，可能创建于其他设备。')).toBeTruthy(),
+    );
   });
 });

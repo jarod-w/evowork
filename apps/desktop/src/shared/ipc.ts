@@ -64,8 +64,12 @@ export type DeeplinkTargetView =
 /**
  * 深链的一次投递：成功给 `target`，失败给 `refused`（02 §8 规则 3：不静默）。
  *
- * 冷启动走**拉**（`takeDeeplink`），热路径走推（`RendererEvent` 的 `deeplink`）——
+ * **渲染层还没订阅时走拉**（`takeDeeplink`），订阅之后才走推（`RendererEvent` 的 `deeplink`）——
  * 两条路同一个形状，所以渲染层只要一个处理函数。
+ *
+ * 判据是"订阅了没有"而不是"是不是冷启动"：macOS 上系统的 `open-url` 会在 `whenReady`
+ * 之前就来，那也是冷启动，但它不走 argv（2026-09-27 订正，见 `service-host.ts`
+ * 的 `rendererSubscribed`）。
  */
 export interface DeeplinkDelivery {
   readonly target?: DeeplinkTargetView | undefined;

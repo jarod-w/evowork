@@ -11,6 +11,17 @@ appId: com.evowork.desktop
 productName: EvoWork
 copyright: Copyright © 2026 EvoWork
 
+# `evowork://` 深链（02 §8）。**macOS 上这一段是硬前提，不是锦上添花**：
+# `app.setAsDefaultProtocolClient` 只能注册**已经写进 Info.plist** 的 scheme，
+# 所以少了它，真入口里那行注册就是个空操作 —— 分享页上的「在 EvoWork 中打开」
+# 点了不会有任何反应，而且不报错。electron-builder 把它展开成 macOS 的
+# `CFBundleURLTypes` 与 Windows 的注册表项；`scripts/verify-packaged-app.mjs`
+# 第 ⑥ 段会去装出来的 Info.plist 里把它读回来核对。
+protocols:
+  - name: EvoWork 深链
+    schemes:
+      - evowork
+
 directories:
   # 应用清单是 apps/desktop/package.json（name/version/main/electron 版本都从那里读）。
   # `files` 的路径相对本目录；`extraResources.from` 与 `output` 相对仓库根 —— 这是

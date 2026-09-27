@@ -18,7 +18,7 @@ import { join } from 'node:path';
 
 import { RENDERER_ACTIONS } from '../preload/index.js';
 import { DEEPLINK_SCHEME, deeplinkFromArgv, resolveDeeplink } from './deeplink.js';
-import { createServiceHost, resolvePaths, type ServiceHost } from './service-host.js';
+import { createServiceHost, resolvePaths, type ServiceHost, IPC } from './service-host.js';
 
 /** 真窗口 E2E 注入可观察 launcher；生产入口仍直接使用 `bootstrap`。 */
 export { createServiceHost } from './service-host.js';
@@ -79,11 +79,16 @@ export interface ElectronApi {
     /**
      * 第二个实例被拉起时的 argv。
      *
-     * **深链必须有它**：不要单实例锁的话，点一条链接会再开一个应用 ——
-     * 两个进程抢同一个 sqlite，那比深链不工作糟得多。
+     * **锁本身不在这个端口上。** 它必须在 `bootstrap()` 之前就抢到：抢不到的那个进程
+     * 要在开 sqlite、起网关之前走掉，而跑到这里时早就晚了。所以
+     * `requestSingleInstanceLock()` 在 `electron-entry.mjs` 的模块顶层调用，
+     * 这里只负责接住**第一个**实例收到的那份 argv。
+     *
+     * 这条声明此前是 `requestSingleInstanceLock?(): boolean`，配着一段讲「两个进程
+     * 抢同一个 sqlite」的注释 —— 而**它从来没有被任何人调用过**。
+     * 一段描述没实现行为的注释比没有注释更糟：它让读的人以为这件事已经做了。
      */
     onSecondInstance?(handler: (argv: readonly string[]) => void): void;
-    requestSingleInstanceLock?(): boolean;
   };
   createWindow(options: BrowserWindowOptions): ElectronWindow;
   readonly ipcMain: {
@@ -305,21 +310,33 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
    */
   electron.app.setAsDefaultProtocolClient?.(DEEPLINK_SCHEME);
 
-  function handleDeeplink(raw: string | undefined, cold = false): void {
+  function handleDeeplink(raw: string | undefined): void {
     if (!raw) return;
     const resolved = resolveDeeplink(raw, host.deeplinkLookup);
     const delivery = resolved.ok ? { target: resolved.target } : { refused: resolved.reason };
-    if (cold) {
-      /*
-       * 冷启动**不能推**：这一刻 React 还没挂载、还没订阅事件，推过去就丢了 ——
-       * 表现正是这条特性要防的「点了链接什么都没发生」。存一条，等渲染层来领。
-       */
+    /*
+     * **推还是存，由渲染层订阅没订阅决定 —— 不由「是不是冷启动」决定。**
+     *
+     * 这两件事此前被当成一回事：只有 argv 那条路标了 `cold`，`open-url` 一律直接推。
+     * 而 macOS 上系统的 `open-url` **会在 `whenReady` 之前就来**（用户在应用没开着的
+     * 时候点一条分享链接），那一刻 React 还没挂载、还没订阅，推过去就丢 ——
+     * 表现正是这条特性要防的「点了链接什么都没发生」。
+     */
+    if (!host.rendererSubscribed()) {
       host.queueDeeplink(delivery);
       return;
     }
     window.show?.();
     window.focus?.();
-    window.webContents.send('evowork:event', { type: 'deeplink', ...delivery });
+    /*
+     * **频道名走常量，不写字面量。** 这里原本硬编码的是 `'evowork:event'` ——
+     * 而渲染层监听的是 `'evowork:ui-event'`（`preload` 的 `RENDERER_CHANNELS.uiEvent`）。
+     * 少了 `ui-` 三个字符，于是**热路径上的每一条深链都被发进了一个没有监听者的频道**：
+     * 不报错、不打日志，`send` 照常返回。冷启动那条走的是拉（队列），所以它一直是好的，
+     * 掩盖了这件事 —— 2026-09-27 在真 `.app` 上用探针打出「解析成功、订阅=true、
+     * 推送完成」而窗口毫无反应，才找到这里。
+     */
+    window.webContents.send(IPC.uiEvent, { type: 'deeplink', ...delivery });
   }
 
   electron.app.onOpenUrl?.((url) => handleDeeplink(url));
@@ -328,8 +345,8 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   if (options.devServerUrl) await window.loadURL(options.devServerUrl);
   else await window.loadFile(options.rendererHtmlPath);
 
-  // 冷启动那一次：系统把 URL 放在自己的 argv 里，没有事件可接
-  handleDeeplink(deeplinkFromArgv(process.argv), true);
+  // 冷启动那一次：Windows / Linux 把 URL 放在自己的 argv 里，没有事件可接
+  handleDeeplink(deeplinkFromArgv(process.argv));
 
   // macOS 首发（Q26），但"关掉最后一个窗口就退出"在三个平台上都是对的：
   // 这是一个本机服务宿主，留一个没有窗口的后台进程只会让人以为它挂了

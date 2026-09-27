@@ -19,6 +19,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/*
+ * 临时目录的清理。此前这个脚本的每一段都建了目录、一个都没删 ——
+ * 跑几十次之后 /var/folders 下攒了几个 GB，而每一次运行本身都是绿的。
+ * 复用 e2e 那份：它只肯删名字里带 `evowork-` 的路径，并且删不掉时**警告而不是失败**
+ * （一个全过的验证不该因为收尾而变红）。
+ */
+import { removeE2EHome } from '../apps/desktop/test/e2e/harness/runner.mjs';
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RELEASE = join(ROOT, 'dist/release');
 
@@ -86,6 +94,21 @@ if (existsSync(plist)) {
   check(
     !/codex|openai/i.test(text),
     'Info.plist 里出现了 Codex / OpenAI —— K5 说对外可见字符串不许带内核品牌',
+  );
+  /*
+   * `CFBundleURLTypes` —— **macOS 上深链的硬前提**。
+   * `app.setAsDefaultProtocolClient` 只能注册**已经写进 Info.plist** 的 scheme，
+   * 所以少了这一段，真入口里那行注册就是个空操作，而且不报错。
+   * 2026-09-27 实测：当时整段都不在（`build/electron-builder.yml` 没有 `protocols:`），
+   * 于是分享页上的「在 EvoWork 中打开」在装出来的应用上点了毫无反应。
+   */
+  const urlTypes = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleURLTypes', plist], {
+    encoding: 'utf8',
+  });
+  check(
+    /\bevowork\b/.test(urlTypes.stdout ?? ''),
+    'Info.plist 里没有 evowork 这个 URL scheme —— 系统不会把这个应用认作 evowork:// 的处理者' +
+      '（补在 build/electron-builder.yml 的 protocols:）',
   );
 }
 
@@ -160,19 +183,18 @@ if (existsSync(exe) && problems.length === 0) {
     problems.push(`打包后的应用起不来或没渲染出界面：${String(error).slice(0, 300)}`);
   } finally {
     await app?.close().catch(() => undefined);
+    removeE2EHome(userData);
   }
 }
 
 // ── ⑥ 深链：冷启动 argv 那条路（02 §8）─────────────────────────────────
 /*
- * **只验得了冷启动这一条。** 另外三样要装成应用、由系统派发才跑得到：
- *   · LaunchServices 里的协议注册（`setAsDefaultProtocolClient`）
- *   · macOS 的 `open-url` 事件
- *   · 单实例锁（第二个实例把 argv 递给第一个）
- * 这个脚本用 Playwright 直接起可执行文件，绕过了系统派发，所以那三样不在覆盖面里 ——
- * 报告里如实说，不把"冷启动过了"说成"深链验过了"。
+ * **这一段只验 argv 那条路**，也就是 Windows / Linux 上系统把 URL 当命令行参数递过来的形状。
+ * 它不经过注入端口（`handleDeeplink(deeplinkFromArgv(process.argv))` 直接读 `process.argv`），
+ * 所以它在那三样全断的时候也是绿的 —— 别把它读成"深链验过了"。
+ * **macOS 上真正的冷启动走 `open-url`**，那三样连同它一起在第 ⑦ 段验。
  *
- * 但冷启动这一条是真链路：真进程的 `process.argv` → `deeplinkFromArgv` →
+ * 这一条本身是真链路：真进程的 `process.argv` → `deeplinkFromArgv` →
  * `resolveDeeplink` 查本机 → 存成待领 → 渲染层挂载后来领 → 画出来。
  * 它同时验掉一个最容易写错的地方：**冷启动时 React 还没订阅事件**，
  * 直接 `webContents.send` 会把那条深链丢掉，表现正是"点了链接什么都没发生"。
@@ -199,13 +221,139 @@ if (existsSync(exe) && problems.length === 0) {
      */
     await page.getByText('该任务不在本机，可能创建于其他设备。').waitFor({ timeout: 90_000 });
     notes.push('冷启动 argv 深链走通：未知 ID 给出了明确错误（02 §8 规则 3）');
-    notes.push(
-      '深链的另外三样（协议注册 · macOS open-url · 单实例锁）**这里验不到** —— 要装成应用由系统派发',
-    );
+    notes.push('（这一条是 Windows / Linux 形状的冷启动；macOS 的冷启动走 open-url，见第 ⑦ 段）');
   } catch (error) {
     problems.push(`冷启动深链没走通：${String(error).slice(0, 300)}`);
   } finally {
     await app?.close().catch(() => undefined);
+    removeE2EHome(deepHome);
+  }
+}
+
+// ── ⑦ 深链的系统派发：协议注册 · macOS open-url · 单实例锁 ─────────────
+/*
+ * **这一段让系统参与，所以它验得到第 ⑥ 段验不到的那三样。**
+ *
+ *   · 协议注册问的是 **LaunchServices 自己的注册表**，不是我们以为注册成功了
+ *   · 在 macOS 上处理它的是 `open-url` 事件（argv 那条只在 Windows / Linux 上走）
+ *   · 第二个实例用**同一个** `--user-data-dir` 起来，必然撞上单实例锁（锁按 userData 算）
+ *
+ * 2026-09-27 之前这三样在代码里就是断的：`electron-entry.mjs` 的端口里
+ * **一项都没提供**（`setAsDefaultProtocolClient` / `onOpenUrl` / `onSecondInstance`），
+ * 而 bootstrap 用 `?.` 调它们 —— 漏填不报错、不打日志，只是深链静默地不工作。
+ * `apps/desktop/test/electron-entry-port.test.ts` 守着"别再漏"，这一段则是
+ * **唯一一处见过它们真的工作**的证据。
+ *
+ * 两条探针用**不同的深链类型**，因为它们的拒绝文案不同 ——
+ * 都用 `task/` 的话，第二条会被第一条留在屏幕上的那句话直接满足，等于没断。
+ *
+ * **副作用，如实说**：应用启动时会把自己注册成 `evowork://` 的处理者
+ * （`setAsDefaultProtocolClient`，产品每次启动都做，不是这个脚本额外干的），
+ * 所以跑完之后这台机器上的 `evowork://` 指向 dist 里的这个构建。
+ */
+if (existsSync(exe) && problems.length === 0) {
+  const { ELECTRON_RUN_AS_NODE: _drop3, ...env } = process.env;
+  const shared = mkdtempSync(join(tmpdir(), 'evowork-pkg-dispatch-'));
+  const chromium = join(shared, 'chromium');
+  const homeB = join(shared, 'home-second');
+  let app;
+  try {
+    app = await electron.launch({
+      executablePath: exe,
+      args: [`--user-data-dir=${chromium}`],
+      env: { ...env, EVOWORK_HOME: join(shared, 'home-first') },
+      timeout: 120_000,
+    });
+    const page = await app.firstWindow();
+    await page.getByRole('heading', { name: '欢迎使用 EvoWork' }).waitFor({ timeout: 90_000 });
+
+    /*
+     * ⑦a **协议注册**：问 LaunchServices 它认不认这个 bundle。
+     *
+     * **这里不用 `open evowork://` 来验，原因是实测出来的。** Playwright 是直接 exec
+     * `Contents/MacOS/EvoWork` 起的进程，不是经 LaunchServices 启动的。那种情况下
+     * `open` 退出码 0、不新起进程，而运行中的实例**收不到** `open-url`
+     * （2026-09-27 连看 25 秒，一次都没到；进程数 1 → 1，用户真实家目录也没被动过）。
+     *
+     * 要让它到，得让 LaunchServices 自己把应用拉起来 —— 而那条路没法把 `EVOWORK_HOME`
+     * 传进去（`open` 不传调用方的环境变量），于是测试就会跑在**用户真实的数据**上。
+     * 用 `launchctl setenv` 绕过去技术上可行，但那是会话级的全局改动：脚本中途崩掉
+     * 就会把用户自己的 EvoWork 指到一个临时目录，下次打开像是数据全没了。
+     * 那个代价远大于这条断言的价值。
+     *
+     * 所以这一段验的是**注册那一半**：`CFBundleURLTypes`（第 ③ 段）加上
+     * `setAsDefaultProtocolClient` 真的让系统把这个 bundle 记成了 `evowork:` 的处理者。
+     * **派发那一半验不到**，下面如实登记，不混成一句"深链验过了"。
+     */
+    const lsregister =
+      '/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Support/lsregister';
+    const dump = spawnSync(lsregister, ['-dump'], {
+      encoding: 'utf8',
+      maxBuffer: 512 * 1024 * 1024,
+    });
+    const lines = (dump.stdout ?? '').split('\n');
+    const isPathLine = (line) => line.trimStart().startsWith('path:');
+    const at = lines.findIndex((line) => isPathLine(line) && line.includes(appPath));
+    /*
+     * 往后找而不是全局搜 `evowork:`：全局搜会被**任何**一条记录满足，
+     * 包括别处的旧副本 —— 那样这条断言就不再是在说"这个包"了。
+     *
+     * **窗口由下一条 `path:` 划定，不能写一个固定行数。** 第一版写的是 `at + 80`，
+     * 而实测这条记录里 `claimed schemes:` 在 `path:` **之后 105 行** ——
+     * 于是断言红了，报的是"系统没把这个包记成处理者"，而系统其实记了。
+     * 一个猜出来的窗口给出的是**假阴性**：它看起来在验产品，实际在验我猜得准不准。
+     */
+    const next = lines.findIndex((line, i) => i > at && isPathLine(line));
+    const record = at >= 0 ? lines.slice(at, next > at ? next : lines.length).join('\n') : '';
+    check(at >= 0, `LaunchServices 里没有这个包的登记：${appPath} —— 系统根本不知道它存在`);
+    check(
+      /claimed schemes:.*\bevowork:/.test(record),
+      '系统没把这个包记成 evowork: 的处理者 —— Info.plist 的 CFBundleURLTypes 或者' +
+        '真入口里的 setAsDefaultProtocolClient 有一边没生效',
+    );
+    if (at >= 0 && /claimed schemes:.*\bevowork:/.test(record)) {
+      notes.push('LaunchServices 认这个包是 evowork: 的处理者（协议注册这一半成立）');
+    }
+    notes.push(
+      'macOS `open-url` 的**派发**这一段验不到 —— 直接 exec 起的进程收不到它，' +
+        '而经 LaunchServices 启动就没法隔离 EVOWORK_HOME（理由写在代码注释里）',
+    );
+
+    // ⑦b 单实例锁：同一个 user-data-dir 起第二次
+    /*
+     * **判据是两半，缺一不可。**
+     *   · 只断"第二个进程退了"：各跑各的**也会**退（它自己跑完就退了），等于没断
+     *   · 只断"第一个窗口收到了"：证明不了第二个进程没在开库
+     *
+     * 第二半用的是"它的家目录到现在还是空的"：第二个实例拿到的 `EVOWORK_HOME` 是一个
+     * **全新目录**，锁真的拦住了它，那个目录就永远不会被建出来。锁没拦住的话，
+     * 它会一路走到开 sqlite、起网关 —— 目录立刻就在了。这比去查第一个进程的库干净得多。
+     */
+    const second = spawnSync(exe, [`--user-data-dir=${chromium}`, 'evowork://library/nod_second'], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: { ...env, EVOWORK_HOME: homeB },
+    });
+    check(
+      second.status === 0,
+      `第二个实例没有干净退出（status=${second.status}, signal=${second.signal}）——` +
+        '单实例锁没生效的表现就是它变成一个完整的应用，一直不退',
+    );
+    check(
+      !existsSync(homeB),
+      `第二个实例建出了自己的家目录 ${homeB} —— 它走到了开库那一步，锁没拦住它`,
+    );
+    try {
+      await page.getByText('该文件不在这台电脑上。').waitFor({ timeout: 30_000 });
+      notes.push('单实例锁生效：第二个实例把 argv 递给了第一个，自己在开库之前就退了');
+    } catch {
+      problems.push('第二个实例退了，但第一个窗口没收到它的深链 —— argv 没有被递过去');
+    }
+  } catch (error) {
+    problems.push(`深链的系统派发没走通：${String(error).slice(0, 300)}`);
+  } finally {
+    await app?.close().catch(() => undefined);
+    removeE2EHome(shared);
   }
 }
 

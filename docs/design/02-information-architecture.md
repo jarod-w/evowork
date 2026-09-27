@@ -253,15 +253,55 @@ evowork://home?scenario=office&prompt=<urlencoded>
 
 **另外两件缺了任何一件都比"深链不工作"更糟**：不注册协议 → 点了什么都不发生；不要单实例锁 → 点链接会再开一个应用，两个进程抢同一个 sqlite。
 
-**冷启动走拉，热路径走推**（2026-09-27 实现时发现的一处真缺陷）：冷启动那一刻 React
-还没挂载、还没订阅事件，`webContents.send` 推过去**就丢了** —— 用户那一侧是
+> **2026-09-27 订正：上面这两件当天写下来了，但没有被实现。**
+> `bootstrap.ts` 对着注入端口接得好好的，而真入口 `electron-entry.mjs` 的端口里
+> **一项都没填**（`setAsDefaultProtocolClient` / `onOpenUrl` / `onSecondInstance`），
+> bootstrap 用 `?.` 调它们 —— 漏填不报错、不打日志。`requestSingleInstanceLock`
+> 更彻底：类型上有声明、配着一段讲"两个进程抢同一个 sqlite"的注释，**从没有被调用过**。
+> 再加上 `build/electron-builder.yml` 当时没有 `protocols:`，产物的 Info.plist 里没有
+> `CFBundleURLTypes` —— 而 macOS 上 `setAsDefaultProtocolClient` 只能注册已经写进
+> Info.plist 的 scheme。四处叠起来：装出来的应用上，`evowork://` 点了毫无反应。
+>
+> 四处都已补齐。真正的修复是第五处：`apps/desktop/test/electron-entry-port.test.ts`
+> 把 bootstrap 对端口的全部访问与真入口实际提供的键对出包含关系 —— 真入口是 `.mjs`、
+> 本来就不在类型检查里，这个洞不堵会一直在。
+
+**推还是存，由渲染层订阅没订阅决定**（2026-09-27 实现时发现的一处真缺陷，同日订正过一次）：
+渲染层还没挂载、还没订阅事件时，`webContents.send` 推过去**就丢了** —— 用户那一侧是
 "点了链接什么都没发生"，而日志里一切正常。所以主进程存一条待领的
 （`service-host.ts` 的 `pendingDeeplink`），渲染层挂载后 `takeDeeplink` 领一次、领完清掉。
-`open-url` 与第二个实例那两条路那时候订阅已经在了，仍然走推。
 
-**验到哪一步**：`scripts/verify-packaged-app.mjs` 在真 `.app` 上验了**冷启动 argv** 这一条
-（真 `process.argv` → 解析 → 查本机 → 待领 → 渲染层领走 → 画出来，断言的是规则 3 的那句错误）。
-协议注册、macOS `open-url`、单实例锁**还没验** —— 那三样要装成应用由系统派发才跑得到。
+第一版的判据是一个叫 `cold` 的布尔，只有 argv 那条路传 `true`。**那等于把"冷启动"和
+"走 argv"当成了同一件事** —— 在 Windows / Linux 上成立，在 macOS 上不成立：那边系统用
+`open-url`，而用户在应用没开着的时候点一条分享链接，那个事件会在 `whenReady`
+**之前**就来。那同样是冷启动，只是不走 argv，于是被当成热路径直接推掉、丢了。
+现在判据是 `host.rendererSubscribed()`，信号取自渲染层挂载时那一次 `takeDeeplink()`
+（它在挂载 effect 里，而订阅 `onUiEvent` 的 effect 紧挨在后面、同一次 commit 里同步跑完，
+所以那条 IPC 到主进程时订阅一定已经在了）。**那个调用因此不只是取值** ——
+`app.test.tsx` 有一条守着它别被删掉。
+
+**验到哪一步**（2026-09-27 在真 `.app` 上跑出来的，不是推断）：
+
+| | 结论 | 证据 |
+| --- | --- | --- |
+| 冷启动 argv | ✅ | 真 `process.argv` → 解析 → 查本机 → 待领 → 渲染层领走 → 画出来，断言规则 3 那句错误 |
+| 协议注册 | ✅ | `lsregister -dump` 里这个包 `claimed schemes: evowork:` —— **整条链路上唯一一条不是我们自己说的证据** |
+| 单实例锁 | ✅ | 三条判据缺一不可：第二个实例干净退出 · 它那个**全新的 `EVOWORK_HOME` 目录没被建出来**（证明没走到开库）· argv 递到第一个实例并画了出来 |
+| macOS `open-url` 的派发 | **验不到** | 直接 exec 起的进程收不到那个 Apple Event（实测：`open` 退出码 0、不新起进程、连看 20 秒没反应）；而经 LaunchServices 启动就没法把 `EVOWORK_HOME` 递进去，测试会跑在**用户真实数据**上 |
+
+最后一条**单独登记，不并进"深链验过了"**。`launchctl setenv EVOWORK_HOME` 技术上能绕开隔离问题，
+但那是会话级的全局改动：脚本中途崩掉就会把用户自己的 EvoWork 指到一个临时目录，
+下次打开像是数据全没了。为一条断言不值。
+
+「macOS 会不会早发 `open-url`」是 Apple 的行为，验不了也不必验；
+「**它早到了我们会不会丢**」是我们的行为，已经拎进 `main/early-events.ts` 单独测了
+（接线前到的要补发 · 接线后到的直接走 · **补发完要清空**，否则第二次接线会重放旧链接）。
+
+**还有一条不在上表里，因为它比上面任何一条都大**：热路径的 `webContents.send` 推的是
+`evowork:event`，而渲染层监听的是 `evowork:ui-event`（`preload` 的 `RENDERER_CHANNELS.uiEvent`）。
+少三个字符，`send` 照常返回、不报错 —— **"应用开着的时候点深链"从来没有工作过**。
+冷启动走拉（队列）所以一直是好的，正是它把这件事盖住了。
+现在频道走 `IPC.uiEvent` 常量，并有一条类级别的断言守着「主进程发的每个频道，渲染层都得在听」。
 
 `evowork://share/<id>` 有一条专门的文案：点它的多半是**接收方**，他本机当然没有这份产物，所以话是「它是别人分享给你的，请用网页上的下载」而不是含糊的「打不开」。
 
