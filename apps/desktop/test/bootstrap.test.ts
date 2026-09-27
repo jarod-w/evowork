@@ -5,9 +5,10 @@
  * `contextIsolation` 被谁改成 false 不会有任何开发期症状，它只在有人往渲染进程
  * 注入内容那天表现出来（R5）。同理还有 window.open 与导航。
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -305,6 +306,35 @@ describe('主进程与渲染层的频道名必须是同一个', () => {
       if (mine === undefined) continue; // preload 可以多几个（主进程不一定都发）
       expect(mine, `频道 ${name} 两边对不上：主进程 ${mine} / 渲染层 ${channel}`).toBe(channel);
     }
+  });
+
+  /**
+   * **发送点一律走常量，不许手写频道字面量。**
+   *
+   * 上面两条各自漏了一半：「两边常量相等」管不到没进常量表的名字，
+   * 「主进程发的每个频道渲染层都得在听」遍历的是 `IPC` —— 一个手写的字面量
+   * 两条都绕得过去。而 #7 正是这么发生的（`'evowork:event'` 少三个字符，
+   * `send` 照常返回）。补这一条之后，**下一个手写的字面量在写出来的时候就红**，
+   * 不用等到有人在真 `.app` 上点一条链接。
+   *
+   * 2026-09-27 加它时立刻抓到一个已经在树里的：`service-host.ts` 的
+   * `emitToRenderer('evowork:computer-use-status', …)` —— 名字碰巧是对的，
+   * 但它是同一个名字的第三份手抄，且不在 `IPC` 里，上面两条都看不见它。
+   */
+  it('主进程的发送点不许手写频道字面量', () => {
+    const MAIN = join(dirname(fileURLToPath(import.meta.url)), '../src/main');
+    const offenders: string[] = [];
+    for (const file of readdirSync(MAIN).filter((n) => n.endsWith('.ts'))) {
+      const code = readFileSync(join(MAIN, file), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      for (const m of code.matchAll(/(?:emitToRenderer|webContents\.send)\(\s*'([^']+)'/g)) {
+        offenders.push(`${file}: '${m[1]}'`);
+      }
+    }
+    expect(offenders, `这些发送点手写了频道名，改用 IPC.* 常量：${offenders.join(' / ')}`).toEqual(
+      [],
+    );
   });
 
   it('主进程发的每一个频道，渲染层都得在听', () => {

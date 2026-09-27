@@ -712,6 +712,13 @@ function attachmentFromOutcome(
 
 /** IPC 频道名。渲染进程只认这几个，不认协议方法名（K2）。 */
 export const IPC = {
+  /*
+   * 2026-09-27 补：这一条此前**只在发送点手写了一遍字面量**（`'evowork:computer-use-status'`）。
+   * 名字碰巧是对的，但它是同一个名字的第三份手抄，而 `IPC` 里没有它 ——
+   * 于是「主进程发的每个频道渲染层都得在听」那条守卫扫不到这个发送点。
+   * #7（深链推到 `evowork:event`）就是这个形状，只是那次打错了。
+   */
+  computerUseStatus: 'evowork:computer-use-status',
   uiEvent: 'evowork:ui-event',
   notice: 'evowork:notice',
   degrade: 'evowork:degrade',
@@ -990,7 +997,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     ask: (approval) => adapter.requestComputerUseConsent(approval),
     cancelApprovals: () => adapter.cancelComputerUseApprovals(),
-    changed: (status) => options.emitToRenderer('evowork:computer-use-status', status),
+    changed: (status) => options.emitToRenderer(IPC.computerUseStatus, status),
     audit: (record) => {
       createAuditRepo(store.db).insertMany([
         {
