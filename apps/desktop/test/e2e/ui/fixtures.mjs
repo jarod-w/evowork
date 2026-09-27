@@ -11,6 +11,8 @@ import { resolve } from 'node:path';
 
 import { _electron as electron, expect, test as base } from '@playwright/test';
 
+import { removeE2EHome } from '../harness/runner.mjs';
+
 const require = createRequire(import.meta.url);
 const ROOT = resolve(import.meta.dirname, '../../../../..');
 
@@ -57,7 +59,7 @@ export const test = base.extend({
    */
   realModel: [false, { option: true }],
 
-  electronApp: async ({ keepOnboarding, realModel }, use) => {
+  electronApp: async ({ keepOnboarding, realModel }, use, testInfo) => {
     if (!existsSync(KERNEL)) {
       // 不跳过：缺内核就是没验证，而"跳过的测试"会让人以为验过了（CLAUDE.md §9.1）
       throw new Error(`找不到真实 app-server：${KERNEL}。先构建或设置 EVOWORK_APP_SERVER。`);
@@ -84,7 +86,21 @@ export const test = base.extend({
       timeout: 120_000,
     });
     await use(app);
+
+    /*
+     * 路径要在**测试跑完之后、关闭之前**取：太早的话 `bootApp` 还没发布控制面，
+     * 拿到的是 undefined；太晚的话进程没了，问不出来。
+     */
+    const home = await app.evaluate(() => globalThis.__evoworkE2E?.home).catch(() => undefined);
     await app.close();
+
+    /*
+     * **通过才清理，失败留着现场。**
+     * 不清理的代价实测过：一次会话在 `/var/folders` 下攒了 4.8 GB，
+     * 而那个目录没人会去看。失败时留着，是因为那份 home 里有 sqlite 与内核家目录 ——
+     * 排查"为什么这条红了"只能靠它。
+     */
+    if (testInfo.status === testInfo.expectedStatus) removeE2EHome(home);
   },
 
   page: async ({ electronApp, keepOnboarding }, use) => {

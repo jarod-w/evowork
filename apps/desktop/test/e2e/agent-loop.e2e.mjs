@@ -35,7 +35,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { app } from 'electron';
 
 import { bootApp, createE2EHome, writeKernelConfig } from './harness/boot.mjs';
-import { createRunner, waitFor } from './harness/runner.mjs';
+import { createRunner, removeE2EHome, waitFor } from './harness/runner.mjs';
 
 const { stage, report } = createRunner({
   stagePrefix: '__EVOWORK_AGENT_LOOP_STAGE__',
@@ -300,6 +300,12 @@ exporter = "none"
     });
     await host.stop();
     gateway.kill();
+    /*
+     * 通过才清理。一次会话攒过 4.8 GB —— 每个 home 里有内核家目录、本机 sqlite
+     * 与 rollout，而 `/var/folders` 下的东西没人会去看。
+     * **失败时故意不删**：那份 home 是排查唯一的依据。
+     */
+    removeE2EHome(home);
     app.exit(0);
   } catch (error) {
     console.error(error);

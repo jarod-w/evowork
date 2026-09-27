@@ -14,7 +14,7 @@ import { app } from 'electron';
 import { seedMemorySummary } from '../../../../services/kernel-adapter/test-support/memory-fixture.mjs';
 import { bootApp, createE2EHome, writeKernelConfig } from './harness/boot.mjs';
 import { createFakeGateway } from './harness/fake-gateway.mjs';
-import { createRunner, publishControls, waitFor } from './harness/runner.mjs';
+import { createRunner, publishControls, removeE2EHome, waitFor } from './harness/runner.mjs';
 
 const { stage, report } = createRunner({
   stagePrefix: '__EVOWORK_DESKTOP_E2E_STAGE__',
@@ -759,6 +759,12 @@ exporter = "none"
     });
     await host.stop();
     await gateway.close();
+    /*
+     * 通过才清理。一次会话攒过 4.8 GB —— 每个 home 里有内核家目录、本机 sqlite
+     * 与 rollout，而 `/var/folders` 下的东西没人会去看。
+     * **失败时故意不删**：那份 home 是排查唯一的依据。
+     */
+    removeE2EHome(home);
     app.exit(0);
   } catch (error) {
     console.error(error);

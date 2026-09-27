@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs';
+
 /**
  * 真窗口 E2E 的**运行器协议**：阶段标记、结果标记、轮询等待、给进程外驱动用的控制面。
  *
@@ -6,6 +8,23 @@
  * 前缀是这两侧之间的契约，改一个字两边就对不上 —— 所以由调用方显式传进来，
  * 这里不替它拼一个「看起来对」的名字。
  */
+
+/**
+ * 跑完把一次性 home 删掉。
+ *
+ * 不删的代价是实测出来的：一次会话在 `/var/folders` 下攒了 **4.8 GB**
+ * （每个 home 里有内核家目录、本机 sqlite、rollout 与解析缓存），而那个目录没人会去看。
+ *
+ * **失败时不要调它** —— 那份 home 是排查"为什么这条红了"的唯一依据，
+ * 与 Playwright 失败时保留 trace 是同一个道理。
+ *
+ * 放在这个文件而不是 `boot.mjs`：夹具跑在**普通 Node** 里，而 `boot.mjs` import 了
+ * `electron` —— 从那边引会让整个 spec 收集阶段炸掉（实测踩到）。这个文件不碰 electron。
+ */
+export function removeE2EHome(home) {
+  if (typeof home !== 'string' || !home.includes('evowork-')) return; // 防手滑
+  rmSync(home, { recursive: true, force: true });
+}
 
 /** 阶段与结果标记的写出口。两个入口各有一套前缀，不能共用。 */
 export function createRunner({ stagePrefix, resultPrefix }) {
