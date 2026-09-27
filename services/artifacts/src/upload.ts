@@ -32,7 +32,7 @@ export interface UploadInput {
   readonly bytes: Uint8Array;
   readonly contentType: string;
   readonly expiresAt: number;
-  readonly passwordHash?: string | undefined;
+  readonly accessCodeHash?: string | undefined;
 }
 
 export interface UploadProgress {
@@ -91,7 +91,7 @@ export function createUploader(target: UploadTarget, ports: UploaderPorts) {
             // 文件名以 digest 上传：云端不需要知道它，而它可能本身就是敏感信息
             'x-evowork-name-digest': digestName(input.fileName),
             'x-evowork-expires-at': String(input.expiresAt),
-            ...(input.passwordHash ? { 'x-evowork-password': input.passwordHash } : {}),
+            ...(input.accessCodeHash ? { 'x-evowork-password': input.accessCodeHash } : {}),
           },
           /*
            * 用 Blob 而不是直接给 Uint8Array。
@@ -170,11 +170,14 @@ export function createUploader(target: UploadTarget, ports: UploaderPorts) {
 }
 
 /**
- * 分享密码只上传**哈希**，不上传明文。
+ * 分享访问码只上传**哈希**，不上传明文。
  *
- * 云端只需要能验证"访问者输入的密码对不对"，不需要知道密码是什么 ——
- * 而用户很可能复用了别处的密码。
+ * 云端只需要能验证"访问者输入的码对不对"，不需要知道它是什么 ——
+ * 而用户很可能复用了别处的口令。
+ *
+ * 名字里不带 `password`：见 `share.ts` 的 `accessCode` 注释与 08 §7.6。
+ * HTTP 头仍叫 `x-evowork-password`——那是与服务端的既有线上契约，改它要两边同时改。
  */
-export function hashSharePassword(password: string, shareId: string): string {
-  return createHash('sha256').update(`${shareId}:${password}`).digest('hex');
+export function hashShareAccessCode(accessCode: string, shareId: string): string {
+  return createHash('sha256').update(`${shareId}:${accessCode}`).digest('hex');
 }

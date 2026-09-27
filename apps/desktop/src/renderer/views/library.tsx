@@ -74,6 +74,9 @@ export interface ShareRow {
   readonly expiresLabel: string;
   readonly expiringSoon: boolean;
   readonly accessCount: number;
+  /** 已撤销 / 已过期的也列出来 —— 用户来这一页多半就是查"到底撤没撤" */
+  readonly state: 'active' | 'expiring-soon' | 'expired' | 'revoked';
+  readonly hasPassword: boolean;
 }
 
 export interface LibraryTreeNode {
@@ -94,6 +97,9 @@ export interface LibraryProps {
   readonly onOpen?: ((row: LibraryRow) => void) | undefined;
   readonly onDelete?: ((row: LibraryRow, alsoDeleteFile: boolean) => void) | undefined;
   readonly onRevokeShare?: ((shareId: string) => void) | undefined;
+  /** 分享是**过一次授权流**的入口，不是直接动作（Q10 规则 1） */
+  readonly onShare?: ((row: LibraryRow) => void) | undefined;
+  readonly onCopyShareLink?: ((url: string) => void) | undefined;
   readonly onCleanup?: (() => void) | undefined;
   readonly onAddMyFile?: (() => void) | undefined;
   readonly onSubscribeTeam?: (() => void) | undefined;
@@ -249,24 +255,38 @@ export function Library(props: LibraryProps) {
         </div>
 
         {nav === 'recent' && tab === 'shared-by-me' ? (
-          <SharesTable shares={props.shares ?? []} onRevoke={props.onRevokeShare} />
+          <SharesTable
+            shares={props.shares ?? []}
+            onRevoke={props.onRevokeShare}
+            onCopy={props.onCopyShareLink}
+          />
         ) : (
           <DataTable
             ariaLabel="资料列表"
             columns={columns}
             rows={rows}
             onRowClick={props.onOpen}
-            {...(props.onDelete
+            {...(props.onDelete || props.onShare
               ? {
                   rowActions: (row: LibraryRow) => (
-                    <IconButton
-                      label={`删除 ${row.name}`}
-                      icon="🗑"
-                      onClick={() => {
-                        setPendingDelete(row);
-                        setAlsoDeleteFile(false);
-                      }}
-                    />
+                    <>
+                      {props.onShare ? (
+                        // 「分享」先过授权模态（Q10 规则 1：逐次授权，不记住选择）
+                        <PillButton variant="ghost" onClick={() => props.onShare?.(row)}>
+                          分享
+                        </PillButton>
+                      ) : null}
+                      {props.onDelete ? (
+                        <IconButton
+                          label={`删除 ${row.name}`}
+                          icon="🗑"
+                          onClick={() => {
+                            setPendingDelete(row);
+                            setAlsoDeleteFile(false);
+                          }}
+                        />
+                      ) : null}
+                    </>
                   ),
                 }
               : {})}
@@ -374,21 +394,38 @@ function DeleteDialog({
 }
 
 /** 「我分享的」：链接 + 有效期倒计时 + 访问次数 + 撤销（06 §3.3 / 08 §7.2）。 */
+const SHARE_TONE: Record<ShareRow['state'], 'neutral' | 'warning' | 'danger'> = {
+  active: 'neutral',
+  'expiring-soon': 'warning',
+  expired: 'danger',
+  revoked: 'danger',
+};
+
 function SharesTable({
   shares,
   onRevoke,
+  onCopy,
 }: {
   readonly shares: readonly ShareRow[];
   readonly onRevoke?: ((shareId: string) => void) | undefined;
+  readonly onCopy?: ((url: string) => void) | undefined;
 }) {
   const columns: Column<ShareRow>[] = [
-    { id: 'name', header: '产物', render: (row) => row.name, sortValue: (row) => row.name },
+    {
+      id: 'name',
+      header: '产物',
+      render: (row) => (
+        <span className="ew-share-cell">
+          {row.name}
+          {row.hasPassword ? <Badge variant="neutral">有密码</Badge> : null}
+        </span>
+      ),
+      sortValue: (row) => row.name,
+    },
     {
       id: 'expires',
       header: '有效期',
-      render: (row) => (
-        <Badge variant={row.expiringSoon ? 'warning' : 'neutral'}>{row.expiresLabel}</Badge>
-      ),
+      render: (row) => <Badge variant={SHARE_TONE[row.state]}>{row.expiresLabel}</Badge>,
     },
     { id: 'access', header: '访问次数', render: (row) => row.accessCount, align: 'end' },
   ];
@@ -398,10 +435,23 @@ function SharesTable({
       columns={columns}
       rows={shares}
       rowActions={(row) => (
-        // 撤销即云端删除 + 链接失效（08 §7.2 规则 3）
-        <PillButton variant="ghost" onClick={() => onRevoke?.(row.id)}>
-          撤销分享
-        </PillButton>
+        <>
+          {onCopy && row.state !== 'revoked' && row.state !== 'expired' ? (
+            <PillButton variant="ghost" onClick={() => onCopy(row.url)}>
+              复制链接
+            </PillButton>
+          ) : null}
+          {/*
+            撤销即云端删除 + 链接失效（08 §7.2 规则 3）。
+            已撤销 / 已过期的不再给这个按钮 —— 点它没有任何事情会发生，
+            而一个点了没反应的按钮比没有按钮更让人怀疑状态是不是真的。
+          */}
+          {row.state === 'active' || row.state === 'expiring-soon' ? (
+            <PillButton variant="ghost" onClick={() => onRevoke?.(row.id)}>
+              撤销分享
+            </PillButton>
+          ) : null}
+        </>
       )}
       emptyState={
         <EmptyState

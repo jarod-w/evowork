@@ -12,7 +12,7 @@ import {
   createPollingFileSystem,
   createUploader,
   digestName,
-  hashSharePassword,
+  hashShareAccessCode,
   MAX_SHARE_BYTES,
   type ArtifactRecord,
   type FileSystemPort,
@@ -318,10 +318,10 @@ describe('分享上传', () => {
   });
 
   it('密码只上传哈希，不上传明文', () => {
-    const hash = hashSharePassword('hunter2', 'sh_1');
+    const hash = hashShareAccessCode('hunter2', 'sh_1');
     expect(hash).not.toContain('hunter2');
     // 同一密码在不同分享上哈希不同（shareId 参与）
-    expect(hashSharePassword('hunter2', 'sh_2')).not.toBe(hash);
+    expect(hashShareAccessCode('hunter2', 'sh_2')).not.toBe(hash);
   });
 
   it('撤销走 DELETE', async () => {

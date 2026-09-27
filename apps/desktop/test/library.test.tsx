@@ -136,6 +136,8 @@ describe('分享列表（08 §7.2）', () => {
           expiresLabel: '还有 3 小时',
           expiringSoon: true,
           accessCount: 4,
+          state: 'expiring-soon' as const,
+          hasPassword: false,
         },
       ],
     });
@@ -206,5 +208,63 @@ describe('相对时间', () => {
     expect(formatWhen(NOW - 3 * 3600_000, NOW)).toBe('3 小时前');
     expect(formatWhen(NOW - 3 * 86400_000, NOW)).toBe('3 天前');
     expect(formatWhen(Date.parse('2025-01-02T00:00:00Z'), NOW)).toBe('2025-01-02');
+  });
+});
+
+describe('分享的行动作按状态收（08 §7.2 规则 3）', () => {
+  const base = {
+    id: 'sh_1',
+    name: 'Q3汇报.pptx',
+    url: 'https://s/x#Q3%E6%B1%87%E6%8A%A5.pptx',
+    expiresLabel: '还有 3 小时',
+    expiringSoon: false,
+    accessCount: 0,
+    hasPassword: false,
+  };
+
+  it('有效的分享可以复制链接、可以撤销', () => {
+    const onCopyShareLink = vi.fn();
+    renderLibrary({
+      onRevokeShare: vi.fn(),
+      onCopyShareLink,
+      shares: [{ ...base, state: 'active' as const }],
+    });
+    fireEvent.click(screen.getByRole('tab', { name: '我分享的' }));
+    fireEvent.click(screen.getByRole('button', { name: '复制链接' }));
+    expect(onCopyShareLink).toHaveBeenCalledWith(base.url);
+    expect(screen.getByRole('button', { name: '撤销分享' })).toBeTruthy();
+  });
+
+  it.each([['revoked'], ['expired']] as const)(
+    '%s 的分享不再给「撤销」与「复制链接」——点了什么都不会发生的按钮比没有按钮更糟',
+    (state) => {
+      renderLibrary({
+        onRevokeShare: vi.fn(),
+        onCopyShareLink: vi.fn(),
+        shares: [{ ...base, state }],
+      });
+      fireEvent.click(screen.getByRole('tab', { name: '我分享的' }));
+      expect(screen.queryByRole('button', { name: '撤销分享' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '复制链接' })).toBeNull();
+      // 但这一行**还在** —— 用户来这一页就是查"到底撤没撤"
+      expect(screen.getByText('Q3汇报.pptx')).toBeTruthy();
+    },
+  );
+
+  it('设了密码的分享在列表上看得出来', () => {
+    renderLibrary({ shares: [{ ...base, state: 'active' as const, hasPassword: true }] });
+    fireEvent.click(screen.getByRole('tab', { name: '我分享的' }));
+    expect(screen.getByText('有密码')).toBeTruthy();
+  });
+});
+
+describe('分享入口（Q10 规则 1）', () => {
+  it('产物行上的「分享」是过授权流的入口，不直接上传', () => {
+    const onShare = vi.fn();
+    renderLibrary({ onShare });
+    fireEvent.click(screen.getAllByRole('button', { name: '分享' })[0]!);
+    expect(onShare).toHaveBeenCalledTimes(1);
+    // 这一步**不该**产生任何上传：它只是把授权模态叫出来
+    expect(onShare.mock.calls[0]?.[0]).toMatchObject({ id: expect.any(String) });
   });
 });

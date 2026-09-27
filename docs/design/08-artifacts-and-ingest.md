@@ -354,6 +354,66 @@ Q10 已决策：**显式授权后上传 EvoWork 云 · 默认关闭 · 逐次授
 
 本页跟「分享的上传实现」同一工期，不塞进 M10b 的账号/管理端。
 
+### 7.5 文件名走链接片段（2026-09-26，解一处文档矛盾）
+
+**矛盾**：§7.4 的表格说分享页要显示**文件名**（失效页那一行甚至写着「文件名以外的
+元数据能少则少」，即文件名是要显示的）；而 [`services/artifacts/src/upload.ts`](../../services/artifacts/src/upload.ts)
+只上传 `x-evowork-name-digest`，理由是「云端不需要知道它，而它可能本身就是敏感信息」。
+两边都对，但**云端不知道名字就渲染不出名字**。
+
+**决议**：名字走**链接片段**，不走服务器。
+
+```
+https://s.example.com/s/shr_abc#%E5%91%A8%E6%8A%A5.docx
+                                └────────────────────┘
+                     浏览器不会把 # 之后的内容发给服务器
+```
+
+| 面 | 结果 |
+| --- | --- |
+| 云端 | 仍然只有 digest。DDL 里没有 name 列，访问日志里也没有 —— 比原先两份文档**任一份都更严** |
+| 分享页 | 从 `location.hash` 取名字显示，并把它用于 `download` 属性，所以保存下来的文件名是对的 |
+| 下载 | 走 `fetch` + object URL，不是 `<a href>` 直下 —— 服务器写不出 `Content-Disposition` 的文件名，因为它不知道 |
+| 片段丢了 | 某些聊天工具会吃掉 `#`。此时页面如实说「文件名未随链接传来」，用 `<id>.<ext>` 兜底命名，**不因此拒绝下载** |
+| 名字本身 | 是接收方那一侧唯一的不可信输入：解码后挡掉路径分隔符与控制字符，截断到 200 字 |
+
+**这条是决议不是建议**：`services/share` 的 `test/no-name-column.test.ts` 扫 DDL 与日志，
+想在云端记文件名就得先改那份测试。
+
+### 7.6 分享的访问码不叫 `password`（2026-09-27）
+
+界面上仍然写「访问密码」（§7.1 的原话不变），**代码里的标识符叫 `accessCode`**。
+
+接分享链路时撞上了 `apps/desktop/test/no-password-ipc.test.ts` ——
+Q33=A / 11 §12 第 12 条说客户端进程里没有 `password` 这个标识符。
+那条守卫拦对了：**账号密码与分享链接的口令是两件事**，共用一个名字会让后者
+有一天被顺手接进账号那条路，也会让那条断言从"绝对没有"退化成"有几个例外"。
+
+所以改的是名字不是守卫，且整个分享域统一（`ShareAuthorization.accessCode` ·
+`UploadInput.accessCodeHash` · `hashShareAccessCode`）——
+留一个转换点在被扫的文件里等于没改。
+**HTTP 头仍是 `x-evowork-password`**：那是与服务端的既有线上契约，改它要两边同时改。
+
+### 7.7 整条链路的落地状态（2026-09-27）
+
+**分享任务为什么把全文铺开**：规则 5 的原话是"提供预览将要上传的内容"，而"不许盲传"是它的要点。
+实现上有一条不显然但重要的：**预览的字符串与上传的字符串是同一个值**
+（渲染层生成一次，既传给模态显示、又传给主进程上传），不是两处各自推导。
+分两处的话，某天一处改了另一处没改，预览就开始撒谎 —— 而那正是这条规则要防的事。
+`previewed` 因此是一个显式入参而不是默认 `true`。
+
+| 段 | 落点 | 状态 |
+| --- | --- | --- |
+| ① 授权模态 | `apps/desktop/src/renderer/components/share-dialog.tsx` | ✅ 三段式（授权 / 上传中 / 完成）；不预勾；**没有「以后不再询问」** |
+| ② 上传 | `services/artifacts/src/share-flow.ts` → `upload.ts` | ✅ 授权通过之后才读文件；取消传 `AbortSignal` |
+| ③ 链接 | 同上，`linkWithName` 拼片段 | ✅ 含**二维码**（`qrcode-generator`，MIT 零传递依赖）。编的是带片段的同一条链接 —— 扫出来没名字就白扫了 |
+| ④ 落库 | `services/store` 的 `createShareRepo` + `artifact.share_id` | ✅ |
+| 「我分享的」 | `apps/desktop/src/renderer/views/library.tsx` | ✅ 含已撤销 / 已过期；行动作按状态收 |
+| 撤销 | `share-flow.revokeShare` | ✅ **云端先删、本机后标** —— 反过来会让用户以为链接失效了而它还活着 |
+| 云端 | `services/share` | ✅ 见 11 §13.10 C |
+| 分享任务（规则 5） | `performThread` + `thread-transcript.ts` | ✅ 同一模态 + 额外警告 + **全文预览**。两个勾都打上才让传 |
+| `evowork://share/<id>` | `main/deeplink.ts` + `bootstrap.ts` | ✅ 五条路由都接了，见 [02 §8](02-information-architecture.md) |
+
 ---
 
 ## 8. 空态与异常

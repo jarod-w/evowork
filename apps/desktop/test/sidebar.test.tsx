@@ -215,9 +215,11 @@ describe('可见页上报（04 §3.4 第②步）', () => {
 });
 
 describe('行操作（04 §3.3）', () => {
-  it('只显示已经接通的改名、归档与删除，不暴露无效操作', () => {
+  it('只显示已经接通的动作：改名、分享、归档、删除', () => {
     const items = rowMenuItems(task({ id: 't1' }));
-    expect(items.map((item) => item.id)).toEqual(['rename', 'archive', 'delete']);
+    expect(items.map((item) => item.id)).toEqual(['rename', 'share', 'archive', 'delete']);
+    // 分享带省略号：它是**过一次授权流的入口**，不是点了就传（Q10 规则 1）
+    expect(items.find((item) => item.id === 'share')?.label).toBe('分享…');
   });
 
   /*

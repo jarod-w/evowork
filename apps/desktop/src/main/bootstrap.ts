@@ -17,6 +17,7 @@
 import { join } from 'node:path';
 
 import { RENDERER_ACTIONS } from '../preload/index.js';
+import { DEEPLINK_SCHEME, deeplinkFromArgv, resolveDeeplink } from './deeplink.js';
 import { createServiceHost, resolvePaths, type ServiceHost } from './service-host.js';
 
 /** 真窗口 E2E 注入可观察 launcher；生产入口仍直接使用 `bootstrap`。 */
@@ -35,6 +36,14 @@ export interface ElectronWindow {
   loadURL(url: string): Promise<void>;
   loadFile(path: string): Promise<void>;
   on(event: 'closed', handler: () => void): void;
+  /**
+   * 深链进来时把窗口叫到前面（02 §8）。
+   *
+   * 可选：没有它深链照样跳，只是用户得自己去点 Dock 图标 ——
+   * 而"点了链接什么都没发生"与"跳了但窗口在后面"在体感上是同一件事。
+   */
+  show?(): void;
+  focus?(): void;
 }
 
 export interface BrowserWindowOptions {
@@ -60,6 +69,21 @@ export interface ElectronApi {
     quit(): void;
     getVersion(): string;
     getPath(name: 'home'): string;
+    /**
+     * 注册 `evowork://`（02 §8）。可选注入 —— 没给时深链不工作，
+     * 但应用照常起得来，测试也能跑到"没注册"那条路径。
+     */
+    setAsDefaultProtocolClient?(scheme: string): boolean;
+    /** macOS：系统把 URL 交成事件。Windows / Linux 走 `second-instance` 的 argv。 */
+    onOpenUrl?(handler: (url: string) => void): void;
+    /**
+     * 第二个实例被拉起时的 argv。
+     *
+     * **深链必须有它**：不要单实例锁的话，点一条链接会再开一个应用 ——
+     * 两个进程抢同一个 sqlite，那比深链不工作糟得多。
+     */
+    onSecondInstance?(handler: (argv: readonly string[]) => void): void;
+    requestSingleInstanceLock?(): boolean;
   };
   createWindow(options: BrowserWindowOptions): ElectronWindow;
   readonly ipcMain: {
@@ -268,8 +292,44 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
 
   await host.start();
 
+  /*
+   * `evowork://`（02 §8）。
+   *
+   * 三件事缺一不可，缺任何一件的表现都不是"深链不工作"而是更糟：
+   *   · **不注册协议** → 系统不知道谁该处理这条链接，点了什么都不发生
+   *   · **不要单实例锁** → 点链接会再开一个应用，两个进程抢同一个 sqlite
+   *   · **不解析就跳** → 一条外部链接能指向任意 id，而"找不到"要如实说（规则 3）
+   *
+   * 解析与查找在 `deeplink.ts`（不 import electron，所以能单测）；
+   * 这里只负责把系统递过来的 URL 接住、把结果送进渲染层。
+   */
+  electron.app.setAsDefaultProtocolClient?.(DEEPLINK_SCHEME);
+
+  function handleDeeplink(raw: string | undefined, cold = false): void {
+    if (!raw) return;
+    const resolved = resolveDeeplink(raw, host.deeplinkLookup);
+    const delivery = resolved.ok ? { target: resolved.target } : { refused: resolved.reason };
+    if (cold) {
+      /*
+       * 冷启动**不能推**：这一刻 React 还没挂载、还没订阅事件，推过去就丢了 ——
+       * 表现正是这条特性要防的「点了链接什么都没发生」。存一条，等渲染层来领。
+       */
+      host.queueDeeplink(delivery);
+      return;
+    }
+    window.show?.();
+    window.focus?.();
+    window.webContents.send('evowork:event', { type: 'deeplink', ...delivery });
+  }
+
+  electron.app.onOpenUrl?.((url) => handleDeeplink(url));
+  electron.app.onSecondInstance?.((argv) => handleDeeplink(deeplinkFromArgv(argv)));
+
   if (options.devServerUrl) await window.loadURL(options.devServerUrl);
   else await window.loadFile(options.rendererHtmlPath);
+
+  // 冷启动那一次：系统把 URL 放在自己的 argv 里，没有事件可接
+  handleDeeplink(deeplinkFromArgv(process.argv), true);
 
   // macOS 首发（Q26），但"关掉最后一个窗口就退出"在三个平台上都是对的：
   // 这是一个本机服务宿主，留一个没有窗口的后台进程只会让人以为它挂了

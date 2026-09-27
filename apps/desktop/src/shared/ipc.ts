@@ -44,7 +44,46 @@ export interface RenderItemView {
 }
 
 /** 主进程推给渲染进程的语义化 UI 事件。 */
+/**
+ * 深链能跳到哪（02 §8）。**没有能装文件内容的字段**（规则 1）。
+ *
+ * `prefill` 不叫 `prompt`：规则 2 说它只写进 Composer 不自动发送，
+ * 而名字是这条规则最便宜的守卫。
+ */
+export type DeeplinkTargetView =
+  | { readonly kind: 'task'; readonly threadId: string }
+  | { readonly kind: 'automation'; readonly automationId: string }
+  | { readonly kind: 'library'; readonly nodeId: string }
+  | { readonly kind: 'share'; readonly shareId: string }
+  | {
+      readonly kind: 'home';
+      readonly scenario?: string | undefined;
+      readonly prefill?: string | undefined;
+    };
+
+/**
+ * 深链的一次投递：成功给 `target`，失败给 `refused`（02 §8 规则 3：不静默）。
+ *
+ * 冷启动走**拉**（`takeDeeplink`），热路径走推（`RendererEvent` 的 `deeplink`）——
+ * 两条路同一个形状，所以渲染层只要一个处理函数。
+ */
+export interface DeeplinkDelivery {
+  readonly target?: DeeplinkTargetView | undefined;
+  readonly refused?: string | undefined;
+}
+
 export type RendererEvent =
+  /**
+   * `evowork://` 进来了（02 §8）。
+   *
+   * 成功与失败是**同一种事件的两支**，不是"成功才发"：规则 3 要求未知 ID 给明确
+   * 错误而不是空白页 —— 不发失败那一支的话，用户点了链接会看到什么都没发生。
+   */
+  | {
+      readonly type: 'deeplink';
+      readonly target?: DeeplinkTargetView | undefined;
+      readonly refused?: string | undefined;
+    }
   | { readonly type: 'task-removed'; readonly taskId: string }
   | { readonly type: 'task-created'; readonly task: TaskRowView }
   | {
@@ -465,6 +504,88 @@ export interface TaskFilePreviewInput {
  * 资料库（06）。**形状与 `@evowork/artifacts` 的 `LibraryRow` 是两个类型** ——
  * 同一条纪律：那边回答"本机索引里有什么"，这边回答"表格要画什么"。
  */
+/**
+ * 分享授权模态要显示的东西（08 §7.1 第 ① 步）。
+ *
+ * **每次分享都要重新拿一次**：Q10 的原话是"逐次授权"，所以这里没有缓存，
+ * 也没有"以后不再询问"的字段 —— 想加它得先改 Q10。
+ */
+export interface SharePlanView {
+  readonly artifactId: string;
+  readonly fileName: string;
+  readonly sizeBytes: number;
+  readonly artifactTypeLabel: string;
+  /** 三句话，缺一不可。渲染层原样显示，不重新组织 */
+  readonly summary: readonly string[];
+  readonly ttl: ShareTtlId;
+  readonly ttlOptions: readonly { readonly id: ShareTtlId; readonly label: string }[];
+}
+
+export type ShareTtlId = '24h' | '7d' | '30d';
+
+export type SharePlanResult =
+  | { readonly ok: true; readonly plan: SharePlanView }
+  | { readonly ok: false; readonly refused: string };
+
+export interface ShareCreateInput {
+  readonly artifactId: string;
+  readonly ttl: ShareTtlId;
+  /**
+   * 分享链接的访问码（界面上叫「访问密码」，08 §7.1）。
+   *
+   * **字段名不叫 `password`，这是刻意的**：Q33=A / 第 12 条说客户端进程里没有
+   * `password` 这个标识符，而那条说的是**账号密码**。这里是一条分享链接的口令，
+   * 是另一回事 —— 但共用一个名字会让它有一天被顺手接进账号那条路，
+   * 也会让那条守卫从"绝对没有"退化成"有几个例外"。
+   *
+   * 明文只到主进程为止：再往下是 `sha256(shareId:code)`（`upload.ts` 末尾）。
+   */
+  readonly accessCode?: string | undefined;
+  /** 「我确认这份文件可以对外分享」。不预勾 */
+  readonly confirmed: boolean;
+}
+
+/**
+ * 分享**任务**（08 §7.2 规则 5）。
+ *
+ * `markdown` 是**将要上传的那一份**，且它必须先在授权模态里给用户看过 ——
+ * 「不许盲传」是规则 5 的原话。渲染层把同一个字符串既拿去预览、又拿来上传，
+ * 所以"预览的就是要传的"在结构上成立，而不是靠两处各自推导出同一份。
+ */
+export interface ThreadShareInput {
+  readonly threadId: string;
+  readonly fileName: string;
+  readonly markdown: string;
+  readonly ttl: ShareTtlId;
+  readonly accessCode?: string | undefined;
+  readonly confirmed: boolean;
+  /** 用户确实看过将要上传的内容。**不是默认 true** */
+  readonly previewed: boolean;
+}
+
+export type ShareCreateResult =
+  | {
+      readonly ok: true;
+      readonly shareId: string;
+      /** 带文件名片段的完整链接，可以直接复制发出去（08 §7.5） */
+      readonly url: string;
+      readonly expiresAt: number;
+    }
+  | { readonly ok: false; readonly refused: string };
+
+/** 「我分享的」（06 §3.3 / 08 §7.2）。**含已撤销与已过期** —— 见 store 里那条注释。 */
+export interface ShareListView {
+  readonly rows: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly url: string;
+    readonly expiresAt: number;
+    readonly state: 'active' | 'expiring-soon' | 'expired' | 'revoked';
+    readonly hasPassword: boolean;
+    readonly visitCount: number;
+  }[];
+}
+
 export interface LibraryDataView {
   readonly rows: readonly {
     readonly id: string;

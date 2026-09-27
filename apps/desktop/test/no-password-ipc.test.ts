@@ -37,3 +37,32 @@ describe('客户端没有 password 字段', () => {
     expect(hits, `客户端出现了 password 字段：${hits.join(', ')}`).toEqual([]);
   });
 });
+
+/**
+ * 2026-09-27 登记：分享链接的口令**刻意不叫 `password`**。
+ *
+ * 接分享链路时撞上了上面那条守卫 —— 而它拦对了：账号密码与分享访问码是两件事，
+ * 共用一个名字会让这条口令有一天被顺手接进账号那条路，也会让上面那条断言
+ * 从"绝对没有"退化成"有几个例外"。所以改的是名字，不是守卫。
+ */
+describe('分享的访问码不叫 password', () => {
+  it('IPC 契约里是 accessCode，且它带着为什么', () => {
+    const ipc = readFileSync(join(ROOT, 'src/shared/ipc.ts'), 'utf8');
+    expect(ipc).toContain('readonly accessCode?: string | undefined;');
+    expect(ipc).toContain('字段名不叫 `password`，这是刻意的');
+  });
+
+  it('分享模态里也没有 password 标识符 —— 它是渲染层，同样在客户端进程里', () => {
+    const dialog = readFileSync(join(ROOT, 'src/renderer/components/share-dialog.tsx'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      // `type="password"` 是 HTML 属性值，必须留着（否则输入框会明文显示口令）——
+      // 这条断言管的是**标识符**，不是那个属性
+      .replace(/type="password"/g, '');
+    expect(dialog).not.toMatch(/\bpassword\b/);
+    // 但界面上那个词仍然是「访问密码」——改的是标识符，不是给用户看的文案
+    expect(readFileSync(join(ROOT, 'src/renderer/components/share-dialog.tsx'), 'utf8')).toContain(
+      '访问密码',
+    );
+  });
+});

@@ -163,6 +163,52 @@ if (existsSync(exe) && problems.length === 0) {
   }
 }
 
+// ── ⑥ 深链：冷启动 argv 那条路（02 §8）─────────────────────────────────
+/*
+ * **只验得了冷启动这一条。** 另外三样要装成应用、由系统派发才跑得到：
+ *   · LaunchServices 里的协议注册（`setAsDefaultProtocolClient`）
+ *   · macOS 的 `open-url` 事件
+ *   · 单实例锁（第二个实例把 argv 递给第一个）
+ * 这个脚本用 Playwright 直接起可执行文件，绕过了系统派发，所以那三样不在覆盖面里 ——
+ * 报告里如实说，不把"冷启动过了"说成"深链验过了"。
+ *
+ * 但冷启动这一条是真链路：真进程的 `process.argv` → `deeplinkFromArgv` →
+ * `resolveDeeplink` 查本机 → 存成待领 → 渲染层挂载后来领 → 画出来。
+ * 它同时验掉一个最容易写错的地方：**冷启动时 React 还没订阅事件**，
+ * 直接 `webContents.send` 会把那条深链丢掉，表现正是"点了链接什么都没发生"。
+ */
+if (existsSync(exe) && problems.length === 0) {
+  const { ELECTRON_RUN_AS_NODE: _drop2, ...env } = process.env;
+  const deepHome = mkdtempSync(join(tmpdir(), 'evowork-pkg-deeplink-'));
+  let app;
+  try {
+    app = await electron.launch({
+      executablePath: exe,
+      args: [
+        `--user-data-dir=${join(deepHome, 'chromium')}`,
+        // 干净的家目录 = 这台机器上没有任何任务，所以这条必然走"不在本机"那一支
+        'evowork://task/thr_not_here',
+      ],
+      env: { ...env, EVOWORK_HOME: join(deepHome, '.evowork') },
+      timeout: 120_000,
+    });
+    const page = await app.firstWindow();
+    /*
+     * 断言的是**规则 3**：未知 ID 要给明确错误而不是空白页。
+     * 这条比"跳对了页面"更值得验 —— 跳错页用户看得见，而静默丢掉看不见。
+     */
+    await page.getByText('该任务不在本机，可能创建于其他设备。').waitFor({ timeout: 90_000 });
+    notes.push('冷启动 argv 深链走通：未知 ID 给出了明确错误（02 §8 规则 3）');
+    notes.push(
+      '深链的另外三样（协议注册 · macOS open-url · 单实例锁）**这里验不到** —— 要装成应用由系统派发',
+    );
+  } catch (error) {
+    problems.push(`冷启动深链没走通：${String(error).slice(0, 300)}`);
+  } finally {
+    await app?.close().catch(() => undefined);
+  }
+}
+
 // ── 报告 ───────────────────────────────────────────────────────────────
 for (const n of notes) console.log(`· ${n}`);
 if (problems.length > 0) {

@@ -725,3 +725,103 @@ export function createProjectRepo(db: SqliteLike) {
 }
 
 export type ProjectRepo = ReturnType<typeof createProjectRepo>;
+
+/* ───────────────────────────── 分享（08 §7 / Q10）───────────────────────────── */
+
+export interface ShareRecordRow {
+  readonly id: string;
+  readonly artifactId?: string | undefined;
+  readonly threadId?: string | undefined;
+  readonly url: string;
+  readonly expiresAt: number;
+  readonly hasPassword: boolean;
+  readonly visitCount: number;
+  readonly revokedAt?: number | undefined;
+  readonly createdAt: number;
+}
+
+interface RawShare {
+  id: string;
+  artifact_id: string | null;
+  thread_id: string | null;
+  url: string;
+  expires_at: number;
+  has_password: number;
+  visit_count: number;
+  revoked_at: number | null;
+  created_at: number;
+}
+
+function toShare(raw: RawShare): ShareRecordRow {
+  return {
+    id: raw.id,
+    ...(raw.artifact_id === null ? {} : { artifactId: raw.artifact_id }),
+    ...(raw.thread_id === null ? {} : { threadId: raw.thread_id }),
+    url: raw.url,
+    expiresAt: raw.expires_at,
+    hasPassword: raw.has_password === 1,
+    visitCount: raw.visit_count,
+    ...(raw.revoked_at === null ? {} : { revokedAt: raw.revoked_at }),
+    createdAt: raw.created_at,
+  };
+}
+
+/**
+ * 分享记录。
+ *
+ * `share` 表在 schema 里被标成 **authoritative**（权威类）：撤销状态与有效期丢了
+ * 就没法撤销已经发出去的链接 —— 那是一条已经离开这台机器的内容。
+ *
+ * **这张表里没有文件名**：名字在 `artifact` 那一行上，通过 `artifact_id` 关联。
+ * 云端更是连 digest 之外什么都没有（08 §7.5）。
+ */
+export function createShareRepo(db: SqliteLike) {
+  return {
+    insert(row: ShareRecordRow): void {
+      db.prepare(
+        `INSERT INTO share (id, artifact_id, thread_id, url, expires_at, has_password,
+                            visit_count, revoked_at, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      ).run(
+        row.id,
+        row.artifactId ?? null,
+        row.threadId ?? null,
+        row.url,
+        row.expiresAt,
+        row.hasPassword ? 1 : 0,
+        row.visitCount,
+        row.revokedAt ?? null,
+        row.createdAt,
+      );
+    },
+
+    get(id: string): ShareRecordRow | undefined {
+      const raw = db.prepare('SELECT * FROM share WHERE id = ?').get(id) as RawShare | undefined;
+      return raw ? toShare(raw) : undefined;
+    },
+
+    /**
+     * 「我分享的」要看到的全部，**含已撤销与已过期**。
+     *
+     * 只列有效的会让"我上周分享的那份到底撤没撤"无处可查 ——
+     * 而那正是用户点进这一页最常见的理由。
+     */
+    list(limit = 200): readonly ShareRecordRow[] {
+      const rows = db
+        .prepare('SELECT * FROM share ORDER BY created_at DESC LIMIT ?')
+        .all(limit) as RawShare[];
+      return rows.map(toShare);
+    },
+
+    revoke(id: string, at: number): void {
+      db.prepare('UPDATE share SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(at, id);
+    },
+
+    /** 访问次数的真源在云端；本机这一列是对账后的投影。 */
+    setVisitCount(id: string, visits: number): void {
+      db.prepare('UPDATE share SET visit_count = ? WHERE id = ?').run(visits, id);
+    },
+  };
+}
+
+export type ShareRepo = ReturnType<typeof createShareRepo>;

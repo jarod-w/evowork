@@ -36,6 +36,7 @@ import type {
   ComposerReferenceView,
   DirEntryView,
   AccountActionResult,
+  DeeplinkDelivery,
   DeeplinkTargetView,
   LibraryDataView,
   ShareCreateInput,
@@ -258,6 +259,8 @@ export interface EvoworkBridge {
   prepareShare?(input: { artifactId: string }): Promise<SharePlanResult>;
   createShare?(input: ShareCreateInput): Promise<ShareCreateResult>;
   createThreadShare?(input: ThreadShareInput): Promise<ShareCreateResult>;
+  /** 领走冷启动时那条深链（02 §8）。挂载后调一次 */
+  takeDeeplink?(): Promise<DeeplinkDelivery | null>;
   revokeShare?(input: { shareId: string }): Promise<AccountActionResult>;
   listShares?(): Promise<ShareListView>;
   getAutomations(): Promise<AutomationsDataView>;
@@ -826,6 +829,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setFocusItemId(undefined);
     setSearchOpen(false);
     setView('task');
+  }, []);
+
+  /*
+   * 冷启动那条深链走**拉**不走推：推的时候 React 还没订阅事件，会丢
+   * （02 §8 / `service-host.ts` 的 `pendingDeeplink`）。
+   * 主进程那边领一次就清掉，所以这里只跑一次。
+   */
+  useEffect(() => {
+    void bridge.takeDeeplink?.().then((pending) => {
+      if (pending) handleDeeplink(pending);
+    });
+    // 只跑一次：主进程那边领一次就清掉了
   }, []);
 
   useEffect(() => {

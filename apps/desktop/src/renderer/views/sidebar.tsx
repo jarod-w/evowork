@@ -757,6 +757,13 @@ export function rowMenuItems(_task: TaskRow): readonly MenuItemSpec[] {
      * 就永远错下去，而这比"标题是用户自己的原话被截断"更糟。
      */
     { id: 'rename', label: '改名', group: 'a' },
+    /*
+     * 「分享」标着省略号，因为它**是过一次授权流的入口，不是直接动作**（Q10 规则 1）。
+     * 分享任务比分享产物更重：走同一个模态，但多一句警告和一份「将要上传什么」的
+     * 全文预览（08 §7.2 规则 5：不许盲传）—— 用户对"分享一个任务"的直觉是
+     * "分享一段对话"，想不到里面还有工作空间路径与命令输出。
+     */
+    { id: 'share', label: '分享…', group: 'a' },
     { id: 'archive', label: '归档', group: 'a' },
     { id: 'delete', label: '删除', danger: true, group: 'a' },
   ];

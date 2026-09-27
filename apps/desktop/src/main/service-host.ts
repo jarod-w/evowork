@@ -61,7 +61,15 @@ import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
 import { applyUserPreference, computeConcurrencyLimit } from '@evowork/policy';
 import { createIngest, createOfficeParser, type IngestOutcome } from '@evowork/ingest';
 import { BRAND } from '@evowork/tokens';
-import { createAuditRepo, openStore, readMeta, writeMeta, type Store } from '@evowork/store';
+import { createShareFlow, createUploader, shareState } from '@evowork/artifacts';
+import {
+  createAuditRepo,
+  createShareRepo,
+  openStore,
+  readMeta,
+  writeMeta,
+  type Store,
+} from '@evowork/store';
 
 import type {
   AccountActionResult,
@@ -80,8 +88,13 @@ import type {
   ComposerAttachmentView,
   ComposerReferenceView,
   AutomationMutationInput,
+  ShareCreateInput,
+  DeeplinkDelivery,
+  ShareListView,
+  ThreadShareInput,
 } from '../shared/ipc.js';
 import { createAccountSession, originsFromEnv } from './account.js';
+import type { DeeplinkLookup } from './deeplink.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
 import {
   GATEWAY_PORT_IN_USE_NOTICE,
@@ -610,6 +623,15 @@ export interface ServiceHost {
   readonly actions: RendererActions;
   /** 用户对某条审批的决定（F14：服务端发起的请求必须有人回复） */
   resolveApproval(id: string, reply: ApprovalReply): void;
+  /**
+   * 深链要查的四件事（02 §8 规则 3）。
+   *
+   * 放在宿主上而不是让 `bootstrap.ts` 自己翻库：那一层不该知道任务在 projection、
+   * 产物在 artifact 表、分享在 share 表。
+   */
+  readonly deeplinkLookup: DeeplinkLookup;
+  /** 冷启动时把深链存下来，等渲染层挂载后来领（见 `pendingDeeplink` 的注释）。 */
+  queueDeeplink(delivery: DeeplinkDelivery): void;
   start(): Promise<void>;
   stop(): Promise<void>;
   /** 对账定时器（09 §4.1：启动时 + 每 10 分钟一次） */
@@ -1150,6 +1172,144 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 审计的 repo 是新的 —— 那张表此前没有任何读写方。
    */
   const auditRepo = createAuditRepo(store.db);
+  const shareRepo = createShareRepo(store.db);
+
+  /**
+   * 冷启动时收到的那条深链，等渲染层来领（02 §8）。
+   *
+   * **不能直接 `webContents.send`**：冷启动那一刻 React 还没挂载、还没订阅事件，
+   * 推过去就丢了 —— 表现正是这条特性要防的「点了链接什么都没发生」。
+   * 所以冷启动走**拉**：主进程存一条，渲染层挂载后来取一次。
+   * 热路径（macOS 的 `open-url`、第二个实例的 argv）那时候订阅已经在了，仍然走推。
+   */
+  let pendingDeeplink: DeeplinkDelivery | undefined;
+
+  /**
+   * 分享（Q10 / 08 §7）的装配。
+   *
+   * 端点与令牌**都从会话里现取**：未登录时 `uploader()` 回 undefined，流程会如实说
+   * 「要先登录」而不是弹一个点了没反应的框（"不静默降级"在这个项目里的第 N 次落点）。
+   *
+   * 分享服务是**第三个云端进程**（`services/share`），与 identity 分开 ——
+   * 后者的库不许存内容。所以端点单独配，不复用 `EVOWORK_IDENTITY_ORIGIN`。
+   */
+  function shareEndpoint(): string | undefined {
+    const raw = process.env.EVOWORK_SHARE_ORIGIN?.trim();
+    return raw ? raw.replace(/\/$/, '') : undefined;
+  }
+
+  function shareFlowPorts() {
+    const flow = createShareFlow({
+      policy: () => ({
+        // 企业策略可全局禁用分享（R11 / 08 §7.2 规则 6）
+        enabled: !policyView.disableShare,
+        ...(policyView.disableShare
+          ? { reason: policyView.message ?? '你所在的组织已停用分享功能。' }
+          : {}),
+      }),
+      findTarget: (artifactId) => {
+        const row = services.artifacts
+          .listAllForProjects()
+          .find((a) => a.id === artifactId && a.fileState === 'PRESENT');
+        if (!row) return undefined;
+        return {
+          artifactId: row.id,
+          path: row.path,
+          fileName: basename(row.path),
+          sizeBytes: row.sizeBytes ?? 0,
+          artifactTypeLabel: row.artifactType,
+        };
+      },
+      fileExists: (path) => existsSync(path),
+      readFile: async (path) => new Uint8Array(await readFile(path)),
+      uploader: () => {
+        const endpoint = shareEndpoint();
+        const token = account.accessToken();
+        if (!endpoint || !token) return undefined;
+        return createUploader({ endpoint, token }, { fetch, now: () => Date.now(), logger });
+      },
+      persist: (row) =>
+        shareRepo.insert({
+          id: row.id,
+          ...(row.artifactId ? { artifactId: row.artifactId } : {}),
+          ...(row.threadId ? { threadId: row.threadId } : {}),
+          url: row.url,
+          expiresAt: row.expiresAt,
+          hasPassword: row.hasPassword,
+          visitCount: 0,
+          createdAt: row.createdAt,
+        }),
+      attachShare: (artifactId, shareId) => services.artifacts.attachShare(artifactId, shareId),
+      markRevoked: (shareId, at) => shareRepo.revoke(shareId, at),
+      findShare: (shareId) => shareRepo.get(shareId),
+      now: () => Date.now(),
+      newId: () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      logger,
+    });
+
+    return {
+      plan: (artifactId: string) => {
+        const out = flow.plan(artifactId);
+        return 'summary' in out
+          ? ({ ok: true, plan: out } as const)
+          : ({ ok: false, refused: out.refused } as const);
+      },
+      create: async (input: ShareCreateInput) => {
+        const out = await flow.perform({
+          artifactId: input.artifactId,
+          ttl: input.ttl,
+          ...(input.accessCode ? { accessCode: input.accessCode } : {}),
+          confirmed: input.confirmed,
+        });
+        return out.ok
+          ? ({ ok: true, shareId: out.shareId, url: out.url, expiresAt: out.expiresAt } as const)
+          : ({ ok: false, refused: out.refused } as const);
+      },
+      createThread: async (input: ThreadShareInput) => {
+        const out = await flow.performThread({
+          threadId: input.threadId,
+          fileName: input.fileName,
+          markdown: input.markdown,
+          ttl: input.ttl,
+          ...(input.accessCode ? { accessCode: input.accessCode } : {}),
+          confirmed: input.confirmed,
+          previewed: input.previewed,
+        });
+        return out.ok
+          ? ({ ok: true, shareId: out.shareId, url: out.url, expiresAt: out.expiresAt } as const)
+          : ({ ok: false, refused: out.refused } as const);
+      },
+      revoke: (shareId: string) => flow.revokeShare(shareId),
+      list: (): ShareListView => {
+        const names = new Map(
+          services.artifacts.listAllForProjects().map((a) => [a.id, basename(a.path)]),
+        );
+        return {
+          rows: shareRepo.list().map((row) => ({
+            id: row.id,
+            name: row.artifactId ? (names.get(row.artifactId) ?? '（产物已删除）') : '（任务）',
+            url: row.url,
+            expiresAt: row.expiresAt,
+            state: shareState(
+              {
+                id: row.id,
+                artifactId: row.artifactId ?? '',
+                createdAt: row.createdAt,
+                expiresAt: row.expiresAt,
+                hasPassword: row.hasPassword,
+                ...(row.revokedAt !== undefined ? { revokedAt: row.revokedAt } : {}),
+                accessCount: row.visitCount,
+              },
+              Date.now(),
+            ),
+            hasPassword: row.hasPassword,
+            visitCount: row.visitCount,
+          })),
+        };
+      },
+    };
+  }
+
   ensureAuditLog(options.paths.auditLog);
 
   /** 搬一次 hook 写的审计记录。**读之前先搬**，否则页面永远慢一拍 */
@@ -1712,6 +1872,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       read: (): PreferencesView => readPreferences(),
       write: (input: PreferencesInput): PreferencesView => writePreferences(input),
     },
+    takeDeeplink: () => {
+      const pending = pendingDeeplink;
+      pendingDeeplink = undefined;
+      return pending;
+    },
+    sharePorts: shareFlowPorts(),
     accountPorts: {
       startLogin: async () => {
         const result = await account.startLogin();
@@ -1745,6 +1911,24 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     actions,
     resolveApproval,
     reconcileIntervalMs: RECONCILE_INTERVAL_MS,
+
+    /**
+     * 深链要查的四件事（02 §8 规则 3：未知 ID 给明确错误，不是空白页）。
+     *
+     * 放在宿主上而不是让 `bootstrap.ts` 自己去翻库：那一层不该知道
+     * 任务在 projection 里、产物在 artifact 表里、分享在 share 表里。
+     */
+    queueDeeplink(delivery: DeeplinkDelivery) {
+      pendingDeeplink = delivery;
+    },
+
+    deeplinkLookup: {
+      hasTask: (threadId: string) => store.threads.get(threadId) !== undefined,
+      hasAutomation: (automationId: string) => services.automations.get(automationId) !== undefined,
+      hasArtifact: (nodeId: string) =>
+        services.artifacts.listAllForProjects().some((a) => a.id === nodeId),
+      hasShare: (shareId: string) => shareRepo.get(shareId) !== undefined,
+    },
 
     async start() {
       /*

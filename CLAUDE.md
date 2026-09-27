@@ -101,7 +101,8 @@ evowork/
   apps/
     desktop/             桌面壳 + 三栏 UI（侧边栏/对话区/结果区）；Q1=A 后它同时是本机服务的宿主
     web/                 【云端】账号页 + 租户管理端（Q32=B 的密码表单**只在这里**）。
-                         分享页（Q41）尚未实现，跟分享上传走。
+                         **分享页 `/s/<id>` 是这里的第二个入口**（`share.html` + `src/share/`，独立 bundle、
+                         不读账号会话），后端在 `services/share`。
   services/              L3 服务层。Q1=A：下面前五个随桌面 App 在**本机**常驻，后两个在**云端**
     kernel-adapter/      【本机】app-server JSON-RPC v2 适配层（M2a）—— **K2 边界的唯一实现处**
     store/               【本机】本机 sqlite **16 张表** + 两个迁移器 + 状态投影 + automation/artifact/project 三个 repo（M2a，见 09 §4）
@@ -113,6 +114,8 @@ evowork/
     artifacts/           【本机】产物识别（三信号）· 分享授权与上传 · 资料库视图 · fs 监听（M8，D6/Q10）
     gateway/             【云端】Responses API 网关（M1，K4；Q2=必须支持国内模型 → 全量适配）
     identity/            【云端】账号 · 租户 · 配额班级 · 计量 · 默认模型 · 策略包签发（M10b/M10c）
+    share/               【云端】分享托管（Q41）。**云端唯一存内容的服务，所以它与 identity 分开**——
+                         identity 的 DDL 被测试守着不许有内容列，那是「管理端结构上看不到内容」的实现处
   packages/              跨层共享库（只放"被两层以上使用、复制会造成语义分裂"的东西）
     protocol/            app-server v2 的类型与传输（手写子集 = 依赖面的声明）
     logging/             结构化日志：正文字段在序列化层被过滤（Q14「不落盘」的实现处）

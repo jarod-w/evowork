@@ -71,6 +71,13 @@ function fakeHost(): ServiceHost {
       getStartup: vi.fn(async () => ({}) as never),
     } as unknown as ServiceHost['actions'],
     resolveApproval: vi.fn(),
+    queueDeeplink: vi.fn(),
+    deeplinkLookup: {
+      hasTask: () => false,
+      hasAutomation: () => false,
+      hasArtifact: () => false,
+      hasShare: () => false,
+    },
     reconcileIntervalMs: 0,
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),

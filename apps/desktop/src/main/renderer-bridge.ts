@@ -86,6 +86,12 @@ import type {
   DirEntryView,
   DroppedAttachmentInput,
   LibraryDataView,
+  DeeplinkDelivery,
+  ShareCreateInput,
+  ShareCreateResult,
+  ShareListView,
+  SharePlanResult,
+  ThreadShareInput,
   FilePreviewView,
   ModelAccessMutationResult,
   ModelCatalogResult,
@@ -521,6 +527,21 @@ export interface RendererBridgeOptions {
         listDevices(): Promise<readonly DeviceView[]>;
         revokeDevice(deviceId: string): Promise<AccountActionResult>;
         openWeb(path: string): Promise<AccountActionResult>;
+      }
+    | undefined;
+  /**
+   * 分享（Q10 / 08 §7）。没给时「分享」如实说这个构建没接分享服务，
+   * **不弹一个点了没反应的授权框**。
+   */
+  /** 领走冷启动时那条深链（02 §8）。 */
+  readonly takeDeeplink?: (() => DeeplinkDelivery | undefined) | undefined;
+  readonly sharePorts?:
+    | {
+        plan(artifactId: string): SharePlanResult;
+        create(input: ShareCreateInput, signal?: AbortSignal): Promise<ShareCreateResult>;
+        createThread(input: ThreadShareInput): Promise<ShareCreateResult>;
+        revoke(shareId: string): Promise<{ ok: boolean; refused?: string | undefined }>;
+        list(): ShareListView;
       }
     | undefined;
   /**
@@ -2062,6 +2083,74 @@ export function createRendererActions(options: RendererBridgeOptions) {
         }));
       const usage = data.diskUsage?.();
       return Promise.resolve({ rows, ...(usage ? { diskUsage: usage } : {}) });
+    },
+
+    /**
+     * 领走冷启动时那条深链（02 §8）。
+     *
+     * **领一次就没了**：渲染层每次挂载都会调它，而同一条深链只该跳一次 ——
+     * 不清掉的话，热重载或路由切换会让它反复触发。
+     */
+    takeDeeplink(): Promise<DeeplinkDelivery | null> {
+      return Promise.resolve(options.takeDeeplink?.() ?? null);
+    },
+
+    /**
+     * 分享第 ① 步：把授权模态要显示的东西拿回来。
+     *
+     * **这一步不上传任何东西**，也不读文件内容 —— 它只回文件名、大小、类型与有效期选项。
+     * 用户在模态里点「取消」时，什么都没发生过。
+     */
+    prepareShare(input: { readonly artifactId: string }): Promise<SharePlanResult> {
+      if (!options.sharePorts) {
+        return Promise.resolve({
+          ok: false,
+          refused: '这个构建没有接分享服务。可以用「另存为」把文件发给对方。',
+        });
+      }
+      return Promise.resolve(options.sharePorts.plan(input.artifactId));
+    },
+
+    /**
+     * 分享第 ②③④ 步：上传 · 拿链接 · 落库。
+     *
+     * 访问码明文**到这里为止**：再往下走的是 `sha256(shareId:code)`（08 §7.1）。
+     * 所以这条 IPC 的入参里有 `accessCode`，而**返回值里没有** —— 也不进日志。
+     */
+    async createShare(input: ShareCreateInput): Promise<ShareCreateResult> {
+      if (!options.sharePorts) {
+        return {
+          ok: false,
+          refused: '这个构建没有接分享服务。可以用「另存为」把文件发给对方。',
+        };
+      }
+      return options.sharePorts.create(input);
+    },
+
+    /**
+     * 分享**任务**（08 §7.2 规则 5）。
+     *
+     * 与分享产物分成两条动作而不是一条带 `kind`：任务那条多一个 `previewed`，
+     * 而那个字段是规则 5 的全部重量所在 —— 合成一条会让它变成一个可选参数，
+     * 然后在某次重构里被默认成 true。
+     */
+    async createThreadShare(input: ThreadShareInput): Promise<ShareCreateResult> {
+      if (!options.sharePorts) {
+        return { ok: false, refused: '这个构建没有接分享服务。' };
+      }
+      return options.sharePorts.createThread(input);
+    },
+
+    /** 撤销 = 云端删除 + 链接失效（08 §7.2 规则 3）。云端没删成功就不改本机状态。 */
+    async revokeShare(input: { readonly shareId: string }): Promise<AccountActionResult> {
+      if (!options.sharePorts) return { ok: false, refused: '这个构建没有接分享服务。' };
+      const out = await options.sharePorts.revoke(input.shareId);
+      return out.ok ? { ok: true } : { ok: false, refused: out.refused ?? '撤销失败。' };
+    },
+
+    /** 「我分享的」。**含已撤销与已过期** —— 用户来这一页多半就是查"到底撤没撤"。 */
+    listShares(): Promise<ShareListView> {
+      return Promise.resolve(options.sharePorts?.list() ?? { rows: [] });
     },
 
     /**

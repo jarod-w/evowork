@@ -34,7 +34,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 
 ## 2. 运行时依赖（npm，生产依赖）
 
-共 113 个包。
+共 114 个包。
 
 ### ⚠️ 需要法务单独看的许可证
 
@@ -149,6 +149,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | `path-data-parser` | 0.1.0 | MIT |
 | `points-on-curve` | 0.2.0 | MIT |
 | `points-on-path` | 0.2.1 | MIT |
+| `qrcode-generator` | 2.0.4 | MIT |
 | `react` | 19.2.8 | MIT |
 | `react-dom` | 19.2.8 | MIT |
 | `robust-predicates` | 3.0.3 | Unlicense |

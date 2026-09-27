@@ -76,6 +76,22 @@ export default tseslint.config(
     },
   },
 
+  /*
+   * 二维码：**纯黑白是规范要求，不是设计选择**（08 §7.1 第 ③ 步）。
+   *
+   * 走 token 在这里是错的：暗色下 `--text-primary` 是白、`--text-inverse` 是近黑，
+   * 画出来会是一张**反色二维码** —— 部分扫码器读不了，而"有时扫得出有时扫不出"
+   * 是最难被发现的那种坏。静区的白底同理：它是定位图案能被找到的前提。
+   *
+   * 例外只开这一个文件、只开这两个值。
+   */
+  {
+    files: ['apps/desktop/src/renderer/components/qr.tsx'],
+    rules: {
+      '@evowork/no-style-literals': ['error', { allow: ['#ffffff', '#000000'] }],
+    },
+  },
+
   // token 定义本身是字面量的唯一合法归宿（01 §2 是数值真源）
   {
     files: ['packages/tokens/**/*.ts'],

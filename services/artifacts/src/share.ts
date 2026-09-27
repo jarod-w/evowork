@@ -33,7 +33,15 @@ export interface ShareAuthorization {
   readonly sizeBytes: number;
   readonly artifactTypeLabel: string;
   readonly ttl: ShareTtl;
-  readonly password?: string | undefined;
+  /**
+   * 分享链接的访问码（界面上叫「访问密码」，08 §7.1）。
+   *
+   * **不叫 `password`**：Q33=A / 11 §12 第 12 条说客户端进程里没有 `password`
+   * 这个标识符，而那条说的是**账号密码**。共用一个名字会让这条口令有一天被顺手
+   * 接进账号那条路，也会让那条守卫从"绝对没有"退化成"有几个例外"。
+   * `apps/desktop/test/no-password-ipc.test.ts` 会在越界时变红。
+   */
+  readonly accessCode?: string | undefined;
   /** 「我确认这份文件可以对外分享」。**不预勾**（08 §7.1） */
   readonly confirmed: boolean;
 }
@@ -129,7 +137,7 @@ export function createShare(
       artifactId: authorization.artifactId,
       createdAt,
       expiresAt: createdAt + TTL_MS[authorization.ttl],
-      hasPassword: (authorization.password ?? '') !== '',
+      hasPassword: (authorization.accessCode ?? '') !== '',
       accessCount: 0,
     },
   };

@@ -513,6 +513,10 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 
 | **P3.5-3** M10c 企业面 | 🟢 | **配额班级**（`quota_classes` + JWT `quotaClass`；每人覆盖仍走 `setQuota`；用尽不自动换模型）· **签名策略包**（identity ES256 签 payload 原文 · 密钥落库跨重启 · `GET /v1/policy-pack` · 桌面验签后写 `requirements.toml` · 超期只读 + 11 §8 原句）· WEB 管理端签发 / 班级 | 企业 OIDC SSO 不在本段（等客户 IdP）· 10 §7 本机安全能力页仍未做 · 生产发信仍是 stderr |
 
+| **P3.8** 分享的收尾三件 | 🟢 | **二维码**（`qrcode-generator`，MIT 零传递依赖 —— 手写 QR 编码器能跑但没法验证它是对的：掩码选错、格式信息错一位，图案照样"像二维码"只是扫不出来）· **`evowork://` 深链**（02 §8 的五条路由全接：注册协议 + 单实例锁 + 冷启动 argv + macOS open-url；解析与查找在 `main/deeplink.ts`，不 import electron 所以能单测）· **分享任务**（规则 5：同一模态 + 额外警告 + **全文预览**，两个勾都打上才让传）。**两处守卫拦下我并且都拦对了**：渲染层不许 import 服务层 barrel（浏览器没有 node 内置模块）；二维码的纯黑白是规范要求不是设计选择，走 token 在暗色下会变成反色 QR —— 加了一条只开一个文件两个值的 lint 例外，带理由 | `evowork://` 的**冷启动 argv 已挂进 `verify-packaged-app.mjs`** 在真 `.app` 上验过（断言规则 3 的错误文案）；**协议注册 · macOS open-url · 单实例锁仍未验** —— 那三样要装成应用由系统派发才跑得到 · 分享任务的导出只认五类条目，认不出的写成「（未识别的条目：xxx）」而不是跳过 —— 跳过的话预览里看不到它，它照样会被传上去 |
+| **P3.7** 分享链路接线（本机那一半） | 🟢 | **`createShare` / `createUploader` 终于有了调用方**：新增 `services/artifacts/src/share-flow.ts` 把授权判定与上传接起来（授权通过之前一个字节都不读）· `services/store` 补 `createShareRepo`（`share` 表建了很久一直没有 repo）· 桌面四条 IPC（`prepareShare` / `createShare` / `revokeShare` / `listShares`，**分开而不是一条**：prepare 什么都不上传）· **三段式授权模态**（授权 / 上传中 / 完成，不预勾、没有「以后不再询问」）· 资料库产物行上的「分享」入口 · 「我分享的」接上真数据，行动作按状态收。**撞上并尊重了一条守卫**：分享口令改名 `accessCode`，因为 `password` 在客户端进程里是账号密码的专名（登记在 08 §7.6 与 no-password-ipc.test.ts） | ~~二维码~~ · ~~分享任务~~ · ~~`evowork://`~~ **三件都在 P3.8 补完了**。仍然如此：上传没有分块进度（一次 fetch），所以模态里**不画进度条**而不是画一条假的 |
+| **P3.6** Q41 分享链路（云端那一半） | 🟡 | **新增 `services/share`**（D9 第三条职责的落点；与 identity **分进程分库**——后者的 DDL 被 `no-content-schema.test.ts` 守着不许有内容列，那是「管理端结构上看不到内容」的实现处）：上传 / 撤销 / 元数据 / 解锁 / 取字节 / 到期清扫，上传契约沿用 `services/artifacts/src/upload.ts` 里写好很久的那一份。**`/s/<id>` 分享页**落在 `apps/web/share.html` + `src/share/`，**独立 bundle**，`share-isolation.test.ts` 扫 import 图守着「不读账号会话、不带 authorization」（第 25 条）。安全面：办公文件只下载（第 21 条）· SVG 不在预览名单 · PDF 用空 `sandbox` iframe · 失效页只回状态 · 密码只挡下载不开预览 · 明文密码不离开接收方浏览器。**解掉一处文档矛盾**：文件名走链接片段（08 §7.5 新增） | **本机侧接线仍未做**——`createShare` / `createUploader` 至今无调用方，产物卡上的「分享」按钮还到不了授权模态（§6.1 的 D 项只关闭了云端那一半）· `evowork://share/<id>` 桌面侧未注册 · 字节落本地磁盘，云上要换对象存储 |
+| **P3.5-5** WEB 重做（原型落地） | 🟢 | **按确认过的界面原型重写 `apps/web`**：账号面居中单卡 + **登录页双栏**（三条对外承诺从登录之后挪到门面上）· 管理端**左导航五分区**（概览 / 成员 / 默认模型 / 用量与配额 / 策略与审计 = D9 四条职责的界面面）· **`src/components.tsx`** 按 01 §5 的形态规格落的薄组件层 · **01 §11 新增**（01 此前从没提过 `apps/web`，那是它长成"带样式的 phpMyAdmin"的第一因）。**修掉一个真缺陷**：access JWT 15 分钟过期而页面从不续期，管理端开着一刻钟后每个按钮静默变「请求失败」—— 现在 401 → 续期 → 重放（第 26 条）。**identity 补五件**：成员邀请（`invites` 表）· 吊销其他全部设备（§13.9 写了一直没实现）· 策略包生效面（`devices.policy_pack_id`，"已签发"≠"已生效"）· 额度提醒（`tenant_settings` / `quota_notices`，邮件只带数字）· 身份面审计导出 CSV。三态 / 危险动作确认 / 本地时区 / 分页搜索 / 禁用给原因 | 分享页（Q41 / 第 21 · 25 条）仍跟分享上传走 · `packages/ui` 抽包未做（WEB 与桌面各有一份基础件，抽包时合并）· Q44 仍未决策，**没有** `/admin/sources` |
 | **P3.5-4** WEB 缺口收口 | 🟢 | **改密页** `/account/password`（调 `/v1/password`；`mustChangePassword` 时管理端只渲染改密；成功后 `/v1/me` 翻会话）· **成员行内动作**（设额度 / 分配班级 / 授予收回 admin；加人只按邮箱）· **策略包**可读 payload + 历史 + 撤销 · **身份面审计** · **管理端用量聚合**（Q43=A，不按天分组） | 分享页（Q41 / 第 25 条）跟分享上传走 · 企业私有源索引管理面等 Q44 |
 | **新增 · 电脑操控** | 🟡 | 协议/状态机、MCP/宿主接线、授权 UI、删除 API、引导技能已实现；Helper 源码、原生 release 编译及 `.app` 装配通过；`cua_repl` 留存项默认隐藏参数并支持主动查看 AX/截图，删除提示已区分任务历史、项目文件与外部副本 | **尚不可用**：原生测试/完整动作、可信上下文与企业策略、browser 回退、真实 MCP 留存/完整删除、签名/TCC/实机验收待完成，见 [12 §17](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24)；Windows/Linux 不在首版 |
 
@@ -533,7 +537,7 @@ M4 安全策略 · M5 自动化 · M8 产物与可视化 · M9 打包配置）�
 | `services/gateway` | Responses↔Chat 翻译 · 三家 provider 与错误映射 · 用量规范化 · SSE 服务 · 能力端点 · **模型表四层合并** · **托管转发（M10b）** | （含 forward / tenant-models） |
 | `apps/desktop` | Electron 引导 · preload · 本机服务宿主 · 全部 UI · **AgentMessage GFM Markdown + 白名单清洗** · **密钥库** · **拓扑** · **模型接入** · **设置页** · **账号 PKCE（M10b）** | （含 account / settings） |
 | `services/identity` | 云端账号 · 租户 · 默认模型 · 计量 · `/v1/responses` 代理（D9 无内容） | （见该包 test/） |
-| `apps/web` | 账号页与租户管理端。密码表单只在这里。**有改密页**。**没有分享页** | （见该包 test/） |
+| `apps/web` | 账号页与租户管理端。密码表单只在这里。**2026-09-26 按原型重做**：两套骨架 · 五分区 · 令牌续期 · 邀请 · 生效面 · 额度提醒 · 审计导出。**没有分享页** | （见该包 test/） |
 | `services/artifacts` | 产物识别（三信号 + 版本 + 重定位）· 分享授权（Q10）· 资料库视图与磁盘占用 | 26 |
 | `services/scheduler` | 定时调度：cron（时区 + DST）· misfire 补偿 · 失败语义 · 设备迁移 · 自然语言解析 | 54 |
 | `services/policy` | 安全与策略：三级路径策略 · profile 文案 · 命令风险 · 并发与预算 · guardian 映射 · 审计与链式哈希 · 平台能力 · **四个 hook 的决策** | 64 |
@@ -919,14 +923,14 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | # | 现象 | 证据 | 为什么要紧 |
 | --- | --- | --- | --- |
 | C | **侧栏旧任务行能力仍窄** | 侧栏只显示已接通的归档、删除；任务顶栏不展示重命名、分叉、归档、删除，可拖动窗口。置顶、移动项目、打开文件夹仍无动作，因此继续不展示 | 现在没有“点了没反应”的假动作，但 04 §3.3 的完整行操作仍未覆盖 |
-| D | **分享按钮背后没有链路** | `createShare` / `createUploader` 无调用方；云端端点不存在；「我分享的」无数据 | 与 Q10「显式授权后上传」的产品承诺相悖：现在连授权对话框都到不了 |
+| D | ~~**分享按钮背后没有链路**~~ ✅ **已关闭（2026-09-27）** | `createShare` / `createUploader` 有了调用方（`share-flow.ts`）；云端端点在 `services/share`；分享页已落地；「我分享的」有真数据且可撤销 | 那三件（二维码 · 分享任务 · `evowork://`）已在 P3.8 补完 |
 
 其余按篇：
 
 | 篇 | 未做 / 半做 | 证据 |
 | --- | --- | --- |
 | **01 设计系统** | token/断点已改走工作台数值；侧栏拖动手柄未做（clamp 已接）· 应用图标仍是 Electron 默认 | `packages/tokens/src/palette.ts` · `app.css` · `bootstrap.ts` · `build/` |
-| **02 信息架构** | 通知中心与设备中心（接通前已隐藏）· deeplink `evowork://` | `app.tsx` · `sidebar.tsx` |
+| **02 信息架构** | 通知中心与设备中心（接通前已隐藏）。~~deeplink `evowork://`~~ **已接**（2026-09-27，五条路由；冷启动 argv 在真 `.app` 上验过，系统派发那三样未验） | `app.tsx` · `sidebar.tsx` · `main/deeplink.ts` |
 | **03 首页与 Composer** | 语音 · 除 `/清空`、`/新建任务` 外的本地命令（拖拽/粘贴附件、项目文件递归候选、队列编辑/重排已接） | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
 | **04 任务工作台** | C · CU-Q5 的首次留存同意与删除 API 已接；内容查看/留存标记及真实 MCP blob、索引、导出/备份删除验收未完成（CU-R8/R9） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
 | **05 插件** | 公开远程 marketplace 未开放（当前只列本机/工作区源；建议先做只读浏览并允许企业关闭）· 套件安装/卸载尚无真实内核 E2E · CU-Q4 的 browser→Computer Use 路由、策略继承与受控回退未接。MCP 实时状态、OAuth 与逐工具策略已接 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx`；Computer Use 规格见 [12](design/12-computer-use.md) |

@@ -107,6 +107,17 @@ export const RENDERER_ACTIONS = Object.freeze([
    * 而绝大多数会话里用户根本不会打开资料库。
    */
   'getLibrary',
+  /*
+   * 分享（Q10 / 08 §7）。四条分开而不是一条 `share(action)`：
+   * `prepareShare` **不上传任何东西**，`createShare` 才动文件 ——
+   * 合成一条会让"点开授权框看看"与"已经传上去了"在 IPC 上长得一样。
+   */
+  'takeDeeplink',
+  'prepareShare',
+  'createShare',
+  'createThreadShare',
+  'revokeShare',
+  'listShares',
   'getAutomations',
   'saveAutomation',
   'setAutomationStatus',
