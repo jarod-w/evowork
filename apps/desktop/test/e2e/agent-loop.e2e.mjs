@@ -82,6 +82,8 @@ async function run() {
     gateway = spawn(process.execPath, [join(repoRoot, 'dist/gateway/main.js')], {
       env: {
         ...process.env,
+        // execPath 是 Electron 本体：不设这一项，网关会以 Electron 应用启动（Dock 上多一个图标）
+        ELECTRON_RUN_AS_NODE: '1',
         PORT: String(gatewayPort),
         HOST: '127.0.0.1',
         [keyEnvName]: apiKey,

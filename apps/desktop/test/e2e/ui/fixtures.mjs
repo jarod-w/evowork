@@ -45,6 +45,30 @@ function requireKey() {
   return key;
 }
 
+/** 进程还在不在。`kill(pid, 0)` 只探测、不发信号 */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 等真网关退出；两秒后还在就杀掉它，并返回 true（= 它泄漏了）。
+ * 给它一点时间，是因为 will-quit 里发的 SIGTERM 要等它自己收尾。
+ */
+async function reapGateway(pid) {
+  if (typeof pid !== 'number') return false;
+  for (let waited = 0; waited < 2_000; waited += 100) {
+    if (!alive(pid)) return false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  process.kill(pid, 'SIGKILL');
+  return true;
+}
+
 export const test = base.extend({
   /**
    * 保留首次引导。用 `test.use({ keepOnboarding: true })` 打开。
@@ -93,7 +117,11 @@ export const test = base.extend({
      * 拿到的是 undefined；太晚的话进程没了，问不出来。
      */
     const home = await app.evaluate(() => globalThis.__evoworkE2E?.home).catch(() => undefined);
+    const gatewayPid = await app
+      .evaluate(() => globalThis.__evoworkE2E?.gatewayPid)
+      .catch(() => undefined);
     await app.close();
+    const leaked = await reapGateway(gatewayPid);
 
     /*
      * **通过才清理，失败留着现场。**
@@ -102,6 +130,14 @@ export const test = base.extend({
      * 排查"为什么这条红了"只能靠它。
      */
     if (testInfo.status === testInfo.expectedStatus) removeE2EHome(home);
+    /*
+     * 关 App 之后网关还活着 = 泄漏。已经替它收了尸，但**仍然判红**：
+     * 只默默杀掉的话，`ui-entry.mjs` 那条 will-quit 哪天断了也没人知道 ——
+     * 上一次就是这样，孤儿进程在 Dock 上攒到三个才被人看见。
+     */
+    if (leaked) {
+      throw new Error(`关掉 App 之后真网关（pid ${gatewayPid}）还活着：它没有随 App 退出。`);
+    }
   },
 
   page: async ({ electronApp, keepOnboarding }, use) => {

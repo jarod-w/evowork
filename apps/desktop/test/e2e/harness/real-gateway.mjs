@@ -40,6 +40,12 @@ export async function startRealGateway({ repoRoot, keyEnvName, apiKey, customMod
   const child = spawn(process.execPath, [join(repoRoot, 'dist/gateway/main.js')], {
     env: {
       ...process.env,
+      /*
+       * 这里的 `process.execPath` 是 **Electron 本体**（本文件跑在 Electron 主进程里）。
+       * 不设这一项，网关会被当成一个 Electron *应用*启动：Dock 上多一个图标，
+       * 而且它不是我们的窗口，关 App 时没人会去关它。网关只是一段 Node 脚本。
+       */
+      ELECTRON_RUN_AS_NODE: '1',
       PORT: String(port),
       HOST: '127.0.0.1',
       [keyEnvName]: apiKey,
@@ -67,6 +73,8 @@ export async function startRealGateway({ repoRoot, keyEnvName, apiKey, customMod
   return {
     baseUrl: `http://127.0.0.1:${port}/v1`,
     token,
+    /** 给进程外的夹具核对「关 App 之后它真的退了」用 —— 见 fixtures.mjs */
+    pid: child.pid,
     stop: () => child.kill(),
     readLog: () => log,
   };

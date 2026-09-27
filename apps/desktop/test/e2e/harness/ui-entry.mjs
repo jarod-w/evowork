@@ -105,6 +105,15 @@ async function main() {
         customModels: REAL_CUSTOM_MODELS,
       })
     : null;
+  if (real) {
+    /*
+     * 真网关是**子进程**，不会随 App 一起退出：Playwright 关掉 App 之后它就成了孤儿，
+     * 每跑一次 real 就在 Dock 上多一个图标（2026-09-27 攒到三个才被发现）。
+     * 假网关没有这个问题 —— 它是这个进程里的一个 http server。
+     */
+    app.on('will-quit', () => real.stop());
+    publishControls({ gatewayPid: real.pid });
+  }
   const gatewayBaseUrl = real ? real.baseUrl : await gateway.listen();
   const gatewayToken = real ? real.token : 'ui-token';
   writeKernelConfig(
