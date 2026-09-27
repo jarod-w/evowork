@@ -9,12 +9,24 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { openIdentityDb } from '../src/db.js';
-import { memoryMailer } from '../src/mailer.js';
+import { isTokenMail, memoryMailer, type MailMessage } from '../src/mailer.js';
 import { TEST_ARGON } from '../src/password.js';
 import { parseMasterKey } from '../src/secret-box.js';
 import { createIdentity, IdentityError } from '../src/service.js';
 
 const MASTER = parseMasterKey('ab'.repeat(32));
+
+/**
+ * 从邮件里取 token。
+ *
+ * `MailMessage` 现在是个联合：带 token 的（verify / reset / invite）与
+ * 只带数字的额度提醒（quota-warn / quota-exhausted）。额度提醒**故意没有 token**
+ * 也没有正文 —— 所以这里必须先收窄，裸 `.token` 不再编译得过。
+ */
+function mailToken(message: MailMessage | undefined): string {
+  if (!message || !isTokenMail(message)) throw new Error('这封邮件里没有 token');
+  return message.token;
+}
 
 function id() {
   const db = openIdentityDb(':memory:');
@@ -78,7 +90,7 @@ describe('注册不自动开租户', () => {
     });
     const { userId } = identity.signup({ email: 'user@example.com', password: 'user-pass-1' });
     expect(mail.sent[0]?.template).toBe('verify');
-    identity.verifyEmail(mail.sent[0]!.token);
+    identity.verifyEmail(mailToken(mail.sent[0]));
     const login = identity.login({
       identifier: 'user@example.com',
       password: 'user-pass-1',
@@ -109,7 +121,7 @@ describe('授予 / 收回管理员', () => {
     expect(() => identity.grantAdmin(admin.userId, 'usr_nope')).toThrow(/还没有注册/);
 
     identity.signup({ email: 'user@example.com', password: 'user-pass-1' });
-    identity.verifyEmail(mail.sent.find((m) => m.to === 'user@example.com')!.token);
+    identity.verifyEmail(mailToken(mail.sent.find((m) => m.to === 'user@example.com')));
     const user = identity.login({
       identifier: 'user@example.com',
       password: 'user-pass-1',
@@ -148,7 +160,7 @@ describe('Q39 / Q40', () => {
       tenantName: 'default',
     });
     identity.signup({ email: 'user@example.com', password: 'user-pass-1' });
-    identity.verifyEmail(mail.sent.find((m) => m.to === 'user@example.com')!.token);
+    identity.verifyEmail(mailToken(mail.sent.find((m) => m.to === 'user@example.com')));
     const user = identity.login({
       identifier: 'user@example.com',
       password: 'user-pass-1',
@@ -452,7 +464,7 @@ describe('按邮箱加人（Q38）', () => {
     });
     expect(() => identity.addMemberByEmail(admin.userId, 'nope@example.com')).toThrow(/还没有注册/);
     identity.signup({ email: 'user@example.com', password: 'user-pass-1' });
-    identity.verifyEmail(mail.sent.find((m) => m.to === 'user@example.com')!.token);
+    identity.verifyEmail(mailToken(mail.sent.find((m) => m.to === 'user@example.com')));
     const user = identity.login({
       identifier: 'user@example.com',
       password: 'user-pass-1',

@@ -33,13 +33,26 @@ export function migrateIdentityDb(db: SqliteLike): void {
     // 已有行都是 setQuota 写的每人上限，不是班级默认。
     db.exec(`UPDATE quota_accounts SET quota_override = 1`);
   }
+  if (!hasColumn(db, 'memberships', 'warn_opt_out')) {
+    db.exec(`ALTER TABLE memberships ADD COLUMN warn_opt_out INTEGER NOT NULL DEFAULT 0`);
+  }
   if (!hasColumn(db, 'identity_audit', 'target_ref')) {
     db.exec(`ALTER TABLE identity_audit ADD COLUMN target_ref TEXT`);
+  }
+  // 策略包生效面（11 §13.10 B'）。老库里的设备一律算"还没拉过"，
+  // 这比假装它们已经拿到新包安全：管理端宁可多提示两台，也不能漏报。
+  if (!hasColumn(db, 'devices', 'policy_pack_id')) {
+    db.exec(`ALTER TABLE devices ADD COLUMN policy_pack_id TEXT`);
+    db.exec(`ALTER TABLE devices ADD COLUMN policy_pulled_at INTEGER`);
   }
   migratePolicyPacks(db);
   db.exec(
     `INSERT OR IGNORE INTO quota_classes (tenant_id, name, tokens_limit)
      SELECT id, 'default', 0 FROM tenants`,
+  );
+  db.exec(
+    `INSERT OR IGNORE INTO tenant_settings (tenant_id, warn_member, warn_percent, warn_admin)
+     SELECT id, 1, 80, 1 FROM tenants`,
   );
 }
 

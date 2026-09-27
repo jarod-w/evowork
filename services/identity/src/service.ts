@@ -27,6 +27,8 @@ const LOGIN_MAX_FAILS = 5;
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 const EMAIL_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+/** 邀请链接的有效期。短到过期了要重发，长到够一个假期。 */
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type IdentityErrorCode =
   | 'invalid-credentials'
@@ -43,6 +45,7 @@ export type IdentityErrorCode =
   | 'expired'
   | 'invalid-redirect'
   | 'no-sms'
+  | 'needs-password'
   | 'invalid';
 
 export class IdentityError extends Error {
@@ -79,6 +82,7 @@ interface MembershipRow {
   tenant_id: string;
   role: Role;
   quota_class: string;
+  warn_opt_out?: number;
 }
 
 export function createIdentity(deps: IdentityDeps) {
@@ -99,7 +103,9 @@ export function createIdentity(deps: IdentityDeps) {
 
   function membership(userId: string): MembershipRow | undefined {
     return deps.db
-      .prepare(`SELECT user_id, tenant_id, role, quota_class FROM memberships WHERE user_id = ?`)
+      .prepare(
+        `SELECT user_id, tenant_id, role, quota_class, warn_opt_out FROM memberships WHERE user_id = ?`,
+      )
       .get(userId) as MembershipRow | undefined;
   }
 
@@ -120,6 +126,177 @@ export function createIdentity(deps: IdentityDeps) {
     const used = row?.tokens_used ?? 0;
     const limit = row && Number(row.quota_override) === 1 ? row.tokens_limit : classLimit;
     return { used, limit };
+  }
+
+  /**
+   * 计费周期键。额度提醒每期只发一次，换期自动可再发。
+   *
+   * 口径与 `quota_accounts.tokens_used` 一致：那一列是**当期累计**，
+   * 换期由运维清零。这里只需要一个"同一期里别重复发"的键，所以取 UTC 月份就够。
+   */
+  function periodKey(at: number): string {
+    return new Date(at).toISOString().slice(0, 7);
+  }
+
+  function tenantSettingsRow(tenantId: string): {
+    warn_member: number;
+    warn_percent: number;
+    warn_admin: number;
+  } {
+    const row = deps.db
+      .prepare(
+        `SELECT warn_member, warn_percent, warn_admin FROM tenant_settings WHERE tenant_id = ?`,
+      )
+      .get(tenantId) as
+      { warn_member: number; warn_percent: number; warn_admin: number } | undefined;
+    if (row) return row;
+    deps.db
+      .prepare(
+        `INSERT OR IGNORE INTO tenant_settings (tenant_id, warn_member, warn_percent, warn_admin)
+         VALUES (?, 1, 80, 1)`,
+      )
+      .run(tenantId);
+    return { warn_member: 1, warn_percent: 80, warn_admin: 1 };
+  }
+
+  /** 这一期里这条提醒发过没有。发过返回 false，没发过就**占位并返回 true**。 */
+  function claimNotice(tenantId: string, userId: string, kind: 'warn' | 'exhausted'): boolean {
+    const period = periodKey(now());
+    const seen = deps.db
+      .prepare(
+        `SELECT 1 AS hit FROM quota_notices
+         WHERE tenant_id = ? AND user_id = ? AND kind = ? AND period = ?`,
+      )
+      .get(tenantId, userId, kind, period) as { hit: number } | undefined;
+    if (seen) return false;
+    deps.db
+      .prepare(
+        `INSERT INTO quota_notices (tenant_id, user_id, kind, period, sent_at) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(tenantId, userId, kind, period, now());
+    return true;
+  }
+
+  function adminEmails(tenantId: string): readonly string[] {
+    const rows = deps.db
+      .prepare(
+        `SELECT u.email FROM memberships m JOIN users u ON u.id = m.user_id
+         WHERE m.tenant_id = ? AND m.role = 'admin' AND u.email IS NOT NULL`,
+      )
+      .all(tenantId) as { email: string }[];
+    return rows.map((row) => row.email);
+  }
+
+  /**
+   * 额度提醒（11 §13.10 B'）。**用尽不会自动换便宜模型（Q11），所以必须提前说**——
+   * 否则用户的第一感知是任务跑一半停住。
+   *
+   * 邮件里只有 used / limit 两个数字，没有任务、产物或 prompt。
+   */
+  function maybeWarnQuota(tenantId: string, userId: string): void {
+    const q = effectiveQuota(userId);
+    if (!q || q.limit <= 0) return;
+    const settings = tenantSettingsRow(tenantId);
+    const user = deps.db.prepare(`SELECT email FROM users WHERE id = ?`).get(userId) as
+      { email: string | null } | undefined;
+    const mem = membership(userId);
+    const optedOut = Number(mem?.warn_opt_out ?? 0) === 1;
+
+    if (q.used >= q.limit) {
+      if (!claimNotice(tenantId, userId, 'exhausted')) return;
+      if (user?.email && !optedOut) {
+        void deps.mailer.send({
+          to: user.email,
+          template: 'quota-exhausted',
+          used: q.used,
+          limit: q.limit,
+        });
+      }
+      if (settings.warn_admin === 1) {
+        for (const to of adminEmails(tenantId)) {
+          void deps.mailer.send({
+            to,
+            template: 'quota-exhausted',
+            used: q.used,
+            limit: q.limit,
+            ...(user?.email ? { subject: user.email } : {}),
+          });
+        }
+      }
+      return;
+    }
+
+    if (settings.warn_member !== 1 || optedOut || !user?.email) return;
+    if (q.used * 100 < q.limit * settings.warn_percent) return;
+    if (!claimNotice(tenantId, userId, 'warn')) return;
+    void deps.mailer.send({
+      to: user.email,
+      template: 'quota-warn',
+      used: q.used,
+      limit: q.limit,
+    });
+  }
+
+  function tenantName(tenantId: string): string {
+    const row = deps.db.prepare(`SELECT name FROM tenants WHERE id = ?`).get(tenantId) as
+      { name: string } | undefined;
+    return row?.name ?? tenantId;
+  }
+
+  function inviteView(id: string): AdminInvite {
+    const row = deps.db
+      .prepare(
+        `SELECT i.id, i.email, i.role, i.quota_class, i.created_at, i.expires_at,
+                u.email AS by_email
+         FROM invites i LEFT JOIN users u ON u.id = i.invited_by
+         WHERE i.id = ?`,
+      )
+      .get(id) as {
+      id: string;
+      email: string;
+      role: Role;
+      quota_class: string;
+      created_at: number;
+      expires_at: number;
+      by_email: string | null;
+    };
+    return {
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      quotaClass: row.quota_class || 'default',
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      ...(row.by_email ? { invitedByEmail: row.by_email } : {}),
+    };
+  }
+
+  interface InviteRow {
+    id: string;
+    tenant_id: string;
+    email: string;
+    role: Role;
+    quota_class: string;
+    invited_by: string;
+    expires_at: number;
+    accepted_at: number | null;
+    revoked_at: number | null;
+  }
+
+  function requireLiveInvite(token: string): InviteRow {
+    const row = deps.db
+      .prepare(
+        `SELECT id, tenant_id, email, role, quota_class, invited_by, expires_at, accepted_at, revoked_at
+         FROM invites WHERE token_hash = ?`,
+      )
+      .get(sha256Hex(token)) as InviteRow | undefined;
+    if (!row || row.revoked_at !== null) {
+      throw new IdentityError('not-found', '邀请链接无效或已被撤回。');
+    }
+    if (row.accepted_at !== null) throw new IdentityError('conflict', '这条邀请已经被接受了。');
+    if (row.expires_at < now())
+      throw new IdentityError('expired', '邀请链接已过期，请让管理员重发。');
+    return row;
   }
 
   function requireAdmin(actorId: string): MembershipRow {
@@ -556,6 +733,28 @@ export function createIdentity(deps: IdentityDeps) {
         .run(now(), deviceId);
     },
 
+    /**
+     * 吊销除 `keepDeviceId` 之外的全部设备（Q40，11 §13.9 写了但一直没实现）。
+     *
+     * 不合并进 `revokeDevice`：那个是"这一台"，这个是"除了我这台之外的所有台"。
+     * 合成一个按钮会让"我在网吧登过"这件事没有单独的出口。
+     */
+    revokeOtherDevices(actorId: string, keepDeviceId?: string): { revoked: number } {
+      const rows = deps.db
+        .prepare(`SELECT id FROM devices WHERE user_id = ? AND revoked_at IS NULL`)
+        .all(actorId) as { id: string }[];
+      const targets = rows.map((row) => row.id).filter((id) => id !== keepDeviceId);
+      for (const id of targets) {
+        deps.db.prepare(`UPDATE devices SET revoked_at = ? WHERE id = ?`).run(now(), id);
+        deps.db
+          .prepare(
+            `UPDATE refresh_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`,
+          )
+          .run(now(), id);
+      }
+      return { revoked: targets.length };
+    },
+
     listDevices(userId: string): readonly {
       readonly id: string;
       readonly name: string;
@@ -666,6 +865,191 @@ export function createIdentity(deps: IdentityDeps) {
       const target = findUserByIdentifier(email);
       if (!target) throw new IdentityError('not-registered', '对方还没有注册。');
       this.addMember(actorId, target.id);
+    },
+
+    /**
+     * 邀请一个**还没注册**的人进租户（11 §13.10 B'）。
+     *
+     * Q38 只解决了"已注册用户怎么加进来"，而企业部署第一天遇到的是反过来的情形：
+     * 管理员手上是一串公司邮箱，人还没注册。原先的做法是口头让对方先去注册、
+     * 再回来填邮箱 —— 那一步没有任何系统记录，也没人知道谁还没接受。
+     *
+     * 邀请链接里的 token 只存哈希，和验证 / 重置邮件同一条纪律。
+     */
+    createInvite(
+      actorId: string,
+      input: { email: string; role?: Role; quotaClass?: string },
+    ): AdminInvite {
+      const actor = requireAdmin(actorId);
+      const email = input.email.trim().toLowerCase();
+      if (!email.includes('@')) throw new IdentityError('invalid', '邀请需要一个邮箱地址。');
+
+      const existing = findUserByIdentifier(email);
+      if (existing) {
+        const other = membership(existing.id);
+        if (other?.tenant_id === actor.tenant_id) {
+          throw new IdentityError('conflict', '这个人已经是本租户成员了。');
+        }
+        if (other) throw new IdentityError('other-tenant', '对方属于其他租户，要换租户得先退出。');
+      }
+      const pending = deps.db
+        .prepare(
+          `SELECT id FROM invites
+           WHERE tenant_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL
+             AND expires_at > ?`,
+        )
+        .get(actor.tenant_id, email, now()) as { id: string } | undefined;
+      if (pending) throw new IdentityError('conflict', '已经邀请过这个邮箱，还没被接受。');
+
+      const id = newId('inv');
+      const token = randomSecret();
+      deps.db
+        .prepare(
+          `INSERT INTO invites
+             (id, tenant_id, email, role, quota_class, token_hash, invited_by, created_at, expires_at, accepted_at, revoked_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+        )
+        .run(
+          id,
+          actor.tenant_id,
+          email,
+          input.role ?? 'member',
+          input.quotaClass ?? 'default',
+          sha256Hex(token),
+          actorId,
+          now(),
+          now() + INVITE_TTL_MS,
+        );
+      void deps.mailer.send({
+        to: email,
+        template: 'invite',
+        token,
+        tenantName: tenantName(actor.tenant_id),
+      });
+      recordAudit(actorId, 'invite-member', { targetRef: email });
+      return inviteView(id);
+    },
+
+    listInvites(actorId: string): readonly AdminInvite[] {
+      const actor = requireAdmin(actorId);
+      const rows = deps.db
+        .prepare(
+          `SELECT id FROM invites
+           WHERE tenant_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+           ORDER BY created_at DESC`,
+        )
+        .all(actor.tenant_id, now()) as { id: string }[];
+      return rows.map((row) => inviteView(row.id));
+    },
+
+    revokeInvite(actorId: string, inviteId: string): void {
+      const actor = requireAdmin(actorId);
+      const row = deps.db
+        .prepare(`SELECT id, tenant_id, email FROM invites WHERE id = ?`)
+        .get(inviteId) as { id: string; tenant_id: string; email: string } | undefined;
+      if (!row || row.tenant_id !== actor.tenant_id) {
+        throw new IdentityError('not-found', '没有这条邀请。');
+      }
+      deps.db.prepare(`UPDATE invites SET revoked_at = ? WHERE id = ?`).run(now(), inviteId);
+      recordAudit(actorId, 'revoke-invite', { targetRef: row.email });
+    },
+
+    /** 重发 = **换一个 token**，旧链接立刻失效。不换的话"撤回"就形同虚设。 */
+    resendInvite(actorId: string, inviteId: string): AdminInvite {
+      const actor = requireAdmin(actorId);
+      const row = deps.db
+        .prepare(`SELECT id, tenant_id, email, accepted_at, revoked_at FROM invites WHERE id = ?`)
+        .get(inviteId) as
+        | {
+            id: string;
+            tenant_id: string;
+            email: string;
+            accepted_at: number | null;
+            revoked_at: number | null;
+          }
+        | undefined;
+      if (!row || row.tenant_id !== actor.tenant_id) {
+        throw new IdentityError('not-found', '没有这条邀请。');
+      }
+      if (row.accepted_at !== null) throw new IdentityError('conflict', '这条邀请已经被接受了。');
+      if (row.revoked_at !== null) throw new IdentityError('conflict', '这条邀请已经撤回了。');
+      const token = randomSecret();
+      deps.db
+        .prepare(`UPDATE invites SET token_hash = ?, expires_at = ? WHERE id = ?`)
+        .run(sha256Hex(token), now() + INVITE_TTL_MS, inviteId);
+      void deps.mailer.send({
+        to: row.email,
+        template: 'invite',
+        token,
+        tenantName: tenantName(actor.tenant_id),
+      });
+      return inviteView(inviteId);
+    },
+
+    /**
+     * 邀请页在收件人还没登录时就要渲染，所以这一条**不鉴权** —— 它只认 token。
+     * 返回里没有租户成员名单、没有额度、没有任何内容面字段：拿到链接的人
+     * 只能看到"谁邀请我、进哪个租户、我这个邮箱注册过没有"。
+     */
+    inviteInfo(token: string): {
+      email: string;
+      tenantName: string;
+      registered: boolean;
+      expiresAt: number;
+    } {
+      const row = requireLiveInvite(token);
+      return {
+        email: row.email,
+        tenantName: tenantName(row.tenant_id),
+        registered: findUserByIdentifier(row.email) !== undefined,
+        expiresAt: row.expires_at,
+      };
+    },
+
+    /**
+     * 接受邀请。两种情形：
+     *   · 邮箱已注册 → 只是加进租户，不碰密码
+     *   · 邮箱没注册 → 用这里的密码建号，并且**直接算邮箱已验证**
+     *     （能点开这封信本身就证明了对这个邮箱的控制权，再发一封验证信是多余的一步）
+     */
+    acceptInvite(token: string, password?: string): { userId: string } {
+      const row = requireLiveInvite(token);
+      let user = findUserByIdentifier(row.email);
+      if (!user) {
+        if (!password) {
+          throw new IdentityError('needs-password', '这个邮箱还没有账号，请设置一个密码。');
+        }
+        const userId = newId('usr');
+        deps.db
+          .prepare(
+            `INSERT INTO users (id, email, phone, password_hash, email_verified, must_change_password, created_at)
+             VALUES (?, ?, NULL, ?, 1, 0, ?)`,
+          )
+          .run(userId, row.email, hashPassword(password, deps.argon), now());
+        user = deps.db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as UserRow;
+      }
+      // 注册过但一直没验邮箱的人，点开邀请信同样证明了对这个邮箱的控制权。
+      // 不在这里把 email_verified 翻过来，就会出现一个**管理员看得到、本人登不进**
+      // 的成员：signup 的"未验证"是对的，acceptInvite 的"加进租户"也是对的，
+      // 合起来才是错的（CLAUDE.md §9.1）。
+      if (user.email_verified !== 1) {
+        deps.db.prepare(`UPDATE users SET email_verified = 1 WHERE id = ?`).run(user.id);
+      }
+      const other = membership(user.id);
+      if (other && other.tenant_id !== row.tenant_id) {
+        throw new IdentityError('other-tenant', '你已经属于另一个租户，要换租户得先退出。');
+      }
+      if (!other) {
+        deps.db
+          .prepare(
+            `INSERT INTO memberships (user_id, tenant_id, role, quota_class, created_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(user.id, row.tenant_id, row.role, row.quota_class || 'default', now());
+      }
+      deps.db.prepare(`UPDATE invites SET accepted_at = ? WHERE id = ?`).run(now(), row.id);
+      recordAudit(row.invited_by, 'add-member', { targetUserId: user.id });
+      return { userId: user.id };
     },
 
     listMembers(actorId: string): readonly AdminMember[] {
@@ -795,6 +1179,7 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db
         .prepare(`DELETE FROM hosted_models WHERE tenant_id = ? AND model_id = ?`)
         .run(actor.tenant_id, modelId);
+      recordAudit(actorId, 'delete-model', { targetRef: modelId });
     },
 
     hostedProvider(tenantId: string, modelId: string): string | undefined {
@@ -824,6 +1209,7 @@ export function createIdentity(deps: IdentityDeps) {
            ON CONFLICT(tenant_id, user_id) DO UPDATE SET tokens_used = tokens_used + excluded.tokens_used`,
         )
         .run(mem.tenant_id, userId, tokens);
+      maybeWarnQuota(mem.tenant_id, userId);
     },
 
     recordMetering(day: {
@@ -877,6 +1263,7 @@ export function createIdentity(deps: IdentityDeps) {
              quota_override = 1`,
         )
         .run(actor.tenant_id, targetUserId, limit);
+      recordAudit(actorId, 'set-quota', { targetUserId, targetRef: String(limit) });
     },
 
     me(userId: string): {
@@ -937,6 +1324,7 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db
         .prepare(`UPDATE memberships SET quota_class = ? WHERE user_id = ? AND tenant_id = ?`)
         .run(quotaClass, targetUserId, actor.tenant_id);
+      recordAudit(actorId, 'assign-quota-class', { targetUserId, targetRef: quotaClass });
     },
 
     issuePolicyPack(
@@ -1035,6 +1423,116 @@ export function createIdentity(deps: IdentityDeps) {
         .get(tenantId) as { payload_json: string; signature: string; kid: string } | undefined;
       if (!row) return undefined;
       return { payloadJson: row.payload_json, signature: row.signature, kid: row.kid };
+    },
+
+    /**
+     * 设备拉到了哪一份包（11 §13.10 B'）。
+     *
+     * 签发之后管理员最想知道的是"生效了没有"，而下发是**拉取不是推送** ——
+     * 一台一周没开机的设备会一直停在旧包上。不记这一笔的话，管理端只能
+     * 显示"已签发"，而那句话在 12 台里有 2 台没拿到的时候是误导。
+     */
+    markPolicyPulled(deviceId: string, packId: string | undefined): void {
+      if (!deviceId) return;
+      deps.db
+        .prepare(`UPDATE devices SET policy_pack_id = ?, policy_pulled_at = ? WHERE id = ?`)
+        .run(packId ?? null, now(), deviceId);
+    },
+
+    /** 当前包的 id（`currentPolicyPack` 只给信封，签名面不带 id）。 */
+    currentPolicyPackId(tenantId: string): string | undefined {
+      const row = deps.db
+        .prepare(
+          `SELECT id FROM policy_packs
+           WHERE tenant_id = ? AND revoked_at IS NULL
+           ORDER BY issued_at DESC, rowid DESC LIMIT 1`,
+        )
+        .get(tenantId) as { id: string } | undefined;
+      return row?.id;
+    },
+
+    policyReach(actorId: string): PolicyReach {
+      const actor = requireAdmin(actorId);
+      const current = this.currentPolicyPackId(actor.tenant_id);
+      const rows = deps.db
+        .prepare(
+          `SELECT d.id, d.name, d.platform, d.last_seen_at, d.policy_pack_id, d.policy_pulled_at,
+                  u.email AS owner_email
+           FROM devices d
+           JOIN memberships m ON m.user_id = d.user_id
+           LEFT JOIN users u ON u.id = d.user_id
+           WHERE m.tenant_id = ? AND d.revoked_at IS NULL
+           ORDER BY d.last_seen_at DESC`,
+        )
+        .all(actor.tenant_id) as {
+        id: string;
+        name: string;
+        platform: string;
+        last_seen_at: number;
+        policy_pack_id: string | null;
+        policy_pulled_at: number | null;
+        owner_email: string | null;
+      }[];
+      const stale = rows
+        .filter((row) => current === undefined || row.policy_pack_id !== current)
+        .map((row) => ({
+          deviceId: row.id,
+          name: row.name,
+          platform: row.platform,
+          lastSeenAt: row.last_seen_at,
+          ...(row.owner_email ? { ownerEmail: row.owner_email } : {}),
+          ...(row.policy_pulled_at !== null ? { pulledAt: row.policy_pulled_at } : {}),
+        }));
+      return {
+        ...(current !== undefined ? { packId: current } : {}),
+        total: rows.length,
+        pulled: rows.length - stale.length,
+        stale,
+      };
+    },
+
+    tenantSettings(actorId: string): TenantSettings {
+      const actor = requireAdmin(actorId);
+      const row = tenantSettingsRow(actor.tenant_id);
+      return {
+        warnMember: row.warn_member === 1,
+        warnPercent: row.warn_percent,
+        warnAdmin: row.warn_admin === 1,
+      };
+    },
+
+    setTenantSettings(actorId: string, patch: Partial<TenantSettings>): TenantSettings {
+      const actor = requireAdmin(actorId);
+      const current = tenantSettingsRow(actor.tenant_id);
+      const percent = patch.warnPercent ?? current.warn_percent;
+      if (!Number.isInteger(percent) || percent < 1 || percent > 99) {
+        throw new IdentityError('invalid', '提醒阈值要在 1–99 之间。');
+      }
+      deps.db
+        .prepare(
+          `UPDATE tenant_settings SET warn_member = ?, warn_percent = ?, warn_admin = ?
+           WHERE tenant_id = ?`,
+        )
+        .run(
+          (patch.warnMember ?? current.warn_member === 1) ? 1 : 0,
+          percent,
+          (patch.warnAdmin ?? current.warn_admin === 1) ? 1 : 0,
+          actor.tenant_id,
+        );
+      return this.tenantSettings(actorId);
+    },
+
+    /** 成员自己的「别提醒我」。管理员开关在租户设置里，两个都开才发。 */
+    setWarnOptOut(userId: string, optOut: boolean): void {
+      const mem = membership(userId);
+      if (!mem) return;
+      deps.db
+        .prepare(`UPDATE memberships SET warn_opt_out = ? WHERE user_id = ? AND tenant_id = ?`)
+        .run(optOut ? 1 : 0, userId, mem.tenant_id);
+    },
+
+    warnOptOut(userId: string): boolean {
+      return Number(membership(userId)?.warn_opt_out ?? 0) === 1;
     },
 
     listPolicyPacks(actorId: string): {
@@ -1174,7 +1672,17 @@ export interface AdminPolicyPackView {
 }
 
 export type IdentityAuditAction =
-  'grant-admin' | 'revoke-admin' | 'update-model-key' | 'issue-policy-pack' | 'revoke-policy-pack';
+  | 'grant-admin'
+  | 'revoke-admin'
+  | 'update-model-key'
+  | 'delete-model'
+  | 'issue-policy-pack'
+  | 'revoke-policy-pack'
+  | 'invite-member'
+  | 'revoke-invite'
+  | 'add-member'
+  | 'set-quota'
+  | 'assign-quota-class';
 
 /** 身份面审计。没有任务 / 产物 / prompt。 */
 export interface IdentityAuditRow {
@@ -1202,6 +1710,42 @@ export interface AdminUsageMember {
 export interface AdminUsage {
   readonly tenantUsed: number;
   readonly members: readonly AdminUsageMember[];
+}
+
+/** 待接受的邀请。没有任务 / 产物 / prompt。 */
+export interface AdminInvite {
+  readonly id: string;
+  readonly email: string;
+  readonly role: Role;
+  readonly quotaClass: string;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+  readonly invitedByEmail?: string | undefined;
+}
+
+/** 一台还停在旧策略包上的设备。只有设备身份，没有它在做什么。 */
+export interface StaleDevice {
+  readonly deviceId: string;
+  readonly name: string;
+  readonly platform: string;
+  readonly lastSeenAt: number;
+  readonly ownerEmail?: string | undefined;
+  readonly pulledAt?: number | undefined;
+}
+
+/** 策略包生效面。下发是拉取不是推送，所以"已签发"不等于"已生效"。 */
+export interface PolicyReach {
+  readonly packId?: string | undefined;
+  readonly total: number;
+  readonly pulled: number;
+  readonly stale: readonly StaleDevice[];
+}
+
+/** 租户级的额度提醒设置。没有内容面字段。 */
+export interface TenantSettings {
+  readonly warnMember: boolean;
+  readonly warnPercent: number;
+  readonly warnAdmin: boolean;
 }
 
 /** 客户端目录条目。类型上没有 apiKey / baseUrl。 */

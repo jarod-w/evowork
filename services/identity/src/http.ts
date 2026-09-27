@@ -25,6 +25,9 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' } as co
 /** 等上游响应头的上限。见 `proxyResponses` 里为什么只盖"等头"这一段。 */
 const UPSTREAM_HEADERS_TIMEOUT_MS = 300_000;
 
+/** 「测试连接」等上游的上限。拉一份模型清单该是秒级的事。 */
+const PROBE_TIMEOUT_MS = 15_000;
+
 /** 非流式响应最多缓冲多少 —— 用量要从里面取，但不能无上限地吃内存。 */
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 
@@ -301,6 +304,31 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       return;
     }
 
+    // 邀请页在收件人登录之前就要渲染，所以这两条**不鉴权**，只认 token。
+    // 它们不读 session、不带 authorization —— 和分享页同一条理由（11 §13.10 C 第 1 条）。
+    if (req.method === 'GET' && path === '/v1/invite') {
+      const token = url.searchParams.get('token') ?? '';
+      if (!token) {
+        json(res, 400, { error: { message: '需要 token', code: 'bad-request' } });
+        return;
+      }
+      json(res, 200, identity.inviteInfo(token));
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/v1/invite/accept') {
+      const body = await readJson(req);
+      const token = str(body.token);
+      const password = str(body.password);
+      if (!token) {
+        json(res, 400, { error: { message: '需要 token', code: 'bad-request' } });
+        return;
+      }
+      identity.acceptInvite(token, password);
+      json(res, 200, { ok: true });
+      return;
+    }
+
     const actor = actorFrom(req);
     if (!actor) {
       json(res, 401, { error: { message: '鉴权失败', code: 'unauthorized' } });
@@ -338,6 +366,24 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       }
       identity.revokeDevice(actor.sub, deviceId);
       json(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/v1/devices/revoke-others') {
+      const keep = str((await readJson(req)).keepDeviceId) ?? actor.deviceId;
+      json(res, 200, identity.revokeOtherDevices(actor.sub, keep));
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/v1/alerts') {
+      json(res, 200, { warnOptOut: identity.warnOptOut(actor.sub) });
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/v1/alerts') {
+      const optOut = (await readJson(req)).warnOptOut === true;
+      identity.setWarnOptOut(actor.sub, optOut);
+      json(res, 200, { warnOptOut: optOut });
       return;
     }
 
@@ -382,7 +428,12 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
         json(res, 200, { pack: null });
         return;
       }
-      json(res, 200, { pack: identity.currentPolicyPack(actor.tenant) ?? null });
+      const pack = identity.currentPolicyPack(actor.tenant) ?? null;
+      // 生效面（11 §13.10 B'）：下发是拉取不是推送，所以只有这一刻知道它到了哪台机器。
+      if (actor.deviceId) {
+        identity.markPolicyPulled(actor.deviceId, identity.currentPolicyPackId(actor.tenant));
+      }
+      json(res, 200, { pack });
       return;
     }
 
@@ -541,6 +592,68 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       json(res, 200, { ok: true });
       return;
     }
+    if (req.method === 'GET' && path === '/v1/admin/invites') {
+      json(res, 200, { invites: identity.listInvites(actorId) });
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/invites') {
+      const body = await readJson(req);
+      const email = str(body.email);
+      if (!email) {
+        json(res, 400, { error: { message: '邀请需要一个邮箱', code: 'bad-request' } });
+        return;
+      }
+      const role = str(body.role) === 'admin' ? 'admin' : 'member';
+      const quotaClass = str(body.quotaClass);
+      json(res, 200, {
+        invite: identity.createInvite(actorId, {
+          email,
+          role,
+          ...(quotaClass ? { quotaClass } : {}),
+        }),
+      });
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/invites/revoke') {
+      const inviteId = str((await readJson(req)).inviteId);
+      if (!inviteId) {
+        json(res, 400, { error: { message: '需要 inviteId', code: 'bad-request' } });
+        return;
+      }
+      identity.revokeInvite(actorId, inviteId);
+      json(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/invites/resend') {
+      const inviteId = str((await readJson(req)).inviteId);
+      if (!inviteId) {
+        json(res, 400, { error: { message: '需要 inviteId', code: 'bad-request' } });
+        return;
+      }
+      json(res, 200, { invite: identity.resendInvite(actorId, inviteId) });
+      return;
+    }
+    if (req.method === 'GET' && path === '/v1/admin/policy-pack/reach') {
+      json(res, 200, identity.policyReach(actorId));
+      return;
+    }
+    if (req.method === 'GET' && path === '/v1/admin/settings') {
+      json(res, 200, identity.tenantSettings(actorId));
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/settings') {
+      const body = await readJson(req);
+      const patch: {
+        warnMember?: boolean;
+        warnPercent?: number;
+        warnAdmin?: boolean;
+      } = {};
+      if (typeof body.warnMember === 'boolean') patch.warnMember = body.warnMember;
+      if (typeof body.warnAdmin === 'boolean') patch.warnAdmin = body.warnAdmin;
+      if (typeof body.warnPercent === 'number') patch.warnPercent = body.warnPercent;
+      json(res, 200, identity.setTenantSettings(actorId, patch));
+      return;
+    }
     if (req.method === 'GET' && path === '/v1/admin/models') {
       const me = identity.me(actorId);
       json(res, 200, { models: me.tenantId ? identity.publicCatalog(me.tenantId) : [] });
@@ -580,6 +693,64 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
           apiKey,
         }),
       );
+      return;
+    }
+    if (req.method === 'POST' && path === '/v1/admin/models/probe') {
+      /*
+       * 「测试连接」的服务端探针。
+       *
+       * **不能让浏览器直连上游**：管理端跑在我们的域上，`fetch('https://api.deepseek.com/models')`
+       * 是一次跨源请求，厂商不会给我们的域发 CORS 头，于是那个按钮在真浏览器里永远失败 ——
+       * 而在 jsdom 里它会"成功"，因为测试里的 fetch 是假的。桌面端没这个问题（主进程发的请求），
+       * 照抄过来就会踩坑。
+       *
+       * 顺带一条好处：密钥本来就要交给 identity 保管，从这里探测不会让它多走一段浏览器到厂商的链路。
+       */
+      const body = await readJson(req);
+      const baseUrl = str(body.baseUrl);
+      const apiKey = str(body.apiKey);
+      if (!baseUrl || !apiKey) {
+        json(res, 400, { error: { message: '需要 base_url 与密钥', code: 'bad-request' } });
+        return;
+      }
+      let url: URL;
+      try {
+        url = new URL(`${baseUrl.replace(/\/$/, '')}/models`);
+      } catch {
+        json(res, 400, { error: { message: 'base_url 不是一个合法地址', code: 'bad-request' } });
+        return;
+      }
+      if (
+        url.protocol !== 'https:' &&
+        url.hostname !== '127.0.0.1' &&
+        url.hostname !== 'localhost'
+      ) {
+        json(res, 400, {
+          error: { message: '上游必须是 https（本机调试除外）', code: 'bad-request' },
+        });
+        return;
+      }
+      try {
+        const upstream = await fetch(url, {
+          headers: { authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        });
+        if (!upstream.ok) {
+          json(res, 200, {
+            ok: false,
+            message: `上游返回 ${upstream.status}，检查 base_url 与密钥。`,
+          });
+          return;
+        }
+        const payload = (await upstream.json()) as { data?: { id?: string }[] };
+        const models = (payload.data ?? [])
+          .map((row) => row.id)
+          .filter((id): id is string => typeof id === 'string');
+        json(res, 200, { ok: true, models });
+      } catch {
+        // 失败原因不回显上游错误体：那里可能带着我们不该转述的内容
+        json(res, 200, { ok: false, message: '连不上这个 base_url。' });
+      }
       return;
     }
     if (req.method === 'POST' && path === '/v1/admin/models/delete') {
@@ -685,12 +856,17 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
 
   function actorFrom(
     req: IncomingMessage,
-  ): { sub: string; tenant: string; role: string } | undefined {
+  ): { sub: string; tenant: string; role: string; deviceId?: string } | undefined {
     const token = bearer(req.headers.authorization);
     if (token) {
       const result = verifyAccessToken(token, { publicPem: keys.publicPem });
       if (result.ok)
-        return { sub: result.claims.sub, tenant: result.claims.tenant, role: result.claims.role };
+        return {
+          sub: result.claims.sub,
+          tenant: result.claims.tenant,
+          role: result.claims.role,
+          ...(result.claims.deviceId ? { deviceId: result.claims.deviceId } : {}),
+        };
     }
     const cookie = req.headers.cookie ?? '';
     const match = /(?:^|; )session=([^;]+)/.exec(cookie);
@@ -763,6 +939,7 @@ function statusOf(code: IdentityError['code']): number {
     case 'invalid-redirect':
     case 'no-sms':
     case 'invalid':
+    case 'needs-password':
       return 400;
     default:
       return 400;

@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS memberships (
   tenant_id TEXT NOT NULL,
   role TEXT NOT NULL,
   quota_class TEXT NOT NULL DEFAULT 'default',
+  -- 成员自己关掉「快用完了提醒我」。管理员的开关在 tenant_settings，
+  -- 两个都开才发 —— 提醒是给本人的，本人说不要就不发。
+  warn_opt_out INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, tenant_id)
 );
@@ -37,7 +40,11 @@ CREATE TABLE IF NOT EXISTS devices (
   name TEXT NOT NULL,
   platform TEXT NOT NULL,
   last_seen_at INTEGER NOT NULL,
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  -- 这台设备最后一次拉到的策略包。管理端的"生效面"读它：签发之后到底有几台拿到了。
+  -- 只记包 id 与时间，不记这台机器在做什么。
+  policy_pack_id TEXT,
+  policy_pulled_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -131,6 +138,38 @@ CREATE TABLE IF NOT EXISTS identity_audit (
   action TEXT NOT NULL,
   target_user_id TEXT,
   target_ref TEXT
+);
+
+CREATE TABLE IF NOT EXISTS invites (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  quota_class TEXT NOT NULL DEFAULT 'default',
+  token_hash TEXT NOT NULL UNIQUE,
+  invited_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  accepted_at INTEGER,
+  revoked_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS tenant_settings (
+  tenant_id TEXT PRIMARY KEY,
+  warn_member INTEGER NOT NULL DEFAULT 1,
+  warn_percent INTEGER NOT NULL DEFAULT 80,
+  warn_admin INTEGER NOT NULL DEFAULT 1
+);
+
+-- 发过的额度提醒。没有它，每一次调用都会再发一封。
+-- period 是计费周期键（YYYY-MM），换期即重新可发。
+CREATE TABLE IF NOT EXISTS quota_notices (
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  period TEXT NOT NULL,
+  sent_at INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, user_id, kind, period)
 );
 
 CREATE TABLE IF NOT EXISTS login_attempts (

@@ -31,9 +31,17 @@ describe('WEB 没有内容面', () => {
     expect(hits, `WEB 类型出现了内容面字段：${hits.join(', ')}`).toEqual([]);
   });
 
-  it('没有分享路由实现', () => {
-    const app = readFileSync(join(SRC, 'app.tsx'), 'utf8');
-    expect(app).not.toMatch(/\/s\//);
-    expect(app).toContain('没有任务 / 产物 / 分享页');
+  /*
+   * 2026-09-26：分享页（Q41）已落地，但**落在独立入口上**，不是账号应用里多一个路由。
+   * 这条断言因此从"没有分享页"改成"分享页不在这个应用里"——
+   * 改动本身就是那次决策的登记动作（见 README「这个包里的命名」上一节）。
+   * 隔离的结构性保证在 `share-isolation.test.ts`。
+   */
+  it('账号应用里没有分享路由 —— 分享页是独立入口', () => {
+    const raw = readFileSync(join(SRC, 'app.tsx'), 'utf8');
+    // 先去注释：那段注释里**就在讲** `/s/<id>` 落在别处，连注释一起扫会自伤
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/\/s\//);
+    expect(raw).toContain('分享页不在这个应用里');
   });
 });
