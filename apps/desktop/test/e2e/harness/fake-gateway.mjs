@@ -65,6 +65,8 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
   let nextScript;
   /** 还要让上游失败几次（0 = 正常回答）。计数而不是开关：重试之后必须能成功，才测得到用量。 */
   let failUpstream = 0;
+  /** 失败时回哪句话。默认是我们自己写给用户的中文；测英文原因那条会改掉它。 */
+  let failMessage = '与模型服务的连接中断，重试多次仍未成功。';
   /** 被认领的那个回合的收尾函数：扣住不发，等测试放行（用来造出「正在运行」的窗口） */
   let claimedTurn;
   let turnClaimed = false;
@@ -191,7 +193,7 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
             id: `resp_${current}`,
             error: {
               code: 'upstream_disconnected',
-              message: '与模型服务的连接中断，重试多次仍未成功。',
+              message: failMessage,
             },
           },
         });
@@ -273,9 +275,13 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
     scriptNext(script) {
       nextScript = script;
     },
-    /** 接下来 `times` 次默认响应假装上游断线；之后恢复正常回答 */
-    failNextUpstream(times) {
+    /**
+     * 接下来 `times` 次默认响应假装上游断线；之后恢复正常回答。
+     * `message` 给了就用它 —— 测「英文原因要被折进详情」那条要靠它造出英文。
+     */
+    failNextUpstream(times, message) {
       failUpstream = times;
+      if (message !== undefined) failMessage = message;
     },
 
     /** 带 `turnMarker` 的那个请求到了没有（它被扣住，用来造出「正在运行」的窗口） */

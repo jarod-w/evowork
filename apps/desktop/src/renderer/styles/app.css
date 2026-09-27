@@ -2060,7 +2060,16 @@ textarea {
   /* 无边框窗口下这条带子是拖拽区；按钮自己再改回 no-drag */
   -webkit-app-region: drag;
 }
-/* hiddenInset 的交通灯浮在内容上；占位留在左侧，折叠按钮停在右侧。 */
+/* hiddenInset 的交通灯浮在内容上；占位留在左侧，折叠按钮停在右侧。
+ *
+ * **真正在推挤的是 `margin-right: auto`，不是那个 `width`。** 2026-09-27 实测：
+ * 把宽度改成 0，默认宽与 460px 窄窗口下几何一个像素都不变（折叠按钮都停在 x=195），
+ * 因为 auto margin 吃掉了全部空余空间，侧栏也从没窄到让这 40px 生效。
+ *
+ * 留着它是当侧栏真被压到极窄时的下限；但**不要拿它当交通灯留位的判据** ——
+ * 写在它上面的断言无论规则在不在都会是绿的。真正守着这件事的是
+ * `apps/desktop/test/e2e/ui/layout.spec.mjs`：断言「交通灯那块矩形里不许有内容」。
+ */
 html[data-platform='macos'] .ew-sidebar-titlebar::before {
   content: '';
   flex: none;
@@ -4212,4 +4221,106 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* ── 分享授权模态（08 §7.1）──────────────────────────────────── */
+
+.ew-share-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/*
+ * 三句话用列表而不是段落：它们是**并列的三件事**（上传什么 · 谁能看 · 多久失效），
+ * 揉成一段的话第二句最容易被跳过 —— 而那句正是用户最需要读到的。
+ */
+.ew-share-summary {
+  margin: 0;
+  padding: 0 0 0 var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  color: var(--text-secondary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+.ew-share-summary strong {
+  color: var(--text-primary);
+  font-weight: var(--font-label-weight);
+}
+
+.ew-share-file {
+  margin: 0;
+  font-weight: var(--font-label-weight);
+  word-break: break-all;
+}
+
+.ew-share-status {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.ew-share-ttl {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.ew-share-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  background: var(--bg-sunken);
+  border-radius: var(--r-md);
+}
+
+.ew-share-url {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+
+.ew-share-label {
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+  font-weight: var(--font-caption-weight);
+}
+
+.ew-share-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.ew-qr {
+  border-radius: var(--r-sm);
+}
+
+/*
+ * 分享任务时的内容预览（08 §7.2 规则 5：不许盲传）。
+ *
+ * 给固定高度 + 滚动，而不是让它把对话框撑到屏幕外：撑出去的话用户只会
+ * 看到开头几行然后放弃 —— 那等于没预览。
+ */
+.ew-share-preview {
+  margin: 0;
+  max-height: var(--layout-memo-min-height);
+  overflow: auto;
+  padding: var(--space-12);
+  background: var(--bg-sunken);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

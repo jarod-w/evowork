@@ -362,7 +362,10 @@ export interface TaskWorkspaceProps {
   /** 回合失败要落在对应时间线位置，而不是只出现在全局提示条。 */
   readonly turnFailure?:
     | {
-        readonly summary: string;
+        /** 给人看的那一行 */
+        readonly text: string;
+        /** 内核给的原文。**一个字都不丢**，只是折起来（03 §8 / 2026-09-27） */
+        readonly detail?: string | undefined;
         readonly onRetry?: (() => void) | undefined;
         readonly onOpenSettings?: (() => void) | undefined;
       }
@@ -459,7 +462,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     }, 0);
   }, [props.focusItemId, props.items]);
 
-  const failureSummary = props.turnFailure?.summary;
+  const failureSummary = props.turnFailure?.text;
   useEffect(() => {
     const node = conversationRef.current;
     if (!node) return;
@@ -821,7 +824,17 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               {props.turnFailure ? (
                 <section className="ew-turn-failure" role="alert" aria-label="回合失败">
                   <strong>这一回合失败了</strong>
-                  <p>{props.turnFailure.summary}</p>
+                  <p>{props.turnFailure.text}</p>
+                  {/*
+                   * 原文折在这里。**默认收起**：它是英文技术信息，摊开会把上面那句
+                   * 人话和两个动作按钮挤下去 —— 而用户第一眼要的是"我现在能做什么"。
+                   */}
+                  {props.turnFailure.detail ? (
+                    <details className="ew-turn-failure-detail">
+                      <summary>详情</summary>
+                      <pre>{props.turnFailure.detail}</pre>
+                    </details>
+                  ) : null}
                   <div className="ew-turn-failure-actions">
                     {props.turnFailure.onRetry ? (
                       <PillButton variant="accent" onClick={props.turnFailure.onRetry}>

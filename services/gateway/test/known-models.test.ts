@@ -12,7 +12,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { P0_MODELS } from '../src/capabilities.js';
-import { ALL_CAPABILITY_KEYS, findKnownModel, KNOWN_MODELS } from '../src/known-models.js';
+import {
+  ALL_CAPABILITY_KEYS,
+  builtinModelEntries,
+  findKnownModel,
+  KNOWN_MODELS,
+} from '../src/known-models.js';
 
 describe('认得出来的型号：结论只有一份', () => {
   it('Kimi K3 与 GLM-5.3-flash 能读图（2026-09-05 实测，32×32 纯红图答"红色"）', () => {
@@ -113,5 +118,33 @@ describe('每一条结论都得说清是怎么来的', () => {
         seen.add(key);
       }
     }
+  });
+});
+
+describe('内置目录（Q16 的三家 P0）', () => {
+  /**
+   * **三家 P0 都必须在内置目录里。**
+   *
+   * 2026-09-27 实测缺陷：两条 DeepSeek 都没有 `builtinId`，而按本文件的约定
+   * 那等于"已下架"。后果不是少一个选项 —— 只配 `DEEPSEEK_API_KEY` 时网关会以
+   * `gateway.boot.no_models / NO_PROVIDER_KEYS` **拒绝启动**，
+   * 用户那一侧是「我配了 DeepSeek，应用说没有可用模型」。
+   *
+   * 这条钉的是 Q16 的决定本身，不是某个型号：哪天换型号，改的是下面那个 id，
+   * 而"三家都得在"这件事不该跟着型号一起消失。
+   */
+  it('deepseek / moonshot / zhipu 各有一条进了内置目录', () => {
+    const byProvider = new Map(builtinModelEntries().map((m) => [m.provider, m.id]));
+    expect([...byProvider.keys()].sort()).toEqual(['deepseek', 'moonshot', 'zhipu']);
+    expect(byProvider.get('deepseek')).toBe('evowork/deepseek-flash');
+  });
+
+  /**
+   * 下架的那条**不许**回到目录里。它收下图、回 200、却说"无法识别"
+   * （`imageInput` 仍是 false），2026-09-06 因此下架 —— 而能力知识留着是另一回事。
+   */
+  it('已下架的 deepseek-v4-flash 不在目录里，但它的能力知识还在', () => {
+    expect(builtinModelEntries().some((m) => m.upstreamModel === 'deepseek-v4-flash')).toBe(false);
+    expect(findKnownModel('deepseek', 'deepseek-v4-flash')?.capabilities.imageInput).toBe(false);
   });
 });

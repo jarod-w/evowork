@@ -60,7 +60,9 @@ describe('配置解析（全部来自环境变量，不落盘）', () => {
     process.env.ZHIPU_API_KEY = 'sk-c';
     const listed = availableModelRegistry().list();
 
-    expect(new Set(listed.map((m) => m.provider))).toEqual(new Set(['moonshot', 'zhipu']));
+    expect(new Set(listed.map((m) => m.provider))).toEqual(
+      new Set(['deepseek', 'moonshot', 'zhipu']),
+    );
     expect(new Set(listed.map((m) => m.id)).size).toBe(listed.length);
     expect(listed.map((m) => m.upstreamModel)).toEqual(
       expect.arrayContaining(['kimi-k3', 'glm-5.3-flash']),

@@ -36,11 +36,13 @@ import type {
   ComposerReferenceView,
   DirEntryView,
   AccountActionResult,
+  DeeplinkTargetView,
   LibraryDataView,
   ShareCreateInput,
   ShareCreateResult,
   ShareListView,
   SharePlanResult,
+  ThreadShareInput,
   FilePreviewView,
   FileAnnotationView,
   ModelAccessMutationResult,
@@ -90,6 +92,7 @@ import type {
 } from './components/composer.js';
 import { Banner, EmptyState, IconButton } from './components/primitives.js';
 import { ShareDialog, type SharePhase } from './components/share-dialog.js';
+import { transcriptFileName, transcriptToMarkdown } from './views/thread-transcript.js';
 import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
@@ -254,6 +257,7 @@ export interface EvoworkBridge {
    */
   prepareShare?(input: { artifactId: string }): Promise<SharePlanResult>;
   createShare?(input: ShareCreateInput): Promise<ShareCreateResult>;
+  createThreadShare?(input: ThreadShareInput): Promise<ShareCreateResult>;
   revokeShare?(input: { shareId: string }): Promise<AccountActionResult>;
   listShares?(): Promise<ShareListView>;
   getAutomations(): Promise<AutomationsDataView>;
@@ -487,7 +491,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }[]
   >([]);
   const [turnFailures, setTurnFailures] = useState<
-    Readonly<Record<string, { readonly summary: string }>>
+    Readonly<Record<string, { readonly text: string; readonly detail?: string }>>
   >({});
   /**
    * 正在重试的回合。**不是失败**，所以不能塞进 `turnFailures` ——
@@ -589,6 +593,55 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const shareAbort = useRef<AbortController | null>(null);
 
   /**
+   * `evowork://` 进来了（02 §8）。
+   *
+   * 两条规则落在这里：
+   *   · **`prefill` 只写进 Composer，不发送**（规则 2）—— 一条外部链接不该能触发执行
+   *   · **找不到时给明确错误**（规则 3）—— 主进程已经判好了，这里只负责说出来，
+   *     绝不静默跳到空白页
+   */
+  function handleDeeplink(event: {
+    readonly target?: DeeplinkTargetView | undefined;
+    readonly refused?: string | undefined;
+  }) {
+    if (event.refused !== undefined || !event.target) {
+      pushToast({ tone: 'danger', text: event.refused ?? '这条链接打不开。' });
+      return;
+    }
+    const target = event.target;
+    switch (target.kind) {
+      case 'task':
+        setActiveTaskId(target.threadId);
+        setView('task');
+        return;
+      case 'automation':
+        setView('automations');
+        return;
+      case 'library':
+        setLibraryInitialNav('artifacts');
+        setView('library');
+        return;
+      case 'share':
+        // 本机确实有这份产物才会走到这里（主进程查过了），所以直接打开它
+        setLibraryInitialNav('recent');
+        setView('library');
+        pushToast({ tone: 'success', text: '这份产物在本机，已经打开资料库。' });
+        return;
+      case 'home':
+        // 首页不是独立视图：它是 `task` 视图在没有选中任务时的样子（NAV_TO_VIEW 的 new-task）
+        setActiveTaskId(null);
+        setView('task');
+        if (target.scenario) setScenarioId(target.scenario);
+        if (target.prefill) {
+          // 只写入，**不发送**（规则 2）
+          setDraft(target.prefill);
+          pushToast({ tone: 'info', text: '已把内容填进输入框，确认之后再发送。' });
+        }
+        return;
+    }
+  }
+
+  /**
    * 分享第 ① 步：叫出授权模态。
    *
    * **这一步不上传任何东西**。用户点「取消」时什么都没发生过 ——
@@ -608,21 +661,69 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setSharePhase({ kind: 'authorize', plan: out.plan });
   }
 
+  /**
+   * 分享任务（08 §7.2 规则 5）：同一个模态，但多一句警告和一份预览。
+   *
+   * **预览的字符串与上传的字符串是同一个值** —— 这里生成一次，
+   * 既传给模态显示、又传给主进程上传。分两处生成的话，某天一处改了另一处没改，
+   * 预览就开始撒谎，而那正是"不许盲传"要防的事。
+   */
+  function openThreadShare(threadId: string) {
+    const task = tasks.find((row) => row.id === threadId);
+    const title = task?.title ?? '未命名任务';
+    const markdown = transcriptToMarkdown(title, itemsByTask[threadId] ?? []);
+    const bytes = new TextEncoder().encode(markdown).byteLength;
+    setSharePhase({
+      kind: 'authorize-thread',
+      markdown,
+      plan: {
+        artifactId: threadId,
+        fileName: transcriptFileName(title),
+        sizeBytes: bytes,
+        artifactTypeLabel: '任务记录',
+        summary: [
+          `将要上传：${transcriptFileName(title)}（任务记录，${(bytes / 1024).toFixed(1)} KB）`,
+          '文件会上传到 EvoWork 云。**任何拿到链接的人都能访问它。**',
+          '链接在 24 小时后失效，之后云端副本会被自动删除。',
+        ],
+        ttl: '24h',
+        ttlOptions: [
+          { id: '24h', label: '24 小时' },
+          { id: '7d', label: '7 天' },
+          { id: '30d', label: '30 天' },
+        ],
+      },
+    });
+  }
+
   async function confirmShare(input: {
     readonly ttl: ShareCreateInput['ttl'];
     readonly accessCode: string | undefined;
     readonly confirmed: boolean;
+    readonly previewed: boolean;
   }) {
     const phase = sharePhase;
-    if (!phase || phase.kind === 'done' || !bridge.createShare) return;
+    if (!phase || phase.kind === 'done') return;
     setSharePhase({ kind: 'uploading', plan: phase.plan });
     shareAbort.current = new AbortController();
-    const out = await bridge.createShare({
-      artifactId: phase.plan.artifactId,
-      ttl: input.ttl,
-      ...(input.accessCode ? { accessCode: input.accessCode } : {}),
-      confirmed: input.confirmed,
-    });
+    const out =
+      phase.kind === 'authorize-thread'
+        ? await (bridge.createThreadShare?.({
+            threadId: phase.plan.artifactId,
+            fileName: phase.plan.fileName,
+            // 与模态里显示的是同一个值
+            markdown: phase.markdown,
+            ttl: input.ttl,
+            ...(input.accessCode ? { accessCode: input.accessCode } : {}),
+            confirmed: input.confirmed,
+            previewed: input.previewed,
+          }) ?? { ok: false as const, refused: '这个构建没有接分享服务。' })
+        : await (bridge.createShare?.({
+            artifactId: phase.plan.artifactId,
+            ttl: input.ttl,
+            ...(input.accessCode ? { accessCode: input.accessCode } : {}),
+            confirmed: input.confirmed,
+          }) ?? { ok: false as const, refused: '这个构建没有接分享服务。' });
     shareAbort.current = null;
     if (!out.ok) {
       // 回到授权那一屏并带上原因：重试不必从头填一遍
@@ -731,6 +832,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const offs = [
       bridge.onUiEvent((event) => {
         if ('taskId' in event && deletedTaskIds.current.has(event.taskId)) return;
+        if (event.type === 'deeplink') {
+          handleDeeplink(event);
+          return;
+        }
         if (event.type === 'task-goal-changed') {
           if (bridge.getTaskGoal) {
             void bridge
@@ -779,15 +884,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }
         if (event.type === 'turn-failed') {
           /*
-           * 03 §8：模型不可用**不静默降级**。这里把内核给的原因原样显示 ——
-           * 不改写、不归类：`connection refused` 与 `401` 对用户是完全不同的两件事，
-           * 归成一句"模型调用失败"就等于把唯一的线索删掉了。
+           * 03 §8：模型不可用**不静默降级**。原因一个字都不丢 ——
+           * `connection refused` 与 `401` 对用户是完全不同的两件事，
+           * 归成一句"模型调用失败"就等于把唯一的线索删掉。
+           *
+           * 2026-09-27 改成两层：原文进「详情」，上面那行换成人话。
+           * 起因是用户截图里那句 `stream disconnected before completion:
+           * idle timeout waiting for SSE` —— 线索是保住了，可面对中文用户
+           * 它等于什么都没说。两层同时满足这两件事。
            */
           setTurnFailures((previous) => ({
             ...previous,
-            [event.taskId]: {
-              summary: event.details ? `${event.message}（${event.details}）` : event.message,
-            },
+            [event.taskId]: turnFailureCopy(event.message, event.details),
           }));
           return;
         }
@@ -1156,11 +1264,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setTurnFailures((previous) => {
           const next = { ...previous };
           if (result.turnFailure) {
-            next[threadId] = {
-              summary: result.turnFailure.details
-                ? `${result.turnFailure.message}（${result.turnFailure.details}）`
-                : result.turnFailure.message,
-            };
+            next[threadId] = turnFailureCopy(
+              result.turnFailure.message,
+              result.turnFailure.details,
+            );
           } else delete next[threadId];
           return next;
         });
@@ -1740,8 +1847,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
     } catch (error: unknown) {
-      const summary = error instanceof Error ? error.message : String(error);
-      setTurnFailures((previous) => ({ ...previous, [activeTaskId]: { summary } }));
+      // 重试本身失败也走同一套两层文案 —— 否则这条路径又会把裸英文摆到卡片上
+      const raw = error instanceof Error ? error.message : String(error);
+      setTurnFailures((previous) => ({ ...previous, [activeTaskId]: turnFailureCopy(raw) }));
     }
   }, [activeTaskId, bridge, itemsByTask, modelId, mode, pushToast, scenarioId, workspaceId]);
 
@@ -2428,6 +2536,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             }
           }}
           onRowAction={(action, id) => {
+            /*
+             * 「分享」**不走 rowAction**：那条路做完会把任务从列表里拿掉
+             * （归档 / 删除都是这个形状），而分享什么都不改。
+             * 走同一条的话，分享完任务会从侧边栏消失。
+             */
+            if (action === 'share') {
+              openThreadShare(id);
+              return;
+            }
             void bridge
               .rowAction({ action, threadId: id })
               .then(() => {
@@ -3053,7 +3170,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           {...(turnFailures[activeTaskId]
             ? {
                 turnFailure: {
-                  summary: turnFailures[activeTaskId].summary,
+                  text: turnFailures[activeTaskId].text,
+                  ...(turnFailures[activeTaskId].detail
+                    ? { detail: turnFailures[activeTaskId].detail }
+                    : {}),
                   onRetry: () => void retryCurrentTurn(),
                   onOpenSettings: () => {
                     setSettingsSection('models');
@@ -3403,6 +3523,33 @@ function UnbuiltPage({ view }: { readonly view: MainView }) {
  * 用户点了之后 IPC 失败时要说出来的那句话。
  * 空 message 或非 Error 时用 fallback，避免 Toast 里出现空白或 `[object Object]`。
  */
+/**
+ * 回合失败卡上的两层文案：上面一行人话，原文折进「详情」。
+ *
+ * 起因是 2026-09-27 用户截图里的
+ * `stream disconnected before completion: idle timeout waiting for SSE` ——
+ * 03 §8 要求不改写、不归类（`connection refused` 与 `401` 是不同的两件事），
+ * 于是内核给的原因被原样显示，而面对中文用户它等于什么都没说。
+ *
+ * 两层同时满足这两件事：**原文一个字都不丢**，只是不再占着那句要给人看的话。
+ *
+ * **刻意不做翻译表**：把已知英文原因映射成中文读起来更好，但内核的错误文案随上游
+ * 一起漂（R2），而一条**翻错的**中文比英文原文更糟 —— 它看起来可信。
+ * 判据因此只有一条：原文里有没有中文。我们自己写给用户的（网关那句
+ * 「与模型服务的连接中断，重试多次仍未成功。」）是中文，内核与传输层的不是。
+ */
+export function turnFailureCopy(
+  message: string,
+  details?: string,
+): { readonly text: string; readonly detail?: string } {
+  const raw = details ? `${message}（${details}）` : message;
+  if (/[\u4e00-\u9fa5]/.test(message)) return { text: raw };
+  return {
+    text: '这次失败的原因只有技术信息，已折进下面的「详情」。可以先重试；反复出现就换一个模型。',
+    detail: raw,
+  };
+}
+
 /**
  * 经 IPC 回来的拒绝被 Electron 包成这个样子，**内层还可能再套一层我们自己的错误类**：
  *   `Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)`

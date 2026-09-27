@@ -120,6 +120,9 @@ name = "UI Gateway"
 base_url = "${gatewayBaseUrl}"
 wire_api = "responses"
 env_key = "EVOWORK_GATEWAY_TOKEN"
+# UI 测试里不要退避重试：一次失败要等好几轮退避，实测把一条用例拖到 11 分钟。
+# 重试本身另有专门的断言（断言型 E2E 的 upstream-retry），这里要的是"失败之后界面长什么样"。
+stream_max_retries = 0
 
 [permissions.evowork-workspace]
 extends = ":workspace"

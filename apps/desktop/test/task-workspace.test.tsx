@@ -493,11 +493,14 @@ describe('2.7.3–2.7.5 补齐项', () => {
     const onOpenSettings = vi.fn();
     renderWorkspace({
       status: 'interrupted',
-      turnFailure: { summary: '模型暂时不可用', onRetry, onOpenSettings },
+      turnFailure: { text: '模型暂时不可用', onRetry, onOpenSettings },
     });
 
     expect(screen.getByText('已停止，可在下方继续')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('模型暂时不可用');
+
+    // 只有人话、没有原文时，不该凭空冒出一个空的「详情」
+    expect(screen.queryByText('详情')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     fireEvent.click(screen.getByRole('button', { name: '打开模型设置' }));
     expect(onRetry).toHaveBeenCalledOnce();

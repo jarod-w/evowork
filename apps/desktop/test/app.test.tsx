@@ -24,6 +24,7 @@ import {
   changedFilesFromItems,
   lastUserMessageRequest,
   actionErrorText,
+  turnFailureCopy,
   mergeItem,
   reconcileComposerReferences,
   rootTaskFor,
@@ -1150,6 +1151,38 @@ describe('流式增量按 id 合并（04 §5.1）', () => {
     expect(mergeItem([a], b)).toEqual([a, b]);
     // 覆盖时**保持原位置**，否则流式更新会让消息在列表里跳到末尾
     expect(mergeItem([a, b], a2)).toEqual([a2, b]);
+  });
+});
+
+describe('回合失败卡的两层文案（03 §8 / 2026-09-27）', () => {
+  /**
+   * 用户截图里那句 `stream disconnected before completion: idle timeout waiting for SSE`
+   * —— 03 §8 要求不改写不归类，于是内核给的原因被原样显示，而面对中文用户它等于什么都没说。
+   *
+   * 两层同时满足两件事：**原文一个字都不丢**（进详情），上面那行换成人话。
+   */
+  it('英文原因折进详情，上面给人话', () => {
+    const r = turnFailureCopy(
+      'stream disconnected before completion: idle timeout waiting for SSE',
+    );
+    expect(r.text).toMatch(/详情|重试/);
+    expect(r.text).not.toContain('idle timeout');
+    expect(r.detail).toBe('stream disconnected before completion: idle timeout waiting for SSE');
+  });
+
+  it('details 也要跟着进详情，不能丢', () => {
+    const r = turnFailureCopy('upstream failed', 'HTTP 503');
+    expect(r.detail).toBe('upstream failed（HTTP 503）');
+  });
+
+  /**
+   * **我们自己写给用户的中文仍然直接显示**。网关那句就是为这一刻写的，
+   * 把它也折起来等于用一种信息损失换另一种。
+   */
+  it('中文原因直接显示，不折叠', () => {
+    const r = turnFailureCopy('与模型服务的连接中断，重试多次仍未成功。');
+    expect(r.text).toBe('与模型服务的连接中断，重试多次仍未成功。');
+    expect(r.detail).toBeUndefined();
   });
 });
 

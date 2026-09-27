@@ -827,7 +827,17 @@ describe('真实上游形状（DeepSeek，2026-09-05 实测）', () => {
 describe('能力声明（当前内置型号）', () => {
   it('已下架的 DeepSeek 型号不再出现在运行时目录', () => {
     expect(P0_MODELS.map((model) => model.id)).not.toContain('evowork/deepseek-v4-flash');
-    expect([...new Set(P0_MODELS.map((m) => m.provider))].sort()).toEqual(['moonshot', 'zhipu']);
+    /*
+     * 断言落在**型号**上，不落在厂商上。
+     *
+     * 2026-09-27 之前这里写的是「厂商只有 moonshot / zhipu」—— 那句话当时碰巧成立
+     * （DeepSeek 整家都不在目录里），但它表达的不是这条测试的意图。
+     * `deepseek-flash` 进目录之后它立刻红了，而红的原因与"已下架的型号回来了"无关。
+     * 厂商齐不齐是另一条测试的事（`known-models.test.ts` 的 Q16 三家）。
+     */
+    expect(P0_MODELS.filter((m) => m.provider === 'deepseek').map((m) => m.id)).toEqual([
+      'evowork/deepseek-flash',
+    ]);
   });
 
   /**
@@ -850,12 +860,13 @@ describe('能力声明（当前内置型号）', () => {
 
   it('当前内置型号全部实测过', () => {
     const providers = new Set(P0_MODELS.filter((m) => m.verified).map((m) => m.provider));
-    expect([...providers].sort()).toEqual(['moonshot', 'zhipu']);
+    // Q16 的三家 P0，每家在目录里的那一条都实测过
+    expect([...providers].sort()).toEqual(['deepseek', 'moonshot', 'zhipu']);
   });
 
   it('验过的模型必须给日期，并如实列出仍未实测的能力键', () => {
     const verified = P0_MODELS.filter((m) => m.verified);
-    expect(verified.length, 'Kimi + GLM').toBe(2);
+    expect(verified.length, 'DeepSeek Flash + Kimi + GLM').toBe(3);
     for (const model of verified) {
       expect(model.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       // 上下文长度要塞满才能测，探针不做 —— 所以它必须还在未验证列表里

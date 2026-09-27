@@ -139,6 +139,18 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
      * 漏了的话同一个型号会按"不认识"落到保守默认，表现就是这次的缺陷再来一遍。
      */
     aliases: ['deepseek-v4-flash-vision-exp'],
+    /*
+     * 2026-09-27 进内置目录。此前两条 DeepSeek 都没有 `builtinId`，而按本文件的约定
+     * 那等于"已下架" —— 于是只配 `DEEPSEEK_API_KEY` 时网关以 `no_models` 拒绝启动，
+     * 用户那一侧是「我配了 DeepSeek，应用说没有可用模型」。
+     * 而 Q16 把 DeepSeek 列为三家 P0 之一，总纲 D2 也说目录里该留一个 ——
+     * 代码与设计对不上，缺的是这一行。
+     *
+     * 选 `deepseek-flash` 而不是 `deepseek-v4-flash`：后者 2026-09-06 已明确下架，
+     * 且**收下图、回 200、却说"无法识别"**（能力位 imageInput 仍是 false）；
+     * 前者 2026-09-26 实测 23 条全通过，是真能看图的那个。
+     */
+    builtinId: 'evowork/deepseek-flash',
     displayName: 'DeepSeek Flash',
     tier: 'standard',
     evidence: 'probe',
