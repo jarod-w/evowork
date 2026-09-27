@@ -6,7 +6,7 @@
  * **驱动与断言**。分开的理由见 `harness/README.md`：两者变化的原因不同 —— 驱动随产品走，
  * 启动随内核与 Electron 走。第 2 步把驱动换成 Playwright 时只动这一侧。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { app } from 'electron';
@@ -111,6 +111,14 @@ ${memoryConfig}
 [otel]
 environment = "test"
 exporter = "none"
+
+# 与 config/config.toml.template 保持一致。少了它，这份配置就比生产更宽松 ——
+# openai-docs 的关闭正是靠这段全局设置；thread/start 里传的那份只管回合，
+# 管不到引用列表（它走 listSkills，是另一个调用）。
+# 注意：这段 TOML 在 JS 模板字符串里，注释不能带反引号（会提前闭合字符串）。
+[[skills.config]]
+name = "openai-docs"
+enabled = false
 `,
     );
 
@@ -179,6 +187,44 @@ exporter = "none"
       (candidate) => candidate.category === 'skill' && candidate.name === 'skill-creator',
     );
     if (!skill?.path) throw new Error('真实 app-server 没有发现随包 skill-creator。');
+
+    /*
+     * **随包技能一个都不能少。**
+     *
+     * 上一行只验了 `skill-creator`。而 SKILL.md 写坏时技能是**静默消失**的 ——
+     * 不报错、不警告，界面上只是少了一项。静态契约在
+     * `services/catalog/test/builtin-skills.test.ts`（name 与目录一致、description 非空、
+     * interface.json 不回退），但那证明不了"内核认它"。这一条是另一半。
+     */
+    const shipped = readdirSync(join(repoRoot, 'plugins/skills'), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== '_shared' && !e.name.startsWith('.'))
+      .map((e) => e.name);
+    const discovered = new Set(
+      context.mentions.filter((c) => c.category === 'skill').map((c) => c.name),
+    );
+    /*
+     * **`openai-docs` 不许出现在用户的引用列表里**（K5）。
+     *
+     * 它是内核装在 `skills/.system/` 的系统技能，名字本身带着 OpenAI 品牌，
+     * 而它的作用是去读 Codex 文档 —— 2026-09-07 用户问「你是谁」时就是它答的。
+     * 关闭它靠 `config.toml` 的 `[[skills.config]]`（**全局**）；
+     * `thread/start` 里传的那份只管回合，管不到这个列表。
+     * 所以这条断言守的是那段全局设置还在不在，而它掉了的表现是：
+     * 引用列表里多出一项带 OpenAI 的技能，别的什么都正常。
+     */
+    if (discovered.has('openai-docs')) {
+      throw new Error(
+        '`openai-docs` 出现在 $ 引用列表里 —— config.toml 的 [[skills.config]] 全局关闭没生效（K5）',
+      );
+    }
+
+    const missing = shipped.filter((name) => !discovered.has(name));
+    if (missing.length > 0) {
+      throw new Error(
+        `真实 app-server 没有发现这些随包技能：${missing.join('、')}。` +
+          `它发现的是：${[...discovered].join('、') || '（一个都没有）'}`,
+      );
+    }
     stage('skill-discovered');
     const reference = { type: 'skill', name: skill.name, path: skill.path };
     const first = await evaluate(

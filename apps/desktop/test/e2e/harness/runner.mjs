@@ -23,7 +23,32 @@ import { rmSync } from 'node:fs';
  */
 export function removeE2EHome(home) {
   if (typeof home !== 'string' || !home.includes('evowork-')) return; // 防手滑
-  rmSync(home, { recursive: true, force: true });
+  /*
+   * **清理失败绝不能让通过的运行变红。**
+   *
+   * 2026-09-27 实测：内核子进程刚被停掉那一瞬，它还在往 rollout 里写，
+   * `rmSync` 于是抛 `ENOTEMPTY` —— 全部断言都过了，测试却红在收尾上。
+   * 那是最坏的一种红：它指向的地方与真正的问题毫无关系。
+   *
+   * 所以重试一次（给还没落下的写操作一点时间），仍然失败就只是少收拾一个目录，
+   * 说一声，不影响结论。
+   */
+  for (const attempt of [0, 1]) {
+    try {
+      rmSync(home, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === 1) {
+        console.warn(`[e2e] 没能清掉临时目录 ${home}：${String(error)}`);
+        return;
+      }
+      // 同步等一小会儿：这里在进程退出前的收尾路径上，不能 await
+      const until = Date.now() + 300;
+      while (Date.now() < until) {
+        /* 自旋 */
+      }
+    }
+  }
 }
 
 /** 阶段与结果标记的写出口。两个入口各有一套前缀，不能共用。 */
