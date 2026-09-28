@@ -82,7 +82,12 @@
 | ------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 请求批准（默认）    | [复用] | `permissions: evowork-workspace` + `approvalPolicy: on-request` + `approvalsReviewer: user`（`AskForApproval` 是 kebab-case；`onRequest` 会被内核以 -32600 拒绝）                                      |
 | 帮我批准            | [复用] | 同上，但 `approvalsReviewer: auto_review`（`turn.rs:218`；Guardian 自动审查，只把判定为风险的动作交给人）                                                                                                  |
-| 完全访问            | [复用] | 线上 `permissions: :danger-full-access`（命名档不能 `extends` 这个内置档，否则 -32600）+ `approvalPolicy: never` + 二次确认；产品 id 仍记 `evowork-full`。**硬拦截清单仍生效**（§6.11 / 10 §2.3） |
+| 完全访问            | [复用] | 线上 `permissions: :danger-full-access`（命名档不能 `extends` 这个内置档，否则 -32600）+ `approvalPolicy: granular`（2026-09-28 从 `never` 改：只放行规则 prompt 与危险命令的审批，其余同 `never`）+ 二次确认；产品 id 仍记 `evowork-full`。**硬拦截清单仍生效**（§6.11 / 10 §2.3；hook 2026-09-28 才真正接进内核） |
+
+**Q45 修订（2026-09-28，外部测试 D1 组复现后用户决定）**：删除类命令（`rm` / `rmdir` / `unlink`）在三档里都要先问，
+落成内核目录 `rules/evowork.rules` 的 execpolicy prompt 规则 —— 配置层扩展，不是补丁（K1 预算不变）。
+**只覆盖纯命令序列**：带重定向的脚本（覆盖写入、组合命令）内核不按段匹配规则，扩展点做不到，完整覆盖需要内核补丁（未排期）。
+细节与已知缺口见 10 §2.4。
 
 清单原三项的下落：
 

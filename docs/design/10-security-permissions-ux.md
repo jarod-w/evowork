@@ -49,6 +49,19 @@ id → 中文名与说明的映射表由 EvoWork 维护（协议返回的 `descr
 | 需逐次审批                                       | 桌面 / 下载 / 文档 / 图片，以及工作空间之外的任何路径                                                                                                                         | `permission_request` → 审批卡（§3.3）                                 |
 | 工作空间内                                       | 当前 thread 的 cwd 与 `runtimeWorkspaceRoots`                                                                                                                                 | 按 profile 放行                                                       |
 
+**2026-09-28 订正：这条策略此前从没生效过。** 策略包（`services/policy` + `plugins/hooks/evowork-policy`）写好、测好、
+打进了安装包，但内核只从托管 requirements（`/etc/codex/`，要管理员权限）、配置层与已安装插件里找 hook，
+三处都没有它 —— 真机 `audit_log` 一行都没有。现在的接法与限制：
+
+- 宿主每次启动把随包清单展开成内核目录的 `hooks.json`（绝对路径，Electron 充当 node，`ELECTRON_RUN_AS_NODE=1`）；
+  适配层握手后用 `hooks/list` 取内核算的哈希，**只信任来源是这个文件、命令逐字相同**的条目（`config/batchWrite`）。
+- shell 工具的入参是一整行命令（`{"command": "..."}`）：按词切开判路径，`$HOME/` 折成 `~/`。
+  **对命令里的词只套「凭据」与「EvoWork 自身配置」两类**，不套「系统目录」—— 执行 `/usr/bin/python3`、读 `/etc/hosts`
+  是日常，而整条命令以 `/usr/bin/` 开头时旧实现会把它当成系统目录拒掉。系统目录的写保护由系统权限与沙箱负责。
+- **是启发式，不是边界**：`$(echo ~)/.ssh` 这类拼接认不出来。真正不可绕过要落在沙箱的读限制上（未做）。
+- Windows 暂不装（内核在那边不走 `$SHELL -lc`，命令写法不同，且未验证，与 U5 同一处）。
+- 审计表没有 `action` 列（分类值落在 `tool_name` 上并被工具名覆盖），拦截只能从 `pathKind` 与摘要认出来 —— 后续项。
+
 **硬拦截清单对 `evowork-full` 也生效**是刻意的：用户点"完全访问"是为了让 agent 装个依赖、改个系统外的项目文件，不是为了让它读走 SSH 私钥。把这条做成不可绕过，比在审批卡上写警告有效得多。
 
 **Computer Use 的 App 级硬禁止（CU-Q6=A）**：Terminal、iTerm、Warp 等所有终端/命令行前端，
@@ -66,9 +79,27 @@ Composer 常显选择器控制「这次任务里，模型动手前要不要问�
 | ------------------- | -------- | --------------------------------------------- | ------------------- | ---------------- | ------------------- | -------- |
 | `request-approval`  | 请求批准 | 编辑工作空间外的文件或使用互联网时询问你      | `evowork-workspace` | `on-request` | `user`              | 无       |
 | `approve-for-me`    | 帮我批准 | 仅对检测到的风险操作请求批准                  | `evowork-workspace` | `on-request` | `auto_review`       | 无       |
-| `full-access`       | 完全访问 | 可以读写这台电脑上的文件并联网                | `:danger-full-access` | `never`    | `user`              | 要       |
+| `full-access`       | 完全访问 | 可以读写这台电脑上的文件并联网                | `:danger-full-access` | `granular`（见下） | `user`              | 要       |
 
 对应内核：`turn/start.permissions`（F5，与 `sandboxPolicy` 互斥）· `turn/start.approvalPolicy` · `turn/start.approvalsReviewer`（`v2/turn.rs:218`，取值 `user` / `auto_review`）。`collaborationMode.mode` 三档都是 `default`，指令共用 `config/modes/craft.md`。
+
+**2026-09-28 修订：删除类命令在三档里都要先问**（外部测试 D1 组复现后，用户决定）。
+
+- 内核的危险命令启发式只认**带 `-f` 的 rm**（`shell-command/src/command_safety/is_dangerous_command.rs`），
+  于是「请求批准」下 `rm -f x` 会问、`rm x` 不问就删。现在由内核目录 `rules/evowork.rules` 的 execpolicy
+  prompt 规则补上 `rm` / `rmdir` / `unlink`（规则本体在 `services/policy/src/execpolicy.ts` 的 `KERNEL_PROMPT_RULES`，每次启动重写）。
+- **完全访问从 `never` 改成 `granular`**：`{sandbox_approval: true, rules: true, skill_approval: false, request_permissions: false, mcp_elicitations: false}`。
+  `never` 会把规则 prompt **直接变成拒绝**（完全访问下再也删不了文件；`rm -rf` 在 `never` 下其实早就是被拒的）。
+  在 `:danger-full-access` 下这组开关与 `never` 只差两处：规则 prompt 与危险命令改为问你。宿主对完全访问任务的自动代答
+  （`fullAccessApprovalReply`）**不代答删除**。
+- 审批卡上删除命令**不给「本次任务内都允许」**（与 §3.3 文件删除同一条）。
+- **定时任务的后果**：无人值守时这张卡没人点，按 §3.6 超时 10 分钟自动拒绝、run 记 `FAILED / APPROVAL_TIMEOUT`。
+  `rm -f` 以前就是这样，现在普通 `rm` 也是。自动化里需要清理文件的，应当写进工作空间内的临时目录并交给用户确认。
+- **已知缺口，不能对外说 D1 已修好**：内核只对不含重定向、子 shell 的纯命令序列按段匹配规则
+  （`shell-command/src/bash.rs` 的 `parse_shell_lc_plain_commands`）。`printf … > 已有文件`（覆盖，D1-2）与任何含 `>` / `>>`
+  的组合脚本（D1-4 原样命令）仍不问；`python -c "os.remove(...)"`、`find -delete`、apply_patch 的删除也不在覆盖面里。
+  完整覆盖只能走内核补丁（K1），未排期。E2E 把这个缺口钉成了断言（`destructive-approval.spec.mjs` 最后一条）。
+- UI 的一句话说明**没有**因此改成「删除文件时询问你」—— 覆盖面不够说这句话。完全访问确认框加了一行「执行删除文件的命令前仍会问你一次」。
 
 **硬规则**：
 
@@ -112,6 +143,8 @@ README F14：审批是 **server→client request**，不是通知 —— 内核�
 ```
 
 - **「为什么需要确认」是必填的**，来自 `execpolicy` 的判定理由（哪条规则没匹配上）。没有理由的审批等于让用户瞎点。
+  内核的危险命令启发式**不给理由**（2026-09-28 外部测试里 `rm -f 临时脚本` 那张卡写着「执行内核没有给出理由 —— 建议先拒绝」），
+  所以主进程按 `commandApprovalRationale` 补：模型写的用途原样保留；我们自己规则的理由去掉内核的英文包装；没有理由时用命令判定。
 - 「影响范围」由命令解析器给出（写盘 / 联网 / 删除 / 提权四个维度的图标 + 一句话）。
 - `AcceptWithExecpolicyAmendment` 落在「查看策略详情」里 —— 高级用户可把这条命令加入白名单（写入 `execpolicy` 规则）。这是给会用的人的出口，不放在主按钮上。
 - 命令超长时：单行截断 + 「查看完整命令」，**绝不省略中间部分后让用户点允许**（那是注入攻击的最佳藏身处）。
