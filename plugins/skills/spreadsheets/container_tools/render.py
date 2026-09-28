@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -89,6 +90,216 @@ def validate(content: dict) -> None:
                     EXIT_INVALID_CONTENT,
                     f"{where}/conditional_formats/{fmt_index}: 找不到列「{fmt['column']}」。",
                 )
+
+    problem = unmatched_criteria(content)
+    if problem:
+        fail(EXIT_INVALID_CONTENT, problem)
+
+
+# ─────────────────────────── 条件汇总的条件一个都对不上 ───────────────────────────
+#
+# 2026-09-28 外部测试 A4：汇总表写成 `=SUMIF(存款!$A$2:$A$19, A2, 存款!$C$2:$C$19)`，
+# A2 是「华北区」，而存款!A 列装的是 B001…B018 —— 条件永远不成立，三个区域的合计**全是 0**。
+# 两轮都是这样交付的，模型自己的核对脚本也是绿的：它按原始数据重算了一遍区域合计，
+# 却没有去算单元格里的公式（本机没有公式引擎），于是"我算的对"与"表里的公式对"被当成了一回事。
+#
+# 渲染器手里有每一格的值，所以这件事在这里判得出来，不需要公式引擎：
+# 条件取自单元格（每行一个键，典型的"按区域汇总"）、而**这一列没有任何一行**在条件区域里找到
+# 同样的值 —— 那几乎一定是条件区域指错了列。只要有一行对上就放行（某个分组本来就可以是 0）；
+# 条件是字面量（`"逾期"`）时也放行：「没有逾期」是一个合法的 0。
+
+CONDITIONAL_AGGREGATES = {
+    # 函数名 → 从哪个参数开始是 (条件区域, 条件) 对、步长
+    "SUMIF": (0, None),
+    "COUNTIF": (0, None),
+    "AVERAGEIF": (0, None),
+    "SUMIFS": (1, 2),
+    "AVERAGEIFS": (1, 2),
+    "COUNTIFS": (0, 2),
+}
+FUNCTION_CALL = re.compile(
+    r"(?<![A-Za-z0-9_.])(SUMIFS|SUMIF|COUNTIFS|COUNTIF|AVERAGEIFS|AVERAGEIF)\s*\(", re.IGNORECASE
+)
+SHEET_PREFIX = r"(?:'(?P<quoted>(?:[^']|'')+)'|(?P<bare>[^\s!'(),:;&=<>+\-*/^\"]+))!"
+CELL = r"\$?(?P<{0}c>[A-Za-z]{{1,3}})\$?(?P<{0}r>\d+)"
+CELL_REF = re.compile(rf"^(?:{SHEET_PREFIX})?{CELL.format('a')}$")
+RANGE_REF = re.compile(
+    rf"^(?:{SHEET_PREFIX})?(?:{CELL.format('a')}:{CELL.format('b')}"
+    r"|\$?(?P<acol>[A-Za-z]{1,3}):\$?(?P<bcol>[A-Za-z]{1,3}))$"
+)
+UNKNOWN = object()  # 公式格：值要等 Excel 算，这里不知道
+
+
+def column_index(letters: str) -> int:
+    index = 0
+    for char in letters.upper():
+        index = index * 26 + (ord(char) - ord("A") + 1)
+    return index - 1
+
+
+def sheet_grid(sheet: dict) -> dict[tuple[int, int], object]:
+    """(Excel 行号, 列下标) → 渲染后那一格的值，与 `render_xlsx` 写的位置一一对应。"""
+    columns = sheet["columns"]
+    grid: dict[tuple[int, int], object] = {}
+    for col_index, column in enumerate(columns):
+        grid[(1, col_index)] = column["header"]
+    for row_index, row in enumerate(sheet["rows"]):
+        for col_index, column in enumerate(columns):
+            grid[(row_index + 2, col_index)] = UNKNOWN if column.get("formula") else row[col_index]
+    last_row = len(sheet["rows"]) + 1
+    if sheet.get("total_row") and last_row >= 2:
+        grid[(last_row + 1, 0)] = "合计"
+        for col_index, column in enumerate(columns):
+            if column.get("type", "text") in ("number", "integer", "currency"):
+                grid[(last_row + 1, col_index)] = UNKNOWN
+    if sheet.get("note"):
+        grid[(last_row + 3, 0)] = sheet["note"]
+    return grid
+
+
+def split_arguments(formula: str, open_paren: int) -> list[str] | None:
+    """从 `(` 之后切到配对的 `)`，按顶层逗号分参数。引号里的逗号与括号不算。"""
+    args, depth, start, index, in_string = [], 0, open_paren + 1, open_paren + 1, False
+    while index < len(formula):
+        char = formula[index]
+        if in_string:
+            if char == '"':
+                if formula[index + 1 : index + 2] == '"':
+                    index += 1
+                else:
+                    in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                args.append(formula[start:index].strip())
+                return args
+            depth -= 1
+        elif char == "," and depth == 0:
+            args.append(formula[start:index].strip())
+            start = index + 1
+        index += 1
+    return None
+
+
+def ref_sheet(match: re.Match, here: str) -> str:
+    if match.group("quoted") is not None:
+        return match.group("quoted").replace("''", "'")
+    return match.group("bare") or here
+
+
+def range_values(ref: str, here: str, grids: dict) -> tuple[str, str, list] | None:
+    match = RANGE_REF.match(ref)
+    if not match:
+        return None
+    sheet = ref_sheet(match, here)
+    grid = grids.get(sheet)
+    if grid is None:
+        return None
+    if match.group("acol"):
+        first, last = column_index(match.group("acol")), column_index(match.group("bcol"))
+        rows = range(1, max((r for r, _ in grid), default=1) + 1)
+    else:
+        first, last = column_index(match.group("ac")), column_index(match.group("bc"))
+        rows = range(int(match.group("ar")), int(match.group("br")) + 1)
+    values = [grid.get((r, c)) for r in rows for c in range(first, last + 1)]
+    if any(value is UNKNOWN for value in values):
+        return None
+    headers = [grid.get((1, c)) for c in range(first, last + 1)]
+    return sheet, ref.split("!")[-1], values, [h for h in headers if h]
+
+
+def criterion_value(ref: str, here: str, grids: dict) -> tuple[object, str, object, str] | None:
+    """只认"条件就是一个单元格"：`A2` / `汇总!$A2`。其余（字面量、拼接、带运算符）一律不判。"""
+    match = CELL_REF.match(ref)
+    if not match:
+        return None
+    sheet = ref_sheet(match, here)
+    grid = grids.get(sheet)
+    if grid is None:
+        return None
+    column = column_index(match.group("ac"))
+    value = grid.get((int(match.group("ar")), column))
+    if value is UNKNOWN or value is None:
+        return None
+    if isinstance(value, str) and (value[:1] in "<>=" or any(ch in value for ch in "*?~")):
+        return None  # 运算符与通配符：语义是"满足条件"，不是"等于"
+    return value, sheet, grid.get((1, column)), f"{match.group('ac').upper()}{match.group('ar')}"
+
+
+def normalized(value: object) -> object:
+    """Excel 的条件比较：文本不分大小写；"1001" 与 1001 视为相等。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        return text.casefold()
+
+
+def unmatched_criteria(content: dict) -> str | None:
+    grids = {sheet["name"]: sheet_grid(sheet) for sheet in content["sheets"]}
+    for sheet in content["sheets"]:
+        for column in sheet["columns"]:
+            template = column.get("formula")
+            if not template:
+                continue
+            # 同一列里第 k 个条件对：每一行都对不上才算问题
+            checked: dict[int, dict] = {}
+            for row_index in range(len(sheet["rows"])):
+                formula = expand_formula(template, row_index + 2)
+                pair_index = 0
+                for call in FUNCTION_CALL.finditer(formula):
+                    args = split_arguments(formula, call.end() - 1)
+                    if args is None:
+                        continue
+                    first, step = CONDITIONAL_AGGREGATES[call.group(1).upper()]
+                    pairs = [(first, first + 1)] if step is None else [
+                        (i, i + 1) for i in range(first, len(args) - 1, step)
+                    ]
+                    for range_at, criterion_at in pairs:
+                        pair_index += 1
+                        if criterion_at >= len(args):
+                            continue
+                        span = range_values(args[range_at], sheet["name"], grids)
+                        wanted = criterion_value(args[criterion_at], sheet["name"], grids)
+                        if span is None or wanted is None:
+                            continue
+                        state = checked.setdefault(
+                            pair_index,
+                            {"call": call.group(1).upper(), "span": span, "keys": [], "hit": False},
+                        )
+                        keys = {normalized(v) for v in span[2] if v is not None and v != ""}
+                        state["keys"].append(wanted)
+                        state["hit"] = state["hit"] or normalized(wanted[0]) in keys
+            for state in checked.values():
+                if state["hit"] or not state["keys"]:
+                    continue
+                # **报错里只有表名、列名与地址，不带单元格里的值**（本技能「失败输出不含用户内容」
+                # 那条，Q14 同口径）。列名已经足够让模型看出"区域 ≠ 机构代码"
+                target_sheet, target_ref, _values, target_headers = state["span"]
+                _value, key_sheet, key_header, _cell = state["keys"][0]
+                cells = [key[3] for key in state["keys"]]
+                where_keys = cells[0] if len(cells) == 1 else f"{cells[0]}…{cells[-1]}"
+                key_column = f"「{key_header}」列" if key_header else "那几格"
+                target_column = (
+                    "、".join(f"「{h}」" for h in target_headers) + "列" if target_headers else "那片区域"
+                )
+                return (
+                    f"「{sheet['name']}」的「{column['header']}」用 {state['call']} 拿 "
+                    f"{key_sheet}!{where_keys}（{key_column}）去 {target_sheet}!{target_ref}"
+                    f"（{target_column}）里找，{len(cells)} 行一行都对不上 "
+                    f"—— 这些格子在 Excel 里全会算成 0，而表看起来完全正常。"
+                    f"条件与条件区域装的不是同一种值：条件区域指错了列。"
+                    f"按分组汇总时，先让明细表里有分组那一列（比如在明细表加「区域」列），"
+                    f"再对那一列写条件。"
+                )
+    return None
 
 
 def expand_formula(template: str, row_number: int) -> str:

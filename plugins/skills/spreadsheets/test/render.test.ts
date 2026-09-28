@@ -213,3 +213,77 @@ describe('失败输出不含用户内容（Q14 同口径）', () => {
     expect(result.stderr).not.toContain('128000');
   });
 });
+
+describe('**条件汇总的条件一个都对不上** → 拒绝（2026-09-28 外部测试 A4）', () => {
+  /*
+   * A4 两轮交付的表：汇总表按区域写 SUMIF，条件区域却是明细表的「机构代码」列。
+   * 条件永远不成立，三个区域的合计全是 0 —— 而表看起来完全正常，模型自己的核对也是绿的。
+   */
+  const detail = (withRegion: boolean) => ({
+    name: '存款',
+    columns: [
+      { header: '机构代码', type: 'text' },
+      ...(withRegion ? [{ header: '区域', type: 'text' }] : []),
+      { header: '年末余额', type: 'integer' },
+    ],
+    rows: [
+      ['B001', ...(withRegion ? ['华北'] : []), 100],
+      ['B002', ...(withRegion ? ['华北'] : []), 200],
+      ['B003', ...(withRegion ? ['华东'] : []), 300],
+    ],
+  });
+  const summary = (formula: string, regions: readonly string[] = ['华北', '华东']) => ({
+    name: '汇总',
+    columns: [
+      { header: '区域', type: 'text' },
+      { header: '存款合计', type: 'integer', formula },
+    ],
+    rows: regions.map((region) => [region, null]),
+  });
+  const validate = (sheets: readonly unknown[]) => run({ sheets }, 'x.xlsx', ['--validate-only']);
+
+  it('条件区域是「机构代码」、条件是区域名 → 拒绝，说清是哪两列', () => {
+    const result = validate([
+      detail(false),
+      summary('=SUMIF(存款!$A$2:$A$4,A{row},存款!$B$2:$B$4)'),
+    ]);
+    expect(result.status).toBe(EXIT.invalidContent);
+    const { message } = parseFailure(result.stderr);
+    expect(message).toContain('「区域」列');
+    expect(message).toContain('「机构代码」列');
+    expect(message).toContain('全会算成 0');
+    // 与「失败输出不含用户内容」同口径：只报列名与地址，不报格子里的值
+    expect(result.stderr).not.toContain('华北');
+    expect(result.stderr).not.toContain('B001');
+  });
+
+  it('条件区域换成明细表的「区域」列 → 通过', () => {
+    const result = validate([
+      detail(true),
+      summary('=SUMIF(存款!$B$2:$B$4,A{row},存款!$C$2:$C$4)'),
+    ]);
+    expect(result.status).toBe(EXIT.ok);
+  });
+
+  it('只有某一个分组对不上 → 放行（那个区域本来就可以没有机构）', () => {
+    const result = validate([
+      detail(true),
+      summary('=SUMIF(存款!$B$2:$B$4,A{row},存款!$C$2:$C$4)', ['华北', '华东', '华南']),
+    ]);
+    expect(result.status).toBe(EXIT.ok);
+  });
+
+  it('条件是字面量、一个都没命中 → 放行（「没有逾期」是一个合法的 0）', () => {
+    const result = validate([detail(true), summary('=COUNTIF(存款!$B$2:$B$4,"华南")')]);
+    expect(result.status).toBe(EXIT.ok);
+  });
+
+  it('SUMIFS 的第二对条件指错了列 → 同样拒绝', () => {
+    const result = validate([
+      detail(true),
+      summary('=SUMIFS(存款!$C$2:$C$4,存款!$B$2:$B$4,A{row},存款!$A$2:$A$4,A{row})'),
+    ]);
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(parseFailure(result.stderr).message).toContain('SUMIFS');
+  });
+});
