@@ -167,6 +167,22 @@ describe('JsonRpcPeer —— 请求 / 通知 / 服务端请求', () => {
     expect(onUnhandledNotification).toHaveBeenCalledWith('thread/realtime/sdp', { x: 1 });
   });
 
+  it('**未识别通知的回调抛错也不冒出去**：退出时库已关，曾让主进程弹出未捕获异常', () => {
+    const t = fakeTransport();
+    const onMalformedLine = vi.fn();
+    const peer = new JsonRpcPeer({
+      transport: t.transport,
+      onMalformedLine,
+      onUnhandledNotification: () => {
+        throw new Error('database is not open');
+      },
+    });
+    expect(() =>
+      peer.handleMessage({ jsonrpc: '2.0', method: 'hook/completed', params: {} }),
+    ).not.toThrow();
+    expect(onMalformedLine).toHaveBeenCalledOnce();
+  });
+
   it('取消订阅后不再收到通知', () => {
     const t = fakeTransport();
     const handler = vi.fn();

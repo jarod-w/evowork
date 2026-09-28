@@ -293,7 +293,16 @@ export class JsonRpcPeer {
       const method = String(m.method);
       const handlers = this.#notificationHandlers.get(method);
       if (!handlers || handlers.size === 0) {
-        this.options.onUnhandledNotification?.(method, m.params);
+        /*
+         * 与下面订阅者那条同一个道理：回调抛错**不能**冒出 socket 的 data 回调。
+         * 2026-09-28：退出时库已关闭，一条迟到的未识别通知让 `recordUnknownEvent` 抛了，
+         * 主进程弹出「A JavaScript error occurred」模态框，App 因此退不出去。
+         */
+        try {
+          this.options.onUnhandledNotification?.(method, m.params);
+        } catch (err) {
+          this.options.onMalformedLine?.(method, err);
+        }
         return;
       }
       for (const handler of handlers) {
