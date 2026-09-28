@@ -9,6 +9,7 @@
  * （与 `scripts/verify-agent-loop.mjs` 同一条纪律）。
  */
 import { spawn } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 
@@ -32,7 +33,7 @@ function reservePort() {
  * `log` 收着它的 stdout/stderr —— 起不来时要把原因带出来，
  * 否则调用方只会看到一句「网关没起来」。
  */
-export async function startRealGateway({ repoRoot, keyEnvName, apiKey, customModels }) {
+export async function startRealGateway({ repoRoot, keyEnvName, apiKey, customModels, logFile }) {
   if (!apiKey) throw new Error('真网关需要密钥（不要把它写进任何文件）。');
   const port = await reservePort();
   const token = 'ui-real-token';
@@ -61,8 +62,23 @@ export async function startRealGateway({ repoRoot, keyEnvName, apiKey, customMod
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stdout.on('data', (c) => (log += c.toString()));
-  child.stderr.on('data', (c) => (log += c.toString()));
+  /*
+   * `logFile` 给了就同时落盘（放在 E2E home 里：测试失败时 home 会被留下）。
+   * 2026-09-28 真模型轮次里网关回了 502「网关处理失败」，而原因只在它自己的日志里 ——
+   * 当时日志只在内存，进程一退就没了。网关日志不带正文（Q14），落盘是安全的。
+   */
+  const collect = (c) => {
+    log += c.toString();
+    if (logFile) {
+      try {
+        appendFileSync(logFile, c);
+      } catch {
+        /* 诊断用的副本写不进去不影响测试 */
+      }
+    }
+  };
+  child.stdout.on('data', collect);
+  child.stderr.on('data', collect);
 
   await waitFor(
     async () => (await fetch(`http://127.0.0.1:${port}/healthz`)).ok,

@@ -8,6 +8,8 @@
  * 两种驱动共用 `boot.mjs`，区别只有一个 `show` 参数。这正是拆 harness 的收益：
  * 真交互测试没有自己的一套启动代码，也就不会跟断言型 E2E 悄悄漂开。
  */
+import { join } from 'node:path';
+
 import { app } from 'electron';
 
 import { bootApp, createE2EHome, writeKernelConfig } from './boot.mjs';
@@ -103,6 +105,7 @@ async function main() {
         keyEnvName: process.env.EVOWORK_UI_KEY_ENV ?? 'DEEPSEEK_API_KEY',
         apiKey: process.env.EVOWORK_UI_MODEL_KEY,
         customModels: REAL_CUSTOM_MODELS,
+        logFile: join(home, 'gateway.log'),
       })
     : null;
   if (real) {
