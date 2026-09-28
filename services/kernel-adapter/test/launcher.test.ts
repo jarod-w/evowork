@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createSpawnLauncher } from '../src/launcher.js';
+import { createSpawnLauncher, withLoopbackNoProxy } from '../src/launcher.js';
 import type { KernelProcess } from '../src/session.js';
 
 /** spawn 的调用记录：只关心可执行文件与 options.env */
@@ -64,6 +64,37 @@ describe('createSpawnLauncher', () => {
     expect(env.CODEX_HOME).toBe('/home/u/.evowork/kernel');
     // 继承宿主环境（PATH 等），否则内核找不到它要调的工具
     expect(env.PATH).toBeDefined();
+  });
+
+  it('**发往本机网关的流量不走系统代理**：回环一定在 NO_PROXY 里（2026-09-28 实测）', () => {
+    /*
+     * 开着 Clash 一类代理时，内核发往 127.0.0.1 网关的请求（整段 prompt）曾全部绕进
+     * 127.0.0.1:7890；代理一抖，内核收到没有正文的 502，回合失败。
+     */
+    const child = fakeChild();
+    const spawnFn = spawnSpy(child);
+    launchSync(
+      createSpawnLauncher({
+        appServerPath: '/opt/evowork/codex-app-server',
+        kernelHome: '/home/u/.evowork/kernel',
+        // 企业的额外环境里即便写了别的 NO_PROXY，也不能把回环挤掉
+        extraEnv: { NO_PROXY: 'intranet.example' },
+        spawnFn: spawnFn as never,
+      }),
+    );
+    const env = spawnFn.mock.calls[0]![2].env;
+    for (const key of ['NO_PROXY', 'no_proxy'] as const) {
+      const entries = env[key]!.split(',');
+      expect(entries).toEqual(expect.arrayContaining(['127.0.0.1', 'localhost', '::1']));
+      // 用户 / 企业原有的例外保留
+      expect(entries).toContain('intranet.example');
+    }
+  });
+
+  it('合并时去重、去空白，两种大小写的变量都认', () => {
+    const merged = withLoopbackNoProxy({ no_proxy: ' corp.local , 127.0.0.1,' });
+    expect(merged.NO_PROXY).toBe('corp.local,127.0.0.1,localhost,::1');
+    expect(merged.no_proxy).toBe(merged.NO_PROXY);
   });
 
   it('额外环境变量可覆盖（企业私有部署要用）', () => {

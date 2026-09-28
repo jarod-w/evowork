@@ -35,6 +35,36 @@ export interface SpawnLauncherOptions {
   readonly onStderr?: (chunk: string) => void;
 }
 
+/** 本机回环：内核发往本机网关、hook 与 MCP 子进程的流量都在这里 */
+const LOOPBACK = ['127.0.0.1', 'localhost', '::1'] as const;
+
+/**
+ * 把回环地址并进 `NO_PROXY`，保留用户已有的例外。
+ *
+ * ## 为什么必须有它（2026-09-28 实测）
+ *
+ * 内核的 HTTP 客户端（reqwest）在 macOS 上会读**系统代理**。开着 Clash 一类代理时，
+ * 内核发往本机网关 `127.0.0.1:<port>` 的每一个请求 —— 整段 prompt 与文件内容 ——
+ * 都绕进了 `127.0.0.1:7890` 那个代理进程（`lsof` 采样：内核的连接**全部**指向 7890，
+ * 一条都没有直连网关）。代理自带的例外清单救不了：常见写法是把整串
+ * `localhost,127.*,…` 塞进**一个**数组元素，按清单逐项匹配的客户端认不出它。
+ *
+ * 两个后果：① 本机明文流量经过第三方进程，K6「不出本机」的口径被一个我们看不见的进程穿过；
+ * ② 代理一抖，内核收到的是**没有正文的 502**（我们的网关从不这样回）—— 回合失败，
+ * 界面只能给出「unexpected status 502 Bad Gateway: Unknown error」。
+ *
+ * 只动回环：发往外网的流量（云端网关、MCP 连接器）照旧遵从用户的代理设置。
+ */
+export function withLoopbackNoProxy(env: NodeJS.ProcessEnv): Record<string, string> {
+  const existing = [env.NO_PROXY, env.no_proxy]
+    .filter((value): value is string => typeof value === 'string')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter((value) => value !== '');
+  const merged = [...new Set([...existing, ...LOOPBACK])].join(',');
+  return { NO_PROXY: merged, no_proxy: merged };
+}
+
 export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLauncher {
   return {
     launch(): KernelProcess {
@@ -44,6 +74,8 @@ export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLaunch
           ...process.env,
           CODEX_HOME: options.kernelHome,
           ...options.extraEnv,
+          // 放在最后：extraEnv 也不许把回环重新送回代理
+          ...withLoopbackNoProxy({ ...process.env, ...options.extraEnv }),
         },
       };
       const child = (options.spawnFn ?? spawn)(options.appServerPath, [], spawnOptions);
