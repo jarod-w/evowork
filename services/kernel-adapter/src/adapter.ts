@@ -167,6 +167,16 @@ export interface AdapterOptions {
   /** 由宿主提供的只读技能根；握手后注册，内核重启时自动重放。 */
   readonly skillRoots?: readonly string[];
   /**
+   * 宿主写进 `$CODEX_HOME/hooks.json` 的策略 hook。给了才会在握手后信任它们
+   * （配置层的 hook 不被信任就不会跑）—— 见 `trustBundledHooks`。
+   * `sourcePaths` 给同一个文件的几种写法（原路径 + realpath）：macOS 的临时目录在
+   * `/var`，内核那边可能是 `/private/var`。
+   */
+  readonly bundledHooks?: {
+    readonly sourcePaths: readonly string[];
+    readonly commands: readonly string[];
+  };
+  /**
    * 会话参数。**适配层自己建 session**，不接受外部传入一个建好的。
    *
    * 这是被测试逼出来的设计：早先版本允许两条构造路径（传 session 或传 sessionOptions），
@@ -403,6 +413,8 @@ export function createAdapter(options: AdapterOptions) {
   });
 
   let catalog: Catalog | undefined;
+  /** 真正被内核信任、会跑的策略 hook 条数。`undefined` = 宿主没给策略包 */
+  let bundledHooksActive: number | undefined;
   /** 实验队列不可用时的本机兜底。内容只活在进程内，不冒充任务历史。 */
   const localQueues = new Map<string, QueuedInput[]>();
   let queueSequence = 0;
@@ -480,6 +492,83 @@ export function createAdapter(options: AdapterOptions) {
     ];
     if (extraRoots.length === 0) return;
     await session.peer.request(METHOD.skillsExtraRootsSet, { extraRoots });
+  }
+
+  /**
+   * 信任宿主写的策略 hook（2026-09-28：策略包此前从没被内核加载过，见 service-host 的 ensureKernelHooks）。
+   *
+   * 内核对用户配置层的 hook 要求 `hooks.state."<key>".trusted_hash` 等于它自己算的哈希
+   * （`hooks/src/engine/discovery.rs` 的 trust 判定），不等就**不跑、也不报错**。哈希由内核算
+   * （`hooks/list` 的 `currentHash`），我们不复刻它的算法 —— 那是换个上游版本就会悄悄对不上的东西。
+   *
+   * **只信任来源是那个文件、且命令逐字等于宿主写的条目**：信任是在替用户签字，
+   * 别人塞进同一个文件的命令不在我们能担保的范围里。
+   *
+   * 数不够（文件没被读到、被判解析失败、某条没对上）时记一条 warn：策略包不生效是个
+   * 安全后果（硬拦截与审计都不在），必须看得见。返回生效的条数（`bundledHooksActive()` 读它）。
+   * 这个数是"信任写下去了"，不是"真的跑过"——后者只有真内核 E2E 证明得了（policy-hooks.spec.mjs）。
+   */
+  async function trustBundledHooks(): Promise<number | undefined> {
+    const expected = options.bundledHooks;
+    if (!expected) return undefined;
+    const listed = await session.peer.request<{
+      data?: readonly {
+        hooks?: readonly {
+          key: string;
+          handlerType?: string;
+          command?: string;
+          sourcePath?: string;
+          currentHash?: string;
+          trustStatus?: string;
+          enabled?: boolean;
+        }[];
+      }[];
+    }>(METHOD.hooksList, {});
+    const byKey = new Map<
+      string,
+      NonNullable<NonNullable<typeof listed.data>[number]['hooks']>[number]
+    >();
+    for (const entry of listed.data ?? []) {
+      for (const hook of entry.hooks ?? []) {
+        if (
+          hook.handlerType === 'command' &&
+          hook.sourcePath !== undefined &&
+          expected.sourcePaths.includes(hook.sourcePath) &&
+          hook.command !== undefined &&
+          expected.commands.includes(hook.command)
+        ) {
+          byKey.set(hook.key, hook);
+        }
+      }
+    }
+    const ours = [...byKey.values()];
+    const untrusted = ours.filter(
+      (hook) =>
+        hook.currentHash !== undefined &&
+        hook.trustStatus !== 'trusted' &&
+        hook.trustStatus !== 'managed',
+    );
+    if (untrusted.length > 0) {
+      await session.peer.request(METHOD.configBatchWrite, {
+        edits: untrusted.map((hook) => ({
+          keyPath: `hooks.state."${hook.key.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}".trusted_hash`,
+          value: hook.currentHash,
+          mergeStrategy: 'replace',
+        })),
+        filePath: null,
+        expectedVersion: null,
+        // 让已加载的配置立刻看到新的信任状态（内核自己信任插件 hook 时也这么写）
+        reloadUserConfig: true,
+      });
+    }
+    const active = ours.filter((hook) => hook.enabled !== false).length;
+    if (active < expected.commands.length) {
+      logger?.warn('adapter.hooks.bundled_incomplete', {
+        itemCount: active,
+        reason: `EXPECTED_${expected.commands.length}`,
+      });
+    }
+    return active;
   }
 
   /** 带降级的实验方法调用：失败即定性并走兜底（09 §3.3）。 */
@@ -571,6 +660,11 @@ export function createAdapter(options: AdapterOptions) {
 
       await session.start();
       await registerSkillRoots();
+      // 失败不挡启动（一个策略组件装错了不该让 App 起不来），但要留下痕迹
+      bundledHooksActive = await trustBundledHooks().catch((err: unknown) => {
+        logger?.warn('adapter.hooks.trust_failed', errorFields(err));
+        return 0;
+      });
 
       const [profiles, features] = await Promise.all([
         session.peer.request<{ data: PermissionProfileSummary[] }>(
@@ -645,6 +739,11 @@ export function createAdapter(options: AdapterOptions) {
 
     catalog(): Catalog | undefined {
       return catalog;
+    },
+
+    /** 策略 hook 生效了几条（设置页的策略包状态与诊断用）。见 `trustBundledHooks` */
+    bundledHooksActive(): number | undefined {
+      return bundledHooksActive;
     },
 
     async getMemorySettings(): Promise<MemorySettings> {

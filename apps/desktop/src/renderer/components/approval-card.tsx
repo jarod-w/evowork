@@ -29,6 +29,8 @@ export interface ApprovalViewModel {
   readonly threadId: string;
   /** 「为什么需要确认」——必填（10 §3.2）。缺它时组件会显式说明缺失，而不是留空 */
   readonly reason?: string | undefined;
+  /** 命令的影响范围（删除文件 / 写入文件 / 需要联网 / 提升权限），由主进程的命令判定给出 */
+  readonly impact?: string | undefined;
   readonly command?: string | undefined;
   readonly commandKind?: 'command' | 'writeStdin' | undefined;
   readonly questions?:
@@ -152,7 +154,9 @@ export function ApprovalCard({
       ? // writeStdin 是往**已经在跑的进程**写输入，说成"运行一条命令"是错的
         approval.commandKind === 'writeStdin'
         ? '将向正在运行的程序输入内容'
-        : '将运行一条本机命令'
+        : approval.impact
+          ? `将运行一条本机命令 · ${approval.impact}`
+          : '将运行一条本机命令'
       : approval.kind === 'fileChange'
         ? fileImpact
         : approval.kind === 'permissions'

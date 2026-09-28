@@ -11,12 +11,10 @@
  * 10 §2.3：这条对 `evowork-full` 同样生效。看了 permission_mode 就等于给了绕过的口子。
  */
 
-import { analyzeCommand, type CommandRisk } from '../execpolicy.js';
 import { pathDigest, summarizeCommand, type AuditRecord } from '../audit.js';
 import { classifyPath, type PathContext } from '../paths.js';
 import { isComputerUseTool } from '../computer-use.js';
 import {
-  allow,
   deny,
   permissionDecision,
   PASS_THROUGH,
@@ -48,6 +46,8 @@ export interface HookEnvironment {
  */
 export function extractPaths(toolInput: Record<string, unknown>): readonly string[] {
   const found: string[] = [];
+  // `command` 是一整行 shell，不是一条路径 —— 它由 `extractCommandPaths` 按词处理（见那里）
+  const { command: _command, ...fields } = toolInput;
   const visit = (value: unknown, depth = 0): void => {
     if (depth > 4) return;
     if (typeof value === 'string') {
@@ -62,8 +62,53 @@ export function extractPaths(toolInput: Record<string, unknown>): readonly strin
       for (const item of Object.values(value)) visit(item, depth + 1);
     }
   };
-  visit(toolInput);
+  visit(fields);
   return [...new Set(found)];
+}
+
+/**
+ * 从一行 shell 里挑出**看起来像路径的词**（2026-09-28，hook 第一次真正接进内核时补的）。
+ *
+ * 内核给 shell 工具的 `tool_input` 是 `{"command": "<模型写的整行命令>"}`
+ * （`core/src/tools/handlers/unified_exec/exec_command.rs` 的 `pre_tool_use_payload`）。
+ * 以前把整行当一条路径判：`cat ~/.ssh/id_rsa` 不以 `/` 开头，**凭据清单一次都没看过 shell**；
+ * `/usr/bin/env python3 x.py` 以 `/usr/bin/` 开头，**整条被当成系统目录拒掉**。
+ *
+ * 这里按空白与 shell 标点切词，`$HOME/` / `${HOME}/` 折成 `~/`。
+ * **是启发式，不是边界**：`$(echo ~)/.ssh` 这类拼接认不出来 —— 真正的边界要在沙箱层。
+ */
+export function extractCommandPaths(command: string): readonly string[] {
+  const found = new Set<string>();
+  for (const raw of command.split(/[\s;|&()<>`]+/)) {
+    const word = raw.replace(/^['"]+|['"]+$/g, '').replace(/^\$\{?HOME\}?\//, '~/');
+    if (word !== '' && looksLikePath(word)) found.add(word);
+  }
+  return [...found];
+}
+
+/**
+ * shell 命令里的词**不套 `system-dirs`**：执行 `/usr/bin/python3`、读 `/etc/hosts` 都是日常，
+ * 系统目录的写保护由系统权限与沙箱负责。凭据与 EvoWork 自身配置照拦 —— 读到就已经出事了。
+ */
+const COMMAND_EXEMPT_RULES: ReadonlySet<string> = new Set(['system-dirs']);
+
+function hardBlocks(
+  toolInput: Record<string, unknown>,
+  context: PathContext,
+): readonly { readonly raw: string; readonly decision: ReturnType<typeof classifyPath> }[] {
+  const hits = [];
+  for (const raw of extractPaths(toolInput)) {
+    const decision = classifyPath(raw, context);
+    if (decision.verdict === 'hard-block') hits.push({ raw, decision });
+  }
+  const command = extractCommand(toolInput);
+  for (const raw of command === undefined ? [] : extractCommandPaths(command)) {
+    const decision = classifyPath(raw, context);
+    if (decision.verdict === 'hard-block' && !COMMAND_EXEMPT_RULES.has(decision.rule ?? '')) {
+      hits.push({ raw, decision });
+    }
+  }
+  return hits;
 }
 
 function looksLikePath(value: string): boolean {
@@ -106,31 +151,29 @@ export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): 
   const audit: AuditRecord[] = [];
 
   // ① 硬拦截：**不看 permission_mode**
-  for (const raw of extractPaths(input.tool_input)) {
-    const decision = classifyPath(raw, context);
-    if (decision.verdict === 'hard-block') {
-      audit.push({
-        occurredAt: env.now(),
-        action: 'path.blocked',
-        threadId: input.session_id,
-        turnId: input.turn_id,
-        itemId: input.tool_use_id,
-        toolName: input.tool_name,
-        actionSummary: `已阻止访问受保护位置（规则 ${decision.rule}）`,
-        pathKind: decision.rule,
-        pathDigest: pathDigest(raw),
-        decidedBy: 'policy',
-      });
-      return { output: deny('PreToolUse', decision.reason ?? '这是受保护的位置'), audit };
-    }
+  const blocked = hardBlocks(input.tool_input, context)[0];
+  if (blocked) {
+    const { raw, decision } = blocked;
+    audit.push({
+      occurredAt: env.now(),
+      action: 'path.blocked',
+      threadId: input.session_id,
+      turnId: input.turn_id,
+      itemId: input.tool_use_id,
+      toolName: input.tool_name,
+      actionSummary: `已阻止访问受保护位置（规则 ${decision.rule}）`,
+      pathKind: decision.rule,
+      pathDigest: pathDigest(raw),
+      decidedBy: 'policy',
+    });
+    return { output: deny('PreToolUse', decision.reason ?? '这是受保护的位置'), audit };
   }
 
-  // ② 命令风险：不拦，只记 —— 拦不拦是内核审批流的事，
-  //    这里的价值是给审批卡提供「为什么需要确认」（10 §3.2 必填）
+  // ② 命令风险：不拦，只记审计。拦不拦是内核审批流的事；审批卡上的「为什么需要确认」
+  //    由主进程按同一套命令判定给出（`commandApprovalRationale`），不经过这里 ——
+  //    hook 的 additionalContext 进的是模型上下文，到不了卡片
   const command = extractCommand(input.tool_input);
-  let risk: CommandRisk | undefined;
   if (command !== undefined) {
-    risk = analyzeCommand(command);
     audit.push({
       occurredAt: env.now(),
       action: 'tool.pre',
@@ -143,21 +186,7 @@ export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): 
     });
   }
 
-  /*
-   * 把风险说明作为 additionalContext 交回内核。
-   *
-   * 注意这里**不能**用 `permissionDecision: "ask"` —— 内核不支持（contract.ts 的实测表）。
-   * 所以策略层能做的是：放行 + 把理由带上去，让审批卡有话可说。
-   */
-  return {
-    output:
-      risk && risk.dimensions.length > 0
-        ? allow('PreToolUse', {
-            additionalContext: `为什么需要确认：${risk.reason}。影响范围：${risk.impact}。`,
-          })
-        : PASS_THROUGH,
-    audit,
-  };
+  return { output: PASS_THROUGH, audit };
 }
 
 export function handlePermissionRequest(
@@ -171,25 +200,24 @@ export function handlePermissionRequest(
   };
   const audit: AuditRecord[] = [];
 
-  for (const raw of extractPaths(input.tool_input ?? {})) {
-    const decision = classifyPath(raw, context);
-    if (decision.verdict === 'hard-block') {
-      audit.push({
-        occurredAt: env.now(),
-        action: 'permission.decided',
-        threadId: input.session_id,
-        turnId: input.turn_id,
-        toolName: input.tool_name,
-        actionSummary: '拒绝提权到受保护位置',
-        pathKind: decision.rule,
-        pathDigest: pathDigest(raw),
-        approvalResult: 'decline',
-        decidedBy: 'policy',
-      });
-      // 提权请求指向受保护位置时**直接拒绝**，不给用户点"允许"的机会：
-      // 这条路径的存在本身就说明有东西在试图绕过硬拦截
-      return { output: permissionDecision('deny', decision.reason ?? '这是受保护的位置'), audit };
-    }
+  const blocked = hardBlocks(input.tool_input ?? {}, context)[0];
+  if (blocked) {
+    const { raw, decision } = blocked;
+    audit.push({
+      occurredAt: env.now(),
+      action: 'permission.decided',
+      threadId: input.session_id,
+      turnId: input.turn_id,
+      toolName: input.tool_name,
+      actionSummary: '拒绝提权到受保护位置',
+      pathKind: decision.rule,
+      pathDigest: pathDigest(raw),
+      approvalResult: 'decline',
+      decidedBy: 'policy',
+    });
+    // 提权请求指向受保护位置时**直接拒绝**，不给用户点"允许"的机会：
+    // 这条路径的存在本身就说明有东西在试图绕过硬拦截
+    return { output: permissionDecision('deny', decision.reason ?? '这是受保护的位置'), audit };
   }
 
   audit.push({

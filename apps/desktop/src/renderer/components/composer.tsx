@@ -120,6 +120,7 @@ export const FULL_ACCESS_CONFIRM = {
   confirmLabel: '仅当前任务使用完全访问',
   writes: '读写这台电脑上的文件（工作空间内外）',
   network: '使用互联网',
+  deletes: '执行删除文件的命令前仍会问你一次',
   hardBlock: '系统目录、密钥与凭据、EvoWork 自身配置仍会被拦截，完全访问也不能绕过。',
   scope: '这次确认只对当前任务生效，不会改掉默认档。',
 } as const;
@@ -892,6 +893,7 @@ export function Composer(props: ComposerProps) {
           <ul className="ew-danger-confirm-list">
             <li>{FULL_ACCESS_CONFIRM.writes}</li>
             <li>{FULL_ACCESS_CONFIRM.network}</li>
+            <li>{FULL_ACCESS_CONFIRM.deletes}</li>
           </ul>
           <p className="ew-danger-confirm-scope">{FULL_ACCESS_CONFIRM.hardBlock}</p>
         </Dialog>

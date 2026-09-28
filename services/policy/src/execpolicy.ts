@@ -32,6 +32,13 @@ export const DIMENSION_COPY: Readonly<Record<RiskDimension, string>> = Object.fr
   privilege: '提升权限',
 });
 
+/**
+ * 「删除」这条的理由。**同一句话也是内核 prompt 规则的 justification**（见 `KERNEL_PROMPT_RULES`），
+ * `commandApprovalRationale` 靠它认出"这是我们自己那条规则问的"。两处写两遍会慢慢不一样，
+ * 那时审批卡就会露出内核的英文包装。
+ */
+export const DELETE_REASON = '这个命令会删除文件';
+
 interface Matcher {
   readonly rule: string;
   readonly test: RegExp;
@@ -64,7 +71,7 @@ const MATCHERS: readonly Matcher[] = Object.freeze([
     rule: 'delete',
     test: /\b(rm|unlink|rmdir|del)\b/,
     dimensions: ['deletes', 'writes-disk'],
-    reason: '这个命令会删除文件',
+    reason: DELETE_REASON,
   },
   {
     rule: 'package-install',
@@ -145,3 +152,53 @@ export function allowAcceptForSession(input: {
 export function truncateCommand(command: string, limit = 200): string {
   return command.length <= limit ? command : `${command.slice(0, limit - 1)}…`;
 }
+
+/**
+ * 审批卡上「为什么需要确认」与「影响范围」（10 §3.2，**必填**）。
+ *
+ * 内核给的 `reason` 有三种来源，只有一种是给人看的：
+ *
+ * - 模型为越过沙箱写的 `justification` —— 它说的是**用途**，原样保留；
+ * - 我们自己那几条 prompt 规则 —— 内核会包一层英文（`` `rm x` requires approval: … ``），
+ *   认出来之后换成我们的中文，**不去匹配内核的英文原文**（上游改个词就会静默失效），
+ *   只看里面有没有我们自己写的那句理由；
+ * - 内核的危险命令启发式（`rm -f` 之类）—— **不给理由**。2026-09-28 外部测试的 A1 / D1-3
+ *   两张卡都因此写着「执行内核没有给出理由 —— 这本身值得警惕，建议先拒绝」，
+ *   而那只是一次普通的删临时文件。没有理由时由这里的命令判定补上。
+ */
+export function commandApprovalRationale(
+  command: string,
+  kernelReason: string | undefined,
+): {
+  readonly reason: string;
+  readonly impact: string;
+  readonly dimensions: readonly RiskDimension[];
+} {
+  const risk = analyzeCommand(command);
+  const kernel = kernelReason?.trim();
+  const ours = kernel !== undefined && MATCHERS.some((matcher) => kernel.includes(matcher.reason));
+  return {
+    reason: kernel === undefined || kernel === '' || ours ? risk.reason : kernel,
+    impact: risk.impact,
+    dimensions: risk.dimensions,
+  };
+}
+
+/**
+ * 装进 `$CODEX_HOME/rules/evowork.rules` 的内核 execpolicy 规则（Q45 修订，2026-09-28）。
+ *
+ * 内核的危险命令启发式只认**带 -f 的 rm**（`shell-command/src/command_safety/is_dangerous_command.rs`），
+ * 于是在「请求批准」档里 `rm -f x` 会问、`rm x` 不问 —— 2026-09-28 外部测试 D1-1 / D1-4 就是这样
+ * 删掉了文件。这几条 prompt 规则把**纯删除命令**补进审批。
+ *
+ * **只是部分覆盖**，这一点必须如实写着：内核只对「不含重定向、子 shell 等语法的纯命令序列」
+ * 按段匹配规则（`shell-command/src/bash.rs` 的 `parse_shell_lc_plain_commands`）。
+ * `printf … > 已有文件`（覆盖，D1-2）、以及任何含 `>` / `>>` 的组合脚本（D1-4 的原样命令）
+ * 都匹配不上 —— 扩展点做不到，完整覆盖只能走内核补丁（K1）。
+ */
+export const KERNEL_PROMPT_RULES = `# 由 EvoWork 生成，每次启动重写 —— 改这里不会留下来，改 services/policy/src/execpolicy.ts。
+# 删除类命令在工作空间内也要问（Q45 修订，10 §2.4）。
+prefix_rule(pattern = ["rm"], decision = "prompt", justification = ${JSON.stringify(DELETE_REASON)})
+prefix_rule(pattern = ["rmdir"], decision = "prompt", justification = ${JSON.stringify(DELETE_REASON)})
+prefix_rule(pattern = ["unlink"], decision = "prompt", justification = ${JSON.stringify(DELETE_REASON)})
+`;

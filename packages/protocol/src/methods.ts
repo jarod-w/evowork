@@ -69,6 +69,7 @@ export const METHOD = {
   mcpServerReload: 'config/mcpServer/reload',
   configRead: 'config/read',
   configBatchWrite: 'config/batchWrite',
+  hooksList: 'hooks/list',
 
   // 文件系统（工作空间文件视图，04 §6.2）
   fsReadDirectory: 'fs/readDirectory',
@@ -155,6 +156,8 @@ export const NOTIFICATION = {
   threadCompacted: 'thread/compacted',
   /** 当前任务的生效配置变化；它是状态通知，不是对话条目。 */
   threadSettingsUpdated: 'thread/settings/updated',
+  hookStarted: 'hook/started',
+  hookCompleted: 'hook/completed',
   threadTokenUsageUpdated: 'thread/tokenUsage/updated',
   threadQueueChanged: 'thread/queue/changed',
   threadGoalUpdated: 'thread/goal/updated',

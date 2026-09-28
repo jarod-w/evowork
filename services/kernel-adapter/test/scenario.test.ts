@@ -73,9 +73,19 @@ describe('展开优先级：场景默认值 → 审批档 → 用户显式选择
     const result = expandTurnStart({ ...base, overrides: { modeId: 'full-access' } });
     // 命名档不能 extends :danger-full-access，发出去就是 -32600。
     expect(result.params.permissions).toBe(':danger-full-access');
-    expect(result.params.approvalPolicy).toBe('never');
     expect(result.params.approvalsReviewer).toBe('user');
     expect(result.origin.permissionId).toBe('evowork-full');
+  });
+
+  it('完全访问下删除仍然要问：规则 prompt 必须放行，不能是 never（never 会把删除变成拒绝）', () => {
+    const result = expandTurnStart({ ...base, overrides: { modeId: 'full-access' } });
+    const policy = result.params.approvalPolicy;
+    expect(policy).not.toBe('never');
+    expect(policy).toMatchObject({ granular: { rules: true, sandbox_approval: true } });
+    // 其余与 never 相同：连接器征询与提权申请仍不打扰用户
+    expect(policy).toMatchObject({
+      granular: { mcp_elicitations: false, request_permissions: false, skill_approval: false },
+    });
   });
 
   it('权限由审批档决定，用户另传的 permissions 不能把完全访问偷运进来', () => {

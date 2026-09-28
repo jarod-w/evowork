@@ -501,7 +501,8 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
       threadId: 't1',
       itemId: 'i1',
       command: 'rm -rf build',
-      reason: '这个命令会删除文件',
+      // 模型为这次操作写的用途：原样到卡片上（我们自己规则的那句理由会被换成完整判定，见 commandApprovalRationale）
+      reason: '清理上一次的构建目录',
     });
 
     // ① 推给了渲染进程，且是**审批卡能直接渲染的形状**（不是协议原始 params）
@@ -515,7 +516,7 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
     };
     expect(asked.kind).toBe('command');
     expect(asked.threadId).toBe('t1');
-    expect(asked.reason).toBe('这个命令会删除文件');
+    expect(asked.reason).toBe('清理上一次的构建目录');
 
     // ② 用户的决定按**审批自己的 id**回来（两边编两套 id 的话永远对不上）
     host.resolveApproval(asked.id, { decision: 'decline' });

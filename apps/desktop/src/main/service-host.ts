@@ -26,10 +26,12 @@ import { createNativeHelper, readComputerUseRelease } from './computer-use-helpe
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
 import type { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  realpathSync,
   readdirSync,
   readFileSync,
   writeFileSync,
@@ -58,7 +60,7 @@ import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
  * 不在这里另写一份：设置页显示的数与闸门实际用的数必须是同一个，
  * 否则用户会看到"上限 3"而第 2 个任务就开始排队。
  */
-import { applyUserPreference, computeConcurrencyLimit } from '@evowork/policy';
+import { applyUserPreference, computeConcurrencyLimit, KERNEL_PROMPT_RULES } from '@evowork/policy';
 import { createIngest, createOfficeParser, type IngestOutcome } from '@evowork/ingest';
 import { BRAND } from '@evowork/tokens';
 import { createShareFlow, createUploader, shareState } from '@evowork/artifacts';
@@ -289,6 +291,106 @@ export function ensureKernelModelCatalog(
 }
 
 /**
+ * 把 EvoWork 的 execpolicy 规则写进内核目录的 `rules/evowork.rules`（Q45 修订，10 §2.4）。
+ *
+ * **每次启动重写**：规则本体在 `services/policy`，升级必须立刻生效 —— 与模式指令
+ * 「已存在不覆盖」那一套相反，这里没有企业会想保留的旧版本（企业自己的规则放同目录的别的文件，
+ * 内核把 `rules/` 下的 `*.rules` 全部读进来）。同目录的 `default.rules` 是内核自己写的
+ * （用户在审批卡上「加入白名单」时），不碰它。
+ */
+export function ensureKernelExecPolicyRules(paths: EvoworkPaths): string {
+  const dir = join(paths.kernelHome, 'rules');
+  mkdirSync(dir, { recursive: true });
+  const target = join(dir, 'evowork.rules');
+  writeFileSync(target, KERNEL_PROMPT_RULES, 'utf8');
+  return target;
+}
+
+/** 装进内核的策略 hook：写在哪、每条的命令是什么（适配层据此只信任我们自己写的那几条）。 */
+export interface KernelHooks {
+  readonly sourcePath: string;
+  readonly commands: readonly string[];
+}
+
+/** POSIX shell 的单引号转义：内核用 `$SHELL -lc` 跑 hook 命令，路径里有空格很常见 */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * 把随包的策略 hook（`plugins/hooks/evowork-policy`）装进内核目录的 `hooks.json`。
+ *
+ * ## 为什么需要它（2026-09-28 发现）
+ *
+ * 策略包写好、测好、随包打进去了，但**从没被内核加载过**：内核只从托管 requirements、
+ * 配置层（内核目录的 `hooks.json` 或 `config.toml [hooks]`）与已安装插件里找 hook，
+ * 而这三处都没有它。本机 `audit_log` 一行都没有，10 §2.3 的硬拦截（~/.ssh 等）也从没生效过 ——
+ * 完全访问的确认框却一直写着「完全访问也不能绕过」。
+ *
+ * 托管 requirements 在 `/etc/codex/`（要管理员权限，且与机器上的 Codex CLI 共用），
+ * 所以走用户配置层。那一层的 hook 要**被信任**才会跑：适配层启动时用 `hooks/list`
+ * 找到这个文件里的条目并写入 trusted_hash（`trustBundledHooks`）。
+ *
+ * ## 两个"写错了不报错"
+ *
+ * - 文件是内核的 `HooksFile`：事件**必须包在 `hooks` 里**。放在顶层会被解析成空集并被静默丢掉。
+ * - 配置层 hook 没有 `CLAUDE_PLUGIN_ROOT`（那只给插件），命令里要写绝对路径。
+ *
+ * 用 Electron 自己充当 node（`ELECTRON_RUN_AS_NODE=1`）：**用户机器上没有 node**。
+ * 每次启动重写 —— App 挪了位置或升级之后，旧路径就指向不存在的文件。
+ * Windows 暂不装：内核在那边不走 `$SHELL -lc`，命令写法不同，而且没验过（U5 同一处）。
+ */
+export function ensureKernelHooks(
+  paths: EvoworkPaths,
+  input: { readonly pluginsDir: string; readonly execPath: string },
+): KernelHooks | undefined {
+  const target = join(paths.kernelHome, 'hooks.json');
+  if (process.platform === 'win32') return undefined;
+  const pluginRoot = join(input.pluginsDir, 'hooks', 'evowork-policy');
+  const manifestPath = join(pluginRoot, 'hooks.json');
+  if (!existsSync(manifestPath)) return undefined;
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    readonly hooks?: Record<
+      string,
+      readonly {
+        readonly matcher?: string;
+        readonly hooks: readonly { readonly command: string }[];
+      }[]
+    >;
+  };
+  const commands: string[] = [];
+  const hooks = Object.fromEntries(
+    Object.entries(manifest.hooks ?? {}).map(([event, groups]) => [
+      event,
+      groups.map((group) => ({
+        ...(group.matcher !== undefined ? { matcher: group.matcher } : {}),
+        hooks: group.hooks.map((hook) => {
+          const script = hook.command.replace(/^node \$\{CLAUDE_PLUGIN_ROOT\}\//, '');
+          const command = `ELECTRON_RUN_AS_NODE=1 ${shellQuote(input.execPath)} ${shellQuote(join(pluginRoot, script))}`;
+          commands.push(command);
+          return { type: 'command', command };
+        }),
+      })),
+    ]),
+  );
+  if (commands.length === 0) return undefined;
+  writeFileSync(
+    target,
+    `${JSON.stringify(
+      {
+        description:
+          '由 EvoWork 生成，每次启动重写 —— 改这里不会留下来。来源：plugins/hooks/evowork-policy/hooks.json',
+        hooks,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return { sourcePath: target, commands };
+}
+
+/**
  * 设置一个 TOML **根键**。
  *
  * 根键必须出现在第一个 `[table]` 之前 —— TOML 进了表之后不能靠空行回到根，
@@ -501,21 +603,50 @@ function ensureSectionDefaults(
  * 2026-09-07 证实只叠加 developer 指令盖不住系统底稿里的 Codex CLI。
  *
  * 逐个文件比对：企业可能只覆盖其中一份（比如 `ask.md`），整目录判断会让
- * 新增的模式文件永远装不进去。**已存在的不覆盖。**
+ * 新增的模式文件永远装不进去。
+ *
+ * ## 升级：**没被改过的旧版换成新版，改过的保留**（2026-09-28）
+ *
+ * 以前是「已存在的不覆盖」，于是**模式指令的任何修订都到不了已装用户** —— 2026-09-28
+ * 为外部测试 C3 / D3-3 改 `craft.md` 时才发现：改完只对新装机器生效。
+ * 现在已装的文件若**逐字节等于我们发过的某一版**（`config/modes/shipped.json`），
+ * 就说明没人动过它，换成新版；不等就是用户或企业改过，保留原样。
  */
 export function ensureModeInstructions(paths: EvoworkPaths, configDir: string): number {
   const from = join(configDir, 'modes');
   if (!existsSync(from)) return 0;
   mkdirSync(paths.modes, { recursive: true });
+  const shipped = readShippedModeVersions(from);
   let installed = 0;
   for (const name of readdirSync(from)) {
     if (!name.endsWith('.md')) continue;
+    const source = join(from, name);
     const target = join(paths.modes, name);
-    if (existsSync(target)) continue;
-    copyFileSync(join(from, name), target);
+    if (existsSync(target)) {
+      const current = sha256Hex(readFileSync(target));
+      const untouched = shipped[name]?.includes(current) ?? false;
+      if (!untouched || current === sha256Hex(readFileSync(source))) continue;
+    }
+    copyFileSync(source, target);
     installed += 1;
   }
   return installed;
+}
+
+function sha256Hex(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+/** 读不到或读坏了就当作「没有任何已知版本」：宁可不升级，也不覆盖一份可能被改过的文件 */
+function readShippedModeVersions(modesDir: string): Readonly<Record<string, readonly string[]>> {
+  try {
+    const parsed = JSON.parse(readFileSync(join(modesDir, 'shipped.json'), 'utf8')) as {
+      versions?: Record<string, readonly string[]>;
+    };
+    return parsed.versions ?? {};
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -757,6 +888,29 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     if (installed) logger.info('desktop.kernel_config.installed', {});
     const modes = ensureModeInstructions(options.paths, options.configDir);
     if (modes > 0) logger.info('desktop.mode_instructions.installed', { itemCount: modes });
+  }
+  let kernelHooks: KernelHooks | undefined;
+  try {
+    kernelHooks = options.pluginsDir
+      ? ensureKernelHooks(options.paths, {
+          pluginsDir: options.pluginsDir,
+          execPath: process.execPath,
+        })
+      : undefined;
+    if (!kernelHooks) logger.warn('desktop.kernel_config.hooks_unavailable', {});
+  } catch (err) {
+    // 写不出来 = 策略包不生效。启动照常，但**要留一条**：硬拦截与审计此时都不在
+    logger.warn('desktop.kernel_config.hooks_failed', {
+      errorClass: err instanceof Error ? err.name : 'UnknownError',
+    });
+  }
+  try {
+    ensureKernelExecPolicyRules(options.paths);
+  } catch (err) {
+    // 写不出来只是回到内核自己的启发式（删除不一定问）；不值得让启动失败
+    logger.warn('desktop.kernel_config.exec_rules_failed', {
+      errorClass: err instanceof Error ? err.name : 'UnknownError',
+    });
   }
 
   // 旧版本把已下架型号写成了全局默认。只迁移这一个精确值，不覆盖其他用户/企业配置。
@@ -1019,6 +1173,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     store,
     logger,
     ...(options.pluginsDir ? { skillRoots: [join(options.pluginsDir, 'skills')] } : {}),
+    ...(kernelHooks
+      ? {
+          bundledHooks: {
+            sourcePaths: [
+              ...new Set([kernelHooks.sourcePath, realpathSync(kernelHooks.sourcePath)]),
+            ],
+            commands: kernelHooks.commands,
+          },
+        }
+      : {}),
     readInstructions,
     ...(baseInstructions ? { baseInstructions } : {}),
     sessionOptions: {

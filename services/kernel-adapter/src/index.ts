@@ -66,6 +66,7 @@ export {
   resolveModeId,
   AUTO_REVIEW_UNAVAILABLE_REASON,
   MODES,
+  FULL_ACCESS_APPROVAL_POLICY,
   type ComposerOverrides,
   type ExpandContext,
   type ExpandResult,

@@ -1,0 +1,24 @@
+{
+  "_comment": "每个模式文件发过的所有版本（sha256）。已装机器上的文件等于其中之一 = 用户没改过，升级时换成新版；不等 = 用户或企业改过，保留。**改了 config/modes/*.md 就把新哈希加进来**（测试会拦）。",
+  "versions": {
+    "ask.md": [
+      "61d3d0223e97ad1beed92772dc107f3e23d225aca513d0c408e22e1b4bd71ea7",
+      "f061d3f4d92fb864a48a92528f3976ec8e9b39035df3b70aaa937a39816b318f"
+    ],
+    "craft-code.md": ["9b510edc1ca6c211d78ab04c6b2c8b48d8c02a83cd7c10b6d30e0a993b3eb341"],
+    "craft-design.md": [
+      "01b9608c974377adaf154cb90e9698e6b8a06e8868e4260c318246654321797d",
+      "5accc96ab9bccfab604e66b0b62ee21203259f1652a34657e3eb84a7a97edfec"
+    ],
+    "craft-office.md": ["4f51826fadd68aa3654b5ca947b8b9ce2bbbe9d2f00f6acef74dc86869086695"],
+    "craft.md": [
+      "0f06eb7fab8eec5cd593c8807542c4284da39bd6da6695c67574d29cdc1dd06b",
+      "7c983d77311f8fe84a02c466beda9f0b7529fe504de17188d71b482ec79c2ba2",
+      "c417f884831f79f33b58515a55f7550b066c85b556e290a8e4a897cdac1b66ac"
+    ],
+    "plan.md": [
+      "808ffc9e461a49d48539a6c901f0f5ae7da0e6e80bb89f0470e19089102a64cd",
+      "871a645f219a0f0bcaea385a45c69347a26852e1000875c7b62eed4366731fbd"
+    ]
+  }
+}

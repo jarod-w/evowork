@@ -461,9 +461,24 @@ export interface ThreadStartResponse {
  *
  * 写成 `onRequest` 时 `thread/start` 直接 -32600：
  * `unknown variant onRequest, expected one of untrusted, on-request, granular, never`。
- * `on-failure` 在当前内核枚举里不存在。`granular` 是带字段的实验变体，这条类型不装它。
+ * `on-failure` 在当前内核枚举里不存在。
+ *
+ * `granular` 是带字段的**实验**变体（`#[experimental("askForApproval.granular")]`），
+ * 字段名是 snake_case（枚举的 kebab-case 只作用于变体名）。完全访问用它：
+ * 除了 prompt 规则与危险命令，一律不问（10 §2.4，2026-09-28 修订）。
  */
-export type AskForApproval = 'untrusted' | 'on-request' | 'never';
+export type AskForApproval =
+  'untrusted' | 'on-request' | 'never' | { readonly granular: GranularAskForApproval };
+
+export interface GranularAskForApproval {
+  /** 沙箱越权与危险命令启发式的审批。false = 直接拒绝 */
+  readonly sandbox_approval: boolean;
+  /** execpolicy `prompt` 规则触发的审批。false = 直接拒绝 */
+  readonly rules: boolean;
+  readonly skill_approval?: boolean;
+  readonly request_permissions?: boolean;
+  readonly mcp_elicitations: boolean;
+}
 
 /**
  * Q45：谁来批 `on-request` 的动作。

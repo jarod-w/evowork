@@ -733,6 +733,11 @@ export interface ApprovalView {
   readonly options?: readonly { readonly id: string; readonly label?: string }[] | undefined;
   readonly threadId: string;
   readonly reason?: string | undefined;
+  /**
+   * 命令审批的影响范围（写入文件 / 需要联网 / 删除文件 / 提升权限，10 §3.2）。
+   * 由主进程的命令判定给出 —— 渲染层拿不到 `@evowork/policy`。
+   */
+  readonly impact?: string | undefined;
   readonly command?: string | undefined;
   /** `writeStdin` = 往运行中的进程写 stdin，不是启动一条命令 */
   readonly commandKind?: 'command' | 'writeStdin' | undefined;

@@ -9,6 +9,9 @@ import { describe, expect, it } from 'vitest';
 import {
   allowAcceptForSession,
   analyzeCommand,
+  commandApprovalRationale,
+  DELETE_REASON,
+  KERNEL_PROMPT_RULES,
   applyPlatformRestriction,
   applyUserPreference,
   BUDGET_ACTIONS,
@@ -199,6 +202,35 @@ describe('命令风险：「为什么需要确认」是必填的（10 §3.2）',
     expect(
       allowAcceptForSession({ fileCount: 1, anyOutsideWorkspace: false, anyDelete: true }),
     ).toBe(false);
+  });
+});
+
+describe('删除类命令的内核 prompt 规则（Q45 修订，2026-09-28 外部测试 D1）', () => {
+  const rules = [
+    ...KERNEL_PROMPT_RULES.matchAll(
+      /prefix_rule\(pattern = \[([^\]]+)\].*justification = "([^"]+)"\)/g,
+    ),
+  ];
+
+  it('rm / rmdir / unlink 都在规则里，都是 prompt', () => {
+    expect(rules.map((m) => m[1])).toEqual(['"rm"', '"rmdir"', '"unlink"']);
+    expect(KERNEL_PROMPT_RULES.match(/decision = "prompt"/g)).toHaveLength(3);
+  });
+
+  it('**规则的理由就是审批卡认得出的那句** —— 两处不一样时卡片会露出内核的英文包装', () => {
+    for (const rule of rules) {
+      expect(rule[2]).toBe(DELETE_REASON);
+      const shown = commandApprovalRationale(
+        'rm x',
+        `\`rm x\` requires approval: ${rule[2]}`,
+      ).reason;
+      expect(shown).not.toContain('requires approval');
+    }
+  });
+
+  it('没有内核理由、命令又认不出来时如实说认不出来，不编一个', () => {
+    const { reason } = commandApprovalRationale('./mystery-binary --go', undefined);
+    expect(reason).toContain('判断不出');
   });
 });
 

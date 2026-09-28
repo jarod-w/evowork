@@ -55,6 +55,28 @@ export interface ModeDefinition {
   readonly instructionsFile: string;
 }
 
+/**
+ * 完全访问的审批策略：**删除仍然要问，别的一律不问**（10 §2.4，2026-09-28 修订）。
+ *
+ * 原先是 `never`。加了删除类 prompt 规则（`KERNEL_PROMPT_RULES`）之后，`never` 会让内核把
+ * 规则的 prompt **直接变成拒绝**（`exec_policy.rs` 的 `prompt_is_rejected_by_policy`）——
+ * 完全访问下就再也删不了文件。其实 `rm -f` / `rm -rf` 在 `never` 下早就是被拒的
+ * （危险命令启发式同一条路），只是以前没人注意。
+ *
+ * 在 `:danger-full-access` 下，这组开关与 `never` 只差两处：规则 prompt 与危险命令都改为
+ * **问你**而不是拒绝。沙箱越权本来就不存在（没有沙箱），MCP 征询与 `request_permissions`
+ * 仍是关的，与 `never` 相同（`tools/sandboxing.rs` · `mcp_tool_call.rs` · `session/mod.rs`）。
+ */
+export const FULL_ACCESS_APPROVAL_POLICY: AskForApproval = Object.freeze({
+  granular: Object.freeze({
+    sandbox_approval: true,
+    rules: true,
+    skill_approval: false,
+    request_permissions: false,
+    mcp_elicitations: false,
+  }),
+});
+
 export const MODES: Readonly<Record<ModeId, ModeDefinition>> = Object.freeze({
   'request-approval': {
     id: 'request-approval',
@@ -85,7 +107,7 @@ export const MODES: Readonly<Record<ModeId, ModeDefinition>> = Object.freeze({
     kernelMode: 'default',
     permissions: 'evowork-full',
     kernelPermissions: ':danger-full-access',
-    approvalPolicy: 'never',
+    approvalPolicy: FULL_ACCESS_APPROVAL_POLICY,
     approvalsReviewer: 'user',
     instructionsFile: 'modes/craft.md',
   },

@@ -546,6 +546,15 @@ export function createEventRouter(options: EventRouterOptions) {
      */
     [NOTIFICATION.threadSettingsUpdated]: () => [],
 
+    /*
+     * 策略 hook 每跑一次，内核就发一对 started / completed（2026-09-28 hook 接进内核后才出现）。
+     * 审计由 hook 自己写 `audit.jsonl`，这对通知不产生对话内容 —— 纳入订阅面是为了让它们
+     * **不落进未识别通知的雷达**：每条工具调用两条，雷达会被刷满；而且关窗口那一刻
+     * SessionEnd hook 的这对通知在库已关闭时到达，曾经让主进程弹出未捕获异常（见 jsonrpc.ts）。
+     */
+    [NOTIFICATION.hookStarted]: () => [],
+    [NOTIFICATION.hookCompleted]: () => [],
+
     [NOTIFICATION.skillsChanged]: () => {
       onUiEvent({ type: 'skills-changed' });
       return [];

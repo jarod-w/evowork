@@ -37,7 +37,9 @@ import {
  * （浏览器环境），所以由这里经 IPC 送过去 —— 一个真源，两条路径。
  */
 import {
+  analyzeCommand,
   classifyPath,
+  commandApprovalRationale,
   describeCapability,
   RETENTION_DAYS,
   RETENTION_WARNING_DAYS,
@@ -2828,6 +2830,16 @@ export type RendererActions = ReturnType<typeof createRendererActions>;
 export function fullAccessApprovalReply(approval: PendingApproval): ApprovalReply | undefined {
   if (approval.unattended) return undefined;
   if (approval.kind !== 'command' && approval.kind !== 'fileChange') return undefined;
+  /*
+   * **删除不代答**：完全访问承诺的是「删除文件前仍会问你一次」（10 §2.4，2026-09-28 修订）。
+   * 内核在完全访问下为删除类规则发来的审批，正是为了让用户看见 —— 这里一放行就白问了。
+   * 第一版正是这样：E2E 里内核问了、宿主替用户点了允许，文件没了，界面上一张卡都没出现。
+   */
+  const command = typeof approval.params.command === 'string' ? approval.params.command : '';
+  if (approval.kind === 'command' && analyzeCommand(command).dimensions.includes('deletes')) {
+    return undefined;
+  }
+  if (approval.fileChanges?.some((change) => change.kind === 'delete')) return undefined;
   // 逐次放行而不是写入内核的 session 级永久 grant：用户随后切回“请求批准”时，
   // 新到达的动作必须重新询问，不能被一次旧的完全访问选择继续放行。
   return { decision: 'accept' };
@@ -3134,12 +3146,28 @@ export function toApprovalView(
     ...(change.movePath ? { movePath: change.movePath } : {}),
   }));
 
+  /*
+   * 命令审批的「为什么需要确认」与「影响范围」（10 §3.2，必填）。内核的危险命令启发式
+   * **不给理由**，卡片于是写着「执行内核没有给出理由 —— 建议先拒绝」—— 2026-09-28
+   * 外部测试里那张卡要删的只是模型自己刚写的临时脚本。理由的取舍见 `commandApprovalRationale`。
+   */
+  const command = str('command');
+  const rationale =
+    approval.kind === 'command' && str('kind') !== 'writeStdin' && command !== undefined
+      ? commandApprovalRationale(command, str('reason'))
+      : undefined;
+  const reason = rationale?.reason ?? str('reason');
+  // 删除命令不给「本次任务内都允许」—— 与文件改动里的删除同一条（10 §3.3：不可逆的不一键放开）
+  const acceptForSession =
+    allowAcceptForSession && !(rationale?.dimensions.includes('deletes') ?? false);
+
   return {
     id: approval.id,
     kind: approval.kind,
     threadId: approval.threadId,
-    ...(str('reason') !== undefined ? { reason: str('reason') } : {}),
-    ...(str('command') !== undefined ? { command: str('command') } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+    ...(rationale ? { impact: rationale.impact } : {}),
+    ...(command !== undefined ? { command } : {}),
     /*
      * `CommandExecutionApprovalKind = "command" | "writeStdin"`：后者是**往一个
      * 已经在跑的进程的 stdin 里写东西**，不是启动一条命令。以前一律按「将运行一条
@@ -3175,7 +3203,7 @@ export function toApprovalView(
         }
       : {}),
     ...(changes ? { changes } : {}),
-    allowAcceptForSession,
+    allowAcceptForSession: acceptForSession,
     waitedMs: Math.max(0, now - approval.receivedAtMs),
     unattended: approval.unattended,
   };

@@ -70,8 +70,8 @@ describe('输出契约（写错了不报错，只是策略静默失效）', () =
     expect(serialize(null)).toBe('');
   });
 
-  it('allow 可以带 updatedInput（只有 allow 时内核才认）', () => {
-    const output = allow('PreToolUse', { updatedInput: { command: 'echo ok' } }) as {
+  it('allow 只用来改写工具输入：签名上 updatedInput 就是必填的（不带它的 allow 是无效输出）', () => {
+    const output = allow('PreToolUse', { command: 'echo ok' }) as {
       hookSpecificOutput: Record<string, unknown>;
     };
     expect(output.hookSpecificOutput.permissionDecision).toBe('allow');
@@ -113,6 +113,43 @@ describe('入参里的路径要**宁可多认**', () => {
   });
 });
 
+describe('shell 命令按词判路径（hook 第一次真正接进内核时补的，2026-09-28）', () => {
+  it('`cat ~/.ssh/id_rsa` 被拦 —— 以前整行不以 / 开头，凭据清单从没看过 shell', () => {
+    const result = preToolUse({ command: 'cat ~/.ssh/id_rsa' });
+    const output = result.output as { hookSpecificOutput: Record<string, string> };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(result.audit[0]?.pathKind).toBe('credentials');
+  });
+
+  it('`$HOME/.aws/credentials` 与带引号的写法同样被拦', () => {
+    for (const command of [
+      'cp $HOME/.aws/credentials out.txt',
+      'cat "${HOME}/.ssh/config"',
+      "python3 read.py '~/.ssh/id_ed25519'",
+    ]) {
+      expect(preToolUse({ command }).output, command).not.toBeNull();
+    }
+  });
+
+  it('执行系统目录里的程序**不是**越界：`/usr/bin/env python3` 以前会被整条当系统目录拒掉', () => {
+    for (const command of [
+      '/usr/bin/env python3 build.py',
+      '/bin/rm inputs/old.md',
+      '/bin/zsh -lc "ls"',
+      'cat /etc/hosts',
+    ]) {
+      expect(preToolUse({ command }).output, command).toBeNull();
+    }
+  });
+
+  it('`command` 以外的路径字段仍按整条判，system-dirs 照拦', () => {
+    const output = preToolUse({ file_path: '/etc/sudoers' }).output as {
+      hookSpecificOutput: Record<string, string>;
+    };
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+});
+
 describe('PreToolUse：硬拦截**不看 permission_mode**', () => {
   it('访问 ~/.ssh 被拒，理由说清对完全访问也生效', () => {
     const result = preToolUse({ file_path: '/Users/li/.ssh/id_rsa' });
@@ -146,12 +183,11 @@ describe('PreToolUse：硬拦截**不看 permission_mode**', () => {
     expect(result.output).toBeNull();
   });
 
-  it('有风险的命令**放行但带上理由** —— 内核不支持 ask，策略只能这样给审批卡供料', () => {
+  it('有风险的命令**不表态**：`allow` 不带 updatedInput 是无效输出，内核会丢掉整条', () => {
     const result = preToolUse({ command: 'pip install openpyxl' });
-    const output = result.output as { hookSpecificOutput: Record<string, string> };
-    expect(output.hookSpecificOutput.permissionDecision).toBe('allow');
-    expect(output.hookSpecificOutput.additionalContext).toContain('为什么需要确认');
-    expect(output.hookSpecificOutput.additionalContext).toContain('影响范围');
+    // 拦不拦交给内核的审批流；卡片上的理由由主进程给（commandApprovalRationale）
+    expect(result.output).toBeNull();
+    expect(result.audit.some((r) => r.action === 'tool.pre')).toBe(true);
   });
 
   it('命令进审计时被截断（审计要的是类型，不是完整复现）', () => {
@@ -226,11 +262,12 @@ describe('hook 包的接线', () => {
   );
 
   it('hooks.json 声明的四个事件都有对应脚本', () => {
-    const manifest = JSON.parse(readFileSync(join(PLUGIN_ROOT, 'hooks.json'), 'utf8')) as Record<
-      string,
-      { hooks: { command: string }[] }[]
-    >;
-    const events = Object.keys(manifest).filter((k) => !k.startsWith('_'));
+    const file = JSON.parse(readFileSync(join(PLUGIN_ROOT, 'hooks.json'), 'utf8')) as {
+      hooks?: Record<string, { hooks: { command: string }[] }[]>;
+    };
+    // 内核的 HooksFile：事件在 `hooks` 里。放在顶层 = 解析成空集、被静默丢掉
+    const manifest = file.hooks ?? {};
+    const events = Object.keys(manifest);
     expect(events.sort()).toEqual(['PermissionRequest', 'PostToolUse', 'PreToolUse', 'SessionEnd']);
 
     for (const event of events) {

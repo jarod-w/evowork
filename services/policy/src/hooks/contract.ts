@@ -14,8 +14,14 @@
  * | `deny` **必须**带非空 reason | `hooks/src/engine/output_parser.rs:510` | 整条输出被判无效 → **策略静默失效** |
  * | `permissionDecision: "ask"` 不被支持 | 同上 `:459` | 同上 |
  * | `updatedInput` 只在 `allow` 时有效 | 同上 `:450` | 同上 |
+ * | `allow` **必须**带 `updatedInput`（2026-09-28 在当前签出上补查） | 同上 `:451-456` | 同上 |
  *
- * 三条的共同点是**失败方式都是"什么都没发生"**，不是报错。所以它们集中在这里一次写对，
+ * 第四条是 hook 真正接进内核那天才补上的：此前 `handlePreToolUse` 对每条有风险的命令都回
+ * `allow + additionalContext`，那是一条**无效输出** —— 只是 hook 从没被内核加载过，
+ * 所以没人看见。`additionalContext` 本来也到不了审批卡（它进的是模型上下文），
+ * 卡片的理由现在由主进程的 `commandApprovalRationale` 给。
+ *
+ * 四条的共同点是**失败方式都是"什么都没发生"**，不是报错。所以它们集中在这里一次写对，
  * 并由测试钉住 —— 散在四个 hook 脚本里的话，其中一个写错了没人会发现。
  *
  * `PermissionRequest` 事件的形状不同：用 `decision`（allow/deny）而不是 `permissionDecision`
@@ -59,8 +65,11 @@ export type HookOutput =
   /** 不表态：内核按默认流程走 */
   | null;
 
-export function allow(event: 'PreToolUse', extra: Record<string, unknown> = {}): HookOutput {
-  return { hookSpecificOutput: { hookEventName: event, permissionDecision: 'allow', ...extra } };
+/** `allow` 只能用来**改写工具输入**：不带 `updatedInput` 的 allow 是无效输出（见上表第四条）。 */
+export function allow(event: 'PreToolUse', updatedInput: Record<string, unknown>): HookOutput {
+  return {
+    hookSpecificOutput: { hookEventName: event, permissionDecision: 'allow', updatedInput },
+  };
 }
 
 /** `deny` 的 reason 必填且非空 —— 这个函数不接受空字符串。 */

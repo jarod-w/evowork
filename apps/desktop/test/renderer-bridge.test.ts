@@ -5,13 +5,14 @@
  * 而适配层推给渲染层的又是**任务视角**的事件、渲染层认的是**组件视角**的。
  * 三处各自都有测试、合起来是断的 —— 所以这里测的全是"接缝"。
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Adapter, UiEvent } from '@evowork/kernel-adapter';
+import { KERNEL_PROMPT_RULES } from '@evowork/policy';
 import { createArtifactRepo, openStore, type ProjectionRow, type Store } from '@evowork/store';
 
 import {
@@ -32,6 +33,7 @@ import {
 } from '../src/main/renderer-bridge.js';
 import {
   ensureKernelConfig,
+  ensureKernelExecPolicyRules,
   ensureKernelModelCatalog,
   ensurePaths,
   migrateMemoriesConfig,
@@ -1410,6 +1412,33 @@ describe('运行中切换审批档', () => {
     expect(fullAccessApprovalReply({ ...base, kind: 'userInput' })).toBeUndefined();
     expect(fullAccessApprovalReply({ ...base, kind: 'mcp' })).toBeUndefined();
   });
+
+  it('**删除不代答**：完全访问承诺「删除文件前仍会问你」，这里一放行内核就白问了', () => {
+    const base = { id: 'apv_1', threadId: 't1', receivedAtMs: 1, unattended: false };
+    expect(
+      fullAccessApprovalReply({
+        ...base,
+        kind: 'command',
+        params: { command: "/bin/zsh -lc 'rm inputs/report.xlsx'" },
+      }),
+    ).toBeUndefined();
+    expect(
+      fullAccessApprovalReply({
+        ...base,
+        kind: 'fileChange',
+        params: {},
+        fileChanges: [{ path: '/w/old.md', kind: 'delete', outsideWorkspace: false }],
+      }),
+    ).toBeUndefined();
+    // 别的命令照旧代答 —— 完全访问本来就承诺了它们
+    expect(
+      fullAccessApprovalReply({
+        ...base,
+        kind: 'command',
+        params: { command: "/bin/zsh -lc 'pip install openpyxl'" },
+      }),
+    ).toEqual({ decision: 'accept' });
+  });
 });
 
 describe('首次运行装内核配置', () => {
@@ -1501,6 +1530,23 @@ describe('首次运行装内核配置', () => {
     );
     expect(migrated.text.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
     expect(migrateMultiAgentV2Config(migrated.text).changed).toBe(false);
+  });
+
+  it('删除类 prompt 规则写进内核的 rules/，**旧安装里过期的那份会被换掉**', () => {
+    const home = mkdtempSync(join(tmpdir(), 'evowork-rules-'));
+    const paths = resolvePaths(home);
+    ensurePaths(paths);
+    const rulesDir = join(paths.kernelHome, 'rules');
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(join(rulesDir, 'evowork.rules'), '# 上一个版本\n', 'utf8');
+    // 内核自己写的白名单（用户在卡上「加入白名单」）不属于我们，不能碰
+    writeFileSync(join(rulesDir, 'default.rules'), 'prefix_rule(pattern = ["ls"])\n', 'utf8');
+
+    const target = ensureKernelExecPolicyRules(paths);
+
+    expect(target).toBe(join(rulesDir, 'evowork.rules'));
+    expect(readFileSync(target, 'utf8')).toBe(KERNEL_PROMPT_RULES);
+    expect(readFileSync(join(rulesDir, 'default.rules'), 'utf8')).toContain('"ls"');
   });
 
   it('给内核写模型目录：**根键必须在第一个表之前**，否则整份配置会被判无效', () => {
@@ -2253,6 +2299,52 @@ describe('工作空间只有一处真源（spec §2.2）', () => {
  * （`v2/item.rs:1744-1753`）。读错不会报错，表现是卡片写着「需要你回答」、
  * 底下一个字都没有 —— 用户只能对着一个空框猜。
  */
+describe('命令审批卡要说清为什么（10 §3.2 必填，2026-09-28 外部测试 A1 / D1-3）', () => {
+  const command = (params: Record<string, unknown>) =>
+    toApprovalView(
+      {
+        id: 'apv_cmd',
+        kind: 'command' as const,
+        threadId: 't1',
+        receivedAtMs: 0,
+        unattended: false,
+        params: { threadId: 't1', cwd: '/w', ...params },
+      },
+      true,
+      0,
+    );
+
+  it('内核没给理由（危险命令启发式）→ 用命令判定补上，而不是让卡片说「建议先拒绝」', () => {
+    const view = command({ command: "/bin/zsh -lc 'rm -f build_docx.py verify_docx.py'" });
+    expect(view.reason).toContain('删除文件');
+    expect(view.impact).toContain('删除文件');
+  });
+
+  it('我们自己那条删除规则被内核包了一层英文 → 只留中文理由', () => {
+    const view = command({
+      command: "/bin/zsh -lc 'rm inputs/D1_important.xlsx'",
+      reason: '`rm inputs/D1_important.xlsx` requires approval: 这个命令会删除文件',
+    });
+    expect(view.reason).not.toContain('requires approval');
+    expect(view.reason).toContain('删除文件');
+  });
+
+  it('模型为越过沙箱写的用途原样保留：那是它在说为什么要这么做', () => {
+    const view = command({
+      command: "/bin/zsh -lc 'cat ~/Downloads/invoice.pdf'",
+      reason: '读取你提到的发票文件',
+    });
+    expect(view.reason).toBe('读取你提到的发票文件');
+  });
+
+  it('删除命令不给「本次任务内都允许」（10 §3.3），别的命令照旧给', () => {
+    expect(command({ command: "/bin/zsh -lc 'rm a.txt'" }).allowAcceptForSession).toBe(false);
+    expect(command({ command: "/bin/zsh -lc 'pip install openpyxl'" }).allowAcceptForSession).toBe(
+      true,
+    );
+  });
+});
+
 describe('审批卡视图对得上内核的字段名', () => {
   const base = {
     id: 'apv_1',
