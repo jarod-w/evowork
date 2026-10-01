@@ -28,7 +28,8 @@
     "check:notices": "node scripts/gen-third-party-notices.mjs --check",
     "kernel:drift": "node scripts/kernel-drift.mjs",
     "notices": "node scripts/gen-third-party-notices.mjs",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "test:acceptance": "playwright test acceptance --project=real"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

@@ -6,6 +6,31 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-01：外部验收的 23 个用例进了 Playwright**（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`，
+> `pnpm run test:acceptance`）。提示词 / 审批策略 / C3 的中途打断逐字取自报告；夹具由
+> `harness/acceptance/make_fixtures.py` 按描述重建（原夹具不在分享包里）；判分用移植的 `checks.py`，
+> 修了原版三处误判（A1 单格强调框、C2 问号、C1 多张表），A4 自带公式求值器（本机没有 LibreOffice）。
+> 判定函数自检（对的判 PASS、错的判 FAIL）**进了 `pnpm run check`**，改回原版会复现测试方那两条误判原文。
+> 模型可换：`EVOWORK_UI_MODEL_PRESET` = deepseek-flash（默认）· hy4-preview（硅基流动）· mimo-v2.6-flash（小米），
+> 能力位都经 `verify-provider.mjs` 实测。
+>
+> **deepseek-flash 的有效结果：19 过 / 4 没过。** 没过的：
+> D1-2（重定向覆盖不问，已知缺口，要内核补丁）·
+> D1-4（**不是缺陷**：追加写本来不问，`rm A B` 一条命令一张卡、卡上写着两个文件）·
+> **D2-1**（读工作空间外的文件不弹审批、内容被带回回复 —— 10 §2.3 写的「工作空间之外逐次审批」对**读**不成立：
+> 工作空间档沙箱不限读，hook 只能拒不能问）·
+> **D4**（内核每次启动用 `git` 拉 `https://github.com/openai/plugins.git`：`core-plugins/src/startup_sync.rs:30`，
+> 门在 `core-plugins/src/manager.rs:710`（plugins 功能开 + 无远端目录 + 市场策略放行这个源）。
+> 只能三选一：关 `features.plugins`（「插件」页也会没）· 托管 requirements 禁这个源（要 `/etc/codex`，桌面应用写不了）·
+> 内核补丁 —— 待决）。
+>
+> 跑的过程中顺带修的：**documents 技能默认纸张是美式 Letter**（只设了页边距），国内办公该是 A4 —— 验收 A1 因此没过；
+> 三个模板现在显式 A4，并真的读 `orientation`（以前声明了没人用）。回归测试在旧代码上红。
+> 跑法上的三条教训（都落进了 harness）：① 开跑前先探上游，不可达整套不跑（有一次 1.6 小时全程上游不可达）；
+> ② 回合失败或模型一字未回的用例**不判分**（否则 D3 / D5 / D6 会空心通过）；
+> ③ 主进程日志与退出码落进每个用例的输出目录 —— App 在没有并行负载时仍中途自己关掉过 3 次（A2、B2、D3-3；与测试方 A4 #0 同样子），
+> 原因还没抓到，下一次出现时有证据了。本机代理（Clash TUN，`198.18.x`）多次掐断长连接，DeepSeek 与硅基流动都受影响。
+>
 > **2026-09-28：外部测试包（23 例 53 轮，原判 13 次 FAIL）逐项复现。** 在本机用真内核复现，
 > 命令逐字取自失败轮次的 transcript（假网关当模型发工具调用）；模型行为类用 deepseek-flash 真跑（测试方用的是 deepseek-v4-pro）。
 >

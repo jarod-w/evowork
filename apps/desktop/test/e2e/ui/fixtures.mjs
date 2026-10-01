@@ -5,7 +5,7 @@
  * 从**进程外**连上去。两侧的分工就是第 1 步拆出来的那条线。
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { arch, homedir, platform } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -110,6 +110,29 @@ export const test = base.extend({
       },
       timeout: 120_000,
     });
+    /*
+     * 主进程的输出与退出方式落进这个用例的输出目录。
+     * 2026-09-29/30 的真模型轮次里 App 三次在用例中途**自己关掉了**（Target page … has been closed），
+     * 与测试方 A4 #0 的 TargetClosedError 同一个样子 —— 而主进程的日志当时只在内存里，
+     * 进程一退就什么都不剩。退出码 / 信号能分出是崩了、被杀了还是自己 quit 了。
+     */
+    const mainLog = testInfo.outputPath('electron-main.log');
+    const keep = (chunk) => {
+      try {
+        appendFileSync(mainLog, chunk);
+      } catch {
+        /* 诊断用的副本写不进去不影响测试 */
+      }
+    };
+    app.process().stdout?.on('data', keep);
+    app.process().stderr?.on('data', keep);
+    app
+      .process()
+      .on('exit', (code, signal) =>
+        keep(
+          `\n[fixtures] 主进程退出 code=${code} signal=${signal} at ${new Date().toISOString()}\n`,
+        ),
+      );
     await use(app);
 
     /*

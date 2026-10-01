@@ -15,6 +15,7 @@ import { app } from 'electron';
 import { bootApp, createE2EHome, writeKernelConfig } from './boot.mjs';
 import { createFakeGateway } from './fake-gateway.mjs';
 import { startRealGateway } from './real-gateway.mjs';
+import { selectRealModel } from './real-models.mjs';
 import { publishControls, waitFor } from './runner.mjs';
 
 const repoRoot = process.env.EVOWORK_E2E_REPO_ROOT;
@@ -48,25 +49,22 @@ const REAL_MODEL = process.env.EVOWORK_UI_REAL_MODEL === '1';
  *
  * 不走内置目录，是因为目录里现在没有 DeepSeek 的条目：`known-models.ts` 里那两条
  * 都没有 `builtinId`，于是只配 `DEEPSEEK_API_KEY` 时网关会 `no_models` 拒绝启动。
- * 能力位抄自 `known-models.ts` 的 `deepseek-flash`（2026-09-26 实测 23 条全通过）。
+ * 用哪个模型由 `EVOWORK_UI_MODEL_PRESET` 选（默认 deepseek-flash），预设与能力位在 `real-models.mjs`。
  */
+const REAL_MODEL_SPEC = selectRealModel();
+/** DeepSeek 沿用它的内置变量名；别的厂商用中性名，免得被网关当成 DeepSeek 的密钥 */
+const REAL_KEY_ENV =
+  process.env.EVOWORK_UI_KEY_ENV ??
+  (REAL_MODEL_SPEC.provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'EVOWORK_UI_REAL_KEY');
 const REAL_CUSTOM_MODELS = [
   {
-    id: 'deepseek/deepseek-flash',
-    displayName: 'DeepSeek Flash',
-    provider: 'deepseek',
-    upstreamModel: 'deepseek-flash',
-    baseUrl: 'https://api.deepseek.com',
-    keyEnv: process.env.EVOWORK_UI_KEY_ENV ?? 'DEEPSEEK_API_KEY',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: true,
-      promptCache: true,
-      imageInput: true,
-      maxContextTokens: 128_000,
-    },
+    id: REAL_MODEL_SPEC.id,
+    displayName: REAL_MODEL_SPEC.displayName,
+    provider: REAL_MODEL_SPEC.provider,
+    upstreamModel: REAL_MODEL_SPEC.upstreamModel,
+    baseUrl: REAL_MODEL_SPEC.baseUrl,
+    keyEnv: REAL_KEY_ENV,
+    capabilities: REAL_MODEL_SPEC.capabilities,
   },
 ];
 
@@ -102,7 +100,7 @@ async function main() {
   const real = REAL_MODEL
     ? await startRealGateway({
         repoRoot,
-        keyEnvName: process.env.EVOWORK_UI_KEY_ENV ?? 'DEEPSEEK_API_KEY',
+        keyEnvName: REAL_KEY_ENV,
         apiKey: process.env.EVOWORK_UI_MODEL_KEY,
         customModels: REAL_CUSTOM_MODELS,
         logFile: join(home, 'gateway.log'),
