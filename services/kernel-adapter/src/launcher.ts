@@ -15,6 +15,7 @@
  * 所以桌面壳现在只传路径，不知道环境变量叫什么。
  */
 import { spawn, type SpawnOptions } from 'node:child_process';
+import { join } from 'node:path';
 
 import type { KernelLauncher, KernelProcess } from './session.js';
 
@@ -68,7 +69,9 @@ export function withLoopbackNoProxy(env: NodeJS.ProcessEnv): Record<string, stri
 export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLauncher {
   return {
     launch(): KernelProcess {
+      const cwd = join(options.kernelHome, 'startup');
       const spawnOptions: SpawnOptions = {
+        cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,

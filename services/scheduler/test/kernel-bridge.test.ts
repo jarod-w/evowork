@@ -6,7 +6,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createKernelBridge, type AutomationStore, type TaskRunner } from '../src/kernel-bridge.js';
+import {
+  createKernelBridge,
+  type AutomationStore,
+  type BridgeOptions,
+  type TaskRunner,
+} from '../src/kernel-bridge.js';
 import { createScheduler, type AutomationDefinition, type RunRecord } from '../src/scheduler.js';
 
 const NOW = Date.parse('2026-09-05T09:00:00Z');
@@ -29,6 +34,7 @@ const automation: AutomationDefinition = {
 
 function harness(
   over: {
+    resolveEnvironment?: BridgeOptions['resolveEnvironment'];
     workspaceExists?: (path: string) => boolean;
     isModelAvailable?: (modelId: string) => Promise<boolean>;
   } = {},
@@ -69,6 +75,7 @@ function harness(
     deviceId: 'laptop',
     notify: (text) => notices.push(text),
     now: () => NOW,
+    ...(over.resolveEnvironment ? { resolveEnvironment: over.resolveEnvironment } : {}),
     ...(over.workspaceExists ? { workspaceExists: over.workspaceExists } : {}),
     ...(over.isModelAvailable ? { isModelAvailable: over.isModelAvailable } : {}),
   });
@@ -79,6 +86,35 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('起一次定时执行', () => {
+  it('无项目自动化显式使用宿主分配目录并传递环境绑定回调', async () => {
+    const onCreated = vi.fn();
+    const resolveEnvironment = vi.fn(async () => ({ cwd: '/managed/run-1', onCreated }));
+    const { bridge, runner } = harness({ resolveEnvironment });
+    const unprojected = { ...automation, workspaces: [] };
+    await bridge.ports.startRun(unprojected, NOW);
+    expect(resolveEnvironment).toHaveBeenCalledWith(unprojected, NOW);
+    expect(runner.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        overrides: { cwd: '/managed/run-1', model: automation.modelId },
+        onCreated,
+      }),
+    );
+    bridge.dispose();
+  });
+
+  it('环境解析失败立即暂停，不创建内核任务', async () => {
+    const { bridge, runner, patches, notices } = harness({
+      resolveEnvironment: async () => {
+        throw new Error('unsafe-root');
+      },
+    });
+    await expect(bridge.ports.startRun(automation, NOW)).rejects.toThrow('workspace-invalid');
+    expect(runner.createTask).not.toHaveBeenCalled();
+    expect(patches).toContainEqual(expect.objectContaining({ status: 'PAUSED' }));
+    expect(notices).toHaveLength(1);
+    bridge.dispose();
+  });
+
   it('**先设预算再让它跑** —— 顺序反了就有一段没有预算保护的窗口', async () => {
     const { bridge, calls } = harness();
     await bridge.ports.startRun(automation, NOW);

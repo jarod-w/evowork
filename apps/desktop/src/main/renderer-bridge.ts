@@ -19,6 +19,8 @@ import { elicitationChoice } from '@evowork/kernel-adapter';
  * 它一直没被发现，是因为这条链路从来没有被真正拉起来过。
  */
 import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import type { TaskEnvironments } from './task-environments.js';
 
 import {
   titleFromText,
@@ -39,6 +41,7 @@ import {
 import {
   analyzeCommand,
   classifyPath,
+  workspaceRootRefusal,
   commandApprovalRationale,
   describeCapability,
   RETENTION_DAYS,
@@ -48,6 +51,7 @@ import {
   buildProjectCard,
   ellipsizeMiddle,
   isUnderRoot,
+  ownerProjectOf,
   resolveChildPath,
   sortEntries,
   type ArtifactLite,
@@ -387,6 +391,7 @@ function unavailableModelAccess(why: string): ModelAccessMutationResult {
 export interface ProjectPorts {
   readonly home: string;
   readonly rootExists: (path: string) => boolean;
+  readonly sameDirectory?: (a: string, b: string) => Promise<boolean>;
   /**
    * 解析符号链接（`fs.realpath`）。读不了就返回 undefined。
    *
@@ -423,6 +428,7 @@ export interface ProjectPorts {
 }
 
 export interface RendererBridgeOptions {
+  readonly environments?: TaskEnvironments | undefined;
   readonly adapter: Adapter;
   readonly store: Store;
   /**
@@ -658,6 +664,15 @@ export function createEventTranslator(store: Store, now: () => number) {
     return seconds >= 0 ? { completed: true, durationSeconds: seconds } : { completed: true };
   }
 
+  const taskRow = (row: ProjectionRow, at: number): TaskRowView => {
+    const raw = store.db
+      ? readMeta(store.db, `evowork.environment.task.${row.thread_id}`)
+      : undefined;
+    return {
+      ...toTaskRow(row, at),
+      ...(raw ? { projectId: (JSON.parse(raw) as { projectId: string | null }).projectId } : {}),
+    };
+  };
   return function translate(event: UiEvent): readonly RendererEvent[] {
     switch (event.type) {
       case 'task-removed':
@@ -667,7 +682,7 @@ export function createEventTranslator(store: Store, now: () => number) {
       case 'task-created': {
         const row = store.threads.get(event.threadId);
         if (!row) return [];
-        return [{ type: 'task-created', task: toTaskRow(row, now()) }];
+        return [{ type: 'task-created', task: taskRow(row, now()) }];
       }
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
@@ -976,6 +991,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
   }
 
   const projects = createProjectRepo(store.db);
+  const owner = (row: ProjectionRow): string | null | undefined => {
+    const environment = options.environments?.task(row.thread_id);
+    if (environment) return environment.projectId;
+    return row.cwd
+      ? ownerProjectOf(row.cwd, projects.list(), options.projectPorts?.home ?? '')
+      : undefined;
+  };
+  const taskRow = (row: ProjectionRow, at: number): TaskRowView => ({
+    ...toTaskRow(row, at),
+    projectId: owner(row),
+  });
 
   /** 没注入端口时的诚实回答：功能不可用，而不是一个点了没反应的按钮 */
   const NO_PORTS = '这个构建没有接文件系统，项目功能不可用。';
@@ -985,7 +1011,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
       .listTasks({})
       .map((t) => store.threads.get(t.threadId))
       .filter((row): row is ProjectionRow => row !== undefined)
-      .map((row) => ({ cwd: row.cwd, archived: row.archived === 1, recencyAt: row.recency_at }));
+      .map((row) => ({
+        cwd: row.cwd,
+        projectId: owner(row),
+        archived: row.archived === 1,
+        recencyAt: row.recency_at,
+      }));
 
   const allArtifactsLite = (): readonly ArtifactLite[] =>
     (options.pageData?.listArtifacts() ?? []).map((a) => ({
@@ -1004,7 +1035,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       },
-      threads: allThreadsLite(),
+      threads: allThreadsLite().filter((t) => t.projectId === row.id),
       artifacts: allArtifactsLite(),
       rootExists: ports.rootExists,
       home: ports.home,
@@ -1013,7 +1044,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
       id: card.id,
       name: card.name,
       rootDisplay: card.rootDisplay,
-      rootMissing: card.rootState === 'missing',
+      rootMissing:
+        card.rootState === 'missing' || !!workspaceRootRefusal(row.roots[0] ?? '', ports.home),
       taskCount: card.taskCount,
       artifactCount: card.artifactCount,
       ...(card.recencyAt !== null ? { recencyLabel: timeLabel(card.recencyAt, now()) } : {}),
@@ -1066,6 +1098,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
   /** 空间的根目录。没有 root 的空间返回 undefined —— 它做不了任何需要 cwd 的事 */
   const rootOf = (id: string): string | undefined => projects.get(id)?.roots[0];
+  const checkedProjectRoot = async (id: string): Promise<string> => {
+    const ports = options.projectPorts;
+    const root = rootOf(id);
+    if (!ports || !root) throw new Error('项目没有可用目录，请重新选择。');
+    const real = await safeRealpath(ports, root);
+    const home = await safeRealpath(ports, ports.home);
+    if (!real || !home || !ports.rootExists(real)) throw new Error('项目目录已失效，请重新选择。');
+    const refusal = workspaceRootRefusal(real, home);
+    if (refusal) throw new Error(refusal.reason);
+    const verdict = classifyPath(real, { workspaceRoot: real, home });
+    if (verdict.verdict === 'hard-block') throw new Error(verdict.reason);
+    return real;
+  };
+  const taskEnvironmentRoot = async (threadId: string): Promise<string> => {
+    const cwd = store.threads.get(collaborationRoot(threadId).rootThreadId)?.cwd;
+    if (!cwd) throw new Error('任务没有有效目录。');
+    return options.environments ? options.environments.validate(cwd) : cwd;
+  };
+  const attachmentRoot = async (input: PickAttachmentsInput): Promise<string> => {
+    if (input.threadId) return taskEnvironmentRoot(input.threadId);
+    if (options.environments && input.draftId) return options.environments.draftRoot(input.draftId);
+    if (input.workspaceId) return checkedProjectRoot(input.workspaceId);
+    throw new Error('缺少草稿环境，请重新打开新任务。');
+  };
 
   /**
    * 包一层 `ports.realpath`：解析失败（无论是返回 undefined 还是直接抛错）一律当成
@@ -1118,7 +1174,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
    */
   const realRootOf = async (ports: ProjectPorts, root: string): Promise<string | undefined> => {
     const realRoot = await safeRealpath(ports, root);
-    if (realRoot === undefined || !isUnderRoot(realRoot, realRoot, ports.home)) return undefined;
+    if (realRoot === undefined || workspaceRootRefusal(realRoot, ports.home)) return undefined;
     const verdict = classifyPath(realRoot, { workspaceRoot: realRoot, home: ports.home });
     return verdict.verdict === 'hard-block' ? undefined : realRoot;
   };
@@ -1190,153 +1246,230 @@ export function createRendererActions(options: RendererBridgeOptions) {
   const hardBlockRefusal = (reason: string | undefined): string =>
     `这个目录被安全策略拦下了（${reason ?? '受保护目录'}），换一个吧。`;
 
+  let projectMutation = Promise.resolve();
   const createProjectImpl = async (input: {
     readonly name: string;
     readonly path: string;
+    readonly automatic?: boolean;
   }): Promise<ProjectMutationResult> => {
-    const ports = options.projectPorts;
-    if (!ports) return { ok: false, refused: NO_PORTS, projects: [] };
-
-    const verdict = classifyPath(input.path, {
-      workspaceRoot: input.path,
-      home: ports.home,
+    const previous = projectMutation;
+    let release!: () => void;
+    projectMutation = new Promise<void>((done) => {
+      release = done;
     });
-    if (verdict.verdict === 'hard-block') {
-      /*
-       * 10 §5 那条"把工作空间设在 ~/.ssh 就能绕过"正是这个入口。
-       * 不在这里拦，后面所有路径策略都白做。
-       */
+    await previous;
+    const ports = options.projectPorts;
+    try {
+      if (!ports) return { ok: false, refused: NO_PORTS, projects: [] };
+      const real = await safeRealpath(ports, input.path);
+      const home = await safeRealpath(ports, ports.home);
+      if (!real || !home || !ports.rootExists(real))
+        return { ok: false, refused: '目录不存在或无法读取，请重新选择。', projects: cards(ports) };
+      const refusal = workspaceRootRefusal(real, home);
+      if (refusal) return { ok: false, refused: refusal.reason, projects: cards(ports) };
+      const verdict = classifyPath(real, { workspaceRoot: real, home });
+      if (verdict.verdict === 'hard-block')
+        return { ok: false, refused: hardBlockRefusal(verdict.reason), projects: cards(ports) };
+      let existing: ProjectLocalRow | undefined;
+      for (const row of projects.list()) {
+        for (const root of row.roots) {
+          const candidate = await safeRealpath(ports, root);
+          if (candidate && (candidate === real || (await ports.sameDirectory?.(candidate, real))))
+            existing = row;
+        }
+      }
+      const at = now();
+      const id = existing?.id ?? `p-${randomUUID()}`;
+      const parts = real.replace(/\\/g, '/').split('/').filter(Boolean);
+      const base = parts.at(-1) ?? real;
+      let name = input.automatic || !input.name.trim() ? base : input.name.trim();
+      if (!existing && (input.automatic || !input.name.trim())) {
+        const used = new Set(projects.list().map((row) => row.name));
+        if (used.has(name)) name = `${base} · ${parts.at(-2) ?? base}`;
+        const stem = name;
+        for (let index = 2; used.has(name); index += 1) name = `${stem} (${index})`;
+      }
+      if (!existing) projects.insert({ id, name, roots: [real], createdAt: at, updatedAt: at });
+      let warning: string | undefined;
+      if (!existing?.kernelId) {
+        try {
+          const kernelId = await adapter.mirrorProjectCreate({
+            name: existing?.name ?? name,
+            rootPath: real,
+            idempotencyKey: id,
+          });
+          if (kernelId !== undefined) projects.setKernelId(id, kernelId);
+        } catch (err: unknown) {
+          warning = '项目已保存在本机，内核同步失败；再次选择这个文件夹可重试。';
+          options.logger?.warn('desktop.project.mirror_failed', {
+            method: 'project/create',
+            errorClass: err instanceof Error ? err.name : 'UnknownError',
+          });
+        }
+      }
       return {
-        ok: false,
-        refused: hardBlockRefusal(verdict.reason),
+        ok: true,
+        projectId: id,
+        reused: !!existing,
+        ...(warning ? { warning } : {}),
         projects: cards(ports),
       };
+    } finally {
+      release();
     }
-
-    const at = now();
-    const id = `p-${at.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const name = input.name.trim() || input.path.slice(input.path.lastIndexOf('/') + 1);
-    projects.insert({ id, name, roots: [input.path], createdAt: at, updatedAt: at });
-
-    // 镜像：失败静默（spec §2.3）。用户看到的是空间建好了
-    try {
-      const kernelId = await adapter.mirrorProjectCreate({
-        name,
-        rootPath: input.path,
-        idempotencyKey: id,
-      });
-      if (kernelId !== undefined) projects.setKernelId(id, kernelId);
-    } catch (err: unknown) {
-      options.logger?.warn('desktop.project.mirror_failed', {
-        method: 'project/create',
-        errorClass: err instanceof Error ? err.name : 'UnknownError',
-      });
-    }
-
-    return { ok: true, projects: cards(ports) };
   };
 
+  const sendingDrafts = new Map<string, Promise<{ threadId: string; queued?: boolean }>>();
   return {
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
     async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
-      const locked = options.policyPorts?.readOnlyReason();
-      if (locked) throw new Error(locked);
-      const text = input.text.trim();
-      const references: UserInput[] = (input.references ?? [])
-        .filter((reference) =>
+      const id = input.draftId;
+      if (id && sendingDrafts.has(id)) return sendingDrafts.get(id)!;
+      const operation = (async () => {
+        const locked = options.policyPorts?.readOnlyReason();
+        if (locked) throw new Error(locked);
+        const text = input.text.trim();
+        const validReferences = (input.references ?? []).filter((reference) =>
           reference.type === 'text'
             ? reference.text.trim() !== ''
             : reference.path.trim() !== '' &&
               reference.name.trim() !== '' &&
               ['mention', 'skill', 'localImage'].includes(reference.type),
-        )
-        .map((reference) =>
+        );
+        const references: UserInput[] = validReferences.map((reference) =>
           reference.type === 'text'
             ? { type: 'text' as const, text: reference.text }
             : reference.type === 'localImage'
               ? { type: 'localImage' as const, path: reference.path }
               : { type: reference.type, name: reference.name, path: reference.path },
         );
-      if (text === '' && references.length === 0) throw new Error('空需求');
-      let content: UserInput[] = [
-        ...(text ? [{ type: 'text' as const, text }] : []),
-        ...references,
-      ];
+        if (text === '' && references.length === 0) throw new Error('空需求');
+        let content: UserInput[] = [
+          ...(text ? [{ type: 'text' as const, text }] : []),
+          ...references,
+        ];
 
-      /*
-       * 工作空间 id → cwd。**在这里翻译**，渲染层只拿 id（见 `SendInput.workspaceId`）。
-       *
-       * 真源是本机 `project_local`（D-P1），不是内核 `project/list`。UI 传的是
-       * 本机 id（`p-…`）；内核 catalog 的 id 是镜像成功才有的 `kernel_id`，
-       * 两边对不上。查 catalog 的后果是：选了项目也建不出带 cwd 的任务，
-       * 侧栏只能把它丢进「最近」，项目页永远是空的。
-       *
-       * 选了一个没有 root 的空间时 `path` 是 undefined —— 此时**不设 cwd**，
-       * 让任务落在默认目录，而不是传一个 undefined 进 `thread/start` 假装设过。
-       */
-      const cwd = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+        if (!input.threadId && input.workspaceId) await checkedProjectRoot(input.workspaceId);
+        const draftId = input.draftId ?? randomUUID();
+        const environment = input.threadId
+          ? undefined
+          : await options.environments?.prepare(draftId, input.workspaceId);
+        const cwd = input.threadId
+          ? await taskEnvironmentRoot(input.threadId)
+          : (environment?.cwd ??
+            (input.workspaceId ? await checkedProjectRoot(input.workspaceId) : undefined));
+        if (
+          input.threadId &&
+          input.workspaceId &&
+          (await checkedProjectRoot(input.workspaceId)) !== cwd
+        ) {
+          throw new Error('任务工作目录已固定，换项目请新建任务。');
+        }
+        if (environment) {
+          const remapped = await options.environments!.references(
+            draftId,
+            environment.cwd,
+            validReferences,
+          );
+          content = [
+            ...(text ? [{ type: 'text' as const, text }] : []),
+            ...remapped.map((reference) =>
+              reference.type === 'text'
+                ? reference
+                : reference.type === 'localImage'
+                  ? { type: 'localImage' as const, path: reference.path }
+                  : reference,
+            ),
+          ];
+          if (environment.threadId) {
+            if (!environment.sent) {
+              await adapter.sendMessage({
+                threadId: environment.threadId,
+                input: content,
+                overrides: {
+                  ...(input.modelId ? { model: input.modelId } : {}),
+                  ...(input.modeId ? { modeId: input.modeId } : {}),
+                  cwd: environment.cwd,
+                },
+              });
+              options.environments!.markSent(environment.threadId);
+            }
+            return { threadId: environment.threadId };
+          }
+        }
 
-      // 用户手选的模型 / 审批档是优先级最高的一档（03 §2.4：场景默认 → 档 → 用户显式选择）
-      const overrides =
-        input.modelId !== undefined || input.modeId !== undefined || cwd
-          ? {
+        // 用户手选的模型 / 审批档是优先级最高的一档（03 §2.4：场景默认 → 档 → 用户显式选择）
+        const overrides =
+          input.modelId !== undefined || input.modeId !== undefined || cwd
+            ? {
+                ...(input.modelId !== undefined ? { model: input.modelId } : {}),
+                ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
+                ...(cwd ? { cwd } : {}),
+              }
+            : undefined;
+
+        if (input.threadId !== undefined) {
+          const route = collaborationRoot(input.threadId);
+          const targetThreadId = route.rootThreadId;
+          if (route.isSubagent) {
+            content = [
+              {
+                type: 'text',
+                text:
+                  `用户正在只读查看子代理 ${input.threadId}，并向它追加要求。` +
+                  '请先用 list_agents 判断该子代理状态：运行中用 send_message，空闲或已完成用 followup_task；' +
+                  '等待结果后在本根任务中汇总。\n\n' +
+                  (text || '后续要求包含在随本消息附带的结构化引用中。'),
+              },
+              ...references,
+            ];
+          }
+          /*
+           * 已有任务里换模型或审批档：**先落任务级设置，再发这一回合**。
+           *
+           * 两件事都要做。只发不存的话，下一回合 `sendMessage` 会从投影表读回旧的
+           * `row.model` / `row.mode_id`，用户切了只在这一轮生效、下一轮又悄悄换回去；
+           * 只存不发的话，这一轮还是旧值 —— 而用户刚刚就是为了这一轮才切的。
+           * （04 §4：任务级设置下一次 `turn/start` 生效，**不追溯已发生的回合**。）
+           */
+          if (input.modelId !== undefined || input.modeId !== undefined) {
+            adapter.setTaskSettings(targetThreadId, {
               ...(input.modelId !== undefined ? { model: input.modelId } : {}),
               ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
-              ...(cwd ? { cwd } : {}),
-            }
-          : undefined;
-
-      if (input.threadId !== undefined) {
-        const route = collaborationRoot(input.threadId);
-        const targetThreadId = route.rootThreadId;
-        if (route.isSubagent) {
-          content = [
-            {
-              type: 'text',
-              text:
-                `用户正在只读查看子代理 ${input.threadId}，并向它追加要求。` +
-                '请先用 list_agents 判断该子代理状态：运行中用 send_message，空闲或已完成用 followup_task；' +
-                '等待结果后在本根任务中汇总。\n\n' +
-                (text || '后续要求包含在随本消息附带的结构化引用中。'),
-            },
-            ...references,
-          ];
+            });
+          }
+          const sent = await adapter.sendMessage({
+            threadId: targetThreadId,
+            input: content,
+            ...(overrides ? { overrides } : {}),
+            ...(input.steer ? { steer: true } : {}),
+          });
+          return { threadId: targetThreadId, ...(sent.queued ? { queued: true } : {}) };
         }
-        /*
-         * 已有任务里换模型或审批档：**先落任务级设置，再发这一回合**。
-         *
-         * 两件事都要做。只发不存的话，下一回合 `sendMessage` 会从投影表读回旧的
-         * `row.model` / `row.mode_id`，用户切了只在这一轮生效、下一轮又悄悄换回去；
-         * 只存不发的话，这一轮还是旧值 —— 而用户刚刚就是为了这一轮才切的。
-         * （04 §4：任务级设置下一次 `turn/start` 生效，**不追溯已发生的回合**。）
-         */
+        const created = await adapter.createTask({
+          input: content,
+          ...(environment
+            ? { onCreated: (threadId: string) => options.environments!.bind(threadId, environment) }
+            : {}),
+          ...(input.scenarioId !== undefined ? { scenarioId: input.scenarioId } : {}),
+          ...(overrides ? { overrides } : {}),
+        });
+        if (environment) options.environments!.markSent(created.threadId);
+        // 新任务同样要落库：否则这个任务的第二条消息就回落到场景默认
         if (input.modelId !== undefined || input.modeId !== undefined) {
-          adapter.setTaskSettings(targetThreadId, {
+          adapter.setTaskSettings(created.threadId, {
             ...(input.modelId !== undefined ? { model: input.modelId } : {}),
             ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
           });
         }
-        const sent = await adapter.sendMessage({
-          threadId: targetThreadId,
-          input: content,
-          ...(overrides ? { overrides } : {}),
-          ...(input.steer ? { steer: true } : {}),
-        });
-        return { threadId: targetThreadId, ...(sent.queued ? { queued: true } : {}) };
+        return { threadId: created.threadId };
+      })();
+      if (id) sendingDrafts.set(id, operation);
+      try {
+        return await operation;
+      } finally {
+        if (id) sendingDrafts.delete(id);
       }
-      const created = await adapter.createTask({
-        input: content,
-        ...(input.scenarioId !== undefined ? { scenarioId: input.scenarioId } : {}),
-        ...(overrides ? { overrides } : {}),
-      });
-      // 新任务同样要落库：否则这个任务的第二条消息就回落到场景默认
-      if (input.modelId !== undefined || input.modeId !== undefined) {
-        adapter.setTaskSettings(created.threadId, {
-          ...(input.modelId !== undefined ? { model: input.modelId } : {}),
-          ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
-        });
-      }
-      return { threadId: created.threadId };
     },
 
     async setTaskMode(input: SetTaskModeInput): Promise<void> {
@@ -1625,6 +1758,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (input.action === 'delete') {
         options.computerUse?.endThread(input.threadId);
         await adapter.deleteTask(input.threadId);
+        await options.environments?.remove(input.threadId);
         return;
       }
       options.logger?.info('desktop.row_action.unimplemented', { reason: input.action });
@@ -1682,14 +1816,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
         .queryThreadIds({ parentThreadId: input.threadId })
         .map((id) => store.threads.get(id))
         .filter((row): row is ProjectionRow => row !== undefined)
-        .map((row) => toTaskRow(row, now()));
+        .map((row) => taskRow(row, now()));
     },
 
     async searchTasks(input: { readonly query: string }): Promise<readonly TaskSearchHitView[]> {
       const hits = await adapter.searchTasks(input.query);
       return hits.flatMap((hit) => {
         const row = store.threads.get(hit.threadId);
-        return row ? [{ task: toTaskRow(row, now()), snippet: hit.snippet }] : [];
+        return row ? [{ task: taskRow(row, now()), snippet: hit.snippet }] : [];
       });
     },
 
@@ -1728,6 +1862,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const source = store.threads.get(input.threadId);
       const ephemeral = input.ephemeral === true;
       const threadId = await adapter.forkTask(input.threadId, input.lastTurnId, ephemeral);
+      const environment = options.environments?.task(input.threadId);
+      if (environment)
+        options.environments!.bind(threadId, {
+          cwd: environment.cwd,
+          projectId: environment.projectId,
+          managed: environment.managed,
+          sent: true,
+        });
       const timestamp = options.now?.() ?? Date.now();
       const sourceTitle = displayTitle(source);
       return {
@@ -1754,6 +1896,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async deleteTask(input: { readonly threadId: string }): Promise<void> {
       options.computerUse?.endThread(input.threadId);
       await adapter.deleteTask(input.threadId);
+      await options.environments?.remove(input.threadId);
     },
 
     async listQueuedInputs(input: {
@@ -1906,20 +2049,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
       });
     },
 
+    async discardComposerDraft(input: { readonly draftId: string }): Promise<void> {
+      await options.environments?.discard(input.draftId);
+    },
+
     async pickAttachments(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]> {
-      /*
-       * 落盘根必须是这次任务能读到的目录（08 §3.5：uploads/ 在工作空间内，
-       * 沙箱才放行）。选了项目用项目根；没选则用当前任务已经在跑的 cwd。
-       * 两者都没有才拒绝 —— 不能静默写到别处，agent 读不到等于没附上。
-       */
-      const fromProject = input.workspaceId ? rootOf(input.workspaceId) : undefined;
-      const fromTask = input.threadId
-        ? (store.threads.get(input.threadId)?.cwd ?? undefined)
-        : undefined;
-      const root =
-        fromProject ??
-        (typeof fromTask === 'string' && fromTask.trim() !== '' ? fromTask : undefined);
-      if (!root) throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');
+      const root = await attachmentRoot(input);
       if (!options.attachmentPorts) throw new Error('这个构建没有接本地附件选择器。');
       return options.attachmentPorts.pick(root);
     },
@@ -1927,14 +2062,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async ingestAttachments(
       input: DroppedAttachmentInput,
     ): Promise<readonly ComposerAttachmentView[]> {
-      const fromProject = input.workspaceId ? rootOf(input.workspaceId) : undefined;
-      const fromTask = input.threadId
-        ? (store.threads.get(input.threadId)?.cwd ?? undefined)
-        : undefined;
-      const root =
-        fromProject ??
-        (typeof fromTask === 'string' && fromTask.trim() !== '' ? fromTask : undefined);
-      if (!root) throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');
+      const root = await attachmentRoot(input);
       if (!options.attachmentPorts) throw new Error('这个构建没有接本地附件解析器。');
       return options.attachmentPorts.ingest(root, input.files);
     },
@@ -2274,6 +2402,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const result = await createProjectImpl({
         name: picked.slice(picked.lastIndexOf('/') + 1) || picked,
         path: picked,
+        automatic: true,
       });
       if (result.ok) return { path: picked };
       // exactOptionalPropertyTypes：只有真有话可说时才带上这个字段
@@ -2369,6 +2498,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return createProjectImpl({
         name: picked.slice(picked.lastIndexOf('/') + 1) || picked,
         path: picked,
+        automatic: true,
       });
     },
 
@@ -2439,8 +2569,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
         .listTasks({})
         .map((t) => store.threads.get(t.threadId))
         .filter((r): r is ProjectionRow => r !== undefined)
-        .filter((r) => r.archived === 0 && r.cwd !== null && isUnderRoot(root, r.cwd, ports.home))
-        .map((r) => toTaskRow(r, at));
+        .filter((r) => r.archived === 0 && owner(r) === row.id)
+        .map((r) => taskRow(r, at));
 
       const titleOf = new Map(tasks.map((t) => [t.id, t.title]));
 
@@ -2649,19 +2779,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
          * 加上 `thread_projection.cwd` 一共三处 —— 而三处对"有哪些空间"
          * 的回答从来没有对齐过。内核那份现在只是镜像，不供数。
          */
-        workspaces: projects.list().map((row) => ({
-          id: row.id,
-          name: row.name,
-          ...(row.roots[0] !== undefined ? { path: row.roots[0] } : {}),
-          ...(options.projectPorts && toCard(row, options.projectPorts).rootMissing
-            ? { rootMissing: true }
-            : {}),
-        })),
+        workspaces: [...projects.list()]
+          .sort((a, b) => {
+            const recency = (project: ProjectLocalRow) =>
+              Math.max(
+                project.createdAt,
+                ...allThreadsLite()
+                  .filter((t) => !t.archived && t.projectId === project.id)
+                  .map((t) => t.recencyAt ?? 0),
+              );
+            return recency(b) - recency(a);
+          })
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            ...(row.roots[0] !== undefined ? { path: row.roots[0] } : {}),
+            ...(options.projectPorts && toCard(row, options.projectPorts).rootMissing
+              ? { rootMissing: true }
+              : {}),
+          })),
         tasks: adapter
           .listTasks({})
           .map((t) => store.threads.get(t.threadId))
           .filter((row): row is ProjectionRow => row !== undefined)
-          .map((row) => toTaskRow(row, at)),
+          .map((row) => taskRow(row, at)),
         approvalsReviewerAvailable: reviewerAvailable,
         fullAccessAllowed: capability.fullAccessAllowed,
         ...(capability.fullAccessDisabledReason

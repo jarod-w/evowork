@@ -577,10 +577,9 @@ describe('降级必须显式（03 §8 / D2）', () => {
     const menu = screen.getByRole('menu', { name: '选择项目' });
     // 关键断言：菜单**不是空的**（空盒子就是那个 bug）
     expect(menu.textContent?.trim()).not.toBe('');
-    expect(menu.textContent).toContain('还没有项目');
+    expect(menu.textContent).toContain('不使用项目');
     // 而且说清了后果：不说的话用户只知道选不了，不知道任务会跑在哪
-    expect(menu.textContent).toContain('默认目录');
-    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+    expect(screen.getByRole('menuitem', { name: /不使用项目/ })).toBeTruthy();
   });
 
   it('有工作空间时列出来，且把路径显示成"任务会跑在哪"', () => {
@@ -668,5 +667,35 @@ describe('占位文案（03 §4.1）', () => {
       COMPOSER_PLACEHOLDER,
     );
     expect(COMPOSER_PLACEHOLDER).toBe('输入需求，或描述你想完成的工作');
+  });
+});
+
+describe('本地项目动作与固定任务目录', () => {
+  it('零项目可选择文件夹，动作不会成为项目值', () => {
+    const onPickFolder = vi.fn();
+    const onWorkspaceChange = vi.fn();
+    renderComposer({ onPickFolder, onWorkspaceChange });
+    fireEvent.click(screen.getByLabelText('选择项目'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /选择文件夹/ }));
+    expect(onPickFolder).toHaveBeenCalledTimes(1);
+    expect(onWorkspaceChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目');
+  });
+  it('已有任务只提供在其他项目新建任务，不允许覆盖目录', () => {
+    const onWorkspaceChange = vi.fn();
+    const onNewTaskInOtherProject = vi.fn();
+    renderComposer({
+      workspaceLocked: true,
+      workspaceLabel: 'Repo',
+      workspaceId: 'p1',
+      workspaces: [{ id: 'p2', label: 'Other' }],
+      onWorkspaceChange,
+      onNewTaskInOtherProject,
+    });
+    fireEvent.click(screen.getByLabelText('选择项目'));
+    expect(screen.queryByRole('menuitem', { name: 'Other' })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: /在其他项目新建任务/ }));
+    expect(onNewTaskInOtherProject).toHaveBeenCalledTimes(1);
+    expect(onWorkspaceChange).not.toHaveBeenCalled();
   });
 });

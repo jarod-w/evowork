@@ -30,7 +30,13 @@ def cjk_font():
     """办公扩展自带的中文字体（matplotlib 画 PDF 用）。"""
     from matplotlib import font_manager
 
-    font = Path(sys.executable).resolve().parent.parent / "fonts" / "NotoSansSC-Regular.ttf"
+    candidates = [
+        Path(sys.prefix) / "fonts" / "NotoSansSC-Regular.ttf",
+        Path(__file__).resolve().parents[6] / "build" / "office" / "NotoSansSC.ttf",
+    ]
+    font = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if font is None:
+        raise FileNotFoundError("办公扩展及打包字体目录均缺少中文字体")
     return font_manager.FontProperties(fname=str(font))
 
 

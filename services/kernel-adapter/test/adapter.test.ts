@@ -556,7 +556,7 @@ describe('新建任务（03 §4.6）', () => {
     await expect(
       adapter.createTask({
         input: [{ type: 'text', text: '做个周报' }],
-        overrides: { model: '' },
+        overrides: { cwd: '/w', model: '' },
       }),
     ).rejects.toThrow('没有可用模型');
     expect(server.received.filter((request) => request.method === 'thread/start')).toHaveLength(
@@ -605,7 +605,7 @@ describe('新建任务（03 §4.6）', () => {
     await adapter.start();
     await adapter.createTask({
       input: [{ type: 'text', text: '帮我批' }],
-      overrides: { modeId: 'approve-for-me' },
+      overrides: { cwd: '/w', modeId: 'approve-for-me' },
     });
     const turnStart = server.received.find((r) => r.method === 'turn/start');
     expect(turnStart?.params.permissions).toBe('evowork-workspace');
@@ -619,7 +619,7 @@ describe('新建任务（03 §4.6）', () => {
     await adapter.start();
     const created = await adapter.createTask({
       input: [{ type: 'text', text: '装个依赖' }],
-      overrides: { modeId: 'full-access' },
+      overrides: { cwd: '/w', modeId: 'full-access' },
     });
     const threadStart = server.received.find((r) => r.method === 'thread/start');
     expect(threadStart?.params.permissions).toBe(':danger-full-access');
@@ -638,7 +638,7 @@ describe('新建任务（03 §4.6）', () => {
     await expect(
       adapter.createTask({
         input: [{ type: 'text', text: '帮我批' }],
-        overrides: { modeId: 'approve-for-me' },
+        overrides: { cwd: '/w', modeId: 'approve-for-me' },
       }),
     ).rejects.toThrow('安全自动审查还没接通');
     expect(server.received.some((r) => r.method === 'thread/start')).toBe(false);
@@ -658,6 +658,7 @@ describe('新建任务（03 §4.6）', () => {
   it('新任务用第一条需求起名，且排在 turn/start 之后', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
       input: [{ type: 'text', text: '把 data/ 下的三张表合并成季度汇总' }],
     });
 
@@ -681,6 +682,7 @@ describe('新建任务（03 §4.6）', () => {
   it('迟到的 thread/started（name 为空）不能把刚起的标题抹掉', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
       input: [{ type: 'text', text: '你认为学播音的去英国读怎么样' }],
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -695,7 +697,10 @@ describe('新建任务（03 §4.6）', () => {
 
   it('起名不了就不起（只有附件的任务不发 thread/name/set）', async () => {
     await adapter.start();
-    await adapter.createTask({ input: [{ type: 'localImage', path: '/tmp/a.png' }] });
+    await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'localImage', path: '/tmp/a.png' }],
+    });
     expect(server.received.some((r) => r.method === 'thread/name/set')).toBe(false);
   });
 
@@ -708,14 +713,20 @@ describe('新建任务（03 §4.6）', () => {
     server.handlers.set('thread/name/set', () => {
       throw new Error('kernel refused');
     });
-    const result = await adapter.createTask({ input: [{ type: 'text', text: '做个周报' }] });
+    const result = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: '做个周报' }],
+    });
     expect(result.threadId).toBeTruthy();
     expect(store.threads.get(result.threadId)?.title).toBe(null);
   });
 
   it('打开的 thread 会被登记，供崩溃后恢复用（09 §1）', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     expect(adapter.session.openThreads.has(threadId)).toBe(true);
     adapter.closeTask(threadId);
     expect(adapter.session.openThreads.has(threadId)).toBe(false);
@@ -725,7 +736,10 @@ describe('新建任务（03 §4.6）', () => {
 describe('发消息与排队（04 §5.4 / §5.5）', () => {
   it('执行中发消息**入队而不是报错**', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     // 让任务处于运行中
     adapter.events.handle('thread/status/changed', {
       threadId,
@@ -750,7 +764,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
   it('内核队列由 queue extension 自动出队，不与本机降级队列重复启动', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     server.handlers.set('thread/queue/list', () => ({
       data: [
         {
@@ -772,7 +789,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
   it('`thread/queue/*` 不可用 → 退回本机队列（09 §3.3），**不报错**', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     adapter.events.handle('thread/status/changed', {
       threadId,
       status: { type: 'active', activeFlags: [] },
@@ -794,7 +814,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
   it('本机降级队列可编辑与重排', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     adapter.events.handle('thread/status/changed', {
       threadId,
       status: { type: 'active', activeFlags: [] },
@@ -824,7 +847,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
   it('本机队列启动失败时保留输入，成功后才移除', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     adapter.events.handle('thread/status/changed', {
       threadId,
       status: { type: 'active', activeFlags: [] },
@@ -856,7 +882,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
    */
   it('「立即插话」走 turn/steer 而不是入队，并带上当前回合（默认排队，04 §5.5）', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     adapter.events.handle('thread/status/changed', {
       threadId,
       status: { type: 'active', activeFlags: [] },
@@ -887,7 +916,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
    */
   it('没有可插话的回合时改为排队，并说明改了道', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     adapter.events.handle('thread/status/changed', {
       threadId,
       status: { type: 'active', activeFlags: [] },
@@ -909,7 +941,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
       input: [{ type: 'text', text: 'x' }],
-      overrides: { modeId: 'request-approval' },
+      overrides: { cwd: '/w', modeId: 'request-approval' },
     });
     adapter.setTaskSettings(threadId, { modeId: 'full-access' });
     adapter.events.handle('turn/completed', {
@@ -934,7 +966,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
    */
   it('中断走 turn/interrupt，并带上当前在跑的回合（04 §5.5）', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     server.notify('turn/started', {
       threadId,
       turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
@@ -956,7 +991,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
    */
   it('回合还没开始时用空 turnId（内核的启动期中断）', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
 
     await adapter.interrupt(threadId);
 
@@ -972,7 +1010,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
    */
   it('回合结束后不再拿旧 turnId 去中断', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     server.notify('turn/started', {
       threadId,
       turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
@@ -994,7 +1035,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
    */
   it('内核说"没有活动回合"时当作已经停了，不往上抛', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     server.handlers.set('turn/interrupt', () => {
       throw new FakeRpcError(ERROR_CODE.invalidRequest, 'no active turn to interrupt');
     });
@@ -1005,7 +1049,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
   /* 其余 -32600（比如参数形状不对）是我们自己的 bug，必须响亮地失败。 */
   it('其他中断失败照样往上抛', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     server.handlers.set('turn/interrupt', () => {
       throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: missing field `turnId`');
     });
@@ -1100,6 +1147,7 @@ describe('任务列表与筛选（04 §3.4）', () => {
 describe('打开任务（04 §9：< 300ms 出内容）', () => {
   it('同时读取最近回合，让重启后仍能恢复失败原因与本回合范围', async () => {
     await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
     server.handlers.set('thread/turns/list', () => ({
       data: [
         makeTurn({
@@ -1120,6 +1168,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 
   it('先给缓存摘要，再用 thread/items/list 校正', async () => {
     await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
     store.putItemDigest({
       threadId: 't1',
       seq: 1,
@@ -1156,6 +1205,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 
   it('重启读取时保留协作动作的发送者、全部接收者、状态与消息', async () => {
     await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
     server.handlers.set('thread/items/list', () => ({
       data: [
         {
@@ -1175,6 +1225,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
       nextCursor: null,
     }));
 
+    store.threads.upsertFromThread(makeThread({ id: 'root' }));
     const { items } = await adapter.openTask('root');
     await expect(items).resolves.toEqual([
       expect.objectContaining({
@@ -1190,6 +1241,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 
   it('按页拉完，不把包装对象当成消息', async () => {
     await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
     server.handlers.set('thread/items/list', (ctx) => {
       if (ctx.params.cursor === undefined) {
         return {
@@ -1212,6 +1264,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 
   it('thread/items/list 不受当前存储支持时，用 thread/read 补回完整历史', async () => {
     await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
     server.removeMethod('thread/items/list');
     // resume 本身不可用时才需要最后一级 thread/read 兼容路径。
     server.handlers.set('thread/resume', () => {
@@ -1255,6 +1308,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 
   it('分页接口不可用时优先使用 resume 已返回的历史，不再触发会失败的 thread/read', async () => {
     await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
     server.removeMethod('thread/items/list');
     server.handlers.set('thread/resume', (ctx) => ({
       thread: makeThread({
@@ -1288,7 +1342,10 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 describe('目标与预算（Q11：用内核的 ThreadGoal.tokenBudget，不自建）', () => {
   it('setBudget 调 thread/goal/set 并同步投影表', async () => {
     await adapter.start();
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     await adapter.setBudget(threadId, 200_000);
     const call = server.received.find((r) => r.method === 'thread/goal/set');
     expect(call?.params).toMatchObject({
@@ -1382,7 +1439,10 @@ describe('崩溃恢复的端到端（09 §1）', () => {
       },
     });
     await withRecovery.start();
-    const { threadId } = await withRecovery.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await withRecovery.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
 
     server.crash();
     await timers.flush(4);
@@ -1407,7 +1467,10 @@ describe('实验方法门禁（K2）', () => {
       (err as { code?: number }).code = ERROR_CODE.invalidRequest;
       throw err;
     });
-    const { threadId } = await adapter.createTask({ input: [{ type: 'text', text: 'x' }] });
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'x' }],
+    });
     adapter.events.handle('thread/status/changed', {
       threadId,
       status: { type: 'active', activeFlags: [] },
@@ -1587,6 +1650,7 @@ describe('内核镜像：尽力而为，失败不降级（spec §2.3）', () => 
       });
       await loggedAdapter.start();
       const { threadId } = await loggedAdapter.createTask({
+        overrides: { cwd: '/w' },
         input: [{ type: 'text', text: 'x' }],
       });
 
@@ -1735,5 +1799,52 @@ describe('随包策略 hook：握手后信任宿主写的那几条（2026-09-28 
     expect(a.bundledHooksActive()).toBe(1);
     expect(sink.records.some((r) => r.event === 'adapter.hooks.bundled_incomplete')).toBe(true);
     await a.stop();
+  });
+});
+
+describe('任务环境守卫', () => {
+  it('缺 cwd、根目录与相对目录在 thread/start 前被拒绝', async () => {
+    await adapter.start();
+    for (const cwd of [undefined, '/', 'relative']) {
+      await expect(
+        adapter.createTask({ input: [{ type: 'text', text: 'x' }], overrides: cwd ? { cwd } : {} }),
+      ).rejects.toThrow();
+    }
+    expect(server.received.filter((call) => call.method === 'thread/start')).toHaveLength(0);
+  });
+  it('已有任务无法覆盖到其他目录，内核不收到新的回合', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      input: [{ type: 'text', text: 'x' }],
+      overrides: { cwd: '/w' },
+    });
+    const count = server.received.filter((call) => call.method === 'turn/start').length;
+    await expect(
+      adapter.sendMessage({
+        threadId,
+        input: [{ type: 'text', text: 'y' }],
+        overrides: { cwd: '/another' },
+      }),
+    ).rejects.toThrow('工作目录已固定');
+    expect(server.received.filter((call) => call.method === 'turn/start')).toHaveLength(count);
+  });
+  it('thread 创建成功但首个 turn 失败时把 thread 留给宿主重试', async () => {
+    await adapter.start();
+    let bound: string | undefined;
+    server.handlers.set('turn/start', () => {
+      throw new Error('turn failed');
+    });
+    await expect(
+      adapter.createTask({
+        input: [{ type: 'text', text: 'x' }],
+        overrides: { cwd: '/w' },
+        onCreated: (id) => {
+          bound = id;
+        },
+      }),
+    ).rejects.toThrow();
+    expect(bound).toBeTruthy();
+    expect(store.threads.get(bound!)?.cwd).toBe('/w');
+    expect(store.threads.get(bound!)?.first_message).toBe('x');
   });
 });

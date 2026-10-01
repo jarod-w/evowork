@@ -38,6 +38,7 @@ import {
 import { STATUS_VIEW, type TaskStatus } from './task-workspace.js';
 
 export interface TaskRow {
+  readonly projectId?: string | null | undefined;
   readonly id: string;
   readonly title: string | null;
   readonly status: TaskStatus;
@@ -288,28 +289,50 @@ export function Sidebar(props: SidebarProps) {
 
   useEffect(() => setVisibleCount(pageSize), [pageSize, search, filter]);
   const visibleProjects = useMemo(() => (props.projects ?? []).slice(0, 3), [props.projects]);
-  const projectGroups = useMemo(
-    () =>
-      visibleProjects.map((project) => ({
-        project,
-        tasks:
-          project.path === undefined
-            ? []
-            : matched.filter((task) => task.cwd === project.path).slice(0, PROJECT_TASK_LIMIT),
-      })),
-    [matched, visibleProjects],
-  );
-  const visibleProjectPaths = useMemo(
-    () => new Set(visibleProjects.flatMap((project) => project.path ?? [])),
-    [visibleProjects],
-  );
+  const projectGroups = useMemo(() => {
+    const owner = (task: TaskRow) =>
+      task.projectId !== undefined
+        ? task.projectId
+        : [...(props.projects ?? [])]
+            .filter(
+              (project) =>
+                project.path &&
+                task.cwd &&
+                (task.cwd === project.path || task.cwd.startsWith(`${project.path}/`)),
+            )
+            .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0]?.id;
+    return visibleProjects.map((project) => ({
+      project,
+      tasks: matched.filter((task) => owner(task) === project.id).slice(0, PROJECT_TASK_LIMIT),
+    }));
+  }, [matched, visibleProjects, props.projects]);
+  const groupedIds = useMemo(() => {
+    const ids = new Set(visibleProjects.map((project) => project.id));
+    return new Set(
+      topLevel
+        .filter((task) => {
+          if (task.projectId !== undefined)
+            return task.projectId !== null && ids.has(task.projectId);
+          const project = [...(props.projects ?? [])]
+            .filter(
+              (project) =>
+                project.path &&
+                task.cwd &&
+                (task.cwd === project.path || task.cwd.startsWith(`${project.path}/`)),
+            )
+            .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0];
+          return project ? ids.has(project.id) : false;
+        })
+        .map((task) => task.id),
+    );
+  }, [topLevel, visibleProjects, props.projects]);
   const recentTopLevel = useMemo(
-    () => topLevel.filter((task) => task.cwd === undefined || !visibleProjectPaths.has(task.cwd)),
-    [topLevel, visibleProjectPaths],
+    () => topLevel.filter((task) => !groupedIds.has(task.id)),
+    [topLevel, groupedIds],
   );
   const recentMatched = useMemo(
-    () => matched.filter((task) => task.cwd === undefined || !visibleProjectPaths.has(task.cwd)),
-    [matched, visibleProjectPaths],
+    () => matched.filter((task) => !groupedIds.has(task.id)),
+    [matched, groupedIds],
   );
   const visible = useMemo(
     () => recentMatched.slice(0, visibleCount),
@@ -666,7 +689,11 @@ export function Sidebar(props: SidebarProps) {
           {/* 04 §3.3 要求说清这一句。答案是"不删" */}
           <p className="ew-delete-confirm-body">
             归档只隐藏任务并保留历史；删除会清除本机任务历史，包括随任务保存的电脑操控界面文字和截图。
-            <strong>项目目录中的文件不会被删除</strong>
+            <strong>
+              {confirmDelete.projectId === null
+                ? '此任务托管目录中的附件和产物也会删除，请先导出需要保留的文件'
+                : '项目目录中的文件不会被删除'}
+            </strong>
             {confirmDelete.cwd ? `（${confirmDelete.cwd}）` : ''}
             ；已导出、备份或发送给模型提供方的外部副本也不会被撤回。
           </p>

@@ -127,13 +127,13 @@ function Workspace(props: OnboardingProps) {
   return (
     <div className="ew-onboarding-body">
       <p>
-        EvoWork 只能读写你选中的目录。<strong>没有选中的地方它碰不到</strong>，
-        系统目录和密钥所在的位置则永远碰不到。
+        选择文件夹可作为本地项目的工作目录。也可以直接开始无项目任务，附件和产物会保存在独立目录中。
+        文件访问仍受权限与安全策略控制。
       </p>
       {props.workspaces.length === 0 ? (
         <EmptyState
           title="还没有选目录"
-          hint="选一个平时放工作文件的文件夹，之后随时可以再加。"
+          hint="可以选择工作文件夹，也可以点下一步，之后随时再加。"
           action={
             <PillButton variant="accent" onClick={props.onPickWorkspace}>
               选择文件夹
@@ -265,13 +265,10 @@ function Footer(props: OnboardingProps & { readonly index: number }) {
 }
 
 /** 挡住「下一步」的原因。**返回 undefined 表示可以继续**。 */
-export function blockingReason(props: {
+export function blockingReason(_props: {
   readonly step: OnboardingStep;
   readonly workspaces: readonly string[];
 }): string | undefined {
-  if (props.step === 'workspace' && props.workspaces.length === 0) {
-    return '先选一个项目 —— EvoWork 只能读写你选中的目录。';
-  }
   // 第 ③ 步**不阻塞**（R10）：可跳过是它的设计要求，不是妥协
   return undefined;
 }

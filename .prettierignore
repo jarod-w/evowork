@@ -42,3 +42,8 @@ plugins/connectors/*/vendor/
 # 并由同一个脚本逐字节比对新鲜度。交给 prettier 会让两道门互相打架
 # （生成 → prettier 重排 → 新鲜度检查失败），与 THIRD_PARTY_NOTICES 同理。
 packages/protocol/src/kernel-wire.generated.ts
+
+# 内核构建导出的上游源码、缓存与二进制不属于产品源码。
+build/.kernel-src/
+build/.kernel-target/
+build/kernel/

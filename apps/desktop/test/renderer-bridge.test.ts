@@ -506,7 +506,7 @@ describe('添加本地文件', () => {
     expect(pick).toHaveBeenCalledWith('/w/task');
   });
 
-  it('选了项目时用项目根，不改去任务 cwd', async () => {
+  it('已有任务添加附件使用固定 cwd，不随项目选择改变', async () => {
     const store = memoryStore();
     store.db
       .prepare(
@@ -523,7 +523,7 @@ describe('添加本地文件', () => {
     const projectId = created.projects[0]?.id ?? '';
 
     await actions.pickAttachments({ workspaceId: projectId, threadId: 't1' });
-    expect(pick).toHaveBeenCalledWith('/w/project');
+    expect(pick).toHaveBeenCalledWith('/w/task');
   });
 
   it('首页既没有项目也没有任务时拒绝，好让界面把原因说出来', async () => {
@@ -531,7 +531,7 @@ describe('添加本地文件', () => {
     const actions = makeActions({
       attachmentPorts: { pick, ingest: vi.fn(async () => []) },
     });
-    await expect(actions.pickAttachments({})).rejects.toThrow(/先选择一个项目/);
+    await expect(actions.pickAttachments({})).rejects.toThrow(/缺少草稿环境/);
     expect(pick).not.toHaveBeenCalled();
   });
 });
@@ -1061,7 +1061,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     const actions = createRendererActions({
       ...base,
       adapter,
-      store: fakeStore(() => undefined),
+      store: fakeStore(() => row()),
     });
 
     expect(await actions.send({ text: '做个周报' })).toEqual({ threadId: 'new-1' });
@@ -1072,6 +1072,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(await actions.send({ threadId: 't1', text: '再来一条' })).toEqual({ threadId: 't1' });
     expect(adapter.sendMessage).toHaveBeenCalledWith({
       threadId: 't1',
+      overrides: { cwd: '/w' },
       input: [{ type: 'text', text: '再来一条' }],
     });
     // 第二条**没有**又建一个任务
@@ -1100,6 +1101,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     ).resolves.toEqual({ threadId: 'root' });
     expect(adapter.sendMessage).toHaveBeenCalledWith({
       threadId: 'root',
+      overrides: { cwd: '/w' },
       input: [
         {
           type: 'text',
@@ -1137,7 +1139,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     const actions = createRendererActions({
       ...base,
       adapter,
-      store: fakeStore(() => undefined),
+      store: fakeStore(() => row()),
       policyPorts: {
         status: () => ({
           status: 'expired',
@@ -1169,7 +1171,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       sendMessage: vi.fn(async () => ({ queued: false })),
       setTaskSettings: vi.fn(),
     } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     await actions.send({ text: '做个周报', modelId: 'evowork/kimi-k3' });
 
@@ -1186,7 +1188,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       sendMessage: vi.fn(async () => ({ queued: false })),
       setTaskSettings: vi.fn(),
     } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     await actions.send({ text: '做个周报', modeId: 'request-approval' });
 
@@ -1203,7 +1205,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       sendMessage: vi.fn(async () => ({ queued: false })),
       setTaskSettings: vi.fn(),
     } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     await actions.send({ threadId: 't1', text: '放开权限', modeId: 'full-access' });
 
@@ -1211,7 +1213,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(adapter.sendMessage).toHaveBeenCalledWith({
       threadId: 't1',
       input: [{ type: 'text', text: '放开权限' }],
-      overrides: { modeId: 'full-access' },
+      overrides: { modeId: 'full-access', cwd: '/w' },
     });
   });
 
@@ -1221,7 +1223,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       sendMessage: vi.fn(async () => ({ queued: false })),
       setTaskSettings: vi.fn(),
     } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     await actions.send({ threadId: 't1', text: '换个模型再来', modelId: 'evowork/glm-flash' });
 
@@ -1229,7 +1231,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     expect(adapter.sendMessage).toHaveBeenCalledWith({
       threadId: 't1',
       input: [{ type: 'text', text: '换个模型再来' }],
-      overrides: { model: 'evowork/glm-flash' },
+      overrides: { model: 'evowork/glm-flash', cwd: '/w' },
     });
   });
 
@@ -1239,7 +1241,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       sendMessage: vi.fn(async () => ({ queued: false })),
       setTaskSettings: vi.fn(),
     } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     await actions.send({ text: '做个周报' });
 
@@ -1278,7 +1280,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
 
   it('没有配置模型目录读取方时**说清楚**，不是回一个空列表假装没有模型', async () => {
     const adapter = { createTask: vi.fn(), sendMessage: vi.fn() } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     const result = await actions.listModels();
     expect(result.models).toEqual([]);
@@ -1288,7 +1290,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
 
   it('这个版本不能保存密钥时如实说，不静默丢掉用户刚贴的 key', async () => {
     const adapter = { createTask: vi.fn(), sendMessage: vi.fn() } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
     const result = await actions.applyModelAccess({ deepseekApiKey: 'sk' });
     expect(result.models).toEqual([]);
     expect(result.reason).toBe('no-keys');
@@ -1297,7 +1299,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
 
   it('空可见页不发请求 —— 04 §3.4 的有界校正，0 条也算一条边界', async () => {
     const adapter = { refreshAuthoritative: vi.fn(async () => 0) } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
     await actions.refreshVisible([]);
     expect(adapter.refreshAuthoritative).not.toHaveBeenCalled();
   });
@@ -1331,7 +1333,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
         }),
       })),
     } as unknown as Adapter;
-    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => undefined) });
+    const actions = createRendererActions({ ...base, adapter, store: fakeStore(() => row()) });
 
     const ok = await actions.openTask({ threadId: 't1' });
     expect(ok.items).toEqual([
@@ -1799,8 +1801,10 @@ describe('项目动作（spec §2.6）', () => {
   });
 
   it('路径失效时卡片标 rootMissing，且路径原样保留', async () => {
-    const actions = makeActions({ projectPorts: ports({ rootExists: () => false }) });
+    let exists = true;
+    const actions = makeActions({ projectPorts: ports({ rootExists: () => exists }) });
     await actions.createProject({ name: 'A', path: '/w/gone' });
+    exists = false;
     const list = await actions.listProjects();
     expect(list.projects[0]?.rootMissing).toBe(true);
     expect(list.projects[0]?.rootDisplay).toContain('gone');
@@ -1858,7 +1862,7 @@ describe('项目动作（spec §2.6）', () => {
     let readPath: string | undefined;
     const actions = makeActions({
       projectPorts: ports({
-        realpath: async (p) => (p === '/w/a' ? '/private/w/a' : p.replace('/w/a', '/private/w/a')),
+        realpath: async (p) => (p.startsWith('/w/a') ? p.replace('/w/a', '/private/w/a') : p),
         readDir: async (p) => {
           readPath = p;
           return [{ name: 'src', isDirectory: true }];
@@ -1868,9 +1872,11 @@ describe('项目动作（spec §2.6）', () => {
     const created = await actions.createProject({ name: 'A', path: '/w/a' });
     const id = created.projects[0]?.id ?? '';
 
-    const out = await actions.listProjectDir({ id, path: '/w/a/docs' });
+    const out = await actions.listProjectDir({ id, path: '/private/w/a/docs' });
     // 展示路径仍然按字面（用户选的）目录拼，不暴露解析后的真实路径
-    expect(out).toEqual([{ name: 'src', path: '/w/a/docs/src', isDirectory: true, noisy: false }]);
+    expect(out).toEqual([
+      { name: 'src', path: '/private/w/a/docs/src', isDirectory: true, noisy: false },
+    ]);
     // 但真正读盘走的是解析后的真实路径
     expect(readPath).toBe('/private/w/a/docs');
   });
@@ -2423,5 +2429,48 @@ describe('审批卡视图对得上内核的字段名', () => {
     );
     expect(view.questions?.[0]?.question).toBe('收件人是谁？');
     expect(view.questions?.[0]?.options).toBeUndefined();
+  });
+});
+
+describe('选择文件夹创建/复用项目', () => {
+  it('同一目录并发选择和软链别名只创建一个项目，返回同一 id', async () => {
+    const mirrorProjectCreate = vi.fn(async () => 'kernel-project');
+    const actions = makeActions({
+      adapter: fakeAdapter({ mirrorProjectCreate }),
+      projectPorts: ports({ realpath: async (path) => (path === '/alias' ? '/w/repo' : path) }),
+    });
+    const [first, second] = await Promise.all([
+      actions.createProject({ name: 'Repo', path: '/w/repo' }),
+      actions.createProject({ name: 'Other', path: '/alias' }),
+    ]);
+    expect(first.projectId).toBe(second.projectId);
+    expect(second.reused).toBe(true);
+    expect((await actions.listProjects()).projects).toHaveLength(1);
+    expect(mirrorProjectCreate).toHaveBeenCalledTimes(1);
+  });
+  it('软链指向主目录时拒绝，项目表没有新行', async () => {
+    const actions = makeActions({
+      projectPorts: ports({ realpath: async (path) => (path === '/alias' ? '/Users/li' : path) }),
+    });
+    const result = await actions.createProject({ name: 'Repo', path: '/alias' });
+    expect(result.ok).toBe(false);
+    expect(result.refused).toContain('范围过大');
+    expect((await actions.listProjects()).projects).toHaveLength(0);
+  });
+  it('镜像失败后的复用会用原幂等键补偿，既有项目名称不被改写', async () => {
+    const mirrorProjectCreate = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce('kernel-id');
+    const actions = makeActions({
+      adapter: fakeAdapter({ mirrorProjectCreate }),
+      projectPorts: ports(),
+    });
+    const first = await actions.createProject({ name: '自定义名', path: '/w/repo' });
+    const second = await actions.createProject({ name: '新名字', path: '/w/repo' });
+    expect(second.reused).toBe(true);
+    expect(second.projects.map((project) => project.name)).toEqual(['自定义名']);
+    expect(mirrorProjectCreate.mock.calls[0]?.[0].idempotencyKey).toBe(first.projectId);
+    expect(mirrorProjectCreate.mock.calls[1]?.[0].idempotencyKey).toBe(first.projectId);
   });
 });

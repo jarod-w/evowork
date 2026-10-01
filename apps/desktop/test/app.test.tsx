@@ -318,6 +318,7 @@ describe('首页不创建 Thread（03 §1）', () => {
 
     await waitFor(() =>
       expect(bridge.send).toHaveBeenCalledWith({
+        draftId: expect.any(String),
         text: '做个周报',
         scenarioId: 'office',
         // 场景没给默认模型 → 用列表里第一个可用的（resolveModelChoice）
@@ -342,6 +343,7 @@ describe('首页不创建 Thread（03 §1）', () => {
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
     await waitFor(() =>
       expect(bridge.send).toHaveBeenLastCalledWith({
+        draftId: expect.any(String),
         threadId: 't1',
         text: '第二条',
         scenarioId: 'office',
@@ -1349,6 +1351,7 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
 
     await waitFor(() =>
       expect(bridge.send).toHaveBeenCalledWith({
+        draftId: expect.any(String),
         text: '做个周报',
         scenarioId: 'office',
         modelId: 'evowork/kimi-k3',
@@ -1683,7 +1686,11 @@ describe('侧边栏的六个入口都要有落点', () => {
     fireEvent.click(await screen.findByText('hello. 介绍一下自己'));
     fireEvent.click(await screen.findByRole('button', { name: '添加内容' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /添加本地文件/ }));
-    await waitFor(() => expect(pickAttachments).toHaveBeenCalledWith({ threadId: 't1' }));
+    await waitFor(() =>
+      expect(pickAttachments).toHaveBeenCalledWith(
+        expect.objectContaining({ threadId: 't1', draftId: expect.any(String) }),
+      ),
+    );
     expect(await screen.findByText('周报.docx')).toBeTruthy();
   });
 
@@ -1819,7 +1826,7 @@ describe('首次引导（02 §9）', () => {
    * 引导结束若只把 `onboarded` 翻成 true、不把刚建的项目写回这份快照，
    * 项目页看得到、对话框却说「还没有项目」，第一条任务也会落到默认目录。
    */
-  it('走完引导后首页已列出并预选刚建的项目（02 §9）', async () => {
+  it('走完引导后项目已列出，全局首页默认无项目', async () => {
     const PROJECT = {
       id: 'p1',
       name: 'AI_COMPANY',
@@ -1853,7 +1860,7 @@ describe('首次引导（02 §9）', () => {
     await waitFor(() => expect(completeOnboarding).toHaveBeenCalled());
     expect(await screen.findByLabelText('需求输入')).toBeTruthy();
     await waitFor(() =>
-      expect(screen.getByLabelText('选择项目').textContent).toContain('AI_COMPANY'),
+      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目'),
     );
     expect(screen.getByRole('button', { name: 'AI_COMPANY' })).toBeTruthy();
     await screen.findByLabelText('选择模型');
@@ -1864,13 +1871,12 @@ describe('首次引导（02 §9）', () => {
       expect(bridge.send).toHaveBeenCalledWith(
         expect.objectContaining({
           text: '看看这个目录',
-          workspaceId: 'p1',
         }),
       ),
     );
   });
 
-  it('机器上只有一个项目时 Composer 直接预选，不留「选择项目」空占位', async () => {
+  it('只有一个项目时全局首页仍不擅自预选', async () => {
     const { bridge } = fakeBridge({
       getStartup: async () => ({
         ...STARTUP,
@@ -1879,7 +1885,7 @@ describe('首次引导（02 §9）', () => {
     });
     render(<App bridge={bridge} />);
     await waitFor(() =>
-      expect(screen.getByLabelText('选择项目').textContent).toContain('AI_COMPANY'),
+      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目'),
     );
   });
 
@@ -1897,7 +1903,7 @@ describe('首次引导（02 §9）', () => {
     const button = await screen.findByLabelText('选择项目');
     expect(button.textContent).not.toContain('甲');
     expect(button.textContent).not.toContain('乙');
-    expect(button.textContent).toContain('选择项目');
+    expect(button.textContent).toContain('不使用项目');
   });
 
   /*
@@ -2025,7 +2031,7 @@ describe('项目页接线（Task 13）', () => {
     expect(getStartup).toHaveBeenCalledTimes(2);
     // 这是机器上唯一的项目：下拉不能继续显示「选择项目」，否则发出去的任务没有 cwd。
     await waitFor(() =>
-      expect(screen.getByLabelText('选择项目').textContent).toContain('季度汇报'),
+      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目'),
     );
   });
 
@@ -2647,5 +2653,60 @@ describe('深链：挂载时那一次 takeDeeplink（02 §8）', () => {
     await waitFor(() =>
       expect(screen.getByText('该任务不在本机，可能创建于其他设备。')).toBeTruthy(),
     );
+  });
+});
+
+describe('Composer 文件夹动作与草稿', () => {
+  it('文件夹创建后选中项目并保留正文；只有发送时才创建任务', async () => {
+    let created = false;
+    const importProject = vi.fn(async () => {
+      created = true;
+      return { ok: true, projectId: 'p1', reused: false, projects: [] };
+    });
+    const { bridge } = fakeBridge({
+      importProject,
+      getStartup: async () => ({
+        ...STARTUP,
+        workspaces: created ? [{ id: 'p1', name: 'Repo', path: '/w/repo' }] : [],
+      }),
+    });
+    render(<App bridge={bridge} />);
+    const input = await screen.findByLabelText('需求输入');
+    fireEvent.change(input, { target: { value: '先保留这份草稿' } });
+    fireEvent.click(screen.getByLabelText('选择项目'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /选择文件夹/ }));
+    await waitFor(() => expect(screen.getByLabelText('选择项目').textContent).toContain('Repo'));
+    expect((input as HTMLTextAreaElement).value).toBe('先保留这份草稿');
+    expect(bridge.send).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: 'p1',
+          text: '先保留这份草稿',
+          draftId: expect.any(String),
+        }),
+      ),
+    );
+  });
+  it('文件夹选择返回前新建草稿，不把旧结果选入新草稿', async () => {
+    let resolve!: (value: { ok: boolean; projectId: string; projects: [] }) => void;
+    const importProject = vi.fn(
+      () =>
+        new Promise<{ ok: boolean; projectId: string; projects: [] }>((done) => {
+          resolve = done;
+        }),
+    );
+    const { bridge } = fakeBridge({ importProject });
+    render(<App bridge={bridge} />);
+    await screen.findByLabelText('需求输入');
+    fireEvent.click(screen.getByLabelText('选择项目'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /选择文件夹/ }));
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
+    resolve({ ok: true, projectId: 'old-project', projects: [] });
+    await waitFor(() =>
+      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目'),
+    );
+    expect(bridge.send).not.toHaveBeenCalled();
   });
 });

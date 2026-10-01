@@ -19,6 +19,7 @@
  * 起进程失败要中止启动，编排出错只该让某一个功能不可用。
  */
 import { createHash } from 'node:crypto';
+import type { TaskEnvironments } from './task-environments.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
@@ -56,6 +57,7 @@ import type {
 } from '../shared/ipc.js';
 
 export interface LocalServicesOptions {
+  readonly environments?: TaskEnvironments | undefined;
   readonly store: Store;
   readonly adapter: Adapter;
   readonly notify: (text: string) => void;
@@ -136,6 +138,23 @@ export function createLocalServices(options: LocalServicesOptions) {
 
   const bridge = createKernelBridge({
     runner: options.adapter,
+    ...(options.environments
+      ? {
+          resolveEnvironment: async (automation: AutomationDefinition, fireTime: number) => {
+            const environment = automation.workspaces[0]
+              ? {
+                  cwd: await options.environments!.validate(automation.workspaces[0]),
+                  projectId: null,
+                  managed: false,
+                }
+              : await options.environments!.prepare(`automation-${automation.id}-${fireTime}`);
+            return {
+              cwd: environment.cwd,
+              onCreated: (threadId: string) => options.environments!.bind(threadId, environment),
+            };
+          },
+        }
+      : {}),
     store: {
       insertRun: (record) => automations.insertRun(record),
       finishRun: (input) => automations.finishRun(input),

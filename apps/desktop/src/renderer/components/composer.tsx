@@ -178,6 +178,11 @@ export interface ComposerProps {
   readonly onInsertReference?: ((candidate: MentionCandidate) => void) | undefined;
   readonly onRunSkillCommand?: ((id: string) => void) | undefined;
 
+  readonly onPickFolder?: (() => void) | undefined;
+  readonly onNewTaskInOtherProject?: (() => void) | undefined;
+  readonly workspaceLocked?: boolean | undefined;
+  readonly workspaceLabel?: string | undefined;
+  readonly environmentBusy?: boolean | undefined;
   readonly workspaces?: readonly SelectOption[] | undefined;
   readonly workspaceId?: string | undefined;
   readonly onWorkspaceChange?: ((id: string) => void) | undefined;
@@ -363,6 +368,7 @@ export function Composer(props: ComposerProps) {
     empty ||
     parsing > 0 ||
     blockedByModel ||
+    props.environmentBusy === true ||
     props.sendLockedReason !== undefined ||
     confirmFullAccess;
 
@@ -422,7 +428,13 @@ export function Composer(props: ComposerProps) {
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, props.value.split('\n').length));
 
   return (
-    <section className="ew-composer" aria-label="输入区" data-run-state={runState}>
+    <section
+      className="ew-composer"
+      aria-label="输入区"
+      data-run-state={runState}
+      aria-busy={props.environmentBusy}
+    >
+      {props.environmentBusy ? <Banner tone="info">正在准备文件和工作目录…</Banner> : null}
       {/* 03 §8：模型不可用 → danger 条 + 禁用发送。**不换一个模型继续** */}
       {props.sendLockedReason ? (
         <Banner tone="danger">{props.sendLockedReason}</Banner>
@@ -782,10 +794,41 @@ export function Composer(props: ComposerProps) {
             <InlineSelect
               ariaLabel="选择项目"
               icon={renderIcon('folder')}
-              placeholder="选择项目"
-              value={props.workspaceId}
-              options={props.workspaces ?? []}
-              emptyHint="还没有项目。任务会在默认目录里运行，也可以先从侧栏创建项目。"
+              placeholder={props.workspaceLabel ?? '不使用项目'}
+              value={props.workspaceLocked ? undefined : (props.workspaceId ?? 'no-project')}
+              options={
+                props.workspaceLocked
+                  ? []
+                  : [
+                      {
+                        id: 'no-project',
+                        label: '不使用项目',
+                        description: '附件和产物保存在这个任务的独立目录',
+                      },
+                      ...(props.workspaces ?? []).map((option) => ({
+                        ...option,
+                        disabled: option.allowed === false,
+                        disabledReason: option.disabledReason,
+                      })),
+                    ]
+              }
+              disabled={props.environmentBusy}
+              disabledReason="正在准备文件和工作目录…"
+              actions={
+                props.workspaceLocked
+                  ? props.onNewTaskInOtherProject
+                    ? [
+                        {
+                          id: 'new-in-project',
+                          label: '在其他项目新建任务…',
+                          onSelect: props.onNewTaskInOtherProject,
+                        },
+                      ]
+                    : []
+                  : props.onPickFolder
+                    ? [{ id: 'pick-folder', label: '选择文件夹…', onSelect: props.onPickFolder }]
+                    : []
+              }
               onChange={(id) => props.onWorkspaceChange?.(id)}
             />
 

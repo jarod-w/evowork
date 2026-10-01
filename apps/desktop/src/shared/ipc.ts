@@ -14,6 +14,7 @@ export type TaskStatusView =
   'running' | 'pending' | 'planning' | 'completed' | 'failed' | 'interrupted' | 'archived' | 'idle';
 
 export interface TaskRowView {
+  readonly projectId?: string | null | undefined;
   readonly id: string;
   readonly title: string | null;
   readonly status: TaskStatusView;
@@ -180,8 +181,7 @@ export interface PermissionOptionView {
 /**
  * 工作空间下拉的一项（EvoWork 的「空间」= 内核的 Project + cwd，见 CLAUDE.md 第 5 节）。
  *
- * `path` 可能为 null（内核允许一个 project 没有 root）——此时选它**不设 cwd**，
- * 任务落在默认目录。这一条在 UI 上要说出来，不能选完了让用户猜任务跑在哪。
+ * 无有效根目录的项目禁用并说明原因；无项目任务由宿主显式分配持久独立目录。
  */
 export interface WorkspaceView {
   readonly id: string;
@@ -300,6 +300,7 @@ export type ModelUnavailableReason =
   'no-token' | 'no-keys' | 'unauthorized' | 'unreachable' | 'empty' | 'http' | 'broken-install';
 
 export interface SendInput {
+  readonly draftId?: string | undefined;
   readonly threadId?: string | undefined;
   readonly text: string;
   readonly scenarioId?: string | undefined;
@@ -344,11 +345,11 @@ export interface SetTaskModeInput {
 /**
  * 选择本机附件。渲染层只传 id，落盘根目录由主进程翻译。
  *
- * 未选项目时不能直接抛掉：任务已经在某个 cwd 里跑（内核默认目录或上次
- * 选过的项目），附件必须落到**那个**目录的 `uploads/`，agent 才能读到。
- * 首页还没有任务、也没选项目时才拒绝，并且要把原因送回渲染层。
+ * 已有任务使用固定 cwd 的 uploads；新草稿使用 draftId 暂存，发送时迁移到最终目录。
+ * 添加附件不创建项目，也不授予源目录权限。
  */
 export interface PickAttachmentsInput {
+  readonly draftId?: string | undefined;
   readonly workspaceId?: string | undefined;
   readonly threadId?: string | undefined;
 }
@@ -419,6 +420,7 @@ export interface TaskSearchOccurrenceView {
 }
 
 export interface DroppedAttachmentInput {
+  readonly draftId?: string | undefined;
   readonly workspaceId?: string | undefined;
   readonly threadId?: string | undefined;
   readonly files: readonly { readonly name: string; readonly bytes: Uint8Array }[];
@@ -1169,6 +1171,9 @@ export interface DirEntryView {
  * 不是错误码 —— 抛错在界面上的表现是按钮转一下然后什么都没发生。
  */
 export interface ProjectMutationResult {
+  readonly warning?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly reused?: boolean | undefined;
   readonly ok: boolean;
   readonly refused?: string | undefined;
   readonly projects: readonly ProjectCardView[];

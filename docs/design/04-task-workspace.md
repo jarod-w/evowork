@@ -1,5 +1,7 @@
 # 04 · 任务工作台
 
+> **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](../superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
+
 > 上游：[总纲 §6.1 / §6.10](../evowork-on-codex-design.md)· D6 · [清单 §4 / §5 / §6](../agent-platform-feature-list.md)
 > 本篇已按 [类 ChatGPT UI 设计方案](../chatgpt-like-ui-design.md) 的 Approved 决策回写，全部控件按 [01 §5](01-ui-design-system.md) 推导。这是产品使用时长最集中的页面，也是 M2 的主体。
 

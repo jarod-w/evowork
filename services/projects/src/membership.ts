@@ -59,3 +59,18 @@ export function isUnderRoot(root: string, candidate: string, home: string): bool
 
   return absoluteCandidate === absoluteRoot || absoluteCandidate.startsWith(`${absoluteRoot}/`);
 }
+
+/** 显式归属由宿主优先解析；此函数只为旧/外部任务提供路径回退。 */
+export function ownerProjectOf(
+  cwd: string,
+  projects: readonly { readonly id: string; readonly roots: readonly string[] }[],
+  home: string,
+): string | undefined {
+  let match: { id: string; length: number } | undefined;
+  for (const project of projects)
+    for (const root of project.roots) {
+      if (isUnderRoot(root, cwd, home) && (!match || root.length > match.length))
+        match = { id: project.id, length: root.length };
+    }
+  return match?.id;
+}

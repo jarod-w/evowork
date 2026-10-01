@@ -1,3 +1,6 @@
+import { isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
+import { workspaceRootRefusal } from '@evowork/policy';
 /**
  * 适配层的语义化 API（09 §3.1）。
  *
@@ -163,6 +166,7 @@ export interface MemorySettings {
 export type { ThreadGoal, ThreadGoalStatus, ThreadSearchOccurrence };
 
 export interface AdapterOptions {
+  readonly validateCwd?: (cwd: string) => Promise<string>;
   readonly store: Store;
   /** 由宿主提供的只读技能根；握手后注册，内核重启时自动重放。 */
   readonly skillRoots?: readonly string[];
@@ -248,6 +252,19 @@ function isTurnAlreadyOver(err: unknown): boolean {
 }
 
 export function createAdapter(options: AdapterOptions) {
+  const checkedCwd = async (cwd: string | null | undefined): Promise<string> => {
+    if (!cwd || !isAbsolute(cwd)) throw new Error('任务必须指定有效的绝对工作目录。');
+    const refusal = workspaceRootRefusal(cwd, homedir());
+    if (refusal?.kind === 'too-broad') throw new Error(refusal.reason);
+    return options.validateCwd ? options.validateCwd(cwd) : cwd;
+  };
+  const taskCwd = async (threadId: string, override?: string): Promise<string> => {
+    const cwd = store.threads.get(threadId)?.cwd ?? ephemeralThreads.get(threadId)?.cwd;
+    if (override && cwd && override !== cwd)
+      throw new Error('任务工作目录已固定，换项目请新建任务。');
+    return checkedCwd(cwd);
+  };
+
   // 启动即检查「每个实验方法都有降级路径」——缺一条就等于给未来留一次白屏
   assertDegradationCoverage();
 
@@ -468,6 +485,7 @@ export function createAdapter(options: AdapterOptions) {
     let recovered = 0;
     for (const threadId of session.openThreads) {
       try {
+        await taskCwd(threadId);
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
           threadId,
         });
@@ -966,6 +984,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly scenarioId?: string;
       readonly overrides?: ComposerOverrides;
       readonly automationId?: string;
+      readonly onCreated?: (threadId: string) => void;
     }): Promise<{ threadId: string; turn: Turn; degradations: readonly string[] }> {
       const scenario =
         scenarios.find((s) => s.id === args.scenarioId) ??
@@ -979,8 +998,9 @@ export function createAdapter(options: AdapterOptions) {
       assertModeSendable(modeId, reviewerAvailable);
       const mode = MODES[modeId];
 
+      const cwd = await checkedCwd(args.overrides?.cwd);
       const started = await session.peer.request<ThreadStartResponse>(METHOD.threadStart, {
-        ...(args.overrides?.cwd ? { cwd: args.overrides.cwd } : {}),
+        cwd,
         model,
         // F5：permissions 与 sandbox 互斥，只传一个
         permissions: mode.kernelPermissions,
@@ -991,13 +1011,20 @@ export function createAdapter(options: AdapterOptions) {
         config: DISABLE_OPENAI_DOCS_CONFIG,
       });
       const threadId = started.thread.id;
+      options.store.threads.upsertFromThread(started.thread, {
+        firstMessage: args.input
+          .filter((part): part is Extract<UserInput, { type: 'text' }> => part.type === 'text')
+          .map((part) => part.text)
+          .join('\n'),
+      });
+      args.onCreated?.(threadId);
       session.openThreads.add(threadId);
 
       const expanded = expandTurnStart({
         threadId,
         input: args.input,
         scenario,
-        overrides: { ...args.overrides, model },
+        overrides: { ...args.overrides, model, cwd },
         readInstructions: options.readInstructions ?? (() => undefined),
         collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
         permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
@@ -1082,6 +1109,7 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async forkTask(threadId: string, lastTurnId?: string, ephemeral = false): Promise<string> {
+      await taskCwd(threadId);
       const response = await session.peer.request<{ readonly thread: Thread }>(METHOD.threadFork, {
         threadId,
         ...(lastTurnId ? { lastTurnId } : {}),
@@ -1143,6 +1171,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly steer?: boolean;
     }): Promise<{ queued: boolean; degradations: readonly string[] }> {
       const row = store.threads.get(args.threadId);
+      const cwd = await taskCwd(args.threadId, args.overrides?.cwd);
       const running = row?.derived_status === 'running' || row?.derived_status === 'pending';
 
       if (running) {
@@ -1197,6 +1226,7 @@ export function createAdapter(options: AdapterOptions) {
         ...(row?.permission_id ? { permissions: row.permission_id } : {}),
         ...(row?.model ? { model: row.model } : {}),
         ...args.overrides,
+        cwd,
       };
       requireResolvedModel(overrides.model ?? scenario.model);
 
@@ -1307,6 +1337,7 @@ export function createAdapter(options: AdapterOptions) {
       const next = queued[0];
       if (!next) return;
       const row = store.threads.get(threadId);
+      const cwd = await taskCwd(threadId);
       const scenario =
         scenarios.find((candidate) => candidate.id === row?.scenario_id) ??
         scenarios.find((candidate) => candidate.default) ??
@@ -1316,6 +1347,7 @@ export function createAdapter(options: AdapterOptions) {
         ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
         ...(row?.permission_id ? { permissions: row.permission_id } : {}),
         ...(row?.model ? { model: row.model } : {}),
+        cwd,
       };
       requireResolvedModel(overrides.model ?? scenario.model);
       const expanded = expandTurnStart({
@@ -1393,6 +1425,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly items: Promise<readonly ThreadItem[]>;
       readonly latestTurn: Promise<Turn | undefined>;
     }> {
+      await taskCwd(threadId);
       session.openThreads.add(threadId);
       const ephemeral = ephemeralThreads.get(threadId);
       if (ephemeral) {

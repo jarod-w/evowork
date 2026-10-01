@@ -39,6 +39,7 @@ export interface TaskRunner {
       readonly modeId?: 'request-approval' | 'approve-for-me' | 'full-access';
     };
     readonly automationId?: string;
+    readonly onCreated?: (threadId: string) => void;
   }): Promise<{ threadId: string }>;
   setBudget(threadId: string, budget: number): Promise<void>;
   interrupt(threadId: string): Promise<void>;
@@ -70,6 +71,10 @@ export interface AutomationStore {
 }
 
 export interface BridgeOptions {
+  readonly resolveEnvironment?: (
+    automation: AutomationDefinition,
+    fireTime: number,
+  ) => Promise<{ cwd: string; onCreated?: (threadId: string) => void }>;
   readonly runner: TaskRunner;
   readonly store: AutomationStore;
   readonly deviceId: string;
@@ -127,6 +132,8 @@ export function createKernelBridge(options: BridgeOptions) {
         (path) => !(options.workspaceExists?.(path) ?? true),
       );
       if (missing.length > 0) {
+        options.store.updateAutomation(automation.id, { status: 'PAUSED' });
+        options.notify(`「${automation.name}」已暂停：工作空间路径不存在，请编辑环境后恢复。`);
         finish(automation, fireTime, undefined, {
           ok: false,
           failureClass: 'ENVIRONMENT',
@@ -136,12 +143,28 @@ export function createKernelBridge(options: BridgeOptions) {
         throw new Error('workspace-missing');
       }
 
+      let environment: { cwd: string; onCreated?: (threadId: string) => void } | undefined;
+      try {
+        environment = await options.resolveEnvironment?.(automation, fireTime);
+      } catch {
+        options.store.updateAutomation(automation.id, { status: 'PAUSED' });
+        options.notify(`「${automation.name}」已暂停：任务环境不可用，请检查目录后恢复。`);
+        finish(automation, fireTime, undefined, {
+          ok: false,
+          failureClass: 'ENVIRONMENT',
+          summary: '任务环境不可用',
+        });
+        throw new Error('workspace-invalid');
+      }
       const created = await options.runner.createTask({
+        ...(environment?.onCreated ? { onCreated: environment.onCreated } : {}),
         input: [{ type: 'text', text: automation.prompt }],
         automationId: automation.id,
         overrides: {
           model: modelId,
-          ...(automation.workspaces[0] ? { cwd: automation.workspaces[0] } : {}),
+          ...((environment?.cwd ?? automation.workspaces[0])
+            ? { cwd: environment?.cwd ?? automation.workspaces[0] }
+            : {}),
         },
       });
 

@@ -270,6 +270,9 @@ importers:
       '@evowork/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@evowork/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@evowork/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

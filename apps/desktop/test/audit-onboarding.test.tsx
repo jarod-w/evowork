@@ -200,11 +200,12 @@ describe('四步引导（02 §9）', () => {
     expect(screen.queryByText(/工作空间/)).toBeNull();
   });
 
-  it('**没选项目时「下一步」禁用并给原因**（01 §6.3）', () => {
+  it('没选项目也能继续引导并使用独立任务目录', () => {
     render(<OnboardingHarness over={{ step: 'workspace' }} />);
-    const next = screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement;
-    expect(next.disabled).toBe(true);
-    expect(next.getAttribute('title')).toContain('先选一个项目');
+    expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(blockingReason({ step: 'workspace', workspaces: [] })).toBeUndefined();
   });
 
   it('选了之后可以继续', () => {

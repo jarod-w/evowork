@@ -1,5 +1,7 @@
 # 01 · UI 设计系统
 
+> **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](../superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
+
 > 上游：[总纲 §3.8 / §4.1](../evowork-on-codex-design.md)（界面 100% [自建]）· [清单 §13](../agent-platform-feature-list.md)
 > 产品行为仍以 [类 ChatGPT UI 设计方案](../chatgpt-like-ui-design.md) 的 C3–C6 为准（对话优先、项目预览、按需结果区、克制首页、未接通入口隐藏）。
 > **视觉与布局数值**自 2026-09-16 起改走 [`plugins/skills/ui-design`](../../plugins/skills/ui-design/SKILL.md) 的 2026-09-16 工作台基线（[foundations.md](../../plugins/skills/ui-design/references/foundations.md) · [ui-tokens.css](../../plugins/skills/ui-design/assets/ui-tokens.css)）。原 4 张截图只作历史测量参考。所有后续页面只能用本文 §5 的组件拼装。

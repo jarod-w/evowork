@@ -75,7 +75,6 @@ import type {
   TaskRowView,
   TaskResultsView,
   TaskFilePreviewInput,
-  WorkspaceView,
   WriteAgentsMemoResult,
 } from '../shared/ipc.js';
 import type { ApprovalDecision } from './components/approval-card.js';
@@ -139,6 +138,7 @@ export interface EvoworkBridge {
   onPendingApprovals(handler: (approvals: readonly ApprovalView[]) => void): () => void;
   onDegrade(handler: (report: { degradation?: { userVisible: string } }) => void): () => void;
   /** 发送一条需求。没有 threadId 时由主进程新建任务并回 id（03 §1） */
+  discardComposerDraft?(input: { draftId: string }): Promise<void>;
   send(input: SendInput): Promise<{ threadId: string; queued?: boolean }>;
   setTaskMode(input: {
     threadId: string;
@@ -201,6 +201,7 @@ export interface EvoworkBridge {
   }): Promise<ComposerContextView['mentions']>;
   pickAttachments?(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]>;
   ingestAttachments?(input: {
+    draftId?: string;
     workspaceId?: string;
     threadId?: string;
     files: readonly { name: string; bytes: Uint8Array }[];
@@ -455,26 +456,30 @@ const PERMISSION_LABEL: Readonly<Record<string, string>> = {
   ':danger-full-access': '完全访问',
 };
 
-/**
- * 首页 Composer 该预选哪个项目（02 §9）。
- *
- * 已选且还在列表里 → 保持。引导刚选的路径 → 用它。只剩一个项目 → 直接用。
- * 多个且用户没选过 → 不擅自挑，下拉保持「选择项目」。
- */
-function preferredWorkspaceId(
-  workspaces: readonly WorkspaceView[],
-  pickedPaths: readonly string[],
-  current: string | undefined,
-): string | undefined {
-  if (current !== undefined && workspaces.some((workspace) => workspace.id === current)) {
-    return current;
+const COMPOSER_DRAFT_KEY = 'evowork.composer.draft';
+function savedComposerDraft(): {
+  id: string;
+  text: string;
+  workspaceId?: string;
+  attachments: readonly ComposerAttachmentView[];
+  references: readonly ComposerReferenceView[];
+} {
+  try {
+    const raw = localStorage.getItem(COMPOSER_DRAFT_KEY);
+    if (raw) {
+      const value = JSON.parse(raw) as ReturnType<typeof savedComposerDraft>;
+      if (
+        typeof value.id === 'string' &&
+        typeof value.text === 'string' &&
+        Array.isArray(value.attachments) &&
+        Array.isArray(value.references)
+      )
+        return value;
+    }
+  } catch {
+    /* 不可用的本地缓存不能阻止新任务。 */
   }
-  for (let index = pickedPaths.length - 1; index >= 0; index -= 1) {
-    const path = pickedPaths[index];
-    const match = workspaces.find((workspace) => workspace.path === path);
-    if (match) return match.id;
-  }
-  return workspaces.length === 1 ? workspaces[0]?.id : undefined;
+  return { id: crypto.randomUUID(), text: '', attachments: [], references: [] };
 }
 
 export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
@@ -509,7 +514,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [scenarioId, setScenarioId] = useState('office');
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<ModeId>('request-approval');
-  const [draft, setDraft] = useState('');
+  const savedDraft = useRef(savedComposerDraft());
+  const [draft, setDraft] = useState(savedDraft.current.text);
+  const draftIdentity = useRef(savedDraft.current.id);
+  const [environmentBusy, setEnvironmentBusy] = useState(false);
+
+  const pendingEnvironment = useRef(false);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [models, setModels] = useState<readonly ModelOptionView[]>([]);
   const [modelId, setModelId] = useState<string | undefined>(undefined);
@@ -520,7 +530,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     ModelUnavailableReason | undefined
   >(undefined);
   /** 选中的工作空间（EvoWork 的「空间」= 内核的 Project + cwd）。主进程负责翻成 cwd */
-  const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
+  const [workspaceId, setWorkspaceId] = useState<string | undefined>(
+    savedDraft.current.workspaceId,
+  );
   const [view, setView] = useState<MainView>('task');
   /** 设置页的当前分区（11 §4.4）。「更多」菜单直接说要去哪个分区 */
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('models');
@@ -769,8 +781,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [turnDiffByTask, setTurnDiffByTask] = useState<
     Readonly<Record<string, { readonly turnId: string; readonly diff: string }>>
   >({});
-  const [attachments, setAttachments] = useState<readonly ComposerAttachmentView[]>([]);
-  const [references, setReferences] = useState<readonly ComposerReferenceView[]>([]);
+  const [attachments, setAttachments] = useState<readonly ComposerAttachmentView[]>(
+    savedDraft.current.attachments,
+  );
+  const [references, setReferences] = useState<readonly ComposerReferenceView[]>(
+    savedDraft.current.references,
+  );
   const [composerContext, setComposerContext] = useState<ComposerContextView>({
     mentions: [],
     commands: [],
@@ -819,7 +835,35 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 旧任务的历史读取错误、发送错误和任务级模型选择都不能泄漏到新任务首页；
    * 全局故障（例如网关降级、启动失败）仍然保留，因为换任务并不能解决它们。
    */
+  useEffect(() => {
+    if (activeTaskId !== null) return;
+    try {
+      localStorage.setItem(
+        COMPOSER_DRAFT_KEY,
+        JSON.stringify({
+          id: draftIdentity.current,
+          text: draft,
+          workspaceId,
+          attachments,
+          references,
+        }),
+      );
+    } catch {
+      /* 沙箱禁用持久存储时保留内存草稿。 */
+    }
+  }, [activeTaskId, draft, workspaceId, attachments, references]);
+  const currentDraftTask = useRef(activeTaskId);
+  useEffect(() => {
+    if (currentDraftTask.current !== activeTaskId) draftIdentity.current = crypto.randomUUID();
+    currentDraftTask.current = activeTaskId;
+  }, [activeTaskId]);
   const beginNewTask = useCallback(() => {
+    if (!pendingEnvironment.current)
+      void bridge
+        .discardComposerDraft?.({ draftId: draftIdentity.current })
+        .catch((error) => reportFailure(error, '没能清理草稿附件。'));
+    draftIdentity.current = crypto.randomUUID();
+    setWorkspaceId(undefined);
     setActiveTaskId(null);
     setDraft('');
     setReferences([]);
@@ -829,7 +873,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setFocusItemId(undefined);
     setSearchOpen(false);
     setView('task');
-  }, []);
+  }, [bridge, reportFailure]);
 
   /*
    * 冷启动那条深链走**拉**不走推：推的时候 React 还没订阅事件，会丢
@@ -1078,10 +1122,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    * 项目列表变了就校正 Composer 的选中项：引导刚建的、侧栏新建的唯一项目，
    * 以及「在此项目新建任务」留下的选择。删掉当前项后若还剩一个，改选剩下那个。
    */
-  useEffect(() => {
-    const next = preferredWorkspaceId(startup?.workspaces ?? [], pickedWorkspaces, workspaceId);
-    if (next !== workspaceId) setWorkspaceId(next);
-  }, [startup, pickedWorkspaces, workspaceId]);
 
   /*
    * 全局快捷键只负责跨页面导航；文本输入自己的 Enter / Esc 仍由 Composer 处理。
@@ -1314,9 +1354,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   useEffect(() => {
     const cwd =
       activeTaskId === null ? undefined : tasks.find((task) => task.id === activeTaskId)?.cwd;
-    const taskWorkspace = startup?.workspaces.find((workspace) => workspace.path === cwd);
-    if (taskWorkspace) setWorkspaceId(taskWorkspace.id);
-    const contextWorkspaceId = taskWorkspace?.id ?? workspaceId;
+    const taskWorkspace = startup?.workspaces.find((workspace) => {
+      const task = tasks.find((item) => item.id === activeTaskId);
+      return task?.projectId !== undefined
+        ? task.projectId === workspace.id
+        : workspace.path === cwd;
+    });
+    if (activeTaskId !== null) setWorkspaceId(taskWorkspace?.id);
+    const contextWorkspaceId = activeTaskId !== null ? taskWorkspace?.id : workspaceId;
     if (bridge.getComposerContext) {
       void bridge
         .getComposerContext({ ...(contextWorkspaceId ? { workspaceId: contextWorkspaceId } : {}) })
@@ -1369,7 +1414,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       );
 
     const cwd = tasks.find((task) => task.id === threadId)?.cwd;
-    const project = startup?.workspaces.find((workspace) => workspace.path === cwd);
+    const project = startup?.workspaces.find((workspace) => {
+      const task = tasks.find((item) => item.id === activeTaskId);
+      return task?.projectId !== undefined
+        ? task.projectId === workspace.id
+        : workspace.path === cwd;
+    });
     if (!project) {
       setTaskFiles((prev) =>
         deletedTaskIds.current.has(threadId) ? prev : { ...prev, [threadId]: [] },
@@ -1671,9 +1721,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
    */
   const newTaskInProject = useCallback(
     (id: string) => {
-      setWorkspaceId(id);
       setActiveProjectId(null);
       beginNewTask();
+      setWorkspaceId(id);
     },
     [beginNewTask],
   );
@@ -1748,9 +1798,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const attachmentReferences = attachments.flatMap((attachment) => attachment.references);
     const outgoingReferences = [...references, ...attachmentReferences];
     if (!text && outgoingReferences.length === 0) return;
-    setDraft('');
+    if (
+      pendingEnvironment.current ||
+      attachments.some((attachment) => attachment.state !== 'ready')
+    )
+      return;
+    pendingEnvironment.current = true;
+    setEnvironmentBusy(true);
+    const identity = draftIdentity.current;
     try {
       const { threadId } = await bridge.send({
+        draftId: identity,
         ...(activeTaskId ? { threadId: activeTaskId } : {}),
         text,
         scenarioId,
@@ -1759,10 +1817,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         ...(modelId !== undefined ? { modelId } : {}),
         ...(mode !== undefined ? { modeId: mode } : {}),
         // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
-        ...(workspaceId !== undefined ? { workspaceId } : {}),
+        ...(!activeTaskId && workspaceId !== undefined ? { workspaceId } : {}),
         ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
         ...(running ? { steer } : {}),
       });
+      if (identity !== draftIdentity.current) return;
+      setDraft((previous) => (previous === draft ? '' : previous));
+      try {
+        localStorage.removeItem(COMPOSER_DRAFT_KEY);
+      } catch {
+        // 浏览器存储不可用不影响已发送的任务。
+      }
+      void bridge.discardComposerDraft?.({ draftId: identity }).catch(() => undefined);
       setActiveTaskId(threadId);
       setAttachments([]);
       setReferences([]);
@@ -1772,7 +1838,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }
     } catch (err: unknown) {
       // 发送失败要把草稿还回去 —— 清空输入框又什么都没发生，用户会以为消息丢了
-      setDraft(text);
+      if (identity !== draftIdentity.current) return;
       setNotices((prev) => [
         ...prev,
         {
@@ -1781,6 +1847,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           scope: 'task',
         },
       ]);
+    } finally {
+      pendingEnvironment.current = false;
+      setEnvironmentBusy(false);
     }
   }, [
     bridge,
@@ -1936,16 +2005,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   /** 工作空间下拉的选项。空数组时 Composer 渲染一句说明，**不是空白浮层** */
-  const workspaces: readonly SelectOption[] = useMemo(
-    () =>
-      (startup?.workspaces ?? []).map((w) => ({
-        id: w.id,
-        label: w.name,
-        // 路径就是"任务会跑在哪"，是这一项唯一重要的信息；没有 root 的空间如实说明
-        description: w.path ?? '这个空间没有目录，任务会落在默认目录',
-      })),
-    [startup],
-  );
+  const workspaces: readonly SelectOption[] = useMemo(() => {
+    const options = (startup?.workspaces ?? []).map((w) => ({
+      id: w.id,
+      label: w.name,
+      description: w.path ?? '这个项目没有可用目录',
+      allowed: !!w.path && !w.rootMissing,
+      disabledReason: '项目目录已失效，请重新选择。',
+    }));
+    if (workspaceId && startup && !options.some((option) => option.id === workspaceId))
+      options.push({
+        id: workspaceId,
+        label: '项目已失效',
+        description: '请选择其他项目或不使用项目',
+        allowed: false,
+        disabledReason: '项目已被移除',
+      });
+    return options;
+  }, [startup, workspaceId]);
 
   const currentItems = activeTaskId === null ? [] : (itemsByTask[activeTaskId] ?? []);
   const currentResults =
@@ -2093,6 +2170,47 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [composerContext.mentions],
   );
+  const addAttachments = useCallback(
+    async (action: (id: string) => Promise<readonly ComposerAttachmentView[] | undefined>) => {
+      if (pendingEnvironment.current) return;
+      const identity = draftIdentity.current;
+      const taskId = activeTaskId;
+      pendingEnvironment.current = true;
+      setEnvironmentBusy(true);
+      try {
+        const picked = await action(identity);
+        if (identity === draftIdentity.current && taskId === activeTaskId && picked?.length)
+          setAttachments((previous) => [...previous, ...picked]);
+      } catch (error: unknown) {
+        reportFailure(error, '没能添加本地文件。');
+      } finally {
+        pendingEnvironment.current = false;
+        setEnvironmentBusy(false);
+      }
+    },
+    [activeTaskId, reportFailure],
+  );
+  const pickComposerFolder = useCallback(async () => {
+    if (pendingEnvironment.current) return;
+    const identity = draftIdentity.current;
+    pendingEnvironment.current = true;
+    setEnvironmentBusy(true);
+    try {
+      const result = await bridge.importProject();
+      if (result.ok) {
+        if (result.warning) pushToast({ tone: 'info', text: result.warning });
+        const info = await bridge.getStartup();
+        setStartup(info);
+        if (identity === draftIdentity.current && result.projectId)
+          setWorkspaceId(result.projectId);
+      } else if (result.refused) pushToast({ tone: 'danger', text: result.refused });
+    } catch (error: unknown) {
+      reportFailure(error, '没能打开项目文件夹。');
+    } finally {
+      pendingEnvironment.current = false;
+      setEnvironmentBusy(false);
+    }
+  }, [bridge, reportFailure, pushToast]);
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -2105,43 +2223,29 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       },
       attachments: attachments as readonly Attachment[],
       onAttach: bridge.pickAttachments
-        ? () => {
-            /*
-             * 失败必须说出来。以前 `void` 掉 rejection，未选项目时主进程抛错、
-             * 选择器根本打不开，表现就是「点了添加本地文件没反应」。
-             */
-            void bridge
-              .pickAttachments?.({
-                ...(workspaceId ? { workspaceId } : {}),
+        ? () =>
+            void addAttachments((id) =>
+              bridge.pickAttachments!({
+                draftId: id,
                 ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
-              })
-              .then((picked) => {
-                if (picked.length === 0) return;
-                setAttachments((previous) => [...previous, ...picked]);
-              })
-              .catch((error: unknown) => reportFailure(error, '没能添加本地文件。'));
-          }
+              }),
+            )
         : undefined,
       onFilesAdded: bridge.ingestAttachments
-        ? (files: readonly File[]) => {
-            void Promise.all(
-              files.map(async (file) => ({
-                name: file.name,
-                bytes: new Uint8Array(await file.arrayBuffer()),
-              })),
-            )
-              .then((payload) =>
-                bridge.ingestAttachments?.({
-                  ...(workspaceId ? { workspaceId } : {}),
-                  ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
-                  files: payload,
-                }),
-              )
-              .then((picked) => {
-                if (picked?.length) setAttachments((previous) => [...previous, ...picked]);
-              })
-              .catch((error: unknown) => reportFailure(error, '没能添加拖入的文件。'));
-          }
+        ? (files: readonly File[]) =>
+            void addAttachments(async (id) => {
+              const payload = await Promise.all(
+                files.map(async (file) => ({
+                  name: file.name,
+                  bytes: new Uint8Array(await file.arrayBuffer()),
+                })),
+              );
+              return bridge.ingestAttachments!({
+                draftId: id,
+                ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+                files: payload,
+              });
+            })
         : undefined,
       onRemoveAttachment: (id: string) =>
         setAttachments((previous) => previous.filter((attachment) => attachment.id !== id)),
@@ -2257,7 +2361,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       onSteerChange: setSteer,
       workspaces,
       workspaceId,
-      onWorkspaceChange: setWorkspaceId,
+      onWorkspaceChange: (id: string) => setWorkspaceId(id === 'no-project' ? undefined : id),
+      workspaceLocked: activeTaskId !== null,
+      workspaceLabel: activeTaskId
+        ? (startup?.workspaces.find((w) => w.id === workspaceId)?.name ?? '不使用项目')
+        : undefined,
+      environmentBusy,
+      onPickFolder: () => void pickComposerFolder(),
+      onNewTaskInOtherProject: beginNewTask,
       permissions,
       permissionId,
       onPermissionChange: setPermissionId,
@@ -2377,6 +2488,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       modelUnavailableReason,
       modelAccess,
       attachments,
+      environmentBusy,
+      activeTaskId,
+      pickComposerFolder,
+      addAttachments,
       composerContext,
       queuedByTask,
       steer,
@@ -2480,7 +2595,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then(async () => {
                 try {
                   const info = await bridge.getStartup();
-                  setStartup(info);
+                  setStartup({ ...info, onboarded: true });
                 } catch {
                   setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
                 }
@@ -2528,6 +2643,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
           activeNavId={navIdForView(view, activeTaskId)}
           onSelect={(id) => {
+            draftIdentity.current = crypto.randomUUID();
             setActiveTaskId(id);
             setView('task');
           }}

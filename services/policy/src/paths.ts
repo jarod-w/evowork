@@ -144,6 +144,30 @@ export function normalizePath(input: string, home: string): string {
   return resolved;
 }
 
+/** 接收真实路径；只限制工作范围，不替代沙箱或审批策略。 */
+export function workspaceRootRefusal(
+  rawPath: string,
+  home: string,
+): { readonly kind: 'too-broad' | 'evowork-data'; readonly reason: string } | undefined {
+  const slash = rawPath.replace(/\\/g, '/');
+  const path = normalizePath(rawPath, '').replace(/\/+$/, '');
+  const userHome = normalizePath(home, '').replace(/\/+$/, '');
+  if (
+    path === '' ||
+    /^[a-zA-Z]:$/.test(path) ||
+    /^\/\/[^/]+\/[^/]+\/?$/.test(slash) ||
+    path === userHome ||
+    userHome.startsWith(`${path}/`)
+  ) {
+    return { kind: 'too-broad', reason: '目录范围过大，请选择具体的工作文件夹。' };
+  }
+  const data = `${userHome}/.evowork`;
+  if (path === data || path.startsWith(`${data}/`)) {
+    return { kind: 'evowork-data', reason: '这是应用的数据目录，请选择自己的工作文件夹。' };
+  }
+  return undefined;
+}
+
 function underPrefix(path: string, prefix: string): boolean {
   // 目录前缀（以 / 结尾）匹配它自己与其下所有内容；文件前缀要求精确相等
   if (prefix.endsWith('/')) {

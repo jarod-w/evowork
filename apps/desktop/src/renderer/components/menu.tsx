@@ -288,6 +288,9 @@ export interface InlineSelectOption {
 }
 
 export interface InlineSelectProps {
+  readonly actions?:
+    | readonly { readonly id: string; readonly label: string; readonly onSelect: () => void }[]
+    | undefined;
   readonly ariaLabel: string;
   readonly icon?: ReactNode | undefined;
   /** 未选值时显示占位并用 `--text-tertiary`（01 §5.14） */
@@ -371,19 +374,28 @@ export function InlineSelect(props: InlineSelectProps) {
         <Menu
           ariaLabel={props.ariaLabel}
           {...(props.emptyHint !== undefined ? { emptyHint: props.emptyHint } : {})}
-          items={props.options.map((o) => ({
-            id: o.id,
-            label: o.label,
-            checked: o.id === props.value,
-            description: o.description,
-            disabled: o.disabled,
-            disabledReason: o.disabledReason,
-            group: o.group,
-            danger: o.danger,
-          }))}
+          items={[
+            ...props.options.map((o) => ({
+              id: o.id,
+              label: o.label,
+              checked: o.id === props.value,
+              description: o.description,
+              disabled: o.disabled,
+              disabledReason: o.disabledReason,
+              group: o.group,
+              danger: o.danger,
+            })),
+            ...(props.actions ?? []).map((action) => ({
+              id: action.id,
+              label: action.label,
+              group: 'actions',
+            })),
+          ]}
           onSelect={(chosen) => {
             close();
-            props.onChange(chosen);
+            const action = props.actions?.find((item) => item.id === chosen);
+            if (action) action.onSelect();
+            else props.onChange(chosen);
           }}
         />
       </Popover>

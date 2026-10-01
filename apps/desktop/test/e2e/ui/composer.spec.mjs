@@ -69,3 +69,33 @@ test('输入 → 发送 → 进入运行态 → 中断', async ({ page, electron
   await expect(composer).toHaveAttribute('data-run-state', 'idle');
   await expect(page.getByRole('button', { name: '发送' })).toBeVisible();
 });
+
+test('首页不预选项目，两个无项目任务有独立目录', async ({ page }) => {
+  const composer = page.getByLabel('输入区');
+  await expect(composer).toContainText('不使用项目');
+  const roots = [];
+  for (const text of ['独立目录验证一', '独立目录验证二']) {
+    await page.getByLabel('需求输入').fill(text);
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.getByRole('main', { name: '对话区' })).toContainText('E2E response');
+    await expect
+      .poll(async () =>
+        page.evaluate(async (message) => {
+          const startup = await window.evowork.getStartup();
+          return startup.tasks.find((task) => task.title === message);
+        }, text),
+      )
+      .toMatchObject({ projectId: null });
+    roots.push(
+      await page.evaluate(async (message) => {
+        const startup = await window.evowork.getStartup();
+        return startup.tasks.find((task) => task.title === message).cwd;
+      }, text),
+    );
+    await page.getByText('新建任务', { exact: true }).click();
+    await expect(composer).toContainText('不使用项目');
+  }
+  expect(roots[0]).toBeTruthy();
+  expect(roots[1]).toBeTruthy();
+  expect(roots[0]).not.toBe(roots[1]);
+});

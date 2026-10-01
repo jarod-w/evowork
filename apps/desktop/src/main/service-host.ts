@@ -31,12 +31,21 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  statSync,
   realpathSync,
   readdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { lstat, open as openFile, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  stat,
+  open as openFile,
+  readdir,
+  readFile,
+  realpath,
+  writeFile,
+} from 'node:fs/promises';
 import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 
@@ -65,6 +74,7 @@ import { createIngest, createOfficeParser, type IngestOutcome } from '@evowork/i
 import { BRAND } from '@evowork/tokens';
 import { createShareFlow, createUploader, shareState } from '@evowork/artifacts';
 import {
+  createProjectRepo,
   createAuditRepo,
   createShareRepo,
   openStore,
@@ -117,6 +127,7 @@ import {
 import { EMPTY_POLICY_VIEW, syncEnterprisePolicy, type PolicyPackView } from './policy-pack.js';
 import { NO_KEYRING_NOTICE, type SafeStorageLike } from './secret-store.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
+import { createTaskEnvironments } from './task-environments.js';
 import {
   DEFAULT_GATEWAY_BASE_URL,
   fetchModelCatalog,
@@ -1169,7 +1180,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   const translate = createEventTranslator(store, () => Date.now());
 
+  mkdirSync(join(options.paths.kernelHome, 'startup'), { recursive: true });
+  const environments = createTaskEnvironments({
+    store,
+    home: homedir(),
+    dataDir: dirname(options.paths.kernelHome),
+    projectRoot: (id) => createProjectRepo(store.db).get(id)?.roots[0],
+  });
   const adapter = createAdapter({
+    validateCwd: environments.validate,
     store,
     logger,
     ...(options.pluginsDir ? { skillRoots: [join(options.pluginsDir, 'skills')] } : {}),
@@ -1311,6 +1330,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   const automationCatalog: { read?: () => Promise<ModelCatalogResult> } = {};
   const services = createLocalServices({
+    environments,
     store,
     adapter,
     notify: (text) => options.emitToRenderer(IPC.notice, { kind: 'automation', text }),
@@ -1700,7 +1720,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       for (const outcome of outcomes) {
         attachmentSequence += 1;
         let originalPath = file.path;
-        if (!originalPath && outcome.status === 'runtime-missing') {
+        if (outcome.status === 'runtime-missing') {
           uploadSequence += 1;
           const dir = join(workspaceRoot, 'uploads', `dropped-${Date.now()}-${uploadSequence}`);
           mkdirSync(dir, { recursive: true });
@@ -1822,6 +1842,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         : undefined;
     },
     attachmentPorts,
+    environments,
     automationPorts,
     /*
      * 「项目」页的 I/O。真正读盘的只有这几行 —— 判定全在 `@evowork/projects` 里，
@@ -1829,7 +1850,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
      */
     projectPorts: {
       home: homedir(),
-      rootExists: (path) => existsSync(path),
+      rootExists: (path) => {
+        try {
+          return statSync(path).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+      sameDirectory: async (a, b) => {
+        const first = await stat(a);
+        const second = await stat(b);
+        return first.dev === second.dev && first.ino === second.ino;
+      },
       realpath: async (path) => {
         try {
           return await realpath(path);

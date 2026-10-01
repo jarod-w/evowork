@@ -9,6 +9,7 @@ import type { ProjectRecord, RootState } from './types.js';
 
 /** 归属判定要用的那点 thread 字段。**不引 `ProjectionRow`** —— 这个包不认识 sqlite */
 export interface ThreadLite {
+  readonly projectId?: string | null | undefined;
   readonly cwd: string | null;
   readonly archived: boolean;
   readonly recencyAt: number | null;
