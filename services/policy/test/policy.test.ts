@@ -4,6 +4,9 @@
  * 这一整个文件盯的都是**"错了不报错"**的东西：路径判定漏了一条、
  * hook 的输出形状写错一个字段、审批理由空着 —— 三者的表现都是"策略静默失效"。
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -12,6 +15,7 @@ import {
   commandApprovalRationale,
   DELETE_REASON,
   KERNEL_PROMPT_RULES,
+  OVERWRITE_REASON_PREFIX,
   applyPlatformRestriction,
   applyUserPreference,
   BUDGET_ACTIONS,
@@ -231,6 +235,26 @@ describe('删除类命令的内核 prompt 规则（Q45 修订，2026-09-28 外�
   it('没有内核理由、命令又认不出来时如实说认不出来，不编一个', () => {
     const { reason } = commandApprovalRationale('./mystery-binary --go', undefined);
     expect(reason).toContain('判断不出');
+  });
+});
+
+describe('内核补丁 P6：覆盖已有文件的审批理由（外部验收 D1-2）', () => {
+  it('补丁里写的理由前缀与策略层逐字相同 —— 改了一边，卡片就会露出英文', () => {
+    const patch = readFileSync(
+      resolve(import.meta.dirname, '../../../patches/evowork/0001-exec-overwrite-approval.patch'),
+      'utf8',
+    );
+    expect(patch).toContain(`const OVERWRITE_REASON_PREFIX: &str = "${OVERWRITE_REASON_PREFIX}";`);
+  });
+
+  it('卡片上换成中文，并说出被覆盖的是哪个文件', () => {
+    const { reason } = commandApprovalRationale(
+      "/bin/zsh -lc 'printf 已归档 > inputs/D1_notes.md'",
+      `${OVERWRITE_REASON_PREFIX}inputs/D1_notes.md`,
+    );
+    expect(reason).toContain('覆盖已有的文件');
+    expect(reason).toContain('inputs/D1_notes.md');
+    expect(reason).not.toContain('overwrites');
   });
 });
 

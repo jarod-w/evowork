@@ -14,8 +14,9 @@ K3 最后一档才是 `ext/`（需要内核内部状态或事件流）。
 
 ## 补丁（K1）
 
-硬上限 ≤ 5 文件 / ≤ 500 行，`scripts/patch-budget.mjs` 守着。当前清单为空；
-设计判定只剩 P4（对外可见品牌字符串）。内部路径名如 `CODEX_HOME` 保持不动。
+硬上限 ≤ 5 文件 / ≤ 500 行，`scripts/patch-budget.mjs` 守着。当前 1 个：P6（覆盖已有文件要审批）；
+设计上待做的还有 P4（对外可见品牌字符串）。内部路径名如 `CODEX_HOME` 保持不动。
+补丁只存在于 `node scripts/build-kernel.mjs` 编出来的内核里；打包与 E2E 核对 `KERNEL_PROVENANCE.json`。
 
 加补丁前置：
 

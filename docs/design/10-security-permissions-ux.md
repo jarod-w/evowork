@@ -104,10 +104,18 @@ Composer 常显选择器控制「这次任务里，模型动手前要不要问�
 - 审批卡上删除命令**不给「本次任务内都允许」**（与 §3.3 文件删除同一条）。
 - **定时任务的后果**：无人值守时这张卡没人点，按 §3.6 超时 10 分钟自动拒绝、run 记 `FAILED / APPROVAL_TIMEOUT`。
   `rm -f` 以前就是这样，现在普通 `rm` 也是。自动化里需要清理文件的，应当写进工作空间内的临时目录并交给用户确认。
-- **已知缺口，不能对外说 D1 已修好**：内核只对不含重定向、子 shell 的纯命令序列按段匹配规则
-  （`shell-command/src/bash.rs` 的 `parse_shell_lc_plain_commands`）。`printf … > 已有文件`（覆盖，D1-2）与任何含 `>` / `>>`
-  的组合脚本（D1-4 原样命令）仍不问；`python -c "os.remove(...)"`、`find -delete`、apply_patch 的删除也不在覆盖面里。
-  完整覆盖只能走内核补丁（K1），未排期。E2E 把这个缺口钉成了断言（`destructive-approval.spec.mjs` 最后一条）。
+- **覆盖已有文件要审批（2026-10-01，内核补丁 P6，用户批准）**：shell 命令用 `>` / `>|` / `&>` 截断写一个
+  **已存在**的文件时要问（D1-2），新建文件不问（`cat > outputs/新文件` 照常直接跑）。审批卡理由是
+  「这个命令会覆盖已有的文件（路径），原来的内容找不回来」。补丁与逐个扩展点的说明：
+  `patches/evowork/0001-exec-overwrite-approval.{patch,md}`；构建：`scripts/build-kernel.mjs`。
+- **仍然的缺口**：内核只对不含重定向、子 shell 的纯命令序列按段匹配删除规则
+  （`shell-command/src/bash.rs` 的 `parse_shell_lc_plain_commands`），所以**追加与删除写进同一段含 `>>` 的脚本**
+  （D1-4 的一种写法）时删除不问；`>>` 追加、`tee` / `cp` / `mv` 覆盖、`python -c "open(...,'w')"` / `os.remove(...)`、
+  `find -delete`、apply_patch 的删除也不在覆盖面里。E2E 把这些缺口钉成了断言（`destructive-approval.spec.mjs` 最后一条）。
+- **最大的那个缺口是 `apply_patch`**（2026-10-01 真模型实测，待决）：工作空间内的 `Update File` / `Delete File` 不问，
+  而这正是模型改文件最常走的路。deepseek-flash 跑验收 D1-2 四轮，3 轮靠 apply_patch 改掉了文件；其中一轮是 `printf >`
+  被 P6 拦下、**用户拒绝之后**，模型改用 apply_patch 把文件删了重建 —— 拒绝挡住了那条命令，没挡住结果。
+  所以**不能对外说「覆盖文件会问你」**，只能说「用 shell 重定向覆盖会问」。
 - UI 的一句话说明**没有**因此改成「删除文件时询问你」—— 覆盖面不够说这句话。完全访问确认框加了一行「执行删除文件的命令前仍会问你一次」。
 
 **硬规则**：

@@ -56,7 +56,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 
 违反其中任何一条，代价都不是「代码丑」，而是每次上游 rebase 都要重付一遍。
 
-**K1 · 内核不可变。** 不在 `../codex` 里直接改代码。确实无法用扩展点实现时，改动必须落成 `patches/evowork/*.patch`，每个补丁配一份说明「为什么扩展点做不到」。硬上限：**≤ 5 个文件、≤ 500 行**（工作区任务 `evowork: 内核补丁清单自检` 可查）。当前设计判定真正需要打补丁的**只剩 P4（对外可见品牌字符串）一项**，其余全部靠配置绕过 —— 原 P3（`ask.md` 模式模板）已删除：F1 实测 `turn/start.collaborationMode.settings.developer_instructions` 可纯配置注入模式指令，文本随 EvoWork 分发在 `config/modes/*.md`，不进内核仓库。Q45 之后 Composer 主路径只下发 craft 指令。
+**K1 · 内核不可变。** 不在 `../codex` 里直接改代码。确实无法用扩展点实现时，改动必须落成 `patches/evowork/*.patch`，每个补丁配一份说明「为什么扩展点做不到」。硬上限：**≤ 5 个文件、≤ 500 行**（工作区任务 `evowork: 内核补丁清单自检` 可查）。**已落地 1 个：P6（覆盖已有文件要审批，2026-10-01，外部验收 D1-2）**；设计上待做的还有 P4（对外可见品牌字符串），其余全部靠配置绕过。**补丁只存在于 `scripts/build-kernel.mjs` 编出来的内核里**（导出 HEAD → 打补丁 → 编，`../codex` 不动），打包与 E2E 会核对它旁边的 `KERNEL_PROVENANCE.json`，直接编 `../codex` 的内核会被拒。原 P3（`ask.md` 模式模板）已删除：F1 实测 `turn/start.collaborationMode.settings.developer_instructions` 可纯配置注入模式指令，文本随 EvoWork 分发在 `config/modes/*.md`，不进内核仓库。Q45 之后 Composer 主路径只下发 craft 指令。
 
 **K2 · 唯一边界是 app-server JSON-RPC v2。** 前端与服务层只说这个协议，不链接 Rust、不调 SDK 内部、不读内核的 sqlite/rollout 文件。协议定义在 `../codex/codex-rs/app-server-protocol/src/protocol/v2/`。初始化时声明 `capabilities.experimentalApi = true` 才能用 `project/*`、`thread/queue/*`、`goal`、timeline 等实验方法；实验方法一律在服务层收一层适配，不让前端直接依赖。
 
@@ -83,6 +83,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 | 铁律 | 谁在守 | 撞上时长什么样 |
 |---|---|---|
 | K1（补丁预算） | `scripts/patch-budget.mjs`，进 `pnpm run check` | 「超出 K1 上限」 |
+| K1（补丁真的编进去了） | `scripts/kernel-provenance.mjs`，进打包前置检查与 Playwright 夹具 | 「旁边没有 KERNEL_PROVENANCE.json」/「补丁与现在的 patches/evowork/ 不一致」—— 没打补丁的内核照样能跑，这是唯一拦得住它的地方 |
 | K2（唯一边界） | eslint `@evowork/no-kernel-internals` | 「只有 `services/kernel-adapter` 可以引用 `CODEX_HOME`」—— 它把 launcher 从桌面壳里赶了出来 |
 | K5（品牌） | `scripts/gen-third-party-notices.mjs --check`，**2026-09-26 起进 `pnpm run check`** | 依赖树与 NOTICES 不一致 |
 | K6（不出网） | `services/ingest/test/pipeline.test.ts` 扫 **整个 `src/` 目录**里的 `fetch` / `node:http` | 「解析管道里不该出现 fetch(」——**云端兜底是结构上不存在，不是"默认关闭"**。2026-09-07 从"手工列的文件名单"收紧成整目录：办公扩展的下载器被放进了另一个包（`services/runtime-installer`），这里就不必留口子 |
@@ -128,7 +129,7 @@ evowork/
     connectors/          MCP server 集合。**本期只做 browser/**（Q9：国内生态集成推 v2）
     hooks/               策略包 `evowork-policy/`：四个事件的 I/O 壳，**决策在 `services/policy`**（放脚本里就测不了）
   config/                config.toml 模板 · requirements.toml · 权限 profile · 模式模板
-  patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；**当前为空**）
+  patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；当前 1 个：P6）
   build/                 M9 打包：electron-builder 配置 · entitlements。**是源码不是产物**
   scripts/               漂移雷达（含 F1–F25 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
   tools/                 开发期工具（eslint 规则：K2 边界 + token-only 样式）
@@ -214,7 +215,7 @@ EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
 code evowork.code-workspace                       # 打开多根工作区
 
 cd ../codex                                       # just 会自动切到 codex-rs/
-(cd codex-rs && cargo build -p codex-app-server)  # 构建 EvoWork 唯一对话的进程
+(cd codex-rs && cargo build -p codex-app-server)  # 上游原样构建，只用来摸协议；**发货 / E2E 用 node scripts/build-kernel.mjs**（带补丁）
 just app-server-test-client                       # 交互式 JSON-RPC 客户端，摸协议行为
 just exec "根据 data/ 下的表格生成一份周报 docx"   # 办公场景端到端冒烟（M0）
 just codex                                        # TUI，看内核原生行为

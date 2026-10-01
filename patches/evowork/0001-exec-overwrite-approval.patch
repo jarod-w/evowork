@@ -1,0 +1,158 @@
+diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
+index 1057835..8e10c91 100644
+--- a/codex-rs/core/src/unified_exec/process_manager.rs
++++ b/codex-rs/core/src/unified_exec/process_manager.rs
+@@ -1505,6 +1505,14 @@ impl UnifiedExecProcessManager {
+                 command_platform,
+             )
+             .await;
++        // EvoWork P6 (patches/evowork/0001-exec-overwrite-approval): overwriting a file
++        // that already exists asks, even inside the writable workspace.
++        let exec_approval_requirement = require_approval_before_overwrite(
++            exec_approval_requirement,
++            &request.command,
++            &cwd,
++            context.step_context.settings.approval_policy(),
++        );
+         let req = UnifiedExecToolRequest {
+             command: request.command.clone(),
+             shell_type: request.shell_type,
+@@ -1880,6 +1888,55 @@ enum ProcessStatus {
+     Unknown,
+ }
+ 
++
++/// EvoWork P6: the approval reason prefix EvoWork's approval card recognizes.
++/// Keep in sync with `services/policy/src/execpolicy.ts` (`OVERWRITE_REASON_PREFIX`).
++const OVERWRITE_REASON_PREFIX: &str = "overwrites an existing file: ";
++
++/// EvoWork P6: turn "run without asking" into "ask" when the command truncates
++/// (`>`, `>|`, `&>`) a file that already exists. Leaves `never`, explicit
++/// execpolicy allow rules (`bypass_sandbox`) and every other decision alone.
++fn require_approval_before_overwrite(
++    requirement: crate::tools::sandboxing::ExecApprovalRequirement,
++    command: &[String],
++    cwd: &PathUri,
++    approval_policy: codex_protocol::protocol::AskForApproval,
++) -> crate::tools::sandboxing::ExecApprovalRequirement {
++    use crate::tools::sandboxing::ExecApprovalRequirement;
++    use codex_protocol::protocol::AskForApproval;
++
++    let may_prompt = match approval_policy {
++        AskForApproval::Never => false,
++        AskForApproval::OnRequest | AskForApproval::UnlessTrusted => true,
++        AskForApproval::Granular(config) => config.allows_sandbox_approval(),
++    };
++    let runs_unasked = matches!(
++        requirement,
++        ExecApprovalRequirement::Skip {
++            bypass_sandbox: false,
++            ..
++        }
++    );
++    if !may_prompt || !runs_unasked {
++        return requirement;
++    }
++    let Ok(cwd) = cwd.to_abs_path() else {
++        return requirement;
++    };
++    let existing: Vec<String> =
++        codex_shell_command::bash::parse_shell_lc_truncating_redirect_targets(command)
++            .unwrap_or_default()
++            .into_iter()
++            .filter(|target| cwd.as_path().join(target).is_file())
++            .collect();
++    if existing.is_empty() {
++        return requirement;
++    }
++    ExecApprovalRequirement::NeedsApproval {
++        reason: Some(format!("{OVERWRITE_REASON_PREFIX}{}", existing.join(", "))),
++        proposed_execpolicy_amendment: None,
++    }
++}
+ #[cfg(test)]
+ #[path = "process_manager_tests.rs"]
+ mod tests;
+diff --git a/codex-rs/shell-command/src/bash.rs b/codex-rs/shell-command/src/bash.rs
+index ddd5807..c7525a8 100644
+--- a/codex-rs/shell-command/src/bash.rs
++++ b/codex-rs/shell-command/src/bash.rs
+@@ -159,6 +159,43 @@ pub(crate) fn parse_shell_lc_literal_commands(command: &[String]) -> Option<Vec<
+     Some(commands)
+ }
+ 
++/// EvoWork P6: literal destinations of truncating output redirects (`>`, `>|`,
++/// `&>`) in a `bash -lc` / `zsh -lc` script. Appends (`>>`), descriptor
++/// duplication (`>&2`) and dynamic destinations are ignored. Callers use this to
++/// ask before a command overwrites a file that already exists.
++pub fn parse_shell_lc_truncating_redirect_targets(command: &[String]) -> Option<Vec<String>> {
++    let (_, script) = extract_bash_command(command)?;
++    let tree = try_parse_shell(script)?;
++    let root = tree.root_node();
++    if root.has_error() {
++        return None;
++    }
++
++    let mut targets = Vec::new();
++    let mut stack = vec![root];
++    while let Some(node) = stack.pop() {
++        if node.kind() == "file_redirect" {
++            let mut cursor = node.walk();
++            let truncates = node
++                .children(&mut cursor)
++                .any(|child| !child.is_named() && matches!(child.kind(), ">" | ">|" | "&>"));
++            if truncates
++                && let Some(destination) = node.child_by_field_name("destination")
++                && let Some(target) = parse_literal_shell_word(destination, script)
++            {
++                targets.push(target);
++            }
++        }
++
++        let mut cursor = node.walk();
++        for child in node.named_children(&mut cursor) {
++            stack.push(child);
++        }
++    }
++
++    Some(targets)
++}
++
+ fn parse_plain_command_from_node(cmd: tree_sitter::Node, src: &str) -> Option<Vec<String>> {
+     if cmd.kind() != "command" {
+         return None;
+@@ -315,6 +352,34 @@ fn parse_raw_string(node: Node, src: &str) -> Option<String> {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn evowork_truncating_redirect_targets() {
++        let targets = |script: &str| {
++            parse_shell_lc_truncating_redirect_targets(&[
++                "/bin/zsh".to_string(),
++                "-lc".to_string(),
++                script.to_string(),
++            ])
++            .unwrap_or_default()
++        };
++        assert_eq!(
++            targets("printf '已归档\\n' > inputs/D1_notes.md && cat inputs/D1_notes.md"),
++            vec!["inputs/D1_notes.md".to_string()]
++        );
++        assert_eq!(targets("echo hi >| a.txt"), vec!["a.txt".to_string()]);
++        assert_eq!(targets("run &> \"log file.txt\""), vec!["log file.txt".to_string()]);
++        assert_eq!(
++            targets("cat > outputs/new.md <<'EOF'\nbody\nEOF"),
++            vec!["outputs/new.md".to_string()]
++        );
++        // Appends, descriptor duplication, reads and dynamic targets are not overwrites.
++        assert!(targets("printf x >> draft.md").is_empty());
++        assert!(targets("cmd 2>&1 | tee out").is_empty());
++        assert!(targets("sort < in.txt").is_empty());
++        assert!(targets("echo x > \"$OUT\"").is_empty());
++    }
++
+     use pretty_assertions::assert_eq;
+ 
+     fn parse_seq(src: &str) -> Option<Vec<Vec<String>>> {

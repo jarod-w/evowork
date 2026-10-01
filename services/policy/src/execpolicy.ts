@@ -39,6 +39,12 @@ export const DIMENSION_COPY: Readonly<Record<RiskDimension, string>> = Object.fr
  */
 export const DELETE_REASON = '这个命令会删除文件';
 
+/**
+ * 内核补丁 P6（`patches/evowork/0001-exec-overwrite-approval`）给「覆盖已有文件」的审批理由前缀。
+ * 是**我们自己补丁里的**字符串，所以可以认；`services/policy/test` 有一条断言补丁里的前缀与这里逐字相同。
+ */
+export const OVERWRITE_REASON_PREFIX = 'overwrites an existing file: ';
+
 interface Matcher {
   readonly rule: string;
   readonly test: RegExp;
@@ -176,6 +182,14 @@ export function commandApprovalRationale(
 } {
   const risk = analyzeCommand(command);
   const kernel = kernelReason?.trim();
+  if (kernel?.startsWith(OVERWRITE_REASON_PREFIX.trim())) {
+    const targets = kernel.slice(OVERWRITE_REASON_PREFIX.trim().length).trim();
+    return {
+      reason: `这个命令会覆盖已有的文件（${targets}），原来的内容找不回来`,
+      impact: risk.impact,
+      dimensions: risk.dimensions,
+    };
+  }
   const ours = kernel !== undefined && MATCHERS.some((matcher) => kernel.includes(matcher.reason));
   return {
     reason: kernel === undefined || kernel === '' || ours ? risk.reason : kernel,

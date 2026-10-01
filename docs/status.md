@@ -6,7 +6,24 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
-> **2026-10-01（续）：验收里的待决项，用户拍板了（D1-2 的内核补丁另记）。**
+> **2026-10-01（续）：验收里三条待决项，用户拍板了。**
+> ① **D1-2 → 第一个内核补丁 P6「覆盖已有文件要审批」**（`patches/evowork/0001-exec-overwrite-approval.{patch,md}`，
+> 2 个文件、122 行，K1 预算内）。shell 用 `>` / `>|` / `&>` 截断写一个**已存在**的文件时，内核把「直接跑」改成「要审批」，
+> 新建文件照常直接跑；审批卡理由换成中文「这个命令会覆盖已有的文件（路径）」—— 补丁与策略层共用的前缀有测试逐字钉住。
+> 新增 `scripts/build-kernel.mjs`：把 `../codex` 的 HEAD **导出**到 `build/.kernel-src/`、打补丁、编进
+> `build/kernel/<平台>/`，同目录写 `KERNEL_PROVENANCE.json`（内核提交 + 补丁哈希）；`../codex` 本身不动，
+> `--check` 只试打补丁（上游 rebase 后先跑它）。**从现在起 E2E 与打包都要用它编出来的内核**，
+> 直接 `cargo build` 上游签出得到的内核没有 P6。
+> 打包前置检查、Playwright 夹具、`desktop-skills-e2e`、`verify-agent-loop` 都核对 `KERNEL_PROVENANCE.json`
+> （`scripts/kernel-provenance.mjs`）：没有来源文件、二进制被换过、补丁改了没重编，都直接报错。
+> **第一次编出来的内核没有 P6**：`build/.kernel-src` 在 evowork 仓库里面，`git apply` 在仓库子目录里把补丁路径当成相对仓库根、
+> 静默跳过（退出码 0），日志与来源文件都说「打了」—— 来源核对拦不住记错的来源，是 E2E 的 P6 用例抓到的。
+> build-kernel 现在不让 git 往上找仓库，并且打完按内容核对补丁涉及的每个文件都变了。
+> **验过的**：真打了补丁的内核上，假网关的审批 E2E 9/9（覆盖已有文件弹卡、理由是中文、拒绝后一个字节没变；新建文件不弹；
+> `>>` 缺口照旧钉着）。改了策略层之后要先 `pnpm run build` —— E2E 跑的是 `dist`，第一遍卡上露的还是内核英文原文。
+> 真模型（deepseek-flash）：D4 通过；**D1-2 仍然 0/4** —— 1 轮先在对话里问，3 轮改走 `apply_patch`（工作空间内不问），
+> 其中 1 轮是 `printf >` 被 P6 拦下、拒绝之后改用 apply_patch 删了重建。P6 修的是测试方原报告里那条命令；
+> **apply_patch 怎么办待决**（10 §2.4）。
 > ② **D4 → 登记为允许**：内核每次启动用 `git` 同步 `https://github.com/openai/plugins.git`（OpenAI 插件市场），
 > 只读拉取公开仓库、不带用户内容、界面上看不到（「插件」页只列本机与工作区市场）。登记在总纲 K6 登记表；
 > 验收 D4 把 GitHub 的几个域名列为允许，别的目的地照样判失败。

@@ -1,6 +1,6 @@
 # 编译与部署手册
 
-> **更新于 2026-09-27**。本文里的每条命令都在本机实际跑过；**跑不通的地方会写明"没验过"**，
+> **更新于 2026-10-01**。本文里的每条命令都在本机实际跑过；**跑不通的地方会写明"没验过"**，
 > 不写"应该可以"。**唯一的例外是 §5.2.1**（账号页与账号服务的部署），那一节照录的是
 > 另一轮在 Ubuntu 上的实测，本文作者没有重跑 —— 该节开头与 §7 都标着这件事。上游内核与本仓库分开写，因为它们的工具链、构建时长、失败方式完全不同。
 
@@ -43,7 +43,38 @@
 
 ## 2. 构建内核（`../codex`）
 
-### 2.1 只构建我们需要的那一个
+### 2.0 发货与 E2E 用的内核：`scripts/build-kernel.mjs`（2026-10-01 起）
+
+`patches/evowork/` 里有了第一个内核补丁（P6，覆盖已有文件要审批）。**补丁只存在于这个脚本编出来的
+二进制里** —— 直接在 `../codex` 里 `cargo build`（§2.1）得到的内核能正常跑，只是没有那项修复。
+
+```bash
+node scripts/build-kernel.mjs           # release → build/kernel/<平台>/codex-app-server + KERNEL_PROVENANCE.json
+node scripts/build-kernel.mjs --check   # 只试打补丁，不编译（上游 rebase 后先跑它）
+node scripts/build-kernel.mjs --debug   # debug（编得快，二进制约 1 GB，只给本机调试）
+```
+
+它把 `../codex` 的 HEAD 用 `git archive` **导出**到 `build/.kernel-src/`，在副本上打补丁、编译
+（缓存在 `build/.kernel-target/`），`../codex` 本身一个字节都不动（K1）。补丁打不上就直接失败并说是哪一个。
+打完还**按内容核对**补丁涉及的每个文件都变了：`build/.kernel-src` 在 evowork 仓库里面，`git apply` 在仓库子目录里
+会把补丁路径当成相对仓库根、**静默跳过**当前目录之外的文件且退出码为 0 —— 2026-10-01 第一次编 P6 就这样编出了
+一个记着「打了补丁」的原样内核，是 E2E 的 P6 用例抓到的。现在 `git apply` 带 `GIT_CEILING_DIRECTORIES` 跑。
+内核提交与补丁都没变时不重新导出，第二次起是增量编译。
+
+`KERNEL_PROVENANCE.json` 记着内核提交、每个补丁的哈希与二进制哈希。**打包前置检查、Playwright 夹具、
+`desktop-skills-e2e` 与 `verify-agent-loop` 都会核对它**（`scripts/kernel-provenance.mjs`）：
+没有这个文件、二进制被换过、或补丁改了没重编，都直接报错 —— 在不发货的内核上判出来的红绿不算数。
+
+实测（Apple M1 8 核，`../codex` @ `d583e73c4d`，2026-10-01）：
+
+- `--check` 几秒。
+- release 冷编约 **75 分钟**：第一次跑到 30 分钟被工具的默认超时掐掉，续跑（依赖已在缓存里）又用了 44 分钟。
+- 补丁改了之后重编（依赖都在缓存里，只重编 `codex-shell-command`、`codex-core` 及其下游）：**54 分钟**
+  （其间并行跑过一次 `pnpm run check`）。`codex-core` 一个 crate 就超过 35 分钟，而 P6 改的正是它 ——
+  **每改一次补丁都要再付这三刻钟到一小时**。放后台跑时把超时设够。
+- 产物约 232 MB，与不打补丁的上游 release 构建一样大（上游 release profile 带 line-tables 调试信息、不 strip）。
+
+### 2.1 只构建我们需要的那一个（摸协议 / 调内核用）
 
 ```bash
 cd ../codex/codex-rs
@@ -110,7 +141,8 @@ just codex                    # TUI，看内核原生行为
 
 打包时内核二进制随包分发（`build/kernel/<平台>-<架构>/`，见
 [electron-builder.yml](../build/electron-builder.yml) 的 `extraResources`）。
-开发时如果不改内核，可以直接把一份构建好的二进制放到那里，跳过整个 §2。
+开发时如果不改内核，可以把一份 **`build-kernel.mjs` 编出来的**二进制连同它的
+`KERNEL_PROVENANCE.json` 放到那里，跳过整个 §2。只拷二进制不行：没有来源文件，打包与 E2E 都会拒绝它（§2.0）。
 
 ---
 
@@ -295,6 +327,8 @@ EVOWORK_GATEWAY_TOKEN=local-dev-token \
 
 `EVOWORK_DEV=1` 让入口去连 vite dev server，并用 `../codex/codex-rs/target/debug/codex-app-server`
 作为内核（见 [electron-entry.mjs](../apps/desktop/src/main/electron-entry.mjs)）。
+**那是上游的原样构建，没有 `patches/evowork/` 的补丁**（§2.0）：要在开发模式下看 P6 这类行为，
+设 `EVOWORK_APP_SERVER=$PWD/build/kernel/mac-arm64/codex-app-server`。
 没有 debug 构建时可以用 `EVOWORK_APP_SERVER=<路径>` 指向任意一个内核二进制 ——
 少了它唯一的症状是启动失败，与"代码写错了"区分不开。
 
@@ -469,10 +503,8 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 Windows（nsis）· Linux（AppImage / deb）。
 
 ```bash
-# 一次性：把内核二进制放到 build/kernel/<os>-<arch>/
-(cd ../codex/codex-rs && cargo build -p codex-app-server --release)
-mkdir -p build/kernel/mac-arm64
-cp ../codex/codex-rs/target/release/codex-app-server build/kernel/mac-arm64/
+# 一次性：打补丁编内核，放到 build/kernel/<os>-<arch>/（§2.0；不要再从 ../codex/target 拷）
+node scripts/build-kernel.mjs
 
 pnpm run build      # 打包只搬产物，不会替你构建
 pnpm run package    # = node scripts/package.mjs；--dry-run 只跑前置检查
