@@ -5,22 +5,21 @@
  * 三步，顺序是刻意的：
  *
  *   ① `tsc --build`   —— 产出所有包的 JS 与声明文件（含主进程、preload、服务层）
- *   ② vendor 策略包    —— 把 `@evowork/policy` 的产物放进 hook 插件目录
- *   ③ `vite build`    —— 渲染层打包（它 import 的是 TS 源码，不依赖 ①）
- *
- * ② 必须在 ① 之后：hook 运行器要找的是 `dist/index.js`。
- * ③ 与 ①② 无关，放最后只是为了让失败信息按层次出现。
+ *   ② 复制 Electron 入口
+ *   ③ esbuild 打单文件 —— 含 hook 插件目录里的策略包 `vendor/policy.mjs`
+ *   ④ `vite build`    —— 渲染层打包（它 import 的是 TS 源码，不依赖 ①）
  *
  * ## 为什么单独一个脚本而不是三条 npm script 串起来
  *
- * 因为 ② 不是一条命令 —— 它要检查源文件在不在、目标目录建没建，
- * 而"忘了跑 vendor"的表现是**策略在打包后的应用里静默失效**（hook 运行器会退回
+ * 因为好几步不是一条命令 —— 要检查源文件在不在、产物能不能独立加载，
+ * 而策略包装错的表现是**策略在打包后的应用里静默失效**（hook 运行器会退回
  * 仓库路径，而打包产物里没有那个路径）。这种失败要在构建时就红，不能等到运行时。
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { HOOK_VENDOR } from './package-plan.mjs';
 
@@ -36,7 +35,7 @@ if (process.platform === 'darwin') run('node', [join(ROOT, 'scripts/build-comput
 console.log('① 编译 TypeScript（含声明文件）');
 run('node', [join(ROOT, 'node_modules/typescript/bin/tsc'), '--build', 'tsconfig.build.json']);
 
-console.log('\n② 复制 Electron 入口与 vendor 策略包');
+console.log('\n② 复制 Electron 入口');
 /*
  * `electron-entry.mjs` 是 JS 不是 TS（见它的头注释：electron 依赖属 M9，
  * 写成 .ts 会让 typecheck 因为找不到模块而红），所以 tsc 不会把它带进 dist。
@@ -45,19 +44,6 @@ console.log('\n② 复制 Electron 入口与 vendor 策略包');
 const ENTRY = 'apps/desktop/src/main/electron-entry.mjs';
 copyFileSync(join(ROOT, ENTRY), join(ROOT, 'apps/desktop/dist/main/electron-entry.mjs'));
 console.log(`   ${ENTRY} → dist/main/`);
-
-const from = join(ROOT, HOOK_VENDOR.from);
-const to = join(ROOT, HOOK_VENDOR.to);
-if (!existsSync(from)) {
-  // 忘了这一步的表现是策略在打包后的应用里**静默失效**，所以这里必须响亮失败
-  console.error(
-    `找不到 ${HOOK_VENDOR.from}。策略包没有被编译 —— 检查 tsconfig.build.json 里有没有登记 services/policy。`,
-  );
-  process.exit(1);
-}
-mkdirSync(dirname(to), { recursive: true });
-copyFileSync(from, to);
-console.log(`   ${HOOK_VENDOR.from} → ${HOOK_VENDOR.to}（${statSync(to).size} 字节）`);
 
 console.log('\n③ 打包可独立运行的入口（esbuild）');
 /*
@@ -74,6 +60,13 @@ console.log('\n③ 打包可独立运行的入口（esbuild）');
  *     一直是个麻烦，打包之后它就只是一个普通文件。
  */
 const BUNDLES = [
+  /*
+   * hook 策略包。**必须打成单文件**：2026-10-01 之前这里是把 `services/policy/dist/index.js`
+   * 原样拷过去，而那个文件只有一串 `export * from './audit.js'` —— vendor 目录里没有那些文件，
+   * import 必然失败，运行器退回仓库路径。开发与 E2E 有那个路径所以一直是绿的；
+   * 打包后的应用里没有（extraResources 只带 plugins/），**四个策略 hook 全部静默放行**。
+   */
+  { entry: HOOK_VENDOR.from, out: HOOK_VENDOR.to, format: 'esm' },
   {
     entry: 'services/computer-use/src/mcp-main.ts',
     out: 'plugins/connectors/computer-use/vendor/server.mjs',
@@ -116,6 +109,32 @@ for (const bundle of BUNDLES) {
     '--log-level=warning',
   ]);
   console.log(`   ${bundle.entry} → ${bundle.out}`);
+}
+
+/*
+ * 策略包要能**单独**加载：拷到一个只有它自己的目录里 import 一次。
+ * 在原位置 import 证明不了什么 —— 旧的错误产物在原位置同样会失败，但谁也不会在构建时去 import 它。
+ */
+{
+  const alone = mkdtempSync(join(tmpdir(), 'evowork-policy-vendor-'));
+  try {
+    const copy = join(alone, 'policy.mjs');
+    copyFileSync(join(ROOT, HOOK_VENDOR.to), copy);
+    const policy = await import(pathToFileURL(copy).href);
+    const missing = ['handlePreToolUse', 'handlePermissionRequest', 'serialize'].filter(
+      (name) => typeof policy[name] !== 'function',
+    );
+    if (missing.length > 0) throw new Error(`缺导出：${missing.join('、')}`);
+    console.log(`   ${HOOK_VENDOR.to} 可独立加载（${statSync(copy).size} 字节）`);
+  } catch (error) {
+    console.error(
+      `${HOOK_VENDOR.to} 不能独立加载：${error.message}\n` +
+        '打包后的应用里 hook 会找不到策略实现、全部放行 —— 不能发出去。',
+    );
+    process.exit(1);
+  } finally {
+    rmSync(alone, { recursive: true, force: true });
+  }
 }
 
 /*

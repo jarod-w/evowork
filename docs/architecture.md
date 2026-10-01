@@ -529,8 +529,8 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 | 步 | 做什么 | 漏了会怎样 |
 | --- | --- | --- |
 | ① `tsc --build tsconfig.build.json` | 产出所有包的 JS 与声明（solution 风格，新包要在 references 里登记） | 新包不被类型检查覆盖 |
-| ② 复制 `electron-entry.mjs` + `preload-entry.cjs` + **vendor 策略包** | 入口是 `.mjs`（唯一 import electron 的文件，被 tsc 跳过）；preload 入口必须是 CJS；策略包要进 hook 目录 | 打包产物**没有入口**；`window.evowork` 不存在；策略在打包后的应用里**静默失效** |
-| ③ esbuild 打三个单文件入口 | `gateway/main` · `desktop/main/bootstrap` · `desktop/preload`（只 external electron） | workspace 包的 exports 指向 TS 源码，直接 `node dist/…` 会炸 |
+| ② 复制 `electron-entry.mjs` + `preload-entry.cjs` | 入口是 `.mjs`（唯一 import electron 的文件，被 tsc 跳过）；preload 入口必须是 CJS | 打包产物**没有入口**；`window.evowork` 不存在 |
+| ③ esbuild 打单文件入口 | `gateway/main` · `desktop/main/bootstrap` · `desktop/preload` · **hook 策略包 `vendor/policy.mjs`**（只 external electron；策略包打完单独 import 验证） | workspace 包的 exports 指向 TS 源码，直接 `node dist/…` 会炸；策略包若只是拷 `dist/index.js`（2026-10-01 前就是这样），打包后的应用里策略**静默失效** |
 | ④ vite 打渲染层（`base: './'`） | mermaid 走[动态 import](../apps/desktop/src/renderer/components/mermaid-renderer.ts)，天然独立 chunk | `base: '/'` 在 `file://` 下指向文件系统根 → 整页全白且没有任何报错 |
 
 入口把两件事拆开：`app.isPackaged`（随包资源在哪）与 `EVOWORK_DEV`（连不连 vite）。未打包时按**入口文件**定位仓库根，不看 `process.cwd()`。

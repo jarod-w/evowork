@@ -111,9 +111,10 @@ export function artifactName(productName, version, platform, arch, extension, su
 /**
  * hook 策略包的 vendor 步骤（见 `plugins/hooks/evowork-policy/bin/_runner.mjs`）。
  *
- * 打包时把 `@evowork/policy` 的构建产物放到插件目录里，运行器就不必回退到仓库路径。
+ * 打包时把 `@evowork/policy` **打成单文件**放进插件目录，运行器就不必回退到仓库路径
+ * （打包后的应用里没有那个路径）。是 esbuild 的入口，不是拷贝的源 —— 见 `scripts/build.mjs`。
  */
 export const HOOK_VENDOR = Object.freeze({
-  from: 'services/policy/dist/index.js',
+  from: 'services/policy/src/index.ts',
   to: 'plugins/hooks/evowork-policy/vendor/policy.mjs',
 });

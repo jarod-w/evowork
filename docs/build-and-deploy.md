@@ -159,11 +159,18 @@ pnpm run build      # 见下
 | 步 | 做什么 | 漏了会怎样 |
 | --- | --- | --- |
 | ① `tsc --build` | 编译所有包，产出 JS 与声明文件 | — |
-| ② 复制入口 + vendor 策略包 | `electron-entry.mjs` → dist；`services/policy/dist` → hook 插件目录 | 打包出的应用**没有入口**；或**策略静默失效**（hook 找不到实现会放行） |
-| ③ esbuild 打包三个入口 | 网关、主进程、preload 各成单文件 | 见下 |
+| ② 复制入口 | `electron-entry.mjs` → dist | 打包出的应用**没有入口** |
+| ③ esbuild 打单文件 | 网关、主进程、preload，以及 hook 插件目录里的策略包 `vendor/policy.mjs`；策略包打完拷到空目录里单独 import 一次，加载不了就失败 | 见下；策略包装错 = 打包后的应用里**策略静默失效**（hook 找不到实现会放行） |
 | ④ vite 打包渲染层 | — | — |
 
 ### 3.1 为什么第 ③ 步必须存在
+
+**策略包（2026-10-01 订正）**：之前第 ② 步把 `services/policy/dist/index.js` 原样拷进 hook 目录。那个文件
+只有一串 `export * from './audit.js'`，vendor 目录里没有那些文件，import 必然失败，运行器退回仓库里的
+`services/policy/dist`。开发与 E2E 有那个路径，所以一直是绿的；打包后的应用里没有（`extraResources` 只带 `plugins/`），
+**四个策略 hook（含凭据硬拦截）在发出去的应用里全部静默放行**。是给 apply_patch 加规则时发现的：新规则编进去了，
+vendor 文件里却搜不到。现在策略包与其他入口一样打成单文件，并在构建时单独加载验证。
+
 
 workspace 包的 `exports` 指向 **TS 源码**（`./src/index.ts`），这让 vitest 与 tsc 直接吃源码，
 开发期是对的。但 `node services/gateway/dist/main.js` 会顺着同一个 exports 去加载 `.ts` 然后炸掉 ——
