@@ -493,6 +493,19 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 > 且由用户显式触发。真正要防的是"云端兜底解析"——那条分支在 `services/ingest` 里
 > 是结构上不存在的（整目录扫描），不是靠这条登记来约束。
 
+**K6 登记：内核的插件市场同步（2026-10-01 新增）**。外部验收 D4 抓到的：跑一个普通任务时，App 进程树里有一条到
+`github.com:443` 的连接，追下去是内核在同步 OpenAI 的插件市场仓库。**用户决定登记为允许**（不关、不打补丁）：
+
+| 项             | 内容                                                                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 触发           | **内核每次启动**在后台线程跑一次，不是用户动作。门在 `core-plugins/src/manager.rs:710`：plugins 功能开 + 没有远端插件目录 + 市场策略放行这个源                                                          |
+| 去哪           | `github.com`：`git ls-remote` / `git clone https://github.com/openai/plugins.git`（`core-plugins/src/startup_sync.rs:30`）。本机没有 git 时退回 HTTP（GitHub zipball / 备份归档），走内核的 HTTP 客户端 —— 会经系统代理，D4 里内核那条指向 `127.0.0.1:7890` 的连接很可能就是它 |
+| 带什么         | **只读拉取一个公开仓库**（git upload-pack / HTTP GET）。不带 prompt、文件名、任务 id、机器标识；带的只是 git / HTTP 客户端的常规请求头                                                             |
+| 落在哪         | `~/.evowork/kernel/.tmp/plugins/`（内核的「OpenAI curated」市场快照）                                                                                                                                  |
+| 界面上看得见吗 | **看不见**：「插件」页只列本机与工作区市场（适配层 `listPluginBundles` 传 `marketplaceKinds: ['local', 'workspace-directory']`），OpenAI curated 市场不会出现在产品里 —— K7 / Q5（不做公开市场）不受影响 |
+| 为什么不关     | 只有三条路：`[features] plugins = false`（本机插件套件也一起没了）· 托管 requirements 禁这个源（要写 `/etc/codex`，桌面应用做不到）· 内核补丁（占 K1 预算）。代价都大于一次只读拉取公开仓库             |
+| 守卫           | 验收 D4（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`）把 `github.com` 列进允许的外连目的地，别的目的地照样判失败；外连按进程记录，下次多出一条能直接看到是谁连的                              |
+
 **K6 登记：账号、令牌与计量（2026-09-08 新增，来自 [11 §6.3](design/11-account-and-models.md)）**。
 上表第一行「账号 / 租户 / 配额 / 授权」此前只写了数据面，**三个具体动作从没登记过**：
 

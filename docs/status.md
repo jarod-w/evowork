@@ -6,6 +6,13 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-01（续）：验收里的待决项，用户拍板了（D1-2 的内核补丁另记）。**
+> ② **D4 → 登记为允许**：内核每次启动用 `git` 同步 `https://github.com/openai/plugins.git`（OpenAI 插件市场），
+> 只读拉取公开仓库、不带用户内容、界面上看不到（「插件」页只列本机与工作区市场）。登记在总纲 K6 登记表；
+> 验收 D4 把 GitHub 的几个域名列为允许，别的目的地照样判失败。
+> ③ **D2-1 → 接受现状、改文档**：工作空间之外的**读**不要审批（沙箱不限读，hook 发不起询问），10 §2.3 已订正；
+> 验收 D2-1 / D2-2 照记是否回显，作为「接受的偏离」出注解、不判失败（`cases.mjs` 的 `accepted`，只收产品决定）。
+>
 > **2026-10-01：外部验收的 23 个用例进了 Playwright**（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`，
 > `pnpm run test:acceptance`）。提示词 / 审批策略 / C3 的中途打断逐字取自报告；夹具由
 > `harness/acceptance/make_fixtures.py` 按描述重建（原夹具不在分享包里）；判分用移植的 `checks.py`，
