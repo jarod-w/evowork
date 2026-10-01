@@ -1,6 +1,6 @@
 {
   "_comment": "对外报告：有封面、有目录、正文 11pt、页眉写文档标题、页脚写页码。数值不进渲染代码 —— 与 presentations 同一条纪律。",
-  "page": { "margin_cm": 2.5, "orientation": "portrait" },
+  "page": { "size": "A4", "margin_cm": 2.5, "orientation": "portrait" },
   "font": { "cjk": "微软雅黑", "latin": "Calibri" },
   "styles": {
     "title": { "size_pt": 26, "bold": true, "space_after_pt": 6, "align": "center" },

@@ -1,9 +1,6 @@
 {
   "_comment": "内部备忘：无封面、无目录页、正文 10.5pt、信息密度更高。标题直接起在第一页。",
-  "page": {
-    "margin_cm": 2.0,
-    "orientation": "portrait"
-  },
+  "page": { "size": "A4", "margin_cm": 2.0, "orientation": "portrait" },
   "font": {
     "cjk": "微软雅黑",
     "latin": "Calibri"

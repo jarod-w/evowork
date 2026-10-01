@@ -41,6 +41,10 @@ BLOCKS = ("heading", "paragraph", "bullets", "ordered", "table", "image", "quote
 TOC_HINT = "（目录是 Word 的域：第一次打开时按 F9 或右键「更新域」即可显示页码。）"
 
 
+
+# 模板 `page.size` 可选的纸张（竖版宽 × 高，厘米）。缺省 A4
+PAGE_SIZES_CM = {"A4": (21.0, 29.7), "A3": (29.7, 42.0), "Letter": (21.59, 27.94)}
+
 def validate(content: dict, base_dir: Path) -> None:
     validate_content(
         content,
@@ -141,6 +145,15 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
 
     document = docx.Document()
     section = document.sections[0]
+    # 纸张必须显式设：python-docx 的空白模板是**美式 Letter**（8.5×11 英寸）。
+    # 2026-09-28 外部验收 A1 要求 A4，按这个技能渲染出来的文档是 Letter —— 国内办公默认就该是 A4。
+    width_cm, height_cm = PAGE_SIZES_CM[template["page"].get("size", "A4")]
+    if template["page"].get("orientation") == "landscape":
+        from docx.enum.section import WD_ORIENT
+
+        section.orientation = WD_ORIENT.LANDSCAPE
+        width_cm, height_cm = height_cm, width_cm
+    section.page_width, section.page_height = Cm(width_cm), Cm(height_cm)
     for attr in ("top_margin", "bottom_margin", "left_margin", "right_margin"):
         setattr(section, attr, Cm(template["page"]["margin_cm"]))
 

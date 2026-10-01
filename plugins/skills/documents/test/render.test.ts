@@ -212,6 +212,25 @@ describe('装了办公扩展时真的产出 docx', () => {
   });
 });
 
+describe('纸张默认是 A4（2026-09-28 外部验收 A1）', () => {
+  /*
+   * python-docx 的空白模板是**美式 Letter**（12240×15840 twip）。技能只设了页边距，
+   * 于是渲染出来的每一份文档都是 Letter —— 验收 A1 明确要求 A4，照着技能做就错了，
+   * 而在 Word 里不看「布局 → 纸张大小」根本发现不了。
+   */
+  it.runIf(hasDocx)('三个模板渲染出来都是 A4 竖版', () => {
+    for (const template of ['report', 'memo', 'minimal']) {
+      const out = join(dir, `${template}.docx`);
+      expect(run({ ...DOC, template }, `${template}.docx`).status).toBe(EXIT.ok);
+      const size = readDocumentXml(out).match(/<w:pgSz[^>]*w:w="(\d+)"[^>]*w:h="(\d+)"/);
+      expect(size, template).not.toBeNull();
+      // A4 = 11906 × 16838 twip；换算有一两个 twip 的舍入
+      expect(Math.abs(Number(size![1]) - 11906), template).toBeLessThanOrEqual(2);
+      expect(Math.abs(Number(size![2]) - 16838), template).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
 describe('失败输出不含用户内容（Q14 同口径）', () => {
   it('报错里不出现正文', () => {
     const bad = {
