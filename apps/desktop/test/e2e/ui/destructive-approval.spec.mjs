@@ -158,6 +158,55 @@ test('新建文件照常直接跑 —— 模型最常见的动作，不能因为
   await expect.poll(() => read(workspace, 'brand-new.md')).toBe('NEW');
 });
 
+/*
+ * apply_patch（2026-10-01 真模型复测 D1-2 后用户决定）：模型在 exec_command 里写
+ * `apply_patch <<'PATCH' … PATCH`，内核截下来按补丁应用、工作空间内不问。策略 hook 拒掉其中的
+ * 删除与整篇覆盖并指路到会弹审批的写法（services/policy/src/apply-patch.ts）。这里断言 hook 真的
+ * 看得到这类调用 —— 内核给它的 tool_name 是 Bash，补丁在 command 里。
+ */
+const applyPatch = (body) =>
+  `apply_patch <<'PATCH'\n*** Begin Patch\n${body}\n*** End Patch\nPATCH`;
+
+test('apply_patch 删除被策略拒绝 —— 那一轮是 `printf >` 被拒后改用它删了重建', async ({
+  page,
+  electronApp,
+}) => {
+  const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  seed(workspace);
+  const seen = await runCommand(
+    page,
+    electronApp,
+    applyPatch('*** Delete File: inputs/D1_notes.md'),
+    { nth: 0 },
+  );
+  expect(seen, '策略拒绝不该弹卡（拒绝理由回给模型，让它改用 rm）').toBeNull();
+  expect(read(workspace, 'D1_notes.md')).toBe('# notes\n');
+});
+
+test('apply_patch 把已有文件整篇换掉被策略拒绝；局部修改照常执行', async ({
+  page,
+  electronApp,
+}) => {
+  const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  seed(workspace);
+  await runCommand(
+    page,
+    electronApp,
+    applyPatch('*** Update File: inputs/D1_notes.md\n@@\n-# notes\n+已归档'),
+    { nth: 0 },
+  );
+  expect(read(workspace, 'D1_notes.md'), '整篇覆盖不该被执行').toBe('# notes\n');
+
+  writeFileSync(join(workspace, 'inputs', 'D1_draft.md'), '# 草稿\n\n第一段\n');
+  await runCommand(
+    page,
+    electronApp,
+    applyPatch('*** Update File: inputs/D1_draft.md\n@@\n # 草稿\n \n-第一段\n+第一段（已改）'),
+    { nth: 1 },
+  );
+  await expect.poll(() => read(workspace, 'D1_draft.md')).toBe('# 草稿\n\n第一段（已改）\n');
+});
+
 test('**已知缺口**：追加与删除写进同一段含 `>>` 的脚本时，删除不问（D1-4 的一种写法）', async ({
   page,
   electronApp,

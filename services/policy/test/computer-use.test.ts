@@ -82,7 +82,7 @@ describe('电脑操控准入', () => {
           permission_mode: 'danger-full-access',
           tool_input: { text: 'PRIVATE_BODY', source: 'interactive' },
         },
-        { home: '/home/user', now: () => 1 },
+        { home: '/home/user', now: () => 1, readFile: () => undefined },
       );
       expect(result.output?.hookSpecificOutput.permissionDecision).toBe('deny');
       expect(JSON.stringify(result.audit)).not.toContain('PRIVATE_BODY');

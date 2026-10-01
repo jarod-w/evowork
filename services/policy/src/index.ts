@@ -1,3 +1,4 @@
+export * from './apply-patch.js';
 export * from './audit.js';
 export * from './execpolicy.js';
 export * from './guardian.js';

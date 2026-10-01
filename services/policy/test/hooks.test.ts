@@ -4,7 +4,8 @@
  * 三条契约约束（contract.ts 的实测表）的共同点是**失败方式都是"什么都没发生"**：
  * 内核把无效输出丢掉，策略静默失效，而没有任何报错。所以它们在这里被逐条钉住。
  */
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,11 +21,17 @@ import {
   handlePreToolUse,
   handleSessionEnd,
   permissionDecision,
+  parseApplyPatch,
   serialize,
+  type HookEnvironment,
   type PreToolUseInput,
 } from '../src/index.js';
 
-const ENV = { home: '/Users/li', now: () => 1_700_000_000_000 };
+const ENV: HookEnvironment = {
+  home: '/Users/li',
+  now: () => 1_700_000_000_000,
+  readFile: () => undefined,
+};
 
 function preToolUse(toolInput: Record<string, unknown>, over: Partial<PreToolUseInput> = {}) {
   return handlePreToolUse(
@@ -255,6 +262,91 @@ describe('PostToolUse / SessionEnd：审计**只记退出码，不记输出**', 
   });
 });
 
+describe('apply_patch 的删除与整篇覆盖：拒绝并指路到会弹审批的写法（D1-2 真模型复测，2026-10-01）', () => {
+  const CWD = '/Users/li/work/weekly';
+  // 失败轮次里真模型的原样调用：exec_command 里的 heredoc，内核截下来按补丁应用、工作空间内不问
+  const viaShell = (body: string) =>
+    `apply_patch <<'PATCH'\n*** Begin Patch\n${body}\n*** End Patch\nPATCH`;
+  const files: Record<string, string> = {
+    [`${CWD}/inputs/D1_notes.md`]: '# 会议纪要\n\n- 三季度存款目标达成 92%\n',
+  };
+  const env: HookEnvironment = { ...ENV, readFile: (path) => files[path] };
+  const run = (command: string, toolName = 'Bash') =>
+    handlePreToolUse(
+      {
+        session_id: 't1',
+        turn_id: 'turn1',
+        cwd: CWD,
+        hook_event_name: 'PreToolUse',
+        tool_name: toolName,
+        tool_use_id: 'call1',
+        tool_input: { command },
+      },
+      env,
+    );
+  const reasonOf = (result: ReturnType<typeof run>) =>
+    String(result.output?.hookSpecificOutput.permissionDecisionReason ?? '');
+
+  it('删除：拒绝并让它改用 rm（rm 会弹审批）—— 那一轮就是「printf 被拒后删了重建」', () => {
+    const result = run(viaShell('*** Delete File: inputs/D1_notes.md'));
+    expect(result.output?.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(reasonOf(result)).toContain('rm');
+    expect(result.audit[0]).toMatchObject({
+      action: 'permission.decided',
+      approvalResult: 'decline',
+      actionSummary: 'APPLY_PATCH_DELETE',
+    });
+    // 审计里只有路径摘要（Q14）
+    expect(JSON.stringify(result.audit)).not.toContain('D1_notes');
+  });
+
+  it('把已有文件一行不留地换掉 = 覆盖：拒绝并让它改用 shell 重定向（P6 会弹审批）', () => {
+    const result = run(
+      viaShell(
+        '*** Update File: inputs/D1_notes.md\n@@\n-# 会议纪要\n-\n-- 三季度存款目标达成 92%\n+已归档',
+      ),
+    );
+    expect(result.output?.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(reasonOf(result)).toContain('> inputs/D1_notes.md');
+    expect(result.audit[0]?.actionSummary).toBe('APPLY_PATCH_OVERWRITE');
+  });
+
+  it('Add File 写到已有文件上同样是覆盖 —— 内核的 AddFile 不查文件在不在，拦了删除它就是下一条路', () => {
+    const result = run(viaShell('*** Add File: inputs/D1_notes.md\n+已归档'));
+    expect(result.output?.hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+
+  it('原生 apply_patch 工具（tool_name = apply_patch，入参就是补丁本身）也一样', () => {
+    const result = run(
+      '*** Begin Patch\n*** Delete File: inputs/D1_notes.md\n*** End Patch',
+      'apply_patch',
+    );
+    expect(result.output?.hookSpecificOutput.permissionDecision).toBe('deny');
+  });
+
+  it('**局部修改照常不问**（「请求批准」的定义是工作空间内编辑不问）', () => {
+    const result = run(
+      viaShell(
+        '*** Update File: inputs/D1_notes.md\n@@\n # 会议纪要\n \n-- 三季度存款目标达成 92%\n+- 三季度存款目标达成 93%',
+      ),
+    );
+    expect(result.output).toBeNull();
+  });
+
+  it('**新建文件照常不问** —— 模型最常见的动作', () => {
+    expect(run(viaShell('*** Add File: outputs/周报.md\n+# 周报')).output).toBeNull();
+  });
+
+  it('只是把补丁文本打印出来、没调 apply_patch 的命令不算', () => {
+    expect(
+      parseApplyPatch(
+        'Bash',
+        "cat <<'EOF'\n*** Begin Patch\n*** Delete File: a.md\n*** End Patch\nEOF",
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe('hook 包的接线', () => {
   const PLUGIN_ROOT = resolve(
     dirname(fileURLToPath(import.meta.url)),
@@ -294,6 +386,33 @@ describe('hook 包的接线', () => {
           .filter((l) => l.trim() && !l.trim().startsWith('*') && !l.trim().startsWith('/')).length,
         file,
       ).toBeLessThan(6);
+    }
+  });
+
+  it('**运行器真实给出的环境**能让覆盖判定生效 —— 运行器是 .mjs，不在类型检查里，漏给 readFile 不会报错', async () => {
+    const runnerPath = join(PLUGIN_ROOT, 'bin/_runner.mjs');
+    const runner = (await import(runnerPath)) as { hookEnvironment: () => HookEnvironment };
+    const workspace = mkdtempSync(join(tmpdir(), 'hook-runner-'));
+    try {
+      writeFileSync(join(workspace, 'notes.md'), '# 会议纪要\n');
+      const result = handlePreToolUse(
+        {
+          session_id: 't1',
+          turn_id: 'turn1',
+          cwd: workspace,
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_use_id: 'call1',
+          tool_input: {
+            command:
+              "apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: notes.md\n+已归档\n*** End Patch\nPATCH",
+          },
+        },
+        runner.hookEnvironment(),
+      );
+      expect(result.output?.hookSpecificOutput.permissionDecision).toBe('deny');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
     }
   });
 

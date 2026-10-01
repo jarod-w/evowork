@@ -44,8 +44,9 @@
 - **`apply_patch`（这是真模型最常走的那条）**：`exec_command` 里的 `apply_patch <<'PATCH' … PATCH` 被内核截下来按补丁应用，
   不经过这里的挂点，工作空间内的 `Update File` / `Delete File` 都不问。2026-10-01 用 deepseek-flash 跑验收 D1-2 四轮：
   1 轮先在对话里问用户；2 轮直接 `Update File` 改写；1 轮在 `printf … >` 被这个补丁拦下、按策略拒绝之后，
-  改用 `Delete File` + `Add File` 把文件删了重建 —— **用户的拒绝没有挡住结果**。所以 P6 修的是测试方原报告里那条命令，
-  D1-2 作为「覆盖文件须审批」在真模型下仍然不过；要真正覆盖得另做决定（见 10 §2.4）；
+  改用 `Delete File` + `Add File` 把文件删了重建 —— **用户的拒绝没有挡住结果**。这条不靠内核补丁：
+  策略 hook 拒绝 apply_patch 的删除与整篇覆盖，并指路到 `rm` / shell 重定向（`services/policy/src/apply-patch.ts`，
+  10 §2.4）；之后复测 D1-2 四轮全过；
 - `>>` 追加（不是覆盖，按 Q45 工作空间内写入不问）；
 - `tee`、`cp` / `mv` 覆盖、`python -c "open(..., 'w')"` 这类脚本语言里的写；
 - 脚本里先 `cd` 再用相对路径（目标按任务工作目录解析）；`~` 不展开；

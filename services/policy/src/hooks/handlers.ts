@@ -7,10 +7,18 @@
  *
  * ## 一条贯穿的判定顺序
  *
- * 硬拦截 → 工作空间 → 需审批。**硬拦截必须最先**，而且不看 `permission_mode` ——
+ * 硬拦截 → apply_patch 的删除 / 整篇覆盖 → 工作空间 → 需审批。**硬拦截必须最先**，而且不看 `permission_mode` ——
  * 10 §2.3：这条对 `evowork-full` 同样生效。看了 permission_mode 就等于给了绕过的口子。
  */
 
+import { resolve } from 'node:path';
+
+import {
+  deletePatchReason,
+  overwritePatchReason,
+  parseApplyPatch,
+  replacesWholeFile,
+} from '../apply-patch.js';
 import { pathDigest, summarizeCommand, type AuditRecord } from '../audit.js';
 import { classifyPath, type PathContext } from '../paths.js';
 import { isComputerUseTool } from '../computer-use.js';
@@ -36,6 +44,12 @@ export interface HookEnvironment {
   readonly now: () => number;
   /** 额外被视为工作空间内的目录（`runtimeWorkspaceRoots`） */
   readonly extraRoots?: readonly string[] | undefined;
+  /**
+   * 读一个文件的文本，不存在或读不了返回 `undefined`。apply_patch 的覆盖判定要看原文件
+   * （`../apply-patch.ts`）。**必填**：运行器是 `.mjs`、不在类型检查里，漏给它不会报错，
+   * 只是覆盖判定静默失效 —— `hooks.test.ts` 用运行器真实的环境跑一遍判定守着这条接缝。
+   */
+  readonly readFile: (path: string) => string | undefined;
 }
 
 /**
@@ -169,7 +183,25 @@ export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): 
     return { output: deny('PreToolUse', decision.reason ?? '这是受保护的位置'), audit };
   }
 
-  // ② 命令风险：不拦，只记审计。拦不拦是内核审批流的事；审批卡上的「为什么需要确认」
+  // ② apply_patch 的删除与整篇覆盖：拒绝并指路到会弹审批的写法（../apply-patch.ts 的头注释）
+  const patchDenial = applyPatchDenial(input, env);
+  if (patchDenial) {
+    audit.push({
+      occurredAt: env.now(),
+      action: 'permission.decided',
+      threadId: input.session_id,
+      turnId: input.turn_id,
+      itemId: input.tool_use_id,
+      toolName: input.tool_name,
+      actionSummary: patchDenial.summary,
+      pathDigest: pathDigest(patchDenial.path),
+      approvalResult: 'decline',
+      decidedBy: 'policy',
+    });
+    return { output: deny('PreToolUse', patchDenial.reason), audit };
+  }
+
+  // ③ 命令风险：不拦，只记审计。拦不拦是内核审批流的事；审批卡上的「为什么需要确认」
   //    由主进程按同一套命令判定给出（`commandApprovalRationale`），不经过这里 ——
   //    hook 的 additionalContext 进的是模型上下文，到不了卡片
   const command = extractCommand(input.tool_input);
@@ -187,6 +219,30 @@ export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): 
   }
 
   return { output: PASS_THROUGH, audit };
+}
+
+function applyPatchDenial(
+  input: PreToolUseInput,
+  env: HookEnvironment,
+): { readonly reason: string; readonly summary: string; readonly path: string } | undefined {
+  const ops = parseApplyPatch(input.tool_name, extractCommand(input.tool_input)) ?? [];
+  for (const op of ops) {
+    if (op.kind === 'delete') {
+      return { reason: deletePatchReason(op.path), summary: 'APPLY_PATCH_DELETE', path: op.path };
+    }
+    if (op.path === '') continue;
+    const original = env.readFile(resolve(input.cwd, op.path));
+    if (original === undefined) continue; // 新建文件：照常
+    // Add File 写到已有文件上会直接覆盖它（内核 apply-patch 的 AddFile 分支不查是否存在）
+    if (op.kind === 'add' || replacesWholeFile(op, original)) {
+      return {
+        reason: overwritePatchReason(op.path),
+        summary: 'APPLY_PATCH_OVERWRITE',
+        path: op.path,
+      };
+    }
+  }
+  return undefined;
 }
 
 export function handlePermissionRequest(

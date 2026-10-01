@@ -3,7 +3,7 @@
  *
  * ## 它怎么找到策略实现
  *
- * 打包时（M9）`@evowork/policy` 的构建产物会被放到 `../vendor/policy.mjs`；
+ * 打包时（M9）`@evowork/policy` 被 esbuild 打成单文件放到 `../vendor/policy.mjs`（`scripts/build.mjs`）；
  * 开发时退回仓库里的 `services/policy/dist/index.js`（`pnpm typecheck` 会产出它）。
  * 两条都找不到时**放行并在 stderr 说明**，而不是拦住工具 ——
  * 一个可观测性/策略组件装错了不该让用户的任务跑不动。
@@ -13,7 +13,7 @@
  * 所以这里的选择是：放行 + 大声报错（stderr 会进内核日志），
  * 而真正的兜底在沙箱层（M4 的 seatbelt / landlock），不在这个 hook 上。
  */
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -43,6 +43,25 @@ async function readStdin() {
   return raw ? JSON.parse(raw) : {};
 }
 
+/**
+ * 给决策函数的环境（`HookEnvironment`）。这个文件不在类型检查里，漏一项不报错、只是那条判定静默失效，
+ * 所以 `services/policy/test/hooks.test.ts` 用它真实返回的环境跑一遍判定。
+ */
+export function hookEnvironment() {
+  return {
+    home: homedir(),
+    now: () => Date.now(),
+    computerUseAvailable: process.env.EVOWORK_CUA_HOST_READY === '1',
+    readFile: (path) => {
+      try {
+        return readFileSync(path, 'utf8');
+      } catch {
+        return undefined;
+      }
+    },
+  };
+}
+
 export async function runHook(handlerName) {
   const policy = await loadPolicy();
   if (!policy) {
@@ -53,12 +72,7 @@ export async function runHook(handlerName) {
   }
 
   const input = await readStdin();
-  const env = {
-    home: homedir(),
-    now: () => Date.now(),
-    computerUseAvailable: process.env.EVOWORK_CUA_HOST_READY === '1',
-  };
-  const { output, audit } = policy[handlerName](input, env);
+  const { output, audit } = policy[handlerName](input, hookEnvironment());
 
   const auditPath = process.env.EVOWORK_AUDIT_LOG;
   if (auditPath) {

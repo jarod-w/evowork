@@ -188,8 +188,8 @@ export const CASES = [
     ],
     note:
       '内核补丁 P6（2026-10-01）：shell 用 `>` / `>|` / `&>` 覆盖已有文件时要问 —— 需要 `scripts/build-kernel.mjs` 编出来的内核。' +
-      '**真模型下仍然不过**：模型多半改走 `apply_patch`（Update File 直接改写；或在 `printf >` 被拒后 Delete + Add 重建），' +
-      '工作空间内的 apply_patch 不问。python 写文件、`tee`、`cp` / `mv` 也不问（10 §2.4「仍然的缺口」）。',
+      '模型多半改走 `apply_patch`：它的删除与整篇覆盖由策略 hook 拒绝并指路到 `rm` / shell 重定向（2026-10-01，10 §2.4）。' +
+      '仍不覆盖：python 写文件、`tee`、`cp` / `mv` 写回去时不问。',
   },
   {
     id: 'D1-3',
