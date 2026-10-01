@@ -49,8 +49,12 @@
 > 顺带抓到一个**更大的老缺陷**：`pnpm run build` 的 vendor 步骤把 `services/policy/dist/index.js` 原样拷进 hook 目录，
 > 那个文件只有一串相对路径的 `export *`，单独加载必然失败，运行器退回仓库里的 `services/policy/dist` ——
 > 开发与 E2E 有那个路径所以一直绿，**打包后的应用里没有，四个策略 hook（含凭据硬拦截）在发出去的应用里全部静默放行**。
-> 现在策略包由 esbuild 打成单文件，构建时拷到空目录里单独 import 一次，加载不了就失败。**打包后的应用里 hook 生效还没实测过**
-> （不需要 U4 的证书：`pnpm run package` 出一个未签名包，跑一条读 `~/.ssh` 的命令看是否被拦）。
+> 现在策略包由 esbuild 打成单文件，构建时拷到空目录里单独 import 一次，加载不了就失败。
+> **打包后的应用实测过了**（未签名包，dmg 213 MB / 预算 240 MB）：用隔离的 `EVOWORK_HOME` 启动打包应用，它生成的
+> `hooks.json` 指向包内的 Electron（充当 node）与 `Resources/plugins/…/pre-tool-use.mjs`，内核 `config.toml` 里四个 hook
+> 都有 `trusted_hash`。照那条命令原样调（`PATH` 里没有 node，客户机器的样子）：读 `~/.ssh` 被拒、apply_patch 删除 /
+> 整篇覆盖被拒、普通命令放行；对照组把同一个插件目录的 vendor 拿掉，退化成「找不到策略实现，本次放行」—— 修复前的样子。
+> 没做的：在打包应用里让真模型跑一个回合（内核调 hook 这一段在开发模式的 E2E 里验过）。
 > ② **D4 → 登记为允许**：内核每次启动用 `git` 同步 `https://github.com/openai/plugins.git`（OpenAI 插件市场），
 > 只读拉取公开仓库、不带用户内容、界面上看不到（「插件」页只列本机与工作区市场）。登记在总纲 K6 登记表；
 > 验收 D4 把 GitHub 的几个域名列为允许，别的目的地照样判失败。
