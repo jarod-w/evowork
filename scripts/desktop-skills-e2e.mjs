@@ -4,6 +4,8 @@ import { existsSync } from 'node:fs';
 import { arch, platform } from 'node:os';
 import { resolve } from 'node:path';
 
+import { kernelProvenanceProblem } from './kernel-provenance.mjs';
+
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 const platformKey =
@@ -23,6 +25,8 @@ const kernel =
 if (!existsSync(kernel)) {
   throw new Error(`找不到真实 app-server：${kernel}。先构建或设置 EVOWORK_APP_SERVER。`);
 }
+const kernelProblem = kernelProvenanceProblem(kernel, root);
+if (kernelProblem) throw new Error(kernelProblem);
 
 // `node_modules/.bin/electron` 会再派生一层真正的 Electron；超时时只杀到 shim，
 // macOS 上 GUI 进程会变成孤儿并继续占着 stdout。直接启动包导出的二进制，

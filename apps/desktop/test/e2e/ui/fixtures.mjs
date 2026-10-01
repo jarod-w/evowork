@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path';
 
 import { _electron as electron, expect, test as base } from '@playwright/test';
 
+import { kernelProvenanceProblem } from '../../../../../scripts/kernel-provenance.mjs';
 import { removeE2EHome } from '../harness/runner.mjs';
 
 const require = createRequire(import.meta.url);
@@ -32,6 +33,13 @@ const KERNEL =
     platformKey,
     platform() === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
   );
+
+/** 内核要是发货的那个（build-kernel + 当前补丁）。哈希上百 MB 的二进制，每个 worker 只做一次。 */
+let kernelProblem;
+function kernelProvenance() {
+  kernelProblem ??= kernelProvenanceProblem(KERNEL, ROOT) ?? '';
+  return kernelProblem;
+}
 
 /** 真模型模式要密钥。缺了就当场停下 —— 而不是跳过，跳过会被当成"验过了"。 */
 function requireKey() {
@@ -89,6 +97,8 @@ export const test = base.extend({
       // 不跳过：缺内核就是没验证，而"跳过的测试"会让人以为验过了（CLAUDE.md §9.1）
       throw new Error(`找不到真实 app-server：${KERNEL}。先构建或设置 EVOWORK_APP_SERVER。`);
     }
+    // 没打补丁的内核照样能跑，只是少了那几项修复 —— 在它上面判出来的红绿不代表发货的内核
+    if (kernelProvenance()) throw new Error(kernelProvenance());
 
     /*
      * `ELECTRON_RUN_AS_NODE` 必须摘掉 —— 与两个 runner 脚本同一个理由：

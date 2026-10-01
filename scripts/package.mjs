@@ -21,6 +21,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readManifest } from './build-office-bundle.mjs';
+import { kernelProvenanceProblem } from './kernel-provenance.mjs';
 import { artifactName, checkSizeBudget, checkTierPlacement, planSigning } from './package-plan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,12 +68,16 @@ const kernelDir = join(ROOT, 'build/kernel', `${OS_KEY}-${arch}`);
 const kernelBin = join(kernelDir, OS_KEY === 'win' ? 'codex-app-server.exe' : 'codex-app-server');
 if (!existsSync(kernelBin)) {
   problems.push(
-    `缺内核二进制 ${relative(ROOT, kernelBin)} —— ` +
-      `(cd ../codex/codex-rs && cargo build -p codex-app-server --release) 后拷进去`,
+    `缺内核二进制 ${relative(ROOT, kernelBin)} —— 跑 node scripts/build-kernel.mjs ` +
+      `（它打上 patches/evowork/ 的补丁再编；直接编 ../codex 得到的内核没有那些修复）`,
   );
 } else if (OS_KEY !== 'win' && !(statSync(kernelBin).mode & 0o111)) {
   // 拷贝丢执行位这件事只在用户双击应用时才表现出来
   problems.push(`${relative(ROOT, kernelBin)} 没有执行位 —— chmod +x`);
+} else {
+  // 没打补丁的内核照样能跑，发出去就是少了那几项修复（K1：补丁只在 build-kernel 的产物里）
+  const provenance = kernelProvenanceProblem(kernelBin, ROOT);
+  if (provenance) problems.push(provenance);
 }
 
 // ── 前置检查 ③：随包中文字体 ────────────────────────────────────────────

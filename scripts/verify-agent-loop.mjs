@@ -26,6 +26,8 @@ import { existsSync } from 'node:fs';
 import { arch, platform } from 'node:os';
 import { resolve } from 'node:path';
 
+import { kernelProvenanceProblem } from './kernel-provenance.mjs';
+
 const root = resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 
@@ -53,6 +55,8 @@ const kernel =
 if (!existsSync(kernel)) {
   throw new Error(`找不到真实 app-server：${kernel}。先构建或设置 EVOWORK_APP_SERVER。`);
 }
+const kernelProblem = kernelProvenanceProblem(kernel, root);
+if (kernelProblem) throw new Error(kernelProblem);
 if (!existsSync(resolve(root, 'dist/gateway/main.js'))) {
   throw new Error('找不到网关产物：先跑 pnpm run build。');
 }

@@ -33,6 +33,9 @@ __pycache__/
 # `build/` 目录本身是**源码**（electron-builder 配置、entitlements、图标），要进仓库。
 # 只忽略它里面的产物与随 CI 落进去的内核二进制。
 build/kernel/
+# scripts/build-kernel.mjs：内核源码的导出副本（打过 patches/evowork 的）与它的编译缓存
+build/.kernel-src/
+build/.kernel-target/
 build/release/
 
 # 编辑器与系统
