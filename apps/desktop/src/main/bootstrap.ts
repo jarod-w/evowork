@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { RENDERER_ACTIONS } from '../preload/index.js';
 import { DEEPLINK_SCHEME, deeplinkFromArgv, resolveDeeplink } from './deeplink.js';
 import { createServiceHost, resolvePaths, type ServiceHost, IPC } from './service-host.js';
+import { describeStartupFailure } from './startup-failure.js';
 
 /** 真窗口 E2E 注入可观察 launcher；生产入口仍直接使用 `bootstrap`。 */
 export { createServiceHost } from './service-host.js';
@@ -117,6 +118,13 @@ export interface ElectronApi {
   readonly openPath?: ((path: string) => Promise<string>) | undefined;
   /** 系统浏览器。PKCE 登录与「打开管理端」都走这里，渲染进程自己不能出网 */
   readonly openExternal?: ((url: string) => Promise<void>) | undefined;
+  /**
+   * 系统的错误对话框（`dialog.showErrorBox`），**同步**，用户点掉之前不返回。
+   *
+   * 只在启动失败、且失败是用户能自己处理的那一类时用（`describeStartupFailure`）。
+   * 没有它时那类失败退回原来的样子 —— stderr 一行、进程退出，打包后的应用一闪就没了。
+   */
+  readonly showErrorBox?: ((title: string, content: string) => void) | undefined;
   /**
    * `safeStorage`（Q34=A / M10a）—— 厂商密钥与令牌的加密。
    *
@@ -231,52 +239,68 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   });
 
   const create = options.createHost ?? createServiceHost;
-  const host = create({
-    paths,
-    appServerPath: options.appServerPath,
-    ...(options.gatewayEntryPath !== undefined
-      ? { gatewayEntryPath: options.gatewayEntryPath }
-      : {}),
-    appVersion: electron.app.getVersion(),
-    ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
-    ...(options.pluginsDir !== undefined ? { pluginsDir: options.pluginsDir } : {}),
-    ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
-    /*
-     * 目录选择框。`showOpenDialog` 是可选注入，缺了就**没有这个能力**（返回 undefined），
-     * 而不是崩 —— 测试里不需要真开一个系统对话框。
-     */
-    ...(electron.showOpenDialog
-      ? {
-          pickDirectory: async (): Promise<string | undefined> => {
-            const r = await electron.showOpenDialog?.({
-              properties: ['openDirectory', 'createDirectory'],
-            });
-            return r && !r.canceled ? r.filePaths[0] : undefined;
-          },
-          pickFiles: async (): Promise<readonly string[]> => {
-            const r = await electron.showOpenDialog?.({
-              properties: ['openFile', 'multiSelections'],
-            });
-            return r && !r.canceled ? r.filePaths : [];
-          },
-        }
-      : {}),
-    ...(electron.safeStorage ? { safeStorage: electron.safeStorage } : {}),
-    ...(electron.openPath
-      ? {
-          openPath: async (path: string): Promise<void> => {
-            /*
-             * `shell.openPath` 失败时**不抛**，而是 resolve 成一句错误。
-             * 丢掉这句话，访达打不开时上层全是成功路径，表现又是「点了没反应」。
-             */
-            const error = await electron.openPath?.(path);
-            if (error) throw new Error(error);
-          },
-        }
-      : {}),
-    ...(electron.openExternal ? { openExternal: electron.openExternal } : {}),
-    emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
-  });
+  /*
+   * 建宿主（开库、跑迁移都在这里）与 `host.start()` 两处的失败要先**让用户看见**再往外抛。
+   * 往外抛之后真入口会 `app.exit(1)`：在那之前不弹，用户看到的就只是应用一闪而过。
+   */
+  const reportStartupFailure = (error: unknown): void => {
+    const notice = describeStartupFailure(error, electron.app.getVersion());
+    if (notice) electron.showErrorBox?.(notice.title, notice.body);
+  };
+  let host: ServiceHost;
+  try {
+    host = create({
+      paths,
+      appServerPath: options.appServerPath,
+      ...(options.gatewayEntryPath !== undefined
+        ? { gatewayEntryPath: options.gatewayEntryPath }
+        : {}),
+      appVersion: electron.app.getVersion(),
+      ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
+      ...(options.pluginsDir !== undefined ? { pluginsDir: options.pluginsDir } : {}),
+      ...(options.bundledFontPath !== undefined
+        ? { bundledFontPath: options.bundledFontPath }
+        : {}),
+      /*
+       * 目录选择框。`showOpenDialog` 是可选注入，缺了就**没有这个能力**（返回 undefined），
+       * 而不是崩 —— 测试里不需要真开一个系统对话框。
+       */
+      ...(electron.showOpenDialog
+        ? {
+            pickDirectory: async (): Promise<string | undefined> => {
+              const r = await electron.showOpenDialog?.({
+                properties: ['openDirectory', 'createDirectory'],
+              });
+              return r && !r.canceled ? r.filePaths[0] : undefined;
+            },
+            pickFiles: async (): Promise<readonly string[]> => {
+              const r = await electron.showOpenDialog?.({
+                properties: ['openFile', 'multiSelections'],
+              });
+              return r && !r.canceled ? r.filePaths : [];
+            },
+          }
+        : {}),
+      ...(electron.safeStorage ? { safeStorage: electron.safeStorage } : {}),
+      ...(electron.openPath
+        ? {
+            openPath: async (path: string): Promise<void> => {
+              /*
+               * `shell.openPath` 失败时**不抛**，而是 resolve 成一句错误。
+               * 丢掉这句话，访达打不开时上层全是成功路径，表现又是「点了没反应」。
+               */
+              const error = await electron.openPath?.(path);
+              if (error) throw new Error(error);
+            },
+          }
+        : {}),
+      ...(electron.openExternal ? { openExternal: electron.openExternal } : {}),
+      emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
+    });
+  } catch (error) {
+    reportStartupFailure(error);
+    throw error;
+  }
 
   /*
    * 六个渲染动作。
@@ -295,7 +319,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     );
   }
 
-  await host.start();
+  try {
+    await host.start();
+  } catch (error) {
+    reportStartupFailure(error);
+    throw error;
+  }
 
   /*
    * `evowork://`（02 §8）。

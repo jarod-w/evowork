@@ -953,8 +953,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     }
   }
 
-  // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）
-  const store = openStore({ path: options.paths.db, logger });
+  // ① 再开库。migrateAuthoritative 失败会抛错，启动就此中止（这是设计要求）。
+  // 库比应用新（装回了旧版本）时同样中止，用户看到的原因由 bootstrap 的 describeStartupFailure 给
+  const store = openStore({ path: options.paths.db, logger, appVersion: options.appVersion });
 
   /*
    * 本机网关的密钥、令牌、拓扑与自定义模型 —— 全部收在 `model-access.ts` 里（M10a）。

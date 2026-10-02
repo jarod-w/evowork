@@ -10,7 +10,14 @@
  * | 版本键 | `schema_version_projection` | `schema_version_authoritative` |
  * | 迁移前 | 无 | **备份整库**到 `evowork.db.bak.<version>` |
  * | 迁移失败 | 丢弃全部投影表 → 按最新 schema 重建 → **继续启动**（附一条警告） | 回滚到备份 → **抛错，宁可启动失败** |
+ * | 库比应用新 | 按当前版本重建 → 继续启动 | **一个字节都不改** → 抛 `SchemaNewerThanApp` |
  * | 理由 | 真源在内核 / 文件系统，重建只是重算一次 | 真源只在这里，丢了就是丢了定时任务定义 |
+ *
+ * 「库比应用新」= 用户装回了旧版本（手动装旧 dmg、从 beta 渠道切回 stable）。
+ * 这一行是 2026-10-02 补的：此前两个迁移器在这种情况下一条迁移都不跑，**却把版本号写成了
+ * 旧应用的版本**。表还是新的形状，版本号却说它是旧的，于是下次升级时同一条迁移重跑 ——
+ * 一条 `ADD COLUMN` 就会报 duplicate column，权威迁移抛错，应用打不开（实测复现，
+ * 见在线升级提案 §4 A1）。
  */
 import { copyFileSync, existsSync, unlinkSync } from 'node:fs';
 
@@ -188,6 +195,14 @@ export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;
 export const AUTHORITATIVE_VERSION = AUTHORITATIVE_MIGRATIONS.at(-1)?.version ?? 0;
 
+/**
+ * 最近一次成功打开这个库的 EvoWork 版本（`openStore` 的 `appVersion`）。
+ *
+ * 只为一件事：库比应用新、拒绝启动时，告诉用户**该装哪一版**。它按「最近一次」记而不是
+ * 「最高的一次」—— 能成功打开就说明那一版认得当前的 schema，所以它永远是个正确的建议。
+ */
+export const LAST_APP_VERSION_META_KEY = 'last_app_version';
+
 const META_DDL = `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`;
 
 export function ensureMeta(db: SqliteLike): void {
@@ -217,8 +232,10 @@ export interface MigrationOutcome {
   readonly from: number;
   readonly to: number;
   readonly applied: readonly number[];
-  /** 投影类专用：迁移失败后走了"丢弃重建"这条路 */
+  /** 投影类专用：迁移失败、或库比应用新，走了"丢弃重建"这条路 */
   readonly rebuilt: boolean;
+  /** 投影类专用：重建的原因是库比应用新（装回了旧版本），不是迁移失败 */
+  readonly downgraded?: true;
   /** 权威类专用：这次迁移前备份到了哪 */
   readonly backupPath?: string;
   readonly warning?: string;
@@ -284,6 +301,27 @@ export function migrateProjection(
   const from = readVersion(db, 'schema_version_projection');
   if (from === target) {
     return { kind: 'projection', from, to: from, applied: [], rebuilt: false };
+  }
+  if (from > target) {
+    /*
+     * 装回了旧版本。表是新版本的形状，只改版本号就会出现文件头说的那种分裂；
+     * 投影本来就能重算，所以直接按**当前**版本重建 —— 以后再升级，新迁移落在
+     * 旧形状的表上，正好是它们预期的起点。
+     */
+    inTransaction(db, () => {
+      dropProjectionTables(db);
+      applyMigrations(db, migrations, 0);
+      writeMeta(db, 'schema_version_projection', String(target));
+    });
+    return {
+      kind: 'projection',
+      from,
+      to: target,
+      applied: migrations.map((m) => m.version),
+      rebuilt: true,
+      downgraded: true,
+      warning: `投影表来自更新的版本（${from}），已按当前版本（${target}）重建。任务状态与索引会在下一次对账时补齐。`,
+    };
   }
 
   try {
@@ -356,6 +394,10 @@ export function migrateAuthoritative(
   if (from === target) {
     return { kind: 'authoritative', from, to: from, applied: [], rebuilt: false };
   }
+  if (from > target) {
+    // 在备份之前：这条路径什么都不写，没有东西需要备份
+    throw new SchemaNewerThanApp(from, target, readMeta(db, LAST_APP_VERSION_META_KEY));
+  }
 
   let backupPath: string | undefined;
   if (options.dbPath && existsSync(options.dbPath) && from > 0) {
@@ -419,6 +461,34 @@ export class AuthoritativeMigrationFailed extends Error {
           ? `迁移前的整库备份在 ${backupPath}（它是防"进程被杀"的第二道防线，本次不需要用到它）。`
           : '本次没有产生备份（新库）。') +
         '启动被刻意中止：这些表里有定时任务定义、分享记录与审计留痕，丢一条都不该被静默接受（09 §4.6）。',
+    );
+  }
+}
+
+/**
+ * 权威表比这个版本的 EvoWork 新 —— 用户装回了旧版本。
+ *
+ * **不改库、不写版本号、中止启动。** 往下写版本号是那个缺陷本身（见文件头）；
+ * 而「忽略新列继续跑」也不行：旧代码看不懂新版本写进权威表的东西，删一行、改一列都可能
+ * 丢掉新版本的定时任务定义。所以唯一正确的出路是让用户装回认得这份数据的版本。
+ *
+ * 用户看到的文案不在这里（这是服务层，不知道是谁在启动它），由桌面壳的
+ * `describeStartupFailure` 按 `writtenBy` 拼出来。
+ */
+export class SchemaNewerThanApp extends Error {
+  override readonly name = 'SchemaNewerThanApp';
+  constructor(
+    /** 库里记的权威表版本 */
+    readonly found: number,
+    /** 这个版本的 EvoWork 认得的最高版本 */
+    readonly supported: number,
+    /** 最近一次成功打开它的 EvoWork 版本。没有记录（库来自加这个键之前的版本）时为 undefined */
+    readonly writtenBy: string | undefined,
+  ) {
+    super(
+      `本机库的权威表版本是 ${found}，这个版本的 EvoWork 只认到 ${supported}` +
+        (writtenBy ? `（最近打开它的是 EvoWork ${writtenBy}）` : '') +
+        '。启动被刻意中止，库没有被改动：往下写版本号会让下次升级时同一条迁移重跑、应用打不开。',
     );
   }
 }

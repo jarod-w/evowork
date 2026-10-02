@@ -16,8 +16,11 @@ import {
   AUTHORITATIVE_MIGRATIONS,
   AUTHORITATIVE_VERSION,
   AuthoritativeMigrationFailed,
+  LAST_APP_VERSION_META_KEY,
   LEGACY_WORKSPACES_META_KEY,
   PROJECTION_MIGRATIONS,
+  PROJECTION_VERSION,
+  SchemaNewerThanApp,
   dropProjectionTables,
   ensureMeta,
   migrateAuthoritative,
@@ -712,4 +715,108 @@ describe('第 2 版权威迁移：工作空间收敛成一处真源（spec §2.2
       expect(readMeta(db, 'schema_version_authoritative')).toBe('1');
     },
   );
+});
+
+/**
+ * 装回旧版本（库比应用新）。在线升级提案 §4 A1。
+ *
+ * 此前两个迁移器在这种情况下一条迁移都不跑、却把版本号写成旧应用的版本：
+ * 表是新形状，版本号说它是旧的，于是**再升级时同一条迁移重跑**。一条 `ADD COLUMN`
+ * 就报 duplicate column，权威迁移抛错，应用打不开 —— 用户只是装回了一次旧包。
+ */
+describe('装回旧版本：库比应用新', () => {
+  /** 假想的下一版：给 automation 加一列。这是最常见的迁移形态，也正是会重跑失败的那种 */
+  const NEXT_AUTHORITATIVE: readonly Migration[] = [
+    ...AUTHORITATIVE_MIGRATIONS,
+    {
+      version: AUTHORITATIVE_VERSION + 1,
+      summary: '下一版给 automation 加一列',
+      up: (db) => db.exec('ALTER TABLE automation ADD COLUMN note TEXT'),
+    },
+  ];
+
+  it('权威表：旧版本拒绝启动且不改版本号 —— 否则再升级时同一条迁移重跑，应用打不开', () => {
+    const db = memoryDb();
+    migrateAuthoritative(db, { migrations: NEXT_AUTHORITATIVE }); // 新版本先打开过
+
+    expect(() => migrateAuthoritative(db)).toThrow(SchemaNewerThanApp); // 装回旧版本
+    expect(readMeta(db, 'schema_version_authoritative')).toBe(String(AUTHORITATIVE_VERSION + 1));
+
+    // 再升级回来：没有要重跑的迁移，新加的那一列也还在
+    expect(migrateAuthoritative(db, { migrations: NEXT_AUTHORITATIVE }).applied).toEqual([]);
+    const columns = (db.prepare(`PRAGMA table_info(automation)`).all() as { name: string }[]).map(
+      (c) => c.name,
+    );
+    expect(columns).toContain('note');
+  });
+
+  it('真实磁盘：拒绝时说得出该装哪一版，不留备份、不碰库里任何一个键', () => {
+    const path = join(dir, 'evowork.db');
+    openStore({ path, appVersion: '0.0.9' }).close();
+    // 模拟 0.0.9 已经把权威表迁到了下一版
+    const raw = new DatabaseSync(path) as unknown as SqliteLike;
+    writeMeta(raw, 'schema_version_authoritative', String(AUTHORITATIVE_VERSION + 1));
+    (raw as unknown as DatabaseSync).close();
+    const before = readFileSync(path);
+
+    let thrown: unknown;
+    try {
+      openStore({ path, appVersion: '0.0.4' });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(SchemaNewerThanApp);
+    const err = thrown as SchemaNewerThanApp;
+    expect([err.found, err.supported, err.writtenBy]).toEqual([
+      AUTHORITATIVE_VERSION + 1,
+      AUTHORITATIVE_VERSION,
+      '0.0.9',
+    ]);
+    // 这条路径什么都不写，所以也没有东西需要备份
+    expect(existsSync(`${path}.bak.${AUTHORITATIVE_VERSION + 1}`)).toBe(false);
+    // 旧版本没有把自己记成「最近打开它的版本」—— 否则下一次拒绝时给的建议就错了
+    const reopened = new DatabaseSync(path) as unknown as SqliteLike;
+    expect(readMeta(reopened, LAST_APP_VERSION_META_KEY)).toBe('0.0.9');
+    expect(readMeta(reopened, 'schema_version_authoritative')).toBe(
+      String(AUTHORITATIVE_VERSION + 1),
+    );
+    (reopened as unknown as DatabaseSync).close();
+    expect(readFileSync(path).equals(before)).toBe(true);
+  });
+
+  it('来自加这个键之前的库：拒绝照样生效，只是说不出版本号', () => {
+    const db = memoryDb();
+    migrateAuthoritative(db, { migrations: NEXT_AUTHORITATIVE });
+    expect(() => migrateAuthoritative(db)).toThrow(
+      expect.objectContaining({ name: 'SchemaNewerThanApp', writtenBy: undefined }),
+    );
+  });
+
+  it('投影表：按当前版本重建并继续启动；再升级时新迁移正常跑，而不是靠失败兜底', () => {
+    const NEXT_PROJECTION: readonly Migration[] = [
+      ...PROJECTION_MIGRATIONS,
+      {
+        version: PROJECTION_VERSION + 1,
+        summary: '下一版给 thread_projection 加一列',
+        up: (db) => db.exec('ALTER TABLE thread_projection ADD COLUMN note TEXT'),
+      },
+    ];
+    const db = memoryDb();
+    migrateProjection(db, NEXT_PROJECTION);
+
+    const back = migrateProjection(db);
+    expect(back).toMatchObject({ rebuilt: true, downgraded: true, to: PROJECTION_VERSION });
+    expect(readMeta(db, 'schema_version_projection')).toBe(String(PROJECTION_VERSION));
+
+    const again = migrateProjection(db, NEXT_PROJECTION);
+    // rebuilt=false：新迁移是落在旧形状的表上正常跑完的，没有走「迁移失败 → 丢弃重建」
+    expect(again).toMatchObject({ rebuilt: false, applied: [PROJECTION_VERSION + 1] });
+  });
+
+  it('两个迁移器都过了才记版本：记下的那一版一定认得当前的 schema', () => {
+    const store = openStore({ path: ':memory:', appVersion: '0.0.5' });
+    expect(readMeta(store.db, LAST_APP_VERSION_META_KEY)).toBe('0.0.5');
+    store.close();
+  });
 });

@@ -20,6 +20,8 @@ import {
   type ElectronApi,
   type ElectronWindow,
 } from '../src/main/bootstrap.js';
+import { SchemaNewerThanApp } from '@evowork/store';
+
 import { RENDERER_ACTIONS, RENDERER_CHANNELS } from '../src/preload/index.js';
 import { IPC, type ServiceHost } from '../src/main/service-host.js';
 
@@ -344,5 +346,50 @@ describe('主进程与渲染层的频道名必须是同一个', () => {
       unheard.map(([name]) => name),
       `这些频道主进程在发、渲染层没在听：${unheard.map(([, c]) => c).join(' / ')}`,
     ).toEqual([]);
+  });
+});
+
+describe('启动失败要让用户看见（在线升级提案 §4 A1）', () => {
+  /** 带上错误对话框的假 electron；返回值收集弹过的每一次 */
+  function bootFailing(fail: { atCreate?: unknown; atStart?: unknown }) {
+    const shown: { title: string; content: string }[] = [];
+    const run = bootstrap({
+      electron: {
+        ...fakeElectron(),
+        showErrorBox: (title, content) => shown.push({ title, content }),
+      },
+      appServerPath: '/fake/app-server',
+      preloadPath: '/fake/preload.js',
+      rendererHtmlPath: '/fake/index.html',
+      createHost: () => {
+        if (fail.atCreate !== undefined) throw fail.atCreate;
+        const host = fakeHost();
+        if (fail.atStart !== undefined) {
+          return { ...host, start: vi.fn(async () => Promise.reject(fail.atStart)) };
+        }
+        return host;
+      },
+    });
+    return { run, shown };
+  }
+
+  it('开库时发现库比应用新：退出前弹一次说明，然后照样往外抛（真入口靠它退出）', async () => {
+    const error = new SchemaNewerThanApp(4, 3, '0.0.9');
+    const { run, shown } = bootFailing({ atCreate: error });
+    await expect(run).rejects.toBe(error);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.content).toContain('请安装 EvoWork 0.0.9 或更新的版本');
+  });
+
+  it('host.start() 里的同类失败走同一条路', async () => {
+    const { run, shown } = bootFailing({ atStart: new SchemaNewerThanApp(4, 3, undefined) });
+    await expect(run).rejects.toBeInstanceOf(SchemaNewerThanApp);
+    expect(shown).toHaveLength(1);
+  });
+
+  it('认不出来的失败不弹框 —— 不把写给开发者的 message 拿去给用户看', async () => {
+    const { run, shown } = bootFailing({ atStart: new Error('spawn ENOENT') });
+    await expect(run).rejects.toThrow('spawn ENOENT');
+    expect(shown).toEqual([]);
   });
 });

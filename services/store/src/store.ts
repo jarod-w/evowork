@@ -12,6 +12,7 @@ import { digest, type Logger } from '@evowork/logging';
 
 import {
   AUTHORITATIVE_VERSION,
+  LAST_APP_VERSION_META_KEY,
   PROJECTION_VERSION,
   migrateAuthoritative,
   migrateProjection,
@@ -28,6 +29,11 @@ export interface OpenStoreOptions {
   readonly logger?: Logger;
   /** 设备标识（Q15：automation 绑定设备）。首次打开时写入 meta，之后只读 */
   readonly deviceId?: string;
+  /**
+   * 打开它的 EvoWork 版本。两个迁移器都成功之后记进 meta（`LAST_APP_VERSION_META_KEY`），
+   * 以后装回旧版本、库比应用新时，拒绝启动的文案才能说出「请安装哪一版」。
+   */
+  readonly appVersion?: string;
 }
 
 export interface Store {
@@ -79,12 +85,16 @@ export function openStore(options: OpenStoreOptions): Store {
   migrations.push(migrateProjection(db));
 
   const deviceId = ensureDeviceId(db, options.deviceId);
+  // 走到这里说明两个迁移器都过了：这一版认得当前的 schema，可以作为「该装哪一版」的建议
+  if (options.appVersion !== undefined) {
+    writeMeta(db, LAST_APP_VERSION_META_KEY, options.appVersion);
+  }
 
   for (const outcome of migrations) {
     if (outcome.applied.length === 0 && !outcome.rebuilt) continue;
     const fields = {
       schemaVersion: outcome.to,
-      reason: outcome.rebuilt ? 'REBUILT' : 'MIGRATED',
+      reason: outcome.downgraded ? 'DOWNGRADED' : outcome.rebuilt ? 'REBUILT' : 'MIGRATED',
     } as const;
     if (outcome.rebuilt) {
       options.logger?.warn('store.projection.rebuilt', fields);
