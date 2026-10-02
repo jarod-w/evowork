@@ -1,13 +1,14 @@
 # scripts —— 仓库脚本
 
-| 脚本                                                         | 用途                                                            | 谁在跑                                                             |
-| ------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`kernel-drift.mjs`](kernel-drift.mjs)                       | 上游漂移雷达：提交量与影响面 · **F1–F16 断言复核** · 补丁试合并 | 每日 job（`.github/workflows/kernel-drift.yml`）+ 每个 PR + 本地   |
-| [`kernel-assertions.json`](kernel-assertions.json)           | F1–F16 的**机器可读孪生体**                                     | 上面那个脚本读它                                                   |
-| [`kernel-contract.mjs`](kernel-contract.mjs)                 | K2 协议形状自检：我们发的 JSON 对不对得上内核真正接受的形状     | **`pnpm run check`** + CI                                          |
-| [`patch-budget.mjs`](patch-budget.mjs)                       | K1 补丁预算自检（≤5 文件 / ≤500 行 + 说明文件）                 | CI                                                                 |
-| [`gen-third-party-notices.mjs`](gen-third-party-notices.mjs) | 生成 / 校验 `THIRD_PARTY_NOTICES.md`（K5）                      | CI + 依赖变更时                                                    |
-| [`verify-provider.mjs`](verify-provider.mjs)                 | 用**真实 endpoint** 核对一家 provider 的流式语义（U2）          | 拿到某家 key 之后跑一次；**不进 `pnpm run check`**（要网络、要钱） |
+| 脚本                                                         | 用途                                                                          | 谁在跑                                                                                                            |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [`kernel-drift.mjs`](kernel-drift.mjs)                       | 上游漂移雷达：提交量与影响面 · **F1–F16 断言复核** · 补丁试合并               | 每日 job（`.github/workflows/kernel-drift.yml`）+ 每个 PR + 本地                                                  |
+| [`kernel-assertions.json`](kernel-assertions.json)           | F1–F16 的**机器可读孪生体**                                                   | 上面那个脚本读它                                                                                                  |
+| [`kernel-contract.mjs`](kernel-contract.mjs)                 | K2 协议形状自检：我们发的 JSON 对不对得上内核真正接受的形状                   | **`pnpm run check`** + CI                                                                                         |
+| [`patch-budget.mjs`](patch-budget.mjs)                       | K1 补丁预算自检（≤5 文件 / ≤500 行 + 说明文件）                               | CI                                                                                                                |
+| [`gen-third-party-notices.mjs`](gen-third-party-notices.mjs) | 生成 / 校验 `THIRD_PARTY_NOTICES.md`（K5）                                    | CI + 依赖变更时                                                                                                   |
+| [`verify-provider.mjs`](verify-provider.mjs)                 | 用**真实 endpoint** 核对一家 provider 的流式语义（U2）                        | 拿到某家 key 之后跑一次；**不进 `pnpm run check`**（要网络、要钱）                                                |
+| [`build-upgrade-fixture.mjs`](build-upgrade-fixture.mjs)     | 用**某个版本自己的代码**生成升级兼容夹具（库 + 内核配置），在线升级提案 §4 A2 | **发版时**跑一次：`node scripts/build-upgrade-fixture.mjs WORKTREE v<新版本>`；漏了 `upgrade-compat.test.ts` 会红 |
 
 ## 为什么形状要机器比对，而不是靠断言
 
@@ -62,3 +63,18 @@ BROKEN 不总是坏消息：比如 `thread/list` 哪天真加了状态过滤参�
 EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
   --base https://api.deepseek.com --model deepseek-v4-flash --reasoning true
 ```
+
+## `build-upgrade-fixture.mjs` 为什么要用旧代码建库
+
+迁移第 1 版 `createTables` 用的是**当前**的建表语句，所以全新的库永远是最新形状 ——
+「全新库 + 现在的代码」测不出任何升级问题。有人直接改了 `schema.ts` 的 DDL 却没加迁移，
+新用户没事，老用户的库缺一列。只有用那个版本自己的 `openStore` 建出来的库才看得见这件事。
+
+脚本用 `git archive` 取出那个 ref 的 `services/store` 与它依赖的两个包，用 esbuild 打成生成器跑一次，
+**不 checkout、不动工作树**（多个会话共用这一棵工作树）。每张表按列自省写一行固定的样例值，
+重跑结果相同。`upgrade-compat.test.ts` 拿这些夹具判三类事：表结构与全新安装逐列相同、
+那一行的每一列都还在、内核配置模板的每个根键迁移后都有。
+
+第三类是 2026-10-02 生成第一批夹具时立刻抓到的真缺陷：0.0.1 / 0.0.2 的配置没有根键
+`default_permissions`，现在的内核对 `config/read`、`plugin/list` 等四个方法直接回 -32603
+（插件页因此是空的）。修法是 `service-host.ts` 的 `migrateDefaultPermissions`。

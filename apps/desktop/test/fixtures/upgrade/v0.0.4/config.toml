@@ -1,0 +1,133 @@
+# EvoWork 的内核配置模板（→ 首次运行时装到 ~/.evowork/kernel/config.toml）
+#
+# **装到 kernel/ 而不是 ~/.evowork/**：内核只读 $CODEX_HOME 下的 config.toml，
+# 而 launcher 把 CODEX_HOME 指向 ~/.evowork/kernel/。装错地方的表现是
+# 每次 thread/start 都回 "default_permissions requires a `[permissions]` table"。
+#
+# 纪律（09 §7）：**只有内核认识的键放这里**。EvoWork 自己的配置（场景包、运营位、模式片段）
+# 放在同级的 scenarios/ · slots.toml · modes/ 里 —— 混进来会在每次上游 rebase 时
+# 与内核的配置 schema 冲突。
+#
+# CODEX_HOME 保持内部路径名不动（K5：只改对外可见字符串），由桌面 App 用环境变量
+# 指向 ~/.evowork/kernel/。
+
+# ─────────────────────────── 模型接入（K4 / D2） ───────────────────────────
+#
+# 不改内核的模型层，只把 base_url 指向自建网关。`wire_api = "chat"` 已被上游移除
+# （model-provider-info/src/lib.rs:58），内核**只认 Responses API** ——
+# 这正是网关必须做全量协议适配而不是薄转发的原因（R1）。
+
+model_provider = "evowork"
+
+# 这两项是**根键**，必须放在第一个 `[table]` 之前。TOML 进入表后不能再靠空行回到根。
+#
+# 写错的后果**不是"回退默认值"，是每一次 `thread/start` 都失败**（2026-09-26 拿真 app-server
+# 对这份模板实测：把这两行挪到 `[permissions.evowork-workspace]` 之后，thread/start 回 -32600
+# `failed to load configuration: config defines [permissions] profiles but does not set
+# default_permissions`；挪回来立刻就能建任务）。
+#
+# 附带一条容易误导人的事实：两份 E2E 的手写配置长期是错的写法却能跑 —— 不是内核宽容，
+# 是**宿主的迁移把它们悄悄挪回了根**（`service-host.ts` 的 misplacedRootSettings）。
+# 也就是说"跑得起来"证明不了这份配置是对的。
+default_permissions = "evowork-workspace"
+approval_policy = "on-request"
+
+[model_providers.evowork]
+name = "EvoWork Gateway"
+# 云端托管：https://gateway.evowork.example/v1
+# 私有部署：客户自己的地址（Q14）
+base_url = "http://127.0.0.1:8787/v1"
+wire_api = "responses"
+# 网关的访问令牌从环境变量取，**不写进配置文件**（Q14：密钥不落盘）
+env_key = "EVOWORK_GATEWAY_TOKEN"
+# 网关侧已有超时；这里给内核一个更宽的上限，避免两层超时互相打断
+stream_idle_timeout_ms = 300000
+# 上游断了内核会自动重试（网关把这类失败映射成内核的"可重试"语义）。
+# **默认 5 次在这条链路上太贵**：一次重试要把整段上下文重新发给上游，
+# 而"上游卡死"那一种还要先等满网关 120 秒的看门狗（Q11 的预算会失真）。
+#
+# **这个数不等于"上游会被打几次"**：2026-09-26 实测，设 2 → 实际 5～6 次，默认 5 → 实际 11 次。
+# 内核在重试用完之后还会切一次传输通道并把重试计数清零
+# （`core/src/responses_retry.rs:95-111`），所以真实上限约是这里写的两倍多。
+# 改这个值的话，记得 apps/desktop 的 STREAM_RETRY_DEFAULTS（给已有安装的迁移）是同一个数。
+stream_max_retries = 2
+
+# ─────────────────────────── 权限 profile（10 §2.2 / F4） ───────────────────────────
+#
+# 四个命名 profile，都用 extends 从内置档继承以减少出错面。
+# `permissionProfile/list` 会把它们连同 allowed 标记一起返回，前端据此渲染下拉
+# （allowed=false 就是"这个档位存在但你不能选"，企业策略置灰）。
+
+[permissions.evowork-ask]
+extends = ":read-only"
+# Ask 模式：只能查看文件，不能修改，也不联网（D8）
+
+[permissions.evowork-plan]
+extends = ":read-only"
+# Plan 模式：可以查看文件和上网查资料，不能修改文件
+network_access = true
+
+[permissions.evowork-workspace]
+extends = ":workspace"
+# 默认权限：可以在这个工作空间里读写文件、执行命令
+
+# 完全访问不在这里建命名档。
+# 内核的 extensible_builtin_parent_profile 只允许继承 :read-only 与 :workspace。
+# `extends = ":danger-full-access"` 会让每一次选中该档的 thread/start 回
+# -32600：`permissions profile evowork-full cannot extend unsupported built-in profile`。
+# 适配层对「完全访问」直接传内置 `:danger-full-access`（关掉沙箱）。
+# 硬拦截清单（10 §2.3）仍由 pre_tool_use hook 执行，不看这个 profile id。
+
+# ─────────────────────────── 审批与沙箱 ───────────────────────────
+
+# `default_permissions` 与 `approval_policy` 已放在文件顶部的根表；不要移进本段的
+# `[permissions.*]` 子表。定义 profiles 却缺根级 default 时，内核会拒绝加载整份配置。
+
+# ─────────────────────────── 本地记忆（06 §5） ───────────────────────────
+#
+# EvoWork 默认启用本机 Codex 记忆。项目规则仍写进 AGENTS.md；这里的记忆只负责
+# 从既有任务中提取可复用上下文。使用与生成分开控制，设置页可随时关闭。
+[features]
+memories = true
+
+[memories]
+use_memories = true
+generate_memories = true
+# EvoWork 经常使用 Web / MCP。含外部上下文的任务默认不进入记忆提取，避免把
+# 不可信网页指令或连接器内容沉淀成长期上下文。
+disable_on_external_context = true
+
+# ─────────────────────────── 多代理协作（04 §5.6） ───────────────────────────
+#
+# 上游默认仍关闭 V2，并默认只给非代码模式暴露这组工具。EvoWork 的 Craft / Plan / Ask
+# 必须使用同一套 `spawn_agent` / `send_message` / `followup_task` 语义，所以这里显式固定。
+# 4 条活动 thread 包含根代理，即最多 3 个并发子代理，与产品预算闸门一致。
+[features.multi_agent_v2]
+enabled = true
+max_concurrent_threads_per_session = 4
+wait_agent_enabled = true
+non_code_mode_only = false
+
+# ─────────────────────────── Hooks 策略包（M4 / §6.11） ───────────────────────────
+# 由 plugins/hooks/ 提供，安装时按平台写入绝对路径。
+# [hooks.pre_tool_use] / [hooks.permission_request] / [hooks.post_tool_use] /
+# [hooks.session_start] / [hooks.session_end] / [hooks.subagent_start]
+
+# ─────────────────────────── 遥测（§7 P5） ───────────────────────────
+# 内核的 analytics 端点一律关闭：产物识别不依赖它（F10 后已确认自建），
+# 而它是一条我们没有登记过的出网路径（K6）。
+[otel]
+environment = "local"
+exporter = "none"
+
+# ─────────────────────────── 系统技能（K5） ───────────────────────────
+#
+# `openai-docs` 把「you / this app / this coding agent」绑到 Codex 文档上。
+# 产品身份走 `thread/start.baseInstructions`（适配层每次建任务都传，F25），
+# 不在这里写 `model_instructions_file`：那个键的相对路径按 **cwd** 解析，
+# 用户换工作空间就会找不到文件。
+# 已有的 config.toml 不会被覆盖（F21）；适配层会在每次 thread/start 再传一次
+# 同名禁用，所以老安装也能生效。
+[[skills.config]]
+name = "openai-docs"
+enabled = false

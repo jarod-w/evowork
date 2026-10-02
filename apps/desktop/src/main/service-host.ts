@@ -434,6 +434,68 @@ const MULTI_AGENT_V2_SETTINGS = [
 ] as const;
 
 /**
+ * 启动时对**已存在的**内核 `config.toml` 跑的整串迁移（`ensureKernelConfig` 不覆盖已有文件，
+ * 所以老用户的配置只能靠这一串往前走）。
+ *
+ * 单独成一个函数，是为了让升级兼容测试（`test/upgrade-compat.test.ts`）跑的就是宿主跑的
+ * 这一串，而不是测试里抄的一份 —— 抄的那份会在下一次有人往这里加一步时悄悄过期。
+ */
+export function migrateKernelConfigText(text: string): {
+  readonly text: string;
+  readonly changed: {
+    readonly retiredModel: boolean;
+    readonly multiAgentV2: boolean;
+    readonly memories: boolean;
+    readonly retries: boolean;
+    readonly defaultPermissions: boolean;
+  };
+} {
+  const retiredModel = removeRetiredDefaultModel(text);
+  const multiAgentV2 = migrateMultiAgentV2Config(retiredModel.text);
+  const memories = migrateMemoriesConfig(multiAgentV2.text);
+  const retries = migrateStreamRetryBudget(memories.text);
+  // 放在 multiAgentV2 之后：那一步先把「写错位置」的 default_permissions 挪回根，这里只补「根本没有」
+  const defaultPermissions = migrateDefaultPermissions(retries.text);
+  return {
+    text: defaultPermissions.text,
+    changed: {
+      retiredModel: retiredModel.changed,
+      multiAgentV2: multiAgentV2.changed,
+      memories: memories.changed,
+      retries: retries.changed,
+      defaultPermissions: defaultPermissions.changed,
+    },
+  };
+}
+
+/**
+ * 给 0.0.1 / 0.0.2 装出来的配置补上根键 `default_permissions`。
+ *
+ * 那两版的模板定义了 `[permissions.*]` 档位，却没有这个根键；而 `ensureKernelConfig`
+ * 不覆盖已有文件，所以从那两版升上来的用户一直缺着它。现在的内核遇到这种配置
+ * **不是回退默认值**：2026-10-02 拿真内核（`build/kernel/mac-arm64`）对迁移后的 0.0.2 配置实测，
+ * `config/read`、`plugin/list`、`experimentalFeature/list`、`mcpServerStatus/list` 全部回
+ * -32603 `config defines [permissions] profiles but does not set default_permissions`；
+ * 不带 `permissions` 的 `thread/start` 回 -32600。建任务之所以还能用，只是因为适配层每次都显式传了
+ * `permissions` —— 插件页因此是空的，而桥接层把错误吞成了空列表，谁也没看见。
+ *
+ * **只在我们自己的档位在时补**：`[permissions.evowork-workspace]` 是模板的默认档。企业改成了
+ * 自己的档位、又没设根键的，我们不替他们选（那会把默认权限改成一个他们没写的档）。
+ */
+export function migrateDefaultPermissions(text: string): { text: string; changed: boolean } {
+  const lines = text.split(/\r?\n/);
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  const root = firstTable < 0 ? lines : lines.slice(0, firstTable);
+  if (root.some((line) => /^\s*default_permissions\s*=/.test(line))) {
+    return { text, changed: false };
+  }
+  if (!lines.some((line) => /^\s*\[permissions\.evowork-workspace\]\s*(?:#.*)?$/.test(line))) {
+    return { text, changed: false };
+  }
+  return { text: setRootKey(text, 'default_permissions', 'evowork-workspace'), changed: true };
+}
+
+/**
  * 把已有安装定向迁移到内核 V2 协作协议。
  *
  * 不能靠更新模板：`ensureKernelConfig` 刻意不覆盖已有配置。这里仅修改
@@ -935,19 +997,24 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const kernelConfigPath = join(options.paths.kernelHome, 'config.toml');
   if (existsSync(kernelConfigPath)) {
     try {
-      const retiredModel = removeRetiredDefaultModel(readFileSync(kernelConfigPath, 'utf8'));
-      const multiAgentV2 = migrateMultiAgentV2Config(retiredModel.text);
-      const memories = migrateMemoriesConfig(multiAgentV2.text);
-      const retries = migrateStreamRetryBudget(memories.text);
-      if (retiredModel.changed || multiAgentV2.changed || memories.changed || retries.changed) {
-        writeFileSync(kernelConfigPath, retries.text, 'utf8');
+      const migrated = migrateKernelConfigText(readFileSync(kernelConfigPath, 'utf8'));
+      if (Object.values(migrated.changed).some(Boolean)) {
+        writeFileSync(kernelConfigPath, migrated.text, 'utf8');
       }
-      if (retiredModel.changed) {
+      if (migrated.changed.retiredModel) {
         logger.info('desktop.kernel_config.retired_model_removed', {});
       }
-      if (multiAgentV2.changed) logger.info('desktop.kernel_config.multi_agent_v2_migrated', {});
-      if (memories.changed) logger.info('desktop.kernel_config.memories_defaults_migrated', {});
-      if (retries.changed) logger.info('desktop.kernel_config.stream_retries_migrated', {});
+      if (migrated.changed.multiAgentV2) {
+        logger.info('desktop.kernel_config.multi_agent_v2_migrated', {});
+      }
+      if (migrated.changed.memories) {
+        logger.info('desktop.kernel_config.memories_defaults_migrated', {});
+      }
+      if (migrated.changed.retries)
+        logger.info('desktop.kernel_config.stream_retries_migrated', {});
+      if (migrated.changed.defaultPermissions) {
+        logger.info('desktop.kernel_config.default_permissions_added', {});
+      }
     } catch {
       logger.warn('desktop.kernel_config.migration_failed', { reason: 'IO' });
     }

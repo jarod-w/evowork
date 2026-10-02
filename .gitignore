@@ -12,6 +12,10 @@ coverage/
 *.db-wal
 *.db-shm
 *.db.bak.*
+# 例外：升级兼容夹具（在线升级提案 §4 A2）。它们是 scripts/build-upgrade-fixture.mjs
+# 用旧版本代码建的**样例库**，只有固定的假数据，不是任何人的用户数据；少了它们
+# upgrade-compat.test.ts 在干净签出上直接失败。只放开这一个目录里的这一个文件名。
+!apps/desktop/test/fixtures/upgrade/*/evowork.db
 
 # 解析运行时与下载的档位包（08 §4，按需下载，不随仓库）
 runtimes/
