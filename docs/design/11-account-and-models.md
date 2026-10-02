@@ -188,7 +188,7 @@ readonly credentialSource: 'byok' | 'hosted' | 'private';
 | 用量与预算 | `/settings/usage` | Q11 单任务预算 · 托管额度（阶段 2，**只展示已用/总量，无充值/升级**，Q42） | 阶段 1 只做预算部分 |
 | 数据管理 | `/settings/data` | 归档任务 · 本机磁盘占用（Q17） | 已有服务层能力，缺 UI |
 | 安全与权限 | `/settings/security` | 审计记录（M4 遗留的审计 UI 落点） | 后续 |
-| 关于与更新 | `/settings/about` | 版本 · 内核基线 · 第三方声明（K5） | 阶段 1 顺手 |
+| 关于与更新 | `/settings/about` | 版本 · **检查更新与下载**（Q46，2026-10-03）· 办公扩展的版本（08 §4.1）· 第三方声明（K5） | 阶段 1 顺手；更新见[在线升级提案 §4 B4](../superpowers/specs/2026-10-02-online-update-design.md) |
 
 #### 4.4.1 「模型」这一页只有一张卡（2026-09-16 收条件显示，2026-09-19 收成只剩一张）
 

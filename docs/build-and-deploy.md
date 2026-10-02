@@ -551,6 +551,11 @@ node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/update
 node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/updates --kid evowork-update-1
 ```
 
+**更新说明**：客户端在「可以更新」的卡片里显示清单的 `releaseNotes`，**按纯文本、一行一条**（去掉 `- ` 前缀）。
+按 electron-builder 的约定，打包时 `build/release-notes.md` 存在就会被写进 `latest-mac.yml`（`releaseInfo.releaseNotesFile` 的默认值）——
+**这一条没验过**：仓库里还没有这个文件，也还没打过带它的包。发版时写上它，打包后先看一眼 `latest-mac.yml` 里有没有 `releaseNotes:`。
+清单是签过名的，所以更新说明也在签名范围内。
+
 回滚：`a2dissite update.nucleant.cn && a2dismod ssl && cp /etc/apache2/ports.conf.bak-20261002 /etc/apache2/ports.conf && apache2ctl configtest && systemctl reload apache2 && ufw delete allow 9443/tcp`。
 服务器上的完整记录在 `/opt/evowork/PROVENANCE` 的「更新源」一节。
 
