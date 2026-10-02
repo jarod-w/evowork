@@ -67,9 +67,15 @@ export function parseInterfaceJson(
 export function listSkills(roots: SkillRoots, io: CatalogIo): readonly SkillRecord[] {
   const official = scanRoot(roots.official, 'official', true, io);
   const user = scanRoot(roots.user, 'local', false, io);
+  // 5.5（HUB-Q7=A）：Hub 发布了随包技能的新版本时，Hub 那份生效；卸载后回落到随包版本。
+  // 「版本高的才装」由安装方判，这里只认来源标记：只有 `hub` 能盖过随包，`local` / `git` 不能
+  const hubOverrides = new Map(
+    user.filter((s) => s.source === 'hub').map((s) => [s.id, s] as const),
+  );
+  const merged = official.map((s) => hubOverrides.get(s.id) ?? s);
   const seen = new Set(official.map((s) => s.id));
   const extra = user.filter((s) => !seen.has(s.id));
-  return [...official, ...extra];
+  return [...merged, ...extra];
 }
 
 function scanRoot(
@@ -123,7 +129,7 @@ function safeReadDir(io: CatalogIo, path: string): readonly DirEntry[] {
 function readSourceMarker(text: string | undefined, fallback: SkillSource): SkillSource {
   if (fallback === 'official') return fallback;
   const raw = text?.trim();
-  if (raw === 'git' || raw === 'private' || raw === 'local') return raw;
+  if (raw === 'git' || raw === 'private' || raw === 'local' || raw === 'hub') return raw;
   return fallback;
 }
 

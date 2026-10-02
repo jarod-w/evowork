@@ -88,6 +88,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 | K1（补丁真的编进去了） | `scripts/kernel-provenance.mjs`，进打包前置检查与 Playwright 夹具 | 「旁边没有 KERNEL_PROVENANCE.json」/「补丁与现在的 patches/evowork/ 不一致」—— 没打补丁的内核照样能跑，这是唯一拦得住它的地方 |
 | K2（唯一边界） | eslint `@evowork/no-kernel-internals` | 「只有 `services/kernel-adapter` 可以引用 `CODEX_HOME`」—— 它把 launcher 从桌面壳里赶了出来 |
 | K5（品牌） | `scripts/gen-third-party-notices.mjs --check`，**2026-09-26 起进 `pnpm run check`** | 依赖树与 NOTICES 不一致 |
+| K6（Hub 只下行） | `services/catalog/test/hub.test.ts` 扫 catalog 整个 `src/`（也不许依赖 hub-client）；`services/hub-client/test/client.test.ts` 用真 HTTP 服务断言请求头里只多了 `If-None-Match` | 「不该出现 fetch(」/ 请求头里多了 `authorization`、`cookie` 或任何自定义头 —— Hub 是下行通道，不能长成数据面（R12） |
 | K6（不出网） | `services/ingest/test/pipeline.test.ts` 扫 **整个 `src/` 目录**里的 `fetch` / `node:http` | 「解析管道里不该出现 fetch(」——**云端兜底是结构上不存在，不是"默认关闭"**。2026-09-07 从"手工列的文件名单"收紧成整目录：办公扩展的下载器被放进了另一个包（`services/runtime-installer`），这里就不必留口子 |
 | Q14（不落盘正文） | `packages/logging` 的类型 + 字段注册表 + 泄露检测 | 没有接受自由字符串的日志入口；未注册的字段被**静默丢掉** |
 | 01 §9（token-only） | eslint `@evowork/no-style-literals` + `test/styles.test.ts` 扫 CSS | 「组件里不许出现颜色字面量」—— 它拦下过 mermaid 主题的硬编码兜底色 |
@@ -113,6 +114,9 @@ evowork/
     ingest/              【本机】解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时（M3，K6，无云端兜底）
     runtime-installer/   【本机】办公扩展的按需安装（08 §4）。**K6 登记：唯一为装扩展而出网的包**——
                          下载器不放进 ingest，正是为了让那边的"不出网"扫描能收紧成整个 src 目录
+    catalog/             【本机】技能 · 连接器 · 专家 ·「套件」的判定：P0/P1/P2 审计 · Hub 条目合并与 5.4 更新判定（05 / 13）。**不出网**（整目录扫描守着）
+    hub-client/          【本机】插件 Hub 的下行通道：拉索引 · 验签 · 缓存 · 下载（13，H1）。**K6 登记：唯一为 Hub 出网的包**——
+                         理由同 runtime-installer：让 catalog 的「不出网」扫描能覆盖整个目录
     policy/              【本机】安全与策略（M4）：三级路径策略 · profile 文案 · 命令风险 · 并发预算 · 审计链 · **四个 hook 的决策**
     artifacts/           【本机】产物识别（三信号）· 分享授权与上传 · 资料库视图 · fs 监听（M8，D6/Q10）
     gateway/             【云端】Responses API 网关（M1，K4；Q2=必须支持国内模型 → 全量适配）
@@ -123,7 +127,8 @@ evowork/
     protocol/            app-server v2 的类型与传输（手写子集 = 依赖面的声明）
     logging/             结构化日志：正文字段在序列化层被过滤（Q14「不落盘」的实现处）
     tokens/              01 §2 的 design token（前端与 charts 技能共用）
-    account/             账号协议：JWT 验签 · PKCE · 计量类型 · 策略包签名（无网络、无存储）
+    account/             账号协议：JWT 验签 · PKCE · 计量类型 · 签名信封（策略包与 Hub 索引共用）（无网络、无存储）
+    hub-protocol/        插件 Hub 的索引协议：形状 · 验签 · 内容包 tar.gz · 版本与吊销范围（13 §4；evowork-hub 的 CI 也用它）
   ext/                   L2 Rust 扩展 crate（extension-api contributor）
   plugins/               L2 随产品分发的插件包
     skills/              办公产物技能 documents / spreadsheets / presentations / charts + 界面设计 ui-design

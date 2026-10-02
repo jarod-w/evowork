@@ -9,6 +9,9 @@
       "path": "packages/account"
     },
     {
+      "path": "packages/hub-protocol"
+    },
+    {
       "path": "packages/protocol"
     },
     {
@@ -31,6 +34,9 @@
     },
     {
       "path": "services/projects"
+    },
+    {
+      "path": "services/hub-client"
     },
     {
       "path": "services/catalog"

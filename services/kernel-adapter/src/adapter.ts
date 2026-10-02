@@ -868,13 +868,35 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     /**
-     * 套件目录只读本地与工作区源。公开远程市场尚未通过产品/合规决策，不能顺手打开。
+     * 套件目录只读本机市场（13 §9，HUB-Q8=B）。`local` 带上 `cwds` 就会发现工作区里的
+     * `.agents/plugins/marketplace.json`（`plugins.rs` 的 `load_marketplace_context(roots)`）。
+     *
+     * **不传 `workspace-directory`**：那是 ChatGPT 的远端目录，没有 ChatGPT 登录时整个请求报错
+     * （F37 / HF4），有登录时又会把远端目录带进产品。`local` 里仍然混着内核自己同步的
+     * curated 市场（F38 / HF5），由 `@evowork/catalog` 的 `listBundles` 按路径滤掉。
      */
     async listPluginBundles(cwds: readonly string[] = []): Promise<PluginListResponse> {
       return session.peer.request<PluginListResponse>(METHOD.pluginList, {
         cwds: cwds.length > 0 ? [...cwds] : null,
-        marketplaceKinds: ['local', 'workspace-directory'],
+        marketplaceKinds: ['local'],
         forceRefetch: false,
+      });
+    },
+
+    /**
+     * 写插件启停（`core-plugins/src/toggles.rs` 认 `plugins` 整表的形状）。
+     *
+     * 用整表 + upsert 而不是 `plugins.<id>.enabled` 这条 keyPath：内核按 `.` 切 keyPath，
+     * 插件 id 里带点就会被切错，而且**切错不报错**。
+     */
+    async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
+      await session.peer.request(METHOD.configBatchWrite, {
+        edits: [
+          { keyPath: 'plugins', value: { [pluginId]: { enabled } }, mergeStrategy: 'upsert' },
+        ],
+        filePath: null,
+        expectedVersion: null,
+        reloadUserConfig: true,
       });
     },
 

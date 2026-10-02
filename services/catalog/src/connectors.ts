@@ -9,12 +9,17 @@ export interface ConnectorStore {
 export interface StoredConnector {
   readonly id: string;
   readonly name: string;
-  readonly kind: 'official' | 'custom';
+  readonly kind: 'official' | 'hub' | 'custom';
   readonly transport: ConnectorTransport;
   readonly command?: string | undefined;
   readonly args?: readonly string[] | undefined;
   readonly url?: string | undefined;
   readonly envKeys?: readonly string[] | undefined;
+  /**
+   * 写死的、**不是密钥**的环境变量（如 `ELECTRON_RUN_AS_NODE=1`：用户机器上没有 node，
+   * Hub 的 stdio 连接器用 Electron 自己充当 node）。密钥只走 `envKeys`（只有名）。
+   */
+  readonly env?: Readonly<Record<string, string>> | undefined;
   readonly trusted: boolean;
   readonly toolPolicy: Readonly<Record<string, ToolPolicy>>;
   readonly disabledReason?: string | undefined;
@@ -36,7 +41,7 @@ export function parseConnectorStore(text: string | undefined): ConnectorStore {
       if (typeof rec.id !== 'string' || typeof rec.name !== 'string') continue;
       const transport = rec.transport;
       if (transport !== 'stdio' && transport !== 'sse' && transport !== 'http') continue;
-      const kind = rec.kind === 'official' ? 'official' : 'custom';
+      const kind = rec.kind === 'official' ? 'official' : rec.kind === 'hub' ? 'hub' : 'custom';
       connectors.push({
         id: rec.id,
         name: rec.name,
@@ -48,6 +53,7 @@ export function parseConnectorStore(text: string | undefined): ConnectorStore {
         ...(Array.isArray(rec.envKeys)
           ? { envKeys: rec.envKeys.filter((a) => typeof a === 'string') }
           : {}),
+        ...(parseEnv(rec.env) !== undefined ? { env: parseEnv(rec.env) } : {}),
         trusted: rec.trusted === true,
         toolPolicy: parseToolPolicy(rec.toolPolicy),
         ...(typeof rec.disabledReason === 'string' ? { disabledReason: rec.disabledReason } : {}),
@@ -57,6 +63,15 @@ export function parseConnectorStore(text: string | undefined): ConnectorStore {
   } catch {
     return emptyStore();
   }
+}
+
+function parseEnv(raw: unknown): Readonly<Record<string, string>> | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (/^[A-Z_][A-Z0-9_]*$/.test(key) && typeof value === 'string') out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function parseToolPolicy(raw: unknown): Readonly<Record<string, ToolPolicy>> {
@@ -191,6 +206,7 @@ export function patchMcpServersToml(
     readonly command?: string | undefined;
     readonly args?: readonly string[] | undefined;
     readonly url?: string | undefined;
+    readonly env?: Readonly<Record<string, string>> | undefined;
     readonly transport: ConnectorTransport;
   }[],
 ): string {
@@ -211,6 +227,7 @@ function renderMcpBlock(s: {
   readonly command?: string | undefined;
   readonly args?: readonly string[] | undefined;
   readonly url?: string | undefined;
+  readonly env?: Readonly<Record<string, string>> | undefined;
   readonly transport: ConnectorTransport;
   readonly toolPolicy?: Readonly<Record<string, ToolPolicy>>;
 }): string {
@@ -219,6 +236,10 @@ function renderMcpBlock(s: {
     lines.push(`command = ${tomlString(s.command)}`);
     if (s.args !== undefined && s.args.length > 0) {
       lines.push(`args = [${s.args.map(tomlString).join(', ')}]`);
+    }
+    const env = Object.entries(s.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    if (env.length > 0) {
+      lines.push(`env = { ${env.map(([k, v]) => `${k} = ${tomlString(v)}`).join(', ')} }`);
     }
   } else if (s.url !== undefined) {
     lines.push(`url = ${tomlString(s.url)}`);

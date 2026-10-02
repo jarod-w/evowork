@@ -31,6 +31,7 @@ import type {
   AutomationsDataView,
   CatalogDataView,
   CatalogMutationResult,
+  HubItemRef,
   ComposerAttachmentView,
   ComposerContextView,
   ComposerReferenceView,
@@ -110,6 +111,7 @@ import { AuditPage, type AuditRow } from './views/audit.js';
 import {
   CatalogPage,
   SKILL_CREATOR_PROMPT,
+  type CatalogHubActions,
   type CatalogPageProps,
   type CatalogTab,
 } from './views/catalog.js';
@@ -311,8 +313,20 @@ export interface EvoworkBridge {
   installPluginBundle(input: {
     marketplacePath: string;
     pluginName: string;
+    acknowledge?: boolean | undefined;
+    confirmName?: string | undefined;
   }): Promise<CatalogMutationResult>;
   uninstallPluginBundle(input: { pluginId: string }): Promise<CatalogMutationResult>;
+  refreshHub?(): Promise<CatalogMutationResult>;
+  installHubItem?(input: {
+    kind: HubItemRef['kind'];
+    id: string;
+    acknowledge?: boolean | undefined;
+    confirmName?: string | undefined;
+  }): Promise<CatalogMutationResult>;
+  uninstallHubItem?(input: HubItemRef): Promise<CatalogMutationResult>;
+  rollbackHubItem?(input: HubItemRef): Promise<CatalogMutationResult>;
+  setHubFetchWhenSignedOut?(input: { enabled: boolean }): Promise<CatalogMutationResult>;
   addConnector(input: {
     name: string;
     transport: 'stdio' | 'sse' | 'http';
@@ -1512,6 +1526,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then(setCatalog)
         .catch(() => setCatalog(null));
     if (view === 'settings') {
+      // 账号一节里的「未登录时也获取 EvoWork 精选内容」开关要看 Hub 状态
+      if (catalog === null)
+        void bridge
+          .getCatalog()
+          .then(setCatalog)
+          .catch(() => undefined);
       void bridge
         .getComputerUseStatus?.()
         .then(setComputerUse)
@@ -1978,6 +1998,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [applyCatalogResult, catalog, emptyCatalogView],
   );
+
+  /** 插件 Hub 的四个动作（13，H1）。宿主没注入时整块缺席，页面上就没有「EvoWork 精选」。 */
+  const hubActions = useMemo((): CatalogHubActions | undefined => {
+    const { refreshHub, installHubItem, uninstallHubItem, rollbackHubItem } = bridge;
+    if (!refreshHub || !installHubItem || !uninstallHubItem || !rollbackHubItem) return undefined;
+    return {
+      refresh: () => runCatalogMutation(() => refreshHub.call(bridge)),
+      install: (input) => runCatalogMutation(() => installHubItem.call(bridge, input)),
+      uninstall: (ref) => runCatalogMutation(() => uninstallHubItem.call(bridge, ref)),
+      rollback: (ref) => runCatalogMutation(() => rollbackHubItem.call(bridge, ref)),
+    };
+  }, [bridge, runCatalogMutation]);
 
   const scenarios: readonly Scenario[] = useMemo(
     () =>
@@ -3033,6 +3065,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onRemoveConnector={async (id) => runCatalogMutation(() => bridge.removeConnector({ id }))}
           onCreateExpert={async (input) => runCatalogMutation(() => bridge.createExpert(input))}
           onRemoveExpert={async (id) => runCatalogMutation(() => bridge.removeExpert({ id }))}
+          hubActions={hubActions}
+          onHubFetchWhenSignedOut={
+            bridge.setHubFetchWhenSignedOut
+              ? (enabled) => {
+                  void runCatalogMutation(() => bridge.setHubFetchWhenSignedOut!({ enabled }));
+                }
+              : undefined
+          }
           onUsePrompt={prepareTaskWithText}
           onWriteSkill={() => {
             const creator = composerContext.mentions.find(
@@ -3483,6 +3523,8 @@ function MainPage(props: {
   readonly onRemoveConnector: CatalogPageProps['onRemoveConnector'];
   readonly onCreateExpert: CatalogPageProps['onCreateExpert'];
   readonly onRemoveExpert: CatalogPageProps['onRemoveExpert'];
+  readonly hubActions?: CatalogHubActions | undefined;
+  readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void) | undefined;
   readonly onUsePrompt: (prompt: string) => void;
   readonly onWriteSkill: () => void;
 }) {
@@ -3584,6 +3626,8 @@ function MainPage(props: {
           onLogout={props.onLogout}
           onRevokeDevice={props.onRevokeDevice}
           onOpenAccountWeb={props.onOpenAccountWeb}
+          hubStatus={props.catalog?.hub?.status}
+          onHubFetchWhenSignedOut={props.onHubFetchWhenSignedOut}
         />
       );
 
@@ -3637,6 +3681,7 @@ function MainPage(props: {
           onRemoveConnector={props.onRemoveConnector}
           onCreateExpert={props.onCreateExpert}
           onRemoveExpert={props.onRemoveExpert}
+          hubActions={props.hubActions}
           onPickDirectory={props.onPickDirectory}
           onUsePrompt={props.onUsePrompt}
           onWriteSkill={props.onWriteSkill}

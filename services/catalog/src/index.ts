@@ -1,4 +1,12 @@
-export { auditSkillFiles, riskLabel, sourceLabel } from './audit.js';
+export {
+  AUDIT_RULES_VERSION,
+  auditSkillFiles,
+  extractCapabilities,
+  rankLevel,
+  riskLabel,
+  sourceLabel,
+} from './audit.js';
+export type { Capabilities } from './audit.js';
 export type { AuditFile } from './audit.js';
 export {
   categoriesOf,
@@ -44,3 +52,50 @@ export type {
   SkillSource,
   ToolPolicy,
 } from './types.js';
+export {
+  auditBundleFiles,
+  BUNDLE_APPS_REFUSAL,
+  BUNDLE_STDIO_WORST_CASE,
+  bundleSourceHost,
+  bundleSourceLabel,
+  inspectBundleFiles,
+  isKernelSyncedPath,
+  listBundles,
+  parseBundleSource,
+} from './bundles.js';
+export type {
+  BundleAudit,
+  BundleContents,
+  BundleList,
+  BundleMcpServer,
+  BundleRecord,
+  BundleSource,
+  PluginListLike,
+} from './bundles.js';
+export {
+  appSatisfies,
+  capabilityGrowth,
+  decideUpdate,
+  findInstalled,
+  findRevocation,
+  HUB_NEW_WINDOW_SEC,
+  hubEntries,
+  parseHubInstallState,
+  reconcileAudit,
+  removeInstalled,
+  serializeHubInstallState,
+  skillCatalogBudget,
+  skillCatalogCost,
+  upsertInstalled,
+} from './hub.js';
+export type {
+  CatalogCostEntry,
+  HubEntry,
+  HubEntryState,
+  HubInstalled,
+  HubInstalledSnapshot,
+  HubInstallState,
+  HubUpdateDecision,
+  LocalAudit,
+  ReconciledAudit,
+} from './hub.js';

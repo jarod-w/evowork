@@ -1206,7 +1206,7 @@ export interface CatalogItemView {
   readonly name: string;
   readonly description: string;
   readonly category: string;
-  readonly source: 'official' | 'private' | 'local' | 'git';
+  readonly source: 'official' | 'hub' | 'private' | 'local' | 'git';
   readonly sourceLabel: string;
   readonly installed: boolean;
   readonly featured: boolean;
@@ -1224,7 +1224,7 @@ export interface CatalogItemView {
 export interface ConnectorView {
   readonly id: string;
   readonly name: string;
-  readonly kind: 'official' | 'custom';
+  readonly kind: 'official' | 'hub' | 'custom';
   readonly transport: 'stdio' | 'sse' | 'http';
   readonly command?: string | undefined;
   readonly args?: readonly string[] | undefined;
@@ -1256,7 +1256,7 @@ export interface CatalogExpertView {
   readonly id: string;
   readonly name: string;
   readonly description: string;
-  readonly source: 'official' | 'local';
+  readonly source: 'official' | 'hub' | 'local';
   readonly category: string;
   readonly sampleTasks: readonly string[];
   readonly instructions?: string | undefined;
@@ -1279,14 +1279,93 @@ export interface CatalogBundleView {
   readonly category: string;
   readonly marketplaceName: string;
   readonly marketplacePath?: string | undefined;
+  /** 05 §3.2：每张卡必须标来源。本机 / 工作区市场 =「本地目录」（13 §9.1 第 1 条）。 */
+  readonly sourceLabel?: string | undefined;
   readonly installed: boolean;
   readonly enabled: boolean;
   readonly version?: string | undefined;
   readonly available: boolean;
   readonly disabledReason?: string | undefined;
+  /** git / npm 来源：已以停用状态装上、等用户看过审计结论再启用（HUB-Q8a=B）。 */
+  readonly pendingReview?: boolean | undefined;
+  /** git / npm 来源安装时内核要访问的主机，装不上时如实写出。 */
+  readonly sourceHost?: string | undefined;
+  /** 内容在本机时才有（本机来源，或已装好的 git / npm 来源）。 */
+  readonly riskLevel?: 'p0' | 'p1' | 'p2' | undefined;
+  readonly riskLabel?: string | undefined;
+  readonly mcpServers?:
+    | readonly { readonly name: string; readonly transport: 'stdio' | 'http' | 'sse' | 'unknown' }[]
+    | undefined;
+}
+
+/* ── 插件 Hub（13，H1）────────────────────────────────────────────────── */
+
+export interface HubItemRef {
+  readonly kind: 'skill' | 'expert' | 'connector';
+  readonly id: string;
+}
+
+export interface HubEntryView extends HubItemRef {
+  /** 目录里的最新版本。 */
+  readonly version: string;
+  readonly installedVersion?: string | undefined;
+  /**
+   * 5.6 的卡片状态：可装 / 已装 / 有更新需重新确认 / 已吊销（附原因）/ 需要更新 EvoWork /
+   * 目录过期不能新装。
+   */
+  readonly state:
+    'available' | 'installed' | 'needs-reconfirm' | 'revoked' | 'needs-app-update' | 'expired';
+  readonly displayName: string;
+  readonly description: string;
+  readonly category: string;
+  readonly riskLevel: 'p0' | 'p1' | 'p2';
+  readonly riskLabel: string;
+  readonly license: string;
+  /** false = 按需层：不进 prompt，要在「使用插件」里显式带入（13 §6）。 */
+  readonly promptVisible: boolean;
+  /** 「新上架」：只在插件页标，侧栏与首页不放红点（Q18）。 */
+  readonly isNew: boolean;
+  readonly canRollback: boolean;
+  readonly reason?: string | undefined;
+  readonly minAppVersion?: string | undefined;
+}
+
+export interface HubStatusView {
+  readonly configured: boolean;
+  readonly sourceName: string;
+  /**
+   * auto = 登录了、或未登录但用户打开了开关（HUB-Q3=B）；manual-only = 只有点「刷新」才拉；
+   * off = 部署时关掉（`EVOWORK_HUB_OFFICIAL=off`）；unconfigured = 这个版本还没接入源。
+   */
+  readonly fetchMode: 'auto' | 'manual-only' | 'off' | 'unconfigured';
+  readonly signedIn: boolean;
+  readonly fetchWhenSignedOut: boolean;
+  readonly canRefresh: boolean;
+  readonly expired: boolean;
+  /** 秒。 */
+  readonly fetchedAt?: number | undefined;
+  /** 常驻 warning 条：校验失败丢弃 / 连不上用缓存 / 目录过期。 */
+  readonly warning?: string | undefined;
+  /** 常驻 caption：为什么只有随包内容。 */
+  readonly caption?: string | undefined;
+}
+
+export interface HubCatalogView {
+  readonly status: HubStatusView;
+  readonly entries: readonly HubEntryView[];
+}
+
+/** 进 prompt 的技能目录预算（13 §6 / HF6）。超了给 warning，**不静默截断**。 */
+export interface SkillBudgetView {
+  readonly used: number;
+  readonly budget: number;
+  readonly over: boolean;
+  readonly warning?: string | undefined;
 }
 
 export interface CatalogDataView {
+  readonly hub?: HubCatalogView | undefined;
+  readonly skillBudget?: SkillBudgetView | undefined;
   readonly skills: readonly CatalogItemView[];
   readonly connectors: readonly ConnectorView[];
   readonly experts: readonly CatalogExpertView[];
@@ -1308,6 +1387,8 @@ export interface CatalogMutationResult {
   readonly audit?:
     | {
         readonly skillId: string;
+        /** 确认卡的措辞：技能、套件，还是 Hub 条目。缺省 = 技能。 */
+        readonly subject?: 'skill' | 'bundle' | 'hub' | undefined;
         readonly level: string;
         readonly findings: readonly string[];
         readonly worstCase?: string | undefined;

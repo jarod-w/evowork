@@ -86,6 +86,7 @@ import type {
   CatalogDataView,
   ConnectorView,
   CatalogMutationResult,
+  HubItemRef,
   ComposerAttachmentView,
   ComposerContextView,
   ComposerReferenceView,
@@ -154,6 +155,28 @@ import {
   type InstallSkillInput,
   type SetConnectorToolPolicyInput,
 } from './catalog-host.js';
+import {
+  canAutoFetch,
+  hubCatalogView,
+  installHubItem,
+  readHubState,
+  refreshHub,
+  rollbackHubItem,
+  skillBudgetView,
+  uninstallHubItem,
+  writeFetchWhenSignedOut,
+  type HubHostPorts,
+  type HubMutation,
+  type HubRuntime,
+  type InstallHubInput,
+} from './hub-host.js';
+import {
+  installBundle,
+  readBundles,
+  uninstallBundle,
+  type BundlePorts,
+  type InstallBundleInput,
+} from './bundle-host.js';
 
 /** 增量通道在渲染模型里的承载字段。 */
 const TEXT_DELTA_FIELD: Readonly<Record<string, string | undefined>> = {
@@ -591,6 +614,11 @@ export interface RendererBridgeOptions {
    * 判定在 `@evowork/catalog`；这里只接线。
    */
   readonly catalogPorts?: CatalogPorts | undefined;
+  /**
+   * 插件 Hub（13，H1）。没给时「EvoWork 精选」整块不出现，五个 Hub 动作如实拒绝。
+   * 出网只在 `@evowork/hub-client` 里；什么时候允许出网由 `hub-host` 判（HUB-Q3=B）。
+   */
+  readonly hubPorts?: HubHostPorts | undefined;
   /** OAuth 授权地址只能由主进程交给系统浏览器。 */
   readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   readonly attachmentPorts?:
@@ -882,22 +910,59 @@ export function createRendererActions(options: RendererBridgeOptions) {
     }
   }
 
+  const hubRuntime: HubRuntime = options.hubPorts?.runtime ?? {};
+
+  /**
+   * Hub 装进来的条目走 Hub 的卸载：它还要清 `installed.json`、回滚副本、随包技能的停用标记。
+   * 详情页的「卸载 / 删除」不必知道条目从哪来。
+   */
+  function isHubInstalled(kind: 'skill' | 'expert' | 'connector', id: string): boolean {
+    return (
+      options.hubPorts !== undefined &&
+      readHubState(options.hubPorts).items.some((i) => i.kind === kind && i.id === id)
+    );
+  }
+
+  async function hubResult(run: () => Promise<HubMutation>): Promise<CatalogMutationResult> {
+    const result = await run().catch((error: unknown) => ({
+      ok: false,
+      refused: error instanceof Error ? error.message : 'EvoWork 精选这一步没有完成。',
+    }));
+    return { ...result, catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()) };
+  }
+
+  /**
+   * 套件（13 §9.1）。内核没有插件方法、或没有目录端口时整块不出现。
+   * 工作区市场靠把项目根目录传进 `cwds` 才会被发现（9.1 第 6 条）。
+   */
+  function bundlePorts(): BundlePorts | undefined {
+    const ports = options.catalogPorts;
+    if (!ports || typeof adapter.listPluginBundles !== 'function') return undefined;
+    return {
+      kernelHome: ports.kernelHome,
+      io: ports.io,
+      listPlugins: (cwds) => adapter.listPluginBundles(cwds),
+      install: (input) => adapter.installPluginBundle(input),
+      uninstall: (pluginId) => adapter.uninstallPluginBundle(pluginId),
+      setEnabled: (pluginId, enabled) => adapter.setPluginEnabled(pluginId, enabled),
+      workspaceRoots: () => [
+        ...new Set(
+          createProjectRepo(store.db)
+            .list()
+            .flatMap((project) => project.roots),
+        ),
+      ],
+    };
+  }
+
   async function catalogWithKernelSkills(): Promise<CatalogDataView> {
     const base = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
     if (typeof adapter.listSkills !== 'function') return base;
-    const [listed, pluginCatalog, connectorStatus] = await Promise.all([
+    const [listed, bundleCatalog, connectorStatus] = await Promise.all([
       adapter.listSkills([]),
-      typeof adapter.listPluginBundles === 'function'
-        ? adapter.listPluginBundles([]).catch(() => ({
-            marketplaces: [],
-            marketplaceLoadErrors: [],
-            featuredPluginIds: [],
-          }))
-        : Promise.resolve({
-            marketplaces: [],
-            marketplaceLoadErrors: [],
-            featuredPluginIds: [],
-          }),
+      bundlePorts()
+        ? readBundles(bundlePorts()!)
+        : Promise.resolve({ bundles: [], bundleErrors: [] }),
       typeof adapter.listMcpServerStatuses === 'function'
         ? adapter
             .listMcpServerStatuses()
@@ -952,39 +1017,24 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ...(live.toolsError ? { failureSummary: live.toolsError } : {}),
       };
     });
+    const hubInstalled = options.hubPorts ? readHubState(options.hubPorts) : undefined;
+    const hubExperts = new Set(
+      (hubInstalled?.items ?? []).filter((i) => i.kind === 'expert').map((i) => i.id),
+    );
     return {
       ...base,
+      ...(options.hubPorts ? { hub: hubCatalogView(options.hubPorts, hubRuntime) } : {}),
+      ...(options.catalogPorts
+        ? { skillBudget: skillBudgetView(options.catalogPorts, entry?.skills ?? []) }
+        : {}),
+      experts: base.experts.map((expert) =>
+        hubExperts.has(expert.id) ? { ...expert, source: 'hub' as const } : expert,
+      ),
       skills,
       connectors,
       apps: base.apps.filter((app) => !disabled.has(app.id)),
-      bundles: pluginCatalog.marketplaces.flatMap((marketplace) =>
-        marketplace.plugins.map((plugin) => ({
-          id: plugin.id,
-          name: plugin.interface?.displayName ?? plugin.name,
-          pluginName: plugin.name,
-          description:
-            plugin.interface?.shortDescription ?? plugin.interface?.longDescription ?? plugin.name,
-          category: plugin.interface?.category ?? '套件',
-          marketplaceName: marketplace.interface?.displayName ?? marketplace.name,
-          ...(marketplace.path ? { marketplacePath: marketplace.path } : {}),
-          installed: plugin.installed,
-          enabled: plugin.enabled,
-          ...((plugin.localVersion ?? plugin.version)
-            ? { version: plugin.localVersion ?? plugin.version ?? undefined }
-            : {}),
-          available:
-            plugin.installPolicy !== 'NOT_AVAILABLE' && plugin.availability !== 'DISABLED_BY_ADMIN',
-          ...(plugin.disabledReason ? { disabledReason: plugin.disabledReason } : {}),
-        })),
-      ),
-      ...(pluginCatalog.marketplaceLoadErrors.length
-        ? {
-            bundleErrors: pluginCatalog.marketplaceLoadErrors.map((error) => ({
-              path: error.marketplacePath,
-              message: error.message,
-            })),
-          }
-        : {}),
+      bundles: bundleCatalog.bundles,
+      ...(bundleCatalog.bundleErrors.length ? { bundleErrors: bundleCatalog.bundleErrors } : {}),
       ...(entry?.errors.length ? { skillErrors: entry.errors } : {}),
       ...(connectorStatus.error ? { connectorErrors: [connectorStatus.error] } : {}),
     };
@@ -2826,6 +2876,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
     uninstallSkill(input: { readonly id: string }): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
       if (!ports) return Promise.resolve(missingPortsResult());
+      if (isHubInstalled('skill', input.id)) {
+        return hubResult(() =>
+          uninstallHubItem(options.hubPorts!, { kind: 'skill', id: input.id }),
+        );
+      }
       return Promise.resolve(uninstallSkill(ports, input.id));
     },
 
@@ -2853,35 +2908,67 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
     },
 
-    async installPluginBundle(input: {
-      readonly marketplacePath: string;
-      readonly pluginName: string;
-    }): Promise<CatalogMutationResult> {
-      try {
-        await adapter.installPluginBundle(input);
-        return { ok: true, catalog: await catalogWithKernelSkills() };
-      } catch (error: unknown) {
-        return {
-          ok: false,
-          refused: error instanceof Error ? error.message : '套件没有安装。',
-          catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()),
-        };
-      }
+    async installPluginBundle(input: InstallBundleInput): Promise<CatalogMutationResult> {
+      const ports = bundlePorts();
+      if (!ports) return missingPortsResult();
+      const result = await installBundle(ports, input).catch((error: unknown) => ({
+        ok: false,
+        refused: error instanceof Error ? error.message : '套件没有安装。',
+      }));
+      return { ...result, catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()) };
     },
 
     async uninstallPluginBundle(input: {
       readonly pluginId: string;
     }): Promise<CatalogMutationResult> {
-      try {
-        await adapter.uninstallPluginBundle(input.pluginId);
-        return { ok: true, catalog: await catalogWithKernelSkills() };
-      } catch (error: unknown) {
-        return {
-          ok: false,
-          refused: error instanceof Error ? error.message : '套件没有卸载。',
-          catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()),
-        };
-      }
+      const ports = bundlePorts();
+      if (!ports) return missingPortsResult();
+      const result = await uninstallBundle(ports, input.pluginId).catch((error: unknown) => ({
+        ok: false,
+        refused: error instanceof Error ? error.message : '套件没有卸载。',
+      }));
+      return { ...result, catalog: await catalogWithKernelSkills().catch(() => emptyCatalog()) };
+    },
+
+    /* ── 插件 Hub（13，H1）────────────────────────────────────────── */
+
+    /** 插件页的「刷新」：显式触发（HUB-Q3=B），未登录、开关关着也可以点一次拉一次。 */
+    refreshHub(): Promise<CatalogMutationResult> {
+      const ports = options.hubPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return hubResult(() => refreshHub(ports, hubRuntime, 'manual'));
+    },
+
+    installHubItem(input: InstallHubInput): Promise<CatalogMutationResult> {
+      const ports = options.hubPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return hubResult(() => installHubItem(ports, input));
+    },
+
+    uninstallHubItem(input: HubItemRef): Promise<CatalogMutationResult> {
+      const ports = options.hubPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return hubResult(() => uninstallHubItem(ports, input));
+    },
+
+    rollbackHubItem(input: HubItemRef): Promise<CatalogMutationResult> {
+      const ports = options.hubPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return hubResult(() => rollbackHubItem(ports, input));
+    },
+
+    /**
+     * 「未登录时也获取 EvoWork 精选内容」。打开这个动作本身就是显式授权（Q30 / HUB-Q3=B），
+     * 所以打开时顺手拉一次；关上不发任何请求。
+     */
+    setHubFetchWhenSignedOut(input: { readonly enabled: boolean }): Promise<CatalogMutationResult> {
+      const ports = options.hubPorts;
+      if (!ports) return Promise.resolve(missingPortsResult());
+      return hubResult(async () => {
+        writeFetchWhenSignedOut(ports, input.enabled);
+        if (input.enabled && canAutoFetch(ports)) await refreshHub(ports, hubRuntime, 'auto');
+        return { ok: true };
+      });
     },
 
     addConnector(input: AddConnectorInput): Promise<CatalogMutationResult> {
@@ -2902,6 +2989,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async removeConnector(input: { readonly id: string }): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
       if (!ports) return missingPortsResult();
+      if (isHubInstalled('connector', input.id)) {
+        return hubResult(() =>
+          uninstallHubItem(options.hubPorts!, { kind: 'connector', id: input.id }),
+        );
+      }
       const result = removeConnectorAction(ports, input.id);
       if (!result.ok) return result;
       await adapter.reloadMcpServers();
@@ -2955,6 +3047,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
     removeExpert(input: { readonly id: string }): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
       if (!ports) return Promise.resolve(missingPortsResult());
+      if (isHubInstalled('expert', input.id)) {
+        return hubResult(() =>
+          uninstallHubItem(options.hubPorts!, { kind: 'expert', id: input.id }),
+        );
+      }
       return Promise.resolve(removeExpert(ports, input.id));
     },
   };

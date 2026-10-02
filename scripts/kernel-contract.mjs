@@ -118,7 +118,7 @@ const OUTGOING = {
   'mcpServer/oauth/login': { keys: ['name'], maybe: ['threadId'] },
   'plugin/list': {
     keys: ['cwds', 'marketplaceKinds', 'forceRefetch'],
-    values: { marketplaceKinds: ['local', 'workspace-directory'] },
+    values: { marketplaceKinds: ['local'] },
   },
   'plugin/install': {
     keys: ['marketplacePath', 'remoteMarketplaceName', 'installAttemptId', 'pluginName'],

@@ -213,6 +213,15 @@ export const RENDERER_ACTIONS = Object.freeze([
   'removeConnector',
   'createExpert',
   'removeExpert',
+  /*
+   * 插件 Hub（13，H1）。「刷新」是用户显式触发的出网（HUB-Q3=B），开关是显式授权；
+   * 自动拉取（启动 + 每小时）在主进程里，渲染层碰不到。
+   */
+  'refreshHub',
+  'installHubItem',
+  'uninstallHubItem',
+  'rollbackHubItem',
+  'setHubFetchWhenSignedOut',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {

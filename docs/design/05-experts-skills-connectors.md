@@ -49,7 +49,8 @@
 | 已安装列表与计数 | `services/catalog` 的技能目录视图                                                                                    | 目录变化后刷新                                             |
 | 技能根目录       | `<config>/skills`、`~/.agents/skills`、`<project>/.agents/skills`                                                    | 总纲 §6.3；`skills/extraRoots/set` 可加 EvoWork 自己的目录 |
 | 可安装来源       | ① 随包官方技能 ② 本地目录 ③ Git                                                                                      | 当前已接通范围                                             |
-| 已决策、未实现     | ④ EvoWork 精选（Hub）⑤ 企业私有源 ⑥「套件」的安装前审计（「套件」现在已能安装，但直接走内核、不经审计；规则见 [13 §9.1](13-plugin-hub.md)）                                       | 13 篇，HUB-Q 已全部确认 |
+| 已实现（2026-10-02） | ④ EvoWork 精选（Hub）的客户端：拉取、验签、安装、更新、吊销、回滚（[13 §13.1](13-plugin-hub.md)；H2 之前没有签名公钥，界面如实显示「还没有接入」）⑥「套件」的安装前审计（[13 §9.1](13-plugin-hub.md)） | 13 篇 H0 / H1 |
+| 已决策、未实现     | ⑤ 企业私有源（H6 之后）                                                                                             | 13 篇，HUB-Q 已全部确认 |
 | 安装 / 卸载      | `services/catalog` + 桌面宿主动作                                                                                    | 支持本地目录与 Git 安装、卸载                              |
 | 卡片视觉元数据   | plugin manifest 的 `interface`：`displayName` / `logo` / `brandColor` / `screenshots` / `category` / `defaultPrompt` | 这套元数据足以驱动商店级 UI（总纲 §6.3）                   |
 

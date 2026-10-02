@@ -1,0 +1,24 @@
+{
+  "name": "@evowork/hub-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "插件 Hub 的索引协议：类型 · 编码 · 验签 · 内容包格式（13 §4）。无网络、无存储",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/account": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

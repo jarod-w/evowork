@@ -65,6 +65,12 @@ importers:
       '@evowork/gateway':
         specifier: workspace:*
         version: link:../../services/gateway
+      '@evowork/hub-client':
+        specifier: workspace:*
+        version: link:../../services/hub-client
+      '@evowork/hub-protocol':
+        specifier: workspace:*
+        version: link:../../packages/hub-protocol
       '@evowork/ingest':
         specifier: workspace:*
         version: link:../../services/ingest
@@ -182,6 +188,16 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
 
+  packages/hub-protocol:
+    dependencies:
+      '@evowork/account':
+        specifier: workspace:*
+        version: link:../account
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
+
   packages/logging:
     devDependencies:
       vitest:
@@ -215,6 +231,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
 
   services/catalog:
+    dependencies:
+      '@evowork/hub-protocol':
+        specifier: workspace:*
+        version: link:../../packages/hub-protocol
     devDependencies:
       vitest:
         specifier: ^3.2.4
@@ -234,6 +254,19 @@ importers:
       '@evowork/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+    devDependencies:
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))
+
+  services/hub-client:
+    dependencies:
+      '@evowork/account':
+        specifier: workspace:*
+        version: link:../../packages/account
+      '@evowork/hub-protocol':
+        specifier: workspace:*
+        version: link:../../packages/hub-protocol
     devDependencies:
       vitest:
         specifier: ^3.2.4

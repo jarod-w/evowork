@@ -24,7 +24,8 @@ export function listApps(
       id: `connector:${c.id}`,
       kind: 'connector' as const,
       displayName: c.name,
-      description: c.kind === 'official' ? '官方连接器' : '自建 MCP',
+      description:
+        c.kind === 'official' ? '官方连接器' : c.kind === 'hub' ? 'EvoWork 精选' : '自建 MCP',
       category: c.category === 'browser' ? '浏览器' : '自建',
     }));
   return [...fromSkills, ...fromConnectors];

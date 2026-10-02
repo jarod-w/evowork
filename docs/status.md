@@ -1,10 +1,27 @@
 # 开发状态
 
-> **更新于 2026-09-28（第 71 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-10-02（第 72 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **2026-10-02：插件 Hub 的 H0 与 H1（客户端）落地（[13 §13.1](design/13-plugin-hub.md)）。**
+> **H0**：「套件」Tab 只列本机与工作区市场 —— 适配层只传 `local`，`@evowork/catalog` 的 `listBundles` 按路径滤掉
+> `<kernelHome>/.tmp/` 下的所有市场（OpenAI curated「Codex official」50 个插件此前只是碰巧没出现），读失败进 `bundleErrors`；
+> **安装前审计**：本机来源先审后装，git / npm 来源装完立刻停用、审计落盘目录、经确认才启用，带应用连接器的不可装 / 立刻卸载，
+> 插件内 stdio MCP 与 hooks 按 P2；安装前重新列一遍，渲染层直接传 `.tmp/` 路径也装不上。
+> **H1**：新包 `packages/hub-protocol`（索引形状 · ES256 信封与策略包共用 · 确定性 tar.gz 与严格读取器 · 版本与吊销范围）、
+> `services/hub-client`（**唯一为 Hub 出网的包**：只 GET、只带 `If-None-Match`；`sequence` 防回滚、缓存每次重验）、
+> `services/catalog/src/hub.ts`（本地重审按 `AUDIT_RULES_VERSION` 对账、5.4 更新判定、prompt 预算口径）、
+> `apps/desktop/src/main/hub-host.ts`（拉取时机 HUB-Q3=B、安装 / 静默更新 / 吊销 / 回滚 / 卸载、5.5 覆盖随包技能），
+> 插件页的来源筛选 · 状态卡 · warning / caption · 刷新 · 预算条，设置页「未登录时也获取 EvoWork 精选内容」开关。
+> **官方源还没接入**：签名公钥是 H2 的事，`hub-config.ts` 里的钉死列表是空的，所以产品里如实显示「还没有接入」、**一个请求都不发**。
+> **真内核验证**（V1 / V3 / V5 / V6，13 §12.1）**用的是 2026-09-05 的上游 debug 二进制**（`build-kernel.mjs` 这次没编完），
+> 源码断言在当前签出上核对过：V1 成立（按需层可行）；V3 随包 7 个技能 ≈489 token / 128K 窗口预算 2,560；
+> **V6 推翻了「预写停用」**：内核装完无条件写启用（`core-plugins/src/manager.rs:2256`），先装后审的空窗存在，已登记 13 §14。
+> 没做的：`kernel-drift.mjs` 给 F37–F41 加断言；真实桌面窗口的视觉验收；在打补丁的内核上重跑 V1–V6。
+> 验收：`pnpm run check` 退出 0，139 个测试文件通过、1 个原有跳过；2306 个测试通过、2 个原有跳过（新增约 98 个）。未跑 Playwright UI 用例，未重新打包。
 >
 > **2026-10-02：侧栏“项目”“最近”与用户提供的参考图对齐。**
 > 统一灰色分组标题与线性折叠箭头，两个分组可独立折叠；默认隐藏最近计数，筛选时仍显示命中 / 总数和重置入口。

@@ -7,9 +7,13 @@
  *
  * 类型里没有能装内容的字段：没有 `threadId` / prompt / 产物。
  */
-import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
-
 import { CLOCK_SKEW_SEC } from './claims.js';
+import {
+  parseSignedEnvelope,
+  signEnvelope,
+  verifyEnvelopeSignature,
+  type SignedEnvelope,
+} from './envelope.js';
 import { JWT_ALG, type PublicJwk } from './jwt.js';
 
 export const POLICY_PACK_SCHEMA_VER = 1 as const;
@@ -39,11 +43,8 @@ export interface PolicyPackPayload {
   readonly disabledProfiles: readonly string[];
 }
 
-export interface PolicyPackEnvelope {
-  readonly payloadJson: string;
-  readonly signature: string;
-  readonly kid: string;
-}
+/** 信封与 Hub 索引共用（`envelope.ts`）。 */
+export type PolicyPackEnvelope = SignedEnvelope;
 
 export type PolicyPackStatusKind = 'valid' | 'expiring' | 'expired';
 
@@ -131,55 +132,15 @@ export function signPolicyPack(
   payload: PolicyPackPayload,
   kid: string,
 ): PolicyPackEnvelope {
-  const payloadJson = encodePolicyPackPayload(payload);
-  const signature = sign('sha256', Buffer.from(payloadJson, 'utf8'), {
-    key: createPrivateKey(privatePem),
-    dsaEncoding: 'ieee-p1363',
-  }).toString('base64url');
-  return { payloadJson, signature, kid };
+  return signEnvelope(privatePem, encodePolicyPackPayload(payload), kid);
 }
 
 export function verifyPolicyPack(
   envelope: PolicyPackEnvelope,
   options: { readonly publicPem?: string | undefined; readonly jwk?: PublicJwk | undefined },
 ): VerifyPackResult {
-  if (
-    typeof envelope.payloadJson !== 'string' ||
-    typeof envelope.signature !== 'string' ||
-    typeof envelope.kid !== 'string' ||
-    envelope.payloadJson.length === 0 ||
-    envelope.signature.length === 0
-  ) {
-    return { ok: false, reason: 'malformed' };
-  }
-  if (options.jwk?.kid !== undefined && options.jwk.kid !== envelope.kid) {
-    return { ok: false, reason: 'bad-kid' };
-  }
-  let key;
-  try {
-    key = options.publicPem
-      ? createPublicKey(options.publicPem)
-      : options.jwk
-        ? createPublicKey({ key: options.jwk, format: 'jwk' } as Parameters<
-            typeof createPublicKey
-          >[0])
-        : undefined;
-  } catch {
-    return { ok: false, reason: 'malformed' };
-  }
-  if (!key) return { ok: false, reason: 'malformed' };
-  let okSig = false;
-  try {
-    okSig = verify(
-      'sha256',
-      Buffer.from(envelope.payloadJson, 'utf8'),
-      { key, dsaEncoding: 'ieee-p1363' },
-      Buffer.from(envelope.signature, 'base64url'),
-    );
-  } catch {
-    return { ok: false, reason: 'bad-sig' };
-  }
-  if (!okSig) return { ok: false, reason: 'bad-sig' };
+  const sig = verifyEnvelopeSignature(envelope, options);
+  if (!sig.ok) return { ok: false, reason: sig.reason };
   const payload = parsePolicyPackPayload(envelope.payloadJson);
   if (!payload) return { ok: false, reason: 'bad-payload' };
   return { ok: true, payload, payloadJson: envelope.payloadJson };
@@ -231,13 +192,7 @@ audit_upload = ${tomlBool(payload.forceAudit)}
 }
 
 export function parsePolicyPackEnvelope(input: unknown): PolicyPackEnvelope | undefined {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) return undefined;
-  const rec = input as Record<string, unknown>;
-  const payloadJson = typeof rec.payloadJson === 'string' ? rec.payloadJson : undefined;
-  const signature = typeof rec.signature === 'string' ? rec.signature : undefined;
-  const kid = typeof rec.kid === 'string' ? rec.kid : undefined;
-  if (!payloadJson || !signature || !kid) return undefined;
-  return { payloadJson, signature, kid };
+  return parseSignedEnvelope(input);
 }
 
 export { JWT_ALG as POLICY_PACK_ALG };

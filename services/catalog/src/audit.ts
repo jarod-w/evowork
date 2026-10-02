@@ -6,6 +6,15 @@
  */
 import type { AuditFinding, AuditResult, RiskLevel } from './types.js';
 
+/**
+ * 审计规则的版本（13 §4.1 `audit.rulesVersion`、§5.3）。**改了下面任何一条判定就要改它。**
+ *
+ * Hub 的 CI 和用户手里的 App 用的是两个仓库各自发版的规则（HUB-Q9=A），客户端本地再审一遍时：
+ * 版本相同，结论必须一致（不一致 = 内容或索引被动过，拒装）；版本不同，取两边更严的那个。
+ * 改了规则却没改版本号，前一条就会把正常的包判成「被动过」。
+ */
+export const AUDIT_RULES_VERSION = '2026-10-02.1';
+
 const P2_BIN_EXT = ['.exe', '.dll', '.so', '.dylib', '.bin', '.wasm'];
 const SENSITIVE_PATH = /(?:^|[^\w.])(?:\/etc\/|\/root\/|~\/\.ssh|~\.ssh|\.ssh\/|\/proc\/)/i;
 const ARBITRARY_NET =
@@ -103,6 +112,45 @@ export function auditSkillFiles(files: readonly AuditFile[]): AuditResult {
   };
 }
 
+/**
+ * 能力面（13 §5.4 判「更新是否扩大了能力」用）：要访问的域名、会执行的脚本、有没有 hooks。
+ *
+ * 和 `auditSkillFiles` 看的是同一批文件；它给等级，这里给清单。两者一起才能判「等级没升，
+ * 但多了一个域名」这种情况。
+ */
+export interface Capabilities {
+  readonly network: readonly string[];
+  readonly commands: readonly string[];
+  readonly hooks: boolean;
+}
+
+const URL_RE = /https?:\/\/([A-Za-z0-9.-]+(?::\d{1,5})?)/g;
+
+export function extractCapabilities(files: readonly AuditFile[]): Capabilities {
+  const network = new Set<string>();
+  const commands = new Set<string>();
+  let hooks = false;
+  for (const file of files) {
+    const lower = file.relativePath.toLowerCase();
+    const base = lower.split(/[/\\]/).pop() ?? lower;
+    if (base === 'hooks.json' || lower.includes('/hooks/') || lower.startsWith('hooks/'))
+      hooks = true;
+    if (/\.(py|mjs|js|cjs|sh|ps1|bat)$/.test(lower)) commands.add(file.relativePath);
+    for (const m of (file.text ?? '').matchAll(URL_RE)) {
+      if (m[1] !== undefined) network.add(m[1].toLowerCase());
+    }
+  }
+  return {
+    network: [...network].sort(),
+    commands: [...commands].sort(),
+    hooks,
+  };
+}
+
+export function rankLevel(level: RiskLevel): number {
+  return rank(level);
+}
+
 function rank(level: RiskLevel): number {
   if (level === 'p0') return 0;
   if (level === 'p1') return 1;
@@ -115,8 +163,9 @@ export function riskLabel(level: RiskLevel): string {
   return '高风险';
 }
 
-export function sourceLabel(source: 'official' | 'private' | 'local' | 'git'): string {
+export function sourceLabel(source: 'official' | 'hub' | 'private' | 'local' | 'git'): string {
   if (source === 'official') return '官方内置';
+  if (source === 'hub') return 'EvoWork 精选';
   if (source === 'private') return '企业私有源';
   if (source === 'git') return 'Git';
   return '本地目录';

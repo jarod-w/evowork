@@ -13,10 +13,14 @@ import type {
   CatalogItemView,
   CatalogMutationResult,
   ConnectorView,
+  HubCatalogView,
+  HubEntryView,
+  HubItemRef,
 } from '../../shared/ipc.js';
 import { Menu, Popover } from '../components/menu.js';
 import { TextTabs } from '../components/panels.js';
 import {
+  Banner,
   Dialog,
   EmptyState,
   FilterChip,
@@ -30,6 +34,22 @@ import {
 } from '../components/primitives.js';
 
 export type CatalogTab = 'experts' | 'skills' | 'connectors';
+
+/** 插件 Hub 的四个动作（13，H1）。宿主没注入时缺席，页面上没有「EvoWork 精选」。 */
+export interface CatalogHubActions {
+  readonly refresh: () => Promise<CatalogMutationResult>;
+  readonly install: (
+    input: HubItemRef & { acknowledge?: boolean; confirmName?: string },
+  ) => Promise<CatalogMutationResult>;
+  readonly uninstall: (ref: HubItemRef) => Promise<CatalogMutationResult>;
+  readonly rollback: (ref: HubItemRef) => Promise<CatalogMutationResult>;
+}
+
+const HUB_KIND: Readonly<Record<CatalogTab, HubItemRef['kind']>> = {
+  skills: 'skill',
+  experts: 'expert',
+  connectors: 'connector',
+};
 
 export interface CatalogPageProps {
   readonly data: CatalogDataView | null;
@@ -52,6 +72,8 @@ export interface CatalogPageProps {
   readonly onInstallBundle: (input: {
     marketplacePath: string;
     pluginName: string;
+    acknowledge?: boolean;
+    confirmName?: string;
   }) => Promise<CatalogMutationResult>;
   readonly onUninstallBundle: (pluginId: string) => Promise<CatalogMutationResult>;
   readonly onAddConnector: (input: {
@@ -80,6 +102,7 @@ export interface CatalogPageProps {
   readonly onPickDirectory: () => Promise<string | undefined>;
   readonly onUsePrompt: (prompt: string) => void;
   readonly onWriteSkill: () => void;
+  readonly hubActions?: CatalogHubActions | undefined;
 }
 
 type Pending =
@@ -90,7 +113,10 @@ type Pending =
       readonly level: string;
       readonly findings: readonly string[];
       readonly worstCase?: string;
-      readonly source: { kind: 'directory' | 'git'; path?: string; url?: string };
+      readonly source:
+        | { kind: 'directory' | 'git'; path?: string; url?: string }
+        | { kind: 'bundle'; marketplacePath: string; pluginName: string; pendingReview: boolean }
+        | { kind: 'hub'; ref: HubItemRef };
     }
   | { readonly kind: 'connector' }
   | { readonly kind: 'expert' }
@@ -106,6 +132,8 @@ export function CatalogPage(props: CatalogPageProps) {
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [bundleTab, setBundleTab] = useState<'recommend' | 'bundles'>('recommend');
   const [featuredOffset, setFeaturedOffset] = useState(0);
+  /** 5.6 的来源筛选：全部 / EvoWork 精选。 */
+  const [hubOnly, setHubOnly] = useState(false);
   const [selected, setSelected] = useState<
     | { readonly kind: 'skill'; readonly id: string }
     | { readonly kind: 'connector'; readonly id: string }
@@ -127,6 +155,49 @@ export function CatalogPage(props: CatalogPageProps) {
   const [expertCat, setExpertCat] = useState('未分类');
   const [expertTasks, setExpertTasks] = useState('');
   const [expertInstr, setExpertInstr] = useState('');
+
+  /** Hub 条目同样先过审计（13 §5.3）：P1 / P2 转成确认卡。 */
+  const installHub = async (ref: HubItemRef): Promise<void> => {
+    if (!props.hubActions) return;
+    const result = await props.hubActions.install(ref);
+    if (result.needsConfirm && result.audit) {
+      setPending({
+        kind: 'audit',
+        skillId: result.audit.skillId,
+        level: result.audit.level,
+        findings: result.audit.findings,
+        ...(result.audit.worstCase !== undefined ? { worstCase: result.audit.worstCase } : {}),
+        source: { kind: 'hub', ref },
+      });
+    }
+  };
+
+  /** 套件安装同样先过审计（13 §9.1）：要人看的，转成确认卡，不在卡片上一键装完。 */
+  const installBundle = async (input: {
+    marketplacePath: string;
+    pluginName: string;
+  }): Promise<CatalogMutationResult> => {
+    const result = await props.onInstallBundle(input);
+    if (result.needsConfirm && result.audit) {
+      const bundle = result.catalog.bundles?.find(
+        (b) => b.marketplacePath === input.marketplacePath && b.pluginName === input.pluginName,
+      );
+      setPending({
+        kind: 'audit',
+        skillId: result.audit.skillId,
+        level: result.audit.level,
+        findings: result.audit.findings,
+        ...(result.audit.worstCase !== undefined ? { worstCase: result.audit.worstCase } : {}),
+        source: {
+          kind: 'bundle',
+          marketplacePath: input.marketplacePath,
+          pluginName: input.pluginName,
+          pendingReview: bundle?.pendingReview === true,
+        },
+      });
+    }
+    return result;
+  };
 
   const data = props.data;
   const skills = data?.skills ?? [];
@@ -297,6 +368,19 @@ export function CatalogPage(props: CatalogPageProps) {
 
       <div className="ew-content-column">
         {props.refusal ? <p className="ew-projects-refusal">{props.refusal}</p> : null}
+        {data?.hub && props.hubActions && selected === null ? (
+          <HubBar
+            hub={data.hub}
+            hubOnly={hubOnly}
+            onHubOnly={setHubOnly}
+            onRefresh={() => void props.hubActions?.refresh()}
+          />
+        ) : null}
+        {props.tab === 'skills' && data?.skillBudget?.over ? (
+          <Banner tone="warning">
+            {data.skillBudget.warning ?? '已启用的技能太多，模型将看不到部分技能的说明'}
+          </Banner>
+        ) : null}
         {(data?.skillErrors ?? []).map((error) => (
           <p key={`${error.path}:${error.message}`} className="ew-projects-refusal">
             技能加载失败：{error.path}（{error.message}）
@@ -369,6 +453,21 @@ export function CatalogPage(props: CatalogPageProps) {
                     })
             }
           />
+        ) : hubOnly && data?.hub && props.hubActions ? (
+          <HubGrid
+            entries={data.hub.entries.filter(
+              (e) =>
+                e.kind === HUB_KIND[props.tab] &&
+                (query.trim() === '' ||
+                  `${e.displayName} ${e.description} ${e.category}`
+                    .toLowerCase()
+                    .includes(query.trim().toLowerCase())),
+            )}
+            status={data.hub.status}
+            onInstall={(ref) => void installHub(ref)}
+            onUninstall={(ref) => void props.hubActions?.uninstall(ref)}
+            onRollback={(ref) => void props.hubActions?.rollback(ref)}
+          />
         ) : props.tab === 'skills' ? (
           <SkillsGrid
             featured={featured}
@@ -384,7 +483,7 @@ export function CatalogPage(props: CatalogPageProps) {
             onWrite={props.onWriteSkill}
             bundles={data?.bundles ?? []}
             bundleErrors={data?.bundleErrors ?? []}
-            onInstallBundle={props.onInstallBundle}
+            onInstallBundle={installBundle}
             onUninstallBundle={props.onUninstallBundle}
           />
         ) : props.tab === 'connectors' ? (
@@ -447,21 +546,58 @@ export function CatalogPage(props: CatalogPageProps) {
         <Dialog
           title={
             pending.level === 'p2'
-              ? '高风险技能'
+              ? pending.source.kind === 'bundle'
+                ? '高风险套件'
+                : pending.source.kind === 'hub'
+                  ? '高风险内容'
+                  : '高风险技能'
               : pending.level === 'p1'
                 ? '安装前请确认'
-                : '安装技能'
+                : pending.source.kind === 'bundle'
+                  ? '安装套件'
+                  : '安装技能'
           }
-          confirmLabel="安装"
+          confirmLabel={
+            pending.source.kind === 'bundle' && pending.source.pendingReview ? '启用' : '安装'
+          }
           variant={pending.level === 'p2' ? 'danger' : 'default'}
           confirmDisabled={
             (pending.level === 'p1' && !ack) ||
             (pending.level === 'p2' && confirmName.trim() !== pending.skillId)
           }
-          onCancel={closeDialog}
+          onCancel={() => {
+            const source = pending.source;
+            closeDialog();
+            // git / npm 套件此时已经以停用状态装上了（HUB-Q8a=B）：不要它，就卸掉，不留半装的东西
+            if (source.kind === 'bundle' && source.pendingReview) {
+              const bundle = props.data?.bundles?.find(
+                (b) =>
+                  b.marketplacePath === source.marketplacePath &&
+                  b.pluginName === source.pluginName,
+              );
+              if (bundle) void props.onUninstallBundle(bundle.id);
+            }
+          }}
           onConfirm={() => {
             const source = pending.source;
             closeDialog();
+            if (source.kind === 'hub') {
+              void props.hubActions?.install({
+                ...source.ref,
+                acknowledge: true,
+                ...(pending.level === 'p2' ? { confirmName: pending.skillId } : {}),
+              });
+              return;
+            }
+            if (source.kind === 'bundle') {
+              void props.onInstallBundle({
+                marketplacePath: source.marketplacePath,
+                pluginName: source.pluginName,
+                acknowledge: true,
+                ...(pending.level === 'p2' ? { confirmName: pending.skillId } : {}),
+              });
+              return;
+            }
             void props.onInstallSkill({
               kind: source.kind,
               ...(source.path !== undefined ? { path: source.path } : {}),
@@ -476,7 +612,9 @@ export function CatalogPage(props: CatalogPageProps) {
               ? '低风险：只读工作空间，无网络、无 shell、无 hooks。'
               : pending.level === 'p1'
                 ? '需注意。安装前请逐项看过：'
-                : '高风险。输入技能名以确认你知道它能做什么最坏的事。'}
+                : pending.source.kind === 'bundle' || pending.source.kind === 'hub'
+                  ? '高风险。输入名称以确认你知道它能做什么最坏的事。'
+                  : '高风险。输入技能名以确认你知道它能做什么最坏的事。'}
           </p>
           <ul className="ew-catalog-findings">
             {pending.findings.map((f) => (
@@ -492,7 +630,11 @@ export function CatalogPage(props: CatalogPageProps) {
           ) : null}
           {pending.level === 'p2' ? (
             <label className="ew-dialog-field">
-              输入技能名「{pending.skillId}」确认
+              输入
+              {pending.source.kind === 'directory' || pending.source.kind === 'git'
+                ? '技能名'
+                : '名称'}
+              「{pending.skillId}」确认
               <input
                 className="ew-dialog-input"
                 value={confirmName}
@@ -780,7 +922,7 @@ function SkillsGrid({
         {bundles.length === 0 ? (
           <EmptyState
             title="还没有套件"
-            hint="套件是包含多技能 / MCP / hooks 的分发单元。EvoWork 当前只读取本机与工作区市场。"
+            hint="套件是包含多技能 / MCP / hooks 的分发单元。EvoWork 只读取本机与工作区市场，安装前先检查它能做什么。"
           />
         ) : (
           <div className="ew-projects-grid">
@@ -790,14 +932,39 @@ function SkillsGrid({
                 name={bundle.name}
                 description={bundle.description}
                 badges={[
+                  ...(bundle.sourceLabel ? [bundle.sourceLabel] : []),
                   bundle.marketplaceName,
                   bundle.category,
-                  bundle.installed ? (bundle.enabled ? '已启用' : '已停用') : '未安装',
+                  bundle.pendingReview
+                    ? '待确认'
+                    : bundle.installed
+                      ? bundle.enabled
+                        ? '已启用'
+                        : '已停用'
+                      : '未安装',
+                  ...(bundle.riskLabel ? [bundle.riskLabel] : []),
                   ...(bundle.version ? [bundle.version] : []),
                 ]}
-                tone={bundle.available ? 'default' : 'warning'}
+                tone={bundle.available && bundle.riskLevel !== 'p2' ? 'default' : 'warning'}
                 action={
-                  bundle.installed ? (
+                  bundle.pendingReview && bundle.marketplacePath ? (
+                    <>
+                      <PillButton
+                        variant="accent"
+                        onClick={() =>
+                          void onInstallBundle({
+                            marketplacePath: bundle.marketplacePath!,
+                            pluginName: bundle.pluginName,
+                          })
+                        }
+                      >
+                        审查并启用
+                      </PillButton>
+                      <PillButton onClick={() => void onUninstallBundle(bundle.id)}>
+                        卸载
+                      </PillButton>
+                    </>
+                  ) : bundle.installed ? (
                     <PillButton onClick={() => void onUninstallBundle(bundle.id)}>卸载</PillButton>
                   ) : bundle.available && bundle.marketplacePath ? (
                     <PillButton
@@ -1224,3 +1391,172 @@ function statusBadge(c: ConnectorView): string {
 
 export const SKILL_CREATOR_PROMPT =
   '帮我写一个新技能。先确认它要解决的重复任务和必要权限；完成后放到当前项目的 .agents/skills 目录，校验并告诉我精确路径。';
+
+/* ── 插件 Hub（13 §5.6）─────────────────────────────────────────────────── */
+
+const HUB_STATE_LABEL: Readonly<Record<HubEntryView['state'], string>> = {
+  available: '未安装',
+  installed: '已安装',
+  'needs-reconfirm': '有更新，需重新确认',
+  revoked: '已吊销',
+  'needs-app-update': '需要更新 EvoWork',
+  expired: '目录已过期',
+};
+
+/**
+ * 「EvoWork 精选」的状态条 + 来源筛选。
+ *
+ * warning（校验失败丢弃 / 连不上用缓存 / 目录过期）与 caption（为什么只有随包内容）都**常驻**，
+ * 不是一闪而过的 Toast —— 「不静默降级」（5.6）。
+ */
+function HubBar({
+  hub,
+  hubOnly,
+  onHubOnly,
+  onRefresh,
+}: {
+  readonly hub: HubCatalogView;
+  readonly hubOnly: boolean;
+  readonly onHubOnly: (value: boolean) => void;
+  readonly onRefresh: () => void;
+}) {
+  const status = hub.status;
+  return (
+    <>
+      {status.warning !== undefined ? <Banner tone="warning">{status.warning}</Banner> : null}
+      {status.caption !== undefined ? (
+        <p className="ew-catalog-muted" role="status">
+          {status.caption}
+        </p>
+      ) : null}
+      <FilterChipRow ariaLabel="来源">
+        <FilterChip label="全部来源" selected={!hubOnly} onClick={() => onHubOnly(false)} />
+        <FilterChip label={status.sourceName} selected={hubOnly} onClick={() => onHubOnly(true)} />
+        {status.fetchedAt !== undefined ? (
+          <span className="ew-catalog-muted">更新于 {formatHubTime(status.fetchedAt)}</span>
+        ) : null}
+        {status.canRefresh ? <GhostButton label="刷新" icon="↻" onClick={onRefresh} /> : null}
+      </FilterChipRow>
+    </>
+  );
+}
+
+function HubGrid({
+  entries,
+  status,
+  onInstall,
+  onUninstall,
+  onRollback,
+}: {
+  readonly entries: readonly HubEntryView[];
+  readonly status: HubCatalogView['status'];
+  readonly onInstall: (ref: HubItemRef) => void;
+  readonly onUninstall: (ref: HubItemRef) => void;
+  readonly onRollback: (ref: HubItemRef) => void;
+}) {
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        title={`${status.sourceName}里还没有这一类内容`}
+        hint={
+          status.caption ??
+          (status.fetchedAt === undefined
+            ? '还没有拿到目录。点「刷新」获取一次。'
+            : '换个分类看看。')
+        }
+      />
+    );
+  }
+  return (
+    <div className="ew-projects-grid">
+      {entries.map((entry) => {
+        const ref = { kind: entry.kind, id: entry.id };
+        const version =
+          entry.installedVersion !== undefined && entry.installedVersion !== entry.version
+            ? `${entry.installedVersion} → ${entry.version}`
+            : entry.version;
+        return (
+          <ItemCard
+            key={`${entry.kind}:${entry.id}`}
+            name={entry.displayName}
+            description={
+              entry.reason !== undefined
+                ? `${entry.description}（${entry.reason}）`
+                : entry.description
+            }
+            badges={[
+              status.sourceName,
+              ...(entry.isNew ? ['新上架'] : []),
+              HUB_STATE_LABEL[entry.state],
+              entry.riskLabel,
+              ...(entry.promptVisible ? [] : ['按需带入']),
+              version,
+            ]}
+            tone={entry.state === 'revoked' || entry.riskLevel === 'p2' ? 'warning' : 'default'}
+            action={
+              <HubAction
+                entry={entry}
+                onInstall={() => onInstall(ref)}
+                onUninstall={() => onUninstall(ref)}
+                onRollback={() => onRollback(ref)}
+              />
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function HubAction({
+  entry,
+  onInstall,
+  onUninstall,
+  onRollback,
+}: {
+  readonly entry: HubEntryView;
+  readonly onInstall: () => void;
+  readonly onUninstall: () => void;
+  readonly onRollback: () => void;
+}) {
+  switch (entry.state) {
+    case 'available':
+      return (
+        <PillButton variant="accent" onClick={onInstall}>
+          安装
+        </PillButton>
+      );
+    case 'needs-reconfirm':
+      return (
+        <>
+          <PillButton variant="accent" onClick={onInstall}>
+            重新确认并更新
+          </PillButton>
+          <PillButton onClick={onUninstall}>卸载</PillButton>
+        </>
+      );
+    case 'installed':
+      return (
+        <>
+          {entry.canRollback ? <PillButton onClick={onRollback}>回滚</PillButton> : null}
+          <PillButton onClick={onUninstall}>卸载</PillButton>
+        </>
+      );
+    case 'revoked':
+      return <PillButton onClick={onUninstall}>卸载</PillButton>;
+    case 'needs-app-update':
+      return entry.installedVersion !== undefined ? (
+        <PillButton onClick={onUninstall}>卸载</PillButton>
+      ) : (
+        <span className="ew-catalog-muted">需要更新 EvoWork</span>
+      );
+    case 'expired':
+      return <span className="ew-catalog-muted">目录已过期，暂不能安装</span>;
+  }
+}
+
+function formatHubTime(sec: number): string {
+  const d = new Date(sec * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${String(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

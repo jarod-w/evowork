@@ -29,6 +29,7 @@ import {
   SectionHeader,
 } from '../components/primitives.js';
 import type {
+  HubStatusView,
   CustomModelInput,
   CustomModelTestInput,
   CustomModelUpdateInput,
@@ -104,6 +105,9 @@ export interface SettingsPageProps {
   readonly onLogout?: () => void;
   readonly onRevokeDevice?: (deviceId: string) => void;
   readonly onOpenAccountWeb?: (path: string) => void;
+  /** 插件 Hub 的状态（13 §5.6）。没加载时缺席，开关不出现。 */
+  readonly hubStatus?: HubStatusView | undefined;
+  readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void) | undefined;
 }
 
 export function SettingsPage(props: SettingsPageProps) {
@@ -128,6 +132,8 @@ export function SettingsPage(props: SettingsPageProps) {
             onLogout={props.onLogout}
             onRevokeDevice={props.onRevokeDevice}
             onOpenAccountWeb={props.onOpenAccountWeb}
+            hubStatus={props.hubStatus}
+            onHubFetchWhenSignedOut={props.onHubFetchWhenSignedOut}
           />
         ) : null}
         {props.section === 'models' ? <ModelsSection {...props} /> : null}
@@ -248,7 +254,11 @@ function AccountSection({
   onLogout,
   onRevokeDevice,
   onOpenAccountWeb,
+  hubStatus,
+  onHubFetchWhenSignedOut,
 }: {
+  readonly hubStatus?: HubStatusView | undefined;
+  readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void) | undefined;
   readonly access: ModelAccessView | null;
   readonly onLogin?: (() => void) | undefined;
   readonly onLogout?: (() => void) | undefined;
@@ -314,6 +324,29 @@ function AccountSection({
             登录只用于解锁托管的模型额度。
           </p>
           {onLogin ? <PillButton onClick={onLogin}>在浏览器中登录</PillButton> : null}
+          {/*
+           * HUB-Q3=B：未登录默认不自动拉 EvoWork 精选。打开这个开关本身就是显式授权（Q30）。
+           * 登录后本来就会自动拉，所以只在未登录时出现；部署时关掉了官方源、或这个版本还没接入源时
+           * 不出现开关，改为如实说明。
+           */}
+          {hubStatus !== undefined && onHubFetchWhenSignedOut ? (
+            hubStatus.fetchMode === 'off' || hubStatus.fetchMode === 'unconfigured' ? (
+              hubStatus.caption !== undefined ? (
+                <p className="ew-settings-note">{hubStatus.caption}</p>
+              ) : null
+            ) : (
+              <label className="ew-checkbox">
+                <input
+                  type="checkbox"
+                  checked={hubStatus.fetchWhenSignedOut}
+                  onChange={(event) => onHubFetchWhenSignedOut(event.target.checked)}
+                />
+                <span>
+                  未登录时也获取 EvoWork 精选内容（只下载目录与你选择安装的内容，不上传任何东西）
+                </span>
+              </label>
+            )
+          ) : null}
         </>
       )}
     </section>

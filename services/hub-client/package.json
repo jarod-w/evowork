@@ -1,0 +1,25 @@
+{
+  "name": "@evowork/hub-client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "插件 Hub 的下行通道：拉索引 · 验签 · 缓存 · 下载内容包 · 校验（13 §5.1）。K6 登记：唯一为 Hub 出网的包",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@evowork/account": "workspace:*",
+    "@evowork/hub-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

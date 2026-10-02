@@ -1,5 +1,5 @@
 /** 技能来源（05 §3.2：角标必须能一眼看出是谁给的）。 */
-export type SkillSource = 'official' | 'private' | 'local' | 'git';
+export type SkillSource = 'official' | 'hub' | 'private' | 'local' | 'git';
 
 export type RiskLevel = 'p0' | 'p1' | 'p2';
 
@@ -40,7 +40,7 @@ export interface AuditResult {
   readonly worstCase?: string | undefined;
 }
 
-export type ConnectorKind = 'official' | 'custom';
+export type ConnectorKind = 'official' | 'hub' | 'custom';
 export type ConnectorTransport = 'stdio' | 'sse' | 'http';
 export type ConnectorStatus =
   'untrusted' | 'disconnected' | 'connected' | 'needs-auth' | 'failed' | 'disabled';

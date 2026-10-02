@@ -18,6 +18,8 @@
     "@evowork/catalog": "workspace:*",
     "@evowork/computer-use": "workspace:*",
     "@evowork/gateway": "workspace:*",
+    "@evowork/hub-client": "workspace:*",
+    "@evowork/hub-protocol": "workspace:*",
     "@evowork/ingest": "workspace:*",
     "@evowork/kernel-adapter": "workspace:*",
     "@evowork/logging": "workspace:*",

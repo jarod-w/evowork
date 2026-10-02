@@ -5,10 +5,10 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 版本 | v1.3 |
+| 版本 | v1.4 |
 | 日期 | 2026-10-02 |
 | 作者 | li.wang |
-| 状态 | **决策完毕（2026-10-02）：HUB-Q1–Q11 及 HUB-Q5a / Q6a / Q8a 全部确认**（结论见 §10 各条开头）。**已回写总纲**（2026-10-02，总纲 v0.13 §10.1.7，明细见 §11）；待技术评审。§9 的先决修复可以先做 |
+| 状态 | **决策完毕（2026-10-02）：HUB-Q1–Q11 及 HUB-Q5a / Q6a / Q8a 全部确认**（结论见 §10 各条开头）。**已回写总纲**（2026-10-02，总纲 v0.13 §10.1.7，明细见 §11）。**H0 与 H1 的客户端已实现**（2026-10-02，见 §13.1）；H2 之前没有签名密钥与 CDN，所以精选源在产品里如实显示「还没有接入」、不发请求 |
 | 内核签出 | `openai/codex` @ **`d583e73c4d`（2026-09-21）**。本文所有内核 `path:line` 都在这个提交上当场核对过 |
 | 实测样本 | 本机内核已同步的 OpenAI curated 市场快照（`~/.evowork/kernel/.tmp/plugins`，`plugins.sha` = `5fd93af4cd`）；已安装 App 0.0.4 的内核二进制 |
 
@@ -435,7 +435,7 @@ G4 会统计：「如果办公运行时多一个包 X，能多放进来多少技
    - **装之前**先往内核配置写 `plugins.<id>.enabled = false`（内核用这个键管插件的启停：`core-plugins/src/toggles.rs:13-24`），让它以停用状态落盘。
    - 调 `plugin/install`，内核去 git / npm 取内容。
    - 对内核落盘的目录跑同一套静态审计。通过：P1 / P2 让用户确认，确认后再写 `enabled = true`。不通过：立即 `plugin/uninstall`，卡片写明原因。
-   - **还没核对的两点**（§12 V6）：内核安装时会不会无视预先写好的 `enabled = false`，直接写成启用；以及怎么拿到它落盘的目录（`plugin/list` 对 git / npm 来源只给 URL 或包名）。如果预写不生效，就退成「装完立刻写 `enabled = false`」，这中间会有一个很短的空窗：恰好在这时开始的任务可能加载到它。这个空窗要如实写进 §14，不能当作不存在。
+   - **V6 已核对（2026-10-02）：预写不生效。** 内核装完**无条件**写 `enabled = true`（`core-plugins/src/manager.rs:2256` 的 `set_user_plugin_enabled(.., true)`；实测预写的 `false` 被覆盖）。所以实现退成「装完立刻写 `enabled = false`」，**不再预写**，空窗如实登记在 §14。落盘目录 = `<kernelHome>/plugins/cache/<市场 name>/<插件名>/<localVersion>`（没有版本时是 `local`；`core-plugins/src/store.rs` 的 `plugin_root`），里面带 `.git`，审计时跳过。
    - 内容是内核在用户点安装时去 git / npm 取的，客户机器连不上 GitHub（HF10）或 npm 时会装不上，要如实提示「需要能访问 <host>」。这也是一条新的、由用户触发的出网路径，要登记进 K6（§11）。
 3. **带 `apps` 的插件**（ChatGPT Apps，K7）显示为不可安装，原因写「包含本产品不支持的应用连接器」。文案里不出现 ChatGPT 字样（K5）。
 4. **插件里的 MCP server** 会随插件一起被内核启用，绕过连接器的「审查并信任」。所以安装确认卡要逐个列出这些 server，stdio 类按 P2（与 HUB-Q6=B 同一口径）；用户确认这一步同时算作信任。
@@ -600,8 +600,9 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | 05 §3.1 / §3.2 / §4.3 / §7 | 来源（已决策未实现的三类）、「套件」Tab 改为渲染（HF13 以改文档收场）、连接器目录与文案说明、两条新异常态 | ✅ 已回写 |
 | [11 §7](11-account-and-models.md) | 策略包将新增 `disableOfficialHub`（HUB-Q11） | ✅ 已回写（文档）；`packages/account` 的 `PolicyPackPayload` 是代码，实现时改 |
 | README §1 / §4 | 文档地图加 13；HF1–HF9 登记为 **F34–F42** | ✅ 已回写 |
-| `scripts/kernel-drift.mjs` | 给 F37–F41（HF4–HF8）加断言：它们都是「内核换了行为也不会报错」的那种 | ⏳ 代码，未做 |
-| CLAUDE.md §3 | 目录结构加 `services/hub-client` | ⏳ 等目录真的建出来再加（§3 写的是现状，不是目标） |
+| `scripts/kernel-drift.mjs` | 给 F37–F41（HF4–HF8）加断言：它们都是「内核换了行为也不会报错」的那种；V6 新发现的 `manager.rs:2256`（安装无条件启用）也该加 | ⏳ 代码，未做（H0 / H1 没做它） |
+| CLAUDE.md §3 | 目录结构加 `services/hub-client` 与 `packages/hub-protocol` | ✅ 2026-10-02（目录已建出来） |
+| `packages/account` | 策略包的信封抽成 `envelope.ts`，Hub 索引与策略包共用（HF11） | ✅ 2026-10-02 |
 
 ---
 
@@ -615,6 +616,17 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | **V4** | 海外厂商 MCP 在国内网络下能否连通 | 对候选端点逐个实测 | HUB-Q6 选 A 的前提 |
 | **V5** | §9 的修复 | 单测 + 守卫，加上一次真内核下的 `plugin/list` | 先决修复 |
 | **V6** | 先装后审的两点前提（HUB-Q8a=B） | 在真内核上：① 预先写 `plugins.<id>.enabled = false` 再安装，看装完是不是停用；② 找到 git / npm 来源插件落盘的目录，确认审计读到的就是内核要加载的那份 | 决定 9.1 第 2 条有没有空窗 |
+
+### 12.1 验证结果（2026-10-02）
+
+**口径**：用的内核二进制是 `../codex` 的 **2026-09-05 debug 构建**（上游原样，没有 P6）——`build-kernel.mjs` 这次没编完。源码断言都在当前签出 `d583e73c4d` 上重新核对过；但**行为是在旧二进制上测的**，换了签出之后应当在 `build-kernel.mjs` 编出的内核上重跑一遍。脚本与原始结果在当次会话的临时目录，没有进仓库。
+
+| # | 结论 | 依据 |
+| --- | --- | --- |
+| **V1** | **成立** | 写了 `allow_implicit_invocation: false` 的技能：`skills/list` 里 `enabled: true`；第一轮发给模型的请求里没有它的名字和描述（对照技能在）；以结构化的 `UserInput::Skill` 选中时 SKILL.md 正文被注入；**在文本里提到它的名字也会被注入**。按需层（§6）的前提成立，退路用不上 |
+| **V3** | 7 个随包技能合计 **≈489 token**（平均 70；按装在 `/Applications/EvoWork.app/...` 下的路径算，路径本身约占 30%） | 口径（`ext/skills/src/render.rs`）：每个进目录的技能一行 `- <name>: <description> (file: <路径>)`，描述截到 1024 字符，**4 字节 ≈ 1 token**，预算 = 上下文窗口 × 2%。按支持的最小窗口 128K（`services/gateway/src/known-models.ts`，标着 `unverified`）算预算 2,560，**余量约 2,070 ≈ 30 个平均大小的技能**——与 §6 估的「核心层 20–30 个」一致。中文描述按字节算，比英文贵约 2–3 倍 |
+| **V5** | **成立** | `plugin/list` 只传 `['local']`：返回 `openai-api-curated`（「Codex official」，50 个插件），路径在 `<kernelHome>/.tmp/plugins/` 下，被 `listBundles` 按路径滤掉；加上 `workspace-directory` 整个请求报 `-32600 chatgpt authentication required for remote plugin catalog`（HF4 / HF5 实测复现）。单测与守卫见 `services/catalog/test/bundles.test.ts`、`apps/desktop/test/bundle-host.test.ts` |
+| **V6** | ① **预写不生效**（见 9.1 第 2 条）；② 落盘目录可由 `plugin/list` 的市场 `name` + 插件名 + `localVersion` 推出 | 另一个发现：用 `marketplace/add` 加的 git 市场落在 `<kernelHome>/.tmp/marketplaces/<name>/`，**同样会被 §9 的 `.tmp/` 过滤滤掉**。产品里没有添加市场的入口，所以这不影响现在的用法；要在「套件」里看到 git / npm 来源的插件，市场本身得是用户放在 `.tmp/` 之外的本机目录 |
 
 ---
 
@@ -632,6 +644,29 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 
 ---
 
+### 13.1 H0 / H1 实现状态（2026-10-02）
+
+| 部分 | 落在哪 | 状态 |
+| --- | --- | --- |
+| §9 先决修复（只传 `local`、按路径滤 `.tmp/`、错误进 `bundleErrors`、判一类的守卫） | `services/kernel-adapter` · `services/catalog/src/bundles.ts` · `apps/desktop/src/main/bundle-host.ts` | ✅ |
+| 9.1 安装前审计（本机来源先审后装；git / npm 先装后审；带 apps 不可装；插件内 MCP 与 hooks 按 P2；工作区市场传 `cwds`；渲染层传来的路径不可信、安装前重新列一遍） | 同上 | ✅；第 7 条（套件技能计入预算）随 5.6 的预算条一起做了：数的是内核 `skills/list` 里所有启用的技能 |
+| V1 / V3 / V5 / V6 | §12.1 | ✅（旧二进制上测的，见口径） |
+| 协议（索引形状、签名、tar.gz、版本与吊销范围） | `packages/hub-protocol`（新） | ✅ |
+| 下行通道（拉索引、验签、`sequence` 防回滚、缓存重验、下载、sha256 / 树哈希） | `services/hub-client`（新，**唯一为 Hub 出网的包**） | ✅ |
+| 合并、本地重审（按 `rulesVersion` 比对）、5.4 更新判定、预算 | `services/catalog/src/hub.ts`（整目录不出网的扫描守着） | ✅ |
+| 安装 / 静默更新 / 吊销 / 回滚 / 卸载；5.5 覆盖随包技能；HUB-Q3=B 的拉取时机 | `apps/desktop/src/main/hub-host.ts` | ✅ |
+| 界面：来源筛选、状态卡、warning / caption、刷新、预算条；设置里的未登录开关 | `views/catalog.tsx` · `views/settings.tsx` | ✅（单测；**没做真实窗口验收**） |
+| 官方源的地址与公钥 | `apps/desktop/src/main/hub-config.ts` | ⏳ H2：公钥列表是空的，地址由 `EVOWORK_HUB_ORIGIN` 给。两样都有之前**一个请求都不发** |
+| 4.7 企业管控（`disableOfficialHub`、离线包、白名单） | — | ⏳ H6。`EVOWORK_HUB_OFFICIAL=off` 已经认（H1 顺手做了，代价为零） |
+
+实现时定下的几处细节（文档原来没写到这么细）：
+
+- **随包技能的版本**写在它的 `interface.json` 的 `version` 里；没写 = `0.0.0`，任何 Hub 版本都比它新（5.5）。现在 7 个随包技能都没写，所以 Hub 一旦发布同名技能就会生效，**App 升级后随包那份变新了也不会自动回到随包版本**，要 Hub 那边下架或用户卸载。随包技能真要被 Hub 覆盖之前，应当给它们补上版本号。
+- **上游固定提交的条目**（HUB-Q5a=A）校验的是解开后 `subdir` 的**文件树哈希**（`package.treeSha256`），不是归档的 sha256：代码托管站重新压缩过归档，字节就不一样了。托管在我们 CDN 上的仍然先比归档的 sha256、再解包。
+- 内容包用自己写的 tar 读取器解，**不调系统 `tar`**：符号链接、硬链接、`..`、绝对路径整包拒绝。
+- 静默更新前**下载并本地重审**：云端说能力没扩大、本机审出来扩大了，这一版不装，卡片转「有更新，需重新确认」并写明多了什么。回滚之后同一版本也按这条挡住，不会下次刷新又被静默升回去。
+- 连接器条目的内容包是 `connector.json`（远程：`transport` + `url`；stdio：`runtime` = `node` | `python` + 包内 `entry`）。stdio 用 `process.execPath` + `ELECTRON_RUN_AS_NODE=1` 跑。
+
 ## 14. 风险
 
 | 风险 | 缓解 |
@@ -644,7 +679,7 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | Hub 长成数据面（R12） | 只有下行；不回传装了什么；不带设备标识；K6 登记写死「带什么」 |
 | 「套件」Tab 漏出 OpenAI 品牌 | §9：按路径过滤，守卫判这一类 |
 | 离线环境的吊销滞后（HUB-Q11=A） | 离线索引有效期较长，吊销要等企业导入新包才生效。在 `MANIFEST.json` 里写明打包时间，插件页显示「离线内容，更新于 X」；有安全吊销时，主动通知企业客户重新打包 |
-| 「套件」先装后审的空窗（HUB-Q8a=B） | 装之前预写停用；审计不过立即卸载；V6 证实预写无效时，如实登记空窗，不当作不存在 |
+| 「套件」先装后审的空窗（HUB-Q8a=B） | **V6 证实预写无效**（内核装完无条件写启用，`core-plugins/src/manager.rs:2256`）：从 `plugin/install` 返回到我们写回 `enabled = false` 之间，恰好在这时开始的任务可能加载到这个插件。这段空窗**存在**，实现里只能把它压到「一次本机 RPC」那么短；审计不过立即卸载 |
 | stdio 连接器以用户身份运行任意代码（HUB-Q6=B） | 一律 P2、输入名称确认；包内自带并钉死代码，不允许运行时拉包（HUB-Q6a=A）；任何更新都要重新确认（5.4）；吊销时立即从 `config.toml` 移除 |
 | 没写许可的内容有版权风险（HUB-Q5） | HUB-Q5a=A：只做索引，不托管、不改写；接到下架请求时，下一份索引就吊销；上线前请法务确认 |
 
@@ -680,3 +715,4 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | v1.1 | 2026-10-02 | 回写总纲（v0.13）、05、11、CLAUDE.md §8、README §4（HF1–HF9 → F34–F42）。HUB-Q 保留自己的编号（同 CU-Q），不占 Q 号；§11 改为回写记录 |
 | v1.2 | 2026-10-02 | §9 第 2 条（以及 05 §3.2）补一句：滤掉的是通道，不是内容；curated 内容经 Hub 收编或由用户自行安装 |
 | v1.3 | 2026-10-02 | §3 写明 Hub 的形态：静态目录，类似 apt / rpm 仓库，没有 Web 界面，仓库是源头、CDN 目录是产物。`evowork-hub` 仓库已创建（公开），新增 7.5 写它的约束 |
+| v1.4 | 2026-10-02 | H0 / H1 客户端实现（§13.1）；§12.1 记 V1 / V3 / V5 / V6 的结果；9.1 第 2 条与 §14 按 V6 订正（预写停用无效，改为装完立刻停用，空窗如实登记） |

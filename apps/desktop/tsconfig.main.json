@@ -19,6 +19,9 @@
       "path": "../../packages/account"
     },
     {
+      "path": "../../packages/hub-protocol"
+    },
+    {
       "path": "../../packages/protocol"
     },
     {
@@ -53,6 +56,9 @@
     },
     {
       "path": "../../services/computer-use"
+    },
+    {
+      "path": "../../services/hub-client"
     }
   ]
 }

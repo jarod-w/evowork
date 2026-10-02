@@ -51,6 +51,13 @@ export {
 } from './metering.js';
 export { bearer, jwtAuth, type Authenticate, type JwtAuthOptions } from './auth.js';
 export {
+  parseSignedEnvelope,
+  signEnvelope,
+  verifyEnvelopeSignature,
+  type EnvelopeFailure,
+  type SignedEnvelope,
+} from './envelope.js';
+export {
   encodePolicyPackPayload,
   evaluatePolicyPack,
   parsePolicyPackEnvelope,

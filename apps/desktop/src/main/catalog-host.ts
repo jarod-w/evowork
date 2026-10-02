@@ -71,6 +71,7 @@ export interface CatalogPorts {
   readonly copyDir: (src: string, dest: string) => void;
   readonly removePath: (path: string) => void;
   readonly writeText: (path: string, content: string) => void;
+  readonly writeBytes: (path: string, content: Uint8Array) => void;
   readonly mkdtemp: (prefix: string) => string;
   readonly gitClone: (
     url: string,
@@ -363,6 +364,9 @@ export function createFsCatalogPorts(input: {
     },
     writeText: (path, content) => {
       writeFileSync(path, content, 'utf8');
+    },
+    writeBytes: (path, content) => {
+      writeFileSync(path, content);
     },
     mkdtemp: (prefix) =>
       join(tmpdir(), `${prefix}${Date.now()}-${Math.random().toString(16).slice(2)}`),

@@ -145,6 +145,10 @@ import {
   type RendererActions,
 } from './renderer-bridge.js';
 import { createFsCatalogPorts } from './catalog-host.js';
+import { createNodeHubPorts } from '@evowork/hub-client';
+import { officeInterpreterPaths } from '@evowork/ingest';
+import { OFFICIAL_HUB_NAME, officialHubDisabled, officialHubSource } from './hub-config.js';
+import { refreshHub, type HubHostPorts } from './hub-host.js';
 import { BUILTIN_CASES } from './showcase.js';
 
 /** `~/.evowork/` 的布局（09 §7）。 */
@@ -197,6 +201,9 @@ export interface EvoworkPaths {
    */
   readonly kernelHome: string;
 }
+
+/** 13 §4.4：每小时一次（条件请求，没变化只回一个 304）。 */
+const HUB_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
   return {
@@ -1352,6 +1359,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   services.startArtifactReports(options.paths.artifactLog);
 
   let reconcileTimer: ReturnType<typeof setInterval> | undefined;
+  let hubTimer: ReturnType<typeof setInterval> | undefined;
   /** 本机网关子进程（拓扑 A）。网关在服务器上时它一直是 undefined */
   let gateway: GatewayProcess | undefined;
 
@@ -1805,6 +1813,39 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
   };
 
+  const catalogPorts = createFsCatalogPorts({
+    pluginsDir: options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
+    userRoot: options.paths.home,
+    kernelHome: options.paths.kernelHome,
+  });
+  /*
+   * 插件 Hub（13，H1）。出网只在 hub-client；什么时候能出网由 hub-host 判：
+   * 登录了才自动拉，未登录要用户在设置里打开（HUB-Q3=B）。官方源的地址由部署给，
+   * 公钥钉死在 hub-config.ts —— H2 之前公钥是空的，Hub 如实显示「还没有接入」、一个请求都不发。
+   */
+  const hubPorts: HubHostPorts = {
+    catalog: catalogPorts,
+    client: createNodeHubPorts({ cacheRoot: join(options.paths.home, 'hub', 'cache') }),
+    source: officialHubSource(process.env),
+    sourceName: OFFICIAL_HUB_NAME,
+    appVersion: options.appVersion,
+    officialOff: officialHubDisabled(process.env),
+    signedIn: () => account.signedIn(),
+    // 用户机器上没有 node：stdio 连接器的 JS 用 Electron 自己跑（HUB-Q6a=A，同 browser / cua）
+    nodeRuntime: { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } },
+    pythonCommand: () => {
+      const override = process.env.EVOWORK_OFFICE_PYTHON?.trim();
+      if (override) return existsSync(override) ? override : undefined;
+      return officeInterpreterPaths(homedir()).find((p) => existsSync(p));
+    },
+    setSkillEnabledByPath: async (path, enabled) => {
+      await adapter.setSkillEnabled({ path, enabled });
+    },
+    reloadMcp: () => adapter.reloadMcpServers(),
+    now: () => Math.floor(Date.now() / 1000),
+    runtime: {},
+  };
+
   const actions = createRendererActions({
     ...(options.openExternal ? { openExternal: options.openExternal } : {}),
     adapter,
@@ -1925,11 +1966,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         await writeFile(path, content, 'utf8');
       },
     },
-    catalogPorts: createFsCatalogPorts({
-      pluginsDir: options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
-      userRoot: options.paths.home,
-      kernelHome: options.paths.kernelHome,
-    }),
+    catalogPorts,
+    hubPorts,
     pageData: {
       /*
        * C2：不能喂 `listAllPresent()`——那个 feed 只挑 `PRESENT`、按 200 条封顶，
@@ -2227,6 +2265,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           errorClass: err instanceof Error ? err.name : 'UnknownError',
         });
       });
+      // 13 §4.4：启动一次 + 每小时一次。不满足 canAutoFetch（未登录且没打开开关）时一个请求都不发
+      const autoRefreshHub = () => {
+        void refreshHub(hubPorts, hubPorts.runtime, 'auto').catch((err: unknown) => {
+          logger.warn('desktop.hub.refresh_failed', {
+            errorClass: err instanceof Error ? err.name : 'UnknownError',
+          });
+        });
+      };
+      autoRefreshHub();
+      hubTimer = setInterval(autoRefreshHub, HUB_REFRESH_INTERVAL_MS);
+      hubTimer.unref?.();
+
       reconcileTimer = setInterval(() => {
         /*
          * 以前这里是 `.catch(() => undefined)`。对账失败确实不该打断别的事，
@@ -2279,6 +2329,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       pendingApprovalById.clear();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
+      if (hubTimer) clearInterval(hubTimer);
       services.stop();
       await adapter.stop();
       store.close();

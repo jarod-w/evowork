@@ -504,22 +504,22 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 去哪           | `github.com`：`git ls-remote` / `git clone https://github.com/openai/plugins.git`（`core-plugins/src/startup_sync.rs:30`）。本机没有 git 时退回 HTTP（GitHub zipball / 备份归档），走内核的 HTTP 客户端 —— 会经系统代理，D4 里内核那条指向 `127.0.0.1:7890` 的连接很可能就是它 |
 | 带什么         | **只读拉取一个公开仓库**（git upload-pack / HTTP GET）。不带 prompt、文件名、任务 id、机器标识；带的只是 git / HTTP 客户端的常规请求头                                                             |
 | 落在哪         | `~/.evowork/kernel/.tmp/plugins/`（内核的「OpenAI curated」市场快照）                                                                                                                                  |
-| 界面上看得见吗 | **目前看不见，但理由不是原来写的那条**（2026-10-02 订正，[13 HF4 / HF5](design/13-plugin-hub.md)）：`local` 类型**本身就包含** curated 市场（`app-server/src/request_processors/plugins.rs:617` · `core-plugins/src/manager.rs:3540`，实测返回「Codex official」50 个插件）。现在看不见，是因为同一请求里的 `workspace-directory` 是 ChatGPT 远端目录、没登录 ChatGPT 时整个请求报错，桥接层把错误吞成了空列表。**这是碰巧，不是守住**；修法（按路径滤掉 `<kernelHome>/.tmp/` 下的市场 + 不吞错误 + 判一类的守卫）见 [13 §9](design/13-plugin-hub.md)。修好之前，K7 / Q5 / K5 都只靠这个报错撑着 |
+| 界面上看得见吗 | **目前看不见，但理由不是原来写的那条**（2026-10-02 订正，[13 HF4 / HF5](design/13-plugin-hub.md)）：`local` 类型**本身就包含** curated 市场（`app-server/src/request_processors/plugins.rs:617` · `core-plugins/src/manager.rs:3540`，实测返回「Codex official」50 个插件）。原来看不见，是因为同一请求里的 `workspace-directory` 是 ChatGPT 远端目录、没登录 ChatGPT 时整个请求报错，桥接层把错误吞成了空列表 —— **那是碰巧，不是守住**。**2026-10-02 已修**（[13 §9](design/13-plugin-hub.md)，H0）：适配层只传 `local`；`@evowork/catalog` 的 `listBundles` 按路径滤掉 `<kernelHome>/.tmp/` 下的所有市场；读失败写进 `bundleErrors`；守卫判的是「渲染层收到的任何套件，其路径都不在 `.tmp/` 之下」（`apps/desktop/test/bundle-host.test.ts`），安装前还会重新列一遍，渲染层直接传 `.tmp/` 路径也装不上。**同步本身照旧发生**，看不见的只是这条通道 |
 | 为什么不关     | 只有三条路：`[features] plugins = false`（本机插件套件也一起没了）· 托管 requirements 禁这个源（要写 `/etc/codex`，桌面应用做不到）· 内核补丁（占 K1 预算）。代价都大于一次只读拉取公开仓库             |
 | 守卫           | 验收 D4（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`）把 `github.com` 列进允许的外连目的地，别的目的地照样判失败；外连按进程记录，下次多出一条能直接看到是谁连的                              |
 
-**K6 登记：插件 Hub 拉取（2026-10-02 新增，来自 [13 §4.6](design/13-plugin-hub.md)）**。尚未实现，先登记边界：
+**K6 登记：插件 Hub 拉取（2026-10-02 新增，来自 [13 §4.6](design/13-plugin-hub.md)）**。**客户端已实现（2026-10-02，H1）**；H2 之前没有签名公钥，`apps/desktop/src/main/hub-config.ts` 返回「未接入」，**这条路径实际一个请求都不发**：
 
 | 项       | 内容 |
 | -------- | ---- |
 | 触发     | 已登录：App 启动 + 每小时一次 + 插件页手动刷新。**未登录（HUB-Q3=B）：默认只有用户点「刷新」时才拉**；用户在设置里打开开关后，与已登录时相同。安装 / 更新时下载内容包 |
 | 去哪     | Hub 的 CDN（官方源）；企业私有源由策略包配置的地址；**没写许可的条目**（HUB-Q5a=A，只做索引、不托管）在用户点安装时直接访问上游代码托管站（如 `github.com`） |
-| 带什么   | **只有 GET**：`If-None-Match` + App 版本。**不带** prompt、文件名、任务 id、设备 id、**账号令牌（登录了也不带）**，不回传装了什么 |
+| 带什么   | **只有 GET**，只带 `If-None-Match`（实现选了 13 §4.6 的「连 App 版本都不带」：`minAppVersion` 纯客户端过滤）。**不带** prompt、文件名、任务 id、设备 id、**账号令牌（登录了也不带）**，不回传装了什么。`services/hub-client/test/client.test.ts` 用真 HTTP 服务断言请求头里没有别的东西 |
 | 完整性   | 索引 ES256 验签（复用策略包信封）+ `sequence` 防回滚 + `expiresAt` + 内容包 sha256 |
-| 出口     | 只有 `services/hub-client` 出网；`services/catalog` 保持整目录扫不出出网调用 |
+| 出口     | 只有 `services/hub-client` 出网；`services/catalog` 整目录扫不出出网调用（`services/catalog/test/hub.test.ts` 守着，也不许依赖 hub-client） |
 | 不出网时 | 离线包 `EVOWORK_HUB_BUNDLE`（一个字节都不出网）；`EVOWORK_HUB_OFFICIAL=off` 或策略包 `disableOfficialHub` 整个关掉官方源（HUB-Q11=A） |
 
-**K6 登记：「套件」安装时内核去 git / npm 取内容（2026-10-02 新增，HUB-Q8a=B）**。「套件」Tab 保留（HUB-Q8=B），来源为 git / npm 的插件**先装后审**：只在用户点安装时由内核取内容，装之前预写停用、审计通过并经用户确认后才启用（[13 §9.1](design/13-plugin-hub.md)）。去哪：插件声明的 git 仓库或 npm registry；带什么：git / npm 客户端的常规请求，无用户内容；不联网时：装不上并如实提示「需要能访问 <host>」。
+**K6 登记：「套件」安装时内核去 git / npm 取内容（2026-10-02 新增，HUB-Q8a=B）**。「套件」Tab 保留（HUB-Q8=B），来源为 git / npm 的插件**先装后审**：只在用户点安装时由内核取内容，装完立刻写停用（**预写停用无效**：内核安装无条件写启用，`core-plugins/src/manager.rs:2256`，13 §12.1 V6；中间的空窗登记在 13 §14）、审计通过并经用户确认后才启用（[13 §9.1](design/13-plugin-hub.md)）。去哪：插件声明的 git 仓库或 npm registry；带什么：git / npm 客户端的常规请求，无用户内容；不联网时：装不上并如实提示「需要能访问 <host>」。
 
 **K6 登记：在线升级检查与下载（2026-10-02 新增，Q46，来自[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md)）**。尚未实现，先登记边界：
 

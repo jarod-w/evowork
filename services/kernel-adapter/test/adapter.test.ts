@@ -189,9 +189,10 @@ describe('启动序列（09 §3.2）', () => {
     });
     await adapter.uninstallPluginBundle('office-suite@local');
 
+    // 不带 workspace-directory：那是远端目录，没有 ChatGPT 登录时整个请求失败（13 §9 / F37）
     expect(server.received.findLast((r) => r.method === 'plugin/list')?.params).toEqual({
       cwds: ['/workspace'],
-      marketplaceKinds: ['local', 'workspace-directory'],
+      marketplaceKinds: ['local'],
       forceRefetch: false,
     });
     expect(server.received.findLast((r) => r.method === 'plugin/install')?.params).toEqual({
