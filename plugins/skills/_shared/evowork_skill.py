@@ -120,6 +120,13 @@ def office_fonts_dir() -> Path | None:
     return fonts if fonts.is_dir() else None
 
 
+#: 办公扩展里**不止**那几个文档库：内容校验用的 `jsonschema` 也只装在扩展里
+#: （`services/runtime-installer/src/manifest.ts` 的 REQUIREMENTS），主程序不带它。
+#: 所以「当前解释器缺不缺扩展的东西」要连它一起看 —— 系统 python 里恰好有 python-docx、
+#: 却没有 jsonschema 时，不换解释器就会在校验那一步失败。
+OFFICE_SUPPORT_MODULES = ("jsonschema",)
+
+
 def ensure_office_runtime(modules: Iterable[str]) -> None:
     """需要办公扩展的模块不在当前解释器里时，**换到办公扩展的解释器重跑一次**。
 
@@ -132,7 +139,8 @@ def ensure_office_runtime(modules: Iterable[str]) -> None:
     所以判断留在这里：缺模块 + 扩展装了 → 用扩展的解释器重跑；扩展没装 → 照常报 3 号退出码。
     环境变量做防重入，避免换了解释器还缺模块时无限套娃。
     """
-    missing = [name for name in modules if importlib.util.find_spec(name) is None]
+    wanted = (*modules, *OFFICE_SUPPORT_MODULES)
+    missing = [name for name in wanted if importlib.util.find_spec(name) is None]
     if not missing:
         return
     if os.environ.get("EVOWORK_SKILL_REEXEC") == "1":
@@ -238,8 +246,16 @@ def validate_content(
     try:
         import jsonschema
     except ModuleNotFoundError:
-        # jsonschema 属于基础包（随主程序），缺它是安装损坏而不是"扩展没装"
-        fail(EXIT_RUNTIME_MISSING, "校验库缺失，请重新安装 EvoWork 的解析组件。")
+        # jsonschema 随**办公扩展**安装，不随主程序（manifest.ts 的 REQUIREMENTS）。
+        # 2026-10-03 之前这里说「校验库缺失，请重新安装 EvoWork 的解析组件」—— 那是把它当成了
+        # 基础包；用户机器上没装扩展、系统 python 又没有 jsonschema 时，会被指去修一个没坏的东西。
+        if os.environ.get("EVOWORK_SKILL_REEXEC") == "1":
+            # 已经换到扩展的解释器了还缺：扩展装坏了
+            fail(
+                EXIT_RUNTIME_MISSING,
+                "办公扩展不完整（缺少校验库 jsonschema），请在设置里重新安装办公扩展。",
+            )
+        fail(EXIT_RUNTIME_MISSING, runtime_missing_message("office", "校验与生成这份内容"))
 
     validator = jsonschema.Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(content), key=lambda e: list(e.path))

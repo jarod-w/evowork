@@ -10,12 +10,19 @@
 （被别的项目装进去的）—— 于是"没装办公扩展"那条路径在这些机器上根本走不到，
 测试渲染成功、退出码 0。
 
+## 为什么也挡 `jsonschema`
+
+它和文档库一样**只随办公扩展安装**（`services/runtime-installer/src/manifest.ts`）。
+2026-10-03 之前这里刻意**不**挡它，理由是「它属于基础包」—— 那是错的，后果有两个：
+测试要求跑测试的那个 `python3` 恰好装着 jsonschema（这台机器没有就红）；
+而产品里同样的情形会给用户一句「请重新安装解析组件」，指向一个没坏的东西。
+现在「没装扩展」就是扩展提供的**所有**模块都不在，与用户机器上的真实情形一致，
+也不再看本机 python 的脸色。
+
 ## 为什么不用 PYTHONNOUSERSITE=1
 
-它一刀切掉整个用户级 site-packages，**连 `jsonschema` 一起挡掉**了 ——
-于是脚本走进"校验库缺失"的分支，退出码同样是 3，但文案完全不同。
-两种缺失是两件事（一个要装办公扩展，一个是 EvoWork 自己的解析组件坏了），
-测试要能区分它们，挡的范围就必须精确到模块名。
+它只挡用户级 site-packages，挡不住系统级（发行版的 `python3-docx` 之类），
+而且会连带挡掉与扩展无关的包 —— 挡的范围要精确到模块名。
 
 ## 为什么要动两个地方
 
@@ -34,8 +41,8 @@ import importlib.util
 import sys
 from importlib.abc import MetaPathFinder
 
-#: 办公扩展提供的模块（08 §4）。**只挡这些**。
-BLOCKED = frozenset({"docx", "openpyxl", "pptx", "matplotlib"})
+#: 办公扩展提供的模块（08 §4 + 内容校验用的 jsonschema）。**只挡这些**。
+BLOCKED = frozenset({"docx", "openpyxl", "pptx", "matplotlib", "jsonschema"})
 
 
 def _is_blocked(fullname: str) -> bool:

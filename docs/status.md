@@ -6,6 +6,14 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-03：`jsonschema` 随办公扩展安装，技能按这个事实报错（修产品缺陷 + 测试对本机 python 的隐含依赖）。**
+> `jsonschema` 只装在办公扩展里（`runtime-installer` 的 REQUIREMENTS），而技能把它当「随主程序的基础包」：
+> 没装扩展、系统 python 又没有它时，用户看到的是「校验库缺失，请重新安装 EvoWork 的解析组件」—— 指向一个没坏的东西。
+> 现在：缺它 = 「需要安装本地办公扩展」；已经换到扩展的解释器还缺 = 「办公扩展不完整，请重新安装」；
+> `ensure_office_runtime` 判「缺不缺扩展的东西」时连它一起看。测试夹具 `no-office` 也挡它，
+> 四个技能的测试不再看跑测试那台机器的 `python3` 里有没有 jsonschema（系统 PATH 与扩展在前两种环境都 72/72）。
+> 验收：`pnpm run check` 在**不改 PATH** 的本机环境退出 0，144 个测试文件通过、1 个原有跳过；2398 个测试通过、2 个原有跳过。
+>
 > **2026-10-02（续）：Hub 的收尾 + H6 + G3 规则。**
 > ① **打补丁内核上复测**（`build-kernel.mjs --debug` 第一次在本机编完，`build/.kernel-target` 链到上游已有的 target 以省盘）：V1 / V5 / V6 全部成立，补充两点见 13 §12.1。
 > ② **漂移雷达**：HF4–HF8 进 `kernel-assertions.json`（F39–F43），V6 的「安装无条件启用」成为 F45；Hub 事实在 README §4 改登记为 F36–F44 —— 原来写的 F34 / F35 与 2026-09-26 已进雷达的两条模型目录断言撞号。
@@ -14,7 +22,7 @@
 > ⑤ **H6**：策略包 `disableOfficialHub`（identity 签发 · web 策略页勾选框与 diff · 桌面执行；字段可缺省，旧包照认）；离线包 `EVOWORK_HUB_BUNDLE`（同一个 hub-client 换成读目录，验签照跑、非 `bundle:` 地址一律失败）+ `scripts/build-hub-bundle.mjs` + 企业白名单（只删不加）。
 > ⑦ **H3 / H2 的工具在 `evowork-hub`**（本机提交，未推送）：管道 G1–G4 + 报告、`publish.ts` 打包与未签名 payload、`sign.ts` 离线签名。**V2 第一个真实数字**：506 个技能 302 收 · 37 只做索引 · 13 人工 · 154 拒（13 §12.1）。托管 / 域名 / 第一把密钥还没定，所以官方源仍是「未接入」。
 > ⑥ **G3 指令文本规则进 `services/catalog` 的审计**（规则版本 `2026-10-02.2`）：下载即执行、ClickFix 诱导、大段 base64、收数据端点、凭据路径；诱导类带 `lure` 标记供管道拒收。随包 7 个技能无一命中。
-> 验收：`pnpm run check` 退出 0，140 个测试文件通过、1 个原有跳过；2331 个测试通过、2 个原有跳过。**环境注意**：四个办公技能的「没装办公扩展」用例隐含要求 PATH 上第一个 `python3` 带 `jsonschema`（基础包），这台机器的系统 python 没有，本次在 PATH 前面加上 `~/.evowork/runtime/office/bin` 才跑绿 —— 这是测试辅助函数的老依赖，不是本次改动引入的；另外本机 pnpm store 的索引文件丢了一大批，`pnpm install --force` 修好（`gen-third-party-notices.mjs --check` 现在会直接说「读不到依赖树」，不再误报成「清单过时」）。
+> 验收：`pnpm run check` 退出 0，140 个测试文件通过、1 个原有跳过；2331 个测试通过、2 个原有跳过。**环境注意**（2026-10-03 已修，见下一条）：四个办公技能的「没装办公扩展」用例曾隐含要求 PATH 上第一个 `python3` 带 `jsonschema`；另外本机 pnpm store 的索引文件丢了一大批，`pnpm install --force` 修好（`gen-third-party-notices.mjs --check` 现在会直接说「读不到依赖树」，不再误报成「清单过时」）。
 >
 > **2026-10-02：插件 Hub 的 H0 与 H1（客户端）落地（[13 §13.1](design/13-plugin-hub.md)）。**
 > **H0**：「套件」Tab 只列本机与工作区市场 —— 适配层只传 `local`，`@evowork/catalog` 的 `listBundles` 按路径滤掉

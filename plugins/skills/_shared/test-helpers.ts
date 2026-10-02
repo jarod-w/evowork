@@ -100,9 +100,10 @@ export function parseFailure(stderr: string): {
  * 断言 3 号码失败。它本来是为了"不靠 skipIf、强制构造那个环境"而写的
  * （CLAUDE.md §9.1），却因为漏掉一半而变回了"看本机脸色"。
  *
- * （试过 `PYTHONNOUSERSITE=1`，**不行**：它一刀切掉整个用户级 site-packages，
- * 连 `jsonschema` 一起挡掉，于是走进"校验库缺失"分支 —— 退出码同样是 3、文案完全不同。
- * 挡的范围必须精确到模块名，理由见那个 `sitecustomize.py` 的头注释。）
+ * （试过 `PYTHONNOUSERSITE=1`，**不行**：它只挡用户级 site-packages、又连带挡掉无关的包，
+ * 挡的范围必须精确到模块名，理由见那个 `sitecustomize.py` 的头注释。
+ * 2026-10-03 起 fixture 也挡 `jsonschema`：它和文档库一样只随办公扩展安装，
+ * 之前不挡它，这几条测试就要求跑测试的 `python3` 恰好装着它。）
  *
  * 这样**两条分支都能被测，不管本机装没装扩展**。只用 `skipIf` 的话，
  * 装了扩展的机器上"没装时该怎么办"就永远没人验 —— 而那条路径恰恰是用户第一次用时走的。

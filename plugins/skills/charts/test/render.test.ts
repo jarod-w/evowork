@@ -186,6 +186,29 @@ describe('输出格式与运行时（08 §4）', () => {
   });
 });
 
+describe('校验库 jsonschema 随办公扩展安装，不随主程序', () => {
+  it('没装扩展时 --validate-only 也是「需要安装办公扩展」，不是「请重新安装解析组件」', () => {
+    const result = runPython(
+      RENDER,
+      ['--content', writeContent(dir, BAR), '--out', join(dir, 'x.png'), '--validate-only'],
+      WITHOUT_OFFICE_RUNTIME,
+    );
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toContain('办公扩展');
+    expect(parseFailure(result.stderr).message).not.toContain('解析组件');
+  });
+
+  it('已经换到扩展的解释器还缺 jsonschema → 说扩展装坏了，让人重装扩展', () => {
+    const result = runPython(
+      RENDER,
+      ['--content', writeContent(dir, BAR), '--out', join(dir, 'x.png'), '--validate-only'],
+      { ...WITHOUT_OFFICE_RUNTIME, EVOWORK_SKILL_REEXEC: '1' },
+    );
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toMatch(/办公扩展不完整.*jsonschema/);
+  });
+});
+
 describe('装了办公扩展时真的能画出来', () => {
   it.runIf(hasMatplotlib)('产出 png，且文件不是空的', () => {
     const out = join(dir, 'chart.png');
