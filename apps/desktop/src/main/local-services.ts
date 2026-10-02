@@ -349,7 +349,10 @@ export function createLocalServices(options: LocalServicesOptions) {
    * 必须 `invalidate()` —— 不失效的话界面会一直显示"没装"，用户刚装完就被告知没装，
    * 只能重启 App 才认。这正是 `probe.ts` 头注释里写的那个"安装流程结束时调用"。
    */
+  let runtimeInstalling = false;
   const officeRuntime = {
+    /** 正在装吗。在线升级退出前要告诉用户「办公扩展正在安装」会被打断 */
+    installing: (): boolean => runtimeInstalling,
     status: (): RuntimeStatusView => {
       const missing = RUNTIME_TIERS.office.probeModules.filter((m) => !probe.hasModule(m));
       const triple = TRIPLE_BY_PLATFORM[`${process.arch}-${process.platform}`];
@@ -374,6 +377,7 @@ export function createLocalServices(options: LocalServicesOptions) {
     },
 
     install: async (): Promise<RuntimeInstallResultView> => {
+      runtimeInstalling = true;
       const result = await installOfficeRuntime({
         ...(options.logger ? { logger: options.logger } : {}),
         ...(process.env.EVOWORK_OFFICE_BUNDLE
@@ -392,6 +396,7 @@ export function createLocalServices(options: LocalServicesOptions) {
       });
       // 成功与否都失效一次：失败也可能装进去了一部分，缓存住旧答案只会更乱
       probe.invalidate();
+      runtimeInstalling = false;
       return result.ok
         ? { ok: true }
         : { ok: false, failure: result.failure, message: result.message };

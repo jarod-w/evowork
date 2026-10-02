@@ -136,6 +136,8 @@ import type {
   TaskFilePreviewInput,
   QueuedInputView,
   WriteAgentsMemoResult,
+  UpdateQuitImpactView,
+  UpdateStatusView,
 } from '../shared/ipc.js';
 import {
   addConnector,
@@ -171,6 +173,8 @@ import {
   type HubRuntime,
   type InstallHubInput,
 } from './hub-host.js';
+import * as updates from './update-check.js';
+import type { UpdateHostPorts, UpdateRuntime } from './update-check.js';
 import {
   installBundle,
   readBundles,
@@ -620,6 +624,12 @@ export interface RendererBridgeOptions {
    * 出网只在 `@evowork/hub-client` 里；什么时候允许出网由 `hub-host` 判（HUB-Q3=B）。
    */
   readonly hubPorts?: HubHostPorts | undefined;
+  /**
+   * 在线升级（在线升级提案 §4 B4）。没给时设置页如实说「这个版本还没接上在线升级」，
+   * 七个动作都不出网。`runtime` 与 service-host 的自动检查定时器共用同一份。
+   */
+  readonly updateHost?:
+    { readonly ports: UpdateHostPorts; readonly runtime: UpdateRuntime } | undefined;
   /** OAuth 授权地址只能由主进程交给系统浏览器。 */
   readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   readonly attachmentPorts?:
@@ -2524,6 +2534,67 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return options.officeRuntime.install();
     },
 
+    /* ── 在线升级（在线升级提案 §4 B4 · 总纲 Q46）──────────────────── */
+
+    getUpdateStatus(): Promise<UpdateStatusView> {
+      const host = options.updateHost;
+      return Promise.resolve(
+        host ? updates.updateStatusView(host.ports, host.runtime) : noUpdateHost(),
+      );
+    },
+
+    /** 「检查更新」：用户显式触发（Q30），登录与否都可以点 */
+    checkForUpdate(): Promise<UpdateStatusView> {
+      const host = options.updateHost;
+      if (!host) return Promise.resolve(noUpdateHost());
+      return updates.checkForUpdate(host.ports, host.runtime, 'manual');
+    },
+
+    /** 只有用户点「下载」才下（Q46-4） */
+    downloadUpdate(): Promise<UpdateStatusView> {
+      const host = options.updateHost;
+      if (!host) return Promise.resolve(noUpdateHost());
+      return updates.downloadUpdate(host.ports, host.runtime);
+    },
+
+    cancelUpdateDownload(): Promise<UpdateStatusView> {
+      const host = options.updateHost;
+      if (!host) return Promise.resolve(noUpdateHost());
+      updates.cancelUpdateDownload(host.runtime);
+      return Promise.resolve(updates.updateStatusView(host.ports, host.runtime));
+    },
+
+    /**
+     * 自动检查的开关：改的是**当前登录状态**对应的那一个。打开它本身就是显式授权（Q30），
+     * 所以打开时顺手按自动检查的规则检查一次（24 小时内查过就不发）；关上不发任何请求。
+     */
+    setUpdateAutoCheck(input: { readonly enabled: boolean }): Promise<UpdateStatusView> {
+      const host = options.updateHost;
+      if (!host) return Promise.resolve(noUpdateHost());
+      const view = updates.setAutoCheck(host.ports, host.runtime, input.enabled);
+      if (input.enabled) void updates.checkForUpdate(host.ports, host.runtime, 'auto');
+      return Promise.resolve(view);
+    },
+
+    getUpdateQuitImpact(): Promise<UpdateQuitImpactView> {
+      const host = options.updateHost;
+      return Promise.resolve(
+        host
+          ? host.ports.quitImpact()
+          : { runningTasks: [], upcoming: [], runtimeInstalling: false },
+      );
+    },
+
+    /** 先再校验一遍、打开安装包，再退出（顺序反过来，退出之后就没人去打开它了） */
+    quitAndOpenInstaller(): Promise<{
+      readonly ok: boolean;
+      readonly refused?: string | undefined;
+    }> {
+      const host = options.updateHost;
+      if (!host) return Promise.resolve({ ok: false, refused: '这个版本还没接上在线升级。' });
+      return updates.quitAndOpenInstaller(host.ports, host.runtime);
+    },
+
     /* ── 项目（02 §4.3）───────────────────────────────────────────── */
 
     listProjects(): Promise<ProjectsDataView> {
@@ -3057,6 +3128,18 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
       return Promise.resolve(removeExpert(ports, input.id));
     },
+  };
+}
+
+/** 这个构建没接在线升级模块时的视图：如实说，不给一个点了没反应的按钮 */
+function noUpdateHost(): UpdateStatusView {
+  return {
+    currentVersion: '',
+    availability: 'unsupported',
+    signedIn: false,
+    autoCheck: false,
+    phase: 'idle',
+    message: '这个版本还没接上在线升级，需要手动下载新版本安装。',
   };
 }
 

@@ -10,12 +10,12 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { parseUpdateManifest } from '../../apps/desktop/src/main/update-manifest.ts';
 import {
   checkReleaseFiles,
   checkSigningKeys,
-  compareVersions,
+  loadClientModule,
   MANIFEST_NAME,
-  parseLatestYml,
   uploadPlan,
   uploadRelease,
 } from '../publish-release.mjs';
@@ -35,32 +35,18 @@ sha512: Cl5iz2nTJSCGgWre/4rGbPKEHxv4JXzMfH4iBoiki8yU5RNVLwxAqxZivG1smh2bBLYv4Xmu
 releaseDate: '2026-10-01T23:50:01.429Z'
 `;
 
-describe('解析 latest-mac.yml', () => {
-  it('electron-builder 写出来的形状能读出版本与每个文件的 sha512 / 大小', () => {
-    const m = parseLatestYml(REAL_SHAPE);
-    expect(m.version).toBe('0.0.4');
-    expect(m.files.map((f) => [f.url, f.size])).toEqual([
-      ['EvoWork-0.0.4-mac-arm64-unsigned.zip', 223597718],
-      ['EvoWork-0.0.4-mac-arm64-unsigned.dmg', 223369465],
-    ]);
-    expect(m.releaseDate).toBe('2026-10-01T23:50:01.429Z');
-  });
+/** 脚本经 esbuild 现编客户端的 update-manifest.ts；解析与版本比较的用例在 apps/desktop/test/update-manifest.test.ts */
+function parseLatestYml(text) {
+  const result = parseUpdateManifest(text);
+  if (!result.ok) throw new Error(result.reason);
+  return result.manifest;
+}
 
-  it('认不出的行直接报错 —— 宽容的解析器会把写错的清单也发出去', () => {
-    expect(() => parseLatestYml(`${REAL_SHAPE}stagingPercentage: 10\n`)).toThrow(/认不出/);
-  });
-});
-
-describe('版本比较', () => {
-  it('按数字比，不按字符串比：0.0.10 比 0.0.9 新', () => {
-    expect(compareVersions('0.0.10', '0.0.9')).toBe(1);
-    expect(compareVersions('0.0.4', '0.0.5')).toBe(-1);
-    expect(compareVersions('0.0.5', '0.0.5')).toBe(0);
-  });
-
-  it('预发布版排在同号正式版之前：0.0.5-beta.1 < 0.0.5', () => {
-    expect(compareVersions('0.0.5-beta.1', '0.0.5')).toBe(-1);
-    expect(compareVersions('0.0.5', '0.0.5-beta.1')).toBe(1);
+describe('脚本与客户端用同一份解析器', () => {
+  it('现编出来的模块就是客户端那份：同一份清单读出来一模一样，「发得出去」与「客户端认得」是同一个判据', async () => {
+    const mod = await loadClientModule('apps/desktop/src/main/update-manifest.ts');
+    expect(mod.parseUpdateManifest(REAL_SHAPE)).toEqual(parseUpdateManifest(REAL_SHAPE));
+    expect(mod.parseUpdateManifest(`${REAL_SHAPE}stagingPercentage: 10\n`).ok).toBe(false);
   });
 });
 

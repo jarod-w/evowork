@@ -12,5 +12,9 @@ import { afterEach } from 'vitest';
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  /*
+   * 主进程的测试按文件切到 node 环境（`// @vitest-environment node`）：那里没有 localStorage。
+   * 必须切的理由在 update-check.test.ts 的头注释 —— jsdom 的 AbortSignal 与 Node 24 的 fetch 不兼容。
+   */
+  globalThis.localStorage?.clear();
 });

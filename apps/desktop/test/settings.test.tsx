@@ -7,7 +7,7 @@
  *   · 钥匙串不可用时两个选项并列（不替用户选）；
  *   · 并发上限只能往下调（机器就是资源上限）。
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SecretInput } from '../src/renderer/components/primitives.js';
@@ -17,6 +17,8 @@ import type {
   MemorySettingsView,
   ModelAccessView,
   ModelOptionView,
+  UpdateQuitImpactView,
+  UpdateStatusView,
 } from '../src/shared/ipc.js';
 
 function model(over: Partial<ModelOptionView> = {}): ModelOptionView {
@@ -635,5 +637,165 @@ describe('还没做好的两个分区', () => {
     expect(
       screen.getByText('安全策略已过期，已切换为只读模式。请连接企业网络以更新。'),
     ).toBeTruthy();
+  });
+});
+
+/* ───────────────── 关于与更新（在线升级提案 §4 B4 · 总纲 Q46，按确认过的原型） ───────────────── */
+
+function updateView(over: Partial<UpdateStatusView> = {}): UpdateStatusView {
+  return {
+    currentVersion: '0.0.4',
+    availability: 'on',
+    signedIn: false,
+    autoCheck: false,
+    phase: 'idle',
+    ...over,
+  };
+}
+
+const OFFER = {
+  version: '0.0.5',
+  sizeBytes: 223_000_000,
+  notes: ['修复插件页为空', '<b>不当 HTML 渲染</b>'],
+  fileName: 'EvoWork-0.0.5-mac-arm64-unsigned.dmg',
+};
+
+describe('关于与更新', () => {
+  it('未登录：开关写「未登录时也自动检查更新」，默认关；点开是改未登录那一个', () => {
+    const onUpdateAutoCheck = vi.fn();
+    page({ section: 'about', update: updateView(), onUpdateAutoCheck });
+    const box = screen.getByRole('checkbox', {
+      name: /未登录时也自动检查更新/,
+    }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(onUpdateAutoCheck).toHaveBeenCalledWith(true);
+  });
+
+  it('已登录：开关写「自动检查更新」，默认开，**也能关**（2026-10-03）', () => {
+    const onUpdateAutoCheck = vi.fn();
+    page({
+      section: 'about',
+      update: updateView({ signedIn: true, autoCheck: true }),
+      onUpdateAutoCheck,
+    });
+    const box = screen.getByRole('checkbox', { name: /^自动检查更新/ }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    fireEvent.click(box);
+    expect(onUpdateAutoCheck).toHaveBeenCalledWith(false);
+  });
+
+  it('组织统一分发：没有「检查更新」按钮，也没有开关，说明为什么', () => {
+    page({
+      section: 'about',
+      update: updateView({ availability: 'off' }),
+      onUpdateAutoCheck: vi.fn(),
+    });
+    expect(screen.queryByRole('button', { name: '检查更新' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText(/你所在的组织统一分发 EvoWork 的更新/)).toBeTruthy();
+  });
+
+  it('签名校验失败：只能再检查一次，**没有任何下载入口**', () => {
+    page({
+      section: 'about',
+      update: updateView({
+        phase: 'error',
+        error: 'bad-signature',
+        message: '收到的版本清单没有通过签名校验，已丢弃。',
+      }),
+    });
+    expect(screen.getByRole('button', { name: '再检查一次' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /下载/ })).toBeNull();
+  });
+
+  it('有新版本：卡片给版本、大小、更新说明（纯文本），下载由用户点（Q46-4）', () => {
+    const onDownloadUpdate = vi.fn();
+    const { container } = render(<></>);
+    page({
+      section: 'about',
+      update: updateView({ phase: 'available', offer: OFFER }),
+      onDownloadUpdate,
+    });
+    expect(screen.getByText(/可以更新/)).toBeTruthy();
+    expect(screen.getByText('约 223 MB')).toBeTruthy();
+    // 更新说明来自签过名的清单，但仍然只当文本：不让一段说明在设置页里长出链接或按钮
+    expect(screen.getByText('<b>不当 HTML 渲染</b>')).toBeTruthy();
+    expect(container.ownerDocument.querySelector('.ew-update-notes b')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '下载 0.0.5' }));
+    expect(onDownloadUpdate).toHaveBeenCalled();
+  });
+
+  it('有新版本时，「关于与更新」那一项上有一个点 —— 首页不放提示（2026-10-03 定）', () => {
+    const dotOnAbout = () =>
+      within(screen.getByRole('button', { name: /关于与更新/ })).queryByLabelText('有更新');
+    page({ section: 'models', update: updateView({ phase: 'available', offer: OFFER }) });
+    expect(dotOnAbout()).toBeTruthy();
+    cleanup();
+    page({ section: 'models', update: updateView({ phase: 'latest' }) });
+    expect(dotOnAbout()).toBeNull();
+  });
+
+  it('下好了、退出会打断任务：先列出会被打断什么，确认之后才退出', async () => {
+    const impact: UpdateQuitImpactView = {
+      runningTasks: ['整理九月周报'],
+      upcoming: [
+        {
+          name: '每日站会纪要',
+          at: Date.now() + 3_600_000,
+          whenMissed: '那时 EvoWork 没开着的话，6 小时内重新打开会补跑一次。',
+        },
+      ],
+      runtimeInstalling: false,
+    };
+    const onQuitAndInstall = vi.fn();
+    page({
+      section: 'about',
+      update: updateView({ phase: 'ready', offer: OFFER }),
+      onGetUpdateQuitImpact: vi.fn(async () => impact),
+      onQuitAndInstall,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '退出并打开安装包' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/整理九月周报/)).toBeTruthy();
+    expect(within(dialog).getByText(/6 小时内重新打开会补跑一次/)).toBeTruthy();
+    expect(onQuitAndInstall).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '退出并打开安装包' }));
+    expect(onQuitAndInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it('下好了、没有会被打断的事：直接退出并打开，不多问一句', async () => {
+    const onQuitAndInstall = vi.fn();
+    page({
+      section: 'about',
+      update: updateView({ phase: 'ready', offer: OFFER }),
+      onGetUpdateQuitImpact: vi.fn(async () => ({
+        runningTasks: [],
+        upcoming: [],
+        runtimeInstalling: false,
+      })),
+      onQuitAndInstall,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '退出并打开安装包' }));
+    await vi.waitFor(() => expect(onQuitAndInstall).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('办公扩展装着但不是这一版要的组件：在这里说，重新安装由用户点（A4）', () => {
+    const onInstallRuntime = vi.fn();
+    page({
+      section: 'about',
+      update: updateView(),
+      runtime: {
+        installed: true,
+        outdated: true,
+        missing: [],
+        supported: true,
+        downloadSize: '约 25 MB',
+      },
+      onInstallRuntime,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重新安装（约 25 MB）' }));
+    expect(onInstallRuntime).toHaveBeenCalled();
   });
 });

@@ -36,58 +36,6 @@ export const MANIFEST_NAME = 'latest-mac.yml';
 /* ───────────────────────────── 纯函数（有测试） ───────────────────────────── */
 
 /**
- * 解析 electron-builder 写的 `latest-mac.yml`。只认它生成的那个形状，认不出就报错 ——
- * 不引第三方 YAML 库：形状固定，而一个「宽容」的解析器会把写错的清单也放过去。
- */
-export function parseLatestYml(text) {
-  const lines = text.split(/\r?\n/);
-  const out = { files: [] };
-  let current;
-  for (const line of lines) {
-    if (line.trim() === '') continue;
-    let m;
-    if ((m = /^version: (.+)$/.exec(line))) out.version = unquote(m[1]);
-    else if (line === 'files:') continue;
-    else if ((m = /^ {2}- url: (.+)$/.exec(line)))
-      out.files.push((current = { url: unquote(m[1]) }));
-    else if ((m = /^ {4}sha512: (.+)$/.exec(line)) && current) current.sha512 = unquote(m[1]);
-    else if ((m = /^ {4}size: (\d+)$/.exec(line)) && current) current.size = Number(m[1]);
-    else if ((m = /^path: (.+)$/.exec(line))) out.path = unquote(m[1]);
-    else if ((m = /^sha512: (.+)$/.exec(line))) out.sha512 = unquote(m[1]);
-    else if ((m = /^releaseDate: (.+)$/.exec(line))) out.releaseDate = unquote(m[1]);
-    else if (/^ {4}(blockMapSize|isAdminRightsRequired): /.test(line)) continue;
-    else throw new Error(`${MANIFEST_NAME} 里有认不出的一行：${line}`);
-  }
-  if (!out.version || out.files.length === 0 || out.files.some((f) => !f.sha512 || !f.size)) {
-    throw new Error(`${MANIFEST_NAME} 缺字段（version / files[].sha512 / files[].size）`);
-  }
-  return out;
-}
-
-function unquote(raw) {
-  const v = raw.trim();
-  return /^'.*'$|^".*"$/.test(v) ? v.slice(1, -1) : v;
-}
-
-/** `x.y.z` 与 `x.y.z-pre`。预发布版本排在同号正式版之前 */
-export function compareVersions(a, b) {
-  const parse = (v) => {
-    const [core, pre] = v.split('-', 2);
-    return { nums: core.split('.').map(Number), pre };
-  };
-  const pa = parse(a);
-  const pb = parse(b);
-  for (let i = 0; i < 3; i += 1) {
-    const d = (pa.nums[i] ?? 0) - (pb.nums[i] ?? 0);
-    if (d !== 0) return Math.sign(d);
-  }
-  if (pa.pre === pb.pre) return 0;
-  if (pa.pre === undefined) return 1;
-  if (pb.pre === undefined) return -1;
-  return pa.pre < pb.pre ? -1 : 1;
-}
-
-/**
  * 上传分三批，顺序就是正确性的一部分（见文件头）。
  * `blockmap` 跟着安装包走：electron-updater 的差量下载要它，缺了只是退回整包下载。
  */
@@ -140,10 +88,14 @@ export function checkSigningKeys(keys, kid) {
 
 const git = (...args) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim();
 
-/** 用 esbuild 现编一次 `update-keys.ts`，拿到的就是客户端编进去的那个数组 */
-async function loadClientKeys() {
+/**
+ * 用 esbuild 现编一个客户端模块，拿到的就是客户端编进去的那一份代码：
+ * `update-keys.ts` 的公钥、`update-manifest.ts` 的清单解析与版本比较。
+ * 不在脚本里另写一份 —— 两份解析器会各自走样，而「发得出去」与「客户端认得」必须是同一个判据。
+ */
+export async function loadClientModule(relativePath) {
   const result = await build({
-    entryPoints: [join(REPO, 'apps/desktop/src/main/update-keys.ts')],
+    entryPoints: [join(REPO, relativePath)],
     bundle: true,
     write: false,
     format: 'esm',
@@ -151,8 +103,7 @@ async function loadClientKeys() {
     logLevel: 'silent',
   });
   const code = result.outputFiles[0].text;
-  const mod = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
-  return mod.UPDATE_PUBLIC_KEYS;
+  return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 }
 
 function isRemote(dest) {
@@ -182,6 +133,9 @@ function splitRemote(dest) {
 
 /** 每一项都要过；返回 [{ ok, label, detail? }] */
 export async function checkRelease({ distDir, kid, dest, channel }) {
+  const { parseUpdateManifest, compareVersions } = await loadClientModule(
+    'apps/desktop/src/main/update-manifest.ts',
+  );
   const version = JSON.parse(readFileSync(join(REPO, 'apps/desktop/package.json'), 'utf8')).version;
   const results = [];
   const add = (ok, label, detail) => results.push({ ok, label, ...(detail ? { detail } : {}) });
@@ -201,7 +155,11 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
     add(false, `${MANIFEST_NAME} 存在`, `${distDir} 下没有，先跑 pnpm run package`);
   } else {
     const raw = readFileSync(manifestPath);
-    manifest = { ...parseLatestYml(raw.toString('utf8')), raw };
+    const parsed = parseUpdateManifest(raw.toString('utf8'));
+    if (!parsed.ok) add(false, '清单的格式客户端认得', parsed.reason);
+    else manifest = { ...parsed.manifest, raw };
+  }
+  if (manifest) {
     add(
       manifest.version === version,
       '清单版本与 package.json 一致',
@@ -226,7 +184,8 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
     `node scripts/build-upgrade-fixture.mjs WORKTREE v${version}`,
   );
 
-  const keyProblems = checkSigningKeys(await loadClientKeys(), kid);
+  const keys = await loadClientModule('apps/desktop/src/main/update-keys.ts');
+  const keyProblems = checkSigningKeys(keys.UPDATE_PUBLIC_KEYS, kid);
   add(keyProblems.length === 0, '客户端内嵌的公钥够发这一版', keyProblems.join('；'));
 
   // 源码里有这把 key 不等于打出来的包里有：dist/ 可能是更早一次打包留下的
@@ -240,7 +199,8 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
 
   const published = readPublishedManifest(dest, channel);
   if (manifest) {
-    const online = published ? parseLatestYml(published).version : undefined;
+    const parsedOnline = published ? parseUpdateManifest(published) : undefined;
+    const online = parsedOnline?.ok ? parsedOnline.manifest.version : undefined;
     add(
       online === undefined || compareVersions(manifest.version, online) > 0,
       '比线上的版本新',

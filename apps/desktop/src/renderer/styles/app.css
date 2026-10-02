@@ -3916,6 +3916,29 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   gap: var(--space-16);
   padding: var(--space-16) var(--space-20);
 }
+/* 在线升级：设置 → 关于与更新（在线升级提案 §4 B4）。卡片沿用上面「模型」那张卡的壳 */
+.ew-update-card-head {
+  padding-bottom: var(--space-8);
+}
+.ew-update-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: 0 var(--space-20) var(--space-16);
+}
+.ew-update-notes {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding-left: var(--space-20);
+  color: var(--text-secondary);
+}
+.ew-update-progress {
+  font-variant-numeric: tabular-nums;
+}
+.ew-update-inline {
+  margin: 0;
+}
 .ew-settings-model-card-title {
   margin: 0 0 var(--space-4);
   font-size: var(--font-body-lg-size);

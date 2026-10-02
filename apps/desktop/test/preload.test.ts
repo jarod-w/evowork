@@ -35,6 +35,8 @@ describe('暴露面', () => {
         'onComputerUseStatus',
         // 办公扩展安装进度（08 §4）：装一次要几分钟，推送比轮询合适
         'onRuntimeProgress',
+        // 在线升级的状态（在线升级提案 §4 B4）：下载进度与自动检查结果都推这一份
+        'onUpdateStatus',
         ...RENDERER_ACTIONS,
       ].sort(),
     );

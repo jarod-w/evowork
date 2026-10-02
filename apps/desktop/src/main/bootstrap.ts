@@ -69,7 +69,8 @@ export interface ElectronApi {
     on(event: 'window-all-closed' | 'before-quit', handler: () => void): void;
     quit(): void;
     getVersion(): string;
-    getPath(name: 'home'): string;
+    /** `downloads`：在线升级把安装包下到「下载」文件夹（2026-10-03 定） */
+    getPath(name: 'home' | 'downloads'): string;
     /**
      * 注册 `evowork://`（02 §8）。可选注入 —— 没给时深链不工作，
      * 但应用照常起得来，测试也能跑到"没注册"那条路径。
@@ -256,6 +257,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
         ? { gatewayEntryPath: options.gatewayEntryPath }
         : {}),
       appVersion: electron.app.getVersion(),
+      downloadsDir: electron.app.getPath('downloads'),
+      // 在线升级「退出并打开安装包」：先打开安装包、再走这里退出
+      quit: () => electron.app.quit(),
       ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
       ...(options.pluginsDir !== undefined ? { pluginsDir: options.pluginsDir } : {}),
       ...(options.bundledFontPath !== undefined

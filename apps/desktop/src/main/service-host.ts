@@ -104,7 +104,9 @@ import type {
   DeeplinkDelivery,
   ShareListView,
   ThreadShareInput,
+  UpdateQuitImpactView,
 } from '../shared/ipc.js';
+import { nextFire } from '@evowork/scheduler';
 import { createAccountSession, originsFromEnv } from './account.js';
 import type { DeeplinkLookup } from './deeplink.js';
 import { ensureAuditLog, ingestAuditLog } from './audit-ingest.js';
@@ -160,6 +162,8 @@ import {
   offlineHubSource,
 } from './hub-config.js';
 import { refreshHub, type HubHostPorts } from './hub-host.js';
+import { UPDATE_PUBLIC_KEYS } from './update-keys.js';
+import * as updates from './update-check.js';
 import { BUILTIN_CASES } from './showcase.js';
 
 /** `~/.evowork/` 的布局（09 §7）。 */
@@ -215,6 +219,8 @@ export interface EvoworkPaths {
 
 /** 13 §4.4：每小时一次（条件请求，没变化只回一个 304）。 */
 const HUB_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+/** 在线升级的自动检查每小时醒一次；真正发不发请求由 `checkForUpdate('auto')` 按 24 小时与开关判 */
+const UPDATE_WAKE_INTERVAL_MS = 60 * 60 * 1000;
 
 export function resolvePaths(root = join(homedir(), '.evowork')): EvoworkPaths {
   return {
@@ -823,6 +829,10 @@ export interface ServiceHostOptions {
   readonly openPath?: ((path: string) => Promise<void>) | undefined;
   /** 系统浏览器（Q33=A 的 PKCE 登录）。没给时登录动作会如实失败 */
   readonly openExternal?: ((url: string) => Promise<void>) | undefined;
+  /** 「下载」文件夹（`app.getPath('downloads')`）。在线升级把安装包下到这里（2026-10-03 定） */
+  readonly downloadsDir?: string | undefined;
+  /** 退出应用。在线升级的「退出并打开安装包」用；没给时只打开安装包、不退出 */
+  readonly quit?: (() => void) | undefined;
   /**
    * 本机网关 listen 最多等多久。测试里假 spawn 不会真的听端口，传 0 跳过。
    * 不传 = 8 秒（见 `waitUntilGatewayReady`）。
@@ -948,6 +958,8 @@ export const IPC = {
   askApproval: 'evowork:ask-approval',
   /** 办公扩展安装进度（08 §4）。与 `preload` 的 `RENDERER_CHANNELS` 一一对应 */
   runtimeProgress: 'evowork:runtime-progress',
+  /** 在线升级的完整状态（在线升级提案 §4 B4） */
+  updateStatus: 'evowork:update-status',
 } as const;
 
 const RECONCILE_INTERVAL_MS = 10 * 60_000;
@@ -1439,6 +1451,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   let reconcileTimer: ReturnType<typeof setInterval> | undefined;
   let hubTimer: ReturnType<typeof setInterval> | undefined;
+  let updateTimer: ReturnType<typeof setInterval> | undefined;
   /** 本机网关子进程（拓扑 A）。网关在服务器上时它一直是 undefined */
   let gateway: GatewayProcess | undefined;
 
@@ -1943,7 +1956,59 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     runtime: {},
   };
 
+  /*
+   * 在线升级（在线升级提案 §4 B4）。出网只在 update-check.ts；请求不带令牌、设备 id、版本号（Q46）。
+   * runtime 与上面的自动检查定时器共用，所以设置页看到的永远是同一份状态。
+   */
+  const updateHost = {
+    runtime: updates.createUpdateRuntime(),
+    ports: {
+      appVersion: options.appVersion,
+      platform: process.platform,
+      arch: process.arch,
+      feed: updates.updateFeedFrom(process.env),
+      keys: UPDATE_PUBLIC_KEYS,
+      signedIn: () => account.signedIn(),
+      prefsPath: join(options.paths.home, 'update.json'),
+      downloadsDir: () => options.downloadsDir ?? join(homedir(), 'Downloads'),
+      fetch: (url, init) => fetch(url, { signal: init.signal, headers: init.headers }),
+      now: () => Date.now(),
+      openPath: async (path) => {
+        if (!options.openPath) throw new Error('这个构建打不开文件：没有注入 openPath');
+        await options.openPath(path);
+      },
+      quit: () => options.quit?.(),
+      emit: (view) => options.emitToRenderer(IPC.updateStatus, view),
+      quitImpact: () => updateQuitImpact(),
+      logger,
+    } satisfies updates.UpdateHostPorts,
+  };
+
+  /** 「退出并打开安装包」之前要告诉用户的：哪些事会被打断（原型确认过的那个确认框） */
+  const updateQuitImpact = (): UpdateQuitImpactView => {
+    const runningTasks = store.threads
+      .queryThreadIds({ statuses: ['running', 'planning'] })
+      .map((id) => store.threads.get(id)?.title ?? '未命名的任务');
+    const now = Date.now();
+    const upcoming = services.automations
+      .listActive(store.deviceId)
+      .map((a) => ({ automation: a, at: nextFire(a.schedule, now, a.timezone) }))
+      .filter(
+        (x): x is { automation: (typeof x)['automation']; at: number } =>
+          x.at !== undefined && x.at - now <= 24 * 60 * 60 * 1000,
+      )
+      .sort((x, y) => x.at - y.at)
+      .slice(0, 3)
+      .map(({ automation, at }) => ({
+        name: automation.name,
+        at,
+        whenMissed: whenMissedCopy(automation),
+      }));
+    return { runningTasks, upcoming, runtimeInstalling: services.officeRuntime.installing() };
+  };
+
   const actions = createRendererActions({
+    updateHost,
     ...(options.openExternal ? { openExternal: options.openExternal } : {}),
     adapter,
     store,
@@ -2381,6 +2446,19 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       }
       hubTimer = setInterval(autoRefreshHub, HUB_REFRESH_INTERVAL_MS);
       hubTimer.unref?.();
+      // Q46-1 / Q46-2：每天最多一次，而且当前登录状态下的开关开着才发请求（判断在 checkForUpdate 里）
+      const autoCheckUpdate = () => {
+        void updates
+          .checkForUpdate(updateHost.ports, updateHost.runtime, 'auto')
+          .catch((err: unknown) => {
+            logger.warn('desktop.update.check_failed', {
+              errorClass: err instanceof Error ? err.name : 'UnknownError',
+            });
+          });
+      };
+      autoCheckUpdate();
+      updateTimer = setInterval(autoCheckUpdate, UPDATE_WAKE_INTERVAL_MS);
+      updateTimer.unref?.();
 
       reconcileTimer = setInterval(() => {
         /*
@@ -2435,10 +2513,30 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (hubTimer) clearInterval(hubTimer);
+      if (updateTimer) clearInterval(updateTimer);
+      // 退出时还在下的安装包：停掉并删半截文件，不留一个看起来像安装包的 .part
+      updates.cancelUpdateDownload(updateHost.runtime);
       services.stop();
       await adapter.stop();
       store.close();
       logger.info('desktop.host.stopped', {});
     },
   };
+}
+
+/**
+ * 定时任务错过一次之后会怎样 —— 按它**自己的**错过补偿策略说（07 §4.3），不一概说「跳过」。
+ * 原型里写过一句「这一次会跳过，不会补跑」，对 `FIRE_ONCE_ON_WAKE`（默认）和 `FIRE_ALL` 都不对。
+ */
+export function whenMissedCopy(automation: {
+  readonly misfirePolicy: 'FIRE_ONCE_ON_WAKE' | 'FIRE_ALL' | 'DROP';
+  readonly catchupWindowMs: number;
+}): string {
+  const hours = Math.max(1, Math.round(automation.catchupWindowMs / 3_600_000));
+  if (automation.misfirePolicy === 'DROP')
+    return '那时 EvoWork 没开着的话，这一次会跳过，不会补跑。';
+  if (automation.misfirePolicy === 'FIRE_ALL') {
+    return `那时 EvoWork 没开着的话，${String(hours)} 小时内重新打开会把错过的都补跑。`;
+  }
+  return `那时 EvoWork 没开着的话，${String(hours)} 小时内重新打开会补跑一次。`;
 }

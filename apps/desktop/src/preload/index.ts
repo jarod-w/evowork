@@ -33,6 +33,11 @@ export const RENDERER_CHANNELS = Object.freeze({
    * （进度条一跳一大截）。而"现在在下什么"恰恰是这几分钟里用户唯一关心的事。
    */
   runtimeProgress: 'evowork:runtime-progress',
+  /**
+   * 在线升级的状态（在线升级提案 §4 B4）。下载进度、检查结果都推这一份完整视图，
+   * 渲染层不自己推算 —— 与 `runtimeProgress` 同一条理由。
+   */
+  updateStatus: 'evowork:update-status',
 });
 
 /**
@@ -222,6 +227,17 @@ export const RENDERER_ACTIONS = Object.freeze([
   'uninstallHubItem',
   'rollbackHubItem',
   'setHubFetchWhenSignedOut',
+  /*
+   * 在线升级（在线升级提案 §4 B4 · 总纲 Q46）。「检查更新」与「下载」都是用户显式触发的出网；
+   * 自动检查（每天最多一次，看当前登录状态下的开关）在主进程里，渲染层碰不到。
+   */
+  'getUpdateStatus',
+  'checkForUpdate',
+  'downloadUpdate',
+  'cancelUpdateDownload',
+  'setUpdateAutoCheck',
+  'getUpdateQuitImpact',
+  'quitAndOpenInstaller',
 ] as const);
 
 export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): void {
@@ -240,6 +256,7 @@ export function installBridge(bridge: ContextBridgeLike, ipc: IpcRendererLike): 
     onDegrade: subscribe(RENDERER_CHANNELS.degrade),
     onPendingApprovals: subscribe(RENDERER_CHANNELS.pendingApprovals),
     onRuntimeProgress: subscribe(RENDERER_CHANNELS.runtimeProgress),
+    onUpdateStatus: subscribe(RENDERER_CHANNELS.updateStatus),
   };
   for (const action of RENDERER_ACTIONS) {
     api[action] = (payload?: unknown) => ipc.invoke(`evowork:${action}`, payload);

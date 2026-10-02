@@ -68,6 +68,8 @@ import type {
   RuntimeInstallResultView,
   RuntimeProgressView,
   RuntimeStatusView,
+  UpdateQuitImpactView,
+  UpdateStatusView,
   SendInput,
   StartupInfo,
   TaskSearchHitView,
@@ -372,6 +374,18 @@ export interface EvoworkBridge {
   /** 装办公扩展。要几分钟，进度走 `onRuntimeProgress` */
   installOfficeRuntime(): Promise<RuntimeInstallResultView>;
   onRuntimeProgress(handler: (progress: RuntimeProgressView) => void): () => void;
+  /*
+   * 在线升级（在线升级提案 §4 B4 · 总纲 Q46）。可选：没接时设置页如实说「还没接上」。
+   * 状态由主进程推（`onUpdateStatus`），渲染层不自己推算。
+   */
+  getUpdateStatus?(): Promise<UpdateStatusView>;
+  checkForUpdate?(): Promise<UpdateStatusView>;
+  downloadUpdate?(): Promise<UpdateStatusView>;
+  cancelUpdateDownload?(): Promise<UpdateStatusView>;
+  setUpdateAutoCheck?(input: { enabled: boolean }): Promise<UpdateStatusView>;
+  getUpdateQuitImpact?(): Promise<UpdateQuitImpactView>;
+  quitAndOpenInstaller?(): Promise<{ ok: boolean; refused?: string | undefined }>;
+  onUpdateStatus?(handler: (status: UpdateStatusView) => void): () => void;
 }
 
 /**
@@ -585,6 +599,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     undefined,
   );
   const [runtimeError, setRuntimeError] = useState<string | undefined>(undefined);
+  /** 在线升级的状态。主进程推完整视图过来，这里只存 */
+  const [update, setUpdate] = useState<UpdateStatusView | null>(null);
   /**
    * 正在拉当前任务的历史。点开已完成任务到条目到达之前，不能显示
    * 「这个任务还没有消息」—— 那是刚创建的空态，不是加载中。
@@ -1224,6 +1240,27 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .catch(() => setRuntime(null));
     return bridge.onRuntimeProgress(setRuntimeProgress);
   }, [bridge]);
+
+  /** 在线升级：进来先取一次，之后跟着主进程推（下载进度、自动检查的结果都走这里） */
+  useEffect(() => {
+    void bridge
+      .getUpdateStatus?.()
+      .then(setUpdate)
+      .catch(() => setUpdate(null));
+    return bridge.onUpdateStatus?.(setUpdate);
+  }, [bridge]);
+
+  const runUpdateAction = useCallback(
+    (action: (() => Promise<UpdateStatusView>) | undefined) => {
+      if (!action) return;
+      action()
+        .then(setUpdate)
+        .catch((error: unknown) =>
+          pushToast({ tone: 'danger', text: actionErrorText(error, '这一步没能完成。') }),
+        );
+    },
+    [pushToast],
+  );
 
   /**
    * 装办公扩展。
@@ -3073,6 +3110,43 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 }
               : undefined
           }
+          update={update}
+          onCheckUpdate={() =>
+            runUpdateAction(bridge.checkForUpdate && (() => bridge.checkForUpdate!()))
+          }
+          onDownloadUpdate={() =>
+            runUpdateAction(bridge.downloadUpdate && (() => bridge.downloadUpdate!()))
+          }
+          onCancelUpdateDownload={() =>
+            runUpdateAction(bridge.cancelUpdateDownload && (() => bridge.cancelUpdateDownload!()))
+          }
+          onUpdateAutoCheck={(enabled) =>
+            runUpdateAction(
+              bridge.setUpdateAutoCheck && (() => bridge.setUpdateAutoCheck!({ enabled })),
+            )
+          }
+          onGetUpdateQuitImpact={async () =>
+            (await bridge.getUpdateQuitImpact?.()) ?? {
+              runningTasks: [],
+              upcoming: [],
+              runtimeInstalling: false,
+            }
+          }
+          onQuitAndInstall={() => {
+            void bridge
+              .quitAndOpenInstaller?.()
+              .then((result) => {
+                if (!result.ok)
+                  pushToast({ tone: 'danger', text: result.refused ?? '没能打开安装包。' });
+              })
+              .catch((error: unknown) =>
+                pushToast({ tone: 'danger', text: actionErrorText(error, '没能打开安装包。') }),
+              );
+          }}
+          runtime={runtime}
+          runtimeProgress={runtimeProgress}
+          runtimeError={runtimeError}
+          onInstallRuntime={() => void installRuntime()}
           onUsePrompt={prepareTaskWithText}
           onWriteSkill={() => {
             const creator = composerContext.mentions.find(
@@ -3525,6 +3599,18 @@ function MainPage(props: {
   readonly onRemoveExpert: CatalogPageProps['onRemoveExpert'];
   readonly hubActions?: CatalogHubActions | undefined;
   readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void) | undefined;
+  /* 在线升级与办公扩展（设置 → 关于与更新） */
+  readonly update: UpdateStatusView | null;
+  readonly onCheckUpdate: () => void;
+  readonly onDownloadUpdate: () => void;
+  readonly onCancelUpdateDownload: () => void;
+  readonly onUpdateAutoCheck: (enabled: boolean) => void;
+  readonly onGetUpdateQuitImpact: () => Promise<UpdateQuitImpactView>;
+  readonly onQuitAndInstall: () => void;
+  readonly runtime: RuntimeStatusView | null;
+  readonly runtimeProgress?: RuntimeProgressView | undefined;
+  readonly runtimeError?: string | undefined;
+  readonly onInstallRuntime: () => void;
   readonly onUsePrompt: (prompt: string) => void;
   readonly onWriteSkill: () => void;
 }) {
@@ -3628,6 +3714,17 @@ function MainPage(props: {
           onOpenAccountWeb={props.onOpenAccountWeb}
           hubStatus={props.catalog?.hub?.status}
           onHubFetchWhenSignedOut={props.onHubFetchWhenSignedOut}
+          update={props.update}
+          onCheckUpdate={props.onCheckUpdate}
+          onDownloadUpdate={props.onDownloadUpdate}
+          onCancelUpdateDownload={props.onCancelUpdateDownload}
+          onUpdateAutoCheck={props.onUpdateAutoCheck}
+          onGetUpdateQuitImpact={props.onGetUpdateQuitImpact}
+          onQuitAndInstall={props.onQuitAndInstall}
+          runtime={props.runtime}
+          runtimeProgress={props.runtimeProgress}
+          runtimeError={props.runtimeError}
+          onInstallRuntime={props.onInstallRuntime}
         />
       );
 

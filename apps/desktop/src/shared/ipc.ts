@@ -829,6 +829,72 @@ export interface RuntimeInstallResultView {
   readonly message?: string | undefined;
 }
 
+/* ─────────────────── 在线升级（在线升级提案 §4 B4 · 总纲 Q46）─────────────────── */
+
+/**
+ * 「关于与更新」里那一块的全部状态。主进程是唯一真源，每次变化都推一份完整的过来
+ * （`RENDERER_CHANNELS.updateStatus`），渲染层不自己推算。
+ *
+ * `message` 是**可以直接显示**的一句话：文案只在主进程写一份，渲染层不按错误码另拼。
+ */
+export interface UpdateStatusView {
+  readonly currentVersion: string;
+  /**
+   * on = 可以检查；off = 部署时关掉（`EVOWORK_UPDATE_FEED=off`，Q46-6）；
+   * invalid = 那个变量填的不是可用地址；no-keys = 这个版本没内嵌签名公钥（打包问题）。
+   * unsupported = 这个构建没接在线升级模块（测试与开发环境）。
+   * 不是 on 时**一个请求都不发**，手动点也不发。
+   */
+  readonly availability: 'on' | 'off' | 'invalid' | 'no-keys' | 'unsupported';
+  readonly signedIn: boolean;
+  /**
+   * 当前登录状态下自动检查开没开。已登录默认开、未登录默认关，两个开关各自记（Q46-1 / Q46-2，
+   * 2026-10-03：已登录也可以关）。
+   */
+  readonly autoCheck: boolean;
+  /** 毫秒 */
+  readonly lastCheckedAt?: number | undefined;
+  readonly phase:
+    'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'verifying' | 'ready' | 'error';
+  /** 有新版本时：要提示的那一版 */
+  readonly offer?:
+    | {
+        readonly version: string;
+        readonly sizeBytes: number;
+        /** 纯文本，每条一行。**不当 HTML / Markdown 渲染** */
+        readonly notes: readonly string[];
+        readonly fileName: string;
+      }
+    | undefined;
+  readonly percent?: number | undefined;
+  readonly receivedBytes?: number | undefined;
+  /** 用户刚取消过下载（半截文件已删） */
+  readonly cancelled?: boolean | undefined;
+  /** 出错时的一个码，界面用它决定给哪个按钮；话在 `message` 里 */
+  readonly error?:
+    | 'offline'
+    | 'server'
+    | 'bad-signature'
+    | 'bad-manifest'
+    | 'stall'
+    | 'mismatch'
+    | 'disk'
+    | undefined;
+  readonly message?: string | undefined;
+}
+
+/** 「退出并打开安装包」之前要告诉用户的：哪些事会被打断 */
+export interface UpdateQuitImpactView {
+  readonly runningTasks: readonly string[];
+  /** 24 小时内要触发的定时任务。`whenMissed` 是按它自己的错过补偿策略写好的一句话 */
+  readonly upcoming: readonly {
+    readonly name: string;
+    readonly at: number;
+    readonly whenMissed: string;
+  }[];
+  readonly runtimeInstalling: boolean;
+}
+
 /**
  * 用户填的厂商密钥。空字符串 = 这一家没改。
  *

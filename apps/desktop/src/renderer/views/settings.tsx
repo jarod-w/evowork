@@ -26,6 +26,7 @@ import {
   EmptyState,
   IconButton,
   PillButton,
+  ProgressBar,
   SectionHeader,
 } from '../components/primitives.js';
 import type {
@@ -39,6 +40,10 @@ import type {
   MemorySettingsInput,
   MemorySettingsView,
   PreferencesView,
+  RuntimeProgressView,
+  RuntimeStatusView,
+  UpdateQuitImpactView,
+  UpdateStatusView,
 } from '../../shared/ipc.js';
 
 export type SettingsSection =
@@ -108,6 +113,19 @@ export interface SettingsPageProps {
   /** 插件 Hub 的状态（13 §5.6）。没加载时缺席，开关不出现。 */
   readonly hubStatus?: HubStatusView | undefined;
   readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void) | undefined;
+  /* 关于与更新（在线升级提案 §4 B4 · 总纲 Q46）。不给时那一块如实说「还没接上」 */
+  readonly update?: UpdateStatusView | null | undefined;
+  readonly onCheckUpdate?: (() => void) | undefined;
+  readonly onDownloadUpdate?: (() => void) | undefined;
+  readonly onCancelUpdateDownload?: (() => void) | undefined;
+  readonly onUpdateAutoCheck?: ((enabled: boolean) => void) | undefined;
+  readonly onGetUpdateQuitImpact?: (() => Promise<UpdateQuitImpactView>) | undefined;
+  readonly onQuitAndInstall?: (() => void) | undefined;
+  /* 办公扩展的版本（A4）：装着但不是这一版要的组件时，在这里说并给「重新安装」 */
+  readonly runtime?: RuntimeStatusView | null | undefined;
+  readonly runtimeProgress?: RuntimeProgressView | undefined;
+  readonly runtimeError?: string | undefined;
+  readonly onInstallRuntime?: (() => void) | undefined;
 }
 
 export function SettingsPage(props: SettingsPageProps) {
@@ -119,6 +137,11 @@ export function SettingsPage(props: SettingsPageProps) {
             key={item.id}
             label={item.label}
             selected={props.section === item.id}
+            // 自动检查发现了新版本：只在这里点一个点（首页不放提示，2026-10-03 定）
+            badge={
+              item.id === 'about' &&
+              (props.update?.phase === 'available' || props.update?.phase === 'ready')
+            }
             onClick={() => props.onSection(item.id)}
           />
         ))}
@@ -141,9 +164,7 @@ export function SettingsPage(props: SettingsPageProps) {
         {props.section === 'usage' ? <UsageSection {...props} /> : null}
         {props.section === 'data' ? <DataSection /> : null}
         {props.section === 'security' ? <SecuritySection {...props} /> : null}
-        {props.section === 'about' ? (
-          <AboutSection appName={props.appName} appVersion={props.appVersion} />
-        ) : null}
+        {props.section === 'about' ? <AboutSection {...props} /> : null}
       </div>
     </div>
   );
@@ -1006,23 +1027,306 @@ function SecuritySection(props: SettingsPageProps) {
   );
 }
 
-function AboutSection({
-  appName,
-  appVersion,
-}: {
-  readonly appName: string;
-  readonly appVersion: string;
-}) {
+function AboutSection(props: SettingsPageProps) {
+  // 不为 null 时就是确认框开着：里面是「退出会打断什么」
+  const [impact, setImpact] = useState<UpdateQuitImpactView | null>(null);
+  const update = props.update ?? null;
+  const offer = update?.offer;
+
+  const quit = () => {
+    const ask = props.onGetUpdateQuitImpact;
+    if (!ask) {
+      props.onQuitAndInstall?.();
+      return;
+    }
+    void ask().then((found) => {
+      const interrupts =
+        found.runningTasks.length > 0 || found.upcoming.length > 0 || found.runtimeInstalling;
+      if (interrupts) setImpact(found);
+      else props.onQuitAndInstall?.();
+    });
+  };
+
   return (
     <section className="ew-settings-section">
       <SectionHeader title="关于与更新" />
       <p className="ew-settings-note">
-        {appName} <span className="ew-mono">{appVersion}</span>
+        {props.appName} <span className="ew-mono">{props.appVersion}</span>
       </p>
+
+      <UpdateBlock {...props} update={update} onQuit={quit} />
+
+      {offer &&
+      (update?.phase === 'available' ||
+        update?.phase === 'downloading' ||
+        update?.phase === 'verifying') ? (
+        <div className="ew-settings-model-card">
+          <div className="ew-settings-model-card-head ew-update-card-head">
+            <span className="ew-settings-model-card-title">
+              EvoWork <span className="ew-mono">{offer.version}</span> 可以更新
+            </span>
+            <span className="ew-settings-note">约 {megabytes(offer.sizeBytes)} MB</span>
+          </div>
+          <div className="ew-update-card-body">
+            {offer.notes.length > 0 ? (
+              <ul className="ew-update-notes">
+                {offer.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            ) : null}
+            {update.phase === 'available' ? (
+              <>
+                {update.cancelled ? (
+                  <p className="ew-settings-note">已取消下载，下载了一半的文件已删除。</p>
+                ) : null}
+                <div className="ew-approval-actions">
+                  <PillButton variant="accent" onClick={props.onDownloadUpdate}>
+                    下载 {offer.version}
+                  </PillButton>
+                </div>
+                <p className="ew-settings-note">
+                  下载到「下载」文件夹。下载完成后由你决定什么时候安装，不会自动安装。
+                </p>
+              </>
+            ) : update.phase === 'downloading' ? (
+              <>
+                <ProgressBar
+                  percent={update.percent ?? 0}
+                  label={`正在下载 EvoWork ${offer.version}`}
+                />
+                <div className="ew-approval-actions">
+                  <span className="ew-settings-note ew-update-progress">
+                    正在下载 · {update.percent ?? 0}% · {megabytes(update.receivedBytes ?? 0)} /{' '}
+                    {megabytes(offer.sizeBytes)} MB
+                  </span>
+                  <PillButton variant="ghost" onClick={props.onCancelUpdateDownload}>
+                    取消下载
+                  </PillButton>
+                </div>
+              </>
+            ) : (
+              <p className="ew-settings-note">正在校验安装包…</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <OfficeRuntimeBlock {...props} />
+
       <p className="ew-settings-note">
         第三方许可声明随安装包分发（<span className="ew-mono">THIRD_PARTY_NOTICES.md</span>）。
-        自动更新还没接上 —— 现在需要手动下载新版本安装。
       </p>
+
+      {impact ? (
+        <Dialog
+          title={`退出并安装 ${offer?.version ?? '新版本'}？`}
+          confirmLabel="退出并打开安装包"
+          cancelLabel="稍后再说"
+          onConfirm={() => {
+            setImpact(null);
+            props.onQuitAndInstall?.();
+          }}
+          onCancel={() => setImpact(null)}
+        >
+          <p>EvoWork 退出时，下面这些会被打断：</p>
+          <ul className="ew-update-notes">
+            {impact.runningTasks.length > 0 ? (
+              <li>
+                {impact.runningTasks.length} 个任务正在运行：
+                {impact.runningTasks.map((title) => `「${title}」`).join('')}
+                。它们会停在当前位置，重新打开后可以接着让它们继续。
+              </li>
+            ) : null}
+            {impact.upcoming.map((item) => (
+              <li key={`${item.name}-${String(item.at)}`}>
+                定时任务「{item.name}」{clockTime(item.at)} 要执行。{item.whenMissed}
+              </li>
+            ))}
+            {impact.runtimeInstalling ? <li>办公扩展正在安装，退出会中断这次安装。</li> : null}
+          </ul>
+        </Dialog>
+      ) : null}
     </section>
   );
+}
+
+/** 检查更新那一行 + 开关 + 结果。不可用时如实说为什么，**不给一个点了没反应的按钮** */
+function UpdateBlock(
+  props: SettingsPageProps & {
+    readonly update: UpdateStatusView | null;
+    readonly onQuit: () => void;
+  },
+) {
+  const update = props.update;
+  if (!update || update.availability === 'unsupported') {
+    return (
+      <p className="ew-settings-note">
+        {update?.message ?? '这个版本还没接上在线升级，需要手动下载新版本安装。'}
+      </p>
+    );
+  }
+  if (update.availability === 'off') {
+    return <Banner tone="info">你所在的组织统一分发 EvoWork 的更新，这里不检查更新。</Banner>;
+  }
+  if (update.availability === 'invalid') {
+    return (
+      <Banner tone="warning">
+        更新源的地址配置不对（EVOWORK_UPDATE_FEED），所以这里不检查更新。请联系你的 IT 管理员。
+      </Banner>
+    );
+  }
+  if (update.availability === 'no-keys') {
+    return (
+      <Banner tone="danger">
+        这个版本里缺少更新签名公钥，没法确认更新的来源，所以不检查更新。请到官网手动下载最新版本。
+      </Banner>
+    );
+  }
+
+  const busy =
+    update.phase === 'checking' || update.phase === 'downloading' || update.phase === 'verifying';
+  const retry = update.error === 'stall' || update.error === 'mismatch' || update.error === 'disk';
+  return (
+    <>
+      <div className="ew-approval-actions">
+        <PillButton variant="accent" disabled={busy} onClick={props.onCheckUpdate}>
+          {update.phase === 'checking' ? '正在检查…' : '检查更新'}
+        </PillButton>
+        <span className="ew-settings-note ew-update-inline">
+          {update.phase === 'latest'
+            ? '已是最新版本。'
+            : `上次检查：${lastChecked(update.lastCheckedAt)}`}
+        </span>
+      </div>
+      {props.onUpdateAutoCheck ? (
+        <label className="ew-checkbox">
+          <input
+            type="checkbox"
+            checked={update.autoCheck}
+            onChange={(event) => props.onUpdateAutoCheck?.(event.target.checked)}
+          />
+          <span>
+            {update.signedIn ? '自动检查更新' : '未登录时也自动检查更新'}
+            （每天最多一次，只下载版本清单，不上传任何东西）
+          </span>
+        </label>
+      ) : null}
+      {update.phase === 'error' && update.message ? (
+        <Banner
+          tone={
+            update.error === 'offline' || update.error === 'stall' || update.error === 'server'
+              ? 'warning'
+              : 'danger'
+          }
+          action={
+            retry && update.offer ? (
+              <PillButton onClick={props.onDownloadUpdate}>重新下载</PillButton>
+            ) : (
+              <PillButton onClick={props.onCheckUpdate}>
+                {update.error === 'bad-signature' ? '再检查一次' : '再试一次'}
+              </PillButton>
+            )
+          }
+        >
+          {update.message}
+        </Banner>
+      ) : null}
+      {update.phase === 'ready' && update.offer ? (
+        <>
+          <Banner
+            tone="accent"
+            action={
+              <PillButton variant="accent" onClick={props.onQuit}>
+                退出并打开安装包
+              </PillButton>
+            }
+          >
+            EvoWork {update.offer.version} 已下载并通过校验，保存在「下载」文件夹。
+          </Banner>
+          <p className="ew-settings-note">
+            现在的安装包还没有 Apple 签名，所以要手动替换：EvoWork 退出后会打开安装包，把 EvoWork
+            拖进「应用程序」并选择「替换」，再重新打开。
+          </p>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/** 办公扩展的版本（A4）。装着但不是这一版要的组件时说清楚，**重新安装仍由用户点**（K6 登记） */
+function OfficeRuntimeBlock(props: SettingsPageProps) {
+  const runtime = props.runtime;
+  if (!runtime) return null;
+  const size = runtime.downloadSize !== undefined ? `（${runtime.downloadSize}）` : '';
+  let body;
+  if (props.runtimeProgress) {
+    body = (
+      <>
+        <ProgressBar percent={props.runtimeProgress.percent} label={props.runtimeProgress.label} />
+        <p className="ew-settings-note">{props.runtimeProgress.label}</p>
+      </>
+    );
+  } else if (props.runtimeError !== undefined) {
+    body = (
+      <Banner
+        tone="danger"
+        action={<PillButton onClick={props.onInstallRuntime}>重新安装</PillButton>}
+      >
+        {props.runtimeError}
+      </Banner>
+    );
+  } else if (!runtime.supported) {
+    body = <p className="ew-settings-note">这台电脑的架构没有对应的办公扩展。</p>;
+  } else if (!runtime.installed) {
+    body = (
+      <div className="ew-approval-actions">
+        <span className="ew-settings-note ew-update-inline">
+          还没有安装。Word / Excel / PPT / PDF 的处理要用它。
+        </span>
+        <PillButton onClick={props.onInstallRuntime}>安装{size}</PillButton>
+      </div>
+    );
+  } else if (runtime.outdated) {
+    body = (
+      <Banner
+        tone="warning"
+        action={<PillButton onClick={props.onInstallRuntime}>重新安装{size}</PillButton>}
+      >
+        办公扩展已安装，但不是这个版本要求的组件。现在仍然能用；重新安装后，Word / Excel / PPT / PDF
+        的处理才会换成新组件。
+      </Banner>
+    );
+  } else {
+    body = <p className="ew-settings-note">已安装，与这个版本要求的组件一致。</p>;
+  }
+  return (
+    <>
+      <SectionHeader title="办公扩展" />
+      {body}
+    </>
+  );
+}
+
+function megabytes(bytes: number): number {
+  return Math.round(bytes / 1_000_000);
+}
+
+function lastChecked(at: number | undefined): string {
+  if (at === undefined) return '从未';
+  const minutes = Math.floor((Date.now() - at) / 60_000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${String(minutes)} 分钟前`;
+  return new Date(at).toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** 24 小时内的时刻；不是今天的写「明天」 */
+function clockTime(at: number): string {
+  const time = new Date(at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(at).toDateString() === new Date().toDateString() ? time : `明天 ${time}`;
 }

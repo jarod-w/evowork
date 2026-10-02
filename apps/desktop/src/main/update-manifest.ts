@@ -99,3 +99,165 @@ export function verifyUpdateManifest(
     ? { ok: true, kid: key.kid, role: key.role }
     : { ok: false, reason: 'bad-signature' };
 }
+
+/* ───────────────────────────── 清单内容 ───────────────────────────── */
+
+/** `latest-mac.yml` 里列出的一个文件 */
+export interface UpdateManifestFile {
+  readonly url: string;
+  /** base64 */
+  readonly sha512: string;
+  readonly size: number;
+}
+
+export interface UpdateManifest {
+  readonly version: string;
+  readonly files: readonly UpdateManifestFile[];
+  readonly path?: string | undefined;
+  readonly releaseDate?: string | undefined;
+  /** 每行一条，已去掉 `- ` / `* ` 前缀与空行。来自 `build/release-notes.md`，**纯文本** */
+  readonly notes: readonly string[];
+}
+
+export type ParseManifestResult =
+  | { readonly ok: true; readonly manifest: UpdateManifest }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * 解析 electron-builder 写的 `latest-*.yml`。**发布脚本也用这一份**（`scripts/publish-release.mjs`
+ * 经 esbuild 现编它），所以「发得出去」和「客户端认得」是同一个判据。
+ *
+ * 只认 electron-builder 生成的那个形状，认不出的行直接报错：不引 YAML 库 —— 形状固定，
+ * 而一个宽容的解析器会把写错的清单也放过去。**验签之后才调它**：签名保证这是我们发的，
+ * 这里只保证它是我们以为的那个形状。
+ *
+ * `releaseNotes` 支持 electron-builder（js-yaml）会写出的四种写法：块（`|` `|-`）、折叠块（`>` `>-`）、
+ * 单引号、双引号，以及不加引号的一行。
+ */
+export function parseUpdateManifest(text: string): ParseManifestResult {
+  const lines = text.split(/\r?\n/);
+  let version: string | undefined;
+  let path: string | undefined;
+  let releaseDate: string | undefined;
+  let notesText: string | undefined;
+  const files: { url: string; sha512?: string; size?: number }[] = [];
+  let current: { url: string; sha512?: string; size?: number } | undefined;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (line.trim() === '') continue;
+    let m: RegExpExecArray | null;
+    if ((m = /^version: (.+)$/.exec(line))) version = unquote(m[1] ?? '');
+    else if (line === 'files:') continue;
+    else if ((m = /^ {2}- url: (.+)$/.exec(line)))
+      files.push((current = { url: unquote(m[1] ?? '') }));
+    else if ((m = /^ {4}sha512: (.+)$/.exec(line)) && current) current.sha512 = unquote(m[1] ?? '');
+    else if ((m = /^ {4}size: (\d+)$/.exec(line)) && current) current.size = Number(m[1]);
+    else if (/^ {4}(blockMapSize|isAdminRightsRequired): /.test(line)) continue;
+    else if ((m = /^path: (.+)$/.exec(line))) path = unquote(m[1] ?? '');
+    else if (/^sha512: /.test(line)) continue;
+    else if ((m = /^releaseDate: (.+)$/.exec(line))) releaseDate = unquote(m[1] ?? '');
+    else if ((m = /^releaseNotes: ?(.*)$/.exec(line))) {
+      const head = (m[1] ?? '').trim();
+      if (/^[|>][-+]?$/.test(head)) {
+        const block: string[] = [];
+        while (
+          i + 1 < lines.length &&
+          (/^ {2}/.test(lines[i + 1] ?? '') || (lines[i + 1] ?? '').trim() === '')
+        ) {
+          i += 1;
+          block.push((lines[i] ?? '').replace(/^ {2}/, ''));
+        }
+        notesText = head.startsWith('>') ? foldBlock(block) : block.join('\n');
+      } else notesText = unquote(head);
+    } else return { ok: false, reason: `清单里有认不出的一行：${line.slice(0, 80)}` };
+  }
+
+  if (version === undefined || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
+    return { ok: false, reason: '清单没有可用的版本号' };
+  }
+  if (files.length === 0 || files.some((f) => f.sha512 === undefined || f.size === undefined)) {
+    return { ok: false, reason: '清单里的文件缺少 sha512 或大小' };
+  }
+  const notes = (notesText ?? '')
+    .split('\n')
+    .map((n) => n.trim().replace(/^[-*]\s+/, ''))
+    .filter((n) => n !== '');
+  return {
+    ok: true,
+    manifest: {
+      version,
+      files: files.map((f) => ({ url: f.url, sha512: f.sha512 ?? '', size: f.size ?? 0 })),
+      ...(path !== undefined ? { path } : {}),
+      ...(releaseDate !== undefined ? { releaseDate } : {}),
+      notes,
+    },
+  };
+}
+
+function unquote(raw: string): string {
+  const v = raw.trim();
+  if (/^'.*'$/.test(v)) return v.slice(1, -1).replace(/''/g, "'");
+  if (/^".*"$/.test(v)) {
+    try {
+      return JSON.parse(v) as string;
+    } catch {
+      return v.slice(1, -1);
+    }
+  }
+  return v;
+}
+
+/** YAML 折叠块：相邻的非空行用空格接起来，空行变成换行 */
+function foldBlock(block: readonly string[]): string {
+  const out: string[] = [];
+  let paragraph: string[] = [];
+  for (const line of block) {
+    if (line.trim() === '') {
+      if (paragraph.length > 0) out.push(paragraph.join(' '));
+      paragraph = [];
+    } else paragraph.push(line.trim());
+  }
+  if (paragraph.length > 0) out.push(paragraph.join(' '));
+  return out.join('\n');
+}
+
+/** `x.y.z` 与 `x.y.z-pre`，按数字比（0.0.10 比 0.0.9 新）。预发布版排在同号正式版之前 */
+export function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => {
+    const [core = '', pre] = v.split('-', 2);
+    return { nums: core.split('.').map((n) => Number(n)), pre };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < 3; i += 1) {
+    const d = (pa.nums[i] ?? 0) - (pb.nums[i] ?? 0);
+    if (d !== 0) return Math.sign(d);
+  }
+  if (pa.pre === pb.pre) return 0;
+  if (pa.pre === undefined) return 1;
+  if (pb.pre === undefined) return -1;
+  return pa.pre < pb.pre ? -1 : 1;
+}
+
+/** 清单所在目录里，这个平台读哪个文件（electron-builder 的命名） */
+export function manifestNameFor(platform: string): string {
+  if (platform === 'darwin') return 'latest-mac.yml';
+  if (platform === 'linux') return 'latest-linux.yml';
+  return 'latest.yml';
+}
+
+/**
+ * 这台机器该下哪个安装包。mac 下 dmg（用户要手动替换，dmg 是他们认得的形状），
+ * 清单里有多个架构时取名字里带本机架构的那个。没有合适的就返回 undefined，**不猜**。
+ */
+export function pickPackageFor(
+  manifest: UpdateManifest,
+  platform: string,
+  arch: string,
+): UpdateManifestFile | undefined {
+  const ext = platform === 'darwin' ? '.dmg' : platform === 'linux' ? '.AppImage' : '.exe';
+  const candidates = manifest.files.filter((f) => f.url.endsWith(ext));
+  if (candidates.length <= 1) return candidates[0];
+  return candidates.find((f) => f.url.includes(arch));
+}
