@@ -18,7 +18,7 @@
  * 4. **审批卡内联在时间线上**（不是模态），同时顶部有 `z-400` 吸顶条（04 §5.3 / 10 §3.5）。
  */
 import { LAYOUT } from '@evowork/tokens';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import type { TaskGoalView } from '../../shared/ipc.js';
 
@@ -34,6 +34,7 @@ import {
   type RenderItem,
 } from '../components/item-renderers.js';
 import { renderIcon } from '../components/icons.js';
+import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
 import {
   Badge,
   Banner,
@@ -387,6 +388,23 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [hasNewContent, setHasNewContent] = useState(false);
   const [resultWidth, setResultWidth] = useState<number | undefined>(undefined);
   const [goalOpen, setGoalOpen] = useState(false);
+  const [taskMenuOpen, setTaskMenuOpen] = useState(false);
+  const taskMenuId = useId();
+  const taskMenuRef = useRef<HTMLSpanElement | null>(null);
+  const taskMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeTaskMenu = useCallback(() => {
+    setTaskMenuOpen(false);
+    taskMenuTriggerRef.current?.focus();
+  }, []);
+  const taskMenuItems: MenuItemSpec[] = [
+    ...(props.onGoalSave ? [{ id: 'goal', label: props.goal ? '目标与预算' : '设置目标' }] : []),
+    ...(props.onFork
+      ? [
+          { id: 'fork', label: '分叉' },
+          { id: 'side-chat', label: '旁聊' },
+        ]
+      : []),
+  ];
   const [subtasksOpen, setSubtasksOpen] = useState(false);
   const [goalObjective, setGoalObjective] = useState(props.goal?.objective ?? '');
   const [goalBudget, setGoalBudget] = useState(
@@ -434,11 +452,17 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   }, [props.hasResults, props.resultPanel, resultOpen]);
 
   useEffect(() => {
+    if (taskMenuOpen)
+      taskMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [taskMenuOpen]);
+
+  useEffect(() => {
     setVisibleCount(TIMELINE_PAGE_SIZE);
     followOutputRef.current = true;
     setHasNewContent(false);
     setLocalResultOpen(undefined);
     setSubtasksOpen(false);
+    setTaskMenuOpen(false);
   }, [props.taskId]);
 
   useEffect(() => {
@@ -518,29 +542,6 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           </>
         ) : null}
         <div className="ew-title-bar-actions">
-          {props.onGoalSave ? (
-            <button
-              type="button"
-              className="ew-pill-button"
-              onClick={() => setGoalOpen((value) => !value)}
-            >
-              {props.goal ? '目标与预算' : '设置目标'}
-            </button>
-          ) : null}
-          {props.onFork ? (
-            <>
-              <button
-                type="button"
-                className="ew-pill-button"
-                onClick={() => props.onFork?.(false)}
-              >
-                分叉
-              </button>
-              <button type="button" className="ew-pill-button" onClick={() => props.onFork?.(true)}>
-                旁聊
-              </button>
-            </>
-          ) : null}
           {(props.subtasks ?? []).length > 0 ? (
             <button
               type="button"
@@ -560,6 +561,68 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
             >
               {resultOpen ? '关闭结果' : '打开结果'}
             </button>
+          ) : null}
+          {taskMenuItems.length > 0 ? (
+            <span
+              ref={taskMenuRef}
+              className="ew-task-menu-anchor"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && taskMenuOpen) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeTaskMenu();
+                  return;
+                }
+                if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                if (!taskMenuOpen) {
+                  setTaskMenuOpen(true);
+                  return;
+                }
+                const items = [
+                  ...(taskMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+                    '[role="menuitem"]',
+                  ) ?? []),
+                ];
+                const current = items.indexOf(document.activeElement as HTMLButtonElement);
+                const next =
+                  event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? items.length - 1
+                      : (current + (event.key === 'ArrowUp' ? -1 : 1) + items.length) %
+                        items.length;
+                items[next]?.focus();
+              }}
+            >
+              <button
+                ref={taskMenuTriggerRef}
+                type="button"
+                className="ew-icon-button"
+                aria-label="任务更多操作"
+                title="更多操作"
+                aria-haspopup="menu"
+                aria-expanded={taskMenuOpen}
+                aria-controls={taskMenuOpen ? taskMenuId : undefined}
+                data-selected={taskMenuOpen ? 'true' : undefined}
+                onClick={() => setTaskMenuOpen((open) => !open)}
+              >
+                <span aria-hidden="true">⋯</span>
+              </button>
+              <Popover open={taskMenuOpen} onClose={closeTaskMenu} align="end">
+                <Menu
+                  id={taskMenuId}
+                  ariaLabel="任务操作"
+                  items={taskMenuItems}
+                  onSelect={(id) => {
+                    closeTaskMenu();
+                    if (id === 'goal') setGoalOpen((open) => !open);
+                    if (id === 'fork') props.onFork?.(false);
+                    if (id === 'side-chat') props.onFork?.(true);
+                  }}
+                />
+              </Popover>
+            </span>
           ) : null}
         </div>
       </header>

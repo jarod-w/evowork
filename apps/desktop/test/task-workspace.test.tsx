@@ -119,14 +119,50 @@ describe('结果区（04 §1）', () => {
     expect(container.querySelector('.ew-result-pane')).toBeNull();
   });
 
-  it('顶栏不展示重命名、分叉、归档、删除；归档删除仍在侧栏任务菜单', () => {
-    renderWorkspace({ hasResults: true, title: '季度汇报 PPT' });
+  it('目标、分叉和旁聊收进更多菜单，归档删除仍在侧栏任务菜单', () => {
+    const onGoalSave = vi.fn();
+    const onFork = vi.fn();
+    renderWorkspace({ hasResults: true, title: '季度汇报 PPT', onGoalSave, onFork });
     expect(screen.getByRole('heading', { name: '季度汇报 PPT' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '关闭结果' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '重命名' })).toBeNull();
     expect(screen.queryByRole('button', { name: '分叉' })).toBeNull();
     expect(screen.queryByRole('button', { name: '归档' })).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+    expect(screen.queryByText('设置目标')).toBeNull();
+    expect(screen.queryByText('旁聊')).toBeNull();
+
+    const more = screen.getByRole('button', { name: '任务更多操作' });
+    fireEvent.click(more);
+    const goal = screen.getByRole('menuitem', { name: '设置目标' });
+    expect(document.activeElement).toBe(goal);
+    fireEvent.keyDown(goal, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '分叉' }));
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(more);
+    expect(screen.getByRole('button', { name: '关闭结果' })).toBeTruthy();
+
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置目标' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: '任务目标' }), {
+      target: { value: '完成季度报告' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onGoalSave).toHaveBeenCalledWith({ objective: '完成季度报告', tokenBudget: null });
+
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('menuitem', { name: '分叉' }));
+    expect(onFork).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('menuitem', { name: '旁聊' }));
+    expect(onFork).toHaveBeenLastCalledWith(true);
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(more);
+    fireEvent.mouseDown(screen.getByRole('heading', { name: '季度汇报 PPT' }));
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });
 

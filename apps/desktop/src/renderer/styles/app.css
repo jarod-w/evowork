@@ -231,7 +231,14 @@ textarea {
 .ew-title-bar-actions {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: var(--space-8);
+}
+
+.ew-task-menu-anchor {
+  position: relative;
+  display: inline-flex;
+  -webkit-app-region: no-drag;
 }
 
 .ew-workspace-body {

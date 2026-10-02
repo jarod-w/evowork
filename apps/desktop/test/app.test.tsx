@@ -467,7 +467,8 @@ describe('事件接线', () => {
 
     fireEvent.click(await screen.findByText('源任务'));
     await screen.findByText('已有回答');
-    fireEvent.click(screen.getByRole('button', { name: '旁聊' }));
+    fireEvent.click(screen.getByRole('button', { name: '任务更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '旁聊' }));
 
     await waitFor(() =>
       expect(forkTask).toHaveBeenCalledWith(
