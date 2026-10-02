@@ -1985,12 +1985,13 @@ describe('项目页接线（Task 13）', () => {
     automations: [],
   };
 
-  it('点侧边栏「项目」会去拉列表，而不是显示"还没做好"', async () => {
+  it('侧栏「查看所有项目」会去拉列表，而不是显示"还没做好"', async () => {
     const listProjects = vi.fn(async () => ({ projects: [PROJECT_CARD] }));
     const { bridge } = fakeBridge({ listProjects });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(listProjects).toHaveBeenCalled());
     expect(await screen.findByText('季度汇报')).toBeTruthy();
     expect(screen.queryByText('项目页还没做好')).toBeNull();
@@ -2050,7 +2051,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await screen.findByText('季度汇报');
     // 列表页此刻还没有理由拉详情三件套 —— 这条钉住"按需拉"，不是"进了这一页就顺带全拉了"
     expect(readProjectDetail).not.toHaveBeenCalled();
@@ -2079,7 +2081,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
 
     // 空态里那个「新建空间」→ 对话框 → 选目录 → 创建
@@ -2109,7 +2112,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getAllByText('新建项目')[0] as HTMLElement);
@@ -2175,7 +2179,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
 
     fireEvent.click(screen.getAllByText('新建项目')[1] as HTMLElement);
@@ -2200,7 +2205,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await screen.findByText('季度汇报');
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
     fireEvent.click(screen.getByText('在此项目新建任务'));
@@ -2218,7 +2224,8 @@ describe('项目页接线（Task 13）', () => {
     const { bridge, emit } = fakeBridge({ listProjects });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
 
     emit.ui?.({ type: 'projects-changed' });
@@ -2230,7 +2237,8 @@ describe('项目页接线（Task 13）', () => {
     const { bridge, emit } = fakeBridge({ listProjects });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: /新建任务/ }));
 
@@ -2251,7 +2259,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await screen.findByText('季度汇报');
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
     fireEvent.click(screen.getByText('改名'));
@@ -2271,7 +2280,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await screen.findByText('季度汇报');
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
     fireEvent.click(screen.getByText('从列表移除'));
@@ -2289,7 +2299,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await waitFor(() => expect(screen.getByText(/还没有项目/)).toBeTruthy());
     fireEvent.click(screen.getAllByText('导入现有文件夹')[0] as HTMLElement);
 
@@ -2306,7 +2317,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await screen.findByText('季度汇报');
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
     fireEvent.click(screen.getByText('打开所在文件夹'));
@@ -2328,7 +2340,8 @@ describe('项目页接线（Task 13）', () => {
       openProjectFolder,
     });
     render(<App bridge={bridge} />);
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     await screen.findByText('季度汇报');
     fireEvent.click(screen.getByLabelText('季度汇报 的更多操作'));
     fireEvent.click(screen.getByText('打开所在文件夹'));
@@ -2348,7 +2361,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     fireEvent.click(await screen.findByText('季度汇报'));
     fireEvent.click(await screen.findByRole('tab', { name: '文件' }));
     await screen.findByText('src');
@@ -2374,7 +2388,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     fireEvent.click(await screen.findByText('季度汇报'));
     fireEvent.click(await screen.findByRole('tab', { name: '项目说明' }));
     const textarea = await screen.findByLabelText('项目说明');
@@ -2408,7 +2423,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     fireEvent.click(await screen.findByText('季度汇报'));
     fireEvent.click(await screen.findByRole('tab', { name: '项目说明' }));
     const textarea = await screen.findByLabelText('项目说明');
@@ -2442,7 +2458,8 @@ describe('项目页接线（Task 13）', () => {
     });
     render(<App bridge={bridge} />);
 
-    fireEvent.click(await screen.findByText('项目'));
+    fireEvent.click(await screen.findByRole('button', { name: '项目更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '查看所有项目' }));
     fireEvent.click(await screen.findByText('季度汇报'));
     fireEvent.click(await screen.findByText('季度评审'));
 

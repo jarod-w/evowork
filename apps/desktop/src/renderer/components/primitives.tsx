@@ -477,6 +477,8 @@ export function SidebarSectionHeader({
   label,
   count,
   filteredCount,
+  showCount = true,
+  controlsId,
   collapsed,
   onToggle,
   onResetFilter,
@@ -485,6 +487,8 @@ export function SidebarSectionHeader({
   readonly label: string;
   readonly count?: number | undefined;
   readonly filteredCount?: number | undefined;
+  readonly showCount?: boolean | undefined;
+  readonly controlsId?: string | undefined;
   readonly collapsed?: boolean | undefined;
   readonly onToggle?: (() => void) | undefined;
   readonly onResetFilter?: (() => void) | undefined;
@@ -493,7 +497,7 @@ export function SidebarSectionHeader({
   const counter =
     filteredCount !== undefined && count !== undefined
       ? `(${filteredCount} / ${count})`
-      : count !== undefined
+      : showCount && count !== undefined
         ? `(${count})`
         : '';
   return (
@@ -502,12 +506,13 @@ export function SidebarSectionHeader({
         type="button"
         className="ew-sidebar-section-toggle"
         aria-expanded={!collapsed}
+        aria-controls={controlsId}
         onClick={onToggle}
       >
         <span className="ew-sidebar-section-label">{label}</span>
         {counter ? <span className="ew-sidebar-section-count">{counter}</span> : null}
         <span className="ew-sidebar-section-chevron" aria-hidden="true">
-          {collapsed ? '▸' : '▾'}
+          {renderIcon(collapsed ? 'chevron-right' : 'chevron-down')}
         </span>
       </button>
       {onResetFilter ? (

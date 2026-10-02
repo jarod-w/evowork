@@ -73,8 +73,7 @@ describe('分组结构（04 §3.1）', () => {
     });
     expect(screen.getByText('父任务')).toBeTruthy();
     expect(screen.queryByText('子任务')).toBeNull();
-    // 计数也要不含子任务，否则「任务 (2)」与看到的一行对不上
-    expect(screen.getByText('(1)')).toBeTruthy();
+    expect(screen.queryByText('(2)')).toBeNull();
   });
 
   it('完成任务保持纯文本左对齐，只有进行中等需关注状态显示状态点', () => {
@@ -108,7 +107,8 @@ describe('搜索与筛选（04 §3.4）', () => {
 
     expect(screen.getByText('(2 / 3)')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
-    expect(screen.getByText('(3)')).toBeTruthy();
+    expect(screen.queryByText('(3)')).toBeNull();
+    expect(screen.getByRole('button', { name: '最近' })).toBeTruthy();
   });
 
   it('状态是多选', () => {
@@ -305,13 +305,16 @@ describe('项目与插件入口', () => {
     expect(screen.getByRole('button', { name: '季度汇报（目录不可用）' })).toBeTruthy();
   });
 
-  it('点「项目」后同一行提供 ⋯ 与 +，+ 直接请求创建项目', () => {
+  it('项目标题负责折叠，同一行的 + 直接请求创建项目', () => {
     const onNavSelect = vi.fn();
     const onProjectCreate = vi.fn();
     renderSidebar({ activeNavId: 'projects', onNavSelect, onProjectCreate });
 
     fireEvent.click(screen.getByRole('button', { name: '项目' }));
-    expect(onNavSelect).toHaveBeenCalledWith('projects');
+    expect(onNavSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '项目' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
     expect(screen.getByRole('button', { name: '项目更多操作' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
@@ -353,20 +356,60 @@ describe('项目与插件入口', () => {
     expect(screen.getByText('独立任务')).toBeTruthy();
   });
 
-  it('「最近」的计数只包含未归属项目的任务，删掉最后一条后归零', () => {
-    const project = { id: 'p1', name: 'evowork', path: '/work/evowork' };
-    const projectTask = task({ id: 'project-task', title: '项目任务', cwd: project.path });
-    const recentTask = task({ id: 'recent-task', title: '独立任务' });
-    const { rerender } = renderSidebar({
-      projects: [project],
-      tasks: [projectTask, recentTask],
+  it('默认标题不带计数，筛选计数只包含最近任务', () => {
+    renderSidebar({
+      projects: [{ id: 'p1', name: 'evowork', path: '/work/evowork' }],
+      tasks: [
+        task({ id: 'project-task', title: '项目任务', cwd: '/work/evowork' }),
+        task({ id: 'recent-task', title: '独立任务' }),
+      ],
     });
+    expect(screen.getByRole('button', { name: '最近' })).toBeTruthy();
+    expect(screen.queryByText('(1)')).toBeNull();
+    fireEvent.click(screen.getByLabelText('打开搜索框'));
+    fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '任务' } });
+    expect(screen.getByText('(1 / 1)')).toBeTruthy();
+  });
 
-    expect(screen.getByText('(1)')).toBeTruthy();
-
-    rerender(<Sidebar projects={[project]} tasks={[projectTask]} sections={[]} />);
-    expect(screen.getByText('(0)')).toBeTruthy();
+  it('项目和最近独立折叠，隐藏任务停止上报，重新展开保留选中态', () => {
+    const onVisibleChange = vi.fn();
+    renderSidebar({
+      projects: [{ id: 'p1', name: 'evowork', path: '/work/evowork' }],
+      tasks: [
+        task({ id: 'project-task', title: '项目任务', cwd: '/work/evowork' }),
+        task({ id: 'recent-task', title: '独立任务' }),
+      ],
+      selectedId: 'project-task',
+      onVisibleChange,
+    });
+    const projectsToggle = screen.getByRole('button', { name: '项目' });
+    const recentToggle = screen.getByRole('button', { name: '最近' });
+    expect(projectsToggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(projectsToggle);
+    expect(screen.queryByText('项目任务')).toBeNull();
+    expect(screen.getByText('独立任务')).toBeTruthy();
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['recent-task']);
+    fireEvent.click(recentToggle);
     expect(screen.queryByText('独立任务')).toBeNull();
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual([]);
+    fireEvent.click(projectsToggle);
+    expect(
+      screen.getByText('项目任务').closest('.ew-task-item')?.getAttribute('data-selected'),
+    ).toBe('true');
+    expect(screen.queryByText('独立任务')).toBeNull();
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['project-task']);
+    fireEvent.click(recentToggle);
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['project-task', 'recent-task']);
+  });
+
+  it('没有任务时保留两个分组标题，筛空时仍提供重置提示', () => {
+    renderSidebar({ tasks: [] });
+    expect(screen.getByRole('button', { name: '项目' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '最近' })).toBeTruthy();
+    expect(screen.queryByText('还没有任务。')).toBeNull();
+    fireEvent.click(screen.getByLabelText('打开搜索框'));
+    fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '任务' } });
+    expect(screen.getByText(/改一下筛选条件，或者重置/)).toBeTruthy();
   });
 });
 

@@ -298,9 +298,9 @@ C7：本版只设计和验收浅色。技能色板含暗色值，token 包可以
 态：默认 → 悬停 `--bg-hover` → **选中 `--bg-selected` + 文字 `--text-primary`/600 + 图标满色**。选中态**不用**品牌色填充（截图为中性灰选中）。
 可选右侧计数徽标（数字 ≥1 时显示，`micro`，`--bg-selected` 圆角胶囊）—— 通知中心用。
 
-### 5.4 SidebarSectionHeader（「任务 (8)」）
+### 5.4 SidebarSectionHeader（「项目」「最近」）
 
-高 28，左内边距 20：`caption`/500/`--text-secondary` + 4 + 计数 + 4 + chevron 12（可折叠）。悬停时右侧浮出 `IconButton`（新建分组 / 排序）。
+高 28，左内边距 8（加侧栏外边距 8 后与列表文字起点一致）：`label`/400/`--text-tertiary`（悬停为 `--text-primary`）+ 4 + 线性 chevron 12；展开向下、折叠向右。标题下间距 4。默认不显示计数；筛选时“最近”显示命中 / 总数及重置入口。项目标题右侧的 `⋯` 与 `+` 在标题悬停、键盘聚焦或项目页激活时出现。两组独立折叠，标题按钮带 `aria-expanded` 与 `aria-controls`。
 
 ### 5.5 TaskListItem
 

@@ -35,7 +35,8 @@ test('插件：三个分类 Tab 都切得动，搜索框在', async ({ page, ele
 });
 
 test('项目：列表在，搜索在，每个项目都有更多操作', async ({ page, electronApp }) => {
-  await page.getByRole('button', { name: '项目', exact: true }).first().click();
+  await page.getByRole('button', { name: '项目更多操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '查看所有项目', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: '搜索项目' })).toBeVisible();
   /*
    * 引导里建的那个项目要真的列出来 —— 列表只读 props 的话，组件测试看不出接线断了。

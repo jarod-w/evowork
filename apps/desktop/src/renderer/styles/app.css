@@ -2176,36 +2176,12 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-sidebar-projects {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-12) 0 var(--space-16);
+  padding: var(--space-12) 0;
 }
 .ew-sidebar-project-group {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-.ew-sidebar-subhead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--layout-nav-item-height);
-  padding: 0 var(--space-8);
-  color: var(--text-secondary);
-  font-size: var(--font-caption-size);
-}
-.ew-sidebar-projects-link {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-tertiary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.ew-sidebar-projects-link:hover {
-  color: var(--text-primary);
 }
 .ew-sidebar-project-actions {
   display: inline-flex;
@@ -2214,8 +2190,8 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   pointer-events: none;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-.ew-sidebar-projects:hover .ew-sidebar-project-actions,
-.ew-sidebar-projects:focus-within .ew-sidebar-project-actions,
+.ew-sidebar-projects .ew-sidebar-section-header:hover .ew-sidebar-project-actions,
+.ew-sidebar-projects .ew-sidebar-section-header:focus-within .ew-sidebar-project-actions,
 .ew-sidebar-projects[data-active='true'] .ew-sidebar-project-actions {
   opacity: 1;
   pointer-events: auto;
@@ -2411,20 +2387,39 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  height: var(--layout-nav-item-height);
+  min-height: var(--layout-nav-item-height);
   padding: 0 var(--space-8);
+  margin-bottom: var(--space-4);
 }
 .ew-sidebar-section-toggle {
   display: flex;
+  min-width: 0;
+  min-height: var(--layout-nav-item-height);
+  padding: 0;
   align-items: center;
   gap: var(--space-4);
   border: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   font: inherit;
-  font-size: var(--font-caption-size);
+  font-size: var(--font-label-size);
   font-weight: var(--font-caption-weight);
   cursor: pointer;
+}
+.ew-sidebar-section-toggle:hover {
+  color: var(--text-primary);
+}
+.ew-sidebar-section-chevron {
+  display: inline-flex;
+  color: var(--text-tertiary);
+}
+.ew-sidebar-section-chevron .ew-icon {
+  width: var(--layout-chevron-size);
+  height: var(--layout-chevron-size);
+}
+.ew-sidebar-section-actions {
+  display: inline-flex;
+  margin-left: auto;
 }
 .ew-reset-filter {
   border: 0;
@@ -2446,6 +2441,9 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-secondary);
 }
 .ew-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--layout-nav-rhythm) - var(--layout-nav-item-height));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2522,7 +2520,8 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-task-item:hover .ew-task-item-time {
   opacity: 0;
 }
-.ew-task-item:hover .ew-task-item-tail .ew-icon-button {
+.ew-task-item:hover .ew-task-item-tail .ew-icon-button,
+.ew-task-row-anchor:focus-within .ew-task-item-tail .ew-icon-button {
   opacity: 1;
 }
 .ew-task-item-time {
