@@ -798,6 +798,15 @@ export interface RuntimeStatusView {
   readonly supported: boolean;
   /** 要下多少（如 "约 25 MB"）。不支持的平台上不填 */
   readonly downloadSize?: string | undefined;
+  /**
+   * 装着、模块也 import 得动，但**装的不是这一版要的清单**（新版本改了钉死的版本，
+   * 或者是加版本戳之前装的）。在线升级提案 §4 A4。
+   *
+   * 不影响 `installed`：旧清单照样能用，只是版本不对。重新安装仍由用户点（K6 登记：
+   * 办公扩展只在用户点安装时下载）。用户自己指定了解释器（`EVOWORK_OFFICE_PYTHON`）时不判。
+   * **界面还没接**：提示条要先出原型，和「检查更新」一起做。
+   */
+  readonly outdated?: boolean | undefined;
 }
 
 /**

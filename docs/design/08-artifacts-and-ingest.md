@@ -215,6 +215,7 @@ artifact
 | 失败怎么说                        | 平台不支持 / 下载失败 / 校验不过 / 停滞 / pip 被代理挡 / 磁盘满 / 验收不过，**各自一句能照做的话**，不合并成"安装失败" |
 | 停滞看门狗                        | 60 秒收不到字节即判定连接死了。**没有它的表现是进度条永远停在 0%**（2026-09-07 真机 E2E 撞到过），用户没有任何出路   |
 | 离线安装（企业）                  | `scripts/build-office-bundle.mjs` 打包，目标机器上 `EVOWORK_OFFICE_BUNDLE=<目录>`。**这条路径一个字节都不出网**，有测试守（把下载函数换成"一被调用就失败"） |
+| 版本戳（2026-10-02，[在线升级提案 §4 A4](../superpowers/specs/2026-10-02-online-update-design.md)） | 换入前在目录里写 `.evowork-runtime.json`（清单指纹：python 版本与构建号、钉死的包、字体哈希与字重）。探针只看「能不能 import」，判不出「装的是旧清单」—— 新版本改了钉死的版本，老机器上的模块照样 import 得动。不一致或没有戳时 `RuntimeStatusView.outdated = true`，`installed` 不变（旧清单照样能用）；`EVOWORK_OFFICE_PYTHON` 覆盖时不判。重新安装仍由用户点。**界面还没接**，提示条和「检查更新」一起出原型 |
 
 出网路径已按 K6 登记在[总纲 D9](../evowork-on-codex-design.md)。发版前必须跑一次真机安装：
 `EVOWORK_INSTALL_E2E=1 npx vitest run --project runtime-installer`（上游资产变了只有它能发现）。

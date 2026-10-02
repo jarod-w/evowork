@@ -23,6 +23,7 @@
  *
  * 更新清单用 `node scripts/refresh-office-manifest.mjs`，它会重新拉 `SHA256SUMS` 并核对。
  */
+import { createHash } from 'node:crypto';
 
 /** 一个可下载、可校验的文件。**三个字段缺一不可**：没有 size 就画不出进度条。 */
 export interface RemoteAsset {
@@ -181,3 +182,23 @@ export function totalDownloadBytes(
   const python = PYTHON_ASSETS[triple]?.bytes ?? 0;
   return options.includeFont === false ? python : python + FONT_ASSET.bytes;
 }
+
+/**
+ * 这份清单的指纹：python 版本与构建号、钉死的包、字体哈希与切出的字重。
+ *
+ * 安装完成时写进运行时目录（`install.ts` 的 `RUNTIME_STAMP_FILE`），探测时拿它比对。
+ * 只看「能不能 import」永远判不出「装的是旧清单」：新版本 EvoWork 改了这里钉死的版本，
+ * 老用户机器上的模块照样 import 得动，只是版本不对（在线升级提案 §4 A4）。
+ * **改上面任何一项，指纹都会变** —— 这正是要的效果。
+ */
+export const RUNTIME_MANIFEST_DIGEST: string = createHash('sha256')
+  .update(
+    JSON.stringify({
+      python: PYTHON_VERSION,
+      release: PYTHON_RELEASE,
+      requirements: REQUIREMENTS,
+      font: FONT_ASSET.sha256,
+      fontWeight: FONT_WEIGHT_AXIS,
+    }),
+  )
+  .digest('hex');

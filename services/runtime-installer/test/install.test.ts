@@ -8,11 +8,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   installOfficeRuntime,
   officeRoot,
+  RUNTIME_STAMP_FILE,
+  runtimeStampStatus,
   stagingRoot,
   type InstallProgress,
   type RunFn,
 } from '../src/install.js';
-import { FONT_ASSET, FONT_FILE_NAME, PIP_INDEX_URL } from '../src/manifest.js';
+import {
+  FONT_ASSET,
+  FONT_FILE_NAME,
+  PIP_INDEX_URL,
+  RUNTIME_MANIFEST_DIGEST,
+} from '../src/manifest.js';
 
 let home: string;
 
@@ -332,5 +339,49 @@ describe('离线安装（企业部署）', () => {
     const result = await installOfficeRuntime({ ...base(makeRun()), bundleDir: bundle });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain('python-aarch64-apple-darwin.tar.gz');
+  });
+});
+
+/**
+ * 版本戳（在线升级提案 §4 A4）。探针只看「能不能 import」，而新版本改了钉死的版本之后，
+ * 老机器上的模块照样 import 得动 —— 没有这个戳，「装的是旧清单」永远判不出来。
+ */
+describe('版本戳：判得出装的是不是这一版要的清单', () => {
+  it('装完就是 current —— 戳跟着原子换入一起进去，不是换入之后再补', async () => {
+    const result = await installOfficeRuntime(base(makeRun()));
+    expect(result.ok).toBe(true);
+    expect(runtimeStampStatus(home)).toBe('current');
+  });
+
+  it('离线包装出来的也带戳 —— 两条路径装出来的环境必须是同一个', async () => {
+    // 与「离线安装」那组的 makeBundle 同一个布局
+    const bundle = join(home, 'bundle');
+    mkdirSync(join(bundle, 'wheels'), { recursive: true });
+    writeFileSync(join(bundle, 'python-aarch64-apple-darwin.tar.gz'), 'x');
+    writeFileSync(join(bundle, 'NotoSansSC.ttf'), 'x');
+    const result = await installOfficeRuntime({ ...base(makeRun()), bundleDir: bundle });
+    expect(result.ok, result.ok ? '' : result.message).toBe(true);
+    expect(runtimeStampStatus(home)).toBe('current');
+  });
+
+  it('戳是另一份清单写的（新版本改了钉死的版本）：outdated', async () => {
+    await installOfficeRuntime(base(makeRun()));
+    expect(RUNTIME_MANIFEST_DIGEST).not.toBe('a'.repeat(64));
+    writeFileSync(
+      join(officeRoot(home), RUNTIME_STAMP_FILE),
+      JSON.stringify({ manifestDigest: 'a'.repeat(64) }),
+    );
+    expect(runtimeStampStatus(home)).toBe('outdated');
+  });
+
+  it('戳读不懂也算 outdated，不当成 current 放过去', async () => {
+    await installOfficeRuntime(base(makeRun()));
+    writeFileSync(join(officeRoot(home), RUNTIME_STAMP_FILE), '{not json');
+    expect(runtimeStampStatus(home)).toBe('outdated');
+  });
+
+  it('加戳之前装的（目录在、没有戳）：missing —— 交给调用方按旧清单处理', async () => {
+    mkdirSync(join(officeRoot(home), 'bin'), { recursive: true });
+    expect(runtimeStampStatus(home)).toBe('missing');
   });
 });

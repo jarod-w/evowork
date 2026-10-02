@@ -38,6 +38,7 @@ import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
 import {
   installOfficeRuntime,
   PHASE_LABEL,
+  runtimeStampStatus,
   totalDownloadBytes,
   TRIPLE_BY_PLATFORM,
 } from '@evowork/runtime-installer';
@@ -354,10 +355,16 @@ export function createLocalServices(options: LocalServicesOptions) {
       const triple = TRIPLE_BY_PLATFORM[`${process.arch}-${process.platform}`];
       const fontBundled =
         options.bundledFontPath !== undefined && existsSync(options.bundledFontPath);
+      // 版本戳只管我们自己装的那份；企业指定了解释器时，装的是什么由他们负责
+      const outdated =
+        missing.length === 0 &&
+        !process.env.EVOWORK_OFFICE_PYTHON &&
+        runtimeStampStatus() !== 'current';
       return {
         installed: missing.length === 0,
         missing,
         supported: triple !== undefined,
+        ...(outdated ? { outdated: true } : {}),
         ...(triple !== undefined
           ? {
               downloadSize: `约 ${Math.round(totalDownloadBytes(triple, { includeFont: !fontBundled }) / 1_000_000)} MB`,

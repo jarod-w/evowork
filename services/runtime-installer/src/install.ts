@@ -27,8 +27,8 @@
  *    这条路径在断网的机器上必须能走完 —— 企业部署的验收标准就是"拔网线还能装上"。
  */
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -44,7 +44,9 @@ import {
   FONT_WEIGHT_AXIS,
   PIP_INDEX_URL,
   PYTHON_ASSETS,
+  PYTHON_VERSION,
   REQUIREMENTS,
+  RUNTIME_MANIFEST_DIGEST,
   totalDownloadBytes,
   TRIPLE_BY_PLATFORM,
 } from './manifest.js';
@@ -183,6 +185,34 @@ export function officeRoot(home: string = homedir()): string {
 }
 
 /** 装到一半的目录。**与最终目录同级同父**，这样 rename 是同一文件系统内的原子操作 */
+/** 运行时目录里的版本戳（在线升级提案 §4 A4）。内容是装它时那份清单的指纹 */
+export const RUNTIME_STAMP_FILE = '.evowork-runtime.json';
+
+function stampContent(): string {
+  return `${JSON.stringify({ manifestDigest: RUNTIME_MANIFEST_DIGEST, python: PYTHON_VERSION, requirements: REQUIREMENTS }, null, 2)}\n`;
+}
+
+/**
+ * 装着的运行时是不是这一版 EvoWork 要的那份清单。
+ *
+ *   · `current`  —— 戳在、指纹一致
+ *   · `outdated` —— 戳在但指纹不同（新版本改了钉死的版本），或者戳读不懂
+ *   · `missing`  —— 没有戳：加这个戳之前装的，或者根本没装。调用方要先确认装没装（探针），
+ *                   装了却没有戳的，同样是一份说不清来源的旧清单
+ *
+ * 只读本地一个文件，不出网。
+ */
+export function runtimeStampStatus(home: string = homedir()): 'current' | 'outdated' | 'missing' {
+  const path = join(officeRoot(home), RUNTIME_STAMP_FILE);
+  if (!existsSync(path)) return 'missing';
+  try {
+    const stamp = JSON.parse(readFileSync(path, 'utf8')) as { manifestDigest?: unknown };
+    return stamp.manifestDigest === RUNTIME_MANIFEST_DIGEST ? 'current' : 'outdated';
+  } catch {
+    return 'outdated';
+  }
+}
+
 export function stagingRoot(home: string = homedir()): string {
   return `${officeRoot(home)}.staging`;
 }
@@ -375,7 +405,11 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
     }
     report('verify', 1);
 
-    /* ⑥ 原子换入 */
+    /*
+     * ⑥ 写版本戳，再原子换入。戳写在 staging 里、跟着 rename 一起进去：
+     * 先换入再写，中间被杀就会留下一个「装好了、但没有戳」的目录，下次被判成旧清单。
+     */
+    await writeFile(join(staging, RUNTIME_STAMP_FILE), stampContent(), 'utf8');
     await swapIn(staging, target);
     report('done', 1);
     log?.info('office.install.done', { itemCount: REQUIREMENTS.length });
