@@ -15,6 +15,7 @@ export {
   parseFrontmatter,
   parseInterfaceJson,
   rotateFeatured,
+  HUB_REVOKED_MARKER,
   SOURCE_MARKER_FILE,
 } from './skills.js';
 export type { CatalogIo, DirEntry, SkillRoots } from './skills.js';
@@ -33,8 +34,9 @@ export {
   slugConnectorName,
   trustConnector,
   upsertConnector,
+  withOfficialLaunch,
 } from './connectors.js';
-export type { ConnectorStore, StoredConnector } from './connectors.js';
+export type { ConnectorStore, OfficialLaunch, StoredConnector } from './connectors.js';
 export { listExperts, parseAgentToml, renderAgentToml, slug as slugExpert } from './agents.js';
 export type { ExpertIo, ExpertRoots } from './agents.js';
 export { listApps } from './apps.js';

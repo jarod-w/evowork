@@ -15,6 +15,7 @@ import {
   installSkill,
   missingPortsResult,
   readCatalog,
+  refreshOfficialConnectors,
   removeConnectorAction,
   setConnectorToolPolicyAction,
   trustConnectorAction,
@@ -291,5 +292,62 @@ describe('专家不预置角色包', () => {
     expect(created.catalog.experts[0]?.name).toBe('财务分析专家');
     expect(created.catalog.experts[0]?.sampleTasks).toEqual(['解读这份财报', '做一份预算表']);
     expect(existsSync(join(root, 'user', 'agents', '财务分析专家.toml'))).toBe(true);
+  });
+});
+
+describe('官方 browser 连接器在用户机器上起得来（没有 node）', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'ew-browser-launch-'));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const ports = () =>
+    createFsCatalogPorts({
+      pluginsDir: join(root, 'Resources', 'plugins'),
+      userRoot: join(root, 'user'),
+      kernelHome: join(root, 'kernel'),
+      nodeCommand: '/Applications/EvoWork.app/Contents/MacOS/EvoWork',
+      nodeEnv: { ELECTRON_RUN_AS_NODE: '1' },
+    });
+
+  it('信任后写进 config.toml 的是 Electron 自己 + ELECTRON_RUN_AS_NODE，不是 node', () => {
+    trustConnectorAction(ports(), 'browser');
+    const config = readFileSync(join(root, 'kernel', 'config.toml'), 'utf8');
+    expect(config).toMatch(/command = "\/Applications\/EvoWork\.app\/Contents\/MacOS\/EvoWork"/);
+    expect(config).toMatch(/env = \{ ELECTRON_RUN_AS_NODE = "1" \}/);
+  });
+
+  it('旧版本存下的 `node`（以及旧的随包路径）在启动时被换成这次安装的，并重写 config.toml', () => {
+    mkdirSync(join(root, 'user'), { recursive: true });
+    writeFileSync(
+      join(root, 'user', 'connectors.json'),
+      JSON.stringify({
+        connectors: [
+          {
+            id: 'browser',
+            name: '浏览器',
+            kind: 'official',
+            transport: 'stdio',
+            command: 'node',
+            args: ['/old/EvoWork 0.0.3.app/plugins/connectors/browser/server.mjs'],
+            trusted: true,
+            toolPolicy: { browser_navigate: 'approve' },
+          },
+        ],
+      }),
+    );
+    const p = ports();
+    expect(readCatalog(p).connectors.find((c) => c.id === 'browser')?.command).toBe(p.nodeCommand);
+    expect(refreshOfficialConnectors(p)).toBe(true);
+    const config = readFileSync(join(root, 'kernel', 'config.toml'), 'utf8');
+    expect(config).not.toMatch(/command = "node"/);
+    expect(config).toMatch(/Resources\/plugins\/connectors\/browser\/server\.mjs/);
+    // 用户的选择（信任、逐工具权限）不动
+    expect(config).toMatch(/approval_mode = "prompt"/);
+    // 第二次没有变化，不写盘
+    expect(refreshOfficialConnectors(p)).toBe(false);
   });
 });

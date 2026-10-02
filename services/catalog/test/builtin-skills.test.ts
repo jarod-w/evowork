@@ -80,6 +80,18 @@ describe.each(dirs)('随包技能：%s', (name) => {
    * —— 不抛错、不记日志。所以这里不看"文件在不在"，看**解析结果是不是还等于兜底值**：
    * 等于兜底就说明那个文件白带了。
    */
+  /**
+   * 13 §5.5（HUB-Q7=A）：Hub 可以发布随包技能的新版本，**版本高的生效**。随包这份不写版本时
+   * 按 `0.0.0` 算 —— 任何 Hub 版本都比它新，App 升级后随包那份修好了也回不来。
+   * 所以每个随包技能都要写一个认得出来的版本号；改了随包技能的行为，就把它调高。
+   */
+  it('interface.json 写了版本号（Hub 覆盖随包技能时靠它比新旧）', () => {
+    const raw = JSON.parse(readFileSync(join(dir, 'interface.json'), 'utf8')) as {
+      version?: unknown;
+    };
+    expect(typeof raw.version === 'string' && /^\d+\.\d+\.\d+$/.test(raw.version), name).toBe(true);
+  });
+
   it('interface.json 真的被采纳（displayName 与 category 都不是兜底值）', () => {
     const fallback: SkillInterface = { displayName: name, category: '未分类' };
     const text = existsSync(join(dir, 'interface.json'))

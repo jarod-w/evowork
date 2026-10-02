@@ -144,7 +144,7 @@ import {
   toApprovalView,
   type RendererActions,
 } from './renderer-bridge.js';
-import { createFsCatalogPorts } from './catalog-host.js';
+import { createFsCatalogPorts, refreshOfficialConnectors } from './catalog-host.js';
 import { createNodeHubPorts } from '@evowork/hub-client';
 import { officeInterpreterPaths } from '@evowork/ingest';
 import { OFFICIAL_HUB_NAME, officialHubDisabled, officialHubSource } from './hub-config.js';
@@ -1885,6 +1885,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     pluginsDir: options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
     userRoot: options.paths.home,
     kernelHome: options.paths.kernelHome,
+    // 用户机器上没有 node：随包的 browser 连接器用 Electron 自己跑（同 computer-use 的 cua_repl）。
+    // 2026-10-02 之前这里没传，默认成了 `node`，信任之后在客户机器上起不来
+    nodeCommand: process.execPath,
+    nodeEnv: { ELECTRON_RUN_AS_NODE: '1' },
   });
   /*
    * 插件 Hub（13，H1）。出网只在 hub-client；什么时候能出网由 hub-host 判：
@@ -2342,6 +2346,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         });
       };
       autoRefreshHub();
+      // 官方连接器的启动方式跟着这次安装走（应用升级会换路径；旧版本写进去的是 `node`）
+      if (refreshOfficialConnectors(catalogPorts)) {
+        await adapter.reloadMcpServers().catch((err: unknown) => {
+          logger.warn('desktop.connectors.reload_failed', {
+            errorClass: err instanceof Error ? err.name : 'UnknownError',
+          });
+        });
+      }
       hubTimer = setInterval(autoRefreshHub, HUB_REFRESH_INTERVAL_MS);
       hubTimer.unref?.();
 

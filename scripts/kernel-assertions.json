@@ -31,7 +31,10 @@
       "file": "codex-rs/protocol/src/config_types.rs",
       "needle": "pub enum ModeKind",
       "line": 673,
-      "enumVariants": { "name": "ModeKind", "expected": 2 },
+      "enumVariants": {
+        "name": "ModeKind",
+        "expected": 2
+      },
       "impact": "总纲 D8 · 设计 03 §2.4"
     },
     {
@@ -66,7 +69,10 @@
       "file": "codex-rs/protocol/src/user_input.rs",
       "needle": "pub enum UserInput",
       "line": 15,
-      "enumVariants": { "name": "UserInput", "expected": 7 },
+      "enumVariants": {
+        "name": "UserInput",
+        "expected": 7
+      },
       "mustNotContain": ["    Document {", "    File {", "    Pdf {"],
       "impact": "总纲 §6.7 · 设计 08 §3.1"
     },
@@ -76,7 +82,10 @@
       "file": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
       "needle": "pub enum ThreadStatus",
       "line": 1639,
-      "enumVariants": { "name": "ThreadStatus", "expected": 4 },
+      "enumVariants": {
+        "name": "ThreadStatus",
+        "expected": 4
+      },
       "impact": "设计 04 §2.1 · 09 §4.1"
     },
     {
@@ -131,7 +140,10 @@
       "file": "codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
       "needle": "pub enum TurnStatus",
       "line": 32,
-      "enumVariants": { "name": "TurnStatus", "expected": 4 },
+      "enumVariants": {
+        "name": "TurnStatus",
+        "expected": 4
+      },
       "impact": "设计 04 §2.2（补「已中断」态）· 09 §3.4"
     },
     {
@@ -140,7 +152,10 @@
       "file": "codex-rs/app-server-protocol/src/protocol/v2/item.rs",
       "needle": "pub enum ThreadItem",
       "line": 234,
-      "enumVariants": { "name": "ThreadItem", "expected": 19 },
+      "enumVariants": {
+        "name": "ThreadItem",
+        "expected": 19
+      },
       "impact": "设计 04 §5.2（逐类渲染规范）"
     },
     {
@@ -183,7 +198,10 @@
       "file": "codex-rs/app-server-protocol/src/protocol/common.rs",
       "needle": "client_notification_definitions! {",
       "line": 2053,
-      "scopeLines": { "before": 0, "after": 2 },
+      "scopeLines": {
+        "before": 0,
+        "after": 2
+      },
       "mustContain": ["Initialized,"],
       "mustNotContain": ["notifications/initialized"],
       "impact": "设计 09 §3.2；适配层握手通知"
@@ -194,7 +212,10 @@
       "file": "codex-rs/app-server/src/message_processor.rs",
       "needle": "if let Some(reason) = codex_request.experimental_reason()",
       "line": 968,
-      "scopeLines": { "before": 0, "after": 5 },
+      "scopeLines": {
+        "before": 0,
+        "after": 5
+      },
       "mustContain": [
         "!session.experimental_api_enabled()",
         "invalid_request(experimental_required_message(reason))"
@@ -207,7 +228,10 @@
       "file": "codex-rs/hooks/src/engine/output_parser.rs",
       "needle": "fn unsupported_pre_tool_use_hook_specific_output",
       "line": 441,
-      "scopeLines": { "before": 0, "after": 72 },
+      "scopeLines": {
+        "before": 0,
+        "after": 72
+      },
       "mustContain": [
         "updatedInput without permissionDecision:allow",
         "unsupported permissionDecision:ask",
@@ -221,7 +245,10 @@
       "file": "codex-rs/protocol/src/config_types.rs",
       "needle": "pub struct Settings {",
       "line": 780,
-      "scopeLines": { "before": 1, "after": 4 },
+      "scopeLines": {
+        "before": 1,
+        "after": 4
+      },
       "mustContain": ["pub model: String"],
       "mustNotContain": ["pub model: Option<"],
       "impact": "设计 03 §2.4；场景兜底必须带 model"
@@ -240,7 +267,10 @@
       "file": "codex-rs/protocol/src/config_types.rs",
       "needle": "pub struct Settings {",
       "line": 780,
-      "scopeLines": { "before": 2, "after": 4 },
+      "scopeLines": {
+        "before": 2,
+        "after": 4
+      },
       "mustContain": ["pub reasoning_effort:", "pub developer_instructions:"],
       "mustNotContain": ["rename_all", "developerInstructions", "reasoningEffort"],
       "impact": "K5 身份指令必须用 snake_case 下发"
@@ -252,7 +282,10 @@
       "file": "apps/desktop/src/main/service-host.ts",
       "needle": "export function ensureModeInstructions",
       "line": 246,
-      "scopeLines": { "before": 0, "after": 16 },
+      "scopeLines": {
+        "before": 0,
+        "after": 16
+      },
       "mustContain": ["paths.modes", "copyFileSync"],
       "impact": "干净机器不能静默丢失 developer_instructions"
     },
@@ -262,7 +295,10 @@
       "file": "codex-rs/model-provider/src/provider.rs",
       "needle": "match config_model_catalog {",
       "line": 551,
-      "scopeLines": { "before": 0, "after": 18 },
+      "scopeLines": {
+        "before": 0,
+        "after": 18
+      },
       "mustContain": [
         "StaticModelsManager::new",
         "OpenAiModelsEndpoint::new",
@@ -285,7 +321,10 @@
       "file": "codex-rs/features/src/lib.rs",
       "needle": "id: Feature::MultiAgentV2,",
       "line": 1319,
-      "scopeLines": { "before": 1, "after": 4 },
+      "scopeLines": {
+        "before": 1,
+        "after": 4
+      },
       "mustContain": ["key: \"multi_agent_v2\"", "stage: Stage::Stable", "default_enabled: false"],
       "impact": "设计 04 §5.6.1；首次模板与已有配置迁移都不可省"
     },
@@ -295,7 +334,10 @@
       "file": "codex-rs/app-server/src/request_processors/thread_input.rs",
       "needle": "direct app-server input is not allowed for multi-agent v2 sub-agents",
       "line": 9,
-      "scopeLines": { "before": 2, "after": 18 },
+      "scopeLines": {
+        "before": 2,
+        "after": 18
+      },
       "mustContain": [
         "can_accept_direct_input",
         "MultiAgentVersion::V2",
@@ -309,7 +351,10 @@
       "file": "codex-rs/core/src/tools/handlers/multi_agents_spec.rs",
       "needle": "\"fork_turns\".to_string(),",
       "line": 646,
-      "scopeLines": { "before": 8, "after": 130 },
+      "scopeLines": {
+        "before": 8,
+        "after": 130
+      },
       "mustContain": [
         "Defaults to `all`",
         "canonical task name",
@@ -325,7 +370,10 @@
       "file": "codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs",
       "needle": "Handles the shared MultiAgentV2 message flow",
       "line": 41,
-      "scopeLines": { "before": 2, "after": 55 },
+      "scopeLines": {
+        "before": 2,
+        "after": 55
+      },
       "mustContain": [
         "MessageDeliveryMode",
         "MessageDeliveryMode::TriggerTurn",
@@ -339,7 +387,10 @@
       "file": "codex-rs/codex-api/src/sse/responses.rs",
       "needle": "\"codex.response.metadata\"",
       "line": 531,
-      "scopeLines": { "before": 2, "after": 14 },
+      "scopeLines": {
+        "before": 2,
+        "after": 14
+      },
       "mustContain": [
         "\"response.in_progress\"",
         "trace!(\"unhandled responses event: {}\", event.kind)"
@@ -352,7 +403,10 @@
       "file": "codex-rs/codex-api/src/sse/responses.rs",
       "needle": "response = timeout(idle_timeout, stream.next()) => response,",
       "line": 591,
-      "scopeLines": { "before": 2, "after": 30 },
+      "scopeLines": {
+        "before": 2,
+        "after": 30
+      },
       "mustContain": ["idle timeout waiting for SSE"],
       "impact": "网关必须自己保证连接上一直有帧（server.ts 的心跳）+ 自己先一步判上游死掉（pipeline 的看门狗）"
     },
@@ -362,7 +416,10 @@
       "file": "codex-rs/codex-api/src/sse/responses.rs",
       "needle": "_ => ApiError::Retryable { message, delay },",
       "line": 468,
-      "scopeLines": { "before": 6, "after": 2 },
+      "scopeLines": {
+        "before": 6,
+        "after": 2
+      },
       "mustContain": ["rate_limit_exceeded", "try_parse_retry_after"],
       "impact": "网关的 UPSTREAM_DISCONNECTED 走的就是这个兜底分支：断流/5xx/上游卡死要能自动重试，且 message 要留给用户"
     },
@@ -372,7 +429,10 @@
       "file": "codex-rs/protocol/src/error.rs",
       "needle": "| CodexErrorDetails::ServerOverloaded",
       "line": 402,
-      "scopeLines": { "before": 2, "after": 22 },
+      "scopeLines": {
+        "before": 2,
+        "after": 22
+      },
       "mustContain": ["=> None,", "CodexErrorDetails::Stream(..)", "backoff(retry_count)"],
       "impact": "用 server_is_overloaded 的后果是**既不重试、又把我们写给用户的话换成内核那句英文**（2026-09-26 三处已改）"
     },
@@ -382,7 +442,10 @@
       "file": "codex-rs/models-manager/src/model_info.rs",
       "needle": "pub fn model_info_from_slug",
       "line": 99,
-      "scopeLines": { "before": 1, "after": 40 },
+      "scopeLines": {
+        "before": 1,
+        "after": 40
+      },
       "mustContain": [
         "This will use fallback model metadata",
         "context_window: Some(272_000)",
@@ -396,9 +459,89 @@
       "file": "codex-rs/protocol/src/openai_models.rs",
       "needle": "pub fn deserialize_model_infos_with_legacy_base",
       "line": 800,
-      "scopeLines": { "before": 1, "after": 40 },
+      "scopeLines": {
+        "before": 1,
+        "after": 40
+      },
       "mustContain": ["is missing both", "instructions_template"],
       "impact": "缺了它**所有任务都起不来**（thread/start -32600）。2026-09-26 第一版目录就栽在这条；我们填的是自己的产品身份底稿，不是内核那份带 Codex 的"
+    },
+    {
+      "id": "F39",
+      "summary": "plugin/list 的 workspace-directory 是 ChatGPT 远端目录；没登录 ChatGPT 时整个请求报错（13 HF4）",
+      "file": "codex-rs/app-server/src/request_processors/plugins.rs",
+      "needle": "remote_sources.push(RemoteMarketplaceSource::WorkspaceDirectory);",
+      "line": 721,
+      "scopeLines": {
+        "before": 3,
+        "after": 0
+      },
+      "mustContain": ["PluginListMarketplaceKind::WorkspaceDirectory"],
+      "impact": "适配层的 listPluginBundles 只传 'local' 就是因为它（13 §9）。上游要是把它改成本机目录，不传它就会漏掉工作区市场；要是删了它，kernel-contract 的 values 会先红"
+    },
+    {
+      "id": "F40",
+      "summary": "plugin/list 的 local 类型包含 OpenAI curated 市场（没有远端目录时恒为 true；13 HF5）",
+      "file": "codex-rs/app-server/src/request_processors/plugins.rs",
+      "needle": "/*include_openai_curated*/ !use_remote_global_catalog",
+      "line": 617,
+      "impact": "「套件」Tab 必须按路径滤掉 <kernelHome>/.tmp/（@evowork/catalog 的 listBundles）。它变了不一定是好事：curated 换个目录落盘，过滤就漏了 —— 看一眼新的落盘路径"
+    },
+    {
+      "id": "F41",
+      "summary": "技能目录进 prompt 的预算：上下文窗口的 2%，拿不到窗口时 8,000 字符；按 4 字节 ≈ 1 token；描述截到 1024 字符（13 HF6 / V3）",
+      "file": "codex-rs/ext/skills/src/render.rs",
+      "needle": "const SKILL_METADATA_CONTEXT_WINDOW_PERCENT: usize = 2;",
+      "line": 20,
+      "scopeLines": {
+        "before": 4,
+        "after": 4
+      },
+      "mustContain": [
+        "DEFAULT_SKILL_METADATA_CHAR_BUDGET: usize = 8_000",
+        "MAX_CATALOG_SKILL_DESCRIPTION_CHARS: usize = 1_024",
+        "APPROX_BYTES_PER_TOKEN: usize = 4"
+      ],
+      "impact": "services/catalog/src/hub.ts 的 skillCatalogCost / skillCatalogBudget 照抄了这套口径；这里一变，插件页的预算 warning 就会算错（早报或漏报）"
+    },
+    {
+      "id": "F42",
+      "summary": "agents/openai.yaml 里 allow_implicit_invocation: false 的技能仍启用，但不进 prompt 目录（13 HF7 / V1）",
+      "file": "codex-rs/ext/skills/src/provider/host.rs",
+      "needle": "if !skill.allows_implicit_invocation() {",
+      "line": 147,
+      "scopeLines": {
+        "before": 3,
+        "after": 2
+      },
+      "mustContain": ["entry.hidden_from_prompt()", "entry = entry.disabled();"],
+      "impact": "Hub 的按需层（13 §6）完全靠它：promptVisible=false 的条目写的就是这个 yaml。变了就要走 13 §6 写的退路"
+    },
+    {
+      "id": "F43",
+      "summary": "显式选中（UserInput::Skill）跳过已停用的技能（13 HF8）",
+      "file": "codex-rs/skills/src/selection.rs",
+      "needle": "if !selection_context.loaded_skills.is_skill_enabled(skill)",
+      "line": 82,
+      "scopeLines": {
+        "before": 0,
+        "after": 3
+      },
+      "mustContain": ["continue;"],
+      "impact": "按需层只能是「启用但不进 prompt」，不能是「停用、用时再带入」。上游放开这条，13 §6 的方案仍成立，但可以有更省的做法"
+    },
+    {
+      "id": "F45",
+      "summary": "plugin/install 装完无条件把插件写成启用；预写 enabled = false 会被覆盖（13 §12.1 V6）",
+      "file": "codex-rs/core-plugins/src/manager.rs",
+      "needle": "result.plugin_id.as_key(),",
+      "line": 2258,
+      "scopeLines": {
+        "before": 2,
+        "after": 1
+      },
+      "mustContain": ["set_user_plugin_enabled(", "/*enabled*/ true"],
+      "impact": "「套件」git / npm 来源先装后审的空窗（13 §14）就来自它：bundle-host 只能在装完之后立刻写停用。上游要是改成尊重已有的启停，就可以改回「预写停用」，空窗消失"
     }
   ]
 }

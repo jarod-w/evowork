@@ -40,6 +40,8 @@ build/kernel/
 # scripts/build-kernel.mjs：内核源码的导出副本（打过 patches/evowork 的）与它的编译缓存
 build/.kernel-src/
 build/.kernel-target/
+# 本机磁盘不够时可以把它链到上游签出已有的 target（链接本身不是目录，上一行匹配不到它）
+build/.kernel-target
 build/release/
 
 # 编辑器与系统

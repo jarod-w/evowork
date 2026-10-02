@@ -26,6 +26,8 @@ export interface SkillRecord {
   readonly featured: boolean;
   readonly interface: SkillInterface;
   readonly audit: AuditResult;
+  /** Hub 装的、已被吊销（13 §5.4）：照样列出来让用户卸载，但**不再盖过**同名的随包技能。 */
+  readonly hubRevoked?: boolean | undefined;
 }
 
 export interface AuditFinding {

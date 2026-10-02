@@ -25,6 +25,8 @@ const SKIP_DIRS = new Set(['_shared', 'node_modules', '.git', 'test']);
 
 /** 安装时写下的来源，扫描用户根时读它。 */
 export const SOURCE_MARKER_FILE = '.evowork-source';
+/** Hub 条目被吊销后改写的来源标记（13 §5.4：停用、不删）。 */
+export const HUB_REVOKED_MARKER = 'hub-revoked';
 
 export function parseFrontmatter(text: string): { name: string; description: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
@@ -69,8 +71,9 @@ export function listSkills(roots: SkillRoots, io: CatalogIo): readonly SkillReco
   const user = scanRoot(roots.user, 'local', false, io);
   // 5.5（HUB-Q7=A）：Hub 发布了随包技能的新版本时，Hub 那份生效；卸载后回落到随包版本。
   // 「版本高的才装」由安装方判，这里只认来源标记：只有 `hub` 能盖过随包，`local` / `git` 不能
+  // 吊销了的 Hub 版本不再盖过随包版本：内核那边已经回落到随包那份，目录要说同一件事
   const hubOverrides = new Map(
-    user.filter((s) => s.source === 'hub').map((s) => [s.id, s] as const),
+    user.filter((s) => s.source === 'hub' && s.hubRevoked !== true).map((s) => [s.id, s] as const),
   );
   const merged = official.map((s) => hubOverrides.get(s.id) ?? s);
   const seen = new Set(official.map((s) => s.id));
@@ -101,7 +104,9 @@ function scanRoot(
     const iface = parseInterfaceJson(io.readText(join(dir, 'interface.json')), fallback);
     const files = io.listFiles(dir, 3);
     const audit = auditSkillFiles(files);
-    const marked = readSourceMarker(io.readText(join(dir, SOURCE_MARKER_FILE)), source);
+    const markerText = io.readText(join(dir, SOURCE_MARKER_FILE))?.trim();
+    const marked = readSourceMarker(markerText, source);
+    const hubRevoked = source !== 'official' && markerText === HUB_REVOKED_MARKER;
     records.push({
       id,
       path: dir,
@@ -112,6 +117,7 @@ function scanRoot(
       featured: featuredPool,
       interface: iface,
       audit,
+      ...(hubRevoked ? { hubRevoked: true } : {}),
     });
   }
   return records.sort((a, b) => a.id.localeCompare(b.id));
@@ -130,6 +136,7 @@ function readSourceMarker(text: string | undefined, fallback: SkillSource): Skil
   if (fallback === 'official') return fallback;
   const raw = text?.trim();
   if (raw === 'git' || raw === 'private' || raw === 'local' || raw === 'hub') return raw;
+  if (raw === HUB_REVOKED_MARKER) return 'hub';
   return fallback;
 }
 

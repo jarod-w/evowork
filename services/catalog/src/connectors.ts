@@ -87,14 +87,44 @@ export function serializeConnectorStore(store: ConnectorStore): string {
   return `${JSON.stringify(store, null, 2)}\n`;
 }
 
+export interface OfficialLaunch {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env?: Readonly<Record<string, string>> | undefined;
+}
+
+/**
+ * 官方 `browser` 的启动方式**永远取当前这次安装的**，不信 `connectors.json` 里存的那份：
+ * 应用升级后随包路径会变；而 2026-10-02 之前存进去的是 `command = "node"` ——
+ * 用户机器上没有 node，那条连接器信任之后也起不来。用户能改的只有信任与工具权限。
+ */
+export function withOfficialLaunch(
+  store: ConnectorStore,
+  official: OfficialLaunch,
+): ConnectorStore {
+  return {
+    connectors: store.connectors.map((c) =>
+      c.id === BROWSER_CONNECTOR_ID && c.kind === 'official'
+        ? {
+            ...c,
+            command: official.command,
+            args: official.args,
+            ...(official.env !== undefined ? { env: official.env } : { env: undefined }),
+          }
+        : c,
+    ),
+  };
+}
+
 /**
  * 官方 `browser` 永远在列表里（Q9：本期唯一官方连接器）。
  * 用户条目覆盖同 id；没有用户条目时用随包路径补一条未信任的。
  */
 export function mergeConnectors(
-  store: ConnectorStore,
-  officialBrowser: { readonly command: string; readonly args: readonly string[] },
+  rawStore: ConnectorStore,
+  officialBrowser: OfficialLaunch,
 ): readonly ConnectorRecord[] {
+  const store = withOfficialLaunch(rawStore, officialBrowser);
   const fromStore = store.connectors.map((c) => toRecord(c));
   if (fromStore.some((c) => c.id === BROWSER_CONNECTOR_ID)) return fromStore;
   return [
@@ -105,6 +135,7 @@ export function mergeConnectors(
       transport: 'stdio',
       command: officialBrowser.command,
       args: officialBrowser.args,
+      ...(officialBrowser.env !== undefined ? { env: officialBrowser.env } : {}),
       trusted: false,
       toolPolicy: {},
     }),
@@ -139,9 +170,10 @@ export function connectorStatus(c: StoredConnector): ConnectorRecord['status'] {
 
 /** 信任官方 browser 之前要先有一条可写的记录；getCatalog 合并不会落盘。 */
 export function ensureOfficialBrowser(
-  store: ConnectorStore,
-  official: { readonly command: string; readonly args: readonly string[] },
+  rawStore: ConnectorStore,
+  official: OfficialLaunch,
 ): ConnectorStore {
+  const store = withOfficialLaunch(rawStore, official);
   if (store.connectors.some((c) => c.id === BROWSER_CONNECTOR_ID)) return store;
   return upsertConnector(store, {
     id: BROWSER_CONNECTOR_ID,
@@ -150,6 +182,7 @@ export function ensureOfficialBrowser(
     transport: 'stdio',
     command: official.command,
     args: official.args,
+    ...(official.env !== undefined ? { env: official.env } : {}),
     trusted: false,
     toolPolicy: {},
   });

@@ -43,10 +43,12 @@ import {
   sourceLabel,
   trustConnector,
   upsertConnector,
+  withOfficialLaunch,
   type CatalogIo,
   type ConnectorRecord,
   type ConnectorStore,
   type ExpertRecord,
+  type OfficialLaunch,
   type SkillRecord,
   type StoredConnector,
 } from '@evowork/catalog';
@@ -65,6 +67,11 @@ export interface CatalogPorts {
   readonly userRoot: string;
   readonly kernelHome: string;
   readonly nodeCommand: string;
+  /**
+   * 跑随包 JS 时额外要的环境变量。打包后 `nodeCommand` 是 Electron 自己，
+   * 要带 `ELECTRON_RUN_AS_NODE=1` 才是 node（用户机器上没有 node）。
+   */
+  readonly nodeEnv?: Readonly<Record<string, string>> | undefined;
   readonly io: CatalogIo;
   readonly exists: (path: string) => boolean;
   readonly mkdirp: (path: string) => void;
@@ -341,6 +348,7 @@ export function createFsCatalogPorts(input: {
   readonly userRoot: string;
   readonly kernelHome: string;
   readonly nodeCommand?: string | undefined;
+  readonly nodeEnv?: Readonly<Record<string, string>> | undefined;
   readonly gitClone?: CatalogPorts['gitClone'] | undefined;
 }): CatalogPorts {
   const io = createFsCatalogIo();
@@ -349,6 +357,7 @@ export function createFsCatalogPorts(input: {
     userRoot: input.userRoot,
     kernelHome: input.kernelHome,
     nodeCommand: input.nodeCommand ?? 'node',
+    ...(input.nodeEnv !== undefined ? { nodeEnv: input.nodeEnv } : {}),
     io,
     exists: (path) => existsSync(path),
     mkdirp: (path) => {
@@ -469,11 +478,31 @@ function expertRoots(ports: CatalogPorts) {
   };
 }
 
-function officialBrowser(ports: CatalogPorts) {
+export function officialBrowser(ports: CatalogPorts): OfficialLaunch {
   return {
     command: ports.nodeCommand,
-    args: [join(ports.pluginsDir, 'connectors', 'browser', 'server.mjs')] as const,
+    args: [join(ports.pluginsDir, 'connectors', 'browser', 'server.mjs')],
+    ...(ports.nodeEnv !== undefined ? { env: ports.nodeEnv } : {}),
   };
+}
+
+/**
+ * 启动时对一次官方连接器的启动方式（应用升级、或 2026-10-02 之前写进去的 `command = "node"`）。
+ * 只有已信任、且 `config.toml` 里那份与现在不一样时才写盘；返回是否写过（写过要让内核重读）。
+ */
+export function refreshOfficialConnectors(ports: CatalogPorts): boolean {
+  const raw = readStore(ports);
+  const browser = raw.connectors.find((c) => c.id === BROWSER_CONNECTOR_ID);
+  if (browser === undefined) return false;
+  const fresh = withOfficialLaunch(raw, officialBrowser(ports));
+  const next = fresh.connectors.find((c) => c.id === BROWSER_CONNECTOR_ID);
+  if (JSON.stringify(next) === JSON.stringify(browser)) return false;
+  writeStore(ports, fresh);
+  if (browser.trusted) {
+    writeMcpConfig(ports, fresh);
+    return true;
+  }
+  return false;
 }
 
 function storePath(ports: CatalogPorts): string {

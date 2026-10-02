@@ -33,9 +33,11 @@ import {
   serializeHubInstallState,
   skillCatalogBudget,
   skillCatalogCost,
+  HUB_REVOKED_MARKER,
   SOURCE_MARKER_FILE,
   upsertConnector,
   upsertInstalled,
+  withOfficialLaunch,
   type AuditFile,
   type Capabilities,
   type HubInstalled,
@@ -67,7 +69,7 @@ import type {
   HubStatusView,
   SkillBudgetView,
 } from '../shared/ipc.js';
-import type { CatalogPorts } from './catalog-host.js';
+import { officialBrowser, type CatalogPorts } from './catalog-host.js';
 
 export interface HubHostPorts {
   readonly catalog: CatalogPorts;
@@ -785,12 +787,14 @@ async function syncMcp(
   const c = ports.catalog;
   const configPath = join(c.kernelHome, 'config.toml');
   const current = c.io.readText(configPath) ?? '';
+  // 别把 connectors.json 里存的旧启动方式（如 `node`）写回去：官方连接器永远用这次安装的
+  const fresh = withOfficialLaunch(store, officialBrowser(c));
   c.mkdirp(c.kernelHome);
   c.writeText(
     configPath,
     patchMcpServersToml(
       current,
-      store.connectors.filter((x) => x.trusted),
+      fresh.connectors.filter((x) => x.trusted),
     ),
   );
   await ports.reloadMcp?.().catch(() => undefined);
@@ -807,6 +811,9 @@ async function revoke(ports: HubHostPorts, installed: HubInstalled, reason: stri
   if (installed.kind === 'skill') {
     const kernelDest = join(c.kernelHome, 'skills', installed.id);
     if (c.exists(kernelDest)) c.removePath(kernelDest);
+    const userDir = join(c.userRoot, 'skills', installed.id);
+    if (c.exists(userDir))
+      c.writeText(join(userDir, SOURCE_MARKER_FILE), `${HUB_REVOKED_MARKER}\n`);
     if (installed.overridesBundled === true) {
       await ports.setSkillEnabledByPath?.(
         join(c.pluginsDir, 'skills', installed.id, 'SKILL.md'),

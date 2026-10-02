@@ -872,8 +872,8 @@ export function createAdapter(options: AdapterOptions) {
      * `.agents/plugins/marketplace.json`（`plugins.rs` 的 `load_marketplace_context(roots)`）。
      *
      * **不传 `workspace-directory`**：那是 ChatGPT 的远端目录，没有 ChatGPT 登录时整个请求报错
-     * （F37 / HF4），有登录时又会把远端目录带进产品。`local` 里仍然混着内核自己同步的
-     * curated 市场（F38 / HF5），由 `@evowork/catalog` 的 `listBundles` 按路径滤掉。
+     * （F39 / HF4），有登录时又会把远端目录带进产品。`local` 里仍然混着内核自己同步的
+     * curated 市场（F40 / HF5），由 `@evowork/catalog` 的 `listBundles` 按路径滤掉。
      */
     async listPluginBundles(cwds: readonly string[] = []): Promise<PluginListResponse> {
       return session.peer.request<PluginListResponse>(METHOD.pluginList, {

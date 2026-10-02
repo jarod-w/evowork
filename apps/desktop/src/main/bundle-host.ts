@@ -1,7 +1,7 @@
 /**
  * 「套件」= 内核插件包的安装与卸载（13 §9.1，HUB-Q8=B / HUB-Q8a=B）。
  *
- * 内核的 `plugin/install` **不验签名、不经过我们的 P0/P1/P2 审计**（F35 / HF2），
+ * 内核的 `plugin/install` **不验签名、不经过我们的 P0/P1/P2 审计**（F37 / HF2），
  * 所以每一次安装都在这里先过审计：
  *
  * - **本机来源**：内容在安装前就在磁盘上 → 先审后装。
@@ -62,7 +62,7 @@ export interface BundleCatalog {
  * 列出产品里能出现的套件，并给每一条附上它的审计结论。
  *
  * 列表读失败**写进 bundleErrors**，不吞成空列表（13 §9 第 3 条）—— 修复之前「套件」Tab
- * 是空的，正是因为请求失败、错误被吞掉了（F37）。
+ * 是空的，正是因为请求失败、错误被吞掉了（F39）。
  */
 export async function readBundles(ports: BundlePorts): Promise<BundleCatalog> {
   let response: PluginListLike;

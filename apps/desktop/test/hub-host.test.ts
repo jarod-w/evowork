@@ -322,6 +322,27 @@ describe('安装（13 §5.3）', () => {
     expect(readCatalog(p.catalog).skills.find((s) => s.id === 'charts')?.source).toBe('official');
   });
 
+  it('覆盖随包技能的 Hub 版本被吊销 → 内核与目录都回到随包那份（不再显示被吊销的那份）', async () => {
+    const bundled = join(root, 'plugins', 'skills', 'charts');
+    mkdirSync(bundled, { recursive: true });
+    writeFileSync(join(bundled, 'SKILL.md'), '---\nname: charts\ndescription: 随包\n---\n');
+    writeFileSync(join(bundled, 'interface.json'), '{"version":"1.0.0"}');
+    const setSkillEnabledByPath = vi.fn(async () => undefined);
+    serveIndex([publish('skill', 'charts', '1.1.0', skillFiles('charts'))]);
+    const p = ports({ setSkillEnabledByPath });
+    await refreshHub(p, p.runtime, 'manual');
+    await installHubItem(p, { kind: 'skill', id: 'charts' });
+    serveIndex([publish('skill', 'charts', '1.1.0', skillFiles('charts'))], {
+      revoked: [{ id: 'charts', versions: ['1.1.0'], reason: '有问题' }],
+    });
+    await refreshHub(p, p.runtime, 'manual');
+    expect(setSkillEnabledByPath).toHaveBeenLastCalledWith(join(bundled, 'SKILL.md'), true);
+    expect(readCatalog(p.catalog).skills.find((s) => s.id === 'charts')?.source).toBe('official');
+    expect(hubCatalogView(p, p.runtime).entries.find((e) => e.id === 'charts')?.state).toBe(
+      'revoked',
+    );
+  });
+
   it('随包版本不比 Hub 的旧 → 不装', async () => {
     const bundled = join(root, 'plugins', 'skills', 'charts');
     mkdirSync(bundled, { recursive: true });
