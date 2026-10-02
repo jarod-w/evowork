@@ -526,9 +526,9 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 项       | 内容 |
 | -------- | ---- |
 | 触发     | 用户在设置 → 关于里点「检查更新」（登录与否都可以）。**已登录：每天最多自动检查一次。未登录：默认不自动检查**，用户在设置里打开独立开关后，与已登录时相同（Q46-1 / Q46-2 / Q46-3）。下载安装包**只在用户点「下载」时**发生（Q46-4） |
-| 去哪     | 更新源的 HTTPS 域名（对象存储 + CDN，可与办公扩展共用一个桶，[build-and-deploy §5.3](build-and-deploy.md)）；企业用 `EVOWORK_UPDATE_FEED` 指向的内网镜像 |
+| 去哪     | 更新源的 HTTPS 域名。**试点阶段沿用现有服务器**（Apache + 子域名 + Let's Encrypt，2026-10-02 定），用户量上来后迁到对象存储 + CDN（可与办公扩展共用一个桶，[build-and-deploy §5.3](build-and-deploy.md)）；企业用 `EVOWORK_UPDATE_FEED` 指向的内网镜像。**域名待定** |
 | 带什么   | **只有 GET**：`latest-<平台>.yml`、它的签名、安装包。**不带** prompt、文件名、任务 id、设备 id、**账号令牌（登录了也不带）**、版本号（在客户端比较） |
-| 完整性   | 设计上：清单 ES256 验签（复用 `packages/account` 的签名原语，签原文、验原文）+ 安装包 sha512。没有 Developer ID 期间，应用内下载的文件不带 quarantine 标记、Gatekeeper 不检查，**清单签名是唯一的真实性校验**（提案 §4 B3） |
+| 完整性   | 设计上：清单 ES256 验签（复用 `packages/account` 的签名原语，签原文、验原文）+ 安装包 sha512。私钥只在发版机，客户端内嵌日常与离线备用两把公钥（2026-10-02 定）。没有 Developer ID 期间，应用内下载的文件不带 quarantine 标记、Gatekeeper 不检查，**清单签名是唯一的真实性校验**（提案 §4 B3） |
 | 出口     | 只有桌面主进程的更新模块出网（落位见提案 §4 B4，尚未建）。不借用 `services/runtime-installer` 的下载器，以免改变它「唯一为装扩展而出网」的登记含义 |
 | 不出网时 | 检查失败如实说明，**本机执行面不受任何影响**（Q46-5 不强制更新）。企业用 `EVOWORK_UPDATE_FEED=off` 或策略包 `disableUpdateCheck` 整个关掉，自己分发安装包（Q46-6） |
 
