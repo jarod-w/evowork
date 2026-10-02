@@ -498,7 +498,7 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
-| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://updates.evowork.example/${channel}` | 配置已就位，**服务端没建**。一个对象存储桶即可；不做自动更新就手工分发安装包 |
+| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://updates.evowork.example/${channel}` | 配置已就位，**服务端没建**。一个对象存储桶即可；不做自动更新就手工分发安装包。检查与下载的边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
 | 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
 
 这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
