@@ -23,6 +23,32 @@
 > 没做的：`kernel-drift.mjs` 给 F37–F41 加断言；真实桌面窗口的视觉验收；在打补丁的内核上重跑 V1–V6。
 > 验收：`pnpm run check` 退出 0，139 个测试文件通过、1 个原有跳过；2306 个测试通过、2 个原有跳过（新增约 98 个）。未跑 Playwright UI 用例，未重新打包。
 >
+> **2026-10-02（再续）：更新源 `https://update.nucleant.cn:9443/` 已上线。** 机主加了 A 记录、放行了云安全组、确认已备案后，在 115.190.115.161 上：
+> Apache 新增 `update.nucleant.cn.conf`（80 端口只做 ACME 验证并跳 9443；9443 提供 `/opt/evowork/updates`，不列目录，`.yml` 不缓存，签名与安装包 immutable），
+> 用 certbot（webroot）签了 Let's Encrypt 证书（到期 2026-12-31，自动续期），ufw 放行 9443。**没有停过任何服务**，只做了平滑重载。
+> 两处容易出事的地方都已处理并核对：站点文件名要排在 `evowork.conf` 之后（否则它变成 80 端口的默认站点）；`ports.conf` 的 `Listen 443` 已注释（否则 mod_ssl 会让 Apache 在 443 上以明文提供 `/var/www/html`）。
+> 外网验收全过：TLS 链、403、404、两种缓存头，以及按 IP 访问的原站点仍是 200。发布脚本的 rsync-over-ssh 路径用探针 channel 实传、经 HTTPS 取回核对后删除；
+> 这次探针抓到 `rsync -a` 会带上发版机的 uid 501，已改成 `-rlt`。搭法与回滚写在 build-and-deploy §5.3.1，服务器上的记录在 `/opt/evowork/PROVENANCE`。
+> **还没发过任何版本**：客户端要到 B4 才会把公钥打进包里。
+>
+> **2026-10-02（续）：更新源地址与签名密钥。** 地址定为 `https://update.nucleant.cn:9443/`（试点期），已写进 `electron-builder.yml`。
+> 签名密钥在发版机上生成：日常 `evowork-update-1` 存在登录钥匙串；备用 `evowork-update-backup-1` 写在 `~/evowork-update-backup-key/`，**待挪到离线位置**。
+> 两把公钥已进 `update-keys.ts`。钥匙串和文件两条路径都实测过：签出的签名都被客户端验过。目前只有一个人发版。
+> **这个地址还不能用**（只读核对，服务器没改）：公共 DNS 对 `update.nucleant.cn` 返回 NXDOMAIN；9443 端口没有服务，ufw 也没放行；
+> nucleant 现有证书是自签名的，服务器上没有 ACME 工具；Apache 只听 80。另外主进程还没引用 `update-keys.ts`（要到 B4 才会），
+> 所以现在打出来的包里没有这两把公钥，`publish-release.mjs` 的「包里嵌着 kid」一项会一直不过 —— 这是对的。
+> 验收：`pnpm run check` 退出 0，137 个测试文件通过、1 个原有跳过；2273 个测试通过、2 个原有跳过。
+>
+> **2026-10-02：在线升级的发布脚本与清单签名（在线升级提案 §4 B2 / B3）。**
+> `scripts/update-signing.mjs`：`keygen` 生成 P-256 密钥，日常那把存进登录钥匙串，备用那把写成 0600 的 PEM 文件，两处都不覆盖已有的 key；`sign` 先自验，再写 `signatures/<清单 sha256>.sig`。
+> 签名文件按内容命名，上传之间就不会出现「新清单 + 旧签名」验不过的窗口。客户端 `update-manifest.ts` 的 `verifyUpdateManifest` 分四种失败；
+> 公钥表 `update-keys.ts` **现在是空的**，要由发版的人生成密钥。`scripts/publish-release.mjs` 先查八项（工作树 · tag · 清单与 package 版本 ·
+> 每个文件的大小与 sha512 · 夹具 · 两把公钥与 kid · **包里真的嵌着这把 kid** · 比线上新），任何一项不过就一个文件都不传；
+> 上传顺序是安装包 → 签名 → 清单，旧文件不删。签名与验签两边由 `scripts/test/update-signing.test.mjs` 用「这边签、那边验」守着。
+> 在真仓库上跑 `--dry-run`：4 项不过（工作树、tag、公钥、包里的 kid），4 项通过（两个 223MB 安装包的 sha512 都对得上）。
+> **没真发过**：域名未定，服务器上的 vhost 与 Let's Encrypt 证书未配，签名密钥未生成。钥匙串那条路径只读过代码、没在钥匙串上跑过；文件那条路径实测过（0600、拒绝覆盖、签名可验）。
+> 验收：`pnpm run check` 退出 0，137 个测试文件通过、1 个原有跳过；2273 个测试通过、2 个原有跳过。
+>
 > **2026-10-02：办公运行时加版本戳（在线升级提案 §4 A4）。**
 > 安装器换入前写 `.evowork-runtime.json`（清单指纹），`runtimeStampStatus()` 判 current / outdated / missing；
 > `RuntimeStatusView` 加 `outdated`：装着、能 import，但不是这一版要的清单（或是加戳之前装的）。`installed` 不变，

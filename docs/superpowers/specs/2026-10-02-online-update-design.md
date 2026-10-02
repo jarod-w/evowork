@@ -17,8 +17,8 @@
 | A3 | 真机验证手动升级路径（钥匙串 / 数据） | ⏸ **暂缓**（2026-10-02 用户决定；步骤已写好） | P0 |
 | A4 | 办公运行时加版本戳 | ✅ **已完成**（2026-10-02；界面留到 B4 原型） | P1 |
 | B1 | 定 Q46，登记出网路径 | ✅ **已完成**（2026-10-02） | — |
-| B2 | 发布源与发布脚本 | **做**（2026-10-02 定：试点沿用现有服务器） | P1 |
-| B3 | 自己给更新清单签名 | **做**（2026-10-02 定：私钥只在发版机，两把公钥） | P1 |
+| B2 | 发布源与发布脚本 | ✅ **已完成**（2026-10-02，更新源已上线；还没发过版本） | P1 |
+| B3 | 自己给更新清单签名 | ✅ **工具与验签已完成**（2026-10-02）；密钥待发版的人生成 | P1 |
 | B4 | 设置 → 关于里加「检查更新」 | **做** | P1 |
 | D1 | 自签代码签名证书 spike | ⏸ **暂缓**（2026-10-02 用户决定） | P1 |
 | C1 | 自建不依赖签名的自动替换更新器 | **不做** | — |
@@ -30,7 +30,7 @@
 
 | 项 | 状态 | 依据 |
 |---|---|---|
-| 更新源配置 | 已就位，但地址是占位符 | [electron-builder.yml:97](../../../build/electron-builder.yml#L97)：`provider: generic`，`url: https://updates.evowork.example/${channel}`。`${channel}` 宏可用（app-builder-lib 26.15.3 的 `macroExpander.js`：`appInfo.channel \|\| "latest"`） |
+| 更新源配置 | 已就位（2026-10-02 起地址是 `https://update.nucleant.cn:9443/${channel}`，此前是占位符） | [electron-builder.yml:97](../../../build/electron-builder.yml#L97)：`provider: generic`，`url: https://updates.evowork.example/${channel}`。`${channel}` 宏可用（app-builder-lib 26.15.3 的 `macroExpander.js`：`appInfo.channel \|\| "latest"`） |
 | 更新清单与差量文件 | 打包时已经生成 | `dist/release/` 下有 `latest-mac.yml`、`*.zip.blockmap`、`*.dmg.blockmap`（0.0.4） |
 | mac 打包目标 | dmg + zip | 自动更新要用 zip，已经包含 |
 | 客户端更新代码 | **没有** | `apps/desktop/package.json` 没有 `electron-updater` 依赖，主进程里没有更新模块 |
@@ -207,7 +207,12 @@ rm -rf ~/evowork-a3   # 钥匙串里的「EvoWork Safe Storage」：只有这次
 ### B2 · 发布源与发布脚本（P1，做）
 
 > **2026-10-02 决定**（采纳下面的建议）：试点阶段**沿用现有服务器**（115.190.115.161 的 Apache；它的 `/var/www/html` 现在就在提供安装包下载），加一个子域名和 Let's Encrypt 证书改成 HTTPS。用户量上来以后再迁到对象存储 + CDN，客户端只认一个地址，迁移只改配置。上传权限是那台服务器的 ssh key，**只放在发版机上**。
-> **还没定**：用哪个域名，以及它是否已经备案。在这之前，服务端配置（vhost、证书）做不了，发布脚本先支持「发到本地目录」。
+> **域名（2026-10-02 给定，试点期）**：`https://update.nucleant.cn:9443/`，已写进 `build/electron-builder.yml` 的 `publish.url`。
+> **已上线（2026-10-02 当天搭好，搭法见 [build-and-deploy §5.3.1](../../build-and-deploy.md)）**。下面是搭之前的只读核对结果，留作记录：
+> - 公共 DNS 对 `update.nucleant.cn` 返回 NXDOMAIN，还没有 A 记录。同一服务器上的 `demo.nucleant.cn`、`admin.nucleant.cn` 解析到 115.190.115.161。
+> - 9443 端口上没有进程在监听；ufw 放行了 9943、9944，**没有放行 9443**。
+> - 服务器上 Apache 在跑，只监听 80；nginx 里那两份 9943/9944 的配置没有生效（nginx 是 inactive）。
+> - 现有证书 `/etc/ssl/nucleant/demo.nucleant.cn.crt` 是**自签名**的，客户端不会信任它。服务器上没有 certbot 或 acme.sh。
 
 **发布源**：
 - HTTPS 域名 + 对象存储 + 国内 CDN。按 build-and-deploy §5.3 的规划，可以和办公扩展共用一个桶，分两个前缀。
@@ -218,7 +223,7 @@ rm -rf ~/evowork-a3   # 钥匙串里的「EvoWork Safe Storage」：只有这次
 
 ```
 /{channel}/latest-mac.yml
-/{channel}/latest-mac.yml.sig          ← B3
+/{channel}/signatures/<清单的 sha256>.sig ← B3：按内容命名，旧的从不删
 /{channel}/EvoWork-x.y.z-mac-arm64-unsigned.{zip,dmg}
 /{channel}/EvoWork-x.y.z-mac-arm64-unsigned.{zip,dmg}.blockmap
 ```
@@ -228,10 +233,21 @@ rm -rf ~/evowork-a3   # 钥匙串里的「EvoWork Safe Storage」：只有这次
 - 上传顺序：**先传安装包和 blockmap，再传 `.sig`，最后传 `latest-mac.yml`**。顺序反了，用户会拿到一份指向还没上传完的文件的清单。
 - 线上的旧版本不删，出问题时要能对照。
 
+**落地情况（2026-10-02）**：`scripts/publish-release.mjs` 已经做了，**还没有真的发过**：域名没定，服务器上的 vhost 和证书也还没配。
+
+- 目标先只认一个路径：本地目录，或 `user@host:/路径`（rsync over ssh）。`--dry-run` 只做检查、不签名、不上传。
+- 检查八项：工作树干净 · HEAD 打了 `v<版本>` 的 tag · 清单版本与 `package.json` 一致 · 清单里每个文件都在、大小与 sha512 对得上 · 有这一版的升级兼容夹具 · 客户端内嵌了日常与备用两把公钥、签名用的 kid 在其中 · **打包产物里真的嵌着这把 kid**（源码里有不等于打出来的包里有）· 比线上的版本新。任何一项不过，一个文件都不传。
+- 和上面计划的两处不同：
+  - `verify-packaged-app.mjs` 会真的启动应用，所以不替人跑，只提醒。
+  - `KERNEL_PROVENANCE.json` 的核对在打包那一步（`package.mjs`）就做了。发布这一步改成核对 sha512 和嵌入的 kid，确认要发的就是那次打包的产物。
+- **签名文件改成按清单内容命名**（`signatures/<sha256>.sig`），原计划是 `latest-mac.yml.sig`。同名覆盖时，两次上传之间拉到「新清单 + 旧签名」的客户端会验签失败，CDN 缓存还会把这个窗口拉长；按内容命名之后，拿到哪份清单就取哪份签名，没有这个窗口。
+- 在真仓库上跑 `--dry-run`：查出 4 项不过（工作树、tag、公钥、包里的 kid），另外 4 项通过，其中两个 223MB 安装包的 sha512 都对得上。
+
 ### B3 · 自己给更新清单签名（P1，做）
 
 > **2026-10-02 决定**（采纳下面的建议）：私钥**只放在发版机上**，不进 CI。客户端内嵌**两把**公钥：一把日常用；另一把备用，它的私钥离线单独保管，只在日常那把丢失或泄露时启用。
-> **还没定**：几个人能发版。先按一个人、一把日常 key 实现；`kid` 机制留出了以后加人的余地。
+> **目前只有一个人发版**（2026-10-02 确认）。
+> **密钥已在发版机上生成**（2026-10-02，发版的人授权直接操作）：日常 `evowork-update-1` 存在登录钥匙串（service `evowork-update-signing`）；备用 `evowork-update-backup-1` 写在 `~/evowork-update-backup-key/`（0600），**要挪到离线位置并删掉本机副本**。两把公钥已写进 `update-keys.ts`。实测：从钥匙串取出日常私钥签名、从文件取出备用私钥签名，两份签名都被客户端的 `verifyUpdateManifest` 验过。
 
 **为什么必须做**：`latest-mac.yml` 里的 sha512 和安装包放在同一台服务器上，只能证明文件没传坏，证明不了文件是我们发的。没有 Developer ID 时，系统签名也帮不上忙。另外 B4 用应用内下载，下载下来的文件不带 quarantine 标记（§7 实测），Gatekeeper 不会检查它。所以**清单签名是唯一的真实性校验**，不是锦上添花。
 
@@ -240,12 +256,18 @@ rm -rf ~/evowork-a3   # 钥匙串里的「EvoWork Safe Storage」：只有这次
 - 公钥在构建时编进应用，内嵌两把（当前一把 + 下一把，带 `kid`），留出换钥的余地。私钥离线保管，发布时才用。
 - 客户端：先验 `.sig`，通过之后才相信清单里的版本号和 sha512；下载完再校验 sha512。任何一步失败都整包丢弃，并如实告诉用户原因。
 
+**落地情况（2026-10-02）**：
+
+- `scripts/update-signing.mjs`：`keygen` 生成 P-256 密钥。日常那把默认存进登录钥匙串，`--out` 写成 0600 的 PEM 文件，给备用那把用；两处都不覆盖已有的 key。`sign` 签名后先自验一遍，再写进 `signatures/<sha256>.sig`。
+- 客户端：`apps/desktop/src/main/update-manifest.ts` 的 `verifyUpdateManifest`，失败分四种：`no-keys` · `malformed-signature` · `unknown-key` · `bad-signature`。公钥表在 `update-keys.ts`，**现在是空的**：私钥要由发版的人在发版机上生成，生成命令写在那个文件的头注释里。
+- 和上面计划的不同：**没有复用 `packages/account`**。签名端是 `.mjs` 脚本，引不了 TS 包，所以两边都直接调 `node:crypto`，参数相同。两边对不对得上，由 `scripts/test/update-signing.test.mjs` 守着：用真的签名函数签，用真的验签函数验。这条测试还覆盖了这些情况：清单被改一个字、别人的 key 冒用我们的 kid、DER 编码的签名、两边算出的签名文件名不一致。
+
 ### B4 · 设置 → 关于里加「检查更新」（P1，做）
 
 **流程**：
 
 ```
-点「检查更新」→ 拉 yml + sig → 验签 → 和 app.getVersion() 比较
+点「检查更新」→ 拉 yml → 按它的 sha256 取 signatures/<sha256>.sig → 验签 → 和 app.getVersion() 比较
   ├ 已是最新 → Toast
   └ 有新版本 → 显示版本号与更新说明（纯文本渲染）+ [下载]
         → 应用内下载 dmg（ProgressBar；60 秒收不到字节就判断连接已断，给出可照做的原因）
@@ -309,7 +331,7 @@ rm -rf ~/evowork-a3   # 钥匙串里的「EvoWork Safe Storage」：只有这次
 | 4 | D1 自签证书 spike | ⏸ 暂缓 | 结果决定内测包怎么签 |
 | 5 | ~~B1 Q46 + 出网登记~~ | ✅ 已完成 | — |
 | 6 | ~~A4 运行时版本戳~~ | ✅ 已完成（界面留到 B4 原型） | — |
-| 7 | B2 + B3 发布源、发布脚本、清单签名 | 2–3 天 | 域名备案、HTTPS、私钥保管方式 |
+| 7 | ~~B2 + B3 发布源、发布脚本、清单签名~~ | ✅ 已完成：更新源已上线，密钥已生成；还没发过版本 | — |
 | 8 | B4 检查更新（原型 + 实现） | 0.5 + 2 天 | B1、B2、B3 |
 
 1–4 不依赖任何外部条件，现在就能开始。

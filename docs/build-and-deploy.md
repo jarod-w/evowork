@@ -498,10 +498,64 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
-| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://updates.evowork.example/${channel}` | 配置已就位，**服务端没建**。一个对象存储桶即可；不做自动更新就手工分发安装包。检查与下载的边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
+| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn:9443/${channel}` | **已上线（2026-10-02，§5.3.1）**，但**还没发过任何版本**：客户端要到 B4 接上「检查更新」后才会把签名公钥打进包里，在此之前 `publish-release.mjs` 的「包里嵌着 kid」一项一定不过。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
 | 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
 
 这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
+
+#### 5.3.1 更新源 `update.nucleant.cn:9443`（2026-10-02 实测搭建）
+
+试点期沿用 §5.2.1 那台机器（总纲 Q46 / D9 的 K6 登记）。**下面每条都在那台机器上实际跑过**；
+它上面还有别人的服务，所以只加不改：没有停过任何服务，Apache 只做了平滑重载。
+
+前置（机主做的）：域名控制台加 A 记录 `update → 115.190.115.161`；云安全组放行 TCP 9443；`nucleant.cn` 已备案
+（所以 80 端口的 HTTP-01 验证走得通）。
+
+```bash
+# ① 先把整份 Apache 配置备份下来，回滚靠它
+tar czf /root/apache2-backup-20261002-evowork-update.tgz /etc/apache2
+
+# ② 80 端口只为 ACME 验证，其余跳 9443（站点文件全文见服务器上的 update.nucleant.cn.conf）
+mkdir -p /var/www/acme-update/.well-known/acme-challenge
+a2ensite update.nucleant.cn && apache2ctl configtest && systemctl reload apache2
+
+# ③ 证书。非交互装包时让 needrestart 只列不重启（共用的机器，不替别人重启服务）
+DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y certbot
+certbot certonly --webroot -w /var/www/acme-update -d update.nucleant.cn \
+  --agree-tos --register-unsafely-without-email --non-interactive \
+  --deploy-hook "systemctl reload apache2"
+
+# ④ 9443 站点（Listen 9443 写在站点文件里，不改 ports.conf 的 Listen 80）+ 防火墙
+a2enmod ssl && apache2ctl configtest && systemctl reload apache2
+ufw allow 9443/tcp comment "EvoWork update feed"
+mkdir -p /opt/evowork/updates/latest/signatures
+```
+
+有三处**漏了不报错，但会出事**：
+
+| 地方 | 漏了会怎样 |
+| --- | --- |
+| 站点文件名要排在 `evowork.conf` **之后**（叫 `update.nucleant.cn.conf`，不叫 `evowork-update.conf`） | `sites-enabled` 按名字排序，排第一的是 `*:80` 的默认站点。排到前面，按 IP 访问的账号页、分享页、安装包下载全都落到这个只做 ACME 的站点上。改完用 `apache2ctl -S` 看 `default server` 还是不是 `evowork.conf` |
+| `a2enmod ssl` 之前先注释掉 `ports.conf` 里两处 `Listen 443` | Ubuntu 的 `ports.conf` 在 `<IfModule ssl_module>` 里写着 `Listen 443`：开了 mod_ssl，Apache 就会在 443 上以**明文**提供 `/var/www/html`，而 ufw 本来就放行了 443。改完用 `ss -ltn` 核对只有 80 和 9443 |
+| `.yml` 必须 `no-cache` | 清单被缓存住，用户就一直看不到新版本，也不会报任何错。签名按清单内容命名、安装包按版本命名，这两类可以 `immutable` |
+
+外网验收（2026-10-02）：TLS 链校验通过（Let's Encrypt YE2，首签到期 2026-12-31，`certbot.timer` 自动续期）·
+列目录 403 · 缺清单 404 · `.yml` 是 `no-cache, must-revalidate` · `.sig` 是 `immutable` · 按 IP 访问 `/` 与 `/healthz` 仍是 200。
+发版机用 `uploadRelease` 经 rsync over ssh 实传一个探针 channel，经 HTTPS 取回的内容一致，之后已删除。
+那次探针抓到一个问题：`rsync -a` 会把发版机的 uid 501 带到服务器上，所以发布脚本改成了 `-rlt`。
+
+发布（发版机上）：
+
+```bash
+node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/updates --kid evowork-update-1 --dry-run
+node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/updates --kid evowork-update-1
+```
+
+回滚：`a2dissite update.nucleant.cn && a2dismod ssl && cp /etc/apache2/ports.conf.bak-20261002 /etc/apache2/ports.conf && apache2ctl configtest && systemctl reload apache2 && ufw delete allow 9443/tcp`。
+服务器上的完整记录在 `/opt/evowork/PROVENANCE` 的「更新源」一节。
+
+**本机代理的坑**：这台发版机走 fake-ip 代理，加 A 记录之前它缓存了「域名不存在」，加完之后一段时间内按域名访问会连不上，
+而服务器自己访问是通的。验证时用 `curl --resolve update.nucleant.cn:9443:115.190.115.161` 绕开本机 DNS；缓存过期后就恢复了。
 
 ### 5.4 桌面 App
 
