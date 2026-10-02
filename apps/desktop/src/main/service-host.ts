@@ -145,9 +145,20 @@ import {
   type RendererActions,
 } from './renderer-bridge.js';
 import { createFsCatalogPorts, refreshOfficialConnectors } from './catalog-host.js';
-import { createNodeHubPorts } from '@evowork/hub-client';
+import {
+  createBundleFetch,
+  createNodeHubPorts,
+  readBundleAllowlist,
+  readBundleManifest,
+} from '@evowork/hub-client';
+import { parseAllowlist } from '@evowork/catalog';
 import { officeInterpreterPaths } from '@evowork/ingest';
-import { OFFICIAL_HUB_NAME, officialHubDisabled, officialHubSource } from './hub-config.js';
+import {
+  OFFICIAL_HUB_NAME,
+  officialHubDisabled,
+  officialHubSource,
+  offlineHubSource,
+} from './hub-config.js';
 import { refreshHub, type HubHostPorts } from './hub-host.js';
 import { BUILTIN_CASES } from './showcase.js';
 
@@ -1895,13 +1906,27 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 登录了才自动拉，未登录要用户在设置里打开（HUB-Q3=B）。官方源的地址由部署给，
    * 公钥钉死在 hub-config.ts —— H2 之前公钥是空的，Hub 如实显示「还没有接入」、一个请求都不发。
    */
+  // 4.7 ③：有离线包就只读离线包（不出网），否则走在线的官方源
+  const hubOffline = offlineHubSource(process.env);
   const hubPorts: HubHostPorts = {
     catalog: catalogPorts,
-    client: createNodeHubPorts({ cacheRoot: join(options.paths.home, 'hub', 'cache') }),
-    source: officialHubSource(process.env),
+    client: createNodeHubPorts({
+      cacheRoot: join(options.paths.home, 'hub', hubOffline ? 'offline-cache' : 'cache'),
+      ...(hubOffline ? { fetch: createBundleFetch(hubOffline.dir) } : {}),
+    }),
+    source: hubOffline?.source ?? officialHubSource(process.env),
+    ...(hubOffline
+      ? {
+          offline: {
+            builtAt: readBundleManifest(hubOffline.dir)?.builtAt,
+            allowlist: parseAllowlist(readBundleAllowlist(hubOffline.dir)),
+          },
+        }
+      : {}),
     sourceName: OFFICIAL_HUB_NAME,
     appVersion: options.appVersion,
     officialOff: officialHubDisabled(process.env),
+    orgDisabled: () => policyView.disableOfficialHub,
     signedIn: () => account.signedIn(),
     // 用户机器上没有 node：stdio 连接器的 JS 用 Electron 自己跑（HUB-Q6a=A，同 browser / cua）
     nodeRuntime: { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } },

@@ -352,6 +352,7 @@ export function createIdentity(deps: IdentityDeps) {
       disableShare: payload?.disableShare ?? false,
       disableSlots: payload?.disableSlots ?? false,
       forceAudit: payload?.forceAudit ?? false,
+      disableOfficialHub: payload?.disableOfficialHub ?? false,
       revoked: row.revoked_at !== null,
       ...(row.actor_email ? { actorEmail: row.actor_email } : {}),
       ...(row.actor_phone ? { actorPhone: row.actor_phone } : {}),
@@ -1340,6 +1341,7 @@ export function createIdentity(deps: IdentityDeps) {
         disableSlots?: boolean | undefined;
         forceAudit?: boolean | undefined;
         disabledProfiles?: readonly string[] | undefined;
+        disableOfficialHub?: boolean | undefined;
       },
     ): PolicyPackEnvelope {
       const actor = requireAdmin(actorId);
@@ -1384,6 +1386,7 @@ export function createIdentity(deps: IdentityDeps) {
           disableSlots: input.disableSlots === true,
           forceAudit: input.forceAudit === true,
           disabledProfiles: [...(input.disabledProfiles ?? [])],
+          disableOfficialHub: input.disableOfficialHub === true,
         },
         deps.keys.kid,
       );
@@ -1666,6 +1669,7 @@ export interface AdminPolicyPackView {
   readonly disableShare: boolean;
   readonly disableSlots: boolean;
   readonly forceAudit: boolean;
+  readonly disableOfficialHub: boolean;
   readonly revoked: boolean;
   readonly actorEmail?: string | undefined;
   readonly actorPhone?: string | undefined;

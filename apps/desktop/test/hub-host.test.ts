@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { generateEs256KeyPair } from '@evowork/account';
 import { AUDIT_RULES_VERSION } from '@evowork/catalog';
-import { createNodeHubPorts } from '@evowork/hub-client';
+import { BUNDLE_BASE_URL, createBundleFetch, createNodeHubPorts } from '@evowork/hub-client';
 import {
   packTarGz,
   sha256Hex,
@@ -27,7 +27,9 @@ import { createFsCatalogPorts, readCatalog } from '../src/main/catalog-host.js';
 import { officialHubSource } from '../src/main/hub-config.js';
 import {
   canAutoFetch,
+  enforceOrganizationPolicy,
   hubCatalogView,
+  HUB_ORG_OFF_CAPTION,
   HUB_INTEGRITY_REFUSAL,
   installHubItem,
   readHubState,
@@ -524,5 +526,98 @@ describe('更新 · 吊销 · 回滚（13 §5.4，HUB-Q4=A）', () => {
     expect(readHubState(p).items).toEqual([]);
     expect(existsSync(userSkill('minutes'))).toBe(false);
     expect(existsSync(kernelSkill('minutes'))).toBe(false);
+  });
+});
+
+describe('企业策略包关掉官方源（13 §4.7 ①，HUB-Q11=A）', () => {
+  it('不再发请求；已装的停用并写明原因、不删；组织重新打开后确认一次就恢复', async () => {
+    let orgOff = false;
+    serveIndex([publish('skill', 'minutes', '1.0.0', skillFiles('minutes'))]);
+    const p = ports({ orgDisabled: () => orgOff });
+    await refreshHub(p, p.runtime, 'manual');
+    await installHubItem(p, { kind: 'skill', id: 'minutes' });
+    const before = requests.length;
+
+    orgOff = true;
+    expect(canAutoFetch(p)).toBe(false);
+    await refreshHub(p, p.runtime, 'manual');
+    expect(requests.length).toBe(before);
+    expect(existsSync(kernelSkill('minutes'))).toBe(false);
+    expect(existsSync(userSkill('minutes'))).toBe(true);
+    const view = hubCatalogView(p, p.runtime);
+    expect(view.status.caption).toBe(HUB_ORG_OFF_CAPTION);
+    expect(view.status.canRefresh).toBe(false);
+    expect(view.entries.map((e) => [e.id, e.state])).toEqual([['minutes', 'revoked']]);
+    expect((await installHubItem(p, { kind: 'skill', id: 'minutes' })).ok).toBe(false);
+    // 幂等
+    expect(await enforceOrganizationPolicy(p)).toBe(0);
+
+    orgOff = false;
+    expect(hubCatalogView(p, p.runtime).entries[0]?.state).toBe('needs-reconfirm');
+    expect((await installHubItem(p, { kind: 'skill', id: 'minutes', acknowledge: true })).ok).toBe(
+      true,
+    );
+    expect(existsSync(kernelSkill('minutes'))).toBe(true);
+    expect(hubCatalogView(p, p.runtime).entries[0]?.state).toBe('installed');
+  });
+});
+
+describe('企业离线包（13 §4.7 ③，EVOWORK_HUB_BUNDLE）', () => {
+  /** 用「CDN」上的文件铺一个离线目录（离线索引就是同一份签名原件）。 */
+  function bundleDir(): string {
+    const dir = join(root, 'bundle');
+    for (const [url, body] of files) {
+      const rel = url.replace('/v1/evowork/', '');
+      mkdirSync(join(dir, rel, '..'), { recursive: true });
+      writeFileSync(join(dir, rel), body);
+    }
+    return dir;
+  }
+
+  it('未登录也读（读的是本机目录，不是请求）；白名单只留列出的；没写许可的条目不装、不出网', async () => {
+    const upstream: HubItem = {
+      ...publish('skill', 'unlicensed', '1.0.0', skillFiles('unlicensed')),
+      license: { spdx: 'NOASSERTION' },
+      package: {
+        url: 'https://codeload.example/o/r/tar.gz/abc',
+        subdir: '',
+        treeSha256: 'a'.repeat(64),
+      },
+    };
+    serveIndex([
+      publish('skill', 'minutes', '1.0.0', skillFiles('minutes')),
+      publish('skill', 'other', '1.0.0', skillFiles('other')),
+      upstream,
+    ]);
+    const dir = bundleDir();
+    const p = ports({
+      signedIn: () => false,
+      officialOff: true,
+      client: {
+        ...createNodeHubPorts({
+          cacheRoot: join(root, 'home', 'hub', 'offline-cache'),
+          fetch: createBundleFetch(dir),
+        }),
+        now: () => now,
+      },
+      source: {
+        id: 'evowork',
+        baseUrl: BUNDLE_BASE_URL,
+        trustedKeys: [{ kid: 'k1', publicPem: keys.publicPem }],
+      },
+      offline: { builtAt: now - 3600, allowlist: new Set(['skill:minutes', 'skill:unlicensed']) },
+    });
+    expect(canAutoFetch(p)).toBe(true);
+    await refreshHub(p, p.runtime, 'auto');
+    expect(requests).toEqual([]);
+    const view = hubCatalogView(p, p.runtime);
+    expect(view.status.fetchMode).toBe('offline');
+    expect(view.status.caption).toMatch(/^离线内容，更新于/);
+    expect(view.entries.map((e) => e.id).sort()).toEqual(['minutes', 'unlicensed']);
+    expect((await installHubItem(p, { kind: 'skill', id: 'minutes' })).ok).toBe(true);
+    const refused = await installHubItem(p, { kind: 'skill', id: 'unlicensed' });
+    expect(refused.refused).toMatch(/不在离线包里/);
+    expect((await installHubItem(p, { kind: 'skill', id: 'other' })).ok).toBe(false);
+    expect(requests).toEqual([]);
   });
 });

@@ -227,11 +227,23 @@ const content = `${L.join('\n')}\n`;
 if (checkOnly) {
   const existing = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
   if (existing !== content) {
+    // 先说「读不到依赖树」：那是本机环境问题（如 pnpm store 缺文件），不是清单过时 ——
+    // 这时去跑 `pnpm notices` 会把 114 个包的清单改写成一句警告
+    if (!npm.available) {
+      console.error(
+        `❌ 读不到 npm 依赖的许可证（${npm.reason}）。先修好本机的 pnpm（通常是 \`pnpm install\`），不要重新生成清单。`,
+      );
+      process.exit(1);
+    }
     console.error('❌ THIRD_PARTY_NOTICES.md 与当前依赖树不一致。跑 `pnpm notices` 重新生成。');
     process.exit(1);
   }
   console.log('✅ THIRD_PARTY_NOTICES.md 是最新的。');
 } else {
+  if (!npm.available) {
+    console.error(`❌ 读不到 npm 依赖的许可证（${npm.reason}），不写清单。先修好本机的 pnpm。`);
+    process.exit(1);
+  }
   writeFileSync(OUT, content, 'utf8');
   console.log(`✅ 已写入 ${OUT}`);
 }

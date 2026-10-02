@@ -33,6 +33,8 @@ export interface PolicyPackView {
   readonly allowManagedHooksOnly: boolean;
   readonly disabledProfiles: readonly string[];
   readonly allowCustomModels: boolean;
+  /** 13 §4.7 ①。过期的策略包照样按它执行（R11：过期不放开）。 */
+  readonly disableOfficialHub: boolean;
 }
 
 export const EMPTY_POLICY_VIEW: PolicyPackView = {
@@ -43,6 +45,7 @@ export const EMPTY_POLICY_VIEW: PolicyPackView = {
   allowManagedHooksOnly: false,
   disabledProfiles: [],
   allowCustomModels: true,
+  disableOfficialHub: false,
 };
 
 export interface SyncPolicyDeps {
@@ -139,6 +142,7 @@ export function viewFromPayload(
     allowManagedHooksOnly: payload.allowManagedHooksOnly,
     disabledProfiles: payload.disabledProfiles,
     allowCustomModels: payload.models.allowCustom,
+    disableOfficialHub: payload.disableOfficialHub === true,
   };
 }
 

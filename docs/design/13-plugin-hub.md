@@ -5,7 +5,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 版本 | v1.4 |
+| 版本 | v1.5 |
 | 日期 | 2026-10-02 |
 | 作者 | li.wang |
 | 状态 | **决策完毕（2026-10-02）：HUB-Q1–Q11 及 HUB-Q5a / Q6a / Q8a 全部确认**（结论见 §10 各条开头）。**已回写总纲**（2026-10-02，总纲 v0.13 §10.1.7，明细见 §11）。**H0 与 H1 的客户端已实现**（2026-10-02，见 §13.1）；H2 之前没有签名密钥与 CDN，所以精选源在产品里如实显示「还没有接入」、不发请求 |
@@ -600,7 +600,7 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | 05 §3.1 / §3.2 / §4.3 / §7 | 来源（已决策未实现的三类）、「套件」Tab 改为渲染（HF13 以改文档收场）、连接器目录与文案说明、两条新异常态 | ✅ 已回写 |
 | [11 §7](11-account-and-models.md) | 策略包将新增 `disableOfficialHub`（HUB-Q11） | ✅ 已回写（文档）；`packages/account` 的 `PolicyPackPayload` 是代码，实现时改 |
 | README §1 / §4 | 文档地图加 13；HF1–HF9 登记为 **F36–F44**（原写 F34–F42，与 2026-09-26 已进 `kernel-assertions.json` 的 F34 / F35 撞号，2026-10-02 订正） | ✅ 已回写 |
-| `scripts/kernel-drift.mjs` | 给 F39–F43（HF4–HF8）加断言：它们都是「内核换了行为也不会报错」的那种；V6 新发现的 `manager.rs:2256`（安装无条件启用）也该加 | ⏳ 代码，未做（H0 / H1 没做它） |
+| `scripts/kernel-drift.mjs` | 给 HF4–HF8 加断言（F39–F43），V6 的「安装无条件启用」加为 F45 | ✅ 2026-10-02（`scripts/kernel-assertions.json`） |
 | CLAUDE.md §3 | 目录结构加 `services/hub-client` 与 `packages/hub-protocol` | ✅ 2026-10-02（目录已建出来） |
 | `packages/account` | 策略包的信封抽成 `envelope.ts`，Hub 索引与策略包共用（HF11） | ✅ 2026-10-02 |
 
@@ -619,7 +619,7 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 
 ### 12.1 验证结果（2026-10-02）
 
-**口径**：用的内核二进制是 `../codex` 的 **2026-09-05 debug 构建**（上游原样，没有 P6）——`build-kernel.mjs` 这次没编完。源码断言都在当前签出 `d583e73c4d` 上重新核对过；但**行为是在旧二进制上测的**，换了签出之后应当在 `build-kernel.mjs` 编出的内核上重跑一遍。脚本与原始结果在当次会话的临时目录，没有进仓库。
+**口径**：第一轮用的是 `../codex` 的 2026-09-05 上游 debug 构建（没有 P6）。**2026-10-02 在 `build-kernel.mjs --debug` 编出的打补丁内核上复测了 V1 / V5 / V6，结论全部一致**（内核 `d583e73c4d`，补丁 `0001-exec-overwrite-approval.patch`，二进制 sha256 与 `KERNEL_PROVENANCE.json` 一致；每次用独立的 `CODEX_HOME` 与 `HOME`）。复测补充的两点：① 内核刚启动时 `plugin/list(['local'])` 可能还**没有** curated 市场，约 5 秒后同步完才出现 —— 有没有它取决于启动时机，§9 的 `.tmp/` 过滤两种情况都得守住；② 用适配层 `setPluginEnabled` 的同一份 `config/batchWrite` 写停用后，`plugin/list` 显示 `enabled: false`，**该插件的技能从 `skills/list` 里整个消失**（不是列成停用）。没测：空窗期间恰好开始的回合会不会带上它；写停用之后的回合 prompt 里确实没有它（只看了 `skills/list`）。脚本与原始结果在会话临时目录，没有进仓库。
 
 | # | 结论 | 依据 |
 | --- | --- | --- |
@@ -657,7 +657,11 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | 安装 / 静默更新 / 吊销 / 回滚 / 卸载；5.5 覆盖随包技能；HUB-Q3=B 的拉取时机 | `apps/desktop/src/main/hub-host.ts` | ✅ |
 | 界面：来源筛选、状态卡、warning / caption、刷新、预算条；设置里的未登录开关 | `views/catalog.tsx` · `views/settings.tsx` | ✅（单测；**没做真实窗口验收**） |
 | 官方源的地址与公钥 | `apps/desktop/src/main/hub-config.ts` | ⏳ H2：公钥列表是空的，地址由 `EVOWORK_HUB_ORIGIN` 给。两样都有之前**一个请求都不发** |
-| 4.7 企业管控（`disableOfficialHub`、离线包、白名单） | — | ⏳ H6。`EVOWORK_HUB_OFFICIAL=off` 已经认（H1 顺手做了，代价为零） |
+| 4.7 ① 策略包 `disableOfficialHub` | `packages/account` · `services/identity` · `apps/web` 策略页 · `hub-host.ts` | ✅ 2026-10-02（H6）。组织停用的条目记为 `revokedBy: 'organization'`：**不是**内容出了问题，所以组织重新打开后卡片转「需重新确认」，确认一次恢复；连接器的信任要重新给（K6） |
+| 4.7 ② `EVOWORK_HUB_OFFICIAL=off` | `hub-config.ts` | ✅（H1） |
+| 4.7 ③ 离线包 + 白名单 | `services/hub-client/src/bundle.ts` · `scripts/build-hub-bundle.mjs` | ✅ 2026-10-02（H6）。离线源用的是**同一个** hub-client，只是把 fetch 换成读目录：验签、`sequence`、sha256 原样跑，非 `bundle:` 地址一律失败（不出网）。官方源要另外发一份长有效期的 **`index.offline.json`**（H2 的发布流程要产出它）；没有时脚本退回在线索引并在 MANIFEST 里标出来。没写许可的条目不进离线包。白名单写坏 = 当作没有白名单（照样提示），不是「全删」 |
+| G3 指令文本规则（诱导安装 · 下载即执行 · base64 · 收数据端点 · 凭据） | `services/catalog/src/audit.ts`（规则版本 `2026-10-02.2`） | ✅ 2026-10-02。规则只有这一份（HUB-Q9=A），管道引用它；诱导类的 finding 带 `lure`，管道见到直接拒收 |
+| 企业私有源 | — | ⏳ 等 Q44；公钥由策略包下发（4.3），客户端的多源合并还没做 |
 
 实现时定下的几处细节（文档原来没写到这么细）：
 
@@ -665,6 +669,7 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 - **上游固定提交的条目**（HUB-Q5a=A）校验的是解开后 `subdir` 的**文件树哈希**（`package.treeSha256`），不是归档的 sha256：代码托管站重新压缩过归档，字节就不一样了。托管在我们 CDN 上的仍然先比归档的 sha256、再解包。
 - 内容包用自己写的 tar 读取器解，**不调系统 `tar`**：符号链接、硬链接、`..`、绝对路径整包拒绝。
 - 静默更新前**下载并本地重审**：云端说能力没扩大、本机审出来扩大了，这一版不装，卡片转「有更新，需重新确认」并写明多了什么。回滚之后同一版本也按这条挡住，不会下次刷新又被静默升回去。
+- **离线包与 `EVOWORK_HUB_OFFICIAL=off` 同时设置时，离线包照常可用**：`off` 管的是「不向官方源发网络请求」，离线包不发请求。企业策略包的 `disableOfficialHub` 则连离线包一起停（那是「不要用外部内容」）。
 - 连接器条目的内容包是 `connector.json`（远程：`transport` + `url`；stdio：`runtime` = `node` | `python` + 包内 `entry`）。stdio 用 `process.execPath` + `ELECTRON_RUN_AS_NODE=1` 跑。
 
 ## 14. 风险
@@ -716,3 +721,4 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | v1.2 | 2026-10-02 | §9 第 2 条（以及 05 §3.2）补一句：滤掉的是通道，不是内容；curated 内容经 Hub 收编或由用户自行安装 |
 | v1.3 | 2026-10-02 | §3 写明 Hub 的形态：静态目录，类似 apt / rpm 仓库，没有 Web 界面，仓库是源头、CDN 目录是产物。`evowork-hub` 仓库已创建（公开），新增 7.5 写它的约束 |
 | v1.4 | 2026-10-02 | H0 / H1 客户端实现（§13.1）；§12.1 记 V1 / V3 / V5 / V6 的结果；9.1 第 2 条与 §14 按 V6 订正（预写停用无效，改为装完立刻停用，空窗如实登记） |
+| v1.5 | 2026-10-02 | H6 的客户端与管理端（策略包开关、离线包、白名单）；HF1–HF9 改登记为 F36–F44（原号与已有的 F34 / F35 撞了），F39–F43 与 F45 进漂移雷达；§12.1 补上在打补丁内核上的复测 |

@@ -269,6 +269,10 @@ function CurrentPack(props: { readonly pack: PolicyPackView; readonly onRevoke: 
           <dt>强制审计</dt>
           <dd>{pack.forceAudit ? '是' : '否'}</dd>
         </div>
+        <div className="ew-kv-row">
+          <dt>禁用 EvoWork 精选源</dt>
+          <dd>{pack.disableOfficialHub ? '是' : '否'}</dd>
+        </div>
       </dl>
 
       {pack.reason ? (
@@ -411,6 +415,7 @@ export interface PackDraft {
   readonly allowManagedHooksOnly: boolean;
   readonly disableShare: boolean;
   readonly forceAudit: boolean;
+  readonly disableOfficialHub: boolean;
   readonly expiresInDays: number;
   readonly graceInDays: string;
   readonly reason: string;
@@ -423,6 +428,7 @@ const EMPTY_DRAFT: PackDraft = {
   allowManagedHooksOnly: false,
   disableShare: false,
   forceAudit: false,
+  disableOfficialHub: false,
   expiresInDays: 30,
   graceInDays: '',
   reason: '',
@@ -453,6 +459,7 @@ export function IssueWizard(props: {
           allowManagedHooksOnly: props.current.allowManagedHooksOnly,
           disableShare: props.current.disableShare,
           forceAudit: props.current.forceAudit,
+          disableOfficialHub: props.current.disableOfficialHub,
           reason: props.current.reason ?? '',
         }
       : EMPTY_DRAFT,
@@ -488,6 +495,7 @@ export function IssueWizard(props: {
           disableShare: draft.disableShare,
           disableSlots: false,
           forceAudit: draft.forceAudit,
+          disableOfficialHub: draft.disableOfficialHub,
         });
       }}
     >
@@ -573,6 +581,12 @@ export function IssueWizard(props: {
               label="强制审计"
               checked={draft.forceAudit}
               onChange={(checked) => setDraft((d) => ({ ...d, forceAudit: checked }))}
+            />
+            <Checkbox
+              label="禁用 EvoWork 精选源"
+              checked={draft.disableOfficialHub}
+              onChange={(checked) => setDraft((d) => ({ ...d, disableOfficialHub: checked }))}
+              why="成员的客户端不再向 EvoWork 精选源发任何请求；已装的精选内容会被停用（不删）。随包内容与本地安装的不受影响"
             />
           </fieldset>
         </>
@@ -679,6 +693,7 @@ export function buildDiff(current: PolicyPackView | null, draft: PackDraft): rea
     allowManagedHooksOnly: false,
     disableShare: false,
     forceAudit: false,
+    disableOfficialHub: false,
   };
 
   for (const id of draft.disabledModels) {
@@ -707,6 +722,7 @@ export function buildDiff(current: PolicyPackView | null, draft: PackDraft): rea
     ['allowManagedHooksOnly', '只允许管理员 hooks'],
     ['disableShare', '禁用分享'],
     ['forceAudit', '强制审计'],
+    ['disableOfficialHub', '禁用 EvoWork 精选源'],
   ];
   for (const [key, label] of flags) {
     const next = draft[key] as boolean;

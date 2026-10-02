@@ -412,7 +412,7 @@ D9 的四类云端职责里已包含账号，但**登录与令牌刷新这两个
 **2026-09-09 落地（M10c）**：identity 用与 JWT 同一把 ES256 密钥签 payload **原文**（密钥经 master key 落库，重启可验旧包）；成员 `GET /v1/policy-pack` 只拿信封。桌面验签后写 `~/.evowork/requirements.toml` 的 `[models]`（网关第②层）以及模板里的 hooks / 权限 / 开关。无包或未登录不锁 BYOK。超期文案用 §8 原句，Composer 与 `send` 都挡。配额班级 `quota_classes` 写入 JWT `quotaClass`；每人 `setQuota` 仍是覆盖。**企业 OIDC SSO 未做**（等客户 IdP，不在本段 1.5 周表里）。
 
 
-> **2026-10-02（HUB-Q11=A，[13 §4.7](13-plugin-hub.md)）**：策略包将新增 `disableOfficialHub`，关掉 EvoWork 精选源。走同一条通道、做法同 `disableShare`，管理端只多一个勾选框（不碰 Q44）。**尚未实现。**
+> **2026-10-02（HUB-Q11=A，[13 §4.7](13-plugin-hub.md)）**：策略包新增 `disableOfficialHub`，关掉 EvoWork 精选源。走同一条通道、做法同 `disableShare`，管理端只多一个勾选框（不碰 Q44）。**已实现（2026-10-02）**：字段**可缺省**（旧 identity 签的包里没有它 = 不禁用；写成非布尔值整个包不认）；过期的策略包照样按它执行（R11）；客户端行为见 13 §4.7 ①。
 
 ---
 

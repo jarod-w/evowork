@@ -75,6 +75,7 @@ export type {
   PluginListLike,
 } from './bundles.js';
 export {
+  applyAllowlist,
   appSatisfies,
   capabilityGrowth,
   decideUpdate,
@@ -82,6 +83,7 @@ export {
   findRevocation,
   HUB_NEW_WINDOW_SEC,
   hubEntries,
+  parseAllowlist,
   parseHubInstallState,
   reconcileAudit,
   removeInstalled,

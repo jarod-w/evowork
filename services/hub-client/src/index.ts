@@ -18,3 +18,10 @@ export {
   type VerifiedIndex,
 } from './client.js';
 export { createNodeHubPorts, nodeHubFetch, nodeHubFs } from './node.js';
+export {
+  BUNDLE_BASE_URL,
+  createBundleFetch,
+  readBundleAllowlist,
+  readBundleManifest,
+  type BundleManifest,
+} from './bundle.js';

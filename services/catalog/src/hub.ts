@@ -44,6 +44,11 @@ export interface HubInstalled {
   readonly heldReason?: string | undefined;
   /** 被吊销：已停用，**没有删**（5.4）。 */
   readonly revokedReason?: string | undefined;
+  /**
+   * 谁停用的。`organization` = 企业策略包关掉了官方源（13 §4.7 ①）：那不是内容出了问题，
+   * 所以组织重新打开后，卡片转「需重新确认」，用户确认一次就恢复（连接器的信任要重新给，K6）。
+   */
+  readonly revokedBy?: 'revocation' | 'organization' | undefined;
   /** 覆盖了同名的随包技能（5.5，HUB-Q7=A）。卸载时要把随包那份恢复。 */
   readonly overridesBundled?: boolean | undefined;
 }
@@ -146,6 +151,9 @@ function parseInstalled(raw: unknown): HubInstalled | undefined {
     ...(typeof r.heldVersion === 'string' ? { heldVersion: r.heldVersion } : {}),
     ...(typeof r.heldReason === 'string' ? { heldReason: r.heldReason } : {}),
     ...(typeof r.revokedReason === 'string' ? { revokedReason: r.revokedReason } : {}),
+    ...(r.revokedBy === 'organization' || r.revokedBy === 'revocation'
+      ? { revokedBy: r.revokedBy }
+      : {}),
     ...(r.overridesBundled === true ? { overridesBundled: true } : {}),
   };
 }
@@ -261,6 +269,8 @@ export function decideUpdate(
   index: HubIndexPayload,
   appVersion: string,
 ): HubUpdateDecision {
+  // 组织停用的条目不自动做任何事：恢复要用户确认（hubEntries 里是「需重新确认」）
+  if (installed.revokedBy === 'organization') return { kind: 'none' };
   const revocation = findRevocation(index.revoked, installed.kind, installed.id, installed.version);
   if (revocation !== undefined) return { kind: 'revoked', reason: revocation.reason };
   const item = index.items.find((i) => i.kind === installed.kind && i.id === installed.id);
@@ -343,7 +353,13 @@ export function hubEntries(input: {
     const revokedLatest = findRevocation(index?.revoked ?? [], item.kind, item.id, item.version);
     let state: HubEntryState;
     let reason: string | undefined;
-    if (installed?.revokedReason !== undefined) {
+    if (installed?.revokedReason !== undefined && installed.revokedBy === 'organization') {
+      state = revokedLatest !== undefined ? 'revoked' : 'needs-reconfirm';
+      reason =
+        revokedLatest !== undefined
+          ? revokedLatest.reason
+          : '你所在的组织曾停用 EvoWork 精选内容，确认后恢复';
+    } else if (installed?.revokedReason !== undefined) {
       state = 'revoked';
       reason = installed.revokedReason;
     } else if (installed !== undefined && index !== undefined) {
@@ -419,6 +435,39 @@ export function hubEntries(input: {
     });
   }
   return out;
+}
+
+/* ── 企业白名单（13 §4.7 ③）─────────────────────────────────────────── */
+
+/**
+ * `allowlist.json`：`{ "items": ["skill:minutes", "expert:analyst"] }`。
+ *
+ * **不需要签名**，因为它只能从已签名的索引里删条目、不能加 —— 装不进任何没经过我们签名的内容。
+ * 认不出来的白名单返回 undefined，调用方按「没有白名单」处理（不是「全删」：
+ * 写坏一个字符就让企业所有人什么都用不了，比不过滤更糟，而且照样如实提示）。
+ */
+export function parseAllowlist(text: string | undefined): ReadonlySet<string> | undefined {
+  if (text === undefined || text.trim() === '') return undefined;
+  try {
+    const raw = JSON.parse(text) as { items?: unknown };
+    if (!Array.isArray(raw.items)) return undefined;
+    const keys = raw.items.filter(
+      (k): k is string =>
+        typeof k === 'string' && /^(skill|expert|connector):[a-z0-9][a-z0-9._-]{0,63}$/.test(k),
+    );
+    return new Set(keys);
+  } catch {
+    return undefined;
+  }
+}
+
+/** 只删不加：白名单里写了索引里没有的条目，什么都不会发生。 */
+export function applyAllowlist(
+  index: HubIndexPayload,
+  allow: ReadonlySet<string> | undefined,
+): HubIndexPayload {
+  if (allow === undefined) return index;
+  return { ...index, items: index.items.filter((i) => allow.has(`${i.kind}:${i.id}`)) };
 }
 
 /* ── prompt 预算（13 §6，HF6）─────────────────────────────────────────── */

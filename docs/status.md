@@ -6,6 +6,15 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-02（续）：Hub 的收尾 + H6 + G3 规则。**
+> ① **打补丁内核上复测**（`build-kernel.mjs --debug` 第一次在本机编完，`build/.kernel-target` 链到上游已有的 target 以省盘）：V1 / V5 / V6 全部成立，补充两点见 13 §12.1。
+> ② **漂移雷达**：HF4–HF8 进 `kernel-assertions.json`（F39–F43），V6 的「安装无条件启用」成为 F45；Hub 事实在 README §4 改登记为 F36–F44 —— 原来写的 F34 / F35 与 2026-09-26 已进雷达的两条模型目录断言撞号。
+> ③ **一个老缺陷**：随包 browser 连接器写进 `config.toml` 的是 `command = "node"` 且没有 `ELECTRON_RUN_AS_NODE`，客户机器上没有 node，信任之后起不来。官方连接器的启动方式现在永远取这次安装的（Electron 自己 + `ELECTRON_RUN_AS_NODE=1` + 当前随包路径），启动时把旧的改写掉。**没在打包应用里验过**。
+> ④ 随包 7 个技能写上版本号（5.5 有东西可比）；吊销了的 Hub 覆盖版不再在目录里盖过随包那份。
+> ⑤ **H6**：策略包 `disableOfficialHub`（identity 签发 · web 策略页勾选框与 diff · 桌面执行；字段可缺省，旧包照认）；离线包 `EVOWORK_HUB_BUNDLE`（同一个 hub-client 换成读目录，验签照跑、非 `bundle:` 地址一律失败）+ `scripts/build-hub-bundle.mjs` + 企业白名单（只删不加）。
+> ⑥ **G3 指令文本规则进 `services/catalog` 的审计**（规则版本 `2026-10-02.2`）：下载即执行、ClickFix 诱导、大段 base64、收数据端点、凭据路径；诱导类带 `lure` 标记供管道拒收。随包 7 个技能无一命中。
+> 验收：`pnpm run check` 退出 0，140 个测试文件通过、1 个原有跳过；2331 个测试通过、2 个原有跳过。**环境注意**：四个办公技能的「没装办公扩展」用例隐含要求 PATH 上第一个 `python3` 带 `jsonschema`（基础包），这台机器的系统 python 没有，本次在 PATH 前面加上 `~/.evowork/runtime/office/bin` 才跑绿 —— 这是测试辅助函数的老依赖，不是本次改动引入的；另外本机 pnpm store 的索引文件丢了一大批，`pnpm install --force` 修好（`gen-third-party-notices.mjs --check` 现在会直接说「读不到依赖树」，不再误报成「清单过时」）。
+>
 > **2026-10-02：插件 Hub 的 H0 与 H1（客户端）落地（[13 §13.1](design/13-plugin-hub.md)）。**
 > **H0**：「套件」Tab 只列本机与工作区市场 —— 适配层只传 `local`，`@evowork/catalog` 的 `listBundles` 按路径滤掉
 > `<kernelHome>/.tmp/` 下的所有市场（OpenAI curated「Codex official」50 个插件此前只是碰巧没出现），读失败进 `bundleErrors`；
@@ -20,7 +29,7 @@
 > **真内核验证**（V1 / V3 / V5 / V6，13 §12.1）**用的是 2026-09-05 的上游 debug 二进制**（`build-kernel.mjs` 这次没编完），
 > 源码断言在当前签出上核对过：V1 成立（按需层可行）；V3 随包 7 个技能 ≈489 token / 128K 窗口预算 2,560；
 > **V6 推翻了「预写停用」**：内核装完无条件写启用（`core-plugins/src/manager.rs:2256`），先装后审的空窗存在，已登记 13 §14。
-> 没做的：`kernel-drift.mjs` 给 F39–F43 加断言；真实桌面窗口的视觉验收；在打补丁的内核上重跑 V1–V6。
+> 没做的：真实桌面窗口的视觉验收。（F39–F43 / F45 漂移断言与打补丁内核上的 V1 / V5 / V6 复测已在同日补上，见下一条。）
 > 验收：`pnpm run check` 退出 0，139 个测试文件通过、1 个原有跳过；2306 个测试通过、2 个原有跳过（新增约 98 个）。未跑 Playwright UI 用例，未重新打包。
 >
 > **2026-10-02（再续）：更新源 `https://update.nucleant.cn:9443/` 已上线。** 机主加了 A 记录、放行了云安全组、确认已备案后，在 115.190.115.161 上：

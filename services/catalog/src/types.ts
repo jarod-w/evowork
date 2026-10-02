@@ -33,6 +33,11 @@ export interface SkillRecord {
 export interface AuditFinding {
   readonly code: string;
   readonly detail: string;
+  /**
+   * 「诱导安装」类（13 §7.1 G3：ClickFix 手法）。Hub 的管道见到它**直接拒收**；
+   * 用户自己从本地 / Git 装时它按 P2 呈现，最坏能做什么写清楚。
+   */
+  readonly lure?: boolean | undefined;
 }
 
 export interface AuditResult {

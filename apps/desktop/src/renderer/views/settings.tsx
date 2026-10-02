@@ -330,7 +330,10 @@ function AccountSection({
            * 不出现开关，改为如实说明。
            */}
           {hubStatus !== undefined && onHubFetchWhenSignedOut ? (
-            hubStatus.fetchMode === 'off' || hubStatus.fetchMode === 'unconfigured' ? (
+            hubStatus.fetchMode === 'off' ||
+            hubStatus.fetchMode === 'org-off' ||
+            hubStatus.fetchMode === 'offline' ||
+            hubStatus.fetchMode === 'unconfigured' ? (
               hubStatus.caption !== undefined ? (
                 <p className="ew-settings-note">{hubStatus.caption}</p>
               ) : null

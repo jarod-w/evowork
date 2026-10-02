@@ -91,6 +91,8 @@ export interface PolicyPackView {
   readonly disableShare: boolean;
   readonly disableSlots: boolean;
   readonly forceAudit: boolean;
+  /** 13 §4.7 ①：成员客户端不再向 EvoWork 精选源发请求，已装的精选条目停用。 */
+  readonly disableOfficialHub: boolean;
   readonly revoked: boolean;
   readonly actorEmail?: string;
   readonly actorPhone?: string;

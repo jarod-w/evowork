@@ -13,7 +13,7 @@ import type { AuditFinding, AuditResult, RiskLevel } from './types.js';
  * 版本相同，结论必须一致（不一致 = 内容或索引被动过，拒装）；版本不同，取两边更严的那个。
  * 改了规则却没改版本号，前一条就会把正常的包判成「被动过」。
  */
-export const AUDIT_RULES_VERSION = '2026-10-02.1';
+export const AUDIT_RULES_VERSION = '2026-10-02.2';
 
 const P2_BIN_EXT = ['.exe', '.dll', '.so', '.dylib', '.bin', '.wasm'];
 const SENSITIVE_PATH = /(?:^|[^\w.])(?:\/etc\/|\/root\/|~\/\.ssh|~\.ssh|\.ssh\/|\/proc\/)/i;
@@ -21,6 +21,28 @@ const ARBITRARY_NET =
   /(?:network\s*[:=]\s*(?:any|\*)|danger-full-access|allow_all_unix|permissions\s*[:=]\s*["']?\*)/i;
 const LIMITED_NET = /(?:https?:\/\/[^\s]+|network_access|mcp_servers?)/i;
 const SHELL_HINT = /(?:\b(bash|sh|zsh|powershell|cmd\.exe|os\.system|subprocess)\b)/i;
+
+/*
+ * 指令文本规则（13 §7.1 G3，2026-10-02.2）。ClawHavoc 那批恶意技能很多**没有脚本**，
+ * 只在 SKILL.md 的「前置条件」里诱导用户或模型去装东西 —— 只审脚本不够，指令文本也要审。
+ *
+ * 判据刻意收窄到「几乎没有正当用途」的写法，避免把正常的 `pip install requests` 也判成诱导：
+ * 管道见到 `lure` 是直接拒收的。
+ */
+/** 下载即执行：`curl … | sh`、`wget -O- … | bash`、`iwr … | iex`、`base64 -d | sh`。 */
+const PIPE_TO_SHELL =
+  /(?:\b(?:curl|wget)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b|\b(?:iwr|irm|invoke-webrequest|invoke-restmethod)\b[^\n|]*\|\s*(?:iex|invoke-expression)\b|base64\s+(?:-d|--decode)[^\n|]*\|\s*(?:ba|z)?sh\b)/i;
+/** 让人去下载一个可执行文件，或者去掉系统的隔离标记、把命令粘进终端（ClickFix）。 */
+const INSTALL_LURE =
+  /(?:https?:\/\/[^\s)'"]+\.(?:exe|msi|dmg|pkg|command|scr|bat|ps1)(?:[\s)'"?#]|$)|xattr\s+-[a-z]*d[a-z]*\s+com\.apple\.quarantine|(?:paste|copy)\s+(?:this|the following|it)\s+(?:command\s+)?(?:into|in)\s+(?:your\s+)?(?:terminal|powershell|the run dialog|cmd)|(?:粘贴|复制)到(?:你的)?(?:终端|命令行|运行窗口|PowerShell))/i;
+/** 大段 base64：藏东西最常见的办法。 */
+const BASE64_BLOB = /[A-Za-z0-9+/]{400,}={0,2}/;
+/** 收数据用的公共端点：webhook、粘贴站、内网穿透。 */
+const EXFIL_HOST =
+  /\b(?:webhook\.site|requestbin\.(?:com|net)|pipedream\.net|pastebin\.com|hastebin\.com|paste\.ee|transfer\.sh|ngrok(?:-free)?\.(?:io|app)|discord(?:app)?\.com\/api\/webhooks)\b/i;
+/** 凭据：钥匙串、云账号凭据文件、私钥文件。 */
+const CREDENTIAL_PATH =
+  /(?:security\s+(?:find|dump)-(?:generic|internet)-password|\bdump-keychain\b|login\.keychain|\.aws\/credentials|\.config\/gcloud|\.kube\/config|\bid_(?:rsa|ed25519|ecdsa)\b)/i;
 
 export interface AuditFile {
   readonly relativePath: string;
@@ -72,6 +94,58 @@ export function auditSkillFiles(files: readonly AuditFile[]): AuditResult {
     }
 
     const text = file.text ?? '';
+    if (text !== '' && PIPE_TO_SHELL.test(text)) {
+      raise(
+        'p2',
+        {
+          code: 'pipe-to-shell',
+          detail: `${file.relativePath} 让人把下载下来的内容直接交给 shell 执行。`,
+          lure: true,
+        },
+        '它会从网上下载一段没人检查过的程序并立刻运行，能做你在这台电脑上能做的任何事。',
+      );
+    }
+    if (text !== '' && INSTALL_LURE.test(text)) {
+      raise(
+        'p2',
+        {
+          code: 'install-lure',
+          detail: `${file.relativePath} 引导下载可执行文件、去掉系统隔离标记，或把命令粘进终端。`,
+          lure: true,
+        },
+        '这是诱导安装恶意程序的常见写法：装上的东西不受任何检查。',
+      );
+    }
+    if (text !== '' && BASE64_BLOB.test(text)) {
+      raise(
+        'p2',
+        {
+          code: 'base64-blob',
+          detail: `${file.relativePath} 里有一大段 base64，内容无法直接审阅。`,
+        },
+        '大段编码内容可能藏着任何东西，静态审计看不穿它。',
+      );
+    }
+    if (text !== '' && EXFIL_HOST.test(text)) {
+      raise(
+        'p2',
+        {
+          code: 'exfil-host',
+          detail: `${file.relativePath} 提到了 webhook / 粘贴站 / 内网穿透这类收数据的地址。`,
+        },
+        '它可能把你的文件或对话内容发到第三方收集端点。',
+      );
+    }
+    if (text !== '' && CREDENTIAL_PATH.test(text)) {
+      raise(
+        'p2',
+        {
+          code: 'credentials',
+          detail: `${file.relativePath} 会接触钥匙串、云账号凭据或私钥文件。`,
+        },
+        '它可以读到你的登录凭据与密钥。',
+      );
+    }
     if (text !== '' && ARBITRARY_NET.test(text)) {
       raise(
         'p2',

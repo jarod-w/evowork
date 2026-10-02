@@ -37,6 +37,7 @@ import {
   SOURCE_MARKER_FILE,
   upsertConnector,
   upsertInstalled,
+  applyAllowlist,
   withOfficialLaunch,
   type AuditFile,
   type Capabilities,
@@ -56,6 +57,7 @@ import {
 } from '@evowork/hub-client';
 import {
   compareVersions,
+  isUpstreamPackage,
   isVersion,
   type HubItem,
   type HubItemKind,
@@ -80,6 +82,21 @@ export interface HubHostPorts {
   readonly appVersion: string;
   /** 部署时的 `EVOWORK_HUB_OFFICIAL=off`（4.7 ②）。 */
   readonly officialOff: boolean;
+  /**
+   * 企业策略包的 `disableOfficialHub`（13 §4.7 ①）。按**最后一份有效策略包**执行：
+   * 策略包过期不放开（R11）—— 那由策略包一侧保证，这里只读结果。
+   */
+  readonly orgDisabled?: (() => boolean) | undefined;
+  /**
+   * 企业离线包（4.7 ③，`EVOWORK_HUB_BUNDLE`）。有值时 `client.fetch` 只读那个目录、不碰网络，
+   * 所以「自动拉」不受 Q30 的零请求约束（没有请求）；白名单只能从已签名的索引里删条目。
+   */
+  readonly offline?:
+    | {
+        readonly builtAt?: number | undefined;
+        readonly allowlist?: ReadonlySet<string> | undefined;
+      }
+    | undefined;
   readonly signedIn: () => boolean;
   /** stdio 连接器的 JS 用 Electron 自己充当 node（HUB-Q6a=A）。 */
   readonly nodeRuntime: {
@@ -126,6 +143,8 @@ export const HUB_BUDGET_WARNING = '已启用的技能太多，模型将看不到
 /** 5.6：未登录、开关关着。 */
 export const HUB_SIGNED_OUT_CAPTION = '登录或在设置中开启后，可以获取 EvoWork 精选内容';
 export const HUB_OFF_CAPTION = '这台电脑的部署配置停用了 EvoWork 精选内容';
+/** 13 §4.7 ① 的原句。 */
+export const HUB_ORG_OFF_CAPTION = '你所在的组织已停用 EvoWork 精选内容';
 export const HUB_UNCONFIGURED_CAPTION = '这个版本还没有接入 EvoWork 精选源';
 
 /**
@@ -178,13 +197,36 @@ export function writeFetchWhenSignedOut(ports: HubHostPorts, enabled: boolean): 
  * 登录了才自动拉；未登录要用户在设置里打开（打开这个动作本身就是显式授权）。
  */
 export function canAutoFetch(ports: HubHostPorts): boolean {
-  if (ports.source === undefined || ports.officialOff) return false;
+  if (ports.source === undefined || orgOff(ports)) return false;
+  // 离线包：读的是本机目录，不是请求
+  if (ports.offline !== undefined) return true;
+  if (ports.officialOff) return false;
   return ports.signedIn() || readFetchWhenSignedOut(ports);
 }
 
 /** 插件页的「刷新」= 显式触发，开关关着也可以点一次拉一次。部署时关掉的不行。 */
 export function canManualFetch(ports: HubHostPorts): boolean {
-  return ports.source !== undefined && !ports.officialOff;
+  if (ports.source === undefined || orgOff(ports)) return false;
+  return ports.offline !== undefined || !ports.officialOff;
+}
+
+function orgOff(ports: HubHostPorts): boolean {
+  return ports.orgDisabled?.() === true;
+}
+
+/**
+ * 组织关掉官方源之后，已装的精选条目**停用并写明原因，不静默删除**（4.7 ①）。
+ * 「停止更新」不够：管理员的意思是「不要用外部内容」。幂等，可以随时调。
+ */
+export async function enforceOrganizationPolicy(ports: HubHostPorts): Promise<number> {
+  if (!orgOff(ports)) return 0;
+  let n = 0;
+  for (const installed of readHubState(ports).items) {
+    if (installed.revokedReason !== undefined) continue;
+    await revoke(ports, installed, HUB_ORG_OFF_CAPTION, 'organization');
+    n += 1;
+  }
+  return n;
 }
 
 /* ── 拉取 ───────────────────────────────────────────────────────────────── */
@@ -202,13 +244,14 @@ export async function refreshHub(
   runtime: HubRuntime,
   trigger: 'auto' | 'manual',
 ): Promise<HubMutation> {
+  await enforceOrganizationPolicy(ports);
   const allowed = trigger === 'auto' ? canAutoFetch(ports) : canManualFetch(ports);
   if (!allowed || ports.source === undefined) {
     return { ok: false, refused: statusCaption(ports) ?? '现在不能获取 EvoWork 精选内容。' };
   }
   const outcome = await refreshIndex(ports.client, ports.source);
   runtime.last = outcome;
-  const index = outcome.index;
+  const index = outcome.index !== undefined ? effective(ports, outcome.index) : undefined;
   if (index !== undefined) await applyHubUpdates(ports, index);
   if (outcome.status === 'rejected') return { ok: false, refused: outcome.reason };
   if (outcome.status === 'unreachable') {
@@ -218,7 +261,15 @@ export async function refreshHub(
 }
 
 function cachedIndex(ports: HubHostPorts): VerifiedIndex | undefined {
-  return ports.source !== undefined ? readCachedIndex(ports.client, ports.source) : undefined;
+  const index =
+    ports.source !== undefined ? readCachedIndex(ports.client, ports.source) : undefined;
+  return index !== undefined ? effective(ports, index) : undefined;
+}
+
+/** 离线包的企业白名单：只删不加（4.7 ③）。 */
+function effective(ports: HubHostPorts, index: VerifiedIndex): VerifiedIndex {
+  const allow = ports.offline?.allowlist;
+  return allow === undefined ? index : { ...index, payload: applyAllowlist(index.payload, allow) };
 }
 
 /**
@@ -232,7 +283,7 @@ export async function applyHubUpdates(ports: HubHostPorts, index: VerifiedIndex)
     const decision = decideUpdate(installed, index.payload, ports.appVersion);
     if (decision.kind === 'revoked') {
       if (installed.revokedReason === undefined) {
-        await revoke(ports, installed, decision.reason);
+        await revoke(ports, installed, decision.reason, 'revocation');
         state = readHubState(ports);
       }
       continue;
@@ -263,11 +314,15 @@ export function hubStatus(ports: HubHostPorts, runtime: HubRuntime): HubStatusVi
   const fetchMode: HubStatusView['fetchMode'] =
     ports.source === undefined
       ? 'unconfigured'
-      : ports.officialOff
-        ? 'off'
-        : canAutoFetch(ports)
-          ? 'auto'
-          : 'manual-only';
+      : orgOff(ports)
+        ? 'org-off'
+        : ports.offline !== undefined
+          ? 'offline'
+          : ports.officialOff
+            ? 'off'
+            : canAutoFetch(ports)
+              ? 'auto'
+              : 'manual-only';
   const last = runtime.last;
   const warning =
     last?.status === 'rejected'
@@ -294,6 +349,13 @@ export function hubStatus(ports: HubHostPorts, runtime: HubRuntime): HubStatusVi
 
 function statusCaption(ports: HubHostPorts): string | undefined {
   if (ports.source === undefined) return HUB_UNCONFIGURED_CAPTION;
+  if (orgOff(ports)) return HUB_ORG_OFF_CAPTION;
+  if (ports.offline !== undefined) {
+    // §14：离线环境吊销滞后 —— 至少让人看见这份内容是什么时候打的包
+    return ports.offline.builtAt !== undefined
+      ? `离线内容，更新于 ${formatTime(ports.offline.builtAt)}`
+      : '离线内容';
+  }
   if (ports.officialOff) return HUB_OFF_CAPTION;
   if (!ports.signedIn() && !readFetchWhenSignedOut(ports)) return HUB_SIGNED_OUT_CAPTION;
   return undefined;
@@ -332,7 +394,18 @@ export function hubCatalogView(ports: HubHostPorts, runtime: HubRuntime): HubCat
     ...(e.reason !== undefined ? { reason: e.reason } : {}),
     ...(e.minAppVersion !== undefined ? { minAppVersion: e.minAppVersion } : {}),
   }));
-  return { status: hubStatus(ports, runtime), entries };
+  // 4.7 ①：组织停用后不显示精选条目，只留已装的（停用状态，可以卸载）
+  const visible = orgOff(ports)
+    ? entries
+        .filter((e) => e.installedVersion !== undefined)
+        .map((e) => ({
+          ...e,
+          state: 'revoked' as const,
+          reason: HUB_ORG_OFF_CAPTION,
+          canRollback: false,
+        }))
+    : entries;
+  return { status: hubStatus(ports, runtime), entries: visible };
 }
 
 /**
@@ -387,6 +460,10 @@ type PrepareResult = Prepared | { readonly ok: false; readonly refused: string }
 /** 下载 → 校验 → 本地重审 → 与云端结论对账（5.3）。 */
 async function prepare(ports: HubHostPorts, item: HubItem): Promise<PrepareResult> {
   if (ports.source === undefined) return { ok: false, refused: HUB_UNCONFIGURED_CAPTION };
+  // 离线包不含没写许可的条目（它们只做索引、内容在上游，HUB-Q5a=A），离线模式下不出网去取
+  if (ports.offline !== undefined && isUpstreamPackage(item.package)) {
+    return { ok: false, refused: '这一项不在离线包里（它的内容只能从上游代码托管站下载）。' };
+  }
   const downloaded = await downloadItem(ports.client, ports.source, item);
   if (!downloaded.ok) {
     if (downloaded.kind === 'integrity') return { ok: false, refused: HUB_INTEGRITY_REFUSAL };
@@ -434,7 +511,9 @@ export async function installHubItem(
   input: InstallHubInput,
 ): Promise<HubMutation> {
   if (ports.source === undefined) return { ok: false, refused: HUB_UNCONFIGURED_CAPTION };
-  if (ports.officialOff) return { ok: false, refused: HUB_OFF_CAPTION };
+  if (ports.officialOff && ports.offline === undefined)
+    return { ok: false, refused: HUB_OFF_CAPTION };
+  if (orgOff(ports)) return { ok: false, refused: HUB_ORG_OFF_CAPTION };
   const index = cachedIndex(ports);
   if (index === undefined)
     return { ok: false, refused: '还没有拿到 EvoWork 精选的目录，请先刷新。' };
@@ -806,7 +885,12 @@ async function syncMcp(
  * 5.4：吊销 = **停用并写明原因，不删**。技能从内核目录撤下（用户那份留着），
  * 专家挪出专家目录，连接器从 `config.toml` 移除并标上原因。
  */
-async function revoke(ports: HubHostPorts, installed: HubInstalled, reason: string): Promise<void> {
+async function revoke(
+  ports: HubHostPorts,
+  installed: HubInstalled,
+  reason: string,
+  by: 'revocation' | 'organization',
+): Promise<void> {
   const c = ports.catalog;
   if (installed.kind === 'skill') {
     const kernelDest = join(c.kernelHome, 'skills', installed.id);
@@ -845,7 +929,7 @@ async function revoke(ports: HubHostPorts, installed: HubInstalled, reason: stri
   }
   writeHubState(
     ports,
-    upsertInstalled(readHubState(ports), { ...installed, revokedReason: reason }),
+    upsertInstalled(readHubState(ports), { ...installed, revokedReason: reason, revokedBy: by }),
   );
 }
 

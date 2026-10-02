@@ -1344,9 +1344,9 @@ export interface HubStatusView {
   readonly sourceName: string;
   /**
    * auto = 登录了、或未登录但用户打开了开关（HUB-Q3=B）；manual-only = 只有点「刷新」才拉；
-   * off = 部署时关掉（`EVOWORK_HUB_OFFICIAL=off`）；unconfigured = 这个版本还没接入源。
+   * off = 部署时关掉（`EVOWORK_HUB_OFFICIAL=off`）；org-off = 企业策略包关掉（4.7 ①）；unconfigured = 这个版本还没接入源。
    */
-  readonly fetchMode: 'auto' | 'manual-only' | 'off' | 'unconfigured';
+  readonly fetchMode: 'auto' | 'manual-only' | 'off' | 'org-off' | 'offline' | 'unconfigured';
   readonly signedIn: boolean;
   readonly fetchWhenSignedOut: boolean;
   readonly canRefresh: boolean;

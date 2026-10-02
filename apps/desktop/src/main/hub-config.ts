@@ -15,7 +15,7 @@
  *
  * 轮换：新旧 kid 并存一个 App 版本周期；私钥泄露时发版删掉那个 kid（4.3）。
  */
-import type { HubSource } from '@evowork/hub-client';
+import { BUNDLE_BASE_URL, type HubSource } from '@evowork/hub-client';
 import type { TrustedHubKey } from '@evowork/hub-protocol';
 
 export const OFFICIAL_HUB_SOURCE_ID = 'evowork';
@@ -49,4 +49,21 @@ export function officialHubSource(
 /** 4.7 ②：MDM 下发时设 `EVOWORK_HUB_OFFICIAL=off`，连「刷新」都不出现。 */
 export function officialHubDisabled(env: NodeJS.ProcessEnv): boolean {
   return env.EVOWORK_HUB_OFFICIAL?.trim().toLowerCase() === 'off';
+}
+
+/**
+ * 4.7 ③：`EVOWORK_HUB_BUNDLE` 指向企业离线包目录。有它时**只读这个目录，一个字节都不出网**；
+ * 签名照验（用的还是钉死的公钥），所以离线包在内网被改过同样装不上。
+ * 公钥列表是空的（H2 之前）时离线包也用不了 —— 验不过的东西不该装。
+ */
+export function offlineHubSource(
+  env: NodeJS.ProcessEnv,
+  keys: readonly TrustedHubKey[] = OFFICIAL_HUB_KEYS,
+): { readonly dir: string; readonly source: HubSource } | undefined {
+  const dir = env.EVOWORK_HUB_BUNDLE?.trim();
+  if (dir === undefined || dir === '' || keys.length === 0) return undefined;
+  return {
+    dir,
+    source: { id: OFFICIAL_HUB_SOURCE_ID, baseUrl: BUNDLE_BASE_URL, trustedKeys: keys },
+  };
 }

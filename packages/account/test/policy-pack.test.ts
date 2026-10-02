@@ -102,3 +102,23 @@ describe('写 requirements.toml', () => {
     expect(POLICY_EXPIRED_COPY).toBe('安全策略已过期，已切换为只读模式。请连接企业网络以更新。');
   });
 });
+
+describe('disableOfficialHub（13 §4.7 ①）', () => {
+  it('旧版 identity 签的包里没有这个字段 → 照样认，按「不禁用」处理', () => {
+    const parsed = parsePolicyPackPayload(encodePolicyPackPayload(payload()));
+    expect(parsed).toBeDefined();
+    expect(parsed?.disableOfficialHub).toBeUndefined();
+  });
+
+  it('签进去、验出来', () => {
+    const pair = generateEs256KeyPair();
+    const env = signPolicyPack(pair.privatePem, payload({ disableOfficialHub: true }), pair.kid);
+    const result = verifyPolicyPack(env, { publicPem: pair.publicPem });
+    expect(result.ok && result.payload.disableOfficialHub).toBe(true);
+  });
+
+  it('写成非布尔值 → 整个包不认（不能被读成「没禁用」）', () => {
+    const json = encodePolicyPackPayload(payload()).replace(/}$/, ',"disableOfficialHub":"yes"}');
+    expect(parsePolicyPackPayload(json)).toBeUndefined();
+  });
+});

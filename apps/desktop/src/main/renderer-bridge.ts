@@ -157,6 +157,7 @@ import {
 } from './catalog-host.js';
 import {
   canAutoFetch,
+  enforceOrganizationPolicy,
   hubCatalogView,
   installHubItem,
   readHubState,
@@ -1017,6 +1018,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ...(live.toolsError ? { failureSummary: live.toolsError } : {}),
       };
     });
+    // 4.7 ①：组织刚关掉官方源（策略包随登录 / 刷新更新）时，读目录这一刻就把已装的停掉
+    if (options.hubPorts) await enforceOrganizationPolicy(options.hubPorts).catch(() => 0);
     const hubInstalled = options.hubPorts ? readHubState(options.hubPorts) : undefined;
     const hubExperts = new Set(
       (hubInstalled?.items ?? []).filter((i) => i.kind === 'expert').map((i) => i.id),

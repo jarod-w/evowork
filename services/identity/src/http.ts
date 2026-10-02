@@ -847,6 +847,9 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
           ...(typeof body.disableSlots === 'boolean' ? { disableSlots: body.disableSlots } : {}),
           ...(typeof body.forceAudit === 'boolean' ? { forceAudit: body.forceAudit } : {}),
           ...(disabledProfiles ? { disabledProfiles } : {}),
+          ...(typeof body.disableOfficialHub === 'boolean'
+            ? { disableOfficialHub: body.disableOfficialHub }
+            : {}),
         }),
       );
       return;

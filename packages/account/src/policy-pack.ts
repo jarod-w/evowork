@@ -41,6 +41,11 @@ export interface PolicyPackPayload {
   readonly disableSlots: boolean;
   readonly forceAudit: boolean;
   readonly disabledProfiles: readonly string[];
+  /**
+   * 「禁用 EvoWork 精选源」（13 §4.7 ①，HUB-Q11=A）。**可缺省**：这个字段比策略包晚出现，
+   * 旧版 identity 签的包里没有它，缺省 = 不禁用。新包一律写出来。
+   */
+  readonly disableOfficialHub?: boolean | undefined;
 }
 
 /** 信封与 Hub 索引共用（`envelope.ts`）。 */
@@ -76,6 +81,7 @@ export function encodePolicyPackPayload(payload: PolicyPackPayload): string {
   rec.disableSlots = payload.disableSlots;
   rec.forceAudit = payload.forceAudit;
   rec.disabledProfiles = [...payload.disabledProfiles];
+  if (payload.disableOfficialHub !== undefined) rec.disableOfficialHub = payload.disableOfficialHub;
   return JSON.stringify(rec);
 }
 
@@ -103,6 +109,9 @@ export function parsePolicyPackPayload(json: string): PolicyPackPayload | undefi
   const disableSlots = asBool(rec.disableSlots);
   const forceAudit = asBool(rec.forceAudit);
   const disabledProfiles = asStringList(rec.disabledProfiles);
+  const disableOfficialHub =
+    rec.disableOfficialHub === undefined ? undefined : asBool(rec.disableOfficialHub);
+  if (rec.disableOfficialHub !== undefined && disableOfficialHub === undefined) return undefined;
   if (
     allowManagedHooksOnly === undefined ||
     disableShare === undefined ||
@@ -124,6 +133,7 @@ export function parsePolicyPackPayload(json: string): PolicyPackPayload | undefi
     disableSlots,
     forceAudit,
     disabledProfiles,
+    ...(disableOfficialHub !== undefined ? { disableOfficialHub } : {}),
   };
 }
 

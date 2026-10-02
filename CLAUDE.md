@@ -212,7 +212,7 @@ pnpm run check                    # 格式 · lint（含 K2 边界规则）· �
                                   # 许可清单那步要 `../codex` 在位（它要读内核的 LICENSE）；CI 没有签出，所以那边只当 warning
 pnpm run build                    # 四步装配：tsc → 复制入口与 vendor → esbuild 三个入口 → vite 渲染层
 pnpm run test -- --project store  # 只跑一个包
-node scripts/kernel-drift.mjs     # 上游漂移 + F1–F25 断言机器复核
+node scripts/kernel-drift.mjs     # 上游漂移 + kernel-assertions.json 里的 F 编号断言机器复核
 
 # 拿到某家模型的 key 之后跑一次，把能力表里的 verified 变成有依据的值（U2 / U7）
 # --image true 会发一张 32×32 纯红图问颜色：**答不出颜色 = 看不见**，只看状态码会判错
@@ -245,14 +245,14 @@ git --no-pager log --oneline HEAD..origin/main    # 上游漂移（D7）
 **别再用 `uv venv` 装它**：uv 建的目录不可搬运（`bin/python` 是指向 uv 自己 python 目录的
 绝对符号链接），而且不带 pip —— 客户机器上拷过去就是死链。安装器用
 python-build-standalone 的 `install_only` 构建，自包含、位置无关、自带 pip。
-企业离线部署用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打），
+企业离线部署用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打；插件 Hub 的离线包同一个思路：`EVOWORK_HUB_BUNDLE` + `scripts/build-hub-bundle.mjs`），
 或用 `EVOWORK_OFFICE_PYTHON` 指向已装好的解释器。
 
 ---
 
 ## 8. 已定的产品决策 —— 照着做，别再当成开放问题
 
-设计文档第 10 章的 **Q1–Q29、Q45、Q46 已决策**。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。插件 Hub 的 **HUB-Q1–Q11 也已决策**（[13 §10](docs/design/13-plugin-hub.md)，总纲 §10.1.7；尚未实现）。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3 / §10.1.5 / §10.1.8](docs/evowork-on-codex-design.md)：
+设计文档第 10 章的 **Q1–Q29、Q45、Q46 已决策**。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。插件 Hub 的 **HUB-Q1–Q11 也已决策**（[13 §10](docs/design/13-plugin-hub.md)，总纲 §10.1.7）；客户端（H0 / H1 / H6）已实现，**官方源要等 H2 的签名公钥与 CDN** —— 在那之前产品里如实显示「还没有接入」、不发请求，进度见 13 §13.1。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3 / §10.1.5 / §10.1.8](docs/evowork-on-codex-design.md)：
 
 | 决策 | 结论 | 写码时意味着什么 |
 |---|---|---|

@@ -461,6 +461,7 @@ describe('展示口径', () => {
         disableShare: false,
         disableSlots: false,
         forceAudit: false,
+        disableOfficialHub: false,
         revoked: false,
       },
       {
@@ -470,6 +471,7 @@ describe('展示口径', () => {
         allowManagedHooksOnly: false,
         disableShare: false,
         forceAudit: false,
+        disableOfficialHub: true,
         expiresInDays: 30,
         graceInDays: '',
         reason: 'x',
@@ -478,6 +480,8 @@ describe('展示口径', () => {
     const removed = rows.find((row) => row.kind === 'remove');
     expect(removed?.text).toContain('glm');
     expect(removed?.note).toContain('设备将恢复');
+    // 13 §4.7 ①：关掉官方源也要出现在 diff 里，管理员看得见自己改了它
+    expect(rows.some((row) => row.text.includes('禁用 EvoWork 精选源'))).toBe(true);
   });
 });
 
