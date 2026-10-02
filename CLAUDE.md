@@ -27,14 +27,16 @@ Cursor 侧的仓级约定正文是 [`.cursorrules`](.cursorrules)，Agent 模式
 |---|---|---|
 | 本仓库 `evowork` | 产品：前端 · 服务层 · 扩展包 · 配置 · 文档 | 可写 |
 | `../codex` | 执行内核（`openai/codex` 上游签出，Apache-2.0） | **只读**，见 K1 |
+| `../evowork-hub` | 插件 Hub 的内容与筛选管道（[13 篇](docs/design/13-plugin-hub.md)，HUB-Q9=A；远端 `jarod-w/evowork-hub`，**公开仓库**） | 可写；约束见它自己的 CLAUDE.md 与 13 §7.5 |
 
-用 [evowork.code-workspace](../evowork.code-workspace) 打开（多根：`evowork` + `codex-kernel`），内核目录在编辑器里被标为只读，构建产物已从搜索/监听中排除。
+用 [evowork.code-workspace](../evowork.code-workspace) 打开（多根：`evowork` + `evowork-hub` + `codex-kernel`），内核目录在编辑器里被标为只读，构建产物已从搜索/监听中排除。
 
 > **本文件在仓库根**（2026-09-05 从上一层移进来）。放在上一层时它不受版本控制 ——
 > 一份承载铁律的文件没有历史、换台机器就没了。
 > 不要在上一层再放一份：Claude Code 是从工作目录**向上**找的，两份会同时加载并慢慢分叉——上一层那份副本确实分叉了（说「仓库里还没有代码」，而当时 M0–M9 已经落地），2026-09-05 已删除。
 > 上一层现在是空的。代价是：工作目录切到 `../codex` 时向上找不到任何 EvoWork 规则，
 > **那种情况下 K1「内核只读」得靠自己记住**——但那么用的话，本来也该从仓库根起手。
+> 工作目录在 `../evowork-hub` 时同样读不到本文件，所以那个仓库有**自己的 CLAUDE.md**（指回 13 篇，写明公开仓库带来的约束），不要把本文件复制过去。
 
 **仓库现状**：**M0–M9 的核心实现全部落地**（`pnpm run check` 全绿）。
 第 3 节的每个目录都已存在且非空 —— 新文件按它落位，不要另起一套。
