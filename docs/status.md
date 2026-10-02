@@ -12,6 +12,7 @@
 > ③ **一个老缺陷**：随包 browser 连接器写进 `config.toml` 的是 `command = "node"` 且没有 `ELECTRON_RUN_AS_NODE`，客户机器上没有 node，信任之后起不来。官方连接器的启动方式现在永远取这次安装的（Electron 自己 + `ELECTRON_RUN_AS_NODE=1` + 当前随包路径），启动时把旧的改写掉。**没在打包应用里验过**。
 > ④ 随包 7 个技能写上版本号（5.5 有东西可比）；吊销了的 Hub 覆盖版不再在目录里盖过随包那份。
 > ⑤ **H6**：策略包 `disableOfficialHub`（identity 签发 · web 策略页勾选框与 diff · 桌面执行；字段可缺省，旧包照认）；离线包 `EVOWORK_HUB_BUNDLE`（同一个 hub-client 换成读目录，验签照跑、非 `bundle:` 地址一律失败）+ `scripts/build-hub-bundle.mjs` + 企业白名单（只删不加）。
+> ⑦ **H3 / H2 的工具在 `evowork-hub`**（本机提交，未推送）：管道 G1–G4 + 报告、`publish.ts` 打包与未签名 payload、`sign.ts` 离线签名。**V2 第一个真实数字**：506 个技能 302 收 · 37 只做索引 · 13 人工 · 154 拒（13 §12.1）。托管 / 域名 / 第一把密钥还没定，所以官方源仍是「未接入」。
 > ⑥ **G3 指令文本规则进 `services/catalog` 的审计**（规则版本 `2026-10-02.2`）：下载即执行、ClickFix 诱导、大段 base64、收数据端点、凭据路径；诱导类带 `lure` 标记供管道拒收。随包 7 个技能无一命中。
 > 验收：`pnpm run check` 退出 0，140 个测试文件通过、1 个原有跳过；2331 个测试通过、2 个原有跳过。**环境注意**：四个办公技能的「没装办公扩展」用例隐含要求 PATH 上第一个 `python3` 带 `jsonschema`（基础包），这台机器的系统 python 没有，本次在 PATH 前面加上 `~/.evowork/runtime/office/bin` 才跑绿 —— 这是测试辅助函数的老依赖，不是本次改动引入的；另外本机 pnpm store 的索引文件丢了一大批，`pnpm install --force` 修好（`gen-third-party-notices.mjs --check` 现在会直接说「读不到依赖树」，不再误报成「清单过时」）。
 >

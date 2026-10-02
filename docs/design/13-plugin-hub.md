@@ -378,7 +378,9 @@ G4 会统计：「如果办公运行时多一个包 X，能多放进来多少技
 
 ### 7.4 会收到多少
 
-**不预估。** 拿 §2.3 的样本，按插件级许可估出 367 个候选（宽松许可 314 ＋ 没写许可 53），但 G3–G5 的淘汰率要真跑一遍才知道，而且其中适合职场场景的比例更低。§12 的 V2 会给出第一个真实数字。
+**不预估。** 拿 §2.3 的样本，按插件级许可估出 367 个候选（宽松许可 314 ＋ 没写许可 53），但 G3–G5 的淘汰率要真跑一遍才知道，而且其中适合职场场景的比例更低。
+
+**V2 的第一个真实数字（2026-10-02，§12.1）**：`openai/plugins` @ `d416fd5a` 共 506 个技能，过了 G2–G4 的 **302 收 · 37 只做索引 · 13 人工 · 154 拒**（许可 133 / 安全 6 / 兼容 15）。逐个技能判许可之后：宽松 327、没写 46、限制 133 —— 与按插件级估的 314 / 53 不同，正是 G2 要逐个判的理由。**302 还没过 G5 试跑、也没判是否适合职场**，是上限。
 
 ### 7.5 `evowork-hub` 仓库的约束
 
@@ -626,6 +628,7 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | **V1** | **成立** | 写了 `allow_implicit_invocation: false` 的技能：`skills/list` 里 `enabled: true`；第一轮发给模型的请求里没有它的名字和描述（对照技能在）；以结构化的 `UserInput::Skill` 选中时 SKILL.md 正文被注入；**在文本里提到它的名字也会被注入**。按需层（§6）的前提成立，退路用不上 |
 | **V3** | 7 个随包技能合计 **≈489 token**（平均 70；按装在 `/Applications/EvoWork.app/...` 下的路径算，路径本身约占 30%） | 口径（`ext/skills/src/render.rs`）：每个进目录的技能一行 `- <name>: <description> (file: <路径>)`，描述截到 1024 字符，**4 字节 ≈ 1 token**，预算 = 上下文窗口 × 2%。按支持的最小窗口 128K（`services/gateway/src/known-models.ts`，标着 `unverified`）算预算 2,560，**余量约 2,070 ≈ 30 个平均大小的技能**——与 §6 估的「核心层 20–30 个」一致。中文描述按字节算，比英文贵约 2–3 倍 |
 | **V5** | **成立** | `plugin/list` 只传 `['local']`：返回 `openai-api-curated`（「Codex official」，50 个插件），路径在 `<kernelHome>/.tmp/plugins/` 下，被 `listBundles` 按路径滤掉；加上 `workspace-directory` 整个请求报 `-32600 chatgpt authentication required for remote plugin catalog`（HF4 / HF5 实测复现）。单测与守卫见 `services/catalog/test/bundles.test.ts`、`apps/desktop/test/bundle-host.test.ts` |
+| **V2** | 506 个技能：**302 收 · 37 只做索引 · 13 人工 · 154 拒**（G2 133 / G3 6 / G4 15） | `evowork-hub` 的 `pipeline/run.ts`，对本机内核同步的 `openai/plugins` @ `d416fd5a`（2026-09-08；比 §2.3 统计时的 `5fd93af4cd` 新）跑 G2–G4，Python 依赖按办公运行时的实际模块判。G3 的 6 个都是诱导类（5 个 `curl \| sh` 一类的安装命令、1 个下载 `.exe`）；人工的 13 个多是 webhook 文档里的 ngrok、读 `/etc` 的运维说明。G4 第一版把示例代码（`references/` `examples/`）里的 import 也算成依赖，误杀了 Shopify 的 7 个，已改。§7.3 的统计：**被 G2 挡掉的技能里有 49 个要 `requests`**，宽松许可里缺包的都是长尾，暂时没有值得往办公运行时加的包 |
 | **V6** | ① **预写不生效**（见 9.1 第 2 条）；② 落盘目录可由 `plugin/list` 的市场 `name` + 插件名 + `localVersion` 推出 | 另一个发现：用 `marketplace/add` 加的 git 市场落在 `<kernelHome>/.tmp/marketplaces/<name>/`，**同样会被 §9 的 `.tmp/` 过滤滤掉**。产品里没有添加市场的入口，所以这不影响现在的用法；要在「套件」里看到 git / npm 来源的插件，市场本身得是用户放在 `.tmp/` 之外的本机目录 |
 
 ---
@@ -661,6 +664,9 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | 4.7 ② `EVOWORK_HUB_OFFICIAL=off` | `hub-config.ts` | ✅（H1） |
 | 4.7 ③ 离线包 + 白名单 | `services/hub-client/src/bundle.ts` · `scripts/build-hub-bundle.mjs` | ✅ 2026-10-02（H6）。离线源用的是**同一个** hub-client，只是把 fetch 换成读目录：验签、`sequence`、sha256 原样跑，非 `bundle:` 地址一律失败（不出网）。官方源要另外发一份长有效期的 **`index.offline.json`**（H2 的发布流程要产出它）；没有时脚本退回在线索引并在 MANIFEST 里标出来。没写许可的条目不进离线包。白名单写坏 = 当作没有白名单（照样提示），不是「全删」 |
 | G3 指令文本规则（诱导安装 · 下载即执行 · base64 · 收数据端点 · 凭据） | `services/catalog/src/audit.ts`（规则版本 `2026-10-02.2`） | ✅ 2026-10-02。规则只有这一份（HUB-Q9=A），管道引用它；诱导类的 finding 带 `lure`，管道见到直接拒收 |
+| H3 管道 G1–G4 | `evowork-hub/pipeline/`（审计规则与协议从 evowork 源码引用，`evowork.lock` 钉提交） | ✅ 2026-10-02；V2 见 §12.1。`sources.yaml` 还是空的：首批上游要逐个核对许可与提交再登记 |
+| H2 发布工具 | `evowork-hub/pipeline/publish.ts` · `sign.ts` | ✅ 打包、未签名 payload（在线 7 天 / 离线 180 天）、离线签名（私钥在仓库目录里就拒签）；签出来的索引用客户端的 `verifyHubIndex` 验过。**⏳ 托管（哪家对象存储 / CDN、域名）、第一把签名密钥的生成与钉进 `hub-config.ts`、CI 的「请求签名」流程** —— 这三样要先定 |
+| H4 G5 试跑 · G6 改写 | — | ⏳ |
 | 企业私有源 | — | ⏳ 等 Q44；公钥由策略包下发（4.3），客户端的多源合并还没做 |
 
 实现时定下的几处细节（文档原来没写到这么细）：
