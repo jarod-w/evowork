@@ -1,9 +1,16 @@
+// @vitest-environment node
 /**
  * 插件 Hub 的本机宿主（13，H1）。真临时目录 + 真本机 HTTP 服务当 Hub + 真签名：
  * 拉取 → 验签 → 下载 → 本地重审 → 落盘 → 更新 / 吊销 / 回滚，整条链一起跑。
  *
  * 断的是后果：「装上之后内核那边有没有这个技能」「吊销之后内核看不见、但用户那份没删」，
  * 不是某个函数被调用了几次。
+ *
+ * **为什么切到 node 环境**（2026-10-03）：desktop 的测试默认跑在 jsdom 里，jsdom 换掉了全局的
+ * AbortController；Node 24 的 fetch 只认它自己的 AbortSignal，于是拉索引的请求在发出去之前就被拒了
+ * （`RequestInit: Expected signal … to be an instance of AbortSignal`），表现成「EvoWork 精选暂时无法访问」，
+ * 后面的安装、更新、吊销用例跟着全红 —— 在 Node 22 上不会，所以换一台机器才看得见。
+ * hub-host 是主进程代码，本来就跑在 Node 里。同一个原因见 update-check.test.ts 的头注释。
  */
 import { createPublicKey } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

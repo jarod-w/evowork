@@ -44,7 +44,7 @@
 > 发布脚本改为经 esbuild 现编客户端的 `parseUpdateManifest`，不再自己解析，两边同一个判据。设置页按原型做；退出确认框里定时任务那句**按每个任务自己的错过补偿策略说** —— 原型里「一概跳过」写错了（默认是补跑一次）。
 > 新增 42 条测试：`update-check.test.ts` 22 条（真本机 HTTP 服务、真签名跑整条链，三条核心保证 —— 自动检查的开关门槛、验签、打开前再校验 —— 都做过反向核对）、`update-manifest.test.ts` 10 条、设置页 9 条、脚本与客户端共用解析器的接缝 1 条。
 > `setup.ts` 改为没有 `localStorage` 时跳过清理，主进程测试可以按文件切到 node 环境（jsdom 的 AbortSignal 与 Node 24 的 fetch 不兼容）。
-> 验收：`pnpm run check` 中格式 · lint · 类型 · 补丁预算 · 协议形状 · 许可清单全过；测试 2394 通过、2 个原有跳过，**15 个失败全在 `hub-host.test.ts`**：那是 75a1156（插件 Hub）的测试，同样因为 jsdom 的 AbortSignal 在这台 Node 24 上失败，与本次改动无关、未修。`pnpm run build` 通过，主进程产物里有更新源地址与两把公钥。
+> 验收：`pnpm run check` 中格式 · lint · 类型 · 补丁预算 · 协议形状 · 许可清单全过；测试 2394 通过、2 个原有跳过，**15 个失败全在 `hub-host.test.ts`**：那是 75a1156（插件 Hub）的测试，同样因为 jsdom 的 AbortSignal 在这台 Node 24 上失败，与本次改动无关。**同日已修**：给 `hub-host.test.ts` 加 `// @vitest-environment node`（主进程测试本就该在 node 环境），25 条全过，`pnpm run check` 退出 0（2438 通过、2 个原有跳过）。`pnpm run build` 通过，主进程产物里有更新源地址与两把公钥。
 > **没验过**：真实桌面窗口的视觉；从这台发版机访问线上更新源（服务器本机返回 404 正常、日志里有外网访问 9443，但这台 Mac 的代理在 TLS 握手前重置连接）；策略包 `disableUpdateCheck` 没做。
 >
 > **2026-10-02：插件 Hub 的 H0 与 H1（客户端）落地（[13 §13.1](design/13-plugin-hub.md)）。**
