@@ -6,6 +6,19 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-03（续）：插件 Hub 官方源上线 `https://hub.nucleant.cn:9443`（H2）。**
+> 服务器 115.190.115.161：MinIO（`evowork-hub-minio.service`，只听回环；匿名只能取对象，**自带的 download 策略会放开列目录**，换成了自定义策略）
+> + Apache `zz-hub.nucleant.cn.conf`（9443 只读反代，只放 GET/HEAD、拒查询串；文件名加 `zz-` 是因为它抢走过 9443 的默认站点）+ Let's Encrypt。
+> 签名：日常 `evowork-hub-1` 在发版机（仓库之外），备份 `evowork-hub-2` 待机主离线保存；两把公钥钉进 `hub-config.ts`，默认地址指向它。
+> **第一次钉的时候钉成了空串，测试全绿** —— 现在有一条测试核对每把钉死的公钥都能解析成 P-256。
+> 发布：`evowork-hub` 的 `pnpm release`（发版机签名 → 用 App 钉的公钥核对 → ssh 隧道 + SigV4 PUT，先包后索引 → HTTPS 取回验证）。
+> 首发序号 1、0 个条目；App 自己的代码路径取到并验过，第二次 304。
+> **【阻塞】上线几分钟后被火山引擎的未备案拦截拦下**：外网 80 端口 302 到 `webblock.volcengine.com`（`Server: Suzaku`），
+> 9443 带 `hub` / `update` / `demo.nucleant.cn` 的 SNI 一律被重置 —— **更新源同样不可用**，此前把它归到发版机代理上是误判。
+> 要机主在火山引擎给 `nucleant.cn` 办接入备案；在那之前对外不可用，不绕。
+> 另：从发版机下载只有 ~6.5KB/s（服务器取自己 25MB/s），原因没分清。CI 工作流写了，没在 GitHub 上跑过。
+> 验收：`pnpm run check` 退出 0，144 个测试文件通过、1 个原有跳过；2400 个测试通过、2 个原有跳过。服务器侧的外网验收见 build-and-deploy §5.3.2。
+>
 > **2026-10-03：`jsonschema` 随办公扩展安装，技能按这个事实报错（修产品缺陷 + 测试对本机 python 的隐含依赖）。**
 > `jsonschema` 只装在办公扩展里（`runtime-installer` 的 REQUIREMENTS），而技能把它当「随主程序的基础包」：
 > 没装扩展、系统 python 又没有它时，用户看到的是「校验库缺失，请重新安装 EvoWork 的解析组件」—— 指向一个没坏的东西。

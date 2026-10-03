@@ -5,6 +5,7 @@
  * 断的是后果：「装上之后内核那边有没有这个技能」「吊销之后内核看不见、但用户那份没删」，
  * 不是某个函数被调用了几次。
  */
+import { createPublicKey } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -24,7 +25,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFsCatalogPorts, readCatalog } from '../src/main/catalog-host.js';
-import { officialHubSource } from '../src/main/hub-config.js';
+import { OFFICIAL_HUB_KEYS, officialHubSource } from '../src/main/hub-config.js';
 import {
   canAutoFetch,
   enforceOrganizationPolicy,
@@ -165,8 +166,8 @@ const kernelSkill = (id: string) => join(root, 'kernel', 'skills', id, 'SKILL.md
 const userSkill = (id: string) => join(root, 'home', 'skills', id, 'SKILL.md');
 
 describe('什么时候出网（13 §4.4，HUB-Q3=B）', () => {
-  it('没接入源（H2 之前公钥是空的）→ 一个请求都不发，并如实说', async () => {
-    expect(officialHubSource({ EVOWORK_HUB_ORIGIN: origin })).toBeUndefined();
+  it('没有可信公钥的源 → 一个请求都不发，并如实说', async () => {
+    expect(officialHubSource({ EVOWORK_HUB_ORIGIN: origin }, [])).toBeUndefined();
     const p = ports({ source: undefined });
     const result = await refreshHub(p, p.runtime, 'manual');
     expect(result.ok).toBe(false);
@@ -197,6 +198,25 @@ describe('什么时候出网（13 §4.4，HUB-Q3=B）', () => {
     expect((await refreshHub(p, p.runtime, 'manual')).ok).toBe(false);
     expect(hubCatalogView(p, p.runtime).status.canRefresh).toBe(false);
     expect(requests).toEqual([]);
+  });
+
+  it('默认指向 hub.nucleant.cn，钉着日常与备份两把公钥；环境变量能换地址、不能加钥匙', () => {
+    const official = officialHubSource({});
+    expect(official?.baseUrl).toBe('https://hub.nucleant.cn:9443/v1');
+    expect(official?.trustedKeys.map((k) => k.kid)).toEqual(['evowork-hub-1', 'evowork-hub-2']);
+    const staging = officialHubSource({ EVOWORK_HUB_ORIGIN: 'https://staging.example' });
+    expect(staging?.baseUrl).toBe('https://staging.example/v1');
+    expect(staging?.trustedKeys).toBe(official?.trustedKeys);
+  });
+
+  it('钉死的公钥每一把都是能用的 P-256 公钥，kid 不重复（钉坏了不报错，只是所有索引都验不过）', () => {
+    expect(OFFICIAL_HUB_KEYS.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(OFFICIAL_HUB_KEYS.map((k) => k.kid)).size).toBe(OFFICIAL_HUB_KEYS.length);
+    for (const key of OFFICIAL_HUB_KEYS) {
+      const parsed = createPublicKey(key.publicPem ?? '');
+      expect(parsed.asymmetricKeyType, key.kid).toBe('ec');
+      expect(parsed.asymmetricKeyDetails?.namedCurve, key.kid).toBe('prime256v1');
+    }
   });
 
   it('官方源地址只认 https（本机回环放行给开发与 E2E）', () => {

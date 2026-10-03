@@ -508,12 +508,12 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 为什么不关     | 只有三条路：`[features] plugins = false`（本机插件套件也一起没了）· 托管 requirements 禁这个源（要写 `/etc/codex`，桌面应用做不到）· 内核补丁（占 K1 预算）。代价都大于一次只读拉取公开仓库             |
 | 守卫           | 验收 D4（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`）把 `github.com` 列进允许的外连目的地，别的目的地照样判失败；外连按进程记录，下次多出一条能直接看到是谁连的                              |
 
-**K6 登记：插件 Hub 拉取（2026-10-02 新增，来自 [13 §4.6](design/13-plugin-hub.md)）**。**客户端已实现（2026-10-02，H1）**；H2 之前没有签名公钥，`apps/desktop/src/main/hub-config.ts` 返回「未接入」，**这条路径实际一个请求都不发**：
+**K6 登记：插件 Hub 拉取（2026-10-02 新增，来自 [13 §4.6](design/13-plugin-hub.md)）**。**客户端已实现（2026-10-02，H1）；官方源 2026-10-03 上线**（公钥钉在 `apps/desktop/src/main/hub-config.ts`）。未登录时仍按 HUB-Q3=B：默认不自动拉：
 
 | 项       | 内容 |
 | -------- | ---- |
 | 触发     | 已登录：App 启动 + 每小时一次 + 插件页手动刷新。**未登录（HUB-Q3=B）：默认只有用户点「刷新」时才拉**；用户在设置里打开开关后，与已登录时相同。安装 / 更新时下载内容包 |
-| 去哪     | Hub 的 CDN（官方源）；企业私有源由策略包配置的地址；**没写许可的条目**（HUB-Q5a=A，只做索引、不托管）在用户点安装时直接访问上游代码托管站（如 `github.com`） |
+| 去哪     | Hub 的官方源 **`https://hub.nucleant.cn:9443`**（2026-10-03 上线，与更新源同一台机器，build-and-deploy §5.3.2）；企业私有源由策略包配置的地址；**没写许可的条目**（HUB-Q5a=A，只做索引、不托管）在用户点安装时直接访问上游代码托管站（如 `github.com`） |
 | 带什么   | **只有 GET**，只带 `If-None-Match`（实现选了 13 §4.6 的「连 App 版本都不带」：`minAppVersion` 纯客户端过滤）。**不带** prompt、文件名、任务 id、设备 id、**账号令牌（登录了也不带）**，不回传装了什么。`services/hub-client/test/client.test.ts` 用真 HTTP 服务断言请求头里没有别的东西 |
 | 完整性   | 索引 ES256 验签（复用策略包信封）+ `sequence` 防回滚 + `expiresAt` + 内容包 sha256 |
 | 出口     | 只有 `services/hub-client` 出网；`services/catalog` 整目录扫不出出网调用（`services/catalog/test/hub.test.ts` 守着，也不许依赖 hub-client） |

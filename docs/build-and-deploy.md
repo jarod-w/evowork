@@ -562,6 +562,71 @@ node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/update
 **本机代理的坑**：这台发版机走 fake-ip 代理，加 A 记录之前它缓存了「域名不存在」，加完之后一段时间内按域名访问会连不上，
 而服务器自己访问是通的。验证时用 `curl --resolve update.nucleant.cn:9443:115.190.115.161` 绕开本机 DNS；缓存过期后就恢复了。
 
+#### 5.3.2 插件 Hub `hub.nucleant.cn:9443`（2026-10-03 实测搭建）
+
+与 §5.3.1 同一台机器，同样**只加不改**（没停任何服务，Apache 只平滑重载）。设计见 [13 §3 / §4](design/13-plugin-hub.md)；
+服务器上的完整记录在 `/opt/evowork/PROVENANCE` 的「插件 Hub」一节。机主做的：A 记录 `hub → 115.190.115.161`（9443 已在安全组里）。
+
+```bash
+# ① 对象存储：MinIO 单二进制 + systemd，只听本机回环（官网 dl.min.io 在国内返回 410，用 dl.minio.org.cn 镜像，按它给的 sha256 核对）
+install -m 755 minio.new /usr/local/bin/minio && install -m 755 mc.new /usr/local/bin/minio-mc   # 叫 minio-mc，不和 Midnight Commander 撞名
+useradd --system --no-create-home --shell /usr/sbin/nologin minio-user
+#   /etc/default/evowork-hub-minio（600）：--address 127.0.0.1:9000 --console-address 127.0.0.1:9001，root 密码 openssl rand 生成
+#   /etc/systemd/system/evowork-hub-minio.service：User=minio-user、MemoryMax=1G、ProtectSystem=strict、IPAddressAllow=localhost
+systemctl enable --now evowork-hub-minio
+
+# ② 桶 hub：匿名只读对象；写入账号 hub-publisher 只有这个桶的读写（凭据交给发版机后，服务器上那份 shred 掉）
+minio-mc mb local/hub && minio-mc anonymous set-json anon-getobject-only.json local/hub
+
+# ③ Apache：先整份备份，再 80（ACME）→ 证书 → 9443（只读反代）
+tar czf /root/apache2-backup-20261003-0743-evowork-hub.tgz /etc/apache2
+a2ensite zz-hub.nucleant.cn && apache2ctl configtest && systemctl reload apache2
+certbot certonly --webroot -w /var/www/acme-hub -d hub.nucleant.cn --agree-tos \
+  --register-unsafely-without-email --non-interactive --deploy-hook "systemctl reload apache2"
+```
+
+9443 站点：只放 `GET` / `HEAD`、只反代 `/v1/` → `127.0.0.1:9000/hub/v1/`、**带查询串一律 403**（MinIO 把 `?acl`、`?list-type`
+这类查询参数当子操作）、剥掉 `Cookie` / `Authorization`；`index*.json` 是 `no-cache`（有 ETag，没变化回 304），`*.tar.gz` 是 `immutable`。
+
+有四处**漏了不报错，但会出事**：
+
+| 地方 | 漏了会怎样 |
+| --- | --- |
+| MinIO 自带的 `anonymous set download` **会放开列目录** | 匿名 `GET /hub/` 返回 200 + 全部对象清单。要用只有 `s3:GetObject` 的自定义策略（`set-json`），改完核对列目录是 403 |
+| 站点文件叫 `zz-hub.nucleant.cn.conf`，不叫 `hub.nucleant.cn.conf` | 按名字排序，`hub` 排在 `update` 前面，**抢走了 9443 的默认站点**：不带 SNI 或按 IP 访问 9443 的流量会落到 Hub 上。改完用 `apache2ctl -S` 核对 80 的默认仍是 `evowork.conf`、9443 的默认仍是 `update.nucleant.cn` |
+| 站点里**不写** `Listen 9443` | 已经写在 `update.nucleant.cn.conf` 里，重复的 `Listen` 会让 Apache 起不来 |
+| 匿名可写？ | 不可写，但要验：匿名 `PUT` 是 403、经 9443 的 `PUT` / `DELETE` 也是 403 |
+
+外网验收（2026-10-03 08:00 前后，从发版机，**被拦截之前**）：TLS 链校验通过（Let's Encrypt YE1，到期 2026-12-31）· 读 200 · `If-None-Match` 304 ·
+`PUT` / `DELETE` 403 · 列目录 404 · 带查询串 403 · `/v1/` 以外 404 · HTTP 跳 9443（301）· 按 IP 访问 80 仍是账号页。
+用 App 自己的代码路径（`officialHubSource({})` 的默认地址 + 钉死的公钥 + `refreshIndex`）取到序号 1，第二次 `not-modified`。
+
+发布（发版机上，evowork-hub 仓库）：
+
+```bash
+pnpm release --dry-run   # 打包、用日常私钥签名、用 App 钉死的公钥验一遍，不上传
+pnpm release             # 经 ssh 隧道直连服务器本机的 MinIO（S3 SigV4 PUT）：先内容包，再离线索引，最后在线索引；再从 HTTPS 取回验证
+```
+
+日常私钥 `~/.evowork-hub-keys/evowork-hub-1.pem` 与写入凭据 `minio-publisher.env` 都在发版机上、**仓库之外**（0600）；
+备份私钥 `evowork-hub-2` 离线保存。**发版机与 App 不配套**（私钥和钉的公钥对不上）时 `release` 在上传之前就失败。
+
+回滚：`a2dissite zz-hub.nucleant.cn && systemctl reload apache2 && systemctl disable --now evowork-hub-minio`（数据目录留着）。
+
+**两件没弄清楚的事**：
+
+- **带宽**：从这台发版机经 HTTPS 下载一个 2MB 的探针只有约 **6.5KB/s**，服务器取自己是 25MB/s；经 ssh 拷一份 30MB 的 `mc` 十分钟只过了 7.8MB。
+  分不清是服务器出口带宽的上限、跨境路径，还是与上面的拦截有关。Hub 的索引只有几 KB、技能包多是几十 KB，影响不大；
+  **但 §5.3.1 更新源的安装包有两百多 MB** —— 要在一台真实客户网络的机器上 `curl -o /dev/null -w '%{speed_download}\n' …` 测一次。
+- **【阻塞】火山引擎的未备案拦截（2026-10-03 查明）**：外网访问 `hub.nucleant.cn` / `update.nucleant.cn` / `demo.nucleant.cn`
+  都被云厂商网关拦下 —— 80 端口返回 **302 → `https://webblock.volcengine.com`**（`Server: Suzaku`，不是我们的 Apache），
+  9443 上带这些 SNI 的 TLS 握手被**重置**（`errno=104`）；不带 SNI、或 SNI 是随便一个名字时照常落到我们的站点。
+  `hub.nucleant.cn` 刚加 A 记录的头几分钟能通（发布、App 代码路径、304 都是那时验的），之后被识别、拦下。
+  服务器取自己不受影响。**这不是本机代理的问题**（此前把更新源的重置归到本机代理上，是误判）：
+  本机出口在新加坡（腾讯云），任何外部访问都会过这道网关。
+  **要机主处理**：在火山引擎为 `nucleant.cn` 办理接入备案（备案若在别家服务商，要做「新增接入」）。
+  在那之前 Hub 与更新源对外都不可用。**不要绕**（比如改用 IP 访问）—— 这是合规要求，不是技术故障。
+
 ### 5.4 桌面 App
 
 打包配置在 [build/electron-builder.yml](../build/electron-builder.yml)，驱动是
