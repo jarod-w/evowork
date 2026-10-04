@@ -1,10 +1,32 @@
 # 开发状态
 
-> **更新于 2026-10-02（第 72 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-10-04（第 73 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **2026-10-04：小米 MiMo v2.6 Flash 跑完全部真模型 UI 用例；顺带修了 UI 测试夹具的两个缺陷。**
+> MiMo（`EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash`）：身份 2 · 纪律 2 · 多附件 1 **全过**；外部验收 **22/23**，
+> 没过的只有 D1-4（与 deepseek-flash 同一条已知口径：`rm A B` 一张卡写两个文件）；D2-2 是按 `accepted` 记的偏离
+> （经符号链接读到了工作空间外的金丝雀，10 §2.3 已接受）。deepseek-flash 当时没过的 D1-2 / D4 这次都过了（P6 与 D4 登记之后）。
+> ① **能力位写错了**：预设里 MiMo 的 `imageInput` 按保守侧关着，多附件那条整轮被网关拒掉（「当前模型不支持图片输入」）。
+> `verify-provider.mjs --image true` 补测 23/23（纯红图答出「红」），改为 true 后那条 29 秒过，饼图里的 45% 答对了。
+> 产品侧未改：MiMo 不在 `known-models.ts`，用户在设置里加它时要自己勾「读图」。
+> ② **UI 测试一直没开在用例的工作区里**（fd1faea 之后）：首页不预选项目，任务落在 `~/.evowork/workspaces/<id>/`，
+> 而用例往夹具的「UI」项目放输入、判产出。真模型那边 D3-3 判「没写出 summary.md」、C3 靠模型自己 `find` 才绿；
+> 假网关那边 `destructive-approval` 8 条里 6 条红，**另外 2 条「拒绝后文件没变」是空心绿**（命令根本没碰到那些文件）。
+> 现在开新任务一律走 `fixtures.mjs` 的 `startTaskInWorkspace`：在选择器里选「UI」，并断言**后果**（任务 cwd 就是那个目录）。
+> 同一轮里另外两条是测试过时：引导第二步从 10-01 起不再强制选目录（`onboarding.spec` 改断言可跳过并有提示）；
+> 侧栏项目的 ⋯ 只在悬停时出现（6e6f9a0），`views-rest` 改为先悬停再点。
+> ③ **「App 在用例中途自己关掉」找到了原因**（09-29/30 那三次，见下文 10-01 条）：这一轮 A3 在 30 秒处红，
+> 内核报 `stream disconnected … error decoding response body`、同一秒 Playwright 报 `Target page … has been closed`、网关没有任何日志 ——
+> `pmset -g log`：07:07:17 屏幕关、07:07:22 `Entering Sleep state due to 'Idle Sleep'`（电池供电，空闲 1 分钟就睡）。
+> 不是产品缺陷。`playwright.config.mjs` 加了 `globalSetup`：macOS 上 `caffeinate -i -w <runner pid>`，跑完自动解除。
+> A3 单独重跑 8/8、误报 0。前三次没有当时的电源日志，**归因是推断**。
+> 顺带看到、**没修**：回合失败卡片的「详情」那行等宽英文不折行，会横穿卡片右边框；03 §8 说的「附件区就拒绝图片」没有实现，
+> 现在是发出去以后整轮失败、另外几个附件一起白传。
+> 验收：真模型（MiMo）5/5 + 验收 22/23（A3 重跑后）；假网关 UI **42/42**；`pnpm run check` 退出 0，146 个测试文件通过、1 个原有跳过；2438 个测试通过、2 个原有跳过。
 >
 > **2026-10-03（续）：插件 Hub 官方源上线 `https://hub.nucleant.cn:9443`（H2）。**
 > 服务器 115.190.115.161：MinIO（`evowork-hub-minio.service`，只听回环；匿名只能取对象，**自带的 download 策略会放开列目录**，换成了自定义策略）
