@@ -10,6 +10,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './apps/desktop/test/e2e/ui',
   testMatch: '**/*.spec.mjs',
+  // 跑的时候不许 Mac 空闲睡眠 —— 睡一下，用例就以「页面被关了」的样子红掉（见文件头）
+  globalSetup: './apps/desktop/test/e2e/ui/global-setup.mjs',
 
   /*
    * 一次只起一个：每个用例都拉起一个真 Electron + 一个真内核子进程，
