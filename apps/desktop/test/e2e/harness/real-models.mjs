@@ -57,7 +57,9 @@ export const REAL_MODEL_PRESETS = Object.freeze({
    * 小米 MiMo v2.6 Flash，走通用 OpenAI 兼容适配（`private`）。
    * 2026-10-01 `verify-provider.mjs` 实测 21/21：流式 · reasoning_content · 工具调用（含一轮两个）·
    * 第二次同 prompt 报出 cache 命中（`prompt_tokens_details.cached_tokens`）· 未知模型回 4xx 且可识别。
-   * 看图没测，按保守侧关掉；上下文长度没有实测依据，按 128k 保守写。
+   * 看图 2026-10-04 补测（`--image true`，23/23）：纯红图答出了「红」。之前按保守侧关着，
+   * 结果多附件那条整轮被网关拒掉（「当前模型不支持图片输入」）—— 拒得对，是能力位写错了。
+   * 上下文长度没有实测依据，按 128k 保守写（厂商文档写的是 1M）。
    */
   'mimo-v2.6-flash': {
     id: 'xiaomi/mimo-v2.6-flash',
@@ -72,7 +74,7 @@ export const REAL_MODEL_PRESETS = Object.freeze({
       parallelToolCalls: true,
       reasoning: true,
       promptCache: true,
-      imageInput: false,
+      imageInput: true,
       maxContextTokens: 128_000,
     },
   },
