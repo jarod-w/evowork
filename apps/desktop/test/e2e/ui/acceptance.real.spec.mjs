@@ -32,7 +32,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 import { CASES } from '../harness/acceptance/cases.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
-import { expect, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../../../../..');
 const HARNESS = resolve(ROOT, 'apps/desktop/test/e2e/harness/acceptance');
@@ -242,7 +242,7 @@ for (const c of CASES) {
       .replaceAll('{run_token}', tokens.run_token);
     const sampler = c.egress ? startEgressSampler(electronApp.process().pid) : null;
     const startedAt = Date.now();
-    await send(page, prompt);
+    await startTaskInWorkspace(page, electronApp, prompt);
     const approvals = await drive(page, c);
     const sampled = sampler?.stop();
     const egress = sampled?.remotes ?? null;

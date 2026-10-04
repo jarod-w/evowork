@@ -30,21 +30,22 @@ test('首次引导：读到隐私承诺 → 选目录 → 走完之后不再回�
   await expect(page.getByRole('heading', { name: '选一个项目' })).toBeVisible();
 
   /*
-   * ③ **这时「下一步」必须是灰的，而且要说出为什么。**
+   * ③ **不选目录也能往下走，而且界面要说出来。**
    *
-   * onboarding.tsx 里写着「一个灰着的按钮不告诉用户为什么灰，比不给按钮更让人困惑」。
-   * 只断言 disabled 不够 —— 那样文案丢了测试照样绿，而用户会卡在一个不解释自己的界面上。
+   * 2026-10-01 Composer 修订（02 / 03 文首的修订基线）：首页默认无项目，无项目任务有自己的独立目录，
+   * 所以这一步不再挡人。以前这里断言的是「灰着并说明为什么」—— 那条规则已被取代。
+   * 只断言 enabled 不够：用户得知道「可以跳过」，否则看到一个空列表会以为必须选。
    */
   const next = page.getByRole('button', { name: '下一步' });
-  await expect(next).toBeDisabled();
-  await expect(next).toHaveAttribute('title', /.+/);
+  await expect(next).toBeEnabled();
+  await expect(page.locator('.ew-app-onboarding')).toContainText('也可以点下一步');
 
   // ④ 选文件夹（系统对话框由主进程的假实现回答，见 harness/ui-entry.mjs）
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
   await page.getByRole('button', { name: '选择文件夹' }).click();
   await expect(page.locator('.ew-app-onboarding')).toContainText(workspace);
 
-  // ⑤ 选完之后才解锁 —— 这正是那次"整个应用打不开"的反面
+  // ⑤ 选了目录照样能往下走（选目录是可选的，不是被它反过来锁住）
   await expect(next).toBeEnabled();
   await next.click();
 

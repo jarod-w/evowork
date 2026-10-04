@@ -16,7 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
 function seed(workspace) {
   const inputs = join(workspace, 'inputs');
@@ -41,8 +41,15 @@ async function runCommand(page, electronApp, cmd, { decision = '拒绝', nth }) 
     (_electron, script) => globalThis.__evoworkE2E.gateway.scriptNext(script),
     { tool: 'exec_command', args: { cmd } },
   );
-  await page.getByLabel('需求输入').fill(`执行 ${cmd}`);
-  await page.getByRole('button', { name: '发送' }).click();
+  /*
+   * 第一条开新任务，要开在用例的工作区里（见 `startTaskInWorkspace`）；之后是同一任务里的追加。
+   * 不这样的话命令跑在任务自己的目录里：「拒绝后文件没变」那几条会**空心通过**（文件根本没被碰到）。
+   */
+  if (nth === 0) await startTaskInWorkspace(page, electronApp, `执行 ${cmd}`);
+  else {
+    await page.getByLabel('需求输入').fill(`执行 ${cmd}`);
+    await page.getByRole('button', { name: '发送' }).click();
+  }
 
   const card = page.getByLabel('需要你确认');
   const reply = page.getByText('E2E response').nth(nth);

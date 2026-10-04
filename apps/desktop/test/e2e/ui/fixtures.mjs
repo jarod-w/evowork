@@ -5,7 +5,7 @@
  * 从**进程外**连上去。两侧的分工就是第 1 步拆出来的那条线。
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { arch, homedir, platform } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -202,6 +202,46 @@ export const test = base.extend({
 });
 
 export { expect } from '@playwright/test';
+
+/** 同一个目录在 macOS 上有 `/var/...` 与 `/private/var/...` 两种写法 */
+function samePath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * 在夹具建好的「UI」项目里**开一个新任务**（= `__evoworkE2E.workspace`，用例放输入、判产出的目录）。
+ * 同一任务里的追加消息不走这里：任务开起来以后项目选择器是锁住的。
+ *
+ * 首页**不预选项目**是产品决定（fd1faea，`composer.spec.mjs` 守着）：不选的话任务落在
+ * `~/.evowork/workspaces/<id>/`，和用例的目录不是同一个。2026-10-04 MiMo 那一轮就栽在这上面 ——
+ * D3-3 的 summary.md 写进了任务自己的目录，用例判「没写出」；C3 则是模型自己 `find` 到
+ * 上一层的输入才绿的。两条判出来的都不是模型的行为。
+ * 所以断言的是**后果**（这个任务的 cwd 就是那个目录），不是「点过了项目」。
+ */
+export async function startTaskInWorkspace(page, electronApp, text) {
+  const workspace = samePath(await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace));
+  const picker = page.getByRole('button', { name: '选择项目' });
+  await picker.click();
+  await page.getByRole('menuitem', { name: /^UI/ }).click();
+  await expect(picker).toContainText('UI');
+
+  await page.getByLabel('需求输入').fill(text);
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect
+    .poll(
+      async () => {
+        const { tasks } = await page.evaluate(() => window.evowork.getStartup());
+        const latest = [...tasks].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        return latest?.cwd ? samePath(latest.cwd) : undefined;
+      },
+      { message: '任务没有开在用例的工作区里，输入与产出会对不上' },
+    )
+    .toBe(workspace);
+}
 
 /**
  * 生成多附件旅程的输入（`harness/make-office-fixtures.py`）：两张图的 docx、两张图的 pptx、

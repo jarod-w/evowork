@@ -35,6 +35,15 @@ test('插件：三个分类 Tab 都切得动，搜索框在', async ({ page, ele
 });
 
 test('项目：列表在，搜索在，每个项目都有更多操作', async ({ page, electronApp }) => {
+  /*
+   * ⋯ 只在悬停分区标题（或键盘聚焦进去）时出现（6e6f9a0，`.ew-sidebar-project-actions`）。
+   * 用户是先把鼠标移过去才看得见它的；直接 click 时 Playwright 在悬停之前就做命中检查，
+   * 撞上的是外层 span —— 那是测试的走法不对，不是按钮点不到。
+   */
+  await page
+    .getByRole('region', { name: '项目' })
+    .getByRole('button', { name: '项目', exact: true })
+    .hover();
   await page.getByRole('button', { name: '项目更多操作', exact: true }).click();
   await page.getByRole('menuitem', { name: '查看所有项目', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: '搜索项目' })).toBeVisible();
