@@ -133,6 +133,52 @@ describe('电脑操控宿主边界', () => {
       await s.host.close();
     }
   });
+  it('认不出的应用 id 回 APP_NOT_FOUND（能改正），硬禁止的仍是 POLICY_DENIED（该停下）', async () => {
+    const s = setup();
+    try {
+      await s.host.setEnabled(true);
+      // 2026-10-05 MiMo flash：把 list_apps 的显示名当 id 传进来
+      await expect(s.call('get_app_state', { app: 'TextEdit' })).rejects.toThrow('APP_NOT_FOUND');
+      await expect(s.call('get_app_state', { app: 'com.apple.Terminal' })).rejects.toThrow(
+        'POLICY_DENIED',
+      );
+      expect(
+        vi.mocked(s.helper.call).mock.calls.some(([method]) => method === 'get_app_state'),
+      ).toBe(false);
+    } finally {
+      await s.host.close();
+    }
+  });
+  it('用户点「停止控制」进审计，之后被挡下的调用也进；回合正常结束不算用户停止', async () => {
+    const s = setup();
+    try {
+      await s.host.setEnabled(true);
+      await s.call('get_app_state', { app: 'com.apple.TextEdit' });
+      s.host.stop('user');
+      await expect(s.call('get_app_state', { app: 'com.apple.TextEdit' })).rejects.toThrow(
+        'USER_STOPPED',
+      );
+      const records = s.audit.mock.calls.map(([record]) => record);
+      expect(records).toContainEqual(
+        expect.objectContaining({ toolName: 'stop_control', resultCode: 'USER_STOPPED' }),
+      );
+      expect(records.filter((record) => record.resultCode === 'USER_STOPPED')).toHaveLength(2);
+      expect(JSON.stringify(records)).not.toContain('PRIVATE_SCREEN');
+    } finally {
+      await s.host.close();
+    }
+    const quiet = setup();
+    try {
+      await quiet.host.setEnabled(true);
+      await quiet.call('get_app_state', { app: 'com.apple.TextEdit' });
+      quiet.host.endTurn('thread');
+      expect(quiet.audit.mock.calls.some(([record]) => record.toolName === 'stop_control')).toBe(
+        false,
+      );
+    } finally {
+      await quiet.host.close();
+    }
+  });
   it('等待同意期间回合切换，不能继续读取 App', async () => {
     const s = setup();
     s.ask.mockImplementationOnce(async () => {

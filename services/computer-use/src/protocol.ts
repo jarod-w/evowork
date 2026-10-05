@@ -34,6 +34,27 @@ const number: Field = { type: 'number', minimum: 0, maximum: 32768 };
 const element: Field = { type: 'integer', minimum: 0, maximum: 2147483647 };
 const target = { element_index: element, x: number, y: number };
 const choice = (...values: string[]): Field => ({ type: 'string', enum: values });
+/**
+ * 给模型看的工具说明。没有它时模型只拿到工具名和 schema，「`app` 要填 bundle id」只写在 SKILL 里 ——
+ * 2026-10-05 MiMo flash 就把 `list_apps` 给的显示名当成了 id。闭环的规矩（先读、带最新 state_id、
+ * 动作后重读）仍以 SKILL 为准，这里只说每个工具自己是什么。
+ */
+const APP = 'app 填 list_apps 返回的 app 字段（bundle id），不是显示名。';
+const ACT = `${APP}state_id 用最近一次 get_app_state 返回的；动作后必须重新 get_app_state。`;
+const DESCRIPTIONS: Readonly<Record<string, string>> = {
+  list_apps: '列出用户允许、可以操作的桌面应用（app = bundle id，name = 显示名）。',
+  get_app_state: `读取应用当前窗口：返回 state_id、可访问元素的扁平文本（[n] 是 element_index）与窗口信息。${APP}`,
+  click: `点击一个元素（element_index）或窗口坐标（x, y，二选一）。${ACT}`,
+  drag: `在窗口坐标间拖拽。${ACT}`,
+  paste: `把一段文字粘贴到当前焦点。${ACT}`,
+  perform_secondary_action: `对元素执行辅助动作（菜单、确认、取消、增减）。${ACT}`,
+  press_key: `按一个键或有限组合键；目标应用必须在前台。${ACT}`,
+  scroll: `滚动元素或窗口坐标处的区域。${ACT}`,
+  select_text: `在元素里选中一段文字。${ACT}`,
+  set_value: `直接设置可写元素的值（文本框等）。${ACT}`,
+  type_text: `向当前焦点逐字输入文字；换行可能提交表单。${ACT}`,
+};
+
 function tool(
   name: string,
   properties: Record<string, Field>,
@@ -43,6 +64,7 @@ function tool(
 ) {
   return {
     name,
+    description: DESCRIPTIONS[name] ?? '',
     inputSchema: {
       type: 'object',
       additionalProperties: false,

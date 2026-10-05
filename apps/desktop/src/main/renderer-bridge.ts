@@ -1779,7 +1779,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         : this.getComputerUseStatus();
     },
     async stopComputerUse() {
-      options.computerUse?.stop();
+      options.computerUse?.stop('user');
       return this.getComputerUseStatus();
     },
     async revokeComputerUseAccess(input: { appId?: string }) {

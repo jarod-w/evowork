@@ -64,6 +64,28 @@ describe('固定工具协议', () => {
     expect(() => validateToolCall('eval', { text: 'private' })).toThrow(/^POLICY_DENIED$/);
   });
 });
+describe('给模型看的工具说明', () => {
+  /*
+   * 没有说明时模型只看得到工具名和 schema。2026-10-05 MiMo flash 把 list_apps 的显示名
+   * `TextEdit` 当成 app 传进 get_app_state —— 「app 要填 bundle id」当时只写在 SKILL 里。
+   */
+  it('每个工具都有说明；带 app 参数的都说清 app 要填 list_apps 的 bundle id', () => {
+    for (const tool of TOOLS) {
+      expect(tool.description, tool.name).not.toBe('');
+      if ('app' in tool.inputSchema.properties) {
+        expect(tool.description, tool.name).toContain('bundle id');
+        expect(tool.description, tool.name).toContain('不是显示名');
+      }
+    }
+  });
+  it('写动作的说明都提醒带最新 state_id、动作后重读', () => {
+    for (const tool of TOOLS.filter((t) => !t.annotations.readOnlyHint)) {
+      expect(tool.description, tool.name).toContain('state_id');
+      expect(tool.description, tool.name).toContain('重新 get_app_state');
+    }
+  });
+});
+
 describe('一次观测只允许一次动作', () => {
   it('先读后写，成功或失败的动作均不可重用', () => {
     const session = new ComputerUseSession('t', 'turn');

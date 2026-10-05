@@ -78,6 +78,22 @@ export interface ComputerUseHostOptions {
     hadScreenshot: boolean;
   }) => void;
 }
+/**
+ * 给模型看的错误（12 §5.3：`message` 是可给模型看的短说明，不含屏幕正文）。
+ * 只给模型自己能改正的那几种配一句话；停止 / 拒绝类的照 SKILL 停下，不需要提示。
+ */
+const MODEL_HINTS: Partial<Record<string, string>> = {
+  APP_NOT_FOUND:
+    '没有这个应用：app 要填 list_apps 返回的 app 字段（bundle id），不是显示名。重新 list_apps 后再试。',
+  STALE_STATE: '状态已过期：重新调用 get_app_state，用新的 state_id。',
+  ELEMENT_NOT_FOUND: '这个元素不在最近一次读到的状态里：重新调用 get_app_state。',
+};
+function modelFacingError(error: unknown): { ok: false; code: string; message?: string } {
+  const code = error instanceof ComputerUseError ? error.code : 'INTERNAL';
+  const message = MODEL_HINTS[code];
+  return { ok: false, code, ...(message ? { message } : {}) };
+}
+
 /** 宿主是唯一准入边界；这里从不相信工具 arguments 内的来源、许可或模型信息。 */
 export function createComputerUseHost(options: ComputerUseHostOptions) {
   const token = randomBytes(32).toString('hex');
@@ -158,8 +174,18 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
     writeFileSync(temporary, JSON.stringify(grants), { mode: 0o600, flag: 'wx' });
     renameSync(temporary, grantsPath);
   }
-  function stop() {
+  /** `user` = 用户点了「停止控制」（12 §8.2 的 computer_use.user_stopped）；其余是回合结束、关闭等收尾 */
+  function stop(reason: 'user' | 'system' = 'system') {
     options.cancelApprovals?.();
+    if (active && reason === 'user') {
+      options.audit?.({
+        threadId: active.threadId,
+        turnId: active.turnId,
+        toolName: 'stop_control',
+        resultCode: 'USER_STOPPED',
+        hadScreenshot: false,
+      });
+    }
     if (active) {
       active.session.stop();
       stoppedTurns.add(`${active.threadId}:${active.turnId}`);
@@ -222,7 +248,17 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
     if (!context || !context.interactive || !context.root || !context.enterpriseAllowed)
       throw new ComputerUseError('POLICY_DENIED');
     const turnKey = `${request.threadId}:${context.turnId}`;
-    if (stoppedTurns.has(turnKey)) throw new ComputerUseError('USER_STOPPED');
+    if (stoppedTurns.has(turnKey)) {
+      // 停止之后还来的调用也要进审计：「停了之后它还试过几次」正是审计要回答的问题
+      options.audit?.({
+        threadId: request.threadId,
+        turnId: context.turnId,
+        toolName: request.name,
+        resultCode: 'USER_STOPPED',
+        hadScreenshot: false,
+      });
+      throw new ComputerUseError('USER_STOPPED');
+    }
     if (active && (active.threadId !== request.threadId || active.turnId !== context.turnId))
       throw new ComputerUseError('POLICY_DENIED');
     const current = () => {
@@ -298,8 +334,15 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           ],
         };
       const app = apps.find((app) => app.app === args.app);
-      if (!app || permitted(app, true) === 'POLICY_DENIED')
-        throw new ComputerUseError('POLICY_DENIED');
+      /*
+       * 认不出的 id 是「找不到」（12 §5.3 的 APP_NOT_FOUND），不是策略拒绝。
+       * 两者对模型的意思相反：SKILL 规定 POLICY_DENIED 立即停止，而传错 id 应该回头用规范 id 再试。
+       * 2026-10-05 MiMo flash 把显示名 `TextEdit` 当 id 传进来，拿到 POLICY_DENIED 后照规矩停下，
+       * 对用户说「被策略拒绝」—— 一个能改正的笔误变成了误导人的硬停。
+       * 硬禁止的应用 Helper 也会列出来（见上），它们走下一行，仍是 POLICY_DENIED。
+       */
+      if (!app) throw new ComputerUseError('APP_NOT_FOUND');
+      if (permitted(app, true) === 'POLICY_DENIED') throw new ComputerUseError('POLICY_DENIED');
       const taskKey = `${app.app}:${app.identity}`;
       if (permitted(app, taskGrants.get(request.threadId)?.has(taskKey) ?? false) !== 'allow') {
         if (grants[app.app]?.allowed === false) throw new ComputerUseError('APP_DENIED');
@@ -489,10 +532,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
                         content: [
                           {
                             type: 'text',
-                            text: JSON.stringify({
-                              ok: false,
-                              code: error instanceof ComputerUseError ? error.code : 'INTERNAL',
-                            }),
+                            text: JSON.stringify(modelFacingError(error)),
                           },
                         ],
                       },
