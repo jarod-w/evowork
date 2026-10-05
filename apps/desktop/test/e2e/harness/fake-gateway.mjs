@@ -75,6 +75,158 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
   let requestCount = 0;
   /** 内核发给网关的**请求**正文（不是响应）—— 断言「插的话有没有进到模型请求里」靠它 */
   const requestBodies = [];
+  /**
+   * 按**内容**认领的剧本（`scriptWhen`），按登记顺序匹配，每条只用一次。
+   *
+   * 多代理那几条要它：根代理与子代理的请求打到同一个网关，**到达顺序由内核调度决定**，
+   * `scriptNext` 那种「下一次」会把给子代理的剧本发给根代理。只能看请求里是谁、走到了哪一步。
+   */
+  const rules = [];
+  /** 规则名 → 它认领到的那条请求正文（「谁的请求里带着什么」靠它断言） */
+  const matchedBodies = new Map();
+
+  /**
+   * 给规则判断用的请求视图：正文 · 声明给模型的工具名 · 历史里已经发生过的工具调用名。
+   * `generate: false` 的是预热，不是一次采样，不让它吃掉剧本。
+   */
+  function requestView(body) {
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return undefined;
+    }
+    if (parsed?.generate === false) return undefined;
+    const names = (list) =>
+      (Array.isArray(list) ? list : []).flatMap((entry) =>
+        Array.isArray(entry?.tools) ? names(entry.tools) : [entry?.name],
+      );
+    const input = Array.isArray(parsed?.input) ? parsed.input : [];
+    return {
+      text: body,
+      tools: names(parsed?.tools).filter((name) => typeof name === 'string'),
+      calls: input.filter((entry) => entry?.type === 'function_call').map((entry) => entry.name),
+    };
+  }
+
+  function claimRule(body) {
+    const view = requestView(body);
+    if (!view) return undefined;
+    const rule = rules.find((entry) => !matchedBodies.has(entry.name) && entry.match(view));
+    if (rule) matchedBodies.set(rule.name, body);
+    return rule;
+  }
+
+  /** 规则可以等别的规则先被认领再作答（「B 已经在等了，A 才发消息」）。最多等 30 秒 */
+  async function untilReady(rule) {
+    if (!rule.ready) return;
+    const deadline = Date.now() + 30_000;
+    while (!rule.ready({ matched: (name) => matchedBodies.has(name) }) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  /**
+   * 这个工具在请求里是挂在哪个命名空间下声明的。真模型照声明的样子调用，假的也得这样：
+   * 内核把多代理那组工具放在 `collaboration` 命名空间里（`config/mod.rs` 的
+   * `DEFAULT_MULTI_AGENT_V2_TOOL_NAMESPACE`），只报名字不报命名空间，内核回「unsupported call」。
+   */
+  function declaredNamespace(body, tool) {
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return undefined;
+    }
+    const owner = (Array.isArray(parsed?.tools) ? parsed.tools : []).find(
+      (entry) =>
+        entry?.type === 'namespace' &&
+        Array.isArray(entry.tools) &&
+        entry.tools.some((inner) => inner?.name === tool),
+    );
+    return owner?.name;
+  }
+
+  /** 按剧本答一次：`{ kind: 'hold' }` · `{ kind: 'text', text }` · `{ tool, args }` */
+  function respondWithScript(response, script, current, body) {
+    const id = `resp_${current}`;
+    response.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache',
+    });
+    sendEvent(response, { type: 'response.created', response: { id } });
+    if (script.kind === 'hold') {
+      // 回一句话就**挂着不收尾** —— 回合会一直"在跑"，正好用来点停止 / 插话
+      sendEvent(response, {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'message', id: `msg_${current}`, role: 'assistant', content: [] },
+      });
+      sendEvent(response, {
+        type: 'response.output_text.delta',
+        item_id: `msg_${current}`,
+        output_index: 0,
+        content_index: 0,
+        delta: '正在写……',
+      });
+      releaseScriptedTurn = () => {
+        sendEvent(response, {
+          type: 'response.completed',
+          response: { id, end_turn: true },
+        });
+        response.end('data: [DONE]\n\n');
+        releaseScriptedTurn = undefined;
+      };
+      return;
+    }
+    if (script.kind === 'text') {
+      /*
+       * 让模型回一段**指定的**正文。给 Visualizer 那几条旅程用：
+       * mermaid / evowork-chart / html 三类受控 fence 只有在真回合的
+       * assistant 消息里才会被渲染，而默认那句 `E2E response N` 里没有它们。
+       */
+      const itemId = `msg_${current}`;
+      sendEvent(response, {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'message', id: itemId, role: 'assistant', content: [] },
+      });
+      sendEvent(response, {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'message',
+          id: itemId,
+          role: 'assistant',
+          content: [{ type: 'output_text', text: script.text }],
+        },
+      });
+      sendEvent(response, {
+        type: 'response.completed',
+        response: { id, end_turn: true, usage },
+      });
+      response.end('data: [DONE]\n\n');
+      return;
+    }
+    // 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它
+    sendEvent(response, {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'function_call',
+        id: `fc_${current}`,
+        name: script.tool,
+        ...(declaredNamespace(body, script.tool)
+          ? { namespace: declaredNamespace(body, script.tool) }
+          : {}),
+        arguments: JSON.stringify(script.args),
+        call_id: `call_${current}`,
+      },
+    });
+    // `end_turn: false`：工具调用之后回合还要继续
+    sendEvent(response, { type: 'response.completed', response: { id, end_turn: false } });
+    response.end('data: [DONE]\n\n');
+  }
 
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -90,86 +242,19 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
     const chunks = [];
     request.on('data', (chunk) => chunks.push(chunk));
     request.on('end', () => {
-      requestBodies.push(Buffer.concat(chunks).toString('utf8'));
+      const body = Buffer.concat(chunks).toString('utf8');
+      requestBodies.push(body);
       requestCount += 1;
       const current = requestCount;
+      const rule = claimRule(body);
+      if (rule) {
+        void untilReady(rule).then(() => respondWithScript(response, rule.script, current, body));
+        return;
+      }
       if (nextScript) {
         const script = nextScript;
         nextScript = undefined;
-        const id = `resp_${current}`;
-        response.writeHead(200, {
-          'content-type': 'text/event-stream; charset=utf-8',
-          'cache-control': 'no-cache',
-        });
-        sendEvent(response, { type: 'response.created', response: { id } });
-        if (script.kind === 'hold') {
-          // 回一句话就**挂着不收尾** —— 回合会一直"在跑"，正好用来点停止 / 插话
-          sendEvent(response, {
-            type: 'response.output_item.added',
-            output_index: 0,
-            item: { type: 'message', id: `msg_${current}`, role: 'assistant', content: [] },
-          });
-          sendEvent(response, {
-            type: 'response.output_text.delta',
-            item_id: `msg_${current}`,
-            output_index: 0,
-            content_index: 0,
-            delta: '正在写……',
-          });
-          releaseScriptedTurn = () => {
-            sendEvent(response, {
-              type: 'response.completed',
-              response: { id, end_turn: true },
-            });
-            response.end('data: [DONE]\n\n');
-            releaseScriptedTurn = undefined;
-          };
-          return;
-        }
-        if (script.kind === 'text') {
-          /*
-           * 让模型回一段**指定的**正文。给 Visualizer 那几条旅程用：
-           * mermaid / evowork-chart / html 三类受控 fence 只有在真回合的
-           * assistant 消息里才会被渲染，而默认那句 `E2E response N` 里没有它们。
-           */
-          const itemId = `msg_${current}`;
-          sendEvent(response, {
-            type: 'response.output_item.added',
-            output_index: 0,
-            item: { type: 'message', id: itemId, role: 'assistant', content: [] },
-          });
-          sendEvent(response, {
-            type: 'response.output_item.done',
-            output_index: 0,
-            item: {
-              type: 'message',
-              id: itemId,
-              role: 'assistant',
-              content: [{ type: 'output_text', text: script.text }],
-            },
-          });
-          sendEvent(response, {
-            type: 'response.completed',
-            response: { id, end_turn: true, usage },
-          });
-          response.end('data: [DONE]\n\n');
-          return;
-        }
-        // 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它
-        sendEvent(response, {
-          type: 'response.output_item.done',
-          output_index: 0,
-          item: {
-            type: 'function_call',
-            id: `fc_${current}`,
-            name: script.tool,
-            arguments: JSON.stringify(script.args),
-            call_id: `call_${current}`,
-          },
-        });
-        // `end_turn: false`：工具调用之后回合还要继续
-        sendEvent(response, { type: 'response.completed', response: { id, end_turn: false } });
-        response.end('data: [DONE]\n\n');
+        respondWithScript(response, script, current, body);
         return;
       }
       if (failUpstream > 0) {
@@ -275,6 +360,16 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
     scriptNext(script) {
       nextScript = script;
     },
+    /**
+     * 第一条让 `match(view)` 为真的请求按 `script` 答（剧本形状同 `scriptNext`）。
+     * `view` = `{ text, tools, calls }`，见 `requestView`。`ready({ matched })` 给了就等它为真再答。
+     * 谓词跑在主进程里：spec 从 `electronApp.evaluate` 里登记，闭包够不着 spec 的变量，标记要当参数传进去。
+     */
+    scriptWhen(name, match, script, { ready } = {}) {
+      rules.push({ name, match, script, ready });
+    },
+    /** 那条规则认领到的请求正文；还没认领到就是 undefined */
+    matchedBody: (name) => matchedBodies.get(name),
     /**
      * 接下来 `times` 次默认响应假装上游断线；之后恢复正常回答。
      * `message` 给了就用它 —— 测「英文原因要被折进详情」那条要靠它造出英文。

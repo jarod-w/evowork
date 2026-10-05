@@ -35,6 +35,26 @@ EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "C3 " --repeat-each=5
 - 开跑前会先探一次上游（`beforeAll`），不可达就整套不跑；回合失败或模型一个字没回的用例
   **不判分**，报「没有真正跑起来」和原因 —— 否则安全类用例会因为「什么都没做」而空心通过。
 
+## 多代理协作（`multi-agent.spec.mjs` · `multi-agent.real.spec.mjs`）
+
+04 §5.6 的同一任务内多代理：派生 · 等待 · 结论回根 · 只读子视图 · 子视图追加要求经根任务路由 · 兄弟代理互发。
+
+- **假网关那份**用 `scriptWhen(name, match, script, { ready })` 按**请求内容**认领每个代理的请求：
+  根代理和子代理打到同一个网关，到达顺序由内核调度决定，`scriptNext` 的「下一次」会发错人。
+  `match` 收到 `{ text, tools, calls }`（正文 · 声明给模型的工具名 · 历史里已发生的工具调用名），
+  `matchedBody(name)` 交回被认领的那条请求，断言「谁的请求里带着什么」靠它。
+- **真模型那份**判的是模型读没读懂要求。内核写给模型的规则是「**明确要求**子代理 / 委派 / 并行才派生，
+  要求深入、仔细不算」，所以有一条反向对照：只说「仔细、深入」时不该派。概率性，用 `--repeat-each` 看比例。
+- **兄弟代理互发的两条是 `fixme`**：子代理拿不拿得到协作工具，内核看模型目录的 `multi_agent_version`。
+  产品已声明 v2（`kernel-catalog.ts`，单测守着），但宿主只把内置三家与设置页加的自定义模型写进目录，
+  这套 harness 的模型只登记在它自己的网关上，所以这里的子代理拿不到 `send_message`。
+  让 harness 走设置页那条路会让宿主在同一个本机端口上再拉一个网关，还没做。**在那之前这条没有被端到端验证过。**
+
+```bash
+pnpm run test:ui -- multi-agent.spec.mjs
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- multi-agent
+```
+
 ## 和隔壁那些 `*.e2e.mjs` 的区别
 
 |          | `../*.e2e.mjs`                             | 这里                       |
