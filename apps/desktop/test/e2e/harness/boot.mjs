@@ -62,6 +62,7 @@ export async function bootApp({
   show = false,
   showOpenDialog,
   gatewayEntryPath,
+  computerUse,
 }) {
   /*
    * 拿到内核子进程才杀得掉它（`skill-reference` 靠 SIGKILL 验「崩了会自己起来」）。
@@ -122,6 +123,11 @@ export async function bootApp({
         ...options,
         env: { ...process.env, ...hostEnv },
         ...spawnSeam,
+        /*
+         * 电脑操控的注入驱动（`fake-computer-use.mjs`）：顶替随包的原生 Helper 与它的发布标记。
+         * 默认不给 —— 宿主按发货的样子读随包标记，那条「未验收不能启用」的闸门也要有人走。
+         */
+        ...(computerUse ? { computerUse } : {}),
       }),
   });
 

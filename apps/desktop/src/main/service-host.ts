@@ -1,5 +1,5 @@
 import { patchComputerUseConfig } from './computer-use-config.js';
-import { createComputerUseHost } from './computer-use-host.js';
+import { createComputerUseHost, type NativeHelper } from './computer-use-host.js';
 import { createNativeHelper, readComputerUseRelease } from './computer-use-helper.js';
 /**
  * 本机服务宿主（09 §1）。
@@ -841,6 +841,16 @@ export interface ServiceHostOptions {
   readonly gatewayReadyTimeoutMs?: number | undefined;
   /** 注入以便测试网关就绪探测，不必真起一个 HTTP 服务 */
   readonly fetchFn?: typeof fetch | undefined;
+  /**
+   * 测试注入：替代随包的原生 Helper 与它的发布标记（12 §4.0「开发测试中的注入驱动」）。
+   *
+   * 给了它，宿主 → 内核 → `cua_repl` MCP → 认证 socket → 准入/审批 → 界面这一整条链路
+   * 才能在没有签名 Helper 的机器上被真窗口 E2E 走一遍（CU-R7 / R9 / R10）。
+   * **它不证明原生能力**：AX、截图、TCC、签名都不经过这里，`releaseVerified` 仍由随包标记决定，
+   * 发货入口从不传它。
+   */
+  readonly computerUse?:
+    { readonly helper: NativeHelper; readonly releaseVerified: boolean } | undefined;
 }
 
 export interface ServiceHost {
@@ -1238,12 +1248,21 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     'computer-use',
     'EvoWork Computer Use.app',
   );
+  /*
+   * 发布标记只判一次：宿主准入与给 hook 的 `EVOWORK_CUA_HOST_READY` 用同一个值。
+   * 各读一遍的话，注入驱动（`options.computerUse`）只改得到其中一处 ——
+   * 宿主放行、hook 却以「授权链尚未就绪」拒掉，两边对同一件事说两种话。
+   */
+  const computerUseReleaseVerified =
+    options.computerUse?.releaseVerified ?? readComputerUseRelease(helperApp, options.appVersion);
   const computerUse = createComputerUseHost({
     root: options.paths.home,
     platform: process.platform,
     enabledChanged: writeComputerUseConfig,
-    releaseVerified: readComputerUseRelease(helperApp, options.appVersion),
-    helper: createNativeHelper(helperApp, options.appVersion, process.execPath),
+    releaseVerified: computerUseReleaseVerified,
+    helper:
+      options.computerUse?.helper ??
+      createNativeHelper(helperApp, options.appVersion, process.execPath),
     context: (threadId) => {
       const row = store.threads.get(threadId);
       if (!row?.last_turn_id || row.derived_status !== 'running') return undefined;
@@ -1322,9 +1341,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         extraEnv: {
           ...computerUse.environment,
           EVOWORK_CUA_HOST_READY:
-            process.platform === 'darwin' && readComputerUseRelease(helperApp, options.appVersion)
-              ? '1'
-              : '0',
+            process.platform === 'darwin' && computerUseReleaseVerified ? '1' : '0',
           EVOWORK_AUDIT_LOG: options.paths.auditLog,
           EVOWORK_ARTIFACT_LOG: options.paths.artifactLog,
           ...(gatewayToken ? { EVOWORK_GATEWAY_TOKEN: gatewayToken } : {}),

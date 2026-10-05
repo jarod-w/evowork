@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { app } from 'electron';
 
 import { bootApp, createE2EHome, writeKernelConfig } from './boot.mjs';
+import { createFakeComputerUse, cuaScript } from './fake-computer-use.mjs';
 import { createFakeGateway } from './fake-gateway.mjs';
 import { startRealGateway } from './real-gateway.mjs';
 import { selectRealModel } from './real-models.mjs';
@@ -66,6 +67,15 @@ const REGISTER_MODELS = process.env.EVOWORK_UI_REGISTER_MODELS === '1';
 const HOST_GATEWAY = REAL_MODEL && process.env.EVOWORK_UI_HOST_GATEWAY === '1';
 
 /**
+ * 用**假原生 Helper** 顶替随包的 `EvoWork Computer Use.app`（`fake-computer-use.mjs`）。
+ *
+ * 只有这样，电脑操控「宿主准入 → 内核 → `cua_repl` MCP → 审批卡 → 状态条 → 时间线」
+ * 这条链路才能在没有签名 Helper 的机器上被真窗口走一遍。默认不顶替：发货的样子是
+ * 「未验收、不能启用」，那条闸门同样要有人验。
+ */
+const FAKE_COMPUTER_USE = process.env.EVOWORK_UI_FAKE_COMPUTER_USE === '1';
+
+/**
  * 真模型模式下注册的模型 —— 按**用户在设置页加自定义模型**那条路走（11 §4.1）。
  *
  * 不走内置目录，是因为目录里现在没有 DeepSeek 的条目：`known-models.ts` 里那两条
@@ -101,6 +111,7 @@ const UI_MODELS = [
 const gateway = REAL_MODEL
   ? null
   : createFakeGateway({ turnMarker: TURN_MARKER, models: UI_MODELS });
+const computerUse = FAKE_COMPUTER_USE ? createFakeComputerUse() : null;
 
 /*
  * **静态事实在启动之前就挂出去**，别等 `main()` 跑完。
@@ -115,6 +126,7 @@ publishControls({
   turnMarker: TURN_MARKER,
   keptOnboarding: KEEP_ONBOARDING,
   models: UI_MODELS,
+  ...(computerUse ? { computerUse: { ...computerUse, script: cuaScript } } : {}),
 });
 
 /** 一个空闲的本机端口。宿主网关监听 `base_url` 里的端口，不能撞上开发机上常驻的 8787 */
@@ -273,6 +285,7 @@ exporter = "none"
         : { EVOWORK_GATEWAY_URL: gatewayBaseUrl }),
     },
     ...(HOST_GATEWAY ? { gatewayEntryPath: join(repoRoot, 'dist/gateway/main.js') } : {}),
+    ...(computerUse ? { computerUse: { helper: computerUse.helper, releaseVerified: true } } : {}),
     show: true,
     captureKernelProcess: true,
     /*

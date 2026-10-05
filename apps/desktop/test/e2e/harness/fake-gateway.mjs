@@ -208,18 +208,22 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
       response.end('data: [DONE]\n\n');
       return;
     }
-    // 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它
+    /*
+     * 工具调用：`output_item.done` 里给一个 function_call，内核会去执行它。
+     * `tool` / `args` 可以是「请求正文 → 值」的函数：有些参数只能从这次请求里取
+     * （电脑操控的写动作要带上一次读状态现发的 `state_id`，CU-D4）。
+     */
+    const tool = typeof script.tool === 'function' ? script.tool(body) : script.tool;
+    const args = typeof script.args === 'function' ? script.args(body) : script.args;
     sendEvent(response, {
       type: 'response.output_item.done',
       output_index: 0,
       item: {
         type: 'function_call',
         id: `fc_${current}`,
-        name: script.tool,
-        ...(declaredNamespace(body, script.tool)
-          ? { namespace: declaredNamespace(body, script.tool) }
-          : {}),
-        arguments: JSON.stringify(script.args),
+        name: tool,
+        ...(declaredNamespace(body, tool) ? { namespace: declaredNamespace(body, tool) } : {}),
+        arguments: JSON.stringify(args),
         call_id: `call_${current}`,
       },
     });

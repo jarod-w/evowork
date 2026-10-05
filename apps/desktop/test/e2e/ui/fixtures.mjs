@@ -104,8 +104,14 @@ export const test = base.extend({
    */
   hostGateway: [false, { option: true }],
 
+  /**
+   * 电脑操控用假原生 Helper（见 `harness/fake-computer-use.mjs`）。
+   * 测的是宿主 → 内核 → MCP → 界面那一段；AX、TCC、签名不经过它。
+   */
+  fakeComputerUse: [false, { option: true }],
+
   electronApp: async (
-    { keepOnboarding, realModel, registerModels, hostGateway },
+    { keepOnboarding, realModel, registerModels, hostGateway, fakeComputerUse },
     use,
     testInfo,
   ) => {
@@ -135,6 +141,7 @@ export const test = base.extend({
         ...(realModel ? { EVOWORK_UI_REAL_MODEL: '1', EVOWORK_UI_MODEL_KEY: requireKey() } : {}),
         ...(registerModels ? { EVOWORK_UI_REGISTER_MODELS: '1' } : {}),
         ...(hostGateway ? { EVOWORK_UI_HOST_GATEWAY: '1' } : {}),
+        ...(fakeComputerUse ? { EVOWORK_UI_FAKE_COMPUTER_USE: '1' } : {}),
       },
       timeout: 120_000,
     });

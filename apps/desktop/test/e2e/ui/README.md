@@ -58,6 +58,30 @@ pnpm run test:ui -- multi-agent.spec.mjs
 EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- multi-agent
 ```
 
+## 电脑操控（`computer-use.spec.mjs` · `computer-use.real.spec.mjs`）
+
+12 篇的真窗口旅程，只在 macOS 上跑（CU-Q1）。两种起法：
+
+- **发货的样子**（默认夹具）：随包 Helper 没有验收标记。判三处都关着 —— 设置页如实说、按钮点不动、
+  内核配置里 `cua_repl` 是 `enabled = false`、**模型请求里没有任何电脑操控工具**。
+- **假原生 Helper**（夹具选项 `fakeComputerUse`，`../harness/fake-computer-use.mjs`）：
+  经 `ServiceHostOptions.computerUse` 顶替 `EvoWork Computer Use.app` 与它的发布标记，
+  宿主 → 内核 → `cua_repl` MCP → 认证 socket → 准入 / 审批 → 状态条 / 时间线全是真的。
+  它演一个 TextEdit，同时把终端与系统设置列进 `list_apps`，被问到时**照样会答** ——
+  硬禁止漏放会留在调用记录里（`__evoworkE2E.computerUse.calls`）。**这些绿不证明 AX / TCC / 签名**（CU-R1 / R11）。
+
+假网关那份按「这一回合已发生几次工具调用」认领剧本；写动作要带的 `state_id` 由剧本从请求里现取
+（假网关的 `tool` / `args` 可以是「请求正文 → 值」的函数）。真模型那份判模型守不守
+`plugins/skills/computer-use/SKILL.md` 的闭环；只放行电脑操控自己的两道闸，命令 / 改文件卡一律拒绝。
+
+```bash
+npx playwright test computer-use.spec.mjs --project=fake
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... npx playwright test computer-use.real --project=real
+```
+
+> **别写成 `pnpm run test:ui -- <文件>`**：pnpm 会把那个 `--` 原样交给 Playwright，后面的过滤全部失效，
+> 跑的是整套（2026-10-05 实测：想跑一条，起了 81 条）。直接用 `npx playwright test <过滤>`。
+
 ## 和隔壁那些 `*.e2e.mjs` 的区别
 
 |          | `../*.e2e.mjs`                             | 这里                       |
