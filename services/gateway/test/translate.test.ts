@@ -1051,3 +1051,61 @@ describe('命名空间工具：去程摊平、回程还原', () => {
     });
   });
 });
+
+describe('代理之间的消息（agent_message）', () => {
+  it('派给子代理的任务原样进上游：头部 + encrypted_content 里的正文，作为一条 user 消息', () => {
+    /*
+     * 形状抄自 2026-10-05 一次真实运行的 rollout（只换了正文）。跳过这一条，子代理只看得到
+     * 继承来的用户原话、看不到分给自己的活，MiMo 的子代理原话是「I don't see a NEW_TASK payload」。
+     */
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: '原始需求' }] },
+          {
+            type: 'agent_message',
+            author: '/root',
+            recipient: '/root/agent_b',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Message Type: NEW_TASK\nTask name: /root/agent_b\nSender: /root\nPayload:\n',
+              },
+              { type: 'encrypted_content', encrypted_content: '读取 inputs/south.txt 并回报编号' },
+            ],
+          },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+
+    const last = request.messages.at(-1);
+    expect(last?.role).toBe('user');
+    expect(last?.content).toContain('Message Type: NEW_TASK');
+    expect(last?.content, '正文在 encrypted_content 里，丢了它子代理就没有任务').toContain(
+      '读取 inputs/south.txt 并回报编号',
+    );
+  });
+
+  it('夹在工具调用之后也不打乱 tool_call_id 的配对', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'function_call', name: 'wait_agent', arguments: '{}', call_id: 'call_1' },
+          { type: 'function_call_output', call_id: 'call_1', output: '{"timed_out":false}' },
+          {
+            type: 'agent_message',
+            content: [{ type: 'encrypted_content', encrypted_content: '数量是 42' }],
+          },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+    expect(request.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'user']);
+    expect(request.messages[1]?.tool_call_id).toBe('call_1');
+  });
+});

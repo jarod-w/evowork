@@ -244,6 +244,34 @@ export function toChatRequest(
         }
         break;
       }
+      case 'agent_message': {
+        /*
+         * 代理之间的消息。可见的只有一段头部（`Message Type: NEW_TASK / Task name / Sender /
+         * Payload:`），**正文在 `encrypted_content` 块里**：内核把模型写在工具参数里的原文放进去
+         * （`multi_agents_v2.rs` 的 `agent_message_from_tool`），只有 OpenAI 自家的上游才会是真密文。
+         * 经网关的上游从不加密 —— 那些工具参数就是网关自己从 Chat 的 tool_calls 拼出来的明文 ——
+         * 所以按正文还原，作为发给这个代理的一条 user 消息。
+         *
+         * 跳过它的后果不报错：子代理收不到派给它的任务、收不到兄弟发来的消息、收不到转交，
+         * 只看得到继承来的用户原话 —— 于是照着原话再派一遍子代理，层层撞满线程上限
+         * （2026-10-05 MiMo 实测，子代理原话：「I don't see a NEW_TASK payload」）。
+         */
+        const agent = item as Extract<ResponseItem, { type: 'agent_message' }>;
+        const text = (agent.content ?? [])
+          .map((part) =>
+            part.type === 'input_text'
+              ? part.text
+              : part.type === 'encrypted_content'
+                ? part.encrypted_content
+                : '',
+          )
+          .join('');
+        if (text.trim().length > 0) {
+          flushReasoningAtBoundary();
+          messages.push({ role: 'user', content: text });
+        }
+        break;
+      }
       default:
         // 未知条目类型：跳过而不是抛错 —— 上游内核会不断新增条目类型（R2），
         // 网关不该因为看到一个新类型就让整个回合失败

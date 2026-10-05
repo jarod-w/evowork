@@ -86,6 +86,20 @@ export type ResponseItem =
       readonly call_id: string;
     }
   | {
+      /**
+       * 代理之间的消息（多代理 V2）：派生时的任务（NEW_TASK）、send_message、followup_task、
+       * 子代理完成的回报都以它进对方的请求。见 `translate/to-chat.ts` 的同名分支。
+       */
+      readonly type: 'agent_message';
+      readonly id?: string;
+      readonly author?: string;
+      readonly recipient?: string;
+      readonly content: readonly (
+        | { readonly type: 'input_text'; readonly text: string }
+        | { readonly type: 'encrypted_content'; readonly encrypted_content: string }
+      )[];
+    }
+  | {
       readonly type: 'function_call_output';
       readonly id?: string;
       readonly call_id: string;
