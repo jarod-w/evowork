@@ -12,6 +12,13 @@
  */
 import { expect, test } from './fixtures.mjs';
 
+/*
+ * 把假网关的模型登记成自定义模型，让它进宿主写给内核的模型目录：子代理拿不拿得到
+ * 协作工具（兄弟互发、嵌套派生）看的就是那份目录里的 `multi_agent_version`。
+ * 不登记的话，兄弟互发那条只会测出「unsupported call」—— 那是 harness 的缺口，不是产品的行为。
+ */
+test.use({ registerModels: true });
+
 /** 04 §5.6 要求六个 V2 协作动作在 Craft / Plan / Ask 里都在（`non_code_mode_only = false`） */
 const V2_TOOLS = [
   'spawn_agent',
@@ -279,15 +286,6 @@ test('兄弟代理互发：agent_a 用 send_message 把结果交给正在等待�
    * 时序由网关定死：agent_b 先进入 wait_agent，agent_a 才发 —— 否则 send_message
    * 会撞上「live agent path not found」，判出来的是调度的偶然，不是协作语义。
    */
-  /*
-   * **fixme，原因写清楚**：子代理拿不拿得到协作工具，内核看模型目录里的 `multi_agent_version`
-   * （`spec_plan.rs` 的 `collab_tools_enabled`）。产品这边已改成 v2（`kernel-catalog.ts`，
-   * 有单测守着），但宿主只把**内置三家 + 用户在设置页加的自定义模型**写进目录，而这套 harness
-   * 的模型只登记在它自己的网关上 —— 所以这里的子代理拿不到 send_message，内核回「unsupported call」。
-   * 让 harness 把模型登记成自定义模型会让宿主在同一个本机端口上再拉一个网关，暂不这么做。
-   * 2026-10-05：在真 App 里用设置页加的模型手测之前，这条**没有被端到端验证过**。
-   */
-  test.fixme(true, 'harness 的模型不在宿主写给内核的模型目录里，子代理拿不到协作工具（见注释）');
   const m = markers();
   await electronApp.evaluate((_electron, m) => {
     const gateway = globalThis.__evoworkE2E.gateway;
@@ -348,7 +346,10 @@ test('兄弟代理互发：agent_a 用 send_message 把结果交给正在等待�
 
   /*
    * ② 落盘的历史里，这条消息的发送者是 agent_a、接收者是 agent_b，而不是根代理。
-   * 04 §5.6.1 要求保留 sender 与全部 recipients —— 只看到「根代理发了消息」的话，界面就在撒谎。
+   * 04 §5.6.1 要求保留 sender 与 recipients —— 只看到「根代理发了消息」的话，界面就在撒谎。
+   * V2 的 send_message 不留协作卡，而是在**发送方**的时间线里留一条指向接收方的
+   * `subAgentActivity(kind=interacted)`（message_tool.rs 的 `emit_sub_agent_activity`）——
+   * 所以发送者就是「这条活动出现在谁的时间线里」。
    */
   const root = await rootThreadId(page, m.root);
   await expect
@@ -369,19 +370,15 @@ test('兄弟代理互发：agent_a 用 send_message 把结果交给正在等待�
       child.id,
     );
     for (const item of items) {
-      if (item.type === 'collabAgentToolCall' && item.tool === 'sendMessage') {
-        sends.push({
-          owner: child.id,
-          sender: item.senderThreadId,
-          receivers: item.receiverThreadIds,
-        });
+      if (item.type === 'subAgentActivity' && item.kind === 'interacted') {
+        sends.push({ sender: child.id, receiver: item.agentThreadId, path: item.agentPath });
       }
     }
   }
-  expect(sends, '两个子代理的历史里应当恰好有一条 send_message').toHaveLength(1);
+  expect(sends, '两个子代理的历史里应当恰好有一条子代理之间的消息').toHaveLength(1);
   const [sent] = sends;
-  const other = children.find((child) => child.id !== sent.owner).id;
-  expect(sent.sender, '发送者应是 agent_a 自己').toBe(sent.owner);
-  expect(sent.sender).not.toBe(root);
-  expect(sent.receivers, '接收者应是另一个子代理').toEqual([other]);
+  const other = children.find((child) => child.id !== sent.sender).id;
+  expect(sent.sender, '发送者是子代理，不是根代理').not.toBe(root);
+  expect(sent.receiver, '接收者应是另一个子代理').toBe(other);
+  expect(sent.path).toBe('/root/agent_b');
 });

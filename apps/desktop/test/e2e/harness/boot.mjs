@@ -61,6 +61,7 @@ export async function bootApp({
   captureKernelProcess = false,
   show = false,
   showOpenDialog,
+  gatewayEntryPath,
 }) {
   /*
    * 拿到内核子进程才杀得掉它（`skill-reference` 靠 SIGKILL 验「崩了会自己起来」）。
@@ -107,6 +108,11 @@ export async function bootApp({
       ...(showOpenDialog ? { showOpenDialog } : {}),
     },
     appServerPath,
+    /*
+     * 给了它，宿主就像发货的 App 一样**自己拉起本机网关**（D11，`service-host.ts` 的
+     * `launchLocalGateway`）。默认不给：两种 E2E 各自起网关，宿主只当它是外面的服务。
+     */
+    ...(gatewayEntryPath ? { gatewayEntryPath } : {}),
     configDir: join(repoRoot, 'config'),
     pluginsDir: join(repoRoot, 'plugins'),
     preloadPath: join(repoRoot, 'apps/desktop/dist/preload/index.bundle.cjs'),

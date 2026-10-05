@@ -92,7 +92,23 @@ export const test = base.extend({
    */
   realModel: [false, { option: true }],
 
-  electronApp: async ({ keepOnboarding, realModel }, use, testInfo) => {
+  /**
+   * 把这次用的模型登记成用户的自定义模型（`models.toml`），让它进宿主写给内核的模型目录。
+   * 子代理拿不拿得到协作工具看的就是那份目录（见 `ui-entry.mjs` 的 `REGISTER_MODELS`）。
+   */
+  registerModels: [false, { option: true }],
+
+  /**
+   * 真模型走宿主自己的本机网关（D11），不起 harness 那只（见 `ui-entry.mjs` 的 `HOST_GATEWAY`）。
+   * 隐含登记模型。只对 `realModel` 有意义：假网关的剧本换不了别的网关来演。
+   */
+  hostGateway: [false, { option: true }],
+
+  electronApp: async (
+    { keepOnboarding, realModel, registerModels, hostGateway },
+    use,
+    testInfo,
+  ) => {
     if (!existsSync(KERNEL)) {
       // 不跳过：缺内核就是没验证，而"跳过的测试"会让人以为验过了（CLAUDE.md §9.1）
       throw new Error(`找不到真实 app-server：${KERNEL}。先构建或设置 EVOWORK_APP_SERVER。`);
@@ -117,6 +133,8 @@ export const test = base.extend({
         EVOWORK_APP_SERVER: KERNEL,
         ...(keepOnboarding ? { EVOWORK_UI_KEEP_ONBOARDING: '1' } : {}),
         ...(realModel ? { EVOWORK_UI_REAL_MODEL: '1', EVOWORK_UI_MODEL_KEY: requireKey() } : {}),
+        ...(registerModels ? { EVOWORK_UI_REGISTER_MODELS: '1' } : {}),
+        ...(hostGateway ? { EVOWORK_UI_HOST_GATEWAY: '1' } : {}),
       },
       timeout: 120_000,
     });

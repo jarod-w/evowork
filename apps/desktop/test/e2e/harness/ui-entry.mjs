@@ -8,6 +8,9 @@
  * 两种驱动共用 `boot.mjs`，区别只有一个 `show` 参数。这正是拆 harness 的收益：
  * 真交互测试没有自己的一套启动代码，也就不会跟断言型 E2E 悄悄漂开。
  */
+import { randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 
 import { app } from 'electron';
@@ -43,6 +46,24 @@ const KEEP_ONBOARDING = process.env.EVOWORK_UI_KEEP_ONBOARDING === '1';
  * 而**只有真模型答得出来的问题**只能这样问 —— 比如「介绍一下自己」会不会说漏内核品牌。
  */
 const REAL_MODEL = process.env.EVOWORK_UI_REAL_MODEL === '1';
+
+/**
+ * 把这次用的模型**登记成用户的自定义模型**（`~/.evowork/models.toml`，设置页写的就是这个文件）。
+ *
+ * 不登记的话，宿主写给内核的模型目录（`ensureKernelModelCatalog`：内置三家 + 自定义模型）里
+ * 没有这次的模型，内核对它套兜底元数据：上下文按 272k 算，**子代理也拿不到协作工具**
+ * （`multi_agent_version` 只在目录里声明）—— 兄弟代理互发在 E2E 里因此测不了（2026-10-05）。
+ * 默认不登记：别的旅程一直是这么跑的。
+ */
+const REGISTER_MODELS = process.env.EVOWORK_UI_REGISTER_MODELS === '1';
+
+/**
+ * 真模型改走**宿主自己的本机网关**（D11），不起 harness 那只：模型登记成自定义模型、
+ * 密钥只在环境变量里，宿主照发货的样子拉起 `dist/gateway/main.js`。
+ * 这就是用户在设置页加了一个模型之后的拓扑 —— 模型目录、网关的自定义模型注入、
+ * 宿主管网关的生死，都走产品自己的那条路。
+ */
+const HOST_GATEWAY = REAL_MODEL && process.env.EVOWORK_UI_HOST_GATEWAY === '1';
 
 /**
  * 真模型模式下注册的模型 —— 按**用户在设置页加自定义模型**那条路走（11 §4.1）。
@@ -96,16 +117,99 @@ publishControls({
   models: UI_MODELS,
 });
 
+/** 一个空闲的本机端口。宿主网关监听 `base_url` 里的端口，不能撞上开发机上常驻的 8787 */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/** `models.toml` 的条目（= `CustomModelSpec`）。假网关的模型照它目录里的能力位写 */
+function customModelRecords(gatewayBaseUrl) {
+  if (REAL_MODEL) return REAL_CUSTOM_MODELS;
+  return UI_MODELS.map((model) => ({
+    id: model.id,
+    displayName: model.displayName,
+    provider: 'private',
+    upstreamModel: model.id,
+    baseUrl: gatewayBaseUrl,
+    // 假网关不收密钥；宿主读文件时只要求它非空。宿主不拉起网关，这个变量也就没人读
+    keyEnv: 'EVOWORK_UI_FAKE_KEY',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: false,
+      promptCache: false,
+      imageInput: false,
+      maxContextTokens: 32_000,
+    },
+  }));
+}
+
+/**
+ * 写 `models.toml`，格式照设置页的 `serializeModelsToml`（`custom-models.ts`）。
+ *
+ * 不 import 它：那个模块经 `@evowork/gateway` 指到 TS 源码，Electron 主进程加载不了，
+ * 2026-10-05 第一次就这么在用户屏幕上弹了一个主进程异常框。抄一份格式的代价是可能漂开 ——
+ * 所以启动之后由 `assertRegistered` 核对宿主**真的读懂了**（模型进了它写给内核的目录）。
+ */
+function writeCustomModels(records) {
+  const lines = [];
+  for (const model of records) {
+    lines.push(
+      '[[models]]',
+      `id = "${model.id}"`,
+      `display_name = "${model.displayName}"`,
+      `provider = "${model.provider}"`,
+      `upstream_model = "${model.upstreamModel}"`,
+      `base_url = "${model.baseUrl}"`,
+      `key_env = "${model.keyEnv}"`,
+      `reasoning = ${String(model.capabilities.reasoning)}`,
+      `image_input = ${String(model.capabilities.imageInput)}`,
+      `parallel_tool_calls = ${String(model.capabilities.parallelToolCalls)}`,
+      `prompt_cache = ${String(model.capabilities.promptCache)}`,
+      `max_context_tokens = ${String(model.capabilities.maxContextTokens)}`,
+      '',
+    );
+  }
+  writeFileSync(join(home, '.evowork', 'models.toml'), lines.join('\n'), { mode: 0o600 });
+}
+
+/** 登记的模型必须出现在宿主写给内核的目录里，否则登记等于没做，而用例会以别的样子红 */
+function assertRegistered(records) {
+  let slugs = [];
+  try {
+    const catalog = JSON.parse(readFileSync(join(kernelHome, 'model-catalog.json'), 'utf8'));
+    slugs = catalog.models.map((model) => model.slug);
+  } catch {
+    /* 读不到就按「一个都没进」报 */
+  }
+  const missing = records.map((model) => model.id).filter((id) => !slugs.includes(id));
+  if (missing.length > 0) {
+    throw new Error(
+      `登记的模型没进宿主写给内核的模型目录：${missing.join(', ')}。` +
+        'models.toml 的格式可能已和设置页的 serializeModelsToml 漂开。',
+    );
+  }
+}
+
 async function main() {
-  const real = REAL_MODEL
-    ? await startRealGateway({
-        repoRoot,
-        keyEnvName: REAL_KEY_ENV,
-        apiKey: process.env.EVOWORK_UI_MODEL_KEY,
-        customModels: REAL_CUSTOM_MODELS,
-        logFile: join(home, 'gateway.log'),
-      })
-    : null;
+  const real =
+    REAL_MODEL && !HOST_GATEWAY
+      ? await startRealGateway({
+          repoRoot,
+          keyEnvName: REAL_KEY_ENV,
+          apiKey: process.env.EVOWORK_UI_MODEL_KEY,
+          customModels: REAL_CUSTOM_MODELS,
+          logFile: join(home, 'gateway.log'),
+        })
+      : null;
   if (real) {
     /*
      * 真网关是**子进程**，不会随 App 一起退出：Playwright 关掉 App 之后它就成了孤儿，
@@ -115,8 +219,19 @@ async function main() {
     app.on('will-quit', () => real.stop());
     publishControls({ gatewayPid: real.pid });
   }
-  const gatewayBaseUrl = real ? real.baseUrl : await gateway.listen();
-  const gatewayToken = real ? real.token : 'ui-token';
+  const gatewayBaseUrl = HOST_GATEWAY
+    ? `http://127.0.0.1:${await freePort()}/v1`
+    : real
+      ? real.baseUrl
+      : await gateway.listen();
+  const gatewayToken = HOST_GATEWAY
+    ? randomBytes(24).toString('base64url')
+    : real
+      ? real.token
+      : 'ui-token';
+  // 宿主启动时读 models.toml 写模型目录，所以要在 bootApp 之前落盘
+  const registered = REGISTER_MODELS || HOST_GATEWAY ? customModelRecords(gatewayBaseUrl) : [];
+  if (registered.length > 0) writeCustomModels(registered);
   writeKernelConfig(
     kernelHome,
     `model_provider = "evowork"
@@ -149,8 +264,15 @@ exporter = "none"
     home,
     hostEnv: {
       EVOWORK_GATEWAY_TOKEN: gatewayToken,
-      EVOWORK_GATEWAY_URL: gatewayBaseUrl,
+      /*
+       * 宿主网关模式下**不设** `EVOWORK_GATEWAY_URL`：设了它，宿主就当网关在别处，
+       * 不再从内核配置里认自己的本机网关。密钥按设置页的变量名给，宿主转交给网关子进程。
+       */
+      ...(HOST_GATEWAY
+        ? { [REAL_KEY_ENV]: process.env.EVOWORK_UI_MODEL_KEY }
+        : { EVOWORK_GATEWAY_URL: gatewayBaseUrl }),
     },
+    ...(HOST_GATEWAY ? { gatewayEntryPath: join(repoRoot, 'dist/gateway/main.js') } : {}),
     show: true,
     captureKernelProcess: true,
     /*
@@ -172,6 +294,8 @@ exporter = "none"
       return { canceled: picked.length === 0, filePaths: picked };
     },
   });
+
+  if (registered.length > 0) assertRegistered(registered);
 
   /*
    * **跳过首次引导**，让第一条旅程聚焦在它要测的东西上。

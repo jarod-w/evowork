@@ -78,6 +78,28 @@ export const REAL_MODEL_PRESETS = Object.freeze({
       maxContextTokens: 128_000,
     },
   },
+  /**
+   * 小米 MiMo v2.6 Pro，同一个 endpoint 与密钥。2026-10-05 `verify-provider.mjs --reasoning true --image true`
+   * 实测 23/23（流式 · reasoning_content · 一轮两个工具调用 · cache 命中 · 纯红图答出「红」· 未知模型 4xx）。
+   * 用来回答「多代理那条失败是不是 flash 的问题」。上下文长度同样没有实测依据，按 128k 保守写。
+   */
+  'mimo-v2.6-pro': {
+    id: 'xiaomi/mimo-v2.6-pro',
+    displayName: 'MiMo v2.6 Pro',
+    provider: 'private',
+    upstreamModel: 'mimo-v2.6-pro',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    probeUrl: 'https://api.xiaomimimo.com/v1/models',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: true,
+      promptCache: true,
+      imageInput: true,
+      maxContextTokens: 128_000,
+    },
+  },
 });
 
 /** 选中的预设。拼错就当场报错 —— 静默回落到默认模型会让人以为测的是另一个 */

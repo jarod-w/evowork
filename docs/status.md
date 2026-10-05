@@ -1,10 +1,16 @@
 # 开发状态
 
-> **更新于 2026-10-05（第 75 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-10-05（第 76 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **2026-10-05（续三）：多代理在真模型上「表现差」的根因是网关丢了代理之间的消息 —— 修了之后 MiMo flash / pro 各 3/3。**
+> ⑥ **网关丢了 `agent_message`**：内核把代理之间的消息（派生时的 NEW_TASK、`send_message`、`followup_task`、子代理完成的回报）作为 `agent_message` 条目送进对方的请求，正文放在 `encrypted_content` 块里 —— 内核把模型写在工具参数里的原文放进去（`multi_agents_v2.rs` 的 `agent_message_from_tool`），只有 OpenAI 自家上游才是真密文。`to-chat.ts` 把它当未知条目跳过：经网关的子代理收不到分给自己的活，只看得到继承来的用户原话，于是照原话再派子代理，撞满 4 线程后互相等待（MiMo 子代理原话：「I don't see a NEW_TASK payload」）。现在还原成一条 user 消息（头部 + 正文）。假网关测不出它：假网关看的是原始请求。
+> **harness 换网关**：真模型用例改走**宿主自己的本机网关**（夹具 `hostGateway`：模型写进 `models.toml`、密钥只在环境变量、宿主拉起 `dist/gateway/main.js` —— 用户在设置页加了模型之后的拓扑）；假网关用例只登记模型（`registerModels`）。模型因此进了宿主写给内核的目录，子代理拿得到协作工具。`ui-entry.mjs` 照设置页格式写 `models.toml`（不能 import 产品模块：它经 `@evowork/gateway` 指到 TS 源码，Electron 主进程加载不了，第一次就弹了主进程异常框），启动后核对登记的模型真的进了目录。新增 `mimo-v2.6-pro` 预设（`verify-provider.mjs` 23/23）。
+> 验收：假网关 4/4，**兄弟互发第一次端到端通过**（agent_a 的 `send_message` 唤醒了在 `wait_agent` 的 agent_b；V2 的 `send_message` 不留协作卡，落盘的是发送方时间线里一条指向接收方的 `subAgentActivity(interacted)`）。MiMo flash 修复前 1/3（两条 6 分钟超时）→ 修复后 **3/3**（1.9 分钟）；pro 2/3 → **3/3**（1.7 分钟）。各只跑了一轮，概率性的结论要用 `--repeat-each` 看比例。**那两轮的构建混进了同一棵树上另一个会话尚未提交的压缩点改动（续二）**，与协作链路无关，但不是纯净构建。`pnpm run check` 退出 0（2466 通过、2 个原有跳过；同样含那些未提交改动）。
+> 上一条「没验过」里「兄弟互发没有端到端验证」「MiMo 的子代理把用户那句当成自己的任务」两项由本条订正：前者已验，后者的根因是 ⑥ 而不是模型。其余几项（读得到本机库与审计日志、子代理先答完时 `wait_agent` 等到超时）仍未处理。
 >
 > **2026-10-05（续）：多代理协作第一次对着真内核与真模型（MiMo）跑 —— 同一任务内的 V2 协作此前经网关整条不可用，修了五处。**
 > 起因是给 04 §5.6 写 Playwright 用例（`multi-agent.spec.mjs` 假网关 4 条 · `multi-agent.real.spec.mjs` 真模型 3 条；假网关新增按请求内容认领剧本的 `scriptWhen`）。第 56 次的「已支持」只验过 `config/read`，一跑就露出：

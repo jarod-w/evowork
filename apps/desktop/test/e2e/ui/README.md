@@ -31,7 +31,7 @@ EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "C3 " --repeat-each=5
 - 真模型是**概率性**的，一轮绿不代表稳定；测试方用的是 deepseek-v4-pro。
 - **换模型**：`EVOWORK_UI_MODEL_PRESET=<预设>`，`EVOWORK_UI_MODEL_KEY` 给对应厂商的密钥。
   预设在 `../harness/real-models.mjs`，能力位都来自 `scripts/verify-provider.mjs` 实测：
-  `deepseek-flash`（默认）· `hy4-preview`（硅基流动 · 腾讯混元）· `mimo-v2.6-flash`（小米 MiMo）。
+  `deepseek-flash`（默认）· `hy4-preview`（硅基流动 · 腾讯混元）· `mimo-v2.6-flash` · `mimo-v2.6-pro`（小米 MiMo）。
 - 开跑前会先探一次上游（`beforeAll`），不可达就整套不跑；回合失败或模型一个字没回的用例
   **不判分**，报「没有真正跑起来」和原因 —— 否则安全类用例会因为「什么都没做」而空心通过。
 
@@ -45,14 +45,17 @@ EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "C3 " --repeat-each=5
   `matchedBody(name)` 交回被认领的那条请求，断言「谁的请求里带着什么」靠它。
 - **真模型那份**判的是模型读没读懂要求。内核写给模型的规则是「**明确要求**子代理 / 委派 / 并行才派生，
   要求深入、仔细不算」，所以有一条反向对照：只说「仔细、深入」时不该派。概率性，用 `--repeat-each` 看比例。
-- **兄弟代理互发的两条是 `fixme`**：子代理拿不拿得到协作工具，内核看模型目录的 `multi_agent_version`。
-  产品已声明 v2（`kernel-catalog.ts`，单测守着），但宿主只把内置三家与设置页加的自定义模型写进目录，
-  这套 harness 的模型只登记在它自己的网关上，所以这里的子代理拿不到 `send_message`。
-  让 harness 走设置页那条路会让宿主在同一个本机端口上再拉一个网关，还没做。**在那之前这条没有被端到端验证过。**
+- **模型要登记成自定义模型**（夹具选项 `registerModels` / `hostGateway`）：子代理拿不拿得到协作工具，
+  内核看宿主写给它的模型目录里的 `multi_agent_version`，而宿主只把内置三家与 `models.toml` 里的模型写进去。
+  harness 的模型默认只登记在它自己的网关上，不登记的话子代理只会拿到「unsupported call」。
+  `ui-entry.mjs` 照设置页的格式写 `models.toml`，启动后核对模型真的进了目录（格式漂开会当场报错）。
+- **真模型那份走宿主自己的本机网关**（`hostGateway`）：不起 harness 的网关，宿主照发货的样子拉起
+  `dist/gateway/main.js`，密钥只在环境变量里 —— 就是用户在设置页加了一个模型之后的拓扑。
+  假网关那份只能登记模型（`registerModels`）：剧本换不了别的网关来演。
 
 ```bash
 pnpm run test:ui -- multi-agent.spec.mjs
-EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- multi-agent
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- multi-agent
 ```
 
 ## 和隔壁那些 `*.e2e.mjs` 的区别

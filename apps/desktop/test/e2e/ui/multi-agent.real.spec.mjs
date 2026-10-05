@@ -20,6 +20,13 @@ import { join } from 'node:path';
 import { selectRealModel } from '../harness/real-models.mjs';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
+/*
+ * 走宿主自己的本机网关，模型登记成自定义模型 —— 与用户在设置页加了 MiMo 之后一模一样。
+ * harness 自己的网关只登记了模型、宿主的模型目录里却没有它，于是子代理拿不到协作工具，
+ * 2026-10-05 第二轮里两个子代理因此空转到 6 分钟预算用完（见 docs/status.md）。
+ */
+test.use({ hostGateway: true });
+
 const TURN_BUDGET_MS = 6 * 60_000;
 
 test.beforeAll(async () => {
@@ -92,9 +99,6 @@ async function snapshot(page) {
   for (const child of children) childItems[child.id] = (await read(child.id)).items;
   return { root, rootItems, children, childItems };
 }
-
-const collab = (items, tool) =>
-  items.filter((item) => item.type === 'collabAgentToolCall' && item.tool === tool);
 
 /**
  * 派出了几个子代理。V2 的派生**不是**一张 collabAgentToolCall，而是父任务流里一条
@@ -182,15 +186,6 @@ test('明确要求兄弟代理互发：agent_a 的 send_message 真的发到了 
   page,
   electronApp,
 }, testInfo) => {
-  /*
-   * **fixme，原因写清楚**：子代理拿不拿得到协作工具，内核看模型目录里的 `multi_agent_version`
-   * （`spec_plan.rs` 的 `collab_tools_enabled`）。产品这边已改成 v2（`kernel-catalog.ts`，
-   * 有单测守着），但宿主只把**内置三家 + 用户在设置页加的自定义模型**写进目录，而这套 harness
-   * 的模型只登记在它自己的网关上 —— 所以这里的子代理拿不到 send_message，内核回「unsupported call」。
-   * 让 harness 把模型登记成自定义模型会让宿主在同一个本机端口上再拉一个网关，暂不这么做。
-   * 2026-10-05：在真 App 里用设置页加的模型手测之前，这条**没有被端到端验证过**。
-   */
-  test.fixme(true, 'harness 的模型不在宿主写给内核的模型目录里，子代理拿不到协作工具（见注释）');
   test.setTimeout(TURN_BUDGET_MS + 3 * 60_000);
   const { north, south } = await placeInputs(electronApp);
   await startTaskInWorkspace(
@@ -214,17 +209,23 @@ test('明确要求兄弟代理互发：agent_a 的 send_message 真的发到了 
   /*
    * 判的是**子代理到子代理**：发送者是某个子代理、接收者是另一个子代理。
    * 根代理自己 send_message 给 agent_b 不算 —— 那是父子沟通，第 1 条已经覆盖了。
+   * V2 的 send_message 在发送方时间线里留一条指向接收方的 `subAgentActivity(kind=interacted)`
+   * （不是协作卡），所以发送者 = 这条活动出现在谁的时间线里。
    */
   const childIds = new Set(snap.children.map((child) => child.id));
-  const siblingSends = Object.entries(snap.childItems).flatMap(([owner, items]) =>
-    collab(items, 'sendMessage')
-      .filter((item) => item.senderThreadId === owner)
-      .filter((item) =>
-        (item.receiverThreadIds ?? []).some((id) => childIds.has(id) && id !== owner),
-      ),
+  const siblingSends = Object.entries(snap.childItems).flatMap(([sender, items]) =>
+    items
+      .filter((item) => item.type === 'subAgentActivity' && item.kind === 'interacted')
+      .filter((item) => childIds.has(item.agentThreadId) && item.agentThreadId !== sender)
+      .map((item) => ({ sender, receiver: item.agentThreadId })),
   );
   expect(siblingSends.length, '没有一条从子代理发给另一个子代理的消息').toBeGreaterThanOrEqual(1);
-  expect(JSON.stringify(siblingSends), '发出去的消息里应当带着北区编号').toContain(north);
+  // 活动条目里没有正文：看接收方的历史里有没有北区编号（提示词要它只读南区那份）
+  const receivers = siblingSends.map(({ receiver }) => JSON.stringify(snap.childItems[receiver]));
+  expect(
+    receivers.some((history) => history.includes(north)),
+    '接收消息的那个子代理的历史里应当出现北区编号',
+  ).toBe(true);
 
   const answer = finalAnswer(snap.rootItems);
   expect(answer, '最终答复里要有两个编号').toContain(north);
