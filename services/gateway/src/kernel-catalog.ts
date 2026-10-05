@@ -29,6 +29,19 @@
  * **内核会在发给网关之前把图片悄悄摘掉** —— 而 D2 / `to-chat.ts` 坑 3 要求的是
  * **显式拒绝并告诉用户**。那是一次把文档承诺换成静默降级的"改进"。
  *
+ * ## 唯一的第二处差分：`multi_agent_version = "v2"`
+ *
+ * 兜底值是 `null`。多代理 V2 下，**子代理**拿不拿得到那组协作工具，内核看的是模型元数据
+ * （`core/src/tools/spec_plan.rs` 的 `collab_tools_enabled`：根代理恒有，子代理要求
+ * `model_info.multi_agent_version == V2`）。留 `null` 的后果是子代理既不能 `send_message`
+ * 给兄弟、也不能再派子代理 —— 04 §5.6.1 写的「父子或兄弟代理通过 send_message 传递」
+ * 「嵌套子代理逐级追溯到根」都不成立，而且不报错，只是内核回「unsupported call」
+ * （2026-10-05 `multi-agent.spec.mjs` 的兄弟互发用例抓到的）。
+ *
+ * 它**不改变多代理开不开**：配置里 `[features.multi_agent_v2] enabled` 为真时优先于模型元数据
+ * （`config/mod.rs` 的 `multi_agent_version_for_model`），而宿主的迁移总会把它写成真。
+ * 并发仍受 `max_concurrent_threads_per_session = 4` 约束（根 + 3，Q11）。
+ *
  * ## 上游改了这个结构怎么办
  *
  * `ModelInfo` 有 17 个必填字段（`protocol/src/openai_models.rs`）。上游加一个必填字段，
@@ -77,7 +90,8 @@ export interface KernelCatalogModel {
   readonly truncation_policy: TruncationPolicy;
   readonly experimental_supported_tools: readonly never[];
   readonly tool_mode: null;
-  readonly multi_agent_version: null;
+  /** 唯一一处有意偏离兜底值的行为字段，理由见文件头「唯一的第二处差分」 */
+  readonly multi_agent_version: 'v2';
   /** **这次改动的全部意义**：模型真实的上下文大小 */
   readonly context_window: number;
   readonly max_context_window: number;
@@ -117,7 +131,8 @@ const FALLBACK_BEHAVIOUR = {
   truncation_policy: { mode: 'bytes', limit: 10_000 },
   experimental_supported_tools: [] as const,
   tool_mode: null,
-  multi_agent_version: null,
+  // 兜底是 null；子代理要靠它才拿得到协作工具（文件头「唯一的第二处差分」）
+  multi_agent_version: 'v2',
   // `default_input_modalities()`。**不要按能力表收窄**，理由见文件头注释
   input_modalities: ['text', 'image'] as const,
 } as const;

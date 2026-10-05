@@ -42,8 +42,19 @@ describe('给内核的模型目录', () => {
       support_verbosity: false,
       truncation_policy: { mode: 'bytes', limit: 10_000 },
       tool_mode: null,
-      multi_agent_version: null,
     });
+  });
+
+  it('**多代理版本声明为 v2** —— 留兜底的 null，子代理就拿不到 send_message / spawn_agent', () => {
+    /*
+     * 内核给不给**子代理**协作工具，看的是这一项（`spec_plan.rs` 的 `collab_tools_enabled`）。
+     * null 的后果不报错：兄弟代理互发、嵌套派生都只换来「unsupported call」（04 §5.6.1 的承诺落空）。
+     */
+    const [entry] = buildKernelModelCatalog(
+      [{ id: 'x/y', displayName: 'Y', maxContextTokens: 100_000 }],
+      BASE,
+    )!.models;
+    expect(entry?.multi_agent_version).toBe('v2');
   });
 
   it('**看不见图的模型也写 ["text","image"]** —— 收窄它等于让内核把图悄悄摘掉', () => {
