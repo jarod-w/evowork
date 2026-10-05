@@ -14,6 +14,7 @@ import {
   type ChatChunk,
 } from '../src/translate/from-chat.js';
 import { toChatRequest, UnsupportedInputError } from '../src/translate/to-chat.js';
+import { chatToolName, namespacedToolNames } from '../src/translate/tool-names.js';
 import { normalizeUsage } from '../src/translate/usage.js';
 
 const FULL: ModelCapabilities = {
@@ -916,5 +917,137 @@ describe('能力声明（当前内置型号）', () => {
   it('当前内置型号都支持图片输入', () => {
     expect(P0_MODELS.find((m) => m.id === 'evowork/kimi-k3')?.capabilities.imageInput).toBe(true);
     expect(P0_MODELS.find((m) => m.id === 'evowork/glm-flash')?.capabilities.imageInput).toBe(true);
+  });
+});
+
+/*
+ * 命名空间工具（`{ type: "namespace", name, tools }`）。多代理的六个协作动作就挂在 `collaboration` 下，
+ * 而 Chat Completions 只有一层函数名。2026-10-05 之前这里把整个命名空间当成**一个没有参数的工具**
+ * 发给上游 —— 经网关的模型一个子代理都派不出来，也不报错（多代理 UI 测试抓到的）。
+ */
+describe('命名空间工具：去程摊平、回程还原', () => {
+  const COLLABORATION = {
+    type: 'namespace',
+    name: 'collaboration',
+    description: 'Tools in the collaboration namespace.',
+    tools: [
+      {
+        type: 'function',
+        name: 'spawn_agent',
+        description: 'Spawns an agent',
+        parameters: { type: 'object', properties: { task_name: { type: 'string' } } },
+      },
+      { type: 'function', name: 'wait_agent', parameters: { type: 'object', properties: {} } },
+    ],
+  };
+
+  it('命名空间里的每个工具都成为一个扁平函数，参数原样带过去；命名空间本身不是工具', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: '派一个子代理' }],
+          },
+        ],
+        tools: [{ type: 'function', name: 'shell', parameters: { type: 'object' } }, COLLABORATION],
+      },
+      'upstream',
+      FULL,
+    );
+
+    const names = request.tools?.map((tool) => tool.function.name);
+    expect(names).toEqual(['shell', 'collaboration__spawn_agent', 'collaboration__wait_agent']);
+    expect(names, '只发一个叫 collaboration 的工具，模型就看不到 spawn_agent').not.toContain(
+      'collaboration',
+    );
+    expect(request.tools?.[1]?.function.parameters).toEqual(COLLABORATION.tools[0]?.parameters);
+  });
+
+  it('模型调用摊平后的名字 → 还原成内核认得的 { name, namespace }；扁平工具原样', () => {
+    const t = createTranslator({
+      responseId: 'resp_1',
+      capabilities: FULL,
+      toolNames: namespacedToolNames([COLLABORATION]),
+    });
+    const events = [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_a',
+                  function: { name: 'collaboration__spawn_agent', arguments: '{"task_name":"a"}' },
+                },
+                // MCP 工具的扁平名里本来就有 `__`：不在表里就不能拆
+                {
+                  index: 1,
+                  id: 'call_b',
+                  function: { name: 'mcp__browser__open', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ].flatMap((chunk) => t.push(chunk as ChatChunk));
+    const calls = [...events, ...t.finish()]
+      .filter((e) => e.type === EVENT.outputItemDone)
+      .map((e) => (e as { item: Record<string, unknown> }).item)
+      .filter((item) => item.type === 'function_call');
+
+    // 内核对没带命名空间的 spawn_agent 回「unsupported call: spawn_agent」
+    expect(calls[0]).toMatchObject({ name: 'spawn_agent', namespace: 'collaboration' });
+    expect(calls[1]).toMatchObject({ name: 'mcp__browser__open' });
+    expect(calls[1]).not.toHaveProperty('namespace');
+  });
+
+  it('历史里带命名空间的调用用同一个 Chat 名 —— 否则模型看到的是一个没声明过的工具', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          {
+            type: 'function_call',
+            name: 'spawn_agent',
+            namespace: 'collaboration',
+            arguments: '{}',
+            call_id: 'call_1',
+          },
+          { type: 'function_call_output', call_id: 'call_1', output: '{"task_name":"/root/a"}' },
+        ],
+        tools: [COLLABORATION],
+      },
+      'upstream',
+      FULL,
+    );
+
+    expect(request.messages[0]?.tool_calls?.[0]?.function.name).toBe('collaboration__spawn_agent');
+  });
+
+  it('拼出来超过 64 个字符就截断加尾巴：仍合法，且两个不同的工具不会撞成一个名字', () => {
+    const long = 'x'.repeat(40);
+    const a = chatToolName(`${long}_alpha`, `ns_${long}`);
+    const b = chatToolName(`${long}_beta`, `ns_${long}`);
+    expect(a).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    expect(b).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    expect(a).not.toBe(b);
+    expect(
+      namespacedToolNames([
+        {
+          type: 'namespace',
+          name: `ns_${long}`,
+          tools: [{ type: 'function', name: `${long}_alpha` }],
+        },
+      ]).get(a),
+    ).toEqual({
+      name: `${long}_alpha`,
+      namespace: `ns_${long}`,
+    });
   });
 });

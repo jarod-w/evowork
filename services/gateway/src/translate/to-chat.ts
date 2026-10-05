@@ -18,6 +18,7 @@
  */
 import type { ContentItem, ResponseItem, ResponsesRequest, ResponsesTool } from '../protocol.js';
 import type { DegradeReason, ModelCapabilities } from '../capabilities.js';
+import { chatToolName } from './tool-names.js';
 
 export interface ChatMessage {
   readonly role: 'system' | 'user' | 'assistant' | 'tool';
@@ -119,11 +120,11 @@ function contentToChat(
   return parts;
 }
 
-function toolToChat(tool: ResponsesTool) {
+function toolToChat(tool: ResponsesTool, name = tool.name ?? 'unnamed') {
   return {
     type: 'function' as const,
     function: {
-      name: tool.name ?? 'unnamed',
+      name,
       ...(tool.description ? { description: tool.description } : {}),
       ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
     },
@@ -213,7 +214,8 @@ export function toChatRequest(
         pendingToolCalls.push({
           id: call.call_id,
           type: 'function',
-          function: { name: call.name, arguments: call.arguments },
+          // 历史里的调用也要用 Chat 那边的名字，否则模型看到的是一个没声明过的工具
+          function: { name: chatToolName(call.name, call.namespace), arguments: call.arguments },
         });
         break;
       }
@@ -257,7 +259,16 @@ export function toChatRequest(
   if (!capabilities.reasoning) degradations.add('NO_REASONING');
   if (!capabilities.promptCache) degradations.add('NO_PROMPT_CACHE');
 
-  const tools = request.tools?.filter((t) => t.type === 'function' || t.name).map(toolToChat);
+  // 命名空间摊平成一组扁平函数（tool-names.ts）；整个命名空间当成一个工具发出去，模型就看不到里面那些
+  const tools = request.tools?.flatMap((tool) =>
+    tool.type === 'namespace'
+      ? (tool.tools ?? []).flatMap((inner) =>
+          inner.name ? [toolToChat(inner, chatToolName(inner.name, tool.name))] : [],
+        )
+      : tool.type === 'function' || tool.name
+        ? [toolToChat(tool)]
+        : [],
+  );
 
   return {
     request: {

@@ -26,6 +26,7 @@ import { EVENT, type ResponsesEvent, type ResponsesRequest } from './protocol.js
 import type { Provider, ProviderConfig } from './providers/types.js';
 import { createTranslator, type ChatChunk } from './translate/from-chat.js';
 import { toChatRequest, UnsupportedInputError } from './translate/to-chat.js';
+import { namespacedToolNames } from './translate/tool-names.js';
 
 export interface PipelineDeps {
   readonly models: CapabilityLookup;
@@ -109,7 +110,11 @@ export async function* runPipeline(
     fileCount: request.tools?.length ?? 0,
   });
 
-  const translator = createTranslator({ responseId, capabilities: model.capabilities });
+  const translator = createTranslator({
+    responseId,
+    capabilities: model.capabilities,
+    toolNames: namespacedToolNames(request.tools),
+  });
 
   let converted;
   try {

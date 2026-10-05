@@ -52,6 +52,8 @@ export interface ResponsesTool {
   readonly description?: string;
   readonly parameters?: unknown;
   readonly strict?: boolean;
+  /** `type: "namespace"` 时的成员工具（见 `translate/tool-names.ts`） */
+  readonly tools?: readonly ResponsesTool[];
 }
 
 export type ContentItem =
@@ -78,6 +80,8 @@ export type ResponseItem =
       readonly type: 'function_call';
       readonly id?: string;
       readonly name: string;
+      /** 工具声明在命名空间下时，调用要带上它，否则内核回「unsupported call」 */
+      readonly namespace?: string;
       readonly arguments: string;
       readonly call_id: string;
     }

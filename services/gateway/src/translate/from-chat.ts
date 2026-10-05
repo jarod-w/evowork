@@ -20,6 +20,7 @@
  */
 import type { DegradeReason, ModelCapabilities } from '../capabilities.js';
 import { EVENT, type ResponseItem, type ResponsesEvent } from '../protocol.js';
+import type { KernelToolName } from './tool-names.js';
 import { normalizeUsage, type ChatUsage } from './usage.js';
 
 /** Chat 流式 chunk（各家的并集）。 */
@@ -49,6 +50,8 @@ export interface TranslatorOptions {
   readonly capabilities: ModelCapabilities;
   /** 请求里声明的降级（来自 to-chat），会与流内发现的合并 */
   readonly initialDegradations?: readonly DegradeReason[];
+  /** 摊平过的命名空间工具：Chat 名 → 内核名（`namespacedToolNames`）。回程靠它把命名空间还回去 */
+  readonly toolNames?: ReadonlyMap<string, KernelToolName>;
 }
 
 interface ToolCallAccumulator {
@@ -264,13 +267,15 @@ export function createTranslator(options: TranslatorOptions) {
 
       // 工具调用按 output_index 升序发出：内核按顺序构造回合，乱序会让 call 与 output 对不上
       for (const acc of [...toolCalls.values()].sort((a, b) => a.outputIndex - b.outputIndex)) {
+        const kernelName = options.toolNames?.get(acc.name);
         events.push({
           type: EVENT.outputItemDone,
           output_index: acc.outputIndex,
           item: {
             type: 'function_call',
             id: acc.itemId,
-            name: acc.name,
+            name: kernelName?.name ?? acc.name,
+            ...(kernelName ? { namespace: kernelName.namespace } : {}),
             // arguments 必须是**完整**字符串。上游一个字符一片地给，我们在这里合成
             arguments: acc.args.length > 0 ? acc.args : '{}',
             call_id: acc.callId,
