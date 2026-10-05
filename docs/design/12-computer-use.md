@@ -862,3 +862,15 @@ CU-Q1–CU-Q6 已于 2026-09-24 全部确认。下表保留原选项、最终决
 **本次续做验证（2026-09-24）**：格式、lint、全仓类型检查、1703 项测试与补丁预算通过；2 项联网安装 e2e 条件跳过。socket 测试在允许本机 Unix socket 的环境运行；技能结构校验通过。随后在本机完成 Swift Helper release 编译及 `.app` 装配；此前沙箱缓存权限错误造成的 SDK 不匹配判断已排除。尚未完成原生测试、签名、公证、TCC 或真机功能验收，构建产物仍强制 `releaseVerified=false`。
 
 **原生后续验证（2026-09-24）**：独立 Swift 策略测试可执行文件通过 12 个检查点；Helper release 重新编译并装配通过，真实进程的 stdio 长度帧 `health` 握手通过（未读 AX/截图）。`select_text` 的 `extend` 模式已有 AX 选区合并实现，但测试只覆盖纯逻辑，不代表真实 App 交互成功。Command Line Tools 中的 XCTest 缺失且 Swift Testing 宏插件增量编译不稳定，故测试入口不依赖二者。签名、公证、TCC、窗口截图与真实 AX 动作仍待实机验收。
+
+**真窗口 E2E（2026-10-05 / 修复 2026-10-06）**：新增 `apps/desktop/test/e2e/ui/computer-use.spec.mjs`（假网关 7 例）与
+`computer-use.real.spec.mjs`（真模型 3 例）。原生 Helper 由测试注入的假驱动顶替
+（`ServiceHostOptions.computerUse`，发货入口不传；宿主准入与给 hook 的 `EVOWORK_CUA_HOST_READY` 改为同一个判定），
+宿主 → 内核 → `cua_repl` MCP → 认证 socket → 准入 / 审批 → 状态条 / 时间线都是真的。**这些结果不证明 AX、截图、TCC、签名或物理输入中断**（CU-R1 / R4 / R11 不变）。
+
+- **已在真窗口验过**（CU-R7 / R9 / R10 的一部分）：发布闸门三处一致（设置页如实说明且不能启用、内核配置 `enabled = false`、模型请求里没有任何 `cua_repl` 工具）；先告知后读取（同意前 Helper 未被调用）；终端 / 系统设置不进 `list_apps`、点名时读取前 `POLICY_DENIED` 且不弹准入卡；准入卡三个范围；「正在使用」状态条与停止控制（停止后的读取返回 `USER_STOPPED`，Helper 不再被调用）；时间线读取项默认隐藏、主动查看 / 收起；审计无 AX 正文；拒绝告知后 Helper 零调用且不再追问；「始终允许」进设置页、撤销即时生效并清掉落盘记录。内核确实把 `_meta.threadId / sessionId` 交给 MCP（`core/src/mcp_tool_call.rs` 的 `with_mcp_tool_call_ids_meta`）。
+- **缺陷一（已修，2026-10-06）**：内核的 MCP 工具审批是**空表单** elicitation（`requestedSchema.properties = {}`，`_meta.codex_approval_kind = "mcp_tool_call"`，`build_mcp_tool_approval_elicitation_request`），适配层原先只认单个枚举字段，卡片显示「此授权表单暂不支持，无法批准」、`toWireReply` 把 accept 改写成 decline —— 「请求批准」档下电脑操控的写动作永远落不下去（任何需审批的 MCP 写工具都一样）。现在适配层认出它（`approvals.ts` 的 `mcpToolApproval`），同意回 `accept` + 空 content（内核读作 Approved），「本次任务内都允许」只在内核给了 `persist: session` 时提供；内核先发 `item/started` 再问，适配层据此认回那次调用（`lookupMcpToolCall`），卡片按「需要你确认」画：影响「电脑操控将在 <App> 上<动作>」、范围列目标与将发送的内容（§7.4），不再显示内核的英文兜底句（`main/mcp-tool-approval-view.ts`）。电脑操控的写动作仍只能一次一批（内核对 `writes` 档会把 session 降回一次）。
+- **缺陷二（已修，2026-10-06）**：「完全访问」是 `granular` 策略，内核只在 `never` 时自动放行 MCP 写工具，这一档下写动作照样弹卡，与 §7.3 不符。现在由宿主的完全访问代答（`renderer-bridge.ts` 的 `fullAccessApprovalReply`，与命令 / 文件改动同一处）放行内核的 MCP 工具审批；内容告知、应用准入与硬禁止不受影响（见 10 §2.4）。§7.4 的高风险类别（发送、付款、删除等）仍**没有**动作语义识别 —— 完全访问下它们与普通写动作一样放行，这是剩余缺口。
+- **缺陷三（已修，2026-10-06）**：宿主对认不出的 `app` 一律回 `POLICY_DENIED`，MiMo flash 把显示名 `TextEdit` 当 id 传入后按 SKILL 立即停下、告诉用户「被策略拒绝」。现在认不出的回 `APP_NOT_FOUND`（硬禁止的仍是 `POLICY_DENIED`），错误里带一句给模型的短说明（§5.3 的 `message`）；11 个工具补了 `description`（`app` 填 bundle id、写动作带最新 `state_id` 并重读），SKILL 补了 `APP_NOT_FOUND` 的处理。
+- **审计缺口（已补，2026-10-06）**：用户点「停止控制」记一条 `stop_control / USER_STOPPED`，停止后被挡下的调用也记；回合正常结束不算用户停止。
+- **真模型（MiMo v2.6 flash / pro，假 Helper）**：两者都会先读 `SKILL.md`。**修复前**：「写动作被拒」flash 4/5、pro 1/1（flash 那 1 次是写动作的卡点「拒绝」后一直没消失、回合 8 分钟超时，重跑 3 次未复现，原因未查清；用例已改为同一张卡连点三次不消失就当场报错并留证）；「点名要终端」flash 3/3、pro 1/1；「写动作被批准」0/4（缺陷一挡住 3 次，flash 1 次先撞上缺陷三）。**修复后（2026-10-06，最终构建）**：flash 3/3、pro 3/3 —— 「写动作被批准」两者都是 读 TextEdit → 带最新 `state_id` 的 `set_value` → 重读 → 回复「已改为…，未保存」；「写动作被拒」读一次、试一次、停下并如实说没改；「点名要终端」不调电脑操控、说明限制并征求改用受控 shell。真模型是概率性的，这是各一轮的结果。

@@ -6,6 +6,16 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-06（电脑操控）：第一次在真窗口里走通「宿主 → 内核 → `cua_repl` → 界面」，跑出的三个缺陷已修 —— 写动作第一次在真模型上落到应用上。**
+> 新增 `computer-use.spec.mjs`（假网关 7 例）与 `computer-use.real.spec.mjs`（真模型 3 例）；原生 Helper 由测试注入的假驱动顶替（`ServiceHostOptions.computerUse`，发货入口不传，
+> 宿主准入与 hook 的 `EVOWORK_CUA_HOST_READY` 改为同一个判定）。**不证明 AX / TCC / 签名**。修复前假网关 4/7，修复后 **7/7**。
+> 修的三个：① 内核的 MCP 工具审批是**空表单** elicitation（`codex_approval_kind = "mcp_tool_call"`），适配层原先只认单枚举字段 → 卡上「此授权表单暂不支持，无法批准」、accept 被改写成 decline，
+> **任何要审批的 MCP 写工具在「请求批准」档都批不了**；现在适配层认得出（`mcpToolApproval`）、按内核认的形状回，并从 `item/started` 认回那次调用，卡片说清应用、目标与将发送的内容（12 §7.4）。
+> ② 「完全访问」是 `granular` 策略，内核只在 `never` 时放行 MCP 写工具 → 这一档照样弹卡；现在 `fullAccessApprovalReply` 一并代答（10 §2.4）。
+> ③ 宿主对认不出的应用名回 `POLICY_DENIED` → 改回 `APP_NOT_FOUND` + 给模型的短说明；11 个工具补了 `description`。另补：停止控制进审计。
+> 真模型（MiMo v2.6 flash / pro）修复前「写动作被批准」0/4，修复后 **flash 3/3、pro 3/3**（读 → 带最新 `state_id` 写 → 重读 → 如实报告；被拒即停；终端不绕道）。
+> 仍未做：§7.4 高风险动作（发送、付款等）没有语义识别，完全访问下与普通写动作一样放行；flash 有一轮「点拒绝后卡片不消失」未复现。详见 [12 §17 末尾](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24)。
+>
 > **2026-10-05（续三）：多代理在真模型上「表现差」的根因是网关丢了代理之间的消息 —— 修了之后 MiMo flash / pro 各 3/3。**
 > ⑥ **网关丢了 `agent_message`**：内核把代理之间的消息（派生时的 NEW_TASK、`send_message`、`followup_task`、子代理完成的回报）作为 `agent_message` 条目送进对方的请求，正文放在 `encrypted_content` 块里 —— 内核把模型写在工具参数里的原文放进去（`multi_agents_v2.rs` 的 `agent_message_from_tool`），只有 OpenAI 自家上游才是真密文。`to-chat.ts` 把它当未知条目跳过：经网关的子代理收不到分给自己的活，只看得到继承来的用户原话，于是照原话再派子代理，撞满 4 线程后互相等待（MiMo 子代理原话：「I don't see a NEW_TASK payload」）。现在还原成一条 user 消息（头部 + 正文）。假网关测不出它：假网关看的是原始请求。
 > **harness 换网关**：真模型用例改走**宿主自己的本机网关**（夹具 `hostGateway`：模型写进 `models.toml`、密钥只在环境变量、宿主拉起 `dist/gateway/main.js` —— 用户在设置页加了模型之后的拓扑）；假网关用例只登记模型（`registerModels`）。模型因此进了宿主写给内核的目录，子代理拿得到协作工具。`ui-entry.mjs` 照设置页格式写 `models.toml`（不能 import 产品模块：它经 `@evowork/gateway` 指到 TS 源码，Electron 主进程加载不了，第一次就弹了主进程异常框），启动后核对登记的模型真的进了目录。新增 `mimo-v2.6-pro` 预设（`verify-provider.mjs` 23/23）。
