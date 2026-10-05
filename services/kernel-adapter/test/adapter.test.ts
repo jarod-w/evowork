@@ -11,6 +11,7 @@ import { openStore, type Store } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAdapter, type Adapter } from '../src/adapter.js';
+import type { PendingApproval } from '../src/approvals.js';
 import type { CapabilityReport } from '../src/capabilities.js';
 import type { UiEvent } from '../src/events.js';
 import { BUILTIN_SCENARIOS, FULL_ACCESS_APPROVAL_POLICY } from '../src/scenario.js';
@@ -1905,5 +1906,73 @@ describe('任务环境守卫', () => {
     expect(bound).toBeTruthy();
     expect(store.threads.get(bound!)?.cwd).toBe('/w');
     expect(store.threads.get(bound!)?.first_message).toBe('x');
+  });
+});
+
+/*
+ * 内核的 MCP 工具审批（空表单 + `codex_approval_kind = "mcp_tool_call"`）。审批请求不带 item id，
+ * 但内核先发 `item/started` 再问 —— 卡片要说清「在哪个应用、对什么、发送什么」（12 §7.4）就靠认回那次调用。
+ * （完全访问下的代答在宿主：`renderer-bridge.ts` 的 `fullAccessApprovalReply`。）
+ */
+describe('内核的 MCP 工具审批', () => {
+  const toolApproval = (threadId: string, turnId = 'turn-1') => ({
+    threadId,
+    turnId,
+    serverName: 'cua_repl',
+    mode: 'form',
+    message: 'Allow the cua_repl MCP server to run tool "set_value"?',
+    requestedSchema: { type: 'object', properties: {} },
+    _meta: { codex_approval_kind: 'mcp_tool_call' },
+  });
+
+  function adapterAsking(asked: PendingApproval[]) {
+    return createAdapter({
+      store,
+      scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+        heartbeatIntervalMs: 10 ** 9,
+      },
+      askApproval: async (approval) => {
+        asked.push(approval);
+        return { decision: 'decline' };
+      },
+    });
+  }
+
+  it('卡片认回正在进行的那次调用；调用结束后不再张冠李戴', async () => {
+    const asked: PendingApproval[] = [];
+    const withAsk = adapterAsking(asked);
+    await withAsk.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1', cwd: '/w' }));
+    const call = {
+      type: 'mcpToolCall',
+      id: 'call-1',
+      server: 'cua_repl',
+      tool: 'set_value',
+      status: 'inProgress',
+      arguments: { app: 'com.apple.TextEdit', element_index: 2, value: '周报' },
+    };
+    server.notify('item/started', { threadId: 't1', turnId: 'turn-1', item: call });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await server.requestClient('mcpServer/elicitation/request', toolApproval('t1'));
+    expect(asked.at(-1)?.mcpToolCall).toEqual({
+      server: 'cua_repl',
+      tool: 'set_value',
+      arguments: { app: 'com.apple.TextEdit', element_index: 2, value: '周报' },
+    });
+
+    server.notify('item/completed', {
+      threadId: 't1',
+      turnId: 'turn-1',
+      item: { ...call, status: 'failed' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await server.requestClient('mcpServer/elicitation/request', toolApproval('t1'));
+    expect(asked.at(-1)?.mcpToolCall).toBeUndefined();
+    await withAsk.stop();
   });
 });

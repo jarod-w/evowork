@@ -1,5 +1,6 @@
 import type { ComputerUseHost } from './computer-use-host.js';
-import { elicitationChoice } from '@evowork/kernel-adapter';
+import { elicitationChoice, mcpToolApproval } from '@evowork/kernel-adapter';
+import { describeMcpToolApproval } from './mcp-tool-approval-view.js';
 /**
  * 渲染进程能做的那几件事（`RENDERER_ACTIONS`），以及推给它的三种事件。
  *
@@ -3148,11 +3149,22 @@ export type RendererActions = ReturnType<typeof createRendererActions>;
 /**
  * 运行中切到完全访问时可自动处理的审批。
  *
- * 只覆盖完全访问本来就承诺的命令与文件操作。追问、连接器表单与独立的权限申请
+ * 只覆盖完全访问本来就承诺的命令、文件操作与 **MCP 工具调用**。追问、连接器表单与独立的权限申请
  * 仍交给用户，避免把“完全访问本机”扩大成“替用户回答任何问题”。
  */
 export function fullAccessApprovalReply(approval: PendingApproval): ApprovalReply | undefined {
   if (approval.unattended) return undefined;
+  /*
+   * 内核的 MCP 工具审批（`mcpToolApproval`：空表单 + `codex_approval_kind = "mcp_tool_call"`）是一次
+   * **动作**审批，和命令同类，不是连接器要用户回答的表单。完全访问原本是 `never`，内核自己就放行它们；
+   * 改成 granular 之后内核只在 `never` 时放行（`codex-mcp/src/mcp/mod.rs` 的
+   * `mcp_permission_prompt_is_auto_approved`），2026-10-05 真窗口 E2E 里电脑操控的写动作于是在
+   * 完全访问下照样弹卡（12 §7.3 说这一档可跳过普通写审批）。
+   * 连接器自己的表单 —— 包括电脑操控的内容告知与应用准入 —— 不是这一种，仍交给用户。
+   */
+  if (approval.kind === 'mcp') {
+    return mcpToolApproval(approval.params) ? { decision: 'accept' } : undefined;
+  }
   if (approval.kind !== 'command' && approval.kind !== 'fileChange') return undefined;
   /*
    * **删除不代答**：完全访问承诺的是「删除文件前仍会问你一次」（10 §2.4，2026-09-28 修订）。
@@ -3475,6 +3487,32 @@ export function toApprovalView(
    * **不给理由**，卡片于是写着「执行内核没有给出理由 —— 建议先拒绝」—— 2026-09-28
    * 外部测试里那张卡要删的只是模型自己刚写的临时脚本。理由的取舍见 `commandApprovalRationale`。
    */
+  /*
+   * 内核自己发起的 MCP 工具审批（空表单 + `codex_approval_kind = "mcp_tool_call"`）按一张
+   * 「需要你确认」的审批卡画：影响 · 范围 · 原因 + 允许这一次。当成 elicitation 表单画的话，
+   * 它是「此授权表单暂不支持，无法批准」—— 2026-10-05 真窗口 E2E 跑出来的那张批不了的卡。
+   */
+  const meta =
+    approval.kind === 'mcp' && mcpToolApproval(p) && p._meta && typeof p._meta === 'object'
+      ? (p._meta as Record<string, unknown>)
+      : undefined;
+  const toolApproval = meta
+    ? (() => {
+        const described = describeMcpToolApproval({
+          server: str('serverName') ?? '未知连接器',
+          message: p.message,
+          toolTitle: meta.tool_title,
+          toolDescription: meta.tool_description,
+          call: approval.mcpToolCall,
+        });
+        return {
+          impact: described.impact,
+          reason: described.reason,
+          toolCall: { scope: described.scope },
+        };
+      })()
+    : undefined;
+
   const command = str('command');
   const rationale =
     approval.kind === 'command' && str('kind') !== 'writeStdin' && command !== undefined
@@ -3509,7 +3547,8 @@ export function toApprovalView(
      * 只取第一个：卡片当前就只画一个问题。多问题得先改卡，不能在这里把它们拼成一段话。
      */
     ...(approval.kind === 'userInput' ? toUserInputQuestionView(p) : {}),
-    ...(approval.kind === 'mcp'
+    ...(toolApproval ? toolApproval : {}),
+    ...(approval.kind === 'mcp' && !toolApproval
       ? {
           question: str('message') ?? '连接器请求授权',
           options: (elicitationChoice(p)?.options ?? []).map((id) => ({

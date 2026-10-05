@@ -777,6 +777,12 @@ export interface ApprovalView {
         readonly movePath?: string | undefined;
       }[]
     | undefined;
+  /**
+   * 内核的 MCP 工具审批（连接器要运行一个工具，含电脑操控的写动作）。有它时卡片按「需要你确认」画：
+   * 影响写在 `impact`、原因写在 `reason`、这里是「范围」那几行（目标 · 会发送的内容 · 参数）。
+   * 没有它的 `mcp` 才是 MCP server 自己的表单（`question` / `options`）。
+   */
+  readonly toolCall?: { readonly scope: readonly string[] } | undefined;
   /** 由适配层决定（10 §3.3：批量变更**不给**「本次任务内都允许」） */
   readonly allowAcceptForSession: boolean;
   readonly waitedMs?: number | undefined;

@@ -64,8 +64,13 @@ export interface ModeDefinition {
  * （危险命令启发式同一条路），只是以前没人注意。
  *
  * 在 `:danger-full-access` 下，这组开关与 `never` 只差两处：规则 prompt 与危险命令都改为
- * **问你**而不是拒绝。沙箱越权本来就不存在（没有沙箱），MCP 征询与 `request_permissions`
- * 仍是关的，与 `never` 相同（`tools/sandboxing.rs` · `mcp_tool_call.rs` · `session/mod.rs`）。
+ * **问你**而不是拒绝。沙箱越权本来就不存在（没有沙箱），`request_permissions` 仍是关的。
+ *
+ * **还差第三处（2026-10-05 真窗口 E2E 实测订正）**：内核只在 `approval_policy == never` 时
+ * 自动放行 MCP 写工具（`codex-mcp/src/mcp/mod.rs` 的 `mcp_permission_prompt_is_auto_approved`），
+ * 换成 granular 之后 MCP 写工具（包括电脑操控的九个写动作）照样发审批。所以「别的一律不问」
+ * 对 MCP 工具审批由宿主的完全访问代答补上（`apps/desktop/src/main/renderer-bridge.ts` 的
+ * `fullAccessApprovalReply`，与命令 / 文件改动同一处），不改这组开关。
  */
 export const FULL_ACCESS_APPROVAL_POLICY: AskForApproval = Object.freeze({
   granular: Object.freeze({

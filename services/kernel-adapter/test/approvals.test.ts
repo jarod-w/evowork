@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createApprovalRouter,
+  mcpToolApproval,
   INTERACTIVE_POLICY,
   UNATTENDED_POLICY,
   type ApprovalReply,
@@ -457,5 +458,103 @@ describe('MCP elicitation 不套用 command decision 回复', () => {
     expect(await request).toEqual({ action: 'cancel', content: null, _meta: null });
     resolve({ decision: 'accept', optionId: 'always' });
     expect(router.pendingList()).toEqual([]);
+  });
+});
+
+/**
+ * 内核自己发起的 MCP 工具审批（`core/src/mcp_tool_call.rs` 的 `build_mcp_tool_approval_elicitation_request`）：
+ * 空表单 + `_meta.codex_approval_kind = "mcp_tool_call"`。2026-10-05 真窗口 E2E 之前它被当成
+ * 「不支持的表单」：卡片批不了，accept 也被改写成 decline —— MCP 写工具在默认档永远落不下去。
+ */
+describe('内核的 MCP 工具审批：认得出、批得了、回得对', () => {
+  const toolParams = (persist?: unknown) => ({
+    threadId: 't',
+    turnId: 'turn',
+    serverName: 'cua_repl',
+    mode: 'form',
+    message: 'Allow the cua_repl MCP server to run tool "set_value"?',
+    requestedSchema: { type: 'object', properties: {} },
+    _meta: {
+      codex_approval_kind: 'mcp_tool_call',
+      ...(persist !== undefined ? { persist } : {}),
+    },
+  });
+
+  it('认得出：空表单 + mcp_tool_call；带字段的表单不算（那是要用户填东西）', () => {
+    expect(mcpToolApproval(toolParams())).toEqual({ persist: [] });
+    expect(mcpToolApproval(toolParams(['session', 'always']))).toEqual({
+      persist: ['session', 'always'],
+    });
+    expect(
+      mcpToolApproval({
+        ...toolParams(),
+        requestedSchema: { type: 'object', properties: { x: { type: 'string' } } },
+      }),
+    ).toBeUndefined();
+    expect(mcpToolApproval({ ...toolParams(), _meta: {} })).toBeUndefined();
+  });
+
+  it('允许这一次 = accept + 空 content（内核把「没有答案」读成 Approved）', async () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, toolParams())).toEqual({
+      action: 'accept',
+      content: null,
+      _meta: null,
+    });
+  });
+
+  it.each(['decline', 'cancel'] as const)('%s 原样回去', async (decision) => {
+    const router = createApprovalRouter({ ask: async () => ({ decision }) });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, toolParams())).toEqual({
+      action: decision,
+      content: null,
+      _meta: null,
+    });
+  });
+
+  it('「本次任务内都允许」只在内核给了 session 时才带 persist，没给就只批这一次', async () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'acceptForSession' }) });
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, toolParams('session'))).toEqual(
+      { action: 'accept', content: null, _meta: { persist: 'session' } },
+    );
+    expect(await router.handle(SERVER_REQUEST.mcpServerElicitation, toolParams())).toEqual({
+      action: 'accept',
+      content: null,
+      _meta: null,
+    });
+  });
+
+  it('只有内核给了 session 才提供「本次任务内都允许」按钮', () => {
+    const router = createApprovalRouter({ ask: async () => ({ decision: 'accept' }) });
+    const approval = (params: Record<string, unknown>): PendingApproval => ({
+      id: 'a',
+      kind: 'mcp',
+      threadId: 't',
+      params,
+      receivedAtMs: 0,
+      unattended: false,
+    });
+    expect(router.allowsAcceptForSession(approval(toolParams()))).toBe(false);
+    expect(router.allowsAcceptForSession(approval(toolParams('session')))).toBe(true);
+  });
+
+  it('卡片带上认回来的那次调用（参数要说清会发送什么，12 §7.4）', async () => {
+    let seen: PendingApproval | undefined;
+    const router = createApprovalRouter({
+      lookupMcpToolCall: ({ server }) =>
+        server === 'cua_repl'
+          ? { server, tool: 'set_value', arguments: { app: 'com.apple.TextEdit', value: 'x' } }
+          : undefined,
+      ask: async (approval) => {
+        seen = approval;
+        return { decision: 'decline' };
+      },
+    });
+    await router.handle(SERVER_REQUEST.mcpServerElicitation, toolParams());
+    expect(seen?.mcpToolCall).toEqual({
+      server: 'cua_repl',
+      tool: 'set_value',
+      arguments: { app: 'com.apple.TextEdit', value: 'x' },
+    });
   });
 });

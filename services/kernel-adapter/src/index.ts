@@ -25,6 +25,7 @@ export {
 export {
   createApprovalRouter,
   elicitationChoice,
+  mcpToolApproval,
   INTERACTIVE_POLICY,
   UNATTENDED_POLICY,
   type ApprovalDecision,
@@ -34,6 +35,7 @@ export {
   type ApprovalRouter,
   type ApprovalRouterOptions,
   type ApprovalTimeoutPolicy,
+  type McpToolCallRef,
   type PendingApproval,
 } from './approvals.js';
 export {

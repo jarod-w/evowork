@@ -56,6 +56,8 @@ export interface ApprovalViewModel {
   readonly purpose?: string | undefined;
   readonly question?: string | undefined;
   readonly options?: readonly { readonly id: string; readonly label?: string }[] | undefined;
+  /** 内核的 MCP 工具审批：「范围」那几行（目标 · 会发送的内容 · 参数）。有它就按确认卡画 */
+  readonly toolCall?: { readonly scope: readonly string[] } | undefined;
   /** 由适配层决定是否提供「本次任务内都允许」（10 §3.3） */
   readonly allowAcceptForSession: boolean;
   /** 已等待时长（10 §3.6：30 分钟后在列表里置顶并显示等待时间） */
@@ -138,7 +140,12 @@ export function ApprovalCard({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
-  const isQuestion = approval.kind === 'userInput' || approval.kind === 'mcp';
+  /*
+   * `mcp` 有两种：MCP server 自己的表单（要你回答），和内核的工具审批（要你确认一次动作，
+   * 带 `toolCall`）。后者画成表单的话就是「此授权表单暂不支持，无法批准」—— 批不了。
+   */
+  const isQuestion =
+    approval.kind === 'userInput' || (approval.kind === 'mcp' && !approval.toolCall);
   const dangerous = (approval.changes ?? []).some((c) => c.kind === 'delete');
   // 清单没查到时按"不知道改了什么"说，不说"0 个文件"
   const fileImpact = approval.changes
@@ -161,7 +168,9 @@ export function ApprovalCard({
         ? fileImpact
         : approval.kind === 'permissions'
           ? '将扩大这个任务可访问的范围'
-          : '需要你的回答才能继续';
+          : approval.kind === 'mcp' && approval.toolCall
+            ? (approval.impact ?? '将让连接器执行一个操作')
+            : '需要你的回答才能继续';
 
   return (
     <section
@@ -290,6 +299,13 @@ export function ApprovalCard({
               <p>{approval.cwd ? `目录：${approval.cwd}` : '当前项目目录'}</p>
             ) : null}
             {approval.kind === 'fileChange' ? <FileChangeBody approval={approval} /> : null}
+            {approval.kind === 'mcp' && approval.toolCall ? (
+              <ul>
+                {approval.toolCall.scope.map((line, index) => (
+                  <li key={`s${index}`}>{line}</li>
+                ))}
+              </ul>
+            ) : null}
             {approval.kind === 'permissions' ? (
               <ul>
                 {(approval.paths ?? []).map((entry, index) => (

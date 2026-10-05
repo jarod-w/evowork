@@ -65,6 +65,7 @@ import {
   createApprovalRouter,
   type ApprovalFileChange,
   type ApprovalReply,
+  type McpToolCallRef,
   type PendingApproval,
 } from './approvals.js';
 import { KernelSession, type KernelSessionOptions, type SessionNotice } from './session.js';
@@ -298,6 +299,21 @@ export function createAdapter(options: AdapterOptions) {
     string,
     { readonly threadId: string; readonly turnId?: string; readonly changes: ApprovalFileChange[] }
   >();
+  /**
+   * 正在进行的 `mcpToolCall`（itemId → 哪个任务、哪个连接器、调的什么），给内核的 MCP 工具审批卡认回
+   * 「要批的是哪一次调用」。内核先发 `item/started`、后发审批（见 `PendingApproval.mcpToolCall`），
+   * 调用结束（`item/completed`）或回合结束就扔掉。参数原样留着：审批卡要说清会发送哪些数据（12 §7.4）。
+   */
+  const inFlightMcpCalls = new Map<
+    string,
+    {
+      readonly threadId: string;
+      readonly turnId?: string;
+      readonly server: string;
+      readonly tool: string;
+      readonly arguments: unknown;
+    }
+  >();
   /** 上限只为兜底：正常路径上 `turn-completed` 就清了。超了按插入序扔最老的。 */
   const FILE_CHANGE_CACHE_CAP = 512;
 
@@ -339,12 +355,57 @@ export function createAdapter(options: AdapterOptions) {
    * `turnId` 只作过滤：内核对启动期请求会给空串，那时按内核 TUI 的做法当通配
    * （`thread_events.rs:533-535`）。
    */
+  function forgetMcpCalls(threadId: string): void {
+    for (const [itemId, entry] of inFlightMcpCalls) {
+      if (entry.threadId === threadId) inFlightMcpCalls.delete(itemId);
+    }
+  }
+
   function forgetFileChanges(
     match: (entry: { readonly threadId: string; readonly turnId?: string }) => boolean,
   ): void {
     for (const [itemId, entry] of fileChangeItems) {
       if (match(entry)) fileChangeItems.delete(itemId);
     }
+  }
+
+  function rememberMcpCall(event: {
+    readonly type: 'item-started' | 'item-completed';
+    readonly threadId: string;
+    readonly turnId?: string;
+    readonly item: ThreadItem;
+  }): void {
+    if (event.item.type !== 'mcpToolCall') return;
+    if (event.type === 'item-completed') {
+      inFlightMcpCalls.delete(event.item.id);
+      return;
+    }
+    const { server, tool } = event.item as { server?: unknown; tool?: unknown };
+    if (typeof server !== 'string' || typeof tool !== 'string') return;
+    inFlightMcpCalls.set(event.item.id, {
+      threadId: event.threadId,
+      ...(event.turnId ? { turnId: event.turnId } : {}),
+      server,
+      tool,
+      arguments: (event.item as { arguments?: unknown }).arguments,
+    });
+  }
+
+  /** 同一任务、同一连接器、正在进行的**恰好一次**调用；零次或多次都认不准，返回 undefined */
+  function lookupMcpToolCall(input: {
+    readonly threadId: string;
+    readonly turnId?: string;
+    readonly server: string;
+  }): McpToolCallRef | undefined {
+    const matches = [...inFlightMcpCalls.values()].filter(
+      (entry) =>
+        entry.threadId === input.threadId &&
+        entry.server === input.server &&
+        (!input.turnId || !entry.turnId || entry.turnId === input.turnId),
+    );
+    if (matches.length !== 1) return undefined;
+    const [only] = matches;
+    return only ? { server: only.server, tool: only.tool, arguments: only.arguments } : undefined;
   }
 
   function lookupFileChanges(input: {
@@ -380,6 +441,7 @@ export function createAdapter(options: AdapterOptions) {
         localQueues.delete(event.threadId);
         activeTurns.delete(event.threadId);
         forgetFileChanges((entry) => entry.threadId === event.threadId);
+        forgetMcpCalls(event.threadId);
         approvals.cancel((a) => a.threadId === event.threadId);
       }
       if (event.type === 'turn-started') activeTurns.set(event.threadId, event.turnId);
@@ -391,10 +453,12 @@ export function createAdapter(options: AdapterOptions) {
             entry.threadId === event.threadId &&
             (entry.turnId === undefined || entry.turnId === event.turnId),
         );
+        forgetMcpCalls(event.threadId);
         approvals.cancel((a) => a.kind === 'mcp' && a.threadId === event.threadId);
       }
       if (event.type === 'item-started' || event.type === 'item-completed') {
         rememberFileChanges(event);
+        rememberMcpCall(event);
       }
       options.onUiEvent?.(event);
     },
@@ -433,6 +497,7 @@ export function createAdapter(options: AdapterOptions) {
     ask: options.askApproval ?? (async () => ({ decision: 'decline' as const })),
     isUnattended: (threadId) => Boolean(store.threads.get(threadId)?.automation_id),
     lookupFileChanges,
+    lookupMcpToolCall,
     ...(options.onPendingApprovalsChanged
       ? { onPendingChanged: options.onPendingApprovalsChanged }
       : {}),

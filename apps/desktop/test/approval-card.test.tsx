@@ -304,6 +304,26 @@ describe('电脑操控授权选项', () => {
     expect(onAnswer).toHaveBeenCalledWith({ optionId: 'task' });
     expect(screen.queryByRole('button', { name: '允许这一次' })).toBeNull();
   });
+  it('内核的写动作审批是一张确认卡：说清影响与范围，能批', () => {
+    const onDecide = vi.fn();
+    render(
+      <ApprovalCard
+        approval={approval({
+          kind: 'mcp',
+          impact: '电脑操控将在 com.apple.TextEdit 上填入内容',
+          reason: '电脑操控的每个写动作都要你确认',
+          toolCall: { scope: ['目标：界面元素 #2', '内容：「周报」'] },
+        })}
+        onDecide={onDecide}
+      />,
+    );
+    expect(screen.getByRole('alertdialog', { name: '需要你确认' })).toBeTruthy();
+    expect(screen.getByText('电脑操控将在 com.apple.TextEdit 上填入内容')).toBeTruthy();
+    expect(screen.getByText('内容：「周报」')).toBeTruthy();
+    expect(screen.queryByText('此授权表单暂不支持，无法批准。')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '允许这一次' }));
+    expect(onDecide).toHaveBeenCalledWith('accept');
+  });
   it('不支持的表单只能拒绝或取消', () => {
     const onDecide = vi.fn();
     render(<ApprovalCard approval={approval({ kind: 'mcp' })} onDecide={onDecide} />);

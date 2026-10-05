@@ -60,9 +60,24 @@ export interface PendingApproval {
    * 两者必须分开 —— 以前合并成 `?? []`，卡片就笃定地写着「将改动 0 个文件」。
    */
   readonly fileChanges?: readonly ApprovalFileChange[] | undefined;
+  /**
+   * 内核 MCP 工具审批（`mcpToolApproval`）对应的那次工具调用。**审批请求不带 item id**
+   * （`v2/mcp.rs` 的 `McpServerElicitationRequestParams` 那条 TODO），但内核先发
+   * `item/started` 再问（`mcp_tool_call.rs` 的 `notify_mcp_tool_call_started` 早于
+   * `maybe_request_mcp_tool_approval`），所以由适配层从 item 流里认回来。
+   * `undefined` = 没认出来（不是「没有参数」）。
+   */
+  readonly mcpToolCall?: McpToolCallRef | undefined;
   readonly receivedAtMs: number;
   /** 是否是无人值守的定时任务（决定超时策略） */
   readonly unattended: boolean;
+}
+
+/** 一次 MCP 工具调用：哪个连接器、哪个工具、什么参数（参数原样，只给本机审批卡用） */
+export interface McpToolCallRef {
+  readonly server: string;
+  readonly tool: string;
+  readonly arguments: unknown;
 }
 
 export interface ApprovalReply {
@@ -118,6 +133,15 @@ export interface ApprovalRouterOptions {
     readonly turnId?: string;
     readonly itemId?: string;
   }) => readonly ApprovalFileChange[] | undefined;
+  /**
+   * 认回这次 MCP 工具审批对应的工具调用（同一任务、同一连接器、正在进行的那一次）。
+   * 认不准（零个或多个）就返回 undefined —— 卡片宁可说「参数未知」，也不能张冠李戴。
+   */
+  readonly lookupMcpToolCall?: (input: {
+    readonly threadId: string;
+    readonly turnId?: string;
+    readonly server: string;
+  }) => McpToolCallRef | undefined;
   readonly logger?: Logger;
   readonly now?: () => number;
   readonly setTimeoutFn?: typeof setTimeout;
@@ -144,6 +168,24 @@ function toWireReply(
   params: Record<string, unknown>,
 ): Record<string, unknown> {
   if (kind === 'mcp') {
+    const tool = mcpToolApproval(params);
+    if (tool) {
+      /*
+       * 内核的 MCP 工具审批：同意 = `accept` + 空 content（`parse_mcp_tool_approval_elicitation_response`
+       * 把「没有答案」读成 Approved）；「本次任务内都允许」= `_meta.persist = "session"`，
+       * 只在内核自己给了这个选项时才回（给了也会被 writes / prompt 档降回「这一次」，
+       * `normalize_approval_decision_for_mode`）。
+       */
+      const accepted = reply.decision === 'accept' || reply.decision === 'acceptForSession';
+      return {
+        action: reply.decision === 'cancel' ? 'cancel' : accepted ? 'accept' : 'decline',
+        content: null,
+        _meta:
+          reply.decision === 'acceptForSession' && tool.persist.includes('session')
+            ? { persist: 'session' }
+            : null,
+      };
+    }
     const form = elicitationChoice(params);
     const action =
       reply.decision === 'cancel'
@@ -259,6 +301,7 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
     ) {
       return toWireReply(kind, { decision: 'decline' }, params);
     }
+    const toolApproval = kind === 'mcp' ? mcpToolApproval(params) : undefined;
     const id = `apv_${++counter}`;
 
     const turnId = typeof params.turnId === 'string' ? params.turnId : undefined;
@@ -272,6 +315,15 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
           })
         : undefined;
 
+    const mcpToolCall =
+      toolApproval && typeof params.serverName === 'string'
+        ? options.lookupMcpToolCall?.({
+            threadId,
+            ...(turnId ? { turnId } : {}),
+            server: params.serverName,
+          })
+        : undefined;
+
     const approval: PendingApproval = {
       id,
       kind,
@@ -280,6 +332,7 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
       ...(itemId ? { itemId } : {}),
       params,
       ...(fileChanges ? { fileChanges } : {}),
+      ...(mcpToolCall ? { mcpToolCall } : {}),
       receivedAtMs: now(),
       unattended,
     };
@@ -366,6 +419,10 @@ export function createApprovalRouter(options: ApprovalRouterOptions) {
      * 是为了让"哪些情况能给这个按钮"只有一个定义处。
      */
     allowsAcceptForSession(approval: PendingApproval): boolean {
+      // MCP 工具：内核说它会记住才给。会被内核降回「这一次」的话，这个按钮就是一句假话
+      if (approval.kind === 'mcp') {
+        return mcpToolApproval(approval.params)?.persist.includes('session') ?? false;
+      }
       if (approval.kind !== 'fileChange') return approval.kind === 'command';
       /*
        * 用反查来的清单，不是 `params.changes` —— 内核从不发那个字段，
@@ -409,4 +466,40 @@ export function elicitationChoice(
   )
     return undefined;
   return { field, options: p.enum };
+}
+
+/**
+ * 内核自己发起的 MCP 工具审批（不是 MCP server 的 elicitation）：
+ * 空表单 + `_meta.codex_approval_kind = "mcp_tool_call"`
+ * （内核 `core/src/mcp_tool_call.rs` 的 `build_mcp_tool_approval_elicitation_request`；
+ * 键名在 `protocol/src/mcp_approval_meta.rs`）。
+ *
+ * 认不出它的后果是 2026-10-05 真窗口 E2E 跑出来的：`elicitationChoice` 只认单个枚举字段，
+ * 卡片画成「此授权表单暂不支持，无法批准」，accept 也被改写成 decline —— **任何要审批的
+ * MCP 写工具（包括电脑操控的九个写动作）在「请求批准」档都批不了**。
+ */
+export function mcpToolApproval(
+  params: Record<string, unknown>,
+): { persist: readonly ('session' | 'always')[] } | undefined {
+  if (params.mode !== 'form') return undefined;
+  const meta = params._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return undefined;
+  const m = meta as Record<string, unknown>;
+  if (m.codex_approval_kind !== 'mcp_tool_call') return undefined;
+  const schema = params.requestedSchema as Record<string, unknown> | undefined;
+  // 带字段的表单要用户填东西，不是一次「同意 / 拒绝」—— 不能当成审批一键放行
+  if (
+    !schema ||
+    typeof schema !== 'object' ||
+    !schema.properties ||
+    typeof schema.properties !== 'object' ||
+    Object.keys(schema.properties).length > 0
+  )
+    return undefined;
+  const raw = Array.isArray(m.persist) ? m.persist : [m.persist];
+  return {
+    persist: raw.filter(
+      (value): value is 'session' | 'always' => value === 'session' || value === 'always',
+    ),
+  };
 }

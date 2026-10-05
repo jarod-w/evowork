@@ -120,6 +120,11 @@ Composer 常显选择器控制「这次任务里，模型动手前要不要问�
   `never` 会把规则 prompt **直接变成拒绝**（完全访问下再也删不了文件；`rm -rf` 在 `never` 下其实早就是被拒的）。
   在 `:danger-full-access` 下这组开关与 `never` 只差两处：规则 prompt 与危险命令改为问你。宿主对完全访问任务的自动代答
   （`fullAccessApprovalReply`）**不代答删除**。
+- **MCP 工具调用同样不问（2026-10-06 补）**：内核只在 `approval_policy == never` 时自己放行 MCP 写工具
+  （`codex-mcp/src/mcp/mod.rs` 的 `mcp_permission_prompt_is_auto_approved`），改成 `granular` 后它对 MCP 写工具
+  （含电脑操控的九个写动作）照样发审批 —— 与「别的一律不问」不符，2026-10-05 真窗口 E2E 才发现。现在由同一个
+  `fullAccessApprovalReply` 代答内核的 **MCP 工具审批**（`_meta.codex_approval_kind = "mcp_tool_call"` 的空表单）；
+  连接器自己的表单（含电脑操控的内容告知与应用准入，12 §7.2）仍交给用户，无人值守仍不代答。
 - 审批卡上删除命令**不给「本次任务内都允许」**（与 §3.3 文件删除同一条）。
 - **定时任务的后果**：无人值守时这张卡没人点，按 §3.6 超时 10 分钟自动拒绝、run 记 `FAILED / APPROVAL_TIMEOUT`。
   `rm -f` 以前就是这样，现在普通 `rm` 也是。自动化里需要清理文件的，应当写进工作空间内的临时目录并交给用户确认。

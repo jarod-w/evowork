@@ -1415,6 +1415,44 @@ describe('运行中切换审批档', () => {
     expect(fullAccessApprovalReply({ ...base, kind: 'mcp' })).toBeUndefined();
   });
 
+  /*
+   * 内核的 MCP 工具审批是动作审批（和命令同类）。完全访问原本是 never，内核自己放行它们；改成 granular 后
+   * 内核照样来问，2026-10-05 真窗口 E2E 里电脑操控的写动作在完全访问下弹了卡（12 §7.3 说这一档不问）。
+   */
+  it('完全访问代答内核的 MCP 工具审批；连接器自己的表单（含电脑操控的告知与准入）仍交给用户', () => {
+    const base = { id: 'apv_1', threadId: 't1', receivedAtMs: 1, unattended: false };
+    const toolCall = {
+      serverName: 'cua_repl',
+      mode: 'form',
+      message: 'Allow the cua_repl MCP server to run tool "set_value"?',
+      requestedSchema: { type: 'object', properties: {} },
+      _meta: { codex_approval_kind: 'mcp_tool_call' },
+    };
+    expect(fullAccessApprovalReply({ ...base, kind: 'mcp', params: toolCall })).toEqual({
+      decision: 'accept',
+    });
+    expect(
+      fullAccessApprovalReply({
+        ...base,
+        kind: 'mcp',
+        params: {
+          serverName: 'cua_repl',
+          mode: 'form',
+          message: '允许 EvoWork 读取并操作 TextEdit？',
+          requestedSchema: {
+            type: 'object',
+            properties: { scope: { type: 'string', enum: ['task', 'deny'] } },
+            required: ['scope'],
+          },
+        },
+      }),
+    ).toBeUndefined();
+    // 无人值守照旧不代答（与命令同一条）
+    expect(
+      fullAccessApprovalReply({ ...base, kind: 'mcp', params: toolCall, unattended: true }),
+    ).toBeUndefined();
+  });
+
   it('**删除不代答**：完全访问承诺「删除文件前仍会问你」，这里一放行内核就白问了', () => {
     const base = { id: 'apv_1', threadId: 't1', receivedAtMs: 1, unattended: false };
     expect(
