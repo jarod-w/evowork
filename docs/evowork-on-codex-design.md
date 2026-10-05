@@ -368,7 +368,7 @@
 - **`imageInput` 有三种结局，不是两种**：真能看（Kimi / GLM）· 明确拒绝 · **接受请求但看不见**（deepseek-v4-flash）。第三种最危险，因为它不报错，只能靠能力表拦在前面 —— 这正是 D2「降级必须显式」要防的形态。
 - **推理模型会吃掉 `max_tokens`**：给 64 token 预算时 DeepSeek 与 GLM 都返回**空 content**（预算全被思维链花完，`finish_reason` 仍是 stop）。调用方按非推理模型的经验设小预算，拿到的是"模型没回话"而不是报错。
 
-能力表用 `verified` / `verifiedAt` / `unverified` 三个字段区分"验过什么、没验什么"，并由能力端点透出。`maxContextTokens` 要塞满上下文才能测，五个型号都仍在 `unverified` 里。
+能力表用 `verified` / `verifiedAt` / `unverified` 三个字段区分"验过什么、没验什么"，并由能力端点透出。`maxContextTokens` 要塞满上下文才能测，五个型号都仍在 `unverified` 里。（2026-10-05：`deepseek-flash` 用超长合成请求读出了厂商报的上限 1,048,576，移出 `unverified`；其余仍在。）
 
 > **2026-09-26：能力表收敛成一张，并补进 `deepseek-flash`。** 用户在设置页加了
 > `deepseek/deepseek-flash` 与 `moonshot/kimi-k3`，两条在模型下拉里都把「读图」画成灰色划除 ——
@@ -379,7 +379,7 @@
 > 这一张按 (协议适配类型, 上游模型名) 索引的表，`P0_MODELS` 从它派生；详见
 > [11 §4.1.1](design/11-account-and-models.md)。
 >
-> **`deepseek-flash` 与上表的 `deepseek-v4-flash` 不是同一个型号。** 前者是厂商文档
+> **`deepseek-flash` 与上表的 `deepseek-v4-flash` 不是同一个型号**（2026-09-26 时如此；2026-10-05 起后者退役、旧名路由到前者，见下文同日条目）。前者是厂商文档
 > （api-docs.deepseek.com 的视觉指南，2026-09-26 核对）里**原生支持视觉**的那个，
 > 视觉能力最早以 `deepseek-v4-flash-vision-exp` 发布；后者就是上表"接受但看不见"的那个，
 > 仍然留在能力表里且 `imageInput: false` —— **下架的是目录条目，不是能力知识**。
@@ -398,6 +398,36 @@
 > 按"一家一条"去改成按厂商只读一条，会在另一家上漏读，而漏读的表现是命中永远 0。
 > Kimi 未命中时给的是 `prompt_tokens_details.cache_write_tokens` —— **写入不是命中**，
 > 读错会让用户在第一次调用就看到满额命中。详见 [status.md](status.md) 同日第二节。
+
+> **2026-10-05：上下文订正为 1M 级；压缩点另设 256k 上限；`deepseek-v4-flash` 并入 `deepseek-flash`。**
+> 客户反馈「经常压缩上下文」。内核的压缩点是 `min(模型元数据的 auto_compact_token_limit, 窗口 × 90%)`
+> （F46），窗口来自宿主写给内核的模型目录（`kernel-catalog.ts`，F34 那次做的）。
+> ① **能力表的上下文没有出处，且都偏小**：Kimi K3 记 256k、GLM-5.3-flash 记 128k。订正为：
+> Kimi K3 **1,048,576**（platform.kimi.com 接入指南的 `model_context_window = 1048576`）；
+> GLM-5.3-flash **1,000,000**（docs.bigmodel.cn 与 docs.z.ai 都只写「1M」，按小的读法记 —— 估大比估小危险）；
+> deepseek-flash **1,048,576（实测）**：发约 115 万 token 的合成填充请求，厂商回 400
+> "maximum context length is 1048576 tokens"（文档同样只写「1M」）。前两家仍是 `unverified`（没有密钥）。
+> **超长报错的 `code` 是 `invalid_request_error`，与未知模型同一个**，网关现把它映射成 `invalid_prompt` ——
+> 内核认不出是超长、不会压缩后重来。正常对话有 256k 上限挡着碰不到，一次塞进超大内容时会走到这条路，未修。
+> ①b **`deepseek-v4-flash` 不再单独一条**。厂商文档（Models & Pricing）：旧名 `deepseek-v4-flash` /
+> `deepseek-v4-flash-vision-exp` 仍收，但对应型号已退役，请求由 DeepSeek-V4.1-Flash（= `deepseek-flash`）处理。
+> 复测：两个名字各跑 `verify-provider.mjs` 23/23，**旧名同样答出纯红图的颜色**，帧数与 cache 命中数一致。
+> 于是旧名并为 `deepseek-flash` 的别名（读图 true）。上面 2026-09-05 表里"接受但看不见"那一格**是退役前那个型号的结论**，
+> 照旧保留作为 `imageInput` 第三种结局的记录；还按它记旧名的后果，是 Composer 把一个能读图的模型的图片拦掉（03 §8）。
+> ② **真实窗口与压缩点拆开**。窗口照实填，它是内核的硬上限；但等到 1M × 90% 才压缩，
+> agent 每调一次工具都重发 ~94 万 token —— 每步成本与首 token 延迟线性涨（Kimi K3 输入 $3/M，一步接近 $3），
+> 长上下文里的表现也更差，Q11 的单任务预算会被这一截烧掉。**决定：压缩点上限 256k**
+> （`AUTO_COMPACT_TOKEN_CAP`）。依据是每个任务的固定开销（系统提示 + 工具 + 技能目录）实测约 1 万 token，
+> 剩下 ~25 万对办公任务很少用满。只写给窗口大于上限的模型，更小的模型压缩点不变。
+> 放在模型目录（每次启动重写）而不是 `config.toml`（已存在不覆盖，老用户拿不到）；
+> 企业在 `config.toml` 设 `model_auto_compact_token_limit` 会盖过它。
+> ③ **表外自定义模型的默认上下文由 32k 改为 256k**（同日产品决定）。32k 是「经常压缩」最可能的来源：
+> 约 1 万 token 的固定开销之后只剩 ~1.9 万，28.8k 就压。旧版本把代填的 32000 写进了每个用户的
+> `models.toml`，所以读的时候**没有 `format_version` 的旧文件里恰好是 32000 的值按代填处理**、落到新默认值；
+> 别的数（手改的）照旧尊重；新写出的文件带 `format_version = 2`，其中的 32000 只可能是用户写的。
+> **代价是估大的那个方向**：endpoint 真实窗口小于 256k（企业自部署常见 32k / 128k）时，内核等不到压缩、
+> 上游先以超长拒绝，而 `private` 通道与 DeepSeek 的超长报错网关都还认不出来（当成 `invalid_prompt`），
+> 下一回合原样重发、任务卡死。缓解要靠两件事：「添加模型」里能填上下文（同日已做，11 §4.4）；网关认出超长报错（还没做）。
 
 > ⚠️ 风险：Responses API 的 reasoning/encrypted_content 语义在非 OpenAI 模型上无对应物，需设计降级策略。**降级必须显式**：网关在响应里标注能力缺失，前端据此隐藏对应 UI（如推理过程折叠区），而不是静默留白。
 
