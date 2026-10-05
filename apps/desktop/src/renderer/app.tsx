@@ -1439,6 +1439,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [activeTaskId, bridge, startup, tasks, workspaceId]);
 
+  /*
+   * 子代理多半是**这一回合里**派出来的，而用户一直停在这个任务上。只在切换任务时读一次的话，
+   * 标题栏的「子任务」入口要等用户切走再切回来才出现（`multi-agent.spec.mjs` 抓到的）。
+   * 所以时间线里每多一条协作条目、任务状态每变一次都重读：协作条目可能先于子代理的投影行到，
+   * 回合收尾那一次兜底。
+   */
+  const activeCollabItems =
+    activeTaskId === null
+      ? 0
+      : (itemsByTask[activeTaskId] ?? []).filter(
+          (item) => item.type === 'subAgentActivity' || item.type === 'collabAgentToolCall',
+        ).length;
+  const activeTaskStatus = tasks.find((task) => task.id === activeTaskId)?.status;
   useEffect(() => {
     if (activeTaskId === null || !bridge.listSubtasks) return;
     const threadId = activeTaskId;
@@ -1446,7 +1459,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .listSubtasks({ threadId })
       .then((subtasks) => setSubtasksByTask((previous) => ({ ...previous, [threadId]: subtasks })))
       .catch((error: unknown) => reportFailure(error, '没能读取子任务。'));
-  }, [activeTaskId, bridge, reportFailure]);
+  }, [activeTaskId, bridge, reportFailure, activeCollabItems, activeTaskStatus]);
 
   /** 结果区数据按任务读取；产物来自索引，文件来自该任务所属项目的根目录。 */
   useEffect(() => {

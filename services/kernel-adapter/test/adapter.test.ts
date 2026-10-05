@@ -1395,6 +1395,64 @@ describe('通知驱动 UI（09 §3.4 的端到端）', () => {
     expect(JSON.stringify(ui)).not.toContain('thread/started');
   });
 
+  it('派出的子代理进投影表并带上父任务 —— 内核不给子代理发 thread/started', async () => {
+    /*
+     * app-server 只为 thread/start · review · fork 发 thread/started；spawn_agent 派出来的子代理
+     * 只在父任务流里留一条 subAgentActivity(started)。不补这一步，子任务抽屉永远是空的，
+     * 子视图里的追加要求也认不出根任务、会被直接发给子代理（04 §5.6 要的是经根代理转交）。
+     */
+    server.handlers.set('thread/read', (ctx) => ({
+      thread: makeThread({ id: String(ctx.params.threadId), parentThreadId: 'root' }),
+    }));
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'root' }));
+
+    server.notify('item/started', {
+      threadId: 'root',
+      turnId: 'turn-1',
+      item: {
+        type: 'subAgentActivity',
+        id: 'call-1',
+        kind: 'started',
+        agentThreadId: 'child',
+        agentPath: '/root/researcher',
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    expect(store.threads.get('child')?.parent_thread_id).toBe('root');
+    expect(store.threads.queryThreadIds({ parentThreadId: 'root' })).toEqual(['child']);
+    // 子代理不该变成侧栏里一个新的顶层任务
+    expect(ui.filter((e) => e.type === 'task-created' && e.threadId === 'child')).toHaveLength(0);
+  });
+
+  it('兄弟代理互发的 subAgentActivity(interacted) 不认领父子关系', async () => {
+    let reads = 0;
+    server.handlers.set('thread/read', (ctx) => {
+      reads += 1;
+      return { thread: makeThread({ id: String(ctx.params.threadId), parentThreadId: 'root' }) };
+    });
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'agent-a', parentThreadId: 'root' }));
+
+    // agent_a 给 agent_b 发消息：这条出现在 a 的流里，而 a 不是 b 的父任务
+    server.notify('item/started', {
+      threadId: 'agent-a',
+      item: {
+        type: 'subAgentActivity',
+        id: 'call-2',
+        kind: 'interacted',
+        agentThreadId: 'agent-b',
+        agentPath: '/root/agent_b',
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+
+    expect(reads).toBe(0);
+    expect(store.threads.get('agent-b')).toBeUndefined();
+  });
+
   it('未识别的通知只记形状，不进入对话 UI（R2 雷达）', async () => {
     await adapter.start();
     server.notify('item/brandNewKind', { threadId: 't1', payload: {} });

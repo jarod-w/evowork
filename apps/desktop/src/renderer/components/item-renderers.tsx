@@ -130,12 +130,26 @@ const COLLAB_TOOL_LABEL: Readonly<Record<string, string>> = {
   send_message: '发送消息',
   followupTask: '继续子任务',
   followup_task: '继续子任务',
+  // app-server 线上的 V2 等待叫 `wait`（`v2/item.rs` 的 CollabAgentTool 是 camelCase），不是工具名 wait_agent
+  wait: '等待代理',
   waitAgent: '等待代理',
   wait_agent: '等待代理',
+  // V1 的三个动作：同一个枚举里还在，上游切回 V1 时不该露出英文
+  sendInput: '发送消息',
+  resumeAgent: '恢复代理',
+  closeAgent: '关闭代理',
   interruptAgent: '中断代理',
   interrupt_agent: '中断代理',
   listAgents: '查看代理',
   list_agents: '查看代理',
+};
+
+/** `SubAgentActivityKind`（`v2/item.rs`）。没有这张表，中文界面上露出的是 `started` */
+const SUBAGENT_ACTIVITY_LABEL: Readonly<Record<string, string>> = {
+  started: '已启动',
+  interacted: '收到消息',
+  interrupted: '已中断',
+  completed: '已完成',
 };
 
 const COLLAB_STATUS_LABEL: Readonly<Record<string, string>> = {
@@ -744,7 +758,7 @@ export function ItemRenderer({
           summary={
             <>
               <span>{path}</span>
-              {activity ? <span>{activity}</span> : null}
+              {activity ? <span>{SUBAGENT_ACTIVITY_LABEL[activity] ?? activity}</span> : null}
               {tokens !== undefined ? (
                 <span className="ew-token-usage">{tokens} tokens</span>
               ) : null}

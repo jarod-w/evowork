@@ -398,10 +398,36 @@ export function createAdapter(options: AdapterOptions) {
       }
       options.onUiEvent?.(event);
     },
-    ...(options.onSideEffect ? { onSideEffect: options.onSideEffect } : {}),
+    onSideEffect: (effect) => {
+      if (effect.kind === 'project-subagent') {
+        void projectSubagent(effect.threadId);
+        return;
+      }
+      options.onSideEffect?.(effect);
+    },
     ...(logger ? { logger } : {}),
     now,
   });
+
+  /**
+   * 子代理进投影表（`project-subagent`）。不补这一步，子代理**永远**不在投影表里：
+   * 子任务抽屉是空的（`listSubtasks` 按 `parent_thread_id` 查），子视图里的追加要求也认不出
+   * 它的根任务，会被当成一个普通任务直接发给子代理 —— 04 §5.6 要的是经根代理转交。
+   * 读到的 Thread 自带 `parentThreadId`（内核只给子代理填它），`upsertFromThread` 原样落库。
+   */
+  async function projectSubagent(threadId: string): Promise<void> {
+    if (store.threads.get(threadId)) return;
+    try {
+      const response = await session.peer.request<{ thread?: Thread }>(METHOD.threadRead, {
+        threadId,
+      });
+      if (response?.thread && !store.threads.get(threadId)) {
+        store.threads.upsertFromThread(response.thread);
+      }
+    } catch (err) {
+      logger?.warn('adapter.subagent.project_failed', { threadId, ...errorFields(err) });
+    }
+  }
 
   const approvals = createApprovalRouter({
     ask: options.askApproval ?? (async () => ({ decision: 'decline' as const })),

@@ -138,7 +138,13 @@ export type SideEffect =
       readonly threadId: string;
       readonly status: Turn['status'];
     }
-  | { readonly kind: 'index-title'; readonly threadId: string };
+  | { readonly kind: 'index-title'; readonly threadId: string }
+  /**
+   * 把一个刚派出来的子代理补进投影表。子代理的 thread **没有 `thread/started`**：app-server 只为
+   * thread/start · review · fork 发它，spawn_agent 派出来的只挂监听（`thread_processor.rs` 的
+   * `try_attach_thread_listener`）。适配层在自己内部执行它（要 `thread/read`），不交给宿主。
+   */
+  | { readonly kind: 'project-subagent'; readonly threadId: string };
 
 export interface EventRouterOptions {
   readonly store: Store;
@@ -467,6 +473,21 @@ export function createEventRouter(options: EventRouterOptions) {
         ...(p.turnId ? { turnId: p.turnId } : {}),
         item: p.item,
       });
+      /*
+       * V2 的派生信号是父任务流里一条 `subAgentActivity(kind=started)`（spawn.rs 的
+       * `emit_sub_agent_activity`）。只认 `started`：`interacted` 出现在**发消息的那一方**的流里，
+       * 兄弟代理之间互发时那一方不是接收者的父任务。
+       */
+      const activity = p.item as { type: string; kind?: unknown; agentThreadId?: unknown };
+      if (
+        activity.type === 'subAgentActivity' &&
+        activity.kind === 'started' &&
+        typeof activity.agentThreadId === 'string' &&
+        !ephemeralThreadIds.has(p.threadId) &&
+        !store.threads.get(activity.agentThreadId)
+      ) {
+        return [{ kind: 'project-subagent', threadId: activity.agentThreadId }];
+      }
       return [];
     },
 
