@@ -13,7 +13,7 @@
  *
  * 用法：
  *   EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
- *     --base https://api.deepseek.com --model deepseek-v4-flash
+ *     --base https://api.deepseek.com --model deepseek-flash
  *
  * 可选开关：
  *   --reasoning true   这个型号**应该**吐 reasoning_content（断言的是"与能力表一致"）

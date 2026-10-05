@@ -870,8 +870,10 @@ describe('能力声明（当前内置型号）', () => {
     expect(verified.length, 'DeepSeek Flash + Kimi + GLM').toBe(3);
     for (const model of verified) {
       expect(model.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      // 上下文长度要塞满才能测，探针不做 —— 所以它必须还在未验证列表里
-      expect(model.unverified, `${model.id}`).toContain('maxContextTokens');
+      // 上下文长度探针不测：没另外实测过的必须还在未验证列表里，实测过的 notes 要写出上限
+      if (!model.unverified.includes('maxContextTokens')) {
+        expect(model.notes, `${model.id}`).toContain('上下文上限实测为');
+      }
       expect(model.notes).toContain('实测');
     }
   });

@@ -63,7 +63,7 @@ BROKEN 不总是坏消息：比如 `thread/list` 哪天真加了状态过滤参�
 
 ```bash
 EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
-  --base https://api.deepseek.com --model deepseek-v4-flash --reasoning true
+  --base https://api.deepseek.com --model deepseek-flash --reasoning true
 ```
 
 ## `build-upgrade-fixture.mjs` 为什么要用旧代码建库

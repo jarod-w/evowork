@@ -118,7 +118,7 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 
 | **F32** | `response.failed` 里**内核认不出来的 `code`** → `Retryable{message}` → `CodexErr::Stream`：按退避自动重试，重试用完后把 message 显示给用户 | `codex-api/src/sse/responses.rs:462-469` | ✅ 网关的 `UPSTREAM_DISCONNECTED` 走的就是这条 |
 | **F33** | `CodexErrorDetails::Stream(..)` 可重试（`backoff`），而 **`ServerOverloaded` 是终止态**（`retry_delay → None`）且 Display 是写死的 "Selected model is at capacity. Please try a different model." | `protocol/src/error.rs:379-420` | 🚨 **2026-09-26 三处已改**：网关原来用 `server_is_overloaded` 表示「连不上 / 断流 / 厂商 5xx」—— 既不重试，又把我们写给用户的中文换成那句英文。最该重试的三种故障因此一次都没重试过 |
-| **F34** | 未知型号套用兜底元数据，`context_window` 一律 272_000 | `models-manager/src/model_info.rs:99`（`model_info_from_slug`） | ✅ 2026-09-26（`scripts/kernel-assertions.json` 机器复核）：没有模型目录时 GLM（128k）永远等不到压缩、DeepSeek（1M）浪费七成多 —— 这是我们要给内核一份模型目录的理由 |
+| **F34** | 未知型号套用兜底元数据，`context_window` 一律 272_000 | `models-manager/src/model_info.rs:99`（`model_info_from_slug`） | ✅ 2026-09-26（`scripts/kernel-assertions.json` 机器复核）：没有模型目录时，窗口小于 272k 的模型永远等不到压缩、1M 的浪费七成多 —— 这是我们要给内核一份模型目录的理由（2026-10-05：内置三家按厂商文档订正为 1M 级，小窗口那条如今落在表外的自定义模型上） |
 | **F35** | 模型目录的每条模型必须带 `base_instructions` 或 `model_messages.instructions_template`，否则整份配置加载失败 | `protocol/src/openai_models.rs:800`（`deserialize_model_infos_with_legacy_base`） | ✅ 2026-09-26（机器复核）：缺了它所有任务都起不来（`thread/start` -32600） |
 | **F36** | 内核插件包只能装 skills · mcp_servers · apps · hooks，**没有 agent role** | `plugin/src/manifest.rs:19-25` | ✅ 2026-10-02 读码（13 HF1）：内核市场装不了专家，专家要走我们自己的通道 |
 | **F37** | 内核**不验插件签名** | `plugin/src/bundled_hooks.rs:2`（注释原文 `does not verify plugin signatures`） | ✅ 2026-10-02 读码（13 HF2）：「验签失败拒装」只能在我们这一层做 |
@@ -130,6 +130,7 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 | **F43** | 显式选中（`UserInput::Skill`）**跳过已停用的技能** | `skills/src/selection.rs:82` | ✅ 2026-10-02 读码（13 HF8）：「装了先停用、用时再带入」走不通 |
 | **F44** | 技能 name ≤ 64 字符，description ≤ 1024 字符 | `skills/src/interface.rs:10-11` | ✅ 2026-10-02 读码（13 HF9） |
 | **F45** | `plugin/install` 装完**无条件**把插件写成启用；预写的 `enabled = false` 会被覆盖 | `core-plugins/src/manager.rs:2256`（`set_user_plugin_enabled(.., /*enabled*/ true)`） | ✅ 2026-10-02 实测 + 读码（13 §12.1 V6）：「套件」git / npm 来源先装后审只能装完再停用，中间有空窗（13 §14） |
+| **F46** | 压缩点 = min(模型元数据的 `auto_compact_token_limit`, 窗口 × 90%)；`config.toml` 的 `model_auto_compact_token_limit` 会**盖过**元数据 | `protocol/src/openai_models.rs:525` · `models-manager/src/model_info.rs:29`（`with_config_overrides`） | ✅ 2026-10-05 读码（`scripts/kernel-assertions.json` 机器复核）：模型目录给 1M 级模型写的 256k 上限靠「取较小值」成立（总纲 D2 2026-10-05）；企业在 config.toml 里设的上限优先于我们的 |
 
 ### 4.1 F1 的直接收益：补丁清单从 P3+P4 缩到只有 P4
 

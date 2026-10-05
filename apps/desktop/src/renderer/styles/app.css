@@ -3548,6 +3548,21 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
+/* 填的值存不下（「添加模型」的自定义上下文小于下限）：文字用 -text 变体（01 §2.2） */
+.ew-field-hint[data-tone='warning'] {
+  color: var(--warning-text);
+}
+/* 输入框后面跟一个单位（自定义上下文的「token」） */
+.ew-field-row > input {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.ew-field-unit {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+}
 .ew-fixed-behavior {
   padding: var(--space-8) var(--space-12);
   border-radius: var(--r-md);
@@ -4017,6 +4032,13 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-settings-model-kind {
   flex: none;
   color: var(--text-tertiary);
+}
+/* 上下文大小（「上下文 256K · 能力表」）：次要信息，不抢模型名的视线 */
+.ew-settings-model-meta {
+  color: var(--text-tertiary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-variant-numeric: tabular-nums;
 }
 /* 缺密钥：文字用 -text 变体（01 §2.2：基色写文字不达标） */
 .ew-settings-model-warn {

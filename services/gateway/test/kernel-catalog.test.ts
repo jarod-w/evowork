@@ -2,31 +2,60 @@
  * 给内核的模型目录。
  *
  * 这份 JSON 的特别之处是**做错了会让内核拒绝加载整份配置** —— 表现不是"压缩点不对"，
- * 是所有任务都起不来。所以这里断言的不是"字段都在"，而是**两条后果**：
+ * 是所有任务都起不来。所以这里断言的不是"字段都在"，而是**三条后果**：
  *   ① 上下文大小按模型逐条给对（这是做这件事的全部意义）；
- *   ② 除了上下文，**行为与今天的兜底元数据一字不差**（改动面只有一处，出事也只能出在那儿）。
+ *   ② 除了上下文，**行为与今天的兜底元数据一字不差**（改动面只有一处，出事也只能出在那儿）——
+ *      有意的例外逐条列在 `kernel-catalog.ts` 文件头，每条在这里有自己的用例；
+ *   ③ 窗口大的模型压缩点有上限，窗口小的不受影响。
  */
 import { describe, expect, it } from 'vitest';
 
-import { buildKernelModelCatalog } from '../src/kernel-catalog.js';
+import { AUTO_COMPACT_TOKEN_CAP, buildKernelModelCatalog } from '../src/kernel-catalog.js';
 import { P0_MODELS } from '../src/capabilities.js';
 
 /** 产品身份底稿（`config/prompts/base-instructions.md` 的替身）。内核要求每条模型都带 */
 const BASE = '你是 EvoWork 的执行智能体。';
 
 describe('给内核的模型目录', () => {
-  it('上下文大小逐条给对 —— GLM 的 128k 不能被当成兜底的 272k', () => {
+  it('上下文大小逐条给对 —— 128k 的模型不能被当成兜底的 272k', () => {
     const catalog = buildKernelModelCatalog(
       [
-        { id: 'evowork/glm-flash', displayName: 'GLM', maxContextTokens: 128_000 },
-        { id: 'evowork/kimi-k3', displayName: 'Kimi', maxContextTokens: 256_000 },
+        { id: 'private/small', displayName: '小窗口', maxContextTokens: 128_000 },
+        { id: 'private/big', displayName: '大窗口', maxContextTokens: 1_048_576 },
       ],
       BASE,
     );
     const byId = new Map(catalog?.models.map((m) => [m.slug, m]));
-    expect(byId.get('evowork/glm-flash')?.context_window).toBe(128_000);
-    expect(byId.get('evowork/glm-flash')?.max_context_window).toBe(128_000);
-    expect(byId.get('evowork/kimi-k3')?.context_window).toBe(256_000);
+    expect(byId.get('private/small')?.context_window).toBe(128_000);
+    expect(byId.get('private/small')?.max_context_window).toBe(128_000);
+    expect(byId.get('private/big')?.context_window).toBe(1_048_576);
+  });
+
+  it('**1M 的模型在 256k 压缩，不等到 ~94 万** —— 真实窗口照实填，压缩点另设上限（D2）', () => {
+    /*
+     * 不设上限时内核按窗口的 90% 压缩：agent 每调一次工具都要重发整段上下文，
+     * 越往后每一步越贵、越慢，Q11 的单任务预算会被这一截烧掉。
+     * 窗口本身不能为此改小 —— 它是内核的硬上限，填小了等于谎报。
+     */
+    const [entry] = buildKernelModelCatalog(
+      [{ id: 'x/big', displayName: '大窗口', maxContextTokens: 1_048_576 }],
+      BASE,
+    )!.models;
+    expect(entry?.context_window).toBe(1_048_576);
+    expect(entry?.auto_compact_token_limit).toBe(AUTO_COMPACT_TOKEN_CAP);
+    expect(AUTO_COMPACT_TOKEN_CAP).toBe(256_000);
+  });
+
+  it('**比上限小的模型不写这个键** —— 它们的压缩点与这次改动之前一字不差', () => {
+    /*
+     * 表外的自定义模型默认 32k。写一个 256k 进去本来也会被内核的 min(上限, 90% 窗口) 吸收，
+     * 但那要靠内核那一行不变（F46）；不写，就根本不依赖它。
+     */
+    const [entry] = buildKernelModelCatalog(
+      [{ id: 'private/custom', displayName: '自定义', maxContextTokens: 32_000 }],
+      BASE,
+    )!.models;
+    expect(entry).not.toHaveProperty('auto_compact_token_limit');
   });
 
   it('**除了上下文，其余逐字复刻内核的兜底值**（`model_info.rs:99-137`）', () => {
@@ -112,5 +141,9 @@ describe('给内核的模型目录', () => {
     expect(catalog?.models.length).toBe(P0_MODELS.length);
     // 没有哪一条还停在兜底的 272k 上
     expect(catalog?.models.every((m) => m.context_window !== 272_000)).toBe(true);
+    // 内置三家都是 1M 级（2026-10-05 按厂商文档订正）：压缩点全部落在上限上，没有一条等到 90%
+    expect(catalog?.models.map((m) => m.auto_compact_token_limit)).toEqual(
+      P0_MODELS.map(() => AUTO_COMPACT_TOKEN_CAP),
+    );
   });
 });

@@ -451,7 +451,7 @@
         "context_window: Some(272_000)",
         "effective_context_window_percent: 95"
       ],
-      "impact": "没有目录时 GLM（128k）永远等不到压缩、DeepSeek（1M）浪费七成多。这个数变了就要同步 services/gateway/src/kernel-catalog.ts 的头注释"
+      "impact": "没有目录时，窗口小于 272k 的模型（表外自定义模型默认 32k）永远等不到压缩、1M 的浪费七成多。这个数变了就要同步 services/gateway/src/kernel-catalog.ts 的头注释"
     },
     {
       "id": "F35",
@@ -542,6 +542,19 @@
       },
       "mustContain": ["set_user_plugin_enabled(", "/*enabled*/ true"],
       "impact": "「套件」git / npm 来源先装后审的空窗（13 §14）就来自它：bundle-host 只能在装完之后立刻写停用。上游要是改成尊重已有的启停，就可以改回「预写停用」，空窗消失"
+    },
+    {
+      "id": "F46",
+      "summary": "压缩点 = min(模型元数据的 auto_compact_token_limit, 窗口 × 90%)；config.toml 的 model_auto_compact_token_limit 会盖过元数据（总纲 D2 2026-10-05）",
+      "file": "codex-rs/protocol/src/openai_models.rs",
+      "needle": "pub fn auto_compact_token_limit(&self) -> Option<i64> {",
+      "line": 525,
+      "scopeLines": {
+        "before": 0,
+        "after": 11
+      },
+      "mustContain": ["(context_window * 9) / 10", "std::cmp::min(limit, context_limit)"],
+      "impact": "kernel-catalog.ts 给 1M 级模型写的 256k 上限（AUTO_COMPACT_TOKEN_CAP）靠「取较小值」才成立。上游要是改成「设了就直接用」，写进目录的上限会压过小窗口的 90% —— 我们只给窗口大于上限的模型写这个键，所以不会出事，但要重新核对那条判断；企业覆盖走 models-manager/src/model_info.rs:29（with_config_overrides）"
     }
   ]
 }

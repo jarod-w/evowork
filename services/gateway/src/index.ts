@@ -37,7 +37,9 @@ export {
   builtinModelEntries,
   findKnownModel,
   KNOWN_MODELS,
+  knownContextEntries,
   type CapabilityEvidence,
+  type KnownContextEntry,
   type KnownModel,
 } from './known-models.js';
 export {
@@ -107,7 +109,9 @@ export {
   type UpstreamResponse,
 } from './providers/types.js';
 export {
+  AUTO_COMPACT_TOKEN_CAP,
   buildKernelModelCatalog,
+  MIN_CONTEXT_TOKENS,
   type CatalogSource,
   type KernelCatalogModel,
   type KernelModelCatalog,

@@ -303,8 +303,9 @@ export function ensureKernelConfig(paths: EvoworkPaths, templatePath: string): b
  *
  * 为什么必须做这件事：内核不认识我们的任何模型（用户机器上的日志是
  * `Unknown model … This will use fallback model metadata.`），于是**每一个**模型都按
- * 兜底的 `context_window: 272_000` 对待，而压缩是按它的 95% 提前触发的。
- * GLM 只有 128k —— 压缩永远等不到，厂商先拒；DeepSeek 1M 则浪费掉七成多。
+ * 兜底的 `context_window: 272_000` 对待，而压缩是按它的 90% 提前触发的（95% 是硬上限）。
+ * 比它小的模型（例如 `models.toml` 里写着 128k 的表外模型）压缩永远等不到，厂商先拒；1M 的则浪费掉七成多。
+ * 目录里还带着压缩点上限（`AUTO_COMPACT_TOKEN_CAP`，总纲 D2）。
  *
  * **生成不出来就什么都不写**：没有目录只是回到今天的行为，而一份坏目录会让内核
  * 拒绝加载整份配置 —— 那是所有任务都起不来。

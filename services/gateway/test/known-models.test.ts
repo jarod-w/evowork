@@ -25,26 +25,27 @@ describe('认得出来的型号：结论只有一份', () => {
     expect(findKnownModel('zhipu', 'glm-5.3-flash')?.capabilities.imageInput).toBe(true);
   });
 
-  it('deepseek-flash 能读图（2026-09-26 实测，32×32 纯红图答"红"）', () => {
+  it('deepseek-flash 能读图（2026-09-26 实测、2026-10-05 新旧两个名字复测，32×32 纯红图答"红"）', () => {
     const model = findKnownModel('deepseek', 'deepseek-flash');
     expect(model?.capabilities.imageInput).toBe(true);
     expect(model?.evidence).toBe('probe');
-    expect(model?.verifiedAt).toBe('2026-09-26');
+    expect(model?.verifiedAt).toBe('2026-10-05');
   });
 
-  it('**deepseek-v4-flash 仍然不能读图** —— 它收下图、回 200、然后说看不见', () => {
-    const model = findKnownModel('deepseek', 'deepseek-v4-flash');
-    expect(model?.capabilities.imageInput).toBe(false);
+  it('**旧名 deepseek-v4-flash 认作 deepseek-flash** —— 厂商退役了原型号，旧名的请求由 V4.1-Flash 处理', () => {
     /*
-     * 这条是整张表里最容易被"顺手改对"的一条：名字像、厂商一样、文档说 DeepSeek 支持视觉。
-     * 但实测结论是第三种结局（接受但看不见），而那一种**不报错**——
-     * 改成 true 的代价是用户发了图、模型说"我没看到"，没有任何地方会提示出了什么事。
+     * 2026-09-05 那个型号"收下图、回 200、说看不见"，所以它曾单独一条且不读图。
+     * 2026-10-05 厂商文档：旧名仍收，但请求由 DeepSeek-V4.1-Flash（= deepseek-flash）处理。
+     * 还按退役前的结论记，后果是 Composer 把一个能读图的模型的图片拦掉（03 §8）。
+     * 依据是厂商的路由声明，notes 里要写明，免得下一个人以为这是按名字猜的。
      */
-    expect(model?.evidence).toBe('probe');
-    expect(model?.notes).toContain('无法识别');
+    const legacy = findKnownModel('deepseek', 'deepseek-v4-flash');
+    expect(legacy?.upstreamModel).toBe('deepseek-flash');
+    expect(legacy?.capabilities.imageInput).toBe(true);
+    expect(legacy?.notes).toContain('已退役');
   });
 
-  it('视觉实验名是同一个型号的别名，不该被当成陌生型号', () => {
+  it('视觉实验名同样是 deepseek-flash 的别名，不该被当成陌生型号', () => {
     expect(findKnownModel('deepseek', 'deepseek-v4-flash-vision-exp')?.upstreamModel).toBe(
       'deepseek-flash',
     );
@@ -70,7 +71,7 @@ describe('P0_MODELS 是派生的', () => {
   it('内置目录 = 表里带 builtinId 的那几条（下架 = 去掉 builtinId，不是删能力知识）', () => {
     const builtin = KNOWN_MODELS.filter((m) => m.builtinId !== undefined).map((m) => m.builtinId);
     expect(P0_MODELS.map((m) => m.id)).toEqual(builtin);
-    // 下架的 deepseek-v4-flash 不在目录里，但能力知识还在
+    // 旧名只是别名：认得出来，但不会在目录里多出一条
     expect(P0_MODELS.map((m) => m.upstreamModel)).not.toContain('deepseek-v4-flash');
     expect(findKnownModel('deepseek', 'deepseek-v4-flash')).toBeDefined();
   });
@@ -103,9 +104,19 @@ describe('每一条结论都得说清是怎么来的', () => {
     }
   });
 
-  it('`maxContextTokens` 始终在未验证列表里（要塞满上下文才能测，探针不做）', () => {
+  it('`maxContextTokens` 移出未验证列表，notes 里必须写着实测出的上限', () => {
+    /*
+     * 探针不测上下文（要塞满才能测）。2026-10-05 起有了第二条路：发一个超长的合成请求，
+     * 厂商在 400 里报出上限（DeepSeek 原话 "maximum context length is 1048576 tokens"）。
+     * 厂商文档常常只写「1M」，两种读法差 4.8 万 —— 所以没实测过的必须留在未验证列表里，
+     * 实测过的要把读出来的数写进 notes，不能只是悄悄把它从列表里删掉。
+     */
     for (const model of KNOWN_MODELS) {
-      expect(model.unverified, model.upstreamModel).toContain('maxContextTokens');
+      if (model.unverified.includes('maxContextTokens')) continue;
+      expect(model.notes, model.upstreamModel).toContain('上下文上限实测为');
+      expect(model.notes, model.upstreamModel).toContain(
+        model.capabilities.maxContextTokens.toLocaleString('en-US'),
+      );
     }
   });
 
@@ -140,11 +151,14 @@ describe('内置目录（Q16 的三家 P0）', () => {
   });
 
   /**
-   * 下架的那条**不许**回到目录里。它收下图、回 200、却说"无法识别"
-   * （`imageInput` 仍是 false），2026-09-06 因此下架 —— 而能力知识留着是另一回事。
+   * 2026-09-06 从目录下架的 `deepseek-v4-flash` **不许**回到目录里；2026-10-05 起它也不再有
+   * 自己的能力结论 —— 厂商退役了那个型号，旧名背后就是 `deepseek-flash`，两者必须是同一条，
+   * 否则同一个请求会因为用户填的是哪个名字而得到两套能力位。
    */
-  it('已下架的 deepseek-v4-flash 不在目录里，但它的能力知识还在', () => {
+  it('退役的旧名不回到目录，且与 deepseek-flash 是同一条能力知识', () => {
     expect(builtinModelEntries().some((m) => m.upstreamModel === 'deepseek-v4-flash')).toBe(false);
-    expect(findKnownModel('deepseek', 'deepseek-v4-flash')?.capabilities.imageInput).toBe(false);
+    expect(findKnownModel('deepseek', 'deepseek-v4-flash')).toBe(
+      findKnownModel('deepseek', 'deepseek-flash'),
+    );
   });
 });

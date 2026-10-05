@@ -538,6 +538,178 @@ describe('模型', () => {
   });
 });
 
+/**
+ * 「添加模型」的上下文大小（11 §4.4，2026-10-05 按原型落地）。
+ *
+ * 它决定内核在哪儿压缩早期对话；客户「经常压缩」的投诉就出在这个数上。
+ * 守的是三条后果：表外模型发出去的是用户看到的那个数；认得出的型号锁定为表里的值、
+ * 不发也不让改；存不进内核目录的数不让保存。
+ */
+describe('添加模型：上下文大小', () => {
+  const CONTEXT_ACCESS: ModelAccessView = {
+    ...ACCESS,
+    knownContexts: [
+      {
+        provider: 'deepseek',
+        upstreamModel: 'deepseek-flash',
+        maxContextTokens: 1_048_576,
+        source: '2026-10-05 实测',
+      },
+    ],
+    contextPolicy: { defaultTokens: 256_000, minTokens: 1_000, autoCompactCap: 256_000 },
+  };
+
+  function openPrivate(over: Partial<SettingsPageProps> = {}) {
+    const props = page({ access: CONTEXT_ACCESS, ...over });
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '其他 OpenAI 兼容 API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-x' } });
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'qwen3.8-max' } });
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/v1'), {
+      target: { value: 'https://example.com/v1' },
+    });
+    return props;
+  }
+  function save() {
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
+  }
+  function saveButton() {
+    return within(screen.getByRole('dialog')).getByRole('button', {
+      name: '保存',
+    }) as HTMLButtonElement;
+  }
+
+  it('表外模型默认 256K，并说出约多少时压缩 —— 发出去的就是用户看到的那个数', () => {
+    const props = openPrivate();
+    expect(screen.getByRole('button', { name: '上下文大小' }).textContent).toContain(
+      '256K（默认）',
+    );
+    // min(256K 上限, 90% × 256K) = 230.4K
+    expect(screen.getByText(/上下文到约 230K 时自动压缩早期对话/)).toBeTruthy();
+    save();
+    expect(props.onAddCustomModel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'private/qwen3.8-max', maxContextTokens: 256_000 }),
+    );
+  });
+
+  it('选 32K：提示跟着变，发出去的是 32000', () => {
+    const props = openPrivate();
+    fireEvent.click(screen.getByRole('button', { name: '上下文大小' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '32K' }));
+    expect(screen.getByText(/上下文到约 28.8K 时自动压缩早期对话/)).toBeTruthy();
+    save();
+    expect(props.onAddCustomModel).toHaveBeenCalledWith(
+      expect.objectContaining({ maxContextTokens: 32_000 }),
+    );
+  });
+
+  it('**自定义的数存不进内核目录就不让保存**，并说为什么 —— 否则那条模型会回到 272k 兜底', () => {
+    const props = openPrivate();
+    fireEvent.click(screen.getByRole('button', { name: '上下文大小' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '自定义…' }));
+    const input = screen.getByLabelText('自定义上下文（token）');
+    fireEvent.change(input, { target: { value: '500' } });
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.getByText('填一个整数，单位是 token，例如 200000。')).toBeTruthy();
+
+    // 千分位照样认
+    fireEvent.change(input, { target: { value: '200,000' } });
+    expect(saveButton().disabled).toBe(false);
+    save();
+    expect(props.onAddCustomModel).toHaveBeenCalledWith(
+      expect.objectContaining({ maxContextTokens: 200_000 }),
+    );
+  });
+
+  it('**能力表认得出的型号锁定为表里的值**并说出处；不发这一项 —— 主进程本来就按表覆盖', () => {
+    const props = page({ access: CONTEXT_ACCESS });
+    fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
+    fireEvent.click(screen.getByRole('button', { name: '供应商' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'DeepSeek API' }));
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-x' } });
+    // 大小写与空格不影响识别（与 findKnownModel 同一口径）
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: ' DeepSeek-Flash ' } });
+
+    const trigger = screen.getByRole('button', { name: '上下文大小' }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.textContent).toContain('1,048,576（1M）');
+    // 01 §6.3：禁用必须说原因，而且说清怎么才能自己选
+    expect(trigger.title).toContain('能力表');
+    expect(screen.getByText(/2026-10-05 实测/)).toBeTruthy();
+    // 1M 的 90% 远过上限，压缩点就是上限
+    expect(screen.getByText(/上下文到约 256K/)).toBeTruthy();
+
+    save();
+    expect(vi.mocked(props.onAddCustomModel).mock.calls[0]?.[0]).not.toHaveProperty(
+      'maxContextTokens',
+    );
+  });
+
+  it('修改：预填已存的那个数，保存时带上它', () => {
+    const props = page({
+      access: {
+        ...CONTEXT_ACCESS,
+        customModels: [
+          custom({
+            id: 'private/qwen3.8-max',
+            provider: 'private',
+            upstreamModel: 'qwen3.8-max',
+            baseUrl: 'https://example.com/v1',
+            maxContextTokens: 64_000,
+          }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '修改 private/qwen3.8-max' }));
+    expect(screen.getByRole('button', { name: '上下文大小' }).textContent).toContain('64K');
+    save();
+    expect(props.onUpdateCustomModel).toHaveBeenCalledWith(
+      expect.objectContaining({ previousId: 'private/qwen3.8-max', maxContextTokens: 64_000 }),
+    );
+  });
+
+  it('改一条能力表里的模型到表外型号：预选的是默认值，**不是上一个型号的 1M**', () => {
+    page({
+      access: {
+        ...CONTEXT_ACCESS,
+        customModels: [
+          custom({
+            id: 'deepseek/deepseek-flash',
+            upstreamModel: 'deepseek-flash',
+            maxContextTokens: 1_048_576,
+            contextFromTable: true,
+          }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '修改 deepseek/deepseek-flash' }));
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'deepseek-v4-pro' } });
+    // 估大是危险方向：带着 1M 过去，内核等不到压缩、上游先拒
+    expect(screen.getByRole('button', { name: '上下文大小' }).textContent).toContain(
+      '256K（默认）',
+    );
+  });
+
+  it('列表每行写出上下文；来自能力表的标出来', () => {
+    page({
+      access: {
+        ...CONTEXT_ACCESS,
+        customModels: [
+          custom({ id: 'private/qwen3.8-max', maxContextTokens: 256_000 }),
+          custom({
+            id: 'deepseek/deepseek-flash',
+            maxContextTokens: 1_048_576,
+            contextFromTable: true,
+          }),
+        ],
+      },
+    });
+    expect(screen.getByText('上下文 256K')).toBeTruthy();
+    expect(screen.getByText('上下文 1M · 能力表')).toBeTruthy();
+  });
+});
+
 describe('账号（M10b）', () => {
   it('未登录显示登录入口，没有密码框（Q33=A）', () => {
     const onLogin = vi.fn();

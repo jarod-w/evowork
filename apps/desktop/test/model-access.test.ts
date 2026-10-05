@@ -15,6 +15,7 @@ import {
   CUSTOM_MODELS_ENV,
   MODEL_POLICY_ENV,
   UPSTREAM_BASE_URL_ENV,
+  findKnownModel,
 } from '@evowork/gateway';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -258,7 +259,11 @@ describe('自定义模型的能力位来自能力表（known-models）', () => {
       capabilities: { imageInput: boolean; maxContextTokens: number };
     }[];
     expect(specs[0]?.capabilities.imageInput).toBe(true);
-    expect(specs[0]?.capabilities.maxContextTokens).toBe(256_000);
+    // 文件里早年种下的 32000 不算数，以能力表为准 —— 它决定内核在哪儿压缩
+    expect(specs[0]?.capabilities.maxContextTokens).toBe(
+      findKnownModel('moonshot', 'kimi-k3')?.capabilities.maxContextTokens,
+    );
+    expect(specs[0]?.capabilities.maxContextTokens).not.toBe(32_000);
   });
 
   it('把型号改成另一个就重算能力位，不沿用上一条的', () => {
@@ -270,20 +275,215 @@ describe('自定义模型的能力位来自能力表（known-models）', () => {
       baseUrl: 'https://api.deepseek.com/v1',
       apiKey: SECRET,
     });
-    // 改回那个"收下图却看不见"的老型号：徽标必须跟着变，否则用户发了图只会得到"我没看到"
+    /*
+     * 改成一个不读图的型号：徽标必须跟着变，否则用户发了图只会得到"我没看到"。
+     * deepseek-v4-pro 不在能力表里（落到保守默认），厂商文档也写着它不支持视觉。
+     * （原先这里用的是 deepseek-v4-flash —— 2026-10-05 它成了 deepseek-flash 的别名。）
+     */
     expect(
       m.updateCustomModel({
         previousId: 'deepseek/deepseek-flash',
-        id: 'deepseek/deepseek-v4-flash',
+        id: 'deepseek/deepseek-v4-pro',
         provider: 'deepseek',
-        upstreamModel: 'deepseek-v4-flash',
+        upstreamModel: 'deepseek-v4-pro',
         baseUrl: 'https://api.deepseek.com/v1',
       }),
     ).toBeUndefined();
     const specs = JSON.parse(m.env()[CUSTOM_MODELS_ENV] as string) as {
-      capabilities: { imageInput: boolean };
+      capabilities: { imageInput: boolean; maxContextTokens: number };
     }[];
     expect(specs[0]?.capabilities.imageInput).toBe(false);
+    // 上下文也不许继承旧型号的 1M：估大了内核等不到压缩，厂商先以超长拒绝
+    expect(specs[0]?.capabilities.maxContextTokens).not.toBe(
+      findKnownModel('deepseek', 'deepseek-flash')?.capabilities.maxContextTokens,
+    );
+  });
+
+  it('**型号没变时**保住添加时声明的能力位 —— 只改地址不该把用户声明冲掉', () => {
+    const m = access();
+    m.addCustomModel({
+      id: 'my/qwen',
+      provider: 'private',
+      upstreamModel: 'qwen3.8-max',
+      baseUrl: 'https://example.com/v1',
+      apiKey: SECRET,
+      imageInput: true,
+      maxContextTokens: 200_000,
+    });
+    expect(
+      m.updateCustomModel({
+        previousId: 'my/qwen',
+        id: 'my/qwen',
+        provider: 'private',
+        upstreamModel: 'qwen3.8-max',
+        baseUrl: 'https://example.org/v1',
+      }),
+    ).toBeUndefined();
+    const specs = JSON.parse(m.env()[CUSTOM_MODELS_ENV] as string) as {
+      capabilities: { imageInput: boolean; maxContextTokens: number };
+    }[];
+    expect(specs[0]?.capabilities.imageInput).toBe(true);
+    expect(specs[0]?.capabilities.maxContextTokens).toBe(200_000);
+  });
+});
+
+/**
+ * 表外模型的上下文默认值（2026-10-05：32k → 256k，总纲 D2）。
+ *
+ * 难点不在新加的那条，在**已经存下来的**：旧版本把代填的 32000 写进了每条表外模型，
+ * 只改默认值的话，正在抱怨「经常压缩」的那些用户一个都碰不到。
+ */
+describe('表外模型的上下文：默认 256k，旧文件里代填的 32k 自己会好', () => {
+  function legacyFile(maxContext: string, header = ''): void {
+    writeFileSync(
+      join(dir, 'models.toml'),
+      [
+        header,
+        '[[models]]',
+        'id = "my/qwen"',
+        'display_name = "qwen"',
+        'provider = "private"',
+        'upstream_model = "qwen3.8-max"',
+        'base_url = "https://example.com/v1"',
+        'key_env = "EVOWORK_CUSTOM_KEY_1"',
+        `max_context_tokens = ${maxContext}`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+  }
+  function contextOf(m: ReturnType<typeof access>): number | undefined {
+    return (
+      JSON.parse(m.env()[CUSTOM_MODELS_ENV] as string) as {
+        capabilities: { maxContextTokens: number };
+      }[]
+    )[0]?.capabilities.maxContextTokens;
+  }
+
+  it('新加一条表外模型、没声明上下文 → 256k，不再是 28.8k 就压缩的 32k', () => {
+    const m = access();
+    m.addCustomModel({
+      id: 'my/qwen',
+      provider: 'private',
+      upstreamModel: 'qwen3.8-max',
+      baseUrl: 'https://example.com/v1',
+      apiKey: SECRET,
+    });
+    expect(contextOf(m)).toBe(256_000);
+  });
+
+  it('**旧文件里的 32000 是代填的**，读出来是 256k —— 那时设置页根本没有这一项', () => {
+    legacyFile('32000');
+    expect(contextOf(access())).toBe(256_000);
+  });
+
+  it('旧文件里别的数是有人手改的，照旧尊重', () => {
+    legacyFile('64000');
+    expect(contextOf(access())).toBe(64_000);
+  });
+
+  it('新格式文件里的 32000 是用户在设置页选的，不能当成代填值抹掉', () => {
+    legacyFile('32000', 'format_version = 2');
+    expect(contextOf(access())).toBe(32_000);
+  });
+
+  it('写出去的文件带格式版本 —— 否则下次读回来分不清是谁写的 32000', () => {
+    const m = access();
+    m.addCustomModel({
+      id: 'my/qwen',
+      provider: 'private',
+      upstreamModel: 'qwen3.8-max',
+      baseUrl: 'https://example.com/v1',
+      apiKey: SECRET,
+      maxContextTokens: 32_000,
+    });
+    expect(readFileSync(join(dir, 'models.toml'), 'utf8')).toContain('format_version = 2');
+    // 重新读一遍（换一个实例）：用户选的 32k 留得住
+    expect(contextOf(access())).toBe(32_000);
+  });
+});
+
+/**
+ * 设置页「上下文大小」那一项的主进程一侧（11 §4.4）。
+ * 渲染层不自己存这些数，所以视图里给的必须就是实际生效的那些。
+ */
+describe('设置页拿到的上下文 · 改上下文', () => {
+  it('每行带上实际生效的上下文；认得出的型号是表里的值并标明', () => {
+    const m = access();
+    m.addCustomModel({
+      id: 'my/qwen',
+      provider: 'private',
+      upstreamModel: 'qwen3.8-max',
+      baseUrl: 'https://example.com/v1',
+      apiKey: SECRET,
+      maxContextTokens: 64_000,
+    });
+    m.addCustomModel({
+      id: 'deepseek/deepseek-flash',
+      provider: 'deepseek',
+      upstreamModel: 'deepseek-flash',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: SECRET,
+      // 认得出的型号：用户这里填什么都按表走
+      maxContextTokens: 32_000,
+    });
+    const rows = m.view(EMPTY_CATALOG).customModels;
+    expect(rows[0]).toMatchObject({ maxContextTokens: 64_000, contextFromTable: false });
+    expect(rows[1]).toMatchObject({
+      maxContextTokens: findKnownModel('deepseek', 'deepseek-flash')?.capabilities.maxContextTokens,
+      contextFromTable: true,
+    });
+  });
+
+  it('视图带着能力表的名字（含旧名）与三个数 —— 渲染层不另存一份', () => {
+    const view = access().view(EMPTY_CATALOG);
+    const legacy = view.knownContexts?.find(
+      (k) => k.provider === 'deepseek' && k.upstreamModel === 'deepseek-v4-flash',
+    );
+    // 旧名的出处要说清它等同哪个型号，免得用户以为表里有两个不同的模型
+    expect(legacy?.source).toContain('旧名等同 deepseek-flash');
+    expect(view.knownContexts?.some((k) => k.provider === 'private')).toBe(false);
+    expect(view.contextPolicy).toEqual({
+      defaultTokens: 256_000,
+      minTokens: 1_000,
+      autoCompactCap: 256_000,
+    });
+  });
+
+  it('改的时候带上新的上下文就存下来', () => {
+    const m = access();
+    m.addCustomModel({
+      id: 'my/qwen',
+      provider: 'private',
+      upstreamModel: 'qwen3.8-max',
+      baseUrl: 'https://example.com/v1',
+      apiKey: SECRET,
+    });
+    expect(
+      m.updateCustomModel({
+        previousId: 'my/qwen',
+        id: 'my/qwen',
+        provider: 'private',
+        upstreamModel: 'qwen3.8-max',
+        baseUrl: 'https://example.com/v1',
+        maxContextTokens: 128_000,
+      }),
+    ).toBeUndefined();
+    expect(m.view(EMPTY_CATALOG).customModels[0]?.maxContextTokens).toBe(128_000);
+  });
+
+  it('**存不进内核目录的数拒掉** —— 比下限小的那条会回到内核兜底的 272k', () => {
+    const m = access();
+    const refusal = m.addCustomModel({
+      id: 'my/qwen',
+      provider: 'private',
+      upstreamModel: 'qwen3.8-max',
+      baseUrl: 'https://example.com/v1',
+      apiKey: SECRET,
+      maxContextTokens: 500,
+    });
+    expect(refusal).toContain('上下文至少填 1,000 token');
+    expect(m.view(EMPTY_CATALOG).customModels).toEqual([]);
   });
 });
 

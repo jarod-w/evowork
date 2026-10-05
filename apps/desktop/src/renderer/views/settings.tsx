@@ -30,11 +30,13 @@ import {
   SectionHeader,
 } from '../components/primitives.js';
 import type {
+  ContextPolicyView,
   HubStatusView,
   CustomModelInput,
   CustomModelTestInput,
   CustomModelUpdateInput,
   CustomModelView,
+  KnownContextView,
   ModelAccessView,
   ModelProbeResult,
   MemorySettingsInput,
@@ -486,6 +488,16 @@ function ModelsSection(props: SettingsPageProps) {
                     <span className="ew-settings-model-kind">自定义</span>
                   </div>
                   {/*
+                   * 上下文决定内核在哪儿压缩（总纲 D2）。摆在行里，不点开铅笔也看得出哪条是 32K ——
+                   * 「经常压缩」的投诉多半就出在那一条上。
+                   */}
+                  {model.maxContextTokens !== undefined ? (
+                    <span className="ew-settings-model-meta">
+                      上下文 {shortTokens(model.maxContextTokens)}
+                      {model.contextFromTable ? ' · 能力表' : ''}
+                    </span>
+                  ) : null}
+                  {/*
                    * 缺密钥是**用户必须知道**的一条：这条模型在下拉里看着正常、
                    * 发出去 401。正常那条不显示第二行，行高与附件一致。
                    */}
@@ -547,6 +559,8 @@ function ModelsSection(props: SettingsPageProps) {
           }}
           onTest={props.onTestCustomModel}
           onOpenDocs={props.onOpenProviderDocs}
+          knownContexts={access.knownContexts ?? []}
+          contextPolicy={access.contextPolicy}
         />
       ) : null}
     </section>
@@ -562,7 +576,17 @@ const MODE_LABEL: Readonly<Record<string, string>> = Object.freeze({
 /**
  * 「添加模型」/「修改模型」弹窗（11 §4.4 的附件形态）。
  *
- * 四件事按用户填的顺序排：**供应商 → API Key（可当场测）→ 模型名称 → endpoint**。
+ * 五件事按用户填的顺序排：**供应商 → API Key（可当场测）→ 模型名称 → endpoint → 上下文大小**。
+ *
+ * ## 上下文大小（2026-10-05，原型确认后落地）
+ *
+ * 它决定内核在哪儿压缩早期对话（总纲 D2）。四条规矩：
+ * - 档位 32K / 64K / 128K / 256K / 1M / 自定义，**按十进制存**（128K = 128,000，比厂商常说的
+ *   131,072 小）：估小只是早一点压缩，估大了长任务会在压缩之前被上游拒绝，所以宁小勿大。
+ * - **能力表认得出的型号锁定为表里的值**并说出处：保存时主进程本来就按表覆盖，
+ *   让人改了却不生效是静默降级。
+ * - 下面一行算出压缩点：min(上限, 90% 上下文)（F46）。三个数都由宿主给（`ContextPolicyView`）。
+ * - 自定义的值进不了内核目录（小于下限）时禁用保存并说为什么。
  *
  * ## 三处与附件不同，都是因为我们的模型不是"套餐里选一个"
  *
@@ -592,9 +616,13 @@ function CustomModelDialog({
   onUpdate,
   onTest,
   onOpenDocs,
+  knownContexts,
+  contextPolicy,
 }: {
   /** 缺席 = 添加；有值 = 改这一条 */
   readonly model?: CustomModelView | undefined;
+  readonly knownContexts: readonly KnownContextView[];
+  readonly contextPolicy?: ContextPolicyView | undefined;
   readonly onCancel: () => void;
   readonly onAdd: (input: CustomModelInput) => void;
   readonly onUpdate: (input: CustomModelUpdateInput) => void;
@@ -610,6 +638,23 @@ function CustomModelDialog({
   /** 点「测试连接」之后上游返回的名单。换供应商 / 密钥 / 地址就作废。 */
   const [fetchedModels, setFetchedModels] = useState<readonly string[]>([]);
   const [testing, setTesting] = useState(false);
+  const defaultContext = contextPolicy?.defaultTokens ?? FALLBACK_DEFAULT_CONTEXT;
+  /*
+   * 改一条来自能力表的模型时不沿用表里的值：用户把它改成表外型号的那一刻，
+   * 预选的应当是默认值，而不是上一个型号的 1M。
+   */
+  const initialContext =
+    model?.maxContextTokens !== undefined && model.contextFromTable !== true
+      ? model.maxContextTokens
+      : defaultContext;
+  const [contextChoice, setContextChoice] = useState<string>(
+    contextPresetFor(initialContext, defaultContext),
+  );
+  const [contextCustom, setContextCustom] = useState(
+    contextPresetFor(initialContext, defaultContext) === CUSTOM_CONTEXT
+      ? String(initialContext)
+      : '',
+  );
 
   const trimmedName = modelName.trim();
   const trimmedKey = apiKey.trim();
@@ -623,12 +668,31 @@ function CustomModelDialog({
     provider === 'private' ||
     (provider !== undefined && trimmedUrl !== '' && trimmedUrl !== PROVIDER_BASE_URL[provider]);
 
+  const knownContext =
+    provider === undefined
+      ? undefined
+      : knownContexts.find(
+          (entry) =>
+            entry.provider === provider && entry.upstreamModel === trimmedName.toLowerCase(),
+        );
+  const minContext = contextPolicy?.minTokens ?? FALLBACK_MIN_CONTEXT;
+  const chosenContext =
+    contextChoice === CUSTOM_CONTEXT
+      ? parseContextTokens(contextCustom, minContext)
+      : Number(contextChoice);
   const ready =
     provider !== undefined &&
     trimmedName !== '' &&
     trimmedUrl !== '' &&
     // 改的时候不要求重填密钥（留空 = 沿用已存的那把）
-    (trimmedKey !== '' || keyOnFile);
+    (trimmedKey !== '' || keyOnFile) &&
+    // 认得出的型号按表走，不看这一项；认不出的必须是一个进得了内核目录的数
+    (knownContext !== undefined || chosenContext !== undefined);
+  // 认得出的型号不发：主进程按表覆盖，发了也只是噪音
+  const contextField =
+    knownContext === undefined && chosenContext !== undefined
+      ? { maxContextTokens: chosenContext }
+      : {};
   const hasKey = trimmedKey !== '' || keyOnFile;
   const canTest =
     onTest !== undefined && provider !== undefined && hasKey && trimmedUrl !== '' && !testing;
@@ -674,6 +738,7 @@ function CustomModelDialog({
             baseUrl: trimmedUrl,
             // 留空 = 不动已存的那把（协议里就是这个语义）
             ...(trimmedKey !== '' ? { apiKey: trimmedKey } : {}),
+            ...contextField,
           });
           return;
         }
@@ -684,6 +749,7 @@ function CustomModelDialog({
           upstreamModel: trimmedName,
           baseUrl: trimmedUrl,
           apiKey: trimmedKey,
+          ...contextField,
         });
       }}
     >
@@ -813,7 +879,143 @@ function CustomModelDialog({
           />
         </label>
       ) : null}
+
+      <ContextSizeField
+        known={knownContext}
+        choice={contextChoice}
+        custom={contextCustom}
+        chosen={chosenContext}
+        defaultTokens={defaultContext}
+        compactCap={contextPolicy?.autoCompactCap}
+        onChoice={setContextChoice}
+        onCustom={setContextCustom}
+      />
     </Dialog>
+  );
+}
+
+/** 「自定义…」那一档的 id（不是一个数） */
+const CUSTOM_CONTEXT = 'custom';
+/** 宿主没给 `contextPolicy` 时（老版本主进程 / 测试夹具）的兜底，与主进程那三个数相同 */
+const FALLBACK_DEFAULT_CONTEXT = 256_000;
+const FALLBACK_MIN_CONTEXT = 1_000;
+/** 档位按十进制存：估小只是早一点压缩，估大会被上游拒绝（见 `CustomModelDialog` 头注释） */
+const CONTEXT_PRESETS: readonly number[] = [32_000, 64_000, 128_000, 256_000, 1_000_000];
+
+function contextPresetFor(tokens: number, defaultTokens: number): string {
+  return [...CONTEXT_PRESETS, defaultTokens].includes(tokens) ? String(tokens) : CUSTOM_CONTEXT;
+}
+
+/** 「自定义」框里的字：允许千分位与空格；不是整数或小于下限 → undefined */
+function parseContextTokens(text: string, min: number): number | undefined {
+  const value = Number(text.replace(/[,\s_]/g, ''));
+  return Number.isInteger(value) && value >= min ? value : undefined;
+}
+
+/** 256000 → 256K，1048576 → 1M，28800 → 28.8K */
+function shortTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${String(Math.round(tokens / 100_000) / 10).replace(/\.0$/, '')}M`;
+  }
+  const k = tokens / 1000;
+  return `${String(k >= 100 ? Math.round(k) : Math.round(k * 10) / 10).replace(/\.0$/, '')}K`;
+}
+
+/**
+ * 「上下文大小」一项（见 `CustomModelDialog` 头注释「上下文大小」）。
+ *
+ * 认得出的型号用**禁用的** InlineSelect 显示表里的值：禁用原因挂在 title 上（01 §6.3），
+ * 不换成一段纯文字 —— 换了，用户会以为这一项消失了，而不是"这里按表走"。
+ */
+function ContextSizeField({
+  known,
+  choice,
+  custom,
+  chosen,
+  defaultTokens,
+  compactCap,
+  onChoice,
+  onCustom,
+}: {
+  readonly known: KnownContextView | undefined;
+  readonly choice: string;
+  readonly custom: string;
+  readonly chosen: number | undefined;
+  readonly defaultTokens: number;
+  readonly compactCap: number | undefined;
+  readonly onChoice: (next: string) => void;
+  readonly onCustom: (next: string) => void;
+}) {
+  // F46：压缩点 = min(上限, 90% 上下文)。上限没给时如实只按 90% 算
+  const compactAt = (tokens: number): number =>
+    Math.min(compactCap ?? Number.POSITIVE_INFINITY, Math.floor(tokens * 0.9));
+
+  if (known) {
+    const value = `${known.maxContextTokens.toLocaleString('en-US')}（${shortTokens(known.maxContextTokens)}）`;
+    return (
+      <div className="ew-field">
+        <span>上下文大小</span>
+        <InlineSelect
+          field
+          ariaLabel="上下文大小"
+          placeholder={value}
+          value="table"
+          options={[{ id: 'table', label: value }]}
+          disabled
+          disabledReason="这个型号在能力表里，上下文按表里的值。换「其他 OpenAI 兼容」或改模型名就能自己选。"
+          onChange={() => undefined}
+        />
+        <p className="ew-field-hint">
+          能力表里有这个型号：{known.maxContextTokens.toLocaleString('en-US')} token，
+          {known.source}。上下文到约 {shortTokens(compactAt(known.maxContextTokens))}{' '}
+          时自动压缩早期对话。
+        </p>
+      </div>
+    );
+  }
+
+  const presets = [...new Set([...CONTEXT_PRESETS, defaultTokens])].sort((a, b) => a - b);
+  return (
+    <div className="ew-field">
+      <span>上下文大小</span>
+      <InlineSelect
+        field
+        ariaLabel="上下文大小"
+        placeholder="选择上下文大小"
+        value={choice}
+        options={[
+          ...presets.map((tokens) => ({
+            id: String(tokens),
+            label: `${shortTokens(tokens)}${tokens === defaultTokens ? '（默认）' : ''}`,
+          })),
+          { id: CUSTOM_CONTEXT, label: '自定义…' },
+        ]}
+        onChange={onChoice}
+      />
+      {choice === CUSTOM_CONTEXT ? (
+        <div className="ew-field-row">
+          <input
+            aria-label="自定义上下文（token）"
+            inputMode="numeric"
+            spellCheck={false}
+            placeholder="例如 200000"
+            value={custom}
+            onChange={(event) => onCustom(event.target.value)}
+          />
+          <span className="ew-field-unit">token</span>
+        </div>
+      ) : null}
+      {chosen === undefined ? (
+        <p className="ew-field-hint" data-tone="warning">
+          填一个整数，单位是 token，例如 200000。
+        </p>
+      ) : (
+        <p className="ew-field-hint">
+          上下文到约 {shortTokens(compactAt(chosen))}{' '}
+          时自动压缩早期对话。填得比模型实际上限大，长任务会在压缩之前被上游拒绝；拿不准就选小一档。
+        </p>
+      )}
+    </div>
   );
 }
 

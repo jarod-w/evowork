@@ -47,8 +47,27 @@ export const DEFAULT_CUSTOM_CAPABILITIES: ModelCapabilities = Object.freeze({
   reasoning: false,
   promptCache: false,
   imageInput: false,
-  maxContextTokens: 32_000,
+  /*
+   * 上下文**不朝保守侧走**，2026-10-05 由 32k 改为 256k（产品决定，总纲 D2 同日记录）。
+   * 32k 时每个任务约 1 万 token 的固定开销之后只剩 ~1.9 万，28.8k 就压缩 —— 客户反馈
+   * 「经常压缩」的主因。代价是反方向：endpoint 真实窗口比 256k 小时，内核等不到压缩、
+   * 上游先以超长拒绝，而 `private` 通道的超长报错网关还认不出来（status.md 同日）。
+   */
+  maxContextTokens: 256_000,
 });
+
+/**
+ * 旧版本代填的上下文（df4b5cd 起写进每一条表外模型）。设置页那时**没有**上下文这一项，
+ * 所以文件里的 `32000` 是我们写的，不是用户选的 —— 读的时候不能当成用户声明。
+ */
+export const LEGACY_SEEDED_CONTEXT_TOKENS = 32_000;
+
+/**
+ * 文件格式版本。缺这一行 = 旧版本写的，那里的 `32000` 是代填值（见 `LEGACY_SEEDED_CONTEXT_TOKENS`）。
+ * **2 起代填值是 256k**，文件里的 `32000` 只可能是用户写的（手改，或设置页有了上下文那一项之后选的）——
+ * 没有这一行区分，旧值迁移会把用户明确要的 32K 一并抹成 256k。
+ */
+export const MODELS_FILE_FORMAT = 2;
 
 /**
  * 一条自定义模型该带什么能力位。
@@ -102,9 +121,19 @@ export function parseModelsToml(text: string): {
   const models: CustomModelRecord[] = [];
   let dropped = 0;
   let current: Record<string, string> | undefined;
+  /** 文件头的 `format_version`；缺席 = 旧版本写的 */
+  let format = 1;
 
   const flush = (): void => {
     if (!current) return;
+    /*
+     * 旧文件里**恰好是代填值**的上下文不算用户声明，落到现在的默认值 —— 否则已经在用的那些
+     * 模型永远停在 32k，改默认值只对新加的生效，而抱怨压缩的恰恰是已经在用的人。
+     * 别的数（有人手改过）照旧尊重。新文件（format 2）里的 32000 是用户在设置页选的，也尊重。
+     */
+    if (format < 2 && Number(current.max_context_tokens) === LEGACY_SEEDED_CONTEXT_TOKENS) {
+      delete current.max_context_tokens;
+    }
     // 认得出来的型号以能力表为准，文件里那几行只对表外的型号起作用（见 `capabilitiesFor`）
     const capabilities = capabilitiesFor(current.provider ?? '', current.upstream_model ?? '', {
       ...(current.reasoning !== undefined ? { reasoning: current.reasoning === 'true' } : {}),
@@ -150,8 +179,12 @@ export function parseModelsToml(text: string): {
       flush();
       continue;
     }
-    if (!current) continue;
     const m = /^([a-z_]+)\s*=\s*(.*)$/.exec(line);
+    if (!current) {
+      // 第一张表之前只认格式版本这一个键
+      if (m?.[1] === 'format_version' && Number.isInteger(Number(m[2]))) format = Number(m[2]);
+      continue;
+    }
     if (!m?.[1]) continue;
     let value = (m[2] ?? '').trim();
     if (
@@ -171,6 +204,8 @@ export function serializeModelsToml(models: readonly CustomModelRecord[]): strin
     '# EvoWork 自定义模型（第③层，11 §4.1）。**这个文件里没有密钥** ——',
     '# 密钥在系统钥匙串里，这里只写它的环境变量名（key_env）。',
     '# 由设置页写入；手改也可以，读不懂的条目会被丢掉并在日志里报一条。',
+    '',
+    `format_version = ${String(MODELS_FILE_FORMAT)}`,
     '',
   ];
   for (const model of models) {

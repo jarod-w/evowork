@@ -943,6 +943,42 @@ export interface CustomModelView {
   readonly baseUrl: string;
   readonly keySaved: boolean;
   readonly keyLast4?: string | undefined;
+  /**
+   * 这条模型实际生效的上下文（token）—— 它决定内核在哪儿压缩（总纲 D2 2026-10-05）。
+   * 能力表认得出的型号是表里的值，其余是用户在「添加模型」里选的（缺省 256k）。
+   */
+  readonly maxContextTokens?: number | undefined;
+  /** 上下文来自能力表：设置页对这类型号不给改（11 §4.4） */
+  readonly contextFromTable?: boolean | undefined;
+}
+
+/**
+ * 能力表里认得出的一个型号名（含别名）和它的上下文（11 §4.4）。
+ *
+ * 「添加模型」里填到这些名字时，上下文**锁定**为表里的值并说明出处 ——
+ * 保存时主进程本来就按表覆盖，让用户改了却不生效是静默降级。
+ */
+export interface KnownContextView {
+  readonly provider: string;
+  /** 小写；比较前把用户填的名字也转小写、去空格 */
+  readonly upstreamModel: string;
+  readonly maxContextTokens: number;
+  /** 给人看的出处，例如「2026-10-05 实测」「厂商文档，没实测」 */
+  readonly source: string;
+}
+
+/**
+ * 上下文的三个产品数（总纲 D2 2026-10-05）。都在主进程 / 网关里各有唯一真源，
+ * 渲染层拿来显示与校验，**不自己写一份** —— 两处各写一遍，改了一边，界面上的「（默认）」
+ * 或「约多少时压缩」就会和实际行为对不上，而且不报错。
+ */
+export interface ContextPolicyView {
+  /** 表外模型不声明时的默认值（`DEFAULT_CUSTOM_CAPABILITIES.maxContextTokens`） */
+  readonly defaultTokens: number;
+  /** 能存的最小值（`MIN_CONTEXT_TOKENS`）：再小就进不了内核目录，回到 272k 兜底 */
+  readonly minTokens: number;
+  /** 压缩点上限（`AUTO_COMPACT_TOKEN_CAP`）。压缩点 = min(上限, 90% 上下文)（F46） */
+  readonly autoCompactCap: number;
 }
 
 /** 设置页「模型接入」一屏要画的全部内容。 */
@@ -972,6 +1008,10 @@ export interface ModelAccessView {
   readonly modelsFilePath?: string | undefined;
   /** 企业锁了自定义模型（第②层）。false 时「添加模型」禁用**并给原因**，不隐藏 */
   readonly allowCustomModels: boolean;
+  /** 能力表认得出的型号名 → 上下文（「添加模型」锁定上下文用，见 `KnownContextView`） */
+  readonly knownContexts?: readonly KnownContextView[] | undefined;
+  /** 「添加模型」里上下文那一项要用的三个数。由宿主给，渲染层不另存一份（见 `ContextPolicyView`） */
+  readonly contextPolicy?: ContextPolicyView | undefined;
   readonly lockedReason?: string | undefined;
   /**
    * 是否已登录我们的账号。未登录时首页仍可用（Q30=A）。
@@ -1072,6 +1112,8 @@ export interface CustomModelUpdateInput {
   /** 缺席或空串 = **不动已保存的那把密钥** */
   readonly apiKey?: string | undefined;
   readonly authHeader?: string | undefined;
+  /** 用户选的上下文（token）。缺席 = 型号没变时沿用已存的值，变了就落到默认值 */
+  readonly maxContextTokens?: number | undefined;
 }
 
 /**

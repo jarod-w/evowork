@@ -23,9 +23,13 @@
  *
  * 这张表里既有**我们自己对着真实 endpoint 测出来的**结论，也有**只读了厂商文档**的。
  * 两者的可信度不一样，而 U2 的教训正是"文档说支持"与"真的能用"能差出一个缺陷：
- * `deepseek-v4-flash` 收下图片、回 HTTP 200、然后说"无法识别" —— 既不报错也看不见。
- * 它仍然留在这张表里且 `imageInput: false`，**就是为了让它不被"名字里有 flash"
- * 或者"DeepSeek 支持视觉"这类推断重新标成 true**。
+ * 2026-09-05 的 `deepseek-v4-flash` 收下图片、回 HTTP 200、然后说"无法识别" —— 既不报错也看不见。
+ * 判据因此是**答没答对图里的颜色**，不是状态码（`verify-provider.mjs --image true`）。
+ *
+ * 那个型号 2026-10-05 已被厂商退役：旧名仍然收，但请求由 DeepSeek-V4.1-Flash
+ * （即 `deepseek-flash`）处理（api-docs.deepseek.com 的 Models & Pricing）。所以旧名现在是
+ * `deepseek-flash` 的别名 —— **改它的依据是厂商的路由声明，不是"名字里有 flash"这类推断**。
+ * 继续把旧名记成看不见图，后果是 Composer 把一个能读图的模型的图片拦掉（03 §8）。
  *
  * `evidence: 'probe'` → `verified: true` + `verifiedAt`；
  * `evidence: 'vendor-doc'` → `verified: false`，能力端点会如实告诉用户"这条没实测过"。
@@ -94,7 +98,10 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
       '2026-09-26 复测 23 条全通过，并**订正一条 cache 口径**：命中时它现在' +
       '**同时**给顶层 `cached_tokens` 与嵌套的 `prompt_tokens_details.cached_tokens`（都是 1024），' +
       '不再是 2026-09-05 记的"顶层，与另两家都不同"；未命中时给的是 ' +
-      '`prompt_tokens_details.cache_write_tokens`，**那是写入不是命中，不能当命中读**。',
+      '`prompt_tokens_details.cache_write_tokens`，**那是写入不是命中，不能当命中读**。' +
+      '上下文 1,048,576 取自厂商文档（platform.kimi.com，2026-10-05 核对：快速开始写「100 万 token」，' +
+      '同站的接入指南给的精确值是 `model_context_window = 1048576`）；' +
+      '原表的 256k 没有出处，**这一项仍没实测**（要塞满上下文才能测）。',
     capabilities: {
       streaming: true,
       toolCalls: true,
@@ -102,7 +109,7 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
       reasoning: true,
       promptCache: true,
       imageInput: true,
-      maxContextTokens: 256_000,
+      maxContextTokens: 1_048_576,
     },
   },
   {
@@ -119,52 +126,10 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
       '2026-09-05 实测：**是推理模型**（65 帧里 64 帧 reasoning_content，原表 false 已订正）；' +
       '并行工具调用成立；**能看图**（答"红色"）；cache 走嵌套的 prompt_tokens_details.cached_tokens；' +
       '未知模型 400 + error.code="1214"（不在已知码表里，靠状态码兜底到 invalid_prompt）。' +
-      '**产物质量本身仍未评估**（U1）—— 这里验的是协议语义，不是它写得好不好。',
-    capabilities: {
-      streaming: true,
-      toolCalls: true,
-      parallelToolCalls: true,
-      reasoning: true,
-      promptCache: true,
-      imageInput: true,
-      maxContextTokens: 128_000,
-    },
-  },
-  {
-    provider: 'deepseek',
-    upstreamModel: 'deepseek-flash',
-    /*
-     * 视觉能力最早以 `deepseek-v4-flash-vision-exp` 这个实验名发布，厂商文档现在说
-     * 它"仍可用但已废弃"。用户 `models.toml` 里存的可能就是老名字，所以列进别名 ——
-     * 漏了的话同一个型号会按"不认识"落到保守默认，表现就是这次的缺陷再来一遍。
-     */
-    aliases: ['deepseek-v4-flash-vision-exp'],
-    /*
-     * 2026-09-27 进内置目录。此前两条 DeepSeek 都没有 `builtinId`，而按本文件的约定
-     * 那等于"已下架" —— 于是只配 `DEEPSEEK_API_KEY` 时网关以 `no_models` 拒绝启动，
-     * 用户那一侧是「我配了 DeepSeek，应用说没有可用模型」。
-     * 而 Q16 把 DeepSeek 列为三家 P0 之一，总纲 D2 也说目录里该留一个 ——
-     * 代码与设计对不上，缺的是这一行。
-     *
-     * 选 `deepseek-flash` 而不是 `deepseek-v4-flash`：后者 2026-09-06 已明确下架，
-     * 且**收下图、回 200、却说"无法识别"**（能力位 imageInput 仍是 false）；
-     * 前者 2026-09-26 实测 23 条全通过，是真能看图的那个。
-     */
-    builtinId: 'evowork/deepseek-flash',
-    displayName: 'DeepSeek Flash',
-    tier: 'standard',
-    evidence: 'probe',
-    verifiedAt: '2026-09-26',
-    unverified: ['maxContextTokens'],
-    notes:
-      '2026-09-26 实测（`verify-provider.mjs`，23 条全通过）：**真的能看图** ——' +
-      '32×32 纯红图答"红"，与同厂的 `deepseek-v4-flash`（收下图、回 200、说"无法识别"）' +
-      '**不是同一个型号**，后者在本表里 imageInput 仍是 false；' +
-      '是推理模型（66 帧里 65 帧 reasoning_content）；一轮给出两个 tool_call，并行成立；' +
-      'cache 命中同时给**顶层 `prompt_cache_hit_tokens`** 与嵌套的 ' +
-      '`prompt_tokens_details.cached_tokens`（同 prompt 发两次，都是 896）；' +
-      '未知模型 400 + error.code=invalid_request_error。' +
-      '视觉能力最早以 `deepseek-v4-flash-vision-exp` 发布（厂商文档标已废弃），故列为别名。',
+      '**产物质量本身仍未评估**（U1）—— 这里验的是协议语义，不是它写得好不好。' +
+      '上下文取自厂商文档（docs.bigmodel.cn 与 docs.z.ai 的 GLM-5.3-Flash/FlashX 页，2026-10-05 核对）：' +
+      '两处都只写「1M」、没有精确 token 数，**按小的那种读法记 1,000,000**（估大比估小危险：' +
+      '估大了内核等不到压缩、厂商先拒）；原表的 128k 没有出处，**这一项仍没实测**。',
     capabilities: {
       streaming: true,
       toolCalls: true,
@@ -177,33 +142,65 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
   },
   {
     provider: 'deepseek',
-    upstreamModel: 'deepseek-v4-flash',
-    displayName: 'DeepSeek V4 Flash',
-    tier: 'standard',
+    upstreamModel: 'deepseek-flash',
     /*
-     * 2026-09-06 从内置目录下架（总纲 §D2），但**能力知识必须留着**：
-     * 它是"接受但看不见"那一类的唯一样本，删掉之后没有任何东西拦得住
-     * 下一个人按"DeepSeek 支持视觉"把它标成 true。
+     * 两个旧名，厂商文档（Models & Pricing，2026-10-05 核对）原话：
+     * "The legacy names `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are still accepted,
+     * but the corresponding models have been retired, their requests are served by the
+     * DeepSeek-V4.1-Flash model" —— 也就是本条。用户 `models.toml` 里存的可能就是老名字，
+     * 漏了的话同一个型号会按"不认识"落到表外默认（不读图、上下文按默认值），或者按退役前的结论拦掉图片。
+     * 页面没写旧名哪天停收。
      */
+    aliases: ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'],
+    /*
+     * 2026-09-27 进内置目录。此前两条 DeepSeek 都没有 `builtinId`，而按本文件的约定
+     * 那等于"已下架" —— 于是只配 `DEEPSEEK_API_KEY` 时网关以 `no_models` 拒绝启动，
+     * 用户那一侧是「我配了 DeepSeek，应用说没有可用模型」。
+     * 而 Q16 把 DeepSeek 列为三家 P0 之一，总纲 D2 也说目录里该留一个 ——
+     * 代码与设计对不上，缺的是这一行。
+     *
+     * 选 `deepseek-flash` 而不是 `deepseek-v4-flash`：后者 2026-09-06 已明确下架，
+     * 且当时**收下图、回 200、却说"无法识别"**；前者 2026-09-26 实测 23 条全通过，
+     * 是真能看图的那个。（2026-10-05 起后者已被厂商退役、旧名路由到前者，见上面的别名。）
+     */
+    builtinId: 'evowork/deepseek-flash',
+    displayName: 'DeepSeek Flash',
+    tier: 'standard',
     evidence: 'probe',
-    verifiedAt: '2026-09-05',
-    unverified: ['maxContextTokens'],
+    verifiedAt: '2026-10-05',
+    unverified: [],
     notes:
-      '2026-09-05 实测：**是推理模型**（65 帧里 44 帧 reasoning_content）；并行工具调用成立；' +
-      'cache 口径是顶层 `prompt_cache_hit_tokens`；未知模型 400 + code=invalid_request_error。' +
-      '**图片输入是第三种结局**：HTTP 200 收下了，然后回"无法识别" —— 不报错、也看不见，' +
-      '所以 imageInput 必须是 false（D2「降级必须显式」要防的正是这一形态）。' +
-      '2026-09-06 已从内置目录下架，这里只保留能力结论。',
+      '2026-09-26 实测（`verify-provider.mjs`，23 条全通过）：**真的能看图** ——' +
+      '32×32 纯红图答"红"，与 2026-09-05 测的 `deepseek-v4-flash`（收下图、回 200、说"无法识别"）' +
+      '当时**不是同一个型号**；' +
+      '是推理模型（66 帧里 65 帧 reasoning_content）；一轮给出两个 tool_call，并行成立；' +
+      'cache 命中同时给**顶层 `prompt_cache_hit_tokens`** 与嵌套的 ' +
+      '`prompt_tokens_details.cached_tokens`（同 prompt 发两次，都是 896）；' +
+      '未知模型 400 + error.code=invalid_request_error。' +
+      '2026-10-05 厂商文档：`deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 两个旧名仍收，' +
+      '对应型号已退役、请求由本条（V4.1-Flash）处理，故都列为别名；' +
+      '2026-10-05 复测：新旧两个名字各跑 `verify-provider.mjs` 23 条全通过，**旧名同样答出纯红图的颜色**、' +
+      '帧数与 cache 命中数（896）一致 —— 厂商的路由声明成立。' +
+      '**上下文上限实测为 1,048,576**：发约 115 万 token 的合成填充请求，两个名字都回 400 + ' +
+      '`code=invalid_request_error`，原话 "This model\'s maximum context length is 1048576 tokens"' +
+      '（厂商文档只写「1M」）。**注意超长的错误码与未知模型是同一个**，网关现在把它映射成 invalid_prompt，' +
+      '内核认不出是超长（见 status.md 2026-10-05）。',
     capabilities: {
       streaming: true,
       toolCalls: true,
       parallelToolCalls: true,
       reasoning: true,
       promptCache: true,
-      imageInput: false,
-      maxContextTokens: 128_000,
+      imageInput: true,
+      maxContextTokens: 1_048_576,
     },
   },
+  /*
+   * 原先这里还有一条 `deepseek-v4-flash`（2026-09-05 实测"接受但看不见"，imageInput: false）。
+   * 2026-10-05 厂商退役了那个型号、旧名路由到 `deepseek-flash`，所以并成上面那条的别名 ——
+   * 留着它等于对一个已经不存在的型号下结论，而且结论与旧名现在背后的型号相反。
+   * 那次实测的结果仍记在总纲 D2 的表里。
+   */
 ];
 
 /** 按 (协议适配类型, 上游模型名) 建索引，别名一起进去。**大小写不敏感**：厂商文档与控制台大小写不一。 */
@@ -227,6 +224,39 @@ const BY_KEY: ReadonlyMap<string, KnownModel> = (() => {
 export function findKnownModel(provider: string, upstreamModel: string): KnownModel | undefined {
   if (provider === 'private') return undefined;
   return BY_KEY.get(`${provider}\u0000${upstreamModel.trim().toLowerCase()}`);
+}
+
+/** 能力表里一个名字（正名或别名）对应的上下文。 */
+export interface KnownContextEntry {
+  readonly provider: ProviderId;
+  /** 用户可能填的那个名字，小写（与 `findKnownModel` 的比较口径一致） */
+  readonly name: string;
+  /** 这个名字背后的正名。`name` 是别名时与它不同 */
+  readonly upstreamModel: string;
+  readonly maxContextTokens: number;
+  /** 上下文**实测过**时的日期；缺席 = 只有厂商文档 */
+  readonly measuredAt?: string;
+}
+
+/**
+ * 能力表里每个名字（含别名）的上下文 —— 设置页「添加模型」用：用户填到这些型号时，
+ * 上下文锁定为表里的值（保存时 `capabilitiesFor` 本来就按表覆盖，让人改了却不生效是静默降级）。
+ * `private` 不在里面：它一律认不出来（见 `findKnownModel`）。
+ */
+export function knownContextEntries(): readonly KnownContextEntry[] {
+  return KNOWN_MODELS.flatMap((model) => {
+    const measured =
+      !model.unverified.includes('maxContextTokens') && model.verifiedAt !== undefined
+        ? { measuredAt: model.verifiedAt }
+        : {};
+    return [model.upstreamModel, ...(model.aliases ?? [])].map((name) => ({
+      provider: model.provider,
+      name: name.toLowerCase(),
+      upstreamModel: model.upstreamModel,
+      maxContextTokens: model.capabilities.maxContextTokens,
+      ...measured,
+    }));
+  });
 }
 
 /** 进内置目录（① 层）的那几条。`P0_MODELS` 就是它。 */

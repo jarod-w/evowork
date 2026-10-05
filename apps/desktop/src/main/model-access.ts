@@ -32,8 +32,12 @@ import { homedir } from 'node:os';
 
 import {
   ACCESS_JWT_ENV,
+  AUTO_COMPACT_TOKEN_CAP,
   CUSTOM_MODELS_ENV,
   encodeCustomModels,
+  findKnownModel,
+  knownContextEntries,
+  MIN_CONTEXT_TOKENS,
   MODEL_POLICY_ENV,
   UPSTREAM_BASE_URL_ENV,
   validateCustomModel,
@@ -46,6 +50,7 @@ import type {
   CustomModelInput,
   CustomModelTestInput,
   CustomModelUpdateInput,
+  KnownContextView,
   ModelAccessView,
   ModelCatalogResult,
   ModelProbeResult,
@@ -57,6 +62,7 @@ import { ACCOUNT_SECRET_PREFIX, type AccountVault } from './account.js';
 import {
   assignKeyEnv,
   capabilitiesFor,
+  DEFAULT_CUSTOM_CAPABILITIES,
   readModelsFile,
   writeModelsFile,
   type CustomModelRecord,
@@ -424,8 +430,17 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
             baseUrl: model.baseUrl,
             keySaved: last4 !== undefined,
             ...(last4 !== undefined ? { keyLast4: last4 } : {}),
+            // 记录里的能力位读文件时已按表重算过（`capabilitiesFor`），这里就是实际生效的值
+            maxContextTokens: model.capabilities.maxContextTokens,
+            contextFromTable: findKnownModel(model.provider, model.upstreamModel) !== undefined,
           };
         }),
+        knownContexts: KNOWN_CONTEXTS,
+        contextPolicy: {
+          defaultTokens: DEFAULT_CUSTOM_CAPABILITIES.maxContextTokens,
+          minTokens: MIN_CONTEXT_TOKENS,
+          autoCompactCap: AUTO_COMPACT_TOKEN_CAP,
+        },
         models: catalog.models,
         modelsFilePath: displayPath(deps.paths.modelsFile),
         allowCustomModels: policy.allowCustomModels,
@@ -460,7 +475,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
       if (!policy.allowCustomModels) {
         return policy.reason ?? '你所在组织要求使用统一配置的模型，这台电脑上不能自己添加模型。';
       }
-      const refusal = validateCustomModel(input);
+      const refusal = validateCustomModel(input) ?? contextRefusal(input.maxContextTokens);
       if (refusal) return refusal;
       if (models.models.some((m) => m.id === input.id)) {
         return `已经有一个叫「${input.id}」的模型了，换个 id 或先删掉它。`;
@@ -516,7 +531,7 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
       const index = models.models.findIndex((m) => m.id === input.previousId);
       const target = models.models[index];
       if (index < 0 || !target) return '这条自定义模型已经不在了，刷新一下再试。';
-      const refusal = validateCustomModel(input);
+      const refusal = validateCustomModel(input) ?? contextRefusal(input.maxContextTokens);
       if (refusal) return refusal;
       if (input.id !== input.previousId && models.models.some((m) => m.id === input.id)) {
         return `已经有一个叫「${input.id}」的模型了，换个名字或先删掉它。`;
@@ -544,8 +559,21 @@ export function createModelAccess(deps: ModelAccessDeps): ModelAccess {
          * 「把 `deepseek-v4-flash` 改成 `deepseek-flash`」是用户升级型号的常规动作，
          * 而沿用旧能力位的表现是：新型号能读图，界面上却仍然划着「读图」。
          * 反方向更糟 —— 从能读图的型号改到不能读图的，会留下一个标着能读图的模型。
+         *
+         * 旧能力位**只在型号没变时**当作用户声明沿用（只改地址 / 名字时，保住添加时声明过的值）。
+         * 2026-10-05 之前这里无条件传 `target.capabilities`：改到表外型号时，旧型号的
+         * 「能读图」和 **1M 上下文**整组被当成声明盖过保守默认 —— 上下文估大了，
+         * 内核等不到压缩、厂商先拒。原测试没抓到，是因为它改到的型号恰好在能力表里。
          */
-        capabilities: capabilitiesFor(input.provider, input.upstreamModel, target.capabilities),
+        capabilities: capabilitiesFor(input.provider, input.upstreamModel, {
+          ...(input.provider === target.provider && input.upstreamModel === target.upstreamModel
+            ? target.capabilities
+            : {}),
+          // 设置页「上下文大小」那一项（11 §4.4）。认得出的型号 `capabilitiesFor` 会按表覆盖
+          ...(input.maxContextTokens !== undefined
+            ? { maxContextTokens: Math.floor(input.maxContextTokens) }
+            : {}),
+        }),
       };
       const next = [...models.models];
       next[index] = record;
@@ -612,6 +640,30 @@ function safeRead(path: string): string {
  * 一条 `/Users/someone/.evowork/models.toml` 读起来更像一条日志。
  * 家目录不在前缀里（`EVOWORK_HOME` 被指到别处）时**原样显示**，不硬拗成 `~`。
  */
+/**
+ * 设置页传来的上下文（11 §4.4）。缺席 = 不改；给了就必须进得了内核的模型目录 ——
+ * 比 `MIN_CONTEXT_TOKENS` 小的不进目录，那条模型会回到内核兜底的 272k，等于把用户选的数换成一个大得多的。
+ */
+function contextRefusal(value: number | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return Number.isFinite(value) && Math.floor(value) >= MIN_CONTEXT_TOKENS
+    ? undefined
+    : `上下文至少填 ${MIN_CONTEXT_TOKENS.toLocaleString('en-US')} token。`;
+}
+
+/**
+ * 能力表认得出的型号名 → 上下文与出处（`ModelAccessView.knownContexts`）。
+ * 表是编译期常量，算一次就够。
+ */
+const KNOWN_CONTEXTS: readonly KnownContextView[] = knownContextEntries().map((entry) => ({
+  provider: entry.provider,
+  upstreamModel: entry.name,
+  maxContextTokens: entry.maxContextTokens,
+  source:
+    (entry.measuredAt !== undefined ? `${entry.measuredAt} 实测` : '厂商文档，没实测') +
+    (entry.name === entry.upstreamModel ? '' : `，旧名等同 ${entry.upstreamModel}`),
+}));
+
 function displayPath(path: string): string {
   const home = homedir();
   return home !== '' && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;

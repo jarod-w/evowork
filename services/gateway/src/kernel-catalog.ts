@@ -7,12 +7,15 @@
  * `Unknown model deepseek/deepseek-flash is used. This will use fallback model metadata.`
  * 兜底元数据把**每一个**模型都按 `context_window: 272_000` 对待
  * （`models-manager/src/model_info.rs:99-137`），而内核的上下文压缩是**提前触发**的：
- * 到 `context_window × effective_context_window_percent(95%)` 就压缩。于是：
+ * 到 `context_window × 90%` 就压缩（`openai_models.rs:525`；`effective_context_window_percent`
+ * 的 95% 是硬上限）。于是：
  *
- *   · **GLM 只有 128k** → 内核要等到 ~258k 才压缩，厂商在 128k 就拒了
- *     —— **压缩永远等不到**，长任务必然硬失败；
- *   · Kimi 256k → 阈值同样落在真实上限之外；
- *   · DeepSeek 1M → 反过来浪费掉七成多。
+ *   · **上下文小于 272k 的模型**（当时能力表里 GLM 记的是 128k；表外的自定义模型那时默认 32k）
+ *     → 内核要等到 ~258k 才压缩，厂商先拒了 —— **压缩永远等不到**，长任务必然硬失败；
+ *   · 1M 的模型 → 反过来浪费掉七成多。
+ *
+ * （2026-10-05：能力表按厂商文档订正后，内置三家都是 1M 级。小窗口那条理由如今落在
+ * 表外的自定义模型上，仍然成立。）
  *
  * `model_catalog_json` 是内核给的正规入口（F24 已经写过这条路），它**整份替换**内核自带的
  * 目录 —— 对我们正好：我们本来就不用它自带的那些型号。
@@ -41,6 +44,23 @@
  * 它**不改变多代理开不开**：配置里 `[features.multi_agent_v2] enabled` 为真时优先于模型元数据
  * （`config/mod.rs` 的 `multi_agent_version_for_model`），而宿主的迁移总会把它写成真。
  * 并发仍受 `max_concurrent_threads_per_session = 4` 约束（根 + 3，Q11）。
+ *
+ * ## 第三处差分：压缩点上限 `auto_compact_token_limit`（2026-10-05）
+ *
+ * 兜底值是 null，内核于是按 `context_window × 90%` 压缩（`openai_models.rs:525`）。
+ * 对 1M 的模型那是 ~94 万 token 才压缩，而 agent 每调一次工具都要把整段上下文重发一遍：
+ * 越往后每一步越贵（Kimi K3 输入 $3/M，一步接近 $3）、首 token 越慢，长上下文里的表现也更差，
+ * Q11 的单任务预算会被这一截烧掉。**真实窗口照实填（它是硬上限），压缩点另设上限** ——
+ * 两件事拆开，前者是事实，后者是成本与压缩频率之间的产品取舍（总纲 D2，2026-10-05）。
+ *
+ * 只给**窗口大于上限**的模型写这个键：更小的模型，内核自己的 90% 本来就在上限之下，
+ * 写了也不起作用 —— 而那个"不起作用"要靠内核取 `min(上限, 90% 窗口)` 才成立（F46 钉着）。
+ * 不写，小模型的压缩点就与这次改动之前一字不差。
+ *
+ * 企业在 config.toml 里设 `model_auto_compact_token_limit` 会**盖过**这里的值
+ * （`models-manager/src/model_info.rs:29` 的 `with_config_overrides`，目录内外的模型都走它），
+ * 所以放在目录里而不是写进 config.toml：config.toml 已存在就不覆盖（老用户拿不到），
+ * 而目录每次启动重写。
  *
  * ## 上游改了这个结构怎么办
  *
@@ -90,11 +110,13 @@ export interface KernelCatalogModel {
   readonly truncation_policy: TruncationPolicy;
   readonly experimental_supported_tools: readonly never[];
   readonly tool_mode: null;
-  /** 唯一一处有意偏离兜底值的行为字段，理由见文件头「唯一的第二处差分」 */
+  /** 有意偏离兜底值的行为字段，理由见文件头「唯一的第二处差分」（第三处是下面的压缩点上限） */
   readonly multi_agent_version: 'v2';
   /** **这次改动的全部意义**：模型真实的上下文大小 */
   readonly context_window: number;
   readonly max_context_window: number;
+  /** 压缩点上限。只在窗口大于 `AUTO_COMPACT_TOKEN_CAP` 时出现，理由见文件头「第三处差分」 */
+  readonly auto_compact_token_limit?: number;
   readonly input_modalities: readonly ['text', 'image'];
 }
 
@@ -137,8 +159,20 @@ const FALLBACK_BEHAVIOUR = {
   input_modalities: ['text', 'image'] as const,
 } as const;
 
-/** 上下文大小的下限。0 或负数进了目录，内核那边就是"这个模型装不下任何东西"。 */
-const MIN_CONTEXT_TOKENS = 1_000;
+/**
+ * 上下文大小的下限。0 或负数进了目录，内核那边就是"这个模型装不下任何东西"。
+ * 比它小的**不进目录**，那条模型回到内核兜底的 272k —— 所以设置页也不许存比它小的值。
+ */
+export const MIN_CONTEXT_TOKENS = 1_000;
+
+/**
+ * 压缩点上限（总纲 D2，2026-10-05）。上下文到这里就压缩，哪怕模型的窗口远大于它。
+ *
+ * 256k 的依据：每个任务的固定开销（系统提示 + 工具定义 + 技能目录）实测约 1 万 token，
+ * 剩下的 ~25 万对办公任务很少用满；再往上，每一步的成本与延迟线性涨，而换来的只是
+ * 少压缩一次。改它之前先改总纲 D2 那条记录。
+ */
+export const AUTO_COMPACT_TOKEN_CAP = 256_000;
 
 /**
  * 把我们知道的模型翻译成内核的目录。
@@ -170,6 +204,9 @@ export function buildKernelModelCatalog(
       ...FALLBACK_BEHAVIOUR,
       context_window: window,
       max_context_window: window,
+      ...(window > AUTO_COMPACT_TOKEN_CAP
+        ? { auto_compact_token_limit: AUTO_COMPACT_TOKEN_CAP }
+        : {}),
     });
   }
   // 内核拒绝空目录（`config/mod.rs:2112`：must contain at least one model）。

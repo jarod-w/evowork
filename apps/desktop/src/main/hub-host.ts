@@ -148,8 +148,11 @@ export const HUB_ORG_OFF_CAPTION = '你所在的组织已停用 EvoWork 精选�
 export const HUB_UNCONFIGURED_CAPTION = '这个版本还没有接入 EvoWork 精选源';
 
 /**
- * 支持的最小上下文窗口（13 §6：核心层预算按它算）。`services/gateway/src/known-models.ts`
- * 里内置模型最小的是 128K（GLM-5.3-flash / DeepSeek，`unverified: ['maxContextTokens']`）。
+ * 支持的最小上下文窗口（13 §6：核心层预算按它算）。128K 原本取自 `known-models.ts`
+ * 里内置模型的最小值；2026-10-05 那张表按厂商文档订正后内置三家都是 1M 级，
+ * **这里有意不跟着放大**：内核按每个模型的真实窗口算技能目录预算，表外的自定义模型可以比 1M 小
+ * （默认 256k，手改 `models.toml` 可以更小），按 1M 算的预算在它们身上会漏报截断。
+ * 128K 对 32K / 64K 的模型仍偏大，还没处理。
  */
 export const HUB_MIN_CONTEXT_WINDOW = 128_000;
 
