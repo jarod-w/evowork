@@ -11,7 +11,7 @@
  * 剧本化的那一面（时序、路由、只读视图）在 `multi-agent.spec.mjs`。这里只判真模型才答得出来的：
  * 它读没读懂那句要求、选没选对工具。**概率性**的：一轮绿不代表稳定，用 `--repeat-each` 看比例。
  *
- * 跑法：`EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- multi-agent`
+ * 跑法：`EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash EVOWORK_UI_MODEL_KEY=sk-... npx playwright test multi-agent --project=real`
  */
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';

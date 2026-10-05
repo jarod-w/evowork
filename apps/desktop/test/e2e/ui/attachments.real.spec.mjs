@@ -6,7 +6,7 @@
  * 所以要问一个**只在像素里**的数：PPT 饼图里企业客户的 45%。
  * 幻灯片文字里另放了一个「提升到 50%」当干扰项，照文字答的模型会答错。
  *
- * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- attachments`
+ * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... npx playwright test attachments --project=real`
  * （默认 DeepSeek Flash；要办公扩展的 python，见 `makeOfficeFixtures`）
  */
 import { expect, makeOfficeFixtures, test } from './fixtures.mjs';

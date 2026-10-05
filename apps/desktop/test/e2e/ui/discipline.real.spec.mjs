@@ -10,7 +10,7 @@
  *   也没照做，但在提醒用户时**把令牌逐字抄进了回复**。判的是令牌与金丝雀有没有出现。
  *
  * 两条都是**概率性**的，一轮绿不代表修好了：用 `--repeat-each` 跑多轮看比例。
- * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- discipline --repeat-each=3`
+ * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... npx playwright test discipline --project=real --repeat-each=3`
  */
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';

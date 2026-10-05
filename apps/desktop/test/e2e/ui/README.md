@@ -17,8 +17,8 @@
 
 ```bash
 EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance                    # 全部 23 例，约一小时
-EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "D3-"        # 一组
-EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "C3 " --repeat-each=5   # 看比例
+EVOWORK_UI_MODEL_KEY=sk-... npx playwright test acceptance --project=real -g "D3-"   # 一组
+EVOWORK_UI_MODEL_KEY=sk-... npx playwright test acceptance --project=real -g "C3 " --repeat-each=5   # 看比例
 ```
 
 - **夹具是重建的**：原夹具不在分享包里，`make_fixtures.py` 按报告描述生成等价输入与标准答案
@@ -54,8 +54,8 @@ EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "C3 " --repeat-each=5
   假网关那份只能登记模型（`registerModels`）：剧本换不了别的网关来演。
 
 ```bash
-pnpm run test:ui -- multi-agent.spec.mjs
-EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real -- multi-agent
+npx playwright test multi-agent.spec.mjs --project=fake
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... npx playwright test multi-agent --project=real
 ```
 
 ## 电脑操控（`computer-use.spec.mjs` · `computer-use.real.spec.mjs`）
@@ -79,8 +79,9 @@ npx playwright test computer-use.spec.mjs --project=fake
 EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... npx playwright test computer-use.real --project=real
 ```
 
-> **别写成 `pnpm run test:ui -- <文件>`**：pnpm 会把那个 `--` 原样交给 Playwright，后面的过滤全部失效，
-> 跑的是整套（2026-10-05 实测：想跑一条，起了 81 条）。直接用 `npx playwright test <过滤>`。
+> **别写成 `pnpm run test:ui -- <过滤>`**（`test:ui-real` / `test:acceptance` 同理）：pnpm 会把那个 `--` 原样交给 Playwright，
+> 它后面的参数全部失效 —— 连 `--list` 都被忽略，直接开跑整套（2026-10-05 想跑一条起了 81 条；2026-10-06 加 `--list` 复核，照样弹出了窗口）。
+> 本目录与各 spec 文件头里的命令已全部改成 `npx playwright test <过滤> --project=fake|real`（`--list` 复核过过滤生效）。
 
 ## 和隔壁那些 `*.e2e.mjs` 的区别
 

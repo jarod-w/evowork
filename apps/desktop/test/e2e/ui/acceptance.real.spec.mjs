@@ -14,7 +14,7 @@
  *
  * 真模型是**概率性**的：一轮绿不代表稳定，用 `--repeat-each` 看比例。
  * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance`（全部）
- *       `EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance -- -g "D3-"`（一组）
+ *       `EVOWORK_UI_MODEL_KEY=sk-... npx playwright test acceptance --project=real -g "D3-"`（一组）
  */
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
