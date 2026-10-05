@@ -109,6 +109,7 @@ import {
   type ToastSpec,
 } from './components/panels.js';
 import { resolveModelChoice } from './model-selection.js';
+import { gateAttachmentsForModel, modelImageInput } from './attachment-capability.js';
 import { AuditPage, type AuditRow } from './views/audit.js';
 import {
   CatalogPage,
@@ -1849,15 +1850,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   // 运行态必须来自当前任务。后台自动化或另一个任务的状态事件不能把当前 Composer
   // 误切成“停止/插话”模式。
   const running = activeRoot?.status === 'running' || activeRoot?.status === 'pending';
+  // 03 §8：当前模型读不了图时，附件区就拒掉图片。显示与发送用同一份结果
+  // （`attachment-capability.ts`）；`attachments` 本身不改，换回能读图的模型时图片就回来了。
+  const imageInput = modelImageInput(models, modelId);
+  const gatedAttachments = useMemo(
+    () => gateAttachmentsForModel(attachments, imageInput),
+    [attachments, imageInput],
+  );
 
   const send = useCallback(async () => {
     const text = draft.trim();
-    const attachmentReferences = attachments.flatMap((attachment) => attachment.references);
+    const attachmentReferences = gatedAttachments.flatMap((attachment) => attachment.references);
     const outgoingReferences = [...references, ...attachmentReferences];
     if (!text && outgoingReferences.length === 0) return;
     if (
       pendingEnvironment.current ||
-      attachments.some((attachment) => attachment.state !== 'ready')
+      gatedAttachments.some((attachment) => attachment.state !== 'ready')
     )
       return;
     pendingEnvironment.current = true;
@@ -1911,7 +1919,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, [
     bridge,
     draft,
-    attachments,
+    gatedAttachments,
     references,
     activeTaskId,
     scenarioId,
@@ -2290,7 +2298,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           .interrupt(interactionTaskId)
           .catch((error: unknown) => reportFailure(error, '没能停下。'));
       },
-      attachments: attachments as readonly Attachment[],
+      attachments: gatedAttachments as readonly Attachment[],
       onAttach: bridge.pickAttachments
         ? () =>
             void addAttachments((id) =>
@@ -2318,14 +2326,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         : undefined,
       onRemoveAttachment: (id: string) =>
         setAttachments((previous) => previous.filter((attachment) => attachment.id !== id)),
-      onReferAsRaw: (id: string) =>
+      onReferAsRaw: (id: string) => {
+        // 出路取自显示出来的那一份：被模型能力拦下的图片，它的原始引用只在那里有
+        const rawReference = gatedAttachments.find(
+          (attachment) => attachment.id === id,
+        )?.rawReference;
+        if (!rawReference) return;
         setAttachments((previous) =>
           previous.map((attachment) =>
-            attachment.id === id && attachment.rawReference
-              ? { ...attachment, state: 'ready', references: [attachment.rawReference] }
+            attachment.id === id
+              ? { ...attachment, state: 'ready', references: [rawReference] }
               : attachment,
           ),
-        ),
+        );
+      },
       mentionCandidates: composerContext.mentions as readonly MentionCandidate[],
       onSearchMentions: bridge.searchComposerMentions
         ? (query: string) =>
@@ -2556,7 +2570,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       loadModels,
       modelUnavailableReason,
       modelAccess,
-      attachments,
+      gatedAttachments,
       environmentBusy,
       activeTaskId,
       pickComposerFolder,

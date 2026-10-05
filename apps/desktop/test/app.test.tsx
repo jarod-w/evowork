@@ -1706,6 +1706,104 @@ describe('侧边栏的六个入口都要有落点', () => {
     expect(await screen.findByText(/先选择一个项目/)).toBeTruthy();
   });
 
+  describe('当前模型读不了图时的附件（03 §8）', () => {
+    /*
+     * 03 §8 的接缝：Composer 画的、`send()` 发的必须是同一份。
+     * 默认选中的 deepseek-v4-flash 在这组夹具里标着「不支持读图」，kimi-k3 能读图。
+     */
+    const SCREENSHOT = {
+      id: 'img',
+      name: '截图.png',
+      kind: 'image' as const,
+      sizeLabel: '已保存到项目',
+      state: 'ready' as const,
+      references: [
+        { type: 'localImage' as const, name: '截图.png', path: '/w/uploads/a/截图.png' },
+      ],
+    };
+
+    async function attach(pickAttachments: NonNullable<EvoworkBridge['pickAttachments']>) {
+      const { bridge } = fakeBridge({ pickAttachments });
+      render(<App bridge={bridge} />);
+      await waitFor(() =>
+        expect(screen.getByLabelText('选择模型').textContent).toContain('deepseek-v4-flash'),
+      );
+      fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /添加本地文件/ }));
+      await waitFor(() => expect(pickAttachments).toHaveBeenCalled());
+      fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '整理一下' } });
+      return bridge;
+    }
+
+    it('当前模型读不了图：附件区就拒掉图片、不发出去；换成能读图的模型，图片照常发', async () => {
+      const bridge = await attach(vi.fn(async () => [SCREENSHOT]));
+      expect(
+        await screen.findByText('《截图.png》当前模型不支持图片输入，可切换模型。'),
+      ).toBeTruthy();
+      fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+      expect(bridge.send).not.toHaveBeenCalled();
+
+      // attachments 本身没被改写：换了模型，图片就回来了
+      fireEvent.click(screen.getByLabelText('选择模型'));
+      fireEvent.click(screen.getByRole('menuitem', { name: /moonshot\/kimi-k3/ }));
+      await waitFor(() => expect(screen.queryByText(/当前模型不支持图片输入/)).toBeNull());
+      fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+      await waitFor(() =>
+        expect(bridge.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            modelId: 'evowork/kimi-k3',
+            references: SCREENSHOT.references,
+          }),
+        ),
+      );
+    });
+
+    it('被拦下的图片改用原始文件引用后发出去的是路径，不是图片', async () => {
+      const bridge = await attach(vi.fn(async () => [SCREENSHOT]));
+      fireEvent.click(await screen.findByRole('button', { name: '以原始文件引用' }));
+      fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+      await waitFor(() =>
+        expect(bridge.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            references: [{ type: 'mention', name: '截图.png', path: '/w/uploads/a/截图.png' }],
+          }),
+        ),
+      );
+    });
+
+    it('带插图的文档发给读不了图的模型：文字照常发、插图留下，并说一声', async () => {
+      const text = { type: 'text' as const, text: '已上传《年报.docx》，正文在 content.md' };
+      const mention = { type: 'mention' as const, name: '年报.docx', path: '/w/uploads/b/' };
+      const bridge = await attach(
+        vi.fn(async () => [
+          {
+            id: 'doc',
+            name: '年报.docx',
+            kind: 'document' as const,
+            sizeLabel: '已保存到项目',
+            state: 'ready' as const,
+            references: [
+              text,
+              {
+                type: 'localImage' as const,
+                name: '年报.docx',
+                path: '/w/uploads/b/assets/p1.png',
+              },
+              mention,
+            ],
+          },
+        ]),
+      );
+      expect(await screen.findByText(/《年报\.docx》里的图片不会发给当前模型/)).toBeTruthy();
+      fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+      await waitFor(() =>
+        expect(bridge.send).toHaveBeenCalledWith(
+          expect.objectContaining({ references: [text, mention] }),
+        ),
+      );
+    });
+  });
+
   it('中断失败时说明原因，不让停止按钮变成没反应', async () => {
     const interrupt = vi.fn(async () => {
       throw new Error('内核没有响应。');

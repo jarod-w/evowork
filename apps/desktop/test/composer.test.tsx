@@ -18,6 +18,7 @@ import {
   composerModeOptions,
   detectTrigger,
   parsingCount,
+  UNADDED_ATTACHMENT_BLOCKS_SEND,
   type ComposerProps,
 } from '../src/renderer/components/composer.js';
 
@@ -241,6 +242,59 @@ describe('附件与本机解析（03 §4.4，K6/Q3 的对外表达点）', () =>
     expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
 
     rerender(<Harness over={{ attachments: [{ ...parsing, state: 'ready' }] }} />);
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('有正文也不能带着没添加上的附件发送，并说为什么 —— 以前按钮是亮的，点了什么都不发生', () => {
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        value: '把这张图放进周报',
+        attachments: [
+          {
+            ...parsing,
+            kind: 'image',
+            name: '截图.png',
+            state: 'failed',
+            error: '当前模型不支持图片输入，可切换模型。',
+            rawReference: { type: 'mention', name: '截图.png', path: '/w/截图.png' },
+          },
+        ],
+      },
+      onSend,
+    );
+    const send = screen.getByRole('button', { name: '发送' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.title).toBe(UNADDED_ATTACHMENT_BLOCKS_SEND);
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+    // 原因与出路都画在附件区（03 §8 原话）
+    expect(screen.getByRole('alert').textContent).toBe(
+      '《截图.png》当前模型不支持图片输入，可切换模型。',
+    );
+    expect(screen.getByRole('button', { name: '以原始文件引用' })).toBeTruthy();
+  });
+
+  it('照常发送但留下了一部分的附件，附件区说一声（不是错误，不挡发送）', () => {
+    renderComposer({
+      value: '总结一下',
+      attachments: [
+        {
+          ...parsing,
+          name: '年报.docx',
+          state: 'ready',
+          notice: '里的图片不会发给当前模型（它不支持图片输入），只发送解析出的文字。',
+        },
+      ],
+    });
+    expect(
+      screen.getByText(
+        '《年报.docx》里的图片不会发给当前模型（它不支持图片输入），只发送解析出的文字。',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(
       false,
     );

@@ -1861,6 +1861,12 @@ textarea {
   font: inherit;
   cursor: pointer;
 }
+/* 附件照常发送、但有一部分没发出去（03 §8：模型读不了图时文档里的插图） */
+.ew-attachment-note {
+  margin: 0 0 var(--space-8);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
 /* K6/Q3 的对外表达点（03 §4.4） */
 .ew-privacy-note {
   margin: 0 0 var(--space-8);

@@ -47,6 +47,11 @@ export interface Attachment {
    * 给它们画这个按钮，点了什么都不会发生。
    */
   readonly rawReference?: unknown;
+  /**
+   * 附件照常发送、但有一部分没发出去时的说明（接在《文件名》后面读）。
+   * 现在只有一种：当前模型读不了图，文档里的插图被留下了（03 §8）。
+   */
+  readonly notice?: string | undefined;
 }
 
 export type MentionCategory = 'file' | 'upload' | 'skill' | 'library';
@@ -307,6 +312,27 @@ export function failureReasons(
   return [...byReason].map(([reason, names]) => ({ reason, names }));
 }
 
+/** 同 `failureReasons`，给照常发送但带说明的附件。 */
+export function attachmentNotices(
+  attachments: readonly Attachment[],
+): readonly { readonly notice: string; readonly names: readonly string[] }[] {
+  const byNotice = new Map<string, string[]>();
+  for (const attachment of attachments) {
+    if (attachment.state !== 'ready' || !attachment.notice) continue;
+    byNotice.set(attachment.notice, [...(byNotice.get(attachment.notice) ?? []), attachment.name]);
+  }
+  return [...byNotice].map(([notice, names]) => ({ notice, names }));
+}
+
+/**
+ * 还挂着没添加上的附件时不让发，并说为什么。
+ *
+ * App 层的 `send()` 本来就拒绝带着失败附件发送，而按钮以前只看「有没有正文」——
+ * 有正文时按钮是亮的、点了什么都不发生。用户得先移除它、改用原始文件引用，
+ * 或者（图片被模型能力拦下时）换一个能读图的模型。
+ */
+export const UNADDED_ATTACHMENT_BLOCKS_SEND = '有附件没添加上，先移除它或按提示处理，再发送。';
+
 export function parsingCount(attachments: readonly Attachment[]): number {
   return attachments.filter((a) => a.state === 'parsing').length;
 }
@@ -364,9 +390,11 @@ export function Composer(props: ComposerProps) {
   const empty =
     props.value.trim() === '' && !attachments.some((attachment) => attachment.state === 'ready');
   const blockedByModel = props.modelUnavailable !== undefined;
+  const unadded = attachments.some((attachment) => attachment.state === 'failed');
   const sendDisabled =
     empty ||
     parsing > 0 ||
+    unadded ||
     blockedByModel ||
     props.environmentBusy === true ||
     props.sendLockedReason !== undefined ||
@@ -560,6 +588,12 @@ export function Composer(props: ComposerProps) {
                 <p key={reason} className="ew-attachment-error" role="alert">
                   {names.map((name) => `《${name}》`).join('')}
                   {reason}
+                </p>
+              ))}
+              {attachmentNotices(attachments).map(({ notice, names }) => (
+                <p key={notice} className="ew-attachment-note">
+                  {names.map((name) => `《${name}》`).join('')}
+                  {notice}
                 </p>
               ))}
               <p className="ew-privacy-note">{LOCAL_PARSE_PROMISE}</p>
@@ -874,6 +908,7 @@ export function Composer(props: ComposerProps) {
               runState={runState}
               disabled={sendDisabled}
               parsing={parsing}
+              blockedReason={unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined}
               queuePosition={props.queuePosition}
               onSend={props.onSend}
               onInterrupt={props.onInterrupt}
@@ -969,6 +1004,7 @@ function SendButton({
   runState,
   disabled,
   parsing,
+  blockedReason,
   queuePosition,
   onSend,
   onInterrupt,
@@ -977,6 +1013,7 @@ function SendButton({
   readonly runState: ComposerRunState;
   readonly disabled: boolean;
   readonly parsing: number;
+  readonly blockedReason?: string | undefined;
   readonly queuePosition?: number | undefined;
   readonly onSend: () => void;
   readonly onInterrupt?: (() => void) | undefined;
@@ -1029,7 +1066,7 @@ function SendButton({
       className="ew-send-button"
       data-state={disabled ? 'disabled' : 'ready'}
       aria-label={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : '发送'}
-      title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : undefined}
+      title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : blockedReason}
       disabled={disabled}
       onClick={onSend}
     >
