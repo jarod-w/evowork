@@ -170,7 +170,7 @@ export function SettingsPage(props: SettingsPageProps) {
   );
 }
 
-/** Codex 本机记忆。内容由内核管理，产品只呈现受支持的控制与准备状态。 */
+/** 执行内核的本机记忆。内容由内核管理，产品只呈现受支持的控制与准备状态。 */
 function MemorySection(props: SettingsPageProps) {
   const [confirmReset, setConfirmReset] = useState(false);
   const memory = props.memory;
@@ -198,7 +198,7 @@ function MemorySection(props: SettingsPageProps) {
     <section className="ew-settings-section">
       <SectionHeader title="个性化" />
       <p className="ew-settings-note">
-        EvoWork 默认启用本机 Codex 记忆，在后续新任务里使用已提取的可复用上下文。项目长期规则仍写在
+        EvoWork 默认启用本地记忆，在后续新任务里使用已提取的可复用上下文。项目长期规则仍写在
         AGENTS.md；这里不会把记忆正文暴露给界面。
       </p>
       <label className="ew-checkbox">
@@ -257,7 +257,7 @@ function MemorySection(props: SettingsPageProps) {
             props.onResetMemories();
           }}
         >
-          <p>这会删除 Codex 已提取的全部本地记忆，项目里的 AGENTS.md 和任务历史不会被删除。</p>
+          <p>这会删除 EvoWork 已提取的全部本地记忆，项目里的 AGENTS.md 和任务历史不会被删除。</p>
         </Dialog>
       ) : null}
     </section>
