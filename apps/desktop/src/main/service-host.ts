@@ -1,6 +1,7 @@
 import { patchComputerUseConfig } from './computer-use-config.js';
 import { createComputerUseHost, type NativeHelper } from './computer-use-host.js';
 import { createNativeHelper, readComputerUseRelease } from './computer-use-helper.js';
+import { computerUseModelContext } from './computer-use-model.js';
 /**
  * 本机服务宿主（09 §1）。
  *
@@ -1253,6 +1254,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
    * 各读一遍的话，注入驱动（`options.computerUse`）只改得到其中一处 ——
    * 宿主放行、hook 却以「授权链尚未就绪」拒掉，两边对同一件事说两种话。
    */
+  let computerUseModelCatalog: ModelCatalogResult['models'] = [];
   const computerUseReleaseVerified =
     options.computerUse?.releaseVerified ?? readComputerUseRelease(helperApp, options.appVersion);
   const computerUse = createComputerUseHost({
@@ -1269,10 +1271,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       return {
         turnId: row.last_turn_id,
         model: row.model ?? '未知模型',
-        credentialSource: '当前任务配置的模型凭据',
+        ...computerUseModelContext(row.model ?? '', computerUseModelCatalog),
         interactive: !row.automation_id,
         root: !row.parent_thread_id,
-        imageSupported: false,
         // 企业策略细项尚未接通前，只要有企业 requirements 就保守禁用。
         enterpriseAllowed: !existsSync(options.paths.requirements),
         persistentAllowed: true,
@@ -1667,9 +1668,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           : gateway.result.reason === 'NO_ENTRY'
             ? ('broken-install' as const)
             : ('unreachable' as const);
+      computerUseModelCatalog = [];
       return { models: [], unavailable: gateway.result.notice, reason };
     }
-    return fetchModelCatalog(catalogFetchOptions());
+    const result = await fetchModelCatalog(catalogFetchOptions());
+    computerUseModelCatalog = result.models;
+    return result;
   };
   automationCatalog.read = readModelCatalog;
 

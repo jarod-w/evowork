@@ -1447,6 +1447,21 @@ describe('运行中切换审批档', () => {
         },
       }),
     ).toBeUndefined();
+    expect(
+      fullAccessApprovalReply({
+        ...base,
+        kind: 'mcp',
+        params: {
+          ...toolCall,
+          message: '动作类别：发送或提交内容',
+          requestedSchema: {
+            type: 'object',
+            properties: { scope: { type: 'string', enum: ['confirm', 'deny'] } },
+            required: ['scope'],
+          },
+        },
+      }),
+    ).toBeUndefined();
     // 无人值守照旧不代答（与命令同一条）
     expect(
       fullAccessApprovalReply({ ...base, kind: 'mcp', params: toolCall, unattended: true }),

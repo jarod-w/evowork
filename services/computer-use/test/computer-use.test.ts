@@ -152,3 +152,32 @@ describe('一次观测只允许一次动作', () => {
     expect(() => a.consume(id, window)).toThrow('USER_STOPPED');
   });
 });
+
+describe('截图坐标拖拽与输入预算', () => {
+  it('拖拽两个端点都需要截图、窗口内坐标和有限距离', () => {
+    const session = new ComputerUseSession('t', 'turn');
+    const path = { from_x: 0, from_y: 0, to_x: 799, to_y: 599 };
+    expect(() => session.consume(session.observe(window, []), window, path)).toThrow(
+      'POLICY_DENIED',
+    );
+    for (const invalid of [
+      { ...path, to_x: 800 },
+      { ...path, from_y: -1 },
+      { ...path, to_y: NaN },
+      { from_x: 0, from_y: 0, to_x: 5 },
+    ]) {
+      expect(() => session.consume(session.observe(window, [], true), window, invalid)).toThrow(
+        'POLICY_DENIED',
+      );
+    }
+    session.consume(session.observe(window, [], true), window, path);
+  });
+  it('逐字输入超过原生 4096 UTF-16 上限时在工具边界拒绝，长文本仍可纯文本粘贴', () => {
+    expect(() => validateToolCall('type_text', { ...base, text: 'x'.repeat(4097) })).toThrow(
+      'POLICY_DENIED',
+    );
+    expect(
+      validateToolCall('paste', { ...base, text: 'x'.repeat(4097), format: 'plain' }),
+    ).toBeTruthy();
+  });
+});

@@ -3560,6 +3560,7 @@ export function toApprovalView(
                   always: '始终允许此应用',
                   deny: '不允许',
                   enable: '继续并启用',
+                  confirm: '确认本次动作',
                 } as Record<string, string>
               )[id] ?? id,
           })),

@@ -79,6 +79,17 @@ export function createFakeComputerUse() {
           return apps;
         case 'window_identity':
           return { ...window, app: params.app ?? TEXTEDIT };
+        case 'inspect_action':
+          return {
+            window,
+            text: axText(),
+            target: {
+              app: TEXTEDIT,
+              role: params.element_index === ELEMENT.save ? 'AXButton' : 'AXTextArea',
+              label: params.element_index === ELEMENT.save ? '保存' : '正文',
+              editable: params.element_index !== ELEMENT.save,
+            },
+          };
         case 'get_app_state':
           return {
             window: { ...window, app: params.app ?? TEXTEDIT },

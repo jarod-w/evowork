@@ -51,11 +51,47 @@ export class ComputerUseSession {
   consume(
     stateId: string,
     window: WindowIdentity,
-    target: { element_index?: number; x?: number; y?: number } = {},
+    target: {
+      element_index?: number;
+      x?: number;
+      y?: number;
+      from_x?: number;
+      from_y?: number;
+      to_x?: number;
+      to_y?: number;
+    } = {},
   ): { warnBudget: boolean } {
+    try {
+      this.validate(stateId, window, target);
+    } catch (error) {
+      this.observation = undefined;
+      throw error;
+    }
+    this.observation = undefined;
+    if (this.writes >= 100) {
+      this.stop();
+      throw new ComputerUseError('POLICY_DENIED');
+    }
+    this.writes++;
+    return { warnBudget: this.writes >= 80 };
+  }
+
+  /** 审批前后校验，但只有真正开始动作才消费；校验失败同样使状态失效。 */
+  validate(
+    stateId: string,
+    window: WindowIdentity,
+    target: {
+      element_index?: number;
+      x?: number;
+      y?: number;
+      from_x?: number;
+      from_y?: number;
+      to_x?: number;
+      to_y?: number;
+    } = {},
+  ): void {
     this.assertActive();
     const state = this.observation;
-    this.observation = undefined;
     if (
       !state ||
       state.id !== stateId ||
@@ -64,7 +100,38 @@ export class ComputerUseSession {
         (key) => state.window[key] !== window[key],
       )
     ) {
+      this.observation = undefined;
       throw new ComputerUseError('STALE_STATE');
+    }
+    if (
+      target.from_x !== undefined ||
+      target.from_y !== undefined ||
+      target.to_x !== undefined ||
+      target.to_y !== undefined
+    ) {
+      if (
+        target.element_index !== undefined ||
+        target.x !== undefined ||
+        target.y !== undefined ||
+        !state.coordinateFallback
+      )
+        throw new ComputerUseError('POLICY_DENIED');
+      for (const [x, y] of [
+        [target.from_x, target.from_y],
+        [target.to_x, target.to_y],
+      ]) {
+        if (
+          !Number.isFinite(x) ||
+          !Number.isFinite(y) ||
+          x! < 0 ||
+          y! < 0 ||
+          x! >= window.width ||
+          y! >= window.height
+        )
+          throw new ComputerUseError('POLICY_DENIED');
+      }
+      if (Math.hypot(target.to_x! - target.from_x!, target.to_y! - target.from_y!) > 2000)
+        throw new ComputerUseError('POLICY_DENIED');
     }
     if (target.element_index !== undefined) {
       if (target.x !== undefined || target.y !== undefined)
@@ -84,12 +151,6 @@ export class ComputerUseSession {
         throw new ComputerUseError('POLICY_DENIED');
       }
     }
-    if (this.writes >= 100) {
-      this.stop();
-      throw new ComputerUseError('POLICY_DENIED');
-    }
-    this.writes++;
-    return { warnBudget: this.writes >= 80 };
   }
 
   /** 只接受结果码和是否变化，不接受窗口正文作为循环检测键。 */

@@ -3,6 +3,7 @@ import ApplicationServices
 import ScreenCaptureKit
 import Security
 import Darwin
+import CryptoKit
 import EvoWorkComputerUsePolicy
 
 // 单一权限主体；不启动网络服务，不读取模型参数以外的文件，不写屏幕正文日志。
@@ -34,11 +35,35 @@ func identity(_ app: NSRunningApplication) -> String? {
     return hash.map { String(format: "%02x", $0) }.joined()
 }
 
+// 私有继承 stdio 之外，再验证真实父进程签名；模型和环境变量不能声明调用方身份。
+func trustedCaller() -> Bool {
+    guard getppid() > 1 else { return false }
+    var own: SecCode?, ownStatic: SecStaticCode?, ownInfo: CFDictionary?
+    guard SecCodeCopySelf([], &own) == errSecSuccess, let own,
+          SecCodeCopyStaticCode(own, [], &ownStatic) == errSecSuccess, let ownStatic,
+          SecCodeCopySigningInformation(ownStatic, SecCSFlags(rawValue: kSecCSSigningInformation), &ownInfo) == errSecSuccess,
+          let info = ownInfo as? [String: Any], let team = info[kSecCodeInfoTeamIdentifier as String] as? String,
+          team.count == 10, team.allSatisfy({ "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".contains($0) }) else { return false }
+    var peer: SecCode?, requirement: SecRequirement?
+    let rule = "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\" and identifier \"com.evowork.desktop\""
+    guard SecRequirementCreateWithString(rule as CFString, [], &requirement) == errSecSuccess, let requirement,
+          SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String: getppid()] as CFDictionary, [], &peer) == errSecSuccess, let peer else { return false }
+    return SecCodeCheckValidity(peer, [], requirement) == errSecSuccess
+}
+
 @MainActor final class Controller {
     // 未完成类别识别的第三方 App 一律不可操作；不能靠可伪造的显示名判终端。
     let supported: Set<String> = ["com.apple.TextEdit", "com.apple.finder", "com.apple.iWork.Numbers"]
     var elements: [Int: AXUIElement] = [:]
     var snapshot: [String: Any]?
+    var observedText = ""
+    var observedFingerprint = ""
+    var currentFingerprint = ""
+    var confirmationText = ""
+    var confirmationComplete = true
+    var screenshotBound = false
+    var screenshotFingerprint = ""
+    var approvalPaused = false
     var observedAt = Date.distantPast
     var interrupted = false
     var lastRequest = Date()
@@ -73,11 +98,12 @@ func identity(_ app: NSRunningApplication) -> String? {
     }
     func installInputMonitor() throws {
         if tap != nil { return }
-        let mask = [CGEventType.keyDown, .leftMouseDown, .rightMouseDown, .mouseMoved, .scrollWheel].reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        let mask = [CGEventType.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .flagsChanged, .mouseMoved, .scrollWheel].reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let pointer = Unmanaged.passUnretained(self).toOpaque()
         guard let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly, eventsOfInterest: mask, callback: { _, type, event, info in
             guard let info else { return Unmanaged.passUnretained(event) }
             let controller = Unmanaged<Controller>.fromOpaque(info).takeUnretainedValue()
+            if controller.approvalPaused { return Unmanaged.passUnretained(event) }
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput || event.getIntegerValueField(.eventSourceUserData) != controller.syntheticMarker {
                 controller.interrupted = true
             }
@@ -107,11 +133,16 @@ func identity(_ app: NSRunningApplication) -> String? {
         // CG 窗口号绑定 AX bounds；多窗口重叠导致不唯一时直接拒绝。
         let matches = matchingWindowNumbers(CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [], processID: app.processIdentifier, origin: origin, size: size)
         guard matches.count == 1, let number = matches.first else { try fail("WINDOW_NOT_FOUND") }
-        return (win, ["app": app.bundleIdentifier!, "processId": Int(app.processIdentifier), "windowId": String(number), "x": origin.x, "y": origin.y, "width": size.width, "height": size.height, "scale": 1])
+        return (win, ["app": app.bundleIdentifier!, "processId": Int(app.processIdentifier), "windowId": String(number), "x": origin.x, "y": origin.y, "width": size.width, "height": size.height, "scale": NSScreen.screens.first(where: { screen in
+            guard let display = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return CGDisplayBounds(display.uint32Value).contains(CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2))
+        })?.backingScaleFactor ?? 1])
     }
     func tree(_ root: AXUIElement) -> String {
         elements.removeAll()
         var lines: [String] = [], bytes = 0, visited = Set<CFHashCode>()
+        var hash = SHA256()
+        confirmationText = ""; confirmationComplete = true
         func visit(_ node: AXUIElement, depth: Int) {
             guard depth <= 30, lines.count < 2000, bytes < 65536, !visited.contains(CFHash(node)) else { return }
             visited.insert(CFHash(node))
@@ -123,12 +154,20 @@ func identity(_ app: NSRunningApplication) -> String? {
             elements[index] = node
             let title = ax(node, kAXTitleAttribute) as? String ?? ""
             let value = ax(node, kAXValueAttribute) as? String ?? ""
+            let description = ax(node, kAXDescriptionAttribute) as? String ?? ""
+            let position = pointValue(ax(node, kAXPositionAttribute)) ?? .zero
+            let size = sizeValue(ax(node, kAXSizeAttribute)) ?? .zero
+            hash.update(data: Data("\(CFHash(node))|\(role)|\(title)|\(description)|\(value)|\(position)|\(size)|\(ax(node, kAXEnabledAttribute) as? Bool ?? false)".utf8))
+            let detail = "[\(index)] \(role) \(title) value=\(value)\n"
+            if confirmationText.utf8.count + detail.utf8.count <= 1024 * 1024 { confirmationText += detail }
+            else { confirmationComplete = false }
             let line = "[\(index)] depth=\(depth) \(role) \(String(title.prefix(512))) value=\(String(value.prefix(2048)))"
             if bytes + line.utf8.count > 65536 { return }
             bytes += line.utf8.count; lines.append(line)
             for child in ax(node, kAXChildrenAttribute) as? [AXUIElement] ?? [] { visit(child, depth: depth + 1) }
         }
         visit(root, depth: 0)
+        currentFingerprint = hash.finalize().map { String(format: "%02x", $0) }.joined()
         return lines.joined(separator: "\n")
     }
     func postKey(_ code: CGKeyCode, flags: CGEventFlags = []) throws {
@@ -139,7 +178,7 @@ func identity(_ app: NSRunningApplication) -> String? {
     func point(_ params: [String: Any], _ xKey: String, _ yKey: String, _ bounds: [String: Any]) throws -> CGPoint {
         guard let x = params[xKey] as? Double, let y = params[yKey] as? Double,
               let width = bounds["width"] as? Double, let height = bounds["height"] as? Double,
-              x.isFinite, y.isFinite, x >= 0, y >= 0, x < width, y < height else { try fail("POLICY_DENIED") }
+              validatedWindowPoint(x: x, y: y, width: width, height: height) != nil else { try fail("POLICY_DENIED") }
         return CGPoint(x: x + (bounds["x"] as! Double), y: y + (bounds["y"] as! Double))
     }
     func mouse(_ type: CGEventType, _ location: CGPoint, _ button: CGMouseButton = .left, _ count: Int = 1) throws {
@@ -148,9 +187,39 @@ func identity(_ app: NSRunningApplication) -> String? {
         event.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
         event.setIntegerValueField(.mouseEventClickState, value: Int64(count)); event.post(tap: .cghidEventTap)
     }
+    // 坐标动作需要最近成功截图；AX 元素中心也必须在当前窗口内。
+    func actionPoint(_ params: [String: Any], _ selected: AXUIElement?, _ bounds: [String: Any]) throws -> CGPoint {
+        if let selected {
+            guard let origin = pointValue(ax(selected, kAXPositionAttribute)), let size = sizeValue(ax(selected, kAXSizeAttribute)), size.width > 0, size.height > 0 else { try fail("ELEMENT_NOT_FOUND") }
+            return try point(["x": origin.x + size.width / 2 - (bounds["x"] as! Double), "y": origin.y + size.height / 2 - (bounds["y"] as! Double)], "x", "y", bounds)
+        }
+        guard screenshotBound else { try fail("POLICY_DENIED") }
+        return try point(params, "x", "y", bounds)
+    }
+    // 中断清理不能再次调用 guardSession，否则会留下按住的鼠标。
+    func releaseMouse(_ type: CGEventType, _ location: CGPoint, _ button: CGMouseButton) {
+        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: location, mouseButton: button) else { return }
+        event.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+        event.post(tap: .cghidEventTap)
+    }
+    func capture(_ target: NSRunningApplication, _ bounds: [String: Any]) async throws -> Data {
+        guard CGPreflightScreenCaptureAccess() else { try fail("PERMISSION_REQUIRED") }
+        let available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let id = UInt32(bounds["windowId"] as! String), let captured = available.windows.first(where: { $0.windowID == id && $0.owningApplication?.processID == target.processIdentifier }) else { try fail("WINDOW_NOT_FOUND") }
+        let configuration = SCStreamConfiguration()
+        configuration.width = Int(bounds["width"] as! Double); configuration.height = Int(bounds["height"] as! Double)
+        configuration.showsCursor = false
+        let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: captured), configuration: configuration)
+        guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { try fail("INTERNAL") }
+        try guardSession()
+        let (_, after) = try window(target)
+        guard NSDictionary(dictionary: bounds).isEqual(to: after) else { try fail("STALE_STATE") }
+        return png
+    }
     func handle(_ method: String, _ params: [String: Any]) async throws -> Any {
         lastRequest = Date()
         if method == "health" { return ["protocolVersion": 1, "buildVersion": ProcessInfo.processInfo.environment["EVOWORK_CUA_BUILD_VERSION"] ?? "", "accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess()] as [String: Any] }
+        guard trustedCaller() else { try fail("POLICY_DENIED") }
         try guardSession()
         if method == "list_apps" {
             return NSWorkspace.shared.runningApplications.compactMap { app -> [String: Any]? in
@@ -166,31 +235,61 @@ func identity(_ app: NSRunningApplication) -> String? {
             try guardSession()
             let (win, bounds) = try window(target)
             let text = tree(win)
-            var result: [String: Any] = ["window": bounds, "text": text, "elements": Array(elements.keys), "coordinateFallback": false]
+            let originalFingerprint = currentFingerprint
+            screenshotBound = false
+            approvalPaused = false
+            var result: [String: Any] = ["window": bounds, "text": text, "elements": Array(elements.keys), "coordinateFallback": false, "requiresScreenshot": elements.count <= 1]
             if params["include_screenshot"] as? Bool == true {
-                guard CGPreflightScreenCaptureAccess() else { try fail("PERMISSION_REQUIRED") }
-                let available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard let id = UInt32(bounds["windowId"] as! String), let captured = available.windows.first(where: { $0.windowID == id && $0.owningApplication?.processID == target.processIdentifier }) else { try fail("WINDOW_NOT_FOUND") }
-                let configuration = SCStreamConfiguration()
-                configuration.width = Int(bounds["width"] as! Double); configuration.height = Int(bounds["height"] as! Double)
-                configuration.showsCursor = false
-                let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: captured), configuration: configuration)
-                guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { try fail("INTERNAL") }
-                try guardSession()
-                let (_, after) = try window(target)
-                guard NSDictionary(dictionary: bounds).isEqual(to: after) else { try fail("STALE_STATE") }
+                let png = try await capture(target, bounds)
+                screenshotFingerprint = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+                // 截图期间 AX 可能变化，必须把文字和图像绑定到同一次观测。
+                guard tree(win) == text, currentFingerprint == originalFingerprint else { try fail("STALE_STATE") }
                 result["screenshot"] = png.base64EncodedString()
+                screenshotBound = true
+                result["coordinateFallback"] = true
             }
-            snapshot = bounds; observedAt = Date()
+            snapshot = bounds; observedText = text; observedFingerprint = currentFingerprint; observedAt = Date()
             try installInputMonitor()
             return result
         }
-        let (_, bounds) = try window(target)
+        if method == "inspect_action", params["restore_focus"] as? Bool == true {
+            guard approvalPaused else { try fail("POLICY_DENIED") }
+            target.activate(options: [])
+            try await Task.sleep(nanoseconds: 150_000_000)
+            approvalPaused = false
+            try guardSession()
+        }
+        let (currentWindow, bounds) = try window(target)
         if method == "window_identity" { return bounds }
         guard let before = snapshot, NSDictionary(dictionary: before).isEqual(to: bounds), Date().timeIntervalSince(observedAt) < 30 else { try fail("STALE_STATE") }
         let appRoot = AXUIElementCreateApplication(target.processIdentifier)
         if let focus = ax(appRoot, kAXFocusedUIElementAttribute), CFGetTypeID(focus) == AXUIElementGetTypeID(),
            ax(unsafeBitCast(focus, to: AXUIElement.self), kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { try fail("POLICY_DENIED") }
+        guard tree(currentWindow) == observedText, currentFingerprint == observedFingerprint else { snapshot = nil; try fail("STALE_STATE") }
+        if params["x"] != nil || params["from_x"] != nil {
+            guard screenshotBound else { try fail("POLICY_DENIED") }
+            let png = try await capture(target, bounds)
+            let fingerprint = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+            guard fingerprint == screenshotFingerprint, tree(currentWindow) == observedText, currentFingerprint == observedFingerprint else { snapshot = nil; try fail("STALE_STATE") }
+        }
+        if method == "pause_for_approval" {
+            approvalPaused = true
+            return ["ok": true]
+        }
+        if method == "inspect_action" {
+            guard confirmationComplete else { try fail("POLICY_DENIED") }
+            var focused: AXUIElement?
+            if let value = ax(appRoot, kAXFocusedUIElementAttribute), CFGetTypeID(value) == AXUIElementGetTypeID() { focused = unsafeBitCast(value, to: AXUIElement.self) }
+            let element = (params["element_index"] as? Int).flatMap { elements[$0] } ?? focused
+            var editable = DarwinBoolean(false)
+            if let element { AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &editable) }
+            let role = element.flatMap { ax($0, kAXRoleAttribute) as? String } ?? "unknown"
+            let label = element.map { node in
+                [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].compactMap { ax(node, $0) as? String }.joined(separator: " · ")
+            } ?? "窗口坐标（用途未知）"
+            return ["window": bounds, "text": observedText, "confirmationText": confirmationText, "target": ["app": target.bundleIdentifier!, "role": role, "label": label, "editable": editable.boolValue]]
+        }
+        guard !approvalPaused else { try fail("POLICY_DENIED") }
         snapshot = nil // 失败也不能重用这批元素。
         defer { elements.removeAll() }
         var selected: AXUIElement?
@@ -201,8 +300,25 @@ func identity(_ app: NSRunningApplication) -> String? {
         }
         switch method {
         case "click":
-            guard let selected, (params["click_count"] as? Int ?? 1) == 1, (params["button"] as? String ?? "left") == "left" else { try fail("POLICY_DENIED") }
-            guard AXUIElementPerformAction(selected, kAXPressAction as CFString) == .success else { try fail("ELEMENT_NOT_FOUND") }
+            let count = params["click_count"] as? Int ?? 1
+            let buttonName = params["button"] as? String ?? "left"
+            guard (1...3).contains(count), ["left", "right", "middle"].contains(buttonName) else { try fail("POLICY_DENIED") }
+            if let selected, count == 1, buttonName == "left" {
+                guard AXUIElementPerformAction(selected, kAXPressAction as CFString) == .success else { try fail("ELEMENT_NOT_FOUND") }
+            } else {
+                let location = try actionPoint(params, selected, bounds)
+                let button: CGMouseButton = buttonName == "right" ? .right : buttonName == "middle" ? .center : .left
+                let down: CGEventType = button == .right ? .rightMouseDown : button == .center ? .otherMouseDown : .leftMouseDown
+                let up: CGEventType = button == .right ? .rightMouseUp : button == .center ? .otherMouseUp : .leftMouseUp
+                defer { releaseMouse(up, location, button) }
+                for index in 1...count {
+                    try mouse(down, location, button, index)
+                    try mouse(up, location, button, index)
+                    try await Task.sleep(nanoseconds: 60_000_000)
+                    try guardSession()
+                    _ = try window(target)
+                }
+            }
         case "set_value":
             guard let selected, let value = params["value"] as? String else { try fail("POLICY_DENIED") }
             guard AXUIElementSetAttributeValue(selected, kAXValueAttribute as CFString, value as CFString) == .success else { try fail("ELEMENT_NOT_FOUND") }
@@ -253,9 +369,34 @@ func identity(_ app: NSRunningApplication) -> String? {
             }
             guard var range = selectedTextRange(value: value, text: text, prefix: params["prefix"] as? String ?? "", suffix: params["suffix"] as? String ?? "", mode: mode, existing: previous) else { try fail("ELEMENT_NOT_FOUND") }
             guard let axRange = AXValueCreate(.cfRange, &range), AXUIElementSetAttributeValue(selected, kAXSelectedTextRangeAttribute as CFString, axRange) == .success else { try fail("ELEMENT_NOT_FOUND") }
-        case "scroll", "drag":
-            // 坐标回退需独立验收：不以未经验证的坐标替代 AX 动作。
-            try fail("POLICY_DENIED")
+        case "scroll":
+            let location = try actionPoint(params, selected, bounds)
+            guard let pages = params["pages"] as? Int, (1...5).contains(pages), let direction = params["direction"] as? String, ["up", "down", "left", "right"].contains(direction) else { try fail("POLICY_DENIED") }
+            let vertical = direction == "up" || direction == "down"
+            let distance = min(32768, Int((bounds[vertical ? "height" : "width"] as! Double) * 0.8) * pages)
+            let amount = Int32((direction == "down" || direction == "right") ? -distance : distance)
+            guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical ? amount : 0, wheel2: vertical ? 0 : amount, wheel3: 0) else { try fail("INTERNAL") }
+            event.location = location
+            event.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+            try guardSession(); event.post(tap: .cghidEventTap)
+        case "drag":
+            guard screenshotBound else { try fail("POLICY_DENIED") }
+            let from = try point(params, "from_x", "from_y", bounds)
+            let to = try point(params, "to_x", "to_y", bounds)
+            let duration = params["duration_ms"] as? Int ?? 500
+            let rectangle = CGRect(x: bounds["x"] as! Double, y: bounds["y"] as! Double, width: bounds["width"] as! Double, height: bounds["height"] as! Double)
+            guard let path = validatedDragPath(from: from, to: to, window: rectangle, duration: duration) else { try fail("POLICY_DENIED") }
+            var location = from
+            defer { releaseMouse(.leftMouseUp, location, .left) }
+            try mouse(.leftMouseDown, from)
+            for point in path {
+                try await Task.sleep(nanoseconds: UInt64(duration / path.count) * 1_000_000)
+                try guardSession()
+                let (_, moved) = try window(target)
+                guard NSDictionary(dictionary: bounds).isEqual(to: moved) else { try fail("STALE_STATE") }
+                location = point
+                try mouse(.leftMouseDragged, location)
+            }
         default: try fail("POLICY_DENIED")
         }
         try guardSession()

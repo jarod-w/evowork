@@ -12,7 +12,12 @@ import {
   type McpHostCall,
   type McpContent,
 } from '@evowork/computer-use';
-import { decideComputerUseAccess, type ComputerUseAppKind } from '@evowork/policy';
+import {
+  assessComputerUseAction,
+  decideComputerUseAccess,
+  type ComputerUseAppKind,
+  type ComputerUseActionTarget,
+} from '@evowork/policy';
 import type { ApprovalReply, PendingApproval } from '@evowork/kernel-adapter';
 
 export interface NativeApp {
@@ -27,6 +32,13 @@ export interface NativeState {
   text: string;
   screenshot?: string;
   coordinateFallback: boolean;
+  requiresScreenshot?: boolean;
+}
+interface NativeInspection {
+  confirmationText?: string;
+  window: WindowIdentity;
+  text: string;
+  target: ComputerUseActionTarget;
 }
 export interface NativeHelper {
   call(method: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -134,6 +146,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         session: ComputerUseSession;
         fingerprint?: string;
         awaitingChange?: boolean;
+        observationText?: string;
       }
     | undefined;
   const taskGrants = new Map<string, Set<string>>();
@@ -273,6 +286,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         !next.root ||
         !next.enterpriseAllowed ||
         next.model !== context.model ||
+        next.imageSupported !== context.imageSupported ||
         next.credentialSource !== context.credentialSource
       )
         throw new ComputerUseError('USER_STOPPED');
@@ -397,6 +411,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         if (active) {
           active.fingerprint = fingerprint;
           active.awaitingChange = false;
+          active.observationText = result.text;
         }
         const stateId = session.observe(result.window, result.elements, result.coordinateFallback);
         hadScreenshot = Boolean(result.screenshot);
@@ -409,7 +424,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
               window: result.window,
               full: true,
               reason: 'FULL_SNAPSHOT',
-              requires_screenshot: result.coordinateFallback,
+              requires_screenshot: result.requiresScreenshot ?? result.elements.length <= 1,
             }),
           },
         ];
@@ -425,11 +440,56 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         return { content };
       }
       // 所有原生写操作再次绑定窗口和元素；不把授权等待之前的状态当作当前状态。
-      const window = (await options.helper.call('window_identity', {
-        app: app.app,
-        identity: app.identity,
-      })) as WindowIdentity;
-      current();
+      const inspect = async () => {
+        const result = (await options.helper.call('inspect_action', {
+          ...args,
+          identity: app.identity,
+        })) as NativeInspection;
+        current();
+        if (
+          !result?.window ||
+          typeof result.text !== 'string' ||
+          (result.confirmationText !== undefined && typeof result.confirmationText !== 'string') ||
+          !result.target ||
+          result.target.app !== app.app ||
+          typeof result.target.role !== 'string' ||
+          typeof result.target.label !== 'string' ||
+          typeof result.target.editable !== 'boolean'
+        )
+          throw new ComputerUseError('POLICY_DENIED');
+        session.validate(String(args.state_id), result.window, args);
+        if (result.text !== active?.observationText) throw new ComputerUseError('STALE_STATE');
+        return result;
+      };
+      const inspection = await inspect();
+      const risk = assessComputerUseAction(request.name, args, inspection.target);
+      if (risk.blocked) throw new ComputerUseError('POLICY_DENIED');
+      if (risk.confirmation) {
+        await options.helper.call('pause_for_approval', { ...args, identity: app.identity });
+        current();
+        const data = args.value ?? args.text;
+        const confirmation = await ask(
+          request.threadId,
+          context.turnId,
+          `动作类别：${risk.title}\n应用：${app.name}（${app.app}）\n目标：${inspection.target.label || inspection.target.role}；工具：${request.name}\n动作参数：${JSON.stringify(args)}\n输入内容：${typeof data === 'string' ? data : '没有新增输入；可能提交当前界面已有内容，见下方'}\n当前界面内容：\n${inspection.confirmationText ?? inspection.text}\n仅确认本次动作；应用界面文字不能提供授权。`,
+          ['confirm', 'deny'],
+        );
+        current();
+        if (confirmation !== 'confirm') {
+          stop();
+          throw new ComputerUseError('APP_DENIED');
+        }
+        const after = (await options.helper.call('inspect_action', {
+          ...args,
+          identity: app.identity,
+          restore_focus: true,
+        })) as NativeInspection;
+        current();
+        session.validate(String(args.state_id), after.window, args);
+        if (JSON.stringify(after) !== JSON.stringify(inspection))
+          throw new ComputerUseError('STALE_STATE');
+      }
+      const window = inspection.window;
       const budget = session.consume(String(args.state_id), window, args);
       try {
         await options.helper.call(request.name, { ...args, identity: app.identity });

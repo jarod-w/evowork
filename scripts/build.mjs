@@ -68,6 +68,11 @@ const BUNDLES = [
    */
   { entry: HOOK_VENDOR.from, out: HOOK_VENDOR.to, format: 'esm' },
   {
+    entry: 'services/policy/src/computer-use-action.ts',
+    out: 'plugins/connectors/browser/vendor/policy.mjs',
+    format: 'esm',
+  },
+  {
     entry: 'services/computer-use/src/mcp-main.ts',
     out: 'plugins/connectors/computer-use/vendor/server.mjs',
     format: 'esm',
@@ -142,6 +147,40 @@ for (const bundle of BUNDLES) {
  * 开发时（vitest 从 src/ 加载 office.py）解析成功，装好的 App 拖入 docx
  * 永远「解析失败」。Python 读不了 asar 里的文件，运行时还会再物化一份。
  */
+// 从无 workspace 的目录启动浏览器 MCP，验证发布包的策略与工具清单接线。
+{
+  const alone = mkdtempSync(join(tmpdir(), 'evowork-browser-bundle-'));
+  try {
+    mkdirSync(join(alone, 'vendor'));
+    for (const name of ['server.mjs', 'runtime.mjs', 'cdp.mjs', 'vendor/policy.mjs'])
+      copyFileSync(join(ROOT, 'plugins/connectors/browser', name), join(alone, name));
+    const output = execFileSync(process.execPath, [join(alone, 'server.mjs')], {
+      encoding: 'utf8',
+      timeout: 5000,
+      input:
+        [
+          { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+          { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        ]
+          .map((frame) => JSON.stringify(frame))
+          .join('\n') + '\n',
+    });
+    const listed = output
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+      .find((frame) => frame.id === 2)?.result?.tools;
+    if (
+      !listed?.some((tool) => tool.name === 'browser_download') ||
+      !listed?.some((tool) => tool.name === 'browser_fill')
+    )
+      throw new Error('浏览器 MCP 发布包缺少完整工具清单');
+    console.log('   browser MCP 可脱离 workspace 启动，策略 bundle 与 8 个工具已接通');
+  } finally {
+    rmSync(alone, { recursive: true, force: true });
+  }
+}
+
 const OFFICE_PARSER = 'services/ingest/src/parsers/office.py';
 const OFFICE_PARSER_DEST = 'apps/desktop/dist/main/office.py';
 if (!existsSync(join(ROOT, OFFICE_PARSER))) {

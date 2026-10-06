@@ -193,7 +193,7 @@ export const TOOLS = [
     'element_index',
     'value',
   ]),
-  tool('type_text', { ...base, text }, ['app', 'state_id', 'text']),
+  tool('type_text', { ...base, text: { ...text, maxLength: 4096 } }, ['app', 'state_id', 'text']),
 ] as const;
 
 /** 与上述 schema 同源校验；错误不回显可能含隐私的参数。 */

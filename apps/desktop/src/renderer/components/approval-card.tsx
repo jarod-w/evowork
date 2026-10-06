@@ -146,6 +146,8 @@ export function ApprovalCard({
    */
   const isQuestion =
     approval.kind === 'userInput' || (approval.kind === 'mcp' && !approval.toolCall);
+  const confirmationForm =
+    approval.kind === 'mcp' && approval.options?.some((option) => option.id === 'confirm');
   const dangerous = (approval.changes ?? []).some((c) => c.kind === 'delete');
   // 清单没查到时按"不知道改了什么"说，不说"0 个文件"
   const fileImpact = approval.changes
@@ -178,13 +180,13 @@ export function ApprovalCard({
       className="ew-approval-card"
       // 10 §8.1：审批卡用 role="alertdialog" 且焦点自动落到卡上
       role="alertdialog"
-      aria-label={isQuestion ? '需要你回答' : '需要你确认'}
+      aria-label={isQuestion && !confirmationForm ? '需要你回答' : '需要你确认'}
       tabIndex={-1}
       data-kind={approval.kind}
       data-tone={dangerous ? 'danger' : 'warning'}
     >
       <header className="ew-approval-header">
-        <strong>{isQuestion ? '需要你回答' : '需要你确认'}</strong>
+        <strong>{isQuestion && !confirmationForm ? '需要你回答' : '需要你确认'}</strong>
         {approval.unattended ? (
           // 定时任务的审批超时 10 分钟自动拒绝（10 §3.6）——必须在卡上说清楚
           <Badge variant="warning">无人值守 · 10 分钟后自动取消</Badge>

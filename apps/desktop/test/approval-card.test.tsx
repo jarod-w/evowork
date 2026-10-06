@@ -433,3 +433,31 @@ describe('命令审批卡分得清 command 与 writeStdin', () => {
     expect(document.body.textContent).toContain('将运行一条本机命令');
   });
 });
+
+describe('电脑操控敏感动作单次确认', () => {
+  it('显示完整目标和输入，只提供本次确认，回传枚举而非通用允许', () => {
+    const onAnswer = vi.fn(),
+      onDecide = vi.fn();
+    render(
+      <ApprovalCard
+        approval={approval({
+          kind: 'mcp',
+          question: '动作类别：发送\n目标：客户邮件\n输入内容：完整正文',
+          options: [
+            { id: 'confirm', label: '确认本次动作' },
+            { id: 'deny', label: '拒绝' },
+          ],
+          allowAcceptForSession: false,
+        })}
+        onAnswer={onAnswer}
+        onDecide={onDecide}
+      />,
+    );
+    expect(screen.getByRole('alertdialog', { name: '需要你确认' })).toBeTruthy();
+    expect(screen.getByText(/完整正文/)).toBeTruthy();
+    expect(screen.queryByText('本次任务内都允许')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '确认本次动作' }));
+    expect(onAnswer).toHaveBeenCalledWith({ optionId: 'confirm' });
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+});

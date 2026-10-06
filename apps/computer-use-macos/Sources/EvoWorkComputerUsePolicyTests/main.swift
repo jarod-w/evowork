@@ -18,6 +18,17 @@ func window(_ number: Int, pid: Int32 = 42, layer: Int = 0, x: Double = 10, widt
 struct NativePolicyTests {
     static func main() {
         let origin = CGPoint(x: 10, y: 20)
+        check(validatedWindowPoint(x: 0, y: 0, width: 800, height: 600) == CGPoint.zero, "window origin accepted")
+        check(validatedWindowPoint(x: 800, y: 10, width: 800, height: 600) == nil, "exclusive right edge")
+        check(validatedWindowPoint(x: -1, y: 0, width: 800, height: 600) == nil, "negative coordinate denied")
+        check(validatedWindowPoint(x: .nan, y: 0, width: 800, height: 600) == nil, "NaN denied")
+        check(validatedWindowPoint(x: 0, y: 0, width: .infinity, height: 600) == nil, "invalid bounds denied")
+        let rectangle = CGRect(x: 10, y: 20, width: 3000, height: 600)
+        let path = validatedDragPath(from: origin, to: CGPoint(x: 110, y: 120), window: rectangle, duration: 500)
+        check(path?.last == CGPoint(x: 110, y: 120) && path?.count == 25, "drag reaches exact endpoint with interruption steps")
+        check(validatedDragPath(from: origin, to: CGPoint(x: 2011, y: 20), window: rectangle, duration: 500) == nil, "drag distance budget")
+        check(validatedDragPath(from: origin, to: CGPoint(x: 10, y: 620), window: rectangle, duration: 500) == nil, "drag endpoint outside window")
+        check(validatedDragPath(from: origin, to: CGPoint(x: 110, y: 120), window: rectangle, duration: 2001) == nil, "drag duration budget")
         let size = CGSize(width: 800, height: 600)
         let entries = [window(1, pid: 43), window(2, layer: 1), window(3, x: 11), window(4, width: .nan), window(5)]
         check(matchingWindowNumbers(entries, processID: 42, origin: origin, size: size) == [5], "unique process/window match")
@@ -38,7 +49,7 @@ struct NativePolicyTests {
         check(fromRight?.location == 1 && fromRight?.length == 3, "extend selection left")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: nil) == nil, "missing original selection denied")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: CFRange(location: 4, length: 2)) == nil, "out-of-bounds selection denied")
-        print("Native policy checks passed (12 cases).")
+        print("Native policy checks passed (21 cases).")
     }
 }
 

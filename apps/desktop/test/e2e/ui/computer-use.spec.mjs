@@ -425,6 +425,49 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
    * `POLICY_DENIED`，模型照规矩停下，告诉用户「TextEdit 被系统/权限策略拒绝」——
    * 一个能改正的笔误，变成了一句误导人的硬停。
    */
+  for (const choice of ['确认本次动作', '拒绝']) {
+    test(`完全访问下 Enter 提交仍需独立确认：${choice}`, async ({ page, electronApp }) => {
+      await enableComputerUse(page, electronApp);
+      await page.getByRole('button', { name: '审批档' }).click();
+      await page.locator('.ew-menu-item').filter({ hasText: '完全访问' }).click();
+      await page.getByRole('button', { name: '仅当前任务使用完全访问' }).click();
+      const value = newMarker('SUBMIT-DATA'),
+        marker = newMarker('RISK');
+      await scriptComputerUse(electronApp, marker, [
+        { tool: 'list_apps', args: {} },
+        { tool: 'get_app_state', args: { app: TEXTEDIT } },
+        {
+          tool: 'set_value',
+          args: { app: TEXTEDIT, element_index: BODY_ELEMENT, value },
+          withState: true,
+        },
+        { tool: 'get_app_state', args: { app: TEXTEDIT } },
+        { tool: 'press_key', args: { app: TEXTEDIT, key: 'Enter' }, withState: true },
+        { text: '本次提交动作已按你的选择处理。' },
+      ]);
+      await send(page, `填写正文并提交 ${marker}`);
+      await grantTextEdit(page);
+      const card = page.getByRole('alertdialog', { name: '需要你确认' });
+      await expect(card).toContainText('可能提交内容', { timeout: 90_000 });
+      await expect(card).toContainText(value);
+      await expect(card.getByRole('button', { name: '本次任务内都允许' })).toHaveCount(0);
+      expect(
+        (await helperCalls(electronApp)).filter((call) => call.method === 'press_key'),
+      ).toHaveLength(0);
+      await card.getByRole('button', { name: choice, exact: true }).click();
+      await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
+        timeout: 60_000,
+      });
+      expect(
+        (await helperCalls(electronApp)).filter((call) => call.method === 'press_key'),
+      ).toHaveLength(choice === '确认本次动作' ? 1 : 0);
+      if (choice === '拒绝')
+        expect(
+          await electronApp.evaluate(() => globalThis.__evoworkE2E.computerUse.stops()),
+        ).toBeGreaterThan(0);
+    });
+  }
+
   test('认不出的应用名：回 APP_NOT_FOUND，不冒充策略拒绝', async ({ page, electronApp }) => {
     await enableComputerUse(page, electronApp);
     const marker = newMarker('UNKNOWN');

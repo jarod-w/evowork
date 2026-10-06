@@ -2,6 +2,22 @@ import CoreFoundation
 import CoreGraphics
 import Foundation
 
+public func validatedWindowPoint(x: Double, y: Double, width: Double, height: Double) -> CGPoint? {
+    guard x.isFinite, y.isFinite, width.isFinite, height.isFinite, width > 0, height > 0, x >= 0, y >= 0, x < width, y < height else { return nil }
+    return CGPoint(x: x, y: y)
+}
+public func validatedDragPath(from: CGPoint, to: CGPoint, window: CGRect, duration: Int) -> [CGPoint]? {
+    guard window.origin.x.isFinite, window.origin.y.isFinite, (100...2000).contains(duration),
+          validatedWindowPoint(x: from.x - window.minX, y: from.y - window.minY, width: window.width, height: window.height) != nil,
+          validatedWindowPoint(x: to.x - window.minX, y: to.y - window.minY, width: window.width, height: window.height) != nil,
+          hypot(to.x - from.x, to.y - from.y) <= 2000 else { return nil }
+    let steps = max(2, duration / 20)
+    return (1...steps).map { step in
+        let progress = Double(step) / Double(steps)
+        return CGPoint(x: from.x + (to.x - from.x) * progress, y: from.y + (to.y - from.y) * progress)
+    }
+}
+
 // AX bounds 必须唯一对应目标进程的前台普通窗口，不能按数组顺序猜测。
 public func matchingWindowNumbers(_ entries: [[String: Any]], processID: Int32, origin: CGPoint, size: CGSize) -> [Int] {
     entries.compactMap { entry in

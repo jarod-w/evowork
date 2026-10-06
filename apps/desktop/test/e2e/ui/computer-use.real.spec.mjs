@@ -77,8 +77,8 @@ async function drive(page, { writes, answered }) {
           `写动作的审批卡批不了（只有拒绝 / 取消）：${text.slice(0, 200)}。` +
             '产品缺陷，见 computer-use.spec.mjs「请求批准档」那条。',
         );
-      } else
-        choice = (await card.getByRole('button', { name: /^允许/ }).first().innerText()).trim();
+      } else if (text.includes('确认本次动作')) choice = '确认本次动作';
+      else choice = (await card.getByRole('button', { name: /^允许/ }).first().innerText()).trim();
       /*
        * 同一张卡连点三次都没走 = 用户点了没反应。照实报出来，别让它拖成一句「8 分钟没结束」
        * （2026-10-05 MiMo flash 一轮：写动作的卡点「拒绝」后一直留在屏幕上，整轮超时）。
@@ -307,3 +307,31 @@ test('点名要终端：不读取、不弹准入、不换通道去开它', async
     description: `执行过 ${commands.length} 条命令；电脑操控卡 ${answered.filter((card) => card.kind === 'mcp').length} 张，其它卡 ${answered.filter((card) => card.kind !== 'mcp').length} 张（均已拒绝）`,
   });
 });
+
+for (const decision of ['approve', 'decline']) {
+  test(`完全访问敏感提交独立确认：${decision}`, async ({ page, electronApp }, testInfo) => {
+    test.setTimeout(TURN_BUDGET_MS + 3 * 60_000);
+    await enableComputerUse(page, electronApp);
+    await page.getByRole('button', { name: '审批档' }).click();
+    await page.locator('.ew-menu-item').filter({ hasText: '完全访问' }).click();
+    await page.getByRole('button', { name: '仅当前任务使用完全访问' }).click();
+    const token = `EVOWORK-${Date.now().toString(36).toUpperCase()}`;
+    await send(
+      page,
+      `请用电脑操控读取 TextEdit 当前文档，用 set_value 把正文改成「${token}」（不含书名号），重新读取后，用 press_key 单独按一次 Enter，最后再次读取确认。只改正文，不保存、不操作其它应用。`,
+    );
+    const result = await runTurn(page, electronApp, testInfo, { writes: decision });
+    const sensitive = writeCards(result.answered).filter((card) => /可能提交内容/.test(card.text));
+    expect(sensitive.length, '模型没有尝试 Enter 提交，未验到敏感动作闸门').toBeGreaterThan(0);
+    expect(
+      sensitive.every((card) => card.text.includes(token)),
+      '提交确认没有包含当前正文',
+    ).toBe(true);
+    const entered = result.calls.filter(
+      (call) => call.method === 'press_key' && call.key === 'Enter',
+    );
+    expect(entered.length).toBe(decision === 'approve' ? 1 : 0);
+    if (decision === 'decline') expect(result.reply).toMatch(/未|没有|没能|无法|不能|拒绝|取消/);
+    expect((await fakeDocument(electronApp)).saved).toBe(false);
+  });
+}
