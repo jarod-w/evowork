@@ -6,6 +6,24 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-06：网关认出上下文超长，内核在下一轮先压缩 —— 不再原样重发卡死；超限文案改成「再发一条会先压缩」。**
+> ① **网关**（`providers/registry.ts` 的 `isContextOverflow`）：查码表**之前**先按报错原文认超长，只收整句
+> （`maximum context length is` —— DeepSeek 实测原话、vLLM / OpenAI 旧版同句；`exceeds the context window` —— OpenAI Responses），
+> 只在 400 / 413 / 422 / 流内报错上认。DeepSeek 的超长与「模型不存在」同一个码（`invalid_request_error`），原先一律落成
+> `invalid_prompt`。不收单个词：误认会白压缩一次、把别的错说成超长。新增 6 条用例（含「输出上限设大了不算」「401 / 429 / 503
+> 里夹着这句也不改判」）；撤掉新判定 → 三条超长用例红（实测）。原文只在内存里比对，日志照旧只有映射后的 code（Q14）。
+> 原计划里「`extractError` 收数字 code」没做：vLLM 的数字 code 就是 HTTP 状态码，不带信息，靠原文已经认得出。
+> ② **文案**（`kernel-adapter/src/events.ts`）：「新建一个任务继续」→「这一轮超出了模型的上下文上限，没有完成。再发一条消息
+> （比如「继续」），会先压缩早期对话再接着做。」依据是**真内核实测**（scratchpad 一次性脚本：真 app-server + 假上游，JSON-RPC 驱动、不开窗口）：
+> 第一轮回 `context_length_exceeded` → 本轮以 `contextWindowExceeded` 失败；第二轮内核**先发压缩请求、再发正常请求**，回合完成，
+> 时间线出现 `contextCompaction`。**对照**：同一场景给 `invalid_prompt` → `codexErrorInfo=other`，第二轮不压缩、原样重发。
+> 漂移雷达加 F47（内核只认 `context_length_exceeded`）与 F48（超长时 `set_total_tokens_full`，文案的承诺靠它）。
+> 顺带订正 `registry.ts` 头注释：那张表原写「`context_length_exceeded` → 压缩上下文后重试」，实际是本轮失败、下一轮先压缩。
+> ③ **补测各家超长格式（原计划第 3 步）没做**，记为 work-priority §10 的 **U11**：Kimi 只靠码表里的 `content_too_long`（没实测过超长），
+> **GLM 怎么报不知道**（认不出时仍会卡住），vLLM 是推断。另立项候选同记在 U11：从报错原文读出真实上限、让用户一键改模型的上下文。
+> 验收：`pnpm run check` 除格式检查外各步退出 0（这次改的文件单独过了 prettier），150 个测试文件通过、1 个原有跳过；
+> 2520 通过、2 个原有跳过（含另一个会话同时新加的用例）；漂移雷达 OK 33 · BROKEN 0。**没在真窗口里看过**新文案。
+>
 > **2026-10-06（电脑操控）：第一次在真窗口里走通「宿主 → 内核 → `cua_repl` → 界面」，跑出的三个缺陷已修 —— 写动作第一次在真模型上落到应用上。**
 > 新增 `computer-use.spec.mjs`（假网关 7 例）与 `computer-use.real.spec.mjs`（真模型 3 例）；原生 Helper 由测试注入的假驱动顶替（`ServiceHostOptions.computerUse`，发货入口不传，
 > 宿主准入与 hook 的 `EVOWORK_CUA_HOST_READY` 改为同一个判定）。**不证明 AX / TCC / 签名**。修复前假网关 4/7，修复后 **7/7**。

@@ -408,7 +408,7 @@
 > deepseek-flash **1,048,576（实测）**：发约 115 万 token 的合成填充请求，厂商回 400
 > "maximum context length is 1048576 tokens"（文档同样只写「1M」）。前两家仍是 `unverified`（没有密钥）。
 > **超长报错的 `code` 是 `invalid_request_error`，与未知模型同一个**，网关现把它映射成 `invalid_prompt` ——
-> 内核认不出是超长、不会压缩后重来。正常对话有 256k 上限挡着碰不到，一次塞进超大内容时会走到这条路，未修。
+> 内核认不出是超长、不会压缩后重来。**2026-10-06 已修**：网关先按报错原文认超长（`isContextOverflow`），再查码表；其余几家的说法待补测（work-priority U11）。
 > ①b **`deepseek-v4-flash` 不再单独一条**。厂商文档（Models & Pricing）：旧名 `deepseek-v4-flash` /
 > `deepseek-v4-flash-vision-exp` 仍收，但对应型号已退役，请求由 DeepSeek-V4.1-Flash（= `deepseek-flash`）处理。
 > 复测：两个名字各跑 `verify-provider.mjs` 23/23，**旧名同样答出纯红图的颜色**，帧数与 cache 命中数一致。
@@ -427,7 +427,7 @@
 > 别的数（手改的）照旧尊重；新写出的文件带 `format_version = 2`，其中的 32000 只可能是用户写的。
 > **代价是估大的那个方向**：endpoint 真实窗口小于 256k（企业自部署常见 32k / 128k）时，内核等不到压缩、
 > 上游先以超长拒绝，而 `private` 通道与 DeepSeek 的超长报错网关都还认不出来（当成 `invalid_prompt`），
-> 下一回合原样重发、任务卡死。缓解要靠两件事：「添加模型」里能填上下文（同日已做，11 §4.4）；网关认出超长报错（还没做）。
+> 下一回合原样重发、任务卡死。缓解要靠两件事：「添加模型」里能填上下文（同日已做，11 §4.4）；网关认出超长报错（2026-10-06 做了 DeepSeek 实测与 vLLM 推断的那两句，Kimi / GLM 待补测，U11）。
 
 > ⚠️ 风险：Responses API 的 reasoning/encrypted_content 语义在非 OpenAI 模型上无对应物，需设计降级策略。**降级必须显式**：网关在响应里标注能力缺失，前端据此隐藏对应 UI（如推理过程折叠区），而不是静默留白。
 
