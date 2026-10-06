@@ -4414,3 +4414,46 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-web-sources p {
   white-space: pre-wrap;
 }
+
+/* AI 图片设置和任务内结果卡。 */
+.ew-image-settings > label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-image-settings input:not([type='checkbox']),
+.ew-image-settings select {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.ew-image-settings p,
+.ew-image-operation p {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.ew-image-operation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-width: 0;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.ew-image-operation > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+.ew-image-operation img {
+  border-radius: var(--r-md);
+  object-fit: contain;
+}

@@ -1,3 +1,4 @@
+import { ImageOperationCard, type ImageUiPorts } from './image-settings.js';
 /**
  * 19 类 Item 的渲染规范（04 §5.2）。
  *
@@ -43,6 +44,9 @@ export interface MarkdownArtifact {
 }
 
 export interface ItemRenderContext {
+  readonly imagePorts?: ImageUiPorts | undefined;
+  readonly imageThreadId?: string | null | undefined;
+  readonly onEditImage?: ((id: string) => void) | undefined;
   /** 模型是否有推理能力（来自网关的能力声明，D2）。false 时 Reasoning 整体不渲染 */
   readonly reasoningAvailable: boolean;
   /** 企业策略可配置隐藏 HookPrompt（04 §5.2 #15），但审计日志始终记录 */
@@ -772,6 +776,16 @@ export function ItemRenderer({
     case 'dynamicToolCall': {
       const name = text(item, 'tool') || text(item, 'toolName') || text(item, 'name') || '工具调用';
       const server = text(item, 'server');
+      if (server === 'image_generation')
+        return (
+          <ImageOperationCard
+            ports={context.imagePorts}
+            threadId={context.imageThreadId ?? undefined}
+            callId={item.id}
+            onOpen={context.onOpenArtifact}
+            onEdit={context.onEditImage}
+          />
+        );
       if (
         kind === 'mcpToolCall' &&
         server === 'browser' &&
@@ -874,7 +888,15 @@ export function ItemRenderer({
               alt={text(item, 'prompt') || '生成的图片'}
             />
           ) : (
-            <div className="ew-generated-image ew-image-pending">正在生成图片…</div>
+            <div className="ew-generated-image ew-image-pending">
+              {item.interrupted === true
+                ? '图片生成已中断'
+                : ['failed', 'cancelled'].includes(text(item, 'status'))
+                  ? '图片生成未完成'
+                  : text(item, 'status') === 'completed'
+                    ? '未收到可交付图片'
+                    : '正在生成图片…'}
+            </div>
           )}
           {source && context.onOpenResult ? (
             <button

@@ -11,7 +11,7 @@
  * 而那个红没有任何信息量（我们知道它没装）。写成 .mjs 让类型检查跳过这一个文件，
  * 其余全部照常受约束。装上 electron 之后可以原样改名成 .ts。
  */
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -179,6 +179,13 @@ if (isPrimaryInstance) {
        * 而那正是 Q34 想终结的状态。Linux 上 `getSelectedStorageBackend()` 返回
        * `basic_text` 时我们**当成不可用**（固定密钥等价于明文），所以这里原样透出它。
        */
+      normalizeImage: (bytes) => {
+        const image = nativeImage.createFromBuffer(bytes);
+        const size = image.getSize();
+        if (image.isEmpty() || size.width * size.height > 16000000)
+          throw new Error('图片无法解码或像素数超过上限。');
+        return image.toPNG();
+      },
       safeStorage: {
         isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
         encryptString: (plain) => safeStorage.encryptString(plain),

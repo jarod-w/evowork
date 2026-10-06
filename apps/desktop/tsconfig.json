@@ -20,6 +20,7 @@
     { "path": "../../services/scheduler" },
     { "path": "../../services/policy" },
     { "path": "../../services/ingest" },
-    { "path": "../../services/artifacts" }
+    { "path": "../../services/artifacts" },
+    { "path": "../../services/image-generation" }
   ]
 }

@@ -1,3 +1,4 @@
+import { ImageSettings, type ImageUiPorts } from '../components/image-settings.js';
 import type { ComputerUseStatusView } from '../../shared/ipc.js';
 /**
  * 设置页（11 §4.4，M10a）—— 02 §2 路由表里那个 `/settings/*` 的实现。
@@ -74,6 +75,7 @@ export const BACKEND_LABEL: Readonly<Record<string, string>> = Object.freeze({
 });
 
 export interface SettingsPageProps {
+  readonly imagePorts?: ImageUiPorts | undefined;
   readonly computerUse?: ComputerUseStatusView | null | undefined;
   readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
   readonly onComputerUseStop?: (() => void) | undefined;
@@ -414,6 +416,7 @@ function ModelsSection(props: SettingsPageProps) {
   return (
     <section className="ew-settings-section">
       <SectionHeader title="模型" />
+      <ImageSettings ports={props.imagePorts} />
 
       {/* 钥匙串不可用：**两个选项并列，不替用户选**（11 §4.3） */}
       {access.secretNotice !== undefined ? (

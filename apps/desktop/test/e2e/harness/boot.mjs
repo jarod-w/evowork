@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
 
 import { bootstrap, createServiceHost } from '../../../dist/main/bootstrap.bundle.js';
 import { publishControls, waitFor } from './runner.mjs';
@@ -98,6 +98,13 @@ export async function bootApp({
        * actionability 检查会一直等不到「可点击」。
        */
       createWindow: (options) => new BrowserWindow({ ...options, show }),
+      normalizeImage: (bytes) => {
+        const image = nativeImage.createFromBuffer(bytes),
+          size = image.getSize();
+        if (image.isEmpty() || size.width * size.height > 16_000_000)
+          throw new Error('IMAGE_INPUT_UNSUPPORTED');
+        return image.toPNG();
+      },
       ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
       openExternal: async (url) => {
         openedExternalUrls.push(url);

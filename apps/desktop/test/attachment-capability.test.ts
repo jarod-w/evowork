@@ -136,3 +136,13 @@ describe('从模型目录里读能力位', () => {
     expect(modelImageInput([], 'evowork/text-only')).toBeUndefined();
   });
 });
+
+it('独立 AI 编辑引用不依赖对话模型看图能力', () => {
+  const image: ComposerAttachmentView = {
+    ...SCREENSHOT,
+    references: [
+      { type: 'localImage', name: '截图.png', path: '/w/uploads/a/截图.png', purpose: 'imageEdit' },
+    ],
+  };
+  expect(gateAttachmentsForModel([image], false)).toEqual([image]);
+});

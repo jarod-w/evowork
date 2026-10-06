@@ -173,7 +173,13 @@ export function planLocalGateway(options: GatewayProcessOptions): GatewayPlan {
   const hasCustomModels = (env[CUSTOM_MODELS_ENV] ?? '').trim().length > 2;
   const hasTenantModels = (env[TENANT_MODELS_ENV] ?? '').trim().length > 2;
   const hasPrivateUpstream = (env[UPSTREAM_BASE_URL_ENV] ?? '').trim().length > 0;
-  if (!envHasProviderKey(env) && !hasCustomModels && !hasTenantModels && !hasPrivateUpstream) {
+  if (
+    !envHasProviderKey(env) &&
+    !hasCustomModels &&
+    !hasTenantModels &&
+    !hasPrivateUpstream &&
+    !(env.ARK_API_KEY ?? '').trim()
+  ) {
     options.logger?.warn('gateway.child.skipped', { reason: 'NO_KEYS' });
     return {
       kind: 'skip',

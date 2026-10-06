@@ -247,6 +247,7 @@ export interface ComposerProps {
 
   /** 本机并发已满（Q11：3）→ 发送按钮变「排队中（前面 N 个）」 */
   readonly queuePosition?: number | undefined;
+  readonly onAttachImageEdit?: (() => void) | undefined;
   readonly onAttach?: (() => void) | undefined;
   readonly onFilesAdded?: ((files: readonly File[]) => void) | undefined;
   /** `+` 菜单中的已接通入口；未提供的动作不会显示。 */
@@ -730,6 +731,16 @@ export function Composer(props: ComposerProps) {
                 <Menu
                   ariaLabel="添加内容"
                   items={[
+                    ...(props.onAttachImageEdit
+                      ? [
+                          {
+                            id: 'image-edit',
+                            label: '添加图片用于 AI 编辑',
+                            description: '上传与费用将在实际编辑前确认',
+                            group: 'content',
+                          },
+                        ]
+                      : []),
                     ...(props.onAttach
                       ? [
                           {
@@ -773,6 +784,7 @@ export function Composer(props: ComposerProps) {
                   onSelect={(id) => {
                     setAddOpen(false);
                     if (id === 'attach') props.onAttach?.();
+                    if (id === 'image-edit') props.onAttachImageEdit?.();
                     if (id === 'library') props.onOpenLibrary?.();
                     if (id === 'use-plugins') {
                       setPluginsOpen(true);

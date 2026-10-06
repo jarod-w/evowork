@@ -2205,3 +2205,57 @@ describe('电脑操控可信桌面来源', () => {
     await expect(adapter.readComputerUseRequirements()).rejects.toThrow('INVALID_REQUIREMENTS');
   });
 });
+
+describe('图片工具可信绑定', () => {
+  it('仅接受正在执行的根回合、同名同参数的唯一调用，完成后失效', async () => {
+    await adapter.start();
+    server.handlers.set('turn/start', (ctx) => {
+      const turn = makeTurn({ id: 'image-turn', status: 'inProgress' });
+      server.notify('turn/started', { threadId: ctx.params.threadId, turn });
+      return { turn };
+    });
+    const task = await adapter.createTask({
+      input: [{ type: 'text', text: '生成图片' }],
+      desktopInteractive: true,
+      overrides: { cwd: '/w' },
+    });
+    const call = {
+      type: 'mcpToolCall',
+      id: 'image-call',
+      server: 'image_generation',
+      tool: 'image_generate',
+      arguments: { prompt: 'a cat' },
+      status: 'inProgress',
+    };
+    server.notify('item/started', { threadId: task.threadId, turnId: task.turn.id, item: call });
+    await new Promise((r) => setImmediate(r));
+    expect(
+      adapter.resolveImageToolCall(task.threadId, 'image_generate', { prompt: 'a cat' }),
+    ).toMatchObject({ callId: 'image-call', turnId: task.turn.id });
+    expect(
+      adapter.resolveImageToolCall(task.threadId, 'image_generate', { prompt: 'other' }),
+    ).toBeUndefined();
+    expect(
+      adapter.resolveImageToolCall('foreign', 'image_generate', call.arguments),
+    ).toBeUndefined();
+    server.notify('item/started', {
+      threadId: task.threadId,
+      turnId: task.turn.id,
+      item: { ...call, id: 'ambiguous' },
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(
+      adapter.resolveImageToolCall(task.threadId, 'image_generate', call.arguments),
+    ).toBeUndefined();
+    for (const id of ['image-call', 'ambiguous'])
+      server.notify('item/completed', {
+        threadId: task.threadId,
+        turnId: task.turn.id,
+        item: { ...call, id, status: 'completed' },
+      });
+    await new Promise((r) => setImmediate(r));
+    expect(
+      adapter.resolveImageToolCall(task.threadId, 'image_generate', call.arguments),
+    ).toBeUndefined();
+  });
+});

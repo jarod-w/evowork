@@ -25,3 +25,9 @@ P0 三家（Q16）：**DeepSeek**（基准实现）· **Kimi** · **GLM-5.3-flas
 2. **不落盘 prompt 与响应体**（Q14）—— 三条会泄露正文的路径都要管住：应用日志、
    APM trace（span attribute 不带 input/output）、错误上报（异常堆栈不得携带请求体）。
    这条是**对外可审计的承诺**，实现方式见 `packages/logging`：做成**代码层面的不可能**，不是约定。
+
+## AI 图片接口
+
+`GET /v1/evowork/image-models` 仅验证服务商型号目录；`POST /v1/evowork/image-operations` 调用一次 Seedream 图片接口，两者均经过本机网关鉴权。`ARK_API_KEY` 仅由宿主密钥库注入进程环境，`ARK_BASE_URL` 为用户显式配置的接口。默认云端功能关闭；`EVOWORK_DISABLE_IMAGE_GENERATION=1` 与已有模型禁用策略优先拒绝。
+
+Flash / Lite / Pro 的真实型号、严格参数和有界 Base64 处理在 `src/images.ts`。单张 2K PNG，输入只接受已标准化的 PNG 数据；不抓取任意图片 URL、不重定向、不重试、不换模型。提交后网络失联返回 `outcomeUnknown`，无原始提示词、响应体、图片或密钥日志。具体任务授权与本机恢复归 `services/image-generation`，不在网关增加执行循环。

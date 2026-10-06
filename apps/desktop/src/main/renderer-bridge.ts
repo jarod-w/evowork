@@ -1,3 +1,5 @@
+import type { ImageHost } from './image-host.js';
+import type { SaveImageSettingsInput } from '../shared/ipc.js';
 import type { ComputerUseHost } from './computer-use-host.js';
 import { elicitationChoice, mcpToolApproval } from '@evowork/kernel-adapter';
 import { describeMcpToolApproval } from './mcp-tool-approval-view.js';
@@ -459,6 +461,7 @@ export interface ProjectPorts {
 }
 
 export interface RendererBridgeOptions {
+  readonly imageGeneration?: ImageHost | undefined;
   readonly environments?: TaskEnvironments | undefined;
   readonly adapter: Adapter;
   readonly store: Store;
@@ -1424,6 +1427,30 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
   const sendingDrafts = new Map<string, Promise<{ threadId: string; queued?: boolean }>>();
   return {
+    async verifyImageConnection() {
+      if (!options.imageGeneration) throw new Error('图片服务不可用。');
+      return options.imageGeneration.verify();
+    },
+    async getImageSettings() {
+      if (!options.imageGeneration) throw new Error('图片服务不可用。');
+      return options.imageGeneration.view();
+    },
+    async saveImageSettings(input: SaveImageSettingsInput) {
+      if (!options.imageGeneration) throw new Error('图片服务不可用。');
+      return options.imageGeneration.save(input);
+    },
+    async getImageOperations(input: { threadId: string }) {
+      return options.imageGeneration?.list(input.threadId) ?? [];
+    },
+    async recoverImageFiles() {
+      options.imageGeneration?.recover();
+    },
+    async acknowledgeImageOutcome(input: { threadId: string; operationId: string }) {
+      options.imageGeneration?.acknowledge(input.threadId, input.operationId);
+    },
+    async extendImageBudget(input: { threadId: string }) {
+      options.imageGeneration?.extendBudget(input.threadId);
+    },
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
     async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
       const id = input.draftId;
@@ -1487,6 +1514,28 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ) {
           throw new Error('任务工作目录已固定，换项目请新建任务。');
         }
+        const toKernelReference = (reference: ComposerReferenceView): UserInput => {
+          if (reference.type === 'localImage' && reference.purpose === 'imageEdit') {
+            if (!cwd || !options.imageGeneration) throw new Error('图片编辑引用不可用。');
+            const ref = options.imageGeneration.register(cwd, reference.path, input.threadId);
+            return {
+              type: 'text',
+              text:
+                '用户选择用于 AI 编辑的图片 ' +
+                reference.name +
+                '；imageRef: ' +
+                ref +
+                '。只能将该引用交给 image_generation.image_edit，图片字节不发送给对话模型。',
+            };
+          }
+          return reference.type === 'localImage'
+            ? { type: 'localImage', path: reference.path }
+            : reference;
+        };
+        content = [
+          ...(text ? [{ type: 'text' as const, text }] : []),
+          ...(environment ? [] : validReferences.map(toKernelReference)),
+        ];
         if (environment) {
           const remapped = await options.environments!.references(
             draftId,
@@ -1495,13 +1544,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           );
           content = [
             ...(text ? [{ type: 'text' as const, text }] : []),
-            ...remapped.map((reference) =>
-              reference.type === 'text'
-                ? reference
-                : reference.type === 'localImage'
-                  ? { type: 'localImage' as const, path: reference.path }
-                  : reference,
-            ),
+            ...remapped.map(toKernelReference),
           ];
           if (environment.threadId) {
             if (!environment.sent) {
@@ -1859,6 +1902,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       await options.openComputerUseSettings(input?.permission);
     },
     async interrupt(threadId: string): Promise<void> {
+      options.imageGeneration?.stop(threadId);
       options.computerUse?.endTurn(threadId);
       await adapter.interrupt(threadId);
     },
@@ -2054,6 +2098,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     async deleteTask(input: { readonly threadId: string }): Promise<void> {
+      options.imageGeneration?.remove(input.threadId);
       options.computerUse?.endThread(input.threadId);
       await adapter.deleteTask(input.threadId);
       await options.environments?.remove(input.threadId);
@@ -2243,7 +2288,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async pickAttachments(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]> {
       const root = await attachmentRoot(input);
       if (!options.attachmentPorts) throw new Error('这个构建没有接本地附件选择器。');
-      return options.attachmentPorts.pick(root);
+      const attachments = await options.attachmentPorts.pick(root);
+      if (input.purpose === 'imageEdit') {
+        if (!options.imageGeneration) throw new Error('图片服务不可用。');
+        return options.imageGeneration.prepareAttachments(root, attachments);
+      }
+      return attachments;
     },
 
     async ingestAttachments(

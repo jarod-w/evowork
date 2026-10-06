@@ -19,6 +19,7 @@
     "build:renderer": "pnpm --filter @evowork/desktop run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:images-e2e": "pnpm run build && node scripts/image-generation-e2e.mjs",
     "test:desktop-e2e": "pnpm run build && node scripts/desktop-skills-e2e.mjs",
     "test:ui": "playwright test",
     "test:ui-real": "playwright test --project=real",

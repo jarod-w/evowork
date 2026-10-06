@@ -58,7 +58,12 @@ function catalogEntry({ id, displayName }) {
 /** 默认只发一个模型：断言型 E2E 一直是这么跑的，别因为 UI 测试要两个就把它改了。 */
 const DEFAULT_MODELS = Object.freeze([{ id: 'e2e-model', displayName: 'E2E Model' }]);
 
-export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = DEFAULT_MODELS }) {
+export function createFakeGateway({
+  turnMarker,
+  usage = DEFAULT_USAGE,
+  models = DEFAULT_MODELS,
+  imageOperation,
+}) {
   if (!turnMarker) throw new Error('假网关需要 turnMarker 才能认领回合请求。');
 
   /** 下一次模型请求怎么答（一次性） */
@@ -234,6 +239,14 @@ export function createFakeGateway({ turnMarker, usage = DEFAULT_USAGE, models = 
 
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    if (
+      request.method === 'POST' &&
+      url.pathname === '/v1/evowork/image-operations' &&
+      imageOperation
+    ) {
+      void imageOperation(request, response);
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/v1/evowork/models') {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ data: models.map(catalogEntry) }));

@@ -353,6 +353,7 @@ export interface SetTaskModeInput {
  * 添加附件不创建项目，也不授予源目录权限。
  */
 export interface PickAttachmentsInput {
+  readonly purpose?: 'imageEdit' | undefined;
   readonly draftId?: string | undefined;
   readonly workspaceId?: string | undefined;
   readonly threadId?: string | undefined;
@@ -362,7 +363,12 @@ export type ComposerReferenceView =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'mention'; readonly name: string; readonly path: string }
   | { readonly type: 'skill'; readonly name: string; readonly path: string }
-  | { readonly type: 'localImage'; readonly name: string; readonly path: string };
+  | {
+      readonly type: 'localImage';
+      readonly name: string;
+      readonly path: string;
+      readonly purpose?: 'imageEdit' | undefined;
+    };
 
 export interface ComposerAttachmentView {
   readonly id: string;
@@ -1544,4 +1550,33 @@ export interface ComputerUseStatusView {
   readonly permissions?: { accessibility: boolean; screenRecording: boolean | null } | undefined;
   readonly component?: 'unchecked' | 'connected' | 'error' | undefined;
   readonly persistentAllowed?: boolean | undefined;
+}
+
+/** 图片配置与操作视图只带元数据，密钥只允许单向提交。 */
+export interface ImageSettingsView {
+  enabled: boolean;
+  model: string;
+  baseUrl: string;
+  hasKey: boolean;
+  models: readonly { id: string; name: string }[];
+  secretBackend: string;
+}
+export interface SaveImageSettingsInput {
+  enabled: boolean;
+  model: string;
+  baseUrl: string;
+  apiKey?: string;
+  clearKey?: boolean;
+}
+export interface ImageOperationView {
+  id: string;
+  callId: string;
+  status: string;
+  model: string;
+  artifactId: string | null;
+  parentId: string | null;
+  width: number | null;
+  height: number | null;
+  errorCode: string | null;
+  submitted: boolean;
 }

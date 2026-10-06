@@ -15,6 +15,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { errorFields, type Logger } from '@evowork/logging';
 
 import type { CapabilityLookup } from './capabilities.js';
+import { handleImageHttp, type ImageProviderConfig } from './images.js';
 import {
   mergeCatalog,
   MODELS_ENDPOINT_PATH,
@@ -35,6 +36,7 @@ import {
 import { EVENT, keepAliveEvent, toSseData, type ResponsesRequest } from './protocol.js';
 
 export interface ServerOptions extends PipelineDeps {
+  readonly imageProvider?: ImageProviderConfig | undefined;
   /**
    * **收窄成合并层的结果**（`layers.ts`）：目录端点必须透出 `credentialSource`
    * 与 `denied`，而基类型里没有它们。`PipelineDeps` 那一侧仍是基类型 ——
@@ -214,6 +216,18 @@ export function createGatewayServer(options: ServerOptions): Server {
       const body: ModelCatalogResponse = { data: await catalogEntries() };
       res.writeHead(200, JSON_HEADERS);
       res.end(JSON.stringify(body));
+      return;
+    }
+
+    if (
+      (req.method === 'GET' && url.pathname === '/v1/evowork/image-models') ||
+      (req.method === 'POST' && url.pathname === '/v1/evowork/image-operations')
+    ) {
+      if (!(await authenticate(req.headers.authorization))) {
+        unauthorized(res);
+        return;
+      }
+      await handleImageHttp(req, res, options.imageProvider);
       return;
     }
 

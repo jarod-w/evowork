@@ -1,3 +1,5 @@
+import { parse as parseImageRequirements } from 'smol-toml';
+import { createImageHost } from './image-host.js';
 import { createComputerUsePolicyReader } from './computer-use-policy.js';
 import { patchComputerUseConfig } from './computer-use-config.js';
 import { createComputerUseHost, type NativeHelper } from './computer-use-host.js';
@@ -768,6 +770,7 @@ export function readBaseInstructions(configDir: string | undefined): string | un
 }
 
 export interface ServiceHostOptions {
+  readonly normalizeImage?: ((bytes: Buffer) => Buffer) | undefined;
   readonly paths: EvoworkPaths;
   /** app-server 可执行文件路径。M9 打包时随内核二进制一起分发 */
   readonly appServerPath: string;
@@ -1177,8 +1180,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const composeGatewayEnv = (): NodeJS.ProcessEnv => ({
     ...modelAccess.env(),
     ...account.gatewayInject(),
+    ...imageHost.env(),
   });
-  let gatewayRuntimeEnv = composeGatewayEnv();
+  let gatewayRuntimeEnv: NodeJS.ProcessEnv = {};
   let gatewayToken = modelAccess.token();
   let policyView: PolicyPackView = EMPTY_POLICY_VIEW;
 
@@ -1305,6 +1309,65 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
   });
 
+  const imageHost = createImageHost({
+    store,
+    adapter: () => adapter,
+    vault: modelAccess.accountVault,
+    secretBackend: modelAccess.secretBackend,
+    keyPresent: () => !!modelAccess.env().ARK_API_KEY,
+    gateway: () => ({ baseUrl: gatewayBaseUrl, ...(gatewayToken ? { token: gatewayToken } : {}) }),
+    denied: () => {
+      if (policyView.status === 'expired' || baseEnv.EVOWORK_DISABLE_IMAGE_GENERATION === '1')
+        return true;
+      try {
+        const policy = existsSync(options.paths.requirements)
+          ? parseImageRequirements(readFileSync(options.paths.requirements, 'utf8'))
+          : {};
+        const image = policy.image_generation as Record<string, unknown> | undefined;
+        return image?.enabled === false;
+      } catch {
+        return true;
+      }
+    },
+    configure: (enabled) => {
+      if (!options.pluginsDir) return;
+      const original = existsSync(kernelConfigPath) ? readFileSync(kernelConfigPath, 'utf8') : '';
+      const lines = original.split('\n');
+      let skip = false;
+      const kept: string[] = [];
+      for (const line of lines) {
+        const section = /^\s*\[([^\]]+)\]/.exec(line)?.[1];
+        if (section)
+          skip =
+            section === 'mcp_servers.image_generation' ||
+            section.startsWith('mcp_servers.image_generation.');
+        if (!skip) kept.push(line);
+      }
+      writeFileSync(
+        kernelConfigPath,
+        kept.join('\n').trimEnd() +
+          '\n\n[mcp_servers.image_generation]\ncommand = ' +
+          JSON.stringify(process.execPath) +
+          '\nargs = [' +
+          JSON.stringify(join(options.pluginsDir, 'connectors/image-generation/server.mjs')) +
+          ']\nenv = { ELECTRON_RUN_AS_NODE = "1" }\nenv_vars = ["EVOWORK_IMAGE_ENDPOINT", "EVOWORK_IMAGE_TOKEN"]\nstartup_timeout_sec = 15\ntool_timeout_sec = 600\ndefault_tools_approval_mode = "writes"\nenabled = ' +
+          enabled +
+          '\n',
+        { mode: 0o600 },
+      );
+    },
+    restartGateway: async () => {
+      await restartGateway();
+    },
+    normalize: options.normalizeImage,
+    changed: (threadId) =>
+      options.emitToRenderer(IPC.uiEvent, {
+        type: 'task-results-updated',
+        taskId: threadId,
+      } satisfies RendererEvent),
+  });
+  gatewayRuntimeEnv = composeGatewayEnv();
+
   const translate = createEventTranslator(store, () => Date.now());
 
   mkdirSync(join(options.paths.kernelHome, 'startup'), { recursive: true });
@@ -1347,6 +1410,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
          *
          * 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**。
          */
+        extraEnvProvider: () => imageHost.environment,
         extraEnv: {
           ...computerUse.environment,
           EVOWORK_CUA_HOST_READY:
@@ -1364,9 +1428,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         const cwd = store.threads.get(event.threadId)?.cwd;
         if (cwd) services.watchWorkspace(cwd, event.threadId);
       }
-      if (event.type === 'task-removed') computerUse.endThread(event.threadId);
+      if (event.type === 'task-removed') {
+        computerUse.endThread(event.threadId);
+        imageHost.remove(event.threadId);
+      }
       if (event.type === 'turn-completed') {
         computerUse.endTurn(event.threadId);
+        imageHost.stop(event.threadId);
         // `mark_artifact` 在命令结束前已同步追加完整 JSON 行。先入库再通知 UI，
         // 否则 UI 立刻重读时会撞上“文件已生成，产物表还是空的”窗口。
         services.flushArtifactReports(event.threadId);
@@ -1382,6 +1450,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     onNotice: (notice: SessionNotice) => {
       computerUse.stop();
+      imageHost.rotate();
       if (notice.kind === 'kernel-lost') services.onKernelExit();
       if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed') {
         for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
@@ -2052,6 +2121,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     resolveApproval,
     pendingApprovals: () => [...pendingApprovalById.values()],
     computerUse,
+    imageGeneration: imageHost,
     openComputerUseSettings: async (permission = 'accessibility') => {
       if (process.platform !== 'darwin' || !options.openExternal)
         throw new Error('当前平台不能打开此权限设置。');
@@ -2397,6 +2467,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
 
     async start() {
+      await imageHost.ready;
       /*
        * 已登录才 restore（会打 identity）。未登录时 vault 里没有 refresh，
        * restore 立刻返回，**零出网**（11 §12 第 14 条）。
@@ -2548,6 +2619,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
       approvalReplies.clear();
       pendingApprovalById.clear();
+      imageHost.close();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (hubTimer) clearInterval(hubTimer);

@@ -2,6 +2,7 @@
   "// 说明": "solution 风格：只列引用，不含 files。新增 workspace 包时在这里登记，否则 pnpm typecheck 不会检查它。",
   "files": [],
   "references": [
+    { "path": "services/image-generation" },
     {
       "path": "packages/logging"
     },

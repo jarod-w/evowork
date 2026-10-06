@@ -52,6 +52,13 @@ export const RENDERER_CHANNELS = Object.freeze({
  * 所以契约里没有多参数的动作。
  */
 export const RENDERER_ACTIONS = Object.freeze([
+  'verifyImageConnection',
+  'getImageSettings',
+  'saveImageSettings',
+  'getImageOperations',
+  'recoverImageFiles',
+  'acknowledgeImageOutcome',
+  'extendImageBudget',
   'getComputerUseStatus',
   'setComputerUseEnabled',
   'stopComputerUse',

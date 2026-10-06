@@ -67,9 +67,29 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     }
     // 投影类现在是第 2 版：建表 + title_source（标题是谁给的）
     expect(readMeta(store.db, 'schema_version_projection')).toBe('2');
-    // 权威类现在是第 3 版：建表 + 工作空间收敛 + 删 automation 的租户列（D10）
-    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('3');
+    // 权威类第 4 版：此前三个迁移 + AI 图片操作。
+    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('4');
     store.close();
+  });
+
+  it('v3 upgrade adds authoritative image operations after backup without replacing existing metadata', () => {
+    const path = join(dir, 'upgrade.db');
+    const old = openStore({ path });
+    old.db.exec('DROP TABLE image_operation');
+    writeMeta(old.db, 'schema_version_authoritative', '3');
+    writeMeta(old.db, 'existing-user-data', 'preserved');
+    old.close();
+    const upgraded = openStore({ path });
+    expect(existsSync(path + '.bak.3')).toBe(true);
+    expect(readMeta(upgraded.db, 'existing-user-data')).toBe('preserved');
+    expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe('4');
+    const columns = upgraded.db.prepare('PRAGMA table_info(image_operation)').all() as {
+      name: string;
+    }[];
+    expect(columns.map((c) => c.name)).toEqual(
+      expect.arrayContaining(['provider_endpoint', 'operation_kind', 'call_id', 'submitted_at']),
+    );
+    upgraded.close();
   });
 
   it('WAL 已开启（单写者多读者，09 §4）', () => {

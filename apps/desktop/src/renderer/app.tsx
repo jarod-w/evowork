@@ -1,3 +1,8 @@
+import type {
+  ImageSettingsView,
+  SaveImageSettingsInput,
+  ImageOperationView,
+} from '../shared/ipc.js';
 import type { ComputerUseStatusView } from '../shared/ipc.js';
 /**
  * 渲染进程的外壳：把首页、任务工作台、侧边栏接到主进程推来的事件上。
@@ -133,6 +138,13 @@ import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge {
+  verifyImageConnection?(): Promise<string>;
+  getImageSettings?(): Promise<ImageSettingsView>;
+  saveImageSettings?(input: SaveImageSettingsInput): Promise<ImageSettingsView>;
+  getImageOperations?(input: { threadId: string }): Promise<ImageOperationView[]>;
+  recoverImageFiles?(): Promise<void>;
+  acknowledgeImageOutcome?(input: { threadId: string; operationId: string }): Promise<void>;
+  extendImageBudget?(input: { threadId: string }): Promise<void>;
   getComputerUseStatus?(): Promise<ComputerUseStatusView>;
   setComputerUseEnabled?(input: { enabled: boolean }): Promise<ComputerUseStatusView>;
   stopComputerUse?(): Promise<ComputerUseStatusView>;
@@ -2520,6 +2532,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               }),
             )
         : undefined,
+      onAttachImageEdit: bridge.pickAttachments
+        ? () =>
+            void addAttachments((id) =>
+              bridge.pickAttachments!({
+                draftId: id,
+                ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+                purpose: 'imageEdit',
+              }),
+            )
+        : undefined,
       onFilesAdded: bridge.ingestAttachments
         ? (files: readonly File[]) =>
             void addAttachments(async (id) => {
@@ -3075,6 +3097,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .openComputerUseSettings?.({ permission: permission ?? 'accessibility' })
               .catch((error: unknown) => reportFailure(error, '没能打开系统设置。'));
           }}
+          imagePorts={bridge}
           preferences={preferences}
           memory={memorySettings}
           appName={startup?.appName ?? 'EvoWork'}
@@ -3572,6 +3595,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
             artifacts: currentResults.artifacts,
             onOpenArtifact: openArtifact,
+            imagePorts: bridge,
+            imageThreadId: interactionTaskId,
+            onEditImage: (imageRef: string) => {
+              setDraft('请编辑这张图片（imageRef: ' + imageRef + '）：');
+            },
             onOpenWebSource: (sourceId) => {
               if (!bridge.openWebSource) {
                 reportFailure(new Error('当前版本不能打开网页来源。'), '无法打开来源。');
@@ -3773,6 +3801,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  * 02 §1 的 6 个入口是产品骨架。「更多」现在还没有本体页，给一个如实说明的空页。
  */
 function MainPage(props: {
+  readonly imagePorts?: EvoworkBridge | undefined;
   readonly computerUse?: ComputerUseStatusView | null | undefined;
   readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
   readonly onComputerUseStop?: (() => void) | undefined;
@@ -3958,6 +3987,7 @@ function MainPage(props: {
           onComputerUseRevoke={props.onComputerUseRevoke}
           onComputerUseSettings={props.onComputerUseSettings}
           onComputerUseRefresh={props.onComputerUseRefresh}
+          imagePorts={props.imagePorts}
           preferences={props.preferences}
           memory={props.memory}
           appName={props.appName}

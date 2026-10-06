@@ -33,6 +33,7 @@ const EXPECTED = [
   'charts',
   'computer-use',
   'documents',
+  'image-generation',
   'presentations',
   'skill-creator',
   'spreadsheets',

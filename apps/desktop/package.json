@@ -21,6 +21,7 @@
     "@evowork/hub-client": "workspace:*",
     "@evowork/hub-protocol": "workspace:*",
     "@evowork/ingest": "workspace:*",
+    "@evowork/image-generation": "workspace:*",
     "@evowork/kernel-adapter": "workspace:*",
     "@evowork/logging": "workspace:*",
     "@evowork/policy": "workspace:*",

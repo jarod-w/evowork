@@ -29,6 +29,7 @@ export interface SpawnLauncherOptions {
    * （K5：只改对外可见字符串，内部路径名不动 —— 改它会凭空增加补丁面）。
    */
   readonly kernelHome: string;
+  readonly extraEnvProvider?: (() => Readonly<Record<string, string>>) | undefined;
   readonly extraEnv?: Readonly<Record<string, string>>;
   /** 注入 spawn 供测试替换 */
   readonly spawnFn?: typeof spawn;
@@ -69,6 +70,7 @@ export function withLoopbackNoProxy(env: NodeJS.ProcessEnv): Record<string, stri
 export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLauncher {
   return {
     launch(): KernelProcess {
+      const extraEnv = { ...options.extraEnv, ...options.extraEnvProvider?.() };
       const cwd = join(options.kernelHome, 'startup');
       const spawnOptions: SpawnOptions = {
         cwd,
@@ -76,9 +78,9 @@ export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLaunch
         env: {
           ...process.env,
           CODEX_HOME: options.kernelHome,
-          ...options.extraEnv,
+          ...extraEnv,
           // 放在最后：extraEnv 也不许把回环重新送回代理
-          ...withLoopbackNoProxy({ ...process.env, ...options.extraEnv }),
+          ...withLoopbackNoProxy({ ...process.env, ...extraEnv }),
         },
       };
       const child = (options.spawnFn ?? spawn)(options.appServerPath, [], spawnOptions);

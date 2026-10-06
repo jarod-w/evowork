@@ -47,9 +47,13 @@ export function gateAttachmentsForModel(
   if (imageInput !== false) return attachments;
   return attachments.map((attachment) => {
     if (attachment.state !== 'ready') return attachment;
-    const images = attachment.references.filter((reference) => reference.type === 'localImage');
+    const images = attachment.references.filter(
+      (reference) => reference.type === 'localImage' && reference.purpose !== 'imageEdit',
+    );
     if (images.length === 0) return attachment;
-    const rest = attachment.references.filter((reference) => reference.type !== 'localImage');
+    const rest = attachment.references.filter(
+      (reference) => reference.type !== 'localImage' || reference.purpose === 'imageEdit',
+    );
     if (rest.length > 0) {
       return { ...attachment, references: rest, notice: DOCUMENT_IMAGES_WITHHELD };
     }
@@ -59,7 +63,11 @@ export function gateAttachmentsForModel(
       state: 'failed',
       error: IMAGE_INPUT_UNSUPPORTED,
       references: [],
-      rawReference: { type: 'mention', name: attachment.name, path: first.path },
+      rawReference: {
+        type: 'mention',
+        name: attachment.name,
+        path: first.type === 'localImage' ? first.path : '',
+      },
     };
   });
 }

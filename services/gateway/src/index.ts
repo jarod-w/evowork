@@ -118,6 +118,19 @@ export {
 } from './kernel-catalog.js';
 export { createGatewayServer, type ServerOptions } from './server.js';
 export {
+  IMAGE_MODELS,
+  IMAGE_API_BASE,
+  imageModelId,
+  imageBaseUrl,
+  ImageApiError,
+  generateImage,
+  boundedImageJson,
+  IMAGE_MAX_BYTES,
+  type ImageRequest,
+  type ImageResponse,
+  type ImageProviderConfig,
+} from './images.js';
+export {
   ACCESS_JWT_ENV,
   AUTH_MODE_ENV,
   encodeTenantModels,

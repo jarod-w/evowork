@@ -190,6 +190,14 @@ export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
   createTables(AUTHORITATIVE_TABLES),
   migrateLegacyWorkspaces,
   dropAutomationTenancyColumns,
+  {
+    version: 4,
+    summary: 'AI 图片操作权威记录',
+    up: (db) => {
+      const table = AUTHORITATIVE_TABLES.find((t) => t.name === 'image_operation')!;
+      for (const ddl of table.ddl) db.exec(ddl);
+    },
+  },
 ];
 
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;

@@ -1,0 +1,7 @@
+{
+  "displayName": "AI 图片",
+  "category": "创作",
+  "brandColor": "#0169cc",
+  "defaultPrompt": "生成一张 AI 图片",
+  "version": "1.0.0"
+}

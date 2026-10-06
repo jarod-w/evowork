@@ -43,6 +43,21 @@ export const DERIVED_STATUS = [
 export type DerivedStatus = (typeof DERIVED_STATUS)[number];
 
 export const TABLES: readonly TableSpec[] = [
+  {
+    name: 'image_operation',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS image_operation (
+        id TEXT PRIMARY KEY, cwd TEXT NOT NULL, thread_id TEXT NOT NULL, turn_id TEXT NOT NULL, call_id TEXT NOT NULL,
+        model TEXT NOT NULL, provider_endpoint TEXT NOT NULL, operation_kind TEXT NOT NULL, request_hash TEXT NOT NULL, status TEXT NOT NULL,
+        output_path TEXT, output_hash TEXT, artifact_id TEXT, parent_id TEXT,
+        width INTEGER, height INTEGER, error_code TEXT, submitted_at INTEGER,
+        created_at INTEGER NOT NULL, cancelled INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(thread_id,turn_id,call_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS ix_image_thread ON image_operation(thread_id,created_at)`,
+    ],
+  },
   // ───────────────────────── 投影类 ─────────────────────────
   {
     name: 'thread_projection',

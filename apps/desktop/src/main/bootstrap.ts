@@ -64,6 +64,7 @@ export interface BrowserWindowOptions {
 }
 
 export interface ElectronApi {
+  readonly normalizeImage?: ((bytes: Buffer) => Buffer) | undefined;
   readonly app: {
     whenReady(): Promise<void>;
     on(event: 'window-all-closed' | 'before-quit', handler: () => void): void;
@@ -285,6 +286,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
             },
           }
         : {}),
+      ...(electron.normalizeImage ? { normalizeImage: electron.normalizeImage } : {}),
       ...(electron.safeStorage ? { safeStorage: electron.safeStorage } : {}),
       ...(electron.openPath
         ? {

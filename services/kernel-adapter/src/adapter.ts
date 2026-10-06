@@ -913,6 +913,25 @@ export function createAdapter(options: AdapterOptions) {
         !row.parent_thread_id,
       );
     },
+    resolveImageToolCall(threadId: string, tool: string, args: unknown) {
+      const canonical = (value: unknown): string =>
+        JSON.stringify(value, Object.keys((value ?? {}) as object).sort());
+      const matches = [...inFlightMcpCalls.entries()].filter(
+        ([, entry]) =>
+          entry.threadId === threadId &&
+          entry.server === 'image_generation' &&
+          entry.tool === tool &&
+          entry.turnId &&
+          this.isDesktopInteractiveTurn(threadId, entry.turnId) &&
+          canonical(entry.arguments) === canonical(args),
+      );
+      if (matches.length !== 1) return undefined;
+      const [callId, entry] = matches[0]!;
+      return { callId, turnId: entry.turnId!, generation: session.generation };
+    },
+    cancelImageApprovals(): void {
+      approvals.cancel((a) => a.kind === 'mcp' && a.params.serverName === 'image_generation');
+    },
     async readComputerUseRequirements(): Promise<unknown> {
       const response = await session.peer.request<{ requirements: unknown }>(
         METHOD.configRequirementsRead,

@@ -71,6 +71,9 @@ importers:
       '@evowork/hub-protocol':
         specifier: workspace:*
         version: link:../../packages/hub-protocol
+      '@evowork/image-generation':
+        specifier: workspace:*
+        version: link:../../services/image-generation
       '@evowork/ingest':
         specifier: workspace:*
         version: link:../../services/ingest
@@ -290,6 +293,15 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@1.8.0))
+
+  services/image-generation:
+    dependencies:
+      '@evowork/gateway':
+        specifier: workspace:*
+        version: link:../gateway
+      '@evowork/store':
+        specifier: workspace:*
+        version: link:../store
 
   services/ingest:
     dependencies:
