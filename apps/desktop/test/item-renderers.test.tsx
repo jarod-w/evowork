@@ -356,11 +356,10 @@ describe('Reasoning：模型无推理能力时**整体不渲染，不留空壳**
     expect(body?.textContent).toContain('再决定怎么分组');
   });
 
-  it('挂在处理过程组里时推理正文直接可见，不必再点一次', () => {
-    renderItem(
-      { id: 'i1', type: 'reasoning', completed: true, content: ['先看表头'] },
-      { nestedInProcessGroup: true },
-    );
+  it('完成后的推理独立折叠，主动打开才挂载正文', () => {
+    renderItem({ id: 'i1', type: 'reasoning', completed: true, content: ['先看表头'] });
+    expect(document.querySelector('.ew-reasoning-body')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /推理过程/ }));
     expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('先看表头');
   });
 
@@ -390,14 +389,14 @@ describe('CommandExecution（04 §5.2 #5）', () => {
     expect(screen.getByText(/Successfully installed/)).toBeTruthy();
   });
 
-  it('非零退出码用 danger 状态点', () => {
+  it('非零退出码明确显示失败', () => {
     const { container } = renderItem({
       id: 'i1',
       type: 'commandExecution',
       command: 'x',
       exitCode: 1,
     });
-    expect(container.querySelector('[data-tone="danger"]')).not.toBeNull();
+    expect(container.textContent).toContain('失败');
   });
 });
 

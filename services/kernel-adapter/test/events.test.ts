@@ -138,7 +138,7 @@ describe('09 §3.4 的分发表逐行', () => {
     });
     expect(ui).toEqual([
       { type: 'task-status', threadId: 't1', status: 'running' },
-      { type: 'turn-started', threadId: 't1', turnId: 'turn-live' },
+      { type: 'turn-started', threadId: 't1', turnId: 'turn-live', startedAt: 1757000000 },
     ]);
   });
 

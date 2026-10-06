@@ -1168,6 +1168,37 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     });
   });
 
+  it('回合时间按页恢复，旧回合与最新回合都有独立元数据', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
+    server.handlers.set('thread/turns/list', ({ params }) => {
+      const cursor = params.cursor;
+      return cursor
+        ? {
+            data: [
+              makeTurn({
+                id: 'old',
+                status: 'completed',
+                startedAt: 100,
+                completedAt: 112,
+                durationMs: 12_000,
+              }),
+            ],
+            nextCursor: null,
+          }
+        : {
+            data: [makeTurn({ id: 'new', status: 'inProgress', startedAt: 200 })],
+            nextCursor: 'older',
+          };
+    });
+    const { turns, latestTurn } = await adapter.openTask('t1');
+    await expect(turns).resolves.toMatchObject([
+      { id: 'old', durationMs: 12_000 },
+      { id: 'new', startedAt: 200 },
+    ]);
+    await expect(latestTurn).resolves.toMatchObject({ id: 'new' });
+  });
+
   it('先给缓存摘要，再用 thread/items/list 校正', async () => {
     await adapter.start();
     store.threads.upsertFromThread(makeThread({ id: 't1' }));

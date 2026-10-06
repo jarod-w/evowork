@@ -356,6 +356,7 @@ export interface UserMessageItem extends ThreadItemBase {
 export interface AgentMessageItem extends ThreadItemBase {
   readonly type: 'agentMessage';
   readonly text?: string;
+  readonly phase?: 'commentary' | 'final_answer' | null;
 }
 
 export interface PlanItem extends ThreadItemBase {

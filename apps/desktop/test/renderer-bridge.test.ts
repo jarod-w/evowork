@@ -160,6 +160,7 @@ describe('来源打开只接受当前任务内核历史中的网页', () => {
       cached: [],
       items: Promise.resolve(items),
       latestTurn: Promise.resolve(undefined),
+      turns: Promise.resolve([]),
     })) as unknown as Adapter['openTask'];
     return {
       openExternal,
@@ -694,6 +695,66 @@ describe('打开文件夹不能假装成功', () => {
 });
 
 describe('事件翻译：适配层的任务视角 → 渲染层的组件视角', () => {
+  it('回合时间从协议秒转成 IPC 毫秒，完成耗时不会丢失', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 999_000,
+    );
+    expect(
+      translate({ type: 'turn-started', threadId: 't1', turnId: 'turn', startedAt: 100 }),
+    ).toEqual([{ type: 'turn-started', taskId: 't1', turnId: 'turn', startedAtMs: 100_000 }]);
+    expect(
+      translate({
+        type: 'turn-completed',
+        threadId: 't1',
+        turnId: 'turn',
+        status: 'completed',
+        startedAt: 100,
+        completedAt: 172,
+        durationMs: 72_300,
+      }),
+    ).toEqual([
+      {
+        type: 'turn-completed',
+        taskId: 't1',
+        turnId: 'turn',
+        status: 'completed',
+        startedAtMs: 100_000,
+        completedAtMs: 172_000,
+        durationMs: 72_300,
+      },
+    ]);
+  });
+
+  it('旧回合迟到的完成事件不会中断新回合的工具', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 10_000,
+    );
+    translate({
+      type: 'item-started',
+      threadId: 't1',
+      turnId: 'new',
+      item: { id: 'c', type: 'commandExecution', status: 'inProgress' },
+    });
+    const ended = translate({
+      type: 'turn-completed',
+      threadId: 't1',
+      turnId: 'old',
+      status: 'interrupted',
+    });
+    expect(ended).toHaveLength(1);
+    expect(
+      translate({
+        type: 'item-delta',
+        threadId: 't1',
+        itemId: 'c',
+        channel: 'commandOutput',
+        delta: 'still running',
+      }),
+    ).toMatchObject([{ type: 'item', item: { output: 'still running', _turnId: 'new' } }]);
+  });
+
   it('task-created 带上整行数据 —— 渲染层拿不到 store，自己补不出这一行', () => {
     const translate = createEventTranslator(
       fakeStore(() => row()),
@@ -791,6 +852,32 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
     expect(output.split('\n')).toHaveLength(500);
     expect(output).not.toContain('line-0\n');
     expect(output).toContain('line-509');
+  });
+
+  it('命令完成未带聚合输出时保留已收到的输出增量', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    translate({
+      type: 'item-started',
+      threadId: 't1',
+      item: { id: 'cmd1', type: 'commandExecution', command: 'run' } as never,
+    });
+    translate({
+      type: 'item-delta',
+      threadId: 't1',
+      itemId: 'cmd1',
+      channel: 'commandOutput',
+      delta: 'actual stdout\n',
+    });
+    expect(
+      translate({
+        type: 'item-completed',
+        threadId: 't1',
+        item: { id: 'cmd1', type: 'commandExecution', aggregatedOutput: null } as never,
+      })[0],
+    ).toMatchObject({ item: { completed: true, output: 'actual stdout\n' } });
   });
 
   it('没见过 item-started 的增量**不猜形状**，等 item-completed 给完整条目', () => {
@@ -944,7 +1031,13 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       {
         type: 'item',
         taskId: 't1',
-        item: { id: 'r1', type: 'reasoning', completed: true, durationSeconds: 3 },
+        item: {
+          id: 'r1',
+          type: 'reasoning',
+          completed: true,
+          durationSeconds: 3,
+          interrupted: true,
+        },
       },
       { type: 'turn-completed', taskId: 't1', turnId: 'x', status: 'interrupted' },
     ]);
@@ -1511,6 +1604,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       ],
       items: Promise.reject(new Error('connection refused')),
       latestTurn: Promise.resolve(undefined),
+      turns: Promise.resolve([]),
     }));
     const fallback = await actions.openTask({ threadId: 't1' });
     expect(fallback.items).toEqual([

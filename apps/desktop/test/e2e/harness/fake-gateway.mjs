@@ -165,15 +165,34 @@ export function createFakeGateway({
       sendEvent(response, {
         type: 'response.output_item.added',
         output_index: 0,
-        item: { type: 'message', id: `msg_${current}`, role: 'assistant', content: [] },
+        item: {
+          type: 'message',
+          id: `msg_${current}`,
+          role: 'assistant',
+          ...(script.phase ? { phase: script.phase } : {}),
+          content: [],
+        },
       });
       sendEvent(response, {
         type: 'response.output_text.delta',
         item_id: `msg_${current}`,
         output_index: 0,
         content_index: 0,
-        delta: '正在写……',
+        delta: script.text ?? '正在写……',
       });
+      if (script.completeMessage) {
+        sendEvent(response, {
+          type: 'response.output_item.done',
+          output_index: 0,
+          item: {
+            type: 'message',
+            id: `msg_${current}`,
+            role: 'assistant',
+            ...(script.phase ? { phase: script.phase } : {}),
+            content: [{ type: 'output_text', text: script.text ?? '正在写……' }],
+          },
+        });
+      }
       releaseScriptedTurn = () => {
         sendEvent(response, {
           type: 'response.completed',
@@ -218,11 +237,33 @@ export function createFakeGateway({
      * `tool` / `args` 可以是「请求正文 → 值」的函数：有些参数只能从这次请求里取
      * （电脑操控的写动作要带上一次读状态现发的 `state_id`，CU-D4）。
      */
+    if (script.preamble) {
+      const message = {
+        type: 'message',
+        id: `progress_${current}`,
+        role: 'assistant',
+        phase: 'commentary',
+        content: [],
+      };
+      sendEvent(response, { type: 'response.output_item.added', output_index: 0, item: message });
+      sendEvent(response, {
+        type: 'response.output_text.delta',
+        item_id: message.id,
+        output_index: 0,
+        content_index: 0,
+        delta: script.preamble,
+      });
+      sendEvent(response, {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: { ...message, content: [{ type: 'output_text', text: script.preamble }] },
+      });
+    }
     const tool = typeof script.tool === 'function' ? script.tool(body) : script.tool;
     const args = typeof script.args === 'function' ? script.args(body) : script.args;
     sendEvent(response, {
       type: 'response.output_item.done',
-      output_index: 0,
+      output_index: script.preamble ? 1 : 0,
       item: {
         type: 'function_call',
         id: `fc_${current}`,

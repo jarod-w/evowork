@@ -63,7 +63,7 @@ import {
   type ThreadLite,
 } from '@evowork/projects';
 import type { Logger } from '@evowork/logging';
-import type { ThreadItem, UserInput } from '@evowork/protocol';
+import type { ThreadItem, Turn, UserInput } from '@evowork/protocol';
 import { nextFire } from '@evowork/scheduler/cron.js';
 import {
   createProjectRepo,
@@ -124,6 +124,7 @@ import type {
   ProjectMutationResult,
   ProjectsDataView,
   RenderItemView,
+  TurnView,
   RendererEvent,
   RowActionInput,
   RuntimeInstallResultView,
@@ -224,6 +225,25 @@ function diffStats(diff: string): { readonly added: number; readonly removed: nu
     if (line.startsWith('-') && !line.startsWith('---')) removed += 1;
   }
   return { added, removed };
+}
+
+/** 协议的 startedAt/completedAt 是 Unix 秒，统一在 IPC 边界转成毫秒。 */
+export function toTurnView(turn: Turn): TurnView {
+  return {
+    id: turn.id,
+    status: turn.status,
+    ...(typeof turn.startedAt === 'number' && Number.isFinite(turn.startedAt)
+      ? { startedAtMs: turn.startedAt * 1000 }
+      : {}),
+    ...(typeof turn.completedAt === 'number' && Number.isFinite(turn.completedAt)
+      ? { completedAtMs: turn.completedAt * 1000 }
+      : {}),
+    ...(typeof turn.durationMs === 'number' &&
+    Number.isFinite(turn.durationMs) &&
+    turn.durationMs >= 0
+      ? { durationMs: turn.durationMs }
+      : {}),
+  };
 }
 
 /**
@@ -733,9 +753,13 @@ export function createEventTranslator(store: Store, now: () => number) {
             type: 'task-restored',
             taskId: event.threadId,
             history: {
-              items: event.items.map((item) =>
-                toTaskHistoryItem(item, turn?.status !== 'inProgress'),
-              ),
+              items: event.items.map((item) => {
+                const owner = (event.turns ?? (turn ? [turn] : [])).find(
+                  (candidate) => candidate.id === item._turnId,
+                );
+                return toTaskHistoryItem(item, (owner ?? turn)?.status !== 'inProgress');
+              }),
+              turns: (event.turns ?? (turn ? [turn] : [])).map(toTurnView),
               ...(turn ? { latestTurnId: turn.id } : {}),
               ...(turn?.status === 'failed' && turn.error
                 ? {
@@ -763,7 +787,14 @@ export function createEventTranslator(store: Store, now: () => number) {
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
       case 'turn-started':
-        return [{ type: 'turn-started', taskId: event.threadId, turnId: event.turnId }];
+        return [
+          {
+            type: 'turn-started',
+            taskId: event.threadId,
+            turnId: event.turnId,
+            startedAtMs: (event.startedAt ?? now() / 1000) * 1000,
+          },
+        ];
       case 'turn-completed': {
         /*
          * 回合结束时**收尾还挂着的条目**。
@@ -775,11 +806,24 @@ export function createEventTranslator(store: Store, now: () => number) {
          */
         const stale: RendererEvent[] = [];
         for (const [itemId, held] of [...streaming]) {
-          if (held.taskId !== event.threadId) continue;
+          if (
+            held.taskId !== event.threadId ||
+            (held.item._turnId !== undefined && held.item._turnId !== event.turnId)
+          )
+            continue;
           stale.push({
             type: 'item',
             taskId: held.taskId,
-            item: { ...held.item, ...completionFields(itemId) } as unknown as RenderItemView,
+            item: {
+              ...held.item,
+              ...completionFields(itemId),
+              ...(event.status !== 'completed'
+                ? {
+                    interrupted: true,
+                    ...(held.item.status === 'inProgress' ? { status: 'interrupted' } : {}),
+                  }
+                : {}),
+            } as unknown as RenderItemView,
           });
           streaming.delete(itemId);
         }
@@ -790,6 +834,9 @@ export function createEventTranslator(store: Store, now: () => number) {
           taskId: event.threadId,
           turnId: event.turnId,
           status: event.status,
+          ...(event.startedAt != null ? { startedAtMs: event.startedAt * 1000 } : {}),
+          ...(event.completedAt != null ? { completedAtMs: event.completedAt * 1000 } : {}),
+          ...(event.durationMs != null ? { durationMs: event.durationMs } : {}),
         };
         if (event.status !== 'failed' || !event.error) return [...stale, completed];
         return [
@@ -845,6 +892,12 @@ export function createEventTranslator(store: Store, now: () => number) {
         const completed = {
           ...held?.item,
           ...normalized,
+          ...(event.item.type === 'commandExecution' &&
+          typeof event.item.aggregatedOutput !== 'string' &&
+          typeof event.item.output !== 'string' &&
+          typeof held?.item.output === 'string'
+            ? { output: held.item.output }
+            : {}),
           id: itemId,
           ...completionFields(itemId),
         };
@@ -1956,8 +2009,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async openTask(input: OpenTaskInput): Promise<OpenTaskResult> {
       const threadId = input.threadId?.trim();
       if (!threadId) throw new Error('没有任务 id');
-      const { cached, items, latestTurn } = await adapter.openTask(threadId);
+      const { cached, items, latestTurn, turns } = await adapter.openTask(threadId);
       const turn = await latestTurn;
+      const historyTurns = await (turns ?? Promise.resolve(turn ? [turn] : []));
       const turnFields = turn
         ? {
             latestTurnId: turn.id,
@@ -1976,13 +2030,18 @@ export function createRendererActions(options: RendererBridgeOptions) {
       try {
         const listed = await items;
         return {
-          items: listed.map((item) => toTaskHistoryItem(item, turn?.status !== 'inProgress')),
+          items: listed.map((item) => {
+            const owner = historyTurns.find((candidate) => candidate.id === item._turnId);
+            return toTaskHistoryItem(item, (owner ?? turn)?.status !== 'inProgress');
+          }),
+          turns: historyTurns.map(toTurnView),
           ...turnFields,
         };
       } catch (err: unknown) {
         const reason = err instanceof Error ? err.message : String(err);
         return {
           items: cached.map(digestToRenderItem),
+          turns: historyTurns.map(toTurnView),
           incomplete: `读不到这个任务的完整历史：${reason}`,
           ...turnFields,
         };
@@ -3367,8 +3426,10 @@ export function toHistoryItem(item: ThreadItem): RenderItemView {
 /** 非活动任务中没有收尾的工具只能说明已中断，不能继续显示“进行中”。 */
 function toTaskHistoryItem(item: ThreadItem, stopped: boolean): RenderItemView {
   const view = toHistoryItem(item);
-  return stopped && view.status === 'inProgress'
-    ? { ...view, status: 'interrupted', interrupted: true }
+  return view.status === 'inProgress'
+    ? stopped
+      ? { ...view, status: 'interrupted', interrupted: true }
+      : { ...view, completed: false }
     : view;
 }
 

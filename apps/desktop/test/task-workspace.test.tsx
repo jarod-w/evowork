@@ -5,7 +5,7 @@
  * 状态文案与 01 §6.1 一致（含"已中断"这一态）、审批卡内联而非模态、
  * 空态给出下一步动作。
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApprovalViewModel } from '../src/renderer/components/approval-card.js';
@@ -257,162 +257,219 @@ describe('结果区（04 §1）', () => {
   });
 });
 
-describe('思考与执行过程（04 §5.1–§5.2）', () => {
-  it('同一回合的思考、操作与中间回复收成一个过程组，点开前不挂载细节', () => {
-    const { container } = renderWorkspace({
-      items: [
-        {
-          id: 'reasoning-1',
-          type: 'reasoning',
-          completed: true,
-          durationSeconds: 2,
-          content: ['先分析表结构'],
-        },
-        {
-          id: 'note-1',
-          type: 'agentMessage',
-          completed: true,
-          text: '先看看工作空间里有什么可用的项目信息。',
-        },
-        {
-          id: 'command-1',
-          type: 'commandExecution',
-          completed: true,
-          command: 'python render.py',
-          output: 'rendered 12 slides',
-          exitCode: 0,
-        },
-        {
-          id: 'answer-1',
-          type: 'agentMessage',
-          completed: true,
-          text: 'PPT 已完成',
-        },
-      ],
-    });
-
-    const process = screen.getByRole('button', { name: /处理过程/ });
-    expect(screen.getAllByRole('button', { name: /处理过程/ })).toHaveLength(1);
-    expect(process.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('button', { name: /思考与计划/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /操作/ })).toBeNull();
-    expect(screen.queryByText('先看看工作空间里有什么可用的项目信息。')).toBeNull();
-    expect(screen.getByText('PPT 已完成')).toBeTruthy();
-    expect(container.querySelector('[data-kind="reasoning"]')).toBeNull();
-    expect(container.querySelector('[data-kind="commandExecution"]')).toBeNull();
-    expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
-    // 折叠行只留「处理过程」和状态/耗时，不把命令贴在标题后面。
-    expect(process.textContent).not.toContain('python render.py');
-
-    fireEvent.click(process);
-    expect(screen.getByText('先看看工作空间里有什么可用的项目信息。')).toBeTruthy();
-    expect(container.querySelector('[data-kind="reasoning"]')).not.toBeNull();
-    expect(container.querySelector('[data-kind="commandExecution"]')).not.toBeNull();
-    // 点开过程组就能看见推理正文，不必再点「推理过程」。
-    expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('先分析表结构');
-    // 命令自己的输出仍保持第二层折叠，不会因展开过程组直接灌满屏幕。
-    expect(screen.queryByText(/rendered 12 slides/)).toBeNull();
+describe('说明与操作交错显示', () => {
+  it('后续操作到达不会移动或隐藏已经显示的进度说明', () => {
+    const items: RenderItem[] = [
+      { id: 'u', type: 'userMessage', _turnId: 't', content: [{ type: 'text', text: '整理文档' }] },
+      {
+        id: 'n',
+        type: 'agentMessage',
+        _turnId: 't',
+        phase: 'commentary',
+        completed: true,
+        text: '先看目录',
+      },
+    ];
+    const { rerender, props, container } = renderWorkspace({ items });
+    rerender(
+      <TaskWorkspace
+        {...props}
+        items={[
+          ...items,
+          { id: 'c', type: 'commandExecution', _turnId: 't', command: 'ls', completed: false },
+          {
+            id: 'a',
+            type: 'agentMessage',
+            _turnId: 't',
+            phase: 'final_answer',
+            completed: true,
+            text: '这是结论',
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('先看目录')).toBeTruthy();
+    expect(screen.getByText('这是结论')).toBeTruthy();
+    expect(
+      [...container.querySelectorAll('[data-task-item-id]')].map((node) =>
+        node.getAttribute('data-task-item-id'),
+      ),
+    ).toEqual(['u', 'n', 'a']);
+    const group = screen.getByRole('button', { name: /操作记录/ });
+    expect(group.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByLabelText('当前动作').textContent).toContain('ls');
+    fireEvent.click(group);
+    expect(container.querySelector('[data-task-item-id="c"]')).not.toBeNull();
   });
 
-  it('生成中展开过程组并挂上推理正文，用户不用干等一行摘要', () => {
-    renderWorkspace({
-      status: 'running',
-      items: [{ id: 'reasoning-1', type: 'reasoning', text: '先盘任务目标' }],
-    });
-
-    const process = screen.getByRole('button', { name: /处理过程/ });
-    expect(process.getAttribute('aria-expanded')).toBe('true');
-    expect(document.querySelector('.ew-reasoning-body')?.textContent).toContain('先盘任务目标');
-  });
-
-  it('groupTimelineItems 即使回复先到，也把处理过程放在最终回复上面', () => {
+  it('只合并同回合相邻操作，未知阶段的说明也始终保留', () => {
     const entries = groupTimelineItems([
-      { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: '整理文档' }] },
-      { id: 'a1', type: 'agentMessage', completed: true, text: '这是结论' },
-      { id: 'r1', type: 'reasoning', completed: true },
+      { id: 'c1', type: 'commandExecution', _turnId: 'one' },
+      { id: 'c2', type: 'webSearch', _turnId: 'one' },
+      { id: 'n', type: 'agentMessage', _turnId: 'one', text: '已确认资料' },
+      { id: 'c3', type: 'commandExecution', _turnId: 'one' },
+      { id: 'c4', type: 'commandExecution', _turnId: 'two' },
+      { id: 'unknown', type: 'futureEvent', _turnId: 'two' },
     ]);
-
-    expect(entries.map((entry) => entry.kind)).toEqual(['item', 'process', 'item']);
-    expect(entries[1]?.kind === 'process' ? entries[1].items.map((item) => item.id) : []).toEqual([
-      'r1',
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      'process',
+      'item',
+      'process',
+      'process',
+      'item',
     ]);
-    expect(entries[2]?.kind === 'item' ? entries[2].item.id : '').toBe('a1');
-  });
-
-  it('没有后续过程时，助手回复始终直接显示', () => {
-    const { container } = renderWorkspace({
-      items: [
-        { id: 'reasoning-1', type: 'reasoning', completed: true },
-        { id: 'command-1', type: 'commandExecution', completed: true, command: 'open result' },
-        { id: 'answer-1', type: 'agentMessage', completed: true, text: 'PPT 已完成' },
-      ],
-    });
-
-    expect(screen.getByText('PPT 已完成')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /处理过程/ })).toHaveLength(1);
-    expect(container.querySelector('[data-kind="commandExecution"]')).toBeNull();
-  });
-
-  it('groupTimelineItems 把中间回复留在过程组里，只把最后的结论铺开', () => {
-    const entries = groupTimelineItems([
-      { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: '整理文档' }] },
-      { id: 'r1', type: 'reasoning', completed: true },
-      { id: 'n1', type: 'agentMessage', completed: true, text: '先看目录' },
-      { id: 'c1', type: 'commandExecution', completed: true, command: 'ls' },
-      { id: 'a1', type: 'agentMessage', completed: true, text: '这是结论' },
-    ]);
-
-    expect(entries.map((entry) => entry.kind)).toEqual(['item', 'process', 'item']);
-    expect(entries[1]?.kind === 'process' ? entries[1].items.map((item) => item.id) : []).toEqual([
-      'r1',
-      'n1',
+    expect(entries[0]?.kind === 'process' ? entries[0].items.map((item) => item.id) : []).toEqual([
       'c1',
+      'c2',
     ]);
-    expect(entries[2]?.kind === 'item' ? entries[2].item.id : '').toBe('a1');
   });
 
-  it('模型无推理能力或企业隐藏策略时，不留下空的过程组', () => {
-    const { container } = renderWorkspace({
-      items: [
-        { id: 'reasoning-1', type: 'reasoning', completed: true },
-        { id: 'hook-1', type: 'hookPrompt', completed: true, text: '内部策略' },
-      ],
-      itemContext: { reasoningAvailable: false, hidePolicyPrompts: true },
-    });
-
-    expect(container.querySelector('.ew-process-group')).toBeNull();
-    expect(screen.queryByRole('button', { name: /思考|处理过程/ })).toBeNull();
+  it('完成后保留用户展开选择，输出仍需主动打开', () => {
+    const command = {
+      id: 'c',
+      type: 'commandExecution',
+      command: 'python render.py',
+      output: 'rendered 12 slides',
+    };
+    const { rerender, props, container } = renderWorkspace({ items: [command] });
+    fireEvent.click(screen.getByRole('button', { name: /操作记录/ }));
+    rerender(<TaskWorkspace {...props} items={[{ ...command, completed: true, exitCode: 0 }]} />);
+    expect(screen.getByRole('button', { name: /操作记录/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    expect(container.querySelector('[data-kind="commandExecution"]')).not.toBeNull();
+    expect(screen.queryByText('rendered 12 slides')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /已运行 python/ }));
+    expect(screen.getByText('rendered 12 slides')).toBeTruthy();
   });
 
-  it('中间命令失败但回合最终完成时，过程不误报为整体失败', () => {
+  it('长操作组追加事件后保留展开选择，操作详情分页挂载', () => {
+    const commands = Array.from({ length: 130 }, (_, index) => ({
+      id: `c${index}`,
+      type: 'commandExecution',
+      _turnId: 't',
+      completed: true,
+      command: `cmd${index}`,
+    }));
+    const { rerender, props, container } = renderWorkspace({ items: commands });
+    fireEvent.click(screen.getByRole('button', { name: /操作记录/ }));
+    expect(container.querySelectorAll('[data-kind="commandExecution"]')).toHaveLength(120);
+    rerender(
+      <TaskWorkspace
+        {...props}
+        items={[
+          ...commands,
+          { id: 'c130', type: 'commandExecution', _turnId: 't', command: 'new command' },
+        ]}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /操作记录/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /加载更早操作/ }));
+    expect(container.querySelectorAll('[data-kind="commandExecution"]')).toHaveLength(131);
+  });
+
+  it('失败操作在摘要中可见，不把成功回合标成失败', () => {
     renderWorkspace({
+      status: 'completed',
+      items: [
+        { id: 'c', type: 'commandExecution', command: 'try first', completed: true, exitCode: 1 },
+        { id: 'a', type: 'agentMessage', text: '报告已生成', completed: true },
+      ],
+    });
+    expect(screen.getByRole('button', { name: /操作记录/ }).textContent).toContain('1 项操作失败');
+    expect(screen.getByText('报告已生成')).toBeTruthy();
+    expect(screen.queryByLabelText('当前动作')).toBeNull();
+  });
+
+  it('推理单独折叠，运行时显示真实片段；无能力时不留空壳', () => {
+    const { rerender, props, container } = renderWorkspace({
+      items: [{ id: 'r', type: 'reasoning', text: '正在核对资料' }],
+    });
+    expect(screen.getByText('正在核对资料')).toBeTruthy();
+    expect(container.querySelector('.ew-reasoning-body')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /思考中/ }));
+    expect(container.querySelector('.ew-reasoning-body')?.textContent).toContain('正在核对资料');
+    rerender(
+      <TaskWorkspace
+        {...props}
+        itemContext={{ reasoningAvailable: false, hidePolicyPrompts: true }}
+      />,
+    );
+    expect(container.querySelector('[data-kind="reasoning"]')).toBeNull();
+  });
+
+  it('回复先到也保持原顺序，不把晚到的过程移到答案上方', () => {
+    const entries = groupTimelineItems([
+      { id: 'a', type: 'agentMessage', text: '结论' },
+      { id: 'c', type: 'commandExecution', completed: true },
+    ]);
+    expect(entries[0]?.kind === 'item' ? entries[0].item.id : '').toBe('a');
+  });
+});
+
+describe('回合处理时间', () => {
+  it('实时计时在终态固定，恢复后使用回合时间而不是工具耗时之和', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    try {
+      const { rerender, props } = renderWorkspace({
+        turns: [{ id: 't', status: 'inProgress', startedAtMs: 90_000 }],
+        items: [{ id: 'a', type: 'agentMessage', _turnId: 't', text: '正在处理' }],
+      });
+      expect(screen.getByLabelText('回合处理时间').textContent).toBe('已处理 10 秒');
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(screen.getByLabelText('回合处理时间').textContent).toBe('已处理 12 秒');
+      rerender(
+        <TaskWorkspace {...props} turns={[{ id: 't', status: 'completed', durationMs: 72_000 }]} />,
+      );
+      act(() => vi.advanceTimersByTime(20_000));
+      expect(screen.getByLabelText('回合处理时间').textContent).toBe('已处理 1 分钟 12 秒');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('等待首条输出或仅有用户消息的失败回合，也显示计时与真实状态', () => {
+    const { container, rerender, props } = renderWorkspace({
+      turns: [{ id: 't', status: 'inProgress', startedAtMs: Date.now() - 2_000 }],
       items: [
         {
-          id: 'command-1',
-          type: 'commandExecution',
-          completed: true,
-          command:
-            "/bin/bash -lc 'cd /Users/wangli/develop/evowork/evowork && ls __pycache__; git status'",
-          exitCode: 1,
-          durationSeconds: 76,
-        },
-        {
-          id: 'answer-1',
-          type: 'agentMessage',
-          completed: true,
-          text: '脚本写好了',
+          id: 'u',
+          type: 'userMessage',
+          _turnId: 't',
+          content: [{ type: 'text', text: '开始工作' }],
         },
       ],
     });
+    expect(screen.getByLabelText('回合处理时间').textContent).toMatch(/已处理/);
+    const user = container.querySelector('[data-task-item-id="u"]');
+    expect(user?.nextElementSibling?.getAttribute('aria-label')).toBe('回合处理时间');
+    rerender(
+      <TaskWorkspace {...props} turns={[{ id: 't', status: 'failed', durationMs: 2_000 }]} />,
+    );
+    expect(screen.getByLabelText('回合处理时间').textContent).toBe('已处理 2 秒 · 失败');
+  });
 
-    const process = screen.getByRole('button', { name: /处理过程/ });
-    expect(process.getAttribute('aria-expanded')).toBe('false');
-    expect(process.textContent).toMatch(/处理过程/);
-    expect(process.textContent).toMatch(/已完成/);
-    expect(process.textContent).not.toMatch(/失败/);
-    expect(process.textContent).not.toContain('/bin/bash');
-    expect(process.textContent).not.toContain('git status');
-    expect(screen.queryByText(/\/bin\/bash/)).toBeNull();
+  it('历史回合各有独立时间，缺失时间不编造；停止与断线区分', () => {
+    renderWorkspace({
+      turns: [
+        { id: 'one', status: 'completed', durationMs: 12_000 },
+        { id: 'two', status: 'interrupted' },
+        { id: 'three', status: 'disconnected', startedAtMs: 10_000, completedAtMs: 20_000 },
+      ],
+      items: [
+        { id: 'a', type: 'agentMessage', _turnId: 'one', text: '第一轮' },
+        { id: 'b', type: 'agentMessage', _turnId: 'two', text: '第二轮' },
+        { id: 'c', type: 'agentMessage', _turnId: 'three', text: '第三轮' },
+      ],
+    });
+    expect(screen.getAllByLabelText('回合处理时间').map((node) => node.textContent)).toEqual([
+      '已处理 12 秒',
+      '处理记录 · 已停止',
+      '已处理 10 秒 · 连接中断',
+    ]);
   });
 });
 
@@ -608,22 +665,18 @@ describe('生成中的 Composer 定位', () => {
 });
 
 describe('2.7.3–2.7.5 补齐项', () => {
-  it('同一回合的过程事件收成一组，生成中展开并保留状态', () => {
+  it('操作收成组，计划、文件变更和产物保持独立可见', () => {
     const { container } = renderWorkspace({
       items: [
-        { id: 'r', type: 'reasoning', completed: true, content: ['分析需求'] },
         { id: 'c', type: 'commandExecution', completed: false, command: 'pnpm test' },
         { id: 'f', type: 'fileChange', completed: true, changes: [{ path: 'a.ts' }] },
-        { id: 's', type: 'subAgentActivity', completed: true, agentRole: '研究员' },
         { id: 'i', type: 'imageGeneration', completed: true, prompt: '封面' },
       ],
     });
-
-    const process = screen.getByRole('button', { name: /处理过程.*进行中/ });
-    expect(screen.getAllByRole('button', { name: /处理过程/ })).toHaveLength(1);
-    expect(process.getAttribute('aria-expanded')).toBe('true');
-    expect(process.textContent).not.toContain('生成图片');
-    expect(process.textContent).not.toContain('pnpm test');
+    expect(
+      screen.getByRole('button', { name: /操作记录.*进行中/ }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.getByLabelText('当前动作').textContent).toContain('pnpm test');
     expect(container.querySelector('[data-kind="imageGeneration"]')).not.toBeNull();
     expect(screen.getByText('a.ts')).toBeTruthy();
   });

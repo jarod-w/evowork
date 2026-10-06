@@ -31,6 +31,7 @@ export type UiEvent =
       readonly threadId: string;
       readonly items: readonly ThreadItem[];
       readonly latestTurn?: Turn | undefined;
+      readonly turns?: readonly Turn[] | undefined;
     }
   | { readonly type: 'task-created'; readonly threadId: string; readonly title: string | null }
   | {
@@ -40,13 +41,20 @@ export type UiEvent =
     }
   | { readonly type: 'task-renamed'; readonly threadId: string; readonly title: string | null }
   | { readonly type: 'task-removed'; readonly threadId: string }
-  | { readonly type: 'turn-started'; readonly threadId: string; readonly turnId: string }
+  | {
+      readonly type: 'turn-started';
+      readonly threadId: string;
+      readonly turnId: string;
+      readonly startedAt?: number | null;
+    }
   | {
       readonly type: 'turn-completed';
       readonly threadId: string;
       readonly turnId: string;
       readonly status: Turn['status'];
       readonly durationMs?: number | null;
+      readonly startedAt?: number | null;
+      readonly completedAt?: number | null;
       /**
        * 失败原因。内核只在 `status = failed` 时填它（`v2/thread_data.rs:390-391`）。
        *
@@ -390,7 +398,12 @@ export function createEventRouter(options: EventRouterOptions) {
         const status = store.threads.applyTurnStarted(p.threadId, p.turn.id, now());
         onUiEvent({ type: 'task-status', threadId: p.threadId, status });
       }
-      onUiEvent({ type: 'turn-started', threadId: p.threadId, turnId: p.turn.id });
+      onUiEvent({
+        type: 'turn-started',
+        threadId: p.threadId,
+        turnId: p.turn.id,
+        startedAt: p.turn.startedAt ?? now() / 1000,
+      });
       return [{ kind: 'concurrency', delta: 1 }];
     },
 
@@ -409,6 +422,8 @@ export function createEventRouter(options: EventRouterOptions) {
         turnId: p.turn.id,
         status: p.turn.status,
         durationMs: p.turn.durationMs ?? null,
+        startedAt: p.turn.startedAt ?? null,
+        completedAt: p.turn.completedAt ?? now() / 1000,
         // **不记日志**：这段文本可能带模型/提供方回的正文（Q14 不落盘）。只往 UI 送
         ...(failure
           ? {

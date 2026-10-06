@@ -1,3 +1,5 @@
+import { activityIcon, activityState, describeActivity } from '../../shared/activity.js';
+import { renderIcon } from './icons.js';
 import { ImageOperationCard, type ImageUiPorts } from './image-settings.js';
 /**
  * 19 类 Item 的渲染规范（04 §5.2）。
@@ -72,11 +74,6 @@ export interface ItemRenderContext {
   readonly renderChart?: ((spec: ChartSpec) => ReactNode) | undefined;
   readonly prefersDark?: boolean | undefined;
   readonly onSaveFence?: ((block: FenceBlock) => void) | undefined;
-  /**
-   * 挂在「处理过程」组里时，推理正文随组一起展开：用户点一次组标题就能看见
-   * 思考内容，不必再点「推理过程」。命令输出仍保持二次折叠。
-   */
-  readonly nestedInProcessGroup?: boolean | undefined;
 }
 
 /** 04 §5.2 的"默认"列：过程性折叠、结论性展开。 */
@@ -586,7 +583,11 @@ export function ItemRenderer({
       );
       const citedSources = sources.filter((source) => ids.has(source.id));
       return (
-        <div className="ew-item ew-item-agent" data-kind={kind}>
+        <div
+          className="ew-item ew-item-agent"
+          data-kind={kind}
+          data-phase={text(item, 'phase') || 'unknown'}
+        >
           {blocks.map((block, index) =>
             block.kind === 'text' ? (
               <div
@@ -659,13 +660,21 @@ export function ItemRenderer({
       const done = item.completed === true;
       const body = joined(item, 'text') || joined(item, 'content') || joined(item, 'summary');
       return (
-        <Collapsible
-          kind={kind}
-          defaultExpanded={Boolean(context.nestedInProcessGroup) || defaultExpanded}
-          summary={seconds !== undefined ? `已思考 ${seconds} 秒` : done ? '推理过程' : '思考中…'}
-        >
-          <div className="ew-reasoning-body">{body}</div>
-        </Collapsible>
+        <div className="ew-reasoning" data-running={done ? 'false' : 'true'}>
+          <Collapsible
+            kind={kind}
+            defaultExpanded={defaultExpanded}
+            summary={
+              <>
+                {renderIcon('library')}
+                {seconds !== undefined ? `已思考 ${seconds} 秒` : done ? '推理过程' : '思考中…'}
+              </>
+            }
+          >
+            <div className="ew-reasoning-body">{body}</div>
+          </Collapsible>
+          {!done && body ? <div className="ew-reasoning-preview">{body.slice(-180)}</div> : null}
+        </div>
       );
     }
 
@@ -713,16 +722,28 @@ export function ItemRenderer({
           defaultExpanded={defaultExpanded}
           summary={
             <>
-              <StatusDot tone={failed ? 'danger' : exitCode === 0 ? 'accent' : 'muted'} />
-              <code className="ew-command">$ {text(item, 'command')}</code>
+              <span aria-hidden="true">{renderIcon(activityIcon(item))}</span>
+              <span className="ew-command" title={text(item, 'command')}>
+                {describeActivity(item)}
+              </span>
+              {activityState(item) === 'running' ? <span>进行中</span> : null}
               {item.interrupted === true ? <span>已中断，结果需检查</span> : null}
+              {failed ? <span>失败</span> : null}
+              {typeof item.durationMs === 'number' ? (
+                <span>{Math.max(0, Math.round(item.durationMs / 1000))} 秒</span>
+              ) : null}
               {exitCode !== undefined ? (
                 <span className="ew-exit-code">退出码 {exitCode}</span>
               ) : null}
             </>
           }
         >
-          <pre className="ew-command-output">{text(item, 'output')}</pre>
+          <pre className="ew-command-output">$ {text(item, 'command')}</pre>
+          {text(item, 'output') ? (
+            <pre className="ew-command-output">{text(item, 'output')}</pre>
+          ) : (
+            <p className="ew-tool-progress">没有可显示的命令输出。</p>
+          )}
         </Collapsible>
       );
     }
@@ -842,6 +863,9 @@ export function ItemRenderer({
             <p className="ew-tool-progress">{text(item, 'progress')}</p>
           ) : null}
           <pre className="ew-json">{JSON.stringify(item.arguments ?? {}, null, 2)}</pre>
+          {item.result != null ? (
+            <pre className="ew-json">{JSON.stringify(item.result, null, 2)}</pre>
+          ) : null}
         </Collapsible>
       );
     }

@@ -1093,9 +1093,11 @@ textarea {
   width: 100%;
 }
 .ew-process-kind {
-  flex: none;
-  color: var(--text-primary);
-  font-weight: var(--font-label-weight);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
 }
 .ew-process-meta {
   flex: none;
@@ -4456,4 +4458,46 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-image-operation img {
   border-radius: var(--r-md);
   object-fit: contain;
+}
+
+/* 说明正文之间的轻量操作记录与回合时间。 */
+.ew-turn-header {
+  margin: var(--space-20) 0;
+  padding-bottom: var(--space-12);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-current-activity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  color: var(--text-secondary);
+  padding: var(--space-4) 0;
+}
+.ew-current-activity span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ew-current-activity .ew-icon,
+.ew-item-summary .ew-icon {
+  flex: none;
+  width: var(--layout-icon-size-xs);
+  height: var(--layout-icon-size-xs);
+}
+.ew-reasoning-preview {
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ew-reasoning[data-running='true'] .ew-item[data-expanded='true'] + .ew-reasoning-preview {
+  display: none;
+}
+.ew-process-body .ew-item-summary {
+  width: 100%;
 }

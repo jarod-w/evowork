@@ -663,6 +663,7 @@ export function createAdapter(options: AdapterOptions) {
             threadId,
             items,
             latestTurn: resumed.thread.turns.at(-1),
+            turns: resumed.thread.turns,
           });
         }
         recovered += 1;
@@ -1702,6 +1703,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly cached: ReturnType<Store['readItemDigest']>;
       readonly items: Promise<readonly ThreadItem[]>;
       readonly latestTurn: Promise<Turn | undefined>;
+      readonly turns: Promise<readonly Turn[]>;
     }> {
       if (session.phase !== 'ready')
         throw new TransportClosedError('执行内核尚未恢复，请稍后创建任务');
@@ -1714,6 +1716,7 @@ export function createAdapter(options: AdapterOptions) {
           cached: [],
           items: Promise.resolve(itemsFromTurns(turns)),
           latestTurn: Promise.resolve(turns.at(-1)),
+          turns: Promise.resolve(turns),
         };
       }
       const cached = store.readItemDigest(threadId);
@@ -1729,24 +1732,43 @@ export function createAdapter(options: AdapterOptions) {
           response?.thread.turns,
         );
       })();
-      const latestTurn = session.peer
-        .request<{ readonly data?: readonly Turn[] }>(METHOD.threadTurnsList, {
-          threadId,
-          limit: 1,
-          sortDirection: 'desc',
-          itemsView: 'summary',
-        })
-        .then(async (response) => (await resumed)?.thread.turns.at(-1) ?? response.data?.[0])
-        .catch(async () => (await resumed)?.thread.turns.at(-1))
-        .then(async (turn) => {
-          const thread = (await resumed)?.thread;
-          if (thread && threadRevisions.get(threadId) === revision) {
-            const status = store.threads.upsertFromThread({ ...thread, turns: turn ? [turn] : [] });
-            options.onUiEvent?.({ type: 'task-status', threadId, status });
+      // 回合分页可能比正文失败慢；立即登记拒绝处理，保留原 promise 给调用方报告失败。
+      void items.catch(() => undefined);
+      const turns = (async () => {
+        try {
+          const listed: Turn[] = [];
+          let cursor: string | undefined;
+          for (let page = 0; page < ITEM_LIST_PAGE_CAP; page += 1) {
+            const response = await session.peer.request<{
+              readonly data?: readonly Turn[];
+              readonly nextCursor?: string | null;
+            }>(METHOD.threadTurnsList, {
+              threadId,
+              limit: ITEM_LIST_PAGE_SIZE,
+              sortDirection: 'desc',
+              itemsView: 'summary',
+              ...(cursor ? { cursor } : {}),
+            });
+            listed.push(...(response.data ?? []));
+            if (!response.nextCursor) break;
+            cursor = response.nextCursor;
           }
-          return turn;
-        });
-      return { cached, items, latestTurn };
+          return listed.length > 0 ? listed.reverse() : ((await resumed)?.thread.turns ?? []);
+        } catch {
+          // 老内核没有回合分页时，resume 返回的回合仍是协议提供的时间真源。
+          return (await resumed)?.thread.turns ?? [];
+        }
+      })();
+      const latestTurn = turns.then(async (history) => {
+        const turn = history.at(-1);
+        const thread = (await resumed)?.thread;
+        if (thread && threadRevisions.get(threadId) === revision) {
+          const status = store.threads.upsertFromThread({ ...thread, turns: turn ? [turn] : [] });
+          options.onUiEvent?.({ type: 'task-status', threadId, status });
+        }
+        return turn;
+      });
+      return { cached, items, latestTurn, turns };
     },
 
     closeTask(threadId: string): void {

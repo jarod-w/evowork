@@ -20,6 +20,13 @@
 import { LAYOUT } from '@evowork/tokens';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import {
+  activityIcon,
+  activityKinds,
+  activityState,
+  describeActivity,
+} from '../../shared/activity.js';
+import type { TurnView } from '../../shared/ipc.js';
 import type { TaskGoalView } from '../../shared/ipc.js';
 import { webSourcesByItem, type WebSource } from '../../shared/web-sources.js';
 
@@ -83,14 +90,11 @@ const RESULT_TABS = [
 ] as const;
 
 /**
- * 会被收进「处理过程」组的协议条目。未知类型故意不在这里：上游新增 item
+ * 会被收进相邻操作组的协议条目。未知类型故意不在这里：上游新增 item
  * 时仍要直接露出「新类型事件」这一行，否则 R2 的防线会被外层折叠悄悄吃掉。
  */
 export const PROCESS_ITEM_TYPES = Object.freeze(
   new Set([
-    'reasoning',
-    'plan',
-    'contextCompaction',
     'commandExecution',
     'mcpToolCall',
     'dynamicToolCall',
@@ -98,13 +102,8 @@ export const PROCESS_ITEM_TYPES = Object.freeze(
     'webSearch',
     'imageView',
     'sleep',
-    'fileChange',
-    'enteredReviewMode',
-    'exitedReviewMode',
     'subAgentActivity',
     'collabAgentToolCall',
-    'hookPrompt',
-    'imageGeneration',
   ]),
 );
 
@@ -120,57 +119,20 @@ function isProcessItem(item: RenderItem): boolean {
   return PROCESS_ITEM_TYPES.has(item.type);
 }
 
-function isTurnBoundary(item: RenderItem): boolean {
-  return item.type === 'userMessage' || (!isProcessItem(item) && item.type !== 'agentMessage');
-}
-
-/**
- * 同一回合的思考、操作、变更与中间回复收成一个过程组；最终助手回复和用户消息
- * 直接铺开。中间 `agentMessage` 若还跟着过程项，就不是结论，不能切断分组。
- */
+/** 只合并同回合内相邻操作，说明与结论都保持到达位置。 */
 export function groupTimelineItems(items: readonly RenderItem[]): readonly TimelineEntry[] {
   const entries: TimelineEntry[] = [];
-  let index = 0;
-  while (index < items.length) {
-    const item = items[index];
-    if (!item) break;
-    if (isTurnBoundary(item)) {
+  let group: RenderItem[] | undefined;
+  for (const item of items) {
+    if (!isProcessItem(item)) {
       entries.push({ kind: 'item', item });
-      index += 1;
-      continue;
+      group = undefined;
+    } else if (group && group[0]?._turnId === item._turnId) {
+      group.push(item);
+    } else {
+      group = [item];
+      entries.push({ kind: 'process', key: item.id, items: group });
     }
-
-    const run: RenderItem[] = [];
-    while (index < items.length) {
-      const next = items[index];
-      if (!next || isTurnBoundary(next)) break;
-      run.push(next);
-      index += 1;
-    }
-
-    let lastProcess = -1;
-    for (let cursor = run.length - 1; cursor >= 0; cursor -= 1) {
-      const candidate = run[cursor];
-      if (candidate && isProcessItem(candidate)) {
-        lastProcess = cursor;
-        break;
-      }
-    }
-    if (lastProcess < 0) {
-      for (const visible of run) entries.push({ kind: 'item', item: visible });
-      continue;
-    }
-
-    /*
-     * 过程组始终画在该回合最终回复之上。回复 item 若先到（思考条目要等
-     * `output_item.done` 才出现），仍把过程组提前，避免「处理过程」掉到答案下面。
-     */
-    const firstProcess = run.findIndex((candidate) => isProcessItem(candidate));
-    const folded = run.slice(firstProcess, lastProcess + 1);
-    const answers = [...run.slice(0, firstProcess), ...run.slice(lastProcess + 1)];
-    const first = folded[0];
-    if (first) entries.push({ kind: 'process', key: first.id, items: folded });
-    for (const visible of answers) entries.push({ kind: 'item', item: visible });
   }
   return entries;
 }
@@ -182,50 +144,24 @@ export interface ProcessSummary {
 }
 
 export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
-  const needsUser = items.some(
-    (item) => item.needsUserAction === true || item.status === 'pending',
-  );
-  const running = items.some((item) => item.completed !== true);
-  const durationMs = items.reduce((total, item) => {
-    if (typeof item.durationMs === 'number') return total + Math.max(0, item.durationMs);
-    if (typeof item.durationSeconds === 'number')
-      return total + Math.max(0, item.durationSeconds * 1000);
-    return total;
-  }, 0);
-  const planSteps = items.flatMap((item) =>
-    item.type === 'plan' && Array.isArray(item.steps) ? (item.steps as { status?: string }[]) : [],
-  );
-  const completedSteps = planSteps.filter((step) => step.status === 'completed').length;
-  const detail =
-    planSteps.length > 0
-      ? `${completedSteps}/${planSteps.length} 步`
-      : durationMs > 0
-        ? `${Math.max(1, Math.round(durationMs / 1000))} 秒`
-        : `${items.length} 项`;
-
+  const states = items.map(activityState);
+  const status = states.includes('pending')
+    ? '需要你处理'
+    : states.includes('running')
+      ? '进行中'
+      : states.includes('interrupted')
+        ? '已中断'
+        : '已完成';
+  const failed = states.filter((state) => state === 'failed').length;
+  const kinds = [...new Set(items.flatMap(activityKinds))];
   return {
-    label: '处理过程',
-    /*
-     * 命令非零退出是一次操作的结果，不是整个回合的终态。模型经常会
-     * 换一条路重试并最终成功；在这里用“任意命令失败”概括整个处理过程，
-     * 就会出现“报告已生成，但界面说失败”。真正的回合失败由 turnFailure 卡片
-     * 和任务状态表达；单个命令的退出码仍在展开的操作详情里如实显示。
-     */
-    status: needsUser
-      ? '需要你处理'
-      : running
-        ? '进行中'
-        : items.some((item) => item.interrupted === true)
-          ? '已中断'
-          : '已完成',
-    detail,
+    label: `${status === '进行中' ? '正在' : status === '需要你处理' ? '待确认：' : status === '已中断' ? '已中断：' : '已'}${kinds.join(' · ')}`,
+    status,
+    ...(failed > 0 ? { detail: `${failed} 项操作失败` } : {}),
   };
 }
 
-/**
- * Cursor 式组级 disclosure：生成中展开，让思考与当前动作可见；完成后收成
- * 一行「处理过程」。不是用 CSS 遮住——折叠时长输出根本不进 DOM。
- */
+/** 摘要默认折叠；当前操作仍可见，用户的展开选择不会被完成事件覆盖。 */
 function ProcessGroup({
   items,
   context,
@@ -237,53 +173,114 @@ function ProcessGroup({
   readonly focusItemId?: string | undefined;
   readonly sourceContexts?: ReadonlyMap<string, readonly WebSource[]> | undefined;
 }) {
-  const visibleItems = items.filter(
-    (item) =>
-      !(item.type === 'reasoning' && !context.reasoningAvailable) &&
-      !(item.type === 'hookPrompt' && context.hidePolicyPrompts),
-  );
-  const running = visibleItems.some((item) => item.completed !== true);
-  /** undefined = 跟随运行态（生成中展开、完成后收起）；boolean = 用户点过。 */
-  const [userExpanded, setUserExpanded] = useState<boolean | undefined>(undefined);
-  const expanded =
-    userExpanded ?? (running || visibleItems.some((item) => item.id === focusItemId));
-  if (visibleItems.length === 0) return null;
-  const summary = summarizeProcess(visibleItems);
-  const itemContext: ItemRenderContext = { ...context, nestedInProcessGroup: true };
-
+  const [userExpanded, setUserExpanded] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(120);
+  const expanded = userExpanded || items.some((item) => item.id === focusItemId);
+  useEffect(() => {
+    const index = items.findIndex((item) => item.id === focusItemId);
+    if (index >= 0) setVisibleCount((count) => Math.max(count, items.length - index));
+  }, [items, focusItemId]);
+  const summary = summarizeProcess(items);
+  const current = [...items]
+    .reverse()
+    .find((item) => activityState(item) === 'running' || activityState(item) === 'pending');
   return (
     <div
       className="ew-item ew-process-group"
       data-expanded={expanded ? 'true' : 'false'}
       role="group"
-      aria-label={`${summary.label}，${summary.status}`}
+      aria-label={`操作记录，${summary.status}`}
     >
       <button
         type="button"
         className="ew-item-summary ew-process-summary"
         aria-expanded={expanded}
-        onClick={() => setUserExpanded((value) => !(value ?? running))}
+        aria-label={`操作记录：${summary.label}，${summary.status}${summary.detail ? `，${summary.detail}` : ''}`}
+        onClick={() => setUserExpanded((value) => !value)}
       >
+        <span className="ew-process-chevron" aria-hidden="true">
+          {renderIcon(activityIcon(items[0] ?? { type: 'unknown' }))}
+        </span>
+        <span className="ew-process-kind">{summary.label}</span>
+        {summary.detail ? <span className="ew-process-meta">{summary.detail}</span> : null}
         <span className="ew-process-chevron" aria-hidden="true">
           {renderIcon(expanded ? 'chevron-down' : 'chevron-right')}
         </span>
-        <span className="ew-process-kind">{summary.label}</span>
-        <span className="ew-process-meta">
-          {summary.status} · {summary.detail}
-        </span>
       </button>
+      {!expanded && current ? (
+        <div
+          className="ew-current-activity"
+          aria-label="当前动作"
+          title={describeActivity(current)}
+        >
+          {renderIcon(activityIcon(current))}
+          <span>{describeActivity(current)}</span>
+        </div>
+      ) : null}
       {expanded ? (
-        <div className="ew-item-body ew-process-body">
-          {visibleItems.map((item) => (
+        <div className="ew-process-body">
+          {items.length > visibleCount ? (
+            <PillButton onClick={() => setVisibleCount((count) => count + 120)}>
+              加载更早操作（还有 {items.length - visibleCount} 项）
+            </PillButton>
+          ) : null}
+          {items.slice(-visibleCount).map((item) => (
             <div key={item.id} data-task-item-id={item.id}>
               <ItemRenderer
                 item={item}
-                context={{ ...itemContext, webSources: sourceContexts?.get(item.id) }}
+                context={{ ...context, webSources: sourceContexts?.get(item.id) }}
               />
             </div>
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function formatTurnDuration(durationMs: number): string {
+  const seconds = Math.max(0, Math.floor(durationMs / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  return hours > 0
+    ? `${hours} 小时 ${minutes % 60} 分钟 ${seconds % 60} 秒`
+    : minutes > 0
+      ? `${minutes} 分钟 ${seconds % 60} 秒`
+      : `${seconds} 秒`;
+}
+
+/** 计时只订阅当前仍在运行的回合，终态和未知时间不制造计时器。 */
+function TurnHeader({ turn }: { readonly turn: TurnView }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (turn.status !== 'inProgress' || turn.startedAtMs === undefined) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [turn.id, turn.status, turn.startedAtMs]);
+  const end = turn.status === 'inProgress' ? now : turn.completedAtMs;
+  const duration =
+    turn.status !== 'inProgress' && turn.durationMs !== undefined
+      ? turn.durationMs
+      : turn.startedAtMs !== undefined && end !== undefined
+        ? Math.max(0, end - turn.startedAtMs)
+        : undefined;
+  const suffix =
+    turn.status === 'failed'
+      ? ' · 失败'
+      : turn.status === 'interrupted'
+        ? ' · 已停止'
+        : turn.status === 'disconnected'
+          ? ' · 连接中断'
+          : '';
+  return (
+    <div className="ew-turn-header" aria-label="回合处理时间">
+      {duration === undefined
+        ? turn.status === 'inProgress'
+          ? '正在处理'
+          : '处理记录'
+        : `已处理 ${formatTurnDuration(duration)}`}
+      {suffix}
     </div>
   );
 }
@@ -303,6 +300,7 @@ export interface TaskWorkspaceProps {
       }
     | undefined;
   readonly items: readonly RenderItem[];
+  readonly turns?: readonly TurnView[] | undefined;
   readonly pendingApprovals: readonly ApprovalViewModel[];
   readonly onDecide: (id: string, decision: ApprovalDecision) => void;
   readonly onAnswer?: (
@@ -527,12 +525,46 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     () => new Map(props.pendingApprovals.map((a) => [a.id, a])),
     [props.pendingApprovals],
   );
-  const mountedItems = useMemo(
-    () => props.items.slice(Math.max(0, props.items.length - visibleCount)),
-    [props.items, visibleCount],
-  );
+  const mountedItems = useMemo(() => {
+    let start = Math.max(0, props.items.length - visibleCount);
+    // 分页不能从相邻操作组中间切开，否则追加新事件会改变组 key、丢失展开选择。
+    while (start > 0) {
+      const current = props.items[start];
+      const previous = props.items[start - 1];
+      if (
+        !current ||
+        !previous ||
+        !isProcessItem(current) ||
+        !isProcessItem(previous) ||
+        current._turnId !== previous._turnId
+      )
+        break;
+      start -= 1;
+    }
+    return props.items.slice(start);
+  }, [props.items, visibleCount]);
   const hiddenItemCount = props.items.length - mountedItems.length;
-  const timeline = useMemo(() => groupTimelineItems(mountedItems), [mountedItems]);
+  const timeline = useMemo(() => {
+    const entries = groupTimelineItems(mountedItems);
+    const seen = new Set<string>();
+    return entries.map((entry) => {
+      const first = entry.kind === 'item' ? entry.item : entry.items[0];
+      const turnId = typeof first?._turnId === 'string' ? first._turnId : undefined;
+      const turn =
+        turnId && first?.type !== 'userMessage' && !seen.has(turnId)
+          ? props.turns?.find((candidate) => candidate.id === turnId)
+          : undefined;
+      const afterTurn =
+        turnId &&
+        first?.type === 'userMessage' &&
+        !mountedItems.some((item) => item._turnId === turnId && item.type !== 'userMessage') &&
+        mountedItems.findLast((item) => item._turnId === turnId)?.id === first.id
+          ? props.turns?.find((candidate) => candidate.id === turnId)
+          : undefined;
+      if (turn) seen.add(turn.id);
+      return { entry, turn, afterTurn };
+    });
+  }, [mountedItems, props.turns]);
   const sourceContexts = useMemo(() => webSourcesByItem(props.items), [props.items]);
 
   const resizeResult = (clientX: number): void => {
@@ -880,27 +912,39 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                 />
               ) : null}
 
-              {timeline.map((entry) =>
-                entry.kind === 'item' ? (
-                  <div key={entry.item.id} data-task-item-id={entry.item.id}>
-                    <ItemRenderer
-                      item={entry.item}
-                      context={{
-                        ...props.itemContext,
-                        webSources: sourceContexts.get(entry.item.id),
-                      }}
+              {timeline.map(({ entry, turn, afterTurn }) => (
+                <div key={entry.kind === 'item' ? entry.item.id : entry.key}>
+                  {turn ? <TurnHeader turn={turn} /> : null}
+                  {entry.kind === 'item' ? (
+                    <div data-task-item-id={entry.item.id}>
+                      <ItemRenderer
+                        item={entry.item}
+                        context={{
+                          ...props.itemContext,
+                          webSources: sourceContexts.get(entry.item.id),
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <ProcessGroup
+                      items={entry.items}
+                      context={props.itemContext}
+                      sourceContexts={sourceContexts}
+                      focusItemId={props.focusItemId}
                     />
-                  </div>
-                ) : (
-                  <ProcessGroup
-                    key={entry.key}
-                    items={entry.items}
-                    context={props.itemContext}
-                    sourceContexts={sourceContexts}
-                    focusItemId={props.focusItemId}
-                  />
-                ),
-              )}
+                  )}
+                  {afterTurn ? <TurnHeader turn={afterTurn} /> : null}
+                </div>
+              ))}
+              {(props.turns ?? [])
+                .filter(
+                  (turn) =>
+                    turn.status === 'inProgress' &&
+                    !mountedItems.some((item) => item._turnId === turn.id),
+                )
+                .map((turn) => (
+                  <TurnHeader key={turn.id} turn={turn} />
+                ))}
 
               {props.items.length > 0 && (props.artifacts ?? []).length > 0 ? (
                 <section className="ew-timeline-artifacts" aria-label="任务产物">

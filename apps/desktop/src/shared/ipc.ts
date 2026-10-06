@@ -100,12 +100,20 @@ export type RendererEvent =
       readonly title?: string | null;
     }
   | { readonly type: 'item'; readonly taskId: string; readonly item: RenderItemView }
-  | { readonly type: 'turn-started'; readonly taskId: string; readonly turnId: string }
+  | {
+      readonly type: 'turn-started';
+      readonly taskId: string;
+      readonly turnId: string;
+      readonly startedAtMs?: number;
+    }
   | {
       readonly type: 'turn-completed';
       readonly taskId: string;
       readonly turnId: string;
       readonly status: 'completed' | 'interrupted' | 'failed' | 'inProgress';
+      readonly startedAtMs?: number;
+      readonly completedAtMs?: number;
+      readonly durationMs?: number;
     }
   | {
       readonly type: 'turn-diff';
@@ -454,7 +462,17 @@ export interface OpenTaskInput {
   readonly threadId: string;
 }
 
+/** 回合时间均为毫秒；正文不在这里复制或持久化。 */
+export interface TurnView {
+  readonly id: string;
+  readonly status: 'inProgress' | 'completed' | 'failed' | 'interrupted' | 'disconnected';
+  readonly startedAtMs?: number | undefined;
+  readonly completedAtMs?: number | undefined;
+  readonly durationMs?: number | undefined;
+}
+
 export interface OpenTaskResult {
+  readonly turns?: readonly TurnView[] | undefined;
   readonly items: readonly RenderItemView[];
   /** 最近回合；用于恢复“本回合”范围与失败原因，不把模型错误正文落进本机投影表。 */
   readonly latestTurnId?: string | undefined;

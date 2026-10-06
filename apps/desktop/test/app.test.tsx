@@ -1,3 +1,4 @@
+import type { OpenTaskResult } from '../src/shared/ipc.js';
 /**
  * 渲染进程外壳（`app.tsx`）。
  *
@@ -920,7 +921,6 @@ describe('结果工作区真实接线', () => {
     });
 
     expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: /处理过程/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'report.md' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText(/-old/)).toBeTruthy();
@@ -954,7 +954,6 @@ describe('结果工作区真实接线', () => {
       },
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: /处理过程/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'out/report.md' }));
 
     await waitFor(() =>
@@ -1014,6 +1013,54 @@ describe('回合失败留在任务时间线', () => {
     expect(screen.queryByText('失联前的过期快照')).toBeNull();
     expect(screen.queryByText('思考中…')).toBeNull();
   });
+  it('旧历史到达时保留新回合计时和失败原因，同时补回旧消息', async () => {
+    let resolveHistory!: (value: OpenTaskResult) => void;
+    const task = {
+      id: 'race',
+      title: '恢复计时任务',
+      status: 'running' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      openTask: () =>
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('恢复计时任务'));
+    await waitFor(() => expect(resolveHistory).toBeDefined());
+    emit.ui?.({ type: 'turn-started', taskId: 'race', turnId: 'new', startedAtMs: 100_000 });
+    emit.ui?.({
+      type: 'item',
+      taskId: 'race',
+      item: { id: 'live', type: 'agentMessage', _turnId: 'new', text: '新回合进展' },
+    });
+    emit.ui?.({
+      type: 'turn-completed',
+      taskId: 'race',
+      turnId: 'new',
+      status: 'failed',
+      durationMs: 11_000,
+    });
+    emit.ui?.({ type: 'turn-failed', taskId: 'race', message: '真实新回合失败' });
+    resolveHistory({
+      items: [{ id: 'saved', type: 'agentMessage', _turnId: 'old', text: '旧回合的历史' }],
+      latestTurnId: 'old',
+      turns: [{ id: 'old', status: 'completed', durationMs: 7_000 }],
+    });
+    expect(await screen.findByText('旧回合的历史')).toBeTruthy();
+    expect(await screen.findByText('新回合进展')).toBeTruthy();
+    expect(screen.getByText('真实新回合失败')).toBeTruthy();
+    expect(screen.getAllByLabelText('回合处理时间').map((node) => node.textContent)).toEqual([
+      '已处理 7 秒',
+      '已处理 11 秒 · 失败',
+    ]);
+  });
+
   it('继续在原任务追加恢复要求，保留草稿且连续点击只发一次', async () => {
     let finish!: (value: { threadId: string }) => void;
     const send = vi.fn(

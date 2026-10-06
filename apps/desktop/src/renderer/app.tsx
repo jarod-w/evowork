@@ -21,6 +21,7 @@ import type { ComputerUseStatusView } from '../shared/ipc.js';
  * 建好回一个 id，这里再切过去。所以"当前在哪个页面"就是 `activeTaskId` 是不是 null，
  * 不需要 router。
  */
+import { mergeTurnViews } from '../shared/turn-view.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
@@ -62,6 +63,7 @@ import type {
   MemorySettingsInput,
   MemorySettingsView,
   OpenTaskResult,
+  TurnView,
   PickAttachmentsInput,
   ProjectDetailView,
   ProjectMutationResult,
@@ -551,6 +553,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [continuingTaskId, setContinuingTaskId] = useState<string | null>(null);
   const continuingTasks = useRef(new Set<string>());
   const historyEpochByTask = useRef(new Map<string, number>());
+  const turnRevisionByTask = useRef(new Map<string, number>());
   /**
    * 正在重试的回合。**不是失败**，所以不能塞进 `turnFailures` ——
    * 它是一行会被下一个动静顶掉的状态：内核重试成功就继续吐字，用完了才变成失败卡。
@@ -829,6 +832,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     Readonly<Record<string, { readonly open: boolean; readonly tab: ResultPane }>>
   >({});
   const [diffScope, setDiffScope] = useState<DiffScope>('thread');
+  const [turnsByTask, setTurnsByTask] = useState<Readonly<Record<string, readonly TurnView[]>>>({});
   const [latestTurnByTask, setLatestTurnByTask] = useState<Readonly<Record<string, string>>>({});
   const [turnDiffByTask, setTurnDiffByTask] = useState<
     Readonly<Record<string, { readonly turnId: string; readonly diff: string }>>
@@ -947,8 +951,29 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, []);
 
   useEffect(() => {
+    // 一帧内同 id 的完整快照只更新一次，首条位置仍按到达顺序保留。
+    let frame: number | undefined;
+    const queuedItems = new Map<string, Map<string, RenderItem>>();
+    const flushItems = (): void => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      frame = undefined;
+      if (queuedItems.size === 0) return;
+      const batch = [...queuedItems];
+      queuedItems.clear();
+      setItemsByTask((previous) => {
+        const next = { ...previous };
+        for (const [taskId, items] of batch) {
+          if (deletedTaskIds.current.has(taskId)) continue;
+          let merged = next[taskId] ?? [];
+          for (const item of items.values()) merged = mergeItem(merged, item);
+          next[taskId] = merged;
+        }
+        return next;
+      });
+    };
     const offs = [
       bridge.onUiEvent((event) => {
+        if (event.type !== 'item') flushItems();
         if ('taskId' in event && deletedTaskIds.current.has(event.taskId)) return;
         if (event.type === 'task-disconnected' || event.type === 'task-restored')
           historyEpochByTask.current.set(
@@ -956,6 +981,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             (historyEpochByTask.current.get(event.taskId) ?? 0) + 1,
           );
         if (event.type === 'task-disconnected') {
+          setTurnsByTask((previous) => ({
+            ...previous,
+            [event.taskId]: (previous[event.taskId] ?? []).map((turn) =>
+              turn.status === 'inProgress'
+                ? { ...turn, status: 'disconnected', completedAtMs: Date.now() }
+                : turn,
+            ),
+          }));
           setTurnRetries(dropTask(event.taskId));
           setItemsByTask((previous) => ({
             ...previous,
@@ -973,6 +1006,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'task-restored') {
+          setTurnsByTask((previous) => ({
+            ...previous,
+            [event.taskId]: event.history.turns ?? [],
+          }));
           setTurnRetries(dropTask(event.taskId));
           setItemsByTask((previous) => ({
             ...previous,
@@ -1022,6 +1059,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setResultDismissed(remove);
           setTurnFailures(remove);
           setLatestTurnByTask(remove);
+          setTurnsByTask(remove);
           setTurnDiffByTask(remove);
           setApprovals((previous) =>
             previous.filter((approval) => approval.threadId !== event.taskId),
@@ -1068,6 +1106,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'turn-started' || event.type === 'turn-completed') {
+          turnRevisionByTask.current.set(
+            event.taskId,
+            (turnRevisionByTask.current.get(event.taskId) ?? 0) + 1,
+          );
+          const taskId = event.taskId;
+          const turn: TurnView =
+            event.type === 'turn-started'
+              ? { id: event.turnId, status: 'inProgress', startedAtMs: event.startedAtMs }
+              : {
+                  id: event.turnId,
+                  status: event.status,
+                  startedAtMs: event.startedAtMs,
+                  completedAtMs: event.completedAtMs,
+                  durationMs: event.durationMs,
+                };
+          setTurnsByTask((previous) => ({
+            ...previous,
+            [taskId]: mergeTurnViews([turn], previous[taskId] ?? []),
+          }));
           setLatestTurnByTask((previous) => ({
             ...previous,
             [event.taskId]: event.turnId,
@@ -1174,11 +1231,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }
         // 又有内容进来了 = 那次重连成功了，提示该撤掉（内核不会专门说"我重连好了"）
         setTurnRetries(dropTask(event.taskId));
-        setItemsByTask((prev) => ({
-          ...prev,
-          // 流式增量按 id 合并（04 §5.1）：同 id 的后来者覆盖前者
-          [event.taskId]: mergeItem(prev[event.taskId] ?? [], event.item as RenderItem),
-        }));
+        let items = queuedItems.get(event.taskId);
+        if (!items) {
+          items = new Map();
+          queuedItems.set(event.taskId, items);
+        }
+        items.set(event.item.id, event.item as RenderItem);
+        frame ??= window.requestAnimationFrame(flushItems);
       }),
       bridge.onPendingApprovals(setApprovals),
       bridge.onNotice((notice) => {
@@ -1203,7 +1262,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         if (text) setNotices((prev) => [...prev, { tone: 'info', text }]);
       }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => {
+      flushItems();
+      offs.forEach((off) => off());
+    };
     // `view` 进依赖：`onUiEvent` 的 handler 闭包里读它判断 projects-changed 要不要重拉，
     // 不进依赖的话闭包会永远拿着订阅那一刻的旧 view，切页后事件处理逻辑就是过期的
   }, [bridge, reportFailure, view, workspaceId]);
@@ -1436,6 +1498,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const threadId = activeTaskId;
     let cancelled = false;
     const epoch = historyEpochByTask.current.get(threadId);
+    const turnRevision = turnRevisionByTask.current.get(threadId);
     setHistoryLoading(true);
     void bridge
       .openTask({ threadId })
@@ -1446,26 +1509,46 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           historyEpochByTask.current.get(threadId) !== epoch
         )
           return;
+        setTurnsByTask((previous) => ({
+          ...previous,
+          [threadId]: mergeTurnViews(previous[threadId] ?? [], result.turns ?? []),
+        }));
         const latestTurnId =
           result.latestTurnId ??
           [...result.items].reverse().find((item) => typeof item._turnId === 'string')?._turnId;
-        if (typeof latestTurnId === 'string') {
-          setLatestTurnByTask((previous) => ({ ...previous, [threadId]: latestTurnId }));
+        if (
+          typeof latestTurnId === 'string' &&
+          turnRevisionByTask.current.get(threadId) === turnRevision
+        ) {
+          setLatestTurnByTask((previous) => {
+            const current = previous[threadId];
+            // 历史请求发出后开始的新回合不会出现在这份快照中，不能把当前范围退回旧回合。
+            const snapshotIds = new Set([
+              ...(result.turns ?? []).map((turn) => turn.id),
+              ...result.items.map((item) => item._turnId),
+            ]);
+            return current && current !== latestTurnId && !snapshotIds.has(current)
+              ? previous
+              : { ...previous, [threadId]: latestTurnId };
+          });
         }
         setItemsByTask((prev) => ({
           ...prev,
           [threadId]: applyHistory(prev[threadId] ?? [], result.items as readonly RenderItem[]),
         }));
-        setTurnFailures((previous) => {
-          const next = { ...previous };
-          if (result.turnFailure) {
-            next[threadId] = turnFailureCopy(
-              result.turnFailure.message,
-              result.turnFailure.details,
-            );
-          } else delete next[threadId];
-          return next;
-        });
+        // 读取期间的新回合终态与失败原因优先于旧快照。
+        if (turnRevisionByTask.current.get(threadId) === turnRevision) {
+          setTurnFailures((previous) => {
+            const next = { ...previous };
+            if (result.turnFailure) {
+              next[threadId] = turnFailureCopy(
+                result.turnFailure.message,
+                result.turnFailure.details,
+              );
+            } else delete next[threadId];
+            return next;
+          });
+        }
         const incomplete = result.incomplete;
         if (incomplete) {
           setNotices((prev) => [...prev, { tone: 'warning', text: incomplete, scope: 'task' }]);
@@ -3446,6 +3529,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ) : (
         <TaskWorkspace
           taskId={activeTaskId}
+          turns={turnsByTask[activeTaskId] ?? []}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}
           {...(isSubagent && active?.parentThreadId
