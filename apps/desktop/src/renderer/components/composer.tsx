@@ -34,6 +34,14 @@ export type AttachmentKind = 'image' | 'document' | 'code' | 'archive';
 export type AttachmentState = 'parsing' | 'ready' | 'failed';
 
 export interface Attachment {
+  readonly textProcessing?:
+    | {
+        readonly state: string;
+        readonly completed?: number | undefined;
+        readonly total?: number | undefined;
+        readonly failed?: number | undefined;
+      }
+    | undefined;
   readonly id: string;
   readonly name: string;
   readonly kind: AttachmentKind;
@@ -176,6 +184,13 @@ export interface ComposerProps {
 
   readonly attachments?: readonly Attachment[] | undefined;
   readonly onRemoveAttachment?: ((id: string) => void) | undefined;
+  readonly onAttachmentTextAction?:
+    | ((
+        id: string,
+        action: 'ocr' | 'continue' | 'stop' | 'partial' | 'join',
+        rotation?: 0 | 90 | 180 | 270,
+      ) => void)
+    | undefined;
   readonly onReferAsRaw?: ((id: string) => void) | undefined;
 
   readonly mentionCandidates?: readonly MentionCandidate[] | undefined;
@@ -354,6 +369,11 @@ export function Composer(props: ComposerProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [textRotation, setTextRotation] = useState('auto');
+  const [confirmTextAction, setConfirmTextAction] = useState<{
+    id: string;
+    action: 'ocr' | 'join';
+  } | null>(null);
   const [confirmFullAccess, setConfirmFullAccess] = useState(false);
   /*
    * 正在编辑的排队项。**不能用 `window.prompt`** —— Electron 直接抛
@@ -561,7 +581,52 @@ export function Composer(props: ComposerProps) {
                   <li key={a.id} className="ew-attachment" data-state={a.state} data-kind={a.kind}>
                     <span className="ew-attachment-name">{a.name}</span>
                     <span className="ew-attachment-size">{a.sizeLabel}</span>
-                    {a.state === 'parsing' ? (
+                    {a.textProcessing && props.onAttachmentTextAction ? (
+                      <>
+                        {a.textProcessing.total ? (
+                          <span>
+                            已处理 {a.textProcessing.completed ?? 0}/{a.textProcessing.total} 页
+                            {a.textProcessing.failed ? `，${a.textProcessing.failed} 页失败` : ''}
+                          </span>
+                        ) : null}
+                        {a.state === 'parsing' ? (
+                          <PillButton
+                            variant="ghost"
+                            onClick={() => props.onAttachmentTextAction?.(a.id, 'stop')}
+                          >
+                            停止识别
+                          </PillButton>
+                        ) : (
+                          <>
+                            <PillButton
+                              variant="ghost"
+                              onClick={() => setConfirmTextAction({ id: a.id, action: 'ocr' })}
+                            >
+                              {a.textProcessing.state === 'stopped' ||
+                              a.textProcessing.state === 'partial'
+                                ? '继续识别'
+                                : '识别文字'}
+                            </PillButton>
+                            {['partial', 'stopped'].includes(a.textProcessing.state) &&
+                            a.state !== 'ready' ? (
+                              <PillButton
+                                variant="ghost"
+                                onClick={() => props.onAttachmentTextAction?.(a.id, 'partial')}
+                              >
+                                使用已完成部分
+                              </PillButton>
+                            ) : null}
+                            <PillButton
+                              variant="ghost"
+                              onClick={() => setConfirmTextAction({ id: a.id, action: 'join' })}
+                            >
+                              加入资料库
+                            </PillButton>
+                          </>
+                        )}
+                      </>
+                    ) : null}
+                    {a.state === 'parsing' && !a.textProcessing ? (
                       <span className="ew-attachment-progress">解析中 {a.progress ?? 0}%</span>
                     ) : null}
                     {a.state === 'failed' ? (
@@ -975,6 +1040,47 @@ export function Composer(props: ComposerProps) {
         </Dialog>
       ) : null}
 
+      {confirmTextAction ? (
+        <Dialog
+          title={confirmTextAction.action === 'join' ? '加入资料库' : '本机识别文字'}
+          confirmLabel={confirmTextAction.action === 'join' ? '加入资料库' : '开始识别'}
+          onCancel={() => setConfirmTextAction(null)}
+          onConfirm={() => {
+            const previous = attachments.find((a) => a.id === confirmTextAction.id)?.textProcessing
+              ?.state;
+            const action =
+              confirmTextAction.action === 'ocr' &&
+              ['partial', 'stopped'].includes(previous ?? '') &&
+              textRotation === 'auto'
+                ? 'continue'
+                : confirmTextAction.action;
+            props.onAttachmentTextAction?.(
+              confirmTextAction.id,
+              action,
+              textRotation !== 'auto' ? (Number(textRotation) as 0 | 90 | 180 | 270) : undefined,
+            );
+            setConfirmTextAction(null);
+          }}
+        >
+          <p>
+            {confirmTextAction.action === 'join'
+              ? '将此附件复制到本机资料目录，供以后跨任务检索。只处理你选择的文件。'
+              : '在本机识别简体中文和英文印刷体，原文件保留。识别结果可能有误，请核对金额和编号。可以停止并继续，部分结果须单独选择后才引用。'}
+          </p>
+          {confirmTextAction.action === 'ocr' ? (
+            <InlineSelect
+              ariaLabel="识别方向"
+              placeholder="自动判断"
+              value={textRotation}
+              options={[
+                { id: 'auto', label: '自动判断' },
+                ...['0', '90', '180', '270'].map((id) => ({ id, label: `旋转 ${id}°` })),
+              ]}
+              onChange={setTextRotation}
+            />
+          ) : null}
+        </Dialog>
+      ) : null}
       {confirmFullAccess ? (
         <Dialog
           title={FULL_ACCESS_CONFIRM.title}

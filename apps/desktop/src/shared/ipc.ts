@@ -378,12 +378,26 @@ export type ComposerReferenceView =
       readonly purpose?: 'imageEdit' | undefined;
     };
 
+export interface AttachmentTextInput extends PickAttachmentsInput {
+  readonly attachmentId: string;
+  readonly action: 'ocr' | 'continue' | 'stop' | 'partial' | 'remove';
+  readonly rotation?: 0 | 90 | 180 | 270 | undefined;
+  readonly startPage?: number | undefined;
+}
 export interface ComposerAttachmentView {
+  readonly textProcessing?:
+    | {
+        readonly state: string;
+        readonly completed?: number | undefined;
+        readonly total?: number | undefined;
+        readonly failed?: number | undefined;
+      }
+    | undefined;
   readonly id: string;
   readonly name: string;
   readonly kind: 'image' | 'document' | 'code' | 'archive';
   readonly sizeLabel: string;
-  readonly state: 'ready' | 'failed';
+  readonly state: 'parsing' | 'ready' | 'failed';
   readonly error?: string | undefined;
   /** 成功解析/复制后发给内核的结构化输入；绝不把文档全文塞进消息。 */
   readonly references: readonly ComposerReferenceView[];
@@ -621,7 +635,54 @@ export interface ShareListView {
   }[];
 }
 
+export interface LibraryDocumentInput {
+  readonly documentId: string;
+  readonly version: string;
+  readonly location?: string | undefined;
+}
+export interface LibrarySearchInput {
+  readonly query: string;
+  readonly generation: number;
+  readonly offset?: number | undefined;
+  readonly source?: 'all' | 'artifact' | 'mine' | undefined;
+  readonly typeFilter?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly threadId?: string | undefined;
+}
+export interface LibrarySearchView {
+  readonly rows: LibraryDataView['rows'];
+  readonly generation: number;
+  readonly revision: number;
+  readonly hasMore: boolean;
+}
+export interface OcrRuntimeView {
+  readonly installed: boolean;
+  readonly canInstall: boolean;
+  readonly bytes?: number | undefined;
+  readonly message: string;
+}
+export interface LibraryActions {
+  clearLibraryBodyCache(): Promise<LibraryDataView>;
+  getOcrRuntime(): Promise<OcrRuntimeView>;
+  installOcrRuntime(): Promise<OcrRuntimeView>;
+  getLibrary(): Promise<LibraryDataView>;
+  enableLibrarySearch(): Promise<LibraryDataView>;
+  importLibraryFiles(): Promise<LibraryDataView>;
+  updateLibraryImport(input: { readonly documentId: string }): Promise<LibraryDataView>;
+  searchLibrary(input: LibrarySearchInput): Promise<LibrarySearchView>;
+  cancelLibrarySearch(): Promise<void>;
+  readLibraryLocation(input: LibraryDocumentInput): Promise<FilePreviewView>;
+  openLibraryDocument(input: LibraryDocumentInput): Promise<void>;
+  controlLibraryDocument(input: {
+    readonly documentId: string;
+    readonly action: 'stop' | 'continue' | 'ocr' | 'remove';
+    readonly rotation?: 0 | 90 | 180 | 270 | undefined;
+  }): Promise<LibraryDataView>;
+}
 export interface LibraryDataView {
+  readonly projects?: readonly { readonly id: string; readonly name: string }[] | undefined;
+  readonly bodySearchEnabled?: boolean | undefined;
+  readonly revision?: number | undefined;
   readonly rows: readonly {
     readonly id: string;
     readonly name: string;
@@ -629,6 +690,23 @@ export interface LibraryDataView {
     readonly owner: string;
     readonly location: string;
     readonly accessedAt: number;
+    readonly version?: string | undefined;
+    readonly projectId?: string | undefined;
+    readonly threadId?: string | undefined;
+    readonly state?: string | undefined;
+    readonly note?: string | undefined;
+    readonly total?: number | undefined;
+    readonly completed?: number | undefined;
+    readonly snippets?:
+      | readonly {
+          readonly text: string;
+          readonly location: string;
+          readonly page?: number | undefined;
+          readonly source: string;
+          readonly needsReview: boolean;
+          readonly highlights: readonly { readonly start: number; readonly end: number }[];
+        }[]
+      | undefined;
     readonly artifactType?: string | undefined;
     readonly extension?: string | undefined;
   }[];

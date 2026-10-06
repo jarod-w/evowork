@@ -198,6 +198,15 @@ if (!existsSync(join(ROOT, OFFICE_PARSER))) {
 mkdirSync(dirname(join(ROOT, OFFICE_PARSER_DEST)), { recursive: true });
 copyFileSync(join(ROOT, OFFICE_PARSER), join(ROOT, OFFICE_PARSER_DEST));
 console.log(`   ${OFFICE_PARSER} → ${OFFICE_PARSER_DEST}`);
+const OCR_PARSER = 'services/ingest/src/parsers/ocr.py';
+const OCR_PARSER_DEST = 'apps/desktop/dist/main/ocr.py';
+if (!existsSync(join(ROOT, OCR_PARSER))) throw new Error('缺少 OCR 解析脚本');
+copyFileSync(join(ROOT, OCR_PARSER), join(ROOT, OCR_PARSER_DEST));
+console.log(`   ${OCR_PARSER} → ${OCR_PARSER_DEST}`);
+copyFileSync(
+  join(ROOT, 'services/ingest/src/parsers/library.py'),
+  join(ROOT, 'apps/desktop/dist/main/library.py'),
+);
 
 // 图片 MCP 只依赖内置模块；从独立目录启动，防止安装包依赖 workspace。
 {

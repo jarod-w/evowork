@@ -85,6 +85,35 @@ const addTitleSource: Migration = {
 export const PROJECTION_MIGRATIONS: readonly Migration[] = [
   createTables(PROJECTION_TABLES),
   addTitleSource,
+  {
+    version: 3,
+    summary: '资料库正文与分块投影（选择与停止保存在文件 manifest）',
+    up: (db) => {
+      for (const table of PROJECTION_TABLES.filter((t) =>
+        ['library_document', 'library_chunk'].includes(t.name),
+      )) {
+        for (const ddl of table.ddl) db.exec(ddl);
+      }
+    },
+  },
+  {
+    version: 4,
+    summary: '资料库按 FTS rowid 移除与按文档排序，避免每次索引全表扫描',
+    up: (db) => {
+      const needsRebuild =
+        !hasColumn(db, 'library_chunk', 'fts_rowid') || !hasColumn(db, 'library_document', 'title');
+      if (!hasColumn(db, 'library_chunk', 'fts_rowid'))
+        db.exec('ALTER TABLE library_chunk ADD COLUMN fts_rowid INTEGER');
+      if (!hasColumn(db, 'library_document', 'title'))
+        db.exec("ALTER TABLE library_document ADD COLUMN title TEXT NOT NULL DEFAULT ''");
+      if (needsRebuild) {
+        // Only the disposable registered body projection is rebuilt; legacy rows and scope manifests survive.
+        db.exec(
+          'DELETE FROM library_index WHERE node_id IN (SELECT id FROM library_document); DELETE FROM library_chunk; DELETE FROM library_document;',
+        );
+      }
+    },
+  },
 ];
 
 /**

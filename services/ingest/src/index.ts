@@ -7,3 +7,7 @@ export * from './probe.js';
 export * from './parsers/zip.js';
 export * from './pipeline.js';
 export * from './runtime.js';
+export * from './isolated-process.js';
+export * from './ocr.js';
+
+export * from './library-extract.js';

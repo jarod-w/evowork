@@ -1,3 +1,4 @@
+import { FilePreview } from '../components/file-preview.js';
 /**
  * 资料库（06，截图 4 复刻）—— 与「任务」同级的一级入口。
  *
@@ -27,7 +28,8 @@
  * Q17/Q19 都不做的话，个人版里这一列恒为「我」。06 §3.3 的规则是
  * **当前视图内所有行的所有者相同时自动隐藏该列** —— 留着就是一整列废信息。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { LibraryActions, LibraryDataView, LibraryDocumentInput } from '../../shared/ipc.js';
 
 import {
   CLEANUP_HINT,
@@ -88,6 +90,9 @@ export interface LibraryTreeNode {
 
 export interface LibraryProps {
   readonly rows: readonly LibraryRow[];
+  readonly data?: LibraryDataView | undefined;
+  readonly actions?: LibraryActions | undefined;
+  readonly onReference?: ((input: LibraryDocumentInput) => void) | undefined;
   /** 从全局搜索的「搜索文件」进入时直接落在搜索视图。 */
   readonly initialNav?: LibraryNav | undefined;
   readonly shares?: readonly ShareRow[] | undefined;
@@ -126,12 +131,144 @@ export function Library(props: LibraryProps) {
   const [filter, setFilter] = useState<TypeFilter>('all');
   const [pendingDelete, setPendingDelete] = useState<LibraryRow | null>(null);
   const [alsoDeleteFile, setAlsoDeleteFile] = useState(false);
+  const [data, setData] = useState(props.data);
+  const [searchRows, setSearchRows] = useState<LibraryDataView['rows'] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<import('../../shared/ipc.js').FilePreviewView | null>(
+    null,
+  );
+  const [message, setMessage] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [project, setProject] = useState('all');
+  const [thread, setThread] = useState('all');
+  const [source, setSource] = useState<'all' | 'artifact' | 'mine'>('all');
+  const [confirmEnable, setConfirmEnable] = useState(false);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
+  const [confirmImport, setConfirmImport] = useState(false);
+  const [ocrRuntime, setOcrRuntime] = useState<import('../../shared/ipc.js').OcrRuntimeView | null>(
+    null,
+  );
+  const [installOcr, setInstallOcr] = useState(false);
+  const [ocrRotation, setOcrRotation] = useState('auto');
+  const [confirmUpdate, setConfirmUpdate] = useState<string | null>(null);
+  const [confirmOcr, setConfirmOcr] = useState<string | null>(null);
+  const generation = useRef(0);
+  const pageRevision = useRef<number | null>(null);
+  useEffect(() => {
+    setData(props.data);
+  }, [props.data]);
+  const act = async (action: () => Promise<LibraryDataView>) => {
+    try {
+      setData(await action());
+      setSearchRows(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '资料动作失败。');
+    }
+  };
+  useEffect(() => {
+    if (!props.actions) return;
+    void props.actions
+      .getOcrRuntime()
+      .then(setOcrRuntime)
+      .catch((error) => setMessage(error instanceof Error ? error.message : '组件状态读取失败。'));
+    let active = true;
+    const refresh = async () => {
+      try {
+        const next = await props.actions!.getLibrary();
+        if (active) setData(next);
+      } catch (error) {
+        if (active) setMessage(error instanceof Error ? error.message : '资料状态读取失败。');
+      }
+    };
+    const timer = setInterval(() => {
+      void refresh();
+    }, 2000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [props.actions]);
+  useEffect(() => {
+    setOffset(0);
+    pageRevision.current = null;
+  }, [query, filter, source, project, thread]);
+  useEffect(() => {
+    const current = ++generation.current;
+    if (!props.actions || !data?.bodySearchEnabled || nav !== 'search' || !query.trim()) {
+      setSearchRows(null);
+      setBusy(false);
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    const timer = setTimeout(() => {
+      void props
+        .actions!.searchLibrary({
+          query,
+          generation: current,
+          offset,
+          typeFilter: filter,
+          source,
+          ...(project !== 'all' ? { projectId: project } : {}),
+          ...(thread !== 'all' ? { threadId: thread } : {}),
+        })
+        .then((result) => {
+          if (generation.current !== result.generation) return;
+          if (offset && pageRevision.current !== result.revision) {
+            setMessage('资料索引已更新，请从第一页重新搜索。');
+            setOffset(0);
+            pageRevision.current = null;
+            return;
+          }
+          pageRevision.current = result.revision;
+          setSearchRows(result.rows);
+          setHasMore(result.hasMore);
+        })
+        .catch((error) => {
+          if (generation.current === current)
+            setMessage(error instanceof Error ? error.message : '搜索未完成。');
+        })
+        .finally(() => {
+          if (generation.current === current) setBusy(false);
+        });
+    }, 250);
+    return () => {
+      ++generation.current;
+      clearTimeout(timer);
+      void props.actions?.cancelLibrarySearch();
+    };
+  }, [
+    query,
+    filter,
+    source,
+    project,
+    thread,
+    offset,
+    nav,
+    data?.bodySearchEnabled,
+    data?.revision,
+    props.actions,
+  ]);
+  const allRows = (data?.rows ?? props.rows) as readonly LibraryRow[];
+  const details = (id: string) => (searchRows ?? data?.rows)?.find((row) => row.id === id);
+  const open = (row: LibraryRow) => {
+    const version = details(row.id)?.version;
+    if (props.actions && version)
+      void props.actions
+        .openLibraryDocument({ documentId: row.id, version })
+        .catch((error) => setMessage(error instanceof Error ? error.message : '打不开资料。'));
+    else props.onOpen?.(row);
+  };
 
   const scoped = useMemo(
-    () => (nav === 'artifacts' ? props.rows.filter((r) => r.source === 'artifact') : props.rows),
-    [props.rows, nav],
+    () => (nav === 'artifacts' ? allRows.filter((r) => r.source === 'artifact') : allRows),
+    [allRows, nav],
   );
-  const rows = useMemo(() => filterRows(scoped, { filter, query }), [scoped, filter, query]);
+  const rows =
+    searchRows && nav === 'search'
+      ? (searchRows as readonly LibraryRow[])
+      : filterRows(scoped, { filter, query });
   const showOwner = shouldShowOwnerColumn(rows);
 
   const columns: Column<LibraryRow>[] = [
@@ -141,7 +278,67 @@ export function Library(props: LibraryProps) {
       render: (row) => (
         <span className="ew-library-name">
           <span aria-hidden="true">{iconFor(row)}</span>
-          {row.name}
+          <span>
+            {row.name}
+            {details(row.id)?.state ? (
+              <Badge variant="neutral">
+                {STATE_LABEL[details(row.id)!.state!] ?? details(row.id)?.state}
+              </Badge>
+            ) : null}
+            {details(row.id)?.total ? (
+              <span>
+                {' '}
+                已处理 {details(row.id)?.completed ?? 0}/{details(row.id)?.total} 页
+              </span>
+            ) : null}
+            {details(row.id)?.note ? (
+              <span className="ew-library-hint">{details(row.id)?.note}</span>
+            ) : null}
+            {details(row.id)?.snippets?.map((snippet, index) => (
+              <p key={index} className="ew-library-hint">
+                <span>
+                  {snippet.location} · {snippet.source === 'ocr' ? 'OCR' : '原文'}
+                  {snippet.needsReview ? ' · 需核对' : ''}：
+                </span>
+                {highlightSegments(snippet.text, snippet.highlights).map((segment, i) =>
+                  segment.highlight ? <mark key={i}>{segment.text}</mark> : segment.text,
+                )}
+                {props.actions && details(row.id)?.version ? (
+                  <PillButton
+                    variant="ghost"
+                    onClick={() => {
+                      void props
+                        .actions!.readLibraryLocation({
+                          documentId: row.id,
+                          version: details(row.id)!.version!,
+                          location: snippet.location,
+                        })
+                        .then(setPreview)
+                        .catch((error) =>
+                          setMessage(error instanceof Error ? error.message : '位置预览失败。'),
+                        );
+                    }}
+                  >
+                    打开位置
+                  </PillButton>
+                ) : null}
+                {props.onReference && details(row.id)?.version ? (
+                  <PillButton
+                    variant="ghost"
+                    onClick={() =>
+                      props.onReference?.({
+                        documentId: row.id,
+                        version: details(row.id)!.version!,
+                        location: snippet.location,
+                      })
+                    }
+                  >
+                    引用此片段
+                  </PillButton>
+                ) : null}
+              </p>
+            ))}
+          </span>
         </span>
       ),
       sortValue: (row) => row.name,
@@ -185,9 +382,15 @@ export function Library(props: LibraryProps) {
           onClick={() => setNav('artifacts')}
         />
 
-        {props.myFiles !== undefined || props.onAddMyFile !== undefined ? (
+        {props.myFiles !== undefined ||
+        props.onAddMyFile !== undefined ||
+        props.actions !== undefined ? (
           <>
-            <TreeSectionHeader label="我的资料" onAdd={props.onAddMyFile} addLabel="添加资料" />
+            <TreeSectionHeader
+              label="我的资料"
+              onAdd={props.actions ? () => setConfirmImport(true) : props.onAddMyFile}
+              addLabel="添加资料"
+            />
             {(props.myFiles ?? []).map((node) => (
               <TreeItem key={node.id} label={node.label} icon={node.icon} depth={node.depth ?? 0} />
             ))}
@@ -222,12 +425,107 @@ export function Library(props: LibraryProps) {
       </nav>
 
       <main className="ew-library-main" aria-label="资料库">
+        {props.actions ? (
+          <PillButton variant="ghost" onClick={() => setConfirmCleanup(true)}>
+            清理正文缓存
+          </PillButton>
+        ) : null}
+        {confirmUpdate ? (
+          <Dialog
+            title="更新资料副本"
+            confirmLabel="选择替换文件"
+            onCancel={() => setConfirmUpdate(null)}
+            onConfirm={() => {
+              const id = confirmUpdate;
+              setConfirmUpdate(null);
+              void act(() => props.actions!.updateLibraryImport({ documentId: id }));
+            }}
+          >
+            <p>
+              选择一个同类型文件替换本机资料副本，并重新建立索引。外部原文件保留，原有识别结果不再用于搜索。
+            </p>
+          </Dialog>
+        ) : null}
+        {confirmCleanup ? (
+          <Dialog
+            title="清理正文缓存"
+            confirmLabel="清理"
+            onCancel={() => setConfirmCleanup(false)}
+            onConfirm={() => {
+              setConfirmCleanup(false);
+              void act(() => props.actions!.clearLibraryBodyCache());
+            }}
+          >
+            <p>
+              删除可重建的正文解析缓存，保留原文件、资料副本、索引与登记选择。OCR
+              页缓存暂不在本次清理范围。
+            </p>
+          </Dialog>
+        ) : null}
+        {ocrRuntime ? (
+          <p className="ew-library-hint">
+            {ocrRuntime.message}
+            {ocrRuntime.canInstall ? (
+              <PillButton variant="ghost" onClick={() => setInstallOcr(true)}>
+                安装 OCR 组件
+              </PillButton>
+            ) : null}
+          </p>
+        ) : null}
+        {preview ? (
+          <Dialog
+            title={preview.name}
+            confirmLabel="关闭"
+            onConfirm={() => setPreview(null)}
+            onCancel={() => setPreview(null)}
+          >
+            <FilePreview preview={preview} />
+          </Dialog>
+        ) : null}
+        {installOcr ? (
+          <Dialog
+            title="安装本地 OCR 组件"
+            confirmLabel="安装"
+            onCancel={() => setInstallOcr(false)}
+            onConfirm={() => {
+              setInstallOcr(false);
+              setMessage('正在安装并校验 OCR 组件…');
+              void props
+                .actions!.installOcrRuntime()
+                .then((next) => {
+                  setOcrRuntime(next);
+                  setMessage(next.message);
+                })
+                .catch((error) =>
+                  setMessage(error instanceof Error ? error.message : '安装失败。'),
+                );
+            }}
+          >
+            <p>
+              从已配置的离线包安装，大小约 {Math.ceil((ocrRuntime?.bytes ?? 0) / 1024 / 1024)}{' '}
+              MiB。不上传文档；安装完成后可继续处理。
+            </p>
+          </Dialog>
+        ) : null}
+        {props.actions && !data?.bodySearchEnabled ? (
+          <div className="ew-library-hint">
+            正文检索尚未开启。
+            <PillButton variant="ghost" onClick={() => setConfirmEnable(true)}>
+              开启本机正文检索
+            </PillButton>
+          </div>
+        ) : null}
+        {props.actions ? (
+          <PillButton variant="ghost" onClick={() => setConfirmImport(true)}>
+            添加资料
+          </PillButton>
+        ) : null}
         <div className="ew-library-toolbar">
           <h1 className="ew-library-title">{NAV_TITLE[nav]}</h1>
           {nav === 'search' ? (
             <SearchInput
               ariaLabel="搜索资料"
-              placeholder="搜索文件名"
+              placeholder={data?.bodySearchEnabled ? '搜索文件名和正文' : '搜索文件名'}
               value={query}
               onChange={setQuery}
             />
@@ -254,6 +552,66 @@ export function Library(props: LibraryProps) {
           </span>
         </div>
 
+        {nav === 'search' && props.actions && data?.bodySearchEnabled ? (
+          <div className="ew-library-filter">
+            <InlineSelect
+              ariaLabel="项目筛选"
+              placeholder="全部项目"
+              value={project}
+              options={[
+                { id: 'all', label: '全部项目' },
+                ...(data.projects ?? []).map((p) => ({ id: p.id, label: p.name })),
+              ]}
+              onChange={(id) => {
+                setProject(id);
+                setThread('all');
+              }}
+            />
+            <InlineSelect
+              ariaLabel="任务筛选"
+              placeholder="全部任务"
+              value={thread}
+              options={[
+                { id: 'all', label: '全部任务' },
+                ...Array.from(
+                  new Set(
+                    (data.rows ?? [])
+                      .filter((r) => project === 'all' || r.projectId === project)
+                      .flatMap((r) => (r.threadId ? [r.threadId] : [])),
+                  ),
+                ).map((id) => ({ id, label: `任务 ${id.slice(0, 8)}` })),
+              ]}
+              onChange={setThread}
+            />
+            <InlineSelect
+              ariaLabel="来源筛选"
+              placeholder="全部来源"
+              value={source}
+              options={[
+                { id: 'all', label: '全部来源' },
+                { id: 'artifact', label: '本地产物' },
+                { id: 'mine', label: '我的资料' },
+              ]}
+              onChange={(id) => setSource(id as typeof source)}
+            />
+          </div>
+        ) : null}
+        {busy ? (
+          <p role="status">
+            正在搜索…{' '}
+            <PillButton
+              variant="ghost"
+              onClick={() => {
+                ++generation.current;
+                setBusy(false);
+                void props.actions?.cancelLibrarySearch();
+              }}
+            >
+              取消
+            </PillButton>
+          </p>
+        ) : null}
+        {message ? <p role="status">{message}</p> : null}
         {nav === 'recent' && tab === 'shared-by-me' ? (
           <SharesTable
             shares={props.shares ?? []}
@@ -265,16 +623,83 @@ export function Library(props: LibraryProps) {
             ariaLabel="资料列表"
             columns={columns}
             rows={rows}
-            onRowClick={props.onOpen}
-            {...(props.onDelete || props.onShare
+            onRowClick={open}
+            {...(props.onDelete || props.onShare || props.actions
               ? {
                   rowActions: (row: LibraryRow) => (
                     <>
-                      {props.onShare ? (
+                      {props.onShare && row.source === 'artifact' && !details(row.id)?.version ? (
                         // 「分享」先过授权模态（Q10 规则 1：逐次授权，不记住选择）
                         <PillButton variant="ghost" onClick={() => props.onShare?.(row)}>
                           分享
                         </PillButton>
+                      ) : null}
+                      {props.actions ? (
+                        <>
+                          {props.onReference && details(row.id)?.version ? (
+                            <PillButton
+                              variant="ghost"
+                              onClick={() =>
+                                props.onReference?.({
+                                  documentId: row.id,
+                                  version: details(row.id)!.version!,
+                                })
+                              }
+                            >
+                              引用到任务
+                            </PillButton>
+                          ) : null}
+                          {['queued', 'inspecting', 'extracting', 'ocr'].includes(
+                            details(row.id)?.state ?? '',
+                          ) ? (
+                            <PillButton
+                              variant="ghost"
+                              onClick={() =>
+                                void act(() =>
+                                  props.actions!.controlLibraryDocument({
+                                    documentId: row.id,
+                                    action: 'stop',
+                                  }),
+                                )
+                              }
+                            >
+                              停止
+                            </PillButton>
+                          ) : (
+                            <PillButton
+                              variant="ghost"
+                              onClick={() =>
+                                void act(() =>
+                                  props.actions!.controlLibraryDocument({
+                                    documentId: row.id,
+                                    action: 'continue',
+                                  }),
+                                )
+                              }
+                            >
+                              继续/重建索引
+                            </PillButton>
+                          )}
+                          {row.source === 'mine' ? (
+                            <PillButton variant="ghost" onClick={() => setConfirmUpdate(row.id)}>
+                              更新副本
+                            </PillButton>
+                          ) : null}
+                          {['png', 'jpg', 'jpeg', 'webp', 'pdf'].includes(row.extension ?? '') ? (
+                            <PillButton variant="ghost" onClick={() => setConfirmOcr(row.id)}>
+                              识别文字
+                            </PillButton>
+                          ) : null}
+                          <PillButton
+                            variant="ghost"
+                            onClick={() => {
+                              setPendingDelete(row);
+                              setAlsoDeleteFile(false);
+                            }}
+                          >
+                            移除
+                          </PillButton>
+                        </>
                       ) : null}
                       {props.onDelete ? (
                         <IconButton
@@ -303,6 +728,91 @@ export function Library(props: LibraryProps) {
           />
         )}
 
+        {searchRows ? (
+          <div>
+            <PillButton
+              variant="ghost"
+              disabled={offset === 0 || busy}
+              onClick={() => setOffset(Math.max(0, offset - 20))}
+            >
+              上一页
+            </PillButton>
+            <span>第 {Math.floor(offset / 20) + 1} 页</span>
+            <PillButton
+              variant="ghost"
+              disabled={!hasMore || busy}
+              onClick={() => setOffset(offset + 20)}
+            >
+              下一页
+            </PillButton>
+          </div>
+        ) : null}
+        {confirmEnable ? (
+          <Dialog
+            title="开启本机正文检索"
+            onCancel={() => setConfirmEnable(false)}
+            confirmLabel="开启"
+            onConfirm={() => {
+              setConfirmEnable(false);
+              void act(() => props.actions!.enableLibrarySearch());
+            }}
+          >
+            <p>
+              读取当前可见本地产物和明确加入的资料，在本机建立正文索引。不会扫描历史附件或其他目录。图片需另选识别文字。停止和移除选择会保留。
+            </p>
+          </Dialog>
+        ) : null}
+        {confirmImport ? (
+          <Dialog
+            title="添加资料"
+            onCancel={() => setConfirmImport(false)}
+            confirmLabel="选择文件并建立副本"
+            onConfirm={() => {
+              setConfirmImport(false);
+              void act(() => props.actions!.importLibraryFiles());
+            }}
+          >
+            <p>
+              一次最多 20
+              个文件。复制到本机资料目录后登记并解析正文，外部原文件保留。移除“我的资料”会删除这里的副本。
+            </p>
+          </Dialog>
+        ) : null}
+        {confirmOcr ? (
+          <Dialog
+            title="在本机识别文字"
+            onCancel={() => setConfirmOcr(null)}
+            confirmLabel="识别文字"
+            onConfirm={() => {
+              const id = confirmOcr;
+              setConfirmOcr(null);
+              void act(() =>
+                props.actions!.controlLibraryDocument({
+                  documentId: id,
+                  action: 'ocr',
+                  ...(ocrRotation !== 'auto'
+                    ? { rotation: Number(ocrRotation) as 0 | 90 | 180 | 270 }
+                    : {}),
+                }),
+              );
+            }}
+          >
+            <p>
+              仅在本机处理简体中文和英文印刷体，原文件保留。OCR
+              结果可能有误，请核对金额和编号；每批最多 100 页，可停止。
+            </p>
+            <InlineSelect
+              ariaLabel="识别方向"
+              placeholder="自动判断"
+              value={ocrRotation}
+              options={[
+                { id: 'auto', label: '自动判断' },
+                ...['0', '90', '180', '270'].map((id) => ({ id, label: `旋转 ${id}°` })),
+              ]}
+              onChange={setOcrRotation}
+            />
+          </Dialog>
+        ) : null}
         {!props.tipDismissed && props.onDismissTip ? (
           <TipBanner
             title="资料库能帮你做什么"
@@ -328,10 +838,18 @@ export function Library(props: LibraryProps) {
         <DeleteDialog
           row={pendingDelete}
           alsoDeleteFile={alsoDeleteFile}
+          managed={!!props.actions}
           onToggleAlsoDelete={setAlsoDeleteFile}
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
-            props.onDelete?.(pendingDelete, alsoDeleteFile);
+            if (props.actions)
+              void act(() =>
+                props.actions!.controlLibraryDocument({
+                  documentId: pendingDelete.id,
+                  action: 'remove',
+                }),
+              );
+            else props.onDelete?.(pendingDelete, alsoDeleteFile);
             setPendingDelete(null);
           }}
         />
@@ -355,12 +873,14 @@ const NAV_TITLE: Readonly<Record<LibraryNav, string>> = {
 function DeleteDialog({
   row,
   alsoDeleteFile,
+  managed,
   onToggleAlsoDelete,
   onCancel,
   onConfirm,
 }: {
   readonly row: LibraryRow;
   readonly alsoDeleteFile: boolean;
+  readonly managed: boolean;
   readonly onToggleAlsoDelete: (value: boolean) => void;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
@@ -379,7 +899,7 @@ function DeleteDialog({
       onConfirm={onConfirm}
     >
       <p className="ew-delete-confirm-body">{intent.body}</p>
-      {intent.offersFileDeletion ? (
+      {intent.offersFileDeletion && !managed ? (
         <label className="ew-delete-also">
           <input
             type="checkbox"
@@ -489,4 +1009,34 @@ export function formatWhen(at: number, now = Date.now()): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} 天前`;
   return new Date(at).toISOString().slice(0, 10);
+}
+
+const STATE_LABEL: Record<string, string> = {
+  queued: '待处理',
+  inspecting: '检查中',
+  extracting: '解析中',
+  ocr: '识别中',
+  searchable: '正文可搜',
+  partial: '部分可搜',
+  runtimeMissing: '组件缺失',
+  ocrRequired: '待识别',
+  stopped: '已停止',
+  stale: '内容已变化',
+  failed: '处理失败',
+  paused: '容量上限已暂停',
+};
+
+export function highlightSegments(
+  text: string,
+  ranges: readonly { readonly start: number; readonly end: number }[],
+): readonly { readonly text: string; readonly highlight: boolean }[] {
+  const chars = Array.from(text),
+    segments: { text: string; highlight: boolean }[] = [];
+  for (let i = 0; i < chars.length; i++) {
+    const highlight = ranges.some((r) => i >= r.start && i < r.end),
+      previous = segments[segments.length - 1];
+    if (previous?.highlight === highlight) previous.text += chars[i];
+    else segments.push({ text: chars[i]!, highlight });
+  }
+  return segments;
 }

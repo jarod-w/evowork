@@ -1,3 +1,5 @@
+import type { AttachmentTextInput } from '../shared/ipc.js';
+import type { LibraryActions, LibraryDocumentInput } from '../shared/ipc.js';
 import type {
   ImageSettingsView,
   SaveImageSettingsInput,
@@ -139,7 +141,17 @@ import { TaskSearchPalette } from './views/task-search.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
-export interface EvoworkBridge {
+export interface EvoworkBridge extends Partial<LibraryActions> {
+  getAttachmentText?(
+    input: PickAttachmentsInput & { readonly attachmentId: string },
+  ): Promise<ComposerAttachmentView>;
+  controlAttachmentText?(input: AttachmentTextInput): Promise<ComposerAttachmentView>;
+  joinAttachmentLibrary?(
+    input: PickAttachmentsInput & { readonly attachmentId: string },
+  ): Promise<LibraryDataView>;
+  referenceLibraryDocument?(
+    input: LibraryDocumentInput & PickAttachmentsInput,
+  ): Promise<readonly ComposerAttachmentView[]>;
   verifyImageConnection?(): Promise<string>;
   getImageSettings?(): Promise<ImageSettingsView>;
   saveImageSettings?(input: SaveImageSettingsInput): Promise<ImageSettingsView>;
@@ -2595,6 +2607,70 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       setEnvironmentBusy(false);
     }
   }, [bridge, reportFailure, pushToast]);
+  useEffect(() => {
+    if (
+      !bridge.getAttachmentText ||
+      !attachments.some((a) => a.state === 'parsing' && a.textProcessing)
+    )
+      return;
+    const identity = draftIdentity.current;
+    let active = true;
+    const timer = setInterval(() => {
+      for (const attachment of attachments.filter(
+        (a) => a.state === 'parsing' && a.textProcessing,
+      )) {
+        void bridge.getAttachmentText!({
+          attachmentId: attachment.id,
+          draftId: identity,
+          ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+        })
+          .then((next) => {
+            if (active && identity === draftIdentity.current)
+              setAttachments((old) => old.map((a) => (a.id === next.id ? next : a)));
+          })
+          .catch((error) => {
+            if (active) reportFailure(error, '识别状态读取失败。');
+          });
+      }
+    }, 1000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [attachments, bridge, interactionTaskId, reportFailure]);
+  const attachmentTextAction = useCallback(
+    async (
+      id: string,
+      action: 'ocr' | 'continue' | 'stop' | 'partial' | 'join',
+      rotation?: 0 | 90 | 180 | 270,
+    ) => {
+      const identity = draftIdentity.current;
+      const input = {
+        attachmentId: id,
+        draftId: identity,
+        ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+      };
+      try {
+        if (action === 'join') {
+          if (bridge.joinAttachmentLibrary) {
+            setLibrary(await bridge.joinAttachmentLibrary(input));
+            pushToast({ tone: 'success', text: '附件副本已加入本机资料库。' });
+          }
+        } else if (bridge.controlAttachmentText) {
+          const next = await bridge.controlAttachmentText({
+            ...input,
+            action,
+            ...(rotation !== undefined ? { rotation } : {}),
+          });
+          if (identity === draftIdentity.current)
+            setAttachments((old) => old.map((a) => (a.id === id ? next : a)));
+        }
+      } catch (error) {
+        reportFailure(error, '附件处理未完成。');
+      }
+    },
+    [bridge, interactionTaskId, reportFailure, pushToast],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
@@ -2641,8 +2717,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               });
             })
         : undefined,
-      onRemoveAttachment: (id: string) =>
-        setAttachments((previous) => previous.filter((attachment) => attachment.id !== id)),
+      onAttachmentTextAction: bridge.controlAttachmentText
+        ? (
+            id: string,
+            action: 'ocr' | 'continue' | 'stop' | 'partial' | 'join',
+            rotation?: 0 | 90 | 180 | 270,
+          ) => void attachmentTextAction(id, action, rotation)
+        : undefined,
+      onRemoveAttachment: (id: string) => {
+        if (attachments.find((a) => a.id === id)?.textProcessing && bridge.controlAttachmentText)
+          void bridge
+            .controlAttachmentText({
+              attachmentId: id,
+              action: 'remove',
+              draftId: draftIdentity.current,
+              ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+            })
+            .catch((error) => reportFailure(error, '未能停止附件识别。'));
+        setAttachments((previous) => previous.filter((attachment) => attachment.id !== id));
+      },
       onReferAsRaw: (id: string) => {
         // 出路取自显示出来的那一份：被模型能力拦下的图片，它的原始引用只在那里有
         const rawReference = gatedAttachments.find(
@@ -2888,6 +2981,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       modelUnavailableReason,
       modelAccess,
       gatedAttachments,
+      attachments,
+      attachmentTextAction,
       environmentBusy,
       activeTaskId,
       pickComposerFolder,
@@ -3384,6 +3479,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onOpenTask={(id) => {
             setActiveTaskId(id);
             setView('task');
+          }}
+          libraryActions={bridge.enableLibrarySearch ? (bridge as LibraryActions) : undefined}
+          onReferenceLibrary={(input) => {
+            if (!bridge.referenceLibraryDocument) return;
+            void addAttachments((id) =>
+              bridge.referenceLibraryDocument!({
+                ...input,
+                draftId: id,
+                ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+              }),
+            ).then(() => setView('task'));
           }}
           onOpenLibraryRow={(id) => {
             void bridge.openResultFile({ artifactId: id }).catch((error: unknown) =>
@@ -3929,6 +4035,8 @@ function MainPage(props: {
   readonly onRevokeDevice: (deviceId: string) => void;
   readonly onOpenAccountWeb: (path: string) => void;
   readonly library: LibraryDataView | null;
+  readonly libraryActions?: LibraryActions | undefined;
+  readonly onReferenceLibrary: (input: LibraryDocumentInput) => void;
   readonly libraryInitialNav: LibraryNav;
   readonly shares: ShareListView;
   readonly onShareArtifact: (artifactId: string) => void;
@@ -4014,6 +4122,9 @@ function MainPage(props: {
         <Library
           key={props.libraryInitialNav}
           initialNav={props.libraryInitialNav}
+          data={props.library ?? undefined}
+          actions={props.libraryActions}
+          onReference={props.onReferenceLibrary}
           rows={(props.library?.rows ?? []) as readonly LibraryRow[]}
           {...(props.library?.diskUsage ? { diskUsage: props.library.diskUsage } : {})}
           onOpen={(row) => props.onOpenLibraryRow(row.id)}

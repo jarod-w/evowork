@@ -66,7 +66,7 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       expect(names).toContain(t.name);
     }
     // 投影类现在是第 2 版：建表 + title_source（标题是谁给的）
-    expect(readMeta(store.db, 'schema_version_projection')).toBe('2');
+    expect(readMeta(store.db, 'schema_version_projection')).toBe('4');
     // 权威类第 4 版：此前三个迁移 + AI 图片操作。
     expect(readMeta(store.db, 'schema_version_authoritative')).toBe('4');
     store.close();
@@ -194,7 +194,7 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       .run();
 
     const failing: Migration = {
-      version: 2,
+      version: 999,
       summary: '故意失败',
       up: () => {
         throw new Error('boom');

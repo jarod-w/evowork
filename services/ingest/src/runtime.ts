@@ -42,9 +42,9 @@ export const RUNTIME_TIERS: Readonly<Record<RuntimeTier, TierSpec>> = Object.fre
   },
   ocr: {
     label: 'OCR 扩展',
-    size: '约 60MB',
-    note: '扫描件识别',
-    probeModules: ['pytesseract'],
+    size: '约 23MB',
+    note: '扫描件与图片文字识别（PDF 另需办公扩展）',
+    probeModules: [],
   },
 });
 
@@ -173,6 +173,8 @@ export function officeInterpreterPaths(home: string): readonly string[] {
 export interface RuntimeProbe {
   /** 某个 python 模块在不在。注入以便测试 */
   hasModule(name: string): boolean;
+  /** Verified native engine, decoder and language data; Python wrappers are insufficient. */
+  hasOcrRuntime?(): boolean;
 }
 
 export interface TierStatus {
@@ -184,7 +186,12 @@ export interface TierStatus {
 
 export function probeTiers(probe: RuntimeProbe): readonly TierStatus[] {
   return (Object.keys(RUNTIME_TIERS) as RuntimeTier[]).map((tier) => {
-    const missing = RUNTIME_TIERS[tier].probeModules.filter((m) => !probe.hasModule(m));
+    const missing =
+      tier === 'ocr'
+        ? probe.hasOcrRuntime?.()
+          ? []
+          : ['ocr-runtime']
+        : RUNTIME_TIERS[tier].probeModules.filter((m) => !probe.hasModule(m));
     return { tier, installed: missing.length === 0, missing };
   });
 }
@@ -205,7 +212,19 @@ export interface Availability {
 export function availabilityFor(kind: InputKind, probe: RuntimeProbe): Availability {
   const tier = TIER_OF[kind];
   if (tier === 'base') return { available: true, tier };
-  const missing = RUNTIME_TIERS[tier].probeModules.filter((m) => !probe.hasModule(m));
+  if (kind === 'pdf-scanned' && probe.hasOcrRuntime?.()) {
+    if (!probe.hasModule('pypdfium2') || !probe.hasModule('PIL'))
+      return {
+        available: false,
+        tier: 'office',
+        message: runtimeMissingMessage('office', '渲染扫描件'),
+      };
+    return { available: true, tier };
+  }
+  const missing =
+    tier === 'ocr'
+      ? ['ocr-runtime']
+      : RUNTIME_TIERS[tier].probeModules.filter((m) => !probe.hasModule(m));
   if (missing.length === 0) return { available: true, tier };
   return {
     available: false,

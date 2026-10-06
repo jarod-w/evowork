@@ -1,3 +1,7 @@
+import type { AttachmentTextHost } from './attachment-text-host.js';
+import type { AttachmentTextInput } from '../shared/ipc.js';
+import type { LibraryHost } from './library-host.js';
+import type { LibraryDocumentInput, LibrarySearchInput } from '../shared/ipc.js';
 import type { ImageHost } from './image-host.js';
 import type { SaveImageSettingsInput } from '../shared/ipc.js';
 import type { ComputerUseHost } from './computer-use-host.js';
@@ -481,6 +485,14 @@ export interface ProjectPorts {
 }
 
 export interface RendererBridgeOptions {
+  readonly attachmentText?: AttachmentTextHost | undefined;
+  readonly ocrRuntime?:
+    | {
+        status: () => Promise<import('../shared/ipc.js').OcrRuntimeView>;
+        install: () => Promise<import('../shared/ipc.js').OcrRuntimeView>;
+      }
+    | undefined;
+  readonly library?: (() => Promise<LibraryHost>) | undefined;
   readonly imageGeneration?: ImageHost | undefined;
   readonly environments?: TaskEnvironments | undefined;
   readonly adapter: Adapter;
@@ -2363,6 +2375,28 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return options.attachmentPorts.ingest(root, input.files);
     },
 
+    async getAttachmentText(
+      input: PickAttachmentsInput & { readonly attachmentId: string },
+    ): Promise<ComposerAttachmentView> {
+      if (!options.attachmentText) throw new Error('此构建未接附件识别。');
+      return options.attachmentText.status(await attachmentRoot(input), input.attachmentId);
+    },
+    async controlAttachmentText(input: AttachmentTextInput): Promise<ComposerAttachmentView> {
+      if (!options.attachmentText) throw new Error('此构建未接附件识别。');
+      if (!['ocr', 'continue', 'stop', 'partial', 'remove'].includes(input.action))
+        throw new Error('未知附件动作。');
+      return options.attachmentText.control(await attachmentRoot(input), input);
+    },
+    async joinAttachmentLibrary(
+      input: PickAttachmentsInput & { readonly attachmentId: string },
+    ): Promise<LibraryDataView> {
+      if (!options.attachmentText || !options.library) throw new Error('此构建未接附件资料登记。');
+      const path = await options.attachmentText.source(
+        await attachmentRoot(input),
+        input.attachmentId,
+      );
+      return (await options.library()).joinAttachment(path, input.threadId);
+    },
     /** 当前任务产物：按 path 折到最新版本，只展示仍存在的文件。 */
     async getTaskResults(input: { readonly threadId: string }): Promise<TaskResultsView> {
       const artifacts = options.pageData?.listArtifacts() ?? [];
@@ -2478,7 +2512,86 @@ export function createRendererActions(options: RendererBridgeOptions) {
      * `location` 给的是**目录**而不是完整路径：表格里一列完整路径会把名称挤没，
      * 而用户在这一列想知道的是"它在哪个工作空间"。完整路径在打开时才需要。
      */
+    async clearLibraryBodyCache(): Promise<LibraryDataView> {
+      if (!options.library) throw new Error('资料缓存清理不可用。');
+      return (await options.library()).clearBodyCache();
+    },
+    async getOcrRuntime() {
+      return options.ocrRuntime
+        ? options.ocrRuntime.status()
+        : { installed: false, canInstall: false, message: '此构建没有接 OCR 组件安装。' };
+    },
+    async installOcrRuntime() {
+      if (!options.ocrRuntime) throw new Error('此构建没有接 OCR 组件安装。');
+      return options.ocrRuntime.install();
+    },
+    async enableLibrarySearch(): Promise<LibraryDataView> {
+      if (!options.library) throw new Error('此构建没有接正文检索。');
+      return (await options.library()).enable();
+    },
+    async importLibraryFiles(): Promise<LibraryDataView> {
+      if (!options.library) throw new Error('此构建没有接资料导入。');
+      return (await options.library()).importFiles();
+    },
+    async updateLibraryImport(input: { readonly documentId: string }): Promise<LibraryDataView> {
+      if (!options.library) throw new Error('此构建未接资料更新。');
+      return (await options.library()).updateImport(input.documentId);
+    },
+    async searchLibrary(input: LibrarySearchInput) {
+      if (!options.library) throw new Error('此构建没有接正文检索。');
+      return (await options.library()).search(input);
+    },
+    async cancelLibrarySearch(): Promise<void> {
+      (await options.library?.())?.cancelSearch();
+    },
+    async readLibraryLocation(input: LibraryDocumentInput): Promise<FilePreviewView> {
+      if (!options.library) throw new Error('资料预览不可用。');
+      const host = await options.library(),
+        selected = await host.preview(input);
+      if (extensionOf(selected.path) === 'pdf' && selected.page && options.projectPorts) {
+        const preview = await previewFile(options.projectPorts, selected.path, selected.name);
+        await host.preview(input);
+        if (preview.kind === 'pdf' && preview.content)
+          return {
+            ...preview,
+            content: `${preview.content}#page=${selected.page}`,
+            message: `物理页码：第 ${selected.page} 页`,
+          };
+      }
+      return {
+        name: selected.name,
+        kind: 'text',
+        content: selected.text,
+        message: `${selected.location} · 解析正文预览（最多 12000 字）。可另行打开原文件。`,
+      };
+    },
+    async openLibraryDocument(input: LibraryDocumentInput): Promise<void> {
+      if (!options.library) throw new Error('此构建没有接资料预览。');
+      await (await options.library()).open(input);
+    },
+    async controlLibraryDocument(input: {
+      readonly documentId: string;
+      readonly action: 'stop' | 'continue' | 'ocr' | 'remove';
+      readonly rotation?: 0 | 90 | 180 | 270 | undefined;
+    }): Promise<LibraryDataView> {
+      if (!options.library) throw new Error('此构建没有接资料处理。');
+      if (!['stop', 'continue', 'ocr', 'remove'].includes(input.action))
+        throw new Error('未知资料动作。');
+      return (await options.library()).control(input);
+    },
+    async referenceLibraryDocument(
+      input: LibraryDocumentInput & PickAttachmentsInput,
+    ): Promise<readonly ComposerAttachmentView[]> {
+      const root = await attachmentRoot(input);
+      if (!options.library || !options.attachmentPorts) throw new Error('此构建没有接资料引用。');
+      const selected = await (await options.library()).reference(input);
+      return options.attachmentPorts.ingest(root, [
+        { name: selected.name, bytes: new TextEncoder().encode(selected.text) },
+      ]);
+    },
     async getLibrary(): Promise<LibraryDataView> {
+      const library = options.library ? await (await options.library()).list() : undefined;
+      if (library?.bodySearchEnabled) return library;
       const data = options.pageData;
       if (!data) return Promise.resolve({ rows: [] });
       /*
@@ -2508,7 +2621,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
           extension: extensionOf(a.path),
         }));
       const usage = data.diskUsage?.();
-      return Promise.resolve({ rows, ...(usage ? { diskUsage: usage } : {}) });
+      return Promise.resolve({
+        rows: [...rows, ...(library?.rows ?? [])],
+        bodySearchEnabled: library?.bodySearchEnabled ?? false,
+        ...(usage ? { diskUsage: usage } : {}),
+      });
     },
 
     /**

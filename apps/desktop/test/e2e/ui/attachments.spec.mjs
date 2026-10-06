@@ -17,6 +17,9 @@ import { join } from 'node:path';
 
 import { expect, makeOfficeFixtures, test } from './fixtures.mjs';
 
+// This journey exercises actual image inputs; register matching vision capabilities with the kernel.
+test.use({ registerModels: true, imageInput: true });
+
 test('选 23 个：前 20 个就绪、后 3 个说清原因；发出去的请求里图一张不少、csv 不当图', async ({
   page,
   electronApp,

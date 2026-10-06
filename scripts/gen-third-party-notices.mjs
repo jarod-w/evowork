@@ -214,7 +214,18 @@ L.push(
   '| 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，随基础包分发，安装时切成 wght=400 静态实例） |' +
     ' SIL Open Font License 1.1 |',
 );
-L.push('| OCR 扩展 | tesseract + 中文语言模型 | Apache-2.0 |');
+const ocrSources = JSON.parse(
+  readFileSync(join(REPO_ROOT, 'services/runtime-installer/src/ocr-sources.json'), 'utf8'),
+);
+const ocrEngineVersion = ocrSources['tesseract.tar.gz'].url.split('/').at(-1);
+const leptonicaVersion = ocrSources['leptonica.tar.gz'].url.split('/').at(-1);
+const dataCommit = ocrSources['eng.traineddata'].url.split('/').at(-2);
+L.push(
+  `| OCR 候选包 · 引擎 | Tesseract ${ocrEngineVersion} + Leptonica ${leptonicaVersion}（固定源码，按原生平台构建） | Apache-2.0 · BSD-2-Clause |`,
+);
+L.push(
+  `| OCR 候选包 · 语言数据 | tessdata_fast \`${dataCommit}\`（chi_sim / eng / osd） | Apache-2.0 |`,
+);
 L.push('');
 L.push(
   '> 办公扩展的版本全部钉死并带 sha256 校验，真源是 ' +

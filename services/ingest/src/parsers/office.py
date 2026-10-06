@@ -371,9 +371,9 @@ def parse_pdf(path: Path) -> tuple[str, dict[str, Any], list[str]]:
     with pdf:
         pages = len(pdf.pages)
         for index, page in enumerate(pdf.pages, start=1):
-            lines.append(f"## 第 {index} 页")
             text = (page.extract_text() or "").strip()
             if text:
+                lines.append(f"## 第 {index} 页")
                 lines.append(text)
             extracted = page.extract_tables() or []
             for table in extracted:

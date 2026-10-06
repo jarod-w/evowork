@@ -1,3 +1,8 @@
+import { ownerProjectOf } from '@evowork/projects';
+import { inspectOcrBundle, installOcrBundle } from '@evowork/runtime-installer';
+import { verifyOcrRuntime } from '@evowork/ingest';
+import { createAttachmentTextHost } from './attachment-text-host.js';
+import { createLibraryHost, type LibraryHost } from './library-host.js';
 import { parse as parseImageRequirements } from 'smol-toml';
 import { createImageHost } from './image-host.js';
 import { createComputerUsePolicyReader } from './computer-use-policy.js';
@@ -30,7 +35,7 @@ import { computerUseModelContext } from './computer-use-model.js';
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
 import type { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -73,7 +78,12 @@ import { createLogger, jsonLinesSink, type Logger } from '@evowork/logging';
  * 不在这里另写一份：设置页显示的数与闸门实际用的数必须是同一个，
  * 否则用户会看到"上限 3"而第 2 个任务就开始排队。
  */
-import { applyUserPreference, computeConcurrencyLimit, KERNEL_PROMPT_RULES } from '@evowork/policy';
+import {
+  applyUserPreference,
+  computeConcurrencyLimit,
+  KERNEL_PROMPT_RULES,
+  classifyPath,
+} from '@evowork/policy';
 import { createIngest, createOfficeParser, type IngestOutcome } from '@evowork/ingest';
 import { BRAND } from '@evowork/tokens';
 import { createShareFlow, createUploader, shareState } from '@evowork/artifacts';
@@ -1889,8 +1899,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     return readPreferences();
   };
 
+  const attachmentText = createAttachmentTextHost({
+    home: options.paths.home,
+    runtimeRoot:
+      (options.env ?? process.env).EVOWORK_OCR_RUNTIME ??
+      join(options.paths.home, 'runtime', 'ocr'),
+  });
   let uploadSequence = 0;
-  let attachmentSequence = 0;
   const ingestAttachments = async (
     workspaceRoot: string,
     files: readonly { readonly name: string; readonly bytes: Uint8Array; readonly path?: string }[],
@@ -1923,7 +1938,6 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       const file = files[index];
       if (!file) continue;
       for (const outcome of outcomes) {
-        attachmentSequence += 1;
         let originalPath = file.path;
         if (outcome.status === 'runtime-missing') {
           uploadSequence += 1;
@@ -1932,12 +1946,19 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           originalPath = join(dir, `original${extname(file.name).toLocaleLowerCase() || '.bin'}`);
           writeFileSync(originalPath, file.bytes);
         }
+        const view = attachmentFromOutcome(
+          outcome,
+          `attachment-${randomUUID()}`,
+          originalPath ?? file.name,
+        );
+        const savedOriginal =
+          'uploadDir' in outcome
+            ? join(outcome.uploadDir, `original${extname(file.name).toLowerCase() || '.bin'}`)
+            : originalPath;
         attachments.push(
-          attachmentFromOutcome(
-            outcome,
-            `attachment-${attachmentSequence}`,
-            originalPath ?? file.name,
-          ),
+          outcome.status !== 'rejected' && savedOriginal
+            ? await attachmentText.register(workspaceRoot, savedOriginal, view)
+            : view,
         );
       }
     }
@@ -1951,11 +1972,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       const failures: ComposerAttachmentView[] = [];
       for (const path of paths) {
         try {
+          const limit = ['.png', '.jpg', '.jpeg', '.webp'].includes(extname(path).toLowerCase())
+            ? 20
+            : 200;
+          if (statSync(path).size > limit * 1024 * 1024) throw new Error('附件超过大小上限。');
           files.push({ name: basename(path), bytes: readFileSync(path), path });
         } catch {
-          attachmentSequence += 1;
           failures.push({
-            id: `attachment-${attachmentSequence}`,
+            id: `attachment-${randomUUID()}`,
             name: basename(path),
             kind: 'document',
             sizeLabel: '未添加',
@@ -2112,7 +2136,106 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     return { runningTasks, upcoming, runtimeInstalling: services.officeRuntime.installing() };
   };
 
+  const ocrRoot =
+    (options.env ?? process.env).EVOWORK_OCR_RUNTIME ?? join(options.paths.home, 'runtime', 'ocr');
+  const ocrBundle = (options.env ?? process.env).EVOWORK_OCR_BUNDLE;
+  const ocrBundleDigest = (options.env ?? process.env).EVOWORK_OCR_BUNDLE_DIGEST;
+  const ocrRuntimeStatus = async () => {
+    let installed = false;
+    try {
+      verifyOcrRuntime(ocrRoot);
+      installed = true;
+    } catch {
+      /* Missing or damaged is observable. */
+    }
+    if (installed)
+      return {
+        installed: true,
+        canInstall: false,
+        message: '本地 OCR 引擎可用；PDF 渲染另需办公扩展。',
+      };
+    if (ocrBundle && ocrBundleDigest) {
+      try {
+        const bundle = await inspectOcrBundle(ocrBundle, ocrBundleDigest);
+        return {
+          installed: false,
+          canInstall: true,
+          bytes: bundle.bytes,
+          message: '可从已配置的离线包安装本地 OCR 组件。',
+        };
+      } catch {
+        return {
+          installed: false,
+          canInstall: false,
+          message: 'OCR 离线包校验失败，请检查部署包。',
+        };
+      }
+    }
+    return {
+      installed: false,
+      canInstall: false,
+      message:
+        '此版本尚未配置可验证的 OCR 发行包。可由管理员配置离线包；不会下载或执行未校验的程序。',
+    };
+  };
+  let library: LibraryHost | undefined;
+  let libraryReady: Promise<LibraryHost> | undefined;
+  const getLibraryHost = (): Promise<LibraryHost> => {
+    libraryReady ??= createLibraryHost({
+      home: options.paths.home,
+      db: store.db,
+      databasePath: options.paths.db,
+      artifacts: () => services.artifacts.listAllForProjects(),
+      projects: () => createProjectRepo(store.db).list(),
+      projectOfThread: (id) => {
+        const environment = environments.task(id);
+        if (environment) return environment.projectId ?? undefined;
+        const cwd = store.threads.get(id)?.cwd;
+        return cwd ? ownerProjectOf(cwd, createProjectRepo(store.db).list(), homedir()) : undefined;
+      },
+      approveArtifact: async (artifact) => {
+        if (!artifact.threadId) return false;
+        const cwd = store.threads.get(artifact.threadId)?.cwd;
+        if (!cwd) return false;
+        try {
+          const root = await environments.validate(cwd),
+            path = await realpath(artifact.path);
+          if (classifyPath(path, { home: homedir(), workspaceRoot: root }).verdict !== 'allow')
+            return false;
+          return path.startsWith(`${root}/`) && path === artifact.path;
+        } catch {
+          return false;
+        }
+      },
+      pickFiles: async () => (await options.pickFiles?.()) ?? [],
+      openPath: async (path) => {
+        if (!options.openPath) throw new Error('此构建不能打开本机文件。');
+        await options.openPath(path);
+      },
+      ...((options.env ?? process.env).EVOWORK_OCR_RUNTIME
+        ? { runtimeRoot: (options.env ?? process.env).EVOWORK_OCR_RUNTIME }
+        : {}),
+    }).then((host) => {
+      library = host;
+      return host;
+    });
+    return libraryReady;
+  };
+
   const actions = createRendererActions({
+    library: getLibraryHost,
+    ocrRuntime: {
+      status: ocrRuntimeStatus,
+      install: async () => {
+        if (!ocrBundle || !ocrBundleDigest) throw new Error('尚未配置可验证的 OCR 离线包。');
+        await installOcrBundle({
+          bundle: ocrBundle,
+          digest: ocrBundleDigest,
+          destination: ocrRoot,
+        });
+        return ocrRuntimeStatus();
+      },
+    },
     updateHost,
     ...(options.openExternal ? { openExternal: options.openExternal } : {}),
     adapter,
@@ -2153,6 +2276,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         : undefined;
     },
     attachmentPorts,
+    attachmentText,
     environments,
     automationPorts,
     /*
@@ -2619,6 +2743,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
       approvalReplies.clear();
       pendingApprovalById.clear();
+      attachmentText.stop();
+      library?.dispose();
       imageHost.close();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);

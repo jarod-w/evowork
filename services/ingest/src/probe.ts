@@ -13,6 +13,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { verifyOcrRuntime } from './ocr-runtime.js';
 
 import { officeInterpreterPaths, type RuntimeProbe } from './runtime.js';
 
@@ -42,6 +44,23 @@ export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
   };
 
   return {
+    hasOcrRuntime(): boolean {
+      const key = 'native-ocr-runtime';
+      const cached = cache.get(key);
+      if (cached !== undefined) return cached;
+      let ok = false;
+      try {
+        verifyOcrRuntime(
+          process.env.EVOWORK_OCR_RUNTIME ??
+            join(options.home ?? homedir(), '.evowork/runtime/ocr'),
+        );
+        ok = true;
+      } catch {
+        /* Missing or damaged runtime stays unavailable. */
+      }
+      cache.set(key, ok);
+      return ok;
+    },
     hasModule(name: string): boolean {
       const cached = cache.get(name);
       if (cached !== undefined) return cached;

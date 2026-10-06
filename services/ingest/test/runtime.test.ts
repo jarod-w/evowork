@@ -56,6 +56,24 @@ describe('探测：装了一半是真实会发生的状态', () => {
     expect(office?.missing).toEqual(['pptx']);
   });
 
+  it('Python 包可用也不能把未安装的原生 OCR 引擎报为可用', () => {
+    expect(probeTiers({ hasModule: () => true }).find((t) => t.tier === 'ocr')?.installed).toBe(
+      false,
+    );
+    expect(
+      probeTiers({ hasModule: () => false, hasOcrRuntime: () => true }).find(
+        (t) => t.tier === 'ocr',
+      )?.installed,
+    ).toBe(true);
+    expect(
+      availabilityFor('pdf-scanned', { hasModule: () => false, hasOcrRuntime: () => true }).tier,
+    ).toBe('office');
+    expect(
+      availabilityFor('pdf-scanned', { hasModule: () => true, hasOcrRuntime: () => true })
+        .available,
+    ).toBe(true);
+  });
+
   it('base 档永远可用（它没有可探测的模块）', () => {
     const base = probeTiers({ hasModule: () => false }).find((t) => t.tier === 'base');
     expect(base?.installed).toBe(true);

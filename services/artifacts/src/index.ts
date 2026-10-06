@@ -6,3 +6,5 @@ export * from './task-title.js';
 export * from './types.js';
 export * from './upload.js';
 export * from './watcher.js';
+
+export * from './library-registry.js';

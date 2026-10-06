@@ -253,6 +253,8 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 
 ## 8. 已定的产品决策 —— 照着做，别再当成开放问题
 
+**OCR-Q1–OCR-Q12 已于 2026-10-06 全部采纳建议**，决策真源见总纲 §10.1.10，细化见 [16](docs/design/16-ocr-and-library-search.md)，实施与验收进度见 [status.md](docs/status.md)。不把 FTS 表存在或 `pytesseract` 导入成功当作功能与发布验收通过。
+
 **图片 IMG-Q1–IMG-Q11 已于 2026-10-06 全部采纳建议**，已回写总纲 §6.8 / §10.1.9 与 [15 v0.2](docs/design/15-ai-image-generation.md)；产品范围已确认，真实接口与 G0–G3 尚未实现。
 
 设计文档第 10 章的 **Q1–Q29、Q45、Q46 已决策**。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。插件 Hub 的 **HUB-Q1–Q11 也已决策**（[13 §10](docs/design/13-plugin-hub.md)，总纲 §10.1.7）；客户端（H0 / H1 / H6）已实现，**官方源要等 H2 的签名公钥与 CDN** —— 在那之前产品里如实显示「还没有接入」、不发请求，进度见 13 §13.1。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3 / §10.1.5 / §10.1.8](docs/evowork-on-codex-design.md)：

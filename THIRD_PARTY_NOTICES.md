@@ -175,7 +175,8 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | 办公扩展 · 解释器 | CPython 3.12.14（python-build-standalone 20260901，`install_only`） | PSF-2.0 |
 | 办公扩展 · Python 包 | python-docx==1.2.0 · openpyxl==3.1.5 · python-pptx==1.0.2 · matplotlib==3.11.1 · pdfplumber==0.11.10 · jsonschema==4.26.0 | MIT · MIT · MIT · PSF-2.0 · MIT · MIT |
 | 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，随基础包分发，安装时切成 wght=400 静态实例） | SIL Open Font License 1.1 |
-| OCR 扩展 | tesseract + 中文语言模型 | Apache-2.0 |
+| OCR 候选包 · 引擎 | Tesseract 5.5.1 + Leptonica 1.85.0（固定源码，按原生平台构建） | Apache-2.0 · BSD-2-Clause |
+| OCR 候选包 · 语言数据 | tessdata_fast `87416418657359cb625c412a48b6e1d6d41c29bd`（chi_sim / eng / osd） | Apache-2.0 |
 
 > 办公扩展的版本全部钉死并带 sha256 校验，真源是 `services/runtime-installer/src/manifest.ts`；这一节由本脚本从那里读出，不手工维护。
 

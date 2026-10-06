@@ -4,6 +4,8 @@
  * 启动细节全在 `harness/ui-entry.mjs` 里（它跑在 Electron 主进程），这边只负责
  * 从**进程外**连上去。两侧的分工就是第 1 步拆出来的那条线。
  */
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -109,9 +111,19 @@ export const test = base.extend({
    * 测的是宿主 → 内核 → MCP → 界面那一段；AX、TCC、签名不经过它。
    */
   fakeComputerUse: [false, { option: true }],
+  ocrBundle: [undefined, { option: true }],
+  imageInput: [false, { option: true }],
 
   electronApp: async (
-    { keepOnboarding, realModel, registerModels, hostGateway, fakeComputerUse },
+    {
+      keepOnboarding,
+      realModel,
+      registerModels,
+      hostGateway,
+      fakeComputerUse,
+      ocrBundle,
+      imageInput,
+    },
     use,
     testInfo,
   ) => {
@@ -137,6 +149,15 @@ export const test = base.extend({
         ...parentEnv,
         EVOWORK_E2E_REPO_ROOT: ROOT,
         EVOWORK_APP_SERVER: KERNEL,
+        ...(imageInput ? { EVOWORK_UI_IMAGE_INPUT: '1' } : {}),
+        ...(ocrBundle
+          ? {
+              EVOWORK_OCR_BUNDLE: ocrBundle,
+              EVOWORK_OCR_BUNDLE_DIGEST: createHash('sha256')
+                .update(readFileSync(join(ocrBundle, 'ocr-runtime.json')))
+                .digest('hex'),
+            }
+          : {}),
         ...(keepOnboarding ? { EVOWORK_UI_KEEP_ONBOARDING: '1' } : {}),
         ...(realModel ? { EVOWORK_UI_REAL_MODEL: '1', EVOWORK_UI_MODEL_KEY: requireKey() } : {}),
         ...(registerModels ? { EVOWORK_UI_REGISTER_MODELS: '1' } : {}),

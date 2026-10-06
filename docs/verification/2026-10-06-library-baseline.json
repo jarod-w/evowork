@@ -1,0 +1,83 @@
+{
+  "platform": "arm64-darwin",
+  "offlineInstall": true,
+  "imagesWithoutOffice": [
+    {
+      "extension": "png",
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "needsReview": false
+    },
+    {
+      "extension": "jpg",
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "needsReview": false
+    },
+    {
+      "extension": "webp",
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "needsReview": false
+    }
+  ],
+  "nativeRotations": [
+    {
+      "mode": 90,
+      "rotation": 90,
+      "criticalValuesCorrect": true,
+      "originalCoordinatesBounded": true
+    },
+    {
+      "mode": "auto",
+      "rotation": 90,
+      "criticalValuesCorrect": true,
+      "originalCoordinatesBounded": true
+    }
+  ],
+  "rejected": [
+    "animated.webp",
+    "oversized.png"
+  ],
+  "row201Location": "工作表 Sheet · 行 201–220",
+  "queryCorpus": 10000,
+  "queryBlocks": 100000,
+  "timings": [
+    {
+      "query": "ZXCVUNIQUE",
+      "observations": [
+        564,
+        547,
+        542,
+        526,
+        498
+      ],
+      "p95Ms": 564,
+      "documents": 20
+    },
+    {
+      "query": "合同",
+      "observations": [
+        237,
+        212,
+        234,
+        225,
+        206
+      ],
+      "p95Ms": 237,
+      "documents": 20
+    },
+    {
+      "query": "ZXCVUNIQUE 付款",
+      "observations": [
+        667,
+        642,
+        639,
+        648,
+        660
+      ],
+      "p95Ms": 667,
+      "documents": 20
+    }
+  ]
+}

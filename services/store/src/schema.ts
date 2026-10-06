@@ -44,6 +44,21 @@ export type DerivedStatus = (typeof DERIVED_STATUS)[number];
 
 export const TABLES: readonly TableSpec[] = [
   {
+    name: 'library_document',
+    klass: 'projection',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS library_document (id TEXT PRIMARY KEY, source_hash TEXT NOT NULL, state TEXT NOT NULL, updated_at INTEGER NOT NULL, title TEXT NOT NULL)`,
+    ],
+  },
+  {
+    name: 'library_chunk',
+    klass: 'projection',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS library_chunk (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id TEXT NOT NULL, sequence INTEGER NOT NULL, meta TEXT NOT NULL, fts_rowid INTEGER)`,
+      `CREATE INDEX IF NOT EXISTS ix_library_chunk_document ON library_chunk(document_id,sequence)`,
+    ],
+  },
+  {
     name: 'image_operation',
     klass: 'authoritative',
     ddl: [

@@ -4501,3 +4501,17 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-process-body .ew-item-summary {
   width: 100%;
 }
+
+/* Library body hits are plain text; highlight and quality hints use semantic tokens. */
+.ew-library-name > span:last-child {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ew-library-name mark {
+  background: var(--accent-weak);
+  color: var(--accent-strong);
+}
+.ew-library-name .ew-library-hint {
+  color: var(--text-secondary);
+}

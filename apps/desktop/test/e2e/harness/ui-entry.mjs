@@ -100,13 +100,23 @@ const REAL_CUSTOM_MODELS = [
 ];
 
 const { home, workspace, kernelHome } = createE2EHome('evowork-ui-');
+// A fresh SQLite home also needs a fresh Chromium profile; drafts persist in localStorage.
+app.setPath('userData', home);
 /*
  * **两个模型**：真交互测试里有一条要验「在界面上换一个模型，下一回合真的用它」，
  * 而一个模型的下拉框点不出任何东西来。断言型 E2E 仍然是默认的一个。
  */
 const UI_MODELS = [
-  { id: 'e2e-model', displayName: 'E2E Model' },
-  { id: 'e2e-model-alt', displayName: 'E2E Model Alt' },
+  {
+    id: 'e2e-model',
+    displayName: 'E2E Model',
+    imageInput: process.env.EVOWORK_UI_IMAGE_INPUT === '1',
+  },
+  {
+    id: 'e2e-model-alt',
+    displayName: 'E2E Model Alt',
+    imageInput: process.env.EVOWORK_UI_IMAGE_INPUT === '1',
+  },
 ];
 const gateway = REAL_MODEL
   ? null
@@ -158,7 +168,7 @@ function customModelRecords(gatewayBaseUrl) {
       parallelToolCalls: true,
       reasoning: false,
       promptCache: false,
-      imageInput: false,
+      imageInput: model.imageInput,
       maxContextTokens: 32_000,
     },
   }));

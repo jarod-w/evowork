@@ -29,7 +29,7 @@ function sendEvent(response, event) {
  * 记忆提取都可能先到），按「第一个请求」认会偶发看错请求，表现成「记忆没注入」。
  */
 /** 目录里一条模型。能力位对这些测试无所谓，但字段少一个前端就渲染不出来。 */
-function catalogEntry({ id, displayName }) {
+function catalogEntry({ id, displayName, imageInput = false }) {
   return {
     id,
     displayName,
@@ -42,7 +42,7 @@ function catalogEntry({ id, displayName }) {
       parallelToolCalls: true,
       reasoning: false,
       promptCache: false,
-      imageInput: false,
+      imageInput,
       maxContextTokens: 32_000,
     },
     verified: true,

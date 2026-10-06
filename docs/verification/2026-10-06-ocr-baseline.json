@@ -1,0 +1,228 @@
+{
+  "engine": {
+    "digest": "5529b181a1a3dea1f11f469698fcf27e3128321a50100fabb1ffa206676b4148",
+    "version": "5.5.1"
+  },
+  "corpus": "synthetic-clear-print-v1",
+  "sourceSha256": "aee83e71e18b5479518da9e047eed9d3f93be225c53248cbe020ba6f9023445c",
+  "fontSha256": "fd51128b4dacd2cf2e353063d95076de34f322f8fa9a6dff253ed20ced050e0c",
+  "pages": [
+    {
+      "page": 1,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 2,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 3,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 4,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 5,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 6,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 7,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 8,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 9,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 10,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 11,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 12,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 13,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 14,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 15,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 16,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 17,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 18,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 19,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 20,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 21,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 22,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 23,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 24,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 25,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 26,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 27,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 28,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 29,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    },
+    {
+      "page": 30,
+      "cer": 0,
+      "amountCorrect": true,
+      "numberCorrect": true,
+      "source": "ocr"
+    }
+  ],
+  "averageCer": 0,
+  "elapsedMs": 53144,
+  "nativeAndBlank": true,
+  "resumeReuse": true,
+  "explicitRotation": true,
+  "automaticRotation": true,
+  "gatePassed": true
+}

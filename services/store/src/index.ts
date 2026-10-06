@@ -57,3 +57,6 @@ export {
   type Store,
 } from './store.js';
 export * from './repositories.js';
+export * from './library-query.js';
+
+export * from './library-projection.js';

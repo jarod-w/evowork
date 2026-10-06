@@ -102,6 +102,9 @@ export const RENDERER_ACTIONS = Object.freeze([
   'searchComposerMentions',
   'pickAttachments',
   'ingestAttachments',
+  'getAttachmentText',
+  'controlAttachmentText',
+  'joinAttachmentLibrary',
   'discardComposerDraft',
   'getStartup',
   // 模型下拉（03 §4.5「启动时 + 手动刷新」）。与 getStartup 分开是因为它是一次网络调用，
@@ -121,6 +124,18 @@ export const RENDERER_ACTIONS = Object.freeze([
    * 而绝大多数会话里用户根本不会打开资料库。
    */
   'getLibrary',
+  'clearLibraryBodyCache',
+  'getOcrRuntime',
+  'installOcrRuntime',
+  'enableLibrarySearch',
+  'importLibraryFiles',
+  'updateLibraryImport',
+  'searchLibrary',
+  'cancelLibrarySearch',
+  'openLibraryDocument',
+  'readLibraryLocation',
+  'controlLibraryDocument',
+  'referenceLibraryDocument',
   /*
    * 分享（Q10 / 08 §7）。四条分开而不是一条 `share(action)`：
    * `prepareShare` **不上传任何东西**，`createShare` 才动文件 ——

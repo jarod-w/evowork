@@ -44,7 +44,7 @@ EXIT_MISSING_ASSET = 4
 RUNTIME_TIERS = {
     "base": {"label": "基础组件", "size": "0MB", "note": "随主程序，无需下载"},
     "office": {"label": "办公扩展", "size": "约 120MB", "note": "Word / Excel / PPT / PDF 文本层"},
-    "ocr": {"label": "OCR 扩展", "size": "约 60MB", "note": "扫描件识别"},
+    "ocr": {"label": "OCR 扩展", "size": "约 23MB", "note": "扫描件与图片文字识别（PDF 另需办公扩展）"},
 }
 
 
