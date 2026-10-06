@@ -38,6 +38,35 @@ function withStore(fn: (store: Store) => void): void {
 }
 
 describe('deriveStatus —— 清单六态 + 已中断（04 §2.2）', () => {
+  it('执行中更新计划不会让任务变成中断，审批等待状态也保留', () =>
+    withStore((store) => {
+      store.threads.upsertFromThread(thread());
+      store.threads.applyTurnStarted('t1', 'turn');
+      expect(store.threads.applyPlanUpdated('t1', true)).toBe('running');
+      store.threads.applyStatusChanged('t1', WAITING_APPROVAL);
+      expect(store.threads.applyPlanUpdated('t1', true)).toBe('pending');
+    }));
+  it('中断和失败优先于未确认计划；不能让停止的任务继续显示规划中', () => {
+    for (const lastTurnStatus of ['interrupted', 'failed'] as const)
+      expect(deriveStatus({ lastTurnStatus, hasPlanItem: true, planConfirmed: false })).toBe(
+        lastTurnStatus,
+      );
+  });
+
+  it('权威历史校正漏掉的终态通知，随后无回合的列表快照不能抹掉结果', () =>
+    withStore((store) => {
+      store.threads.upsertFromThread(thread());
+      store.threads.applyTurnStarted('t1', 'turn-old');
+      store.threads.upsertFromThread(
+        thread({ turns: [{ id: 'turn-new', status: 'failed', items: [] }] }),
+      );
+      store.threads.upsertFromThread(thread());
+      expect(store.threads.get('t1')).toMatchObject({
+        derived_status: 'failed',
+        last_turn_status: 'failed',
+        last_turn_id: 'turn-new',
+      });
+    }));
   it('内核的 ThreadStatus 单独**推不出**已完成 / 失败 / 已中断（F7 的直接后果）', () => {
     // 只有实时状态、没有投影记录时，只能得出"还没开始"
     /*

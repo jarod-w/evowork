@@ -80,6 +80,50 @@ function renderWorkspace(over: Partial<Parameters<typeof TaskWorkspace>[0]> = {}
 }
 
 describe('状态视觉规范（01 §6.1）', () => {
+  it('无预算的长任务也显示目标，实际计划步骤和当前动作可见', () => {
+    renderWorkspace({
+      goal: {
+        threadId: 't1',
+        objective: '完成季度报告',
+        status: 'active',
+        tokenBudget: null,
+        tokensUsed: 12,
+        timeUsedSeconds: 3,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      items: [
+        {
+          id: 'plan',
+          type: 'plan',
+          steps: [
+            { step: '收集资料', status: 'completed' },
+            { step: '生成报告', status: 'inProgress' },
+          ],
+        },
+      ],
+    });
+    const progress = screen.getByRole('region', { name: '持续目标' });
+    expect(progress.textContent).toContain('完成季度报告');
+    expect(progress.textContent).toContain('已完成 1/2 步 · 当前：生成报告');
+    expect(progress.textContent).toContain('持续推进中');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
+  it('中断提供继续入口；恢复期间禁用，避免再次追加', () => {
+    const onContinue = vi.fn();
+    const { rerender, props } = renderWorkspace({
+      status: 'interrupted',
+      onContinue,
+      continueDisabled: true,
+    });
+    const button = screen.getByRole('button', { name: '继续任务' });
+    fireEvent.click(button);
+    expect(onContinue).not.toHaveBeenCalled();
+    rerender(<TaskWorkspace {...props} continueDisabled={false} />);
+    fireEvent.click(button);
+    expect(onContinue).toHaveBeenCalledOnce();
+  });
   it('六态 + 已中断 + idle 都有文案，且「待你确认」用第二人称', () => {
     expect(STATUS_VIEW.pending.label).toBe('待你确认');
     expect(STATUS_VIEW.running.label).toBe('进行中');

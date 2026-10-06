@@ -1538,6 +1538,129 @@ describe('通知驱动 UI（09 §3.4 的端到端）', () => {
 });
 
 describe('崩溃恢复的端到端（09 §1）', () => {
+  it('后台执行任务也恢复：失联变中断、权威历史回到 UI，且不重发需求或触发完成副作用', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: '完成报告' }],
+    });
+    server.notify('turn/started', { threadId, turn: makeTurn({ id: 'old-turn' }) });
+    server.notify('turn/plan/updated', {
+      threadId,
+      turnId: 'old-turn',
+      plan: [
+        { step: '收集资料', status: 'completed' },
+        { step: '生成报告', status: 'inProgress' },
+      ],
+    });
+    adapter.closeTask(threadId);
+    server.handlers.set('thread/resume', () => ({
+      thread: makeThread({
+        id: threadId,
+        turns: [
+          makeTurn({
+            id: 'old-turn',
+            status: 'interrupted',
+            items: [{ id: 'saved', type: 'agentMessage', text: '已完成资料收集' }],
+          }),
+        ],
+      }),
+    }));
+    server.removeMethod('thread/items/list');
+    const starts = server.received.filter((request) => request.method === 'turn/start').length;
+    ui.length = 0;
+    server.crash();
+    expect(store.threads.get(threadId)?.derived_status).toBe('interrupted');
+    await expect(
+      adapter.sendMessage({ threadId, input: [{ type: 'text', text: '不应发送' }] }),
+    ).rejects.toThrow('尚未恢复');
+    await timers.flush(4);
+    expect(store.threads.get(threadId)?.last_turn_status).toBe('interrupted');
+    expect(ui).toContainEqual(
+      expect.objectContaining({
+        type: 'task-restored',
+        threadId,
+        items: [expect.objectContaining({ id: 'saved', text: '已完成资料收集' })],
+      }),
+    );
+    expect(ui.some((event) => event.type === 'turn-completed')).toBe(false);
+    expect(server.received.filter((request) => request.method === 'turn/start')).toHaveLength(
+      starts,
+    );
+  });
+
+  it('崩溃撤销所有挂起审批，恢复失败明确可见', async () => {
+    adapter = createAdapter({
+      store,
+      scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+        heartbeatIntervalMs: 10 ** 9,
+      },
+      askApproval: () => new Promise(() => {}),
+      onUiEvent: (event) => ui.push(event),
+    });
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: '报告' }],
+    });
+    void server.requestClient('item/commandExecution/requestApproval', {
+      threadId,
+      turnId: 'turn_0',
+      itemId: 'waiting',
+    });
+    expect(adapter.approvals.pendingList()).toHaveLength(1);
+    server.handlers.set('thread/resume', () => {
+      throw new Error('历史不可读');
+    });
+    server.crash();
+    await timers.flush(4);
+    expect(adapter.approvals.pendingList()).toHaveLength(0);
+    expect(ui).toContainEqual(
+      expect.objectContaining({
+        type: 'kernel-warning',
+        text: expect.stringContaining('历史恢复失败'),
+      }),
+    );
+    expect(store.threads.get(threadId)?.derived_status).not.toBe('running');
+  });
+
+  it('历史读取开始后新的回合通知到达，旧快照不能把新回合投影成已完成', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'race' }));
+    server.handlers.set('thread/resume', () => {
+      server.notify('turn/started', { threadId: 'race', turn: makeTurn({ id: 'new-turn' }) });
+      return {
+        thread: makeThread({
+          id: 'race',
+          turns: [makeTurn({ id: 'old-turn', status: 'completed' })],
+        }),
+      };
+    });
+    const opened = await adapter.openTask('race');
+    await opened.latestTurn;
+    expect(store.threads.get('race')).toMatchObject({
+      derived_status: 'running',
+      last_turn_id: 'new-turn',
+    });
+  });
+
+  it('启动对账读取所有页，旧任务不会因超过第一页而丢失', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'older' }));
+    server.handlers.set('thread/list', ({ params }) =>
+      params.cursor
+        ? { data: [makeThread({ id: 'older' })], nextCursor: null }
+        : { data: [makeThread({ id: 'newer' })], nextCursor: 'page2' },
+    );
+    await adapter.reconcile();
+    expect(store.threads.get('older')).toBeDefined();
+    expect(store.threads.get('newer')).toBeDefined();
+  });
   it('崩溃后恢复所有打开的任务，并保留审批处理器', async () => {
     const asked: string[] = [];
     const notices: string[] = [];

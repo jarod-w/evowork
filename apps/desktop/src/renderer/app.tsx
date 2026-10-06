@@ -529,11 +529,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       text: string;
       /** 只属于当前任务；进入新任务时不应把旧任务的故障继续挂在首页。 */
       scope?: 'task';
+      kind?: 'kernel-runtime';
     }[]
   >([]);
   const [turnFailures, setTurnFailures] = useState<
     Readonly<Record<string, { readonly text: string; readonly detail?: string }>>
   >({});
+  const [kernelUnavailable, setKernelUnavailable] = useState(false);
+  const [continuingTaskId, setContinuingTaskId] = useState<string | null>(null);
+  const continuingTasks = useRef(new Set<string>());
+  const historyEpochByTask = useRef(new Map<string, number>());
   /**
    * 正在重试的回合。**不是失败**，所以不能塞进 `turnFailures` ——
    * 它是一行会被下一个动静顶掉的状态：内核重试成功就继续吐字，用完了才变成失败卡。
@@ -933,6 +938,48 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const offs = [
       bridge.onUiEvent((event) => {
         if ('taskId' in event && deletedTaskIds.current.has(event.taskId)) return;
+        if (event.type === 'task-disconnected' || event.type === 'task-restored')
+          historyEpochByTask.current.set(
+            event.taskId,
+            (historyEpochByTask.current.get(event.taskId) ?? 0) + 1,
+          );
+        if (event.type === 'task-disconnected') {
+          setTurnRetries(dropTask(event.taskId));
+          setItemsByTask((previous) => ({
+            ...previous,
+            [event.taskId]: (previous[event.taskId] ?? []).map((item) => ({
+              ...item,
+              completed: true,
+              ...(item.completed !== true
+                ? {
+                    interrupted: true,
+                    ...(item.status === 'inProgress' ? { status: 'interrupted' } : {}),
+                  }
+                : {}),
+            })),
+          }));
+          return;
+        }
+        if (event.type === 'task-restored') {
+          setTurnRetries(dropTask(event.taskId));
+          setItemsByTask((previous) => ({
+            ...previous,
+            [event.taskId]: event.history.items as readonly RenderItem[],
+          }));
+          if (event.history.latestTurnId)
+            setLatestTurnByTask((previous) => ({
+              ...previous,
+              [event.taskId]: event.history.latestTurnId!,
+            }));
+          setTurnFailures((previous) => {
+            const next = { ...previous };
+            const failure = event.history.turnFailure;
+            if (failure) next[event.taskId] = turnFailureCopy(failure.message, failure.details);
+            else delete next[event.taskId];
+            return next;
+          });
+          return;
+        }
         if (event.type === 'deeplink') {
           handleDeeplink(event);
           return;
@@ -1042,7 +1089,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 .listQueuedInputs({ threadId: event.taskId })
                 .then((queued) =>
                   setQueuedByTask((previous) => ({ ...previous, [event.taskId]: queued })),
-                );
+                )
+                .catch((error: unknown) => reportFailure(error, '没能刷新排队消息。'));
             }
             if (event.status === 'running') {
               setTurnFailures((previous) => {
@@ -1121,9 +1169,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }));
       }),
       bridge.onPendingApprovals(setApprovals),
-      bridge.onNotice((notice) =>
-        setNotices((prev) => [...prev, { tone: 'warning', text: notice.text }]),
-      ),
+      bridge.onNotice((notice) => {
+        if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed')
+          setKernelUnavailable(true);
+        if (notice.kind === 'kernel-restarted') setKernelUnavailable(false);
+        const isKernelNotice = ['kernel-lost', 'kernel-failed', 'kernel-restarted'].includes(
+          notice.kind,
+        );
+        setNotices((prev) => [
+          ...(isKernelNotice ? prev.filter((entry) => entry.kind !== 'kernel-runtime') : prev),
+          {
+            tone: 'warning',
+            text: notice.text,
+            ...(isKernelNotice ? { kind: 'kernel-runtime' as const } : {}),
+          },
+        ]);
+      }),
       // 09 §3.3：降级显式告诉用户，不假装正常
       bridge.onDegrade((report) => {
         const text = report.degradation?.userVisible;
@@ -1362,11 +1423,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     if (activeTaskId === null) return;
     const threadId = activeTaskId;
     let cancelled = false;
+    const epoch = historyEpochByTask.current.get(threadId);
     setHistoryLoading(true);
     void bridge
       .openTask({ threadId })
       .then((result) => {
-        if (cancelled || deletedTaskIds.current.has(threadId)) return;
+        if (
+          cancelled ||
+          deletedTaskIds.current.has(threadId) ||
+          historyEpochByTask.current.get(threadId) !== epoch
+        )
+          return;
         const latestTurnId =
           result.latestTurnId ??
           [...result.items].reverse().find((item) => typeof item._turnId === 'string')?._turnId;
@@ -1437,9 +1504,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setQueuedByTask((previous) =>
             deletedTaskIds.current.has(threadId) ? previous : { ...previous, [threadId]: queued },
           ),
-        );
+        )
+        .catch((error: unknown) => reportFailure(error, '没能读取排队消息。'));
     }
-  }, [activeTaskId, bridge, startup, tasks, workspaceId]);
+  }, [activeTaskId, bridge, reportFailure, startup, tasks, workspaceId]);
 
   // 只在打开任务时补快照；实时通知是权威更新，不能被较早发出的读取覆盖。
   useEffect(() => {
@@ -2076,7 +2144,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   const retryCurrentTurn = useCallback(async () => {
-    if (activeTaskId === null) return;
+    if (activeTaskId === null || kernelUnavailable || continuingTasks.current.has(activeTaskId))
+      return;
     const request = lastUserMessageRequest(itemsByTask[activeTaskId] ?? []);
     if (!request) {
       pushToast({
@@ -2085,6 +2154,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       });
       return;
     }
+    continuingTasks.current.add(activeTaskId);
+    setContinuingTaskId(activeTaskId);
     setTurnFailures((previous) => {
       const next = { ...previous };
       delete next[activeTaskId];
@@ -2104,8 +2175,44 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       // 重试本身失败也走同一套两层文案 —— 否则这条路径又会把裸英文摆到卡片上
       const raw = error instanceof Error ? error.message : String(error);
       setTurnFailures((previous) => ({ ...previous, [activeTaskId]: turnFailureCopy(raw) }));
+    } finally {
+      continuingTasks.current.delete(activeTaskId);
+      setContinuingTaskId((current) => (current === activeTaskId ? null : current));
     }
-  }, [activeTaskId, bridge, itemsByTask, modelId, mode, pushToast, scenarioId, workspaceId]);
+  }, [
+    activeTaskId,
+    bridge,
+    itemsByTask,
+    kernelUnavailable,
+    modelId,
+    mode,
+    pushToast,
+    scenarioId,
+    workspaceId,
+  ]);
+
+  const continueCurrentTask = useCallback(async () => {
+    if (!activeTaskId || kernelUnavailable || continuingTasks.current.has(activeTaskId)) return;
+    const threadId = activeTaskId;
+    continuingTasks.current.add(threadId);
+    setContinuingTaskId(threadId);
+    try {
+      await bridge.send({
+        threadId,
+        text: '继续完成这个任务。先核对已有对话、计划和工作目录中的产物，确认哪些步骤已经完成、哪些操作的结果尚不确定；只执行剩余步骤。不要重复已确认完成的写入、发送、提交等操作。结果不明确或需要再次授权时先向我确认。',
+        scenarioId,
+        ...(modelId !== undefined ? { modelId } : {}),
+        ...(mode !== undefined ? { modeId: mode } : {}),
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      });
+    } catch (error: unknown) {
+      const raw = error instanceof Error ? error.message : String(error);
+      setTurnFailures((previous) => ({ ...previous, [threadId]: turnFailureCopy(raw) }));
+    } finally {
+      continuingTasks.current.delete(threadId);
+      setContinuingTaskId((current) => (current === threadId ? null : current));
+    }
+  }, [activeTaskId, bridge, kernelUnavailable, modelId, mode, scenarioId, workspaceId]);
 
   const prepareTaskWithText = useCallback(
     (text: string) => {
@@ -3338,6 +3445,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           goal={goalsByTask[activeTaskId]}
           goalPanelRequest={
             goalPanelRequest.threadId === activeTaskId ? goalPanelRequest.sequence : 0
+          }
+          onContinue={!isSubagent ? () => void continueCurrentTask() : undefined}
+          continueDisabled={
+            kernelUnavailable || historyLoading || continuingTaskId === activeTaskId
           }
           focusItemId={focusItemId}
           onGoalSave={

@@ -174,10 +174,13 @@ export class ThreadProjection {
    */
   upsertFromThread(thread: Thread, origin: ThreadOrigin = {}): DerivedStatus {
     const existing = this.get(thread.id);
+    const latestTurn = thread.turns.at(-1);
+    const lastTurnStatus = latestTurn?.status ?? existing?.last_turn_status ?? null;
+    const lastTurnId = latestTurn?.id ?? existing?.last_turn_id ?? null;
     const modeId = origin.modeId ?? existing?.mode_id ?? null;
     const derived = deriveStatus({
       threadStatus: thread.status,
-      lastTurnStatus: existing?.last_turn_status ?? lastTurnStatusOf(thread),
+      lastTurnStatus,
       archived: existing ? existing.archived === 1 : false,
       modeId,
       hasPlanItem: existing?.has_plan_item === 1,
@@ -199,6 +202,8 @@ export class ThreadProjection {
            project_id = excluded.project_id,
            section_id = excluded.section_id,
            derived_status = excluded.derived_status,
+           last_turn_status = excluded.last_turn_status,
+           last_turn_id = excluded.last_turn_id,
            model = excluded.model,
            parent_thread_id = excluded.parent_thread_id,
            updated_at = excluded.updated_at,
@@ -218,8 +223,8 @@ export class ThreadProjection {
         thread.projectId ?? null,
         thread.section?.id ?? null,
         derived,
-        existing?.last_turn_status ?? lastTurnStatusOf(thread),
-        existing?.last_turn_id ?? lastTurnIdOf(thread),
+        lastTurnStatus,
+        lastTurnId,
         origin.scenarioId ?? null,
         modeId,
         origin.permissionId ?? null,
@@ -343,7 +348,14 @@ export class ThreadProjection {
     const row = this.get(threadId);
     this.#patch(threadId, { has_plan_item: hasSteps ? 1 : 0, updated_at: now });
     const derived = deriveStatus({
-      threadStatus: row ? null : null,
+      threadStatus:
+        row?.last_turn_status === 'inProgress' &&
+        (row.derived_status === 'running' || row.derived_status === 'pending')
+          ? {
+              type: 'active',
+              activeFlags: row.derived_status === 'pending' ? ['waitingOnApproval'] : [],
+            }
+          : null,
       lastTurnStatus: row?.last_turn_status ?? null,
       archived: row?.archived === 1,
       modeId: row?.mode_id ?? null,
@@ -520,13 +532,4 @@ export class ThreadProjection {
 function toMs(seconds: number | null | undefined): number | null {
   if (seconds === null || seconds === undefined) return null;
   return seconds < 1e12 ? Math.round(seconds * 1000) : Math.round(seconds);
-}
-
-function lastTurnStatusOf(thread: Thread): TurnStatus | null {
-  const last = thread.turns.at(-1);
-  return last?.status ?? null;
-}
-
-function lastTurnIdOf(thread: Thread): string | null {
-  return thread.turns.at(-1)?.id ?? null;
 }

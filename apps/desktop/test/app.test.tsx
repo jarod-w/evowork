@@ -969,6 +969,89 @@ describe('结果工作区真实接线', () => {
 });
 
 describe('回合失败留在任务时间线', () => {
+  it('重启补齐的历史优先于失联前发起的读取，失效的流式条目被清除', async () => {
+    let resolveHistory!: (value: {
+      items: readonly { id: string; type: string; text: string }[];
+    }) => void;
+    const task = {
+      id: 'restored',
+      title: '恢复历史任务',
+      status: 'running' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      openTask: () =>
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('恢复历史任务'));
+    await waitFor(() => expect(resolveHistory).toBeDefined());
+    emit.ui?.({
+      type: 'item',
+      taskId: 'restored',
+      item: { id: 'stale-reasoning', type: 'reasoning', completed: false },
+    });
+    emit.ui?.({ type: 'task-disconnected', taskId: 'restored' });
+    emit.ui?.({ type: 'task-updated', taskId: 'restored', status: 'interrupted' });
+    emit.ui?.({
+      type: 'task-restored',
+      taskId: 'restored',
+      history: {
+        items: [{ id: 'saved', type: 'agentMessage', text: '已保存的真实历史', completed: true }],
+        latestTurnId: 'turn-saved',
+      },
+    });
+    resolveHistory({ items: [{ id: 'old', type: 'agentMessage', text: '失联前的过期快照' }] });
+    await screen.findByText('已保存的真实历史');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '继续任务' }).hasAttribute('disabled')).toBe(false),
+    );
+    expect(screen.queryByText('失联前的过期快照')).toBeNull();
+    expect(screen.queryByText('思考中…')).toBeNull();
+  });
+  it('继续在原任务追加恢复要求，保留草稿且连续点击只发一次', async () => {
+    let finish!: (value: { threadId: string }) => void;
+    const send = vi.fn(
+      () =>
+        new Promise<{ threadId: string }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const task = {
+      id: 'recover',
+      title: '中断的报告',
+      status: 'interrupted' as const,
+      timeLabel: '刚刚',
+      updatedAt: Date.now(),
+      sectionId: 'ungrouped',
+    };
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+      send,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('中断的报告'));
+    const button = await screen.findByRole('button', { name: '继续任务' });
+    await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '保留这条草稿' } });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: 'recover',
+        text: expect.stringContaining('只执行剩余步骤'),
+      }),
+    );
+    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toBe('保留这条草稿');
+    finish({ threadId: 'recover' });
+    await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
+  });
   it('显示内核原始原因，并能用上一条需求重试当前任务', async () => {
     const send = vi.fn(async () => ({ threadId: 't-failed' }));
     const task = {

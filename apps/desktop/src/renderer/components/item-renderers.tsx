@@ -711,6 +711,7 @@ export function ItemRenderer({
             <>
               <StatusDot tone={failed ? 'danger' : exitCode === 0 ? 'accent' : 'muted'} />
               <code className="ew-command">$ {text(item, 'command')}</code>
+              {item.interrupted === true ? <span>已中断，结果需检查</span> : null}
               {exitCode !== undefined ? (
                 <span className="ew-exit-code">退出码 {exitCode}</span>
               ) : null}
@@ -779,6 +780,7 @@ export function ItemRenderer({
         const result = webResearchResult(item);
         const error = mcpContent(item).find((block) => block.type === 'text')?.text;
         let message = text(item, 'status') === 'inProgress' ? '正在读取…' : '未取得可用来源。';
+        if (item.interrupted === true) message = '读取已中断，可继续任务后重新查询。';
         try {
           const failure =
             typeof error === 'string' ? (JSON.parse(error) as { message?: string }) : undefined;
@@ -818,6 +820,7 @@ export function ItemRenderer({
             <>
               <StatusDot tone="muted" />
               <span>{server ? `${server}.${name}` : name}</span>
+              {item.interrupted === true ? <span>已中断，结果需检查</span> : null}
             </>
           }
         >

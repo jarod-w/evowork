@@ -78,6 +78,8 @@ export interface DeeplinkDelivery {
 }
 
 export type RendererEvent =
+  | { readonly type: 'task-disconnected'; readonly taskId: string }
+  | { readonly type: 'task-restored'; readonly taskId: string; readonly history: OpenTaskResult }
   /**
    * `evowork://` 进来了（02 §8）。
    *

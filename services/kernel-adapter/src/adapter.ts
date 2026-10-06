@@ -23,6 +23,7 @@ import {
   ERROR_CODE,
   EXPERIMENTAL_METHOD,
   JsonRpcCallError,
+  TransportClosedError,
   METHOD,
   fileChangeKind,
   fileChangeMovePath,
@@ -284,6 +285,7 @@ export function createAdapter(options: AdapterOptions) {
    * 这个 id 的地方就是 `turn/started` 通知 —— 不在这里接住，点「停止」时就无从谈起。
    */
   const activeTurns = new Map<string, string>();
+  const threadRevisions = new Map<string, number>();
   // 仅受信桌面入口本次 turn/start 的来源；不持久化、不继承到内核自动续跑。
   const desktopTurns = new Map<string, string>();
   async function startDesktopTurn(
@@ -291,6 +293,8 @@ export function createAdapter(options: AdapterOptions) {
     params: unknown,
     interactive = false,
   ): Promise<TurnStartResponse> {
+    if (session.phase !== 'ready')
+      throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
     try {
       const response = await session.peer.request<TurnStartResponse>(METHOD.turnStart, params);
       if (interactive && response.turn.status === 'inProgress')
@@ -453,6 +457,14 @@ export function createAdapter(options: AdapterOptions) {
     store,
     ephemeralThreadIds,
     onUiEvent: (event) => {
+      if (
+        'threadId' in event &&
+        (event.type === 'turn-started' ||
+          event.type === 'turn-completed' ||
+          event.type === 'task-removed' ||
+          event.type.startsWith('item-'))
+      )
+        threadRevisions.set(event.threadId, (threadRevisions.get(event.threadId) ?? 0) + 1);
       if (event.type === 'task-removed') {
         session.openThreads.delete(event.threadId);
         localQueues.delete(event.threadId);
@@ -463,6 +475,7 @@ export function createAdapter(options: AdapterOptions) {
         approvals.cancel((a) => a.threadId === event.threadId);
       }
       if (event.type === 'turn-started') {
+        if (!ephemeralThreadIds.has(event.threadId)) session.openThreads.add(event.threadId);
         activeTurns.set(event.threadId, event.turnId);
         if (desktopTurns.get(event.threadId) !== event.turnId) desktopTurns.delete(event.threadId);
       }
@@ -535,6 +548,30 @@ export function createAdapter(options: AdapterOptions) {
     },
     onNotice: (notice) => {
       desktopTurns.clear();
+      if (notice.kind === 'kernel-lost') {
+        activeTurns.clear();
+        approvals.cancel(() => true);
+        forgetFileChanges(() => true);
+        inFlightMcpCalls.clear();
+        localQueues.clear();
+        // 只校正执行状态，不发完成事件；完成事件会触发队列和自动化副作用。
+        for (const threadId of store.threads.queryThreadIds({
+          statuses: ['running', 'pending', 'planning'],
+          limit: -1,
+        })) {
+          const row = store.threads.get(threadId);
+          if (row?.last_turn_status !== 'inProgress' || !row.last_turn_id) continue;
+          session.openThreads.add(threadId);
+          threadRevisions.set(threadId, (threadRevisions.get(threadId) ?? 0) + 1);
+          store.threads.applyTurnCompleted(
+            threadId,
+            { id: row.last_turn_id, status: 'interrupted' },
+            now(),
+          );
+          options.onUiEvent?.({ type: 'task-disconnected', threadId });
+          options.onUiEvent?.({ type: 'task-status', threadId, status: 'interrupted' });
+        }
+      }
       options.onNotice?.(notice);
     },
     // R2 雷达：未识别的通知记形状（不记正文）。接在这里而不是让调用方自己接 ——
@@ -598,8 +635,13 @@ export function createAdapter(options: AdapterOptions) {
 
   /** 重启后补齐：恢复 thread 后重新读取历史（09 §1 / §5）。 */
   async function recoverOpenThreads(): Promise<number> {
+    const generation = session.generation;
     let recovered = 0;
+    const failed: string[] = [];
     for (const threadId of session.openThreads) {
+      if (session.generation !== generation) return recovered;
+      if (ephemeralThreadIds.has(threadId)) continue;
+      const revision = threadRevisions.get(threadId);
       try {
         await taskCwd(threadId);
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
@@ -607,16 +649,33 @@ export function createAdapter(options: AdapterOptions) {
         });
         // 拉全量 item 后由前端按 item_id 去重合并（09 §5 第三行：事件丢失的兜底）。
         // 某些存储后端尚未实现分页接口，要走 thread/read 的兼容路径。
-        await listAllThreadItemsWithFallback(
+        const items = await listAllThreadItemsWithFallback(
           (method, params) => session.peer.request(method, params),
           threadId,
           resumed.thread.turns,
         );
+        if (session.generation !== generation) return recovered;
+        if (threadRevisions.get(threadId) === revision) {
+          const status = store.threads.upsertFromThread(resumed.thread);
+          options.onUiEvent?.({ type: 'task-status', threadId, status });
+          options.onUiEvent?.({
+            type: 'task-restored',
+            threadId,
+            items,
+            latestTurn: resumed.thread.turns.at(-1),
+          });
+        }
         recovered += 1;
       } catch (err) {
+        failed.push(threadId);
         logger?.warn('adapter.recover.failed', { threadId, ...errorFields(err) });
       }
     }
+    if (failed.length > 0)
+      options.onUiEvent?.({
+        type: 'kernel-warning',
+        text: `${failed.length} 个任务的历史恢复失败，请重新打开任务检查；未自动重做。`,
+      });
     return recovered;
   }
 
@@ -1102,6 +1161,7 @@ export function createAdapter(options: AdapterOptions) {
       const page = threadIds
         .filter((threadId) => !ephemeralThreadIds.has(threadId))
         .slice(0, pageSize);
+      const revisions = new Map(page.map((id) => [id, threadRevisions.get(id)]));
       const results = await Promise.allSettled(
         page.map((threadId) =>
           session.peer.request<{ thread: Thread }>(METHOD.threadRead, { threadId }),
@@ -1110,6 +1170,8 @@ export function createAdapter(options: AdapterOptions) {
       let refreshed = 0;
       for (const result of results) {
         if (result.status !== 'fulfilled' || !result.value?.thread) continue;
+        if (threadRevisions.get(result.value.thread.id) !== revisions.get(result.value.thread.id))
+          continue;
         store.threads.upsertFromThread(result.value.thread);
         refreshed += 1;
       }
@@ -1121,15 +1183,30 @@ export function createAdapter(options: AdapterOptions) {
      * 用 `useStateDbOnly` 避免全量扫 rollout（文档明写）。
      */
     async reconcile(): Promise<{ upserted: number; removed: number }> {
-      const response = await session.peer.request<ThreadListResponse>(METHOD.threadList, {
-        limit: 200,
-        sortKey: 'recency_at',
-        useStateDbOnly: true,
-      });
-      const threads = response.data ?? [];
-      for (const thread of threads) store.threads.upsertFromThread(thread);
+      const revisions = new Map(threadRevisions);
+      const threads: Thread[] = [];
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const response = await session.peer.request<ThreadListResponse>(METHOD.threadList, {
+          limit: 200,
+          sortKey: 'recency_at',
+          useStateDbOnly: true,
+          ...(cursor ? { cursor } : {}),
+        });
+        threads.push(...(response.data ?? []));
+        cursor = response.nextCursor ?? undefined;
+        if (cursor && cursors.has(cursor)) throw new Error('任务列表分页游标重复，未删除本机投影');
+        if (cursor) cursors.add(cursor);
+      } while (cursor);
+      for (const thread of threads) {
+        if (threadRevisions.get(thread.id) === revisions.get(thread.id))
+          store.threads.upsertFromThread(thread);
+      }
       const stale = store.threads.idsNotIn(threads.map((t) => t.id));
-      for (const id of stale) store.threads.remove(id);
+      for (const id of stale) {
+        if (threadRevisions.get(id) === revisions.get(id)) store.threads.remove(id);
+      }
       logger?.info('adapter.reconcile.done', { itemCount: threads.length });
       return { upserted: threads.length, removed: stale.length };
     },
@@ -1147,6 +1224,8 @@ export function createAdapter(options: AdapterOptions) {
       readonly onCreated?: (threadId: string) => void;
       readonly goalObjective?: string;
     }): Promise<{ threadId: string; turn: Turn; degradations: readonly string[] }> {
+      if (session.phase !== 'ready')
+        throw new TransportClosedError('执行内核尚未恢复，请稍后创建任务');
       const scenario =
         scenarios.find((s) => s.id === args.scenarioId) ??
         scenarios.find((s) => s.default) ??
@@ -1344,6 +1423,8 @@ export function createAdapter(options: AdapterOptions) {
       readonly steer?: boolean;
       readonly desktopInteractive?: boolean;
     }): Promise<{ queued: boolean; degradations: readonly string[] }> {
+      if (session.phase !== 'ready')
+        throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
       const row = store.threads.get(args.threadId);
       const cwd = await taskCwd(args.threadId, args.overrides?.cwd);
       const running = row?.derived_status === 'running' || row?.derived_status === 'pending';
@@ -1603,6 +1684,8 @@ export function createAdapter(options: AdapterOptions) {
       readonly items: Promise<readonly ThreadItem[]>;
       readonly latestTurn: Promise<Turn | undefined>;
     }> {
+      if (session.phase !== 'ready')
+        throw new TransportClosedError('执行内核尚未恢复，请稍后创建任务');
       await taskCwd(threadId);
       session.openThreads.add(threadId);
       const ephemeral = ephemeralThreads.get(threadId);
@@ -1615,6 +1698,7 @@ export function createAdapter(options: AdapterOptions) {
         };
       }
       const cached = store.readItemDigest(threadId);
+      const revision = threadRevisions.get(threadId);
       const resumed = session.peer
         .request<ThreadResumeResponse>(METHOD.threadResume, { threadId })
         .catch(() => undefined);
@@ -1633,8 +1717,16 @@ export function createAdapter(options: AdapterOptions) {
           sortDirection: 'desc',
           itemsView: 'summary',
         })
-        .then(async (response) => response.data?.[0] ?? (await resumed)?.thread.turns.at(-1))
-        .catch(async () => (await resumed)?.thread.turns.at(-1));
+        .then(async (response) => (await resumed)?.thread.turns.at(-1) ?? response.data?.[0])
+        .catch(async () => (await resumed)?.thread.turns.at(-1))
+        .then(async (turn) => {
+          const thread = (await resumed)?.thread;
+          if (thread && threadRevisions.get(threadId) === revision) {
+            const status = store.threads.upsertFromThread({ ...thread, turns: turn ? [turn] : [] });
+            options.onUiEvent?.({ type: 'task-status', threadId, status });
+          }
+          return turn;
+        });
       return { cached, items, latestTurn };
     },
 

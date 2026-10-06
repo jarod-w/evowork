@@ -38,6 +38,25 @@ function immediateTimers() {
 }
 
 describe('KernelSession 握手（09 §3.2）', () => {
+  it('进程活着但不回复握手时限时结束，未决 RPC 不悬挂', async () => {
+    const server = new FakeAppServer();
+    server.blackhole('initialize');
+    const timers = immediateTimers();
+    const session = new KernelSession({
+      launcher: server.launcher(),
+      clientInfo: CLIENT_INFO,
+      handshakeTimeoutMs: 1,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    });
+    const result = expect(session.start()).rejects.toThrow('握手超时');
+    await new Promise((resolve) => setImmediate(resolve));
+    await timers.flush(1);
+    await result;
+    expect(session.phase).toBe('failed');
+    expect(session.peer.pendingCount).toBe(0);
+    await session.stop();
+  });
   it('声明 experimentalApi 并发出 `initialized` 通知（**不是** notifications/initialized，F17）', async () => {
     const server = new FakeAppServer();
     const timers = immediateTimers();
@@ -91,6 +110,73 @@ describe('KernelSession 握手（09 §3.2）', () => {
 });
 
 describe('崩溃 · 退避重启 · 会话恢复（09 §1）', () => {
+  it('恢复不回复时也有截止时间，耗尽预算后停止', async () => {
+    const server = new FakeAppServer();
+    const timers = immediateTimers();
+    const session = new KernelSession({
+      launcher: server.launcher(),
+      clientInfo: CLIENT_INFO,
+      maxRestartAttempts: 2,
+      recoveryTimeoutMs: 1,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+      recover: () => new Promise(() => {}),
+    });
+    await session.start();
+    server.crash();
+    await timers.flush(10);
+    expect(session.phase).toBe('failed');
+    expect(server.launches).toBe(3);
+    await session.stop();
+  });
+
+  it('重连后的迟到旧进程输出与退出不会改动新会话', async () => {
+    const old = new FakeAppServer();
+    const fresh = new FakeAppServer();
+    const timers = immediateTimers();
+    let launches = 0;
+    const session = new KernelSession({
+      launcher: { launch: () => (++launches === 1 ? old : fresh).launcher().launch() },
+      clientInfo: CLIENT_INFO,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    });
+    const received: unknown[] = [];
+    session.onNotification('turn/started', (event) => received.push(event));
+    await session.start();
+    old.crash();
+    await timers.flush(3);
+    old.notify('turn/started', { threadId: 'stale' });
+    fresh.notify('turn/started', { threadId: 'fresh' });
+    expect(received).toEqual([{ threadId: 'fresh' }]);
+    expect(session.phase).toBe('ready');
+    await session.stop();
+  });
+  it('握手成功但恢复持续失败，也会在预算内停止且只运行一条重启链', async () => {
+    const server = new FakeAppServer();
+    const timers = immediateTimers();
+    const notices: SessionNotice[] = [];
+    const session = new KernelSession({
+      launcher: server.launcher(),
+      clientInfo: CLIENT_INFO,
+      maxRestartAttempts: 2,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+      onNotice: (notice) => notices.push(notice),
+      recover: async () => {
+        throw new Error('恢复失败');
+      },
+    });
+    await session.start();
+    server.crash();
+    expect(notices.some((notice) => notice.kind === 'kernel-lost')).toBe(true);
+    await timers.flush(8);
+    expect(session.phase).toBe('failed');
+    expect(server.launches).toBe(3);
+    expect(notices.filter((notice) => notice.kind === 'kernel-restarted')).toHaveLength(0);
+    await session.stop();
+  });
+
   it('崩溃后按退避重启，恢复打开的会话，并**显式**通知用户', async () => {
     const server = new FakeAppServer();
     const timers = immediateTimers();
@@ -131,10 +217,9 @@ describe('崩溃 · 退避重启 · 会话恢复（09 §1）', () => {
     expect(methods.filter((m) => m === 'thread/items/list')).toHaveLength(2);
 
     // **不静默重启**：用户看到一条说明，且说明里有恢复了几个会话
-    expect(notices).toHaveLength(1);
-    expect(notices[0]?.kind).toBe('kernel-restarted');
-    expect(notices[0]?.recoveredThreads).toBe(2);
-    expect(notices[0]?.text).toContain('已重启');
+    expect(notices.map((notice) => notice.kind)).toEqual(['kernel-lost', 'kernel-restarted']);
+    expect(notices[1]?.recoveredThreads).toBe(2);
+    expect(notices[1]?.text).toContain('已重启');
     expect(phases).toContain('restarting');
     await session.stop();
   });

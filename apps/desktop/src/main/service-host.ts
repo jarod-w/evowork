@@ -1382,6 +1382,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     onNotice: (notice: SessionNotice) => {
       computerUse.stop();
+      if (notice.kind === 'kernel-lost') services.onKernelExit();
+      if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed') {
+        for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
+        approvalReplies.clear();
+        pendingApprovalById.clear();
+      }
       options.emitToRenderer(IPC.notice, notice);
     },
     // 降级一律显式（09 §3.3）：推给 UI，让它在设置里列出"当前不可用的能力"

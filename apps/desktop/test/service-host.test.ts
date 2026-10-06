@@ -634,12 +634,23 @@ describe('崩溃恢复（09 §1）', () => {
     await vi.waitFor(
       () => {
         const notices = emitted.filter((e) => e.channel === IPC.notice);
-        expect(notices.length).toBeGreaterThan(0);
+        expect(
+          notices.some(
+            (notice) => (notice.payload as { kind: string }).kind === 'kernel-restarted',
+          ),
+        ).toBe(true);
       },
       { timeout: 4000 },
     );
 
     const notice = emitted.filter((e) => e.channel === IPC.notice).at(-1);
+    expect(
+      emitted.some(
+        (event) =>
+          event.channel === IPC.notice &&
+          (event.payload as { kind: string }).kind === 'kernel-lost',
+      ),
+    ).toBe(true);
     expect((notice?.payload as { kind: string }).kind).toBe('kernel-restarted');
     // **不静默重启**：文案要让用户知道刚才那个中断的任务发生了什么
     expect((notice?.payload as { text: string }).text).toContain('已重启');

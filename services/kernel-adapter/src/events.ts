@@ -25,6 +25,13 @@ import { deriveStatus, type DerivedStatus, type Store } from '@evowork/store';
 
 /** 前端消费的语义化事件。**不包含协议方法名** —— 前端不该知道那些（K2）。 */
 export type UiEvent =
+  | { readonly type: 'task-disconnected'; readonly threadId: string }
+  | {
+      readonly type: 'task-restored';
+      readonly threadId: string;
+      readonly items: readonly ThreadItem[];
+      readonly latestTurn?: Turn | undefined;
+    }
   | { readonly type: 'task-created'; readonly threadId: string; readonly title: string | null }
   | {
       readonly type: 'task-status';

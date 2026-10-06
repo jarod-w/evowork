@@ -142,6 +142,7 @@ export class JsonRpcPeer {
   #requestHandlers = new Map<string, ServerRequestHandler>();
   #closed = false;
   #transport: JsonRpcTransport;
+  #connectionRevision = 0;
 
   constructor(private readonly options: JsonRpcPeerOptions) {
     this.#transport = options.transport;
@@ -155,6 +156,7 @@ export class JsonRpcPeer {
    * 而"没人接"的表现是那个任务静静地停在那里（F14：内核会一直等）。
    */
   setTransport(transport: JsonRpcTransport): void {
+    this.#connectionRevision += 1;
     this.#transport = transport;
     this.#closed = false;
   }
@@ -320,6 +322,8 @@ export class JsonRpcPeer {
   }
 
   async #dispatchServerRequest(id: RequestId, method: string, params: unknown): Promise<void> {
+    const transport = this.#transport;
+    const revision = this.#connectionRevision;
     const handler = this.#requestHandlers.get(method);
     if (!handler) {
       // 没有处理器 → 显式错误回复。静默丢弃会让内核永远等下去（F14）。
@@ -332,8 +336,13 @@ export class JsonRpcPeer {
     }
     try {
       const result = await handler(params, method);
+      // 旧进程的审批可能在重连之后才结束；同 id 已属于新进程，不能替它作答。
+      if (this.#closed || this.#transport !== transport || this.#connectionRevision !== revision)
+        return;
       this.#respondResult(id, result ?? {});
     } catch (err) {
+      if (this.#closed || this.#transport !== transport || this.#connectionRevision !== revision)
+        return;
       this.#respondError(
         id,
         ERROR_CODE.internalError,
@@ -360,6 +369,7 @@ export class JsonRpcPeer {
    * 而"显式"的前提是等待中的调用会有一个结论。
    */
   close(reason = '正常关闭'): void {
+    this.#connectionRevision += 1;
     this.#closed = true;
     const err = new TransportClosedError(reason);
     for (const [, entry] of this.#pending) {
@@ -372,6 +382,7 @@ export class JsonRpcPeer {
 
   /** 重连后复用同一个 peer 时调用：清掉旧的 in-flight，但保留订阅。 */
   resetPending(reason: string): void {
+    this.#connectionRevision += 1;
     const err = new TransportClosedError(reason);
     for (const [, entry] of this.#pending) {
       if (entry.timer) clearTimeout(entry.timer);

@@ -177,7 +177,7 @@ export function groupTimelineItems(items: readonly RenderItem[]): readonly Timel
 
 export interface ProcessSummary {
   readonly label: string;
-  readonly status: '进行中' | '已完成' | '失败' | '需要你处理';
+  readonly status: '进行中' | '已完成' | '失败' | '已中断' | '需要你处理';
   readonly detail?: string | undefined;
 }
 
@@ -211,7 +211,13 @@ export function summarizeProcess(items: readonly RenderItem[]): ProcessSummary {
      * 就会出现“报告已生成，但界面说失败”。真正的回合失败由 turnFailure 卡片
      * 和任务状态表达；单个命令的退出码仍在展开的操作详情里如实显示。
      */
-    status: needsUser ? '需要你处理' : running ? '进行中' : '已完成',
+    status: needsUser
+      ? '需要你处理'
+      : running
+        ? '进行中'
+        : items.some((item) => item.interrupted === true)
+          ? '已中断'
+          : '已完成',
     detail,
   };
 }
@@ -330,6 +336,8 @@ export interface TaskWorkspaceProps {
   readonly onNewTask?: (() => void) | undefined;
   readonly goal?: TaskGoalView | undefined;
   readonly goalPanelRequest?: number | undefined;
+  readonly onContinue?: (() => void) | undefined;
+  readonly continueDisabled?: boolean | undefined;
   readonly onGoalSave?:
     | ((input: {
         objective: string;
@@ -430,6 +438,14 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
       ? undefined
       : Math.min(100, (props.goal.tokensUsed / props.goal.tokenBudget) * 100);
   const goalExhausted = props.goal?.status === 'budgetLimited';
+  const latestPlan = [...props.items]
+    .reverse()
+    .find((item) => item.type === 'plan' && Array.isArray(item.steps));
+  const steps = (latestPlan?.steps ?? []) as readonly { step?: string; status?: string }[];
+  const completedSteps = steps.filter((step) => step.status === 'completed').length;
+  const currentStep = steps.find(
+    (step) => step.status === 'inProgress' || step.status === 'in_progress',
+  );
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const resultTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -637,22 +653,41 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
         </div>
       </header>
 
-      {props.goal ? (
+      {props.goal ||
+      ((props.status === 'running' || props.status === 'pending') && steps.length > 0) ? (
         <section
           className="ew-goal-progress"
-          data-tone={(goalProgress ?? 0) >= 80 ? 'warning' : 'accent'}
-          aria-label="持续目标"
+          data-tone={goalProgress !== undefined && goalProgress >= 80 ? 'warning' : 'accent'}
+          aria-label={props.goal ? '持续目标' : '任务执行进度'}
         >
           <div className="ew-goal-progress-copy">
-            <span>{props.goal.objective}</span>
+            <span>{props.goal?.objective ?? '任务计划'}</span>
             <span>
-              {GOAL_STATUS_LABELS[props.goal.status]} · {props.goal.tokensUsed.toLocaleString()}
+              {props.goal
+                ? props.goal.status === 'active' &&
+                  (props.status === 'failed' || props.status === 'interrupted')
+                  ? '等待继续'
+                  : GOAL_STATUS_LABELS[props.goal.status]
+                : view.label}
+            </span>
+          </div>
+          {steps.length > 0 ? (
+            <div className="ew-goal-progress-copy" role="status">
+              <span>
+                已完成 {completedSteps}/{steps.length} 步
+                {currentStep?.step ? ` · 当前：${currentStep.step}` : ''}
+              </span>
+            </div>
+          ) : null}
+          {props.goal ? (
+            <span>
+              {props.goal.tokensUsed.toLocaleString()}
               {props.goal.tokenBudget != null
                 ? ` / ${props.goal.tokenBudget.toLocaleString()}`
                 : ''}
               {' tokens'} · {props.goal.timeUsedSeconds}s
             </span>
-          </div>
+          ) : null}
           {goalProgress !== undefined ? (
             <progress max={100} value={goalProgress} aria-label="Token 预算使用比例" />
           ) : null}
@@ -890,6 +925,19 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                 </div>
               ) : null}
 
+              {(props.status === 'interrupted' || props.status === 'failed') && props.onContinue ? (
+                <section className="ew-turn-failure" aria-label="任务恢复">
+                  <p>已有历史和产物保留在本机。继续时会先检查进度，再完成剩余步骤。</p>
+                  <PillButton
+                    variant="accent"
+                    disabled={props.continueDisabled}
+                    onClick={props.onContinue}
+                  >
+                    继续任务
+                  </PillButton>
+                </section>
+              ) : null}
+
               {props.turnRetry ? (
                 /*
                  * 用和「已停止，可在下方继续」同一种分隔行，而不是新做一个组件：
@@ -923,7 +971,11 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                   ) : null}
                   <div className="ew-turn-failure-actions">
                     {props.turnFailure.onRetry ? (
-                      <PillButton variant="accent" onClick={props.turnFailure.onRetry}>
+                      <PillButton
+                        variant="accent"
+                        disabled={props.continueDisabled}
+                        onClick={props.turnFailure.onRetry}
+                      >
                         重试
                       </PillButton>
                     ) : null}

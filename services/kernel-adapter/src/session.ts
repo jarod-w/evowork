@@ -67,6 +67,9 @@ export interface KernelSessionOptions {
   readonly maxBackoffMs?: number;
   /** 连续重启失败多少次后放弃，默认 6（约覆盖 1+2+4+8+16+30 秒） */
   readonly maxRestartAttempts?: number;
+  /** 仅控制握手与重启恢复，不给正常长任务设置 RPC 截止时间。 */
+  readonly handshakeTimeoutMs?: number;
+  readonly recoveryTimeoutMs?: number;
   /** 定时器注入，便于测试用假时钟 */
   readonly setTimeoutFn?: typeof setTimeout;
   readonly clearTimeoutFn?: typeof clearTimeout;
@@ -86,6 +89,8 @@ export class KernelSession {
   #heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   #heartbeatMisses = 0;
   #stopping = false;
+  #restarting = false;
+  #generation = 0;
   #initializeResult: InitializeResponse | undefined;
   /** 打开中的 thread（重启后要补齐它们）。由 adapter 维护。 */
   readonly openThreads = new Set<string>();
@@ -94,6 +99,10 @@ export class KernelSession {
 
   get phase(): SessionPhase {
     return this.#phase;
+  }
+
+  get generation(): number {
+    return this.#generation;
   }
 
   get peer(): JsonRpcPeer {
@@ -121,14 +130,21 @@ export class KernelSession {
 
   async start(): Promise<void> {
     this.#stopping = false;
-    await this.#launchAndHandshake();
+    try {
+      await this.#launchAndHandshake();
+      this.#markReady();
+    } catch (error) {
+      this.#discardProcess();
+      this.#setPhase('failed');
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
     this.#stopping = true;
     this.#stopHeartbeat();
+    this.#discardProcess();
     this.#peer?.close('正常关闭');
-    this.#process?.kill();
     this.#setPhase('stopped');
   }
 
@@ -139,8 +155,13 @@ export class KernelSession {
    * 09 §3.2 写错了，已按实测（`app-server-test-client/src/lib.rs:1773`）回写文档（F17）。
    */
   async #launchAndHandshake(): Promise<void> {
+    this.#generation += 1;
     this.#setPhase('starting');
     const proc = await this.options.launcher.launch();
+    if (this.#stopping) {
+      proc.kill();
+      throw new TransportClosedError('内核启动已取消');
+    }
     this.#process = proc;
 
     const transport: JsonRpcTransport = {
@@ -156,16 +177,27 @@ export class KernelSession {
     peer.setTransport(transport);
 
     const framer = new LineFramer((line) => peer.handleLine(line));
-    proc.onStdout((chunk) => framer.push(chunk));
-    proc.onExit((info) => this.#handleExit(info));
-
-    this.#initializeResult = await peer.request<InitializeResponse>(METHOD.initialize, {
-      clientInfo: this.options.clientInfo,
-      // K2：不声明它，所有实验方法都会被拒
-      capabilities: { experimentalApi: true },
+    proc.onStdout((chunk) => {
+      if (this.#process === proc && !this.#stopping) framer.push(chunk);
     });
-    peer.notify(METHOD.initialized);
+    proc.onExit((info) => {
+      if (this.#process === proc) this.#handleExit(info);
+    });
 
+    this.#initializeResult = await this.#bounded(
+      peer.request<InitializeResponse>(METHOD.initialize, {
+        clientInfo: this.options.clientInfo,
+        // K2：不声明它，所有实验方法都会被拒
+        capabilities: { experimentalApi: true },
+      }),
+      this.options.handshakeTimeoutMs ?? 10_000,
+      '内核握手超时',
+    );
+    if (this.#process !== proc || this.#stopping) throw new TransportClosedError('内核启动已取消');
+    peer.notify(METHOD.initialized);
+  }
+
+  #markReady(): void {
     this.#restartAttempt = 0;
     this.#heartbeatMisses = 0;
     this.#setPhase('ready');
@@ -195,57 +227,95 @@ export class KernelSession {
     }
   }
 
+  #discardProcess(): void {
+    this.#generation += 1;
+    const process = this.#process;
+    this.#process = undefined;
+    this.#stopHeartbeat();
+    this.#peer?.resetPending('内核连接已断开');
+    process?.kill();
+  }
+
+  async #bounded<T>(work: Promise<T>, ms: number, reason: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timer = (this.options.setTimeoutFn ?? setTimeout)(() => reject(new Error(reason)), ms);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) (this.options.clearTimeoutFn ?? clearTimeout)(timer);
+    }
+  }
+
   #handleExit(info: { code: number | null; signal: string | null }): void {
+    this.#generation += 1;
+    this.#process = undefined;
     this.#stopHeartbeat();
     if (this.#stopping) return;
-
     this.options.logger?.warn('adapter.kernel.exited', {
       exitCode: info.code ?? undefined,
       reason: info.signal ? 'SIGNAL' : 'EXIT',
     });
-    // 把 in-flight 请求拒掉：否则 UI 上的按钮永远转圈
     this.#peer?.resetPending('内核退出');
-    void this.#scheduleRestart();
+    this.options.onNotice?.({
+      kind: 'kernel-lost',
+      text: '与执行内核的连接中断，正在重连…任务不会自动重做；未执行的排队输入可能丢失，请恢复后确认。',
+    });
+    if (!this.#restarting) void this.#scheduleRestart();
   }
 
   async #scheduleRestart(): Promise<void> {
-    if (this.#stopping) return;
+    this.#restarting = true;
     const maxAttempts = this.options.maxRestartAttempts ?? 6;
-    if (this.#restartAttempt >= maxAttempts) {
-      this.#setPhase('failed');
-      this.options.onNotice?.({
-        kind: 'kernel-failed',
-        text: `执行内核连续 ${maxAttempts} 次启动失败，已停止重试。任务无法执行，请查看日志或重启应用。`,
-      });
-      return;
-    }
-
-    // 1s / 2s / 4s … 上限 30s（09 §1）
-    const backoff = Math.min(1000 * 2 ** this.#restartAttempt, this.options.maxBackoffMs ?? 30_000);
-    this.#restartAttempt += 1;
-    this.#setPhase('restarting');
-
-    await new Promise<void>((resolve) => {
-      (this.options.setTimeoutFn ?? setTimeout)(resolve, backoff);
-    });
-    if (this.#stopping) return;
-
     try {
-      await this.#launchAndHandshake();
-      const recovered = (await this.options.recover?.(this.peer)) ?? 0;
-      // **不静默重启**（09 §1）：用户需要知道刚才那个中断的任务发生了什么
-      this.options.onNotice?.({
-        kind: 'kernel-restarted',
-        text:
-          recovered > 0
-            ? `执行内核已重启，${recovered} 个会话已恢复。中断处的进度可能需要你重新确认。`
-            : '执行内核已重启。',
-        recoveredThreads: recovered,
-      });
-      this.options.logger?.info('adapter.kernel.restarted', { itemCount: recovered });
-    } catch (err) {
-      this.options.logger?.error('adapter.kernel.restart_failed', errorFields(err));
-      void this.#scheduleRestart();
+      while (!this.#stopping && this.#restartAttempt < maxAttempts) {
+        const backoff = Math.min(
+          1000 * 2 ** this.#restartAttempt,
+          this.options.maxBackoffMs ?? 30_000,
+        );
+        this.#restartAttempt += 1;
+        this.#setPhase('restarting');
+        await new Promise<void>((resolve) => {
+          (this.options.setTimeoutFn ?? setTimeout)(resolve, backoff);
+        });
+        if (this.#stopping) return;
+        try {
+          await this.#launchAndHandshake();
+          const recovered = await this.#bounded(
+            this.options.recover?.(this.peer) ?? Promise.resolve(0),
+            this.options.recoveryTimeoutMs ?? 60_000,
+            '内核会话恢复超时',
+          );
+          if (this.#stopping) return;
+          if (!this.#process) throw new TransportClosedError('恢复期间内核退出');
+          this.#markReady();
+          this.options.onNotice?.({
+            kind: 'kernel-restarted',
+            text:
+              recovered > 0
+                ? `执行内核已重启，${recovered} 个会话历史已恢复。检查已有进度后可继续任务；未执行的排队输入请重新确认。`
+                : '执行内核已重启。',
+            recoveredThreads: recovered,
+          });
+          this.options.logger?.info('adapter.kernel.restarted', { itemCount: recovered });
+          return;
+        } catch (err) {
+          this.options.logger?.error('adapter.kernel.restart_failed', errorFields(err));
+          this.#discardProcess();
+        }
+      }
+      if (!this.#stopping) {
+        this.#setPhase('failed');
+        this.options.onNotice?.({
+          kind: 'kernel-failed',
+          text: `执行内核连续 ${maxAttempts} 次启动或恢复失败，已停止重试。任务无法执行，请查看日志或重启应用。`,
+        });
+      }
+    } finally {
+      this.#restarting = false;
     }
   }
 
@@ -262,8 +332,9 @@ export class KernelSession {
     // 重启路径会再调一次；不先停表的话两条心跳链会并存，误判次数跟着翻倍
     this.#stopHeartbeat();
     const interval = this.options.heartbeatIntervalMs ?? 30_000;
+    const generation = this.#generation;
     const tick = async (): Promise<void> => {
-      if (this.#stopping) return;
+      if (this.#stopping || this.#generation !== generation) return;
       if (this.#phase !== 'ready') {
         /*
          * 这一拍赶上了非 ready 的相位（启动中 / 退避重启中）：**跳过这次探测，
@@ -300,8 +371,10 @@ export class KernelSession {
             );
           }),
         ]);
+        if (this.#generation !== generation) return;
         this.#heartbeatMisses = 0;
       } catch {
+        if (this.#generation !== generation) return;
         this.#heartbeatMisses += 1;
         const max = this.options.maxHeartbeatMisses ?? 3;
         this.options.logger?.warn('adapter.kernel.heartbeat_miss', {
@@ -309,10 +382,6 @@ export class KernelSession {
         });
         if (this.#heartbeatMisses >= max) {
           // stdio 管道阻塞：进程还活着但不回应。按崩溃路径处理（09 §5 第二行）
-          this.options.onNotice?.({
-            kind: 'kernel-lost',
-            text: '与执行内核的连接中断，正在重连…',
-          });
           this.#heartbeatMisses = 0;
           this.#process?.kill();
           return;

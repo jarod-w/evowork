@@ -718,6 +718,36 @@ export function createEventTranslator(store: Store, now: () => number) {
   };
   return function translate(event: UiEvent): readonly RendererEvent[] {
     switch (event.type) {
+      case 'task-disconnected':
+      case 'task-restored': {
+        for (const [id, held] of streaming)
+          if (held.taskId === event.threadId) streaming.delete(id);
+        if (event.type === 'task-disconnected')
+          return [{ type: 'task-disconnected', taskId: event.threadId }];
+        const turn = event.latestTurn;
+        return [
+          {
+            type: 'task-restored',
+            taskId: event.threadId,
+            history: {
+              items: event.items.map((item) =>
+                toTaskHistoryItem(item, turn?.status !== 'inProgress'),
+              ),
+              ...(turn ? { latestTurnId: turn.id } : {}),
+              ...(turn?.status === 'failed' && turn.error
+                ? {
+                    turnFailure: {
+                      message: turn.error.message,
+                      ...(turn.error.additionalDetails
+                        ? { details: turn.error.additionalDetails }
+                        : {}),
+                    },
+                  }
+                : {}),
+            },
+          },
+        ];
+      }
       case 'task-removed':
         for (const [id, held] of streaming)
           if (held.taskId === event.threadId) streaming.delete(id);
@@ -1901,7 +1931,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
         : {};
       try {
         const listed = await items;
-        return { items: listed.map(toHistoryItem), ...turnFields };
+        return {
+          items: listed.map((item) => toTaskHistoryItem(item, turn?.status !== 'inProgress')),
+          ...turnFields,
+        };
       } catch (err: unknown) {
         const reason = err instanceof Error ? err.message : String(err);
         return {
@@ -3279,6 +3312,14 @@ export function fullAccessApprovalReply(approval: PendingApproval): ApprovalRepl
  */
 export function toHistoryItem(item: ThreadItem): RenderItemView {
   return { ...normalizeThreadItem(item), completed: true };
+}
+
+/** 非活动任务中没有收尾的工具只能说明已中断，不能继续显示“进行中”。 */
+function toTaskHistoryItem(item: ThreadItem, stopped: boolean): RenderItemView {
+  const view = toHistoryItem(item);
+  return stopped && view.status === 'inProgress'
+    ? { ...view, status: 'interrupted', interrupted: true }
+    : view;
 }
 
 /** 快显缓存 → 能画出来的条目。摘要不是正文副本（09 §4.2），只在权威列表失败时用。 */

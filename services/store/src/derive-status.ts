@@ -62,7 +62,13 @@ export function deriveStatus(input: DeriveInput): DerivedStatus {
   // 规划中：有 plan item 且用户尚未确认执行（Q45：不绑定已下架的 Plan 协作模式）。
   // 注意它排在 last_turn_status 之后判断会出错 —— 产出计划的那个回合本身是
   // completed，所以若先看 last_turn_status，"规划中"永远不会出现。
-  if (input.hasPlanItem && !input.planConfirmed) {
+  if (
+    input.hasPlanItem &&
+    !input.planConfirmed &&
+    input.lastTurnStatus !== 'failed' &&
+    input.lastTurnStatus !== 'interrupted' &&
+    input.lastTurnStatus !== 'inProgress'
+  ) {
     return 'planning';
   }
 

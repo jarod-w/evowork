@@ -30,6 +30,27 @@ function fakeTransport() {
 }
 
 describe('LineFramer —— chunk 边界与消息边界无关', () => {
+  it('旧连接的延迟审批回复不会发给重连后的同 id 请求', async () => {
+    const old = fakeTransport();
+    const fresh = fakeTransport();
+    const peer = new JsonRpcPeer({ transport: old.transport });
+    let finish!: (value: unknown) => void;
+    peer.onRequest(
+      'approval',
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    peer.handleMessage({ id: 1, method: 'approval', params: {} });
+    peer.resetPending('失联');
+    peer.setTransport(fresh.transport);
+    finish({ decision: 'accept' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(fresh.sent).toEqual([]);
+    expect(old.sent).toEqual([]);
+    peer.close();
+  });
   it('一个 chunk 里多条消息、以及跨 chunk 的半条，都能正确拆开', () => {
     const lines: string[] = [];
     const framer = new LineFramer((l) => lines.push(l));
