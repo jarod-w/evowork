@@ -581,6 +581,27 @@
       },
       "mustContain": ["sess.set_total_tokens_full(&turn_context).await;"],
       "impact": "用户看到的超限文案（services/kernel-adapter/src/events.ts）承诺「再发一条会先压缩早期对话」，就靠这一行。上游改成别的处理（例如本轮内直接压缩重试），文案要跟着改"
+    },
+    {
+      "id": "F49",
+      "summary": "configRequirements/read 返回可空的有效 requirements；电脑操控总开关及逐应用/持久约束使用 camelCase 序列化",
+      "file": "codex-rs/app-server-protocol/src/protocol/v2/config.rs",
+      "needle": "pub struct ConfigRequirements {",
+      "line": 413,
+      "scopeLines": {
+        "before": 3,
+        "after": 331
+      },
+      "mustContain": [
+        "#[serde(rename_all = \"camelCase\")]",
+        "pub allow_browser_and_computer_use: Option<bool>",
+        "pub computer_use: Option<ComputerUseRequirements>",
+        "pub allow_persistent_approval: Option<bool>",
+        "pub default_app_access: Option<AllowDenyRequirement>",
+        "pub bundle_ids: Option<BTreeMap<String, AllowDenyRequirement>>",
+        "pub requirements: Option<ConfigRequirements>"
+      ],
+      "impact": "电脑操控 P2 经适配层读取有效 requirements，与 EvoWork 本机 requirements 逐层合并；字段漂移会使准入策略失效，读取失败/形状异常必须保守禁用"
     }
   ]
 }

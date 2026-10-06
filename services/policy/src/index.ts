@@ -8,5 +8,6 @@ export * from './platform.js';
 export * from './profiles.js';
 export * from './computer-use.js';
 export * from './computer-use-action.js';
+export * from './computer-use-requirements.js';
 export * from './hooks/contract.js';
 export * from './hooks/handlers.js';

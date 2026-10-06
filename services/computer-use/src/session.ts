@@ -34,6 +34,10 @@ export class ComputerUseSession {
     private readonly now = () => performance.now(),
   ) {}
 
+  get actionCount(): number {
+    return this.writes;
+  }
+
   observe(window: WindowIdentity, elements: readonly number[], coordinateFallback = false): string {
     this.assertActive();
     const id = randomUUID();

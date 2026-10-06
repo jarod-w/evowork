@@ -136,7 +136,9 @@ export interface EvoworkBridge {
   setComputerUseEnabled?(input: { enabled: boolean }): Promise<ComputerUseStatusView>;
   stopComputerUse?(): Promise<ComputerUseStatusView>;
   revokeComputerUseAccess?(input: { appId?: string }): Promise<ComputerUseStatusView>;
-  openComputerUseSettings?(): Promise<void>;
+  openComputerUseSettings?(input?: {
+    permission: 'accessibility' | 'screenRecording';
+  }): Promise<void>;
   onComputerUseStatus?(handler: (status: ComputerUseStatusView) => void): () => void;
   onUiEvent(handler: (event: RendererEvent) => void): () => void;
   onNotice(handler: (notice: { kind: string; text: string }) => void): () => void;
@@ -2827,7 +2829,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
 
       {computerUse?.state === 'active' ? (
         <div className="ew-approval-bar" role="status">
-          <span>{computerUse.message}</span>
+          <span>
+            {computerUse.message} · 已尝试 {computerUse.actionCount ?? 0} / 100 次动作
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -2863,9 +2867,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then(setComputerUse)
               .catch((error: unknown) => reportFailure(error, '没能撤销应用授权。'));
           }}
-          onComputerUseSettings={() => {
+          onComputerUseRefresh={() => {
             void bridge
-              .openComputerUseSettings?.()
+              .getComputerUseStatus?.()
+              .then(setComputerUse)
+              .catch((error: unknown) => reportFailure(error, '没能重新检查电脑操控。'));
+          }}
+          onComputerUseSettings={(permission) => {
+            void bridge
+              .openComputerUseSettings?.({ permission: permission ?? 'accessibility' })
               .catch((error: unknown) => reportFailure(error, '没能打开系统设置。'));
           }}
           preferences={preferences}
@@ -3534,7 +3544,9 @@ function MainPage(props: {
   readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
   readonly onComputerUseStop?: (() => void) | undefined;
   readonly onComputerUseRevoke?: ((appId?: string) => void) | undefined;
-  readonly onComputerUseSettings?: (() => void) | undefined;
+  readonly onComputerUseSettings?:
+    ((permission?: 'accessibility' | 'screenRecording') => void) | undefined;
+  readonly onComputerUseRefresh?: (() => void) | undefined;
 
   readonly view: MainView;
   readonly settingsSection: SettingsSection;
@@ -3712,6 +3724,7 @@ function MainPage(props: {
           onComputerUseStop={props.onComputerUseStop}
           onComputerUseRevoke={props.onComputerUseRevoke}
           onComputerUseSettings={props.onComputerUseSettings}
+          onComputerUseRefresh={props.onComputerUseRefresh}
           preferences={props.preferences}
           memory={props.memory}
           appName={props.appName}

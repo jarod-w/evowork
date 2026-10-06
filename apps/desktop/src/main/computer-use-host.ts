@@ -14,6 +14,8 @@ import {
 } from '@evowork/computer-use';
 import {
   assessComputerUseAction,
+  computerUseEnterpriseAccess,
+  type ComputerUseRequirementsPolicy,
   decideComputerUseAccess,
   type ComputerUseAppKind,
   type ComputerUseActionTarget,
@@ -53,12 +55,17 @@ export interface ComputerUseView {
     | 'permission-required'
     | 'ready'
     | 'active'
-    | 'component-error';
+    | 'component-error'
+    | 'enterprise-blocked';
   message: string;
   grants: { appId: string; allowed: boolean }[];
   activeApp?: string;
+  actionCount?: number;
+  permissions?: { accessibility: boolean; screenRecording: boolean | null };
+  component?: 'unchecked' | 'connected' | 'error';
+  persistentAllowed?: boolean;
 }
-interface Context {
+export interface ComputerUseContext {
   turnId: string;
   model: string;
   credentialSource: string;
@@ -67,6 +74,7 @@ interface Context {
   imageSupported: boolean;
   enterpriseAllowed: boolean;
   persistentAllowed: boolean;
+  requirements?: ComputerUseRequirementsPolicy;
 }
 interface Grant {
   identity: string;
@@ -77,7 +85,10 @@ export interface ComputerUseHostOptions {
   platform: string;
   releaseVerified: boolean;
   helper: NativeHelper;
-  context: (threadId: string) => Context | undefined;
+  context: (
+    threadId: string,
+  ) => ComputerUseContext | undefined | Promise<ComputerUseContext | undefined>;
+  enterprisePolicy?: () => Promise<ComputerUseRequirementsPolicy>;
   ask: (approval: PendingApproval) => Promise<ApprovalReply>;
   enabledChanged?: (enabled: boolean) => void;
   cancelApprovals?: () => void;
@@ -137,7 +148,12 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
     /* 缺失/损坏都不给授权。 */
   }
   let enabled = false;
+  let permissions: ComputerUseView['permissions'];
+  let component: NonNullable<ComputerUseView['component']> = 'unchecked';
+  let persistentAllowed = true;
   let busy = false;
+  let refreshPending: Promise<ComputerUseView> | undefined;
+  let controlGeneration = 0;
   let active:
     | {
         threadId: string;
@@ -165,7 +181,11 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         : 'disabled';
   let message =
     state === 'unsupported'
-      ? '电脑操控仅支持 macOS 14.4 及以上。'
+      ? options.platform === 'win32'
+        ? 'Windows UIA 电脑操控驱动尚未提供。'
+        : options.platform === 'linux'
+          ? 'Linux Wayland/X11 电脑操控驱动尚未提供。'
+          : '当前平台没有电脑操控驱动；支持 macOS 14.4 及以上。'
       : state === 'unverified'
         ? '此构建尚未完成原生签名、历史删除与用户中断验收，暂不能启用。'
         : '电脑操控未启用。';
@@ -175,7 +195,10 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
       state,
       message,
       grants: Object.entries(grants).map(([appId, grant]) => ({ appId, allowed: grant.allowed })),
-      ...(active ? { activeApp: active.app } : {}),
+      component,
+      persistentAllowed,
+      ...(permissions ? { permissions } : {}),
+      ...(active ? { activeApp: active.app, actionCount: active.session.actionCount } : {}),
     };
   }
   function changed() {
@@ -189,6 +212,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
   }
   /** `user` = 用户点了「停止控制」（12 §8.2 的 computer_use.user_stopped）；其余是回合结束、关闭等收尾 */
   function stop(reason: 'user' | 'system' = 'system') {
+    controlGeneration++;
     options.cancelApprovals?.();
     if (active && reason === 'user') {
       options.audit?.({
@@ -251,16 +275,21 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
       pending.delete(id);
     }
   }
-  async function call(
+  async function execute(
     request: McpHostCall,
     signal?: AbortSignal,
   ): Promise<{ content: McpContent[]; isError?: boolean }> {
-    if (busy || !enabled || !options.releaseVerified) throw new ComputerUseError('POLICY_DENIED');
+    if (!enabled || !options.releaseVerified) throw new ComputerUseError('POLICY_DENIED');
+    const generation = controlGeneration;
     const args = validateToolCall(request.name, request.arguments);
-    const context = options.context(request.threadId);
+    const context = await options.context(request.threadId);
     if (!context || !context.interactive || !context.root || !context.enterpriseAllowed)
       throw new ComputerUseError('POLICY_DENIED');
     const turnKey = `${request.threadId}:${context.turnId}`;
+    if (generation !== controlGeneration) {
+      stoppedTurns.add(turnKey);
+      throw new ComputerUseError('USER_STOPPED');
+    }
     if (stoppedTurns.has(turnKey)) {
       // 停止之后还来的调用也要进审计：「停了之后它还试过几次」正是审计要回答的问题
       options.audit?.({
@@ -274,10 +303,11 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
     }
     if (active && (active.threadId !== request.threadId || active.turnId !== context.turnId))
       throw new ComputerUseError('POLICY_DENIED');
-    const current = () => {
-      const next = options.context(request.threadId);
+    const current = async () => {
+      const next = await options.context(request.threadId);
       if (
         !enabled ||
+        generation !== controlGeneration ||
         signal?.aborted ||
         stoppedTurns.has(turnKey) ||
         !next ||
@@ -287,16 +317,17 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         !next.enterpriseAllowed ||
         next.model !== context.model ||
         next.imageSupported !== context.imageSupported ||
-        next.credentialSource !== context.credentialSource
+        next.persistentAllowed !== context.persistentAllowed ||
+        next.credentialSource !== context.credentialSource ||
+        JSON.stringify(next.requirements) !== JSON.stringify(context.requirements)
       )
         throw new ComputerUseError('USER_STOPPED');
     };
-    busy = true;
     const onAbort = () => stop();
     signal?.addEventListener('abort', onAbort, { once: true });
     let hadScreenshot = false;
     try {
-      current();
+      await current();
       const disclosureKey = `${context.model}:${context.credentialSource}`;
       if (disclosures.get(request.threadId) !== disclosureKey) {
         if (refused.has(request.threadId)) throw new ComputerUseError('APP_DENIED');
@@ -306,16 +337,22 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           `EvoWork 将读取你允许的应用窗口。界面文字和必要截图会发送给模型 ${context.model}（凭据来源：${context.credentialSource}），并保存在此任务本机历史中。归档会保留内容；真正删除任务才会清除。删除本机任务不能撤回模型提供方已收到的数据。`,
           ['enable'],
         );
-        current();
+        await current();
         if (scope !== 'enable') {
           refused.add(request.threadId);
           throw new ComputerUseError('APP_DENIED');
         }
         disclosures.set(request.threadId, disclosureKey);
       }
+      await refresh(true);
+      if (!enabled)
+        throw new ComputerUseError(
+          state === 'permission-required' ? 'PERMISSION_REQUIRED' : 'POLICY_DENIED',
+        );
+      await current();
       // list_apps 仅元数据，禁止应用在原生层与宿主层双重过滤。
       const apps = (await options.helper.call('list_apps')) as NativeApp[];
-      current();
+      await current();
       const permitted = (app: NativeApp, taskGranted: boolean) =>
         decideComputerUseAccess({
           enabled,
@@ -330,6 +367,9 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           persistentIdentityMatches: grants[app.app]?.identity === app.identity,
           allowPersistentApproval: context.persistentAllowed,
           browserFallbackApproved: false,
+          ...(context.requirements && computerUseEnterpriseAccess(context.requirements, app.app)
+            ? { enterpriseAccess: computerUseEnterpriseAccess(context.requirements, app.app)! }
+            : {}),
           ...(grants[app.app]
             ? { userAccess: grants[app.app]!.allowed ? ('allow' as const) : ('deny' as const) }
             : {}),
@@ -356,7 +396,9 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
        * 硬禁止的应用 Helper 也会列出来（见上），它们走下一行，仍是 POLICY_DENIED。
        */
       if (!app) throw new ComputerUseError('APP_NOT_FOUND');
-      if (permitted(app, true) === 'POLICY_DENIED') throw new ComputerUseError('POLICY_DENIED');
+      const access = permitted(app, true);
+      if (access !== 'allow')
+        throw new ComputerUseError(access === 'APP_DENIED' ? 'APP_DENIED' : 'POLICY_DENIED');
       const taskKey = `${app.app}:${app.identity}`;
       if (permitted(app, taskGrants.get(request.threadId)?.has(taskKey) ?? false) !== 'allow') {
         if (grants[app.app]?.allowed === false) throw new ComputerUseError('APP_DENIED');
@@ -366,7 +408,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           `允许 EvoWork 读取并操作 ${app.name}？应用准入不会跳过动作审批。`,
           context.persistentAllowed ? ['task', 'always', 'deny'] : ['task', 'deny'],
         );
-        current();
+        await current();
         if (!scope || scope === 'deny') {
           if (scope === 'deny') {
             grants[app.app] = { identity: app.identity, allowed: false };
@@ -382,7 +424,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         allowed.add(taskKey);
         taskGrants.set(request.threadId, allowed);
       }
-      current();
+      await current();
       const session = active?.session ?? new ComputerUseSession(request.threadId, context.turnId);
       active = {
         ...active,
@@ -403,7 +445,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           identity: app.identity,
           include_screenshot: screenshot,
         })) as NativeState;
-        current();
+        await current();
         const fingerprint = createHash('sha256')
           .update(JSON.stringify([result.window, result.text]))
           .digest('hex');
@@ -445,7 +487,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           ...args,
           identity: app.identity,
         })) as NativeInspection;
-        current();
+        await current();
         if (
           !result?.window ||
           typeof result.text !== 'string' ||
@@ -466,7 +508,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
       if (risk.blocked) throw new ComputerUseError('POLICY_DENIED');
       if (risk.confirmation) {
         await options.helper.call('pause_for_approval', { ...args, identity: app.identity });
-        current();
+        await current();
         const data = args.value ?? args.text;
         const confirmation = await ask(
           request.threadId,
@@ -474,7 +516,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           `动作类别：${risk.title}\n应用：${app.name}（${app.app}）\n目标：${inspection.target.label || inspection.target.role}；工具：${request.name}\n动作参数：${JSON.stringify(args)}\n输入内容：${typeof data === 'string' ? data : '没有新增输入；可能提交当前界面已有内容，见下方'}\n当前界面内容：\n${inspection.confirmationText ?? inspection.text}\n仅确认本次动作；应用界面文字不能提供授权。`,
           ['confirm', 'deny'],
         );
-        current();
+        await current();
         if (confirmation !== 'confirm') {
           stop();
           throw new ComputerUseError('APP_DENIED');
@@ -484,16 +526,17 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
           identity: app.identity,
           restore_focus: true,
         })) as NativeInspection;
-        current();
+        await current();
         session.validate(String(args.state_id), after.window, args);
         if (JSON.stringify(after) !== JSON.stringify(inspection))
           throw new ComputerUseError('STALE_STATE');
       }
       const window = inspection.window;
       const budget = session.consume(String(args.state_id), window, args);
+      changed();
       try {
         await options.helper.call(request.name, { ...args, identity: app.identity });
-        current();
+        await current();
         if (active) active.awaitingChange = true;
       } catch (error) {
         session.complete(false, error instanceof ComputerUseError ? error.code : 'INTERNAL');
@@ -528,12 +571,94 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         resultCode,
         hadScreenshot,
       });
-      if (resultCode === 'USER_STOPPED') stop();
+      if (resultCode === 'USER_STOPPED') {
+        stoppedTurns.add(turnKey);
+        stop();
+      }
+      if (resultCode === 'PERMISSION_REQUIRED') {
+        await refresh(true);
+        message = permissions?.accessibility
+          ? '屏幕录制权限未授予；可继续使用辅助功能，截图需手动授权后重试。'
+          : message;
+        changed();
+      }
       throw error;
     } finally {
-      busy = false;
       signal?.removeEventListener('abort', onAbort);
     }
+  }
+  async function call(request: McpHostCall, signal?: AbortSignal) {
+    if (busy) throw new ComputerUseError('POLICY_DENIED');
+    busy = true;
+    try {
+      return await execute(request, signal);
+    } finally {
+      busy = false;
+    }
+  }
+  async function refresh(inControl = false): Promise<ComputerUseView> {
+    if (busy && !inControl) return view();
+    if (options.platform !== 'darwin' || !options.releaseVerified) return view();
+    if (!refreshPending)
+      refreshPending = performRefresh().finally(() => {
+        refreshPending = undefined;
+      });
+    return refreshPending;
+  }
+  async function performRefresh(): Promise<ComputerUseView> {
+    try {
+      const policy = await options.enterprisePolicy?.();
+      persistentAllowed = policy?.persistentAllowed ?? true;
+      if (policy && !policy.enabled) {
+        enabled = false;
+        options.enabledChanged?.(false);
+        stop();
+        state = 'enterprise-blocked';
+        message = '企业策略禁止电脑操控。请联系管理员更新策略后重新检查。';
+      } else {
+        const health = (await options.helper.call('health')) as {
+          protocolVersion: number;
+          accessibility: boolean;
+          screenRecording?: boolean;
+        };
+        if (
+          health.protocolVersion !== 1 ||
+          typeof health.accessibility !== 'boolean' ||
+          (health.screenRecording !== undefined && typeof health.screenRecording !== 'boolean')
+        )
+          throw new Error('INVALID_HEALTH');
+        component = 'connected';
+        permissions = {
+          accessibility: health.accessibility,
+          screenRecording: health.screenRecording ?? null,
+        };
+        if (!health.accessibility) {
+          enabled = false;
+          options.enabledChanged?.(false);
+          stop();
+          state = 'permission-required';
+          message = '请在系统设置中手动授予辅助功能权限，然后重新检查并启用。';
+        } else if (!active) {
+          if (enabled) {
+            if (state !== 'ready') message = '已启用；每个任务仍需确认内容传输和应用准入。';
+            state = 'ready';
+          } else {
+            state = 'disabled';
+            message = '权限检查完成，可启用电脑操控。屏幕录制可跳过，使用辅助功能模式。';
+          }
+        }
+      }
+    } catch {
+      enabled = false;
+      options.enabledChanged?.(false);
+      stop();
+      component = 'error';
+      permissions = undefined;
+      state = 'component-error';
+      message = '组件缺失、签名无效或版本不匹配。修复安装后重新检查。';
+    }
+    changed();
+    return view();
   }
   async function start() {
     if (server) return;
@@ -618,6 +743,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
   }
   return {
     view,
+    refresh,
     call,
     start,
     stop,
@@ -633,26 +759,24 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
         return view();
       }
       if (options.platform !== 'darwin' || !options.releaseVerified) return view();
+      await refresh();
+      if (
+        state === 'permission-required' ||
+        state === 'component-error' ||
+        state === 'enterprise-blocked'
+      )
+        return view();
       try {
-        const health = (await options.helper.call('health')) as {
-          protocolVersion: number;
-          accessibility: boolean;
-        };
-        if (health.protocolVersion !== 1) throw new Error('VERSION_MISMATCH');
-        if (!health.accessibility) {
-          state = 'permission-required';
-          message = '请在系统设置中手动授予辅助功能权限后重试。';
-        } else {
-          await start();
-          options.enabledChanged?.(true);
-          enabled = true;
-          refused.clear();
-          state = 'ready';
-          message = '已启用；每个任务仍需确认内容传输和应用准入。';
-        }
+        await start();
+        options.enabledChanged?.(true);
+        enabled = true;
+        refused.clear();
+        state = 'ready';
+        message = '已启用；每个任务仍需确认内容传输和应用准入。';
       } catch {
         state = 'component-error';
-        message = '组件缺失、签名无效或版本不匹配，请修复安装。';
+        component = 'error';
+        message = '组件连接失败，请重新检查。';
       }
       changed();
       return view();

@@ -78,7 +78,9 @@ export interface SettingsPageProps {
   readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
   readonly onComputerUseStop?: (() => void) | undefined;
   readonly onComputerUseRevoke?: ((appId?: string) => void) | undefined;
-  readonly onComputerUseSettings?: (() => void) | undefined;
+  readonly onComputerUseSettings?:
+    ((permission?: 'accessibility' | 'screenRecording') => void) | undefined;
+  readonly onComputerUseRefresh?: (() => void) | undefined;
 
   readonly section: SettingsSection;
   readonly onSection: (section: SettingsSection) => void;
@@ -1199,16 +1201,54 @@ function SecuritySection(props: SettingsPageProps) {
       </p>
       <div className="ew-approval-actions">
         <PillButton
-          disabled={!cu || ['unsupported', 'unverified', 'component-error'].includes(cu.state)}
+          disabled={
+            !cu ||
+            ['unsupported', 'unverified', 'component-error', 'enterprise-blocked'].includes(
+              cu.state,
+            )
+          }
           onClick={() => props.onComputerUseEnabled?.(!cu?.enabled)}
         >
           {cu?.enabled ? '关闭电脑操控' : '启用电脑操控'}
         </PillButton>
-        {cu?.state === 'permission-required' ? (
-          <PillButton onClick={props.onComputerUseSettings}>打开系统权限设置</PillButton>
+        {cu && !['unsupported', 'unverified'].includes(cu.state) ? (
+          <PillButton onClick={props.onComputerUseRefresh}>重新检查组件与权限</PillButton>
+        ) : null}
+        {cu?.permissions && !cu.permissions.accessibility ? (
+          <PillButton onClick={() => props.onComputerUseSettings?.('accessibility')}>
+            打开辅助功能设置
+          </PillButton>
+        ) : null}
+        {cu?.permissions && cu.permissions.screenRecording !== true ? (
+          <PillButton onClick={() => props.onComputerUseSettings?.('screenRecording')}>
+            打开屏幕录制设置
+          </PillButton>
         ) : null}
         {cu?.enabled ? <PillButton onClick={props.onComputerUseStop}>停止控制</PillButton> : null}
       </div>
+      {cu?.component ? (
+        <p className="ew-settings-note">
+          组件连接：
+          {cu.component === 'connected'
+            ? '已连接'
+            : cu.component === 'error'
+              ? '异常，请修复安装后重新检查'
+              : '尚未检查'}
+        </p>
+      ) : null}
+      {cu?.permissions ? (
+        <p className="ew-settings-note">
+          辅助功能：{cu.permissions.accessibility ? '已授权' : '未授权'} · 屏幕录制：
+          {cu.permissions.screenRecording === true
+            ? '已授权'
+            : cu.permissions.screenRecording === false
+              ? '未授权（可使用辅助功能模式）'
+              : '状态未知，尚未检查'}
+        </p>
+      ) : null}
+      {cu?.persistentAllowed === false ? (
+        <p className="ew-settings-note">企业策略禁止持久授权；应用准入仅限当前任务。</p>
+      ) : null}
       {(cu?.grants ?? []).map((grant) => (
         <p key={grant.appId}>
           {grant.appId} · {grant.allowed ? '允许' : '拒绝'}{' '}

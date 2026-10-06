@@ -14,7 +14,7 @@
  * 模型每调一次工具，下一次请求的历史就多一条 function_call，计数即步号。
  * 这里不判模型会不会用这套工具 —— 那是 `computer-use.real.spec.mjs` 的事。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { platform } from 'node:os';
 import { join } from 'node:path';
 
@@ -198,9 +198,11 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
     await expect(card).toContainText('保存在此任务本机历史中');
     await expect(card).toContainText('删除本机任务不能撤回模型提供方已收到的数据');
     expect(
-      (await helperCalls(electronApp)).map((call) => call.method),
+      (await helperCalls(electronApp))
+        .filter((call) => call.method !== 'health')
+        .map((call) => call.method),
       '用户还没同意，Helper 就被问了',
-    ).toEqual(['health']);
+    ).toEqual([]);
     await card.getByRole('button', { name: '继续并启用' }).click();
 
     /*
@@ -389,7 +391,7 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
         args: { app: TEXTEDIT, element_index: BODY_ELEMENT, value },
         withState: true,
       },
-      /* 3 */ { tool: 'get_app_state', args: { app: SYSTEM_SETTINGS } },
+      /* 3 */ { tool: 'get_app_state', args: { app: SYSTEM_SETTINGS }, gate: 'cuaCountChecked' },
       /* 4 */ { text: '写好了；系统设置需要你自己改。' },
     ]);
     await send(page, `在 TextEdit 里写一行字，再改一下系统设置 ${marker}`);
@@ -404,6 +406,12 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
      */
     const outcome = await writeOutcome(page, electronApp, value);
     expect(outcome.card, '完全访问下写动作仍然弹了审批卡').toBeUndefined();
+    await expect(
+      page.locator('.ew-approval-bar[role="status"]').filter({ hasText: '正在使用' }),
+    ).toContainText('已尝试 1 / 100 次动作');
+    await electronApp.evaluate(() => {
+      globalThis.__evoworkE2E.cuaCountChecked = true;
+    });
     // 系统设置：完全访问也覆盖不了硬禁止（CU-Q6）
     expect(await stepBody(electronApp, marker, 4)).toContain('POLICY_DENIED');
     await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
@@ -520,9 +528,11 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
     await expect(page.getByLabel('需要你回答')).toHaveCount(0);
 
     expect(
-      (await helperCalls(electronApp)).map((call) => call.method),
+      (await helperCalls(electronApp))
+        .filter((call) => call.method !== 'health')
+        .map((call) => call.method),
       '用户拒绝了传输，Helper 却被调用了',
-    ).toEqual(['health']);
+    ).toEqual([]);
     await expect(
       page.locator('.ew-approval-bar[role="status"]').filter({ hasText: '正在使用' }),
     ).toHaveCount(0);
@@ -560,5 +570,63 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
     await expect(section).not.toContainText(TEXTEDIT);
     expect(existsSync(grantsPath)).toBe(true);
     expect(JSON.parse(readFileSync(grantsPath, 'utf8'))).toEqual({});
+  });
+});
+
+test.describe('P2：权限与企业策略恢复（真内核、假 Helper）', () => {
+  test.use({ fakeComputerUse: true });
+  test('辅助功能撤权注销工具；手动恢复后重新检查，AX-only 可重新启用', async ({
+    page,
+    electronApp,
+  }) => {
+    await enableComputerUse(page, electronApp);
+    await electronApp.evaluate(() =>
+      globalThis.__evoworkE2E.computerUse.setHealth({ accessibility: false }),
+    );
+    const section = await openComputerUseSettings(page);
+    await expect(section.getByRole('status')).toContainText('手动授予辅助功能');
+    await expect(section).toContainText('辅助功能：未授权');
+    await expect(section.getByRole('button', { name: '打开辅助功能设置' })).toBeVisible();
+    expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = false$/m);
+    await electronApp.evaluate(() =>
+      globalThis.__evoworkE2E.computerUse.setHealth({
+        accessibility: true,
+        screenRecording: false,
+      }),
+    );
+    await section.getByRole('button', { name: '重新检查组件与权限' }).click();
+    await expect(section).toContainText('辅助功能：已授权');
+    await expect(section).toContainText('未授权（可使用辅助功能模式）');
+    await section.getByRole('button', { name: '启用电脑操控' }).click();
+    await expect(section.getByRole('button', { name: '关闭电脑操控' })).toBeVisible();
+    expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = true$/m);
+  });
+  test('组件故障可重新检查恢复，故障期间不注册工具', async ({ page, electronApp }) => {
+    await electronApp.evaluate(() =>
+      globalThis.__evoworkE2E.computerUse.setHealth({ componentError: true }),
+    );
+    const section = await openComputerUseSettings(page);
+    await expect(section.getByRole('status')).toContainText('修复安装后重新检查');
+    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeDisabled();
+    expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = false$/m);
+    await electronApp.evaluate(() =>
+      globalThis.__evoworkE2E.computerUse.setHealth({ componentError: false }),
+    );
+    await section.getByRole('button', { name: '重新检查组件与权限' }).click();
+    await expect(section).toContainText('组件连接：已连接');
+    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeEnabled();
+  });
+  test('无关企业约束不禁用；全局 deny 禁用、移除后可检查恢复', async ({ page, electronApp }) => {
+    const requirements = join(await e2eHome(electronApp), '.evowork', 'requirements.toml');
+    writeFileSync(requirements, 'allow_managed_hooks_only = true\n');
+    await enableComputerUse(page, electronApp);
+    writeFileSync(requirements, 'allow_browser_and_computer_use = false\n');
+    const section = await openComputerUseSettings(page);
+    await expect(section.getByRole('status')).toContainText('企业策略禁止电脑操控');
+    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeDisabled();
+    expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = false$/m);
+    unlinkSync(requirements);
+    await section.getByRole('button', { name: '重新检查组件与权限' }).click();
+    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeEnabled();
   });
 });

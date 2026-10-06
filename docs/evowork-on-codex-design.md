@@ -1176,6 +1176,10 @@ EvoWork 需新增的 Hooks 策略包：
 | 可观测                 | `codex-rs/otel`、`codex-rs/rollout-trace`、`codex-rs/analytics`                         |
 | 模型 provider          | `codex-rs/model-provider-info/src/lib.rs`（`:57` chat 已废弃）                          |
 
+### 2026-10-06 · Computer Use P2 扩展边界
+
+桌面控制来源由桌面发送入口和当前回合的 RPC 响应在适配层内绑定，不从模型参数或本机投影缺少自动化标识推断。企业电脑操控约束新增依赖稳定 `configRequirements/read`，与 EvoWork 自有 requirements 逐层合并，任何层拒绝优先，读取异常拒绝；不读取内核内部状态文件。系统权限恢复、应用身份分类和动作计数在自建宿主/Helper/UI 完成，不修改执行内核。Windows/Linux 驱动仍独立立项，macOS 发布闸门与真机签名/TCC 验收条件不变；细则见 [设计 12 的 P2 约定](design/12-computer-use.md)。
+
 ## 附录 B —— 术语
 
 | 术语               | 含义                                                   |

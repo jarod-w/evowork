@@ -18,6 +18,14 @@ func window(_ number: Int, pid: Int32 = 42, layer: Int = 0, x: Double = 10, widt
 struct NativePolicyTests {
     static func main() {
         let origin = CGPoint(x: 10, y: 20)
+        check(applicationKind(bundleID: "com.apple.iWork.Pages", signingID: "com.apple.iWork.Pages", teamID: nil, appleSigned: true) == "ordinary", "Apple office discovered")
+        check(applicationKind(bundleID: "com.apple.TextEdit", signingID: "com.apple.TextEdit", teamID: "FAKE", appleSigned: false) == "unknown", "Apple bundle spoof denied")
+        check(applicationKind(bundleID: "com.microsoft.Word", signingID: "com.microsoft.Word", teamID: "UBF8T346G9", appleSigned: false) == "ordinary", "Microsoft office publisher")
+        check(applicationKind(bundleID: "com.microsoft.Word", signingID: "com.microsoft.Word", teamID: "FAKE", appleSigned: false) == "unknown", "wrong publisher denied")
+        check(applicationKind(bundleID: "com.microsoft.Word", signingID: "different", teamID: "UBF8T346G9", appleSigned: false) == "unknown", "signing identifier mismatch")
+        check(applicationKind(bundleID: "com.apple.Terminal", signingID: "com.apple.Terminal", teamID: nil, appleSigned: true) == "terminal", "terminal separated before activation")
+        check(applicationKind(bundleID: "com.google.Chrome", signingID: "com.google.Chrome", teamID: "any", appleSigned: false) == "browser", "browser cannot use ordinary route")
+        check(applicationKind(bundleID: "com.example.Unknown", signingID: "com.example.Unknown", teamID: "any", appleSigned: false) == "unknown", "unknown signed app denied")
         check(validatedWindowPoint(x: 0, y: 0, width: 800, height: 600) == CGPoint.zero, "window origin accepted")
         check(validatedWindowPoint(x: 800, y: 10, width: 800, height: 600) == nil, "exclusive right edge")
         check(validatedWindowPoint(x: -1, y: 0, width: 800, height: 600) == nil, "negative coordinate denied")
@@ -49,7 +57,7 @@ struct NativePolicyTests {
         check(fromRight?.location == 1 && fromRight?.length == 3, "extend selection left")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: nil) == nil, "missing original selection denied")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: CFRange(location: 4, length: 2)) == nil, "out-of-bounds selection denied")
-        print("Native policy checks passed (21 cases).")
+        print("Native policy checks passed (29 cases).")
     }
 }
 

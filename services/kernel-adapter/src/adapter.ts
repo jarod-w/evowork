@@ -284,6 +284,23 @@ export function createAdapter(options: AdapterOptions) {
    * 这个 id 的地方就是 `turn/started` 通知 —— 不在这里接住，点「停止」时就无从谈起。
    */
   const activeTurns = new Map<string, string>();
+  // 仅受信桌面入口本次 turn/start 的来源；不持久化、不继承到内核自动续跑。
+  const desktopTurns = new Map<string, string>();
+  async function startDesktopTurn(
+    threadId: string,
+    params: unknown,
+    interactive = false,
+  ): Promise<TurnStartResponse> {
+    try {
+      const response = await session.peer.request<TurnStartResponse>(METHOD.turnStart, params);
+      if (interactive && response.turn.status === 'inProgress')
+        desktopTurns.set(threadId, response.turn.id);
+      return response;
+    } catch (error) {
+      desktopTurns.delete(threadId);
+      throw error;
+    }
+  }
   /**
    * `fileChange` item 的改动清单，按 itemId 记着，给文件改动审批卡反查用。
    *
@@ -440,14 +457,19 @@ export function createAdapter(options: AdapterOptions) {
         session.openThreads.delete(event.threadId);
         localQueues.delete(event.threadId);
         activeTurns.delete(event.threadId);
+        desktopTurns.delete(event.threadId);
         forgetFileChanges((entry) => entry.threadId === event.threadId);
         forgetMcpCalls(event.threadId);
         approvals.cancel((a) => a.threadId === event.threadId);
       }
-      if (event.type === 'turn-started') activeTurns.set(event.threadId, event.turnId);
+      if (event.type === 'turn-started') {
+        activeTurns.set(event.threadId, event.turnId);
+        if (desktopTurns.get(event.threadId) !== event.turnId) desktopTurns.delete(event.threadId);
+      }
       // 审批只发生在回合进行中，所以回合结束就可以把这一份清单扔掉
       if (event.type === 'turn-completed') {
         activeTurns.delete(event.threadId);
+        desktopTurns.delete(event.threadId);
         forgetFileChanges(
           (entry) =>
             entry.threadId === event.threadId &&
@@ -511,7 +533,10 @@ export function createAdapter(options: AdapterOptions) {
       await registerSkillRoots();
       return recoverOpenThreads();
     },
-    ...(options.onNotice ? { onNotice: options.onNotice } : {}),
+    onNotice: (notice) => {
+      desktopTurns.clear();
+      options.onNotice?.(notice);
+    },
     // R2 雷达：未识别的通知记形状（不记正文）。接在这里而不是让调用方自己接 ——
     // 它是"上游改了什么"的唯一线索，不该取决于谁构造了 session。
     // 通知不是 ThreadItem：这里只留诊断记录，不能把协议噪声塞进对话时间线。
@@ -811,18 +836,39 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async stop(): Promise<void> {
+      desktopTurns.clear();
       approvals.cancel(() => true);
       ephemeralThreads.clear();
       ephemeralThreadIds.clear();
       await session.stop();
     },
 
+    isDesktopInteractiveTurn(threadId: string, turnId: string): boolean {
+      const row = store.threads.get(threadId);
+      return Boolean(
+        row &&
+        row.derived_status === 'running' &&
+        row.last_turn_id === turnId &&
+        desktopTurns.get(threadId) === turnId &&
+        !row.automation_id &&
+        !row.parent_thread_id,
+      );
+    },
+    async readComputerUseRequirements(): Promise<unknown> {
+      const response = await session.peer.request<{ requirements: unknown }>(
+        METHOD.configRequirementsRead,
+        undefined,
+      );
+      if (!Object.hasOwn(response, 'requirements')) throw new Error('INVALID_REQUIREMENTS');
+      return response.requirements;
+    },
     async requestComputerUseConsent(approval: PendingApproval): Promise<ApprovalReply> {
       const row = store.threads.get(approval.threadId);
       if (
         !row ||
         row.automation_id ||
         row.parent_thread_id ||
+        desktopTurns.get(approval.threadId) !== approval.turnId ||
         row.last_turn_id !== approval.turnId ||
         row.derived_status !== 'running'
       )
@@ -1097,6 +1143,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly scenarioId?: string;
       readonly overrides?: ComposerOverrides;
       readonly automationId?: string;
+      readonly desktopInteractive?: boolean;
       readonly onCreated?: (threadId: string) => void;
     }): Promise<{ threadId: string; turn: Turn; degradations: readonly string[] }> {
       const scenario =
@@ -1159,9 +1206,10 @@ export function createAdapter(options: AdapterOptions) {
       // 侧边栏不必等 `thread/started`：那条通知的 name 是 null，而且可能晚于命名。
       options.onUiEvent?.({ type: 'task-created', threadId, title: title ?? null });
 
-      const turnResponse = await session.peer.request<TurnStartResponse>(
-        METHOD.turnStart,
+      const turnResponse = await startDesktopTurn(
+        threadId,
         expanded.params,
+        args.desktopInteractive === true && !args.automationId,
       );
 
       /*
@@ -1282,6 +1330,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly scenarioId?: string;
       /** 「立即插话」= steer；默认排队（04 §5.5：默认排队） */
       readonly steer?: boolean;
+      readonly desktopInteractive?: boolean;
     }): Promise<{ queued: boolean; degradations: readonly string[] }> {
       const row = store.threads.get(args.threadId);
       const cwd = await taskCwd(args.threadId, args.overrides?.cwd);
@@ -1355,7 +1404,11 @@ export function createAdapter(options: AdapterOptions) {
       });
 
       session.openThreads.add(args.threadId);
-      await session.peer.request(METHOD.turnStart, expanded.params);
+      await startDesktopTurn(
+        args.threadId,
+        expanded.params,
+        args.desktopInteractive === true && !row?.automation_id && !row?.parent_thread_id,
+      );
       return { queued: false, degradations: expanded.degradations };
     },
 

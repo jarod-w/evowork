@@ -800,3 +800,8 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 Linux `pnpm run build` 已验证 MCP bundle 与桌面代码构建；不会构建 macOS Helper。macOS 分支调用 `node scripts/build-computer-use.mjs`（**当前环境未验过**），依赖本机 Swift/macOS SDK，组装独立 App 并随包带入。生成的 `release.json` 固定 `releaseVerified=false`，待正式签名、公证、TCC、用户中断与图文真实删除验收完成后再建立发布流程。原生详细缺口见 `apps/computer-use-macos/README.md`。
 
 发布前待办按 [设计 12 §17 CU-R1/R2/R4/R8/R11](design/12-computer-use.md#17-未完成清单与验收条件2026-09-24) 验收：原生编译、双向认证、用户中断与恢复、真实 MCP 图文删除、正式签名/TCC/干净安装与升级及体积预算。还需完成其它 CU-R 项才能开放功能，不能手改发布标记替代验收。
+
+
+### 2026-10-06 · P2 应用身份元数据探针
+
+`node scripts/verify-computer-use-apps.mjs` 已在本机 macOS 27.0 跑通。脚本提取生产 Helper 的签名验证函数，编译临时 Swift 程序，核对运行应用签名与进程元数据；不激活窗口、不读 AX、不请求 TCC。Finder 必须以 ordinary 类别通过，否则退出失败。多架构二进制须对实际运行切片验签，持久身份使用其 CDHash；不能与磁盘默认切片哈希直接比较。该探针不证明正式同 Team ID 宿主正向调用、AX/TCC 或电脑操控发布可用；发布标记仍为 false。

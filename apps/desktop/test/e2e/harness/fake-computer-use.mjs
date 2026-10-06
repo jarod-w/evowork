@@ -45,6 +45,9 @@ export function createFakeComputerUse() {
     },
   ];
 
+  let accessibility = true,
+    screenRecording = false,
+    componentError = false;
   let body = '';
   let saved = false;
   let selectAll = false;
@@ -74,7 +77,8 @@ export function createFakeComputerUse() {
       calls.push({ method, ...params });
       switch (method) {
         case 'health':
-          return { protocolVersion: 1, accessibility: true };
+          if (componentError) throw new Error('FAKE_COMPONENT_ERROR');
+          return { protocolVersion: 1, accessibility, screenRecording };
         case 'list_apps':
           return apps;
         case 'window_identity':
@@ -130,6 +134,11 @@ export function createFakeComputerUse() {
 
   return {
     helper,
+    setHealth: (patch) => {
+      if (typeof patch.accessibility === 'boolean') accessibility = patch.accessibility;
+      if (typeof patch.screenRecording === 'boolean') screenRecording = patch.screenRecording;
+      if (typeof patch.componentError === 'boolean') componentError = patch.componentError;
+    },
     canary,
     calls,
     document: () => body,

@@ -2,17 +2,21 @@ import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createComputerUseHost, type NativeHelper } from '../src/main/computer-use-host.js';
+import {
+  createComputerUseHost,
+  type NativeHelper,
+  type ComputerUseContext,
+} from '../src/main/computer-use-host.js';
 import { patchComputerUseConfig } from '../src/main/computer-use-config.js';
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-function setup(verified = true, nestedRoot = '') {
+function setup(verified = true, nestedRoot = '', contextCheck?: () => Promise<void>) {
   const temporary = mkdtempSync(join(tmpdir(), 'ew-cu-test-'));
   roots.push(temporary);
   const root = join(temporary, nestedRoot);
-  let context = {
+  let context: ComputerUseContext = {
     turnId: 'turn',
     model: 'model',
     credentialSource: 'local',
@@ -67,7 +71,10 @@ function setup(verified = true, nestedRoot = '') {
     platform: 'darwin',
     releaseVerified: verified,
     helper,
-    context: () => context,
+    context: async () => {
+      await contextCheck?.();
+      return context;
+    },
     ask,
     audit,
   });
@@ -352,5 +359,213 @@ describe('电脑操控宿主边界', () => {
       await s.host.close();
     }
     expect(existsSync(s.host.environment.EVOWORK_CUA_SOCKET)).toBe(false);
+  });
+});
+
+describe('P2 权限恢复与企业准入', () => {
+  it('AX-only 能启用；撤销辅助功能立即停止并注销工具，重新授权后可检查和启用', async () => {
+    const s = setup();
+    let accessibility = true;
+    const original = s.helper.call;
+    s.helper.call = vi.fn(async (method, params) =>
+      method === 'health'
+        ? { protocolVersion: 1, accessibility, screenRecording: false }
+        : original(method, params),
+    );
+    try {
+      expect((await s.host.setEnabled(true)).enabled).toBe(true);
+      expect(s.host.view().permissions?.screenRecording).toBe(false);
+      await s.call('get_app_state', { app: 'com.apple.TextEdit' });
+      accessibility = false;
+      await expect(s.call('get_app_state', { app: 'com.apple.TextEdit' })).rejects.toThrow(
+        'PERMISSION_REQUIRED',
+      );
+      expect(s.host.view().enabled).toBe(false);
+      expect(s.host.view().state).toBe('permission-required');
+      expect(s.host.view().activeApp).toBeUndefined();
+      accessibility = true;
+      expect((await s.host.refresh()).state).toBe('disabled');
+      expect((await s.host.setEnabled(true)).state).toBe('ready');
+    } finally {
+      await s.host.close();
+    }
+  });
+  it('策略应用 deny 覆盖始终允许，不弹准入卡且原生读取零调用', async () => {
+    const s = setup();
+    try {
+      await s.host.setEnabled(true);
+      await s.call('get_app_state', { app: 'com.apple.TextEdit' });
+      s.helper.call = vi.fn(s.helper.call);
+      s.ask.mockClear();
+      s.change({
+        requirements: {
+          enabled: true,
+          persistentAllowed: false,
+          appAccess: { 'com.apple.textedit': 'deny' },
+        },
+        persistentAllowed: false,
+      });
+      await expect(s.call('get_app_state', { app: 'com.apple.TextEdit' })).rejects.toThrow(
+        'APP_DENIED',
+      );
+      expect(s.ask).not.toHaveBeenCalled();
+      expect(
+        vi.mocked(s.helper.call).mock.calls.some(([method]) => method === 'get_app_state'),
+      ).toBe(false);
+    } finally {
+      await s.host.close();
+    }
+  });
+  it('失败的写动作也计入尝试次数，状态条不把失败说成成功', async () => {
+    const s = setup();
+    try {
+      await s.host.setEnabled(true);
+      const read = await s.call('get_app_state', { app: 'com.apple.TextEdit' });
+      const original = s.helper.call;
+      s.helper.call = vi.fn(async (method, params) => {
+        if (method === 'set_value') throw new Error('failure');
+        return original(method, params);
+      });
+      await expect(
+        s.call('set_value', {
+          app: 'com.apple.TextEdit',
+          state_id: JSON.parse(read.content[0]!.text!).state_id,
+          element_index: 1,
+          value: 'x',
+        }),
+      ).rejects.toThrow('failure');
+      expect(s.host.view().actionCount).toBe(1);
+    } finally {
+      await s.host.close();
+    }
+  });
+  it.each(['win32', 'linux'])(
+    '平台 %s 不注册或调用原生能力，原因指明驱动缺失',
+    async (platform) => {
+      const s = setup();
+      const host = createComputerUseHost({
+        root: s.root,
+        platform,
+        releaseVerified: true,
+        helper: s.helper,
+        context: () => undefined,
+        ask: s.ask,
+      });
+      expect((await host.setEnabled(true)).state).toBe('unsupported');
+      expect(host.view().message).toContain('驱动尚未提供');
+      expect(s.helper.call).not.toHaveBeenCalled();
+      await host.close();
+      await s.host.close();
+    },
+  );
+});
+
+describe('控制停止状态', () => {
+  it('打开设置重新检查健康状态，不覆盖用户已经停止的说明', async () => {
+    const s = setup();
+    try {
+      await s.host.setEnabled(true);
+      await s.call('get_app_state', { app: 'com.apple.TextEdit' });
+      s.host.stop('user');
+      expect((await s.host.refresh()).message).toBe('控制已停止；需要重新发起回合才能继续。');
+    } finally {
+      await s.host.close();
+    }
+  });
+});
+
+describe('异步策略读取不扩大控制生命周期', () => {
+  it('等待可信上下文时点停止，返回后不得继续告知或读取', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const s = setup(true, '', () => gate);
+    try {
+      await s.host.setEnabled(true);
+      s.helper.call = vi.fn(s.helper.call);
+      const result = s.call('list_apps');
+      s.host.stop('user');
+      release();
+      await expect(result).rejects.toThrow('USER_STOPPED');
+      await expect(s.call('list_apps')).rejects.toThrow('USER_STOPPED');
+      expect(s.ask).not.toHaveBeenCalled();
+      expect(s.helper.call).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await s.host.close();
+    }
+  });
+  it('动作执行期间打开设置不与 Helper 争用，不能误报组件损坏或停止动作', async () => {
+    const s = setup();
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const started = new Promise<void>((r) => {
+      entered = r;
+    });
+    try {
+      await s.host.setEnabled(true);
+      const read = await s.call('get_app_state', { app: 'com.apple.TextEdit' });
+      const original = s.helper.call;
+      s.helper.call = vi.fn(async (method, params) => {
+        if (method === 'set_value') {
+          entered();
+          await gate;
+        }
+        return original(method, params);
+      });
+      const write = s.call('set_value', {
+        app: 'com.apple.TextEdit',
+        state_id: JSON.parse(read.content[0]!.text!).state_id,
+        element_index: 1,
+        value: 'x',
+      });
+      await started;
+      const before = vi.mocked(s.helper.call).mock.calls.length;
+      expect((await s.host.refresh()).state).toBe('active');
+      expect(vi.mocked(s.helper.call).mock.calls.length).toBe(before);
+      release();
+      await write;
+      expect(s.host.view().enabled).toBe(true);
+    } finally {
+      release();
+      await s.host.close();
+    }
+  });
+});
+
+describe('权限重新检查的并发', () => {
+  it('多个状态读取共用一次健康检查，避免把组件忙误判为损坏', async () => {
+    const s = setup();
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const started = new Promise<void>((r) => {
+      entered = r;
+    });
+    let probing = false;
+    s.helper.call = vi.fn(async (method) => {
+      if (method !== 'health') throw new Error('unexpected');
+      if (probing) throw new Error('BUSY');
+      probing = true;
+      entered();
+      await gate;
+      return { protocolVersion: 1, accessibility: true, screenRecording: false };
+    });
+    try {
+      const first = s.host.refresh();
+      await started;
+      const second = s.host.refresh();
+      release();
+      const views = await Promise.all([first, second]);
+      expect(s.helper.call).toHaveBeenCalledTimes(1);
+      expect(views.every((view) => view.component === 'connected')).toBe(true);
+    } finally {
+      release();
+      await s.host.close();
+    }
   });
 });

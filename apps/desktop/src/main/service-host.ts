@@ -1,3 +1,4 @@
+import { createComputerUsePolicyReader } from './computer-use-policy.js';
 import { patchComputerUseConfig } from './computer-use-config.js';
 import { createComputerUseHost, type NativeHelper } from './computer-use-host.js';
 import { createNativeHelper, readComputerUseRelease } from './computer-use-helper.js';
@@ -1257,7 +1258,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   let computerUseModelCatalog: ModelCatalogResult['models'] = [];
   const computerUseReleaseVerified =
     options.computerUse?.releaseVerified ?? readComputerUseRelease(helperApp, options.appVersion);
+  const readComputerUsePolicy = createComputerUsePolicyReader({
+    requirementsPath: options.paths.requirements,
+    readManaged: () => adapter.readComputerUseRequirements(),
+    readOnly: () => policyView.status === 'expired',
+  });
   const computerUse = createComputerUseHost({
+    enterprisePolicy: readComputerUsePolicy,
     root: options.paths.home,
     platform: process.platform,
     enabledChanged: writeComputerUseConfig,
@@ -1265,18 +1272,19 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     helper:
       options.computerUse?.helper ??
       createNativeHelper(helperApp, options.appVersion, process.execPath),
-    context: (threadId) => {
+    context: async (threadId) => {
       const row = store.threads.get(threadId);
       if (!row?.last_turn_id || row.derived_status !== 'running') return undefined;
+      const requirements = await readComputerUsePolicy();
       return {
+        requirements,
         turnId: row.last_turn_id,
         model: row.model ?? '未知模型',
         ...computerUseModelContext(row.model ?? '', computerUseModelCatalog),
-        interactive: !row.automation_id,
+        interactive: adapter.isDesktopInteractiveTurn(threadId, row.last_turn_id),
         root: !row.parent_thread_id,
-        // 企业策略细项尚未接通前，只要有企业 requirements 就保守禁用。
-        enterpriseAllowed: !existsSync(options.paths.requirements),
-        persistentAllowed: true,
+        enterpriseAllowed: requirements.enabled,
+        persistentAllowed: requirements.persistentAllowed,
       };
     },
     ask: (approval) => adapter.requestComputerUseConsent(approval),
@@ -2038,11 +2046,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     resolveApproval,
     pendingApprovals: () => [...pendingApprovalById.values()],
     computerUse,
-    openComputerUseSettings: async () => {
+    openComputerUseSettings: async (permission = 'accessibility') => {
       if (process.platform !== 'darwin' || !options.openExternal)
         throw new Error('当前平台不能打开此权限设置。');
       await options.openExternal(
-        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+        permission === 'screenRecording'
+          ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+          : 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
       );
     },
     /*

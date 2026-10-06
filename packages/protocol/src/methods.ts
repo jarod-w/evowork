@@ -68,6 +68,7 @@ export const METHOD = {
   mcpServerOauthLogin: 'mcpServer/oauth/login',
   mcpServerReload: 'config/mcpServer/reload',
   configRead: 'config/read',
+  configRequirementsRead: 'configRequirements/read',
   configBatchWrite: 'config/batchWrite',
   hooksList: 'hooks/list',
 

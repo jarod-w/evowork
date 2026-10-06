@@ -1976,3 +1976,50 @@ describe('内核的 MCP 工具审批', () => {
     await withAsk.stop();
   });
 });
+
+describe('电脑操控可信桌面来源', () => {
+  const input = [{ type: 'text' as const, text: '编辑桌面文档' }];
+  function wireTurns() {
+    server.handlers.set('turn/start', (ctx) => {
+      const turn = makeTurn({ id: `trusted_${server.received.length}`, status: 'inProgress' });
+      server.notify('turn/started', { threadId: ctx.params.threadId, turn });
+      return { turn };
+    });
+  }
+  it('只给桌面发起的当前根回合资格，未知续跑和结束后不继承', async () => {
+    await adapter.start();
+    wireTurns();
+    const task = await adapter.createTask({
+      input,
+      desktopInteractive: true,
+      overrides: { cwd: '/w' },
+    });
+    expect(adapter.isDesktopInteractiveTurn(task.threadId, task.turn.id)).toBe(true);
+    server.notify('turn/started', {
+      threadId: task.threadId,
+      turn: makeTurn({ id: 'unknown', status: 'inProgress' }),
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(adapter.isDesktopInteractiveTurn(task.threadId, 'unknown')).toBe(false);
+    expect(adapter.isDesktopInteractiveTurn(task.threadId, task.turn.id)).toBe(false);
+  });
+  it('自动化任务和没有桌面声明的回合都没有资格', async () => {
+    await adapter.start();
+    wireTurns();
+    for (const extras of [{}, { desktopInteractive: true, automationId: 'automation' }]) {
+      const task = await adapter.createTask({ input, ...extras, overrides: { cwd: '/w' } });
+      expect(adapter.isDesktopInteractiveTurn(task.threadId, task.turn.id)).toBe(false);
+    }
+  });
+  it('内核有效策略只经 RPC 读取；失败不伪装成空策略', async () => {
+    await adapter.start();
+    server.handlers.set('configRequirements/read', () => ({
+      requirements: { allowBrowserAndComputerUse: false },
+    }));
+    expect(await adapter.readComputerUseRequirements()).toEqual({
+      allowBrowserAndComputerUse: false,
+    });
+    server.handlers.set('configRequirements/read', () => ({}));
+    await expect(adapter.readComputerUseRequirements()).rejects.toThrow('INVALID_REQUIREMENTS');
+  });
+});

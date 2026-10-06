@@ -971,3 +971,55 @@ describe('关于与更新', () => {
     expect(onInstallRuntime).toHaveBeenCalled();
   });
 });
+
+describe('电脑操控权限状态与恢复', () => {
+  it('AX 与录屏分开显示，AX-only 可启用；系统页链接和重新检查分别可操作', () => {
+    const onSettings = vi.fn(),
+      onRefresh = vi.fn(),
+      onEnabled = vi.fn();
+    page({
+      section: 'security',
+      computerUse: {
+        enabled: false,
+        state: 'disabled',
+        message: '检查完成',
+        grants: [],
+        component: 'connected',
+        permissions: { accessibility: true, screenRecording: false },
+      },
+      onComputerUseSettings: onSettings,
+      onComputerUseRefresh: onRefresh,
+      onComputerUseEnabled: onEnabled,
+    });
+    expect(screen.getByText(/辅助功能：已授权/)).toBeTruthy();
+    expect(screen.getByText(/未授权（可使用辅助功能模式）/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '启用电脑操控' }));
+    expect(onEnabled).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: '打开屏幕录制设置' }));
+    expect(onSettings).toHaveBeenCalledWith('screenRecording');
+    fireEvent.click(screen.getByRole('button', { name: '重新检查组件与权限' }));
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+  it.each(['component-error', 'enterprise-blocked'] as const)(
+    '%s 禁用启用，但保留恢复检查入口',
+    (state) => {
+      page({
+        section: 'security',
+        computerUse: {
+          enabled: false,
+          state,
+          message: '受限',
+          grants: [],
+          persistentAllowed: false,
+        },
+      });
+      expect(screen.getByRole('button', { name: '启用电脑操控' }).hasAttribute('disabled')).toBe(
+        true,
+      );
+      expect(
+        screen.getByRole('button', { name: '重新检查组件与权限' }).hasAttribute('disabled'),
+      ).toBe(false);
+      expect(screen.getByText(/企业策略禁止持久授权/)).toBeTruthy();
+    },
+  );
+});

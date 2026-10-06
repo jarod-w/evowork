@@ -34,7 +34,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 
 ## 2. 运行时依赖（npm，生产依赖）
 
-共 114 个包。
+共 115 个包。
 
 ### ⚠️ 需要法务单独看的许可证
 
@@ -157,6 +157,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | `rw` | 1.3.3 | BSD-3-Clause |
 | `safer-buffer` | 2.1.2 | MIT |
 | `scheduler` | 0.27.0 | MIT |
+| `smol-toml` | 1.9.0 | BSD-3-Clause |
 | `strictdom` | 1.0.1 | MIT |
 | `stylis` | 4.4.0 | MIT |
 | `tinyexec` | 1.3.1 | MIT |

@@ -1530,8 +1530,13 @@ export interface ComputerUseStatusView {
     | 'permission-required'
     | 'ready'
     | 'active'
-    | 'component-error';
+    | 'component-error'
+    | 'enterprise-blocked';
   readonly message: string;
   readonly grants: readonly { appId: string; allowed: boolean }[];
   readonly activeApp?: string | undefined;
+  readonly actionCount?: number | undefined;
+  readonly permissions?: { accessibility: boolean; screenRecording: boolean | null } | undefined;
+  readonly component?: 'unchecked' | 'connected' | 'error' | undefined;
+  readonly persistentAllowed?: boolean | undefined;
 }

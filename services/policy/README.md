@@ -29,6 +29,7 @@
 ```
 src/
   paths.ts       三级路径策略：硬拦截 / 需审批 / 工作空间内
+  computer-use-requirements.ts  内核有效与本机 requirements 分层合并；每层 App 例外覆盖本层默认，跨层 deny 优先
   profiles.ts    权限 profile 的中文文案 + 平台限制（Q26）
   execpolicy.ts  命令风险的四个维度 + 「为什么需要确认」
   limits.ts      并发公式（Q11）与预算闸门

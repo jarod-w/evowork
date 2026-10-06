@@ -24,15 +24,39 @@ func sizeValue(_ value: CFTypeRef?) -> CGSize? {
     var size = CGSize.zero
     return AXValueGetValue(unsafeBitCast(value, to: AXValue.self), .cgSize, &size) ? size : nil
 }
-func identity(_ app: NSRunningApplication) -> String? {
+struct AppProof { let identity: String; let kind: String }
+func proof(_ app: NSRunningApplication) -> AppProof? {
     guard let url = app.bundleURL else { return nil }
     var code: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
           SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
     var info: CFDictionary?
     guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-          let dictionary = info as? [String: Any], let hash = dictionary[kSecCodeInfoUnique as String] as? Data else { return nil }
-    return hash.map { String(format: "%02x", $0) }.joined()
+          let dictionary = info as? [String: Any],
+          let signingID = dictionary[kSecCodeInfoIdentifier as String] as? String,
+          let bundleID = app.bundleIdentifier, signingID == bundleID else { return nil }
+    // 校验受信签名链，并将实际运行进程绑定到同一磁盘签名；拒绝 ad-hoc/换包/伪造 bundle id。
+    var anchor: SecRequirement?, apple: SecRequirement?, designated: SecRequirement?, running: SecCode?, runningStatic: SecStaticCode?, runningInfo: CFDictionary?
+    guard SecRequirementCreateWithString("anchor apple generic" as CFString, [], &anchor) == errSecSuccess, let anchor,
+          SecStaticCodeCheckValidity(code, [], anchor) == errSecSuccess,
+          SecCodeCopyDesignatedRequirement(code, [], &designated) == errSecSuccess, let designated,
+          SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String: app.processIdentifier] as CFDictionary, [], &running) == errSecSuccess, let running,
+          SecCodeCheckValidity(running, [], designated) == errSecSuccess,
+          SecCodeCopyStaticCode(running, [], &runningStatic) == errSecSuccess, let runningStatic,
+          SecCodeCopySigningInformation(runningStatic, SecCSFlags(rawValue: kSecCSSigningInformation), &runningInfo) == errSecSuccess,
+          let live = runningInfo as? [String: Any], let hash = live[kSecCodeInfoUnique as String] as? Data,
+          live[kSecCodeInfoIdentifier as String] as? String == signingID,
+          live[kSecCodeInfoTeamIdentifier as String] as? String == dictionary[kSecCodeInfoTeamIdentifier as String] as? String,
+          let diskExecutable = dictionary[kSecCodeInfoMainExecutable as String] as? URL,
+          let liveExecutable = live[kSecCodeInfoMainExecutable as String] as? URL,
+          diskExecutable.resolvingSymlinksInPath() == liveExecutable.resolvingSymlinksInPath(),
+          SecStaticCodeCheckValidity(runningStatic, [], designated) == errSecSuccess else { return nil }
+    // SecCodeCopyStaticCode 默认对应实际运行架构；不同切片的 CDHash 本来不同。
+    // 对运行切片单独验签，并用它的 CDHash 绑定持久授权，不能拿磁盘默认切片做相等判断。
+    _ = SecRequirementCreateWithString("anchor apple" as CFString, [], &apple)
+    let appleSigned = apple.map { SecStaticCodeCheckValidity(code, [], $0) == errSecSuccess } ?? false
+    let kind = applicationKind(bundleID: bundleID, signingID: signingID, teamID: dictionary[kSecCodeInfoTeamIdentifier as String] as? String, appleSigned: appleSigned)
+    return AppProof(identity: hash.map { String(format: "%02x", $0) }.joined(), kind: kind)
 }
 
 // 私有继承 stdio 之外，再验证真实父进程签名；模型和环境变量不能声明调用方身份。
@@ -52,8 +76,6 @@ func trustedCaller() -> Bool {
 }
 
 @MainActor final class Controller {
-    // 未完成类别识别的第三方 App 一律不可操作；不能靠可伪造的显示名判终端。
-    let supported: Set<String> = ["com.apple.TextEdit", "com.apple.finder", "com.apple.iWork.Numbers"]
     var elements: [Int: AXUIElement] = [:]
     var snapshot: [String: Any]?
     var observedText = ""
@@ -117,9 +139,9 @@ func trustedCaller() -> Bool {
     }
     func app(_ params: [String: Any]) throws -> NSRunningApplication {
         try guardSession()
-        guard let id = params["app"] as? String, supported.contains(id) else { try fail("POLICY_DENIED") }
+        guard let id = params["app"] as? String else { try fail("POLICY_DENIED") }
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first else { try fail("APP_NOT_FOUND") }
-        guard let signature = identity(app), signature == params["identity"] as? String else { try fail("POLICY_DENIED") }
+        guard let verified = proof(app), verified.kind == "ordinary", verified.identity == params["identity"] as? String else { try fail("POLICY_DENIED") }
         return app
     }
     func window(_ app: NSRunningApplication) throws -> (AXUIElement, [String: Any]) {
@@ -223,8 +245,8 @@ func trustedCaller() -> Bool {
         try guardSession()
         if method == "list_apps" {
             return NSWorkspace.shared.runningApplications.compactMap { app -> [String: Any]? in
-                guard let id = app.bundleIdentifier, supported.contains(id), let signature = identity(app) else { return nil }
-                return ["app": id, "name": app.localizedName ?? id, "identity": signature, "kind": "ordinary"]
+                guard app.activationPolicy == .regular, let id = app.bundleIdentifier, let verified = proof(app) else { return nil }
+                return ["app": id, "name": app.localizedName ?? id, "identity": verified.identity, "kind": verified.kind]
             }
         }
         let target = try app(params)

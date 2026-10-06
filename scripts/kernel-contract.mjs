@@ -102,6 +102,8 @@ const OUTGOING = {
   'skills/list': { maybe: ['cwds', 'forceReload'] },
   'skills/config/write': { keys: ['enabled'], maybe: ['path', 'name'] },
   'config/read': { keys: ['includeLayers', 'cwd'] },
+  // 无参数稳定 RPC；requirements 形状由 F49 守卫，失败时电脑操控保守禁用。
+  'configRequirements/read': { keys: [] },
   'config/batchWrite': { keys: ['edits'] },
   // 策略 hook 的信任（2026-09-28）。`cwds` 是可选的（内核 `#[serde(default)]`）：不传 = 只看用户层，
   // 我们的 hooks.json 就在那一层。取回来的 `currentHash` 原样写进 trusted_hash —— 不自己算

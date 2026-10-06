@@ -1066,11 +1066,13 @@ describe('send：首页不创建 Thread（03 §1）', () => {
 
     expect(await actions.send({ text: '做个周报' })).toEqual({ threadId: 'new-1' });
     expect(adapter.createTask).toHaveBeenCalledWith({
+      desktopInteractive: true,
       input: [{ type: 'text', text: '做个周报' }],
     });
 
     expect(await actions.send({ threadId: 't1', text: '再来一条' })).toEqual({ threadId: 't1' });
     expect(adapter.sendMessage).toHaveBeenCalledWith({
+      desktopInteractive: true,
       threadId: 't1',
       overrides: { cwd: '/w' },
       input: [{ type: 'text', text: '再来一条' }],
@@ -1100,6 +1102,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
       actions.send({ threadId: 'grandchild', text: '继续核对第二组数据', steer: true }),
     ).resolves.toEqual({ threadId: 'root' });
     expect(adapter.sendMessage).toHaveBeenCalledWith({
+      desktopInteractive: true,
       threadId: 'root',
       overrides: { cwd: '/w' },
       input: [
@@ -1176,6 +1179,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     await actions.send({ text: '做个周报', modelId: 'evowork/kimi-k3' });
 
     expect(adapter.createTask).toHaveBeenCalledWith({
+      desktopInteractive: true,
       input: [{ type: 'text', text: '做个周报' }],
       overrides: { model: 'evowork/kimi-k3' },
     });
@@ -1193,6 +1197,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     await actions.send({ text: '做个周报', modeId: 'request-approval' });
 
     expect(adapter.createTask).toHaveBeenCalledWith({
+      desktopInteractive: true,
       input: [{ type: 'text', text: '做个周报' }],
       overrides: { modeId: 'request-approval' },
     });
@@ -1211,6 +1216,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
 
     expect(adapter.setTaskSettings).toHaveBeenCalledWith('t1', { modeId: 'full-access' });
     expect(adapter.sendMessage).toHaveBeenCalledWith({
+      desktopInteractive: true,
       threadId: 't1',
       input: [{ type: 'text', text: '放开权限' }],
       overrides: { modeId: 'full-access', cwd: '/w' },
@@ -1229,6 +1235,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
 
     expect(adapter.setTaskSettings).toHaveBeenCalledWith('t1', { model: 'evowork/glm-flash' });
     expect(adapter.sendMessage).toHaveBeenCalledWith({
+      desktopInteractive: true,
       threadId: 't1',
       input: [{ type: 'text', text: '换个模型再来' }],
       overrides: { model: 'evowork/glm-flash', cwd: '/w' },
@@ -1246,6 +1253,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     await actions.send({ text: '做个周报' });
 
     expect(adapter.createTask).toHaveBeenCalledWith({
+      desktopInteractive: true,
       input: [{ type: 'text', text: '做个周报' }],
     });
     expect(adapter.setTaskSettings).not.toHaveBeenCalled();
@@ -1273,6 +1281,7 @@ describe('send：首页不创建 Thread（03 §1）', () => {
     await actions.send({ text: '整理一个文档', workspaceId: id });
 
     expect(adapter.createTask).toHaveBeenCalledWith({
+      desktopInteractive: true,
       input: [{ type: 'text', text: '整理一个文档' }],
       overrides: { cwd: '/w/evowork' },
     });

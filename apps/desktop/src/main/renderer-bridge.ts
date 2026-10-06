@@ -492,7 +492,8 @@ export interface RendererBridgeOptions {
       }
     | undefined;
   /** 把用户的决定交回给挂起的审批（F14：审批是**服务端发起的请求**，必须有人回复） */
-  readonly openComputerUseSettings?: (() => Promise<void>) | undefined;
+  readonly openComputerUseSettings?:
+    ((permission?: 'accessibility' | 'screenRecording') => Promise<void>) | undefined;
   readonly computerUse?: ComputerUseHost | undefined;
   readonly resolveApproval?: ((id: string, reply: ApprovalReply) => void) | undefined;
   /** 当前仍悬着的审批。切到完全访问时只处理同一任务里的命令与文件审批。 */
@@ -1448,6 +1449,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           if (environment.threadId) {
             if (!environment.sent) {
               await adapter.sendMessage({
+                desktopInteractive: true,
                 threadId: environment.threadId,
                 input: content,
                 overrides: {
@@ -1503,6 +1505,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
             });
           }
           const sent = await adapter.sendMessage({
+            desktopInteractive: true,
             threadId: targetThreadId,
             input: content,
             ...(overrides ? { overrides } : {}),
@@ -1511,6 +1514,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           return { threadId: targetThreadId, ...(sent.queued ? { queued: true } : {}) };
         }
         const created = await adapter.createTask({
+          desktopInteractive: true,
           input: content,
           ...(environment
             ? { onCreated: (threadId: string) => options.environments!.bind(threadId, environment) }
@@ -1765,7 +1769,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
     async getComputerUseStatus() {
       return (
-        options.computerUse?.view() ?? {
+        (await options.computerUse?.refresh()) ?? {
           enabled: false,
           state: 'unsupported' as const,
           message: '此版本不支持电脑操控。',
@@ -1786,9 +1790,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async revokeComputerUseAccess(input: { appId?: string }) {
       return options.computerUse?.revoke(input.appId) ?? this.getComputerUseStatus();
     },
-    async openComputerUseSettings() {
+    async openComputerUseSettings(input?: { permission: 'accessibility' | 'screenRecording' }) {
+      if (input && !['accessibility', 'screenRecording'].includes(input.permission))
+        throw new Error('无效的系统权限页面');
       if (!options.openComputerUseSettings) throw new Error('当前版本不能打开权限设置。');
-      await options.openComputerUseSettings();
+      await options.openComputerUseSettings(input?.permission);
     },
     async interrupt(threadId: string): Promise<void> {
       options.computerUse?.endTurn(threadId);
