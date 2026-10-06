@@ -3,6 +3,30 @@ import { assessComputerUseAction } from '../src/computer-use-action.js';
 
 describe('电脑操控业务动作风险', () => {
   it.each([
+    'com.tencent.xinWeChat',
+    'com.tencent.WeWorkMac',
+    'com.yinxiang.Mac',
+    'com.kingsoft.wpsoffice.mac',
+    'org.mozilla.thunderbird',
+  ])('%s 的内容输入和编辑不继承 TextEdit 的免确认规则', (app) => {
+    const target = { app, role: 'AXTextArea', label: '', editable: true };
+    expect(assessComputerUseAction('press_key', { key: 'Enter' }, target)).toMatchObject({
+      category: 'send',
+      confirmation: true,
+    });
+    expect(assessComputerUseAction('type_text', { text: '正文\n' }, target)).toMatchObject({
+      category: 'send',
+      confirmation: true,
+    });
+    expect(assessComputerUseAction('set_value', { value: '正文' }, target)).toMatchObject({
+      category: 'unknown',
+      confirmation: true,
+    });
+    expect(
+      assessComputerUseAction('click', {}, { ...target, role: 'AXButton', label: '发送或分享' }),
+    ).toMatchObject({ category: 'send', confirmation: true });
+  });
+  it.each([
     ['发送邮件', 'send'],
     ['Submit', 'send'],
     ['删除文件', 'delete'],

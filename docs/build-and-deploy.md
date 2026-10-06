@@ -805,3 +805,7 @@ Linux `pnpm run build` 已验证 MCP bundle 与桌面代码构建；不会构建
 ### 2026-10-06 · P2 应用身份元数据探针
 
 `node scripts/verify-computer-use-apps.mjs` 已在本机 macOS 27.0 跑通。脚本提取生产 Helper 的签名验证函数，编译临时 Swift 程序，核对运行应用签名与进程元数据；不激活窗口、不读 AX、不请求 TCC。Finder 必须以 ordinary 类别通过，否则退出失败。多架构二进制须对实际运行切片验签，持久身份使用其 CDHash；不能与磁盘默认切片哈希直接比较。该探针不证明正式同 Team ID 宿主正向调用、AX/TCC 或电脑操控发布可用；发布标记仍为 false。
+
+2026-10-06 按用户要求增加微信、企业微信与印象笔记身份。已执行 `node scripts/verify-computer-use-apps.mjs com.tencent.xinWeChat com.tencent.WeWorkMac com.yinxiang.Mac`，三者运行进程均通过生产身份函数，`requestedVerified=3`、分类均为 ordinary；Finder 同时通过。首次探测企业微信主应用未运行时退出失败；出现运行进程后复查通过，不把安装存在当成运行身份通过。上述命令只检查元数据，不读取聊天/笔记内容、不点击发送。版本、Team ID 与边界见 [12 §用户指定应用扩展](design/12-computer-use.md#2026-10-06--用户指定应用扩展)。
+
+同日增加 WPS Office 和 Thunderbird，已执行 `node scripts/verify-computer-use-apps.mjs com.kingsoft.wpsoffice.mac org.mozilla.thunderbird`，两个真实运行进程均通过生产身份函数，`requestedVerified=2`，分类 ordinary；Finder 同时通过。首次探针在原有 10 秒限制内超时，探针等待上限改为与原生 Helper 请求相同的 30 秒后通过；没有缩减签名检查或扩大运行时请求上限。该结果不证明 WPS 文档编辑、Thunderbird 邮件发送、AX/TCC 或中断延迟可用。

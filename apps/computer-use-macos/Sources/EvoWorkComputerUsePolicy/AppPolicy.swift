@@ -13,5 +13,14 @@ public func applicationKind(bundleID: String, signingID: String, teamID: String?
     if appleSigned && appleApps.contains(id) { return "ordinary" }
     let officeApps: Set<String> = ["com.microsoft.word", "com.microsoft.excel", "com.microsoft.powerpoint", "com.microsoft.onenote.mac", "com.microsoft.outlook"]
     if teamID == "UBF8T346G9" && officeApps.contains(id) { return "ordinary" }
+    // 逐个绑定已核对的应用和发布者，不按厂商或 bundle 前缀放行其它应用。
+    let requestedApps = [
+        "com.tencent.xinwechat": "5A4RE8SF68",
+        "com.tencent.weworkmac": "88L2Q4487U",
+        "com.yinxiang.mac": "7D498F54KM",
+        "com.kingsoft.wpsoffice.mac": "YK4WKE5WAM",
+        "org.mozilla.thunderbird": "43AQ936H96"
+    ]
+    if let publisher = requestedApps[id], teamID == publisher { return "ordinary" }
     return "unknown"
 }

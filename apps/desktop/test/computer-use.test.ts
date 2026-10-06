@@ -12,7 +12,12 @@ const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-function setup(verified = true, nestedRoot = '', contextCheck?: () => Promise<void>) {
+function setup(
+  verified = true,
+  nestedRoot = '',
+  contextCheck?: () => Promise<void>,
+  app = 'com.apple.TextEdit',
+) {
   const temporary = mkdtempSync(join(tmpdir(), 'ew-cu-test-'));
   roots.push(temporary);
   const root = join(temporary, nestedRoot);
@@ -27,7 +32,7 @@ function setup(verified = true, nestedRoot = '', contextCheck?: () => Promise<vo
     persistentAllowed: true,
   };
   const window = {
-    app: 'com.apple.TextEdit',
+    app,
     processId: 10,
     windowId: 'w',
     x: 0,
@@ -42,7 +47,12 @@ function setup(verified = true, nestedRoot = '', contextCheck?: () => Promise<vo
       if (method === 'health') return { protocolVersion: 1, accessibility: true };
       if (method === 'list_apps')
         return [
-          { app: window.app, name: 'TextEdit', identity: 'sig', kind: 'ordinary' },
+          {
+            app: window.app,
+            name: app === 'com.apple.TextEdit' ? 'TextEdit' : app,
+            identity: 'sig',
+            kind: 'ordinary',
+          },
           { app: 'com.apple.Terminal', name: 'Terminal', identity: 'sig2', kind: 'terminal' },
         ];
       if (method === 'get_app_state')
@@ -92,6 +102,56 @@ function setup(verified = true, nestedRoot = '', contextCheck?: () => Promise<vo
     },
   };
 }
+describe.each([
+  ['微信', 'com.tencent.xinWeChat', '发送'],
+  ['企业微信', 'com.tencent.WeWorkMac', '发送'],
+  ['印象笔记', 'com.yinxiang.Mac', '分享笔记'],
+  ['WPS Office', 'com.kingsoft.wpsoffice.mac', '分享文档'],
+  ['Thunderbird', 'org.mozilla.thunderbird', '发送邮件'],
+])('%s 的应用准入与敏感动作', (_name, app, label) => {
+  it.each([true, false])('始终允许后，发送或分享仍需独立确认；用户接受=%s', async (accepted) => {
+    const s = setup(true, '', undefined, app);
+    const original = s.helper.call;
+    s.helper.call = vi.fn(async (method, params) =>
+      method === 'inspect_action'
+        ? {
+            window: await original('window_identity'),
+            text: 'PRIVATE_SCREEN',
+            target: { app, role: 'AXButton', label, editable: false },
+          }
+        : original(method, params),
+    );
+    try {
+      await s.host.setEnabled(true);
+      const apps = await s.call('list_apps');
+      expect(JSON.parse(apps.content[0]!.text!)).toContainEqual({ app, name: app });
+      const read = await s.call('get_app_state', { app });
+      expect(s.host.view().grants).toContainEqual({ appId: app, allowed: true });
+      s.ask.mockImplementationOnce(async () => ({
+        decision: 'accept',
+        optionId: accepted ? 'confirm' : 'deny',
+      }));
+      const action = s.call('click', {
+        app,
+        state_id: JSON.parse(read.content[0]!.text!).state_id,
+        element_index: 1,
+      });
+      if (accepted) await expect(action).resolves.toMatchObject({ content: expect.any(Array) });
+      else {
+        await expect(action).rejects.toThrow('APP_DENIED');
+        await expect(s.call('get_app_state', { app })).rejects.toThrow('USER_STOPPED');
+      }
+      expect(s.ask.mock.calls.at(-1)?.[0].params.message).toContain('发送或提交内容');
+      expect(s.ask.mock.calls.at(-1)?.[0].params.message).toContain(app);
+      expect(
+        vi.mocked(s.helper.call).mock.calls.filter(([method]) => method === 'click'),
+      ).toHaveLength(accepted ? 1 : 0);
+      expect(JSON.stringify(s.audit.mock.calls)).not.toContain('PRIVATE_SCREEN');
+    } finally {
+      await s.host.close();
+    }
+  });
+});
 describe('电脑操控宿主边界', () => {
   it('应用始终允许也不能代答发送；拒绝时原生写动作零调用', async () => {
     const s = setup();

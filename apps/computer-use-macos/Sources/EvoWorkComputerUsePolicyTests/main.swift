@@ -26,6 +26,13 @@ struct NativePolicyTests {
         check(applicationKind(bundleID: "com.apple.Terminal", signingID: "com.apple.Terminal", teamID: nil, appleSigned: true) == "terminal", "terminal separated before activation")
         check(applicationKind(bundleID: "com.google.Chrome", signingID: "com.google.Chrome", teamID: "any", appleSigned: false) == "browser", "browser cannot use ordinary route")
         check(applicationKind(bundleID: "com.example.Unknown", signingID: "com.example.Unknown", teamID: "any", appleSigned: false) == "unknown", "unknown signed app denied")
+        for (bundleID, publisher) in [("com.tencent.xinWeChat", "5A4RE8SF68"), ("com.tencent.WeWorkMac", "88L2Q4487U"), ("com.yinxiang.Mac", "7D498F54KM"), ("com.kingsoft.wpsoffice.mac", "YK4WKE5WAM"), ("org.mozilla.thunderbird", "43AQ936H96")] {
+            check(applicationKind(bundleID: bundleID, signingID: bundleID, teamID: publisher, appleSigned: false) == "ordinary", "requested app publisher accepted: \(bundleID)")
+            check(applicationKind(bundleID: bundleID, signingID: bundleID, teamID: "FAKE", appleSigned: false) == "unknown", "requested app wrong publisher denied: \(bundleID)")
+            check(applicationKind(bundleID: bundleID, signingID: bundleID, teamID: nil, appleSigned: false) == "unknown", "requested app missing publisher denied: \(bundleID)")
+            check(applicationKind(bundleID: bundleID, signingID: "com.example.Spoof", teamID: publisher, appleSigned: false) == "unknown", "requested app signing id mismatch denied: \(bundleID)")
+            check(applicationKind(bundleID: bundleID + ".Other", signingID: bundleID + ".Other", teamID: publisher, appleSigned: false) == "unknown", "same publisher does not authorize other apps: \(bundleID)")
+        }
         check(validatedWindowPoint(x: 0, y: 0, width: 800, height: 600) == CGPoint.zero, "window origin accepted")
         check(validatedWindowPoint(x: 800, y: 10, width: 800, height: 600) == nil, "exclusive right edge")
         check(validatedWindowPoint(x: -1, y: 0, width: 800, height: 600) == nil, "negative coordinate denied")
@@ -57,7 +64,7 @@ struct NativePolicyTests {
         check(fromRight?.location == 1 && fromRight?.length == 3, "extend selection left")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: nil) == nil, "missing original selection denied")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: CFRange(location: 4, length: 2)) == nil, "out-of-bounds selection denied")
-        print("Native policy checks passed (29 cases).")
+        print("Native policy checks passed (54 cases).")
     }
 }
 
