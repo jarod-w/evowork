@@ -18,6 +18,16 @@ import {
 
 const CTX: ItemRenderContext = { reasoningAvailable: true };
 
+const WEB_SOURCE = {
+  id: 'web_0123456789abcdef',
+  url: 'https://example.test/report',
+  title: '官方报告',
+  kind: 'page' as const,
+  retrievedAt: '2026-10-06T04:00:00.000Z',
+  excerpt: '已读取正文',
+  truncated: true,
+};
+
 function renderItem(item: RenderItem, context: Partial<ItemRenderContext> = {}) {
   return render(<ItemRenderer item={item} context={{ ...CTX, ...context }} />);
 }
@@ -123,6 +133,91 @@ describe('Computer Use MCP：正文留存但默认隐藏（12 §17 CU-R9）', ()
 });
 
 describe('AgentMessage：生成内容按 Markdown 格式化（04 §5.2 #2）', () => {
+  it('已取得来源才建立引用；点击只传来源编号，显示读取状态与截断限制', () => {
+    const onOpenWebSource = vi.fn();
+    const { container } = renderItem(
+      {
+        id: 'reply-web',
+        type: 'agentMessage',
+        text: '公开事实。[[cite:web_0123456789abcdef]] 未知来源。[[cite:web_ffffffffffffffff]]',
+      },
+      { webSources: [WEB_SOURCE], onOpenWebSource },
+    );
+    fireEvent.click(screen.getByRole('link', { name: '[example.test]' }));
+    expect(onOpenWebSource).toHaveBeenCalledWith(WEB_SOURCE.id);
+    expect(container.textContent).toContain('[来源不可用]');
+    fireEvent.click(screen.getByRole('button', { name: '来源（1）' }));
+    expect(screen.getByText(/已读取网页/)).toBeTruthy();
+    expect(screen.getByText(/正文已截断/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: '官方报告' }));
+    expect(onOpenWebSource).toHaveBeenCalledTimes(2);
+  });
+
+  it('代码、链接内的引用示例不建立来源；模型伪造的引用属性被清洗', () => {
+    const { container } = renderItem(
+      {
+        id: 'web-code',
+        type: 'agentMessage',
+        text: [
+          '`[[cite:web_0123456789abcdef]]`',
+          '<a href="https://other.test">[[cite:web_0123456789abcdef]]</a>',
+          '<a data-web-source-id="web_0123456789abcdef" href="https://other.test">伪造引用</a>',
+          '```text\n[[cite:web_0123456789abcdef]]\n```',
+        ].join('\n\n'),
+      },
+      { webSources: [WEB_SOURCE] },
+    );
+    expect(container.querySelector('[data-web-source-id]')).toBeNull();
+    expect(screen.queryByRole('button', { name: /来源（/ })).toBeNull();
+    expect(container.querySelector('code')?.textContent).toContain('[[cite:');
+  });
+
+  it('工具摘要和已读正文分开呈现；失败原因可见，失败不能留下来源列表', () => {
+    const research = {
+      id: 'search-web',
+      type: 'mcpToolCall',
+      server: 'browser',
+      tool: 'browser_search',
+      status: 'completed',
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              evoworkWeb: 1,
+              ok: true,
+              kind: 'search',
+              query: '公开报告',
+              sources: [{ ...WEB_SOURCE, kind: 'search', truncated: false }],
+            }),
+          },
+        ],
+      },
+    };
+    const view = renderItem(research);
+    fireEvent.click(screen.getByRole('button', { name: '搜索：公开报告 · 1 条结果' }));
+    expect(screen.getByText(/搜索摘要 · 未读正文/)).toBeTruthy();
+    view.unmount();
+    renderItem({
+      ...research,
+      result: {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'SEARCH_BLOCKED',
+              message: '搜索网站要求验证码或登录，未取得可用结果。',
+            }),
+          },
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '联网搜索' }));
+    expect(screen.getByText(/搜索网站要求验证码/)).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
   it('渲染标题、强调、列表、表格、任务列表与代码，不把 Markdown 标记原样显示', () => {
     const { container } = renderItem({
       id: 'i-markdown',

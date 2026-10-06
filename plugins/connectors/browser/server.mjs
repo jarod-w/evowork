@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { TOOLS, createBrowserSession } from './runtime.mjs';
 import { createBrowserDriver } from './cdp.mjs';
+import { RESEARCH_ERRORS } from './research.mjs';
 import { assessComputerUseAction } from './vendor/policy.mjs';
 
 const pending = new Map();
@@ -113,7 +114,12 @@ async function handle(message) {
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ ok: false, code, requires_refresh: code === 'STALE_STATE' }),
+          text: JSON.stringify({
+            ok: false,
+            code,
+            ...(RESEARCH_ERRORS[code] ? { message: RESEARCH_ERRORS[code] } : {}),
+            requires_refresh: code === 'STALE_STATE',
+          }),
         },
       ],
     });

@@ -4386,3 +4386,31 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.ew-web-citation {
+  font-size: var(--font-caption-size);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.ew-web-citation-unavailable,
+.ew-web-source-meta {
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+
+.ew-web-source-meta {
+  display: block;
+}
+
+.ew-web-sources {
+  overflow-wrap: anywhere;
+}
+
+.ew-web-sources li {
+  margin-block: var(--space-8);
+}
+
+.ew-web-sources p {
+  white-space: pre-wrap;
+}

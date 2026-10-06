@@ -72,6 +72,7 @@ export async function bootApp({
    * 假网关那条 E2E 本来就传，不受影响；真网关那条现在没传，这次拆分不动它。
    */
   let kernelChild;
+  const openedExternalUrls = [];
   const spawnSeam = captureKernelProcess
     ? {
         spawnFn: (command, args, spawnOptions) => {
@@ -98,7 +99,9 @@ export async function bootApp({
        */
       createWindow: (options) => new BrowserWindow({ ...options, show }),
       ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
-      openExternal: async () => undefined,
+      openExternal: async (url) => {
+        openedExternalUrls.push(url);
+      },
       /*
        * 目录选择框。**只有主进程能开系统对话框**，所以它必须从这里注入 ——
        * 不注入的后果不是"少个功能"：首运行会卡在「选一个项目」那一步
@@ -147,6 +150,7 @@ export async function bootApp({
     host: result.host,
     window,
     evaluate,
+    openedExternalUrls,
     /** 当前内核子进程的 pid。重启后会换一个，所以每次都重新读，不要缓存 */
     kernelPid: () => kernelChild?.pid,
     killKernel: () => {

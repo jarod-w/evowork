@@ -126,6 +126,78 @@ function makeActions(overrides: Partial<Parameters<typeof createRendererActions>
   });
 }
 
+describe('来源打开只接受当前任务内核历史中的网页', () => {
+  const source = {
+    id: 'web_0123456789abcdef',
+    url: 'https://example.test/report',
+    title: '报告',
+    kind: 'page',
+    retrievedAt: '2026-10-06T04:00:00.000Z',
+    excerpt: '正文',
+    truncated: false,
+  };
+  function historyItem(overrides = {}) {
+    return {
+      id: 'web-call',
+      type: 'mcpToolCall',
+      server: 'browser',
+      tool: 'browser_read_page',
+      status: 'completed',
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ evoworkWeb: 1, ok: true, kind: 'page', sources: [source] }),
+          },
+        ],
+      },
+      ...overrides,
+    };
+  }
+  function setup(items: ReturnType<typeof historyItem>[]) {
+    const openExternal = vi.fn(async () => {});
+    const openTask = vi.fn(async () => ({
+      cached: [],
+      items: Promise.resolve(items),
+      latestTurn: Promise.resolve(undefined),
+    })) as unknown as Adapter['openTask'];
+    return {
+      openExternal,
+      openTask,
+      actions: makeActions({ adapter: fakeAdapter({ openTask }), openExternal }),
+    };
+  }
+  it('历史恢复后可打开来源，渲染层传入的额外 URL 不参与选址', async () => {
+    const s = setup([historyItem()]);
+    await s.actions.openWebSource({
+      taskId: 't1',
+      sourceId: source.id,
+      url: 'https://other.test',
+    } as never);
+    expect(s.openTask).toHaveBeenCalledWith('t1');
+    expect(s.openExternal).toHaveBeenCalledWith(source.url);
+  });
+  it.each([
+    { items: [] },
+    { items: [historyItem({ status: 'inProgress' })] },
+    { items: [historyItem({ server: 'untrusted' })] },
+  ])('未取得或不属于该任务的来源不能打开 %j', async ({ items }) => {
+    const s = setup(items);
+    await expect(s.actions.openWebSource({ taskId: 't2', sourceId: source.id })).rejects.toThrow(
+      '不在这个任务',
+    );
+    expect(s.openExternal).not.toHaveBeenCalled();
+  });
+  it('URL、伪造编号不能替代来源编号', async () => {
+    const s = setup([historyItem()]);
+    await expect(
+      s.actions.openWebSource({ taskId: 't1', sourceId: 'https://other.test' }),
+    ).rejects.toThrow('没有可打开');
+    expect(s.openTask).not.toHaveBeenCalled();
+    expect(s.openExternal).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * 「项目」页 I/O 端口的假实现。**提到文件顶层**（本来在
  * 「项目动作」那个 describe 块里）：Task 9 的「工作空间只有一处真源」

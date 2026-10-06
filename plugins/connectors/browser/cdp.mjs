@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { open, unlink } from 'node:fs/promises';
 import { tmpdir, homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { httpUrl } from './runtime.mjs';
+import { researchDocument } from './research.mjs';
 
 function channel(url) {
   const socket = new WebSocket(url);
@@ -109,13 +110,30 @@ export function createBrowserDriver({
   let originGuard;
   let closed = false;
   let deniedNavigation = false;
+  let researchMode = false;
+  let mainFrameId;
+  let mainResponse;
   const downloads = new Set();
   function close() {
+    const firstClose = !closed;
     closed = true;
     for (const controller of downloads) controller.abort();
+    // 先终止专用进程树再断开调试连接。断开 CDP 会释放 waitingForDebugger，
+    // 若先断连接、再向 Chrome 发 SIGTERM，暂停的 worker 可能短暂恢复并发出请求。
+    if (firstClose && child?.pid) {
+      try {
+        if (process.platform === 'win32') {
+          const killed = spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+          });
+          if (killed.status !== 0) child.kill('SIGKILL');
+        } else process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        child.kill('SIGKILL');
+      }
+    }
     page?.close();
     browser?.close();
-    child?.kill();
     // Chrome 退出前还会写 profile，退出事件之后再清理，避免 ENOTEMPTY 竞态。
     if (profile && (!child || child.exitCode !== null || child.signalCode !== null)) {
       rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
@@ -140,7 +158,7 @@ export function createBrowserDriver({
           `--user-data-dir=${profile}`,
           'about:blank',
         ],
-        { stdio: 'ignore' },
+        { stdio: 'ignore', detached: process.platform !== 'win32' },
       );
       child.on('error', close);
       child.on('exit', close);
@@ -177,8 +195,8 @@ export function createBrowserDriver({
           close();
           return;
         }
+        // 保留主页面的监控会话。提前 detach 会释放其相关目标的调试暂停。
         await browser.send('Runtime.runIfWaitingForDebugger', {}, sessionId);
-        await browser.send('Target.detachFromTarget', { sessionId });
       });
       await browser.send('Target.setAutoAttach', {
         autoAttach: true,
@@ -193,7 +211,17 @@ export function createBrowserDriver({
       });
       await browser.send('Browser.setDownloadBehavior', { behavior: 'deny' });
       await page.send('Page.enable');
-      page.on('Fetch.requestPaused', async ({ requestId, request }) => {
+      mainFrameId = (await page.send('Page.getFrameTree')).frameTree.frame.id;
+      page.on('Network.responseReceived', ({ type, frameId, response }) => {
+        if (researchMode && type === 'Document' && frameId === mainFrameId) mainResponse = response;
+      });
+      await page.send('Network.enable');
+      page.on('Fetch.requestPaused', async ({ requestId, request, resourceType, frameId }) => {
+        // 研究只读取主文档；子资源不发送，不向用户索取一串广告/跟踪域授权。
+        if (researchMode && (resourceType !== 'Document' || frameId !== mainFrameId)) {
+          await page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
+          return;
+        }
         try {
           await originGuard(request.url);
           await page.send('Fetch.continueRequest', { requestId });
@@ -230,8 +258,11 @@ export function createBrowserDriver({
     setOriginGuard(guard) {
       originGuard = guard;
     },
-    async navigate(url) {
+    async navigate(url, { research = false } = {}) {
       await start();
+      researchMode = research;
+      mainResponse = undefined;
+      await page.send('Emulation.setScriptExecutionDisabled', { value: research });
       deniedNavigation = false;
       let timer, unsubscribe;
       const loaded = new Promise((resolve, reject) => {
@@ -242,13 +273,32 @@ export function createBrowserDriver({
       loaded.catch(() => {});
       try {
         const result = await page.send('Page.navigate', { url });
-        if (result.errorText || deniedNavigation) throw new Error('POLICY_DENIED');
+        if (deniedNavigation) throw new Error('POLICY_DENIED');
+        if (result.errorText) throw new Error(research ? 'NAVIGATION_FAILED' : 'POLICY_DENIED');
         await loaded;
         if (deniedNavigation) throw new Error('POLICY_DENIED');
       } finally {
         clearTimeout(timer);
         unsubscribe();
       }
+    },
+    async research(kind, engine) {
+      await start();
+      if (deniedNavigation) throw new Error('POLICY_DENIED');
+      if (!mainResponse || mainResponse.status >= 400) throw new Error('PAGE_HTTP_ERROR');
+      if (!['text/html', 'application/xhtml+xml', 'text/plain'].includes(mainResponse.mimeType))
+        throw new Error('PAGE_UNSUPPORTED');
+      const { executionContextId } = await page.send('Page.createIsolatedWorld', {
+        frameId: mainFrameId,
+        worldName: 'evowork-research',
+      });
+      const result = await page.send('Runtime.evaluate', {
+        expression: `(${researchDocument.toString()})(${JSON.stringify(kind)},${JSON.stringify(engine)})`,
+        contextId: executionContextId,
+        returnByValue: true,
+      });
+      if (result.exceptionDetails) throw new Error('BROWSER_ACTION_FAILED');
+      return result.result.value;
     },
     async snapshot() {
       await start();

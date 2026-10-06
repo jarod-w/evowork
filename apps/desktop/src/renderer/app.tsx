@@ -165,6 +165,7 @@ export interface EvoworkBridge {
   refreshVisible(ids: readonly string[]): Promise<void>;
   /** 打开已有任务并拉历史。点侧边栏一行就必须调，否则已完成任务是空对话 */
   openTask(input: { threadId: string }): Promise<OpenTaskResult>;
+  openWebSource?(input: { taskId: string; sourceId: string }): Promise<void>;
   listSubtasks?(input: { threadId: string }): Promise<readonly TaskRowView[]>;
   searchTasks?(input: { query: string }): Promise<readonly TaskSearchHitView[]>;
   searchTaskOccurrences?(input: {
@@ -3364,6 +3365,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             onOpenResult: (tab) => updateResultUi({ open: true, tab }),
             artifacts: currentResults.artifacts,
             onOpenArtifact: openArtifact,
+            onOpenWebSource: (sourceId) => {
+              if (!bridge.openWebSource) {
+                reportFailure(new Error('当前版本不能打开网页来源。'), '无法打开来源。');
+                return;
+              }
+              void bridge
+                .openWebSource({ taskId: activeTaskId, sourceId })
+                .catch((error: unknown) => reportFailure(error, '无法打开来源。'));
+            },
             onOpenChangedFile: openChangedFile,
             onOpenSubAgent: (threadId) => {
               const subtask = Object.values(subtasksByTask)

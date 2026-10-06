@@ -21,6 +21,7 @@ import { LAYOUT } from '@evowork/tokens';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import type { TaskGoalView } from '../../shared/ipc.js';
+import { webSourcesByItem, type WebSource } from '../../shared/web-sources.js';
 
 import {
   ApprovalCard,
@@ -222,10 +223,12 @@ function ProcessGroup({
   items,
   context,
   focusItemId,
+  sourceContexts,
 }: {
   readonly items: readonly RenderItem[];
   readonly context: ItemRenderContext;
   readonly focusItemId?: string | undefined;
+  readonly sourceContexts?: ReadonlyMap<string, readonly WebSource[]> | undefined;
 }) {
   const visibleItems = items.filter(
     (item) =>
@@ -266,7 +269,10 @@ function ProcessGroup({
         <div className="ew-item-body ew-process-body">
           {visibleItems.map((item) => (
             <div key={item.id} data-task-item-id={item.id}>
-              <ItemRenderer item={item} context={itemContext} />
+              <ItemRenderer
+                item={item}
+                context={{ ...itemContext, webSources: sourceContexts?.get(item.id) }}
+              />
             </div>
           ))}
         </div>
@@ -508,6 +514,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   );
   const hiddenItemCount = props.items.length - mountedItems.length;
   const timeline = useMemo(() => groupTimelineItems(mountedItems), [mountedItems]);
+  const sourceContexts = useMemo(() => webSourcesByItem(props.items), [props.items]);
 
   const resizeResult = (clientX: number): void => {
     const body = conversationRef.current?.parentElement;
@@ -832,13 +839,20 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               {timeline.map((entry) =>
                 entry.kind === 'item' ? (
                   <div key={entry.item.id} data-task-item-id={entry.item.id}>
-                    <ItemRenderer item={entry.item} context={props.itemContext} />
+                    <ItemRenderer
+                      item={entry.item}
+                      context={{
+                        ...props.itemContext,
+                        webSources: sourceContexts.get(entry.item.id),
+                      }}
+                    />
                   </div>
                 ) : (
                   <ProcessGroup
                     key={entry.key}
                     items={entry.items}
                     context={props.itemContext}
+                    sourceContexts={sourceContexts}
                     focusItemId={props.focusItemId}
                   />
                 ),

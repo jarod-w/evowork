@@ -760,6 +760,24 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 
 ---
 
+### 2026-10-06 · 免 Key 联网研究验收
+
+随包 browser MCP 现在包含 `browser_search` / `browser_read_page`，不需搜索服务 Key；本机需要
+Chrome / Chromium。在「插件 → 连接器 → 浏览器」信任并启用后，任务中的新网站仍单独确认。
+`pnpm run build` 已验证独立目录中的完整工具清单，包括新增的 `research.mjs`。
+
+以下命令已在本机跑通（真窗口需要发货的 app-server 二进制与桌面会话）：
+
+```bash
+node scripts/verify-browser.mjs
+pnpm exec playwright test web-research.spec.mjs --project=fake
+```
+
+前者使用真实 Chrome 和本机合成页面，覆盖搜索结构、正文、HTTP / 格式错误与研究零脚本 / 子资源，
+并复验浏览器原有交互和下载。后者使用真实桌面、内核、browser MCP 与 Chrome，可控模型响应覆盖
+授权 / 拒绝、来源点击和历史恢复。外站验证码、动态正文、引擎布局与网络稳定性不由确定性测试保证；
+本次 Bing 实站搜索 / 官方正文读取通过，百度与 DuckDuckGo 验证码失败，完整状态见 [status](status.md)。
+
 ## 7. 本文没验证的部分
 
 **写进手册但没真跑过的，只有这些**，其余每条命令都在本机执行过：

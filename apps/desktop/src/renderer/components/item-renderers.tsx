@@ -18,6 +18,7 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { useState, type ReactNode } from 'react';
+import { webResearchResult, webUrl, type WebSource } from '../../shared/web-sources.js';
 
 import { Badge, StatusDot } from './primitives.js';
 import {
@@ -52,6 +53,8 @@ export interface ItemRenderContext {
     ((pane: 'artifacts' | 'files' | 'changes' | 'browser') => void) | undefined;
   /** 当前任务已索引的产物。正文里同名文件会变成可点开的入口。 */
   readonly artifacts?: readonly MarkdownArtifact[] | undefined;
+  readonly webSources?: readonly WebSource[] | undefined;
+  readonly onOpenWebSource?: ((id: string) => void) | undefined;
   readonly onOpenArtifact?: ((id: string) => void) | undefined;
   /** 新增文件打开安全预览；修改/删除文件打开对应 diff。 */
   readonly onOpenChangedFile?: ((path: string, kind: string) => void) | undefined;
@@ -263,6 +266,7 @@ export function linkArtifactNamesInMarkdown(
 export function renderMarkdown(
   markdown: string,
   artifacts: readonly MarkdownArtifact[] = [],
+  sources: readonly WebSource[] = [],
 ): { readonly __html: string } {
   const parsed = marked.parse(markdown, {
     async: false,
@@ -276,7 +280,88 @@ export function renderMarkdown(
     ALLOW_DATA_ATTR: false,
     SANITIZE_NAMED_PROPS: true,
   });
-  return { __html: linkArtifactNamesInMarkdown(sanitized, artifacts) };
+  return {
+    __html: linkWebSourcesInMarkdown(linkArtifactNamesInMarkdown(sanitized, artifacts), sources),
+  };
+}
+
+/** 在清洗后的文本节点里转写来源；模型提供的 URL/属性从不参与引用链接。 */
+export function linkWebSourcesInMarkdown(html: string, sources: readonly WebSource[]): string {
+  if (!html.includes('[[cite:')) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.parentElement?.closest('code, pre, a, button') && node.data.includes('[[cite:'))
+      nodes.push(node);
+  }
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  for (const node of nodes) {
+    const fragment = document.createDocumentFragment();
+    let at = 0;
+    for (const match of node.data.matchAll(/\[\[cite:(web_[a-f0-9]{16})\]\]/g)) {
+      const index = match.index ?? 0;
+      fragment.append(node.data.slice(at, index));
+      const source = byId.get(match[1] ?? '');
+      if (source && webUrl(source.url)) {
+        const link = document.createElement('a');
+        link.className = 'ew-web-citation';
+        link.dataset.webSourceId = source.id;
+        link.href = source.url;
+        link.rel = 'noopener noreferrer';
+        link.title = source.title;
+        link.textContent = `[${new URL(source.url).hostname}]`;
+        fragment.append(link);
+      } else {
+        const unavailable = document.createElement('span');
+        unavailable.className = 'ew-web-citation-unavailable';
+        unavailable.textContent = '[来源不可用]';
+        fragment.append(unavailable);
+      }
+      at = index + match[0].length;
+    }
+    fragment.append(node.data.slice(at));
+    node.replaceWith(fragment);
+  }
+  return template.innerHTML;
+}
+
+function WebSourceList({
+  sources,
+  onOpen,
+}: {
+  readonly sources: readonly WebSource[];
+  readonly onOpen?: ((id: string) => void) | undefined;
+}) {
+  return (
+    <ul className="ew-search-results ew-web-sources">
+      {sources.map((source) => (
+        <li key={source.id}>
+          <a
+            href={source.url}
+            rel="noopener noreferrer"
+            onClick={(event) => {
+              event.preventDefault();
+              onOpen?.(source.id);
+            }}
+          >
+            {source.title}
+          </a>
+          <span className="ew-web-source-meta">
+            {new URL(source.url).hostname} ·{' '}
+            {source.kind === 'page' ? '已读取网页' : '搜索摘要 · 未读正文'} · 读取于{' '}
+            {new Date(source.retrievedAt).toLocaleString()}
+          </span>
+          {source.truncated ? (
+            <span className="ew-web-source-meta">正文已截断，不能据此声称读过全文</span>
+          ) : null}
+          <p>{source.excerpt.length > 400 ? `${source.excerpt.slice(0, 400)}…` : source.excerpt}</p>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function Collapsible({
@@ -482,6 +567,20 @@ export function ItemRenderer({
        */
       const blocks = parseFences(text(item, 'text'));
       const artifacts = context.artifacts ?? [];
+      const sources = context.webSources ?? [];
+      const rendered = blocks.map((block) =>
+        block.kind === 'text'
+          ? renderMarkdown(block.text, context.onOpenArtifact ? artifacts : [], sources)
+          : undefined,
+      );
+      const ids = new Set(
+        rendered.flatMap((html) =>
+          [...(html?.__html ?? '').matchAll(/data-web-source-id="(web_[a-f0-9]{16})"/g)].map(
+            (match) => match[1],
+          ),
+        ),
+      );
+      const citedSources = sources.filter((source) => ids.has(source.id));
       return (
         <div className="ew-item ew-item-agent" data-kind={kind}>
           {blocks.map((block, index) =>
@@ -490,11 +589,17 @@ export function ItemRenderer({
                 key={index}
                 className="ew-markdown"
                 // 解析后的 HTML 已由 DOMPurify 按 Markdown 专用白名单清洗。
-                dangerouslySetInnerHTML={renderMarkdown(
-                  block.text,
-                  context.onOpenArtifact ? artifacts : [],
-                )}
+                dangerouslySetInnerHTML={rendered[index]}
                 onClick={(event) => {
+                  const citation =
+                    event.target instanceof Element
+                      ? event.target.closest('[data-web-source-id]')
+                      : null;
+                  if (citation) {
+                    event.preventDefault();
+                    context.onOpenWebSource?.(citation.getAttribute('data-web-source-id') ?? '');
+                    return;
+                  }
                   const target =
                     event.target instanceof Element
                       ? event.target.closest('[data-artifact-id]')
@@ -516,6 +621,15 @@ export function ItemRenderer({
               />
             ),
           )}
+          {citedSources.length ? (
+            <Collapsible
+              kind="sources"
+              defaultExpanded={false}
+              summary={`来源（${citedSources.length}）`}
+            >
+              <WebSourceList sources={citedSources} onOpen={context.onOpenWebSource} />
+            </Collapsible>
+          ) : null}
         </div>
       );
     }
@@ -657,6 +771,43 @@ export function ItemRenderer({
     case 'dynamicToolCall': {
       const name = text(item, 'tool') || text(item, 'toolName') || text(item, 'name') || '工具调用';
       const server = text(item, 'server');
+      if (
+        kind === 'mcpToolCall' &&
+        server === 'browser' &&
+        ['browser_search', 'browser_read_page'].includes(name)
+      ) {
+        const result = webResearchResult(item);
+        const error = mcpContent(item).find((block) => block.type === 'text')?.text;
+        let message = text(item, 'status') === 'inProgress' ? '正在读取…' : '未取得可用来源。';
+        try {
+          const failure =
+            typeof error === 'string' ? (JSON.parse(error) as { message?: string }) : undefined;
+          if (typeof failure?.message === 'string') message = failure.message.slice(0, 300);
+        } catch {
+          /* 不回显原始错误或网页内容。 */
+        }
+        return (
+          <Collapsible
+            kind={kind}
+            defaultExpanded={defaultExpanded}
+            summary={
+              result
+                ? result.kind === 'search'
+                  ? `搜索：${result.query} · ${result.sources.length} 条结果`
+                  : `读取网页：${result.sources[0]?.title ?? ''}`
+                : name === 'browser_search'
+                  ? '联网搜索'
+                  : '读取网页'
+            }
+          >
+            {result ? (
+              <WebSourceList sources={result.sources} onOpen={context.onOpenWebSource} />
+            ) : (
+              <p>{message}</p>
+            )}
+          </Collapsible>
+        );
+      }
       if (kind === 'mcpToolCall' && server === 'cua_repl')
         return <ComputerUseMcpItem item={item} name={name} defaultExpanded={defaultExpanded} />;
       return (

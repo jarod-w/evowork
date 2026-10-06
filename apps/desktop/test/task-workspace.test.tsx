@@ -19,6 +19,53 @@ import {
 
 const ITEM_CTX = { reasoningAvailable: true };
 
+describe('来源的分组与分页接线', () => {
+  it('来源条目未挂载时仍能引用；展开旧消息后也不能用后来的来源给它背书', () => {
+    const source = {
+      id: 'web_0123456789abcdef',
+      url: 'https://example.test/report',
+      title: '官方报告',
+      kind: 'page',
+      retrievedAt: '2026-10-06T04:00:00.000Z',
+      excerpt: '已读正文',
+      truncated: false,
+    };
+    const { container } = renderWorkspace({
+      status: 'completed',
+      items: [
+        { id: 'early', type: 'agentMessage', text: `早期回答[[cite:${source.id}]]` },
+        {
+          id: 'research',
+          type: 'mcpToolCall',
+          server: 'browser',
+          tool: 'browser_read_page',
+          status: 'completed',
+          completed: true,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ evoworkWeb: 1, ok: true, kind: 'page', sources: [source] }),
+              },
+            ],
+          },
+        },
+        ...Array.from({ length: 130 }, (_, index) => ({
+          id: `filler-${index}`,
+          type: 'userMessage',
+          text: `历史消息${index}`,
+        })),
+        { id: 'late', type: 'agentMessage', text: `后期回答[[cite:${source.id}]]` },
+      ],
+    });
+    expect(container.querySelector('[data-task-item-id="research"]')).toBeNull();
+    expect(screen.getAllByRole('link', { name: '[example.test]' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /更早/ }));
+    expect(screen.getByText('[来源不可用]')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: '[example.test]' })).toHaveLength(1);
+  });
+});
+
 function renderWorkspace(over: Partial<Parameters<typeof TaskWorkspace>[0]> = {}) {
   const props = {
     title: '季度汇报 PPT',

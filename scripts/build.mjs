@@ -152,7 +152,13 @@ for (const bundle of BUNDLES) {
   const alone = mkdtempSync(join(tmpdir(), 'evowork-browser-bundle-'));
   try {
     mkdirSync(join(alone, 'vendor'));
-    for (const name of ['server.mjs', 'runtime.mjs', 'cdp.mjs', 'vendor/policy.mjs'])
+    for (const name of [
+      'server.mjs',
+      'runtime.mjs',
+      'cdp.mjs',
+      'research.mjs',
+      'vendor/policy.mjs',
+    ])
       copyFileSync(join(ROOT, 'plugins/connectors/browser', name), join(alone, name));
     const output = execFileSync(process.execPath, [join(alone, 'server.mjs')], {
       encoding: 'utf8',
@@ -172,10 +178,12 @@ for (const bundle of BUNDLES) {
       .find((frame) => frame.id === 2)?.result?.tools;
     if (
       !listed?.some((tool) => tool.name === 'browser_download') ||
-      !listed?.some((tool) => tool.name === 'browser_fill')
+      !listed?.some((tool) => tool.name === 'browser_fill') ||
+      !listed?.some((tool) => tool.name === 'browser_search') ||
+      !listed?.some((tool) => tool.name === 'browser_read_page')
     )
       throw new Error('浏览器 MCP 发布包缺少完整工具清单');
-    console.log('   browser MCP 可脱离 workspace 启动，策略 bundle 与 8 个工具已接通');
+    console.log('   browser MCP 可脱离 workspace 启动，策略 bundle 与联网研究工具已接通');
   } finally {
     rmSync(alone, { recursive: true, force: true });
   }

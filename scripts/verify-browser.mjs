@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { createBrowserDriver } from '../plugins/connectors/browser/cdp.mjs';
 import { createBrowserSession } from '../plugins/connectors/browser/runtime.mjs';
+import { searchSources } from '../plugins/connectors/browser/research.mjs';
 import { assessComputerUseAction } from '../services/policy/src/computer-use-action.ts';
 
 const directory = mkdtempSync(join(tmpdir(), 'ew-browser-verify-'));
@@ -14,6 +15,7 @@ let posted = '',
   requests = 0,
   submissions = 0;
 let blockedRequests = 0;
+let researchSideRequests = 0;
 const blocked = createServer((_request, response) => {
   blockedRequests++;
   response.end('must not arrive');
@@ -22,6 +24,38 @@ await new Promise((resolve) => blocked.listen(0, '127.0.0.1', resolve));
 const blockedUrl = `http://127.0.0.1:${blocked.address().port}`;
 const server = createServer(async (request, response) => {
   requests++;
+  if (request.url.startsWith('/research-side')) {
+    researchSideRequests++;
+    response.end('must not arrive');
+    return;
+  }
+  if (request.url === '/article') {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(`<!doctype html><title>公开研究文章</title>
+      <link rel="stylesheet" href="/research-side-style"><nav>导航噪音</nav>
+      <main><h1>公开研究文章</h1><p>${'可以核实的公开正文。'.repeat(20)}</p><p>第二段内容。</p>
+      <form><input value="私密值"><p>表单文字</p></form><div style="display:none">隐藏资料</div></main>
+      <script>fetch('/research-side-script'); new Worker('/worker.js')</script>
+      <img src="/research-side-image"><iframe src="${blockedUrl}/research-side-frame"></iframe>`);
+    return;
+  }
+  if (request.url === '/search-fixture') {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(
+      '<title>本地搜索结构</title><a href="https://noise.test">导航</a><ol id="b_results"><li class="b_algo"><h2><a href="/article">公开研究文章</a></h2><div class="b_caption"><p>公开摘要</p></div></li></ol>',
+    );
+    return;
+  }
+  if (request.url === '/missing') {
+    response.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<title>404</title><p>这不是来源正文</p>');
+    return;
+  }
+  if (request.url === '/binary') {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"unsupported":true}');
+    return;
+  }
   if (request.url === '/redirect') {
     response.writeHead(302, { location: blockedUrl });
     response.end();
@@ -32,9 +66,15 @@ const server = createServer(async (request, response) => {
     response.end(`fetch('${blockedUrl}')`);
     return;
   }
-  if (request.url === '/worker') {
+  if (['/worker', '/shared-worker', '/service-worker'].includes(request.url)) {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    response.end('<button onclick="new Worker(\'/worker.js\')">启动 worker</button>');
+    const action =
+      request.url === '/worker'
+        ? "new Worker('/worker.js')"
+        : request.url === '/shared-worker'
+          ? "new SharedWorker('/worker.js')"
+          : "navigator.serviceWorker.register('/worker.js')";
+    response.end(`<button onclick="${action}">启动 worker</button>`);
     return;
   }
   if (request.url === '/popup') {
@@ -75,6 +115,43 @@ const session = createBrowserSession({
 });
 const read = async () => JSON.parse((await session.call('browser_snapshot', {})).content[0].text);
 try {
+  const researchDriver = createBrowserDriver();
+  const researchSession = createBrowserSession({
+    driver: researchDriver,
+    ask: async () => true,
+    assessAction: assessComputerUseAction,
+  });
+  try {
+    await researchDriver.navigate(`${url}/search-fixture`, { research: true });
+    const found = searchSources(
+      await researchDriver.research('search', 'bing'),
+      'bing',
+      5,
+      new Date().toISOString(),
+    );
+    assert.equal(found.length, 1);
+    assert.equal(found[0].url, `${url}/article`);
+    const article = JSON.parse(
+      (await researchSession.call('browser_read_page', { url: found[0].url })).content[0].text,
+    );
+    assert.equal(article.sources[0].id, found[0].id);
+    assert.equal(article.sources[0].kind, 'page');
+    assert.ok(article.sources[0].excerpt.includes('第二段内容。'));
+    for (const noise of ['私密值', '表单文字', '隐藏资料', '导航噪音', 'fetch'])
+      assert.ok(!article.sources[0].excerpt.includes(noise));
+    assert.equal(researchSideRequests, 0, '研究执行了脚本或请求了页面子资源');
+    assert.equal(blockedRequests, 0, '研究 iframe 绕过 origin 守卫');
+    await assert.rejects(
+      researchSession.call('browser_read_page', { url: `${url}/missing` }),
+      /PAGE_HTTP_ERROR/,
+    );
+    await assert.rejects(
+      researchSession.call('browser_read_page', { url: `${url}/binary` }),
+      /PAGE_UNSUPPORTED/,
+    );
+  } finally {
+    researchSession.stop();
+  }
   await session.call('browser_navigate', { url });
   let state = await read();
   assert.equal(state.title, '本地浏览器验收');
@@ -157,24 +234,31 @@ try {
   } finally {
     guarded.stop();
   }
-  const workerSession = createBrowserSession({
-    driver: createBrowserDriver(),
-    ask: async () => true,
-    assessAction: assessComputerUseAction,
-  });
-  try {
-    await workerSession.call('browser_navigate', { url: `${url}/worker` });
-    const state = JSON.parse((await workerSession.call('browser_snapshot', {})).content[0].text);
-    try {
-      await workerSession.call('browser_click', { state_id: state.state_id, element_index: 1 });
-    } catch (error) {
-      assert.match(error.message, /USER_STOPPED|BROWSER_ACTION_FAILED/);
+  // 三类 worker 各重复三次，抓「先断 CDP 释放暂停、后停 Chrome」的竞态。
+  for (const workerPath of ['/worker', '/shared-worker', '/service-worker']) {
+    for (let iteration = 0; iteration < 3; iteration++) {
+      const workerSession = createBrowserSession({
+        driver: createBrowserDriver(),
+        ask: async () => true,
+        assessAction: assessComputerUseAction,
+      });
+      try {
+        await workerSession.call('browser_navigate', { url: `${url}${workerPath}` });
+        const state = JSON.parse(
+          (await workerSession.call('browser_snapshot', {})).content[0].text,
+        );
+        try {
+          await workerSession.call('browser_click', { state_id: state.state_id, element_index: 1 });
+        } catch (error) {
+          assert.match(error.message, /USER_STOPPED|BROWSER_ACTION_FAILED/);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await assert.rejects(workerSession.call('browser_snapshot', {}), /USER_STOPPED/);
+        assert.equal(blockedRequests, 0, `${workerPath} 在暂停释放后执行了跨 origin fetch`);
+      } finally {
+        workerSession.stop();
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    await assert.rejects(workerSession.call('browser_snapshot', {}), /USER_STOPPED/);
-    assert.equal(blockedRequests, 0, 'worker 在暂停之前执行了跨 origin fetch');
-  } finally {
-    workerSession.stop();
   }
   const declining = createBrowserSession({
     driver: createBrowserDriver(),
@@ -199,7 +283,7 @@ try {
     declining.stop();
   }
   console.log(
-    `真实 Chrome 验收通过：导航、元素快照、批准输入、状态消费、PNG 截图、滚动、有限按键、发送前确认、表单提交、显式下载、拒绝后零请求、导航/下载跨 origin 拦截、新窗口/worker 暂停关闭（${requests} 次本机请求）。`,
+    `真实 Chrome 验收通过：搜索结构、正文与来源编号、拒绝 HTTP 错误/非网页、研究零脚本/子资源、导航、元素快照、批准输入、状态消费、PNG 截图、滚动、有限按键、发送前确认、表单提交、显式下载、拒绝后零请求、导航/下载跨 origin 拦截、新窗口/worker 暂停关闭（${requests} 次本机请求）。`,
   );
 } finally {
   session.stop();

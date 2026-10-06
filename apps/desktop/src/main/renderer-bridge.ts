@@ -21,6 +21,7 @@ import { describeMcpToolApproval } from './mcp-tool-approval-view.js';
  */
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { mergeWebSources, webResearchResult, type WebSource } from '../shared/web-sources.js';
 import type { TaskEnvironments } from './task-environments.js';
 
 import {
@@ -1878,6 +1879,31 @@ export function createRendererActions(options: RendererBridgeOptions) {
           ...turnFields,
         };
       }
+    },
+
+    async openWebSource(input: {
+      readonly taskId: string;
+      readonly sourceId: string;
+    }): Promise<void> {
+      if (
+        typeof input?.taskId !== 'string' ||
+        !input.taskId ||
+        input.taskId.length > 256 ||
+        typeof input.sourceId !== 'string' ||
+        !/^web_[a-f0-9]{16}$/.test(input.sourceId)
+      )
+        throw new Error('没有可打开的网页来源。');
+      if (!options.openExternal) throw new Error('当前版本不能打开系统浏览器。');
+      const history = await adapter.openTask(input.taskId);
+      let sources: readonly WebSource[] = [];
+      for (const item of await history.items)
+        sources = mergeWebSources(
+          sources,
+          webResearchResult(normalizeThreadItem(item))?.sources ?? [],
+        );
+      const source = sources.find((entry) => entry.id === input.sourceId);
+      if (!source) throw new Error('该来源已不在这个任务的历史中，请重新搜索。');
+      await options.openExternal(source.url);
     },
 
     /** 子任务不进顶层任务列表；详情抽屉从投影表按 parentThreadId 单独读取。 */

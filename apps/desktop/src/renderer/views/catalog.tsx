@@ -1254,6 +1254,12 @@ function ConnectorDetail({
       <GhostButton label="返回目录" onClick={onBack} />
       <h1 className="ew-catalog-detail-title">{connector.name}</h1>
       <p className="ew-catalog-detail-desc">{connectorStatusText(connector)}</p>
+      {connector.id === 'browser' ? (
+        <p className="ew-catalog-detail-desc">
+          联网搜索与网页读取无需配置 Key。需要本机安装 Chrome /
+          Chromium；搜索摘要与已读正文分别标注，回答来源可点击核对。
+        </p>
+      ) : null}
       {connector.command ? (
         <p>
           命令：<code>{connector.command}</code>
