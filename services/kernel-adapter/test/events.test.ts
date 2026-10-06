@@ -410,7 +410,7 @@ describe('09 §3.4 的分发表逐行', () => {
     expect(ui.at(-1)).toEqual({ type: 'task-removed', threadId: 't1' });
   });
 
-  it('上下文超限：换成中文、且不把 **Codex** 这个品牌端给用户（K5）', () => {
+  it('上下文超限：换成中文、告诉用户再发一条会先压缩，且不把 **Codex** 端给用户（K5）', () => {
     router.handle(NOTIFICATION.threadStarted, { thread: makeThread({ id: 't1' }) });
     router.handle(NOTIFICATION.turnCompleted, {
       threadId: 't1',
@@ -428,7 +428,9 @@ describe('09 §3.4 的分发表逐行', () => {
     const failed = ui.find((e) => e.type === 'turn-completed' && e.status === 'failed') as {
       error?: { message: string };
     };
-    expect(failed.error?.message).toContain('上下文已经装不下');
+    // 告诉用户能在原任务里接着做：内核下一轮会先压缩（2026-10-06 真内核实测，见 events.ts）
+    expect(failed.error?.message).toContain('会先压缩早期对话');
+    expect(failed.error?.message).not.toContain('新建');
     expect(failed.error?.message).not.toContain('Codex');
   });
 

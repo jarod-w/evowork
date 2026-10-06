@@ -131,6 +131,8 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 | **F44** | 技能 name ≤ 64 字符，description ≤ 1024 字符 | `skills/src/interface.rs:10-11` | ✅ 2026-10-02 读码（13 HF9） |
 | **F45** | `plugin/install` 装完**无条件**把插件写成启用；预写的 `enabled = false` 会被覆盖 | `core-plugins/src/manager.rs:2256`（`set_user_plugin_enabled(.., /*enabled*/ true)`） | ✅ 2026-10-02 实测 + 读码（13 §12.1 V6）：「套件」git / npm 来源先装后审只能装完再停用，中间有空窗（13 §14） |
 | **F46** | 压缩点 = min(模型元数据的 `auto_compact_token_limit`, 窗口 × 90%)；`config.toml` 的 `model_auto_compact_token_limit` 会**盖过**元数据 | `protocol/src/openai_models.rs:525` · `models-manager/src/model_info.rs:29`（`with_config_overrides`） | ✅ 2026-10-05 读码（`scripts/kernel-assertions.json` 机器复核）：模型目录给 1M 级模型写的 256k 上限靠「取较小值」成立（总纲 D2 2026-10-05）；企业在 config.toml 里设的上限优先于我们的 |
+| **F47** | 内核只把 `error.code == "context_length_exceeded"` 认作上下文超长；别的码（包括 `invalid_prompt`）都不触发「标满用量、下一轮先压缩」 | `codex-api/src/sse/responses.rs:721`（`is_context_window_error`） | ✅ 2026-10-06 读码 + 实测（`scripts/kernel-assertions.json` 机器复核）：网关的 `isContextOverflow` 把 DeepSeek / vLLM 式的超长原文映射到这个码；同一场景给 `invalid_prompt` 时内核下一轮原样重发、不压缩 |
+| **F48** | 采样以上下文超长失败时，内核把用量标成已满并结束本轮，下一轮开始前先压缩 | `core/src/session/turn.rs:1660`（`set_total_tokens_full`）· `:1286`（采样前压缩） | ✅ 2026-10-06 真内核 + 假上游实测：第一轮 `contextWindowExceeded` 失败；第二轮先发压缩请求再发正常请求，时间线出现压缩分隔线。用户文案「再发一条会先压缩早期对话」靠它 |
 
 ### 4.1 F1 的直接收益：补丁清单从 P3+P4 缩到只有 P4
 

@@ -199,6 +199,15 @@ function retryAttempts(message: string | undefined): {
  * 匹配文案的话，上游改一个词我们就静默失效。
  *
  * 认不出来的码一律原样透出：内核的原话再难看，也比我们编一句盖掉真实原因强（03 §8）。
+ *
+ * ## 超限那句为什么让用户「再发一条」而不是「新建任务」（2026-10-06）
+ *
+ * 内核的原话和我们原先的话都让人换个任务，而那是错的：超限的那一轮里内核把用量标成已满
+ * （`core/src/session/turn.rs:1660`），**下一轮开始前先压缩早期对话**（`:1274`）。
+ * 2026-10-06 用真内核 + 假上游实测：第一轮回 `context_length_exceeded` → 这一轮以本码失败；
+ * 第二轮内核先发压缩请求、再发正常请求，回合完成，时间线里出现压缩分隔线。
+ * 同样的场景换成 `invalid_prompt`，第二轮**不压缩**、原样重发 —— 所以这句承诺只对本码成立，
+ * 网关要把各家的超长都映射到它（`services/gateway/src/providers/registry.ts`）。F48 钉着内核那一行。
  */
 function userFacingFailure(failure: {
   readonly message: string;
@@ -207,7 +216,7 @@ function userFacingFailure(failure: {
   const code = typeof failure.codexErrorInfo === 'string' ? failure.codexErrorInfo : undefined;
   switch (code) {
     case 'contextWindowExceeded':
-      return '这个任务的上下文已经装不下了。新建一个任务继续，或者把要点整理成一段话重新开始。';
+      return '这一轮超出了模型的上下文上限，没有完成。再发一条消息（比如「继续」），会先压缩早期对话再接着做。';
     default:
       return failure.message;
   }

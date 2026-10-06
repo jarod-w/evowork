@@ -555,6 +555,32 @@
       },
       "mustContain": ["(context_window * 9) / 10", "std::cmp::min(limit, context_limit)"],
       "impact": "kernel-catalog.ts 给 1M 级模型写的 256k 上限（AUTO_COMPACT_TOKEN_CAP）靠「取较小值」才成立。上游要是改成「设了就直接用」，写进目录的上限会压过小窗口的 90% —— 我们只给窗口大于上限的模型写这个键，所以不会出事，但要重新核对那条判断；企业覆盖走 models-manager/src/model_info.rs:29（with_config_overrides）"
+    },
+    {
+      "id": "F47",
+      "summary": "内核只把 error.code == \"context_length_exceeded\" 认作上下文超长；别的码（包括 invalid_prompt）都不触发「标满用量、下一轮先压缩」",
+      "file": "codex-rs/codex-api/src/sse/responses.rs",
+      "needle": "fn is_context_window_error(error: &Error) -> bool {",
+      "line": 721,
+      "scopeLines": {
+        "before": 0,
+        "after": 2
+      },
+      "mustContain": ["Some(\"context_length_exceeded\")"],
+      "impact": "网关把各家的超长报错都映射到这个码（services/gateway/src/providers/registry.ts 的 isContextOverflow）。上游改了码名，那段映射就全部失效，任务又会在超长后卡死"
+    },
+    {
+      "id": "F48",
+      "summary": "采样以上下文超长失败时，内核把用量标成已满并结束本轮；下一轮开始前因此先压缩（2026-10-06 真内核 + 假上游实测）",
+      "file": "codex-rs/core/src/session/turn.rs",
+      "needle": "CodexErrorDetails::ContextWindowExceeded => {",
+      "line": 1660,
+      "scopeLines": {
+        "before": 0,
+        "after": 2
+      },
+      "mustContain": ["sess.set_total_tokens_full(&turn_context).await;"],
+      "impact": "用户看到的超限文案（services/kernel-adapter/src/events.ts）承诺「再发一条会先压缩早期对话」，就靠这一行。上游改成别的处理（例如本轮内直接压缩重试），文案要跟着改"
     }
   ]
 }

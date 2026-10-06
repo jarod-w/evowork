@@ -10,7 +10,7 @@
  *
  * | `error.code` | 内核的反应 |
  * |---|---|
- * | `context_length_exceeded` | 压缩上下文后重试 |
+ * | `context_length_exceeded` | 本回合以「上下文超长」失败，并把用量标成已满；**下一回合先压缩再继续**（`core/src/session/turn.rs:1660` / `:1274`，读码，F47 / F48） |
  * | `insufficient_quota` | 停下来告诉用户（不重试） |
  * | `rate_limit_exceeded` | `RateLimitExceeded`，按 `resets_at` 退避 |
  * | `server_is_overloaded` | `ServerOverloaded` —— **终止（不重试）且丢掉 message**，界面上显示内核写死的"模型满了，换一个吧" |
@@ -61,6 +61,47 @@ function extractError(body: unknown): { message: string; code?: string; type?: s
 }
 
 /**
+ * 上游说的是不是「上下文超长」—— 按报错**原文**里的几句完整说法认。
+ *
+ * ## 为什么不能只看 code
+ *
+ * DeepSeek 超长时回 400 + `code=invalid_request_error`，**与"模型不存在"是同一个码**
+ * （2026-10-05 实测）；vLLM 一类自部署服务的 `code` 是数字 400，等于没给。只按 code 映射，
+ * 两者都落成 `invalid_prompt`：内核不知道是超长，用量不标满、下一回合不压缩，原样重发再失败 ——
+ * 任务就卡在那儿了（status.md 2026-10-05 ①c）。
+ *
+ * ## 为什么只收完整的说法
+ *
+ * 判错的代价不小：映射成 `context_length_exceeded`，内核会把用量标成已满、下一回合先压缩。
+ * 如果其实是别的错，压缩白做一次，原因还被说成"超长"。所以不收单个词（"length"、"context"
+ * 在别的报错里也常见），只收整句；认不出来的退回原来的映射，不比改之前差。
+ * 每条注明出处 —— 实测还是推断。其余几家的说法等补测（status.md 2026-10-06 第 3 步）。
+ *
+ * 原文只在内存里比对，日志里照旧只有映射后的 code（Q14）。
+ */
+const CONTEXT_OVERFLOW_PATTERNS: readonly RegExp[] = [
+  /*
+   * DeepSeek 原话（2026-10-05 实测，新旧两个名字一样）："This model's maximum context length is
+   * 1048576 tokens. However, you requested 1150031 tokens ..."。OpenAI 旧版接口与 vLLM 的
+   * OpenAI 兼容服务是同一句（**vLLM 未实测**，按它沿用 OpenAI 措辞推断）。
+   */
+  /maximum context length is/i,
+  // OpenAI Responses 的说法（内核自己的用例里那句，`codex-api/src/sse/responses.rs` 的测试）
+  /exceeds the context window/i,
+];
+
+/** 只在这几种状态上判超长：400 / 413 / 422，以及流里夹带的报错（调用方按 200 传进来）。 */
+const CONTEXT_OVERFLOW_STATUSES: ReadonlySet<number> = new Set([200, 400, 413, 422]);
+
+/** 导出给测试与探针用：给一条报错原文，看我们认不认它是超长。 */
+export function isContextOverflow(status: number, message: string): boolean {
+  return (
+    CONTEXT_OVERFLOW_STATUSES.has(status) &&
+    CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(message))
+  );
+}
+
+/**
  * 共享的错误映射。三家的具体 code 各异，但**状态码语义是一致的**，
  * 所以先按 code 精确匹配，再按状态码兜底 —— 兜底比"落到内核的 Retryable"好得多。
  */
@@ -70,6 +111,11 @@ function mapCommonError(
   vendorCodes: Readonly<Record<string, string>>,
 ): { type?: string; code?: string; message: string } {
   const { message, code, type } = extractError(body);
+
+  // 先于码表：DeepSeek 的超长与"模型不存在"共用一个码，码表会把它判成永久错误
+  if (isContextOverflow(status, message)) {
+    return { code: KERNEL_ERROR.contextWindow, message };
+  }
 
   const mapped = code ? vendorCodes[code] : undefined;
   if (mapped) return { code: mapped, message, ...(type ? { type } : {}) };

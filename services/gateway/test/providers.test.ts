@@ -17,7 +17,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { UPSTREAM_DISCONNECTED } from '../src/idle.js';
-import { DEEPSEEK, MOONSHOT, ZHIPU, extractError } from '../src/providers/registry.js';
+import {
+  DEEPSEEK,
+  MOONSHOT,
+  PRIVATE,
+  ZHIPU,
+  extractError,
+  isContextOverflow,
+} from '../src/providers/registry.js';
 
 describe('错误体解析：三家三种形状（2026-09-05 实测）', () => {
   it('DeepSeek：code 与 type 都有', () => {
@@ -90,9 +97,88 @@ describe('可重试与配额类错误保持原样', () => {
     expect(DEEPSEEK.mapError(503, {}).code).not.toBe('server_is_overloaded');
   });
 
-  it('上下文超限走 context_length_exceeded（内核会压缩后重试，不该被当成永久错误）', () => {
+  it('上下文超限走 context_length_exceeded（内核标满用量、下一回合先压缩，不该被当成永久错误）', () => {
     expect(MOONSHOT.mapError(400, { error: { code: 'content_too_long', message: 'x' } }).code).toBe(
       'context_length_exceeded',
     );
+  });
+});
+
+/**
+ * 上下文超长要按**原文**认（2026-10-06）。
+ *
+ * 认不出来的后果不是"报错难看"，是任务卡死：映射成 `invalid_prompt` 时内核不标满用量、
+ * 下一回合不压缩，原样重发再失败。反过来，误认的代价是白压缩一次、把别的错说成超长 ——
+ * 所以下面一半用例守的是"不该认的别认"。
+ */
+describe('上下文超长：按报错原文认', () => {
+  /** DeepSeek 原话，2026-10-05 用约 115 万 token 的合成请求实测（request_id 已去掉） */
+  const DEEPSEEK_OVERFLOW = {
+    error: {
+      message:
+        "This model's maximum context length is 1048576 tokens. However, you requested 1150031 tokens (1150030 in the messages, 1 in the completion). Please reduce the length of the messages or completion.",
+      type: 'invalid_request_error',
+      param: null,
+      code: 'invalid_request_error',
+    },
+  };
+
+  it('**DeepSeek 的超长与"模型不存在"同一个码**，靠原文分开 —— 前者要压缩，后者是永久错误', () => {
+    expect(DEEPSEEK.mapError(400, DEEPSEEK_OVERFLOW).code).toBe('context_length_exceeded');
+    // 同一个码、别的原文：照旧是永久错误（这句是替身，DeepSeek 未知模型的原文没记下来）
+    expect(
+      DEEPSEEK.mapError(400, {
+        error: {
+          message: 'Model Not Exist',
+          type: 'invalid_request_error',
+          code: 'invalid_request_error',
+        },
+      }).code,
+    ).toBe('invalid_prompt');
+  });
+
+  it('vLLM 一类自部署服务：code 是数字、type 是 BadRequestError，同样靠原文认（**按常见格式推断，未实测**）', () => {
+    const vllm = {
+      object: 'error',
+      message:
+        "This model's maximum context length is 32768 tokens. However, you requested 40211 tokens (40211 in the messages, 0 in the completion). Please reduce the length of the messages or completion.",
+      type: 'BadRequestError',
+      param: null,
+      code: 400,
+    };
+    expect(PRIVATE.mapError(400, vllm).code).toBe('context_length_exceeded');
+  });
+
+  it('流里夹带的超长报错（HTTP 200）同样认', () => {
+    expect(DEEPSEEK.mapError(200, DEEPSEEK_OVERFLOW.error).code).toBe('context_length_exceeded');
+  });
+
+  it('OpenAI Responses 的说法也认（内核自己用例里那句）', () => {
+    expect(
+      isContextOverflow(
+        400,
+        'Your input exceeds the context window of this model. Please adjust your input and try again.',
+      ),
+    ).toBe(true);
+  });
+
+  it('**输出上限设大了不是超长** —— 压缩消息解决不了它，认成超长只会白压缩一次', () => {
+    expect(
+      PRIVATE.mapError(400, {
+        error: {
+          message:
+            'max_tokens is too large: 100000. This model supports at most 8192 completion tokens.',
+          type: 'invalid_request_error',
+        },
+      }).code,
+    ).toBe('invalid_prompt');
+  });
+
+  it('鉴权失败、限流、服务端故障里就算夹着这句也不改判 —— 只在 400 / 413 / 422 / 流内报错上认', () => {
+    // 不带 code 的报错体：只剩状态码与原文，看的就是"状态码不对时原文不起作用"
+    const textOnly = { error: { message: DEEPSEEK_OVERFLOW.error.message } };
+    expect(DEEPSEEK.mapError(401, textOnly).code).toBe('invalid_prompt');
+    expect(DEEPSEEK.mapError(429, textOnly).code).toBe('rate_limit_exceeded');
+    expect(DEEPSEEK.mapError(503, textOnly).code).toBe(UPSTREAM_DISCONNECTED);
   });
 });
