@@ -29,10 +29,12 @@
    不读内核 sqlite / rollout。实验方法只在 `services/kernel-adapter` 出现。
 3. **K3 只走四个扩展点**（能外就外）：技能 → MCP → hooks → `ext/` Rust contributor。
 4. **K4 模型走 Responses API 网关。** 不改内核模型层。网关是全量适配，不是薄转发。
+   图片走独立网关图片适配（IMG-Q3 / 15 §6），技能/MCP/renderer 不直连模型或持服务商密钥。
 5. **K5 对外不得出现 Codex / OpenAI 品牌。** 内部路径名（如 `CODEX_HOME`）保持不动。
 6. **K6 本地优先，无云端解析兜底。** 文件处理在本机；出网必须显式授权。不要加
    「传到云上解析」分支——测试会扫 `services/ingest` 里的 `fetch` / `node:http`。
-7. **K7 不复用上游 Apps/连接器目录与 Codex Cloud。** 连接器自建 MCP；本期只做 `browser/`（Q9）。
+7. **K7 不复用上游 Apps/连接器目录与 Codex Cloud。** 连接器自建 MCP；办公生态本期只做 `browser/`（Q9）。
+   已批准的 computer-use 按 CU-Q、图片模型 MCP 按 IMG-Q3；不开放飞书/企微/钉钉等国内办公生态。
 
 铁律是机器守着的，撞上时长什么样见 `CLAUDE.md` §2.1。先看它拦的是什么，多半它是对的。
 

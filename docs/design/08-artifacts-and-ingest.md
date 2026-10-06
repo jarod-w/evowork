@@ -1,5 +1,7 @@
 # 08 · 产物与文档解析
 
+> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议，尚未实现）**：真实图片文件落任务 cwd 的 `artifacts/images/<operationId>/`，校验后原子提交、补入 image 产物索引。原图与成功产物保留，编辑另存；跨文件父版本用 parent_operation_id/输入产物引用表达，不冒充同路径版本。清理工作副本、mask 与缓存，崩溃暂存至多 24 小时；见 [15 §8 / §11](15-ai-image-generation.md)。解析器仍保持不出网，图片生成不进入 ingest。
+
 > 上游：[总纲 §6.7 / D6](../evowork-on-codex-design.md)· K6 · Q3 · Q10 · [清单 §2 / §6](../agent-platform-feature-list.md)
 > 这是 M3（8 人周）的主体，也是本轮细化改动总纲判断最多的一章（README F10/F11）。
 
@@ -52,7 +54,7 @@
 | `presentation`  | ppt / pptx                 | `presentations`        | 幻灯片     |
 | `pdf`           | pdf                        | `documents`（导出）    | PDF        |
 | `chart`         | svg / png（图表）          | `charts`               | 图表       |
-| `image`         | png / jpg / webp（生成图） | `ext/image-generation` | 图片       |
+| `image`         | png / jpg / webp（生成图） | 已确认图片 MCP / 本机交付服务（15，待实现）；原生工具若实际可用也可识别 | 图片       |
 | `webpage`       | html（单文件）             | 任意                   | 网页       |
 | `data`          | json / parquet / sqlite    | 任意                   | 数据       |
 | `archive`       | zip                        | 任意                   | 压缩包     |

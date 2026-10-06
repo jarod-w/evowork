@@ -1,5 +1,7 @@
 # 11 · 账号与模型管理
 
+> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议，尚未实现）**：图片能力目录与聊天模型独立，Seedream 优先、OpenAI Images 可选，首版 BYOK/已有组织私有服务，不承诺免费额度。模型/参数能力逐项区分 documented/verified/unknown；连接验证不自动付费生成。服务商密钥沿用 safeStorage 与网关边界，renderer/MCP 不取密钥或直连模型；型号在 G0 生成/编辑探针后固定，详见 [15 §4.1 / §7 / §9](15-ai-image-generation.md)。
+
 > 上游：[总纲 D9](../evowork-on-codex-design.md) · K4 · K5 · K6 · Q1 / Q2 / Q14 / Q16 / Q17 / Q19 / Q29 · R1 / R7 / R11 · [status.md §4 第一行](../status.md)
 > 本文是 status.md §4「**网关令牌的正式机制 —— 未决策**」的落点，也是 `services/identity` 从一份 README 变成代码的入口。
 >

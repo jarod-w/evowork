@@ -602,6 +602,71 @@
         "pub requirements: Option<ConfigRequirements>"
       ],
       "impact": "电脑操控 P2 经适配层读取有效 requirements，与 EvoWork 本机 requirements 逐层合并；字段漂移会使准入策略失效，读取失败/形状异常必须保守禁用"
+    },
+    {
+      "id": "F50",
+      "summary": "原生生图工具有功能、provider 能力、模型读图及特定身份门槛（15 §2.2）",
+      "file": "codex-rs/core/src/tools/spec_plan.rs",
+      "needle": "fn image_generation_available(turn_context: &TurnContext, model_info: &ModelInfo) -> bool {",
+      "line": 694,
+      "scopeLines": { "before": 0, "after": 42 },
+      "mustContain": [
+        "Feature::ImageGeneration",
+        "PlanType::Free",
+        "capabilities.image_generation",
+        "capabilities.namespace_tools",
+        "InputModality::Image",
+        "provider.uses_openai_actor_authorization()",
+        "provider.requires_openai_auth",
+        "AuthManager::current_auth_uses_codex_backend"
+      ],
+      "impact": "15 的首版路线不以普通 EvoWork BYOK 能启用原生专用生图工具为前提；门槛变化后重新评估路线 A，不得仅靠增加网关端点宣称接通"
+    },
+    {
+      "id": "F51",
+      "summary": "图片扩展配置也检查 OpenAI provider/auth/actor 身份（15 §2.2）",
+      "file": "codex-rs/ext/image-generation/src/extension.rs",
+      "needle": "available: config.model_provider.is_openai()",
+      "line": 41,
+      "scopeLines": { "before": 0, "after": 2 },
+      "mustContain": [
+        "config.model_provider.requires_openai_auth",
+        "config.model_provider.uses_openai_actor_authorization()"
+      ],
+      "impact": "15 的原生扩展复用成本评估需要核对这一层及核心工具门槛，不能伪造 provider 身份绕过"
+    },
+    {
+      "id": "F52",
+      "summary": "原生图片模型固定，工具参数未提供模型/尺寸/质量/透明背景/mask（15 §2.2）",
+      "file": "codex-rs/ext/image-generation/src/tool.rs",
+      "needle": "const IMAGE_MODEL: &str = \"gpt-image-2\";",
+      "line": 59,
+      "scopeLines": { "before": 0, "after": 37 },
+      "mustContain": [
+        "const MAX_EDIT_IMAGES: usize = 5;",
+        "#[serde(deny_unknown_fields)]",
+        "struct ImagegenArgs {",
+        "prompt: String",
+        "referenced_image_paths: Option<Vec<AbsolutePathBuf>>",
+        "num_last_images_to_include: Option<usize>"
+      ],
+      "mustNotContain": ["mask:", "transparent_background:", "model:", "size:", "quality:"],
+      "impact": "15 提议独立图片能力目录和显式参数；上游若开放工具字段，应重评哪些能力可以复用"
+    },
+    {
+      "id": "F53",
+      "summary": "原生图片生成/编辑使用独立路径与 JSON 请求（15 §2.2）",
+      "file": "codex-rs/codex-api/src/endpoint/images.rs",
+      "needle": "pub async fn generate(",
+      "line": 35,
+      "scopeLines": { "before": 0, "after": 44 },
+      "mustContain": [
+        "\"images/generations\"",
+        "\"images/edits\"",
+        "let body = to_value(request)",
+        ".execute(Method::POST, path, extra_headers, Some(body))"
+      ],
+      "impact": "15 的网关图片适配需区别 Responses、图片 JSON 及 provider 专用 multipart 契约；现有文字路由不能直接充当图片路由"
     }
   ]
 }

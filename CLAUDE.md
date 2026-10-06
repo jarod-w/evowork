@@ -69,7 +69,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 3. **hooks** —— 策略、审计、配额、审批对接（12 类事件，见 `../codex/codex-rs/hooks/`）
 4. **`extension-api` contributor**（Rust）—— 需要内核内部状态或事件流时才用；这是内核自身 guardian / goal / memories / web-search / image-generation 走的正规接口
 
-**K4 · 模型接入走外部 Responses API 网关。** 不改内核模型层，只在 `config.toml` 里配 `model_providers.evowork.base_url` 指向自建网关。**Q2 已决策：必须支持国内模型**，所以网关是全量协议适配层（流式事件重排、工具调用降级、reasoning 占位、cache 口径统一），不是薄转发；每加一家约 1–1.5 人周，语义矩阵见设计文档 D2。`wire_api = "chat"` 已被上游移除，内核只认 Responses API——流式语义、工具调用、reasoning 段、prompt cache 都得由网关补齐。这是全项目**最容易被低估的工作量**（R1）。
+**K4 · 模型接入走外部 Responses API 网关。** 不改内核模型层，只在 `config.toml` 里配 `model_providers.evowork.base_url` 指向自建网关。**Q2 已决策：必须支持国内模型**，所以网关是全量协议适配层（流式事件重排、工具调用降级、reasoning 占位、cache 口径统一），不是薄转发；每加一家约 1–1.5 人周，语义矩阵见设计文档 D2。`wire_api = "chat"` 已被上游移除，内核只认 Responses API——流式语义、工具调用、reasoning 段、prompt cache 都得由网关补齐。这是全项目**最容易被低估的工作量**（R1）。**图片调用同样经过网关，但用独立图片适配端点，不伪装成文字 Responses**（IMG-Q3，15 §6）；技能、MCP 和 renderer 不持服务商密钥、不直连模型。
 
 **K5 · 许可与品牌。** 保留内核的 `LICENSE`/`NOTICE`，建并维护 `THIRD_PARTY_NOTICES`。产品对外**不得出现 Codex / OpenAI 品牌**。改品牌字符串只改对外可见的那些，内部路径名（如 `CODEX_HOME`）保持不动，减少补丁面。
 
@@ -133,7 +133,8 @@ evowork/
   plugins/               L2 随产品分发的插件包
     skills/              办公产物技能 documents / spreadsheets / presentations / charts + 界面设计 ui-design
     agents/              专家角色 *.toml（agent-roles 格式）
-    connectors/          MCP server 集合。**本期只做 browser/**（Q9：国内生态集成推 v2）
+    connectors/          MCP server 集合。办公生态本期只做 browser/（Q9）；computer-use 按 CU-Q；
+                         image-generation/ 按 IMG-Q3 获准、尚未实现（15），不开放国内办公生态集成
     hooks/               策略包 `evowork-policy/`：四个事件的 I/O 壳，**决策在 `services/policy`**（放脚本里就测不了）
   config/                config.toml 模板 · requirements.toml · 权限 profile · 模式模板
   patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；当前 1 个：P6）
@@ -252,6 +253,8 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 
 ## 8. 已定的产品决策 —— 照着做，别再当成开放问题
 
+**图片 IMG-Q1–IMG-Q11 已于 2026-10-06 全部采纳建议**，已回写总纲 §6.8 / §10.1.9 与 [15 v0.2](docs/design/15-ai-image-generation.md)；产品范围已确认，真实接口与 G0–G3 尚未实现。
+
 设计文档第 10 章的 **Q1–Q29、Q45、Q46 已决策**。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。插件 Hub 的 **HUB-Q1–Q11 也已决策**（[13 §10](docs/design/13-plugin-hub.md)，总纲 §10.1.7）；客户端（H0 / H1 / H6）已实现，**官方源要等 H2 的签名公钥与 CDN** —— 在那之前产品里如实显示「还没有接入」、不发请求，进度见 13 §13.1。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3 / §10.1.5 / §10.1.8](docs/evowork-on-codex-design.md)：
 
 | 决策 | 结论 | 写码时意味着什么 |
@@ -259,9 +262,10 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | **Q1 部署形态** | **A 纯本地桌面应用** | 调度器 / 解析 / 产物索引都是**本机常驻进程**，不是云服务；云端只有账号·私有源索引·模型网关·分享托管四件事（D9） |
 | **Q2 国内模型** | **必须支持** | 网关按全量适配层设计（K4、D2） |
 | **Q3 隐私** | **硬约束** | 见 K6，没有云端兜底 |
+| **Q4 / IMG-Q1–IMG-Q11 图片** | **全部采纳建议，尚未实现** | Seedream 优先、BYOK；技能/MCP/本机服务/网关，独立图片模型；单图生成/编辑/连续版本、具体上传授权、四次额度、一个在途，仅交互根任务，原图不覆写。图片预算独立于 token，未知结果不重发；详见 [15](docs/design/15-ai-image-generation.md) 与总纲 §10.1.9 |
 | Q6 Windows | 支持，暂用上游 `windows-sandbox-rs` | 不自研沙箱；隔离强度结论在 M4 给出 |
 | Q8 定时任务 | SKIP + 不自动重试 + 连败 3 次自动 PAUSE | scheduler 数据模型已定型（设计文档 §6.9） |
-| Q9 国内生态集成 | **本期不做** | connectors 只做 browser/；别去写飞书/企微/钉钉/腾讯文档 |
+| Q9 国内生态集成 | **本期不做** | 办公生态只做 browser/；受控图片 MCP 按 IMG-Q3、电脑操控按 CU-Q；别去写飞书/企微/钉钉/腾讯文档 |
 | Q10 产物分享 | 显式授权后上传，默认关闭 + 有效期 | 任何上传动作都要有逐次授权入口 |
 | Q11 并发与预算 | 单用户 3 并行（按本机资源下调）+ 单任务硬预算 + 超预算暂停询问 | 用 `ThreadGoal.tokenBudget` 与 `subagent_start` hook，别自建 |
 | Q13 CLI | 保留，独立品牌「EvoWork CLI」 | CLI 的命令名/帮助文案属于 K5 的对外可见字符串 |

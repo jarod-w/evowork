@@ -1,5 +1,7 @@
 # 04 · 任务工作台
 
+> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议，尚未实现）**：生图/编辑首版走真实 MCP 工具历史与本机图片操作/产物状态，复用图片卡、另存及继续修改；不伪造原生 ImageGeneration item。失败、中断和 outcomeUnknown 明确展示，重开先查本机文件/操作记录，不自动重发可能收费的请求；见 [15 §4 / §10](15-ai-image-generation.md)。
+
 > **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](../superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
 
 > 上游：[总纲 §6.1 / §6.10](../evowork-on-codex-design.md)· D6 · [清单 §4 / §5 / §6](../agent-platform-feature-list.md)
@@ -266,7 +268,7 @@
 | 8   | `DynamicToolCall`                           | 折叠         | 同上，但工具由扩展贡献（`ToolContributor`）。图标取自扩展声明                                                                                                                                            |
 | 9   | `FunctionCallOutput`                        | 折叠         | 通常并入其对应调用项显示，不单独占行；无法关联时以「工具返回」独立折叠行呈现                                                                                                                             |
 | 10  | `WebSearch`                                 | 折叠         | 一行「搜索：<query>」+ 结果条数；展开为结果列表（标题 + 域名 + 摘要），点击在内置浏览器打开（§6.4）                                                                                                      |
-| 11  | `ImageGeneration`                           | 展开         | 图片卡（最大宽 640，点击放大 lightbox）+ 提示词折叠 + 「保存到产物」。对应总纲 §6.8 复用 `ext/image-generation`                                                                                          |
+| 11  | `ImageGeneration`                           | 展开         | 图片卡（最大宽 640，点击放大 lightbox）+ 提示词折叠 + 「保存到产物」。原生 item 仅按实际收到的协议渲染；首版图片 MCP 结果另按 15 映射，不作为工具已接通证据                                                                                          |
 | 12  | `ImageView`                                 | 折叠         | 「已查看图片：<文件名>」+ 缩略图 64                                                                                                                                                                      |
 | 13  | `SubAgentActivity`                          | 折叠         | 子任务卡：完整 agent path + 活动类型 + 「查看子任务详情」（打开子 thread 的只读视图）。这是清单 §9「多角色协作」的可视化                                                                                 |
 | 14  | `CollabAgentToolCall`                       | 折叠         | 协作调用卡：动作、状态、发送者、全部接收者和消息摘要。`spawn_agent` / `send_message` / `followup_task` / `wait_agent` / `interrupt_agent` / `list_agents` 必须原样保留语义，不把多接收者压成第一项             |

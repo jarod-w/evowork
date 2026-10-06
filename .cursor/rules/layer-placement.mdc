@@ -12,7 +12,8 @@ alwaysApply: false
 | Q1 = 纯本地桌面 | 调度 / 解析 / 产物索引是本机常驻，不是云服务 |
 | Q2 / Q16 | 网关按全量适配；P0 是 DeepSeek · Kimi · GLM-5.3-flash |
 | Q3 / K6 | 没有云端解析兜底 |
-| Q9 | connectors 只做 `browser/` |
+| Q4 / IMG-Q1–IMG-Q11 | 已全部采纳建议；技能/MCP/本机图片服务/网关；图片模型与费用独立，单图生成/编辑/连续版本、四次额度、一个在途，仅交互根任务，具体范围上传授权；尚未实现（15） |
+| Q9 | 办公生态只做 `browser/`；computer-use 按 CU-Q，受控图片 MCP 按 IMG-Q3；国内办公生态仍不做 |
 | Q10 | 分享显式授权、默认关闭、一次一个产物 |
 | Q11 | 用 `ThreadGoal.budget` 与 `subagent_start` hook，别自建并发预算 |
 | Q14 | 网关 / 日志 / APM / 错误上报不落盘正文 |

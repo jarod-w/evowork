@@ -9,6 +9,11 @@ alwaysApply: false
 云端。内核只认 Responses API，本包做全量翻译（流式、工具调用、reasoning、cache、用量）。
 P0 三家：DeepSeek（基准）· Kimi · GLM-5.3-flash。
 
+**图片模型（IMG-Q1–IMG-Q11 已确认，尚未实现）**：按 15 §6 / §7 提供独立图片适配，
+Seedream 优先、BYOK/已有私有服务；不把图片调用当文字 Responses，不由技能/MCP/renderer
+直连 provider。只提交已获准请求，不默认重放可能已受理的付费 POST；图片用量独立于聊天 token。
+Q14 同样覆盖图片正文/提示词/完整响应，日志与 APM 不得保存。
+
 ## 不可协商
 
 1. **降级必须显式。** 能力缺失在响应里标注；无思维链时留空占位，**不得伪造**；

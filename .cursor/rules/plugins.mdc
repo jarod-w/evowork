@@ -25,7 +25,10 @@ alwaysApply: false
 | documents | 标题层级只能逐级下降；否则 Word 目录缺一层且生成时不报错 |
 | charts | 没有中文字体就停下来，不画方框图 |
 
-connectors **本期只做 `browser/`**（Q9）。不要写飞书 / 企微 / 钉钉 / 腾讯文档。
+connectors 的办公生态范围本期只做 `browser/`（Q9）；computer-use 按 CU-Q，
+图片模型 MCP 按已确认 IMG-Q3（15 §6 / §12，尚未实现）。不要写飞书 / 企微 / 钉钉 / 腾讯文档。
+图片技能与 MCP 不持服务商密钥、不直连 provider，调用走本机图片服务和网关；
+随包 JS 入口使用 Electron Node，不运行时拉包。图片云端默认关闭，不能安装后自动付费验证。
 hooks 决策在 `services/policy`，本目录脚本只做 I/O。
 
 `ui-design` 是指令包，没有 `render.py`。不要给它套办公技能的 JSON Schema / 退出码骨架。
