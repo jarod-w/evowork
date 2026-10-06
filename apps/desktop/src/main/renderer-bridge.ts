@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { mergeWebSources, webResearchResult, type WebSource } from '../shared/web-sources.js';
 import type { TaskEnvironments } from './task-environments.js';
 
+import { parseGoalCommand } from '../shared/goal-command.js';
 import {
   titleFromText,
   isModeId,
@@ -884,7 +885,13 @@ export function createEventTranslator(store: Store, now: () => number) {
       case 'connectors-changed':
         return [{ type: 'connectors-changed' }];
       case 'task-goal-changed':
-        return [{ type: 'task-goal-changed', taskId: event.threadId }];
+        return [
+          {
+            type: 'task-goal-changed',
+            taskId: event.threadId,
+            ...(event.goal ? { goal: event.goal } : {}),
+          },
+        ];
       default:
         // 其余事件在当前 UI 上没有落点。适配层已经落库并记过日志，这里不再重复
         return [];
@@ -1394,7 +1401,26 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const operation = (async () => {
         const locked = options.policyPorts?.readOnlyReason();
         if (locked) throw new Error(locked);
-        const text = input.text.trim();
+        const command = parseGoalCommand(input.text);
+        if (command && command.action !== 'create')
+          throw new Error('请使用目标控制入口查看、暂停、恢复或清除目标。');
+        const goalObjective = command?.action === 'create' ? command.objective : undefined;
+        const text = goalObjective ?? input.text.trim();
+        if (goalObjective && (input.references?.length ?? 0) > 0)
+          throw new Error('创建目标前请先单独发送附件和引用。');
+        const prepareGoal = async (threadId: string) => {
+          if (collaborationRoot(threadId).isSubagent)
+            throw new Error('子任务不能设置目标，请返回根任务。');
+          const goal = await adapter.getGoal(threadId);
+          if (goal && goal.status !== 'complete' && !input.replaceGoal)
+            throw new Error('当前任务已有未完成目标，请确认替换后重试。');
+          if (goal) await adapter.clearGoal(threadId);
+          await adapter.setGoal(threadId, {
+            objective: goalObjective!,
+            status: 'paused',
+            tokenBudget: null,
+          });
+        };
         const validReferences = (input.references ?? []).filter((reference) =>
           reference.type === 'text'
             ? reference.text.trim() !== ''
@@ -1449,6 +1475,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           ];
           if (environment.threadId) {
             if (!environment.sent) {
+              if (goalObjective) await prepareGoal(environment.threadId);
               await adapter.sendMessage({
                 desktopInteractive: true,
                 threadId: environment.threadId,
@@ -1459,6 +1486,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
                   cwd: environment.cwd,
                 },
               });
+              if (goalObjective) await adapter.setGoal(environment.threadId, { status: 'active' });
               options.environments!.markSent(environment.threadId);
             }
             return { threadId: environment.threadId };
@@ -1476,6 +1504,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
             : undefined;
 
         if (input.threadId !== undefined) {
+          if (goalObjective) await prepareGoal(input.threadId);
           const route = collaborationRoot(input.threadId);
           const targetThreadId = route.rootThreadId;
           if (route.isSubagent) {
@@ -1512,11 +1541,13 @@ export function createRendererActions(options: RendererBridgeOptions) {
             ...(overrides ? { overrides } : {}),
             ...(input.steer ? { steer: true } : {}),
           });
+          if (goalObjective) await adapter.setGoal(targetThreadId, { status: 'active' });
           return { threadId: targetThreadId, ...(sent.queued ? { queued: true } : {}) };
         }
         const created = await adapter.createTask({
           desktopInteractive: true,
           input: content,
+          ...(goalObjective ? { goalObjective } : {}),
           ...(environment
             ? { onCreated: (threadId: string) => options.environments!.bind(threadId, environment) }
             : {}),
@@ -2058,6 +2089,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
       readonly tokenBudget?: number | null | undefined;
     }): Promise<TaskGoalView | undefined> {
       const { threadId } = input;
+      if (collaborationRoot(threadId).isSubagent)
+        throw new Error('子任务不能修改目标，请返回根任务。');
+      if (input.status === 'active' || input.objective !== undefined) {
+        const locked = options.policyPorts?.readOnlyReason();
+        if (locked) throw new Error(locked);
+      }
       const changes = {
         ...(input.objective !== undefined ? { objective: input.objective } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
@@ -2067,6 +2104,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     async clearTaskGoal(input: { readonly threadId: string }): Promise<void> {
+      if (collaborationRoot(input.threadId).isSubagent)
+        throw new Error('子任务不能清除目标，请返回根任务。');
       await adapter.clearGoal(input.threadId);
     },
 
@@ -2113,6 +2152,25 @@ export function createRendererActions(options: RendererBridgeOptions) {
         mentions,
         ...(skillEntry?.errors.length ? { skillErrors: skillEntry.errors } : {}),
         commands: [
+          { id: 'goal', label: 'goal · 持续推进目标', kind: 'local', insertText: '/goal' },
+          {
+            id: 'goal-pause',
+            label: 'goal pause · 暂停目标',
+            kind: 'local',
+            insertText: '/goal pause',
+          },
+          {
+            id: 'goal-resume',
+            label: 'goal resume · 恢复目标',
+            kind: 'local',
+            insertText: '/goal resume',
+          },
+          {
+            id: 'goal-clear',
+            label: 'goal clear · 清除目标',
+            kind: 'local',
+            insertText: '/goal clear',
+          },
           { id: 'new-task', label: '新建任务', kind: 'local' },
           { id: 'clear', label: '清空输入', kind: 'local' },
         ],

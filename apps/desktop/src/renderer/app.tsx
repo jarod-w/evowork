@@ -93,7 +93,8 @@ import type {
   MentionCandidate,
   SlashCommand,
 } from './components/composer.js';
-import { Banner, EmptyState, IconButton } from './components/primitives.js';
+import { Banner, Dialog, EmptyState, IconButton } from './components/primitives.js';
+import { GOAL_STATUS_LABELS, parseGoalCommand } from '../shared/goal-command.js';
 import { ShareDialog, type SharePhase } from './components/share-dialog.js';
 import { transcriptFileName, transcriptToMarkdown } from './views/thread-transcript.js';
 import { renderIcon } from './components/icons.js';
@@ -831,6 +832,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [goalsByTask, setGoalsByTask] = useState<
     Readonly<Record<string, TaskGoalView | undefined>>
   >({});
+  const [goalReplacement, setGoalReplacement] = useState<{
+    threadId: string;
+    draft: string;
+    objective: string;
+  } | null>(null);
+  const [goalPanelRequest, setGoalPanelRequest] = useState({ threadId: '', sequence: 0 });
+  const goalRevisions = useRef(new Map<string, number>());
   const [subtasksByTask, setSubtasksByTask] = useState<
     Readonly<Record<string, readonly TaskRowView[]>>
   >({});
@@ -930,13 +938,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'task-goal-changed') {
-          if (bridge.getTaskGoal) {
-            void bridge
-              .getTaskGoal({ threadId: event.taskId })
-              .then((goal) =>
-                setGoalsByTask((previous) => ({ ...previous, [event.taskId]: goal })),
-              );
-          }
+          goalRevisions.current.set(
+            event.taskId,
+            (goalRevisions.current.get(event.taskId) ?? 0) + 1,
+          );
+          setGoalsByTask((previous) => ({ ...previous, [event.taskId]: event.goal }));
           return;
         }
         if (event.type === 'task-removed') {
@@ -1433,14 +1439,31 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           ),
         );
     }
-    if (activeTaskId !== null && bridge.getTaskGoal) {
-      const threadId = activeTaskId;
-      void bridge.getTaskGoal({ threadId }).then((goal) => {
-        if (!deletedTaskIds.current.has(threadId))
-          setGoalsByTask((previous) => ({ ...previous, [threadId]: goal }));
-      });
-    }
   }, [activeTaskId, bridge, startup, tasks, workspaceId]);
+
+  // 只在打开任务时补快照；实时通知是权威更新，不能被较早发出的读取覆盖。
+  useEffect(() => {
+    if (activeTaskId === null || !bridge.getTaskGoal) return;
+    const threadId = activeTaskId;
+    const revision = goalRevisions.current.get(threadId) ?? 0;
+    let cancelled = false;
+    void bridge
+      .getTaskGoal({ threadId })
+      .then((goal) => {
+        if (
+          !cancelled &&
+          !deletedTaskIds.current.has(threadId) &&
+          revision === (goalRevisions.current.get(threadId) ?? 0)
+        )
+          setGoalsByTask((previous) => ({ ...previous, [threadId]: goal }));
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) reportFailure(error, '没能读取任务目标。');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTaskId, bridge, reportFailure]);
 
   /*
    * 子代理多半是**这一回合里**派出来的，而用户一直停在这个任务上。只在切换任务时读一次的话，
@@ -1874,77 +1897,143 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [attachments, imageInput],
   );
 
-  const send = useCallback(async () => {
-    const text = draft.trim();
-    const attachmentReferences = gatedAttachments.flatMap((attachment) => attachment.references);
-    const outgoingReferences = [...references, ...attachmentReferences];
-    if (!text && outgoingReferences.length === 0) return;
-    if (
-      pendingEnvironment.current ||
-      gatedAttachments.some((attachment) => attachment.state !== 'ready')
-    )
-      return;
-    pendingEnvironment.current = true;
-    setEnvironmentBusy(true);
-    const identity = draftIdentity.current;
-    try {
-      const { threadId } = await bridge.send({
-        draftId: identity,
-        ...(activeTaskId ? { threadId: activeTaskId } : {}),
-        text,
-        scenarioId,
-        // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
-        // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
-        ...(modelId !== undefined ? { modelId } : {}),
-        ...(mode !== undefined ? { modeId: mode } : {}),
-        // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
-        ...(!activeTaskId && workspaceId !== undefined ? { workspaceId } : {}),
-        ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
-        ...(running ? { steer } : {}),
-      });
-      if (identity !== draftIdentity.current) return;
-      setDraft((previous) => (previous === draft ? '' : previous));
+  const send = useCallback(
+    async (replaceGoal = false) => {
+      const identity = draftIdentity.current;
+      const text = draft.trim();
+      const command = parseGoalCommand(text);
+      if (command) {
+        if (pendingEnvironment.current) return;
+        pendingEnvironment.current = true;
+        try {
+          if (isSubagent) throw new Error('子任务不能修改目标，请返回根任务。');
+          if (command.action !== 'create') {
+            if (!activeTaskId) {
+              pushToast({ tone: 'info', text: '还没有目标。输入 /goal 加上目标描述开始。' });
+            } else {
+              if (!bridge.getTaskGoal) throw new Error('当前版本不支持目标。');
+              const revision = goalRevisions.current.get(activeTaskId) ?? 0;
+              let goal = await bridge.getTaskGoal({ threadId: activeTaskId });
+              if (command.action === 'show') {
+                setGoalPanelRequest((previous) => ({
+                  threadId: activeTaskId,
+                  sequence: previous.sequence + 1,
+                }));
+                if (!goal) pushToast({ tone: 'info', text: '当前任务还没有目标。' });
+              } else if (!goal) {
+                throw new Error('当前任务还没有目标。');
+              } else if (command.action === 'clear') {
+                if (!bridge.clearTaskGoal) throw new Error('当前版本不支持清除目标。');
+                await bridge.clearTaskGoal({ threadId: activeTaskId });
+                goal = undefined;
+              } else {
+                if (!bridge.setTaskGoal) throw new Error('当前版本不支持更新目标。');
+                goal = await bridge.setTaskGoal({
+                  threadId: activeTaskId,
+                  status: command.action === 'pause' ? 'paused' : 'active',
+                });
+              }
+              if (revision === (goalRevisions.current.get(activeTaskId) ?? 0))
+                setGoalsByTask((previous) => ({ ...previous, [activeTaskId]: goal }));
+              if (goal && command.action !== 'show')
+                pushToast({ tone: 'info', text: `目标${GOAL_STATUS_LABELS[goal.status]}。` });
+            }
+            setDraft((previous) => (previous === draft ? '' : previous));
+            return;
+          }
+          if (attachments.length || references.length)
+            throw new Error('创建目标前请先单独发送附件和引用。');
+          if (!bridge.getTaskGoal || !bridge.setTaskGoal) throw new Error('当前版本不支持目标。');
+          if (activeTaskId && !replaceGoal) {
+            const goal = await bridge.getTaskGoal({ threadId: activeTaskId });
+            if (goal && goal.status !== 'complete') {
+              setGoalReplacement({ threadId: activeTaskId, draft, objective: command.objective });
+              return;
+            }
+          }
+        } catch (error: unknown) {
+          reportFailure(error, '没能执行目标命令。');
+          return;
+        } finally {
+          pendingEnvironment.current = false;
+        }
+      }
+      const attachmentReferences = gatedAttachments.flatMap((attachment) => attachment.references);
+      const outgoingReferences = [...references, ...attachmentReferences];
+      if (!text && outgoingReferences.length === 0) return;
+      if (
+        identity !== draftIdentity.current ||
+        pendingEnvironment.current ||
+        gatedAttachments.some((attachment) => attachment.state !== 'ready')
+      )
+        return;
+      pendingEnvironment.current = true;
+      setEnvironmentBusy(true);
       try {
-        localStorage.removeItem(COMPOSER_DRAFT_KEY);
-      } catch {
-        // 浏览器存储不可用不影响已发送的任务。
+        const { threadId } = await bridge.send({
+          ...(replaceGoal ? { replaceGoal: true } : {}),
+          draftId: identity,
+          ...(activeTaskId ? { threadId: activeTaskId } : {}),
+          text,
+          scenarioId,
+          // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
+          // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
+          ...(modelId !== undefined ? { modelId } : {}),
+          ...(mode !== undefined ? { modeId: mode } : {}),
+          // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
+          ...(!activeTaskId && workspaceId !== undefined ? { workspaceId } : {}),
+          ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
+          ...(running ? { steer } : {}),
+        });
+        if (identity !== draftIdentity.current) return;
+        setDraft((previous) => (previous === draft ? '' : previous));
+        try {
+          localStorage.removeItem(COMPOSER_DRAFT_KEY);
+        } catch {
+          // 浏览器存储不可用不影响已发送的任务。
+        }
+        void bridge.discardComposerDraft?.({ draftId: identity }).catch(() => undefined);
+        setActiveTaskId(threadId);
+        setAttachments([]);
+        setReferences([]);
+        if (bridge.listQueuedInputs) {
+          const queue = await bridge.listQueuedInputs({ threadId });
+          setQueuedByTask((previous) => ({ ...previous, [threadId]: queue }));
+        }
+      } catch (err: unknown) {
+        // 发送失败要把草稿还回去 —— 清空输入框又什么都没发生，用户会以为消息丢了
+        if (identity !== draftIdentity.current) return;
+        setNotices((prev) => [
+          ...prev,
+          {
+            tone: 'danger',
+            text: `没能发出去：${err instanceof Error ? err.message : String(err)}`,
+            scope: 'task',
+          },
+        ]);
+      } finally {
+        pendingEnvironment.current = false;
+        setEnvironmentBusy(false);
       }
-      void bridge.discardComposerDraft?.({ draftId: identity }).catch(() => undefined);
-      setActiveTaskId(threadId);
-      setAttachments([]);
-      setReferences([]);
-      if (bridge.listQueuedInputs) {
-        const queue = await bridge.listQueuedInputs({ threadId });
-        setQueuedByTask((previous) => ({ ...previous, [threadId]: queue }));
-      }
-    } catch (err: unknown) {
-      // 发送失败要把草稿还回去 —— 清空输入框又什么都没发生，用户会以为消息丢了
-      if (identity !== draftIdentity.current) return;
-      setNotices((prev) => [
-        ...prev,
-        {
-          tone: 'danger',
-          text: `没能发出去：${err instanceof Error ? err.message : String(err)}`,
-          scope: 'task',
-        },
-      ]);
-    } finally {
-      pendingEnvironment.current = false;
-      setEnvironmentBusy(false);
-    }
-  }, [
-    bridge,
-    draft,
-    gatedAttachments,
-    references,
-    activeTaskId,
-    scenarioId,
-    modelId,
-    mode,
-    workspaceId,
-    running,
-    steer,
-  ]);
+    },
+    [
+      bridge,
+      draft,
+      gatedAttachments,
+      references,
+      activeTaskId,
+      scenarioId,
+      modelId,
+      mode,
+      workspaceId,
+      running,
+      steer,
+      isSubagent,
+      attachments,
+      pushToast,
+      reportFailure,
+    ],
+  );
 
   const changeMode = useCallback(
     (nextMode: ModeId) => {
@@ -3247,20 +3336,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               }
             : {})}
           goal={goalsByTask[activeTaskId]}
+          goalPanelRequest={
+            goalPanelRequest.threadId === activeTaskId ? goalPanelRequest.sequence : 0
+          }
           focusItemId={focusItemId}
           onGoalSave={
             !isSubagent && bridge.setTaskGoal
               ? (input) => {
                   const threadId = activeTaskId;
+                  const revision = goalRevisions.current.get(threadId) ?? 0;
                   void bridge
                     .setTaskGoal?.({
                       threadId,
                       ...input,
                       status: input.status ?? goalsByTask[threadId]?.status ?? 'active',
                     })
-                    .then((goal) =>
-                      setGoalsByTask((previous) => ({ ...previous, [threadId]: goal })),
-                    )
+                    .then((goal) => {
+                      if (revision === (goalRevisions.current.get(threadId) ?? 0))
+                        setGoalsByTask((previous) => ({ ...previous, [threadId]: goal }));
+                    })
                     .catch((error: unknown) => reportFailure(error, '没能保存任务目标。'));
                 }
               : undefined
@@ -3269,11 +3363,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             !isSubagent && bridge.setTaskGoal
               ? (status) => {
                   const threadId = activeTaskId;
+                  const revision = goalRevisions.current.get(threadId) ?? 0;
                   void bridge
                     .setTaskGoal?.({ threadId, status })
-                    .then((goal) =>
-                      setGoalsByTask((previous) => ({ ...previous, [threadId]: goal })),
-                    )
+                    .then((goal) => {
+                      if (revision === (goalRevisions.current.get(threadId) ?? 0))
+                        setGoalsByTask((previous) => ({ ...previous, [threadId]: goal }));
+                    })
                     .catch((error: unknown) => reportFailure(error, '没能更新任务状态。'));
                 }
               : undefined
@@ -3523,6 +3619,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onPickDirectory={pickProjectDirectory}
           onCancel={() => setProjectCreateOpen(false)}
         />
+      ) : null}
+      {goalReplacement ? (
+        <Dialog
+          title="替换当前目标？"
+          confirmLabel="替换并开始"
+          onCancel={() => setGoalReplacement(null)}
+          onConfirm={() => {
+            const pending = goalReplacement;
+            setGoalReplacement(null);
+            if (activeTaskId === pending.threadId && draft === pending.draft) void send(true);
+            else pushToast({ tone: 'info', text: '任务或输入已改变，请重新发送目标。' });
+          }}
+        >
+          <p>新目标：{goalReplacement.objective}</p>
+          <p>替换后重新计量用量，原目标的预算不会沿用。</p>
+        </Dialog>
       ) : null}
       <p className="ew-window-size-hint" role="status">
         窗口较窄，建议放大窗口获得完整布局

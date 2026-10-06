@@ -222,6 +222,72 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
 }
 
 describe('Composer 技能上下文', () => {
+  it('goal 从首页沿正常创建链启动，语法不泄漏进模型输入', async () => {
+    const adapter = fakeAdapter({
+      setTaskSettings: vi.fn(),
+      createTask: vi.fn(async () => ({ threadId: 'goal-1' })) as unknown as Adapter['createTask'],
+    });
+    const actions = makeActions({ adapter });
+    await expect(
+      actions.send({
+        text: '/goal 完成可验证的报告',
+        modelId: 'test/model',
+        modeId: 'request-approval',
+      }),
+    ).resolves.toEqual({ threadId: 'goal-1' });
+    expect(adapter.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        goalObjective: '完成可验证的报告',
+        input: [{ type: 'text', text: '完成可验证的报告' }],
+        overrides: { model: 'test/model', modeId: 'request-approval' },
+      }),
+    );
+  });
+
+  it('未确认替换和目标附件在任何执行前拒绝', async () => {
+    const adapter = fakeAdapter({
+      getGoal: vi.fn(async () => ({ status: 'paused' })) as unknown as Adapter['getGoal'],
+      clearGoal: vi.fn(),
+      setGoal: vi.fn(),
+      sendMessage: vi.fn(),
+    });
+    const actions = makeActions({ adapter, store: fakeStore(() => row()) });
+    await expect(actions.send({ threadId: 't1', text: '/goal 新目标' })).rejects.toThrow(
+      '确认替换',
+    );
+    await expect(
+      actions.send({ text: '/goal 新目标', references: [{ type: 'text', text: '附件正文' }] }),
+    ).rejects.toThrow('单独发送');
+    expect(adapter.clearGoal).not.toHaveBeenCalled();
+    expect(adapter.setGoal).not.toHaveBeenCalled();
+    expect(adapter.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('确认替换重置目标及预算，先暂停目标再发送最后恢复', async () => {
+    const calls: string[] = [];
+    const adapter = fakeAdapter({
+      getGoal: vi.fn(async () => ({ status: 'blocked' })) as unknown as Adapter['getGoal'],
+      clearGoal: vi.fn(async () => {
+        calls.push('clear');
+      }),
+      setGoal: vi.fn(async (_id, changes) => {
+        calls.push(changes.status!);
+        return undefined;
+      }),
+      sendMessage: vi.fn(async () => {
+        calls.push('send');
+        return { queued: false, degradations: [] };
+      }),
+    });
+    const actions = makeActions({ adapter, store: fakeStore(() => row()) });
+    await actions.send({ threadId: 't1', text: '/goal 新目标', replaceGoal: true });
+    expect(calls).toEqual(['clear', 'paused', 'send', 'active']);
+    expect(adapter.setGoal).toHaveBeenNthCalledWith(1, 't1', {
+      objective: '新目标',
+      status: 'paused',
+      tokenBudget: null,
+    });
+  });
   it('以内核技能清单为真源，保留内部名与精确 SKILL.md 路径', async () => {
     const adapter = fakeAdapter({
       listSkills: vi.fn(async () => ({

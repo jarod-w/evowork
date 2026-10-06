@@ -12,6 +12,10 @@
 > **验收**：完整构建及 browser MCP 独立目录启动通过。`pnpm run check` 退出 0，**2606 个测试通过**，156 个测试文件通过，1 个文件 / 2 个原有测试跳过。真实 Chrome 本机合成页面验证搜索提取、正文、稳定来源编号、HTTP / 格式错误、研究零脚本与零子资源；原有浏览器写操作 / 下载 / origin / popup / worker 回归通过。真 Electron + 真内核 + 真 browser MCP + 真 Chrome + 可控模型网关的两条 UI 旅程 **2/2**：信任启用、origin 授权前零请求、授权读取、引用打开、renderer 重载后从内核恢复；拒绝后零请求、模型编造引用不能建立链接。加窗口最小尺寸、外链与导航隔离回归共 **5/5**。
 > **回归发现并修复**：复跑原有 worker 验收时出现一次跨 origin 请求。关闭浏览器若先断 CDP，会释放调试暂停，Chrome 收到终止信号前 worker 可短暂恢复；现在 Chrome 使用专用进程组，先终止整棵进程树，再断 CDP，保留主页面监控会话直至关闭。真实专用 / 共享 / 服务 worker 各重复 3 次，**9/9** 关闭且零跨 origin 请求。这些是真实 macOS Chrome 验收，Windows 的进程树退出路径尚未真机验收。
 > **实站样本与限制**：本机 Bing 搜索 Node.js 并读取官方正文通过；正常 `www.bing.com → cn.bing.com` 地域跳转仍单独授权。百度与 DuckDuckGo 本次触发验证码，明确失败。实站样本不代表稳定率；需要本机 Chrome / Chromium，动态正文、登录墙和搜索布局变化仍有使用限制。MCP 重启后 `source_id` 查找表不保留，需传 URL 或重新搜索；历史引用显示与点击可恢复。引用证明来源关联，不能自动证明模型结论正确。未改内核、未新增搜索 API / 云服务，原生 Computer Use 发布闸门保持不变。
+> **2026-10-06：接通 `/goal` 持续目标。** Composer 补全及手输支持创建、查看、暂停、恢复、清除；未完成目标替换使用 Dialog 确认。创建沿正常持久任务/目录/模型/审批链路，首轮启动成功后才激活内核续跑；失败保留暂停目标。无预算目标同样展示中文状态、token 和用时；预算复用既有编辑器。目标通知直接带权威快照，打开任务的较早读取不能覆盖新通知。子任务不能修改目标；暂停/清除只停止目标续跑，当前回合仍可用「中断」停止。
+> **验收**：`node scripts/verify-goal.mjs` 在沙箱外退出 0，真实发货内核 + 产品宿主/适配层 + 本机假网关验证自动开始第二轮、模型 `update_goal` 完成、暂停后内核重启保存、恢复后自动执行、清除、预算计量及 `budgetLimited` 停止。专项测试验证命令不进模型、替换确认、补全、无预算展示与快照竞态。正式构建和 `pnpm run check` 均在沙箱外退出 0；沙箱内曾因已有子进程/回环端口测试的 EPERM 失败，不能当成产品失败或通过。完整检查包括格式、lint、类型、全仓测试、内核补丁预算、协议契约和许可清单。
+> **全仓测试结果**：155 个文件通过、1 个文件跳过；**2586 项通过、2 项原有运行时安装 e2e 条件跳过**。
+> **验收边界**：当前 Linux 环境没有图形会话或 Xvfb，新增 `goal.spec.mjs` 真窗口用例尚未运行；没有用真实厂商模型验证长期目标质量。没有修改上游内核或增加补丁/生产出网路径。创建目标时带附件/引用会明确拒绝，需先单独发送上下文。
 >
 > **2026-10-06：继续增加 WPS Office 和 Thunderbird 的 macOS 可信应用识别，已知应用共 21 个。**
 > WPS Office `com.kingsoft.wpsoffice.mac` / Team `YK4WKE5WAM`（本机 12.1.28496）、Thunderbird `org.mozilla.thunderbird` / `43AQ936H96`（153.3.1）。两个安装包均经 `codesign --verify --strict` 验签，两个真实运行进程均通过生产 Helper 身份函数，分类 ordinary，Finder 同时通过。错误/缺失发布者、签名标识不匹配、其它同发布者应用继续拒绝。企业策略、传输告知、应用准入及动作审批继续生效；文档分享、邮件发送、Enter/换行和无法可靠分类的编辑仍单次确认。
@@ -1425,7 +1429,7 @@ Task 1–12 分别把纯逻辑包、两张 sqlite 表、协议声明、内核镜
 | --- | --- | --- |
 | **01 设计系统** | token/断点已改走工作台数值；侧栏拖动手柄未做（clamp 已接）· 应用图标仍是 Electron 默认 | `packages/tokens/src/palette.ts` · `app.css` · `bootstrap.ts` · `build/` |
 | **02 信息架构** | 通知中心与设备中心（接通前已隐藏）。~~deeplink `evowork://`~~ **已接**（2026-09-27，五条路由）。**真机验收见 P3.8 那一行** —— 先前记的"冷启动 argv 已验过"是错的，那条测试当时没被执行过 | `app.tsx` · `sidebar.tsx` · `main/deeplink.ts` |
-| **03 首页与 Composer** | 语音 · 除 `/清空`、`/新建任务` 外的本地命令（拖拽/粘贴附件、项目文件递归候选、队列编辑/重排已接） | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
+| **03 首页与 Composer** | 语音 · 其余本地命令（`/goal` 创建/查看/暂停/恢复/清除、`/清空`、`/新建任务` 已接；拖拽/粘贴附件、项目文件递归候选、队列编辑/重排已接） | `composer.tsx` · `app.tsx` · `renderer-bridge.ts` |
 | **04 任务工作台** | C · CU-Q5 的首次留存同意与删除 API 已接；内容查看/留存标记及真实 MCP blob、索引、导出/备份删除验收未完成（CU-R8/R9） | `item-renderers.tsx` · `app.tsx` · `task-workspace.tsx` · `renderer-bridge.ts` |
 | **05 插件** | 公开远程 marketplace 未开放（当前只列本机/工作区源；建议先做只读浏览并允许企业关闭）· 套件安装/卸载尚无真实内核 E2E · CU-Q4 的 browser→Computer Use 路由、策略继承与受控回退未接。MCP 实时状态、OAuth 与逐工具策略已接 | `plugins/connectors/browser/` · `services/catalog/` · `views/catalog.tsx`；Computer Use 规格见 [12](design/12-computer-use.md) |
 | **06 资料库** | 「我的资料」树 / 添加资料 / 团队空间订阅 / 分享 / 删除仍无宿主动作，当前均按真实能力隐藏 · §3.4 正文 FTS 未接，界面已明确只搜文件名 | `library.tsx` vs `app.tsx` |

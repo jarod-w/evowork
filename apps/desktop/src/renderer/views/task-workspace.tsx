@@ -23,6 +23,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { TaskGoalView } from '../../shared/ipc.js';
 import { webSourcesByItem, type WebSource } from '../../shared/web-sources.js';
 
+import { GOAL_STATUS_LABELS } from '../../shared/goal-command.js';
 import {
   ApprovalCard,
   PendingApprovalBar,
@@ -328,6 +329,7 @@ export interface TaskWorkspaceProps {
   readonly composer?: React.ReactNode | undefined;
   readonly onNewTask?: (() => void) | undefined;
   readonly goal?: TaskGoalView | undefined;
+  readonly goalPanelRequest?: number | undefined;
   readonly onGoalSave?:
     | ((input: {
         objective: string;
@@ -394,6 +396,9 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [hasNewContent, setHasNewContent] = useState(false);
   const [resultWidth, setResultWidth] = useState<number | undefined>(undefined);
   const [goalOpen, setGoalOpen] = useState(false);
+  useEffect(() => {
+    if (props.goalPanelRequest) setGoalOpen(true);
+  }, [props.goalPanelRequest]);
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const taskMenuId = useId();
   const taskMenuRef = useRef<HTMLSpanElement | null>(null);
@@ -419,14 +424,12 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const parsedGoalBudget = goalBudget === '' ? null : Number(goalBudget);
   const goalCanSave =
     goalObjective.trim() !== '' &&
-    (parsedGoalBudget === null || (Number.isFinite(parsedGoalBudget) && parsedGoalBudget > 0));
+    (parsedGoalBudget === null || (Number.isSafeInteger(parsedGoalBudget) && parsedGoalBudget > 0));
   const goalProgress =
     props.goal?.tokenBudget == null || props.goal.tokenBudget <= 0
       ? undefined
       : Math.min(100, (props.goal.tokensUsed / props.goal.tokenBudget) * 100);
-  const goalExhausted =
-    props.goal?.status === 'budgetLimited' ||
-    (props.goal?.tokenBudget != null && props.goal.tokensUsed >= props.goal.tokenBudget);
+  const goalExhausted = props.goal?.status === 'budgetLimited';
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const resultTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -634,20 +637,25 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
         </div>
       </header>
 
-      {props.goal && goalProgress !== undefined ? (
+      {props.goal ? (
         <section
           className="ew-goal-progress"
-          data-tone={goalProgress >= 80 ? 'warning' : 'accent'}
-          aria-label="任务预算进度"
+          data-tone={(goalProgress ?? 0) >= 80 ? 'warning' : 'accent'}
+          aria-label="持续目标"
         >
           <div className="ew-goal-progress-copy">
             <span>{props.goal.objective}</span>
             <span>
-              {props.goal.tokensUsed.toLocaleString()} / {props.goal.tokenBudget?.toLocaleString()}{' '}
-              tokens（{Math.round(goalProgress)}%）
+              {GOAL_STATUS_LABELS[props.goal.status]} · {props.goal.tokensUsed.toLocaleString()}
+              {props.goal.tokenBudget != null
+                ? ` / ${props.goal.tokenBudget.toLocaleString()}`
+                : ''}
+              {' tokens'} · {props.goal.timeUsedSeconds}s
             </span>
           </div>
-          <progress max={100} value={goalProgress} aria-label="Token 预算使用比例" />
+          {goalProgress !== undefined ? (
+            <progress max={100} value={goalProgress} aria-label="Token 预算使用比例" />
+          ) : null}
           {goalExhausted ? (
             <div className="ew-goal-exhausted" role="alert">
               <span>预算已耗尽，任务已暂停。</span>
@@ -706,14 +714,15 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
             <>
               <span>
                 {props.goal.tokensUsed.toLocaleString()} tokens · {props.goal.timeUsedSeconds}s ·{' '}
-                {props.goal.status}
+                {GOAL_STATUS_LABELS[props.goal.status]}
               </span>
               <PillButton
+                disabled={props.goal.status === 'complete' || props.goal.status === 'budgetLimited'}
                 onClick={() =>
-                  props.onGoalStatus?.(props.goal?.status === 'paused' ? 'active' : 'paused')
+                  props.onGoalStatus?.(props.goal?.status === 'active' ? 'paused' : 'active')
                 }
               >
-                {props.goal.status === 'paused' ? '继续' : '暂停'}
+                {props.goal.status === 'active' ? '暂停' : '继续'}
               </PillButton>
               <PillButton onClick={props.onGoalClear}>清除目标</PillButton>
             </>

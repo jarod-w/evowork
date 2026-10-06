@@ -181,6 +181,31 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
 });
 
 describe('附件与本机解析（03 §4.4，K6/Q3 的对外表达点）', () => {
+  it('goal 补全留在输入框供用户写目标，不提前执行', () => {
+    const onRunLocalCommand = vi.fn();
+    renderComposer({
+      onRunLocalCommand,
+      slashCommands: [
+        { id: 'goal', label: 'goal · 持续推进目标', kind: 'local', insertText: '/goal' },
+      ],
+    });
+    type('/go');
+    fireEvent.click(screen.getByRole('option', { name: /goal/ }));
+    expect(screen.getByLabelText('需求输入')).toHaveProperty('value', '/goal ');
+    expect(onRunLocalCommand).not.toHaveBeenCalled();
+  });
+
+  it('模型不可用或附件解析中仍可暂停目标', () => {
+    renderComposer({
+      value: '/goal pause',
+      modelUnavailable: { text: '模型离线' },
+      sendLockedReason: '策略已过期',
+      attachments: [
+        { id: 'a', name: '文档', kind: 'document', sizeLabel: '1 KB', state: 'parsing' },
+      ],
+    });
+    expect(screen.getByRole('button', { name: '发送' })).toHaveProperty('disabled', false);
+  });
   const parsing = {
     id: 'a1',
     name: '年报.pdf',

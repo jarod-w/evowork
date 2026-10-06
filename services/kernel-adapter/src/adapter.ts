@@ -1145,6 +1145,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly automationId?: string;
       readonly desktopInteractive?: boolean;
       readonly onCreated?: (threadId: string) => void;
+      readonly goalObjective?: string;
     }): Promise<{ threadId: string; turn: Turn; degradations: readonly string[] }> {
       const scenario =
         scenarios.find((s) => s.id === args.scenarioId) ??
@@ -1206,11 +1207,22 @@ export function createAdapter(options: AdapterOptions) {
       // 侧边栏不必等 `thread/started`：那条通知的 name 是 null，而且可能晚于命名。
       options.onUiEvent?.({ type: 'task-created', threadId, title: title ?? null });
 
+      // 保存后再启动正常回合，自动续跑不会抢先绕过模式指令与桌面来源设置。
+      if (args.goalObjective !== undefined)
+        await session.peer.request(METHOD.threadGoalSet, {
+          threadId,
+          objective: args.goalObjective,
+          status: 'paused',
+          tokenBudget: null,
+        });
       const turnResponse = await startDesktopTurn(
         threadId,
         expanded.params,
         args.desktopInteractive === true && !args.automationId,
       );
+
+      if (args.goalObjective !== undefined)
+        await session.peer.request(METHOD.threadGoalSet, { threadId, status: 'active' });
 
       /*
        * 起名放在 `turn/start` **之后**：它对这一回合毫无影响，排在前面只会
@@ -1664,10 +1676,19 @@ export function createAdapter(options: AdapterOptions) {
         readonly tokenBudget?: number | null;
       },
     ): Promise<ThreadGoal | undefined> {
+      if (changes.status === 'active' && !session.openThreads.has(threadId)) {
+        const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
+          threadId,
+        });
+        store.threads.upsertFromThread(resumed.thread);
+        session.openThreads.add(threadId);
+      }
       const response = await session.peer.request<{ readonly goal?: ThreadGoal }>(
         METHOD.threadGoalSet,
         { threadId, ...changes },
       );
+      if (response.goal)
+        store.threads.setTaskSettings(threadId, { budgetLimit: response.goal.tokenBudget });
       return response.goal;
     },
 

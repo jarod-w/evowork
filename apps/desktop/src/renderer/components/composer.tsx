@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
+import { parseGoalCommand } from '../../shared/goal-command.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
 import { Badge, Banner, Dialog, GhostButton, PillButton } from './primitives.js';
 
@@ -75,6 +76,7 @@ const CATEGORY_LABEL: Readonly<Record<MentionCategory, string>> = {
 };
 
 export interface SlashCommand {
+  readonly insertText?: string | undefined;
   readonly id: string;
   readonly label: string;
   /**
@@ -389,15 +391,18 @@ export function Composer(props: ComposerProps) {
   // 否则按钮看似可用，App 层却会因为没有文本或结构化引用而什么都不做。
   const empty =
     props.value.trim() === '' && !attachments.some((attachment) => attachment.state === 'ready');
-  const blockedByModel = props.modelUnavailable !== undefined;
+  const goalCommand = parseGoalCommand(props.value);
+  const localGoalControl = goalCommand !== undefined && goalCommand.action !== 'create';
+  const stoppingGoalControl = localGoalControl && goalCommand.action !== 'resume';
+  const blockedByModel = props.modelUnavailable !== undefined && !localGoalControl;
   const unadded = attachments.some((attachment) => attachment.state === 'failed');
   const sendDisabled =
     empty ||
-    parsing > 0 ||
-    unadded ||
+    (!localGoalControl && parsing > 0) ||
+    (!localGoalControl && unadded) ||
     blockedByModel ||
     props.environmentBusy === true ||
-    props.sendLockedReason !== undefined ||
+    (props.sendLockedReason !== undefined && !stoppingGoalControl) ||
     confirmFullAccess;
 
   const candidates = useMemo(() => {
@@ -905,10 +910,12 @@ export function Composer(props: ComposerProps) {
             ) : null}
 
             <SendButton
-              runState={runState}
+              runState={goalCommand ? 'idle' : runState}
               disabled={sendDisabled}
-              parsing={parsing}
-              blockedReason={unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined}
+              parsing={localGoalControl ? 0 : parsing}
+              blockedReason={
+                !localGoalControl && unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined
+              }
               queuePosition={props.queuePosition}
               onSend={props.onSend}
               onInterrupt={props.onInterrupt}
@@ -980,6 +987,10 @@ export function Composer(props: ComposerProps) {
   );
 
   function applyCandidate(chosen: MentionCandidate | SlashCommand): void {
+    if ('kind' in chosen && chosen.insertText) {
+      insertCompletion(chosen.insertText.replace(/^\//u, ''), '/');
+      return;
+    }
     if ('kind' in chosen && chosen.kind === 'local') {
       // 本地指令不进输入框，直接执行（03 §4.3）
       if (trigger) {

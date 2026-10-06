@@ -298,6 +298,87 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
 }
 
 describe('首页不创建 Thread（03 §1）', () => {
+  it('打开任务时较早的目标快照不能覆盖新的完成通知', async () => {
+    const goal = {
+      threadId: 't1',
+      objective: '测试目标',
+      status: 'paused' as const,
+      tokenBudget: null,
+      tokensUsed: 5,
+      timeUsedSeconds: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    let resolveGoal!: (value: typeof goal) => void;
+    const initial = new Promise<typeof goal>((resolve) => {
+      resolveGoal = resolve;
+    });
+    const { bridge, emit } = fakeBridge({ getTaskGoal: vi.fn(() => initial) });
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('需求输入'));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '第一条' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() => expect(bridge.getTaskGoal).toHaveBeenCalledWith({ threadId: 't1' }));
+    emit.ui?.({ type: 'task-goal-changed', taskId: 't1', goal: { ...goal, status: 'complete' } });
+    await waitFor(() => expect(screen.getByLabelText('持续目标').textContent).toContain('已完成'));
+    resolveGoal(goal);
+    await initial;
+    await waitFor(() => expect(screen.getByLabelText('持续目标').textContent).toContain('已完成'));
+  });
+  it('goal 控制命令不创建任务，创建后替换需确认且取消保留草稿', async () => {
+    const goal = {
+      threadId: 't1',
+      objective: '原目标',
+      status: 'paused' as const,
+      tokenBudget: null,
+      tokensUsed: 5,
+      timeUsedSeconds: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const { bridge, emit } = fakeBridge({
+      getTaskGoal: vi.fn(async () => goal),
+      setTaskGoal: vi.fn(async (input) => ({ ...goal, status: input.status ?? goal.status })),
+      clearTaskGoal: vi.fn(async () => undefined),
+    });
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('需求输入'));
+    const submit = (text: string) => {
+      fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: text } });
+      fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    };
+    submit('/goal');
+    await waitFor(() => expect(screen.getByLabelText('需求输入')).toHaveProperty('value', ''));
+    expect(bridge.send).not.toHaveBeenCalled();
+    submit('/goal 原目标');
+    await waitFor(() => expect(bridge.send).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText('有什么可以帮忙的？')).toBeNull());
+    submit('/goal resume');
+    await waitFor(() =>
+      expect(bridge.setTaskGoal).toHaveBeenCalledWith({ threadId: 't1', status: 'active' }),
+    );
+    expect(bridge.send).toHaveBeenCalledTimes(1);
+    emit.ui?.({ type: 'task-goal-changed', taskId: 't1', goal: { ...goal, status: 'blocked' } });
+    await waitFor(() =>
+      expect(screen.getByLabelText('持续目标').textContent).toContain('等待解除阻塞'),
+    );
+    submit('/goal 新目标');
+    await waitFor(() => screen.getByRole('dialog', { name: '替换当前目标？' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.getByLabelText('需求输入')).toHaveProperty('value', '/goal 新目标');
+    expect(bridge.send).toHaveBeenCalledTimes(1);
+    submit('/goal 新目标');
+    await waitFor(() => screen.getByRole('dialog', { name: '替换当前目标？' }));
+    fireEvent.click(screen.getByRole('button', { name: '替换并开始' }));
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenLastCalledWith(
+        expect.objectContaining({ threadId: 't1', text: '/goal 新目标', replaceGoal: true }),
+      ),
+    );
+    submit('/goal clear');
+    await waitFor(() => expect(bridge.clearTaskGoal).toHaveBeenCalledWith({ threadId: 't1' }));
+    expect(bridge.send).toHaveBeenCalledTimes(2);
+  });
   it('刚打开时在首页，且**还没有任何任务**', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);

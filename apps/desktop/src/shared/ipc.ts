@@ -142,7 +142,7 @@ export type RendererEvent =
    * `getTaskResults` 重读，避免在事件载荷里复制另一份产物视图。
    */
   | { readonly type: 'task-results-updated'; readonly taskId: string }
-  | { readonly type: 'task-goal-changed'; readonly taskId: string }
+  | { readonly type: 'task-goal-changed'; readonly taskId: string; readonly goal?: TaskGoalView }
   /** 技能目录变化；Composer 据此重读内核清单，不保留陈旧路径。 */
   | { readonly type: 'skills-changed' }
   /** MCP 启动或 OAuth 状态变化；目录页重读权威运行态。 */
@@ -300,6 +300,8 @@ export type ModelUnavailableReason =
   'no-token' | 'no-keys' | 'unauthorized' | 'unreachable' | 'empty' | 'http' | 'broken-install';
 
 export interface SendInput {
+  /** 已确认替换现有目标；宿主仍重新检查权威状态。 */
+  readonly replaceGoal?: boolean | undefined;
   readonly draftId?: string | undefined;
   readonly threadId?: string | undefined;
   readonly text: string;
@@ -390,6 +392,7 @@ export interface ComposerContextView {
     readonly id: string;
     readonly label: string;
     readonly kind: 'skill' | 'local';
+    readonly insertText?: string;
   }[];
 }
 

@@ -440,6 +440,19 @@ describe('长任务控制面', () => {
     updatedAt: 2,
   };
 
+  it('没有预算也常驻展示目标、中文状态及用量', () => {
+    renderWorkspace({
+      goal: { ...goal, tokenBudget: null, status: 'blocked' },
+      onGoalSave: vi.fn(),
+      onGoalStatus: vi.fn(),
+      goalPanelRequest: 1,
+    });
+    expect(screen.getByLabelText('持续目标').textContent).toContain('等待解除阻塞');
+    expect(screen.getByLabelText('持续目标').textContent).toContain('完成季度报告');
+    expect(screen.queryByLabelText('Token 预算使用比例')).toBeNull();
+    expect(screen.getByRole('button', { name: '继续' })).toHaveProperty('disabled', false);
+  });
+
   it('目标预算持续显示进度，超过 80% 使用 warning', () => {
     const { container } = renderWorkspace({ goal, onGoalSave: vi.fn() });
     expect(screen.getByLabelText('Token 预算使用比例').getAttribute('value')).toBe('82');

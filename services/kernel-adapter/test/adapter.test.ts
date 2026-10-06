@@ -1342,6 +1342,65 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 });
 
 describe('目标与预算（Q11：用内核的 ThreadGoal.tokenBudget，不自建）', () => {
+  it('首轮启动失败时保留暂停目标，不启用后台续跑', async () => {
+    await adapter.start();
+    server.handlers.set('turn/start', () => {
+      throw new FakeRpcError(ERROR_CODE.internalError, 'start failed');
+    });
+    await expect(
+      adapter.createTask({
+        input: [{ type: 'text', text: '目标' }],
+        goalObjective: '目标',
+        overrides: { cwd: '/w' },
+      }),
+    ).rejects.toThrow();
+    const changes = server.received.filter((request) => request.method === 'thread/goal/set');
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.params.status).toBe('paused');
+  });
+  it('目标先持久化，再启动带模式指令的回合，最后启用内核续跑', async () => {
+    await adapter.start();
+    const before = server.received.length;
+    const { threadId } = await adapter.createTask({
+      input: [{ type: 'text', text: '完成目标并验证' }],
+      goalObjective: '完成目标并验证',
+      overrides: { cwd: '/w' },
+      desktopInteractive: true,
+    });
+    const requests = server.received
+      .slice(before)
+      .filter((request) =>
+        ['thread/start', 'thread/goal/set', 'turn/start'].includes(request.method),
+      );
+    expect(requests.map((request) => request.method)).toEqual([
+      'thread/start',
+      'thread/goal/set',
+      'turn/start',
+      'thread/goal/set',
+    ]);
+    expect(requests[1]?.params).toEqual({
+      threadId,
+      objective: '完成目标并验证',
+      status: 'paused',
+      tokenBudget: null,
+    });
+    expect(requests[2]?.params).toMatchObject({
+      collaborationMode: {
+        settings: { developer_instructions: expect.stringContaining('你可以动手') },
+      },
+    });
+    expect(requests[3]?.params).toEqual({ threadId, status: 'active' });
+  });
+
+  it('恢复关闭过的目标先加载任务，且目标预算立即同步投影', async () => {
+    await adapter.start();
+    await adapter.setGoal('saved-goal', { status: 'active', tokenBudget: 30_000 });
+    const requests = server.received.filter((request) =>
+      ['thread/resume', 'thread/goal/set'].includes(request.method),
+    );
+    expect(requests.map((request) => request.method)).toEqual(['thread/resume', 'thread/goal/set']);
+    expect(store.threads.get('saved-goal')?.budget_limit).toBe(30_000);
+  });
   it('setBudget 调 thread/goal/set 并同步投影表', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
