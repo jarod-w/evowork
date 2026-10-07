@@ -94,8 +94,8 @@ linux:
   category: Office
 
 # 自动更新：差量包（R10 的缓解手段之一）
-# 地址 2026-10-02 由发版的人给定（试点期，总纲 Q46 / D9 的 K6 登记）。
+# 地址 2026-10-02 由发版的人给定（试点期，总纲 Q46 / D9 的 K6 登记）；2026-10-07 随服务器迁移改成默认端口（原 :9443）。
 # 打包时它被写进 app-update.yml；scripts/publish-release.mjs 往同一个地方的 <channel>/ 下传文件。
 publish:
   provider: generic
-  url: https://update.nucleant.cn:9443/${channel}
+  url: https://update.nucleant.cn/${channel}

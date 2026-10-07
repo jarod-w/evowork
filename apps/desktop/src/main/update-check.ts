@@ -49,7 +49,7 @@ import {
 } from './update-manifest.js';
 
 /** 与 `build/electron-builder.yml` 的 `publish.url`（channel = latest）同一个地址；有测试对着两边 */
-export const DEFAULT_UPDATE_FEED = 'https://update.nucleant.cn:9443/latest';
+export const DEFAULT_UPDATE_FEED = 'https://update.nucleant.cn/latest';
 /** Q46-1：每天最多一次 */
 export const AUTO_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** 60 秒收不到字节就判定连接死了（与办公扩展安装同一条经验：没有它，进度条会永远停在某处） */

@@ -566,7 +566,7 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 项       | 内容 |
 | -------- | ---- |
 | 触发     | 已登录：App 启动 + 每小时一次 + 插件页手动刷新。**未登录（HUB-Q3=B）：默认只有用户点「刷新」时才拉**；用户在设置里打开开关后，与已登录时相同。安装 / 更新时下载内容包 |
-| 去哪     | Hub 的官方源 **`https://hub.nucleant.cn:9443`**（2026-10-03 上线，与更新源同一台机器，build-and-deploy §5.3.2）；企业私有源由策略包配置的地址；**没写许可的条目**（HUB-Q5a=A，只做索引、不托管）在用户点安装时直接访问上游代码托管站（如 `github.com`） |
+| 去哪     | Hub 的官方源 **`https://hub.nucleant.cn`**（2026-10-03 以 `:9443` 上线；2026-10-07 随更新源迁到 43.143.248.70 并改用默认端口，build-and-deploy §5.3.0 / §5.3.2）；企业私有源由策略包配置的地址；**没写许可的条目**（HUB-Q5a=A，只做索引、不托管）在用户点安装时直接访问上游代码托管站（如 `github.com`） |
 | 带什么   | **只有 GET**，只带 `If-None-Match`（实现选了 13 §4.6 的「连 App 版本都不带」：`minAppVersion` 纯客户端过滤）。**不带** prompt、文件名、任务 id、设备 id、**账号令牌（登录了也不带）**，不回传装了什么。`services/hub-client/test/client.test.ts` 用真 HTTP 服务断言请求头里没有别的东西 |
 | 完整性   | 索引 ES256 验签（复用策略包信封）+ `sequence` 防回滚 + `expiresAt` + 内容包 sha256 |
 | 出口     | 只有 `services/hub-client` 出网；`services/catalog` 整目录扫不出出网调用（`services/catalog/test/hub.test.ts` 守着，也不许依赖 hub-client） |
@@ -579,7 +579,7 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 项       | 内容 |
 | -------- | ---- |
 | 触发     | 用户在设置 → 关于里点「检查更新」（登录与否都可以）。**已登录：每天最多自动检查一次（可关）。未登录：默认不自动检查**，用户在设置里打开独立开关后，与已登录时相同（Q46-1 / Q46-2 / Q46-3）。下载安装包**只在用户点「下载」时**发生（Q46-4） |
-| 去哪     | 更新源的 HTTPS 域名。**试点阶段沿用现有服务器**（Apache + 子域名 + Let's Encrypt，2026-10-02 定；地址 `https://update.nucleant.cn:9443/`，2026-10-02 已上线，搭法见 [build-and-deploy §5.3.1](build-and-deploy.md)），用户量上来后迁到对象存储 + CDN（可与办公扩展共用一个桶，[build-and-deploy §5.3](build-and-deploy.md)）；企业用 `EVOWORK_UPDATE_FEED` 指向的内网镜像 |
+| 去哪     | 更新源的 HTTPS 域名。**试点阶段沿用现有服务器**（Apache + 子域名 + Let's Encrypt，2026-10-02 定；地址 `https://update.nucleant.cn/`，2026-10-02 以 `:9443` 上线，2026-10-07 迁到 43.143.248.70 并改用默认端口，搭法见 [build-and-deploy §5.3.0 / §5.3.1](build-and-deploy.md)），用户量上来后迁到对象存储 + CDN（可与办公扩展共用一个桶，[build-and-deploy §5.3](build-and-deploy.md)）；企业用 `EVOWORK_UPDATE_FEED` 指向的内网镜像 |
 | 带什么   | **只有 GET**：`latest-<平台>.yml`、它的签名（`signatures/<清单 sha256>.sig`）、安装包。**不带** prompt、文件名、任务 id、设备 id、**账号令牌（登录了也不带）**、版本号（在客户端比较） |
 | 完整性   | 设计上：清单 ES256 验签（复用 `packages/account` 的签名原语，签原文、验原文）+ 安装包 sha512。私钥只在发版机，客户端内嵌日常与离线备用两把公钥（2026-10-02 定）。没有 Developer ID 期间，应用内下载的文件不带 quarantine 标记、Gatekeeper 不检查，**清单签名是唯一的真实性校验**（提案 §4 B3） |
 | 出口     | 只有 `apps/desktop/src/main/update-check.ts` 出网（2026-10-03 落地）。不借用 `services/runtime-installer` 的下载器，以免改变它「唯一为装扩展而出网」的登记含义 |

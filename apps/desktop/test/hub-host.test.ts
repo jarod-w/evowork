@@ -209,7 +209,7 @@ describe('什么时候出网（13 §4.4，HUB-Q3=B）', () => {
 
   it('默认指向 hub.nucleant.cn，钉着日常与备份两把公钥；环境变量能换地址、不能加钥匙', () => {
     const official = officialHubSource({});
-    expect(official?.baseUrl).toBe('https://hub.nucleant.cn:9443/v1');
+    expect(official?.baseUrl).toBe('https://hub.nucleant.cn/v1');
     expect(official?.trustedKeys.map((k) => k.kid)).toEqual(['evowork-hub-1', 'evowork-hub-2']);
     const staging = officialHubSource({ EVOWORK_HUB_ORIGIN: 'https://staging.example' });
     expect(staging?.baseUrl).toBe('https://staging.example/v1');

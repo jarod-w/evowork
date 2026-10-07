@@ -213,10 +213,17 @@
 
 | 源 | 公钥从哪来 | 私钥在哪 |
 | --- | --- | --- |
-| EvoWork 官方源 | **随 App 分发并钉死**（按 `kid` 列表）。2026-10-03 起：`evowork-hub-1`（日常）+ `evowork-hub-2`（备份），P-256，钉在 `apps/desktop/src/main/hub-config.ts` | **发版机**（2026-10-03 定：与更新源同一模式）：日常私钥在发版机上、仓库之外；备份私钥离线保存。CI 只产出未签名的 payload 与内容包，签名与上传是发版机上的一条命令（`evowork-hub` 的 `pnpm release`） |
+| EvoWork 官方源 | **随 App 分发并钉死**（按 `kid` 列表）。`evowork-hub-1`（日常）+ `evowork-hub-2`（备份），P-256，钉在 `apps/desktop/src/main/hub-config.ts`（2026-10-03 首次生成，**2026-10-07 整对重新生成**，见下方记录） | **发版机**（2026-10-03 定：与更新源同一模式）：日常私钥在发版机上、仓库之外；备份私钥离线保存。CI 只产出未签名的 payload 与内容包，签名与上传是发版机上的一条命令（`evowork-hub` 的 `pnpm release`） |
 | 企业私有源 | 由策略包下发（Q44 推荐的「只注册源与签名密钥」） | 企业自持 |
 
 轮换：新旧 `kid` 并存一个 App 版本周期。私钥泄露时，靠发版把那个 `kid` 从钉死列表里删掉。
+
+**换钥记录**
+
+| 日期 | 做了什么 | 为什么可以这么做 |
+| --- | --- | --- |
+| 2026-10-03 | 首次生成 `evowork-hub-1` / `evowork-hub-2` 并钉进 App | — |
+| 2026-10-07 | **两把整对重新生成，沿用两个 kid**，没有新旧并存期。新公钥 SPKI 的 sha256：`evowork-hub-1` `5c83e792…d2d50e94`、`evowork-hub-2` `580f7c1f…4832c7c9`（全文在 `hub-config.ts` 注释里） | 10-03 那把日常私钥在发版机上丢了（`~/.evowork-hub-keys/` 整个不在了）；钉着旧公钥的 App 版本**一个都没发布过**，没有客户端需要过渡。旧私钥的任何副本（包括离线保存的旧 `evowork-hub-2`）从此作废 —— 拿它签，`release` 在上传前用钉死的公钥验就会失败 |
 
 ### 4.4 拉取
 
@@ -659,13 +666,13 @@ HUB-Q 沿用 12 篇 CU-Q 的做法，**保留自己的编号，不占总纲的 Q
 | 合并、本地重审（按 `rulesVersion` 比对）、5.4 更新判定、预算 | `services/catalog/src/hub.ts`（整目录不出网的扫描守着） | ✅ |
 | 安装 / 静默更新 / 吊销 / 回滚 / 卸载；5.5 覆盖随包技能；HUB-Q3=B 的拉取时机 | `apps/desktop/src/main/hub-host.ts` | ✅ |
 | 界面：来源筛选、状态卡、warning / caption、刷新、预算条；设置里的未登录开关 | `views/catalog.tsx` · `views/settings.tsx` | ✅（单测；**没做真实窗口验收**） |
-| 官方源的地址与公钥 | `apps/desktop/src/main/hub-config.ts` | ✅ 2026-10-03：默认 `https://hub.nucleant.cn:9443`（`EVOWORK_HUB_ORIGIN` 能换地址、不能加钥匙），钉了日常与备份两把公钥；测试核对每一把都能解析成 P-256（钉坏了不报错，只是所有索引都验不过 —— 第一次钉的时候正是这样钉成了空串，测试却全绿） |
+| 官方源的地址与公钥 | `apps/desktop/src/main/hub-config.ts` | ✅ 2026-10-03：默认 `https://hub.nucleant.cn`（10-03 起是 `:9443`，10-07 随服务器迁移改成默认端口；`EVOWORK_HUB_ORIGIN` 能换地址、不能加钥匙），钉了日常与备份两把公钥（2026-10-07 整对重新生成，§4.3 换钥记录）；测试核对每一把都能解析成 P-256（钉坏了不报错，只是所有索引都验不过 —— 第一次钉的时候正是这样钉成了空串，测试却全绿） |
 | 4.7 ① 策略包 `disableOfficialHub` | `packages/account` · `services/identity` · `apps/web` 策略页 · `hub-host.ts` | ✅ 2026-10-02（H6）。组织停用的条目记为 `revokedBy: 'organization'`：**不是**内容出了问题，所以组织重新打开后卡片转「需重新确认」，确认一次恢复；连接器的信任要重新给（K6） |
 | 4.7 ② `EVOWORK_HUB_OFFICIAL=off` | `hub-config.ts` | ✅（H1） |
 | 4.7 ③ 离线包 + 白名单 | `services/hub-client/src/bundle.ts` · `scripts/build-hub-bundle.mjs` | ✅ 2026-10-02（H6）。离线源用的是**同一个** hub-client，只是把 fetch 换成读目录：验签、`sequence`、sha256 原样跑，非 `bundle:` 地址一律失败（不出网）。官方源要另外发一份长有效期的 **`index.offline.json`**（H2 的发布流程要产出它）；没有时脚本退回在线索引并在 MANIFEST 里标出来。没写许可的条目不进离线包。白名单写坏 = 当作没有白名单（照样提示），不是「全删」 |
 | G3 指令文本规则（诱导安装 · 下载即执行 · base64 · 收数据端点 · 凭据） | `services/catalog/src/audit.ts`（规则版本 `2026-10-02.2`） | ✅ 2026-10-02。规则只有这一份（HUB-Q9=A），管道引用它；诱导类的 finding 带 `lure`，管道见到直接拒收 |
 | H3 管道 G1–G4 | `evowork-hub/pipeline/`（审计规则与协议从 evowork 源码引用，`evowork.lock` 钉提交） | ✅ 2026-10-02；V2 见 §12.1。`sources.yaml` 还是空的：首批上游要逐个核对许可与提交再登记 |
-| H2 托管与发布 | 服务器 115.190.115.161（MinIO + Apache，[build-and-deploy §5.3.2](../build-and-deploy.md)）· `evowork-hub/pipeline/release.ts` | ⚠️ 2026-10-03 搭好并发布了序号 1（空索引）；App 自己的代码路径取到并验过、第二次 304。**几分钟后被火山引擎的未备案拦截拦下**（80 端口 302 到 `webblock.volcengine.com`，9443 按 SNI 重置；更新源同样被拦），要机主为 `nucleant.cn` 办接入备案后才对外可用。CI 工作流写了，**没在 GitHub 上跑过** |
+| H2 托管与发布 | 服务器 **43.143.248.70**（2026-10-07 起；MinIO + Apache，[build-and-deploy §5.3.0 / §5.3.2](../build-and-deploy.md)）· `evowork-hub/pipeline/release.ts` | ⚠️ 2026-10-03 在 115.190.115.161 搭好并发布了序号 1（空索引），几分钟后被火山引擎的未备案拦截拦下。2026-10-07 机主把域名改到腾讯云的新机器，在那里重搭并验过读、304、只读约束与 SigV4 写入链路，**但桶是空的、还没重新发布**：日常私钥丢了，同日整对重新生成（§4.3），发布前 `evowork.lock` 要先升。App 与 `release.ts` 的默认地址同日改成默认端口（不再用 9443）。CI 工作流写了，**没在 GitHub 上跑过** |
 | H4 G5 试跑 · G6 改写 | — | ⏳ |
 | 企业私有源 | — | ⏳ 等 Q44；公钥由策略包下发（4.3），客户端的多源合并还没做 |
 

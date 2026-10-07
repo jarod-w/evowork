@@ -498,134 +498,151 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
-| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn:9443/${channel}` | **已上线（2026-10-02，§5.3.1）**，但**还没发过任何版本**：客户端要到 B4 接上「检查更新」后才会把签名公钥打进包里，在此之前 `publish-release.mjs` 的「包里嵌着 kid」一项一定不过。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
+| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn/${channel}` | **已上线（2026-10-02；10-07 迁到 43.143.248.70 并改用默认端口，§5.3.0 / §5.3.1）**，但**还没发过任何版本**：客户端要到 B4 接上「检查更新」后才会把签名公钥打进包里，在此之前 `publish-release.mjs` 的「包里嵌着 kid」一项一定不过。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
 | 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
 
 这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
 
-#### 5.3.1 更新源 `update.nucleant.cn:9443`（2026-10-02 实测搭建）
+#### 5.3.0 服务器（2026-10-07 起：43.143.248.70）
 
-试点期沿用 §5.2.1 那台机器（总纲 Q46 / D9 的 K6 登记）。**下面每条都在那台机器上实际跑过**；
-它上面还有别人的服务，所以只加不改：没有停过任何服务，Apache 只做了平滑重载。
+更新源与 Hub 在同一台机器上：**43.143.248.70**（腾讯云，Ubuntu 26.04，root 免密 ssh），**专用**，上面没有别的服务。
+2026-10-07 机主把 `update` / `hub` 两条 A 记录从 115.190.115.161 改到这里（那台在火山引擎上，被未备案拦截挡住，见本节末），
+同日在这台空机器上从零搭起。**下面每条都在它上面实际跑过**；服务器上的完整记录在 `/opt/evowork/PROVENANCE`。
 
-前置（机主做的）：域名控制台加 A 记录 `update → 115.190.115.161`；云安全组放行 TCP 9443；`nucleant.cn` 已备案
-（所以 80 端口的 HTTP-01 验证走得通）。
+| 端口 | 谁在听 | 外网 |
+| --- | --- | --- |
+| 80 | Apache：默认站点 `000-catchall`（一律 404，不露 Ubuntu 默认页）；两个域名只做 ACME 验证，其余 301 到 `https://<域名>/` | 通 |
+| 443 | Apache：`update.nucleant.cn`（**默认站点**：不带 SNI / 按 IP 落到这里）· `hub.nucleant.cn` | 通 |
+| 9000 | MinIO，只听 `127.0.0.1` / `::1` | — |
+
+ufw 没开，**防火墙只有云安全组**。**不再用 9443**：旧机器上用它是权宜之计；用 `:9443` 的版本一个都没发出去过，
+所以 2026-10-07 App（更新源、Hub）与发布脚本都改成了默认端口，新机器的安全组也没放行 9443。
 
 ```bash
-# ① 先把整份 Apache 配置备份下来，回滚靠它
-tar czf /root/apache2-backup-20261002-evowork-update.tgz /etc/apache2
+# ① 装包。非交互时让 needrestart 只列不重启
+tar czf /root/apache2-backup-20261007-pristine.tgz /etc/apache2
+DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y apache2 certbot
 
-# ② 80 端口只为 ACME 验证，其余跳 9443（站点文件全文见服务器上的 update.nucleant.cn.conf）
-mkdir -p /var/www/acme-update/.well-known/acme-challenge
-a2ensite update.nucleant.cn && apache2ctl configtest && systemctl reload apache2
+# ② 先只开 80（站点文件里先只有 <VirtualHost *:80>），签证书；两个域名共用 webroot
+mkdir -p /var/www/acme/.well-known/acme-challenge /var/www/empty /opt/evowork/updates/latest/signatures
+a2enmod rewrite && a2dissite 000-default && a2ensite 000-catchall update.nucleant.cn zz-hub.nucleant.cn
+apache2ctl configtest && systemctl reload apache2
+for d in update hub; do
+  certbot certonly --webroot -w /var/www/acme -d $d.nucleant.cn --agree-tos \
+    --register-unsafely-without-email --non-interactive --deploy-hook "systemctl reload apache2"
+done
 
-# ③ 证书。非交互装包时让 needrestart 只列不重启（共用的机器，不替别人重启服务）
-DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y certbot
-certbot certonly --webroot -w /var/www/acme-update -d update.nucleant.cn \
-  --agree-tos --register-unsafely-without-email --non-interactive \
-  --deploy-hook "systemctl reload apache2"
-
-# ④ 9443 站点（Listen 9443 写在站点文件里，不改 ports.conf 的 Listen 80）+ 防火墙
-a2enmod ssl && apache2ctl configtest && systemctl reload apache2
-ufw allow 9443/tcp comment "EvoWork update feed"
-mkdir -p /opt/evowork/updates/latest/signatures
+# ③ 证书到手后把站点文件换成完整版（加上 <VirtualHost *:443>），再开 HTTPS。443 的 Listen 用 ports.conf 自带的那条
+a2enmod ssl headers proxy proxy_http
+apache2ctl configtest && systemctl restart apache2
+apache2ctl -S   # 80 的默认是 catchall.invalid；443 的默认是 update.nucleant.cn
 ```
 
-有三处**漏了不报错，但会出事**：
+证书：Let's Encrypt，两张都到 **2027-01-05**，`certbot.timer` 自动续期，续完平滑重载 Apache。
+
+**漏了不报错、但会出事**的几处（第一条是在旧机器上踩出来的，照搬过来）：
 
 | 地方 | 漏了会怎样 |
 | --- | --- |
-| 站点文件名要排在 `evowork.conf` **之后**（叫 `update.nucleant.cn.conf`，不叫 `evowork-update.conf`） | `sites-enabled` 按名字排序，排第一的是 `*:80` 的默认站点。排到前面，按 IP 访问的账号页、分享页、安装包下载全都落到这个只做 ACME 的站点上。改完用 `apache2ctl -S` 看 `default server` 还是不是 `evowork.conf` |
-| `a2enmod ssl` 之前先注释掉 `ports.conf` 里两处 `Listen 443` | Ubuntu 的 `ports.conf` 在 `<IfModule ssl_module>` 里写着 `Listen 443`：开了 mod_ssl，Apache 就会在 443 上以**明文**提供 `/var/www/html`，而 ufw 本来就放行了 443。改完用 `ss -ltn` 核对只有 80 和 9443 |
-| `.yml` 必须 `no-cache` | 清单被缓存住，用户就一直看不到新版本，也不会报任何错。签名按清单内容命名、安装包按版本命名，这两类可以 `immutable` |
+| Hub 的站点文件叫 `zz-hub.nucleant.cn.conf` | `sites-enabled` 按名字排序，`hub` 排在 `update` 前面就会**抢走 443 的默认站点**：不带 SNI、按 IP 访问的流量落到 Hub 的反代上 |
+| 证书签下来之前，站点文件里不能有 443 段 | `SSLCertificateFile` 指向不存在的文件，`configtest` 直接失败。所以分两步；**不要**用 `<IfFile>` 包起来省事 —— 那样证书没了只是 HTTPS 静默消失 |
 
-外网验收（2026-10-02）：TLS 链校验通过（Let's Encrypt YE2，首签到期 2026-12-31，`certbot.timer` 自动续期）·
-列目录 403 · 缺清单 404 · `.yml` 是 `no-cache, must-revalidate` · `.sig` 是 `immutable` · 按 IP 访问 `/` 与 `/healthz` 仍是 200。
-发版机用 `uploadRelease` 经 rsync over ssh 实传一个探针 channel，经 HTTPS 取回的内容一致，之后已删除。
-那次探针抓到一个问题：`rsync -a` 会把发版机的 uid 501 带到服务器上，所以发布脚本改成了 `-rlt`。
+**本机代理的坑**：这台发版机走 fake-ip 代理，A 记录改完后一段时间内它解析到的仍是旧机器（两个域名过期的时间还不一样）。
+验证时用 `curl --resolve update.nucleant.cn:443:43.143.248.70` 绕开本机 DNS。
+
+#### 5.3.1 更新源 `https://update.nucleant.cn/`
+
+**地址 2026-10-07 从 `https://update.nucleant.cn:9443/` 改成默认端口**（`electron-builder.yml` 的 `publish.url` 与 `update-check.ts` 的 `DEFAULT_UPDATE_FEED`，有测试核对两处一致）。
+
+站点 `update.nucleant.cn.conf`：根目录 `/opt/evowork/updates`，`Options None`（不列目录、不跟符号链接）、只放 `GET` / `HEAD`；
+`.yml` / `.yaml` 是 `no-cache, must-revalidate`（清单被缓存住，用户就一直看不到新版本，也不报错）；
+`.sig` 与安装包（`dmg` `zip` `exe` `blockmap` `AppImage` `deb`）是 `immutable`（签名按清单内容命名、安装包按版本命名）。
+
+外网验收（2026-10-07，从发版机，443）：TLS 链校验通过 · 探针清单 200 + `no-cache, must-revalidate` · 探针签名 200 + `immutable` ·
+`/` 与 `/latest/` 403（不列目录）· 缺清单 404 · `PUT` / `DELETE` 405 · HTTP 301 到 HTTPS · 按 IP 访问 80 是 404。探针已删。
+**还没发过任何版本**，`/opt/evowork/updates/latest/` 是空的。
 
 发布（发版机上）：
 
 ```bash
-node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/updates --kid evowork-update-1 --dry-run
-node scripts/publish-release.mjs --dest root@115.190.115.161:/opt/evowork/updates --kid evowork-update-1
+node scripts/publish-release.mjs --dest root@43.143.248.70:/opt/evowork/updates --kid evowork-update-1 --dry-run
+node scripts/publish-release.mjs --dest root@43.143.248.70:/opt/evowork/updates --kid evowork-update-1
 ```
+
+脚本用 `rsync -rlt`，不用 `-a`：`-a` 会把发版机的 uid 501 带到服务器上（2026-10-02 在旧机器上实传探针时抓到的）。
 
 **更新说明**：客户端在「可以更新」的卡片里显示清单的 `releaseNotes`，**按纯文本、一行一条**（去掉 `- ` 前缀）。
 按 electron-builder 的约定，打包时 `build/release-notes.md` 存在就会被写进 `latest-mac.yml`（`releaseInfo.releaseNotesFile` 的默认值）——
 **这一条没验过**：仓库里还没有这个文件，也还没打过带它的包。发版时写上它，打包后先看一眼 `latest-mac.yml` 里有没有 `releaseNotes:`。
 清单是签过名的，所以更新说明也在签名范围内。
 
-回滚：`a2dissite update.nucleant.cn && a2dismod ssl && cp /etc/apache2/ports.conf.bak-20261002 /etc/apache2/ports.conf && apache2ctl configtest && systemctl reload apache2 && ufw delete allow 9443/tcp`。
-服务器上的完整记录在 `/opt/evowork/PROVENANCE` 的「更新源」一节。
+回滚（只撤更新源）：`a2dissite update.nucleant.cn && apache2ctl configtest && systemctl reload apache2`。
+注意它一撤，443 的默认站点就变成 Hub。
 
-**本机代理的坑**：这台发版机走 fake-ip 代理，加 A 记录之前它缓存了「域名不存在」，加完之后一段时间内按域名访问会连不上，
-而服务器自己访问是通的。验证时用 `curl --resolve update.nucleant.cn:9443:115.190.115.161` 绕开本机 DNS；缓存过期后就恢复了。
+#### 5.3.2 插件 Hub `https://hub.nucleant.cn`
 
-#### 5.3.2 插件 Hub `hub.nucleant.cn:9443`（2026-10-03 实测搭建）
-
-与 §5.3.1 同一台机器，同样**只加不改**（没停任何服务，Apache 只平滑重载）。设计见 [13 §3 / §4](design/13-plugin-hub.md)；
-服务器上的完整记录在 `/opt/evowork/PROVENANCE` 的「插件 Hub」一节。机主做的：A 记录 `hub → 115.190.115.161`（9443 已在安全组里）。
+设计见 [13 §3 / §4](design/13-plugin-hub.md)。**地址 2026-10-07 从 `https://hub.nucleant.cn:9443` 改成默认端口**：
+App 的 `OFFICIAL_HUB_ORIGIN`（`hub-config.ts`，有测试）与 evowork-hub `release.ts` 的默认 `--origin` 一起改的。
 
 ```bash
-# ① 对象存储：MinIO 单二进制 + systemd，只听本机回环（官网 dl.min.io 在国内返回 410，用 dl.minio.org.cn 镜像，按它给的 sha256 核对）
+# ① 对象存储：MinIO 单二进制 + systemd。官网 dl.min.io 在国内不可用，用 dl.minio.org.cn 镜像，按它给的 .sha256sum 核对
+#    2026-10-07 装的是 minio RELEASE.2025-07-23T15-54-02Z、mc RELEASE.2025-07-21T05-28-08Z
 install -m 755 minio.new /usr/local/bin/minio && install -m 755 mc.new /usr/local/bin/minio-mc   # 叫 minio-mc，不和 Midnight Commander 撞名
 useradd --system --no-create-home --shell /usr/sbin/nologin minio-user
-#   /etc/default/evowork-hub-minio（600）：--address 127.0.0.1:9000 --console-address 127.0.0.1:9001，root 密码 openssl rand 生成
-#   /etc/systemd/system/evowork-hub-minio.service：User=minio-user、MemoryMax=1G、ProtectSystem=strict、IPAddressAllow=localhost
+#   /etc/default/evowork-hub-minio（600）：MINIO_OPTS="--address 127.0.0.1:9000 --console-address 127.0.0.1:9001"，
+#     数据在 /var/lib/evowork-hub-minio/data，root 密码 openssl rand 生成
+#   /etc/systemd/system/evowork-hub-minio.service：User=minio-user、MemoryMax=1G、ProtectSystem=strict、
+#     IPAddressDeny=any + IPAddressAllow=localhost（只和本机说话，也不让它自己出网）
 systemctl enable --now evowork-hub-minio
 
-# ② 桶 hub：匿名只读对象；写入账号 hub-publisher 只有这个桶的读写（凭据交给发版机后，服务器上那份 shred 掉）
+# ② 桶 hub：匿名只能取对象；写入账号 hub-publisher 只有这个桶的读写
 minio-mc mb local/hub && minio-mc anonymous set-json anon-getobject-only.json local/hub
-
-# ③ Apache：先整份备份，再 80（ACME）→ 证书 → 9443（只读反代）
-tar czf /root/apache2-backup-20261003-0743-evowork-hub.tgz /etc/apache2
-a2ensite zz-hub.nucleant.cn && apache2ctl configtest && systemctl reload apache2
-certbot certonly --webroot -w /var/www/acme-hub -d hub.nucleant.cn --agree-tos \
-  --register-unsafely-without-email --non-interactive --deploy-hook "systemctl reload apache2"
+minio-mc admin policy create local hub-readwrite hub-readwrite.json
+minio-mc admin user add local hub-publisher <secret> && minio-mc admin policy attach local hub-readwrite --user hub-publisher
+#   凭据交给发版机的 ~/.evowork-hub-keys/minio-publisher.env（0600）后，服务器上那份 shred 掉
 ```
 
-9443 站点：只放 `GET` / `HEAD`、只反代 `/v1/` → `127.0.0.1:9000/hub/v1/`、**带查询串一律 403**（MinIO 把 `?acl`、`?list-type`
-这类查询参数当子操作）、剥掉 `Cookie` / `Authorization`；`index*.json` 是 `no-cache`（有 ETag，没变化回 304），`*.tar.gz` 是 `immutable`。
-
-有四处**漏了不报错，但会出事**：
+站点 `zz-hub.nucleant.cn.conf` 的 443 段：只放 `GET` / `HEAD`、只反代 `/v1/` → `127.0.0.1:9000/hub/v1/`、**带查询串一律 403**（MinIO 把 `?acl`、`?list-type`
+这类查询参数当子操作）、剥掉 `Cookie` / `Authorization`、不让存储种 cookie；`index*.json` 是 `no-cache`（有 ETag，没变化回 304），`*.tar.gz` 是 `immutable`。
 
 | 地方 | 漏了会怎样 |
 | --- | --- |
 | MinIO 自带的 `anonymous set download` **会放开列目录** | 匿名 `GET /hub/` 返回 200 + 全部对象清单。要用只有 `s3:GetObject` 的自定义策略（`set-json`），改完核对列目录是 403 |
-| 站点文件叫 `zz-hub.nucleant.cn.conf`，不叫 `hub.nucleant.cn.conf` | 按名字排序，`hub` 排在 `update` 前面，**抢走了 9443 的默认站点**：不带 SNI 或按 IP 访问 9443 的流量会落到 Hub 上。改完用 `apache2ctl -S` 核对 80 的默认仍是 `evowork.conf`、9443 的默认仍是 `update.nucleant.cn` |
-| 站点里**不写** `Listen 9443` | 已经写在 `update.nucleant.cn.conf` 里，重复的 `Listen` 会让 Apache 起不来 |
-| 匿名可写？ | 不可写，但要验：匿名 `PUT` 是 403、经 9443 的 `PUT` / `DELETE` 也是 403 |
+| 匿名可写？ | 不可写，但要验：直连 MinIO 的匿名 `PUT` / `DELETE` 是 403、经反代的 `PUT` / `DELETE` / `POST` 也是 403 |
 
-外网验收（2026-10-03 08:00 前后，从发版机，**被拦截之前**）：TLS 链校验通过（Let's Encrypt YE1，到期 2026-12-31）· 读 200 · `If-None-Match` 304 ·
-`PUT` / `DELETE` 403 · 列目录 404 · 带查询串 403 · `/v1/` 以外 404 · HTTP 跳 9443（301）· 按 IP 访问 80 仍是账号页。
-用 App 自己的代码路径（`officialHubSource({})` 的默认地址 + 钉死的公钥 + `refreshIndex`）取到序号 1，第二次 `not-modified`。
+外网验收（2026-10-07，从发版机，443）：TLS 链校验通过 · 探针读 200 · `If-None-Match` 304 ·
+`index*.json` 是 `no-cache`、`.tar.gz` 是 `immutable` · 缺索引 404（`release.ts` 靠它判断「线上还没有索引」）·
+`PUT` / `DELETE` / `POST` 403 · 列目录 404 · 带查询串 403 · `/v1/` 以外 404（含 `/minio/health/live`、`/hub/…`、`..` 穿越）·
+带伪造 `Authorization` 照样 200（说明被剥掉了，否则 MinIO 会拒签名）· HTTP 301 到 HTTPS。
+MinIO 直连（服务器本机，匿名）：列桶 403、取对象 200、`PUT` / `DELETE` 403。
+写入链路：用 `hub-publisher` 经 ssh 隧道按 `s3put.ts` 的 SigV4 `PUT` 成功、经 HTTPS 取回内容一致；写别的桶 403。探针已删，**桶现在是空的**。
 
-发布（发版机上，evowork-hub 仓库）：
+发布（发版机上，evowork-hub 仓库；`release.ts` 的默认 `--ssh` 已改成 `root@43.143.248.70`）：
 
 ```bash
 pnpm release --dry-run   # 打包、用日常私钥签名、用 App 钉死的公钥验一遍，不上传
 pnpm release             # 经 ssh 隧道直连服务器本机的 MinIO（S3 SigV4 PUT）：先内容包，再离线索引，最后在线索引；再从 HTTPS 取回验证
 ```
 
-日常私钥 `~/.evowork-hub-keys/evowork-hub-1.pem` 与写入凭据 `minio-publisher.env` 都在发版机上、**仓库之外**（0600）；
-备份私钥 `evowork-hub-2` 离线保存。**发版机与 App 不配套**（私钥和钉的公钥对不上）时 `release` 在上传之前就失败。
+- **签名密钥 2026-10-07 整对重新生成**（[13 §4.3 换钥记录](design/13-plugin-hub.md)）：10-03 那把日常私钥连同 `~/.evowork-hub-keys/` 整个目录在发版机上丢了
+  （用户目录、临时目录、废纸篓、登录钥匙串都找过），而钉着旧公钥的版本没发布过，所以直接换。现在：
+  日常 `~/.evowork-hub-keys/evowork-hub-1.pem`（0600，`release` 的默认 `--key`）；
+  备份 `~/.evowork-hub-backup-key/evowork-hub-2.pem`（0600）**待挪到离线位置**，挪走后发版机上不该再有它。
+  两把都用 App 钉的公钥做过签名—验签往返；要用备份那把就 `--key <pem> --kid evowork-hub-2`。旧私钥的任何副本都已作废。
+- **`evowork.lock` 要先升**：`release` 要求 evowork 签出的 HEAD 与锁里钉的提交**完全一致**（`checkPin(true)`，对不上直接失败），
+  而且 `hub-config.ts` 不能有未提交的改动。2026-10-07 锁还钉在 `8d3ab3bf`，比当时的 evowork HEAD 落后，与这次改地址无关也得升。
+- 新机器首发会是**序号 1**（线上 404 → 0 + 1）。2026-10-03 在旧机器上也发过一份序号 1 的空索引，但带 Hub 的版本还没发布过，
+  没有客户端缓存它，**直接发即可**（2026-10-07 与机主确认）。否则缓存着它的客户端会拒收内容不同的新序号 1（`hub-client` 的「同序号不同内容」）。
 
-回滚：`a2dissite zz-hub.nucleant.cn && systemctl reload apache2 && systemctl disable --now evowork-hub-minio`（数据目录留着）。
+回滚（只撤 Hub）：`a2dissite zz-hub.nucleant.cn && systemctl reload apache2 && systemctl disable --now evowork-hub-minio`（数据目录留着）。
 
-**两件没弄清楚的事**：
+**带宽没测**：旧机器从发版机下载只有约 6.5KB/s，新机器还没量过。Hub 的索引只有几 KB，影响不大；
+**但更新源的安装包有两百多 MB** —— 要在一台真实客户网络的机器上 `curl -o /dev/null -w '%{speed_download}\n' …` 测一次。
 
-- **带宽**：从这台发版机经 HTTPS 下载一个 2MB 的探针只有约 **6.5KB/s**，服务器取自己是 25MB/s；经 ssh 拷一份 30MB 的 `mc` 十分钟只过了 7.8MB。
-  分不清是服务器出口带宽的上限、跨境路径，还是与上面的拦截有关。Hub 的索引只有几 KB、技能包多是几十 KB，影响不大；
-  **但 §5.3.1 更新源的安装包有两百多 MB** —— 要在一台真实客户网络的机器上 `curl -o /dev/null -w '%{speed_download}\n' …` 测一次。
-- **【阻塞】火山引擎的未备案拦截（2026-10-03 查明）**：外网访问 `hub.nucleant.cn` / `update.nucleant.cn` / `demo.nucleant.cn`
-  都被云厂商网关拦下 —— 80 端口返回 **302 → `https://webblock.volcengine.com`**（`Server: Suzaku`，不是我们的 Apache），
-  9443 上带这些 SNI 的 TLS 握手被**重置**（`errno=104`）；不带 SNI、或 SNI 是随便一个名字时照常落到我们的站点。
-  `hub.nucleant.cn` 刚加 A 记录的头几分钟能通（发布、App 代码路径、304 都是那时验的），之后被识别、拦下。
-  服务器取自己不受影响。**这不是本机代理的问题**（此前把更新源的重置归到本机代理上，是误判）：
-  本机出口在新加坡（腾讯云），任何外部访问都会过这道网关。
-  **要机主处理**：在火山引擎为 `nucleant.cn` 办理接入备案（备案若在别家服务商，要做「新增接入」）。
-  在那之前 Hub 与更新源对外都不可用。**不要绕**（比如改用 IP 访问）—— 这是合规要求，不是技术故障。
+**为什么搬家**（2026-10-03 → 10-07）：旧机器 115.190.115.161 在火山引擎上，`nucleant.cn` 没在那里接入备案，
+外网访问这几个域名被云厂商网关拦下（80 端口 302 到 `webblock.volcengine.com`，9443 按 SNI 重置握手）。
+机主的处理是把两条 A 记录改到这台腾讯云机器。旧机器上的 `update.nucleant.cn.conf` / `zz-hub.nucleant.cn.conf` 与 MinIO **还在、没动过**
+（那台机器上还有账号页、分享页与别人的服务，§5.2.1）。
 
 ### 5.4 桌面 App
 

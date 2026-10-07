@@ -3,8 +3,8 @@
  *
  * ## 公钥钉死在这里；地址有默认值，部署可以换
  *
- * 信任根是**公钥**，不是地址：地址默认是 `https://hub.nucleant.cn:9443`（2026-10-03 上线，
- * build-and-deploy §5.3.2），测试 / 预发 / 企业可以用 `EVOWORK_HUB_ORIGIN` 换成别的；
+ * 信任根是**公钥**，不是地址：地址默认是 `https://hub.nucleant.cn`（2026-10-03 以 `:9443` 上线，
+ * 2026-10-07 随服务器迁移改成默认端口，build-and-deploy §5.3.2），测试 / 预发 / 企业可以用 `EVOWORK_HUB_ORIGIN` 换成别的；
  * 而公钥只能随 App 分发并钉死（4.3）。所以环境变量**能换地址、不能加钥匙** ——
  * 指到一个假源上，它签的索引照样验不过。
  *
@@ -20,24 +20,31 @@ import type { TrustedHubKey } from '@evowork/hub-protocol';
 export const OFFICIAL_HUB_SOURCE_ID = 'evowork';
 export const OFFICIAL_HUB_NAME = 'EvoWork 精选';
 
-/** 官方源的默认地址（试点期与更新源同一台机器，SNI 共用 9443）。 */
-export const OFFICIAL_HUB_ORIGIN = 'https://hub.nucleant.cn:9443';
+/** 官方源的默认地址（试点期与更新源同一台机器，按 SNI 共用 443）。 */
+export const OFFICIAL_HUB_ORIGIN = 'https://hub.nucleant.cn';
 
-/** 2026-10-03 生成（P-256 / ES256）。**改这里 = 换信任根**，要走发版、要在 13 §4.3 留记录。 */
+/**
+ * 2026-10-07 重新生成（P-256 / ES256）：10-03 那一对的日常私钥在发版机上丢了，而钉着它的版本一个都没发出去，
+ * 所以直接整对换掉、沿用两个 kid（13 §4.3 有记录）。SPKI 的 sha256，用来认出私钥文件是不是这一对：
+ * `evowork-hub-1` 5c83e7922389dd7cec6ac873dccd14f5bed435240feccf8f6ad8ecf0d2d50e94
+ * `evowork-hub-2` 580f7c1f3640d86730c6bd614f111eca45bbf137256b9390f5aa25024832c7c9
+ *
+ * **改这里 = 换信任根**，要走发版、要在 13 §4.3 留记录。
+ */
 export const OFFICIAL_HUB_KEYS: readonly TrustedHubKey[] = Object.freeze([
   {
     kid: 'evowork-hub-1',
     publicPem: `-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5EKm+A84Cg7EhD89jVcvF7zqOKK9
-I+Xz5Axa4vONWsuv7fr7rjZoRwYRyWpcQneBHI4Yo/duc+Qak2jl2PKjqA==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEewx3HFNeGn5ts+ggZvQJu4YLm661
+8Yv1/R36uNetYgzIXEqI/wBuJpwMpa13oqrQNaGJFwuqgVRpT0KnjemXNw==
 -----END PUBLIC KEY-----
 `,
   },
   {
     kid: 'evowork-hub-2',
     publicPem: `-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE3WoOb5LbJhwFDpL7j175ad99S7+h
-AxcyEgRq2yWoOM+Gz67qiQ7SuGGftumKsrwn3M5Y1/aagZgppEJUhpS2lA==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEYVJWaK11VV+H7nMrlutkWdkVodE
+wBavIMbLk/EByv1HWAXPmmEISBXeuKC4vmfPxrTWu8BfobeF6OQFPtcPsg==
 -----END PUBLIC KEY-----
 `,
   },
