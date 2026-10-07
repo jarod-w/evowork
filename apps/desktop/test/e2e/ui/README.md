@@ -107,6 +107,24 @@ unset EVOWORK_UI_IMAGE_KEY
 `EVOWORK_UI_IMAGE_GATEWAY_ENTRY` 可指定临时编译的旧网关，用本机大图例确认回归会失败；
 不修改工作区源码或发货构建。默认使用 `dist/gateway/main.js`，须先构建项目。
 
+## 持续目标（`goal.spec.mjs` · `goal.real.spec.mjs`）
+
+- 确定性四例：创建/暂停/查看/恢复/完成/清除、空目标控制不创建任务、替换取消与确认/预算重置、预算输入校验与耗尽后停止/刷新/追加预算恢复/清除。
+- 真实模型三例：只发一次用户需求后自动开启下一回合、文件核验后完成；暂停后 renderer 刷新及内核重启保留，再恢复执行且检查点不重复；极小预算耗尽、刷新保留和结束目标。
+- 真实模型走宿主本机网关（`hostGateway`）与已登记自定义模型。断言读取公开 IPC 的权威目标/历史和工作区文件，成功与失败现场保存历史及窗口截图；不读内核文件、不代写文件、不强制模型完成。
+- 预算是内核在工具/回合边界的计量，不保证精确停在第 N 个 token；创建首轮启动前目标为暂停，无工具的首轮可能不计量。确定性用例核对 `budgetLimited` 后回合数量保持不变。
+
+```bash
+pnpm run build
+caffeinate -dimsu -t 600 pnpm exec playwright test goal.spec.mjs --project=fake --retries=0
+read -rs EVOWORK_UI_MODEL_KEY
+export EVOWORK_UI_MODEL_KEY
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash caffeinate -dimsu -t 900 pnpm exec playwright test goal.real.spec.mjs --project=real --retries=0
+unset EVOWORK_UI_MODEL_KEY
+```
+
+`caffeinate` 命令适用于 macOS；其它平台移除该前缀。MiMo 预设使用 `https://api.xiaomimimo.com/v1`；密钥仅经环境传入，不写代码或文件。2026-10-07 实测默认的 `caffeinate -i` 曾遇到真实空闲睡眠，复跑显式保持屏幕和用户活动；测试完成即释放。
+
 ## 和隔壁那些 `*.e2e.mjs` 的区别
 
 |          | `../*.e2e.mjs`                             | 这里                       |
