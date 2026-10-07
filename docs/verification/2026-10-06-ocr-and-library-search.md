@@ -76,6 +76,8 @@ pnpm exec playwright test library-search.spec.mjs ocr-attachments.spec.mjs attac
 
 ## 未完成的发布验收
 
+后续进展：2026-10-07 的检索优化在同一规模固定语料上达到长词/混合 P95 ≤500 ms；新旧各组 30 次 A/B 结果一致，见 [优化验收记录](2026-10-07-library-search-performance.md)。本文件保留首次结果与当时的未完成项，不覆盖历史数据。
+
 - macOS x64 真机；签名、公证、可信线上发行地址、正式安装/升级与可搬运组件。
 - 真实扫描、低清、复杂版式及完整损坏/加密等质量矩阵；更完整的峰值内存和取消延迟数据。
 - 长词/混合检索的 500 ms 性能目标及更充分的冷/热样本。

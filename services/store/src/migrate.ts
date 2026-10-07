@@ -114,6 +114,15 @@ export const PROJECTION_MIGRATIONS: readonly Migration[] = [
       }
     },
   },
+  {
+    version: 5,
+    summary: '资料库 FTS 行到文档的覆盖索引，查询命中不读取重复正文',
+    up: (db) => {
+      db.exec(
+        'CREATE INDEX IF NOT EXISTS ix_library_chunk_fts ON library_chunk(fts_rowid,document_id)',
+      );
+    },
+  },
 ];
 
 /**

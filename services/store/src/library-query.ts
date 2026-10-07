@@ -48,27 +48,40 @@ process.stdin.on('end', () => {
     db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=250; BEGIN');
     const visible = input.ids;
     if (!visible.length) { process.stdout.write('[]'); db.close(); return; }
-    const allowed = 'WITH allowed(node_id) AS (VALUES ' + visible.map(() => '(?)').join(',') + ') ';
+    // One bound JSON value avoids compiling 10,000 VALUES rows for every search.
+    const allowed = 'WITH allowed(node_id) AS (SELECT value FROM json_each(?)) ';
+    const boundVisible = [JSON.stringify(visible)];
     const scope = 'node_id IN (SELECT node_id FROM allowed)';
-    const projected = db.prepare(allowed + 'SELECT count(*) AS count FROM library_document WHERE id IN (SELECT node_id FROM allowed)').get(...visible).count === visible.length;
+    const projected = db.prepare(allowed + 'SELECT count(*) AS count FROM library_document WHERE id IN (SELECT node_id FROM allowed)').get(...boundVisible).count === visible.length;
+    const long = input.terms.filter(t=>Array.from(t).length >= 3);
+    // Keep FTS as the outer scan; the covering rowid lookup avoids loading its body/meta just for node_id.
+    const matchFrom = projected ? 'library_index CROSS JOIN library_chunk c INDEXED BY ix_library_chunk_fts ON c.fts_rowid=library_index.rowid' : 'library_index';
+    const matchId = projected ? 'c.document_id' : 'node_id';
+    // Unary + preserves these TEXT ids while preventing SQLite from probing all visible ids per rowid.
+    const matchScope = '+' + matchId + ' IN (SELECT node_id FROM allowed)';
     const clauses = [], whereValues = [];
     for (const term of input.terms) {
       if (Array.from(term).length >= 3) {
-        clauses.push('node_id IN (SELECT node_id FROM library_index WHERE ' + scope + ' AND library_index MATCH ?)');
+        // With one long term, the scored INNER JOIN already proves the match.
+        if (long.length === 1) continue;
+        clauses.push('node_id IN (SELECT ' + matchId + ' FROM ' + matchFrom + ' WHERE ' + matchScope + ' AND library_index MATCH ?)');
         whereValues.push('"' + term.replace(/"/g, '""') + '"');
       } else {
-        clauses.push('node_id IN (SELECT node_id FROM library_index WHERE ' + scope + ' AND (instr(title, ?) > 0 OR instr(body, ?) > 0))');
+        // Search every source chunk of this document, including chunks without the long term.
+        // EXISTS stops at the first match instead of collecting duplicate hits across the whole FTS table.
+        clauses.push(projected
+          ? 'EXISTS (SELECT 1 FROM library_chunk c JOIN library_index i ON i.rowid=c.fts_rowid WHERE c.document_id=documents.node_id AND (instr(i.title,?) > 0 OR instr(i.body,?) > 0))'
+          : 'node_id IN (SELECT node_id FROM library_index WHERE ' + scope + ' AND (instr(title, ?) > 0 OR instr(body, ?) > 0))');
         whereValues.push(term, term);
       }
     }
     const where = [scope, ...clauses].join(' AND ');
-    const long = input.terms.filter(t=>Array.from(t).length >= 3);
     const rankQuery = long.map(t=>'"' + t.replace(/"/g,'""') + '"').join(' OR ');
-    const scored = long.length ? ', score_rows AS MATERIALIZED (SELECT node_id, rank AS score FROM library_index WHERE ' + scope + ' AND library_index MATCH ?), scored AS (SELECT node_id,min(score) AS score FROM score_rows GROUP BY node_id) ' : '';
+    const scored = long.length ? ', score_rows AS MATERIALIZED (SELECT ' + matchId + ' AS node_id, rank AS score FROM ' + matchFrom + ' WHERE ' + matchScope + ' AND library_index MATCH ?), scored AS (SELECT node_id,min(score) AS score FROM score_rows GROUP BY node_id) ' : '';
     const titleMatch = input.terms.length ? input.terms.map(()=> 'instr(' + (projected ? 'documents.title' : 'library_index.title') + ',?) > 0').join(' OR ') : '0';
     const prefix = allowed.trimEnd() + (projected ? ', documents AS (SELECT id AS node_id,title,updated_at FROM library_document)' : '') + scored;
-    const query = prefix + ' SELECT node_id AS documentId,min(' + (projected ? 'documents.title' : 'library_index.title') + ') AS title,max(' + titleMatch + ') AS titleHit FROM ' + (projected ? 'documents ' : 'library_index ') + (long.length ? 'LEFT JOIN scored USING(node_id) ' : '') + (projected ? '' : 'LEFT JOIN library_document d ON d.id=node_id ') + 'WHERE ' + where + ' GROUP BY node_id ORDER BY titleHit DESC,' + (long.length ? ' min(scored.score) ASC,' : '') + ' max(' + (projected ? 'documents.updated_at' : 'd.updated_at') + ') DESC,node_id LIMIT 20 OFFSET ?';
-    const values = [...visible,...(long.length ? [rankQuery] : []),...input.terms,...whereValues,input.offset];
+    const query = prefix + ' SELECT node_id AS documentId,min(' + (projected ? 'documents.title' : 'library_index.title') + ') AS title,max(' + titleMatch + ') AS titleHit FROM ' + (projected ? 'documents ' : 'library_index ') + (long.length ? 'JOIN scored USING(node_id) ' : '') + (projected ? '' : 'LEFT JOIN library_document d ON d.id=node_id ') + 'WHERE ' + where + ' GROUP BY node_id ORDER BY titleHit DESC,' + (long.length ? ' min(scored.score) ASC,' : '') + ' max(' + (projected ? 'documents.updated_at' : 'd.updated_at') + ') DESC,node_id LIMIT 20 OFFSET ?';
+    const values = [...boundVisible,...(long.length ? [rankQuery] : []),...input.terms,...whereValues,input.offset];
     const hits = db.prepare(query).all(...values);
     if (input.details) for (const hit of hits) {
       hit.snippets = [];

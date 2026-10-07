@@ -8,6 +8,7 @@ import {
   normalizeLibraryText,
 } from '../src/library-query.js';
 import { openStore, type Store } from '../src/store.js';
+import { createLibraryProjection } from '../src/library-projection.js';
 let directory: string;
 let store: Store;
 beforeEach(() => {
@@ -50,6 +51,103 @@ it('scope applies before pagination and an empty scope never searches globally',
     ),
   ).toEqual(['zz-visible']);
   expect(await reader().search({ query: '合同', documentIds: [] })).toEqual([]);
+});
+
+it("projected long/short AND finds different and late chunks without borrowing another document's text", async () => {
+  const projection = createLibraryProjection(store.db);
+  for (const [id, last] of [
+    ['included', '付款说明'],
+    ['long-only', '普通说明'],
+    ['outside', '付款说明'],
+  ]) {
+    projection.publish({
+      id: id!,
+      title: 'report',
+      hash: 'fixture',
+      state: 'searchable',
+      blocks: Array.from({ length: 10 }, (_, index) => ({
+        text:
+          index === 0
+            ? 'needlealpha'
+            : index === 8
+              ? 'needlebeta'
+              : index === 9
+                ? last!
+                : 'ordinary',
+        location: `第 ${index + 1} 页`,
+        source: 'text' as const,
+      })),
+    });
+  }
+  const scope = ['included', 'long-only'];
+  for (const query of ['needlealpha 付款', 'needlealpha needlebeta 付款']) {
+    const hits = await reader().search({ query, documentIds: scope, details: true });
+    expect(hits.map((hit) => hit.documentId)).toEqual(['included']);
+    expect(hits[0]?.snippets?.map((snippet) => snippet.location)).toEqual(
+      query.includes('needlebeta') ? ['第 1 页', '第 9 页', '第 10 页'] : ['第 1 页', '第 10 页'],
+    );
+  }
+});
+
+it('projected matches keep title priority, BM25, timestamp/id tie breaks, and pagination within scope', async () => {
+  const projection = createLibraryProjection(store.db);
+  const publish = (id: string, title: string, text: string, time: number) => {
+    projection.publish({
+      id,
+      title,
+      hash: 'fixture',
+      state: 'searchable',
+      blocks: [{ text, location: '段落 1', source: 'text' }],
+    });
+    store.db.prepare('UPDATE library_document SET updated_at=? WHERE id=?').run(time, id);
+  };
+  publish('title-first', 'needlealpha', 'ordinary '.repeat(200), 0);
+  publish('body-strong', 'report', 'needlealpha '.repeat(20), 0);
+  const scope = ['title-first', 'body-strong'];
+  for (let index = 0; index < 25; index++) {
+    const id = `peer-${String(index).padStart(2, '0')}`;
+    publish(id, 'report', 'needlealpha ' + 'ordinary '.repeat(200), index < 2 ? 999 : 100 - index);
+    scope.push(id);
+  }
+  publish('outside', 'needlealpha', 'needlealpha', 1000);
+  const expected = ['title-first', 'body-strong', ...scope.slice(2)];
+  const first = await reader().search({ query: 'needlealpha', documentIds: scope });
+  const second = await reader().search({ query: 'needlealpha', documentIds: scope, offset: 20 });
+  expect([...first, ...second].map((hit) => hit.documentId)).toEqual(expected);
+  // No query still uses the same explicit scope and timestamp/id order, without requiring FTS matches.
+  expect(
+    (await reader().search({ query: '', documentIds: scope }))
+      .slice(0, 2)
+      .map((hit) => hit.documentId),
+  ).toEqual(['peer-00', 'peer-01']);
+});
+
+it('bound JSON scope keeps quotes/Unicode literal and title-only short matches searchable', async () => {
+  const id = '资料"?) OR 1=1 😀';
+  createLibraryProjection(store.db).publish({
+    id,
+    title: '合同',
+    hash: 'fixture',
+    state: 'searchable',
+    blocks: [],
+  });
+  insert('outside', '合同');
+  expect(
+    (await reader().search({ query: '合同', documentIds: [id, id] })).map((hit) => hit.documentId),
+  ).toEqual([id]);
+  expect(await reader().search({ query: 'absentword', documentIds: [id] })).toEqual([]);
+  createLibraryProjection(store.db).publish({
+    id: 'literal',
+    title: 'report',
+    hash: 'fixture',
+    state: 'searchable',
+    blocks: [{ text: '毛利率分析 ABC AND "quoted"', location: '段落 1', source: 'text' }],
+  });
+  for (const query of ['毛利率', 'ＡＢＣ AND', '"quoted"'])
+    expect(
+      (await reader().search({ query, documentIds: ['literal'] })).map((hit) => hit.documentId),
+    ).toEqual(['literal']);
+  expect(await reader().search({ query: 'NEAR', documentIds: ['literal'] })).toEqual([]);
 });
 it('deadline and explicit cancellation terminate a native query process, then a later query still works', async () => {
   insert('visible', '合同');

@@ -34,6 +34,8 @@ import {
 } from '../src/migrate.js';
 import { AUTHORITATIVE_TABLES, PROJECTION_TABLES } from '../src/schema.js';
 import { openStore } from '../src/store.js';
+import { createLibraryProjection } from '../src/library-projection.js';
+import { createLibraryQueryRunner } from '../src/library-query.js';
 
 let dir: string;
 
@@ -65,8 +67,8 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     for (const t of [...PROJECTION_TABLES, ...AUTHORITATIVE_TABLES]) {
       expect(names).toContain(t.name);
     }
-    // 投影类现在是第 2 版：建表 + title_source（标题是谁给的）
-    expect(readMeta(store.db, 'schema_version_projection')).toBe('4');
+    // 投影第 5 版追加 FTS 行到文档的覆盖索引。
+    expect(readMeta(store.db, 'schema_version_projection')).toBe('5');
     // 权威类第 4 版：此前三个迁移 + AI 图片操作。
     expect(readMeta(store.db, 'schema_version_authoritative')).toBe('4');
     store.close();
@@ -90,6 +92,42 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       expect.arrayContaining(['provider_endpoint', 'operation_kind', 'call_id', 'submitted_at']),
     );
     upgraded.close();
+  });
+
+  it('v4 body indexes upgrade without discarding searchable chunks or existing authority metadata', async () => {
+    const path = join(dir, 'body-upgrade.db');
+    const old = openStore({ path });
+    createLibraryProjection(old.db).publish({
+      id: 'retained',
+      title: 'report',
+      hash: 'retained-source',
+      state: 'searchable',
+      blocks: [{ text: 'originalneedle 合同', location: '第 1 页', source: 'text' }],
+    });
+    old.db.exec('DROP INDEX IF EXISTS ix_library_chunk_fts');
+    writeMeta(old.db, 'schema_version_projection', '4');
+    writeMeta(old.db, 'existing-user-data', 'preserved');
+    old.close();
+    const upgraded = openStore({ path });
+    try {
+      expect(readMeta(upgraded.db, 'schema_version_projection')).toBe('5');
+      expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe('4');
+      expect(readMeta(upgraded.db, 'existing-user-data')).toBe('preserved');
+      expect(
+        upgraded.db.prepare('SELECT source_hash FROM library_document WHERE id=?').get('retained'),
+      ).toMatchObject({ source_hash: 'retained-source' });
+      const hits = await createLibraryQueryRunner({ databasePath: path }).search({
+        query: 'originalneedle 合同',
+        documentIds: ['retained'],
+        details: true,
+      });
+      expect(hits[0]?.snippets?.[0]).toMatchObject({
+        location: '第 1 页',
+        text: 'originalneedle 合同',
+      });
+    } finally {
+      upgraded.close();
+    }
   });
 
   it('WAL 已开启（单写者多读者，09 §4）', () => {

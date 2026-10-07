@@ -56,6 +56,7 @@ export const TABLES: readonly TableSpec[] = [
     ddl: [
       `CREATE TABLE IF NOT EXISTS library_chunk (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id TEXT NOT NULL, sequence INTEGER NOT NULL, meta TEXT NOT NULL, fts_rowid INTEGER)`,
       `CREATE INDEX IF NOT EXISTS ix_library_chunk_document ON library_chunk(document_id,sequence)`,
+      `CREATE INDEX IF NOT EXISTS ix_library_chunk_fts ON library_chunk(fts_rowid,document_id)`,
     ],
   },
   {
