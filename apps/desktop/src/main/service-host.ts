@@ -839,6 +839,7 @@ export interface ServiceHostOptions {
    * 而干净机器上内核一个 project 都没有。
    */
   readonly pickDirectory?: () => Promise<string | undefined>;
+  readonly pickSkillFile?: () => Promise<string | undefined>;
   /** Composer 的本地文件选择框。返回空数组表示用户取消。 */
   readonly pickFiles?: () => Promise<readonly string[]>;
   /** 在访达 / 资源管理器里打开一个目录。由 M9 入口注入 `shell.openPath` */
@@ -2259,6 +2260,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
      * 而不是抛一个"没有 handler"——后者在界面上就是点了没反应。
      */
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
+    ...(options.pickSkillFile ? { pickSkillFile: options.pickSkillFile } : {}),
     // 办公扩展的探测与安装（08 §4）。本机服务里已经有一份带缓存的探针，
     // 安装成功后由它自己 invalidate —— 这里只是把入口交给渲染层
     officeRuntime: services.officeRuntime,

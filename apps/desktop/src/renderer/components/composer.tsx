@@ -184,6 +184,8 @@ export interface ComposerProps {
 
   readonly attachments?: readonly Attachment[] | undefined;
   readonly onRemoveAttachment?: ((id: string) => void) | undefined;
+  readonly onInstallAttachmentSkill?: ((id: string) => void) | undefined;
+  readonly skillInstalling?: boolean | undefined;
   readonly onAttachmentTextAction?:
     | ((
         id: string,
@@ -581,6 +583,17 @@ export function Composer(props: ComposerProps) {
                   <li key={a.id} className="ew-attachment" data-state={a.state} data-kind={a.kind}>
                     <span className="ew-attachment-name">{a.name}</span>
                     <span className="ew-attachment-size">{a.sizeLabel}</span>
+                    {a.name.toLowerCase() === 'skill.md' &&
+                    a.state === 'ready' &&
+                    props.onInstallAttachmentSkill ? (
+                      <PillButton
+                        variant="ghost"
+                        disabled={props.skillInstalling}
+                        onClick={() => props.onInstallAttachmentSkill?.(a.id)}
+                      >
+                        安装为全局技能
+                      </PillButton>
+                    ) : null}
                     {a.textProcessing && props.onAttachmentTextAction ? (
                       <>
                         {a.textProcessing.total ? (

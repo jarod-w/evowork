@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,6 +51,7 @@ import {
   resolvePaths,
 } from '../src/main/service-host.js';
 import { createTaskEnvironments } from '../src/main/task-environments.js';
+import { createAttachmentTextHost } from '../src/main/attachment-text-host.js';
 
 function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
   return {
@@ -232,6 +234,63 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
 }
 
 describe('Composer 技能上下文', () => {
+  it('附件必须属于当前草稿；全局安装需显式调用且沿用正文审计', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-attachment-skill-')));
+    const store = memoryStore();
+    const environments = createTaskEnvironments({
+      store,
+      home,
+      dataDir: join(home, '.evowork'),
+      projectRoot: () => undefined,
+    });
+    const attachmentText = createAttachmentTextHost({ home, runtimeRoot: join(home, 'runtime') });
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(home, 'plugins'),
+      userRoot: join(home, '.evowork'),
+      kernelHome: join(home, '.evowork', 'kernel'),
+    });
+    try {
+      const root = await environments.draftRoot('draft-coach');
+      const path = join(root, 'uploads', 'original.md');
+      mkdirSync(join(root, 'uploads'));
+      writeFileSync(path, '---\nname: coach\ndescription: 工作教练\n---\nnetwork: any');
+      const attachmentId = `attachment-${randomUUID()}`;
+      const view = await attachmentText.register(root, path, {
+        id: attachmentId,
+        name: 'SKILL.MD',
+        kind: 'document',
+        state: 'ready',
+        sizeLabel: '1 KB',
+        references: [],
+      });
+      expect(view.textProcessing).toBeUndefined();
+      expect(existsSync(join(home, '.evowork', 'skills'))).toBe(false);
+      const actions = makeActions({ store, environments, attachmentText, catalogPorts });
+      await expect(
+        actions.installAttachmentSkill({ draftId: 'other-draft', attachmentId }),
+      ).rejects.toThrow('当前任务目录');
+      const first = await actions.installAttachmentSkill({ draftId: 'draft-coach', attachmentId });
+      expect(first.needsConfirm).toBe(true);
+      expect(first.audit?.level).toBe('p2');
+      expect(existsSync(join(home, '.evowork', 'skills'))).toBe(false);
+      const reloaded = createAttachmentTextHost({ home, runtimeRoot: join(home, 'runtime') });
+      expect((await reloaded.status(root, attachmentId)).name).toBe('SKILL.MD');
+      const result = await actions.installAttachmentSkill({
+        draftId: 'draft-coach',
+        attachmentId,
+        acknowledge: true,
+        confirmName: 'coach',
+      });
+      expect(result.ok).toBe(true);
+      expect(
+        readFileSync(join(home, '.evowork', 'kernel', 'skills', 'coach', 'SKILL.md'), 'utf8'),
+      ).toBe(readFileSync(path, 'utf8'));
+    } finally {
+      attachmentText.stop();
+      store.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
   it('已登记的托管任务目录位于用户 .evowork 下时仍能发现技能', async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-managed-skill-')));
     const store = memoryStore();

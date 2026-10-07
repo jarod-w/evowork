@@ -207,8 +207,10 @@ export function createAttachmentTextHost(options: {
       path: string,
       view: ComposerAttachmentView,
     ): Promise<ComposerAttachmentView> {
-      if (!['.pdf', '.png', '.jpg', '.jpeg', '.webp'].includes(extname(path).toLowerCase()))
-        return view;
+      const supportsOcr = ['.pdf', '.png', '.jpg', '.jpeg', '.webp'].includes(
+        extname(path).toLowerCase(),
+      );
+      if (!supportsOcr && view.name.toLowerCase() !== 'skill.md') return view;
       const record: Source = {
         id: view.id,
         root: await realpath(root),
@@ -220,7 +222,7 @@ export function createAttachmentTextHost(options: {
             name: view.name,
             path: await realpath(path),
           },
-          textProcessing: { state: 'available' },
+          ...(supportsOcr ? { textProcessing: { state: 'available' } } : {}),
         },
         stopped: false,
       };

@@ -87,7 +87,7 @@ export interface CatalogPorts {
 }
 
 export interface InstallSkillInput {
-  readonly kind: 'directory' | 'git';
+  readonly kind: 'file' | 'directory' | 'git';
   readonly path?: string | undefined;
   readonly url?: string | undefined;
   readonly acknowledge?: boolean | undefined;
@@ -143,13 +143,25 @@ export async function installSkill(
   if (!prepared.ok) return mutation(ports, false, prepared.refused);
 
   const { src, sourceKind } = prepared;
-  const skillMd = ports.io.readText(join(src, 'SKILL.md'));
+  const singleFile = input.kind === 'file';
+  const skillMd = ports.io.readText(singleFile ? src : join(src, 'SKILL.md'));
   if (skillMd === undefined) {
-    return mutation(ports, false, '这个目录没有 SKILL.md，不是一个技能。');
+    return mutation(
+      ports,
+      false,
+      singleFile ? '这个技能文件现在读不到。' : '这个目录没有 SKILL.md，不是一个技能。',
+    );
   }
-  const id = parseFrontmatter(skillMd).name || basename(src);
-  if (id.trim() === '') {
-    return mutation(ports, false, 'SKILL.md 里没有 name，装不进去。');
+  const frontmatter = parseFrontmatter(skillMd);
+  if (singleFile && (!frontmatter.name || !frontmatter.description)) {
+    return mutation(ports, false, 'SKILL.md 需要有效的 name 和 description。');
+  }
+  const id = frontmatter.name || basename(src);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) {
+    return mutation(ports, false, '技能名须为 1–64 位字母、数字、连字符或下划线，不能包含路径。');
+  }
+  if (singleFile && Buffer.byteLength(skillMd, 'utf8') > 1024 * 1024) {
+    return mutation(ports, false, '技能文件不能超过 1 MB。');
   }
 
   const official = listSkills({ official: skillRoots(ports).official, user: '/nope' }, ports.io);
@@ -157,7 +169,9 @@ export async function installSkill(
     return mutation(ports, false, '这是随包技能，已经在目录里了，不必再装一份。');
   }
 
-  const audit = auditSkillFiles(ports.io.listFiles(src, 3));
+  const audit = auditSkillFiles(
+    singleFile ? [{ relativePath: 'SKILL.md', text: skillMd }] : ports.io.listFiles(src, 3),
+  );
   const needsAck = audit.level === 'p1' || audit.level === 'p2';
   const needsName = audit.level === 'p2';
   if (needsAck && input.acknowledge !== true) {
@@ -181,7 +195,12 @@ export async function installSkill(
   try {
     ports.mkdirp(skillRoots(ports).user);
     if (ports.exists(dest)) ports.removePath(dest);
-    ports.copyDir(src, dest);
+    if (singleFile) {
+      ports.mkdirp(dest);
+      ports.writeText(join(dest, 'SKILL.md'), skillMd);
+    } else {
+      ports.copyDir(src, dest);
+    }
     ports.writeText(join(dest, SOURCE_MARKER_FILE), `${sourceKind}\n`);
     const kernelDest = join(ports.kernelHome, 'skills', id);
     ports.mkdirp(join(ports.kernelHome, 'skills'));
@@ -542,10 +561,13 @@ async function resolveInstallSource(
   | { readonly ok: true; readonly src: string; readonly sourceKind: 'local' | 'git' }
   | { readonly ok: false; readonly refused: string }
 > {
-  if (input.kind === 'directory') {
+  if (input.kind === 'directory' || input.kind === 'file') {
     const path = input.path?.trim();
-    if (path === undefined || path === '') return { ok: false, refused: '没有选择目录。' };
-    if (!ports.exists(path)) return { ok: false, refused: '这个目录不存在。' };
+    if (path === undefined || path === '')
+      return { ok: false, refused: '没有选择技能文件或目录。' };
+    if (!ports.exists(path)) return { ok: false, refused: '这个技能文件或目录不存在。' };
+    if (input.kind === 'file' && !/\.md$/i.test(path))
+      return { ok: false, refused: '请选择 Markdown 技能文件。' };
     return { ok: true, src: path, sourceKind: 'local' };
   }
   const url = input.url?.trim() ?? '';

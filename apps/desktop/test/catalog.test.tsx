@@ -1,11 +1,11 @@
 /**
  * 技能 · 连接器页（05）。断的是用户看见的东西：Tab、空态、文案，不是中间字段。
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CatalogDataView } from '../src/shared/ipc.js';
-import { CatalogPage } from '../src/renderer/views/catalog.js';
+import { CatalogPage, type CatalogPageProps } from '../src/renderer/views/catalog.js';
 
 const EMPTY: CatalogDataView = {
   skills: [],
@@ -28,6 +28,7 @@ const EMPTY: CatalogDataView = {
 function renderPage(
   over: Partial<CatalogDataView> = {},
   tab: 'experts' | 'skills' | 'connectors' = 'skills',
+  props: Partial<CatalogPageProps> = {},
 ) {
   const data = { ...EMPTY, ...over };
   render(
@@ -51,6 +52,7 @@ function renderPage(
       onUsePrompt={vi.fn()}
       onWriteSkill={vi.fn()}
       hubActions={hubActions}
+      {...props}
     />,
   );
 }
@@ -74,6 +76,50 @@ const HUB_STATUS = {
 };
 
 describe('CatalogPage', () => {
+  it('文件安装独立打开文件选择器，P2 未确认不会提交安装授权', async () => {
+    const pickFile = vi.fn(async () => '/downloads/SKILL.MD');
+    const pickDirectory = vi.fn(async () => '/directory');
+    const install = vi.fn(async () => ({
+      ok: false,
+      needsConfirm: true,
+      catalog: EMPTY,
+      audit: { skillId: 'coach', level: 'p2', findings: ['任意网络'] },
+    }));
+    renderPage({}, 'skills', {
+      onPickSkillFile: pickFile,
+      onPickDirectory: pickDirectory,
+      onInstallSkill: install,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '＋ 添加技能' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '从 SKILL.md 文件安装' }));
+    await waitFor(() =>
+      expect(install).toHaveBeenCalledWith({ kind: 'file', path: '/downloads/SKILL.MD' }),
+    );
+    expect(pickDirectory).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain('高风险技能');
+    const confirm = screen.getByRole('button', { name: '安装' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/输入技能名/), { target: { value: 'coach' } });
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(install).toHaveBeenLastCalledWith({
+        kind: 'file',
+        path: '/downloads/SKILL.MD',
+        acknowledge: true,
+        confirmName: 'coach',
+      }),
+    );
+  });
+
+  it('取消技能文件选择不触发安装', async () => {
+    const install = vi.fn(async () => ({ ok: true, catalog: EMPTY }));
+    renderPage({}, 'skills', { onPickSkillFile: async () => undefined, onInstallSkill: install });
+    fireEvent.click(screen.getByRole('button', { name: '＋ 添加技能' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '从 SKILL.md 文件安装' }));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(install).not.toHaveBeenCalled();
+  });
   it('技能空态如实说随包目录没装上，不编一套演示技能', () => {
     renderPage();
     expect(screen.getByText('还没有可安装的技能')).toBeTruthy();
@@ -171,7 +217,7 @@ describe('CatalogPage', () => {
     expect(screen.getByRole('tab', { name: '套件' })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: 'SkillHub' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '＋ 添加技能' }));
-    expect(screen.getByRole('menuitem', { name: '从文件/目录安装' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '从目录安装' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '从 Git 安装' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '让 EvoWork 帮我写一个' })).toBeTruthy();
   });

@@ -124,6 +124,27 @@ async function boot() {
   });
 }
 
+it('技能文件选择器允许单个 Markdown 文件，取消返回 undefined', async () => {
+  const dialog = vi.fn(async () => ({ canceled: false, filePaths: ['/downloads/SKILL.MD'] }));
+  await bootstrap({
+    electron: { ...fakeElectron(), showOpenDialog: dialog },
+    appServerPath: '/fake/app-server',
+    preloadPath: '/fake/preload.js',
+    rendererHtmlPath: '/fake/index.html',
+    createHost: (options) => {
+      hostOptions = options;
+      return fakeHost();
+    },
+  });
+  expect(await hostOptions.pickSkillFile?.()).toBe('/downloads/SKILL.MD');
+  expect(dialog).toHaveBeenCalledWith({
+    properties: ['openFile'],
+    filters: [{ name: 'SKILL.md', extensions: ['md', 'MD'] }],
+  });
+  dialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+  expect(await hostOptions.pickSkillFile?.()).toBeUndefined();
+});
+
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'evowork-boot-'));
   sent = [];

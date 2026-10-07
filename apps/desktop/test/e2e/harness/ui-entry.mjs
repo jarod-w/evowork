@@ -323,11 +323,14 @@ exporter = "none"
      * 附件条上只会多一个读不到的条目。没设就当用户点了取消。
      */
     showOpenDialog: async (options) => {
-      if (!options?.properties?.includes('multiSelections')) {
+      if (!options?.properties?.includes('openFile')) {
         return { canceled: false, filePaths: [workspace] };
       }
       const picked = globalThis.__evoworkE2E?.pickedFiles ?? [];
-      return { canceled: picked.length === 0, filePaths: picked };
+      return {
+        canceled: picked.length === 0,
+        filePaths: options.properties.includes('multiSelections') ? picked : picked.slice(0, 1),
+      };
     },
   });
 

@@ -134,6 +134,52 @@ describe('技能目录安装审计（05 §3.3）', () => {
     expect(existsSync(join(root, 'user', 'skills', 'readme', 'SKILL.md'))).toBe(true);
   });
 
+  it('直接安装 SKILL.MD 只复制所选文件，供用户目录和内核使用', async () => {
+    const src = join(root, 'downloads');
+    mkdirSync(src);
+    const text = '---\nname: coach\ndescription: 工作教练\n---\n帮助整理工作。';
+    const path = join(src, 'SKILL.MD');
+    writeFileSync(path, text);
+    writeFileSync(join(src, 'private.txt'), '同目录无关资料');
+    const result = await installSkill(ports(), { kind: 'file', path });
+    expect(result.ok).toBe(true);
+    expect(result.catalog.skills.some((skill) => skill.id === 'coach')).toBe(true);
+    for (const base of ['user', 'kernel']) {
+      const dest = join(root, base, 'skills', 'coach');
+      expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(text);
+      expect(existsSync(join(dest, 'private.txt'))).toBe(false);
+    }
+  });
+
+  it('单文件正文同样审计；P2 确认前不写入用户或内核技能根', async () => {
+    const path = join(root, 'SKILL.md');
+    writeFileSync(path, '---\nname: risky\ndescription: 测试\n---\nnetwork: any\n');
+    const p = ports();
+    const first = await installSkill(p, { kind: 'file', path });
+    expect(first.audit?.level).toBe('p2');
+    expect(first.needsConfirm).toBe(true);
+    expect(existsSync(join(root, 'user', 'skills', 'risky'))).toBe(false);
+    expect(existsSync(join(root, 'kernel', 'skills', 'risky'))).toBe(false);
+    expect(
+      (await installSkill(p, { kind: 'file', path, acknowledge: true, confirmName: 'wrong' })).ok,
+    ).toBe(false);
+    expect(
+      (await installSkill(p, { kind: 'file', path, acknowledge: true, confirmName: 'risky' })).ok,
+    ).toBe(true);
+  });
+
+  it.each(['普通资料', '---\nname: coach\n---\n', '---\nname: ../escape\ndescription: x\n---\n'])(
+    '缺少元数据或带路径的技能名不能作为单文件安装：%s',
+    async (text) => {
+      const path = join(root, 'SKILL.md');
+      writeFileSync(path, text);
+      const result = await installSkill(ports(), { kind: 'file', path });
+      expect(result.ok).toBe(false);
+      expect(existsSync(join(root, 'user', 'skills'))).toBe(false);
+      expect(existsSync(join(root, 'kernel', 'skills'))).toBe(false);
+    },
+  );
+
   it('Git 安装把来源标成 git，失败时不落盘', async () => {
     const p = createFsCatalogPorts({
       pluginsDir: join(root, 'plugins'),

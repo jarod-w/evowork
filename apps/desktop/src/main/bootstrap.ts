@@ -109,6 +109,7 @@ export interface ElectronApi {
         properties: readonly (
           'openDirectory' | 'createDirectory' | 'openFile' | 'multiSelections'
         )[];
+        filters?: readonly { name: string; extensions: string[] }[];
       }) => Promise<{ canceled: boolean; filePaths: readonly string[] }>)
     | undefined;
   /**
@@ -283,6 +284,13 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
                 properties: ['openFile', 'multiSelections'],
               });
               return r && !r.canceled ? r.filePaths : [];
+            },
+            pickSkillFile: async (): Promise<string | undefined> => {
+              const r = await electron.showOpenDialog?.({
+                properties: ['openFile'],
+                filters: [{ name: 'SKILL.md', extensions: ['md', 'MD'] }],
+              });
+              return r && !r.canceled ? r.filePaths[0] : undefined;
             },
           }
         : {}),

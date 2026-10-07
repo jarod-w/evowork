@@ -405,6 +405,12 @@ export interface ComposerAttachmentView {
   readonly rawReference?: ComposerReferenceView | undefined;
 }
 
+export interface InstallAttachmentSkillInput extends PickAttachmentsInput {
+  readonly attachmentId: string;
+  readonly acknowledge?: boolean;
+  readonly confirmName?: string;
+}
+
 export interface ComposerContextView {
   readonly mentions: readonly {
     readonly id: string;

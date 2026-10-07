@@ -87,6 +87,8 @@ describe('暴露面', () => {
     for (const action of [
       'getCatalog',
       'installSkill',
+      'pickSkillFile',
+      'installAttachmentSkill',
       'uninstallSkill',
       'addConnector',
       'trustConnector',

@@ -637,6 +637,7 @@ export interface RendererBridgeOptions {
    * 那一侧把 electron 的真实选择框同时接进这里与 `projectPorts`。
    */
   readonly pickDirectory?: (() => Promise<string | undefined>) | undefined;
+  readonly pickSkillFile?: (() => Promise<string | undefined>) | undefined;
   /**
    * 办公扩展的探测与安装（08 §4）。注入而不是在这里直接调安装器：
    * 装扩展要起子进程、要下载，而这个文件其余部分全是纯翻译 ——
@@ -3307,6 +3308,34 @@ export function createRendererActions(options: RendererBridgeOptions) {
       const ports = options.catalogPorts;
       if (!ports) return missingPortsResult();
       return installSkill(ports, input);
+    },
+
+    async pickSkillFile(): Promise<string | undefined> {
+      if (!options.pickSkillFile) throw new Error('此构建没有接技能文件选择器。');
+      return options.pickSkillFile();
+    },
+
+    async installAttachmentSkill(
+      input: PickAttachmentsInput & {
+        readonly attachmentId: string;
+        readonly acknowledge?: boolean;
+        readonly confirmName?: string;
+      },
+    ): Promise<CatalogMutationResult> {
+      const ports = options.catalogPorts;
+      if (!ports) return missingPortsResult();
+      if (!options.attachmentText) throw new Error('此构建未接附件登记。');
+      const root = await attachmentRoot(input);
+      const view = await options.attachmentText.status(root, input.attachmentId);
+      if (view.name.toLowerCase() !== 'skill.md' || view.state !== 'ready')
+        throw new Error('请选择已添加成功的 SKILL.md 附件。');
+      const path = await options.attachmentText.source(root, input.attachmentId);
+      return installSkill(ports, {
+        kind: 'file',
+        path,
+        ...(input.acknowledge !== undefined ? { acknowledge: input.acknowledge } : {}),
+        ...(input.confirmName !== undefined ? { confirmName: input.confirmName } : {}),
+      });
     },
 
     uninstallSkill(input: { readonly id: string }): Promise<CatalogMutationResult> {

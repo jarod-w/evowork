@@ -1,4 +1,5 @@
-import type { AttachmentTextInput } from '../shared/ipc.js';
+import type { AttachmentTextInput, InstallAttachmentSkillInput } from '../shared/ipc.js';
+import { SkillInstallDialog } from './components/skill-install-dialog.js';
 import type { LibraryActions, LibraryDocumentInput } from '../shared/ipc.js';
 import type {
   ImageSettingsView,
@@ -333,8 +334,10 @@ export interface EvoworkBridge extends Partial<LibraryActions> {
    * 技能 · 连接器（05）。与三个目录式页面同一条理由：**按需拉，不并进 getStartup**。
    */
   getCatalog(): Promise<CatalogDataView>;
+  pickSkillFile?(): Promise<string | undefined>;
+  installAttachmentSkill?(input: InstallAttachmentSkillInput): Promise<CatalogMutationResult>;
   installSkill(input: {
-    kind: 'directory' | 'git';
+    kind: 'file' | 'directory' | 'git';
     path?: string | undefined;
     url?: string | undefined;
     acknowledge?: boolean | undefined;
@@ -933,6 +936,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       reportFailure(error, '没能刷新技能列表。');
     }
   }, [activeTaskId, bridge, reportFailure, workspaceId]);
+  const latestComposerRefresh = useRef(refreshComposerContext);
+  latestComposerRefresh.current = refreshComposerContext;
 
   useEffect(() => {
     setComposerContext({ mentions: [], commands: [] });
@@ -981,6 +986,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setDraft('');
     setReferences([]);
     setAttachments([]);
+    setPendingAttachmentSkill(null);
     setModelOverridden(false);
     setNotices((previous) => previous.filter((notice) => notice.scope !== 'task'));
     setFocusItemId(undefined);
@@ -1988,6 +1994,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [bridge, reportFailure]);
 
+  const pickCatalogSkillFile = useCallback(async () => {
+    try {
+      return await bridge.pickSkillFile?.();
+    } catch (error) {
+      reportFailure(error, '没能选择技能文件。');
+      return undefined;
+    }
+  }, [bridge, reportFailure]);
+
   /** 技能「从目录安装」复用同一个选择框，拒绝理由要落在目录页，不落到项目页。 */
   const pickCatalogDirectory = useCallback(async () => {
     try {
@@ -2352,11 +2367,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     (result: CatalogMutationResult): CatalogMutationResult => {
       setCatalog(result.catalog);
       setCatalogRefusal(result.refused);
-      pushToast(
-        result.ok
-          ? { tone: 'success', text: '插件设置已更新。' }
-          : { tone: 'danger', text: result.refused ?? '插件操作没有完成。' },
-      );
+      if (result.ok) void latestComposerRefresh.current();
+      if (!result.needsConfirm)
+        pushToast(
+          result.ok
+            ? { tone: 'success', text: '插件设置已更新。' }
+            : { tone: 'danger', text: result.refused ?? '插件操作没有完成。' },
+        );
       return result;
     },
     [pushToast],
@@ -2378,6 +2395,33 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }
     },
     [applyCatalogResult, catalog, emptyCatalogView],
+  );
+
+  /** 附件安装是用户级变更；审计确认仍属于发起安装的那份草稿。 */
+  const [skillInstalling, setSkillInstalling] = useState(false);
+  const skillInstallBusy = useRef(false);
+  const [pendingAttachmentSkill, setPendingAttachmentSkill] = useState<{
+    input: InstallAttachmentSkillInput;
+    audit: NonNullable<CatalogMutationResult['audit']>;
+  } | null>(null);
+  useEffect(() => setPendingAttachmentSkill(null), [activeTaskId, workspaceId]);
+  const installAttachmentSkill = useCallback(
+    async (input: InstallAttachmentSkillInput) => {
+      if (!bridge.installAttachmentSkill || skillInstallBusy.current) return;
+      skillInstallBusy.current = true;
+      setSkillInstalling(true);
+      setPendingAttachmentSkill(null);
+      const identity = draftIdentity.current;
+      try {
+        const result = await runCatalogMutation(() => bridge.installAttachmentSkill!(input));
+        if (identity === draftIdentity.current && result.needsConfirm && result.audit)
+          setPendingAttachmentSkill({ input, audit: result.audit });
+      } finally {
+        skillInstallBusy.current = false;
+        setSkillInstalling(false);
+      }
+    },
+    [bridge, runCatalogMutation],
   );
 
   /** 插件 Hub 的四个动作（13，H1）。宿主没注入时整块缺席，页面上就没有「EvoWork 精选」。 */
@@ -2699,6 +2743,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           .catch((error: unknown) => reportFailure(error, '没能停下。'));
       },
       attachments: gatedAttachments as readonly Attachment[],
+      skillInstalling,
+      onInstallAttachmentSkill: bridge.installAttachmentSkill
+        ? (attachmentId: string) =>
+            void installAttachmentSkill({
+              attachmentId,
+              draftId: draftIdentity.current,
+              ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+            })
+        : undefined,
       onAttach: bridge.pickAttachments
         ? () =>
             void addAttachments((id) =>
@@ -3000,6 +3053,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       gatedAttachments,
       attachments,
       attachmentTextAction,
+      installAttachmentSkill,
+      skillInstalling,
       environmentBusy,
       activeTaskId,
       pickComposerFolder,
@@ -3544,6 +3599,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onCatalogTab={setCatalogTab}
           {...(catalogRefusal !== undefined ? { catalogRefusal } : {})}
           onInstallSkill={async (input) => runCatalogMutation(() => bridge.installSkill(input))}
+          onPickSkillFile={bridge.pickSkillFile ? pickCatalogSkillFile : undefined}
           onUninstallSkill={async (id) => runCatalogMutation(() => bridge.uninstallSkill({ id }))}
           onSetSkillEnabled={async (input) =>
             runCatalogMutation(() => bridge.setSkillEnabled(input))
@@ -3985,10 +4041,23 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       <p className="ew-window-size-hint" role="status">
         窗口较窄，建议放大窗口获得完整布局
       </p>
-      {/*
-        分享授权模态挂在最外层，不挂在资料库里：**它是 Q10 那条"逐次授权"的入口**，
-        以后从任务时间线的产物卡上也会叫它 —— 挂进某一页会让第二个入口没法复用。
-      */}
+      {pendingAttachmentSkill ? (
+        <SkillInstallDialog
+          key={pendingAttachmentSkill.input.attachmentId}
+          audit={pendingAttachmentSkill.audit}
+          onCancel={() => setPendingAttachmentSkill(null)}
+          onConfirm={() =>
+            void installAttachmentSkill({
+              ...pendingAttachmentSkill.input,
+              acknowledge: true,
+              ...(pendingAttachmentSkill.audit.level === 'p2'
+                ? { confirmName: pendingAttachmentSkill.audit.skillId }
+                : {}),
+            })
+          }
+        />
+      ) : null}
+      {/* 分享授权挂在最外层，任务时间线和资料库共用这一个 Q10 入口。 */}
       {sharePhase ? (
         <ShareDialog
           phase={sharePhase}
@@ -4096,6 +4165,7 @@ function MainPage(props: {
   readonly onCatalogTab: (tab: CatalogTab) => void;
   readonly catalogRefusal?: string | undefined;
   readonly onInstallSkill: CatalogPageProps['onInstallSkill'];
+  readonly onPickSkillFile?: CatalogPageProps['onPickSkillFile'];
   readonly onUninstallSkill: CatalogPageProps['onUninstallSkill'];
   readonly onSetSkillEnabled: CatalogPageProps['onSetSkillEnabled'];
   readonly onInstallBundle: CatalogPageProps['onInstallBundle'];
@@ -4282,6 +4352,7 @@ function MainPage(props: {
           onTab={props.onCatalogTab}
           {...(props.catalogRefusal !== undefined ? { refusal: props.catalogRefusal } : {})}
           onInstallSkill={props.onInstallSkill}
+          onPickSkillFile={props.onPickSkillFile}
           onUninstallSkill={props.onUninstallSkill}
           onSetSkillEnabled={props.onSetSkillEnabled}
           onInstallBundle={props.onInstallBundle}

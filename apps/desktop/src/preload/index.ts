@@ -230,6 +230,8 @@ export const RENDERER_ACTIONS = Object.freeze([
    */
   'getCatalog',
   'installSkill',
+  'pickSkillFile',
+  'installAttachmentSkill',
   'uninstallSkill',
   'setSkillEnabled',
   'installPluginBundle',

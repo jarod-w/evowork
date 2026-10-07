@@ -51,6 +51,22 @@ function type(text: string) {
 }
 
 describe('触发补全（03 §4.2 / §4.3）', () => {
+  it('SKILL.md 附件提供显式全局安装，普通附件和未就绪附件不提供', () => {
+    const install = vi.fn();
+    renderComposer({
+      onInstallAttachmentSkill: install,
+      attachments: [
+        { id: 'skill', name: 'SKILL.MD', kind: 'document', state: 'ready', sizeLabel: '1 KB' },
+        { id: 'note', name: 'notes.md', kind: 'document', state: 'ready', sizeLabel: '1 KB' },
+        { id: 'failed', name: 'SKILL.md', kind: 'document', state: 'failed', sizeLabel: '未添加' },
+      ],
+    });
+    expect(install).not.toHaveBeenCalled();
+    const buttons = screen.getAllByRole('button', { name: '安装为全局技能' });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]!);
+    expect(install).toHaveBeenCalledWith('skill');
+  });
   it('`@` 在任意位置都触发', () => {
     expect(detectTrigger('看一下 @Q3', 9)?.kind).toBe('@');
     expect(detectTrigger('@', 1)).toEqual({ kind: '@', start: 0, query: '' });

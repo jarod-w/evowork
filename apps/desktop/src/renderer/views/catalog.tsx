@@ -57,7 +57,7 @@ export interface CatalogPageProps {
   readonly onTab: (tab: CatalogTab) => void;
   readonly refusal?: string | undefined;
   readonly onInstallSkill: (input: {
-    kind: 'directory' | 'git';
+    kind: 'file' | 'directory' | 'git';
     path?: string;
     url?: string;
     acknowledge?: boolean;
@@ -100,6 +100,7 @@ export interface CatalogPageProps {
   }) => Promise<CatalogMutationResult>;
   readonly onRemoveExpert: (id: string) => Promise<CatalogMutationResult>;
   readonly onPickDirectory: () => Promise<string | undefined>;
+  readonly onPickSkillFile?: (() => Promise<string | undefined>) | undefined;
   readonly onUsePrompt: (prompt: string) => void;
   readonly onWriteSkill: () => void;
   readonly hubActions?: CatalogHubActions | undefined;
@@ -114,7 +115,7 @@ type Pending =
       readonly findings: readonly string[];
       readonly worstCase?: string;
       readonly source:
-        | { kind: 'directory' | 'git'; path?: string; url?: string }
+        | { kind: 'file' | 'directory' | 'git'; path?: string; url?: string }
         | { kind: 'bundle'; marketplacePath: string; pluginName: string; pendingReview: boolean }
         | { kind: 'hub'; ref: HubItemRef };
     }
@@ -323,16 +324,19 @@ export function CatalogPage(props: CatalogPageProps) {
               <Menu
                 ariaLabel="添加技能"
                 items={[
-                  { id: 'dir', label: '从文件/目录安装' },
+                  ...(props.onPickSkillFile ? [{ id: 'file', label: '从 SKILL.md 文件安装' }] : []),
+                  { id: 'dir', label: '从目录安装' },
                   { id: 'git', label: '从 Git 安装' },
                   { id: 'write', label: '让 EvoWork 帮我写一个' },
                 ]}
                 onSelect={(id) => {
                   setAddOpen(false);
-                  if (id === 'dir') {
-                    void props.onPickDirectory().then(async (path) => {
+                  if (id === 'dir' || id === 'file') {
+                    const pick = id === 'file' ? props.onPickSkillFile : props.onPickDirectory;
+                    void pick?.().then(async (path) => {
                       if (path === undefined) return;
-                      const result = await props.onInstallSkill({ kind: 'directory', path });
+                      const kind = id === 'file' ? 'file' : 'directory';
+                      const result = await props.onInstallSkill({ kind, path });
                       if (result.needsConfirm && result.audit) {
                         setPending({
                           kind: 'audit',
@@ -342,7 +346,7 @@ export function CatalogPage(props: CatalogPageProps) {
                           ...(result.audit.worstCase !== undefined
                             ? { worstCase: result.audit.worstCase }
                             : {}),
-                          source: { kind: 'directory', path },
+                          source: { kind, path },
                         });
                       }
                     });
@@ -631,7 +635,9 @@ export function CatalogPage(props: CatalogPageProps) {
           {pending.level === 'p2' ? (
             <label className="ew-dialog-field">
               输入
-              {pending.source.kind === 'directory' || pending.source.kind === 'git'
+              {pending.source.kind === 'file' ||
+              pending.source.kind === 'directory' ||
+              pending.source.kind === 'git'
                 ? '技能名'
                 : '名称'}
               「{pending.skillId}」确认
