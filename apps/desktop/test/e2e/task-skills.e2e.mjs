@@ -1,5 +1,6 @@
 /** 无项目任务本地技能：真 Electron / preload / 宿主 / 内核，本机夹具网关。 */
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { app } from 'electron';
@@ -12,7 +13,12 @@ const { stage, report } = createRunner({
   stagePrefix: '__EVOWORK_DESKTOP_E2E_STAGE__',
   resultPrefix: '__EVOWORK_DESKTOP_E2E__',
 });
-const { home, workspace, kernelHome } = createE2EHome('evowork-task-skills-');
+// 放在真实应用数据目录下的独立测试子树，覆盖项目选址规则对 ~/.evowork 的拒绝。
+// 仅清理本次随机目录，不读取或改写用户既有配置与任务。
+const parentDir = join(homedir(), '.evowork');
+mkdirSync(parentDir, { recursive: true });
+const { home, kernelHome } = createE2EHome('evowork-task-skills-e2e-', parentDir);
+const workspace = mkdtempSync(join(tmpdir(), 'evowork-skill-project-'));
 const gateway = createFakeGateway({ turnMarker: 'unused-held-turn' });
 let host;
 
@@ -82,6 +88,7 @@ extends = ":workspace"
     await host.stop();
     await gateway.close();
     removeE2EHome(home);
+    removeE2EHome(workspace);
     app.exit(0);
   } catch (error) {
     console.error(error);

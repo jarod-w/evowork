@@ -2272,7 +2272,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (input.threadId && !root) throw new Error('任务没有有效目录。');
       const ports = options.projectPorts;
       let skillCwd: string | undefined;
-      if (root && ports) {
+      if (input.threadId && root && options.environments) {
+        // 托管任务可合法位于 ~/.evowork/workspaces；复用宿主登记校验，不套用项目选址限制。
+        skillCwd = await options.environments.validate(root);
+      } else if (root && ports) {
         const realRoot = await realRootOf(ports, root);
         if (realRoot) skillCwd = realRoot;
       }

@@ -5,14 +5,22 @@
  * 而适配层推给渲染层的又是**任务视角**的事件、渲染层认的是**组件视角**的。
  * 三处各自都有测试、合起来是断的 —— 所以这里测的全是"接缝"。
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Adapter, UiEvent } from '@evowork/kernel-adapter';
-import { KERNEL_PROMPT_RULES } from '@evowork/policy';
+import { KERNEL_PROMPT_RULES, workspaceRootRefusal } from '@evowork/policy';
 import { createArtifactRepo, openStore, type ProjectionRow, type Store } from '@evowork/store';
 
 import {
@@ -41,6 +49,7 @@ import {
   migrateStreamRetryBudget,
   resolvePaths,
 } from '../src/main/service-host.js';
+import { createTaskEnvironments } from '../src/main/task-environments.js';
 
 function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
   return {
@@ -223,6 +232,74 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
 }
 
 describe('Composer 技能上下文', () => {
+  it('已登记的托管任务目录位于用户 .evowork 下时仍能发现技能', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-managed-skill-')));
+    const store = memoryStore();
+    try {
+      const environments = createTaskEnvironments({
+        store,
+        home,
+        dataDir: join(home, '.evowork'),
+        projectRoot: () => undefined,
+      });
+      const environment = await environments.prepare('draft-coach');
+      environments.bind('t1', environment);
+      const cwd = environment.cwd;
+      store.db
+        .prepare(
+          "INSERT INTO thread_projection (thread_id, cwd, derived_status) VALUES (?, ?, 'idle')",
+        )
+        .run('t1', cwd);
+      const path = join(cwd, '.agents', 'skills', 'coach', 'SKILL.md');
+      mkdirSync(join(cwd, '.agents', 'skills', 'coach'), { recursive: true });
+      writeFileSync(path, '---\nname: coach\ndescription: 工作教练\n---\n');
+      // 同一位置不允许被选为普通项目，但它确实是宿主登记的合法任务环境。
+      expect(workspaceRootRefusal(cwd, home)?.kind).toBe('evowork-data');
+      const adapter = fakeAdapter({
+        listSkills: vi.fn(async () => ({
+          data: [
+            {
+              cwd,
+              skills: [
+                {
+                  name: 'coach',
+                  description: '工作教练',
+                  path,
+                  scope: 'repo' as const,
+                  enabled: true,
+                },
+              ],
+              errors: [],
+            },
+          ],
+        })),
+      });
+      const actions = makeActions({
+        store,
+        adapter,
+        environments,
+        projectPorts: ports({ home, realpath: async (p) => realpathSync(p) }),
+      });
+      const context = await actions.getComposerContext({ threadId: 't1' });
+      expect(context.mentions).toContainEqual(expect.objectContaining({ name: 'coach', path }));
+      expect(adapter.listSkills).toHaveBeenCalledWith([cwd], true);
+
+      const unregistered = join(home, '.evowork', 'workspaces', 'unregistered');
+      mkdirSync(unregistered);
+      store.db
+        .prepare('UPDATE thread_projection SET cwd = ? WHERE thread_id = ?')
+        .run(unregistered, 't1');
+      vi.mocked(adapter.listSkills).mockClear();
+      await expect(actions.getComposerContext({ threadId: 't1' })).rejects.toThrow(
+        '应用的数据目录',
+      );
+      expect(adapter.listSkills).not.toHaveBeenCalled();
+    } finally {
+      store.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it.each([null, 'project-1'])(
     '按任务实际目录发现技能，不依赖项目归属（%s）',
     async (projectId) => {

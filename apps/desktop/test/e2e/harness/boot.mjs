@@ -25,8 +25,8 @@ import { publishControls, waitFor } from './runner.mjs';
  * 用临时目录而不是固定路径，是为了让每次跑都从**真的空**开始 —— 首运行引导、迁移器、
  * 「还没有任何任务」这些分支只在空 home 上走得到，复用一个目录会让它们永远没人验。
  */
-export function createE2EHome(prefix) {
-  const home = mkdtempSync(join(tmpdir(), prefix));
+export function createE2EHome(prefix, parentDir = tmpdir()) {
+  const home = mkdtempSync(join(parentDir, prefix));
   const workspace = join(home, 'workspace');
   const kernelHome = join(home, '.evowork', 'kernel');
   mkdirSync(workspace, { recursive: true });
