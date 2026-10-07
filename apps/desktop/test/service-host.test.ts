@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readMeta, writeMeta } from '@evowork/store';
 
 import {
   createServiceHost,
@@ -123,6 +124,30 @@ afterEach(async () => {
   await host?.stop().catch(() => undefined);
   host = undefined;
   rmSync(dir, { recursive: true, force: true });
+});
+
+it('旧 Lite 图片配置停止启用，不能隐式改成其它付费型号', async () => {
+  host = makeHost({ env: { ARK_API_KEY: 'test-only-key' } });
+  const saved = JSON.stringify({
+    enabled: true,
+    model: 'doubao-seedream-5-0-260128',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/',
+  });
+  writeMeta(host.store.db, 'image.settings', saved);
+  const settings = await host.actions.getImageSettings();
+  expect(settings).toMatchObject({ enabled: false, hasKey: true });
+  expect(settings.models.map((model) => model.id)).toEqual([
+    'doubao-seedream-5-0-flash-260915',
+    'doubao-seedream-5-0-pro-260628',
+  ]);
+  await expect(
+    host.actions.saveImageSettings({
+      enabled: true,
+      model: 'Doubao-Seedream-5.0-lite',
+      baseUrl: settings.baseUrl,
+    }),
+  ).rejects.toThrow('IMAGE_MODEL_UNSUPPORTED');
+  expect(readMeta(host.store.db, 'image.settings')).toBe(saved);
 });
 
 describe('路径布局（09 §7）', () => {

@@ -18,6 +18,10 @@ P0 三家（Q16）：**DeepSeek**（基准实现）· **Kimi** · **GLM-5.3-flas
 **六条语义必须逐家补齐**（D2 的矩阵，缺一项都会在真实任务里暴露）：流式事件序列 · 工具调用
 （并行 / 增量 arguments）· reasoning 段 · prompt cache · 多模态输入 · token 用量口径。
 
+`function_call_output` 的内容块数组同样按多模态处理：文本保留在对应 `tool` 消息中，
+图片放到该组工具结果之后的 `user` 视觉消息，并标明来源调用。不能把图片 Base64
+序列化成文字上下文；不支持图片的模型明确拒绝，与用户图片输入保持同一能力边界。
+
 **两条不可协商的纪律**：
 
 1. **降级必须显式**（D2）—— 能力缺失要在响应里标注，前端据此隐藏对应 UI；
@@ -30,4 +34,4 @@ P0 三家（Q16）：**DeepSeek**（基准实现）· **Kimi** · **GLM-5.3-flas
 
 `GET /v1/evowork/image-models` 仅验证服务商型号目录；`POST /v1/evowork/image-operations` 调用一次 Seedream 图片接口，两者均经过本机网关鉴权。`ARK_API_KEY` 仅由宿主密钥库注入进程环境，`ARK_BASE_URL` 为用户显式配置的接口。默认云端功能关闭；`EVOWORK_DISABLE_IMAGE_GENERATION=1` 与已有模型禁用策略优先拒绝。
 
-Flash / Lite / Pro 的真实型号、严格参数和有界 Base64 处理在 `src/images.ts`。单张 2K PNG，输入只接受已标准化的 PNG 数据；不抓取任意图片 URL、不重定向、不重试、不换模型。提交后网络失联返回 `outcomeUnknown`，无原始提示词、响应体、图片或密钥日志。具体任务授权与本机恢复归 `services/image-generation`，不在网关增加执行循环。
+Flash / Pro 的真实型号、严格参数和有界 Base64 处理在 `src/images.ts`。Lite 因上游问题于 2026-10-07 暂时移除，其别名和型号 ID 均拒绝请求。单张 2K PNG，输入只接受已标准化的 PNG 数据；不抓取任意图片 URL、不重定向、不重试、不换模型。提交后网络失联返回 `outcomeUnknown`，无原始提示词、响应体、图片或密钥日志。具体任务授权与本机恢复归 `services/image-generation`，不在网关增加执行循环。

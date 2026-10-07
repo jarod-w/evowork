@@ -83,6 +83,30 @@ EVOWORK_UI_MODEL_PRESET=mimo-v2.6-pro EVOWORK_UI_MODEL_KEY=sk-... npx playwright
 > 它后面的参数全部失效 —— 连 `--list` 都被忽略，直接开跑整套（2026-10-05 想跑一条起了 81 条；2026-10-06 加 `--list` 复核，照样弹出了窗口）。
 > 本目录与各 spec 文件头里的命令已全部改成 `npx playwright test <过滤> --project=fake|real`（`--list` 复核过过滤生效）。
 
+## 图片生成与查看（`image-generation.spec.mjs` · `image-generation.real.spec.mjs`）
+
+真 Electron、发货内核、图片 MCP、本机交付服务和产品网关翻译均参与。Chat 上游使用可控夹具，
+确保输入“生成一张天空图片”后依次调用生成和 `view_image`；它检查图片位于视觉消息中，
+并拒绝旧网关塞入工具文本的大图 Base64。此测试不能代表真实聊天模型的规划或视觉理解质量。
+
+- 本机三例：生成大图、查看后成功收尾、PNG/图片卡/结果预览、刷新后重新打开与零重放；拒绝费用确认后零服务商请求；服务商 404 明确记录型号不可用，不伪装取消或成功。
+- 真实两例：Flash / Pro 各生成一张天空图片（Lite 因上游问题暂时移除）。所有图片请求经本机观察代理转发到 Ark，
+  上限为每个用例一笔付费 POST，测试重试关闭；超时或未知结果不自动再提交。
+- `EVOWORK_UI_IMAGE_KEY` 必填，缺失明确失败；默认地址为 Ark 北京 v3，可由 `EVOWORK_UI_IMAGE_BASE_URL` 设置 HTTPS 地址。
+  密钥从环境进入测试进程，不填入 renderer、不写源码/配置/日志。PNG、成功窗口截图和不含正文的调用统计保存在用例输出目录。
+
+```bash
+pnpm exec playwright test image-generation.spec.mjs --project=fake
+# 隐藏输入密钥；不要把真实密钥写进 shell 命令或文件。
+read -rs EVOWORK_UI_IMAGE_KEY
+export EVOWORK_UI_IMAGE_KEY
+pnpm exec playwright test image-generation.real.spec.mjs --project=real --retries=0
+unset EVOWORK_UI_IMAGE_KEY
+```
+
+`EVOWORK_UI_IMAGE_GATEWAY_ENTRY` 可指定临时编译的旧网关，用本机大图例确认回归会失败；
+不修改工作区源码或发货构建。默认使用 `dist/gateway/main.js`，须先构建项目。
+
 ## 和隔壁那些 `*.e2e.mjs` 的区别
 
 |          | `../*.e2e.mjs`                             | 这里                       |

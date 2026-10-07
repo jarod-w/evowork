@@ -426,6 +426,128 @@ describe('⑤ 多模态：不支持时**明确报错**，不静默丢图（D2）
 // ─────────────────────── Responses → Chat 的三个坑 ───────────────────────
 
 describe('Responses → Chat：instructions / 工具结果 / 未知条目', () => {
+  it('查看图片的工具结果按视觉输入传递，Base64 不进入文字上下文', () => {
+    const image = 'data:image/png;base64,' + 'A'.repeat(2_000_000);
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'function_call', name: 'view_image', arguments: '{}', call_id: 'view_1' },
+          {
+            type: 'function_call_output',
+            call_id: 'view_1',
+            output: [
+              { type: 'input_text', text: '生成的天空图片' },
+              { type: 'input_image', image_url: image },
+            ],
+          },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+    expect(request.messages[1]).toEqual({
+      role: 'tool',
+      tool_call_id: 'view_1',
+      content: '生成的天空图片',
+    });
+    expect(request.messages[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '工具 view_1 返回的图片：' },
+        { type: 'image_url', image_url: { url: image } },
+      ],
+    });
+    expect(
+      request.messages.map((m) => (typeof m.content === 'string' ? m.content : '')).join(''),
+    ).not.toContain(image);
+  });
+
+  it('不支持图片的模型拒绝工具图片结果，错误不含图片正文', () => {
+    expect(() =>
+      toChatRequest(
+        {
+          model: 'm',
+          input: [
+            {
+              type: 'function_call_output',
+              call_id: 'v',
+              output: [{ type: 'input_image', image_url: 'data:image/png;base64,SECRET' }],
+            },
+          ],
+        },
+        'upstream',
+        LIGHT,
+      ),
+    ).toThrow(UnsupportedInputError);
+  });
+
+  it('并行工具的全部结果先配对，再发送图片，后续思维链仍属于后续 assistant', () => {
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: [
+          { type: 'function_call', name: 'view_image', arguments: '{}', call_id: 'v' },
+          { type: 'function_call', name: 'shell', arguments: '{}', call_id: 's' },
+          {
+            type: 'function_call_output',
+            call_id: 'v',
+            output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAA' }],
+          },
+          { type: 'function_call_output', call_id: 's', output: 'file.png' },
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: '确认天空颜色' }] },
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'output_text', text: '图片已生成' }],
+          },
+        ],
+      },
+      'upstream',
+      FULL,
+    );
+    expect(request.messages.map((m) => m.role)).toEqual([
+      'assistant',
+      'tool',
+      'tool',
+      'user',
+      'assistant',
+    ]);
+    expect(request.messages[1]).toEqual({ role: 'tool', tool_call_id: 'v', content: '' });
+    expect(request.messages[2]).toEqual({ role: 'tool', tool_call_id: 's', content: 'file.png' });
+    expect(request.messages[4]?.reasoning_content).toBe('确认天空颜色');
+  });
+
+  it('结构化工具文本保留换行，普通 JSON 对象与字符串保留既有语义', () => {
+    const outputs = [
+      [
+        { type: 'input_text', text: '第一行' },
+        { type: 'input_text', text: '第二行' },
+      ],
+      { artifactId: 'img_1' },
+      '[{"type":"input_image","image_url":"literal"}]',
+      [null, 1, { artifactId: 'img_2' }],
+    ];
+    const { request } = toChatRequest(
+      {
+        model: 'm',
+        input: outputs.map((output, i) => ({
+          type: 'function_call_output',
+          call_id: String(i),
+          output,
+        })),
+      },
+      'upstream',
+      FULL,
+    );
+    expect(request.messages.map((m) => m.content)).toEqual([
+      '第一行\n第二行',
+      '{"artifactId":"img_1"}',
+      outputs[2],
+      '[null,1,{"artifactId":"img_2"}]',
+    ]);
+  });
+
   it('instructions 变成 system 且排在最前（丢了它 Ask 模式就失效，D8）', () => {
     const { request } = toChatRequest(
       {

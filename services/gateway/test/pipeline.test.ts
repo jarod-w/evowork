@@ -13,6 +13,7 @@ import { ModelNotConfiguredError, runPipeline } from '../src/pipeline.js';
 import { EVENT, type ResponsesRequest } from '../src/protocol.js';
 import { UPSTREAM_DISCONNECTED } from '../src/idle.js';
 import { KERNEL_ERROR, type Provider } from '../src/providers/types.js';
+import type { ChatRequest } from '../src/translate/to-chat.js';
 
 /** 一个可脚本化的上游：给它 SSE 行，它就照着回。 */
 function fakeProvider(script: {
@@ -101,6 +102,57 @@ function deps(provider: Provider, models = createModelRegistry([MODEL])) {
 }
 
 describe('完整链路', () => {
+  it('图片生成后查看结果：上游收到视觉输入并完成回合，图片不进入文本或日志', async () => {
+    const image = 'data:image/png;base64,' + 'B'.repeat(2_000_000);
+    const sink = memorySink();
+    const model = { ...MODEL, capabilities: { ...MODEL.capabilities, imageInput: true } };
+    let sent: ChatRequest | undefined;
+    const provider = fakeProvider({
+      onRequest: (body) => {
+        sent = body as ChatRequest;
+      },
+      lines: [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '天空图片已生成。' }, finish_reason: 'stop' }] })}`,
+        'data: [DONE]',
+      ],
+    });
+    const events = await collect(
+      runPipeline(
+        request({
+          input: [
+            { type: 'function_call', name: 'view_image', arguments: '{}', call_id: 'view_1' },
+            {
+              type: 'function_call_output',
+              call_id: 'view_1',
+              output: [{ type: 'input_image', image_url: image }],
+            },
+          ],
+        }),
+        { requestId: 'req_image' },
+        {
+          ...deps(provider, createModelRegistry([model])),
+          logger: createLogger({ service: 'gateway', sink }),
+        },
+      ),
+    );
+    expect(events.at(-1)?.type).toBe(EVENT.completed);
+    expect(sent?.messages.find((m) => m.role === 'tool')?.content).toBe('');
+    expect(sent?.messages.at(-1)?.content).toEqual([
+      { type: 'text', text: '工具 view_1 返回的图片：' },
+      { type: 'image_url', image_url: { url: image } },
+    ]);
+    const text = sent?.messages
+      .flatMap((m) =>
+        typeof m.content === 'string'
+          ? [m.content]
+          : (m.content ?? []).flatMap((p) => (p.type === 'text' ? [p.text] : [])),
+      )
+      .join('');
+    expect(text).not.toContain('base64');
+    expect(text?.length).toBeLessThan(1000);
+    expect(JSON.stringify(sink.records)).not.toContain(image);
+  });
+
   it('文本回复：请求被翻译成 Chat，响应被翻译成 Responses 事件', async () => {
     let sent: unknown;
     const provider = fakeProvider({

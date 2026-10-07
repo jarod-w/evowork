@@ -157,6 +157,14 @@ export function toChatRequest(
    * 这样「reasoning → 正文 → function_call」会写到同一条 assistant 上（坑 4）。
    */
   let pendingReasoning = '';
+  // Chat 的 tool 消息只承载文本；图片放到这一组工具结果之后的 user 视觉消息。
+  // 不能在并行调用的两个 tool 结果之间插入 user，否则会破坏调用/结果配对。
+  let pendingToolImages: ChatContentPart[] = [];
+  const flushToolImages = (): void => {
+    if (pendingToolImages.length === 0) return;
+    messages.push({ role: 'user', content: pendingToolImages });
+    pendingToolImages = [];
+  };
 
   const reasoningField = (): { readonly reasoning_content: string } | Record<string, never> => {
     if (!capabilities.reasoning || pendingReasoning.length === 0) return {};
@@ -195,6 +203,7 @@ export function toChatRequest(
   };
 
   for (const item of request.input) {
+    if (item.type !== 'function_call_output') flushToolImages();
     switch (item.type) {
       case 'message': {
         const msg = item as Extract<ResponseItem, { type: 'message' }>;
@@ -224,10 +233,44 @@ export function toChatRequest(
         flushToolCalls();
         pendingReasoning = '';
         const out = item as Extract<ResponseItem, { type: 'function_call_output' }>;
+        let content: string;
+        if (
+          Array.isArray(out.output) &&
+          out.output.every(
+            (part: unknown) =>
+              typeof part === 'object' &&
+              part !== null &&
+              'type' in part &&
+              ['input_text', 'output_text', 'input_image', 'input_audio'].includes(
+                String(part.type),
+              ),
+          )
+        ) {
+          // 内核 view_image / MCP 的 output 是内容块数组。JSON.stringify 会把
+          // 数 MB 的 Base64 当成文字 token，导致出图成功后的下一次请求超上下文。
+          const parts = out.output as readonly ContentItem[];
+          content = parts
+            .flatMap((part) =>
+              part.type === 'input_text' || part.type === 'output_text' ? [part.text] : [],
+            )
+            .join('\n');
+          const media = contentToChat(
+            parts.filter((part) => part.type !== 'input_text' && part.type !== 'output_text'),
+            capabilities,
+          );
+          if (Array.isArray(media)) {
+            pendingToolImages.push(
+              { type: 'text', text: `工具 ${out.call_id} 返回的图片：` },
+              ...media,
+            );
+          }
+        } else {
+          content = typeof out.output === 'string' ? out.output : JSON.stringify(out.output);
+        }
         messages.push({
           role: 'tool',
           tool_call_id: out.call_id,
-          content: typeof out.output === 'string' ? out.output : JSON.stringify(out.output),
+          content,
         });
         break;
       }
@@ -278,6 +321,7 @@ export function toChatRequest(
         break;
     }
   }
+  flushToolImages();
   flushReasoningAtBoundary();
 
   const wantsParallel = request.parallel_tool_calls ?? false;

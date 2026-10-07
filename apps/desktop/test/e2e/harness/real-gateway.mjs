@@ -33,14 +33,23 @@ function reservePort() {
  * `log` 收着它的 stdout/stderr —— 起不来时要把原因带出来，
  * 否则调用方只会看到一句「网关没起来」。
  */
-export async function startRealGateway({ repoRoot, keyEnvName, apiKey, customModels, logFile }) {
+export async function startRealGateway({
+  repoRoot,
+  keyEnvName,
+  apiKey,
+  customModels,
+  logFile,
+  env = {},
+  entryPath,
+}) {
   if (!apiKey) throw new Error('真网关需要密钥（不要把它写进任何文件）。');
   const port = await reservePort();
   const token = 'ui-real-token';
   let log = '';
-  const child = spawn(process.execPath, [join(repoRoot, 'dist/gateway/main.js')], {
+  const child = spawn(process.execPath, [entryPath ?? join(repoRoot, 'dist/gateway/main.js')], {
     env: {
       ...process.env,
+      ...env,
       /*
        * 这里的 `process.execPath` 是 **Electron 本体**（本文件跑在 Electron 主进程里）。
        * 不设这一项，网关会被当成一个 Electron *应用*启动：Dock 上多一个图标，

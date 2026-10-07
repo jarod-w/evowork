@@ -2,7 +2,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export const IMAGE_MODELS = [
   { id: 'doubao-seedream-5-0-flash-260915', name: 'Seedream 5.0 Flash' },
-  { id: 'doubao-seedream-5-0-260128', name: 'Seedream 5.0 Lite' },
   { id: 'doubao-seedream-5-0-pro-260628', name: 'Seedream 5.0 Pro' },
 ] as const;
 export const IMAGE_API_BASE = 'https://ark.cn-beijing.volces.com/api/v3/';
@@ -39,8 +38,7 @@ export class ImageApiError extends Error {
 export function imageModelId(value: string): string {
   const aliases: Record<string, string> = {
     'Doubao-Seedream-5.0-flash': IMAGE_MODELS[0].id,
-    'Doubao-Seedream-5.0-lite': IMAGE_MODELS[1].id,
-    'Doubao-Seedream-5.0-pro': IMAGE_MODELS[2].id,
+    'Doubao-Seedream-5.0-pro': IMAGE_MODELS[1].id,
   };
   const id = aliases[value] ?? value;
   if (!IMAGE_MODELS.some((m) => m.id === id)) throw new ImageApiError('IMAGE_MODEL_UNSUPPORTED');

@@ -1,7 +1,20 @@
 import { expect, it, vi } from 'vitest';
-import { generateImage, IMAGE_MODELS, IMAGE_API_BASE } from '../src/images.js';
+import { generateImage, imageModelId, IMAGE_MODELS, IMAGE_API_BASE } from '../src/images.js';
 const input = { model: IMAGE_MODELS[0].id, prompt: 'a cat' };
 const config = { baseUrl: IMAGE_API_BASE, apiKey: 'test-only-key' };
+it('temporarily removed Lite IDs cannot issue a provider request', async () => {
+  const fetchImpl = vi.fn();
+  for (const model of ['Doubao-Seedream-5.0-lite', 'doubao-seedream-5-0-260128']) {
+    await expect(
+      generateImage({ ...config, fetchImpl }, { ...input, model }, new AbortController().signal),
+    ).rejects.toMatchObject({ code: 'IMAGE_MODEL_UNSUPPORTED', outcomeUnknown: false });
+  }
+  expect(fetchImpl).not.toHaveBeenCalled();
+});
+it('remaining Flash and Pro aliases resolve to their own provider IDs', () => {
+  expect(imageModelId('Doubao-Seedream-5.0-flash')).toBe('doubao-seedream-5-0-flash-260915');
+  expect(imageModelId('Doubao-Seedream-5.0-pro')).toBe('doubao-seedream-5-0-pro-260628');
+});
 it('one generation/edit POST with no redirects, retries or model switching', async () => {
   const fetchImpl = vi.fn(
     async () =>
@@ -105,10 +118,9 @@ it('HTTP image routes authenticate locally, verify only directory and never leak
     expect(directory.status).toBe(200);
     expect(text).not.toContain(config.apiKey);
     expect(text).not.toContain('provider-private-detail');
-    expect(JSON.parse(text).models.map((m: { available: boolean }) => m.available)).toEqual([
-      true,
-      false,
-      false,
+    expect(JSON.parse(text).models).toEqual([
+      expect.objectContaining({ id: 'doubao-seedream-5-0-flash-260915', available: true }),
+      expect.objectContaining({ id: 'doubao-seedream-5-0-pro-260628', available: false }),
     ]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const result = await fetch(base + 'image-operations', {

@@ -113,6 +113,7 @@ export const test = base.extend({
   fakeComputerUse: [false, { option: true }],
   ocrBundle: [undefined, { option: true }],
   imageInput: [false, { option: true }],
+  imageGeneration: [false, { option: true }],
 
   electronApp: async (
     {
@@ -123,6 +124,7 @@ export const test = base.extend({
       fakeComputerUse,
       ocrBundle,
       imageInput,
+      imageGeneration,
     },
     use,
     testInfo,
@@ -150,6 +152,7 @@ export const test = base.extend({
         EVOWORK_E2E_REPO_ROOT: ROOT,
         EVOWORK_APP_SERVER: KERNEL,
         ...(imageInput ? { EVOWORK_UI_IMAGE_INPUT: '1' } : {}),
+        ...(imageGeneration ? { EVOWORK_UI_IMAGE_GENERATION: imageGeneration } : {}),
         ...(ocrBundle
           ? {
               EVOWORK_OCR_BUNDLE: ocrBundle,

@@ -20,6 +20,7 @@ import { createFakeComputerUse, cuaScript } from './fake-computer-use.mjs';
 import { createFakeGateway } from './fake-gateway.mjs';
 import { startRealGateway } from './real-gateway.mjs';
 import { selectRealModel } from './real-models.mjs';
+import { createImageGateway } from './image-gateway.mjs';
 import { publishControls, waitFor } from './runner.mjs';
 
 const repoRoot = process.env.EVOWORK_E2E_REPO_ROOT;
@@ -118,9 +119,12 @@ const UI_MODELS = [
     imageInput: process.env.EVOWORK_UI_IMAGE_INPUT === '1',
   },
 ];
-const gateway = REAL_MODEL
+const IMAGE_GENERATION = process.env.EVOWORK_UI_IMAGE_GENERATION;
+let gateway = IMAGE_GENERATION
   ? null
-  : createFakeGateway({ turnMarker: TURN_MARKER, models: UI_MODELS });
+  : REAL_MODEL
+    ? null
+    : createFakeGateway({ turnMarker: TURN_MARKER, models: UI_MODELS });
 const computerUse = FAKE_COMPUTER_USE ? createFakeComputerUse() : null;
 
 /*
@@ -222,6 +226,12 @@ function assertRegistered(records) {
 }
 
 async function main() {
+  if (IMAGE_GENERATION) {
+    gateway = await createImageGateway({ repoRoot, workspace, home, mode: IMAGE_GENERATION });
+    publishControls({ gateway });
+    app.on('will-quit', () => gateway.stop());
+    publishControls({ gatewayPid: gateway.pid });
+  }
   const real =
     REAL_MODEL && !HOST_GATEWAY
       ? await startRealGateway({
@@ -246,11 +256,13 @@ async function main() {
     : real
       ? real.baseUrl
       : await gateway.listen();
-  const gatewayToken = HOST_GATEWAY
-    ? randomBytes(24).toString('base64url')
-    : real
-      ? real.token
-      : 'ui-token';
+  const gatewayToken = IMAGE_GENERATION
+    ? gateway.token
+    : HOST_GATEWAY
+      ? randomBytes(24).toString('base64url')
+      : real
+        ? real.token
+        : 'ui-token';
   // 宿主启动时读 models.toml 写模型目录，所以要在 bootApp 之前落盘
   const registered = REGISTER_MODELS || HOST_GATEWAY ? customModelRecords(gatewayBaseUrl) : [];
   if (registered.length > 0) writeCustomModels(registered);
@@ -286,6 +298,7 @@ exporter = "none"
     home,
     hostEnv: {
       EVOWORK_GATEWAY_TOKEN: gatewayToken,
+      ...(IMAGE_GENERATION ? { ARK_API_KEY: 'image-e2e-host-placeholder' } : {}),
       /*
        * 宿主网关模式下**不设** `EVOWORK_GATEWAY_URL`：设了它，宿主就当网关在别处，
        * 不再从内核配置里认自己的本机网关。密钥按设置页的变量名给，宿主转交给网关子进程。
