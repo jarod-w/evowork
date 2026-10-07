@@ -2260,15 +2260,23 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
     async getComposerContext(input: {
       readonly workspaceId?: string | undefined;
+      readonly threadId?: string | undefined;
     }): Promise<ComposerContextView> {
       const mentions: ComposerContextView['mentions'][number][] = [];
-      const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      // 已有任务以自己的执行目录为准；无项目任务、项目子目录都不能回退到默认目录。
+      const root = input.threadId
+        ? store.threads.get(input.threadId)?.cwd
+        : input.workspaceId
+          ? rootOf(input.workspaceId)
+          : undefined;
+      if (input.threadId && !root) throw new Error('任务没有有效目录。');
       const ports = options.projectPorts;
       let skillCwd: string | undefined;
       if (root && ports) {
         const realRoot = await realRootOf(ports, root);
         if (realRoot) skillCwd = realRoot;
       }
+      if (input.threadId && !skillCwd) throw new Error('任务工作空间现在不可用。');
       for (const artifact of options.pageData?.listArtifacts() ?? []) {
         if (artifact.fileState !== 'PRESENT') continue;
         mentions.push({
@@ -2279,7 +2287,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
           path: artifact.path,
         });
       }
-      const listed = await adapter.listSkills(skillCwd ? [skillCwd] : []);
+      // 首次创建 .agents/skills 时可能尚未建立目录监听；显式刷新不能继续读旧缓存。
+      const listed = await adapter.listSkills(skillCwd ? [skillCwd] : [], true);
       const skillEntry =
         (skillCwd ? listed.data.find((entry) => entry.cwd === skillCwd) : undefined) ??
         listed.data[0];

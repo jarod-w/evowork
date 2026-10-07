@@ -223,6 +223,58 @@ function ports(overrides: Partial<ProjectPorts> = {}): ProjectPorts {
 }
 
 describe('Composer 技能上下文', () => {
+  it.each([null, 'project-1'])(
+    '按任务实际目录发现技能，不依赖项目归属（%s）',
+    async (projectId) => {
+      const cwd = '/w/task-environment';
+      const path = `${cwd}/.agents/skills/evowork-task-coach/SKILL.md`;
+      const store = memoryStore();
+      store.db
+        .prepare(
+          "INSERT INTO thread_projection (thread_id, cwd, project_id, derived_status) VALUES (?, ?, ?, 'idle')",
+        )
+        .run('t1', cwd, projectId);
+      const adapter = fakeAdapter({
+        listSkills: vi.fn(async (cwds) => ({
+          data: [
+            {
+              cwd: cwds?.[0] ?? '/kernel',
+              skills:
+                cwds?.[0] === cwd
+                  ? [
+                      {
+                        name: 'evowork-task-coach',
+                        description: '工作教练',
+                        path,
+                        scope: 'repo' as const,
+                        enabled: true,
+                      },
+                    ]
+                  : [],
+              errors: [],
+            },
+          ],
+        })),
+      });
+      const actions = makeActions({ store, adapter, projectPorts: ports() });
+      const context = await actions.getComposerContext({ threadId: 't1' });
+      expect(context.mentions).toContainEqual(
+        expect.objectContaining({ name: 'evowork-task-coach', path }),
+      );
+      expect(adapter.listSkills).toHaveBeenCalledWith([cwd], true);
+      store.close();
+    },
+  );
+
+  it('任务不存在时明确报错，不回退到默认目录的技能', async () => {
+    const adapter = fakeAdapter({ listSkills: vi.fn(async () => ({ data: [] })) });
+    const actions = makeActions({ adapter, projectPorts: ports() });
+    await expect(actions.getComposerContext({ threadId: 'missing' })).rejects.toThrow(
+      '任务没有有效目录',
+    );
+    expect(adapter.listSkills).not.toHaveBeenCalled();
+  });
+
   it('goal 从首页沿正常创建链启动，语法不泄漏进模型输入', async () => {
     const adapter = fakeAdapter({
       setTaskSettings: vi.fn(),

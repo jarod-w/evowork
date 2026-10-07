@@ -32,7 +32,13 @@ if (kernelProblem) throw new Error(kernelProblem);
 // macOS 上 GUI 进程会变成孤儿并继续占着 stdout。直接启动包导出的二进制，
 // 才能让测试超时与 CI 清理都可靠。
 const electron = require('electron');
-const entry = resolve(root, 'apps/desktop/test/e2e/skill-reference.e2e.mjs');
+const taskSkills = process.argv.includes('--task-skills');
+const entry = resolve(
+  root,
+  taskSkills
+    ? 'apps/desktop/test/e2e/task-skills.e2e.mjs'
+    : 'apps/desktop/test/e2e/skill-reference.e2e.mjs',
+);
 /*
  * VS Code 的集成终端与扩展宿主会设 `ELECTRON_RUN_AS_NODE=1`（它自己就是 Electron 应用）。
  * 原样继承给子进程后，Electron 会以**普通 Node** 启动，`electron` 这个 specifier 于是
@@ -75,4 +81,8 @@ const marker = stdout.split(/\r?\n/).findLast((line) => line.startsWith('__EVOWO
 if (!marker) throw new Error('桌面 E2E 没有返回验收结果。');
 const result = JSON.parse(marker.slice('__EVOWORK_DESKTOP_E2E__'.length));
 if (result.ok !== true) throw new Error(`桌面 E2E 未通过：${JSON.stringify(result)}`);
-console.log('✅ 真实 app-server + Electron 技能引用 / 记忆控制 E2E 通过');
+console.log(
+  taskSkills
+    ? '✅ 真实 app-server + Electron 无项目任务技能发现 E2E 通过'
+    : '✅ 真实 app-server + Electron 技能引用 / 记忆控制 E2E 通过',
+);

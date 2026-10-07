@@ -229,7 +229,10 @@ export interface EvoworkBridge extends Partial<LibraryActions> {
   readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
   readTaskFilePreview?(input: TaskFilePreviewInput): Promise<FilePreviewView>;
   readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
-  getComposerContext?(input: { workspaceId?: string }): Promise<ComposerContextView>;
+  getComposerContext?(input: {
+    workspaceId?: string;
+    threadId?: string;
+  }): Promise<ComposerContextView>;
   searchComposerMentions?(input: {
     workspaceId?: string;
     query: string;
@@ -859,6 +862,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     mentions: [],
     commands: [],
   });
+  const composerContextRequest = useRef(0);
   const [queuedByTask, setQueuedByTask] = useState<
     Readonly<Record<string, readonly QueuedInputView[]>>
   >({});
@@ -903,6 +907,40 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [pushToast],
   );
+
+  const refreshComposerContext = useCallback(async () => {
+    const request = ++composerContextRequest.current;
+    if (!bridge.getComposerContext) return;
+    try {
+      const context = await bridge.getComposerContext(
+        activeTaskId !== null ? { threadId: activeTaskId } : workspaceId ? { workspaceId } : {},
+      );
+      if (request !== composerContextRequest.current) return;
+      setComposerContext(context);
+      const skillErrors = context.skillErrors;
+      if (skillErrors?.length) {
+        setNotices((previous) => [
+          ...previous,
+          {
+            tone: 'warning',
+            text: `有 ${skillErrors.length} 个技能无法加载：${skillErrors[0]?.message ?? '格式无效'}`,
+          },
+        ]);
+      }
+    } catch (error) {
+      if (request !== composerContextRequest.current) return;
+      setComposerContext({ mentions: [], commands: [] });
+      reportFailure(error, '没能刷新技能列表。');
+    }
+  }, [activeTaskId, bridge, reportFailure, workspaceId]);
+
+  useEffect(() => {
+    setComposerContext({ mentions: [], commands: [] });
+    void refreshComposerContext();
+    return () => {
+      composerContextRequest.current += 1;
+    };
+  }, [refreshComposerContext]);
 
   /**
    * 进入真正的「新任务」状态。
@@ -1118,6 +1156,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'turn-started' || event.type === 'turn-completed') {
+          if (event.type === 'turn-completed' && event.taskId === activeTaskId) {
+            void refreshComposerContext();
+          }
           turnRevisionByTask.current.set(
             event.taskId,
             (turnRevisionByTask.current.get(event.taskId) ?? 0) + 1,
@@ -1212,24 +1253,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'skills-changed') {
-          if (bridge.getComposerContext) {
-            void bridge
-              .getComposerContext({ ...(workspaceId ? { workspaceId } : {}) })
-              .then((context) => {
-                setComposerContext(context);
-                const skillErrors = context.skillErrors;
-                if (skillErrors?.length) {
-                  setNotices((previous) => [
-                    ...previous,
-                    {
-                      tone: 'warning',
-                      text: `有 ${skillErrors.length} 个技能无法加载：${skillErrors[0]?.message ?? '格式无效'}`,
-                    },
-                  ]);
-                }
-              })
-              .catch((error: unknown) => reportFailure(error, '没能刷新技能列表。'));
-          }
+          void refreshComposerContext();
           return;
         }
         if (event.type === 'connectors-changed') {
@@ -1280,7 +1304,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
     // `view` 进依赖：`onUiEvent` 的 handler 闭包里读它判断 projects-changed 要不要重拉，
     // 不进依赖的话闭包会永远拿着订阅那一刻的旧 view，切页后事件处理逻辑就是过期的
-  }, [bridge, reportFailure, view, workspaceId]);
+  }, [activeTaskId, bridge, refreshComposerContext, reportFailure, view]);
 
   useEffect(() => {
     void bridge
@@ -1585,7 +1609,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
   }, [activeTaskId, bridge]);
 
-  /** 任务切换时同步它所属的项目、补全候选与排队追问。 */
+  /** 任务切换时同步它所属的项目与排队追问。 */
   useEffect(() => {
     const cwd =
       activeTaskId === null ? undefined : tasks.find((task) => task.id === activeTaskId)?.cwd;
@@ -1596,13 +1620,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         : workspace.path === cwd;
     });
     if (activeTaskId !== null) setWorkspaceId(taskWorkspace?.id);
-    const contextWorkspaceId = activeTaskId !== null ? taskWorkspace?.id : workspaceId;
-    if (bridge.getComposerContext) {
-      void bridge
-        .getComposerContext({ ...(contextWorkspaceId ? { workspaceId: contextWorkspaceId } : {}) })
-        .then(setComposerContext)
-        .catch(() => setComposerContext({ mentions: [], commands: [] }));
-    }
     if (activeTaskId !== null && bridge.listQueuedInputs) {
       const threadId = rootTaskFor(tasks, activeTaskId)?.id ?? activeTaskId;
       void bridge

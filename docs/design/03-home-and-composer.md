@@ -164,6 +164,8 @@ prompt = "分析这份数据并给出可视化："
 | 技能         | `skills/list`                                  | `UserInput::Skill { name, path }`       |
 | 资料库条目   | 本机资料索引（06；正文检索按 16，待实现）      | 复核后复制所选材料至任务 `uploads/`，再 `Mention` |
 
+技能候选的目录：已有任务由主进程按任务 ID 读取其实际 `cwd`，包括无项目任务与项目子目录；首页按所选项目根目录查询。打开任务、收到 `skills/changed` 和当前回合结束时使用同一查询路径，明确要求内核重新扫描，覆盖首次创建技能目录但尚未建立监听的情况。较早查询的迟到结果不能覆盖当前任务的候选。渲染层不直接指定磁盘目录。
+
 渲染：输入框内显示为不可分割的 token（`--bg-sunken` 圆角 6 + 图标 14 + 名称），退格整块删除。底层同时维护 `text` + `textElements`（`UserInput::Text.text_elements`，`protocol/src/user_input.rs:16-24`）以便历史与 resume 保真。
 
 ### 4.3 `/` 命令

@@ -5,7 +5,7 @@ import type { OpenTaskResult } from '../src/shared/ipc.js';
  * 盯两件事：**首页不创建 Thread**（发送后才有任务、才切页），
  * 以及流式增量按 id 合并 —— 后者做错的表现是同一条消息在对话里出现两次。
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Adapter } from '@evowork/kernel-adapter';
@@ -91,6 +91,138 @@ const STARTUP: StartupInfo = {
   onboarded: true,
   tasks: [],
 };
+
+describe('任务内的技能发现', () => {
+  it('切换任务后，旧技能查询迟到不能覆盖当前任务的候选', async () => {
+    const skillContext = (name: string) => ({
+      mentions: [
+        {
+          id: `skill:${name}`,
+          label: name,
+          name,
+          category: 'skill' as const,
+          insertAs: 'skill' as const,
+          path: `/${name}/SKILL.md`,
+        },
+      ],
+      commands: [],
+    });
+    let finishOld!: (context: ReturnType<typeof skillContext>) => void;
+    const getComposerContext = vi.fn(async (input: { threadId?: string }) => {
+      if (input.threadId === 'old')
+        return new Promise<ReturnType<typeof skillContext>>((resolve) => {
+          finishOld = resolve;
+        });
+      return input.threadId === 'new' ? skillContext('new-coach') : { mentions: [], commands: [] };
+    });
+    const { bridge } = fakeBridge({
+      getComposerContext,
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: ['old', 'new'].map((id) => ({
+          id,
+          title: `${id}任务`,
+          status: 'idle' as const,
+          timeLabel: '刚刚',
+          updatedAt: Date.now(),
+          sectionId: 'ungrouped',
+          cwd: `/${id}`,
+        })),
+      }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('old任务'));
+    await waitFor(() => expect(finishOld).toBeDefined());
+    fireEvent.click(screen.getByText('new任务'));
+    await waitFor(() => expect(getComposerContext).toHaveBeenLastCalledWith({ threadId: 'new' }));
+    await act(async () => {
+      finishOld(skillContext('old-coach'));
+    });
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '$' } });
+    expect(await screen.findByRole('option', { name: /new-coach/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /old-coach/ })).toBeNull();
+  });
+
+  it.each(['skills-changed', 'turn-completed'] as const)(
+    '无项目任务在 %s 后能在 $ 中选到新增技能',
+    async (eventType) => {
+      let installed = false;
+      const getComposerContext = vi.fn(async (input: { threadId?: string }) => ({
+        mentions:
+          input.threadId === 'standalone' && installed
+            ? [
+                {
+                  id: 'skill:coach',
+                  label: '工作教练',
+                  name: 'evowork-task-coach',
+                  category: 'skill' as const,
+                  insertAs: 'skill' as const,
+                  path: '/task/.agents/skills/evowork-task-coach/SKILL.md',
+                },
+              ]
+            : [],
+        commands: [],
+      }));
+      const { bridge, emit } = fakeBridge({
+        getComposerContext,
+        getStartup: async () => ({
+          ...STARTUP,
+          tasks: [
+            {
+              id: 'standalone',
+              title: '独立任务',
+              status: 'idle',
+              timeLabel: '刚刚',
+              updatedAt: Date.now(),
+              sectionId: 'ungrouped',
+              cwd: '/task',
+            },
+          ],
+        }),
+      });
+      render(<App bridge={bridge} />);
+      fireEvent.click(await screen.findByText('独立任务'));
+      await waitFor(() =>
+        expect(getComposerContext).toHaveBeenLastCalledWith({ threadId: 'standalone' }),
+      );
+      installed = true;
+      await act(async () => {
+        emit.ui?.(
+          eventType === 'skills-changed'
+            ? { type: eventType }
+            : {
+                type: eventType,
+                taskId: 'standalone',
+                turnId: 'import-skill',
+                status: 'completed',
+              },
+        );
+      });
+      expect(getComposerContext).toHaveBeenLastCalledWith({ threadId: 'standalone' });
+      fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '$' } });
+      expect(await screen.findByRole('option', { name: /工作教练/ })).toBeTruthy();
+      fireEvent.click(screen.getByRole('option', { name: /工作教练/ }));
+      expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toContain(
+        '$工作教练',
+      );
+      fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+      await waitFor(() =>
+        expect(bridge.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            threadId: 'standalone',
+            references: [
+              expect.objectContaining({
+                type: 'skill',
+                name: 'evowork-task-coach',
+                path: '/task/.agents/skills/evowork-task-coach/SKILL.md',
+              }),
+            ],
+          }),
+        ),
+      );
+    },
+  );
+});
 
 function sampleCatalog(): CatalogDataView {
   const skills = (
