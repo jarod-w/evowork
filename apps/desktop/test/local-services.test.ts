@@ -12,6 +12,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import * as runtimeInstaller from '@evowork/runtime-installer';
 import { openStore, createAutomationRepo, type Store, type TitleSource } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -508,5 +509,36 @@ describe('路径展示', () => {
   it('工作空间内显示相对路径，之外显示绝对路径', () => {
     expect(displayPath('/w', '/w/a/b.txt')).toBe('a/b.txt');
     expect(displayPath('/w', '/etc/passwd')).toBe('/etc/passwd');
+  });
+});
+
+describe('共享办公组件安装', () => {
+  it('设置和技能同时请求只启动一次，抛错后清理状态并允许重试', async () => {
+    let rejectInstall: (error: Error) => void = () => undefined;
+    const install = vi
+      .spyOn(runtimeInstaller, 'installOfficeRuntime')
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectInstall = reject;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true, interpreter: '/test/office/python', offline: true });
+    try {
+      const { services } = make();
+      const first = services.officeRuntime.install();
+      const second = services.officeRuntime.install();
+      expect(first).toBe(second);
+      expect(services.officeRuntime.installing()).toBe(true);
+      expect(install).toHaveBeenCalledTimes(1);
+      rejectInstall(new Error('download failed'));
+      await expect(first).rejects.toThrow('download failed');
+      expect(services.officeRuntime.installing()).toBe(false);
+      expect(await services.officeRuntime.install()).toEqual({ ok: true });
+      expect(install).toHaveBeenCalledTimes(2);
+      expect(services.officeRuntime.installing()).toBe(false);
+    } finally {
+      install.mockRestore();
+    }
   });
 });

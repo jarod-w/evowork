@@ -4,7 +4,7 @@
  * 三 Tab 共用同一套标题栏骨架（SegmentedControl + 搜索 + 已安装筛选 + 添加）。
  * 数据全是宿主给的：这一层不读盘、不调内核。
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import type {
   CatalogBundleView,
@@ -141,6 +141,8 @@ export function CatalogPage(props: CatalogPageProps) {
     | { readonly kind: 'expert'; readonly id: string }
     | null
   >(null);
+  const hubInstalling = useRef(false);
+  const [hubBusy, setHubBusy] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
@@ -158,18 +160,27 @@ export function CatalogPage(props: CatalogPageProps) {
   const [expertInstr, setExpertInstr] = useState('');
 
   /** Hub 条目同样先过审计（13 §5.3）：P1 / P2 转成确认卡。 */
-  const installHub = async (ref: HubItemRef): Promise<void> => {
-    if (!props.hubActions) return;
-    const result = await props.hubActions.install(ref);
-    if (result.needsConfirm && result.audit) {
-      setPending({
-        kind: 'audit',
-        skillId: result.audit.skillId,
-        level: result.audit.level,
-        findings: result.audit.findings,
-        ...(result.audit.worstCase !== undefined ? { worstCase: result.audit.worstCase } : {}),
-        source: { kind: 'hub', ref },
-      });
+  const installHub = async (
+    ref: HubItemRef & { acknowledge?: boolean; confirmName?: string },
+  ): Promise<void> => {
+    if (!props.hubActions || hubInstalling.current) return;
+    hubInstalling.current = true;
+    setHubBusy(true);
+    try {
+      const result = await props.hubActions.install(ref);
+      if (result.needsConfirm && result.audit) {
+        setPending({
+          kind: 'audit',
+          skillId: result.audit.skillId,
+          level: result.audit.level,
+          findings: result.audit.findings,
+          ...(result.audit.worstCase !== undefined ? { worstCase: result.audit.worstCase } : {}),
+          source: { kind: 'hub', ref },
+        });
+      }
+    } finally {
+      hubInstalling.current = false;
+      setHubBusy(false);
     }
   };
 
@@ -286,6 +297,7 @@ export function CatalogPage(props: CatalogPageProps) {
 
   return (
     <div className="ew-page">
+      {hubBusy ? <p role="status">正在安装技能并准备所需组件，请稍候…</p> : null}
       <div className="ew-page-title-bar">
         <SegmentedControl
           variant="dark"
@@ -586,7 +598,7 @@ export function CatalogPage(props: CatalogPageProps) {
             const source = pending.source;
             closeDialog();
             if (source.kind === 'hub') {
-              void props.hubActions?.install({
+              void installHub({
                 ...source.ref,
                 acknowledge: true,
                 ...(pending.level === 'p2' ? { confirmName: pending.skillId } : {}),

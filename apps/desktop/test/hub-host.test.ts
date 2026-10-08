@@ -648,3 +648,99 @@ describe('企业离线包（13 §4.7 ③，EVOWORK_HUB_BUNDLE）', () => {
     expect(requests).toEqual([]);
   });
 });
+
+describe('技能共享运行组件', () => {
+  const declared = (value: unknown = ['office']) => [
+    { path: 'interface.json', bytes: enc.encode(JSON.stringify({ runtimeDependencies: value })) },
+  ];
+  it('确认前零安装；确认后组件就绪才写入两份技能', async () => {
+    serveIndex([publish('skill', 'deck', '1.0.0', skillFiles('deck', '说明', declared()))]);
+    let ready = false;
+    const install = vi.fn(async () => {
+      ready = true;
+      return { ok: true };
+    });
+    const p = ports({
+      officeRuntime: {
+        status: () => ({ installed: ready, supported: true, downloadSize: '约 200 MB' }),
+        install,
+      },
+    });
+    await refreshHub(p, p.runtime, 'manual');
+    const first = await installHubItem(p, { kind: 'skill', id: 'deck' });
+    expect(first).toMatchObject({ ok: false, needsConfirm: true });
+    expect(JSON.stringify(first)).toContain('200 MB');
+    expect(install).not.toHaveBeenCalled();
+    expect(existsSync(kernelSkill('deck'))).toBe(false);
+    expect(await installHubItem(p, { kind: 'skill', id: 'deck', acknowledge: true })).toEqual({
+      ok: true,
+    });
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(existsSync(kernelSkill('deck'))).toBe(true);
+    expect(existsSync(userSkill('deck'))).toBe(true);
+  });
+  it('组件已就绪时直接复用，不下载', async () => {
+    serveIndex([publish('skill', 'deck', '1.0.0', skillFiles('deck', '说明', declared()))]);
+    const install = vi.fn();
+    const p = ports({
+      officeRuntime: { status: () => ({ installed: true, supported: true }), install },
+    });
+    await refreshHub(p, p.runtime, 'manual');
+    expect(await installHubItem(p, { kind: 'skill', id: 'deck' })).toEqual({ ok: true });
+    expect(install).not.toHaveBeenCalled();
+  });
+  it.each(['failed', 'throws', 'not-ready'])(
+    '安装 %s 不留下技能或安装登记，重试可恢复',
+    async (mode) => {
+      serveIndex([publish('skill', 'deck', '1.0.0', skillFiles('deck', '说明', declared()))]);
+      let ready = false;
+      const install = vi.fn(async () => {
+        if (mode === 'throws') throw new Error('network');
+        return { ok: mode !== 'failed', message: '下载失败' };
+      });
+      const p = ports({
+        officeRuntime: { status: () => ({ installed: ready, supported: true }), install },
+      });
+      await refreshHub(p, p.runtime, 'manual');
+      expect((await installHubItem(p, { kind: 'skill', id: 'deck', acknowledge: true })).ok).toBe(
+        false,
+      );
+      expect(existsSync(kernelSkill('deck'))).toBe(false);
+      expect(existsSync(userSkill('deck'))).toBe(false);
+      expect(readHubState(p).items).toHaveLength(0);
+      ready = true;
+      expect((await installHubItem(p, { kind: 'skill', id: 'deck', acknowledge: true })).ok).toBe(
+        true,
+      );
+    },
+  );
+  it.each([['pip'], 'office', null])('未知或畸形声明拒绝而非执行', async (value) => {
+    serveIndex([publish('skill', 'deck', '1.0.0', skillFiles('deck', '说明', declared(value)))]);
+    const install = vi.fn();
+    const p = ports({
+      officeRuntime: { status: () => ({ installed: false, supported: true }), install },
+    });
+    await refreshHub(p, p.runtime, 'manual');
+    expect((await installHubItem(p, { kind: 'skill', id: 'deck', acknowledge: true })).ok).toBe(
+      false,
+    );
+    expect(install).not.toHaveBeenCalled();
+    expect(existsSync(kernelSkill('deck'))).toBe(false);
+  });
+  it('静默更新遇到新依赖保留旧版，手动确认后升级', async () => {
+    const p = ports({
+      officeRuntime: { status: () => ({ installed: false, supported: true }), install: vi.fn() },
+    });
+    serveIndex([publish('skill', 'deck', '1.0.0', skillFiles('deck'))]);
+    await refreshHub(p, p.runtime, 'manual');
+    await installHubItem(p, { kind: 'skill', id: 'deck' });
+    serveIndex([publish('skill', 'deck', '1.1.0', skillFiles('deck', '新版本', declared()))]);
+    await refreshHub(p, p.runtime, 'manual');
+    expect(readHubState(p).items[0]).toMatchObject({ version: '1.0.0', heldVersion: '1.1.0' });
+    expect(p.officeRuntime?.install).not.toHaveBeenCalled();
+    expect(readFileSync(kernelSkill('deck'), 'utf8')).not.toContain('新版本');
+    expect(await installHubItem(p, { kind: 'skill', id: 'deck' })).toMatchObject({
+      needsConfirm: true,
+    });
+  });
+});

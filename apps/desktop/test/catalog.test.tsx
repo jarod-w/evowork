@@ -287,3 +287,59 @@ describe('CatalogPage', () => {
     expect(screen.getByText('已启用的技能太多，模型将看不到部分技能的说明')).toBeTruthy();
   });
 });
+
+it('Hub 组件确认后显示准备状态，等待期间不重复安装，失败后可以重试', async () => {
+  const data: CatalogDataView = {
+    ...EMPTY,
+    hub: {
+      status: HUB_STATUS,
+      entries: [
+        {
+          kind: 'skill',
+          id: 'deck',
+          version: '1.0.0',
+          state: 'available',
+          displayName: '演示',
+          description: '说明',
+          category: '办公',
+          riskLevel: 'p0',
+          riskLabel: '低风险',
+          license: 'MIT',
+          promptVisible: true,
+          isNew: false,
+          canRollback: false,
+        },
+      ],
+    },
+  };
+  let complete: (value: { ok: boolean; catalog: CatalogDataView }) => void = () => undefined;
+  const install = vi
+    .fn<NonNullable<CatalogPageProps['hubActions']>['install']>()
+    .mockResolvedValueOnce({
+      ok: false,
+      needsConfirm: true,
+      catalog: data,
+      audit: { skillId: 'deck', level: 'p0', findings: ['需要安装办公组件（约 200 MB）'] },
+    })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    )
+    .mockResolvedValue({ ok: true, catalog: data });
+  renderPage(data, 'skills', { hubActions: { ...hubActions, install } });
+  fireEvent.click(screen.getByText('EvoWork 精选', { selector: 'button, button *' }));
+  fireEvent.click(screen.getByRole('button', { name: '安装' }));
+  await screen.findByRole('dialog');
+  expect(screen.getByText('需要安装办公组件（约 200 MB）')).toBeTruthy();
+  fireEvent.click(screen.getAllByRole('button', { name: '安装' }).at(-1)!);
+  await waitFor(() => expect(install).toHaveBeenCalledTimes(2));
+  expect(screen.getByText(/正在安装技能并准备所需组件/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '安装' }));
+  expect(install).toHaveBeenCalledTimes(2);
+  complete({ ok: false, catalog: data });
+  await waitFor(() => expect(screen.queryByText(/正在安装技能并准备所需组件/)).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '安装' }));
+  await waitFor(() => expect(install).toHaveBeenCalledTimes(3));
+});

@@ -350,6 +350,7 @@ export function createLocalServices(options: LocalServicesOptions) {
    * 只能重启 App 才认。这正是 `probe.ts` 头注释里写的那个"安装流程结束时调用"。
    */
   let runtimeInstalling = false;
+  let runtimeInstall: Promise<RuntimeInstallResultView> | undefined;
   const officeRuntime = {
     /** 正在装吗。在线升级退出前要告诉用户「办公扩展正在安装」会被打断 */
     installing: (): boolean => runtimeInstalling,
@@ -376,30 +377,36 @@ export function createLocalServices(options: LocalServicesOptions) {
       };
     },
 
-    install: async (): Promise<RuntimeInstallResultView> => {
+    install: (): Promise<RuntimeInstallResultView> => {
+      if (runtimeInstall) return runtimeInstall;
       runtimeInstalling = true;
-      const result = await installOfficeRuntime({
-        ...(options.logger ? { logger: options.logger } : {}),
-        ...(process.env.EVOWORK_OFFICE_BUNDLE
-          ? { bundleDir: process.env.EVOWORK_OFFICE_BUNDLE }
-          : {}),
-        ...(options.bundledFontPath !== undefined
-          ? { bundledFontPath: options.bundledFontPath }
-          : {}),
-        onProgress: (p) =>
-          options.onRuntimeProgress?.({
-            phase: p.phase,
-            label: PHASE_LABEL[p.phase],
-            percent: p.percent,
-            ...(p.detail !== undefined ? { detail: p.detail } : {}),
-          }),
+      runtimeInstall = (async () => {
+        const result = await installOfficeRuntime({
+          ...(options.logger ? { logger: options.logger } : {}),
+          ...(process.env.EVOWORK_OFFICE_BUNDLE
+            ? { bundleDir: process.env.EVOWORK_OFFICE_BUNDLE }
+            : {}),
+          ...(options.bundledFontPath !== undefined
+            ? { bundledFontPath: options.bundledFontPath }
+            : {}),
+          onProgress: (p) =>
+            options.onRuntimeProgress?.({
+              phase: p.phase,
+              label: PHASE_LABEL[p.phase],
+              percent: p.percent,
+              ...(p.detail !== undefined ? { detail: p.detail } : {}),
+            }),
+        });
+        // 成功与否都失效一次：失败也可能装进去了一部分，缓存住旧答案只会更乱
+        return result.ok
+          ? { ok: true }
+          : { ok: false, failure: result.failure, message: result.message };
+      })().finally(() => {
+        probe.invalidate();
+        runtimeInstalling = false;
+        runtimeInstall = undefined;
       });
-      // 成功与否都失效一次：失败也可能装进去了一部分，缓存住旧答案只会更乱
-      probe.invalidate();
-      runtimeInstalling = false;
-      return result.ok
-        ? { ok: true }
-        : { ok: false, failure: result.failure, message: result.message };
+      return runtimeInstall;
     },
   };
 

@@ -2078,6 +2078,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       if (override) return existsSync(override) ? override : undefined;
       return officeInterpreterPaths(homedir()).find((p) => existsSync(p));
     },
+    officeRuntime: services.officeRuntime,
     setSkillEnabledByPath: async (path, enabled) => {
       await adapter.setSkillEnabled({ path, enabled });
     },

@@ -105,6 +105,21 @@ export interface HubHostPorts {
   };
   /** 办公运行时的 python；没装 → undefined。 */
   readonly pythonCommand: () => string | undefined;
+  /** 只允许产品固定的共享组件，不执行内容包里的安装代码。 */
+  readonly officeRuntime?:
+    | {
+        readonly status: () => {
+          readonly installed: boolean;
+          readonly outdated?: boolean | undefined;
+          readonly supported: boolean;
+          readonly downloadSize?: string | undefined;
+        };
+        readonly install: () => Promise<{
+          readonly ok: boolean;
+          readonly message?: string | undefined;
+        }>;
+      }
+    | undefined;
   /** 5.5：Hub 版本覆盖随包技能时，按路径停用 / 恢复随包那一份。 */
   readonly setSkillEnabledByPath?: ((path: string, enabled: boolean) => Promise<void>) | undefined;
   /** 写完 `config.toml` 的 mcp_servers 之后让内核重读。 */
@@ -300,6 +315,16 @@ export async function applyHubUpdates(ports: HubHostPorts, index: VerifiedIndex)
         ...installed,
         heldVersion: decision.item.version,
         heldReason: growth.join('；'),
+      });
+      writeHubState(ports, state);
+      continue;
+    }
+    const dependency = officeDependency(ports, decision.item, prepared.files);
+    if (!dependency.ok || dependency.missing) {
+      state = upsertInstalled(state, {
+        ...installed,
+        heldVersion: decision.item.version,
+        heldReason: dependency.ok ? '需要安装或更新办公组件，请手动更新并确认' : dependency.refused,
       });
       writeHubState(ports, state);
       continue;
@@ -552,13 +577,22 @@ export async function installHubItem(
   const prepared = await prepare(ports, item);
   if (!prepared.ok) return { ok: false, refused: prepared.refused };
 
+  const dependency = officeDependency(ports, item, prepared.files);
+  if (!dependency.ok) return dependency;
   const findings = [...prepared.findings];
+  if (dependency.missing)
+    findings.push(
+      `需要安装或更新办公组件（${ports.officeRuntime?.status().downloadSize ?? '共享运行环境'}），确认后将自动下载并安装；企业离线环境可使用办公组件离线包。`,
+    );
   if (installed !== undefined) {
     findings.unshift(
       ...capabilityGrowth(installed, { level: prepared.level, ...prepared.capabilities }),
     );
   }
-  const needsAck = prepared.level !== 'p0' || (installed !== undefined && findings.length > 0);
+  const needsAck =
+    dependency.missing ||
+    prepared.level !== 'p0' ||
+    (installed !== undefined && findings.length > 0);
   if (needsAck && input.acknowledge !== true) {
     return {
       ok: false,
@@ -575,7 +609,49 @@ export async function installHubItem(
   if (prepared.level === 'p2' && input.confirmName !== item.id) {
     return { ok: false, refused: `这一项是高风险，请输入名称「${item.id}」确认。` };
   }
+  if (dependency.missing) {
+    try {
+      const result = await ports.officeRuntime?.install();
+      if (!result?.ok)
+        return { ok: false, refused: result?.message ?? '办公组件安装失败，请重试。' };
+      const checked = officeDependency(ports, item, prepared.files);
+      if (!checked.ok) return checked;
+      if (checked.missing)
+        return { ok: false, refused: '办公组件尚未就绪，请到设置中修复后重试。' };
+    } catch {
+      return { ok: false, refused: '办公组件安装失败，请重试；技能尚未安装。' };
+    }
+  }
   return writeItem(ports, item, prepared, installed);
+}
+
+/** 读取已校验内容包中的声明；未知依赖不能退化为“无依赖”。 */
+function officeDependency(
+  ports: HubHostPorts,
+  item: HubItem,
+  files: readonly TarFile[],
+):
+  | { readonly ok: true; readonly missing: boolean }
+  | { readonly ok: false; readonly refused: string } {
+  if (item.kind !== 'skill') return { ok: true, missing: false };
+  const file = files.find((f) => f.path === 'interface.json');
+  if (!file) return { ok: true, missing: false };
+  try {
+    const raw = JSON.parse(Buffer.from(file.bytes).toString('utf8')) as {
+      runtimeDependencies?: unknown;
+    };
+    const deps = raw.runtimeDependencies;
+    if (deps === undefined) return { ok: true, missing: false };
+    if (!Array.isArray(deps) || deps.some((d: unknown) => d !== 'office'))
+      return { ok: false, refused: '技能声明了不支持的运行组件，请更新应用或联系发布者。' };
+    if (deps.length === 0) return { ok: true, missing: false };
+    const status = ports.officeRuntime?.status();
+    if (status?.installed && status.outdated !== true) return { ok: true, missing: false };
+    if (!status?.supported) return { ok: false, refused: '当前应用或系统不支持所需的办公组件。' };
+    return { ok: true, missing: true };
+  } catch {
+    return { ok: false, refused: '技能的运行组件声明格式不正确。' };
+  }
 }
 
 /**
