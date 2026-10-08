@@ -581,6 +581,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   >({});
   const [toasts, setToasts] = useState<readonly ToastSpec[]>([]);
   const toastCounter = useRef(0);
+  const toastTimers = useRef(new Map<string, number>());
   const [startup, setStartup] = useState<StartupInfo | null>(null);
   const [scenarioId, setScenarioId] = useState('office');
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
@@ -891,7 +892,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [resultDismissed, setResultDismissed] = useState<Readonly<Record<string, boolean>>>({});
 
   const dismissToast = useCallback((id: string) => {
+    const timer = toastTimers.current.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    toastTimers.current.delete(id);
     setToasts((previous) => previous.filter((toast) => toast.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const timers = toastTimers.current;
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer);
+      timers.clear();
+    };
   }, []);
 
   const pushToast = useCallback((toast: Omit<ToastSpec, 'id'>): void => {
@@ -899,9 +911,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     const withId: ToastSpec = { ...toast, id: `toast-${toastCounter.current}` };
     setToasts((previous) => [withId, ...previous]);
     if (shouldAutoDismiss(withId)) {
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
+        toastTimers.current.delete(withId.id);
         setToasts((previous) => previous.filter((item) => item.id !== withId.id));
       }, TOAST_AUTO_DISMISS_MS);
+      toastTimers.current.set(withId.id, timer);
     }
   }, []);
   const reportFailure = useCallback(

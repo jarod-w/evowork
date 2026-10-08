@@ -16,9 +16,11 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/js-yaml": "4.0.9",
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@evowork/hub-protocol": "workspace:*"
+    "@evowork/hub-protocol": "workspace:*",
+    "js-yaml": "4.3.2"
   }
 }

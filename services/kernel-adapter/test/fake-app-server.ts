@@ -113,9 +113,13 @@ export class FakeAppServer {
       })),
     }));
     this.handlers.set('fuzzyFileSearch', () => ({ files: [] }));
-    this.handlers.set('skills/config/write', (ctx) => ({
-      effectiveEnabled: Boolean(ctx.params.enabled),
-    }));
+    this.handlers.set('skills/config/write', (ctx) => {
+      const hasPath = typeof ctx.params.path === 'string';
+      const hasName = typeof ctx.params.name === 'string';
+      if (hasPath === hasName || (hasName && !(ctx.params.name as string).trim()))
+        throw new FakeRpcError(ERROR_CODE.invalidParams, 'requires exactly one of path or name');
+      return { effectiveEnabled: Boolean(ctx.params.enabled) };
+    });
     this.handlers.set('plugin/list', () => ({
       marketplaces: [],
       marketplaceLoadErrors: [],

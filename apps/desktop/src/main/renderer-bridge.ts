@@ -97,6 +97,7 @@ import type {
   CatalogMutationResult,
   HubItemRef,
   ComposerAttachmentView,
+  InstallAttachmentSkillInput,
   ComposerContextView,
   ComposerReferenceView,
   DirEntryView,
@@ -1079,7 +1080,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     const base = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
     if (typeof adapter.listSkills !== 'function') return base;
     const [listed, bundleCatalog, connectorStatus] = await Promise.all([
-      adapter.listSkills([]),
+      adapter.listSkills([], true),
       bundlePorts()
         ? readBundles(bundlePorts()!)
         : Promise.resolve({ bundles: [], bundleErrors: [] }),
@@ -1160,6 +1161,21 @@ export function createRendererActions(options: RendererBridgeOptions) {
       ...(entry?.errors.length ? { skillErrors: entry.errors } : {}),
       ...(connectorStatus.error ? { connectorErrors: [connectorStatus.error] } : {}),
     };
+  }
+
+  async function refreshedSkillResult(
+    result: CatalogMutationResult,
+  ): Promise<CatalogMutationResult> {
+    if (!result.ok) return result;
+    try {
+      return { ...result, catalog: await catalogWithKernelSkills() };
+    } catch {
+      return {
+        ...result,
+        ok: false,
+        refused: '技能文件已变更，但未能刷新技能目录。请重新打开插件页检查。',
+      };
+    }
   }
 
   const projects = createProjectRepo(store.db);
@@ -2293,9 +2309,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
       // 首次创建 .agents/skills 时可能尚未建立目录监听；显式刷新不能继续读旧缓存。
       const listed = await adapter.listSkills(skillCwd ? [skillCwd] : [], true);
-      const skillEntry =
-        (skillCwd ? listed.data.find((entry) => entry.cwd === skillCwd) : undefined) ??
-        listed.data[0];
+      const skillEntry = skillCwd
+        ? listed.data.find((entry) => entry.cwd === skillCwd)
+        : listed.data[0];
+      if (skillCwd && !skillEntry)
+        throw new Error('未能加载当前工作空间的技能，请重新打开任务后重试。');
       for (const skill of skillEntry?.skills ?? []) {
         if (!skill.enabled) continue;
         mentions.push({
@@ -3307,7 +3325,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async installSkill(input: InstallSkillInput): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
       if (!ports) return missingPortsResult();
-      return installSkill(ports, input);
+      return refreshedSkillResult(await installSkill(ports, input));
     },
 
     async pickSkillFile(): Promise<string | undefined> {
@@ -3316,29 +3334,33 @@ export function createRendererActions(options: RendererBridgeOptions) {
     },
 
     async installAttachmentSkill(
-      input: PickAttachmentsInput & {
-        readonly attachmentId: string;
-        readonly acknowledge?: boolean;
-        readonly confirmName?: string;
-      },
+      input: InstallAttachmentSkillInput,
     ): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
       if (!ports) return missingPortsResult();
       if (!options.attachmentText) throw new Error('此构建未接附件登记。');
       const root = await attachmentRoot(input);
-      const view = await options.attachmentText.status(root, input.attachmentId);
+      const view = await options.attachmentText
+        .status(root, input.attachmentId)
+        .catch((error: unknown) => {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+            throw new Error('此附件没有可用的安装副本，请重新添加 SKILL.md 后重试。');
+          throw error;
+        });
       if (view.name.toLowerCase() !== 'skill.md' || view.state !== 'ready')
         throw new Error('请选择已添加成功的 SKILL.md 附件。');
       const path = await options.attachmentText.source(root, input.attachmentId);
-      return installSkill(ports, {
-        kind: 'file',
-        path,
-        ...(input.acknowledge !== undefined ? { acknowledge: input.acknowledge } : {}),
-        ...(input.confirmName !== undefined ? { confirmName: input.confirmName } : {}),
-      });
+      return refreshedSkillResult(
+        await installSkill(ports, {
+          kind: 'file',
+          path,
+          ...(input.acknowledge !== undefined ? { acknowledge: input.acknowledge } : {}),
+          ...(input.confirmName !== undefined ? { confirmName: input.confirmName } : {}),
+        }),
+      );
     },
 
-    uninstallSkill(input: { readonly id: string }): Promise<CatalogMutationResult> {
+    async uninstallSkill(input: { readonly id: string }): Promise<CatalogMutationResult> {
       const ports = options.catalogPorts;
       if (!ports) return Promise.resolve(missingPortsResult());
       if (isHubInstalled('skill', input.id)) {
@@ -3346,7 +3368,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           uninstallHubItem(options.hubPorts!, { kind: 'skill', id: input.id }),
         );
       }
-      return Promise.resolve(uninstallSkill(ports, input.id));
+      return refreshedSkillResult(uninstallSkill(ports, input.id));
     },
 
     async setSkillEnabled(input: {

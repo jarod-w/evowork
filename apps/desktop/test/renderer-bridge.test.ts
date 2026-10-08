@@ -269,6 +269,12 @@ describe('Composer 技能上下文', () => {
       await expect(
         actions.installAttachmentSkill({ draftId: 'other-draft', attachmentId }),
       ).rejects.toThrow('当前任务目录');
+      await expect(
+        actions.installAttachmentSkill({
+          draftId: 'draft-coach',
+          attachmentId: `attachment-${randomUUID()}`,
+        }),
+      ).rejects.toThrow('重新添加 SKILL.md');
       const first = await actions.installAttachmentSkill({ draftId: 'draft-coach', attachmentId });
       expect(first.needsConfirm).toBe(true);
       expect(first.audit?.level).toBe('p2');
@@ -289,6 +295,86 @@ describe('Composer 技能上下文', () => {
       attachmentText.stop();
       store.close();
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('安装结果带即时内核状态；卸载也强制重扫，刷新失败不伪报成功', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ew-native-skill-'));
+    const store = memoryStore();
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(home, 'plugins'),
+      userRoot: join(home, 'user'),
+      kernelHome: join(home, 'kernel'),
+    });
+    const path = join(home, 'SKILL.md');
+    const nativePath = join(home, 'kernel', 'skills', 'coach', 'SKILL.md');
+    writeFileSync(path, '---\nname: coach\ndescription: 工作教练\n---\n');
+    const adapter = fakeAdapter({
+      listSkills: vi.fn(async () => ({
+        data: [
+          {
+            cwd: home,
+            skills: existsSync(nativePath)
+              ? [
+                  {
+                    name: 'coach',
+                    description: '工作教练',
+                    path: nativePath,
+                    scope: 'user' as const,
+                    enabled: true,
+                  },
+                ]
+              : [],
+            errors: [],
+          },
+        ],
+      })),
+    });
+    try {
+      const actions = makeActions({ store, adapter, catalogPorts });
+      const installed = await actions.installSkill({ kind: 'file', path });
+      expect(installed.ok).toBe(true);
+      expect(installed.catalog.skills.find((s) => s.id === 'coach')).toMatchObject({
+        enabled: true,
+        scope: 'user',
+        skillPath: nativePath,
+      });
+      expect(adapter.listSkills).toHaveBeenLastCalledWith([], true);
+      const removed = await actions.uninstallSkill({ id: 'coach' });
+      expect(removed.ok).toBe(true);
+      expect(removed.catalog.skills.some((s) => s.id === 'coach')).toBe(false);
+      expect(adapter.listSkills).toHaveBeenCalledTimes(2);
+      vi.mocked(adapter.listSkills).mockRejectedValueOnce(new Error('kernel unavailable'));
+      const refreshFailed = await actions.installSkill({ kind: 'file', path });
+      expect(refreshFailed.ok).toBe(false);
+      expect(refreshFailed.refused).toContain('文件已变更');
+      expect(existsSync(nativePath)).toBe(true);
+    } finally {
+      store.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('内核没有返回请求目录时明确报错，不能拿其他工作空间的技能代替', async () => {
+    const store = memoryStore();
+    store.db
+      .prepare(
+        "INSERT INTO thread_projection (thread_id, cwd, derived_status) VALUES (?, ?, 'idle')",
+      )
+      .run('t1', '/w/requested');
+    try {
+      const actions = makeActions({
+        store,
+        projectPorts: ports(),
+        adapter: fakeAdapter({
+          listSkills: vi.fn(async () => ({
+            data: [{ cwd: '/w/another', skills: [], errors: [] }],
+          })),
+        }),
+      });
+      await expect(actions.getComposerContext({ threadId: 't1' })).rejects.toThrow('当前工作空间');
+    } finally {
+      store.close();
     }
   });
   it('已登记的托管任务目录位于用户 .evowork 下时仍能发现技能', async () => {

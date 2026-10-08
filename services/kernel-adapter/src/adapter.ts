@@ -1071,12 +1071,13 @@ export function createAdapter(options: AdapterOptions) {
       readonly name?: string;
       readonly enabled: boolean;
     }): Promise<boolean> {
-      if (!input.path && !input.name) throw new Error('启停技能需要 path 或 name');
+      if (!input.path && !input.name?.trim()) throw new Error('启停技能需要 path 或 name');
       const response = await session.peer.request<{ readonly effectiveEnabled: boolean }>(
         METHOD.skillsConfigWrite,
         {
           path: input.path ?? null,
-          name: input.name ?? null,
+          // 原生接口要求选择器互斥；路径能精确区分同名的不同作用域技能。
+          name: input.path ? null : (input.name ?? null),
           enabled: input.enabled,
         },
       );

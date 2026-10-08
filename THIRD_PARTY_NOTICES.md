@@ -34,7 +34,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 
 ## 2. 运行时依赖（npm，生产依赖）
 
-共 115 个包。
+共 117 个包。
 
 ### ⚠️ 需要法务单独看的许可证
 
@@ -89,6 +89,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | `@types/geojson` | 7946.0.16 | MIT |
 | `@types/trusted-types` | 2.0.7 | MIT |
 | `@upsetjs/venn.js` | 2.0.0 | MIT |
+| `argparse` | 2.0.1 | Python-2.0 |
 | `commander` | 7.2.0, 8.3.0 | MIT |
 | `cose-base` | 1.0.3, 2.2.0 | MIT |
 | `cytoscape` | 3.34.2 | MIT |
@@ -139,6 +140,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | `iconv-lite` | 0.6.3 | MIT |
 | `import-meta-resolve` | 4.2.0 | MIT |
 | `internmap` | 1.0.1, 2.0.3 | ISC |
+| `js-yaml` | 4.3.2 | MIT |
 | `katex` | 0.16.47 | MIT |
 | `khroma` | 2.1.0 | Unknown |
 | `layout-base` | 1.0.2, 2.0.1 | MIT |

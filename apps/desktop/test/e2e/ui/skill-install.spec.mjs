@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { expect, test } from './fixtures.mjs';
 
@@ -115,4 +115,90 @@ test('附件正文中的高风险声明不能代替用户确认；取消零安�
   await dialog.getByLabel(/输入技能名/).fill('risky-coach');
   await dialog.getByRole('button', { name: '安装为全局技能' }).click();
   await expectSkillCandidate(page, 'risky-coach');
+});
+
+test('带引号和多行描述的技能安装后立即可启停，更新与卸载同步刷新候选', async ({
+  page,
+  electronApp,
+}, testInfo) => {
+  const name = 'lifecycle-coach';
+  const path = testInfo.outputPath('SKILL.MD');
+  mkdirSync(dirname(path), { recursive: true });
+  const contents =
+    '\uFEFF---\nname: "lifecycle-coach"\ndescription: >-\n  帮助整理\n  工作计划\n---\n说明\n';
+  writeFileSync(path, contents);
+  const installPickedFile = async () => {
+    await electronApp.evaluate((_electron, selected) => {
+      globalThis.__evoworkE2E.pickedFiles = [selected];
+    }, path);
+    await page.getByRole('button', { name: '＋ 添加技能' }).click();
+    await page.getByRole('menuitem', { name: '从 SKILL.md 文件安装' }).click();
+  };
+  const openDetail = async () => {
+    await page.getByRole('button', { name: new RegExp(`${name}.*已安装`) }).click();
+  };
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  await installPickedFile();
+  await openDetail();
+  await expect(page.getByRole('button', { name: '停用', exact: true })).toBeVisible();
+  await expect(page.locator('.ew-catalog-detail-desc')).toHaveText('帮助整理 工作计划');
+  const installed = await page.evaluate(
+    async (id) => (await window.evowork.getCatalog()).skills.find((skill) => skill.id === id),
+    name,
+  );
+  expect(installed.scope).toBe('user');
+  const nativePath = installed.skillPath;
+  const userPath = join(dirname(dirname(dirname(dirname(nativePath)))), 'skills', name, 'SKILL.md');
+  expect(readFileSync(nativePath, 'utf8')).toBe(contents.slice(1));
+  expect(readFileSync(userPath, 'utf8')).toBe(contents.slice(1));
+  expect(readFileSync(path, 'utf8')).toBe(contents);
+  await page.getByRole('button', { name: '停用', exact: true }).click();
+  await expect(page.getByRole('button', { name: '启用', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  await page.getByLabel('需求输入').fill(`$${name}`);
+  await expect(page.getByRole('option', { name: new RegExp(name) })).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await window.evowork.getComposerContext({})).mentions.some((skill) => skill.name === id),
+      name,
+    ),
+  ).toBe(false);
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  await openDetail();
+  await page.getByRole('button', { name: '启用', exact: true }).click();
+  await expect(page.getByRole('button', { name: '停用', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  await expectSkillCandidate(page, name);
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  writeFileSync(path, skillText(name).replace('工作教练', '更新后的工作教练'));
+  await installPickedFile();
+  await openDetail();
+  await expect(page.locator('.ew-catalog-detail-desc')).toHaveText('更新后的工作教练');
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  await expectSkillCandidate(page, name);
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await window.evowork.getComposerContext({})).mentions.find((skill) => skill.name === id)
+          ?.description,
+      name,
+    ),
+  ).toBe('更新后的工作教练');
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  await openDetail();
+  await page.getByRole('button', { name: '卸载', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '卸载', exact: true }).click();
+  await expect.poll(() => existsSync(nativePath) || existsSync(userPath)).toBe(false);
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  await page.getByLabel('需求输入').fill(`$${name}`);
+  await expect(page.getByRole('option', { name: new RegExp(name) })).toHaveCount(0);
+  await page.reload();
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await window.evowork.getComposerContext({})).mentions.some((skill) => skill.name === id),
+      name,
+    ),
+  ).toBe(false);
 });

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { JSON_SCHEMA, load } from 'js-yaml';
 
 import { auditSkillFiles, type AuditFile } from './audit.js';
 import type { SkillInterface, SkillRecord, SkillSource } from './types.js';
@@ -29,12 +30,52 @@ export const SOURCE_MARKER_FILE = '.evowork-source';
 export const HUB_REVOKED_MARKER = 'hub-revoked';
 
 export function parseFrontmatter(text: string): { name: string; description: string } {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-  if (match === null) return { name: '', description: '' };
+  const empty = { name: '', description: '' };
+  const match = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  if (!match) return empty;
   const block = match[1] ?? '';
-  const name = /^\s*name:\s*(.+)\s*$/m.exec(block)?.[1]?.trim() ?? '';
-  const description = /^\s*description:\s*(.+)\s*$/m.exec(block)?.[1]?.trim() ?? '';
-  return { name, description };
+  let parsed: unknown;
+  try {
+    parsed = load(block, { schema: JSON_SCHEMA });
+  } catch {
+    // 与内核一致：容忍普通说明标量里的未引用冒号，但不改写多行正文或结构化值。
+    let blockIndent: number | undefined;
+    const repaired = block
+      .split('\n')
+      .map((line) => {
+        const indent = line.length - line.trimStart().length;
+        if (blockIndent !== undefined) {
+          if (!line.trim() || indent > blockIndent) return line;
+          blockIndent = undefined;
+        }
+        const scalar = /^([ ]*)([\w-]+):[ \t]+(.*)$/.exec(line);
+        if (!scalar) return line;
+        const value = scalar[3]!.trim();
+        if (/^[|>]/.test(value)) blockIndent = indent;
+        if (/^["'|>[{]/.test(value) || !/:\s/.test(value)) return line;
+        return `${scalar[1]}${scalar[2]}: ${JSON.stringify(value.replace(/[ \t]+#.*$/, '').trim())}`;
+      })
+      .join('\n');
+    try {
+      parsed = load(repaired, { schema: JSON_SCHEMA });
+    } catch {
+      return empty;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return empty;
+  const data = parsed as Record<string, unknown>;
+  if (data.name != null && typeof data.name !== 'string') return empty;
+  if (typeof data.description !== 'string') return empty;
+  if (data.metadata != null) {
+    if (typeof data.metadata !== 'object' || Array.isArray(data.metadata)) return empty;
+    const short = (data.metadata as Record<string, unknown>)['short-description'];
+    if (short != null && typeof short !== 'string') return empty;
+  }
+  const clean = (value: string) => value.trim().replace(/\s+/g, ' ');
+  return {
+    name: clean(typeof data.name === 'string' ? data.name : ''),
+    description: clean(data.description),
+  };
 }
 
 export function parseInterfaceJson(

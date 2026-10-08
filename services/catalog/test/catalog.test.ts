@@ -150,6 +150,39 @@ describe('技能扫描', () => {
     });
   });
 
+  it('YAML 引号、折叠描述和 BOM 不会变成技能名或占位符', () => {
+    expect(
+      parseFrontmatter(
+        '\uFEFF---\nname: "quoted-coach"\ndescription: >-\n  帮助整理\n  工作。\n---\n正文',
+      ),
+    ).toEqual({ name: 'quoted-coach', description: '帮助整理 工作。' });
+    expect(parseFrontmatter("---\nname: 'coach'\ndescription: '说 it''s ready'\n---\n")).toEqual({
+      name: 'coach',
+      description: "说 it's ready",
+    });
+  });
+
+  it.each([
+    '---\nname: coach\ndescription: ""\n---\n',
+    '---\nname: coach\ndescription:\n---\n',
+    '---\nname: coach\ndescription: [资料]\n---\n',
+    '---\nname: coach\ndescription: x\nmetadata: invalid\n---\n',
+  ])('无效描述或元数据不能解析成可用技能：%s', (text) =>
+    expect(parseFrontmatter(text).description).toBe(''),
+  );
+
+  it('兼容未引用冒号的说明字段，同时保持多行描述原文', () => {
+    expect(
+      parseFrontmatter(
+        '---\nname: coach\nargument-hint: <duration: e.g. 7d>\ndescription: |\n  使用 AWS: ECS\n  保存原有说明\n---\n',
+      ),
+    ).toEqual({ name: 'coach', description: '使用 AWS: ECS 保存原有说明' });
+    expect(parseFrontmatter('---\nname: coach\ndescription: 工作: 教练 # 注释\n---\n')).toEqual({
+      name: 'coach',
+      description: '工作: 教练',
+    });
+  });
+
   it('随包 ui-design 进官方目录：中文展示名、无脚本、对外不含 Codex / OpenAI', () => {
     const root = join(fileURLToPath(new URL('.', import.meta.url)), '../../../plugins/skills');
     const skills = listSkills({ official: root, user: '/nope' }, nodeCatalogIo);

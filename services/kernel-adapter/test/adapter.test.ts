@@ -175,9 +175,25 @@ describe('启动序列（09 §3.2）', () => {
     ).resolves.toBe(false);
     expect(server.received.findLast((r) => r.method === 'skills/config/write')?.params).toEqual({
       path: '/skills/presentations/SKILL.md',
-      name: 'presentations',
+      name: null,
       enabled: false,
     });
+  });
+
+  it('仅名称也可启停；缺少选择器或空名称在发送前拒绝', async () => {
+    await adapter.start();
+    await expect(adapter.setSkillEnabled({ name: 'coach', enabled: true })).resolves.toBe(true);
+    expect(server.received.findLast((r) => r.method === 'skills/config/write')?.params).toEqual({
+      path: null,
+      name: 'coach',
+      enabled: true,
+    });
+    const count = server.received.filter((r) => r.method === 'skills/config/write').length;
+    await expect(adapter.setSkillEnabled({ enabled: false })).rejects.toThrow('path 或 name');
+    await expect(adapter.setSkillEnabled({ name: ' ', enabled: false })).rejects.toThrow(
+      'path 或 name',
+    );
+    expect(server.received.filter((r) => r.method === 'skills/config/write')).toHaveLength(count);
   });
 
   it('套件生命周期只查询本机/工作区市场，并把安装卸载交给 app-server', async () => {

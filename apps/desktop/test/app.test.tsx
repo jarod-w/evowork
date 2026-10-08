@@ -79,6 +79,7 @@ describe('子代理交互归属根任务', () => {
   });
 });
 import { createRendererActions } from '../src/main/renderer-bridge.js';
+import { TOAST_AUTO_DISMISS_MS } from '../src/renderer/components/panels.js';
 
 const STARTUP: StartupInfo = {
   appName: 'EvoWork',
@@ -429,6 +430,31 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
   };
   return { bridge, emit };
 }
+
+describe('自动消失提示的生命周期', () => {
+  it.each(['dismiss', 'unmount'])('%s 会清理待执行的提示定时器', async (action) => {
+    const timeout = vi.spyOn(window, 'setTimeout');
+    const clear = vi.spyOn(window, 'clearTimeout');
+    const { bridge } = fakeBridge();
+    const view = render(<App bridge={bridge} />);
+    try {
+      await screen.findByRole('heading', { name: '有什么可以帮忙的？' });
+      fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '/goal' } });
+      fireEvent.click(screen.getByRole('button', { name: '发送' }));
+      await screen.findByText('还没有目标。输入 /goal 加上目标描述开始。');
+      const index = timeout.mock.calls.findLastIndex((call) => call[1] === TOAST_AUTO_DISMISS_MS);
+      expect(index).toBeGreaterThanOrEqual(0);
+      const timer = timeout.mock.results[index]!.value;
+      if (action === 'dismiss') fireEvent.click(screen.getByRole('button', { name: '关闭提示' }));
+      else view.unmount();
+      expect(clear).toHaveBeenCalledWith(timer);
+    } finally {
+      view.unmount();
+      timeout.mockRestore();
+      clear.mockRestore();
+    }
+  });
+});
 
 describe('首页不创建 Thread（03 §1）', () => {
   it('打开任务时较早的目标快照不能覆盖新的完成通知', async () => {

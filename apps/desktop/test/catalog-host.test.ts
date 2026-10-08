@@ -2,7 +2,17 @@
  * 目录宿主 I/O（05 §3.3）。不经过 sqlite：打开库会把「这台机器有没有 fts5」
  * 混进安装审计，而那是另一条路径。
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -134,6 +144,169 @@ describe('技能目录安装审计（05 §3.3）', () => {
     expect(existsSync(join(root, 'user', 'skills', 'readme', 'SKILL.md'))).toBe(true);
   });
 
+  it('带引号技能名与多行描述可安装，目录元数据缺失不能报成功', async () => {
+    const path = join(root, 'SKILL.md');
+    writeFileSync(
+      path,
+      '\uFEFF---\nname: "quoted-coach"\ndescription: >-\n  帮助整理\n  工作\n---\n说明',
+    );
+    expect((await installSkill(ports(), { kind: 'file', path })).ok).toBe(true);
+    expect(readFileSync(path, 'utf8').startsWith('\uFEFF')).toBe(true);
+    for (const base of ['user', 'kernel']) {
+      const saved = readFileSync(join(root, base, 'skills', 'quoted-coach', 'SKILL.md'), 'utf8');
+      expect(saved.startsWith('---\n')).toBe(true);
+      expect(saved).toBe(readFileSync(path, 'utf8').slice(1));
+    }
+    const src = join(root, 'bad-dir');
+    mkdirSync(src);
+    writeFileSync(join(src, 'SKILL.md'), '---\nname: missing-desc\n---\n');
+    const result = await installSkill(ports(), { kind: 'directory', path: src });
+    expect(result.ok).toBe(false);
+    expect(existsSync(join(root, 'kernel', 'skills', 'missing-desc'))).toBe(false);
+  });
+
+  it('从已安装目录再次安装会保留来源文件与资源', async () => {
+    const p = ports();
+    const src = join(root, 'src');
+    writeSkill(src, 'coach', { name: 'resource.txt', text: '技能资源' });
+    expect((await installSkill(p, { kind: 'directory', path: src })).ok).toBe(true);
+    const installed = join(root, 'user', 'skills', 'coach');
+    expect((await installSkill(p, { kind: 'directory', path: installed })).ok).toBe(true);
+    expect(readFileSync(join(installed, 'resource.txt'), 'utf8')).toBe('技能资源');
+    expect(readFileSync(join(root, 'kernel', 'skills', 'coach', 'resource.txt'), 'utf8')).toBe(
+      '技能资源',
+    );
+  });
+
+  it('更新的内核镜像拷贝失败时，两份旧版本都保留', async () => {
+    const p = ports();
+    const src = join(root, 'src');
+    writeSkill(src, 'coach');
+    await installSkill(p, { kind: 'directory', path: src });
+    const previous = readFileSync(join(src, 'SKILL.md'), 'utf8');
+    writeFileSync(join(src, 'SKILL.md'), `${previous}\n新版本`);
+    const result = await installSkill(
+      {
+        ...p,
+        copyDir: (from, to) => {
+          if (to.startsWith(join(root, 'kernel'))) throw new Error('模拟磁盘错误');
+          p.copyDir(from, to);
+        },
+      },
+      { kind: 'directory', path: src },
+    );
+    expect(result.ok).toBe(false);
+    for (const base of ['user', 'kernel'])
+      expect(readFileSync(join(root, base, 'skills', 'coach', 'SKILL.md'), 'utf8')).toBe(previous);
+  });
+
+  it.each([false, true])('内核替换失败回滚两份目录（已有版本：%s）', async (existing) => {
+    const p = ports();
+    const src = join(root, 'src');
+    writeSkill(src, 'coach');
+    const previous = readFileSync(join(src, 'SKILL.md'), 'utf8');
+    if (existing) expect((await installSkill(p, { kind: 'directory', path: src })).ok).toBe(true);
+    writeFileSync(join(src, 'SKILL.md'), `${previous}\n更新内容`);
+    const result = await installSkill(
+      {
+        ...p,
+        renamePath: (from, to) => {
+          if (from.endsWith('/next') && to.startsWith(join(root, 'kernel')))
+            throw new Error('模拟替换失败');
+          p.renamePath(from, to);
+        },
+      },
+      { kind: 'directory', path: src },
+    );
+    expect(result.ok).toBe(false);
+    for (const base of ['user', 'kernel']) {
+      const dest = join(root, base, 'skills', 'coach', 'SKILL.md');
+      if (existing) expect(readFileSync(dest, 'utf8')).toBe(previous);
+      else expect(existsSync(dest)).toBe(false);
+      expect(readdirSync(join(root, base)).some((name) => name.startsWith('.skill-'))).toBe(false);
+    }
+  });
+
+  it('目录中的 SKILL.MD 统一保存为 SKILL.md；缺少 name 时按目录名安装', async () => {
+    const src = join(root, 'folder-coach');
+    mkdirSync(src);
+    const text = '---\ndescription: 工作教练\n---\n说明';
+    writeFileSync(join(src, 'SKILL.MD'), text);
+    const result = await installSkill(ports(), { kind: 'directory', path: src });
+    expect(result.ok).toBe(true);
+    expect(readdirSync(src)).toEqual(['SKILL.MD']);
+    for (const base of ['user', 'kernel']) {
+      const dest = join(root, base, 'skills', 'folder-coach');
+      expect(readdirSync(dest)).toContain('SKILL.md');
+      expect(readdirSync(dest)).not.toContain('SKILL.MD');
+      expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(text);
+    }
+  });
+
+  it('目录别名和元数据符号链接不会让安装回写来源文件', async () => {
+    const src = join(root, 'source');
+    mkdirSync(src);
+    const original = join(root, 'original.md');
+    const text = '\uFEFF---\nname: coach\ndescription: 工作教练\n---\n';
+    writeFileSync(original, text);
+    const marker = join(root, 'original-marker');
+    writeFileSync(marker, '不能改写');
+    symlinkSync(original, join(src, 'SKILL.md'));
+    symlinkSync(marker, join(src, '.evowork-source'));
+    const alias = join(root, 'alias');
+    symlinkSync(src, alias, 'dir');
+    expect((await installSkill(ports(), { kind: 'directory', path: alias })).ok).toBe(true);
+    expect(readFileSync(original, 'utf8')).toBe(text);
+    expect(readFileSync(marker, 'utf8')).toBe('不能改写');
+    for (const base of ['user', 'kernel']) {
+      const dest = join(root, base, 'skills', 'coach');
+      expect(lstatSync(dest).isSymbolicLink()).toBe(false);
+      expect(lstatSync(join(dest, 'SKILL.md')).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(text.slice(1));
+      expect(readFileSync(join(dest, '.evowork-source'), 'utf8')).toBe('local\n');
+    }
+  });
+
+  it('卸载内核副本失败会恢复用户目录，重试成功后两边都移除', async () => {
+    const p = ports();
+    const src = join(root, 'src');
+    writeSkill(src, 'coach');
+    await installSkill(p, { kind: 'directory', path: src });
+    const result = uninstallSkill(
+      {
+        ...p,
+        renamePath: (from, to) => {
+          if (from === join(root, 'kernel', 'skills', 'coach')) throw new Error('模拟卸载失败');
+          p.renamePath(from, to);
+        },
+      },
+      'coach',
+    );
+    expect(result.ok).toBe(false);
+    for (const base of ['user', 'kernel'])
+      expect(existsSync(join(root, base, 'skills', 'coach', 'SKILL.md'))).toBe(true);
+    expect(uninstallSkill(p, 'coach').ok).toBe(true);
+    for (const base of ['user', 'kernel'])
+      expect(existsSync(join(root, base, 'skills', 'coach'))).toBe(false);
+  });
+
+  it('安装后修改技能名不能让卸载越出技能目录，也不会遗留原内核副本', async () => {
+    const p = ports();
+    const src = join(root, 'src');
+    writeSkill(src, 'coach');
+    await installSkill(p, { kind: 'directory', path: src });
+    const outside = join(root, 'kernel', 'important.txt');
+    writeFileSync(outside, '保留数据');
+    writeFileSync(
+      join(root, 'user', 'skills', 'coach', 'SKILL.md'),
+      '---\nname: ../important.txt\ndescription: 工作教练\n---\n',
+    );
+    expect(uninstallSkill(p, '../important.txt').ok).toBe(true);
+    expect(readFileSync(outside, 'utf8')).toBe('保留数据');
+    for (const base of ['user', 'kernel'])
+      expect(existsSync(join(root, base, 'skills', 'coach'))).toBe(false);
+  });
+
   it('直接安装 SKILL.MD 只复制所选文件，供用户目录和内核使用', async () => {
     const src = join(root, 'downloads');
     mkdirSync(src);
@@ -181,11 +354,13 @@ describe('技能目录安装审计（05 §3.3）', () => {
   );
 
   it('Git 安装把来源标成 git，失败时不落盘', async () => {
+    const clonedPaths: string[] = [];
     const p = createFsCatalogPorts({
       pluginsDir: join(root, 'plugins'),
       userRoot: join(root, 'user'),
       kernelHome: join(root, 'kernel'),
       gitClone: async (url, dest) => {
+        clonedPaths.push(dest);
         if (url === 'https://git.example/empty.git') return { ok: true };
         mkdirSync(dest, { recursive: true });
         writeSkill(dest, 'from-git');
@@ -203,6 +378,7 @@ describe('技能目录安装审计（05 §3.3）', () => {
       readFileSync(join(root, 'user', 'skills', 'from-git', '.evowork-source'), 'utf8').trim(),
     ).toBe('git');
     expect(ok.catalog.skills.some((s) => s.source === 'git' && s.id === 'from-git')).toBe(true);
+    expect(clonedPaths.every((path) => !existsSync(path))).toBe(true);
   });
 });
 
