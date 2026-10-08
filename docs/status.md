@@ -1,10 +1,17 @@
 # 开发状态
 
-> **更新于 2026-10-08（第 98 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
+> **更新于 2026-10-08（第 99 次）**。这份文件回答一个问题：**现在到哪了、下一步是什么、什么还不能信。**
 > 计划与优先级在 [work-priority.md](work-priority.md)，架构与决策在 [总纲](evowork-on-codex-design.md)，
 > **代码现在长什么样（进程 · 包 · 七条跨边界通道 · 守卫）在 [architecture.md](architecture.md)**（2026-09-09 按 M10a 后的代码重写），
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
+>
+> **2026-10-08：桌面应用 0.0.5 已打成未签名 dmg，并发布到 `https://update.nucleant.cn/latest/`。**
+> 版本号在根 `package.json` 与 `apps/desktop/package.json`。tag `v0.0.5` 打在 `ba29433`（版本提交 `cb745c4`，升级夹具 `ba29433`）。
+> `pnpm run package` 产出 `EvoWork-0.0.5-mac-arm64-unsigned.dmg`（213.3MB）与同名 zip（213.5MB），都在 240MB 预算内。`latest-mac.yml` 带有 `releaseNotes`。
+> `publish-release.mjs` 八项检查全过，传到 `root@43.143.248.70:/opt/evowork/updates/latest/`。
+> **外网核对**（`--resolve` 到 43.143.248.70）：清单 200、`no-cache, must-revalidate`、sha256 与本机一致；dmg `Content-Length: 223636675`、`immutable`；签名 200、`immutable`；`/latest/` 列目录 403。
+> **没做**：完整 `pnpm run check` 只跑了 `upgrade-compat`（31 通过）；没跑 `verify-packaged-app.mjs`；没有 Apple 签名和公证；这次的 git 提交与 tag 没有 push。
 >
 > **2026-10-08：补齐全局技能安装、更新、启停与卸载的同类边界。**
 > 技能元数据改用 YAML 解析，支持引号与多行描述；拒绝空描述及错误类型，目录仍可按目录名补 name。安装副本去掉发货内核不能读取的 UTF-8 BOM，目录中大小写不同的说明统一保存为 `SKILL.md`。安装/更新先完成两份暂存再替换，普通 I/O 失败恢复旧版本；从已安装目录重装、目录别名及元数据符号链接不能回写或先删除来源。卸载先将两份目录移出扫描根，移动失败恢复；镜像按真实目录名定位，防止编辑后的技能名变成删除路径。Git 克隆在成功、拒绝和待确认返回后清理。安装/卸载结果强制重扫并合并内核启停状态，刚安装的详情页立即可启停；指定任务目录缺失响应时明确报错，不混入另一目录候选。旧附件缺少安装登记时提示重新添加。

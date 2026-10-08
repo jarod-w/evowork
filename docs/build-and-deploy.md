@@ -498,7 +498,7 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
-| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn/${channel}` | **已上线（2026-10-02；10-07 迁到 43.143.248.70 并改用默认端口，§5.3.0 / §5.3.1）**，但**还没发过任何版本**：客户端要到 B4 接上「检查更新」后才会把签名公钥打进包里，在此之前 `publish-release.mjs` 的「包里嵌着 kid」一项一定不过。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
+| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn/${channel}` | **已上线，2026-10-08 发出第一版 `0.0.5`**（未签名 dmg / zip，`latest/`）。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
 | 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
 
 这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
@@ -560,7 +560,7 @@ apache2ctl -S   # 80 的默认是 catchall.invalid；443 的默认是 update.nuc
 
 外网验收（2026-10-07，从发版机，443）：TLS 链校验通过 · 探针清单 200 + `no-cache, must-revalidate` · 探针签名 200 + `immutable` ·
 `/` 与 `/latest/` 403（不列目录）· 缺清单 404 · `PUT` / `DELETE` 405 · HTTP 301 到 HTTPS · 按 IP 访问 80 是 404。探针已删。
-**还没发过任何版本**，`/opt/evowork/updates/latest/` 是空的。
+**2026-10-08 发出第一版 `0.0.5`**（未签名）：`/opt/evowork/updates/latest/` 里有清单、签名、dmg 与 zip。外网核对见 [status.md](status.md) 同日条目。
 
 发布（发版机上）：
 
@@ -573,7 +573,7 @@ node scripts/publish-release.mjs --dest root@43.143.248.70:/opt/evowork/updates 
 
 **更新说明**：客户端在「可以更新」的卡片里显示清单的 `releaseNotes`，**按纯文本、一行一条**（去掉 `- ` 前缀）。
 按 electron-builder 的约定，打包时 `build/release-notes.md` 存在就会被写进 `latest-mac.yml`（`releaseInfo.releaseNotesFile` 的默认值）——
-**这一条没验过**：仓库里还没有这个文件，也还没打过带它的包。发版时写上它，打包后先看一眼 `latest-mac.yml` 里有没有 `releaseNotes:`。
+**2026-10-08 的 0.0.5 包验过**：`build/release-notes.md` 写进了 `latest-mac.yml` 的 `releaseNotes:`。
 清单是签过名的，所以更新说明也在签名范围内。
 
 回滚（只撤更新源）：`a2dissite update.nucleant.cn && apache2ctl configtest && systemctl reload apache2`。
