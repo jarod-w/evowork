@@ -30,7 +30,8 @@
     "kernel:drift": "node scripts/kernel-drift.mjs",
     "notices": "node scripts/gen-third-party-notices.mjs",
     "package": "node scripts/package.mjs",
-    "test:acceptance": "playwright test acceptance --project=real"
+    "test:acceptance": "playwright test acceptance --project=real",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

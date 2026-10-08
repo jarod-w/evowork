@@ -844,3 +844,25 @@ Linux `pnpm run build` 已验证 MCP bundle 与桌面代码构建；不会构建
 2026-10-06 按用户要求增加微信、企业微信与印象笔记身份。已执行 `node scripts/verify-computer-use-apps.mjs com.tencent.xinWeChat com.tencent.WeWorkMac com.yinxiang.Mac`，三者运行进程均通过生产身份函数，`requestedVerified=3`、分类均为 ordinary；Finder 同时通过。首次探测企业微信主应用未运行时退出失败；出现运行进程后复查通过，不把安装存在当成运行身份通过。上述命令只检查元数据，不读取聊天/笔记内容、不点击发送。版本、Team ID 与边界见 [12 §用户指定应用扩展](design/12-computer-use.md#2026-10-06--用户指定应用扩展)。
 
 同日增加 WPS Office 和 Thunderbird，已执行 `node scripts/verify-computer-use-apps.mjs com.kingsoft.wpsoffice.mac org.mozilla.thunderbird`，两个真实运行进程均通过生产身份函数，`requestedVerified=2`，分类 ordinary；Finder 同时通过。首次探针在原有 10 秒限制内超时，探针等待上限改为与原生 Helper 请求相同的 30 秒后通过；没有缩减签名检查或扩大运行时请求上限。该结果不证明 WPS 文档编辑、Thunderbird 邮件发送、AX/TCC 或中断延迟可用。
+
+### 用 Git 记录准备下一版
+
+先提交本次要发布的改动，再运行：
+
+```bash
+pnpm run release:prepare -- 0.0.6 --dry-run
+pnpm run release:prepare -- 0.0.6
+```
+
+`0.0.6` 替换为目标正式版本。脚本要求工作区干净、两个 package.json 版本一致，
+且新版本高于当前版本、对应 tag 尚不存在。从当前分支可达的最高正式版本 tag
+到 HEAD 读取提交标题，过滤 doc/docs、test、chore、ci、build、refactor、style
+类型的内部提交（带 `!` 的不兼容变更保留），去重后生成草稿；普通标题也会保留。
+如果没有发布 tag 或过滤后没有内容，拒绝写入。
+
+执行后同步根目录与桌面 package.json 的版本，覆盖 `build/release-notes.md`，
+并在 `CHANGELOG.md` 顶部保存本版记录；首次执行还保存当前版本的既有说明。
+这是确定性的标题整理，不调用模型，也不会自动翻译或判断实际功能是否已开放。
+**发布前必须审核并改写成用户能理解的说明，同步 CHANGELOG.md 与 build/release-notes.md。**
+审核 `git diff` 后沿用既有检查、提交、打 tag、打包和发布流程；脚本不自动执行这些动作。
+`--dry-run` 只预览说明，不写文件。跨版本升级的客户端仍只展示目标版本说明。
