@@ -88,3 +88,10 @@ export {
   type SessionNotice,
   type SessionPhase,
 } from './session.js';
+
+export {
+  createThreadCommunication,
+  type ThreadCommunication,
+  type CommunicationTarget,
+  type CommunicationPort,
+} from './thread-communication.js';

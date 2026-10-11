@@ -9,6 +9,8 @@
 
 **技能格式零改动**（总纲 §6.3）：`SKILL.md` + frontmatter，沿用内核的加载机制与三个根目录。
 
+**独立会话通信（2026-10-11）**：内置 `connectors/thread-communication/`，用 Electron 自带 Node 启动。stdio MCP 通过受认证本机 HTTP 调用宿主；提供同项目元数据发现、逐次批准的摘要/历史读取和请求发送，具体审批不由完全访问代答。设计见 [17](../docs/design/17-thread-communication.md)。
+
 **产物技能的核心设计是结构化生成**（08 §5.3，R4 的主要缓解手段）：模型输出的不是 pptx、
 也不是 python 代码，而是一份受 JSON Schema 约束的**内容 JSON**；排版、字号、留白、配色由
 `render.py` 按模板库完成。理由：轻量档模型（GLM-5.3-flash）在"写 python-pptx 代码"上失败率高，

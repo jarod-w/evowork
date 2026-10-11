@@ -2,6 +2,8 @@ import type { AttachmentTextHost } from './attachment-text-host.js';
 import type { AttachmentTextInput } from '../shared/ipc.js';
 import type { LibraryHost } from './library-host.js';
 import type { LibraryDocumentInput, LibrarySearchInput } from '../shared/ipc.js';
+import type { ThreadCommunication } from '@evowork/kernel-adapter';
+import type { CommunicationSendInput, CommunicationRecordView } from '../shared/ipc.js';
 import type { ImageHost } from './image-host.js';
 import type { SaveImageSettingsInput } from '../shared/ipc.js';
 import type { ComputerUseHost } from './computer-use-host.js';
@@ -495,6 +497,7 @@ export interface RendererBridgeOptions {
     | undefined;
   readonly library?: (() => Promise<LibraryHost>) | undefined;
   readonly imageGeneration?: ImageHost | undefined;
+  readonly communication?: ThreadCommunication | undefined;
   readonly environments?: TaskEnvironments | undefined;
   readonly adapter: Adapter;
   readonly store: Store;
@@ -1534,6 +1537,38 @@ export function createRendererActions(options: RendererBridgeOptions) {
       options.imageGeneration?.extendBudget(input.threadId);
     },
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
+    async getCommunicationTargets(input: { threadId: string; includeOtherProjects?: boolean }) {
+      if (!options.communication) throw new Error('会话通信不可用。');
+      return options.communication.targets(input.threadId, input.includeOtherProjects === true);
+    },
+    async getCommunicationRecords(input: { threadId: string }): Promise<CommunicationRecordView[]> {
+      if (!options.communication) throw new Error('会话通信不可用。');
+      return options.communication.list(input.threadId).map((r) => ({
+        id: r.id,
+        sourceThreadId: r.source_thread_id,
+        targetThreadId: r.target_thread_id,
+        text: r.text,
+        status: r.status,
+        reply: r.reply_text,
+        error: r.error,
+        createdAt: r.created_at,
+      }));
+    },
+    async sendCommunication(input: CommunicationSendInput) {
+      const reason = options.policyPorts?.readOnlyReason();
+      if (reason) throw new Error(reason);
+      if (!options.communication) throw new Error('会话通信不可用。');
+      const message = options.communication.send(input);
+      return { requestId: message.id };
+    },
+    async cancelCommunication(input: { threadId: string; requestId: string }) {
+      if (!options.communication) throw new Error('会话通信不可用。');
+      options.communication.cancel(input.threadId, input.requestId);
+    },
+    async checkCommunication(input: { threadId: string; requestId: string }) {
+      if (!options.communication) throw new Error('会话通信不可用。');
+      await options.communication.check(input.threadId, input.requestId);
+    },
     async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
       const id = input.draftId;
       if (id && sendingDrafts.has(id)) return sendingDrafts.get(id)!;

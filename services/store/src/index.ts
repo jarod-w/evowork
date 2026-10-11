@@ -60,3 +60,5 @@ export * from './repositories.js';
 export * from './library-query.js';
 
 export * from './library-projection.js';
+
+export { ThreadMessages, type ThreadMessage, type ThreadMessageStatus } from './thread-messages.js';

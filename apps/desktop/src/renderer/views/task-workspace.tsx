@@ -286,6 +286,7 @@ function TurnHeader({ turn }: { readonly turn: TurnView }) {
 }
 
 export interface TaskWorkspaceProps {
+  readonly communicationPanel?: React.ReactNode | undefined;
   readonly taskId?: string | undefined;
   readonly title: string | null;
   readonly status: TaskStatus;
@@ -684,6 +685,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           ) : null}
         </div>
       </header>
+      {props.communicationPanel}
 
       {props.goal ||
       ((props.status === 'running' || props.status === 'pending') && steps.length > 0) ? (

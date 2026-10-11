@@ -1,5 +1,7 @@
 # EvoWork 实现架构（as-built）
 
+> **2026-10-11 独立会话通信补充**：新增随包 stdio MCP `plugins/connectors/thread-communication/server.mjs`；它以短期 bearer 连接宿主 `thread-communication-host.ts` 的随机回环 HTTP 端口，按原生 MCP 调用核对来源并逐次确认共享范围。`kernel-adapter/thread-communication.ts` 协调权威本机 `thread_message` 队列，以官方协议恢复目标并开始正常回合，沿用目标模型与权限；最终回复返回来源且不自动循环。UI 通过五个新增 IPC 动作及 `task-communication-updated` 事件显示状态。此通道补充下文早期七通道基线，未改变 K2 的唯一内核边界。详见 [17](design/17-thread-communication.md)。
+
 > **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
 
 > **这份文档描述代码现在是怎么组织的**，不描述它应该怎么组织。

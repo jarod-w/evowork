@@ -17,3 +17,5 @@
 
 产品身份（K5）走 `thread/start.baseInstructions` 整段替换内核底稿，并关掉系统技能
 `openai-docs`（F25）。`developer_instructions` 只管 Craft/Plan/Ask 怎么干活，盖不住「你是谁」。
+
+**独立会话通信（2026-10-11）**：`thread-communication.ts` 管理权威本机队列、每目标互斥、空闲投递、最终结果回传和断线核对。`Adapter` 校验原生 MCP item、具体范围审批、来源回合及内核代际；投递沿用目标模型/权限/模式，以官方 `thread/read`、`thread/resume`、`turn/start` 完成。不会读取内核数据库或复制 rollout；未知投递不自动重试。设计见 [17](../../docs/design/17-thread-communication.md)。

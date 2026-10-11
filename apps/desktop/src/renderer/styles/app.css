@@ -4515,3 +4515,73 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-library-name .ew-library-hint {
   color: var(--text-secondary);
 }
+
+.ew-communication {
+  flex: none;
+  padding: var(--space-12) var(--space-20);
+  border-bottom: 1px solid var(--border-default);
+}
+.ew-communication summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-communication-body {
+  display: grid;
+  gap: var(--space-12);
+  max-width: var(--layout-content-column);
+  max-height: calc(var(--space-64) * 4);
+  margin: var(--space-12) auto 0;
+  padding: 0 var(--space-8);
+  overflow: auto;
+}
+.ew-communication-body label {
+  display: grid;
+  gap: var(--space-8);
+}
+.ew-communication-body .ew-communication-scope {
+  display: flex;
+  align-items: center;
+}
+.ew-communication-body select,
+.ew-communication-body textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+.ew-communication-body textarea {
+  min-height: var(--layout-data-table-row-height);
+  resize: vertical;
+}
+.ew-communication-body p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
+.ew-communication-body > button {
+  justify-self: start;
+}
+.ew-communication-body ul {
+  display: grid;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ew-communication-body li {
+  display: grid;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.ew-communication-body li p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

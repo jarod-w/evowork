@@ -5,6 +5,7 @@ import { createAttachmentTextHost } from './attachment-text-host.js';
 import { createLibraryHost, type LibraryHost } from './library-host.js';
 import { parse as parseImageRequirements } from 'smol-toml';
 import { createImageHost } from './image-host.js';
+import { createCommunicationHost, patchCommunicationConfig } from './thread-communication-host.js';
 import { createComputerUsePolicyReader } from './computer-use-policy.js';
 import { patchComputerUseConfig } from './computer-use-config.js';
 import { createComputerUseHost, type NativeHelper } from './computer-use-host.js';
@@ -1388,6 +1389,35 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     dataDir: dirname(options.paths.kernelHome),
     projectRoot: (id) => createProjectRepo(store.db).get(id)?.roots[0],
   });
+  const communicationHost = createCommunicationHost({
+    store,
+    projectOf: (threadId) => {
+      const environment = environments.task(threadId);
+      if (environment) return environment.projectId;
+      const cwd = store.threads.get(threadId)?.cwd;
+      return cwd
+        ? (ownerProjectOf(cwd, createProjectRepo(store.db).list(), homedir()) ?? null)
+        : null;
+    },
+    adapter: () => adapter,
+    denied: () =>
+      policyView.status === 'expired' || baseEnv.EVOWORK_DISABLE_THREAD_COMMUNICATION === '1',
+    changed: (threadId) =>
+      options.emitToRenderer(IPC.uiEvent, {
+        type: 'task-communication-updated',
+        taskId: threadId,
+      } satisfies RendererEvent),
+  });
+  if (options.pluginsDir)
+    writeFileSync(
+      kernelConfigPath,
+      patchCommunicationConfig(
+        existsSync(kernelConfigPath) ? readFileSync(kernelConfigPath, 'utf8') : '',
+        process.execPath,
+        join(options.pluginsDir, 'connectors/thread-communication/server.mjs'),
+      ),
+      { mode: 0o600 },
+    );
   const adapter = createAdapter({
     validateCwd: environments.validate,
     store,
@@ -1421,7 +1451,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
          *
          * 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**。
          */
-        extraEnvProvider: () => imageHost.environment,
+        extraEnvProvider: () => ({ ...imageHost.environment, ...communicationHost.environment }),
         extraEnv: {
           ...computerUse.environment,
           EVOWORK_CUA_HOST_READY:
@@ -1435,6 +1465,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     // 适配层的事件是**任务视角**，渲染层要的是**组件视角**，翻译在 renderer-bridge 里
     onUiEvent: (event) => {
+      communicationHost.service.onEvent(event);
       if (event.type === 'turn-started') {
         const cwd = store.threads.get(event.threadId)?.cwd;
         if (cwd) services.watchWorkspace(cwd, event.threadId);
@@ -1462,6 +1493,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     onNotice: (notice: SessionNotice) => {
       computerUse.stop();
       imageHost.rotate();
+      if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed')
+        communicationHost.rotate();
+      if (notice.kind === 'kernel-restarted') void communicationHost.service.start();
       if (notice.kind === 'kernel-lost') services.onKernelExit();
       if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed') {
         for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
@@ -2247,6 +2281,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     pendingApprovals: () => [...pendingApprovalById.values()],
     computerUse,
     imageGeneration: imageHost,
+    communication: communicationHost.service,
     openComputerUseSettings: async (permission = 'accessibility') => {
       if (process.platform !== 'darwin' || !options.openExternal)
         throw new Error('当前平台不能打开此权限设置。');
@@ -2595,6 +2630,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
     async start() {
       await imageHost.ready;
+      await communicationHost.ready;
       /*
        * 已登录才 restore（会打 identity）。未登录时 vault 里没有 refresh，
        * restore 立刻返回，**零出网**（11 §12 第 14 条）。
@@ -2626,6 +2662,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       }
 
       const catalog = await adapter.start();
+      await communicationHost.service.start();
       logger.info('desktop.host.started', {
         itemCount: catalog.permissionProfiles.length,
         concurrency: catalog.scenarios.length,
@@ -2749,6 +2786,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       attachmentText.stop();
       library?.dispose();
       imageHost.close();
+      communicationHost.close();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (hubTimer) clearInterval(hubTimer);

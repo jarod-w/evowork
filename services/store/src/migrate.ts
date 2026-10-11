@@ -225,6 +225,7 @@ const dropAutomationTenancyColumns: Migration = {
 };
 
 export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
+  // Fresh databases already contain all tables; existing installs add the authoritative outbox in v5.
   createTables(AUTHORITATIVE_TABLES),
   migrateLegacyWorkspaces,
   dropAutomationTenancyColumns,
@@ -234,6 +235,14 @@ export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
     up: (db) => {
       const table = AUTHORITATIVE_TABLES.find((t) => t.name === 'image_operation')!;
       for (const ddl of table.ddl) db.exec(ddl);
+    },
+  },
+  {
+    version: 5,
+    summary: '独立会话通信权威队列',
+    up: (db) => {
+      for (const ddl of AUTHORITATIVE_TABLES.find((t) => t.name === 'thread_message')!.ddl)
+        db.exec(ddl);
     },
   },
 ];

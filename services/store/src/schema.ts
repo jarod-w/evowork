@@ -44,6 +44,20 @@ export type DerivedStatus = (typeof DERIVED_STATUS)[number];
 
 export const TABLES: readonly TableSpec[] = [
   {
+    name: 'thread_message',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS thread_message (
+        id TEXT PRIMARY KEY, source_thread_id TEXT NOT NULL, target_thread_id TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE, text TEXT NOT NULL, status TEXT NOT NULL,
+        request_turn_id TEXT, reply_turn_id TEXT, reply_text TEXT, error TEXT,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS ix_thread_message_source ON thread_message(source_thread_id,created_at)`,
+      `CREATE INDEX IF NOT EXISTS ix_thread_message_target ON thread_message(target_thread_id,created_at)`,
+    ],
+  },
+  {
     name: 'library_document',
     klass: 'projection',
     ddl: [

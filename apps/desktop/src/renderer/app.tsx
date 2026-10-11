@@ -139,10 +139,12 @@ import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskSearchPalette } from './views/task-search.js';
+import { ThreadCommunicationPanel } from './components/thread-communication-panel.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
-export interface EvoworkBridge extends Partial<LibraryActions> {
+export interface EvoworkBridge
+  extends Partial<LibraryActions>, Partial<import('../shared/ipc.js').CommunicationActions> {
   getAttachmentText?(
     input: PickAttachmentsInput & { readonly attachmentId: string },
   ): Promise<ComposerAttachmentView>;
@@ -1285,6 +1287,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }
           return;
         }
+        // Other consumers handle metadata-only events, including communication receipts.
+        if (event.type !== 'item') return;
         // 又有内容进来了 = 那次重连成功了，提示该撤掉（内核不会专门说"我重连好了"）
         setTurnRetries(dropTask(event.taskId));
         let items = queuedItems.get(event.taskId);
@@ -3722,6 +3726,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ) : (
         <TaskWorkspace
           taskId={activeTaskId}
+          communicationPanel={
+            !isSubagent &&
+            !active?.source?.includes('automation') &&
+            bridge.getCommunicationRecords ? (
+              <ThreadCommunicationPanel
+                key={activeTaskId}
+                threadId={activeTaskId}
+                actions={bridge}
+              />
+            ) : undefined
+          }
           turns={turnsByTask[activeTaskId] ?? []}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}

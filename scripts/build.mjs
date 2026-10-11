@@ -240,6 +240,40 @@ copyFileSync(
   }
 }
 
+// 独立会话 MCP 同样必须脱离 workspace 启动，发货包只依赖 Node 内置模块。
+{
+  const alone = mkdtempSync(join(tmpdir(), 'evowork-communication-bundle-'));
+  try {
+    const server = join(alone, 'server.mjs');
+    copyFileSync(join(ROOT, 'plugins/connectors/thread-communication/server.mjs'), server);
+    const output = execFileSync(process.execPath, [server], {
+      encoding: 'utf8',
+      timeout: 5000,
+      input:
+        [
+          { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+          { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        ]
+          .map((frame) => JSON.stringify(frame))
+          .join('\n') + '\n',
+    });
+    const tools = output
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+      .find((frame) => frame.id === 2)?.result?.tools;
+    if (
+      !['list_threads', 'read_thread', 'send_request'].every((name) =>
+        tools?.some((tool) => tool.name === name),
+      )
+    )
+      throw new Error('会话通信 MCP 发布包缺少工具');
+    console.log('   thread communication MCP 可脱离 workspace 独立启动');
+  } finally {
+    rmSync(alone, { recursive: true, force: true });
+  }
+}
+
 console.log('\n④ 打包渲染层');
 /*
  * 用 pnpm --filter 而不是直接跑 `node node_modules/vite/bin/vite.js`。

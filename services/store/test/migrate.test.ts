@@ -59,6 +59,21 @@ function tableNames(db: SqliteLike): string[] {
   ).map((r) => r.name);
 }
 
+it('v4 升级新增通信队列，保留既有数据并生成权威备份', () => {
+  const path = join(dir, 'communication-upgrade.db');
+  const old = openStore({ path });
+  old.db.exec('DROP TABLE thread_message');
+  writeMeta(old.db, 'schema_version_authoritative', '4');
+  writeMeta(old.db, 'existing-data', 'preserved');
+  old.close();
+  const upgraded = openStore({ path });
+  expect(existsSync(path + '.bak.4')).toBe(true);
+  expect(readMeta(upgraded.db, 'existing-data')).toBe('preserved');
+  expect(tableNames(upgraded.db)).toContain('thread_message');
+  expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe(String(AUTHORITATIVE_VERSION));
+  upgraded.close();
+});
+
 describe('两个迁移器的分工（09 §4.6）', () => {
   it('全新库：两类表都建起来，版本号分别记在 meta 里', () => {
     const store = openStore({ path: join(dir, 'evowork.db') });
@@ -69,8 +84,8 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     }
     // 投影第 5 版追加 FTS 行到文档的覆盖索引。
     expect(readMeta(store.db, 'schema_version_projection')).toBe('5');
-    // 权威类第 4 版：此前三个迁移 + AI 图片操作。
-    expect(readMeta(store.db, 'schema_version_authoritative')).toBe('4');
+    // 权威类第 5 版：此前迁移 + AI 图片操作 + 独立会话通信。
+    expect(readMeta(store.db, 'schema_version_authoritative')).toBe(String(AUTHORITATIVE_VERSION));
     store.close();
   });
 
@@ -84,7 +99,9 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     const upgraded = openStore({ path });
     expect(existsSync(path + '.bak.3')).toBe(true);
     expect(readMeta(upgraded.db, 'existing-user-data')).toBe('preserved');
-    expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe('4');
+    expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe(
+      String(AUTHORITATIVE_VERSION),
+    );
     const columns = upgraded.db.prepare('PRAGMA table_info(image_operation)').all() as {
       name: string;
     }[];
@@ -111,7 +128,9 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     const upgraded = openStore({ path });
     try {
       expect(readMeta(upgraded.db, 'schema_version_projection')).toBe('5');
-      expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe('4');
+      expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe(
+        String(AUTHORITATIVE_VERSION),
+      );
       expect(readMeta(upgraded.db, 'existing-user-data')).toBe('preserved');
       expect(
         upgraded.db.prepare('SELECT source_hash FROM library_document WHERE id=?').get('retained'),

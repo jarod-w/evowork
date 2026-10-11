@@ -914,6 +914,99 @@ export function createAdapter(options: AdapterOptions) {
         !row.parent_thread_id,
       );
     },
+    communicationReady(): boolean {
+      return session.phase === 'ready';
+    },
+    async communicationHistory(threadId: string): Promise<readonly Turn[]> {
+      const response = await session.peer.request<ThreadReadResponse>(METHOD.threadRead, {
+        threadId,
+        includeTurns: true,
+      });
+      store.threads.upsertFromThread(response.thread);
+      return response.thread.turns ?? [];
+    },
+    async deliverCommunication(threadId: string, text: string): Promise<string> {
+      const response = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
+        threadId,
+      });
+      store.threads.upsertFromThread(response.thread);
+      const row = store.threads.get(threadId);
+      if (
+        !row ||
+        row.archived ||
+        row.parent_thread_id ||
+        row.automation_id ||
+        response.thread.turns?.at(-1)?.status === 'inProgress'
+      )
+        throw new Error('目标会话不能启动通信回合。');
+      const scenario =
+        scenarios.find((s) => s.id === row.scenario_id) ??
+        scenarios.find((s) => s.default) ??
+        scenarios[0];
+      if (!scenario) throw new Error('没有可用的场景包');
+      const expanded = expandTurnStart({
+        threadId,
+        input: [{ type: 'text', text }],
+        scenario,
+        overrides: {
+          model: requireResolvedModel(row.model ?? scenario.model),
+          modeId: resolveModeId(row.mode_id ?? 'craft'),
+          cwd: await taskCwd(threadId),
+          ...(row.permission_id ? { permissions: row.permission_id } : {}),
+        },
+        readInstructions: options.readInstructions ?? (() => undefined),
+        collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
+        permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+        approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
+      });
+      session.openThreads.add(threadId);
+      return (await startDesktopTurn(threadId, expanded.params)).turn.id;
+    },
+    resolveCommunicationToolCall(threadId: string, tool: string, args: unknown) {
+      const row = store.threads.get(threadId);
+      if (
+        !row ||
+        row.archived ||
+        row.parent_thread_id ||
+        row.automation_id ||
+        row.last_turn_status !== 'inProgress'
+      )
+        return undefined;
+      const canonical = (value: unknown): string =>
+        JSON.stringify(value, Object.keys((value ?? {}) as object).sort());
+      const matches = [...inFlightMcpCalls.entries()].filter(
+        ([, entry]) =>
+          entry.threadId === threadId &&
+          entry.server === 'thread_communication' &&
+          entry.tool === tool &&
+          entry.turnId === row.last_turn_id &&
+          canonical(entry.arguments) === canonical(args),
+      );
+      if (matches.length !== 1) return undefined;
+      return { callId: matches[0]![0], turnId: row.last_turn_id!, generation: session.generation };
+    },
+    async requestCommunicationConsent(approval: PendingApproval): Promise<ApprovalReply> {
+      const row = store.threads.get(approval.threadId);
+      if (
+        !row ||
+        row.archived ||
+        row.parent_thread_id ||
+        row.automation_id ||
+        row.last_turn_status !== 'inProgress' ||
+        row.last_turn_id !== approval.turnId
+      )
+        return { decision: 'decline' };
+      const result = await approvals.handle('mcpServer/elicitation/request', {
+        ...approval.params,
+        threadId: approval.threadId,
+        turnId: approval.turnId,
+      });
+      const content = result.content as Record<string, unknown> | null;
+      return {
+        decision: result.action === 'accept' ? 'accept' : 'decline',
+        ...(typeof content?.scope === 'string' ? { optionId: content.scope } : {}),
+      };
+    },
     resolveImageToolCall(threadId: string, tool: string, args: unknown) {
       const canonical = (value: unknown): string =>
         JSON.stringify(value, Object.keys((value ?? {}) as object).sort());

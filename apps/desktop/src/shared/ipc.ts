@@ -78,6 +78,7 @@ export interface DeeplinkDelivery {
 }
 
 export type RendererEvent =
+  | { readonly type: 'task-communication-updated'; readonly taskId: string }
   | { readonly type: 'task-disconnected'; readonly taskId: string }
   | { readonly type: 'task-restored'; readonly taskId: string; readonly history: OpenTaskResult }
   /**
@@ -1681,4 +1682,31 @@ export interface ImageOperationView {
   height: number | null;
   errorCode: string | null;
   submitted: boolean;
+}
+
+export interface CommunicationSendInput {
+  sourceThreadId: string;
+  targetThreadId: string;
+  text: string;
+  clientId: string;
+}
+export interface CommunicationRecordView {
+  id: string;
+  sourceThreadId: string;
+  targetThreadId: string;
+  text: string;
+  status: string;
+  reply: string | null;
+  error: string | null;
+  createdAt: number;
+}
+export interface CommunicationActions {
+  getCommunicationTargets(input: {
+    threadId: string;
+    includeOtherProjects?: boolean;
+  }): Promise<readonly { id: string; title: string; projectId: string | null; status: string }[]>;
+  getCommunicationRecords(input: { threadId: string }): Promise<readonly CommunicationRecordView[]>;
+  sendCommunication(input: CommunicationSendInput): Promise<{ requestId: string }>;
+  cancelCommunication(input: { threadId: string; requestId: string }): Promise<void>;
+  checkCommunication(input: { threadId: string; requestId: string }): Promise<void>;
 }
