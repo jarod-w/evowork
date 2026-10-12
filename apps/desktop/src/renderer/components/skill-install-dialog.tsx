@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CatalogMutationResult } from '../../shared/ipc.js';
+import { AuditFindings } from './audit-findings.js';
 import { Dialog } from './primitives.js';
 
 /** 附件安装复用目录安装的审计结果与确认要求。 */
@@ -23,11 +24,7 @@ export function SkillInstallDialog(props: {
       <p>
         安装后可在所有新旧任务中使用。单文件安装只包含这份 SKILL.md；有脚本或资源时请从目录安装。
       </p>
-      <ul className="ew-catalog-findings">
-        {audit.findings.map((finding) => (
-          <li key={finding}>{finding}</li>
-        ))}
-      </ul>
+      <AuditFindings findings={audit.findings} />
       {audit.worstCase ? <p>{audit.worstCase}</p> : null}
       {audit.level === 'p2' ? (
         <label className="ew-dialog-field">

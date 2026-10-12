@@ -695,7 +695,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           aria-label={props.goal ? '持续目标' : '任务执行进度'}
         >
           <div className="ew-goal-progress-copy">
-            <span>{props.goal?.objective ?? '任务计划'}</span>
+            <span title={props.goal?.objective}>{props.goal?.objective ?? '任务计划'}</span>
             <span>
               {props.goal
                 ? props.goal.status === 'active' &&

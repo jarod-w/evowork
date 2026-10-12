@@ -45,6 +45,28 @@ describe('Dialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('打开时焦点进入表单，Esc 从真实焦点关闭且不传给背景，关闭后还给触发按钮', () => {
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+    const cancel = vi.fn();
+    const outer = vi.fn();
+    const { unmount } = render(
+      <div onKeyDown={outer}>
+        <Dialog title="连接器设置" confirmLabel="保存" onConfirm={() => {}} onCancel={cancel}>
+          <input aria-label="名称" />
+        </Dialog>
+      </div>,
+    );
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '名称' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(outer).not.toHaveBeenCalled();
+    unmount();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
   it('confirmDisabled 时主动作点不动 —— 名字为空就不该能提交', () => {
     const onConfirm = vi.fn();
     render(

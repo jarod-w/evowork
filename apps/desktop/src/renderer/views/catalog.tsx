@@ -17,6 +17,7 @@ import type {
   HubEntryView,
   HubItemRef,
 } from '../../shared/ipc.js';
+import { AuditFindings } from '../components/audit-findings.js';
 import { Menu, Popover } from '../components/menu.js';
 import { TextTabs } from '../components/panels.js';
 import {
@@ -632,11 +633,7 @@ export function CatalogPage(props: CatalogPageProps) {
                   ? '高风险。输入名称以确认你知道它能做什么最坏的事。'
                   : '高风险。输入技能名以确认你知道它能做什么最坏的事。'}
           </p>
-          <ul className="ew-catalog-findings">
-            {pending.findings.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
+          <AuditFindings findings={pending.findings} />
           {pending.worstCase ? <p className="ew-catalog-worst">{pending.worstCase}</p> : null}
           {pending.level === 'p1' ? (
             <label className="ew-dialog-field">

@@ -23,7 +23,7 @@
  * 所以**渲染层的组件 prop 显式接受 undefined**，服务层保持严格。
  * 这不是把开关关掉 —— `apps/desktop/src/main` 与所有 `packages/` / `services/` 仍受它约束。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
 import { renderIcon } from './icons.js';
@@ -972,11 +972,8 @@ export function ProgressBar({
  * **新模态一律用它**。仓库里此前有**四处**各自搭的确认框：`views/library.tsx` 与
  * `views/sidebar.tsx`（两处共用 `ew-delete-confirm`）· `components/changes-view.tsx`
  * （`ew-revert-confirm`）· `components/composer.tsx`（`ew-danger-confirm`）。
- * 本任务只并掉 library 那一处，其余三处是记下来的债。
- *
- * **`ew-delete-confirm` 这个类名因此不能从 CSS 里删掉** —— sidebar 还在用它。
- * 而 sidebar 的测试只断言 role 与文案，删了不会有任何一条测试变红，
- * 表现是那个确认框丢掉边框背景阴影、变成浮在页面上的裸文字。
+ * 删除任务、文件撤销、会话回滚也复用此壳：长内容只滚正文，操作栏始终可见。
+ * 历史 ew-*-confirm 样式仍供说明文字与兼容测试使用。
  *
  * 它不管自己什么时候出现 —— 由调用方决定挂不挂载，
  * 这样"打开着的时候按 Esc"与"根本没打开"是两个显然不同的状态，
@@ -1011,21 +1008,39 @@ export function Dialog({
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    const first = dialog.current?.querySelector<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex="0"]',
+    );
+    (first ?? dialog.current)?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, []);
   return (
     <div className="ew-dialog-scrim">
       <div
         className="ew-dialog"
+        ref={dialog}
         data-variant={variant}
         role={variant === 'danger' ? 'alertdialog' : 'dialog'}
         aria-label={title}
         aria-modal="true"
         tabIndex={-1}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') onCancel();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          }
         }}
       >
         <div className="ew-dialog-head">
-          <p className="ew-dialog-title">{title}</p>
+          <p className="ew-dialog-title" title={title}>
+            {title}
+          </p>
           {closable && variant !== 'danger' ? (
             <IconButton label="关闭" icon={renderIcon('close')} onClick={onCancel} />
           ) : null}
@@ -1092,7 +1107,9 @@ export function ItemCard({
             {icon}
           </span>
         ) : null}
-        <span className="ew-item-card-name">{name}</span>
+        <span className="ew-item-card-name" title={name}>
+          {name}
+        </span>
         {action ? (
           /*
            * 整张卡都可点（打开详情），而 `action`（项目卡是 ⋯ 菜单）嵌在卡片内部 ——
@@ -1105,11 +1122,13 @@ export function ItemCard({
           </span>
         ) : null}
       </div>
-      <p className="ew-item-card-desc">{description}</p>
+      <p className="ew-item-card-desc" title={description}>
+        {description}
+      </p>
       {hasBadges ? (
         <p className="ew-item-card-badges">
           {badges.map((badge) => (
-            <span key={badge} className="ew-item-card-badge">
+            <span key={badge} className="ew-item-card-badge" title={badge}>
               {badge}
             </span>
           ))}

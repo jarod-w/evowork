@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 
-import { EmptyState, PillButton, SegmentedControl } from './primitives.js';
+import { Dialog, EmptyState, PillButton, SegmentedControl } from './primitives.js';
 
 export interface ChangedFile {
   readonly path: string;
@@ -147,30 +147,24 @@ export function ChangesView(props: ChangesViewProps) {
       ) : null}
 
       {confirm ? (
-        <div
-          className="ew-revert-confirm"
-          role="alertdialog"
-          aria-label={REVERT_COPY[confirm.kind].title}
+        <Dialog
+          title={REVERT_COPY[confirm.kind].title}
+          variant="danger"
+          confirmLabel="确认"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            if (confirm.kind === 'revert') props.onRevert?.(confirm.path);
+            else props.onRollback?.(confirm.path);
+            setConfirm(null);
+          }}
         >
-          <p className="ew-revert-confirm-title">{REVERT_COPY[confirm.kind].title}</p>
           <p
             className="ew-revert-confirm-body"
             data-touches-disk={REVERT_COPY[confirm.kind].touchesDisk ? 'true' : 'false'}
           >
             {REVERT_COPY[confirm.kind].body}
           </p>
-          <PillButton onClick={() => setConfirm(null)}>取消</PillButton>
-          <PillButton
-            variant="accent"
-            onClick={() => {
-              if (confirm.kind === 'revert') props.onRevert?.(confirm.path);
-              else props.onRollback?.(confirm.path);
-              setConfirm(null);
-            }}
-          >
-            确认
-          </PillButton>
-        </div>
+        </Dialog>
       ) : null}
     </div>
   );

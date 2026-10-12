@@ -707,8 +707,17 @@ export function Sidebar(props: SidebarProps) {
       ) : null}
 
       {confirmDelete ? (
-        <div className="ew-delete-confirm" role="alertdialog" aria-label="删除任务">
-          <p className="ew-delete-confirm-title">删除「{confirmDelete.title ?? '未命名任务'}」？</p>
+        <Dialog
+          title="删除任务"
+          variant="danger"
+          confirmLabel="删除任务"
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            props.onRowAction?.('delete', confirmDelete.id);
+            setConfirmDelete(null);
+          }}
+        >
+          <p>删除「{confirmDelete.title ?? '未命名任务'}」？</p>
           {/* 04 §3.3 要求说清这一句。答案是"不删" */}
           <p className="ew-delete-confirm-body">
             归档只隐藏任务并保留历史；删除会清除本机任务历史，包括随任务保存的电脑操控界面文字和截图。
@@ -720,17 +729,7 @@ export function Sidebar(props: SidebarProps) {
             {confirmDelete.cwd ? `（${confirmDelete.cwd}）` : ''}
             ；已导出、备份或发送给模型提供方的外部副本也不会被撤回。
           </p>
-          <PillButton onClick={() => setConfirmDelete(null)}>取消</PillButton>
-          <PillButton
-            variant="accent"
-            onClick={() => {
-              props.onRowAction?.('delete', confirmDelete.id);
-              setConfirmDelete(null);
-            }}
-          >
-            删除任务
-          </PillButton>
-        </div>
+        </Dialog>
       ) : null}
     </nav>
   );
