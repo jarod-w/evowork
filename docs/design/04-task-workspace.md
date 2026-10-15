@@ -233,7 +233,8 @@
 | 切换工作模式     | 下一次 `turn/start` 生效；**不追溯已发生的回合**              |
 | 切换权限 profile | `turn/start.permissions`（F5：不与 `sandboxPolicy` 同传）     |
 | 切换模型         | `turn/start.model`                                            |
-| 任务是否贡献记忆 | `thread/memoryMode/set` (exp)；总开关、使用与生成在「设置 → 个性化」 |
+| 任务是否贡献记忆 | `/memories` 弹窗调用 `thread/memoryMode/set` (exp)；全局控制在「设置 → 个性化」 |
+| 新任务读取记忆 | 通过 `/memories` 弹窗在发送前选择跟随全局 / 读取 / 不读取；经 `thread/start.config` 生效，宿主保存并在恢复、分叉时重放；已加载任务不能热切换，也不撤回历史 |
 | 设定预算         | `thread/goal/set` 的 `tokenBudget`（Q11，10 §5）              |
 | 压缩上下文       | `thread/compact/start`，并在流里插入 `ContextCompaction` item |
 | 回滚 / 撤销      | `thread/rollback` / `thread/revert`（§6.3）                   |

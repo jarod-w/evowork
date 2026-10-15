@@ -33,11 +33,14 @@ if (kernelProblem) throw new Error(kernelProblem);
 // 才能让测试超时与 CI 清理都可靠。
 const electron = require('electron');
 const taskSkills = process.argv.includes('--task-skills');
+const memory = process.argv.includes('--memory');
 const entry = resolve(
   root,
-  taskSkills
-    ? 'apps/desktop/test/e2e/task-skills.e2e.mjs'
-    : 'apps/desktop/test/e2e/skill-reference.e2e.mjs',
+  memory
+    ? 'apps/desktop/test/e2e/memory.e2e.mjs'
+    : taskSkills
+      ? 'apps/desktop/test/e2e/task-skills.e2e.mjs'
+      : 'apps/desktop/test/e2e/skill-reference.e2e.mjs',
 );
 /*
  * VS Code 的集成终端与扩展宿主会设 `ELECTRON_RUN_AS_NODE=1`（它自己就是 Electron 应用）。
@@ -82,7 +85,9 @@ if (!marker) throw new Error('桌面 E2E 没有返回验收结果。');
 const result = JSON.parse(marker.slice('__EVOWORK_DESKTOP_E2E__'.length));
 if (result.ok !== true) throw new Error(`桌面 E2E 未通过：${JSON.stringify(result)}`);
 console.log(
-  taskSkills
-    ? '✅ 真实 app-server + Electron 无项目任务技能发现 E2E 通过'
-    : '✅ 真实 app-server + Electron 技能引用 / 记忆控制 E2E 通过',
+  memory
+    ? '✅ 真实 app-server + Electron 记忆模型与读取控制 E2E 通过'
+    : taskSkills
+      ? '✅ 真实 app-server + Electron 无项目任务技能发现 E2E 通过'
+      : '✅ 真实 app-server + Electron 技能引用 / 记忆控制 E2E 通过',
 );

@@ -19,6 +19,9 @@ describe('no-kernel-internals（K2 边界纪律）', () => {
         { code: `await rpc.request('memory/status', {});` },
         { code: `await rpc.request('thread/memoryMode/set', { threadId, mode: 'disabled' });` },
         { code: `await rpc.request('memory/reset', {});` },
+        { code: `const command = '/memories';` },
+        { code: `if (text === '/memories') openSettings();` },
+        { code: `notify('/memories 不接受参数。');` },
         // 变量名/注释里提到这些概念不算破线（规则只看字符串与成员访问）
         { code: `const rolloutTraceEnabled = true;` },
         // 自己的投影表（09 §4.1）——名字里没有内核痕迹
@@ -50,6 +53,9 @@ describe('no-kernel-internals（K2 边界纪律）', () => {
           errors: [{ messageId: 'kernelState' }],
         },
         // 相对路径 + 扩展名也算路径
+        { code: `await readdir('/memories');`, errors: [{ messageId: 'kernelState' }] },
+        { code: `const path = join('/memories');`, errors: [{ messageId: 'kernelState' }] },
+        { code: `const config = { path: '/memories' };`, errors: [{ messageId: 'kernelState' }] },
         {
           code: `await readFile('rollouts/2026-09-05.jsonl', 'utf8');`,
           errors: [{ messageId: 'kernelState' }],

@@ -311,6 +311,8 @@ export type ModelUnavailableReason =
   'no-token' | 'no-keys' | 'unauthorized' | 'unreachable' | 'empty' | 'http' | 'broken-install';
 
 export interface SendInput {
+  /** 只在新任务创建前设置；已进入历史的记忆无法撤回。 */
+  readonly useMemories?: boolean | undefined;
   /** 已确认替换现有目标；宿主仍重新检查权威状态。 */
   readonly replaceGoal?: boolean | undefined;
   readonly draftId?: string | undefined;
@@ -1311,6 +1313,8 @@ export interface MemorySettingsView {
   readonly useMemories: boolean;
   readonly generateMemories: boolean;
   readonly disableOnExternalContext: boolean;
+  readonly extractModel?: string | undefined;
+  readonly consolidationModel?: string | undefined;
   readonly statusSupported: boolean;
   /** 内核协议是否仍提供“清空全部”；不可用时设置页必须禁用入口。 */
   readonly resetSupported: boolean;
@@ -1324,7 +1328,11 @@ export interface MemorySettingsInput {
   readonly enabled: boolean;
   readonly useMemories: boolean;
   readonly generateMemories: boolean;
-  /** 有当前任务时同步更新它是否贡献记忆；使用既有记忆只对后续新任务生效。 */
+  readonly disableOnExternalContext?: boolean | undefined;
+  /** null = 跟随启动该记忆处理流程的任务模型；缺省保留原配置。 */
+  readonly extractModel?: string | null | undefined;
+  readonly consolidationModel?: string | null | undefined;
+  /** 兼容旧调用方；全局保存不再修改当前任务的选择。 */
   readonly currentThreadId?: string | undefined;
 }
 

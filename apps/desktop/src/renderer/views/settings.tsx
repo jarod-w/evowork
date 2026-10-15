@@ -187,6 +187,7 @@ function MemorySection(props: SettingsPageProps) {
       enabled: memory.enabled,
       useMemories: memory.useMemories,
       generateMemories: memory.generateMemories,
+      disableOnExternalContext: memory.disableOnExternalContext,
       ...next,
     });
   };
@@ -236,12 +237,61 @@ function MemorySection(props: SettingsPageProps) {
       <p className="ew-settings-note" role="status">
         {status}
       </p>
+      <label className="ew-checkbox">
+        <input
+          type="checkbox"
+          checked={!memory.disableOnExternalContext}
+          disabled={!memory.enabled}
+          onChange={(event) => update({ disableOnExternalContext: !event.target.checked })}
+        />
+        <span>允许使用网页或连接器的任务贡献记忆</span>
+      </label>
       <p className="ew-settings-note">
-        含网页或连接器等外部上下文的任务默认不参与提取，避免把不可信内容沉淀为长期上下文。当前任务也可在输入区单独选择“不贡献记忆”。
+        默认排除使用网页或连接器的整个任务。开启后，这些任务也可成为记忆来源；只影响后续使用工具的任务，不会自动恢复此前已排除的任务。
+      </p>
+      {(['extractModel', 'consolidationModel'] as const).map((key) => {
+        const value = memory[key];
+        const models = props.access?.models ?? [];
+        return (
+          <div key={key}>
+            <p className="ew-settings-note">
+              {key === 'extractModel' ? '记忆提取模型' : '记忆整理模型'}
+            </p>
+            <InlineSelect
+              ariaLabel={key === 'extractModel' ? '记忆提取模型' : '记忆整理模型'}
+              placeholder={key === 'extractModel' ? '记忆提取模型' : '记忆整理模型'}
+              value={value ?? '@task'}
+              disabled={!memory.enabled}
+              options={[
+                { id: '@task', label: '跟随任务模型' },
+                ...(value && !models.some((model) => model.id === value)
+                  ? [{ id: value, label: `${value}（当前不可用）`, disabled: true }]
+                  : []),
+                ...models.map((model) => ({
+                  id: model.id,
+                  label: model.label,
+                  disabled: !!model.denied,
+                  description:
+                    model.denied ??
+                    {
+                      byok: '用户自有模型密钥',
+                      hosted: '托管模型凭据',
+                      private: '私有模型服务凭据',
+                    }[model.credentialSource],
+                })),
+              ]}
+              onChange={(id) => update({ [key]: id === '@task' ? null : id })}
+            />
+          </div>
+        );
+      })}
+      <p className="ew-settings-note">
+        提取和整理会调用模型并消耗用量。未指定时使用启动该后台流程的任务模型；单独指定时使用所选模型的凭据。修改对之后启动或恢复的任务生效。
+        新任务可在发送前通过 /memories 单独选择是否读取记忆；已有任务不能撤回已进入历史的记忆。
       </p>
       {!memory.taskModeSupported ? (
         <p className="ew-settings-note" role="status">
-          当前内核不支持按任务设置记忆，输入区将使用全局设置。
+          当前版本不支持按任务调整记忆贡献，使用全局设置。
         </p>
       ) : null}
       <PillButton disabled={!memory.resetSupported} onClick={() => setConfirmReset(true)}>

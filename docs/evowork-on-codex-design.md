@@ -750,21 +750,22 @@ OAuth 令牌存 `codex-rs/secrets` + `keyring-store`，不落明文配置。
 
 ### 6.6 记忆系统（以当前 ChatGPT / Codex 基线为准）
 
-基线来源：[OpenAI Docs · Memories](https://learn.chatgpt.com/docs/customization/memories)（复核于 2026-09-26）。
-EvoWork 只在“默认开启”上按本产品决策偏离上游的默认关闭；其余控制语义与数据边界以该基线为准。
+基线来源：[OpenAI Docs · Memories](https://learn.chatgpt.com/docs/customization/memories)（复核于 2026-10-15）。
+EvoWork 保留默认开启、默认排除外部上下文的产品选择；后者可在个性化页关闭，保存其他设置不改变它。
 
 | 能力 | 实现 |
 | ---- | ---- |
 | 总开关 | `[features] memories = true`，EvoWork 首装与旧安装缺省都开启；已有显式 `false` 不覆盖 |
-| 使用已有记忆 | `memories.use_memories`，只影响后续新任务是否注入已提取上下文 |
+| 使用已有记忆 | `memories.use_memories` 是全局默认；新任务发送前可通过 `thread/start.config` 单独覆盖，宿主保存该选择并在恢复时重放。当前内核不支持对已加载任务热切换，不能撤回已进入历史的记忆 |
 | 生成新记忆 | `memories.generate_memories`；当前任务可用 `thread/memoryMode/set` 单独覆盖 |
-| 外部上下文保护 | `memories.disable_on_external_context = true`；网页、MCP/连接器等外部上下文默认不进入提取 |
+| 外部上下文保护 | `memories.disable_on_external_context = true`；网页、MCP/连接器等外部上下文默认不进入提取，用户可显式关闭 |
+| 记忆模型 | 个性化页可分别指定网关目录中的提取/整理模型；未指定时在任务启动/恢复配置中显式使用该任务模型，避免请求内核默认的未注册型号。显式配置不静默替换，沿用现有网关及凭据路径 |
 | 准备状态与清空 | `memory/status` 只提供 V2 整理进度；V1 不请求/轮询该方法；`memory/reset` 清空全部本机记忆 |
 | 项目长期指令 | `AGENTS.md` 层级加载；它是项目指导文件，不是自动学习记忆 |
 | 历史检索 | `thread/searchOccurrences`，与记忆注入是不同能力 |
 
 当前 app-server **没有**记忆正文的 list/read/write/edit/delete 协议。因此产品入口在
-「设置 → 个性化」：总开关、使用、生成、清空全部；V2 额外显示准备状态，V1 明确说明当前协议不提供进度。任务输入区提供“贡献记忆 / 不贡献记忆”。
+「设置 → 个性化」：总开关、使用、生成、外部上下文保护、提取/整理模型、清空全部；V2 额外显示准备状态，V1 明确说明当前协议不提供进度。输入区不显示常驻记忆下拉框；输入或从补全菜单选择 `/memories` 打开记忆设置弹窗，在弹窗中控制新任务读取和当前任务贡献，另可进入全局个性化设置。命令本地执行，不创建任务、不发送给模型；取消不保存，模型离线时也能打开。全局保存不覆盖当前任务的生成选择。
 不实现「长期记忆」条目列表、逐条编辑/删除、对话内「已记住 + 撤销」等无法由协议兑现的界面。
 生成文件是内核内部状态，EvoWork 不直接读取。ChatGPT Web 的云端记忆与本机 Codex 记忆分离，
 本期不提供同步开关或 `MemoryBackend` 远端实现。

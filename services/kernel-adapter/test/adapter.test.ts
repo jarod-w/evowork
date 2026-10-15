@@ -479,18 +479,19 @@ describe('本地记忆（当前 Codex 基线）', () => {
     expect(server.received.some((r) => r.method === 'memory/status')).toBe(false);
   });
 
-  it('全局设置热重载，并把生成开关应用到当前任务', async () => {
+  it('全局设置热重载，尊重外部上下文选择且不覆盖当前任务', async () => {
     await adapter.start();
 
     const view = await adapter.updateMemorySettings({
       enabled: true,
       useMemories: true,
       generateMemories: false,
+      disableOnExternalContext: false,
       currentThreadId: 'thread-memory',
     });
 
     expect(view.generateMemories).toBe(false);
-    expect(view.disableOnExternalContext).toBe(true);
+    expect(view.disableOnExternalContext).toBe(false);
     expect(server.received.findLast((r) => r.method === 'config/batchWrite')?.params).toEqual({
       edits: [
         { keyPath: 'features.memories', value: true, mergeStrategy: 'replace' },
@@ -498,7 +499,7 @@ describe('本地记忆（当前 Codex 基线）', () => {
         { keyPath: 'memories.generate_memories', value: false, mergeStrategy: 'replace' },
         {
           keyPath: 'memories.disable_on_external_context',
-          value: true,
+          value: false,
           mergeStrategy: 'replace',
         },
       ],
@@ -506,7 +507,7 @@ describe('本地记忆（当前 Codex 基线）', () => {
       expectedVersion: null,
       reloadUserConfig: true,
     });
-    expect(server.threadMemoryModes.get('thread-memory')).toBe('disabled');
+    expect(server.threadMemoryModes.has('thread-memory')).toBe(false);
   });
 
   it('支持单任务覆盖与清空全部本地记忆', async () => {
@@ -517,6 +518,86 @@ describe('本地记忆（当前 Codex 基线）', () => {
 
     expect(server.threadMemoryModes.get('thread-1')).toBe('disabled');
     expect(server.memoryResetCount).toBe(1);
+  });
+
+  it('旧调用方省略外部上下文和模型字段时保留已保存设置', async () => {
+    server.memoryConfig.disableOnExternalContext = false;
+    server.memoryConfig.extractModel = 'test/extract';
+    await adapter.start();
+    const view = await adapter.updateMemorySettings({
+      enabled: true,
+      useMemories: false,
+      generateMemories: true,
+    });
+    expect(view).toMatchObject({ disableOnExternalContext: false, extractModel: 'test/extract' });
+  });
+
+  it('未指定记忆模型时显式使用任务模型，单任务禁读不修改全局设置', async () => {
+    await adapter.start();
+    const task = await adapter.createTask({
+      input: [{ type: 'text', text: '不读取已有记忆' }],
+      overrides: { cwd: '/w', model: 'test/byok' },
+      useMemories: false,
+    });
+    expect(
+      server.received.findLast((r) => r.method === 'thread/start')?.params.config,
+    ).toMatchObject({
+      'memories.extract_model': 'test/byok',
+      'memories.consolidation_model': 'test/byok',
+      'memories.use_memories': false,
+    });
+    expect((await adapter.getMemorySettings()).useMemories).toBe(true);
+    expect(adapter.taskMemoryUse(task.threadId)).toBe(false);
+    server.handlers.set('thread/fork', () => ({
+      thread: makeThread({ id: 'memory-fork', cwd: '/w' }),
+    }));
+    const forkId = await adapter.forkTask(task.threadId);
+    expect(adapter.taskMemoryUse(forkId)).toBe(false);
+    expect(
+      server.received.findLast((r) => r.method === 'thread/fork')?.params.config,
+    ).toMatchObject({ 'memories.use_memories': false });
+    await adapter.openTask(task.threadId);
+    expect(
+      server.received.findLast((r) => r.method === 'thread/resume')?.params.config,
+    ).toMatchObject({ 'memories.use_memories': false });
+  });
+
+  it('显式记忆模型不被任务模型替换，清除后恢复跟随任务模型', async () => {
+    await adapter.start();
+    await adapter.updateMemorySettings({
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      extractModel: 'test/extract',
+      consolidationModel: 'test/consolidate',
+    });
+    await adapter.createTask({
+      input: [{ type: 'text', text: '使用指定记忆模型' }],
+      overrides: { cwd: '/w' },
+    });
+    expect(
+      server.received.findLast((r) => r.method === 'thread/start')?.params.config,
+    ).toMatchObject({
+      'memories.extract_model': 'test/extract',
+      'memories.consolidation_model': 'test/consolidate',
+    });
+    await adapter.updateMemorySettings({
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      extractModel: null,
+      consolidationModel: null,
+    });
+    await adapter.createTask({
+      input: [{ type: 'text', text: '跟随任务模型' }],
+      overrides: { cwd: '/w' },
+    });
+    expect(
+      server.received.findLast((r) => r.method === 'thread/start')?.params.config,
+    ).toMatchObject({
+      'memories.extract_model': 'test/model',
+      'memories.consolidation_model': 'test/model',
+    });
   });
 
   it('实验方法被上游移除时把能力降级暴露给 UI', async () => {
@@ -614,7 +695,7 @@ describe('新建任务（03 §4.6）', () => {
     // F25：产品身份走 thread/start.baseInstructions，不是 developer_instructions
     const threadStart = server.received.find((r) => r.method === 'thread/start');
     expect(threadStart?.params.baseInstructions).toBe("You are EvoWork's execution agent.");
-    expect(threadStart?.params.config).toEqual({
+    expect(threadStart?.params.config).toMatchObject({
       'skills.config': [{ name: 'openai-docs', enabled: false }],
     });
   });

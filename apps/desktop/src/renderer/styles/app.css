@@ -2019,6 +2019,20 @@ textarea {
   gap: var(--space-8);
   justify-content: flex-end;
 }
+.ew-memory-read-options {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.ew-memory-read-options legend {
+  padding: 0 var(--space-4);
+  color: var(--text-primary);
+}
+.ew-memory-read-options .ew-checkbox + .ew-checkbox {
+  margin-top: var(--space-8);
+}
 
 /* ─────────────────────────── 01 §5.20 ItemCard ─────────────────────────── */
 

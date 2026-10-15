@@ -128,6 +128,7 @@ describe('个性化记忆', () => {
       enabled: true,
       useMemories: true,
       generateMemories: false,
+      disableOnExternalContext: true,
     });
 
     page({ section: 'personalization', memory: { ...MEMORY, enabled: false } });
@@ -149,6 +150,42 @@ describe('个性化记忆', () => {
     expect(props.onResetMemories).toHaveBeenCalled();
   });
 
+  it('外部上下文开关可关闭保护，其他设置不会把它重新打开', () => {
+    const props = page({
+      section: 'personalization',
+      memory: { ...MEMORY, disableOnExternalContext: false },
+    });
+    const allow = screen.getByRole('checkbox', {
+      name: '允许使用网页或连接器的任务贡献记忆',
+    }) as HTMLInputElement;
+    expect(allow.checked).toBe(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: '在新任务中使用已有记忆' }));
+    expect(props.onMemorySettings).toHaveBeenLastCalledWith({
+      enabled: true,
+      useMemories: false,
+      generateMemories: true,
+      disableOnExternalContext: false,
+    });
+    fireEvent.click(allow);
+    expect(props.onMemorySettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ disableOnExternalContext: true }),
+    );
+  });
+
+  it('分别选择提取和整理模型，可清除指定恢复跟随任务', () => {
+    const props = page({ section: 'personalization' });
+    fireEvent.click(screen.getByRole('button', { name: '记忆提取模型' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(`^${model().label}`) }));
+    expect(props.onMemorySettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ extractModel: model().id }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '记忆整理模型' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^跟随任务模型/ }));
+    expect(props.onMemorySettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ consolidationModel: null }),
+    );
+  });
+
   it('内核缺少实验方法时显式禁用对应控件', () => {
     page({
       section: 'personalization',
@@ -157,7 +194,7 @@ describe('个性化记忆', () => {
     expect(
       (screen.getByRole('button', { name: '清空全部本地记忆' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    expect(screen.getByText(/输入区将使用全局设置/)).toBeTruthy();
+    expect(screen.getByText(/不支持按任务调整记忆贡献，使用全局设置/)).toBeTruthy();
     expect(screen.getByText(/不支持清空全部本地记忆/)).toBeTruthy();
   });
 });

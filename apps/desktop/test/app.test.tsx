@@ -349,6 +349,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
         path: `/skills/${skill.id}/SKILL.md`,
       })),
       commands: [
+        { id: 'memories', label: 'memories · 记忆设置', kind: 'local' as const },
         { id: 'new-task', label: '新建任务', kind: 'local' as const },
         { id: 'clear', label: '清空输入', kind: 'local' as const },
       ],
@@ -568,6 +569,106 @@ describe('首页不创建 Thread（03 §1）', () => {
     );
     // 切到任务页：首页的 Hero 不在了
     await waitFor(() => expect(screen.queryByText('有什么可以帮忙的？')).toBeNull());
+  });
+
+  function memoryBridge(over: Partial<EvoworkBridge> = {}) {
+    return fakeBridge({
+      getMemorySettings: vi.fn(async () => ({
+        enabled: true,
+        version: 'v1' as const,
+        useMemories: true,
+        generateMemories: true,
+        disableOnExternalContext: true,
+        statusSupported: false,
+        resetSupported: true,
+        taskModeSupported: true,
+        consolidatedThreads: 0,
+        ready: false,
+      })),
+      ...over,
+    });
+  }
+
+  async function openMemoriesCommand() {
+    await waitFor(() => screen.getByLabelText('需求输入'));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '/memories' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() => screen.getByRole('dialog', { name: '记忆设置' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '保存' })).toHaveProperty('disabled', false),
+    );
+  }
+
+  it('/memories 本地打开设置，新任务禁读在保存后随创建发送', async () => {
+    const { bridge } = memoryBridge();
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('需求输入'));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '/memories' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => screen.getByRole('radio', { name: '不读取已有记忆' }));
+    expect(bridge.send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: '不读取已有记忆' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '记忆设置' })).toBeNull());
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '独立处理这次任务' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(expect.objectContaining({ useMemories: false })),
+    );
+    expect(screen.queryByRole('button', { name: '任务记忆' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '新任务读取记忆' })).toBeNull();
+  });
+
+  it('取消 /memories 不保存选择，也不创建任务；可进入全局设置', async () => {
+    const { bridge } = memoryBridge();
+    render(<App bridge={bridge} />);
+    await openMemoriesCommand();
+    fireEvent.click(screen.getByRole('radio', { name: '不读取已有记忆' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await openMemoriesCommand();
+    expect(screen.getByRole('radio', { name: /跟随全局设置/ })).toHaveProperty('checked', true);
+    fireEvent.click(screen.getByRole('button', { name: '打开全局记忆设置' }));
+    await waitFor(() => screen.getByRole('checkbox', { name: '启用本地记忆' }));
+    expect(bridge.send).not.toHaveBeenCalled();
+  });
+
+  it('已有任务通过 /memories 单独关闭贡献，不发送命令或改变全局', async () => {
+    const setTaskMemoryMode = vi.fn(async () => ({ ok: true }));
+    const { bridge } = memoryBridge({ setTaskMemoryMode });
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('需求输入'));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '先创建任务' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByText('有什么可以帮忙的？')).toBeNull());
+    await openMemoriesCommand();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.getByText(/更改读取方式请新建任务/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: '允许当前任务贡献新记忆' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() =>
+      expect(setTaskMemoryMode).toHaveBeenCalledWith({ threadId: 't1', enabled: false }),
+    );
+    expect(bridge.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('/memories 保存失败时保留弹窗与选择，不把命令发给模型', async () => {
+    const { bridge } = memoryBridge({ setTaskMemoryMode: vi.fn(async () => ({ ok: false })) });
+    render(<App bridge={bridge} />);
+    await waitFor(() => screen.getByLabelText('需求输入'));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '先创建任务' } });
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByText('有什么可以帮忙的？')).toBeNull());
+    await openMemoriesCommand();
+    fireEvent.click(screen.getByRole('checkbox', { name: '允许当前任务贡献新记忆' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('不支持任务级记忆控制'),
+    );
+    expect(screen.getByRole('checkbox', { name: '允许当前任务贡献新记忆' })).toHaveProperty(
+      'checked',
+      false,
+    );
+    expect(bridge.send).toHaveBeenCalledTimes(1);
   });
 
   it('在任务页里发送带上 threadId（不会又建一个新任务）', async () => {

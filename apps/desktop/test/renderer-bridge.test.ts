@@ -137,6 +137,66 @@ function makeActions(overrides: Partial<Parameters<typeof createRendererActions>
   });
 }
 
+describe('记忆配置边界', () => {
+  const memory = {
+    enabled: true,
+    version: 'v1' as const,
+    useMemories: true,
+    generateMemories: true,
+    disableOnExternalContext: true,
+    statusSupported: false,
+    resetSupported: true,
+    taskModeSupported: true,
+    consolidatedThreads: 0,
+    ready: false,
+  };
+  it('未知或被策略禁用的记忆模型不能写入配置', async () => {
+    const updateMemorySettings = vi.fn(async () => memory);
+    const actions = makeActions({
+      adapter: fakeAdapter({ getMemorySettings: async () => memory, updateMemorySettings }),
+      readModelCatalog: async () => ({ models: [] }),
+    });
+    const result = await actions.setMemorySettings({
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      extractModel: 'unknown/model',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.refused).toContain('记忆模型当前不可用');
+    expect(updateMemorySettings).not.toHaveBeenCalled();
+  });
+  it('清除模型配置无需目录可用；外部上下文选择原样传递', async () => {
+    const updateMemorySettings = vi.fn(async () => memory);
+    const actions = makeActions({ adapter: fakeAdapter({ updateMemorySettings }) });
+    const input = {
+      enabled: true,
+      useMemories: true,
+      generateMemories: true,
+      disableOnExternalContext: false,
+      extractModel: null,
+      consolidationModel: null,
+    };
+    expect((await actions.setMemorySettings(input)).ok).toBe(true);
+    expect(updateMemorySettings).toHaveBeenCalledWith(input);
+  });
+  it('宿主拒绝把 /memories 作为需求发给模型', async () => {
+    const createTask = vi.fn();
+    const actions = makeActions({ adapter: fakeAdapter({ createTask }) });
+    await expect(actions.send({ text: '/memories' })).rejects.toThrow('本地记忆设置');
+    await expect(actions.send({ text: '/memories extra' })).rejects.toThrow('本地记忆设置');
+    expect(createTask).not.toHaveBeenCalled();
+  });
+  it('拒绝已有任务读取热切换，不能静默忽略', async () => {
+    const sendMessage = vi.fn();
+    const actions = makeActions({ adapter: fakeAdapter({ sendMessage }) });
+    await expect(
+      actions.send({ threadId: 't1', text: '继续', useMemories: false }),
+    ).rejects.toThrow('只能在新任务发送前选择');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('来源打开只接受当前任务内核历史中的网页', () => {
   const source = {
     id: 'web_0123456789abcdef',

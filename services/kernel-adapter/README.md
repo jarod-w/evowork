@@ -18,4 +18,6 @@
 产品身份（K5）走 `thread/start.baseInstructions` 整段替换内核底稿，并关掉系统技能
 `openai-docs`（F25）。`developer_instructions` 只管 Craft/Plan/Ask 怎么干活，盖不住「你是谁」。
 
+记忆配置通过 `config/read` / `config/batchWrite` 管理来源和提取/整理模型。未指定记忆模型时，任务启动与冷恢复配置显式使用任务模型；新任务读取选择保存到宿主 meta，在恢复/分叉时重放。已加载任务不支持读取热切换。生产代码不读写内核记忆存储；真实后台回归及时间夹具在 `test-support`，入口 `node scripts/desktop-skills-e2e.mjs --memory`（仓库根执行）。
+
 **独立会话通信（2026-10-11）**：`thread-communication.ts` 管理权威本机队列、每目标互斥、空闲投递、最终结果回传和断线核对。`Adapter` 校验原生 MCP item、具体范围审批、来源回合及内核代际；投递沿用目标模型/权限/模式，以官方 `thread/read`、`thread/resume`、`turn/start` 完成。不会读取内核数据库或复制 rollout；未知投递不自动重试。设计见 [17](../../docs/design/17-thread-communication.md)。

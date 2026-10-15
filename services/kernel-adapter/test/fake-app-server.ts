@@ -66,6 +66,8 @@ export class FakeAppServer {
     useMemories: boolean;
     generateMemories: boolean;
     disableOnExternalContext: boolean;
+    extractModel?: string | undefined;
+    consolidationModel?: string | undefined;
   } = {
     enabled: true,
     version: 'v2',
@@ -137,6 +139,8 @@ export class FakeAppServer {
         features: { memories: this.memoryConfig.enabled },
         memories: {
           version: this.memoryConfig.version,
+          extract_model: this.memoryConfig.extractModel,
+          consolidation_model: this.memoryConfig.consolidationModel,
           use_memories: this.memoryConfig.useMemories,
           generate_memories: this.memoryConfig.generateMemories,
           disable_on_external_context: this.memoryConfig.disableOnExternalContext,
@@ -148,6 +152,11 @@ export class FakeAppServer {
       for (const raw of (ctx.params.edits as readonly Record<string, unknown>[] | undefined) ??
         []) {
         const key = raw.keyPath;
+        if (key === 'memories.extract_model')
+          this.memoryConfig.extractModel = typeof raw.value === 'string' ? raw.value : undefined;
+        if (key === 'memories.consolidation_model')
+          this.memoryConfig.consolidationModel =
+            typeof raw.value === 'string' ? raw.value : undefined;
         if (key === 'features.memories') this.memoryConfig.enabled = Boolean(raw.value);
         if (key === 'memories.use_memories') this.memoryConfig.useMemories = Boolean(raw.value);
         if (key === 'memories.generate_memories')

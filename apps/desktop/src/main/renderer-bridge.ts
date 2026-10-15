@@ -33,6 +33,7 @@ import { mergeWebSources, webResearchResult, type WebSource } from '../shared/we
 import type { TaskEnvironments } from './task-environments.js';
 
 import { parseGoalCommand } from '../shared/goal-command.js';
+import { isMemoriesCommand } from '../shared/memory-command.js';
 import {
   titleFromText,
   isModeId,
@@ -1570,6 +1571,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
       await options.communication.check(input.threadId, input.requestId);
     },
     async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
+      if (isMemoriesCommand(input.text))
+        throw new Error('请通过 /memories 打开本地记忆设置，不要发送给模型。');
+      if (input.threadId && input.useMemories !== undefined)
+        throw new Error('读取记忆只能在新任务发送前选择；已有任务的记忆无法撤回。');
       const id = input.draftId;
       if (id && sendingDrafts.has(id)) return sendingDrafts.get(id)!;
       const operation = (async () => {
@@ -1664,6 +1669,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
             ...remapped.map(toKernelReference),
           ];
           if (environment.threadId) {
+            if (
+              input.useMemories !== undefined &&
+              adapter.taskMemoryUse(environment.threadId) !== input.useMemories
+            )
+              throw new Error('这个草稿已经创建任务，不能改变读取记忆的选择；请新建任务。');
             if (!environment.sent) {
               if (goalObjective) await prepareGoal(environment.threadId);
               await adapter.sendMessage({
@@ -1737,6 +1747,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         const created = await adapter.createTask({
           desktopInteractive: true,
           input: content,
+          ...(input.useMemories !== undefined ? { useMemories: input.useMemories } : {}),
           ...(goalObjective ? { goalObjective } : {}),
           ...(environment
             ? { onCreated: (threadId: string) => options.environments!.bind(threadId, environment) }
@@ -1921,6 +1932,21 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
     async setMemorySettings(input: MemorySettingsInput): Promise<MemoryMutationResult> {
       try {
+        const chosen = [input.extractModel, input.consolidationModel].filter(
+          (model): model is string => typeof model === 'string',
+        );
+        if (chosen.length) {
+          const catalog = await options.readModelCatalog?.();
+          if (
+            !catalog ||
+            chosen.some((id) => !catalog.models.some((model) => model.id === id && !model.denied))
+          )
+            return {
+              ok: false,
+              refused: '选择的记忆模型当前不可用，请刷新模型目录后重试。',
+              view: await adapter.getMemorySettings(),
+            };
+        }
         const view = await adapter.updateMemorySettings(input);
         return { ok: true, view };
       } catch (error: unknown) {
@@ -2367,6 +2393,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         mentions,
         ...(skillEntry?.errors.length ? { skillErrors: skillEntry.errors } : {}),
         commands: [
+          { id: 'memories', label: 'memories · 记忆设置', kind: 'local' },
           { id: 'goal', label: 'goal · 持续推进目标', kind: 'local', insertText: '/goal' },
           {
             id: 'goal-pause',

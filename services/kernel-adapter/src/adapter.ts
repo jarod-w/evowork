@@ -54,7 +54,14 @@ import {
   type UserInput,
 } from '@evowork/protocol';
 import { errorFields, type Logger } from '@evowork/logging';
-import type { ProjectionRow, Store, ThreadFilter, TitleSource } from '@evowork/store';
+import {
+  readMeta,
+  writeMeta,
+  type ProjectionRow,
+  type Store,
+  type ThreadFilter,
+  type TitleSource,
+} from '@evowork/store';
 
 import {
   assertDegradationCoverage,
@@ -158,6 +165,8 @@ export interface MemorySettings {
   readonly useMemories: boolean;
   readonly generateMemories: boolean;
   readonly disableOnExternalContext: boolean;
+  readonly extractModel?: string | undefined;
+  readonly consolidationModel?: string | undefined;
   readonly statusSupported: boolean;
   readonly resetSupported: boolean;
   readonly taskModeSupported: boolean;
@@ -646,6 +655,7 @@ export function createAdapter(options: AdapterOptions) {
         await taskCwd(threadId);
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
           threadId,
+          config: await memoryThreadConfig({ model: store.threads.get(threadId)?.model, threadId }),
         });
         // 拉全量 item 后由前端按 item_id 去重合并（09 §5 第三行：事件丢失的兜底）。
         // 某些存储后端尚未实现分页接口，要走 thread/read 的兼容路径。
@@ -823,11 +833,59 @@ export function createAdapter(options: AdapterOptions) {
       useMemories: memories.use_memories !== false,
       generateMemories: memories.generate_memories !== false,
       disableOnExternalContext: memories.disable_on_external_context === true,
+      extractModel: typeof memories.extract_model === 'string' ? memories.extract_model : undefined,
+      consolidationModel:
+        typeof memories.consolidation_model === 'string' ? memories.consolidation_model : undefined,
       statusSupported: status.supported !== false,
       resetSupported: capabilities.isUsable(EXPERIMENTAL_METHOD.memoryReset),
       taskModeSupported: capabilities.isUsable(EXPERIMENTAL_METHOD.threadMemoryModeSet),
       consolidatedThreads: status.v2ConsolidatedThreads,
       ready: status.v2Ready,
+    };
+  }
+
+  // These are thread/start and cold thread/resume overrides, never global writes.
+  // A loaded thread ignores arbitrary resume config; its initial choice cannot be changed here.
+  async function memoryThreadConfig({
+    model,
+    threadId,
+    useMemories,
+    cwd,
+  }: {
+    readonly model?: string | null | undefined;
+    readonly threadId?: string;
+    readonly useMemories?: boolean;
+    readonly cwd?: string;
+  }) {
+    const response = await session.peer.request<{
+      readonly config?: Readonly<Record<string, unknown>>;
+    }>(METHOD.configRead, {
+      includeLayers: false,
+      cwd: cwd ?? (threadId ? store.threads.get(threadId)?.cwd : null) ?? null,
+    });
+    const config = record(response.config);
+    const memories = record(config.memories);
+    const selectedModel = model ?? (typeof config.model === 'string' ? config.model : undefined);
+    const saved = threadId ? readMeta(store.db, `evowork.memory.use.${threadId}`) : undefined;
+    const use =
+      useMemories ??
+      (saved === 'true' ? true : saved === 'false' ? false : memories.use_memories !== false);
+    return {
+      ...DISABLE_OPENAI_DOCS_CONFIG,
+      ...(selectedModel
+        ? {
+            'memories.extract_model':
+              typeof memories.extract_model === 'string' && memories.extract_model.trim()
+                ? memories.extract_model
+                : selectedModel,
+            'memories.consolidation_model':
+              typeof memories.consolidation_model === 'string' &&
+              memories.consolidation_model.trim()
+                ? memories.consolidation_model
+                : selectedModel,
+          }
+        : {}),
+      'memories.use_memories': use,
     };
   }
 
@@ -928,6 +986,7 @@ export function createAdapter(options: AdapterOptions) {
     async deliverCommunication(threadId: string, text: string): Promise<string> {
       const response = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
         threadId,
+        config: await memoryThreadConfig({ model: store.threads.get(threadId)?.model, threadId }),
       });
       store.threads.upsertFromThread(response.thread);
       const row = store.threads.get(threadId);
@@ -1077,11 +1136,19 @@ export function createAdapter(options: AdapterOptions) {
       return readMemorySettings();
     },
 
-    /** 与 Codex `/memories` 相同：保存全局设置，并把“是否生成”立即应用到当前任务。 */
+    taskMemoryUse(threadId: string): boolean | undefined {
+      const saved = readMeta(store.db, `evowork.memory.use.${threadId}`);
+      return saved === 'true' ? true : saved === 'false' ? false : undefined;
+    },
+
+    /** 全局默认与当前任务选择分开保存。 */
     async updateMemorySettings(input: {
       readonly enabled: boolean;
       readonly useMemories: boolean;
       readonly generateMemories: boolean;
+      readonly disableOnExternalContext?: boolean | undefined;
+      readonly extractModel?: string | null | undefined;
+      readonly consolidationModel?: string | null | undefined;
       readonly currentThreadId?: string | undefined;
     }): Promise<MemorySettings> {
       await session.peer.request(METHOD.configBatchWrite, {
@@ -1097,26 +1164,34 @@ export function createAdapter(options: AdapterOptions) {
             value: input.generateMemories,
             mergeStrategy: 'replace',
           },
-          {
-            keyPath: 'memories.disable_on_external_context',
-            value: true,
-            mergeStrategy: 'replace',
-          },
+          ...(input.disableOnExternalContext === undefined
+            ? []
+            : [
+                {
+                  keyPath: 'memories.disable_on_external_context',
+                  value: input.disableOnExternalContext,
+                  mergeStrategy: 'replace',
+                },
+              ]),
+          ...(['extractModel', 'consolidationModel'] as const).flatMap((key) =>
+            input[key] === undefined
+              ? []
+              : [
+                  {
+                    keyPath:
+                      key === 'extractModel'
+                        ? 'memories.extract_model'
+                        : 'memories.consolidation_model',
+                    value: input[key],
+                    mergeStrategy: 'replace',
+                  },
+                ],
+          ),
         ],
         filePath: null,
         expectedVersion: null,
         reloadUserConfig: true,
       });
-      if (input.currentThreadId) {
-        await callExperimental(
-          EXPERIMENTAL_METHOD.threadMemoryModeSet,
-          {
-            threadId: input.currentThreadId,
-            mode: input.enabled && input.generateMemories ? 'enabled' : 'disabled',
-          },
-          () => undefined,
-        );
-      }
       return readMemorySettings();
     },
 
@@ -1337,6 +1412,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly desktopInteractive?: boolean;
       readonly onCreated?: (threadId: string) => void;
       readonly goalObjective?: string;
+      readonly useMemories?: boolean;
     }): Promise<{ threadId: string; turn: Turn; degradations: readonly string[] }> {
       if (session.phase !== 'ready')
         throw new TransportClosedError('执行内核尚未恢复，请稍后创建任务');
@@ -1353,6 +1429,11 @@ export function createAdapter(options: AdapterOptions) {
       const mode = MODES[modeId];
 
       const cwd = await checkedCwd(args.overrides?.cwd);
+      const memoryConfig = await memoryThreadConfig({
+        model,
+        cwd,
+        ...(args.useMemories === undefined ? {} : { useMemories: args.useMemories }),
+      });
       const started = await session.peer.request<ThreadStartResponse>(METHOD.threadStart, {
         cwd,
         model,
@@ -1362,9 +1443,14 @@ export function createAdapter(options: AdapterOptions) {
         approvalsReviewer: mode.approvalsReviewer,
         // F25：整段替换内核底稿。developer_instructions 盖不住「你是谁」
         ...(options.baseInstructions ? { baseInstructions: options.baseInstructions } : {}),
-        config: DISABLE_OPENAI_DOCS_CONFIG,
+        config: memoryConfig,
       });
       const threadId = started.thread.id;
+      writeMeta(
+        store.db,
+        `evowork.memory.use.${threadId}`,
+        String(memoryConfig['memories.use_memories']),
+      );
       options.store.threads.upsertFromThread(started.thread, {
         firstMessage: args.input
           .filter((part): part is Extract<UserInput, { type: 'text' }> => part.type === 'text')
@@ -1476,8 +1562,13 @@ export function createAdapter(options: AdapterOptions) {
 
     async forkTask(threadId: string, lastTurnId?: string, ephemeral = false): Promise<string> {
       await taskCwd(threadId);
+      const memoryConfig = await memoryThreadConfig({
+        model: store.threads.get(threadId)?.model,
+        threadId,
+      });
       const response = await session.peer.request<{ readonly thread: Thread }>(METHOD.threadFork, {
         threadId,
+        config: memoryConfig,
         ...(lastTurnId ? { lastTurnId } : {}),
         excludeTurns: true,
         ...(ephemeral ? { ephemeral: true } : {}),
@@ -1487,6 +1578,11 @@ export function createAdapter(options: AdapterOptions) {
         ephemeralThreadIds.add(response.thread.id);
       } else {
         store.threads.upsertFromThread(response.thread);
+        writeMeta(
+          store.db,
+          `evowork.memory.use.${response.thread.id}`,
+          String(memoryConfig['memories.use_memories']),
+        );
       }
       session.openThreads.add(response.thread.id);
       return response.thread.id;
@@ -1515,6 +1611,7 @@ export function createAdapter(options: AdapterOptions) {
         return;
       }
       await session.peer.request(METHOD.threadDelete, { threadId });
+      store.db.prepare('DELETE FROM meta WHERE key = ?').run(`evowork.memory.use.${threadId}`);
       store.threads.remove(threadId);
       session.openThreads.delete(threadId);
       localQueues.delete(threadId);
@@ -1816,7 +1913,10 @@ export function createAdapter(options: AdapterOptions) {
       const cached = store.readItemDigest(threadId);
       const revision = threadRevisions.get(threadId);
       const resumed = session.peer
-        .request<ThreadResumeResponse>(METHOD.threadResume, { threadId })
+        .request<ThreadResumeResponse>(METHOD.threadResume, {
+          threadId,
+          config: await memoryThreadConfig({ model: store.threads.get(threadId)?.model, threadId }),
+        })
         .catch(() => undefined);
       const items = (async () => {
         const response = await resumed;
@@ -1906,6 +2006,7 @@ export function createAdapter(options: AdapterOptions) {
       if (changes.status === 'active' && !session.openThreads.has(threadId)) {
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
           threadId,
+          config: await memoryThreadConfig({ model: store.threads.get(threadId)?.model, threadId }),
         });
         store.threads.upsertFromThread(resumed.thread);
         session.openThreads.add(threadId);

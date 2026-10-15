@@ -15,3 +15,4 @@
 所以 `no-kernel-internals` 对 `memories` / `rollout` 这类可能出现在内核路径里的词只在**路径形态**下报错
 （`memory/status` / `memory/reset` 是正路，`~/.evowork/kernel/memories` 是歧路）。当前 app-server
 不暴露记忆正文列表，因此界面也不绕过协议直接读生成文件。规则自己的测试就钉着这条区分。
+本地 UI 命令 `/memories` 放行；用于文件操作、路径拼接或路径字段的同名字符串仍按路径检查。

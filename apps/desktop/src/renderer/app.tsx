@@ -105,6 +105,8 @@ import type {
 } from './components/composer.js';
 import { Banner, Dialog, EmptyState, IconButton } from './components/primitives.js';
 import { GOAL_STATUS_LABELS, parseGoalCommand } from '../shared/goal-command.js';
+import { isMemoriesCommand } from '../shared/memory-command.js';
+import { MemoriesDialog } from './components/memory-dialog.js';
 import { ShareDialog, type SharePhase } from './components/share-dialog.js';
 import { transcriptFileName, transcriptToMarkdown } from './views/thread-transcript.js';
 import { renderIcon } from './components/icons.js';
@@ -616,6 +618,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [preferences, setPreferences] = useState<PreferencesView | null>(null);
   const [memorySettings, setMemorySettingsView] = useState<MemorySettingsView | null>(null);
   const [taskMemoryModes, setTaskMemoryModes] = useState<Readonly<Record<string, boolean>>>({});
+  const [memoryDialogTarget, setMemoryDialogTarget] = useState<{
+    readonly draftId: string;
+    readonly threadId?: string;
+  } | null>(null);
+  const [draftMemoryUse, setDraftMemoryUse] = useState<'default' | 'enabled' | 'disabled'>(
+    'default',
+  );
   /** 上一次设置页动作被拒绝的原话，以及连通性检查的结论。**都要显示出来** */
   const [settingsRefusal, setSettingsRefusal] = useState<string | undefined>(undefined);
   const [probeResult, setProbeResult] = useState<string | undefined>(undefined);
@@ -999,6 +1008,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     draftIdentity.current = crypto.randomUUID();
     setWorkspaceId(undefined);
     setActiveTaskId(null);
+    setDraftMemoryUse('default');
     setDraft('');
     setReferences([]);
     setAttachments([]);
@@ -2122,10 +2132,31 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [attachments, imageInput],
   );
 
+  const openMemories = useCallback(() => {
+    setMemoryDialogTarget({
+      draftId: draftIdentity.current,
+      ...(interactionTaskId ? { threadId: interactionTaskId } : {}),
+    });
+  }, [interactionTaskId]);
+  const loadMemories = useCallback(async () => {
+    if (!bridge.getMemorySettings) throw new Error('当前版本不支持记忆设置。');
+    const memory = await bridge.getMemorySettings();
+    setMemorySettingsView(memory);
+    return memory;
+  }, [bridge]);
+
   const send = useCallback(
     async (replaceGoal = false) => {
       const identity = draftIdentity.current;
       const text = draft.trim();
+      if (isMemoriesCommand(text)) {
+        if (text !== '/memories') pushToast({ tone: 'info', text: '/memories 不接受参数。' });
+        else {
+          openMemories();
+          setDraft((previous) => (previous === draft ? '' : previous));
+        }
+        return;
+      }
       const command = parseGoalCommand(text);
       if (command) {
         if (pendingEnvironment.current) return;
@@ -2199,6 +2230,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           ...(replaceGoal ? { replaceGoal: true } : {}),
           draftId: identity,
           ...(activeTaskId ? { threadId: activeTaskId } : {}),
+          ...(!activeTaskId && draftMemoryUse !== 'default'
+            ? { useMemories: draftMemoryUse === 'enabled' }
+            : {}),
           text,
           scenarioId,
           // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
@@ -2248,6 +2282,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       references,
       activeTaskId,
       scenarioId,
+      draftMemoryUse,
+      openMemories,
       modelId,
       mode,
       workspaceId,
@@ -2273,31 +2309,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       });
     },
     [bridge, interactionTaskId, mode, reportFailure],
-  );
-
-  const changeTaskMemoryMode = useCallback(
-    (enabled: boolean) => {
-      if (!interactionTaskId || !bridge.setTaskMemoryMode) return;
-      const threadId = interactionTaskId;
-      const previous = taskMemoryModes[threadId] ?? memorySettings?.generateMemories ?? true;
-      setTaskMemoryModes((current) => ({ ...current, [threadId]: enabled }));
-      void bridge
-        .setTaskMemoryMode({ threadId, enabled })
-        .then((result) => {
-          if (!result.ok) throw new Error('当前内核不支持任务级记忆控制');
-        })
-        .catch((error: unknown) => {
-          setTaskMemoryModes((current) =>
-            current[threadId] === enabled ? { ...current, [threadId]: previous } : current,
-          );
-          void bridge
-            .getMemorySettings?.()
-            .then(setMemorySettingsView)
-            .catch(() => undefined);
-          reportFailure(error, '没能更新当前任务的记忆设置。');
-        });
-    },
-    [bridge, interactionTaskId, memorySettings?.generateMemories, reportFailure, taskMemoryModes],
   );
 
   const retryCurrentTurn = useCallback(async () => {
@@ -2871,6 +2882,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           ]);
       },
       onRunLocalCommand: (id: string) => {
+        if (id === 'memories') openMemories();
         if (id === 'clear') {
           setDraft('');
           setReferences([]);
@@ -3014,12 +3026,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setCatalogTab('skills');
         setView('catalog');
       },
-      ...(interactionTaskId && memorySettings?.enabled && memorySettings.taskModeSupported
-        ? {
-            memoryEnabled: taskMemoryModes[interactionTaskId] ?? memorySettings.generateMemories,
-            onMemoryEnabledChange: changeTaskMemoryMode,
-          }
-        : {}),
       ...(modelAccess?.policyPack?.status === 'expired' && modelAccess.policyPack.message
         ? { sendLockedReason: modelAccess.policyPack.message }
         : {}),
@@ -3087,9 +3093,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       catalog,
       prepareTaskWithText,
       emptyCatalogView,
-      memorySettings,
-      taskMemoryModes,
-      changeTaskMemoryMode,
+      openMemories,
     ],
   );
 
@@ -3412,19 +3416,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onMemorySettings={(input) => {
             if (!bridge.setMemorySettings) return;
             void bridge
-              .setMemorySettings({
-                ...input,
-                ...(interactionTaskId ? { currentThreadId: interactionTaskId } : {}),
-              })
+              .setMemorySettings(input)
               .then((result) => {
                 setMemorySettingsView(result.view);
                 setSettingsRefusal(result.refused);
-                if (result.ok && interactionTaskId) {
-                  setTaskMemoryModes((current) => ({
-                    ...current,
-                    [interactionTaskId]: result.view.enabled && result.view.generateMemories,
-                  }));
-                }
               })
               .catch((error: unknown) => reportFailure(error, '记忆设置没有保存。'));
           }}
@@ -4049,6 +4044,42 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onCreate={createProject}
           onPickDirectory={pickProjectDirectory}
           onCancel={() => setProjectCreateOpen(false)}
+        />
+      ) : null}
+      {memoryDialogTarget ? (
+        <MemoriesDialog
+          readChoice={draftMemoryUse}
+          {...(memoryDialogTarget.threadId
+            ? { task: { generateMemories: taskMemoryModes[memoryDialogTarget.threadId] } }
+            : {})}
+          load={loadMemories}
+          onClose={() => setMemoryDialogTarget(null)}
+          onGlobalSettings={() => {
+            setMemoryDialogTarget(null);
+            setSettingsSection('personalization');
+            setView('settings');
+          }}
+          onSave={async (changes) => {
+            if (
+              memoryDialogTarget.draftId !== draftIdentity.current ||
+              memoryDialogTarget.threadId !== (interactionTaskId ?? undefined)
+            )
+              throw new Error('任务已改变，请重新打开记忆设置。');
+            if (memoryDialogTarget.threadId) {
+              if (changes.generateMemories !== undefined) {
+                if (!bridge.setTaskMemoryMode) throw new Error('当前版本不支持任务级记忆控制。');
+                const result = await bridge.setTaskMemoryMode({
+                  threadId: memoryDialogTarget.threadId,
+                  enabled: changes.generateMemories,
+                });
+                if (!result.ok) throw new Error('当前内核不支持任务级记忆控制。');
+                setTaskMemoryModes((current) => ({
+                  ...current,
+                  [memoryDialogTarget.threadId!]: changes.generateMemories!,
+                }));
+              }
+            } else setDraftMemoryUse(changes.readChoice);
+          }}
         />
       ) : null}
       {goalReplacement ? (

@@ -381,18 +381,55 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(screen.queryByText('任何文件')).toBeNull();
   });
 
-  it('已有任务可单独关闭贡献记忆；新任务不显示一个尚无目标 thread 的开关', () => {
-    const onMemoryEnabledChange = vi.fn();
-    const { unmount } = renderComposer({ memoryEnabled: true, onMemoryEnabledChange });
-    const memory = screen.getByRole('button', { name: '任务记忆' });
-    expect(memory.textContent).toContain('贡献记忆');
-    fireEvent.click(memory);
-    fireEvent.click(screen.getByRole('menuitem', { name: /^不贡献记忆/ }));
-    expect(onMemoryEnabledChange).toHaveBeenCalledWith(false);
-
-    unmount();
+  it('输入区不再常驻读取或贡献记忆控件', () => {
     renderComposer();
     expect(screen.queryByRole('button', { name: '任务记忆' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '新任务读取记忆' })).toBeNull();
+  });
+
+  it('/memories 补全直接执行本地设置，不插入模型需求', () => {
+    const onRunLocalCommand = vi.fn();
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        slashCommands: [{ id: 'memories', label: 'memories · 记忆设置', kind: 'local' }],
+        onRunLocalCommand,
+      },
+      onSend,
+    );
+    type('/mem');
+    fireEvent.click(screen.getByRole('option', { name: /memories/ }));
+    expect(onRunLocalCommand).toHaveBeenCalledWith('memories');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('模型不可用、附件解析中或策略锁定时仍可打开 /memories', () => {
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        value: '/memories',
+        modelUnavailable: { text: '模型离线' },
+        sendLockedReason: '策略已过期',
+        attachments: [
+          { id: 'a', name: '文档', kind: 'document', sizeLabel: '1 KB', state: 'parsing' },
+        ],
+      },
+      onSend,
+    );
+    expect(screen.getByRole('button', { name: '发送' })).toHaveProperty('disabled', false);
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it.each(['running', 'over-budget'] as const)('%s 时 /memories 点击仍打开设置', (runState) => {
+    const onSend = vi.fn();
+    const onInterrupt = vi.fn();
+    const onAddBudget = vi.fn();
+    renderComposer({ value: '/memories', runState, onInterrupt, onAddBudget }, onSend);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(onInterrupt).not.toHaveBeenCalled();
+    expect(onAddBudget).not.toHaveBeenCalled();
   });
 });
 

@@ -44,6 +44,32 @@ function isPathLike(value) {
   return false;
 }
 
+/** `/memories` is also a UI command. Filesystem consumers still count as paths. */
+function isMemoryCommand(node, value) {
+  if (!/^\/memories(?:\s|$)/u.test(value)) return false;
+  const parent = node.parent;
+  if (parent?.type === 'Property') {
+    const key = parent.key.name ?? parent.key.value;
+    if (['path', 'cwd', 'root', 'directory', 'filename'].includes(key)) return false;
+  }
+  if (parent?.type === 'CallExpression' || parent?.type === 'NewExpression') {
+    const callee = parent.callee;
+    const name =
+      callee.type === 'Identifier'
+        ? callee.name
+        : callee.type === 'MemberExpression'
+          ? (callee.property.name ?? callee.property.value)
+          : '';
+    if (
+      /^(?:readFile|writeFile|appendFile|readdir|opendir|mkdir|stat|lstat|access|open|exists|rm|rmdir|unlink|copyFile|rename|watch|join|resolve|Path)(?:Sync)?$/u.test(
+        name,
+      )
+    )
+      return false;
+  }
+  return true;
+}
+
 /** 只有适配层可以知道 CODEX_HOME 的存在（它要 spawn 内核并注入环境变量）。 */
 const CODEX_HOME_ALLOWED = /(^|\/)services\/kernel-adapter\//;
 
@@ -82,6 +108,7 @@ export const noKernelInternals = {
       const pathLike = isPathLike(value);
       for (const { re, hint, pathOnly } of KERNEL_STATE_PATTERNS) {
         if (pathOnly && !pathLike) continue;
+        if (hint === 'CODEX_HOME/memories 目录' && isMemoryCommand(node, value)) continue;
         if (re.test(value)) {
           context.report({ node, messageId: 'kernelState', data: { hint } });
           return;
