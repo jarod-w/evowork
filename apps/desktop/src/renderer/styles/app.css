@@ -682,6 +682,8 @@ textarea {
 }
 .ew-pill-button {
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: var(--space-6);
 }
@@ -788,6 +790,10 @@ textarea {
 
 /* SegmentedControl：两个变体的分工是硬规则（01 §5.10） */
 .ew-segmented {
+  flex: none;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
   height: var(--layout-segmented-track-height);
   padding: var(--space-4);
   border-radius: var(--r-full);
@@ -796,6 +802,8 @@ textarea {
   gap: var(--space-2);
 }
 .ew-segmented-item {
+  flex: none;
+  white-space: nowrap;
   height: var(--layout-nav-item-height);
   padding: 0 var(--space-12);
   border: 0;
@@ -1645,6 +1653,7 @@ textarea {
   white-space: nowrap;
 }
 .ew-inline-select-trigger {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
@@ -3185,11 +3194,17 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-weight: var(--font-title-1-weight);
 }
 
+.ew-data-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
 .ew-data-table {
   width: 100%;
   border-collapse: collapse;
 }
 .ew-data-table th {
+  white-space: nowrap;
   height: var(--layout-data-table-header-height);
   padding: 0 var(--space-12);
   border-bottom: 1px solid var(--border-subtle);
@@ -3200,7 +3215,25 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 }
 .ew-data-table td {
   height: var(--layout-data-table-row-height);
-  padding: 0 var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+.ew-data-table-cell {
+  min-width: calc(var(--space-64) * 2);
+  max-width: calc(var(--space-64) * 3);
+  overflow-wrap: anywhere;
+}
+.ew-data-table-cell[data-nowrap='true'] {
+  min-width: max-content;
+  max-width: none;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.ew-data-table-cell[data-truncate='true'] {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .ew-data-table th[data-align='end'],
 .ew-data-table td[data-align='end'] {
@@ -3219,14 +3252,18 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font: inherit;
   cursor: pointer;
 }
-/* 行操作从右端浮出，**不占列宽**（01 §5.28） */
+/* 操作列独立占位，按钮整项换行，文字不因长路径挤压而竖排。 */
 .ew-data-table-actions {
-  width: 0;
-  position: relative;
-  opacity: 0;
+  width: 1%;
 }
-.ew-data-table tbody tr:hover .ew-data-table-actions {
-  opacity: 1;
+.ew-data-table-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  width: max-content;
+  max-width: calc(var(--space-64) * 4);
 }
 
 .ew-tip-banner {
@@ -3325,23 +3362,50 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 }
 .ew-library-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-12);
   margin-bottom: var(--space-16);
 }
 .ew-library-title {
+  flex: none;
+  white-space: nowrap;
   margin: 0;
   font-size: var(--font-title-1-size);
   line-height: var(--font-title-1-line);
   font-weight: var(--font-title-1-weight);
 }
 .ew-library-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
   margin-left: auto;
 }
 .ew-library-name {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
+  width: 100%;
   gap: var(--space-8);
+}
+.ew-library-name > span:first-child {
+  flex: none;
+}
+.ew-library-filename {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ew-share-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+}
+.ew-share-cell .ew-library-filename {
+  max-width: 100%;
 }
 .ew-library-hint {
   margin: var(--space-8) var(--space-12);
@@ -3692,6 +3756,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 
 .ew-audit-filters {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-12);
   margin: var(--space-12) var(--space-20);

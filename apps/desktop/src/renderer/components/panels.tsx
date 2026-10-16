@@ -171,13 +171,16 @@ export interface Column<Row> {
   /** 可排序时给取值函数 */
   readonly sortValue?: ((row: Row) => string | number) | undefined;
   readonly align?: 'start' | 'end' | undefined;
+  /** 日期、计数等短值保持单行；长内容由表格滚动容器承接。 */
+  readonly nowrap?: boolean | undefined;
+  /** 路径等长文本单行省略，纯文本保留完整悬停标题。 */
+  readonly truncate?: boolean | undefined;
 }
 
 /**
  * 01 §5.28 DataTable：表头 40、数据行 48。
  *
- * **行操作在悬停时从右端浮出，不占列宽**（§5.28 原话）——
- * 给操作留一列的话，每一行都会为一个大部分时间不用的东西让出空间。
+ * 行操作独立占列，按钮整项换行；窄容器只滚动表格，不挤压成逐字竖排。
  */
 export function DataTable<Row extends { readonly id: string }>({
   columns,
@@ -214,64 +217,106 @@ export function DataTable<Row extends { readonly id: string }>({
   if (rows.length === 0 && emptyState) return <>{emptyState}</>;
 
   return (
-    <table className="ew-data-table" aria-label={ariaLabel}>
-      <thead>
-        <tr>
-          {columns.map((column) => (
-            <th key={column.id} data-align={column.align}>
-              {column.sortValue ? (
-                <button
-                  type="button"
-                  className="ew-data-table-sort"
-                  onClick={() =>
-                    setSort((current) =>
-                      current?.id === column.id
-                        ? { id: column.id, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-                        : { id: column.id, direction: 'asc' },
-                    )
-                  }
-                  aria-label={`按${column.header}排序`}
-                >
-                  {column.header}
-                  <span aria-hidden="true">
-                    {sort?.id === column.id ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
-                  </span>
-                </button>
-              ) : (
-                column.header
-              )}
-            </th>
-          ))}
-          {rowActions ? <th className="ew-data-table-actions-head" aria-label="操作" /> : null}
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((row) => (
-          <tr
-            key={row.id}
-            data-selected={row.id === selectedId ? 'true' : undefined}
-            onClick={onRowClick ? () => onRowClick(row) : undefined}
-            tabIndex={onRowClick ? 0 : undefined}
-            onKeyDown={
-              onRowClick
-                ? (event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    onRowClick(row);
-                  }
-                : undefined
-            }
-          >
+    <div
+      className="ew-data-table-scroll"
+      role="region"
+      aria-label={`${ariaLabel}滚动区域`}
+      tabIndex={0}
+    >
+      <table className="ew-data-table" aria-label={ariaLabel}>
+        <thead>
+          <tr>
             {columns.map((column) => (
-              <td key={column.id} data-align={column.align}>
-                {column.render(row)}
-              </td>
+              <th key={column.id} data-align={column.align}>
+                {column.sortValue ? (
+                  <button
+                    type="button"
+                    className="ew-data-table-sort"
+                    onClick={() =>
+                      setSort((current) =>
+                        current?.id === column.id
+                          ? {
+                              id: column.id,
+                              direction: current.direction === 'asc' ? 'desc' : 'asc',
+                            }
+                          : { id: column.id, direction: 'asc' },
+                      )
+                    }
+                    aria-label={`按${column.header}排序`}
+                  >
+                    {column.header}
+                    <span aria-hidden="true">
+                      {sort?.id === column.id ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+                    </span>
+                  </button>
+                ) : (
+                  column.header
+                )}
+              </th>
             ))}
-            {rowActions ? <td className="ew-data-table-actions">{rowActions(row)}</td> : null}
+            {rowActions ? <th className="ew-data-table-actions-head">操作</th> : null}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {sorted.map((row) => (
+            <tr
+              key={row.id}
+              data-selected={row.id === selectedId ? 'true' : undefined}
+              onClick={
+                onRowClick
+                  ? (event) => {
+                      if (
+                        (event.target as Element).closest(
+                          'button, a, input, select, textarea, [role="button"]',
+                        )
+                      )
+                        return;
+                      onRowClick(row);
+                    }
+                  : undefined
+              }
+              tabIndex={onRowClick ? 0 : undefined}
+              onKeyDown={
+                onRowClick
+                  ? (event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      event.preventDefault();
+                      onRowClick(row);
+                    }
+                  : undefined
+              }
+            >
+              {columns.map((column) => {
+                const content = column.render(row);
+                return (
+                  <td key={column.id} data-align={column.align}>
+                    <div
+                      className="ew-data-table-cell"
+                      data-nowrap={column.nowrap || undefined}
+                      data-truncate={column.truncate || undefined}
+                      title={
+                        column.truncate &&
+                        (typeof content === 'string' || typeof content === 'number')
+                          ? String(content)
+                          : undefined
+                      }
+                    >
+                      {content}
+                    </div>
+                  </td>
+                );
+              })}
+              {rowActions ? (
+                <td className="ew-data-table-actions">
+                  <div className="ew-data-table-action-group">{rowActions(row)}</div>
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

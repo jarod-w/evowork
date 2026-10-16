@@ -557,6 +557,7 @@ a {
 /* ─────────────────────────── 按钮 ─────────────────────────── */
 
 .ew-btn {
+  flex-shrink: 0;
   height: var(--space-32);
   padding: 0 var(--space-12);
   display: inline-flex;
@@ -800,7 +801,7 @@ a {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .ew-table {
@@ -813,6 +814,7 @@ a {
 }
 
 .ew-table th {
+  white-space: nowrap;
   height: var(--layout-data-table-header-height);
   padding: 0 var(--space-16);
   text-align: left;
@@ -823,8 +825,9 @@ a {
 }
 
 .ew-table td {
+  white-space: nowrap;
   height: var(--layout-data-table-row-height);
-  padding: 0 var(--space-16);
+  padding: var(--space-8) var(--space-16);
   font-size: var(--font-body-size);
   border-top: 1px solid var(--border-subtle);
 }

@@ -198,7 +198,12 @@ export function AccountHome(props: {
                     description="在 EvoWork 桌面版里登录之后，这台机器会出现在这里。"
                   />
                 ) : (
-                  <div className="ew-table-wrap">
+                  <div
+                    className="ew-table-wrap"
+                    role="region"
+                    aria-label="设备列表滚动区域"
+                    tabIndex={0}
+                  >
                     <table className="ew-table">
                       <thead>
                         <tr>

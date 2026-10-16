@@ -145,6 +145,7 @@ export function AuditPage(props: AuditPageProps) {
     {
       id: 'time',
       header: '时间',
+      nowrap: true,
       render: (row) => new Date(row.occurredAt).toLocaleString('zh-CN', { hour12: false }),
       sortValue: (row) => row.occurredAt,
     },
@@ -188,6 +189,7 @@ export function AuditPage(props: AuditPageProps) {
     {
       id: 'usage',
       header: '用量',
+      nowrap: true,
       render: (row) =>
         row.tokenUsage === undefined ? '—' : row.tokenUsage.toLocaleString('zh-CN'),
       align: 'end',

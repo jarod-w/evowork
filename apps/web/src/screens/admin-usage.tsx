@@ -90,7 +90,12 @@ export function AdminUsagePage(props: { readonly onToast: (text: string) => void
 
               <div className="ew-cols">
                 <div className="ew-col-main">
-                  <div className="ew-table-wrap">
+                  <div
+                    className="ew-table-wrap"
+                    role="region"
+                    aria-label="成员用量滚动区域"
+                    tabIndex={0}
+                  >
                     <table className="ew-table">
                       <thead>
                         <tr>

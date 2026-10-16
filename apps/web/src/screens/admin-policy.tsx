@@ -368,7 +368,7 @@ function AuditTable(props: { readonly rows: readonly IdentityAuditView[] }) {
       {rows.length === 0 ? (
         <p className="ew-muted">这段时间里没有管理动作。</p>
       ) : (
-        <div className="ew-table-wrap">
+        <div className="ew-table-wrap" role="region" aria-label="管理记录滚动区域" tabIndex={0}>
           <table className="ew-table">
             <thead>
               <tr>

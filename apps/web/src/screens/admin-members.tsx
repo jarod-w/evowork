@@ -163,7 +163,12 @@ export function AdminMembers(props: {
                 </FilterChip>
               </div>
 
-              <div className="ew-table-wrap">
+              <div
+                className="ew-table-wrap"
+                role="region"
+                aria-label="成员列表滚动区域"
+                tabIndex={0}
+              >
                 <table className="ew-table">
                   <thead>
                     <tr>

@@ -140,16 +140,18 @@ export function ProjectDetailPage(props: ProjectDetailPageProps) {
                   ariaLabel="最近的文件动作"
                   rows={props.detail.fileActions}
                   columns={[
-                    { id: 'name', header: '文件', render: (row) => row.name },
-                    { id: 'action', header: '动作', render: (row) => row.action },
+                    { id: 'name', header: '文件', render: (row) => row.name, truncate: true },
+                    { id: 'action', header: '动作', render: (row) => row.action, nowrap: true },
                     {
                       id: 'task',
                       header: '来自哪个任务',
+                      truncate: true,
                       render: (row) => row.fromTaskTitle ?? '—',
                     },
                     {
                       id: 'at',
                       header: '时间',
+                      nowrap: true,
                       render: (row) => new Date(row.at).toLocaleString(),
                       sortValue: (row) => row.at,
                     },
@@ -219,17 +221,18 @@ export function ProjectDetailPage(props: ProjectDetailPageProps) {
                 rows={props.detail.automations}
                 onRowClick={(row) => props.onOpenAutomation(row.id)}
                 columns={[
-                  { id: 'name', header: '名称', render: (row) => row.name },
+                  { id: 'name', header: '名称', render: (row) => row.name, truncate: true },
                   { id: 'schedule', header: '计划', render: (row) => row.schedule },
                   {
                     id: 'next',
                     header: '下次运行',
+                    nowrap: true,
                     render: (row) =>
                       row.nextFireAt === undefined
                         ? '—'
                         : new Date(row.nextFireAt).toLocaleString(),
                   },
-                  { id: 'status', header: '状态', render: (row) => row.status },
+                  { id: 'status', header: '状态', render: (row) => row.status, nowrap: true },
                 ]}
               />
             )}

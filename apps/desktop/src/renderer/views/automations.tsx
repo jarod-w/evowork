@@ -453,6 +453,7 @@ export function AutomationHistory({
     {
       id: 'fireTime',
       header: '触发时间',
+      nowrap: true,
       render: (row) => (
         <span>
           {formatInZone(row.fireTime, timezone)}
@@ -471,6 +472,7 @@ export function AutomationHistory({
     {
       id: 'status',
       header: '状态',
+      nowrap: true,
       render: (row) => {
         const view = describeRunStatus(row);
         return <Badge variant={view.badge}>{view.text}</Badge>;
@@ -502,6 +504,7 @@ export function AutomationHistory({
     {
       id: 'duration',
       header: '耗时',
+      nowrap: true,
       render: (row) =>
         row.durationMs === undefined ? '—' : `${Math.round(row.durationMs / 1000)}s`,
       align: 'end',
@@ -509,6 +512,7 @@ export function AutomationHistory({
     {
       id: 'usage',
       header: '用量',
+      nowrap: true,
       // 成本标「估算」（10 §5.2 的诚实要求）
       render: (row) =>
         row.tokenUsage === undefined ? '—' : `${row.tokenUsage.toLocaleString('zh-CN')} tokens`,

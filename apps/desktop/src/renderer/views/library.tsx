@@ -279,7 +279,9 @@ export function Library(props: LibraryProps) {
         <span className="ew-library-name">
           <span aria-hidden="true">{iconFor(row)}</span>
           <span>
-            {row.name}
+            <span className="ew-library-filename" title={row.name}>
+              {row.name}
+            </span>
             {details(row.id)?.state ? (
               <Badge variant="neutral">
                 {STATE_LABEL[details(row.id)!.state!] ?? details(row.id)?.state}
@@ -346,10 +348,11 @@ export function Library(props: LibraryProps) {
     ...(showOwner
       ? [{ id: 'owner', header: '所有者', render: (row: LibraryRow) => row.owner }]
       : []),
-    { id: 'location', header: '位置', render: (row) => row.location },
+    { id: 'location', header: '位置', render: (row) => row.location, truncate: true },
     {
       id: 'accessedAt',
       header: '最近访问',
+      nowrap: true,
       render: (row) => formatWhen(row.accessedAt),
       sortValue: (row) => row.accessedAt,
       align: 'end',
@@ -936,7 +939,9 @@ function SharesTable({
       header: '产物',
       render: (row) => (
         <span className="ew-share-cell">
-          {row.name}
+          <span className="ew-library-filename" title={row.name}>
+            {row.name}
+          </span>
           {row.hasPassword ? <Badge variant="neutral">有密码</Badge> : null}
         </span>
       ),
@@ -945,9 +950,16 @@ function SharesTable({
     {
       id: 'expires',
       header: '有效期',
+      nowrap: true,
       render: (row) => <Badge variant={SHARE_TONE[row.state]}>{row.expiresLabel}</Badge>,
     },
-    { id: 'access', header: '访问次数', render: (row) => row.accessCount, align: 'end' },
+    {
+      id: 'access',
+      header: '访问次数',
+      render: (row) => row.accessCount,
+      align: 'end',
+      nowrap: true,
+    },
   ];
   return (
     <DataTable
