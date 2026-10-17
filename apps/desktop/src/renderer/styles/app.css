@@ -515,6 +515,9 @@ textarea {
   justify-content: space-between;
   margin-bottom: var(--space-8);
 }
+.ew-pdf-pages-toolbar {
+  flex-wrap: wrap;
+}
 .ew-file-preview-markdown {
   max-height: calc(var(--space-64) * 9);
   overflow: auto;

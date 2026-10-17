@@ -8,3 +8,4 @@ export * from './upload.js';
 export * from './watcher.js';
 
 export * from './library-registry.js';
+export * from './file-journal.js';

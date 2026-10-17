@@ -1066,6 +1066,22 @@ export function createAdapter(options: AdapterOptions) {
         ...(typeof content?.scope === 'string' ? { optionId: content.scope } : {}),
       };
     },
+    resolveWorkspaceFileToolCall(threadId: string, tool: string, args: unknown) {
+      const row = store.threads.get(threadId);
+      if (!row || row.archived || row.last_turn_status !== 'inProgress') return undefined;
+      const canonical = (value: unknown): string =>
+        JSON.stringify(value, Object.keys((value ?? {}) as object).sort());
+      const matches = [...inFlightMcpCalls.entries()].filter(
+        ([, entry]) =>
+          entry.threadId === threadId &&
+          entry.server === 'workspace_files' &&
+          entry.tool === tool &&
+          entry.turnId === row.last_turn_id &&
+          canonical(entry.arguments) === canonical(args),
+      );
+      if (matches.length !== 1) return undefined;
+      return { callId: matches[0]![0], turnId: row.last_turn_id!, generation: session.generation };
+    },
     resolveImageToolCall(threadId: string, tool: string, args: unknown) {
       const canonical = (value: unknown): string =>
         JSON.stringify(value, Object.keys((value ?? {}) as object).sort());

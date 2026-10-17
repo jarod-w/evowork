@@ -144,6 +144,7 @@ import {
 import { EMPTY_POLICY_VIEW, syncEnterprisePolicy, type PolicyPackView } from './policy-pack.js';
 import { NO_KEYRING_NOTICE, type SafeStorageLike } from './secret-store.js';
 import { createLocalServices, type LocalServices } from './local-services.js';
+import { createFileHost } from './file-host.js';
 import { createTaskEnvironments } from './task-environments.js';
 import {
   DEFAULT_GATEWAY_BASE_URL,
@@ -169,7 +170,7 @@ import {
   readBundleManifest,
 } from '@evowork/hub-client';
 import { parseAllowlist } from '@evowork/catalog';
-import { officeInterpreterPaths } from '@evowork/ingest';
+import { officeInterpreterPaths, createOfficeLayoutPreview } from '@evowork/ingest';
 import {
   OFFICIAL_HUB_NAME,
   officialHubDisabled,
@@ -1378,6 +1379,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         taskId: threadId,
       } satisfies RendererEvent),
   });
+  const fileHost = createFileHost({
+    directory: join(options.paths.home, 'file-revisions'),
+    store,
+    adapter: () => adapter,
+    configPath: kernelConfigPath,
+    pluginsDir: options.pluginsDir,
+    emit: (event) => options.emitToRenderer(IPC.uiEvent, event),
+    register: (threadId, path) => {
+      const root = store.threads.get(threadId)?.cwd;
+      if (root) services.ingestFileChanges(root, threadId, [{ path, kind: { type: 'update' } }]);
+    },
+  });
   gatewayRuntimeEnv = composeGatewayEnv();
 
   const translate = createEventTranslator(store, () => Date.now());
@@ -1451,7 +1464,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
          *
          * 令牌走进程环境（config.toml 的 env_key），**不落进内核的配置文件**。
          */
-        extraEnvProvider: () => ({ ...imageHost.environment, ...communicationHost.environment }),
+        extraEnvProvider: () => ({
+          ...imageHost.environment,
+          ...communicationHost.environment,
+          ...fileHost.environment,
+        }),
         extraEnv: {
           ...computerUse.environment,
           EVOWORK_CUA_HOST_READY:
@@ -1466,9 +1483,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 适配层的事件是**任务视角**，渲染层要的是**组件视角**，翻译在 renderer-bridge 里
     onUiEvent: (event) => {
       communicationHost.service.onEvent(event);
+      fileHost.onEvent(event);
       if (event.type === 'turn-started') {
         const cwd = store.threads.get(event.threadId)?.cwd;
-        if (cwd) services.watchWorkspace(cwd, event.threadId);
+        if (cwd) services.watchWorkspace(cwd);
       }
       if (event.type === 'task-removed') {
         computerUse.endThread(event.threadId);
@@ -1479,7 +1497,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         imageHost.stop(event.threadId);
         // `mark_artifact` 在命令结束前已同步追加完整 JSON 行。先入库再通知 UI，
         // 否则 UI 立刻重读时会撞上“文件已生成，产物表还是空的”窗口。
-        services.flushArtifactReports(event.threadId);
+        services.flushArtifactReports();
       }
       for (const mapped of translate(event)) options.emitToRenderer(IPC.uiEvent, mapped);
       if (event.type === 'turn-completed') {
@@ -1493,6 +1511,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     onNotice: (notice: SessionNotice) => {
       computerUse.stop();
       imageHost.rotate();
+      fileHost.rotate();
       if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed')
         communicationHost.rotate();
       if (notice.kind === 'kernel-restarted') void communicationHost.service.start();
@@ -1582,11 +1601,21 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 安装进度单独一个频道：它要在同一个位置连续更新几分钟，
     // 走 notice 的话界面上会堆出几十条"正在下载 3%…4%…"
     onRuntimeProgress: (progress) => options.emitToRenderer(IPC.runtimeProgress, progress),
-    onArtifactChanged: (threadId) =>
+    onArtifactChanged: (threadId) => {
+      for (const artifact of services.artifacts.listAllForProjects()) {
+        if (artifact.threadId === threadId && artifact.fileState === 'PRESENT') {
+          try {
+            fileHost.journal.claim(threadId, artifact.path);
+          } catch {
+            /* cwd 外仍由产物索引展示 */
+          }
+        }
+      }
       options.emitToRenderer(IPC.uiEvent, {
         type: 'task-results-updated',
         taskId: threadId,
-      } satisfies RendererEvent),
+      } satisfies RendererEvent);
+    },
     ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
     isModelAvailable: async (modelId) => {
       const catalog = await automationCatalog.read?.();
@@ -2032,6 +2061,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     ) => ingestAttachments(workspaceRoot, files),
   };
   const officePreviewParser = createOfficeParser({ assetOutput: 'temporary' });
+  const officeLayoutPreview = createOfficeLayoutPreview();
 
   const automationPorts = {
     save: (input: AutomationMutationInput & { readonly id: string }): void => {
@@ -2259,6 +2289,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   };
 
   const actions = createRendererActions({
+    fileHost,
     library: getLibraryHost,
     ocrRuntime: {
       status: ocrRuntimeStatus,
@@ -2301,6 +2332,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 安装成功后由它自己 invalidate —— 这里只是把入口交给渲染层
     officeRuntime: services.officeRuntime,
     officePreview: async (path, kind) => {
+      const layout = await officeLayoutPreview(path);
+      if (layout.pdf)
+        return {
+          markdown: '',
+          pdf: layout.pdf,
+          pages: layout.pages,
+          pageCount: layout.pageCount,
+          note: layout.note,
+        };
       const parsed = await officePreviewParser.parse({
         kind,
         absolutePath: path,
@@ -2309,9 +2349,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       return parsed
         ? {
             markdown: parsed.markdown,
-            ...(parsed.meta.note ? { note: parsed.meta.note } : {}),
+            note: [layout.note, parsed.meta.note].filter(Boolean).join(' '),
           }
-        : undefined;
+        : { markdown: '', note: layout.note + ' 正文预览也不可用，请使用系统应用打开原文件。' };
     },
     attachmentPorts,
     attachmentText,
@@ -2631,6 +2671,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     async start() {
       await imageHost.ready;
       await communicationHost.ready;
+      await fileHost.ready;
       /*
        * 已登录才 restore（会打 identity）。未登录时 vault 里没有 refresh，
        * restore 立刻返回，**零出网**（11 §12 第 14 条）。
@@ -2786,6 +2827,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       attachmentText.stop();
       library?.dispose();
       imageHost.close();
+      fileHost.close();
       communicationHost.close();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);

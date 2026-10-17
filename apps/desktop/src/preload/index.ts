@@ -99,6 +99,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'clearTaskGoal',
   /** 当前任务的产物，以及从索引中校验后交给系统打开的动作。 */
   'getTaskResults',
+  'revertTaskFile',
   'openResultFile',
   'readResultPreview',
   'readTaskFilePreview',

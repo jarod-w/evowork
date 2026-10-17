@@ -13,7 +13,7 @@ import {
 } from '../src/renderer/components/changes-view.js';
 
 const FILES: ChangedFile[] = [
-  { path: 'src/report.md', added: 12, removed: 3, diff: '@@ -1 +1 @@\n-旧\n+新' },
+  { path: 'src/report.md', added: 12, removed: 3, diff: '@@ -1 +1 @@\n-旧\n+新', reversible: true },
   { path: '/etc/hosts', added: 1, removed: 0, diff: '@@\n+1.2.3.4', outsideWorkspace: true },
 ];
 
@@ -55,8 +55,11 @@ describe('文件列表与 diff', () => {
   });
 
   it('空态解释这里会出现什么，而不是「暂无数据」', () => {
-    renderView({ files: [] });
-    expect(screen.getByText('这个任务还没有改动文件')).toBeTruthy();
+    const onScopeChange = vi.fn();
+    renderView({ files: [], onScopeChange });
+    expect(screen.getByText('当前范围没有文件变更')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: '本任务全部' }));
+    expect(onScopeChange).toHaveBeenCalledWith('thread');
     expect(screen.queryByText(/暂无/)).toBeNull();
   });
 });
@@ -66,6 +69,31 @@ describe('撤销与回滚的二次确认（04 §6.3）', () => {
     renderView();
     expect(screen.queryByRole('button', { name: '撤销这次变更' })).toBeNull();
     expect(screen.queryByRole('button', { name: '回滚到这个回合' })).toBeNull();
+  });
+
+  it('缺少可验证快照时，即使宿主支持撤销也不显示按钮', () => {
+    renderView({ files: [{ ...FILES[0]!, reversible: false }], onRevert: vi.fn() });
+    expect(screen.queryByRole('button', { name: '撤销这次变更' })).toBeNull();
+  });
+
+  it('确认期间数据刷新，仍提交用户看到的旧版本和范围，交给宿主拒绝过期记录', () => {
+    const onRevert = vi.fn();
+    const { rerender } = renderView({
+      files: [{ ...FILES[0]!, revision: 'old' }],
+      scope: 'turn',
+      onRevert,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '撤销这次变更' }));
+    rerender(
+      <ChangesView
+        files={[{ ...FILES[0]!, revision: 'new' }]}
+        scope="thread"
+        onScopeChange={() => {}}
+        onRevert={onRevert}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^确认$/ }));
+    expect(onRevert).toHaveBeenCalledWith('src/report.md', 'old', 'turn');
   });
 
   it('**撤销说清会动磁盘**', () => {

@@ -100,7 +100,16 @@ export function FilePreview({
     if (!anchor || !focus || !root.contains(anchor) || !root.contains(focus)) return;
     setQuote(selection.toString().trim().slice(0, 500));
   };
-  const regionPage = preview.kind === 'pdf' ? Math.max(1, Number(pdfPage) || 1) : undefined;
+  const renderedPages = preview.pages;
+  const displayedPage = Math.min(
+    renderedPages?.length || Infinity,
+    Math.max(1, Math.trunc(Number(pdfPage)) || 1),
+  );
+  const regionPage = preview.kind === 'pdf' ? displayedPage : undefined;
+  const selectPage = (value: number) => {
+    setPdfPage(String(Math.min(renderedPages?.length || Infinity, Math.max(1, value || 1))));
+    setRegion(undefined);
+  };
   const updateRegion = (event: React.PointerEvent<HTMLElement>): void => {
     if (!regionStartRef.current) return;
     setRegion(normalizeAnnotationRegion(regionStartRef.current, regionPoint(event), regionPage));
@@ -110,6 +119,12 @@ export function FilePreview({
       <div className="ew-file-region-surface" data-annotating={annotating ? 'true' : 'false'}>
         {preview.kind === 'image' ? (
           <img className="ew-file-preview-image" src={preview.content} alt={preview.name} />
+        ) : renderedPages?.length ? (
+          <img
+            className="ew-file-preview-image"
+            src={renderedPages[displayedPage - 1]}
+            alt={`${preview.name} 第 ${displayedPage} 页`}
+          />
         ) : (
           <iframe
             className="ew-file-preview-frame"
@@ -168,6 +183,38 @@ export function FilePreview({
         ) : null}
       </div>
       {preview.message ? <p>{preview.message}</p> : null}
+      {renderedPages?.length ? (
+        <div className="ew-file-preview-toolbar ew-pdf-pages-toolbar" aria-label="PDF 翻页">
+          <button
+            className="ew-pill-button"
+            type="button"
+            disabled={displayedPage <= 1}
+            onClick={() => selectPage(displayedPage - 1)}
+          >
+            上一页
+          </button>
+          <label className="ew-file-annotation-page">
+            第{' '}
+            <input
+              aria-label="预览页码"
+              type="number"
+              min={1}
+              max={renderedPages.length}
+              value={displayedPage}
+              onChange={(event) => selectPage(Number(event.target.value))}
+            />{' '}
+            页，共 {preview.pageCount ?? renderedPages.length} 页
+          </label>
+          <button
+            className="ew-pill-button"
+            type="button"
+            disabled={displayedPage >= renderedPages.length}
+            onClick={() => selectPage(displayedPage + 1)}
+          >
+            下一页
+          </button>
+        </div>
+      ) : null}
       {preview.truncated ? <p>文件较大，只显示前 1 MB。</p> : null}
       {preview.kind === 'image' || preview.kind === 'pdf' ? (
         regionPreview

@@ -37,17 +37,23 @@ function read(workspace, rel) {
  * 弹了就按 `decision` 点掉，并把卡片上的原因与按钮一起交回来。
  */
 async function runCommand(page, electronApp, cmd, { decision = '拒绝', nth }) {
+  const marker = `DESTRUCTIVE-${Date.now()}-${nth}`;
   await electronApp.evaluate(
-    (_electron, script) => globalThis.__evoworkE2E.gateway.scriptNext(script),
-    { tool: 'exec_command', args: { cmd } },
+    (_electron, { marker, cmd }) =>
+      globalThis.__evoworkE2E.gateway.scriptWhen(
+        marker,
+        (request) => request.text.includes(marker),
+        { tool: 'exec_command', args: { cmd } },
+      ),
+    { marker, cmd },
   );
   /*
    * 第一条开新任务，要开在用例的工作区里（见 `startTaskInWorkspace`）；之后是同一任务里的追加。
    * 不这样的话命令跑在任务自己的目录里：「拒绝后文件没变」那几条会**空心通过**（文件根本没被碰到）。
    */
-  if (nth === 0) await startTaskInWorkspace(page, electronApp, `执行 ${cmd}`);
+  if (nth === 0) await startTaskInWorkspace(page, electronApp, `${marker} 执行 ${cmd}`);
   else {
-    await page.getByLabel('需求输入').fill(`执行 ${cmd}`);
+    await page.getByLabel('需求输入').fill(`${marker} 执行 ${cmd}`);
     await page.getByRole('button', { name: '发送' }).click();
   }
 
@@ -71,6 +77,13 @@ async function runCommand(page, electronApp, cmd, { decision = '拒绝', nth }) 
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
     timeout: 60_000,
   });
+  expect(
+    await electronApp.evaluate(
+      (_, marker) => Boolean(globalThis.__evoworkE2E.gateway.matchedBody(marker)),
+      marker,
+    ),
+    '模型脚本没有被本次真实需求认领',
+  ).toBe(true);
   return seen;
 }
 

@@ -8,6 +8,27 @@ import {
 } from '../src/renderer/components/file-preview.js';
 
 describe('本地文件预览', () => {
+  it('Office 的 PDF 页面以本机光栅图显示，可翻页且不依赖沙箱中的 PDF 插件', () => {
+    render(
+      <FilePreview
+        preview={{
+          name: 'report.docx',
+          kind: 'pdf',
+          pages: ['data:image/png;base64,one', 'data:image/png;base64,two'],
+          pageCount: 2,
+        }}
+      />,
+    );
+    expect(screen.getByAltText('report.docx 第 1 页').getAttribute('src')).toContain('one');
+    expect(document.querySelector('iframe')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(screen.getByAltText('report.docx 第 2 页').getAttribute('src')).toContain('two');
+    expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '上一页' }));
+    expect(screen.getByAltText('report.docx 第 1 页')).toBeTruthy();
+  });
   it('HTML 预览用无脚本 sandbox，并用 CSP 阻止内容自行出网', () => {
     render(
       <FilePreview

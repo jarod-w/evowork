@@ -20,7 +20,18 @@
  */
 import { createHash } from 'node:crypto';
 import type { TaskEnvironments } from './task-environments.js';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
 import {
@@ -94,22 +105,27 @@ function toIndexPort(repo: ReturnType<typeof createArtifactRepo>): IndexPort {
 /**
  * 真实文件系统的读取。
  *
- * 内容哈希用**前 64KB + 大小**而不是整文件：产物动辄几十 MB，
- * 而这里要回答的问题只是"它变了没有""它是不是被挪走的那一个"。
- * 整文件哈希在一次对账里会读掉几百 MB。
+ * 流式计算完整内容哈希，避免文件后半部等长修改漏报；不将整份产物同时读进内存。
  */
-const HASH_PREFIX_BYTES = 64 * 1024;
-
 function hashFile(path: string): { sizeBytes: number; contentHash: string } | undefined {
+  let fd: number | undefined;
   try {
-    const stat = statSync(path);
+    if (!lstatSync(path).isFile()) return undefined;
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const stat = fstatSync(fd);
     if (!stat.isFile()) return undefined;
-    const buffer = readFileSync(path);
-    const head = buffer.subarray(0, HASH_PREFIX_BYTES);
-    const hash = createHash('sha256').update(head).update(String(stat.size)).digest('hex');
-    return { sizeBytes: stat.size, contentHash: hash.slice(0, 32) };
+    const hash = createHash('sha256'),
+      buffer = Buffer.alloc(64 * 1024);
+    let bytes: number;
+    while ((bytes = readSync(fd, buffer, 0, buffer.length, null)) > 0)
+      hash.update(buffer.subarray(0, bytes));
+    const after = fstatSync(fd);
+    if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) return undefined;
+    return { sizeBytes: stat.size, contentHash: hash.digest('hex') };
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -183,24 +199,18 @@ export function createLocalServices(options: LocalServicesOptions) {
   });
 
   const watchers = new Map<string, ReturnType<typeof createArtifactWatcher>>();
-  const workspaceThreads = new Map<string, string>();
-  /** 最近一次 turn 的任务。桌面等 cwd 之外的上报 JSONL 里没有 threadId，靠这个认领。 */
-  let lastActiveThreadId: string | undefined;
   let artifactSeq = 0;
   let artifactReportLog: string | undefined;
   let artifactReportOffset = 0;
   let artifactReportTimer: ReturnType<typeof setInterval> | undefined;
+  const pendingReports = new Map<string, Parameters<typeof reportArtifact>[0]>();
 
   function canonicalPath(path: string): string {
     return normalize(resolve(path));
   }
 
-  function watchWorkspace(root: string, threadId?: string): void {
+  function watchWorkspace(root: string): void {
     const canonicalRoot = canonicalPath(root);
-    if (threadId) {
-      workspaceThreads.set(canonicalRoot, threadId);
-      lastActiveThreadId = threadId;
-    }
     if (watchers.has(canonicalRoot)) return;
     const watcher = createArtifactWatcher({
       fs,
@@ -222,18 +232,14 @@ export function createLocalServices(options: LocalServicesOptions) {
    * 给一份绝对路径找到（或建）对应 watcher。产物经常写到 cwd 之外
    * （用户指定的桌面目录），不能因为「不在当前工作空间里」就丢掉。
    */
-  function watcherFor(
-    path: string,
-    threadId?: string,
-  ): ReturnType<typeof createArtifactWatcher> | undefined {
+  function watcherFor(path: string): ReturnType<typeof createArtifactWatcher> | undefined {
     const artifactPath = canonicalPath(path);
     const existingRoot = [...watchers.keys()].find((root) => isInside(root, artifactPath));
     if (existingRoot) {
-      if (threadId) workspaceThreads.set(existingRoot, threadId);
       return watchers.get(existingRoot);
     }
     const parent = canonicalPath(dirname(artifactPath));
-    watchWorkspace(parent, threadId);
+    watchWorkspace(parent);
     return watchers.get(parent);
   }
 
@@ -277,9 +283,23 @@ export function createLocalServices(options: LocalServicesOptions) {
     readonly threadId?: string | undefined;
   }): void {
     const artifactPath = canonicalPath(report.path);
-    const normalizedReport = { ...report, path: artifactPath };
-    const threadId = report.threadId ?? lastActiveThreadId;
-    const watcher = watcherFor(artifactPath, threadId);
+    let normalizedReport = { ...report, path: artifactPath };
+    const pending = pendingReports.get(artifactPath);
+    if (pending && pending.threadId !== report.threadId) {
+      // 两个并发任务都只声明了同一输出路径，尚不能证明最终文件由谁写入。
+      normalizedReport = { ...normalizedReport, threadId: undefined };
+    }
+    if (!hashFile(artifactPath)) {
+      pendingReports.set(artifactPath, normalizedReport);
+      return;
+    }
+    const threadId = normalizedReport.threadId;
+    // A skill can mark an edit before writing. Keep its explicit provenance for subsequent
+    // hashes until this turn ends; otherwise the polling update would become unowned.
+    if (threadId && options.store.threads.get(threadId)?.last_turn_status === 'inProgress')
+      pendingReports.set(artifactPath, normalizedReport);
+    else pendingReports.delete(artifactPath);
+    const watcher = watcherFor(artifactPath);
     const record = watcher?.ingestSkillReport(normalizedReport, { threadId });
     renameTaskAfter(record);
     announceArtifact(record);
@@ -289,7 +309,10 @@ export function createLocalServices(options: LocalServicesOptions) {
    * 技能上报是 JSONL。按字节偏移量只消费完整行，避免刚好在写入中间读到
    * 半个 UTF-8 字符或半条 JSON。损坏行只记分类，不把路径/标题写进日志。
    */
-  function flushArtifactReports(fallbackThreadId?: string): number {
+  function flushArtifactReports(): number {
+    for (const [path, report] of pendingReports) {
+      if (hashFile(path)) reportArtifact(report);
+    }
     const path = artifactReportLog;
     if (!path || !existsSync(path)) return 0;
     let bytes: Buffer;
@@ -315,6 +338,8 @@ export function createLocalServices(options: LocalServicesOptions) {
           typeof raw.skill !== 'string' ||
           typeof raw.path !== 'string' ||
           typeof raw.outputFormat !== 'string' ||
+          (raw.threadId !== undefined &&
+            (typeof raw.threadId !== 'string' || !raw.threadId.trim())) ||
           (raw.operationKind !== 'create' && raw.operationKind !== 'edit')
         ) {
           options.logger?.warn('artifacts.report.invalid', { reason: 'INVALID_RECORD' });
@@ -326,11 +351,8 @@ export function createLocalServices(options: LocalServicesOptions) {
           outputFormat: raw.outputFormat,
           operationKind: raw.operationKind,
           ...(typeof raw.title === 'string' ? { title: raw.title } : {}),
-          // JSONL 本身没有 threadId。路径在 cwd 里时 watcher 能认领；写到桌面等
-          // cwd 之外时必须用当前回合，否则索引有记录、结果区仍是空的。
-          ...((fallbackThreadId ?? lastActiveThreadId)
-            ? { threadId: fallbackThreadId ?? lastActiveThreadId }
-            : {}),
+          // 缺少身份的旧上报不猜归属：另一个任务可能正在同一目录或桌面输出。
+          ...(typeof raw.threadId === 'string' ? { threadId: raw.threadId.trim() } : {}),
         });
         accepted += 1;
       } catch {
@@ -495,12 +517,12 @@ export function createLocalServices(options: LocalServicesOptions) {
       changes: readonly { readonly path: string; readonly kind?: unknown }[],
     ): void {
       const canonicalRoot = canonicalPath(root);
-      watchWorkspace(canonicalRoot, threadId);
+      watchWorkspace(canonicalRoot);
       for (const change of changes) {
         const path = canonicalPath(
           isAbsolute(change.path) ? change.path : join(canonicalRoot, change.path),
         );
-        const watcher = watcherFor(path, threadId);
+        const watcher = watcherFor(path);
         if (!watcher) continue;
         const decoded = fileChangeKind(change.kind);
         const kind = decoded === 'delete' ? 'delete' : decoded === 'add' ? 'add' : 'modify';
@@ -540,9 +562,9 @@ export function createLocalServices(options: LocalServicesOptions) {
       tick = undefined;
       for (const watcher of watchers.values()) watcher.stop();
       watchers.clear();
-      workspaceThreads.clear();
       if (artifactReportTimer) clearInterval(artifactReportTimer);
       artifactReportTimer = undefined;
+      pendingReports.clear();
       bridge.dispose();
     },
   };

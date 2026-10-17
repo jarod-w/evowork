@@ -77,6 +77,10 @@ export function runMarkArtifact(defaultSkill) {
 
   const record = {
     kind: 'artifact.mark',
+    // 内核逐命令注入；共享 cwd、外部输出目录和并发回合都不能用“最近活动任务”猜归属。
+    ...(process.env.CODEX_THREAD_ID?.trim()
+      ? { threadId: process.env.CODEX_THREAD_ID.trim() }
+      : {}),
     skill: args.skill,
     operationKind: args.operationKind,
     expectedOutputCount: Number(args.expectedOutputCount ?? '1'),

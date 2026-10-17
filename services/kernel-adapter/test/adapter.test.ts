@@ -2387,3 +2387,59 @@ describe('图片工具可信绑定', () => {
     ).toBeUndefined();
   });
 });
+
+describe('本机文件工具绑定', () => {
+  it('按在途工具的任务、回合、服务器和参数核对，歧义与完成后调用拒绝', async () => {
+    await adapter.start();
+    server.handlers.set('turn/start', (ctx) => {
+      const turn = makeTurn({ id: 'files-turn', status: 'inProgress' });
+      server.notify('turn/started', { threadId: ctx.params.threadId, turn });
+      return { turn };
+    });
+    const task = await adapter.createTask({
+      input: [{ type: 'text', text: '打开文件' }],
+      overrides: { cwd: '/w' },
+    });
+    const call = {
+      type: 'mcpToolCall',
+      id: 'file-call',
+      server: 'workspace_files',
+      tool: 'open_file',
+      arguments: { path: 'out.txt' },
+      status: 'inProgress',
+    };
+    server.notify('item/started', { threadId: task.threadId, turnId: task.turn.id, item: call });
+    await new Promise((r) => setImmediate(r));
+    expect(
+      adapter.resolveWorkspaceFileToolCall(task.threadId, 'open_file', { path: 'out.txt' }),
+    ).toMatchObject({ callId: 'file-call', turnId: task.turn.id });
+    expect(
+      adapter.resolveWorkspaceFileToolCall('foreign', 'open_file', call.arguments),
+    ).toBeUndefined();
+    expect(
+      adapter.resolveWorkspaceFileToolCall(task.threadId, 'open_file', { path: 'other.txt' }),
+    ).toBeUndefined();
+    expect(
+      adapter.resolveWorkspaceFileToolCall(task.threadId, 'register_file', call.arguments),
+    ).toBeUndefined();
+    server.notify('item/started', {
+      threadId: task.threadId,
+      turnId: task.turn.id,
+      item: { ...call, id: 'duplicate' },
+    });
+    await new Promise((r) => setImmediate(r));
+    expect(
+      adapter.resolveWorkspaceFileToolCall(task.threadId, 'open_file', call.arguments),
+    ).toBeUndefined();
+    for (const id of ['file-call', 'duplicate'])
+      server.notify('item/completed', {
+        threadId: task.threadId,
+        turnId: task.turn.id,
+        item: { ...call, id, status: 'completed' },
+      });
+    await new Promise((r) => setImmediate(r));
+    expect(
+      adapter.resolveWorkspaceFileToolCall(task.threadId, 'open_file', call.arguments),
+    ).toBeUndefined();
+  });
+});

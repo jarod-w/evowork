@@ -78,6 +78,12 @@ export interface DeeplinkDelivery {
 }
 
 export type RendererEvent =
+  | {
+      readonly type: 'file-open-requested';
+      readonly taskId: string;
+      readonly path: string;
+      readonly requestId: string;
+    }
   | { readonly type: 'task-communication-updated'; readonly taskId: string }
   | { readonly type: 'task-disconnected'; readonly taskId: string }
   | { readonly type: 'task-restored'; readonly taskId: string; readonly history: OpenTaskResult }
@@ -510,6 +516,7 @@ export interface OpenTaskResult {
 
 /** 右侧结果工作区只取当前任务的产物，不复用全局资料库视图。 */
 export interface TaskResultsView {
+  readonly workspace?: import('@evowork/artifacts').WorkspaceFilesView | undefined;
   readonly artifacts: readonly {
     readonly id: string;
     readonly name: string;
@@ -526,6 +533,15 @@ export interface FilePreviewView {
   readonly language?: string | undefined;
   readonly truncated?: boolean | undefined;
   readonly message?: string | undefined;
+  readonly pages?: readonly string[] | undefined;
+  readonly pageCount?: number | undefined;
+}
+
+export interface RevertTaskFileInput {
+  readonly threadId: string;
+  readonly path: string;
+  readonly scope: 'turn' | 'thread';
+  readonly revision: string;
 }
 
 /** 预览内的局部批注坐标。百分比坐标不依赖窗口缩放，也不泄露本机绝对路径。 */

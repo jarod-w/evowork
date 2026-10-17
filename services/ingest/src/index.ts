@@ -11,3 +11,4 @@ export * from './isolated-process.js';
 export * from './ocr.js';
 
 export * from './library-extract.js';
+export * from './office-preview.js';

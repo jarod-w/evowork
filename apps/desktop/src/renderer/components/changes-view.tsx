@@ -20,12 +20,18 @@ import { Dialog, EmptyState, PillButton, SegmentedControl } from './primitives.j
 
 export interface ChangedFile {
   readonly path: string;
+  readonly displayPath?: string | undefined;
   readonly added: number;
   readonly removed: number;
   /** 统一 diff 文本（`turn/diff/updated` 的片段） */
   readonly diff: string;
   readonly kind?: string | undefined;
   readonly outsideWorkspace?: boolean | undefined;
+  /** 回合聚合为净差异；逐项历史的行数为累计编辑量。 */
+  readonly diffMode?: 'net' | 'history' | undefined;
+  readonly revision?: string | undefined;
+  readonly reversible?: boolean | undefined;
+  readonly source?: 'task' | 'workspace' | undefined;
 }
 
 export type DiffScope = 'turn' | 'thread';
@@ -53,14 +59,19 @@ export interface ChangesViewProps {
   readonly onScopeChange: (scope: DiffScope) => void;
   /** 从时间线点某个修改/删除路径时，直接选中它的 diff。 */
   readonly selectedPath?: string | undefined;
-  readonly onRevert?: ((path: string) => void) | undefined;
+  readonly onRevert?: ((path: string, revision?: string, scope?: DiffScope) => void) | undefined;
   readonly onRollback?: ((path: string) => void) | undefined;
 }
 
 export function ChangesView(props: ChangesViewProps) {
   const [selected, setSelected] = useState<string | null>(props.files[0]?.path ?? null);
   const [layout, setLayout] = useState<DiffLayout>('unified');
-  const [confirm, setConfirm] = useState<{ kind: RevertKind; path: string } | null>(null);
+  const [confirm, setConfirm] = useState<{
+    kind: RevertKind;
+    path: string;
+    revision?: string | undefined;
+    scope?: DiffScope | undefined;
+  } | null>(null);
 
   const current = useMemo(
     () => props.files.find((f) => f.path === selected) ?? props.files[0],
@@ -72,15 +83,6 @@ export function ChangesView(props: ChangesViewProps) {
       setSelected(props.selectedPath);
     }
   }, [props.files, props.selectedPath]);
-
-  if (props.files.length === 0) {
-    return (
-      <EmptyState
-        title="这个任务还没有改动文件"
-        hint="agent 写入或修改文件后，这里会列出每个文件的改动并可以逐项撤销。"
-      />
-    );
-  }
 
   return (
     <div className="ew-changes-view">
@@ -107,6 +109,10 @@ export function ChangesView(props: ChangesViewProps) {
         />
       </div>
 
+      {props.files.length === 0 ? (
+        <EmptyState title="当前范围没有文件变更" hint="可切换范围，查看其他回合的变更记录。" />
+      ) : null}
+
       <ul className="ew-changed-files">
         {props.files.map((file) => (
           <li key={file.path}>
@@ -117,7 +123,10 @@ export function ChangesView(props: ChangesViewProps) {
               data-outside={file.outsideWorkspace ? 'true' : undefined}
               onClick={() => setSelected(file.path)}
             >
-              <span className="ew-changed-file-path">{file.path}</span>
+              <span className="ew-changed-file-path" title={file.path}>
+                {file.displayPath ?? file.path}
+              </span>
+              {file.source === 'workspace' ? <span>来源待确认</span> : null}
               {file.outsideWorkspace ? (
                 <span className="ew-changed-file-outside">工作空间之外</span>
               ) : null}
@@ -130,10 +139,22 @@ export function ChangesView(props: ChangesViewProps) {
 
       {current ? (
         <div className="ew-diff" data-layout={layout}>
+          {current.diffMode === 'history' ? (
+            <p>按发生顺序展示变更记录，行数为累计编辑量。</p>
+          ) : null}
           <pre className="ew-diff-body">{current.diff}</pre>
           <div className="ew-diff-actions">
-            {props.onRevert ? (
-              <PillButton onClick={() => setConfirm({ kind: 'revert', path: current.path })}>
+            {props.onRevert && current.reversible ? (
+              <PillButton
+                onClick={() =>
+                  setConfirm({
+                    kind: 'revert',
+                    path: current.path,
+                    revision: current.revision,
+                    scope: props.scope,
+                  })
+                }
+              >
                 撤销这次变更
               </PillButton>
             ) : null}
@@ -153,8 +174,10 @@ export function ChangesView(props: ChangesViewProps) {
           confirmLabel="确认"
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
-            if (confirm.kind === 'revert') props.onRevert?.(confirm.path);
-            else props.onRollback?.(confirm.path);
+            if (confirm.kind === 'revert') {
+              if (confirm.revision) props.onRevert?.(confirm.path, confirm.revision, confirm.scope);
+              else props.onRevert?.(confirm.path);
+            } else props.onRollback?.(confirm.path);
             setConfirm(null);
           }}
         >
@@ -164,6 +187,12 @@ export function ChangesView(props: ChangesViewProps) {
           >
             {REVERT_COPY[confirm.kind].body}
           </p>
+          {confirm.kind === 'revert' ? (
+            <p>
+              文件：{confirm.path}。范围：{confirm.scope === 'turn' ? '本回合' : '本任务全部'}
+              。新增文件会删除，删除的文件会恢复。
+            </p>
+          ) : null}
         </Dialog>
       ) : null}
     </div>

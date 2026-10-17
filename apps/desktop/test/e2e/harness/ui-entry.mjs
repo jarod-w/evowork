@@ -9,9 +9,10 @@
  * 真交互测试没有自己的一套启动代码，也就不会跟断言型 E2E 悄悄漂开。
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import { app } from 'electron';
 
@@ -100,7 +101,16 @@ const REAL_CUSTOM_MODELS = [
   },
 ];
 
-const { home, workspace, kernelHome } = createE2EHome('evowork-ui-');
+// Explicit restart journeys may reopen only one of this harness's own temporary homes.
+const resumeHome = process.env.EVOWORK_UI_REUSE_HOME;
+function testHome() {
+  if (!resumeHome) return createE2EHome('evowork-ui-');
+  const home = realpathSync(resumeHome);
+  if (!basename(home).startsWith('evowork-ui-') || dirname(home) !== realpathSync(tmpdir()))
+    throw new Error('只允许重开本夹具的临时目录');
+  return { home, workspace: join(home, 'workspace'), kernelHome: join(home, '.evowork/kernel') };
+}
+const { home, workspace, kernelHome } = testHome();
 // A fresh SQLite home also needs a fresh Chromium profile; drafts persist in localStorage.
 app.setPath('userData', home);
 /*
@@ -348,9 +358,10 @@ exporter = "none"
    */
   if (!KEEP_ONBOARDING) {
     await desktop.evaluate('window.evowork.completeOnboarding()');
-    await desktop.evaluate(
-      `window.evowork.createProject(${JSON.stringify({ name: 'UI', path: workspace })})`,
-    );
+    if (!resumeHome)
+      await desktop.evaluate(
+        `window.evowork.createProject(${JSON.stringify({ name: 'UI', path: workspace })})`,
+      );
     await desktop.window.webContents.reload();
     await waitFor(
       () => desktop.evaluate('Boolean(window.evowork)'),

@@ -8,9 +8,11 @@
  *   · 内核崩了却把在跑的任务算成"任务失败" → 三次之后自动暂停，用户不知道为什么；
  *   · 技能报了产物但那个目录没人盯 → 这条记录之后永远不更新状态。
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 
 import * as runtimeInstaller from '@evowork/runtime-installer';
 import { openStore, createAutomationRepo, type Store, type TitleSource } from '@evowork/store';
@@ -273,11 +275,158 @@ describe('scheduler ↔ 内核', () => {
 });
 
 describe('文件变化 ↔ 产物索引', () => {
+  it('先声明编辑再写入，最新内容仍保留本回合技能归属；回合结束后不认领外部修改', () => {
+    const { services } = make();
+    seedThread('editing');
+    store.db
+      .prepare(
+        "UPDATE thread_projection SET last_turn_status='inProgress' WHERE thread_id='editing'",
+      )
+      .run();
+    const path = join(dir, 'work', 'editing.md');
+    writeFileSync(path, 'before');
+    services.reportArtifact({
+      threadId: 'editing',
+      skill: 'documents',
+      path,
+      outputFormat: 'md',
+      operationKind: 'edit',
+    });
+    writeFileSync(path, 'after');
+    services.flushArtifactReports();
+    expect(
+      store.db
+        .prepare('SELECT thread_id,version FROM artifact ORDER BY version DESC LIMIT 1')
+        .get(),
+    ).toEqual({ thread_id: 'editing', version: 2 });
+    store.db
+      .prepare(
+        "UPDATE thread_projection SET last_turn_status='completed' WHERE thread_id='editing'",
+      )
+      .run();
+    services.flushArtifactReports();
+    writeFileSync(path, 'external');
+    services.flushArtifactReports();
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM artifact').get()).toEqual({ n: 2 });
+    services.stop();
+  });
+  it('生成前上报等待真正落盘后发布，首版归属和任务命名都保留', () => {
+    const { services, adapter } = make();
+    seedThread('t1');
+    const path = join(dir, 'work', 'pending.md');
+    services.reportArtifact({
+      threadId: 't1',
+      skill: 'documents',
+      path,
+      outputFormat: 'md',
+      operationKind: 'create',
+      title: '稍后生成的报告',
+    });
+    expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(0);
+    writeFileSync(path, 'finished');
+    services.flushArtifactReports();
+    expect(store.db.prepare('SELECT thread_id, version, file_state FROM artifact').get()).toEqual({
+      thread_id: 't1',
+      version: 1,
+      file_state: 'PRESENT',
+    });
+    expect(adapter.setTaskName).toHaveBeenCalledWith('t1', '稍后生成的报告', 'artifact');
+    services.stop();
+  });
+
+  it('同一待生成路径被两个任务声明时，扫描到文件后也不猜归属', () => {
+    const { services } = make();
+    const path = join(dir, 'work', 'shared.md');
+    for (const threadId of ['a', 'b'])
+      services.reportArtifact({
+        threadId,
+        skill: 'documents',
+        path,
+        outputFormat: 'md',
+        operationKind: 'create',
+      });
+    writeFileSync(path, 'shared');
+    services.flushArtifactReports();
+    expect(store.db.prepare('SELECT thread_id FROM artifact').get()).toEqual({ thread_id: null });
+    services.stop();
+  });
+  it('并发任务在同一目录及 cwd 外上报，产物和通知始终归实际执行命令的任务', async () => {
+    const { services } = make();
+    const log = join(dir, 'artifacts.jsonl');
+    services.startArtifactReports(log, 60_000);
+    seedThread('t-first');
+    seedThread('t-last');
+    services.watchWorkspace(join(dir, 'work'));
+    services.watchWorkspace(join(dir, 'work'));
+    const outputs = [
+      { threadId: 't-first', path: join(dir, 'work', 'first.md') },
+      { threadId: 't-last', path: join(dir, 'outside.md') },
+    ];
+    for (const output of outputs) writeFileSync(output.path, output.threadId);
+    try {
+      await Promise.all(
+        outputs.map((output) =>
+          promisify(execFile)(
+            process.execPath,
+            [
+              resolve('plugins/skills/documents/container_tools/mark_artifact.mjs'),
+              '--operation-kind',
+              'create',
+              '--output-format',
+              'md',
+              '--path',
+              output.path,
+            ],
+            {
+              env: {
+                ...process.env,
+                CODEX_THREAD_ID: output.threadId,
+                EVOWORK_ARTIFACT_LOG: log,
+                EVOWORK_ARTIFACT_SOCKET: '',
+              },
+            },
+          ),
+        ),
+      );
+      services.flushArtifactReports();
+      expect(store.db.prepare('SELECT path, thread_id FROM artifact ORDER BY path').all()).toEqual(
+        outputs
+          .map((output) => ({ path: output.path, thread_id: output.threadId }))
+          .sort((a, b) => a.path.localeCompare(b.path)),
+      );
+    } finally {
+      services.stop();
+    }
+  });
+
+  it('缺少任务身份的旧上报保留为无归属，不能认领最近活动任务或改它的标题', () => {
+    const { services, adapter } = make();
+    seedThread('t-last');
+    services.watchWorkspace(join(dir, 'work'));
+    const path = join(dir, 'work', 'legacy.md');
+    writeFileSync(path, 'legacy');
+    const log = join(dir, 'artifacts.jsonl');
+    services.startArtifactReports(log, 60_000);
+    appendFileSync(
+      log,
+      `${JSON.stringify({ kind: 'artifact.mark', skill: 'documents', path, outputFormat: 'md', operationKind: 'create', title: '旧产物' })}\n`,
+    );
+    try {
+      services.flushArtifactReports();
+      expect(store.db.prepare('SELECT thread_id FROM artifact WHERE path = ?').get(path)).toEqual({
+        thread_id: null,
+      });
+      expect(adapter.setTaskName).not.toHaveBeenCalled();
+    } finally {
+      services.stop();
+    }
+  });
+
   it('盯住一个工作空间只建立基线，原有文件不冒充当前任务产物', () => {
     const { services } = make();
     writeFileSync(join(dir, 'work', 'report.docx'), 'v1');
     writeFileSync(join(dir, 'work', 'package.json'), '{}');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
 
     expect(store.db.prepare('SELECT * FROM artifact').all()).toHaveLength(0);
     services.stop();
@@ -288,7 +437,7 @@ describe('文件变化 ↔ 产物索引', () => {
     mkdirSync(join(dir, 'work', 'uploads', 'x'), { recursive: true });
     writeFileSync(join(dir, 'work', 'uploads', 'x', 'content.md'), 'parsed');
     writeFileSync(join(dir, 'work', 'report.docx'), 'v1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
     services.ingestFileChanges(join(dir, 'work'), 't1', [
       { path: 'uploads/x/content.md', kind: { type: 'add' } },
       { path: './report.docx', kind: { type: 'add' } },
@@ -302,7 +451,7 @@ describe('文件变化 ↔ 产物索引', () => {
     const { services } = make();
     const path = join(dir, 'work', 'report.docx');
     writeFileSync(path, 'v1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
 
     services.ingestFileChanges(join(dir, 'work'), 't1', [
       { path: './report.docx', kind: { type: 'add' } },
@@ -318,9 +467,10 @@ describe('文件变化 ↔ 产物索引', () => {
     mkdirSync(join(dir, 'work', 'charts'), { recursive: true });
     const png = join(dir, 'work', 'charts', 'margin.png');
     writeFileSync(png, 'png-bytes');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
 
     services.reportArtifact({
+      threadId: 't1',
       skill: 'charts',
       path: png,
       outputFormat: 'png',
@@ -349,9 +499,10 @@ describe('文件变化 ↔ 产物索引', () => {
     seedThread('t1');
     const path = join(dir, 'work', 'Q3经营分析.docx');
     writeFileSync(path, 'v1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
 
     services.reportArtifact({
+      threadId: 't1',
       skill: 'documents',
       path,
       outputFormat: 'docx',
@@ -366,7 +517,7 @@ describe('文件变化 ↔ 产物索引', () => {
   it('**第一个产物赢** —— 三个产物让标题在侧边栏里跳三次比平庸的标题更糟', () => {
     const { services, adapter } = make();
     seedThread('t1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
 
     for (const [name, title] of [
       ['a.docx', '先产出的文档'],
@@ -375,6 +526,7 @@ describe('文件变化 ↔ 产物索引', () => {
       const path = join(dir, 'work', name);
       writeFileSync(path, name);
       services.reportArtifact({
+        threadId: 't1',
         skill: 'documents',
         path,
         outputFormat: name.split('.')[1] as string,
@@ -398,12 +550,13 @@ describe('文件变化 ↔ 产物索引', () => {
   it('用户改过名字之后，产物不再动它', () => {
     const { services, adapter } = make();
     seedThread('t1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
     expect(store.threads.setTitleSource('t1', 'user')).toBe(true);
 
     const path = join(dir, 'work', 'Q3经营分析.docx');
     writeFileSync(path, 'v1');
     services.reportArtifact({
+      threadId: 't1',
       skill: 'documents',
       path,
       outputFormat: 'docx',
@@ -422,6 +575,7 @@ describe('文件变化 ↔ 产物索引', () => {
     writeFileSync(path, 'v1');
 
     services.reportArtifact({
+      threadId: 't1',
       skill: 'documents',
       path,
       outputFormat: 'docx',
@@ -441,7 +595,7 @@ describe('文件变化 ↔ 产物索引', () => {
     const { services } = make();
     const path = join(dir, 'work', 'report.docx');
     writeFileSync(path, 'v1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
     services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: { type: 'add' } }]);
 
     rmSync(path);
@@ -459,7 +613,7 @@ describe('文件变化 ↔ 产物索引', () => {
     mkdirSync(desktop, { recursive: true });
     const path = join(desktop, '美股市场日报.docx');
     writeFileSync(path, 'v1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
     services.ingestFileChanges(join(dir, 'work'), 't1', [{ path, kind: { type: 'add' } }]);
 
     const rows = store.db.prepare('SELECT path, thread_id FROM artifact').all() as {
@@ -486,8 +640,9 @@ describe('文件变化 ↔ 产物索引', () => {
     mkdirSync(desktop, { recursive: true });
     const path = join(desktop, '分析报告.docx');
     writeFileSync(path, 'v1');
-    services.watchWorkspace(join(dir, 'work'), 't1');
+    services.watchWorkspace(join(dir, 'work'));
     services.reportArtifact({
+      threadId: 't1',
       skill: 'documents',
       path,
       outputFormat: 'docx',

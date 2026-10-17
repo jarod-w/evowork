@@ -56,6 +56,7 @@ import type {
   ThreadShareInput,
   FilePreviewView,
   FileAnnotationView,
+  RevertTaskFileInput,
   ModelAccessMutationResult,
   ModelAccessView,
   ModelCatalogResult,
@@ -230,6 +231,7 @@ export interface EvoworkBridge
   }): Promise<TaskGoalView | undefined>;
   clearTaskGoal?(input: { threadId: string }): Promise<void>;
   getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
+  revertTaskFile?(input: RevertTaskFileInput): Promise<void>;
   openResultFile(input: { artifactId: string }): Promise<void>;
   readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
   readTaskFilePreview?(input: TaskFilePreviewInput): Promise<FilePreviewView>;
@@ -901,6 +903,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     Readonly<Record<string, string>>
   >({});
   const [resultDismissed, setResultDismissed] = useState<Readonly<Record<string, boolean>>>({});
+  const fileOpenRequests = useRef(new Map<string, string | symbol>());
 
   const dismissToast = useCallback((id: string) => {
     const timer = toastTimers.current.get(id);
@@ -1254,6 +1257,31 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               });
             }
           }
+          return;
+        }
+        if (event.type === 'file-open-requested') {
+          const { taskId, requestId, path } = event;
+          fileOpenRequests.current.set(taskId, requestId);
+          if (!bridge.readTaskFilePreview) {
+            reportFailure(new Error('当前构建没有文件预览能力。'), '无法打开文件。');
+            return;
+          }
+          void bridge
+            .readTaskFilePreview({ threadId: taskId, path })
+            .then((preview) => {
+              if (
+                deletedTaskIds.current.has(taskId) ||
+                fileOpenRequests.current.get(taskId) !== requestId
+              )
+                return;
+              setPreviewByTask((previous) => ({ ...previous, [taskId]: preview }));
+              setResultDismissed((previous) => ({ ...previous, [taskId]: false }));
+              setResultUi((previous) => ({
+                ...previous,
+                [taskId]: { open: true, tab: preview.kind === 'html' ? 'browser' : 'files' },
+              }));
+            })
+            .catch((error: unknown) => reportFailure(error, '无法打开文件。'));
           return;
         }
         if (event.type === 'task-results-updated') {
@@ -1772,20 +1800,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         [activeTaskId]: { open: true, tab: current?.tab ?? 'artifacts' },
       };
     });
-    if (!shouldAutoOpenResult(itemsByTask[activeTaskId] ?? []) || !bridge.readResultPreview) return;
-    void bridge
-      .readResultPreview({ artifactId: latest.id })
-      .then((preview) => {
-        setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
-        setResultUi((previous) => ({
-          ...previous,
-          [activeTaskId]: {
-            open: true,
-            tab: preview.kind === 'html' ? 'browser' : (previous[activeTaskId]?.tab ?? 'artifacts'),
-          },
-        }));
-      })
-      .catch(() => undefined);
   }, [activeTaskId, bridge, itemsByTask, resultDismissed, taskResults]);
 
   /**
@@ -2524,29 +2538,51 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const currentTurnDiff = activeTaskId === null ? undefined : turnDiffByTask[activeTaskId];
   const changedFiles = useMemo(
     () =>
-      changedFilesFromItems(
-        currentItems,
-        diffScope === 'turn' ? currentTurnId : undefined,
-        diffScope === 'turn' && currentTurnDiff?.turnId === currentTurnId
-          ? currentTurnDiff?.diff
-          : undefined,
-      ),
-    [currentItems, currentTurnDiff, currentTurnId, diffScope],
+      currentResults.workspace
+        ? diffScope === 'thread'
+          ? currentResults.workspace.thread
+          : currentResults.workspace.turn
+        : changedFilesFromItems(
+            currentItems,
+            diffScope === 'turn' ? currentTurnId : undefined,
+            diffScope === 'turn' && currentTurnDiff?.turnId === currentTurnId
+              ? currentTurnDiff?.diff
+              : undefined,
+            active?.cwd,
+          ),
+    [
+      active?.cwd,
+      currentResults.workspace,
+      currentItems,
+      currentTurnDiff,
+      currentTurnId,
+      diffScope,
+    ],
   );
   // 项目目录里的既有文件只是「文件」Tab 可浏览的数据，不是当前任务的结果信号。
   // 否则一发送消息、任务进入 processing，目录读取完成就会把结果区提前撑开。
   // 只有任务产物索引或本轮 FileChange 才能证明这次确实产生/修改了文件。
-  const hasCurrentResults = currentResults.artifacts.length > 0 || changedFiles.length > 0;
+  const hasCurrentResults =
+    Boolean(currentPreview) ||
+    currentResults.artifacts.length > 0 ||
+    (currentResults.workspace?.files.length ?? 0) > 0 ||
+    (currentResults.workspace?.warnings.length ?? 0) > 0 ||
+    changedFiles.length > 0 ||
+    currentItems.some(
+      (item) =>
+        item.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0,
+    );
   const activeResultUi =
     activeTaskId === null
       ? { open: false, tab: 'artifacts' as ResultPane }
       : (resultUi[activeTaskId] ?? {
           open: hasCurrentResults,
-          tab: 'artifacts' as ResultPane,
+          tab: (currentResults.artifacts.length > 0 ? 'artifacts' : 'changes') as ResultPane,
         });
   const updateResultUi = useCallback(
     (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
       if (activeTaskId === null) return;
+      fileOpenRequests.current.delete(activeTaskId);
       setResultUi((prev) => ({
         ...prev,
         [activeTaskId]: { ...activeResultUi, ...patch },
@@ -2588,11 +2624,48 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }
   }, [activeTaskId, bridge, currentItems, currentTurnId, pushToast, reportFailure]);
 
+  const revertFile = async (
+    path: string,
+    revision?: string,
+    scope: DiffScope = diffScope,
+  ): Promise<void> => {
+    if (!activeTaskId || !bridge.revertTaskFile) return;
+    const threadId = activeTaskId,
+      file = changedFiles.find((candidate) => candidate.path === path);
+    if (!revision) return;
+    try {
+      if (!file?.reversible) throw new Error('文件状态已改变，请重新查看后撤销。');
+      await bridge.revertTaskFile({ threadId, path, scope, revision });
+      fileOpenRequests.current.delete(threadId);
+      const result = await bridge.getTaskResults({ threadId });
+      setTaskResults((previous) => ({ ...previous, [threadId]: result }));
+      setPreviewByTask((previous) => {
+        const next = { ...previous };
+        delete next[threadId];
+        return next;
+      });
+      if (activeProject) {
+        const entries = await bridge.listProjectDir({ id: activeProject.id });
+        setTaskFiles((previous) => ({ ...previous, [threadId]: entries }));
+      }
+      pushToast({ tone: 'success', text: '磁盘文件已恢复，文件与差异已刷新。' });
+    } catch (error: unknown) {
+      reportFailure(error, '无法撤销文件变更。');
+    }
+  };
+
   const showPreview = useCallback(
     async (load: () => Promise<FilePreviewView>, pane: ResultPane = 'artifacts') => {
       if (activeTaskId === null) return;
+      const requestId = Symbol('user-file-open');
+      fileOpenRequests.current.set(activeTaskId, requestId);
       try {
         const preview = await load();
+        if (
+          deletedTaskIds.current.has(activeTaskId) ||
+          fileOpenRequests.current.get(activeTaskId) !== requestId
+        )
+          return;
         setPreviewByTask((previous) => ({ ...previous, [activeTaskId]: preview }));
         updateResultUi({ open: true, tab: preview.kind === 'html' ? 'browser' : pane });
       } catch (error: unknown) {
@@ -3946,8 +4019,36 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 <EmptyState title="还没有产物" hint="任务生成的交付文件会出现在这里。" />
               ),
             files:
-              currentFiles.length > 0 || (currentPreview && currentPreview.kind !== 'html') ? (
+              currentFiles.length > 0 ||
+              (currentResults.workspace?.files.length ?? 0) > 0 ||
+              (currentPreview && currentPreview.kind !== 'html') ? (
                 <div className="ew-result-preview-stack">
+                  {currentResults.workspace?.files.length ? (
+                    <ul className="ew-result-artifacts">
+                      {currentResults.workspace.files.map((file) => (
+                        <li key={file.path}>
+                          <button
+                            type="button"
+                            className="ew-result-artifact"
+                            onClick={() => {
+                              if (bridge.readTaskFilePreview)
+                                void showPreview(
+                                  () =>
+                                    bridge.readTaskFilePreview!({
+                                      threadId: activeTaskId,
+                                      path: file.path,
+                                    }),
+                                  'files',
+                                );
+                            }}
+                          >
+                            <span>{file.path.split(/[\\/]/).at(-1)}</span>
+                            <span>{file.source === 'task' ? '本任务文件' : '来源待确认'}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {currentFiles.length > 0 ? (
                     <FileTree
                       entries={currentFiles}
@@ -3973,15 +4074,28 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 <EmptyState title="没有项目文件" hint="把任务放进项目后可在这里浏览根目录。" />
               ),
             changes: (
-              <ChangesView
-                files={changedFiles}
-                scope={diffScope}
-                onScopeChange={setDiffScope}
-                selectedPath={selectedChangeByTask[activeTaskId]}
-                {...(currentTurnId !== undefined && bridge.revertTask
-                  ? { onRollback: () => void rollbackCurrentTurn() }
-                  : {})}
-              />
+              <div>
+                {currentResults.workspace?.warnings.map((warning) => (
+                  <p key={warning} role="status">
+                    {warning}
+                  </p>
+                ))}
+                <ChangesView
+                  files={changedFiles}
+                  scope={diffScope}
+                  onScopeChange={setDiffScope}
+                  selectedPath={selectedChangeByTask[activeTaskId]}
+                  {...(bridge.revertTaskFile
+                    ? {
+                        onRevert: (path: string, revision?: string, scope?: DiffScope) =>
+                          void revertFile(path, revision, scope),
+                      }
+                    : {})}
+                  {...(currentTurnId !== undefined && bridge.revertTask
+                    ? { onRollback: () => void rollbackCurrentTurn() }
+                    : {})}
+                />
+              </div>
             ),
             browser:
               currentPreview?.kind === 'html' ? (
@@ -4638,48 +4752,72 @@ function changedFilesFromUnifiedDiff(diff: string): readonly ChangedFile[] {
   });
 }
 
+/** 仅作展示分组：读文件的真实路径与权限仍由宿主核验。 */
+function changePathKey(path: string, cwd?: string): string {
+  const slashPath = path.replaceAll('\\', '/');
+  const absolute = /^(?:\/|[A-Za-z]:\/)/.test(slashPath);
+  const joined = !absolute && cwd ? `${cwd.replaceAll('\\', '/')}/${slashPath}` : slashPath;
+  const prefix = joined.startsWith('//') ? '//' : joined.startsWith('/') ? '/' : '';
+  const segments: string[] = [];
+  for (const segment of joined.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      const last = segments.at(-1);
+      if (last && last !== '..' && !/^[A-Za-z]:$/.test(last)) segments.pop();
+      else if (!prefix && !/^[A-Za-z]:/.test(joined)) segments.push(segment);
+    } else segments.push(segment);
+  }
+  return prefix + segments.join('/');
+}
+
 /**
  * 把时间线里的 FileChange 投影成完整变更视图。
- * 指定 turnId 时只看该回合；聚合 diff 用来补足尚未收到 FileChange 完整快照的窗口。
+ * 指定 turnId 时只看该回合，优先展示内核聚合的净差异。
+ * 没有聚合快照时按发生顺序保留各次补丁，累计编辑量不冒充净增删行数。
  */
 export function changedFilesFromItems(
   items: readonly RenderItem[],
   turnId?: string,
   aggregateDiff?: string,
+  cwd?: string,
 ): readonly ChangedFile[] {
   const files = new Map<string, ChangedFile>();
+  const diffs = new Map<string, string[]>();
   for (const item of items) {
     if (item.type !== 'fileChange' || !Array.isArray(item.changes)) continue;
     if (turnId !== undefined && item._turnId !== turnId) continue;
     const itemDiff = typeof item.diff === 'string' ? item.diff : '';
     for (const raw of item.changes as readonly Record<string, unknown>[]) {
       if (typeof raw.path !== 'string' || raw.path === '') continue;
-      files.set(raw.path, {
-        path: raw.path,
-        added: typeof raw.added === 'number' ? raw.added : 0,
-        removed: typeof raw.removed === 'number' ? raw.removed : 0,
-        diff: typeof raw.diff === 'string' ? raw.diff : itemDiff,
+      const key = changePathKey(raw.path, cwd);
+      const previous = files.get(key);
+      const diff = typeof raw.diff === 'string' ? raw.diff : itemDiff;
+      const history = diffs.get(key) ?? [];
+      if (diff) history.push(diff);
+      diffs.set(key, history);
+      files.set(key, {
+        ...previous,
+        path: previous?.path ?? raw.path,
+        added: (previous?.added ?? 0) + (typeof raw.added === 'number' ? raw.added : 0),
+        removed: (previous?.removed ?? 0) + (typeof raw.removed === 'number' ? raw.removed : 0),
+        diff:
+          history.length > 1
+            ? history.map((patch, index) => `第 ${index + 1} 次变更\n${patch}`).join('\n\n')
+            : (history[0] ?? ''),
+        diffMode: 'history',
         ...(typeof raw.kind === 'string' ? { kind: raw.kind } : {}),
         ...(raw.outsideWorkspace === true ? { outsideWorkspace: true } : {}),
       });
     }
   }
-  for (const file of changedFilesFromUnifiedDiff(aggregateDiff ?? '')) {
-    const existing = files.get(file.path);
-    files.set(file.path, existing?.diff ? existing : file);
+  if (aggregateDiff !== undefined) {
+    // 聚合快照是完整净差异；不能把已恢复原文的文件从局部历史里补回来。
+    return changedFilesFromUnifiedDiff(aggregateDiff).map((file) => {
+      const existing = files.get(changePathKey(file.path, cwd));
+      return { ...existing, ...file, path: existing?.path ?? file.path, diffMode: 'net' };
+    });
   }
   return [...files.values()];
-}
-
-/** 只在助手明确交付/邀请预览时自动打开，普通文件变更不抢焦点。 */
-export function shouldAutoOpenResult(items: readonly RenderItem[]): boolean {
-  const latest = [...items]
-    .reverse()
-    .find((item) => item.type === 'agentMessage' && typeof item.text === 'string');
-  if (!latest || typeof latest.text !== 'string') return false;
-  return /(?:已生成|已完成|交付|打开预览|请查看|预览|generated|ready to review|open (?:the )?preview)/i.test(
-    latest.text,
-  );
 }
 
 /**

@@ -379,6 +379,7 @@ describe('FileChange → 产物索引', () => {
       resolvePaths(dir).artifactLog,
       `${JSON.stringify({
         kind: 'artifact.mark',
+        threadId: 't-report',
         skill: 'documents',
         operationKind: 'create',
         expectedOutputCount: 1,
@@ -451,6 +452,7 @@ describe('FileChange → 产物索引', () => {
       resolvePaths(dir).artifactLog,
       `${JSON.stringify({
         kind: 'artifact.mark',
+        threadId: 't-desktop',
         skill: 'documents',
         operationKind: 'create',
         expectedOutputCount: 1,
@@ -481,6 +483,83 @@ describe('FileChange → 产物索引', () => {
           (event.payload as { taskId?: string }).taskId === 't-desktop',
       ),
     ).toBe(true);
+  });
+
+  it('另一个并发任务先结束时，公共上报队列仍按各自产物身份入库和通知', async () => {
+    host = makeHost();
+    const workspace = join(dir, 'work');
+    mkdirSync(workspace, { recursive: true });
+    await host.start();
+    for (const id of ['first', 'second']) {
+      child.reply({
+        jsonrpc: '2.0',
+        method: 'thread/started',
+        params: {
+          thread: {
+            id,
+            sessionId: `s-${id}`,
+            preview: id,
+            ephemeral: false,
+            modelProvider: 'evowork',
+            createdAt: 1,
+            updatedAt: 1,
+            status: 'running',
+            cwd: workspace,
+            turns: [],
+          },
+        },
+      });
+      child.reply({
+        jsonrpc: '2.0',
+        method: 'turn/started',
+        params: {
+          threadId: id,
+          turn: { id: `turn-${id}`, status: 'inProgress' },
+        },
+      });
+    }
+    await new Promise((done) => setImmediate(done));
+    const reports = ['first', 'second'].map((threadId) => {
+      const path = join(dir, `${threadId}.md`);
+      writeFileSync(path, threadId);
+      return {
+        kind: 'artifact.mark',
+        threadId,
+        skill: 'documents',
+        path,
+        operationKind: 'create',
+        outputFormat: 'md',
+      };
+    });
+    writeFileSync(
+      resolvePaths(dir).artifactLog,
+      reports.map((report) => JSON.stringify(report)).join('\n') + '\n',
+    );
+    emitted = [];
+    child.reply({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: {
+        threadId: 'second',
+        turn: { id: 'turn-second', status: 'completed' },
+      },
+    });
+    await new Promise((done) => setImmediate(done));
+    for (const report of reports) {
+      await expect(
+        host.actions.getTaskResults({ threadId: report.threadId }),
+      ).resolves.toMatchObject({
+        artifacts: [{ path: report.path }],
+      });
+      expect(
+        emitted.some(
+          (event) =>
+            event.channel === IPC.uiEvent &&
+            (event.payload as { type?: string }).type === 'task-results-updated' &&
+            (event.payload as { taskId?: string }).taskId === report.threadId,
+        ),
+      ).toBe(true);
+    }
   });
 });
 

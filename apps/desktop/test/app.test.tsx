@@ -1,4 +1,4 @@
-import type { OpenTaskResult } from '../src/shared/ipc.js';
+import type { FilePreviewView, OpenTaskResult } from '../src/shared/ipc.js';
 /**
  * 渲染进程外壳（`app.tsx`）。
  *
@@ -1154,6 +1154,150 @@ describe('结果工作区真实接线', () => {
     expect(openResultFile).toHaveBeenCalledWith({ artifactId: 'a1' });
   });
 
+  it('明确打开事件可以预览未索引文件；迟到的旧预览不能覆盖新的打开请求', async () => {
+    let finishFirst!: (preview: FilePreviewView) => void;
+    const readTaskFilePreview = vi.fn(async (input: { path: string }): Promise<FilePreviewView> => {
+      if (input.path === 'first.txt')
+        return new Promise((done) => {
+          finishFirst = done;
+        });
+      return { name: 'second.txt', kind: 'text', content: '第二份文件' };
+    });
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      readTaskFilePreview,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({
+      type: 'file-open-requested',
+      taskId: resultTask.id,
+      path: 'first.txt',
+      requestId: 'first',
+    });
+    emit.ui?.({
+      type: 'file-open-requested',
+      taskId: resultTask.id,
+      path: 'second.txt',
+      requestId: 'second',
+    });
+    expect(await screen.findByText('第二份文件')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /^文件$/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: '关闭结果' })).toBeTruthy();
+    await act(async () =>
+      finishFirst({ name: 'first.txt', kind: 'text', content: '迟到的第一份文件' }),
+    );
+    expect(screen.queryByText('迟到的第一份文件')).toBeNull();
+  });
+
+  it('助手交付措辞不再代替明确打开事件', async () => {
+    const readResultPreview = vi.fn(async () => ({
+      name: 'out.md',
+      kind: 'text' as const,
+      content: 'preview',
+    }));
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      readResultPreview,
+      getTaskResults: async () => ({
+        artifacts: [
+          { id: 'a1', name: 'out.md', path: '/w/out.md', version: 1, artifactType: 'document' },
+        ],
+      }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
+    await act(async () =>
+      emit.ui?.({
+        type: 'item',
+        taskId: resultTask.id,
+        item: { id: 'msg', type: 'agentMessage', text: '已完成，已生成，请查看预览。' },
+      }),
+    );
+    expect(readResultPreview).not.toHaveBeenCalled();
+  });
+
+  it('慢文件预览返回前用户已关闭结果区，旧请求不能重新展开', async () => {
+    let finish!: (preview: FilePreviewView) => void;
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      getTaskResults: async () => ({
+        artifacts: [
+          {
+            id: 'a1',
+            name: 'report.docx',
+            path: '/w/report.docx',
+            artifactType: 'document',
+            version: 1,
+          },
+        ],
+      }),
+      readTaskFilePreview: async () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    await screen.findByRole('button', { name: '关闭结果' });
+    emit.ui?.({
+      type: 'file-open-requested',
+      taskId: resultTask.id,
+      path: 'report.docx',
+      requestId: 'slow',
+    });
+    fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
+    await act(async () => finish({ name: 'report.docx', kind: 'text', content: '迟到预览' }));
+    expect(screen.queryByRole('button', { name: '关闭结果' })).toBeNull();
+    expect(screen.queryByText('迟到预览')).toBeNull();
+  });
+
+  it('磁盘撤销须确认并携带快照版本，成功后重新读取真实差异', async () => {
+    const change = {
+      path: '/w/app.ts',
+      added: 1,
+      removed: 1,
+      diff: '-before\n+after',
+      kind: 'modify' as const,
+      source: 'task' as const,
+      reversible: true,
+      revision: 'revision-1',
+      diffMode: 'net' as const,
+    };
+    const getTaskResults = vi
+      .fn()
+      .mockResolvedValueOnce({
+        artifacts: [],
+        workspace: { turnId: 'one', thread: [change], turn: [change], files: [], warnings: [] },
+      })
+      .mockResolvedValue({
+        artifacts: [],
+        workspace: { turnId: 'one', thread: [], turn: [], files: [], warnings: [] },
+      });
+    const revertTaskFile = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      getTaskResults,
+      revertTaskFile,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    fireEvent.click(await screen.findByRole('button', { name: '撤销这次变更' }));
+    expect(revertTaskFile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^确认$/ }));
+    await waitFor(() =>
+      expect(revertTaskFile).toHaveBeenCalledWith({
+        threadId: resultTask.id,
+        path: change.path,
+        scope: 'thread',
+        revision: 'revision-1',
+      }),
+    );
+    expect(await screen.findByText('磁盘文件已恢复，文件与差异已刷新。')).toBeTruthy();
+  });
+
   it('时间线的文件变更可直接跳到完整 diff，并按任务记住选中 Tab', async () => {
     const { bridge, emit } = fakeBridge({
       getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
@@ -1180,6 +1324,8 @@ describe('结果工作区真实接线', () => {
     });
 
     expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByText('还没有产物')).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: 'report.md' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText(/-old/)).toBeTruthy();
@@ -1187,6 +1333,33 @@ describe('结果工作区真实接线', () => {
     fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
     fireEvent.click(screen.getByRole('button', { name: '打开结果' }));
     expect(screen.getByRole('tab', { name: '变更' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('本回合恢复原文后仍可切回全部历史，不因净差异为空关闭结果区', async () => {
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    await waitFor(() => expect(emit.ui).toBeDefined());
+    emit.ui?.({ type: 'turn-started', taskId: resultTask.id, turnId: 'one' });
+    emit.ui?.({
+      type: 'item',
+      taskId: resultTask.id,
+      item: {
+        id: 'patch',
+        type: 'fileChange',
+        _turnId: 'one',
+        changes: [{ path: 'app.ts', diff: '-before\n+after' }],
+      },
+    });
+    expect(await screen.findByRole('button', { name: '关闭结果' })).toBeTruthy();
+    emit.ui?.({ type: 'turn-diff', taskId: resultTask.id, turnId: 'one', diff: '' });
+    fireEvent.click(screen.getByRole('tab', { name: '本回合' }));
+    expect(await screen.findByText('当前范围没有文件变更')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '关闭结果' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: '本任务全部' }));
+    expect(await screen.findByText(/-before/)).toBeTruthy();
   });
 
   it('点击新增文件路径后按任务身份安全读取，并在应用内打开文件预览', async () => {
@@ -1789,9 +1962,142 @@ describe('任务输出恢复', () => {
         },
       ],
       'new',
-      'diff --git a/live.md b/live.md\n--- a/live.md\n+++ b/live.md\n@@ -0,0 +1 @@\n+live',
+      'diff --git a/new.md b/new.md\n--- /dev/null\n+++ b/new.md\n@@ -0,0 +1 @@\n+new\ndiff --git a/live.md b/live.md\n--- a/live.md\n+++ b/live.md\n@@ -0,0 +1 @@\n+live',
     );
     expect(files.map((file) => file.path)).toEqual(['new.md', 'live.md']);
+  });
+
+  it('同一文件在多个回合反复修改，全部变更保留每次差异和累计统计', () => {
+    const files = changedFilesFromItems([
+      {
+        id: 'first',
+        type: 'fileChange',
+        _turnId: 'one',
+        changes: [{ path: 'app.ts', added: 1, removed: 1, diff: '@@ -1 +1 @@\n-before\n+middle' }],
+      },
+      {
+        id: 'second',
+        type: 'fileChange',
+        _turnId: 'two',
+        changes: [{ path: 'app.ts', added: 1, removed: 1, diff: '@@ -1 +1 @@\n-middle\n+after' }],
+      },
+    ]);
+    expect(files).toHaveLength(1);
+    expect(files[0]?.diff).toContain('-before');
+    expect(files[0]?.diff).toContain('+middle');
+    expect(files[0]?.diff).toContain('-middle');
+    expect(files[0]?.diff).toContain('+after');
+    expect(files[0]).toMatchObject({ added: 2, removed: 2 });
+  });
+
+  it('本回合聚合 diff 优先于最后一项补丁，展示修改前到最终状态的净差异', () => {
+    const aggregate =
+      'diff --git a/app.ts b/app.ts\n--- a/app.ts\n+++ b/app.ts\n@@ -1 +1 @@\n-before\n+after';
+    const files = changedFilesFromItems(
+      [
+        {
+          id: 'first',
+          type: 'fileChange',
+          _turnId: 'one',
+          changes: [{ path: 'app.ts', diff: '@@ -1 +1 @@\n-before\n+middle' }],
+        },
+        {
+          id: 'second',
+          type: 'fileChange',
+          _turnId: 'one',
+          changes: [{ path: 'app.ts', diff: '@@ -1 +1 @@\n-middle\n+after' }],
+        },
+      ],
+      'one',
+      aggregate,
+    );
+    expect(files).toHaveLength(1);
+    expect(files[0]?.diff).toBe(aggregate);
+    expect(files[0]).toMatchObject({ added: 1, removed: 1 });
+  });
+
+  it('同回合尚无聚合快照也不丢历史，后到的空 diff 不清空已有补丁', () => {
+    const first = {
+      id: 'first',
+      type: 'fileChange',
+      _turnId: 'one',
+      changes: [{ path: 'app.ts', added: 1, diff: '+first' }],
+    };
+    const second = {
+      id: 'second',
+      type: 'fileChange',
+      _turnId: 'one',
+      changes: [{ path: 'app.ts', added: 1, diff: '+second' }],
+    };
+    expect(changedFilesFromItems([first, second], 'one')[0]?.diff).toMatch(
+      /\+first[\s\S]*\+second/,
+    );
+    expect(
+      changedFilesFromItems([first, { ...second, changes: [{ path: 'app.ts' }] }], 'one')[0]?.diff,
+    ).toBe('+first');
+  });
+
+  it('绝对路径 FileChange 与工作目录下的相对聚合路径只展示一个文件', () => {
+    const items = [
+      {
+        id: 'f1',
+        type: 'fileChange',
+        _turnId: 'one',
+        changes: [
+          { path: '/work/src/app.ts', diff: '-middle\n+after' },
+          { path: '/other/src/app.ts', diff: '-outside\n+changed', outsideWorkspace: true },
+        ],
+      },
+    ];
+    const aggregate =
+      'diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-before\n+after\ndiff --git a//other/src/app.ts b//other/src/app.ts\n--- a//other/src/app.ts\n+++ b//other/src/app.ts\n@@ -1 +1 @@\n-outside\n+changed';
+    const files = changedFilesFromItems(items, 'one', aggregate, '/work');
+    expect(files).toHaveLength(2);
+    expect(files[0]?.path).toBe('/work/src/app.ts');
+    expect(files[0]?.diff).toContain('-before');
+    expect(files[0]?.diff).not.toContain('middle');
+    expect(files[1]).toMatchObject({ path: '/other/src/app.ts', outsideWorkspace: true });
+  });
+
+  it('Windows 路径与相对路径按任务目录归并，逐项历史也能统一点路径', () => {
+    const files = changedFilesFromItems(
+      [
+        {
+          id: 'first',
+          type: 'fileChange',
+          changes: [{ path: 'C:\\work\\src\\app.ts', diff: '+first' }],
+        },
+        {
+          id: 'second',
+          type: 'fileChange',
+          changes: [{ path: './src/../src/app.ts', diff: '+second' }],
+        },
+      ],
+      undefined,
+      undefined,
+      'C:\\work',
+    );
+    expect(files).toHaveLength(1);
+    expect(files[0]?.diff).toMatch(/\+first[\s\S]*\+second/);
+  });
+
+  it('聚合快照以最终状态为准，已恢复原文的文件不再显示虚假改动', () => {
+    const items = [
+      {
+        id: 'first',
+        type: 'fileChange',
+        _turnId: 'one',
+        changes: [{ path: 'app.ts', diff: '-before\n+middle' }],
+      },
+      {
+        id: 'second',
+        type: 'fileChange',
+        _turnId: 'one',
+        changes: [{ path: 'app.ts', diff: '-middle\n+before' }],
+      },
+    ];
+    expect(changedFilesFromItems(items, 'one', '')).toEqual([]);
+    expect(changedFilesFromItems(items)[0]?.diff).toMatch(/-before[\s\S]*\+before/);
   });
 });
 

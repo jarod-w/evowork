@@ -5,6 +5,8 @@ import type { LibraryDocumentInput, LibrarySearchInput } from '../shared/ipc.js'
 import type { ThreadCommunication } from '@evowork/kernel-adapter';
 import type { CommunicationSendInput, CommunicationRecordView } from '../shared/ipc.js';
 import type { ImageHost } from './image-host.js';
+import type { createFileHost } from './file-host.js';
+import type { RevertTaskFileInput } from '../shared/ipc.js';
 import type { SaveImageSettingsInput } from '../shared/ipc.js';
 import type { ComputerUseHost } from './computer-use-host.js';
 import { elicitationChoice, mcpToolApproval } from '@evowork/kernel-adapter';
@@ -489,6 +491,7 @@ export interface ProjectPorts {
 }
 
 export interface RendererBridgeOptions {
+  readonly fileHost?: ReturnType<typeof createFileHost> | undefined;
   readonly attachmentText?: AttachmentTextHost | undefined;
   readonly ocrRuntime?:
     | {
@@ -690,7 +693,16 @@ export interface RendererBridgeOptions {
     | ((
         path: string,
         kind: 'docx' | 'xlsx' | 'pptx' | 'rtf',
-      ) => Promise<{ readonly markdown: string; readonly note?: string | undefined } | undefined>)
+      ) => Promise<
+        | {
+            readonly markdown: string;
+            readonly note?: string | undefined;
+            readonly pdf?: Uint8Array | undefined;
+            readonly pages?: readonly Uint8Array[] | undefined;
+            readonly pageCount?: number | undefined;
+          }
+        | undefined
+      >)
     | undefined;
   readonly automationPorts?:
     | {
@@ -1383,6 +1395,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
     ) {
       const parsed = await options.officePreview(path, extension);
       if (parsed) {
+        if (parsed.pdf)
+          return {
+            name,
+            kind: 'pdf',
+            content: `data:application/pdf;base64,${Buffer.from(parsed.pdf).toString('base64')}`,
+            message: parsed.note,
+            pages: parsed.pages?.map(
+              (page) => `data:image/png;base64,${Buffer.from(page).toString('base64')}`,
+            ),
+            pageCount: parsed.pageCount,
+          };
         return {
           name,
           kind: 'markdown',
@@ -2509,6 +2532,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         }
       }
       return {
+        workspace: options.fileHost?.view(input.threadId),
         artifacts: [...latestByPath.values()]
           .filter((artifact) => artifact.fileState === 'PRESENT')
           .map((artifact) => ({
@@ -2524,6 +2548,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
     /**
      * 只接受产物 id，再从本机索引取路径。渲染进程不能借这个动作打开任意路径。
      */
+    async revertTaskFile(input: RevertTaskFileInput): Promise<void> {
+      if (!options.fileHost) throw new Error('当前构建没有接入磁盘撤销。');
+      options.fileHost.journal.revert(input);
+      options.fileHost.changed(input.threadId);
+    },
+
     async openResultFile(input: { readonly artifactId: string }): Promise<void> {
       const artifact = (options.pageData?.listArtifacts() ?? []).find(
         (row) => row.id === input.artifactId && row.fileState === 'PRESENT',

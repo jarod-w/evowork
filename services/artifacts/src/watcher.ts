@@ -20,6 +20,7 @@
  * 所以扫描时先收集"新出现的文件"的哈希，再拿它去认领 MISSING 的记录。
  */
 
+import { relative } from 'node:path';
 import { recognize, relocate, type ArtifactRecord, type RecognizeContext } from './recognize.js';
 import { isIgnored } from './types.js';
 
@@ -66,7 +67,10 @@ export interface ArtifactProvenance {
 }
 
 export function createArtifactWatcher(options: WatcherOptions) {
+  let workspaceRoot: string | undefined;
+  const ignored = (path: string) => isIgnored(workspaceRoot ? relative(workspaceRoot, path) : path);
   const context = (provenance?: ArtifactProvenance, inheritDefaults = true): RecognizeContext => ({
+    workspaceRoot,
     threadId: provenance?.threadId ?? (inheritDefaults ? options.threadId : undefined),
     turnId: provenance?.turnId ?? (inheritDefaults ? options.turnId : undefined),
     automationId: provenance?.automationId ?? (inheritDefaults ? options.automationId : undefined),
@@ -116,7 +120,7 @@ export function createArtifactWatcher(options: WatcherOptions) {
    * UI 上闪一下"文件已不存在"再变回来。
    */
   function reconcile(root: string): { added: number; moved: number; missing: number } {
-    const onDisk = options.fs.listFiles(root).filter((path) => !isIgnored(path));
+    const onDisk = options.fs.listFiles(root).filter((path) => !ignored(path));
     const onDiskSet = new Set(onDisk);
     const indexed = options.index.listPresent(root);
     const indexedPaths = new Set(indexed.map((record) => record.path));
@@ -184,9 +188,10 @@ export function createArtifactWatcher(options: WatcherOptions) {
      * package.json、tsconfig 等已有文件全部错误归到当前任务。
      */
     start(root: string): void {
+      workspaceRoot = root;
       const indexed = new Set(options.index.listPresent(root).map((record) => record.path));
       for (const path of options.fs.listFiles(root)) {
-        if (isIgnored(path) || indexed.has(path)) continue;
+        if (ignored(path) || indexed.has(path)) continue;
         const hash = options.fs.stat(path)?.contentHash;
         if (hash !== undefined) baseline.set(path, hash);
       }

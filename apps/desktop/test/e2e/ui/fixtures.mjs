@@ -114,6 +114,7 @@ export const test = base.extend({
   ocrBundle: [undefined, { option: true }],
   imageInput: [false, { option: true }],
   imageGeneration: [false, { option: true }],
+  desktopEnv: [{}, { option: true }],
 
   electronApp: async (
     {
@@ -125,6 +126,7 @@ export const test = base.extend({
       ocrBundle,
       imageInput,
       imageGeneration,
+      desktopEnv,
     },
     use,
     testInfo,
@@ -149,6 +151,7 @@ export const test = base.extend({
       cwd: ROOT,
       env: {
         ...parentEnv,
+        ...desktopEnv,
         EVOWORK_E2E_REPO_ROOT: ROOT,
         EVOWORK_APP_SERVER: KERNEL,
         ...(imageInput ? { EVOWORK_UI_IMAGE_INPUT: '1' } : {}),

@@ -16,6 +16,7 @@
  * 而"删除索引 ≠ 删除文件"就成了自然结果，不需要额外约定。
  */
 
+import { relative } from 'node:path';
 import {
   isIgnored,
   typeFromPath,
@@ -89,6 +90,7 @@ const SIGNAL_PRIORITY: Readonly<Record<SourceSignal, number>> = {
 };
 
 export interface RecognizeContext {
+  readonly workspaceRoot?: string | undefined;
   readonly threadId?: string | undefined;
   readonly turnId?: string | undefined;
   readonly automationId?: string | undefined;
@@ -120,7 +122,8 @@ export function recognize(signal: RecognitionSignal, context: RecognizeContext):
     // 删除不产生新记录：`fs/watch` 会把已有记录标成 MISSING（08 §8）
     return { kind: 'ignored', reason: 'deleted' };
   }
-  if (isIgnored(signal.path)) return { kind: 'ignored', reason: 'not-artifact' };
+  if (isIgnored(context.workspaceRoot ? relative(context.workspaceRoot, signal.path) : signal.path))
+    return { kind: 'ignored', reason: 'not-artifact' };
 
   const artifactType =
     signal.signal === 'SKILL_REPORT'
