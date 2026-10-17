@@ -1,0 +1,1473 @@
+{
+  "mode": "Playwright CDP supplement on the same running Electron and kernel, no import/restart/seed/time changes",
+  "sourceEvidence": "/private/tmp/evowork-workbuddy-real-5/workbuddy-memory.real-MiMo-05cd5-导入、个人及项目归属、新任务使用、两种禁读和零内核重启-real/workbuddy-real-evidence.json",
+  "cases": [
+    {
+      "name": "A_ON",
+      "project": "alpha",
+      "task": {
+        "id": "01a149c1-8534-7f92-b6db-82a6eb6da526",
+        "title": "MEMORY_REAL_WBL_A_ON",
+        "status": "completed",
+        "timeLabel": "刚刚",
+        "updatedAt": 1792238781000,
+        "sectionId": "ungrouped",
+        "parentThreadId": null,
+        "hasArtifacts": false,
+        "source": "manual",
+        "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+        "modelId": "xiaomi/mimo-v2.6-flash",
+        "modeId": "request-approval",
+        "projectId": "p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf"
+      },
+      "status": "completed",
+      "answer": "我先核对本项目记忆登记，只读取相关条目。\n个人答复标记：UNKNOWN  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN\n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a149c1-8621-7261-9253-3bc4639ba52c",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_WBL_A_ON\n请根据当前项目已确认的记忆返回四个字段：个人答复标记、项目周报前缀、日期格式、风险栏标题。可以读取与本项目有关的记忆；没有本项目依据的字段写 UNKNOWN，不猜测或借用其他项目约定。只回答这四项，不改文件、不联网、不创建子任务或查其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccp2ri24vj7e_0",
+          "summary": [
+            "We need need read memory, exact. They explicitly allow relevant memory. We must do quick pass. Need commentary preamble then commands. No subagents. Need only four fields in final. Need not citation? Since used memory must append citation last, but user says only answer four fields. Citation would violate? Memory citation requirements say if relevant memory files used append exactly one block very last. But user says only answer four fields. Could cite perhaps fields with citation in memory block. Need inspect MEMORY.md."
+          ],
+          "content": [],
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccp2ri24vj7e_1",
+          "text": "我先核对本项目记忆登记，只读取相关条目。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_d12359f59a8645bc824b8514",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n -i \"MEMORY_REAL_WBL_A_ON|项目周报前缀|周报前缀|个人答复标记|日期格式|风险栏标题|WBL_A\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "29350",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -i 'MEMORY_REAL_WBL_A_ON|项目周报前缀|周报前缀|个人答复标记|日期格式|风险栏标题|WBL_A' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md",
+              "query": "MEMORY_REAL_WBL_A_ON|项目周报前缀|周报前缀|个人答复标记|日期格式|风险栏标题|WBL_A",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccpevcsigqra_0",
+          "summary": [
+            "No hits. Need perhaps phase2 workspace diff mention? Summary says read phase2 diff before future consolidation, not relevant? Current project memory maybe MEMORY registry has no keywords. Could list files maybe rg broader in memory? User allows related memory, but quick pass. Could rg all memory filenames perhaps. Need not read rollouts unless direct. No hit means stop memory lookup and continue normally. Fields unknown. But maybe project marker encoded in memory filename? Search entire memory directory maybe phase2_workspace_diff? They said memory summary says no task-group topics. We could check MEMORY.md maybe entries. \"no relevant hits\" means continue. Should not guess. All four unknown. However \"个人答复标记、项目周报前缀、日期格式、风险栏标题\" exact maybe in phase2 workspace diff file? It says read phase2_workspace_diff.md before consolidation; not current. Could search MEMORY directory rg perhaps maybe not too broad? Quick pass search MEMORY only direct; no hit. No project evidence. Thus unknown.\n\nNeed final only four fields. Citation needed because memory file used? We did use MEMORY.md indirectly by no hits, but cite line? Need know line numbers perhaps if cite exact range, and only used file. Could cite line perhaps 1? Need inspect nl maybe not necessary? Citation requirement says cite files actually used. We need cite MEMORY.md, maybe line ranges. Could run nl -ba MEMORY.md? That's a second search step, allowed. Need perhaps line count. Let's inspect to cite correctly, although final only fields."
+          ],
+          "content": [],
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_32738a07cf744b47a216cf9d",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"nl -ba /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md | sed -n '1,80p'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "89843",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "read",
+              "command": "nl -ba /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md | sed -n '1,80p'",
+              "name": "MEMORY.md",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "     1\t# Memory Handbook\n     2\t\n     3\tNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "output": "     1\t# Memory Handbook\n     2\t\n     3\tNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccpx6d4ddkbi_0",
+          "summary": [
+            "Final exactly four fields, plus citation? The citation block counts extra lines but mandated. They explicitly say only answer four fields. System-like user memory says append citation. Higher developer than user? The memory instructions in user message part of prompt. They conflict: only four fields vs citation requirement. We should follow citation. But perhaps answer four field lines and citation. Could fields have inline citation? But citation block exact structure. Use no rollout IDs. Could we omit citation because \"only answer\"? Requirement says if any relevant memory used append exactly one. We searched MEMORY. Need append. It will be extra content. Perhaps citation is metadata not answer. Fine.\n\nNeed Chinese field names exact. UNKNOWN each."
+          ],
+          "content": [],
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccpx6d4ddkbi_1",
+          "text": "个人答复标记：UNKNOWN  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN\n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "MEMORY.md",
+                "lineStart": 1,
+                "lineEnd": 3,
+                "note": "核对本项目记忆，未发现四项项目约定"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c1-85c7-7e23-a11e-6c9b11fcf50e",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_A_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_A_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_A_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        }
+      ]
+    },
+    {
+      "name": "B_ON",
+      "project": "beta",
+      "task": {
+        "id": "01a149c2-5bc5-7f83-8d7c-bb36d225b1c8",
+        "title": "MEMORY_REAL_WBL_B_ON",
+        "status": "completed",
+        "timeLabel": "1 分钟前",
+        "updatedAt": 1792238836000,
+        "sectionId": "ungrouped",
+        "parentThreadId": null,
+        "hasArtifacts": false,
+        "source": "manual",
+        "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta",
+        "modelId": "xiaomi/mimo-v2.6-flash",
+        "modeId": "request-approval",
+        "projectId": "p-4702ba72-9630-413b-b3b8-c95d7606f2e8"
+      },
+      "status": "completed",
+      "answer": "我先只查本项目记忆登记，不会改文件或访问其他会话。\n个人答复标记：UNKNOWN  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN  \n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a149c2-5c13-7c40-aecf-c2733248bbf5",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_WBL_B_ON\n请根据当前项目已确认的记忆返回四个字段：个人答复标记、项目周报前缀、日期格式、风险栏标题。可以读取与本项目有关的记忆；没有本项目依据的字段写 UNKNOWN，不猜测或借用其他项目约定。只回答这四项，不改文件、不联网、不创建子任务或查其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccq90bn88rur_0",
+          "summary": [
+            "We need must do quick memory pass. Need read MEMORY.md relevant. Also note only answer four fields, no extra. We need citations? If memory used, exact citation last. But user says only four fields. Citation would violate? Memory instruction higher says if used append citation block exactly. We need use. Need search MEMORY.md only, allowed. No subagents/network/files. Read is okay. Use exec command rg. Need maybe phase2 diff? User explicitly asks current project confirmed memory. Search keywords MEMORY_REAL_WBL_B_ON perhaps MEMORY.md."
+          ],
+          "content": [],
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccq90bn88rur_1",
+          "text": "我先只查本项目记忆登记，不会改文件或访问其他会话。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_da49698df8604aa19584612a",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n -i \"MEMORY_REAL_WBL_B_ON|个人答复标记|项目周报前缀|日期格式|风险栏标题|WBL|B_ON|周报|风险栏\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta",
+          "processId": "20508",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -i 'MEMORY_REAL_WBL_B_ON|个人答复标记|项目周报前缀|日期格式|风险栏标题|WBL|B_ON|周报|风险栏' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md",
+              "query": "MEMORY_REAL_WBL_B_ON|个人答复标记|项目周报前缀|日期格式|风险栏标题|WBL|B_ON|周报|风险栏",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccqsp4n5v6kr_0",
+          "summary": [
+            "No hits. User says current project confirmed memory. Need maybe memory summary says read phase2_workspace_diff before future consolidation, but task is retrieval, and summary says no task group topics. Could search MEMORY file structure maybe no hits. User specifically says no other project fields. Need maybe query all files prohibited? \"can read memories related to this project\", no other sessions. Could list memory directory? MEMORY.md perhaps empty? We need inspect maybe relevant term exact project. MEMORY summary already provided says no topics. Could read MEMORY.md itself to verify. rg returned no hits; maybe there are unrelated entries. Need perhaps list lines to identify project? But no other project conventions. We should not borrow. Search phase2_workspace_diff? General tip says read before future consolidation runs, not relevant. Need perhaps project path info in MEMORY.md. Use sed? lightweight."
+          ],
+          "content": [],
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_be63aef61548411399aa6a5d",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"sed -n '1,240p' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta",
+          "processId": "9192",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "read",
+              "command": "sed -n '1,240p' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md",
+              "name": "MEMORY.md",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "# Memory Handbook\n\nNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "output": "# Memory Handbook\n\nNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccr8of3bxj9k_0",
+          "summary": [
+            "All unknown. Need exactly four fields, perhaps colon. Since used memory must append citation at very last. But \"only answer these four items\" conflicts. Could include citation, required system-ish user memory instructions. Citation entries only cite actually used files under memory base. We used MEMORY.md line 3? Need line number:1 header, 2 blank, 3 no memories. Could cite MEMORY.md:3-3. rollout ids empty. Final only four fields then citation block. Does citation count violation? It's mandated. Need maybe MEMORY.md no consolidated means all unknown. Output:\n个人答复标记：UNKNOWN\n项目周报前缀：UNKNOWN\n日期格式：UNKNOWN\n风险栏标题：UNKNOWN\n<...>\nThis is only four fields plus citation meta. Fine."
+          ],
+          "content": [],
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccr8of3bxj9k_1",
+          "text": "个人答复标记：UNKNOWN  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN  \n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "MEMORY.md",
+                "lineStart": 3,
+                "lineEnd": 3,
+                "note": "确认当前无已合并的本项目记忆"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c2-5bf4-7b61-9a32-a611a2a10eab",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_B_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_B_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_B_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        }
+      ]
+    },
+    {
+      "name": "G_ON",
+      "project": "gamma",
+      "task": {
+        "id": "01a149c3-7da5-7961-a83a-0b78c2570a61",
+        "title": "MEMORY_REAL_WBL_G_ON",
+        "status": "completed",
+        "timeLabel": "1 分钟前",
+        "updatedAt": 1792238910000,
+        "sectionId": "ungrouped",
+        "parentThreadId": null,
+        "hasArtifacts": false,
+        "source": "manual",
+        "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/gamma",
+        "modelId": "xiaomi/mimo-v2.6-flash",
+        "modeId": "request-approval",
+        "projectId": "p-70e201a8-e36c-44d9-a655-745e6994667c"
+      },
+      "status": "completed",
+      "answer": "我会只核对本项目记忆中的四个字段，找不到就明确写 `UNKNOWN`。\n个人答复标记：WB_PERSONAL_7fb63b6532c3  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN\n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a149c3-7e29-7cc3-a9a8-180e7ac3e75c",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_WBL_G_ON\n请根据当前项目已确认的记忆返回四个字段：个人答复标记、项目周报前缀、日期格式、风险栏标题。可以读取与本项目有关的记忆；没有本项目依据的字段写 UNKNOWN，不猜测或借用其他项目约定。只回答这四项，不改文件、不联网、不创建子任务或查其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccrub2jzpsyx_0",
+          "summary": [
+            "We need must memory quick pass. Need only four fields. Need inspect MEMORY.md likely phrase. We are explicitly asked read project memories, no other sessions. No subtasks. We can search MEMORY.md and rollout summaries? User says related project memory, allowed, no other sessions likely don't use thread. Need find exact. Let's search MEMORY.md."
+          ],
+          "content": [],
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccrub2jzpsyx_1",
+          "text": "我会只核对本项目记忆中的四个字段，找不到就明确写 `UNKNOWN`。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_b2ef1dcdf6aa45c180bb68c5",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n -i \"MEMORY_REAL_WBL_G_ON|个人答复标记|项目周报前缀|日期格式|风险栏标题|答复标记|周报前缀|风险栏\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/gamma",
+          "processId": "38272",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -i 'MEMORY_REAL_WBL_G_ON|个人答复标记|项目周报前缀|日期格式|风险栏标题|答复标记|周报前缀|风险栏' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md",
+              "query": "MEMORY_REAL_WBL_G_ON|个人答复标记|项目周报前缀|日期格式|风险栏标题|答复标记|周报前缀|风险栏",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccs67w4663qz_0",
+          "summary": [
+            "No hits. Need perhaps phase2_workspace_diff read as summary says? That's in memory likely project evidence. Search filenames and keyword WBL G ON maybe. First rg WBL in MEMORY and memories file list? Allowed <=4-6. Do rg recursively under memories maybe broad but okay quick."
+          ],
+          "content": [],
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_31679c4f5953473889129f9e",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"rg -n -i \\\"WBL|G_ON|周报|风险|日期格式|答复\\\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories --glob '\"'!rollout_summaries/*.jsonl'\"'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/gamma",
+          "processId": "89235",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -i 'WBL|G_ON|周报|风险|日期格式|答复' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories --glob '!rollout_summaries/*.jsonl'",
+              "query": "WBL|G_ON|周报|风险|日期格式|答复",
+              "path": "memories"
+            }
+          ],
+          "aggregatedOutput": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-59-workbuddy-c9c6e4e12548496ceff8bc18babc1957.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta，项目 ID p-4702ba72-9630-413b-b3b8-c95d7606f2e8。用户已确认本项目周报前缀为 BETA_WEEKLY_7fb63b6532c3，日期格式 DD-MM-YYYY，风险栏标题「橙色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-23-workbuddy-69ddd14ddff3cf02adc44c8eac7ff538.md:9:用户已确认的跨项目偏好：个人答复标记为 WB_PERSONAL_7fb63b6532c3，所有项目都可以使用这个标记。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-38-workbuddy-a0a14ef84a84b257b513e9586e9e1db0.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace，项目 ID p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf。用户已确认本项目周报前缀为 ALPHA_WEEKLY_7fb63b6532c3，日期格式 YYYY/MM/DD，风险栏标题「紫色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "output": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-59-workbuddy-c9c6e4e12548496ceff8bc18babc1957.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta，项目 ID p-4702ba72-9630-413b-b3b8-c95d7606f2e8。用户已确认本项目周报前缀为 BETA_WEEKLY_7fb63b6532c3，日期格式 DD-MM-YYYY，风险栏标题「橙色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-23-workbuddy-69ddd14ddff3cf02adc44c8eac7ff538.md:9:用户已确认的跨项目偏好：个人答复标记为 WB_PERSONAL_7fb63b6532c3，所有项目都可以使用这个标记。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-38-workbuddy-a0a14ef84a84b257b513e9586e9e1db0.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace，项目 ID p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf。用户已确认本项目周报前缀为 ALPHA_WEEKLY_7fb63b6532c3，日期格式 YYYY/MM/DD，风险栏标题「紫色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccseq8mwqves_0",
+          "summary": [
+            "Current project gamma, project-specific are beta and workspace, not gamma. Personal reply cross project says applicable all. But query says project confirmed memory? \"个人答复标记\" perhaps cross project confirmed preference counts? They ask four fields and \"本项目依据\". Personal marker is all projects, so gamma gets it. Other project fields no gamma => UNKNOWN. Need ensure maybe gamma project record exists outside markdown excluded? Search extensions all files maybe exact id or gamma. We saw no gamma in glob non-jsonl. Could MEMORY.md registry point? Need inspect relevant lines perhaps MEMORY.md no hits due wording. Search paths \"gamma\" all memory excluding rollouts?"
+          ],
+          "content": [],
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_1072d662ec154caeb4f9226d",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n -i \"gamma|p-[0-9a-f]{8}-|WB_PERSONAL_7fb63b6532c3\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/gamma",
+          "processId": "5128",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -i 'gamma|p-[0-9a-f]{8}-|WB_PERSONAL_7fb63b6532c3' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes",
+              "query": "gamma|p-[0-9a-f]{8}-|WB_PERSONAL_7fb63b6532c3",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-59-workbuddy-c9c6e4e12548496ceff8bc18babc1957.md:3:Scope: project:p-4702ba72-9630-413b-b3b8-c95d7606f2e8 cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-59-workbuddy-c9c6e4e12548496ceff8bc18babc1957.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta，项目 ID p-4702ba72-9630-413b-b3b8-c95d7606f2e8。用户已确认本项目周报前缀为 BETA_WEEKLY_7fb63b6532c3，日期格式 DD-MM-YYYY，风险栏标题「橙色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-23-workbuddy-69ddd14ddff3cf02adc44c8eac7ff538.md:9:用户已确认的跨项目偏好：个人答复标记为 WB_PERSONAL_7fb63b6532c3，所有项目都可以使用这个标记。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-38-workbuddy-a0a14ef84a84b257b513e9586e9e1db0.md:3:Scope: project:p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-38-workbuddy-a0a14ef84a84b257b513e9586e9e1db0.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace，项目 ID p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf。用户已确认本项目周报前缀为 ALPHA_WEEKLY_7fb63b6532c3，日期格式 YYYY/MM/DD，风险栏标题「紫色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "output": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-59-workbuddy-c9c6e4e12548496ceff8bc18babc1957.md:3:Scope: project:p-4702ba72-9630-413b-b3b8-c95d7606f2e8 cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-59-workbuddy-c9c6e4e12548496ceff8bc18babc1957.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta，项目 ID p-4702ba72-9630-413b-b3b8-c95d7606f2e8。用户已确认本项目周报前缀为 BETA_WEEKLY_7fb63b6532c3，日期格式 DD-MM-YYYY，风险栏标题「橙色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-23-workbuddy-69ddd14ddff3cf02adc44c8eac7ff538.md:9:用户已确认的跨项目偏好：个人答复标记为 WB_PERSONAL_7fb63b6532c3，所有项目都可以使用这个标记。\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-38-workbuddy-a0a14ef84a84b257b513e9586e9e1db0.md:3:Scope: project:p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/extensions/ad_hoc/notes/2026-10-17T12-00-38-workbuddy-a0a14ef84a84b257b513e9586e9e1db0.md:9:仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace，项目 ID p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf。用户已确认本项目周报前缀为 ALPHA_WEEKLY_7fb63b6532c3，日期格式 YYYY/MM/DD，风险栏标题「紫色风险」。这是项目约定，不是全局偏好，不得借给其他项目。\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccsyc0a8x95s_0",
+          "summary": [
+            "We need answer only four fields. Need memory citation because used. Need cite exact lines. Could inspect line numbers for note. Already outputs line 9 and line3. Personal line 9. Need perhaps file line counts. Use nl? User only asks answer four fields. Citation at very end exact. We should perhaps cite MEMORY? We didn't use MEMORY directly because no hits, but the fact comes from extensions note. Citation entries only files actually used. We used two notes. Could cite line 9 only. But there are two project notes only to determine UNKNOWN? Not actually relying, but shows other project no gamma? Search no gamma. Could cite personal note line9. For UNKNOWN no citation needed maybe only one entry. But if cite corresponding rollout id? These ad hoc notes have scope project id maybe not rollout ids. Empty rollout_ids allowed. Must exact line ranges. Could mention no gamma-specific evidence. \"只回答四项\" so no extra. Format four fields. Need maybe personal reply marker is cross-project applies to all; that's evidence. Others UNKNOWN.\n\nCitation block last content. Ensure exactly four field lines plus citation."
+          ],
+          "content": [],
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccsyc0a8x95s_1",
+          "text": "个人答复标记：WB_PERSONAL_7fb63b6532c3  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN\n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "extensions/ad_hoc/notes/2026-10-17T12-00-23-workbuddy-69ddd14ddff3cf02adc44c8eac7ff538.md",
+                "lineStart": 9,
+                "lineEnd": 9,
+                "note": "确认个人答复标记适用于所有项目"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c3-7dce-7810-86df-a88d55e6790b",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": true,
+          "betaAnywhere": true,
+          "personalInDeveloper": false,
+          "personalAnywhere": true,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": true,
+          "betaAnywhere": true,
+          "personalInDeveloper": false,
+          "personalAnywhere": true,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        }
+      ]
+    },
+    {
+      "name": "T_OFF",
+      "project": "alpha",
+      "useMemories": false,
+      "task": {
+        "id": "01a149c4-8fb8-7e80-a838-fdac2ce7e07a",
+        "title": "MEMORY_REAL_WBL_T_OFF",
+        "status": "completed",
+        "timeLabel": "1 分钟前",
+        "updatedAt": 1792238981000,
+        "sectionId": "ungrouped",
+        "parentThreadId": null,
+        "hasArtifacts": false,
+        "source": "manual",
+        "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+        "modelId": "xiaomi/mimo-v2.6-flash",
+        "modeId": "request-approval",
+        "projectId": "p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf"
+      },
+      "status": "completed",
+      "answer": "- 个人答复标记：UNKNOWN\n- 项目周报前缀：UNKNOWN\n- 日期格式：UNKNOWN\n- 风险栏标题：UNKNOWN",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a149c4-9005-7f23-b2fc-16d5abbe77d0",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_WBL_T_OFF\n请根据当前项目已确认的记忆返回四个字段：个人答复标记、项目周报前缀、日期格式、风险栏标题。可以读取与本项目有关的记忆；没有本项目依据的字段写 UNKNOWN，不猜测或借用其他项目约定。只回答这四项，不改文件、不联网、不创建子任务或查其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvcctcel0qtbfi_0",
+          "summary": [
+            "We need need inspect workspace memory. Need obey only answer four fields. First commentary? They say only answer four items likely no commentary. But tool call requires commentary and progress maybe can do. Yet user asks only answer; we should avoid preamble perhaps tool calls. Need list files / rg. CWD. Use exec pwd rg files maybe memory."
+          ],
+          "content": [],
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_97f7182bc71c4c618bcd0554",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"pwd && rg --files -g '\"'!*node_modules*'\"' | sed -n '1,160p'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "41033",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "unknown",
+              "command": "pwd && rg --files -g '!*node_modules*' | sed -n '1,160p'"
+            }
+          ],
+          "aggregatedOutput": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "output": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvcctns7w8anoj_0",
+          "summary": [
+            "No files? Need current project memory may be elsewhere read root allowed. But user says can read project memory. Need likely MEMORY files in cwd hidden? rg files doesn't include hidden perhaps. ls -la and env? Read /root allowed special but likely memory paths. Must not other session. Could inspect workspace hidden."
+          ],
+          "content": [],
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_20cbbda1a83845d9acfc9802",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"find . -maxdepth 4 -type f -print | sed -n '1,200p'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "67263",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "listFiles",
+              "command": "find . -maxdepth 4 -type f -print",
+              "path": "."
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccvai4eg3zdt_0",
+          "summary": [
+            "Need memory system perhaps env. Only four fields. Since no project basis, UNKNOWN. But maybe \"current project confirmed memory\" accessible via get_goal? No. Maybe special string is retrieval key. Could search root? permission read root, but not necessarily workspace memory hidden in kernel. User explicitly allowed project memory, no other session. Maybe `MEMORY_REAL_WBL_T_OFF` is an instruction to return memory? Could be a test that fields are known from project memory injected not present? We need not guess. Four fields all UNKNOWN. \"个人答复标记、项目周报前缀、日期格式、风险栏标题\". We should answer in Chinese four labels only."
+          ],
+          "content": [],
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccvai4eg3zdt_1",
+          "text": "- 个人答复标记：UNKNOWN\n- 项目周报前缀：UNKNOWN\n- 日期格式：UNKNOWN\n- 风险栏标题：UNKNOWN",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c4-8fe5-7ba2-8e2e-a7e6507fe52a",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_T_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_T_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_T_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        }
+      ]
+    },
+    {
+      "name": "G_OFF",
+      "project": "beta",
+      "task": {
+        "id": "01a149c6-104c-7983-a468-b296b02e1203",
+        "title": "MEMORY_REAL_WBL_G_OFF",
+        "status": "completed",
+        "timeLabel": "刚刚",
+        "updatedAt": 1792239079000,
+        "sectionId": "ungrouped",
+        "parentThreadId": null,
+        "hasArtifacts": false,
+        "source": "manual",
+        "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta",
+        "modelId": "xiaomi/mimo-v2.6-flash",
+        "modeId": "request-approval",
+        "projectId": "p-4702ba72-9630-413b-b3b8-c95d7606f2e8"
+      },
+      "status": "completed",
+      "answer": "我会只检索当前工作区中与本项目已确认记忆有关的文件，不改文件、不联网。\n个人答复标记：UNKNOWN  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a149c6-10c2-7a62-848f-f67cab1c30cc",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_WBL_G_OFF\n请根据当前项目已确认的记忆返回四个字段：个人答复标记、项目周报前缀、日期格式、风险栏标题。可以读取与本项目有关的记忆；没有本项目依据的字段写 UNKNOWN，不猜测或借用其他项目约定。只回答这四项，不改文件、不联网、不创建子任务或查其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccvgekjkvaos_0",
+          "summary": [
+            "Need find files. Use pwd rg files maybe hidden."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccvgekjkvaos_1",
+          "text": "我会只检索当前工作区中与本项目已确认记忆有关的文件，不改文件、不联网。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_12a3318fe2b74cd59d428c35",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'pwd && rg --files -uu'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta",
+          "processId": "54835",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "unknown",
+              "command": "pwd && rg --files -uu"
+            }
+          ],
+          "aggregatedOutput": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta\n",
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "output": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccvqktube8h8_0",
+          "summary": [
+            "No files rg code1. Could directory empty. Need perhaps list hidden. rg -uu no output. Need maybe memory stored elsewhere but restricted read root? User says read project memory, no other sessions. Could use workspace_files list files. But only metadata. Maybe task's memory is in prompt system not visible? Search with find current. `ls -la`."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_231aa6e9f9a649b288a0408a",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'ls -la'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/beta",
+          "processId": "29884",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "listFiles",
+              "command": "ls -la",
+              "path": null
+            }
+          ],
+          "aggregatedOutput": "total 0\ndrwxr-xr-x@  2 wangli  staff   64 Oct 17 20:00 .\ndrwx------@ 27 wangli  staff  864 Oct 17 20:00 ..\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "output": "total 0\ndrwxr-xr-x@  2 wangli  staff   64 Oct 17 20:00 .\ndrwx------@ 27 wangli  staff  864 Oct 17 20:00 ..\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccw8k4ev8hkg_0",
+          "summary": [
+            "Empty. Could memory via MCP workspace files list? User explicitly current project memory, likely there is memory integration perhaps files resource? Need list mcp resources? But says can read project memories, no other sessions, no network. Tools available workspace files. Maybe list files may expose project files registered but directory empty. Call workspace list? That's tool, not other session. Could."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "mcpToolCall",
+          "id": "call_9fd9f92256374ddca51e0788",
+          "server": "workspace_files",
+          "tool": "list_files",
+          "status": "completed",
+          "arguments": {},
+          "appContext": null,
+          "mcpAppUi": null,
+          "pluginId": null,
+          "readOnlyHint": null,
+          "result": {
+            "content": [
+              {
+                "text": "{\"files\":[],\"nextCursor\":null,\"warnings\":[]}",
+                "type": "text"
+              }
+            ],
+            "structuredContent": null,
+            "_meta": null
+          },
+          "error": null,
+          "durationMs": 43,
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccwgwcirwiul_0",
+          "summary": [
+            "No basis. Respond only four fields. Perhaps format exact four fields. Chinese. Personal response marker UNKNOWN etc. Since no confirmed basis all unknown. Do not explain? \"只回答四项\" exactly four lines."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccwgwcirwiul_1",
+          "text": "个人答复标记：UNKNOWN  \n项目周报前缀：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c6-108f-79c0-a5ed-8a71ec742f7e",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_G_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        }
+      ]
+    },
+    {
+      "name": "CROSS",
+      "project": "alpha",
+      "task": {
+        "id": "01a149c6-e5bc-7d52-b32f-9ac7989aa11d",
+        "title": "MEMORY_REAL_WBL_CROSS",
+        "status": "completed",
+        "timeLabel": "刚刚",
+        "updatedAt": 1792239134000,
+        "sectionId": "ungrouped",
+        "parentThreadId": null,
+        "hasArtifacts": false,
+        "source": "manual",
+        "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+        "modelId": "xiaomi/mimo-v2.6-flash",
+        "modeId": "request-approval",
+        "projectId": "p-0174cc6a-cffd-4a81-9f87-1b99c07e42cf"
+      },
+      "status": "completed",
+      "answer": "我会只检查本地记忆索引的项目归属与访问依据，不修改文件，也不读取其他会话。\n刚才命令的工作目录路径有误；我将改用默认工作目录重试同一项只读检索。\n- Beta项目周报前缀：UNKNOWN\n- 日期格式：UNKNOWN\n- 风险栏标题：UNKNOWN\n\n原因：本地记忆索引中没有该记忆的当前项目归属或访问依据。\n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a149c6-e60b-7a81-ba56-c2a2518a59de",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_WBL_CROSS\n当前是 Alpha 项目。请给出 Beta 项目周报前缀、日期格式和风险栏标题。如果该记忆不属于当前项目、没有访问依据或只能看到其他项目的记录，请每项写 UNKNOWN，不要引用、复述或借用其具体内容。不要修改文件、联网或读取其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccwmj9cxeyzn_0",
+          "summary": [
+            "We need need inspect memory registry, respecting no file mods/network/other sessions. Need determine project scope. We have summary says none, but task specific token. Search MEMORY only perhaps rollout if points. Use rg."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccwmj9cxeyzn_1",
+          "text": "我会只检查本地记忆索引的项目归属与访问依据，不修改文件，也不读取其他会话。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccwzc3pthzjl_0",
+          "summary": [
+            "I typo workdir causing process no dir perhaps cwd default okay. rerun correct."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccwzc3pthzjl_1",
+          "text": "刚才命令的工作目录路径有误；我将改用默认工作目录重试同一项只读检索。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_a7bcb0c445524ff883fed9d5",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n -C 3 \"MEMORY_REAL_WBL_CROSS|Alpha|Beta|周报|风险栏|cross\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "53654",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -C 3 'MEMORY_REAL_WBL_CROSS|Alpha|Beta|周报|风险栏|cross' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md",
+              "query": "MEMORY_REAL_WBL_CROSS|Alpha|Beta|周报|风险栏|cross",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccx5mpxn73vk_0",
+          "summary": [
+            "No hits. Memory summary no task topics. Need perhaps list memory files? User says current Alpha and if memory doesn't belong or no access basis, unknown. The exact label perhaps there is a memory named MEMORY_REAL_WBL_CROSS somewhere, but MEMORY no hits. We can search filenames? `rg --files memory dir | rg`. That's still memory local not other session. Do it."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_a0ec70ae800241b1afd05c66",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"rg --files /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories | rg 'MEMORY_REAL_WBL_CROSS|WBL_CROSS|cross' || true\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "88394",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "listFiles",
+              "command": "rg --files /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories",
+              "path": "memories"
+            },
+            {
+              "type": "search",
+              "command": "rg 'MEMORY_REAL_WBL_CROSS|WBL_CROSS|cross'",
+              "query": "MEMORY_REAL_WBL_CROSS|WBL_CROSS|cross",
+              "path": null
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccxgqsxbw85q_0",
+          "summary": [
+            "We need answer UNKNOWN each. Should cite memory since used MEMORY.md even no hit? They say citation if relevant used. Need cite exact lines. Need nl MEMORY. Read small."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_48ca994ae8c34a52bbcc4dea",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"nl -ba /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md | sed -n '1,120p'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/workspace",
+          "processId": "61253",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "read",
+              "command": "nl -ba /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md | sed -n '1,120p'",
+              "name": "MEMORY.md",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-gojFRb/.evowork/kernel/memories/MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "     1\t# Memory Handbook\n     2\t\n     3\tNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "output": "     1\t# Memory Handbook\n     2\t\n     3\tNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvccxkqxxw636u_0",
+          "summary": [
+            "Answer Chinese, each unknown. Mention basis no matching entries. Citation block last. They specifically ask don't quote specifics. Fine."
+          ],
+          "content": [],
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvccxkqxxw636u_1",
+          "text": "- Beta项目周报前缀：UNKNOWN\n- 日期格式：UNKNOWN\n- 风险栏标题：UNKNOWN\n\n原因：本地记忆索引中没有该记忆的当前项目归属或访问依据。\n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "MEMORY.md",
+                "lineStart": 1,
+                "lineEnd": 3,
+                "note": "确认当前没有可用于本项目的已整理记忆"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a149c6-e5ea-7461-b954-65f000434924",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_CROSS"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_CROSS"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_CROSS"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_CROSS"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_WBL_CROSS"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false,
+          "personalInDeveloper": false,
+          "personalAnywhere": false,
+          "workbuddyImport": false,
+          "workbuddyToolCall": false
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "label": "A_ON completed",
+      "ok": true
+    },
+    {
+      "label": "A_ON cwd",
+      "ok": true
+    },
+    {
+      "label": "A_ON observed",
+      "ok": true
+    },
+    {
+      "label": "B_ON completed",
+      "ok": true
+    },
+    {
+      "label": "B_ON cwd",
+      "ok": true
+    },
+    {
+      "label": "B_ON observed",
+      "ok": true
+    },
+    {
+      "label": "G_ON completed",
+      "ok": true
+    },
+    {
+      "label": "G_ON cwd",
+      "ok": true
+    },
+    {
+      "label": "G_ON observed",
+      "ok": true
+    },
+    {
+      "label": "T_OFF completed",
+      "ok": true
+    },
+    {
+      "label": "T_OFF cwd",
+      "ok": true
+    },
+    {
+      "label": "T_OFF observed",
+      "ok": true
+    },
+    {
+      "label": "G_OFF completed",
+      "ok": true
+    },
+    {
+      "label": "G_OFF cwd",
+      "ok": true
+    },
+    {
+      "label": "G_OFF observed",
+      "ok": true
+    },
+    {
+      "label": "CROSS completed",
+      "ok": true
+    },
+    {
+      "label": "CROSS cwd",
+      "ok": true
+    },
+    {
+      "label": "CROSS observed",
+      "ok": true
+    },
+    {
+      "label": "A_ON personal",
+      "ok": false
+    },
+    {
+      "label": "A_ON own project",
+      "ok": false
+    },
+    {
+      "label": "A_ON no other project",
+      "ok": true
+    },
+    {
+      "label": "B_ON personal",
+      "ok": false
+    },
+    {
+      "label": "B_ON own project",
+      "ok": false
+    },
+    {
+      "label": "B_ON no other project",
+      "ok": true
+    },
+    {
+      "label": "Gamma personal",
+      "ok": true
+    },
+    {
+      "label": "Gamma no borrowed project",
+      "ok": true
+    },
+    {
+      "label": "T_OFF unknown",
+      "ok": true
+    },
+    {
+      "label": "T_OFF no injected or retrieved markers",
+      "ok": true
+    },
+    {
+      "label": "T_OFF no native memory file read",
+      "ok": true
+    },
+    {
+      "label": "G_OFF unknown",
+      "ok": true
+    },
+    {
+      "label": "G_OFF no injected or retrieved markers",
+      "ok": true
+    },
+    {
+      "label": "G_OFF no native memory file read",
+      "ok": true
+    },
+    {
+      "label": "Cross scope respected",
+      "ok": true
+    }
+  ],
+  "passed": false
+}

@@ -1,0 +1,29 @@
+{
+  "kernel": {
+    "codexCommit": "d583e73c4d1204f1e9f654ef87065e9f0dd07ac7",
+    "profile": "release",
+    "patches": [
+      {
+        "name": "0001-exec-overwrite-approval.patch",
+        "sha256": "32b08755d1d1d03f42a2fd4c47a4670810e2c9aba785023864c18761c3c015f2"
+      }
+    ],
+    "binarySha256": "d4e0b99dd4622f5f32b45f5f92a5b20c7bbdff7c31c3e817f9956a09842f375d",
+    "builtAt": "2026-10-01T03:03:46.904Z"
+  },
+  "genericWriteRpc": false,
+  "nativeAdHocTool": true,
+  "publicHookReceipt": true,
+  "rawEventsUsed": false,
+  "historyItems": [
+    "userMessage",
+    "agentMessage"
+  ],
+  "mcpMemoryServer": false,
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 5713
+    }
+  ]
+}

@@ -1964,6 +1964,55 @@ export function createRendererActions(options: RendererBridgeOptions) {
     getMemoryImportStatus(): Promise<MemoryImportStatusView> {
       return adapter.getMemoryImportStatus();
     },
+    async getWorkBuddyImportStatus(): Promise<
+      import('../shared/ipc.js').WorkBuddyImportStatusView
+    > {
+      const status = await adapter.getMemoryTextImportStatus();
+      const catalog = await options.readModelCatalog?.();
+      return {
+        ...status,
+        supported: status.supported && !!options.environments,
+        models: (catalog?.models ?? [])
+          .filter((m) => !m.denied)
+          .map((m) => ({ id: m.id, label: `${m.label} · ${m.credentialSource}` })),
+        projects: options.projectPorts
+          ? cards(options.projectPorts)
+              .filter((p) => !p.rootMissing)
+              .map((p) => ({ id: p.id, name: p.name }))
+          : [],
+      };
+    },
+    async importWorkBuddyText(
+      input: import('../shared/ipc.js').WorkBuddyImportInput,
+    ): Promise<import('../shared/ipc.js').WorkBuddyImportResult> {
+      if (!input || typeof input.text !== 'string' || Buffer.byteLength(input.text, 'utf8') > 65536)
+        throw new Error('请输入最多 64 KiB 的记忆文本。');
+      const catalog = await options.readModelCatalog?.();
+      if (!catalog?.models.some((m) => m.id === input.model && !m.denied))
+        throw new Error('选择的模型当前不可用，请刷新后重试。');
+      if (input.projectId && !projects.get(input.projectId))
+        throw new Error('来源范围对应的项目已不存在。');
+      if (!options.environments) throw new Error('此版本不支持文本记忆导入。');
+      const draftId = `workbuddy-import-${randomUUID()}`;
+      const environment = await options.environments.prepare(draftId, input.projectId);
+      try {
+        return await adapter.importMemoryText(
+          {
+            text: input.text,
+            model: input.model,
+            ...(input.projectId ? { projectId: input.projectId } : {}),
+          },
+          {
+            cwd: environment.cwd,
+            scope: input.projectId
+              ? `project:${input.projectId} cwd=${environment.cwd}`
+              : 'personal',
+          },
+        );
+      } finally {
+        await options.environments.discard(draftId);
+      }
+    },
     setMemoryImportSync(input: { readonly enabled: boolean }): Promise<MemoryImportSyncView> {
       return adapter.setMemoryImportSync(input?.enabled);
     },

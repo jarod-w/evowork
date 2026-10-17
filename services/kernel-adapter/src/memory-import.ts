@@ -77,6 +77,7 @@ export function createMemoryImporter(
     read(): MemoryImportSync | undefined;
     write(value: MemoryImportSync): void;
   },
+  externalBusy: () => boolean = () => false,
 ) {
   let selection: { id: string; keys: Set<string> } | undefined;
   let importing = false;
@@ -211,7 +212,7 @@ export function createMemoryImporter(
   }
 
   async function checkSync(): Promise<void> {
-    if (!sync.enabled || checking || importing) return;
+    if (!sync.enabled || checking || importing || externalBusy()) return;
     checking = true;
     const generation = revision;
     try {
@@ -337,7 +338,8 @@ export function createMemoryImporter(
       return sync;
     },
     async reset<T>(perform: () => Promise<T>): Promise<T> {
-      if (checking || importing) throw new Error('正在导入或同步，请等待结果后再清空记忆。');
+      if (checking || importing || externalBusy())
+        throw new Error('正在导入或同步，请等待结果后再清空记忆。');
       importing = true;
       try {
         if (sync.pending && !(await history()).some((record) => record.id === sync.pending?.id))
@@ -352,6 +354,15 @@ export function createMemoryImporter(
       }
     },
     status,
+    async exclusive<T>(perform: () => Promise<T>): Promise<T> {
+      if (checking || importing || sync.pending) throw new Error('正在导入或同步，请等待结果。');
+      importing = true;
+      try {
+        return await perform();
+      } finally {
+        importing = false;
+      }
+    },
     detect,
     history,
     invalidate() {
@@ -366,7 +377,8 @@ export function createMemoryImporter(
         const { pending: _pending, ...rest } = sync;
         save(rest);
       }
-      if (importing || checking) throw new MemoryImportRefusal('正在导入或同步，请等待结果。');
+      if (importing || checking || externalBusy())
+        throw new MemoryImportRefusal('正在导入或同步，请等待结果。');
       if (
         !input ||
         !Array.isArray(input.projectKeys) ||

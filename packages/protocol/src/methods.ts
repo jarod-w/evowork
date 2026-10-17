@@ -19,6 +19,7 @@ export const METHOD = {
 
   // 线程生命周期
   threadStart: 'thread/start',
+  threadUnsubscribe: 'thread/unsubscribe',
   threadResume: 'thread/resume',
   threadFork: 'thread/fork',
   threadRead: 'thread/read',

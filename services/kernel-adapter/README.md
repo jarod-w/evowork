@@ -25,3 +25,5 @@
 **外部记忆导入（2026-10-17）**：`memory-import.ts` 只经原生迁移协议发现/导入 Claude Code 项目记忆并读取历史；一次性选择凭据、提交前复核、超时结果未知不重放、明确禁用降级。`enableMemoryReading` 仅启用记忆及读取，不改生成或模型设置。设计见 [20](../../docs/design/20-memory-import.md)，原生探针 `node scripts/verify-memory-import.mjs`（仓库根），真实窗口入口为 `memory-import.spec.mjs`。
 
 **记忆能力复用**：原生消息保留 `memoryCitation`，V2 `memory/status` 仅用于整体就绪状态。自动同步在本适配层每分钟复用原生 detect/import/history，默认关闭，授权项目清单及待核对批次存在宿主 meta，不建立记忆正文副本。写前持久化暂停标记，异常暂停且不重放；退出只在已发写入结果不明时暂停，只读检测不会关闭开关。清空与导入/同步互斥，并先撤销同步授权。隔离/项目遗忘提案见 [21](../../docs/design/21-project-memory-isolation-and-forgetting.md)。
+
+**WorkBuddy 文本快照（2026-10-17）**：`memory-text-import.ts` 在显式确认后以临时会话调用原生 `memories.add_ad_hoc_note`，以受信任同步 PostToolUse 的公开 `hook/completed` 回执校验文件名及正文哈希；同时核对来源文件和 hook 顺序。不开启内部 raw events，不读写原生记忆文件。临时会话以 `threadSource` 标识，在 `thread/started` 提前于启动响应时同样隔离其任务/队列事件。宿主只持久化哈希与状态，未知批次不重放；可能仍在执行的超时写入阻止后续记忆写操作，应用重开后核对。正式能力、用量与整理延迟见 [20](../../docs/design/20-memory-import.md) 和 [WorkBuddy 验收](../../docs/verification/2026-10-17-workbuddy-memory-import.md)。

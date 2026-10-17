@@ -10,8 +10,14 @@ import type {
 } from '../../shared/ipc.js';
 import { MemoryPreparation } from './memory-preparation.js';
 import { Dialog, PillButton } from './primitives.js';
+import {
+  WorkBuddyMemoryImport,
+  WorkBuddyHistory,
+  type WorkBuddyImportPorts,
+} from './workbuddy-memory-import.js';
+import type { WorkBuddyImportStatusView } from '../../shared/ipc.js';
 
-export interface MemoryImportPorts {
+export interface MemoryImportPorts extends WorkBuddyImportPorts {
   getMemoryImportStatus?(): Promise<MemoryImportStatusView>;
   setMemoryImportSync?(input: { readonly enabled: boolean }): Promise<MemoryImportSyncView>;
   detectMemoryImport?(): Promise<MemoryImportDetectionView>;
@@ -51,9 +57,16 @@ export function MemoryImportOverview(props: {
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [syncBusy, setSyncBusy] = useState(false);
+  const [workbuddy, setWorkbuddy] = useState<WorkBuddyImportStatusView>();
   useEffect(() => {
     let active = true;
     setError(undefined);
+    void props.ports
+      .getWorkBuddyImportStatus?.()
+      .then((value) => {
+        if (active) setWorkbuddy(value);
+      })
+      .catch(() => {});
     void props.ports
       .getMemoryImportStatus?.()
       .then((value) => {
@@ -91,12 +104,12 @@ export function MemoryImportOverview(props: {
   return (
     <>
       <p className="ew-settings-note">
-        从 Claude Code 导入本机项目记忆，在后续新任务中继续使用。首次检测由你主动开始。
+        从 Claude Code 导入本机项目记忆，或导入 WorkBuddy 文本快照，在后续新任务中继续使用。
       </p>
       {!props.ports.getMemoryImportStatus ? <p>当前版本不支持记忆导入。</p> : null}
       {status && !status.supported ? <p role="status">{status.reason}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      <PillButton disabled={!status?.supported} onClick={props.onStart}>
+      <PillButton disabled={!status?.supported && !workbuddy?.supported} onClick={props.onStart}>
         导入已有记忆
       </PillButton>
       <PillButton variant="ghost" onClick={() => setAttempt((value) => value + 1)}>
@@ -104,6 +117,7 @@ export function MemoryImportOverview(props: {
       </PillButton>
       {status?.sync && props.ports.setMemoryImportSync ? (
         <section aria-label="记忆自动同步">
+          <p>自动同步仅适用于 Claude Code 项目。WorkBuddy 文本快照需要手动重新导入。</p>
           <label className="ew-checkbox">
             <input
               type="checkbox"
@@ -149,6 +163,7 @@ export function MemoryImportOverview(props: {
         </section>
       ) : null}
       {status ? <ImportHistory records={status.history} /> : null}
+      {workbuddy ? <WorkBuddyHistory status={workbuddy} /> : null}
     </>
   );
 }
@@ -169,6 +184,7 @@ export function MemoryImportDialog(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [uncertain, setUncertain] = useState(false);
+  const [workbuddy, setWorkbuddy] = useState(false);
   const mounted = useRef(true);
   const content = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -286,6 +302,14 @@ export function MemoryImportDialog(props: {
     }
   };
   const anySuccess = result?.projects.some((project) => project.ok);
+  if (workbuddy)
+    return (
+      <WorkBuddyMemoryImport
+        ports={props.ports}
+        onClose={props.onClose}
+        onBack={() => setWorkbuddy(false)}
+      />
+    );
   return (
     <Dialog
       title="导入项目记忆"
@@ -331,6 +355,9 @@ export function MemoryImportDialog(props: {
               <strong>Claude Code</strong>
             </p>
             <p>检测这台电脑上的项目记忆。原应用的文件保持不变。</p>
+            <PillButton variant="ghost" onClick={() => setWorkbuddy(true)}>
+              WorkBuddy 文本
+            </PillButton>
             {!status && !error ? <p role="status">正在检查导入能力…</p> : null}
             {status && !status.supported ? <p role="status">{status.reason}</p> : null}
             {!props.ports.getMemoryImportStatus ? <p>当前版本不支持记忆导入。</p> : null}

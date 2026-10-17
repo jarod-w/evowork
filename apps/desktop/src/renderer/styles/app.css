@@ -4745,3 +4745,31 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   min-width: 0;
   white-space: normal;
 }
+.ew-memory-text-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-block: var(--space-12);
+}
+.ew-memory-text-field textarea,
+.ew-memory-text-field select,
+.ew-memory-text-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+.ew-memory-text-field textarea {
+  resize: vertical;
+}
+.ew-memory-text-preview {
+  max-height: calc(var(--space-64) * 4);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

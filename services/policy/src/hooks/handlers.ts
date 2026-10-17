@@ -12,6 +12,7 @@
  */
 
 import { resolve } from 'node:path';
+import { memoryNoteReceipt } from '../memory-note-receipt.js';
 
 import {
   deletePatchReason,
@@ -289,10 +290,13 @@ export function handlePermissionRequest(
 }
 
 export function handlePostToolUse(input: PostToolUseInput, env: HookEnvironment): HookResult {
+  const receipt = memoryNoteReceipt(input.tool_name, input.tool_input);
   const response = input.tool_response ?? {};
   const exitCode = typeof response.exit_code === 'number' ? response.exit_code : undefined;
   return {
-    output: PASS_THROUGH,
+    output: receipt
+      ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: receipt } }
+      : PASS_THROUGH,
     audit: [
       {
         occurredAt: env.now(),

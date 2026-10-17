@@ -228,6 +228,8 @@ export const RENDERER_ACTIONS = Object.freeze([
   'getPreferences',
   'setPreferences',
   'getMemoryImportStatus',
+  'getWorkBuddyImportStatus',
+  'importWorkBuddyText',
   'setMemoryImportSync',
   'detectMemoryImport',
   'getMemoryImportHistory',

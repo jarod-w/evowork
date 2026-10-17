@@ -1,0 +1,36 @@
+
+Running 1 test using 1 worker
+
+(node:20465) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+WorkBuddy import personal: trusted native receipt confirmed
+WorkBuddy import alpha: trusted native receipt confirmed
+WorkBuddy import beta: trusted native receipt confirmed
+WorkBuddy case TRIGGER: completed, requests=1
+  ✘  1 [real] › apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs:15:1 › MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使用、两种禁读和零内核重启 (13.5m)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs:15:1 › MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使用、两种禁读和零内核重启
+
+    Error: expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "waiting"
+
+    Call Log:
+    - Timeout 600000ms exceeded while waiting on the predicate
+
+      265 |     // continue every independent behavior case instead of waiting for content forever.
+      266 |     expect.soft(consolidationState, '原生后台整理无终态错误').toBe('ready');
+    > 267 |     const memory = consolidatedMemory(kernelHome)?.memory ?? '';
+          |            ^
+      268 |     for (const marker of [alpha, beta, personal])
+      269 |       expect.soft(memory, '整理正文保留导入事实').toContain(marker);
+      270 |     await stableKernel('consolidation-completed');
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs:267:12
+
+    Error Context: ../../../../../private/tmp/evowork-workbuddy-real-5/workbuddy-memory.real-MiMo-05cd5-导入、个人及项目归属、新任务使用、两种禁读和零内核重启-real/error-context.md
+
+  Slow test file: [real] › apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs (13.5m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  1 failed
+    [real] › apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs:15:1 › MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使用、两种禁读和零内核重启

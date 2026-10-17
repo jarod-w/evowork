@@ -1,4 +1,9 @@
 import { createMemoryImporter } from './memory-import.js';
+import {
+  createMemoryTextImporter,
+  type MemoryTextInput,
+  type MemoryTextRecord,
+} from './memory-text-import.js';
 import { isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { workspaceRootRefusal } from '@evowork/policy';
@@ -560,6 +565,7 @@ export function createAdapter(options: AdapterOptions) {
       desktopTurns.clear();
       if (notice.kind === 'kernel-lost') {
         memoryImporter.invalidate();
+        memoryTextImporter.invalidate();
         activeTurns.clear();
         approvals.cancel(() => true);
         forgetFileChanges(() => true);
@@ -593,18 +599,70 @@ export function createAdapter(options: AdapterOptions) {
     },
   });
 
-  const memoryImporter = createMemoryImporter(() => session.peer, {
+  const memoryImporter = createMemoryImporter(
+    () => session.peer,
+    {
+      read() {
+        const raw = readMeta(store.db, 'evowork.memory.importSync');
+        if (!raw) return undefined;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return undefined;
+        }
+      },
+      write(value) {
+        writeMeta(store.db, 'evowork.memory.importSync', JSON.stringify(value));
+      },
+    },
+    () => memoryTextImporter.isBusy(),
+  );
+
+  const memoryTextImporter = createMemoryTextImporter({
+    peer: () => session.peer,
+    ready: () => session.phase === 'ready',
+    hookSources: options.bundledHooks?.sourcePaths ?? [],
+    async hooksAvailable() {
+      if (!options.bundledHooks) return [];
+      const listed = await session.peer.request<{
+        data: readonly {
+          hooks: readonly {
+            eventName: string;
+            command?: string;
+            sourcePath: string;
+            enabled: boolean;
+            async: boolean;
+            trustStatus: string;
+            displayOrder: number;
+          }[];
+        }[];
+      }>(METHOD.hooksList, {});
+      return listed.data.flatMap((d) =>
+        d.hooks
+          .filter(
+            (h) =>
+              h.eventName === 'postToolUse' &&
+              h.enabled &&
+              !h.async &&
+              ['trusted', 'managed'].includes(h.trustStatus) &&
+              options.bundledHooks!.sourcePaths.includes(h.sourcePath) &&
+              options.bundledHooks!.commands.includes(h.command ?? '') &&
+              (h.command ?? '').includes('post-tool-use.mjs'),
+          )
+          .map((h) => ({ sourcePath: h.sourcePath, displayOrder: h.displayOrder })),
+      );
+    },
     read() {
-      const raw = readMeta(store.db, 'evowork.memory.importSync');
-      if (!raw) return undefined;
       try {
-        return JSON.parse(raw);
+        return JSON.parse(
+          readMeta(store.db, 'evowork.memory.workbuddy') ?? '[]',
+        ) as MemoryTextRecord[];
       } catch {
-        return undefined;
+        return [];
       }
     },
-    write(value) {
-      writeMeta(store.db, 'evowork.memory.importSync', JSON.stringify(value));
+    write(records) {
+      writeMeta(store.db, 'evowork.memory.workbuddy', JSON.stringify(records));
     },
   });
 
@@ -924,7 +982,19 @@ export function createAdapter(options: AdapterOptions) {
         session.onRequest(method, (params, m) => approvals.handle(m, params));
       }
       for (const method of events.methods()) {
-        session.onNotification(method, (params, m) => events.handle(m, params));
+        session.onNotification(method, (params, m) => {
+          const p = params as
+            | {
+                threadId?: string;
+                thread?: { id?: string; ephemeral?: boolean; threadSource?: string };
+              }
+            | undefined;
+          if (p?.thread && memoryTextImporter.observeThread(p.thread)) return;
+          const threadId = p?.threadId ?? p?.thread?.id;
+          // Import conversations are implementation work, not user tasks or queue targets.
+          if (threadId && memoryTextImporter.ownsThread(threadId)) return;
+          events.handle(m, params);
+        });
       }
 
       await session.start();
@@ -973,6 +1043,7 @@ export function createAdapter(options: AdapterOptions) {
 
     async stop(): Promise<void> {
       memoryImporter.stop();
+      memoryTextImporter.invalidate();
       desktopTurns.clear();
       approvals.cancel(() => true);
       ephemeralThreads.clear();
@@ -1168,6 +1239,20 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     getMemoryImportStatus: () => memoryImporter.status(),
+    async getMemoryTextImportStatus() {
+      return {
+        supported: await memoryTextImporter.supported(),
+        history: memoryTextImporter.history(),
+      };
+    },
+    importMemoryText: (
+      input: MemoryTextInput,
+      environment: { readonly cwd: string; readonly scope: string },
+    ) =>
+      memoryImporter.exclusive(async () => {
+        await checkedCwd(environment.cwd);
+        return memoryTextImporter.import(input, environment);
+      }),
     setMemoryImportSync: (enabled: boolean) => memoryImporter.setSync(enabled),
     detectMemoryImport: () => memoryImporter.detect(),
     getMemoryImportHistory: () => memoryImporter.history(),
@@ -1261,11 +1346,15 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async resetMemories(): Promise<boolean> {
-      return memoryImporter.reset(() =>
-        callExperimental(EXPERIMENTAL_METHOD.memoryReset, undefined, () => false).then(
-          (result) => result !== false,
-        ),
-      );
+      return memoryImporter.reset(async () => {
+        const result = await callExperimental(
+          EXPERIMENTAL_METHOD.memoryReset,
+          undefined,
+          () => false,
+        );
+        if (result !== false) memoryTextImporter.clear();
+        return result !== false;
+      });
     },
 
     /** 以 app-server 的发现结果为唯一事实源，避免 UI 自己猜技能名和路径。 */

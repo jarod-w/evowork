@@ -84,6 +84,7 @@ const OUTGOING = {
   'thread/start': { keys: ['model', 'approvalPolicy', 'approvalsReviewer'], maybe: '*' },
   'thread/fork': { keys: ['threadId', 'excludeTurns'], maybe: ['lastTurnId', 'ephemeral'] },
   'thread/archive': { keys: ['threadId'] },
+  'thread/unsubscribe': { keys: ['threadId'] },
   'thread/delete': { keys: ['threadId'] },
   'thread/revert': { keys: ['threadId', 'beforeTurnId'] },
   'thread/items/list': { keys: ['threadId', 'limit'], maybe: ['cursor'] },

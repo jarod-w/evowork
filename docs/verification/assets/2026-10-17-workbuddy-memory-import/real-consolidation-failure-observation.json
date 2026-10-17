@@ -1,0 +1,13 @@
+{
+  "source": "Read-only memoryRuntimeDiagnostics of retained round-3 native home after Playwright interruption",
+  "observedAt": "2026-10-17T12:08:35.502Z",
+  "diagnostics": [
+    {
+      "kind": "memory_consolidate_global",
+      "status": "error",
+      "last_error": "failed_agent",
+      "retry_remaining": 2
+    }
+  ],
+  "note": "The primary evidence JSON remains the earlier running snapshot; this records the retained native job outcome without changing it."
+}

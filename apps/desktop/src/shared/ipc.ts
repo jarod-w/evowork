@@ -1735,7 +1735,29 @@ export interface CommunicationActions {
   checkCommunication(input: { threadId: string; requestId: string }): Promise<void>;
 }
 
-/** 导入只传项目元数据和原生操作结果，记忆正文不穿过 IPC。 */
+/** Claude 导入只传项目元数据；WorkBuddy 文本仅在用户确认后通过 IPC 交给模型导入。 */
+export interface WorkBuddyImportRecordView {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly scope: string;
+  readonly filename: string;
+  readonly state: 'pending' | 'saved' | 'unknown';
+}
+export interface WorkBuddyImportInput {
+  readonly text: string;
+  readonly model: string;
+  readonly projectId?: string | undefined;
+}
+export interface WorkBuddyImportStatusView {
+  readonly supported: boolean;
+  readonly history: readonly WorkBuddyImportRecordView[];
+  readonly models: readonly { readonly id: string; readonly label: string }[];
+  readonly projects: readonly { readonly id: string; readonly name: string }[];
+}
+export interface WorkBuddyImportResult {
+  readonly record: WorkBuddyImportRecordView;
+  readonly duplicate?: boolean | undefined;
+}
 export interface MemoryImportProjectView {
   readonly key: string;
   readonly path?: string | undefined;

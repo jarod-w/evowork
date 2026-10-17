@@ -8,7 +8,7 @@ export function installMemoryWire(path) {
   const emit = Server.prototype.emit;
   Server.prototype.emit = function (event, ...args) {
     if (event === 'request') {
-      const [request] = args;
+      const [request, response] = args;
       if (request.method === 'POST' && request.url?.split('?')[0].endsWith('/responses')) {
         const chunks = [];
         let size = 0;
@@ -27,6 +27,16 @@ export function installMemoryWire(path) {
             const developer = JSON.stringify(
               (body.input ?? []).filter((item) => item.role === 'developer'),
             );
+            response.on('finish', () => {
+              appendFileSync(
+                `${path}.outcomes`,
+                JSON.stringify({
+                  model: body.model,
+                  cases: [...new Set(text.match(/MEMORY_REAL_[A-Z_0-9]+/g) ?? [])],
+                  status: response.statusCode,
+                }) + '\n',
+              );
+            });
             appendFileSync(
               path,
               JSON.stringify({
@@ -38,6 +48,12 @@ export function installMemoryWire(path) {
                 betaInDeveloper: developer.includes('BETA_WEEKLY_'),
                 alphaAnywhere: text.includes('ALPHA_WEEKLY_'),
                 betaAnywhere: text.includes('BETA_WEEKLY_'),
+                personalInDeveloper: developer.includes('WB_PERSONAL_'),
+                personalAnywhere: text.includes('WB_PERSONAL_'),
+                workbuddyImport: text.includes('WORKBUDDY_TEXT_IMPORT_V1'),
+                workbuddyToolCall: (body.input ?? []).some(
+                  (item) => item.type === 'function_call' && item.name === 'add_ad_hoc_note',
+                ),
               }) + '\n',
             );
           }

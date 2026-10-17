@@ -1,0 +1,44 @@
+import { chromium } from '/Users/wangli/develop/evowork/evowork/node_modules/@playwright/test/index.mjs';
+import {readFileSync,writeFileSync} from 'node:fs';
+const [input,output]=process.argv.slice(2);
+const seed=JSON.parse(readFileSync(input));
+const home=seed.paths.alpha.slice(0,-'/workspace'.length);
+const port=readFileSync(home+'/DevToolsActivePort','utf8').split('\n')[0];
+const browser=await chromium.connectOverCDP('http://127.0.0.1:'+port);
+const page=browser.contexts()[0].pages()[0];
+const startup=await page.evaluate(()=>window.evowork.getStartup());
+const ids={};
+// Project cards expose path instead of roots on some versions; obtain confirmed registered IDs through createProject.
+for(const name of ['alpha','beta','gamma']) {
+ const r=await page.evaluate(input=>window.evowork.createProject(input),{name:'WorkBuddy '+name,path:seed.paths[name]});
+ if(!r.ok)throw Error('Existing project lookup failed');ids[name]=r.projectId;
+}
+const result={mode:'Playwright CDP supplement on the same running Electron and kernel, no import/restart/seed/time changes',sourceEvidence:input,cases:[],assertions:[]};
+const wire=()=>readFileSync(home+'/memory-wire.jsonl','utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+function check(ok,label){result.assertions.push({label,ok:!!ok});}
+function save(){writeFileSync(output,JSON.stringify(result,null,2));}
+const modelId='xiaomi/mimo-v2.6-flash';
+async function run(name,project,useMemories,prompt){
+ const marker='MEMORY_REAL_WBL_'+name;
+ const r=await page.evaluate(input=>window.evowork.send(input),{workspaceId:ids[project],modelId,text:marker+'\n'+prompt,...(useMemories===undefined?{}:{useMemories})});
+ let history;const end=Date.now()+180000;
+ while(Date.now()<end){history=await page.evaluate(threadId=>window.evowork.openTask({threadId}),r.threadId);if(history.turns?.at(-1)?.status && history.turns.at(-1).status!=='inProgress')break;await new Promise(r=>setTimeout(r,1000));}
+ const task=(await page.evaluate(()=>window.evowork.getStartup())).tasks.find(t=>t.id===r.threadId);
+ const answer=history.items.filter(i=>i.type==='agentMessage'&&i.phase!=='commentary').map(i=>i.text).join('\n');
+ const record={name,project,useMemories,task,status:history.turns?.at(-1)?.status,answer,items:history.items,wire:wire().filter(r=>r.cases.includes(marker))};result.cases.push(record);
+ check(record.status==='completed',name+' completed');check(task.cwd===seed.paths[project],name+' cwd');check(record.wire.length>0,name+' observed');save();
+ await page.getByRole('navigation',{name:'侧边栏'}).getByRole('button',{name:task.title,exact:true}).click();await page.screenshot({path:output.replace('.json','-'+name.toLowerCase()+'.png')});console.log(name,record.status,answer);return record;
+}
+const prompt='请根据当前项目已确认的记忆返回四个字段：个人答复标记、项目周报前缀、日期格式、风险栏标题。可以读取与本项目有关的记忆；没有本项目依据的字段写 UNKNOWN，不猜测或借用其他项目约定。只回答这四项，不改文件、不联网、不创建子任务或查其他会话。';
+try{
+ const a=await run('A_ON','alpha',undefined,prompt);const b=await run('B_ON','beta',undefined,prompt);const g=await run('G_ON','gamma',undefined,prompt);const t=await run('T_OFF','alpha',false,prompt);
+ await page.evaluate(model=>window.evowork.setMemorySettings({enabled:true,useMemories:false,generateMemories:false,extractModel:model,consolidationModel:model}),modelId);
+ const off=await run('G_OFF','beta',undefined,prompt);
+ await page.evaluate(model=>window.evowork.setMemorySettings({enabled:true,useMemories:true,generateMemories:false,extractModel:model,consolidationModel:model}),modelId);
+ const cross=await run('CROSS','alpha',undefined,'当前是 Alpha 项目。请给出 Beta 项目周报前缀、日期格式和风险栏标题。如果该记忆不属于当前项目、没有访问依据或只能看到其他项目的记录，请每项写 UNKNOWN，不要引用、复述或借用其具体内容。不要修改文件、联网或读取其他会话。');
+ for(const [r,own,other,date,risk]of[[a,seed.alpha,seed.beta,'YYYY/MM/DD','紫色风险'],[b,seed.beta,seed.alpha,'DD-MM-YYYY','橙色风险']]){check(r.answer.includes(seed.personal),r.name+' personal');check(r.answer.includes(own)&&r.answer.includes(date)&&r.answer.includes(risk),r.name+' own project');check(!r.answer.includes(other),r.name+' no other project');}
+ check(g.answer.includes(seed.personal),'Gamma personal');check(g.answer.includes('UNKNOWN')&&!/ALPHA_WEEKLY_|BETA_WEEKLY_|YYYY\/MM\/DD|DD-MM-YYYY|紫色风险|橙色风险/.test(g.answer),'Gamma no borrowed project');
+ for(const r of[t,off]){check(r.answer.includes('UNKNOWN')&&!/ALPHA_WEEKLY_|BETA_WEEKLY_|WB_PERSONAL_|紫色风险|橙色风险/.test(r.answer),r.name+' unknown');check(r.wire.every(w=>!w.memoryContext&&!w.alphaAnywhere&&!w.betaAnywhere&&!w.personalAnywhere),r.name+' no injected or retrieved markers');check(!JSON.stringify(r.items.filter(i=>i.type!=='agentMessage')).includes('/memories/'),r.name+' no native memory file read');}
+ check(cross.answer.includes('UNKNOWN')&&!/BETA_WEEKLY_|DD-MM-YYYY|橙色风险/.test(cross.answer),'Cross scope respected');
+ result.passed=result.assertions.every(a=>a.ok);save();console.log('SUPPLEMENT',result.passed?'PASS':'FAIL');process.exit(result.passed?0:1);
+}catch(error){result.error=String(error);save();throw error;}
