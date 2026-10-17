@@ -50,6 +50,15 @@ export function installMemoryWire(path) {
                 betaAnywhere: text.includes('BETA_WEEKLY_'),
                 personalInDeveloper: developer.includes('WB_PERSONAL_'),
                 personalAnywhere: text.includes('WB_PERSONAL_'),
+                consolidation: text.includes('## Memory Writing Agent: Phase 2 (Consolidation)'),
+                sourceDiff: (body.input ?? []).some(
+                  (item) =>
+                    item.type === 'function_call_output' &&
+                    JSON.stringify(item.output).includes('# Memory Workspace Diff') &&
+                    JSON.stringify(item.output).includes('ALPHA_WEEKLY_') &&
+                    JSON.stringify(item.output).includes('BETA_WEEKLY_') &&
+                    JSON.stringify(item.output).includes('WB_PERSONAL_'),
+                ),
                 workbuddyImport: text.includes('WORKBUDDY_TEXT_IMPORT_V1'),
                 workbuddyToolCall: (body.input ?? []).some(
                   (item) => item.type === 'function_call' && item.name === 'add_ad_hoc_note',

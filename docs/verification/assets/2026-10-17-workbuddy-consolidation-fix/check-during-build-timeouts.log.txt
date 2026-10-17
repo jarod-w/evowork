@@ -1,0 +1,1011 @@
+
+> evowork@0.0.6 check /Users/wangli/develop/evowork/evowork
+> pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run check:kernel-budget && pnpm run check:kernel-contract && pnpm run check:notices
+
+
+> evowork@0.0.6 format:check /Users/wangli/develop/evowork/evowork
+> prettier --check .
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> evowork@0.0.6 lint /Users/wangli/develop/evowork/evowork
+> eslint .
+
+
+> evowork@0.0.6 typecheck /Users/wangli/develop/evowork/evowork
+> node scripts/typecheck.mjs
+
+① 构建（含声明文件）
+② 测试类型检查（25 个包）
+   - packages/account/tsconfig.spec.json
+   - packages/hub-protocol/tsconfig.spec.json
+   - packages/logging/tsconfig.spec.json
+   - packages/protocol/tsconfig.spec.json
+   - packages/tokens/tsconfig.spec.json
+   - services/artifacts/tsconfig.spec.json
+   - services/catalog/tsconfig.spec.json
+   - services/computer-use/tsconfig.spec.json
+   - services/gateway/tsconfig.spec.json
+   - services/hub-client/tsconfig.spec.json
+   - services/identity/tsconfig.spec.json
+   - services/image-generation/tsconfig.spec.json
+   - services/ingest/tsconfig.spec.json
+   - services/kernel-adapter/tsconfig.spec.json
+   - services/policy/tsconfig.spec.json
+   - services/projects/tsconfig.spec.json
+   - services/scheduler/tsconfig.spec.json
+   - services/share/tsconfig.spec.json
+   - services/store/tsconfig.spec.json
+   - apps/desktop/tsconfig.spec.json
+   - apps/web/tsconfig.spec.json
+   - plugins/skills/charts/tsconfig.spec.json
+   - plugins/skills/documents/tsconfig.spec.json
+   - plugins/skills/presentations/tsconfig.spec.json
+   - plugins/skills/spreadsheets/tsconfig.spec.json
+✅ 类型检查通过
+
+> evowork@0.0.6 test /Users/wangli/develop/evowork/evowork
+> vitest run
+
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |desktop| test/composer.test.tsx (57 tests) 9023ms
+   ✓ 触发补全（03 §4.2 / §4.3） > SKILL.md 附件提供显式全局安装，普通附件和未就绪附件不提供  989ms
+   ✓ 附件与本机解析（03 §4.4，K6/Q3 的对外表达点） > 只有失败附件且没有正文时禁止发送，选择原始引用后才可发送  554ms
+   ✓ 渐进披露的选择器（类 ChatGPT UI §9） > 常显审批档与项目，不再显示 Craft / Plan / Ask  335ms
+   ✓ 审批三档（Q45 / 10 §2.4） > 完全访问未确认时不改档、也不发送  412ms
+   ✓ 审批三档（Q45 / 10 §2.4） > 确认完全访问只对当前任务改档  471ms
+   ✓ 添加内容菜单 > 只显示已经接通的入口，并把插件使用与管理分开  411ms
+   ✓ 添加内容菜单 > 「使用插件」锚在添加按钮上，选中后只交出提示、不发送  401ms
+ ✓ |desktop| test/kernel-policy-install.test.ts (5 tests) 3875ms
+   ✓ 策略 hook 装进内核目录的 hooks.json > 路径里有空格和单引号也能被 shell 原样拿到（内核用 $SHELL -lc 跑它）  3738ms
+ ❯ |desktop| test/task-workspace.test.tsx (45 tests | 1 failed) 11480ms
+   ✓ 来源的分组与分页接线 > 来源条目未挂载时仍能引用；展开旧消息后也不能用后来的来源给它背书  1857ms
+   ✓ 状态视觉规范（01 §6.1） > 无预算的长任务也显示目标，实际计划步骤和当前动作可见  333ms
+   ✓ 状态视觉规范（01 §6.1） > 中断提供继续入口；恢复期间禁用，避免再次追加 85ms
+   ✓ 状态视觉规范（01 §6.1） > 六态 + 已中断 + idle 都有文案，且「待你确认」用第二人称 7ms
+   ✓ 状态视觉规范（01 §6.1） > 进行中与待处理带呼吸，其余不带（01 §6.1） 0ms
+   ✓ 状态视觉规范（01 §6.1） > 渲染时状态点 + 文字 Badge 同时出现（状态不靠颜色单传，01 §8.1） 17ms
+   ✓ 结果区（04 §1） > 没有可展示结果时默认不显示 67ms
+   ✓ 结果区（04 §1） > 有结果时默认显示，并提供明确的收起入口 39ms
+   ✓ 结果区（04 §1） > 用户关闭和重新打开结果区，关闭后不被内容变化抢开 114ms
+   ✓ 结果区（04 §1） > 结果区四视图用**浅色**分段控件（01 §5.10：决定已装内容怎么看）  461ms
+   ✓ 结果区（04 §1） > ⌘I 切换结果区（02 §6） 75ms
+   ✓ 结果区（04 §1） > 无产物时的空态解释什么算产物（04 §8） 13ms
+   ✓ 结果区（04 §1） > 没有可展示结果时不显示空面板入口，快捷键也不会打开 13ms
+   ✓ 结果区（04 §1） > 目标、分叉和旁聊收进更多菜单，归档删除仍在侧栏任务菜单  1109ms
+   ✓ 说明与操作交错显示 > 后续操作到达不会移动或隐藏已经显示的进度说明 94ms
+   ✓ 说明与操作交错显示 > 只合并同回合相邻操作，未知阶段的说明也始终保留 1ms
+   ✓ 说明与操作交错显示 > 完成后保留用户展开选择，输出仍需主动打开 283ms
+   × 说明与操作交错显示 > 长操作组追加事件后保留展开选择，操作详情分页挂载 5114ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ✓ 说明与操作交错显示 > 失败操作在摘要中可见，不把成功回合标成失败 102ms
+   ✓ 说明与操作交错显示 > 推理单独折叠，运行时显示真实片段；无能力时不留空壳 100ms
+   ✓ 说明与操作交错显示 > 回复先到也保持原顺序，不把晚到的过程移到答案上方 0ms
+   ✓ 回合处理时间 > 实时计时在终态固定，恢复后使用回合时间而不是工具耗时之和 78ms
+   ✓ 回合处理时间 > 等待首条输出或仅有用户消息的失败回合，也显示计时与真实状态 19ms
+   ✓ 回合处理时间 > 历史回合各有独立时间，缺失时间不编造；停止与断线区分 19ms
+   ✓ 审批：**内联在时间线上，不是模态**（04 §5.3） > 审批卡出现在对话区内容列里，且顶部有吸顶条 23ms
+   ✓ 审批：**内联在时间线上，不是模态**（04 §5.3） > 决定沿着 onDecide 往上传（带 approval id） 93ms
+   ✓ 审批：**内联在时间线上，不是模态**（04 §5.3） > 有待审批时不显示"输入第一个需求"的空态（那会盖住真正要做的事） 12ms
+   ✓ 顶部提示条（04 §8） > 断连提示用 warning 并带动作 53ms
+   ✓ 顶部提示条（04 §8） > danger 级提示用 role=alert（会打断屏幕阅读器，符合它的紧急程度） 5ms
+   ✓ 长任务控制面 > 没有预算也常驻展示目标、中文状态及用量 92ms
+   ✓ 长任务控制面 > 目标预算持续显示进度，超过 80% 使用 warning 13ms
+   ✓ 长任务控制面 > 预算耗尽提供追加预算与结束任务两个动作 108ms
+   ✓ 长任务控制面 > 子任务从侧滑详情进入对应任务 57ms
+   ✓ 长任务控制面 > 子代理时间线明确只读，并把继续交代说明为根任务协作路由 18ms
+   ✓ 空态（01 §4.3：文案必须给出下一步动作） > 新任务的空态给出下一步，而不是"暂无数据" 17ms
+   ✓ 空态（01 §4.3：文案必须给出下一步动作） > 已完成任务在条目到达前不显示「还没有消息」—— 那是刚创建的空态 2ms
+   ✓ 流式区的无障碍（01 §8.1） > 对话内容用 aria-live="polite"（**不用 assertive**，否则每个 token 都打断） 2ms
+   ✓ 流式输出跟随 > 同一个 item id 的正文增长时仍滚到底部 46ms
+   ✓ 生成中的 Composer 定位 > 输入框在滚动区外独立占位，流式内容增高不会把它上下推动 24ms
+   ✓ 2.7.3–2.7.5 补齐项 > 操作收成组，计划、文件变更和产物保持独立可见 65ms
+   ✓ 2.7.3–2.7.5 补齐项 > 回合失败留在时间线并提供重试和设置入口；停止显示可继续分隔线 45ms
+   ✓ 2.7.3–2.7.5 补齐项 > 重试中是一行状态，不是失败卡 —— 回合还在跑，读屏也不该被打断 14ms
+   ✓ 2.7.3–2.7.5 补齐项 > 解不出次数时只说事，不编数字 28ms
+   ✓ 2.7.3–2.7.5 补齐项 > 长时间线先只挂载末尾分段，可按需加载更早内容  665ms
+   ✓ 2.7.3–2.7.5 补齐项 > 结果区可用键盘调宽，Esc 关闭后焦点回到入口 83ms
+ ✓ |desktop| test/sidebar.test.tsx (33 tests) 12192ms
+   ✓ 搜索与筛选（04 §3.4） > 筛选生效时标题变成「(命中 / 总数)」并出现**重置入口**（清单 §4.2）  1732ms
+   ✓ 搜索与筛选（04 §3.4） > 状态是多选  794ms
+   ✓ 可见页上报（04 §3.4 第②步） > 滚动到底部增量挂载下一页，并继续上报有界可见集  384ms
+   ✓ 行操作（04 §3.3） > 改名开对话框、预填当前标题，保存后把新名字往上传  736ms
+   ✓ 行操作（04 §3.3） > 空名字存不下去 —— 内核也会拒绝它  614ms
+   ✓ 行操作（04 §3.3） > 删除是危险项，且**二次确认说清不删工作空间文件**  511ms
+   ✓ 项目与插件入口 > 项目标题负责折叠，同一行的 + 直接请求创建项目  687ms
+   ✓ 项目与插件入口 > 项目 ⋯ 菜单可以查看全部或导入已有文件夹  948ms
+   ✓ 项目与插件入口 > 项目内任务嵌在对应项目下，且不会在「最近」中重复出现  351ms
+   ✓ 项目与插件入口 > 默认标题不带计数，筛选计数只包含最近任务  322ms
+   ✓ 项目与插件入口 > 项目和最近独立折叠，隐藏任务停止上报，重新展开保留选中态  604ms
+   ✓ 项目与插件入口 > 没有任务时保留两个分组标题，筛空时仍提供重置提示  795ms
+   ✓ 手动折叠 > 折叠按钮调用宿主，由宿主保留恢复入口  464ms
+{"ts":"2026-10-17T13:05:33.803Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:33.835Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:33.835Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:33.868Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:33.869Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:33.917Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:33.919Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.064Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.078Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.092Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.092Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.094Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.117Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.122Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.140Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.140Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.141Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.159Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.169Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.174Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.175Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.190Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.190Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.195Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.196Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.220Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.242Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.252Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.252Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.268Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.268Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.272Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.273Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.339Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.339Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.339Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:34.353Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.366Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.374Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.374Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.388Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.388Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.392Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.393Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.405Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.405Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.405Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:34.409Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.417Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.429Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.429Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.430Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.443Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.443Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.443Z","level":"warn","event":"desktop.base_instructions.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NOT_INSTALLED"}
+{"ts":"2026-10-17T13:05:34.443Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:34.447Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.458Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.467Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.467Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.488Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.488Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.494Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.495Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.516Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.516Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.516Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:34.543Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.555Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.558Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.558Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.602Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.602Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.610Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.612Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.652Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.653Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.653Z","level":"warn","event":"desktop.reconcile.failed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","errorClass":"JsonRpcCallError"}
+{"ts":"2026-10-17T13:05:34.660Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.672Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.675Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.675Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.699Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.699Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.703Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.704Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.720Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.721Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.721Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+ ✓ |desktop| test/library-host.test.ts (8 tests) 3221ms
+   ✓ imports a controlled copy, searches body with cross-block AND/snippets, and copies only a selected location  1042ms
+   ✓ rejects an old result after a managed source changed and never opens outside its registration  602ms
+   ✓ explicitly updates a managed copy while preserving its identity and both external originals  555ms
+   ✓ task and project filters apply before pagination, and joined attachments stay explicitly scoped  478ms
+{"ts":"2026-10-17T13:05:34.734Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-17T13:05:34.793Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.816Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.824Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:34.825Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:34.847Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.847Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:34.851Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:34.852Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:34.882Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:34.882Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:34.882Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:34.925Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-17T13:05:34.960Z","level":"info","event":"artifacts.task_renamed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","threadId":"t-report"}
+{"ts":"2026-10-17T13:05:34.984Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.004Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.011Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.014Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.035Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.035Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.044Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.045Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.069Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.069Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.069Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.083Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-17T13:05:35.096Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-17T13:05:35.101Z","level":"info","event":"artifacts.task_renamed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","threadId":"t-desktop"}
+{"ts":"2026-10-17T13:05:35.116Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.136Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.142Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.142Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.160Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.160Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.166Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.166Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.186Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.186Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.186Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.194Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-17T13:05:35.236Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-17T13:05:35.265Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+ ✓ |desktop| test/library.test.tsx (22 tests) 3859ms
+   ✓ 三栏骨架与真实能力 > 中栏保留已接通导航，未接通的树分区隐藏  993ms
+{"ts":"2026-10-17T13:05:35.297Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.304Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.304Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.332Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.332Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.339Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.339Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.354Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.354Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.354Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.368Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+ ✓ |desktop| test/share-journey.test.tsx (20 tests) 4238ms
+   ✓ 授权屏（Q10 的六条硬规则） > 三句话都在，第二句原样说清"任何拿到链接的人都能访问"  1054ms
+   ✓ 授权屏（Q10 的六条硬规则） > **确认框不预勾**，且没勾之前「生成链接」点不动  441ms
+   ✓ 授权屏（Q10 的六条硬规则） > 三档有效期可选，选了就带下去  390ms
+   ✓ 分享任务（08 §7.2 规则 5：不许盲传） > 两个勾都打上才让传：确认可以外传 **以及** 确实看过  345ms
+{"ts":"2026-10-17T13:05:35.378Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.386Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.386Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.417Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.417Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.425Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.426Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.461Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.461Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.462Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.470Z","level":"info","event":"adapter.approval.received","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","threadId":"t1","reason":"COMMAND"}
+{"ts":"2026-10-17T13:05:35.550Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.575Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.580Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.581Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.596Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.596Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.601Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.601Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.614Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.614Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.614Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.615Z","level":"info","event":"adapter.approval.received","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","threadId":"t1","reason":"FILECHANGE"}
+{"ts":"2026-10-17T13:05:35.677Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.693Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.700Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.700Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.720Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.720Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.724Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.725Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.756Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.756Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.757Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.769Z","level":"info","event":"adapter.approval.received","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","threadId":"t1","reason":"COMMAND"}
+{"ts":"2026-10-17T13:05:35.830Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.855Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.869Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:35.869Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.918Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.918Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:35.924Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:35.926Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:35.959Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:35.959Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:35.959Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:35.968Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:35.984Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:36.000Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:36.000Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:36.040Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:36.040Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:36.049Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:36.050Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:36.071Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:36.071Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:36.072Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:36.073Z","level":"warn","event":"adapter.kernel.exited","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","exitCode":1,"reason":"EXIT"}
+{"ts":"2026-10-17T13:05:37.089Z","level":"info","event":"adapter.kernel.restarted","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:37.131Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.142Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.151Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.151Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.169Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.169Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.184Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.184Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.197Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.215Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.221Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.221Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.240Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.240Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.247Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.248Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.274Z","level":"info","event":"gateway.child.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1}
+{"ts":"2026-10-17T13:05:37.278Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:37.278Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:37.282Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:37.292Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.321Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.328Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.328Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.378Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.381Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.384Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.385Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.399Z","level":"warn","event":"gateway.child.skipped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_KEYS"}
+{"ts":"2026-10-17T13:05:37.401Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:37.401Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:37.401Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:37.408Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.431Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.436Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.436Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.464Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.464Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.473Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.474Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.484Z","level":"info","event":"gateway.child.reclaimed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"STALE_PROCESS"}
+{"ts":"2026-10-17T13:05:37.485Z","level":"info","event":"gateway.child.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1}
+{"ts":"2026-10-17T13:05:37.488Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:37.488Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:37.488Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:37.500Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.511Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.518Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.518Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.543Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.543Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.551Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.553Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.594Z","level":"warn","event":"gateway.child.skipped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"PORT_IN_USE"}
+{"ts":"2026-10-17T13:05:37.598Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:37.598Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:37.598Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:37.623Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.641Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.650Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.651Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.667Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.667Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.675Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.683Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.706Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:37.706Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:37.706Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:37.734Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.744Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.749Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.750Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.788Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.788Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.801Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.803Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.826Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.855Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.863Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.863Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.881Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.882Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.888Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.889Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:37.902Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.936Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.946Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":5}
+{"ts":"2026-10-17T13:05:37.946Z","level":"warn","event":"desktop.kernel_config.hooks_unavailable","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+{"ts":"2026-10-17T13:05:37.978Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.978Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+{"ts":"2026-10-17T13:05:37.992Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":3}
+{"ts":"2026-10-17T13:05:37.994Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","authMode":"local","secretStore":"unavailable"}
+{"ts":"2026-10-17T13:05:38.006Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":1,"concurrency":3}
+{"ts":"2026-10-17T13:05:38.006Z","level":"warn","event":"desktop.gateway_token.missing","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","reason":"NO_GATEWAY_TOKEN"}
+{"ts":"2026-10-17T13:05:38.006Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.0-test","platform":"darwin","itemCount":0}
+{"ts":"2026-10-17T13:05:38.200Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.0-test","platform":"darwin"}
+ ✓ |desktop| test/service-host.test.ts (29 tests) 4453ms
+   ✓ 旧 Lite 图片配置停止启用，不能隐式改成其它付费型号  301ms
+   ✓ 崩溃恢复（09 §1） > 内核退出后重启并**显式通知**用户  1160ms
+   ✓ Composer 一次选多个文件（真实宿主接线） > 选 23 个：前 20 个就绪，后 3 个被拒并说明原因；读不到的那个如实失败，一个都不少  310ms
+ ✓ |desktop| test/settings.test.tsx (68 tests) 27528ms
+   ✓ 个性化记忆 > 显示 Codex 当前支持的全局开关与准备状态  1021ms
+   ✓ 个性化记忆 > 使用与生成分开保存，关闭总开关后从属项不可编辑  411ms
+   ✓ 个性化记忆 > 清空全部记忆需要确认，并说明不会删除项目规则与任务历史  657ms
+   ✓ 个性化记忆 > 分别选择提取和整理模型，可清除指定恢复跟随任务  920ms
+   ✓ 模型 > 每行是 id + 「自定义」+ 三个动作（改 · 测连通 · 删）  430ms
+   ✓ 模型 > 铅笔打开的弹窗预填那一条，且**不要求重填密钥**（留空 = 沿用已存的那把）  816ms
+   ✓ 模型 > 改一条指向自建代理的模型时 endpoint 那一行**露出来** —— 藏起来等于保存时偷偷改回官方  383ms
+   ✓ 模型 > 添加模型：**供应商没选就不能提交**，endpoint 方言不能靠猜  448ms
+   ✓ 模型 > 选了内置供应商就不问 endpoint（地址与网关同一张表）；选「其他」才问  855ms
+   ✓ 模型 > 选「其他 OpenAI 兼容」时必须自己填 endpoint  629ms
+   ✓ 模型 > 选「其他 OpenAI 兼容」时没填 endpoint，「测试连接」仍禁用并说原因  877ms
+   ✓ 模型 > API Key 的明文开关默认关着（旁边可能坐着别人），且只作用于**正在打的那个值**  436ms
+   ✓ 模型 > 「测试连接」把结论显示在**弹窗里**（页顶横幅在模态后面，用户看不见）  2284ms
+   ✓ 模型 > 填完 API Key 之后「测试连接」可点 —— 不要求先填模型名（名单就是这一下要拉的）  1729ms
+   ✓ 模型 > 测试连接拉回的名单填进「模型名称」下拉  1447ms
+   ✓ 模型 > 测完之后点模型名称输入框也能打开上游名单，不必点右侧箭头  921ms
+   ✓ 模型 > 「查看文档」按供应商跳；没选供应商时禁用并说原因  602ms
+   ✓ 模型 > 「其他 OpenAI 兼容」没有文档可跳，链接禁用并说清那是用户自己的 endpoint  491ms
+   ✓ 模型 > 模型名称下拉在测过之前禁用；测完才能从上游名单里挑  351ms
+   ✓ 模型 > 弹窗右上角的 ✕ 与「取消」是同一个动作  417ms
+   ✓ 添加模型：上下文大小 > 表外模型默认 256K，并说出约多少时压缩 —— 发出去的就是用户看到的那个数  876ms
+   ✓ 添加模型：上下文大小 > 选 32K：提示跟着变，发出去的是 32000  782ms
+   ✓ 添加模型：上下文大小 > **自定义的数存不进内核目录就不让保存**，并说为什么 —— 否则那条模型会回到 272k 兜底  1139ms
+   ✓ 添加模型：上下文大小 > **能力表认得出的型号锁定为表里的值**并说出处；不发这一项 —— 主进程本来就按表覆盖  1195ms
+   ✓ 添加模型：上下文大小 > 修改：预填已存的那个数，保存时带上它  782ms
+   ✓ 添加模型：上下文大小 > 改一条能力表里的模型到表外型号：预选的是默认值，**不是上一个型号的 1M**  774ms
+   ✓ 关于与更新 > 有新版本时，「关于与更新」那一项上有一个点 —— 首页不放提示（2026-10-03 定）  443ms
+   ✓ 关于与更新 > 下好了、退出会打断任务：先列出会被打断什么，确认之后才退出  623ms
+   ✓ 电脑操控权限状态与恢复 > enterprise-blocked 禁用启用，但保留恢复检查入口  310ms
+ ✓ |desktop| test/item-renderers.test.tsx (37 tests) 6514ms
+   ✓ 未知 item：**绝不静默丢弃**（04 §5.2 最后一段，R2 的防线） > 渲染成一行「新类型事件」并可展开看原始 JSON  1334ms
+   ✓ Computer Use MCP：正文留存但默认隐藏（12 §17 CU-R9） > 识别内核真实 tool 字段，不渲染输入参数，用户主动查看后才显示 AX 与截图  697ms
+   ✓ AgentMessage：生成内容按 Markdown 格式化（04 §5.2 #2） > 已取得来源才建立引用；点击只传来源编号，显示读取状态与截断限制  987ms
+   ✓ AgentMessage：生成内容按 Markdown 格式化（04 §5.2 #2） > 渲染标题、强调、列表、表格、任务列表与代码，不把 Markdown 标记原样显示  725ms
+   ✓ SubAgentActivity：子任务卡（清单 §9 多角色协作的可视化） > 折叠行显示角色与 token 用量；展开可跳子任务  315ms
+   ✓ CollabAgentToolCall：显式代理消息 > 显示动作、状态、发送者、全部接收者与消息，并可逐个打开  458ms
+ ✓ |desktop| test/catalog.test.tsx (10 tests) 7762ms
+   ✓ CatalogPage > 文件安装独立打开文件选择器，P2 未确认不会提交安装授权  2680ms
+   ✓ CatalogPage > 取消技能文件选择不触发安装  515ms
+   ✓ CatalogPage > 连接器详情显示 OAuth 状态和逐工具权限  308ms
+   ✓ CatalogPage > 专家 Tab 空态不预置角色包  506ms
+   ✓ CatalogPage > 添加技能有三项入口，没有 SkillHub Tab  816ms
+   ✓ CatalogPage > 插件 Hub（13 §5.6）：caption 常驻说明为什么只有随包内容；来源筛选切到精选后，状态写在卡上  439ms
+   ✓ Hub 组件确认后显示准备状态，等待期间不重复安装，失败后可以重试  2131ms
+ ✓ |desktop| test/acceptance-checks.test.ts (1 test) 36323ms
+   ✓ 外部验收用例的判定函数 > 对的产出判 PASS、错的判 FAIL（含测试方原版的两处误判已修）  36305ms
+ ✓ |desktop| test/changes-view.test.tsx (12 tests) 6202ms
+   ✓ 文件列表与 diff > 列出每个文件的 +n/-m，工作空间之外的标注出来  442ms
+   ✓ 文件列表与 diff > 切换文件换 diff  1509ms
+   ✓ 撤销与回滚的二次确认（04 §6.3） > 没有真实实现时不显示会确认后无响应的动作  492ms
+   ✓ 撤销与回滚的二次确认（04 §6.3） > 确认期间数据刷新，仍提交用户看到的旧版本和范围，交给宿主拒绝过期记录  704ms
+   ✓ 撤销与回滚的二次确认（04 §6.3） > **撤销说清会动磁盘**  772ms
+   ✓ 撤销与回滚的二次确认（04 §6.3） > **回滚说清不动磁盘** —— 这两句拼反的代价是用户丢文件  806ms
+   ✓ 撤销与回滚的二次确认（04 §6.3） > 取消就什么都不做  620ms
+ ✓ |web| test/app.test.tsx (30 tests) 9621ms
+   ✓ 路由 > 没有分享页路径（Q41 跟分享上传同一切片）  2100ms
+   ✓ access 令牌续期（15 分钟那个缺陷） > 续不上时页面弹「登录已过期」，而不是让每个按钮各自变成失败  433ms
+   ✓ 管理端 > 概览把「看不到什么」写在管理员每天看得到的地方，且没有充值  501ms
+   ✓ 管理端 > 五个分区 = D9 四条云端职责的界面面，不多不少  425ms
+   ✓ 管理端 > 用量页只有当期聚合：没有按天曲线，也没有明细导出（Q43=A / 第 24 条）  333ms
+   ✓ 管理端 > 一段加载失败时说清「空不是因为没有数据」，并给重试  435ms
+   ✓ 管理端 > 只剩一名管理员时「收回管理员」禁用并给原因，不是点了再吃 403  761ms
+   ✓ 管理端 > 撤销策略包要先确认，并说清它回到的是「没有策略」而不是上一份  837ms
+   ✓ 账号页 > 吊销其他全部设备要先确认，并说清本机数据不动（Q40）  751ms
+   ✓ 邀请页 > 不读会话、不带 authorization —— 收件人还没登录（与分享页同一条理由）  520ms
+   ✓ 添加模型 > 「测试连接」走服务端探针，不从浏览器直连上游（那会被 CORS 挡死）  766ms
+ ✓ |desktop| test/automations.test.tsx (24 tests) 7202ms
+   ✓ **配置时就要说清的三件事** > ① 关机不执行 —— 常驻提示，不是事后解释（R9）  876ms
+   ✓ **配置时就要说清的三件事** > ② 绑定这台电脑，其他电脑看得见但不重复执行（Q15）  492ms
+   ✓ **配置时就要说清的三件事** > 固定保存模型，并说明下架时会暂停而不是静默切换  447ms
+   ✓ 自动化列表的执行摘要 > 优先显示下次运行、绑定设备、最近结果与启用状态  2870ms
+   ✓ 自动化列表的执行摘要 > 历史里的成功结果只在有关联任务时提供打开动作  697ms
+   ✓ 触发编辑器：三档递进（07 §3.3） > 三档都在，且**预览是三档共有的**  321ms
+   ✓ 触发编辑器：三档递进（07 §3.3） > 自然语言解析成功就改 cron，且回显人话  303ms
+ ✓ |desktop| test/visualizer.test.tsx (21 tests) 1031ms
+   ✓ 三类都提供「查看源码」与「保存为文件」（04 §7） > 查看源码切换出原文  764ms
+ ✓ |desktop| test/dialog.test.tsx (9 tests) 1637ms
+   ✓ Dialog > 破坏性动作用 alertdialog —— 读屏用户要在焦点进来之前就被打断  761ms
+ ✓ |desktop| test/approval-card.test.tsx (28 tests) 3281ms
+   ✓ 命令审批卡（10 §3.2） > 先显示影响、范围、原因，命令收在技术详情里  1053ms
+   ✓ 电脑操控授权选项 > 按明确的授权范围回答，不出现通用的允许按钮  382ms
+ ✓ |desktop| test/audit-onboarding.test.tsx (29 tests) 3803ms
+   ✓ 审计页：**永远不显示正文** > 路径以「分类 + 短哈希」呈现，不是路径本身  384ms
+   ✓ 审计页：能被真的用起来（10 §6「用户可见」） > 默认 7 天，切到 30 天能看到更早的记录  1155ms
+   ✓ 审计页：能被真的用起来（10 §6「用户可见」） > 按动作类型筛选  811ms
+ ✓ |desktop| test/renderer-bridge.test.ts (143 tests) 2698ms
+stderr | test/share-page.test.tsx > 文件名不离开这个浏览器 > 整页对服务端发起的每一次请求都不带这个名字
+Not implemented: navigation to another Document
+
+stderr | test/share-page.test.tsx
+Not implemented: navigation to another Document
+
+ ✓ |web| test/share-page.test.tsx (19 tests) 2162ms
+   ✓ 失效页 > expired：只给一句话，不给类型与大小  870ms
+ ✓ |desktop| test/projects.test.tsx (12 tests) 2352ms
+   ✓ ProjectsPage > 失效项目的「在此项目新建任务」禁用**并给原因** —— 不静默灰掉  808ms
+   ✓ ProjectsPage > 移除的确认文案必须说清不删文件 —— 说反了用户丢文件  352ms
+   ✓ ProjectsPage > Esc 能关掉对话框，且对话框依赖的状态（草稿名称）在下次打开前不会被污染  389ms
+ ✓ |desktop| test/project-detail.test.tsx (12 tests) 2822ms
+   ✓ ProjectDetailPage > 用四个页签分开任务、文件、项目说明与自动化  975ms
+   ✓ ProjectDetailPage > 噪声目录仍然列出来 —— 隐藏会让人以为生成的文件丢了  439ms
+ ✓ |desktop| test/home.test.tsx (14 tests) 2244ms
+   ✓ 克制的空白首页（类 ChatGPT UI §8） > 首屏直接显示问候和输入框，不再显示常驻场景导航  965ms
+   ✓ 克制的空白首页（类 ChatGPT UI §8） > **chip 只写入 Composer，不发送**（03 §3.2）  417ms
+ ✓ |desktop| test/local-services.test.ts (27 tests) 1980ms
+   ✓ scheduler ↔ 内核 > 启动时做 misfire 扫描：**先落一条 MISSED，再补跑**（07 §8-1）  381ms
+   ✓ 文件变化 ↔ 产物索引 > 并发任务在同一目录及 cwd 外上报，产物和通知始终归实际执行命令的任务  365ms
+ ✓ |desktop| test/file-preview.test.tsx (6 tests) 2422ms
+   ✓ 本地文件预览 > Office 的 PDF 页面以本机光栅图显示，可翻页且不依赖沙箱中的 PDF 插件  1599ms
+   ✓ 本地文件预览 > Office/Markdown 预览渲染结构，批注可回填修改请求  507ms
+ ✓ |desktop| test/thread-communication-panel.test.tsx (2 tests) 1530ms
+   ✓ 会话通信入口 > 选择目标并展示正文后显式发送，默认不列跨项目会话  1293ms
+ ✓ |desktop| test/attachment-text-host.test.ts (1 test) 492ms
+   ✓ concurrent control/job saves remain atomic, removals survive late failure, and other task roots cannot read an attachment  490ms
+ ✓ |desktop| test/memory-preparation.test.tsx (3 tests) 1285ms
+   ✓ 整理状态真实语义 > 读取失败明确显示并可重试；更晚的关闭组件不会接收旧结果  823ms
+   ✓ 同步开关保存与撤销 > 立即响应点击，保存失败回滚并显示错误；来源功能关闭后仍可关闭同步  450ms
+ ✓ |desktop| test/task-search.test.tsx (2 tests) 1677ms
+   ✓ 任务高级搜索 > 面板可组合筛选并清除  1667ms
+ ✓ |desktop| test/data-table.test.tsx (2 tests) 1599ms
+   ✓ DataTable 的行与控件各自激活 > 按钮、链接和输入框不打开行，行本身仍支持点击、Enter 和空格  1251ms
+   ✓ DataTable 的行与控件各自激活 > 省略显示的长文本保留完整悬停标题，排序仍使用原始值  346ms
+ ✓ |desktop| test/audit-findings.test.tsx (2 tests) 1540ms
+   ✓ 长安装审计 > 附件安装仍需明确确认，高风险仍需输入准确技能名  1271ms
+ ✓ |desktop| test/gateway-process.test.ts (19 tests) 693ms
+   ✓ 再次启动时端口上还留着上次的网关 > 真有一个还在听的网关进程时，回收之后它不再占着端口  594ms
+ ✓ |desktop| test/catalog-host.test.ts (27 tests) 655ms
+ ✓ |desktop| test/image-settings.test.tsx (4 tests) 897ms
+   ✓ 默认关闭，独立型号与密钥单向提交，保存后清空输入  752ms
+ ✓ |desktop| test/task-environments.test.ts (6 tests) 717ms
+ ✓ |desktop| test/menu.test.tsx (2 tests) 855ms
+   ✓ Popover 窗口边界 > 触发器靠近窗口下沿时向上展开，审批档的最后一项仍留在可视区域内  813ms
+ ✓ |desktop| test/upgrade-compat.test.ts (36 tests) 744ms
+ ✓ |desktop| test/computer-use.test.ts (32 tests) 502ms
+ ✓ |desktop| test/model-access.test.ts (52 tests) 685ms
+ ✓ |desktop| test/thread-communication-host.test.ts (10 tests) 397ms
+ ✓ |desktop| test/bundle-host.test.ts (14 tests) 181ms
+ ✓ |desktop| test/styles.test.ts (31 tests) 370ms
+ ✓ |desktop| test/deeplink.test.ts (20 tests) 109ms
+ ✓ |desktop| test/bootstrap.test.ts (20 tests) 187ms
+ ✓ |desktop| test/secret-store.test.ts (12 tests) 77ms
+ ✓ |desktop| test/policy-pack.test.ts (3 tests) 73ms
+ ✓ |desktop| test/brand-strings.test.ts (2 tests) 58ms
+ ✓ |desktop| test/packaging.test.ts (10 tests) 32ms
+ ✓ |desktop| test/app-config.test.ts (10 tests) 54ms
+ ✓ |desktop| test/audit-ingest.test.ts (8 tests) 131ms
+ ✓ |desktop| test/goal-command.test.ts (1 test) 14ms
+ ✓ |web| test/no-content.test.ts (2 tests) 126ms
+ ✓ |desktop| test/preload.test.ts (6 tests) 21ms
+ ✓ |desktop| test/model-catalog.test.ts (16 tests) 43ms
+ ✓ |desktop| test/account.test.ts (5 tests) 46ms
+ ✓ |web| test/share-isolation.test.ts (6 tests) 104ms
+ ✓ |desktop| test/web-sources.test.ts (10 tests) 18ms
+ ✓ |desktop| test/no-password-ipc.test.ts (3 tests) 34ms
+ ✓ |desktop| test/attachment-capability.test.ts (10 tests) 11ms
+ ✓ |desktop| test/early-events.test.ts (3 tests) 10ms
+ ✓ |desktop| test/computer-use-model.test.ts (1 test) 12ms
+ ✓ |desktop| test/computer-use-policy.test.ts (4 tests) 53ms
+ ✓ |desktop| test/logout-keeps-local-rows.test.ts (1 test) 15ms
+ ✓ |desktop| test/gateway-env.test.ts (6 tests) 11ms
+ ✓ |desktop| test/electron-entry-port.test.ts (2 tests) 10ms
+ ✓ |web| test/styles.test.ts (2 tests) 17ms
+ ✓ |desktop| test/activity.test.ts (4 tests) 22ms
+ ✓ |desktop| test/model-selection.test.ts (6 tests) 16ms
+ ✓ |desktop| test/mcp-tool-approval-view.test.ts (7 tests) 213ms
+ ✓ |desktop| test/identity-prompt.test.ts (4 tests) 22ms
+ ✓ |desktop| test/startup-failure.test.ts (3 tests) 9ms
+ ✓ |ingest| test/isolated-process.test.ts (5 tests) 4072ms
+   ✓ OS sandbox permits only approved file content and refuses a real network socket  457ms
+   ✓ cancellation kills forked OCR descendants before they can write a late result  3123ms
+   ✓ terminates a parser process group when sampled resident memory exceeds its configured budget  327ms
+ ❯ |desktop| test/app.test.tsx (120 tests | 1 failed) 93065ms
+   ✓ 子代理交互归属根任务 > 沿完整父链解析根任务，缺链或循环时不猜 18ms
+   ✓ 任务内的技能发现 > 切换任务后，旧技能查询迟到不能覆盖当前任务的候选  1425ms
+   ✓ 任务内的技能发现 > 无项目任务在 skills-changed 后能在 $ 中选到新增技能  897ms
+   ✓ 任务内的技能发现 > 无项目任务在 turn-completed 后能在 $ 中选到新增技能  849ms
+   ✓ 自动消失提示的生命周期 > dismiss 会清理待执行的提示定时器  895ms
+   ✓ 自动消失提示的生命周期 > unmount 会清理待执行的提示定时器  667ms
+   ✓ 首页不创建 Thread（03 §1） > 打开任务时较早的目标快照不能覆盖新的完成通知  438ms
+   ✓ 首页不创建 Thread（03 §1） > goal 控制命令不创建任务，创建后替换需确认且取消保留草稿  1337ms
+   ✓ 首页不创建 Thread（03 §1） > 刚打开时在首页，且**还没有任何任务** 298ms
+   ✓ 首页不创建 Thread（03 §1） > 发送第一条消息后才建任务并切到任务页  528ms
+   ✓ 首页不创建 Thread（03 §1） > /memories 本地打开设置，新任务禁读在保存后随创建发送  2061ms
+   ✓ 首页不创建 Thread（03 §1） > 取消 /memories 不保存选择，也不创建任务；可进入全局设置  1279ms
+   ✓ 首页不创建 Thread（03 §1） > 已有任务通过 /memories 单独关闭贡献，不发送命令或改变全局  963ms
+   ✓ 首页不创建 Thread（03 §1） > /memories 保存失败时保留弹窗与选择，不把命令发给模型  1010ms
+   ✓ 首页不创建 Thread（03 §1） > 在任务页里发送带上 threadId（不会又建一个新任务） 269ms
+   ✓ 事件接线 > 任务创建事件进侧边栏列表 168ms
+   ✓ 事件接线 > 后到的未命名 task-created 不能把已经显示的标题冲掉 159ms
+   ✓ 事件接线 > 后台任务进入运行态不会把当前任务的 Composer 误切成中断按钮  630ms
+   ✓ 事件接线 > 可见页变化往主进程报（04 §3.4 第②步） 152ms
+   ✓ 事件接线 > 旁聊继承当前时间线并作为当前窗口的临时任务打开  1280ms
+   ✓ 事件接线 > 新建任务会清掉旧任务的读取错误与模型回退提示，并恢复可用默认模型  995ms
+   ✓ 全局快捷键与侧栏折叠 > 侧栏确认删除后调用权威删除链路，并立即从任务列表移除  771ms
+   ✓ 全局快捷键与侧栏折叠 > 删除任务失败时任务还在，并把原因说出来  951ms
+   ✓ 全局快捷键与侧栏折叠 > 任务删除后，迟到的电脑操控历史与 Item 事件不会重建留存内容  362ms
+   ✓ 全局快捷键与侧栏折叠 > ⌘K 打开搜索，⌘⇧O 回到新任务，⌘\ 可折叠并恢复侧栏  770ms
+   ✓ 全局快捷键与侧栏折叠 > 点搜索按钮打开覆盖当前界面的面板，先显示最近聊天与快捷操作  494ms
+   ✓ 结果工作区真实接线 > 发送后仅进入处理中时不因项目既有文件显示结果区  706ms
+   ✓ 结果工作区真实接线 > 按任务读取产物，结果默认显示并可交给系统打开文件  1952ms
+   ✓ 结果工作区真实接线 > 明确打开事件可以预览未索引文件；迟到的旧预览不能覆盖新的打开请求  1868ms
+   ✓ 结果工作区真实接线 > 助手交付措辞不再代替明确打开事件  1866ms
+   ✓ 结果工作区真实接线 > 慢文件预览返回前用户已关闭结果区，旧请求不能重新展开  4276ms
+   × 结果工作区真实接线 > 磁盘撤销须确认并携带快照版本，成功后重新读取真实差异 6187ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ✓ 结果工作区真实接线 > 时间线的文件变更可直接跳到完整 diff，并按任务记住选中 Tab  1541ms
+   ✓ 结果工作区真实接线 > 本回合恢复原文后仍可切回全部历史，不因净差异为空关闭结果区  1721ms
+   ✓ 结果工作区真实接线 > 点击新增文件路径后按任务身份安全读取，并在应用内打开文件预览  2338ms
+   ✓ 回合失败留在任务时间线 > 重启补齐的历史优先于失联前发起的读取，失效的流式条目被清除  846ms
+   ✓ 回合失败留在任务时间线 > 旧历史到达时保留新回合计时和失败原因，同时补回旧消息  560ms
+   ✓ 回合失败留在任务时间线 > 继续在原任务追加恢复要求，保留草稿且连续点击只发一次  976ms
+   ✓ 回合失败留在任务时间线 > 显示内核原始原因，并能用上一条需求重试当前任务  617ms
+   ✓ 回合失败留在任务时间线 > 内核重试期间显示「正在重新连接」，**下一条内容一到就撤掉**  733ms
+   ✓ 生成后的产物刷新 > 宿主通知产物已入库后重读当前任务，不用切走再切回才看到  1367ms
+   ✓ 生成后的产物刷新 > 交付文案里的文件名可点开，并展开结果区  1765ms
+   ✓ 点开已完成任务要看到历史（不是「还没有消息」） > 点侧边栏一行会调 openTask，并把条目画进对话区  383ms
+   ✓ 点开已完成任务要看到历史（不是「还没有消息」） > 切走之后才回来的历史**不会**盖到当前任务上  475ms
+   ✓ 流式增量按 id 合并（04 §5.1） > 同 id 覆盖，新 id 追加 —— 不合并的表现是同一条消息出现两次 7ms
+   ✓ 回合失败卡的两层文案（03 §8 / 2026-09-27） > 英文原因折进详情，上面给人话 6ms
+   ✓ 回合失败卡的两层文案（03 §8 / 2026-09-27） > details 也要跟着进详情，不能丢 0ms
+   ✓ 回合失败卡的两层文案（03 §8 / 2026-09-27） > 中文原因直接显示，不折叠 2ms
+   ✓ 动作失败时给用户看的那句话 > IPC 包装与内部错误类不许泄漏到错误条（2026-09-27 用户截图） 4ms
+   ✓ 动作失败时给用户看的那句话 > 打开任务时权威历史是顺序真源，流式增量叠上去 2ms
+   ✓ Composer 可见 token 与结构化引用一致 > 保留仍有 `$技能` / `@文件` token 的引用 1ms
+   ✓ Composer 可见 token 与结构化引用一致 > 删除可见 token 时同步删除后台结构化引用 0ms
+   ✓ 任务输出恢复 > 重试会无损带回 mention / skill / localImage 引用 1ms
+   ✓ 任务输出恢复 > 本回合 Changes 只取匹配 turnId 的文件，并用聚合 diff 补增量窗口 4ms
+   ✓ 任务输出恢复 > 同一文件在多个回合反复修改，全部变更保留每次差异和累计统计 27ms
+   ✓ 任务输出恢复 > 本回合聚合 diff 优先于最后一项补丁，展示修改前到最终状态的净差异 1ms
+   ✓ 任务输出恢复 > 同回合尚无聚合快照也不丢历史，后到的空 diff 不清空已有补丁 6ms
+   ✓ 任务输出恢复 > 绝对路径 FileChange 与工作目录下的相对聚合路径只展示一个文件 3ms
+   ✓ 任务输出恢复 > Windows 路径与相对路径按任务目录归并，逐项历史也能统一点路径 1ms
+   ✓ 任务输出恢复 > 聚合快照以最终状态为准，已恢复原文的文件不再显示虚假改动 7ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 下拉里按 provider 分组列出网关给的模型，并画出缺失能力  437ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 选中一个模型后，发出去的消息带的是**它**，不是场景默认值  467ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 选「帮我批准」后发出去的是这个档，不是场景默认的请求批准  377ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 帮我批准未接通时不能发出这个档  509ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 完全访问未确认时不发出这个档  872ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 任务发出后切到完全访问，会立即把新档位交给主进程  1081ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 手动选过之后出现"已被你改过"的圆点（03 §2.5）  353ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 网关连不上 → danger 条 + 发送按钮禁用，而不是让用户发出去再失败 299ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 没配模型时指向设置页添加，不是就地录入三家密钥  1274ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 切到旧任务时，下拉跟着那个任务上次用的模型走  432ms
+   ✓ 手动选模型（03 §4.5 / §2.4） > 「检查模型接入」重新拉一次列表 —— 用户通常是去把网关起起来了再回来点它  481ms
+   ✓ 侧边栏的六个入口都要有落点 > 点「资料库」进资料库页，并去拉那一页的数据  503ms
+   ✓ 侧边栏的六个入口都要有落点 > 点「自动化」进自动化页；一条都没有时说清"绑这台电脑、关机不跑"  794ms
+   ✓ 侧边栏的六个入口都要有落点 > 点「资料库」点亮的是「资料库」，从用户菜单进设置则哪一项都不点亮  1470ms
+   ✓ 侧边栏的六个入口都要有落点 > 插件页是真目录，不是「还没做好」  828ms
+   ✓ 侧边栏的六个入口都要有落点 > Composer 的「使用插件」列出已装技能，选中后只填入不自动发送  969ms
+   ✓ 侧边栏的六个入口都要有落点 > 已有任务未选项目时，添加本地文件仍打开选择器  997ms
+   ✓ 侧边栏的六个入口都要有落点 > 首页未选项目就添加本地文件时说明原因，不静默没反应  857ms
+   ✓ 侧边栏的六个入口都要有落点 > 当前模型读不了图时的附件（03 §8） > 当前模型读不了图：附件区就拒掉图片、不发出去；换成能读图的模型，图片照常发  1073ms
+   ✓ 侧边栏的六个入口都要有落点 > 当前模型读不了图时的附件（03 §8） > 被拦下的图片改用原始文件引用后发出去的是路径，不是图片  939ms
+   ✓ 侧边栏的六个入口都要有落点 > 当前模型读不了图时的附件（03 §8） > 带插图的文档发给读不了图的模型：文字照常发、插图留下，并说一声  952ms
+   ✓ 侧边栏的六个入口都要有落点 > 中断失败时说明原因，不让停止按钮变成没反应  1033ms
+   ✓ 侧边栏的六个入口都要有落点 > 侧边栏没有「助理」入口，也没有它的空页  865ms
+   ✓ 侧边栏的六个入口都要有落点 > 从别的页面点「新建任务」回到首页  616ms
+   ✓ 侧边栏的六个入口都要有落点 > 离开再进资料库会重新拉一次  930ms
+   ✓ 首次引导（02 §9） > 没走过引导时它盖住整个界面 95ms
+   ✓ 首次引导（02 §9） > 走过引导就直接进主界面 75ms
+   ✓ 首次引导（02 §9） > 走完引导调 completeOnboarding 并进主界面  634ms
+   ✓ 首次引导（02 §9） > 走完引导后项目已列出，全局首页默认无项目  1423ms
+   ✓ 首次引导（02 §9） > 只有一个项目时全局首页仍不擅自预选 91ms
+   ✓ 首次引导（02 §9） > 有多个项目时不擅自选一个 —— 用户得自己挑任务跑在哪 101ms
+   ✓ 首次引导（02 §9） > 首运行选中被拒的目录——拒绝理由要真的显示出来，不是点了没反应 255ms
+   ✓ 首次引导（02 §9） > 取消选择保持安静——不该弹出任何提示  303ms
+   ✓ 项目页接线（Task 13） > 侧栏「查看所有项目」会去拉列表，而不是显示"还没做好"  547ms
+   ✓ 项目页接线（Task 13） > 侧栏 + 直接打开创建框，创建成功后新项目立刻出现在左侧  1648ms
+   ✓ 项目页接线（Task 13） > 点卡片进详情页，且详情是单独拉的 —— 列表里没有文件树与记忆  1117ms
+   ✓ 项目页接线（Task 13） > 新建被拒时把原话显示出来 —— 不是静默什么都不发生  959ms
+   ✓ 项目页接线（Task 13） > 新建成功后直接用返回的新列表刷新 —— 不再多调一次 listProjects  666ms
+   ✓ 项目页接线（Task 13） > 真实 createRendererActions：选目录再按创建只建出一个空间，不是两个  1155ms
+   ✓ 项目页接线（Task 13） > 「在此项目新建任务」把首页的项目预选上 —— 否则跳过去还得再选一次  1511ms
+   ✓ 项目页接线（Task 13） > projects-changed 事件到达时刷新列表 —— 但本机增删不等它  812ms
+   ✓ 项目页接线（Task 13） > projects-changed 到达但不在项目页时不刷新 —— 回去才需要看到新数据  789ms
+   ✓ 项目页接线（Task 13） > 改名 / 移除 / 导入都直接用返回的新列表，且改名对话框预填旧名字  785ms
+   ✓ 项目页接线（Task 13） > 移除确认后调 removeProject 并用返回的新列表刷新  601ms
+   ✓ 项目页接线（Task 13） > 「导入现有文件夹」直接调 importProject，不弹对话框  1118ms
+   ✓ 项目页接线（Task 13） > 列表与详情里的打开文件夹都能对上当前项目  304ms
+   ✓ 项目页接线（Task 13） > 打开文件夹失败时说明原因，不静默没反应  349ms
+   ✓ 项目页接线（Task 13） > 详情页展开目录懒加载子项；刷新按钮重拉根目录  319ms
+   ✓ 项目页接线（Task 13） > 保存空间记忆调 writeAgentsMemo 并带上当前空间 id 295ms
+   ✓ 项目页接线（Task 13） > writeAgentsMemo 的 promise 被拒绝时不崩溃、不显示「已保存」  482ms
+   ✓ 项目页接线（Task 13） > 详情页点任务行会像侧边栏一样真的去拉历史，而不是空对话  758ms
+   ✓ 设置页（11 §4.4） > 用户菜单中的「设置」到达模型接入分区  573ms
+   ✓ 设置页（11 §4.4） > 菜单里没接通的设备与同步入口不显示  466ms
+   ✓ 设置页（11 §4.4） > 在设置页加完模型后，Composer 的模型下拉用的是同一份新目录  3514ms
+   ✓ 设置页（11 §4.4） > 加完自定义模型后，首页不再说网关没起，默认用配置的第一个模型  1360ms
+   ✓ 深链：挂载时那一次 takeDeeplink（02 §8） > 一挂载就去领一次，这是主进程判断「订阅好了」的唯一依据 100ms
+   ✓ 深链：挂载时那一次 takeDeeplink（02 §8） > **引导屏上也要看得见** —— 那正是收到分享链接的人第一次启动的样子 86ms
+   ✓ 深链：挂载时那一次 takeDeeplink（02 §8） > 领回来的那条深链要真的被用上 —— 不是领了就扔 55ms
+   ✓ Composer 文件夹动作与草稿 > 文件夹创建后选中项目并保留正文；只有发送时才创建任务 154ms
+   ✓ Composer 文件夹动作与草稿 > 文件夹选择返回前新建草稿，不把旧结果选入新草稿 175ms
+ ✓ |skill-presentations| test/render.test.ts (19 tests) 10882ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 合法内容通过校验（--validate-only 不需要办公扩展）  1779ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > **校验失败要指出具体哪一条**，而不是"内容格式错误"  508ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 每页最多 6 条 bullets —— 超过就该拆页（这是内容约束，不是排版问题）  933ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 单条 bullet 超过 80 字被拦（缩到看不清就不是排版问题了）  523ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 只认五种 layout，**没有第六种**  418ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 多余字段被拒（additionalProperties: false）—— 免得模型以为它加的字段生效了  399ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 表格最多 12 行 —— 再多该导出 xlsx 附件而不是塞进幻灯片  435ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 坏 JSON 给出行号，而不是 python 堆栈  337ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 失败输出里**不含内容 JSON 本身**（它是用户业务内容，Q14 同口径）  464ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > **报错只指出用户想用的那个 layout 的问题** —— 模型只有一次修正机会  422ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 未知模板被拒（不会静默回落到 business）  453ms
+   ✓ 办公扩展未安装时的行为（08 §4 的按需下载） > 装了扩展时能真的产出 pptx  2121ms
+   ✓ 办公扩展未安装时的行为（08 §4 的按需下载） > 引用的图片不存在 → 退出码 4，不产出坏文件  1200ms
+ ✓ |identity| test/service.test.ts (18 tests) 10347ms
+   ✓ Q38 种子管理员 > 0 个 admin 时用配置创建；已有 admin 时忽略明文密码，不覆盖  688ms
+   ✓ 注册不自动开租户 > 自助注册的人没有默认模型，只能等被加入租户  473ms
+   ✓ 授予 / 收回管理员 > 不能收回最后一名；跨租户拒绝；未注册拒绝  1163ms
+   ✓ Q39 / Q40 > 注销只清云端身份；最后一名 admin 不能注销  512ms
+   ✓ Q39 / Q40 > 注销要再输密码；密码对了才清云端身份  924ms
+   ✓ Q39 / Q40 > 吊销设备后 refresh 立刻失效  415ms
+   ✓ 默认模型目录类型没有 key > publicCatalog 没有 apiKey / baseUrl；internal 才有  723ms
+   ✓ 额度闸门 > 用尽后 checkQuota 拒绝，且不自动换成别的模型（调用方只能看到这句话）  1098ms
+   ✓ 额度闸门 > 配额班级用尽同样拒绝，JWT 带真实 quotaClass，不自动换模型  778ms
+   ✓ 额度闸门 > default 班级上限 0 = 不限，没有每人覆盖时放行  616ms
+   ✓ 签名策略包 > 管理员签发后成员能拿到信封，里面没有 apiKey  328ms
+   ✓ 签名策略包 > 签发历史可回读，撤销后成员拿不到包  389ms
+   ✓ 按邮箱加人（Q38） > 已注册用户能按邮箱进租户；未注册拒绝  516ms
+   ✓ 身份面审计 > 授予 admin、改默认模型 key、签发策略包都有记录，且没有任务字段  718ms
+   ✓ 管理端用量（Q43=A） > 只给租户总量与按人当期累计，即使 metering 有多天也不按天分组  485ms
+ ✓ |identity| test/http.test.ts (6 tests) 4821ms
+   ✓ identity HTTP > 登录后目录没有 apiKey；内部端点才返回上游  959ms
+   ✓ identity HTTP > 签发策略包后成员 GET 拿到信封，响应里没有 apiKey  804ms
+   ✓ identity HTTP > 改密前管理端 403；改密后能进（11 §12 第 23 条）  1060ms
+   ✓ identity HTTP > 管理端用量即使带 groupBy=day 也不返回按天序列（Q43=A）  913ms
+   ✓ identity HTTP > 托管转发是边收边转的，不是读完再转；用量从流里那条 completed 取  940ms
+stdout | test/prepare-release.test.mjs > 准备发布 > 预览不写入；实际执行同步版本与说明，并保留上一版记录
+0.0.5 → 0.0.6；提交范围：v0.0.5..HEAD
+
+- 支持正文搜索
+
+预览完成，未修改文件。
+0.0.5 → 0.0.6；提交范围：v0.0.5..HEAD
+
+- 支持正文搜索
+
+已更新两个版本号、build/release-notes.md 和 CHANGELOG.md。请审核草稿、同步两处说明并检查 git diff，再提交、打 tag 和打包发布。
+
+ ✓ |skill-documents| test/render.test.ts (17 tests) 16240ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 合法内容通过校验（不需要办公扩展）  1385ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 未知的 block 种类被拦下，且报错精确到"按你声明的那种检查"  551ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > oneOf 的报错只列**用户声明的那种 block** 的问题  655ms
+   ✓ **标题层级不许跳级** —— 跳了 Word 的目录会缺一层，而生成时不报错 > h1 直接到 h3 被拒绝，并说清应该是 h2  609ms
+   ✓ **标题层级不许跳级** —— 跳了 Word 的目录会缺一层，而生成时不报错 > 逐级下降与任意幅度的上升都合法（h3 回到 h1 是正常的换章）  591ms
+   ✓ 表格与图片的跨字段约束 > 行的格数与表头列数不一致 → 指出是哪一行  632ms
+   ✓ 表格与图片的跨字段约束 > 引用不存在的图片 → 专用退出码 4，让模型先去生成它  476ms
+   ✓ 表格与图片的跨字段约束 > 图片存在时通过  689ms
+   ✓ md 是一等输出，不是降级（不需要办公扩展） > 产出 md 并保留层级  597ms
+   ✓ md 是一等输出，不是降级（不需要办公扩展） > 表格转成 md 表格  624ms
+   ✓ md 是一等输出，不是降级（不需要办公扩展） > 分页符转成水平线，而不是被静默丢掉  612ms
+   ✓ 运行时与格式（08 §4） > 只接受 .docx 与 .md  514ms
+   ✓ 运行时与格式（08 §4） > 没装办公扩展时给可操作提示 + 退出码 3  632ms
+   ✓ 装了办公扩展时真的产出 docx > 产出的是 zip 容器（docx 的真实形状），且目录域写进去了  1728ms
+   ✓ 装了办公扩展时真的产出 docx > 每个标题都带大纲级别（否则目录域按 F9 也刷不出内容）  967ms
+   ✓ 纸张默认是 A4（2026-09-28 外部验收 A1） > 三个模板渲染出来都是 A4 竖版  4006ms
+   ✓ 失败输出不含用户内容（Q14 同口径） > 报错里不出现正文  941ms
+ ✓ |scripts| test/prepare-release.test.mjs (4 tests) 2725ms
+   ✓ 准备发布 > 预览不写入；实际执行同步版本与说明，并保留上一版记录  1466ms
+   ✓ 准备发布 > 工作区不干净或没有发布基线时拒绝写入  1246ms
+ ✓ |identity| test/invites-and-alerts.test.ts (18 tests) 8052ms
+   ✓ 成员邀请 > 邀请未注册的人：邮件带 token，接受时必须给密码，接受后直接算邮箱已验证  502ms
+   ✓ 成员邀请 > 邀请已注册但没验过邮箱的人：不碰密码，加进租户，并且顺手把邮箱算作已验证  977ms
+   ✓ Q40 吊销其他全部设备 > 留下当前这台，其余设备与它们的 refresh 全部作废  388ms
+   ✓ 策略包生效面 > 签发之后没有设备算已拉取；拉过之后才计入  687ms
+   ✓ 策略包生效面 > 重新签发之后，拿着旧包的设备重新算作没拉过  507ms
+   ✓ 策略包生效面 > 生效面只给设备身份，不给它在做什么  607ms
+   ✓ 额度提醒 > 到阈值发一封给本人，同一期不再发第二封  682ms
+   ✓ 额度提醒 > 用尽时通知本人，并汇总给管理员  529ms
+   ✓ 额度提醒 > 本人关掉提醒后不再收到，但管理员那条汇总还在  371ms
+   ✓ 额度提醒 > 管理员关掉租户开关后，成员的阈值提醒不发  484ms
+   ✓ 额度提醒 > 不限额度（limit = 0）的人永远不触发提醒  837ms
+   ✓ 额度提醒 > 提醒邮件里只有数字，没有任务 / 产物 / prompt（K6 · Q14 的同一条纪律）  344ms
+ ✓ |store| test/library-query.test.ts (8 tests) 4100ms
+   ✓ short words and literal quotes/FTS tokens search body, with AND across separate blocks  1088ms
+   ✓ scope applies before pagination and an empty scope never searches globally  387ms
+   ✓ projected long/short AND finds different and late chunks without borrowing another document's text  464ms
+   ✓ projected matches keep title priority, BM25, timestamp/id tie breaks, and pagination within scope  432ms
+   ✓ bound JSON scope keeps quotes/Unicode literal and title-only short matches searchable  1194ms
+   ✓ a SQLite recursive scan running in native code cannot block the host beyond its deadline  322ms
+ ✓ |skill-charts| test/render.test.ts (15 tests) 16809ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 合法内容通过校验（不需要办公扩展）  1295ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > 未知的 chart 种类被拦下，并列出五种合法取值  571ms
+   ✓ 结构化生成：先校验再渲染（08 §5.3） > schema 不允许多余字段 —— 免得你以为指定了颜色就生效了  618ms
+   ✓ 跨字段一致性：JSON Schema 表达不了、matplotlib 的报错又看不懂 > values 与 categories 长度不一致 → 指出具体是哪一条 series 与两边的长度  574ms
+   ✓ 跨字段一致性：JSON Schema 表达不了、matplotlib 的报错又看不懂 > bar 缺 categories  574ms
+   ✓ 跨字段一致性：JSON Schema 表达不了、matplotlib 的报错又看不懂 > pie 只能有一个 series，且不能有负数  1378ms
+   ✓ 跨字段一致性：JSON Schema 表达不了、matplotlib 的报错又看不懂 > scatter 必须给 x_values，且与 values 等长  1207ms
+   ✓ 输出格式与运行时（08 §4） > 只接受 .svg 与 .png  533ms
+   ✓ 装了办公扩展时真的能画出来 > 产出 png，且文件不是空的  4968ms
+   ✓ 装了办公扩展时真的能画出来 > 中文标题不会因为缺字体而失败（本机有 CJK 字体时）  3817ms
+   ✓ 失败输出不含用户内容（Q14 同口径） > 报错里不出现标题、分类名与数字  651ms
+ ✓ |skill-spreadsheets| test/render.test.ts (21 tests) 18221ms
+   ✓ **公式而非硬编码结果**（08 §5.2 的关键质量点） > 计算列的位置填了算好的数 → 拒绝，并说清为什么  1571ms
+   ✓ **公式而非硬编码结果**（08 §5.2 的关键质量点） > 计算列填 null 时通过  583ms
+   ✓ **公式而非硬编码结果**（08 §5.2 的关键质量点） > formula 必须以 = 开头（schema 拦）  654ms
+   ✓ 跨字段一致性 > 行的格数与列数不一致 → 指出是哪一行、两边各多少  589ms
+   ✓ 跨字段一致性 > 表头重名 → 拒绝（公式与条件格式会指错列）  599ms
+   ✓ 跨字段一致性 > 条件格式指向不存在的列 → 拒绝  711ms
+   ✓ 跨字段一致性 > 工作表名里的非法字符被 schema 拦（Excel 不允许 : \ / ? * [ ]）  616ms
+   ✓ csv 是基础包能力，且降级是显式的 > 不需要办公扩展也能产出 csv  711ms
+   ✓ csv 是基础包能力，且降级是显式的 > **计算列留空并在表头标注**，而不是悄悄算一个值填进去  606ms
+   ✓ csv 是基础包能力，且降级是显式的 > 带 BOM —— 没有它 Excel 打开 UTF-8 csv 会把中文显示成乱码  562ms
+   ✓ csv 是基础包能力，且降级是显式的 > 多张表输出 csv → 拒绝并给两条出路  535ms
+   ✓ 运行时与格式（08 §4） > 只接受 .xlsx 与 .csv  1076ms
+   ✓ 运行时与格式（08 §4） > 没装办公扩展时给可操作提示 + 退出码 3  312ms
+   ✓ 装了办公扩展时真的产出 xlsx，且**公式是公式** > 金额列与合计行在文件里是 =B2*C2 与 =SUM(...)，不是算好的数  2242ms
+   ✓ 装了办公扩展时真的产出 xlsx，且**公式是公式** > 冻结首行真的落进了文件  1500ms
+   ✓ 失败输出不含用户内容（Q14 同口径） > 报错里不出现单元格里的业务数据  1306ms
+   ✓ **条件汇总的条件一个都对不上** → 拒绝（2026-09-28 外部测试 A4） > 条件区域是「机构代码」、条件是区域名 → 拒绝，说清是哪两列  827ms
+   ✓ **条件汇总的条件一个都对不上** → 拒绝（2026-09-28 外部测试 A4） > 条件区域换成明细表的「区域」列 → 通过  913ms
+   ✓ **条件汇总的条件一个都对不上** → 拒绝（2026-09-28 外部测试 A4） > 只有某一个分组对不上 → 放行（那个区域本来就可以没有机构）  775ms
+   ✓ **条件汇总的条件一个都对不上** → 拒绝（2026-09-28 外部测试 A4） > 条件是字面量、一个都没命中 → 放行（「没有逾期」是一个合法的 0）  1007ms
+   ✓ **条件汇总的条件一个都对不上** → 拒绝（2026-09-28 外部测试 A4） > SUMIFS 的第二对条件指错了列 → 同样拒绝  513ms
+ ✓ |ingest| test/office.test.ts (10 tests) 2211ms
+   ✓ 包装层：不依赖办公扩展 > 假解释器跑通后给出 Markdown，而不是 undefined  436ms
+   ✓ 真解析：装了扩展就出正文，没装就承认没解出来 > docx 标题、段落、表格都能进 Markdown  925ms
+ ✓ |runtime-installer| test/ocr-install.test.ts (2 tests) 496ms
+   ✓ validates in staging and preserves an existing runtime on a failed probe  470ms
+ ✓ |kernel-adapter| test/thread-communication.test.ts (19 tests) 793ms
+ ✓ |share| test/start.test.ts (9 tests) 877ms
+   ✓ 进程入口（按部署方式打包后真起） > 体检不过：以退出码 1 结束，且从没开始监听  445ms
+ ✓ |ingest| test/library-extract.test.ts (2 tests) 2459ms
+   ✓ spreadsheet indexing includes row 201 and keeps sheet/row anchors, or reports the genuinely missing runtime  2224ms
+ ✓ |ingest| test/pipeline.test.ts (25 tests) 1114ms
+   ✓ zip：先列后解 > 包里的文件被逐个解析（递归，限深度 2）  353ms
+ ✓ |desktop| test/file-host.test.ts (4 tests) 1183ms
+   ✓ shell 文件先发现但不认领；明确打开只发事件，显式登记才建立归属  304ms
+   ✓ 文件发现分页覆盖所有条目，工具结果不混入完整 diff 或文件内容  670ms
+ ✓ |store| test/migrate.test.ts (40 tests) 1249ms
+   ✓ 两个迁移器的分工（09 §4.6） > v4 body indexes upgrade without discarding searchable chunks or existing authority metadata  373ms
+ ✓ |runtime-installer| test/download.test.ts (8 tests) 500ms
+ ✓ |desktop| test/hub-host.test.ts (34 tests) 1427ms
+ ✓ |runtime-installer| test/install.test.ts (24 tests) 729ms
+ ✓ |kernel-adapter| test/adapter.test.ts (99 tests) 1355ms
+ ✓ |ingest| test/runtime.test.ts (12 tests) 867ms
+ ✓ |artifacts| test/file-journal.test.ts (14 tests) 354ms
+ ✓ |share| test/http.test.ts (11 tests) 334ms
+ ✓ |image-generation| test/service.test.ts (7 tests) 373ms
+ ✓ |share| test/aborted-and-fragment.test.ts (2 tests) 245ms
+ ✓ |kernel-adapter| test/events.test.ts (33 tests) 183ms
+ ✓ |scripts| test/web-research.test.mjs (13 tests) 1029ms
+   ✓ 公开网页提取，不运行网页指令或保留交互表单 > 只取正文，保留段落；脚本、隐藏内容和表单值不进入来源  634ms
+ ✓ |gateway| test/server.test.ts (20 tests) 290ms
+ ✓ |identity| test/no-content-schema.test.ts (3 tests) 30ms
+ ✓ |identity| test/signing-keys.test.ts (1 test) 484ms
+   ✓ 签发密钥跨重启 > 第二次打开同一库仍能验第一次签的策略包  482ms
+ ✓ |store| test/projection.test.ts (38 tests) 205ms
+ ✓ |gateway| test/pipeline.test.ts (19 tests) 260ms
+stdout | test/publish-release.test.mjs > 传到本地目录（服务器上的布局） > 文件落在客户端会去找的位置：<channel>/ 下放包与清单，签名在 signatures/
+  ✓ packages：EvoWork-0.0.4-mac-arm64-unsigned.zip · EvoWork-0.0.4-mac-arm64-unsigned.zip.blockmap · EvoWork-0.0.4-mac-arm64-unsigned.dmg
+  ✓ signature：signatures/864d3368fdee07517c2a0848455b05bbd2ab0bd5294f0b205cca45f33b265975.sig
+  ✓ manifest：latest-mac.yml
+
+ ✓ |scripts| test/publish-release.test.mjs (9 tests) 241ms
+ ✓ |kernel-adapter| test/memory-text-import.test.ts (11 tests) 159ms
+ ✓ |desktop| test/update-check.test.ts (22 tests) 1082ms
+ ✓ |protocol| test/jsonrpc.test.ts (22 tests) 132ms
+ ✓ |gateway| test/images.test.ts (10 tests) 339ms
+ ✓ |scripts| test/build-hub-bundle.test.mjs (6 tests) 474ms
+ ✓ |catalog| test/bundles.test.ts (12 tests) 69ms
+ ✓ |hub-client| test/client.test.ts (13 tests) 466ms
+ ✓ |catalog| test/catalog.test.ts (32 tests) 259ms
+ ✓ |ingest| test/office-preview.test.ts (4 tests) 598ms
+ ✓ |eslint-plugin| test/rules.test.js (2 tests) 698ms
+   ✓ no-kernel-internals（K2 边界纪律） > 拒绝 09 §2 列的三条破法，放行协议调用  626ms
+ ✓ |account| test/jwt.test.ts (13 tests) 200ms
+ ✓ |share| test/no-name-column.test.ts (6 tests) 14ms
+ ✓ |scheduler| test/cron.test.ts (16 tests) 211ms
+ ✓ |scheduler| test/scheduler.test.ts (38 tests) 234ms
+ ✓ |gateway| test/known-models.test.ts (14 tests) 352ms
+   ✓ 每一条结论都得说清是怎么来的 > `maxContextTokens` 移出未验证列表，notes 里必须写着实测出的上限  327ms
+ ✓ |ingest| test/ocr.test.ts (5 tests) 353ms
+ ✓ |artifacts| test/wiring.test.ts (18 tests) 155ms
+ ✓ |kernel-adapter| test/memory-import.test.ts (15 tests) 613ms
+ ✓ |kernel-adapter| test/session.test.ts (13 tests) 338ms
+ ✓ |runtime-installer| test/manifest.test.ts (11 tests) 325ms
+ ✓ |scripts| test/kernel-provenance.test.mjs (6 tests) 39ms
+ ✓ |store| test/schema-no-tenancy.test.ts (4 tests) 38ms
+ ✓ |gateway| test/forward.test.ts (3 tests) 18ms
+ ✓ |policy| test/policy.test.ts (47 tests) 79ms
+ ✓ |policy| test/hooks.test.ts (34 tests) 226ms
+ ✓ |hub-protocol| test/hub-protocol.test.ts (20 tests) 72ms
+ ✓ |projects| test/tree.test.ts (22 tests) 44ms
+ ✓ |gateway| test/tenant-models.test.ts (5 tests) 35ms
+ ✓ |logging| test/no-body-in-logs.test.ts (7 tests) 38ms
+ ✓ |kernel-adapter| test/approvals.test.ts (35 tests) 20ms
+ ✓ |tokens| test/contrast.test.ts (20 tests) 22ms
+ ✓ |store| test/projects-repo.test.ts (6 tests) 67ms
+ ✓ |gateway| test/kernel-catalog.test.ts (11 tests) 16ms
+ ✓ |scheduler| test/kernel-bridge.test.ts (14 tests) 67ms
+ ✓ |catalog| test/builtin-skills.test.ts (41 tests) 62ms
+ ✓ |gateway| test/translate.test.ts (58 tests) 38ms
+ ✓ |account| test/policy-pack.test.ts (11 tests) 68ms
+ ✓ |computer-use| test/mcp.test.ts (3 tests) 24ms
+ ✓ |share| test/share.test.ts (19 tests) 47ms
+ ✓ |computer-use| test/computer-use.test.ts (25 tests) 59ms
+ ✓ |logging| test/fields.test.ts (10 tests) 24ms
+ ✓ |logging| test/redact.test.ts (13 tests) 85ms
+ ✓ |artifacts| test/artifacts.test.ts (26 tests) 53ms
+ ✓ |kernel-adapter| test/launcher.test.ts (9 tests) 42ms
+ ✓ |scripts| test/package-plan.test.mjs (10 tests) 14ms
+ ✓ |artifacts| test/share-flow.test.ts (19 tests) 80ms
+ ✓ |kernel-adapter| test/scenario.test.ts (27 tests) 230ms
+ ✓ |account| test/claims.test.ts (4 tests) 8ms
+ ✓ |projects| test/membership.test.ts (20 tests) 14ms
+ ✓ |scripts| test/browser.test.mjs (5 tests) 44ms
+ ✓ |projects| test/cards.test.ts (22 tests) 41ms
+ ✓ |kernel-adapter| test/capabilities.test.ts (18 tests) 21ms
+ ✓ |scripts| test/update-signing.test.mjs (11 tests) 21ms
+ ✓ |catalog| test/hub.test.ts (17 tests) 39ms
+ ✓ |gateway| test/main.test.ts (11 tests) 13ms
+ ✓ |desktop| test/update-manifest.test.ts (10 tests) 17ms
+ ✓ |gateway| test/layers.test.ts (10 tests) 9ms
+ ✓ |kernel-adapter| test/title.test.ts (15 tests) 10ms
+ ✓ |account| test/auth.test.ts (1 test) 23ms
+ ✓ |policy| test/memory-note-receipt.test.ts (3 tests) 7ms
+ ✓ |ingest| test/detect-and-gates.test.ts (22 tests) 85ms
+ ✓ |scripts| test/build-office-bundle.test.mjs (6 tests) 29ms
+ ✓ |account| test/metering.test.ts (2 tests) 11ms
+ ✓ |artifacts| test/task-title.test.ts (7 tests) 12ms
+ ✓ |image-generation| test/input.test.ts (2 tests) 16ms
+ ✓ |policy| test/computer-use-action.test.ts (16 tests) 17ms
+ ✓ |gateway| test/catalog.test.ts (5 tests) 115ms
+ ✓ |gateway| test/custom-models.test.ts (15 tests) 60ms
+ ✓ |account| test/pkce.test.ts (3 tests) 5ms
+ ✓ |account| test/no-content-fields.test.ts (1 test) 10ms
+ ✓ |policy| test/computer-use-requirements.test.ts (8 tests) 15ms
+ ✓ |scripts| test/adhoc-sign.test.mjs (3 tests) 10ms
+ ✓ |gateway| test/providers.test.ts (20 tests) 15ms
+ ↓ |runtime-installer| test/install.e2e.test.ts (2 tests | 2 skipped)
+ ✓ |policy| test/computer-use.test.ts (10 tests) 19ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |desktop| test/app.test.tsx > 结果工作区真实接线 > 磁盘撤销须确认并携带快照版本，成功后重新读取真实差异
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/app.test.tsx:1257:3
+    1255|   });
+    1256|
+    1257|   it('磁盘撤销须确认并携带快照版本，成功后重新读取真实差异', async () => {
+       |   ^
+    1258|     const change = {
+    1259|       path: '/w/app.ts',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |desktop| test/task-workspace.test.tsx > 说明与操作交错显示 > 长操作组追加事件后保留展开选择，操作详情分页挂载
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/task-workspace.test.tsx:346:3
+    344|   });
+    345|
+    346|   it('长操作组追加事件后保留展开选择，操作详情分页挂载', () => {
+       |   ^
+    347|     const commands = Array.from({ length: 130 }, (_, index) => ({
+    348|       id: `c${index}`,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 180 passed | 1 skipped (183)
+      Tests  2 failed | 2915 passed | 2 skipped (2919)
+   Start at  21:05:04
+   Duration  144.98s (transform 60.46s, setup 48.77s, collect 134.76s, tests 414.28s, environment 192.58s, prepare 67.71s)
+
+ ELIFECYCLE  Test failed. See above for more details.
+ ELIFECYCLE  Command failed with exit code 1.

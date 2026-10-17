@@ -291,9 +291,9 @@ name = "UI Gateway"
 base_url = "${gatewayBaseUrl}"
 wire_api = "responses"
 env_key = "EVOWORK_GATEWAY_TOKEN"
-# UI 测试里不要退避重试：一次失败要等好几轮退避，实测把一条用例拖到 11 分钟。
-# 重试本身另有专门的断言（断言型 E2E 的 upstream-retry），这里要的是"失败之后界面长什么样"。
-stream_max_retries = 0
+# 确定性 UI 默认不重试，故障专测可显式配置；真实模型沿用产品模板重试预算。
+# Playwright 本身的重试独立配置，不用关闭内核恢复来模拟发货行为。
+stream_max_retries = ${REAL_MODEL ? readFileSync(join(repoRoot, 'config/config.toml.template'), 'utf8').match(/^stream_max_retries\s*=\s*(\d+)/m)[1] : (process.env.EVOWORK_UI_NATIVE_RETRIES ?? 0)}
 
 [permissions.evowork-workspace]
 extends = ":workspace"

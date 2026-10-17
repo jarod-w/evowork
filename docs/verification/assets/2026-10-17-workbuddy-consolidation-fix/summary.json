@@ -1,0 +1,102 @@
+{
+  "nativeGitUtils": {
+    "passed": 46
+  },
+  "gatewayProvidersAndPipeline": {
+    "passed": 39
+  },
+  "deterministicPlaywright": {
+    "tests": 25,
+    "started": 31,
+    "exited": 4,
+    "unexpectedExits": 0,
+    "passed": 25,
+    "retries": 0,
+    "skipped": 0
+  },
+  "realModel": {
+    "model": "mimo-v2.6-flash",
+    "passed": 1,
+    "minutes": 7.9,
+    "requests": 28,
+    "backgroundRequests": 9,
+    "sourceDiffDelivered": true,
+    "importStates": [
+      "saved",
+      "saved",
+      "saved"
+    ],
+    "cases": [
+      {
+        "name": "TRIGGER",
+        "status": "completed",
+        "requests": 1
+      },
+      {
+        "name": "ALPHA_ON",
+        "status": "completed",
+        "requests": 2
+      },
+      {
+        "name": "BETA_ON",
+        "status": "completed",
+        "requests": 1
+      },
+      {
+        "name": "GAMMA_ON",
+        "status": "completed",
+        "requests": 2
+      },
+      {
+        "name": "TASK_OFF",
+        "status": "completed",
+        "requests": 4
+      },
+      {
+        "name": "GLOBAL_OFF",
+        "status": "completed",
+        "requests": 2
+      },
+      {
+        "name": "CROSS_SCOPE",
+        "status": "completed",
+        "requests": 1
+      }
+    ],
+    "jobs": [
+      {
+        "kind": "memory_consolidate_global",
+        "status": "done",
+        "last_error": null,
+        "retry_remaining": 3
+      }
+    ],
+    "runtime": {
+      "streamMaxRetries": 2,
+      "upstream503Errors": 0,
+      "unsupportedPlanCalls": 1
+    },
+    "kernelStarts": 1,
+    "kernelExits": 0,
+    "retries": 0,
+    "skipped": 0
+  },
+  "fullCheck": {
+    "exitCode": 0,
+    "passed": 2917,
+    "skipped": 2,
+    "testFilesPassed": 182,
+    "testFilesSkipped": 1
+  },
+  "credentialScan": {
+    "files": 140,
+    "bytes": 6177742,
+    "exactCredentialMatches": 0,
+    "matchedPaths": []
+  },
+  "limitations": [
+    "Shared memory summary is visible across projects; scope adherence is not a strict ACL.",
+    "Historical incorrect done summaries are not automatically regenerated or exempted from cooldown.",
+    "macOS arm64 and one live model only; no installer published."
+  ]
+}

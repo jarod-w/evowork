@@ -58,7 +58,7 @@ cd ../codex && git --no-pager log --oneline HEAD..origin/main   # 或用工作�
 
 违反其中任何一条，代价都不是「代码丑」，而是每次上游 rebase 都要重付一遍。
 
-**K1 · 内核不可变。** 不在 `../codex` 里直接改代码。确实无法用扩展点实现时，改动必须落成 `patches/evowork/*.patch`，每个补丁配一份说明「为什么扩展点做不到」。硬上限：**≤ 5 个文件、≤ 500 行**（工作区任务 `evowork: 内核补丁清单自检` 可查）。**已落地 1 个：P6（覆盖已有文件要审批，2026-10-01，外部验收 D1-2）**；设计上待做的还有 P4（对外可见品牌字符串），其余全部靠配置绕过。**补丁只存在于 `scripts/build-kernel.mjs` 编出来的内核里**（导出 HEAD → 打补丁 → 编，`../codex` 不动），打包与 E2E 会核对它旁边的 `KERNEL_PROVENANCE.json`，直接编 `../codex` 的内核会被拒。原 P3（`ask.md` 模式模板）已删除：F1 实测 `turn/start.collaborationMode.settings.developer_instructions` 可纯配置注入模式指令，文本随 EvoWork 分发在 `config/modes/*.md`，不进内核仓库。Q45 之后 Composer 主路径只下发 craft 指令。
+**K1 · 内核不可变。** 不在 `../codex` 里直接改代码。确实无法用扩展点实现时，改动必须落成 `patches/evowork/*.patch`，每个补丁配一份说明「为什么扩展点做不到」。硬上限：**≤ 5 个文件、≤ 500 行**（工作区任务 `evowork: 内核补丁清单自检` 可查）。**已落地 2 个：P6（覆盖已有文件要审批，2026-10-01）与 P7（首轮记忆基线保留来源，2026-10-17）**；设计上待做的还有 P4（对外可见品牌字符串），其余全部靠配置绕过。**补丁只存在于 `scripts/build-kernel.mjs` 编出来的内核里**（导出 HEAD → 打补丁 → 编，`../codex` 不动），打包与 E2E 会核对它旁边的 `KERNEL_PROVENANCE.json`，直接编 `../codex` 的内核会被拒。原 P3（`ask.md` 模式模板）已删除：F1 实测 `turn/start.collaborationMode.settings.developer_instructions` 可纯配置注入模式指令，文本随 EvoWork 分发在 `config/modes/*.md`，不进内核仓库。Q45 之后 Composer 主路径只下发 craft 指令。
 
 **K2 · 唯一边界是 app-server JSON-RPC v2。** 前端与服务层只说这个协议，不链接 Rust、不调 SDK 内部、不读内核的 sqlite/rollout 文件。协议定义在 `../codex/codex-rs/app-server-protocol/src/protocol/v2/`。初始化时声明 `capabilities.experimentalApi = true` 才能用 `project/*`、`thread/queue/*`、`goal`、timeline 等实验方法；实验方法一律在服务层收一层适配，不让前端直接依赖。
 
@@ -137,7 +137,7 @@ evowork/
                          image-generation/ 按 IMG-Q3 获准、尚未实现（15），不开放国内办公生态集成
     hooks/               策略包 `evowork-policy/`：四个事件的 I/O 壳，**决策在 `services/policy`**（放脚本里就测不了）
   config/                config.toml 模板 · requirements.toml · 权限 profile · 模式模板
-  patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；当前 1 个：P6）
+  patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；当前 2 个：P6 / P7）
   build/                 M9 打包：electron-builder 配置 · entitlements。**是源码不是产物**
   scripts/               漂移雷达（含 F1–F25 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
   tools/                 开发期工具（eslint 规则：K2 边界 + token-only 样式）

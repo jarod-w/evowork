@@ -1,0 +1,39 @@
+[
+  {
+    "home": "evowork-ui-qn8fb3",
+    "runtime": {
+      "streamMaxRetries": 0,
+      "upstream503Errors": 1,
+      "unsupportedPlanCalls": 1
+    },
+    "jobs": [
+      {
+        "kind": "memory_consolidate_global",
+        "status": "error",
+        "last_error": "failed_agent",
+        "retry_remaining": 2
+      }
+    ],
+    "consolidated": null
+  },
+  {
+    "home": "evowork-ui-gojFRb",
+    "runtime": {
+      "streamMaxRetries": 0,
+      "upstream503Errors": 0,
+      "unsupportedPlanCalls": 1
+    },
+    "jobs": [
+      {
+        "kind": "memory_consolidate_global",
+        "status": "done",
+        "last_error": null,
+        "retry_remaining": 3
+      }
+    ],
+    "consolidated": {
+      "summary": "v1\n\n## User Profile\n\n- No durable user-profile evidence is available yet.\n\n## User preferences\n\n- No evidence-backed user preferences have been recorded yet.\n\n## General Tips\n\n- Read `phase2_workspace_diff.md` before future consolidation runs; this memory set is newly initialized and has no rollout evidence.\n\n## What's in Memory\n\n- No task-group topics yet.\n",
+      "memory": "# Memory Handbook\n\nNo consolidated memories are available yet. Phase 1 produced an empty `raw_memories.md`, and no rollout summaries or ad-hoc notes are present.\n"
+    }
+  }
+]

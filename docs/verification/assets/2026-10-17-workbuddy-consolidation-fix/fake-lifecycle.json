@@ -1,0 +1,80 @@
+[
+  {
+    "test": "workbuddy-memory-导入中主动终止测试内核，恢复后未知批次不重放-fake",
+    "events": [
+      {
+        "kind": "started",
+        "pid": 49983,
+        "at": 1792245444397
+      },
+      {
+        "kind": "intentional-kill",
+        "pid": 49983,
+        "at": 1792245445616
+      },
+      {
+        "kind": "exited",
+        "pid": 49983,
+        "code": null,
+        "signal": "SIGKILL",
+        "intentional": true,
+        "at": 1792245445619
+      },
+      {
+        "kind": "started",
+        "pid": 49994,
+        "at": 1792245446631
+      }
+    ]
+  },
+  {
+    "test": "workbuddy-memory-模型只声称成功仍显示未确认，重复提交不重放-fake",
+    "events": [
+      {
+        "kind": "started",
+        "pid": 49955,
+        "at": 1792245442347
+      }
+    ]
+  },
+  {
+    "test": "workbuddy-memory-原生-note-后续整理进入新任务，禁读不注入，无内核重启-fake",
+    "events": [
+      {
+        "kind": "started",
+        "pid": 49501,
+        "at": 1792245435082
+      }
+    ]
+  },
+  {
+    "test": "workbuddy-memory-后台整理瞬时故障恢复-503-后同一整理作业重试成功、记忆进入新任务且不重启内核-fake",
+    "events": [
+      {
+        "kind": "started",
+        "pid": 49732,
+        "at": 1792245438756
+      }
+    ]
+  },
+  {
+    "test": "workbuddy-memory-拒绝无效-UTF-8、超大文件和不可用模型，预览不执行-HTML-fake",
+    "events": [
+      {
+        "kind": "started",
+        "pid": 50003,
+        "at": 1792245447741
+      }
+    ]
+  },
+  {
+    "test": "workbuddy-memory-WorkBuddy-文本和文件预览取消零提交，个人-项目保存、去重、设置历史及窄窗-fake",
+    "events": [
+      {
+        "kind": "started",
+        "pid": 49421,
+        "at": 1792245429081
+      }
+    ]
+  }
+]

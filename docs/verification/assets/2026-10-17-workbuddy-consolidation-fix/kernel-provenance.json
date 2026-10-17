@@ -1,0 +1,16 @@
+{
+  "codexCommit": "d583e73c4d1204f1e9f654ef87065e9f0dd07ac7",
+  "profile": "release",
+  "patches": [
+    {
+      "name": "0001-exec-overwrite-approval.patch",
+      "sha256": "32b08755d1d1d03f42a2fd4c47a4670810e2c9aba785023864c18761c3c015f2"
+    },
+    {
+      "name": "0002-memory-initial-baseline.patch",
+      "sha256": "6ddfbf1331620f4da1f8753f2a14c25f6e906c2a6b78de42c4eb6271b1632f4a"
+    }
+  ],
+  "binarySha256": "b6282c153346fbf4d8f37a595a259d3015c6a31b9c14e452c28c1e2975f561d7",
+  "builtAt": "2026-10-17T13:56:53.813Z"
+}

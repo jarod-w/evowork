@@ -160,6 +160,14 @@ export function createFakeGateway({
       'cache-control': 'no-cache',
     });
     sendEvent(response, { type: 'response.created', response: { id } });
+    if (script.kind === 'fail') {
+      sendEvent(response, {
+        type: 'response.failed',
+        response: { id, error: { code: script.code, message: script.text } },
+      });
+      response.end('data: [DONE]\n\n');
+      return;
+    }
     if (script.kind === 'hold') {
       // 回一句话就**挂着不收尾** —— 回合会一直"在跑"，正好用来点停止 / 插话
       sendEvent(response, {

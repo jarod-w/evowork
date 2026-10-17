@@ -1,0 +1,26 @@
+
+Running 19 tests using 1 worker
+
+(node:51697) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [fake] › apps/desktop/test/e2e/ui/memories.spec.mjs:3:1 › /memories 从补全和手输打开，取消不保存，禁读在真实任务中生效 (4.1s)
+  ✓   2 [fake] › apps/desktop/test/e2e/ui/memory-import-restart.spec.mjs:17:1 › 整个应用关闭重开，项目记忆、读取设置、原生历史和去重均保持 (5.3s)
+  ✓   3 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:70:1 › 设置及 /import 共用向导，取消零写入、仅选中项目、保留开关、去重与历史恢复 (4.2s)
+  ✓   4 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:167:1 › 发货内核实际整理导入资料，新任务收到记忆索引，禁读任务不注入 (2.9s)
+  ✓   5 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:266:1 › 原生批次部分失败时保留成功项目并显示失败原因，可重新检测重试 (2.0s)
+  ✓   6 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:298:1 › 空来源及缺少可靠项目目录时无候选，重新检测可发现新增项目 (1.7s)
+  ✓   7 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:319:1 › 返回修改项目及取消零写入，个性化入口保持原生成和模型设置，新建任务可达 (2.4s)
+  ✓   8 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:372:1 › 手动更新同步来源修改和删除，检测前不自动同步，历史与来源保持可追溯 (2.1s)
+  ✓   9 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:409:1 › 确认时来源已删除则拒绝写入，可重新检测导入剩余项目 (1.8s)
+  ✓  10 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:426:1 › 确认前内核重启使旧选择失效，拒绝零写入，重新检测可恢复 (3.1s)
+  ✓  11 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:443:1 › 长项目列表在宽中窄窗口可滚动到最后项目，确认按钮和键盘焦点始终可达 (2.5s)
+  ✓  12 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:497:1 › 模型网关不可用时 /import 仍在本地工作，复制成功且不创建模型任务 (1.8s)
+  ✓  13 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:517:3 › 原生写入后丢失响应 › 未知结果不重放，原生历史可核对真实成功，重新检测去重 (22.3s)
+  ✓  14 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:553:3 › 显式关闭记忆导入 › 升级保留关闭设置，入口明确说明且不允许检测 (1.7s)
+  ✓  15 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:565:1 › 自动同步默认关闭、限定已授权项目，定时同步更新和删减，关闭后停止 (2.1m)
+  ✓  16 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:629:1 › 原生结构化记忆引用在实时消息和刷新历史中显示 (2.5s)
+  ✓  17 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:657:1 › V2 整理状态读取真实整体就绪接口，不把零任务显示为正在整理 (3.0s)
+  ✓  18 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:684:1 › 自动同步遇到原生复制失败会暂停，历史保留失败结果 (2.0s)
+  ✓  19 [fake] › apps/desktop/test/e2e/ui/memory-import.spec.mjs:707:3 › 自动同步原生响应丢失 › 已写入但结果未知时暂停，核对历史后才显式恢复，无自动重放 (1.4m)
+
+  19 passed (4.6m)

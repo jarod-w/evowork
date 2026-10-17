@@ -124,3 +124,7 @@ EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash node node_modules/@playwright/test/cli.j
 ```
 
 最终精确凭据扫描覆盖 **25,161 个文件、423,435,047 字节，0 命中**：含五轮日志/证据、补测产物、失败保留 HOME 及当前变更文件。扫描使用隐藏输入进行字节级比对，不输出正文或密钥。见[扫描结果](assets/2026-10-17-workbuddy-memory-import/real-secret-scan.json)。
+
+## 后续修复验收
+
+后续已定位 503/测试流重试配置与首轮基线漏纳入两个根因，P7、网关和测试夹具修复后，新的发货内核 MiMo 完整旅程通过。本记录的失败现场与当时结论保留；修复、真实 diff、七个新任务及零意外重启证据见[整理修复记录](2026-10-17-workbuddy-consolidation-fix.md)。

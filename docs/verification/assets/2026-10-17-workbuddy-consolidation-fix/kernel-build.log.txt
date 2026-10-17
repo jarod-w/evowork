@@ -1,0 +1,98 @@
+▸ 导出 /Users/wangli/develop/evowork/codex @ d583e73c4d → /Users/wangli/develop/evowork/evowork/build/.kernel-src
+▸ 打补丁 0001-exec-overwrite-approval.patch
+▸ 打补丁 0002-memory-initial-baseline.patch
+▸ cargo build -p codex-app-server（release）
+   Compiling codex-git-utils v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/git-utils)
+   Compiling codex-shell-command v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/shell-command)
+   Compiling codex-exec-server-protocol v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/exec-server-protocol)
+   Compiling codex-skills v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/skills)
+   Compiling codex-memories-read v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/memories/read)
+   Compiling codex-utils-cli v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/cli)
+   Compiling codex-config v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/config)
+   Compiling codex-secrets v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/secrets)
+   Compiling codex-rollout v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/rollout)
+   Compiling codex-prompts v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/prompts)
+   Compiling codex-utils-git-discovery v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/git-discovery)
+   Compiling codex-app-server-protocol v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/app-server-protocol)
+   Compiling codex-exec-server v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/exec-server)
+   Compiling codex-login v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/login)
+   Compiling codex-agent-roles v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/agent-roles)
+   Compiling codex-utils-plugins v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/plugins)
+   Compiling codex-plugin v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/plugin)
+   Compiling codex-models-manager v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/models-manager)
+   Compiling codex-feedback v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/feedback)
+   Compiling codex-model-provider v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/model-provider)
+   Compiling codex-connectors v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/connectors)
+   Compiling codex-rmcp-client v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/rmcp-client)
+   Compiling codex-tools v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/tools)
+   Compiling codex-mcp v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/codex-mcp)
+   Compiling codex-analytics v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/analytics)
+   Compiling codex-extension-api v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/extension-api)
+   Compiling codex-hooks v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/hooks)
+   Compiling codex-core-plugins v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/core-plugins)
+   Compiling codex-apply-patch v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/apply-patch)
+   Compiling codex-guardian-reviewer v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/guardian-reviewer)
+   Compiling codex-agent-message-board-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/agent-message-board)
+   Compiling codex-skills-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/skills)
+   Compiling codex-thread-store v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/thread-store)
+   Compiling codex-backend-client v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/backend-client)
+   Compiling codex-connectors-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/connectors)
+   Compiling codex-cloud-config v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/cloud-config)
+   Compiling codex-core v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/core)
+   Compiling codex-git-attribution v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/git-attribution)
+   Compiling codex-arg0 v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/arg0)
+   Compiling codex-home v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/codex-home)
+   Compiling codex-memories-write v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/memories/write)
+   Compiling codex-memories-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/memories)
+   Compiling codex-guardian-v2 v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/guardian-v2)
+   Compiling codex-goal-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/goal)
+   Compiling codex-app-server-transport v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/app-server-transport)
+   Compiling codex-agent-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/agent)
+   Compiling codex-image-generation-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/image-generation)
+   Compiling codex-queue-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/queue)
+   Compiling codex-external-agent-migration v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/external-agent-migration)
+   Compiling codex-web-search-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/web-search)
+   Compiling codex-chatgpt v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/chatgpt)
+   Compiling codex-mcp-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/mcp)
+   Compiling codex-history-notes-extension v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/history-notes)
+   Compiling codex-app-server v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/app-server)
+warning: variable does not need to be mutable
+    --> app-server/src/lib.rs:1485:5
+     |
+1485 |     mut loader_overrides: LoaderOverrides,
+     |     ----^^^^^^^^^^^^^^^^
+     |     |
+     |     help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `codex-app-server` (lib) generated 1 warning (run `cargo fix --lib -p codex-app-server` to apply 1 suggestion)
+cargo(46298) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+cargo(46299) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+cargo(46300) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+cargo(46301) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+warning: unused import: `codex_app_server::PluginStartupTasks`
+ --> app-server/src/main.rs:8:5
+  |
+8 | use codex_app_server::PluginStartupTasks;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MANAGED_CONFIG_PATH_ENV_VAR` is never used
+  --> app-server/src/main.rs:27:7
+   |
+27 | const MANAGED_CONFIG_PATH_ENV_VAR: &str = "CODEX_APP_SERVER_MANAGED_CONFIG_PATH";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `DISABLE_MANAGED_CONFIG_ENV_VAR` is never used
+  --> app-server/src/main.rs:28:7
+   |
+28 | const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `codex-app-server` (bin "codex-app-server") generated 3 warnings (run `cargo fix --bin "codex-app-server" -p codex-app-server` to apply 1 suggestion)
+    Finished `release` profile [optimized + debuginfo] target(s) in 75m 10s
+▸ 完成：/Users/wangli/develop/evowork/evowork/build/kernel/mac-arm64/codex-app-server（来源见同目录 KERNEL_PROVENANCE.json）

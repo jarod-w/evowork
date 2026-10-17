@@ -353,6 +353,17 @@ async function collectJson(lines: AsyncIterable<string>): Promise<unknown> {
   try {
     return JSON.parse(text);
   } catch {
+    // A non-2xx response can still contain an SSE error envelope (MiMo 503).
+    for (const line of parts) {
+      const payload = parseSseData(line);
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const frame: unknown = JSON.parse(payload);
+        if (typeof frame === 'object' && frame !== null && 'error' in frame) return frame;
+      } catch {
+        // Keep the original bounded provider-error fallback for non-JSON error bodies.
+      }
+    }
     return text;
   }
 }

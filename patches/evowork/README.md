@@ -3,10 +3,11 @@
 **硬上限：≤ 5 个文件、≤ 500 行。** `pnpm run check:kernel-budget`（`scripts/patch-budget.mjs`）
 在每次 CI 上算这笔账。
 
-**当前清单：1 个补丁、2 个文件。**
+**当前清单：2 个补丁、4 个文件、208 行。**
 
 | 补丁 | 总纲 | 内容 |
 | ---- | ---- | ---- |
+| `0002-memory-initial-baseline` | §7 P7 | 首次/损坏恢复建立空树基线，现存记忆来源仍进入首轮整理 diff；成功整理后才快照当前树 |
 | `0001-exec-overwrite-approval` | §7 P6 | shell 命令截断写一个已存在的文件时要审批（外部验收 D1-2，2026-10-01 用户批准） |
 
 **怎么编进去**：`node scripts/build-kernel.mjs` 把 `../codex` 的 HEAD 导出到 `build/.kernel-src/`、

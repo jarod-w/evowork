@@ -1,0 +1,20 @@
+
+Running 1 test using 1 worker
+
+(node:50169) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+WorkBuddy import personal: trusted native receipt confirmed
+WorkBuddy import alpha: trusted native receipt confirmed
+WorkBuddy import beta: trusted native receipt confirmed
+WorkBuddy case TRIGGER: completed, requests=1
+WorkBuddy case ALPHA_ON: completed, requests=2
+WorkBuddy case BETA_ON: completed, requests=1
+WorkBuddy case GAMMA_ON: completed, requests=2
+WorkBuddy case TASK_OFF: completed, requests=4
+WorkBuddy case GLOBAL_OFF: completed, requests=2
+WorkBuddy case CROSS_SCOPE: completed, requests=1
+  ✓  1 [real] › apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs:18:1 › MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使用、两种禁读和零内核重启 (7.9m)
+
+  Slow test file: [real] › apps/desktop/test/e2e/ui/workbuddy-memory.real.spec.mjs (7.9m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  1 passed (7.9m)

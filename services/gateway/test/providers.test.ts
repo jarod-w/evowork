@@ -182,3 +182,19 @@ describe('上下文超长：按报错原文认', () => {
     expect(DEEPSEEK.mapError(503, textOnly).code).toBe(UPSTREAM_DISCONNECTED);
   });
 });
+
+describe('流内 HTTP 错误码（MiMo 503 现场）', () => {
+  it.each(['503', 503])('HTTP 200 中的 %s 仍按可重试服务故障处理', (code) => {
+    expect(
+      PRIVATE.mapError(200, {
+        code,
+        type: 'ServiceUnavailableError',
+        message: 'Internal Server Error',
+      }).code,
+    ).toBe(UPSTREAM_DISCONNECTED);
+  });
+  it('流内 401 不应盲目重试，非 HTTP 的厂商码仍走原有映射', () => {
+    expect(PRIVATE.mapError(200, { code: '401', message: 'bad key' }).code).toBe('invalid_prompt');
+    expect(ZHIPU.mapError(200, { code: '1113', message: 'quota' }).code).toBe('insufficient_quota');
+  });
+});

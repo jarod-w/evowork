@@ -1,0 +1,93 @@
+
+running 46 tests
+test apply::tests::apply_modify_conflict ... ok
+test apply::tests::apply_add_success ... ok
+test apply::tests::apply_modify_skipped_missing_index ... ok
+test apply::tests::extract_paths_handles_quoted_headers ... ok
+test apply::tests::extract_paths_ignores_dev_null_header ... ok
+test apply::tests::extract_paths_unescapes_c_style_in_quoted_headers ... ok
+test apply::tests::parse_output_unescapes_quoted_paths ... ok
+test apply::tests::apply_then_revert_success ... ok
+test apply::tests::preflight_blocks_partial_changes ... ok
+test baseline::tests::diff_reports_added_modified_and_deleted_files ... ok
+test baseline::tests::ensure_recovers_from_unborn_repository ... ok
+test baseline::tests::first_baseline_exposes_existing_extension_notes_until_successful_reset ... ok
+test baseline::tests::reports_executable_bit_changes_as_modified ... ok
+test apply::tests::revert_preflight_does_not_stage_index ... ok
+test baseline::tests::reset_creates_fresh_baseline ... ok
+test baseline::tests::status_scan_does_not_write_added_file_blobs ... ok
+test baseline::tests::reset_drops_previous_history ... ok
+Initialized empty Git repository in /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/.tmpIolQJw/remote.git/
+Initialized empty Git repository in /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/.tmpIolQJw/repo/.git/
+test baseline::tests::write_index_ignores_configured_hooks_path ... ok
+Initialized empty Git repository in /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/.tmpnrC5Wz/.git/
+[main (root-commit) a7e4780] base commit
+ 1 file changed, 1 insertion(+)
+ create mode 100644 base.txt
+[main (root-commit) f6a366e] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 tracked.txt
+test branch::tests::merge_base_returns_none_when_branch_missing ... ok
+To /var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/.tmpIolQJw/remote.git
+ * [new branch]      main -> main
+branch 'main' set up to track 'origin/main'.
+Initialized empty Git repository in /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/.tmpCzPKDv/.git/
+Switched to a new branch 'feature'
+[main (root-commit) a7e4780] base commit
+ 1 file changed, 1 insertion(+)
+ create mode 100644 base.txt
+[feature f78896f] feature commit
+ 1 file changed, 1 insertion(+)
+ create mode 100644 feature.txt
+Switched to a new branch 'feature'
+Switched to a new branch 'rewrite'
+rm 'base.txt'
+rm 'feature.txt'
+[feature f78896f] feature commit
+ 1 file changed, 1 insertion(+)
+ create mode 100644 feature.txt
+[rewrite (root-commit) 8d7bcff] rewrite main
+ 1 file changed, 1 insertion(+)
+ create mode 100644 new-main.txt
+Switched to branch 'main'
+branch 'main' set up to track 'origin/main'.
+[main cf698d2] main commit
+ 1 file changed, 1 insertion(+)
+ create mode 100644 main.txt
+Switched to branch 'feature'
+Switched to branch 'feature'
+test branch::tests::merge_base_returns_shared_commit ... ok
+test fsmonitor::tests::detects_supported_builtin_fsmonitor_values ... ok
+test branch::tests::merge_base_prefers_upstream_when_remote_ahead ... ok
+test git_process::tests::timed_out_exited_git_wrapper_does_not_leave_child_process_running ... ok
+test info::tests::canonicalize_git_remote_url_handles_ghe_without_lowercasing_path ... ok
+test info::tests::canonicalize_git_remote_url_normalizes_github_variants ... ok
+test info::tests::canonicalize_git_remote_url_rejects_non_repository_values ... ok
+test git_process::tests::timed_out_git_wrapper_does_not_leave_child_process_running ... ok
+test info::tests::fsmonitor_override_rejects_configured_helper ... ok
+test info::tests::fsmonitor_override_uses_effective_layered_config_value ... ok
+
+running 1 test
+test info::tests::git_metadata_commands_do_not_inherit_stdin ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.18s
+
+test info::tests::git_metadata_commands_do_not_inherit_stdin ... ok
+test info::tests::git_metadata_collection_sanitizes_rewritten_remote_credentials ... ok
+test info::tests::parse_git_remote_urls_sanitizes_fetch_credentials ... ok
+test info::tests::parse_git_remote_urls_skips_malformed_entries ... ok
+test status::tests::canceling_one_consumer_preserves_the_shared_status_scan ... ok
+test status::tests::canceling_the_last_consumer_allows_a_fresh_status_scan ... ok
+test status::tests::completed_status_requests_are_not_reused_while_a_consumer_retains_them ... ok
+test status::tests::completed_status_requests_start_fresh_scans_and_prune_expired_entries ... ok
+test status::tests::concurrent_status_requests_share_one_repository_scan ... ok
+test status::tests::status_keys_coalesce_symlink_aliases_of_the_same_worktree ... ok
+test status::tests::status_requests_do_not_share_different_repositories ... ok
+test status::tests::status_requests_from_sibling_directories_use_the_known_worktree_root ... ok
+test worktree::tests::linked_worktree_discovery_preserves_logical_working_directory_aliases ... ok
+test worktree::tests::linked_worktree_discovery_rejects_mismatched_backlinks ... ok
+test worktree::tests::linked_worktree_discovery_rejects_relative_directory_symlink_escapes ... ok
+test worktree::tests::repository_identity_is_shared_by_primary_and_linked_checkouts ... ok
+test info::tests::local_git_branches_excludes_detached_head_entry ... ok
+
+test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.83s

@@ -1,0 +1,209 @@
+   Compiling lock_api v0.4.14
+   Compiling subtle v2.6.1
+   Compiling typenum v1.20.0
+   Compiling generic-array v0.14.7
+   Compiling serde_json v1.0.149
+   Compiling getrandom v0.3.4
+   Compiling tracing v0.1.44
+   Compiling syn v3.0.3
+   Compiling futures-io v0.3.34
+   Compiling parking_lot v0.12.5
+   Compiling getrandom v0.4.2
+   Compiling unicode-normalization v0.1.25
+   Compiling tinystr v0.8.3
+   Compiling tokio v1.52.3
+   Compiling gix-utils v0.3.1
+   Compiling prodash v31.0.0
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling icu_locale_core v2.2.0
+   Compiling digest v0.10.7
+   Compiling sha1 v0.10.6
+   Compiling gix-features v0.46.2
+   Compiling rustix v1.1.4
+   Compiling either v1.15.0
+   Compiling rand_core v0.9.5
+   Compiling itertools v0.14.0
+   Compiling sha1-checked v0.10.0
+   Compiling rand_chacha v0.9.0
+   Compiling icu_provider v2.2.0
+   Compiling rand v0.9.3
+   Compiling futures-macro v0.3.34
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling uuid v1.20.0
+   Compiling tempfile v3.27.0
+   Compiling zeroize v1.8.2
+   Compiling futures-util v0.3.34
+   Compiling gix-hash v0.23.0
+   Compiling ahash v0.8.12
+   Compiling ring v0.17.14
+   Compiling sha2 v0.10.9
+   Compiling spin v0.9.8
+   Compiling time v0.3.47
+   Compiling rustls-pki-types v1.14.0
+   Compiling idna_adapter v1.2.1
+   Compiling idna v1.1.0
+   Compiling flume v0.12.0
+   Compiling num-integer v0.1.46
+   Compiling getrandom v0.2.17
+   Compiling aws-lc-rs v1.18.1
+   Compiling url v2.5.8
+   Compiling num-bigint v0.4.6
+   Compiling tokio-util v0.7.18
+   Compiling rama-utils v0.3.0-alpha.4
+   Compiling tokio-graceful v0.2.2
+   Compiling futures-executor v0.3.34
+   Compiling gix-hashtable v0.13.0
+   Compiling security-framework-sys v2.15.0
+   Compiling futures v0.3.34
+   Compiling rama-core v0.3.0-alpha.4
+   Compiling memchr v2.8.1
+   Compiling gix-object v0.58.0
+   Compiling serde_core v1.0.228
+   Compiling rustls v0.23.45
+   Compiling h2 v0.4.16
+   Compiling serde v1.0.228
+   Compiling aho-corasick v1.1.4
+   Compiling schemars v0.8.22
+   Compiling regex-automata v0.4.13
+   Compiling rama-http-types v0.3.0-alpha.4
+   Compiling gix-fs v0.19.2
+   Compiling rand v0.10.1
+   Compiling moka v0.12.13
+   Compiling quickcheck v1.1.0
+   Compiling regex v1.12.3
+   Compiling lock_free_hashtable v0.1.4
+   Compiling asn1-rs v0.7.1
+   Compiling security-framework v3.5.1
+   Compiling hickory-proto v0.25.2
+   Compiling ts-rs v11.1.0
+   Compiling rama-net v0.3.0-alpha.4
+   Compiling rustls-webpki v0.103.15
+   Compiling arrayvec v0.7.6
+   Compiling allocative v0.3.6
+   Compiling blake3 v1.8.2
+   Compiling dashmap v6.1.0
+   Compiling codex-utils-absolute-path v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/absolute-path)
+   Compiling hyper v1.8.1
+   Compiling rustls-native-certs v0.8.3
+   Compiling hickory-resolver v0.25.2
+   Compiling schemafy_core v0.5.2
+   Compiling static_interner v0.1.2
+   Compiling sorted_vector_map v0.2.1
+   Compiling Inflector v0.11.4
+   Compiling gix-tempfile v21.0.2
+   Compiling security-framework v2.11.1
+   Compiling pagable v0.4.1
+   Compiling gix-lock v21.0.2
+   Compiling native-tls v0.2.14
+   Compiling hyper-util v0.1.20
+   Compiling rama-dns v0.3.0-alpha.4
+   Compiling rama-http-headers v0.3.0-alpha.4
+   Compiling schemafy_lib v0.5.2
+   Compiling tokio-rustls v0.26.4
+   Compiling oid-registry v0.8.1
+   Compiling der-parser v10.0.0
+   Compiling tokio-stream v0.1.18
+   Compiling clap_builder v4.5.58
+   Compiling rama-tcp v0.3.0-alpha.4
+   Compiling x509-parser v0.18.1
+   Compiling tokio-test v0.4.5
+   Compiling rama-http v0.3.0-alpha.4
+   Compiling tracing-subscriber v0.3.22
+   Compiling tower v0.5.3
+   Compiling starlark_map v0.14.2
+   Compiling schemafy v0.5.2
+   Compiling cookie v0.18.1
+   Compiling flate2 v1.1.8
+   Compiling lsp-types v0.97.0
+   Compiling tokio-native-tls v0.3.1
+   Compiling gix-commitgraph v0.35.0
+   Compiling yasna v0.6.0
+   Compiling publicsuffix v2.3.0
+   Compiling fd-lock v4.0.4
+   Compiling gix-quote v0.7.0
+   Compiling opentelemetry v0.31.0
+   Compiling rustyline v14.0.0
+   Compiling display_container v0.9.0
+   Compiling rcgen v0.14.9
+   Compiling gix-revwalk v0.29.0
+   Compiling cookie_store v0.22.1
+   Compiling clap v4.5.58
+   Compiling png v0.18.0
+   Compiling hyper-tls v0.6.0
+   Compiling debugserver-types v0.5.0
+   Compiling tower-http v0.6.8
+   Compiling hyper-rustls v0.27.7
+   Compiling codex-utils-rustls-provider v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/rustls-provider)
+   Compiling rama-http-core v0.3.0-alpha.4
+   Compiling rama-unix v0.3.0-alpha.4
+   Compiling rama-udp v0.3.0-alpha.4
+   Compiling gix-ref v0.61.0
+   Compiling webpki-roots v1.0.5
+   Compiling codex-utils-path-uri v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/path-uri)
+   Compiling codex-utils-cache v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/cache)
+   Compiling rama-tls-rustls v0.3.0-alpha.4
+   Compiling reqwest v0.12.28
+   Compiling rama-socks5 v0.3.0-alpha.4
+   Compiling icu_locale v2.2.0
+   Compiling image v0.25.9
+   Compiling tracing-opentelemetry v0.32.1
+   Compiling rama-http-backend v0.3.0-alpha.4
+   Compiling gix-command v0.8.0
+   Compiling codex-utils-home-dir v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/home-dir)
+   Compiling rand_regex v0.18.1
+   Compiling gix-glob v0.24.0
+   Compiling codex-utils-string v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/string)
+   Compiling codex-network-proxy v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/network-proxy)
+   Compiling starlark_syntax v0.14.2
+   Compiling icu_decimal v2.2.0
+   Compiling codex-utils-image v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/image)
+   Compiling gix-pack v0.68.0
+   Compiling gix-transport v0.55.1
+   Compiling codex-http-client v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/http-client)
+   Compiling starlark v0.14.2
+   Compiling gix-revision v0.43.0
+   Compiling gix-shallow v0.10.0
+   Compiling codex-extension-items v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/ext/items)
+   Compiling codex-utils-redacted-string v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/redacted-string)
+   Compiling codex-async-utils v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/async-utils)
+   Compiling strum v0.27.2
+   Compiling gix-config v0.54.0
+   Compiling gix-protocol v0.59.0
+   Compiling gix-refspec v0.39.0
+   Compiling gix-odb v0.78.0
+   Compiling gix-discover v0.49.0
+   Compiling gix-traverse v0.55.0
+   Compiling gix-diff v0.61.0
+   Compiling yansi v1.0.1
+   Compiling diff v0.1.13
+   Compiling pretty_assertions v1.4.1
+   Compiling gix v0.81.0
+   Compiling codex-utils-pty v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/utils/pty)
+   Compiling codex-execpolicy v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/execpolicy)
+   Compiling codex-protocol v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/protocol)
+   Compiling codex-file-system v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/file-system)
+   Compiling codex-git-utils v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/git-utils)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2m 34s
+     Running unittests src/lib.rs (/Users/wangli/develop/evowork/evowork/build/.kernel-target/release/deps/codex_git_utils-b57a586062194275)
+
+running 1 test
+test baseline::tests::first_baseline_exposes_existing_extension_notes_until_successful_reset ... FAILED
+
+failures:
+
+---- baseline::tests::first_baseline_exposes_existing_extension_notes_until_successful_reset stdout ----
+
+thread 'baseline::tests::first_baseline_exposes_existing_extension_notes_until_successful_reset' (153328) panicked at git-utils/src/baseline.rs:580:9:
+assertion failed: diff.changes.iter().any(|c|
+        c.path == note && c.status == GitBaselineChangeStatus::Added)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    baseline::tests::first_baseline_exposes_existing_extension_notes_until_successful_reset
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p codex-git-utils --lib`

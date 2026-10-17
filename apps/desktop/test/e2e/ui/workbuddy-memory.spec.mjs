@@ -6,6 +6,7 @@ import {
   workbuddyNotes,
   workbuddyConsolidationCommand,
 } from '../../../../../services/kernel-adapter/test-support/workbuddy-memory-fixture.mjs';
+import { memoryRuntimeDiagnostics } from '../../../../../services/kernel-adapter/test-support/memory-fixture.mjs';
 import { consolidatedMemory } from '../../../../../services/kernel-adapter/test-support/claude-memory-fixture.mjs';
 
 async function fixture(electronApp) {
@@ -163,7 +164,7 @@ test('WorkBuddy 文本和文件预览取消零提交，个人/项目保存、去
   ).not.toContain('violet');
 });
 
-test('原生 note 后续整理进入新任务，禁读不注入，无内核重启', async ({ page, electronApp }) => {
+async function verifyConsolidation(page, electronApp, injectRetry = false) {
   const f = await fixture(electronApp);
   const dialog = await open(page);
   await installModel(electronApp);
@@ -181,18 +182,31 @@ test('原生 note 后续整理进入新任务，禁读不注入，无内核重�
       }),
     model,
   );
-  await electronApp.evaluate((_, cmd) => {
-    const g = globalThis.__evoworkE2E.gateway;
-    g.scriptWhen(
-      'wb-consolidation',
-      (v) => v.text.includes('phase2_workspace_diff.md') && !v.calls.includes('exec_command'),
-      { tool: 'exec_command', args: { cmd } },
-    );
-    g.scriptWhen('wb-consolidation-done', (v) => v.text.includes('WORKBUDDY_EVIDENCE_READ'), {
-      kind: 'text',
-      text: 'WorkBuddy notes consolidated.',
-    });
-  }, workbuddyConsolidationCommand);
+  await electronApp.evaluate(
+    (_, { cmd, injectRetry }) => {
+      const g = globalThis.__evoworkE2E.gateway;
+      if (injectRetry)
+        g.scriptWhen(
+          'wb-consolidation-503',
+          (v) => v.text.includes('## Memory Writing Agent: Phase 2 (Consolidation)'),
+          {
+            kind: 'fail',
+            code: 'upstream_disconnected',
+            text: 'Synthetic MiMo ServiceUnavailableError 503',
+          },
+        );
+      g.scriptWhen(
+        'wb-consolidation',
+        (v) => v.text.includes('phase2_workspace_diff.md') && !v.calls.includes('exec_command'),
+        { tool: 'exec_command', args: { cmd } },
+      );
+      g.scriptWhen('wb-consolidation-done', (v) => v.text.includes('WORKBUDDY_EVIDENCE_READ'), {
+        kind: 'text',
+        text: 'WorkBuddy notes consolidated.',
+      });
+    },
+    { cmd: workbuddyConsolidationCommand, injectRetry },
+  );
   const project = (await page.evaluate(() => window.evowork.listProjects())).projects[0].id;
   const send = (text, useMemories) =>
     page.evaluate(
@@ -216,6 +230,9 @@ test('原生 note 后续整理进入新任务，禁读不注入，无内核重�
       ),
     )
     .toContain('WORKBUDDY_NATIVE_EVIDENCE');
+  await expect
+    .poll(() => memoryRuntimeDiagnostics(f.kernelHome), { timeout: 30000 })
+    .toEqual([expect.objectContaining({ status: 'done', last_error: null, retry_remaining: 3 })]);
   await send('WB_NEW_TASK');
   await expect
     .poll(() =>
@@ -242,6 +259,26 @@ test('原生 note 后续整理进入新任务，禁读不注入，无内核重�
         .every((b) => !b.includes('WorkBuddy preference')),
     ),
   ).toBe(true);
+  if (injectRetry)
+    expect(
+      await electronApp.evaluate(() =>
+        globalThis.__evoworkE2E.gateway.matchedBody('wb-consolidation-503'),
+      ),
+    ).toBeTruthy();
+  const lifecycle = await electronApp.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle());
+  expect(lifecycle.filter((e) => e.kind === 'started')).toHaveLength(1);
+  expect(lifecycle.filter((e) => e.kind === 'exited')).toEqual([]);
+}
+
+test('原生 note 后续整理进入新任务，禁读不注入，无内核重启', async ({ page, electronApp }) => {
+  await verifyConsolidation(page, electronApp);
+});
+
+test.describe('后台整理瞬时故障恢复', () => {
+  test.use({ desktopEnv: { EVOWORK_UI_NATIVE_RETRIES: '2' } });
+  test('503 后同一整理作业重试成功、记忆进入新任务且不重启内核', async ({ page, electronApp }) => {
+    await verifyConsolidation(page, electronApp, true);
+  });
 });
 
 test('模型只声称成功仍显示未确认，重复提交不重放', async ({ page, electronApp }) => {

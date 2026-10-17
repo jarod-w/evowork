@@ -945,6 +945,7 @@ EvoWork 需新增的 Hooks 策略包：
 | P4     | 品牌字符串（`CODEX_HOME`、UA、提示文案）               | 改为 EvoWork                    | 需改，且面较散 —— 只改对外可见字符串，保留内部路径名。**Q13 已决策保留 CLI**，故 CLI 的命令名、帮助文案、版本输出也进入"对外可见"范围，补丁面略增但仍在 K1 上限内              |
 | P5     | 遥测端点                                               | 关闭/改向                       | 走配置                                                                                                                                                                         |
 | P6     | `codex-rs/shell-command/src/bash.rs` · `codex-rs/core/src/unified_exec/process_manager.rs` | **覆盖已有文件要审批**：shell 命令用 `>` / `>|` / `&>` 截断写一个**已存在**的文件时，把「直接跑」改成「要审批」 | **不能**（2026-10-01，外部验收 D1-2 之后用户批准）。execpolicy 规则按段匹配只认不含重定向的纯命令；hook 不能发起询问（`permissionDecision: ask` 不被支持），`updatedInput` 对 shell 只能换 `command`、加不了 `sandbox_permissions`；判定「目标是否已存在」需要命令的工作目录，只有内核的审批点拿得到。补丁本体与逐个扩展点的说明：`patches/evowork/0001-exec-overwrite-approval.{patch,md}` |
+| P7 | `codex-rs/git-utils/src/baseline.rs` · `codex-rs/memories/write/src/workspace_tests.rs` | **初始记忆基线为空树**，让首轮已有扩展笔记进入整理 diff；成功整理仍快照当前树 | **不能通过扩展点修正内部基线**：模型工具仅追加 note；技能/MCP/hooks 无基线协议，contributor 不持有该内部 Git 初始化事务。详见 `patches/evowork/0002-memory-initial-baseline.md`。 |
 
 **结论（v0.4 修订）：真正的代码补丁只剩 P4 一项（品牌字符串），其余全部靠配置。** K1 的硬上限（≤5 文件 / ≤500 行）余量充足。这比 v0.3 的判断更强地验证了 D1。
 
@@ -953,6 +954,8 @@ EvoWork 需新增的 Hooks 策略包：
 `../codex` 本身不动（K1）。P6 不管 `apply_patch`（真模型改文件最常走这条）：它的删除与整篇覆盖由策略 hook
 拒绝并指路到会弹审批的写法，不进内核（10 §2.4）。已知不覆盖：`>>` 追加、`tee` / `cp` / `mv` / 脚本语言里的写文件、
 命令里先 `cd` 再相对路径写（按任务工作目录解析）、远端执行环境。
+
+**2026-10-17 修订：加 P7**。首次（或损坏后）建立内部记忆 Git 基线时，旧实现已把所有现存 note 纳入“已处理”基线；Phase 2 diff 只剩空 raw 文件，模型可能合法完成却漏掉来源。首次基线改为空树，成功整理后的 reset 仍保存当前树，不清库、不改冷却时间、不重启内核。P6 + P7 共 4 个内核文件，遵守 ≤5 文件/≤500 行；正式工具/协议未变化。真实模型夹具还恢复产品默认 2 次流重试，Playwright 仍零重试；流内 HTTP 错误在网关按状态语义映射，不把 503 误当内核崩溃。
 
 ---
 

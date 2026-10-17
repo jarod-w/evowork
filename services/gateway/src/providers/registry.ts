@@ -56,7 +56,12 @@ function extractError(body: unknown): { message: string; code?: string; type?: s
    * 于是这个永久错误一路落到"映射不上"，被内核当成可重试。
    * DeepSeek 与 GLM 都给 code，所以只看 code 在那两家上不会暴露。
    */
-  const code = typeof err.code === 'string' ? err.code : type;
+  const code =
+    typeof err.code === 'string'
+      ? err.code
+      : typeof err.code === 'number' && Number.isInteger(err.code)
+        ? String(err.code)
+        : type;
   return { message, ...(code ? { code } : {}), ...(type ? { type } : {}) };
 }
 
@@ -111,6 +116,9 @@ function mapCommonError(
   vendorCodes: Readonly<Record<string, string>>,
 ): { type?: string; code?: string; message: string } {
   const { message, code, type } = extractError(body);
+  // Some compatible services report HTTP errors inside a successful SSE stream.
+  // Keep vendor codes (e.g. 1113) intact; only exact HTTP error numbers supply status semantics.
+  if (status === 200 && code && /^[45]\d{2}$/u.test(code)) status = Number(code);
 
   // 先于码表：DeepSeek 的超长与"模型不存在"共用一个码，码表会把它判成永久错误
   if (isContextOverflow(status, message)) {

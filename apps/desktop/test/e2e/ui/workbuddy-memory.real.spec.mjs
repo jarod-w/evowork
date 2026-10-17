@@ -2,7 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { consolidatedMemory } from '../../../../../services/kernel-adapter/test-support/claude-memory-fixture.mjs';
-import { workbuddyNotes } from '../../../../../services/kernel-adapter/test-support/workbuddy-memory-fixture.mjs';
+import {
+  workbuddyNotes,
+  workbuddyRuntimeEvidence,
+} from '../../../../../services/kernel-adapter/test-support/workbuddy-memory-fixture.mjs';
 import {
   memoryConsolidationIdle,
   memoryRuntimeDiagnostics,
@@ -54,6 +57,7 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
       {
         ...evidence,
         notes: workbuddyNotes(kernelHome),
+        runtime: workbuddyRuntimeEvidence(kernelHome),
         consolidated: consolidatedMemory(kernelHome),
         diagnostics: existsSync(join(kernelHome, 'memories_1.sqlite'))
           ? memoryRuntimeDiagnostics(kernelHome)
@@ -204,6 +208,10 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
     await expect
       .poll(async () => (await page.evaluate(() => window.evowork.listModels())).models)
       .toEqual(expect.arrayContaining([expect.objectContaining({ id: modelId })]));
+    expect(
+      workbuddyRuntimeEvidence(kernelHome).streamMaxRetries,
+      '真实模型使用产品的流重试预算',
+    ).toBe(2);
     await settings(true);
     for (const [name, path] of Object.entries(paths)) {
       const result = await page.evaluate((input) => window.evowork.createProject(input), {
@@ -267,6 +275,19 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
     const memory = consolidatedMemory(kernelHome)?.memory ?? '';
     for (const marker of [alpha, beta, personal])
       expect.soft(memory, '整理正文保留导入事实').toContain(marker);
+    expect
+      .soft(
+        wire().some(
+          (r) =>
+            r.consolidation &&
+            r.sourceDiff &&
+            r.alphaAnywhere &&
+            r.betaAnywhere &&
+            r.personalAnywhere,
+        ),
+        '原生整理 diff 实际向模型提供全部导入来源',
+      )
+      .toBe(true);
     await stableKernel('consolidation-completed');
     await save();
     const prompt =

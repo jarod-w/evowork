@@ -1,0 +1,15 @@
+   Compiling codex-git-utils v0.0.0 (/Users/wangli/develop/evowork/evowork/build/.kernel-src/codex-rs/git-utils)
+    Finished `release` profile [optimized + debuginfo] target(s) in 30.03s
+     Running unittests src/lib.rs (/Users/wangli/develop/evowork/evowork/build/.kernel-target/release/deps/codex_git_utils-b57a586062194275)
+
+running 8 tests
+test baseline::tests::reports_executable_bit_changes_as_modified ... ok
+test baseline::tests::status_scan_does_not_write_added_file_blobs ... ok
+test baseline::tests::diff_reports_added_modified_and_deleted_files ... ok
+test baseline::tests::reset_drops_previous_history ... ok
+test baseline::tests::reset_creates_fresh_baseline ... ok
+test baseline::tests::first_baseline_exposes_existing_extension_notes_until_successful_reset ... ok
+test baseline::tests::write_index_ignores_configured_hooks_path ... ok
+test baseline::tests::ensure_recovers_from_unborn_repository ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.10s

@@ -12,6 +12,7 @@ import { createModelRegistry, type ModelRegistryEntry } from '../src/capabilitie
 import { ModelNotConfiguredError, runPipeline } from '../src/pipeline.js';
 import { EVENT, type ResponsesRequest } from '../src/protocol.js';
 import { UPSTREAM_DISCONNECTED } from '../src/idle.js';
+import { PRIVATE } from '../src/providers/registry.js';
 import { KERNEL_ERROR, type Provider } from '../src/providers/types.js';
 import type { ChatRequest } from '../src/translate/to-chat.js';
 
@@ -537,5 +538,29 @@ describe('Q14：不落盘 prompt 与响应体（M0 §10.2 第 2 条的可审计�
     // onViolation: 'throw' —— 如果链路上有任何一处试图记未注册字段，这个测试会炸
     await collect(runPipeline(request(), { requestId: 'req_1' }, { ...deps(provider), logger }));
     expect(sink.records.length).toBeGreaterThan(0);
+  });
+});
+
+describe('MiMo 503 SSE 错误信封', () => {
+  it.each([200, 503])('HTTP %s 中的 SSE 错误保留可重试语义且不带 data 包装', async (status) => {
+    const fake = fakeProvider({
+      status,
+      lines: [
+        'data:{"error":{"code":"503","message":"Internal Server Error","type":"ServiceUnavailableError"}}',
+        'data: [DONE]',
+      ],
+    });
+    const events = await collect(
+      runPipeline(
+        request(),
+        { requestId: 'mimo-503' },
+        deps({ ...fake, mapError: PRIVATE.mapError }),
+      ),
+    );
+    const failed = events.find((e) => e.type === EVENT.failed);
+    expect(failed).toMatchObject({
+      response: { error: { code: UPSTREAM_DISCONNECTED, message: 'Internal Server Error' } },
+    });
+    expect(events.some((e) => e.type === EVENT.completed)).toBe(false);
   });
 });
