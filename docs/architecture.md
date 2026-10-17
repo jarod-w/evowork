@@ -394,6 +394,10 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 首页下拉的工作空间 = 这两张表；任务归属按 `thread_projection.cwd` 是否在某个根下判定（[membership.ts](../services/projects/src/membership.ts)）；
 空间记忆是根目录下的 `AGENTS.md`，写入前经三级路径策略。
 
+### 5.9 本机自动记忆与外部项目导入（2026-10-17）
+
+自动记忆与项目 `AGENTS.md` 指令独立。设置/`/import` 及记忆弹窗链接共用导入向导，经五个语义 IPC 动作进入 `kernel-adapter/memory-import.ts`；适配层通过原生 `externalAgentConfig/detect`、`import`、`import/readHistories` 导入 Claude Code 项目记忆。宿主只保存短期候选选择，不读取记忆正文或内部数据库，也不迁移其他配置类型。产品补缺启用原生迁移开关，尊重显式关闭；读取和生成设置不随导入改变。完成结果以原生历史核对，后台整理与新任务读取继续由内核负责。没有新增中心记忆或对外网络通道，模型整理沿用现有网关。详见 [20](design/20-memory-import.md) 和[验收记录](verification/2026-10-17-memory-import.md)。
+
 ---
 
 ## 6. 本机数据模型

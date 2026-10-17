@@ -1,3 +1,4 @@
+import { MemoryImportOverview, type MemoryImportPorts } from '../components/memory-import.js';
 import { ImageSettings, type ImageUiPorts } from '../components/image-settings.js';
 import type { ComputerUseStatusView } from '../../shared/ipc.js';
 /**
@@ -50,7 +51,7 @@ import type {
 } from '../../shared/ipc.js';
 
 export type SettingsSection =
-  'account' | 'models' | 'personalization' | 'usage' | 'data' | 'security' | 'about';
+  'account' | 'models' | 'import' | 'personalization' | 'usage' | 'data' | 'security' | 'about';
 
 export const SETTINGS_SECTIONS: readonly {
   readonly id: SettingsSection;
@@ -59,6 +60,7 @@ export const SETTINGS_SECTIONS: readonly {
   { id: 'account', label: '账号' },
   { id: 'models', label: '模型' },
   { id: 'personalization', label: '个性化' },
+  { id: 'import', label: '导入' },
   { id: 'usage', label: '用量与预算' },
   { id: 'data', label: '数据管理' },
   { id: 'security', label: '安全与权限' },
@@ -89,6 +91,9 @@ export interface SettingsPageProps {
   readonly access: ModelAccessView | null;
   readonly preferences: PreferencesView | null;
   readonly memory: MemorySettingsView | null;
+  readonly memoryImportPorts?: MemoryImportPorts | undefined;
+  readonly memoryImportRevision?: number | undefined;
+  readonly onImportMemories?: (() => void) | undefined;
   readonly appName: string;
   readonly appVersion: string;
   /** 上一次动作被拒绝的原话。**显示出来**，不吞掉 */
@@ -166,6 +171,16 @@ export function SettingsPage(props: SettingsPageProps) {
           />
         ) : null}
         {props.section === 'models' ? <ModelsSection {...props} /> : null}
+        {props.section === 'import' ? (
+          <section className="ew-settings-section">
+            <SectionHeader title="导入" />
+            <MemoryImportOverview
+              refreshKey={props.memoryImportRevision}
+              ports={props.memoryImportPorts ?? {}}
+              onStart={() => props.onImportMemories?.()}
+            />
+          </section>
+        ) : null}
         {props.section === 'personalization' ? <MemorySection {...props} /> : null}
         {props.section === 'usage' ? <UsageSection {...props} /> : null}
         {props.section === 'data' ? <DataSection /> : null}
@@ -204,6 +219,9 @@ function MemorySection(props: SettingsPageProps) {
   return (
     <section className="ew-settings-section">
       <SectionHeader title="个性化" />
+      <PillButton onClick={props.onImportMemories} disabled={!props.onImportMemories}>
+        导入已有记忆
+      </PillButton>
       <p className="ew-settings-note">
         EvoWork 默认启用本地记忆，在后续新任务里使用已提取的可复用上下文。项目长期规则仍写在
         AGENTS.md；这里不会把记忆正文暴露给界面。

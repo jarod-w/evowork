@@ -68,6 +68,9 @@ const PROTOCOL_SRC = join(KERNEL_DIR, 'codex-rs/app-server-protocol/src');
  * 每条都值得写一句「为什么是这个形状」，尤其是踩过坑的那几条。
  */
 const OUTGOING = {
+  'externalAgentConfig/detect': { keys: ['includeHome'] },
+  'externalAgentConfig/import': { keys: ['migrationItems', 'source', 'providerId'] },
+  'externalAgentConfig/import/readHistories': { keys: [] },
   'thread/name/set': { keys: ['threadId', 'name'] },
   'thread/resume': { keys: ['threadId'] },
   'thread/read': { keys: ['threadId'], maybe: ['includeTurns'] },

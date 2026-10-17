@@ -18,6 +18,7 @@ import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
 
 import { bootstrap, createServiceHost } from '../../../dist/main/bootstrap.bundle.js';
 import { publishControls, waitFor } from './runner.mjs';
+import { createMemoryRpcFaults } from '../../../../../services/kernel-adapter/test-support/memory-rpc-faults.mjs';
 
 /**
  * 一次性的 EVOWORK_HOME：产物、本机 sqlite、内核配置全在里面。
@@ -72,12 +73,28 @@ export async function bootApp({
    * 假网关那条 E2E 本来就传，不受影响；真网关那条现在没传，这次拆分不动它。
    */
   let kernelChild;
+  const memoryImportFaults =
+    process.env.EVOWORK_UI_MEMORY_RPC_FAULT === '1' ? createMemoryRpcFaults() : undefined;
   const openedExternalUrls = [];
   const spawnSeam = captureKernelProcess
     ? {
         spawnFn: (command, args, spawnOptions) => {
-          const child = spawn(command, args, spawnOptions);
-          if (command === appServerPath) kernelChild = child;
+          // The launcher inherits the real process environment, independently of hostEnv.
+          // Keep external-agent discovery inside this test's disposable OS home too.
+          const child = spawn(
+            command,
+            args,
+            command === appServerPath
+              ? {
+                  ...spawnOptions,
+                  env: { ...spawnOptions.env, HOME: home },
+                }
+              : spawnOptions,
+          );
+          if (command === appServerPath) {
+            kernelChild = child;
+            memoryImportFaults?.attach(child);
+          }
           return child;
         },
       }
@@ -131,7 +148,7 @@ export async function bootApp({
     createHost: (options) =>
       createServiceHost({
         ...options,
-        env: { ...process.env, ...hostEnv },
+        env: { ...process.env, HOME: home, ...hostEnv },
         ...spawnSeam,
         /*
          * 电脑操控的注入驱动（`fake-computer-use.mjs`）：顶替随包的原生 Helper 与它的发布标记。
@@ -158,6 +175,7 @@ export async function bootApp({
     window,
     evaluate,
     openedExternalUrls,
+    memoryImportFaults,
     /** 当前内核子进程的 pid。重启后会换一个，所以每次都重新读，不要缓存 */
     kernelPid: () => kernelChild?.pid,
     killKernel: () => {

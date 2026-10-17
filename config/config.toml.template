@@ -89,6 +89,7 @@ extends = ":workspace"
 # 从既有任务中提取可复用上下文。使用与生成分开控制，设置页可随时关闭。
 [features]
 memories = true
+external_agent_memory_import = true
 
 [memories]
 use_memories = true

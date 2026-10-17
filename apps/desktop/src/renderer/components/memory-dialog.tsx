@@ -14,6 +14,7 @@ export function MemoriesDialog(props: {
   }) => Promise<void>;
   readonly onClose: () => void;
   readonly onGlobalSettings: () => void;
+  readonly onImportMemories?: (() => void) | undefined;
 }) {
   const [memory, setMemory] = useState<MemorySettingsView | null>(null);
   const [error, setError] = useState<string>();
@@ -114,6 +115,11 @@ export function MemoriesDialog(props: {
             </>
           )}
         </>
+      ) : null}
+      {props.onImportMemories ? (
+        <PillButton disabled={saving} onClick={props.onImportMemories}>
+          导入已有记忆
+        </PillButton>
       ) : null}
       <PillButton disabled={saving} onClick={props.onGlobalSettings}>
         打开全局记忆设置

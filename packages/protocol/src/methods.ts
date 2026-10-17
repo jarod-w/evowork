@@ -71,6 +71,9 @@ export const METHOD = {
   configRequirementsRead: 'configRequirements/read',
   configBatchWrite: 'config/batchWrite',
   hooksList: 'hooks/list',
+  externalAgentDetect: 'externalAgentConfig/detect',
+  externalAgentImport: 'externalAgentConfig/import',
+  externalAgentImportHistoriesRead: 'externalAgentConfig/import/readHistories',
 
   // 文件系统（工作空间文件视图，04 §6.2）
   fsReadDirectory: 'fs/readDirectory',

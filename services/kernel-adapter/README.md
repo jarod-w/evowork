@@ -21,3 +21,5 @@
 记忆配置通过 `config/read` / `config/batchWrite` 管理来源和提取/整理模型。未指定记忆模型时，任务启动与冷恢复配置显式使用任务模型；新任务读取选择保存到宿主 meta，在恢复/分叉时重放。已加载任务不支持读取热切换。生产代码不读写内核记忆存储；真实后台回归及时间夹具在 `test-support`，入口 `node scripts/desktop-skills-e2e.mjs --memory`（仓库根执行）。
 
 **独立会话通信（2026-10-11）**：`thread-communication.ts` 管理权威本机队列、每目标互斥、空闲投递、最终结果回传和断线核对。`Adapter` 校验原生 MCP item、具体范围审批、来源回合及内核代际；投递沿用目标模型/权限/模式，以官方 `thread/read`、`thread/resume`、`turn/start` 完成。不会读取内核数据库或复制 rollout；未知投递不自动重试。设计见 [17](../../docs/design/17-thread-communication.md)。
+
+**外部记忆导入（2026-10-17）**：`memory-import.ts` 只经原生迁移协议发现/导入 Claude Code 项目记忆并读取历史；一次性选择凭据、提交前复核、超时结果未知不重放、明确禁用降级。`enableMemoryReading` 仅启用记忆及读取，不改生成或模型设置。设计见 [20](../../docs/design/20-memory-import.md)，原生探针 `node scripts/verify-memory-import.mjs`（仓库根），真实窗口入口为 `memory-import.spec.mjs`。

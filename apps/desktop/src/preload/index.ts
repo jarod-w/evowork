@@ -227,6 +227,11 @@ export const RENDERER_ACTIONS = Object.freeze([
   /** 单任务预算与并发上限（Q11 的阶段 1；托管额度随账号叠在视图上） */
   'getPreferences',
   'setPreferences',
+  'getMemoryImportStatus',
+  'detectMemoryImport',
+  'getMemoryImportHistory',
+  'importMemories',
+  'enableMemoryReading',
   'getMemorySettings',
   'setMemorySettings',
   'resetMemories',

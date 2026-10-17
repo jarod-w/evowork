@@ -35,6 +35,15 @@ import { mergeWebSources, webResearchResult, type WebSource } from '../shared/we
 import type { TaskEnvironments } from './task-environments.js';
 
 import { parseGoalCommand } from '../shared/goal-command.js';
+import { MemoryImportRefusal } from '@evowork/kernel-adapter';
+import type { MemoryImportResult } from '../shared/ipc.js';
+import { isImportCommand } from '../shared/import-command.js';
+import type {
+  MemoryImportInput,
+  MemoryImportStatusView,
+  MemoryImportDetectionView,
+  MemoryImportHistoryView,
+} from '../shared/ipc.js';
 import { isMemoriesCommand } from '../shared/memory-command.js';
 import {
   titleFromText,
@@ -1594,6 +1603,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
       await options.communication.check(input.threadId, input.requestId);
     },
     async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
+      if (isImportCommand(input.text))
+        throw new Error('请通过 /import 打开本地记忆导入，不要发送给模型。');
       if (isMemoriesCommand(input.text))
         throw new Error('请通过 /memories 打开本地记忆设置，不要发送给模型。');
       if (input.threadId && input.useMemories !== undefined)
@@ -1947,6 +1958,27 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return Promise.resolve(
         options.preferencePorts?.write(input) ?? { concurrencyComputed: 1, concurrencyLimit: 1 },
       );
+    },
+
+    getMemoryImportStatus(): Promise<MemoryImportStatusView> {
+      return adapter.getMemoryImportStatus();
+    },
+    detectMemoryImport(): Promise<MemoryImportDetectionView> {
+      return adapter.detectMemoryImport();
+    },
+    getMemoryImportHistory(): Promise<readonly MemoryImportHistoryView[]> {
+      return adapter.getMemoryImportHistory();
+    },
+    async importMemories(input: MemoryImportInput): Promise<MemoryImportResult> {
+      try {
+        return await adapter.importMemories(input);
+      } catch (error) {
+        if (error instanceof MemoryImportRefusal) return { refused: error.message };
+        throw error;
+      }
+    },
+    async enableMemoryReading(): Promise<MemorySettingsView> {
+      return adapter.enableMemoryReading();
     },
 
     getMemorySettings(): Promise<MemorySettingsView> {
@@ -2416,6 +2448,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         mentions,
         ...(skillEntry?.errors.length ? { skillErrors: skillEntry.errors } : {}),
         commands: [
+          { id: 'import', label: 'import · 导入已有记忆', kind: 'local' },
           { id: 'memories', label: 'memories · 记忆设置', kind: 'local' },
           { id: 'goal', label: 'goal · 持续推进目标', kind: 'local', insertText: '/goal' },
           {

@@ -83,6 +83,32 @@ describe('Dialog', () => {
     fireEvent.click(screen.getByText('创建'));
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('Tab 与 Shift+Tab 在弹窗内循环，跳过禁用和隐藏操作，步骤容器也能返回可操作控件', () => {
+    render(
+      <Dialog title="导入项目记忆" confirmLabel="确认导入" onConfirm={() => {}} onCancel={() => {}}>
+        <button disabled>禁用动作</button>
+        <div hidden>
+          <button>隐藏动作</button>
+        </div>
+        <div tabIndex={-1} data-testid="step">
+          项目确认
+        </div>
+        <button>返回选择项目</button>
+      </Dialog>,
+    );
+    const first = screen.getByRole('button', { name: '返回选择项目' });
+    const last = screen.getByRole('button', { name: '确认导入' });
+    last.focus();
+    fireEvent.keyDown(last, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    const step = screen.getByTestId('step');
+    step.focus();
+    fireEvent.keyDown(step, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
 });
 
 describe('ItemCard（§5.20）', () => {

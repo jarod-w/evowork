@@ -966,6 +966,26 @@ export function ProgressBar({
   );
 }
 
+function dialogFocusTargets(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'a[href], input:not([type="hidden"]), textarea, select, button, [tabindex]',
+    ),
+  ).filter((element) => {
+    if (
+      element.tabIndex < 0 ||
+      element.matches(':disabled') ||
+      element.closest('[hidden], [inert], [aria-hidden="true"]')
+    )
+      return false;
+    for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+    }
+    return true;
+  });
+}
+
 /**
  * 01 §5.34 Dialog（模态壳）。
  *
@@ -1011,9 +1031,7 @@ export function Dialog({
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement;
-    const first = dialog.current?.querySelector<HTMLElement>(
-      'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex="0"]',
-    );
+    const first = dialog.current ? dialogFocusTargets(dialog.current)[0] : undefined;
     (first ?? dialog.current)?.focus();
     return () => {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
@@ -1034,6 +1052,22 @@ export function Dialog({
             event.preventDefault();
             event.stopPropagation();
             onCancel();
+          } else if (event.key === 'Tab') {
+            event.stopPropagation();
+            const targets = dialogFocusTargets(event.currentTarget);
+            const first = targets[0];
+            const last = targets.at(-1);
+            const active = document.activeElement;
+            if (!first || !last) {
+              event.preventDefault();
+              event.currentTarget.focus();
+            } else if (
+              !targets.includes(active as HTMLElement) ||
+              (event.shiftKey ? active === first : active === last)
+            ) {
+              event.preventDefault();
+              (event.shiftKey ? last : first).focus();
+            }
           }
         }}
       >

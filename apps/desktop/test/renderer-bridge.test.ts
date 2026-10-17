@@ -2280,6 +2280,7 @@ describe('首次运行装内核配置', () => {
     expect(migrated.text).toContain('memories = false');
     expect(migrated.text).toContain('generate_memories = false');
     expect(migrated.text).toContain('use_memories = true');
+    expect(migrated.text).toContain('external_agent_memory_import = true');
     expect(migrated.text).toContain('disable_on_external_context = true');
     expect(migrateMemoriesConfig(migrated.text)).toEqual({ text: migrated.text, changed: false });
   });
@@ -2293,9 +2294,16 @@ describe('首次运行装内核配置', () => {
     );
   });
 
+  it('用户或企业明确关闭记忆导入时，升级不会重新打开', () => {
+    const migrated = migrateMemoriesConfig('[features]\nexternal_agent_memory_import = false\n');
+    expect(migrated.text).toContain('external_agent_memory_import = false');
+    expect(migrated.text).not.toContain('external_agent_memory_import = true');
+    expect(migrateMemoriesConfig(migrated.text).changed).toBe(false);
+  });
+
   it('不因迁移凭空改变文件末尾换行', () => {
     const input =
-      '[features]\nmemories = true\n\n[memories]\nuse_memories = true\ngenerate_memories = true\ndisable_on_external_context = true';
+      '[features]\nmemories = true\nexternal_agent_memory_import = true\n\n[memories]\nuse_memories = true\ngenerate_memories = true\ndisable_on_external_context = true';
     expect(migrateMemoriesConfig(input)).toEqual({ text: input, changed: false });
   });
 });

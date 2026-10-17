@@ -22,6 +22,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 
 import { renderIcon } from './icons.js';
 import { parseGoalCommand } from '../../shared/goal-command.js';
+import { isImportCommand } from '../../shared/import-command.js';
 import { isMemoriesCommand } from '../../shared/memory-command.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
 import { Badge, Banner, Dialog, GhostButton, PillButton } from './primitives.js';
@@ -423,7 +424,7 @@ export function Composer(props: ComposerProps) {
     props.value.trim() === '' && !attachments.some((attachment) => attachment.state === 'ready');
   const goalCommand = parseGoalCommand(props.value);
   const localGoalControl = goalCommand !== undefined && goalCommand.action !== 'create';
-  const memoryCommand = isMemoriesCommand(props.value);
+  const memoryCommand = isMemoriesCommand(props.value) || isImportCommand(props.value);
   const localControl = localGoalControl || memoryCommand;
   const stoppingGoalControl = localGoalControl && goalCommand.action !== 'resume';
   const blockedByModel = props.modelUnavailable !== undefined && !localControl;

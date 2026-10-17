@@ -750,6 +750,8 @@ OAuth 令牌存 `codex-rs/secrets` + `keyring-store`，不落明文配置。
 
 ### 6.6 记忆系统（以当前 ChatGPT / Codex 基线为准）
 
+**2026-10-17 外部记忆导入增量**：首版复用原生 `externalAgentConfig/*` 专用迁移协议导入 Claude Code 项目记忆，入口为设置和本地 `/import`；不新增通用记忆正文写入能力，不同步中心记忆。设计与边界见 [20](design/20-memory-import.md)。下文通用正文管理限制仍成立。
+
 基线来源：[OpenAI Docs · Memories](https://learn.chatgpt.com/docs/customization/memories)（复核于 2026-10-15）。
 EvoWork 保留默认开启、默认排除外部上下文的产品选择；后者可在个性化页关闭，保存其他设置不改变它。
 

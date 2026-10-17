@@ -1,3 +1,4 @@
+import { createMemoryImporter } from './memory-import.js';
 import { isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { workspaceRootRefusal } from '@evowork/policy';
@@ -558,6 +559,7 @@ export function createAdapter(options: AdapterOptions) {
     onNotice: (notice) => {
       desktopTurns.clear();
       if (notice.kind === 'kernel-lost') {
+        memoryImporter.invalidate();
         activeTurns.clear();
         approvals.cancel(() => true);
         forgetFileChanges(() => true);
@@ -590,6 +592,8 @@ export function createAdapter(options: AdapterOptions) {
       store.recordUnknownEvent(method, params, now());
     },
   });
+
+  const memoryImporter = createMemoryImporter(() => session.peer);
 
   let catalog: Catalog | undefined;
   /** 真正被内核信任、会跑的策略 hook 条数。`undefined` = 宿主没给策略包 */
@@ -1146,6 +1150,27 @@ export function createAdapter(options: AdapterOptions) {
     /** 策略 hook 生效了几条（设置页的策略包状态与诊断用）。见 `trustBundledHooks` */
     bundledHooksActive(): number | undefined {
       return bundledHooksActive;
+    },
+
+    getMemoryImportStatus: () => memoryImporter.status(),
+    detectMemoryImport: () => memoryImporter.detect(),
+    getMemoryImportHistory: () => memoryImporter.history(),
+    importMemories: (input: {
+      readonly selectionId: string;
+      readonly projectKeys: readonly string[];
+    }) => memoryImporter.import(input),
+
+    async enableMemoryReading(): Promise<MemorySettings> {
+      await session.peer.request(METHOD.configBatchWrite, {
+        edits: [
+          { keyPath: 'features.memories', value: true, mergeStrategy: 'replace' },
+          { keyPath: 'memories.use_memories', value: true, mergeStrategy: 'replace' },
+        ],
+        filePath: null,
+        expectedVersion: null,
+        reloadUserConfig: true,
+      });
+      return readMemorySettings();
     },
 
     async getMemorySettings(): Promise<MemorySettings> {

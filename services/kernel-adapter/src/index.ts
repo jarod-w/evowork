@@ -95,3 +95,12 @@ export {
   type CommunicationTarget,
   type CommunicationPort,
 } from './thread-communication.js';
+
+export type {
+  MemoryImportStatus,
+  MemoryImportDetection,
+  MemoryImportHistory,
+  MemoryImportProject,
+} from './memory-import.js';
+
+export { MemoryImportRefusal } from './memory-import.js';

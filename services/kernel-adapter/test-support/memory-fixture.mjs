@@ -28,6 +28,20 @@ export function memoryConsolidationIdle(kernelHome) {
   }
 }
 
+/** Read-only job outcome for a disposable real-model fixture; never a product API. */
+export function memoryRuntimeDiagnostics(kernelHome) {
+  const db = new DatabaseSync(join(kernelHome, 'memories_1.sqlite'), { readOnly: true });
+  try {
+    return db
+      .prepare(
+        "SELECT kind, status, last_error, retry_remaining FROM jobs WHERE kind = 'memory_consolidate_global'",
+      )
+      .all();
+  } finally {
+    db.close();
+  }
+}
+
 /** Advance only the isolated fixture past the native six-hour success cooldown. */
 export function ageMemoryConsolidation(kernelHome) {
   const db = new DatabaseSync(join(kernelHome, 'memories_1.sqlite'));

@@ -4726,3 +4726,22 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.ew-memory-import-projects,
+.ew-memory-import-record {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  margin-block: var(--space-12);
+}
+.ew-memory-import-projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+.ew-memory-import-projects .ew-checkbox {
+  align-items: flex-start;
+}
+.ew-memory-import-projects .ew-checkbox > span {
+  min-width: 0;
+  white-space: normal;
+}

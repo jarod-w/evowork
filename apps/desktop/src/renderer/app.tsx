@@ -106,6 +106,8 @@ import type {
 } from './components/composer.js';
 import { Banner, Dialog, EmptyState, IconButton } from './components/primitives.js';
 import { GOAL_STATUS_LABELS, parseGoalCommand } from '../shared/goal-command.js';
+import { MemoryImportDialog, type MemoryImportPorts } from './components/memory-import.js';
+import { isImportCommand } from '../shared/import-command.js';
 import { isMemoriesCommand } from '../shared/memory-command.js';
 import { MemoriesDialog } from './components/memory-dialog.js';
 import { ShareDialog, type SharePhase } from './components/share-dialog.js';
@@ -147,7 +149,10 @@ import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge
-  extends Partial<LibraryActions>, Partial<import('../shared/ipc.js').CommunicationActions> {
+  extends
+    MemoryImportPorts,
+    Partial<LibraryActions>,
+    Partial<import('../shared/ipc.js').CommunicationActions> {
   getAttachmentText?(
     input: PickAttachmentsInput & { readonly attachmentId: string },
   ): Promise<ComposerAttachmentView>;
@@ -618,6 +623,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [computerUse, setComputerUse] = useState<ComputerUseStatusView | null>(null);
   useEffect(() => bridge.onComputerUseStatus?.(setComputerUse), [bridge]);
   const [preferences, setPreferences] = useState<PreferencesView | null>(null);
+  const [memoryImportOpen, setMemoryImportOpen] = useState(false);
+  const [memoryImportRevision, setMemoryImportRevision] = useState(0);
+  const openMemoryImport = useCallback(() => setMemoryImportOpen(true), []);
   const [memorySettings, setMemorySettingsView] = useState<MemorySettingsView | null>(null);
   const [taskMemoryModes, setTaskMemoryModes] = useState<Readonly<Record<string, boolean>>>({});
   const [memoryDialogTarget, setMemoryDialogTarget] = useState<{
@@ -2163,6 +2171,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     async (replaceGoal = false) => {
       const identity = draftIdentity.current;
       const text = draft.trim();
+      if (isImportCommand(text)) {
+        if (text !== '/import') pushToast({ tone: 'info', text: '/import 不接受参数。' });
+        else {
+          openMemoryImport();
+          setDraft((previous) => (previous === draft ? '' : previous));
+        }
+        return;
+      }
       if (isMemoriesCommand(text)) {
         if (text !== '/memories') pushToast({ tone: 'info', text: '/memories 不接受参数。' });
         else {
@@ -2298,6 +2314,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       scenarioId,
       draftMemoryUse,
       openMemories,
+      openMemoryImport,
       modelId,
       mode,
       workspaceId,
@@ -2955,6 +2972,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           ]);
       },
       onRunLocalCommand: (id: string) => {
+        if (id === 'import') openMemoryImport();
         if (id === 'memories') openMemories();
         if (id === 'clear') {
           setDraft('');
@@ -3167,6 +3185,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       prepareTaskWithText,
       emptyCatalogView,
       openMemories,
+      openMemoryImport,
     ],
   );
 
@@ -3486,6 +3505,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then(setPreferences)
               .catch((error: unknown) => reportFailure(error, '偏好没有保存。'));
           }}
+          memoryImportRevision={memoryImportRevision}
+          memoryImportPorts={bridge}
+          onImportMemories={openMemoryImport}
           onMemorySettings={(input) => {
             if (!bridge.setMemorySettings) return;
             void bridge
@@ -4160,6 +4182,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onCancel={() => setProjectCreateOpen(false)}
         />
       ) : null}
+      {memoryImportOpen ? (
+        <MemoryImportDialog
+          ports={bridge}
+          onClose={() => {
+            setMemoryImportOpen(false);
+            setMemoryImportRevision((value) => value + 1);
+          }}
+          onNewTask={() => {
+            setMemoryImportOpen(false);
+            beginNewTask();
+          }}
+          onReadingEnabled={setMemorySettingsView}
+        />
+      ) : null}
       {memoryDialogTarget ? (
         <MemoriesDialog
           readChoice={draftMemoryUse}
@@ -4168,6 +4204,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             : {})}
           load={loadMemories}
           onClose={() => setMemoryDialogTarget(null)}
+          onImportMemories={() => {
+            setMemoryDialogTarget(null);
+            openMemoryImport();
+          }}
           onGlobalSettings={() => {
             setMemoryDialogTarget(null);
             setSettingsSection('personalization');
@@ -4288,6 +4328,9 @@ function MainPage(props: {
   readonly onOpenModelsFolder: () => void;
   readonly onOpenProviderDocs: (provider: string) => void;
   readonly onPreferences: (input: PreferencesInput) => void;
+  readonly memoryImportRevision: number;
+  readonly memoryImportPorts: MemoryImportPorts;
+  readonly onImportMemories: () => void;
   readonly onMemorySettings: (input: MemorySettingsInput) => void;
   readonly onResetMemories: () => void;
   readonly onLogin: () => void;
@@ -4465,6 +4508,9 @@ function MainPage(props: {
           }
           onProbe={props.onProbe}
           onPreferences={props.onPreferences}
+          memoryImportRevision={props.memoryImportRevision}
+          memoryImportPorts={props.memoryImportPorts}
+          onImportMemories={props.onImportMemories}
           onMemorySettings={props.onMemorySettings}
           onResetMemories={props.onResetMemories}
           onLogin={props.onLogin}

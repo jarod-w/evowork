@@ -403,11 +403,11 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('模型不可用、附件解析中或策略锁定时仍可打开 /memories', () => {
+  it.each(['/memories', '/import'])('模型不可用、附件解析中或策略锁定时仍可打开 %s', (command) => {
     const onSend = vi.fn();
     renderComposer(
       {
-        value: '/memories',
+        value: command,
         modelUnavailable: { text: '模型离线' },
         sendLockedReason: '策略已过期',
         attachments: [

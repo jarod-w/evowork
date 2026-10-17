@@ -9,6 +9,18 @@
 `../harness/make-office-fixtures.py` 当场生成（带图的 docx / pptx 等）。缺了就报错，不跳过。
 系统文件框点不到，spec 把「用户多选了哪些」写进 `__evoworkE2E.pickedFiles`，由 `ui-entry.mjs` 作答。
 
+## 项目记忆导入
+
+`memory-import.spec.mjs` 覆盖真实四步向导、来源/选择、手动更新与删除同步、部分失败、失效选择、离线网关、三档窗口与焦点；`memory-import-restart.spec.mjs` 关闭整个 App 后核对历史、记忆副本、设置和去重；`memories.spec.mjs` 守读取与贡献入口。测试源只创建在隔离 HOME。
+
+```bash
+node node_modules/@playwright/test/cli.js test memory-import.spec.mjs memory-import-restart.spec.mjs memories.spec.mjs --project=fake --retries=0
+# 真实模型需先经隐藏输入注入 EVOWORK_UI_MODEL_KEY，不在命令或配置中填写密钥。
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash node node_modules/@playwright/test/cli.js test memory-import.real.spec.mjs --project=real --retries=0
+```
+
+`memory-import.real.spec.mjs` 通过宿主网关让模型自主整理、测试两个项目与未导入项目、单任务/全局禁读，并逐个打开任务核对页面回答、保存截图与请求布尔证据。`EVOWORK_UI_MEMORY_RPC_FAULT` 只供确定性用例丢弃一次原生成功响应，真实写入与历史不伪造；`EVOWORK_UI_MEMORY_WIRE` 只观测模型请求中的标记与注入布尔值，不记录鉴权或请求正文。scope 是模型使用约束，不是项目 ACL；详见[验收记录](../../../../../docs/verification/2026-10-17-memory-import-playwright.md)。
+
 ## 外部验收测试包（`acceptance.real.spec.mjs`，23 例）
 
 2026-09-28 外部测试方那套验收（A 办公产物 · B 取数清洗 · C 长任务与交互 · D 安全）的 Playwright 版。

@@ -1,0 +1,566 @@
+{
+  "model": "mimo-v2.6-flash",
+  "paths": {
+    "alpha": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace",
+    "beta": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta",
+    "gamma": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/gamma"
+  },
+  "alpha": "ALPHA_WEEKLY_49fb7273999d",
+  "beta": "BETA_WEEKLY_49fb7273999d",
+  "consolidated": {
+    "summary": "v1\n\n## User Profile\n\n- No stable global user profile is supported yet. Current evidence consists only of user-confirmed weekly-report conventions for two separately scoped projects, so project-specific details must not be generalized.\n\n## User preferences\n\n- No global user preferences are supported by the current inputs; keep confirmed project conventions inside their scoped `MEMORY.md` entries rather than global defaults.\n\n## General Tips\n\n- Read extension `instructions.md` before interpreting extension memories; preserve imported-only provenance with `extension_resource_files` and never invent rollout timestamps.\n- Use `scope.json` cwd as the reuse boundary for imported project memories, and keep imported detail progressively available rather than flattening it into global profile sections.\n\n## What's in Memory\n\n### Older Memory Topics\n\n#### /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace\n\n- Alpha weekly report conventions: ALPHA_WEEKLY_49fb7273999d, YYYY/MM/DD, 紫色风险\n  - desc: Scoped Alpha report formatting and strict cwd applicability; search this first when editing or creating a weekly report in that exact workspace.\n\n#### /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta\n\n- Beta weekly report conventions: BETA_WEEKLY_49fb7273999d, DD-MM-YYYY, 橙色风险\n  - desc: Scoped Beta report formatting and strict cwd applicability; search this first when editing or creating a weekly report in that exact project.\n",
+    "memory": "# Task Group: Alpha project weekly report conventions\n\nscope: Confirmed Alpha-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace; reuse_rule=use only for the Alpha workspace exactly, not for Beta or any other project.\n\n## Task 1: Produce an Alpha weekly report using the confirmed project convention\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/alpha-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace, source=external_agent_import)\n\n### keywords\n\n- ALPHA_WEEKLY_49fb7273999d, YYYY/MM/DD, 紫色风险, Alpha 项目周报, weekly report prefix, risk heading\n\n## User preferences\n\n- For the Alpha project weekly report, the source records as user-confirmed: \"本项目周报必须以 ALPHA_WEEKLY_49fb7273999d 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n- The imported note explicitly says \"这是项目约定，不是用户全局偏好\" -> do not promote this format to unrelated projects or the global user profile. [Task 1]\n\n## Reusable knowledge\n\n- The authoritative scope is /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace from extensions/external_agent_import/resources/alpha-project/scope.json; retain the imported resource for progressive disclosure. [Task 1]\n- For imported-only evidence, provenance is an `extension_resource_files` entry rather than rollout metadata; no rollout path, thread ID, or timestamp exists. [Task 1]\n\n## Failures and how to do differently\n\n- Symptom: wrong prefix, date order, or risk heading in an Alpha report. Cause: applying Beta's convention or a generic house style. Fix: enforce the exact Alpha strings `ALPHA_WEEKLY_49fb7273999d`, `YYYY/MM/DD`, and `紫色风险`, and stop if the cwd is not the scoped Alpha workspace. [Task 1]\n\n# Task Group: Beta project weekly report conventions\n\nscope: Confirmed Beta-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta; reuse_rule=use only for the Beta project exactly, not for Alpha or any other project.\n\n## Task 1: Produce a Beta weekly report using the confirmed project convention\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/beta-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta, source=external_agent_import)\n\n### keywords\n\n- BETA_WEEKLY_49fb7273999d, DD-MM-YYYY, 橙色风险, Beta 项目周报, weekly report prefix, risk heading\n\n## User preferences\n\n- For the Beta project weekly report, the source records as user-confirmed: \"本项目周报必须以 BETA_WEEKLY_49fb7273999d 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n- The imported note explicitly says \"这是项目约定，不是用户全局偏好\" -> do not promote this format to unrelated projects or the global user profile. [Task 1]\n\n## Reusable knowledge\n\n- The authoritative scope is /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta from extensions/external_agent_import/resources/beta-project/scope.json; retain the imported resource for progressive disclosure. [Task 1]\n- For imported-only evidence, provenance is an `extension_resource_files` entry rather than rollout metadata; no rollout path, thread ID, or timestamp exists. [Task 1]\n\n## Failures and how to do differently\n\n- Symptom: wrong prefix, date order, or risk heading in a Beta report. Cause: applying Alpha's convention or a generic house style. Fix: enforce the exact Beta strings `BETA_WEEKLY_49fb7273999d`, `DD-MM-YYYY`, and `橙色风险`, and stop if the cwd is not the scoped Beta project. [Task 1]\n"
+  },
+  "wire": [
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_TRIGGER"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_BETA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_BETA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GAMMA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GAMMA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GLOBAL_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GLOBAL_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GLOBAL_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    }
+  ],
+  "diagnostics": [
+    {
+      "kind": "memory_consolidate_global",
+      "status": "done",
+      "last_error": null,
+      "retry_remaining": 3
+    }
+  ],
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "cases": [
+    {
+      "name": "TRIGGER",
+      "project": "alpha",
+      "threadId": "01a14875-db13-79c1-8990-60fb92285a51",
+      "status": "completed",
+      "answer": "READY",
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_TRIGGER"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        }
+      ],
+      "tools": []
+    },
+    {
+      "name": "ALPHA_ON",
+      "project": "alpha",
+      "threadId": "01a14878-119a-75b1-a617-5fc86290ae02",
+      "status": "completed",
+      "answer": "我会只核对当前项目记忆中的周报约定，不读取其他会话、不改文件、不联网。\n- 开头标签：`ALPHA_WEEKLY_49fb7273999d`\n- 日期格式：`YYYY/MM/DD`\n- 风险栏标题：紫色风险\n\n",
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        }
+      ],
+      "tools": [
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc 'rg -n \"ALPHA_WEEKLY|周报|紫色风险|YYYY/MM/DD|开头标签|日期格式|风险栏\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace",
+          "aggregatedOutput": "14:- ALPHA_WEEKLY_49fb7273999d, YYYY/MM/DD, 紫色风险, Alpha 项目周报, weekly report prefix, risk heading\n18:- For the Alpha project weekly report, the source records as user-confirmed: \"本项目周报必须以 ALPHA_WEEKLY_49fb7273999d 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n28:- Symptom: wrong prefix, date order, or risk heading in an Alpha report. Cause: applying Beta's convention or a generic house style. Fix: enforce the exact Alpha strings `ALPHA_WEEKLY_49fb7273999d`, `YYYY/MM/DD`, and `紫色风险`, and stop if the cwd is not the scoped Alpha workspace. [Task 1]\n43:- BETA_WEEKLY_49fb7273999d, DD-MM-YYYY, 橙色风险, Beta 项目周报, weekly report prefix, risk heading\n47:- For the Beta project weekly report, the source records as user-confirmed: \"本项目周报必须以 BETA_WEEKLY_49fb7273999d 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n",
+          "exitCode": 0,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc \"sed -n '1,34p' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/.evowork/kernel/memories/MEMORY.md\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace",
+          "aggregatedOutput": "# Task Group: Alpha project weekly report conventions\n\nscope: Confirmed Alpha-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace; reuse_rule=use only for the Alpha workspace exactly, not for Beta or any other project.\n\n## Task 1: Produce an Alpha weekly report using the confirmed project convention\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/alpha-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace, source=external_agent_import)\n\n### keywords\n\n- ALPHA_WEEKLY_49fb7273999d, YYYY/MM/DD, 紫色风险, Alpha 项目周报, weekly report prefix, risk heading\n\n## User preferences\n\n- For the Alpha project weekly report, the source records as user-confirmed: \"本项目周报必须以 ALPHA_WEEKLY_49fb7273999d 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n- The imported note explicitly says \"这是项目约定，不是用户全局偏好\" -> do not promote this format to unrelated projects or the global user profile. [Task 1]\n\n## Reusable knowledge\n\n- The authoritative scope is /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace from extensions/external_agent_import/resources/alpha-project/scope.json; retain the imported resource for progressive disclosure. [Task 1]\n- For imported-only evidence, provenance is an `extension_resource_files` entry rather than rollout metadata; no rollout path, thread ID, or timestamp exists. [Task 1]\n\n## Failures and how to do differently\n\n- Symptom: wrong prefix, date order, or risk heading in an Alpha report. Cause: applying Beta's convention or a generic house style. Fix: enforce the exact Alpha strings `ALPHA_WEEKLY_49fb7273999d`, `YYYY/MM/DD`, and `紫色风险`, and stop if the cwd is not the scoped Alpha workspace. [Task 1]\n\n# Task Group: Beta project weekly report conventions\n\nscope: Confirmed Beta-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta; reuse_rule=use only for the Beta project exactly, not for Alpha or any other project.\n\n",
+          "exitCode": 0,
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "name": "BETA_ON",
+      "project": "beta",
+      "threadId": "01a14878-a6f6-7fe1-9ee6-d3bf58460520",
+      "status": "completed",
+      "answer": "我会只核对Beta项目记忆中的三项约定，不做其他读取或修改。\n- 开头标签：BETA_WEEKLY_49fb7273999d\n- 日期格式：DD-MM-YYYY\n- 风险栏标题：橙色风险\n\n",
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_BETA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_BETA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        }
+      ],
+      "tools": [
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc 'rg -n \"Beta|BETA_WEEKLY|周报|风险|DD-MM-YYYY|橙色\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta",
+          "aggregatedOutput": "4:applies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace; reuse_rule=use only for the Alpha workspace exactly, not for Beta or any other project.\n14:- ALPHA_WEEKLY_49fb7273999d, YYYY/MM/DD, 紫色风险, Alpha 项目周报, weekly report prefix, risk heading\n18:- For the Alpha project weekly report, the source records as user-confirmed: \"本项目周报必须以 ALPHA_WEEKLY_49fb7273999d 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n28:- Symptom: wrong prefix, date order, or risk heading in an Alpha report. Cause: applying Beta's convention or a generic house style. Fix: enforce the exact Alpha strings `ALPHA_WEEKLY_49fb7273999d`, `YYYY/MM/DD`, and `紫色风险`, and stop if the cwd is not the scoped Alpha workspace. [Task 1]\n30:# Task Group: Beta project weekly report conventions\n32:scope: Confirmed Beta-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\n33:applies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta; reuse_rule=use only for the Beta project exactly, not for Alpha or any other project.\n35:## Task 1: Produce a Beta weekly report using the confirmed project convention\n43:- BETA_WEEKLY_49fb7273999d, DD-MM-YYYY, 橙色风险, Beta 项目周报, weekly report prefix, risk heading\n47:- For the Beta project weekly report, the source records as user-confirmed: \"本项目周报必须以 BETA_WEEKLY_49fb7273999d 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n57:- Symptom: wrong prefix, date order, or risk heading in a Beta report. Cause: applying Alpha's convention or a generic house style. Fix: enforce the exact Beta strings `BETA_WEEKLY_49fb7273999d`, `DD-MM-YYYY`, and `橙色风险`, and stop if the cwd is not the scoped Beta project. [Task 1]\n",
+          "exitCode": 0,
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "name": "ALPHA_OFF",
+      "project": "alpha",
+      "threadId": "01a14878-e4d1-7062-8563-228af6cb23b8",
+      "status": "completed",
+      "answer": "我会只在当前项目内查找周报样例与约定，并原样核对这三个字段。\n- 开头标签：UNKNOWN\n- 日期格式：UNKNOWN\n- 风险栏标题：UNKNOWN",
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        }
+      ],
+      "useMemories": false,
+      "tools": [
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc \"pwd && rg --files -g 'AGENTS.md' -g '*周报*' -g '*weekly*' -g '*report*' -g '*.md' | head -200\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace",
+          "aggregatedOutput": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace\n",
+          "exitCode": 0,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc \"find . -maxdepth 4 -type f -print | sed 's#\"'^./##'\"' | head -300\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/workspace",
+          "aggregatedOutput": null,
+          "exitCode": 0,
+          "status": "completed"
+        },
+        {
+          "type": "mcpToolCall",
+          "server": "codex",
+          "tool": "list_mcp_resources",
+          "status": "completed"
+        },
+        {
+          "type": "mcpToolCall",
+          "server": "codex",
+          "tool": "list_mcp_resource_templates",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "name": "GAMMA_ON",
+      "project": "gamma",
+      "threadId": "01a14879-4abb-7941-921c-f4ecf198ed66",
+      "status": "completed",
+      "answer": "我先核对项目记忆中是否确有 `gamma` 的周报约定，仅查本地记忆，不改文件。\n开头标签: UNKNOWN\n日期格式: UNKNOWN\n风险栏标题: UNKNOWN\n\n",
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GAMMA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GAMMA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        }
+      ],
+      "tools": [
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc 'rg -n -i \"gamma|周报|weekly|风险栏|日期格式|开头标签\" /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/.evowork/kernel/memories/MEMORY.md'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/gamma",
+          "aggregatedOutput": "1:# Task Group: Alpha project weekly report conventions\n3:scope: Confirmed Alpha-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\n6:## Task 1: Produce an Alpha weekly report using the confirmed project convention\n14:- ALPHA_WEEKLY_49fb7273999d, YYYY/MM/DD, 紫色风险, Alpha 项目周报, weekly report prefix, risk heading\n18:- For the Alpha project weekly report, the source records as user-confirmed: \"本项目周报必须以 ALPHA_WEEKLY_49fb7273999d 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n28:- Symptom: wrong prefix, date order, or risk heading in an Alpha report. Cause: applying Beta's convention or a generic house style. Fix: enforce the exact Alpha strings `ALPHA_WEEKLY_49fb7273999d`, `YYYY/MM/DD`, and `紫色风险`, and stop if the cwd is not the scoped Alpha workspace. [Task 1]\n30:# Task Group: Beta project weekly report conventions\n32:scope: Confirmed Beta-project weekly-report prefix, date format, risk-heading label, and the hard cwd boundary that prevents reuse elsewhere.\n35:## Task 1: Produce a Beta weekly report using the confirmed project convention\n43:- BETA_WEEKLY_49fb7273999d, DD-MM-YYYY, 橙色风险, Beta 项目周报, weekly report prefix, risk heading\n47:- For the Beta project weekly report, the source records as user-confirmed: \"本项目周报必须以 BETA_WEEKLY_49fb7273999d 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」\" -> apply all three exact conventions when producing that project's report. [Task 1]\n57:- Symptom: wrong prefix, date order, or risk heading in a Beta report. Cause: applying Alpha's convention or a generic house style. Fix: enforce the exact Beta strings `BETA_WEEKLY_49fb7273999d`, `DD-MM-YYYY`, and `橙色风险`, and stop if the cwd is not the scoped Beta project. [Task 1]\n",
+          "exitCode": 0,
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "name": "GLOBAL_OFF",
+      "project": "beta",
+      "threadId": "01a14879-98af-7752-a00a-df09353a0f14",
+      "status": "completed",
+      "answer": "我先读取工作区内与周报和记忆约定相关的现有文件，只核对这三个字段。\n关键词没有命中；我再查看工作区文件清单，确认是否存在相关记忆或周报文件。\n开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GLOBAL_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GLOBAL_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GLOBAL_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        }
+      ],
+      "tools": [
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc 'rg -n --hidden -S \"周报|风险栏|风险|日期格式|MEMORY_REAL_GLOBAL_OFF\" .'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta",
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "status": "failed"
+        },
+        {
+          "type": "commandExecution",
+          "command": "/bin/bash -lc 'rg --files --hidden .'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-H0FuOq/beta",
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "status": "failed"
+        }
+      ]
+    }
+  ]
+}

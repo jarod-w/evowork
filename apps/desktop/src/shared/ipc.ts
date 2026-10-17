@@ -1734,3 +1734,36 @@ export interface CommunicationActions {
   cancelCommunication(input: { threadId: string; requestId: string }): Promise<void>;
   checkCommunication(input: { threadId: string; requestId: string }): Promise<void>;
 }
+
+/** 导入只传项目元数据和原生操作结果，记忆正文不穿过 IPC。 */
+export interface MemoryImportProjectView {
+  readonly key: string;
+  readonly path?: string | undefined;
+}
+export interface MemoryImportHistoryView {
+  readonly id: string;
+  readonly completedAt: number;
+  readonly projects: readonly {
+    readonly key: string;
+    readonly ok: boolean;
+    readonly reason?: string | undefined;
+  }[];
+}
+export interface MemoryImportStatusView {
+  readonly supported: boolean;
+  readonly reason?: string | undefined;
+  readonly history: readonly MemoryImportHistoryView[];
+}
+export interface MemoryImportDetectionView {
+  readonly selectionId: string;
+  readonly projects: readonly MemoryImportProjectView[];
+}
+export interface MemoryImportInput {
+  readonly selectionId: string;
+  readonly projectKeys: readonly string[];
+}
+
+export interface MemoryImportResult {
+  readonly importId?: string | undefined;
+  readonly refused?: string | undefined;
+}

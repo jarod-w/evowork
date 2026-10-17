@@ -21,6 +21,7 @@ import { createFakeComputerUse, cuaScript } from './fake-computer-use.mjs';
 import { createFakeGateway } from './fake-gateway.mjs';
 import { startRealGateway } from './real-gateway.mjs';
 import { selectRealModel } from './real-models.mjs';
+import { createObservedGatewayEntry } from './memory-wire.mjs';
 import { createImageGateway } from './image-gateway.mjs';
 import { publishControls, waitFor } from './runner.mjs';
 
@@ -276,9 +277,10 @@ async function main() {
   // 宿主启动时读 models.toml 写模型目录，所以要在 bootApp 之前落盘
   const registered = REGISTER_MODELS || HOST_GATEWAY ? customModelRecords(gatewayBaseUrl) : [];
   if (registered.length > 0) writeCustomModels(registered);
-  writeKernelConfig(
-    kernelHome,
-    `model_provider = "evowork"
+  // Reopening the same fixture must preserve user settings; only the ephemeral gateway moves.
+  const kernelConfig = resumeHome
+    ? readFileSync(join(kernelHome, 'config.toml'), 'utf8')
+    : `model_provider = "evowork"
 
 # 根键必须在第一个方括号表头之前（config.toml.template 同一条纪律）。
 default_permissions = "evowork-workspace"
@@ -299,7 +301,14 @@ extends = ":workspace"
 [otel]
 environment = "test"
 exporter = "none"
-`,
+${process.env.EVOWORK_UI_MEMORY_IMPORT === 'disabled' ? '[features]\nexternal_agent_memory_import = false\n' : ''}
+`;
+  writeKernelConfig(
+    kernelHome,
+    kernelConfig.replace(
+      /(\[model_providers\.evowork\][\s\S]*?\nbase_url\s*=\s*)"[^"]*"/,
+      `$1"${gatewayBaseUrl}"`,
+    ),
   );
 
   const desktop = await bootApp({
@@ -317,7 +326,14 @@ exporter = "none"
         ? { [REAL_KEY_ENV]: process.env.EVOWORK_UI_MODEL_KEY }
         : { EVOWORK_GATEWAY_URL: gatewayBaseUrl }),
     },
-    ...(HOST_GATEWAY ? { gatewayEntryPath: join(repoRoot, 'dist/gateway/main.js') } : {}),
+    ...(HOST_GATEWAY
+      ? {
+          gatewayEntryPath:
+            process.env.EVOWORK_UI_MEMORY_WIRE === '1'
+              ? createObservedGatewayEntry(home, repoRoot)
+              : join(repoRoot, 'dist/gateway/main.js'),
+        }
+      : {}),
     ...(computerUse ? { computerUse: { helper: computerUse.helper, releaseVerified: true } } : {}),
     show: true,
     captureKernelProcess: true,

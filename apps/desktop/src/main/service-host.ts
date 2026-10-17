@@ -613,6 +613,7 @@ export function migrateMultiAgentV2Config(text: string): { text: string; changed
 
 const MEMORY_DEFAULTS = [
   ['features', 'memories', 'true'],
+  ['features', 'external_agent_memory_import', 'true'],
   ['memories', 'use_memories', 'true'],
   ['memories', 'generate_memories', 'true'],
   ['memories', 'disable_on_external_context', 'true'],
