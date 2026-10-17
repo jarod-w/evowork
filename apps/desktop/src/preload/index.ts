@@ -228,6 +228,7 @@ export const RENDERER_ACTIONS = Object.freeze([
   'getPreferences',
   'setPreferences',
   'getMemoryImportStatus',
+  'setMemoryImportSync',
   'detectMemoryImport',
   'getMemoryImportHistory',
   'importMemories',

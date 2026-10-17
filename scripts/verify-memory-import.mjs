@@ -96,6 +96,12 @@ try {
   child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
   const config = await call('config/read', { includeLayers: false });
   assert.equal(config.config.features.external_agent_memory_import, true);
+  const readiness = await call('memory/status', {});
+  assert.deepEqual(readiness, { v2ConsolidatedThreads: 0, v2Ready: false });
+  await assert.rejects(call('memory/status', { minConsolidatedThreads: 0 }));
+  // No public sync scheduler method in this shipping protocol; update detection/import is native.
+  await assert.rejects(call('externalAgentConfig/sync', {}));
+  console.log('shipping memory/status available; dedicated sync method unavailable');
   const found = await call('externalAgentConfig/detect', { includeHome: true });
   const item = found.items.find((i) => i.itemType === 'MEMORY');
   assert.ok(item, 'Memory item missing');
@@ -140,6 +146,10 @@ try {
     'consolidation model did not receive source evidence',
   );
   console.log('native consolidation passed');
+  gateway.scriptWhen('memory-citation', (v) => v.text.includes('IMPORT_NEW_TASK'), {
+    kind: 'text',
+    text: 'Use violet reports.<oai-mem-citation><citation_entries>\nMEMORY.md:1-2|note=[Imported project reference]\n</citation_entries>\n<rollout_ids>\n</rollout_ids></oai-mem-citation>',
+  });
   const task = await call('thread/start', { cwd, model: 'e2e-model' });
   await call('turn/start', {
     threadId: task.thread.id,
@@ -154,7 +164,26 @@ try {
     ),
     'new task did not receive memory route',
   );
-  console.log('new task memory injection passed');
+  const citationDeadline = Date.now() + 10000;
+  let cited;
+  while (Date.now() < citationDeadline) {
+    cited = notices.find(
+      (n) =>
+        n.method === 'item/completed' &&
+        n.params.threadId === task.thread.id &&
+        n.params.item.memoryCitation,
+    );
+    if (cited) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.equal(cited?.params.item.memoryCitation.entries[0].path, 'MEMORY.md');
+  const restored = await call('thread/read', { threadId: task.thread.id, includeTurns: true });
+  assert.ok(
+    restored.thread.turns
+      .flatMap((t) => t.items)
+      .some((i) => i.memoryCitation?.entries[0]?.path === 'MEMORY.md'),
+  );
+  console.log('new task memory injection, citation events and history passed');
   const blocked = await call('thread/start', {
     cwd,
     model: 'e2e-model',

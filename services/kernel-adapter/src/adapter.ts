@@ -593,7 +593,20 @@ export function createAdapter(options: AdapterOptions) {
     },
   });
 
-  const memoryImporter = createMemoryImporter(() => session.peer);
+  const memoryImporter = createMemoryImporter(() => session.peer, {
+    read() {
+      const raw = readMeta(store.db, 'evowork.memory.importSync');
+      if (!raw) return undefined;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return undefined;
+      }
+    },
+    write(value) {
+      writeMeta(store.db, 'evowork.memory.importSync', JSON.stringify(value));
+    },
+  });
 
   let catalog: Catalog | undefined;
   /** 真正被内核信任、会跑的策略 hook 条数。`undefined` = 宿主没给策略包 */
@@ -954,10 +967,12 @@ export function createAdapter(options: AdapterOptions) {
         modes: Object.values(MODES),
         workspaces: (projects.data ?? []).map(toWorkspace),
       };
+      memoryImporter.start();
       return catalog;
     },
 
     async stop(): Promise<void> {
+      memoryImporter.stop();
       desktopTurns.clear();
       approvals.cancel(() => true);
       ephemeralThreads.clear();
@@ -1153,6 +1168,7 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     getMemoryImportStatus: () => memoryImporter.status(),
+    setMemoryImportSync: (enabled: boolean) => memoryImporter.setSync(enabled),
     detectMemoryImport: () => memoryImporter.detect(),
     getMemoryImportHistory: () => memoryImporter.history(),
     importMemories: (input: {
@@ -1245,8 +1261,10 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async resetMemories(): Promise<boolean> {
-      return callExperimental(EXPERIMENTAL_METHOD.memoryReset, undefined, () => false).then(
-        (result) => result !== false,
+      return memoryImporter.reset(() =>
+        callExperimental(EXPERIMENTAL_METHOD.memoryReset, undefined, () => false).then(
+          (result) => result !== false,
+        ),
       );
     },
 

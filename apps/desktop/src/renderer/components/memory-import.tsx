@@ -6,11 +6,14 @@ import type {
   MemoryImportResult,
   MemoryImportStatusView,
   MemorySettingsView,
+  MemoryImportSyncView,
 } from '../../shared/ipc.js';
+import { MemoryPreparation } from './memory-preparation.js';
 import { Dialog, PillButton } from './primitives.js';
 
 export interface MemoryImportPorts {
   getMemoryImportStatus?(): Promise<MemoryImportStatusView>;
+  setMemoryImportSync?(input: { readonly enabled: boolean }): Promise<MemoryImportSyncView>;
   detectMemoryImport?(): Promise<MemoryImportDetectionView>;
   importMemories?(input: MemoryImportInput): Promise<MemoryImportResult>;
   getMemoryImportHistory?(): Promise<readonly MemoryImportHistoryView[]>;
@@ -47,6 +50,7 @@ export function MemoryImportOverview(props: {
   const [status, setStatus] = useState<MemoryImportStatusView>();
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  const [syncBusy, setSyncBusy] = useState(false);
   useEffect(() => {
     let active = true;
     setError(undefined);
@@ -62,6 +66,28 @@ export function MemoryImportOverview(props: {
       active = false;
     };
   }, [props.ports, props.refreshKey, attempt]);
+  useEffect(() => {
+    if (!status?.sync?.enabled) return;
+    const timer = setInterval(() => setAttempt((value) => value + 1), 3000);
+    return () => clearInterval(timer);
+  }, [status?.sync?.enabled]);
+  const setSync = async (enabled: boolean) => {
+    if (syncBusy || !props.ports.setMemoryImportSync) return;
+    setSyncBusy(true);
+    setError(undefined);
+    const previous = status?.sync;
+    setStatus((value) => (value?.sync ? { ...value, sync: { ...value.sync, enabled } } : value));
+    try {
+      const sync = await props.ports.setMemoryImportSync({ enabled });
+      setStatus((previous) => (previous ? { ...previous, sync } : previous));
+      setAttempt((value) => value + 1);
+    } catch (cause) {
+      if (previous) setStatus((value) => (value ? { ...value, sync: previous } : value));
+      setError(cause instanceof Error ? cause.message : '同步设置未保存，请重试。');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
   return (
     <>
       <p className="ew-settings-note">
@@ -76,6 +102,52 @@ export function MemoryImportOverview(props: {
       <PillButton variant="ghost" onClick={() => setAttempt((value) => value + 1)}>
         刷新导入历史
       </PillButton>
+      {status?.sync && props.ports.setMemoryImportSync ? (
+        <section aria-label="记忆自动同步">
+          <label className="ew-checkbox">
+            <input
+              type="checkbox"
+              checked={status.sync.enabled}
+              disabled={
+                syncBusy ||
+                (!status.sync.enabled &&
+                  (!status.supported || !status.history.some((r) => r.projects.some((p) => p.ok))))
+              }
+              onChange={(event) => void setSync(event.target.checked)}
+            />
+            自动更新已导入的项目记忆
+          </label>
+          <p>
+            开启后每分钟检查以下已导入项目。同步包括来源文件的删减；后台整理会使用已配置模型并消耗用量。新增项目需要重新确认同步范围。
+          </p>
+          <ul>
+            {(status.sync.enabled
+              ? status.sync.projectKeys
+              : [
+                  ...new Set(
+                    status.history.flatMap((r) => r.projects.filter((p) => p.ok).map((p) => p.key)),
+                  ),
+                ]
+            ).map((key) => (
+              <li key={key}>{key}</li>
+            ))}
+          </ul>
+          {status.sync.pending ? <p role="status">同步资料已提交，正在核对导入结果。</p> : null}
+          {status.sync.error ? <p role="alert">{status.sync.error}</p> : null}
+          {status.sync.lastCheckedAt ? (
+            <p>最近检查：{new Date(status.sync.lastCheckedAt).toLocaleString()}</p>
+          ) : null}
+          {status.sync.lastCompletedAt ? (
+            <p>
+              最近同步完成：{new Date(status.sync.lastCompletedAt).toLocaleString()}
+              。资料同步完成不代表整理就绪。
+            </p>
+          ) : null}
+          <p>
+            关闭后停止后续同步，已经提交的操作仍可能完成。删除来源项目不会自动清除已学到的记忆。
+          </p>
+        </section>
+      ) : null}
       {status ? <ImportHistory records={status.history} /> : null}
     </>
   );
@@ -331,6 +403,10 @@ export function MemoryImportDialog(props: {
             {anySuccess ? (
               <>
                 <p>资料已导入；后台整理后可在后续新任务中使用。本页不代表记忆已经整理就绪。</p>
+                <MemoryPreparation
+                  key={String(memory?.enabled)}
+                  read={props.ports.getMemorySettings}
+                />
                 {memory && (!memory.enabled || !memory.useMemories) ? (
                   <>
                     <p>当前未开启“使用已有记忆”。</p>

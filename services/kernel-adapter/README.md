@@ -23,3 +23,5 @@
 **独立会话通信（2026-10-11）**：`thread-communication.ts` 管理权威本机队列、每目标互斥、空闲投递、最终结果回传和断线核对。`Adapter` 校验原生 MCP item、具体范围审批、来源回合及内核代际；投递沿用目标模型/权限/模式，以官方 `thread/read`、`thread/resume`、`turn/start` 完成。不会读取内核数据库或复制 rollout；未知投递不自动重试。设计见 [17](../../docs/design/17-thread-communication.md)。
 
 **外部记忆导入（2026-10-17）**：`memory-import.ts` 只经原生迁移协议发现/导入 Claude Code 项目记忆并读取历史；一次性选择凭据、提交前复核、超时结果未知不重放、明确禁用降级。`enableMemoryReading` 仅启用记忆及读取，不改生成或模型设置。设计见 [20](../../docs/design/20-memory-import.md)，原生探针 `node scripts/verify-memory-import.mjs`（仓库根），真实窗口入口为 `memory-import.spec.mjs`。
+
+**记忆能力复用**：原生消息保留 `memoryCitation`，V2 `memory/status` 仅用于整体就绪状态。自动同步在本适配层每分钟复用原生 detect/import/history，默认关闭，授权项目清单及待核对批次存在宿主 meta，不建立记忆正文副本。写前持久化暂停标记，异常暂停且不重放；退出只在已发写入结果不明时暂停，只读检测不会关闭开关。清空与导入/同步互斥，并先撤销同步授权。隔离/项目遗忘提案见 [21](../../docs/design/21-project-memory-isolation-and-forgetting.md)。

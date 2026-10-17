@@ -35,7 +35,7 @@ test('真模型导入后使用、任务/全局禁读和三个项目的范围约�
     paths.alpha,
     'alpha-project',
     `# Alpha 项目记忆\n仅适用于项目 ${paths.alpha}，不得应用到任何其他项目。\n` +
-      `已经由用户确认：本项目周报必须以 ${alpha} 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。\n` +
+      `已经由用户确认：本项目周报必须以 ${alpha}_OLD 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。\n` +
       '这是项目约定，不是用户全局偏好。\n',
   );
   seedClaudeMemory(
@@ -88,7 +88,41 @@ test('真模型导入后使用、任务/全局禁读和三个项目的范围约�
   }
   await dialog.getByRole('button', { name: '完成', exact: true }).click();
 
-  const evidence = { model: selectRealModel().upstreamModel, paths, alpha, beta, cases: [] };
+  // Update the authorized native copy through the production sync UI before model consolidation.
+  const sourcePath = join(home, '.claude/projects/alpha-project/memory/MEMORY.md');
+  writeFileSync(sourcePath, readFileSync(sourcePath, 'utf8').replace(`${alpha}_OLD`, alpha));
+  await page.getByRole('button', { name: /菜单$/ }).click();
+  await page
+    .getByRole('menu', { name: '用户菜单' })
+    .getByRole('menuitem', { name: '设置', exact: true })
+    .click();
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '导入', exact: true })
+    .click();
+  const sync = page.getByLabel('记忆自动同步');
+  await sync.getByRole('checkbox').check();
+  await expect
+    .poll(() => importedMemory(kernelHome, 'alpha-project')?.text)
+    .not.toContain(`${alpha}_OLD`);
+  await expect
+    .poll(async () => (await page.evaluate(() => window.evowork.getMemoryImportHistory())).length)
+    .toBe(2);
+  await expect
+    .poll(
+      async () => (await page.evaluate(() => window.evowork.getMemoryImportStatus())).sync?.pending,
+    )
+    .toBeUndefined();
+  await sync.getByRole('checkbox').uncheck();
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  const evidence = {
+    model: selectRealModel().upstreamModel,
+    paths,
+    alpha,
+    beta,
+    automaticSync: true,
+    cases: [],
+  };
   const wire = () => {
     const path = join(home, 'memory-wire.jsonl');
     return existsSync(path)
@@ -231,6 +265,7 @@ test('真模型导入后使用、任务/全局禁读和三个项目的范围约�
         // eslint-disable-next-line @evowork/no-kernel-internals -- Test-only assertion on returned tool evidence, no storage access.
         .not.toContain('/memories/');
     }
+    expect.soft(a.answer, '使用自动同步后的版本').not.toContain(`${alpha}_OLD`);
     expect.soft(unknown.answer, '未导入项目不借用其他项目约定').toContain('UNKNOWN');
     expect
       .soft(unknown.answer, '未导入项目不借用其他项目约定')

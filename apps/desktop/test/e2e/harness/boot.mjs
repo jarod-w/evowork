@@ -73,6 +73,8 @@ export async function bootApp({
    * 假网关那条 E2E 本来就传，不受影响；真网关那条现在没传，这次拆分不动它。
    */
   let kernelChild;
+  const kernelLifecycle = [];
+  const expectedKernelExits = new WeakSet();
   const memoryImportFaults =
     process.env.EVOWORK_UI_MEMORY_RPC_FAULT === '1' ? createMemoryRpcFaults() : undefined;
   const openedExternalUrls = [];
@@ -93,6 +95,17 @@ export async function bootApp({
           );
           if (command === appServerPath) {
             kernelChild = child;
+            kernelLifecycle.push({ kind: 'started', pid: child.pid, at: Date.now() });
+            child.once('exit', (code, signal) => {
+              kernelLifecycle.push({
+                kind: 'exited',
+                pid: child.pid,
+                code,
+                signal,
+                intentional: expectedKernelExits.has(child),
+                at: Date.now(),
+              });
+            });
             memoryImportFaults?.attach(child);
           }
           return child;
@@ -178,9 +191,12 @@ export async function bootApp({
     memoryImportFaults,
     /** 当前内核子进程的 pid。重启后会换一个，所以每次都重新读，不要缓存 */
     kernelPid: () => kernelChild?.pid,
+    kernelLifecycle: () => kernelLifecycle.map((event) => ({ ...event })),
     killKernel: () => {
       if (!kernelChild)
         throw new Error('没有捕获内核子进程（bootApp 要传 captureKernelProcess）。');
+      expectedKernelExits.add(kernelChild);
+      kernelLifecycle.push({ kind: 'intentional-kill', pid: kernelChild.pid, at: Date.now() });
       kernelChild.kill('SIGKILL');
     },
   };

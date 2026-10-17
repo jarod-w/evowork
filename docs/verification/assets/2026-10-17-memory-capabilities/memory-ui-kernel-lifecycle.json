@@ -1,0 +1,269 @@
+{
+  "tests": 19,
+  "starts": 24,
+  "intentionalKills": 3,
+  "exits": 3,
+  "unexpectedExits": 0,
+  "cases": [
+    {
+      "case": "memories--memories-从补全和手输打开，取消不保存，禁读在真实任务中生效-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87440,
+          "at": 1792229438984
+        }
+      ]
+    },
+    {
+      "case": "memory-import-V2-整理状态读取真实整体就绪接口，不把零任务显示为正在整理-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88408,
+          "at": 1792229627925
+        },
+        {
+          "kind": "intentional-kill",
+          "pid": 88408,
+          "at": 1792229628891
+        },
+        {
+          "kind": "exited",
+          "pid": 88408,
+          "code": null,
+          "signal": "SIGKILL",
+          "intentional": true,
+          "at": 1792229628896
+        },
+        {
+          "kind": "started",
+          "pid": 88417,
+          "at": 1792229629903
+        }
+      ]
+    },
+    {
+      "case": "memory-import-restart-整个应用关闭重开，项目记忆、读取设置、原生历史和去重均保持-fake",
+      "events": [
+        [
+          {
+            "kind": "started",
+            "pid": 87581,
+            "at": 1792229442929
+          }
+        ],
+        [
+          {
+            "kind": "started",
+            "pid": 87604,
+            "at": 1792229444727
+          }
+        ],
+        [
+          {
+            "kind": "started",
+            "pid": 87620,
+            "at": 1792229446580
+          }
+        ]
+      ]
+    },
+    {
+      "case": "memory-import-原生写入后丢失响应-未知结果不重放，原生历史可核对真实成功，重新检测去重-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88049,
+          "at": 1792229472913
+        }
+      ]
+    },
+    {
+      "case": "memory-import-原生批次部分失败时保留成功项目并显示失败原因，可重新检测重试-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87873,
+          "at": 1792229454997
+        }
+      ]
+    },
+    {
+      "case": "memory-import-原生结构化记忆引用在实时消息和刷新历史中显示-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88269,
+          "at": 1792229625457
+        }
+      ]
+    },
+    {
+      "case": "memory-import-发货内核实际整理导入资料，新任务收到记忆索引，禁读任务不注入-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87666,
+          "at": 1792229452113
+        }
+      ]
+    },
+    {
+      "case": "memory-import-手动更新同步来源修改和删除，检测前不自动同步，历史与来源保持可追溯-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87937,
+          "at": 1792229461118
+        }
+      ]
+    },
+    {
+      "case": "memory-import-显式关闭记忆导入-升级保留关闭设置，入口明确说明且不允许检测-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88111,
+          "at": 1792229496589
+        }
+      ]
+    },
+    {
+      "case": "memory-import-模型网关不可用时-import-仍在本地工作，复制成功且不创建模型任务-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88026,
+          "at": 1792229471046
+        }
+      ]
+    },
+    {
+      "case": "memory-import-确认前内核重启使旧选择失效，拒绝零写入，重新检测可恢复-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87983,
+          "at": 1792229465313
+        },
+        {
+          "kind": "intentional-kill",
+          "pid": 87983,
+          "at": 1792229466473
+        },
+        {
+          "kind": "exited",
+          "pid": 87983,
+          "code": null,
+          "signal": "SIGKILL",
+          "intentional": true,
+          "at": 1792229466477
+        },
+        {
+          "kind": "started",
+          "pid": 87992,
+          "at": 1792229467486
+        }
+      ]
+    },
+    {
+      "case": "memory-import-确认时来源已删除则拒绝写入，可重新检测导入剩余项目-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87960,
+          "at": 1792229463248
+        }
+      ]
+    },
+    {
+      "case": "memory-import-空来源及缺少可靠项目目录时无候选，重新检测可发现新增项目-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87896,
+          "at": 1792229457123
+        }
+      ]
+    },
+    {
+      "case": "memory-import-自动同步原生响应丢失-已写入但结果未知时暂停，核对历史后才显式恢复，无自动重放-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88463,
+          "at": 1792229633126
+        }
+      ]
+    },
+    {
+      "case": "memory-import-自动同步遇到原生复制失败会暂停，历史保留失败结果-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88437,
+          "at": 1792229631118
+        }
+      ]
+    },
+    {
+      "case": "memory-import-自动同步默认关闭、限定已授权项目，定时同步更新和删减，关闭后停止-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88128,
+          "at": 1792229499011
+        }
+      ]
+    },
+    {
+      "case": "memory-import-设置及-import-共用向导，取消零写入、仅选中项目、保留开关、去重与历史恢复-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87636,
+          "at": 1792229447969
+        },
+        {
+          "kind": "intentional-kill",
+          "pid": 87636,
+          "at": 1792229450309
+        },
+        {
+          "kind": "exited",
+          "pid": 87636,
+          "code": null,
+          "signal": "SIGKILL",
+          "intentional": true,
+          "at": 1792229450313
+        },
+        {
+          "kind": "started",
+          "pid": 87657,
+          "at": 1792229451322
+        }
+      ]
+    },
+    {
+      "case": "memory-import-返回修改项目及取消零写入，个性化入口保持原生成和模型设置，新建任务可达-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 87910,
+          "at": 1792229458844
+        }
+      ]
+    },
+    {
+      "case": "memory-import-长项目列表在宽中窄窗口可滚动到最后项目，确认按钮和键盘焦点始终可达-fake",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 88012,
+          "at": 1792229468648
+        }
+      ]
+    }
+  ]
+}

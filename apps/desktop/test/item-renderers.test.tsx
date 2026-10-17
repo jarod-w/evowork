@@ -580,3 +580,38 @@ describe('UserMessage：@ 引用成块显示（03 §4.2 的 token 在历史里�
     expect(img?.getAttribute('alt')).toBe('一张折线图');
   });
 });
+
+describe('原生记忆引用', () => {
+  it('只呈现结构化引用，不从正文伪造来源，不把记忆路径变成文件动作', () => {
+    const { container } = renderItem({
+      id: 'cited',
+      type: 'agentMessage',
+      text: '使用项目惯例。',
+      memoryCitation: {
+        entries: [
+          {
+            path: '../../private/MEMORY.md',
+            lineStart: 2,
+            lineEnd: 4,
+            note: '<img src=x onerror=alert(1)>',
+          },
+        ],
+        threadIds: ['source-thread'],
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /记忆引用/ }));
+    expect(screen.getByText('../../private/MEMORY.md:2–4')).toBeTruthy();
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('a')).toBeNull();
+  });
+  it('缺失或无效引用不显示已使用记忆的承诺', () => {
+    renderItem({
+      id: 'uncited',
+      type: 'agentMessage',
+      text: '我使用了 MEMORY.md',
+      memoryCitation: { entries: [{ path: 'MEMORY.md', lineStart: -1, lineEnd: 2, note: 'bad' }] },
+    });
+    expect(screen.queryByRole('button', { name: /记忆引用/ })).toBeNull();
+  });
+});

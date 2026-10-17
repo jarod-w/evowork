@@ -1749,10 +1749,19 @@ export interface MemoryImportHistoryView {
     readonly reason?: string | undefined;
   }[];
 }
+export interface MemoryImportSyncView {
+  readonly enabled: boolean;
+  readonly projectKeys: readonly string[];
+  readonly lastCheckedAt?: number | undefined;
+  readonly lastCompletedAt?: number | undefined;
+  readonly error?: string | undefined;
+  readonly pending?: { readonly id: string; readonly startedAt: number } | undefined;
+}
 export interface MemoryImportStatusView {
   readonly supported: boolean;
   readonly reason?: string | undefined;
   readonly history: readonly MemoryImportHistoryView[];
+  readonly sync?: MemoryImportSyncView | undefined;
 }
 export interface MemoryImportDetectionView {
   readonly selectionId: string;

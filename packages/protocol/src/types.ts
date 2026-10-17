@@ -353,10 +353,21 @@ export interface UserMessageItem extends ThreadItemBase {
   readonly content: readonly UserInput[];
 }
 
+export interface MemoryCitation {
+  readonly entries: readonly {
+    readonly path: string;
+    readonly lineStart: number;
+    readonly lineEnd: number;
+    readonly note: string;
+  }[];
+  readonly threadIds: readonly string[];
+}
+
 export interface AgentMessageItem extends ThreadItemBase {
   readonly type: 'agentMessage';
   readonly text?: string;
   readonly phase?: 'commentary' | 'final_answer' | null;
+  readonly memoryCitation?: MemoryCitation | null;
 }
 
 export interface PlanItem extends ThreadItemBase {

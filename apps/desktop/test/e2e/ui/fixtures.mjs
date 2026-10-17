@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { arch, homedir, platform } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -201,6 +201,16 @@ export const test = base.extend({
      * 路径要在**测试跑完之后、关闭之前**取：太早的话 `bootApp` 还没发布控制面，
      * 拿到的是 undefined；太晚的话进程没了，问不出来。
      */
+    const lifecycle = await app
+      .evaluate(() => globalThis.__evoworkE2E?.kernelLifecycle?.())
+      .catch(() => undefined);
+    const unexpectedExits =
+      lifecycle?.filter((event) => event.kind === 'exited' && !event.intentional) ?? [];
+    if (lifecycle)
+      writeFileSync(
+        testInfo.outputPath('kernel-lifecycle.json'),
+        JSON.stringify(lifecycle, null, 2),
+      );
     const home = await app.evaluate(() => globalThis.__evoworkE2E?.home).catch(() => undefined);
     const gatewayPid = await app
       .evaluate(() => globalThis.__evoworkE2E?.gatewayPid)
@@ -214,7 +224,14 @@ export const test = base.extend({
      * 而那个目录没人会去看。失败时留着，是因为那份 home 里有 sqlite 与内核家目录 ——
      * 排查"为什么这条红了"只能靠它。
      */
-    if (testInfo.status === testInfo.expectedStatus) removeE2EHome(home);
+    if (testInfo.status === testInfo.expectedStatus && lifecycle && !unexpectedExits.length)
+      removeE2EHome(home);
+    if (unexpectedExits.length)
+      throw new Error(
+        `测试中发生 ${unexpectedExits.length} 次非预期内核退出；即使恢复成功也不能通过，详情见 kernel-lifecycle.json。`,
+      );
+    if (!lifecycle && testInfo.status === testInfo.expectedStatus)
+      throw new Error('未取得内核生命周期证据，不能确认没有意外重启。');
     /*
      * 关 App 之后网关还活着 = 泄漏。已经替它收了尸，但**仍然判红**：
      * 只默默杀掉的话，`ui-entry.mjs` 那条 will-quit 哪天断了也没人知道 ——

@@ -1284,3 +1284,10 @@ O0 须固定包/语言/渲染器清单与样本，验证离线可搬运、实际
 | Plugin             | 可含 skills / mcpServers / hooks / commands 的分发单元 |
 | Marketplace        | 插件来源（npm / git / 本地目录）                       |
 | app-server         | codex 面向 GUI 的 JSON-RPC 服务                        |
+
+### 2026-10-17 记忆接口复用补充
+
+记忆引用依赖原生 AgentMessage.memoryCitation；整理状态沿用 memory/status 的 V2 整体语义。
+自动同步复用 externalAgentConfig/detect 与 import，调度和授权清单位于 kernel-adapter，
+不增加内核文件访问、记忆正文存储、生产出网路径或补丁。
+发货协议没有独立自动同步调度、逐批整理状态或按项目遗忘接口；细则见 [20](design/20-memory-import.md)。

@@ -1,3 +1,4 @@
+import { memoryCitationEntries } from '../../shared/memory-citations.js';
 import { activityIcon, activityState, describeActivity } from '../../shared/activity.js';
 import { renderIcon } from './icons.js';
 import { ImageOperationCard, type ImageUiPorts } from './image-settings.js';
@@ -626,6 +627,21 @@ export function ItemRenderer({
               />
             ),
           )}
+          {memoryCitationEntries(item.memoryCitation).length ? (
+            <Collapsible kind="memory-sources" defaultExpanded={false} summary="记忆引用">
+              <p>模型标注的记忆来源，不代表完整的检索记录。</p>
+              <ul>
+                {memoryCitationEntries(item.memoryCitation).map((entry, index) => (
+                  <li key={index}>
+                    <code>
+                      {entry.path}:{entry.lineStart}–{entry.lineEnd}
+                    </code>
+                    {entry.note ? <p>{entry.note}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
+          ) : null}
           {citedSources.length ? (
             <Collapsible
               kind="sources"

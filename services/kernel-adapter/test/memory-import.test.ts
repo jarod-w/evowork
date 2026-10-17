@@ -1,13 +1,17 @@
 import { ERROR_CODE, JsonRpcCallError, METHOD, type JsonRpcPeer } from '@evowork/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { createMemoryImporter } from '../src/memory-import.js';
+import { type MemoryImportSync, createMemoryImporter } from '../src/memory-import.js';
 
-function fixture() {
+function fixture(persistence?: {
+  read(): MemoryImportSync | undefined;
+  write(value: MemoryImportSync): void;
+}) {
   const calls: { method: string; params: unknown }[] = [];
   let enabled = true;
   let projects = ['alpha', 'beta'];
   let importError = false;
   let holdImport = false;
+  let releaseImport: (() => void) | undefined;
   let histories: unknown[] = [];
   let unsupported = false;
   const peer = {
@@ -31,7 +35,10 @@ function fixture() {
           ],
         } as T;
       if (method === METHOD.externalAgentImport) {
-        if (holdImport) return await new Promise<T>(() => {});
+        if (holdImport)
+          return await new Promise<T>((resolve) => {
+            releaseImport = () => resolve({ importId: 'native-import' } as T);
+          });
         if (importError) throw new Error('connection lost after write');
         return { importId: 'native-import' } as T;
       }
@@ -39,8 +46,11 @@ function fixture() {
     },
   };
   return {
-    importer: createMemoryImporter(() => peer as JsonRpcPeer),
+    importer: createMemoryImporter(() => peer as JsonRpcPeer, persistence),
     calls,
+    releaseImport() {
+      releaseImport?.();
+    },
     configure(input: {
       enabled?: boolean;
       projects?: string[];
@@ -189,4 +199,246 @@ describe('项目记忆导入边界', () => {
       },
     ]);
   });
+});
+
+describe('原生增量同步调度', () => {
+  const imported = (id = 'previous', key = 'alpha') => ({
+    importId: id,
+    providerId: 'claude-code',
+    completedAtMs: Date.now(),
+    successes: [{ itemType: 'MEMORY', source: key }],
+    failures: [],
+  });
+  it('默认关闭及关闭后零来源检测；开启仅同步确认时的已导入项目，不扩大到新项目', async () => {
+    vi.useFakeTimers();
+    let saved: MemoryImportSync | undefined;
+    const f = fixture({
+      read: () => saved,
+      write: (value) => {
+        saved = value;
+      },
+    });
+    try {
+      f.importer.start();
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(f.calls.some((call) => call.method === METHOD.externalAgentDetect)).toBe(false);
+      f.configure({ histories: [imported()] });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(saved?.enabled).toBe(true);
+      expect(saved?.pending?.id).toBe('native-import');
+      expect(
+        f.calls.find((call) => call.method === METHOD.externalAgentImport)?.params,
+      ).toMatchObject({
+        migrationItems: [{ itemType: 'MEMORY', details: { memory: ['alpha'] } }],
+      });
+      f.configure({ histories: [imported(), imported('native-import'), imported('new', 'beta')] });
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(saved?.lastCompletedAt).toBeDefined();
+      expect(saved?.projectKeys).toEqual(['alpha']);
+      await f.importer.setSync(false);
+      const count = f.calls.length;
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(f.calls).toHaveLength(count);
+      const restarted = fixture({
+        read: () => saved,
+        write: (value) => {
+          saved = value;
+        },
+      });
+      restarted.importer.start();
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(restarted.calls).toHaveLength(0);
+      restarted.importer.stop();
+    } finally {
+      f.importer.stop();
+      vi.useRealTimers();
+    }
+  });
+  it('写入前持久化暂停状态，丢失回复后不自动重放，重开仍暂停', async () => {
+    vi.useFakeTimers();
+    let saved: MemoryImportSync | undefined;
+    const snapshots: MemoryImportSync[] = [];
+    const f = fixture({
+      read: () => saved,
+      write: (value) => {
+        saved = value;
+        snapshots.push(value);
+      },
+    });
+    try {
+      f.configure({ histories: [imported()], holdImport: true });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(saved).toMatchObject({ enabled: false, projectKeys: ['alpha'] });
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(f.calls.filter((c) => c.method === METHOD.externalAgentImport)).toHaveLength(1);
+      expect(saved?.error).toContain('暂停');
+      f.importer.stop();
+      const restarted = fixture({
+        read: () => saved,
+        write: (value) => {
+          saved = value;
+        },
+      });
+      restarted.importer.start();
+      await vi.advanceTimersByTimeAsync(120_001);
+      expect(restarted.calls).toHaveLength(0);
+      restarted.importer.stop();
+      expect(snapshots.some((value) => value.enabled)).toBe(true);
+    } finally {
+      f.importer.stop();
+      vi.useRealTimers();
+    }
+  });
+  it('同步批次部分失败后暂停，不把导入完成当作整理就绪', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    try {
+      f.configure({ histories: [imported()] });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      f.configure({
+        histories: [
+          {
+            ...imported('native-import'),
+            successes: [],
+            failures: [{ itemType: 'MEMORY', source: 'alpha', message: 'permission denied' }],
+          },
+        ],
+      });
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect((await f.importer.status()).sync).toMatchObject({
+        enabled: false,
+        error: expect.stringContaining('部分项目同步失败'),
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(f.calls.filter((c) => c.method === METHOD.externalAgentImport)).toHaveLength(1);
+    } finally {
+      f.importer.stop();
+      vi.useRealTimers();
+    }
+  });
+  it('关闭或内核丢失时，迟到响应不能重新开启同步；不消费手动向导选择', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    try {
+      const selection = await f.importer.detect();
+      f.configure({ histories: [imported()], projects: [] });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      f.configure({ projects: ['alpha'] });
+      await f.importer.setSync(false);
+      await f.importer.import({ selectionId: selection.selectionId, projectKeys: ['alpha'] });
+      expect((await f.importer.status()).sync?.enabled).toBe(false);
+      f.configure({ holdImport: true });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      f.importer.invalidate();
+      await vi.advanceTimersByTimeAsync(200_001);
+      expect((await f.importer.status()).sync?.enabled).toBe(false);
+    } finally {
+      f.importer.stop();
+      vi.useRealTimers();
+    }
+  });
+  it('没有 Claude Code 成功导入记录时不能开启，不扫描来源', async () => {
+    const f = fixture();
+    f.configure({ histories: [{ ...imported(), providerId: 'cursor' }] });
+    await expect(f.importer.setSync(true)).rejects.toThrow('请先导入');
+    expect(f.calls.some((c) => c.method === METHOD.externalAgentDetect)).toBe(false);
+    await expect(f.importer.setSync('true' as unknown as boolean)).rejects.toThrow('同步设置无效');
+  });
+});
+
+describe('同步关闭、重开与清空竞态', () => {
+  const records = [
+    {
+      importId: 'previous',
+      providerId: 'claude-code',
+      completedAtMs: 1,
+      successes: [{ itemType: 'MEMORY', source: 'alpha' }],
+      failures: [],
+    },
+  ];
+  it('关闭后迟到的真实写响应不能重新启用，清空也不能穿过在途同步', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    try {
+      f.configure({ histories: records, holdImport: true });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      const reset = vi.fn(async () => true);
+      await expect(f.importer.reset(reset)).rejects.toThrow('正在导入或同步');
+      expect(reset).not.toHaveBeenCalled();
+      await f.importer.setSync(false);
+      f.releaseImport();
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await f.importer.status()).sync?.enabled).toBe(false);
+      await f.importer.reset(reset);
+      expect(reset).toHaveBeenCalledOnce();
+      expect((await f.importer.status()).sync).toMatchObject({ enabled: false, projectKeys: [] });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(f.calls.filter((c) => c.method === METHOD.externalAgentImport)).toHaveLength(1);
+    } finally {
+      f.importer.stop();
+      vi.useRealTimers();
+    }
+  });
+  it('只读检测后正常退出保留开启和范围，新实例自动检测并同步原授权项目', async () => {
+    vi.useFakeTimers();
+    let saved: MemoryImportSync | undefined;
+    const persistence = {
+      read: () => saved,
+      write: (value: MemoryImportSync) => {
+        saved = value;
+      },
+    };
+    const f = fixture(persistence);
+    const restarted = () => fixture(persistence);
+    try {
+      f.configure({ histories: records, projects: [] });
+      await f.importer.setSync(true);
+      await vi.advanceTimersByTimeAsync(1);
+      f.importer.stop();
+      expect(saved).toMatchObject({ enabled: true, projectKeys: ['alpha'] });
+      const next = restarted();
+      next.configure({ histories: records });
+      next.importer.start();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(next.calls.find((c) => c.method === METHOD.externalAgentImport)?.params).toMatchObject(
+        { migrationItems: [{ details: { memory: ['alpha'] } }] },
+      );
+      next.importer.stop();
+    } finally {
+      f.importer.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
+it('前台核对批次不能把下一次来源检测提前到一秒后', async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const record = (id: string) => ({
+    importId: id,
+    providerId: 'claude-code',
+    completedAtMs: 1,
+    successes: [{ itemType: 'MEMORY', source: 'alpha' }],
+    failures: [],
+  });
+  try {
+    f.configure({ histories: [record('first')] });
+    await f.importer.setSync(true);
+    await vi.advanceTimersByTimeAsync(1);
+    f.configure({ histories: [record('first'), record('native-import')] });
+    expect((await f.importer.status()).sync?.pending).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(f.calls.filter((call) => call.method === METHOD.externalAgentDetect)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(f.calls.filter((call) => call.method === METHOD.externalAgentDetect)).toHaveLength(2);
+  } finally {
+    f.importer.stop();
+    vi.useRealTimers();
+  }
 });

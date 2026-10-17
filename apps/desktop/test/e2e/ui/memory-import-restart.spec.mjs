@@ -1,6 +1,6 @@
 import { _electron as electron } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { realpathSync } from 'node:fs';
+import { realpathSync, writeFileSync } from 'node:fs';
 import { arch, platform } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { expect, test } from './fixtures.mjs';
@@ -30,6 +30,13 @@ test('整个应用关闭重开，项目记忆、读取设置、原生历史和�
   let app,
     home,
     success = false;
+  const lifecycles = [];
+  async function recordLifecycle() {
+    const events = await app.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle());
+    expect(events.filter((event) => event.kind === 'exited')).toEqual([]);
+    lifecycles.push(events);
+    writeFileSync(info.outputPath('kernel-lifecycle.json'), JSON.stringify(lifecycles, null, 2));
+  }
   async function launch(reuse) {
     app = await electron.launch({
       executablePath: require('electron'),
@@ -81,6 +88,7 @@ test('整个应用关闭重开，项目记忆、读取设置、原生历史和�
     await expect(dialog.getByText('restart-project：资料已导入')).toBeVisible();
     const before = await page.evaluate(() => window.evowork.getMemoryImportHistory());
     expect(before).toHaveLength(1);
+    await recordLifecycle();
     await app.close();
     app = undefined;
     page = await launch(home);
@@ -111,6 +119,40 @@ test('整个应用关闭重开，项目记忆、读取设置、原生历史和�
     await expect(dialog.getByRole('button', { name: '继续', exact: true })).toBeDisabled();
     expect((await page.evaluate(() => window.evowork.getStartup())).tasks).toHaveLength(0);
     await page.screenshot({ path: info.outputPath('import-whole-app-restarted.png') });
+    await page.keyboard.press('Escape');
+    await page.getByRole('checkbox', { name: '自动更新已导入的项目记忆' }).check();
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => window.evowork.getMemoryImportStatus())).sync?.enabled,
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => window.evowork.getMemoryImportStatus())).sync?.lastCheckedAt,
+      )
+      .toBeTruthy();
+    await recordLifecycle();
+    await app.close();
+    app = undefined;
+    writeFileSync(
+      join(home, '.claude/projects/restart-project/memory/MEMORY.md'),
+      '# Restart project\nSYNC_AFTER_APP_RESTART\n',
+    );
+    page = await launch(home);
+    await expect
+      .poll(() => importedMemory(join(home, '.evowork/kernel'), 'restart-project')?.text)
+      .toContain('SYNC_AFTER_APP_RESTART');
+    await expect
+      .poll(async () => (await page.evaluate(() => window.evowork.getMemoryImportHistory())).length)
+      .toBe(2);
+    expect((await page.evaluate(() => window.evowork.getMemoryImportStatus())).sync).toMatchObject({
+      enabled: true,
+      projectKeys: ['restart-project'],
+    });
+    expect((await page.evaluate(() => window.evowork.getStartup())).tasks).toHaveLength(0);
+    await recordLifecycle();
     success = true;
   } finally {
     if (app) await app.close();

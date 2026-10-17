@@ -41,6 +41,7 @@ import { isImportCommand } from '../shared/import-command.js';
 import type {
   MemoryImportInput,
   MemoryImportStatusView,
+  MemoryImportSyncView,
   MemoryImportDetectionView,
   MemoryImportHistoryView,
 } from '../shared/ipc.js';
@@ -1962,6 +1963,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
     getMemoryImportStatus(): Promise<MemoryImportStatusView> {
       return adapter.getMemoryImportStatus();
+    },
+    setMemoryImportSync(input: { readonly enabled: boolean }): Promise<MemoryImportSyncView> {
+      return adapter.setMemoryImportSync(input?.enabled);
     },
     detectMemoryImport(): Promise<MemoryImportDetectionView> {
       return adapter.detectMemoryImport();

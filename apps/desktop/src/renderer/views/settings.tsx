@@ -1,3 +1,4 @@
+import { memoryPreparationLabel } from '../components/memory-preparation.js';
 import { MemoryImportOverview, type MemoryImportPorts } from '../components/memory-import.js';
 import { ImageSettings, type ImageUiPorts } from '../components/image-settings.js';
 import type { ComputerUseStatusView } from '../../shared/ipc.js';
@@ -206,15 +207,7 @@ function MemorySection(props: SettingsPageProps) {
       ...next,
     });
   };
-  const status = !memory.enabled
-    ? '本地记忆已关闭。'
-    : memory.version === 'v1'
-      ? '当前记忆管线（V1）不提供整理进度；使用与生成设置仍然有效。'
-      : !memory.statusSupported
-        ? '当前内核不提供记忆准备进度；设置仍然有效。'
-        : memory.ready
-          ? `记忆已就绪，已整理 ${memory.consolidatedThreads} 个任务。`
-          : `正在学习，已整理 ${memory.consolidatedThreads} 个任务。`;
+  const status = memoryPreparationLabel(memory);
 
   return (
     <section className="ew-settings-section">
@@ -331,7 +324,10 @@ function MemorySection(props: SettingsPageProps) {
             props.onResetMemories();
           }}
         >
-          <p>这会删除 EvoWork 已提取的全部本地记忆，项目里的 AGENTS.md 和任务历史不会被删除。</p>
+          <p>
+            这会删除 EvoWork 已提取的全部本地记忆，并关闭项目记忆自动同步。项目里的 AGENTS.md
+            和任务历史不会被删除。
+          </p>
         </Dialog>
       ) : null}
     </section>

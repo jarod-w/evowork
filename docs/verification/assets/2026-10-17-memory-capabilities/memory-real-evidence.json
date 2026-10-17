@@ -1,0 +1,1145 @@
+{
+  "model": "mimo-v2.6-flash",
+  "paths": {
+    "alpha": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace",
+    "beta": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta",
+    "gamma": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/gamma"
+  },
+  "alpha": "ALPHA_WEEKLY_340053b76d1f",
+  "beta": "BETA_WEEKLY_340053b76d1f",
+  "automaticSync": true,
+  "cases": [
+    {
+      "name": "TRIGGER",
+      "project": "alpha",
+      "threadId": "01a1492d-567d-7f31-a30f-f809c5915e4d",
+      "status": "completed",
+      "answer": "READY",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a1492d-56f4-75e0-8f23-b4c5c89b6d8f",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_TRIGGER\n请只回复 READY。不读文件，不运行命令，不创建子任务。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a1492d-569f-7110-9155-d922a91a14c2",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc6wxdxjlsdnx_0",
+          "summary": [
+            "We need respond READY only. No tools."
+          ],
+          "content": [],
+          "_turnId": "01a1492d-569f-7110-9155-d922a91a14c2",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc6wxdxjlsdnx_1",
+          "text": "READY",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a1492d-569f-7110-9155-d922a91a14c2",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_TRIGGER"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        }
+      ]
+    },
+    {
+      "name": "ALPHA_ON",
+      "project": "alpha",
+      "threadId": "01a14931-0d23-79e1-a814-6928bf9116ba",
+      "status": "completed",
+      "answer": "我会只检索本项目记忆，核对这三个字段，不读取其他会话。\n开头标签：ALPHA_WEEKLY_340053b76d1f  \n日期格式：YYYY/MM/DD  \n风险栏标题：紫色风险\n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14931-0db6-77e1-aea9-295163af313f",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_ALPHA_ON\n请按本项目已有的周报约定，返回开头标签、日期格式、风险栏标题。可以查阅本项目相关记忆；没有本项目依据的字段写 UNKNOWN，不得猜测或借用其他项目约定。只回答这三个字段，不修改文件，不联网，不创建子任务或读取其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14931-0d71-7fb1-bf2b-df4e0a1d32d1",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc7256tsjyk61_0",
+          "summary": [
+            "We need must memory quick pass. Need use memory. Query mentions project weekly. Need read MEMORY.md. Then likely skill. We know summary Alpha workspace but must not borrow other projects. Cwd workspace maps Alpha. Need exact lines citation. We need only answer 3 fields, but citation must be last exact. Conflict \"只回答这三个字段\" memory citation mandatory. Could maybe output fields plus citation block. Need inspect memory."
+          ],
+          "content": [],
+          "_turnId": "01a14931-0d71-7fb1-bf2b-df4e0a1d32d1",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc7256tsjyk61_1",
+          "text": "我会只检索本项目记忆，核对这三个字段，不读取其他会话。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14931-0d71-7fb1-bf2b-df4e0a1d32d1",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_a9061ed38e8f4c7085ff56c6",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n \"Alpha|ALPHA_WEEKLY|周报|紫色风险|日期格式|开头标签\" \"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md\"'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace",
+          "processId": "22818",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n 'Alpha|ALPHA_WEEKLY|周报|紫色风险|日期格式|开头标签' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md",
+              "query": "Alpha|ALPHA_WEEKLY|周报|紫色风险|日期格式|开头标签",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "1:# Task Group: Alpha project weekly report format\n3:scope: Generate or edit weekly reports for the Alpha project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n6:## Task 1: Apply the confirmed Alpha weekly-report format\n14:- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n18:- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n28:- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n43:- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n47:- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14931-0d71-7fb1-bf2b-df4e0a1d32d1",
+          "output": "1:# Task Group: Alpha project weekly report format\n3:scope: Generate or edit weekly reports for the Alpha project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n6:## Task 1: Apply the confirmed Alpha weekly-report format\n14:- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n18:- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n28:- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n43:- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n47:- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc72bzeqbq020_0",
+          "summary": [
+            "Need only three fields, citation is mandated. But says only answer three fields likely citation block exception? Memory citation required. Could include exactly three lines then citation block. Need perhaps scope match workspace. We have lines1,14,18. Cite MEMORY14-18 maybe. Citation last. Need no extra prose."
+          ],
+          "content": [],
+          "_turnId": "01a14931-0d71-7fb1-bf2b-df4e0a1d32d1",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc72bzeqbq020_1",
+          "text": "开头标签：ALPHA_WEEKLY_340053b76d1f  \n日期格式：YYYY/MM/DD  \n风险栏标题：紫色风险\n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "MEMORY.md",
+                "lineStart": 14,
+                "lineEnd": 18,
+                "note": "本项目周报的开头标签、日期格式和风险栏标题"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14931-0d71-7fb1-bf2b-df4e0a1d32d1",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        }
+      ]
+    },
+    {
+      "name": "BETA_ON",
+      "project": "beta",
+      "threadId": "01a14931-440e-7db0-9768-2f7acc710edc",
+      "status": "completed",
+      "answer": "我先快速核对本项目记忆与适用范围，只读取记忆文件。\n- 开头标签：`BETA_WEEKLY_340053b76d1f`\n- 日期格式：`DD-MM-YYYY`\n- 风险栏标题：`橙色风险`\n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14931-448d-7213-b948-c9eebc38d120",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_BETA_ON\n请按本项目已有的周报约定，返回开头标签、日期格式、风险栏标题。可以查阅本项目相关记忆；没有本项目依据的字段写 UNKNOWN，不得猜测或借用其他项目约定。只回答这三个字段，不修改文件，不联网，不创建子任务或读取其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc72g0i9f5q0k_0",
+          "summary": [
+            "We need quick memory. Summary gives all, but must read scope and source per instructions? User allows project relevant memory. MEMORY.md search. Need cite exact lines. First commentary."
+          ],
+          "content": [],
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc72g0i9f5q0k_1",
+          "text": "我先快速核对本项目记忆与适用范围，只读取记忆文件。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_73ed72d2c9fe408fbb54da85",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc 'rg -n \"BETA_WEEKLY|Beta|周报|橙色风险|DD-MM-YYYY\" \"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md\"'",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta",
+          "processId": "51225",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n 'BETA_WEEKLY|Beta|周报|橙色风险|DD-MM-YYYY' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md",
+              "query": "BETA_WEEKLY|Beta|周报|橙色风险|DD-MM-YYYY",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "14:- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n18:- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n30:# Task Group: Beta project weekly report format\n32:scope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n35:## Task 1: Apply the confirmed Beta weekly-report format\n43:- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n47:- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n57:- Symptom: a Beta weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "output": "14:- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n18:- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n30:# Task Group: Beta project weekly report format\n32:scope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n35:## Task 1: Apply the confirmed Beta weekly-report format\n43:- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n47:- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n57:- Symptom: a Beta weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc72jnwdg5oj8_0",
+          "summary": [
+            "Need perhaps scope.json/source MEMORY requirement says source. Need maybe MEMORY has enough but import sources instructions say scope. Let's inspect relevant lines around 30."
+          ],
+          "content": [],
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_713b6bfe094844cdafa9636d",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"sed -n '28,49p' \\\"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md\\\" && rg --files \\\"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories\\\" | rg 'scope\\\\.json\"'$|rollout'\"' | head -30\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta",
+          "processId": "49929",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "read",
+              "command": "sed -n '28,49p' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md",
+              "name": "MEMORY.md",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md"
+            },
+            {
+              "type": "listFiles",
+              "command": "rg --files /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories",
+              "path": "memories"
+            },
+            {
+              "type": "search",
+              "command": "rg \"scope\\\\.json\"'$|rollout'",
+              "query": "scope\\.json$|rollout",
+              "path": null
+            }
+          ],
+          "aggregatedOutput": "- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n\n# Task Group: Beta project weekly report format\n\nscope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta; reuse_rule=use only for this checkout and treat the convention as project-specific, not as a global user preference.\n\n## Task 1: Apply the confirmed Beta weekly-report format\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/beta-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta, source=external_agent_import)\n\n### keywords\n\n- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n\n## User preferences\n\n- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n\n## Reusable knowledge\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/alpha-project/scope.json\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/scope.json\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "output": "- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n\n# Task Group: Beta project weekly report format\n\nscope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta; reuse_rule=use only for this checkout and treat the convention as project-specific, not as a global user preference.\n\n## Task 1: Apply the confirmed Beta weekly-report format\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/beta-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta, source=external_agent_import)\n\n### keywords\n\n- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n\n## User preferences\n\n- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n\n## Reusable knowledge\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/alpha-project/scope.json\n/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/scope.json\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc72n6149sb6d_0",
+          "summary": [
+            "Need source MEMORY and scope. Read both."
+          ],
+          "content": [],
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_30efe5e78908456cbe7c06f9",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"sed -n '1,220p' \\\"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/scope.json\\\"; sed -n '1,220p' \\\"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/MEMORY.md\\\"\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta",
+          "processId": "7041",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "read",
+              "command": "sed -n '1,220p' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/scope.json",
+              "name": "scope.json",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/scope.json"
+            },
+            {
+              "type": "read",
+              "command": "sed -n '1,220p' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/MEMORY.md",
+              "name": "MEMORY.md",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/extensions/external_agent_import/resources/beta-project/MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "{\"cwd\":\"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta\"}# Beta 项目记忆\n仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta，不得应用到任何其他项目。\n已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。\n这是项目约定，不是用户全局偏好。\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "output": "{\"cwd\":\"/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta\"}# Beta 项目记忆\n仅适用于项目 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta，不得应用到任何其他项目。\n已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。\n这是项目约定，不是用户全局偏好。\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc72r5ssc9s3p_0",
+          "summary": [
+            "Final only three fields, citation last exact. Citation file line ranges. MEMORY source is1-4. But citation requires used files. MEMORY.md lines 30-47 perhaps. source MEMORY. Scope file one line maybe cite? Used to verify applicability. We can cite. Only answer three fields but citation mandated. Make exactly three bullets then citation."
+          ],
+          "content": [],
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc72r5ssc9s3p_1",
+          "text": "- 开头标签：`BETA_WEEKLY_340053b76d1f`\n- 日期格式：`DD-MM-YYYY`\n- 风险栏标题：`橙色风险`\n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "MEMORY.md",
+                "lineStart": 30,
+                "lineEnd": 47,
+                "note": "确认本项目周报三个字段及适用范围"
+              },
+              {
+                "path": "extensions/external_agent_import/resources/beta-project/MEMORY.md",
+                "lineStart": 1,
+                "lineEnd": 4,
+                "note": "核对项目级原始约定"
+              },
+              {
+                "path": "extensions/external_agent_import/resources/beta-project/scope.json",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "note": "确认约定仅适用于当前项目目录"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14931-4437-7242-84f8-4cec8ad9ab93",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_BETA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_BETA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_BETA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_BETA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        }
+      ]
+    },
+    {
+      "name": "ALPHA_OFF",
+      "project": "alpha",
+      "useMemories": false,
+      "threadId": "01a14931-a9fd-7b83-9613-f7d0abbaa892",
+      "status": "completed",
+      "answer": "我会在本项目文件中查找周报约定，只提取你指定的三个字段。\n开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14931-aa47-7973-a2a0-16eba0e712d9",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_ALPHA_OFF\n请按本项目已有的周报约定，返回开头标签、日期格式、风险栏标题。可以查阅本项目相关记忆；没有本项目依据的字段写 UNKNOWN，不得猜测或借用其他项目约定。只回答这三个字段，不修改文件，不联网，不创建子任务或读取其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc7303y7l4mfh_0",
+          "summary": [
+            "We need inspect project files for weekly report conventions. Must not spawn subagents. Need read AGENTS maybe and search files. User asks only answer three fields: beginning label, date format, risk column title. No modifying files. We can use rg. First send brief preamble."
+          ],
+          "content": [],
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc7303y7l4mfh_1",
+          "text": "我会在本项目文件中查找周报约定，只提取你指定的三个字段。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_b68724bdf4094e7da4e0aa37",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"pwd && rg -n --hidden -S \\\"周报|风险|日期格式|日期|开头标签|报告\\\" . --glob '\"'!**/.git/**'\"'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace",
+          "processId": "95029",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "unknown",
+              "command": "pwd && rg -n --hidden -S \"周报|风险|日期格式|日期|开头标签|报告\" . --glob '!**/.git/**'"
+            }
+          ],
+          "aggregatedOutput": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace\n",
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "output": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc73cvk0d26xw_0",
+          "summary": [
+            "No results, maybe empty workspace. Need list files including hidden. rg --files -uu. Also maybe project memory elsewhere? They forbid other session, not files. \"查阅本项目相关记忆\"; maybe no project memory accessible? list files tool perhaps. Use mcp list files per instructions? That's metadata. But simple shell. Need maybe current directory empty. We can list."
+          ],
+          "content": [],
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_227de64b93b8477b8fdde589",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"find . -maxdepth 3 -type f -print | sort | head -200 && printf '\\\\n-- directories --\\\\n' && find . -maxdepth 2 -type d -print | sort\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace",
+          "processId": "49303",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "listFiles",
+              "command": "find . -maxdepth 3 -type f -print",
+              "path": "."
+            },
+            {
+              "type": "listFiles",
+              "command": "find . -maxdepth 2 -type d -print",
+              "path": "."
+            }
+          ],
+          "aggregatedOutput": "\n-- directories --\n.\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "output": "\n-- directories --\n.\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc73i5sxzusxl_0",
+          "summary": [
+            "Workspace empty. User says no project basis fields UNKNOWN, do not guess. Need answer only these three fields. Need maybe \"开头标签\" unknown, date format unknown, risk column title unknown. \"只回答这三个字段\". Format concise maybe:\n开头标签：UNKNOWN\n日期格式：UNKNOWN\n风险栏标题：UNKNOWN\nNo extra."
+          ],
+          "content": [],
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc73i5sxzusxl_1",
+          "text": "开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14931-aa27-7d13-8e7c-57228ea388f5",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_ALPHA_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        }
+      ]
+    },
+    {
+      "name": "GAMMA_ON",
+      "project": "gamma",
+      "threadId": "01a14932-1004-72a2-9405-45c80db8e2aa",
+      "status": "completed",
+      "answer": "我先做一次本项目记忆检索，只核对这三个字段。\n开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN\n\n",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14932-1088-7341-9ddf-cdaa5dd77ca0",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_GAMMA_ON\n请按本项目已有的周报约定，返回开头标签、日期格式、风险栏标题。可以查阅本项目相关记忆；没有本项目依据的字段写 UNKNOWN，不得猜测或借用其他项目约定。只回答这三个字段，不修改文件，不联网，不创建子任务或读取其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14932-102d-7973-801c-2ac055058c01",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc73kb1voi3bs_0",
+          "summary": [
+            "We need need memory quick pass. Summary says no gamma. Must search MEMORY.md keywords gamma. Read only memory. Need citation if used. We can say unknown fields based on memory search. Need exact line citation. Let's inspect MEMORY.md."
+          ],
+          "content": [],
+          "_turnId": "01a14932-102d-7973-801c-2ac055058c01",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc73kb1voi3bs_1",
+          "text": "我先做一次本项目记忆检索，只核对这三个字段。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14932-102d-7973-801c-2ac055058c01",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_cfe5157ca9bc424ca9230d84",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"rg -n -i 'gamma|周报|weekly|风险|risk|日期格式' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/gamma",
+          "processId": "86939",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n -i 'gamma|周报|weekly|风险|risk|日期格式' /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/.evowork/kernel/memories/MEMORY.md",
+              "query": "gamma|周报|weekly|风险|risk|日期格式",
+              "path": "MEMORY.md"
+            }
+          ],
+          "aggregatedOutput": "1:# Task Group: Alpha project weekly report format\n3:scope: Generate or edit weekly reports for the Alpha project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n6:## Task 1: Apply the confirmed Alpha weekly-report format\n14:- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n18:- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n24:- Related skill: skills/project-weekly-report-scope/SKILL.md\n28:- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n30:# Task Group: Beta project weekly report format\n32:scope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n35:## Task 1: Apply the confirmed Beta weekly-report format\n43:- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n47:- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n53:- Related skill: skills/project-weekly-report-scope/SKILL.md\n57:- Symptom: a Beta weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n",
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14932-102d-7973-801c-2ac055058c01",
+          "output": "1:# Task Group: Alpha project weekly report format\n3:scope: Generate or edit weekly reports for the Alpha project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n6:## Task 1: Apply the confirmed Alpha weekly-report format\n14:- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n18:- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n24:- Related skill: skills/project-weekly-report-scope/SKILL.md\n28:- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n30:# Task Group: Beta project weekly report format\n32:scope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\n35:## Task 1: Apply the confirmed Beta weekly-report format\n43:- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n47:- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n53:- Related skill: skills/project-weekly-report-scope/SKILL.md\n57:- Symptom: a Beta weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc73pfgwwnh5n_0",
+          "summary": [
+            "We need answer only three fields. Need memory citation because used MEMORY.md. Must exact line perhaps lines 1-57? We used it to establish no gamma? Relevant absence cannot cite absent. Could cite entire memory registry lines 1-57, note searched and only Alpha/Beta scopes found, so gamma UNKNOWN. But user says only three fields. Need maybe output:\n开头标签：UNKNOWN\n日期格式：UNKNOWN\n风险栏标题：UNKNOWN\nThen citation exactly last. Citation entries line1-57 perhaps valid nonblank. rollout ids empty since no summary. They requested only three fields; citation required by system, can append after three fields. Citation is not a field? Still unavoidable exact block. Use note simple."
+          ],
+          "content": [],
+          "_turnId": "01a14932-102d-7973-801c-2ac055058c01",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc73pfgwwnh5n_1",
+          "text": "开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN\n\n",
+          "phase": null,
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "MEMORY.md",
+                "lineStart": 1,
+                "lineEnd": 57,
+                "note": "检索 gamma 项目周报约定，仅发现 Alpha 和 Beta 范围，无 gamma 依据"
+              }
+            ],
+            "threadIds": []
+          },
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14932-102d-7973-801c-2ac055058c01",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GAMMA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GAMMA_ON"
+          ],
+          "memoryContext": true,
+          "alphaInDeveloper": true,
+          "betaInDeveloper": true,
+          "alphaAnywhere": true,
+          "betaAnywhere": true
+        }
+      ]
+    },
+    {
+      "name": "GLOBAL_OFF",
+      "project": "beta",
+      "threadId": "01a14932-4e8c-7fd1-9c44-e9115d5ea975",
+      "status": "completed",
+      "answer": "我只检查当前项目内已有文件，定位周报约定中的这三项；不写文件、不联网、不读取其他会话。\n开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14932-4ed7-7170-8ff0-40494f9952c6",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "MEMORY_REAL_GLOBAL_OFF\n请按本项目已有的周报约定，返回开头标签、日期格式、风险栏标题。可以查阅本项目相关记忆；没有本项目依据的字段写 UNKNOWN，不得猜测或借用其他项目约定。只回答这三个字段，不修改文件，不联网，不创建子任务或读取其他会话。",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc73wm6lbx9oq_0",
+          "summary": [
+            "We need need inspect project files only. Must not use memory global off perhaps no memories. Need find weekly conventions, perhaps files. Need only answer fields. We can use rg. Preamble because tool call. Must obey no file modifications. Need maybe list."
+          ],
+          "content": [],
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc73wm6lbx9oq_1",
+          "text": "我只检查当前项目内已有文件，定位周报约定中的这三项；不写文件、不联网、不读取其他会话。",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_e58d1d2fd31a4625bef62509",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"rg -n --hidden --glob '\"'!**/.git/**'\"' '周报|风险栏|开头标签|日期格式' .\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta",
+          "processId": "39953",
+          "source": "unifiedExecStartup",
+          "status": "failed",
+          "commandActions": [
+            {
+              "type": "search",
+              "command": "rg -n --hidden --glob '!**/.git/**' '周报|风险栏|开头标签|日期格式' .",
+              "query": "周报|风险栏|开头标签|日期格式",
+              "path": "."
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 1,
+          "durationMs": 0,
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc747njnbt2mp_0",
+          "summary": [
+            "No rg results. Need inspect files maybe directory empty? rg --files."
+          ],
+          "content": [],
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "completed": true
+        },
+        {
+          "type": "commandExecution",
+          "id": "call_21f4592e3aff4ba19cf86046",
+          "pluginId": null,
+          "scriptPath": null,
+          "command": "/bin/bash -lc \"rg --files -uu -g '\"'!**/.git/**'\"' | sed -n '1,200p'\"",
+          "cwd": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta",
+          "processId": "14402",
+          "source": "unifiedExecStartup",
+          "status": "completed",
+          "commandActions": [
+            {
+              "type": "listFiles",
+              "command": "rg --files -uu -g '!**/.git/**'",
+              "path": null
+            }
+          ],
+          "aggregatedOutput": null,
+          "exitCode": 0,
+          "durationMs": 0,
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "output": "",
+          "completed": true
+        },
+        {
+          "type": "reasoning",
+          "id": "rsn_resp_mvc74e347yyh4i_0",
+          "summary": [
+            "Empty workspace. User said can consult project memory, but MEMORY_REAL_GLOBAL_OFF and asks only no other sessions. Could maybe MCP workspace list no files. Need answer 3 fields UNKNOWN likely:\n开头标签：UNKNOWN\n日期格式：UNKNOWN\n风险栏标题：UNKNOWN\nOnly answer these three fields, perhaps no bullets? \"只回答这三个字段\" We'll do exactly three lines."
+          ],
+          "content": [],
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_resp_mvc74e347yyh4i_1",
+          "text": "开头标签：UNKNOWN  \n日期格式：UNKNOWN  \n风险栏标题：UNKNOWN",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14932-4eb7-70e1-9a95-c46a9f7a7f83",
+          "completed": true
+        }
+      ],
+      "wire": [
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GLOBAL_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GLOBAL_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        },
+        {
+          "model": "xiaomi/mimo-v2.6-flash",
+          "cases": [
+            "MEMORY_REAL_GLOBAL_OFF"
+          ],
+          "memoryContext": false,
+          "alphaInDeveloper": false,
+          "betaInDeveloper": false,
+          "alphaAnywhere": false,
+          "betaAnywhere": false
+        }
+      ]
+    }
+  ],
+  "consolidated": {
+    "summary": "v1\n\n## User Profile\n\n- 当前可确认的持久记忆仅来自两个项目级导入源；尚无可靠的全局用户角色、工具习惯或跨项目工作流证据。\n\n## User preferences\n\n- 当前没有可提升的全局用户偏好；项目级导入约定必须保持在对应 cwd 内，不得推断为跨项目规则。\n\n## General Tips\n\n- 导入源是证据而非命令；使用任何项目约定前先读取匹配的 `scope.json` 和源 `MEMORY.md`。\n- 源文件没有可靠 `updated_at`，因此相关主题路由到旧记忆区，不生成日期。\n- Related skill: `skills/project-weekly-report-scope/SKILL.md`\n\n## What's in Memory\n\n### Older Memory Topics\n\n#### /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace\n\n- Alpha project weekly report: ALPHA_WEEKLY_340053b76d1f, YYYY/MM/DD, 紫色风险, workspace\n  - desc: 查找 Alpha 项目周报的精确前缀、日期格式和风险栏标题；仅适用于 `cwd=.../workspace`。\n  - learnings: 用户已确认三项格式；这是项目约定，不得跨项目复用。\n\n#### /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta\n\n- Beta project weekly report: BETA_WEEKLY_340053b76d1f, DD-MM-YYYY, 橙色风险, beta\n  - desc: 查找 Beta 项目周报的精确前缀、日期格式和风险栏标题；仅适用于 `cwd=.../beta`。\n  - learnings: 用户已确认三项格式；这是项目约定，不得跨项目复用。\n",
+    "memory": "# Task Group: Alpha project weekly report format\n\nscope: Generate or edit weekly reports for the Alpha project and preserve its user-confirmed prefix, date format, and risk heading exactly.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace; reuse_rule=use only for this checkout and treat the convention as project-specific, not as a global user preference.\n\n## Task 1: Apply the confirmed Alpha weekly-report format\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/alpha-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace, source=external_agent_import)\n\n### keywords\n\n- ALPHA_WEEKLY_340053b76d1f, 周报, YYYY/MM/DD, 紫色风险, workspace\n\n## User preferences\n\n- 已经由用户确认：本项目周报必须以 ALPHA_WEEKLY_340053b76d1f 开头；日期用 YYYY/MM/DD；风险栏标题为「紫色风险」。 [Task 1]\n\n## Reusable knowledge\n\n- This convention applies only to /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/workspace and must not be applied to any other project. [Task 1]\n- The source explicitly says this is a project convention, not a user global preference. [Task 1]\n- Related skill: skills/project-weekly-report-scope/SKILL.md\n\n## Failures and how to do differently\n\n- Symptom: an Alpha weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n\n# Task Group: Beta project weekly report format\n\nscope: Generate or edit weekly reports for the Beta project and preserve its user-confirmed prefix, date format, and risk heading exactly.\napplies_to: cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta; reuse_rule=use only for this checkout and treat the convention as project-specific, not as a global user preference.\n\n## Task 1: Apply the confirmed Beta weekly-report format\n\n### extension_resource_files\n\n- extensions/external_agent_import/resources/beta-project/MEMORY.md (cwd=/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta, source=external_agent_import)\n\n### keywords\n\n- BETA_WEEKLY_340053b76d1f, 周报, DD-MM-YYYY, 橙色风险, beta\n\n## User preferences\n\n- 已经由用户确认：本项目周报必须以 BETA_WEEKLY_340053b76d1f 开头；日期用 DD-MM-YYYY；风险栏标题为「橙色风险」。 [Task 1]\n\n## Reusable knowledge\n\n- This convention applies only to /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-MgZqin/beta and must not be applied to any other project. [Task 1]\n- The source explicitly says this is a project convention, not a user global preference. [Task 1]\n- Related skill: skills/project-weekly-report-scope/SKILL.md\n\n## Failures and how to do differently\n\n- Symptom: a Beta weekly report uses another prefix, date format, or risk heading; cause: project conventions were generalized or mixed with another checkout; fix: re-read the matching extension resource and apply only its exact strings. [Task 1]\n"
+  },
+  "diagnostics": [
+    {
+      "kind": "memory_consolidate_global",
+      "status": "done",
+      "last_error": null,
+      "retry_remaining": 3
+    }
+  ],
+  "wire": [
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_TRIGGER"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_BETA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_BETA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_BETA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_BETA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_ALPHA_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GAMMA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GAMMA_ON"
+      ],
+      "memoryContext": true,
+      "alphaInDeveloper": true,
+      "betaInDeveloper": true,
+      "alphaAnywhere": true,
+      "betaAnywhere": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GLOBAL_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GLOBAL_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [
+        "MEMORY_REAL_GLOBAL_OFF"
+      ],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false
+    }
+  ]
+}
