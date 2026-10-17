@@ -38,30 +38,38 @@ function renderSidebar(over: Partial<SidebarProps> = {}) {
 }
 
 describe('分组结构（04 §3.1）', () => {
-  it('置顶分区排在最前并带图钉', () => {
+  it('最近按活动时间降序排列，置顶保留图钉但不改变顺序', () => {
     renderSidebar({
       tasks: [
-        task({ id: 't1', title: '普通任务' }),
-        task({ id: 't2', title: '重要任务', sectionId: PINNED_SECTION }),
+        task({ id: 't2', title: '重要任务', sectionId: PINNED_SECTION, updatedAt: 100 }),
+        task({ id: 't1', title: '普通任务', updatedAt: 200 }),
       ],
     });
-    const groups = [...document.querySelectorAll('.ew-task-group-name')];
-    expect(groups[0]?.textContent).toContain('置顶');
+    const recent = screen.getByRole('region', { name: '最近' });
+    expect(
+      within(recent)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('普通任务'), expect.stringContaining('重要任务')]);
     expect(screen.getByLabelText('已置顶')).toBeTruthy();
   });
 
-  it('用户分区按传入顺序排，普通最近任务不再多套一层「未分组」标题', () => {
+  it('不同分区统一按活动时间排序，不在最近列表内插入分区标题', () => {
     renderSidebar({
       sections: [{ id: 'weekly', name: '周报' }],
       tasks: [
-        task({ id: 't1', sectionId: 'ungrouped' }),
-        task({ id: 't2', sectionId: 'weekly' }),
-        task({ id: 't3', sectionId: PINNED_SECTION }),
+        task({ id: 't1', sectionId: 'ungrouped', updatedAt: 300 }),
+        task({ id: 't2', sectionId: 'weekly', updatedAt: 100 }),
+        task({ id: 't3', sectionId: PINNED_SECTION, updatedAt: 200 }),
       ],
     });
     const names = [...document.querySelectorAll('.ew-task-group-name')].map((n) => n.textContent);
-    expect(names).toEqual(['📌 置顶', '周报']);
-    expect(screen.getByText('任务 t1')).toBeTruthy();
+    expect(names).toEqual([]);
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('任务 t1'),
+      expect.stringContaining('任务 t3'),
+      expect.stringContaining('任务 t2'),
+    ]);
   });
 
   it('**子任务不出现在顶层列表**（04 §3.2）', () => {
@@ -173,11 +181,13 @@ describe('搜索与筛选（04 §3.4）', () => {
 describe('可见页上报（04 §3.4 第②步）', () => {
   it('**只报可见页**，不报全部命中 —— 否则「筛出 800 条」会变成 800 个 thread/read', () => {
     const onVisibleChange = vi.fn();
-    const many = Array.from({ length: 100 }, (_, i) => task({ id: `t${i}` }));
+    const many = Array.from({ length: 100 }, (_, i) => task({ id: `t${i}`, updatedAt: i }));
     renderSidebar({ tasks: many, onVisibleChange, pageSize: 30 });
 
     const reported = onVisibleChange.mock.calls.at(-1)?.[0] as string[];
     expect(reported).toHaveLength(30);
+    expect(reported[0]).toBe('t99');
+    expect(reported.at(-1)).toBe('t70');
     expect(screen.getByText('还有 70 条，向下滚动继续加载')).toBeTruthy();
   });
 
@@ -198,10 +208,10 @@ describe('可见页上报（04 §3.4 第②步）', () => {
     expect(screen.getByText('还有 5 条，向下滚动继续加载')).toBeTruthy();
   });
 
-  it('项目预览每组最多上报 5 条，项目历史再多也不会触发无界 thread/read', () => {
+  it('项目每次只加载 5 条，与最近重复的可见任务只上报一次', () => {
     const onVisibleChange = vi.fn();
     const tasks = Array.from({ length: 100 }, (_, i) =>
-      task({ id: `project-${i}`, cwd: '/work/evowork' }),
+      task({ id: `project-${i}`, cwd: '/work/evowork', updatedAt: 100 - i }),
     );
     renderSidebar({
       tasks,
@@ -209,8 +219,14 @@ describe('可见页上报（04 §3.4 第②步）', () => {
       onVisibleChange,
     });
 
-    const reported = onVisibleChange.mock.calls.at(-1)?.[0] as string[];
-    expect(reported).toHaveLength(5);
+    fireEvent.click(screen.getByRole('button', { name: 'evowork' }));
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toHaveLength(30);
+    fireEvent.click(screen.getByRole('button', { name: '最近' }));
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(
+      Array.from({ length: 5 }, (_, i) => `project-${i}`),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '展开显示' }));
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toHaveLength(10);
   });
 });
 
@@ -335,7 +351,7 @@ describe('项目与插件入口', () => {
     expect(onNavSelect).toHaveBeenCalledWith('projects');
   });
 
-  it('项目内任务嵌在对应项目下，且不会在「最近」中重复出现', () => {
+  it('项目任务默认收起，点击项目后展开，同时保留在最近列表中', () => {
     renderSidebar({
       projects: [
         { id: 'p1', name: 'evowork', path: '/work/evowork' },
@@ -351,12 +367,14 @@ describe('项目与插件入口', () => {
       .getByRole('button', { name: 'evowork' })
       .closest('.ew-sidebar-project-group');
     expect(project).not.toBeNull();
+    expect(within(project as HTMLElement).queryByText('调整侧栏布局')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'evowork' }));
     expect(within(project as HTMLElement).getByText('调整侧栏布局')).toBeTruthy();
-    expect(screen.getAllByText('调整侧栏布局')).toHaveLength(1);
+    expect(screen.getAllByText('调整侧栏布局')).toHaveLength(2);
     expect(screen.getByText('独立任务')).toBeTruthy();
   });
 
-  it('默认标题不带计数，筛选计数只包含最近任务', () => {
+  it('默认标题不带计数，最近的筛选计数包含项目和无项目任务', () => {
     renderSidebar({
       projects: [{ id: 'p1', name: 'evowork', path: '/work/evowork' }],
       tasks: [
@@ -368,7 +386,7 @@ describe('项目与插件入口', () => {
     expect(screen.queryByText('(1)')).toBeNull();
     fireEvent.click(screen.getByLabelText('打开搜索框'));
     fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '任务' } });
-    expect(screen.getByText('(1 / 1)')).toBeTruthy();
+    expect(screen.getByText('(2 / 2)')).toBeTruthy();
   });
 
   it('项目和最近独立折叠，隐藏任务停止上报，重新展开保留选中态', () => {
@@ -384,11 +402,15 @@ describe('项目与插件入口', () => {
     });
     const projectsToggle = screen.getByRole('button', { name: '项目' });
     const recentToggle = screen.getByRole('button', { name: '最近' });
+    fireEvent.click(screen.getByRole('button', { name: 'evowork' }));
     expect(projectsToggle.getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(projectsToggle);
-    expect(screen.queryByText('项目任务')).toBeNull();
+    expect(within(screen.getByRole('region', { name: '项目' })).queryByText('项目任务')).toBeNull();
+    expect(within(screen.getByRole('region', { name: '最近' })).getByText('项目任务')).toBeTruthy();
     expect(screen.getByText('独立任务')).toBeTruthy();
-    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['recent-task']);
+    expect(new Set(onVisibleChange.mock.calls.at(-1)?.[0])).toEqual(
+      new Set(['project-task', 'recent-task']),
+    );
     fireEvent.click(recentToggle);
     expect(screen.queryByText('独立任务')).toBeNull();
     expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual([]);
@@ -399,7 +421,108 @@ describe('项目与插件入口', () => {
     expect(screen.queryByText('独立任务')).toBeNull();
     expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['project-task']);
     fireEvent.click(recentToggle);
-    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['project-task', 'recent-task']);
+    expect(new Set(onVisibleChange.mock.calls.at(-1)?.[0])).toEqual(
+      new Set(['project-task', 'recent-task']),
+    );
+  });
+
+  it('显示全部项目，各项目独立分页，每次最多增加五条直到全部显示', () => {
+    const onProjectSelect = vi.fn();
+    renderSidebar({
+      projects: Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, name: `项目 ${i}` })),
+      tasks: [
+        ...Array.from({ length: 12 }, (_, i) =>
+          task({
+            id: `a${i}`,
+            projectId: 'p0',
+            updatedAt: i,
+          }),
+        ),
+        task({ id: 'b', projectId: 'p5' }),
+        task({ id: 'child', projectId: 'p0', parentThreadId: 'a0' }),
+      ],
+      onProjectSelect,
+    });
+    const projects = screen.getByRole('region', { name: '项目' });
+    expect(within(projects).getByRole('button', { name: '项目 5' })).toBeTruthy();
+    expect(within(projects).queryAllByRole('listitem')).toHaveLength(0);
+    const toggle = within(projects).getByRole('button', { name: '项目 0' });
+    fireEvent.click(toggle);
+    expect(onProjectSelect).toHaveBeenCalledWith('p0');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const group = toggle.closest('.ew-sidebar-project-group') as HTMLElement;
+    expect(
+      within(group)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([11, 10, 9, 8, 7].map((i) => expect.stringContaining(`任务 a${i}`)));
+    fireEvent.click(within(group).getByRole('button', { name: '展开显示' }));
+    expect(within(group).getAllByRole('listitem')).toHaveLength(10);
+    fireEvent.click(within(projects).getByRole('button', { name: '项目 5' }));
+    expect(within(projects).getByText('任务 b')).toBeTruthy();
+    expect(within(group).getAllByRole('listitem')).toHaveLength(10);
+    fireEvent.click(toggle);
+    expect(within(group).queryAllByRole('listitem')).toHaveLength(0);
+    fireEvent.click(toggle);
+    expect(within(group).getAllByRole('listitem')).toHaveLength(10);
+    fireEvent.click(within(group).getByRole('button', { name: '展开显示' }));
+    expect(within(group).getAllByRole('listitem')).toHaveLength(12);
+    expect(within(group).queryByRole('button', { name: '展开显示' })).toBeNull();
+    expect(screen.queryByText('任务 child')).toBeNull();
+  });
+
+  it('项目归属优先使用 projectId，旧任务按最长根路径匹配，最近包含所有归属', () => {
+    renderSidebar({
+      projects: [
+        { id: 'root', name: '根项目', path: '/work' },
+        { id: 'nested', name: '子项目', path: '/work/nested' },
+      ],
+      tasks: [
+        task({ id: 'legacy', cwd: '/work/nested/src', updatedAt: 100 }),
+        task({ id: 'explicit', projectId: 'root', cwd: '/work/nested', updatedAt: 300 }),
+        task({ id: 'none', projectId: null, cwd: '/work/nested', updatedAt: 200 }),
+        task({ id: 'unknown', projectId: 'removed', updatedAt: 400 }),
+      ],
+    });
+    const root = screen.getByRole('button', { name: '根项目' });
+    const nested = screen.getByRole('button', { name: '子项目' });
+    fireEvent.click(root);
+    fireEvent.click(nested);
+    expect(
+      within(root.closest('.ew-sidebar-project-group') as HTMLElement).getAllByRole('listitem'),
+    ).toHaveLength(1);
+    expect(
+      within(nested.closest('.ew-sidebar-project-group') as HTMLElement).getByText('任务 legacy'),
+    ).toBeTruthy();
+    const recent = screen.getByRole('region', { name: '最近' });
+    expect(
+      within(recent)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(
+      ['unknown', 'explicit', 'none', 'legacy'].map((id) => expect.stringContaining(`任务 ${id}`)),
+    );
+  });
+
+  it('任务在项目和最近同时出现时，操作菜单只在点击的位置打开', () => {
+    const onRenameTask = vi.fn();
+    renderSidebar({
+      projects: [{ id: 'p1', name: '项目一' }],
+      tasks: [task({ id: 't1', projectId: 'p1', title: '会话一' })],
+      onRenameTask,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '项目一' }));
+    const projects = screen.getByRole('region', { name: '项目' });
+    fireEvent.click(within(projects).getByLabelText('会话一 的更多操作'));
+    expect(screen.getAllByRole('menu', { name: '会话一 的操作' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('menuitem', { name: '改名' }));
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '新会话名' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onRenameTask).toHaveBeenCalledWith('t1', '新会话名');
+    const recent = screen.getByRole('region', { name: '最近' });
+    fireEvent.click(within(recent).getByLabelText('会话一 的更多操作'));
+    expect(screen.getAllByRole('menu', { name: '会话一 的操作' })).toHaveLength(1);
+    expect(within(projects).queryByRole('menu')).toBeNull();
   });
 
   it('没有任务时保留两个分组标题，筛空时仍提供重置提示', () => {

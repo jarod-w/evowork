@@ -134,7 +134,7 @@ export interface SidebarProps {
     readonly excerpt: string;
   }[];
   /**
-   * 当前挂载的任务 id（上界 = 一页最近任务 + 3 个项目各 5 条预览）。
+   * 当前挂载的任务 id（最近的已加载页 + 展开项目的已加载页，去重）。
    * 宿主用它做**有界的**权威字段校正（04 §3.4 第②步）。
    */
   readonly onVisibleChange?: ((ids: readonly string[]) => void) | undefined;
@@ -230,7 +230,7 @@ export const MORE_MENU: readonly MenuItemSpec[] = [
 ];
 
 const DEFAULT_PAGE_SIZE = 30;
-const PROJECT_TASK_LIMIT = 5;
+const PROJECT_PAGE_SIZE = 5;
 
 export function Sidebar(props: SidebarProps) {
   const [search, setSearch] = useState('');
@@ -253,6 +253,10 @@ export function Sidebar(props: SidebarProps) {
   }
   const [collapsed, setCollapsed] = useState(false);
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState<Readonly<Record<string, boolean>>>({});
+  const [projectVisibleCounts, setProjectVisibleCounts] = useState<
+    Readonly<Record<string, number>>
+  >({});
   const projectsListId = useId();
   const recentListId = useId();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -267,7 +271,8 @@ export function Sidebar(props: SidebarProps) {
 
   // 04 §3.2：子任务不进顶层列表
   const topLevel = useMemo(
-    () => props.tasks.filter((t) => t.parentThreadId == null),
+    () =>
+      props.tasks.filter((t) => t.parentThreadId == null).sort((a, b) => b.updatedAt - a.updatedAt),
     [props.tasks],
   );
 
@@ -291,56 +296,41 @@ export function Sidebar(props: SidebarProps) {
   }, [topLevel, search, filter]);
 
   useEffect(() => setVisibleCount(pageSize), [pageSize, search, filter]);
-  const visibleProjects = useMemo(() => (props.projects ?? []).slice(0, 3), [props.projects]);
   const projectGroups = useMemo(() => {
+    const projectsByPath = [...(props.projects ?? [])].sort(
+      (a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0),
+    );
     const owner = (task: TaskRow) =>
       task.projectId !== undefined
         ? task.projectId
-        : [...(props.projects ?? [])]
-            .filter(
-              (project) =>
-                project.path &&
-                task.cwd &&
-                (task.cwd === project.path || task.cwd.startsWith(`${project.path}/`)),
-            )
-            .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0]?.id;
-    return visibleProjects.map((project) => ({
-      project,
-      tasks: matched.filter((task) => owner(task) === project.id).slice(0, PROJECT_TASK_LIMIT),
-    }));
-  }, [matched, visibleProjects, props.projects]);
-  const groupedIds = useMemo(() => {
-    const ids = new Set(visibleProjects.map((project) => project.id));
-    return new Set(
-      topLevel
-        .filter((task) => {
-          if (task.projectId !== undefined)
-            return task.projectId !== null && ids.has(task.projectId);
-          const project = [...(props.projects ?? [])]
-            .filter(
-              (project) =>
-                project.path &&
-                task.cwd &&
-                (task.cwd === project.path || task.cwd.startsWith(`${project.path}/`)),
-            )
-            .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0];
-          return project ? ids.has(project.id) : false;
-        })
-        .map((task) => task.id),
-    );
-  }, [topLevel, visibleProjects, props.projects]);
-  const recentTopLevel = useMemo(
-    () => topLevel.filter((task) => !groupedIds.has(task.id)),
-    [topLevel, groupedIds],
-  );
-  const recentMatched = useMemo(
-    () => matched.filter((task) => !groupedIds.has(task.id)),
-    [matched, groupedIds],
-  );
-  const visible = useMemo(
-    () => recentMatched.slice(0, visibleCount),
-    [recentMatched, visibleCount],
-  );
+        : projectsByPath.find(
+            (project) =>
+              project.path &&
+              task.cwd &&
+              (task.cwd === project.path || task.cwd.startsWith(`${project.path}/`)),
+          )?.id;
+    const tasksByProject = new Map<string, TaskRow[]>();
+    for (const task of matched) {
+      const projectId = owner(task);
+      if (projectId == null) continue;
+      const tasks = tasksByProject.get(projectId) ?? [];
+      tasks.push(task);
+      tasksByProject.set(projectId, tasks);
+    }
+    return (props.projects ?? []).map((project) => {
+      const tasks = tasksByProject.get(project.id) ?? [];
+      const expanded = expandedProjects[project.id] ?? false;
+      return {
+        project,
+        expanded,
+        total: tasks.length,
+        tasks: expanded
+          ? tasks.slice(0, projectVisibleCounts[project.id] ?? PROJECT_PAGE_SIZE)
+          : [],
+      };
+    });
+  }, [matched, props.projects, expandedProjects, projectVisibleCounts]);
+  const visible = useMemo(() => matched.slice(0, visibleCount), [matched, visibleCount]);
   const displayed = useMemo(
     () => [
       ...(projectsCollapsed ? [] : projectGroups.flatMap((group) => group.tasks)),
@@ -349,14 +339,13 @@ export function Sidebar(props: SidebarProps) {
     [projectGroups, visible, projectsCollapsed, collapsed],
   );
 
-  // 只报侧栏真实挂载的行：项目预览（每组最多 5 条）+「最近」的可见页。
+  // 只报侧栏真实挂载的行：展开项目的已加载页 +「最近」的可见页，重复 id 只读一次。
   // 把这里改成 matched 会在"筛出 800 条"时打爆内核。
   const onVisibleChange = props.onVisibleChange;
   useEffect(() => {
-    onVisibleChange?.(displayed.map((t) => t.id));
+    onVisibleChange?.([...new Set(displayed.map((t) => t.id))]);
   }, [displayed, onVisibleChange]);
 
-  const grouped = useMemo(() => groupBySection(visible, props.sections), [visible, props.sections]);
   const filtering = isFilterActive(filter) || search.trim() !== '';
   const closeMenu = useCallback(() => setMenuFor(null), []);
 
@@ -447,9 +436,9 @@ export function Sidebar(props: SidebarProps) {
           if (
             node.scrollHeight - node.scrollTop - node.clientHeight <= 1 &&
             !collapsed &&
-            visibleCount < recentMatched.length
+            visibleCount < matched.length
           ) {
-            setVisibleCount((count) => Math.min(count + pageSize, recentMatched.length));
+            setVisibleCount((count) => Math.min(count + pageSize, matched.length));
           }
         }}
       >
@@ -523,33 +512,63 @@ export function Sidebar(props: SidebarProps) {
           <div id={projectsListId} hidden={projectsCollapsed}>
             {projectsCollapsed
               ? null
-              : projectGroups.map(({ project, tasks: projectTasks }) => (
+              : projectGroups.map(({ project, expanded, total, tasks: projectTasks }) => (
                   <div key={project.id} className="ew-sidebar-project-group">
                     <NavItem
                       label={project.rootMissing ? `${project.name}（目录不可用）` : project.name}
                       icon={renderIcon('folder')}
                       selected={project.id === props.selectedProjectId}
-                      onClick={() => props.onProjectSelect?.(project.id)}
+                      expanded={expanded}
+                      controlsId={`${projectsListId}-${project.id}`}
+                      onClick={() => {
+                        setExpandedProjects((previous) => ({
+                          ...previous,
+                          [project.id]: !expanded,
+                        }));
+                        setMenuFor(null);
+                        props.onProjectSelect?.(project.id);
+                      }}
                     />
-                    {projectTasks.length > 0 ? (
-                      <ul className="ew-task-list ew-sidebar-project-task-list">
-                        {projectTasks.map((task) => (
-                          <li key={task.id}>
-                            <TaskRowEntry
-                              task={task}
-                              selected={task.id === props.selectedId}
-                              menuOpen={menuFor === task.id}
-                              onSelect={props.onSelect}
-                              onMenuToggle={() => setMenuFor(task.id === menuFor ? null : task.id)}
-                              onMenuClose={closeMenu}
-                              onDelete={setConfirmDelete}
-                              onRename={startRename}
-                              onAction={props.onRowAction}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
+                    <div id={`${projectsListId}-${project.id}`} hidden={!expanded}>
+                      {projectTasks.length > 0 ? (
+                        <ul className="ew-task-list ew-sidebar-project-task-list">
+                          {projectTasks.map((task) => (
+                            <li key={task.id}>
+                              <TaskRowEntry
+                                task={task}
+                                selected={task.id === props.selectedId}
+                                menuOpen={menuFor === `project:${project.id}:${task.id}`}
+                                onSelect={props.onSelect}
+                                onMenuToggle={() => {
+                                  const key = `project:${project.id}:${task.id}`;
+                                  setMenuFor(key === menuFor ? null : key);
+                                }}
+                                onMenuClose={closeMenu}
+                                onDelete={setConfirmDelete}
+                                onRename={startRename}
+                                onAction={props.onRowAction}
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {expanded && total > projectTasks.length ? (
+                        <div className="ew-sidebar-project-task-list">
+                          <PillButton
+                            variant="ghost"
+                            onClick={() =>
+                              setProjectVisibleCounts((previous) => ({
+                                ...previous,
+                                [project.id]:
+                                  (previous[project.id] ?? PROJECT_PAGE_SIZE) + PROJECT_PAGE_SIZE,
+                              }))
+                            }
+                          >
+                            展开显示
+                          </PillButton>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
           </div>
@@ -558,10 +577,10 @@ export function Sidebar(props: SidebarProps) {
         <section className="ew-sidebar-recent" aria-label="最近">
           <SidebarSectionHeader
             label="最近"
-            count={recentTopLevel.length}
+            count={topLevel.length}
             showCount={false}
             controlsId={recentListId}
-            {...(filtering ? { filteredCount: recentMatched.length } : {})}
+            {...(filtering ? { filteredCount: matched.length } : {})}
             collapsed={collapsed}
             onToggle={() => {
               setCollapsed((value) => !value);
@@ -580,32 +599,26 @@ export function Sidebar(props: SidebarProps) {
           <div id={recentListId} hidden={collapsed}>
             {collapsed ? null : (
               <div className="ew-task-groups">
-                {grouped.map((group) => (
-                  <div key={group.id} className="ew-task-group">
-                    {group.id === UNGROUPED_SECTION ? null : (
-                      <p className="ew-task-group-name">
-                        {group.id === PINNED_SECTION ? '📌 置顶' : group.name}
-                      </p>
-                    )}
-                    <ul className="ew-task-list">
-                      {group.tasks.map((task) => (
-                        <li key={task.id}>
-                          <TaskRowEntry
-                            task={task}
-                            selected={task.id === props.selectedId}
-                            menuOpen={menuFor === task.id}
-                            onSelect={props.onSelect}
-                            onMenuToggle={() => setMenuFor(task.id === menuFor ? null : task.id)}
-                            onMenuClose={closeMenu}
-                            onDelete={setConfirmDelete}
-                            onRename={startRename}
-                            onAction={props.onRowAction}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                <ul className="ew-task-list">
+                  {visible.map((task) => (
+                    <li key={task.id}>
+                      <TaskRowEntry
+                        task={task}
+                        selected={task.id === props.selectedId}
+                        menuOpen={menuFor === `recent:${task.id}`}
+                        onSelect={props.onSelect}
+                        onMenuToggle={() => {
+                          const key = `recent:${task.id}`;
+                          setMenuFor(key === menuFor ? null : key);
+                        }}
+                        onMenuClose={closeMenu}
+                        onDelete={setConfirmDelete}
+                        onRename={startRename}
+                        onAction={props.onRowAction}
+                      />
+                    </li>
+                  ))}
+                </ul>
 
                 {filtering && matched.length === 0 ? (
                   <p className="ew-task-list-empty">
@@ -613,9 +626,9 @@ export function Sidebar(props: SidebarProps) {
                   </p>
                 ) : null}
 
-                {recentMatched.length > visible.length ? (
+                {matched.length > visible.length ? (
                   <p className="ew-task-list-more">
-                    还有 {recentMatched.length - visible.length} 条，向下滚动继续加载
+                    还有 {matched.length - visible.length} 条，向下滚动继续加载
                   </p>
                 ) : null}
               </div>
@@ -816,29 +829,6 @@ export function rowMenuItems(_task: TaskRow): readonly MenuItemSpec[] {
     { id: 'archive', label: '归档', group: 'a' },
     { id: 'delete', label: '删除', danger: true, group: 'a' },
   ];
-}
-
-function groupBySection(
-  tasks: readonly TaskRow[],
-  sections: readonly TaskSection[],
-): readonly { id: string; name: string; tasks: readonly TaskRow[] }[] {
-  const order = [
-    { id: PINNED_SECTION, name: '置顶' },
-    ...sections.filter((s) => s.id !== PINNED_SECTION),
-    { id: UNGROUPED_SECTION, name: '未分组' },
-  ];
-  const known = new Set(order.map((s) => s.id));
-  return order
-    .map((section) => ({
-      id: section.id,
-      name: section.name,
-      tasks: tasks.filter((t) =>
-        section.id === UNGROUPED_SECTION
-          ? !known.has(t.sectionId) || t.sectionId === UNGROUPED_SECTION
-          : t.sectionId === section.id,
-      ),
-    }))
-    .filter((group) => group.tasks.length > 0);
 }
 
 /** 04 §3.4 的筛选面板：六组条件，状态为多选。 */

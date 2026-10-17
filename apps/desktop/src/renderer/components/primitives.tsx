@@ -436,6 +436,8 @@ export function NavItem({
   selected,
   trailing,
   count,
+  expanded,
+  controlsId,
   onClick,
 }: {
   readonly label: string;
@@ -445,6 +447,9 @@ export function NavItem({
   readonly trailing?: string | undefined;
   /** 右侧计数徽标，≥1 时显示（通知中心用） */
   readonly count?: number | undefined;
+  /** 可展开的导航项；不提供时保持普通导航行为。 */
+  readonly expanded?: boolean | undefined;
+  readonly controlsId?: string | undefined;
   readonly onClick?: (() => void) | undefined;
 }) {
   return (
@@ -453,6 +458,8 @@ export function NavItem({
       className="ew-nav-item"
       data-selected={selected ? 'true' : undefined}
       aria-current={selected ? 'page' : undefined}
+      aria-expanded={expanded}
+      aria-controls={controlsId}
       onClick={onClick}
     >
       {icon ? (
@@ -462,6 +469,11 @@ export function NavItem({
       ) : null}
       <span className="ew-nav-label">{label}</span>
       {trailing ? <span className="ew-nav-trailing">{trailing}</span> : null}
+      {expanded !== undefined ? (
+        <span className="ew-nav-trailing" aria-hidden="true">
+          {renderIcon(expanded ? 'chevron-down' : 'chevron-right')}
+        </span>
+      ) : null}
       {count !== undefined && count >= 1 ? <span className="ew-nav-count">{count}</span> : null}
     </button>
   );
