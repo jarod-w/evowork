@@ -1,4 +1,5 @@
 import { memoryCitationEntries } from '../../shared/memory-citations.js';
+import { skillToken } from '../../shared/skill-token.js';
 import { activityIcon, activityState, describeActivity } from '../../shared/activity.js';
 import { renderIcon } from './icons.js';
 import { ImageOperationCard, type ImageUiPorts } from './image-settings.js';
@@ -549,8 +550,9 @@ export function ItemRenderer({
                         : undefined
                   }
                 >
-                  {part.type === 'skill' ? '$' : part.type === 'mention' ? '@' : ''}
-                  {part.name ?? part.type}
+                  {part.type === 'skill'
+                    ? skillToken(part.name ?? part.type)
+                    : `${part.type === 'mention' ? '@' : ''}${part.name ?? part.type}`}
                 </span>
               ),
             )}

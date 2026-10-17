@@ -109,6 +109,7 @@ import { GOAL_STATUS_LABELS, parseGoalCommand } from '../shared/goal-command.js'
 import { MemoryImportDialog, type MemoryImportPorts } from './components/memory-import.js';
 import { isImportCommand } from '../shared/import-command.js';
 import { isMemoriesCommand } from '../shared/memory-command.js';
+import { skillToken } from '../shared/skill-token.js';
 import { MemoriesDialog } from './components/memory-dialog.js';
 import { ShareDialog, type SharePhase } from './components/share-dialog.js';
 import { transcriptFileName, transcriptToMarkdown } from './views/thread-transcript.js';
@@ -3090,7 +3091,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             return;
           }
           beginNewTask();
-          setDraft(`$${candidate.label} ${prompt}`.trim());
+          setDraft(`${skillToken(candidate.label)} ${prompt}`.trim());
           setReferences([
             {
               type: 'skill',
@@ -4733,7 +4734,7 @@ export function lastUserMessageText(items: readonly RenderItem[]): string | unde
 }
 
 /**
- * 文本里的可见 token 是结构化引用的删除手柄：用户删掉 `@文件` / `$技能` 后，
+ * 文本里的可见 token 是结构化引用的删除手柄：用户删掉 `@文件` / `/技能` 后，
  * 对应引用也必须消失，不能继续在后台悄悄发送。
  */
 export function reconcileComposerReferences(
@@ -4745,13 +4746,16 @@ export function reconcileComposerReferences(
     if (reference.type !== 'mention' && reference.type !== 'skill') return true;
     const candidate = candidates.find((item) => item.path === reference.path);
     const labels = new Set([reference.name, candidate?.label].filter(Boolean) as string[]);
-    const prefix = reference.type === 'skill' ? '$' : '@';
-    return [...labels].some((label) => hasVisibleReferenceToken(value, prefix, label));
+    return [...labels].some((label) =>
+      reference.type === 'skill'
+        ? hasVisibleReferenceToken(value, skillToken(label)) ||
+          hasVisibleReferenceToken(value, `$${label}`)
+        : hasVisibleReferenceToken(value, `@${label}`),
+    );
   });
 }
 
-function hasVisibleReferenceToken(value: string, prefix: '@' | '$', label: string): boolean {
-  const token = `${prefix}${label}`;
+function hasVisibleReferenceToken(value: string, token: string): boolean {
   let offset = value.indexOf(token);
   while (offset >= 0) {
     const next = value[offset + token.length];

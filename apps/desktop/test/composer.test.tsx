@@ -136,7 +136,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     ]);
   });
 
-  it('从 `@` 统一发现中选技能时改写为 `$技能`，并保留结构化引用', () => {
+  it('从 `@` 统一发现中选技能时改写为 `/技能`，并保留结构化引用', () => {
     const onChange = vi.fn();
     const onInsertReference = vi.fn();
     renderComposer({
@@ -154,7 +154,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     });
     type('@演示');
     fireEvent.click(screen.getByRole('option', { name: /演示文稿/ }));
-    expect(onChange).toHaveBeenLastCalledWith('$演示文稿 ');
+    expect(onChange).toHaveBeenLastCalledWith('/演示文稿 ');
     expect(onInsertReference).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'presentations' }),
     );
@@ -175,7 +175,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     expect(onChange).toHaveBeenLastCalledWith('$presentations ');
   });
 
-  it('`/` 只展示本地指令，且不进输入框', () => {
+  it('`/` 本地指令选中即执行，不作为提示词插入输入框', () => {
     const onRunLocalCommand = vi.fn();
     const onChange = vi.fn();
     renderComposer({
@@ -193,6 +193,60 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     expect(onRunLocalCommand).toHaveBeenCalledWith('clear');
     // 触发文本被清掉，而不是把 `/清空` 当提示词发出去
     expect(onChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('`/` 同时提供本地指令和技能，技能按内部名搜索并保留绑定', () => {
+    const onInsertReference = vi.fn();
+    const onRunLocalCommand = vi.fn();
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        onInsertReference,
+        onRunLocalCommand,
+        slashCommands: Array.from({ length: 8 }, (_, index) => ({
+          id: `local-${index}`,
+          label: `本地指令${index}`,
+          kind: 'local' as const,
+        })),
+        mentionCandidates: [
+          { id: 'file', label: 'presentations.md', category: 'file', insertAs: 'mention' },
+          {
+            id: 'ppt',
+            label: '演示文稿',
+            name: 'presentations',
+            category: 'skill',
+            insertAs: 'skill',
+            path: '/skills/presentations/SKILL.md',
+          },
+        ],
+      },
+      onSend,
+    );
+    const box = type('/');
+    expect(screen.getByRole('listbox', { name: '指令与技能候选' })).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(9);
+    expect(screen.queryByRole('option', { name: /presentations\.md/ })).toBeNull();
+    type('/pres');
+    fireEvent.keyDown(box, { key: 'Tab' });
+    expect(box).toHaveProperty('value', '/演示文稿 ');
+    expect(onInsertReference).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'presentations', path: '/skills/presentations/SKILL.md' }),
+    );
+    expect(onRunLocalCommand).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each(['goal', 'import', 'memories'])('技能 %s 与本地命令同名时用 /skills/ 区分', (name) => {
+    const onRunLocalCommand = vi.fn();
+    renderComposer({
+      onRunLocalCommand,
+      slashCommands: [{ id: name, label: `${name} · 本地操作`, kind: 'local' }],
+      mentionCandidates: [{ id: 'skill', label: name, category: 'skill', insertAs: 'skill' }],
+    });
+    type(`/${name}`);
+    fireEvent.click(screen.getByRole('option', { name: `${name}技能` }));
+    expect(screen.getByLabelText('需求输入')).toHaveProperty('value', `/skills/${name} `);
+    expect(onRunLocalCommand).not.toHaveBeenCalled();
   });
 });
 

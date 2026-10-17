@@ -24,6 +24,7 @@ import { renderIcon } from './icons.js';
 import { parseGoalCommand } from '../../shared/goal-command.js';
 import { isImportCommand } from '../../shared/import-command.js';
 import { isMemoriesCommand } from '../../shared/memory-command.js';
+import { skillToken } from '../../shared/skill-token.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
 import { Badge, Banner, Dialog, GhostButton, PillButton } from './primitives.js';
 
@@ -461,19 +462,29 @@ export function Composer(props: ComposerProps) {
         .map(({ candidate }) => candidate)
         .slice(0, 8);
     }
-    if (trigger.kind === '$') {
-      return (props.mentionCandidates ?? [])
-        .filter((c) => c.category === 'skill' && c.label.toLowerCase().includes(q))
-        .slice(0, 8);
-    }
-    return (props.slashCommands ?? [])
+    const skills = (props.mentionCandidates ?? [])
+      .filter(
+        (c) =>
+          c.category === 'skill' &&
+          (c.label.toLowerCase().includes(q) || c.name?.toLowerCase().includes(q)),
+      )
+      .slice(0, 8);
+    if (trigger.kind === '$') return skills;
+    const commands = (props.slashCommands ?? [])
       .filter((c) => c.kind === 'local' && c.label.toLowerCase().includes(q))
       .slice(0, 8);
+    return [...commands, ...skills];
   }, [trigger, props.mentionCandidates, props.slashCommands, searchedMentions]);
 
   useEffect(() => {
     setActiveIndex((index) => (index < candidates.length ? index : 0));
   }, [candidates.length]);
+
+  useEffect(() => {
+    document
+      .getElementById(`${completionListId}-option-${activeIndex}`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeIndex, candidates, completionListId]);
 
   const syncTrigger = useCallback((value: string, caret: number) => {
     setTrigger(detectTrigger(value, caret));
@@ -770,7 +781,11 @@ export function Composer(props: ComposerProps) {
                 semanticRole="listbox"
                 itemId={(_item, index) => `${completionListId}-option-${index}`}
                 ariaLabel={
-                  trigger.kind === '@' ? '引用候选' : trigger.kind === '$' ? '技能候选' : '本地指令'
+                  trigger.kind === '@'
+                    ? '引用候选'
+                    : trigger.kind === '$'
+                      ? '技能候选'
+                      : '指令与技能候选'
                 }
                 activeId={candidates[activeIndex]?.id}
                 items={candidates.map((c) =>
@@ -1129,10 +1144,10 @@ export function Composer(props: ComposerProps) {
     }
     if ('category' in chosen) props.onInsertReference?.(chosen);
     else props.onRunSkillCommand?.(chosen.id);
-    insertCompletion(
-      chosen.label,
-      'category' in chosen && chosen.category === 'skill' ? '$' : undefined,
-    );
+    if ('category' in chosen && chosen.category === 'skill') {
+      const token = trigger?.kind === '$' ? `$${chosen.label}` : skillToken(chosen.label);
+      insertCompletion(token.slice(1), token[0] as '/' | '$');
+    } else insertCompletion(chosen.label);
   }
 }
 

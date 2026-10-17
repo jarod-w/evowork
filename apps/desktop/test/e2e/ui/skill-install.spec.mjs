@@ -16,54 +16,86 @@ async function addSkillAttachment(page, text) {
   await expect(page.getByRole('button', { name: '安装为全局技能' })).toBeVisible();
 }
 
-async function expectSkillCandidate(page, name) {
+async function expectSkillCandidate(page, name, prefix = '$') {
   await page.getByLabel('需求输入').fill('');
-  await page.getByLabel('需求输入').fill(`$${name}`);
+  await page.getByLabel('需求输入').fill(`${prefix}${name}`);
   await expect(page.getByRole('option', { name: new RegExp(name) })).toBeVisible();
 }
 
-test('单个 SKILL.MD 可从文件选择器安装；首页和新建任务均可引用', async ({
-  page,
-  electronApp,
-}, testInfo) => {
-  const folder = testInfo.outputPath('picked-skill');
-  mkdirSync(folder, { recursive: true });
-  const path = join(folder, 'SKILL.MD');
-  writeFileSync(path, skillText('file-coach'));
-  writeFileSync(join(folder, 'private.txt'), '不应安装的同目录资料');
-  await electronApp.evaluate((_electron, selected) => {
-    globalThis.__evoworkE2E.pickedFiles = [selected];
-  }, path);
-  await page.getByRole('button', { name: '插件', exact: true }).click();
-  await page.getByRole('button', { name: '＋ 添加技能' }).click();
-  await page.getByRole('menuitem', { name: '从 SKILL.md 文件安装' }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(async () =>
-        (await window.evowork.getCatalog()).skills.some((skill) => skill.id === 'file-coach'),
+for (const [label, prefix] of [
+  ['slash', '/'],
+  ['dollar', '$'],
+]) {
+  test(`单个 SKILL.MD 安装后可通过 ${label} 选择、发送并恢复历史`, async ({
+    page,
+    electronApp,
+  }, testInfo) => {
+    const folder = testInfo.outputPath('picked-skill');
+    mkdirSync(folder, { recursive: true });
+    const path = join(folder, 'SKILL.MD');
+    writeFileSync(path, skillText('file-coach'));
+    writeFileSync(join(folder, 'private.txt'), '不应安装的同目录资料');
+    await electronApp.evaluate((_electron, selected) => {
+      globalThis.__evoworkE2E.pickedFiles = [selected];
+    }, path);
+    await page.getByRole('button', { name: '插件', exact: true }).click();
+    await page.getByRole('button', { name: '＋ 添加技能' }).click();
+    await page.getByRole('menuitem', { name: '从 SKILL.md 文件安装' }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(async () =>
+          (await window.evowork.getCatalog()).skills.some((skill) => skill.id === 'file-coach'),
+        ),
+      )
+      .toBe(true);
+    await page.getByRole('button', { name: '新建任务', exact: true }).click();
+    if (prefix === '/') {
+      const input = page.getByLabel('需求输入');
+      await input.fill('/');
+      const menu = page.getByRole('listbox', { name: '指令与技能候选' });
+      await expect(menu.getByRole('option', { name: /file-coach/ })).toHaveCount(1);
+      expect(await menu.getByRole('option').count()).toBeGreaterThan(8);
+      const menuBox = await menu.boundingBox();
+      const inputBox = await input.boundingBox();
+      expect(menuBox.y).toBeGreaterThanOrEqual(0);
+      expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(inputBox.y);
+      for (let index = 0; index < 8; index += 1) await input.press('ArrowDown');
+      await expect(menu.locator('[aria-selected="true"]')).toBeInViewport();
+      await page.screenshot({ path: testInfo.outputPath('slash-combined-menu.png') });
+    }
+    await expectSkillCandidate(page, 'file-coach', prefix);
+    const installed = await page.evaluate(async () =>
+      (await window.evowork.getComposerContext({})).mentions.find(
+        (skill) => skill.name === 'file-coach',
       ),
-    )
-    .toBe(true);
-  await page.getByRole('button', { name: '新建任务', exact: true }).click();
-  await expectSkillCandidate(page, 'file-coach');
-  const installed = await page.evaluate(async () =>
-    (await window.evowork.getComposerContext({})).mentions.find(
-      (skill) => skill.name === 'file-coach',
-    ),
-  );
-  expect(installed.scope).toBe('user');
-  const files = readdirSync(dirname(installed.path));
-  expect(files).not.toContain('private.txt');
-  await page.getByRole('button', { name: '关闭提示' }).click();
-  await page.getByRole('option', { name: /file-coach/ }).click();
-  await page.getByLabel('需求输入').fill('$file-coach 验证全局技能在独立任务中可用');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.getByRole('main', { name: '对话区' })).toContainText('E2E response');
-  await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
-  await expectSkillCandidate(page, 'file-coach');
-  await page.getByRole('button', { name: '新建任务', exact: true }).click();
-  await expectSkillCandidate(page, 'file-coach');
-});
+    );
+    expect(installed.scope).toBe('user');
+    const files = readdirSync(dirname(installed.path));
+    expect(files).not.toContain('private.txt');
+    await page.getByRole('button', { name: '关闭提示' }).click();
+    if (prefix === '/')
+      await page.screenshot({ path: testInfo.outputPath('slash-skill-menu.png') });
+    await page.getByRole('option', { name: /file-coach/ }).click();
+    await expect(page.getByLabel('需求输入')).toHaveValue(`${prefix}file-coach `);
+    await page.getByLabel('需求输入').fill(`${prefix}file-coach 验证全局技能在独立任务中可用`);
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect(page.getByRole('main', { name: '对话区' })).toContainText('E2E response');
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+    await expect(page.locator('[data-mention-kind="skill"]')).toHaveText('/file-coach');
+    const task = await page.evaluate(async () =>
+      (await window.evowork.getStartup()).tasks.find((entry) =>
+        entry.title.includes('验证全局技能在独立任务中'),
+      ),
+    );
+    expect(task).toBeTruthy();
+    await page.reload();
+    await page.getByRole('button', { name: task.title, exact: true }).click();
+    await expect(page.locator('[data-mention-kind="skill"]')).toHaveText('/file-coach');
+    await expectSkillCandidate(page, 'file-coach', prefix);
+    await page.getByRole('button', { name: '新建任务', exact: true }).click();
+    await expectSkillCandidate(page, 'file-coach', prefix);
+  });
+}
 
 test('添加技能附件不自动安装；点击全局安装后当前和另一个新任务都能发现', async ({
   page,

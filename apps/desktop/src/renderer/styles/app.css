@@ -1773,8 +1773,14 @@ textarea {
 }
 .ew-completion {
   position: absolute;
+  bottom: 100%;
   left: var(--space-12);
+  margin-bottom: var(--space-8);
   z-index: var(--z-popover);
+}
+.ew-completion .ew-menu {
+  max-height: var(--layout-model-menu-max-height);
+  overflow-y: auto;
 }
 .ew-composer-tool-row {
   display: flex;

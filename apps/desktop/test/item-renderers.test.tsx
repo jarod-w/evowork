@@ -541,7 +541,7 @@ describe('UserMessage：@ 引用成块显示（03 §4.2 的 token 在历史里�
     expect(screen.getByText('按这个模板做：')).toBeTruthy();
     const mentions = document.querySelectorAll('.ew-mention');
     expect(mentions).toHaveLength(2);
-    expect(mentions[0]?.textContent).toBe('$presentations');
+    expect(mentions[0]?.textContent).toBe('/presentations');
     expect(mentions[1]?.textContent).toBe('@Q3.xlsx');
   });
 

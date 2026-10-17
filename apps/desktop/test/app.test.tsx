@@ -94,6 +94,43 @@ const STARTUP: StartupInfo = {
 };
 
 describe('任务内的技能发现', () => {
+  it.each(['presentations', 'goal', 'import', 'memories'])(
+    '从 / 选择技能 %s 后编辑并发送，保持技能绑定且不执行本地操作',
+    async (name) => {
+      const { bridge } = fakeBridge({
+        getComposerContext: vi.fn(async () => ({
+          mentions: [
+            {
+              id: `skill:${name}`,
+              label: name,
+              name,
+              category: 'skill' as const,
+              insertAs: 'skill' as const,
+              path: `/skills/${name}/SKILL.md`,
+            },
+          ],
+          commands: [],
+        })),
+      });
+      render(<App bridge={bridge} />);
+      const box = await screen.findByLabelText('需求输入');
+      fireEvent.change(box, { target: { value: `/${name}` } });
+      fireEvent.click(await screen.findByRole('option', { name: `${name}技能` }));
+      const token = name === 'presentations' ? `/${name}` : `/skills/${name}`;
+      expect(box).toHaveProperty('value', `${token} `);
+      fireEvent.change(box, { target: { value: `${token} 请处理这份材料` } });
+      fireEvent.keyDown(box, { key: 'Enter' });
+      await waitFor(() =>
+        expect(bridge.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: `${token} 请处理这份材料`,
+            references: [{ type: 'skill', name, path: `/skills/${name}/SKILL.md` }],
+          }),
+        ),
+      );
+    },
+  );
+
   it('切换任务后，旧技能查询迟到不能覆盖当前任务的候选', async () => {
     const skillContext = (name: string) => ({
       mentions: [
@@ -145,7 +182,7 @@ describe('任务内的技能发现', () => {
   });
 
   it.each(['skills-changed', 'turn-completed'] as const)(
-    '无项目任务在 %s 后能在 $ 中选到新增技能',
+    '无项目任务在 %s 后能在 / 中选到新增技能并发送绑定',
     async (eventType) => {
       let installed = false;
       const getComposerContext = vi.fn(async (input: { threadId?: string }) => ({
@@ -200,11 +237,11 @@ describe('任务内的技能发现', () => {
         );
       });
       expect(getComposerContext).toHaveBeenLastCalledWith({ threadId: 'standalone' });
-      fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '$' } });
+      fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '/' } });
       expect(await screen.findByRole('option', { name: /工作教练/ })).toBeTruthy();
       fireEvent.click(screen.getByRole('option', { name: /工作教练/ }));
       expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toContain(
-        '$工作教练',
+        '/工作教练',
       );
       fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
       await waitFor(() =>
@@ -1907,11 +1944,14 @@ describe('Composer 可见 token 与结构化引用一致', () => {
     { type: 'mention' as const, name: 'Q3.xlsx', path: '/w/Q3.xlsx' },
   ];
 
-  it('保留仍有 `$技能` / `@文件` token 的引用', () => {
-    expect(
-      reconcileComposerReferences('用 $演示文稿 处理 @Q3.xlsx ', references, candidates),
-    ).toEqual(references);
-  });
+  it.each(['/演示文稿', '$演示文稿', '/presentations'])(
+    '保留仍有 %s / @文件 token 的引用',
+    (token) => {
+      expect(
+        reconcileComposerReferences(`用 ${token} 处理 @Q3.xlsx `, references, candidates),
+      ).toEqual(references);
+    },
+  );
 
   it('删除可见 token 时同步删除后台结构化引用', () => {
     expect(reconcileComposerReferences('只处理 @Q3.xlsx ', references, candidates)).toEqual([
