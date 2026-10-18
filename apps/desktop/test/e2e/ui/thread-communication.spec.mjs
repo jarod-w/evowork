@@ -54,7 +54,31 @@ async function scriptReplies(electronApp, m) {
     );
   }, m);
 }
-test('用户明确选择同项目目标，完整请求执行、回传、汇总与刷新恢复，无回复循环', async ({
+async function sendingApproval(page, m) {
+  const approval = page
+    .getByRole('alertdialog')
+    .filter({ has: page.getByRole('button', { name: '批准本次发送', exact: true }) });
+  // Native MCP policy may separately request permission to invoke the connector.
+  const native = page
+    .getByRole('alertdialog')
+    .filter({ has: page.getByRole('button', { name: '允许这一次', exact: true }) });
+  await expect
+    .poll(async () => (await approval.count()) + (await native.count()), { timeout: 60000 })
+    .toBeGreaterThan(0);
+  if (await native.count())
+    await native.getByRole('button', { name: '允许这一次', exact: true }).click();
+  await expect(approval).toBeVisible();
+  await expect(approval).toContainText(m.b);
+  await expect(approval).toContainText(m.request);
+  expect(
+    await page.evaluate(
+      (threadId) => window.evowork.getCommunicationRecords({ threadId }),
+      m.source,
+    ),
+  ).toHaveLength(0);
+  return approval;
+}
+test('对话发现同项目目标并确认发送，执行、回传、汇总与刷新恢复，无回复循环', async ({
   page,
   electronApp,
 }, testInfo) => {
@@ -62,14 +86,37 @@ test('用户明确选择同项目目标，完整请求执行、回传、汇总�
   page.on('pageerror', (error) => pageErrors.push(error.message));
   const m = await setup(page, electronApp);
   await scriptReplies(electronApp, m);
-  await page.getByText('会话通信', { exact: true }).click();
-  await expect(page.getByLabel('通信目标会话').locator('option')).toContainText([
-    '请选择会话',
-    m.b,
-  ]);
-  await page.getByLabel('通信目标会话').selectOption(m.target);
-  await page.getByLabel('会话请求内容').fill(m.request);
-  await page.getByRole('button', { name: '发送会话请求', exact: true }).click();
+  await expect(page.getByText('会话通信', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('通信目标会话')).toHaveCount(0);
+  await expect(page.getByLabel('会话请求内容')).toHaveCount(0);
+  await electronApp.evaluate((_electron, m) => {
+    const gateway = globalThis.__evoworkE2E.gateway;
+    gateway.scriptWhen(
+      'communication-discover',
+      (r) => r.text.includes('COMM-DISCOVER-' + m.a) && !r.calls.includes('list_threads'),
+      { tool: 'list_threads', args: {} },
+    );
+    gateway.scriptWhen(
+      'communication-discovered-send',
+      (r) =>
+        r.text.includes('COMM-DISCOVER-' + m.a) &&
+        r.calls.includes('list_threads') &&
+        !r.calls.includes('send_request'),
+      { tool: 'send_request', args: { targetThreadId: m.target, text: m.request } },
+    );
+    gateway.scriptWhen('communication-discovered-sent', (r) => r.calls.includes('send_request'), {
+      kind: 'text',
+      text: '请求已发送，等待目标回复。',
+    });
+  }, m);
+  await page
+    .getByLabel('需求输入')
+    .fill(
+      `COMM-DISCOVER-${m.a} 请找到同项目的“${m.b}”任务，让它处理以下请求，并把结果返回这里：${m.request}`,
+    );
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  const approval = await sendingApproval(page, m);
+  await approval.getByRole('button', { name: '批准本次发送', exact: true }).click();
   await expect
     .poll(
       async () =>
@@ -82,8 +129,8 @@ test('用户明确选择同项目目标，完整请求执行、回传、汇总�
       { timeout: 90000 },
     )
     .toBe('completed');
-  await expect(page.getByLabel('会话通信记录')).toContainText(m.result);
-  await expect(page.getByLabel('会话通信记录')).toContainText('已完成');
+  await idle(page);
+  await expect(page.locator('.ew-conversation-scroll')).toContainText('已汇总 ' + m.result);
   const conversation = await page.locator('.ew-conversation-scroll').boundingBox();
   const windowHeight = await page.evaluate(() => window.innerHeight);
   expect(conversation.height).toBeGreaterThan(windowHeight / 8);
@@ -109,8 +156,8 @@ test('用户明确选择同项目目标，完整请求执行、回传、汇总�
   ).title;
   await page.reload();
   await page.getByRole('button', { name: sourceTitle, exact: true }).click();
-  await page.getByText('会话通信', { exact: true }).click();
-  await expect(page.getByLabel('会话通信记录')).toContainText(m.result);
+  await expect(page.getByText('会话通信', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.ew-conversation-scroll')).toContainText('已汇总 ' + m.result);
   const after = await page.evaluate(
     (threadId) => window.evowork.getCommunicationRecords({ threadId }),
     m.source,
@@ -142,29 +189,11 @@ for (const accept of [false, true]) {
         text: '本次通信工具调用已结束。',
       });
     }, m);
-    await page.getByLabel('需求输入').fill('COMM-ASK-' + m.a);
+    await page
+      .getByLabel('需求输入')
+      .fill(`COMM-ASK-${m.a} 请让“${m.b}”任务处理以下请求，并把结果返回这里：${m.request}`);
     await page.getByRole('button', { name: '发送', exact: true }).click();
-    const approval = page
-      .getByRole('alertdialog')
-      .filter({ has: page.getByRole('button', { name: '批准本次发送', exact: true }) });
-    // Native MCP policy may separately request permission to invoke the connector.
-    const native = page
-      .getByRole('alertdialog')
-      .filter({ has: page.getByRole('button', { name: '允许这一次', exact: true }) });
-    await expect
-      .poll(async () => (await approval.count()) + (await native.count()), { timeout: 60000 })
-      .toBeGreaterThan(0);
-    if (await native.count())
-      await native.getByRole('button', { name: '允许这一次', exact: true }).click();
-    await expect(approval).toBeVisible();
-    await expect(approval).toContainText(m.b);
-    await expect(approval).toContainText(m.request);
-    expect(
-      await page.evaluate(
-        (threadId) => window.evowork.getCommunicationRecords({ threadId }),
-        m.source,
-      ),
-    ).toHaveLength(0);
+    const approval = await sendingApproval(page, m);
     await approval
       .getByRole('button', { name: accept ? '批准本次发送' : '拒绝', exact: true })
       .click();

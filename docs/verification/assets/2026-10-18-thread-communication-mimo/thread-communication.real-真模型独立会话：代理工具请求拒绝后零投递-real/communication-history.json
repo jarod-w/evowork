@@ -1,0 +1,196 @@
+{
+  "model": "mimo-v2.6-flash",
+  "source": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a14cf2-4b42-7a62-bbee-28cb745614ee",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "REAL-A-mvd8iwvo 本次只回复“初始化完成”，不要使用工具、联网、读写文件或创建子任务。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。PRIVATE-mvd8iwvo",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a14cf2-4b1f-7a41-b2b7-d4828aa56ac7",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8kd3ik5gxgs_0",
+        "summary": [
+          "用户已要求只回复固定短语，不执行工具、联网、读写文件或创建子任务。"
+        ],
+        "content": [],
+        "_turnId": "01a14cf2-4b1f-7a41-b2b7-d4828aa56ac7",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8kd3ik5gxgs_1",
+        "text": "初始化完成",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cf2-4b1f-7a41-b2b7-d4828aa56ac7",
+        "completed": true
+      },
+      {
+        "type": "userMessage",
+        "id": "01a14cf2-54ad-7db0-a2cc-11f5b2512a05",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "请给“REAL-B-mvd8iwvo 本次只回复“初始…”任务（会话 ID：01a14cf1-438d-75e1-b7a1-b3ae0d881daa）发送以下完整请求，并把结果返回这里：\nREQUEST-mvd8iwvo 请计算 17 + 25。只回复“ANSWER-mvd8iwvo：42”，不要使用工具、联网、读写文件或继续发送消息。\n发送后简短确认并结束当前回合，不轮询、不重试、不使用其他工具。收到回复后简短汇总并保留 ANSWER-mvd8iwvo。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8keyc9jxg3l_0",
+        "summary": [
+          "用户明确要求使用 thread_communication 发送到指定会话，工具会弹授权，直接调用。"
+        ],
+        "content": [],
+        "_turnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8keyc9jxg3l_1",
+        "text": "正在按指定会话 ID 发送完整请求。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "completed": true
+      },
+      {
+        "type": "mcpToolCall",
+        "id": "call_2b1e025046a848049a04cc2c",
+        "server": "thread_communication",
+        "tool": "send_request",
+        "status": "failed",
+        "arguments": {
+          "targetThreadId": "01a14cf1-438d-75e1-b7a1-b3ae0d881daa",
+          "text": "REQUEST-mvd8iwvo 请计算 17 + 25。只回复“ANSWER-mvd8iwvo：42”，不要使用工具、联网、读写文件或继续发送消息。"
+        },
+        "appContext": null,
+        "mcpAppUi": null,
+        "pluginId": null,
+        "readOnlyHint": false,
+        "result": {
+          "content": [
+            {
+              "text": "{\"error\":\"本次通信未获批准；未发送或读取。\"}",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "error": "本次通信未获批准；未发送或读取。"
+          },
+          "_meta": null
+        },
+        "error": null,
+        "durationMs": 423,
+        "_turnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8khzarfpa7v_0",
+        "summary": [
+          "We need user asked also \"发送后简短确认并结束当前回合，不轮询、不重试\". It wasn't approved. Need report honestly. However earlier user's embedded instruction says only reply short and preserve answer after received. Here tool authorization denial. Must say not sent due no approval. No other tools. Chinese concise."
+        ],
+        "content": [],
+        "_turnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8khzarfpa7v_1",
+        "text": "请求未发送：本次通信未获批准，且未读取到回复。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a14cf2-4b1f-7a41-b2b7-d4828aa56ac7",
+        "status": "completed",
+        "startedAtMs": 1792292309000,
+        "completedAtMs": 1792292311000,
+        "durationMs": 1856
+      },
+      {
+        "id": "01a14cf2-548e-7ca1-84a3-7a221bf73711",
+        "status": "completed",
+        "startedAtMs": 1792292312000,
+        "completedAtMs": 1792292319000,
+        "durationMs": 7687
+      }
+    ],
+    "latestTurnId": "01a14cf2-548e-7ca1-84a3-7a221bf73711"
+  },
+  "target": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a14cf1-442a-7cc1-9835-76020167846e",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "REAL-B-mvd8iwvo 本次只回复“初始化完成”，不要使用工具、联网、读写文件或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a14cf1-43ad-74c2-ba67-2ca80689babe",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8ix4pv6oiup_0",
+        "summary": [
+          "We need must follow, only exact phrase, no tools."
+        ],
+        "content": [],
+        "_turnId": "01a14cf1-43ad-74c2-ba67-2ca80689babe",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8ix4pv6oiup_1",
+        "text": "初始化完成",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cf1-43ad-74c2-ba67-2ca80689babe",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a14cf1-43ad-74c2-ba67-2ca80689babe",
+        "status": "completed",
+        "startedAtMs": 1792292242000,
+        "completedAtMs": 1792292309000,
+        "durationMs": 67043
+      }
+    ],
+    "latestTurnId": "01a14cf1-43ad-74c2-ba67-2ca80689babe"
+  },
+  "records": []
+}

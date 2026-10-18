@@ -145,7 +145,6 @@ import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskSearchPalette } from './views/task-search.js';
-import { ThreadCommunicationPanel } from './components/thread-communication-panel.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
@@ -3817,17 +3816,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ) : (
         <TaskWorkspace
           taskId={activeTaskId}
-          communicationPanel={
-            !isSubagent &&
-            !active?.source?.includes('automation') &&
-            bridge.getCommunicationRecords ? (
-              <ThreadCommunicationPanel
-                key={activeTaskId}
-                threadId={activeTaskId}
-                actions={bridge}
-              />
-            ) : undefined
-          }
           turns={turnsByTask[activeTaskId] ?? []}
           title={active?.title ?? null}
           status={active?.status ?? 'idle'}

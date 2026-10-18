@@ -1,0 +1,144 @@
+{
+  "model": "mimo-v2.6-flash",
+  "source": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a14cec-e9eb-7f41-ac74-55e349b11c00",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "REAL-A-mvd8cr16 本次只回复“初始化完成”，不要使用工具、联网、读写文件或创建子任务。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。这是来源独有的背景资料。PRIVATE-mvd8cr16",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a14cec-e9cf-7ed1-a9cd-aa9c97ac23a3",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8ct12laua10_0",
+        "summary": [
+          "We need comply exact."
+        ],
+        "content": [],
+        "_turnId": "01a14cec-e9cf-7ed1-a9cd-aa9c97ac23a3",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8ct12laua10_1",
+        "text": "初始化完成",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cec-e9cf-7ed1-a9cd-aa9c97ac23a3",
+        "completed": true
+      },
+      {
+        "type": "userMessage",
+        "id": "01a14cec-ef93-7ea2-8a34-5e963d78c33c",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "请给“REAL-B-mvd8cr16 本次只回复“初始…”任务（会话 ID：01a14cec-e090-7e03-bb5c-e0339eb77ac2）发送以下完整请求，并把结果返回这里：\nREQUEST-mvd8cr16 请计算 17 + 25。只回复“ANSWER-mvd8cr16：42”，不要使用工具、联网、读写文件或继续发送消息。\n发送前交给我确认目标和正文。发送后简短确认并结束当前回合，不轮询、不重试、不使用其他工具。收到回复后简短汇总并保留 ANSWER-mvd8cr16。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a14cec-ef75-7162-9a5d-e40362faed07",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8cu5650skxt_0",
+        "summary": [
+          "We need need ask confirmation target/body before send, using thread tool requires approval itself maybe send tool gives confirm. User explicitly asks send and says before confirmation. We can maybe list not needed. Need probably call send_request, tool itself approval. But \"发送前交给我确认目标和正文\" means we should present target and text and ask. Cannot use request_user_input outside plan mode. Just reply asking confirmation, no tool."
+        ],
+        "content": [],
+        "_turnId": "01a14cec-ef75-7162-9a5d-e40362faed07",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8cu5650skxt_1",
+        "text": "发送确认：\n\n- 目标会话：`01a14cec-e090-7e03-bb5c-e0339eb77ac2`\n- 正文：`REQUEST-mvd8cr16 请计算 17 + 25。只回复“ANSWER-mvd8cr16：42”，不要使用工具、联网、读写文件或继续发送消息。`\n\n请确认是否发送。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cec-ef75-7162-9a5d-e40362faed07",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a14cec-e9cf-7ed1-a9cd-aa9c97ac23a3",
+        "status": "completed",
+        "startedAtMs": 1792291957000,
+        "completedAtMs": 1792291958000,
+        "durationMs": 1218
+      },
+      {
+        "id": "01a14cec-ef75-7162-9a5d-e40362faed07",
+        "status": "completed",
+        "startedAtMs": 1792291958000,
+        "completedAtMs": 1792291965000,
+        "durationMs": 6475
+      }
+    ],
+    "latestTurnId": "01a14cec-ef75-7162-9a5d-e40362faed07"
+  },
+  "target": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a14cec-e1b3-7650-87cf-d021d61006de",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "REAL-B-mvd8cr16 本次只回复“初始化完成”，不要使用工具、联网、读写文件或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a14cec-e0f7-78c0-9b57-c2e11081862f",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvd8crex8axk7r_0",
+        "summary": [
+          "We need must comply exact."
+        ],
+        "content": [],
+        "_turnId": "01a14cec-e0f7-78c0-9b57-c2e11081862f",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvd8crex8axk7r_1",
+        "text": "初始化完成",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a14cec-e0f7-78c0-9b57-c2e11081862f",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a14cec-e0f7-78c0-9b57-c2e11081862f",
+        "status": "completed",
+        "startedAtMs": 1792291954000,
+        "completedAtMs": 1792291956000,
+        "durationMs": 1805
+      }
+    ],
+    "latestTurnId": "01a14cec-e0f7-78c0-9b57-c2e11081862f"
+  },
+  "records": []
+}

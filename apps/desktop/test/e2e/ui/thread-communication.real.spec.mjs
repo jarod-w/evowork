@@ -66,7 +66,7 @@ async function evidence(page, testInfo, m) {
   await page.screenshot({ path: testInfo.outputPath('communication.png'), fullPage: true });
   return history;
 }
-async function completed(page, testInfo, m, sourceTurns = 2) {
+async function completed(page, testInfo, m, sourceTurns = 3) {
   await expect
     .poll(async () => (await records(page, m.source.id))[0]?.status, { timeout: 180000 })
     .toBe('completed');
@@ -95,29 +95,6 @@ async function completed(page, testInfo, m, sourceTurns = 2) {
   return history.records[0];
 }
 
-test('真模型独立会话：手动发送、真实计算回传、来源汇总、刷新保留且无循环', async ({
-  page,
-  electronApp,
-}, testInfo) => {
-  const m = await setup(page, electronApp);
-  try {
-    await page.getByText('会话通信', { exact: true }).click();
-    await page.getByLabel('通信目标会话').selectOption(m.target.id);
-    await page.getByLabel('会话请求内容').fill(m.request);
-    await page.getByRole('button', { name: '发送会话请求', exact: true }).click();
-    const record = await completed(page, testInfo, m);
-    await expect(page.getByLabel('会话通信记录')).toContainText(m.answer);
-    await page.reload();
-    await page.getByRole('button', { name: m.source.title, exact: true }).click();
-    await page.getByText('会话通信', { exact: true }).click();
-    await expect(page.getByLabel('会话通信记录')).toContainText(m.answer);
-    expect(await records(page, m.source.id)).toEqual([record]);
-  } catch (error) {
-    await evidence(page, testInfo, m).catch(() => undefined);
-    throw error;
-  }
-});
-
 for (const accept of [false, true]) {
   test(`真模型独立会话：代理工具请求${accept ? '批准后执行并回传' : '拒绝后零投递'}`, async ({
     page,
@@ -128,7 +105,7 @@ for (const accept of [false, true]) {
       await page
         .getByLabel('需求输入')
         .fill(
-          `请现在调用 thread_communication 的 send_request，目标 targetThreadId 严格为 ${m.target.id}，text 严格为下面这段完整内容：\n${m.request}\n调用本身会显示具体授权卡，交给我审批。调用后只简短确认工具结果并结束当前回合，不轮询、不重试、不调用其它工具。收到回复后简短汇总并保留 ${m.answer}。`,
+          `请给“${m.target.title}”任务（会话 ID：${m.target.id}）发送以下完整请求，并把结果返回这里：\n${m.request}\n发送后简短确认并结束当前回合，不轮询、不重试、不使用其他工具。收到回复后简短汇总并保留 ${m.answer}。`,
         );
       await page.getByRole('button', { name: '发送', exact: true }).click();
       const approval = page
@@ -152,8 +129,15 @@ for (const accept of [false, true]) {
         .getByRole('button', { name: accept ? '批准本次发送' : '拒绝', exact: true })
         .click();
       await idle(page);
-      if (accept) await completed(page, testInfo, m, 3);
-      else {
+      if (accept) {
+        const record = await completed(page, testInfo, m);
+        await expect(page.locator('.ew-conversation-scroll')).toContainText(m.answer);
+        await page.reload();
+        await page.getByRole('button', { name: m.source.title, exact: true }).click();
+        await expect(page.getByText('会话通信', { exact: true })).toHaveCount(0);
+        await expect(page.locator('.ew-conversation-scroll')).toContainText(m.answer);
+        expect(await records(page, m.source.id)).toEqual([record]);
+      } else {
         const history = await evidence(page, testInfo, m);
         expect(history.records).toHaveLength(0);
         expect(JSON.stringify(history.target.items)).not.toContain(m.request);

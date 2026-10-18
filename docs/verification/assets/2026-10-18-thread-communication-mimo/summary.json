@@ -1,0 +1,52 @@
+{
+  "model": "mimo-v2.6-flash",
+  "passed": 2,
+  "retries": 0,
+  "skipped": 0,
+  "cases": [
+    {
+      "case": "thread-communication.real-真模型独立会话：代理工具请求批准后执行并回传-real",
+      "model": "mimo-v2.6-flash",
+      "sourceTurns": 3,
+      "targetTurns": 2,
+      "records": [
+        {
+          "id": "e87f922b-c1b6-45f7-b30b-8227f261cc82",
+          "status": "completed",
+          "reply": "ANSWER-mvd8knm6：42"
+        }
+      ],
+      "sourceFinal": [
+        "收到回复：ANSWER-mvd8knm6：42"
+      ],
+      "toolCalls": [
+        {
+          "server": "thread_communication",
+          "tool": "send_request",
+          "status": "completed"
+        }
+      ],
+      "kernelStarts": 1,
+      "kernelExits": 0
+    },
+    {
+      "case": "thread-communication.real-真模型独立会话：代理工具请求拒绝后零投递-real",
+      "model": "mimo-v2.6-flash",
+      "sourceTurns": 2,
+      "targetTurns": 1,
+      "records": [],
+      "sourceFinal": [
+        "请求未发送：本次通信未获批准，且未读取到回复。"
+      ],
+      "toolCalls": [
+        {
+          "server": "thread_communication",
+          "tool": "send_request",
+          "status": "failed"
+        }
+      ],
+      "kernelStarts": 1,
+      "kernelExits": 0
+    }
+  ]
+}
