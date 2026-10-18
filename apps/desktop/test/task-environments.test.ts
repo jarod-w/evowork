@@ -26,6 +26,78 @@ afterEach(async () => {
 });
 
 describe('任务环境的真实文件系统后果', () => {
+  it('修改无项目工作目录后新任务在新位置创建，重启、重试与旧任务保留原目录', async () => {
+    const old = await environments.prepare('old');
+    environments.bind('old-thread', old);
+    const selected = join(home, '我的工作');
+    await mkdir(selected);
+    await environments.setWorkingDirectory(selected);
+    const first = await environments.prepare('new');
+    expect(first.cwd.startsWith(`${selected}/`)).toBe(true);
+    const restored = createTaskEnvironments({
+      store,
+      home,
+      dataDir: join(home, '.evowork'),
+      projectRoot: (id) => roots.get(id),
+    });
+    expect(restored.workingDirectory()).toEqual({ path: selected, isDefault: false });
+    expect((await restored.prepare('new')).cwd).toBe(first.cwd);
+    expect(restored.task('old-thread')?.cwd).toBe(old.cwd);
+    roots.set('project', selected);
+    const project = await restored.prepare('project-draft', 'project');
+    expect(project.cwd).toBe(selected);
+    expect(project.managed).toBe(false);
+    await restored.setWorkingDirectory(null);
+    expect(
+      (await restored.prepare('default')).cwd.startsWith(
+        `${join(home, '.evowork', 'workspaces')}/`,
+      ),
+    ).toBe(true);
+    expect((await restored.prepare('new')).cwd).toBe(first.cwd);
+    await writeFile(join(selected, 'keep.txt'), '用户文件');
+    restored.bind('new-thread', first);
+    await restored.remove('new-thread');
+    expect(await readFile(join(selected, 'keep.txt'), 'utf8')).toBe('用户文件');
+  });
+
+  it('工作目录设置拒绝过宽、内部和无效目录，失败不改变已保存选择', async () => {
+    const selected = join(home, 'work');
+    await mkdir(selected);
+    await environments.setWorkingDirectory(selected);
+    for (const invalid of [home, '/', join(home, '.evowork'), join(home, 'missing')]) {
+      await expect(environments.setWorkingDirectory(invalid)).rejects.toThrow();
+      expect(environments.workingDirectory().path).toBe(selected);
+    }
+    await rm(selected, { recursive: true });
+    await expect(environments.prepare('missing-root')).rejects.toThrow();
+  });
+
+  it('自定义根目录被换成软链时拒绝创建，不把新任务写入软链目标', async () => {
+    const selected = join(home, 'work');
+    const outside = join(home, 'outside');
+    await mkdir(selected);
+    await mkdir(outside);
+    await environments.setWorkingDirectory(selected);
+    await rm(selected, { recursive: true });
+    await symlink(outside, selected);
+    await expect(environments.prepare('replaced-root')).rejects.toThrow('工作目录已被替换');
+  });
+
+  it('覆盖应用数据位置时也不能选择内部目录作为自定义工作目录', async () => {
+    const dataDir = join(home, 'app-data');
+    await mkdir(join(dataDir, 'secrets'), { recursive: true });
+    const overridden = createTaskEnvironments({
+      store,
+      home,
+      dataDir,
+      projectRoot: () => undefined,
+    });
+    await expect(overridden.setWorkingDirectory(dataDir)).rejects.toThrow('应用的数据目录');
+    await expect(overridden.setWorkingDirectory(join(dataDir, 'secrets'))).rejects.toThrow(
+      '应用的数据目录',
+    );
+  });
+
   it('丢弃未发送草稿清理未绑定环境，已绑定任务保留产物', async () => {
     const abandoned = await environments.prepare('draft-abandoned');
     await environments.discard('draft-abandoned');

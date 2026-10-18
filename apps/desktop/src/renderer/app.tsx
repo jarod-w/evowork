@@ -73,6 +73,7 @@ import type {
   ProjectMutationResult,
   PreferencesInput,
   PreferencesView,
+  WorkingDirectoryView,
   ProjectsDataView,
   QueuedInputView,
   RendererEvent,
@@ -288,6 +289,8 @@ export interface EvoworkBridge
   openProviderDocs(input: { provider: string }): Promise<{ ok: boolean; refused?: string }>;
   setSecretFallback(input: { accept: boolean }): Promise<ModelAccessMutationResult>;
   probeModel(input: { modelId: string }): Promise<ModelProbeResult>;
+  getWorkingDirectory(): Promise<WorkingDirectoryView>;
+  setWorkingDirectory(input: { reset?: boolean }): Promise<WorkingDirectoryView>;
   getPreferences(): Promise<PreferencesView>;
   setPreferences(input: PreferencesInput): Promise<PreferencesView>;
   getMemorySettings?(): Promise<MemorySettingsView>;
@@ -622,6 +625,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [modelAccess, setModelAccess] = useState<ModelAccessView | null>(null);
   const [computerUse, setComputerUse] = useState<ComputerUseStatusView | null>(null);
   useEffect(() => bridge.onComputerUseStatus?.(setComputerUse), [bridge]);
+  const [workingDirectory, setWorkingDirectory] = useState<WorkingDirectoryView | null>(null);
+  const [workingDirectoryBusy, setWorkingDirectoryBusy] = useState(false);
   const [preferences, setPreferences] = useState<PreferencesView | null>(null);
   const [memoryImportOpen, setMemoryImportOpen] = useState(false);
   const [memoryImportRevision, setMemoryImportRevision] = useState(0);
@@ -1873,6 +1878,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           setSettingsRefusal(result.refused);
         })
         .catch(() => setModelAccess(null));
+      void bridge
+        .getWorkingDirectory()
+        .then(setWorkingDirectory)
+        .catch((error: unknown) => reportFailure(error, '没能读取工作目录。'));
       void bridge
         .getPreferences()
         .then(setPreferences)
@@ -3462,6 +3471,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .catch((error: unknown) => reportFailure(error, '没能打开系统设置。'));
           }}
           imagePorts={bridge}
+          workingDirectory={workingDirectory}
+          workingDirectoryBusy={workingDirectoryBusy}
+          onWorkingDirectory={(reset) => {
+            if (workingDirectoryBusy) return;
+            setWorkingDirectoryBusy(true);
+            void bridge
+              .setWorkingDirectory({ reset })
+              .then((directory) => {
+                setWorkingDirectory(directory);
+                setSettingsRefusal(undefined);
+              })
+              .catch((error: unknown) => reportFailure(error, '工作目录没有保存。'))
+              .finally(() => setWorkingDirectoryBusy(false));
+          }}
           preferences={preferences}
           memory={memorySettings}
           appName={startup?.appName ?? 'EvoWork'}
@@ -4293,6 +4316,9 @@ function MainPage(props: {
   readonly settingsSection: SettingsSection;
   readonly onSettingsSection: (section: SettingsSection) => void;
   readonly modelAccess: ModelAccessView | null;
+  readonly workingDirectory?: WorkingDirectoryView | null | undefined;
+  readonly workingDirectoryBusy?: boolean | undefined;
+  readonly onWorkingDirectory?: ((reset: boolean) => void) | undefined;
   readonly preferences: PreferencesView | null;
   readonly memory: MemorySettingsView | null;
   readonly appName: string;
@@ -4476,6 +4502,9 @@ function MainPage(props: {
           onComputerUseSettings={props.onComputerUseSettings}
           onComputerUseRefresh={props.onComputerUseRefresh}
           imagePorts={props.imagePorts}
+          workingDirectory={props.workingDirectory}
+          workingDirectoryBusy={props.workingDirectoryBusy}
+          onWorkingDirectory={props.onWorkingDirectory}
           preferences={props.preferences}
           memory={props.memory}
           appName={props.appName}

@@ -137,6 +137,37 @@ function makeActions(overrides: Partial<Parameters<typeof createRendererActions>
   });
 }
 
+describe('无项目工作目录设置', () => {
+  it('选择、取消和恢复默认走真实环境登记，不创建项目；拒绝目录保留原选择', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-working-directory-')));
+    const store = memoryStore();
+    try {
+      const selected = join(home, '工作');
+      mkdirSync(selected);
+      const environments = createTaskEnvironments({
+        store,
+        home,
+        dataDir: join(home, '.evowork'),
+        projectRoot: () => undefined,
+      });
+      let picked: string | undefined = selected;
+      const actions = makeActions({ store, environments, pickDirectory: async () => picked });
+      const initial = await actions.getWorkingDirectory();
+      expect(initial.isDefault).toBe(true);
+      expect(await actions.setWorkingDirectory({})).toEqual({ path: selected, isDefault: false });
+      picked = undefined;
+      expect(await actions.setWorkingDirectory({})).toEqual({ path: selected, isDefault: false });
+      picked = home;
+      await expect(actions.setWorkingDirectory({})).rejects.toThrow('范围过大');
+      expect((await actions.getWorkingDirectory()).path).toBe(selected);
+      expect((await actions.getStartup()).workspaces).toHaveLength(0);
+      expect(await actions.setWorkingDirectory({ reset: true })).toEqual(initial);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('记忆配置边界', () => {
   const memory = {
     enabled: true,

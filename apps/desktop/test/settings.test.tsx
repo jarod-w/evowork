@@ -102,6 +102,23 @@ function page(over: Partial<SettingsPageProps> = {}) {
   return props;
 }
 
+describe('常规工作目录', () => {
+  it('显示无项目工作目录，可更改和恢复默认，并说明只影响新任务', () => {
+    const onWorkingDirectory = vi.fn();
+    page({
+      section: 'general',
+      workingDirectory: { path: '/Users/li/工作', isDefault: false },
+      onWorkingDirectory,
+    });
+    expect(screen.getByText('/Users/li/工作')).toBeTruthy();
+    expect(screen.getByText(/每个新任务创建独立子目录/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '更改…' }));
+    expect(onWorkingDirectory).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
+    expect(onWorkingDirectory).toHaveBeenCalledWith(true);
+  });
+});
+
 describe('个性化记忆', () => {
   it('显示 Codex 当前支持的全局开关与准备状态', () => {
     page({ section: 'personalization' });

@@ -45,6 +45,7 @@ import type {
   MemorySettingsInput,
   MemorySettingsView,
   PreferencesView,
+  WorkingDirectoryView,
   RuntimeProgressView,
   RuntimeStatusView,
   UpdateQuitImpactView,
@@ -52,12 +53,21 @@ import type {
 } from '../../shared/ipc.js';
 
 export type SettingsSection =
-  'account' | 'models' | 'import' | 'personalization' | 'usage' | 'data' | 'security' | 'about';
+  | 'general'
+  | 'account'
+  | 'models'
+  | 'import'
+  | 'personalization'
+  | 'usage'
+  | 'data'
+  | 'security'
+  | 'about';
 
 export const SETTINGS_SECTIONS: readonly {
   readonly id: SettingsSection;
   readonly label: string;
 }[] = [
+  { id: 'general', label: '常规' },
   { id: 'account', label: '账号' },
   { id: 'models', label: '模型' },
   { id: 'personalization', label: '个性化' },
@@ -78,6 +88,9 @@ export const BACKEND_LABEL: Readonly<Record<string, string>> = Object.freeze({
 });
 
 export interface SettingsPageProps {
+  readonly workingDirectory?: WorkingDirectoryView | null | undefined;
+  readonly workingDirectoryBusy?: boolean | undefined;
+  readonly onWorkingDirectory?: ((reset: boolean) => void) | undefined;
   readonly imagePorts?: ImageUiPorts | undefined;
   readonly computerUse?: ComputerUseStatusView | null | undefined;
   readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
@@ -160,6 +173,44 @@ export function SettingsPage(props: SettingsPageProps) {
       </nav>
       <div className="ew-settings-body">
         {props.refusal !== undefined ? <Banner tone="danger">{props.refusal}</Banner> : null}
+        {props.section === 'general' ? (
+          <section className="ew-settings-section">
+            <SectionHeader title="常规" />
+            <h3>工作目录</h3>
+            <p className="ew-settings-note">
+              选择“不使用项目”时，在此目录中为每个新任务创建独立子目录，用于保存附件和产物。
+              更改后仅对新任务生效，已有任务继续使用原目录。
+            </p>
+            {props.workingDirectory ? (
+              <p className="ew-settings-directory" title={props.workingDirectory.path}>
+                {props.workingDirectory.path}
+              </p>
+            ) : (
+              <p className="ew-settings-note">正在读取工作目录…</p>
+            )}
+            <div className="ew-settings-actions">
+              <PillButton
+                disabled={
+                  !props.workingDirectory || !props.onWorkingDirectory || props.workingDirectoryBusy
+                }
+                onClick={() => props.onWorkingDirectory?.(false)}
+              >
+                {props.workingDirectoryBusy ? '正在更改…' : '更改…'}
+              </PillButton>
+              <PillButton
+                disabled={
+                  !props.workingDirectory ||
+                  props.workingDirectory.isDefault ||
+                  !props.onWorkingDirectory ||
+                  props.workingDirectoryBusy
+                }
+                onClick={() => props.onWorkingDirectory?.(true)}
+              >
+                恢复默认
+              </PillButton>
+            </div>
+          </section>
+        ) : null}
         {props.section === 'account' ? (
           <AccountSection
             access={props.access}

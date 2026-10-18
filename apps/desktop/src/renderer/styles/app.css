@@ -4026,6 +4026,10 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   flex-direction: column;
   gap: var(--space-12);
 }
+.ew-settings-directory {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
 .ew-settings-note {
   margin: 0;
   color: var(--text-secondary);

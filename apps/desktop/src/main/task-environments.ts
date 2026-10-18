@@ -4,7 +4,7 @@ import { cp, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'nod
 import { isAbsolute, join } from 'node:path';
 import { classifyPath, workspaceRootRefusal } from '@evowork/policy';
 import { readMeta, writeMeta, type Store } from '@evowork/store';
-import type { ComposerReferenceView } from '../shared/ipc.js';
+import type { ComposerReferenceView, WorkingDirectoryView } from '../shared/ipc.js';
 
 export interface TaskEnvironment {
   readonly cwd: string;
@@ -16,6 +16,8 @@ export interface TaskEnvironment {
 }
 
 export interface TaskEnvironments {
+  workingDirectory(): WorkingDirectoryView;
+  setWorkingDirectory(path: string | null): Promise<WorkingDirectoryView>;
   draftRoot(id: string): Promise<string>;
   prepare(id: string, projectId?: string): Promise<TaskEnvironment>;
   validate(cwd: string): Promise<string>;
@@ -38,6 +40,11 @@ export function createTaskEnvironments(options: {
   readonly projectRoot: (id: string) => string | undefined;
 }): TaskEnvironments {
   const { store, home, dataDir } = options;
+  const directoryKey = 'evowork.workingDirectory';
+  const workingDirectory = (): WorkingDirectoryView => {
+    const custom = readMeta(store.db, directoryKey);
+    return { path: custom || join(dataDir, 'workspaces'), isDefault: !custom };
+  };
   const key = (kind: string, id: string) => `evowork.environment.${kind}.${id}`;
   const load = (kind: string, id: string): TaskEnvironment | undefined => {
     const raw = readMeta(store.db, key(kind, id));
@@ -88,7 +95,36 @@ export function createTaskEnvironments(options: {
     return real;
   };
   const task = (threadId: string) => load('task', threadId);
+  const validateCustomRoot = async (path: string): Promise<string> => {
+    if (!isAbsolute(path) || !(await stat(path)).isDirectory())
+      throw new Error('工作目录不存在，请重新选择。');
+    const real = await realpath(path);
+    const realData = await realpath(dataDir).catch(() => dataDir);
+    if (real === realData || real.startsWith(`${realData}/`))
+      throw new Error('不能使用应用的数据目录，请选择其他工作目录。');
+    const refusal = workspaceRootRefusal(real, await realpath(home));
+    if (refusal) throw new Error(refusal.reason);
+    await validate(real);
+    return real;
+  };
+  const newWorkspace = async (): Promise<string> => {
+    const directory = workingDirectory();
+    if (directory.isDefault) return managedRoot('workspaces', randomUUID());
+    const root = await validateCustomRoot(directory.path);
+    if (root !== directory.path) throw new Error('工作目录已被替换，请重新选择。');
+    const path = join(root, randomUUID());
+    await mkdir(path, { mode: 0o700 });
+    if ((await realpath(root)) !== root || (await realpath(path)) !== path)
+      throw new Error('工作目录已被替换，请重新选择。');
+    return path;
+  };
   return {
+    workingDirectory,
+    async setWorkingDirectory(path) {
+      const real = path === null ? '' : await validateCustomRoot(path);
+      writeMeta(store.db, directoryKey, real);
+      return workingDirectory();
+    },
     draftRoot: (id) => managedRoot('drafts', id),
     validate,
     task,
@@ -105,7 +141,7 @@ export function createTaskEnvironments(options: {
         ? options.projectRoot(projectId)
         : previous?.managed
           ? previous.cwd
-          : await managedRoot('workspaces', randomUUID());
+          : await newWorkspace();
       if (!cwd) throw new Error('项目没有可用目录，请重新选择项目。');
       const env: TaskEnvironment = {
         cwd: await realpath(cwd),

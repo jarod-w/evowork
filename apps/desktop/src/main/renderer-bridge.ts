@@ -1949,6 +1949,22 @@ export function createRendererActions(options: RendererBridgeOptions) {
         : { ok: false, message: '这个版本不能做连通性检查。' };
     },
 
+    async getWorkingDirectory() {
+      if (!options.environments) throw new Error('此版本不支持修改工作目录。');
+      return options.environments.workingDirectory();
+    },
+
+    async setWorkingDirectory(input: { readonly reset?: boolean }) {
+      if (!options.environments) throw new Error('此版本不支持修改工作目录。');
+      if (input.reset === true) return options.environments.setWorkingDirectory(null);
+      const pick = options.projectPorts?.pickDirectory ?? options.pickDirectory;
+      if (!pick) throw new Error('此版本不能选择工作目录。');
+      const selected = await pick();
+      return selected === undefined
+        ? options.environments.workingDirectory()
+        : options.environments.setWorkingDirectory(selected);
+    },
+
     getPreferences(): Promise<PreferencesView> {
       return Promise.resolve(
         options.preferencePorts?.read() ?? { concurrencyComputed: 1, concurrencyLimit: 1 },

@@ -1300,6 +1300,12 @@ export interface ModelProbeResult {
   readonly models?: readonly string[] | undefined;
 }
 
+/** 无项目任务目录的根位置；每个任务在其中创建独立子目录。 */
+export interface WorkingDirectoryView {
+  readonly path: string;
+  readonly isDefault: boolean;
+}
+
 /**
  * 设置页「用量与预算」的阶段 1 部分（Q11）。
  *
