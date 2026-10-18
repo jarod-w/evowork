@@ -16,7 +16,15 @@
  * 只能靠逐个 `thread/read` 拉权威字段，而这件事**必须限死在可见页**（不限的话
  * "筛出 800 条"会变成 800 个请求）。"哪些行现在可见"只有这一层知道，所以由它往外报。
  */
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
 
 import { BRAND } from '@evowork/tokens';
 
@@ -158,6 +166,7 @@ export interface SidebarProps {
   readonly onProjectCreate?: (() => void) | undefined;
   /** 项目「⋯」菜单里的导入动作。 */
   readonly onProjectImport?: (() => void) | undefined;
+  readonly onProjectRename?: ((id: string, name: string) => void) | undefined;
   readonly nav?: readonly {
     readonly id: string;
     readonly label: string;
@@ -231,8 +240,28 @@ export const MORE_MENU: readonly MenuItemSpec[] = [
 
 const DEFAULT_PAGE_SIZE = 30;
 const PROJECT_PAGE_SIZE = 5;
+const PROJECT_PINS_KEY = 'evowork.sidebar.pinned-projects';
+
+function readProjectPins(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(PROJECT_PINS_KEY) ?? '[]');
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 export function Sidebar(props: SidebarProps) {
+  const [pinnedProjects, setPinnedProjects] = useState(readProjectPins);
+  const [editingProject, setEditingProject] = useState<{ id: string; name: string } | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const toggleProjectPin = (id: string): void => {
+    const next = pinnedProjects.includes(id)
+      ? pinnedProjects.filter((pinned) => pinned !== id)
+      : [...pinnedProjects, id];
+    localStorage.setItem(PROJECT_PINS_KEY, JSON.stringify(next));
+    setPinnedProjects(next);
+  };
   const [search, setSearch] = useState('');
   const [localSearchOpen, setLocalSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -309,6 +338,12 @@ export function Sidebar(props: SidebarProps) {
               task.cwd &&
               (task.cwd === project.path || task.cwd.startsWith(`${project.path}/`)),
           )?.id;
+    const countsByProject = new Map<string, number>();
+    for (const task of topLevel) {
+      const projectId = owner(task);
+      if (projectId != null)
+        countsByProject.set(projectId, (countsByProject.get(projectId) ?? 0) + 1);
+    }
     const tasksByProject = new Map<string, TaskRow[]>();
     for (const task of matched) {
       const projectId = owner(task);
@@ -317,19 +352,22 @@ export function Sidebar(props: SidebarProps) {
       tasks.push(task);
       tasksByProject.set(projectId, tasks);
     }
-    return (props.projects ?? []).map((project) => {
-      const tasks = tasksByProject.get(project.id) ?? [];
-      const expanded = expandedProjects[project.id] ?? false;
-      return {
-        project,
-        expanded,
-        total: tasks.length,
-        tasks: expanded
-          ? tasks.slice(0, projectVisibleCounts[project.id] ?? PROJECT_PAGE_SIZE)
-          : [],
-      };
-    });
-  }, [matched, props.projects, expandedProjects, projectVisibleCounts]);
+    return [...(props.projects ?? [])]
+      .sort((a, b) => Number(pinnedProjects.includes(b.id)) - Number(pinnedProjects.includes(a.id)))
+      .map((project) => {
+        const tasks = tasksByProject.get(project.id) ?? [];
+        const expanded = expandedProjects[project.id] ?? false;
+        return {
+          project,
+          expanded,
+          total: tasks.length,
+          taskCount: countsByProject.get(project.id) ?? 0,
+          tasks: expanded
+            ? tasks.slice(0, projectVisibleCounts[project.id] ?? PROJECT_PAGE_SIZE)
+            : [],
+        };
+      });
+  }, [matched, topLevel, props.projects, expandedProjects, projectVisibleCounts, pinnedProjects]);
   const visible = useMemo(() => matched.slice(0, visibleCount), [matched, visibleCount]);
   const displayed = useMemo(
     () => [
@@ -512,65 +550,79 @@ export function Sidebar(props: SidebarProps) {
           <div id={projectsListId} hidden={projectsCollapsed}>
             {projectsCollapsed
               ? null
-              : projectGroups.map(({ project, expanded, total, tasks: projectTasks }) => (
-                  <div key={project.id} className="ew-sidebar-project-group">
-                    <NavItem
-                      label={project.rootMissing ? `${project.name}（目录不可用）` : project.name}
-                      icon={renderIcon('folder')}
-                      selected={project.id === props.selectedProjectId}
-                      expanded={expanded}
-                      controlsId={`${projectsListId}-${project.id}`}
-                      onClick={() => {
-                        setExpandedProjects((previous) => ({
-                          ...previous,
-                          [project.id]: !expanded,
-                        }));
-                        setMenuFor(null);
-                        props.onProjectSelect?.(project.id);
-                      }}
-                    />
-                    <div id={`${projectsListId}-${project.id}`} hidden={!expanded}>
-                      {projectTasks.length > 0 ? (
-                        <ul className="ew-task-list ew-sidebar-project-task-list">
-                          {projectTasks.map((task) => (
-                            <li key={task.id}>
-                              <TaskRowEntry
-                                task={task}
-                                selected={task.id === props.selectedId}
-                                menuOpen={menuFor === `project:${project.id}:${task.id}`}
-                                onSelect={props.onSelect}
-                                onMenuToggle={() => {
-                                  const key = `project:${project.id}:${task.id}`;
-                                  setMenuFor(key === menuFor ? null : key);
-                                }}
-                                onMenuClose={closeMenu}
-                                onDelete={setConfirmDelete}
-                                onRename={startRename}
-                                onAction={props.onRowAction}
-                              />
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {expanded && total > projectTasks.length ? (
-                        <div className="ew-sidebar-project-task-list">
-                          <PillButton
-                            variant="ghost"
-                            onClick={() =>
-                              setProjectVisibleCounts((previous) => ({
-                                ...previous,
-                                [project.id]:
-                                  (previous[project.id] ?? PROJECT_PAGE_SIZE) + PROJECT_PAGE_SIZE,
-                              }))
-                            }
-                          >
-                            展开显示
-                          </PillButton>
-                        </div>
-                      ) : null}
+              : projectGroups.map(
+                  ({ project, expanded, total, taskCount, tasks: projectTasks }) => (
+                    <div key={project.id} className="ew-sidebar-project-group">
+                      <ProjectHoverRow
+                        name={project.name}
+                        path={project.path}
+                        taskCount={taskCount}
+                        pinned={pinnedProjects.includes(project.id)}
+                        onPin={() => toggleProjectPin(project.id)}
+                        onEdit={
+                          props.onProjectRename
+                            ? () => {
+                                setEditingProject(project);
+                                setProjectName(project.name);
+                              }
+                            : undefined
+                        }
+                        label={project.rootMissing ? `${project.name}（目录不可用）` : project.name}
+                        selected={project.id === props.selectedProjectId}
+                        expanded={expanded}
+                        controlsId={`${projectsListId}-${project.id}`}
+                        onClick={() => {
+                          setExpandedProjects((previous) => ({
+                            ...previous,
+                            [project.id]: !expanded,
+                          }));
+                          setMenuFor(null);
+                          props.onProjectSelect?.(project.id);
+                        }}
+                      />
+                      <div id={`${projectsListId}-${project.id}`} hidden={!expanded}>
+                        {projectTasks.length > 0 ? (
+                          <ul className="ew-task-list ew-sidebar-project-task-list">
+                            {projectTasks.map((task) => (
+                              <li key={task.id}>
+                                <TaskRowEntry
+                                  task={task}
+                                  selected={task.id === props.selectedId}
+                                  menuOpen={menuFor === `project:${project.id}:${task.id}`}
+                                  onSelect={props.onSelect}
+                                  onMenuToggle={() => {
+                                    const key = `project:${project.id}:${task.id}`;
+                                    setMenuFor(key === menuFor ? null : key);
+                                  }}
+                                  onMenuClose={closeMenu}
+                                  onDelete={setConfirmDelete}
+                                  onRename={startRename}
+                                  onAction={props.onRowAction}
+                                />
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {expanded && total > projectTasks.length ? (
+                          <div className="ew-sidebar-project-task-list">
+                            <PillButton
+                              variant="ghost"
+                              onClick={() =>
+                                setProjectVisibleCounts((previous) => ({
+                                  ...previous,
+                                  [project.id]:
+                                    (previous[project.id] ?? PROJECT_PAGE_SIZE) + PROJECT_PAGE_SIZE,
+                                }))
+                              }
+                            >
+                              展开显示
+                            </PillButton>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
           </div>
         </section>
 
@@ -697,6 +749,28 @@ export function Sidebar(props: SidebarProps) {
         ) : null}
       </div>
 
+      {editingProject ? (
+        <Dialog
+          title="编辑项目"
+          confirmLabel="保存"
+          confirmDisabled={projectName.trim() === ''}
+          onCancel={() => setEditingProject(null)}
+          onConfirm={() => {
+            props.onProjectRename?.(editingProject.id, projectName.trim());
+            setEditingProject(null);
+          }}
+        >
+          <label className="ew-dialog-field">
+            项目名称
+            <input
+              aria-label="项目名称"
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+            />
+          </label>
+        </Dialog>
+      ) : null}
+
       {renaming ? (
         <Dialog
           title="给任务改名"
@@ -745,6 +819,105 @@ export function Sidebar(props: SidebarProps) {
         </Dialog>
       ) : null}
     </nav>
+  );
+}
+
+/** Popover 的项目预览变体：DOM 留在触发器内，鼠标可跨过间隙进入固定定位卡片。 */
+function ProjectHoverRow({
+  name,
+  path,
+  taskCount,
+  pinned,
+  onPin,
+  onEdit,
+  onClick,
+  ...navProps
+}: Omit<ComponentProps<typeof NavItem>, 'icon'> & {
+  readonly name: string;
+  readonly path?: string | undefined;
+  readonly taskCount: number;
+  readonly pinned: boolean;
+  readonly onPin: () => void;
+  readonly onEdit?: (() => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearTimer = useCallback(() => {
+    clearTimeout(timer.current);
+  }, []);
+  const close = useCallback(() => {
+    clearTimer();
+    setOpen(false);
+  }, [clearTimer]);
+  useEffect(() => clearTimer, [clearTimer]);
+  const schedule = (visible: boolean): void => {
+    clearTimer();
+    timer.current = setTimeout(() => setOpen(visible), visible ? 250 : 150);
+  };
+
+  return (
+    <div
+      className="ew-sidebar-project-hover"
+      data-pinned={pinned ? 'true' : undefined}
+      onMouseEnter={() => schedule(true)}
+      onMouseLeave={() => schedule(false)}
+      onFocus={() => {
+        clearTimer();
+        setOpen(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) close();
+      }}
+    >
+      <NavItem
+        {...navProps}
+        icon={renderIcon('folder')}
+        onClick={() => {
+          close();
+          onClick?.();
+        }}
+      />
+      {pinned ? (
+        <span className="ew-sidebar-project-pin" aria-hidden="true">
+          {renderIcon('pin')}
+        </span>
+      ) : null}
+      <Popover open={open} onClose={close} side="right">
+        <section className="ew-project-hover-card" aria-label={`${name} 项目信息`}>
+          <div className="ew-project-hover-heading">
+            {renderIcon('folder')}
+            <span className="ew-project-hover-name">{name}</span>
+            <IconButton
+              label={pinned ? '取消置顶项目' : '置顶项目'}
+              icon={renderIcon('pin')}
+              selected={pinned}
+              onClick={onPin}
+            />
+          </div>
+          <p className="ew-project-hover-count">
+            {renderIcon('message-circle')}
+            <span>{taskCount} 次聊天</span>
+          </p>
+          <div className="ew-project-hover-path">
+            {renderIcon('folder')}
+            <span>{path ?? '未设置工作目录'}</span>
+          </div>
+          <button
+            type="button"
+            className="ew-project-hover-edit"
+            disabled={!onEdit}
+            title={!onEdit ? '暂时无法编辑项目' : undefined}
+            onClick={() => {
+              close();
+              onEdit?.();
+            }}
+          >
+            {renderIcon('settings')}
+            <span>编辑项目</span>
+          </button>
+        </section>
+      </Popover>
+    </div>
   );
 }
 

@@ -4,8 +4,8 @@
  * 四条会被用户直接撞上的规则：子任务不进顶层列表、筛选生效时有重置入口、
  * 删除确认必须说清不删工作空间文件、可见页上报必须有界。
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   EMPTY_FILTER,
@@ -36,6 +36,87 @@ function renderSidebar(over: Partial<SidebarProps> = {}) {
   };
   return { ...render(<Sidebar {...props} />), props };
 }
+
+describe('项目悬浮信息卡', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('悬停显示真实目录与未筛选总数，子任务不计入，移入卡片可继续操作', () => {
+    const onVisibleChange = vi.fn();
+    renderSidebar({
+      projects: [{ id: 'p', name: '项目一', path: '/work/project' }],
+      tasks: [
+        task({ id: 'one', projectId: 'p', title: '匹配' }),
+        task({ id: 'two', cwd: '/work/project/src', title: '其他' }),
+        task({ id: 'child', projectId: 'p', parentThreadId: 'one' }),
+      ],
+      onVisibleChange,
+    });
+    fireEvent.click(screen.getByLabelText('打开搜索框'));
+    fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '匹配' } });
+    const row = screen.getByRole('button', { name: '项目一' });
+    fireEvent.mouseEnter(row);
+    expect(screen.queryByRole('region', { name: '项目一 项目信息' })).toBeNull();
+    act(() => vi.advanceTimersByTime(250));
+    const card = screen.getByRole('region', { name: '项目一 项目信息' });
+    expect(within(card).getByText('/work/project')).toBeTruthy();
+    expect(within(card).getByText('2 次聊天')).toBeTruthy();
+    expect(onVisibleChange.mock.calls.at(-1)?.[0]).toEqual(['one']);
+    fireEvent.mouseLeave(row);
+    act(() => vi.advanceTimersByTime(50));
+    fireEvent.mouseEnter(card);
+    act(() => vi.advanceTimersByTime(250));
+    expect(screen.getByRole('region', { name: '项目一 项目信息' })).toBeTruthy();
+    fireEvent.mouseLeave(card);
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.queryByRole('region', { name: '项目一 项目信息' })).toBeNull();
+  });
+
+  it('键盘聚焦直接显示零聊天，Esc 和点击外部可关闭，点击项目仍展开', () => {
+    const onProjectSelect = vi.fn();
+    renderSidebar({ projects: [{ id: 'p', name: '空项目' }], onProjectSelect });
+    const row = screen.getByRole('button', { name: '空项目' });
+    fireEvent.focus(row);
+    expect(screen.getByText('0 次聊天')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByText('0 次聊天')).toBeNull();
+    fireEvent.focus(row);
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText('0 次聊天')).toBeNull();
+    fireEvent.click(row);
+    expect(onProjectSelect).toHaveBeenCalledWith('p');
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('置顶排序在重新挂载后保留，取消置顶恢复原顺序；编辑保存真实项目 id 与名称', () => {
+    const onProjectRename = vi.fn();
+    const props = {
+      projects: [
+        { id: 'a', name: '甲' },
+        { id: 'b', name: '乙' },
+      ],
+      onProjectRename,
+    };
+    const view = renderSidebar(props);
+    fireEvent.focus(screen.getByRole('button', { name: '乙' }));
+    fireEvent.click(screen.getByRole('button', { name: '置顶项目' }));
+    view.unmount();
+    renderSidebar(props);
+    const rows = () =>
+      [...document.querySelectorAll('.ew-sidebar-project-hover > button')].map(
+        (row) => row.textContent,
+      );
+    expect(rows()).toEqual(['乙', '甲']);
+    fireEvent.focus(screen.getByRole('button', { name: '乙' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消置顶项目' }));
+    expect(rows()).toEqual(['甲', '乙']);
+    fireEvent.click(screen.getByRole('button', { name: '编辑项目' }));
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '  新名称  ' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(onProjectRename).toHaveBeenCalledWith('b', '新名称');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
 
 describe('分组结构（04 §3.1）', () => {
   it('最近按活动时间降序排列，置顶保留图钉但不改变顺序', () => {

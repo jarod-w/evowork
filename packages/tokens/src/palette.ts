@@ -264,6 +264,8 @@ export const LAYOUT = {
   /** §5.19 Menu 项高与最小宽 */
   menuItemHeight: 30,
   menuMinWidth: 180,
+  /** §5.19 侧栏项目悬浮卡。 */
+  projectHoverWidth: 320,
   /**
    * §5.15 ModelSelect 下拉的最小宽与最大高。
    *

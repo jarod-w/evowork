@@ -33,11 +33,11 @@ function rect({
   } as DOMRect;
 }
 
-function renderOpenPopover() {
+function renderOpenPopover(side?: 'bottom' | 'right') {
   const view = render(
     <span data-testid="anchor">
       <button type="button">触发器</button>
-      <Popover open onClose={() => {}}>
+      <Popover open onClose={() => {}} side={side}>
         <Menu
           ariaLabel="审批档"
           items={[
@@ -58,6 +58,28 @@ function renderOpenPopover() {
 }
 
 describe('Popover 窗口边界', () => {
+  it('项目卡优先在右侧，靠近窗口右下角时翻到左侧并上移，滚动后重新定位', () => {
+    const { anchor, popover } = renderOpenPopover('right');
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 });
+    let left = 20;
+    anchor.getBoundingClientRect = () => rect({ top: 520, left, width: 240, height: 28 });
+    popover.getBoundingClientRect = () => rect({ top: 0, left: 0, width: 320, height: 200 });
+    fireEvent(window, new Event('resize'));
+    expect(popover.dataset.side).toBe('right');
+    expect(Number.parseFloat(popover.style.getPropertyValue('--ew-popover-left'))).toBeGreaterThan(
+      260,
+    );
+    expect(
+      Number.parseFloat(popover.style.getPropertyValue('--ew-popover-anchor-y')) + 200,
+    ).toBeLessThan(600);
+    left = 650;
+    fireEvent(document, new Event('scroll'));
+    expect(popover.dataset.side).toBe('left');
+    expect(
+      Number.parseFloat(popover.style.getPropertyValue('--ew-popover-left')) + 320,
+    ).toBeLessThan(650);
+  });
   it('触发器靠近窗口下沿时向上展开，审批档的最后一项仍留在可视区域内', () => {
     const { anchor, popover } = renderOpenPopover();
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 });

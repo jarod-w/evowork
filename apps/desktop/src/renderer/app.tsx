@@ -1955,6 +1955,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       setProjects({ projects: result.projects });
       setProjectRefusal(result.refused);
       if (result.ok) {
+        setProjectDetail((current) => {
+          if (current === null) return current;
+          const updated = result.projects.find((project) => project.id === current.id);
+          return updated
+            ? {
+                ...current,
+                name: updated.name,
+                rootDisplay: updated.rootDisplay,
+                rootMissing: updated.rootMissing,
+              }
+            : current;
+        });
         /*
          * 项目页卡片吃 mutation 返回值，侧栏/Composer 则吃 startup.workspaces。
          * 成功后只把后者的工作空间快照校正回来；不重拉 listProjects，避免旧响应
@@ -3351,6 +3363,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           onProjectCreate={() => setProjectCreateOpen(true)}
           onProjectImport={importProject}
+          onProjectRename={(id, name) => renameProject({ id, name })}
           onNavSelect={(id) => {
             if (id === 'library') setLibraryInitialNav('recent');
             setView(NAV_TO_VIEW[id] ?? 'task');

@@ -155,11 +155,13 @@ export function Popover({
   onClose,
   children,
   align = 'start',
+  side = 'bottom',
 }: {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly children: ReactNode;
   readonly align?: 'start' | 'end' | undefined;
+  readonly side?: 'bottom' | 'right' | undefined;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -205,18 +207,48 @@ export function Popover({
       );
       const spaceBelow = Math.max(0, viewportHeight - anchorRect.bottom - gap - gutter);
       const spaceAbove = Math.max(0, anchorRect.top - gap - gutter);
-      const side = naturalHeight <= spaceBelow || spaceBelow >= spaceAbove ? 'bottom' : 'top';
-      const availableHeight = side === 'top' ? spaceAbove : spaceBelow;
+      const horizontal = side === 'right';
+      const placedSide = horizontal
+        ? viewportWidth - anchorRect.right - gap >= naturalWidth ||
+          anchorRect.left < naturalWidth + gap
+          ? 'right'
+          : 'left'
+        : naturalHeight <= spaceBelow || spaceBelow >= spaceAbove
+          ? 'bottom'
+          : 'top';
+      const availableHeight = horizontal
+        ? viewportHeight - gutter * 2
+        : placedSide === 'top'
+          ? spaceAbove
+          : spaceBelow;
       const availableWidth = Math.max(0, viewportWidth - gutter * 2);
       const renderedWidth = Math.min(naturalWidth, availableWidth);
-      const preferredLeft = align === 'end' ? anchorRect.right - renderedWidth : anchorRect.left;
+      const preferredLeft = horizontal
+        ? placedSide === 'right'
+          ? anchorRect.right + gap
+          : anchorRect.left - renderedWidth - gap
+        : align === 'end'
+          ? anchorRect.right - renderedWidth
+          : anchorRect.left;
       const rightmostLeft = Math.max(gutter, viewportWidth - gutter - renderedWidth);
       const left = Math.min(Math.max(preferredLeft, gutter), rightmostLeft);
 
-      popover.dataset.side = side;
+      popover.dataset.side = placedSide;
       popover.style.setProperty(
         '--ew-popover-anchor-y',
-        `${side === 'top' ? anchorRect.top : anchorRect.bottom}px`,
+        `${
+          horizontal
+            ? Math.max(
+                gutter,
+                Math.min(
+                  anchorRect.top,
+                  viewportHeight - Math.min(naturalHeight, availableHeight) - gutter,
+                ),
+              )
+            : placedSide === 'top'
+              ? anchorRect.top
+              : anchorRect.bottom
+        }px`,
       );
       popover.style.setProperty('--ew-popover-left', `${left}px`);
       popover.style.setProperty('--ew-popover-available-height', `${availableHeight}px`);
@@ -242,7 +274,7 @@ export function Popover({
       document.removeEventListener('scroll', reposition, true);
       resizeObserver?.disconnect();
     };
-  }, [align, open]);
+  }, [align, open, side]);
 
   useEffect(() => {
     if (!open) return undefined;
