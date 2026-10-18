@@ -4638,9 +4638,8 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-reasoning-preview {
   color: var(--text-secondary);
   font-size: var(--font-caption-size);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .ew-reasoning[data-running='true'] .ew-item[data-expanded='true'] + .ew-reasoning-preview {
   display: none;
