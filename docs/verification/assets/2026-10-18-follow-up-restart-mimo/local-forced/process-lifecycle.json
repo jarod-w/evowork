@@ -1,0 +1,35 @@
+{
+  "boots": [
+    {
+      "electronPid": 18670,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 18676,
+          "at": 1792333147245
+        }
+      ],
+      "exit": {
+        "code": null,
+        "signal": "SIGKILL",
+        "at": 1792333169859
+      },
+      "exitKind": "SIGKILL"
+    },
+    {
+      "electronPid": 18875,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 18921,
+          "at": 1792333170603
+        }
+      ],
+      "exit": {
+        "code": 0,
+        "signal": null,
+        "at": 1792333207465
+      }
+    }
+  ]
+}

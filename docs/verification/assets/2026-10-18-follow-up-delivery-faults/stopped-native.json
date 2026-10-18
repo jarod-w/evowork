@@ -1,0 +1,68 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 4,
+      "project/create": 1,
+      "config/read": 3,
+      "thread/start": 1,
+      "turn/start": 1,
+      "thread/queue/list": 16,
+      "thread/read": 41,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 2,
+      "thread/queue/add": 2,
+      "turn/interrupt": 1
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e48-3408-7420-abca-8c771e40d8be",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-33ac-70b1-9ce5-c6cce654d7ac",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e48-33ac-70b1-9ce5-c6cce654d7ac",
+          "status": "interrupted",
+          "startedAtMs": 1792314717000,
+          "completedAtMs": 1792314717000,
+          "durationMs": 395
+        }
+      ],
+      "latestTurnId": "01a14e48-33ac-70b1-9ce5-c6cce654d7ac"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 55388,
+      "at": 1792314716088
+    }
+  ]
+}

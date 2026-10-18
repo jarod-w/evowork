@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-18",
+  "platform": "macOS arm64",
+  "runtime": "real Electron + shipping kernel + deterministic local gateway",
+  "playwright": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "retries": 0,
+    "durationSeconds": 57.7
+  },
+  "kernelStarts": 10,
+  "unexpectedKernelExits": 0,
+  "tests": [
+    {
+      "test": "queue-steer-运行中：Esc-把回合停下来-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "composer-输入-→-发送-→-进入运行态-→-中断-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "queue-steer-运行中：缺失活动回合投影时插话改为排队，完整显示原因-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "composer-首页不预选项目，两个无项目任务有独立目录-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "queue-steer-运行中：默认是排队而不是插话-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "queue-steer-运行中：单次插话、发送反馈与下一条恢复排队-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "queue-steer-运行中：追问进排队区，能调序、能编辑、能删除，放行后自动跑-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "queue-steer-运行中：窄窗发送和停止独立，停止保留草稿；下轮恢复排队-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "output-stream-输出流保持进度与操作顺序，当前动作可见，停止和刷新后计时与详情一致-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "test": "queue-steer-切换运行任务或回到新任务时不携带插话选择-fake",
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedKernelExits": 0
+    }
+  ],
+  "check": {
+    "command": "pnpm run check",
+    "exitCode": 0,
+    "passed": 2952,
+    "skipped": 2
+  },
+  "build": {
+    "fullDesktop": true,
+    "finalRenderer": true
+  }
+}

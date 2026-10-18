@@ -44,7 +44,7 @@ test('输出流保持进度与操作顺序，当前动作可见，停止和刷�
     (await page.locator('.ew-item-agent').allTextContents()).map((text) => text.trim()),
   ).toEqual(['先核对本机执行环境，再整理结果。', '执行环境已核对，正在整理结果。']);
   await page.screenshot({ path: testInfo.outputPath('expanded.png') });
-  await page.getByRole('button', { name: '中断', exact: true }).click();
+  await page.getByRole('button', { name: '停止', exact: true }).click();
   const clock = page.getByLabel('回合处理时间');
   await expect(clock).toContainText('已停止');
   const stopped = await clock.innerText();

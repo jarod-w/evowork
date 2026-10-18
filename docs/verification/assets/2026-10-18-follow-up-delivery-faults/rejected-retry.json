@@ -1,0 +1,102 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 4,
+      "project/create": 1,
+      "config/read": 3,
+      "thread/start": 1,
+      "turn/start": 1,
+      "thread/read": 40,
+      "thread/queue/list": 13,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 2,
+      "turn/steer": 2
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e47-e17e-70f0-9c0f-4ae5b7a66803",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e47-e122-7f30-9e64-022e4d1e3162",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e47-e369-7c22-a221-87de6663c57e",
+          "clientId": "5fa623a9-e550-4c12-b28c-3a085a503dd5",
+          "content": [
+            {
+              "type": "text",
+              "text": "REJECT-RETRY",
+              "text_elements": []
+            },
+            {
+              "type": "text",
+              "text": "已上传《keep.txt》，解析后的正文在 /private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-3zJCD5/.evowork/workspaces/e8a7439e-b261-4a7f-af82-02b16e7a320f/uploads/20261018-171136-keep-1/content.md（12 字）。\n摘要：发送失败时保留的真实附件\n需要细节时直接读那个文件，不要让我把全文贴出来。",
+              "text_elements": []
+            },
+            {
+              "type": "mention",
+              "name": "keep.txt",
+              "path": "/private/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-ui-3zJCD5/.evowork/workspaces/e8a7439e-b261-4a7f-af82-02b16e7a320f/uploads/20261018-171136-keep-1/"
+            }
+          ],
+          "_turnId": "01a14e47-e122-7f30-9e64-022e4d1e3162",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_3",
+          "text": "E2E response 3",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14e47-e122-7f30-9e64-022e4d1e3162",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e47-e122-7f30-9e64-022e4d1e3162",
+          "status": "completed",
+          "startedAtMs": 1792314695000,
+          "completedAtMs": 1792314696000,
+          "durationMs": 587
+        }
+      ],
+      "latestTurnId": "01a14e47-e122-7f30-9e64-022e4d1e3162"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 54282,
+      "at": 1792314694960
+    }
+  ]
+}

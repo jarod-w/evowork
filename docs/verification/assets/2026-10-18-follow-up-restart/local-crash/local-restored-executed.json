@@ -1,0 +1,155 @@
+{
+  "boots": [
+    {
+      "electronPid": 1500,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 1505,
+          "at": 1792321001386
+        }
+      ],
+      "exitKind": "SIGKILL"
+    },
+    {
+      "electronPid": 1657,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 1700,
+          "at": 1792321003354
+        }
+      ]
+    }
+  ],
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14ea8-1bcb-7520-bc54-a8b6951c5c0b",
+          "clientId": "bb1b4acc-7773-4f57-a515-5ceaaa17b355",
+          "content": [
+            {
+              "type": "text",
+              "text": "重启验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14ea8-1b64-78b1-8d7f-2ed04d8c7781",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14ea8-2c21-7cc2-ae2c-5922c2f73a66",
+          "clientId": "dispatch-908d295a-fb18-4729-96de-e94eeb149a6c",
+          "content": [
+            {
+              "type": "text",
+              "text": "LOCAL-B-EDITED",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14ea8-2c0e-7ab0-9dba-991cf591ba13",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_1",
+          "text": "E2E response 1",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14ea8-2c0e-7ab0-9dba-991cf591ba13",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14ea8-2c52-71c0-ac0f-b02c814d8ab7",
+          "clientId": "dispatch-6a3abc42-345f-49b1-ba47-bdcbf0460a2d",
+          "content": [
+            {
+              "type": "text",
+              "text": "LOCAL-A",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14ea8-2c32-7b90-9a49-a8f0369dfa03",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_2",
+          "text": "E2E response 2",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14ea8-2c32-7b90-9a49-a8f0369dfa03",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14ea8-1b64-78b1-8d7f-2ed04d8c7781",
+          "status": "interrupted",
+          "startedAtMs": 1792321002000,
+          "completedAtMs": 1792321003000,
+          "durationMs": 710
+        },
+        {
+          "id": "01a14ea8-2c0e-7ab0-9dba-991cf591ba13",
+          "status": "completed",
+          "startedAtMs": 1792321006000,
+          "completedAtMs": 1792321006000,
+          "durationMs": 27
+        },
+        {
+          "id": "01a14ea8-2c32-7b90-9a49-a8f0369dfa03",
+          "status": "completed",
+          "startedAtMs": 1792321006000,
+          "completedAtMs": 1792321006000,
+          "durationMs": 41
+        }
+      ],
+      "latestTurnId": "01a14ea8-2c32-7b90-9a49-a8f0369dfa03"
+    }
+  ],
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "thread/queue/list": 30,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 5,
+      "thread/read": 59,
+      "thread/goal/get": 1,
+      "config/read": 3,
+      "thread/resume": 3,
+      "thread/turns/list": 3,
+      "thread/items/list": 3,
+      "turn/start": 2
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 1700,
+      "at": 1792321003354
+    }
+  ],
+  "state": {
+    "queued": 0,
+    "paused": 0,
+    "pendingComposer": 0,
+    "receipts": 6
+  }
+}

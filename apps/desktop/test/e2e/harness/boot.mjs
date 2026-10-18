@@ -18,6 +18,7 @@ import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
 
 import { bootstrap, createServiceHost } from '../../../dist/main/bootstrap.bundle.js';
 import { publishControls, waitFor } from './runner.mjs';
+import { createDeliveryRpcFaults } from '../../../../../services/kernel-adapter/test-support/delivery-rpc-faults.mjs';
 import { createMemoryRpcFaults } from '../../../../../services/kernel-adapter/test-support/memory-rpc-faults.mjs';
 
 /**
@@ -72,6 +73,8 @@ export async function bootApp({
    * 会被换成「不扫描」（service-host.ts:1124 的 `listListeners: () => []`）。
    * 假网关那条 E2E 本来就传，不受影响；真网关那条现在没传，这次拆分不动它。
    */
+  const deliveryFaults =
+    process.env.EVOWORK_UI_DELIVERY_RPC_FAULT === '1' ? createDeliveryRpcFaults() : undefined;
   let kernelChild;
   const kernelLifecycle = [];
   const expectedKernelExits = new WeakSet();
@@ -107,6 +110,7 @@ export async function bootApp({
               });
             });
             memoryImportFaults?.attach(child);
+            deliveryFaults?.attach(child);
           }
           return child;
         },
@@ -163,6 +167,7 @@ export async function bootApp({
         ...options,
         env: { ...process.env, HOME: home, ...hostEnv },
         ...spawnSeam,
+        ...(deliveryFaults ? { deliveryTimeoutMs: 1500 } : {}),
         /*
          * 电脑操控的注入驱动（`fake-computer-use.mjs`）：顶替随包的原生 Helper 与它的发布标记。
          * 默认不给 —— 宿主按发货的样子读随包标记，那条「未验收不能启用」的闸门也要有人走。
@@ -189,6 +194,7 @@ export async function bootApp({
     evaluate,
     openedExternalUrls,
     memoryImportFaults,
+    deliveryFaults,
     /** 当前内核子进程的 pid。重启后会换一个，所以每次都重新读，不要缓存 */
     kernelPid: () => kernelChild?.pid,
     kernelLifecycle: () => kernelLifecycle.map((event) => ({ ...event })),

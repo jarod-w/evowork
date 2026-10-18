@@ -1461,10 +1461,7 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
       fakeStore(() => row()),
       () => 0,
     );
-    const noop: UiEvent[] = [
-      { type: 'rate-limits-updated' },
-      { type: 'queue-changed', threadId: 't1' },
-    ];
+    const noop: UiEvent[] = [{ type: 'rate-limits-updated' }];
     for (const event of noop) expect(translate(event)).toEqual([]);
   });
 
@@ -1648,6 +1645,22 @@ describe('侧栏任务动作', () => {
 
 describe('send：首页不创建 Thread（03 §1）', () => {
   const base = { appName: 'EvoWork', appVersion: '0.0.0' };
+
+  it.each([
+    { queued: true, degradations: ['当前没有可插话的回合，这条输入已改为排队。'] },
+    { queued: false, steered: true, degradations: [] },
+    { queued: false, degradations: [] },
+  ])('发送回执保留实际投递结果和降级原因：%j', async (result) => {
+    const adapter = fakeAdapter({ sendMessage: vi.fn(async () => result) });
+    const actions = makeActions({ adapter, store: fakeStore(() => row()) });
+    const sent = await actions.send({ threadId: 't1', text: '新要求', steer: true });
+    expect(sent).toEqual({
+      threadId: 't1',
+      ...(result.queued ? { queued: true } : {}),
+      ...('steered' in result && result.steered ? { steered: true } : {}),
+      ...(result.degradations.length ? { degradations: result.degradations } : {}),
+    });
+  });
 
   it('没有 threadId → createTask；有 threadId → sendMessage', async () => {
     const adapter = {
@@ -3140,4 +3153,70 @@ describe('选择文件夹创建/复用项目', () => {
     expect(mirrorProjectCreate.mock.calls[0]?.[0].idempotencyKey).toBe(first.projectId);
     expect(mirrorProjectCreate.mock.calls[1]?.[0].idempotencyKey).toBe(first.projectId);
   });
+});
+
+describe('持久发送恢复接缝', () => {
+  it('界面未确认前保存待确认负载，宿主动作重建仍能取回，确认后才删除', async () => {
+    const store = memoryStore();
+    try {
+      store.db
+        .prepare(
+          "INSERT INTO thread_projection(thread_id,cwd,derived_status) VALUES ('t1','/w','idle')",
+        )
+        .run();
+      let finish!: (value: { queued: boolean; degradations: readonly string[] }) => void;
+      const sendMessage = vi.fn(
+        () =>
+          new Promise<{ queued: boolean; degradations: readonly string[] }>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const adapter = fakeAdapter({ sendMessage });
+      const actions = makeActions({ store, adapter });
+      const payload = {
+        draftId: 'draft-durable',
+        submissionId: 'send-durable',
+        threadId: 't1',
+        text: '持久负载',
+      };
+      const sending = actions.send(payload);
+      await vi.waitFor(() => expect(sendMessage).toHaveBeenCalled());
+      const restored = makeActions({ store, adapter });
+      expect(await restored.getPendingSend()).toEqual(payload);
+      finish({ queued: true, degradations: [] });
+      await sending;
+      expect(await restored.getPendingSend()).toEqual(payload);
+      await restored.acknowledgeSend({ submissionId: payload.submissionId });
+      expect(await restored.getPendingSend()).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+  it('纯本机队列变化也会经事件翻译抵达界面，无需等待新回合', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(translate({ type: 'queue-changed', threadId: 't1' })).toEqual([
+      { type: 'queue-changed', taskId: 't1' },
+    ]);
+  });
+});
+
+it('无有效目录的任务拒绝投递，也不持久保存其草稿恢复正文', async () => {
+  const store = memoryStore();
+  try {
+    const actions = makeActions({ store });
+    await expect(
+      actions.send({
+        threadId: 'not-persistent',
+        submissionId: 'rejected',
+        draftId: 'draft',
+        text: '不应留存',
+      }),
+    ).rejects.toThrow('任务没有有效目录');
+    expect(await actions.getPendingSend()).toBeUndefined();
+  } finally {
+    store.close();
+  }
 });

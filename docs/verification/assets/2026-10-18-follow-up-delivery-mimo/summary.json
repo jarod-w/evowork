@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-18",
+  "platform": "macOS arm64",
+  "model": "mimo-v2.6-flash",
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "runtime": "real Electron + shipping kernel + product host gateway + real MiMo provider",
+  "controlledToolStep": "Local input-readiness gate; model responses and direction changes were not scripted.",
+  "playwright": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "retries": 0,
+    "duration": "1.4m"
+  },
+  "upstreamRequestCount": 17,
+  "cases": [
+    {
+      "case": "queue",
+      "turnCount": 2,
+      "turnStatuses": [
+        "completed",
+        "completed"
+      ],
+      "upstreamRequestCount": 9,
+      "models": [
+        "mimo-v2.6-flash"
+      ],
+      "endpoints": [
+        "https://api.xiaomimimo.com/v1/chat/completions"
+      ],
+      "upstreamStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "updateReachedUpstreamAtMs": 1792297095834,
+      "firstTurnCompletedAtMs": 1792297095000,
+      "firstTurnCompletedNotificationAtMs": 1792297095794,
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedExits": 0
+    },
+    {
+      "case": "steer",
+      "turnCount": 1,
+      "turnStatuses": [
+        "completed"
+      ],
+      "upstreamRequestCount": 8,
+      "models": [
+        "mimo-v2.6-flash"
+      ],
+      "endpoints": [
+        "https://api.xiaomimimo.com/v1/chat/completions"
+      ],
+      "upstreamStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "updateReachedUpstreamAtMs": 1792297131475,
+      "firstTurnCompletedAtMs": 1792297150000,
+      "firstTurnCompletedNotificationAtMs": 1792297150849,
+      "kernelStarts": 1,
+      "kernelExitsDuringTest": 0,
+      "unexpectedExits": 0
+    }
+  ],
+  "check": {
+    "command": "pnpm run check",
+    "exitCode": 0,
+    "passed": 2952,
+    "skipped": 2
+  },
+  "feedback": {
+    "queue": "等待当前任务完成",
+    "steer": "已发送，正在调整方向",
+    "clearedAfterCompletion": true,
+    "steerSelectionResetAfterSend": true
+  }
+}

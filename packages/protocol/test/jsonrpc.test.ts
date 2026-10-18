@@ -29,6 +29,20 @@ function fakeTransport() {
   };
 }
 
+it('单次请求超时释放等待，迟到回执不会串到下次请求', async () => {
+  const transport = fakeTransport();
+  const peer = new JsonRpcPeer({ transport: transport.transport });
+  const first = peer.request('delivery', {}, 5);
+  const oldId = transport.last().id;
+  await expect(first).rejects.toBeInstanceOf(JsonRpcCallError);
+  const second = peer.request('read-only', {}, 100);
+  const newId = transport.last().id;
+  peer.handleMessage({ id: oldId, result: { accepted: true } });
+  peer.handleMessage({ id: newId, result: { fresh: true } });
+  await expect(second).resolves.toEqual({ fresh: true });
+  peer.close();
+});
+
 describe('LineFramer —— chunk 边界与消息边界无关', () => {
   it('旧连接的延迟审批回复不会发给重连后的同 id 请求', async () => {
     const old = fakeTransport();

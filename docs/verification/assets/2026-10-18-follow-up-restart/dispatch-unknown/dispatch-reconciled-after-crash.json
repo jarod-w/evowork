@@ -1,0 +1,111 @@
+{
+  "boots": [
+    {
+      "electronPid": 1961,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 1966,
+          "at": 1792321013760
+        }
+      ],
+      "exitKind": "SIGKILL"
+    },
+    {
+      "electronPid": 2122,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 2128,
+          "at": 1792321017573
+        }
+      ]
+    }
+  ],
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14ea8-4c14-73e1-945b-09478d695ce7",
+          "clientId": "7d91e15e-f57b-4953-b3ee-fe7839bde80c",
+          "content": [
+            {
+              "type": "text",
+              "text": "重启验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14ea8-4bce-76a0-8ce6-472fbb1b2ebc",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14ea8-4dbe-7e92-91e9-4829e4fd27f5",
+          "clientId": "dispatch-c25f0ee2-7cc6-4f2b-9f60-b7f5616972cc",
+          "content": [
+            {
+              "type": "text",
+              "text": "LOCAL-DISPATCH-ONCE",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14ea8-4da6-7f83-a148-453ec66db8ba",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14ea8-4bce-76a0-8ce6-472fbb1b2ebc",
+          "status": "interrupted",
+          "startedAtMs": 1792321014000,
+          "completedAtMs": 1792321015000,
+          "durationMs": 404
+        },
+        {
+          "id": "01a14ea8-4da6-7f83-a148-453ec66db8ba",
+          "status": "interrupted",
+          "startedAtMs": 1792321015000,
+          "completedAtMs": 1792321017000,
+          "durationMs": 2084
+        }
+      ],
+      "latestTurnId": "01a14ea8-4da6-7f83-a148-453ec66db8ba"
+    }
+  ],
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "thread/queue/list": 11,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 3,
+      "thread/read": 26,
+      "thread/goal/get": 1,
+      "config/read": 2,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 3
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 2128,
+      "at": 1792321017573
+    }
+  ],
+  "state": {
+    "queued": 0,
+    "paused": 0,
+    "pendingComposer": 0,
+    "receipts": 3
+  }
+}

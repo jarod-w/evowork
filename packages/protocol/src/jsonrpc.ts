@@ -165,7 +165,11 @@ export class JsonRpcPeer {
     return this.#pending.size;
   }
 
-  request<T = unknown>(method: string, params?: unknown): Promise<T> {
+  request<T = unknown>(
+    method: string,
+    params?: unknown,
+    timeoutMs = this.options.requestTimeoutMs,
+  ): Promise<T> {
     if (this.#closed) {
       return Promise.reject(new TransportClosedError('peer 已关闭'));
     }
@@ -178,7 +182,6 @@ export class JsonRpcPeer {
     };
 
     return new Promise<T>((resolve, reject) => {
-      const timeoutMs = this.options.requestTimeoutMs;
       const entry = {
         method,
         resolve: resolve as (value: unknown) => void,

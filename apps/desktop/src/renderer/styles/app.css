@@ -1822,11 +1822,41 @@ textarea {
   color: var(--text-tertiary);
   cursor: not-allowed;
 }
-/* 执行中 = 中断（03 §4.6） */
-.ew-send-button[data-state='running'] {
+.ew-composer-run-actions {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-composer-tool-row:has(.ew-composer-run-actions) {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: var(--layout-segmented-track-height);
+  row-gap: var(--space-8);
+}
+.ew-composer-run-actions .ew-send-button {
+  margin-left: 0;
+  white-space: nowrap;
+}
+.ew-stop-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  height: var(--layout-send-button-size);
+  padding: 0 var(--space-12);
+  border: 0;
   background: var(--danger);
   color: var(--text-inverse);
   border-radius: var(--r-md);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ew-stop-button .ew-icon {
+  width: var(--layout-icon-size-md);
+  height: var(--layout-icon-size-md);
 }
 .ew-send-button[data-state='over-budget'] {
   background: var(--warning-weak);
@@ -1937,12 +1967,24 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ew-steer-toggle {
+.ew-follow-up-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-follow-up-options label {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
+}
+.ew-send-feedback {
+  margin: 0;
   font-size: var(--font-caption-size);
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .ew-danger-confirm,

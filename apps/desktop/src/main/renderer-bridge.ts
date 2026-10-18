@@ -85,6 +85,7 @@ import type { Logger } from '@evowork/logging';
 import type { ThreadItem, Turn, UserInput } from '@evowork/protocol';
 import { nextFire } from '@evowork/scheduler/cron.js';
 import {
+  FollowUpStore,
   createProjectRepo,
   readMeta,
   writeMeta,
@@ -151,6 +152,7 @@ import type {
   SaveProviderKeyInput,
   RuntimeStatusView,
   SendInput,
+  SendResult,
   SetTaskModeInput,
   SetTaskMemoryModeInput,
   StartupInfo,
@@ -824,6 +826,8 @@ export function createEventTranslator(store: Store, now: () => number) {
         if (!row) return [];
         return [{ type: 'task-created', task: taskRow(row, now()) }];
       }
+      case 'queue-changed':
+        return [{ type: 'queue-changed', taskId: event.threadId }];
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
       case 'turn-started':
@@ -1033,6 +1037,7 @@ export function createEventTranslator(store: Store, now: () => number) {
  */
 export function createRendererActions(options: RendererBridgeOptions) {
   const { adapter, store } = options;
+  const followUp = new FollowUpStore(store, false);
   const now = options.now ?? (() => Date.now());
 
   /**
@@ -1544,8 +1549,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
     }
   };
 
-  const sendingDrafts = new Map<string, Promise<{ threadId: string; queued?: boolean }>>();
+  const sendingDrafts = new Map<string, Promise<SendResult>>();
   return {
+    async getPendingSend(): Promise<SendInput | undefined> {
+      return followUp.pending<SendInput>();
+    },
+    async acknowledgeSend(input: { readonly submissionId: string }): Promise<void> {
+      followUp.acknowledge(input.submissionId);
+    },
     async verifyImageConnection() {
       if (!options.imageGeneration) throw new Error('图片服务不可用。');
       return options.imageGeneration.verify();
@@ -1603,7 +1614,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!options.communication) throw new Error('会话通信不可用。');
       await options.communication.check(input.threadId, input.requestId);
     },
-    async send(input: SendInput): Promise<{ threadId: string; queued?: boolean }> {
+    async send(input: SendInput): Promise<SendResult> {
       if (isImportCommand(input.text))
         throw new Error('请通过 /import 打开本地记忆导入，不要发送给模型。');
       if (isMemoriesCommand(input.text))
@@ -1671,6 +1682,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ) {
           throw new Error('任务工作目录已固定，换项目请新建任务。');
         }
+        if (input.submissionId && input.draftId)
+          followUp.savePending(input.submissionId, input.draftId, input.threadId, input);
         const toKernelReference = (reference: ComposerReferenceView): UserInput => {
           if (reference.type === 'localImage' && reference.purpose === 'imageEdit') {
             if (!cwd || !options.imageGeneration) throw new Error('图片编辑引用不可用。');
@@ -1711,7 +1724,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
               throw new Error('这个草稿已经创建任务，不能改变读取记忆的选择；请新建任务。');
             if (!environment.sent) {
               if (goalObjective) await prepareGoal(environment.threadId);
-              await adapter.sendMessage({
+              const sent = await adapter.sendMessage({
+                ...(input.submissionId ? { submissionId: input.submissionId } : {}),
                 desktopInteractive: true,
                 threadId: environment.threadId,
                 input: content,
@@ -1721,6 +1735,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
                   cwd: environment.cwd,
                 },
               });
+              if (sent.unconfirmed)
+                return {
+                  threadId: environment.threadId,
+                  unconfirmed: true,
+                  degradations: sent.degradations,
+                };
               if (goalObjective) await adapter.setGoal(environment.threadId, { status: 'active' });
               options.environments!.markSent(environment.threadId);
             }
@@ -1771,21 +1791,34 @@ export function createRendererActions(options: RendererBridgeOptions) {
           }
           const sent = await adapter.sendMessage({
             desktopInteractive: true,
+            ...(input.submissionId ? { submissionId: input.submissionId } : {}),
             threadId: targetThreadId,
             input: content,
             ...(overrides ? { overrides } : {}),
             ...(input.steer ? { steer: true } : {}),
           });
           if (goalObjective) await adapter.setGoal(targetThreadId, { status: 'active' });
-          return { threadId: targetThreadId, ...(sent.queued ? { queued: true } : {}) };
+          return {
+            threadId: targetThreadId,
+            ...(sent.unconfirmed ? { unconfirmed: true } : {}),
+            ...(sent.queued ? { queued: true } : {}),
+            ...(sent.steered ? { steered: true } : {}),
+            ...(sent.degradations?.length ? { degradations: sent.degradations } : {}),
+          };
         }
         const created = await adapter.createTask({
+          ...(input.submissionId ? { submissionId: input.submissionId } : {}),
           desktopInteractive: true,
           input: content,
           ...(input.useMemories !== undefined ? { useMemories: input.useMemories } : {}),
           ...(goalObjective ? { goalObjective } : {}),
           ...(environment
-            ? { onCreated: (threadId: string) => options.environments!.bind(threadId, environment) }
+            ? {
+                onCreated: (threadId: string) => {
+                  options.environments!.bind(threadId, environment);
+                  if (input.submissionId) followUp.bindPending(input.submissionId, threadId);
+                },
+              }
             : {}),
           ...(input.scenarioId !== undefined ? { scenarioId: input.scenarioId } : {}),
           ...(overrides ? { overrides } : {}),
@@ -2375,6 +2408,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
       options.computerUse?.endThread(input.threadId);
       await adapter.deleteTask(input.threadId);
       await options.environments?.remove(input.threadId);
+    },
+
+    async resumeQueued(input: { readonly threadId: string }): Promise<void> {
+      await adapter.resumeQueued(input.threadId);
     },
 
     async listQueuedInputs(input: {

@@ -1,0 +1,86 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 4,
+      "project/create": 1,
+      "config/read": 3,
+      "thread/start": 1,
+      "turn/start": 1,
+      "thread/queue/list": 20,
+      "thread/read": 49,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 2,
+      "thread/queue/add": 1
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e48-2aff-7a22-8bda-57eac1f9b79f",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-2a9c-71b2-b397-d0c6ba1dfc7d",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e48-2c39-7af1-b36b-eccc98ab164c",
+          "clientId": "b7999cdc-2a78-470c-a0e1-40c122d3aadc",
+          "content": [
+            {
+              "type": "text",
+              "text": "COMPLETED-RACE-queue",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-2c24-7021-94e9-a5622f193383",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e48-2a9c-71b2-b397-d0c6ba1dfc7d",
+          "status": "completed",
+          "startedAtMs": 1792314714000,
+          "completedAtMs": 1792314715000,
+          "durationMs": 357
+        },
+        {
+          "id": "01a14e48-2c24-7021-94e9-a5622f193383",
+          "status": "inProgress",
+          "startedAtMs": 1792314715000
+        }
+      ],
+      "latestTurnId": "01a14e48-2c24-7021-94e9-a5622f193383"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 55229,
+      "at": 1792314713756
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "boots": [
+    {
+      "electronPid": 788,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 797,
+          "at": 1792320984951
+        }
+      ],
+      "exitKind": "SIGKILL"
+    },
+    {
+      "electronPid": 912,
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 960,
+          "at": 1792320986427
+        }
+      ]
+    }
+  ],
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14ea7-dbbe-7471-bd33-99546759e84b",
+          "clientId": "6f41e7db-623d-46fb-95f8-5b13742e0c2b",
+          "content": [
+            {
+              "type": "text",
+              "text": "FIRST-ACCEPTED-ONCE",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14ea7-db58-79e2-bd74-e18ce33b680c",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_2",
+          "text": "E2E response 2",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14ea7-db58-79e2-bd74-e18ce33b680c",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14ea7-db58-79e2-bd74-e18ce33b680c",
+          "status": "completed",
+          "startedAtMs": 1792320985000,
+          "completedAtMs": 1792320986000,
+          "durationMs": 106
+        }
+      ],
+      "latestTurnId": "01a14ea7-db58-79e2-bd74-e18ce33b680c"
+    }
+  ],
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 3,
+      "thread/read": 25,
+      "thread/queue/list": 8,
+      "thread/goal/get": 1,
+      "config/read": 2,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 2
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 960,
+      "at": 1792320986427
+    }
+  ],
+  "state": {
+    "queued": 0,
+    "paused": 0,
+    "pendingComposer": 0,
+    "receipts": 1
+  }
+}

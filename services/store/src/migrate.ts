@@ -245,6 +245,16 @@ export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
         db.exec(ddl);
     },
   },
+  {
+    version: 6,
+    summary: '发送回执、本机追问队列及暂停意图',
+    up: (db) => {
+      for (const table of AUTHORITATIVE_TABLES.filter((table) =>
+        table.name.startsWith('follow_up_'),
+      ))
+        for (const ddl of table.ddl) db.exec(ddl);
+    },
+  },
 ];
 
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;

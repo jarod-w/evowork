@@ -1,0 +1,87 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 4,
+      "project/create": 1,
+      "config/read": 3,
+      "thread/start": 1,
+      "turn/start": 2,
+      "thread/queue/list": 21,
+      "thread/read": 52,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 2,
+      "turn/steer": 1,
+      "thread/queue/add": 1
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e48-771e-7f12-b2e4-d709cd04a5fb",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-76ce-7162-a464-3a1b5b96bb72",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e48-7886-7323-9f98-773f2c94b47c",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "LOCAL-COMPLETED-RACE",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-7871-7502-a448-29e58acce585",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e48-76ce-7162-a464-3a1b5b96bb72",
+          "status": "completed",
+          "startedAtMs": 1792314734000,
+          "completedAtMs": 1792314734000,
+          "durationMs": 390
+        },
+        {
+          "id": "01a14e48-7871-7502-a448-29e58acce585",
+          "status": "inProgress",
+          "startedAtMs": 1792314734000
+        }
+      ],
+      "latestTurnId": "01a14e48-7871-7502-a448-29e58acce585"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 56169,
+      "at": 1792314733276
+    }
+  ]
+}

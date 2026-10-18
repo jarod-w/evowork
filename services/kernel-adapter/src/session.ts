@@ -262,7 +262,7 @@ export class KernelSession {
     this.#peer?.resetPending('内核退出');
     this.options.onNotice?.({
       kind: 'kernel-lost',
-      text: '与执行内核的连接中断，正在重连…任务不会自动重做；未执行的排队输入可能丢失，请恢复后确认。',
+      text: '与执行内核的连接中断，正在重连…任务不会自动重做；本机队列已保留，恢复后请确认并继续。',
     });
     if (!this.#restarting) void this.#scheduleRestart();
   }

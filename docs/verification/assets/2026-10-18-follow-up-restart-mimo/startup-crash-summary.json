@@ -1,0 +1,129 @@
+{
+  "phase": "restricted-sandbox-launch-before-window",
+  "reports": [
+    {
+      "report": "Electron-2026-10-18-220505.ips",
+      "pid": 4752,
+      "exception": {
+        "codes": "0x0000000000000000, 0x0000000000000000",
+        "rawCodes": [
+          0,
+          0
+        ],
+        "type": "EXC_CRASH",
+        "signal": "SIGABRT"
+      },
+      "termination": {
+        "flags": 0,
+        "code": 6,
+        "namespace": "SIGNAL",
+        "indicator": "Abort trap: 6",
+        "byProc": "Electron",
+        "byPid": 4752
+      },
+      "triggeredFrames": [
+        "__pthread_kill",
+        "pthread_kill",
+        "abort",
+        "___RegisterApplication_block_invoke",
+        "_dispatch_client_callout",
+        "_dispatch_once_callout",
+        "_RegisterApplication",
+        "GetCurrentProcess",
+        "-[NSMenuBarPresentationInstance _getAggregateUIMode:withOptions:]",
+        "_NSGetAggregateUIMode",
+        "-[NSMenuBarPresentationInstance _isVisible]",
+        "+[NSMenuBarPresentationInstance _isMenuBarVisible]",
+        "_NSInitializeAppContext",
+        "-[NSApplication init]",
+        "+[NSApplication sharedApplication]",
+        "node::PrincipalRealm::inspector_enable_network_tracking() const",
+        "node::PrincipalRealm::inspector_enable_network_tracking() const",
+        "ElectronInitializeICUandStartNode"
+      ]
+    },
+    {
+      "report": "Electron-2026-10-18-220506.ips",
+      "pid": 4757,
+      "exception": {
+        "codes": "0x0000000000000000, 0x0000000000000000",
+        "rawCodes": [
+          0,
+          0
+        ],
+        "type": "EXC_CRASH",
+        "signal": "SIGABRT"
+      },
+      "termination": {
+        "flags": 0,
+        "code": 6,
+        "namespace": "SIGNAL",
+        "indicator": "Abort trap: 6",
+        "byProc": "Electron",
+        "byPid": 4757
+      },
+      "triggeredFrames": [
+        "__pthread_kill",
+        "pthread_kill",
+        "abort",
+        "___RegisterApplication_block_invoke",
+        "_dispatch_client_callout",
+        "_dispatch_once_callout",
+        "_RegisterApplication",
+        "GetCurrentProcess",
+        "-[NSMenuBarPresentationInstance _getAggregateUIMode:withOptions:]",
+        "_NSGetAggregateUIMode",
+        "-[NSMenuBarPresentationInstance _isVisible]",
+        "+[NSMenuBarPresentationInstance _isMenuBarVisible]",
+        "_NSInitializeAppContext",
+        "-[NSApplication init]",
+        "+[NSApplication sharedApplication]",
+        "node::PrincipalRealm::inspector_enable_network_tracking() const",
+        "node::PrincipalRealm::inspector_enable_network_tracking() const",
+        "ElectronInitializeICUandStartNode"
+      ]
+    },
+    {
+      "report": "Electron-2026-10-18-220506.000.ips",
+      "pid": 4764,
+      "exception": {
+        "codes": "0x0000000000000000, 0x0000000000000000",
+        "rawCodes": [
+          0,
+          0
+        ],
+        "type": "EXC_CRASH",
+        "signal": "SIGABRT"
+      },
+      "termination": {
+        "flags": 0,
+        "code": 6,
+        "namespace": "SIGNAL",
+        "indicator": "Abort trap: 6",
+        "byProc": "Electron",
+        "byPid": 4764
+      },
+      "triggeredFrames": [
+        "__pthread_kill",
+        "pthread_kill",
+        "abort",
+        "___RegisterApplication_block_invoke",
+        "_dispatch_client_callout",
+        "_dispatch_once_callout",
+        "_RegisterApplication",
+        "GetCurrentProcess",
+        "-[NSMenuBarPresentationInstance _getAggregateUIMode:withOptions:]",
+        "_NSGetAggregateUIMode",
+        "-[NSMenuBarPresentationInstance _isVisible]",
+        "+[NSMenuBarPresentationInstance _isMenuBarVisible]",
+        "_NSInitializeAppContext",
+        "-[NSApplication init]",
+        "+[NSApplication sharedApplication]",
+        "node::PrincipalRealm::inspector_enable_network_tracking() const",
+        "node::PrincipalRealm::inspector_enable_network_tracking() const",
+        "ElectronInitializeICUandStartNode"
+      ]
+    }
+  ],
+  "interpretation": "AppKit application registration abort during restricted launch; later GUI-capable launch opens successfully. Not an injected SIGKILL."
+}

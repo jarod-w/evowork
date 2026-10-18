@@ -7,7 +7,7 @@
  */
 import { ERROR_CODE, EXPERIMENTAL_METHOD, JsonRpcCallError } from '@evowork/protocol';
 import { createLogger, memorySink } from '@evowork/logging';
-import { openStore, type Store } from '@evowork/store';
+import { FollowUpStore, openStore, type Store } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAdapter, type Adapter } from '../src/adapter.js';
@@ -15,7 +15,7 @@ import type { PendingApproval } from '../src/approvals.js';
 import type { CapabilityReport } from '../src/capabilities.js';
 import type { UiEvent } from '../src/events.js';
 import { BUILTIN_SCENARIOS, FULL_ACCESS_APPROVAL_POLICY } from '../src/scenario.js';
-import { FakeAppServer, FakeRpcError, makeThread, makeTurn } from './fake-app-server.js';
+import { FakeAppServer, FakeRpcError, NO_REPLY, makeThread, makeTurn } from './fake-app-server.js';
 
 let store: Store;
 let server: FakeAppServer;
@@ -833,6 +833,145 @@ describe('新建任务（03 §4.6）', () => {
 });
 
 describe('发消息与排队（04 §5.4 / §5.5）', () => {
+  it('暂停队列接管失败时禁止恢复任务，不静默跳过保护', async () => {
+    new FollowUpStore(store).pause('stopped-task');
+    server.handlers.set('thread/queue/list', () => {
+      throw new FakeRpcError(ERROR_CODE.internalError, 'unavailable');
+    });
+    await expect(adapter.start()).rejects.toThrow();
+    await expect(adapter.openTask('stopped-task')).rejects.toThrow();
+    expect(server.received.some((request) => request.method === 'thread/resume')).toBe(false);
+    expect(new FollowUpStore(store).has('stopped-task')).toBe(true);
+  });
+
+  it('宿主重新创建后仍复用已接受回执，不再次投递', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'original' }],
+    });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { type: 'active', activeFlags: [] },
+    });
+    const args = {
+      threadId,
+      submissionId: 'restart-accepted',
+      input: [{ type: 'text' as const, text: 'accepted-once' }],
+    };
+    await adapter.sendMessage(args);
+    await adapter.stop();
+    server = new FakeAppServer();
+    adapter = createAdapter({
+      store,
+      scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'restart-test', version: '0' },
+        heartbeatIntervalMs: 10 ** 9,
+      },
+    });
+    await adapter.start();
+    await adapter.sendMessage(args);
+    expect(
+      server.received.filter((request) =>
+        ['turn/start', 'turn/steer', 'thread/queue/add'].includes(request.method),
+      ),
+    ).toEqual([]);
+  });
+
+  it('发送身份缓存成功回执，拒绝不同内容复用同一身份', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'original' }],
+    });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { type: 'active', activeFlags: [] },
+    });
+    const args = {
+      threadId,
+      submissionId: 'delivery-one',
+      input: [{ type: 'text' as const, text: 'one' }],
+    };
+    await Promise.all([adapter.sendMessage(args), adapter.sendMessage(args)]);
+    await adapter.sendMessage(args);
+    expect(server.received.filter((r) => r.method === 'thread/queue/add')).toHaveLength(1);
+    await expect(
+      adapter.sendMessage({ ...args, input: [{ type: 'text', text: 'changed' }] }),
+    ).rejects.toThrow('发送身份与内容不一致');
+  });
+
+  it('写入回执丢失后核对客户端身份，不重复投递', async () => {
+    await adapter.stop();
+    adapter = createAdapter({
+      store,
+      deliveryTimeoutMs: 10,
+      scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
+      sessionOptions: {
+        launcher: server.launcher(),
+        clientInfo: { name: 'test', version: '0' },
+        heartbeatIntervalMs: 0,
+      },
+    });
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'original' }],
+    });
+    server.handlers.set('thread/queue/add', () => {
+      throw NO_REPLY;
+    });
+    server.handlers.set('thread/queue/list', () => ({
+      data: [{ id: 'native-one', clientUserMessageId: 'lost-one' }],
+    }));
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { type: 'active', activeFlags: [] },
+    });
+    const args = {
+      threadId,
+      submissionId: 'lost-one',
+      input: [{ type: 'text' as const, text: 'one' }],
+    };
+    expect(await adapter.sendMessage(args)).toMatchObject({
+      queued: true,
+      degradations: ['回执丢失，已核对排队记录。'],
+    });
+    await adapter.sendMessage(args);
+    expect(server.received.filter((r) => r.method === 'thread/queue/add')).toHaveLength(1);
+  });
+
+  it('插话回合在途结束时改为排队，普通拒绝不伪装成功', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'original' }],
+    });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { type: 'active', activeFlags: [] },
+    });
+    adapter.events.handle('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'turn-live', status: 'inProgress' }),
+    });
+    server.handlers.set('turn/steer', () => {
+      throw new FakeRpcError(ERROR_CODE.invalidRequest, 'no active turn to steer');
+    });
+    expect(
+      await adapter.sendMessage({ threadId, steer: true, input: [{ type: 'text', text: 'one' }] }),
+    ).toMatchObject({ queued: true, degradations: ['原回合已结束或已切换，这条输入已改为排队。'] });
+    server.handlers.set('turn/steer', () => {
+      throw new FakeRpcError(ERROR_CODE.invalidParams, 'bad input');
+    });
+    await expect(
+      adapter.sendMessage({ threadId, steer: true, input: [{ type: 'text', text: 'two' }] }),
+    ).rejects.toThrow();
+    expect(server.received.filter((r) => r.method === 'thread/queue/add')).toHaveLength(1);
+  });
+
   it('执行中发消息**入队而不是报错**', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
@@ -903,12 +1042,38 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
       input: [{ type: 'text', text: '再加一页' }],
     });
 
-    // queued=false 表示"内核队列没接住，改由本机队列托管"
-    expect(result.queued).toBe(false);
+    // 用户结果仍是排队：存放位置不能改变投递语义。
+    expect(result.queued).toBe(true);
     expect(degradations.map((d) => d.method)).toContain(EXPERIMENTAL_METHOD.threadQueueAdd);
     expect(adapter.degradations().map((d) => d.degradation?.userVisible)).toContain(
       '排队仍可用（队列只在这台电脑上）。',
     );
+  });
+
+  it('原回合结束后才发生本机队列降级时立即启动，不等待不存在的下一次完成事件', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: 'original' }],
+    });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { type: 'active', activeFlags: [] },
+    });
+    server.handlers.set('thread/queue/add', () => {
+      adapter.events.handle('thread/status/changed', { threadId, status: { type: 'idle' } });
+      throw new FakeRpcError(ERROR_CODE.methodNotFound, 'unavailable');
+    });
+    const result = await adapter.sendMessage({
+      threadId,
+      input: [{ type: 'text', text: 'race-local' }],
+    });
+    expect(server.received.filter((r) => r.method === 'turn/start')).toHaveLength(2);
+    expect(await adapter.listQueuedInputs(threadId)).toHaveLength(0);
+    expect(result).toMatchObject({
+      queued: false,
+      degradations: ['原回合已结束，这条输入已开始执行。'],
+    });
   });
 
   it('本机降级队列可编辑与重排', async () => {
@@ -944,6 +1109,28 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     ]);
   });
 
+  it('停止后本机队列保持暂停，只有明确继续才启动', async () => {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: '原任务' }],
+    });
+    adapter.events.handle('thread/status/changed', {
+      threadId,
+      status: { type: 'active', activeFlags: [] },
+    });
+    server.removeMethod('thread/queue/add');
+    await adapter.sendMessage({ threadId, input: [{ type: 'text', text: '稍后执行' }] });
+    await adapter.interrupt(threadId);
+    const before = server.received.filter((r) => r.method === 'turn/start').length;
+    await adapter.startNextQueued(threadId);
+    expect(server.received.filter((r) => r.method === 'turn/start')).toHaveLength(before);
+    expect(await adapter.listQueuedInputs(threadId)).toHaveLength(1);
+    await adapter.resumeQueued(threadId);
+    expect(server.received.filter((r) => r.method === 'turn/start')).toHaveLength(before + 1);
+    expect(await adapter.listQueuedInputs(threadId)).toHaveLength(0);
+  });
+
   it('本机队列启动失败时保留输入，成功后才移除', async () => {
     await adapter.start();
     const { threadId } = await adapter.createTask({
@@ -961,7 +1148,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     });
 
     server.handlers.set('turn/start', () => {
-      throw new Error('temporary failure');
+      throw new FakeRpcError(ERROR_CODE.invalidParams, 'temporary failure');
     });
     await expect(adapter.startNextQueued(threadId)).rejects.toThrow('turn/start 失败');
     expect(await adapter.listQueuedInputs(threadId)).toMatchObject([
@@ -971,7 +1158,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     server.handlers.set('turn/start', () => ({
       turn: makeTurn({ id: 'turn-local', status: 'inProgress' }),
     }));
-    await adapter.startNextQueued(threadId);
+    await adapter.resumeQueued(threadId);
     expect(await adapter.listQueuedInputs(threadId)).toEqual([]);
   });
 
@@ -1001,7 +1188,7 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
       steer: true,
     });
 
-    expect(sent).toEqual({ queued: false, degradations: [] });
+    expect(sent).toEqual({ queued: false, steered: true, degradations: [] });
     expect(server.received.at(-1)).toMatchObject({
       method: 'turn/steer',
       params: { threadId, expectedTurnId: 'turn-live' },
@@ -1033,7 +1220,10 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
     expect(server.received.some((r) => r.method === 'turn/steer')).toBe(false);
     // 这条输入没被丢掉 —— 它在队列里（实验队列不可用时是本机队列，两者都算排上了）
     expect(await adapter.listQueuedInputs(threadId)).toHaveLength(1);
-    expect(sent.degradations).toHaveLength(1);
+    expect(sent).toEqual({
+      queued: true,
+      degradations: ['当前没有可插话的回合，这条输入已改为排队。'],
+    });
   });
 
   it('空闲任务发消息 = 新的 turn，且沿用任务自身的设置（04 §4.3）', async () => {
@@ -1077,7 +1267,9 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
     await adapter.interrupt(threadId);
 
-    expect(server.received.at(-1)).toMatchObject({
+    expect(
+      server.received.findLast((request) => request.method === 'turn/interrupt'),
+    ).toMatchObject({
       method: 'turn/interrupt',
       params: { threadId, turnId: 'turn-live' },
     });
@@ -1097,7 +1289,9 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
     await adapter.interrupt(threadId);
 
-    expect(server.received.at(-1)).toMatchObject({
+    expect(
+      server.received.findLast((request) => request.method === 'turn/interrupt'),
+    ).toMatchObject({
       method: 'turn/interrupt',
       params: { threadId, turnId: '' },
     });
@@ -1125,7 +1319,9 @@ describe('发消息与排队（04 §5.4 / §5.5）', () => {
 
     await adapter.interrupt(threadId);
 
-    expect(server.received.at(-1)?.params.turnId).toBe('');
+    expect(
+      server.received.findLast((request) => request.method === 'turn/interrupt')?.params.turnId,
+    ).toBe('');
   });
 
   /*

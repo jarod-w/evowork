@@ -22,6 +22,7 @@ import { createFakeGateway } from './fake-gateway.mjs';
 import { startRealGateway } from './real-gateway.mjs';
 import { selectRealModel } from './real-models.mjs';
 import { createObservedGatewayEntry } from './memory-wire.mjs';
+import { createFollowUpObservedGatewayEntry } from './follow-up-wire.mjs';
 import { createImageGateway } from './image-gateway.mjs';
 import { publishControls, waitFor } from './runner.mjs';
 
@@ -331,7 +332,9 @@ ${process.env.EVOWORK_UI_MEMORY_IMPORT === 'disabled' ? '[features]\nexternal_ag
           gatewayEntryPath:
             process.env.EVOWORK_UI_MEMORY_WIRE === '1'
               ? createObservedGatewayEntry(home, repoRoot)
-              : join(repoRoot, 'dist/gateway/main.js'),
+              : process.env.EVOWORK_UI_FOLLOW_UP_WIRE === '1'
+                ? createFollowUpObservedGatewayEntry(home, repoRoot)
+                : join(repoRoot, 'dist/gateway/main.js'),
         }
       : {}),
     ...(computerUse ? { computerUse: { helper: computerUse.helper, releaseVerified: true } } : {}),

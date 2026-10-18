@@ -1,9 +1,11 @@
+import { FollowUpStore, type FollowUpResult } from '@evowork/store';
 import { createMemoryImporter } from './memory-import.js';
 import {
   createMemoryTextImporter,
   type MemoryTextInput,
   type MemoryTextRecord,
 } from './memory-text-import.js';
+import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { workspaceRootRefusal } from '@evowork/policy';
@@ -183,6 +185,7 @@ export interface MemorySettings {
 export type { ThreadGoal, ThreadGoalStatus, ThreadSearchOccurrence };
 
 export interface AdapterOptions {
+  readonly deliveryTimeoutMs?: number;
   readonly validateCwd?: (cwd: string) => Promise<string>;
   readonly store: Store;
   /** 由宿主提供的只读技能根；握手后注册，内核重启时自动重放。 */
@@ -307,11 +310,16 @@ export function createAdapter(options: AdapterOptions) {
     threadId: string,
     params: unknown,
     interactive = false,
+    timeoutMs?: number,
   ): Promise<TurnStartResponse> {
     if (session.phase !== 'ready')
       throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
     try {
-      const response = await session.peer.request<TurnStartResponse>(METHOD.turnStart, params);
+      const response = await session.peer.request<TurnStartResponse>(
+        METHOD.turnStart,
+        params,
+        timeoutMs,
+      );
       if (interactive && response.turn.status === 'inProgress')
         desktopTurns.set(threadId, response.turn.id);
       return response;
@@ -558,6 +566,7 @@ export function createAdapter(options: AdapterOptions) {
   const session = new KernelSession({
     ...options.sessionOptions,
     recover: async () => {
+      await protectAllStoppedQueues();
       await registerSkillRoots();
       return recoverOpenThreads();
     },
@@ -570,7 +579,7 @@ export function createAdapter(options: AdapterOptions) {
         approvals.cancel(() => true);
         forgetFileChanges(() => true);
         inFlightMcpCalls.clear();
-        localQueues.clear();
+        for (const id of session.openThreads) localQueues.pause(id);
         // 只校正执行状态，不发完成事件；完成事件会触发队列和自动化副作用。
         for (const threadId of store.threads.queryThreadIds({
           statuses: ['running', 'pending', 'planning'],
@@ -669,8 +678,25 @@ export function createAdapter(options: AdapterOptions) {
   let catalog: Catalog | undefined;
   /** 真正被内核信任、会跑的策略 hook 条数。`undefined` = 宿主没给策略包 */
   let bundledHooksActive: number | undefined;
-  /** 实验队列不可用时的本机兜底。内容只活在进程内，不冒充任务历史。 */
-  const localQueues = new Map<string, QueuedInput[]>();
+  /** 实验队列不可用时的本机兜底。内容作为待发权威状态保存在本机，不冒充任务历史。 */
+  const localQueues = new FollowUpStore(store);
+  const pausedQueues = {
+    has: (id: string) => localQueues.has(id),
+    add: (id: string) => localQueues.pause(id),
+    delete: (id: string) => localQueues.resume(id),
+  };
+  const startingQueues = new Set<string>();
+  type DeliveryResult = FollowUpResult;
+  const deliveries = new Map<
+    string,
+    {
+      fingerprint: string;
+      route?: 'queue' | 'steer' | 'start';
+      pending?: Promise<DeliveryResult>;
+      result?: DeliveryResult;
+    }
+  >();
+  const deliveryTimeout = options.deliveryTimeoutMs ?? 15_000;
   let queueSequence = 0;
 
   /**
@@ -715,6 +741,54 @@ export function createAdapter(options: AdapterOptions) {
       logger?.warn('adapter.set_task_name.failed', { threadId, ...errorFields(err) });
       return false;
     }
+  }
+
+  async function protectStoppedQueue(threadId: string): Promise<void> {
+    if (!localQueues.has(threadId)) return;
+    for (;;) {
+      let response: {
+        data: { id: string; input: readonly UserInput[]; clientUserMessageId: string }[];
+      };
+      try {
+        response = await session.peer.request(
+          EXPERIMENTAL_METHOD.threadQueueList,
+          { threadId, limit: 100 },
+          deliveryTimeout,
+        );
+      } catch (error) {
+        if (
+          error instanceof JsonRpcCallError &&
+          (error.isMethodNotFound ||
+            (error.code === ERROR_CODE.invalidRequest &&
+              /^(thread not found:|session .+ is archived\.)/.test(error.rpcMessage)))
+        )
+          return;
+        throw error;
+      }
+      if (!response.data.length) return;
+      for (const entry of response.data) {
+        const current = localQueues.get(threadId) ?? [];
+        if (!current.some((item) => item.nativeId === entry.id))
+          localQueues.set(threadId, [
+            ...current,
+            {
+              id: `native-${entry.id}`,
+              nativeId: entry.id,
+              clientId: entry.clientUserMessageId,
+              input: entry.input,
+            },
+          ]);
+        // 先持久保存副本，再移除原生项；崩溃后用 nativeId 幂等接管。
+        await session.peer.request(
+          EXPERIMENTAL_METHOD.threadQueueDelete,
+          { threadId, queuedSubmissionId: entry.id },
+          deliveryTimeout,
+        );
+      }
+    }
+  }
+  async function protectAllStoppedQueues(): Promise<void> {
+    for (const threadId of localQueues.paused()) await protectStoppedQueue(threadId);
   }
 
   /** 重启后补齐：恢复 thread 后重新读取历史（09 §1 / §5）。 */
@@ -855,10 +929,11 @@ export function createAdapter(options: AdapterOptions) {
     method: string,
     params: unknown,
     fallback: () => T,
+    timeoutMs?: number,
   ): Promise<T> {
     if (!capabilities.isUsable(method)) return fallback();
     try {
-      const result = await session.peer.request<T>(method, params);
+      const result = await session.peer.request<T>(method, params, timeoutMs);
       capabilities.markAvailable(method);
       return result;
     } catch (err) {
@@ -998,6 +1073,7 @@ export function createAdapter(options: AdapterOptions) {
       }
 
       await session.start();
+      await protectAllStoppedQueues();
       await registerSkillRoots();
       // 失败不挡启动（一个策略组件装错了不该让 App 起不来），但要留下痕迹
       bundledHooksActive = await trustBundledHooks().catch((err: unknown) => {
@@ -1045,6 +1121,7 @@ export function createAdapter(options: AdapterOptions) {
       memoryImporter.stop();
       memoryTextImporter.invalidate();
       desktopTurns.clear();
+      deliveries.clear();
       approvals.cancel(() => true);
       ephemeralThreads.clear();
       ephemeralThreadIds.clear();
@@ -1558,6 +1635,7 @@ export function createAdapter(options: AdapterOptions) {
       readonly overrides?: ComposerOverrides;
       readonly automationId?: string;
       readonly desktopInteractive?: boolean;
+      readonly submissionId?: string;
       readonly onCreated?: (threadId: string) => void;
       readonly goalObjective?: string;
       readonly useMemories?: boolean;
@@ -1642,11 +1720,42 @@ export function createAdapter(options: AdapterOptions) {
           status: 'paused',
           tokenBudget: null,
         });
-      const turnResponse = await startDesktopTurn(
-        threadId,
-        expanded.params,
-        args.desktopInteractive === true && !args.automationId,
-      );
+      const firstFingerprint = createHash('sha256')
+        .update(JSON.stringify([threadId, args.input]))
+        .digest('hex');
+      if (args.submissionId)
+        localQueues.saveReceipt(args.submissionId, threadId, {
+          fingerprint: firstFingerprint,
+          route: 'start',
+        });
+      let turnResponse: TurnStartResponse;
+      try {
+        turnResponse = await startDesktopTurn(
+          threadId,
+          {
+            ...expanded.params,
+            ...(args.submissionId ? { clientUserMessageId: args.submissionId } : {}),
+          },
+          args.desktopInteractive === true && !args.automationId,
+          args.submissionId ? deliveryTimeout : undefined,
+        );
+      } catch (error) {
+        if (
+          args.submissionId &&
+          error instanceof JsonRpcCallError &&
+          [ERROR_CODE.invalidParams, ERROR_CODE.invalidRequest, ERROR_CODE.methodNotFound].some(
+            (code) => code === error.code,
+          )
+        )
+          localQueues.removeReceipt(args.submissionId);
+        throw error;
+      }
+      if (args.submissionId)
+        localQueues.saveReceipt(args.submissionId, threadId, {
+          fingerprint: firstFingerprint,
+          route: 'start',
+          result: { queued: false, degradations: expanded.degradations },
+        });
 
       if (args.goalObjective !== undefined)
         await session.peer.request(METHOD.threadGoalSet, { threadId, status: 'active' });
@@ -1780,88 +1889,227 @@ export function createAdapter(options: AdapterOptions) {
       readonly scenarioId?: string;
       /** 「立即插话」= steer；默认排队（04 §5.5：默认排队） */
       readonly steer?: boolean;
+      readonly submissionId?: string;
       readonly desktopInteractive?: boolean;
-    }): Promise<{ queued: boolean; degradations: readonly string[] }> {
-      if (session.phase !== 'ready')
-        throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
-      const row = store.threads.get(args.threadId);
-      const cwd = await taskCwd(args.threadId, args.overrides?.cwd);
-      const running = row?.derived_status === 'running' || row?.derived_status === 'pending';
-
-      if (running) {
-        /*
-         * 「立即插话」必须带 `expectedTurnId` —— 它是内核的活动回合前置条件
-         * （`v2/turn.rs:312-314`），而且**不接受空串**（`turn_processor.rs:1038`）：
-         * 与 `turn/interrupt` 的启动期中断不同，这里没有"不知道就先发"的退路。
-         * 漏掉它的表现和当初的中断一模一样 —— 勾了插话就永远发不出去（-32600）。
-         */
-        const steerTurnId = args.steer ? activeTurnId(args.threadId) : undefined;
-        if (args.steer && steerTurnId) {
-          await session.peer.request(METHOD.turnSteer, {
-            threadId: args.threadId,
-            input: args.input,
-            expectedTurnId: steerTurnId,
-          });
-          return { queued: false, degradations: [] };
+    }): Promise<DeliveryResult> {
+      const key = args.submissionId;
+      const fingerprint = createHash('sha256')
+        .update(JSON.stringify([args.threadId, args.input]))
+        .digest('hex');
+      const persisted = key ? localQueues.receipt(key) : undefined;
+      const existing = key
+        ? (deliveries.get(key) ??
+          (persisted
+            ? {
+                ...persisted,
+                result: persisted.result ?? { queued: false, unconfirmed: true, degradations: [] },
+              }
+            : undefined))
+        : undefined;
+      if (existing && existing.fingerprint !== fingerprint)
+        throw new Error('发送身份与内容不一致，请重新输入。');
+      const receipt = existing ?? ({ fingerprint } as NonNullable<typeof existing>);
+      const reconcile = async (): Promise<DeliveryResult> => {
+        try {
+          if (receipt.route === 'queue') {
+            if (
+              (localQueues.get(args.threadId) ?? []).some(
+                (entry) => entry.id === key || entry.clientId === key,
+              )
+            )
+              return { queued: true, degradations: ['回执丢失，已核对排队记录。'] };
+            const queue = await session.peer.request<{ data: { clientUserMessageId?: string }[] }>(
+              EXPERIMENTAL_METHOD.threadQueueList,
+              { threadId: args.threadId, limit: 100 },
+              deliveryTimeout,
+            );
+            if (queue.data.some((entry) => entry.clientUserMessageId === key))
+              return { queued: true, degradations: ['回执丢失，已核对排队记录。'] };
+          }
+          const items = await listAllThreadItemsWithFallback(
+            (method, params) => session.peer.request(method, params, deliveryTimeout),
+            args.threadId,
+          );
+          if (items.some((item) => item.type === 'userMessage' && item.clientId === key))
+            return {
+              queued: false,
+              ...(receipt.route === 'steer' ? { steered: true } : {}),
+              degradations: ['回执丢失，已核对历史记录。'],
+            };
+        } catch {
+          /* 核对失败不能推断未接受，更不能盲目重发。 */
         }
-
-        const id = `q-${now().toString(36)}-${(queueSequence += 1).toString(36)}`;
-        const queued = await callExperimental<
-          { readonly queuedSubmission?: { readonly id?: string } } | false
-        >(
-          EXPERIMENTAL_METHOD.threadQueueAdd,
-          { threadId: args.threadId, input: args.input, clientUserMessageId: id },
-          () => false,
-        );
-        if (queued === false) {
-          const current = localQueues.get(args.threadId) ?? [];
-          localQueues.set(args.threadId, [...current, { id, input: args.input }]);
-        }
-        /*
-         * 想插话但没有可插的回合（任务是 active 的，回合却还没起来）：内核那边
-         * `turn/steer` 也只会回 "no active turn to steer"。**改为排队而不是丢掉**，
-         * 并把这次改道说出来 —— 用户勾了插话却被排队，不说就是静默降级。
-         */
         return {
-          queued: queued !== false,
-          degradations:
-            args.steer && !steerTurnId ? ['当前没有可插话的回合，这条输入已改为排队。'] : [],
+          queued: false,
+          unconfirmed: true,
+          degradations: ['发送结果尚未确认，草稿已保留；再次发送将核对原请求，不会重复投递。'],
         };
-      }
-
-      const scenario =
-        scenarios.find((s) => s.id === (args.scenarioId ?? row?.scenario_id)) ??
-        scenarios.find((s) => s.default) ??
-        scenarios[0];
-      if (!scenario) throw new Error('没有可用的场景包');
-
-      const overrides: ComposerOverrides = {
-        ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
-        ...(row?.permission_id ? { permissions: row.permission_id } : {}),
-        ...(row?.model ? { model: row.model } : {}),
-        ...args.overrides,
-        cwd,
       };
-      requireResolvedModel(overrides.model ?? scenario.model);
+      if (receipt.pending) return receipt.pending;
+      if (receipt.result && !receipt.result.unconfirmed) return receipt.result;
+      if (key) {
+        deliveries.set(key, receipt);
+        localQueues.saveReceipt(key, args.threadId, {
+          fingerprint,
+          ...(receipt.route ? { route: receipt.route } : {}),
+          ...(receipt.result ? { result: receipt.result } : {}),
+        });
+      }
+      const route = (value: 'queue' | 'steer' | 'start') => {
+        receipt.route = value;
+        if (key) localQueues.saveReceipt(key, args.threadId, { fingerprint, route: value });
+      };
+      const execute = async (): Promise<DeliveryResult> => {
+        if (existing?.result?.unconfirmed) return reconcile();
+        if (session.phase !== 'ready')
+          throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
+        const row = store.threads.get(args.threadId);
+        const cwd = await taskCwd(args.threadId, args.overrides?.cwd);
+        const running = row?.derived_status === 'running' || row?.derived_status === 'pending';
 
-      const expanded = expandTurnStart({
-        threadId: args.threadId,
-        input: args.input,
-        scenario,
-        overrides,
-        readInstructions: options.readInstructions ?? (() => undefined),
-        collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
-        permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
-        approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
+        if (running) {
+          /*
+           * 「立即插话」必须带 `expectedTurnId` —— 它是内核的活动回合前置条件
+           * （`v2/turn.rs:312-314`），而且**不接受空串**（`turn_processor.rs:1038`）：
+           * 与 `turn/interrupt` 的启动期中断不同，这里没有"不知道就先发"的退路。
+           * 漏掉它的表现和当初的中断一模一样 —— 勾了插话就永远发不出去（-32600）。
+           */
+          const steerTurnId = args.steer ? activeTurnId(args.threadId) : undefined;
+          let turnEnded = false;
+          if (args.steer && steerTurnId) {
+            route('steer');
+            try {
+              await session.peer.request(
+                METHOD.turnSteer,
+                {
+                  threadId: args.threadId,
+                  input: args.input,
+                  expectedTurnId: steerTurnId,
+                  ...(key ? { clientUserMessageId: key } : {}),
+                },
+                deliveryTimeout,
+              );
+              return { queued: false, steered: true, degradations: [] };
+            } catch (error) {
+              if (
+                !(error instanceof JsonRpcCallError) ||
+                error.code !== ERROR_CODE.invalidRequest ||
+                !/^(no active turn to steer|expected active turn id `)/.test(error.rpcMessage)
+              )
+                throw error;
+              turnEnded = true;
+            }
+          }
+
+          route('queue');
+          const id = key ?? `q-${now().toString(36)}-${(queueSequence += 1).toString(36)}`;
+          const queued = pausedQueues.has(args.threadId)
+            ? false
+            : await callExperimental<
+                { readonly queuedSubmission?: { readonly id?: string } } | false
+              >(
+                EXPERIMENTAL_METHOD.threadQueueAdd,
+                { threadId: args.threadId, input: args.input, clientUserMessageId: id },
+                () => false,
+                deliveryTimeout,
+              );
+          let localStarted = false;
+          if (queued === false) {
+            const current = localQueues.get(args.threadId) ?? [];
+            localQueues.set(args.threadId, [...current, { id, input: args.input }]);
+            const latest = store.threads.get(args.threadId)?.derived_status;
+            if (latest !== 'running' && latest !== 'pending' && !pausedQueues.has(args.threadId)) {
+              await this.startNextQueued(args.threadId);
+              localStarted = !(localQueues.get(args.threadId) ?? []).some(
+                (entry) => entry.id === id,
+              );
+            }
+          }
+          /*
+           * 想插话但没有可插的回合（任务是 active 的，回合却还没起来）：内核那边
+           * `turn/steer` 也只会回 "no active turn to steer"。**改为排队而不是丢掉**，
+           * 并把这次改道说出来 —— 用户勾了插话却被排队，不说就是静默降级。
+           */
+          return {
+            queued: !localStarted,
+            degradations: localStarted
+              ? ['原回合已结束，这条输入已开始执行。']
+              : turnEnded
+                ? ['原回合已结束或已切换，这条输入已改为排队。']
+                : args.steer && !steerTurnId
+                  ? ['当前没有可插话的回合，这条输入已改为排队。']
+                  : [],
+          };
+        }
+
+        const scenario =
+          scenarios.find((s) => s.id === (args.scenarioId ?? row?.scenario_id)) ??
+          scenarios.find((s) => s.default) ??
+          scenarios[0];
+        if (!scenario) throw new Error('没有可用的场景包');
+
+        const overrides: ComposerOverrides = {
+          ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
+          ...(row?.permission_id ? { permissions: row.permission_id } : {}),
+          ...(row?.model ? { model: row.model } : {}),
+          ...args.overrides,
+          cwd,
+        };
+        requireResolvedModel(overrides.model ?? scenario.model);
+
+        const expanded = expandTurnStart({
+          threadId: args.threadId,
+          input: args.input,
+          scenario,
+          overrides,
+          readInstructions: options.readInstructions ?? (() => undefined),
+          collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
+          permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+          approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
+        });
+
+        route('start');
+        session.openThreads.add(args.threadId);
+        await startDesktopTurn(
+          args.threadId,
+          { ...expanded.params, ...(key ? { clientUserMessageId: key } : {}) },
+          args.desktopInteractive === true && !row?.automation_id && !row?.parent_thread_id,
+          deliveryTimeout,
+        );
+        return { queued: false, degradations: expanded.degradations };
+      };
+      const operation = execute().catch(async (error: unknown) => {
+        if (
+          key &&
+          receipt.route &&
+          !(
+            error instanceof JsonRpcCallError &&
+            [ERROR_CODE.invalidParams, ERROR_CODE.invalidRequest, ERROR_CODE.methodNotFound].some(
+              (code) => code === error.code,
+            )
+          )
+        )
+          return reconcile();
+        if (key) {
+          deliveries.delete(key);
+          localQueues.removeReceipt(key);
+        }
+        throw error;
       });
-
-      session.openThreads.add(args.threadId);
-      await startDesktopTurn(
-        args.threadId,
-        expanded.params,
-        args.desktopInteractive === true && !row?.automation_id && !row?.parent_thread_id,
-      );
-      return { queued: false, degradations: expanded.degradations };
+      receipt.pending = operation;
+      try {
+        const result = await operation;
+        receipt.result = result;
+        if (key)
+          localQueues.saveReceipt(key, args.threadId, {
+            fingerprint,
+            ...(receipt.route ? { route: receipt.route } : {}),
+            result,
+          });
+        return result;
+      } finally {
+        delete receipt.pending;
+      }
     },
 
     async listQueuedInputs(threadId: string): Promise<readonly QueuedInput[]> {
@@ -1873,11 +2121,17 @@ export function createAdapter(options: AdapterOptions) {
           Boolean(entry.id),
         )
         .map((entry) => ({ id: entry.id, input: entry.input ?? [] }));
-      return [...remote, ...(localQueues.get(threadId) ?? [])];
+      const local = localQueues.get(threadId) ?? [];
+      return [
+        ...remote.filter((entry) => !local.some((item) => item.nativeId === entry.id)),
+        ...local,
+      ];
     },
 
     async removeQueuedInput(threadId: string, id: string): Promise<boolean> {
       const local = localQueues.get(threadId) ?? [];
+      if (local.some((entry) => entry.id === id && entry.dispatchId))
+        throw new Error('这条输入正在核对派发结果，请先继续队列核对。');
       if (local.some((entry) => entry.id === id)) {
         localQueues.set(
           threadId,
@@ -1905,6 +2159,8 @@ export function createAdapter(options: AdapterOptions) {
       ];
       const local = localQueues.get(threadId) ?? [];
       const localIndex = local.findIndex((entry) => entry.id === id);
+      if (local[localIndex]?.dispatchId)
+        throw new Error('这条输入正在核对派发结果，请先继续队列核对。');
       if (localIndex >= 0) {
         localQueues.set(
           threadId,
@@ -1950,38 +2206,130 @@ export function createAdapter(options: AdapterOptions) {
      * idle 状态稍后落定时请求会报“仍有 active turn”，并产生一次假失败。
      * `thread/queue/add` 降级时才由 EvoWork 自己持有输入，因此只消费 `localQueues`。
      */
-    async startNextQueued(threadId: string): Promise<void> {
-      const queued = localQueues.get(threadId) ?? [];
-      const next = queued[0];
-      if (!next) return;
-      const row = store.threads.get(threadId);
-      const cwd = await taskCwd(threadId);
-      const scenario =
-        scenarios.find((candidate) => candidate.id === row?.scenario_id) ??
-        scenarios.find((candidate) => candidate.default) ??
-        scenarios[0];
-      if (!scenario) return;
-      const overrides: ComposerOverrides = {
-        ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
-        ...(row?.permission_id ? { permissions: row.permission_id } : {}),
-        ...(row?.model ? { model: row.model } : {}),
-        cwd,
-      };
-      requireResolvedModel(overrides.model ?? scenario.model);
-      const expanded = expandTurnStart({
-        threadId,
-        input: next.input,
-        scenario,
-        overrides,
-        readInstructions: options.readInstructions ?? (() => undefined),
-        collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
-        permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
-        approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
+    async resumeQueued(threadId: string): Promise<void> {
+      await protectStoppedQueue(threadId);
+      pausedQueues.delete(threadId);
+      if ((localQueues.get(threadId) ?? []).length) return this.startNextQueued(threadId);
+      await callExperimental(EXPERIMENTAL_METHOD.threadQueueStart, { threadId }, () => {
+        throw new Error('当前版本无法继续队列。');
       });
-      session.openThreads.add(threadId);
-      await session.peer.request(METHOD.turnStart, expanded.params);
-      // 请求成功后再移除；失败时保留，避免一次暂时故障把用户排队的输入吞掉。
-      localQueues.set(threadId, queued.slice(1));
+    },
+
+    async startNextQueued(threadId: string): Promise<void> {
+      if (pausedQueues.has(threadId) || startingQueues.has(threadId)) return;
+      startingQueues.add(threadId);
+      try {
+        for (;;) {
+          const queued = localQueues.get(threadId) ?? [];
+          const next = queued[0];
+          if (!next) return;
+          const row = store.threads.get(threadId);
+          const cwd = await taskCwd(threadId);
+          const scenario =
+            scenarios.find((candidate) => candidate.id === row?.scenario_id) ??
+            scenarios.find((candidate) => candidate.default) ??
+            scenarios[0];
+          if (!scenario) return;
+          const overrides: ComposerOverrides = {
+            ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
+            ...(row?.permission_id ? { permissions: row.permission_id } : {}),
+            ...(row?.model ? { model: row.model } : {}),
+            cwd,
+          };
+          requireResolvedModel(overrides.model ?? scenario.model);
+          const expanded = expandTurnStart({
+            threadId,
+            input: next.input,
+            scenario,
+            overrides,
+            readInstructions: options.readInstructions ?? (() => undefined),
+            collaborationModeAvailable: capabilities.isUsable('turn/start.collaborationMode'),
+            permissionsFieldAvailable: capabilities.isUsable('turn/start.permissions'),
+            approvalsReviewerAvailable: capabilities.isUsable('turn/start.approvalsReviewer'),
+          });
+          session.openThreads.add(threadId);
+          const dispatchId = next.dispatchId ?? `dispatch-${next.id}`;
+          const previous = localQueues.receipt(dispatchId);
+          if (previous) {
+            if (!previous.result || previous.result.unconfirmed) {
+              const items = await listAllThreadItemsWithFallback(
+                (method, params) => session.peer.request(method, params, deliveryTimeout),
+                threadId,
+              );
+              if (
+                !items.some((item) => item.type === 'userMessage' && item.clientId === dispatchId)
+              ) {
+                localQueues.pause(threadId);
+                throw new Error(
+                  '这条排队输入的派发结果尚未确认，队列已暂停；再次继续只核对，不会重复投递。',
+                );
+              }
+              localQueues.saveReceipt(dispatchId, threadId, {
+                ...previous,
+                result: { queued: false, degradations: [] },
+              });
+            }
+          } else {
+            localQueues.set(
+              threadId,
+              queued.map((entry) => (entry.id === next.id ? { ...entry, dispatchId } : entry)),
+            );
+            const fingerprint = createHash('sha256')
+              .update(JSON.stringify([threadId, next.input]))
+              .digest('hex');
+            localQueues.saveReceipt(dispatchId, threadId, { fingerprint, route: 'start' });
+            try {
+              await session.peer.request(
+                METHOD.turnStart,
+                { ...expanded.params, clientUserMessageId: dispatchId },
+                deliveryTimeout,
+              );
+              localQueues.saveReceipt(dispatchId, threadId, {
+                fingerprint,
+                route: 'start',
+                result: { queued: false, degradations: [] },
+              });
+            } catch (error) {
+              localQueues.pause(threadId);
+              if (
+                error instanceof JsonRpcCallError &&
+                [
+                  ERROR_CODE.invalidParams,
+                  ERROR_CODE.invalidRequest,
+                  ERROR_CODE.methodNotFound,
+                ].some((code) => code === error.code)
+              ) {
+                localQueues.removeReceipt(dispatchId);
+                localQueues.set(
+                  threadId,
+                  (localQueues.get(threadId) ?? []).map((entry) => {
+                    const { dispatchId: _id, ...rest } = entry;
+                    return entry.id === next.id ? rest : entry;
+                  }),
+                );
+              }
+              throw error;
+            }
+          }
+          const acceptedId = next.clientId ?? next.id;
+          const originalReceipt = localQueues.receipt(acceptedId);
+          if (originalReceipt)
+            localQueues.saveReceipt(acceptedId, threadId, {
+              ...originalReceipt,
+              result: { queued: false, degradations: ['这条输入已接受，未重复投递。'] },
+            });
+          // 请求成功后再移除；失败时保留，避免一次暂时故障把用户排队的输入吞掉。
+          localQueues.set(
+            threadId,
+            (localQueues.get(threadId) ?? []).filter((entry) => entry.id !== next.id),
+          );
+          options.onUiEvent?.({ type: 'queue-changed', threadId });
+          const latest = store.threads.get(threadId)?.derived_status;
+          if (!previous || latest === 'running' || latest === 'pending') return;
+        }
+      } finally {
+        startingQueues.delete(threadId);
+      }
     },
 
     /**
@@ -1999,9 +2347,11 @@ export function createAdapter(options: AdapterOptions) {
      * 因此那条路径上 Promise resolve 意味着真的停住了。
      */
     async interrupt(threadId: string): Promise<void> {
+      pausedQueues.add(threadId);
       const turnId = activeTurnId(threadId) ?? '';
       try {
         await session.peer.request(METHOD.turnInterrupt, { threadId, turnId });
+        await protectStoppedQueue(threadId);
       } catch (err) {
         // 回合在请求路上自己结束了 —— 用户要的「停下」已经达成，再报一次错
         // 只会让人以为没停住，然后再点一次，凑出一串重复的报错。
@@ -2010,6 +2360,7 @@ export function createAdapter(options: AdapterOptions) {
         const turnField = turnId ? { turnId } : {};
         if (isTurnAlreadyOver(err)) {
           activeTurns.delete(threadId);
+          await protectStoppedQueue(threadId);
           logger?.info('adapter.interrupt.already_stopped', { threadId, ...turnField });
           return;
         }
@@ -2060,6 +2411,7 @@ export function createAdapter(options: AdapterOptions) {
       }
       const cached = store.readItemDigest(threadId);
       const revision = threadRevisions.get(threadId);
+      await protectStoppedQueue(threadId);
       const resumed = session.peer
         .request<ThreadResumeResponse>(METHOD.threadResume, {
           threadId,

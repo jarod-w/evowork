@@ -103,7 +103,7 @@ async function drive(page, { approval, followups = [] }) {
       pending[0]?.after === 'first_tool_call' &&
       (await page.locator('.ew-item[data-kind="commandExecution"]').count()) > 0
     ) {
-      await page.getByRole('button', { name: '中断' }).click();
+      await page.getByRole('button', { name: '停止' }).click();
       await expect(composer).toHaveAttribute('data-run-state', 'idle', { timeout: 60_000 });
       await send(page, pending.shift().text);
       await expect(composer).toHaveAttribute('data-run-state', /running|pending/, {

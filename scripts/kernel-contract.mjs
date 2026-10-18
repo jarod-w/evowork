@@ -98,7 +98,7 @@ const OUTGOING = {
   'turn/start': { keys: ['threadId', 'input'], maybe: '*' },
   // `expectedTurnId` 是内核的活动回合前置条件，且**不接受空串**
   // （`turn_processor.rs:1038`）。漏掉它 = 勾了「立即插话」永远发不出去。
-  'turn/steer': { keys: ['threadId', 'input', 'expectedTurnId'] },
+  'turn/steer': { keys: ['threadId', 'input', 'expectedTurnId'], maybe: ['clientUserMessageId'] },
   // 两个字段都没有 `Option`。漏掉 `turnId` = 「停止」按钮从来没成功过一次。
   // 空串是内核定义的「启动期中断」，是合法值，所以这里只要求**键在**。
   'turn/interrupt': { keys: ['threadId', 'turnId'] },
@@ -142,6 +142,7 @@ const OUTGOING = {
   },
   'thread/searchOccurrences': { keys: ['threadId', 'searchTerm', 'limit'] },
   'thread/queue/add': { keys: ['threadId', 'input', 'clientUserMessageId'] },
+  'thread/queue/start': { keys: ['threadId'] },
   'thread/queue/list': { keys: ['threadId', 'limit'] },
   'thread/queue/delete': { keys: ['threadId', 'queuedSubmissionId'] },
   'thread/queue/update': { keys: ['threadId', 'queuedSubmissionId', 'input'] },

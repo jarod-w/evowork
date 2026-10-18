@@ -466,6 +466,36 @@ export const TABLES: readonly TableSpec[] = [
       `CREATE INDEX IF NOT EXISTS ix_audit_thread ON audit_log(thread_id, occurred_at DESC)`,
     ],
   },
+  {
+    name: 'follow_up_receipt',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS follow_up_receipt (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, receipt TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS ix_follow_up_receipt_thread ON follow_up_receipt(thread_id)`,
+    ],
+  },
+  {
+    name: 'follow_up_queue',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS follow_up_queue (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, position INTEGER NOT NULL, entry TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS ix_follow_up_queue_thread ON follow_up_queue(thread_id, position)`,
+    ],
+  },
+  {
+    name: 'follow_up_control',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS follow_up_control (thread_id TEXT PRIMARY KEY, paused INTEGER NOT NULL CHECK(paused IN (0,1)))`,
+    ],
+  },
+  {
+    name: 'follow_up_composer',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS follow_up_composer (id TEXT PRIMARY KEY, draft_id TEXT NOT NULL, thread_id TEXT, payload TEXT NOT NULL)`,
+    ],
+  },
 ];
 
 export const PROJECTION_TABLES = TABLES.filter((t) => t.klass === 'projection');

@@ -1,0 +1,110 @@
+
+Running 4 tests using 1 worker
+
+(node:4924) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:304:1 › MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投 (25.5s)
+(node:4993) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:323:1 › MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑 (24.3s)
+(node:5043) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:346:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次 (23.9s)
+(node:5147) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:346:3 › MiMo 重启：本机降级队列停止后强制退出，明确继续才执行一次 (2.6s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:304:1 › MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByLabel('选择模型')
+    Expected substring: "MiMo v2.6 Flash"
+    Received string:    "private/mimo-v2.6-flash▾"
+    Timeout: 20000ms
+
+    Call log:
+      - Expect "toContainText" getByLabel('选择模型') with timeout 20000ms
+      - waiting for getByLabel('选择模型')
+        44 × locator resolved to <button type="button" data-mono="true" aria-label="选择模型" aria-haspopup="menu" aria-expanded="false" class="ew-inline-select-trigger">…</button>
+           - unexpected value "private/mimo-v2.6-flash▾"
+
+
+      89 |       .toBe(true);
+      90 |     await expect(input(page)).toBeVisible();
+    > 91 |     await expect(page.getByLabel('选择模型')).toContainText(selected.displayName);
+         |                                           ^
+      92 |     home ??= await app.evaluate(() => globalThis.__evoworkE2E.home);
+      93 |     workspace ??= realpathSync(await app.evaluate(() => globalThis.__evoworkE2E.workspace));
+      94 |     boots.push({
+        at launch (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:91:43)
+        at journey (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:279:5)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:308:3
+
+    Error Context: test-results/queue-steer-restart.real-MiMo-重启：首轮已接受但-IPC-回执丢失，强退后原身份重试不重投-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:323:1 › MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByLabel('选择模型')
+    Expected substring: "MiMo v2.6 Flash"
+    Received string:    "private/mimo-v2.6-flash▾"
+    Timeout: 20000ms
+
+    Call log:
+      - Expect "toContainText" getByLabel('选择模型') with timeout 20000ms
+      - waiting for getByLabel('选择模型')
+        43 × locator resolved to <button type="button" data-mono="true" aria-label="选择模型" aria-haspopup="menu" aria-expanded="false" class="ew-inline-select-trigger">…</button>
+           - unexpected value "private/mimo-v2.6-flash▾"
+
+
+      89 |       .toBe(true);
+      90 |     await expect(input(page)).toBeVisible();
+    > 91 |     await expect(page.getByLabel('选择模型')).toContainText(selected.displayName);
+         |                                           ^
+      92 |     home ??= await app.evaluate(() => globalThis.__evoworkE2E.home);
+      93 |     workspace ??= realpathSync(await app.evaluate(() => globalThis.__evoworkE2E.workspace));
+      94 |     boots.push({
+        at launch (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:91:43)
+        at journey (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:279:5)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:327:3
+
+    Error Context: test-results/queue-steer-restart.real-M-f1be4-已接受但-IPC-回执丢失，停止强退后不重投或自动续跑-real/error-context.md
+
+  3) [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:346:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByLabel('选择模型')
+    Expected substring: "MiMo v2.6 Flash"
+    Received string:    "private/mimo-v2.6-flash▾"
+    Timeout: 20000ms
+
+    Call log:
+      - Expect "toContainText" getByLabel('选择模型') with timeout 20000ms
+      - waiting for getByLabel('选择模型')
+        43 × locator resolved to <button type="button" data-mono="true" aria-label="选择模型" aria-haspopup="menu" aria-expanded="false" class="ew-inline-select-trigger">…</button>
+           - unexpected value "private/mimo-v2.6-flash▾"
+
+
+      89 |       .toBe(true);
+      90 |     await expect(input(page)).toBeVisible();
+    > 91 |     await expect(page.getByLabel('选择模型')).toContainText(selected.displayName);
+         |                                           ^
+      92 |     home ??= await app.evaluate(() => globalThis.__evoworkE2E.home);
+      93 |     workspace ??= realpathSync(await app.evaluate(() => globalThis.__evoworkE2E.workspace));
+      94 |     boots.push({
+        at launch (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:91:43)
+        at journey (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:279:5)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:350:5
+
+    Error Context: test-results/queue-steer-restart.real-MiMo-重启：本机降级队列停止后正常退出，明确继续才执行一次-real/error-context.md
+
+  3 failed
+    [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:304:1 › MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投
+    [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:323:1 › MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑
+    [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:346:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次
+  1 interrupted
+    [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:346:3 › MiMo 重启：本机降级队列停止后强制退出，明确继续才执行一次

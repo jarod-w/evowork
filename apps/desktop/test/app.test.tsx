@@ -599,6 +599,8 @@ describe('首页不创建 Thread（03 §1）', () => {
     await waitFor(() =>
       expect(bridge.send).toHaveBeenCalledWith({
         draftId: expect.any(String),
+        submissionId: expect.any(String),
+        recovery: expect.any(Object),
         text: '做个周报',
         scenarioId: 'office',
         // 场景没给默认模型 → 用列表里第一个可用的（resolveModelChoice）
@@ -724,6 +726,8 @@ describe('首页不创建 Thread（03 §1）', () => {
     await waitFor(() =>
       expect(bridge.send).toHaveBeenLastCalledWith({
         draftId: expect.any(String),
+        submissionId: expect.any(String),
+        recovery: expect.any(Object),
         threadId: 't1',
         text: '第二条',
         scenarioId: 'office',
@@ -731,6 +735,140 @@ describe('首页不创建 Thread（03 §1）', () => {
         modeId: 'request-approval',
       }),
     );
+  });
+});
+
+describe('运行中的本次发送方式与回执', () => {
+  const tasks = ['first', 'second'].map((id) => ({
+    id,
+    title: `${id}运行任务`,
+    status: 'running' as const,
+    timeLabel: '刚刚',
+    updatedAt: 1,
+    sectionId: 'ungrouped',
+  }));
+  const startup = async () => ({ ...STARTUP, tasks });
+
+  it('插话成功恢复排队，下一条按排队发送，反馈来自实际回执', async () => {
+    const send = vi.fn(async (input: import('../src/shared/ipc.js').SendInput) => ({
+      threadId: 'first',
+      ...(input.steer ? { steered: true } : { queued: true }),
+    }));
+    const { bridge } = fakeBridge({ getStartup: startup, send });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('first运行任务'));
+    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    const box = screen.getByLabelText('需求输入');
+    fireEvent.change(box, { target: { value: '换个方向' } });
+    fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('发送状态').textContent).toBe('已发送，正在调整方向'),
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ threadId: 'first', steer: true }),
+    );
+    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(box).toHaveProperty('value', '');
+    fireEvent.change(box, { target: { value: '完成后补一页' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() =>
+      expect(screen.getByLabelText('发送状态').textContent).toBe('等待当前任务完成'),
+    );
+    expect(send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ steer: false, text: '完成后补一页' }),
+    );
+    expect(bridge.interrupt).not.toHaveBeenCalled();
+  });
+
+  it('插话降级时显示排队结果与原因，不冒充调整成功', async () => {
+    const { bridge } = fakeBridge({
+      getStartup: startup,
+      send: vi.fn(async () => ({
+        threadId: 'first',
+        queued: true,
+        degradations: ['当前没有可插话的回合，这条输入已改为排队。'],
+      })),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('first运行任务'));
+    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '改查上海' } });
+    fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('发送状态').textContent).toBe(
+        '等待当前任务完成 当前没有可插话的回合，这条输入已改为排队。',
+      ),
+    );
+    expect(screen.queryByText('已发送，正在调整方向')).toBeNull();
+    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+  });
+
+  it('发送失败保留草稿和插话选择，重试成功后才重置', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('暂时断线'))
+      .mockResolvedValue({ threadId: 'first', steered: true });
+    const { bridge } = fakeBridge({ getStartup: startup, send });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('first运行任务'));
+    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    const box = screen.getByLabelText('需求输入');
+    fireEvent.change(box, { target: { value: '保留这条' } });
+    fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
+    await screen.findByText('没能发出去：暂时断线');
+    expect(box).toHaveProperty('value', '保留这条');
+    expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('checked', true);
+    expect(screen.queryByLabelText('发送状态')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true),
+    );
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('切任务和结束运行都重置选择，回到原任务也不恢复插话', async () => {
+    const { bridge, emit } = fakeBridge({ getStartup: startup });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('first运行任务'));
+    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    fireEvent.click(screen.getByText('second运行任务'));
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true),
+    );
+    fireEvent.click(screen.getByText('first运行任务'));
+    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    fireEvent.click(screen.getByRole('radio', { name: '立即插话' }));
+    act(() => emit.ui?.({ type: 'task-updated', taskId: 'first', status: 'idle' }));
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    act(() => emit.ui?.({ type: 'task-updated', taskId: 'first', status: 'running' }));
+    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+  });
+
+  it('发送在途时不可重复提交，切任务后迟到的回执不改变新草稿与选择', async () => {
+    let finish!: (result: import('../src/shared/ipc.js').SendResult) => void;
+    const send = vi.fn(
+      () =>
+        new Promise<import('../src/shared/ipc.js').SendResult>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { bridge } = fakeBridge({ getStartup: startup, send });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('first运行任务'));
+    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '旧消息' } });
+    fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
+    expect(screen.getByRole('button', { name: '立即插话' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: '停止' })).toHaveProperty('disabled', false);
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(send).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByText('second运行任务'));
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '新任务草稿' } });
+    await act(async () => finish({ threadId: 'first', steered: true }));
+    expect(screen.getByLabelText('需求输入')).toHaveProperty('value', '新任务草稿');
+    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(screen.queryByLabelText('发送状态')).toBeNull();
   });
 });
 
@@ -792,7 +930,7 @@ describe('事件接线', () => {
 
     emit.ui?.({ type: 'task-updated', taskId: 'background', status: 'running' });
 
-    expect(screen.queryByRole('button', { name: '中断' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull();
     expect(screen.getByRole('button', { name: '发送' })).toBeTruthy();
   });
 
@@ -2171,6 +2309,8 @@ describe('手动选模型（03 §4.5 / §2.4）', () => {
     await waitFor(() =>
       expect(bridge.send).toHaveBeenCalledWith({
         draftId: expect.any(String),
+        submissionId: expect.any(String),
+        recovery: expect.any(Object),
         text: '做个周报',
         scenarioId: 'office',
         modelId: 'evowork/kimi-k3',
@@ -2644,7 +2784,7 @@ describe('侧边栏的六个入口都要有落点', () => {
     });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('正在跑'));
-    fireEvent.click(await screen.findByRole('button', { name: '中断' }));
+    fireEvent.click(await screen.findByRole('button', { name: '停止' }));
     await waitFor(() => expect(interrupt).toHaveBeenCalledWith('t-run'));
     expect(await screen.findByText('内核没有响应。')).toBeTruthy();
   });
@@ -3619,6 +3759,8 @@ describe('Composer 文件夹动作与草稿', () => {
           workspaceId: 'p1',
           text: '先保留这份草稿',
           draftId: expect.any(String),
+          submissionId: expect.any(String),
+          recovery: expect.any(Object),
         }),
       ),
     );
@@ -3643,4 +3785,44 @@ describe('Composer 文件夹动作与草稿', () => {
     );
     expect(bridge.send).not.toHaveBeenCalled();
   });
+});
+
+describe('宿主恢复的待确认发送', () => {
+  it('没有浏览器缓存也恢复原身份和审批档，确认收到后才向宿主确认清理', async () => {
+    const payload = {
+      submissionId: 'durable-send',
+      draftId: 'durable-draft',
+      text: '崩溃后待确认的需求',
+      modeId: 'full-access' as const,
+      modelId: 'evowork/deepseek-v4-flash',
+    };
+    const acknowledgeSend = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({ getPendingSend: async () => payload, acknowledgeSend });
+    render(<App bridge={bridge} />);
+    expect(await screen.findByDisplayValue(payload.text)).toBeTruthy();
+    expect(screen.getByText('完全访问')).toBeTruthy();
+    expect(acknowledgeSend).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    await waitFor(() => expect(bridge.send).toHaveBeenCalledWith(payload));
+    expect(acknowledgeSend).toHaveBeenCalledWith({ submissionId: payload.submissionId });
+  });
+});
+
+it('恢复接口失败时保留禁止发送状态，不能靠新身份绕过未知回执', async () => {
+  const { bridge } = fakeBridge({
+    getPendingSend: async () => {
+      throw new Error('storage unavailable');
+    },
+  });
+  render(<App bridge={bridge} />);
+  expect(await screen.findByText(/没能恢复待确认发送/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '不能盲目重发' } });
+  expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+  expect(bridge.send).not.toHaveBeenCalled();
 });

@@ -83,6 +83,7 @@ import type {
   UpdateQuitImpactView,
   UpdateStatusView,
   SendInput,
+  SendResult,
   StartupInfo,
   TaskSearchHitView,
   TaskSearchOccurrenceView,
@@ -185,7 +186,9 @@ export interface EvoworkBridge
   onDegrade(handler: (report: { degradation?: { userVisible: string } }) => void): () => void;
   /** 发送一条需求。没有 threadId 时由主进程新建任务并回 id（03 §1） */
   discardComposerDraft?(input: { draftId: string }): Promise<void>;
-  send(input: SendInput): Promise<{ threadId: string; queued?: boolean }>;
+  send(input: SendInput): Promise<SendResult>;
+  getPendingSend?(): Promise<SendInput | undefined>;
+  acknowledgeSend?(input: { submissionId: string }): Promise<void>;
   setTaskMode(input: {
     threadId: string;
     modeId: 'request-approval' | 'approve-for-me' | 'full-access';
@@ -219,6 +222,7 @@ export interface EvoworkBridge
   }): Promise<{ threadId: string; task?: TaskRowView }>;
   archiveTask?(input: { threadId: string }): Promise<void>;
   deleteTask?(input: { threadId: string }): Promise<void>;
+  resumeQueued?(input: { threadId: string }): Promise<void>;
   listQueuedInputs?(input: { threadId: string }): Promise<readonly QueuedInputView[]>;
   updateQueuedInput?(input: {
     threadId: string;
@@ -536,14 +540,50 @@ const PERMISSION_LABEL: Readonly<Record<string, string>> = {
 };
 
 const COMPOSER_DRAFT_KEY = 'evowork.composer.draft';
-function savedComposerDraft(): {
+const PENDING_SEND_KEY = 'evowork.composer.pending-send';
+type PendingSend = { fingerprint: string; id: string; input?: SendInput; unconfirmed?: boolean };
+function clearPendingSend(id: string): void {
+  const raw = localStorage.getItem(PENDING_SEND_KEY);
+  if (raw && (JSON.parse(raw) as { submission?: PendingSend }).submission?.id === id)
+    localStorage.removeItem(PENDING_SEND_KEY);
+}
+function savedComposerDraft(usePendingCache = true): {
   id: string;
   text: string;
   workspaceId?: string;
+  taskId?: string;
+  pending?: PendingSend;
   attachments: readonly ComposerAttachmentView[];
   references: readonly ComposerReferenceView[];
 } {
   try {
+    const pendingRaw = localStorage.getItem(PENDING_SEND_KEY);
+    if (pendingRaw && usePendingCache) {
+      const value = JSON.parse(pendingRaw) as {
+        submission: PendingSend;
+        attachments: readonly ComposerAttachmentView[];
+        references: readonly ComposerReferenceView[];
+        workspaceId?: string;
+      };
+      const input = value.submission?.input;
+      if (
+        input &&
+        typeof input.draftId === 'string' &&
+        typeof input.text === 'string' &&
+        typeof value.submission.id === 'string' &&
+        Array.isArray(value.attachments) &&
+        Array.isArray(value.references)
+      )
+        return {
+          id: input.draftId,
+          text: input.text,
+          ...(input.threadId ? { taskId: input.threadId } : {}),
+          pending: { ...value.submission, unconfirmed: true },
+          attachments: value.attachments,
+          references: value.references,
+          ...(value.workspaceId ? { workspaceId: value.workspaceId } : {}),
+        };
+    }
     const raw = localStorage.getItem(COMPOSER_DRAFT_KEY);
     if (raw) {
       const value = JSON.parse(raw) as ReturnType<typeof savedComposerDraft>;
@@ -562,12 +602,15 @@ function savedComposerDraft(): {
 }
 
 export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
+  const savedDraft = useRef(savedComposerDraft(!bridge.getPendingSend));
   const deletedTaskIds = useRef(new Set<string>());
   const [tasks, setTasks] = useState<readonly TaskRowView[]>([]);
   const [itemsByTask, setItemsByTask] = useState<Readonly<Record<string, readonly RenderItem[]>>>(
     {},
   );
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(
+    savedDraft.current.taskId ?? null,
+  );
   const [approvals, setApprovals] = useState<readonly ApprovalView[]>([]);
   const [notices, setNotices] = useState<
     readonly {
@@ -600,12 +643,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [scenarioId, setScenarioId] = useState('office');
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<ModeId>('request-approval');
-  const savedDraft = useRef(savedComposerDraft());
   const [draft, setDraft] = useState(savedDraft.current.text);
   const draftIdentity = useRef(savedDraft.current.id);
-  const [environmentBusy, setEnvironmentBusy] = useState(false);
+  const [environmentBusy, setEnvironmentBusy] = useState(Boolean(bridge.getPendingSend));
 
-  const pendingEnvironment = useRef(false);
+  const pendingEnvironment = useRef(Boolean(bridge.getPendingSend));
+  const pendingSubmission = useRef<PendingSend | undefined>(savedDraft.current.pending);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [models, setModels] = useState<readonly ModelOptionView[]>([]);
   const [modelId, setModelId] = useState<string | undefined>(undefined);
@@ -911,6 +954,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   >({});
   const [focusItemId, setFocusItemId] = useState<string | undefined>(undefined);
   const [steer, setSteer] = useState(false);
+  const [sendFeedback, setSendFeedback] = useState<string | undefined>(undefined);
+  const [sendReason, setSendReason] = useState<string | undefined>(undefined);
   const [previewByTask, setPreviewByTask] = useState<Readonly<Record<string, FilePreviewView>>>({});
   const [selectedChangeByTask, setSelectedChangeByTask] = useState<
     Readonly<Record<string, string>>
@@ -1016,6 +1061,60 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     if (currentDraftTask.current !== activeTaskId) draftIdentity.current = crypto.randomUUID();
     currentDraftTask.current = activeTaskId;
   }, [activeTaskId]);
+  useEffect(() => {
+    if (!bridge.getPendingSend) return;
+    let cancelled = false;
+    let restored = false;
+    void bridge
+      .getPendingSend()
+      .then((payload) => {
+        restored = true;
+        try {
+          localStorage.removeItem(PENDING_SEND_KEY);
+        } catch {
+          /* 宿主是恢复真源。 */
+        }
+        if (cancelled || !payload?.submissionId || !payload.draftId) return;
+        const recovery = payload.recovery;
+        const fingerprint =
+          recovery?.fingerprint ??
+          JSON.stringify([payload.draftId, payload.text, payload.references ?? []]);
+        draftIdentity.current = payload.draftId;
+        currentDraftTask.current = payload.threadId ?? null;
+        pendingSubmission.current = {
+          id: payload.submissionId,
+          fingerprint,
+          input: payload,
+          unconfirmed: true,
+        };
+        setActiveTaskId(payload.threadId ?? null);
+        setDraft(payload.text);
+        if (payload.modeId) setMode(payload.modeId);
+        if (payload.modelId) {
+          setModelId(payload.modelId);
+          setModelOverridden(true);
+        }
+        setAttachments(recovery?.attachments ?? []);
+        setReferences(recovery?.references ?? payload.references ?? []);
+        if (recovery?.workspaceId) setWorkspaceId(recovery.workspaceId);
+      })
+      .catch(() =>
+        setNotices((previous) => [
+          ...previous,
+          { tone: 'danger', text: '没能恢复待确认发送，发送已暂停；请重新打开应用后核对。' },
+        ]),
+      )
+      .finally(() => {
+        if (!cancelled && restored) {
+          pendingEnvironment.current = false;
+          setEnvironmentBusy(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, reportFailure]);
+
   const beginNewTask = useCallback(() => {
     if (!pendingEnvironment.current)
       void bridge
@@ -1239,6 +1338,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             ...previous,
             [event.taskId]: { turnId: event.turnId, diff: event.diff },
           }));
+          return;
+        }
+        if (event.type === 'queue-changed') {
+          void bridge
+            .listQueuedInputs?.({ threadId: event.taskId })
+            .then((queued) => {
+              setQueuedByTask((previous) =>
+                deletedTaskIds.current.has(event.taskId)
+                  ? previous
+                  : { ...previous, [event.taskId]: queued },
+              );
+            })
+            .catch((error: unknown) => reportFailure(error, '没能刷新排队消息。'));
           return;
         }
         if (event.type === 'task-updated') {
@@ -2167,6 +2279,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   // 运行态必须来自当前任务。后台自动化或另一个任务的状态事件不能把当前 Composer
   // 误切成“停止/插话”模式。
   const running = activeRoot?.status === 'running' || activeRoot?.status === 'pending';
+  useEffect(() => {
+    setSteer(false);
+    setSendFeedback(undefined);
+    if (!running) setSendReason(undefined);
+  }, [activeTaskId, running]);
+  useEffect(() => setSendReason(undefined), [activeTaskId]);
   // 03 §8：当前模型读不了图时，附件区就拒掉图片。显示与发送用同一份结果
   // （`attachment-capability.ts`）；`attachments` 本身不改，换回能读图的模型时图片就回来了。
   const imageInput = modelImageInput(models, modelId);
@@ -2274,28 +2392,85 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         gatedAttachments.some((attachment) => attachment.state !== 'ready')
       )
         return;
+      // 内容不变的未知结果始终核对原请求；运行状态或选择变化不产生第二次投递。
+      const fingerprint = JSON.stringify([identity, text, outgoingReferences]);
+      if (pendingSubmission.current?.fingerprint !== fingerprint)
+        pendingSubmission.current = { fingerprint, id: crypto.randomUUID() };
       pendingEnvironment.current = true;
       setEnvironmentBusy(true);
       try {
-        const { threadId } = await bridge.send({
-          ...(replaceGoal ? { replaceGoal: true } : {}),
-          draftId: identity,
-          ...(activeTaskId ? { threadId: activeTaskId } : {}),
-          ...(!activeTaskId && draftMemoryUse !== 'default'
-            ? { useMemories: draftMemoryUse === 'enabled' }
-            : {}),
-          text,
-          scenarioId,
-          // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
-          // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
-          ...(modelId !== undefined ? { modelId } : {}),
-          ...(mode !== undefined ? { modeId: mode } : {}),
-          // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
-          ...(!activeTaskId && workspaceId !== undefined ? { workspaceId } : {}),
-          ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
-          ...(running ? { steer } : {}),
-        });
+        const submission = pendingSubmission.current;
+        const payload: SendInput =
+          submission.unconfirmed && submission.input
+            ? submission.input
+            : {
+                submissionId: pendingSubmission.current.id,
+                recovery: {
+                  fingerprint: submission.fingerprint,
+                  attachments: gatedAttachments,
+                  references,
+                  workspaceId,
+                },
+                ...(replaceGoal ? { replaceGoal: true } : {}),
+                draftId: identity,
+                ...(activeTaskId ? { threadId: activeTaskId } : {}),
+                ...(!activeTaskId && draftMemoryUse !== 'default'
+                  ? { useMemories: draftMemoryUse === 'enabled' }
+                  : {}),
+                text,
+                scenarioId,
+                // 手选的模型跟着这一条消息走（03 §2.4：用户显式选择优先级最高）。
+                // 主进程同时把它写进任务级设置，否则下一轮又回落到场景默认值
+                ...(modelId !== undefined ? { modelId } : {}),
+                ...(mode !== undefined ? { modeId: mode } : {}),
+                // 任务在哪个目录里跑。id → path 的翻译在主进程（渲染层不持有绝对路径）
+                ...(!activeTaskId && workspaceId !== undefined ? { workspaceId } : {}),
+                ...(outgoingReferences.length > 0 ? { references: outgoingReferences } : {}),
+                ...(running ? { steer } : {}),
+              };
+        submission.input = payload;
+        // 必须先保存身份，再调用 IPC；回执丢失/应用崩溃后仍核对同一请求。
+        if (!bridge.getPendingSend)
+          localStorage.setItem(
+            PENDING_SEND_KEY,
+            JSON.stringify({ submission, attachments: gatedAttachments, references, workspaceId }),
+          );
+        const result = await bridge.send(payload);
+        if (!result.unconfirmed) {
+          await bridge.acknowledgeSend?.({ submissionId: submission.id }).catch(() => undefined);
+          try {
+            clearPendingSend(submission.id);
+          } catch {
+            /* 宿主权威回执仍保证重试不重投。 */
+          }
+        }
         if (identity !== draftIdentity.current) return;
+        if (result.unconfirmed) {
+          submission.unconfirmed = true;
+          setNotices((previous) => [
+            ...previous.filter((notice) => !notice.text.startsWith('发送结果尚未确认')),
+            {
+              tone: 'warning',
+              text: (result.degradations ?? ['发送结果尚未确认，草稿已保留。']).join(' '),
+              scope: 'task',
+            },
+          ]);
+          return;
+        }
+        pendingSubmission.current = undefined;
+        setNotices((previous) =>
+          previous.filter(
+            (notice) =>
+              !notice.text.startsWith('发送结果尚未确认') &&
+              !notice.text.startsWith('没能发出去：'),
+          ),
+        );
+        const { threadId } = result;
+        setSteer(false);
+        setSendFeedback(
+          result.queued ? '等待当前任务完成' : result.steered ? '已发送，正在调整方向' : undefined,
+        );
+        setSendReason(result.degradations?.join(' ') || undefined);
         setDraft((previous) => (previous === draft ? '' : previous));
         try {
           localStorage.removeItem(COMPOSER_DRAFT_KEY);
@@ -2307,8 +2482,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setAttachments([]);
         setReferences([]);
         if (bridge.listQueuedInputs) {
-          const queue = await bridge.listQueuedInputs({ threadId });
-          setQueuedByTask((previous) => ({ ...previous, [threadId]: queue }));
+          void bridge
+            .listQueuedInputs({ threadId })
+            .then((queue) => {
+              if (identity === draftIdentity.current && result.queued && queue.length === 0)
+                setSendFeedback(undefined);
+              setQueuedByTask((previous) => ({ ...previous, [threadId]: queue }));
+            })
+            .catch(() => {
+              if (identity === draftIdentity.current)
+                setNotices((previous) => [
+                  ...previous,
+                  {
+                    tone: 'warning',
+                    text: '消息已发送，但队列未能刷新，请稍后重新打开任务查看。',
+                    scope: 'task',
+                  },
+                ]);
+            });
         }
       } catch (err: unknown) {
         // 发送失败要把草稿还回去 —— 清空输入框又什么都没发生，用户会以为消息丢了
@@ -3002,6 +3193,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         if (id === 'new-task') beginNewTask();
       },
       queued: interactionTaskId ? (queuedByTask[interactionTaskId] ?? []) : [],
+      onQueueResume:
+        bridge.resumeQueued && interactionTaskId
+          ? () => {
+              void bridge.resumeQueued!({ threadId: interactionTaskId }).catch((error: unknown) =>
+                reportFailure(error, '没能继续队列。'),
+              );
+            }
+          : undefined,
       onQueueRemove: (id: string) => {
         if (!interactionTaskId || !bridge.removeQueuedInput) return;
         void bridge
@@ -3064,6 +3263,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         : undefined,
       steer,
       onSteerChange: setSteer,
+      sendFeedback:
+        [running ? sendFeedback : undefined, sendReason].filter(Boolean).join(' ') || undefined,
       workspaces,
       workspaceId,
       onWorkspaceChange: (id: string) => setWorkspaceId(id === 'no-project' ? undefined : id),
@@ -3198,6 +3399,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       composerContext,
       queuedByTask,
       steer,
+      sendFeedback,
+      sendReason,
       workspaceId,
       reportFailure,
       startup,

@@ -36,13 +36,14 @@ test('输入 → 发送 → 进入运行态 → 中断', async ({ page, electron
 
   /*
    * ④ **进入运行态**。断言的是后果，不是"点过了"：
-   * 输入框清空 + 按钮变成「中断」+ 对话区出现 —— 三件事一起成立，
+   * 输入框清空 + 独立发送与停止按钮 + 对话区出现 —— 三件事一起成立，
    * 才说明 send 真的穿过了 IPC、到了内核、并且界面跟着切了状态。
    */
   await expect(composer).toHaveAttribute('data-run-state', 'running');
-  const stop = page.getByRole('button', { name: '中断' });
+  const stop = page.getByRole('button', { name: '停止' });
   await expect(stop).toBeVisible();
-  await expect(page.getByRole('button', { name: '发送' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeDisabled();
   await expect(page.getByRole('main', { name: '对话区' })).toBeVisible();
 
   // ⑤ 模型回的第一片文字真的画出来了（假网关在扣住之前发了一条 delta）

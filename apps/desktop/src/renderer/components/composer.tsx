@@ -254,12 +254,14 @@ export interface ComposerProps {
 
   /** 04 §5.4 排队追问 */
   readonly queued?: readonly { readonly id: string; readonly text: string }[] | undefined;
+  readonly onQueueResume?: (() => void) | undefined;
   readonly onQueueRemove?: ((id: string) => void) | undefined;
   readonly onQueueUpdate?: ((id: string, text: string) => void) | undefined;
   readonly onQueueMove?: ((id: string, direction: -1 | 1) => void) | undefined;
   /** 04 §5.5「立即插话」：开启时走 `turn/steer` 而非入队。**默认排队** */
   readonly steer?: boolean | undefined;
   readonly onSteerChange?: ((steer: boolean) => void) | undefined;
+  readonly sendFeedback?: string | undefined;
 
   /** 本机并发已满（Q11：3）→ 发送按钮变「排队中（前面 N 个）」 */
   readonly queuePosition?: number | undefined;
@@ -534,6 +536,11 @@ export function Composer(props: ComposerProps) {
       {(props.queued ?? []).length > 0 ? (
         <div className="ew-queue" aria-label="排队中的追问">
           <p className="ew-queue-title">排队中 ({(props.queued ?? []).length})</p>
+          {runState !== 'running' && props.onQueueResume ? (
+            <button type="button" className="ew-queue-remove" onClick={props.onQueueResume}>
+              继续队列
+            </button>
+          ) : null}
           <ul className="ew-queue-list">
             {(props.queued ?? []).map((q, index, queued) => (
               <li key={q.id}>
@@ -1011,11 +1018,15 @@ export function Composer(props: ComposerProps) {
             ) : null}
 
             <SendButton
-              runState={goalCommand || memoryCommand ? 'idle' : runState}
+              runState={
+                runState === 'running' ? runState : goalCommand || memoryCommand ? 'idle' : runState
+              }
               disabled={sendDisabled}
               parsing={localControl ? 0 : parsing}
               blockedReason={!localControl && unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined}
               queuePosition={props.queuePosition}
+              steer={props.steer}
+              localCommand={Boolean(goalCommand || memoryCommand)}
               onSend={props.onSend}
               onInterrupt={props.onInterrupt}
               onAddBudget={props.onAddBudget}
@@ -1024,16 +1035,36 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
 
-      {/* 04 §5.5：两者的差别必须在 UI 上说清，不能只靠开关名字 */}
-      {runState === 'running' ? (
-        <label className="ew-steer-toggle" title="插话会打断当前思路；排队会等它做完。默认排队。">
-          <input
-            type="checkbox"
-            checked={props.steer ?? false}
-            onChange={(event) => props.onSteerChange?.(event.target.checked)}
-          />
-          立即插话
-        </label>
+      {/* 04 §5.5：只影响本次发送；停止与发送是独立动作。 */}
+      {runState === 'running' && !goalCommand && !memoryCommand ? (
+        <div className="ew-follow-up-options" role="radiogroup" aria-label="本次发送方式">
+          <label title="等待当前任务完成后处理这条消息。">
+            <input
+              type="radio"
+              name={`${completionListId}-follow-up`}
+              checked={!props.steer}
+              disabled={props.environmentBusy}
+              onChange={() => props.onSteerChange?.(false)}
+            />
+            排队发送
+          </label>
+          <label title="调整当前执行方向；已运行的动作不会撤销，在途工具可能需要先返回。">
+            <input
+              type="radio"
+              name={`${completionListId}-follow-up`}
+              checked={props.steer ?? false}
+              disabled={props.environmentBusy}
+              onChange={() => props.onSteerChange?.(true)}
+            />
+            立即插话
+          </label>
+          <span>仅本次发送，发送后恢复排队</span>
+        </div>
+      ) : null}
+      {props.sendFeedback ? (
+        <p className="ew-send-feedback" role="status" aria-label="发送状态">
+          {props.sendFeedback}
+        </p>
       ) : null}
 
       {editingQueued ? (
@@ -1157,6 +1188,8 @@ function SendButton({
   parsing,
   blockedReason,
   queuePosition,
+  steer,
+  localCommand,
   onSend,
   onInterrupt,
   onAddBudget,
@@ -1166,22 +1199,36 @@ function SendButton({
   readonly parsing: number;
   readonly blockedReason?: string | undefined;
   readonly queuePosition?: number | undefined;
+  readonly steer?: boolean | undefined;
+  readonly localCommand?: boolean | undefined;
   readonly onSend: () => void;
   readonly onInterrupt?: (() => void) | undefined;
   readonly onAddBudget?: (() => void) | undefined;
 }): ReactNode {
   if (runState === 'running') {
-    // 03 §4.6：执行中变 danger 方形 = 中断
+    // 03 §4.6：运行中始终可停止；发送独立遵守草稿和附件的可用性。
     return (
-      <button
-        type="button"
-        className="ew-send-button"
-        data-state="running"
-        aria-label="中断"
-        onClick={onInterrupt}
-      >
-        {renderIcon('stop')}
-      </button>
+      <div className="ew-composer-run-actions">
+        <button
+          type="button"
+          className="ew-stop-button"
+          onClick={onInterrupt}
+          title="停止当前任务（Esc / ⌘.）"
+        >
+          {renderIcon('stop')}
+          停止
+        </button>
+        <button
+          type="button"
+          className="ew-send-button"
+          data-state={disabled ? 'disabled' : 'ready'}
+          disabled={disabled}
+          title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : blockedReason}
+          onClick={onSend}
+        >
+          {localCommand ? '发送' : steer ? '立即插话' : '排队发送'}
+        </button>
+      </div>
     );
   }
   if (runState === 'over-budget') {

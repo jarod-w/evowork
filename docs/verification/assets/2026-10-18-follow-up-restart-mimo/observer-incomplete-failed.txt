@@ -1,0 +1,57 @@
+
+Running 4 tests using 1 worker
+
+(node:9771) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:337:1 › MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投 (22.6s)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:356:1 › MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑 (1.5m)
+  ✘  3 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:379:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次 (1.1m)
+(node:14169) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:379:3 › MiMo 重启：本机降级队列停止后强制退出，明确继续才执行一次 (1.1m)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:379:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次
+
+    Error: expect(received).toHaveLength(expected)
+
+    Expected length: 9
+    Received length: 8
+    Received array:  [{"at": 1792332850711, "id": 2, "status": 200, "type": "response"}, {"at": 1792332854104, "id": 1, "status": 200, "type": "response"}, {"at": 1792332859078, "id": 3, "status": 200, "type": "response"}, {"at": 1792332872247, "id": 1, "status": 200, "type": "response"}, {"at": 1792332885176, "id": 2, "status": 200, "type": "response"}, {"at": 1792332898954, "id": 4, "status": 200, "type": "response"}, {"at": 1792332905533, "id": 5, "status": 200, "type": "response"}, {"at": 1792332910052, "id": 6, "status": 200, "type": "response"}]
+
+      311 |     ).toBe(true);
+      312 |     const responses = wire().filter((row) => row.type === 'response');
+    > 313 |     expect(responses).toHaveLength(requests.length);
+          |                       ^
+      314 |     expect(responses.every((row) => row.status === 200)).toBe(true);
+      315 |     await c.snapshot('final-evidence');
+      316 |     ok = true;
+        at journey (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:313:23)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:383:5
+
+    Error Context: test-results/queue-steer-restart.real-MiMo-重启：本机降级队列停止后正常退出，明确继续才执行一次-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:379:3 › MiMo 重启：本机降级队列停止后强制退出，明确继续才执行一次
+
+    Error: expect(received).toHaveLength(expected)
+
+    Expected length: 7
+    Received length: 6
+    Received array:  [{"at": 1792332918469, "id": 2, "status": 200, "type": "response"}, {"at": 1792332921733, "id": 1, "status": 200, "type": "response"}, {"at": 1792332924062, "id": 3, "status": 200, "type": "response"}, {"at": 1792332932100, "id": 4, "status": 200, "type": "response"}, {"at": 1792332957013, "id": 2, "status": 200, "type": "response"}, {"at": 1792332979567, "id": 3, "status": 200, "type": "response"}]
+
+      311 |       ),
+      312 |     ).toBe(true);
+    > 313 |     const responses = wire().filter((row) => row.type === 'response');
+          |                       ^
+      314 |     const terminal = wire().filter(
+      315 |       (row) => row.type === 'response' || row.type === 'transport-error',
+      316 |     );
+        at journey (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:313:23)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:383:5
+
+    Error Context: test-results/queue-steer-restart.real-MiMo-重启：本机降级队列停止后强制退出，明确继续才执行一次-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:379:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次
+    [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:379:3 › MiMo 重启：本机降级队列停止后强制退出，明确继续才执行一次
+  2 passed (4.2m)

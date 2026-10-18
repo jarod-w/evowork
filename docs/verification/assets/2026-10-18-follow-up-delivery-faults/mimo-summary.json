@@ -1,0 +1,140 @@
+{
+  "passed": 4,
+  "retries": 0,
+  "skips": 0,
+  "duration": "2.7m",
+  "requests": 38,
+  "responses": 38,
+  "kernelStarts": 4,
+  "kernelExits": 0,
+  "credentialScan": {
+    "filesScanned": 56,
+    "credentialHits": 0,
+    "testExitCode": 0
+  },
+  "cases": [
+    {
+      "case": "stop-resume",
+      "turnStatuses": [
+        "interrupted",
+        "completed"
+      ],
+      "requests": 6,
+      "responses": 6,
+      "models": [
+        "mimo-v2.6-flash"
+      ],
+      "endpoints": [
+        "https://api.xiaomimimo.com/v1/chat/completions"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 58675,
+          "at": 1792314931391
+        }
+      ],
+      "files": {
+        "original.txt": null,
+        "queued.txt": "REALFOLLOW_RESUME_0146bb942d7d:42\n",
+        "old-plan.txt": null,
+        "redirected.txt": null
+      }
+    },
+    {
+      "case": "queue-normal",
+      "turnStatuses": [
+        "completed",
+        "completed"
+      ],
+      "requests": 9,
+      "responses": 9,
+      "models": [
+        "mimo-v2.6-flash"
+      ],
+      "endpoints": [
+        "https://api.xiaomimimo.com/v1/chat/completions"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 57536,
+          "at": 1792314792056
+        }
+      ],
+      "files": {
+        "original.txt": "REALFOLLOW_ORIGINAL_39ccab04a6e1:437\n",
+        "queued.txt": "REALFOLLOW_QUEUED_39ccab04a6e1:42\n",
+        "old-plan.txt": null,
+        "redirected.txt": null
+      }
+    },
+    {
+      "case": "queue-lost-ack",
+      "turnStatuses": [
+        "completed",
+        "completed"
+      ],
+      "requests": 14,
+      "responses": 14,
+      "models": [
+        "mimo-v2.6-flash"
+      ],
+      "endpoints": [
+        "https://api.xiaomimimo.com/v1/chat/completions"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 57858,
+          "at": 1792314823457
+        }
+      ],
+      "files": {
+        "original.txt": "REALFOLLOW_ORIGINAL_63d90dddb8cc:437\n",
+        "queued.txt": "REALFOLLOW_QUEUED_63d90dddb8cc:42\n",
+        "old-plan.txt": null,
+        "redirected.txt": null
+      }
+    },
+    {
+      "case": "steer",
+      "turnStatuses": [
+        "completed"
+      ],
+      "requests": 9,
+      "responses": 9,
+      "models": [
+        "mimo-v2.6-flash"
+      ],
+      "endpoints": [
+        "https://api.xiaomimimo.com/v1/chat/completions"
+      ],
+      "httpStatuses": [
+        200
+      ],
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 58331,
+          "at": 1792314895075
+        }
+      ],
+      "files": {
+        "original.txt": null,
+        "queued.txt": null,
+        "old-plan.txt": null,
+        "redirected.txt": "REALFOLLOW_REDIRECTED_d393611e0fc4:42\n"
+      }
+    }
+  ]
+}

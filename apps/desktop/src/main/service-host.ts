@@ -858,6 +858,8 @@ export interface ServiceHostOptions {
    * 不传 = 8 秒（见 `waitUntilGatewayReady`）。
    */
   readonly gatewayReadyTimeoutMs?: number | undefined;
+  /** 单次投递及回执核对的超时预算，默认 15 秒。 */
+  readonly deliveryTimeoutMs?: number;
   /** 注入以便测试网关就绪探测，不必真起一个 HTTP 服务 */
   readonly fetchFn?: typeof fetch | undefined;
   /**
@@ -1433,6 +1435,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       { mode: 0o600 },
     );
   const adapter = createAdapter({
+    ...(options.deliveryTimeoutMs !== undefined
+      ? { deliveryTimeoutMs: options.deliveryTimeoutMs }
+      : {}),
     validateCwd: environments.validate,
     store,
     logger,
@@ -1501,7 +1506,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         services.flushArtifactReports();
       }
       for (const mapped of translate(event)) options.emitToRenderer(IPC.uiEvent, mapped);
-      if (event.type === 'turn-completed') {
+      if (event.type === 'turn-completed' && event.status === 'completed') {
         void adapter.startNextQueued(event.threadId).catch((error: unknown) => {
           logger.warn('desktop.queue.start_failed', {
             errorClass: error instanceof Error ? error.name : 'UnknownError',

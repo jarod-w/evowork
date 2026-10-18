@@ -1,0 +1,12 @@
+{
+  "checkExitCode": 0,
+  "testsPassed": 2958,
+  "existingSkipped": 2,
+  "deterministicPassed": 23,
+  "realMimoPassed": 4,
+  "newFaultCases": 13,
+  "platform": "macOS arm64",
+  "retries": 0,
+  "credentialScanFiles": 56,
+  "credentialHits": 0
+}

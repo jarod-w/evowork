@@ -1,0 +1,9 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |desktop| test/library-host.test.ts (8 tests) 695ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  22:12:32
+   Duration  1.66s (transform 183ms, setup 90ms, collect 225ms, tests 695ms, environment 395ms, prepare 53ms)

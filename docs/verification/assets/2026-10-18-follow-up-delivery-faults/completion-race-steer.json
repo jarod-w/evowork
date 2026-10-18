@@ -1,0 +1,87 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 4,
+      "project/create": 1,
+      "config/read": 3,
+      "thread/start": 1,
+      "turn/start": 1,
+      "thread/queue/list": 18,
+      "thread/read": 46,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 2,
+      "turn/steer": 1,
+      "thread/queue/add": 1
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e48-21f6-7082-a0a4-d4d8b263f92c",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-2198-7041-bb4b-943619670020",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e48-234f-7ef0-9383-27c96e54bbd4",
+          "clientId": "2070ba04-bae4-4aed-ae7c-5ac61b437f43",
+          "content": [
+            {
+              "type": "text",
+              "text": "COMPLETED-RACE-steer",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-233a-70f1-b7d7-4053f0c75df7",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e48-2198-7041-bb4b-943619670020",
+          "status": "completed",
+          "startedAtMs": 1792314712000,
+          "completedAtMs": 1792314712000,
+          "durationMs": 404
+        },
+        {
+          "id": "01a14e48-233a-70f1-b7d7-4053f0c75df7",
+          "status": "inProgress",
+          "startedAtMs": 1792314712000
+        }
+      ],
+      "latestTurnId": "01a14e48-233a-70f1-b7d7-4053f0c75df7"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 55080,
+      "at": 1792314711472
+    }
+  ]
+}

@@ -8,7 +8,7 @@
  * 三条纪律：
  *   ① **两个迁移器**（`migrate.ts`）—— 投影类可丢弃重建，权威类宁可启动失败也不丢；
  *   ② **筛选先查 id、再用 `thread/list` 拉权威字段**（`projection.ts` 只暴露 id 查询）；
- *   ③ **不记正文** —— 连未识别通知也只记形状指纹（`store.ts` 的 `recordUnknownEvent`）。
+ *   ③ **投影与日志不记正文** —— 待发输入与待确认界面恢复内容仅存本机权威表，未识别通知也只记形状指纹（`store.ts` 的 `recordUnknownEvent`）。
  */
 export { deriveStatus, STATUS_LABEL, type DeriveInput } from './derive-status.js';
 export {
@@ -62,3 +62,10 @@ export * from './library-query.js';
 export * from './library-projection.js';
 
 export { ThreadMessages, type ThreadMessage, type ThreadMessageStatus } from './thread-messages.js';
+
+export {
+  FollowUpStore,
+  type FollowUpReceipt,
+  type FollowUpResult,
+  type StoredFollowUp,
+} from './follow-up.js';

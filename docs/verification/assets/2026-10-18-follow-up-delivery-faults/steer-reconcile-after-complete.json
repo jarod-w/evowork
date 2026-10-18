@@ -1,0 +1,92 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 4,
+      "project/create": 1,
+      "config/read": 3,
+      "thread/start": 1,
+      "turn/start": 1,
+      "thread/queue/list": 17,
+      "thread/read": 47,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 2,
+      "thread/turns/list": 2,
+      "thread/items/list": 4,
+      "turn/steer": 1
+    },
+    "held": 0,
+    "dropped": 1
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e48-5f98-73b0-8bdb-43fe57aa395d",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-5f3a-7020-9c18-ae9970a42374",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e48-6806-7ac3-b743-806e6afb4815",
+          "clientId": "cedfcdb5-3a97-4ee7-b252-750b81d84060",
+          "content": [
+            {
+              "type": "text",
+              "text": "STEER-ACCEPTED-UNKNOWN",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-5f3a-7020-9c18-ae9970a42374",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_3",
+          "text": "E2E response 3",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14e48-5f3a-7020-9c18-ae9970a42374",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e48-5f3a-7020-9c18-ae9970a42374",
+          "status": "completed",
+          "startedAtMs": 1792314728000,
+          "completedAtMs": 1792314730000,
+          "durationMs": 2264
+        }
+      ],
+      "latestTurnId": "01a14e48-5f3a-7020-9c18-ae9970a42374"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 55859,
+      "at": 1792314727244
+    }
+  ]
+}

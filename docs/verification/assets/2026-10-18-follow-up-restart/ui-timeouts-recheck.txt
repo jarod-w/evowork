@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |desktop| test/changes-view.test.tsx (12 tests | 11 skipped) 95ms
+ ✓ |desktop| test/app.test.tsx (133 tests | 132 skipped) 228ms
+
+ Test Files  2 passed (2)
+      Tests  2 passed | 143 skipped (145)
+   Start at  18:15:42
+   Duration  1.98s (transform 811ms, setup 198ms, collect 1.07s, tests 323ms, environment 849ms, prepare 111ms)

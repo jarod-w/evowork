@@ -1,0 +1,11 @@
+
+Running 4 tests using 1 worker
+
+(node:14594) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:346:1 › MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投 (19.1s)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:365:1 › MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑 (48.4s)
+  ✓  3 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:388:3 › MiMo 重启：本机降级队列停止后正常退出，明确继续才执行一次 (52.7s)
+  ✓  4 [real] › apps/desktop/test/e2e/ui/queue-steer-restart.real.spec.mjs:388:3 › MiMo 重启：本机降级队列停止后强制退出，明确继续才执行一次 (1.0m)
+
+  4 passed (3.0m)

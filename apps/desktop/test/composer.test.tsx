@@ -484,6 +484,10 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(onSend).toHaveBeenCalledOnce();
     expect(onInterrupt).not.toHaveBeenCalled();
     expect(onAddBudget).not.toHaveBeenCalled();
+    if (runState === 'running') {
+      fireEvent.click(screen.getByRole('button', { name: '停止' }));
+      expect(onInterrupt).toHaveBeenCalledOnce();
+    }
   });
 });
 
@@ -665,7 +669,7 @@ describe('发送按钮的五个态（03 §4.6）', () => {
   it('执行中变中断', () => {
     const onInterrupt = vi.fn();
     renderComposer({ runState: 'running', onInterrupt });
-    fireEvent.click(screen.getByRole('button', { name: '中断' }));
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
     expect(onInterrupt).toHaveBeenCalled();
   });
 
@@ -824,16 +828,70 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
     prompt.mockRestore();
   });
 
-  it('「立即插话」只在执行中出现，且 tooltip 说清它与排队的差别', () => {
+  it('运行中提供互斥的本次方式，默认排队，选择不会发送', () => {
+    const onSend = vi.fn();
+    const onSteerChange = vi.fn();
     const { rerender } = render(
-      <Composer value="" onChange={() => {}} onSend={() => {}} runState="idle" />,
+      <Composer value="补充要求" onChange={() => {}} onSend={onSend} runState="idle" />,
     );
-    expect(screen.queryByText('立即插话')).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: '本次发送方式' })).toBeNull();
+    rerender(
+      <Composer
+        value="补充要求"
+        onChange={() => {}}
+        onSend={onSend}
+        runState="running"
+        onSteerChange={onSteerChange}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('checked', false);
+    fireEvent.click(screen.getByRole('radio', { name: '立即插话' }));
+    expect(onSteerChange).toHaveBeenCalledWith(true);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByText('仅本次发送，发送后恢复排队')).toBeTruthy();
+  });
 
-    rerender(<Composer value="" onChange={() => {}} onSend={() => {}} runState="running" />);
-    const label = screen.getByText('立即插话').closest('label');
-    expect(label?.getAttribute('title')).toContain('插话会打断当前思路');
-    expect(label?.getAttribute('title')).toContain('默认排队');
+  it.each([false, true])('运行中发送与停止独立（插话=%s）', (steer) => {
+    const onSend = vi.fn();
+    const onInterrupt = vi.fn();
+    renderComposer({ value: '补充要求', runState: 'running', steer, onInterrupt }, onSend);
+    fireEvent.click(screen.getByRole('button', { name: steer ? '立即插话' : '排队发送' }));
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onInterrupt).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('需求输入')).toHaveProperty('value', '补充要求');
+  });
+
+  it.each([
+    { value: '' },
+    { value: '补充要求', environmentBusy: true },
+    { value: '补充要求', modelUnavailable: { text: '网关不可用' } },
+    {
+      value: '补充要求',
+      attachments: [
+        {
+          id: 'p',
+          name: '待解析',
+          state: 'parsing' as const,
+          kind: 'document' as const,
+          sizeLabel: '1 KB',
+        },
+      ],
+    },
+  ])('运行中发送不可用仍可停止：%j', (over) => {
+    const onSend = vi.fn();
+    const onInterrupt = vi.fn();
+    renderComposer({ ...over, runState: 'running', onInterrupt }, onSend);
+    expect(screen.getByRole('button', { name: '排队发送' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: '排队发送' }));
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onInterrupt).toHaveBeenCalledOnce();
+    if (over.environmentBusy)
+      expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('disabled', true);
   });
 
   it('执行中按 Esc 中断（04 §5.5）', () => {

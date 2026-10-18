@@ -54,7 +54,7 @@ async function runUntilIdle(page, { stopAfterFirstCommand = false } = {}) {
       stopAfterFirstCommand &&
       (await page.locator('.ew-item[data-kind="commandExecution"]').count()) > 0
     ) {
-      await page.getByRole('button', { name: '中断' }).click();
+      await page.getByRole('button', { name: '停止' }).click();
       stopAfterFirstCommand = false;
     }
     if ((await composer.getAttribute('data-run-state')) === 'idle') return;

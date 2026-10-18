@@ -1,0 +1,132 @@
+{
+  "faults": {
+    "counts": {
+      "initialize": 1,
+      "initialized": 1,
+      "skills/extraRoots/set": 1,
+      "hooks/list": 1,
+      "config/batchWrite": 1,
+      "permissionProfile/list": 1,
+      "experimentalFeature/list": 1,
+      "project/list": 2,
+      "thread/list": 1,
+      "skills/list": 6,
+      "project/create": 1,
+      "config/read": 4,
+      "thread/start": 1,
+      "turn/start": 3,
+      "thread/queue/list": 33,
+      "thread/read": 70,
+      "thread/name/set": 1,
+      "thread/goal/get": 1,
+      "thread/resume": 3,
+      "thread/turns/list": 3,
+      "thread/items/list": 3,
+      "thread/queue/add": 1,
+      "turn/interrupt": 1
+    },
+    "held": 0,
+    "dropped": 0
+  },
+  "histories": [
+    {
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "01a14e48-45bf-7c13-9256-89d06e6f4150",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "故障验证原任务",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-455c-7732-a2f1-3f01bf6841ab",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e48-50a2-7fc0-887b-76b62977b66a",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "STOP-QUEUE-A",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-5092-7870-be9e-9b7d5fe1bfa1",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_3",
+          "text": "E2E response 3",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14e48-5092-7870-be9e-9b7d5fe1bfa1",
+          "completed": true
+        },
+        {
+          "type": "userMessage",
+          "id": "01a14e48-50c2-7542-adb9-658961ec4aca",
+          "clientId": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "STOP-QUEUE-B",
+              "text_elements": []
+            }
+          ],
+          "_turnId": "01a14e48-50ad-7932-b4d8-d6487aa6f903",
+          "completed": true
+        },
+        {
+          "type": "agentMessage",
+          "id": "msg_4",
+          "text": "E2E response 4",
+          "phase": null,
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null,
+          "_turnId": "01a14e48-50ad-7932-b4d8-d6487aa6f903",
+          "completed": true
+        }
+      ],
+      "turns": [
+        {
+          "id": "01a14e48-455c-7732-a2f1-3f01bf6841ab",
+          "status": "interrupted",
+          "startedAtMs": 1792314721000,
+          "completedAtMs": 1792314722000,
+          "durationMs": 454
+        },
+        {
+          "id": "01a14e48-5092-7870-be9e-9b7d5fe1bfa1",
+          "status": "completed",
+          "startedAtMs": 1792314724000,
+          "completedAtMs": 1792314724000,
+          "durationMs": 19
+        },
+        {
+          "id": "01a14e48-50ad-7932-b4d8-d6487aa6f903",
+          "status": "completed",
+          "startedAtMs": 1792314724000,
+          "completedAtMs": 1792314724000,
+          "durationMs": 25
+        }
+      ],
+      "latestTurnId": "01a14e48-50ad-7932-b4d8-d6487aa6f903"
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 55546,
+      "at": 1792314720617
+    }
+  ]
+}

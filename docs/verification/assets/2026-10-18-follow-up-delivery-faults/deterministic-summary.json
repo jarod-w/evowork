@@ -1,0 +1,241 @@
+{
+  "passed": 23,
+  "newFaultCases": 13,
+  "retries": 0,
+  "skips": 0,
+  "duration": "1.1m",
+  "cases": [
+    {
+      "case": "composer-输入-→-发送-→-进入运行态-→-中断-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 53768,
+          "at": 1792314684475
+        }
+      ]
+    },
+    {
+      "case": "composer-首页不预选项目，两个无项目任务有独立目录-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 53926,
+          "at": 1792314686757
+        }
+      ]
+    },
+    {
+      "case": "output-stream-输出流保持进度与操作顺序，当前动作可见，停止和刷新后计时与详情一致-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 54100,
+          "at": 1792314688967
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-停止与继续：local队列保留两条，停止后不启动，明确继续才顺序执行-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 55546,
+          "at": 1792314720617
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-停止与继续：native队列保留两条，停止后不启动，明确继续才顺序执行-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 55388,
+          "at": 1792314716088
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-发送处理中：连续回车和点击只投递一次，切任务后迟到回执不污染新草稿-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 54931,
+          "at": 1792314709406
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-回执等待中仍可停止，已接受的排队项不会越过停止自动执行-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56022,
+          "at": 1792314731196
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-已接受后的队列刷新失败不会谎报没发出去-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 55712,
+          "at": 1792314725239
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-拒绝：草稿、附件和插话选择保留，重试只接受一次-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 54282,
+          "at": 1792314694960
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-排队drop-response：超时核对原生队列，迟到回执不重复发送-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 54430,
+          "at": 1792314697343
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-排队hold-response：超时核对原生队列，迟到回执不重复发送-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 54591,
+          "at": 1792314701361
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-插话已接受但核对故障：完成后沿用原身份核对，不会再建回合-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 55859,
+          "at": 1792314727244
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-无法确认：保留草稿附件，重复发送只核对、不盲目重投-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 54768,
+          "at": 1792314705390
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-结束竞态叠加队列不可用：本机降级消息直接进入新回合-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56169,
+          "at": 1792314733276
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-结束竞态：queue请求在原回合结束后才到达，接受一次且反馈真实-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 55229,
+          "at": 1792314713756
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-faults-结束竞态：steer请求在原回合结束后才到达，接受一次且反馈真实-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 55080,
+          "at": 1792314711472
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-切换运行任务或回到新任务时不携带插话选择-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 57242,
+          "at": 1792314747545
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-运行中：Esc-把回合停下来-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56622,
+          "at": 1792314739556
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-运行中：单次插话、发送反馈与下一条恢复排队-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56475,
+          "at": 1792314737376
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-运行中：窄窗发送和停止独立，停止保留草稿；下轮恢复排队-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 57076,
+          "at": 1792314745393
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-运行中：缺失活动回合投影时插话改为排队，完整显示原因-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56929,
+          "at": 1792314743356
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-运行中：追问进排队区，能调序、能编辑、能删除，放行后自动跑-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56769,
+          "at": 1792314741296
+        }
+      ]
+    },
+    {
+      "case": "queue-steer-运行中：默认是排队而不是插话-fake",
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 56317,
+          "at": 1792314735605
+        }
+      ]
+    }
+  ],
+  "kernelStarts": 23,
+  "kernelExits": 0
+}

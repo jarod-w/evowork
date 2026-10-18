@@ -78,6 +78,7 @@ export interface DeeplinkDelivery {
 }
 
 export type RendererEvent =
+  | { readonly type: 'queue-changed'; readonly taskId: string }
   | {
       readonly type: 'file-open-requested';
       readonly taskId: string;
@@ -317,6 +318,16 @@ export type ModelUnavailableReason =
   'no-token' | 'no-keys' | 'unauthorized' | 'unreachable' | 'empty' | 'http' | 'broken-install';
 
 export interface SendInput {
+  /** 仅用于本机崩溃恢复，不进入模型输入或日志。 */
+  readonly recovery?:
+    | {
+        readonly fingerprint: string;
+        readonly attachments: readonly ComposerAttachmentView[];
+        readonly references: readonly ComposerReferenceView[];
+        readonly workspaceId?: string | undefined;
+      }
+    | undefined;
+  readonly submissionId?: string | undefined;
   /** 只在新任务创建前设置；已进入历史的记忆无法撤回。 */
   readonly useMemories?: boolean | undefined;
   /** 已确认替换现有目标；宿主仍重新检查权威状态。 */
@@ -349,6 +360,15 @@ export interface SendInput {
   readonly references?: readonly ComposerReferenceView[] | undefined;
   /** 运行中发送时，true = 立即插话；false/缺省 = 排队。 */
   readonly steer?: boolean | undefined;
+}
+
+/** 宿主确认的投递结果；不能用用户选择推断插话是否成功。 */
+export interface SendResult {
+  readonly unconfirmed?: boolean;
+  readonly threadId: string;
+  readonly queued?: boolean;
+  readonly steered?: boolean;
+  readonly degradations?: readonly string[];
 }
 
 /**

@@ -1,0 +1,8 @@
+
+Running 1 test using 1 worker
+
+(node:97452) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/output-stream.spec.mjs:3:1 › 输出流保持进度与操作顺序，当前动作可见，停止和刷新后计时与详情一致 (8.6s)
+
+  1 passed (9.1s)

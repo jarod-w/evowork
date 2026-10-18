@@ -1,0 +1,11 @@
+
+Running 4 tests using 1 worker
+
+(node:57529) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/queue-steer.real.spec.mjs:107:3 › MiMo：排队等待原回合结束，丢回执=false，反馈准确 (32.1s)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/queue-steer.real.spec.mjs:107:3 › MiMo：排队等待原回合结束，丢回执=true，反馈准确 (1.2m)
+  ✓  3 [real] › apps/desktop/test/e2e/ui/queue-steer.real.spec.mjs:198:1 › MiMo：立即插话改变同一回合的后续计划，反馈与实际结果一致 (36.3s)
+  ✓  4 [real] › apps/desktop/test/e2e/ui/queue-steer.real.spec.mjs:265:1 › MiMo：停止后保留队列，明确继续才计算追加任务 (22.3s)
+
+  4 passed (2.7m)
