@@ -231,6 +231,18 @@ outdir = Path(args[args.index("--outdir") + 1])
     expect(existsSync(join(dir, 'out.docx'))).toBe(false);
   });
 
+  it.runIf(hasDocx)('转换程序失败时不留下 PDF', () => {
+    const script = fakeConverter(`
+import sys
+sys.stderr.write("converter failed")
+sys.exit(1)
+`);
+    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
+    expect(existsSync(join(dir, 'out.docx'))).toBe(false);
+  });
+
   it.runIf(hasDocx)('转换结果没有 PDF 头时不把文件留下', () => {
     const script = fakeConverter(`
 import sys

@@ -108,6 +108,69 @@ describe('图示只画三种结构', () => {
     expect(existsSync(join(dir, 'too-many.svg'))).toBe(false);
   });
 
+  it('组织关系超过 4 层时拒绝', () => {
+    const result = run(
+      {
+        diagram: 'org',
+        title: '层级',
+        root: {
+          text: '一层',
+          children: [
+            {
+              text: '二层',
+              children: [
+                { text: '三层', children: [{ text: '四层', children: [{ text: '五层' }] }] },
+              ],
+            },
+          ],
+        },
+      },
+      'deep.svg',
+    );
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(parseFailure(result.stderr).message).toContain('4');
+    expect(existsSync(join(dir, 'deep.svg'))).toBe(false);
+  });
+
+  it('排期跨度超过 366 天时拒绝', () => {
+    const result = run(
+      {
+        diagram: 'gantt',
+        title: '长计划',
+        rows: [{ name: '全程', start: '2026-01-01', end: '2027-01-02' }],
+      },
+      'long.svg',
+    );
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(parseFailure(result.stderr).message).toContain('366');
+    expect(existsSync(join(dir, 'long.svg'))).toBe(false);
+  });
+
+  it('没有中文时 png 不依赖中文字体', () => {
+    const result = runPython(
+      RENDER,
+      [
+        '--content',
+        writeContent(dir, {
+          diagram: 'flowchart',
+          title: 'Pay',
+          nodes: [
+            { id: 'a', text: 'Send' },
+            { id: 'b', text: 'Done' },
+          ],
+          edges: [{ from: 'a', to: 'b' }],
+        }),
+        '--out',
+        join(dir, 'flow.png'),
+      ],
+      { EVOWORK_CJK_FONT: '/nonexistent/evowork-cjk.ttf' },
+    );
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    expect(readFileSync(join(dir, 'flow.png')).subarray(0, 4)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    );
+  });
+
   it('没有中文字体时不写出含中文的 png', () => {
     const result = runPython(
       RENDER,

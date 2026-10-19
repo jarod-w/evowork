@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +15,14 @@ import {
 } from '../../_shared/test-helpers.js';
 
 const CHECK = resolve(dirname(fileURLToPath(import.meta.url)), '../container_tools/check.py');
+const DOCUMENTS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../documents/container_tools/render.py',
+);
+const SPREADSHEETS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../spreadsheets/container_tools/render.py',
+);
 
 let dir: string;
 beforeEach(() => {
@@ -136,6 +145,46 @@ describe('扫描文本才能入账', () => {
     expect(existsSync(join(dir, 'out.json'))).toBe(false);
   });
 
+  it('台账交给 spreadsheets 后，金额是数字，公式列仍是公式', () => {
+    const result = run({
+      output: 'ledger',
+      source: sourceFile('scan.txt', '2026-09-01 出租车 128.00'),
+      title: '报销台账',
+      sheet: '明细',
+      columns: [
+        { header: '日期', type: 'date' },
+        { header: '摘要', type: 'text' },
+        { header: '金额', type: 'currency' },
+        { header: '备注', type: 'currency', formula: '=C{row}' },
+      ],
+      rows: [['2026-09-01', '出租车', '128.00', null]],
+    });
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    const rendered = runPython(SPREADSHEETS, [
+      '--content',
+      join(dir, 'out.json'),
+      '--out',
+      join(dir, 'ledger.xlsx'),
+    ]);
+    expect(rendered.status, rendered.stderr).toBe(EXIT.ok);
+    const inspected = execFileSync(
+      'python3',
+      [
+        '-c',
+        [
+          'from openpyxl import load_workbook',
+          `book = load_workbook(${JSON.stringify(join(dir, 'ledger.xlsx'))})`,
+          'sheet = book.active',
+          'print(sheet["C2"].value)',
+          'print(sheet["D2"].value)',
+          'print(sheet["A2"].value)',
+        ].join('\n'),
+      ],
+      { encoding: 'utf8' },
+    ).trim();
+    expect(inspected.split('\n')).toEqual(['128', '=C2', '2026-09-01']);
+  });
+
   it('图片不识别', () => {
     const path = join(dir, 'page.png');
     writeFileSync(path, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
@@ -185,6 +234,20 @@ describe('扫描文本才能写纪要', () => {
     expect(content.blocks.find((block) => block.block === 'bullets')?.items).toEqual([
       '通过三季度预算',
     ]);
+  });
+
+  it('纪要交给 documents 后决议还在', () => {
+    expect(run(minutes()).status).toBe(EXIT.ok);
+    const rendered = runPython(DOCUMENTS, [
+      '--content',
+      join(dir, 'out.json'),
+      '--out',
+      join(dir, 'minutes.md'),
+    ]);
+    expect(rendered.status, rendered.stderr).toBe(EXIT.ok);
+    const markdown = readFileSync(join(dir, 'minutes.md'), 'utf8');
+    expect(markdown).toContain('通过三季度预算');
+    expect(markdown).toContain('催收逾期款');
   });
 
   it('原文没有的决议被拒绝，且不把决议写进报错', () => {

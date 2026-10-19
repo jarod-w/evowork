@@ -101,6 +101,37 @@ describe('只在工作区里移动', () => {
     expect(readFileSync(join(ws, 'a.txt'), 'utf8')).toBe('a');
   });
 
+  it('绝对路径指向工作区外时拒绝', () => {
+    const outside = join(dir, 'outside');
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'secret.txt'), 'secret');
+    writeFileSync(join(ws, 'a.txt'), 'a');
+    const result = run({
+      operation: 'rename',
+      workspace: ws,
+      items: [{ from: 'a.txt', to: join(outside, 'secret.txt') }],
+    });
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(readFileSync(join(outside, 'secret.txt'), 'utf8')).toBe('secret');
+    expect(readFileSync(join(ws, 'a.txt'), 'utf8')).toBe('a');
+  });
+
+  it('路径经过符号链接目录时拒绝', () => {
+    const outside = join(dir, 'outside');
+    mkdirSync(outside);
+    symlinkSync(outside, join(ws, 'linked'));
+    writeFileSync(join(ws, 'a.txt'), 'a');
+    const result = run({
+      operation: 'rename',
+      workspace: ws,
+      items: [{ from: 'a.txt', to: 'linked/a.txt' }],
+    });
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(parseFailure(result.stderr).message).toContain('符号链接');
+    expect(readFileSync(join(ws, 'a.txt'), 'utf8')).toBe('a');
+    expect(existsSync(join(outside, 'a.txt'))).toBe(false);
+  });
+
   it('不跟随符号链接', () => {
     const outside = join(dir, 'outside');
     mkdirSync(outside);
@@ -171,6 +202,20 @@ outdir = Path(args[args.index("--outdir") + 1])
     expect(result.status, result.stderr).toBe(EXIT.ok);
     expect(readFileSync(join(ws, '周报.docx'), 'utf8')).toBe('doc');
     expect(readFileSync(join(ws, '周报.pdf')).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+  });
+
+  it('转换失败时 docx 原件还在，也不留下 PDF', () => {
+    writeFileSync(join(ws, '周报.docx'), 'doc');
+    const script = join(dir, 'soffice-fail');
+    writeFileSync(script, '#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n', 'utf8');
+    chmodSync(script, 0o755);
+    const result = run(
+      { operation: 'docx-to-pdf', workspace: ws, files: ['周报.docx'] },
+      { EVOWORK_OFFICE_CONVERTER: script },
+    );
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(readFileSync(join(ws, '周报.docx'), 'utf8')).toBe('doc');
+    expect(existsSync(join(ws, '周报.pdf'))).toBe(false);
   });
 
   it('没有 soffice 时不产生 PDF', () => {

@@ -14,6 +14,10 @@ import {
 } from '../../_shared/test-helpers.js';
 
 const CHECK = resolve(dirname(fileURLToPath(import.meta.url)), '../container_tools/check.py');
+const DOCUMENTS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../documents/container_tools/render.py',
+);
 
 let dir: string;
 beforeEach(() => {
@@ -68,6 +72,17 @@ describe('会议纪要必须能跟进', () => {
     expect(result.status).toBe(EXIT.invalidContent);
     expect(parseFailure(result.stderr).message).toContain('owner');
     expect(result.stderr).not.toContain('鹏程公司');
+  });
+
+  it('交给 documents 后能写出纪要正文', () => {
+    expect(run(GOOD).status).toBe(EXIT.ok);
+    const content = join(dir, 'out.json');
+    const markdown = runPython(DOCUMENTS, ['--content', content, '--out', join(dir, 'minutes.md')]);
+    expect(markdown.status, markdown.stderr).toBe(EXIT.ok);
+    expect(readFileSync(join(dir, 'minutes.md'), 'utf8')).toContain('通过三季度预算');
+    const docx = runPython(DOCUMENTS, ['--content', content, '--out', join(dir, 'minutes.docx')]);
+    expect(docx.status, docx.stderr).toBe(EXIT.ok);
+    expect(readFileSync(join(dir, 'minutes.docx')).subarray(0, 2).toString('latin1')).toBe('PK');
   });
 
   it('截止日期不是 YYYY-MM-DD 时拒绝', () => {

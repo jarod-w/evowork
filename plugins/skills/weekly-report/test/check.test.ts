@@ -14,6 +14,10 @@ import {
 } from '../../_shared/test-helpers.js';
 
 const CHECK = resolve(dirname(fileURLToPath(import.meta.url)), '../container_tools/check.py');
+const DOCUMENTS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../documents/container_tools/render.py',
+);
 
 let dir: string;
 beforeEach(() => {
@@ -52,6 +56,21 @@ describe('周报三节都要在', () => {
     expect(
       content.blocks.filter((block) => block.block === 'bullets').map((block) => block.items),
     ).toEqual([['完成三季度对账'], ['本周没有新的风险'], ['周五前发出催收函']]);
+  });
+
+  it('交给 documents 后三节能出现在 markdown 里', () => {
+    expect(run(GOOD).status).toBe(EXIT.ok);
+    const rendered = runPython(DOCUMENTS, [
+      '--content',
+      join(dir, 'out.json'),
+      '--out',
+      join(dir, 'weekly.md'),
+    ]);
+    expect(rendered.status, rendered.stderr).toBe(EXIT.ok);
+    const markdown = readFileSync(join(dir, 'weekly.md'), 'utf8');
+    expect(markdown).toContain('本期');
+    expect(markdown).toContain('完成三季度对账');
+    expect(markdown).toContain('周五前发出催收函');
   });
 
   it('省掉风险节时拒绝', () => {

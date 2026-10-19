@@ -14,6 +14,10 @@ import {
 } from '../../_shared/test-helpers.js';
 
 const CHECK = resolve(dirname(fileURLToPath(import.meta.url)), '../container_tools/check.py');
+const DOCUMENTS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../documents/container_tools/render.py',
+);
 
 let dir: string;
 beforeEach(() => {
@@ -62,6 +66,21 @@ describe('分析必须带来源和结论', () => {
     expect(result.status).toBe(EXIT.invalidContent);
     expect(parseFailure(result.stderr).message).toContain('source');
     expect(result.stderr).not.toContain('鹏程公司');
+  });
+
+  it('报告交给 documents 后，来源和结论都在正文里', () => {
+    expect(run(GOOD).status).toBe(EXIT.ok);
+    const rendered = runPython(DOCUMENTS, [
+      '--content',
+      join(dir, 'out.json'),
+      '--out',
+      join(dir, 'analysis.md'),
+    ]);
+    expect(rendered.status, rendered.stderr).toBe(EXIT.ok);
+    const markdown = readFileSync(join(dir, 'analysis.md'), 'utf8');
+    expect(markdown).toContain('revenue.xlsx / 明细');
+    expect(markdown).toContain('先核对华东区折扣');
+    expect(markdown).toContain('来源：revenue.xlsx 的明细表');
   });
 
   it('没有来源文件时拒绝', () => {
