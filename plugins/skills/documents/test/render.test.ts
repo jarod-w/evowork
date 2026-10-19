@@ -231,6 +231,85 @@ describe('纸张默认是 A4（2026-09-28 外部验收 A1）', () => {
   });
 });
 
+describe('改已有文件：提取成内容 JSON', () => {
+  it('md 往返保留标题、层级、表格和分页', () => {
+    const source = { ...DOC, template: 'memo', author: '财务部', date: '2026-09-05' };
+    expect(run(source, 'out.md').status).toBe(EXIT.ok);
+    const extracted = runPython(RENDER, [
+      '--extract',
+      join(dir, 'out.md'),
+      '--out',
+      join(dir, 'back.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(EXIT.ok);
+    const content = JSON.parse(readFileSync(join(dir, 'back.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(content.template).toBe('memo');
+    expect(content.title).toBe(DOC.title);
+    expect(content.author).toBe('财务部');
+    expect(content.date).toBe('2026-09-05');
+    expect(content.toc).toBe(true);
+    expect(content.blocks).toEqual(DOC.blocks);
+  });
+
+  it('找不到文件时退出码 2，且不报堆栈', () => {
+    const result = runPython(RENDER, [
+      '--extract',
+      join(dir, 'missing.md'),
+      '--out',
+      join(dir, 'back.json'),
+    ]);
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(result.stderr).not.toContain('Traceback');
+    expect(parseFailure(result.stderr).message).toContain('missing.md');
+  });
+
+  it.runIf(hasDocx)('docx 往返保留模板、大纲、列表和表格', () => {
+    const source = {
+      template: 'memo',
+      title: '周报',
+      author: '财务部',
+      date: '2026-09-05',
+      blocks: [
+        { block: 'heading', level: 1, text: '本期' },
+        { block: 'paragraph', text: '营收同比增长 18%。' },
+        { block: 'bullets', items: ['A 线', 'B 线'] },
+        { block: 'table', header: ['产品线', '营收'], rows: [['A 线', '1,240 万']] },
+        { block: 'pagebreak' },
+        { block: 'heading', level: 2, text: '下周' },
+      ],
+    };
+    expect(run(source, 'note.docx').status).toBe(EXIT.ok);
+    const extracted = runPython(RENDER, [
+      '--extract',
+      join(dir, 'note.docx'),
+      '--out',
+      join(dir, 'note.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(EXIT.ok);
+    const content = JSON.parse(readFileSync(join(dir, 'note.json'), 'utf8')) as {
+      template: string;
+      blocks: unknown;
+    };
+    expect(content.template).toBe('memo');
+    expect(content.blocks).toEqual(source.blocks);
+  });
+
+  it('没装办公扩展时提取 docx 给出安装提示', () => {
+    writeFileSync(join(dir, 'x.docx'), 'not-a-docx');
+    const result = runPython(
+      RENDER,
+      ['--extract', join(dir, 'x.docx'), '--out', join(dir, 'x.json')],
+      WITHOUT_OFFICE_RUNTIME,
+    );
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toContain('办公扩展');
+    expect(result.stderr).not.toContain('Traceback');
+  });
+});
+
 describe('失败输出不含用户内容（Q14 同口径）', () => {
   it('报错里不出现正文', () => {
     const bad = {

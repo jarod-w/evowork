@@ -81,6 +81,24 @@ docx 的目录是 Word 的**域**，不是一段文字。用 python-docx 写进�
 渲染器会在目录下方留一行提示说明这件事 —— 你不需要另外解释，但如果用户问起"目录怎么是空的"，
 答案就是这个。
 
+## 改已有文件
+
+用户拿出的是一份已经存在的 docx 或 Markdown 时，**不要另起一份内容 JSON 重写**。先提取，再改，再写回：
+
+```bash
+python3 container_tools/render.py --extract "<绝对路径>/周报.docx" --out "<绝对路径>/周报.content.json"
+
+node container_tools/mark_artifact.mjs \
+  --operation-kind edit --expected-output-count 1 --output-format docx \
+  --title "周报" --path "<绝对路径>/周报.docx"
+
+python3 container_tools/render.py --content "<绝对路径>/周报.content.json" --out "<绝对路径>/周报.docx"
+```
+
+提取结果就是生成时用的内容 JSON。我们自己生成的文件会带上模板标记，提取后仍用原来的 `report` / `memo` / `minimal`。别人做的文件没有标记时，渲染用默认的 `report`。
+
+提取能收回的是标题、大纲级别（或「标题 1」样式）、项目符号、表格和正文。引用块、文本框和封面装饰收不回来，会变成普通段落或被跳过；封面和目录自带的分页不进入正文。图片会抽到内容 JSON 旁边的 `extracted-media/`。超过 400 个块、表超过 10 列或 200 行时停下来，不截断。
+
 ## 需要办公扩展
 
 `.docx` 依赖本机的**办公扩展**（Python + python-docx，约 120MB，按需下载）。

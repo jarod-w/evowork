@@ -90,6 +90,17 @@ python3 container_tools/render.py --content content.json --out "<绝对路径>/Q
 
 不确定用哪个就用 `business`。
 
+## 改已有文件
+
+用户要改的是已经存在的 pptx 时，先提取成内容 JSON，改 JSON，再写回。上报用 `--operation-kind edit`。
+
+```bash
+python3 container_tools/render.py --extract "<绝对路径>/汇报.pptx" --out "<绝对路径>/汇报.content.json"
+python3 container_tools/render.py --content "<绝对路径>/汇报.content.json" --out "<绝对路径>/汇报.pptx"
+```
+
+我们自己生成的文件按五种版式原样收回，模板标记还在。别人做的文件按「标题 / 要点 / 图表 / 表格 / 章节」归类：一页超过 6 条要点、没有标题、或既没有文字也没有表时停下来，不截断、不编一页空内容。图表图片抽到内容 JSON 旁边的 `extracted-media/`。动画、自由摆放的装饰和第六种版式收不回来。
+
 ## 需要办公扩展
 
 渲染依赖本机的**办公扩展**（Python + python-pptx，约 120MB，按需下载）。

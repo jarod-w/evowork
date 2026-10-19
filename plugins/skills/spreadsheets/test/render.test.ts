@@ -287,3 +287,71 @@ describe('**条件汇总的条件一个都对不上** → 拒绝（2026-09-28 �
     expect(parseFailure(result.stderr).message).toContain('SUMIFS');
   });
 });
+
+describe('改已有文件：提取成内容 JSON', () => {
+  it('csv 往返保留文字和整数，不把公式列的空单元格当成结果', () => {
+    const content = {
+      sheets: [
+        {
+          name: 'plain',
+          columns: [
+            { header: '产品', type: 'text' },
+            { header: '数量', type: 'integer' },
+          ],
+          rows: [
+            ['A 线', 2],
+            ['B 线', 3],
+          ],
+          freeze_header: true,
+        },
+      ],
+    };
+    expect(run(content, 'plain.csv').status).toBe(EXIT.ok);
+    const extracted = runPython(RENDER, [
+      '--extract',
+      join(dir, 'plain.csv'),
+      '--out',
+      join(dir, 'plain.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(EXIT.ok);
+    expect(JSON.parse(readFileSync(join(dir, 'plain.json'), 'utf8'))).toEqual(content);
+
+    expect(run(SHEET, 'formula.csv').status).toBe(EXIT.ok);
+    const refused = runPython(RENDER, [
+      '--extract',
+      join(dir, 'formula.csv'),
+      '--out',
+      join(dir, 'formula.json'),
+    ]);
+    expect(refused.status).toBe(EXIT.invalidContent);
+    expect(parseFailure(refused.stderr).message).toContain('xlsx');
+  });
+
+  it.runIf(hasOpenpyxl)('xlsx 把同一列公式收成 {row}，合计行收成 total_row', () => {
+    expect(run(SHEET, 'book.xlsx').status).toBe(EXIT.ok);
+    const extracted = runPython(RENDER, [
+      '--extract',
+      join(dir, 'book.xlsx'),
+      '--out',
+      join(dir, 'book.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(EXIT.ok);
+    const sheet = (
+      JSON.parse(readFileSync(join(dir, 'book.json'), 'utf8')) as {
+        sheets: {
+          columns: { header: string; formula?: string }[];
+          rows: unknown[][];
+          total_row?: boolean;
+          freeze_header?: boolean;
+        }[];
+      }
+    ).sheets[0]!;
+    expect(sheet.columns[3]).toMatchObject({ header: '金额', formula: '=B{row}*C{row}' });
+    expect(sheet.rows).toEqual([
+      ['A 线', 12.5, 100, null],
+      ['B 线', 8, 200, null],
+    ]);
+    expect(sheet.total_row).toBe(true);
+    expect(sheet.freeze_header).toBe(true);
+  });
+});

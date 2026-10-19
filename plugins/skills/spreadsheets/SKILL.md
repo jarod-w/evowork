@@ -102,6 +102,19 @@ csv 没有公式。输出 csv 时计算列会**留空并在表头标注"（公�
 而不是悄悄填一个算好的值 —— 用户看到空列会来问，看到一个数不会。
 需要公式就输出 xlsx。
 
+## 改已有文件
+
+用户要改的是已经存在的 xlsx 或 csv 时，先提取成内容 JSON，改 JSON，再写回。上报用 `--operation-kind edit`。
+
+```bash
+python3 container_tools/render.py --extract "<绝对路径>/对账.xlsx" --out "<绝对路径>/对账.content.json"
+python3 container_tools/render.py --content "<绝对路径>/对账.content.json" --out "<绝对路径>/对账.xlsx"
+```
+
+xlsx 里同一列、随行号变化的公式会收成 `=B{row}*C{row}` 这种模板，数据行对应位置是 `null`。绝对引用（`$D$2`）保持原样。合计行只有在数字列都是 `SUM` 时才收成 `total_row`。一列里既有公式又有常量，或各行公式收不成同一个模板时停下来，不把其中一种悄悄丢掉。
+
+csv 没有公式。表头带「公式列，csv 不支持」时拒绝提取，让你改去读原来的 xlsx，而不是交出一张空列看起来像结果的表。
+
 ## 需要办公扩展
 
 `.xlsx` 依赖本机的**办公扩展**（Python + openpyxl，约 120MB，按需下载）。

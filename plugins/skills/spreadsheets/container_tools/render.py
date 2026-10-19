@@ -35,6 +35,7 @@ from evowork_skill import (  # noqa: E402
     runtime_missing_message,
     succeeded,
     validate_content,
+    write_extracted,
 )
 
 MAX_COLUMNS = 60
@@ -431,16 +432,290 @@ def render_xlsx(content: dict, out_path: Path) -> None:
     book.save(out_path)
 
 
+FORMULA_HEADER_MARK = "（公式列，csv 不支持）"
+FORMAT_TO_TYPE = {
+    "@": "text",
+    "#,##0.00": "number",
+    "#,##0": "integer",
+    "¥#,##0.00": "currency",
+    "0.0%": "percent",
+    "yyyy-mm-dd": "date",
+}
+MAX_DATA_ROWS = 50000
+
+
+def _missing(path: Path) -> None:
+    if not path.is_file():
+        fail(EXIT_INVALID_CONTENT, f"找不到要提取的文件：{path.name}。")
+
+
+def _cell_template(formula: str, row_number: int) -> str:
+    """把当前行号收成 `{row}`。`$2` 这种绝对行号不动，避免 SUM 区间被改掉。"""
+    text = formula if str(formula).startswith("=") else f"={formula}"
+    return re.sub(rf"(?<!\$){row_number}(?!\d)", "{row}", text)
+
+
+def _json_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d")
+    return str(value)
+
+
+def extract_csv(path: Path) -> dict:
+    _missing(path)
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    if len(rows) < 2:
+        fail(EXIT_INVALID_CONTENT, "这份 csv 至少要有表头和一行数据。")
+    headers = rows[0]
+    if any(header.endswith(FORMULA_HEADER_MARK) for header in headers):
+        fail(
+            EXIT_INVALID_CONTENT,
+            "csv 里没有公式，计算列只留下了空单元格。请改从原来的 xlsx 提取，不要把空列当成结果。",
+        )
+    if any(not header.strip() for header in headers):
+        fail(EXIT_INVALID_CONTENT, "表头有空列，提取会把右边的列错位。")
+    columns = []
+    parsed_columns: list[list[object]] = []
+    for header_index, header in enumerate(headers):
+        values = [row[header_index] if header_index < len(row) else "" for row in rows[1:]]
+        parsed: list[object] = []
+        saw_text = False
+        saw_float = False
+        for raw in values:
+            text = raw.strip()
+            if text == "":
+                parsed.append(None)
+                continue
+            try:
+                number = float(text)
+            except ValueError:
+                saw_text = True
+                parsed.append(text)
+                continue
+            if "." in text or "e" in text.lower():
+                saw_float = True
+                parsed.append(number)
+            else:
+                parsed.append(int(number))
+        if saw_text:
+            kind = "text"
+            parsed = [None if value is None else str(value) if not isinstance(value, str) else value for value in parsed]
+        elif saw_float:
+            kind = "number"
+        elif any(value is not None for value in parsed):
+            kind = "integer"
+        else:
+            kind = "text"
+        columns.append({"header": header.strip(), "type": kind})
+        parsed_columns.append(parsed)
+    body = [list(row) for row in zip(*parsed_columns)] if parsed_columns else []
+    name = re.sub(r"[:\\/?*\[\]]+", "-", path.stem).strip()[:31] or "Sheet1"
+    return {"sheets": [{"name": name, "columns": columns, "rows": body, "freeze_header": True}]}
+
+
+def _conditional_formats(sheet, headers: list[str]) -> list[dict]:  # noqa: ANN001
+    found: list[dict] = []
+    rules = getattr(sheet.conditional_formatting, "_cf_rules", {})
+    for sqref, cf_rules in rules.items():
+        letters = str(sqref).split(":")[0]
+        match = re.match(r"([A-Za-z]+)", letters)
+        if match is None:
+            fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」的条件格式认不出作用列，不会静默丢掉。")
+        index = column_index(match.group(1))
+        if index >= len(headers):
+            fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」的条件格式落在表头外面，不会静默丢掉。")
+        for rule in cf_rules:
+            formula = " ".join(str(item) for item in (getattr(rule, "formula", None) or []))
+            kind = getattr(rule, "type", "")
+            operator = getattr(rule, "operator", "")
+            if kind == "dataBar":
+                name = "data-bar"
+            elif kind == "cellIs" and operator == "lessThan" and formula.strip() == "0":
+                name = "negative-red"
+            elif kind == "cellIs" and operator == "greaterThan" and formula.upper().startswith("AVERAGE("):
+                name = "above-average-green"
+            elif (
+                kind == "cellIs"
+                and operator == "greaterThanOrEqual"
+                and formula.upper().startswith("LARGE(")
+            ):
+                name = "top10-green"
+            else:
+                fail(
+                    EXIT_INVALID_CONTENT,
+                    f"「{sheet.title}」有一条条件格式不是这四种"
+                    f"（负数标红 / 高于平均 / 前 10 / 数据条），提取不会静默丢掉它。",
+                )
+            found.append({"column": headers[index], "rule": name})
+    return found
+
+
+def extract_xlsx(path: Path) -> dict:
+    _missing(path)
+    try:
+        from openpyxl import load_workbook
+    except ModuleNotFoundError:
+        fail(EXIT_RUNTIME_MISSING, runtime_missing_message("office", "读取 xlsx"))
+
+    book = load_workbook(path, data_only=False)
+    sheets = []
+    for sheet in book.worksheets:
+        if sheet.max_column < 1 or sheet.max_row < 1 or sheet.cell(1, 1).value is None:
+            fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」没有表头。")
+        headers: list[str] = []
+        for col in range(1, sheet.max_column + 1):
+            value = sheet.cell(1, col).value
+            if value is None:
+                if any(sheet.cell(1, later).value is not None for later in range(col + 1, sheet.max_column + 1)):
+                    fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」的表头有空列，提取会把右边的列错位。")
+                break
+            headers.append(str(value).strip())
+        if len(headers) > MAX_COLUMNS:
+            fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」超过 {MAX_COLUMNS} 列。")
+
+        last = 1
+        for row in range(2, sheet.max_row + 1):
+            if any(sheet.cell(row, col).value is not None for col in range(1, len(headers) + 1)):
+                last = row
+        note = None
+        total = False
+        if last > 1 and sheet.cell(last, 1).value == "合计":
+            for col in range(2, len(headers) + 1):
+                value = sheet.cell(last, col).value
+                kind = FORMAT_TO_TYPE.get(sheet.cell(last, col).number_format, "text")
+                header_kind = FORMAT_TO_TYPE.get(sheet.cell(2, col).number_format, "text")
+                if header_kind in ("number", "integer", "currency"):
+                    expected = f"=SUM({column_letter(col - 1)}2:{column_letter(col - 1)}{last - 1})"
+                    if value != expected:
+                        fail(
+                            EXIT_INVALID_CONTENT,
+                            f"「{sheet.title}」的合计行里有不是 SUM 的格子，提取不会把它当成公式合计。",
+                        )
+                elif value not in (None, ""):
+                    fail(
+                        EXIT_INVALID_CONTENT,
+                        f"「{sheet.title}」的合计行里有写死的数，提取不会把它当成公式合计。",
+                    )
+            total = True
+            last -= 1
+        for row in range(last + 1, sheet.max_row + 1):
+            values = [sheet.cell(row, col).value for col in range(1, len(headers) + 1)]
+            if values[0] not in (None, "") and all(item in (None, "") for item in values[1:]):
+                note = str(values[0])
+                break
+
+        data_end = last
+        if data_end - 1 > MAX_DATA_ROWS:
+            fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」超过 {MAX_DATA_ROWS} 行。把原始数据留给用户，不要提取成内容 JSON。")
+
+        columns = []
+        grid: list[list[object]] = []
+        for col in range(1, len(headers) + 1):
+            templates: list[str] = []
+            values: list[object] = []
+            saw_formula = False
+            saw_constant = False
+            number_format = "@"
+            for row in range(2, data_end + 1):
+                cell = sheet.cell(row, col)
+                if row == 2:
+                    number_format = cell.number_format or "@"
+                if cell.value is None:
+                    values.append(None)
+                    continue
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    saw_formula = True
+                    templates.append(_cell_template(cell.value, row))
+                    values.append(None)
+                else:
+                    saw_constant = True
+                    values.append(_json_value(cell.value))
+            if saw_formula and saw_constant:
+                fail(
+                    EXIT_INVALID_CONTENT,
+                    f"「{sheet.title}」的「{headers[col - 1]}」既有公式又有常量，提取不会把常量当成公式。",
+                )
+            column: dict = {"header": headers[col - 1]}
+            kind = FORMAT_TO_TYPE.get(number_format)
+            if kind:
+                column["type"] = kind
+            if saw_formula:
+                unique = set(templates)
+                if len(unique) != 1:
+                    fail(
+                        EXIT_INVALID_CONTENT,
+                        f"「{sheet.title}」的「{headers[col - 1]}」各行公式不是同一个模板，提取会丢掉差异。",
+                    )
+                column["formula"] = templates[0]
+                column["type"] = kind or "number"
+            columns.append(column)
+            if col == 1:
+                grid = [[value] for value in values]
+            else:
+                for index, value in enumerate(values):
+                    grid[index].append(value)
+        if not grid:
+            fail(EXIT_INVALID_CONTENT, f"「{sheet.title}」没有数据行。")
+        spec: dict = {
+            "name": sheet.title,
+            "columns": columns,
+            "rows": grid,
+            "freeze_header": sheet.freeze_panes == "A2",
+        }
+        if total:
+            spec["total_row"] = True
+        formats = _conditional_formats(sheet, headers)
+        if formats:
+            spec["conditional_formats"] = formats
+        if note:
+            spec["note"] = note
+        sheets.append(spec)
+    if not sheets:
+        fail(EXIT_INVALID_CONTENT, "这个工作簿没有表。")
+    return {"sheets": sheets}
+
+
+def extract_spreadsheet(path: Path) -> dict:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return extract_csv(path)
+    if suffix == ".xlsx":
+        return extract_xlsx(path)
+    fail(EXIT_INVALID_CONTENT, f"提取只支持 .xlsx 与 .csv，收到 {suffix or '(无扩展名)'}。")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="内容 JSON → xlsx / csv")
-    parser.add_argument("--content", required=True)
-    parser.add_argument("--out", required=True, help="输出路径，扩展名决定格式（.xlsx / .csv）")
+    parser = argparse.ArgumentParser(description="内容 JSON → xlsx / csv，或从已有文件提取内容 JSON")
+    parser.add_argument("--content", help="要渲染的内容 JSON")
+    parser.add_argument("--extract", help="已有的 .xlsx / .csv，提取成内容 JSON")
+    parser.add_argument("--out", required=True, help="渲染：.xlsx / .csv。提取：.json")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
 
-    # 缺办公扩展的模块时换到扩展的解释器重跑（见 evowork_skill.ensure_office_runtime）。
-    # --validate-only 不需要它，但提前换掉更简单，也让两条路径的行为一致
-    ensure_office_runtime(("openpyxl",))
+    if bool(args.extract) == bool(args.content):
+        fail(EXIT_INVALID_CONTENT, "提取用 --extract，生成用 --content，不要同时给，也不要都不给。")
+    if args.extract and args.validate_only:
+        fail(EXIT_INVALID_CONTENT, "提取会直接写出 JSON，没有 --validate-only。")
+
+    if args.extract and Path(args.extract).suffix.lower() == ".xlsx":
+        ensure_office_runtime(("openpyxl",))
+    elif not args.extract:
+        # 缺办公扩展的模块时换到扩展的解释器重跑（见 evowork_skill.ensure_office_runtime）。
+        # --validate-only 不需要它，但提前换掉更简单，也让两条路径的行为一致
+        ensure_office_runtime(("openpyxl",))
+
+    if args.extract:
+        content = extract_spreadsheet(Path(args.extract).resolve())
+        validate(content)
+        out_path = Path(args.out).resolve()
+        write_extracted(content, out_path)
+        succeeded(out_path, sheets=len(content["sheets"]), format="json", operation="extract")
+        return
 
     content = read_content(Path(args.content).resolve())
     validate(content)
