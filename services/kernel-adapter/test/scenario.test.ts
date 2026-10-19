@@ -291,6 +291,7 @@ describe('场景包（03 §2.2）', () => {
       'email-draft',
       'data-analysis',
       'diagrams',
+      'scan-to-ledger',
     ]);
   });
 

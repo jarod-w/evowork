@@ -18,7 +18,7 @@ instructions_file = "modes/craft-office.md"
 budget_limit      = 400000
 
 # 影响可用能力
-skills              = ["documents", "spreadsheets", "presentations", "charts", "minutes", "weekly-report", "email-draft", "data-analysis", "diagrams"]
+skills              = ["documents", "spreadsheets", "presentations", "charts", "minutes", "weekly-report", "email-draft", "data-analysis", "diagrams", "scan-to-ledger"]
 connectors          = []                       # Q9：本期只有 browser，办公场景默认不开
 experts_recommended = ["report-writer", "data-analyst", "finance-analyst"]
 

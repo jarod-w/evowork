@@ -39,6 +39,7 @@ const EXPECTED = [
   'image-generation',
   'minutes',
   'presentations',
+  'scan-to-ledger',
   'skill-creator',
   'spreadsheets',
   'ui-design',
