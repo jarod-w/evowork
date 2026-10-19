@@ -60,7 +60,7 @@ instructions_file = "modes/craft-office.md"    # 拼进 developer_instructions
 
 # 影响可用能力
 skills        = ["documents", "spreadsheets", "presentations", "charts"]
-connectors    = []                             # Q9：本期只有 browser，办公场景默认不开
+connectors    = ["browser"]                    # Q9：本期只有 browser。写进场景说明，信任仍由用户显式完成
 experts_recommended = ["report-writer", "data-analyst", "finance-analyst"]
 
 # 影响首页的上下文建议
