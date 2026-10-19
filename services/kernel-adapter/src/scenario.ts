@@ -393,6 +393,7 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
       'weekly-report',
       'email-draft',
       'data-analysis',
+      'diagrams',
     ],
     connectors: [],
     expertsRecommended: ['report-writer', 'data-analyst', 'finance-analyst'],

@@ -290,6 +290,7 @@ describe('场景包（03 §2.2）', () => {
       'weekly-report',
       'email-draft',
       'data-analysis',
+      'diagrams',
     ]);
   });
 
