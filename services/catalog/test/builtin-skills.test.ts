@@ -32,6 +32,7 @@ const SKILLS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../p
 const EXPECTED = [
   'charts',
   'computer-use',
+  'data-analysis',
   'documents',
   'email-draft',
   'image-generation',
