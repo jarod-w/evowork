@@ -17,8 +17,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -644,6 +648,92 @@ def extract_docx(path: Path, asset_dir: Path) -> dict:
     return content
 
 
+# 与 services/ingest/src/office-preview.ts 同一套隔离参数：独立配置、关掉宏。
+MACRO_LOCK = (
+    '<?xml version="1.0"?>'
+    '<oor:items xmlns:oor="http://openoffice.org/2001/registry">'
+    '<item oor:path="/org.openoffice.Office.Common/Security/Scripting">'
+    '<prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop>'
+    '<prop oor:name="DisableActiveContent" oor:op="fuse"><value>true</value></prop>'
+    '<prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>'
+    "</item></oor:items>"
+)
+
+
+def office_converter() -> Path | None:
+    """本机 soffice。`EVOWORK_OFFICE_CONVERTER` 与预览共用。
+
+    设了覆盖就不再回退到 PATH：坏路径若被静默换成另一份程序，测试就钉不住失败。
+    """
+    override = os.environ.get("EVOWORK_OFFICE_CONVERTER")
+    if override is not None:
+        path = Path(override)
+        return path if path.is_file() else None
+    found = shutil.which("soffice")
+    if found:
+        return Path(found)
+    for candidate in (
+        Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+        Path("/Applications/LibreOfficeDev.app/Contents/MacOS/soffice"),
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
+    converter = office_converter()
+    if converter is None:
+        fail(
+            EXIT_RUNTIME_MISSING,
+            "需要本机 LibreOffice（soffice）才能把文档导出成 PDF。安装后重试，或改交付 .docx / .md。",
+        )
+    work = Path(tempfile.mkdtemp(prefix="evowork-pdf-"))
+    try:
+        profile = work / "profile"
+        (profile / "user").mkdir(parents=True)
+        (profile / "user" / "registrymodifications.xcu").write_text(MACRO_LOCK, encoding="utf-8")
+        staged = work / "document.docx"
+        shutil.copyfile(docx_path, staged)
+        try:
+            completed = subprocess.run(
+                [
+                    str(converter),
+                    "-env:UserInstallation=" + profile.resolve().as_uri(),
+                    "--headless",
+                    "--nologo",
+                    "--nodefault",
+                    "--norestore",
+                    "--nolockcheck",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(work),
+                    str(staged),
+                ],
+                capture_output=True,
+                timeout=45,
+            )
+        except subprocess.TimeoutExpired:
+            fail(EXIT_RUNTIME_MISSING, "LibreOffice 转换 PDF 超时。请稍后重试，或改交付 .docx / .md。")
+        produced = work / "document.pdf"
+        if completed.returncode != 0 or not produced.is_file():
+            fail(
+                EXIT_RUNTIME_MISSING,
+                "LibreOffice 没有写出 PDF。请确认 soffice 可用后重试，或改交付 .docx / .md。",
+            )
+        data = produced.read_bytes()
+        if not data.startswith(b"%PDF-"):
+            fail(
+                EXIT_RUNTIME_MISSING,
+                "转换结果不是 PDF。请确认 soffice 可用后重试，或改交付 .docx / .md。",
+            )
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(data)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def extract_document(path: Path, out_path: Path) -> dict:
     suffix = path.suffix.lower()
     if suffix == ".md":
@@ -695,8 +785,21 @@ def main() -> None:
         render_md(content, out_path)
         succeeded(out_path, blocks=len(content["blocks"]), format="md")
         return
+    if suffix == ".pdf":
+        # 先看转换器，再渲染。缺 soffice 时不要先报「缺 python-docx」，两条都缺时用户先装错东西。
+        if office_converter() is None:
+            fail(
+                EXIT_RUNTIME_MISSING,
+                "需要本机 LibreOffice（soffice）才能把文档导出成 PDF。安装后重试，或改交付 .docx / .md。",
+            )
+        with tempfile.TemporaryDirectory(prefix="evowork-pdf-src-") as tmp:
+            docx_path = Path(tmp) / "document.docx"
+            render_docx(content, docx_path, content_path.parent)
+            convert_docx_to_pdf(docx_path, out_path)
+        succeeded(out_path, blocks=len(content["blocks"]), format="pdf")
+        return
     if suffix != ".docx":
-        fail(EXIT_INVALID_CONTENT, f"输出格式只支持 .docx 与 .md，收到 {suffix or '(无扩展名)'}。")
+        fail(EXIT_INVALID_CONTENT, f"输出格式只支持 .docx、.md 与 .pdf，收到 {suffix or '(无扩展名)'}。")
 
     render_docx(content, out_path, content_path.parent)
     succeeded(out_path, blocks=len(content["blocks"]), format="docx")

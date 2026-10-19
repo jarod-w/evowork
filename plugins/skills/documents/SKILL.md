@@ -1,6 +1,6 @@
 ---
 name: documents
-description: 生成 Word 文档（docx）或 Markdown。当用户要"写一份报告/方案/说明/纪要/总结"并要可以直接发出去的文件时使用。
+description: 生成 Word 文档（docx）、Markdown 或 PDF。当用户要"写一份报告/方案/说明/纪要/总结"并要可以直接发出去的文件时使用。PDF 由本机 LibreOffice 从 docx 转出。
 ---
 
 # documents —— 生成文档
@@ -24,6 +24,20 @@ python3 container_tools/render.py --content content.json --out "<绝对路径>/Q
 写进代码仓库的说明、发给同事的草稿，用 `.md` 更合适。
 
 先跑一次 `--validate-only` 可以在不装扩展的情况下把内容改对。
+
+## 导出 PDF
+
+用户要 PDF 时，`--output-format` 用 `pdf`，输出路径用 `.pdf`。渲染器先生成 docx，再用本机 LibreOffice 转成 PDF。
+
+```bash
+node container_tools/mark_artifact.mjs \
+  --operation-kind create --expected-output-count 1 --output-format pdf \
+  --title "Q3 经营分析" --path "<绝对路径>/Q3经营分析.pdf"
+
+python3 container_tools/render.py --content content.json --out "<绝对路径>/Q3经营分析.pdf"
+```
+
+本机没有 soffice 时退出码是 3。这时改交 `.docx` 或 `.md`。`EVOWORK_OFFICE_CONVERTER` 可以指向 soffice，和预览用的是同一个变量。
 
 ## 内容 JSON
 
