@@ -1,0 +1,14 @@
+
+Running 7 tests using 1 worker
+
+(node:90525) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:4:1 › goal 从真实输入启动、暂停、查看、恢复、完成与清除 (9.2s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:41:1 › 未创建目标时，查看与控制给出提示且不创建任务 (14.9s)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:51:1 › 未完成目标替换先确认：取消保留旧目标，确认重置预算并执行新目标 (4.7s)
+  ✓  4 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:102:1 › 预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算恢复并清除 (4.8s)
+  ✓  5 [fake] › apps/desktop/test/e2e/ui/settings.spec.mjs:37:1 › 七个分类、模型标签与记忆渐进披露在三档窗口可用 (4.4s)
+  ✓  6 [fake] › apps/desktop/test/e2e/ui/settings.spec.mjs:92:1 › 预算失焦不写入，取消离开保留草稿，明确保存后刷新仍保留 (2.4s)
+  ✓  7 [fake] › apps/desktop/test/e2e/ui/settings.spec.mjs:130:1 › 图片表单保留失败草稿，标签和业务导航均保护未保存内容 (2.4s)
+
+  7 passed (43.2s)

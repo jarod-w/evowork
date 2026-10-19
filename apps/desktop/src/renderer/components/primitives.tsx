@@ -122,14 +122,16 @@ export function PillButton({
   onClick,
   disabled,
   disabledReason,
+  expanded,
 }: {
   readonly children: ReactNode;
-  readonly variant?: 'default' | 'accent' | 'ghost' | undefined;
+  readonly variant?: 'default' | 'accent' | 'ghost' | 'danger' | undefined;
   /** §5.8 的「可选图标 14」 */
   readonly icon?: ReactNode | undefined;
   /** §5.8 的「可选 chevron/箭头 12」 */
   readonly trailing?: ReactNode | undefined;
   readonly onClick?: (() => void) | undefined;
+  readonly expanded?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly disabledReason?: string | undefined;
 }) {
@@ -139,6 +141,7 @@ export function PillButton({
       className="ew-pill-button"
       data-variant={variant}
       disabled={disabled}
+      aria-expanded={expanded}
       {...(disabled && disabledReason ? { title: disabledReason } : {})}
       onClick={onClick}
     >

@@ -149,6 +149,9 @@ test('预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算�
     );
   });
   await page.getByRole('button', { name: '追加预算', exact: true }).click();
+  const resumePanel = page.getByLabel('长任务目标');
+  await resumePanel.getByLabel('Token 预算', { exact: true }).fill('100000');
+  await resumePanel.getByRole('button', { name: '保存预算并继续', exact: true }).click();
   await expect(page.getByLabel('持续目标')).toContainText('已完成');
   const extended = await readGoal(page, task.id);
   expect(extended.tokenBudget).toBeGreaterThan(goal.tokensUsed);

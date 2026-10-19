@@ -156,7 +156,7 @@ EvoWork
   模型与账号             → /settings/models · /settings/account
 管理
   用量与预算             → /settings/usage
-  数据管理（含归档任务）  → /settings/data
+  数据管理              → /library（设置常规也提供入口）
   安全与权限             → /settings/security
   用量与审计             → /audit
 系统

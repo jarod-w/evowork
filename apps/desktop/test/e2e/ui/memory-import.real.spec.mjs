@@ -98,7 +98,7 @@ test('真模型导入后使用、任务/全局禁读和三个项目的范围约�
     .click();
   await page
     .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '导入', exact: true })
+    .getByRole('button', { name: '记忆与导入', exact: true })
     .click();
   const sync = page.getByLabel('记忆自动同步');
   await sync.getByRole('checkbox').check();

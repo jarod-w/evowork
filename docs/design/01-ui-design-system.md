@@ -320,6 +320,8 @@ C7：本版只设计和验收浅色。技能色板含暗色值，token 包可以
 
 高 28，`--r-full`，`--bg-surface` + `--border-subtle` + `--shadow-xs`，内边距 0 12，内容 = 可选图标 14 + 6 + `label` + 可选 chevron/箭头 12。用于明确的页面动作。变体：`accent`（`--accent-weak` 底 + `--accent-strong` 字）、`ghost`（无底无边）。
 
+危险操作可用 `PillButton` 的 danger 变体：中性背景与 `--danger-text` 文本，确认后仍走既有危险 Dialog。可展开按钮通过 expanded prop 传递 `aria-expanded`。
+
 ### 5.9 SegmentedControl（深色选中态）
 
 轨道高 36，`--r-full`，`--bg-sunken`，内边距 4。分段项高 28，`--r-full`，内边距 0 14，内容 = 图标 15 + 6 + `label`。
@@ -444,6 +446,8 @@ Popover 默认锚在触发器下方；下方放不下且上方空间更多时自
 ### 5.22 TextTabs
 
 截图 2 的「推荐 / SkillHub / 套件」。`title-1`，项间距 24。选中 `--text-primary`/700；未选 `--text-tertiary`/500。无下划线、无底色 —— 仅靠字重与颜色区分。悬停未选项变 `--text-secondary`。
+
+设置页的 TextTabs 使用紧凑变体（body 字号、label 字重、组底发丝分隔线），保持无选中底色；其他页面的标题字号不变。
 
 ### 5.23 PanelHeader（中栏头）
 
@@ -583,6 +587,12 @@ XSS 面上（11 §12 第 2 条）。两个组件的话，这种失败方式在�
 空查询显示最近 9 条顶层聊天；输入后切到 `thread/search` 返回的标题与正文命中。上下方向键移动
 选中项，`Enter` 打开，`Esc` 或点击遮罩关闭；关闭后焦点归还触发按钮。选中态使用中性
 `--bg-hover`，不使用品牌色。Windows/Linux 的快捷键提示显示 `Ctrl+`，macOS 显示 `⌘`。
+
+### 5.37 SettingsRow（设置行）
+
+用于设置页的统一名称/说明/控件布局，左侧名称与一句说明，右侧当前值或操作；组内使用发丝分隔线。窄窗控件换到下一行，长路径允许折行。开关为现有原生 checkbox 的视觉变体，宽 40 / 高 24 / 滑块 16，使用间距 token；保留 checkbox 语义、名称与键盘操作，不另建 UI 库。
+
+状态组件与异步 hook 属该组件组合：宿主回执前为保存中，成功后才为已保存，失败用 danger 文本及恢复操作，`role=status` / `role=alert` 随状态变化。常态信息不使用警告 banner。设置分类宽度 token `--layout-settings-nav-width` = 176；低于已有 1100 断点用顶部分类选择器，其他页面中栏宽度保持原值。
 
 ---
 

@@ -1,0 +1,16 @@
+{"ts":"2026-10-19T15:01:38.344Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":273}
+{"ts":"2026-10-19T15:01:45.634Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":291}
+{"ts":"2026-10-19T15:01:47.719Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"44.2.0","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-19T15:01:47.826Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":273}
+{"ts":"2026-10-19T15:01:47.828Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":274}
+{"ts":"2026-10-19T15:01:58.842Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":349}
+{"ts":"2026-10-19T15:01:58.849Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":273}
+{"ts":"2026-10-19T15:02:07.854Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":349}
+{"ts":"2026-10-19T15:02:08.228Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":274}
+{"ts":"2026-10-19T15:02:09.967Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":348}
+Debugger ending on ws://127.0.0.1:53005/9b6d5bfa-b4cc-4213-a1e9-7ce930cd08d5
+For help, see: https://nodejs.org/learn/getting-started/debugging
+{"ts":"2026-10-19T15:02:11.821Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"44.2.0","platform":"darwin"}
+{"ts":"2026-10-19T15:02:11.865Z","level":"warn","event":"gateway.child.exited","service":"desktop","appVersion":"44.2.0","platform":"darwin","reason":"EXIT","droppedFields":1}
+
+[fixtures] 主进程退出 code=0 signal=null at 2026-10-19T15:02:11.934Z

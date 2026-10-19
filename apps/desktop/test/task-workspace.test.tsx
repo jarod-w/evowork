@@ -560,7 +560,7 @@ describe('长任务控制面', () => {
     expect(container.querySelector('.ew-goal-progress')?.getAttribute('data-tone')).toBe('warning');
   });
 
-  it('预算耗尽提供追加预算与结束任务两个动作', () => {
+  it('预算耗尽先让用户明确新总预算，保存后才恢复；不足以覆盖已用量时不能恢复', () => {
     const onGoalSave = vi.fn();
     const onGoalStatus = vi.fn();
     renderWorkspace({
@@ -569,9 +569,21 @@ describe('长任务控制面', () => {
       onGoalStatus,
     });
     fireEvent.click(screen.getByRole('button', { name: '追加预算' }));
+    expect(onGoalSave).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Token 预算'), { target: { value: '100000' } });
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(onGoalSave).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('长任务目标')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '追加预算' }));
+    const budget = screen.getByLabelText('Token 预算');
+    expect(screen.getByRole('button', { name: '保存预算并继续' })).toHaveProperty('disabled', true);
+    fireEvent.change(budget, { target: { value: '10000' } });
+    expect(screen.getByRole('button', { name: '保存预算并继续' })).toHaveProperty('disabled', true);
+    fireEvent.change(budget, { target: { value: '100000' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存预算并继续' }));
     expect(onGoalSave).toHaveBeenCalledWith({
       objective: '完成季度报告',
-      tokenBudget: 12_500,
+      tokenBudget: 100_000,
       status: 'active',
     });
     fireEvent.click(screen.getByRole('button', { name: '结束任务' }));

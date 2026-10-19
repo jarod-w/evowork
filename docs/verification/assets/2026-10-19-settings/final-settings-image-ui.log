@@ -1,0 +1,13 @@
+
+Running 6 tests using 1 worker
+
+(node:76475) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/image-generation.spec.mjs:5:1 › 大图生成后查看图片：任务成功、预览可见、重载不重复生成 (9.1s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/image-generation.spec.mjs:11:1 › 拒绝图片费用确认：零服务商请求且正常结束 (2.6s)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/image-generation.spec.mjs:22:3 › 服务商错误 › 服务商返回 404：明确记录型号不可用，不伪装取消或成功 (2.7s)
+  ✓  4 [fake] › apps/desktop/test/e2e/ui/settings.spec.mjs:37:1 › 七个分类、模型标签与记忆渐进披露在三档窗口可用 (3.9s)
+  ✓  5 [fake] › apps/desktop/test/e2e/ui/settings.spec.mjs:92:1 › 预算失焦不写入，取消离开保留草稿，明确保存后刷新仍保留 (2.4s)
+  ✓  6 [fake] › apps/desktop/test/e2e/ui/settings.spec.mjs:130:1 › 图片表单保留失败草稿，标签和业务导航均保护未保存内容 (2.2s)
+
+  6 passed (23.2s)

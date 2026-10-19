@@ -74,11 +74,11 @@ export function fakeDocument(electronApp) {
 /** 打开电脑操控，并核对**三处**都真的打开了：设置页文案、按钮、内核配置 */
 export async function enableComputerUse(page, electronApp) {
   const section = await openComputerUseSettings(page);
-  await section.getByRole('button', { name: '启用电脑操控' }).click();
-  await expect(section.getByRole('status')).toHaveText(
+  await section.getByRole('checkbox', { name: '电脑操控', exact: true }).check();
+  await expect(section.getByRole('status', { name: '电脑操控状态' })).toHaveText(
     '已启用；每个任务仍需确认内容传输和应用准入。',
   );
-  await expect(section.getByRole('button', { name: '关闭电脑操控' })).toBeVisible();
+  await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeChecked();
   // 「启用后供下一条任务加载」：内核那边要真的被打开，否则下一条任务拿不到工具
   expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = true$/m);
   await backToComposer(page);

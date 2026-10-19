@@ -1,0 +1,80 @@
+{
+  "model": "mimo-v2.6-flash",
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "platform": "macOS arm64",
+  "passed": 2,
+  "failed": 0,
+  "retries": 0,
+  "skipped": 0,
+  "duration": "1.3m",
+  "journeys": [
+    {
+      "name": "models",
+      "requestCount": 5,
+      "httpStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "result": {
+        "sum": 2346,
+        "max": 826
+      },
+      "input": [
+        278,
+        511,
+        191,
+        180,
+        113,
+        141,
+        106,
+        826
+      ],
+      "preferences": {
+        "concurrencyComputed": 3,
+        "concurrencyLimit": 3
+      },
+      "kernelStarts": 1,
+      "unexpectedKernelExits": 0
+    },
+    {
+      "name": "budget",
+      "requestCount": 9,
+      "httpStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "result": {
+        "sum": 3905,
+        "max": 937
+      },
+      "input": [
+        670,
+        141,
+        239,
+        728,
+        937,
+        230,
+        713,
+        247
+      ],
+      "preferences": {
+        "taskTokenBudget": 200000,
+        "concurrencyComputed": 3,
+        "concurrencyLimit": 3
+      },
+      "kernelStarts": 1,
+      "unexpectedKernelExits": 0
+    }
+  ],
+  "observedRequests": 14
+}

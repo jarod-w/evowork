@@ -1,0 +1,35 @@
+
+Running 1 test using 1 worker
+
+(node:87377) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算 (15.7s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算 
+
+    Error: 设置默认预算没有在首轮生效
+
+    设置默认预算没有在首轮生效
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: undefined
+
+    Call Log:
+    - Timeout 10000ms exceeded while waiting on the predicate
+
+      107 |           message: '设置默认预算没有在首轮生效',
+      108 |         })
+    > 109 |         .toBe(1);
+          |          ^
+      110 |       writeFileSync(join(root, 'budget-release'), 'ready');
+      111 |       await expect(page.getByLabel('持续目标')).toContainText('预算已耗尽', { timeout: 150000 });
+      112 |       await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:109:10
+
+    Error Context: ../../../../../private/tmp/evowork-budget-before/settings-budget.real-MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算-real/error-context.md
+
+  1 failed
+    [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算 

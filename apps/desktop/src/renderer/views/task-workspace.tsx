@@ -427,15 +427,23 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [goalBudget, setGoalBudget] = useState(
     props.goal?.tokenBudget == null ? '' : String(props.goal.tokenBudget),
   );
+  const goalBudgetRef = useRef<HTMLInputElement | null>(null);
+  const goalExhausted = props.goal?.status === 'budgetLimited';
   const parsedGoalBudget = goalBudget === '' ? null : Number(goalBudget);
   const goalCanSave =
     goalObjective.trim() !== '' &&
-    (parsedGoalBudget === null || (Number.isSafeInteger(parsedGoalBudget) && parsedGoalBudget > 0));
+    (parsedGoalBudget === null ||
+      (Number.isSafeInteger(parsedGoalBudget) && parsedGoalBudget > 0)) &&
+    (!goalExhausted ||
+      parsedGoalBudget === null ||
+      parsedGoalBudget > (props.goal?.tokensUsed ?? 0));
   const goalProgress =
     props.goal?.tokenBudget == null || props.goal.tokenBudget <= 0
       ? undefined
       : Math.min(100, (props.goal.tokensUsed / props.goal.tokenBudget) * 100);
-  const goalExhausted = props.goal?.status === 'budgetLimited';
+  useEffect(() => {
+    if (goalOpen && goalExhausted) goalBudgetRef.current?.focus();
+  }, [goalOpen, goalExhausted]);
   const latestPlan = [...props.items]
     .reverse()
     .find((item) => item.type === 'plan' && Array.isArray(item.steps));
@@ -491,7 +499,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   useEffect(() => {
     setGoalObjective(props.goal?.objective ?? '');
     setGoalBudget(props.goal?.tokenBudget == null ? '' : String(props.goal.tokenBudget));
-  }, [props.goal]);
+  }, [props.taskId, props.goal?.objective, props.goal?.tokenBudget]);
 
   useEffect(() => {
     for (const node of document.querySelectorAll<HTMLElement>('[data-search-focus]')) {
@@ -726,21 +734,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           {goalExhausted ? (
             <div className="ew-goal-exhausted" role="alert">
               <span>预算已耗尽，任务已暂停。</span>
-              <PillButton
-                variant="accent"
-                onClick={() => {
-                  if (!props.goal?.tokenBudget) return;
-                  const increment = Math.max(1_000, Math.ceil(props.goal.tokenBudget * 0.25));
-                  props.onGoalSave?.({
-                    objective: props.goal.objective,
-                    tokenBudget: Math.max(
-                      props.goal.tokenBudget + increment,
-                      props.goal.tokensUsed + 1_000,
-                    ),
-                    status: 'active',
-                  });
-                }}
-              >
+              <PillButton variant="accent" onClick={() => setGoalOpen(true)}>
                 追加预算
               </PillButton>
               <PillButton onClick={() => props.onGoalStatus?.('complete')}>结束任务</PillButton>
@@ -759,6 +753,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           />
           <input
             aria-label="Token 预算"
+            ref={goalBudgetRef}
             type="number"
             min={1}
             value={goalBudget}
@@ -772,11 +767,28 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               props.onGoalSave?.({
                 objective: goalObjective.trim(),
                 tokenBudget: parsedGoalBudget,
+                ...(goalExhausted ? { status: 'active' } : {}),
               })
             }
           >
-            保存
+            {goalExhausted ? '保存预算并继续' : '保存'}
           </PillButton>
+          {goalExhausted ? (
+            <>
+              <PillButton
+                onClick={() => {
+                  setGoalObjective(props.goal?.objective ?? '');
+                  setGoalBudget(
+                    props.goal?.tokenBudget == null ? '' : String(props.goal.tokenBudget),
+                  );
+                  setGoalOpen(false);
+                }}
+              >
+                取消
+              </PillButton>
+              <span>填写高于已用量的新总预算，留空表示不限。保存前任务保持暂停。</span>
+            </>
+          ) : null}
           {props.goal ? (
             <>
               <span>

@@ -11,7 +11,7 @@ import {
 import { expect, test } from './fixtures.mjs';
 import { horizontalOverflow, resizeWindow } from './assertions.mjs';
 
-async function openSettings(page, section = '导入') {
+async function openSettings(page, section = '记忆与导入') {
   await page.getByRole('button', { name: /菜单$/ }).click();
   await page
     .getByRole('menu', { name: '用户菜单' })
@@ -20,6 +20,10 @@ async function openSettings(page, section = '导入') {
   await page
     .getByRole('navigation', { name: '设置分类' })
     .getByRole('button', { name: section, exact: true })
+    .click();
+  await page
+    .locator('summary')
+    .filter({ hasText: /^导入历史$/ })
     .click();
 }
 
@@ -138,7 +142,7 @@ test('设置及 /import 共用向导，取消零写入、仅选中项目、保�
     .click();
   await page
     .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '导入', exact: true })
+    .getByRole('button', { name: '记忆与导入', exact: true })
     .click();
   await expect(page.getByLabel('记忆导入历史')).toContainText('alpha-project：资料已导入');
   await page.getByRole('button', { name: '导入已有记忆', exact: true }).click();
@@ -337,7 +341,7 @@ test('返回修改项目及取消零写入，个性化入口保持原生成和�
       )
     ).ok,
   ).toBe(true);
-  await openSettings(page, '个性化');
+  await openSettings(page, '记忆与导入');
   await page.getByRole('button', { name: '导入已有记忆', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: '导入项目记忆' });
   await selectAlpha(dialog);

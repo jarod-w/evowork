@@ -1,0 +1,11 @@
+{"ts":"2026-10-19T22:57:08.056Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"44.2.0","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-19T22:57:08.087Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":274}
+{"ts":"2026-10-19T22:57:11.958Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":348}
+{"ts":"2026-10-19T22:57:12.365Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":275}
+{"ts":"2026-10-19T22:57:17.607Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":348}
+Debugger ending on ws://127.0.0.1:59371/3756d6c1-0d97-49ea-a25f-d9b4ef88783e
+For help, see: https://nodejs.org/learn/getting-started/debugging
+{"ts":"2026-10-19T22:57:28.566Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"44.2.0","platform":"darwin"}
+{"ts":"2026-10-19T22:57:28.651Z","level":"warn","event":"gateway.child.exited","service":"desktop","appVersion":"44.2.0","platform":"darwin","reason":"EXIT","droppedFields":1}
+
+[fixtures] 主进程退出 code=0 signal=null at 2026-10-19T22:57:28.736Z

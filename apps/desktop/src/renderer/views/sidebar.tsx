@@ -232,7 +232,7 @@ export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
  */
 export const MORE_MENU: readonly MenuItemSpec[] = [
   { id: 'settings:models', label: '设置' },
-  { id: 'settings:data', label: '数据管理' },
+  { id: 'library', label: '数据管理' },
   { id: 'settings:usage', label: '用量与预算' },
   { id: 'audit', label: '用量与审计' },
   { id: 'settings:about', label: '关于' },

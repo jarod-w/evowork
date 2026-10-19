@@ -1631,6 +1631,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
           throw new Error('请使用目标控制入口查看、暂停、恢复或清除目标。');
         const goalObjective = command?.action === 'create' ? command.objective : undefined;
         const text = goalObjective ?? input.text.trim();
+        // 全局偏好只为新任务/新目标提供默认值，已有任务追问沿用其权威预算。
+        const defaultBudget =
+          input.threadId === undefined || goalObjective
+            ? options.preferencePorts?.read().taskTokenBudget
+            : undefined;
         if (goalObjective && (input.references?.length ?? 0) > 0)
           throw new Error('创建目标前请先单独发送附件和引用。');
         const prepareGoal = async (threadId: string) => {
@@ -1643,8 +1648,24 @@ export function createRendererActions(options: RendererBridgeOptions) {
           await adapter.setGoal(threadId, {
             objective: goalObjective!,
             status: 'paused',
-            tokenBudget: null,
+            tokenBudget: defaultBudget ?? null,
           });
+        };
+        const prepareDraftGoal = async (threadId: string): Promise<boolean> => {
+          if (goalObjective) {
+            await prepareGoal(threadId);
+            return true;
+          }
+          const goal = await adapter.getGoal(threadId);
+          // 首轮未发成功的草稿已经有预算时不覆盖；已耗尽/完成的目标也不可重新激活。
+          if (goal) return goal.status === 'paused';
+          if (!defaultBudget) return false;
+          await adapter.setGoal(threadId, {
+            objective: text || '完成当前任务并验证交付',
+            status: 'paused',
+            tokenBudget: defaultBudget,
+          });
+          return true;
         };
         const validReferences = (input.references ?? []).filter((reference) =>
           reference.type === 'text'
@@ -1723,7 +1744,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
             )
               throw new Error('这个草稿已经创建任务，不能改变读取记忆的选择；请新建任务。');
             if (!environment.sent) {
-              if (goalObjective) await prepareGoal(environment.threadId);
+              const activateGoal = await prepareDraftGoal(environment.threadId);
               const sent = await adapter.sendMessage({
                 ...(input.submissionId ? { submissionId: input.submissionId } : {}),
                 desktopInteractive: true,
@@ -1741,7 +1762,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
                   unconfirmed: true,
                   degradations: sent.degradations,
                 };
-              if (goalObjective) await adapter.setGoal(environment.threadId, { status: 'active' });
+              if (activateGoal) await adapter.setGoal(environment.threadId, { status: 'active' });
               options.environments!.markSent(environment.threadId);
             }
             return { threadId: environment.threadId };
@@ -1750,11 +1771,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
         // 用户手选的模型 / 审批档是优先级最高的一档（03 §2.4：场景默认 → 档 → 用户显式选择）
         const overrides =
-          input.modelId !== undefined || input.modeId !== undefined || cwd
+          input.modelId !== undefined || input.modeId !== undefined || cwd || defaultBudget
             ? {
                 ...(input.modelId !== undefined ? { model: input.modelId } : {}),
                 ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
                 ...(cwd ? { cwd } : {}),
+                ...(input.threadId === undefined && defaultBudget
+                  ? { budgetLimit: defaultBudget }
+                  : {}),
               }
             : undefined;
 

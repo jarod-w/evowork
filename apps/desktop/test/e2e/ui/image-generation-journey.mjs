@@ -15,20 +15,36 @@ export async function imageGenerationJourney(
     .getByRole('navigation', { name: '设置分类' })
     .getByRole('button', { name: '模型', exact: true })
     .click();
+  await page.getByRole('tab', { name: '图片模型', exact: true }).click();
   await page.getByLabel('启用 AI 图片').check();
+  await expect(page.getByLabel('启用 AI 图片')).toBeEnabled();
+  await page.getByRole('button', { name: '配置图片模型' }).click();
+  await page.getByRole('button', { name: '图片模型', exact: true }).click();
+  const options = page.getByRole('menuitem');
   expect(
-    await page
-      .getByLabel('图片模型', { exact: true })
-      .locator('option')
-      .evaluateAll((options) => options.map((option) => option.value)),
+    (await page.evaluate(() => window.evowork.getImageSettings())).models.map((model) => model.id),
   ).toEqual(['doubao-seedream-5-0-flash-260915', 'doubao-seedream-5-0-pro-260628']);
-  await page.getByLabel('图片模型', { exact: true }).selectOption(model);
+  expect(await options.locator('.ew-menu-label').allTextContents()).toEqual([
+    'Seedream 5.0 Flash',
+    'Seedream 5.0 Pro',
+  ]);
+  await page
+    .getByRole('menuitem', {
+      name: model.includes('flash') ? 'Seedream 5.0 Flash' : 'Seedream 5.0 Pro',
+      exact: true,
+    })
+    .click();
   await page
     .getByLabel('图片接口地址')
     .fill(process.env.EVOWORK_UI_IMAGE_BASE_URL ?? 'https://ark.cn-beijing.volces.com/api/v3/');
   // 密钥从进程环境注入宿主；真实 Ark 密钥不会进入 renderer / 截图 / 测试参数。
-  await page.getByRole('button', { name: '保存图片设置' }).click();
-  await expect(page.getByText('已保存。图片工具对新任务生效；已有任务请重新打开。')).toBeVisible();
+  const save = page.getByRole('button', { name: '保存图片设置' });
+  if (await save.isEnabled()) {
+    await save.click();
+    await expect(
+      page.getByText('已保存。图片工具对新任务生效；已有任务请重新打开。'),
+    ).toBeVisible();
+  } else await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await startTaskInWorkspace(page, electronApp, '生成一张天空图片');
   const firstApproval = page.getByRole('alertdialog', { name: '需要你确认' });

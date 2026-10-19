@@ -1,0 +1,32 @@
+
+Running 2 tests using 1 worker
+
+(node:81350) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/settings.real.spec.mjs:106:1 › MiMo：设置七分类和窄窗、已保存模型连通性、记忆开关刷新保持及真实文件任务 (1.2m)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/settings.real.spec.mjs:158:1 › MiMo：预算不在失焦时保存、离开保护草稿、明确保存刷新保持并可正常执行任务 (33.7s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/settings.real.spec.mjs:158:1 › MiMo：预算不在失焦时保存、离开保护草稿、明确保存刷新保持并可正常执行任务 
+
+    Error: expect(received).toHaveLength(expected)
+
+    Expected length: 10
+    Received length: 9
+    Received array:  [{"at": 1792422018315, "id": 2, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422019388, "id": 1, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422025823, "id": 3, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422025905, "id": 4, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422032284, "id": 5, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422033167, "id": 6, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422037675, "id": 7, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422041156, "id": 8, "pid": 81661, "status": 200, "type": "response"}, {"at": 1792422045360, "id": 9, "pid": 81661, "status": 200, "type": "response"}]
+
+      85 |     true,
+      86 |   );
+    > 87 |   expect(responses).toHaveLength(requests.length);
+         |                     ^
+      88 |   expect(responses.every((row) => row.status === 200)).toBe(true);
+      89 |   expect(observations.filter((row) => row.type === 'transport-error')).toEqual([]);
+      90 |   const evidence = {
+        at saveEvidence (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/settings.real.spec.mjs:87:21)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/settings.real.spec.mjs:186:9
+
+    Error Context: ../../../../../private/tmp/evowork-settings-mimo-results/settings.real-MiMo：预算不在失焦时保存、离开保护草稿、明确保存刷新保持并可正常执行任务-real/error-context.md
+
+  1 failed
+    [real] › apps/desktop/test/e2e/ui/settings.real.spec.mjs:158:1 › MiMo：预算不在失焦时保存、离开保护草稿、明确保存刷新保持并可正常执行任务 
+  1 passed (1.8m)

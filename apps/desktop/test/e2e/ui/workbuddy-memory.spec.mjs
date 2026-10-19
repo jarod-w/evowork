@@ -145,7 +145,7 @@ test('WorkBuddy 文本和文件预览取消零提交，个人/项目保存、去
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
   await page
     .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '导入', exact: true })
+    .getByRole('button', { name: '记忆与导入', exact: true })
     .click();
   await expect(page.getByLabel('WorkBuddy 导入历史')).toContainText('个人偏好');
   await page.getByRole('button', { name: '导入已有记忆', exact: true }).click();

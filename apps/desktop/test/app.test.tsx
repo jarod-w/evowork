@@ -3826,3 +3826,25 @@ it('恢复接口失败时保留禁止发送状态，不能靠新身份绕过未�
   fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
   expect(bridge.send).not.toHaveBeenCalled();
 });
+
+it('取消离开设置不会提前清理聊天草稿或附件', async () => {
+  const discardComposerDraft = vi.fn(async () => {});
+  const { bridge } = fakeBridge({ discardComposerDraft });
+  render(<App bridge={bridge} />);
+  const input = await screen.findByLabelText('需求输入');
+  fireEvent.change(input, { target: { value: '尚未发送的聊天草稿' } });
+  fireEvent.click(screen.getByRole('button', { name: /菜单$/ }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+  await screen.findByRole('heading', { name: '模型' });
+  fireEvent.click(screen.getByRole('button', { name: '用量与预算' }));
+  await screen.findByRole('heading', { name: '用量与预算' });
+  fireEvent.click(screen.getByRole('button', { name: '单任务用量上限' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '自定义' }));
+  fireEvent.change(screen.getByLabelText('用量上限（tokens）'), { target: { value: '200000' } });
+  discardComposerDraft.mockClear();
+  fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
+  const dialog = await screen.findByRole('dialog', { name: '设置尚未保存' });
+  expect(discardComposerDraft).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+  expect((screen.getByLabelText('用量上限（tokens）') as HTMLInputElement).value).toBe('200000');
+});

@@ -1,0 +1,45 @@
+
+Running 2 tests using 1 worker
+
+(node:88483) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算 (3.0m)
+(node:89425) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确结束任务 (25.7s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByLabel('持续目标')
+    Expected substring: "已完成"
+    Received string:    "这是预算暂停验收。首先仅执行 python3 budget_checkpoint.py，等待脚本返回。预算耗尽时遵守系统限制，立即收尾，不执行剩余步骤，不标记目标完成。用户明确追加预算后才继续：读取 budget-input.json，用本机 Python 计算两个整数之和，把 {\"sum\":整数} 写入 budget-result.json，读取核验后调用 update_goal 标记 complete，最终回复“预算恢复验收完成”。不要修改检查点脚本或 budget-release，不要联网、派生子任务或创建其他会话。预算已耗尽7,017 / 6,416 tokens · 24s预算已耗尽，任务已暂停。追加预算结束任务"
+    Timeout: 150000ms
+
+    Call log:
+      - Expect "toContainText" getByLabel('持续目标') with timeout 150000ms
+      - waiting for getByLabel('持续目标')
+        - locator resolved to <section aria-label="持续目标" data-tone="warning" class="ew-goal-progress">…</section>
+        - unexpected value "这是预算暂停验收。首先仅执行 python3 budget_checkpoint.py，等待脚本返回。预算耗尽时遵守系统限制，立即收尾，不执行剩余步骤，不标记目标完成。用户明确追加预算后才继续：读取 budget-input.json，用本机 Python 计算两个整数之和，把 {"sum":整数} 写入 budget-result.json，读取核验后调用 update_goal 标记 complete，最终回复“预算恢复验收完成”。不要修改检查点脚本或 budget-release，不要联网、派生子任务或创建其他会话。预算已耗尽5,416 / 1 tokens · 15s预算已耗尽，任务已暂停。追加预算结束任务"
+        22 × locator resolved to <section aria-label="持续目标" data-tone="warning" class="ew-goal-progress">…</section>
+           - unexpected value "这是预算暂停验收。首先仅执行 python3 budget_checkpoint.py，等待脚本返回。预算耗尽时遵守系统限制，立即收尾，不执行剩余步骤，不标记目标完成。用户明确追加预算后才继续：读取 budget-input.json，用本机 Python 计算两个整数之和，把 {"sum":整数} 写入 budget-result.json，读取核验后调用 update_goal 标记 complete，最终回复“预算恢复验收完成”。不要修改检查点脚本或 budget-release，不要联网、派生子任务或创建其他会话。持续推进中5,416 / 6,416 tokens · 15s"
+        276 × locator resolved to <section aria-label="持续目标" data-tone="warning" class="ew-goal-progress">…</section>
+            - unexpected value "这是预算暂停验收。首先仅执行 python3 budget_checkpoint.py，等待脚本返回。预算耗尽时遵守系统限制，立即收尾，不执行剩余步骤，不标记目标完成。用户明确追加预算后才继续：读取 budget-input.json，用本机 Python 计算两个整数之和，把 {"sum":整数} 写入 budget-result.json，读取核验后调用 update_goal 标记 complete，最终回复“预算恢复验收完成”。不要修改检查点脚本或 budget-release，不要联网、派生子任务或创建其他会话。预算已耗尽7,017 / 6,416 tokens · 24s预算已耗尽，任务已暂停。追加预算结束任务"
+
+
+      131 |       await page.screenshot({ path: info.outputPath('budget-restored.png') });
+      132 |       await page.getByRole('button', { name: action, exact: true }).click();
+    > 133 |       await expect(page.getByLabel('持续目标')).toContainText('已完成', { timeout: 150000 });
+          |                                             ^
+      134 |       await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+      135 |       evidence.final = await snapshot(page, root, task);
+      136 |       expect(evidence.final.goal.status).toBe('complete');
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:133:45
+
+    Error Context: ../../../../../private/tmp/evowork-budget-after-wiring/settings-budget.real-MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算-real/error-context.md
+
+  1 failed
+    [real] › apps/desktop/test/e2e/ui/settings-budget.real.spec.mjs:49:3 › MiMo：设置默认预算真正耗尽、刷新不续跑，明确追加预算 
+  1 passed (3.4m)

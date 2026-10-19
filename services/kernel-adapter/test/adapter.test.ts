@@ -1666,6 +1666,69 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
 });
 
 describe('目标与预算（Q11：用内核的 ThreadGoal.tokenBudget，不自建）', () => {
+  it('普通任务预算在首轮前交给内核，不仅写投影；不限任务不隐式持续执行', async () => {
+    await adapter.start();
+    const before = server.received.length;
+    const { threadId } = await adapter.createTask({
+      input: [{ type: 'text', text: '计算并验证结果' }],
+      overrides: { cwd: '/w', budgetLimit: 1 },
+      desktopInteractive: true,
+    });
+    const requests = server.received
+      .slice(before)
+      .filter((r) => ['thread/start', 'thread/goal/set', 'turn/start'].includes(r.method));
+    expect(requests.map((r) => r.method)).toEqual([
+      'thread/start',
+      'thread/goal/set',
+      'turn/start',
+      'thread/goal/set',
+    ]);
+    expect(requests[1]?.params).toMatchObject({
+      threadId,
+      objective: '计算并验证结果',
+      status: 'paused',
+      tokenBudget: 1,
+    });
+    expect(requests[3]?.params).toEqual({ threadId, status: 'active' });
+    expect(store.threads.get(threadId)?.budget_limit).toBe(1);
+    const after = server.received.length;
+    await adapter.createTask({
+      input: [{ type: 'text', text: '不限任务' }],
+      overrides: { cwd: '/w' },
+    });
+    expect(server.received.slice(after).some((r) => r.method === 'thread/goal/set')).toBe(false);
+  });
+
+  it('预算初始化失败不启动模型回合，防止不限预算执行', async () => {
+    await adapter.start();
+    const before = server.received.length;
+    server.handlers.set('thread/goal/set', () => {
+      throw new FakeRpcError(ERROR_CODE.internalError, 'budget unavailable');
+    });
+    await expect(
+      adapter.createTask({
+        input: [{ type: 'text', text: '受限任务' }],
+        overrides: { cwd: '/w', budgetLimit: 1 },
+      }),
+    ).rejects.toBeInstanceOf(JsonRpcCallError);
+    expect(server.received.slice(before).some((r) => r.method === 'turn/start')).toBe(false);
+  });
+
+  it.each([NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    '无效预算 %s 在创建任务前拒绝',
+    async (budgetLimit) => {
+      await adapter.start();
+      const before = server.received.length;
+      await expect(
+        adapter.createTask({
+          input: [{ type: 'text', text: '计算' }],
+          overrides: { cwd: '/w', budgetLimit },
+        }),
+      ).rejects.toThrow('预算');
+      expect(server.received.slice(before).some((r) => r.method === 'thread/start')).toBe(false);
+    },
+  );
+
   it('首轮启动失败时保留暂停目标，不启用后台续跑', async () => {
     await adapter.start();
     server.handlers.set('turn/start', () => {

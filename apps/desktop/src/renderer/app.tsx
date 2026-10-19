@@ -143,6 +143,9 @@ import { Home, type Scenario } from './views/home.js';
 import { Library, type LibraryNav } from './views/library.js';
 import { Onboarding, ONBOARDING_STEPS, type OnboardingStep } from './views/onboarding.js';
 import { ProjectDetailPage } from './views/project-detail.js';
+import { actionErrorText } from './action-error.js';
+export { actionErrorText } from './action-error.js';
+import type { SettingsLeaveGuard } from './components/settings-controls.js';
 import { SettingsPage, type SettingsSection } from './views/settings.js';
 import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
@@ -662,9 +665,37 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(
     savedDraft.current.workspaceId,
   );
-  const [view, setView] = useState<MainView>('task');
+  const [view, setViewDirect] = useState<MainView>('task');
+  const settingsLeaveGuard = useRef<SettingsLeaveGuard | null>(null);
+  const registerSettingsGuard = useCallback((guard: SettingsLeaveGuard | null) => {
+    settingsLeaveGuard.current = guard;
+  }, []);
+  const afterSettingsGuard = useCallback((action: () => void) => {
+    const guard = settingsLeaveGuard.current;
+    if (guard)
+      void guard().then((allowed) => {
+        if (allowed) action();
+      });
+    else action();
+  }, []);
+  const setView = useCallback((next: MainView) => {
+    const guard = settingsLeaveGuard.current;
+    if (guard && next !== 'settings')
+      void guard().then((allowed) => {
+        if (allowed) setViewDirect(next);
+      });
+    else setViewDirect(next);
+  }, []);
   /** 设置页的当前分区（11 §4.4）。「更多」菜单直接说要去哪个分区 */
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('models');
+  const [settingsSection, setSettingsSectionDirect] = useState<SettingsSection>('models');
+  const setSettingsSection = useCallback((next: SettingsSection) => {
+    const guard = settingsLeaveGuard.current;
+    if (guard)
+      void guard().then((allowed) => {
+        if (allowed) setSettingsSectionDirect(next);
+      });
+    else setSettingsSectionDirect(next);
+  }, []);
   const [modelAccess, setModelAccess] = useState<ModelAccessView | null>(null);
   const [computerUse, setComputerUse] = useState<ComputerUseStatusView | null>(null);
   useEffect(() => bridge.onComputerUseStatus?.(setComputerUse), [bridge]);
@@ -1115,25 +1146,29 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
   }, [bridge, reportFailure]);
 
-  const beginNewTask = useCallback(() => {
-    if (!pendingEnvironment.current)
-      void bridge
-        .discardComposerDraft?.({ draftId: draftIdentity.current })
-        .catch((error) => reportFailure(error, '没能清理草稿附件。'));
-    draftIdentity.current = crypto.randomUUID();
-    setWorkspaceId(undefined);
-    setActiveTaskId(null);
-    setDraftMemoryUse('default');
-    setDraft('');
-    setReferences([]);
-    setAttachments([]);
-    setPendingAttachmentSkill(null);
-    setModelOverridden(false);
-    setNotices((previous) => previous.filter((notice) => notice.scope !== 'task'));
-    setFocusItemId(undefined);
-    setSearchOpen(false);
-    setView('task');
-  }, [bridge, reportFailure]);
+  const beginNewTask = useCallback(
+    () =>
+      afterSettingsGuard(() => {
+        if (!pendingEnvironment.current)
+          void bridge
+            .discardComposerDraft?.({ draftId: draftIdentity.current })
+            .catch((error) => reportFailure(error, '没能清理草稿附件。'));
+        draftIdentity.current = crypto.randomUUID();
+        setWorkspaceId(undefined);
+        setActiveTaskId(null);
+        setDraftMemoryUse('default');
+        setDraft('');
+        setReferences([]);
+        setAttachments([]);
+        setPendingAttachmentSkill(null);
+        setModelOverridden(false);
+        setNotices((previous) => previous.filter((notice) => notice.scope !== 'task'));
+        setFocusItemId(undefined);
+        setSearchOpen(false);
+        setView('task');
+      }),
+    [bridge, reportFailure, afterSettingsGuard],
+  );
 
   /*
    * 冷启动那条深链走**拉**不走推：推的时候 React 还没订阅事件，会丢
@@ -2009,7 +2044,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   useEffect(() => {
     if (
       view !== 'settings' ||
-      settingsSection !== 'personalization' ||
+      !['personalization', 'import'].includes(settingsSection) ||
       !memorySettings?.enabled ||
       !memorySettings.statusSupported ||
       memorySettings.ready ||
@@ -3547,11 +3582,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           sections={[]}
           selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
           activeNavId={navIdForView(view, activeTaskId)}
-          onSelect={(id) => {
-            draftIdentity.current = crypto.randomUUID();
-            setActiveTaskId(id);
-            setView('task');
-          }}
+          onSelect={(id) =>
+            afterSettingsGuard(() => {
+              draftIdentity.current = crypto.randomUUID();
+              setActiveTaskId(id);
+              setViewDirect('task');
+            })
+          }
           onNewTask={beginNewTask}
           projects={(startup?.workspaces ?? []).map((project) => ({
             id: project.id,
@@ -3560,22 +3597,31 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             rootMissing: project.rootMissing,
           }))}
           selectedProjectId={view === 'projects' ? (activeProjectId ?? undefined) : undefined}
-          onProjectSelect={(id) => {
-            setActiveProjectId(id);
-            setView('projects');
-          }}
+          onProjectSelect={(id) =>
+            afterSettingsGuard(() => {
+              setActiveProjectId(id);
+              setViewDirect('projects');
+            })
+          }
           onProjectCreate={() => setProjectCreateOpen(true)}
           onProjectImport={importProject}
           onProjectRename={(id, name) => renameProject({ id, name })}
-          onNavSelect={(id) => {
-            if (id === 'library') setLibraryInitialNav('recent');
-            setView(NAV_TO_VIEW[id] ?? 'task');
-          }}
+          onNavSelect={(id) =>
+            afterSettingsGuard(() => {
+              if (id === 'library') setLibraryInitialNav('recent');
+              setViewDirect(NAV_TO_VIEW[id] ?? 'task');
+            })
+          }
           /*
            * 「更多」是一个菜单（02 §4.7），它的项直接落到设置页的某个分区 ——
            * `settings:models` 这种形式让菜单自己说出要去哪儿，少一处 id → 分区的映射。
            */
           onMoreSelect={(id) => {
+            if (id === 'library') {
+              setLibraryInitialNav('recent');
+              setView('library');
+              return;
+            }
             if (id === 'audit') {
               setView('audit');
               return;
@@ -3653,15 +3699,19 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       {view !== 'task' ? (
         <MainPage
           view={view}
+          onRegisterLeaveGuard={registerSettingsGuard}
+          onOpenLibrary={() => {
+            setLibraryInitialNav('recent');
+            setView('library');
+          }}
+          onOpenAudit={() => setView('audit')}
           settingsSection={settingsSection}
           onSettingsSection={setSettingsSection}
           modelAccess={modelAccess}
           computerUse={computerUse}
-          onComputerUseEnabled={(enabled) => {
-            void bridge
-              .setComputerUseEnabled?.({ enabled })
-              .then(setComputerUse)
-              .catch((error: unknown) => reportFailure(error, '没能更新电脑操控状态。'));
+          onComputerUseEnabled={async (enabled) => {
+            if (!bridge.setComputerUseEnabled) throw new Error('当前版本不支持更改电脑操控。');
+            setComputerUse(await bridge.setComputerUseEnabled({ enabled }));
           }}
           onComputerUseStop={() => {
             void bridge
@@ -3669,17 +3719,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then(setComputerUse)
               .catch((error: unknown) => reportFailure(error, '没能停止电脑操控。'));
           }}
-          onComputerUseRevoke={(appId) => {
-            void bridge
-              .revokeComputerUseAccess?.(appId ? { appId } : {})
-              .then(setComputerUse)
-              .catch((error: unknown) => reportFailure(error, '没能撤销应用授权。'));
+          onComputerUseRevoke={async (appId) => {
+            if (!bridge.revokeComputerUseAccess) throw new Error('当前版本不支持撤销应用授权。');
+            setComputerUse(await bridge.revokeComputerUseAccess(appId ? { appId } : {}));
           }}
-          onComputerUseRefresh={() => {
-            void bridge
-              .getComputerUseStatus?.()
-              .then(setComputerUse)
-              .catch((error: unknown) => reportFailure(error, '没能重新检查电脑操控。'));
+          onComputerUseRefresh={async () => {
+            if (!bridge.getComputerUseStatus) throw new Error('当前版本不支持检查电脑操控。');
+            setComputerUse(await bridge.getComputerUseStatus());
           }}
           onComputerUseSettings={(permission) => {
             void bridge
@@ -3689,17 +3735,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           imagePorts={bridge}
           workingDirectory={workingDirectory}
           workingDirectoryBusy={workingDirectoryBusy}
-          onWorkingDirectory={(reset) => {
-            if (workingDirectoryBusy) return;
+          onWorkingDirectory={async (reset) => {
+            if (workingDirectoryBusy) throw new Error('正在更改工作目录，请稍候。');
             setWorkingDirectoryBusy(true);
-            void bridge
-              .setWorkingDirectory({ reset })
-              .then((directory) => {
-                setWorkingDirectory(directory);
-                setSettingsRefusal(undefined);
-              })
-              .catch((error: unknown) => reportFailure(error, '工作目录没有保存。'))
-              .finally(() => setWorkingDirectoryBusy(false));
+            try {
+              setWorkingDirectory(await bridge.setWorkingDirectory({ reset }));
+              setSettingsRefusal(undefined);
+            } finally {
+              setWorkingDirectoryBusy(false);
+            }
           }}
           preferences={preferences}
           memory={memorySettings}
@@ -3707,14 +3751,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           appVersion={startup?.appVersion ?? ''}
           {...(settingsRefusal !== undefined ? { settingsRefusal } : {})}
           {...(probeResult !== undefined ? { probeResult } : {})}
-          onModelAccessAction={(run) => {
-            void run(bridge)
-              .then((result) => {
-                applyAccessView(result.view);
-                // 拒绝的原话要显示出来；成功时把上一次的拒绝清掉
-                setSettingsRefusal(result.refused);
-              })
-              .catch((error: unknown) => reportFailure(error, '设置没有保存。'));
+          onModelAccessAction={async (run) => {
+            const result = await run(bridge);
+            applyAccessView(result.view);
+            setSettingsRefusal(result.refused);
+            if (!result.ok) throw new Error(result.refused ?? '设置没有保存。');
           }}
           onTestCustomModel={(input) => bridge.testCustomModel(input)}
           onOpenModelsFolder={() =>
@@ -3738,37 +3779,25 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               .then((r) => setProbeResult(r.message))
               .catch(() => setProbeResult('检查没跑起来。'));
           }}
-          onPreferences={(input) => {
-            void bridge
-              .setPreferences(input)
-              .then(setPreferences)
-              .catch((error: unknown) => reportFailure(error, '偏好没有保存。'));
+          onPreferences={async (input) => {
+            setPreferences(await bridge.setPreferences(input));
           }}
           memoryImportRevision={memoryImportRevision}
           memoryImportPorts={bridge}
           onImportMemories={openMemoryImport}
-          onMemorySettings={(input) => {
-            if (!bridge.setMemorySettings) return;
-            void bridge
-              .setMemorySettings(input)
-              .then((result) => {
-                setMemorySettingsView(result.view);
-                setSettingsRefusal(result.refused);
-              })
-              .catch((error: unknown) => reportFailure(error, '记忆设置没有保存。'));
+          onMemorySettings={async (input) => {
+            if (!bridge.setMemorySettings) throw new Error('当前版本不支持更改记忆设置。');
+            const result = await bridge.setMemorySettings(input);
+            setMemorySettingsView(result.view);
+            setSettingsRefusal(result.refused);
+            if (!result.ok) throw new Error(result.refused ?? '记忆设置没有保存。');
           }}
-          onResetMemories={() => {
-            if (!bridge.resetMemories) return;
-            void bridge
-              .resetMemories()
-              .then((result) => {
-                setMemorySettingsView(result.view);
-                pushToast({
-                  tone: result.ok ? 'success' : 'danger',
-                  text: result.ok ? '本地记忆已清空。' : (result.refused ?? '本地记忆没有清空。'),
-                });
-              })
-              .catch((error: unknown) => reportFailure(error, '本地记忆没有清空。'));
+          onResetMemories={async () => {
+            if (!bridge.resetMemories) throw new Error('当前版本不支持清空记忆。');
+            const result = await bridge.resetMemories();
+            setMemorySettingsView(result.view);
+            if (!result.ok) throw new Error(result.refused ?? '本地记忆没有清空。');
+            setMemoryImportRevision((value) => value + 1);
           }}
           onLogin={() => {
             void bridge
@@ -3971,8 +4000,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           hubActions={hubActions}
           onHubFetchWhenSignedOut={
             bridge.setHubFetchWhenSignedOut
-              ? (enabled) => {
-                  void runCatalogMutation(() => bridge.setHubFetchWhenSignedOut!({ enabled }));
+              ? async (enabled) => {
+                  const result = await runCatalogMutation(() =>
+                    bridge.setHubFetchWhenSignedOut!({ enabled }),
+                  );
+                  if (!result.ok) throw new Error(result.refused ?? '精选内容设置没有保存。');
                 }
               : undefined
           }
@@ -3986,11 +4018,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onCancelUpdateDownload={() =>
             runUpdateAction(bridge.cancelUpdateDownload && (() => bridge.cancelUpdateDownload!()))
           }
-          onUpdateAutoCheck={(enabled) =>
-            runUpdateAction(
-              bridge.setUpdateAutoCheck && (() => bridge.setUpdateAutoCheck!({ enabled })),
-            )
-          }
+          onUpdateAutoCheck={async (enabled) => {
+            if (!bridge.setUpdateAutoCheck) throw new Error('当前版本不支持自动检查更新。');
+            setUpdate(await bridge.setUpdateAutoCheck({ enabled }));
+          }}
           onGetUpdateQuitImpact={async () =>
             (await bridge.getUpdateQuitImpact?.()) ?? {
               runningTasks: [],
@@ -4519,14 +4550,17 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  * 02 §1 的 6 个入口是产品骨架。「更多」现在还没有本体页，给一个如实说明的空页。
  */
 function MainPage(props: {
+  readonly onRegisterLeaveGuard: (guard: SettingsLeaveGuard | null) => void;
+  readonly onOpenLibrary: () => void;
+  readonly onOpenAudit: () => void;
   readonly imagePorts?: EvoworkBridge | undefined;
   readonly computerUse?: ComputerUseStatusView | null | undefined;
-  readonly onComputerUseEnabled?: ((enabled: boolean) => void) | undefined;
+  readonly onComputerUseEnabled?: ((enabled: boolean) => void | Promise<void>) | undefined;
   readonly onComputerUseStop?: (() => void) | undefined;
-  readonly onComputerUseRevoke?: ((appId?: string) => void) | undefined;
+  readonly onComputerUseRevoke?: ((appId?: string) => void | Promise<void>) | undefined;
   readonly onComputerUseSettings?:
     ((permission?: 'accessibility' | 'screenRecording') => void) | undefined;
-  readonly onComputerUseRefresh?: (() => void) | undefined;
+  readonly onComputerUseRefresh?: (() => void | Promise<void>) | undefined;
 
   readonly view: MainView;
   readonly settingsSection: SettingsSection;
@@ -4534,7 +4568,7 @@ function MainPage(props: {
   readonly modelAccess: ModelAccessView | null;
   readonly workingDirectory?: WorkingDirectoryView | null | undefined;
   readonly workingDirectoryBusy?: boolean | undefined;
-  readonly onWorkingDirectory?: ((reset: boolean) => void) | undefined;
+  readonly onWorkingDirectory?: ((reset: boolean) => void | Promise<void>) | undefined;
   readonly preferences: PreferencesView | null;
   readonly memory: MemorySettingsView | null;
   readonly appName: string;
@@ -4549,7 +4583,7 @@ function MainPage(props: {
    */
   readonly onModelAccessAction: (
     run: (bridge: EvoworkBridge) => Promise<ModelAccessMutationResult>,
-  ) => void;
+  ) => Promise<void>;
   readonly onProbe: (modelId: string) => void;
   /**
    * 「测试连接」走**自己的一条路**而不是 `onModelAccessAction`：它不改本机状态，
@@ -4558,12 +4592,12 @@ function MainPage(props: {
   readonly onTestCustomModel: (input: CustomModelTestInput) => Promise<ModelProbeResult>;
   readonly onOpenModelsFolder: () => void;
   readonly onOpenProviderDocs: (provider: string) => void;
-  readonly onPreferences: (input: PreferencesInput) => void;
+  readonly onPreferences: (input: PreferencesInput) => Promise<void>;
   readonly memoryImportRevision: number;
   readonly memoryImportPorts: MemoryImportPorts;
   readonly onImportMemories: () => void;
-  readonly onMemorySettings: (input: MemorySettingsInput) => void;
-  readonly onResetMemories: () => void;
+  readonly onMemorySettings: (input: MemorySettingsInput) => Promise<void>;
+  readonly onResetMemories: () => Promise<void>;
   readonly onLogin: () => void;
   readonly onLogout: () => void;
   readonly onRevokeDevice: (deviceId: string) => void;
@@ -4626,13 +4660,13 @@ function MainPage(props: {
   readonly onCreateExpert: CatalogPageProps['onCreateExpert'];
   readonly onRemoveExpert: CatalogPageProps['onRemoveExpert'];
   readonly hubActions?: CatalogHubActions | undefined;
-  readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void) | undefined;
+  readonly onHubFetchWhenSignedOut?: ((enabled: boolean) => void | Promise<void>) | undefined;
   /* 在线升级与办公扩展（设置 → 关于与更新） */
   readonly update: UpdateStatusView | null;
   readonly onCheckUpdate: () => void;
   readonly onDownloadUpdate: () => void;
   readonly onCancelUpdateDownload: () => void;
-  readonly onUpdateAutoCheck: (enabled: boolean) => void;
+  readonly onUpdateAutoCheck: (enabled: boolean) => Promise<void>;
   readonly onGetUpdateQuitImpact: () => Promise<UpdateQuitImpactView>;
   readonly onQuitAndInstall: () => void;
   readonly runtime: RuntimeStatusView | null;
@@ -4708,6 +4742,9 @@ function MainPage(props: {
     case 'settings':
       return (
         <SettingsPage
+          onRegisterLeaveGuard={props.onRegisterLeaveGuard}
+          onOpenLibrary={props.onOpenLibrary}
+          onOpenAudit={props.onOpenAudit}
           section={props.settingsSection}
           onSection={props.onSettingsSection}
           access={props.modelAccess}
@@ -4875,44 +4912,6 @@ export function turnFailureCopy(
     text: '这次失败的原因只有技术信息，已折进下面的「详情」。可以先重试；反复出现就换一个模型。',
     detail: raw,
   };
-}
-
-/**
- * 经 IPC 回来的拒绝被 Electron 包成这个样子，**内层还可能再套一层我们自己的错误类**：
- *   `Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)`
- */
-const IPC_WRAPPER = /^Error invoking remote method '[^']*':\s*/;
-
-/** 一眼就知道不是写给用户看的东西。命中任何一条就改用兜底文案。 */
-const INTERNAL_MARKERS: readonly RegExp[] = [
-  /Error invoking remote method/,
-  /\w+Error:/, // JsonRpcCallError / TransportClosedError / TypeError…
-  /\bcode -?\d{3,}\b/, // 裸 JSON-RPC 错误码
-  /\n\s*at\s/, // 堆栈
-];
-
-/**
- * 动作失败时**给用户看的那句话**。
- *
- * `error.message` 不能原样显示。2026-09-27 的用户截图里，点「停止」失败之后弹出来的是
- * `Error invoking remote method 'evowork:interrupt': JsonRpcCallError: turn/interrupt 失败 (code -32600)`
- * —— 它同时泄漏了内部通道名、内部错误类和裸错误码，而对用户没有任何可操作信息。
- * 此前的实现是「有 message 就显示 message」，于是调用方精心写的兜底文案几乎永远轮不到。
- *
- * 规则：先剥掉 Electron 的包装；剩下的部分还带内部痕迹的话，就用**调用方为这个动作写的
- * 兜底文案** —— 那是为这次失败写的人话，比任何通用改写都准。
- *
- * **不碰回合失败卡**：那条路（`turn-failed` 的 summary）是 03 §8 的明确决定 ——
- * 把内核给的原因原样显示，因为 `connection refused` 与 `401` 对用户是不同的两件事。
- * 两者的区别是：那边显示的是**内核写的原因**，这边泄漏的是**传输层的包装**。
- */
-export function actionErrorText(error: unknown, fallback: string): string {
-  const raw = error instanceof Error ? error.message.trim() : '';
-  if (raw === '') return fallback;
-  const unwrapped = raw.replace(IPC_WRAPPER, '').trim();
-  if (unwrapped === '') return fallback;
-  if (INTERNAL_MARKERS.some((re) => re.test(unwrapped))) return fallback;
-  return unwrapped;
 }
 
 /** 流式增量按 id 合并（04 §5.1）。导出是为了单独测"同 id 覆盖、新 id 追加"。 */

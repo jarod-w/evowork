@@ -7,7 +7,7 @@
  *   · 钥匙串不可用时两个选项并列（不替用户选）；
  *   · 并发上限只能往下调（机器就是资源上限）。
  */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SecretInput } from '../src/renderer/components/primitives.js';
@@ -103,7 +103,7 @@ function page(over: Partial<SettingsPageProps> = {}) {
 }
 
 describe('常规工作目录', () => {
-  it('显示无项目工作目录，可更改和恢复默认，并说明只影响新任务', () => {
+  it('显示无项目工作目录，可更改和恢复默认，并说明只影响新任务', async () => {
     const onWorkingDirectory = vi.fn();
     page({
       section: 'general',
@@ -114,6 +114,11 @@ describe('常规工作目录', () => {
     expect(screen.getByText(/每个新任务创建独立子目录/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '更改…' }));
     expect(onWorkingDirectory).toHaveBeenCalledWith(false);
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '恢复默认' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
     expect(onWorkingDirectory).toHaveBeenCalledWith(true);
   });
@@ -122,7 +127,7 @@ describe('常规工作目录', () => {
 describe('个性化记忆', () => {
   it('显示 Codex 当前支持的全局开关与准备状态', () => {
     page({ section: 'personalization' });
-    expect(screen.getByRole('heading', { name: '个性化' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '记忆与导入' })).toBeTruthy();
     expect(
       (screen.getByRole('checkbox', { name: '启用本地记忆' }) as HTMLInputElement).checked,
     ).toBe(true);
@@ -167,11 +172,12 @@ describe('个性化记忆', () => {
     expect(props.onResetMemories).toHaveBeenCalled();
   });
 
-  it('外部上下文开关可关闭保护，其他设置不会把它重新打开', () => {
+  it('外部上下文开关可关闭保护，其他设置不会把它重新打开', async () => {
     const props = page({
       section: 'personalization',
       memory: { ...MEMORY, disableOnExternalContext: false },
     });
+    fireEvent.click(screen.getByText('高级设置'));
     const allow = screen.getByRole('checkbox', {
       name: '允许使用网页或连接器的任务贡献记忆',
     }) as HTMLInputElement;
@@ -183,19 +189,22 @@ describe('个性化记忆', () => {
       generateMemories: true,
       disableOnExternalContext: false,
     });
+    await screen.findByText('已保存。');
     fireEvent.click(allow);
     expect(props.onMemorySettings).toHaveBeenLastCalledWith(
       expect.objectContaining({ disableOnExternalContext: true }),
     );
   });
 
-  it('分别选择提取和整理模型，可清除指定恢复跟随任务', () => {
+  it('分别选择提取和整理模型，可清除指定恢复跟随任务', async () => {
     const props = page({ section: 'personalization' });
+    fireEvent.click(screen.getByText('高级设置'));
     fireEvent.click(screen.getByRole('button', { name: '记忆提取模型' }));
     fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(`^${model().label}`) }));
     expect(props.onMemorySettings).toHaveBeenLastCalledWith(
       expect.objectContaining({ extractModel: model().id }),
     );
+    await screen.findByText('已保存。');
     fireEvent.click(screen.getByRole('button', { name: '记忆整理模型' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /^跟随任务模型/ }));
     expect(props.onMemorySettings).toHaveBeenLastCalledWith(
@@ -262,42 +271,47 @@ describe('模型', () => {
     expect(screen.queryByText('模型接入')).toBeNull();
   });
 
-  it('主区就是那张自定义模型卡片，并**如实标出宿主给的真实落盘路径**', () => {
+  it('默认显示对话模型，配置路径在次要入口里保留真实位置', () => {
     page();
     expect(screen.getByRole('heading', { name: '自定义模型' })).toBeTruthy();
-    expect(screen.getByText(/模型添加后会自动写入到本地/)).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '对话模型' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
     // 路径不是渲染层拼死的：`EVOWORK_HOME` 被指到别处时这一行必须跟着变
-    expect(screen.getByRole('button', { name: '~/somewhere/models.toml' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开配置目录' }).title).toBe(
+      '~/somewhere/models.toml',
+    );
     expect(screen.getByRole('button', { name: '添加模型' })).toBeTruthy();
   });
 
   it('路径是个链接：点它在访达里打开那个目录（点了没反应的链接不如纯文本）', () => {
     const onOpenModelsFolder = vi.fn();
     page({ onOpenModelsFolder });
-    fireEvent.click(screen.getByRole('button', { name: '~/somewhere/models.toml' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开配置目录' }));
     expect(onOpenModelsFolder).toHaveBeenCalled();
   });
 
   it('没注入 shell 时那个链接**禁用**，而不是点了什么都不发生', () => {
     page({ onOpenModelsFolder: undefined });
     expect(
-      (screen.getByRole('button', { name: '~/somewhere/models.toml' }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole('button', { name: '打开配置目录' }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
-  it('每行是 id + 「自定义」+ 三个动作（改 · 测连通 · 删）', () => {
+  it('每行使用名称、未验证提示与真实动作，删除需要确认', () => {
     const props = page({ access: { ...ACCESS, customModels: [custom()] } });
-    expect(screen.getByText('deepseek/deepseek-v4-flash-0731')).toBeTruthy();
-    expect(screen.getByText('自定义')).toBeTruthy();
+    expect(screen.getByText('deepseek-v4-flash-0731')).toBeTruthy();
+    expect(screen.getByText(/未验证/)).toBeTruthy();
     fireEvent.click(
       screen.getByRole('button', { name: '检查 deepseek/deepseek-v4-flash-0731 连接' }),
     );
     expect(props.onProbe).toHaveBeenCalledWith('deepseek/deepseek-v4-flash-0731');
     fireEvent.click(screen.getByRole('button', { name: '删除 deepseek/deepseek-v4-flash-0731' }));
+    expect(props.onRemoveCustomModel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
     expect(props.onRemoveCustomModel).toHaveBeenCalledWith('deepseek/deepseek-v4-flash-0731');
     expect(
-      screen.getByRole('button', { name: '修改 deepseek/deepseek-v4-flash-0731' }),
+      screen.getByRole('button', { name: '修改 deepseek/deepseek-v4-flash-0731', hidden: true }),
     ).toBeTruthy();
   });
 
@@ -305,7 +319,7 @@ describe('模型', () => {
     page({
       access: { ...ACCESS, customModels: [custom({ keySaved: false, keyLast4: undefined })] },
     });
-    expect(screen.getByText(/还没有密钥/)).toBeTruthy();
+    expect(screen.getByText(/尚未配置密钥/)).toBeTruthy();
   });
 
   it('铅笔打开的弹窗预填那一条，且**不要求重填密钥**（留空 = 沿用已存的那把）', () => {
@@ -369,7 +383,7 @@ describe('模型', () => {
     expect(screen.queryByRole('table', { name: '可用模型' })).toBeNull();
   });
 
-  it('钥匙串不可用：两个选项**并列**，不替用户选', () => {
+  it('钥匙串不可用：两个选项**并列**，不替用户选', async () => {
     const props = page({
       access: {
         ...ACCESS,
@@ -379,6 +393,7 @@ describe('模型', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /以明文文件保存/ }));
     expect(props.onSecretFallback).toHaveBeenCalledWith(true);
+    await screen.findByText('已保存。');
     fireEvent.click(screen.getByRole('button', { name: /不保存/ }));
     expect(props.onSecretFallback).toHaveBeenCalledWith(false);
   });
@@ -801,11 +816,15 @@ describe('账号（M10b）', () => {
 });
 
 describe('用量与预算（Q11 的阶段 1）', () => {
-  it('预算失焦时才提交，且清空 = 不限（那是一个合法选择，不是错误）', () => {
+  it('预算失焦不提交，明确保存才写入，且不限是合法选择', () => {
     const props = page({ section: 'usage' });
-    const input = screen.getByLabelText(/token 硬预算/) as HTMLInputElement;
+    fireEvent.click(screen.getByRole('button', { name: '单任务用量上限' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '自定义' }));
+    const input = screen.getByLabelText('用量上限（tokens）');
     fireEvent.change(input, { target: { value: '200000' } });
     fireEvent.blur(input);
+    expect(props.onPreferences).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '保存预算' }));
     expect(props.onPreferences).toHaveBeenCalledWith({ taskTokenBudget: 200000 });
   });
 
@@ -833,17 +852,23 @@ describe('用量与预算（Q11 的阶段 1）', () => {
   });
 });
 
-describe('还没做好的两个分区', () => {
-  it('数据管理：说清归档管理界面没做，并指出磁盘占用在资料库页', () => {
-    page({ section: 'data' });
-    expect(screen.getByText(/归档任务的管理界面还没做好/)).toBeTruthy();
-    expect(screen.getByText(/资料库/)).toBeTruthy();
+describe('数据与安全入口', () => {
+  it('旧数据管理入口进入常规，并提供真实资料库入口', () => {
+    const onOpenLibrary = vi.fn();
+    page({ section: 'data', onOpenLibrary });
+    expect(screen.getByRole('heading', { name: '常规' })).toBeTruthy();
+    expect(screen.queryByText(/还没做好/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '前往资料库' }));
+    expect(onOpenLibrary).toHaveBeenCalledOnce();
   });
 
-  it('安全与权限：没包时说明不锁；档位可视化仍说没做', () => {
-    page({ section: 'security' });
+  it('安全页保留策略说明和可用的审计入口，不展示未完成占位', () => {
+    const onOpenAudit = vi.fn();
+    page({ section: 'security', onOpenAudit });
     expect(screen.getByText(/没有企业策略包/)).toBeTruthy();
-    expect(screen.getByText(/还没做好/)).toBeTruthy();
+    expect(screen.queryByText(/还没做好/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看审计' }));
+    expect(onOpenAudit).toHaveBeenCalledOnce();
   });
 
   it('超期策略包显示设计原句（含恢复路径）', () => {
@@ -1027,7 +1052,7 @@ describe('关于与更新', () => {
 });
 
 describe('电脑操控权限状态与恢复', () => {
-  it('AX 与录屏分开显示，AX-only 可启用；系统页链接和重新检查分别可操作', () => {
+  it('AX 与录屏分开显示，AX-only 可启用；系统页链接和重新检查分别可操作', async () => {
     const onSettings = vi.fn(),
       onRefresh = vi.fn(),
       onEnabled = vi.fn();
@@ -1047,10 +1072,11 @@ describe('电脑操控权限状态与恢复', () => {
     });
     expect(screen.getByText(/辅助功能：已授权/)).toBeTruthy();
     expect(screen.getByText(/未授权（可使用辅助功能模式）/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '启用电脑操控' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '电脑操控' }));
     expect(onEnabled).toHaveBeenCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: '打开屏幕录制设置' }));
     expect(onSettings).toHaveBeenCalledWith('screenRecording');
+    await screen.findByText('已保存。');
     fireEvent.click(screen.getByRole('button', { name: '重新检查组件与权限' }));
     expect(onRefresh).toHaveBeenCalledOnce();
   });
@@ -1059,6 +1085,7 @@ describe('电脑操控权限状态与恢复', () => {
     (state) => {
       page({
         section: 'security',
+        onComputerUseRefresh: vi.fn(),
         computerUse: {
           enabled: false,
           state,
@@ -1067,7 +1094,7 @@ describe('电脑操控权限状态与恢复', () => {
           persistentAllowed: false,
         },
       });
-      expect(screen.getByRole('button', { name: '启用电脑操控' }).hasAttribute('disabled')).toBe(
+      expect(screen.getByRole('checkbox', { name: '电脑操控' }).hasAttribute('disabled')).toBe(
         true,
       );
       expect(
@@ -1076,4 +1103,126 @@ describe('电脑操控权限状态与恢复', () => {
       expect(screen.getByText(/企业策略禁止持久授权/)).toBeTruthy();
     },
   );
+});
+
+describe('设置重排后的保存与离开行为', () => {
+  it('只有七个分类，旧导入入口归入记忆与导入', () => {
+    page({ section: 'import' });
+    expect(
+      within(screen.getByRole('navigation', { name: '设置分类' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['常规', '账号', '模型', '记忆与导入', '用量与预算', '安全与权限', '关于与更新']);
+    expect(screen.getByRole('heading', { name: '记忆与导入' })).toBeTruthy();
+  });
+
+  it('未完成的记忆保存不显示成功，拒绝后保留原值并展示错误', async () => {
+    let reject!: (error: Error) => void;
+    page({
+      section: 'personalization',
+      onMemorySettings: () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    });
+    const checkbox = screen.getByRole('checkbox', { name: '启用本地记忆' }) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(false);
+    expect(screen.getByText('正在保存…')).toBeTruthy();
+    expect(screen.queryByText('已保存。')).toBeNull();
+    expect(checkbox.disabled).toBe(true);
+    reject(new Error('磁盘不可写，记忆设置未保存。'));
+    await screen.findByRole('alert');
+    expect(checkbox.checked).toBe(true);
+    expect(checkbox.disabled).toBe(false);
+    expect(screen.queryByText('已保存。')).toBeNull();
+  });
+
+  it('模型保存被宿主拒绝时弹窗与草稿保留，用户可以修正重试', async () => {
+    const props = page({
+      access: { ...ACCESS, customModels: [custom()] },
+      onUpdateCustomModel: vi.fn(async () => {
+        throw new Error(
+          "Error invoking remote method 'evowork:updateCustomModel': 模型名称冲突，请修改。",
+        );
+      }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: '修改 ' + custom().id }));
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'my-new-model' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
+    await screen.findByText('模型名称冲突，请修改。');
+    expect((screen.getByLabelText('模型名称') as HTMLInputElement).value).toBe('my-new-model');
+    expect(props.onUpdateCustomModel).toHaveBeenCalledOnce();
+  });
+
+  it('预算草稿在切换分类前确认，取消保留输入，明确丢弃才导航', async () => {
+    const props = page({ section: 'usage' });
+    fireEvent.click(screen.getByRole('button', { name: '单任务用量上限' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '自定义' }));
+    fireEvent.change(screen.getByLabelText('用量上限（tokens）'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: '账号' }));
+    const dialog = await screen.findByRole('dialog', { name: '设置尚未保存' });
+    expect(props.onSection).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect((screen.getByLabelText('用量上限（tokens）') as HTMLInputElement).value).toBe('123456');
+    fireEvent.click(screen.getByRole('button', { name: '账号' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: '丢弃并离开' }),
+    );
+    await waitFor(() => expect(props.onSection).toHaveBeenCalledWith('account'));
+    expect(props.onPreferences).not.toHaveBeenCalled();
+  });
+
+  it('预算非法数字不会保存，选择不限明确提交 0，取消不写入', async () => {
+    const props = page({
+      section: 'usage',
+      preferences: { concurrencyComputed: 3, concurrencyLimit: 3, taskTokenBudget: 200000 },
+    });
+    const input = screen.getByLabelText('用量上限（tokens）');
+    fireEvent.change(input, { target: { value: '9007199254740993' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存预算' }));
+    expect(screen.getByRole('alert').textContent).toContain('大于 0 的整数');
+    expect(props.onPreferences).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect((input as HTMLInputElement).value).toBe('200000');
+    fireEvent.click(screen.getByRole('button', { name: '单任务用量上限' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '不限' }));
+    expect(props.onPreferences).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '保存预算' }));
+    await waitFor(() => expect(props.onPreferences).toHaveBeenCalledWith({ taskTokenBudget: 0 }));
+  });
+});
+
+it('预算保存中请求离开会等待真实回执，完成后自动导航，不再误报未保存', async () => {
+  let complete!: () => void;
+  const props = page({
+    section: 'usage',
+    onPreferences: () =>
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      }),
+  });
+  cleanup();
+  const view = render(<SettingsPage {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: '单任务用量上限' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '自定义' }));
+  fireEvent.change(screen.getByLabelText('用量上限（tokens）'), { target: { value: '200000' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存预算' }));
+  fireEvent.click(screen.getByRole('button', { name: '账号' }));
+  const dialog = await screen.findByRole('dialog', { name: '正在保存设置' });
+  expect(
+    (within(dialog).getByRole('button', { name: '丢弃并离开' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(props.onSection).not.toHaveBeenCalled();
+  await act(async () => {
+    complete();
+    view.rerender(
+      <SettingsPage
+        {...props}
+        preferences={{ concurrencyComputed: 3, concurrencyLimit: 3, taskTokenBudget: 200000 }}
+      />,
+    );
+  });
+  await waitFor(() => expect(props.onSection).toHaveBeenCalledWith('account'));
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   MemoryImportDetectionView,
   MemoryImportHistoryView,
@@ -8,6 +8,8 @@ import type {
   MemorySettingsView,
   MemoryImportSyncView,
 } from '../../shared/ipc.js';
+import { actionErrorText } from '../action-error.js';
+import { SettingsRow } from './settings-controls.js';
 import { MemoryPreparation } from './memory-preparation.js';
 import { Dialog, PillButton } from './primitives.js';
 import {
@@ -57,6 +59,9 @@ export function MemoryImportOverview(props: {
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [syncBusy, setSyncBusy] = useState(false);
+  const [syncSaved, setSyncSaved] = useState(false);
+  const [syncError, setSyncError] = useState<string>();
+  const syncId = useId();
   const [workbuddy, setWorkbuddy] = useState<WorkBuddyImportStatusView>();
   useEffect(() => {
     let active = true;
@@ -80,90 +85,142 @@ export function MemoryImportOverview(props: {
     };
   }, [props.ports, props.refreshKey, attempt]);
   useEffect(() => {
-    if (!status?.sync?.enabled) return;
+    if (!status?.sync?.enabled || syncBusy) return;
     const timer = setInterval(() => setAttempt((value) => value + 1), 3000);
     return () => clearInterval(timer);
-  }, [status?.sync?.enabled]);
+  }, [status?.sync?.enabled, syncBusy]);
   const setSync = async (enabled: boolean) => {
     if (syncBusy || !props.ports.setMemoryImportSync) return;
     setSyncBusy(true);
-    setError(undefined);
+    setSyncSaved(false);
+    setSyncError(undefined);
     const previous = status?.sync;
     setStatus((value) => (value?.sync ? { ...value, sync: { ...value.sync, enabled } } : value));
     try {
       const sync = await props.ports.setMemoryImportSync({ enabled });
       setStatus((previous) => (previous ? { ...previous, sync } : previous));
+      setSyncSaved(true);
       setAttempt((value) => value + 1);
     } catch (cause) {
       if (previous) setStatus((value) => (value ? { ...value, sync: previous } : value));
-      setError(cause instanceof Error ? cause.message : '同步设置未保存，请重试。');
+      setSyncError(actionErrorText(cause, '同步设置未保存，请重试。'));
     } finally {
       setSyncBusy(false);
     }
   };
   return (
     <>
+      <div className="ew-settings-actions">
+        <PillButton disabled={!status?.supported && !workbuddy?.supported} onClick={props.onStart}>
+          导入已有记忆
+        </PillButton>
+      </div>
       <p className="ew-settings-note">
-        从 Claude Code 导入本机项目记忆，或导入 WorkBuddy 文本快照，在后续新任务中继续使用。
+        从 Claude Code 导入本机项目记忆，或导入 WorkBuddy 文本快照。
       </p>
-      {!props.ports.getMemoryImportStatus ? <p>当前版本不支持记忆导入。</p> : null}
-      {status && !status.supported ? <p role="status">{status.reason}</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
-      <PillButton disabled={!status?.supported && !workbuddy?.supported} onClick={props.onStart}>
-        导入已有记忆
-      </PillButton>
-      <PillButton variant="ghost" onClick={() => setAttempt((value) => value + 1)}>
-        刷新导入历史
-      </PillButton>
+      {!props.ports.getMemoryImportStatus ? (
+        <p className="ew-settings-note">当前版本不支持项目记忆导入。</p>
+      ) : null}
+      {status && !status.supported ? (
+        <p className="ew-settings-note" role="status">
+          {status.reason}
+        </p>
+      ) : null}
+      {error || syncError ? (
+        <p role="alert" className="ew-settings-feedback" data-error="true">
+          {error ?? syncError}
+        </p>
+      ) : null}
       {status?.sync && props.ports.setMemoryImportSync ? (
         <section aria-label="记忆自动同步">
-          <p>自动同步仅适用于 Claude Code 项目。WorkBuddy 文本快照需要手动重新导入。</p>
-          <label className="ew-checkbox">
+          <SettingsRow
+            label="自动更新已导入的项目记忆"
+            htmlFor={syncId}
+            description="每分钟检查一次，包含来源文件的删减；后台整理会消耗模型用量。"
+          >
             <input
+              id={syncId}
               type="checkbox"
+              className="ew-settings-switch"
               checked={status.sync.enabled}
               disabled={
                 syncBusy ||
                 (!status.sync.enabled &&
-                  (!status.supported || !status.history.some((r) => r.projects.some((p) => p.ok))))
+                  (!status.supported ||
+                    !status.history.some((record) =>
+                      record.projects.some((project) => project.ok),
+                    )))
               }
               onChange={(event) => void setSync(event.target.checked)}
             />
-            自动更新已导入的项目记忆
-          </label>
-          <p>
-            开启后每分钟检查以下已导入项目。同步包括来源文件的删减；后台整理会使用已配置模型并消耗用量。新增项目需要重新确认同步范围。
+          </SettingsRow>
+          <p className="ew-settings-note">
+            仅适用于 Claude Code 项目。WorkBuddy 文本快照需手动重新导入；新增项目需要确认同步范围。
           </p>
-          <ul>
-            {(status.sync.enabled
-              ? status.sync.projectKeys
-              : [
-                  ...new Set(
-                    status.history.flatMap((r) => r.projects.filter((p) => p.ok).map((p) => p.key)),
-                  ),
-                ]
-            ).map((key) => (
-              <li key={key}>{key}</li>
-            ))}
-          </ul>
-          {status.sync.pending ? <p role="status">同步资料已提交，正在核对导入结果。</p> : null}
-          {status.sync.error ? <p role="alert">{status.sync.error}</p> : null}
-          {status.sync.lastCheckedAt ? (
-            <p>最近检查：{new Date(status.sync.lastCheckedAt).toLocaleString()}</p>
-          ) : null}
-          {status.sync.lastCompletedAt ? (
-            <p>
-              最近同步完成：{new Date(status.sync.lastCompletedAt).toLocaleString()}
-              。资料同步完成不代表整理就绪。
+          {syncBusy ? (
+            <p className="ew-settings-note" role="status">
+              正在保存同步设置…
+            </p>
+          ) : syncSaved ? (
+            <p className="ew-settings-feedback" role="status">
+              同步设置已保存。
             </p>
           ) : null}
-          <p>
-            关闭后停止后续同步，已经提交的操作仍可能完成。删除来源项目不会自动清除已学到的记忆。
-          </p>
+          {status.sync.pending ? (
+            <p role="status" className="ew-settings-note">
+              同步资料已提交，正在核对导入结果。
+            </p>
+          ) : null}
+          {status.sync.error ? (
+            <p role="alert" className="ew-settings-feedback" data-error="true">
+              {status.sync.error}
+            </p>
+          ) : null}
+          <details className="ew-settings-details">
+            <summary>同步范围与状态</summary>
+            <ul className="ew-settings-note">
+              {(status.sync.enabled
+                ? status.sync.projectKeys
+                : [
+                    ...new Set(
+                      status.history.flatMap((record) =>
+                        record.projects
+                          .filter((project) => project.ok)
+                          .map((project) => project.key),
+                      ),
+                    ),
+                  ]
+              ).map((key) => (
+                <li key={key}>{key}</li>
+              ))}
+            </ul>
+            {status.sync.lastCheckedAt ? (
+              <p className="ew-settings-note">
+                最近检查：{new Date(status.sync.lastCheckedAt).toLocaleString()}
+              </p>
+            ) : null}
+            {status.sync.lastCompletedAt ? (
+              <p className="ew-settings-note">
+                最近同步完成：{new Date(status.sync.lastCompletedAt).toLocaleString()}
+                。资料同步完成不代表整理就绪。
+              </p>
+            ) : null}
+            <p className="ew-settings-note">
+              关闭后停止后续同步，已经提交的操作仍可能完成。删除来源项目不会自动清除已学到的记忆。
+            </p>
+          </details>
         </section>
       ) : null}
-      {status ? <ImportHistory records={status.history} /> : null}
-      {workbuddy ? <WorkBuddyHistory status={workbuddy} /> : null}
+      <details className="ew-settings-details">
+        <summary>导入历史</summary>
+        <div className="ew-settings-actions">
+          <PillButton variant="ghost" onClick={() => setAttempt((value) => value + 1)}>
+            刷新导入历史
+          </PillButton>
+        </div>
+        {status ? <ImportHistory records={status.history} /> : null}
+        {workbuddy ? <WorkBuddyHistory status={workbuddy} /> : null}
+      </details>
     </>
   );
 }

@@ -1647,6 +1647,9 @@ export function createAdapter(options: AdapterOptions) {
         scenarios.find((s) => s.default) ??
         scenarios[0];
       if (!scenario) throw new Error('没有可用的场景包');
+      const budget = args.overrides?.budgetLimit ?? scenario.budgetLimit;
+      if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 0))
+        throw new Error('任务预算必须是非负安全整数。');
       const model = requireResolvedModel(args.overrides?.model ?? scenario.model);
 
       const reviewerAvailable = capabilities.isUsable('turn/start.approvalsReviewer');
@@ -1713,13 +1716,18 @@ export function createAdapter(options: AdapterOptions) {
       options.onUiEvent?.({ type: 'task-created', threadId, title: title ?? null });
 
       // 保存后再启动正常回合，自动续跑不会抢先绕过模式指令与桌面来源设置。
-      if (args.goalObjective !== undefined)
+      const hasGoal = args.goalObjective !== undefined || (budget !== undefined && budget > 0);
+      if (hasGoal) {
         await session.peer.request(METHOD.threadGoalSet, {
           threadId,
-          objective: args.goalObjective,
+          objective: args.goalObjective ?? (firstMessage || '完成当前任务并验证交付'),
           status: 'paused',
-          tokenBudget: null,
+          tokenBudget: budget && budget > 0 ? budget : null,
         });
+        store.threads.setTaskSettings(threadId, {
+          budgetLimit: budget && budget > 0 ? budget : null,
+        });
+      }
       const firstFingerprint = createHash('sha256')
         .update(JSON.stringify([threadId, args.input]))
         .digest('hex');
@@ -1757,8 +1765,7 @@ export function createAdapter(options: AdapterOptions) {
           result: { queued: false, degradations: expanded.degradations },
         });
 
-      if (args.goalObjective !== undefined)
-        await session.peer.request(METHOD.threadGoalSet, { threadId, status: 'active' });
+      if (hasGoal) await session.peer.request(METHOD.threadGoalSet, { threadId, status: 'active' });
 
       /*
        * 起名放在 `turn/start` **之后**：它对这一回合毫无影响，排在前面只会

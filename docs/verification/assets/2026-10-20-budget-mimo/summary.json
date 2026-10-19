@@ -1,0 +1,111 @@
+{
+  "model": "mimo-v2.6-flash",
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "platform": "macOS arm64",
+  "realTests": {
+    "passed": 2,
+    "failed": 0,
+    "retries": 0,
+    "skipped": 0,
+    "duration": "1.8m"
+  },
+  "existingUiTests": {
+    "passed": 7,
+    "failed": 0,
+    "retries": 0,
+    "skipped": 0,
+    "durationSeconds": 43.2
+  },
+  "journeys": [
+    {
+      "action": "结束任务",
+      "limited": {
+        "tokenBudget": 1,
+        "tokensUsed": 5225,
+        "status": "budgetLimited",
+        "turns": 1,
+        "requests": 2
+      },
+      "restored": {
+        "status": "budgetLimited",
+        "turns": 1,
+        "requests": 2
+      },
+      "final": {
+        "status": "complete",
+        "tokenBudget": 1,
+        "tokensUsed": 5225,
+        "result": null,
+        "turns": 1
+      },
+      "input": [
+        586,
+        987
+      ],
+      "requests": 2,
+      "httpStatuses": [
+        200,
+        200
+      ],
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 90426,
+          "at": 1792450625671
+        }
+      ]
+    },
+    {
+      "action": "追加预算",
+      "limited": {
+        "tokenBudget": 1,
+        "tokensUsed": 13476,
+        "status": "budgetLimited",
+        "turns": 1,
+        "requests": 2
+      },
+      "restored": {
+        "status": "budgetLimited",
+        "turns": 1,
+        "requests": 2
+      },
+      "final": {
+        "status": "complete",
+        "tokenBudget": 100000,
+        "tokensUsed": 17763,
+        "result": {
+          "sum": 1100
+        },
+        "turns": 2
+      },
+      "input": [
+        379,
+        721
+      ],
+      "requests": 8,
+      "httpStatuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "lifecycle": [
+        {
+          "kind": "started",
+          "pid": 90271,
+          "at": 1792450545378
+        }
+      ]
+    }
+  ],
+  "observedRequests": 10,
+  "fullCheck": {
+    "exitCode": 0,
+    "passed": 2990,
+    "skipped": 2
+  }
+}

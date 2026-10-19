@@ -40,7 +40,7 @@ src/
       home.tsx            首页：Hero · 场景 · chips · Composer · 案例位（03）
       task-workspace.tsx  三栏工作台（04）
       sidebar.tsx         任务列表 · 六组筛选 · 行操作（04 §3）· 「更多」菜单（02 §4.7）
-      settings.tsx        设置页六个分区（11 §4.4）。**两个分区如实说自己没做**
+      settings.tsx        设置页七个分类（11 §4.4）：模型标签、记忆与导入、真实保存反馈与未保存草稿保护
     components/
       composer.tsx        首页与任务页**共用**的输入区（03 §4）
       menu.tsx            Menu / Popover / InlineSelect / ModelSelect

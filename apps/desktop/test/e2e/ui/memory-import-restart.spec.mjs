@@ -109,7 +109,7 @@ test('整个应用关闭重开，项目记忆、读取设置、原生历史和�
       .click();
     await page
       .getByRole('navigation', { name: '设置分类' })
-      .getByRole('button', { name: '导入', exact: true })
+      .getByRole('button', { name: '记忆与导入', exact: true })
       .click();
     await expect(page.getByLabel('记忆导入历史')).toContainText('restart-project：资料已导入');
     await page.getByRole('button', { name: '导入已有记忆', exact: true }).click();

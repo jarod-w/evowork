@@ -320,9 +320,9 @@ export function createImageHost(options: ImageHostOptions) {
         error?: { code: string };
       };
       if (!response.ok) throw new Error(result.error?.code ?? 'IMAGE_DIRECTORY_UNAVAILABLE');
-      return result.models?.some((m) => m.id === view().model && m.available)
-        ? '密钥和型号目录验证通过；本次未生成图片，生成/编辑仍需单独费用确认。'
-        : '服务商目录未列出所选型号，请检查账户权限或选择其它型号。';
+      if (!result.models?.some((m) => m.id === view().model && m.available))
+        throw new Error('服务商目录未列出所选型号，请检查账户权限或选择其它型号。');
+      return '密钥和型号目录验证通过；本次未生成图片，生成/编辑仍需单独费用确认。';
     },
     async save(input: SaveImageSettingsInput) {
       if (service.busy()) throw new Error('请先停止正在进行的图片操作，再修改设置。');

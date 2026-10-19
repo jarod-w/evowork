@@ -9,6 +9,27 @@
 `../harness/make-office-fixtures.py` 当场生成（带图的 docx / pptx 等）。缺了就报错，不跳过。
 系统文件框点不到，spec 把「用户多选了哪些」写进 `__evoworkE2E.pickedFiles`，由 `ui-entry.mjs` 作答。
 
+## 设置页
+
+`settings.spec.mjs` 覆盖七分类、三档窗口、预算明确保存、图片失败草稿与离开保护，使用本机确定性上游。`settings.real.spec.mjs` 使用指定 MiMo 预设和宿主网关，点击已保存模型的连通性检查，验证记忆开关与预算刷新保持，并在每条旅程末尾执行真实文件计算：输入随机生成且仅在本机文件中，核对实际命令、输出 JSON、完成回合和最终回复。
+
+```bash
+node node_modules/@playwright/test/cli.js test settings.spec.mjs --project=fake --retries=0
+# 先经隐藏输入安全注入 EVOWORK_UI_MODEL_KEY。
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash node node_modules/@playwright/test/cli.js test settings.real.spec.mjs --project=real --retries=0
+```
+
+真实用例复用测试专用 `EVOWORK_UI_FOLLOW_UP_WIRE`，仅观测上游端点、型号、HTTP 状态和时间，不修改请求/响应。任务完成后仍可能有后台模型请求在途，收集证据前等待已发请求都有结果；未返回、非 200、错误模型或错误端点都会失败。密钥仅经进程环境进入宿主，未通过页面新增/保存凭据；预算测试覆盖偏好保存与任务可执行，不覆盖预算耗尽或并发准入。验收事实见[设置页实模型记录](../../../../../docs/verification/2026-10-19-settings-mimo.md)。
+
+`settings-budget.real.spec.mjs` 补充默认预算的执行验收：在设置页保存 1 token，新建普通任务，核对内核权威预算、真实耗尽与停止、刷新后持续 5 秒没有新回合或上游请求；分别验证结束任务后仍不执行，及追加预算先打开编辑、取消不恢复、明确保存新总预算后才完成随机文件计算。禁用夹具的本地记忆以隔离后台模型请求；检查点工具只控制本机数据就绪时间，不伪造模型响应、计量或工具结果。预算由内核在工具/回合边界收尾，不断言精确停在 1 token。
+
+```bash
+# 同样先经隐藏输入注入密钥。
+EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash node node_modules/@playwright/test/cli.js test settings-budget.real.spec.mjs --project=real --retries=0
+```
+
+修复前失败、最终结果及截图见[预算暂停实模型验收](../../../../../docs/verification/2026-10-20-budget-mimo.md)。
+
 ## 项目记忆导入
 
 `memory-import.spec.mjs` 覆盖真实四步向导、来源/选择、手动更新与删除同步、部分失败、失效选择、离线网关、三档窗口与焦点；`memory-import-restart.spec.mjs` 关闭整个 App 后核对历史、记忆副本、设置和去重；`memories.spec.mjs` 守读取与贡献入口。测试源只创建在隔离 HOME。

@@ -588,6 +588,30 @@ describe('Composer 技能上下文', () => {
     expect(adapter.listSkills).not.toHaveBeenCalled();
   });
 
+  it('设置页默认预算必须传到新任务，已有任务追问不重置预算', async () => {
+    const adapter = fakeAdapter({
+      setTaskSettings: vi.fn(),
+      createTask: vi.fn(async () => ({ threadId: 'budget-1' })) as unknown as Adapter['createTask'],
+      sendMessage: vi.fn(async () => ({ queued: false, degradations: [] })),
+    });
+    const actions = makeActions({
+      adapter,
+      store: fakeStore(() => row()),
+      preferencePorts: {
+        read: () => ({ taskTokenBudget: 1234, concurrencyComputed: 3, concurrencyLimit: 3 }),
+        write: () => ({ concurrencyComputed: 3, concurrencyLimit: 3 }),
+      },
+    });
+    await actions.send({ text: '读取数据并计算', modelId: 'test/model' });
+    expect(adapter.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ overrides: { model: 'test/model', budgetLimit: 1234 } }),
+    );
+    await actions.send({ threadId: 't1', text: '继续计算' });
+    expect(adapter.sendMessage).toHaveBeenCalledWith(
+      expect.not.objectContaining({ overrides: expect.objectContaining({ budgetLimit: 1234 }) }),
+    );
+  });
+
   it('goal 从首页沿正常创建链启动，语法不泄漏进模型输入', async () => {
     const adapter = fakeAdapter({
       setTaskSettings: vi.fn(),
@@ -608,6 +632,57 @@ describe('Composer 技能上下文', () => {
         overrides: { model: 'test/model', modeId: 'request-approval' },
       }),
     );
+  });
+
+  it.each([false, true])('首轮草稿重试先初始化预算或保留原预算，已有预算=%s', async (saved) => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-budget-retry-')));
+    const store = memoryStore();
+    try {
+      const dataDir = join(home, '.evowork');
+      mkdirSync(dataDir);
+      const environments = createTaskEnvironments({
+        store,
+        home,
+        dataDir,
+        projectRoot: () => undefined,
+      });
+      environments.bind('t1', await environments.prepare('budget-retry'));
+      const calls: string[] = [];
+      const adapter = fakeAdapter({
+        getGoal: vi.fn(async () =>
+          saved ? { status: 'paused', tokenBudget: 10 } : undefined,
+        ) as unknown as Adapter['getGoal'],
+        setGoal: vi.fn(async (_id, changes) => {
+          calls.push(changes.status!);
+          return undefined;
+        }),
+        sendMessage: vi.fn(async () => {
+          calls.push('send');
+          return { queued: false, degradations: [] };
+        }),
+      });
+      const actions = makeActions({
+        store,
+        adapter,
+        environments,
+        preferencePorts: {
+          read: () => ({ taskTokenBudget: 1000, concurrencyComputed: 3, concurrencyLimit: 3 }),
+          write: () => ({ concurrencyComputed: 3, concurrencyLimit: 3 }),
+        },
+      });
+      await actions.send({ draftId: 'budget-retry', text: '完成计算' });
+      expect(calls).toEqual(saved ? ['send', 'active'] : ['paused', 'send', 'active']);
+      if (saved) expect(adapter.setGoal).toHaveBeenCalledTimes(1);
+      else
+        expect(adapter.setGoal).toHaveBeenNthCalledWith(1, 't1', {
+          objective: '完成计算',
+          status: 'paused',
+          tokenBudget: 1000,
+        });
+    } finally {
+      store.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it('未确认替换和目标附件在任何执行前拒绝', async () => {

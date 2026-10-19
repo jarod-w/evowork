@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |kernel-adapter| test/adapter.test.ts (113 tests) 371ms
+ ✓ |desktop| test/renderer-bridge.test.ts (153 tests) 305ms
+ ✓ |desktop| test/task-workspace.test.tsx (45 tests) 1379ms
+   ✓ 说明与操作交错显示 > 长操作组追加事件后保留展开选择，操作详情分页挂载  508ms
+
+ Test Files  3 passed (3)
+      Tests  311 passed (311)
+   Start at  06:52:30
+   Duration  2.66s (transform 1.57s, setup 289ms, collect 2.19s, tests 2.06s, environment 1.01s, prepare 189ms)
+

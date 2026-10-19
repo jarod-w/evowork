@@ -95,10 +95,10 @@ test.describe('发货的样子：未验收的构建', () => {
     const section = await openComputerUseSettings(page);
 
     // ① 如实说为什么不能用，按钮点不动（12 §17：不能把「未验证」变成「就绪」）
-    await expect(section.getByRole('status')).toHaveText(
+    await expect(section.getByRole('status', { name: '电脑操控状态' })).toHaveText(
       '此构建尚未完成原生签名、历史删除与用户中断验收，暂不能启用。',
     );
-    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeDisabled();
+    await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeDisabled();
     await expect(section.getByRole('button', { name: '停止控制' })).toHaveCount(0);
 
     // ② 内核里登记了 cua_repl，但它是关着的；令牌只登记变量名，值不落进配置文件
@@ -302,7 +302,9 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
     // ⑨「仅本次任务」不留持久授权；设置页如实说控制已停止
     const section = await openComputerUseSettings(page);
     await expect(section).not.toContainText(TEXTEDIT);
-    await expect(section.getByRole('status')).toHaveText('控制已停止；需要重新发起回合才能继续。');
+    await expect(section.getByRole('status', { name: '电脑操控状态' })).toHaveText(
+      '控制已停止；需要重新发起回合才能继续。',
+    );
   });
 
   /*
@@ -584,7 +586,9 @@ test.describe('P2：权限与企业策略恢复（真内核、假 Helper）', ()
       globalThis.__evoworkE2E.computerUse.setHealth({ accessibility: false }),
     );
     const section = await openComputerUseSettings(page);
-    await expect(section.getByRole('status')).toContainText('手动授予辅助功能');
+    await expect(section.getByRole('status', { name: '电脑操控状态' })).toContainText(
+      '手动授予辅助功能',
+    );
     await expect(section).toContainText('辅助功能：未授权');
     await expect(section.getByRole('button', { name: '打开辅助功能设置' })).toBeVisible();
     expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = false$/m);
@@ -597,8 +601,8 @@ test.describe('P2：权限与企业策略恢复（真内核、假 Helper）', ()
     await section.getByRole('button', { name: '重新检查组件与权限' }).click();
     await expect(section).toContainText('辅助功能：已授权');
     await expect(section).toContainText('未授权（可使用辅助功能模式）');
-    await section.getByRole('button', { name: '启用电脑操控' }).click();
-    await expect(section.getByRole('button', { name: '关闭电脑操控' })).toBeVisible();
+    await section.getByRole('checkbox', { name: '电脑操控', exact: true }).check();
+    await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeChecked();
     expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = true$/m);
   });
   test('组件故障可重新检查恢复，故障期间不注册工具', async ({ page, electronApp }) => {
@@ -606,15 +610,17 @@ test.describe('P2：权限与企业策略恢复（真内核、假 Helper）', ()
       globalThis.__evoworkE2E.computerUse.setHealth({ componentError: true }),
     );
     const section = await openComputerUseSettings(page);
-    await expect(section.getByRole('status')).toContainText('修复安装后重新检查');
-    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeDisabled();
+    await expect(section.getByRole('status', { name: '电脑操控状态' })).toContainText(
+      '修复安装后重新检查',
+    );
+    await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeDisabled();
     expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = false$/m);
     await electronApp.evaluate(() =>
       globalThis.__evoworkE2E.computerUse.setHealth({ componentError: false }),
     );
     await section.getByRole('button', { name: '重新检查组件与权限' }).click();
     await expect(section).toContainText('组件连接：已连接');
-    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeEnabled();
+    await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeEnabled();
   });
   test('无关企业约束不禁用；全局 deny 禁用、移除后可检查恢复', async ({ page, electronApp }) => {
     const requirements = join(await e2eHome(electronApp), '.evowork', 'requirements.toml');
@@ -622,11 +628,13 @@ test.describe('P2：权限与企业策略恢复（真内核、假 Helper）', ()
     await enableComputerUse(page, electronApp);
     writeFileSync(requirements, 'allow_browser_and_computer_use = false\n');
     const section = await openComputerUseSettings(page);
-    await expect(section.getByRole('status')).toContainText('企业策略禁止电脑操控');
-    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeDisabled();
+    await expect(section.getByRole('status', { name: '电脑操控状态' })).toContainText(
+      '企业策略禁止电脑操控',
+    );
+    await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeDisabled();
     expect(await cuaConfigSection(electronApp)).toMatch(/^enabled = false$/m);
     unlinkSync(requirements);
     await section.getByRole('button', { name: '重新检查组件与权限' }).click();
-    await expect(section.getByRole('button', { name: '启用电脑操控' })).toBeEnabled();
+    await expect(section.getByRole('checkbox', { name: '电脑操控', exact: true })).toBeEnabled();
   });
 });

@@ -203,6 +203,8 @@ export const LAYOUT = {
   /** 侧栏 clamp 上限：min(520, 100vw - 本值)，避免把工作区挤没。 */
   sidebarViewportGutter: 320,
   middleWidth: 272,
+  /** 设置分类独立窄栏（01 §5.37）。 */
+  settingsNavWidth: 176,
   middleMin: 240,
   middleMax: 360,
   /** 结果工作区：01 §3.1，默认按主窗口 42%，拖动范围 420–720。 */
