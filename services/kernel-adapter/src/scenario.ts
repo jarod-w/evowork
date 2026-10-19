@@ -408,6 +408,7 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
       'data-analysis',
       'diagrams',
       'scan-to-ledger',
+      'batch-files',
     ],
     // Q9：本期只有 browser。写进说明，不代表已经信任。
     connectors: ['browser'],

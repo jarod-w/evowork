@@ -314,6 +314,7 @@ describe('场景包（03 §2.2）', () => {
       'data-analysis',
       'diagrams',
       'scan-to-ledger',
+      'batch-files',
     ]);
   });
 
