@@ -1,0 +1,7 @@
+{
+  "displayName": "邮件草稿",
+  "category": "办公",
+  "brandColor": "#d97706",
+  "defaultPrompt": "写一封可以复制发出的邮件草稿",
+  "version": "1.0.0"
+}

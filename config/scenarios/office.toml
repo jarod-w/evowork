@@ -18,7 +18,7 @@ instructions_file = "modes/craft-office.md"
 budget_limit      = 400000
 
 # 影响可用能力
-skills              = ["documents", "spreadsheets", "presentations", "charts"]
+skills              = ["documents", "spreadsheets", "presentations", "charts", "minutes", "weekly-report", "email-draft"]
 connectors          = []                       # Q9：本期只有 browser，办公场景默认不开
 experts_recommended = ["report-writer", "data-analyst", "finance-analyst"]
 
@@ -42,7 +42,7 @@ prompt = "分析这份数据并给出可视化："
 [[chips]]
 label  = "个人工作台"
 icon   = "layout"
-prompt = "帮我整理今天的工作安排："
+prompt = "整理今天的待办，或根据材料写会议纪要："
 
 [[chips]]
 label  = "幻灯片"

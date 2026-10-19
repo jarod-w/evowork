@@ -1,0 +1,7 @@
+{
+  "displayName": "周报",
+  "category": "办公",
+  "brandColor": "#059669",
+  "defaultPrompt": "按本期、风险、下周写一份周报",
+  "version": "1.0.0"
+}

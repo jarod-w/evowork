@@ -280,8 +280,16 @@ describe('场景包（03 §2.2）', () => {
     expect(OFFICE.chips?.[0]?.requiresFile).toBe(true);
   });
 
-  it('office 场景启用四个办公技能（08 §5.2）', () => {
-    expect(OFFICE.skills).toEqual(['documents', 'spreadsheets', 'presentations', 'charts']);
+  it('office 场景启用办公产物技能和文种技能', () => {
+    expect(OFFICE.skills).toEqual([
+      'documents',
+      'spreadsheets',
+      'presentations',
+      'charts',
+      'minutes',
+      'weekly-report',
+      'email-draft',
+    ]);
   });
 
   it('design 场景带上界面设计技能，不把它算进办公四件套', () => {

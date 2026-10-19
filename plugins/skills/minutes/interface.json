@@ -1,0 +1,7 @@
+{
+  "displayName": "会议纪要",
+  "category": "办公",
+  "brandColor": "#2563eb",
+  "defaultPrompt": "根据这些材料写一份会议纪要",
+  "version": "1.0.0"
+}

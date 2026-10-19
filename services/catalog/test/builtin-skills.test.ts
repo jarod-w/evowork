@@ -33,11 +33,14 @@ const EXPECTED = [
   'charts',
   'computer-use',
   'documents',
+  'email-draft',
   'image-generation',
+  'minutes',
   'presentations',
   'skill-creator',
   'spreadsheets',
   'ui-design',
+  'weekly-report',
 ] as const;
 
 const dirs = readdirSync(SKILLS_ROOT, { withFileTypes: true })
