@@ -2,7 +2,7 @@
 
 > **2026-10-11 独立会话通信已接通**：新增权威 v5 `thread_message` 和适配层队列协调器。宿主登记的任务环境决定同项目范围；旧/外部任务才用 cwd 路径边界回退。内置 MCP 通过受认证本机 HTTP 进入宿主，按原生 MCP item 与回合/代际绑定，发送/读取具体范围逐次审批。投递与恢复只经适配层官方协议，保留未知状态而不自动重试，不另建模型执行循环。详见 [17](17-thread-communication.md)。
 
-> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议，尚未实现）**：新增本机图片交付服务与 image_operation 元数据的设计按 [15 §6 / §8 / §10](15-ai-image-generation.md)，不存图片 Base64/原始提示词、不加本机租户表；可信 MCP 调用绑定经 kernel-adapter 验证。记录审批、额度、提交与文件状态；断线/崩溃结果未知不自动重发，只查已有结果或补本机保存/索引，不另建任务执行循环。
+> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议；单图生成/编辑首版已实施，实现与验收边界见 [15 §15](15-ai-image-generation.md)）**：新增本机图片交付服务与 image_operation 元数据的设计按 [15 §6 / §8 / §10](15-ai-image-generation.md)，不存图片 Base64/原始提示词、不加本机租户表；可信 MCP 调用绑定经 kernel-adapter 验证。记录审批、额度、提交与文件状态；断线/崩溃结果未知不自动重发，只查已有结果或补本机保存/索引，不另建任务执行循环。
 
 > **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](../superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
 
@@ -279,7 +279,9 @@ CREATE UNIQUE INDEX ix_run_idem ON automation_run(automation_id, fire_time);  --
 
 `failure_class` 决定是否计入 `consecutive_failures`（07 §7 最后一条：`ENVIRONMENT` 不计入）。
 
-### 4.5 其余五张表
+### 4.5 其余表（节选）
+
+完整表清单以 `services/store/src/schema.ts` 与 `migrate.ts` 为准；项目（`project_local` / `project_root`）、运行中投递（`follow_up_*`）、图片操作、资料库文档/分块与权威 `meta`（含任务环境登记）等后续表不在下表展开，见各自章节或设计。
 
 | 表              | 用途                                        | 文档    |
 | --------------- | ------------------------------------------- | ------- |
@@ -294,7 +296,7 @@ CREATE UNIQUE INDEX ix_run_idem ON automation_run(automation_id, fire_time);  --
 
 ### 4.6 迁移与备份
 
-**OCR/资料库投影补充（2026-10-06，OCR-Q 全部确认，待实现）**：拟新增 `library_document` / `library_chunk` 与处理队列，FTS 以分块为行，索引标题、正文和有限显式元数据，关联 ID 为 UNINDEXED；现有 `meta UNINDEXED` 不自动可搜。文档记录稳定来源、当前版本/hash、归属、解析状态、页数/完成范围与错误枚举，分块保留页/段落/工作表行范围及原文偏移（16 §6）。
+**OCR/资料库投影补充（2026-10-06，OCR-Q 全部确认；2026-10-07 本机首版已接通，见下段）**：新增 `library_document` / `library_chunk` 与处理队列，FTS 以分块为行，索引标题、正文和有限显式元数据，关联 ID 为 UNINDEXED；现有 `meta UNINDEXED` 不自动可搜。文档记录稳定来源、当前版本/hash、归属、解析状态、页数/完成范围与错误枚举，分块保留页/段落/工作表行范围及原文偏移（16 §6）。
 
 **2026-10-07 实现补充**：上述本机首版已接通，验收边界见 16 §14。投影 v4 保存 `library_chunk.fts_rowid` 与文档标题；v5 只新增 `ix_library_chunk_fts(fts_rowid, document_id)` 覆盖索引，已有正文不重建，权威版本不变。长词命中/评分直接从 FTS 行关联文档，不读取重复的正文/meta；范围用绑定 JSON 数组，短词在当前文档的全部分块上执行可提前结束的字面查找。跨块 AND、标题优先/BM25/时间/ID 排序与 2 秒可终止查询契约不变。
 
@@ -393,7 +395,8 @@ artifacts 管范围/登记/对账与增量队列，ingest 管解析/OCR，runtim
   library/               ← 我的资料
   library-cache/         ← 团队空间缓存
   assistant/             ← 助理会话的 cwd（02 §4.2）
-  scratch/               ← 临时工作空间
+  workspaces/            ← 无项目任务的独立持久 cwd（默认位置；「设置 → 常规」可改父目录，修订设计 §3.2）
+  drafts/                ← 草稿附件暂存 drafts/<草稿ID>/uploads，发送时归入最终任务环境
   logs/
 ```
 

@@ -155,7 +155,7 @@ Composer 添加名为 `SKILL.md` 的附件（大小写不敏感）后，提供�
 
 ### 4.4 browser 连接器的特殊性
 
-它是 v1 办公生态的官方连接器；Computer Use 按 CU-Q，图片模型 MCP 按 IMG-Q3（[15](15-ai-image-generation.md)，尚未实现）。browser 同时服务两个地方：agent 的网页操作能力（MCP 工具）与结果区的浏览器视图（04 §6.4）。配置项对应 `BrowserUseConfig` 的 origin 级策略：
+它是 v1 办公生态的官方连接器；Computer Use 按 CU-Q，图片模型 MCP 按 IMG-Q3（[15](15-ai-image-generation.md)，首版已实施）。browser 同时服务两个地方：agent 的网页操作能力（MCP 工具）与结果区的浏览器视图（04 §6.4）。配置项对应 `BrowserUseConfig` 的 origin 级策略：
 
 | 配置              | 默认                             | 说明                                 |
 | ----------------- | -------------------------------- | ------------------------------------ |
@@ -170,8 +170,8 @@ CDP 会话的场景。不能因为网页元素难定位就直接换通道，也�
 下载、表单提交或敏感数据外发的拒绝。
 
 路由器切换控制器时必须结束上一控制器的操作片段并重新观察；CDP 节点、browser tab id 与 Computer
-Use 的 `state_id` 不得交叉复用。目标浏览器仍需独立 App 准入。**当前只有 browser MCP，Computer Use
-以及两者之间的能力路由、策略继承和受控回退均未实现**；接通前不显示“可自动回退到电脑操控”。
+Use 的 `state_id` 不得交叉复用。目标浏览器仍需独立 App 准入。**Computer Use 已按 [12](12-computer-use.md) 接入（`cua_repl` MCP 与宿主授权已落地，真机与发布验收未完成），
+但两者之间的能力路由、策略继承和受控回退均未实现**；接通前不显示“可自动回退到电脑操控”。
 
 #### 4.4.1 联网研究（2026-10-06）
 
