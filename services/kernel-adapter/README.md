@@ -5,11 +5,12 @@
 四条职责（09 §3.1）：
 
 1. **收敛实验方法** —— `project/*`、`thread/queue/*`、`thread/search*`、`turn/start.collaborationMode`、
-   `turn/start.permissions` 等 15 个实验方法只在这里出现一次。上游任一变更只改这里一处。
+   `turn/start.permissions` 等实验面只在这里出现一次（方法清单见 `@evowork/protocol` 的 `EXPERIMENTAL_METHOD`，现 21 个）。上游任一变更只改这里一处。
 2. **展开 EvoWork 概念** —— 前端只传 `{scenarioId, modeId, overrides}`，由这里展开成
    `collaborationMode` + `permissions` + `model`（03 §2.4）。场景包必须自建的原因见 F3。
 3. **合并数据源** —— 任务列表 = `thread/list`（权威字段）+ 本机投影表（状态/日期筛选）。
-4. **降级与兜底** —— 用 `experimentalFeature/list` 的**实际返回**决定 UI，不硬编码"实验方法一定可用"；
+4. **降级与兜底** —— 不硬编码"实验方法一定可用"：启动时探测无副作用的方法，其余首次调用失败即降级
+   （`capabilities.ts`；`experimentalFeature/list` 返回的是内核功能开关，判断不了方法在不在）；
    缺失时走 09 §3.3 的降级表，且**降级一律显式**（不假装正常）。
 
 **审批是 server→client request，不是通知**（F14）—— 适配层必须实现可回复的请求处理器，

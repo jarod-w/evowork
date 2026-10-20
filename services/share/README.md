@@ -4,7 +4,7 @@
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | 里程碑 | Q41 / 08 §7 分享链路（2026-09-26 落地服务端与分享页）                                                              |
 | 设计   | [11 §13.9 Q41](../../docs/design/11-account-and-models.md) · [08 §7](../../docs/design/08-artifacts-and-ingest.md) |
-| 状态   | **服务端与 `/s/<id>` 页面已落地**。本机侧的「分享」按钮→授权→上传仍未接（见下文「还缺什么」）                      |
+| 状态   | **服务端与 `/s/<id>` 页面已落地**；本机侧「分享」按钮→授权→上传已由 `services/artifacts/src/share-flow.ts` 接通    |
 
 ## 为什么它不在 `services/identity` 里
 
@@ -98,11 +98,9 @@ EVOWORK_IDENTITY_PUBLIC_PEM='-----BEGIN PUBLIC KEY-----\nMFkw…\n-----END PUBLI
 
 ## 还缺什么
 
-1. **本机侧的调用方**：`createShare` / `createUploader` 至今没有调用方，
-   桌面产物卡上的「分享」按钮还到不了授权模态（status.md §6.1 的 D 项）。
-   服务端就绪之后，这一段是接线而不是设计。
-2. **`evowork://share/<id>`** 的深链处理（02 §8）：分享页上的「在 EvoWork 中打开」
-   已经指过去了，桌面侧还没注册这个协议。
+1. ~~本机侧的调用方~~ **已做**：`services/artifacts/src/share-flow.ts` 由桌面宿主
+   （`apps/desktop/src/main/service-host.ts`）调用 `createShare` / `createUploader`。
+2. ~~`evowork://share/<id>` 的深链处理~~ **已做**：桌面 `deeplink.ts` 解析 `share` 目标（02 §8）。
 3. **对象存储**：现在字节落本地磁盘。云上部署要换成对象存储，
    `ShareBlobs` 这个接口就是为换它留的。
 4. **网关有同一类缺陷**：`services/gateway/src/main.ts` 读 `EVOWORK_JWT_PUBLIC_PEM` 时只查
