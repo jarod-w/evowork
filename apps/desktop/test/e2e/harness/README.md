@@ -12,13 +12,16 @@ bootstrap 注入缝（四个 Electron 接缝 + 四条路径 + 宿主环境）、
 更要紧的是第二个理由：**启动与驱动的变化原因不同**。驱动（点什么、断言什么）随产品走，
 启动（进程怎么起、缝往哪注）随内核与 Electron 走。混在一个文件里，换驱动方式就要重写启动。
 
-## 三个模块
+## 三个核心模块
 
 | 文件               | 管什么                                                                |
 | ------------------ | --------------------------------------------------------------------- |
 | `runner.mjs`       | 阶段 / 结果标记的输出契约 · `waitFor` · 给进程外驱动的控制面          |
 | `boot.mjs`         | 一次性 home · 内核 config.toml 落盘 · `bootApp()` 真窗口启动          |
 | `fake-gateway.mjs` | 脚本化的假模型网关（`skill-reference` 用；`agent-loop` 用的是真网关） |
+
+其余是按场景加的夹具：`ui-entry.mjs`（Playwright 用的进程外入口）· `real-gateway.mjs` / `real-models.mjs`（真网关与真模型）·
+`image-gateway.mjs` · `fake-computer-use.mjs` · `follow-up-wire.mjs` / `memory-wire.mjs`（只记元数据的上游观测）。
 
 ## 纪律
 
@@ -34,17 +37,17 @@ bootstrap 注入缝（四个 Electron 接缝 + 四条路径 + 宿主环境）、
 - **假网关不是真网关的替代品**。假的测**真内核**（心跳帧 F30、可重试错误码 F32/F33 只有
   真 app-server 能证伪），真的测**真翻译层**（`to-chat.ts` / `from-chat.ts`）。两条都要留。
 
-## 第 2 步会动哪里
+## 第 2 步动了哪里
 
-换 Playwright 从进程外驱动 DOM 时，改的是驱动侧，这三个模块基本原样保留。两处例外：
+Playwright 从进程外驱动 DOM 已落地（`../ui/`），改的是驱动侧，这三个模块基本原样保留。两处例外：
 
-1. `boot.mjs` 里窗口现在是 `show: false`。真交互（焦点 / hover / 布局）要把它显示出来。
+1. `boot.mjs` 的窗口默认 `show: false`，`bootApp()` 的 `show` 参数给真交互（焦点 / hover / 布局）把它显示出来。
 2. `runner.mjs` 的 `publishControls()` 是为那一步留的：`electronApp.evaluate()` 在主进程里
    求值，够得着 `globalThis`，够不着这些模块的闭包。「杀内核」「让网关这一次挂住」这类
    只有主进程做得到的动作，必须从那里露出去，否则第 2 步只能把它们重写一遍。
 
 ## 上层
 
-- 驱动与断言：`apps/desktop/test/e2e/*.e2e.mjs`
+- 驱动与断言：`apps/desktop/test/e2e/*.e2e.mjs` · Playwright 用例 `apps/desktop/test/e2e/ui/*.spec.mjs`
 - 外层运行器：`scripts/desktop-skills-e2e.mjs` · `scripts/verify-agent-loop.mjs`
 - 现状与欠账：`docs/status.md`（搜「真窗口 E2E」）

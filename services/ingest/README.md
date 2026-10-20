@@ -50,7 +50,8 @@ src/
 
 ## 还没做的
 
-- **OCR 档的实际解析器**（扫描件 / `pdf-scanned`）：办公档的 `createOfficeParser` 已接
-  python-docx / openpyxl / python-pptx / pdfplumber；扫描件仍要 tesseract，安装器还没装 OCR 档。
-- 解析进程的 seatbelt / landlock（M4）。当前会摘掉代理环境变量，真正断网仍等沙箱接线。
-- 解析结果进资料库全文索引（第 ⑥ 步，M8）。
+- ~~OCR 档的实际解析器~~ **首版已接**（2026-10-06）：`ocr.ts` / `native-image-ocr.ts` + Tesseract 离线组件
+  （`runtime-installer` 的 `ocr-install.ts`）；x64、签名与可信发行地址仍待发货验收（16 §14）。
+- 办公档解析（`parsers/office.ts`）的 seatbelt / landlock（M4）：当前只摘掉代理环境变量，真正断网仍等沙箱接线。
+  OCR、PDF 分页、Office 预览与资料库正文抽取已走 `isolated-process.ts` 的受限子进程。
+- ~~解析结果进资料库全文索引~~ **首版已接**（`library-extract.ts`，16 §14）。

@@ -2,7 +2,9 @@
 
 > **2026-10-18 独立会话通信交互更新**：随包 stdio MCP `plugins/connectors/thread-communication/server.mjs` 以短期 bearer 连接宿主 `thread-communication-host.ts` 的随机回环 HTTP 端口，按原生 MCP 调用核对来源并逐次确认共享范围。`kernel-adapter/thread-communication.ts` 协调权威本机 `thread_message` 队列，以官方协议恢复目标并开始正常回合，沿用目标模型与权限；最终回复返回来源且不自动循环。用户在正常对话中用自然语言发起，任务页不再挂载独立通信表单或记录列表；既有 IPC 动作、状态事件与底层队列保留。此通道补充下文早期七通道基线，未改变 K2 的唯一内核边界。详见 [17](design/17-thread-communication.md)。
 
-> **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
+> **2026-10-20 按当前代码订正**：§1–§10 中已被后续实现推翻的现状描述（IPC 频道与动作数、本机表数与迁移版本、包与依赖、解析器、分享通道、新增出网通道、侧栏入口、补丁预算、§10 偏差表）已改成当前代码的样子；§5.1 / §5.8 已按下一段的 Composer 修订改写。各功能的验收边界仍以 [status.md](status.md) 为准。
+
+> **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代（§5.1 / §5.8 已按此改写）。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
 
 > **这份文档描述代码现在是怎么组织的**，不描述它应该怎么组织。
 >
@@ -10,8 +12,8 @@
 >
 > | 问题 | 去哪 |
 > | --- | --- |
-> | 为什么这么设计、决策是什么（D1–D11 / Q1–Q42 / K1–K7 / 里程碑 / 风险） | [总纲](evowork-on-codex-design.md) |
-> | 某个模块的页面规格、字段、协议序列 | [详细设计集 01–11](design/README.md) |
+> | 为什么这么设计、决策是什么（D1–D11 / Q1–Q46 / K1–K7 / 里程碑 / 风险） | [总纲](evowork-on-codex-design.md) |
+> | 某个模块的页面规格、字段、协议序列 | [详细设计集 01–21](design/README.md)（无 18） |
 > | 做到哪了、什么验过了、什么卡住了 | [status.md](status.md) |
 > | 怎么编译、怎么部署 | [build-and-deploy.md](build-and-deploy.md) |
 > | **代码里有哪些进程、哪些包、谁调谁、边界在哪、谁在守** | **本文** |
@@ -20,8 +22,9 @@
 > 本文的每条断言都能在仓库里找到对应文件，链接直接给出。
 >
 > 撰写基线：仓库 `ui_based_codex` 分支 @ `342abe0`（2026-09-08）；内核签出 `../codex` @ **`7769bccbb2`（2026-09-07）**，
-> 断言基线仍是 `89a4eec6da`（见 §10 偏差 1）。**上一版基线是 2026-09-05**，此后落地的 M10a（模型管理）、
+> 断言基线当时是 `89a4eec6da`（见 §10 偏差 1）。**上一版基线是 2026-09-05**，此后落地的 M10a（模型管理）、
 > 「项目」页、办公扩展安装器、审计链路、网关子进程、产品身份底稿都已经进本文。
+> 2026-10-20 订正时对照的是仓库 @ `ee9faa8e`；机器上没有 `../codex`，涉及内核 `path:line` 的断言未重新核对。
 
 ---
 
@@ -37,12 +40,13 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 │  React 19 · 应用外壳 + 侧边栏 + 8 个主视图 · Visualizer(沙箱 iframe)             │
 │  contextIsolation=true · nodeIntegration=false · sandbox=true                 │
 └───────────────────────────────┬──────────────────────────────────────────────┘
-                    ① preload contextBridge：5 个订阅 + 49 个动作 + 1 条审批请求，**无 ipcRenderer**
+                    ① preload contextBridge：7 个订阅 + 159 个动作 + 1 条审批请求，**无 ipcRenderer**
 ┌───────────────────────────────┴──────────────────────────────────────────────┐
 │  Electron 主进程 = 本机服务宿主                                                │
 │  ┌────────────────────────────────────────────────────────────────────────┐  │
 │  │ kernel-adapter │ store │ scheduler │ ingest │ artifacts │ policy       │  │
 │  │ projects │ runtime-installer │ model-access（密钥库 · 拓扑 · 四层模型表）  │  │
+│  │ catalog │ hub-client │ image-generation │ computer-use │ 会话通信 · 更新  │  │
 │  │  （同进程内的模块，**不拆进程**：加起来就是一个 sqlite 加几个 watcher）    │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │  sqlite: ~/.evowork/evowork.db（node:sqlite · WAL · FTS5）                    │
@@ -67,15 +71,28 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
                                     │ （Chat 协议；网关做 Responses↔Chat 全量翻译）     │
                                     └──────────────────────────────────────────────┘
 ┌────────────────────────────┐   ⑥ 分享上传：**逐次授权后**才发生，默认关闭
-│ identity + apps/web（账号/管理）│◀──────  分享托管仍未接；`upload.ts` 还没有调用方（§10）
+│ identity + apps/web（账号/管理）│◀──────  分享托管在 services/share（与 identity 分进程分库）
 │ JWT · 租户默认模型 · 计量      │
 └────────────────────────────┘
 ```
 
-**七条跨边界通道，全仓库只有这七条**（§4 逐条说明谁实现、谁在守）。除 ⑤（经本机网关到厂商）、⑥、⑦ 之外，
-没有任何东西离开这台机器 —— 这不是"默认关闭"，是**结构上不存在**（K6，见 §9 的守卫表）。
-⑦ 是 2026-09-07 新增的：办公扩展的下载器单独放进 `services/runtime-installer`，
+**图里是 2026-09 的七条基线通道**（§4 逐条说明谁实现、谁在守）。⑦ 是 2026-09-07 新增的：办公扩展的下载器单独放进 `services/runtime-installer`，
 **正是为了让 `services/ingest` 的"不出网"扫描能收紧成整个 `src/` 目录**而不必留口子。
+
+2026-10 起又加了几条出网路径，图里没画（每条都是用户显式开启或触发，出网登记见[总纲](evowork-on-codex-design.md) D9 / K6）：
+
+| 路径 | 实现处 | 何时出网 |
+| --- | --- | --- |
+| 在线升级：取签名清单与安装包 | [update-check.ts](../apps/desktop/src/main/update-check.ts) → `https://update.nucleant.cn/` | 用户点「检查更新」/「下载」；自动检查每天最多一次，受开关控制 |
+| 插件 Hub：取签名索引与内容包 | [services/hub-client](../services/hub-client/) → `https://hub.nucleant.cn` | 用户点「刷新」；自动拉取（启动 + 每小时）受开关控制 |
+| AI 图片：本机图片服务 → 本机网关 → 服务商 | [image-host.ts](../apps/desktop/src/main/image-host.ts) · [services/gateway/src/images.ts](../services/gateway/src/images.ts) | 每次具体上传/费用确认之后（复用 ⑤ 的网关出口） |
+| 浏览器 MCP：独立 Chrome profile 访问网页与搜索 | [plugins/connectors/browser](../plugins/connectors/browser/) | 连接器被信任后，按任务 origin 逐次授权 |
+
+OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-installer/src/ocr-install.ts) 只从管理员配置的离线包
+（`EVOWORK_OCR_BUNDLE` + `EVOWORK_OCR_BUNDLE_DIGEST`，见 [service-host.ts](../apps/desktop/src/main/service-host.ts)）校验后安装；
+`ocr-sources.json` 只被构建期的 `scripts/build-ocr-bundle.mjs` 读。
+
+除 ⑤、⑥、⑦ 与上表之外，没有任何东西离开这台机器（K6，见 §9 的守卫表）。随包的图片、会话通信、文件交付 MCP 只连宿主的本机回环端口，电脑操控 MCP 只连宿主的私有 Unix socket，都不出设备。
 
 进程划分的判据是**崩溃域**，不是模块边界：
 [service-host.ts](../apps/desktop/src/main/service-host.ts) 的头注释写明了本机服务不拆进程的理由 ——
@@ -96,7 +113,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/account` | [packages/account](../packages/account/) | JWT 验签 · PKCE · 计量类型。无网络、无存储 | [jwt.ts](../packages/account/src/jwt.ts) · [claims.ts](../packages/account/src/claims.ts) |
 | `@evowork/tokens` | [packages/tokens](../packages/tokens/) | design token + 对比度断言 + CSS 变量生成 | [contrast.ts](../packages/tokens/src/contrast.ts) |
 | `@evowork/kernel-adapter` | [services/kernel-adapter](../services/kernel-adapter/) | **K2 边界的唯一实现处**：会话/心跳/重启/恢复/能力降级/事件定序/审批/场景展开/**就地起名**/**产品身份** | [adapter.ts](../services/kernel-adapter/src/adapter.ts) · [title.ts](../services/kernel-adapter/src/title.ts) · [identity.ts](../services/kernel-adapter/src/identity.ts) |
-| `@evowork/store` | [services/store](../services/store/) | 本机 sqlite：两类表 · 两个迁移器 · 状态派生 · 投影 · automation/artifact/project/audit 四个 repo | [schema.ts](../services/store/src/schema.ts) · [repositories.ts](../services/store/src/repositories.ts) |
+| `@evowork/store` | [services/store](../services/store/) | 本机 sqlite：两类表 · 两个迁移器 · 状态派生 · 投影 · automation/artifact/project/audit/share 五个 repo | [schema.ts](../services/store/src/schema.ts) · [repositories.ts](../services/store/src/repositories.ts) |
 | `@evowork/scheduler` | [services/scheduler](../services/scheduler/) | 定时调度：带时区 cron · misfire 补偿 · 失败分类 · 设备绑定 · 与内核的桥 | [cron.ts](../services/scheduler/src/cron.ts) · [kernel-bridge.ts](../services/scheduler/src/kernel-bridge.ts) |
 | `@evowork/ingest` | [services/ingest](../services/ingest/) | 本机解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时探测 | [pipeline.ts](../services/ingest/src/pipeline.ts) · [probe.ts](../services/ingest/src/probe.ts) |
 | `@evowork/runtime-installer` | [services/runtime-installer](../services/runtime-installer/) | 办公扩展（自包含 CPython + 六个钉死版本的包 + 中文字体）的按需安装；**K6 登记：唯一为装扩展而出网的包** | [install.ts](../services/runtime-installer/src/install.ts) · [manifest.ts](../services/runtime-installer/src/manifest.ts) |
@@ -106,17 +123,22 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | `@evowork/artifacts` | [services/artifacts](../services/artifacts/) | 产物识别（三信号）· 版本 · fs 对账 watcher · 分享授权与上传 · 资料库视图 | [recognize.ts](../services/artifacts/src/recognize.ts) · [watcher.ts](../services/artifacts/src/watcher.ts) |
 | `@evowork/gateway` | [services/gateway](../services/gateway/) | Responses↔Chat 全量翻译 · 三家 provider · 错误映射 · SSE · **模型表四层合并** · **托管转发** | [pipeline.ts](../services/gateway/src/pipeline.ts) · [forward.ts](../services/gateway/src/forward.ts) · [tenant-models.ts](../services/gateway/src/tenant-models.ts) |
 | `@evowork/identity` | [services/identity](../services/identity/) | 云端账号 · 租户 · 默认模型 · 计量。无内容面 | [service.ts](../services/identity/src/service.ts) · [http.ts](../services/identity/src/http.ts) |
-| `@evowork/web` | [apps/web](../apps/web/) | 账号页与租户管理端。密码表单只在这里。**有改密页**。**没有分享页** | [screens.tsx](../apps/web/src/screens.tsx) |
+| `@evowork/web` | [apps/web](../apps/web/) | 账号页与租户管理端。密码表单只在这里。**有改密页**。分享页 `/s/<id>` 是独立 bundle（`share.html` + `src/share/`），不读账号会话 | [screens/](../apps/web/src/screens/) · [share/](../apps/web/src/share/) |
+| `@evowork/share` | [services/share](../services/share/) | 云端分享托管（D9 第三条职责）：上传 / 撤销 / 元数据 / 解锁 / 取字节 / 到期清扫。与 identity 分进程分库 | [service.ts](../services/share/src/service.ts) · [http.ts](../services/share/src/http.ts) |
+| `@evowork/hub-protocol` | [packages/hub-protocol](../packages/hub-protocol/) | 插件 Hub 的索引协议。无网络、无存储 | [index-format.ts](../packages/hub-protocol/src/index-format.ts) |
+| `@evowork/hub-client` | [services/hub-client](../services/hub-client/) | 插件 Hub 的本机下行通道：拉索引 · 验签 · 缓存 · 下载内容包 · 校验 sha256。不落盘内容、不判更新 | [client.ts](../services/hub-client/src/client.ts) |
+| `@evowork/image-generation` | [services/image-generation](../services/image-generation/) | 本机 AI 图片交付：图片操作权威元数据 · 输入校验与 PNG 校验。不持密钥、不直接调用服务商 | [input.ts](../services/image-generation/src/input.ts) · [png.ts](../services/image-generation/src/png.ts) |
+| `@evowork/computer-use` | [services/computer-use](../services/computer-use/) | 电脑操控的固定协议、状态机与 `cua_repl` MCP 实现（打包进 `plugins/connectors/computer-use/vendor/`）。原生 Helper 在 [apps/computer-use-macos](../apps/computer-use-macos/)（Swift，不是 workspace 包） | [protocol.ts](../services/computer-use/src/protocol.ts) · [session.ts](../services/computer-use/src/session.ts) |
 | `@evowork/desktop` | [apps/desktop](../apps/desktop/) | Electron 壳 + 本机服务宿主 + 全部 UI | [service-host.ts](../apps/desktop/src/main/service-host.ts) · [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) · [model-access.ts](../apps/desktop/src/main/model-access.ts) |
 | `@evowork/eslint-plugin` | [tools/eslint-plugin-evowork](../tools/eslint-plugin-evowork/) | 把 K2 与 token-only 两条纪律做成会失败的规则 | [no-kernel-internals.js](../tools/eslint-plugin-evowork/src/no-kernel-internals.js) |
 
-**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）+ `ui-design`（指令包，无渲染脚本）·
+**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）+ `ui-design`（指令包，无渲染脚本）+ `image-generation` · `computer-use`（引导技能）+ `skill-creator` ·
 [plugins/hooks/evowork-policy/](../plugins/hooks/evowork-policy/) 策略包的 I/O 壳 ·
-[plugins/connectors/browser/](../plugins/connectors/browser/) 官方 browser MCP（Q9）·
+[plugins/connectors/](../plugins/connectors/) 随包 stdio MCP：`browser`（官方浏览器，Q9；含免 Key 搜索）· `image-generation` · `thread-communication` · `workspace-files` · `computer-use`（`cua_repl`）·
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·
-[scripts/](../scripts/) 门禁与雷达 · [build/](../build/) 打包配置 + **`build/kernel/<os>-<arch>/` 随包的内核二进制**（当前只有 `mac-arm64`）。
+[scripts/](../scripts/) 门禁与雷达 · [build/](../build/) 打包配置 + **`build/kernel/<os>-<arch>/` 随包的内核二进制**（不进 git，由 `scripts/build-kernel.mjs` 打补丁编出；迄今只在 `mac-arm64` 上构建过）+ `build/computer-use/`（macOS Helper，由 `scripts/build-computer-use.mjs` 装配）。
 
-**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· `apps/web` 的分享页（Q41）· 企业私有源索引的管理面（**Q44 未决策**）。见 §10。
+**尚无实现**：`ext/`（Rust contributor，只有 README）· 预置专家角色包（`plugins/agents/` 故意为空）· 企业私有源索引的管理面（**Q44 未决策**）。见 §10。
 
 ### 2.1 依赖图（实测自各包 `package.json`）
 
@@ -144,18 +166,25 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
              └───────────────┘
 ```
 
+上图之后新增的依赖边（2026-10-20 实测各包 `package.json`，图未重画）：
+`kernel-adapter → policy` · `gateway → account` · `catalog → hub-protocol` · `hub-protocol → account` ·
+`hub-client → account, hub-protocol` · `image-generation → store, gateway` · `share / identity → account, logging` ·
+`runtime-installer → ingest, logging` · `computer-use`、`account`、`tokens` 无内部依赖。
+
 四条能从图里直接读出来的事实：
 
-1. **`protocol` 只被 `store` 与 `kernel-adapter` 依赖，外加 `desktop` 主进程的一处类型导入**
-   （[renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) 的 `import type { ThreadItem }`）。
+1. **`protocol` 只被 `store` 与 `kernel-adapter` 依赖，外加 `desktop` 主进程的两处导入**
+   （[renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) 的 `import type { ThreadItem, Turn, UserInput }`，
+   [local-services.ts](../apps/desktop/src/main/local-services.ts) 的 `fileChangeKind`）。
    **渲染层仍然不依赖它** —— K2 的结构性保证是"前端连协议的类型都拿不到"，这一条没变；
-   主进程那一处是翻译 Item 形状时的只读类型，不是调用面。
-2. **`scheduler` / `ingest` / `artifacts` / `policy` / `gateway` 互不依赖**，也不依赖适配层。
+   主进程那两处是翻译 Item 形状时的类型与一个纯函数，不是调用面。
+2. **`scheduler` / `ingest` / `artifacts` / `policy` / `gateway` 互不依赖**，也不依赖适配层
+   （反方向有一条：`kernel-adapter` 依赖 `policy`）。
    它们之间的接线全部集中在 [local-services.ts](../apps/desktop/src/main/local-services.ts) 一个文件里
    （scheduler 需要的适配层能力用**结构类型** `TaskRunner` 表达，见 [kernel-bridge.ts](../services/scheduler/src/kernel-bridge.ts)）。
-3. **`gateway` 不依赖除 logging 外的任何内部包** —— 它要能独立部署成一个文件（见 §8）。
+3. **`gateway` 只依赖 `logging` 与 `account`**（后者提供云端模式的 `jwtAuth`）—— 它要能独立部署成一个文件（见 §8）。
    反过来，`desktop` 依赖 `gateway` 是为了共用**类型与校验**（`CustomModelSpec` / `validateCustomModel` / 四层合并），不是为了在进程内跑它。
-4. **`projects` 只依赖 `policy`**（路径硬拦截：`~/.ssh` 不能被设成空间根），`catalog` **无内部依赖**，`runtime-installer` 只依赖 `ingest`（复用运行时探测与档位文案）。
+4. **`projects` 只依赖 `policy`**（路径硬拦截：`~/.ssh` 不能被设成空间根），`catalog` 只依赖 `hub-protocol`，`runtime-installer` 只依赖 `ingest` 与 `logging`（复用运行时探测与档位文案）。
 
 ---
 
@@ -164,10 +193,10 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 | 总纲的层 | 代码里是什么 | 备注 |
 | --- | --- | --- |
 | L4 前端 | [apps/desktop/src/renderer/](../apps/desktop/src/renderer/) | 只认 IPC 频道，不认协议方法名。渲染层 import 服务层时**只许走子路径导出**（barrel 会带进 `node:*`，vite 构建直接炸） |
-| L3 本机服务 | `services/{kernel-adapter,store,scheduler,ingest,policy,artifacts,projects,catalog,runtime-installer}` + `apps/desktop/src/main/{model-access,secret-store,app-config,custom-models,audit-ingest,catalog-host}.ts` | 同进程模块，宿主是 Electron 主进程。desktop 里那几份要 Electron API 或以注入方式接收 I/O；`catalog` 与 `projects` 一样**不做 I/O** |
-| L3′ 云端 | `services/gateway`（本机子进程 + 云端同一份）· `services/identity` · `apps/web`（账号/管理；分享页未做） | 网关与 identity 都是独立进程 |
-| L2 扩展包 | `plugins/{skills,hooks}`（已建）· `plugins/connectors/browser`（stdio MCP）· `plugins/agents/`（空，不预置角色）· `ext/`（未建） | K3 的四个扩展点用了三个（MCP 只做了 browser） |
-| L1 内核 | `../codex`，**只读**；随包二进制在 `build/kernel/` | 补丁预算 5 文件 / 500 行，当前用了 0 |
+| L3 本机服务 | `services/{kernel-adapter,store,scheduler,ingest,policy,artifacts,projects,catalog,runtime-installer,hub-client,image-generation,computer-use}` + `apps/desktop/src/main/` 里的宿主模块（`model-access` / `secret-store` / `app-config` / `custom-models` / `audit-ingest` / `catalog-host` / `hub-host` / `image-host` / `library-host` / `task-environments` / `thread-communication-host` / `computer-use-host` / `update-check` / `policy-pack` 等） | 同进程模块，宿主是 Electron 主进程。desktop 里那几份要 Electron API 或以注入方式接收 I/O；`catalog` 与 `projects` 一样**不做 I/O** |
+| L3′ 云端 | `services/gateway`（本机子进程 + 云端同一份）· `services/identity` · `services/share`（分享托管）· `apps/web`（账号/管理 + 分享页） | 网关、identity、share 都是独立进程 |
+| L2 扩展包 | `plugins/{skills,hooks}`（已建）· `plugins/connectors/{browser,computer-use,image-generation,thread-communication,workspace-files}`（MCP）· `plugins/agents/`（空，不预置角色）· `ext/`（只有 README） | K3 的四个扩展点用了三个 |
+| L1 内核 | `../codex`，**只读**；随包二进制在 `build/kernel/` | 补丁预算 5 文件 / 500 行，当前用了 4 文件 / 208 行（`patches/evowork/` 两个补丁，`node scripts/patch-budget.mjs`） |
 
 ---
 
@@ -179,8 +208,8 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 
 - 实现：[preload/index.ts](../apps/desktop/src/preload/index.ts) ↔ [service-host.ts](../apps/desktop/src/main/service-host.ts) 的 `IPC` + [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) 的 `createRendererActions`。
   契约类型在 [shared/ipc.ts](../apps/desktop/src/shared/ipc.ts)，**两侧共用一份** —— 2026-09-06 之前三处各写一份、各自能编译、合起来是断的。
-- 渲染进程能做的**全部事情**：订阅 `uiEvent` / `notice` / `degrade` / `pendingApprovals` / `runtimeProgress` 五个频道；
-  调用 `RENDERER_ACTIONS` 里的 **49 个动作**（任务 7 · 模型目录与接入 2 · 三个目录页 3 · 引导与工作空间 3 · 办公扩展 2 · 项目 10 · 设置页 7 · 账号 5 · 偏好 2 · 技能·连接器 8）；
+- 渲染进程能做的**全部事情**：订阅 `computerUseStatus` / `uiEvent` / `notice` / `degrade` / `pendingApprovals` / `runtimeProgress` / `updateStatus` 七个频道；
+  调用 `RENDERER_ACTIONS` 里的 **159 个动作**（2026-10-20 实数；分组以 preload 源码里的注释为准，这里不再逐类计数）；
   另有一条主进程→渲染进程的审批**请求**频道 `askApproval`。
 - `ipcRenderer` 本身**绝不暴露** —— 暴露它等于把整个 IPC 面交出去，之后每次"临时加个频道"都会绕过这里。
 - **动作清单与实现逐项相等**由 `bootstrap.test.ts` 钉住（`RENDERER_ACTIONS` ↔ `ServiceHost['actions']`）。这条约束是被一次真实故障换来的：主进程只注册了审批一个 handler，界面上"回车没反应"且一行报错都没有。
@@ -223,8 +252,10 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
   （python-build-standalone 的 `install_only` 构建：自包含、位置无关、自带 pip；**不用 `uv venv`**，它建的目录不可搬运），
   四个技能的 `render.py` 缺模块时**自动换到这个解释器重跑**。可用 `EVOWORK_OFFICE_PYTHON` / `EVOWORK_OFFICE_BUNDLE` 覆盖。
 - TS 侧与 Python 侧（`plugins/skills/_shared/evowork_skill.py`）的档位文案是**同一份数据**，由测试逐字段比对。
-- 解析器子进程**必须关网络**（沙箱在 M4 强制，`ingest` 这一侧是接口约束）。**`office` / `ocr` 档的实际解析器尚未接**：
-  [parsers/](../services/ingest/src/parsers/) 里只有 `builtin.ts` 与 `zip.ts`，拖入 docx/pdf 现在只以原始文件引用（§10）。
+- 解析器子进程**必须关网络**。[parsers/](../services/ingest/src/parsers/) 现有 `builtin.ts` · `zip.ts` ·
+  `office.ts` + `office.py`（Word / Excel / PPT / PDF 文本层）· `ocr.py`（tesseract）· `library.py`（资料库抽取）。
+  OCR、资料库抽取、PDF 分页与 Office 预览经 [isolated-process.ts](../services/ingest/src/isolated-process.ts)
+  起子进程（macOS 上 fail closed）；**`office.ts` 的文本解析仍是直接 `execFile`**，只拿掉网络相关环境变量，不在沙箱里（§10）。
 
 ### ⑤ 内核 → 本机网关 → 厂商：唯一的模型出网路径
 
@@ -254,18 +285,19 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 
 ### ⑥ 产物分享上传：本机内容离开设备的唯一常规通道
 
-- [share.ts](../services/artifacts/src/share.ts) + [upload.ts](../services/artifacts/src/upload.ts)。
+- [share.ts](../services/artifacts/src/share.ts) + [upload.ts](../services/artifacts/src/upload.ts) + [share-flow.ts](../services/artifacts/src/share-flow.ts)；云端托管在 [services/share](../services/share/)。
 - 流程**刻意做得重**：每次过授权模态 · 不记住选择 · 不做批量 · 一次一个 `artifactId` · 可撤销 · 到期自动删（默认 24h）。
 - **授权在前、读文件在后**：顺序反了的话，"用户取消了授权"与"文件已被读进内存"会同时成立。
 - 日志里没有文件名 —— 文件名本身可能就是敏感信息。
-- **现状：这条通道两端都还没接**。`createShare` / `createUploader` 在 `apps/desktop` 里没有调用方（只有测试），云端托管端点也不存在；
-  资料库页的「我分享的」表格与撤销按钮是 UI 骨架。见 §10。
+- **现状：两端都已接**。[service-host.ts](../apps/desktop/src/main/service-host.ts) 用 `createShareFlow` / `createUploader` 组装，
+  渲染层经 `prepareShare` / `createShare` / `createThreadShare` / `revokeShare` / `listShares` 五个动作调用
+  （`prepareShare` 不上传任何东西）；接收方打开的 `/s/<id>` 页面在 [apps/web/share.html](../apps/web/share.html)。
 
 ### ⑦ 办公扩展下载：唯一为装扩展而出网的路径（K6 登记）
 
 - [services/runtime-installer](../services/runtime-installer/)：从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的 URL + 校验和下载 CPython，六个 python 包由 pip 从清华镜像（`--index-url`）安装，中文字体从随包的 `Resources/office/NotoSansSC.ttf` 拷出再切静态实例，装进 `~/.evowork/runtime/office/`，
   装完做"搬走目录再跑"的可搬运检查，然后 `probe.invalidate()` 重探。
-- 用户在 App 里点「现在安装」（引导第 ④ 步 / 设置页）才触发；进度经 `runtimeProgress` 频道推送，文案真源在安装器包里。
+- 用户在 App 里点「现在安装」（引导第 ③ 步 / 设置页）才触发；进度经 `runtimeProgress` 频道推送，文案真源在安装器包里。
 - 离线机器用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打），此时下载函数**一被调用就炸**（测试如此构造）。
 - 它不在 `services/ingest` 里，是为了让那边的 K6 扫描（`fetch(` / `node:http`）能覆盖整个 `src/` 目录而不留口子。
 
@@ -276,10 +308,13 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 ### 5.1 首次发送一条需求
 
 ```
-渲染层 Composer ──send({text, scenarioId?, modelId?, modeId?, workspaceId?})──▶ 主进程
+渲染层 Composer ──send({text, draftId?, scenarioId?, modelId?, modeId?, workspaceId?, …})──▶ 主进程
    （首页不创建 Thread —— 发第一条消息时才建，建好回 id，前端据此切页）
         │
-        ├─ workspaceId → overrides.cwd（id→path 只有主进程知道，渲染层不持有绝对路径）
+        ├─ draftId + workspaceId → task-environments.ts 登记草稿环境 → overrides.cwd
+        │    有项目：项目根（id→path 只有主进程知道，渲染层不持有绝对路径）
+        │    无项目：独立新目录 ~/.evowork/workspaces/<uuid>，或设置「常规」里自选工作目录下的 <uuid>
+        │    环境（cwd + projectId）写进权威 meta；创建后 cwd 固定，换项目要新建任务
         ├─ modelId → overrides.model，并写进任务级设置（下一回合生效，不追溯）
         ├─ modeId → overrides.modeId，同样写进任务级设置（Q45 审批三档）
         ├─ scenario.ts: 场景 + 审批档 + 覆盖 → turn/start 参数
@@ -391,7 +426,9 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 本机 `project_local` / `project_root` 两张**权威表**是真源，内核 `project/*` 只做**尽力镜像**（`kernel_id` 为 NULL 不影响任何功能）——
 2026-09-07 把口径从"内核为主、本机兜底"反转过来：Q1=A 是纯本地应用、`project/*` 是实验方法、EvoWork 要存的字段超出内核 `Project` 的形状。
 `project/list` 保留为启动探针（降级判定机制依赖一个"无副作用、不需要 thread 上下文"的方法）。
-首页下拉的工作空间 = 这两张表；任务归属按 `thread_projection.cwd` 是否在某个根下判定（[membership.ts](../services/projects/src/membership.ts)）；
+首页下拉的工作空间 = 这两张表，全局首页默认无项目、不预选最近项目；任务归属**先看宿主登记的显式 `projectId`**
+（[task-environments.ts](../apps/desktop/src/main/task-environments.ts)，存在权威 `meta`），
+只有没有登记的旧任务/外部任务才按 `thread_projection.cwd` 落在哪个根下（最长路径边界）判定（[membership.ts](../services/projects/src/membership.ts) 的 `ownerProjectOf`）；
 空间记忆是根目录下的 `AGENTS.md`，写入前经三级路径策略。
 
 ### 5.9 本机自动记忆与外部项目导入（2026-10-17）
@@ -405,14 +442,14 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 驱动是 Node 内置 `node:sqlite`（`DatabaseSync`），自带 WAL 与 FTS5 —— 没有原生模块，
 因此 Electron 打包不需要按 ABI 重编译（代价是 Electron 的 Node 版本必须 ≥ 22.5，见 §8）。库在 `~/.evowork/evowork.db`。
 
-**15 张业务表分两类**（[schema.ts](../services/store/src/schema.ts)），外加迁移器自建的 `meta` 表（文档口径的"16 张"含它）：
+**23 张业务表分两类**（[schema.ts](../services/store/src/schema.ts) 的 `TABLES`，2026-10-20 实数），外加迁移器自建的 `meta` 表（"24 张"的口径含它）：
 
 | 类别 | 真源在哪 | 迁移失败时 | 表 |
 | --- | --- | --- | --- |
-| **投影类**（6） | 内核 / 文件系统 | **丢弃重建**，附一条警告，继续启动 | `thread_projection` `item_digest` `library_node` `library_index`(FTS5) `access_log` `unknown_event` |
-| **权威类**（9） | 只在这里 | 备份 → 失败则回滚并**抛错，宁可启动失败** | `project_local` `project_root` `artifact` `automation` `automation_run` `share` `subscription` `notification` `audit_log` |
+| **投影类**（8） | 内核 / 文件系统 | **丢弃重建**，附一条警告，继续启动 | `thread_projection` `item_digest` `library_node` `library_index`(FTS5) `library_document` `library_chunk` `access_log` `unknown_event` |
+| **权威类**（15） | 只在这里 | 备份 → 失败则回滚并**抛错，宁可启动失败** | `project_local` `project_root` `artifact` `automation` `automation_run` `share` `subscription` `notification` `audit_log` `thread_message` `image_operation` `follow_up_receipt` `follow_up_queue` `follow_up_control` `follow_up_composer` |
 
-两类各有**独立的版本号与独立的迁移器**（[migrate.ts](../services/store/src/migrate.ts)，权威类当前 **v3**），
+两类各有**独立的版本号与独立的迁移器**（[migrate.ts](../services/store/src/migrate.ts)，投影类当前 **v5**、权威类当前 **v6**），
 两条路径没有任何共享的可写状态 —— 不这么做的话，"重建索引"的逻辑总有一天会把 `automation` 表也清了。
 
 `artifact` 归权威类是一个需要说明的判断：产物**本体**的真源是文件系统（D6），
@@ -500,15 +537,15 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 ### 7.5 前端
 
 - 视图切换不用 router：`MainView` 八个值（`task` / `library` / `automations` / `audit` / `projects` / `catalog` / `settings` / `more`）+ `activeTaskId` + `settingsSection`。
-  侧边栏六个入口（新建任务 · 项目 · 技能·连接器 · 自动化 · 资料库 · 更多），「更多」是菜单，项直接落到设置页的某个分区（`settings:models` 这种形式）。
-  设置页是**一页多分区**，不是六个视图。**没有页面的入口也必须在 `NAV_TO_VIEW` 里出现**（`UnbuiltPage` 如实说没做，不是白屏）；「助理」入口 2026-09-07 整个下架（方案留在 02 §4.2）。
-  **以上是 2026-09-09 的当前代码形状，不是新版目标。** 2026-09-11 Approved UI 要求后续把项目与最近任务分区、入口统一为“插件”、移除“发现应用/更多”的重复或空壳入口，并隐藏未接通动作；实现完成前以 [status.md §6.1](status.md) 跟踪差距。
+  侧边栏一级入口是 [sidebar.tsx](../apps/desktop/src/renderer/views/sidebar.tsx) 的 `MAIN_NAV` 四项（新建任务 · 自动化 · 插件 · 资料库），其下是「项目」与「最近」两个分区；
+  底部「更多」菜单（`MORE_MENU`：设置 · 数据管理 · 用量与预算 · 用量与审计 · 关于），项直接落到某个视图或设置页的某个分区（`settings:models` 这种形式）。
+  设置页是**一页多分区**，不是若干视图。**没有页面的入口也必须在 `NAV_TO_VIEW` 里出现**（`UnbuiltPage` 如实说没做，不是白屏）；「助理」入口 2026-09-07 整个下架（方案留在 02 §4.2）。
 - 样式**零字面量**：颜色与 px 只能来自 [packages/tokens](../packages/tokens/)，由 eslint 规则在渲染层文件上强制。
-  组件只能来自 01 §5 的清单（现 **35** 个；第 33 ProgressBar · 34 Dialog / ItemCard · 35 SecretInput 都是先登记再实现）。
+  组件只能来自 01 §5 的清单（现 **37** 个；第 33 ProgressBar · 34 Dialog / ItemCard · 35 SecretInput · 36 GlobalSearchPalette · 37 SettingsRow 都是先登记再实现）。
 - 渲染层 import 服务层**只许走子路径导出**（barrel 会带进 `node:crypto` / `node:child_process`，vite 直接失败），`styles.test.ts` 扫源码拦这类导入。
 - **每个顶层视图根都要在 `.ew-app >` 的 flex 规则里**（`styles.test.ts`）—— 新造一个类、CSS 里一条规则都没有，那一页会缩成左上角一小块，而组件自己的样式全对。
 - Visualizer 是不可信内容的落点：沙箱 iframe **给 `allow-scripts`、绝不给 `allow-same-origin`**（两者同给等于没有沙箱）·
-  SVG 白名单清洗且**点名删 `foreignObject`** · chart spec 拒绝未知字段与函数字符串。mermaid 走动态 import，独立 chunk（主 chunk 244KB，mermaid 683KB）。
+  SVG 白名单清洗且**点名删 `foreignObject`** · chart spec 拒绝未知字段与函数字符串。mermaid 走动态 import，独立 chunk（2026-09-12 实测：主 chunk 415KB，mermaid core 614KB，见 status.md 指标表）。
 
 ### 7.6 拓扑与凭据（M10a）
 
@@ -530,19 +567,19 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 
 ## 8. 构建与分发拓扑
 
-`pnpm run build` = [scripts/build.mjs](../scripts/build.mjs) 四步，顺序刻意：
+`pnpm run build` = [scripts/build.mjs](../scripts/build.mjs) 四步，顺序刻意（在 macOS 上，四步之前先跑 `scripts/build-computer-use.mjs` 装配电脑操控 Helper）：
 
 | 步 | 做什么 | 漏了会怎样 |
 | --- | --- | --- |
 | ① `tsc --build tsconfig.build.json` | 产出所有包的 JS 与声明（solution 风格，新包要在 references 里登记） | 新包不被类型检查覆盖 |
-| ② 复制 `electron-entry.mjs` + `preload-entry.cjs` | 入口是 `.mjs`（唯一 import electron 的文件，被 tsc 跳过）；preload 入口必须是 CJS | 打包产物**没有入口**；`window.evowork` 不存在 |
-| ③ esbuild 打单文件入口 | `gateway/main` · `desktop/main/bootstrap` · `desktop/preload` · **hook 策略包 `vendor/policy.mjs`**（只 external electron；策略包打完单独 import 验证） | workspace 包的 exports 指向 TS 源码，直接 `node dist/…` 会炸；策略包若只是拷 `dist/index.js`（2026-10-01 前就是这样），打包后的应用里策略**静默失效** |
+| ② 复制 `electron-entry.mjs` | 入口是 `.mjs`（唯一 import electron 的文件，被 tsc 跳过） | 打包产物**没有入口** |
+| ③ esbuild 打单文件入口 | `dist/gateway/main.js` · `dist/identity/main.js` · `desktop/main/bootstrap.bundle.js` · `desktop/preload/index.bundle.cjs`（入口 `preload-entry.cjs`，必须 CJS）· **hook 策略包 `vendor/policy.mjs`** · 浏览器连接器的 `vendor/policy.mjs` · 电脑操控 MCP `vendor/server.mjs`（只 external electron）。打完单独验证策略包可 import、浏览器 / 图片 / 会话通信 MCP 能脱离仓库启动；再把 `office.py` / `ocr.py` / `library.py` 拷到 `apps/desktop/dist/main/` | workspace 包的 exports 指向 TS 源码，直接 `node dist/…` 会炸；策略包若只是拷 `dist/index.js`（2026-10-01 前就是这样），打包后的应用里策略**静默失效**；漏拷解析脚本则装好的 App 拖入 docx 永远「解析失败」；preload 漏打则 `window.evowork` 不存在 |
 | ④ vite 打渲染层（`base: './'`） | mermaid 走[动态 import](../apps/desktop/src/renderer/components/mermaid-renderer.ts)，天然独立 chunk | `base: '/'` 在 `file://` 下指向文件系统根 → 整页全白且没有任何报错 |
 
 入口把两件事拆开：`app.isPackaged`（随包资源在哪）与 `EVOWORK_DEV`（连不连 vite）。未打包时按**入口文件**定位仓库根，不看 `process.cwd()`。
 ESM 入口**不顶层 await** `whenReady()`（与 Electron 的 `ready` 互相等 → 进程活着、零个 Helper、一行输出都没有）。
 
-分发（M9，配置在 [build/](../build/)）：electron-builder 三平台 + 差量更新 + macOS entitlements；内核二进制从 `build/kernel/<os>-<arch>/` 进 `extraResources`，中文字体从 `build/office/NotoSansSC.ttf` 进 `Resources/office/`；
+分发（M9，配置在 [build/](../build/)）：electron-builder 三平台 + 差量更新 + macOS entitlements；内核二进制从 `build/kernel/<os>-<arch>/` 进 `extraResources`，中文字体从 `build/office/NotoSansSC.ttf` 进 `Resources/office/`；macOS 包另带 `build/computer-use/EvoWork Computer Use.app`（`mac.extraResources`，发布标记仍关闭）；
 `electron` 装在仓库根（electron-builder 检测到 pnpm workspace 后从根解析版本）；`app.asar` 排除 `node_modules`（三个入口都是自包含 bundle）。
 [package-plan.mjs](../scripts/package-plan.mjs) 守两件事 —— **体积预算与档位边界**（防止 office/ocr 档混进基础包），
 以及**缺任一签名 secret 就整体降级为未签名并把标注写进文件名**（半签名的产物看起来像正式包）。
@@ -552,7 +589,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 
 ```
 ~/.evowork/
-  evowork.db            本机 sqlite（15 张业务表 + meta）
+  evowork.db            本机 sqlite（23 张业务表 + meta）
   app.toml              EvoWork 自己的配置：mode / upstream_base_url（D11）
   models.toml           第③层自定义模型的元数据（无密钥）
   secrets.bin           safeStorage 密文（厂商密钥 + 网关令牌）
@@ -560,6 +597,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
   gateway.env.migrated  旧明文密钥文件，首次启动导入后改名；钥匙串不可用的机器不改名、继续读
   gateway-token         旧令牌文件，同上
   audit.jsonl           hook 追加的审计记录，宿主搬进 audit_log 后截断
+  artifacts.jsonl       技能 mark_artifact 的上报队列（resolvePaths 的 artifactLog）
   config.toml           `resolvePaths` 里仍有这个条目，但**没有任何读写方** —— 内核只读 kernel/config.toml（F21）
   requirements.toml
   modes/                执行指令片段（craft.md 进 Composer 三档；plan.md / ask.md 仅内部。首次运行装入，已存在不覆盖）
@@ -568,6 +606,11 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
   kernel/               = 内核家目录。config.toml **在这里**（F21），宿主只知道"内核的家在这儿"，
                         **不知道那个环境变量叫什么** —— 那是适配层的知识
   runtime/office/       办公扩展（自包含 CPython + 六个包 + fonts/；卸载 = 删一个目录）
+  runtime/ocr/          本地 OCR 组件（只从校验过的离线包安装）
+  workspaces/           无项目任务的独立 cwd（每个任务一个 <uuid>；设置「常规」可改到自选目录）
+  drafts/               Composer 草稿附件的暂存区，发送前归入最终环境
+  …                     其余由各宿主模块按需创建、不在 resolvePaths 里：library/ · cache/ · hub/ ·
+                        attachment-sources/ · file-revisions/ · policy-pack.json · jwks.json · update.json
 ```
 
 启动顺序也是刻意的：**建目录 → 装配置模板与模式片段 → 拓扑 → 密钥库（含迁移）→ 开库 → 起内核 → 起网关（mode=local）→ 审计搬运 → 调度器**。
@@ -600,30 +643,29 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 运行时文案 TS/Python 两侧一致 | [ingest/test/runtime.test.ts](../services/ingest/test/runtime.test.ts) 逐字段比对 | 用户以为解析和生成要装两个不同的东西 |
 | "没装扩展怎么办"必须被测到 | `WITHOUT_OFFICE_RUNTIME` 夹具：`EVOWORK_OFFICE_PYTHON` 指向不存在的路径 + `sitecustomize.py` 只挡那四个模块 | 开发机用户级 site-packages 里有 python-docx 时，这条路径永远没人验 —— 而它是用户第一次用时走的 |
 | 打包产物的四条"装得上、看不出哪里错了" | [desktop/test/packaging.test.ts](../apps/desktop/test/packaging.test.ts) | 入口顶层 await · preload 无入口 · `~/.evowork` 没人建 · vite `base` 绝对路径 |
-| 内核事实 F1–F16 仍成立 | [kernel-drift.mjs](../scripts/kernel-drift.mjs) + [kernel-assertions.json](../scripts/kernel-assertions.json)，每日 CI | `LINE-MOVED`（行号漂，不算失败）/ `BROKEN`（断言被上游推翻） |
+| 内核事实仍成立（[kernel-assertions.json](../scripts/kernel-assertions.json) 的 49 条，编号 F1–F53，其中 F36–F38 / F44 无条目） | [kernel-drift.mjs](../scripts/kernel-drift.mjs) + [kernel-assertions.json](../scripts/kernel-assertions.json)，每日 CI | `LINE-MOVED`（行号漂，不算失败）/ `BROKEN`（断言被上游推翻） |
 
 一条贯穿全仓库的写法纪律：**断言写后果，不写实现**。`expect(x).toBe(3)` 半年后没人知道为什么是 3；
 写成「超预算只给两个动作，没有"用便宜模型继续"」，改的人才知道自己在破坏什么。
 
 ---
 
-## 10. 已知偏差（写作时实测，2026-09-09）
+## 10. 已知偏差（写作时实测，2026-09-09；2026-10-20 按当前代码复核）
 
 架构文档最容易腐化的部分是"现状描述"，所以这一节写死在文档里而不是口头传递。
+2026-10-20 复核时删掉了已修掉的两行（原第 3 行「分享托管仍未接」、原第 11 行「电脑操控尚未进入当前架构」），其余行按当前代码改写，编号保留不重排。
 
 | # | 偏差 | 实测 |
 | --- | --- | --- |
-| 1 | **内核签出领先断言基线 89 个提交** | `../codex` HEAD = `7769bccbb2`（2026-09-07），[kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `89a4eec6da`（2026-09-05 复核）。`node scripts/kernel-drift.mjs --no-fetch` 在实际签出上跑出 **OK 12 · LINE-MOVED 5 · BROKEN 0**（F3 / F7 / F8 / F14 / F16 行号漂了），断言本身没坏，但 CLAUDE.md §1 与 status.md 记的"当前签出 `89a4eec6da`"在这台机器上已不成立。F17–F25 九条**没有进断言文件**（当前 17 条），只在 [设计集 README §4](design/README.md) 里 |
-| 2 | K3 的四个扩展点用了三个 | 技能包 ✅ · hooks ✅ · MCP server 仅 `plugins/connectors/browser/`（Q9 本期只做这一个，不铺国内目录）· Rust contributor ❌（`ext/` 只有 README；内部只读路径若恢复仍要 `ToolContributor` 过滤写工具，Q45 后这条不再挡 Composer） |
-| 3 | 分享托管仍未接 | `services/identity` 与 `apps/web` 的账号/管理端已落地。§4 通道 ⑥ 的**分享云端一侧不存在**，`upload.ts` 面向一个还没有实现的端点，且**本机侧也没有调用方** —— 「分享」现在是 UI 骨架 + 两个没人调的服务层函数 |
+| 1 | 内核签出与断言基线的对应关系**本机无法复核** | [kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `d583e73c4d12`（2026-09-24 复核），共 **49** 条断言（编号 F1–F53，F36–F38 / F44 无条目）。2026-10-20 订正时机器上没有 `../codex`，`kernel-drift.mjs` 未重跑；2026-09-09 记录的"签出 `7769bccbb2` 领先基线 `89a4eec6da`、OK 12 · LINE-MOVED 5 · BROKEN 0"是当时那台机器上的结果 |
+| 2 | K3 的四个扩展点用了三个 | 技能包 ✅ · hooks ✅ · MCP server ✅（随包 `browser` · `image-generation` · `thread-communication` · `workspace-files` · `computer-use`）· Rust contributor ❌（`ext/` 只有 README；内部只读路径若恢复仍要 `ToolContributor` 过滤写工具，Q45 后这条不再挡 Composer） |
 | 4 | 第 ② 层签名策略包已接（M10c） | identity ES256 签 payload 原文 → 桌面验签后写 `~/.evowork/requirements.toml`。无包 / 未登录不锁 BYOK。超期只读，文案见 11 §8。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
 | 5 | 专家角色包为空 | `plugins/agents/` 不预置角色（编造 100+ 专家等于铺演示数据）。用户可在「技能·连接器 → 专家」新建，或把 TOML 放到 `~/.evowork/agents/`。信任连接器只写 `config.toml`，**不假装有 live reload** |
-| 6 | OCR 档解析器与扫描件识别未接 | 办公档（docx / xlsx / pptx / pdf 文本层 / rtf）已由 `createOfficeParser` + `office.py` 接入；扫描件（`pdf-scanned`）仍无 OCR 解析器，安装器也不装 `pytesseract`。解析子进程尚未套 seatbelt / landlock（M4） |
+| 6 | 办公解析子进程不在沙箱里；OCR 无可用发行包 | 办公档（docx / xlsx / pptx / pdf 文本层 / rtf）由 `createOfficeParser` + `office.py` 接入，但 `office.ts` 直接 `execFile`，未经 [isolated-process.ts](../services/ingest/src/isolated-process.ts)（OCR / 资料库抽取 / PDF 分页 / Office 预览已走它，macOS 上 fail closed；其他平台未套 landlock 等）。OCR 本地首版（`ocr.py` + tesseract）已接，但运行时只从管理员配置的离线包安装，默认构建里显示"尚未配置可验证的 OCR 发行包" |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |
-| 8 | 表数口径 | `TABLES` 里是 **15** 张（6 投影 + 9 权威），第 16 张是迁移器自建的 `meta`。CLAUDE.md §3 与 status.md 写"16 张"含 meta；`.cursor/rules/apps-desktop.mdc` 仍写"32 个组件"（现为 35） |
-| 9 | 随包内核只有一个平台 | `build/kernel/` 下只有 `mac-arm64/`；Windows / Linux 的二进制要在 CI 里构建后放进对应目录，`scripts/package.mjs` 缺它时会拒绝打包 |
-| 10 | 桌面壳有若干 UI 声明了但没接 | 侧边栏**行操作只接了 `archive` / `delete`**（且两者都是从投影表移除，没调内核的归档），`rename` / `move` / `reveal` / `new-in-workspace` / `share` / `copy-link` / `fork` 七项落到 `rowAction` 后只记一条 `desktop.row_action.unimplemented` 日志（[renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts)）；「更多」菜单里 `inspiration` / `guide` / `devices` / `update` 四项禁用并给原因；`@` 候选与语音输入没有数据源。菜单项本身都如实说"还没做"，但**行菜单里的七项看起来是能点的** |
-| 11 | 电脑操控尚未进入当前架构 | CU-Q1–CU-Q6 已全部确认；但 `apps/computer-use-macos/`、`services/computer-use/`、`plugins/connectors/computer-use/` 均不存在，当前 App 和安装包没有 Helper、MCP 工具、授权、browser 路由、留存/真实删除、终端与 System Settings 提前硬拒绝、权限页或控制状态条。现有任务“删除”只移除投影记录，不满足 CU-Q5；完整目标架构见 [12](design/12-computer-use.md) |
+| 8 | 表数口径 | `TABLES` 里是 **23** 张（8 投影 + 15 权威），另有迁移器自建的 `meta`；含 meta 的口径是 24 张 |
+| 9 | 随包内核只有一个平台 | `build/kernel/` 不进 git，由 `scripts/build-kernel.mjs` 打补丁编出，迄今只在 `mac-arm64` 上构建过；Windows / Linux 的二进制要在 CI 里构建后放进对应目录，`scripts/package.mjs` 缺它时会拒绝打包 |
+| 10 | 桌面壳仍有少量 UI 声明了但没接 | 侧边栏行菜单现在只露 `rename` / `share…` / `archive` / `delete` 四项（[sidebar.tsx](../apps/desktop/src/renderer/views/sidebar.tsx) 的 `rowMenuItems`）：改名与分享由渲染层另走 `renameTask` 与分享授权流，归档 / 删除经 `rowAction` 调内核的 `archiveTask` / `deleteTask`；`RowAction` 类型里其余值（pin / unpin / move / reveal / new-in-workspace / copy-link / fork；分叉另有独立动作 `forkTask`）落到 `rowAction` 只记一条 `desktop.row_action.unimplemented` 日志，但菜单里已不展示。「更多」菜单的禁用项已移除。`@` 候选已由 `searchComposerMentions` 提供；**语音输入**只有一个由 `micAvailable` 控制的按钮，没有任何调用方传这个值，因此不显示 |
 
 另有若干"还没被证伪的断言"（GLM 产物质量 · misfire 真机体验 · 签名公证链路 · Windows 隔离强度 · `safeStorage` 真机行为），
 它们是**结论层面**的空白而不是架构层面的，见 [work-priority §10](work-priority.md) 与 [status.md §3](status.md)。

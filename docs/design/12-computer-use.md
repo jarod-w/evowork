@@ -1,6 +1,6 @@
 # 12 · 电脑操控（Computer Use）设计
 
-> 状态：**实施中：协议、MCP、宿主授权与 UI 已落地；Helper 源码及发布验收未完成**
+> 状态：**实施中：协议、MCP、宿主授权与 UI 已落地；macOS Helper 源码与原生 release 编译已落地，真机与发布验收未完成，`releaseVerified=false`（剩余项见 §17）**
 > 日期：2026-09-24
 > 适用基线：EvoWork `5fdde4147650b3b146ec8a4a78c1815f89fbad5b`；Codex `ee6814bfa4889fe9b2b3dcc9cc8bdd91effa8ab8`
 > 关联文档：[总纲](../evowork-on-codex-design.md) · [服务层](09-service-layer.md) · [安全与权限 UX](10-security-permissions-ux.md) · [插件](05-experts-skills-connectors.md)
@@ -821,7 +821,7 @@ CU-Q1–CU-Q6 已于 2026-09-24 全部确认。下表保留原选项、最终决
 
 - CU-Q1–CU-Q6 已全部按 A 书面确认。
 - `pnpm run check`、原生 Helper 测试、许可检查、补丁预算和打包预算全绿。
-- Codex 内核补丁仍为 0；CU-Q5=A 不以“分离清除截图”为目标。若真实删除或内容索引仍需补丁，必须先按 K1 单独写理由并评审。
+- 电脑操控不新增 Codex 内核补丁（现有 P6 / P7 与本能力无关，见 `patches/evowork/README.md`）；CU-Q5=A 不以“分离清除截图”为目标。若真实删除或内容索引仍需补丁，必须先按 K1 单独写理由并评审。
 - 正式签名的 macOS 安装包完成 TCC 首次授权、升级保留和撤权恢复测试。
 - 六个 MVP 验收任务通过，并有用户中断、硬禁止、审批三档与审计无正文泄露证据。
 - 设置页如实展示能力状态；未安装、未授权、模型不支持、企业禁用都不伪装成“已就绪”。

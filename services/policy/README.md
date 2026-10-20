@@ -64,11 +64,11 @@ Q6 决定暂用上游 `windows-sandbox-rs` 不自研，隔离强度在 M4 单独
 
 ## 还没做的
 
-- **hook 包的 vendor 构建**（把 `@evowork/policy` 的产物放进 `plugins/hooks/evowork-policy/vendor/`）——
-  属 M9 打包。开发时运行器会退回仓库里的 `dist/`。
+- ~~hook 包的 vendor 构建~~ **已做**：`scripts/build.mjs` 把 `@evowork/policy` 打成
+  `plugins/hooks/evowork-policy/vendor/policy.mjs`，并在独立目录验证可加载。
 - 策略包的**签名与下发**（R11 / 10 §8）已随 M10c 落地：identity 签名 → 桌面校验 → 写 `requirements.toml`。
 - 审计的 UI（设置 →「用量与审计」，可筛选可导出）—— 2026-09-06 已接通。
 
 ## 电脑操控（设计 12）
 
-`src/computer-use.ts` 实现默认拒绝、硬禁止身份/类别、企业与用户 deny 优先、任务/持久准入以及无人值守拒绝的纯函数。宿主可信身份与来源尚未接通，PreToolUse 当前对 `cua_repl` 工具统一拒绝并写无正文审计；不是已完成的端到端应用授权。
+`src/computer-use.ts` 实现默认拒绝、硬禁止身份/类别、企业与用户 deny 优先、任务/持久准入以及无人值守拒绝的纯函数。宿主声明电脑操控不可用（`computerUseAvailable` 为假）时，PreToolUse 对 `cua_repl` 工具统一拒绝并写无正文审计；原生 Helper 发布标记仍为 `releaseVerified=false`，不是已完成的端到端应用授权。

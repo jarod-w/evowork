@@ -10,6 +10,7 @@ alwaysApply: false
 
 K3 最后一档才是 `ext/`（需要内核内部状态或事件流）。
 当前设计里确定要写 Rust 的是 D8：Ask 模式在 `ToolContributor` 层过滤写工具。
+Q45 之后它降为内部只读路径的要求，不再挡 Composer 主路径；`ext/` 目前仍为空。
 这是扩展，**不占 K1 预算**。接口：`../codex/codex-rs/ext/extension-api/src/lib.rs`。
 
 ## 补丁（K1）

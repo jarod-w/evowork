@@ -1,6 +1,6 @@
 # 11 · 账号与模型管理
 
-> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议，尚未实现）**：图片能力目录与聊天模型独立，Seedream 优先、OpenAI Images 可选，首版 BYOK/已有组织私有服务，不承诺免费额度。模型/参数能力逐项区分 documented/verified/unknown；连接验证不自动付费生成。服务商密钥沿用 safeStorage 与网关边界，renderer/MCP 不取密钥或直连模型；型号在 G0 生成/编辑探针后固定，详见 [15 §4.1 / §7 / §9](15-ai-image-generation.md)。
+> **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议；Seedream BYOK 单图生成/编辑首版已实施，实施与验收边界见 [15 §15](15-ai-image-generation.md)）**：图片能力目录与聊天模型独立，Seedream 优先、OpenAI Images 可选，首版 BYOK/已有组织私有服务，不承诺免费额度。模型/参数能力逐项区分 documented/verified/unknown；连接验证不自动付费生成。服务商密钥沿用 safeStorage 与网关边界，renderer/MCP 不取密钥或直连模型；型号在 G0 生成/编辑探针后固定，详见 [15 §4.1 / §7 / §9](15-ai-image-generation.md)。
 
 > 上游：[总纲 D9](../evowork-on-codex-design.md) · K4 · K5 · K6 · Q1 / Q2 / Q14 / Q16 / Q17 / Q19 / Q29 · R1 / R7 / R11 · [status.md §4 第一行](../status.md)
 > 本文是 status.md §4「**网关令牌的正式机制 —— 未决策**」的落点，也是 `services/identity` 从一份 README 变成代码的入口。
@@ -10,7 +10,7 @@
 > | 版本 | v0.4（Q30–Q42 全部决策，**决策已折进正文**） |
 > | 日期 | 2026-09-08（v0.3 同日稍早；v0.2 于 2026-09-07） |
 > | 作者 | li.wang |
-> | 状态 | **产品决策完毕，待技术评审。** Q30=**A** · Q31=**A** · Q32=**B** · Q33=**A** · Q34=**A** · Q35=**A** · Q36=**A** · Q37=**B** · Q38=**配置引导种子管理员 + 可授予已注册用户** · Q39=**注销只清云端** · Q40=**吊销权威在 identity** · Q41=**办公文件只下载** · Q42=**v1 不做支付**（决策表见 §9）。**v0.4 把 Q39–Q42 折进 §13.9**。改了什么见 **§14 变更记录** |
+> | 状态 | **产品决策完毕；M10a / M10b / M10c（企业 SSO 除外）已实现（实现状态见 §12 与 [status.md](../status.md) P3.5），外部前置（域名 / 发信域 / 云上部署）未解除。** Q30=**A** · Q31=**A** · Q32=**B** · Q33=**A** · Q34=**A** · Q35=**A** · Q36=**A** · Q37=**B** · Q38=**配置引导种子管理员 + 可授予已注册用户** · Q39=**注销只清云端** · Q40=**吊销权威在 identity** · Q41=**办公文件只下载** · Q42=**v1 不做支付**（决策表见 §9）。**v0.4 把 Q39–Q42 折进 §13.9**。改了什么见 **§14 变更记录** |
 
 **分工边界**（同 [设计集 README](README.md)）：总纲是 D\*/Q\*/K\*/M\*/R\* 的唯一真源，本文只做展开。**D10 / D11 / Q30–Q37 / R12 / M10 已于 2026-09-08 被总纲吸收**（§11 保留原文作推导）。**Q38–Q42 仍只在本文**，评审通过后再回写总纲。
 
@@ -23,6 +23,8 @@
 ---
 
 ## 1. 现状盘点（对着代码点的，不是回忆）
+
+> 本节是 2026-09-07 写作时的盘点，保留作推导依据，**不是当前事实**。此后 `services/identity`、`packages/account`、`apps/web`、桌面设置页（`views/settings.tsx`）与 D11 的 `mode` 权威均已落地（§12 实现状态 · [status.md](../status.md) P3.5），文中行号也可能已漂移。
 
 ### 1.1 现在有什么
 
@@ -580,7 +582,7 @@ CLAUDE.md §9.1「降级、跳过、认不出来都要如实说」在这一块�
 > 第 8 条现已完整：`mode` 是权威，内核 `base_url` 恒为 loopback，private 经本机网关转发。
 > **第 21 条（Q41 分享页）与第 25 条（分享页不读账号会话）2026-09-26 已落地并有测试**
 > （`services/share/test/share.test.ts` · `apps/web/test/share-page.test.tsx` ·
-> `apps/web/test/share-isolation.test.ts`）。本机侧的上传接线仍未做。
+> `apps/web/test/share-isolation.test.ts`）。本机侧的上传接线 2026-09-27 已接（`services/artifacts/src/share-flow.ts`，见 status.md P3.7）。
 >
 > **2026-09-20 新增第 23 · 24 · 25 条。** 第 23 · 24 条已落地并有测试。
 > **第 25 条 2026-09-26 落地**：分享页是独立入口，`share-isolation.test.ts` 扫 import 图。
@@ -909,7 +911,7 @@ refresh 已经绑 `device_id`（§5.2）。吊销 = identity 把该 `device_id` 
 呈现规则见 §13.9 与 08 §7.4（办公文件只下载、图片 / PDF 可预览但不给 `allow-same-origin`、过期与撤销给失效页、访问密码只挡下载不开预览）。补两条结构面：
 
 1. **分享页不共享账号页的会话**：它是给不需要账号的收件人看的，所以**不读 `sessionStorage` 里的 session、不带 `authorization` 头**，最好是独立入口（独立 HTML + 独立 bundle），而不是在账号应用里多一个路由。理由与 Q41 同源：这一页要渲染的是不可信来源的元数据，它旁边不该放着一把令牌。
-2. **它的真实规模是"整条分享链路"而不是"一个页面"**：`services/artifacts` 的 `createShare` / `createUploader` 至今没有调用方，云端端点也不存在（status.md §6.1 的 D 项）。所以本页仍然按 08 §7.4 的原话跟上传同一切片排，不要单独排一个"WEB 分享页"。
+2. **它的真实规模是"整条分享链路"而不是"一个页面"**：`services/artifacts` 的 `createShare` / `createUploader` 至今没有调用方，云端端点也不存在（status.md §6.1 的 D 项）。所以本页仍然按 08 §7.4 的原话跟上传同一切片排，不要单独排一个"WEB 分享页"。（写作时如此；两半已分别于 2026-09-26 / 2026-09-27 落地，见下表。）
 
 **2026-09-26 落地了这两条中的第 1 条与第 2 条的云端那一半**：
 
@@ -918,8 +920,8 @@ refresh 已经绑 `device_id`（§5.2）。吊销 = identity 把该 `device_id` 
 | 云端托管服务 | **新增 `services/share`**（自己一个进程、自己一套库） | ✅ |
 | `/s/<id>` 页面 | `apps/web/share.html` + `src/share/`，**独立 bundle** | ✅ |
 | 隔离的结构保证 | `apps/web/test/share-isolation.test.ts` 扫 import 图 | ✅ |
-| 本机「分享」按钮 → 授权 → 上传 | `createShare` / `createUploader` 仍无调用方 | ❌ 接线未做 |
-| `evowork://share/<id>` 深链 | 页面已指过去，桌面侧未注册协议 | ❌ |
+| 本机「分享」按钮 → 授权 → 上传 | `services/artifacts/src/share-flow.ts` 接到宿主（2026-09-27，status.md P3.7） | ✅ |
+| `evowork://share/<id>` 深链 | `main/deeplink.ts` + `electron-entry.mjs` 注册协议（2026-09-27，status.md P3.8）；macOS `open-url` 派发未验 | ✅ |
 
 **为什么 `services/share` 不能并进 `services/identity`**：identity 的 DDL 被
 `no-content-schema.test.ts` 守着不许有内容列，而那条测试就是「管理端结构上看不到内容」

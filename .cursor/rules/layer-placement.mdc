@@ -12,21 +12,21 @@ alwaysApply: false
 | Q1 = 纯本地桌面 | 调度 / 解析 / 产物索引是本机常驻，不是云服务 |
 | Q2 / Q16 | 网关按全量适配；P0 是 DeepSeek · Kimi · GLM-5.3-flash |
 | Q3 / K6 | 没有云端解析兜底 |
-| Q4 / IMG-Q1–IMG-Q11 | 已全部采纳建议；技能/MCP/本机图片服务/网关；图片模型与费用独立，单图生成/编辑/连续版本、四次额度、一个在途，仅交互根任务，具体范围上传授权；尚未实现（15） |
+| Q4 / IMG-Q1–IMG-Q11 | 已全部采纳建议；技能/MCP/本机图片服务/网关；图片模型与费用独立，单图生成/编辑/连续版本、四次额度、一个在途，仅交互根任务，具体范围上传授权；首版已接通（15 §15） |
 | Q9 | 办公生态只做 `browser/`；computer-use 按 CU-Q，受控图片 MCP 按 IMG-Q3；国内办公生态仍不做 |
 | Q10 | 分享显式授权、默认关闭、一次一个产物 |
-| Q11 | 用 `ThreadGoal.budget` 与 `subagent_start` hook，别自建并发预算 |
+| Q11 | 用 `ThreadGoal.tokenBudget` 与 `subagent_start` hook，别自建并发预算 |
 | Q14 | 网关 / 日志 / APM / 错误上报不落盘正文 |
 | Q15 | automation 绑创建它的设备；迁移重置 misfire 基准 |
 | Q17 | 不做个人云盘；资料库显示本机磁盘占用 |
 | Q18 | 运营位默认关、禁行为回传；不做积分 |
 | Q19 | 团队空间只读订阅 |
 | Q20 | 助理 = 一个常驻特殊 Thread，固定 cwd `~/.evowork/assistant/`，别自建会话存储 |
-| Q23 / Q24 | Electron + React + 32 自建组件 |
+| Q23 / Q24 | Electron + React + 37 自建组件 |
 | Q25 | 代码与文档统一 EvoWork |
 | Q26 | macOS 首发；Windows 隔离不足时标 `allowed:false` 并给原因页，不静默降级 |
 | Q27 | 前端不得直连实验方法 |
 | Q29 | 不为自建推理排期；网关保留私有 endpoint 配置项即可 |
 | **Q45** | Composer 一级模式是请求批准 / 帮我批准 / 完全访问。`send()` 必须传 `modeId`。帮我批准未接通时禁用并给原因，禁止静默降成请求批准 |
 
-`services/identity` **尚未开始**。云端只有 D9 的四件事；不要给它加内容数据面。
+`services/identity` 已随 M10b / M10c 落地（只有身份与计量）。云端只有 D9 的四件事；不要给它加内容数据面。

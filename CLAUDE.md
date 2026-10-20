@@ -107,9 +107,10 @@ evowork/
     web/                 【云端】账号页 + 租户管理端（Q32=B 的密码表单**只在这里**）。
                          **分享页 `/s/<id>` 是这里的第二个入口**（`share.html` + `src/share/`，独立 bundle、
                          不读账号会话），后端在 `services/share`。
-  services/              L3 服务层。Q1=A：下面前五个随桌面 App 在**本机**常驻，后两个在**云端**
+    computer-use-macos/  macOS 原生电脑操控 Helper（Swift，设计 12）；AX/TCC 真机与签名验收前不能启用
+  services/              L3 服务层。Q1=A：标【本机】的随桌面 App 在**本机**常驻，标【云端】的在**云端**
     kernel-adapter/      【本机】app-server JSON-RPC v2 适配层（M2a）—— **K2 边界的唯一实现处**
-    store/               【本机】本机 sqlite **16 张表** + 两个迁移器 + 状态投影 + automation/artifact/project 三个 repo（M2a，见 09 §4）
+    store/               【本机】本机 sqlite **24 张表**（`schema.ts` 23 张含 FTS 虚表 + `meta`）+ 两个迁移器 + 状态投影 + automation/audit/artifact/project/share 五个 repo（M2a，见 09 §4）
     scheduler/           【本机】定时调度（M5；带时区的 cron · misfire 补偿 · 设备绑定 · 与内核的桥接）
     ingest/              【本机】解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时（M3，K6，无云端兜底）
     runtime-installer/   【本机】办公扩展的按需安装（08 §4）。**K6 登记：唯一为装扩展而出网的包**——
@@ -119,6 +120,9 @@ evowork/
                          理由同 runtime-installer：让 catalog 的「不出网」扫描能覆盖整个目录
     policy/              【本机】安全与策略（M4）：三级路径策略 · profile 文案 · 命令风险 · 并发预算 · 审计链 · **四个 hook 的决策**
     artifacts/           【本机】产物识别（三信号）· 分享授权与上传 · 资料库视图 · fs 监听（M8，D6/Q10）
+    projects/            【本机】「项目」的归属判定与视图组装，不做 I/O（02 §4.3）
+    computer-use/        【本机】电脑操控的固定协议与会话状态机（12）；正式发布仍受 `releaseVerified=false` 闸门约束
+    image-generation/    【本机】AI 图片交付服务：授权 · 操作账本 · 落盘与恢复，不持密钥、不直连服务商（15）
     gateway/             【云端】Responses API 网关（M1，K4；Q2=必须支持国内模型 → 全量适配）
     identity/            【云端】账号 · 租户 · 配额班级 · 计量 · 默认模型 · 策略包签发（M10b/M10c）
     share/               【云端】分享托管（Q41）。**云端唯一存内容的服务，所以它与 identity 分开**——
@@ -131,15 +135,18 @@ evowork/
     hub-protocol/        插件 Hub 的索引协议：形状 · 验签 · 内容包 tar.gz · 版本与吊销范围（13 §4；evowork-hub 的 CI 也用它）
   ext/                   L2 Rust 扩展 crate（extension-api contributor）
   plugins/               L2 随产品分发的插件包
-    skills/              办公产物技能 documents / spreadsheets / presentations / charts + 界面设计 ui-design
+    skills/              办公产物技能 documents / spreadsheets / presentations / charts（共用 `_shared/`）+ 界面设计 ui-design
+                         + image-generation（AI 生图与编辑）· computer-use（电脑操控）· skill-creator（在项目里新建技能）
     agents/              专家角色 *.toml（agent-roles 格式）
-    connectors/          MCP server 集合。办公生态本期只做 browser/（Q9）；computer-use 按 CU-Q；
-                         image-generation/ 按 IMG-Q3 获准、尚未实现（15），不开放国内办公生态集成
+    connectors/          MCP server 集合。办公生态本期只做 browser/（Q9）；computer-use/ 按 CU-Q；
+                         image-generation/ 按 IMG-Q3（15，Seedream 单图生成与编辑已接线）；
+                         thread-communication/（独立会话通信，17）· workspace-files/（本机文件交付）为内置工具；
+                         不开放国内办公生态集成
     hooks/               策略包 `evowork-policy/`：四个事件的 I/O 壳，**决策在 `services/policy`**（放脚本里就测不了）
   config/                config.toml 模板 · requirements.toml · 权限 profile · 模式模板
   patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；当前 2 个：P6 / P7）
   build/                 M9 打包：electron-builder 配置 · entitlements。**是源码不是产物**
-  scripts/               漂移雷达（含 F1–F25 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
+  scripts/               漂移雷达（含 F1–F53 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
   tools/                 开发期工具（eslint 规则：K2 边界 + token-only 样式）
 ```
 
@@ -211,7 +218,7 @@ evowork/
 # ── 本仓库（改代码前后各跑一次，它是唯一的验收口径）──
 pnpm run check                    # 格式 · lint（含 K2 边界规则）· 类型（含测试）· 测试 · K1 补丁预算 · 协议形状 · 许可清单
                                   # 许可清单那步要 `../codex` 在位（它要读内核的 LICENSE）；CI 没有签出，所以那边只当 warning
-pnpm run build                    # 四步装配：tsc → 复制入口与 vendor → esbuild 三个入口 → vite 渲染层
+pnpm run build                    # 四步装配：tsc → 复制入口 → esbuild 单文件（主进程 · preload · 网关 · 账号服务 · 各 vendor）→ vite 渲染层
 pnpm run test -- --project store  # 只跑一个包
 node scripts/kernel-drift.mjs     # 上游漂移 + kernel-assertions.json 里的 F 编号断言机器复核
 
@@ -255,7 +262,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 
 **OCR-Q1–OCR-Q12 已于 2026-10-06 全部采纳建议**，决策真源见总纲 §10.1.10，细化见 [16](docs/design/16-ocr-and-library-search.md)，实施与验收进度见 [status.md](docs/status.md)。不把 FTS 表存在或 `pytesseract` 导入成功当作功能与发布验收通过。
 
-**图片 IMG-Q1–IMG-Q11 已于 2026-10-06 全部采纳建议**，已回写总纲 §6.8 / §10.1.9 与 [15 v0.2](docs/design/15-ai-image-generation.md)；产品范围已确认，真实接口与 G0–G3 尚未实现。
+**图片 IMG-Q1–IMG-Q11 已于 2026-10-06 全部采纳建议**，已回写总纲 §6.8 / §10.1.9 与 [15 v0.3](docs/design/15-ai-image-generation.md)；G0–G3 首版已于 2026-10-06 接通（Seedream Flash / Pro，Lite 于 2026-10-07 暂时移除），G4 与正式发布边界见 15 §15。
 
 设计文档第 10 章的 **Q1–Q29、Q45、Q46 已决策**。账号与模型那一块的 **Q30–Q43 也已决策**（记在 [11 §9](docs/design/11-account-and-models.md)，不在总纲复制一份）。插件 Hub 的 **HUB-Q1–Q11 也已决策**（[13 §10](docs/design/13-plugin-hub.md)，总纲 §10.1.7）；客户端（H0 / H1 / H6）已实现，**官方源要等 H2 的签名公钥与 CDN** —— 在那之前产品里如实显示「还没有接入」、不发请求，进度见 13 §13.1。**当前唯一的开放项是 Q44**：企业私有源索引的管理面做到哪一层（推荐"只注册源、不托管内容"）—— 开着期间不要在 `apps/web` 建 `/admin/sources`。下面是会直接影响写码方式的几条，完整表格见 [设计文档 §10.1 / §10.1.1 / §10.1.3 / §10.1.5 / §10.1.8](docs/evowork-on-codex-design.md)：
 
@@ -264,7 +271,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | **Q1 部署形态** | **A 纯本地桌面应用** | 调度器 / 解析 / 产物索引都是**本机常驻进程**，不是云服务；云端只有账号·私有源索引·模型网关·分享托管四件事（D9） |
 | **Q2 国内模型** | **必须支持** | 网关按全量适配层设计（K4、D2） |
 | **Q3 隐私** | **硬约束** | 见 K6，没有云端兜底 |
-| **Q4 / IMG-Q1–IMG-Q11 图片** | **全部采纳建议，尚未实现** | Seedream 优先、BYOK；技能/MCP/本机服务/网关，独立图片模型；单图生成/编辑/连续版本、具体上传授权、四次额度、一个在途，仅交互根任务，原图不覆写。图片预算独立于 token，未知结果不重发；详见 [15](docs/design/15-ai-image-generation.md) 与总纲 §10.1.9 |
+| **Q4 / IMG-Q1–IMG-Q11 图片** | **全部采纳建议，首版已接通（2026-10-06）** | Seedream 优先、BYOK；技能/MCP/本机服务/网关，独立图片模型；单图生成/编辑/连续版本、具体上传授权、四次额度、一个在途，仅交互根任务，原图不覆写。图片预算独立于 token，未知结果不重发；详见 [15](docs/design/15-ai-image-generation.md) 与总纲 §10.1.9 |
 | Q6 Windows | 支持，暂用上游 `windows-sandbox-rs` | 不自研沙箱；隔离强度结论在 M4 给出 |
 | Q8 定时任务 | SKIP + 不自动重试 + 连败 3 次自动 PAUSE | scheduler 数据模型已定型（设计文档 §6.9） |
 | Q9 国内生态集成 | **本期不做** | 办公生态只做 browser/；受控图片 MCP 按 IMG-Q3、电脑操控按 CU-Q；别去写飞书/企微/钉钉/腾讯文档 |
@@ -281,7 +288,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | **Q45 Composer 主模式** | **请求批准 / 帮我批准 / 完全访问** | 前端传 `modeId`，适配层展开为 `permissions` + `approvalPolicy` + `approvalsReviewer`。帮我批准未接通时禁用并给原因，**不静默降级**。发送链路已接；`auto_review` 仅单测 |
 | **Q46 在线升级** | 手动「检查更新」随时可点；已登录每天最多自动检查一次（**可关**）；未登录默认不自动（独立开关，不和 Hub 的合并）；检查到只提示、不自动下载，包下到「下载」文件夹；**不强制更新**；**首页不放提示** | 更新请求**不带账号令牌、`deviceId`、版本号**；本机执行面永远不因版本旧而停用；企业用 `disableUpdateCheck` / `EVOWORK_UPDATE_FEED`。自动安装等 U4（证书） |
 | **Q23 桌面壳** | **Electron** | 不用 Tauri（体积优势被随包 Python 运行时抹平，而侧载子进程/自动更新/公证的成熟度 Electron 更高） |
-| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 35 个）；**出现清单外的组件先补进 01** |
+| **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 37 个）；**出现清单外的组件先补进 01** |
 | **Q25 品牌** | 代码与文档统一 **EvoWork** | WorkBuddy 只是候选对外名；品牌层 = `--accent` 系列 + appName + logo + mascot 四项 token |
 | Q26 首发平台 | **macOS 首发**，Windows 随 M4 结论 | Windows 隔离不足时把 `evowork-full` 标 `allowed:false` **并给原因页**，不静默降级 |
 | **Q27 M2a** | **单列里程碑**（服务层与协议适配 2–3 人周） | 前端**不得**直连实验方法，一律经适配层（破 K2 的最常见方式就是把它挤压掉） |
@@ -361,7 +368,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 4. 是否触碰 K1–K7 中的任何一条？触碰了就先改文档。
 5. 依赖的内核 `path:line` 还成立吗？（`git log HEAD..origin/main`）
 6. 有没有引入未经显式授权的出网路径？（K6）
-7. 要用一个 01 §5 清单之外的 UI 组件吗？**先把它补进 01 §5**（现在是 35 个 —— 第 35 个 SecretInput 是 2026-09-08 为 M10a 的设置页加的；它原本被计划成第 34 个，而那个号当天已被 Dialog 占了 —— 登记制度就是在这种时候起作用的）。
+7. 要用一个 01 §5 清单之外的 UI 组件吗？**先把它补进 01 §5**（现在是 37 个，最新的第 37 个是 SettingsRow。第 35 个 SecretInput 是 2026-09-08 为 M10a 的设置页加的；它原本被计划成第 34 个，而那个号当天已被 Dialog 占了 —— 登记制度就是在这种时候起作用的）。
 
 ---
 

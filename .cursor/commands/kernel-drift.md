@@ -1,5 +1,5 @@
 ---
-description: Re-check kernel drift assertions F1–F16
+description: Re-check the kernel drift assertions in scripts/kernel-assertions.json
 ---
 
 Run `node scripts/kernel-drift.mjs` (add `--no-fetch` if the network or `../codex` fetch should not run).

@@ -12,7 +12,8 @@ alwaysApply: false
 `permissions` + `approvalPolicy` + `approvalsReviewer`。帮我批准在
 `approvalsReviewer` 不可用时必须禁用，禁止改成 `user` 发出去。
 
-- 用 `experimentalFeature/list` 的**实际返回**决定 UI，不硬编码「实验方法一定可用」。
+- 不硬编码「实验方法一定可用」：启动时探测无副作用的方法，其余首次调用失败即降级
+  （`capabilities.ts`）。`experimentalFeature/list` 返回的是内核功能开关，判断不了方法在不在。
   缺失时走 09 §3.3 降级表，且降级一律显式。
 - **审批是 server→client request，不是通知**（F14）。必须实现可回复的请求处理器；
   内核在等回复时会一直等。交互式不自动拒绝；定时任务 10 分钟自动 Decline。
