@@ -162,7 +162,7 @@ sequenceDiagram
 
 这是一项图片工具的交付服务，不另建 agent 执行循环；任务规划、对话压缩、目标预算、审批协议和回合中断继续复用内核。
 
-### 6.2 模块落点（均为待实现）
+### 6.2 模块落点（首版已按此落地，网关适配实际为单文件 `services/gateway/src/images.ts`；见 §15.1）
 
 | 模块 | 职责 |
 | --- | --- |
@@ -175,11 +175,11 @@ sequenceDiagram
 | `apps/desktop/src/main/` | 端口接线、secretStore、文件授权、事件和语义 IPC |
 | `apps/desktop/src/renderer/` | 图片配置、确认、状态、图片卡、编辑与恢复入口；不取密钥、不出网调模型 |
 
-新增目录配 README。共享请求/结果类型可放跨层包，provider 特有类型只留在网关。所有路径为提议，不表示目录已经存在。
+新增目录配 README。共享请求/结果类型可放跨层包，provider 特有类型只留在网关。上表除 `services/gateway/src/images/` 目录（实际为 `images.ts`）外均已存在。
 
 ### 6.3 工具与内部请求
 
-建议工具分为 `image_generate`、`image_edit`、`image_operation_status`。最后一个只读，必须限定到当前任务；状态查询不触发再次生成。模型不传 API Key、上游 URL、任意输出路径或自选计费账号。
+建议工具分为 `image_generate`、`image_edit`、`image_operation_status`（首版 MCP 只提供前两个，见 `plugins/connectors/image-generation/server.mjs`）。最后一个只读，必须限定到当前任务；状态查询不触发再次生成。模型不传 API Key、上游 URL、任意输出路径或自选计费账号。
 
 示例为 EvoWork 内部语义，**不是任何厂商 API 的原样参数**：
 

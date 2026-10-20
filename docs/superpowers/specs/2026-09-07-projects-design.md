@@ -1,5 +1,7 @@
 # 「项目」功能设计（列表页 + 详情页 + 后端）
 
+> **状态：已实现（2026-09-07 项目页落地，见 [status.md](../../status.md) P1-3；代码在 `services/projects`、`services/store` 的 `project_local` / `project_root`、`views/projects.tsx` / `project-detail.tsx`）。** 下方 §0 等「现在」描述是实现前基线；无项目任务与 Composer 选目录部分以 2026-10-01 修订基线为准。
+
 > **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
 
 > 2026-09-07。上游：[02 §4.3](../../design/02-information-architecture.md) · [09 §3.3](../../design/09-service-layer.md) ·
