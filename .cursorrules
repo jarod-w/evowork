@@ -70,7 +70,7 @@
 ## 验收与命令
 
 ```bash
-pnpm run check              # 唯一验收口径：format · lint · tsc · test · K1 预算
+pnpm run check              # 唯一验收口径：format · lint · tsc · test · K1 预算 · 协议形状 · 许可清单
 pnpm run test -- --project store
 node scripts/kernel-drift.mjs
 ```
@@ -84,7 +84,7 @@ Node ≥ 22.12 · pnpm 10。不要用单包测试代替 `pnpm run check`。
 - 引用内核用 `path:line` 并当场核对（行号会漂）。改断言同步 `scripts/kernel-assertions.json`。
 - 讨论功能用任务/Thread、空间/Project 这张映射表（`CLAUDE.md` §5），别造第三个词。
 - 动手前在 `../codex` 里搜一遍：清单里一半以上能力内核已有。
-- 组件只能来自 01 §5 的 32 个；第 33 个先补进 01。
+- 组件只能来自 01 §5 的 37 个；第 38 个先补进 01。
 - 渲染层可选 prop 写成 `?: T | undefined`；`packages/` 与 `services/` 保持
   `exactOptionalPropertyTypes`。
 - 降级、跳过、认不出来都要如实说。不静默降级。

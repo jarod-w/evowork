@@ -11,7 +11,7 @@ alwaysApply: false
 | 脚本 | 守的是 |
 |---|---|
 | `patch-budget.mjs` | K1 ≤ 5 文件 / ≤ 500 行 + 说明文件必须有「为什么扩展点做不到」 |
-| `kernel-drift.mjs` | 上游漂移 + F1–F16 机器复核。`LINE-MOVED` 是常态不算失败；`BROKEN` 可能意味着设计被推翻 |
+| `kernel-drift.mjs` | 上游漂移 + `kernel-assertions.json` 的 F 编号断言机器复核。`LINE-MOVED` 是常态不算失败；`BROKEN` 可能意味着设计被推翻 |
 | `kernel-assertions.json` | `docs/design/README.md` §4 的孪生体。改一边必须改另一边 |
 | `gen-third-party-notices.mjs` | K5。生成物不要交给 prettier，否则与 `--check` 互打 |
 | `verify-provider.mjs` | **只打印形状，不打印正文。** 不进 `pnpm run check`（要网络、要钱） |

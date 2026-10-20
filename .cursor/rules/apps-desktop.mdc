@@ -1,13 +1,13 @@
 ---
-description: 桌面壳与渲染层：token-only、32 组件、K2 经适配层、Visualizer 沙箱。
+description: 桌面壳与渲染层：token-only、37 组件、K2 经适配层、Visualizer 沙箱。
 globs: apps/desktop/**/*
 alwaysApply: false
 ---
 
 # apps/desktop
 
-Q23 = Electron，Q24 = React + TS + Vite，32 个组件全自建、不引 UI 库。
-本机五个服务跑在 Electron **主进程**（不拆进程）。渲染层只经
+Q23 = Electron，Q24 = React + TS + Vite，37 个组件全自建、不引 UI 库。
+`services/*` 的本机服务跑在 Electron **主进程**（不拆进程）。渲染层只经
 `services/kernel-adapter` 的语义化 API，**不直连**实验方法或协议传输。
 
 ## 样式
@@ -15,7 +15,7 @@ Q23 = Electron，Q24 = React + TS + Vite，32 个组件全自建、不引 UI 库
 - 颜色与 px 一律走 token。`@evowork/no-style-literals` 只在
   `src/renderer/**` 上开。数值真源是 01 §2，代码在 `packages/tokens`。
 - 语义色的文字必须用 `-text` / `-strong`。`--text-tertiary` 只用于非必要信息。
-- 第 33 个组件出现前先补进 01 §5。
+- 第 38 个组件出现前先补进 01 §5。
 
 ## 改错了不会立刻报错
 
