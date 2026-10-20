@@ -1,6 +1,6 @@
 # 编译与部署手册
 
-> **更新于 2026-10-01**。本文里的每条命令都在本机实际跑过；**跑不通的地方会写明"没验过"**，
+> **更新于 2026-10-01；2026-10-20 按当前代码订正**（构建步骤与产物、内核补丁数、出网点、分享 / 策略包 / 更新源 / 电脑操控的现状、§6 / §7 里已修掉的条目；没有重跑任何命令，订正处只对照了代码与配置）。本文里的每条命令都在本机实际跑过；**跑不通的地方会写明"没验过"**，
 > 不写"应该可以"。**唯一的例外是 §5.2.1**（账号页与账号服务的部署），那一节照录的是
 > 另一轮在 Ubuntu 上的实测，本文作者没有重跑 —— 该节开头与 §7 都标着这件事。上游内核与本仓库分开写，因为它们的工具链、构建时长、失败方式完全不同。
 
@@ -45,7 +45,8 @@
 
 ### 2.0 发货与 E2E 用的内核：`scripts/build-kernel.mjs`（2026-10-01 起）
 
-`patches/evowork/` 里有了第一个内核补丁（P6，覆盖已有文件要审批）。**补丁只存在于这个脚本编出来的
+`patches/evowork/` 里现有两个内核补丁：`0001-exec-overwrite-approval`（P6，覆盖已有文件要审批，2026-10-01）与
+`0002-memory-initial-baseline`（P7，首轮记忆基线保留未整理来源，2026-10-17）；合计 4 文件 / 208 行（`node scripts/patch-budget.mjs`）。**补丁只存在于这个脚本编出来的
 二进制里** —— 直接在 `../codex` 里 `cargo build`（§2.1）得到的内核能正常跑，只是没有那项修复。
 
 ```bash
@@ -154,13 +155,13 @@ pnpm run check      # 格式 · lint · 类型（含测试）· 测试 · K1 补
 pnpm run build      # 见下
 ```
 
-`pnpm run build` 有四步，顺序是刻意的（见 [scripts/build.mjs](../scripts/build.mjs) 的头注释）：
+`pnpm run build` 有四步，顺序是刻意的（见 [scripts/build.mjs](../scripts/build.mjs) 的头注释）。在 macOS 上，四步之前还会先跑 `scripts/build-computer-use.mjs` 装配电脑操控 Helper（见文末「Computer Use 构建状态」）：
 
 | 步 | 做什么 | 漏了会怎样 |
 | --- | --- | --- |
 | ① `tsc --build` | 编译所有包，产出 JS 与声明文件 | — |
 | ② 复制入口 | `electron-entry.mjs` → dist | 打包出的应用**没有入口** |
-| ③ esbuild 打单文件 | 网关、主进程、preload，以及 hook 插件目录里的策略包 `vendor/policy.mjs`；策略包打完拷到空目录里单独 import 一次，加载不了就失败 | 见下；策略包装错 = 打包后的应用里**策略静默失效**（hook 找不到实现会放行） |
+| ③ esbuild 打单文件 | 网关、identity、主进程、preload，hook 插件目录里的策略包 `vendor/policy.mjs`，浏览器连接器的 `vendor/policy.mjs`，电脑操控 MCP `vendor/server.mjs`；策略包打完拷到空目录里单独 import 一次，浏览器 / 图片 / 会话通信 MCP 也拷到独立目录里试启动，任一失败就失败；最后把 `office.py` / `ocr.py` / `library.py` 拷到 `apps/desktop/dist/main/` | 见下；策略包装错 = 打包后的应用里**策略静默失效**（hook 找不到实现会放行） |
 | ④ vite 打包渲染层 | — | — |
 
 ### 3.1 为什么第 ③ 步必须存在
@@ -183,11 +184,15 @@ Electron 主进程不再依赖 workspace 链接（electron-builder 打包 pnpm w
 
 ```
 dist/gateway/main.js                            网关，单文件，可直接 node 运行
+dist/identity/main.js                           账号服务，单文件（§5.2.1）
 apps/desktop/dist/renderer/                     渲染层（vite，含代码分割）
 apps/desktop/dist/main/electron-entry.mjs       Electron 入口
 apps/desktop/dist/main/bootstrap.bundle.js      主进程，单文件
-apps/desktop/dist/preload/index.bundle.js       preload，单文件
+apps/desktop/dist/main/{office,ocr,library}.py  解析脚本（随主进程带走）
+apps/desktop/dist/preload/index.bundle.cjs      preload，单文件（CJS：窗口开着 sandbox）
 plugins/hooks/evowork-policy/vendor/policy.mjs  策略包
+plugins/connectors/browser/vendor/policy.mjs    浏览器连接器的动作策略
+plugins/connectors/computer-use/vendor/server.mjs  电脑操控 MCP
 ```
 
 `dist/` 与 `vendor/` 都已 gitignore —— 它们是产物。
@@ -215,7 +220,7 @@ git status --short        # 非空就别构建要拿去部署的产物
 
 处理与生成 Word / Excel / PPT / PDF 需要一个**独立的 Python 环境**，装在
 `~/.evowork/runtime/office/`。**用户不需要敲任何命令** —— 在 App 里点「现在安装」即可
-（引导第 ⑤ 步，或第一次遇到这类文件时）。它会下载一份自包含的 python、装六个钉死版本的包、
+（引导第 ③ 步「解析组件」，或第一次遇到这类文件时）。它会下载一份自包含的 python、装六个钉死版本的包、
 装一份中文字体，全程可见进度，装完当场验收。
 
 开发时想用命令装同一份（等价于点按钮）：
@@ -300,7 +305,7 @@ EOF
 | **手工单独起网关**（就是上面那条命令） | 仍然要自己 `set -a && . ~/.evowork/gateway.env`。网关只从进程环境读密钥，它不读任何配置文件（Q14 / K6） |
 | **桌面 App 首次启动** | 把里面的密钥**导入系统钥匙串**，然后把文件改名成 `gateway.env.migrated`（不删 —— 本文一直让人手写它，静默删掉会让照文档操作的人困惑） |
 
-**新装机器不需要这个文件**：在应用内「设置 → 模型接入」填密钥即可，
+**新装机器不需要这个文件**：在应用内「设置 → 模型」填密钥即可，
 它进 `~/.evowork/secrets.bin`（密文，由 macOS Keychain / Windows DPAPI / Linux libsecret 托管，Q34=A）。
 
 **例外**：这台机器上没有可用的系统钥匙串时（常见于没装 keyring 的 Linux），
@@ -372,9 +377,9 @@ EVOWORK_GATEWAY_URL=http://127.0.0.1:8791/v1 ./node_modules/.bin/electron …
 下拉里列出的是网关**真的配了密钥**的那些模型（F24）。网关没起时下拉是空的，
 Composer 顶部给一条 danger 提示并**禁用发送** —— 03 §8：模型不可用要在发送之前就说。
 
-> **这是过渡方案。** 明文文件不满足"密钥不落盘"的本意。终态有两条候选、都还没决策：
-> Electron `safeStorage` 存进系统钥匙串 + 设置页录入，或由 identity 服务签发短期令牌
-> （Q14 的原设计，但 identity 尚未开始）。见 [status.md §4](status.md)。
+> **明文文件只剩开发与企业注入两种用法。** 正式机制已落地：M10a 用 Electron `safeStorage`
+> 存进系统钥匙串 + 设置页录入（见上文「正式机制是密钥库」）；登录后 hosted 模型经 identity
+> 签发的 access JWT 转发（M10b）。见 [status.md](status.md)。
 
 > **以 root 运行时** Electron 需要 `--no-sandbox`，否则直接 `FATAL ... Running as root is not supported`。
 > 这是容器/CI 里的常见情况；正常桌面环境不需要它，**也不该加**。
@@ -395,7 +400,7 @@ Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端�
 | --- | --- | --- | --- |
 | **A · 零服务器** | 无。网关作为本机进程随桌面 App 起，监听 `127.0.0.1` | 个人 · 试点 · 完全离网的私有环境 | **厂商 API key 落在用户机器上**，没有集中计量与配额 —— Q14 选"云端托管为主"正是为了托管密钥 |
 | **B · 一台服务器 + 一个静态桶** | 网关（§5.2）· 静态文件源（§5.3） | 团队 · 生产的最小面。**推荐的起点** | 要管 TLS 与 token 发放；配额仍是静态 token 粒度 |
-| **C · 完整企业形态** | B + identity · 分享托管 · 私有源索引 · 策略包下发 | 多租户 · 企业合规 | 这四样**现在一个都没建**（§5.6） |
+| **C · 完整企业形态** | B + identity · 分享托管 · 私有源索引 · 策略包下发 | 多租户 · 企业合规 | identity、分享托管、签名策略包已实现；企业私有源索引仍未决策（Q44，§5.6） |
 
 **为什么网关省不掉**：内核只认 Responses API —— `wire_api = "chat"` 已被上游移除
 （`model-provider-info/src/lib.rs:57`，2026-09-05 在签出 `728cb12fe5` 上核对），
@@ -404,12 +409,20 @@ Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端�
 
 用户机器上跑的是执行面的**全部**：agent 循环、沙箱、文档解析、定时调度、产物索引、
 策略与审计，没有一样在服务端（进程图见 [architecture.md §1](architecture.md)）。
-全仓库非测试代码里的出网调用点只有两处，这就是数据面的全部：
+全仓库非测试代码里的出网调用点（2026-10-20 按 `fetch(` 重新清点；早先这里只有前两行）：
 
 | 出网点 | 谁在发 | 什么时候 |
 | --- | --- | --- |
-| [providers/registry.ts:115](../services/gateway/src/providers/registry.ts) | **网关**（不是用户机器） | 每次模型调用；prompt 过境但不落盘（Q14） |
-| [artifacts/src/upload.ts:85](../services/artifacts/src/upload.ts) | 桌面 App | 仅在逐次授权的分享上传时。**当前产品代码里没有调用方**，见 §5.6 |
+| [providers/registry.ts:179](../services/gateway/src/providers/registry.ts) | **网关** | 每次模型调用；prompt 过境但不落盘（Q14） |
+| [artifacts/src/upload.ts:85](../services/artifacts/src/upload.ts) | 桌面 App → 分享托管 | 仅在逐次授权的分享上传 / 撤销时（`service-host.ts` 组装，§5.6） |
+| [gateway/src/forward.ts](../services/gateway/src/forward.ts) · [images.ts](../services/gateway/src/images.ts) | 网关 | hosted 模型转发到 identity；AI 图片请求到服务商 |
+| [account.ts](../apps/desktop/src/main/account.ts) · [policy-pack.ts](../apps/desktop/src/main/policy-pack.ts) | 桌面 App → identity | 登录后：账号、设备、JWKS 与签名策略包 |
+| [update-check.ts](../apps/desktop/src/main/update-check.ts) | 桌面 App → 更新源 | 检查 / 下载更新（§5.3.1） |
+| [hub-client](../services/hub-client/src/node.ts) | 桌面 App → 插件 Hub | 刷新索引、下载内容包（§5.3.2） |
+| [runtime-installer/src/download.ts](../services/runtime-installer/src/download.ts) | 桌面 App → GitHub / 清华 PyPI 镜像 | 用户点「现在安装」办公扩展时（§3.3）；离线包模式不出网 |
+| [identity/src/http.ts](../services/identity/src/http.ts) | identity | 转发 hosted 模型调用；管理端探测上游模型目录 |
+
+另有随包的浏览器 MCP 驱动本机 Chrome 访问网页（连接器被信任后按 origin 逐次授权），不经上面任何一处。
 
 ### 5.2 网关（唯一必须的服务端组件）
 
@@ -498,10 +511,10 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
-| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn/${channel}` | **已上线，2026-10-08 发出第一版 `0.0.5`**（未签名 dmg / zip，`latest/`）。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
-| 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **没有分发端**。§3.3 现在是手工建 venv；下载编排并入 M9，尚未实现 |
+| 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn/${channel}` | **已上线，2026-10-08 发出第一版 `0.0.5`**（未签名 dmg / zip，`latest/`）。仓库随后打了 `v0.0.6` tag（2026-10-13，`package.json` 现为 0.0.6），但本文与 status.md 都没有它上传到更新源的记录。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
+| 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **不需要自建分发端**：`office` 档由 App 内安装器从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的上游地址（python-build-standalone、清华 PyPI 镜像）下载并校验（§3.3）；`ocr` 档运行时只从管理员配置的离线包安装（`EVOWORK_OCR_BUNDLE` + `EVOWORK_OCR_BUNDLE_DIGEST`），默认构建里没有可用的 OCR 发行包 |
 
-这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
+若将来要把办公扩展改成自托管，这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
 
 #### 5.3.0 服务器（2026-10-07 起：43.143.248.70）
 
@@ -696,17 +709,16 @@ dmg / zip 各 **197MB**（2026-09-06 口径，**尚未计入** 2026-09-19 随包
 解析组件（**可跳过**）→ 完成。权限默认值暂时不进引导（选了也不会进 `turn/start`）。
 模型不在引导里配：进 App 后去「设置 → 模型」添加自定义模型（密钥进系统钥匙串）。
 
-### 5.6 现在还不需要部署的三件事（原四件；identity 已落地，见 §5.2.1）
+### 5.6 D9 云端职责的现状（2026-10-20 订正：原「还不需要部署的四件事」只剩企业私有源索引一件未建）
 
-D9 给云端留了四类职责，除模型网关外的其余部分**都还没有实现**。不写清这一点的后果是
-按 C 拓扑去准备机器，然后发现没有东西可以装上去。
+D9 给云端留了四类职责。下表是每一类现在的实现状态，按 C 拓扑准备机器前先看这里。
 
 | 组件 | D9 里的职责 | 实际状态 | 不部署它的影响 |
 | --- | --- | --- | --- |
 | ~~identity~~ | 账号 · 租户 · 配额 · 授权 | **已实现并部署**（2026-09-26），部署步骤见 §5.2.1 | 不部署它时网关退回静态 token（`staticTokenAuth`）：试点够用，但**没有按用户的配额与审计** |
-| 分享托管 | 产物分享（Q10），`/v1/shares` | 客户端 [upload.ts](../services/artifacts/src/upload.ts) 已实现，但 `createUploader` 在产品代码里**没有调用方**；服务端没写 | 分享功能整体不可用。这也意味着**当前形态下本机内容不会离开设备**（除模型调用） |
-| 企业私有源索引 | 技能 / 插件分发（Q5：无公开市场） | 未建；`plugins/connectors/` 只有 `.gitkeep`（Q9 本期不做） | 扩展只能随包分发 |
-| 签名策略包下发 | 审计汇总 · 策略下发（R11） | 未建。策略与审计链在本机（`services/policy`）已实现 | 企业无法在服务端强制拦截 —— 这正是 D9 明确列出的代价 |
+| ~~分享托管~~ | 产物分享（Q10），`/v1/shares` | **已实现**：服务端是独立的 [services/share](../services/share/)（与 identity 分进程分库），接收方页面是 `apps/web` 的 `share.html`；本机侧由 [share-flow.ts](../services/artifacts/src/share-flow.ts) 经 `service-host.ts` 接通。部署要点以 [services/share/README.md](../services/share/README.md) 为准 | 不部署它时「分享」不可用，本机内容除模型调用外不离开设备 |
+| 企业私有源索引 | 技能 / 插件分发（Q5：无公开市场） | 官方插件 Hub 已上线（§5.3.2，随包 `plugins/connectors/` 现有五个 MCP 连接器）；**企业私有源**仍未决策（Q44） | 企业只能用随包扩展与官方 Hub |
+| ~~签名策略包下发~~ | 审计汇总 · 策略下发（R11） | **已实现**（M10c）：identity 签发、桌面验签后写 `~/.evowork/requirements.toml`（[policy-pack.ts](../apps/desktop/src/main/policy-pack.ts)） | 不登录时不锁 BYOK，本机策略与审计链（`services/policy`）照常生效 |
 
 ### 5.7 不是"服务器"，但绕不开的基础设施
 
@@ -718,13 +730,15 @@ D9 给云端留了四类职责，除模型网关外的其余部分**都还没有
 | **签名证书** | Apple Developer ID + 公证 · Windows 代码签名 | 卡 P0-5，见 §7 与 U4。缺任一 secret 时 `package.mjs` 整体降级为未签名并标注进文件名 |
 | 内核构建的时间与磁盘 | 首次约 40 分钟、`target/` 涨到 7.7 GB（§2.1） | 别在 CI 里给它设 30 分钟超时 |
 
-### 5.8 电脑操控辅助组件（未实现）
+### 5.8 电脑操控辅助组件（已随包，未开放发布）
 
 CU-Q1、CU-Q2 已于 2026-09-24 确认：电脑操控首版仅支持 **macOS 14.4+**；原生 Helper 与
-`cua_repl` MCP server **随基础包分发，但能力默认关闭**。当前安装包尚未包含这些组件或对应权限说明，
-不能把现有 dmg 描述为支持电脑操控。
+`cua_repl` MCP server **随基础包分发，但能力默认关闭**。2026-10-20 的打包配置里，macOS 包已经通过
+`mac.extraResources` 带上 `build/computer-use/EvoWork Computer Use.app`（`scripts/build-computer-use.mjs` 装配），
+MCP 以 `plugins/connectors/computer-use/vendor/server.mjs` 随 `plugins/` 带入；但装配出的 `release.json`
+固定 `releaseVerified=false`，发布标记关闭，**仍不能把现有 dmg 描述为支持电脑操控**。
 
-后续 macOS 包需把自建 Helper 与 MCP server 作为 `extraResources` 随主 App 一起分发，并满足：固定 bundle id、
+发布前 macOS 包需把自建 Helper 与 MCP server 作为 `extraResources` 随主 App 一起分发，并满足：固定 bundle id、
 与主 App 相同 Team ID、整组签名与公证、协议版本绑定、20 MB 增量预算以及 TCC 首次授权/升级保留/
 撤权恢复真机测试。`package.mjs` 应在目标声明启用 Computer Use 时校验两项组件存在、版本匹配且签名一致；
 不得在首次使用时临时联网下载，也不得把 OpenAI 的 `@oai/sky`、Computer Use App 或品牌资产放入安装包。
@@ -744,7 +758,7 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 | 受限执行环境中 `pnpm --version` 或许可检查长时间没有输出，而普通终端正常 | 2026-10-16 本机实测：Homebrew pnpm 11.24.0 会先按 `packageManager` 切换到 10.30.3；当前沙箱内启动不返回，沙箱外立即返回锁定版本。不能据此判定依赖树或产品代码有错 | 先在允许包管理器启动的环境核对 `pnpm --version` 为 **10.30.3**，再运行原版 `pnpm run check`（包括 `check:notices`）。受限代理使用其沙箱外执行入口。不要为了绕过启动问题升级锁定版本、重装依赖或跳过许可门禁；仍失败时保留实际错误再排查 |
 | 从仓库直接跑构建产物，报 `spawn .../electron/dist/Electron.app/Contents/Resources/kernel/codex-app-server ENOENT` | 旧版入口用一个 `EVOWORK_DEV` 同时决定"随包资源在哪"与"渲染层从哪来"，于是"跑一次构建好的产物"没有表示法。**2026-09-06 已修**：资源看 `app.isPackaged`，vite 才看 `EVOWORK_DEV` | 重新 `pnpm run build`。没有 debug 内核时用 `EVOWORK_APP_SERVER=$PWD/build/kernel/mac-arm64/codex-app-server` |
 | 模型下拉里还是旧的模型表 | 网关是**独立进程**，模型表在它内存里；改代码不会让已经在跑的那个变 | 2026-09-06 起 App 会自己拉起本机网关（`base_url` 指向环回时），重启 App 即可。手工跑的旧进程要先 `pkill -f "dist/gateway/main.js"` |
-| 首运行卡在「选一个工作空间」，「下一步」一直是灰的 | 干净机器上内核一个 project 都没有，而这一步要求至少一个。**2026-09-06 已修**（接上目录选择器） | 点「选择文件夹」。企业预置可直接写 `~/.evowork/evowork.db` 的 `meta` 表 `evowork.workspaces` |
+| 首运行卡在「选一个工作空间」，「下一步」一直是灰的 | 干净机器上内核一个 project 都没有，而这一步要求至少一个。**2026-09-06 已修**（接上目录选择器） | 点「选择文件夹」。**不要再往 `meta` 表写 `evowork.workspaces` 做企业预置**：权威迁移 v2 起项目存在 `project_local` / `project_root`，那个键只在 v2 升级时被读一次（`services/store/src/migrate.ts`） |
 | `cargo build` 在 `openssl-sys` 失败 | 缺 `pkg-config` / `libssl-dev` | 见 §1 |
 | `node dist/.../main.js` 报 `ERR_MODULE_NOT_FOUND: .../src/*.js` | 跑的是 tsc 产物而不是 esbuild 打包产物 | 跑 `pnpm run build`，用 `dist/gateway/main.js` |
 | 装好的 App 报「连不上模型网关」，`~/.evowork/gateway.env` 里其实有密钥 | 从访达启动不继承 shell 环境；旧包的宿主不读这个文件，本机网关走 NO_KEYS 根本不起，fetch 打到没人听的 8787 | 2026-09-07 已修（宿主启动时读该文件）。**必须重新构建后再装**；只改源码、继续跑旧 asar，界面上还是同一句。确认手法：终端里起 App，日志应是 `gateway.child.started` 而不是 `skipped reason=NO_KEYS` |
@@ -764,13 +778,13 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 | 从终端跑 `EvoWork.app/Contents/MacOS/EvoWork`，**两秒就以退出码 0 退出**，一行日志都没有；带个参数则报 `bad option` | 终端环境里有 `ELECTRON_RUN_AS_NODE=1` —— **VS Code 的集成终端（以及从它起的 agent）会继承这个变量**，于是 EvoWork 被当成 node 跑。2026-10-01 验证打包应用时踩到 | `env -u ELECTRON_RUN_AS_NODE EVOWORK_HOME=<临时目录> dist/release/mac-arm64/EvoWork.app/Contents/MacOS/EvoWork`。E2E 夹具与两个 runner 脚本早就摘掉了它，手工启动时要自己摘 |
 | 内核启动即退，且**什么都没说** | 内核要求它的家目录（`~/.evowork/kernel/`）**已存在**，它不会自己建；而我们默认丢弃内核 stderr（launcher.ts 写了为什么） | `createServiceHost` 里的 `ensurePaths` 负责建。手工排查时先 `ls ~/.evowork/` |
 | 窗口正常打开、标题栏正常，**整页全白**，主进程日志一切正常 | 打包后走 `loadFile`（file://），而 vite 默认 `base: '/'` 生成的 `<script src="/assets/…">` 在 file:// 下指向**文件系统根目录** | `vite.config.ts` 里 `base: './'`；`apps/desktop/test/packaging.test.ts` 钉住了。排查手法见下方 |
-| 界面出来了，但一操作就报 `No handler registered for 'evowork:xxx'` | `bootstrap` 只注册了 `askApproval`，preload 声明的六个渲染动作一个都没接 —— M2 的接线缺口，**不是打包问题** | 未修，见 [status.md](status.md) |
+| 界面出来了，但一操作就报 `No handler registered for 'evowork:xxx'` | 旧版 `bootstrap` 只注册了 `askApproval`，preload 声明的六个渲染动作一个都没接 —— M2 的接线缺口，**不是打包问题** | **已修**：`bootstrap` 遍历 `RENDERER_ACTIONS` 逐个注册，`bootstrap.test.ts` 钉住动作清单与 `ServiceHost['actions']` 逐项相等。现在还看到这句，说明跑的是旧产物，重新 `pnpm run build` |
 
 > **怎么查渲染层**：主进程日志看不到渲染进程里的事。给 `BrowserWindow` 挂
 > `console-message` / `did-fail-load` / `did-finish-load`，并在 `did-finish-load` 里
 > `executeJavaScript` 取 `#root` 的 innerHTML 长度与 `typeof window.evowork` ——
 > 这两个数字直接区分开"JS 没加载"、"加载了但渲染为空"、"渲染了但 preload 桥没通"。
-| 装好的应用启动即报找不到内核 | `build/kernel/` 下的目录名写成了 `darwin-arm64`。`extraResources` 匹配不到时**不报错**，只拷一个空目录 | 用 `mac-arm64`（§5.2）；`pnpm run package` 会先拦这一条 |
+| 装好的应用启动即报找不到内核 | `build/kernel/` 下的目录名写成了 `darwin-arm64`。`extraResources` 匹配不到时**不报错**，只拷一个空目录 | 用 `mac-arm64`（§5.4）；`pnpm run package` 会先拦这一条 |
 | 装到另一台 Mac 提示「已损坏，无法打开」，要把应用移到废纸篓 | 未签名包（U4）经 Chrome 下载会被打上隔离标记；`identity=null` 还会留下 Electron 残签，`spctl` 报 `code has no resources`。系统把这两件事说成「已损坏」 | 打包侧 `afterPack` 会补完整 ad-hoc 签名。对方机器仍要先清隔离：`xattr -cr /Applications/EvoWork.app`（或对着 dmg 同样做）。右键打开在新系统上不够。正式分发卡 P0-5 证书 |
 | 策略 hook 看起来没生效 | 忘了 vendor 步骤，hook 找不到实现会**放行并往 stderr 报错** | 跑 `pnpm run build`；真正的兜底在沙箱层，不在 hook 上 |
 | 不确定线上那份产物是从哪个源码状态构建的 | 时间戳只说明文件**何时被写**，不说明源码是哪一版；`dist/` 还可能混进别人未提交的改动（§3.2.1） | **查内容，不查时间戳**：挑几个只存在于待验版本里的字符串（新模板名、新错误码），**再挑几个两版都有的做正向对照**。没有正向对照的话，"全都没找到"既可能是"确实不是那一版"，也可能是"你的查法根本查不到东西" |
@@ -810,9 +824,9 @@ pnpm exec playwright test web-research.spec.mjs --project=fake
 | systemd 单元 | 本机没有以服务方式跑过，只跑过前台进程 | §5.2 |
 | 网关放到服务器上：`HOST=0.0.0.0` + 反向代理终止 TLS | 只跑过明文 `127.0.0.1` 的前台进程 | §5.2 |
 | 网关的水平扩展与长压测 | 只跑过单实例；`maxContextTokens` 也仍未实测 | M1 剩余项 |
-| 自动更新服务端 | `publish` 配置已就位，服务端没建 | §5.3 · M9 |
-| 办公扩展的下载编排 | 没实现；§3.3 现在是手工建 venv | §5.3 · M9 |
-| 电脑操控 Helper/MCP 的签名、随包分发与 TCC 升级行为 | CU-M0–CU-M4 尚未实施；CU-Q1、CU-Q2 已确认 macOS 14.4+、随基础包但默认关闭 | §5.8 · 12 §11–§13 |
+| 电脑操控 Helper/MCP 的签名、公证与 TCC 升级行为 | Helper 与 MCP 已进 macOS 打包配置（§5.8），但未签名、未公证，`releaseVerified=false`；CU-Q1、CU-Q2 已确认 macOS 14.4+、随基础包但默认关闭 | §5.8 · 12 §11–§13 |
+
+（2026-10-20 移出本表：「自动更新服务端」已上线并发出 0.0.5，见 §5.3.1；「办公扩展的下载编排」已由 App 内安装器实现，见 §3.3。）
 
 已验证的：
 
@@ -825,8 +839,8 @@ pnpm exec playwright test web-research.spec.mjs --project=fake
   干净机器上 `~/.evowork/{kernel,logs,evowork.db}` 自动建出、两个迁移器跑完、
   `desktop.host.started` 落日志，**渲染层出界面**（`#root` 有内容、`window.evowork` 是对象）。
   这一次跑通改掉了五个"装得上、看不出哪里错了"的缺陷，见 [status.md](status.md)。
-  **仍不可用**：六个渲染动作的 IPC handler 没接，界面能看不能用
-- `pnpm run check`（840 测试）· `pnpm run build` 四步
+  当时**仍不可用**：六个渲染动作的 IPC handler 没接，界面能看不能用（此后已修，见 §6）
+- `pnpm run check`（2026-09-06 时 840 测试；2026-10-20 为 2990 通过、2 跳过，见 status.md 指标表）· `pnpm run build` 四步
 - 网关单文件启动 + 能力端点 401/200 + **对 DeepSeek 的端到端流式请求**
 - 四个办公技能真实产出 pptx / docx / xlsx / png（xlsx 里确认是 `=B2*C2` 而不是算好的数）
 - 策略 hook 加载 vendor 后正确拦截 `~/.ssh` · Electron 二进制 `--version` 可运行
@@ -851,11 +865,11 @@ Linux `pnpm run build` 已验证 MCP bundle 与桌面代码构建；不会构建
 先提交本次要发布的改动，再运行：
 
 ```bash
-pnpm run release:prepare -- 0.0.6 --dry-run
-pnpm run release:prepare -- 0.0.6
+pnpm run release:prepare -- 0.0.7 --dry-run
+pnpm run release:prepare -- 0.0.7
 ```
 
-`0.0.6` 替换为目标正式版本。脚本要求工作区干净、两个 package.json 版本一致，
+`0.0.7` 替换为目标正式版本（当前版本已是 0.0.6，`v0.0.6` tag 已存在）。脚本要求工作区干净、两个 package.json 版本一致，
 且新版本高于当前版本、对应 tag 尚不存在。从当前分支可达的最高正式版本 tag
 到 HEAD 读取提交标题，过滤 doc/docs、test、chore、ci、build、refactor、style
 类型的内部提交（带 `!` 的不兼容变更保留），去重后生成草稿；普通标题也会保留。
