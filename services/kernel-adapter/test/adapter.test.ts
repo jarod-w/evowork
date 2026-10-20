@@ -2702,3 +2702,59 @@ describe('本机文件工具绑定', () => {
     ).toBeUndefined();
   });
 });
+
+describe('下一步建议的真实调用绑定', () => {
+  it('核对嵌套参数、任务、工具、唯一性，结束后立即失效', async () => {
+    await adapter.start();
+    server.handlers.set('turn/start', (ctx) => {
+      const turn = makeTurn({ id: 'suggestion-turn', status: 'inProgress' });
+      server.notify('turn/started', { threadId: ctx.params.threadId, turn });
+      return { turn };
+    });
+    const task = await adapter.createTask({
+      input: [{ type: 'text', text: '交付文档' }],
+      overrides: { cwd: '/w' },
+    });
+    const args = { outcome: 'delivered', actions: [{ title: '验证', prompt: '检查文档' }] };
+    const call = {
+      type: 'mcpToolCall',
+      id: 'suggestion-call',
+      server: 'next_actions',
+      tool: 'propose_next_actions',
+      arguments: args,
+      status: 'inProgress',
+    };
+    server.notify('item/started', { threadId: task.threadId, turnId: task.turn.id, item: call });
+    await new Promise((resolve) => setImmediate(resolve));
+    const resolve = (threadId = task.threadId, raw: unknown = args) =>
+      adapter.resolveLocalToolCall(threadId, 'next_actions', 'propose_next_actions', raw);
+    expect(resolve()).toMatchObject({ callId: call.id, turnId: task.turn.id });
+    expect(resolve('foreign')).toBeUndefined();
+    expect(
+      resolve(task.threadId, { ...args, actions: [{ title: '验证', prompt: '删除文档' }] }),
+    ).toBeUndefined();
+    expect(
+      adapter.resolveLocalToolCall(
+        task.threadId,
+        'thread_communication',
+        'propose_next_actions',
+        args,
+      ),
+    ).toBeUndefined();
+    server.notify('item/started', {
+      threadId: task.threadId,
+      turnId: task.turn.id,
+      item: { ...call, id: 'second' },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(resolve()).toBeUndefined();
+    for (const id of [call.id, 'second'])
+      server.notify('item/completed', {
+        threadId: task.threadId,
+        turnId: task.turn.id,
+        item: { ...call, id, status: 'completed' },
+      });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(resolve()).toBeUndefined();
+  });
+});

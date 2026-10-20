@@ -1,0 +1,8 @@
+✅ 类型检查通过
+ Test Files  186 passed | 1 skipped (187)
+      Tests  3016 passed | 2 skipped (3018)
+   Duration  33.01s (transform 10.95s, setup 9.49s, collect 28.50s, tests 112.89s, environment 33.75s, prepare 11.47s)
+✅ 符合 K1。
+请求 52 个 · 通知 30 条 · 回复 5 个 · 镜像枚举 4 个（豁免 6）· 内核结构体 663 个
+✅ 我们发的形状和内核接受的形状一致。
+✅ THIRD_PARTY_NOTICES.md 是最新的。

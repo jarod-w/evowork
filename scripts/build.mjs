@@ -147,6 +147,24 @@ for (const bundle of BUNDLES) {
  * 开发时（vitest 从 src/ 加载 office.py）解析成功，装好的 App 拖入 docx
  * 永远「解析失败」。Python 读不了 asar 里的文件，运行时还会再物化一份。
  */
+{
+  const alone = mkdtempSync(join(tmpdir(), 'evowork-next-actions-bundle-'));
+  try {
+    const server = join(alone, 'server.mjs');
+    copyFileSync(join(ROOT, 'plugins/connectors/next-actions/server.mjs'), server);
+    const output = execFileSync(process.execPath, [server], {
+      encoding: 'utf8',
+      timeout: 5000,
+      input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n',
+    });
+    const tools = JSON.parse(output.trim()).result.tools;
+    if (!tools.some((tool) => tool.name === 'propose_next_actions'))
+      throw new Error('下一步建议 MCP 发布包缺少工具');
+    console.log('   next actions MCP 可脱离 workspace 独立启动');
+  } finally {
+    rmSync(alone, { recursive: true, force: true });
+  }
+}
 // 从无 workspace 的目录启动浏览器 MCP，验证发布包的策略与工具清单接线。
 {
   const alone = mkdtempSync(join(tmpdir(), 'evowork-browser-bundle-'));

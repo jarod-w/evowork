@@ -64,6 +64,8 @@ export const RENDERER_ACTIONS = Object.freeze([
   'stopComputerUse',
   'revokeComputerUseAccess',
   'openComputerUseSettings',
+  'getNextActions',
+  'actOnNextAction',
   'getCommunicationTargets',
   'getCommunicationRecords',
   'sendCommunication',

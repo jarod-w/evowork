@@ -1,0 +1,88 @@
+   apps/desktop/src/main/electron-entry.mjs → dist/main/
+$ /Users/wangli/develop/evowork/evowork/node_modules/.bin/esbuild services/gateway/src/main.ts --bundle --outfile=dist/gateway/main.js --platform=node --format=esm --target=node22 --external:electron --log-level=warning
+   services/gateway/src/main.ts → dist/gateway/main.js
+$ /Users/wangli/develop/evowork/evowork/node_modules/.bin/esbuild services/identity/src/main.ts --bundle --outfile=dist/identity/main.js --platform=node --format=esm --target=node22 --external:electron --log-level=warning
+   services/identity/src/main.ts → dist/identity/main.js
+$ /Users/wangli/develop/evowork/evowork/node_modules/.bin/esbuild apps/desktop/src/main/bootstrap.ts --bundle --outfile=apps/desktop/dist/main/bootstrap.bundle.js --platform=node --format=esm --target=node22 --external:electron --log-level=warning
+   apps/desktop/src/main/bootstrap.ts → apps/desktop/dist/main/bootstrap.bundle.js
+$ /Users/wangli/develop/evowork/evowork/node_modules/.bin/esbuild apps/desktop/src/preload/preload-entry.cjs --bundle --outfile=apps/desktop/dist/preload/index.bundle.cjs --platform=node --format=cjs --target=node22 --external:electron --log-level=warning
+   apps/desktop/src/preload/preload-entry.cjs → apps/desktop/dist/preload/index.bundle.cjs
+   plugins/hooks/evowork-policy/vendor/policy.mjs 可独立加载（40126 字节）
+   next actions MCP 可脱离 workspace 独立启动
+   browser MCP 可脱离 workspace 启动，策略 bundle 与联网研究工具已接通
+   services/ingest/src/parsers/office.py → apps/desktop/dist/main/office.py
+   services/ingest/src/parsers/ocr.py → apps/desktop/dist/main/ocr.py
+   image MCP 可脱离 workspace 独立启动
+   thread communication MCP 可脱离 workspace 独立启动
+vite v7.3.6 building client environment for production...
+../../dist/renderer/index.html                                         0.82 kB │ gzip:   0.60 kB
+../../dist/renderer/assets/index-5RKEbORC.css                         91.09 kB │ gzip:  13.11 kB
+../../dist/renderer/assets/channel-BVFagBdQ.js                         0.12 kB │ gzip:   0.13 kB
+../../dist/renderer/assets/init-Gi6I4Gst.js                            0.15 kB │ gzip:   0.13 kB
+../../dist/renderer/assets/chunk-2Q5K7J3B-p9LFpCej.js                  0.19 kB │ gzip:   0.16 kB
+../../dist/renderer/assets/chunk-JWPE2WC7-Cc5go_LD.js                  0.23 kB │ gzip:   0.17 kB
+../../dist/renderer/assets/chunk-XXDRQBXY-B5bQx8Qr.js                  0.23 kB │ gzip:   0.21 kB
+../../dist/renderer/assets/chunk-5VM5RSS4-DOmb7Fsu.js                  0.37 kB │ gzip:   0.27 kB
+../../dist/renderer/assets/stateDiagram-v2-MP3YSRHH-agfNlJf2.js        0.43 kB │ gzip:   0.31 kB
+../../dist/renderer/assets/classDiagram-ZZMXUADV-H4eWbFq8.js           0.47 kB │ gzip:   0.32 kB
+../../dist/renderer/assets/classDiagram-v2-VYDZK3BY-H4eWbFq8.js        0.47 kB │ gzip:   0.32 kB
+../../dist/renderer/assets/chunk-POPQ4Y6H-D563zEhu.js                  0.51 kB │ gzip:   0.36 kB
+../../dist/renderer/assets/swimlanesDiagram-VR7AAH4N-DheLU3Dc.js       0.55 kB │ gzip:   0.37 kB
+../../dist/renderer/assets/infoDiagram-27XIBGKW-B2GM69EV.js            0.59 kB │ gzip:   0.41 kB
+../../dist/renderer/assets/sizeCapture-INFHLROL-DCVR7zTs.js            0.94 kB │ gzip:   0.53 kB
+../../dist/renderer/assets/ordinal-Cboi1Yqb.js                         1.19 kB │ gzip:   0.57 kB
+../../dist/renderer/assets/railroadDiagram-O6MQD6OU-DjsWd7U6.js        1.61 kB │ gzip:   0.76 kB
+../../dist/renderer/assets/abnfDiagram-VCTEODGH-DXXWvyX7.js            1.81 kB │ gzip:   0.89 kB
+../../dist/renderer/assets/chunk-F27PBJKO-CqNZmYEo.js                  1.88 kB │ gzip:   0.83 kB
+../../dist/renderer/assets/pegDiagram-XKGWAZYB-TTvCyAVX.js             1.96 kB │ gzip:   0.92 kB
+../../dist/renderer/assets/ebnfDiagram-PWID7BFC-BJTIFROf.js            2.01 kB │ gzip:   0.88 kB
+../../dist/renderer/assets/arc-XMjQbyhg.js                             3.44 kB │ gzip:   1.48 kB
+../../dist/renderer/assets/diagram-Z3DM3KII-CvZ8xPyk.js                4.21 kB │ gzip:   1.84 kB
+../../dist/renderer/assets/defaultLocale-DX6XiGOO.js                   4.69 kB │ gzip:   2.18 kB
+../../dist/renderer/assets/linear-DJZH5p08.js                          5.66 kB │ gzip:   2.31 kB
+../../dist/renderer/assets/diagram-UQ7AKVKN-D_l1El6L.js                6.08 kB │ gzip:   2.62 kB
+../../dist/renderer/assets/pieDiagram-E7YTZNPT-D84CiSFN.js             6.29 kB │ gzip:   2.62 kB
+../../dist/renderer/assets/diagram-S7CK7UJ4-CKMdSg51.js                8.22 kB │ gzip:   3.67 kB
+../../dist/renderer/assets/cynefinDiagram-5FMLGOSQ-D8OWuusV.js        10.10 kB │ gzip:   3.63 kB
+../../dist/renderer/assets/stateDiagram-D77RDMKH-DGcxwx6Q.js          10.36 kB │ gzip:   3.63 kB
+../../dist/renderer/assets/dagre-GXQ25YYZ-5zRzhlwA.js                 10.68 kB │ gzip:   4.03 kB
+../../dist/renderer/assets/diagram-VSXAHHWV-DW6V6NR6.js               10.72 kB │ gzip:   4.13 kB
+../../dist/renderer/assets/chunk-SVP7TREG-Cz00xDp-.js                 15.74 kB │ gzip:   4.41 kB
+../../dist/renderer/assets/diagram-VX7I27RA-CGS2SXWA.js               15.96 kB │ gzip:   5.70 kB
+../../dist/renderer/assets/ishikawaDiagram-5VMMS53U-tAI0sruM.js       17.47 kB │ gzip:   6.64 kB
+../../dist/renderer/assets/kanban-definition-UXKFOSKX-BmF3KyCA.js     20.29 kB │ gzip:   7.20 kB
+../../dist/renderer/assets/mindmap-definition-YA3MSWOX-BNhrhWBQ.js    23.18 kB │ gzip:   7.83 kB
+../../dist/renderer/assets/sankeyDiagram-P5KCCOFB-fw-OjRkJ.js         23.20 kB │ gzip:   8.56 kB
+../../dist/renderer/assets/journeyDiagram-3NMN7TZE-DZWyCF3G.js        23.57 kB │ gzip:   8.35 kB
+../../dist/renderer/assets/wardleyDiagram-VM6X3IG4-DZPff0n7.js        25.50 kB │ gzip:   6.79 kB
+../../dist/renderer/assets/gitGraphDiagram-WWUBYQGX-CXXRqk6j.js       29.42 kB │ gzip:   8.70 kB
+../../dist/renderer/assets/erDiagram-RLTQ6QDP-DqypETZ0.js             30.79 kB │ gzip:  10.59 kB
+../../dist/renderer/assets/timeline-definition-24CTP7MA-CdIqm3Il.js   30.82 kB │ gzip:  10.15 kB
+../../dist/renderer/assets/requirementDiagram-BXWQKSXE-eYbA7TOj.js    31.00 kB │ gzip:   9.73 kB
+../../dist/renderer/assets/quadrantDiagram-AXDQQJYC-Co24hS94.js       34.01 kB │ gzip:   9.98 kB
+../../dist/renderer/assets/layout-BKI9D_U6.js                         35.44 kB │ gzip:  12.75 kB
+../../dist/renderer/assets/chunk-IMKFNOWR-CxaGI72C.js                 38.11 kB │ gzip:  12.53 kB
+../../dist/renderer/assets/blockDiagram-I7D4REHJ-CzZIN6_c.js          41.76 kB │ gzip:  13.58 kB
+../../dist/renderer/assets/vennDiagram-4TSXK5OY-BSg6qHp3.js           41.96 kB │ gzip:  15.70 kB
+../../dist/renderer/assets/xychartDiagram-S5SC5T6Z-pXsrbdcJ.js        44.51 kB │ gzip:  12.61 kB
+../../dist/renderer/assets/chunk-TICWLB2K-C2aQg41P.js                 49.21 kB │ gzip:  15.76 kB
+../../dist/renderer/assets/flowDiagram-HODETNUW-ly72bKSr.js           61.88 kB │ gzip:  19.89 kB
+../../dist/renderer/assets/c4Diagram-7LVT6UL2-DsghzM7S.js             65.47 kB │ gzip:  18.79 kB
+../../dist/renderer/assets/ganttDiagram-EL5Y4UJY-gftKaSE3.js          69.69 kB │ gzip:  23.56 kB
+../../dist/renderer/assets/cose-bilkent-JH36ORCC-CS9OfkM7.js          81.70 kB │ gzip:  22.48 kB
+../../dist/renderer/assets/swimlanes-42K2YHIH-PB-IBkGO.js            115.79 kB │ gzip:  42.51 kB
+../../dist/renderer/assets/sequenceDiagram-WJ2MYXX4-BSXgDuJe.js      116.96 kB │ gzip:  31.14 kB
+../../dist/renderer/assets/architectureDiagram-5GKGNRK7-DezxtAHQ.js  151.82 kB │ gzip:  43.15 kB
+../../dist/renderer/assets/katex-HP8lGamR.js                         261.31 kB │ gzip:  77.57 kB
+../../dist/renderer/assets/cytoscape.esm-DzSz-X2X.js                 443.04 kB │ gzip: 141.98 kB
+../../dist/renderer/assets/mermaid.core-DuhL7qwU.js                  613.90 kB │ gzip: 145.88 kB
+../../dist/renderer/assets/index-CL07LV03.js                         652.92 kB │ gzip: 213.45 kB
+../../dist/renderer/assets/cynefin-OW5HDTMX-DpNYzQdH.js              688.15 kB │ gzip: 154.16 kB
+✓ built in 16.59s
+✅ 构建完成。产物：
+   dist/gateway/main.js                             网关（单文件，可直接 node 运行）
+   dist/identity/main.js                            账号服务（云端，不进桌面包）
+   apps/desktop/dist/renderer/                      渲染层（vite）
+   apps/desktop/dist/main/electron-entry.mjs        Electron 入口
+   apps/desktop/dist/main/bootstrap.bundle.js       主进程（单文件）
+   apps/desktop/dist/preload/index.bundle.cjs       preload（单文件，CJS）

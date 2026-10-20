@@ -1189,6 +1189,9 @@ export function createAdapter(options: AdapterOptions) {
       return (await startDesktopTurn(threadId, expanded.params)).turn.id;
     },
     resolveCommunicationToolCall(threadId: string, tool: string, args: unknown) {
+      return this.resolveLocalToolCall(threadId, 'thread_communication', tool, args);
+    },
+    resolveLocalToolCall(threadId: string, server: string, tool: string, args: unknown) {
       const row = store.threads.get(threadId);
       if (
         !row ||
@@ -1198,12 +1201,21 @@ export function createAdapter(options: AdapterOptions) {
         row.last_turn_status !== 'inProgress'
       )
         return undefined;
-      const canonical = (value: unknown): string =>
-        JSON.stringify(value, Object.keys((value ?? {}) as object).sort());
+      const normalize = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(normalize);
+        if (value && typeof value === 'object')
+          return Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, entry]) => [key, normalize(entry)]),
+          );
+        return value;
+      };
+      const canonical = (value: unknown): string => JSON.stringify(normalize(value));
       const matches = [...inFlightMcpCalls.entries()].filter(
         ([, entry]) =>
           entry.threadId === threadId &&
-          entry.server === 'thread_communication' &&
+          entry.server === server &&
           entry.tool === tool &&
           entry.turnId === row.last_turn_id &&
           canonical(entry.arguments) === canonical(args),

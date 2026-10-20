@@ -77,8 +77,25 @@ export interface DeeplinkDelivery {
   readonly refused?: string | undefined;
 }
 
+export interface NextActionView {
+  readonly id: string;
+  readonly threadId: string;
+  readonly sourceTurnId: string;
+  readonly title: string;
+  readonly prompt: string;
+  readonly reason?: string;
+}
+export interface NextActionActions {
+  getNextActions(input: { threadId: string }): Promise<readonly NextActionView[]>;
+  actOnNextAction(input: {
+    threadId: string;
+    id: string;
+    action: 'accepted' | 'dismissed';
+  }): Promise<NextActionView>;
+}
 export type RendererEvent =
   | { readonly type: 'queue-changed'; readonly taskId: string }
+  | { readonly type: 'next-actions-changed'; readonly taskId: string }
   | {
       readonly type: 'file-open-requested';
       readonly taskId: string;

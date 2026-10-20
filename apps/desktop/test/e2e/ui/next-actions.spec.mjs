@@ -1,0 +1,159 @@
+/** Real Electron, shipped kernel and bundled MCP with a local deterministic upstream. */
+import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { horizontalOverflow, resizeWindow } from './assertions.mjs';
+test.use({ registerModels: true });
+const candidate = { title: '验收交付结果', prompt: '检查刚生成的交付结果，汇总验收结论。' };
+async function propose(electronApp, marker, outcome = 'delivered', held = false) {
+  await electronApp.evaluate(
+    (_electron, { marker, candidate, outcome, held }) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen(
+        'next-actions-propose-' + marker,
+        (view) => view.text.includes(marker) && !view.calls.includes('propose_next_actions'),
+        {
+          tool: 'propose_next_actions',
+          args: { outcome, actions: outcome === 'delivered' ? [candidate] : [] },
+        },
+      );
+      gateway.scriptWhen(
+        'next-actions-finish-' + marker,
+        (view) => view.text.includes(marker) && view.calls.includes('propose_next_actions'),
+        held
+          ? { kind: 'hold' }
+          : {
+              kind: 'text',
+              text: outcome === 'delivered' ? '已完成交付 ' + marker : '请补充目标格式 ' + marker,
+            },
+      );
+    },
+    { marker, candidate, outcome, held },
+  );
+}
+async function task(page, marker) {
+  const { tasks } = await page.evaluate(() => window.evowork.getStartup());
+  return tasks.find((item) => item.title?.includes(marker));
+}
+async function idle(page) {
+  await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
+    timeout: 60000,
+  });
+}
+async function history(page, id) {
+  return page.evaluate((threadId) => window.evowork.openTask({ threadId }), id);
+}
+test('MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送走原回合链路', async ({
+  page,
+  electronApp,
+}, testInfo) => {
+  const marker = 'NEXT-' + Date.now().toString(36);
+  await propose(electronApp, marker);
+  await startTaskInWorkspace(page, electronApp, marker + ' 生成交付结果');
+  await idle(page);
+  const suggestion = page.getByLabel('下一步建议');
+  await expect(suggestion).toBeVisible();
+  const current = await task(page, marker);
+  expect(
+    (await history(page, current.id)).items.filter((item) => item.type === 'userMessage'),
+  ).toHaveLength(1);
+  await page.reload();
+  await page.getByRole('button', { name: current.title, exact: true }).click();
+  await expect(suggestion).toBeVisible();
+  const input = page.getByLabel('需求输入');
+  await expect(input).toHaveValue('');
+  await expect(input).toHaveAttribute('placeholder', candidate.prompt);
+  await page.screenshot({ path: testInfo.outputPath('next-action.png') });
+  await resizeWindow(electronApp, 480, 820);
+  await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click();
+  await expect(suggestion.getByRole('button', { name: '填入', exact: true })).toBeVisible();
+  expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('next-action-480.png') });
+  await resizeWindow(electronApp, 1280, 820);
+  await input.focus();
+  await input.press('Tab');
+  await expect(input).toHaveValue(candidate.prompt);
+  await expect(suggestion).toHaveCount(0);
+  expect(
+    (await history(page, current.id)).items.filter((item) => item.type === 'userMessage'),
+  ).toHaveLength(1);
+  await input.fill(candidate.prompt + ' 仅检查第一页。');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await idle(page);
+  await expect
+    .poll(
+      async () =>
+        (await history(page, current.id)).items.filter((item) => item.type === 'userMessage')
+          .length,
+    )
+    .toBe(2);
+  await expect(suggestion).toHaveCount(0);
+});
+test('运行中的候选不展示、不覆盖草稿，点击填入不发送；忽略刷新后仍隐藏', async ({
+  page,
+  electronApp,
+}) => {
+  const marker = 'DRAFT-' + Date.now().toString(36);
+  await propose(electronApp, marker, 'delivered', true);
+  await startTaskInWorkspace(page, electronApp, marker + ' 生成结果');
+  await expect
+    .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
+    .toBe(true);
+  const input = page.getByLabel('需求输入');
+  await input.fill('用户自己的草稿');
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
+  await idle(page);
+  await expect(input).toHaveValue('用户自己的草稿');
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await input.fill('');
+  const suggestion = page.getByLabel('下一步建议');
+  await expect(suggestion).toBeVisible();
+  const current = await task(page, marker);
+  await suggestion.getByRole('button', { name: '填入', exact: true }).click();
+  await expect(input).toHaveValue(candidate.prompt);
+  await expect(input).toBeFocused();
+  expect(
+    (await history(page, current.id)).items.filter((item) => item.type === 'userMessage'),
+  ).toHaveLength(1);
+  // A fresh task gets a separate suggestion, which can be persistently dismissed.
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  const second = 'IGNORE-' + Date.now().toString(36);
+  await propose(electronApp, second);
+  await startTaskInWorkspace(page, electronApp, second + ' 生成结果');
+  await idle(page);
+  await expect(suggestion).toBeVisible();
+  const ignored = await task(page, second);
+  await suggestion.getByRole('button', { name: '忽略', exact: true }).click();
+  await expect(suggestion).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('button', { name: ignored.title, exact: true }).click();
+  await expect(page.getByLabel('需求输入')).toBeVisible();
+  await expect(suggestion).toHaveCount(0);
+});
+test('等待用户补充不展示下一步建议', async ({ page, electronApp }) => {
+  const marker = 'ASK-' + Date.now().toString(36);
+  await propose(electronApp, marker, 'needs_input');
+  await startTaskInWorkspace(page, electronApp, marker + ' 需要补充需求');
+  await idle(page);
+  await expect(page.getByText('请补充目标格式 ' + marker, { exact: true })).toBeVisible();
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+});
+
+test('提出候选后停止回合，不发布或恢复未完成建议', async ({ page, electronApp }) => {
+  const marker = 'STOP-' + Date.now().toString(36);
+  await propose(electronApp, marker, 'delivered', true);
+  await startTaskInWorkspace(page, electronApp, marker + ' 生成结果');
+  await expect
+    .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
+    .toBe(true);
+  const current = await task(page, marker);
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await page.getByRole('button', { name: '停止', exact: true }).click();
+  await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
+  await idle(page);
+  expect(
+    await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), current.id),
+  ).toEqual([]);
+  await page.reload();
+  await page.getByRole('button', { name: current.title, exact: true }).click();
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+});

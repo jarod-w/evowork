@@ -188,3 +188,7 @@ jsdom **不做布局**，也发不出可信输入事件。受控 `textarea` 的�
   否则回合自己失败也会让界面回到 idle，测试变绿而按钮根本没用。
 - 定位优先用 `getByRole` / `getByLabel`。渲染层的 `aria-label` 很全（01 §9），
   不需要为测试加 `data-testid` —— 那等于让测试反过来改产品代码。
+
+## 下一步建议
+
+`next-actions.spec.mjs` 使用真实 Electron、发货内核、随包 MCP 和本机确定性上游，验证候选在成功完成后出现、刷新并重新打开任务后恢复、Tab/点击只填入草稿、编辑后发送才增加用户消息、运行中草稿不被覆盖、关闭持久化、等待输入与停止后隐藏，含窄窗截图。命令：`pnpm exec playwright test next-actions.spec.mjs --project=fake --retries=0`。它验证链路和交互，不代表真实厂商模型建议质量已验收。

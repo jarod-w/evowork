@@ -6,6 +6,7 @@ import { createLibraryHost, type LibraryHost } from './library-host.js';
 import { parse as parseImageRequirements } from 'smol-toml';
 import { createImageHost } from './image-host.js';
 import { createCommunicationHost, patchCommunicationConfig } from './thread-communication-host.js';
+import { createNextActionsHost, patchNextActionsConfig } from './next-actions-host.js';
 import { createComputerUsePolicyReader } from './computer-use-policy.js';
 import { patchComputerUseConfig } from './computer-use-config.js';
 import { createComputerUseHost, type NativeHelper } from './computer-use-host.js';
@@ -1434,6 +1435,25 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       ),
       { mode: 0o600 },
     );
+  const nextActionsHost = createNextActionsHost({
+    store,
+    adapter: () => adapter,
+    changed: (threadId) =>
+      options.emitToRenderer(IPC.uiEvent, {
+        type: 'next-actions-changed',
+        taskId: threadId,
+      } satisfies RendererEvent),
+  });
+  if (options.pluginsDir)
+    writeFileSync(
+      kernelConfigPath,
+      patchNextActionsConfig(
+        readFileSync(kernelConfigPath, 'utf8'),
+        process.execPath,
+        join(options.pluginsDir, 'connectors/next-actions/server.mjs'),
+      ),
+      { mode: 0o600 },
+    );
   const adapter = createAdapter({
     ...(options.deliveryTimeoutMs !== undefined
       ? { deliveryTimeoutMs: options.deliveryTimeoutMs }
@@ -1473,6 +1493,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         extraEnvProvider: () => ({
           ...imageHost.environment,
           ...communicationHost.environment,
+          ...nextActionsHost.environment,
           ...fileHost.environment,
         }),
         extraEnv: {
@@ -1489,6 +1510,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     // 适配层的事件是**任务视角**，渲染层要的是**组件视角**，翻译在 renderer-bridge 里
     onUiEvent: (event) => {
       communicationHost.service.onEvent(event);
+      nextActionsHost.service.onEvent(event);
       fileHost.onEvent(event);
       if (event.type === 'turn-started') {
         const cwd = store.threads.get(event.threadId)?.cwd;
@@ -1518,6 +1540,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       computerUse.stop();
       imageHost.rotate();
       fileHost.rotate();
+      nextActionsHost.rotate();
       if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed')
         communicationHost.rotate();
       if (notice.kind === 'kernel-restarted') void communicationHost.service.start();
@@ -2319,6 +2342,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     computerUse,
     imageGeneration: imageHost,
     communication: communicationHost.service,
+    nextActions: nextActionsHost.service,
     openComputerUseSettings: async (permission = 'accessibility') => {
       if (process.platform !== 'darwin' || !options.openExternal)
         throw new Error('当前平台不能打开此权限设置。');
@@ -2677,6 +2701,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     async start() {
       await imageHost.ready;
       await communicationHost.ready;
+      await nextActionsHost.ready;
       await fileHost.ready;
       /*
        * 已登录才 restore（会打 identity）。未登录时 vault 里没有 refresh，
@@ -2835,6 +2860,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       imageHost.close();
       fileHost.close();
       communicationHost.close();
+      nextActionsHost.close();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (hubTimer) clearInterval(hubTimer);

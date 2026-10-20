@@ -181,6 +181,10 @@ export interface ComposerPlugin {
 }
 
 export interface ComposerProps {
+  readonly suggestion?: { readonly title: string; readonly prompt: string } | undefined;
+  readonly suggestionBusy?: boolean | undefined;
+  readonly onAcceptSuggestion?: (() => void) | undefined;
+  readonly onDismissSuggestion?: (() => void) | undefined;
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly onSend: () => void;
@@ -420,6 +424,17 @@ export function Composer(props: ComposerProps) {
     };
   }, [props.onSearchMentions, trigger]);
 
+  const suggestion =
+    props.value === '' &&
+    attachments.length === 0 &&
+    (props.queued ?? []).length === 0 &&
+    runState === 'idle' &&
+    !trigger &&
+    !props.environmentBusy &&
+    !props.sendLockedReason &&
+    !props.modelUnavailable
+      ? props.suggestion
+      : undefined;
   const parsing = parsingCount(attachments);
   // 解析失败的附件还没有可发送内容；用户选择「以原始文件引用」后才会变成 ready。
   // 否则按钮看似可用，App 层却会因为没有文本或结构化引用而什么都不做。
@@ -712,6 +727,28 @@ export function Composer(props: ComposerProps) {
             </>
           ) : null}
 
+          {suggestion ? (
+            <div className="ew-next-action" aria-label="下一步建议">
+              <span>建议：{suggestion.title}</span>
+              <PillButton
+                variant="ghost"
+                disabled={props.suggestionBusy}
+                onClick={() => {
+                  props.onAcceptSuggestion?.();
+                  textareaRef.current?.focus();
+                }}
+              >
+                填入
+              </PillButton>
+              <PillButton
+                variant="ghost"
+                disabled={props.suggestionBusy}
+                onClick={props.onDismissSuggestion}
+              >
+                忽略
+              </PillButton>
+            </div>
+          ) : null}
           <textarea
             ref={textareaRef}
             className="ew-composer-textarea"
@@ -725,7 +762,7 @@ export function Composer(props: ComposerProps) {
                 ? `${completionListId}-option-${activeIndex}`
                 : undefined
             }
-            placeholder={COMPOSER_PLACEHOLDER}
+            placeholder={suggestion?.prompt ?? COMPOSER_PLACEHOLDER}
             rows={rows}
             value={props.value}
             onChange={(event) => {
@@ -742,6 +779,18 @@ export function Composer(props: ComposerProps) {
               props.onFilesAdded?.(files);
             }}
             onKeyDown={(event) => {
+              if (
+                suggestion &&
+                props.onAcceptSuggestion &&
+                !props.suggestionBusy &&
+                event.key === 'Tab' &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                props.onAcceptSuggestion();
+                return;
+              }
               if (trigger && candidates.length > 0) {
                 if (event.key === 'ArrowDown') {
                   event.preventDefault();

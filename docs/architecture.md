@@ -442,14 +442,14 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 驱动是 Node 内置 `node:sqlite`（`DatabaseSync`），自带 WAL 与 FTS5 —— 没有原生模块，
 因此 Electron 打包不需要按 ABI 重编译（代价是 Electron 的 Node 版本必须 ≥ 22.5，见 §8）。库在 `~/.evowork/evowork.db`。
 
-**23 张业务表分两类**（[schema.ts](../services/store/src/schema.ts) 的 `TABLES`，2026-10-20 实数），外加迁移器自建的 `meta` 表（"24 张"的口径含它）：
+**24 张业务表分两类**（[schema.ts](../services/store/src/schema.ts) 的 `TABLES`，2026-10-20 实数），外加迁移器自建的 `meta` 表（"25 张"的口径含它）：
 
 | 类别 | 真源在哪 | 迁移失败时 | 表 |
 | --- | --- | --- | --- |
 | **投影类**（8） | 内核 / 文件系统 | **丢弃重建**，附一条警告，继续启动 | `thread_projection` `item_digest` `library_node` `library_index`(FTS5) `library_document` `library_chunk` `access_log` `unknown_event` |
-| **权威类**（15） | 只在这里 | 备份 → 失败则回滚并**抛错，宁可启动失败** | `project_local` `project_root` `artifact` `automation` `automation_run` `share` `subscription` `notification` `audit_log` `thread_message` `image_operation` `follow_up_receipt` `follow_up_queue` `follow_up_control` `follow_up_composer` |
+| **权威类**（16） | 只在这里 | 备份 → 失败则回滚并**抛错，宁可启动失败** | `project_local` `project_root` `artifact` `automation` `automation_run` `share` `subscription` `notification` `audit_log` `thread_message` `image_operation` `follow_up_receipt` `follow_up_queue` `follow_up_control` `follow_up_composer` `next_action` |
 
-两类各有**独立的版本号与独立的迁移器**（[migrate.ts](../services/store/src/migrate.ts)，投影类当前 **v5**、权威类当前 **v6**），
+两类各有**独立的版本号与独立的迁移器**（[migrate.ts](../services/store/src/migrate.ts)，投影类当前 **v5**、权威类当前 **v7**），
 两条路径没有任何共享的可写状态 —— 不这么做的话，"重建索引"的逻辑总有一天会把 `automation` 表也清了。
 
 `artifact` 归权威类是一个需要说明的判断：产物**本体**的真源是文件系统（D6），
@@ -663,7 +663,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 5 | 专家角色包为空 | `plugins/agents/` 不预置角色（编造 100+ 专家等于铺演示数据）。用户可在「技能·连接器 → 专家」新建，或把 TOML 放到 `~/.evowork/agents/`。信任连接器只写 `config.toml`，**不假装有 live reload** |
 | 6 | 办公解析子进程不在沙箱里；OCR 无可用发行包 | 办公档（docx / xlsx / pptx / pdf 文本层 / rtf）由 `createOfficeParser` + `office.py` 接入，但 `office.ts` 直接 `execFile`，未经 [isolated-process.ts](../services/ingest/src/isolated-process.ts)（OCR / 资料库抽取 / PDF 分页 / Office 预览已走它，macOS 上 fail closed；其他平台未套 landlock 等）。OCR 本地首版（`ocr.py` + tesseract）已接，但运行时只从管理员配置的离线包安装，默认构建里显示"尚未配置可验证的 OCR 发行包" |
 | 7 | `wake_system` 与睡眠唤醒事件未接 | `automation.wake_system` 列存在、表单里能选；`services/scheduler` 与 `apps/desktop/src/main` 里没有任何 `powerMonitor` / 唤醒钩子，调度靠分钟 `setInterval`。休眠唤醒后要等下一个 tick 才做 misfire 扫描（09 §6.3 写的是"直接触发") |
-| 8 | 表数口径 | `TABLES` 里是 **23** 张（8 投影 + 15 权威），另有迁移器自建的 `meta`；含 meta 的口径是 24 张 |
+| 8 | 表数口径 | `TABLES` 里是 **24** 张（8 投影 + 16 权威），另有迁移器自建的 `meta`；含 meta 的口径是 25 张 |
 | 9 | 随包内核只有一个平台 | `build/kernel/` 不进 git，由 `scripts/build-kernel.mjs` 打补丁编出，迄今只在 `mac-arm64` 上构建过；Windows / Linux 的二进制要在 CI 里构建后放进对应目录，`scripts/package.mjs` 缺它时会拒绝打包 |
 | 10 | 桌面壳仍有少量 UI 声明了但没接 | 侧边栏行菜单现在只露 `rename` / `share…` / `archive` / `delete` 四项（[sidebar.tsx](../apps/desktop/src/renderer/views/sidebar.tsx) 的 `rowMenuItems`）：改名与分享由渲染层另走 `renameTask` 与分享授权流，归档 / 删除经 `rowAction` 调内核的 `archiveTask` / `deleteTask`；`RowAction` 类型里其余值（pin / unpin / move / reveal / new-in-workspace / copy-link / fork；分叉另有独立动作 `forkTask`）落到 `rowAction` 只记一条 `desktop.row_action.unimplemented` 日志，但菜单里已不展示。「更多」菜单的禁用项已移除。`@` 候选已由 `searchComposerMentions` 提供；**语音输入**只有一个由 `micAvailable` 控制的按钮，没有任何调用方传这个值，因此不显示 |
 
@@ -684,3 +684,8 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 ## Computer Use 接线（2026-09-24，未开放发布）
 
 `cua_repl` stdio MCP → 带令牌/递增序号的私有 Unix socket → 桌面宿主 → 签名校验后的原生 Helper 私有 stdio。宿主使用 kernel-adapter 的任务上下文与审批路由，renderer 只暴露启停、撤权、状态订阅等语义动作。原生源码与 macOS 打包入口已加入，但发布标记强制关闭；不能把 Linux 构建通过描述成 macOS 能力可用。具体限制见 status.md 的第二批实现记录。
+
+
+### 下一步建议（2026-10-20）
+
+随包 `next_actions` MCP 向本机回环宿主提交结构化候选；适配层用真实在途工具 item 核对任务、回合、服务器、工具和递归参数。权威 v7 的 `next_action` 表保存最后一组候选及采纳/关闭状态，与待执行队列独立。回合成功结束后筛选目标、审批与队列状态，再通过语义 IPC 交给 Composer；点击填入或 Tab 只形成草稿，用户发送仍经过现有投递链路。没有新增外网或独立模型请求。详见 [22](design/22-next-actions.md)。

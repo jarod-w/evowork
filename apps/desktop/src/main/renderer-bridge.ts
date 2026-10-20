@@ -514,6 +514,7 @@ export interface RendererBridgeOptions {
   readonly library?: (() => Promise<LibraryHost>) | undefined;
   readonly imageGeneration?: ImageHost | undefined;
   readonly communication?: ThreadCommunication | undefined;
+  readonly nextActions?: import('@evowork/kernel-adapter').NextActions | undefined;
   readonly environments?: TaskEnvironments | undefined;
   readonly adapter: Adapter;
   readonly store: Store;
@@ -1582,6 +1583,18 @@ export function createRendererActions(options: RendererBridgeOptions) {
       options.imageGeneration?.extendBudget(input.threadId);
     },
     /** 03 §1：没有 threadId 就是首页的第一条 —— 此时才 `thread/start`，所以首页不产生空任务 */
+    async getNextActions(input: { threadId: string }) {
+      return options.nextActions ? options.nextActions.list(input.threadId) : [];
+    },
+    async actOnNextAction(input: {
+      threadId: string;
+      id: string;
+      action: 'accepted' | 'dismissed';
+    }) {
+      if (!['accepted', 'dismissed'].includes(input.action) || !options.nextActions)
+        throw new Error('建议操作无效。');
+      return options.nextActions.act(input.threadId, input.id, input.action);
+    },
     async getCommunicationTargets(input: { threadId: string; includeOtherProjects?: boolean }) {
       if (!options.communication) throw new Error('会话通信不可用。');
       return options.communication.targets(input.threadId, input.includeOtherProjects === true);

@@ -1,0 +1,177 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextActionStore, openStore, type Store } from '@evowork/store';
+import type { ThreadGoal } from '@evowork/protocol';
+import type { Adapter, QueuedInput } from '../src/adapter.js';
+import { createNextActions, type NextActions } from '../src/next-actions.js';
+import { makeThread } from './fake-app-server.js';
+
+let store: Store;
+let service: NextActions;
+let bound: boolean;
+let turnId: string;
+let goal: ThreadGoal | undefined;
+let queue: readonly QueuedInput[];
+let adapter: Adapter;
+const args = {
+  outcome: 'delivered',
+  actions: [{ title: '验证线上页面', prompt: '验证刚部署的页面是否正常。', reason: '已完成部署' }],
+};
+function running(id = 'one') {
+  turnId = id;
+  store.db
+    .prepare(
+      "UPDATE thread_projection SET last_turn_id=?,last_turn_status='inProgress',derived_status='running' WHERE thread_id='a'",
+    )
+    .run(id);
+  service.onEvent({ type: 'turn-started', threadId: 'a', turnId: id });
+}
+function complete(status: 'completed' | 'failed' | 'interrupted' = 'completed', id = turnId) {
+  store.db
+    .prepare('UPDATE thread_projection SET last_turn_status=?,derived_status=? WHERE thread_id=?')
+    .run(status, status, 'a');
+  service.onEvent({ type: 'turn-completed', threadId: 'a', turnId: id, status });
+}
+beforeEach(() => {
+  store = openStore({ path: ':memory:' });
+  store.threads.upsertFromThread(makeThread({ id: 'a' }));
+  bound = true;
+  goal = undefined;
+  queue = [];
+  adapter = {
+    resolveLocalToolCall: vi.fn(() =>
+      bound ? { callId: 'call', turnId, generation: 1 } : undefined,
+    ),
+    getGoal: vi.fn(async () => goal),
+    listQueuedInputs: vi.fn(async () => queue),
+  } as unknown as Adapter;
+  service = createNextActions({ store, adapter: () => adapter, changed: vi.fn() });
+  running();
+});
+afterEach(() => store.close());
+describe('下一步建议与执行队列分离', () => {
+  it('回合结束前不可见，成功后只展示第一条，采纳只改变建议状态', async () => {
+    service.propose('a', {
+      ...args,
+      actions: [...args.actions, { title: '汇总结果', prompt: '汇总验证结果。' }],
+    });
+    expect(await service.list('a')).toEqual([]);
+    complete();
+    const [suggestion] = await service.list('a');
+    expect(suggestion).toMatchObject({
+      threadId: 'a',
+      sourceTurnId: 'one',
+      prompt: args.actions[0]!.prompt,
+    });
+    expect(await service.list('a')).toHaveLength(1);
+    expect(await service.act('a', suggestion!.id, 'accepted')).toEqual(suggestion);
+    expect(await service.list('a')).toEqual([]);
+    expect(store.db.prepare('SELECT * FROM follow_up_queue').all()).toEqual([]);
+    await expect(service.act('a', suggestion!.id, 'accepted')).rejects.toThrow('失效');
+  });
+  it.each(['failed', 'interrupted'] as const)(
+    '%s 不发布；新回合及旧完成通知不能复活建议',
+    async (status) => {
+      service.propose('a', args);
+      complete(status);
+      expect(await service.list('a')).toEqual([]);
+      running('two');
+      service.propose('a', args);
+      service.onEvent({
+        type: 'turn-completed',
+        threadId: 'a',
+        turnId: 'one',
+        status: 'completed',
+      });
+      expect(await service.list('a')).toEqual([]);
+      complete();
+      expect(await service.list('a')).toHaveLength(1);
+      running('three');
+      expect(await service.list('a')).toEqual([]);
+    },
+  );
+  it('无建议、等待输入、非法嵌套正文和未核对来源不生成可用建议', async () => {
+    bound = false;
+    expect(() => service.propose('a', args)).toThrow('来源');
+    bound = true;
+    for (const raw of [
+      { ...args, threadId: 'foreign' },
+      { ...args, actions: [{ ...args.actions[0], prompt: ' ' }] },
+      { ...args, actions: [{ ...args.actions[0], targetThreadId: 'foreign' }] },
+      { ...args, actions: Array(4).fill(args.actions[0]) },
+      { ...args, outcome: 'needs_input' },
+    ])
+      expect(() => service.propose('a', raw)).toThrow();
+    service.propose('a', { outcome: 'needs_input', actions: [] });
+    complete();
+    expect(await service.list('a')).toEqual([]);
+  });
+  it.each(['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited'] as const)(
+    '目标 %s 时隐藏',
+    async (status) => {
+      service.propose('a', args);
+      complete();
+      goal = { status } as ThreadGoal;
+      expect(await service.list('a')).toEqual([]);
+      goal = { status: 'complete' } as ThreadGoal;
+      expect(await service.list('a')).toHaveLength(1);
+    },
+  );
+  it('队列、待审批、归档、子任务和自动化均不展示', async () => {
+    service.propose('a', args);
+    complete();
+    queue = [{ id: 'pending', input: [] }];
+    expect(await service.list('a')).toEqual([]);
+    queue = [];
+    for (const [field, value, reset] of [
+      ['derived_status', 'pending', 'completed'],
+      ['archived', 1, 0],
+      ['parent_thread_id', 'parent', null],
+      ['automation_id', 'cron', null],
+    ] as const) {
+      store.db.prepare(`UPDATE thread_projection SET ${field}=? WHERE thread_id='a'`).run(value);
+      expect(await service.list('a')).toEqual([]);
+      store.db.prepare(`UPDATE thread_projection SET ${field}=? WHERE thread_id='a'`).run(reset);
+    }
+    expect(await service.list('a')).toHaveLength(1);
+  });
+  it('查询目标时新回合开始，迟到响应不发布；目标未知不伪装成无目标', async () => {
+    service.propose('a', args);
+    complete();
+    vi.mocked(adapter.getGoal).mockImplementation(async () => {
+      running('new');
+      return undefined;
+    });
+    expect(await service.list('a')).toEqual([]);
+    service.propose('a', args);
+    complete();
+    vi.mocked(adapter.getGoal).mockRejectedValue(new Error('goal unavailable'));
+    await expect(service.list('a')).rejects.toThrow('goal unavailable');
+  });
+  it('同时采纳与关闭只成功一次，不复活已经消费的建议', async () => {
+    service.propose('a', args);
+    complete();
+    const [candidate] = await service.list('a');
+    const results = await Promise.allSettled([
+      service.act('a', candidate!.id, 'accepted'),
+      service.act('a', candidate!.id, 'dismissed'),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(await service.list('a')).toEqual([]);
+  });
+  it('重建服务保留可用/关闭状态，丢弃未完成提案；删除清理正文', async () => {
+    service.propose('a', args);
+    complete();
+    service = createNextActions({ store, adapter: () => adapter, changed: vi.fn() });
+    const [candidate] = await service.list('a');
+    await service.act('a', candidate!.id, 'dismissed');
+    service = createNextActions({ store, adapter: () => adapter, changed: vi.fn() });
+    expect(await service.list('a')).toEqual([]);
+    running('new');
+    service.propose('a', args);
+    service.interrupted();
+    complete();
+    expect(await service.list('a')).toEqual([]);
+    service.onEvent({ type: 'task-removed', threadId: 'a' });
+    expect(new NextActionStore(store).get('a')).toBeUndefined();
+  });
+});

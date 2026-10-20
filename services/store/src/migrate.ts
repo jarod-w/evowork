@@ -255,6 +255,14 @@ export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
         for (const ddl of table.ddl) db.exec(ddl);
     },
   },
+  {
+    version: 7,
+    summary: '本机下一步建议，与待执行队列分离',
+    up: (db) => {
+      for (const ddl of AUTHORITATIVE_TABLES.find((t) => t.name === 'next_action')!.ddl)
+        db.exec(ddl);
+    },
+  },
 ];
 
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;

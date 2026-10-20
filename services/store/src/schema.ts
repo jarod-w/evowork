@@ -44,6 +44,13 @@ export type DerivedStatus = (typeof DERIVED_STATUS)[number];
 
 export const TABLES: readonly TableSpec[] = [
   {
+    name: 'next_action',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS next_action (thread_id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL)`,
+    ],
+  },
+  {
     name: 'thread_message',
     klass: 'authoritative',
     ddl: [

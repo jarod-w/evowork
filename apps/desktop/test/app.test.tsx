@@ -3848,3 +3848,71 @@ it('取消离开设置不会提前清理聊天草稿或附件', async () => {
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   expect((screen.getByLabelText('用量上限（tokens）') as HTMLInputElement).value).toBe('200000');
 });
+
+describe('任务引导的异步草稿保护', () => {
+  const row = (id: string) => ({
+    id,
+    title: id + '已完成任务',
+    status: 'completed' as const,
+    timeLabel: '刚刚',
+    updatedAt: 1,
+    sectionId: 'ungrouped',
+  });
+  const candidate = (id = 'a') => ({
+    id: id + '-suggestion',
+    threadId: id,
+    sourceTurnId: 'turn',
+    title: '验收结果',
+    prompt: id + '检查交付结果。',
+  });
+  it('采纳等待宿主回执时继续输入，回执不能覆盖新草稿，也不发送', async () => {
+    let finish!: (value: ReturnType<typeof candidate>) => void;
+    const actOnNextAction = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof candidate>>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [row('a')] }),
+      getNextActions: vi.fn(async () => [candidate()]),
+      actOnNextAction,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('a已完成任务'));
+    fireEvent.click(await screen.findByRole('button', { name: '填入' }));
+    await waitFor(() => expect(actOnNextAction).toHaveBeenCalledOnce());
+    const box = screen.getByLabelText('需求输入');
+    fireEvent.change(box, { target: { value: '等待时输入的新草稿' } });
+    await act(async () => {
+      finish(candidate());
+    });
+    expect(box).toHaveProperty('value', '等待时输入的新草稿');
+    expect(bridge.send).not.toHaveBeenCalled();
+  });
+  it('切换任务后，旧查询迟到不能替换新建议', async () => {
+    let finish!: (value: ReturnType<typeof candidate>[]) => void;
+    const getNextActions = vi.fn(async ({ threadId }: { threadId: string }) =>
+      threadId === 'a'
+        ? new Promise<ReturnType<typeof candidate>[]>((resolve) => {
+            finish = resolve;
+          })
+        : [candidate('b')],
+    );
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [row('a'), row('b')] }),
+      getNextActions,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('a已完成任务'));
+    await waitFor(() => expect(getNextActions).toHaveBeenCalledWith({ threadId: 'a' }));
+    fireEvent.click(screen.getByText('b已完成任务'));
+    await screen.findByRole('button', { name: '填入' });
+    await act(async () => {
+      finish([candidate('a')]);
+    });
+    expect(screen.getByLabelText('需求输入').getAttribute('placeholder')).toBe(
+      candidate('b').prompt,
+    );
+  });
+});

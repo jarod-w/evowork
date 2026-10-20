@@ -110,7 +110,7 @@ evowork/
     computer-use-macos/  macOS 原生电脑操控 Helper（Swift，设计 12）；AX/TCC 真机与签名验收前不能启用
   services/              L3 服务层。Q1=A：标【本机】的随桌面 App 在**本机**常驻，标【云端】的在**云端**
     kernel-adapter/      【本机】app-server JSON-RPC v2 适配层（M2a）—— **K2 边界的唯一实现处**
-    store/               【本机】本机 sqlite **24 张表**（`schema.ts` 23 张含 FTS 虚表 + `meta`）+ 两个迁移器 + 状态投影 + automation/audit/artifact/project/share 五个 repo（M2a，见 09 §4）
+    store/               【本机】本机 sqlite **25 张表**（`schema.ts` 24 张含 FTS 虚表 + `meta`）+ 两个迁移器 + 状态投影 + automation/audit/artifact/project/share 五个 repo（M2a，见 09 §4）
     scheduler/           【本机】定时调度（M5；带时区的 cron · misfire 补偿 · 设备绑定 · 与内核的桥接）
     ingest/              【本机】解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时（M3，K6，无云端兜底）
     runtime-installer/   【本机】办公扩展的按需安装（08 §4）。**K6 登记：唯一为装扩展而出网的包**——

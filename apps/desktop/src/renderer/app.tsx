@@ -157,7 +157,8 @@ export interface EvoworkBridge
   extends
     MemoryImportPorts,
     Partial<LibraryActions>,
-    Partial<import('../shared/ipc.js').CommunicationActions> {
+    Partial<import('../shared/ipc.js').CommunicationActions>,
+    Partial<import('../shared/ipc.js').NextActionActions> {
   getAttachmentText?(
     input: PickAttachmentsInput & { readonly attachmentId: string },
   ): Promise<ComposerAttachmentView>;
@@ -1205,6 +1206,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
     const offs = [
       bridge.onUiEvent((event) => {
+        if (
+          'taskId' in event &&
+          event.taskId === activeTaskId &&
+          [
+            'next-actions-changed',
+            'turn-started',
+            'task-disconnected',
+            'task-restored',
+            'task-removed',
+          ].includes(event.type)
+        ) {
+          setNextAction(undefined);
+          setNextActionsRefresh((previous) => previous + 1);
+        }
         if (event.type !== 'item') flushItems();
         if ('taskId' in event && deletedTaskIds.current.has(event.taskId)) return;
         if (event.type === 'task-disconnected' || event.type === 'task-restored')
@@ -3098,9 +3113,105 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     },
     [bridge, interactionTaskId, reportFailure, pushToast],
   );
+  const [nextAction, setNextAction] = useState<import('../shared/ipc.js').NextActionView>();
+  const [nextActionsRefresh, setNextActionsRefresh] = useState(0);
+  const [nextActionBusy, setNextActionBusy] = useState(false);
+  const nextActionRevision = useRef(0);
+  const nextActionContext = useRef({
+    activeTaskId,
+    draft,
+    attachments,
+    references,
+    running,
+    identity: draftIdentity.current,
+  });
+  nextActionContext.current = {
+    activeTaskId,
+    draft,
+    attachments,
+    references,
+    running,
+    identity: draftIdentity.current,
+  };
+  useEffect(() => {
+    let cancelled = false;
+    setNextAction(undefined);
+    const load = () => {
+      const revision = ++nextActionRevision.current;
+      setNextAction(undefined);
+      if (!activeTaskId || isSubagent || !bridge.getNextActions) return;
+      void bridge
+        .getNextActions({ threadId: activeTaskId })
+        .then((actions) => {
+          if (!cancelled && revision === nextActionRevision.current) setNextAction(actions[0]);
+        })
+        .catch((error: unknown) => {
+          if (!cancelled && revision === nextActionRevision.current)
+            reportFailure(error, '没能读取下一步建议。');
+        });
+    };
+    load();
+    return () => {
+      cancelled = true;
+      ++nextActionRevision.current;
+    };
+  }, [activeTaskId, isSubagent, bridge, reportFailure, nextActionsRefresh]);
+  const actOnNextAction = useCallback(
+    async (action: 'accepted' | 'dismissed') => {
+      if (!nextAction || nextActionBusy || !bridge.actOnNextAction) return;
+      const before = nextActionContext.current;
+      const revision = nextActionRevision.current;
+      if (
+        before.activeTaskId !== nextAction.threadId ||
+        before.draft !== '' ||
+        before.attachments.length ||
+        before.references.length ||
+        before.running
+      )
+        return;
+      setNextActionBusy(true);
+      try {
+        const accepted = await bridge.actOnNextAction({
+          threadId: nextAction.threadId,
+          id: nextAction.id,
+          action,
+        });
+        const current = nextActionContext.current;
+        // The status event can invalidate the query during this request. The original
+        // draft identity and current content protect text typed while awaiting IPC.
+        if (
+          action === 'accepted' &&
+          current.activeTaskId === before.activeTaskId &&
+          current.identity === before.identity &&
+          current.draft === '' &&
+          !current.attachments.length &&
+          !current.references.length &&
+          !current.running
+        ) {
+          changeDraft(accepted.prompt);
+        }
+        setNextAction((previous) => (previous?.id === nextAction.id ? undefined : previous));
+      } catch (error) {
+        if (revision === nextActionRevision.current) reportFailure(error, '这条建议没能更新。');
+      } finally {
+        setNextActionBusy(false);
+      }
+    },
+    [nextAction, nextActionBusy, bridge, changeDraft, reportFailure],
+  );
   const composer = useMemo(
     () => ({
       onSend: () => void send(),
+      suggestion:
+        !isSubagent &&
+        active?.status === 'completed' &&
+        references.length === 0 &&
+        nextAction?.threadId === activeTaskId
+          ? nextAction
+          : undefined,
+      suggestionBusy: nextActionBusy,
+      onAcceptSuggestion: () => void actOnNextAction('accepted'),
+      onDismissSuggestion: () => void actOnNextAction('dismissed'),
       runState: (running ? 'running' : 'idle') as 'running' | 'idle',
       onInterrupt: () => {
         if (!interactionTaskId) return;
@@ -3406,6 +3517,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     }),
     [
       send,
+      nextAction,
+      nextActionBusy,
+      actOnNextAction,
+      isSubagent,
+      active?.status,
+      references.length,
       running,
       activeTaskId,
       interactionTaskId,

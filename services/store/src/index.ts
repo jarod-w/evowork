@@ -69,3 +69,5 @@ export {
   type FollowUpResult,
   type StoredFollowUp,
 } from './follow-up.js';
+
+export { NextActionStore, type NextAction, type NextActionState } from './next-actions.js';

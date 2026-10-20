@@ -943,3 +943,59 @@ describe('本地项目动作与固定任务目录', () => {
     expect(onWorkspaceChange).not.toHaveBeenCalled();
   });
 });
+
+describe('下一步建议只填草稿', () => {
+  const suggestion = { title: '验收页面', prompt: '检查刚部署的页面。' };
+  it('灰字不算输入，Enter 不采纳，Tab 只填入不发送', () => {
+    const accept = vi.fn();
+    const send = vi.fn();
+    renderComposer({ suggestion, onAcceptSuggestion: accept }, send);
+    const box = screen.getByLabelText('需求输入');
+    expect(box.getAttribute('placeholder')).toBe(suggestion.prompt);
+    expect((box as HTMLTextAreaElement).value).toBe('');
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(accept).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: 'Tab', shiftKey: true });
+    expect(accept).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: 'Tab' });
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+  it('点击填入和忽略各走明确回调，已有草稿永远保持', () => {
+    const accept = vi.fn();
+    const dismiss = vi.fn();
+    renderComposer({ suggestion, onAcceptSuggestion: accept, onDismissSuggestion: dismiss });
+    fireEvent.click(screen.getByRole('button', { name: '填入' }));
+    expect(accept).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '忽略' }));
+    expect(dismiss).toHaveBeenCalledOnce();
+    type('我正在编辑的需求');
+    expect(screen.queryByLabelText('下一步建议')).toBeNull();
+    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toBe(
+      '我正在编辑的需求',
+    );
+  });
+  it.each([
+    { runState: 'running' as const },
+    { runState: 'over-budget' as const },
+    { queued: [{ id: 'q', text: '先做这件事' }] },
+    {
+      attachments: [
+        {
+          id: 'a',
+          name: '资料',
+          kind: 'document' as const,
+          state: 'ready' as const,
+          sizeLabel: '1 KB',
+        },
+      ],
+    },
+  ])('运行、预算、队列和附件下隐藏建议：%j', (over) => {
+    renderComposer({ ...over, suggestion });
+    expect(screen.queryByLabelText('下一步建议')).toBeNull();
+    expect(screen.getByLabelText('需求输入').getAttribute('placeholder')).toBe(
+      COMPOSER_PLACEHOLDER,
+    );
+  });
+});

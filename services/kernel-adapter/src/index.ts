@@ -106,3 +106,5 @@ export type {
 } from './memory-import.js';
 
 export { MemoryImportRefusal } from './memory-import.js';
+
+export { createNextActions, type NextActions } from './next-actions.js';
