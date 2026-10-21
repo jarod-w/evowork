@@ -572,8 +572,8 @@ export function TaskListItem({
       <button type="button" className="ew-task-item-main" onClick={onClick}>
         {showStatus ? <StatusDot tone={tone} breathing={breathing} /> : null}
         {pinned ? (
-          <span className="ew-task-pin" aria-label="已置顶">
-            📌
+          <span className="ew-task-pin" role="img" aria-label="已置顶">
+            {renderIcon('pin')}
           </span>
         ) : null}
         <span className="ew-task-item-title">{title}</span>

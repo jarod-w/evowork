@@ -119,38 +119,95 @@ describe('项目悬浮信息卡', () => {
 });
 
 describe('分组结构（04 §3.1）', () => {
-  it('最近按活动时间降序排列，置顶保留图钉但不改变顺序', () => {
+  /*
+   * 和 ChatGPT 一致：置顶的任务进「置顶」区、从「最近」里拿掉，不在两处各出现一行。
+   * 置顶区按**置顶时间**倒序 —— 刚置顶的在最上 —— 不按最近活动排；
+   * 「最近」仍按活动时间倒序。置顶区里不再重复画图钉（组标题已经说明了）。
+   */
+  it('置顶任务只出现在「置顶」区并按置顶时间倒序，「最近」里不再出现', () => {
     renderSidebar({
       tasks: [
-        task({ id: 't2', title: '重要任务', sectionId: PINNED_SECTION, updatedAt: 100 }),
+        task({
+          id: 'old-pin',
+          title: '先置顶的',
+          sectionId: PINNED_SECTION,
+          updatedAt: 900,
+          pinnedAt: 1,
+        }),
+        task({
+          id: 'new-pin',
+          title: '后置顶的',
+          sectionId: PINNED_SECTION,
+          updatedAt: 100,
+          pinnedAt: 2,
+        }),
         task({ id: 't1', title: '普通任务', updatedAt: 200 }),
       ],
     });
+    const pinnedRegion = screen.getByRole('region', { name: '置顶' });
+    expect(
+      within(pinnedRegion)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('后置顶的'), expect.stringContaining('先置顶的')]);
     const recent = screen.getByRole('region', { name: '最近' });
     expect(
       within(recent)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
-    ).toEqual([expect.stringContaining('普通任务'), expect.stringContaining('重要任务')]);
-    expect(screen.getByLabelText('已置顶')).toBeTruthy();
+    ).toEqual([expect.stringContaining('普通任务')]);
+    expect(within(pinnedRegion).queryByLabelText('已置顶')).toBeNull();
   });
 
-  it('不同分区统一按活动时间排序，不在最近列表内插入分区标题', () => {
+  it('没有置顶任务时不渲染「置顶」区', () => {
+    renderSidebar({ tasks: [task({ id: 't1' })] });
+    expect(screen.queryByRole('region', { name: '置顶' })).toBeNull();
+  });
+
+  it('其他用户分区统一并入「最近」按活动时间排序，不在最近列表内插入分区标题', () => {
     renderSidebar({
       sections: [{ id: 'weekly', name: '周报' }],
       tasks: [
         task({ id: 't1', sectionId: 'ungrouped', updatedAt: 300 }),
         task({ id: 't2', sectionId: 'weekly', updatedAt: 100 }),
-        task({ id: 't3', sectionId: PINNED_SECTION, updatedAt: 200 }),
+        task({ id: 't3', sectionId: PINNED_SECTION, updatedAt: 200, pinnedAt: 5 }),
       ],
     });
     const names = [...document.querySelectorAll('.ew-task-group-name')].map((n) => n.textContent);
     expect(names).toEqual([]);
     expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      expect.stringContaining('任务 t1'),
       expect.stringContaining('任务 t3'),
+      expect.stringContaining('任务 t1'),
       expect.stringContaining('任务 t2'),
     ]);
+  });
+
+  it('搜索对置顶区同样生效；置顶的任务在项目组里照常出现并带图钉', () => {
+    renderSidebar({
+      projects: [{ id: 'p', name: '项目一' }],
+      tasks: [
+        task({
+          id: 'a',
+          title: '周报草稿',
+          sectionId: PINNED_SECTION,
+          pinnedAt: 1,
+          projectId: 'p',
+        }),
+        task({ id: 'b', title: '季度汇报', sectionId: PINNED_SECTION, pinnedAt: 2 }),
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: '项目一' }));
+    const project = document.querySelector('.ew-sidebar-project-task-list') as HTMLElement;
+    expect(within(project).getByLabelText('已置顶')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('打开搜索框'));
+    fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '季度' } });
+    const pinnedRegion = screen.getByRole('region', { name: '置顶' });
+    expect(
+      within(pinnedRegion)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('季度汇报')]);
   });
 
   it('**子任务不出现在顶层列表**（04 §3.2）', () => {
@@ -312,11 +369,37 @@ describe('可见页上报（04 §3.4 第②步）', () => {
 });
 
 describe('行操作（04 §3.3）', () => {
-  it('只显示已经接通的动作：改名、分享、归档、删除', () => {
+  it('只显示已经接通的动作：改名、分享、置顶、归档、删除', () => {
     const items = rowMenuItems(task({ id: 't1' }));
-    expect(items.map((item) => item.id)).toEqual(['rename', 'share', 'archive', 'delete']);
+    expect(items.map((item) => item.id)).toEqual(['rename', 'share', 'pin', 'archive', 'delete']);
     // 分享带省略号：它是**过一次授权流的入口**，不是点了就传（Q10 规则 1）
     expect(items.find((item) => item.id === 'share')?.label).toBe('分享…');
+    expect(items.find((item) => item.id === 'pin')?.label).toBe('置顶');
+  });
+
+  it('置顶是一个切换：已置顶的任务同一位置显示「取消置顶」', () => {
+    const items = rowMenuItems(task({ id: 't1', sectionId: PINNED_SECTION, pinnedAt: 1 }));
+    expect(items.map((item) => item.id)).toEqual(['rename', 'share', 'unpin', 'archive', 'delete']);
+    expect(items.find((item) => item.id === 'unpin')?.label).toBe('取消置顶');
+  });
+
+  it('从菜单点「置顶」/「取消置顶」把对应动作连同任务 id 往上传', () => {
+    const onRowAction = vi.fn();
+    renderSidebar({
+      tasks: [
+        task({ id: 'plain', title: '普通任务' }),
+        task({ id: 'top', title: '置顶任务', sectionId: PINNED_SECTION, pinnedAt: 1 }),
+      ],
+      onRowAction,
+    });
+
+    fireEvent.click(screen.getByLabelText('普通任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶' }));
+    expect(onRowAction).toHaveBeenLastCalledWith('pin', 'plain');
+
+    fireEvent.click(screen.getByLabelText('置顶任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消置顶' }));
+    expect(onRowAction).toHaveBeenLastCalledWith('unpin', 'top');
   });
 
   /*

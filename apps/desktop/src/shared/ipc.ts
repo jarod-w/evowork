@@ -21,7 +21,13 @@ export interface TaskRowView {
   readonly timeLabel: string;
   /** 最近活动时间（毫秒）。侧栏时间范围筛选必须读真实时间，不能解析展示文案。 */
   readonly updatedAt: number;
+  /**
+   * 分区。内核的内置 Pinned 分区在主进程归一成字面量 `'pinned'`（侧栏只认这个词），
+   * 没有分区是 `'ungrouped'`；其余用户分区原样透传 id。
+   */
   readonly sectionId: string;
+  /** 置顶时间（毫秒）。置顶区按它倒序 —— 最近置顶的在最上，和 ChatGPT 一致。未置顶为空 */
+  readonly pinnedAt?: number | undefined;
   readonly parentThreadId?: string | null | undefined;
   readonly hasArtifacts?: boolean | undefined;
   readonly source?: 'manual' | 'automation' | 'cli' | undefined;
@@ -123,6 +129,9 @@ export type RendererEvent =
       readonly taskId: string;
       readonly status?: TaskStatusView;
       readonly title?: string | null;
+      /** 置顶 / 取消置顶：两个字段一起来（`'pinned'` + 时间，或 `'ungrouped'` + null） */
+      readonly sectionId?: string;
+      readonly pinnedAt?: number | null;
     }
   | { readonly type: 'item'; readonly taskId: string; readonly item: RenderItemView }
   | {

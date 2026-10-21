@@ -1414,6 +1414,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                     ...t,
                     ...(event.status ? { status: event.status } : {}),
                     ...(event.title !== undefined ? { title: event.title } : {}),
+                    ...(event.sectionId !== undefined ? { sectionId: event.sectionId } : {}),
+                    ...(event.pinnedAt !== undefined
+                      ? { pinnedAt: event.pinnedAt ?? undefined }
+                      : {}),
                   }
                 : t,
             ),
@@ -3763,6 +3767,33 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
              */
             if (action === 'share') {
               openThreadShare(id);
+              return;
+            }
+            /*
+             * 置顶 / 取消置顶也不能走「做完就移除」那条路：任务还在，只是换了分组。
+             * 先把分组改在本地（ChatGPT 的置顶是即时的，等往返会像"没点上"），
+             * 请求成功后主进程会推一条带 `sectionId` / `pinnedAt` 的 `task-updated`
+             * 把本机时间对齐；失败就把这一行改回去，并报错 —— 不留下一个
+             * 看着置顶了、重启又掉回去的假状态。
+             */
+            if (action === 'pin' || action === 'unpin') {
+              const pinned = action === 'pin';
+              let previousRow: TaskRowView | undefined;
+              setTasks((previous) =>
+                previous.map((task) => {
+                  if (task.id !== id) return task;
+                  previousRow = task;
+                  return pinned
+                    ? { ...task, sectionId: 'pinned', pinnedAt: Date.now() }
+                    : { ...task, sectionId: 'ungrouped', pinnedAt: undefined };
+                }),
+              );
+              void bridge.rowAction({ action, threadId: id }).catch((error: unknown) => {
+                setTasks((previous) =>
+                  previous.map((task) => (task.id === id && previousRow ? previousRow : task)),
+                );
+                reportFailure(error, pinned ? '没能置顶这个任务。' : '没能取消置顶。');
+              });
               return;
             }
             void bridge

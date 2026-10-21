@@ -82,7 +82,12 @@ import {
   type ThreadLite,
 } from '@evowork/projects';
 import type { Logger } from '@evowork/logging';
-import type { ThreadItem, Turn, UserInput } from '@evowork/protocol';
+import {
+  PINNED_THREAD_SECTION_ID,
+  type ThreadItem,
+  type Turn,
+  type UserInput,
+} from '@evowork/protocol';
 import { nextFire } from '@evowork/scheduler/cron.js';
 import {
   FollowUpStore,
@@ -408,6 +413,18 @@ export function displayTitle(row: ProjectionRow | null | undefined): string | nu
   return row.title ?? titleFromText(row.first_message ?? '') ?? null;
 }
 
+/**
+ * 内核的分区 id → 侧栏认的词。
+ *
+ * 内置 Pinned 分区是一个固定 UUID（`PINNED_THREAD_SECTION_ID`），而侧栏比较的是字面量
+ * `'pinned'`。以前这里把 UUID 原样透出去，于是「置顶」图标永远不会出现 —— 比较两边
+ * 根本不是同一个词。归一只做在这一处，渲染层不需要知道那个 UUID。
+ */
+export function toSectionView(sectionId: string | null): string {
+  if (sectionId === null) return 'ungrouped';
+  return sectionId === PINNED_THREAD_SECTION_ID ? 'pinned' : sectionId;
+}
+
 export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
   return {
     id: row.thread_id,
@@ -415,7 +432,10 @@ export function toTaskRow(row: ProjectionRow, now: number): TaskRowView {
     status: row.derived_status,
     timeLabel: timeLabel(row.recency_at ?? row.updated_at, now),
     updatedAt: row.recency_at ?? row.updated_at ?? row.created_at ?? 0,
-    sectionId: row.section_id ?? 'ungrouped',
+    sectionId: toSectionView(row.section_id),
+    ...(row.section_id === PINNED_THREAD_SECTION_ID && row.section_entered_at !== null
+      ? { pinnedAt: row.section_entered_at }
+      : {}),
     parentThreadId: row.parent_thread_id,
     hasArtifacts: row.artifact_count > 0,
     source: row.automation_id ? 'automation' : 'manual',
@@ -913,6 +933,15 @@ export function createEventTranslator(store: Store, now: () => number) {
         const title = event.title ?? displayTitle(store.threads.get(event.threadId) ?? null);
         return [{ type: 'task-updated', taskId: event.threadId, title }];
       }
+      case 'task-pinned':
+        return [
+          {
+            type: 'task-updated',
+            taskId: event.threadId,
+            sectionId: event.pinned ? 'pinned' : 'ungrouped',
+            pinnedAt: event.pinnedAt,
+          },
+        ];
       case 'item-started': {
         const normalized = normalizeThreadItem(event.item, event.turnId);
         const wireId = event.item.id;
@@ -2266,6 +2295,10 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async rowAction(input: RowActionInput): Promise<void> {
       if (input.action === 'archive') {
         await adapter.archiveTask(input.threadId);
+        return;
+      }
+      if (input.action === 'pin' || input.action === 'unpin') {
+        await adapter.setTaskPinned(input.threadId, input.action === 'pin');
         return;
       }
       if (input.action === 'delete') {

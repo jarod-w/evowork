@@ -1101,6 +1101,126 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(screen.getByText('待删除任务')).toBeTruthy();
   });
 
+  /*
+   * 置顶**不是**「做完就从列表里拿掉」那一类行操作（归档 / 删除才是）。
+   * 任务还在，只是换了分组：即时进「置顶」区（ChatGPT 的置顶没有往返等待），
+   * 失败时改回去并说原因 —— 不留下一个看着置顶了、重启又掉回去的假状态。
+   */
+  it('侧栏「置顶」即时把任务移进置顶区并走权威链路；「取消置顶」把它放回「最近」', async () => {
+    const rowAction = vi.fn(async () => undefined);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 'pin-me',
+            title: '要置顶的任务',
+            status: 'completed',
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      rowAction,
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText('要置顶的任务');
+    expect(screen.queryByRole('region', { name: '置顶' })).toBeNull();
+    fireEvent.click(screen.getByLabelText('要置顶的任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶' }));
+
+    await waitFor(() =>
+      expect(rowAction).toHaveBeenCalledWith({ action: 'pin', threadId: 'pin-me' }),
+    );
+    const pinnedRegion = await screen.findByRole('region', { name: '置顶' });
+    expect(within(pinnedRegion).getByText('要置顶的任务')).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: '最近' })).queryByText('要置顶的任务'),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('要置顶的任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消置顶' }));
+    await waitFor(() =>
+      expect(rowAction).toHaveBeenLastCalledWith({ action: 'unpin', threadId: 'pin-me' }),
+    );
+    await waitFor(() => expect(screen.queryByRole('region', { name: '置顶' })).toBeNull());
+    expect(
+      within(screen.getByRole('region', { name: '最近' })).getByText('要置顶的任务'),
+    ).toBeTruthy();
+  });
+
+  it('主进程推来的 task-updated 带分组与置顶时间时，任务按它换组（不只认状态与标题）', async () => {
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 'remote-pin',
+            title: '别处置顶的任务',
+            status: 'completed',
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+    });
+    render(<App bridge={bridge} />);
+    await screen.findByText('别处置顶的任务');
+
+    act(() =>
+      emit.ui?.({ type: 'task-updated', taskId: 'remote-pin', sectionId: 'pinned', pinnedAt: 9 }),
+    );
+    expect(
+      within(await screen.findByRole('region', { name: '置顶' })).getByText('别处置顶的任务'),
+    ).toBeTruthy();
+
+    act(() =>
+      emit.ui?.({
+        type: 'task-updated',
+        taskId: 'remote-pin',
+        sectionId: 'ungrouped',
+        pinnedAt: null,
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole('region', { name: '置顶' })).toBeNull());
+  });
+
+  it('置顶失败时任务回到「最近」，并把原因说出来', async () => {
+    const rowAction = vi.fn(async () => {
+      throw new Error('内核拒绝移动分区。');
+    });
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 'pin-me',
+            title: '要置顶的任务',
+            status: 'completed' as const,
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+          },
+        ],
+      }),
+      rowAction,
+    });
+    render(<App bridge={bridge} />);
+
+    await screen.findByText('要置顶的任务');
+    fireEvent.click(screen.getByLabelText('要置顶的任务 的更多操作'));
+    fireEvent.click(screen.getByRole('menuitem', { name: '置顶' }));
+
+    expect(await screen.findByText('内核拒绝移动分区。')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('region', { name: '置顶' })).toBeNull());
+    expect(
+      within(screen.getByRole('region', { name: '最近' })).getByText('要置顶的任务'),
+    ).toBeTruthy();
+  });
+
   it('任务删除后，迟到的电脑操控历史与 Item 事件不会重建留存内容', async () => {
     let resolveHistory:
       | ((value: { items: readonly { id: string; type: string; text: string }[] }) => void)

@@ -2700,6 +2700,19 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   text-align: left;
   cursor: pointer;
 }
+.ew-task-pin {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-tertiary);
+}
+.ew-task-pin .ew-icon {
+  width: var(--layout-icon-size-sm);
+  height: var(--layout-icon-size-sm);
+}
+.ew-sidebar-pinned {
+  display: flex;
+  flex-direction: column;
+}
 .ew-task-item-title {
   flex: 1;
   min-width: 0;
