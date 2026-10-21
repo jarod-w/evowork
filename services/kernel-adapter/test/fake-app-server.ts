@@ -280,6 +280,24 @@ export class FakeAppServer {
     }));
     this.handlers.set('thread/goal/clear', () => ({}));
     /*
+     * `thread/section/move` 的 `sectionId` 带 `deserialize_with = "Option::deserialize"`
+     * （`v2/thread.rs:1079`）：**键必须在**，值可以是 null（= 移出分区）。漏发这个键
+     * 不是"内核当成 null"，是整个请求 -32600。内核成功后只回 `{}`，**不发任何通知**。
+     */
+    this.handlers.set('thread/section/move', (ctx) => {
+      if (typeof ctx.params.threadId !== 'string') {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: missing threadId');
+      }
+      if (!('sectionId' in ctx.params)) {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: missing sectionId');
+      }
+      const sectionId = ctx.params.sectionId;
+      if (sectionId !== null && typeof sectionId !== 'string') {
+        throw new FakeRpcError(ERROR_CODE.invalidRequest, 'Invalid request: bad sectionId');
+      }
+      return {};
+    });
+    /*
      * `thread/name/set` 照抄内核的**两个**行为，因为它们各自都藏过一个缺陷：
      *
      *   ① 空名字回 invalid_request（`thread_processor.rs:1788` 的 `normalize_thread_name`）；

@@ -40,6 +40,17 @@ export type UiEvent =
       readonly status: DerivedStatus;
     }
   | { readonly type: 'task-renamed'; readonly threadId: string; readonly title: string | null }
+  /**
+   * 置顶 / 取消置顶。内核**没有**对应通知（`thread/section/move` 只回 `{}`），所以这条
+   * 事件由适配层在请求成功后自己发，不走 `createEventRouter` 的通知表。
+   */
+  | {
+      readonly type: 'task-pinned';
+      readonly threadId: string;
+      readonly pinned: boolean;
+      /** 本机写进投影的置顶时间（毫秒）；取消置顶时为 null */
+      readonly pinnedAt: number | null;
+    }
   | { readonly type: 'task-removed'; readonly threadId: string }
   | {
       readonly type: 'turn-started';
