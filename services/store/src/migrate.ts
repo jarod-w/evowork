@@ -123,6 +123,14 @@ export const PROJECTION_MIGRATIONS: readonly Migration[] = [
       );
     },
   },
+  {
+    version: 6,
+    summary: '加 thread_projection.section_entered_at（置顶区按置顶时间排序）',
+    up: (db) => {
+      if (hasColumn(db, 'thread_projection', 'section_entered_at')) return;
+      db.exec('ALTER TABLE thread_projection ADD COLUMN section_entered_at INTEGER');
+    },
+  },
 ];
 
 /**
