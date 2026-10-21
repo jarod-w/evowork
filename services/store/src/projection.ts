@@ -59,6 +59,8 @@ export interface ProjectionRow {
   cwd: string | null;
   project_id: string | null;
   section_id: string | null;
+  /** 进入当前分区的时间（毫秒）。`section_id` 为 NULL 时它也是 NULL */
+  section_entered_at: number | null;
   derived_status: DerivedStatus;
   last_turn_status: TurnStatus | null;
   last_turn_id: string | null;
@@ -127,6 +129,7 @@ const COLUMNS = [
   'cwd',
   'project_id',
   'section_id',
+  'section_entered_at',
   'derived_status',
   'last_turn_status',
   'last_turn_id',
@@ -190,10 +193,11 @@ export class ThreadProjection {
     this.db
       .prepare(
         `INSERT INTO thread_projection (
-           thread_id, title, cwd, project_id, section_id, derived_status, last_turn_status,
-           last_turn_id, scenario_id, mode_id, permission_id, model, automation_id,
-           budget_limit, first_message, parent_thread_id, created_at, updated_at, recency_at
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           thread_id, title, cwd, project_id, section_id, section_entered_at, derived_status,
+           last_turn_status, last_turn_id, scenario_id, mode_id, permission_id, model,
+           automation_id, budget_limit, first_message, parent_thread_id, created_at, updated_at,
+           recency_at
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(thread_id) DO UPDATE SET
            -- 内核 thread/started 在命名之前发出，name 是 null。
            -- 用它覆盖会把已经起好的标题抹掉，重启走 thread/list 又回来。
@@ -201,6 +205,7 @@ export class ThreadProjection {
            cwd = excluded.cwd,
            project_id = excluded.project_id,
            section_id = excluded.section_id,
+           section_entered_at = excluded.section_entered_at,
            derived_status = excluded.derived_status,
            last_turn_status = excluded.last_turn_status,
            last_turn_id = excluded.last_turn_id,
@@ -222,6 +227,7 @@ export class ThreadProjection {
         thread.cwd,
         thread.projectId ?? null,
         thread.section?.id ?? null,
+        thread.section ? toMs(thread.sectionEnteredAt) : null,
         derived,
         lastTurnStatus,
         lastTurnId,
@@ -380,6 +386,29 @@ export class ThreadProjection {
       token_cached: total.cachedInputTokens ?? 0,
       updated_at: now,
     });
+  }
+
+  /**
+   * `thread/section/move` 成功之后立刻写下分区。内核**不发**分区变更通知
+   * （`v2` 没有 `thread/section/updated` 一类的方法），所以这里不像标题那样
+   * 有事件路由来兜底 —— 不写的话置顶要等下一次 `thread/list` 对账才出现。
+   *
+   * 进入时间由调用方给：内核那边记的是它自己的 `Utc::now()`，与本机时钟可能有
+   * 毫秒级差异，但下次对账会用内核的值覆盖，这里只是让界面立刻排对。
+   *
+   * **不动 `updated_at` / `recency_at`**：置顶不是对任务的一次活动，「最近」的
+   * 时间顺序不该因为它变（ChatGPT 的置顶同样不改最近列表的顺序）。
+   *
+   * 返回是否真的写进去了（投影行不存在时 `UPDATE` 影响 0 行却不报错）。
+   */
+  setSection(threadId: string, sectionId: string | null, now = Date.now()): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE thread_projection SET section_id = ?, section_entered_at = ? WHERE thread_id = ?`,
+      )
+      .run(sectionId, sectionId === null ? null : now, threadId) as
+      { changes?: number } | undefined;
+    return (result?.changes ?? 0) > 0;
   }
 
   setArchived(threadId: string, archived: boolean, now = Date.now()): DerivedStatus {

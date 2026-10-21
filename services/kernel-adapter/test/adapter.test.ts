@@ -5,7 +5,12 @@
  * 发一条消息真的会先 `thread/start` 再 `turn/start`、筛选真的走投影表而不是全量拉、
  * 实验方法不可用时真的走了兜底、审批真的在 start 之前就有人接。
  */
-import { ERROR_CODE, EXPERIMENTAL_METHOD, JsonRpcCallError } from '@evowork/protocol';
+import {
+  ERROR_CODE,
+  EXPERIMENTAL_METHOD,
+  JsonRpcCallError,
+  PINNED_THREAD_SECTION_ID,
+} from '@evowork/protocol';
 import { createLogger, memorySink } from '@evowork/logging';
 import { FollowUpStore, openStore, type Store } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -2345,6 +2350,79 @@ describe('真实删除只通过内核，失败不移除投影', () => {
     await adapter.deleteTask('delete-test');
     expect(store.threads.get('delete-test')).toBeUndefined();
     expect(ui).toContainEqual({ type: 'task-removed', threadId: 'delete-test' });
+  });
+});
+
+describe('置顶（04 §3.1：内核内置 Pinned 分区）', () => {
+  it('置顶 = thread/section/move 到内置分区；成功后写投影、发 task-pinned，不改「最近」时间戳', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'pin-me', updatedAt: 1_700_000_000 }));
+    const before = store.threads.get('pin-me');
+
+    await adapter.setTaskPinned('pin-me', true);
+
+    const call = server.received.find((r) => r.method === 'thread/section/move');
+    expect(call?.params).toEqual({ threadId: 'pin-me', sectionId: PINNED_THREAD_SECTION_ID });
+    const row = store.threads.get('pin-me');
+    expect(row?.section_id).toBe(PINNED_THREAD_SECTION_ID);
+    expect(row?.section_entered_at).toEqual(expect.any(Number));
+    expect(row?.updated_at).toBe(before?.updated_at);
+    expect(row?.recency_at).toBe(before?.recency_at);
+    expect(ui).toContainEqual({
+      type: 'task-pinned',
+      threadId: 'pin-me',
+      pinned: true,
+      pinnedAt: row?.section_entered_at,
+    });
+  });
+
+  it('取消置顶发 `sectionId: null`（键必须在场），投影里分区与置顶时间都清空', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'unpin-me' }));
+    await adapter.setTaskPinned('unpin-me', true);
+    ui.length = 0;
+
+    await adapter.setTaskPinned('unpin-me', false);
+
+    const calls = server.received.filter((r) => r.method === 'thread/section/move');
+    expect(calls.at(-1)?.params).toEqual({ threadId: 'unpin-me', sectionId: null });
+    // 假内核照抄 `deserialize_with = "Option::deserialize"`：键不在就 -32600。
+    // 这里 toEqual 对 `{ sectionId: undefined }` 也会通过，所以再单独断一次键在场
+    expect(Object.hasOwn(calls.at(-1)?.params ?? {}, 'sectionId')).toBe(true);
+    const row = store.threads.get('unpin-me');
+    expect(row?.section_id).toBeNull();
+    expect(row?.section_entered_at).toBeNull();
+    expect(ui).toContainEqual({
+      type: 'task-pinned',
+      threadId: 'unpin-me',
+      pinned: false,
+      pinnedAt: null,
+    });
+  });
+
+  it('内核拒绝时错误原样抛出，投影不动、不发事件（成功才是事实）', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'refused' }));
+    server.handlers.set('thread/section/move', () => {
+      throw new FakeRpcError(ERROR_CODE.invalidRequest, 'section not found');
+    });
+
+    await expect(adapter.setTaskPinned('refused', true)).rejects.toBeInstanceOf(JsonRpcCallError);
+
+    expect(store.threads.get('refused')?.section_id).toBeNull();
+    expect(ui.some((e) => e.type === 'task-pinned')).toBe(false);
+  });
+
+  it('旁聊不能置顶：不发协议调用', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'source' }));
+    server.handlers.set('thread/fork', () => ({
+      thread: makeThread({ id: 'side-chat', ephemeral: true, turns: [] }),
+    }));
+    const threadId = await adapter.forkTask('source', undefined, true);
+
+    await expect(adapter.setTaskPinned(threadId, true)).rejects.toThrow('旁聊不能置顶');
+    expect(server.received.some((r) => r.method === 'thread/section/move')).toBe(false);
   });
 });
 

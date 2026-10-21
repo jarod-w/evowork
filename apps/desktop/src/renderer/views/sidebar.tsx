@@ -53,8 +53,13 @@ export interface TaskRow {
   readonly timeLabel: string;
   /** 最近活动时间（毫秒）；筛选只读这个事实字段，不反向解析 `timeLabel`。 */
   readonly updatedAt: number;
-  /** `threadSection` 的 id。内置 pinned 分区即置顶（总纲 §6.1，不额外做 is_pinned） */
+  /**
+   * 分区。`'pinned'` = 置顶（总纲 §6.1，不额外做 is_pinned）。内核那边是一个固定 UUID，
+   * 主进程在 `toSectionView` 归一成这个词 —— 这里**不**认识那个 UUID。
+   */
   readonly sectionId: string;
+  /** 置顶时间（毫秒）。置顶区按它倒序：刚置顶的在最上，和 ChatGPT 一致 */
+  readonly pinnedAt?: number | undefined;
   /** 非空 = 子任务，**不进顶层列表**（04 §3.2） */
   readonly parentThreadId?: string | null | undefined;
   readonly hasArtifacts?: boolean | undefined;
@@ -287,7 +292,9 @@ export function Sidebar(props: SidebarProps) {
     Readonly<Record<string, number>>
   >({});
   const projectsListId = useId();
+  const pinnedListId = useId();
   const recentListId = useId();
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const pageSize = props.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -323,6 +330,29 @@ export function Sidebar(props: SidebarProps) {
       return true;
     });
   }, [topLevel, search, filter]);
+
+  /*
+   * 置顶区与「最近」是两个互斥的组（和 ChatGPT 一致）：置顶的任务只出现在置顶区，
+   * 不再在「最近」里重复一行；置顶区按**置顶时间**倒序 —— 刚置顶的在最上 —— 而不是
+   * 按最近活动排，否则一条老任务置顶后会沉在置顶区底部，用户会以为没点上。
+   * 搜索与筛选对两个组同样生效；置顶区不分页（它是用户手挑的一小撮）。
+   */
+  const pinned = useMemo(
+    () =>
+      matched
+        .filter((task) => task.sectionId === PINNED_SECTION)
+        .sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0) || b.updatedAt - a.updatedAt),
+    [matched],
+  );
+  const recent = useMemo(
+    () => matched.filter((task) => task.sectionId !== PINNED_SECTION),
+    [matched],
+  );
+  // 「最近 (x / y)」里的 y：未筛选时「最近」一共有多少条（不含置顶）
+  const recentTotal = useMemo(
+    () => topLevel.filter((task) => task.sectionId !== PINNED_SECTION).length,
+    [topLevel],
+  );
 
   useEffect(() => setVisibleCount(pageSize), [pageSize, search, filter]);
   const projectGroups = useMemo(() => {
@@ -368,16 +398,17 @@ export function Sidebar(props: SidebarProps) {
         };
       });
   }, [matched, topLevel, props.projects, expandedProjects, projectVisibleCounts, pinnedProjects]);
-  const visible = useMemo(() => matched.slice(0, visibleCount), [matched, visibleCount]);
+  const visible = useMemo(() => recent.slice(0, visibleCount), [recent, visibleCount]);
   const displayed = useMemo(
     () => [
       ...(projectsCollapsed ? [] : projectGroups.flatMap((group) => group.tasks)),
+      ...pinned,
       ...(collapsed ? [] : visible),
     ],
-    [projectGroups, visible, projectsCollapsed, collapsed],
+    [projectGroups, pinned, visible, projectsCollapsed, collapsed],
   );
 
-  // 只报侧栏真实挂载的行：展开项目的已加载页 +「最近」的可见页，重复 id 只读一次。
+  // 只报侧栏真实挂载的行：展开项目的已加载页 + 置顶区 +「最近」的可见页，重复 id 只读一次。
   // 把这里改成 matched 会在"筛出 800 条"时打爆内核。
   const onVisibleChange = props.onVisibleChange;
   useEffect(() => {
@@ -474,9 +505,9 @@ export function Sidebar(props: SidebarProps) {
           if (
             node.scrollHeight - node.scrollTop - node.clientHeight <= 1 &&
             !collapsed &&
-            visibleCount < matched.length
+            visibleCount < recent.length
           ) {
-            setVisibleCount((count) => Math.min(count + pageSize, matched.length));
+            setVisibleCount((count) => Math.min(count + pageSize, recent.length));
           }
         }}
       >
@@ -626,13 +657,52 @@ export function Sidebar(props: SidebarProps) {
           </div>
         </section>
 
+        {pinned.length > 0 ? (
+          <section className="ew-sidebar-pinned" aria-label="置顶">
+            <SidebarSectionHeader
+              label="置顶"
+              collapsed={pinnedCollapsed}
+              controlsId={pinnedListId}
+              onToggle={() => {
+                setPinnedCollapsed((value) => !value);
+                setMenuFor(null);
+              }}
+            />
+            <div id={pinnedListId} hidden={pinnedCollapsed}>
+              {pinnedCollapsed ? null : (
+                <ul className="ew-task-list">
+                  {pinned.map((task) => (
+                    <li key={task.id}>
+                      <TaskRowEntry
+                        task={task}
+                        selected={task.id === props.selectedId}
+                        menuOpen={menuFor === `pinned:${task.id}`}
+                        onSelect={props.onSelect}
+                        onMenuToggle={() => {
+                          const key = `pinned:${task.id}`;
+                          setMenuFor(key === menuFor ? null : key);
+                        }}
+                        onMenuClose={closeMenu}
+                        onDelete={setConfirmDelete}
+                        onRename={startRename}
+                        onAction={props.onRowAction}
+                        showPin={false}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        ) : null}
+
         <section className="ew-sidebar-recent" aria-label="最近">
           <SidebarSectionHeader
             label="最近"
-            count={topLevel.length}
+            count={recentTotal}
             showCount={false}
             controlsId={recentListId}
-            {...(filtering ? { filteredCount: matched.length } : {})}
+            {...(filtering ? { filteredCount: recent.length } : {})}
             collapsed={collapsed}
             onToggle={() => {
               setCollapsed((value) => !value);
@@ -678,9 +748,9 @@ export function Sidebar(props: SidebarProps) {
                   </p>
                 ) : null}
 
-                {matched.length > visible.length ? (
+                {recent.length > visible.length ? (
                   <p className="ew-task-list-more">
-                    还有 {matched.length - visible.length} 条，向下滚动继续加载
+                    还有 {recent.length - visible.length} 条，向下滚动继续加载
                   </p>
                 ) : null}
               </div>
@@ -931,10 +1001,13 @@ function TaskRowEntry({
   onDelete,
   onRename,
   onAction,
+  showPin = true,
 }: {
   readonly task: TaskRow;
   readonly selected: boolean;
   readonly menuOpen: boolean;
+  /** 置顶区里的行不再重复画图钉（组标题已经说明了），项目组里的行要画 */
+  readonly showPin?: boolean | undefined;
   readonly onSelect?: ((id: string) => void) | undefined;
   readonly onMenuToggle: () => void;
   readonly onMenuClose: () => void;
@@ -956,7 +1029,7 @@ function TaskRowEntry({
           task.status === 'failed' ||
           task.status === 'interrupted'
         }
-        pinned={task.sectionId === PINNED_SECTION}
+        pinned={showPin && task.sectionId === PINNED_SECTION}
         selected={selected}
         onClick={() => onSelect?.(task.id)}
         onMore={onMenuToggle}
@@ -984,7 +1057,8 @@ function TaskRowEntry({
 }
 
 /** 04 §3.3 的行操作菜单。分享标注"需要授权"，与"复制链接"（不上传）区分开。 */
-export function rowMenuItems(_task: TaskRow): readonly MenuItemSpec[] {
+export function rowMenuItems(task: TaskRow): readonly MenuItemSpec[] {
+  const isPinned = task.sectionId === PINNED_SECTION;
   return [
     /*
      * 改名排在第一个，因为标题现在是**自动**来的：先从第一条消息截，再被产物的
@@ -999,6 +1073,13 @@ export function rowMenuItems(_task: TaskRow): readonly MenuItemSpec[] {
      * "分享一段对话"，想不到里面还有工作空间路径与命令输出。
      */
     { id: 'share', label: '分享…', group: 'a' },
+    /*
+     * 置顶是一个**切换**：同一个位置按当前状态显示「置顶」或「取消置顶」（ChatGPT 的
+     * Pin / Unpin 就是这样），而不是两个常驻项。用户只需要在一个地方找它。
+     */
+    isPinned
+      ? { id: 'unpin', label: '取消置顶', group: 'a' }
+      : { id: 'pin', label: '置顶', group: 'a' },
     { id: 'archive', label: '归档', group: 'a' },
     { id: 'delete', label: '删除', danger: true, group: 'a' },
   ];

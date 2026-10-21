@@ -33,6 +33,7 @@ import {
   JsonRpcCallError,
   TransportClosedError,
   METHOD,
+  PINNED_THREAD_SECTION_ID,
   fileChangeKind,
   fileChangeMovePath,
   type FileUpdateChange,
@@ -56,6 +57,7 @@ import {
   type ThreadReadResponse,
   type ThreadResumeResponse,
   type ThreadSearchOccurrence,
+  type ThreadSectionMoveParams,
   type ThreadStartResponse,
   type Turn,
   type TurnStartResponse,
@@ -1862,6 +1864,37 @@ export function createAdapter(options: AdapterOptions) {
       }
       session.openThreads.add(response.thread.id);
       return response.thread.id;
+    },
+
+    /**
+     * 置顶 / 取消置顶（04 §3.3）= 把任务移进 / 移出内核内置的 pinned 分区。
+     *
+     * **写内核而不是写投影表**：分区的真源是内核（`Thread.section`），投影表只是缓存。
+     * 但内核**没有**分区变更的通知可以等，所以成功之后要立刻把投影补上，否则
+     * 刷新前侧栏看不到变化、重启后又出现 —— 同一个任务时隐时现。
+     *
+     * 旁聊（ephemeral）不落内核也不落投影，没有可置顶的东西，直接拒绝：
+     * 让它"看起来成功"的话，用户重开应用会发现那条根本不存在。
+     *
+     * 失败原样抛出：调用方要据此把乐观更新改回去。
+     */
+    async setTaskPinned(threadId: string, pinned: boolean): Promise<void> {
+      if (ephemeralThreads.has(threadId)) throw new Error('旁聊不能置顶');
+      const params: ThreadSectionMoveParams = {
+        threadId,
+        sectionId: pinned ? PINNED_THREAD_SECTION_ID : null,
+      };
+      await session.peer.request(METHOD.threadSectionMove, params);
+      const at = now();
+      if (!store.threads.setSection(threadId, params.sectionId, at)) {
+        logger?.warn('adapter.set_task_pinned.no_row', { threadId });
+      }
+      options.onUiEvent?.({
+        type: 'task-pinned',
+        threadId,
+        pinned,
+        pinnedAt: pinned ? at : null,
+      });
     },
 
     async archiveTask(threadId: string): Promise<void> {

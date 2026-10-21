@@ -106,6 +106,8 @@ export const TABLES: readonly TableSpec[] = [
          cwd              TEXT,
          project_id       TEXT,
          section_id       TEXT,
+         -- 进入当前分区的时间（毫秒）。置顶区按它倒序：最近置顶的排最前
+         section_entered_at INTEGER,
          -- 以下是内核给不了的部分（F7/F8/F9）
          derived_status   TEXT NOT NULL,
          last_turn_status TEXT,

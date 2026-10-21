@@ -88,6 +88,25 @@ export interface ThreadSection {
   readonly kind?: string;
 }
 
+/**
+ * 内核内置的「置顶」分区（`state/src/lib.rs` 的 `PINNED_THREAD_SECTION_ID`，
+ * 由 `state/migrations/0045_threads_section.sql` 种进每个库）。
+ *
+ * 它是一个**固定** UUID，不是按名字找出来的：`threadSection/list` 返回的名字是英文
+ * `Pinned`，而且内核拒绝给它改名 / 删除（`thread_sections.rs:43,67`）。把任务
+ * `thread/section/move` 到这个 id 就是置顶，`sectionId: null` 就是取消置顶 ——
+ * 总纲 §6.1 定的"不额外做 is_pinned 字段"落在这里。
+ */
+export const PINNED_THREAD_SECTION_ID = '01984de2-8f74-7c91-a3b2-5c5e937cf318';
+
+/** `thread/section/move` 的参数。`sectionId` 必须显式给（`null` = 移出分区），不能省略。 */
+export interface ThreadSectionMoveParams {
+  readonly threadId: string;
+  readonly sectionId: string | null;
+  /** 插到这个任务前面；省略 = 追加到分区末尾。只在 `sectionId` 非空时有意义 */
+  readonly beforeThreadId?: string | null;
+}
+
 /** F9：`extra` 是空结构体 —— 协议没有客户端元数据槽，派生状态只能落本机投影表。 */
 export interface Thread {
   readonly id: string;

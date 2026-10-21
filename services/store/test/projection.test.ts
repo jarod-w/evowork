@@ -1,4 +1,4 @@
-import type { Thread, ThreadStatus } from '@evowork/protocol';
+import { PINNED_THREAD_SECTION_ID, type Thread, type ThreadStatus } from '@evowork/protocol';
 import { describe, expect, it } from 'vitest';
 
 import { deriveStatus, STATUS_LABEL } from '../src/derive-status.js';
@@ -294,6 +294,48 @@ describe('ThreadProjection —— 权威性规则（09 §4.1）', () => {
       store.threads.applyTurnCompleted('t1', { id: 'turn1', status: 'completed' });
       expect(store.threads.setArchived('t1', true)).toBe('archived');
       expect(store.threads.setArchived('t1', false)).toBe('completed');
+    });
+  });
+
+  it('置顶写下分区与进入时间，不改动「最近」用的时间戳；取消置顶把两者都清空', () => {
+    withStore((store) => {
+      store.threads.upsertFromThread(thread());
+      const before = store.threads.get('t1')!;
+      expect(store.threads.setSection('t1', PINNED_THREAD_SECTION_ID, 5_000)).toBe(true);
+      const pinned = store.threads.get('t1')!;
+      expect(pinned.section_id).toBe(PINNED_THREAD_SECTION_ID);
+      expect(pinned.section_entered_at).toBe(5_000);
+      expect(pinned.updated_at).toBe(before.updated_at);
+      expect(pinned.recency_at).toBe(before.recency_at);
+
+      expect(store.threads.setSection('t1', null, 6_000)).toBe(true);
+      const unpinned = store.threads.get('t1')!;
+      expect(unpinned.section_id).toBeNull();
+      expect(unpinned.section_entered_at).toBeNull();
+      // 行不存在时 UPDATE 影响 0 行且不报错，调用方必须拿到 false
+      expect(store.threads.setSection('missing', PINNED_THREAD_SECTION_ID)).toBe(false);
+    });
+  });
+
+  it('对账时内核快照里的分区与进入时间（秒）覆盖本机值，并换算成毫秒', () => {
+    withStore((store) => {
+      store.threads.upsertFromThread(thread());
+      store.threads.setSection('t1', PINNED_THREAD_SECTION_ID, 5_000);
+      store.threads.upsertFromThread(
+        thread({
+          section: { id: PINNED_THREAD_SECTION_ID, name: 'Pinned' },
+          sectionEnteredAt: 1_757_000_200,
+        }),
+      );
+      expect(store.threads.get('t1')).toMatchObject({
+        section_id: PINNED_THREAD_SECTION_ID,
+        section_entered_at: 1_757_000_200_000,
+      });
+      store.threads.upsertFromThread(thread({ section: null, sectionEnteredAt: null }));
+      expect(store.threads.get('t1')).toMatchObject({
+        section_id: null,
+        section_entered_at: null,
+      });
     });
   });
 });

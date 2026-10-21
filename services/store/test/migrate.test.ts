@@ -82,8 +82,8 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     for (const t of [...PROJECTION_TABLES, ...AUTHORITATIVE_TABLES]) {
       expect(names).toContain(t.name);
     }
-    // 投影第 5 版追加 FTS 行到文档的覆盖索引。
-    expect(readMeta(store.db, 'schema_version_projection')).toBe('5');
+    // 投影第 6 版追加 thread_projection.section_entered_at（置顶区排序）。
+    expect(readMeta(store.db, 'schema_version_projection')).toBe('6');
     // 权威类第 5 版：此前迁移 + AI 图片操作 + 独立会话通信。
     expect(readMeta(store.db, 'schema_version_authoritative')).toBe(String(AUTHORITATIVE_VERSION));
     store.close();
@@ -127,7 +127,7 @@ describe('两个迁移器的分工（09 §4.6）', () => {
     old.close();
     const upgraded = openStore({ path });
     try {
-      expect(readMeta(upgraded.db, 'schema_version_projection')).toBe('5');
+      expect(readMeta(upgraded.db, 'schema_version_projection')).toBe(String(PROJECTION_VERSION));
       expect(readMeta(upgraded.db, 'schema_version_authoritative')).toBe(
         String(AUTHORITATIVE_VERSION),
       );
@@ -143,6 +143,42 @@ describe('两个迁移器的分工（09 §4.6）', () => {
       expect(hits[0]?.snippets?.[0]).toMatchObject({
         location: '第 1 页',
         text: 'originalneedle 合同',
+      });
+    } finally {
+      upgraded.close();
+    }
+  });
+
+  it('v6：停在第 5 版的老库补上 section_entered_at 列，已有投影行与标题保留', () => {
+    const path = join(dir, 'section-upgrade.db');
+    const old = openStore({ path });
+    old.threads.upsertFromThread({
+      id: 'kept',
+      sessionId: 's',
+      preview: '旧任务',
+      ephemeral: false,
+      modelProvider: 'evowork',
+      createdAt: 1,
+      updatedAt: 2,
+      status: { type: 'idle' },
+      cwd: '/w',
+      turns: [],
+      name: '季度汇报',
+    });
+    // 第 5 版的表没有这一列；全新库在第 1 版就按最新 DDL 建好了，要把它拿掉才像老库
+    old.db.exec('ALTER TABLE thread_projection DROP COLUMN section_entered_at');
+    writeMeta(old.db, 'schema_version_projection', '5');
+    old.close();
+    const upgraded = openStore({ path });
+    try {
+      expect(readMeta(upgraded.db, 'schema_version_projection')).toBe('6');
+      const columns = (
+        upgraded.db.prepare('PRAGMA table_info(thread_projection)').all() as { name: string }[]
+      ).map((column) => column.name);
+      expect(columns).toContain('section_entered_at');
+      expect(upgraded.threads.get('kept')).toMatchObject({
+        title: '季度汇报',
+        section_entered_at: null,
       });
     } finally {
       upgraded.close();

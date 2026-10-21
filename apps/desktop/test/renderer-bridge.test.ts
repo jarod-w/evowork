@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Adapter, UiEvent } from '@evowork/kernel-adapter';
 import { KERNEL_PROMPT_RULES, workspaceRootRefusal } from '@evowork/policy';
+import { PINNED_THREAD_SECTION_ID } from '@evowork/protocol';
 import { createArtifactRepo, openStore, type ProjectionRow, type Store } from '@evowork/store';
 
 import {
@@ -60,6 +61,7 @@ function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
     cwd: '/w',
     project_id: null,
     section_id: null,
+    section_entered_at: null,
     derived_status: 'running',
     last_turn_status: null,
     last_turn_id: null,
@@ -1217,6 +1219,19 @@ describe('事件翻译：适配层的任务视角 → 渲染层的组件视角',
     expect(translate({ type: 'task-created', threadId: 't9', title: null })).toEqual([]);
   });
 
+  it('task-pinned 变成带分组与置顶时间的 task-updated —— 渲染层不认识那个分区 UUID', () => {
+    const translate = createEventTranslator(
+      fakeStore(() => row()),
+      () => 0,
+    );
+    expect(translate({ type: 'task-pinned', threadId: 't1', pinned: true, pinnedAt: 77 })).toEqual([
+      { type: 'task-updated', taskId: 't1', sectionId: 'pinned', pinnedAt: 77 },
+    ]);
+    expect(
+      translate({ type: 'task-pinned', threadId: 't1', pinned: false, pinnedAt: null }),
+    ).toEqual([{ type: 'task-updated', taskId: 't1', sectionId: 'ungrouped', pinnedAt: null }]);
+  });
+
   it('增量在主进程侧累加成完整条目 —— 渲染层按 id 覆盖，收到半截会把正文冲掉', () => {
     const translate = createEventTranslator(
       fakeStore(() => row()),
@@ -1665,6 +1680,22 @@ describe('时间戳只到"天"（01 §5.5）', () => {
     expect(toTaskRow(row({ mode_id: 'full-access' }), 1).modeId).toBe('full-access');
     expect(toTaskRow(row({ mode_id: null }), 1)).not.toHaveProperty('modeId');
   });
+
+  /*
+   * 内核的内置 Pinned 分区是一个固定 UUID，侧栏比较的是字面量 `'pinned'`。
+   * 以前这里把 UUID 原样透出去，于是「置顶」在界面上永远不会出现。
+   */
+  it('内置 Pinned 分区归一成 `pinned` 并带上置顶时间；其他分区原样透传', () => {
+    const pinned = toTaskRow(
+      row({ section_id: PINNED_THREAD_SECTION_ID, section_entered_at: 4_200 }),
+      1,
+    );
+    expect(pinned.sectionId).toBe('pinned');
+    expect(pinned.pinnedAt).toBe(4_200);
+    expect(toTaskRow(row({ section_id: null }), 1)).toMatchObject({ sectionId: 'ungrouped' });
+    expect(toTaskRow(row({ section_id: null }), 1)).not.toHaveProperty('pinnedAt');
+    expect(toTaskRow(row({ section_id: 'weekly' }), 1).sectionId).toBe('weekly');
+  });
 });
 
 describe('侧栏任务动作', () => {
@@ -1680,6 +1711,29 @@ describe('侧栏任务动作', () => {
 
     expect(adapter.archiveTask).toHaveBeenCalledWith('archived-1');
     expect(adapter.deleteTask).toHaveBeenCalledWith('deleted-1');
+  });
+
+  it('置顶 / 取消置顶经适配层改内核分区；适配层拒绝时错误原样抛给渲染层', async () => {
+    const setTaskPinned = vi.fn(async () => undefined);
+    const actions = makeActions({ adapter: fakeAdapter({ setTaskPinned }) });
+
+    await actions.rowAction({ action: 'pin', threadId: 'p1' });
+    await actions.rowAction({ action: 'unpin', threadId: 'p1' });
+    expect(setTaskPinned.mock.calls).toEqual([
+      ['p1', true],
+      ['p1', false],
+    ]);
+
+    const refusing = makeActions({
+      adapter: fakeAdapter({
+        setTaskPinned: vi.fn(async () => {
+          throw new Error('section not found');
+        }),
+      }),
+    });
+    await expect(refusing.rowAction({ action: 'pin', threadId: 'p2' })).rejects.toThrow(
+      'section not found',
+    );
   });
 
   it('对话回滚把明确的 beforeTurnId 交给适配层', async () => {
