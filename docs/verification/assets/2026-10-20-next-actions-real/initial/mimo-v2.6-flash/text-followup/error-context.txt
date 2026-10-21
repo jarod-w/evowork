@@ -1,0 +1,227 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: next-actions.real.spec.mjs >> 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持
+- Location: apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:192:1
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+
+Locator: getByLabel('下一步建议')
+Expected: visible
+Timeout: 20000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toBeVisible" getByLabel('下一步建议') with timeout 20000ms
+  - waiting for getByLabel('下一步建议')
+
+```
+
+```yaml
+- navigation "侧边栏":
+  - button "折叠侧边栏"
+  - text: EvoWork
+  - button "打开搜索框"
+  - button "筛选任务"
+  - button "新建任务"
+  - button "自动化"
+  - button "插件"
+  - button "资料库"
+  - region "项目":
+    - button "项目" [expanded]
+    - button "项目更多操作"
+    - button "创建项目"
+    - button "UI"
+  - region "最近":
+    - button "最近" [expanded]
+    - list:
+      - listitem:
+        - button "REALNEXT_b60f6fedf7 我需要一…"
+        - button "REALNEXT_b60f6fedf7 我需要一… 的更多操作": ⋯
+  - button "wangli 菜单": wangli v44.2.0
+- banner:
+  - heading "REALNEXT_b60f6fedf7 我需要一…" [level=1]
+  - button "任务更多操作"
+- main "对话区":
+  - feed:
+    - paragraph: REALNEXT_b60f6fedf7 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。
+    - text: 已处理 5 秒
+    - button "已思考 1 秒"
+    - paragraph: 你希望三步上线计划最终交付为 Markdown 文档，还是 JSON 文件？
+    - paragraph: 选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。实际环境信息和执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。
+    - text: 已处理 10 秒
+    - button "已思考 9 秒"
+    - paragraph:
+      - strong: 三步上线计划
+    - list:
+      - listitem:
+        - paragraph:
+          - strong: 上线准备
+        - list:
+          - listitem: 确认上线范围、版本、功能清单及验收标准。
+          - listitem: 完成测试、代码审查和发布审批，准备发布说明、值班人员与回滚方案。
+          - listitem: 核对生产环境配置、数据库迁移、第三方依赖及监控告警设置。
+      - listitem:
+        - paragraph:
+          - strong: 发布执行
+        - list:
+          - listitem: 选择低峰时段，冻结相关变更并通知相关团队。
+          - listitem: 先进行小范围灰度发布，验证核心功能、错误率、性能和日志。
+          - listitem: 灰度指标达标后逐步扩大流量，直至全量上线。
+      - listitem:
+        - paragraph:
+          - strong: 上线验证与收尾
+        - list:
+          - listitem: 监控业务指标、系统性能、错误告警和用户反馈，确认运行稳定。
+          - listitem: 更新版本记录、发布文档和运行手册，安排后续观察与优化。
+          - listitem: 出现阻断性问题时停止扩量并执行回滚，恢复后补充故障记录。
+  - region "输入区":
+    - combobox "需求输入"
+    - button "添加内容"
+    - button "审批档": 请求批准
+    - button "选择项目": UI
+    - button "选择模型": private/mimo-v2.6-flash
+    - button "发送" [disabled]
+```
+
+# Test source
+
+```ts
+  125 |     );
+  126 |     task = await currentTask(page, m);
+  127 |     const input = page.getByLabel('需求输入');
+  128 |     await input.fill('用户正在编辑的草稿 ' + m.marker);
+  129 |     await completed(page, task.id, 1);
+  130 |     expect(JSON.parse(readFileSync(join(m.root, 'analysis.json'), 'utf8'))).toEqual({
+  131 |       total: values.reduce((sum, value) => sum + value, 0),
+  132 |       max: Math.max(...values),
+  133 |     });
+  134 |     await expect(input).toHaveValue('用户正在编辑的草稿 ' + m.marker);
+  135 |     await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  136 |     const first = await history(page, task.id);
+  137 |     expect(first.items.some((item) => item.type === 'commandExecution')).toBe(true);
+  138 |     expect(proposals(first).length).toBeGreaterThan(0);
+  139 |     const proposal = proposals(first).at(-1);
+  140 |     expect(proposal.status).toBe('completed');
+  141 |     expect(proposal.error ?? null).toBeNull();
+  142 |     expect(argumentsOf(proposal).outcome).toBe('delivered');
+  143 |     expect(argumentsOf(proposal).actions.length).toBeGreaterThan(0);
+  144 |     expect(existsSync(join(m.root, 'accepted-report.md'))).toBe(false);
+  145 |     await input.fill('');
+  146 |     const suggestion = page.getByLabel('下一步建议');
+  147 |     await expect(suggestion).toBeVisible();
+  148 |     const actions = await page.evaluate(
+  149 |       (threadId) => window.evowork.getNextActions({ threadId }),
+  150 |       task.id,
+  151 |     );
+  152 |     expect(actions).toHaveLength(1);
+  153 |     expect(actions[0].prompt.length).toBeGreaterThan(4);
+  154 |     await page.screenshot({ path: info.outputPath('next-actions-real-suggestion.png') });
+  155 |     await page.reload();
+  156 |     await page.getByRole('button', { name: task.title, exact: true }).click();
+  157 |     await expect(suggestion).toBeVisible();
+  158 |     await input.focus();
+  159 |     await input.press('Tab');
+  160 |     await expect(input).toHaveValue(actions[0].prompt);
+  161 |     expect(
+  162 |       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
+  163 |     ).toHaveLength(1);
+  164 |     await expect(suggestion).toHaveCount(0);
+  165 |     const followup =
+  166 |       actions[0].prompt +
+  167 |       '\n具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 ' +
+  168 |       m.marker +
+  169 |       '。不要联网、读取环境变量、修改其他文件或执行上线。完成后简短回复。';
+  170 |     await input.fill(followup);
+  171 |     await page.getByRole('button', { name: '发送', exact: true }).click();
+  172 |     await completed(page, task.id, 2);
+  173 |     expect(readFileSync(join(m.root, 'accepted-report.md'), 'utf8')).toContain(m.marker);
+  174 |     const after = await history(page, task.id);
+  175 |     expect(after.items.filter((item) => item.type === 'userMessage')).toHaveLength(2);
+  176 |     const lastInput = after.items.filter((item) => item.type === 'userMessage').at(-1);
+  177 |     expect(
+  178 |       lastInput.content
+  179 |         .filter((part) => part.type === 'text')
+  180 |         .map((part) => part.text)
+  181 |         .join('\n'),
+  182 |     ).toContain(followup);
+  183 |     await evidence(page, electronApp, m, info, task, {
+  184 |       values,
+  185 |       first,
+  186 |       actions,
+  187 |       followup,
+  188 |       report: readFileSync(join(m.root, 'accepted-report.md'), 'utf8'),
+  189 |     });
+  190 |   } catch (error) {
+  191 |     await evidence(page, electronApp, m, info, task, { values }, false).catch(() => undefined);
+  192 |     throw error;
+  193 |   }
+  194 | });
+  195 |
+  196 | test('真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持', async ({
+  197 |   page,
+  198 |   electronApp,
+  199 | }, info) => {
+  200 |   const m = await setup(electronApp);
+  201 |   let task;
+  202 |   try {
+  203 |     await startTaskInWorkspace(
+  204 |       page,
+  205 |       electronApp,
+  206 |       m.marker +
+  207 |         ' 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。',
+  208 |     );
+  209 |     task = await currentTask(page, m);
+  210 |     await completed(page, task.id, 1);
+  211 |     const awaiting = await history(page, task.id);
+  212 |     await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  213 |     expect(
+  214 |       await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), task.id),
+  215 |     ).toEqual([]);
+  216 |     for (const item of proposals(awaiting)) {
+  217 |       expect(argumentsOf(item).outcome).toBe('needs_input');
+  218 |       expect(argumentsOf(item).actions).toEqual([]);
+  219 |     }
+  220 |     await page.screenshot({ path: info.outputPath('next-actions-real-awaiting.png') });
+  221 |     await page
+  222 |       .getByLabel('需求输入')
+  223 |       .fill(
+  224 |         '选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。实际环境信息和执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。',
+> 225 |       );
+      |                              ^ Error: expect(locator).toBeVisible() failed
+  226 |     await page.getByRole('button', { name: '发送', exact: true }).click();
+  227 |     await completed(page, task.id, 2);
+  228 |     const suggestion = page.getByLabel('下一步建议');
+  229 |     await expect(suggestion).toBeVisible();
+  230 |     const actions = await page.evaluate(
+  231 |       (threadId) => window.evowork.getNextActions({ threadId }),
+  232 |       task.id,
+  233 |     );
+  234 |     expect(actions).toHaveLength(1);
+  235 |     await suggestion.getByRole('button', { name: '忽略', exact: true }).click();
+  236 |     await expect(suggestion).toHaveCount(0);
+  237 |     await page.reload();
+  238 |     await page.getByRole('button', { name: task.title, exact: true }).click();
+  239 |     await expect(suggestion).toHaveCount(0);
+  240 |     expect(
+  241 |       await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), task.id),
+  242 |     ).toEqual([]);
+  243 |     expect(
+  244 |       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
+  245 |     ).toHaveLength(2);
+  246 |     await evidence(page, electronApp, m, info, task, { awaiting, actions });
+  247 |   } catch (error) {
+  248 |     await evidence(page, electronApp, m, info, task, {}, false).catch(() => undefined);
+  249 |     throw error;
+  250 |   }
+  251 | });
+  252 |
+```

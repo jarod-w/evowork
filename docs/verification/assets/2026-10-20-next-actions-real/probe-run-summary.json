@@ -1,0 +1,16 @@
+{
+  "summary": [
+    {
+      "preset": "mimo-v2.6-flash",
+      "exitCode": 0
+    },
+    {
+      "preset": "deepseek-flash",
+      "exitCode": 0
+    }
+  ],
+  "credentialScan": {
+    "files": 20,
+    "hits": []
+  }
+}

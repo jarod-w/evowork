@@ -35,7 +35,7 @@ export function createNextActionsHost(options: {
   const server = createServer((req, res) => {
     if (
       req.method !== 'POST' ||
-      req.url !== '/call' ||
+      !['/call', '/stop'].includes(req.url ?? '') ||
       req.headers.authorization !== 'Bearer ' + token
     ) {
       res.writeHead(403).end();
@@ -55,7 +55,24 @@ export function createNextActionsHost(options: {
             threadId?: unknown;
             name?: unknown;
             arguments?: unknown;
+            turnId?: unknown;
+            stopHookActive?: unknown;
           };
+          if (req.url === '/stop') {
+            if (
+              typeof input.threadId !== 'string' ||
+              typeof input.turnId !== 'string' ||
+              typeof input.stopHookActive !== 'boolean'
+            )
+              throw new Error('来源回合无效。');
+            const result = await service.checkStop(
+              input.threadId,
+              input.turnId,
+              input.stopHookActive,
+            );
+            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
+            return;
+          }
           if (typeof input.threadId !== 'string' || typeof input.name !== 'string')
             throw new Error('来源会话无效。');
           const result = await call(input.threadId, input.name, input.arguments);

@@ -1,0 +1,19 @@
+{"ts":"2026-10-20T14:22:19.077Z","level":"info","event":"artifacts.watch.started","service":"desktop","appVersion":"44.2.0","platform":"darwin","pathKind":"workspace"}
+{"ts":"2026-10-20T14:22:19.191Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":275}
+{"ts":"2026-10-20T14:22:19.211Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":274}
+{"ts":"2026-10-20T14:22:20.462Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":348}
+{"ts":"2026-10-20T14:22:20.717Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":274}
+{"ts":"2026-10-20T14:22:21.167Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":348}
+{"ts":"2026-10-20T14:22:22.250Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":349}
+{"ts":"2026-10-20T14:22:22.528Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":275}
+{"ts":"2026-10-20T14:22:22.979Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":275}
+{"ts":"2026-10-20T14:22:25.878Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":349}
+{"ts":"2026-10-20T14:22:26.118Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":275}
+{"ts":"2026-10-20T14:22:27.155Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":349}
+{"ts":"2026-10-20T14:22:27.290Z","level":"info","event":"gateway.child.stdout","service":"desktop","appVersion":"44.2.0","platform":"darwin","byteSize":348}
+Debugger ending on ws://127.0.0.1:52684/4de6bcf5-8afd-40f7-aee6-43f0633bf706
+For help, see: https://nodejs.org/learn/getting-started/debugging
+{"ts":"2026-10-20T14:22:48.867Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"44.2.0","platform":"darwin"}
+{"ts":"2026-10-20T14:22:48.881Z","level":"warn","event":"gateway.child.exited","service":"desktop","appVersion":"44.2.0","platform":"darwin","reason":"EXIT","droppedFields":1}
+
+[fixtures] 主进程退出 code=0 signal=null at 2026-10-20T14:22:48.923Z

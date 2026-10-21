@@ -1,0 +1,9 @@
+
+Running 2 tests using 1 worker
+
+(node:60707) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:121:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行 (30.0s)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:207:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持 (19.0s)
+
+  2 passed (49.3s)

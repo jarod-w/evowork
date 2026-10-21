@@ -1,0 +1,102 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ❯ |gateway| test/translate.test.ts (59 tests | 1 failed | 58 skipped) 7ms
+   ↓ ① 流式事件序列：item_id / output_index 由网关自行编号（D2） > 文本流：created → item_added → 多个 delta → item_done → completed
+   ↓ ① 流式事件序列：item_id / output_index 由网关自行编号（D2） > `response.created` 一定先发（内核靠它开始一次响应）
+   ↓ ① 流式事件序列：item_id / output_index 由网关自行编号（D2） > 非流式上游可被切成事件流（重试路径要用）
+   ↓ ① 流式事件序列：item_id / output_index 由网关自行编号（D2） > 流被掐断（没有 finish_reason）也会收尾 —— 已产生的内容不该丢
+   ↓ ② 工具调用：增量 arguments 重组 + 并行降级（D2） > **按 index 累加**而不是按到达顺序拼 —— 一个字符一片也要拼对
+   ↓ ② 工具调用：增量 arguments 重组 + 并行降级（D2） > 多个并行 call 各自成 item，且按 output_index 升序发出
+   ↓ ② 工具调用：增量 arguments 重组 + 并行降级（D2） > 上游声明不支持并行却回了多个 call → **全部转发**并记降级（丢一个 agent 就卡住）
+   ↓ ② 工具调用：增量 arguments 重组 + 并行降级（D2） > **工具调用的 item_done 必须在 completed 之前** —— 否则那次调用会丢
+   ↓ ② 工具调用：增量 arguments 重组 + 并行降级（D2） > arguments 为空时补 `{}` —— 空字符串会让内核的 JSON 解析失败
+   ↓ ② 工具调用：增量 arguments 重组 + 并行降级（D2） > `finish_reason: tool_calls` 时 end_turn = false（回合还没结束）
+   ↓ ③ reasoning：有就映射，**没有就留空，不得伪造**（D2） > 有思维链 → reasoning item + summary delta
+   ↓ ③ reasoning：有就映射，**没有就留空，不得伪造**（D2） > 思维链先发 output_item.added，内核才有 active item 能把增量推到 UI
+   ↓ ③ reasoning：有就映射，**没有就留空，不得伪造**（D2） > 没有思维链 → **一个 reasoning 事件都不发**（不留空壳）
+   ↓ ③ reasoning：有就映射，**没有就留空，不得伪造**（D2） > 能力表说没有但上游给了 → 按上游为准不显示，并记一笔让人去修表
+   ↓ ④⑥ 用量与 cache：三条会让整条流失败的硬约束 > 给了 usage 就必须齐三个总数 + details 必须带各自的必填字段
+   ↓ ④⑥ 用量与 cache：三条会让整条流失败的硬约束 > total 缺失时用 input + output 补 —— 但 input/output 缺一个就整体省略
+   ↓ ④⑥ 用量与 cache：三条会让整条流失败的硬约束 > **不支持 cache 的模型如实报 0**，不猜不估（10 §5.2）
+   ↓ ④⑥ 用量与 cache：三条会让整条流失败的硬约束 > 上游完全不报用量 → **省略 usage 而不是编一个**
+   ↓ ④⑥ 用量与 cache：三条会让整条流失败的硬约束 > 嵌套形状（prompt_tokens_details.cached_tokens）也能读
+   ↓ ④⑥ 用量与 cache：三条会让整条流失败的硬约束 > 负数与非数字被当作缺失，不会写进用量
+   ↓ ⑤ 多模态：不支持时**明确报错**，不静默丢图（D2） > 不支持图片 → 抛 UnsupportedInputError，带用户能看懂的话
+   ↓ ⑤ 多模态：不支持时**明确报错**，不静默丢图（D2） > 支持图片 → 转成 Chat 的 image_url 结构
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 查看图片的工具结果按视觉输入传递，Base64 不进入文字上下文
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 不支持图片的模型拒绝工具图片结果，错误不含图片正文
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 并行工具的全部结果先配对，再发送图片，后续思维链仍属于后续 assistant
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 结构化工具文本保留换行，普通 JSON 对象与字符串保留既有语义
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > instructions 变成 system 且排在最前（丢了它 Ask 模式就失效，D8）
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > function_call + function_call_output → assistant(tool_calls) + tool(tool_call_id)
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 连续多个 function_call 合并到同一条 assistant 消息（Chat 的要求）
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > thinking 模式：历史 reasoning 挂回下一轮 assistant 的 reasoning_content（丢了 DeepSeek 会 400）
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > thinking + 工具调用：reasoning_content 挂在带 tool_calls 的那条 assistant 上
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 只有思维链没有正文时，仍要发出带 reasoning_content 的 assistant（下一轮 user 不能直接接在后面）
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > reasoning 出现在 assistant 之后，也要挂回那条 assistant（内核历史顺序不保证）
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 非推理模型：历史 reasoning 仍丢掉，且不进 content
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 未知条目类型被跳过而不是抛错（R2：上游会不断新增条目类型）
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 不支持并行时**显式传 false**，而不是不传
+   ↓ Responses → Chat：instructions / 工具结果 / 未知条目 > 要求流式用量（stream_options.include_usage）—— 否则流式响应里没有 usage
+   ↓ 真实上游形状（DeepSeek，2026-09-05 实测） > **usage 帧同时带 choices 与 finish_reason** —— OpenAI 那里 choices 是空数组
+   ↓ 真实上游形状（DeepSeek，2026-09-05 实测） > **cache 有三种写法，三条路都得认**，少认一种的表现是"这家永远 0 命中"
+   ↓ 真实上游形状（DeepSeek，2026-09-05 实测） > **`cache_write_tokens` 不是命中**：写入缓存不等于命中缓存（2026-09-26 实测 Kimi 未命中时给的就是它）
+   ↓ 真实上游形状（DeepSeek，2026-09-05 实测） > cache 口径走 prompt_cache_hit_tokens / prompt_cache_miss_tokens（不是 OpenAI 的 details）
+   ↓ 真实上游形状（DeepSeek，2026-09-05 实测） > 工具调用：**首帧带 id 与 name，后续帧只带 arguments 片段**（实测如此）
+   ↓ 真实上游形状（DeepSeek，2026-09-05 实测） > 并行工具调用按 index 分开累积（实测 index 0/1 两个函数）
+   ↓ 能力声明（当前内置型号） > 已下架的 DeepSeek 型号不再出现在运行时目录
+   ↓ 能力声明（当前内置型号） > 没验过的模型 verified 必须是 false，且 unverified 列全六项
+   ↓ 能力声明（当前内置型号） > 当前内置型号全部实测过
+   ↓ 能力声明（当前内置型号） > 验过的模型必须给日期，并如实列出仍未实测的能力键
+   ↓ 能力声明（当前内置型号） > 每条 verified 的 notes 都得带实测证据，而不只是一句"支持"
+   ↓ 能力声明（当前内置型号） > 所有已下架的 DeepSeek 型号都不再出现在目录里
+   ↓ 能力声明（当前内置型号） > GLM-5.3-flash 标为 light 档，且 notes 里写清它为什么在 P0 名单里（R4）
+   ↓ 能力声明（当前内置型号） > 当前内置型号都是推理模型（以实测为准）
+   ↓ 能力声明（当前内置型号） > 当前内置型号都支持图片输入
+   ↓ 命名空间工具：去程摊平、回程还原 > 命名空间里的每个工具都成为一个扁平函数，参数原样带过去；命名空间本身不是工具
+   ↓ 命名空间工具：去程摊平、回程还原 > 模型调用摊平后的名字 → 还原成内核认得的 { name, namespace }；扁平工具原样
+   ↓ 命名空间工具：去程摊平、回程还原 > 历史里带命名空间的调用用同一个 Chat 名 —— 否则模型看到的是一个没声明过的工具
+   ↓ 命名空间工具：去程摊平、回程还原 > 拼出来超过 64 个字符就截断加尾巴：仍合法，且两个不同的工具不会撞成一个名字
+   ↓ 代理之间的消息（agent_message） > 派给子代理的任务原样进上游：头部 + encrypted_content 里的正文，作为一条 user 消息
+   ↓ 代理之间的消息（agent_message） > 夹在工具调用之后也不打乱 tool_call_id 的配对
+   × 产品 developer 指令保持高于用户正文的角色 > 兼容 Chat 提供方时将 developer 映射到 system，普通用户原文仍保持 user 7ms
+     → expected [ { role: 'system', …(1) }, …(2) ] to deeply equal [ { role: 'system', …(1) }, …(2) ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |gateway| test/translate.test.ts > 产品 developer 指令保持高于用户正文的角色 > 兼容 Chat 提供方时将 developer 映射到 system，普通用户原文仍保持 user
+AssertionError: expected [ { role: 'system', …(1) }, …(2) ] to deeply equal [ { role: 'system', …(1) }, …(2) ]
+
+- Expected
++ Received
+
+@@ -3,11 +3,11 @@
+      "content": "产品身份底稿",
+      "role": "system",
+    },
+    {
+      "content": "本机界面元数据登记规则",
+-     "role": "system",
++     "role": "user",
+    },
+    {
+      "content": "请只交付计划正文",
+      "role": "user",
+    },
+
+ ❯ test/translate.test.ts:1261:7
+    1259|     expect(
+    1260|       result.messages.map((message) => ({ role: message.role, content:…
+    1261|     ).toEqual([
+       |       ^
+    1262|       { role: 'system', content: '产品身份底稿' },
+    1263|       { role: 'system', content: '本机界面元数据登记规则' },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 58 skipped (59)
+   Start at  22:07:01
+   Duration  286ms (transform 66ms, setup 0ms, collect 78ms, tests 7ms, environment 0ms, prepare 43ms)

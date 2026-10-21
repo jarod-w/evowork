@@ -49,6 +49,70 @@ beforeEach(() => {
 });
 afterEach(() => store.close());
 describe('下一步建议与执行队列分离', () => {
+  it('纯文本遗漏登记时只提醒一次，同回合重入与并发检查不能无限续跑', async () => {
+    const results = await Promise.all([
+      service.checkStop('a', 'one', false),
+      service.checkStop('a', 'one', false),
+    ]);
+    expect(results.filter((result) => result.decision === 'block')).toHaveLength(1);
+    expect(results.find((result) => result.decision === 'block')?.reason).toContain('needs_input');
+    expect(await service.checkStop('a', 'one', true)).toEqual({});
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    expect(store.db.prepare('SELECT * FROM follow_up_queue').all()).toEqual([]);
+    expect(new NextActionStore(store).get('a')).toBeUndefined();
+  });
+  it('已提交空列表或已尝试失败的工具都不触发结束提醒', async () => {
+    service.propose('a', { outcome: 'needs_input', actions: [] });
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    running('two');
+    service.onEvent({
+      type: 'item-started',
+      threadId: 'a',
+      turnId: 'two',
+      item: {
+        type: 'mcpToolCall',
+        id: 'failed',
+        server: 'next_actions',
+        tool: 'propose_next_actions',
+      } as never,
+    });
+    expect(await service.checkStop('a', 'two', false)).toEqual({});
+  });
+  it('旧回合、非根任务、重建服务、活动目标和未知状态不能唤醒建议循环', async () => {
+    expect(await service.checkStop('a', 'old', false)).toEqual({});
+    expect(await service.checkStop('missing', 'one', false)).toEqual({});
+    expect(await service.checkStop('a', 'one', true)).toEqual({});
+    for (const [field, value, reset] of [
+      ['archived', 1, 0],
+      ['parent_thread_id', 'parent', null],
+      ['automation_id', 'cron', null],
+      ['last_turn_status', 'completed', 'inProgress'],
+    ] as const) {
+      store.db.prepare(`UPDATE thread_projection SET ${field}=? WHERE thread_id='a'`).run(value);
+      expect(await service.checkStop('a', 'one', false)).toEqual({});
+      store.db.prepare(`UPDATE thread_projection SET ${field}=? WHERE thread_id='a'`).run(reset);
+    }
+    goal = { status: 'budgetLimited' } as ThreadGoal;
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    goal = undefined;
+    queue = [{ id: 'pending', input: [] }];
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    queue = [];
+    vi.mocked(adapter.getGoal).mockRejectedValueOnce(new Error('offline'));
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    service.interrupted();
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    service = createNextActions({ store, adapter: () => adapter, changed: vi.fn() });
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+  });
+  it('异步检查期间新回合开始，旧提醒不能作用到新回合', async () => {
+    vi.mocked(adapter.getGoal).mockImplementationOnce(async () => {
+      running('two');
+      return undefined;
+    });
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    expect(await service.checkStop('a', 'two', false)).toMatchObject({ decision: 'block' });
+  });
   it('回合结束前不可见，成功后只展示第一条，采纳只改变建议状态', async () => {
     service.propose('a', {
       ...args,

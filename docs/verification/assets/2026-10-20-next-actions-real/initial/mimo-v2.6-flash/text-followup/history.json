@@ -1,0 +1,201 @@
+{
+  "model": "mimo-v2.6-flash",
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "marker": "REALNEXT_b60f6fedf7",
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a15994-a2e6-7281-b9c2-b1df2ecfd1e9",
+        "clientId": "e12a6bcc-b140-417b-9821-2a22de5a1d5b",
+        "content": [
+          {
+            "type": "text",
+            "text": "REALNEXT_b60f6fedf7 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15994-a27d-7e41-86f2-0a995128e6cf",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvgqrj01j7drjv_0",
+        "summary": [
+          "We need need ask only format, no tools. Chinese concise. Must maybe options. Exactly one question."
+        ],
+        "content": [],
+        "_turnId": "01a15994-a27d-7e41-86f2-0a995128e6cf",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvgqrj01j7drjv_1",
+        "text": "你希望三步上线计划最终交付为 Markdown 文档，还是 JSON 文件？",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15994-a27d-7e41-86f2-0a995128e6cf",
+        "completed": true
+      },
+      {
+        "type": "userMessage",
+        "id": "01a15994-b9bf-7563-9916-51d9dfef15bf",
+        "clientId": "17198a92-106f-4435-b706-388a8a4ba68f",
+        "content": [
+          {
+            "type": "text",
+            "text": "选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。实际环境信息和执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15994-b9a4-7123-804a-64b776a479b4",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvgqrnic2yanky_0",
+        "summary": [
+          "We need answer only in Chinese with three-step go-live plan. Need not do any tool calls or file creation. Keep concise, actionable, no unsupported assumptions. Include preconditions, execution, validation/rollback maybe. Final answer should be just the plan."
+        ],
+        "content": [],
+        "_turnId": "01a15994-b9a4-7123-804a-64b776a479b4",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvgqrnic2yanky_1",
+        "text": "**三步上线计划**\n\n1. **上线准备**\n   - 确认上线范围、版本、功能清单及验收标准。\n   - 完成测试、代码审查和发布审批，准备发布说明、值班人员与回滚方案。\n   - 核对生产环境配置、数据库迁移、第三方依赖及监控告警设置。\n\n2. **发布执行**\n   - 选择低峰时段，冻结相关变更并通知相关团队。\n   - 先进行小范围灰度发布，验证核心功能、错误率、性能和日志。\n   - 灰度指标达标后逐步扩大流量，直至全量上线。\n\n3. **上线验证与收尾**\n   - 监控业务指标、系统性能、错误告警和用户反馈，确认运行稳定。\n   - 更新版本记录、发布文档和运行手册，安排后续观察与优化。\n   - 出现阻断性问题时停止扩量并执行回滚，恢复后补充故障记录。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15994-b9a4-7123-804a-64b776a479b4",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a15994-a27d-7e41-86f2-0a995128e6cf",
+        "status": "completed",
+        "startedAtMs": 1792504275000,
+        "completedAtMs": 1792504280000,
+        "durationMs": 5181
+      },
+      {
+        "id": "01a15994-b9a4-7123-804a-64b776a479b4",
+        "status": "completed",
+        "startedAtMs": 1792504281000,
+        "completedAtMs": 1792504291000,
+        "durationMs": 10025
+      }
+    ],
+    "latestTurnId": "01a15994-b9a4-7123-804a-64b776a479b4"
+  },
+  "wire": [
+    {
+      "type": "request",
+      "pid": 37601,
+      "id": 1,
+      "at": 1792504275699,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "markers": []
+    },
+    {
+      "type": "request",
+      "pid": 37601,
+      "id": 2,
+      "at": 1792504275725,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 37601,
+      "id": 2,
+      "at": 1792504277841,
+      "status": 200
+    },
+    {
+      "type": "response",
+      "pid": 37601,
+      "id": 1,
+      "at": 1792504279169,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 37601,
+      "id": 3,
+      "at": 1792504281540,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 37601,
+      "id": 3,
+      "at": 1792504282278,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 37601,
+      "id": 4,
+      "at": 1792504286668,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 37601,
+      "id": 4,
+      "at": 1792504287332,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 37601,
+      "id": 5,
+      "at": 1792504291783,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 37601,
+      "id": 5,
+      "at": 1792504296340,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 37601,
+      "id": 6,
+      "at": 1792504299341,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 37601,
+      "id": 6,
+      "at": 1792504304457,
+      "status": 200
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 37602,
+      "at": 1792504274084
+    }
+  ]
+}

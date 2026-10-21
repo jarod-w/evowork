@@ -1,0 +1,215 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: next-actions.real.spec.mjs >> 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持
+- Location: apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:207:1
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+
+Locator: getByLabel('下一步建议')
+Expected: visible
+Timeout: 20000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toBeVisible" getByLabel('下一步建议') with timeout 20000ms
+  - waiting for getByLabel('下一步建议')
+
+```
+
+```yaml
+- navigation "侧边栏":
+  - button "折叠侧边栏"
+  - text: EvoWork
+  - button "打开搜索框"
+  - button "筛选任务"
+  - button "新建任务"
+  - button "自动化"
+  - button "插件"
+  - button "资料库"
+  - region "项目":
+    - button "项目" [expanded]
+    - button "项目更多操作"
+    - button "创建项目"
+    - button "UI"
+  - region "最近":
+    - button "最近" [expanded]
+    - list:
+      - listitem:
+        - button "REALNEXT_feab2d21bd 我需要一…"
+        - button "REALNEXT_feab2d21bd 我需要一… 的更多操作": ⋯
+  - button "wangli 菜单": wangli v44.2.0
+- banner:
+  - heading "REALNEXT_feab2d21bd 我需要一…" [level=1]
+  - button "任务更多操作"
+- main "对话区":
+  - feed:
+    - paragraph: REALNEXT_feab2d21bd 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。
+    - text: 已处理 3 秒
+    - button "已思考 1 秒"
+    - paragraph: 请告诉我交付格式：Markdown 还是 JSON？
+    - paragraph: 选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。
+    - text: 已处理 10 秒
+    - button "已思考 10 秒"
+    - heading "三步上线计划" [level=1]
+    - heading "1. 上线准备与验收" [level=2]
+    - list:
+      - listitem: 冻结需求与代码范围，确认版本、变更清单和负责人。
+      - listitem: 完成测试、回归验证及数据备份。
+      - listitem: 准备上线配置、权限、监控和告警。
+    - heading "2. 发布与观察" [level=2]
+    - list:
+      - listitem: 按既定窗口执行部署，并验证健康检查、核心接口和关键业务流程。
+      - listitem: 持续观察错误率、响应时间、资源占用和日志。
+      - listitem: 发现异常时暂停继续放量，并将决策交由负责人确认。
+    - heading "3. 上线确认与收尾" [level=2]
+    - list:
+      - listitem: 业务负责人确认功能可用，运维负责人确认系统稳定。
+      - listitem: 保留版本、部署记录和必要的数据备份。
+      - listitem: 更新上线记录，明确后续监控责任人。
+  - region "输入区":
+    - combobox "需求输入"
+    - button "添加内容"
+    - button "审批档": 请求批准
+    - button "选择项目": UI
+    - button "选择模型": private/mimo-v2.6-flash
+    - button "发送" [disabled]
+```
+
+# Test source
+
+```ts
+  140 |     await completed(page, task.id, 1);
+  141 |     expect(JSON.parse(readFileSync(join(m.root, 'analysis.json'), 'utf8'))).toEqual({
+  142 |       total: values.reduce((sum, value) => sum + value, 0),
+  143 |       max: Math.max(...values),
+  144 |     });
+  145 |     await expect(input).toHaveValue('用户正在编辑的草稿 ' + m.marker);
+  146 |     await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  147 |     const first = await history(page, task.id);
+  148 |     expect(first.items.some((item) => item.type === 'commandExecution')).toBe(true);
+  149 |     expect(proposals(first).length).toBeGreaterThan(0);
+  150 |     const proposal = proposals(first).at(-1);
+  151 |     expect(proposal.status).toBe('completed');
+  152 |     expect(proposal.error ?? null).toBeNull();
+  153 |     expect(argumentsOf(proposal).outcome).toBe('delivered');
+  154 |     expect(argumentsOf(proposal).actions.length).toBeGreaterThan(0);
+  155 |     expect(existsSync(join(m.root, 'accepted-report.md'))).toBe(false);
+  156 |     await input.fill('');
+  157 |     const suggestion = page.getByLabel('下一步建议');
+  158 |     await expect(suggestion).toBeVisible();
+  159 |     const actions = await page.evaluate(
+  160 |       (threadId) => window.evowork.getNextActions({ threadId }),
+  161 |       task.id,
+  162 |     );
+  163 |     expect(actions).toHaveLength(1);
+  164 |     expect(actions[0].prompt.length).toBeGreaterThan(4);
+  165 |     await page.screenshot({ path: info.outputPath('next-actions-real-suggestion.png') });
+  166 |     await page.reload();
+  167 |     await page.getByRole('button', { name: task.title, exact: true }).click();
+  168 |     await expect(suggestion).toBeVisible();
+  169 |     await input.focus();
+  170 |     await input.press('Tab');
+  171 |     await expect(input).toHaveValue(actions[0].prompt);
+  172 |     expect(
+  173 |       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
+  174 |     ).toHaveLength(1);
+  175 |     await expect(suggestion).toHaveCount(0);
+  176 |     const followup =
+  177 |       actions[0].prompt +
+  178 |       '\n具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 ' +
+  179 |       m.marker +
+  180 |       '。不要联网、读取环境变量、修改其他文件或执行上线。完成后简短回复。';
+  181 |     await input.fill(followup);
+  182 |     await page.getByRole('button', { name: '发送', exact: true }).click();
+  183 |     await completed(page, task.id, 2);
+  184 |     expect(readFileSync(join(m.root, 'accepted-report.md'), 'utf8')).toContain(m.marker);
+  185 |     const after = await history(page, task.id);
+  186 |     expect(after.items.filter((item) => item.type === 'userMessage')).toHaveLength(2);
+  187 |     const lastInput = after.items.filter((item) => item.type === 'userMessage').at(-1);
+  188 |     expect(
+  189 |       lastInput.content
+  190 |         .filter((part) => part.type === 'text')
+  191 |         .map((part) => part.text)
+  192 |         .join('\n'),
+  193 |     ).toContain(followup);
+  194 |     await evidence(page, electronApp, m, info, task, {
+  195 |       values,
+  196 |       first,
+  197 |       actions,
+  198 |       followup,
+  199 |       report: readFileSync(join(m.root, 'accepted-report.md'), 'utf8'),
+  200 |     });
+  201 |   } catch (error) {
+  202 |     await evidence(page, electronApp, m, info, task, { values }, false).catch(() => undefined);
+  203 |     throw error;
+  204 |   }
+  205 | });
+  206 |
+  207 | test('真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持', async ({
+  208 |   page,
+  209 |   electronApp,
+  210 | }, info) => {
+  211 |   const m = await setup(electronApp);
+  212 |   let task;
+  213 |   try {
+  214 |     await startTaskInWorkspace(
+  215 |       page,
+  216 |       electronApp,
+  217 |       m.marker +
+  218 |         ' 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。',
+  219 |     );
+  220 |     task = await currentTask(page, m);
+  221 |     await completed(page, task.id, 1);
+  222 |     const awaiting = await history(page, task.id);
+  223 |     await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  224 |     expect(
+  225 |       await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), task.id),
+  226 |     ).toEqual([]);
+  227 |     for (const item of proposals(awaiting)) {
+  228 |       expect(argumentsOf(item).outcome).toBe('needs_input');
+  229 |       expect(argumentsOf(item).actions).toEqual([]);
+  230 |     }
+  231 |     await page.screenshot({ path: info.outputPath('next-actions-real-awaiting.png') });
+  232 |     await page
+  233 |       .getByLabel('需求输入')
+  234 |       .fill(
+  235 |         '选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。',
+  236 |       );
+  237 |     await page.getByRole('button', { name: '发送', exact: true }).click();
+  238 |     await completed(page, task.id, 2);
+  239 |     const suggestion = page.getByLabel('下一步建议');
+> 240 |     await expect(suggestion).toBeVisible();
+      |                              ^ Error: expect(locator).toBeVisible() failed
+  241 |     const actions = await page.evaluate(
+  242 |       (threadId) => window.evowork.getNextActions({ threadId }),
+  243 |       task.id,
+  244 |     );
+  245 |     expect(actions).toHaveLength(1);
+  246 |     await suggestion.getByRole('button', { name: '忽略', exact: true }).click();
+  247 |     await expect(suggestion).toHaveCount(0);
+  248 |     await page.reload();
+  249 |     await page.getByRole('button', { name: task.title, exact: true }).click();
+  250 |     await expect(suggestion).toHaveCount(0);
+  251 |     expect(
+  252 |       await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), task.id),
+  253 |     ).toEqual([]);
+  254 |     expect(
+  255 |       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
+  256 |     ).toHaveLength(2);
+  257 |     await evidence(page, electronApp, m, info, task, { awaiting, actions });
+  258 |   } catch (error) {
+  259 |     await evidence(page, electronApp, m, info, task, {}, false).catch(() => undefined);
+  260 |     throw error;
+  261 |   }
+  262 | });
+  263 |
+```

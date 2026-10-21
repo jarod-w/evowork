@@ -1,0 +1,58 @@
+
+Running 2 tests using 1 worker
+
+(node:37167) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行 (3.6m)
+(node:37594) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:192:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持 (41.0s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected substring: "请基于当前目录的 analysis.json，将总和与最大值整理成一页简洁的管理层 Markdown 汇报；只生成新的汇报文件，不修改 analysis.json，不联网。
+    具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 REALNEXT_3607173675。不要联网、读取环境变量、修改其他文件或执行上线。完成后简短回复。"
+    Received string:    "{\"type\":\"userMessage\",\"id\":\"01a15992-70cf-7e82-9d0c-12b700af88af\",\"clientId\":\"e574b490-2a64-4dc7-878f-12dae732fe16\",\"content\":[{\"type\":\"text\",\"text\":\"请基于当前目录的 analysis.json，将总和与最大值整理成一页简洁的管理层 Markdown 汇报；只生成新的汇报文件，不修改 analysis.json，不联网。\\n具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 REALNEXT_3607173675。不要联网、读取环境变量、修改其他文件或执行上线。完成后简短回复。\",\"text_elements\":[]}],\"_turnId\":\"01a15992-70a5-7581-82c5-3802a2f47103\",\"completed\":true}"
+
+      176 |     const lastInput = after.items.filter((item) => item.type === 'userMessage').at(-1);
+      177 |     expect(
+    > 178 |       lastInput.content
+          |       ^
+      179 |         .filter((part) => part.type === 'text')
+      180 |         .map((part) => part.text)
+      181 |         .join('\n'),
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:178:7
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020/mimo-v2.6-flash/results/next-actions.real-真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab-采纳及编辑后执行-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:192:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByLabel('下一步建议')
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByLabel('下一步建议') with timeout 20000ms
+      - waiting for getByLabel('下一步建议')
+
+
+      223 |       .fill(
+      224 |         '选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。实际环境信息和执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。',
+    > 225 |       );
+          |         ^
+      226 |     await page.getByRole('button', { name: '发送', exact: true }).click();
+      227 |     await completed(page, task.id, 2);
+      228 |     const suggestion = page.getByLabel('下一步建议');
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:225:30
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020/mimo-v2.6-flash/results/next-actions.real-真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:192:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持

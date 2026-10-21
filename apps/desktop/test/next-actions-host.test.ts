@@ -33,6 +33,31 @@ afterEach(() => {
   store.close();
 });
 describe('本机建议 MCP 宿主', () => {
+  it('结束检查使用同一令牌和真实在途回合，不能创建建议或绕过重入上限', async () => {
+    store.db
+      .prepare(
+        "UPDATE thread_projection SET last_turn_id='turn',last_turn_status='inProgress' WHERE thread_id='task'",
+      )
+      .run();
+    host.service.onEvent({ type: 'turn-started', threadId: 'task', turnId: 'turn' });
+    const env = host.environment;
+    const url = env.EVOWORK_NEXT_ACTIONS_ENDPOINT.replace('/call', '/stop');
+    const body = JSON.stringify({ threadId: 'task', turnId: 'turn', stopHookActive: false });
+    expect((await fetch(url, { method: 'POST', body })).status).toBe(403);
+    const invoke = (value: unknown) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + env.EVOWORK_NEXT_ACTIONS_TOKEN },
+        body: JSON.stringify(value),
+      });
+    expect((await invoke({ threadId: 'task', turnId: 'turn' })).status).toBe(400);
+    expect(
+      await (await invoke({ threadId: 'task', turnId: 'old', stopHookActive: false })).json(),
+    ).toEqual({});
+    expect(await (await invoke(JSON.parse(body))).json()).toMatchObject({ decision: 'block' });
+    expect(await (await invoke(JSON.parse(body))).json()).toEqual({});
+    expect(await host.service.list('task')).toEqual([]);
+  });
   it('需要本机令牌和真实来源，登记只暂存不发布，旧令牌失效', async () => {
     const env = host.environment;
     const body = JSON.stringify({

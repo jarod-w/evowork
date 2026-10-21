@@ -3890,6 +3890,40 @@ describe('任务引导的异步草稿保护', () => {
     expect(box).toHaveProperty('value', '等待时输入的新草稿');
     expect(bridge.send).not.toHaveBeenCalled();
   });
+  it('软刷新不能让已经可采纳的建议闪退或吞掉 Tab，采纳仍只填草稿', async () => {
+    let refresh!: (value: ReturnType<typeof candidate>[]) => void;
+    let calls = 0;
+    const getNextActions = vi.fn(async () =>
+      ++calls === 1
+        ? [candidate()]
+        : new Promise<ReturnType<typeof candidate>[]>((resolve) => {
+            refresh = resolve;
+          }),
+    );
+    const accept = vi.fn(async () => candidate());
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [row('a')] }),
+      getNextActions,
+      actOnNextAction: accept,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('a已完成任务'));
+    await screen.findByRole('button', { name: '填入' });
+    await act(async () => {
+      emit.ui?.({ type: 'next-actions-changed', taskId: 'a' });
+    });
+    await waitFor(() => expect(getNextActions).toHaveBeenCalledTimes(2));
+    expect(screen.queryByLabelText('下一步建议')).not.toBeNull();
+    const input = screen.getByLabelText('需求输入');
+    fireEvent.keyDown(input, { key: 'Tab' });
+    await waitFor(() => expect(input).toHaveProperty('value', candidate().prompt));
+    expect(accept).toHaveBeenCalledOnce();
+    expect(bridge.send).not.toHaveBeenCalled();
+    await act(async () => {
+      refresh([]);
+    });
+    expect(input).toHaveProperty('value', candidate().prompt);
+  });
   it('切换任务后，旧查询迟到不能替换新建议', async () => {
     let finish!: (value: ReturnType<typeof candidate>[]) => void;
     const getNextActions = vi.fn(async ({ threadId }: { threadId: string }) =>

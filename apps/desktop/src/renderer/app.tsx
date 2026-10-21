@@ -1217,7 +1217,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             'task-removed',
           ].includes(event.type)
         ) {
-          setNextAction(undefined);
+          // A metadata refresh may arrive while a valid suggestion is being
+          // adopted. Keep it until the host returns; new turns still invalidate
+          // immediately, and adoption revalidates eligibility in the host.
+          if (event.type !== 'next-actions-changed') setNextAction(undefined);
           setNextActionsRefresh((previous) => previous + 1);
         }
         if (event.type !== 'item') flushItems();
@@ -3135,19 +3138,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   };
   useEffect(() => {
     let cancelled = false;
-    setNextAction(undefined);
     const load = () => {
       const revision = ++nextActionRevision.current;
-      setNextAction(undefined);
-      if (!activeTaskId || isSubagent || !bridge.getNextActions) return;
+      if (!activeTaskId || isSubagent || !bridge.getNextActions) {
+        setNextAction(undefined);
+        return;
+      }
       void bridge
         .getNextActions({ threadId: activeTaskId })
         .then((actions) => {
           if (!cancelled && revision === nextActionRevision.current) setNextAction(actions[0]);
         })
         .catch((error: unknown) => {
-          if (!cancelled && revision === nextActionRevision.current)
+          if (!cancelled && revision === nextActionRevision.current) {
+            setNextAction(undefined);
             reportFailure(error, '没能读取下一步建议。');
+          }
         });
     };
     load();

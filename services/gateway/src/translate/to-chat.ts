@@ -207,8 +207,14 @@ export function toChatRequest(
     switch (item.type) {
       case 'message': {
         const msg = item as Extract<ResponseItem, { type: 'message' }>;
+        // Domestic Chat providers use system for privileged instructions. Preserve
+        // developer precedence rather than mixing product policy into user text.
         const role =
-          msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : 'user';
+          msg.role === 'assistant'
+            ? 'assistant'
+            : msg.role === 'system' || msg.role === 'developer'
+              ? 'system'
+              : 'user';
         if (role === 'assistant') {
           flushToolCalls();
           pushAssistant({ role, content: contentToChat(msg.content, capabilities) });

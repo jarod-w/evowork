@@ -41,6 +41,79 @@ async function idle(page) {
 async function history(page, id) {
   return page.evaluate((threadId) => window.evowork.openTask({ threadId }), id);
 }
+test('纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行', async ({
+  page,
+  electronApp,
+}) => {
+  const marker = 'TEXTSTOP-' + Date.now().toString(36);
+  await electronApp.evaluate(
+    (_electron, { marker, candidate }) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen(
+        'text-before-stop',
+        (view) => view.text.includes(marker) && !view.text.includes('本回合尚未登记下一步状态。'),
+        { kind: 'text', text: '三步计划已交付 ' + marker },
+      );
+      gateway.scriptWhen(
+        'proposal-after-stop',
+        (view) =>
+          view.text.includes(marker) &&
+          view.text.includes('本回合尚未登记下一步状态。') &&
+          !view.calls.includes('propose_next_actions'),
+        { tool: 'propose_next_actions', args: { outcome: 'delivered', actions: [candidate] } },
+      );
+      gateway.scriptWhen(
+        'finish-after-stop',
+        (view) => view.text.includes(marker) && view.calls.includes('propose_next_actions'),
+        { kind: 'text', text: '计划已交付，可选择下一步。' },
+      );
+    },
+    { marker, candidate },
+  );
+  await startTaskInWorkspace(
+    page,
+    electronApp,
+    marker + ' 只在回复中给三步计划，下一阶段准备验收清单。',
+  );
+  await idle(page);
+  await expect(page.getByLabel('下一步建议')).toBeVisible();
+  const current = await task(page, marker);
+  const result = await history(page, current.id);
+  expect(result.turns).toHaveLength(1);
+  expect(result.turns[0].status).toBe('completed');
+  expect(result.items.filter((item) => item.type === 'userMessage')).toHaveLength(1);
+  expect(
+    result.items.filter(
+      (item) => item.type === 'mcpToolCall' && item.tool === 'propose_next_actions',
+    ),
+  ).toHaveLength(1);
+  expect(result.items.filter((item) => item.type === 'commandExecution')).toHaveLength(0);
+});
+test('模型忽略结束提醒也能完成原回合，不无限重试或伪造建议', async ({ page, electronApp }) => {
+  const marker = 'IGNORESTOP-' + Date.now().toString(36);
+  await electronApp.evaluate((_electron, marker) => {
+    const gateway = globalThis.__evoworkE2E.gateway;
+    gateway.scriptWhen(
+      'ignore-stop-first',
+      (view) => view.text.includes(marker) && !view.text.includes('本回合尚未登记下一步状态。'),
+      { kind: 'text', text: '正文交付 ' + marker },
+    );
+    gateway.scriptWhen(
+      'ignore-stop-again',
+      (view) => view.text.includes(marker) && view.text.includes('本回合尚未登记下一步状态。'),
+      { kind: 'text', text: '结束 ' + marker },
+    );
+  }, marker);
+  await startTaskInWorkspace(page, electronApp, marker + ' 回复一个计划。');
+  await idle(page);
+  await expect(page.getByText('结束 ' + marker, { exact: true })).toBeVisible();
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  const current = await task(page, marker);
+  const result = await history(page, current.id);
+  expect(result.turns).toHaveLength(1);
+  expect(result.turns[0].status).toBe('completed');
+  expect(result.items.filter((item) => item.type === 'userMessage')).toHaveLength(1);
+});
 test('MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送走原回合链路', async ({
   page,
   electronApp,

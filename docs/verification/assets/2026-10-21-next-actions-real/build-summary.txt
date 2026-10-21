@@ -1,0 +1,23 @@
+../../dist/renderer/assets/swimlanes-42K2YHIH-BuNS5mq_.js            115.79 kB │ gzip:  42.51 kB
+../../dist/renderer/assets/sequenceDiagram-WJ2MYXX4-DBkZCMcA.js      116.96 kB │ gzip:  31.14 kB
+../../dist/renderer/assets/architectureDiagram-5GKGNRK7-D4q1bfxl.js  151.82 kB │ gzip:  43.15 kB
+../../dist/renderer/assets/katex-HP8lGamR.js                         261.31 kB │ gzip:  77.57 kB
+../../dist/renderer/assets/cytoscape.esm-DzSz-X2X.js                 443.04 kB │ gzip: 141.98 kB
+../../dist/renderer/assets/mermaid.core-CenGSCZ6.js                  613.90 kB │ gzip: 145.86 kB
+../../dist/renderer/assets/index-domINSjV.js                         652.96 kB │ gzip: 213.46 kB
+../../dist/renderer/assets/cynefin-OW5HDTMX-D-qsrVbf.js              688.15 kB │ gzip: 154.16 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 5.38s
+
+✅ 构建完成。产物：
+   dist/gateway/main.js                             网关（单文件，可直接 node 运行）
+   dist/identity/main.js                            账号服务（云端，不进桌面包）
+   apps/desktop/dist/renderer/                      渲染层（vite）
+   apps/desktop/dist/main/electron-entry.mjs        Electron 入口
+   apps/desktop/dist/main/bootstrap.bundle.js       主进程（单文件）
+   apps/desktop/dist/preload/index.bundle.cjs       preload（单文件，CJS）
+   plugins/hooks/evowork-policy/vendor/policy.mjs   策略包

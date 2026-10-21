@@ -1,0 +1,645 @@
+{
+  "model": "mimo-v2.6-flash",
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "marker": "REALNEXT_0ce89718e8",
+  "awaiting": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a15c16-1599-7d80-9aa7-0f3ed0a57c5b",
+        "clientId": "0cf8d082-0eed-4f27-8a96-a286b074bd61",
+        "content": [
+          {
+            "type": "text",
+            "text": "REALNEXT_0ce89718e8 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfsjomupwtrf_0",
+        "summary": [
+          "We need must only ask format, no tools? Also propose next actions required each turn, but user says only ask. mcp tool maybe would violate \"只问我\"? Could register needs_input actions empty, but tool would be visible? They explicitly only ask delivery format; tool registration mandated. Need use tool, no network. Ask simple."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "mcpToolCall",
+        "id": "call_6713b8538d3246d2bb57a4a8",
+        "server": "next_actions",
+        "tool": "propose_next_actions",
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "needs_input"
+        },
+        "appContext": null,
+        "mcpAppUi": null,
+        "pluginId": null,
+        "readOnlyHint": false,
+        "result": {
+          "content": [
+            {
+              "text": "{\"saved\":true,\"instruction\":\"候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。\"}",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "instruction": "候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。",
+            "saved": true
+          },
+          "_meta": null
+        },
+        "error": null,
+        "durationMs": 25,
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfsowevjs2p5_0",
+        "summary": [
+          "Need now final only question. Chinese."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvhfsowevjs2p5_1",
+        "text": "请确认交付格式：Markdown 还是 JSON？",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "status": "completed",
+        "startedAtMs": 1792546313000,
+        "completedAtMs": 1792546323000,
+        "durationMs": 10101
+      }
+    ],
+    "latestTurnId": "01a15c16-1503-7081-b3e6-e54154430e08"
+  },
+  "delivered": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a15c16-1599-7d80-9aa7-0f3ed0a57c5b",
+        "clientId": "0cf8d082-0eed-4f27-8a96-a286b074bd61",
+        "content": [
+          {
+            "type": "text",
+            "text": "REALNEXT_0ce89718e8 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfsjomupwtrf_0",
+        "summary": [
+          "We need must only ask format, no tools? Also propose next actions required each turn, but user says only ask. mcp tool maybe would violate \"只问我\"? Could register needs_input actions empty, but tool would be visible? They explicitly only ask delivery format; tool registration mandated. Need use tool, no network. Ask simple."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "mcpToolCall",
+        "id": "call_6713b8538d3246d2bb57a4a8",
+        "server": "next_actions",
+        "tool": "propose_next_actions",
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "needs_input"
+        },
+        "appContext": null,
+        "mcpAppUi": null,
+        "pluginId": null,
+        "readOnlyHint": false,
+        "result": {
+          "content": [
+            {
+              "text": "{\"saved\":true,\"instruction\":\"候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。\"}",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "instruction": "候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。",
+            "saved": true
+          },
+          "_meta": null
+        },
+        "error": null,
+        "durationMs": 25,
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfsowevjs2p5_0",
+        "summary": [
+          "Need now final only question. Chinese."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvhfsowevjs2p5_1",
+        "text": "请确认交付格式：Markdown 还是 JSON？",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "userMessage",
+        "id": "01a15c16-43fd-7643-9dc0-f3d87c71a0b2",
+        "clientId": "9a909100-fa87-4e38-a717-cc4171652b0d",
+        "content": [
+          {
+            "type": "text",
+            "text": "选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfssuaxs2f29_0",
+        "summary": [
+          "We need need produce plan. Need maybe context \"REALNEXT_...\" no actual technical project, so generic three-step rollout plan. Should not read files? They only say no network/env/subtask. We can just answer. Need next actions register before final. User explicitly says future next stage and current only plan, so propose next actions one candidate rollback checklist maybe outcome delivered, actions. Then answer in Markdown. Must ensure three steps exactly. Maybe title and3 numbered. Include validation, backups? Three-step deployment plan. Need probably name REALNEXT_0ce89718e8. Include prerequisite? They ask three-step. \"仅在回复\". Make good. The plan needs actionable but no details. Since no environment facts, generic. Need no claims. Let's register next action."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "mcpToolCall",
+        "id": "call_d5754a8fc578442586ac44bb",
+        "server": "next_actions",
+        "tool": "propose_next_actions",
+        "status": "completed",
+        "arguments": {
+          "actions": [
+            {
+              "prompt": "请把 REALNEXT_0ce89718e8 的三步上线计划扩展为一份 Markdown 回滚演练检查清单，仍只在回复中交付，不写文件；本轮先不执行实际上线。",
+              "reason": "这是用户明确说明的下一阶段目标。",
+              "title": "扩展回滚演练检查清单"
+            }
+          ],
+          "outcome": "delivered"
+        },
+        "appContext": null,
+        "mcpAppUi": null,
+        "pluginId": null,
+        "readOnlyHint": false,
+        "result": {
+          "content": [
+            {
+              "text": "{\"saved\":true,\"instruction\":\"候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。\"}",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "instruction": "候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。",
+            "saved": true
+          },
+          "_meta": null
+        },
+        "error": null,
+        "durationMs": 25,
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhft1v2v75s1j_0",
+        "summary": [
+          "Need now answer three steps only. Need perhaps cautious: plan generic due identifier. Three steps. Markdown. No files. Mention scope. User says only plan. Should perhaps title + numbered3. Include exit criteria. No execution. Since user specified rollback future not checklist. Need no propose tool? Next actions was already required. Could register delivered with future action? Already done in prior turn bizarre, but this turn has new actual delivered plan and next phase. We need before final register this turn too? System says each round before final. We did before response this turn? Actually tool call was at start current turn after user message, yes. It recorded prompt likely okay though title says expand. outcome delivered perhaps premature but now final immediately. Fine.\n\nAnswer concise but useful. Three-step rollout plan with step 1 prechecks, step2 deploy and verify, step 3 stabilize/complete. No actual execution. Full dates? no dates. Make scope clear. \"回滚检查清单暂不制作\". Maybe this violates only plan? It's confirmation. Fine."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvhft1v2v75s1j_1",
+        "text": "# REALNEXT_0ce89718e8 三步上线计划\n\n1. **上线前检查**：确认变更范围、依赖与配置，备份当前版本，完成测试和回滚条件确认。  \n2. **分批发布与验证**：先发布到预发或小流量环境，验证核心功能、监控告警和性能；达标后扩大流量。  \n3. **上线后观察与收尾**：持续观察错误率、关键指标和用户反馈；异常时暂停或回滚，稳定后关闭变更并记录结果。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "status": "completed",
+        "startedAtMs": 1792546313000,
+        "completedAtMs": 1792546323000,
+        "durationMs": 10101
+      },
+      {
+        "id": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "status": "completed",
+        "startedAtMs": 1792546325000,
+        "completedAtMs": 1792546352000,
+        "durationMs": 27014
+      }
+    ],
+    "latestTurnId": "01a15c16-43e4-7d61-9230-7e382a43968a"
+  },
+  "actions": [
+    {
+      "id": "call_d5754a8fc578442586ac44bb:0",
+      "threadId": "01a15c16-14ea-7ce3-bb62-d327d1e8028f",
+      "sourceTurnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+      "title": "扩展回滚演练检查清单",
+      "prompt": "请把 REALNEXT_0ce89718e8 的三步上线计划扩展为一份 Markdown 回滚演练检查清单，仍只在回复中交付，不写文件；本轮先不执行实际上线。",
+      "reason": "这是用户明确说明的下一阶段目标。"
+    }
+  ],
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a15c16-1599-7d80-9aa7-0f3ed0a57c5b",
+        "clientId": "0cf8d082-0eed-4f27-8a96-a286b074bd61",
+        "content": [
+          {
+            "type": "text",
+            "text": "REALNEXT_0ce89718e8 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfsjomupwtrf_0",
+        "summary": [
+          "We need must only ask format, no tools? Also propose next actions required each turn, but user says only ask. mcp tool maybe would violate \"只问我\"? Could register needs_input actions empty, but tool would be visible? They explicitly only ask delivery format; tool registration mandated. Need use tool, no network. Ask simple."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "mcpToolCall",
+        "id": "call_6713b8538d3246d2bb57a4a8",
+        "server": "next_actions",
+        "tool": "propose_next_actions",
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "needs_input"
+        },
+        "appContext": null,
+        "mcpAppUi": null,
+        "pluginId": null,
+        "readOnlyHint": false,
+        "result": {
+          "content": [
+            {
+              "text": "{\"saved\":true,\"instruction\":\"候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。\"}",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "instruction": "候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。",
+            "saved": true
+          },
+          "_meta": null
+        },
+        "error": null,
+        "durationMs": 25,
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfsowevjs2p5_0",
+        "summary": [
+          "Need now final only question. Chinese."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvhfsowevjs2p5_1",
+        "text": "请确认交付格式：Markdown 还是 JSON？",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "completed": true
+      },
+      {
+        "type": "userMessage",
+        "id": "01a15c16-43fd-7643-9dc0-f3d87c71a0b2",
+        "clientId": "9a909100-fa87-4e38-a717-cc4171652b0d",
+        "content": [
+          {
+            "type": "text",
+            "text": "选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhfssuaxs2f29_0",
+        "summary": [
+          "We need need produce plan. Need maybe context \"REALNEXT_...\" no actual technical project, so generic three-step rollout plan. Should not read files? They only say no network/env/subtask. We can just answer. Need next actions register before final. User explicitly says future next stage and current only plan, so propose next actions one candidate rollback checklist maybe outcome delivered, actions. Then answer in Markdown. Must ensure three steps exactly. Maybe title and3 numbered. Include validation, backups? Three-step deployment plan. Need probably name REALNEXT_0ce89718e8. Include prerequisite? They ask three-step. \"仅在回复\". Make good. The plan needs actionable but no details. Since no environment facts, generic. Need no claims. Let's register next action."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "mcpToolCall",
+        "id": "call_d5754a8fc578442586ac44bb",
+        "server": "next_actions",
+        "tool": "propose_next_actions",
+        "status": "completed",
+        "arguments": {
+          "actions": [
+            {
+              "prompt": "请把 REALNEXT_0ce89718e8 的三步上线计划扩展为一份 Markdown 回滚演练检查清单，仍只在回复中交付，不写文件；本轮先不执行实际上线。",
+              "reason": "这是用户明确说明的下一阶段目标。",
+              "title": "扩展回滚演练检查清单"
+            }
+          ],
+          "outcome": "delivered"
+        },
+        "appContext": null,
+        "mcpAppUi": null,
+        "pluginId": null,
+        "readOnlyHint": false,
+        "result": {
+          "content": [
+            {
+              "text": "{\"saved\":true,\"instruction\":\"候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。\"}",
+              "type": "text"
+            }
+          ],
+          "structuredContent": {
+            "instruction": "候选已保存，回合完成后由宿主筛选展示；继续完成当前请求，不执行这些候选。",
+            "saved": true
+          },
+          "_meta": null
+        },
+        "error": null,
+        "durationMs": 25,
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvhft1v2v75s1j_0",
+        "summary": [
+          "Need now answer three steps only. Need perhaps cautious: plan generic due identifier. Three steps. Markdown. No files. Mention scope. User says only plan. Should perhaps title + numbered3. Include exit criteria. No execution. Since user specified rollback future not checklist. Need no propose tool? Next actions was already required. Could register delivered with future action? Already done in prior turn bizarre, but this turn has new actual delivered plan and next phase. We need before final register this turn too? System says each round before final. We did before response this turn? Actually tool call was at start current turn after user message, yes. It recorded prompt likely okay though title says expand. outcome delivered perhaps premature but now final immediately. Fine.\n\nAnswer concise but useful. Three-step rollout plan with step 1 prechecks, step2 deploy and verify, step 3 stabilize/complete. No actual execution. Full dates? no dates. Make scope clear. \"回滚检查清单暂不制作\". Maybe this violates only plan? It's confirmation. Fine."
+        ],
+        "content": [],
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvhft1v2v75s1j_1",
+        "text": "# REALNEXT_0ce89718e8 三步上线计划\n\n1. **上线前检查**：确认变更范围、依赖与配置，备份当前版本，完成测试和回滚条件确认。  \n2. **分批发布与验证**：先发布到预发或小流量环境，验证核心功能、监控告警和性能；达标后扩大流量。  \n3. **上线后观察与收尾**：持续观察错误率、关键指标和用户反馈；异常时暂停或回滚，稳定后关闭变更并记录结果。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a15c16-1503-7081-b3e6-e54154430e08",
+        "status": "completed",
+        "startedAtMs": 1792546313000,
+        "completedAtMs": 1792546323000,
+        "durationMs": 10101
+      },
+      {
+        "id": "01a15c16-43e4-7d61-9230-7e382a43968a",
+        "status": "completed",
+        "startedAtMs": 1792546325000,
+        "completedAtMs": 1792546352000,
+        "durationMs": 27014
+      }
+    ],
+    "latestTurnId": "01a15c16-43e4-7d61-9230-7e382a43968a"
+  },
+  "wire": [
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 1,
+      "at": 1792546313629,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": false,
+      "hasNextActionRulesInSystem": false,
+      "hasNextActionTool": false,
+      "hasNextActionTask": false,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 2,
+      "at": 1792546313640,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": true,
+      "hasNextActionRulesInSystem": true,
+      "hasNextActionTool": true,
+      "hasNextActionTask": true,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 1,
+      "at": 1792546314788,
+      "status": 200
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 2,
+      "at": 1792546315908,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 3,
+      "at": 1792546319506,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": false,
+      "hasNextActionRulesInSystem": false,
+      "hasNextActionTool": false,
+      "hasNextActionTask": false,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 4,
+      "at": 1792546320399,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": true,
+      "hasNextActionRulesInSystem": true,
+      "hasNextActionTool": true,
+      "hasNextActionTask": true,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 4,
+      "at": 1792546322373,
+      "status": 200
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 3,
+      "at": 1792546324600,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 5,
+      "at": 1792546325507,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": true,
+      "hasNextActionRulesInSystem": true,
+      "hasNextActionTool": true,
+      "hasNextActionTask": true,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 5,
+      "at": 1792546326481,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 6,
+      "at": 1792546330442,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": false,
+      "hasNextActionRulesInSystem": false,
+      "hasNextActionTool": false,
+      "hasNextActionTask": false,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 6,
+      "at": 1792546333143,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 7,
+      "at": 1792546337199,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": true,
+      "hasNextActionRulesInSystem": true,
+      "hasNextActionTool": true,
+      "hasNextActionTask": true,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "request",
+      "pid": 60422,
+      "id": 8,
+      "at": 1792546337738,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": false,
+      "hasNextActionRulesInSystem": false,
+      "hasNextActionTool": false,
+      "hasNextActionTask": false,
+      "hasNextActionStopReminder": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 8,
+      "at": 1792546338710,
+      "status": 200
+    },
+    {
+      "type": "response",
+      "pid": 60422,
+      "id": 7,
+      "at": 1792546339449,
+      "status": 200
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 60423,
+      "at": 1792546312127
+    }
+  ]
+}

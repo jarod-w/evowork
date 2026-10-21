@@ -1,0 +1,22 @@
+
+Running 15 tests using 1 worker
+
+(node:54204) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [fake] › apps/desktop/test/e2e/ui/composer.spec.mjs:12:1 › 输入 → 发送 → 进入运行态 → 中断 (4.7s)
+  ✓   2 [fake] › apps/desktop/test/e2e/ui/composer.spec.mjs:74:1 › 首页不预选项目，两个无项目任务有独立目录 (2.2s)
+  ✓   3 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:4:1 › goal 从真实输入启动、暂停、查看、恢复、完成与清除 (6.7s)
+  ✓   4 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:41:1 › 未创建目标时，查看与控制给出提示且不创建任务 (15.4s)
+  ✓   5 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:51:1 › 未完成目标替换先确认：取消保留旧目标，确认重置预算并执行新目标 (4.8s)
+  ✓   6 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:102:1 › 预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算恢复并清除 (5.7s)
+  ✓   7 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:44:1 › 纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行 (3.0s)
+  ✓   8 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:92:1 › 模型忽略结束提醒也能完成原回合，不无限重试或伪造建议 (3.3s)
+  ✓   9 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:117:1 › MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送走原回合链路 (4.7s)
+  ✓  10 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:163:1 › 运行中的候选不展示、不覆盖草稿，点击填入不发送；忽略刷新后仍隐藏 (6.3s)
+  ✓  11 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:205:1 › 等待用户补充不展示下一步建议 (4.6s)
+  ✓  12 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:214:1 › 提出候选后停止回合，不发布或恢复未完成建议 (7.5s)
+  ✓  13 [fake] › apps/desktop/test/e2e/ui/thread-communication.spec.mjs:81:1 › 对话发现同项目目标并确认发送，执行、回传、汇总与刷新恢复，无回复循环 (20.3s)
+  ✓  14 [fake] › apps/desktop/test/e2e/ui/thread-communication.spec.mjs:171:3 › 代理发起独立会话请求：拒绝后零投递 (4.8s)
+  ✓  15 [fake] › apps/desktop/test/e2e/ui/thread-communication.spec.mjs:171:3 › 代理发起独立会话请求：批准后执行并回传 (3.8s)
+
+  15 passed (1.6m)

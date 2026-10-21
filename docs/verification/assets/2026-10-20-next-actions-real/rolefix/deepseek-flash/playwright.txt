@@ -1,0 +1,43 @@
+
+Running 2 tests using 1 worker
+
+(node:41437) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:121:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行 (37.0s)
+(node:41699) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:207:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持 (14.7s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:121:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator:  getByLabel('需求输入')
+    Expected: "基于当前目录的 analysis.json 和 sales-input.json，整理一页面向管理层的 Markdown 汇报：先用 Python 从原始文件重新核算关键数字（总和、最大值、数据条数），并用表格列出每个数字及其来源；给出简洁的结论与管理层可读的要点，避免夸大或推测未提供的数据；只生成一个 Markdown 文件并读回核验，不联网、不读工作目录外文件、不修改原始数据。"
+    Received: ""
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toHaveValue" getByLabel('需求输入') with timeout 20000ms
+      - waiting for getByLabel('需求输入')
+        - locator resolved to <textarea rows="3" role="combobox" aria-label="需求输入" aria-expanded="false" aria-autocomplete="list" class="ew-composer-textarea" placeholder="输入需求，或描述你想完成的工作"></textarea>
+        43 × unexpected value ""
+           - locator resolved to <textarea rows="3" role="combobox" aria-label="需求输入" aria-expanded="false" aria-autocomplete="list" class="ew-composer-textarea" placeholder="基于当前目录的 analysis.json 和 sales-input.json，整理一页面向管理层的 Markdown 汇报：先用 Python 从原始文件重新核算关键数字（总和、最大值、数据条数），并用表格列出每个数字及其来源；给出简洁的结论与管理层可读的要点，避免夸大或推测未提供的数据；只生成一个 Markdown 文件并读回核验，不联网、不读工作目录外文件、不修改原始数据。"></textarea>
+        - unexpected value ""
+
+
+      169 |     await input.focus();
+      170 |     await input.press('Tab');
+    > 171 |     await expect(input).toHaveValue(actions[0].prompt);
+          |                         ^
+      172 |     expect(
+      173 |       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
+      174 |     ).toHaveLength(1);
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:171:25
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020-rolefix/deepseek-flash/results/next-actions.real-真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab-采纳及编辑后执行-real/error-context.md
+
+  1 failed
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:121:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+  1 passed (52.4s)

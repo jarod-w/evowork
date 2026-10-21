@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |desktop| test/composer.test.tsx (73 tests) 1084ms
+ ✓ |desktop| test/app.test.tsx (137 tests) 7679ms
+
+ Test Files  2 passed (2)
+      Tests  210 passed (210)
+   Start at  22:15:21
+   Duration  9.38s (transform 905ms, setup 184ms, collect 1.31s, tests 8.76s, environment 503ms, prepare 74ms)

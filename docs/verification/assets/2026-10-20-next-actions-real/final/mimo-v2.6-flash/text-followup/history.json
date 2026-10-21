@@ -1,0 +1,185 @@
+{
+  "model": "mimo-v2.6-flash",
+  "baseUrl": "https://api.xiaomimimo.com/v1",
+  "marker": "REALNEXT_feab2d21bd",
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a159b0-017a-7aa0-be2f-5d7b565fde79",
+        "clientId": "3d05a743-004b-485a-816a-879d793fd3bd",
+        "content": [
+          {
+            "type": "text",
+            "text": "REALNEXT_feab2d21bd 我需要一个三步上线计划，但还没有决定用 Markdown 还是 JSON。请先只问我交付格式，等我回答后再拟计划。这一轮不要创建文件，也不要开始计划。不要联网、读取环境变量或创建子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a159b0-00fa-73e0-80b2-962cefc98038",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvgrtz0kje3gew_0",
+        "summary": [
+          "We need need ask format only. In Chinese concise. No tools."
+        ],
+        "content": [],
+        "_turnId": "01a159b0-00fa-73e0-80b2-962cefc98038",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvgrtz0kje3gew_1",
+        "text": "请告诉我交付格式：Markdown 还是 JSON？",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a159b0-00fa-73e0-80b2-962cefc98038",
+        "completed": true
+      },
+      {
+        "type": "userMessage",
+        "id": "01a159b0-1813-7222-a631-1b07eb1fcd37",
+        "clientId": "f05fdb98-78a2-4516-aa8e-a5dd18337dab",
+        "content": [
+          {
+            "type": "text",
+            "text": "选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a159b0-17f8-7910-bd61-9bd750973109",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mvgru3h4alm6dp_0",
+        "summary": [
+          "We need answer only markdown three-step launch plan. Need perhaps include no assumptions. Chinese. Must not create. User explicitly says only plan. Three steps. Could mention rollback later? No checklist. Ensure exactly three steps perhaps headings numbered. They ask \"仅在回复中给出三步上线计划\" so only content, no intro."
+        ],
+        "content": [],
+        "_turnId": "01a159b0-17f8-7910-bd61-9bd750973109",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mvgru3h4alm6dp_1",
+        "text": "# 三步上线计划\n\n## 1. 上线准备与验收\n\n- 冻结需求与代码范围，确认版本、变更清单和负责人。\n- 完成测试、回归验证及数据备份。\n- 准备上线配置、权限、监控和告警。\n\n## 2. 发布与观察\n\n- 按既定窗口执行部署，并验证健康检查、核心接口和关键业务流程。\n- 持续观察错误率、响应时间、资源占用和日志。\n- 发现异常时暂停继续放量，并将决策交由负责人确认。\n\n## 3. 上线确认与收尾\n\n- 业务负责人确认功能可用，运维负责人确认系统稳定。\n- 保留版本、部署记录和必要的数据备份。\n- 更新上线记录，明确后续监控责任人。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a159b0-17f8-7910-bd61-9bd750973109",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a159b0-00fa-73e0-80b2-962cefc98038",
+        "status": "completed",
+        "startedAtMs": 1792506069000,
+        "completedAtMs": 1792506072000,
+        "durationMs": 3727
+      },
+      {
+        "id": "01a159b0-17f8-7910-bd61-9bd750973109",
+        "status": "completed",
+        "startedAtMs": 1792506075000,
+        "completedAtMs": 1792506085000,
+        "durationMs": 10302
+      }
+    ],
+    "latestTurnId": "01a159b0-17f8-7910-bd61-9bd750973109"
+  },
+  "wire": [
+    {
+      "type": "request",
+      "pid": 45871,
+      "id": 1,
+      "at": 1792506069382,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": true,
+      "hasNextActionRulesInSystem": true,
+      "hasNextActionTool": true,
+      "hasNextActionTask": true,
+      "markers": []
+    },
+    {
+      "type": "request",
+      "pid": 45871,
+      "id": 2,
+      "at": 1792506069391,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": false,
+      "hasNextActionRulesInSystem": false,
+      "hasNextActionTool": false,
+      "hasNextActionTask": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 45871,
+      "id": 1,
+      "at": 1792506072105,
+      "status": 200
+    },
+    {
+      "type": "response",
+      "pid": 45871,
+      "id": 2,
+      "at": 1792506074501,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 45871,
+      "id": 3,
+      "at": 1792506075161,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": true,
+      "hasNextActionRulesInSystem": true,
+      "hasNextActionTool": true,
+      "hasNextActionTask": true,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 45871,
+      "id": 3,
+      "at": 1792506075720,
+      "status": 200
+    },
+    {
+      "type": "request",
+      "pid": 45871,
+      "id": 4,
+      "at": 1792506091930,
+      "endpoint": "https://api.xiaomimimo.com/v1/chat/completions",
+      "model": "mimo-v2.6-flash",
+      "hasNextActionRules": false,
+      "hasNextActionRulesInSystem": false,
+      "hasNextActionTool": false,
+      "hasNextActionTask": false,
+      "markers": []
+    },
+    {
+      "type": "response",
+      "pid": 45871,
+      "id": 4,
+      "at": 1792506097112,
+      "status": 200
+    }
+  ],
+  "lifecycle": [
+    {
+      "kind": "started",
+      "pid": 45872,
+      "at": 1792506067812
+    }
+  ]
+}

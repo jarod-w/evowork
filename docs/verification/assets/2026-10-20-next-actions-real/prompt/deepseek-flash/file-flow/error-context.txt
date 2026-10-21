@@ -1,0 +1,480 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: next-actions.real.spec.mjs >> 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+- Location: apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1
+
+# Error details
+
+```
+Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: true
+Received: false
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=f2e3]:
+  - navigation "侧边栏" [ref=f2e4]:
+    - button "折叠侧边栏" [ref=f2e6] [cursor=pointer]
+    - generic [ref=f2e9]:
+      - generic [ref=f2e10]: EvoWork
+      - button "打开搜索框" [ref=f2e15] [cursor=pointer]
+      - button "筛选任务" [ref=f2e20] [cursor=pointer]
+    - button "新建任务" [ref=f2e24] [cursor=pointer]
+    - generic [ref=f2e29]:
+      - generic [ref=f2e30]:
+        - button "自动化" [ref=f2e31] [cursor=pointer]
+        - button "插件" [ref=f2e37] [cursor=pointer]
+        - button "资料库" [ref=f2e44] [cursor=pointer]
+      - region "项目" [ref=f2e49]:
+        - generic [ref=f2e50]:
+          - button "项目" [expanded] [ref=f2e51] [cursor=pointer]
+          - generic [ref=f2e56]:
+            - generic:
+              - generic:
+                - button "项目更多操作":
+                  - generic [aria-hidden]: ⋯
+              - button "创建项目"
+        - button "UI" [ref=f2e60] [cursor=pointer]
+      - region "最近" [ref=f2e68]:
+        - button "最近" [expanded] [ref=f2e70] [cursor=pointer]
+        - list [ref=f2e77]:
+          - listitem [ref=f2e78]:
+            - generic [ref=f2e80]:
+              - button "管理层分析摘要" [ref=f2e81] [cursor=pointer]
+              - button "管理层分析摘要 的更多操作" [ref=f2e83] [cursor=pointer]: ⋯
+    - button "wangli 菜单" [ref=f2e87] [cursor=pointer]:
+      - generic [aria-hidden] [ref=f2e88]: w
+      - generic [ref=f2e89]:
+        - generic [ref=f2e90]: wangli
+        - generic [ref=f2e91]: v44.2.0
+  - generic [ref=f2e92]:
+    - banner [ref=f2e93]:
+      - heading "管理层分析摘要" [level=1] [ref=f2e94]
+      - generic [ref=f2e95]:
+        - button "关闭结果" [ref=f2e96] [cursor=pointer]
+        - button "任务更多操作" [ref=f2e98] [cursor=pointer]:
+          - generic [aria-hidden] [ref=f2e99]: ⋯
+    - generic [ref=f2e100]:
+      - main "对话区" [ref=f2e101]:
+        - feed [ref=f2e103]:
+          - paragraph [ref=f2e108]: "REALNEXT_4f474ece24 请读取当前目录 sales-input.json，用本机 Python 计算全部整数的总和与最大值，写入 analysis.json，格式严格为 {\"total\":整数,\"max\":整数}，并读取核验。本轮先完成这个分析文件即可；下一阶段我准备把分析结果整理成一页管理层 Markdown 汇报，还没有开始做。不要提前制作汇报，不联网、不读环境变量或工作目录外文件、不创建子任务。"
+          - generic [ref=f2e109]:
+            - generic "回合处理时间" [ref=f2e110]: 已处理 12 秒
+            - paragraph [ref=f2e114]:
+              - text: 我先查看
+              - code [ref=f2e115]: sales-input.json
+              - text: ，然后用本机 Python 计算总和与最大值，并写入、读回核验。
+          - group "操作记录，已完成" [ref=f2e117]:
+            - button "操作记录：已查看目录 · 读取文件，已完成" [ref=f2e118] [cursor=pointer]:
+              - generic [ref=f2e122]: 已查看目录 · 读取文件
+          - button "推理过程" [ref=f2e130] [cursor=pointer]
+          - paragraph [ref=f2e137]:
+            - text: 我先用 Python 计算并写入
+            - button "analysis.json" [ref=f2e138] [cursor=pointer]
+            - text: ，再读回该文件核对格式与结果。
+          - group "操作记录，已完成" [ref=f2e140]:
+            - button "操作记录：已运行命令，已完成" [ref=f2e141] [cursor=pointer]:
+              - generic [ref=f2e146]: 已运行命令
+          - button "推理过程" [ref=f2e154] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e158]:
+            - button "操作记录：已运行命令，已完成" [ref=f2e159] [cursor=pointer]:
+              - generic [ref=f2e164]: 已运行命令
+          - button "推理过程" [ref=f2e172] [cursor=pointer]
+          - paragraph [ref=f2e179]: 计算完成且读回校验通过；我登记并打开分析文件。
+          - group "操作记录，已完成" [ref=f2e181]:
+            - button "操作记录：已调用工具，已完成" [ref=f2e182] [cursor=pointer]:
+              - generic [ref=f2e188]: 已调用工具
+          - button "推理过程" [ref=f2e196] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e200]:
+            - button "操作记录：已调用工具，已完成" [ref=f2e201] [cursor=pointer]:
+              - generic [ref=f2e207]: 已调用工具
+          - button "推理过程" [ref=f2e215] [cursor=pointer]
+          - generic [ref=f2e220]:
+            - paragraph [ref=f2e222]:
+              - text: 已完成
+              - button "analysis.json" [ref=f2e223] [cursor=pointer]
+              - text: ，内容为：
+            - figure [ref=f2e224]:
+              - button "查看源码" [ref=f2e226] [cursor=pointer]
+              - code [ref=f2e229]: "{\"total\":4696,\"max\":999}"
+            - paragraph [ref=f2e231]:
+              - text: 已用 Python 读回
+              - button "analysis.json" [ref=f2e232] [cursor=pointer]
+              - text: 核验，字段、整数类型和计算结果均与
+              - code [ref=f2e233]: sales-input.json
+              - text: 一致。汇报尚未开始制作。
+          - paragraph [ref=f2e238]: 基于当前工作目录的 analysis.json 和 sales-input.json，整理一页面向管理层的 Markdown 汇报，清楚呈现整数总和、最大值及简要结论；不要改动分析结果。 具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 REALNEXT_4f474ece24。不要联网、读取环境变量、修改其他文件或执行上线。完成后简短回复。
+          - generic [ref=f2e239]:
+            - generic "回合处理时间" [ref=f2e240]: 已处理 50 秒
+            - button "已思考 4 秒" [ref=f2e244] [cursor=pointer]
+          - paragraph [ref=f2e251]:
+            - text: 我先读取
+            - button "analysis.json" [ref=f2e252] [cursor=pointer]
+            - text: 的当前值，并按一页管理层汇报的结构生成
+            - button "accepted-report.md" [ref=f2e253] [cursor=pointer]
+            - text: ；不会改动分析结果或其他文件。
+          - group "操作记录，已完成" [ref=f2e255]:
+            - button "操作记录：已读取文件，已完成" [ref=f2e256] [cursor=pointer]:
+              - generic [ref=f2e260]: 已读取文件
+          - button "已思考 1 秒" [ref=f2e268] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e272]:
+            - button "操作记录：已查看目录，已完成" [ref=f2e273] [cursor=pointer]:
+              - generic [ref=f2e277]: 已查看目录
+          - button "已思考 1 秒" [ref=f2e285] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e289]:
+            - button "操作记录：已运行命令，已完成" [ref=f2e290] [cursor=pointer]:
+              - generic [ref=f2e295]: 已运行命令
+          - button "已思考 1 秒" [ref=f2e303] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e307]:
+            - button "操作记录：已读取文件，已完成" [ref=f2e308] [cursor=pointer]:
+              - generic [ref=f2e312]: 已读取文件
+          - button "已思考 4 秒" [ref=f2e320] [cursor=pointer]
+          - paragraph [ref=f2e327]:
+            - text: 我会用文档技能的一页报告结构渲染 Markdown，数据只取自
+            - button "analysis.json" [ref=f2e328] [cursor=pointer]
+            - text: ，并保留验收标识。
+          - group "操作记录，已完成" [ref=f2e330]:
+            - button "操作记录：已运行命令，已完成" [ref=f2e331] [cursor=pointer]:
+              - generic [ref=f2e336]: 已运行命令
+          - button "已思考 4 秒" [ref=f2e344] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e348]:
+            - button "操作记录：已运行命令，已完成，1 项操作失败" [ref=f2e349] [cursor=pointer]:
+              - generic [ref=f2e354]: 已运行命令
+              - generic [ref=f2e355]: 1 项操作失败
+          - button "已思考 1 秒" [ref=f2e363] [cursor=pointer]
+          - paragraph [ref=f2e370]: 文档渲染器提示需要本地办公扩展，而本轮禁止联网安装；我先检查它的 Markdown 渲染路径，避免改用无关工具。
+          - group "操作记录，已完成" [ref=f2e372]:
+            - button "操作记录：已搜索文件，已完成" [ref=f2e373] [cursor=pointer]:
+              - generic [ref=f2e378]: 已搜索文件
+          - button "已思考 1 秒" [ref=f2e386] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e390]:
+            - button "操作记录：已读取文件，已完成" [ref=f2e391] [cursor=pointer]:
+              - generic [ref=f2e395]: 已读取文件
+          - button "已思考 1 秒" [ref=f2e403] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e407]:
+            - button "操作记录：已读取文件，已完成" [ref=f2e408] [cursor=pointer]:
+              - generic [ref=f2e412]: 已读取文件
+          - button "已思考 3 秒" [ref=f2e420] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e424]:
+            - button "操作记录：已运行命令，已完成，1 项操作失败" [ref=f2e425] [cursor=pointer]:
+              - generic [ref=f2e430]: 已运行命令
+              - generic [ref=f2e431]: 1 项操作失败
+          - button "已思考 1 秒" [ref=f2e439] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e443]:
+            - button "操作记录：已搜索文件 · 读取文件，已完成" [ref=f2e444] [cursor=pointer]:
+              - generic [ref=f2e449]: 已搜索文件 · 读取文件
+          - button "已思考 2 秒" [ref=f2e457] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e461]:
+            - button "操作记录：已运行命令，已完成" [ref=f2e462] [cursor=pointer]:
+              - generic [ref=f2e467]: 已运行命令
+          - button "已思考 1 秒" [ref=f2e475] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e479]:
+            - button "操作记录：已读取文件 · 运行命令，已完成" [ref=f2e480] [cursor=pointer]:
+              - generic [ref=f2e484]: 已读取文件 · 运行命令
+          - button "已思考 2 秒" [ref=f2e492] [cursor=pointer]
+          - paragraph [ref=f2e499]: 读回内容正确；我发现小标题层级比主标题低了两级，先修正为规范的一页结构再核验。
+          - group "操作记录，已完成" [ref=f2e501]:
+            - button "操作记录：已运行命令，已完成" [ref=f2e502] [cursor=pointer]:
+              - generic [ref=f2e507]: 已运行命令
+          - button "已思考 1 秒" [ref=f2e515] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e519]:
+            - button "操作记录：已读取文件 · 运行命令，已完成" [ref=f2e520] [cursor=pointer]:
+              - generic [ref=f2e524]: 已读取文件 · 运行命令
+          - button "已思考 1 秒" [ref=f2e532] [cursor=pointer]
+          - group "操作记录，已完成" [ref=f2e536]:
+            - button "操作记录：已调用工具，已完成" [ref=f2e537] [cursor=pointer]:
+              - generic [ref=f2e543]: 已调用工具
+          - button "已思考 0 秒" [ref=f2e551] [cursor=pointer]
+          - paragraph [ref=f2e558]:
+            - text: 已生成
+            - button "accepted-report.md" [ref=f2e559] [cursor=pointer]
+            - text: ，包含总和
+            - code [ref=f2e560]: "4696"
+            - text: 、最大值
+            - code [ref=f2e561]: "999"
+            - text: 及验收标识
+            - code [ref=f2e562]: REALNEXT_4f474ece24
+            - text: 。已读回核验，
+            - button "analysis.json" [ref=f2e563] [cursor=pointer]
+            - text: 未改动。
+          - region "任务产物" [ref=f2e564]:
+            - button "document 管理层分析摘要 版本 2 · 打开预览" [ref=f2e565] [cursor=pointer]:
+              - generic [ref=f2e566]: document
+              - strong [ref=f2e567]: 管理层分析摘要
+              - generic [ref=f2e568]: 版本 2 · 打开预览
+            - button "data analysis.json 版本 1 · 打开预览" [ref=f2e569] [cursor=pointer]:
+              - generic [ref=f2e570]: data
+              - strong [ref=f2e571]: analysis.json
+              - generic [ref=f2e572]: 版本 1 · 打开预览
+        - region "输入区" [ref=f2e575]:
+          - generic [ref=f2e577]:
+            - combobox "需求输入" [ref=f2e578]
+            - generic [ref=f2e579]:
+              - button "添加内容" [ref=f2e581] [cursor=pointer]
+              - button "审批档" [ref=f2e584] [cursor=pointer]:
+                - generic [ref=f2e588]: 请求批准
+                - generic [aria-hidden] [ref=f2e589]: ▾
+              - button "选择项目" [ref=f2e591] [cursor=pointer]:
+                - generic [ref=f2e595]: UI
+                - generic [aria-hidden] [ref=f2e596]: ▾
+              - button "选择模型" [ref=f2e598] [cursor=pointer]:
+                - generic [ref=f2e599]: deepseek/deepseek-flash
+                - generic [aria-hidden] [ref=f2e600]: ▾
+              - button "发送" [disabled] [ref=f2e601]
+      - complementary "结果区" [ref=f2e604]:
+        - separator "调整结果区宽度" [ref=f2e605]
+        - tablist "结果区视图" [ref=f2e606]:
+          - tab "产物" [ref=f2e607] [cursor=pointer]
+          - tab "文件" [selected] [ref=f2e609] [cursor=pointer]
+          - tab "变更" [ref=f2e611] [cursor=pointer]
+          - tab "浏览器" [ref=f2e613] [cursor=pointer]
+        - generic [ref=f2e616]:
+          - list [ref=f2e617]:
+            - listitem [ref=f2e618]:
+              - button "accepted-report.md 本任务文件" [ref=f2e619] [cursor=pointer]:
+                - generic [ref=f2e620]: accepted-report.md
+                - generic [ref=f2e621]: 本任务文件
+            - listitem [ref=f2e622]:
+              - button "analysis.json 本任务文件" [ref=f2e623] [cursor=pointer]:
+                - generic [ref=f2e624]: analysis.json
+                - generic [ref=f2e625]: 本任务文件
+          - region "结果区项目文件" [ref=f2e626]:
+            - generic [ref=f2e627]:
+              - button "accepted-report.md" [ref=f2e629] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f2e630]: 📄
+              - button "analysis.json" [ref=f2e633] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f2e634]: 📄
+              - button "sales-input.json" [ref=f2e637] [cursor=pointer]:
+                - generic [aria-hidden] [ref=f2e638]: 📄
+          - region "文件预览：accepted-report.md" [ref=f2e640]:
+            - generic [ref=f2e641]:
+              - strong [ref=f2e642]: accepted-report.md
+              - button "添加批注" [ref=f2e643] [cursor=pointer]
+            - article [ref=f2e644]:
+              - heading "管理层分析摘要" [level=1] [ref=f2e645]
+              - blockquote [ref=f2e646]:
+                - paragraph [ref=f2e647]: 数据来源：analysis.json
+              - paragraph [ref=f2e648]: 本页围绕当前分析文件中的两项汇总指标展开，供管理层快速了解整体结果。
+              - heading "核心结果" [level=2] [ref=f2e649]
+              - table [ref=f2e650]:
+                - rowgroup [ref=f2e651]:
+                  - row [ref=f2e652]:
+                    - columnheader "指标" [ref=f2e653]
+                    - columnheader "数值" [ref=f2e654]
+                - rowgroup [ref=f2e655]:
+                  - row [ref=f2e656]:
+                    - cell "整数总和" [ref=f2e657]
+                    - cell "4696" [ref=f2e658]
+                  - row [ref=f2e659]:
+                    - cell "最大值" [ref=f2e660]
+                    - cell "999" [ref=f2e661]
+              - heading "简要结论" [level=2] [ref=f2e662]
+              - list [ref=f2e663]:
+                - listitem [ref=f2e664]: 整数总和为 4696。
+                - listitem [ref=f2e665]: 最大值为 999，是当前数据中的最高单项值。
+                - listitem [ref=f2e666]: 现有结果仅覆盖总和与最大值，不包含趋势、结构及同比信息；如需进一步判断，应补充相应分析。
+              - heading "验收" [level=2] [ref=f2e667]
+              - paragraph [ref=f2e668]: 验收标识：REALNEXT_4f474ece24
+```
+
+# Test source
+
+```ts
+  1   | /** Real providers, host gateway, shipped kernel, bundled MCP and actual Electron input. */
+  2   | import { randomBytes, randomInt } from 'node:crypto';
+  3   | import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+  4   | import { dirname, join } from 'node:path';
+  5   | import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+  6   | import { selectRealModel } from '../harness/real-models.mjs';
+  7   |
+  8   | test.use({
+  9   |   registerModels: true,
+  10  |   hostGateway: true,
+  11  |   desktopEnv: { EVOWORK_UI_FOLLOW_UP_WIRE: '1' },
+  12  | });
+  13  | const history = (page, id) =>
+  14  |   page.evaluate((threadId) => window.evowork.openTask({ threadId }), id);
+  15  | async function setup(electronApp) {
+  16  |   const model = selectRealModel();
+  17  |   expect(['mimo-v2.6-flash', 'deepseek-flash']).toContain(model.upstreamModel);
+  18  |   const root = realpathSync(await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace));
+  19  |   return { model, root, marker: 'REALNEXT_' + randomBytes(5).toString('hex') };
+  20  | }
+  21  | async function currentTask(page, m) {
+  22  |   await expect
+  23  |     .poll(
+  24  |       async () =>
+  25  |         (await page.evaluate(() => window.evowork.getStartup())).tasks.find(
+  26  |           (t) => t.cwd && realpathSync(t.cwd) === m.root,
+  27  |         )?.id,
+  28  |     )
+  29  |     .toBeTruthy();
+  30  |   return (await page.evaluate(() => window.evowork.getStartup())).tasks.find(
+  31  |     (t) => t.cwd && realpathSync(t.cwd) === m.root,
+  32  |   );
+  33  | }
+  34  | async function completed(page, id, turns) {
+  35  |   await expect
+  36  |     .poll(
+  37  |       async () => {
+  38  |         const h = await history(page, id);
+  39  |         return h.turns.length === turns && h.turns.every((turn) => turn.status === 'completed');
+  40  |       },
+  41  |       { timeout: 180000, intervals: [500, 1000, 2000] },
+  42  |     )
+  43  |     .toBe(true);
+  44  |   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+  45  | }
+  46  | const proposals = (h) =>
+  47  |   h.items.filter(
+  48  |     (item) =>
+  49  |       item.type === 'mcpToolCall' &&
+  50  |       item.server === 'next_actions' &&
+  51  |       item.tool === 'propose_next_actions',
+  52  |   );
+  53  | const argumentsOf = (item) =>
+  54  |   typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments;
+  55  | function wire(m) {
+  56  |   const filename = join(dirname(m.root), 'follow-up-wire.jsonl');
+  57  |   return existsSync(filename)
+  58  |     ? readFileSync(filename, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
+  59  |     : [];
+  60  | }
+  61  | async function evidence(page, electronApp, m, info, task, extra = {}, strict = true) {
+  62  |   await expect
+  63  |     .poll(
+  64  |       () => {
+  65  |         const rows = wire(m);
+  66  |         return rows.filter(
+  67  |           (row) =>
+  68  |             row.type === 'request' &&
+  69  |             !rows.some(
+  70  |               (outcome) =>
+  71  |                 outcome.type !== 'request' && outcome.pid === row.pid && outcome.id === row.id,
+  72  |             ),
+  73  |         ).length;
+  74  |       },
+  75  |       { timeout: 60000, intervals: [500, 1000, 2000] },
+  76  |     )
+  77  |     .toBe(0);
+  78  |   const observations = wire(m);
+  79  |   const requests = observations.filter((row) => row.type === 'request');
+  80  |   if (strict) {
+  81  |     expect(requests.length).toBeGreaterThan(0);
+  82  |     expect(requests.every((row) => row.model === m.model.upstreamModel)).toBe(true);
+  83  |     expect(
+  84  |       requests.every(
+  85  |         (row) => row.endpoint === m.model.baseUrl.replace(/\/$/, '') + '/chat/completions',
+  86  |       ),
+> 87  |     ).toBe(true);
+      |       ^ Error: expect(received).toBe(expected) // Object.is equality
+  88  |     expect(observations.filter((row) => row.type === 'response')).toHaveLength(requests.length);
+  89  |     expect(
+  90  |       observations.filter((row) => row.type === 'response').every((row) => row.status === 200),
+  91  |     ).toBe(true);
+  92  |     expect(observations.filter((row) => row.type === 'transport-error')).toEqual([]);
+  93  |   }
+  94  |   const result = {
+  95  |     model: m.model.upstreamModel,
+  96  |     baseUrl: m.model.baseUrl,
+  97  |     marker: m.marker,
+  98  |     ...extra,
+  99  |     history: task ? await history(page, task.id) : null,
+  100 |     wire: observations,
+  101 |     lifecycle: await electronApp.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle()),
+  102 |   };
+  103 |   const body = JSON.stringify(result, null, 2);
+  104 |   if (process.env.EVOWORK_UI_MODEL_KEY && body.includes(process.env.EVOWORK_UI_MODEL_KEY))
+  105 |     throw new Error('凭据扫描命中，拒绝保存证据');
+  106 |   writeFileSync(info.outputPath('next-actions-real-evidence.json'), body);
+  107 |   await page.screenshot({ path: info.outputPath('next-actions-real-final.png') });
+  108 | }
+  109 |
+  110 | test('真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行', async ({
+  111 |   page,
+  112 |   electronApp,
+  113 | }, info) => {
+  114 |   const m = await setup(electronApp);
+  115 |   const values = Array.from({ length: 7 }, () => randomInt(100, 1000));
+  116 |   writeFileSync(join(m.root, 'sales-input.json'), JSON.stringify(values));
+  117 |   let task;
+  118 |   try {
+  119 |     await startTaskInWorkspace(
+  120 |       page,
+  121 |       electronApp,
+  122 |       m.marker +
+  123 |         ' 请读取当前目录 sales-input.json，用本机 Python 计算全部整数的总和与最大值，写入 analysis.json，格式严格为 {"total":整数,"max":整数}，并读取核验。' +
+  124 |         '本轮先完成这个分析文件即可；下一阶段我准备把分析结果整理成一页管理层 Markdown 汇报，还没有开始做。不要提前制作汇报，不联网、不读环境变量或工作目录外文件、不创建子任务。',
+  125 |     );
+  126 |     task = await currentTask(page, m);
+  127 |     const input = page.getByLabel('需求输入');
+  128 |     await input.fill('用户正在编辑的草稿 ' + m.marker);
+  129 |     await completed(page, task.id, 1);
+  130 |     expect(JSON.parse(readFileSync(join(m.root, 'analysis.json'), 'utf8'))).toEqual({
+  131 |       total: values.reduce((sum, value) => sum + value, 0),
+  132 |       max: Math.max(...values),
+  133 |     });
+  134 |     await expect(input).toHaveValue('用户正在编辑的草稿 ' + m.marker);
+  135 |     await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  136 |     const first = await history(page, task.id);
+  137 |     expect(first.items.some((item) => item.type === 'commandExecution')).toBe(true);
+  138 |     expect(proposals(first).length).toBeGreaterThan(0);
+  139 |     const proposal = proposals(first).at(-1);
+  140 |     expect(proposal.status).toBe('completed');
+  141 |     expect(proposal.error ?? null).toBeNull();
+  142 |     expect(argumentsOf(proposal).outcome).toBe('delivered');
+  143 |     expect(argumentsOf(proposal).actions.length).toBeGreaterThan(0);
+  144 |     expect(existsSync(join(m.root, 'accepted-report.md'))).toBe(false);
+  145 |     await input.fill('');
+  146 |     const suggestion = page.getByLabel('下一步建议');
+  147 |     await expect(suggestion).toBeVisible();
+  148 |     const actions = await page.evaluate(
+  149 |       (threadId) => window.evowork.getNextActions({ threadId }),
+  150 |       task.id,
+  151 |     );
+  152 |     expect(actions).toHaveLength(1);
+  153 |     expect(actions[0].prompt.length).toBeGreaterThan(4);
+  154 |     await page.screenshot({ path: info.outputPath('next-actions-real-suggestion.png') });
+  155 |     await page.reload();
+  156 |     await page.getByRole('button', { name: task.title, exact: true }).click();
+  157 |     await expect(suggestion).toBeVisible();
+  158 |     await input.focus();
+  159 |     await input.press('Tab');
+  160 |     await expect(input).toHaveValue(actions[0].prompt);
+  161 |     expect(
+  162 |       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
+  163 |     ).toHaveLength(1);
+  164 |     await expect(suggestion).toHaveCount(0);
+  165 |     const followup =
+  166 |       actions[0].prompt +
+  167 |       '\n具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 ' +
+  168 |       m.marker +
+  169 |       '。不要联网、读取环境变量、修改其他文件或执行上线。完成后简短回复。';
+  170 |     await input.fill(followup);
+  171 |     await page.getByRole('button', { name: '发送', exact: true }).click();
+  172 |     await completed(page, task.id, 2);
+  173 |     expect(readFileSync(join(m.root, 'accepted-report.md'), 'utf8')).toContain(m.marker);
+  174 |     const after = await history(page, task.id);
+  175 |     expect(after.items.filter((item) => item.type === 'userMessage')).toHaveLength(2);
+  176 |     const lastInput = after.items.filter((item) => item.type === 'userMessage').at(-1);
+  177 |     expect(
+  178 |       lastInput.content
+  179 |         .filter((part) => part.type === 'text')
+  180 |         .map((part) => part.text)
+  181 |         .join('\n'),
+  182 |     ).toContain(followup);
+  183 |     await evidence(page, electronApp, m, info, task, {
+  184 |       values,
+  185 |       first,
+  186 |       actions,
+  187 |       followup,
+```

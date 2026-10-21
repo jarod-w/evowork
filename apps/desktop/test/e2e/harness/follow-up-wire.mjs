@@ -8,7 +8,10 @@ export function installFollowUpWire(path) {
   let sequence = 0;
   globalThis.fetch = async function (input, init) {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-    if (url.hostname !== 'api.xiaomimimo.com' || !url.pathname.endsWith('/chat/completions'))
+    if (
+      !['api.xiaomimimo.com', 'api.deepseek.com'].includes(url.hostname) ||
+      !url.pathname.endsWith('/chat/completions')
+    )
       return originalFetch.call(this, input, init);
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
     const id = ++sequence;
@@ -21,6 +24,17 @@ export function installFollowUpWire(path) {
         at: Date.now(),
         endpoint: url.origin + url.pathname,
         model: body.model,
+        hasNextActionRules: JSON.stringify(body.messages ?? []).includes('优先把该目标写成建议'),
+        hasNextActionRulesInSystem: (body.messages ?? []).some(
+          (message) =>
+            message.role === 'system' &&
+            JSON.stringify(message.content ?? '').includes('优先把该目标写成建议'),
+        ),
+        hasNextActionTool: JSON.stringify(body.tools ?? []).includes('propose_next_actions'),
+        hasNextActionTask: JSON.stringify(body.messages ?? []).includes('REALNEXT_'),
+        hasNextActionStopReminder: JSON.stringify(body.messages ?? []).includes(
+          '本回合尚未登记下一步状态。',
+        ),
         markers: [
           ...new Set(
             JSON.stringify(body.messages ?? []).match(/REALFOLLOW_[A-Z]+_[a-f0-9]+/g) ?? [],

@@ -1,0 +1,61 @@
+
+Running 2 tests using 1 worker
+
+(node:38692) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行 (4.1m)
+(node:39004) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:196:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持 (1.2m)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 180000ms exceeded while waiting on the predicate
+
+      41 |       { timeout: 180000, intervals: [500, 1000, 2000] },
+      42 |     )
+    > 43 |     .toBe(true);
+         |      ^
+      44 |   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+      45 | }
+      46 | const proposals = (h) =>
+        at completed (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:43:6)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:172:11
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020-final/mimo-v2.6-flash/results/next-actions.real-真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab-采纳及编辑后执行-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:196:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByLabel('下一步建议')
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByLabel('下一步建议') with timeout 20000ms
+      - waiting for getByLabel('下一步建议')
+
+
+      227 |     await completed(page, task.id, 2);
+      228 |     const suggestion = page.getByLabel('下一步建议');
+    > 229 |     await expect(suggestion).toBeVisible();
+          |                              ^
+      230 |     const actions = await page.evaluate(
+      231 |       (threadId) => window.evowork.getNextActions({ threadId }),
+      232 |       task.id,
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:229:30
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020-final/mimo-v2.6-flash/results/next-actions.real-真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:196:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持

@@ -1,0 +1,12 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |scripts| test/next-actions-stop.test.mjs (3 tests) 8ms
+ ✓ |scripts| test/follow-up-wire.test.mjs (4 tests) 19ms
+ ✓ |kernel-adapter| test/next-actions.test.ts (17 tests) 53ms
+ ✓ |desktop| test/next-actions-host.test.ts (4 tests) 51ms
+
+ Test Files  4 passed (4)
+      Tests  28 passed (28)
+   Start at  09:21:48
+   Duration  901ms (transform 547ms, setup 166ms, collect 748ms, tests 130ms, environment 0ms, prepare 345ms)

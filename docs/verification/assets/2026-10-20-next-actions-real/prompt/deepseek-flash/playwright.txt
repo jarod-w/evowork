@@ -1,0 +1,58 @@
+
+Running 2 tests using 1 worker
+
+(node:39257) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行 (1.1m)
+(node:39659) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:196:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持 (33.1s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      85 |         (row) => row.endpoint === m.model.baseUrl.replace(/\/$/, '') + '/chat/completions',
+      86 |       ),
+    > 87 |     ).toBe(true);
+         |       ^
+      88 |     expect(observations.filter((row) => row.type === 'response')).toHaveLength(requests.length);
+      89 |     expect(
+      90 |       observations.filter((row) => row.type === 'response').every((row) => row.status === 200),
+        at evidence (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:87:7)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:183:5
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020-final/deepseek-flash/results/next-actions.real-真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab-采纳及编辑后执行-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:196:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByLabel('下一步建议')
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByLabel('下一步建议') with timeout 20000ms
+      - waiting for getByLabel('下一步建议')
+
+
+      227 |     await completed(page, task.id, 2);
+      228 |     const suggestion = page.getByLabel('下一步建议');
+    > 229 |     await expect(suggestion).toBeVisible();
+          |                              ^
+      230 |     const actions = await page.evaluate(
+      231 |       (threadId) => window.evowork.getNextActions({ threadId }),
+      232 |       task.id,
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:229:30
+
+    Error Context: ../../../../../private/tmp/evowork-next-actions-real-20261020-final/deepseek-flash/results/next-actions.real-真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:110:1 › 真实模型自主提出后续建议：实际文件交付、草稿保护、刷新、Tab 采纳及编辑后执行
+    [real] › apps/desktop/test/e2e/ui/next-actions.real.spec.mjs:196:1 › 真实模型等待补充时无建议，回答后交付计划；点击忽略在刷新重开后保持

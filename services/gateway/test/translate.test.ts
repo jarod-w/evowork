@@ -1233,3 +1233,35 @@ describe('代理之间的消息（agent_message）', () => {
     expect(request.messages[1]?.tool_call_id).toBe('call_1');
   });
 });
+
+describe('产品 developer 指令保持高于用户正文的角色', () => {
+  it('兼容 Chat 提供方时将 developer 映射到 system，普通用户原文仍保持 user', () => {
+    const { request: result } = toChatRequest(
+      {
+        model: 'test-model',
+        instructions: '产品身份底稿',
+        input: [
+          {
+            type: 'message',
+            role: 'developer',
+            content: [{ type: 'input_text', text: '本机界面元数据登记规则' }],
+          },
+          {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: '请只交付计划正文' }],
+          },
+        ],
+      },
+      'test-model',
+      FULL,
+    );
+    expect(
+      result.messages.map((message) => ({ role: message.role, content: message.content })),
+    ).toEqual([
+      { role: 'system', content: '产品身份底稿' },
+      { role: 'system', content: '本机界面元数据登记规则' },
+      { role: 'user', content: '请只交付计划正文' },
+    ]);
+  });
+});

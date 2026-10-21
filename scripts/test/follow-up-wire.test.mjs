@@ -52,6 +52,37 @@ it('records sanitized transport failures and rethrows the original error without
   expect(readFileSync(path, 'utf8')).not.toContain('test-secret');
 });
 
+it('observes DeepSeek model and endpoint without retaining credentials or message bodies', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('private response')));
+  installFollowUpWire(path);
+  await globalThis.fetch('https://api.deepseek.com/chat/completions', {
+    ...payload,
+    body: JSON.stringify({
+      model: 'deepseek-flash',
+      messages: [
+        { role: 'system', content: 'private policy 优先把该目标写成建议' },
+        { role: 'user', content: 'private body REALNEXT_test' },
+      ],
+      tools: [{ type: 'function', function: { name: 'propose_next_actions' } }],
+    }),
+  });
+  expect(rows()).toMatchObject([
+    {
+      type: 'request',
+      endpoint: 'https://api.deepseek.com/chat/completions',
+      model: 'deepseek-flash',
+      hasNextActionRules: true,
+      hasNextActionRulesInSystem: true,
+      hasNextActionTask: true,
+      hasNextActionTool: true,
+    },
+    { type: 'response', status: 200 },
+  ]);
+  expect(readFileSync(path, 'utf8')).not.toMatch(
+    /private body|private policy|private response|test-secret/,
+  );
+});
+
 it('redacts arbitrary error metadata and leaves other endpoints unobserved', async () => {
   const error = Object.assign(new Error('secret-message'), {
     name: 'secret-name',

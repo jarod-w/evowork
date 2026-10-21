@@ -1,0 +1,81 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ❯ |kernel-adapter| test/next-actions.test.ts (17 tests | 4 failed) 40ms
+   × 下一步建议与执行队列分离 > 纯文本遗漏登记时只提醒一次，同回合重入与并发检查不能无限续跑 12ms
+     → service.checkStop is not a function
+   × 下一步建议与执行队列分离 > 已提交空列表或已尝试失败的工具都不触发结束提醒 2ms
+     → service.checkStop is not a function
+   × 下一步建议与执行队列分离 > 旧回合、非根任务、重建服务、活动目标和未知状态不能唤醒建议循环 2ms
+     → service.checkStop is not a function
+   × 下一步建议与执行队列分离 > 异步检查期间新回合开始，旧提醒不能作用到新回合 1ms
+     → service.checkStop is not a function
+   ✓ 下一步建议与执行队列分离 > 回合结束前不可见，成功后只展示第一条，采纳只改变建议状态 4ms
+   ✓ 下一步建议与执行队列分离 > failed 不发布；新回合及旧完成通知不能复活建议 2ms
+   ✓ 下一步建议与执行队列分离 > interrupted 不发布；新回合及旧完成通知不能复活建议 2ms
+   ✓ 下一步建议与执行队列分离 > 无建议、等待输入、非法嵌套正文和未核对来源不生成可用建议 2ms
+   ✓ 下一步建议与执行队列分离 > 目标 active 时隐藏 2ms
+   ✓ 下一步建议与执行队列分离 > 目标 paused 时隐藏 2ms
+   ✓ 下一步建议与执行队列分离 > 目标 blocked 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 目标 usageLimited 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 目标 budgetLimited 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 队列、待审批、归档、子任务和自动化均不展示 2ms
+   ✓ 下一步建议与执行队列分离 > 查询目标时新回合开始，迟到响应不发布；目标未知不伪装成无目标 2ms
+   ✓ 下一步建议与执行队列分离 > 同时采纳与关闭只成功一次，不复活已经消费的建议 2ms
+   ✓ 下一步建议与执行队列分离 > 重建服务保留可用/关闭状态，丢弃未完成提案；删除清理正文 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 纯文本遗漏登记时只提醒一次，同回合重入与并发检查不能无限续跑
+TypeError: service.checkStop is not a function
+ ❯ test/next-actions.test.ts:54:15
+     52|   it('纯文本遗漏登记时只提醒一次，同回合重入与并发检查不能无限续跑', async () => {
+     53|     const results = await Promise.all([
+     54|       service.checkStop('a', 'one', false),
+       |               ^
+     55|       service.checkStop('a', 'one', false),
+     56|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 已提交空列表或已尝试失败的工具都不触发结束提醒
+TypeError: service.checkStop is not a function
+ ❯ test/next-actions.test.ts:66:26
+     64|   it('已提交空列表或已尝试失败的工具都不触发结束提醒', async () => {
+     65|     service.propose('a', { outcome: 'needs_input', actions: [] });
+     66|     expect(await service.checkStop('a', 'one', false)).toEqual({});
+       |                          ^
+     67|     running('two');
+     68|     service.onEvent({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 旧回合、非根任务、重建服务、活动目标和未知状态不能唤醒建议循环
+TypeError: service.checkStop is not a function
+ ❯ test/next-actions.test.ts:77:26
+     75|   });
+     76|   it('旧回合、非根任务、重建服务、活动目标和未知状态不能唤醒建议循环', async () => {
+     77|     expect(await service.checkStop('a', 'old', false)).toEqual({});
+       |                          ^
+     78|     expect(await service.checkStop('missing', 'one', false)).toEqual({…
+     79|     expect(await service.checkStop('a', 'one', true)).toEqual({});
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 异步检查期间新回合开始，旧提醒不能作用到新回合
+TypeError: service.checkStop is not a function
+ ❯ test/next-actions.test.ts:108:26
+    106|       return undefined;
+    107|     });
+    108|     expect(await service.checkStop('a', 'one', false)).toEqual({});
+       |                          ^
+    109|     expect(await service.checkStop('a', 'two', false)).toMatchObject({…
+    110|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 13 passed (17)
+   Start at  08:45:01
+   Duration  441ms (transform 110ms, setup 0ms, collect 136ms, tests 40ms, environment 0ms, prepare 49ms)

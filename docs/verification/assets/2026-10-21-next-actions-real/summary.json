@@ -1,0 +1,178 @@
+[
+  {
+    "model": "mimo-v2.6-flash",
+    "case": "text-followup",
+    "requests": 8,
+    "responses": 8,
+    "statuses": [
+      200
+    ],
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "allTaskRulesInSystem": true,
+    "requestsAfterStopReminder": 0,
+    "turns": [
+      "completed",
+      "completed"
+    ],
+    "proposals": [
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "needs_input"
+        }
+      },
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [
+            {
+              "prompt": "请把 REALNEXT_0ce89718e8 的三步上线计划扩展为一份 Markdown 回滚演练检查清单，仍只在回复中交付，不写文件；本轮先不执行实际上线。",
+              "reason": "这是用户明确说明的下一阶段目标。",
+              "title": "扩展回滚演练检查清单"
+            }
+          ],
+          "outcome": "delivered"
+        }
+      }
+    ],
+    "unexpectedExits": 0
+  },
+  {
+    "model": "mimo-v2.6-flash",
+    "case": "file-flow",
+    "requests": 20,
+    "responses": 20,
+    "statuses": [
+      200
+    ],
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "allTaskRulesInSystem": true,
+    "requestsAfterStopReminder": 0,
+    "turns": [
+      "completed",
+      "completed"
+    ],
+    "proposals": [
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [
+            {
+              "prompt": "下一阶段请读取 sales-input.json 与 analysis.json，把分析结果整理成一页管理层 Markdown 汇报，不联网。",
+              "reason": "用户已明确下一阶段准备整理汇报，本轮仅保留为候选，不提前执行。",
+              "title": "整理一页管理层汇报"
+            }
+          ],
+          "outcome": "delivered"
+        }
+      },
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "delivered"
+        }
+      }
+    ],
+    "unexpectedExits": 0
+  },
+  {
+    "model": "deepseek-flash",
+    "case": "text-followup",
+    "requests": 12,
+    "responses": 12,
+    "statuses": [
+      200
+    ],
+    "endpoints": [
+      "https://api.deepseek.com/v1/chat/completions"
+    ],
+    "models": [
+      "deepseek-flash"
+    ],
+    "allTaskRulesInSystem": true,
+    "requestsAfterStopReminder": 4,
+    "turns": [
+      "completed",
+      "completed"
+    ],
+    "proposals": [
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "needs_input"
+        }
+      },
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [
+            {
+              "prompt": "基于刚才的三步上线计划，将它扩展成一份回滚演练检查清单。请包含演练目标与范围、前置条件、触发判定、分步回滚操作、数据与配置恢复、验证项、责任人占位、演练记录模板和复盘要点。用 Markdown 输出，仍然不要联网、不要读取环境变量、不要使用子任务；如需生成文件请先问我。",
+              "reason": "你已说明下一阶段准备做回滚演练检查清单，这是自然的后续交付。",
+              "title": "扩展为回滚演练检查清单"
+            }
+          ],
+          "outcome": "delivered"
+        }
+      }
+    ],
+    "unexpectedExits": 0
+  },
+  {
+    "model": "deepseek-flash",
+    "case": "file-flow",
+    "requests": 18,
+    "responses": 18,
+    "statuses": [
+      200
+    ],
+    "endpoints": [
+      "https://api.deepseek.com/v1/chat/completions"
+    ],
+    "models": [
+      "deepseek-flash"
+    ],
+    "allTaskRulesInSystem": true,
+    "requestsAfterStopReminder": 0,
+    "turns": [
+      "completed",
+      "completed"
+    ],
+    "proposals": [
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [
+            {
+              "prompt": "请读取当前目录的 analysis.json，将分析结果整理成一页管理层 Markdown 汇报，突出总销售额 4137 与最高单笔 900，并说明数据来自 sales-input.json。不要修改 analysis.json。",
+              "reason": "沿用本轮已验证的分析结果，进入你提到的下一阶段。",
+              "title": "整理一页管理层汇报"
+            }
+          ],
+          "outcome": "delivered"
+        }
+      },
+      {
+        "status": "completed",
+        "arguments": {
+          "actions": [],
+          "outcome": "delivered"
+        }
+      }
+    ],
+    "unexpectedExits": 0
+  }
+]

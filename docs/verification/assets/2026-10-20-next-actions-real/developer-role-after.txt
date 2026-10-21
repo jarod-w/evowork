@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |scripts| test/follow-up-wire.test.mjs (4 tests) 11ms
+ ✓ |gateway| test/translate.test.ts (59 tests) 8ms
+
+ Test Files  2 passed (2)
+      Tests  63 passed (63)
+   Start at  22:07:31
+   Duration  340ms (transform 107ms, setup 0ms, collect 126ms, tests 20ms, environment 0ms, prepare 98ms)
