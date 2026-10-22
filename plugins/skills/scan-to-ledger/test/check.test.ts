@@ -177,12 +177,13 @@ describe('扫描文本才能入账', () => {
           'sheet = book.active',
           'print(sheet["C2"].value)',
           'print(sheet["D2"].value)',
-          'print(sheet["A2"].value)',
+          'print(sheet["A2"].value, sheet["A2"].data_type)',
         ].join('\n'),
       ],
       { encoding: 'utf8' },
     ).trim();
-    expect(inspected.split('\n')).toEqual(['128', '=C2', '2026-09-01']);
+    // 日期列是真日期（data_type 'd'），不是一串字：spreadsheets 2026-10-22 起把 ISO 日期写成日期值
+    expect(inspected.split('\n')).toEqual(['128', '=C2', '2026-09-01 00:00:00 d']);
   });
 
   it('图片不识别', () => {
