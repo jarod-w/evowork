@@ -9,15 +9,17 @@ description: 写周报。必须分成本期、风险、下周三节，每节都�
 
 ## 怎么用
 
+中间文件写进本任务的临时目录（第一次用 `mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX"` 建，记下路径沿用），不要写进用户的目录。
+
 ```bash
-python3 container_tools/check.py --content weekly.json --out weekly.content.json
+python3 container_tools/check.py --content "<临时目录>/weekly.json" --out "<临时目录>/weekly.content.json"
 
 node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format docx \
   --title "财务部周报" --path "<绝对路径>/财务部周报.docx"
 
 python3 ../documents/container_tools/render.py \
-  --content weekly.content.json --out "<绝对路径>/财务部周报.docx"
+  --content "<临时目录>/weekly.content.json" --out "<绝对路径>/财务部周报.docx"
 ```
 
 ## 内容 JSON
@@ -32,4 +34,4 @@ python3 ../documents/container_tools/render.py \
 }
 ```
 
-`period`、`risks`、`next` 都至少一条。没有风险就写「本周没有新的风险」，不要省掉这一节。材料里没有的进展不要补。
+`period`、`risks`、`next` 都至少一条，每节最多 30 条、每条最多 300 字，标题最多 120 字（与 documents 一致）。没有风险就写「本周没有新的风险」，不要省掉这一节。材料里没有的进展不要补。

@@ -9,12 +9,14 @@ description: 写可以复制的邮件草稿，包含收件人、主题、正文�
 
 ## 怎么用
 
+`mail.json` 是中间文件，写进本任务的临时目录（第一次用 `mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX"` 建），只有草稿 md 交给用户。
+
 ```bash
 node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format md \
   --title "邮件草稿" --path "<绝对路径>/邮件草稿.md"
 
-python3 container_tools/check.py --content mail.json --out "<绝对路径>/邮件草稿.md"
+python3 container_tools/check.py --content "<临时目录>/mail.json" --out "<绝对路径>/邮件草稿.md"
 ```
 
 ## 内容 JSON

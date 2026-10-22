@@ -10,8 +10,10 @@ description: 把工作区里已经解析好的文本整理成台账或会议纪�
 ## 怎么用
 
 ```bash
-python3 container_tools/check.py --content ledger.json --out ledger.content.json
+python3 container_tools/check.py --content "<临时目录>/ledger.json" --out "<临时目录>/ledger.content.json"
 ```
+
+`ledger.json` 与 `ledger.content.json` 是中间文件，写进本任务的临时目录（第一次用 `mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX"` 建），只有最终的 xlsx / docx 交给用户。
 
 `output` 为 `ledger` 时，`ledger.content.json` 交给 `spreadsheets` 渲染成 xlsx。
 `output` 为 `minutes` 时，交给 `documents` 的 `memo` 模板渲染成 docx。
@@ -35,7 +37,15 @@ python3 container_tools/check.py --content ledger.json --out ledger.content.json
 }
 ```
 
-每一行的格子必须都能在原文的**同一行**里找到。金额按原文抄（`128.00` 或 `1,280.50`），不要改成另一种写法，也不要把 `1000` 里的 `100` 拆出来。公式列不能写死数字，对应格子填 `null`。对不上就停，不截掉那一行。
+每一行的格子必须都能在原文的**同一行**里找到。金额**按值**核对，不是按字面：
+
+- 负数写 `-1234.50`（原文 `-1,234.50`、`(1,234.50)`、`−1,234.50` 都算负数）；符号对不上就停。
+- 原文带「万 / 亿 / 千」的，写换算后的数（`1.2万` → `12000`），或者原样带上单位；只写 `1.2` 会被拒。
+- 日期、年份、时刻里的数字不算金额。全角数字、空格千分位、数字后面紧跟英文逗号都认。
+- 原文的一行只能对应台账的一行，同一处文字只能填一个格子 —— 不要把一笔拆成两行，也不要重复入账。
+- 一行太长（超过 200 字）、日期或数字太多、读法有歧义时，检查器报「无法判定」：告诉用户原文需要一笔一行，不要硬凑。OCR 把每个格子拆成一行的，要按列的顺序排好。
+
+公式列不能写死数字，对应格子填 `null`。对不上就停，不截掉那一行。
 
 ## 纪要
 
@@ -51,4 +61,4 @@ python3 container_tools/check.py --content ledger.json --out ledger.content.json
 }
 ```
 
-决议、参会人、待办的事项和负责人按原文逐字抄。日期写成 `YYYY-MM-DD`，但原文里要有这一天（`2026-09-05` 或 `2026年9月5日` 都可以）。原文没有的决议不要补。
+决议、参会人、待办的事项和负责人按原文逐字抄，**连同否定词一起抄**（原文「不同意追加预算」不能写成「同意追加预算」）。原文标了缺席、请假、未到的人不能列为参会人；同一条决议不要写两次。日期写成 `YYYY-MM-DD`，但原文里要有这一天（`2026-09-05` 或 `2026年9月5日` 都可以）。原文没有的决议不要补。

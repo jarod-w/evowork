@@ -14,8 +14,10 @@ node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format svg \
   --title "报销流程" --path "<绝对路径>/报销流程.svg"
 
-python3 container_tools/render.py --content diagram.json --out "<绝对路径>/报销流程.svg"
+python3 container_tools/render.py --content "<临时目录>/diagram.json" --out "<绝对路径>/报销流程.svg"
 ```
+
+`diagram.json` 是中间文件，写进本任务的临时目录（第一次用 `mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX"` 建）。只给文档或幻灯片当配图的图也放那里、不登记成产物；用户要的就是这张图时才输出到用户的目录。
 
 `.svg` 不需要办公扩展。`.png` 需要本机能找到中文字体，找不到就停，不画方框。文档和幻灯片要嵌图时，优先用 png；只要矢量文件时用 svg。
 

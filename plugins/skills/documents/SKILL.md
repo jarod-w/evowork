@@ -1,6 +1,6 @@
 ---
 name: documents
-description: 生成 Word 文档（docx）、Markdown 或 PDF。当用户要"写一份报告/方案/说明/纪要/总结"并要可以直接发出去的文件时使用。PDF 由本机 LibreOffice 从 docx 转出。
+description: 生成或修改 Word 文档（docx）、Markdown 或 PDF。用户要"写一份报告/方案/说明"并要可以直接发出去的文件时使用；会议纪要先用 minutes、周报先用 weekly-report 整理再交给本技能。PDF 由本机 LibreOffice 从 docx 转出。
 ---
 
 # documents —— 生成文档
