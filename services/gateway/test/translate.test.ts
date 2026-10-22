@@ -13,6 +13,7 @@ import {
   createTranslator,
   type ChatChunk,
 } from '../src/translate/from-chat.js';
+import { DROPS_PRIOR_TURN_REASONING } from '../src/providers/registry.js';
 import { toChatRequest, UnsupportedInputError } from '../src/translate/to-chat.js';
 import { chatToolName, namespacedToolNames } from '../src/translate/tool-names.js';
 import { normalizeUsage } from '../src/translate/usage.js';
@@ -710,6 +711,51 @@ describe('Responses → Chat：instructions / 工具结果 / 未知条目', () =
       role: 'assistant',
       content: '我能写代码',
       reasoning_content: '内部思考',
+    });
+  });
+
+  describe('之前回合的思维链不回传（dropPriorTurnReasoning，2026-10-22 只对 DeepSeek 开）', () => {
+    /** 两个用户回合：第一回合调过工具并收尾，第二回合正在调工具，中间还插了一张工具返回的图 */
+    const twoTurns = {
+      model: 'm',
+      input: [
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: '算 17×23' }] },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: '上一回合：要调计算器' }] },
+        { type: 'function_call', name: 'calc', arguments: '{}', call_id: 'c1' },
+        { type: 'function_call_output', call_id: 'c1', output: '391' },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: '上一回合：收尾' }] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '391' }] },
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: '画个图' }] },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: '本回合：先出图' }] },
+        { type: 'function_call', name: 'plot', arguments: '{}', call_id: 'c2' },
+        {
+          type: 'function_call_output',
+          call_id: 'c2',
+          output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA' }],
+        },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: '本回合：再看图' }] },
+        { type: 'function_call', name: 'view', arguments: '{}', call_id: 'c3' },
+      ],
+    } as const;
+
+    it('之前回合的 assistant 不带思维链；当前回合的照旧挂回（同一回合内厂商要它，坑 4）', () => {
+      const { request } = toChatRequest(twoTurns as never, 'upstream', FULL, {
+        dropPriorTurnReasoning: true,
+      });
+      const text = JSON.stringify(request.messages);
+      expect(text).not.toContain('上一回合');
+      expect(text).toContain('本回合：先出图');
+      // 工具图片以 user 身份插在回合中间，但它不是新回合：它后面的思维链也要留着
+      expect(text).toContain('本回合：再看图');
+    });
+
+    it('不开时一字不动 —— Kimi / GLM 没实测过，照原样回传', () => {
+      const { request } = toChatRequest(twoTurns as never, 'upstream', FULL);
+      expect(JSON.stringify(request.messages)).toContain('上一回合：要调计算器');
+    });
+
+    it('只对实测过的厂商开：现在只有 DeepSeek', () => {
+      expect([...DROPS_PRIOR_TURN_REASONING]).toEqual(['deepseek']);
     });
   });
 

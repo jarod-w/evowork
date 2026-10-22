@@ -12,9 +12,10 @@
  *    静默丢图会让模型答"我没有看到图片"，用户以为是模型笨。
  * 4. **thinking 模式必须把历史思维链挂回对应 assistant 的 `reasoning_content`**。
  *    Codex 会把 Responses 的 `reasoning` item 放进下一轮 `input`（这是对的）；
- *    DeepSeek / Kimi / GLM 的 Chat 接口要求把它写在 assistant 消息上，丢掉会 400：
+ *    DeepSeek / Kimi / GLM 的 Chat 接口要求把它写在 assistant 消息上，2026-09-08 丢掉曾回 400：
  *    `The reasoning_content in the thinking mode must be passed back to the API.`
  *    仍然**不得**塞进 `content`（会让模型把思维链当成自己说过的话）。
+ *    **之前用户回合的**可以不回传，只对实测过的厂商这么做（`ToChatOptions.dropPriorTurnReasoning`）。
  */
 import type { ContentItem, ResponseItem, ResponsesRequest, ResponsesTool } from '../protocol.js';
 import type { DegradeReason, ModelCapabilities } from '../capabilities.js';
@@ -137,13 +138,32 @@ function reasoningTextFrom(item: Extract<ResponseItem, { type: 'reasoning' }>): 
   return item.summary.map((part) => part.text).join('');
 }
 
+export interface ToChatOptions {
+  /**
+   * 之前各个用户回合的思维链不再回传（2026-10-22，只对实测过的厂商开，见
+   * `providers/registry.ts` 的 `DROPS_PRIOR_TURN_REASONING`）。**当前回合**的照旧挂回（坑 4）。
+   *
+   * 为什么值得做：思维链是长任务上下文的最大头 —— 10-12 那次 16 页 PPT 的会话里占了 43%，
+   * 远多于截图（DeepSeek 一张图只计 1–2K token）。而厂商**照样按输入计**上一回合的思维链：
+   * 实测保留时 433 token、去掉 417，差的正是那段思维链。去掉之后请求照常 200。
+   * 代价是新回合开始时，上一回合那一段的缓存失效一次；更早的部分已经去过，前缀不变。
+   */
+  readonly dropPriorTurnReasoning?: boolean;
+}
+
 export function toChatRequest(
   request: ResponsesRequest,
   upstreamModel: string,
   capabilities: ModelCapabilities,
+  options: ToChatOptions = {},
 ): ToChatResult {
   const messages: ChatMessage[] = [];
   const degradations = new Set<DegradeReason>();
+  /**
+   * 最后一条**真正的用户消息**的下标：它之前的 assistant 属于之前的回合。
+   * 工具返回的图片与代理间消息也以 user 身份插入，但它们在回合中间，不算边界。
+   */
+  let currentTurnStart = -1;
 
   // 坑 2：instructions 必须变成 system 且在最前
   if (request.instructions && request.instructions.trim().length > 0) {
@@ -220,6 +240,7 @@ export function toChatRequest(
           pushAssistant({ role, content: contentToChat(msg.content, capabilities) });
         } else {
           flushReasoningAtBoundary();
+          if (role === 'user') currentTurnStart = messages.length;
           messages.push({ role, content: contentToChat(msg.content, capabilities) });
         }
         break;
@@ -329,6 +350,15 @@ export function toChatRequest(
   }
   flushToolImages();
   flushReasoningAtBoundary();
+  if (options.dropPriorTurnReasoning) {
+    for (let index = 0; index < currentTurnStart; index += 1) {
+      const message = messages[index];
+      if (message?.role === 'assistant' && message.reasoning_content !== undefined) {
+        const { reasoning_content: _dropped, ...rest } = message;
+        messages[index] = rest;
+      }
+    }
+  }
 
   const wantsParallel = request.parallel_tool_calls ?? false;
   if (wantsParallel && !capabilities.parallelToolCalls) {

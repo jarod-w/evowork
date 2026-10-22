@@ -28,6 +28,7 @@ Q14 同样覆盖图片正文/提示词/完整响应，日志与 APM 不得保存
   否则内核无限重试（Kimi 404 曾经如此）。
 - cache 命中字段三家位置不同。漏读会显示 0，而 0 也是「不支持」的合法值。
 - 推理模型会吃掉 `max_tokens`；给很小预算可能返回空 content。
-- thinking 模式下一轮必须把 `reasoning_content` 挂回对应 assistant；丢掉
-  DeepSeek 会 400。不要塞进 `content`。
+- thinking 模式同一用户回合内（工具调用循环）必须把 `reasoning_content` 挂回对应 assistant
+  （2026-09-08 丢掉曾回 400）；之前用户回合的，DeepSeek 实测可以不回传（2026-10-22），网关按
+  `DROPS_PRIOR_TURN_REASONING` 只对实测过的厂商这么做。不要塞进 `content`。
 - `imageInput` 有三种结局：真能看 / 明确拒绝 / **接受但看不见**。按「接受」画 UI 会骗人。

@@ -23,6 +23,7 @@ import {
   UPSTREAM_DISCONNECTED,
 } from './idle.js';
 import { EVENT, type ResponsesEvent, type ResponsesRequest } from './protocol.js';
+import { DROPS_PRIOR_TURN_REASONING } from './providers/registry.js';
 import type { Provider, ProviderConfig } from './providers/types.js';
 import { createTranslator, type ChatChunk } from './translate/from-chat.js';
 import { toChatRequest, UnsupportedInputError } from './translate/to-chat.js';
@@ -118,7 +119,9 @@ export async function* runPipeline(
 
   let converted;
   try {
-    converted = toChatRequest(request, model.upstreamModel, model.capabilities);
+    converted = toChatRequest(request, model.upstreamModel, model.capabilities, {
+      dropPriorTurnReasoning: DROPS_PRIOR_TURN_REASONING.has(model.provider),
+    });
   } catch (err) {
     if (err instanceof UnsupportedInputError) {
       // 能力缺失 → **显式失败**（D2），并把用户能看懂的话放在 message 里

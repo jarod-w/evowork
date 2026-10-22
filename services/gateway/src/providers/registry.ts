@@ -289,6 +289,15 @@ export const PRIVATE: Provider = {
   mapError: (status, body) => mapCommonError(status, body, {}),
 };
 
+/**
+ * 之前回合的思维链可以不回传的厂商（`translate/to-chat.ts` 的 `dropPriorTurnReasoning`）。
+ *
+ * **只收实测过的**：2026-10-22 对 `deepseek-flash` 发同一段两轮对话，第二轮保留 / 去掉第一轮的
+ * `reasoning_content`，都回 200，输入 token 433 → 417（去掉的正是那段思维链）。这也是 DeepSeek
+ * 文档对多轮对话的建议。Kimi / GLM 没有密钥实测，按原样回传；拿到密钥后用同样的两轮对话验了再加。
+ */
+export const DROPS_PRIOR_TURN_REASONING: ReadonlySet<string> = new Set(['deepseek']);
+
 export const PROVIDERS: Readonly<Record<string, Provider>> = Object.freeze({
   deepseek: DEEPSEEK,
   moonshot: MOONSHOT,

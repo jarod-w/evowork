@@ -276,7 +276,12 @@ describe('完整链路', () => {
     expect(failed.response.error.message).toContain('不支持图片输入');
   });
 
-  it('下一轮请求把上一轮思维链挂回 Chat assistant（thinking 模式强制回传）', async () => {
+  it('DeepSeek：工具调用回合内照旧挂回思维链；之前用户回合的不再回传（2026-10-22 实测）', async () => {
+    /*
+     * 2026-09-08 记录的是「丢掉思维链 DeepSeek 回 400」，这条测试原先断言的是跨用户回合也必须回传。
+     * 2026-10-22 对 deepseek-flash 重新实测：跨回合去掉照常 200，输入 token 少了正好那段思维链；
+     * 同一回合内去掉这次也是 200，但那一半**保守地照旧回传**（厂商哪天收紧也不会坏）。
+     */
     let sent: unknown;
     const provider = fakeProvider({
       onRequest: (body) => {
@@ -299,7 +304,7 @@ describe('完整链路', () => {
             },
             {
               type: 'reasoning',
-              summary: [{ type: 'summary_text', text: '先说明能力再问下一步' }],
+              summary: [{ type: 'summary_text', text: '上一回合的思维链' }],
             },
             {
               type: 'message',
@@ -307,6 +312,9 @@ describe('完整链路', () => {
               content: [{ type: 'output_text', text: '我能写代码' }],
             },
             { type: 'message', role: 'user', content: [{ type: 'input_text', text: TASK.prompt }] },
+            { type: 'reasoning', summary: [{ type: 'summary_text', text: '本回合先列目录' }] },
+            { type: 'function_call', name: 'shell', arguments: '{"cmd":"ls"}', call_id: 'c1' },
+            { type: 'function_call_output', call_id: 'c1', output: 'a.txt' },
           ],
         }),
         { requestId: 'req_1' },
@@ -316,8 +324,8 @@ describe('完整链路', () => {
 
     const messages = (sent as { messages: { role: string; reasoning_content?: string }[] })
       .messages;
-    const assistant = messages.find((m) => m.role === 'assistant');
-    expect(assistant?.reasoning_content).toBe('先说明能力再问下一步');
+    const assistants = messages.filter((m) => m.role === 'assistant');
+    expect(assistants.map((m) => m.reasoning_content)).toEqual([undefined, '本回合先列目录']);
   });
 });
 
