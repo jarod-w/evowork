@@ -206,6 +206,83 @@ describe('PreToolUse：硬拦截**不看 permission_mode**', () => {
   });
 });
 
+describe('内核目录的两处放行口子（2026-10-22，10 §2.3）：内核亲口指给模型的路径要读得到', () => {
+  // eslint-disable-next-line @evowork/no-kernel-internals -- 测试只拿它当 hook 入参里的路径，不读写目录
+  const MEMORIES = '/Users/li/.evowork/kernel/memories';
+  const denied = (result: ReturnType<typeof preToolUse>) =>
+    (result.output as { hookSpecificOutput?: Record<string, string> } | null)?.hookSpecificOutput
+      ?.permissionDecision === 'deny';
+
+  it('读技能的参考文件、执行技能脚本放行 —— 10-12 的 PPT 任务开局 6 条命令都卡在这里', () => {
+    for (const command of [
+      'cat /Users/li/.evowork/kernel/skills/open-kimi-ppt/reference/evowork-local-export.md',
+      'ls -la ~/.evowork/kernel/skills/open-kimi-ppt/',
+      'python3 $HOME/.evowork/kernel/skills/open-kimi-ppt/scripts/export_pptx.py deck.pptd',
+    ]) {
+      expect(denied(preToolUse({ command })), command).toBe(false);
+    }
+  });
+
+  it('记忆目录读写都放行 —— 记忆整理代理就在这个目录里工作，10-18、10-21 两次都被拦过', () => {
+    expect(denied(preToolUse({ command: `cat ${MEMORIES}/MEMORY.md` }))).toBe(false);
+    const patch = [
+      "apply_patch <<'PATCH'",
+      '*** Begin Patch',
+      `*** Add File: ${MEMORIES}/extensions/ad_hoc/notes/n.md`,
+      '+note',
+      '*** End Patch',
+      'PATCH',
+    ].join('\n');
+    expect(denied(preToolUse({ command: patch }))).toBe(false);
+  });
+
+  it('用 apply_patch 往技能目录写照拦 —— 写进去等于给以后每个任务塞指令；相对路径按 cwd 解析', () => {
+    const add = (path: string) =>
+      ['*** Begin Patch', `*** Add File: ${path}`, '+x', '*** End Patch'].join('\n');
+    const absolute = preToolUse(
+      { command: add('/Users/li/.evowork/kernel/skills/x/SKILL.md') },
+      { tool_name: 'apply_patch' },
+    );
+    expect(denied(absolute)).toBe(true);
+    expect(absolute.audit[0]?.pathKind).toBe('evowork-self');
+    const relative = preToolUse(
+      { command: add('../skills/x/SKILL.md') },
+      { tool_name: 'apply_patch', cwd: MEMORIES },
+    );
+    expect(denied(relative)).toBe(true);
+  });
+
+  it('提权请求指向技能目录照拦 —— 提权就是要越过沙箱的写保护', () => {
+    const result = handlePermissionRequest(
+      {
+        session_id: 't1',
+        turn_id: 'turn1',
+        cwd: '/Users/li/work/weekly',
+        tool_input: { command: 'cp evil.md ~/.evowork/kernel/skills/x/SKILL.md' },
+      },
+      ENV,
+    );
+    const output = result.output as { hookSpecificOutput: Record<string, string> };
+    expect(output.hookSpecificOutput.decision).toBe('deny');
+  });
+
+  it('口子之外的 kernel/ 路径一律照拦：配置、hooks、会话，以及上游以后加的任何新文件', () => {
+    for (const command of [
+      'cat ~/.evowork/kernel/config.toml',
+      'cat ~/.evowork/kernel/hooks.json',
+      'ls ~/.evowork/kernel/sessions/2026/10/12/',
+      'sqlite3 ~/.evowork/kernel/future_9.sqlite .tables',
+      // 同名前缀的兄弟目录不是口子
+      'cat ~/.evowork/kernel/skills-evil/SKILL.md',
+      // `..` 在匹配前解析掉：从口子里走出去照拦
+      'cat ~/.evowork/kernel/skills/../config.toml',
+      `cat ${MEMORIES}/../rules/default.rules`,
+    ]) {
+      expect(denied(preToolUse({ command })), command).toBe(true);
+    }
+  });
+});
+
 describe('PermissionRequest：指向受保护位置的提权**直接拒绝**', () => {
   it('不给用户点"允许"的机会 —— 这条路径的存在本身就说明有东西在绕硬拦截', () => {
     const result = handlePermissionRequest(

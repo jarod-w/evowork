@@ -483,6 +483,7 @@ export function migrateKernelConfigText(text: string): {
     readonly memories: boolean;
     readonly retries: boolean;
     readonly defaultPermissions: boolean;
+    readonly bundledSkills: boolean;
   };
 } {
   const retiredModel = removeRetiredDefaultModel(text);
@@ -491,16 +492,38 @@ export function migrateKernelConfigText(text: string): {
   const retries = migrateStreamRetryBudget(memories.text);
   // 放在 multiAgentV2 之后：那一步先把「写错位置」的 default_permissions 挪回根，这里只补「根本没有」
   const defaultPermissions = migrateDefaultPermissions(retries.text);
+  const bundledSkills = migrateBundledSkillsConfig(defaultPermissions.text);
   return {
-    text: defaultPermissions.text,
+    text: bundledSkills.text,
     changed: {
       retiredModel: retiredModel.changed,
       multiAgentV2: multiAgentV2.changed,
       memories: memories.changed,
       retries: retries.changed,
       defaultPermissions: defaultPermissions.changed,
+      bundledSkills: bundledSkills.changed,
     },
   };
+}
+
+const BUNDLED_SKILLS_DEFAULTS = [['skills.bundled', 'enabled', 'false']] as const;
+
+/**
+ * 给已有安装关掉内核随带的系统技能（`skills/.system/`，2026-10-22，模板里有同一段的理由）。
+ *
+ * `$` 引用列表走 `skills/list`，看不到 `thread/start` 传的回合级覆盖 —— 只靠适配层那份，
+ * 老用户的列表里会一直挂着 imagegen / skill-installer。
+ *
+ * **配置里已经以任何写法提到 `bundled` 就不动**：`[skills] bundled = { … }` 或
+ * `skills.bundled.enabled = …` 之后再追加一个 `[skills.bundled]` 表是重复定义，
+ * 内核会拒绝整份配置 —— 那是所有任务都起不来。企业显式写的值因此也不动
+ * （回合里仍由适配层的 `DISABLE_SYSTEM_SKILLS_CONFIG` 关掉，K5）。
+ */
+export function migrateBundledSkillsConfig(text: string): { text: string; changed: boolean } {
+  if (text.split(/\r?\n/).some((line) => /^\s*[^#]*\bbundled\b/.test(line))) {
+    return { text, changed: false };
+  }
+  return ensureSectionDefaults(text, BUNDLED_SKILLS_DEFAULTS, { createMissingSection: true });
 }
 
 /**
@@ -1070,6 +1093,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         logger.info('desktop.kernel_config.stream_retries_migrated', {});
       if (migrated.changed.defaultPermissions) {
         logger.info('desktop.kernel_config.default_permissions_added', {});
+      }
+      if (migrated.changed.bundledSkills) {
+        logger.info('desktop.kernel_config.bundled_skills_disabled', {});
       }
     } catch {
       logger.warn('desktop.kernel_config.migration_failed', { reason: 'IO' });

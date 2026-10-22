@@ -18,14 +18,26 @@ import { join } from 'node:path';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
 async function runCommand(page, electronApp, cmd, nth) {
+  /*
+   * **按内容认领，不按到达顺序**（2026-10-22 改）。原先用 `scriptNext`：内核在回合之前还会发
+   * 别的请求（记忆、下一步建议），剧本被它们领走，回合拿到的只是一句文字回复、命令根本没发出去 ——
+   * 「普通命令照常执行」因此红，而「~/.ssh 被拦」那条判的是「文件不存在」，**空心通过**。
+   * 写法同 destructive-approval.spec。
+   */
+  const marker = `HOOK-E2E-${nth}-${Math.random().toString(36).slice(2, 8)}`;
   await electronApp.evaluate(
-    (_electron, script) => globalThis.__evoworkE2E.gateway.scriptNext(script),
-    { tool: 'exec_command', args: { cmd } },
+    (_electron, { marker, cmd }) =>
+      globalThis.__evoworkE2E.gateway.scriptWhen(
+        marker,
+        (request) => request.text.includes(marker),
+        { tool: 'exec_command', args: { cmd } },
+      ),
+    { marker, cmd },
   );
   // 第一条开新任务，要开在用例的工作区里（见 `startTaskInWorkspace`）；之后是同一任务里的追加
-  if (nth === 0) await startTaskInWorkspace(page, electronApp, `执行 ${cmd}`);
+  if (nth === 0) await startTaskInWorkspace(page, electronApp, `${marker} 执行 ${cmd}`);
   else {
-    await page.getByLabel('需求输入').fill(`执行 ${cmd}`);
+    await page.getByLabel('需求输入').fill(`${marker} 执行 ${cmd}`);
     await page.getByRole('button', { name: '发送' }).click();
   }
   await expect(page.getByText('E2E response').nth(nth)).toBeVisible({ timeout: 60_000 });
@@ -82,4 +94,45 @@ test('普通命令照常执行 —— 包括以系统目录里的程序开头的
     )
     .toBeGreaterThanOrEqual(1);
   expect((await audit(page)).some((r) => r.pathKind !== undefined)).toBe(false);
+});
+
+/*
+ * 内核目录的两处放行口子（2026-10-22，10 §2.3）。E2E 的内核与 hook 都以测试自己的临时 HOME 运行，
+ * 所以 `~/.evowork/kernel/` 就是这个用例的临时内核目录 —— 判的是真规则，碰不到真实数据。
+ * 目标文件都不存在：放行时 `cat` 只报「没有这个文件」，后面的 printf 照跑；拦下时整条不执行。
+ */
+test('内核技能与记忆目录读得到，内核配置照拦 —— 内核亲口指给模型的路径不能被自己的策略挡住', async ({
+  page,
+  electronApp,
+}) => {
+  const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  const marker = (name) => join(workspace, name);
+
+  await runCommand(
+    page,
+    electronApp,
+    `cat ~/.evowork/kernel/skills/e2e-absent/reference/guide.md; printf RAN > ${JSON.stringify(marker('ran-skill-read.txt'))}`,
+    0,
+  );
+  await runCommand(
+    page,
+    electronApp,
+    // eslint-disable-next-line @evowork/no-kernel-internals -- 这是交给假模型去执行的命令，测试本身不读写该目录
+    `ls ~/.evowork/kernel/memories/; printf RAN > ${JSON.stringify(marker('ran-memories-read.txt'))}`,
+    1,
+  );
+  await runCommand(
+    page,
+    electronApp,
+    `cat ~/.evowork/kernel/config-e2e-absent.toml; printf RAN > ${JSON.stringify(marker('ran-config-read.txt'))}`,
+    2,
+  );
+
+  expect(existsSync(marker('ran-skill-read.txt')), '读技能参考文件被拦了').toBe(true);
+  expect(existsSync(marker('ran-memories-read.txt')), '读记忆目录被拦了').toBe(true);
+  expect(existsSync(marker('ran-config-read.txt')), '读内核配置没拦住').toBe(false);
+  const isSelfBlock = (r) => r.pathKind === 'evowork-self' && /已阻止/.test(r.actionSummary ?? '');
+  await expect
+    .poll(async () => (await audit(page)).filter(isSelfBlock).length, { timeout: 15_000 })
+    .toBe(1);
 });

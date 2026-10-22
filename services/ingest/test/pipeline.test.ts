@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildInjection, summarize } from '../src/inject.js';
+import { ATTACHMENT_NOTE_LABEL, buildInjection, summarize } from '../src/inject.js';
 import {
   inferColumnTypes,
   parseDelimited,
@@ -299,6 +299,37 @@ describe('**注入载荷里没有全文**（08 §3.2 第 ⑤ 步 / 总纲 §6.7�
     expect(summary).toContain('首段文字。');
     expect(summary).toContain('包含章节：一、二');
     expect(summary).toContain('含 1 张表格');
+    // 首段自带句号时不能拼出「。。」（2026-10-22 真窗口里看到的）
+    expect(summary).not.toContain('。。');
+  });
+
+  it('附件说明是第三人称、并写明出自 EvoWork —— 它和用户的话同在一条 user 消息里，记忆提取分不出来', () => {
+    const items = buildInjection({
+      fileName: 'SKILL.md',
+      uploadDir: 'uploads/x/',
+      result: {
+        markdown: '正文',
+        meta: { parser: 'p', parserVersion: '1', chars: 2, tables: 0, confidence: 1 },
+        assets: [],
+      },
+    });
+    const text = items.map((i) => ('text' in i ? i.text : '')).join('');
+    expect(text.startsWith(ATTACHMENT_NOTE_LABEL)).toBe(true);
+    // 2026-10-17 的记忆把旧版这句记成了「用户偏好」：注入文本里不许再有以用户口吻说的「我」
+    expect(text).not.toMatch(/[让给替帮]我|我[把的要]/);
+  });
+
+  it('SKILL.md 这类带 frontmatter 的文件：摘要取 description，不是一个「---」', () => {
+    const summary = summarize(
+      '---\nname: coach\ndescription: "把模糊的工作请求整理成可执行的任务"\n---\n\n# 开场\n正文第一段。',
+    );
+    expect(summary.startsWith('把模糊的工作请求整理成可执行的任务')).toBe(true);
+    expect(summary).toContain('包含章节：开场');
+    expect(summary).not.toMatch(/^---/);
+  });
+
+  it('没有 description 的 frontmatter 跳过整段，首段取正文；正文里的分隔线也不算首段', () => {
+    expect(summarize('---\nname: x\n---\n\n***\n真正的首段。').startsWith('真正的首段')).toBe(true);
   });
 
   it('OCR 置信度低时**如实写进注入文本**，不静默当作正常文本（08 §8）', () => {

@@ -96,7 +96,7 @@ import {
   type Scenario,
 } from './scenario.js';
 import { deriveTaskTitle } from './title.js';
-import { DISABLE_OPENAI_DOCS_CONFIG } from './identity.js';
+import { DISABLE_SYSTEM_SKILLS_CONFIG } from './identity.js';
 
 /**
  * 工作空间（第 5 节的映射表：EvoWork 的「空间」= 内核的 Project + cwd）。
@@ -1021,7 +1021,7 @@ export function createAdapter(options: AdapterOptions) {
       useMemories ??
       (saved === 'true' ? true : saved === 'false' ? false : memories.use_memories !== false);
     return {
-      ...DISABLE_OPENAI_DOCS_CONFIG,
+      ...DISABLE_SYSTEM_SKILLS_CONFIG,
       ...(selectedModel
         ? {
             'memories.extract_model':

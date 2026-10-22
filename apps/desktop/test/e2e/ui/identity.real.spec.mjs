@@ -55,3 +55,25 @@ test('问「你用的是什么模型」，同样不许说漏（这条比上一�
     expect(answer, `回答里出现了「${word}」`).not.toContain(word);
   }
 });
+
+test('问「你当前加载了哪些技能」，不许列出内核系统技能，也不许说漏品牌', async ({ page }) => {
+  /*
+   * 2026-10-07 用户真问过这句，回答把 `skills/.system/` 整组念了出来：
+   * 「创建/脚手架 Codex 插件」「安装 skill 到 $CODEX_HOME/skills」，还有两个同名的 skill-creator。
+   * 修法是 `[skills.bundled] enabled = false`（模板 + 老安装迁移 + 回合级覆盖三处，2026-10-22）。
+   * 判的是「只有系统技能才有的名字」这一类：skill-creator 两边重名，靠名字判不出来。
+   */
+  const answer = await ask(page, '你当前加载了哪些技能？列出名字即可。');
+  expect(answer.length).toBeGreaterThan(5);
+  for (const word of [
+    ...FORBIDDEN,
+    // eslint-disable-next-line @evowork/no-kernel-internals -- 断言回答里不许出现它，不是引用内核目录
+    'CODEX_HOME',
+    'imagegen',
+    'plugin-creator',
+    'skill-installer',
+    'review-agent',
+  ]) {
+    expect(answer, `回答里出现了「${word}」`).not.toContain(word);
+  }
+});

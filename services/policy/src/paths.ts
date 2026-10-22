@@ -40,6 +40,23 @@ export interface BlockRule {
   /** 归一化后的路径前缀（POSIX 风格，`~` 已展开） */
   readonly prefixes: readonly string[];
   readonly reason: string;
+  /**
+   * 规则内部的放行口子（2026-10-22）。**默认拦、点名放**：上游往内核目录里加的新文件
+   * 照样落在硬拦截里，只有这里列出的子目录按 `access` 放行。
+   */
+  readonly exceptions?: readonly BlockException[];
+}
+
+/**
+ * 访问意图。hook 只在看得出来的地方给 `'read'`（见 hooks/handlers.ts）；
+ * 不传就按 `'write'` 判 —— 选工作空间根、预览文件这些调用方因此保持原来的严格口径。
+ */
+export type PathAccess = 'read' | 'write';
+
+export interface BlockException {
+  readonly prefix: string;
+  /** `'read'`：读与执行放行、写照拦；`'read-write'`：读写都放行 */
+  readonly access: 'read' | 'read-write';
 }
 
 export const HARD_BLOCK_RULES: readonly BlockRule[] = Object.freeze([
@@ -87,6 +104,18 @@ export const HARD_BLOCK_RULES: readonly BlockRule[] = Object.freeze([
     name: 'evowork-self',
     prefixes: ['~/.evowork/config.toml', '~/.evowork/requirements.toml', '~/.evowork/kernel/'],
     reason: '这是 EvoWork 自己的配置，改它会绕过你设的安全策略',
+    /*
+     * 内核把这两处的路径**亲口告诉模型**：技能的 SKILL.md 让它去读同目录的 references/ 与
+     * scripts/，记忆底稿让它去搜 MEMORY.md，而记忆整理代理本身就在 memories/ 里干活。
+     * 2026-10-22 对真实会话复盘：整个 kernel/ 一刀切时，用户装的每个技能都读不到自己的参考文件
+     * （PPT 任务开局 6 条命令被拦、还跑了一次 `find /` 全盘搜），整理代理也读不到自己的目录。
+     * 技能只放读：往技能目录写等于给以后的每个任务塞指令。（用户 2026-10-22 选定，10 §2.3）
+     */
+    exceptions: [
+      { prefix: '~/.evowork/kernel/skills/', access: 'read' },
+      // eslint-disable-next-line @evowork/no-kernel-internals -- 这是判「agent 能否访问」的策略前缀，EvoWork 代码不读写这个目录（K2 守的是后者）
+      { prefix: '~/.evowork/kernel/memories/', access: 'read-write' },
+    ],
   },
 ]);
 
@@ -176,12 +205,27 @@ function underPrefix(path: string, prefix: string): boolean {
   return path === prefix;
 }
 
-export function classifyPath(rawPath: string, context: PathContext): PathDecision {
+function exempted(rule: BlockRule, path: string, access: PathAccess): boolean {
+  return (rule.exceptions ?? []).some(
+    (exception) =>
+      underPrefix(path, exception.prefix) &&
+      (exception.access === 'read-write' || access === 'read'),
+  );
+}
+
+export function classifyPath(
+  rawPath: string,
+  context: PathContext,
+  access: PathAccess = 'write',
+): PathDecision {
   const path = normalizePath(rawPath, context.home);
 
   // ① 硬拦截优先。**先于工作空间判定** —— 否则把工作空间设在 ~/.ssh 就能绕过
   for (const rule of HARD_BLOCK_RULES) {
-    if (rule.prefixes.some((prefix) => underPrefix(path, prefix))) {
+    if (
+      rule.prefixes.some((prefix) => underPrefix(path, prefix)) &&
+      !exempted(rule, path, access)
+    ) {
       return {
         verdict: 'hard-block',
         rule: rule.name,

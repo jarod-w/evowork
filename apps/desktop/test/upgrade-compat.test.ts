@@ -29,7 +29,13 @@ import {
   type SqliteLike,
 } from '@evowork/store';
 
-import { migrateDefaultPermissions, migrateKernelConfigText } from '../src/main/service-host.js';
+import { parse as parseToml } from 'smol-toml';
+
+import {
+  migrateBundledSkillsConfig,
+  migrateDefaultPermissions,
+  migrateKernelConfigText,
+} from '../src/main/service-host.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures/upgrade');
@@ -168,6 +174,7 @@ describe.each(fixtures)('从 EvoWork $meta.appVersion 升级上来（$meta.name�
       memories: false,
       retries: false,
       defaultPermissions: false,
+      bundledSkills: false,
     });
     expect(twice.text).toBe(once.text);
     const baseUrl = original.split('\n').find((line) => /^\s*base_url\s*=/.test(line));
@@ -242,6 +249,36 @@ describe('migrateDefaultPermissions 的边界', () => {
   it('企业换成了自己的档位、又没设根键：不替他们选 —— 选了就是把默认权限改成一个他们没写的档', () => {
     const custom = '[permissions.corp-locked]\nextends = ":read-only"\n';
     expect(migrateDefaultPermissions(custom)).toEqual({ text: custom, changed: false });
+  });
+});
+
+describe.each(fixtures)('从 EvoWork $meta.appVersion 升级上来：内核系统技能', ({ dir }) => {
+  it('迁移后整组系统技能关掉，且整份配置仍是合法 TOML —— 不合法内核会拒绝整份配置', () => {
+    const migrated = migrateKernelConfigText(readFileSync(join(dir, 'config.toml'), 'utf8')).text;
+    const parsed = parseToml(migrated) as { skills?: { bundled?: { enabled?: boolean } } };
+    expect(parsed.skills?.bundled?.enabled).toBe(false);
+  });
+});
+
+describe('migrateBundledSkillsConfig 的边界', () => {
+  it('已经用别的写法提到 bundled：一个字都不改 —— 再追加一张 [skills.bundled] 是重复定义', () => {
+    for (const input of [
+      '[skills]\nbundled = { enabled = true }\n',
+      'skills.bundled.enabled = true\n',
+      '[skills.bundled]\nenabled = true\n',
+    ]) {
+      expect(migrateBundledSkillsConfig(input), input).toEqual({ text: input, changed: false });
+    }
+  });
+
+  it('注释里提到 bundled 不算 —— 照样补上', () => {
+    const { text, changed } = migrateBundledSkillsConfig(
+      '# bundled skills are noisy\nmodel = "x"\n',
+    );
+    expect(changed).toBe(true);
+    expect(
+      (parseToml(text) as { skills: { bundled: { enabled: boolean } } }).skills.bundled.enabled,
+    ).toBe(false);
   });
 });
 

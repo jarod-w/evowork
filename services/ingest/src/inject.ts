@@ -21,6 +21,9 @@ import type { ParseResult } from './parsers/builtin.js';
 /** 摘要上限。200 字是 08 §3.2 给的数。 */
 export const SUMMARY_LIMIT = 200;
 
+/** 附件说明的第一行：告诉模型、记忆提取与用户，这段不是用户自己写的。 */
+export const ATTACHMENT_NOTE_LABEL = '【附件说明 · 由 EvoWork 自动生成，不是用户的原话】';
+
 /** 关键页图片上限（08 §3.2：关键页 ≤ 4 张）。 */
 export const MAX_KEY_IMAGES = 4;
 
@@ -48,17 +51,23 @@ export interface InjectionInput {
  * 三者合起来足够 agent 判断要不要去读全文，而这正是摘要唯一的用途。
  */
 export function summarize(markdown: string, limit = SUMMARY_LIMIT): string {
-  const lines = markdown.split('\n');
+  const { body, description } = splitFrontmatter(markdown);
+  const lines = body.split('\n');
 
-  const firstParagraph = lines
-    .find(
-      (line) =>
-        line.trim() !== '' &&
-        !line.startsWith('#') &&
-        !line.startsWith('|') &&
-        !line.startsWith('>'),
-    )
-    ?.trim();
+  // 开头的 YAML frontmatter 不是正文：2026-10-07 用户上传 SKILL.md，摘要首段就是一个「---」。
+  // 有 description 时它就是作者写的那句"这是什么"，比正文首段更准
+  const firstParagraph =
+    description ??
+    lines
+      .find(
+        (line) =>
+          line.trim() !== '' &&
+          !line.startsWith('#') &&
+          !line.startsWith('|') &&
+          !line.startsWith('>') &&
+          !/^\s*([-*_])\1{2,}\s*$/.test(line),
+      )
+      ?.trim();
 
   const headings = lines
     .filter((line) => /^#{1,4}\s/.test(line))
@@ -72,8 +81,19 @@ export function summarize(markdown: string, limit = SUMMARY_LIMIT): string {
   if (headings.length > 0) parts.push(`包含章节：${headings.join('、')}`);
   if (tableCount > 0) parts.push(`含 ${tableCount} 张表格`);
 
-  const summary = parts.join('。');
+  // 各段自带的句末标点先去掉再用「。」接：首段多半以句号结尾，原先拼出来是「提纲。。包含章节」
+  const summary = parts.map((part) => part.replace(/[。．.！!？?；;]+$/u, '')).join('。');
   return summary.length <= limit ? summary : `${summary.slice(0, limit - 1)}…`;
+}
+
+/** 只认文件开头那一段 `---` … `---`；`description:` 只取单行写法，多行的不猜。 */
+function splitFrontmatter(markdown: string): { body: string; description?: string } {
+  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(markdown);
+  if (!match) return { body: markdown };
+  const body = markdown.slice(match[0].length);
+  const line = /^description:[ \t]*(.+)$/m.exec(match[1] ?? '')?.[1]?.trim();
+  const description = line?.replace(/^(['"])(.*)\1$/, '$2').trim();
+  return description && !/^[|>]/.test(description) ? { body, description } : { body };
 }
 
 /** 正文规模的描述。页数缺失时退回字数 —— 不编一个页数出来。 */
@@ -96,11 +116,18 @@ export function buildInjection(input: InjectionInput): readonly InjectionItem[] 
   }
   if (result.meta.note) caveats.push(result.meta.note);
 
+  /*
+   * **第三人称，并在第一行写明出处**（2026-10-22）。这段文字和用户输入的话同在一条 user 消息里，
+   * 内核的记忆提取只认得 AGENTS.md 与 `<skill>` 两类附注、会把其余内容都当用户原话 ——
+   * 旧版写成「不要让我把全文贴出来」，被记成了用户偏好。它也原样显示在用户的气泡里，
+   * 所以标注用中文写给人看，不用标签。
+   */
   const text =
-    `已上传《${fileName}》，解析后的正文在 ${uploadDir}content.md（${scaleOf(result)}）。` +
+    `${ATTACHMENT_NOTE_LABEL}\n` +
+    `用户上传了《${fileName}》，EvoWork 已在本机解析，正文在 ${uploadDir}content.md（${scaleOf(result)}）。` +
     (summary ? `\n摘要：${summary}` : '') +
     (caveats.length > 0 ? `\n注意：${caveats.join('；')}。` : '') +
-    '\n需要细节时直接读那个文件，不要让我把全文贴出来。';
+    '\n需要细节时直接读该文件，不必请用户粘贴全文。';
 
   const items: InjectionItem[] = [{ type: 'text', text }];
   for (const image of (input.keyImages ?? []).slice(0, MAX_KEY_IMAGES)) {

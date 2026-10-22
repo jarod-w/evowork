@@ -119,6 +119,9 @@ exporter = "none"
 [[skills.config]]
 name = "openai-docs"
 enabled = false
+
+[skills.bundled]
+enabled = false
 `,
     );
 
@@ -215,6 +218,18 @@ enabled = false
     if (discovered.has('openai-docs')) {
       throw new Error(
         '`openai-docs` 出现在 $ 引用列表里 —— config.toml 的 [[skills.config]] 全局关闭没生效（K5）',
+      );
+    }
+    /*
+     * 其余系统技能同理（2026-10-22）：判的是「skills/.system/ 里只有它才有的名字」这一类，
+     * 不是某一个 —— skill-creator 两边重名，靠名字判不出来，所以不在这张表里。
+     */
+    const systemOnly = ['imagegen', 'plugin-creator', 'skill-installer', 'review-agent'].filter(
+      (name) => discovered.has(name),
+    );
+    if (systemOnly.length > 0) {
+      throw new Error(
+        `内核系统技能出现在 $ 引用列表里：${systemOnly.join('、')} —— config.toml 的 [skills.bundled] 没生效（K5）`,
       );
     }
 

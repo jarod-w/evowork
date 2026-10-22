@@ -697,6 +697,8 @@ describe('新建任务（03 §4.6）', () => {
     expect(threadStart?.params.baseInstructions).toBe("You are EvoWork's execution agent.");
     expect(threadStart?.params.config).toMatchObject({
       'skills.config': [{ name: 'openai-docs', enabled: false }],
+      // 系统技能整组关掉：回答里不再出现「创建 Codex 插件」，imagegen 不再和随包生图技能抢请求
+      'skills.bundled.enabled': false,
     });
   });
 

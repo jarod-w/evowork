@@ -136,3 +136,11 @@ exporter = "none"
 [[skills.config]]
 name = "openai-docs"
 enabled = false
+
+# 内核随带的其余系统技能（imagegen · plugin-creator · skill-creator · skill-installer ·
+# review-agent）也整组关掉（2026-10-22）。用户问「你加载了哪些技能」时，它们让回答里出现
+# 「创建 Codex 插件」「安装到 $CODEX_HOME/skills」；imagegen 与随包的 image-generation 抢同一类请求，
+# skill-creator 与随包的同名技能撞名。EvoWork 不调 review/start 的分离模式（唯一用到
+# review-agent 的地方）。老安装由宿主启动时的迁移补上这一段（migrateBundledSkillsConfig）。
+[skills.bundled]
+enabled = false

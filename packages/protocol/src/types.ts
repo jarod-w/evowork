@@ -455,7 +455,7 @@ export interface ThreadStartParams {
   readonly baseInstructions?: string;
   /**
    * 会话级 `config.toml` 覆盖（与 CLI `-c key=value` 同一条路）。
-   * 用来关掉把「你 / 这个 App」绑到 Codex 文档上的系统技能 `openai-docs`。
+   * 用来关掉内核随带的系统技能（`skills/.system/`，其中 `openai-docs` 把「你 / 这个 App」绑到 Codex 文档上）。
    */
   readonly config?: Readonly<Record<string, unknown>>;
 }

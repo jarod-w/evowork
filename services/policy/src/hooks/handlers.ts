@@ -21,7 +21,7 @@ import {
   replacesWholeFile,
 } from '../apply-patch.js';
 import { pathDigest, summarizeCommand, type AuditRecord } from '../audit.js';
-import { classifyPath, type PathContext } from '../paths.js';
+import { classifyPath, type PathAccess, type PathContext } from '../paths.js';
 import { isComputerUseTool } from '../computer-use.js';
 import {
   deny,
@@ -107,21 +107,46 @@ export function extractCommandPaths(command: string): readonly string[] {
  */
 const COMMAND_EXEMPT_RULES: ReadonlySet<string> = new Set(['system-dirs']);
 
+/**
+ * 硬拦截判定。`access` 是这次调用**看得出来的**访问意图（2026-10-22，10 §2.3）：
+ *
+ * - PreToolUse 的 shell 命令与路径字段一律按 `'read'` 判 —— 一行 shell 分不清读写，
+ *   `cat` 与 `cp x <那里>` 在这里长得一样。默认档的写保护由沙箱给（工作空间外不可写），
+ *   越过沙箱必须走提权请求，而提权请求按 `'write'` 判（`handlePermissionRequest`）。
+ * - apply_patch 的逐文件动作一定是写，单独按 `'write'` 判（`patchHardBlocks`）。
+ *
+ * 只有规则里点名的放行口子（`BlockRule.exceptions`）看 `access`；凭据与其余硬拦截读写都拦。
+ */
 function hardBlocks(
   toolInput: Record<string, unknown>,
   context: PathContext,
+  access: PathAccess,
 ): readonly { readonly raw: string; readonly decision: ReturnType<typeof classifyPath> }[] {
   const hits = [];
   for (const raw of extractPaths(toolInput)) {
-    const decision = classifyPath(raw, context);
+    const decision = classifyPath(raw, context, access);
     if (decision.verdict === 'hard-block') hits.push({ raw, decision });
   }
   const command = extractCommand(toolInput);
   for (const raw of command === undefined ? [] : extractCommandPaths(command)) {
-    const decision = classifyPath(raw, context);
+    const decision = classifyPath(raw, context, access);
     if (decision.verdict === 'hard-block' && !COMMAND_EXEMPT_RULES.has(decision.rule ?? '')) {
       hits.push({ raw, decision });
     }
+  }
+  return hits;
+}
+
+/** apply_patch 改到的每个文件按「写」判；相对路径按 cwd 解析（内核也是这么落盘的）。 */
+function patchHardBlocks(
+  input: PreToolUseInput,
+  context: PathContext,
+): readonly { readonly raw: string; readonly decision: ReturnType<typeof classifyPath> }[] {
+  const hits = [];
+  for (const op of parseApplyPatch(input.tool_name, extractCommand(input.tool_input)) ?? []) {
+    if (op.path === '') continue;
+    const decision = classifyPath(resolve(input.cwd, op.path), context, 'write');
+    if (decision.verdict === 'hard-block') hits.push({ raw: op.path, decision });
   }
   return hits;
 }
@@ -166,7 +191,8 @@ export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): 
   const audit: AuditRecord[] = [];
 
   // ① 硬拦截：**不看 permission_mode**
-  const blocked = hardBlocks(input.tool_input, context)[0];
+  const blocked =
+    hardBlocks(input.tool_input, context, 'read')[0] ?? patchHardBlocks(input, context)[0];
   if (blocked) {
     const { raw, decision } = blocked;
     audit.push({
@@ -257,7 +283,8 @@ export function handlePermissionRequest(
   };
   const audit: AuditRecord[] = [];
 
-  const blocked = hardBlocks(input.tool_input ?? {}, context)[0];
+  // 提权就是要越过沙箱的写保护：放行口子里「只读」的那些，这里照拦
+  const blocked = hardBlocks(input.tool_input ?? {}, context, 'write')[0];
   if (blocked) {
     const { raw, decision } = blocked;
     audit.push({

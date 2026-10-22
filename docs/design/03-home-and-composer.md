@@ -115,7 +115,7 @@ prompt = "分析这份数据并给出可视化："
 - `collaborationMode`、`permissions`、`approvalsReviewer` 都经 09 §3 适配层调用，前端只传语义化的 `{scenarioId, modeId, overrides}`。`modeId` 为 `request-approval` / `approve-for-me` / `full-access`。
 - `developer_instructions` 的拼接顺序固定为 **craft 片段在前、场景片段在后**，并在末尾附加运行时上下文（当前日期、工作空间路径、可用技能清单摘要）。三档共用 `config/modes/craft.md`；`plan.md` / `ask.md` 不进 Composer。
 - 模式片段文件仍放在 `config/modes/`，**不进内核仓库**（P3 补丁保持删除）。
-- **产品身份不在 `developer_instructions` 里。** 那一层只叠加，盖不住内核写死的「You are a coding agent running in the Codex CLI」。身份走同一次建任务的 `thread/start.baseInstructions`（F25，`config/prompts/base-instructions.md` 是内核 `default.md` 的 fork，只改身份段）。相对路径的 `model_instructions_file` 按 cwd 解析，不能写进配置模板。系统技能 `openai-docs` 按名字关掉：它把「you / this app」绑到 Codex 文档上。
+- **产品身份不在 `developer_instructions` 里。** 那一层只叠加，盖不住内核写死的「You are a coding agent running in the Codex CLI」。身份走同一次建任务的 `thread/start.baseInstructions`（F25，`config/prompts/base-instructions.md` 是内核 `default.md` 的 fork，只改身份段）。相对路径的 `model_instructions_file` 按 cwd 解析，不能写进配置模板。系统技能 `openai-docs` 按名字关掉：它把「you / this app」绑到 Codex 文档上。2026-10-22 起内核随带的系统技能整组关掉（`[skills.bundled] enabled = false`）：其余几个让「你加载了哪些技能」的回答里出现「创建 Codex 插件」「安装到 `$CODEX_HOME/skills`」，`imagegen` 与随包 `image-generation` 抢同一类请求，`skill-creator` 与随包同名技能撞名。
 
 ### 2.5 场景配置的交互
 

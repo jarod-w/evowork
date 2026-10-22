@@ -228,7 +228,7 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
   且**每一个都要在降级表里有兜底路径**，由 `assertDegradationCoverage()` 在 `createAdapter()` 启动时钉住。
 - **每次 `thread/start` 都带三样东西**，都是 2026-09-06/07 真跑出来的（F20–F25）：
   `baseInstructions`（随包 `config/prompts/base-instructions.md`，整段替换系统底稿 —— 只叠加 `developer_instructions` 盖不住「Codex CLI」）·
-  `config` 里按名字关掉系统技能 `openai-docs`（[identity.ts](../services/kernel-adapter/src/identity.ts)）·
+  `config` 里关掉内核随带的系统技能（`skills.bundled.enabled = false`，并按名字再关一次 `openai-docs`；[identity.ts](../services/kernel-adapter/src/identity.ts)。`$` 列表走 `skills/list` 看不到回合覆盖，所以 `config.toml` 里另有一段，老安装由 `migrateBundledSkillsConfig` 补上）·
   `collaborationMode.settings` 用 **snake_case** 且 `model` 必填（F20/F22：写错不报错，只是静默丢掉）。
 - 任务标题由适配层**从第一条需求就地取、不调模型**，并写回内核 `thread/name/set`（[title.ts](../services/kernel-adapter/src/title.ts)）—— 内核里没有任何自动命名路径，`thread/name/updated` 只在客户端显式命名后才发。
 - 宿主给内核的 `extraEnv` 里带 `EVOWORK_AUDIT_LOG`（hook 是内核的子进程，环境从那儿继承）与网关令牌；

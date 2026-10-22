@@ -80,7 +80,7 @@ export {
   type ScenarioChip,
 } from './scenario.js';
 export { deriveTaskTitle, titleFromText, TITLE_MAX_CHARS } from './title.js';
-export { DISABLE_OPENAI_DOCS_CONFIG } from './identity.js';
+export { DISABLE_SYSTEM_SKILLS_CONFIG } from './identity.js';
 export {
   KernelSession,
   type KernelLauncher,

@@ -81,6 +81,15 @@ describe('三级路径策略（10 §2.3）', () => {
     }
   });
 
+  it('内核技能目录：不说访问意图就按「写」判 —— 选工作空间根、预览文件这些调用方保持原来的严格口径', () => {
+    const skill = '~/.evowork/kernel/skills/x/SKILL.md';
+    expect(classifyPath(skill, CONTEXT).verdict).toBe('hard-block');
+    expect(classifyPath(skill, CONTEXT, 'write').verdict).toBe('hard-block');
+    expect(classifyPath(skill, CONTEXT, 'read').verdict).not.toBe('hard-block');
+    // 凭据没有口子：说是「读」也照拦
+    expect(classifyPath('~/.ssh/id_rsa', CONTEXT, 'read').verdict).toBe('hard-block');
+  });
+
   it('**硬拦截先于工作空间判定** —— 把工作空间设在 ~/.ssh 也绕不过', () => {
     const evil = { workspaceRoot: '/Users/li/.ssh', home: HOME };
     expect(classifyPath('/Users/li/.ssh/id_rsa', evil).verdict).toBe('hard-block');

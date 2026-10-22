@@ -147,11 +147,14 @@ artifact
          assets/p1.png …     图表/图片页
          meta.json           页数、字数、表数、解析器版本、置信度
   → ⑤ 注入 turn/start：
-         Text("已上传《<文件名>》，解析后的正文在 uploads/<dir>/content.md（<n> 页 / <m> 字）。<摘要 200 字>")
+         Text("【附件说明 · 由 EvoWork 自动生成，不是用户的原话】
+              用户上传了《<文件名>》，EvoWork 已在本机解析，正文在 uploads/<dir>/content.md（<n> 页 / <m> 字）。<摘要 200 字>")
          + LocalImage(关键页 ≤ 4 张)
          + Mention(name: 文件名, path: uploads/<dir>/)
   → ⑥ 用户明确加入资料库后交接正文索引（06 §3.4；16，本地首版已实现）
 ```
+
+**这段文字用第三人称、第一行写明出处**（2026-10-22）。它和用户输入的话同在一条 user 消息里，内核的记忆提取只认 AGENTS.md 与 `<skill>` 两类附注、其余都当用户原话（`memories/write/src/rollout_input.rs` 的 `is_memory_excluded_contextual_user_fragment`）；旧版写成「不要让我把全文贴出来」，被本机记忆记成了用户偏好。它也原样显示在用户的气泡里，所以标注写给人看、不用标签。带 YAML frontmatter 的文件（如 SKILL.md）摘要取 `description`，不再把 `---` 当首段。
 
 第 ⑤ 步的设计要点：**不把全文塞进 prompt**。塞全文会在长文档上炸上下文且浪费 token；给路径 + 摘要 + 关键页，agent 需要细节时用 shell 读 `content.md`（总纲 §6.7 的原话）。摘要由解析器用启发式规则生成（首段 + 各级标题 + 表格清单），**不调模型**。
 
