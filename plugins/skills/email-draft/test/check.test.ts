@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,11 +41,14 @@ describe('邮件只出草稿', () => {
     expect(text).toContain('要对方做的事：确认预算金额');
   });
 
-  it('带发送字段时拒绝，不写出文件', () => {
-    const result = run({ ...GOOD, send: true });
-    expect(result.status).toBe(EXIT.invalidContent);
-    expect(parseFailure(result.stderr).message).toContain('自己发');
-    expect(result.stderr).not.toContain('请确认预算');
+  it('带发送或凭据字段时拒绝，不写出文件', () => {
+    for (const field of ['send', 'smtp', 'deliver', 'password', 'token']) {
+      const result = run({ ...GOOD, [field]: true });
+      expect(result.status, field).toBe(EXIT.invalidContent);
+      expect(parseFailure(result.stderr).message).toContain('自己发');
+      expect(result.stderr).not.toContain('请确认预算');
+      expect(existsSync(join(dir, '邮件草稿.md')), field).toBe(false);
+    }
   });
 
   it('没有要对方做的事时拒绝', () => {
