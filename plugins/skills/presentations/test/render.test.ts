@@ -31,7 +31,12 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { hasPythonModule, WITHOUT_OFFICE_RUNTIME } from '../../_shared/test-helpers.js';
+import {
+  LIBRARY_DEFAULT_PROPERTIES,
+  WITHOUT_OFFICE_RUNTIME,
+  documentProperties,
+  hasPythonModule,
+} from '../../_shared/test-helpers.js';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RENDER = join(SKILL_ROOT, 'container_tools', 'render.py');
@@ -388,6 +393,19 @@ describe('模板（排版由模板决定，不由模型决定）', () => {
       expect(spec.metrics.bullet_shrink_steps).toBeDefined();
     }
   });
+});
+
+describe('交付文件的属性', () => {
+  it.runIf(hasOfficeRuntime)(
+    '不留生成库的名字，也不留库作者的名字（python-pptx 默认写进「最后修改者」）',
+    () => {
+      const out = join(dir, 'deck.pptx');
+      const result = runRender(['--content', writeContent(VALID), '--out', out]);
+      expect(result.status, result.stderr).toBe(0);
+      const props = documentProperties(out);
+      for (const value of LIBRARY_DEFAULT_PROPERTIES) expect(props).not.toContain(value);
+    },
+  );
 });
 
 describe('改已有文件：提取成内容 JSON', () => {

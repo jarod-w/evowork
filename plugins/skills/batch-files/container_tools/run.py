@@ -561,6 +561,8 @@ def merged_xlsx(ws: Workspace, sources: list):
     except ModuleNotFoundError:
         raise Refused(runtime_missing_message("office", "合并 xlsx"), EXIT_RUNTIME_MISSING) from None
     book = Workbook()
+    # openpyxl 默认把「创建者」写成自己：交付的文件属性里不留生成库的名字
+    book.properties.creator = ""
     book.remove(book.active)
     used: set = set()
     for source in sources:

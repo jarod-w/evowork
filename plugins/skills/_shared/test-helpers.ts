@@ -114,6 +114,32 @@ export const WITHOUT_OFFICE_RUNTIME = Object.freeze({
 });
 
 /**
+ * 交付文件的「文件属性」（docx / pptx / xlsx 里 `docProps/` 下的 XML 原文）。
+ * 收件人在 Finder / 资源管理器里就看得到这些，所以直接断言 XML，不经过读它的库。
+ */
+export function documentProperties(file: string): string {
+  const script = [
+    'import sys,zipfile',
+    'z=zipfile.ZipFile(sys.argv[1])',
+    'print("\\n".join(z.read(n).decode("utf-8") for n in z.namelist() if n.startswith("docProps/") and n.endswith(".xml")))',
+  ].join('\n');
+  const result = spawnSync('python3', ['-c', script, file], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return result.stdout;
+}
+
+/**
+ * 三个生成库在空白模板里留下的属性值。留在交付文件里，就是把实现细节
+ * （python-pptx 那条甚至是库作者本人的名字）交给了收件人。
+ */
+export const LIBRARY_DEFAULT_PROPERTIES = Object.freeze([
+  'python-docx',
+  'python-pptx',
+  'Steve Canny',
+  'openpyxl',
+]);
+
+/**
  * 强制"不是 macOS"的环境：`sitecustomize.py` 把 `sys.platform` 改成 `linux`。
  *
  * PDF 转换只在 macOS 上有隔离，别的平台要拒绝。只用 `runIf(!onMac)` 的话，

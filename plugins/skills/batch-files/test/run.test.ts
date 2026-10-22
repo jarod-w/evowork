@@ -16,8 +16,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   EXIT,
+  LIBRARY_DEFAULT_PROPERTIES,
   ON_PLATFORM_WITHOUT_ISOLATION,
   WITHOUT_OFFICE_RUNTIME,
+  documentProperties,
   makeTempDir,
   parseFailure,
   removeDir,
@@ -644,6 +646,8 @@ describe('合并表格不删原件', () => {
       { encoding: 'utf8' },
     ).trim();
     expect(listed.split(',').sort()).toEqual(['支出', '收入']);
+    const props = documentProperties(join(ws, '合计.xlsx'));
+    for (const value of LIBRARY_DEFAULT_PROPERTIES) expect(props).not.toContain(value);
     expect(existsSync(join(ws, '一月.xlsx'))).toBe(true);
     expect(existsSync(join(ws, '二月.xlsx'))).toBe(true);
   });

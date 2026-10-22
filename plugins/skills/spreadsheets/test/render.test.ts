@@ -14,7 +14,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   EXIT,
+  LIBRARY_DEFAULT_PROPERTIES,
   WITHOUT_OFFICE_RUNTIME,
+  documentProperties,
   hasPythonModule,
   makeTempDir,
   parseFailure,
@@ -182,6 +184,12 @@ describe('装了办公扩展时真的产出 xlsx，且**公式是公式**', () =
     // <f> 是公式节点。有它才说明写进去的是公式而不是常量
     expect(xml).toContain('<f>B2*C2</f>');
     expect(xml).toContain('SUM(D2:D3)');
+  });
+
+  it.runIf(hasOpenpyxl)('文件属性里不留生成库的名字（openpyxl 默认把「创建者」写成自己）', () => {
+    expect(run(SHEET, 'book.xlsx').status).toBe(EXIT.ok);
+    const props = documentProperties(join(dir, 'book.xlsx'));
+    for (const value of LIBRARY_DEFAULT_PROPERTIES) expect(props).not.toContain(value);
   });
 
   it.runIf(hasOpenpyxl)('冻结首行真的落进了文件', () => {

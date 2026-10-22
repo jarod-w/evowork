@@ -24,8 +24,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   EXIT,
+  LIBRARY_DEFAULT_PROPERTIES,
   ON_PLATFORM_WITHOUT_ISOLATION,
   WITHOUT_OFFICE_RUNTIME,
+  documentProperties,
   hasPythonModule,
   makeTempDir,
   parseFailure,
@@ -531,6 +533,62 @@ function extract(source: string, extra: readonly string[] = [], out = join(dir, 
     : undefined;
   return { result, content, dropped };
 }
+
+describe('文件属性不是正文（2026-10-22：写回后封面上多出「python-docx」）', () => {
+  it.runIf(hasDocx)('生成的 docx 属性里不留生成库的名字，提取回来也没有作者', () => {
+    expect(run(DOC, 'own.docx').status).toBe(EXIT.ok);
+    const props = documentProperties(join(dir, 'own.docx'));
+    for (const value of LIBRARY_DEFAULT_PROPERTIES) expect(props).not.toContain(value);
+
+    const { result, content } = extract(join(dir, 'own.docx'));
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    expect(content?.author).toBeUndefined();
+  });
+
+  it.runIf(hasDocx)('属性里的作者与主题封面上看不到：提取不收，写回后封面不多出一行字', () => {
+    const source = buildDocx(
+      'props.docx',
+      String.raw`
+doc.core_properties.author = "Administrator"
+doc.core_properties.subject = "部门旧模板"
+doc.add_heading("季度总结", level=1)
+doc.add_paragraph("营收同比增长 18%。")
+`,
+    );
+    const { result, content } = extract(source);
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    expect(content?.author).toBeUndefined();
+    expect(content?.subtitle).toBeUndefined();
+
+    const back = runPython(RENDER, [
+      '--content',
+      join(dir, 'out.json'),
+      '--out',
+      join(dir, 'b.docx'),
+    ]);
+    expect(back.status, back.stderr).toBe(EXIT.ok);
+    const xml = readDocumentXml(join(dir, 'b.docx'));
+    expect(xml).not.toContain('Administrator');
+    expect(xml).not.toContain('部门旧模板');
+  });
+
+  it.runIf(hasDocx)('封面上的副标题以封面为准：属性里的旧主题不顶替它，它也不掉进正文', () => {
+    const source = buildDocx(
+      'subtitle.docx',
+      String.raw`
+doc.core_properties.subject = "旧主题"
+doc.add_paragraph("新方案", style="Title")
+doc.add_paragraph("面向华东区", style="Subtitle")
+doc.add_paragraph("正文第一段。")
+`,
+    );
+    const { result, content } = extract(source);
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    expect(content?.title).toBe('新方案');
+    expect(content?.subtitle).toBe('面向华东区');
+    expect(content?.blocks).toEqual([{ block: 'paragraph', text: '正文第一段。' }]);
+  });
+});
 
 describe('提取 docx：别人做的文件', () => {
   it.runIf(hasDocx)('内容控件（w:sdt）里的正文收回来，块级和行内的都算', () => {

@@ -175,6 +175,9 @@ def render(content: dict, out_path: Path, base_dir: Path) -> None:
     prs.core_properties.category = template_stamp(content.get("template", "business"))
     if content.get("title"):
         prs.core_properties.title = content["title"]
+    # python-pptx 的空白模板把「最后修改者」写成库作者的名字、备注写成生成库：交付的文件里不留这些
+    prs.core_properties.last_modified_by = ""
+    prs.core_properties.comments = ""
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(out_path))

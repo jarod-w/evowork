@@ -475,6 +475,8 @@ def render_xlsx(content: dict, out_path: Path) -> None:
         if sheet_spec.get("note"):
             sheet.cell(row=last_row + 3, column=1, value=sheet_spec["note"])
 
+    # openpyxl 默认把「创建者」写成 openpyxl：交付的文件属性里不留生成库的名字
+    book.properties.creator = ""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     book.save(out_path)
 
