@@ -146,6 +146,8 @@ CLAUDE.md 要求「引用内核代码用 `path:line` 并当场核对」。下表
 | **F51** | 图片扩展配置要求 OpenAI provider、OpenAI auth 或 actor authorization | `ext/image-generation/src/extension.rs:41` | ⚠️ 2026-10-06 静态读码：扩展安装不等于普通自有 provider 已可用；15 §2.2 |
 | **F52** | 原生图片工具固定 `gpt-image-2`；最多 5 张引用；参数只有 prompt、引用路径或最近图片数 | `ext/image-generation/src/tool.rs:59`、`:90` | ⚠️ 2026-10-06 静态读码：不能假定原生工具已提供可选图片模型、尺寸、质量、透明背景或 mask；15 §2.2 |
 | **F53** | 原生图片 API 使用独立 `images/generations` / `images/edits` 路径，并将请求序列化为 JSON | `codex-api/src/endpoint/images.rs:35`、`:58` | ⚠️ 2026-10-06 静态读码：当前 Responses 翻译管道不足以支持；需独立适配；15 §2.2 / §6 |
+| **F54** | 内核所有「ChatGPT 后端」请求的地址取自配置键 `chatgpt_base_url`，默认 `https://chatgpt.com/backend-api/` | `core/src/config/mod.rs:4317` | 🚨 2026-10-22 实测：未登录也会请求 chatgpt.com。模板根键改成 `evowork-disabled://chatgpt-backend/` 断掉，老安装由启动迁移补上；见总纲「K6 登记：内核连 ChatGPT 后端」与 `scripts/verify-kernel-egress.mjs` |
+| **F55** | 精选插件预热只看插件功能开关、**不看是否登录**，地址来自 `remote_plugin_service_config`（即 `chatgpt_base_url`） | `core-plugins/src/manager.rs:1832` | 🚨 启动 / `plugin/list` 时向 `chatgpt.com/backend-api/plugins/featured` 发请求（401，已到达对方）。关插件功能会连本机套件一起关，所以走 F54 那个配置键 |
 
 > **已确认修订（2026-10-06）**：F50–F53 不支持原总纲 §6.8 “复用 `ext/image-generation`，增量成本≈0”的估计。IMG-Q1–IMG-Q11 全部采纳建议，采用官方技能/MCP/本机图片服务/网关；已回写总纲与受控图片连接器范围。静态核对和产品决策均不表示图片功能已落地，G0 探针与实际型号仍待验证。
 

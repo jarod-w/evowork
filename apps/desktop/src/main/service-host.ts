@@ -484,6 +484,7 @@ export function migrateKernelConfigText(text: string): {
     readonly retries: boolean;
     readonly defaultPermissions: boolean;
     readonly bundledSkills: boolean;
+    readonly chatgptBaseUrl: boolean;
   };
 } {
   const retiredModel = removeRetiredDefaultModel(text);
@@ -493,8 +494,9 @@ export function migrateKernelConfigText(text: string): {
   // 放在 multiAgentV2 之后：那一步先把「写错位置」的 default_permissions 挪回根，这里只补「根本没有」
   const defaultPermissions = migrateDefaultPermissions(retries.text);
   const bundledSkills = migrateBundledSkillsConfig(defaultPermissions.text);
+  const chatgptBaseUrl = migrateChatgptBaseUrl(bundledSkills.text);
   return {
-    text: bundledSkills.text,
+    text: chatgptBaseUrl.text,
     changed: {
       retiredModel: retiredModel.changed,
       multiAgentV2: multiAgentV2.changed,
@@ -502,8 +504,29 @@ export function migrateKernelConfigText(text: string): {
       retries: retries.changed,
       defaultPermissions: defaultPermissions.changed,
       bundledSkills: bundledSkills.changed,
+      chatgptBaseUrl: chatgptBaseUrl.changed,
     },
   };
+}
+
+/** 模板里同一个值；理由写在模板与总纲「K6 登记：内核连 ChatGPT 后端」。 */
+export const DISABLED_CHATGPT_BASE_URL = 'evowork-disabled://chatgpt-backend/';
+
+/**
+ * 给已有安装断掉内核连 ChatGPT 后端的请求（2026-10-22，K6 / K7）。
+ *
+ * 10-22 用发货内核与真实用户的配置复现：启动后调 `plugin/list`，内核向
+ * `chatgpt.com/backend-api/plugins/featured` 发请求（401，已到达对方）。只改模板没用 ——
+ * `ensureKernelConfig` 不覆盖已有文件，而这类请求在每台老机器上每次启动都会发。
+ *
+ * **文件里任何位置已经写了 `chatgpt_base_url` 就不动**：那是有人有意设的，我们不替他改；
+ * 写在表里的那种也不挪（挪了就是改写一个我们不了解的值）。
+ */
+export function migrateChatgptBaseUrl(text: string): { text: string; changed: boolean } {
+  if (text.split(/\r?\n/).some((line) => /^\s*chatgpt_base_url\s*=/.test(line))) {
+    return { text, changed: false };
+  }
+  return { text: setRootKey(text, 'chatgpt_base_url', DISABLED_CHATGPT_BASE_URL), changed: true };
 }
 
 const BUNDLED_SKILLS_DEFAULTS = [['skills.bundled', 'enabled', 'false']] as const;
@@ -1096,6 +1119,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       }
       if (migrated.changed.bundledSkills) {
         logger.info('desktop.kernel_config.bundled_skills_disabled', {});
+      }
+      if (migrated.changed.chatgptBaseUrl) {
+        logger.info('desktop.kernel_config.chatgpt_backend_disabled', {});
       }
     } catch {
       logger.warn('desktop.kernel_config.migration_failed', { reason: 'IO' });

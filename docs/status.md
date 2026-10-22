@@ -6,12 +6,17 @@
 > 怎么编译与部署在 [build-and-deploy.md](build-and-deploy.md)。
 > 这里只写**当前事实**，不写计划理由 —— 两边说法冲突时，以本文的"验收凭据"列为准。
 >
+> **2026-10-22（同日）：断掉内核连 ChatGPT 后端的请求（K6 / K7）。**
+> 用发货内核（d583e73c4d + P6/P7）与用户本机配置复现：启动后调 `plugin/list`，内核请求 `https://chatgpt.com/backend-api/plugins/featured`（401，已到达对方），并起了指向 chatgpt.com 的远程控制循环。原因是内核的「ChatGPT 后端」地址全部取自 `chatgpt_base_url`，默认 chatgpt.com，而精选插件预热不看是否登录（F54 / F55）。模板加根键 `chatgpt_base_url = "evowork-disabled://chatgpt-backend/"`，老安装由启动迁移 `migrateChatgptBaseUrl` 补上（已显式写过这个键的不动）。不支持的协议让请求在构造阶段就失败；**不用 `http://127.0.0.1:…`**：内核走 macOS 系统代理且不认例外列表，实测本机地址也被送进代理（代理回 502）。登记在总纲「K6 登记：内核连 ChatGPT 后端」。
+> **验收**：新增 `scripts/verify-kernel-egress.mjs`（发货内核 + 一份配置真起一次，按内核日志判请求目的地）：随包模板 **0 个非本机地址**；用户本机现有配置 **chatgpt.com ×4，判失败**；同一份配置经宿主真实迁移代码处理后 **0 个**，`plugin/list` / `thread/start` 照常。确定性真窗口回归（hook · 技能安装 · 视图 · 输入框）**15/15**；原版 `pnpm run check` 退出 0，**3052 项通过、2 项既有跳过**；漂移雷达 51 条 OK 40 · LINE-MOVED 11 · BROKEN 0。
+> **边界**：判据是内核日志，只覆盖启动、`plugin/list`、`thread/start` 三条路径与 8 秒窗口；插件市场同步（`github.com`，已登记）照旧；改动要重新打包才进入安装包。
+>
 > **2026-10-22：按本机真实会话复盘，修四处 agent 使用效果问题。**
 > 复盘本机 10 个真实会话（22 个回合，10-07 至 10-22，均为 deepseek-flash）后改了三处：① 内核随带的系统技能整组关掉（模板 `[skills.bundled]`、老安装迁移 `migrateBundledSkillsConfig`、`thread/start` 回合级覆盖三处）。此前回答「加载了哪些技能」会出现「创建 Codex 插件」「安装到 `$CODEX_HOME/skills`」，`imagegen` 与随包生图技能抢请求，`skill-creator` 两处撞名。② 附件说明改成第三人称，首行标明由 EvoWork 生成：旧版「不要让我把全文贴出来」被本机记忆记成了用户偏好。带 frontmatter 的文件（如 SKILL.md）摘要改取 description，此前只有一个「---」。③ Craft 指令写明技能作用范围与「安装为全局技能」入口：此前同一份 SKILL.md 被拷进三个无项目任务的临时工作区，用户随后问 `$` 为什么找不到，agent 去逆向 App 包，跑了 34 条命令、用了 176 秒。本机记忆另写一条 ad-hoc 更正笔记，按内核约定放在 `extensions/ad_hoc/notes/`，下次整理时应用。
 > **验收**：随包内核（`build/kernel/mac-arm64`，d583e73c4d + P6/P7）协议探针：默认配置下 `skills/list` 列出 6 个系统技能，加 `[skills.bundled] enabled = false` 后为 0。各版本升级夹具迁移后仍是合法 TOML，且该项为 `false`。原版 `pnpm run check` 退出 0，**3044 项通过、2 项既有跳过**。`app.test.tsx`「慢文件预览返回前用户已关闭结果区」今天 5 遍全量里红过 2 遍、单独重跑全过，是与本次无关的既有时序偶发，未处理。
 > **未验 / 待决**：回合级 `skills.bundled.enabled` 覆盖、新附件说明、Craft 新段落都**没有对真实模型跑过**；记忆更正要等下次整理才知道是否生效。④（用户选定）`~/.evowork/kernel/` 仍整体硬拦截，只点名放两处：`skills/` 只放读，`memories/` 读写都放。此前它挡住了 Hub 与全局技能的参考文件和脚本（内核注入的就是这个路径），也挡住了记忆整理代理读写自己的目录（10-18、10-21 两次都有命令被拦）。apply_patch 写技能目录、指向它的提权请求照拦；完全访问档下 shell 写技能目录拦不住，边界见 [10 §2.3 的 2026-10-22 记录](design/10-security-permissions-ux.md)。K2 的 lint 规则按字面量拦 `kernel/memories`：策略前缀那一行与测试里的一个路径常量各加一条逐行 `eslint-disable-next-line`，写明理由（只是判 agent 能否访问的前缀，EvoWork 代码不读写该目录）。需要重新打包后才进入安装包。
 > **真内核与真模型验收（同日，deepseek-flash）**：真内核 + 真 hook 的 `policy-hooks.spec` **3/3**（读技能、读记忆目录执行，读内核配置被拦）；身份与技能列表 **3/3**，新增「你当前加载了哪些技能」×5 与「附件 SKILL 装到系统里」×7 全过（没有拷出技能目录，回答指到「安装为全局技能」）；外部验收 23 例首轮 **21/23**，C3 为夹具缺陷、修后 3/3，D1-4 同基线；`discipline.real` D3-3 2/2、C3 对齐判分口径后 3/3。验收中改出三处夹具缺陷，其中两处会**空心通过**：`policy-hooks.spec` 的 `scriptNext` 被内核其他请求领走；C3 的触发器认命令条目，而过程组折叠时它不渲染，「更正」从没发出去。详见[验收记录](verification/2026-10-22-agent-effectiveness-real.md)。密钥只经进程环境，34,350 个文件与 358 个测试临时 HOME 扫描 0 命中。单模型小样本，GLM 未跑。
-> 同一次复盘还发现：内核日志里 10-12、10-15 两次启动向 `chatgpt.com/backend-api/plugins/featured` 发过请求（返回 401），还启动了 remote control 循环；10-15 之后没有再记录到这类请求，**是否已修好未查明**（K6/K7，Q30）。
+> 同一次复盘还发现：内核日志里 10-12、10-15 两次启动向 `chatgpt.com/backend-api/plugins/featured` 发过请求（返回 401），还启动了 remote control 循环；当时未查明是否已修好 —— 同日复现确认没修，已断掉，见上一条。
 >
 > **2026-10-21：纯文本下一步漏调修复，两模型完整 Playwright 4/4 通过。**
 > 明确每回合（含纯文本交付/等待补充）登记状态，并接官方 Stop hook：当前手动根任务完全没尝试登记时，原执行 Agent 在同一回合最多收到一次补报提醒；空列表、工具失败、重入、活动目标/队列或未知状态不循环。提醒可能增加原回合推理，不新增独立推荐任务。前轮实测同时修复 developer 指令被 Chat 适配降为 user，以及软刷新吞 Tab 的竞态。
@@ -1186,7 +1191,7 @@ AI 生图与编辑 · 本地 OCR 与资料库正文检索 · 免 Key 联网搜�
 | 测试 | **2990 项通过、2 项既有跳过**（2026-10-20 原版 `pnpm run check` 实测，另 1 个文件因联网 e2e 条件跳过）。跳过的是 runtime-installer 的两条联网端到端安装测试。**"没装扩展怎么办"那条不跳** —— 它由夹具强制构造（2026-09-06 修好，此前那个夹具名不副实，见 §3） |
 | 源码 | TS/TSX 约 86.7k 行（不含测试）+ 51.7k 行测试（2026-10-20 按 `git ls-files` 粗算 `apps/ services/ packages/ plugins/ tools/`，不含 `vendor/`；口径与 2026-09 的旧值不同，不宜直接比较） |
 | 内核补丁 | **2 个补丁 / 4 个文件 / 208 行**（预算 5 / 500，`pnpm run check:kernel-budget` 实测）：P6 `0001-exec-overwrite-approval`（2026-10-01）· P7 `0002-memory-initial-baseline`（2026-10-17），见 [patches/evowork/README.md](../patches/evowork/README.md)。P4 品牌字符串仍未落 |
-| 内核基线 | 断言基线 `d583e73c4d12`（2026-09-24）。本轮已重新核对 Goal（`tokenBudget` + 6 状态）、Queue update/reorder、searchOccurrences、`thread/goal/cleared` 与 Multi-agent V2；F3 检测器也已跟随上游实现重写，不再把“仍只有 Plan + Default”误报为断言破坏。[kernel-assertions.json](../scripts/kernel-assertions.json) 现有 **49 条**机器断言（F1–F53，F36–F38 / F44 无条目），支持锚点局部范围与仓内接线检查；原记录为 `BROKEN 0`；2026-10-20 订正本表时机器上没有 `../codex`，未重跑。 |
+| 内核基线 | 断言基线 `d583e73c4d12`（2026-09-24）。本轮已重新核对 Goal（`tokenBudget` + 6 状态）、Queue update/reorder、searchOccurrences、`thread/goal/cleared` 与 Multi-agent V2；F3 检测器也已跟随上游实现重写，不再把“仍只有 Plan + Default”误报为断言破坏。[kernel-assertions.json](../scripts/kernel-assertions.json) 现有 **51 条**机器断言（F1–F55，F36–F38 / F44 无条目），支持锚点局部范围与仓内接线检查；2026-10-22 在 `d583e73c4d` 签出上重跑：OK 40 · LINE-MOVED 11 · BROKEN 0（`origin/main` 已领先 1394 个提交，未对它复核）。 |
 
 ---
 

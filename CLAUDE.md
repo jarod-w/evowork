@@ -146,7 +146,7 @@ evowork/
   config/                config.toml 模板 · requirements.toml · 权限 profile · 模式模板
   patches/evowork/       对内核的补丁 + 每个补丁的理由说明（K1 硬上限；当前 2 个：P6 / P7）
   build/                 M9 打包：electron-builder 配置 · entitlements。**是源码不是产物**
-  scripts/               漂移雷达（含 F1–F53 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
+  scripts/               漂移雷达（含 F1–F55 断言复核）· 补丁预算 · 许可清单 · **provider 实测探针** · 打包预算
   tools/                 开发期工具（eslint 规则：K2 边界 + token-only 样式）
 ```
 

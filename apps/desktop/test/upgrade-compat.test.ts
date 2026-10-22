@@ -33,6 +33,7 @@ import { parse as parseToml } from 'smol-toml';
 
 import {
   migrateBundledSkillsConfig,
+  migrateChatgptBaseUrl,
   migrateDefaultPermissions,
   migrateKernelConfigText,
 } from '../src/main/service-host.js';
@@ -175,6 +176,7 @@ describe.each(fixtures)('从 EvoWork $meta.appVersion 升级上来（$meta.name�
       retries: false,
       defaultPermissions: false,
       bundledSkills: false,
+      chatgptBaseUrl: false,
     });
     expect(twice.text).toBe(once.text);
     const baseUrl = original.split('\n').find((line) => /^\s*base_url\s*=/.test(line));
@@ -257,6 +259,35 @@ describe.each(fixtures)('从 EvoWork $meta.appVersion 升级上来：内核系�
     const migrated = migrateKernelConfigText(readFileSync(join(dir, 'config.toml'), 'utf8')).text;
     const parsed = parseToml(migrated) as { skills?: { bundled?: { enabled?: boolean } } };
     expect(parsed.skills?.bundled?.enabled).toBe(false);
+  });
+});
+
+/** 内核 `chatgpt_base_url` 的实际取值：没写就是内核默认的 chatgpt.com（`core/src/config/mod.rs`） */
+function chatgptBackend(text: string): string {
+  const value = (parseToml(text) as { chatgpt_base_url?: unknown }).chatgpt_base_url;
+  return typeof value === 'string' ? value : 'https://chatgpt.com/backend-api/';
+}
+
+describe('内核连 ChatGPT 后端的地址（K6 / K7，2026-10-22）', () => {
+  /*
+   * 判的是后果：内核拿到的那个地址**发不出网络请求**。http(s) 一律不行 —— 包括
+   * http://127.0.0.1:…：内核走系统代理且不认例外列表，本机地址也会被送进代理（总纲 K6 登记）。
+   */
+  const reachable = /^https?:\/\//i;
+
+  it('新装：模板里的地址发不出请求', () => {
+    const template = readFileSync(join(HERE, '../../../config/config.toml.template'), 'utf8');
+    expect(chatgptBackend(template)).not.toMatch(reachable);
+  });
+
+  it.each(fixtures)('从 $meta.appVersion 升级上来：迁移后的地址同样发不出请求', ({ dir }) => {
+    const migrated = migrateKernelConfigText(readFileSync(join(dir, 'config.toml'), 'utf8')).text;
+    expect(chatgptBackend(migrated)).not.toMatch(reachable);
+  });
+
+  it('已经显式写了这个键：一个字都不改（不替别人改一个我们不了解的值）', () => {
+    const explicit = 'chatgpt_base_url = "https://corp.example/backend-api/"\nmodel = "x"\n';
+    expect(migrateChatgptBaseUrl(explicit)).toEqual({ text: explicit, changed: false });
   });
 });
 

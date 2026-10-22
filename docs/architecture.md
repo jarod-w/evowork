@@ -643,7 +643,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 | 运行时文案 TS/Python 两侧一致 | [ingest/test/runtime.test.ts](../services/ingest/test/runtime.test.ts) 逐字段比对 | 用户以为解析和生成要装两个不同的东西 |
 | "没装扩展怎么办"必须被测到 | `WITHOUT_OFFICE_RUNTIME` 夹具：`EVOWORK_OFFICE_PYTHON` 指向不存在的路径 + `sitecustomize.py` 只挡那四个模块 | 开发机用户级 site-packages 里有 python-docx 时，这条路径永远没人验 —— 而它是用户第一次用时走的 |
 | 打包产物的四条"装得上、看不出哪里错了" | [desktop/test/packaging.test.ts](../apps/desktop/test/packaging.test.ts) | 入口顶层 await · preload 无入口 · `~/.evowork` 没人建 · vite `base` 绝对路径 |
-| 内核事实仍成立（[kernel-assertions.json](../scripts/kernel-assertions.json) 的 49 条，编号 F1–F53，其中 F36–F38 / F44 无条目） | [kernel-drift.mjs](../scripts/kernel-drift.mjs) + [kernel-assertions.json](../scripts/kernel-assertions.json)，每日 CI | `LINE-MOVED`（行号漂，不算失败）/ `BROKEN`（断言被上游推翻） |
+| 内核事实仍成立（[kernel-assertions.json](../scripts/kernel-assertions.json) 的 51 条，编号 F1–F55，其中 F36–F38 / F44 无条目） | [kernel-drift.mjs](../scripts/kernel-drift.mjs) + [kernel-assertions.json](../scripts/kernel-assertions.json)，每日 CI | `LINE-MOVED`（行号漂，不算失败）/ `BROKEN`（断言被上游推翻） |
 
 一条贯穿全仓库的写法纪律：**断言写后果，不写实现**。`expect(x).toBe(3)` 半年后没人知道为什么是 3；
 写成「超预算只给两个动作，没有"用便宜模型继续"」，改的人才知道自己在破坏什么。
@@ -657,7 +657,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
 
 | # | 偏差 | 实测 |
 | --- | --- | --- |
-| 1 | 内核签出与断言基线的对应关系**本机无法复核** | [kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `d583e73c4d12`（2026-09-24 复核），共 **49** 条断言（编号 F1–F53，F36–F38 / F44 无条目）。2026-10-20 订正时机器上没有 `../codex`，`kernel-drift.mjs` 未重跑；2026-09-09 记录的"签出 `7769bccbb2` 领先基线 `89a4eec6da`、OK 12 · LINE-MOVED 5 · BROKEN 0"是当时那台机器上的结果 |
+| 1 | 断言只对基线签出复核过，**没对上游最新提交复核** | [kernel-assertions.json](../scripts/kernel-assertions.json) 的基线是 `d583e73c4d12`（2026-09-24 复核），共 **51** 条断言（编号 F1–F55，F36–F38 / F44 无条目）。2026-10-22 在 `d583e73c4d` 签出上重跑：OK 40 · LINE-MOVED 11 · BROKEN 0（`origin/main` 已领先 1394 个提交，未对它复核）；2026-09-09 记录的"签出 `7769bccbb2` 领先基线 `89a4eec6da`、OK 12 · LINE-MOVED 5 · BROKEN 0"是当时那台机器上的结果 |
 | 2 | K3 的四个扩展点用了三个 | 技能包 ✅ · hooks ✅ · MCP server ✅（随包 `browser` · `image-generation` · `thread-communication` · `workspace-files` · `computer-use`）· Rust contributor ❌（`ext/` 只有 README；内部只读路径若恢复仍要 `ToolContributor` 过滤写工具，Q45 后这条不再挡 Composer） |
 | 4 | 第 ② 层签名策略包已接（M10c） | identity ES256 签 payload 原文 → 桌面验签后写 `~/.evowork/requirements.toml`。无包 / 未登录不锁 BYOK。超期只读，文案见 11 §8。第 ②' 层在登录后由 identity catalog 注入（`EVOWORK_TENANT_MODELS`）；private 未登录则本机网关拉客户网关的目录 |
 | 5 | 专家角色包为空 | `plugins/agents/` 不预置角色（编造 100+ 专家等于铺演示数据）。用户可在「技能·连接器 → 专家」新建，或把 TOML 放到 `~/.evowork/agents/`。信任连接器只写 `config.toml`，**不假装有 live reload** |

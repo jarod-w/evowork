@@ -667,6 +667,30 @@
         ".execute(Method::POST, path, extra_headers, Some(body))"
       ],
       "impact": "15 的网关图片适配需区别 Responses、图片 JSON 及 provider 专用 multipart 契约；现有文字路由不能直接充当图片路由"
+    },
+    {
+      "id": "F54",
+      "summary": "内核所有「ChatGPT 后端」请求的地址取自配置键 chatgpt_base_url，默认 chatgpt.com（总纲「K6 登记：内核连 ChatGPT 后端」）",
+      "file": "codex-rs/core/src/config/mod.rs",
+      "needle": "chatgpt_base_url: cfg",
+      "line": 4317,
+      "scopeLines": { "before": 0, "after": 3 },
+      "mustContain": [".unwrap_or(\"https://chatgpt.com/backend-api/\".to_string())"],
+      "impact": "EvoWork 靠模板根键 chatgpt_base_url = evowork-disabled://… 断掉这类请求；上游改成硬编码地址或换配置键，这个开关就失效，要重跑 scripts/verify-kernel-egress.mjs"
+    },
+    {
+      "id": "F55",
+      "summary": "精选插件预热只看插件功能开关、不看是否登录，地址来自 remote_plugin_service_config（即 chatgpt_base_url）",
+      "file": "codex-rs/core-plugins/src/manager.rs",
+      "needle": "pub async fn featured_plugin_ids_for_config(",
+      "line": 1832,
+      "scopeLines": { "before": 0, "after": 21 },
+      "mustContain": [
+        "if !config.plugins_enabled {",
+        "fetch_remote_featured_plugin_ids(",
+        "&remote_plugin_service_config(config)"
+      ],
+      "impact": "未登录也会在启动 / plugin/list 时请求 chatgpt.com（2026-10-22 实测 401）；关插件功能会连本机插件套件一起关，所以改走 chatgpt_base_url"
     }
   ]
 }

@@ -563,6 +563,16 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 为什么不关     | 只有三条路：`[features] plugins = false`（本机插件套件也一起没了）· 托管 requirements 禁这个源（要写 `/etc/codex`，桌面应用做不到）· 内核补丁（占 K1 预算）。代价都大于一次只读拉取公开仓库             |
 | 守卫           | 验收 D4（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`）把 `github.com` 列进允许的外连目的地，别的目的地照样判失败；外连按进程记录，下次多出一条能直接看到是谁连的                              |
 
+**K6 登记：内核连 ChatGPT 后端（2026-10-22 关闭）**。本机内核日志 10-12、10-15 两次启动都向 `chatgpt.com` 发过请求；10-22 用发货内核（d583e73c4d + P6/P7）与用户本机配置复现：启动后调用 `plugin/list`，内核请求 `https://chatgpt.com/backend-api/plugins/featured?platform=codex`，返回 401（请求已到达对方），同时起了一个指向 `chatgpt.com` 的远程控制循环。这违反 K6（未经授权出网）与 K7（不用 OpenAI 侧的服务）：
+
+| 项       | 内容 |
+| -------- | ---- |
+| 是什么   | 内核所有「ChatGPT 后端」请求都从配置键 `chatgpt_base_url` 取地址，默认 `https://chatgpt.com/backend-api/`（`core/src/config/mod.rs` 的 `unwrap_or`）。精选插件预热只看插件功能开没开、**不看是否登录**（`core-plugins/src/manager.rs` 的 `featured_plugin_ids_for_config`）；远程控制、云端配置包、apps MCP、反馈上传等也走同一个地址（后几项要 ChatGPT 登录才真正发） |
+| 怎么关   | 模板根键 `chatgpt_base_url = "evowork-disabled://chatgpt-backend/"`，老安装由宿主启动迁移补上（`migrateChatgptBaseUrl`）。不支持的协议让请求在**构造阶段**就失败（`builder error`），一个字节都不发；远程控制判 URL 无效后不再轮询。`plugin/list` 与 `thread/start` 照常 |
+| 为什么不指到本机 | 试过 `http://127.0.0.1:9/`：内核的 HTTP 客户端走 macOS 系统代理，**不认代理的例外列表**（本机例外里有 `127.*`，仍被送进代理，代理回 502）。代理在别的机器上时，这条请求会发到代理服务器 |
+| 不管什么 | 插件市场同步（上一条登记，`github.com`）照旧；模型请求走 `model_providers.evowork.base_url`，与这个键无关 |
+| 守卫     | `scripts/verify-kernel-egress.mjs`：用发货内核 + 随包模板实际启动并调 `plugin/list` / `thread/start`，内核日志里出现 `chatgpt.com` 就失败（升级内核后跑）；F54 钉住「地址取自 `chatgpt_base_url`、精选插件预热不看登录」这两处内核写法；`upgrade-compat.test.ts` 断言模板与各版本迁移后的配置里，这个地址都不是 http(s) |
+
 **K6 登记：插件 Hub 拉取（2026-10-02 新增，来自 [13 §4.6](design/13-plugin-hub.md)）**。**客户端已实现（2026-10-02，H1）；官方源 2026-10-03 上线**（公钥钉在 `apps/desktop/src/main/hub-config.ts`）。未登录时仍按 HUB-Q3=B：默认不自动拉：
 
 | 项       | 内容 |

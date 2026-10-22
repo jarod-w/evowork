@@ -32,6 +32,12 @@ model_provider = "evowork"
 default_permissions = "evowork-workspace"
 approval_policy = "on-request"
 
+# 内核的「ChatGPT 后端」地址（K6 / K7，2026-10-22，总纲「K6 登记：内核连 ChatGPT 后端」）。
+# 默认是 https://chatgpt.com/backend-api/：没登录也会在启动时去拉精选插件、起远程控制循环。
+# 不支持的协议让请求在构造阶段就失败，一个字节都不发。**不要改成 http://127.0.0.1:…**：
+# 内核走系统代理且不认代理的例外列表，本机地址也会被送进代理。同样是根键。
+chatgpt_base_url = "evowork-disabled://chatgpt-backend/"
+
 [model_providers.evowork]
 name = "EvoWork Gateway"
 # 云端托管：https://gateway.evowork.example/v1
