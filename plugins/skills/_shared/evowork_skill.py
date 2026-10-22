@@ -38,6 +38,8 @@ EXIT_OK = 0
 EXIT_INVALID_CONTENT = 2
 EXIT_RUNTIME_MISSING = 3
 EXIT_MISSING_ASSET = 4
+#: 转换器在、也跑了，但没转成（超时、文档坏了、被隔离拦下）。与 3 分开：报成「缺运行时」会让用户去重装
+EXIT_CONVERSION_FAILED = 5
 
 #: 08 §4 的三档运行时。文案必须与 `services/ingest` 一致 ——
 #: 一处说"解析组件"、一处说"生成组件"会让用户以为要装两个东西（08 §4 原话）。
@@ -326,6 +328,39 @@ def read_template_stamp(value: str | None) -> str | None:
     if not name or any(ch.isspace() for ch in name) or "/" in name or "\\" in name:
         return None
     return name
+
+
+def refuse_overwrite(out_path: Path, overwrite: bool) -> None:
+    """目标已存在时默认拒绝（2026-10-22 合并 #20 时补）。
+
+    编辑流程会把 `--out` 指回原文件，而重渲染是**有损**的（提取收不回的内容不会回来）。
+    shell 的 `>` 覆盖有内核补丁 P6 弹审批，python 写文件没有 —— 所以这道闸放在渲染器里：
+    要写回原文件必须显式 `--overwrite`。任务目录里的文件可在 App 里撤销（19 篇的磁盘撤销）；
+    目录外的文件没有撤销副本，先另存一份再覆盖。
+    """
+    if not overwrite and out_path.exists():
+        fail(
+            EXIT_INVALID_CONTENT,
+            f"目标文件已存在：{out_path}。要写回原文件请加 --overwrite；"
+            "否则换一个新文件名，别覆盖用户的原件。",
+        )
+
+
+def lossy_extraction(dropped: dict[str, int], allow_lossy: bool) -> dict[str, Any]:
+    """提取收不回的内容**必须报出来**（不静默降级，CLAUDE.md §9.1）。
+
+    `dropped` 是「丢了什么 → 几处」。有丢失时默认失败；`--allow-lossy` 才继续，
+    并把清单随成功输出交给模型 —— 它要原样告诉用户，再决定要不要改原件。
+    """
+    lost = {kind: count for kind, count in dropped.items() if count > 0}
+    if lost and not allow_lossy:
+        summary = "、".join(f"{kind} {count} 处" for kind, count in lost.items())
+        fail(
+            EXIT_INVALID_CONTENT,
+            f"这份文件有内容提取不回来：{summary}。重新渲染会丢掉它们。"
+            "先告诉用户会丢什么；用户同意后加 --allow-lossy 再提取，或者改用别的方式编辑。",
+        )
+    return {"dropped": lost} if lost else {}
 
 
 def write_extracted(content: dict, out_path: Path) -> None:

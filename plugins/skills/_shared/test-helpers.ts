@@ -118,4 +118,5 @@ export const EXIT = {
   invalidContent: 2,
   runtimeMissing: 3,
   missingAsset: 4,
+  conversionFailed: 5,
 } as const;

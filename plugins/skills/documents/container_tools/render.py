@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -30,12 +32,15 @@ sys.path.insert(0, str(SKILL_ROOT.parent / "_shared"))
 
 from evowork_skill import (  # noqa: E402
     ensure_office_runtime,
+    EXIT_CONVERSION_FAILED,
     EXIT_INVALID_CONTENT,
     EXIT_RUNTIME_MISSING,
     fail,
     load_template,
+    lossy_extraction,
     read_content,
     read_template_stamp,
+    refuse_overwrite,
     resolve_asset,
     runtime_missing_message,
     succeeded,
@@ -648,7 +653,9 @@ def extract_docx(path: Path, asset_dir: Path) -> dict:
     return content
 
 
-# 与 services/ingest/src/office-preview.ts 同一套隔离参数：独立配置、关掉宏。
+# 一次性的 LibreOffice 配置：关宏与活动内容（与 services/ingest/src/office-preview.ts 相同），
+# 另外**加载时不更新外部链接**（Writer 与 Calc 都是 2 = 从不）。没有这一条，一份下载来的 docx
+# 可以靠链接图片 / INCLUDETEXT 一类字段，在转换时读本机文件、甚至联网，再把结果画进 PDF。
 MACRO_LOCK = (
     '<?xml version="1.0"?>'
     '<oor:items xmlns:oor="http://openoffice.org/2001/registry">'
@@ -656,29 +663,105 @@ MACRO_LOCK = (
     '<prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop>'
     '<prop oor:name="DisableActiveContent" oor:op="fuse"><value>true</value></prop>'
     '<prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>'
+    '<prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop>'
+    "</item>"
+    '<item oor:path="/org.openoffice.Office.Writer/Content/Update">'
+    '<prop oor:name="Link" oor:op="fuse"><value>2</value></prop>'
+    "</item>"
+    '<item oor:path="/org.openoffice.Office.Calc/Content/Update">'
+    '<prop oor:name="Link" oor:op="fuse"><value>2</value></prop>'
     "</item></oor:items>"
 )
 
+SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
+CONVERT_TIMEOUT_S = 45
+PDF_LIMIT_BYTES = 25_000_000
+
 
 def office_converter() -> Path | None:
-    """本机 soffice。`EVOWORK_OFFICE_CONVERTER` 与预览共用。
+    """本机 soffice。`EVOWORK_OFFICE_CONVERTER` 与预览共用；找的顺序也与预览相同（先 App，再 PATH）。
 
-    设了覆盖就不再回退到 PATH：坏路径若被静默换成另一份程序，测试就钉不住失败。
+    设了覆盖就不再回退：坏路径若被静默换成另一份程序，测试就钉不住失败。
     """
     override = os.environ.get("EVOWORK_OFFICE_CONVERTER")
     if override is not None:
         path = Path(override)
         return path if path.is_file() else None
-    found = shutil.which("soffice")
-    if found:
-        return Path(found)
     for candidate in (
         Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
         Path("/Applications/LibreOfficeDev.app/Contents/MacOS/soffice"),
     ):
         if candidate.is_file():
             return candidate
-    return None
+    found = shutil.which("soffice")
+    return Path(found) if found else None
+
+
+def _sandbox_profile(read_roots: list[Path], write_dir: Path) -> str:
+    """与 `services/ingest/src/isolated-process.ts` 的 parserSandboxProfile 同一份规则：
+    默认全拒、只读系统目录与转换器自身、只写这次的临时目录、**禁一切网络**。
+    多读一个 `/bin`：转换器是脚本时要用到 `/bin/sh`（测试用的假转换器就是）。"""
+    quoted = lambda path: json.dumps(str(Path(os.path.realpath(path))))  # noqa: E731
+    roots = " ".join(f"(subpath {quoted(path)})" for path in read_roots)
+    return "\n".join(
+        [
+            "(version 1)",
+            "(deny default)",
+            "(allow process-fork)",
+            "(allow process-exec)",
+            "(allow sysctl-read)",
+            "(allow mach-lookup)",
+            "(allow file-read-metadata)",
+            '(allow file-read-data (literal "/"))',
+            '(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") '
+            '(subpath "/Library/Apple") (subpath "/Library/Fonts") (literal "/dev/null") '
+            f"{roots} (subpath {quoted(write_dir)}))",
+            f'(allow file-write* (literal "/dev/null") (subpath {quoted(write_dir)}))',
+            "(deny network*)",
+        ]
+    )
+
+
+def _run_group(command: list[str], work: Path) -> subprocess.CompletedProcess:
+    """独立进程组 + 最小环境（不带账号、模型密钥与真实 HOME）；超时整组杀掉，而不是只杀直接子进程。"""
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(work), "TMPDIR": str(work), "LANG": "en_US.UTF-8"}
+    process = subprocess.Popen(
+        command,
+        cwd=str(work),
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        out, err = process.communicate(timeout=CONVERT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        fail(EXIT_CONVERSION_FAILED, "LibreOffice 转换 PDF 超时。文档可能太大或已损坏；可以改交付 .docx / .md。")
+    return subprocess.CompletedProcess(command, process.returncode, out[-65536:], err[-65536:])
+
+
+def _convert_isolated(command: list[str], read_roots: list[Path], work: Path) -> subprocess.CompletedProcess:
+    """
+    macOS：套一层与预览转换器相同的 seatbelt 沙箱（禁网、只写临时目录）。
+    **已经在内核的沙箱里时套不上**（`sandbox_apply: Operation not permitted`，默认「请求批准」档就是这样）：
+    那一层已经禁网、限写，就在它里面直接跑 —— 只在那种情况下才不套，判据是 sandbox-exec 自己的报错。
+    其他平台还没有隔离手段：直接拒绝（与 services/ingest 的 fail closed 一致），不裸跑。
+    """
+    if sys.platform != "darwin":
+        fail(EXIT_RUNTIME_MISSING, "这个平台上还没有隔离的文档转换器，暂不支持导出 PDF。请改交付 .docx / .md。")
+    if not SANDBOX_EXEC.is_file():
+        fail(EXIT_RUNTIME_MISSING, "找不到系统的 sandbox-exec，不能安全地转换。请改交付 .docx / .md。")
+    wrapped = [str(SANDBOX_EXEC), "-p", _sandbox_profile(read_roots, work), *command]
+    result = _run_group(wrapped, work)
+    if result.returncode == 71 and b"sandbox_apply" in result.stderr:
+        result = _run_group(command, work)
+    return result
 
 
 def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
@@ -688,46 +771,45 @@ def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
             EXIT_RUNTIME_MISSING,
             "需要本机 LibreOffice（soffice）才能把文档导出成 PDF。安装后重试，或改交付 .docx / .md。",
         )
-    work = Path(tempfile.mkdtemp(prefix="evowork-pdf-"))
+    work = Path(os.path.realpath(tempfile.mkdtemp(prefix="evowork-pdf-")))
     try:
         profile = work / "profile"
         (profile / "user").mkdir(parents=True)
         (profile / "user" / "registrymodifications.xcu").write_text(MACRO_LOCK, encoding="utf-8")
         staged = work / "document.docx"
         shutil.copyfile(docx_path, staged)
-        try:
-            completed = subprocess.run(
-                [
-                    str(converter),
-                    "-env:UserInstallation=" + profile.resolve().as_uri(),
-                    "--headless",
-                    "--nologo",
-                    "--nodefault",
-                    "--norestore",
-                    "--nolockcheck",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    str(work),
-                    str(staged),
-                ],
-                capture_output=True,
-                timeout=45,
-            )
-        except subprocess.TimeoutExpired:
-            fail(EXIT_RUNTIME_MISSING, "LibreOffice 转换 PDF 超时。请稍后重试，或改交付 .docx / .md。")
+        executable = Path(os.path.realpath(converter))
+        app = str(executable).find(".app/Contents/")
+        read_root = Path(str(executable)[: app + 4]) if app >= 0 else executable.parent
+        completed = _convert_isolated(
+            [
+                str(executable),
+                "-env:UserInstallation=" + profile.as_uri(),
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--norestore",
+                "--nolockcheck",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(work),
+                str(staged),
+            ],
+            [read_root],
+            work,
+        )
         produced = work / "document.pdf"
-        if completed.returncode != 0 or not produced.is_file():
+        if completed.returncode != 0 or not produced.is_file() or produced.is_symlink():
             fail(
-                EXIT_RUNTIME_MISSING,
-                "LibreOffice 没有写出 PDF。请确认 soffice 可用后重试，或改交付 .docx / .md。",
+                EXIT_CONVERSION_FAILED,
+                "LibreOffice 没有写出 PDF（文档可能损坏，或用了转换器不支持的内容）。可以改交付 .docx / .md。",
             )
+        if produced.stat().st_size > PDF_LIMIT_BYTES:
+            fail(EXIT_CONVERSION_FAILED, "转换出来的 PDF 超过 25MB，没有写出。可以改交付 .docx。")
         data = produced.read_bytes()
         if not data.startswith(b"%PDF-"):
-            fail(
-                EXIT_RUNTIME_MISSING,
-                "转换结果不是 PDF。请确认 soffice 可用后重试，或改交付 .docx / .md。",
-            )
+            fail(EXIT_CONVERSION_FAILED, "转换结果不是 PDF。可以改交付 .docx / .md。")
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         pdf_path.write_bytes(data)
     finally:
@@ -749,6 +831,8 @@ def main() -> None:
     parser.add_argument("--extract", help="已有的 .docx / .md，提取成内容 JSON")
     parser.add_argument("--out", required=True, help="渲染：.docx / .md。提取：.json")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--overwrite", action="store_true", help="目标已存在时允许写回（默认拒绝）")
+    parser.add_argument("--allow-lossy", action="store_true", help="提取有收不回的内容时仍写出（默认拒绝）")
     args = parser.parse_args()
 
     if bool(args.extract) == bool(args.content):
@@ -767,9 +851,12 @@ def main() -> None:
     out_path = Path(args.out).resolve()
     if extracting:
         content = extract_document(Path(extracting).resolve(), out_path)
+        lossy = lossy_extraction(content.pop("_dropped", {}), args.allow_lossy)
         validate(content, out_path.parent)
         write_extracted(content, out_path)
-        succeeded(out_path, blocks=len(content["blocks"]), format="json", operation="extract")
+        succeeded(
+            out_path, blocks=len(content["blocks"]), format="json", operation="extract", **lossy
+        )
         return
 
     content_path = Path(args.content).resolve()
@@ -780,6 +867,7 @@ def main() -> None:
         succeeded(blocks=len(content["blocks"]), validated=True)
         return
 
+    refuse_overwrite(out_path, args.overwrite)
     suffix = out_path.suffix.lower()
     if suffix == ".md":
         render_md(content, out_path)
@@ -792,11 +880,15 @@ def main() -> None:
                 EXIT_RUNTIME_MISSING,
                 "需要本机 LibreOffice（soffice）才能把文档导出成 PDF。安装后重试，或改交付 .docx / .md。",
             )
+        from layout_check import for_output  # noqa: E402 -- 与 evowork_skill 同一个 sys.path
+
         with tempfile.TemporaryDirectory(prefix="evowork-pdf-src-") as tmp:
             docx_path = Path(tmp) / "document.docx"
             render_docx(content, docx_path, content_path.parent)
+            # PDF 是从这份 docx 转出来的：版式问题在这里查，转成 PDF 之后就查不了了
+            layout = for_output(docx_path)
             convert_docx_to_pdf(docx_path, out_path)
-        succeeded(out_path, blocks=len(content["blocks"]), format="pdf")
+        succeeded(out_path, blocks=len(content["blocks"]), format="pdf", **layout)
         return
     if suffix != ".docx":
         fail(EXIT_INVALID_CONTENT, f"输出格式只支持 .docx、.md 与 .pdf，收到 {suffix or '(无扩展名)'}。")

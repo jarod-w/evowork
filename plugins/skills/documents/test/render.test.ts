@@ -4,8 +4,10 @@
  * 两个重点：**md 是一等输出**（不装扩展也能干活），以及**标题层级不许跳级**
  * （跳级会让 Word 的目录缺一层、导航窗格错位，而生成时不报错）。
  */
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -197,62 +199,127 @@ describe('运行时与格式（08 §4）', () => {
   });
 });
 
-describe('PDF 由本机 LibreOffice 转出', () => {
+describe('PDF 由本机 LibreOffice 转出（2026-10-22：经与预览转换器相同的隔离）', () => {
+  const onMac = process.platform === 'darwin';
+
+  /**
+   * 假转换器写成 /bin/sh 脚本：转换在 seatbelt 沙箱里跑，只读得到系统目录与转换器自己所在的目录
+   * —— `#!/usr/bin/env python3` 在沙箱里找不到 python 的家，那正是隔离生效的样子。
+   */
   function fakeConverter(body: string): string {
     const script = join(dir, 'soffice');
-    writeFileSync(script, `#!/usr/bin/env python3\n${body}`, 'utf8');
+    writeFileSync(script, `#!/bin/sh\n${body}`, 'utf8');
     chmodSync(script, 0o755);
     return script;
   }
 
+  /** 核对预览那组参数与一次性配置（关宏、不更新外部链接），再写一个带 %PDF 头的文件 */
   const ACCEPTING = `
-import sys
-from pathlib import Path
-from urllib.parse import unquote, urlparse
-args = sys.argv[1:]
-for item in ("--headless", "--convert-to", "pdf", "--outdir", "--nologo", "--norestore", "--nolockcheck"):
-    if item not in args:
-        sys.stderr.write("missing " + item)
-        sys.exit(1)
-profile = next(arg for arg in args if arg.startswith("-env:UserInstallation="))
-root = Path(unquote(urlparse(profile.split("=", 1)[1]).path))
-text = (root / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
-if "DisableMacrosExecution" not in text:
-    sys.stderr.write("macros not disabled")
-    sys.exit(1)
-outdir = Path(args[args.index("--outdir") + 1])
-(outdir / "document.pdf").write_bytes(b"%PDF-1.4\\n%fake\\n")
+for item in --headless --convert-to --outdir --nologo --norestore --nolockcheck; do
+  case " $* " in *" $item "*) ;; *) echo "missing $item" >&2; exit 1;; esac
+done
+outdir=""; profile=""
+prev=""
+for arg in "$@"; do
+  [ "$prev" = "--outdir" ] && outdir="$arg"
+  case "$arg" in -env:UserInstallation=file://*) profile="\${arg#-env:UserInstallation=file://}";; esac
+  prev="$arg"
+done
+xcu="$profile/user/registrymodifications.xcu"
+/usr/bin/grep -q DisableMacrosExecution "$xcu" || { echo "macros not disabled" >&2; exit 1; }
+/usr/bin/grep -q 'Writer/Content/Update' "$xcu" || { echo "links not locked" >&2; exit 1; }
+printf '%%PDF-1.4\\n%%fake\\n' > "$outdir/document.pdf"
 `;
 
-  it.runIf(hasDocx)('假 soffice 按预览那组参数写出带 %PDF 头的文件', () => {
+  it.runIf(hasDocx && onMac)('假 soffice 按预览那组参数写出带 %PDF 头的文件', () => {
     const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: fakeConverter(ACCEPTING) });
     expect(result.status, result.stderr).toBe(EXIT.ok);
     expect(readFileSync(join(dir, 'out.pdf')).subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(existsSync(join(dir, 'out.docx'))).toBe(false);
+    // PDF 是从中间 docx 转的：版式检查在转之前做，结果随成功输出给模型
+    expect(JSON.parse(result.stdout)).toHaveProperty('layout_warnings');
   });
 
-  it.runIf(hasDocx)('转换程序失败时不留下 PDF', () => {
-    const script = fakeConverter(`
-import sys
-sys.stderr.write("converter failed")
-sys.exit(1)
-`);
-    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+  it.runIf(hasDocx && onMac)(
+    '**转换时连不了网**：转换器想访问本机 HTTP 服务，一个请求都到不了（K6）',
+    async () => {
+      let hits = 0;
+      const server = createServer((_req, res) => {
+        hits += 1;
+        res.end('ok');
+      });
+      await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+      const port = (server.address() as AddressInfo).port;
+      try {
+        const script = fakeConverter(
+          `/usr/bin/curl -s -m 2 http://127.0.0.1:${port}/leak >/dev/null 2>&1\n${ACCEPTING}`,
+        );
+        const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+        expect(result.status, result.stderr).toBe(EXIT.ok);
+        // 对照：不经隔离直接连，服务是通的 —— 所以上面的 0 是隔离挡的，不是服务没起来
+        // 异步发：同步调用会堵住本进程的事件循环，服务就没法应答
+        await new Promise((done) =>
+          execFile('/usr/bin/curl', ['-s', '-m', '2', `http://127.0.0.1:${port}/control`], done),
+        );
+        await new Promise((done) => setTimeout(done, 300));
+        expect(hits).toBe(1);
+      } finally {
+        server.close();
+      }
+    },
+  );
+
+  it.runIf(hasDocx && onMac)(
+    '已经在内核的沙箱里（默认档）套不上第二层时，在那一层里照常转换',
+    () => {
+      const result = spawnSync(
+        '/usr/bin/sandbox-exec',
+        [
+          '-p',
+          '(version 1)(allow default)(deny network*)',
+          'python3',
+          RENDER,
+          '--content',
+          writeContent(dir, DOC),
+          '--out',
+          join(dir, 'nested.pdf'),
+        ],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, EVOWORK_OFFICE_CONVERTER: fakeConverter(ACCEPTING) },
+        },
+      );
+      expect(result.status, result.stderr).toBe(EXIT.ok);
+      expect(readFileSync(join(dir, 'nested.pdf')).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    },
+  );
+
+  it.runIf(hasDocx && !onMac)('还没有隔离手段的平台上拒绝转换，不裸跑转换器、不落盘', () => {
+    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: fakeConverter(ACCEPTING) });
     expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toContain('隔离');
     expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
-    expect(existsSync(join(dir, 'out.docx'))).toBe(false);
   });
 
-  it.runIf(hasDocx)('转换结果没有 PDF 头时不把文件留下', () => {
+  it.runIf(hasDocx && onMac)(
+    '转换程序失败时不留下 PDF，退出码是「转换失败」而不是「缺运行时」',
+    () => {
+      const script = fakeConverter('echo "converter failed" >&2\nexit 1');
+      const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+      expect(result.status).toBe(EXIT.conversionFailed);
+      expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
+      expect(existsSync(join(dir, 'out.docx'))).toBe(false);
+    },
+  );
+
+  it.runIf(hasDocx && onMac)('转换结果没有 PDF 头时不把文件留下', () => {
     const script = fakeConverter(`
-import sys
-from pathlib import Path
-args = sys.argv[1:]
-outdir = Path(args[args.index("--outdir") + 1])
-(outdir / "document.pdf").write_bytes(b"PK\\x03\\x04not a pdf")
+prev=""; outdir=""
+for arg in "$@"; do [ "$prev" = "--outdir" ] && outdir="$arg"; prev="$arg"; done
+printf 'PK not a pdf' > "$outdir/document.pdf"
 `);
     const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
-    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(result.status).toBe(EXIT.conversionFailed);
     expect(parseFailure(result.stderr).message).toContain('不是 PDF');
     expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
   });

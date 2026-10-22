@@ -31,6 +31,8 @@ from evowork_skill import (  # noqa: E402
     EXIT_INVALID_CONTENT,
     EXIT_RUNTIME_MISSING,
     fail,
+    lossy_extraction,
+    refuse_overwrite,
     read_content,
     runtime_missing_message,
     succeeded,
@@ -695,6 +697,8 @@ def main() -> None:
     parser.add_argument("--extract", help="已有的 .xlsx / .csv，提取成内容 JSON")
     parser.add_argument("--out", required=True, help="渲染：.xlsx / .csv。提取：.json")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--overwrite", action="store_true", help="目标已存在时允许写回（默认拒绝）")
+    parser.add_argument("--allow-lossy", action="store_true", help="提取有收不回的内容时仍写出（默认拒绝）")
     args = parser.parse_args()
 
     if bool(args.extract) == bool(args.content):
@@ -711,10 +715,13 @@ def main() -> None:
 
     if args.extract:
         content = extract_spreadsheet(Path(args.extract).resolve())
+        lossy = lossy_extraction(content.pop("_dropped", {}), args.allow_lossy)
         validate(content)
         out_path = Path(args.out).resolve()
         write_extracted(content, out_path)
-        succeeded(out_path, sheets=len(content["sheets"]), format="json", operation="extract")
+        succeeded(
+            out_path, sheets=len(content["sheets"]), format="json", operation="extract", **lossy
+        )
         return
 
     content = read_content(Path(args.content).resolve())
@@ -725,6 +732,7 @@ def main() -> None:
         return
 
     out_path = Path(args.out).resolve()
+    refuse_overwrite(out_path, args.overwrite)
     suffix = out_path.suffix.lower()
     if suffix == ".csv":
         if len(content["sheets"]) > 1:
