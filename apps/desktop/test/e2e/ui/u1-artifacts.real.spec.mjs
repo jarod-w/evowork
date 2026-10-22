@@ -19,7 +19,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { selectRealModel } from '../harness/real-models.mjs';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, runUntilIdle, startTaskInWorkspace, test } from './fixtures.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../../../../..');
 const HARNESS = join(ROOT, 'apps/desktop/test/e2e/harness/u1');
@@ -68,27 +68,6 @@ const TASKS = [
   },
 ];
 const ALL_CRITERIA = ['文字不溢出', '公式可用', '中文不乱码', '层级正确'];
-
-/** 跑到回合结束，审批一律「允许这一次」（与验收的 approve_all 同） */
-async function runUntilIdle(page) {
-  const composer = page.getByLabel('输入区');
-  await expect(composer).toHaveAttribute('data-run-state', /running|pending/, { timeout: 60_000 });
-  const deadline = Date.now() + 20 * 60_000;
-  while (Date.now() < deadline) {
-    const card = page.getByLabel('需要你确认');
-    if (await card.count()) {
-      const allow = card.first().getByRole('button', { name: '允许这一次', exact: true });
-      if (!(await allow.count()))
-        throw new Error(`弹出了一张没有「允许这一次」的卡：${await card.first().innerText()}`);
-      // 数到卡和点下去之间，卡可能已经收掉了（回合往前走了）：点不到就回到循环里重新看
-      await allow.click({ timeout: 5_000 }).catch(() => undefined);
-      continue;
-    }
-    if ((await composer.getAttribute('data-run-state')) === 'idle') return;
-    await page.waitForTimeout(500);
-  }
-  throw new Error('回合 20 分钟内没有结束');
-}
 
 const results = [];
 

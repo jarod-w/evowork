@@ -312,6 +312,38 @@ export async function startTaskInWorkspace(page, electronApp, text) {
     .toBe(workspace);
 }
 
+/** 跑到回合结束，审批一律「允许这一次」（与验收的 approve_all 同） */
+export async function runUntilIdle(page) {
+  const composer = page.getByLabel('输入区');
+  await expect(composer).toHaveAttribute('data-run-state', /running|pending/, { timeout: 60_000 });
+  const deadline = Date.now() + 20 * 60_000;
+  while (Date.now() < deadline) {
+    const card = page.getByLabel('需要你确认');
+    if (await card.count()) {
+      const allow = card.first().getByRole('button', { name: '允许这一次', exact: true });
+      if (!(await allow.count())) {
+        // 卡正在收起（或刚弹出、按钮还没画出来）时也数得到它：等一下再看，仍是这样才算真遇到了别的卡。
+        // 2026-10-22 DeepSeek 一轮就栽在这里：数到卡之后它收掉了，读文字干等了 30 秒
+        await page.waitForTimeout(1_000);
+        if ((await card.count()) && !(await allow.count())) {
+          const text = await card
+            .first()
+            .innerText({ timeout: 2_000 })
+            .catch(() => '（读文字时卡已收起）');
+          throw new Error(`弹出了一张没有「允许这一次」的卡：${text}`);
+        }
+        continue;
+      }
+      // 数到卡和点下去之间，卡可能已经收掉了（回合往前走了）：点不到就回到循环里重新看
+      await allow.click({ timeout: 5_000 }).catch(() => undefined);
+      continue;
+    }
+    if ((await composer.getAttribute('data-run-state')) === 'idle') return;
+    await page.waitForTimeout(500);
+  }
+  throw new Error('回合 20 分钟内没有结束');
+}
+
 /**
  * 生成多附件旅程的输入（`harness/make-office-fixtures.py`）：两张图的 docx、两张图的 pptx、
  * xlsx、csv、png，每个文件藏一个只有它才有的事实。

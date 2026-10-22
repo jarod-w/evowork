@@ -103,8 +103,9 @@ export const REAL_MODEL_PRESETS = Object.freeze({
   /*
    * Q16 的 P0 三家里另外两家（2026-10-22 补）。能力位抄自 `known-models.ts` 的同名条目
    * （2026-09-05 实测、09-26 复测）；地址取自网关的 `providers/registry.ts`。
-   * **probeUrl 没有实测过**（加预设时手上没有这两家的密钥）：厂商若没有 `/models`，
-   * 验收的预检会明确报「HTTP 404」而不是静默跳过，届时改这里。
+   * 2026-10-22 拿到两家密钥后复核：`verify-provider.mjs --reasoning true --image true` 各 **23/23**
+   * （reasoning_content · 一轮两个工具调用 · cache 命中 · 纯红图答出「红」· 未知模型 4xx），
+   * 两个 probeUrl 带密钥都回 200。上下文长度仍是抄来的，没有实测。
    */
   'kimi-k3': {
     id: 'moonshot/kimi-k3',
