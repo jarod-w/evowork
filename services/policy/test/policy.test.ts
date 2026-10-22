@@ -90,6 +90,19 @@ describe('三级路径策略（10 §2.3）', () => {
     expect(classifyPath('~/.ssh/id_rsa', CONTEXT, 'read').verdict).toBe('hard-block');
   });
 
+  it('会话原文照拦（读也不行），理由说清这是对话记录、记忆该按什么作答 —— 不再说成「配置」', () => {
+    for (const path of [
+      '~/.evowork/kernel/sessions/2026/10/12/a.jsonl',
+      '~/.evowork/kernel/session_index.jsonl',
+    ]) {
+      const decision = classifyPath(path, CONTEXT, 'read');
+      expect(decision.verdict, path).toBe('hard-block');
+      expect(decision.rule, path).toBe('evowork-history');
+      expect(decision.reason).toContain('对话记录');
+      expect(decision.reason).toContain('MEMORY.md');
+    }
+  });
+
   it('**硬拦截先于工作空间判定** —— 把工作空间设在 ~/.ssh 也绕不过', () => {
     const evil = { workspaceRoot: '/Users/li/.ssh', home: HOME };
     expect(classifyPath('/Users/li/.ssh/id_rsa', evil).verdict).toBe('hard-block');

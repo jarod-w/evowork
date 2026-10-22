@@ -82,6 +82,7 @@ export const PATH_KIND_LABEL: Readonly<Record<string, string>> = Object.freeze({
   'system-dirs': '系统目录',
   credentials: '密钥与凭据',
   'evowork-self': 'EvoWork 自身配置',
+  'evowork-history': '任务对话记录',
   'personal-dir': '个人目录',
   'outside-workspace': '工作空间之外',
   workspace: '工作空间内',

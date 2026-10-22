@@ -99,6 +99,8 @@ id → 中文名与说明的映射表由 EvoWork 维护（协议返回的 `descr
 
 **边界照实写**：一行 shell 分不清读写，`cp x ~/.evowork/kernel/skills/…` 在 PreToolUse 里放行。默认档（请求批准 / 帮我批准）下写保护由沙箱给 —— 工作空间外不可写，越过沙箱要走提权，提权按「写」判照拦；**完全访问档没有沙箱，shell 写技能目录拦不住**，与 `~/.agents/skills` 等其他内核技能根同等（那几处本来就不在硬拦截里）。`classifyPath` 不传访问意图时按「写」判，选工作空间根、预览文件等其他调用方口径不变。
 
+**会话原文不放**：内核的记忆说明会让模型「需要原话时去翻 `rollout_path`」，那是 `kernel/sessions/` 下所有任务的完整对话。它单独成一条规则 `evowork-history`（排在 `evowork-self` 前面），范围不变、读写都拦，只是拦下时说清「这是对话记录，记忆按 MEMORY.md 与 rollout_summaries 作答」—— 原先说的是「EvoWork 自己的配置」，会误导模型。
+
 没有选的替代方案：把内核的技能根改指 `~/.evowork/skills`（`skills/extraRoots/set`）并停止复制到 kernel/。Hub 的「吊销 = 从内核目录撤下、用户那份留着」要跟着改，记忆目录的问题也不解决。
 
 **2026-10-01 订正：工作空间之外的「读」不要审批**（外部验收 D2-1 复现后用户决定接受现状）。

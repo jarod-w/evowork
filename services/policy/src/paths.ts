@@ -101,6 +101,17 @@ export const HARD_BLOCK_RULES: readonly BlockRule[] = Object.freeze([
     reason: '这里存着密钥、凭据或浏览器登录态',
   },
   {
+    /*
+     * 所有任务的完整对话原文（2026-10-22 从 evowork-self 里分出来，拦的范围不变，只是理由说准）。
+     * 内核的记忆说明会让模型「需要原话时去翻 rollout_path」—— 那就是这里；原先拦下时说的是
+     * 「这是 EvoWork 自己的配置」，模型以为是权限配置问题。**排在 evowork-self 前面**：先命中先返回。
+     */
+    name: 'evowork-history',
+    prefixes: ['~/.evowork/kernel/sessions/', '~/.evowork/kernel/session_index.jsonl'],
+    reason:
+      '这是所有任务的完整对话记录，不开放给任务读取；记忆请按 MEMORY.md 与 rollout_summaries 作答，不要再去翻原文',
+  },
+  {
     name: 'evowork-self',
     prefixes: ['~/.evowork/config.toml', '~/.evowork/requirements.toml', '~/.evowork/kernel/'],
     reason: '这是 EvoWork 自己的配置，改它会绕过你设的安全策略',

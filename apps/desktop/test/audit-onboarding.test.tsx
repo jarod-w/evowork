@@ -7,6 +7,7 @@
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
+import { HARD_BLOCK_RULES } from '@evowork/policy';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -67,6 +68,13 @@ describe('审计页：**永远不显示正文**', () => {
     expect(screen.getByText('a1b2c3d4')).toBeTruthy();
     // 完整哈希也不显示（一串 64 位对用户没用）
     expect(screen.queryByText('a1b2c3d4e5f60718')).toBeNull();
+  });
+
+  it('每一条硬拦截规则都有人话分类 —— 以后加规则忘了配，审计页就会露出枚举名', () => {
+    const missing = HARD_BLOCK_RULES.map((rule) => rule.name).filter(
+      (name) => PATH_KIND_LABEL[name] === undefined,
+    );
+    expect(missing).toEqual([]);
   });
 
   it('页面上明说不记正文', () => {
