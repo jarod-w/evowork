@@ -115,18 +115,26 @@ docx 的目录是 Word 的**域**，不是一段文字。用 python-docx 写进�
 用户拿出的是一份已经存在的 docx 或 Markdown 时，**不要另起一份内容 JSON 重写**。先提取，再改，再写回：
 
 ```bash
-python3 container_tools/render.py --extract "<绝对路径>/周报.docx" --out "<绝对路径>/周报.content.json"
+python3 container_tools/render.py --extract "<绝对路径>/周报.docx" --out "<临时目录>/周报.content.json"
 
 node container_tools/mark_artifact.mjs \
   --operation-kind edit --expected-output-count 1 --output-format docx \
   --title "周报" --path "<绝对路径>/周报.docx"
 
-python3 container_tools/render.py --content "<绝对路径>/周报.content.json" --out "<绝对路径>/周报.docx"
+python3 container_tools/render.py --content "<临时目录>/周报.content.json" --out "<绝对路径>/周报.docx" --overwrite
 ```
+
+提取出的 JSON 和 `extracted-media/` 都是中间文件，写进本任务的临时目录（第一次用 `mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX"` 建）。`extracted-media/` 不覆盖已有文件，目录是符号链接时拒绝写入。
+
+**提取收不回的内容会被列出来，而且默认失败**（退出码 2，消息里是「XX N 处」）：先把清单告诉用户、说清楚重新渲染会丢掉它们；用户同意后加 `--allow-lossy` 再提取，并把结果里的 `dropped` 原样转告。
+
+**写回原文件要显式加 `--overwrite`**，否则目标已存在时会被拒绝。任务目录里的文件可在 App 里撤销；任务目录之外的文件没有撤销副本，先另存一份。
 
 提取结果就是生成时用的内容 JSON。我们自己生成的文件会带上模板标记，提取后仍用原来的 `report` / `memo` / `minimal`。别人做的文件没有标记时，渲染用默认的 `report`。
 
-提取能收回的是标题、大纲级别（或「标题 1」样式）、项目符号、表格和正文。引用块、文本框和封面装饰收不回来，会变成普通段落或被跳过；封面和目录自带的分页不进入正文。图片会抽到内容 JSON 旁边的 `extracted-media/`。超过 400 个块、表超过 10 列或 200 行时停下来，不截断。
+docx 能收回的：标题、大纲级别（或「标题 N」样式；`outlineLvl=9` 是正文）、「标题」样式的那段作为文档标题、项目符号与编号（含工具栏点出来的列表）、表格（合并单元格的字只留一份）、正文、内容控件里的正文、引用和出处、表题和图题、目录。会被列进 `dropped` 的：页眉页脚、文本框、脚注尾注、批注、修订、超链接、原生图表、SmartArt、嵌入对象、公式、嵌套列表层级、标题自动编号、合并单元格、插不回去的图片（EMF/WMF、链接图）等。封面和目录自带的分页不进入正文。超过 400 个块、表超过 10 列或 200 行时停下来，不截断。
+
+Markdown：图片按 .md 所在目录解析、在 JSON 里写绝对路径；.md 目录之外的图、网络图片、找不到的文件不收，列进 `dropped`。代码块连围栏原样留成一段（渲染成 docx 时围栏会显示出来）。作者 / 日期和副标题只认本技能写出的标记行。
 
 ## 需要办公扩展
 

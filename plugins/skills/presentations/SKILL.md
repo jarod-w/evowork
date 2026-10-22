@@ -109,11 +109,17 @@ python3 container_tools/render.py --content "<临时目录>/content.json" --out 
 用户要改的是已经存在的 pptx 时，先提取成内容 JSON，改 JSON，再写回。上报用 `--operation-kind edit`。
 
 ```bash
-python3 container_tools/render.py --extract "<绝对路径>/汇报.pptx" --out "<绝对路径>/汇报.content.json"
-python3 container_tools/render.py --content "<绝对路径>/汇报.content.json" --out "<绝对路径>/汇报.pptx"
+python3 container_tools/render.py --extract "<绝对路径>/汇报.pptx" --out "<临时目录>/汇报.content.json"
+python3 container_tools/render.py --content "<临时目录>/汇报.content.json" --out "<绝对路径>/汇报.pptx" --overwrite
 ```
 
-我们自己生成的文件按五种版式原样收回，模板标记还在。别人做的文件按「标题 / 要点 / 图表 / 表格 / 章节」归类：一页超过 6 条要点、没有标题、或既没有文字也没有表时停下来，不截断、不编一页空内容。图表图片抽到内容 JSON 旁边的 `extracted-media/`。动画、自由摆放的装饰和第六种版式收不回来。
+提取出的 JSON 和 `extracted-media/` 都是中间文件，写进本任务的临时目录（第一次用 `mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX"` 建）。`extracted-media/` 不覆盖已有文件，目录是符号链接时拒绝写入。
+
+**提取收不回的内容会被列出来，而且默认失败**（退出码 2，消息里是「XX N 处」）：先把清单告诉用户、说清楚重新渲染会丢掉它们；用户同意后加 `--allow-lossy` 再提取，并把结果里的 `dropped` 原样转告。
+
+**写回原文件要显式加 `--overwrite`**，否则目标已存在时会被拒绝。任务目录里的文件可在 App 里撤销；任务目录之外的文件没有撤销副本，先另存一份。
+
+我们自己生成的文件按五种版式原样收回，模板标记还在。别人做的文件按「标题 / 要点 / 图表 / 表格 / 章节」归类：一页超过 6 条要点、没有标题、或既没有文字也没有表时停下来，不截断、不编一页空内容。图表图片抽到内容 JSON 旁边的 `extracted-media/`。组合图形里的内容会拆开读；软换行留在同一条要点里；图表页和表格页上单行的第二个文本框作为说明（caption）。会被列进 `dropped` 的：第二栏文本框、多出来的图片和表格、原生图表、SmartArt、嵌入对象、音视频、页脚、嵌套列表层级。动画与自由摆放的装饰不保留。
 
 ## 需要办公扩展
 
