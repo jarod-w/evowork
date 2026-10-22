@@ -31,10 +31,13 @@ afterEach(async () => {
 });
 
 /** 假下载：把内容写到目标路径，不校验（校验在 download.test.ts 里单独测） */
-const fakeDownload = (async (_asset, dest) => {
+type DownloadFn = NonNullable<
+  NonNullable<Parameters<typeof installOfficeRuntime>[0]>['downloadFn']
+>;
+const fakeDownload: DownloadFn = async (_asset, dest) => {
   mkdirSync(dirname(dest), { recursive: true });
   writeFileSync(dest, 'fake');
-}) as unknown as NonNullable<Parameters<typeof installOfficeRuntime>[0]>['downloadFn'];
+};
 
 /**
  * 假子进程。**它必须真的产生副作用**（建出解释器、建出字体文件），
@@ -141,11 +144,11 @@ describe('安装成功的那条路', () => {
     const font = join(home, 'NotoSansSC.ttf');
     writeFileSync(font, 'bundled-font');
     const urls: string[] = [];
-    const tracking = (async (asset, dest) => {
+    const tracking: DownloadFn = async (asset, dest) => {
       urls.push(asset.url);
       mkdirSync(dirname(dest), { recursive: true });
       writeFileSync(dest, 'fake');
-    }) as unknown as typeof fakeDownload;
+    };
 
     const result = await installOfficeRuntime({
       ...base(makeRun()),
@@ -159,11 +162,11 @@ describe('安装成功的那条路', () => {
 
   it('随包字体路径指到空处：报 FONT，不改去 GitHub', async () => {
     const urls: string[] = [];
-    const tracking = (async (asset, dest) => {
+    const tracking: DownloadFn = async (asset, dest) => {
       urls.push(asset.url);
       mkdirSync(dirname(dest), { recursive: true });
       writeFileSync(dest, 'fake');
-    }) as unknown as typeof fakeDownload;
+    };
 
     const result = await installOfficeRuntime({
       ...base(makeRun()),

@@ -24,6 +24,15 @@ const WORKSPACE_DIRS = ['packages', 'services', 'apps', 'tools'];
  */
 const NESTED_DIRS = ['plugins/skills'];
 
+function hasTsTests(dir) {
+  if (!existsSync(dir)) return false;
+  return readdirSync(dir, { withFileTypes: true }).some(
+    (entry) =>
+      (entry.isFile() && /\.test\.tsx?$/.test(entry.name)) ||
+      (entry.isDirectory() && hasTsTests(join(dir, entry.name))),
+  );
+}
+
 function tsc(...args) {
   execFileSync('node', [join(REPO_ROOT, 'node_modules/typescript/bin/tsc'), ...args], {
     cwd: REPO_ROOT,
@@ -35,6 +44,8 @@ console.log('① 构建（含声明文件）');
 tsc('--build', 'tsconfig.build.json');
 
 const specs = [];
+/** 有 TS 测试却没有 tsconfig.spec.json 的包 —— 它们的测试会静默逃过类型检查 */
+const unchecked = [];
 for (const group of [...WORKSPACE_DIRS, ...NESTED_DIRS]) {
   const abs = join(REPO_ROOT, group);
   if (!existsSync(abs)) continue;
@@ -42,7 +53,18 @@ for (const group of [...WORKSPACE_DIRS, ...NESTED_DIRS]) {
     if (!pkg.isDirectory()) continue;
     const spec = join(abs, pkg.name, 'tsconfig.spec.json');
     if (existsSync(spec)) specs.push(relative(REPO_ROOT, spec));
+    else if (hasTsTests(join(abs, pkg.name, 'test'))) unchecked.push(join(group, pkg.name));
   }
+}
+/*
+ * 「没有就跳过」是个口子（CLAUDE.md §9.1）：#20 新加的七个技能都有 TS 测试、都没有这份配置，
+ * 于是它们的测试一条都没被类型检查过，门禁照样全绿。判的是这一类，不是那七个名字。
+ */
+if (unchecked.length > 0) {
+  console.error(
+    `这些包有 TS 测试，却没有 tsconfig.spec.json（测试会逃过类型检查）：${unchecked.join('、')}`,
+  );
+  process.exit(1);
 }
 
 if (specs.length === 0) {

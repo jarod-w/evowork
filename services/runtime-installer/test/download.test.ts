@@ -8,6 +8,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { downloadAsset, DownloadError } from '../src/download.js';
 
+/** 断言这次下载失败并取回那个错误 —— 成功了就让测试失败，而不是拿 undefined 去比 */
+async function rejection(promise: Promise<unknown>): Promise<DownloadError> {
+  try {
+    await promise;
+  } catch (error) {
+    return error as DownloadError;
+  }
+  throw new Error('下载本该失败，却成功了');
+}
+
 let dir: string;
 
 beforeEach(async () => {
@@ -51,17 +61,17 @@ describe('下载与校验', () => {
 
   it('校验失败的文案不劝人重试 —— 重试只会再下一遍同样的东西', async () => {
     const asset = assetOf('hello', 'f'.repeat(64));
-    const err = await downloadAsset(asset, join(dir, 'x'), {
-      fetchFn: respondWith('hello'),
-    }).catch((e: unknown) => e as DownloadError);
+    const err = await rejection(
+      downloadAsset(asset, join(dir, 'x'), { fetchFn: respondWith('hello') }),
+    );
     expect(err.failure).toBe('CHECKSUM');
     expect(err.message).toContain('离线');
   });
 
   it('HTTP 错误带上状态码 —— 403 多半是公司代理，404 是清单过期，处理方式不同', async () => {
-    const err = await downloadAsset(assetOf('x'), join(dir, 'y'), {
-      fetchFn: respondWith('', { status: 403 }),
-    }).catch((e: unknown) => e as DownloadError);
+    const err = await rejection(
+      downloadAsset(assetOf('x'), join(dir, 'y'), { fetchFn: respondWith('', { status: 403 }) }),
+    );
     expect(err.failure).toBe('HTTP_STATUS');
     expect(err.message).toContain('403');
   });
@@ -70,9 +80,7 @@ describe('下载与校验', () => {
     const fetchFn = (async () => {
       throw new Error('getaddrinfo ENOTFOUND');
     }) as unknown as typeof fetch;
-    const err = await downloadAsset(assetOf('x'), join(dir, 'z'), { fetchFn }).catch(
-      (e: unknown) => e as DownloadError,
-    );
+    const err = await rejection(downloadAsset(assetOf('x'), join(dir, 'z'), { fetchFn }));
     expect(err.failure).toBe('NETWORK');
   });
 
@@ -89,10 +97,9 @@ describe('下载与校验', () => {
     const fetchFn = (async () =>
       new Response(neverEnds, { status: 200 })) as unknown as typeof fetch;
 
-    const err = await downloadAsset(assetOf('x'), join(dir, 'stall.bin'), {
-      fetchFn,
-      stallTimeoutMs: 120,
-    }).catch((e: unknown) => e as DownloadError);
+    const err = await rejection(
+      downloadAsset(assetOf('x'), join(dir, 'stall.bin'), { fetchFn, stallTimeoutMs: 120 }),
+    );
 
     expect(err.failure).toBe('STALLED');
     expect(err.message).toContain('离线');
