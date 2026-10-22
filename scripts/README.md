@@ -1,17 +1,30 @@
 # scripts —— 仓库脚本
 
-| 脚本                                                         | 用途                                                                                                                       | 谁在跑                                                                                                            |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [`kernel-drift.mjs`](kernel-drift.mjs)                       | 上游漂移雷达：提交量与影响面 · **F1–F55 断言复核** · 补丁试合并                                                            | 每日 job（`.github/workflows/kernel-drift.yml`）+ 每个 PR + 本地                                                  |
-| [`kernel-assertions.json`](kernel-assertions.json)           | F1–F55 的**机器可读孪生体**                                                                                                | 上面那个脚本读它                                                                                                  |
-| [`kernel-contract.mjs`](kernel-contract.mjs)                 | K2 协议形状自检：我们发的 JSON 对不对得上内核真正接受的形状                                                                | **`pnpm run check`** + CI                                                                                         |
-| [`patch-budget.mjs`](patch-budget.mjs)                       | K1 补丁预算自检（≤5 文件 / ≤500 行 + 说明文件）                                                                            | **`pnpm run check`** + CI                                                                                         |
-| [`gen-third-party-notices.mjs`](gen-third-party-notices.mjs) | 生成 / 校验 `THIRD_PARTY_NOTICES.md`（K5）                                                                                 | **`pnpm run check`**（`--check`）+ CI + 依赖变更时                                                                |
-| [`verify-provider.mjs`](verify-provider.mjs)                 | 用**真实 endpoint** 核对一家 provider 的流式语义（U2）                                                                     | 拿到某家 key 之后跑一次；**不进 `pnpm run check`**（要网络、要钱）                                                |
-| [`verify-kernel-egress.mjs`](verify-kernel-egress.mjs)       | 用**发货内核 + 随包模板**真起一次，按内核日志判它想往哪儿发请求：OpenAI 侧一律失败，未登记目的地失败（K6 / K7，F54 / F55） | **升级内核后**跑一次；`--config` 可验任意一份配置；不要密钥，**不进 `pnpm run check`**（要先编出内核）            |
-| [`build-upgrade-fixture.mjs`](build-upgrade-fixture.mjs)     | 用**某个版本自己的代码**生成升级兼容夹具（库 + 内核配置），在线升级提案 §4 A2                                              | **发版时**跑一次：`node scripts/build-upgrade-fixture.mjs WORKTREE v<新版本>`；漏了 `upgrade-compat.test.ts` 会红 |
-| [`update-signing.mjs`](update-signing.mjs)                   | 更新清单签名：`keygen`（私钥进钥匙串或 0600 文件）· `sign`（写 `signatures/<sha256>.sig`），在线升级提案 §4 B3             | 发版的人在发版机上；`publish-release.mjs` 也调它                                                                  |
-| [`publish-release.mjs`](publish-release.mjs)                 | 把 `dist/release/` 发到更新源：先查八项、再按「安装包 → 签名 → 清单」上传，在线升级提案 §4 B2                              | 发版时；`--dry-run` 只查不传                                                                                      |
+| 脚本                                                         | 用途                                                                                                                                   | 谁在跑                                                                                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [`kernel-drift.mjs`](kernel-drift.mjs)                       | 上游漂移雷达：提交量与影响面 · **F1–F55 断言复核** · 补丁试合并                                                                        | 每日 job（`.github/workflows/kernel-drift.yml`）+ 每个 PR + 本地                                                         |
+| [`kernel-assertions.json`](kernel-assertions.json)           | F1–F55 的**机器可读孪生体**                                                                                                            | 上面那个脚本读它                                                                                                         |
+| [`kernel-contract.mjs`](kernel-contract.mjs)                 | K2 协议形状自检：我们发的 JSON 对不对得上内核真正接受的形状                                                                            | **`pnpm run check`** + CI                                                                                                |
+| [`patch-budget.mjs`](patch-budget.mjs)                       | K1 补丁预算自检（≤5 文件 / ≤500 行 + 说明文件）                                                                                        | **`pnpm run check`** + CI                                                                                                |
+| [`gen-third-party-notices.mjs`](gen-third-party-notices.mjs) | 生成 / 校验 `THIRD_PARTY_NOTICES.md`（K5）                                                                                             | **`pnpm run check`**（`--check`）+ CI + 依赖变更时                                                                       |
+| [`verify-provider.mjs`](verify-provider.mjs)                 | 用**真实 endpoint** 核对一家 provider 的流式语义（U2）                                                                                 | 拿到某家 key 之后跑一次；**不进 `pnpm run check`**（要网络、要钱）                                                       |
+| [`verify-kernel-egress.mjs`](verify-kernel-egress.mjs)       | 用**发货内核 + 随包模板**真起一次，按内核日志判它想往哪儿发请求：OpenAI 侧一律失败，未登记目的地失败（K6 / K7，F54 / F55）             | **升级内核后**跑一次；`--config` 可验任意一份配置；不要密钥，**不进 `pnpm run check`**（要先编出内核）                   |
+| [`review-sessions.mjs`](review-sessions.mjs)                 | **本机会话复盘**：读本机内核的会话记录，统计回合结局、上下文峰值、策略拦截、翻产品内部、临时文件落点、同一件事反复做、记忆里的注入文本 | 改完 Craft 指令 / 技能 / 网关后跑；**默认不输出对话原文**（`--with-text` 才有）；不进 `pnpm run check`（读的是本机数据） |
+| [`build-upgrade-fixture.mjs`](build-upgrade-fixture.mjs)     | 用**某个版本自己的代码**生成升级兼容夹具（库 + 内核配置），在线升级提案 §4 A2                                                          | **发版时**跑一次：`node scripts/build-upgrade-fixture.mjs WORKTREE v<新版本>`；漏了 `upgrade-compat.test.ts` 会红        |
+| [`update-signing.mjs`](update-signing.mjs)                   | 更新清单签名：`keygen`（私钥进钥匙串或 0600 文件）· `sign`（写 `signatures/<sha256>.sig`），在线升级提案 §4 B3                         | 发版的人在发版机上；`publish-release.mjs` 也调它                                                                         |
+| [`publish-release.mjs`](publish-release.mjs)                 | 把 `dist/release/` 发到更新源：先查八项、再按「安装包 → 签名 → 清单」上传，在线升级提案 §4 B2                                          | 发版时；`--dry-run` 只查不传                                                                                             |
+
+## 改完 agent 行为之后的固定复盘（2026-10-22）
+
+改 `config/modes/*.md`、随包技能、网关翻译或策略包之后，按顺序做三件事，结果记进 `docs/verification/`：
+
+1. **本机会话复盘**：`node scripts/review-sessions.mjs --since <改动那天>`。看「值得看的模式」那张表比上次多了还是少了，
+   尤其是策略拦截、翻 App 安装包、在工作区里建临时目录、单次上下文 > 100K、同一件事反复做。
+2. **验收集，每个 P0 模型各一遍**：`EVOWORK_UI_MODEL_PRESET=<deepseek-flash | kimi-k3 | glm-5.3-flash> EVOWORK_UI_MODEL_KEY=… node node_modules/@playwright/test/cli.js test acceptance --project=real --retries=0`。
+   与上一轮比，新增的失败先看是不是夹具问题（2026-10-22 就有两处空心通过）。
+3. **关键行为看比例**：身份 / 技能列表 / 安装指引 / 纪律几条加 `--repeat-each=5`，记「几过几」，不记「过了」。
+
+产物质量（U1）另跑 `u1-artifacts.real.spec.mjs`，它备齐产物与评分表，**分数要人打**（见 08 §5.4）。
 
 ## 为什么形状要机器比对，而不是靠断言
 

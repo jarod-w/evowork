@@ -64,7 +64,7 @@ EVOWORK_UI_MODEL_KEY=sk-... npx playwright test acceptance --project=real -g "C3
 - 真模型是**概率性**的，一轮绿不代表稳定；测试方用的是 deepseek-v4-pro。
 - **换模型**：`EVOWORK_UI_MODEL_PRESET=<预设>`，`EVOWORK_UI_MODEL_KEY` 给对应厂商的密钥。
   预设在 `../harness/real-models.mjs`，能力位都来自 `scripts/verify-provider.mjs` 实测：
-  `deepseek-flash`（默认）· `hy4-preview`（硅基流动 · 腾讯混元）· `mimo-v2.6-flash` · `mimo-v2.6-pro`（小米 MiMo）。
+  `deepseek-flash`（默认）· `hy4-preview`（硅基流动 · 腾讯混元）· `mimo-v2.6-flash` · `mimo-v2.6-pro`（小米 MiMo）· `kimi-k3` · `glm-5.3-flash`（Q16 的另两家 P0，2026-10-22 补；探测地址未实测）。
 - 开跑前会先探一次上游（`beforeAll`），不可达就整套不跑；回合失败或模型一个字没回的用例
   **不判分**，报「没有真正跑起来」和原因 —— 否则安全类用例会因为「什么都没做」而空心通过。
 

@@ -299,6 +299,8 @@ mark_artifact --operation-kind create --expected-output-count 1 --output-format 
 
 用 GLM-5.3-flash 跑三个任务并人工评分：① 从一份 Excel 生成 8 页 pptx；② 从需求描述生成 6 页 docx（含表格与目录）；③ 从 csv 生成含公式的 xlsx。评判标准写进 M0 验收：**文字不溢出、公式可用、中文不乱码、层级正确**四项全过才算达标。不达标按 R4 换旗舰档，**不靠加模板硬扛**（总纲原话）。
 
+**评分材料（2026-10-22）**：`apps/desktop/test/e2e/ui/u1-artifacts.real.spec.mjs` 用固定种子的输入（`harness/u1/make_inputs.py`）跑这三个任务，把产物收进 `test-results/u1-scoring/artifacts/`，再按产物读出机器能确定的事实（页数、表格、目录、公式与断引用、字体、纸张，`harness/u1/facts.py`），生成留给人填的 `评分表.md`。它**不替人打分**：溢出与乱码要看渲染结果。跑法：`EVOWORK_UI_MODEL_PRESET=glm-5.3-flash EVOWORK_UI_MODEL_KEY=… node node_modules/@playwright/test/cli.js test u1-artifacts --project=real --retries=0`。
+
 ---
 
 ## 6. 产物在界面上的呈现

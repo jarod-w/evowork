@@ -100,6 +100,47 @@ export const REAL_MODEL_PRESETS = Object.freeze({
       maxContextTokens: 128_000,
     },
   },
+  /*
+   * Q16 的 P0 三家里另外两家（2026-10-22 补）。能力位抄自 `known-models.ts` 的同名条目
+   * （2026-09-05 实测、09-26 复测）；地址取自网关的 `providers/registry.ts`。
+   * **probeUrl 没有实测过**（加预设时手上没有这两家的密钥）：厂商若没有 `/models`，
+   * 验收的预检会明确报「HTTP 404」而不是静默跳过，届时改这里。
+   */
+  'kimi-k3': {
+    id: 'moonshot/kimi-k3',
+    displayName: 'Kimi K3',
+    provider: 'moonshot',
+    upstreamModel: 'kimi-k3',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    probeUrl: 'https://api.moonshot.cn/v1/models',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: true,
+      promptCache: true,
+      imageInput: true,
+      maxContextTokens: 1_048_576,
+    },
+  },
+  /** U1 要评的就是它：GLM-5.3-flash 撑不撑得住 PPT / 表格产物质量（R4，08 §5.4） */
+  'glm-5.3-flash': {
+    id: 'zhipu/glm-5.3-flash',
+    displayName: 'GLM 5.3 Flash',
+    provider: 'zhipu',
+    upstreamModel: 'glm-5.3-flash',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    probeUrl: 'https://open.bigmodel.cn/api/paas/v4/models',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: true,
+      promptCache: true,
+      imageInput: true,
+      maxContextTokens: 1_000_000,
+    },
+  },
 });
 
 /** 选中的预设。拼错就当场报错 —— 静默回落到默认模型会让人以为测的是另一个 */
