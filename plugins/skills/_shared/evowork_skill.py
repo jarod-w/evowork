@@ -40,6 +40,8 @@ EXIT_RUNTIME_MISSING = 3
 EXIT_MISSING_ASSET = 4
 #: 转换器在、也跑了，但没转成（超时、文档坏了、被隔离拦下）。与 3 分开：报成「缺运行时」会让用户去重装
 EXIT_CONVERSION_FAILED = 5
+#: 执行到一半出错，而且没能全部撤回：磁盘上是半完成状态，消息里逐条列出哪些改动已经生效（batch-files）
+EXIT_PARTIAL = 6
 
 #: 08 §4 的三档运行时。文案必须与 `services/ingest` 一致 ——
 #: 一处说"解析组件"、一处说"生成组件"会让用户以为要装两个东西（08 §4 原话）。

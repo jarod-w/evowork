@@ -28,8 +28,6 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const RUN = resolve(TEST_DIR, '../container_tools/run.py');
 /** 在第 N 次 os.link 上制造故障的夹具，见它自己的头注释 */
 const FLAKY_LINK = join(TEST_DIR, 'fixtures', 'flaky-link');
-/** run.py 的 EXIT_PARTIAL：执行到一半出错，而且没能全部撤回 */
-const EXIT_PARTIAL = 6;
 const onMac = process.platform === 'darwin';
 
 let dir: string;
@@ -411,7 +409,7 @@ describe('要么全做，要么不做', () => {
       },
       { env: flaky({ fail: [2, 3] }) },
     );
-    expect(result.status).toBe(EXIT_PARTIAL);
+    expect(result.status).toBe(EXIT.partial);
     const message = failure(result).message;
     expect(message).toContain('a.txt → x/a.txt');
     expect(message).toContain('新建了文件夹 x/');

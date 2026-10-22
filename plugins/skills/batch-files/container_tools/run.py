@@ -41,6 +41,7 @@ sys.path.insert(0, str(SKILL_ROOT.parent / "_shared"))
 
 from evowork_skill import (  # noqa: E402
     EXIT_INVALID_CONTENT,
+    EXIT_PARTIAL,
     EXIT_RUNTIME_MISSING,
     ensure_office_runtime,
     fail,
@@ -52,8 +53,6 @@ from evowork_skill import (  # noqa: E402
 
 MAX_FILES = 50
 MAX_BYTES = 20 * 1024 * 1024
-#: 本技能独有：执行到一半出错，而且没能全部撤回。工作区是半完成状态，消息里列出哪些改动已经生效。
-EXIT_PARTIAL = 6
 
 SYMLINK = "路径上有符号链接。本技能不跟随符号链接。"
 SAME_NAME = "（名字只差大小写或 Unicode 写法也算同名）"

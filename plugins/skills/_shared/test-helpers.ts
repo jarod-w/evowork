@@ -119,4 +119,5 @@ export const EXIT = {
   runtimeMissing: 3,
   missingAsset: 4,
   conversionFailed: 5,
+  partial: 6,
 } as const;
