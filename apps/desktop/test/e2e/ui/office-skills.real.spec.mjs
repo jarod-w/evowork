@@ -77,8 +77,13 @@ function skillScripts(cmds) {
 }
 
 async function lastReply(page) {
+  return (await allReplies(page)).at(-1) ?? '';
+}
+
+/** 到目前为止的全部回复。模型可能把说明与提问拆成同一回合里的几条（Kimi 就把「等你选」单独发了一条） */
+async function allReplies(page) {
   const conversation = page.getByRole('main', { name: '对话区' });
-  return (await conversation.locator('.ew-item-agent').allInnerTexts()).at(-1) ?? '';
+  return conversation.locator('.ew-item-agent').allInnerTexts();
 }
 
 async function attachEvidence(testInfo, data) {
@@ -323,7 +328,8 @@ test('提取收不回页脚：用户点头之前不丢；点头之后才改', as
   try {
     await runUntilIdle(page);
     seen.firstCommands = await commands(page);
-    seen.firstReply = await lastReply(page);
+    // 第一回合之前没有别的回复：这里拿到的全是这一回合的
+    seen.firstReply = (await allReplies(page)).join('\n');
     seen.changedWithoutAsking = sha(source) !== original;
     seen.first = facts(source);
 
