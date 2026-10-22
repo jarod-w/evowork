@@ -315,20 +315,20 @@ describe('不分大小写的盘上也不覆盖（macOS 默认就是这种盘）'
   });
 
   it('归类时 Note.TXT 和 note.txt 不会挤进同一个名字', () => {
-    mkdirSync(join(ws, '一'));
-    mkdirSync(join(ws, '二'));
+    // note.txt 已经在 TXT/ 里、原地不动；Note.TXT 归类后正好落到它身上
+    mkdirSync(join(ws, '一', 'TXT'), { recursive: true });
     writeFileSync(join(ws, '一', 'Note.TXT'), 'upper');
-    writeFileSync(join(ws, '二', 'note.txt'), 'lower');
+    writeFileSync(join(ws, '一', 'TXT', 'note.txt'), 'lower');
     const result = run({
       operation: 'group',
       workspace: ws,
-      files: ['一/Note.TXT', '二/note.txt'],
+      files: ['一/Note.TXT', '一/TXT/note.txt'],
     });
     expect(result.status).toBe(EXIT.invalidContent);
     failure(result);
     expect(readFileSync(join(ws, '一', 'Note.TXT'), 'utf8')).toBe('upper');
-    expect(readFileSync(join(ws, '二', 'note.txt'), 'utf8')).toBe('lower');
-    expect(existsSync(join(ws, 'txt'))).toBe(false);
+    expect(readFileSync(join(ws, '一', 'TXT', 'note.txt'), 'utf8')).toBe('lower');
+    expect(listing(join(ws, '一'))).toEqual(['Note.TXT', 'TXT']);
   });
 
   it('归类沿用已有的 PDF/ 文件夹，不在旁边再建一个 pdf/，报告写的是文件真实的位置', () => {
@@ -436,6 +436,40 @@ describe('按扩展名归类是移动', () => {
     expect(existsSync(join(ws, '周报.docx'))).toBe(false);
     expect(readFileSync(join(ws, 'docx', '周报.docx'), 'utf8')).toBe('doc');
     expect(readFileSync(join(ws, 'pdf', '附件.pdf'), 'utf8')).toBe('pdf');
+  });
+
+  it('子文件夹里的文件归到它自己旁边的扩展名文件夹，不被挪出那个文件夹', () => {
+    mkdirSync(join(ws, '资料'));
+    writeFileSync(join(ws, '资料', '周报.docx'), 'doc');
+    writeFileSync(join(ws, '资料', '合同.pdf'), 'pdf');
+    const result = run({
+      operation: 'group',
+      workspace: ws,
+      files: ['资料/周报.docx', '资料/合同.pdf'],
+    });
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    expect(listing(ws)).toEqual(['资料']);
+    expect(listing(join(ws, '资料'))).toEqual(['docx', 'pdf']);
+    expect(readFileSync(join(ws, '资料', 'docx', '周报.docx'), 'utf8')).toBe('doc');
+    expect(readFileSync(join(ws, '资料', 'pdf', '合同.pdf'), 'utf8')).toBe('pdf');
+  });
+
+  it('那个文件夹里已有同名文件时整批拒绝，一个都不动（2026-10-22 真模型验收的场景）', () => {
+    mkdirSync(join(ws, '资料', 'docx'), { recursive: true });
+    writeFileSync(join(ws, '资料', '周报.docx'), 'NEW');
+    writeFileSync(join(ws, '资料', 'docx', '周报.docx'), 'OLD');
+    writeFileSync(join(ws, '资料', '合同.pdf'), 'pdf');
+    const result = run({
+      operation: 'group',
+      workspace: ws,
+      files: ['资料/周报.docx', '资料/合同.pdf'],
+    });
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(failure(result).message).toContain('同名');
+    expect(listing(ws)).toEqual(['资料']);
+    expect(listing(join(ws, '资料'))).toEqual(['docx', '合同.pdf', '周报.docx']);
+    expect(readFileSync(join(ws, '资料', '周报.docx'), 'utf8')).toBe('NEW');
+    expect(readFileSync(join(ws, '资料', 'docx', '周报.docx'), 'utf8')).toBe('OLD');
   });
 });
 

@@ -36,7 +36,7 @@ python3 <技能目录>/container_tools/run.py --content "<临时目录>/batch.js
 }
 ```
 
-按扩展名归到文件夹（`docx/`、`pdf/`；没有扩展名的进 `no-extension/`）：
+按扩展名归到文件夹（`docx/`、`pdf/`；没有扩展名的进 `no-extension/`）。文件夹建在文件原来所在的文件夹里：`资料/周报.docx` 归到 `资料/docx/周报.docx`，不会被挪出「资料」。那里已有同名文件时整批拒绝，原样告诉用户、问怎么处理：
 
 ```json
 {

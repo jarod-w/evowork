@@ -466,8 +466,12 @@ def group_all(ws: Workspace, raw: dict, out_path: Path) -> None:
         folder_name = source.suffix.lower().lstrip(".") or "no-extension"
         if folder_name in {".", ".."} or "/" in folder_name or "\\" in folder_name:
             raise Refused("扩展名不能当作文件夹名。")
+        # 扩展名文件夹建在文件**原来所在的文件夹**里（2026-10-22 真模型验收：建在 workspace 根下时，
+        # 「资料/」里的文件全被挪出了「资料」，也就撞不上「资料/docx/」里已有的同名文件）。
+        # 已经在自己的扩展名文件夹里（只差大小写也算）就是归好了
+        base = source.parent.parent if source.parent.name.lower() == folder_name else source.parent
         target, dirs, itself = planner.resolve_target(
-            Path(folder_name) / source.name,
+            base / folder_name / source.name,
             source=info,
             exists_message=f"归类后的位置上已经有同名文件{SAME_NAME}。不会覆盖。",
         )
