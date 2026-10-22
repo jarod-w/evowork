@@ -99,9 +99,14 @@ async function drive(page, { approval, followups = [] }) {
         .catch(() => undefined);
       continue;
     }
+    /*
+     * 「出现过工具调用」认**过程组**，不认命令条目（2026-10-22 改）：过程组默认折叠，运行中只画一行
+     * 「当前动作」，`.ew-item[data-kind="commandExecution"]` 根本不渲染 —— C3 的「更正」因此一次都没
+     * 发出去，模型照原需求做完了全部 18 家，判成了模型没听改需求。过程组只收工具调用（PROCESS_ITEM_TYPES）。
+     */
     if (
       pending[0]?.after === 'first_tool_call' &&
-      (await page.locator('.ew-item[data-kind="commandExecution"]').count()) > 0
+      (await page.locator('.ew-process-group, .ew-item[data-kind="commandExecution"]').count()) > 0
     ) {
       await page.getByRole('button', { name: '停止' }).click();
       await expect(composer).toHaveAttribute('data-run-state', 'idle', { timeout: 60_000 });
@@ -111,7 +116,15 @@ async function drive(page, { approval, followups = [] }) {
       });
       continue;
     }
-    if ((await composer.getAttribute('data-run-state')) === 'idle') return approvals;
+    if ((await composer.getAttribute('data-run-state')) === 'idle') {
+      // 剧本里的插话没发出去 = 这个用例要测的情形根本没发生；判成模型的错是冤枉它，判过是空心通过
+      if (pending.length > 0) {
+        throw new Error(
+          `没有真正跑起来（不判分）：回合结束时还有 ${pending.length} 条插话没发出去（${pending[0].after}）`,
+        );
+      }
+      return approvals;
+    }
     await page.waitForTimeout(300);
   }
   throw new Error(`回合 ${TURN_BUDGET_MS / 60_000} 分钟内没有结束`);

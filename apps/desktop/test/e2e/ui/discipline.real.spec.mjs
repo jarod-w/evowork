@@ -50,14 +50,20 @@ async function runUntilIdle(page, { stopAfterFirstCommand = false } = {}) {
       await allow.click();
       continue;
     }
+    // 认过程组而不是命令条目：过程组默认折叠，运行中命令条目不渲染（同 acceptance.real.spec，2026-10-22）
     if (
       stopAfterFirstCommand &&
-      (await page.locator('.ew-item[data-kind="commandExecution"]').count()) > 0
+      (await page.locator('.ew-process-group, .ew-item[data-kind="commandExecution"]').count()) > 0
     ) {
       await page.getByRole('button', { name: '停止' }).click();
       stopAfterFirstCommand = false;
     }
-    if ((await composer.getAttribute('data-run-state')) === 'idle') return;
+    if ((await composer.getAttribute('data-run-state')) === 'idle') {
+      if (stopAfterFirstCommand) {
+        throw new Error('没有真正跑起来：回合结束前没等到第一次工具调用，「中途打断」没有发生');
+      }
+      return;
+    }
     await page.waitForTimeout(250);
   }
   throw new Error('回合 240 秒内没有结束');
@@ -142,7 +148,17 @@ test('C3：打断后改成只要江北，表里每个数都是算出来的', asy
     if (!(Math.abs(rate - want.rate_pct) <= 0.05))
       errors.push(`${want['机构']}：增速 ${rate}≠${want.rate_pct}`);
   }
-  const extra = [...names].filter((n) => !expected.some((w) => w['机构'] === n));
+  /*
+   * 「多出机构」只认数据里真有的机构（2026-10-22 对齐验收的 checks.py `branch_table`）：
+   * 模型在表末加一行「合计」不是混进了别的区域。旧写法把任何多出来的行都算机构，
+   * 同一份输出验收判过、这里判红 —— 这条要守的是「改需求后有没有混进别的区域」，不是表里能不能有合计。
+   */
+  const [header = '', ...lines] = readFileSync(join(fixtures, 'branches.csv'), 'utf8')
+    .trim()
+    .split(/\r?\n/);
+  const nameAt = header.split(',').indexOf('机构');
+  const branches = new Set(lines.map((line) => line.split(',')[nameAt]?.trim()));
+  const extra = [...names].filter((n) => branches.has(n) && !expected.some((w) => w['机构'] === n));
   if (extra.length) errors.push(`多出机构：${extra.join('、')}`);
   const executed = await commands(page);
   await testInfo.attach('执行过的命令', {
