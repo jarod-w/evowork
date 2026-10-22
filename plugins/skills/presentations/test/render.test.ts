@@ -15,7 +15,16 @@
  * 而不是假装通过。假装通过的测试比没有测试更糟：它会让人以为这条路已经验证过了。
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -429,5 +438,218 @@ describe('改已有文件：提取成内容 JSON', () => {
     expect(back.slides[2]?.chart_ref).toBe('extracted-media/slide-3.png');
     expect(back.slides[2]?.caption).toBe('来源：表1');
     expect(readFileSync(join(dir, 'extracted-media/slide-3.png')).length).toBeGreaterThan(8);
+  });
+});
+
+// ─────────────────────────── 提取：别人做的幻灯片 ───────────────────────────
+//
+// 2026-10-22 修提取时补的。夹具不经本技能渲染，用 python-pptx 按 PowerPoint 自带版式直接造。
+
+const SHARED_DIR = join(SKILL_ROOT, '..', '_shared');
+const PNG_1PX =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+const PPTX_PRELUDE = String.raw`
+import base64, io, sys
+sys.path.insert(0, ${JSON.stringify(SHARED_DIR)})
+import evowork_skill
+evowork_skill.ensure_office_runtime(("pptx",))
+from pptx import Presentation
+from pptx.util import Inches
+OUT = sys.argv[1]
+prs = Presentation()
+
+def png():
+    return io.BytesIO(base64.b64decode("${PNG_1PX}"))
+
+def slide(layout, title=None):
+    page = prs.slides.add_slide(prs.slide_layouts[layout])
+    if title is not None:
+        page.shapes.title.text = title
+    return page
+
+cover = slide(0, "季度汇报")
+cover.placeholders[1].text = "财务部"
+`;
+
+/** 用 python-pptx 造一份幻灯片（第 1 页固定是封面）。缺模块时换到办公扩展的解释器。 */
+function buildPptx(name: string, body: string): string {
+  const out = join(dir, name);
+  const script = join(dir, `build-${name}.py`);
+  writeFileSync(script, `${PPTX_PRELUDE}\n${body}\nprs.save(OUT)\n`, 'utf8');
+  const result = spawnSync('python3', [script, out], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return out;
+}
+
+function extractDeck(source: string, extra: readonly string[] = []) {
+  const out = join(dir, 'deck.json');
+  const result = runRender(['--extract', source, '--out', out, ...extra]);
+  const ok = result.status === 0;
+  const slides = ok
+    ? (JSON.parse(readFileSync(out, 'utf8')) as { slides: Record<string, unknown>[] }).slides
+    : undefined;
+  const dropped = ok
+    ? ((JSON.parse(result.stdout) as { dropped?: Record<string, number> }).dropped ?? {})
+    : undefined;
+  return { result, slides, dropped };
+}
+
+const COVER = { layout: 'title', title: '季度汇报', subtitle: '财务部' };
+
+describe('提取 pptx：别人做的幻灯片', () => {
+  it.runIf(hasOfficeRuntime)(
+    '第二栏、原生图表、多出来的图和表放不进五种版式 → 默认停下并逐类说出来',
+    () => {
+      const source = buildPptx(
+        'others.pptx',
+        String.raw`
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE
+
+two = slide(3, "两栏对比")
+two.placeholders[1].text = "左栏要点一\n左栏要点二"
+two.placeholders[2].text = "右栏要点一\n右栏要点二"
+
+chart = slide(5, "季度趋势")
+data = CategoryChartData()
+data.categories = ["Q1", "Q2"]
+data.add_series("营收", (1, 2))
+chart.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(2), Inches(6), Inches(4), data)
+
+pictures = slide(5, "两张图")
+pictures.shapes.add_picture(png(), Inches(1), Inches(2), Inches(2), Inches(2))
+pictures.shapes.add_picture(png(), Inches(4), Inches(2), Inches(2), Inches(2))
+
+tables = slide(5, "两张表")
+for left in (1, 5):
+    table = tables.shapes.add_table(2, 2, Inches(left), Inches(2), Inches(3), Inches(1)).table
+    for (r, c), value in {(0, 0): "地区", (0, 1): "销售额", (1, 0): "华东", (1, 1): "100"}.items():
+        table.cell(r, c).text = value
+`,
+      );
+
+      const { result, slides, dropped } = extractDeck(source, ['--allow-lossy']);
+      expect(result.status, result.stderr).toBe(0);
+      expect(slides).toEqual([
+        COVER,
+        { layout: 'bullets', title: '两栏对比', bullets: ['左栏要点一', '左栏要点二'] },
+        { layout: 'section', title: '季度趋势' },
+        { layout: 'chart', title: '两张图', chart_ref: 'extracted-media/slide-4.png' },
+        {
+          layout: 'table',
+          title: '两张表',
+          table: { header: ['地区', '销售额'], rows: [['华东', '100']] },
+        },
+      ]);
+      expect(dropped).toEqual({ 文本框: 1, 原生图表: 1, 图片: 1, 表格: 1 });
+
+      // 不加 --allow-lossy：停下，并且说清丢的是什么（之前这份文件「成功」提取、什么都不说）
+      rmSync(join(dir, 'deck.json'));
+      const refused = extractDeck(source);
+      expect(refused.result.status).toBe(2);
+      const message = (JSON.parse(refused.result.stderr) as { message: string }).message;
+      for (const kind of ['文本框 1 处', '原生图表 1 处', '图片 1 处', '表格 1 处']) {
+        expect(message).toContain(kind);
+      }
+      expect(existsSync(join(dir, 'deck.json'))).toBe(false);
+    },
+  );
+
+  it.runIf(hasOfficeRuntime)(
+    '组合图形里的标题和要点照样收回（之前整组被跳过、这页报「没有文字」）',
+    () => {
+      const source = buildPptx(
+        'grouped.pptx',
+        String.raw`
+page = slide(6)
+group = page.shapes.add_group_shape()
+group.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1)).text_frame.text = "组合里的标题"
+group.shapes.add_textbox(Inches(1), Inches(2), Inches(6), Inches(3)).text_frame.text = "要点甲\n要点乙"
+`,
+      );
+      const { result, slides, dropped } = extractDeck(source);
+      expect(result.status, result.stderr).toBe(0);
+      expect(slides).toEqual([
+        COVER,
+        { layout: 'bullets', title: '组合里的标题', bullets: ['要点甲', '要点乙'] },
+      ]);
+      expect(dropped).toEqual({});
+    },
+  );
+
+  it.runIf(hasOfficeRuntime)(
+    '要点里的软换行（Shift+Enter）还是同一条要点，渲染回去也还是一条',
+    () => {
+      const source = buildPptx(
+        'soft-break.pptx',
+        String.raw`
+page = slide(1, "要点")
+frame = page.placeholders[1].text_frame
+frame.text = "第一条"
+frame.paragraphs[0].add_line_break()
+frame.paragraphs[0].add_run().text = "第一条的续行"
+frame.add_paragraph().text = "第二条"
+`,
+      );
+      const expected = ['第一条\n第一条的续行', '第二条'];
+      const { result, slides } = extractDeck(source);
+      expect(result.status, result.stderr).toBe(0);
+      expect(slides?.[1]).toEqual({ layout: 'bullets', title: '要点', bullets: expected });
+
+      const rendered = runRender([
+        '--content',
+        join(dir, 'deck.json'),
+        '--out',
+        join(dir, 'rendered.pptx'),
+      ]);
+      expect(rendered.status, rendered.stderr).toBe(0);
+      rmSync(join(dir, 'deck.json'));
+      expect(extractDeck(join(dir, 'rendered.pptx')).slides?.[1]).toMatchObject({
+        bullets: expected,
+      });
+    },
+  );
+});
+
+describe('提取 pptx：extracted-media 的写入规则', () => {
+  function renderChartDeck(): string {
+    writeFileSync(join(dir, 'chart.png'), Buffer.from(PNG_1PX, 'base64'));
+    const content = {
+      slides: [
+        { layout: 'title', title: '周会' },
+        { layout: 'chart', title: '趋势', chart_ref: 'chart.png' },
+      ],
+    };
+    const out = join(dir, 'deck.pptx');
+    const rendered = runRender(['--content', writeContent(content), '--out', out]);
+    expect(rendered.status, rendered.stderr).toBe(0);
+    return out;
+  }
+
+  it.runIf(hasOfficeRuntime)('**不覆盖**已有的同名图片，新图换一个名字', () => {
+    const deck = renderChartDeck();
+    mkdirSync(join(dir, 'extracted-media'));
+    writeFileSync(join(dir, 'extracted-media', 'slide-2.png'), 'earlier extraction');
+    const { result, slides } = extractDeck(deck);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(dir, 'extracted-media', 'slide-2.png'), 'utf8')).toBe(
+      'earlier extraction',
+    );
+    const ref = String(slides?.[1]?.chart_ref);
+    expect(ref).not.toBe('extracted-media/slide-2.png');
+    expect(readFileSync(join(dir, ref)).subarray(1, 4).toString('latin1')).toBe('PNG');
+  });
+
+  it.runIf(hasOfficeRuntime)('extracted-media 是符号链接时拒绝，链接指向的目录里什么都不写', () => {
+    const deck = renderChartDeck();
+    const elsewhere = join(dir, 'elsewhere');
+    mkdirSync(elsewhere);
+    symlinkSync(elsewhere, join(dir, 'extracted-media'));
+    const { result } = extractDeck(deck);
+    expect(result.status).toBe(2);
+    expect((JSON.parse(result.stderr) as { message: string }).message).toContain('符号链接');
+    expect(readdirSync(elsewhere)).toEqual([]);
+    expect(existsSync(join(dir, 'deck.json'))).toBe(false);
   });
 });

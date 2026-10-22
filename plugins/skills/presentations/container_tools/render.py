@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -179,10 +180,24 @@ def render(content: dict, out_path: Path, base_dir: Path) -> None:
     prs.save(str(out_path))
 
 
+def _paragraphs(shape) -> list[tuple[str, int]]:  # noqa: ANN001
+    """(正文, 层级)，空段落不算。
+
+    段内的软换行（Shift+Enter，a:br）在 python-pptx 里是 `\\v`：换成 `\\n` 留在**同一条**里。
+    2026-10-22 之前按 splitlines 切，`\\v` 也被当成换行，一条要点被拆成了两条。
+    """
+    if shape is None or not getattr(shape, "has_text_frame", False) or not shape.has_text_frame:
+        return []
+    found = []
+    for paragraph in shape.text_frame.paragraphs:
+        text = "\n".join(line.strip() for line in paragraph.text.replace("\v", "\n").split("\n")).strip()
+        if text:
+            found.append((text, paragraph.level))
+    return found
+
+
 def _shape_text(shape) -> str:  # noqa: ANN001
-    if shape is None or not getattr(shape, "has_text_frame", False):
-        return ""
-    return "\n".join(paragraph.text.strip() for paragraph in shape.text_frame.paragraphs).strip()
+    return "\n".join(text for text, _ in _paragraphs(shape))
 
 
 def _notes(slide) -> str | None:  # noqa: ANN001
@@ -192,13 +207,36 @@ def _notes(slide) -> str | None:  # noqa: ANN001
     return text or None
 
 
+def _write_media(asset_dir: Path, stem: str, suffix: str, blob: bytes) -> str:
+    """与 documents 技能同一条规则：**不覆盖、不跟符号链接**（2026-10-22）。
+
+    之前同名就覆盖（第二份幻灯片的 slide-3 冲掉第一份的），`extracted-media` 是指向别处的链接也照写。
+    """
+    if asset_dir.is_symlink():
+        fail(
+            EXIT_INVALID_CONTENT,
+            f"{asset_dir.name} 是一个符号链接，提取不往里面写图片。换一个 --out 目录再提取。",
+        )
+    if asset_dir.exists() and not asset_dir.is_dir():
+        fail(EXIT_INVALID_CONTENT, f"{asset_dir.name} 已存在但不是文件夹。换一个 --out 目录再提取。")
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    for attempt in range(1, 1000):
+        name = f"{stem}{suffix}" if attempt == 1 else f"{stem}-{attempt}{suffix}"
+        try:
+            handle = os.open(asset_dir / name, flags, 0o644)
+        except FileExistsError:
+            continue
+        with os.fdopen(handle, "wb") as out:
+            out.write(blob)
+        return f"{asset_dir.name}/{name}"
+    fail(EXIT_INVALID_CONTENT, f"{asset_dir.name} 里同名的图片太多。换一个 --out 目录再提取。")
+
+
 def _save_picture(shape, asset_dir: Path, index: int) -> str:  # noqa: ANN001
     image = shape.image
     suffix = f".{image.ext}" if image.ext else ".bin"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    name = f"slide-{index}{suffix}"
-    (asset_dir / name).write_bytes(image.blob)
-    return f"{asset_dir.name}/{name}"
+    return _write_media(asset_dir, f"slide-{index}", suffix, image.blob)
 
 
 def _table_block(shape, page: int) -> dict:  # noqa: ANN001
@@ -217,16 +255,18 @@ def _table_block(shape, page: int) -> dict:  # noqa: ANN001
     return {"header": header, "rows": rows}
 
 
-def _bullets_from_text(text: str, page: int) -> list[str]:
+def _bullets(shape, page: int, dropped: dict[str, int]) -> list[str]:  # noqa: ANN001
     items = []
-    for line in text.splitlines():
-        piece = line.strip()
-        if piece.startswith("·"):
-            piece = piece[1:].strip()
-        elif piece.startswith(("- ", "* ")):
-            piece = piece[2:].strip()
-        if piece:
-            items.append(piece)
+    for text, level in _paragraphs(shape):
+        if level > 0:
+            # 内容 JSON 的要点只有一层：下级要点并进来，层级记进清单
+            dropped["嵌套列表层级"] = dropped.get("嵌套列表层级", 0) + 1
+        for marker in ("·", "•", "- ", "* "):
+            if text.startswith(marker):
+                text = text[len(marker) :].strip()
+                break
+        if text:
+            items.append(text)
     if len(items) > 6:
         fail(EXIT_INVALID_CONTENT, f"第 {page} 页要点超过 6 条，五种版式装不下。先拆页再提取。")
     if not items:
@@ -234,12 +274,177 @@ def _bullets_from_text(text: str, page: int) -> list[str]:
     return items
 
 
+#: 我们自己渲染的页上每个形状都有名字（见 render）；有这几个之一的页按名字原样收回
+LAYOUT_SHAPES = ("evowork:section", "evowork:bullets", "evowork:table", "evowork:chart", "evowork:title")
+ROLE_SHAPES = (*LAYOUT_SHAPES, "evowork:heading", "evowork:subtitle", "evowork:caption")
+
+#: 每页收不回来的东西按种类报。页码、日期占位符由幻灯片自己生成，不算内容
+_SHAPE_LOSS = {
+    "text": "文本框",
+    "picture": "图片",
+    "linked-picture": "图片",
+    "table": "表格",
+    "chart": "原生图表",
+    "smartart": "SmartArt 图形",
+    "ole": "嵌入对象",
+    "media": "音视频",
+    "footer": "页脚",
+}
+
+
+def _flatten(shapes) -> list:  # noqa: ANN001
+    """组合图形拆开看：里面的文字、图片、表都算这一页的内容（2026-10-22 之前整组被跳过）。"""
+    from pptx.shapes.group import GroupShape
+
+    found = []
+    for shape in shapes:
+        # 不用 shape.shape_type：认不出几何的形状上它会抛 NotImplementedError
+        if isinstance(shape, GroupShape):
+            found.extend(_flatten(shape.shapes))
+        else:
+            found.append(shape)
+    return found
+
+
+def _shape_kind(shape) -> str | None:  # noqa: ANN001
+    from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+    from pptx.shapes.picture import Picture
+
+    if getattr(shape, "has_chart", False):
+        return "chart"
+    if getattr(shape, "has_table", False):
+        return "table"
+    if isinstance(shape, Picture):
+        try:
+            shape.image  # noqa: B018 -- 链接到文件外的图片取不出字节
+        except Exception:  # noqa: BLE001
+            return "linked-picture"
+        return "picture"
+    uri = shape._element.xpath("./a:graphic/a:graphicData/@uri")
+    if uri and str(uri[0]).endswith("/diagram"):
+        return "smartart"
+    try:
+        shape_type = shape.shape_type
+    except NotImplementedError:
+        shape_type = None
+    if shape_type in (MSO_SHAPE_TYPE.EMBEDDED_OLE_OBJECT, MSO_SHAPE_TYPE.LINKED_OLE_OBJECT):
+        return "ole"
+    if shape_type == MSO_SHAPE_TYPE.MEDIA:
+        return "media"
+    if not _paragraphs(shape):
+        return None  # 空占位符、纯装饰的形状、线条
+    if shape.is_placeholder:
+        kind = shape.placeholder_format.type
+        if kind in (PP_PLACEHOLDER.DATE, PP_PLACEHOLDER.SLIDE_NUMBER):
+            return None
+        if kind == PP_PLACEHOLDER.FOOTER:
+            return "footer"
+    return "text"
+
+
+def _spec_from_roles(named: dict, page: int, asset_dir: Path, dropped: dict) -> tuple[dict, list]:
+    """我们自己生成的页：按 evowork:* 形状名原样收回。"""
+    used = [named.get("evowork:heading")]
+    if "evowork:section" in named:
+        used = [named["evowork:section"]]
+        return {"layout": "section", "title": _shape_text(named["evowork:section"])}, used
+    if "evowork:bullets" in named:
+        used.append(named["evowork:bullets"])
+        spec = {
+            "layout": "bullets",
+            "title": _shape_text(named.get("evowork:heading")),
+            "bullets": _bullets(named["evowork:bullets"], page, dropped),
+        }
+        return spec, used
+    if "evowork:table" in named:
+        used.append(named["evowork:table"])
+        spec = {
+            "layout": "table",
+            "title": _shape_text(named.get("evowork:heading")),
+            "table": _table_block(named["evowork:table"], page),
+        }
+    elif "evowork:chart" in named:
+        used.append(named["evowork:chart"])
+        spec = {
+            "layout": "chart",
+            "title": _shape_text(named.get("evowork:heading")),
+            "chart_ref": _save_picture(named["evowork:chart"], asset_dir, page),
+        }
+    else:
+        used = [named["evowork:title"], named.get("evowork:subtitle")]
+        spec = {"layout": "title", "title": _shape_text(named["evowork:title"])}
+        subtitle = _shape_text(named.get("evowork:subtitle"))
+        if subtitle:
+            spec["subtitle"] = subtitle
+        return spec, used
+    caption = _shape_text(named.get("evowork:caption"))
+    if caption:
+        spec["caption"] = caption
+        used.append(named["evowork:caption"])
+    return spec, used
+
+
+def _spec_from_shapes(slide, shapes: list, page: int, asset_dir: Path, dropped: dict) -> tuple[dict, list]:  # noqa: ANN001
+    """别人做的页：按「标题 / 要点 / 图表 / 表格 / 章节」归类。用不上的形状由调用方逐个报出来。"""
+    kinds = [(shape, _shape_kind(shape)) for shape in shapes]
+    texts = [shape for shape, kind in kinds if kind == "text"]
+    pictures = [shape for shape, kind in kinds if kind == "picture"]
+    tables = [shape for shape, kind in kinds if kind == "table"]
+    # 标题占位符排第一：它在 z 序里不一定最靠前
+    title_shape = slide.shapes.title
+    if title_shape is not None:
+        texts.sort(key=lambda shape: 0 if shape.shape_id == title_shape.shape_id else 1)
+
+    def one_line(shape) -> bool:  # noqa: ANN001
+        paragraphs = _paragraphs(shape)
+        return len(paragraphs) == 1 and "\n" not in paragraphs[0][0]
+
+    if tables or pictures:
+        used = [texts[0]] if texts else []
+        if tables:
+            spec = {
+                "layout": "table",
+                "title": _shape_text(texts[0]) if texts else "表格",
+                "table": _table_block(tables[0], page),
+            }
+            used.append(tables[0])
+        else:
+            spec = {
+                "layout": "chart",
+                "title": _shape_text(texts[0]) if texts else "图表",
+                "chart_ref": _save_picture(pictures[0], asset_dir, page),
+            }
+            used.append(pictures[0])
+        # 第二个文本框只有一行、放得进说明时当作说明（数据来源一类）；多行的是另一栏正文，报出来
+        if len(texts) >= 2 and one_line(texts[1]) and len(_shape_text(texts[1])) <= 200:
+            spec["caption"] = _shape_text(texts[1])
+            used.append(texts[1])
+        return spec, used
+    if len(texts) >= 2 and page == 1 and one_line(texts[0]):
+        return {"layout": "title", "title": _shape_text(texts[0]), "subtitle": _shape_text(texts[1])}, texts[:2]
+    if len(texts) == 1:
+        paragraphs = _paragraphs(texts[0])
+        if len(paragraphs) > 1 or paragraphs[0][0].startswith(("·", "•", "- ", "* ")):
+            return {"layout": "bullets", "title": "要点", "bullets": _bullets(texts[0], page, dropped)}, texts
+        return {"layout": "section", "title": _shape_text(texts[0])}, texts
+    if len(texts) >= 2:
+        # 两栏版式的第二栏、多出来的文本框：五种版式放不下，由调用方报出来
+        spec = {
+            "layout": "bullets",
+            "title": _shape_text(texts[0]),
+            "bullets": _bullets(texts[1], page, dropped),
+        }
+        return spec, texts[:2]
+    fail(EXIT_INVALID_CONTENT, f"第 {page} 页没有可提取的文字或表格。")
+
+
 def extract_pptx(path: Path, asset_dir: Path) -> dict:
+    """按五种版式收回每一页。一页上用不上的形状（第二栏、多余的图和表、原生图表……）逐类记进
+    `_dropped`，由 main() 交给 lossy_extraction —— 2026-10-22 之前它们被静默跳过。"""
     if not path.is_file():
         fail(EXIT_INVALID_CONTENT, f"找不到要提取的文件：{path.name}。")
     try:
         from pptx import Presentation
-        from pptx.enum.shapes import MSO_SHAPE_TYPE
     except ModuleNotFoundError:
         fail(EXIT_RUNTIME_MISSING, runtime_missing_message("office", "读取 pptx"))
 
@@ -252,76 +457,31 @@ def extract_pptx(path: Path, asset_dir: Path) -> dict:
     if title:
         content["title"] = title
 
+    dropped: dict[str, int] = {}
     slides = []
     for page, slide in enumerate(prs.slides, start=1):
-        named = {shape.name: shape for shape in slide.shapes}
-        notes = _notes(slide)
-        if "evowork:section" in named:
-            spec = {"layout": "section", "title": _shape_text(named["evowork:section"])}
-        elif "evowork:bullets" in named:
-            spec = {
-                "layout": "bullets",
-                "title": _shape_text(named.get("evowork:heading")),
-                "bullets": _bullets_from_text(_shape_text(named["evowork:bullets"]), page),
-            }
-        elif "evowork:table" in named:
-            spec = {
-                "layout": "table",
-                "title": _shape_text(named.get("evowork:heading")),
-                "table": _table_block(named["evowork:table"], page),
-            }
-            caption = _shape_text(named["evowork:caption"]) if "evowork:caption" in named else ""
-            if caption:
-                spec["caption"] = caption
-        elif "evowork:chart" in named:
-            spec = {
-                "layout": "chart",
-                "title": _shape_text(named.get("evowork:heading")),
-                "chart_ref": _save_picture(named["evowork:chart"], asset_dir, page),
-            }
-            caption = _shape_text(named["evowork:caption"]) if "evowork:caption" in named else ""
-            if caption:
-                spec["caption"] = caption
-        elif "evowork:title" in named:
-            spec = {"layout": "title", "title": _shape_text(named["evowork:title"])}
-            subtitle = _shape_text(named["evowork:subtitle"]) if "evowork:subtitle" in named else ""
-            if subtitle:
-                spec["subtitle"] = subtitle
+        shapes = _flatten(slide.shapes)
+        named = {shape.name: shape for shape in shapes if shape.name in ROLE_SHAPES}
+        if any(role in named for role in LAYOUT_SHAPES):
+            spec, used = _spec_from_roles(named, page, asset_dir, dropped)
         else:
-            texts = [_shape_text(shape) for shape in slide.shapes if _shape_text(shape)]
-            pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
-            tables = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.TABLE]
-            if tables:
-                spec = {
-                    "layout": "table",
-                    "title": texts[0] if texts else "表格",
-                    "table": _table_block(tables[0], page),
-                }
-            elif pictures:
-                spec = {
-                    "layout": "chart",
-                    "title": texts[0] if texts else "图表",
-                    "chart_ref": _save_picture(pictures[0], asset_dir, page),
-                }
-            elif len(texts) >= 2 and page == 1 and "\n" not in texts[0]:
-                spec = {"layout": "title", "title": texts[0], "subtitle": texts[1]}
-            elif len(texts) == 1 and ("\n" in texts[0] or texts[0].startswith(("·", "- ", "* "))):
-                lines = _bullets_from_text(texts[0], page)
-                spec = {"layout": "bullets", "title": "要点", "bullets": lines}
-            elif len(texts) >= 2:
-                spec = {"layout": "bullets", "title": texts[0], "bullets": _bullets_from_text(texts[1], page)}
-            elif len(texts) == 1:
-                spec = {"layout": "section", "title": texts[0]}
-            else:
-                fail(EXIT_INVALID_CONTENT, f"第 {page} 页没有可提取的文字或表格。")
+            spec, used = _spec_from_shapes(slide, shapes, page, asset_dir, dropped)
+        taken = {shape.shape_id for shape in used if shape is not None}
+        for shape in shapes:
+            kind = None if shape.shape_id in taken else _shape_kind(shape)
+            if kind:
+                loss = _SHAPE_LOSS[kind]
+                dropped[loss] = dropped.get(loss, 0) + 1
         if not spec.get("title"):
             fail(EXIT_INVALID_CONTENT, f"第 {page} 页没有标题。")
+        notes = _notes(slide)
         if notes:
             spec["notes"] = notes
         slides.append(spec)
     if not slides:
         fail(EXIT_INVALID_CONTENT, "这份幻灯片没有页。")
     content["slides"] = slides
+    content["_dropped"] = dropped
     return content
 
 

@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT.parent / "_shared"))
@@ -53,6 +54,8 @@ BLOCKS = ("heading", "paragraph", "bullets", "ordered", "table", "image", "quote
 
 TOC_HINT = "（目录是 Word 的域：第一次打开时按 F9 或右键「更新域」即可显示页码。）"
 
+#: md 封面里副标题那一行之前的标记（作者 / 日期的标记见 META_COMMENT）
+SUBTITLE_COMMENT = "<!-- evowork-subtitle -->"
 
 
 # 模板 `page.size` 可选的纸张（竖版宽 × 高，厘米）。缺省 A4
@@ -94,17 +97,45 @@ def validate(content: dict, base_dir: Path) -> None:
 # ─────────────────────────── markdown（基础包，无需扩展）───────────────────────────
 
 
+def _md_cell(value: object) -> str:
+    # 格子里的 | 会把表切成两列；提取时按同样的转义读回
+    return "" if value is None else str(value).replace("|", "\\|")
+
+
+def _md_image_target(ref: str, out_path: Path) -> str:
+    """md 里写的图片地址。
+
+    提取会把图片写成**绝对路径**（相对 .md 解析，见 extract_md）。原样写回的话，用户的 md
+    会带上本机目录、换台机器就断 —— 所以落在输出目录之内的图片写回相对路径。
+    """
+    target = ref
+    path = Path(ref)
+    if path.is_absolute():
+        real = Path(os.path.realpath(path))
+        base = Path(os.path.realpath(out_path.parent))
+        if real == base or base in real.parents:
+            target = real.relative_to(base).as_posix()
+    # 带空格或括号的地址要包进尖括号，否则 md 在第一个空格 / 右括号处就截断了
+    return f"<{target}>" if re.search(r"[\s()<>]", target) else target
+
+
 def render_md(content: dict, out_path: Path) -> None:
     lines: list[str] = [f"# {content['title']}", ""]
     if content.get("template"):
         # 提取时靠这一行找回模板。放在标题前面，阅读器会把它当注释丢掉。
         lines.insert(0, "")
         lines.insert(0, f"<!-- evowork-template:{content['template']} -->")
+    # 副标题与作者 / 日期各带一行注释标记（阅读器不显示）。提取只认带标记的那两行 ——
+    # 2026-10-22 之前是按「标题后第一段含 · 」猜的，用户正文第一段就被吞成了作者和日期
     if content.get("subtitle"):
-        lines += [f"> {content['subtitle']}", ""]
-    meta = " · ".join(x for x in (content.get("author"), content.get("date")) if x)
-    if meta:
-        lines += [meta, ""]
+        lines += [SUBTITLE_COMMENT, f"> {content['subtitle']}", ""]
+    fields = [name for name in ("author", "date") if content.get(name)]
+    if fields:
+        lines += [
+            f"<!-- evowork-meta:{'+'.join(fields)} -->",
+            " · ".join(content[name] for name in fields),
+            "",
+        ]
     if content.get("toc"):
         # md 的目录由阅读器生成，写一行标记比伪造一份会过期的目录好
         lines += ["<!-- toc -->", ""]
@@ -126,15 +157,16 @@ def render_md(content: dict, out_path: Path) -> None:
             lines += [""]
         elif kind == "table":
             header = block["header"]
-            lines += ["| " + " | ".join(header) + " |"]
+            lines += ["| " + " | ".join(_md_cell(c) for c in header) + " |"]
             lines += ["| " + " | ".join("---" for _ in header) + " |"]
             for row in block["rows"]:
-                lines += ["| " + " | ".join("" if c is None else str(c) for c in row) + " |"]
+                lines += ["| " + " | ".join(_md_cell(c) for c in row) + " |"]
             if block.get("caption"):
                 lines += ["", f"*{block['caption']}*"]
             lines += [""]
         elif kind == "image":
-            lines += [f"![{block.get('caption', '')}]({block['path']})", ""]
+            target = _md_image_target(block["path"], out_path)
+            lines += [f"![{block.get('caption', '')}]({target})", ""]
         elif kind == "pagebreak":
             # md 没有分页概念。用水平线表达"这里原本是分页"，而不是静默丢掉
             lines += ["---", ""]
@@ -184,8 +216,10 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
         # 中文字体必须写进 rPr 的 eastAsia，否则中文会回落到默认字体（可能是方框）
         run._element.rPr.rFonts.set(qn("w:eastAsia"), fonts["cjk"])
 
-    def add_paragraph(text: str, spec: dict):
-        paragraph = document.add_paragraph()
+    def add_paragraph(text: str, spec: dict, style: str | None = None):
+        # style 只给引用与题注：Word 的「引用」「题注」样式是它们的语义（提取靠它认回来，
+        # Word 的「插入表目录」也靠题注样式）。外观仍由下面的直接格式决定
+        paragraph = document.add_paragraph(style=style)
         if spec.get("align") == "center":
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         fmt = paragraph.paragraph_format
@@ -255,7 +289,7 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
         elif kind == "paragraph":
             add_paragraph(block["text"], styles["body"])
         elif kind == "quote":
-            add_paragraph(block["text"], styles["quote"])
+            add_paragraph(block["text"], styles["quote"], "Quote")
             if block.get("cite"):
                 add_paragraph(f"—— {block['cite']}", styles["caption"])
         elif kind in ("bullets", "ordered"):
@@ -287,7 +321,7 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
                         {**styles["body"], "size_pt": spec["font_pt"]},
                     )
             if block.get("caption"):
-                add_paragraph(block["caption"], styles["caption"])
+                add_paragraph(block["caption"], styles["caption"], "Caption")
         elif kind == "image":
             path = resolve_asset(block["path"], base_dir, hint="先用 charts 技能生成它。")
             document.add_picture(
@@ -295,7 +329,7 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
             )
             document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
             if block.get("caption"):
-                add_paragraph(block["caption"], styles["caption"])
+                add_paragraph(block["caption"], styles["caption"], "Caption")
         elif kind == "pagebreak":
             document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
@@ -332,13 +366,179 @@ def render_docx(content: dict, out_path: Path, base_dir: Path) -> None:
 
 
 TEMPLATE_COMMENT = re.compile(r"^<!--\s*evowork-template:([A-Za-z0-9_-]+)\s*-->\s*$")
+META_COMMENT = re.compile(r"^<!--\s*evowork-meta:(author|date|author\+date)\s*-->\s*$")
 DATE_COMMENT = re.compile(r"^evowork-date:(.+)$")
 MAX_BLOCKS = 400
+#: 表头里没有字的格子（合并后的空位、左上角的空格）。schema 要求表头每列都有字，
+#: 只能占位 —— 占位改变了原文，所以同时记进「收不回」的清单
+HEADER_PLACEHOLDER = "—"
+CAPTION_LIMITS = {"table": 120, "image": 200}
 
 
 def _fail_missing(path: Path) -> None:
     if not path.is_file():
         fail(EXIT_INVALID_CONTENT, f"找不到要提取的文件：{path.name}。")
+
+
+class _Collected:
+    """两种提取共用的块收集：块数上限、标题层级、收不回的内容清单（`_dropped`）。"""
+
+    def __init__(self) -> None:
+        self.blocks: list[dict] = []
+        self.dropped: dict[str, int] = {}
+        self.last_heading = 0
+
+    def bump(self, kind: str, count: int = 1) -> None:
+        if count > 0:
+            self.dropped[kind] = self.dropped.get(kind, 0) + count
+
+    def push(self, block: dict) -> None:
+        if len(self.blocks) >= MAX_BLOCKS:
+            fail(EXIT_INVALID_CONTENT, f"块超过 {MAX_BLOCKS} 个。拆成两份文档再提取。")
+        self.blocks.append(block)
+
+    def heading(self, level: int, text: str) -> None:
+        """标题。超过 4 级的降成正文、跳级的补成逐级 —— 都记下来，而不是让整份提取失败。"""
+        text = " ".join(text.split())
+        if not text:
+            return
+        if level > 4:
+            self.bump("超过 4 级的标题")
+            self.push({"block": "paragraph", "text": text})
+            return
+        if self.last_heading and level > self.last_heading + 1:
+            self.bump("跳级的标题")
+            level = self.last_heading + 1
+        self.push({"block": "heading", "level": level, "text": text})
+        self.last_heading = level
+
+    def table_header(self, cells: list) -> list[str]:
+        header = []
+        for cell in cells:
+            text = "" if cell is None else str(cell).strip()
+            if not text:
+                self.bump("表头空白格")
+                text = HEADER_PLACEHOLDER
+            header.append(text)
+        return header
+
+
+def _write_media(asset_dir: Path, stem: str, suffix: str, blob: bytes) -> str:
+    """把一张图写进 `extracted-media/`，返回相对内容 JSON 的路径。
+
+    **不覆盖、不跟符号链接**（2026-10-22）：之前同名就覆盖，目录是指向别处的链接也照写 ——
+    提取第二份文件会冲掉第一份的图，而一个预先放好的链接能让提取往任意目录写文件。
+    """
+    if asset_dir.is_symlink():
+        fail(
+            EXIT_INVALID_CONTENT,
+            f"{asset_dir.name} 是一个符号链接，提取不往里面写图片。换一个 --out 目录再提取。",
+        )
+    if asset_dir.exists() and not asset_dir.is_dir():
+        fail(EXIT_INVALID_CONTENT, f"{asset_dir.name} 已存在但不是文件夹。换一个 --out 目录再提取。")
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    for attempt in range(1, 1000):
+        name = f"{stem}{suffix}" if attempt == 1 else f"{stem}-{attempt}{suffix}"
+        try:
+            # O_EXCL：名字已被占（文件或链接都算）就换下一个，绝不写进已有的文件
+            handle = os.open(asset_dir / name, flags, 0o644)
+        except FileExistsError:
+            continue
+        with os.fdopen(handle, "wb") as out:
+            out.write(blob)
+        return f"{asset_dir.name}/{name}"
+    fail(EXIT_INVALID_CONTENT, f"{asset_dir.name} 里同名的图片太多。换一个 --out 目录再提取。")
+
+
+# ─────────────────────────── 从 Markdown 提取 ───────────────────────────
+
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+ATX_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
+THEMATIC_BREAK = re.compile(r"^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+BULLET_ITEM = re.compile(r"^([ \t]*)[-*+][ \t]+(.*)$")
+ORDERED_ITEM = re.compile(r"^([ \t]*)\d{1,9}[.)][ \t]+(.*)$")
+IMAGE_LINE = re.compile(r"^!\[([^\]]*)\]\((.*)\)$")
+CAPTION_LINE = re.compile(r"^\*(?!\*)(.+?)(?<!\*)\*$")
+URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
+
+
+def _md_list_item(line: str) -> tuple[int, str, str] | None:
+    """(缩进, bullets / ordered, 正文)。`-` `*` `+` 都是无序列表。"""
+    if THEMATIC_BREAK.match(line):
+        return None
+    for kind, pattern in (("bullets", BULLET_ITEM), ("ordered", ORDERED_ITEM)):
+        match = pattern.match(line)
+        if match:
+            return len(match.group(1).expandtabs(4)), kind, match.group(2).strip()
+    return None
+
+
+def _md_image_ref(inner: str) -> str | None:
+    """`![说明](地址 "标题")` 括号里的地址；认不出来返回 None（那一行按普通段落处理）。"""
+    inner = inner.strip()
+    if inner.startswith("<"):
+        end = inner.find(">")
+        rest = inner[end + 1 :].strip() if end > 0 else "x"
+        if end <= 1 or (rest and not re.fullmatch(r'"[^"]*"|\'[^\']*\'', rest)):
+            return None
+        return inner[1:end]
+    match = re.fullmatch(r'(\S+)(?:\s+(?:"[^"]*"|\'[^\']*\'))?', inner)
+    return match.group(1) if match else None
+
+
+def _md_cells(raw: str) -> list[str]:
+    text = raw.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|") and not text.endswith("\\|"):
+        text = text[:-1]
+    return [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", text)]
+
+
+def _md_separator(raw: str) -> bool:
+    """`| --- | :--- | ---: | :---: |` —— 对齐行不是数据行（2026-10-22 之前带冒号的会被当成数据）。"""
+    cells = _md_cells(raw)
+    return bool(cells) and all(re.fullmatch(r":?-+:?", cell) for cell in cells)
+
+
+def _md_block_start(line: str) -> bool:
+    stripped = line.strip()
+    return bool(
+        FENCE.match(line)
+        or THEMATIC_BREAK.match(line)
+        or ATX_HEADING.match(line)
+        or stripped.startswith(("|", ">", "<"))
+        or IMAGE_LINE.match(stripped)
+        or _md_list_item(line)
+    )
+
+
+def _md_image(ref: str, md_dir: Path, collected: _Collected) -> Path | None:
+    """图片按 **.md 所在目录** 解析，只收这个目录树里真实存在的文件。
+
+    2026-10-22 之前按内容 JSON 的目录解析：JSON 一写进临时目录，每张图都"找不到"，
+    还被报成「先用 charts 生成它」。另一半是安全：下载来的 md 写一句
+    `![](../../.ssh/id_rsa)`，重新渲染成 docx 就会把本机文件嵌进去 —— 所以目录树之外的
+    （含经符号链接绕出去的）一律不收，记进清单。网络图片同样不收（不替用户联网下载）。
+    """
+    if URL_SCHEME.match(ref):
+        collected.bump("网络图片")
+        return None
+    raw = Path(ref)
+    if not os.path.lexists(raw if raw.is_absolute() else md_dir / raw):
+        decoded = Path(unquote(ref))
+        if os.path.lexists(decoded if decoded.is_absolute() else md_dir / decoded):
+            raw = decoded
+    root = Path(os.path.realpath(md_dir))
+    real = Path(os.path.realpath(raw if raw.is_absolute() else md_dir / raw))
+    if real != root and root not in real.parents:
+        collected.bump("目录外的图片")
+        return None
+    if not real.is_file():
+        collected.bump("找不到的图片")
+        return None
+    return real
 
 
 def extract_md(path: Path) -> dict:
@@ -347,6 +547,7 @@ def extract_md(path: Path) -> dict:
     lines = path.read_text(encoding="utf-8").splitlines()
     index = 0
     content: dict = {}
+    collected = _Collected()
 
     def blank() -> None:
         nonlocal index
@@ -365,192 +566,661 @@ def extract_md(path: Path) -> dict:
     content["title"] = lines[index][2:].strip()
     index += 1
     blank()
-    if index < len(lines) and lines[index].startswith("> ") and not lines[index].startswith("> >"):
-        content["subtitle"] = lines[index][2:].strip()
-        index += 1
+    # 副标题与作者 / 日期只认渲染器写的标记行（见 render_md）。没有标记的引用和段落都是正文
+    if index < len(lines) and lines[index].strip() == SUBTITLE_COMMENT:
+        if index + 1 < len(lines) and lines[index + 1].startswith(">"):
+            content["subtitle"] = lines[index + 1][1:].strip()
+            index += 2
+        else:
+            index += 1
         blank()
-    if index < len(lines) and " · " in lines[index] and not lines[index].startswith(("#", ">", "-", "|")):
-        author, date = lines[index].split(" · ", 1)
-        if author.strip():
-            content["author"] = author.strip()
-        if date.strip():
-            content["date"] = date.strip()
-        index += 1
+    meta = META_COMMENT.match(lines[index].strip()) if index < len(lines) else None
+    if meta:
+        fields = meta.group(1).split("+")
+        values = lines[index + 1].strip().rsplit(" · ", 1) if index + 1 < len(lines) else []
+        if len(fields) == 1 and values:
+            values = [" · ".join(values)]
+        if len(values) == len(fields) and all(value.strip() for value in values):
+            content.update({name: value.strip() for name, value in zip(fields, values)})
+            index += 2
+        else:
+            index += 1
         blank()
 
-    blocks: list[dict] = []
-
-    def push(block: dict) -> None:
-        if len(blocks) >= MAX_BLOCKS:
-            fail(EXIT_INVALID_CONTENT, f"块超过 {MAX_BLOCKS} 个。拆成两份文档再提取。")
-        blocks.append(block)
-
+    md_dir = path.parent
     while index < len(lines):
         line = lines[index]
-        if line.strip() == "":
+        stripped = line.strip()
+        if not stripped:
             index += 1
             continue
-        if line.strip() == "<!-- toc -->":
+        if stripped == "<!-- toc -->":
             content["toc"] = True
             index += 1
             continue
-        if line.strip() == "---":
-            push({"block": "pagebreak"})
+        fence = FENCE.match(line)
+        if fence:
+            # 代码块原样留成一段（连同围栏）：写回 md 时还是代码块，里面的 `# 注释` 不会变成标题
+            marker = fence.group(1)
+            closing = re.compile(r"^ {0,3}" + re.escape(marker[0]) + "{%d,}[ \t]*$" % len(marker))
+            code = [line]
+            index += 1
+            while index < len(lines):
+                code.append(lines[index])
+                index += 1
+                if closing.match(code[-1]):
+                    break
+            collected.push({"block": "paragraph", "text": "\n".join(code)})
+            continue
+        if THEMATIC_BREAK.match(line):
+            collected.push({"block": "pagebreak"})
             index += 1
             continue
-        heading = re.match(r"^(#{2,5}) (.+)$", line)
+        heading = ATX_HEADING.match(line)
         if heading:
-            push({"block": "heading", "level": len(heading.group(1)) - 1, "text": heading.group(2).strip()})
             index += 1
+            hashes = len(heading.group(1))
+            if hashes == 1 and (heading.group(2) or "").strip():
+                # 文档标题已经占了 h1。第二个 h1 只能降成一级标题（写回 md 是 ##）
+                collected.bump("多余的一级标题")
+            collected.heading(max(hashes - 1, 1), heading.group(2) or "")
             continue
-        if line.startswith("#"):
-            fail(EXIT_INVALID_CONTENT, "标题层级超过 4。提取只保留 h1 到 h4。")
-        if line.startswith("!["):
-            image = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$", line)
-            if image is None:
-                fail(EXIT_INVALID_CONTENT, "有一张图片的写法不是 ![说明](路径)。")
-            block = {"block": "image", "path": image.group(2).strip()}
-            if image.group(1).strip():
-                block["caption"] = image.group(1).strip()
-            push(block)
+        image = IMAGE_LINE.match(stripped)
+        ref = _md_image_ref(image.group(2)) if image else None
+        if image and ref is not None:
             index += 1
+            real = _md_image(ref, md_dir, collected)
+            if real is not None:
+                # 写绝对路径：内容 JSON 放在哪都能找到图（render_md 写回时再换成相对路径）
+                block = {"block": "image", "path": str(real)}
+                if image.group(1).strip():
+                    block["caption"] = image.group(1).strip()
+                collected.push(block)
             continue
-        if line.startswith("|"):
+        if stripped.startswith("|"):
             table_lines = []
-            while index < len(lines) and lines[index].startswith("|"):
+            while index < len(lines) and lines[index].strip().startswith("|"):
                 table_lines.append(lines[index])
                 index += 1
-            rows = [
-                [cell.strip() for cell in raw.strip().strip("|").split("|")]
-                for raw in table_lines
-                if not re.match(r"^\|\s*-+", raw)
-            ]
+            rows = [_md_cells(raw) for raw in table_lines if not _md_separator(raw)]
             if len(rows) < 2:
                 fail(EXIT_INVALID_CONTENT, "有一张表只有表头、没有数据行。")
-            header, body = rows[0], rows[1:]
-            push({"block": "table", "header": header, "rows": body})
-            if index < len(lines) and lines[index].startswith("*") and lines[index].endswith("*"):
-                caption = lines[index].strip("*").strip()
-                if caption:
-                    blocks[-1]["caption"] = caption
-                index += 1
+            header = collected.table_header(rows[0])
+            body = [row + [""] * (len(header) - len(row)) for row in rows[1:]]
+            block = {"block": "table", "header": header, "rows": body}
+            # 表题：渲染器在表后**空一行**写 `*表题*`（2026-10-22 之前只看紧挨着的那一行）
+            look = index
+            while look < len(lines) and not lines[look].strip():
+                look += 1
+            caption = CAPTION_LINE.match(lines[look].strip()) if look < len(lines) else None
+            alone = look + 1 >= len(lines) or not lines[look + 1].strip()
+            if caption and alone and len(caption.group(1).strip()) <= CAPTION_LIMITS["table"]:
+                block["caption"] = caption.group(1).strip()
+                index = look + 1
+            collected.push(block)
             continue
-        if line.startswith("> "):
-            quote = [line[2:]]
-            index += 1
+        if stripped.startswith(">"):
+            quote: list[str] = []
             cite = None
-            while index < len(lines) and lines[index].startswith(">"):
-                piece = lines[index][1:].lstrip()
+            while index < len(lines) and lines[index].strip().startswith(">"):
+                piece = lines[index].strip()[1:].strip()
                 index += 1
                 if piece.startswith("—— "):
                     cite = piece[3:].strip()
                 elif piece:
                     quote.append(piece)
-            block = {"block": "quote", "text": " ".join(quote).strip()}
-            if cite:
-                block["cite"] = cite
-            push(block)
+            if quote:
+                block = {"block": "quote", "text": " ".join(quote).strip()}
+                if cite:
+                    block["cite"] = cite
+                collected.push(block)
+            elif cite:
+                collected.push({"block": "paragraph", "text": f"—— {cite}"})
             continue
-        if line.startswith("- "):
-            items = []
-            while index < len(lines) and lines[index].startswith("- "):
-                items.append(lines[index][2:].strip())
-                index += 1
-            push({"block": "bullets", "items": items})
+        item = _md_list_item(line)
+        if item:
+            base, kind, first = item
+            items = [first] if first else []
+            index += 1
+            while index < len(lines):
+                current = lines[index]
+                if not current.strip():
+                    # 空行之后还是同一种列表项（或更深的一级）：同一个松散列表
+                    look = index
+                    while look < len(lines) and not lines[look].strip():
+                        look += 1
+                    after = _md_list_item(lines[look]) if look < len(lines) else None
+                    if after and (after[0] >= base + 2 or after[1] == kind):
+                        index = look
+                        continue
+                    break
+                after = _md_list_item(current)
+                if after:
+                    indent, other, text = after
+                    if indent >= base + 2:
+                        # 内容 JSON 的列表只有一层：子项并进来，层级记进清单
+                        collected.bump("嵌套列表层级")
+                    elif other != kind:
+                        break
+                    if text:
+                        items.append(text)
+                    index += 1
+                    continue
+                if current[:1] in (" ", "\t") and items and not FENCE.match(current):
+                    items[-1] = f"{items[-1]} {current.strip()}"
+                    index += 1
+                    continue
+                break
+            if items:
+                collected.push({"block": kind, "items": items})
             continue
-        ordered = re.match(r"^\d+\. (.+)$", line)
-        if ordered:
-            items = []
-            while index < len(lines) and re.match(r"^\d+\. (.+)$", lines[index]):
-                items.append(re.match(r"^\d+\. (.+)$", lines[index]).group(1).strip())
-                index += 1
-            push({"block": "ordered", "items": items})
-            continue
-        paragraph = [line.strip()]
+        paragraph = [stripped]
         index += 1
-        while index < len(lines) and lines[index].strip() and not lines[index].startswith(
-            ("#", ">", "-", "|", "!", "<")
-        ) and not re.match(r"^\d+\. ", lines[index]) and lines[index].strip() != "---":
+        while index < len(lines) and lines[index].strip() and not _md_block_start(lines[index]):
             paragraph.append(lines[index].strip())
             index += 1
-        push({"block": "paragraph", "text": " ".join(paragraph)})
+        collected.push({"block": "paragraph", "text": " ".join(paragraph)})
 
-    if not blocks:
+    if not collected.blocks:
         fail(EXIT_INVALID_CONTENT, "这份 Markdown 除了标题没有正文。")
-    content["blocks"] = blocks
+    content["blocks"] = collected.blocks
+    content["_dropped"] = collected.dropped
     return content
 
 
-def _paragraph_text(paragraph) -> str:  # noqa: ANN001 -- python-docx Paragraph
-    return paragraph.text.strip()
+# ─────────────────────────── 从 docx 提取 ───────────────────────────
+#
+# 直接读 XML，不用 python-docx 的 paragraph.text / row.cells：
+#   · paragraph.text 只收 w:p 下面直接的 w:r 与 w:hyperlink —— 行内内容控件、修订插入的字都不在里面；
+#   · row.cells 把合并单元格在每个被合并的位置各返回一次，同一段字会出现好几遍。
+
+OOXML_NS = {
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    "v": "urn:schemas-microsoft-com:vml",
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
+    "dgm": "http://schemas.openxmlformats.org/drawingml/2006/diagram",
+}
 
 
-def _heading_level(paragraph) -> int | None:  # noqa: ANN001
-    from docx.oxml.ns import qn
-
-    p_pr = paragraph._p.pPr
-    if p_pr is not None:
-        outline = p_pr.find(qn("w:outlineLvl"))
-        if outline is not None and outline.get(qn("w:val")) is not None:
-            return int(outline.get(qn("w:val"))) + 1
-    style = paragraph.style.name if paragraph.style is not None else ""
-    match = re.fullmatch(r"(?:Heading|标题)\s*(\d+)", style)
-    return int(match.group(1)) if match else None
+def _w(name: str) -> str:
+    return "{%s}%s" % (OOXML_NS["w"], name)
 
 
-def _list_kind(paragraph) -> str | None:  # noqa: ANN001
-    style = paragraph.style.name if paragraph.style is not None else ""
-    if style == "List Number":
-        return "ordered"
-    if style == "List Bullet":
-        return "bullets"
+def _ns(prefix: str, name: str) -> str:
+    return "{%s}%s" % (OOXML_NS[prefix], name)
+
+
+_XPATHS: dict = {}
+
+
+def _xpath(element, expr: str) -> list:  # noqa: ANN001 -- lxml element
+    compiled = _XPATHS.get(expr)
+    if compiled is None:
+        from lxml import etree  # 随 python-docx 安装；md 那条路径不需要它
+
+        compiled = _XPATHS[expr] = etree.XPath(expr, namespaces=OOXML_NS)
+    return compiled(element)
+
+
+#: 读正文时不进去的子树：属性、删除的修订、文本框（单独报）、图形与公式（单独报）、
+#: mc:Fallback（与 Choice 是同一份内容的两种写法）、注音（w:rt 会和正文叠在一起）
+_TEXT_SKIP = {
+    _w("pPr"),
+    _w("rPr"),
+    _w("sdtPr"),
+    _w("del"),
+    _w("moveFrom"),
+    _w("txbxContent"),
+    _w("drawing"),
+    _w("pict"),
+    _w("object"),
+    _w("rt"),
+    _ns("mc", "Fallback"),
+    _ns("m", "oMath"),
+    _ns("m", "oMathPara"),
+}
+
+#: 只列图片 python-docx 写得回去的格式；EMF / WMF 收回来也渲染不了
+DOCX_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}
+
+TOC_LABELS = {"目录", "目 录", "contents", "table of contents"}
+
+
+def _shows_placeholder(sdt) -> bool:  # noqa: ANN001
+    """内容控件里显示的是「单击此处输入文字」一类的提示，不是正文。"""
+    properties = sdt.find(_w("sdtPr"))
+    return properties is not None and properties.find(_w("showingPlcHdr")) is not None
+
+
+def _docx_text(element) -> str:  # noqa: ANN001
+    parts: list[str] = []
+
+    def walk(node) -> None:  # noqa: ANN001
+        for child in node:
+            tag = child.tag
+            if not isinstance(tag, str) or tag in _TEXT_SKIP:
+                continue
+            if tag == _w("sdt") and _shows_placeholder(child):
+                continue
+            if tag == _w("t"):
+                parts.append(child.text or "")
+            elif tag == _w("tab"):
+                parts.append("\t")
+            elif tag in (_w("br"), _w("cr")):
+                if child.get(_w("type")) not in ("page", "column"):
+                    parts.append("\n")
+            elif tag == _w("noBreakHyphen"):
+                parts.append("-")
+            else:
+                walk(child)
+
+    walk(element)
+    return "".join(parts)
+
+
+def _docx_children(container, tags: tuple[str, ...]) -> list:  # noqa: ANN001
+    """直接子元素，**穿过内容控件与自定义 XML 的包装**。"""
+    found = []
+    for child in container:
+        if child.tag in tags:
+            found.append(child)
+        elif child.tag == _w("sdt"):
+            inner = child.find(_w("sdtContent"))
+            if inner is not None and not _shows_placeholder(child):
+                found.extend(_docx_children(inner, tags))
+        elif child.tag == _w("customXml"):
+            found.extend(_docx_children(child, tags))
+    return found
+
+
+def _docx_items(container, collected: _Collected, items: list) -> None:  # noqa: ANN001
+    """正文的块级元素，按文档顺序。2026-10-22 之前只走 w:p 与 w:tbl，内容控件（w:sdt）里的正文整段丢了。"""
+    for child in container:
+        tag = child.tag
+        if tag == _w("p"):
+            items.append(("p", child))
+        elif tag == _w("tbl"):
+            items.append(("tbl", child))
+        elif tag == _w("sdt"):
+            gallery = _xpath(child, "./w:sdtPr/w:docPartObj/w:docPartGallery/@w:val")
+            if gallery and gallery[0] == "Table of Contents":
+                items.append(("toc", child))
+            elif not _shows_placeholder(child):
+                inner = child.find(_w("sdtContent"))
+                if inner is not None:
+                    _docx_items(inner, collected, items)
+        elif tag == _w("customXml"):
+            _docx_items(child, collected, items)
+        elif tag == _w("altChunk"):
+            collected.bump("嵌入的外部文档")
+
+
+class _DocxStyles:
+    """段落样式链（自身 → basedOn → …）。样式名一律小写比较：Word 内置样式在 XML 里是 `heading 1`、`caption`。"""
+
+    def __init__(self, document) -> None:  # noqa: ANN001
+        self.by_id: dict = {}
+        self.default = None
+        for style in document.styles.element.findall(_w("style")):
+            if style.get(_w("styleId")):
+                self.by_id[style.get(_w("styleId"))] = style
+            if style.get(_w("type")) == "paragraph" and style.get(_w("default")) in ("1", "true", "on"):
+                self.default = style
+
+    def chain(self, p) -> tuple[list, list[str]]:  # noqa: ANN001
+        properties = p.find(_w("pPr"))
+        ref = properties.find(_w("pStyle")) if properties is not None else None
+        style_id = ref.get(_w("val")) if ref is not None else None
+        style = self.by_id.get(style_id) if style_id else None
+        if style is None:
+            style = self.default
+        chain: list = []
+        while style is not None and style not in chain and len(chain) < 16:
+            chain.append(style)
+            based = style.find(_w("basedOn"))
+            style = self.by_id.get(based.get(_w("val"))) if based is not None else None
+        names = []
+        for item in chain:
+            name = item.find(_w("name"))
+            names.append((name.get(_w("val")) or "").strip().lower() if name is not None else "")
+        if style_id and style_id not in self.by_id:
+            # 引用了没定义的样式：别的工具常这么写（只写 pStyle="Heading1"），Word 按名字认
+            names.insert(0, style_id.lower())
+        return chain, names
+
+
+def _style_role(names: list[str]) -> tuple[str, int] | None:
+    """最近的一个认得出的样式决定角色。"""
+    for name in names:
+        heading = re.fullmatch(r"(?:heading|标题)\s*(\d)", name)
+        if heading:
+            return "heading", int(heading.group(1))
+        if re.fullmatch(r"(?:toc|目录)\s*\d", name):
+            return "toc", 0
+        if name in ("toc heading", "tocheading", "目录标题"):
+            return "toc-heading", 0
+        if name in ("title", "标题"):
+            return "title", 0
+        if name in ("subtitle", "副标题"):
+            return "subtitle", 0
+        if name in ("quote", "intense quote", "intensequote", "引用", "明显引用"):
+            return "quote", 0
+        if name in ("caption", "题注"):
+            return "caption", 0
+        if name.startswith("list bullet"):
+            return "list", 1
+        if name.startswith("list number"):
+            return "list", 2
     return None
 
 
-def _is_page_break(paragraph) -> bool:  # noqa: ANN001
-    xml = paragraph._p.xml
-    return 'w:type="page"' in xml or "w:type='page'" in xml
+def _docx_property(p, chain: list, path: str) -> list:  # noqa: ANN001
+    """段落自身优先，其次样式链上最近的定义（Word 的继承顺序）。"""
+    for holder in [p, *chain]:
+        found = _xpath(holder, path)
+        if found:
+            return found
+    return []
 
 
-def _is_toc_field(paragraph) -> bool:  # noqa: ANN001
-    xml = paragraph._p.xml
-    return "instrText" in xml and "TOC" in xml
+def _heading_level(p, chain: list, role: tuple[str, int] | None) -> int | None:  # noqa: ANN001
+    """大纲级别 0–8 是 1–9 级标题，**9 是正文**（WPS 给正文段落普遍写 outlineLvl=9）。
+
+    2026-10-22 之前 9 被读成第 10 级标题，整份提取以「标题层级超过 4」失败。
+    """
+    found = _docx_property(p, chain, "./w:pPr/w:outlineLvl/@w:val")
+    if found and str(found[0]).isdigit():
+        value = int(found[0])
+        return value + 1 if value < 9 else None
+    if role and role[0] == "heading":
+        return role[1]
+    return None
 
 
-def _image_blocks(paragraph, asset_dir: Path, counter: list[int]) -> list[dict]:  # noqa: ANN001
+class _DocxNumbering:
+    """编号定义：段落的 numId + ilvl → 那一级的 numFmt（bullet / decimal / chineseCounting …）。"""
+
+    def __init__(self, document, styles: _DocxStyles) -> None:  # noqa: ANN001
+        self.nums: dict = {}
+        self.abstract: dict = {}
+        self.styles = styles
+        try:
+            root = document.part.numbering_part.element
+        except Exception:  # noqa: BLE001 -- 没有编号部件的文档
+            return
+        for item in root.findall(_w("abstractNum")):
+            self.abstract[item.get(_w("abstractNumId"))] = item
+        for item in root.findall(_w("num")):
+            self.nums[item.get(_w("numId"))] = item
+
+    def format(self, num_id: str, level: int, depth: int = 0) -> str | None:
+        num = self.nums.get(num_id)
+        if num is None or depth > 4:
+            return None
+        for override in num.findall(_w("lvlOverride")):
+            if override.get(_w("ilvl")) == str(level):
+                found = _xpath(override, "./w:lvl/w:numFmt/@w:val")
+                if found:
+                    return str(found[0])
+        abstract = _xpath(num, "./w:abstractNumId/@w:val")
+        definition = self.abstract.get(abstract[0]) if abstract else None
+        if definition is None:
+            return None
+        # Word 的「多级列表」常把级别定义放在列表样式里：abstractNum 只留一个 numStyleLink
+        link = _xpath(definition, "./w:numStyleLink/@w:val")
+        linked = self.styles.by_id.get(str(link[0])) if link else None
+        if linked is not None:
+            target = _xpath(linked, "./w:pPr/w:numPr/w:numId/@w:val")
+            return self.format(str(target[0]), level, depth + 1) if target else None
+        for lvl in definition.findall(_w("lvl")):
+            if lvl.get(_w("ilvl")) == str(level):
+                found = _xpath(lvl, "./w:numFmt/@w:val")
+                return str(found[0]) if found else "decimal"
+        return None
+
+
+def _list_info(p, chain: list, role, numbering: _DocxNumbering) -> tuple[str | None, int]:  # noqa: ANN001
+    """(bullets / ordered / None, 层级)。
+
+    工具栏做的列表是「列表段落」样式 + 段落上的 w:numPr，样式名里看不出有序无序，
+    要按编号定义的 numFmt 判（2026-10-22 之前只认 List Bullet / List Number 两个样式名）。
+    """
+    num_ids = _docx_property(p, chain, "./w:pPr/w:numPr/w:numId/@w:val")
+    levels = _docx_property(p, chain, "./w:pPr/w:numPr/w:ilvl/@w:val")
+    level = int(levels[0]) if levels and str(levels[0]).isdigit() else 0
+    num_id = str(num_ids[0]) if num_ids else None
+    if num_id and num_id != "0":
+        fmt = numbering.format(num_id, level)
+        if fmt == "none":
+            return None, level
+        if fmt == "bullet":
+            return "bullets", level
+        if fmt is not None:
+            return "ordered", level
+    if role and role[0] == "list":
+        return ("bullets" if role[1] == 1 else "ordered"), level
+    if num_id and num_id != "0":
+        return "bullets", level  # 有编号但定义缺失：至少还是一个列表
+    return None, level
+
+
+def _field_kind(instruction: str) -> str | None:
+    """TOC 域是目录；带 \\c / \\a 开关的 TOC 是图表目录（内容 JSON 没有这个）。"""
+    code = instruction.strip()
+    if not re.match(r"TOC\b", code, flags=re.IGNORECASE):
+        return None
+    return "tof" if re.search(r"\\[ca]\b", code) else "toc"
+
+
+def _scan_fields(p, stack: list[list[str]], collected: _Collected) -> str | None:  # noqa: ANN001
+    """这一段是否（部分）落在目录域里。域可以跨好几段：Word 的目录从第一条开始、到最后一条结束。"""
+
+    def active() -> str | None:
+        for entry in stack:
+            kind = _field_kind(entry[0])
+            if kind:
+                return kind
+        return None
+
+    hit = active()
+    outside = "[not(ancestor::w:txbxContent)][not(ancestor::mc:Fallback)]"
+    for node in _xpath(p, f".//w:fldChar{outside} | .//w:instrText{outside} | .//w:fldSimple{outside}"):
+        if node.tag == _w("fldChar"):
+            kind = node.get(_w("fldCharType"))
+            if kind == "begin":
+                stack.append([""])
+            elif kind == "end" and stack:
+                if _field_kind(stack.pop()[0]) == "tof":
+                    collected.bump("图表目录")
+        elif node.tag == _w("instrText"):
+            if stack:
+                stack[-1][0] += node.text or ""
+        else:
+            kind = _field_kind(node.get(_w("instr"), ""))
+            if kind == "tof":
+                collected.bump("图表目录")
+            hit = hit or kind
+        hit = hit or active()
+    return hit
+
+
+def _starts_toc(item: tuple, styles: _DocxStyles) -> bool:
+    kind, element = item
+    if kind == "toc":
+        return True
+    if kind != "p":
+        return False
+    instruction = "".join(node.text or "" for node in _xpath(element, ".//w:instrText"))
+    simple = _xpath(element, ".//w:fldSimple/@w:instr")
+    if _field_kind(instruction) == "toc" or any(_field_kind(str(value)) == "toc" for value in simple):
+        return True
+    role = _style_role(styles.chain(element)[1])
+    return bool(role and role[0] == "toc")
+
+
+def _count_docx_extras(body, collected: _Collected) -> None:  # noqa: ANN001
+    """正文里收不回来、又不在段落文字里的东西：逐类数出来（`_dropped`）。"""
+    outside = "[not(ancestor::mc:Fallback)]"
+    for kind, expr in (
+        ("文本框", f".//w:txbxContent{outside}[not(ancestor::w:txbxContent)]"),
+        ("原生图表", f".//c:chart{outside}"),
+        ("SmartArt 图形", f".//dgm:relIds{outside}"),
+        ("嵌入对象", f".//w:object{outside}"),
+        ("公式", f".//m:oMath{outside}[not(ancestor::m:oMath)]"),
+        ("脚注", ".//w:footnoteReference"),
+        ("尾注", ".//w:endnoteReference"),
+        ("修订记录", ".//w:ins | .//w:del | .//w:moveFrom | .//w:moveTo"),
+        ("超链接", ".//w:hyperlink[@r:id]"),
+    ):
+        collected.bump(kind, len(_xpath(body, expr)))
+    collected.bump("批注", len(set(_xpath(body, ".//w:commentReference/@w:id"))))
+    hyperlink_fields = [
+        node
+        for node in _xpath(body, ".//w:instrText | .//w:fldSimple/@w:instr")
+        # `HYPERLINK \l` 是文内跳转，不是外部地址
+        if re.match(r"\s*HYPERLINK\s+(?!\\l)", str(getattr(node, "text", node) or ""))
+    ]
+    collected.bump("超链接", len(hyperlink_fields))
+
+
+def _text_outside_fields(root) -> str:  # noqa: ANN001
+    """页眉页脚里域以外的字：页码域的结果（"1"）不算内容，模板会重新生成页码。"""
+    depth = 0
+    parts: list[str] = []
+    expr = ".//w:fldChar | .//w:t[not(ancestor::w:fldSimple)][not(ancestor::w:del)][not(ancestor::mc:Fallback)]"
+    for node in _xpath(root, expr):
+        if node.tag == _w("fldChar"):
+            kind = node.get(_w("fldCharType"))
+            if kind == "begin":
+                depth += 1
+            elif kind == "end":
+                depth = max(0, depth - 1)
+        elif depth == 0:
+            parts.append(node.text or "")
+    return "".join(parts)
+
+
+def _count_header_footer(document, expected_header: str | None) -> int:  # noqa: ANN001
+    """有内容的页眉页脚部件数。模板自己会写的（我们的页眉标题、页码域）不算。"""
+    seen: list = []
+    count = 0
+    body = document.element.body
+    for ref in _xpath(body, ".//w:sectPr/w:headerReference | .//w:sectPr/w:footerReference"):
+        part = document.part.related_parts.get(ref.get(_ns("r", "id")))
+        if part is None or part in seen:
+            continue
+        seen.append(part)
+        root = part.element
+        text = _text_outside_fields(root).strip()
+        if ref.tag == _w("headerReference") and expected_header is not None and text == expected_header:
+            text = ""
+        if text or _xpath(root, ".//w:drawing | .//w:pict | .//w:object"):
+            count += 1
+    return count
+
+
+def _expected_header(template: str | None, title: str) -> str | None:
+    if not template or not (SKILL_ROOT / "templates" / template / "template.json").is_file():
+        return None
+    text = load_template(SKILL_ROOT, template).get("header_footer", {}).get("header_text") or ""
+    return text.replace("{title}", title).strip() or None
+
+
+def _paragraph_images(  # noqa: ANN001
+    p, part, asset_dir: Path, collected: _Collected, counter: list[int]
+) -> list[dict]:
     blocks: list[dict] = []
-    embeds = paragraph._p.xpath('.//*[local-name()="blip"]/@*[local-name()="embed"]')
-    for embed in embeds:
-        part = paragraph.part.related_parts.get(embed)
-        if part is None:
+    outside = "[not(ancestor::mc:Fallback)][not(ancestor::w:txbxContent)]"
+    for node in _xpath(p, f".//a:blip{outside} | .//v:imagedata{outside}[not(ancestor::w:object)]"):
+        rel = node.get(_ns("r", "embed")) or node.get(_ns("r", "id"))
+        target = part.related_parts.get(rel) if rel else None
+        suffix = Path(str(target.partname)).suffix.lower() if target is not None else ""
+        if target is None or suffix not in DOCX_IMAGE_SUFFIXES:
+            # 链接的图片（不在文件里）或 EMF / WMF：取不出来、也插不回去
+            collected.bump("取不出来的图片")
             continue
         counter[0] += 1
-        suffix = Path(str(part.partname)).suffix or ".bin"
-        if suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".emf", ".wmf"}:
-            suffix = ".bin"
-        asset_dir.mkdir(parents=True, exist_ok=True)
-        name = f"image-{counter[0]}{suffix}"
-        (asset_dir / name).write_bytes(part.blob)
-        blocks.append({"block": "image", "path": f"{asset_dir.name}/{name}"})
+        name = _write_media(asset_dir, f"image-{counter[0]}", suffix, target.blob)
+        blocks.append({"block": "image", "path": name})
     return blocks
 
 
+def _docx_table(tbl, collected: _Collected) -> list[list[str | None]]:  # noqa: ANN001
+    """按网格读表。合并单元格的字**只出现一次**（在左上角那格），被合并的位置留空。
+
+    2026-10-22 之前用 python-docx 的 row.cells：横向合并的格子在它跨过的每一列各返回一次，
+    纵向合并的在每一行各返回一次 —— 「华东」出现三遍，重新渲染就是三个华东。
+    """
+    rows: list[list[str | None]] = []
+    for tr in _docx_children(tbl, (_w("tr"),)):
+        row: list[str | None] = []
+        before = _xpath(tr, "./w:trPr/w:gridBefore/@w:val")
+        row.extend([None] * (int(before[0]) if before and str(before[0]).isdigit() else 0))
+        for tc in _docx_children(tr, (_w("tc"),)):
+            spans = _xpath(tc, "./w:tcPr/w:gridSpan/@w:val")
+            span = max(1, int(spans[0]) if spans and str(spans[0]).isdigit() else 1)
+            continued = False
+            started = False
+            for merge in _xpath(tc, "./w:tcPr/w:vMerge | ./w:tcPr/w:hMerge"):
+                if merge.get(_w("val")) == "restart":
+                    started = True
+                else:
+                    continued = True
+            if started or (span > 1 and not continued):
+                collected.bump("合并单元格")
+            collected.bump("嵌套表格", len(_docx_children(tc, (_w("tbl"),))))
+            collected.bump("表格里的图片", len(_xpath(tc, ".//a:blip[not(ancestor::mc:Fallback)]")))
+            paragraphs = _docx_children(tc, (_w("p"),))
+            text = "\n".join(_docx_text(p) for p in paragraphs).strip()
+            row.append(None if continued or not text else text)
+            row.extend([None] * (span - 1))
+        rows.append(row)
+    return [row for row in rows if any(cell for cell in row)]
+
+
 def extract_docx(path: Path, asset_dir: Path) -> dict:
-    """读 docx 的大纲、列表和表格。封面与目录自带的分页不进入正文。"""
+    """读 docx 的大纲、列表、表格、引用与题注。封面与目录自带的分页不进入正文。
+
+    收不回来的（页眉页脚、文本框、脚注、批注、修订、原生图表……）逐类记进 `_dropped`，
+    由 main() 交给 lossy_extraction 决定停下还是继续 —— 不静默丢。
+    """
     _fail_missing(path)
     try:
         import docx
-        from docx.oxml.ns import qn
     except ModuleNotFoundError:
         fail(EXIT_RUNTIME_MISSING, runtime_missing_message("office", "读取 docx"))
 
     document = docx.Document(str(path))
+    body = document.element.body
+    styles = _DocxStyles(document)
+    numbering = _DocxNumbering(document, styles)
+    collected = _Collected()
     content: dict = {}
     template = read_template_stamp(document.core_properties.category)
     if template:
         content["template"] = template
-    title = (document.core_properties.title or "").strip() or path.stem
-    content["title"] = title
+
+    items: list = []
+    _docx_items(body, collected, items)
+
+    # 标题：「标题」样式的那一段优先 —— 那是读者看到的标题；核心属性常是模板留下的旧值。
+    # 都没有才用文件名（2026-10-22 之前直接用文件名，标题段落还被当成了正文）
+    core_title = (document.core_properties.title or "").strip()
+    title_element = None
+    for kind, element in items:
+        if kind == "p" and _docx_text(element).strip():
+            role = _style_role(styles.chain(element)[1])
+            if role and role[0] == "title":
+                title_element = element
+                break
+    if title_element is not None:
+        content["title"] = " ".join(_docx_text(title_element).split())
+    else:
+        content["title"] = core_title or path.stem
     subject = (document.core_properties.subject or "").strip()
     if subject:
         content["subtitle"] = subject
@@ -560,96 +1230,164 @@ def extract_docx(path: Path, asset_dir: Path) -> dict:
     date_match = DATE_COMMENT.match((document.core_properties.comments or "").strip())
     if date_match and date_match.group(1).strip():
         content["date"] = date_match.group(1).strip()
-
     meta = " · ".join(x for x in (content.get("author"), content.get("date")) if x)
-    blocks: list[dict] = []
-    counter = [0]
-    started = False
-    skipped_title = False
-    skipped_subject = False
-    skipped_meta = False
 
-    def push(block: dict) -> None:
-        nonlocal started
-        if len(blocks) >= MAX_BLOCKS:
-            fail(EXIT_INVALID_CONTENT, f"块超过 {MAX_BLOCKS} 个。拆成两份文档再提取。")
-        blocks.append(block)
-        started = True
-
-    def flush_list(kind: str | None, items: list[str]) -> None:
-        if kind and items:
-            push({"block": kind, "items": items})
+    _count_docx_extras(body, collected)
+    collected.bump(
+        "页眉页脚", _count_header_footer(document, _expected_header(template, core_title))
+    )
 
     list_kind: str | None = None
     list_items: list[str] = []
+    pending_caption: str | None = None
+    fields: list[list[str]] = []
+    consumed: set[str] = set()
+    image_counter = [0]
 
-    body = document.element.body
-    paragraph_at = 0
-    table_at = 0
-    for child in body:
-        if child.tag == qn("w:p"):
-            paragraph = document.paragraphs[paragraph_at]
-            paragraph_at += 1
-            text = _paragraph_text(paragraph)
-            images = _image_blocks(paragraph, asset_dir, counter)
-            if _is_toc_field(paragraph) or text in {TOC_HINT, "目录"}:
-                continue
-            if not skipped_title and text == title:
-                skipped_title = True
-                continue
-            if subject and not skipped_subject and text == subject:
-                skipped_subject = True
-                continue
-            if meta and not skipped_meta and text == meta:
-                skipped_meta = True
-                continue
-            if _is_page_break(paragraph) and not text:
-                if started:
-                    flush_list(list_kind, list_items)
-                    list_kind, list_items = None, []
-                    push({"block": "pagebreak"})
-                continue
-            level = _heading_level(paragraph)
-            kind = _list_kind(paragraph)
-            if level or kind or text or images:
-                if kind != list_kind:
-                    flush_list(list_kind, list_items)
-                    list_kind, list_items = kind, []
-            if level:
-                if not 1 <= level <= 4:
-                    fail(EXIT_INVALID_CONTENT, "标题层级超过 4。提取只保留 h1 到 h4。")
-                if text:
-                    push({"block": "heading", "level": level, "text": text})
-            elif kind and text:
-                list_items.append(text)
-            elif text:
-                push({"block": "paragraph", "text": text})
-            for image in images:
-                push(image)
-        elif child.tag == qn("w:tbl"):
-            table = document.tables[table_at]
-            table_at += 1
-            flush_list(list_kind, list_items)
-            list_kind, list_items = None, []
-            grid = [[cell.text.strip() for cell in row.cells] for row in table.rows]
-            grid = [row for row in grid if any(row)]
-            if len(grid) < 2:
+    def settle_caption() -> None:
+        """没等到表或图的题注只能降成正文 —— 内容 JSON 没有独立的题注块，所以记进清单。"""
+        nonlocal pending_caption
+        if pending_caption is not None:
+            collected.bump("题注")
+            collected.push({"block": "paragraph", "text": pending_caption})
+            pending_caption = None
+
+    def put(block: dict) -> None:
+        """落一个块。前面有一句还没着落的题注时，表或图就收下它；别的块来了，它只能降成正文。"""
+        nonlocal pending_caption
+        limit = CAPTION_LIMITS.get(block["block"])
+        if pending_caption is not None and limit and len(pending_caption) <= limit:
+            block["caption"] = pending_caption
+            pending_caption = None
+        settle_caption()
+        collected.push(block)
+
+    def flush_list() -> None:
+        nonlocal list_kind, list_items
+        if list_kind and list_items:
+            put({"block": list_kind, "items": list_items})
+        list_kind, list_items = None, []
+
+    for position, (kind, element) in enumerate(items):
+        if kind == "toc":
+            content["toc"] = True
+            continue
+        if kind == "tbl":
+            flush_list()
+            rows = _docx_table(element, collected)
+            if len(rows) < 2:
                 fail(EXIT_INVALID_CONTENT, "有一张表只有表头、没有数据行。")
-            width = len(grid[0])
+            width = max(len(row) for row in rows)
             if width > 10:
                 fail(EXIT_INVALID_CONTENT, "有一张表超过 10 列，文档技能的表装不下。")
-            rows = []
-            for row in grid[1:]:
-                if len(row) != width:
-                    fail(EXIT_INVALID_CONTENT, "有一张表的某一行和表头列数不同。")
-                rows.append([cell or None for cell in row])
-            if len(rows) > 200:
+            if len(rows) > 201:
                 fail(EXIT_INVALID_CONTENT, "有一张表超过 200 行。拆开再提取。")
-            push({"block": "table", "header": grid[0], "rows": rows})
-    flush_list(list_kind, list_items)
-    if not blocks:
+            rows = [row + [None] * (width - len(row)) for row in rows]
+            put({"block": "table", "header": collected.table_header(rows[0]), "rows": rows[1:]})
+            continue
+
+        p = element
+        chain, names = styles.chain(p)
+        role = _style_role(names)
+        in_field = _scan_fields(p, fields, collected)
+        if in_field == "toc" or (role and role[0] in ("toc", "toc-heading")):
+            if in_field == "toc" or role[0] == "toc":
+                content["toc"] = True
+            continue
+        if in_field == "tof":
+            continue
+        text = _docx_text(p).strip()
+        if text == TOC_HINT:
+            continue
+        if text.lower() in TOC_LABELS and any(
+            _starts_toc(item, styles) for item in items[position + 1 : position + 3]
+        ):
+            continue
+        images = _paragraph_images(p, document.part, asset_dir, collected, image_counter)
+        # 标题上方的徽标不算正文开始：封面那几行仍要认出来
+        started = bool(list_items) or any(block["block"] != "image" for block in collected.blocks)
+        if p is title_element:
+            text = ""
+        elif not started and text:
+            # 封面：标题、副标题、作者 · 日期各认一次，只在正文开始之前认
+            if title_element is None and "title" not in consumed and text == content["title"]:
+                consumed.add("title")
+                text = ""
+            elif role and role[0] == "subtitle" and "subtitle" not in content:
+                content["subtitle"] = " ".join(text.split())
+                consumed.add("subtitle")
+                text = ""
+            elif "subtitle" not in consumed and text == content.get("subtitle"):
+                consumed.add("subtitle")
+                text = ""
+            elif meta and "meta" not in consumed and text == meta:
+                consumed.add("meta")
+                text = ""
+        if not text and not images:
+            if _xpath(p, './/w:br[@w:type="page"]') and started:
+                flush_list()
+                put({"block": "pagebreak"})
+            continue
+
+        level = _heading_level(p, chain, role) if text else None
+        list_here, depth = _list_info(p, chain, role, numbering) if text and not level else (None, 0)
+        previous = collected.blocks[-1] if collected.blocks else None
+        if level:
+            flush_list()
+            settle_caption()
+            if _list_info(p, chain, None, numbering)[0]:
+                # 标题的自动编号（「第一章」「1.2」）不在文字里，重新渲染就没了
+                collected.bump("标题自动编号")
+            collected.heading(level, text)
+        elif (
+            text.startswith("——")
+            and not list_items
+            and pending_caption is None
+            and previous is not None
+            and previous["block"] == "quote"
+            and "cite" not in previous
+            and len(text.lstrip("—").strip()) <= 120
+        ):
+            previous["cite"] = text.lstrip("—").strip()  # 渲染器把出处写成引用下面的「—— 出处」
+        elif role and role[0] == "quote":
+            flush_list()
+            put({"block": "quote", "text": text})
+        elif role and role[0] == "caption":
+            flush_list()
+            previous = collected.blocks[-1] if collected.blocks else None
+            limit = CAPTION_LIMITS.get(previous["block"]) if previous else None
+            if pending_caption is None and limit and "caption" not in previous and len(text) <= limit:
+                previous["caption"] = text  # 题注在表 / 图下面
+            else:
+                settle_caption()
+                pending_caption = text  # 题注在表 / 图上面：等下一个块
+        elif list_here:
+            if depth > 0:
+                # 内容 JSON 的列表只有一层：子项并进当前列表，层级记进清单
+                collected.bump("嵌套列表层级")
+            if list_kind is None or (depth == 0 and list_here != list_kind):
+                flush_list()
+                list_kind = list_here
+            list_items.append(text)
+        elif text:
+            flush_list()
+            put({"block": "paragraph", "text": text})
+        for image in images:
+            flush_list()
+            put(image)
+
+    flush_list()
+    settle_caption()
+    if any(_field_kind(entry[0]) == "toc" for entry in fields):
+        # 目录域没有结束标记：它之后的每一段都被当成了目录条目。宁可停下，也不静默丢正文
+        fail(
+            EXIT_INVALID_CONTENT,
+            "目录域没有结束标记（文件可能损坏），分不清目录之后的正文。在 Word 里另存一次再提取。",
+        )
+    if not collected.blocks:
         fail(EXIT_INVALID_CONTENT, "这份文档除了标题没有可提取的正文。")
-    content["blocks"] = blocks
+    content["blocks"] = collected.blocks
+    content["_dropped"] = collected.dropped
     return content
 
 
