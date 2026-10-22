@@ -18,8 +18,8 @@ instructions_file = "modes/craft-office.md"
 budget_limit      = 400000
 
 # 影响可用能力
-skills              = ["documents", "spreadsheets", "presentations", "charts"]
-connectors          = []                       # Q9：本期只有 browser，办公场景默认不开
+skills              = ["documents", "spreadsheets", "presentations", "charts", "minutes", "weekly-report", "email-draft", "data-analysis", "diagrams", "scan-to-ledger", "batch-files"]
+connectors          = ["browser"]              # Q9：本期只有 browser。写进场景说明，信任仍由用户显式完成
 experts_recommended = ["report-writer", "data-analyst", "finance-analyst"]
 
 # 影响首页（截图 1 的 5 个 chips）。点击只写入 Composer，**不自动发送**（03 §3.2）
@@ -42,7 +42,7 @@ prompt = "分析这份数据并给出可视化："
 [[chips]]
 label  = "个人工作台"
 icon   = "layout"
-prompt = "帮我整理今天的工作安排："
+prompt = "整理今天的待办，或根据材料写会议纪要："
 
 [[chips]]
 label  = "幻灯片"

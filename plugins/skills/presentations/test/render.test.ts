@@ -15,7 +15,7 @@
  * 而不是假装通过。假装通过的测试比没有测试更糟：它会让人以为这条路已经验证过了。
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -378,5 +378,56 @@ describe('模板（排版由模板决定，不由模型决定）', () => {
       // 条目多时缩字号的梯度：让它落在模板里，而不是渲染代码里
       expect(spec.metrics.bullet_shrink_steps).toBeDefined();
     }
+  });
+});
+
+describe('改已有文件：提取成内容 JSON', () => {
+  it.runIf(hasOfficeRuntime)('pptx 按版式收回，图表文件写到 extracted-media', () => {
+    writeFileSync(
+      join(dir, 'chart.png'),
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    );
+    const content = {
+      template: 'minimal',
+      title: '周会',
+      slides: [
+        { layout: 'title', title: '周会', subtitle: '周一' },
+        { layout: 'bullets', title: '要点', bullets: ['一件事'], notes: '口头补充' },
+        { layout: 'chart', title: '趋势', chart_ref: 'chart.png', caption: '来源：表1' },
+        { layout: 'section', title: '结束' },
+      ],
+    };
+    const rendered = runRender([
+      '--content',
+      writeContent(content),
+      '--out',
+      join(dir, 'deck.pptx'),
+    ]);
+    expect(rendered.status, rendered.stderr).toBe(0);
+    const extracted = runRender([
+      '--extract',
+      join(dir, 'deck.pptx'),
+      '--out',
+      join(dir, 'deck.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(0);
+    const back = JSON.parse(readFileSync(join(dir, 'deck.json'), 'utf8')) as {
+      template: string;
+      slides: { layout: string; notes?: string; chart_ref?: string; caption?: string }[];
+    };
+    expect(back.template).toBe('minimal');
+    expect(back.slides.map((slide) => slide.layout)).toEqual([
+      'title',
+      'bullets',
+      'chart',
+      'section',
+    ]);
+    expect(back.slides[1]?.notes).toBe('口头补充');
+    expect(back.slides[2]?.chart_ref).toBe('extracted-media/slide-3.png');
+    expect(back.slides[2]?.caption).toBe('来源：表1');
+    expect(readFileSync(join(dir, 'extracted-media/slide-3.png')).length).toBeGreaterThan(8);
   });
 });

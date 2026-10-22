@@ -14,9 +14,9 @@
  *
  * ## 四个技能共用一份
  *
- * `documents` / `spreadsheets` / `presentations` / `charts` 的上报参数与传输方式完全一样，
- * 各留一份的结果是四份慢慢分叉。所以实现在这里，各技能的
- * `container_tools/mark_artifact.mjs` 只是 `runMarkArtifact('<技能名>')` 一行。
+ * 各技能的上报参数与传输方式完全一样，各留一份的结果是慢慢分叉。
+ * 所以实现在这里，各技能的 `container_tools/mark_artifact.mjs` 只是
+ * `runMarkArtifact('<技能名>')` 一行。
  *
  * 技能名由薄壳传进来而**不是**命令行参数：SKILL.md 里的调用没有 `--skill`，
  * 把它改成必填等于改四份文档，而技能名本来就是"哪个文件在跑"这件事已知的。

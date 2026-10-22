@@ -30,14 +30,21 @@ const SKILLS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../p
  * `_shared` 不是技能，是四个办公技能共用的运行时（`evowork_skill.py` / `mark_artifact.mjs`）。
  */
 const EXPECTED = [
+  'batch-files',
   'charts',
   'computer-use',
+  'data-analysis',
+  'diagrams',
   'documents',
+  'email-draft',
   'image-generation',
+  'minutes',
   'presentations',
+  'scan-to-ledger',
   'skill-creator',
   'spreadsheets',
   'ui-design',
+  'weekly-report',
 ] as const;
 
 const dirs = readdirSync(SKILLS_ROOT, { withFileTypes: true })

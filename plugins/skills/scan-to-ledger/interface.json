@@ -1,0 +1,7 @@
+{
+  "displayName": "扫描入账",
+  "category": "办公",
+  "brandColor": "#0f766e",
+  "defaultPrompt": "把已经识别好的文本整理成台账",
+  "version": "1.0.0"
+}

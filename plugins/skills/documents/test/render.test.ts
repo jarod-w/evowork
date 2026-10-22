@@ -5,7 +5,7 @@
  * （跳级会让 Word 的目录缺一层、导航窗格错位，而生成时不报错）。
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -174,8 +174,18 @@ describe('md 是一等输出，不是降级（不需要办公扩展）', () => {
 });
 
 describe('运行时与格式（08 §4）', () => {
-  it('只接受 .docx 与 .md', () => {
-    expect(parseFailure(run(DOC, 'x.pdf').stderr).message).toContain('.docx');
+  it('未知扩展名仍然拒绝', () => {
+    const message = parseFailure(run(DOC, 'x.rtf').stderr).message;
+    expect(message).toContain('.docx');
+    expect(message).toContain('.pdf');
+  });
+
+  it('没有 soffice 时 PDF 以退出码 3 失败，并且不落盘', () => {
+    const result = run(DOC, 'x.pdf', [], { EVOWORK_OFFICE_CONVERTER: '/nonexistent/soffice' });
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toContain('LibreOffice');
+    expect(result.stderr).not.toMatch(/zip/i);
+    expect(existsSync(join(dir, 'x.pdf'))).toBe(false);
   });
 
   // 不用 skipIf：**强制**无扩展环境
@@ -184,6 +194,67 @@ describe('运行时与格式（08 §4）', () => {
     expect(result.status).toBe(EXIT.runtimeMissing);
     expect(parseFailure(result.stderr).message).toContain('办公扩展');
     expect(result.stderr).not.toContain('Traceback');
+  });
+});
+
+describe('PDF 由本机 LibreOffice 转出', () => {
+  function fakeConverter(body: string): string {
+    const script = join(dir, 'soffice');
+    writeFileSync(script, `#!/usr/bin/env python3\n${body}`, 'utf8');
+    chmodSync(script, 0o755);
+    return script;
+  }
+
+  const ACCEPTING = `
+import sys
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+args = sys.argv[1:]
+for item in ("--headless", "--convert-to", "pdf", "--outdir", "--nologo", "--norestore", "--nolockcheck"):
+    if item not in args:
+        sys.stderr.write("missing " + item)
+        sys.exit(1)
+profile = next(arg for arg in args if arg.startswith("-env:UserInstallation="))
+root = Path(unquote(urlparse(profile.split("=", 1)[1]).path))
+text = (root / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
+if "DisableMacrosExecution" not in text:
+    sys.stderr.write("macros not disabled")
+    sys.exit(1)
+outdir = Path(args[args.index("--outdir") + 1])
+(outdir / "document.pdf").write_bytes(b"%PDF-1.4\\n%fake\\n")
+`;
+
+  it.runIf(hasDocx)('假 soffice 按预览那组参数写出带 %PDF 头的文件', () => {
+    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: fakeConverter(ACCEPTING) });
+    expect(result.status, result.stderr).toBe(EXIT.ok);
+    expect(readFileSync(join(dir, 'out.pdf')).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(existsSync(join(dir, 'out.docx'))).toBe(false);
+  });
+
+  it.runIf(hasDocx)('转换程序失败时不留下 PDF', () => {
+    const script = fakeConverter(`
+import sys
+sys.stderr.write("converter failed")
+sys.exit(1)
+`);
+    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
+    expect(existsSync(join(dir, 'out.docx'))).toBe(false);
+  });
+
+  it.runIf(hasDocx)('转换结果没有 PDF 头时不把文件留下', () => {
+    const script = fakeConverter(`
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+outdir = Path(args[args.index("--outdir") + 1])
+(outdir / "document.pdf").write_bytes(b"PK\\x03\\x04not a pdf")
+`);
+    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toContain('不是 PDF');
+    expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
   });
 });
 
@@ -228,6 +299,85 @@ describe('纸张默认是 A4（2026-09-28 外部验收 A1）', () => {
       expect(Math.abs(Number(size![1]) - 11906), template).toBeLessThanOrEqual(2);
       expect(Math.abs(Number(size![2]) - 16838), template).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe('改已有文件：提取成内容 JSON', () => {
+  it('md 往返保留标题、层级、表格和分页', () => {
+    const source = { ...DOC, template: 'memo', author: '财务部', date: '2026-09-05' };
+    expect(run(source, 'out.md').status).toBe(EXIT.ok);
+    const extracted = runPython(RENDER, [
+      '--extract',
+      join(dir, 'out.md'),
+      '--out',
+      join(dir, 'back.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(EXIT.ok);
+    const content = JSON.parse(readFileSync(join(dir, 'back.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(content.template).toBe('memo');
+    expect(content.title).toBe(DOC.title);
+    expect(content.author).toBe('财务部');
+    expect(content.date).toBe('2026-09-05');
+    expect(content.toc).toBe(true);
+    expect(content.blocks).toEqual(DOC.blocks);
+  });
+
+  it('找不到文件时退出码 2，且不报堆栈', () => {
+    const result = runPython(RENDER, [
+      '--extract',
+      join(dir, 'missing.md'),
+      '--out',
+      join(dir, 'back.json'),
+    ]);
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(result.stderr).not.toContain('Traceback');
+    expect(parseFailure(result.stderr).message).toContain('missing.md');
+  });
+
+  it.runIf(hasDocx)('docx 往返保留模板、大纲、列表和表格', () => {
+    const source = {
+      template: 'memo',
+      title: '周报',
+      author: '财务部',
+      date: '2026-09-05',
+      blocks: [
+        { block: 'heading', level: 1, text: '本期' },
+        { block: 'paragraph', text: '营收同比增长 18%。' },
+        { block: 'bullets', items: ['A 线', 'B 线'] },
+        { block: 'table', header: ['产品线', '营收'], rows: [['A 线', '1,240 万']] },
+        { block: 'pagebreak' },
+        { block: 'heading', level: 2, text: '下周' },
+      ],
+    };
+    expect(run(source, 'note.docx').status).toBe(EXIT.ok);
+    const extracted = runPython(RENDER, [
+      '--extract',
+      join(dir, 'note.docx'),
+      '--out',
+      join(dir, 'note.json'),
+    ]);
+    expect(extracted.status, extracted.stderr).toBe(EXIT.ok);
+    const content = JSON.parse(readFileSync(join(dir, 'note.json'), 'utf8')) as {
+      template: string;
+      blocks: unknown;
+    };
+    expect(content.template).toBe('memo');
+    expect(content.blocks).toEqual(source.blocks);
+  });
+
+  it('没装办公扩展时提取 docx 给出安装提示', () => {
+    writeFileSync(join(dir, 'x.docx'), 'not-a-docx');
+    const result = runPython(
+      RENDER,
+      ['--extract', join(dir, 'x.docx'), '--out', join(dir, 'x.json')],
+      WITHOUT_OFFICE_RUNTIME,
+    );
+    expect(result.status).toBe(EXIT.runtimeMissing);
+    expect(parseFailure(result.stderr).message).toContain('办公扩展');
+    expect(result.stderr).not.toContain('Traceback');
   });
 });
 

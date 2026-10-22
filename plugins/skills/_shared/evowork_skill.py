@@ -306,6 +306,36 @@ def read_content(path: Path) -> dict:
     return data
 
 
+#: 写进 Office 核心属性 `category` 的模板标记。提取时只认这个前缀，
+#: 避免把用户自己写在类别里的字当成模板 id。
+TEMPLATE_STAMP_PREFIX = "evowork-template:"
+
+
+def template_stamp(template_id: str) -> str:
+    return f"{TEMPLATE_STAMP_PREFIX}{template_id}"
+
+
+def read_template_stamp(value: str | None) -> str | None:
+    """从核心属性读回模板 id。不是我们写的标记就返回 None，调用方再用默认模板。"""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text.startswith(TEMPLATE_STAMP_PREFIX):
+        return None
+    name = text[len(TEMPLATE_STAMP_PREFIX) :].strip()
+    if not name or any(ch.isspace() for ch in name) or "/" in name or "\\" in name:
+        return None
+    return name
+
+
+def write_extracted(content: dict, out_path: Path) -> None:
+    """提取结果只写成 JSON。模型改的是这份 JSON，再交回原来的渲染器。"""
+    if out_path.suffix.lower() != ".json":
+        fail(EXIT_INVALID_CONTENT, "提取结果必须写成 .json。")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(content, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def succeeded(out_path: Path | None = None, **extra: Any) -> None:
     """成功输出。调用方（artifacts 服务 / agent）读这一行拿到产物路径。
 

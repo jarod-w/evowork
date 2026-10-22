@@ -1,0 +1,7 @@
+{
+  "displayName": "批量文件",
+  "category": "办公",
+  "brandColor": "#57534e",
+  "defaultPrompt": "把这些文件按类型归好",
+  "version": "1.0.0"
+}

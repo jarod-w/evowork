@@ -1,0 +1,44 @@
+---
+name: minutes
+description: 把会议材料整理成纪要。必须写出决议，以及每条待办的事项、负责人和截止日期。用户要纪要、会议记录或行动项时使用。
+---
+
+# minutes —— 会议纪要
+
+用户要的是一份能发出去的纪要，不是对话里的一段摘要。
+
+## 怎么用
+
+先把材料收成下面这份 JSON，再交给检查器。检查器通过后才会写出 `documents` 技能能渲染的内容 JSON。
+
+```bash
+python3 container_tools/check.py --content minutes.json --out minutes.content.json
+
+node container_tools/mark_artifact.mjs \
+  --operation-kind create --expected-output-count 1 --output-format docx \
+  --title "周例会纪要" --path "<绝对路径>/周例会纪要.docx"
+
+python3 ../documents/container_tools/render.py \
+  --content minutes.content.json --out "<绝对路径>/周例会纪要.docx"
+```
+
+`mark_artifact.mjs` 用 documents 技能那一份。本技能不渲染 docx。
+
+## 内容 JSON
+
+```json
+{
+    "title": "周例会纪要",
+    "date": "2026-09-05",
+    "attendees": ["甲", "乙"],
+    "decisions": ["通过三季度预算"],
+    "actions": [{ "task": "催收逾期款", "owner": "甲", "due": "2026-09-12" }]
+}
+```
+
+四条硬要求：
+
+1. `decisions` 至少一条。没有决议就不要写纪要。
+2. 每条待办都要有事项、负责人和 `YYYY-MM-DD` 截止日期。缺一项就停，不编一个「待定」。
+3. 材料里没出现的决议或待办不要补。写不出来就问用户。
+4. 只出文件，不发送、不写进日历。

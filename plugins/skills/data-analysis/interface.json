@@ -1,0 +1,7 @@
+{
+  "displayName": "数据分析",
+  "category": "办公",
+  "brandColor": "#7c3aed",
+  "defaultPrompt": "分析这份数据，写清口径、对比和结论",
+  "version": "1.0.0"
+}

@@ -282,7 +282,20 @@ export function composeInstructions(ctx: ExpandContext, mode: ModeDefinition): s
     if (lines.length > 0) parts.push(lines.join('\n'));
   }
 
+  // createTask 不传 runtime。连接器说明若只挂在运行时上下文上，新建任务时模型看不到。
+  // 这里只点名。信任在插件目录里由用户完成，这段文字不授予信任。
+  const connectorNote = scenarioConnectorNote(ctx.scenario.connectors);
+  if (connectorNote) parts.push(connectorNote);
+
   return parts.length > 0 ? parts.join('\n\n') : undefined;
+}
+
+function scenarioConnectorNote(connectors: readonly string[] | undefined): string | undefined {
+  if (!connectors?.length) return undefined;
+  return (
+    `本场景默认连接器：${connectors.join('、')}。` +
+    '使用前需要用户信任；未信任时不要调用，也不要假装已经连上。'
+  );
 }
 
 /**
@@ -384,14 +397,27 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
     mode: 'request-approval',
     permissions: 'evowork-workspace',
     instructionsFile: 'modes/craft-office.md',
-    skills: ['documents', 'spreadsheets', 'presentations', 'charts'],
-    connectors: [],
+    skills: [
+      'documents',
+      'spreadsheets',
+      'presentations',
+      'charts',
+      'minutes',
+      'weekly-report',
+      'email-draft',
+      'data-analysis',
+      'diagrams',
+      'scan-to-ledger',
+      'batch-files',
+    ],
+    // Q9：本期只有 browser。写进说明，不代表已经信任。
+    connectors: ['browser'],
     expertsRecommended: ['report-writer', 'data-analyst', 'finance-analyst'],
     chips: [
       { label: '文档处理', icon: 'file-text', prompt: '帮我处理这些文档：', requiresFile: true },
       { label: '金融服务', icon: 'bank', prompt: '帮我分析这份财务数据：' },
       { label: '数据分析及可视化', icon: 'pie-chart', prompt: '分析这份数据并给出可视化：' },
-      { label: '个人工作台', icon: 'layout', prompt: '帮我整理今天的工作安排：' },
+      { label: '个人工作台', icon: 'layout', prompt: '整理今天的待办，或根据材料写会议纪要：' },
       { label: '幻灯片', icon: 'presentation', prompt: '帮我做一份汇报幻灯片：' },
     ],
   },

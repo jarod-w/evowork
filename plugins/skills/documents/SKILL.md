@@ -1,6 +1,6 @@
 ---
 name: documents
-description: 生成 Word 文档（docx）或 Markdown。当用户要"写一份报告/方案/说明/纪要/总结"并要可以直接发出去的文件时使用。
+description: 生成 Word 文档（docx）、Markdown 或 PDF。当用户要"写一份报告/方案/说明/纪要/总结"并要可以直接发出去的文件时使用。PDF 由本机 LibreOffice 从 docx 转出。
 ---
 
 # documents —— 生成文档
@@ -26,6 +26,20 @@ python3 container_tools/render.py --content "<临时目录>/content.json" --out 
 写进代码仓库的说明、发给同事的草稿，用 `.md` 更合适。
 
 先跑一次 `--validate-only` 可以在不装扩展的情况下把内容改对。
+
+## 导出 PDF
+
+用户要 PDF 时，`--output-format` 用 `pdf`，输出路径用 `.pdf`。渲染器先生成 docx，再用本机 LibreOffice 转成 PDF。
+
+```bash
+node container_tools/mark_artifact.mjs \
+  --operation-kind create --expected-output-count 1 --output-format pdf \
+  --title "Q3 经营分析" --path "<绝对路径>/Q3经营分析.pdf"
+
+python3 container_tools/render.py --content content.json --out "<绝对路径>/Q3经营分析.pdf"
+```
+
+本机没有 soffice 时退出码是 3。这时改交 `.docx` 或 `.md`。`EVOWORK_OFFICE_CONVERTER` 可以指向 soffice，和预览用的是同一个变量。
 
 ## 内容 JSON
 
@@ -95,6 +109,24 @@ docx 的目录是 Word 的**域**，不是一段文字。用 python-docx 写进�
 用户第一次打开时目录区域是空的，**需要按 F9 或右键「更新域」**才会出现页码。
 渲染器会在目录下方留一行提示说明这件事 —— 你不需要另外解释，但如果用户问起"目录怎么是空的"，
 答案就是这个。
+
+## 改已有文件
+
+用户拿出的是一份已经存在的 docx 或 Markdown 时，**不要另起一份内容 JSON 重写**。先提取，再改，再写回：
+
+```bash
+python3 container_tools/render.py --extract "<绝对路径>/周报.docx" --out "<绝对路径>/周报.content.json"
+
+node container_tools/mark_artifact.mjs \
+  --operation-kind edit --expected-output-count 1 --output-format docx \
+  --title "周报" --path "<绝对路径>/周报.docx"
+
+python3 container_tools/render.py --content "<绝对路径>/周报.content.json" --out "<绝对路径>/周报.docx"
+```
+
+提取结果就是生成时用的内容 JSON。我们自己生成的文件会带上模板标记，提取后仍用原来的 `report` / `memo` / `minimal`。别人做的文件没有标记时，渲染用默认的 `report`。
+
+提取能收回的是标题、大纲级别（或「标题 1」样式）、项目符号、表格和正文。引用块、文本框和封面装饰收不回来，会变成普通段落或被跳过；封面和目录自带的分页不进入正文。图片会抽到内容 JSON 旁边的 `extracted-media/`。超过 400 个块、表超过 10 列或 200 行时停下来，不截断。
 
 ## 需要办公扩展
 
