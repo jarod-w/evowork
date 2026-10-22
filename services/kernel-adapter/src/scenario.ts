@@ -282,20 +282,11 @@ export function composeInstructions(ctx: ExpandContext, mode: ModeDefinition): s
     if (lines.length > 0) parts.push(lines.join('\n'));
   }
 
-  // createTask 不传 runtime。连接器说明若只挂在运行时上下文上，新建任务时模型看不到。
-  // 这里只点名。信任在插件目录里由用户完成，这段文字不授予信任。
-  const connectorNote = scenarioConnectorNote(ctx.scenario.connectors);
-  if (connectorNote) parts.push(connectorNote);
+  // 场景的默认连接器（office 是 browser）**不在这里再写一遍**（2026-10-22 合并 #20 时去掉）：
+  // 模式片段 craft.md 已经写了浏览器连接器怎么用、没信任时怎么说，每回合都带着；
+  // 在场景里再追加一句等于每回合重复同一件事。
 
   return parts.length > 0 ? parts.join('\n\n') : undefined;
-}
-
-function scenarioConnectorNote(connectors: readonly string[] | undefined): string | undefined {
-  if (!connectors?.length) return undefined;
-  return (
-    `本场景默认连接器：${connectors.join('、')}。` +
-    '使用前需要用户信任；未信任时不要调用，也不要假装已经连上。'
-  );
 }
 
 /**

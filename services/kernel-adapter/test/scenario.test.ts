@@ -167,24 +167,12 @@ describe('developer_instructions 拼接（03 §2.4）', () => {
     );
   });
 
-  it('没有运行时上下文时，场景连接器仍写进说明，并且不声称已连接', () => {
-    const text = composeInstructions(base, MODES['request-approval']);
-    expect(text).toContain('本场景默认连接器：browser');
-    expect(text).toContain('需要用户信任');
-    expect(text).not.toContain('已连接');
-    expect(text).not.toContain('已信任');
-    const expanded =
-      expandTurnStart(base).params.collaborationMode?.settings?.developer_instructions;
-    expect(expanded).toContain('本场景默认连接器：browser');
-  });
-
   it('片段文件缺失时不报错（config 可能没装全），只是指令更短', () => {
     const office = composeInstructions(
       { threadId: 't1', input: [], scenario: OFFICE, readInstructions: () => undefined },
       MODES['request-approval'],
     );
-    expect(office).toContain('本场景默认连接器：browser');
-    expect(office).not.toContain('你可以动手');
+    expect(office).toBeUndefined();
     const code = BUILTIN_SCENARIOS.find((s) => s.id === 'code') as Scenario;
     const text = composeInstructions(
       { threadId: 't1', input: [], scenario: code, readInstructions: () => undefined },
