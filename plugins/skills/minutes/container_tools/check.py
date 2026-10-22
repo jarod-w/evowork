@@ -87,6 +87,17 @@ def build(raw: dict) -> tuple[dict, int]:
     people = [require_text(item, f"attendees/{index}") for index, item in enumerate(attendees)]
     if len("参会：" + "、".join(people)) > PARAGRAPH_CHARS:
         fail(EXIT_INVALID_CONTENT, f"attendees 合起来超过 {PARAGRAPH_CHARS} 字。")
+    # 请假、缺席的人有自己的一行（2026-10-22 真模型验收）：没有这个字段时，模型过了检查再往内容 JSON 里
+    # 插一段「请假：某某」，那一段就没人检查了
+    absent_raw = raw.get("absent", [])
+    if not isinstance(absent_raw, list):
+        fail(EXIT_INVALID_CONTENT, "absent 必须是名字的数组。没有缺席的人就不写这个字段。")
+    absent = [require_text(item, f"absent/{index}") for index, item in enumerate(absent_raw)]
+    both = sorted(set(people) & set(absent))
+    if both:
+        fail(EXIT_INVALID_CONTENT, f"同一个人不能既参会又缺席：{'、'.join(both)}。按材料核对。")
+    if len("缺席：" + "、".join(absent)) > PARAGRAPH_CHARS:
+        fail(EXIT_INVALID_CONTENT, f"absent 合起来超过 {PARAGRAPH_CHARS} 字。")
     decisions = raw.get("decisions")
     if not isinstance(decisions, list) or not decisions:
         fail(EXIT_INVALID_CONTENT, "decisions 至少要有一条决议。没有决议就不要写纪要。")
@@ -124,6 +135,7 @@ def build(raw: dict) -> tuple[dict, int]:
         "date": date_text,
         "blocks": [
             {"block": "paragraph", "text": "参会：" + "、".join(people)},
+            *([{"block": "paragraph", "text": "缺席：" + "、".join(absent)}] if absent else []),
             {"block": "heading", "level": 1, "text": "决议"},
             {"block": "bullets", "items": decision_items},
             {"block": "heading", "level": 1, "text": "待办"},
@@ -143,10 +155,13 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     raw = read_content(Path(args.content).resolve())
-    allowed = {"title", "date", "attendees", "decisions", "actions"}
+    allowed = {"title", "date", "attendees", "absent", "decisions", "actions"}
     extra = set(raw) - allowed
     if extra:
-        fail(EXIT_INVALID_CONTENT, "纪要 JSON 有未声明的字段。只写 title、date、attendees、decisions、actions。")
+        fail(
+            EXIT_INVALID_CONTENT,
+            "纪要 JSON 有未声明的字段。只写 title、date、attendees、absent、decisions、actions。",
+        )
     content, undecided = build(raw)
     out_path = Path(args.out).resolve()
     write_extracted(content, out_path)

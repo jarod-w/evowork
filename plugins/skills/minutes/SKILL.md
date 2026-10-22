@@ -32,6 +32,7 @@ python3 ../documents/container_tools/render.py \
     "title": "周例会纪要",
     "date": "2026-09-05",
     "attendees": ["甲", "乙"],
+    "absent": ["丙"],
     "decisions": ["通过三季度预算"],
     "actions": [{ "task": "催收逾期款", "owner": "甲", "due": "2026-09-12" }]
 }
@@ -44,3 +45,5 @@ python3 ../documents/container_tools/render.py \
    上限与 documents 一致：决议最多 30 条、每条最多 300 字，标题最多 120 字。
 3. 材料里没出现的决议或待办不要补。写不出来就问用户。
 4. 只出文件，不发送、不写进日历。
+
+材料里标了请假、缺席、未到的人写进 `absent`（可省略），不要列进 `attendees`，也不要过了检查再往内容 JSON 里补一段。

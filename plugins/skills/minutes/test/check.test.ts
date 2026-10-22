@@ -58,6 +58,31 @@ describe('会议纪要必须能跟进', () => {
     ]);
   });
 
+  it('请假、缺席的人单独一行，紧跟参会人，不混进参会人', () => {
+    expect(run({ ...GOOD, absent: ['丙'] }).status).toBe(EXIT.ok);
+    const content = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')) as {
+      blocks: { block: string; text?: string }[];
+    };
+    expect(content.blocks.slice(0, 2)).toEqual([
+      { block: 'paragraph', text: '参会：甲、乙' },
+      { block: 'paragraph', text: '缺席：丙' },
+    ]);
+  });
+
+  it('同一个人既参会又缺席时拒绝', () => {
+    const result = run({ ...GOOD, absent: ['乙'] });
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(parseFailure(result.stderr).message).toContain('既参会又缺席');
+  });
+
+  it('没写 absent 时不出现「缺席」一行', () => {
+    expect(run(GOOD).status).toBe(EXIT.ok);
+    const content = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')) as {
+      blocks: { text?: string }[];
+    };
+    expect(content.blocks.some((block) => block.text?.startsWith('缺席'))).toBe(false);
+  });
+
   it('没有决议时拒绝', () => {
     const result = run({ ...GOOD, decisions: [] });
     expect(result.status).toBe(EXIT.invalidContent);
