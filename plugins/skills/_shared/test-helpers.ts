@@ -113,6 +113,16 @@ export const WITHOUT_OFFICE_RUNTIME = Object.freeze({
   PYTHONPATH: join(SHARED_DIR, 'test-fixtures', 'no-office'),
 });
 
+/**
+ * 强制"不是 macOS"的环境：`sitecustomize.py` 把 `sys.platform` 改成 `linux`。
+ *
+ * PDF 转换只在 macOS 上有隔离，别的平台要拒绝。只用 `runIf(!onMac)` 的话，
+ * 这条拒绝路径在开发机上永远跑不到（CLAUDE.md §9.1：跳过要能被环境证伪）。
+ */
+export const ON_PLATFORM_WITHOUT_ISOLATION = Object.freeze({
+  PYTHONPATH: join(SHARED_DIR, 'test-fixtures', 'other-platform'),
+});
+
 export const EXIT = {
   ok: 0,
   invalidContent: 2,

@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   EXIT,
+  ON_PLATFORM_WITHOUT_ISOLATION,
   WITHOUT_OFFICE_RUNTIME,
   hasPythonModule,
   makeTempDir,
@@ -303,10 +304,15 @@ printf '%%PDF-1.4\\n%%fake\\n' > "$outdir/document.pdf"
     },
   );
 
-  it.runIf(hasDocx && !onMac)('还没有隔离手段的平台上拒绝转换，不裸跑转换器、不落盘', () => {
-    const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER: fakeConverter(ACCEPTING) });
+  it.runIf(hasDocx)('还没有隔离手段的平台上拒绝转换，不裸跑转换器、不落盘', () => {
+    const ran = join(dir, 'converter-ran');
+    const result = run(DOC, 'out.pdf', [], {
+      ...ON_PLATFORM_WITHOUT_ISOLATION,
+      EVOWORK_OFFICE_CONVERTER: fakeConverter(`: > "${ran}"\n${ACCEPTING}`),
+    });
     expect(result.status).toBe(EXIT.runtimeMissing);
     expect(parseFailure(result.stderr).message).toContain('隔离');
+    expect(existsSync(ran)).toBe(false);
     expect(existsSync(join(dir, 'out.pdf'))).toBe(false);
   });
 

@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   EXIT,
+  ON_PLATFORM_WITHOUT_ISOLATION,
   WITHOUT_OFFICE_RUNTIME,
   makeTempDir,
   parseFailure,
@@ -529,11 +530,11 @@ printf '%%PDF-1.4\\n%%fake\\n' > "$outdir/document.pdf"
     expect(listing(ws)).toEqual(['周报.docx']);
   });
 
-  it.runIf(!onMac)('还没有隔离手段的平台上拒绝转换（退出码 3），不落盘', () => {
+  it('还没有隔离手段的平台上拒绝转换（退出码 3），不落盘', () => {
     writeFileSync(join(ws, '周报.docx'), 'doc');
     const result = run(
       { operation: 'docx-to-pdf', workspace: ws, files: ['周报.docx'] },
-      { env: { EVOWORK_OFFICE_CONVERTER: fakeConverter() } },
+      { env: { ...ON_PLATFORM_WITHOUT_ISOLATION, EVOWORK_OFFICE_CONVERTER: fakeConverter() } },
     );
     expect(result.status).toBe(EXIT.runtimeMissing);
     expect(failure(result).message).toContain('隔离');
