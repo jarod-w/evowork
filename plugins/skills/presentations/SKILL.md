@@ -20,8 +20,9 @@ node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format pptx \
   --title "Q3 业绩汇报" --path "<绝对路径>/Q3业绩汇报.pptx"
 
-# ② 把内容 JSON 交给渲染器
-python3 container_tools/render.py --content content.json --out "<绝对路径>/Q3业绩汇报.pptx"
+# ② 把内容 JSON 交给渲染器。内容 JSON 是中间文件，写进本任务的临时目录、不要写进用户的目录：
+#    第一次用 mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX" 建一个、记下它打印的路径，之后沿用
+python3 container_tools/render.py --content "<临时目录>/content.json" --out "<绝对路径>/Q3业绩汇报.pptx"
 ```
 
 `content.json` 的形状由 `schema/content.schema.json` 约束，渲染器**先校验再渲染**。
@@ -79,6 +80,19 @@ python3 container_tools/render.py --content content.json --out "<绝对路径>/Q
    不要写一个还不存在的路径。
 3. **数字要有来源**。用户拿去汇报时会被问"这个数哪来的"，所以在 `caption` 或备注里
    写清它来自哪个文件的哪张表。
+
+## 渲染之后：看版式检查
+
+渲染成功的输出里带两组检查结果（`_shared/layout_check.py`，离线、不渲染，用字体度量与字形表估算）：
+
+- `layout_warnings`：**要改的**。文字溢出文本框、字体里没有的字（会显示成方框，比如 `U+2212` 减号）、
+  内容越出页面 / 表格超出版心、标题跳级。改内容 JSON（缩短文字、拆成两页、换成键盘上的普通字符）
+  再渲染一次，直到它为空。
+- `layout_notes`：**只是提示**。比如本机没装模板字体、按替代字体估算 —— 收件人的机器上多半有，不必改。
+
+溢出是估算，差一两行的边缘情况可能误判；缺字是确定的。
+**不是用这个技能生成的** pptx / docx 也能单独检查（同样不联网）：
+`python3 <本技能目录>/../_shared/layout_check.py <文件>`。
 
 ## 模板
 

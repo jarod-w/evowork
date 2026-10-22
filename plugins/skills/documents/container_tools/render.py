@@ -334,7 +334,10 @@ def main() -> None:
         fail(EXIT_INVALID_CONTENT, f"输出格式只支持 .docx 与 .md，收到 {suffix or '(无扩展名)'}。")
 
     render_docx(content, out_path, content_path.parent)
-    succeeded(out_path, blocks=len(content["blocks"]), format="docx")
+    # 出图后顺手查一遍缺字 / 表格与图片超出版心 / 标题跳级（_shared/layout_check.py）
+    from layout_check import for_output  # noqa: E402 -- 与 evowork_skill 同一个 sys.path
+
+    succeeded(out_path, blocks=len(content["blocks"]), format="docx", **for_output(out_path))
 
 
 if __name__ == "__main__":

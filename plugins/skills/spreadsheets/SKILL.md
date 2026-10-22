@@ -17,7 +17,9 @@ node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format xlsx \
   --title "Q3 应收对账" --path "<绝对路径>/Q3应收对账.xlsx"
 
-python3 container_tools/render.py --content content.json --out "<绝对路径>/Q3应收对账.xlsx"
+# 内容 JSON 是中间文件，写进本任务的临时目录，不要写进用户的目录：第一次用
+# mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX" 建一个、记下它打印的路径，之后的命令都沿用它
+python3 container_tools/render.py --content "<临时目录>/content.json" --out "<绝对路径>/Q3应收对账.xlsx"
 ```
 
 输出格式由 `--out` 的扩展名决定：`.xlsx`（需要办公扩展）或 `.csv`（不需要，属基础包）。

@@ -20,8 +20,13 @@ node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format png \
   --title "季度毛利率" --path "<绝对路径>/charts/margin.png"
 
-python3 container_tools/render.py --content chart.json --out "<绝对路径>/charts/margin.png"
+# chart.json 是中间文件，写进本任务的临时目录，不要写进用户的目录：第一次用
+# mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX" 建一个、记下它打印的路径，之后的命令都沿用它
+python3 container_tools/render.py --content "<临时目录>/chart.json" --out "<绝对路径>/charts/margin.png"
 ```
+
+**只给 PPT / 文档当配图的图也是中间文件**：`--out` 写到 `<临时目录>/` 下，不跑 `mark_artifact`
+（它会把图登记成交付物）。用户要的就是这张图时，才输出到用户的目录并登记。
 
 输出格式由 `--out` 的扩展名决定：**`.svg` 用于文档里的矢量插图，`.png` 用于 PPT**
 （python-pptx 对 svg 支持不好）。不确定就用 png。

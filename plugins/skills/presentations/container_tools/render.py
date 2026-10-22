@@ -191,7 +191,10 @@ def main() -> None:
 
     out_path = Path(args.out).resolve()
     render(content, out_path, content_path.parent)
-    succeeded(out_path, slides=len(content["slides"]))
+    # 出图后顺手查一遍溢出 / 缺字 / 越界（_shared/layout_check.py），结果随成功输出给模型
+    from layout_check import for_output  # noqa: E402 -- 与 evowork_skill 同一个 sys.path
+
+    succeeded(out_path, slides=len(content["slides"]), **for_output(out_path))
 
 
 if __name__ == "__main__":

@@ -17,7 +17,9 @@ node container_tools/mark_artifact.mjs \
   --operation-kind create --expected-output-count 1 --output-format docx \
   --title "Q3 经营分析" --path "<绝对路径>/Q3经营分析.docx"
 
-python3 container_tools/render.py --content content.json --out "<绝对路径>/Q3经营分析.docx"
+# 内容 JSON 是中间文件，写进本任务的临时目录，不要写进用户的目录：第一次用
+# mktemp -d "${TMPDIR:-/tmp}/evowork.XXXXXX" 建一个、记下它打印的路径，之后的命令都沿用它
+python3 container_tools/render.py --content "<临时目录>/content.json" --out "<绝对路径>/Q3经营分析.docx"
 ```
 
 `.docx` 需要办公扩展，**`.md` 不需要**（内置渲染，属基础包）。
@@ -63,6 +65,19 @@ python3 container_tools/render.py --content content.json --out "<绝对路径>/Q
 3. **图片必须已经存在。** `path` 指向 `charts` 技能已经生成好的文件；写一个还不存在的路径
    会以专用退出码失败，而不是产出一份缺图的文档。
 4. **超过 6 个 heading 就开 `toc`。** 读的人需要知道这份文档有多长。
+
+## 渲染之后：看版式检查
+
+渲染成功的输出里带两组检查结果（`_shared/layout_check.py`，离线、不渲染，用字体度量与字形表估算）：
+
+- `layout_warnings`：**要改的**。文字溢出文本框、字体里没有的字（会显示成方框，比如 `U+2212` 减号）、
+  内容越出页面 / 表格超出版心、标题跳级。改内容 JSON（缩短文字、拆成两页、换成键盘上的普通字符）
+  再渲染一次，直到它为空。
+- `layout_notes`：**只是提示**。比如本机没装模板字体、按替代字体估算 —— 收件人的机器上多半有，不必改。
+
+溢出是估算，差一两行的边缘情况可能误判；缺字是确定的。
+**不是用这个技能生成的** pptx / docx 也能单独检查（同样不联网）：
+`python3 <本技能目录>/../_shared/layout_check.py <文件>`。
 
 ## 三个模板
 
