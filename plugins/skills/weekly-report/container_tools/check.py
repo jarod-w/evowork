@@ -23,15 +23,19 @@ from evowork_skill import (  # noqa: E402
     read_content,
     succeeded,
     write_extracted,
+    document_limits,
 )
+
+#: documents 渲染器的上限，从它的 schema 读（evowork_skill.document_limits）
+_LIMITS = document_limits()
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SECTIONS = (("period", "本期"), ("risks", "风险"), ("next", "下周"))
 
 #: documents 的 content.schema.json：title、bullets 的条数和每条的字数。
-TITLE_MAX = 120
-BULLETS_MAX = 30
-BULLET_CHARS = 300
+TITLE_MAX = _LIMITS["title"]
+BULLETS_MAX = _LIMITS["list_items"]
+BULLET_CHARS = _LIMITS["item_chars"]
 
 
 def require_text(value: object, where: str, limit: int) -> str:

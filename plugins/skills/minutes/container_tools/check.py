@@ -28,7 +28,11 @@ from evowork_skill import (  # noqa: E402
     read_content,
     succeeded,
     write_extracted,
+    document_limits,
 )
+
+#: documents 渲染器的上限，从它的 schema 读（evowork_skill.document_limits）
+_LIMITS = document_limits()
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: 材料里没定的负责人、截止日期，只认这两种写法。
@@ -40,9 +44,9 @@ PLACEHOLDERS = frozenset(
 
 #: documents 渲染器的上限（它的 content.schema.json）。这里放行的，渲染器必须也放行 ——
 #: 否则过了检查、到渲染那一步才失败，报错路径（blocks/2 items/0）还对不回原字段。
-TITLE_MAX = 120
-BULLETS_MAX = 30
-BULLET_CHARS = 300
+TITLE_MAX = _LIMITS["title"]
+BULLETS_MAX = _LIMITS["list_items"]
+BULLET_CHARS = _LIMITS["item_chars"]
 PARAGRAPH_CHARS = 4000
 TABLE_ROWS_MAX = 200
 

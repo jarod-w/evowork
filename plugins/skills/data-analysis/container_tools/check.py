@@ -27,14 +27,18 @@ from evowork_skill import (  # noqa: E402
     read_content,
     succeeded,
     write_extracted,
+    document_limits,
 )
+
+#: documents 渲染器的上限，从它的 schema 读（evowork_skill.document_limits）
+_LIMITS = document_limits()
 
 #: documents 的 content.schema.json：paragraph 的字数、bullets 的条数和每条的字数。
 PARAGRAPH_CHARS = 4000
-BULLETS_MAX = 30
-BULLET_CHARS = 300
+BULLETS_MAX = _LIMITS["list_items"]
+BULLET_CHARS = _LIMITS["item_chars"]
 #: 文档标题（documents 的 title 上限）。完整的问题写在正文第一段，这里只取开头作标题。
-TITLE_MAX = 120
+TITLE_MAX = _LIMITS["title"]
 
 
 def text(value: object, where: str) -> str:

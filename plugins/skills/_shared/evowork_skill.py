@@ -332,6 +332,25 @@ def read_template_stamp(value: str | None) -> str | None:
     return name
 
 
+def document_limits() -> dict[str, int]:
+    """documents 渲染器的上限，**直接从它的 schema 读**（合并 #20 时收拢）。
+
+    纪要、周报、分析、扫描纪要都交给 documents 渲染；它们要在检查阶段就按同一套上限拦下，
+    报错才能指回模型写的原字段。原先四个检查器各抄了一份数 —— 抄的数迟早与 schema 分叉。
+    """
+    schema_path = Path(__file__).resolve().parent.parent / "documents" / "schema" / "content.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    defs = schema["$defs"]
+    return {
+        "title": schema["properties"]["title"]["maxLength"],
+        "list_items": defs["bullets"]["properties"]["items"]["maxItems"],
+        "item_chars": defs["bullets"]["properties"]["items"]["items"]["maxLength"],
+        "table_rows": defs["table"]["properties"]["rows"]["maxItems"],
+        "table_columns": defs["table"]["properties"]["header"]["maxItems"],
+        "header_chars": defs["table"]["properties"]["header"]["items"]["maxLength"],
+    }
+
+
 def refuse_overwrite(out_path: Path, overwrite: bool) -> None:
     """目标已存在时默认拒绝（2026-10-22 合并 #20 时补）。
 
