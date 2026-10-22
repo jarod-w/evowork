@@ -8,7 +8,11 @@
 import { assertNoLeak, createLogger, memorySink } from '@evowork/logging';
 import { describe, expect, it } from 'vitest';
 
-import { createModelRegistry, type ModelRegistryEntry } from '../src/capabilities.js';
+import {
+  createModelRegistry,
+  type ModelRegistryEntry,
+  type ProviderId,
+} from '../src/capabilities.js';
 import { ModelNotConfiguredError, runPipeline } from '../src/pipeline.js';
 import { EVENT, type ResponsesRequest } from '../src/protocol.js';
 import { UPSTREAM_DISCONNECTED } from '../src/idle.js';
@@ -276,12 +280,11 @@ describe('完整链路', () => {
     expect(failed.response.error.message).toContain('不支持图片输入');
   });
 
-  it('DeepSeek：工具调用回合内照旧挂回思维链；之前用户回合的不再回传（2026-10-22 实测）', async () => {
-    /*
-     * 2026-09-08 记录的是「丢掉思维链 DeepSeek 回 400」，这条测试原先断言的是跨用户回合也必须回传。
-     * 2026-10-22 对 deepseek-flash 重新实测：跨回合去掉照常 200，输入 token 少了正好那段思维链；
-     * 同一回合内去掉这次也是 200，但那一半**保守地照旧回传**（厂商哪天收紧也不会坏）。
-     */
+  /**
+   * 按模型所属的厂商决定去不去思维链：一个上一回合 + 一个正在调工具的当前回合，返回发给上游的
+   * assistant 消息上各自的 reasoning_content。
+   */
+  async function sentReasoning(providerId: ProviderId): Promise<(string | undefined)[]> {
     let sent: unknown;
     const provider = fakeProvider({
       onRequest: (body) => {
@@ -292,7 +295,6 @@ describe('完整链路', () => {
         'data: [DONE]',
       ],
     });
-
     await collect(
       runPipeline(
         request({
@@ -318,14 +320,32 @@ describe('完整链路', () => {
           ],
         }),
         { requestId: 'req_1' },
-        deps(provider),
+        {
+          ...deps(provider, createModelRegistry([{ ...MODEL, provider: providerId }])),
+          providers: { [providerId]: provider },
+        },
       ),
     );
-
     const messages = (sent as { messages: { role: string; reasoning_content?: string }[] })
       .messages;
-    const assistants = messages.filter((m) => m.role === 'assistant');
-    expect(assistants.map((m) => m.reasoning_content)).toEqual([undefined, '本回合先列目录']);
+    return messages.filter((m) => m.role === 'assistant').map((m) => m.reasoning_content);
+  }
+
+  /*
+   * 2026-09-08 记录的是「丢掉思维链 DeepSeek 回 400」，这条测试原先断言的是跨用户回合也必须回传。
+   * 2026-10-22 用 verify-provider ⑦ 对 P0 三家实测：跨回合去掉照常 200、输入变少；同一回合内去掉
+   * 这次也是 200，但那一半**保守地照旧回传**（厂商哪天收紧也不会坏）。
+   * 逐家走一遍 pipeline：守的是「模型 → 厂商 → 开关」这条接线，不只是翻译函数本身。
+   */
+  it.each<ProviderId>(['deepseek', 'moonshot', 'zhipu'])(
+    '%s：之前用户回合的思维链不再回传，工具调用回合内的照旧挂回（2026-10-22 实测）',
+    async (providerId) => {
+      expect(await sentReasoning(providerId)).toEqual([undefined, '本回合先列目录']);
+    },
+  );
+
+  it('没实测过的通用接口（private）照原样回传之前回合的思维链', async () => {
+    expect(await sentReasoning('private')).toEqual(['上一回合的思维链', '本回合先列目录']);
   });
 });
 

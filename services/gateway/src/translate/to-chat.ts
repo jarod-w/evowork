@@ -140,7 +140,7 @@ function reasoningTextFrom(item: Extract<ResponseItem, { type: 'reasoning' }>): 
 
 export interface ToChatOptions {
   /**
-   * 之前各个用户回合的思维链不再回传（2026-10-22，只对实测过的厂商开，见
+   * 之前各个用户回合的思维链不再回传（2026-10-22，只对实测过的厂商开：DeepSeek · Kimi · GLM，见
    * `providers/registry.ts` 的 `DROPS_PRIOR_TURN_REASONING`）。**当前回合**的照旧挂回（坑 4）。
    *
    * 为什么值得做：思维链是长任务上下文的最大头 —— 10-12 那次 16 页 PPT 的会话里占了 43%，

@@ -292,11 +292,17 @@ export const PRIVATE: Provider = {
 /**
  * 之前回合的思维链可以不回传的厂商（`translate/to-chat.ts` 的 `dropPriorTurnReasoning`）。
  *
- * **只收实测过的**：2026-10-22 对 `deepseek-flash` 发同一段两轮对话，第二轮保留 / 去掉第一轮的
- * `reasoning_content`，都回 200，输入 token 433 → 417（去掉的正是那段思维链）。这也是 DeepSeek
- * 文档对多轮对话的建议。Kimi / GLM 没有密钥实测，按原样回传；拿到密钥后用同样的两轮对话验了再加。
+ * **只收实测过的**，依据是 `scripts/verify-provider.mjs --reasoning true` 的 ⑦：按真实 agent 的形状
+ * 搭两个用户回合（回合里调工具），第二回合去掉第一回合的 `reasoning_content` 后照常 200、回复有效、
+ * 输入变少；第二回合的工具循环里「保留本回合、去掉上回合」—— 网关真实发出的形状 —— 也能收尾。
+ * 2026-10-22：`deepseek-flash` 2/2（另一遍第 1 回合没出思维链、无可去）、`glm-5.3-flash` 3/3、
+ * `kimi-k3` 3/3。`private`（MiMo 等通用兼容接口）没验过，照原样回传。新加一家先跑 ⑦。
  */
-export const DROPS_PRIOR_TURN_REASONING: ReadonlySet<string> = new Set(['deepseek']);
+export const DROPS_PRIOR_TURN_REASONING: ReadonlySet<string> = new Set([
+  'deepseek',
+  'moonshot',
+  'zhipu',
+]);
 
 export const PROVIDERS: Readonly<Record<string, Provider>> = Object.freeze({
   deepseek: DEEPSEEK,

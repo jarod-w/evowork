@@ -16,7 +16,8 @@
  *     --base https://api.deepseek.com --model deepseek-flash
  *
  * 可选开关：
- *   --reasoning true   这个型号**应该**吐 reasoning_content（断言的是"与能力表一致"）
+ *   --reasoning true   这个型号**应该**吐 reasoning_content（断言的是"与能力表一致"），
+ *                      并跑 ⑦：之前回合的思维链能不能不回传（DROPS_PRIOR_TURN_REASONING 的依据）
  *   --image true       这个型号**应该**能读图（走 ⑤ 那一节，见下）
  */
 import { argv, env, exit } from 'node:process';
@@ -390,6 +391,124 @@ async function readSse(response) {
     }
   } else {
     console.log('⏭️  ⑤ 图片输入：未加 --image true，跳过');
+  }
+}
+
+/*
+ * ── ⑦ 之前回合的思维链能不能不回传（只在 --reasoning true 时跑）──────────
+ *
+ * 2026-10-22 补。思维链是长任务上下文的最大头（那次 16 页 PPT 的会话里占 43%），厂商照样按输入计；
+ * 网关对 `providers/registry.ts` 的 `DROPS_PRIOR_TURN_REASONING` 里的厂商，只回传**当前用户回合**的。
+ * 加进那个集合之前，要用这一节证明三件事：
+ *   · 去掉上一回合的思维链，请求照常 200，模型照常给出有效回复；
+ *   · 输入确实变少（否则没有收益）；
+ *   · 本回合的工具循环里「保留本回合、去掉上回合」—— 网关真实发出的形状 —— 能顺利收尾。
+ * 连本回合的也去掉会怎样，只记录、不断言：那是 2026-09-08 DeepSeek 回 400 的坑，网关从不这么发。
+ *
+ * 会话照真实 agent 的形状搭（回合里有工具调用），用到的思维链都是这个型号自己刚产出的，不是编的。
+ * 同样只打印状态码与 token 数。
+ */
+if (args.get('reasoning') === 'true') {
+  const tools = [
+    {
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: '查询某个城市的天气',
+        parameters: {
+          type: 'object',
+          properties: { city: { type: 'string' } },
+          required: ['city'],
+        },
+      },
+    },
+  ];
+  const system = { role: 'system', content: '你是助手。查天气必须用 get_weather 工具。' };
+  const call = async (messages) => {
+    const response = await post({ messages, tools, tool_choice: 'auto', max_tokens: 2048 });
+    const body = await response.json().catch(() => null);
+    const message = body?.choices?.[0]?.message ?? {};
+    return {
+      status: response.status,
+      input: body?.usage?.prompt_tokens,
+      message,
+      useful:
+        (message.tool_calls?.length ?? 0) > 0 ||
+        (typeof message.content === 'string' && message.content.trim().length > 0),
+    };
+  };
+  /** 模型回的 assistant 消息放回历史，与网关同形：思维链挂 reasoning_content，只调工具时 content 为 null */
+  const assistant = (message) => ({
+    role: 'assistant',
+    content: message.content ? message.content : null,
+    ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}),
+    ...(message.reasoning_content ? { reasoning_content: message.reasoning_content } : {}),
+  });
+  const toolResult = (message, text) => ({
+    role: 'tool',
+    tool_call_id: message.tool_calls[0].id,
+    content: text,
+  });
+  const withoutReasoning = (messages) =>
+    messages.map(({ reasoning_content: _dropped, ...rest }) => rest);
+
+  // 第 1 回合：提问 → 调工具 → 拿结果 → 作答
+  const ask1 = { role: 'user', content: '北京现在天气怎么样？' };
+  const t1a = await call([system, ask1]);
+  const t1b = t1a.message.tool_calls?.length
+    ? await call([system, ask1, assistant(t1a.message), toolResult(t1a.message, '北京：晴，22℃')])
+    : undefined;
+  const turn1Reasoning = [t1a, t1b].filter((t) => t?.message.reasoning_content).length;
+  // 作答那一步带不带思维链看型号（DeepSeek、GLM 调完工具直接作答、不再思考）：至少有一段可去就行
+  record(
+    '⑦ 第 1 回合按真实形状搭起来了（调了工具、作了答、有思维链可去）',
+    Boolean(t1b?.useful) && turn1Reasoning > 0,
+    `工具调用=${t1a.message.tool_calls?.length ?? 0} 带思维链的步数=${turn1Reasoning}/2`,
+  );
+  if (t1b?.useful) {
+    const turn1 = [
+      ask1,
+      assistant(t1a.message),
+      toolResult(t1a.message, '北京：晴，22℃'),
+      assistant(t1b.message),
+    ];
+    const ask2 = { role: 'user', content: '那上海呢？' };
+    const kept = await call([system, ...turn1, ask2]);
+    const dropped = await call([system, ...withoutReasoning(turn1), ask2]);
+    record('⑦ 保留上一回合思维链：200', kept.status === 200, `status=${kept.status}`);
+    record(
+      '⑦ 去掉上一回合思维链：200 且回复有效',
+      dropped.status === 200 && dropped.useful,
+      `status=${dropped.status} 有效=${dropped.useful}`,
+    );
+    record(
+      '⑦ 去掉之后输入变少',
+      typeof kept.input === 'number' &&
+        typeof dropped.input === 'number' &&
+        dropped.input < kept.input,
+      `保留 ${kept.input} → 去掉 ${dropped.input}（少 ${kept.input - dropped.input}）`,
+    );
+
+    // 第 2 回合的工具循环：网关真实发出的形状 —— 本回合的思维链保留，上一回合的去掉
+    if (dropped.message.tool_calls?.length) {
+      const turn2 = [
+        ask2,
+        assistant(dropped.message),
+        toolResult(dropped.message, '上海：小雨，19℃'),
+      ];
+      const finish = await call([system, ...withoutReasoning(turn1), ...turn2]);
+      record(
+        '⑦ 本回合工具循环（保留本回合、去掉上回合）能收尾',
+        finish.status === 200 && finish.useful,
+        `status=${finish.status} 有效=${finish.useful}`,
+      );
+      const bare = await call([system, ...withoutReasoning([...turn1, ...turn2])]);
+      console.log(
+        `   连本回合的思维链也去掉（网关从不这么发，只记录）：status=${bare.status} 有效=${bare.useful}`,
+      );
+    } else {
+      record('⑦ 第 2 回合调了工具（才能验本回合的工具循环）', false, '模型直接作答了，没调工具');
+    }
   }
 }
 

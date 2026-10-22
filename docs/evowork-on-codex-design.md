@@ -341,7 +341,7 @@
 
 > **2026-09-08**：thinking 模式的下一轮请求必须带回上一轮的 `reasoning_content`。这不是 Codex 的缺口 —— 内核已经把 Responses 的 `reasoning` item 放进下一轮 `input`。网关原先按「Chat 没有对应字段」把该 item 丢掉，DeepSeek 回 `The reasoning_content in the thinking mode must be passed back to the API.` 并让整个回合失败。修在 `services/gateway` 的 `to-chat.ts`：推理模型把 `summary` 挂到对应 assistant 上，仍然不塞进 `content`、不伪造 `encrypted_content`。
 >
-> **2026-10-22 订正**：对 `deepseek-flash` 重新实测，**之前用户回合**的 `reasoning_content` 去掉照常 200（输入 token 433 → 417，差的正是那段思维链），同一回合内去掉这次也是 200。思维链是长任务上下文的最大头（10-12 那次 16 页 PPT 会话里占 43%，截图几乎不占：一张图只计 1–2K token），所以网关对 DeepSeek 只回传当前回合的思维链（`providers/registry.ts` 的 `DROPS_PRIOR_TURN_REASONING`）；同一回合内的照旧回传，厂商哪天收紧也不会坏。Kimi / GLM 没有密钥实测，照原样回传。
+> **2026-10-22 订正**：对 `deepseek-flash` 重新实测，**之前用户回合**的 `reasoning_content` 去掉照常 200（输入 token 433 → 417，差的正是那段思维链），同一回合内去掉这次也是 200。思维链是长任务上下文的最大头（10-12 那次 16 页 PPT 会话里占 43%，截图几乎不占：一张图只计 1–2K token），所以网关对 DeepSeek 只回传当前回合的思维链（`providers/registry.ts` 的 `DROPS_PRIOR_TURN_REASONING`）；同一回合内的照旧回传，厂商哪天收紧也不会坏。**同日拿到 Kimi / GLM 的密钥后扩到 P0 三家**：`scripts/verify-provider.mjs --reasoning true` 新增 ⑦，按真实 agent 的形状（回合里调工具）搭两个用户回合，验「去掉上一回合 → 200、回复有效、输入变少」与「本回合工具循环里保留本回合、去掉上回合 → 能收尾」，`glm-5.3-flash` 3/3、`kimi-k3` 3/3、`deepseek-flash` 2/2；真窗口多轮用例（C3 中途改需求、征求同意后第二回合接着改）GLM 2/2、Kimi 2/2。通用兼容接口（`private`，MiMo 等）没验过，照原样回传；新加一家先跑 ⑦。
 
 > **2026-09-06 下架 `deepseek-chat` 与 `deepseek-reasoner`。** 目录里 DeepSeek 只留 `deepseek-v4-flash`。
 > 上面这段实测记录**保留不删** —— 它是"探针订正了三处假设"的证据，与型号在不在目录里无关。

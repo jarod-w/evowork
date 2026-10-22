@@ -714,7 +714,7 @@ describe('Responses → Chat：instructions / 工具结果 / 未知条目', () =
     });
   });
 
-  describe('之前回合的思维链不回传（dropPriorTurnReasoning，2026-10-22 只对 DeepSeek 开）', () => {
+  describe('之前回合的思维链不回传（dropPriorTurnReasoning，2026-10-22 对 P0 三家开）', () => {
     /** 两个用户回合：第一回合调过工具并收尾，第二回合正在调工具，中间还插了一张工具返回的图 */
     const twoTurns = {
       model: 'm',
@@ -749,13 +749,14 @@ describe('Responses → Chat：instructions / 工具结果 / 未知条目', () =
       expect(text).toContain('本回合：再看图');
     });
 
-    it('不开时一字不动 —— Kimi / GLM 没实测过，照原样回传', () => {
+    it('不开时一字不动 —— 没实测过的厂商（如 private 通用接口）照原样回传', () => {
       const { request } = toChatRequest(twoTurns as never, 'upstream', FULL);
       expect(JSON.stringify(request.messages)).toContain('上一回合：要调计算器');
     });
 
-    it('只对实测过的厂商开：现在只有 DeepSeek', () => {
-      expect([...DROPS_PRIOR_TURN_REASONING]).toEqual(['deepseek']);
+    it('只对 verify-provider ⑦ 实测过的厂商开：P0 三家，通用接口（private）不在内', () => {
+      expect([...DROPS_PRIOR_TURN_REASONING].sort()).toEqual(['deepseek', 'moonshot', 'zhipu']);
+      expect(DROPS_PRIOR_TURN_REASONING.has('private')).toBe(false);
     });
   });
 
