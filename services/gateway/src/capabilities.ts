@@ -175,6 +175,7 @@ export function createModelRegistry(extra: readonly ModelRegistryEntry[] = []): 
  *   ③ 日志字段 `degradeReason`（Q14 允许：它是码不是正文）。
  */
 export type DegradeReason =
+  | 'REASONING_EFFORT_UNSUPPORTED'
   /** 请求要求并行工具调用，上游不支持 → 串行化 */
   | 'PARALLEL_TOOLS_SERIALIZED'
   /** 请求带图片，上游不支持 → **拒绝请求**（不静默丢图） */
@@ -189,6 +190,7 @@ export type DegradeReason =
   | 'NON_STREAMING_UPSTREAM';
 
 export const DEGRADE_COPY: Readonly<Record<DegradeReason, string>> = Object.freeze({
+  REASONING_EFFORT_UNSUPPORTED: '这个模型的推理强度调节尚未核实，采用模型服务的默认强度。',
   PARALLEL_TOOLS_SERIALIZED: '上游不支持并行工具调用，已改为串行执行（会更慢）。',
   IMAGE_INPUT_UNSUPPORTED: '这个模型不支持图片输入。',
   NO_REASONING: '这个模型没有推理过程可展示。',

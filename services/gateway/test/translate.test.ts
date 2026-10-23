@@ -39,6 +39,22 @@ const LIGHT: ModelCapabilities = {
 function run(chunks: readonly ChatChunk[], capabilities = FULL) {
   const t = createTranslator({ responseId: 'resp_1', capabilities });
   const events = chunks.flatMap((c) => t.push(c));
+  if (!chunks.some((chunk) => chunk.choices?.some((choice) => choice.finish_reason))) {
+    events.push(
+      ...t.push({
+        choices: [
+          {
+            delta: {},
+            finish_reason: chunks.some((chunk) =>
+              chunk.choices?.some((choice) => choice.delta?.tool_calls?.length),
+            )
+              ? 'tool_calls'
+              : 'stop',
+          },
+        ],
+      }),
+    );
+  }
   return { events: [...events, ...t.finish()], translator: t };
 }
 
@@ -103,10 +119,14 @@ describe('① 流式事件序列：item_id / output_index 由网关自行编号�
     expect(done.item.content[0]?.text).toBe('一次性回复');
   });
 
-  it('流被掐断（没有 finish_reason）也会收尾 —— 已产生的内容不该丢', () => {
-    const { events } = run([{ choices: [{ delta: { content: '半句话' } }] }]);
+  it('流被掐断时保留文字，但不能宣称响应完成', () => {
+    const translator = createTranslator({ responseId: 'resp_1', capabilities: FULL });
+    const events = [
+      ...translator.push({ choices: [{ delta: { content: '半句话' } }] }),
+      ...translator.finish(),
+    ];
     expect(events.map((e) => e.type)).toContain(EVENT.outputItemDone);
-    expect(events.at(-1)?.type).toBe(EVENT.completed);
+    expect(events.at(-1)?.type).toBe(EVENT.failed);
   });
 });
 

@@ -321,6 +321,10 @@
 
 **P0 三家的已知适配重点**（Q16，动手前按当时的实际 API 重新核对，各家迭代很快）：
 
+**2026-10-23 执行效果修正规格**：只有上游明确以 `stop` / `tool_calls` 结束、且工具参数是完整 JSON 对象时，网关才能发送 `response.completed`。EOF / `[DONE]` 不能替代业务结束原因；缺失结束原因按连接中断处理，长度截断、内容过滤和畸形参数明确失败，保留已流出的文字但不提交残缺工具调用。已有合法结束原因时允许省略 `[DONE]`。失败不会自动执行工具。
+
+推理强度经网关转换成 Chat 顶层 `reasoning_effort`，按协议类型和确切模型名适配。依据 2026-10-23 的 [DeepSeek](https://api-docs.deepseek.com/guides/thinking_mode/)、[Kimi](https://platform.kimi.ai/docs/api/chat)、[GLM](https://docs.bigmodel.cn/api-reference/模型-api/对话补全) 官方参数文档：P0 三家支持 low / high / max；DeepSeek 按厂商规则 minimal→low、medium/xhigh→high、ultra→max，另支持 none；Kimi K3 / GLM-5.3 Flash 的 minimal→low、medium→high、xhigh/ultra→max 是产品映射，目录明确说明。未核实支持的模型不冒传参数，目录提示使用厂商默认值，并记录能力降级；不把“能显示思维链”当成“可调推理强度”。本次文档核对不是厂商实测。
+
 | 模型          | 适配重点                                                                                                    |
 | ------------- | ----------------------------------------------------------------------------------------------------------- |
 | DeepSeek      | 有推理型号，思维链字段可映射为 `reasoning` item；**同一用户回合内（工具调用循环）把 `reasoning_content` 挂回对应 assistant**（2026-09-08 丢掉曾回 400）；**之前用户回合的不再回传**（2026-10-22 实测 200，输入 token 少掉那段思维链）；工具调用成熟度相对好，作为**基准实现**先做 |

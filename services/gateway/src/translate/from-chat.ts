@@ -22,6 +22,7 @@ import type { DegradeReason, ModelCapabilities } from '../capabilities.js';
 import { EVENT, type ResponseItem, type ResponsesEvent } from '../protocol.js';
 import type { KernelToolName } from './tool-names.js';
 import { normalizeUsage, type ChatUsage } from './usage.js';
+import { UPSTREAM_DISCONNECTED } from '../idle.js';
 
 /** Chat 流式 chunk（各家的并集）。 */
 export interface ChatChunk {
@@ -230,6 +231,45 @@ export function createTranslator(options: TranslatorOptions) {
       ensureStarted(events);
       finished = true;
 
+      let failure: { code: string; message: string } | undefined;
+      if (!finishReason) {
+        failure = {
+          code: UPSTREAM_DISCONNECTED,
+          message: '模型连接在响应完成前中断，未执行本次工具调用，请重试。',
+        };
+      } else if (finishReason !== 'stop' && finishReason !== 'tool_calls') {
+        failure = {
+          code: 'invalid_prompt',
+          message:
+            finishReason === 'length'
+              ? '模型输出达到长度上限，响应不完整。请缩小本次任务或分步生成。'
+              : finishReason === 'content_filter'
+                ? '模型服务过滤了本次响应，未执行工具调用。请调整需求。'
+                : '模型服务没有正常结束本次响应，未执行工具调用。',
+        };
+      }
+      if (!failure) {
+        for (const call of toolCalls.values()) {
+          try {
+            const args: unknown = JSON.parse(call.args.trim() || '{}');
+            if (
+              !call.name.trim() ||
+              args === null ||
+              typeof args !== 'object' ||
+              Array.isArray(args)
+            )
+              throw new Error('invalid tool call');
+          } catch {
+            failure = {
+              code: 'invalid_prompt',
+              message: '模型返回的工具参数不完整或格式错误，本次工具调用未执行。请重试。',
+            };
+            break;
+          }
+        }
+      }
+      if (failure) toolCalls.clear();
+
       // 思维链 item 收尾
       if (reasoningItem) {
         events.push({
@@ -277,7 +317,7 @@ export function createTranslator(options: TranslatorOptions) {
             name: kernelName?.name ?? acc.name,
             ...(kernelName ? { namespace: kernelName.namespace } : {}),
             // arguments 必须是**完整**字符串。上游一个字符一片地给，我们在这里合成
-            arguments: acc.args.length > 0 ? acc.args : '{}',
+            arguments: acc.args.trim().length > 0 ? acc.args : '{}',
             call_id: acc.callId,
           } satisfies ResponseItem,
         });
@@ -294,6 +334,10 @@ export function createTranslator(options: TranslatorOptions) {
         events.push({ type: EVENT.evoworkDegraded, reasons: [...degradations] });
       }
 
+      if (failure) {
+        events.push({ type: EVENT.failed, response: { id: responseId, error: failure } });
+        return events;
+      }
       events.push({
         type: EVENT.completed,
         response: {

@@ -8,7 +8,7 @@
  * 需要办公扩展（python-pptx / python-docx / fontTools / PIL）；没装时整组跳过并写明原因，
  * 与本目录 render.test.ts 的判据一致（`hasPythonModule`）。
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,6 +84,54 @@ describe.skipIf(!hasOffice)('docx：纸张 · 标题跳级 · 表格超出版心
 });
 
 describe.skipIf(!hasOffice)('接在渲染器上（需要办公扩展）', () => {
+  it('越界图片会保留产物并返回未验收，不能只在成功输出里附带警告', () => {
+    const image = join(dir, 'wide.png');
+    const made = runPython('-c', [
+      'import struct,zlib,sys;from pathlib import Path;chunk=lambda t,b:struct.pack(">I",len(b))+t+b+struct.pack(">I",zlib.crc32(t+b)&0xffffffff);Path(sys.argv[1]).write_bytes(b"\\x89PNG\\r\\n\\x1a\\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",100,1,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(b"\\0"+b"\\xff\\0\\0"*100))+chunk(b"IEND",b""))',
+      image,
+    ]);
+    expect(made.status, made.stderr).toBe(0);
+    const content = join(dir, 'wide.json');
+    const out = join(dir, 'wide.pptx');
+    writeFileSync(
+      content,
+      JSON.stringify({ slides: [{ layout: 'chart', title: '宽图片', chart_ref: image }] }),
+    );
+    const result = runPython(RENDER, ['--content', content, '--out', out]);
+    expect(result.status, result.stderr).toBe(6);
+    expect(existsSync(out)).toBe(true);
+    const report = JSON.parse(result.stdout);
+    expect(report).toMatchObject({ ok: false, quality: { status: 'failed' } });
+    expect(report.layout_warnings.some((warning: Issue) => warning.kind === 'off-slide')).toBe(
+      true,
+    );
+  });
+
+  it('估算性文字溢出标为待复核，不能当作确定的通过或丢掉文件', () => {
+    const content = join(dir, 'overflow.json');
+    const out = join(dir, 'overflow.pptx');
+    writeFileSync(
+      content,
+      JSON.stringify({
+        slides: [
+          {
+            layout: 'bullets',
+            title: '要点',
+            bullets: Array.from({ length: 6 }, () =>
+              Array.from({ length: 5 }, () => '测'.repeat(15)).join('\n'),
+            ),
+          },
+        ],
+      }),
+    );
+    const result = runPython(RENDER, ['--content', content, '--out', out]);
+    expect(result.status, result.stderr).toBe(6);
+    expect(existsSync(out)).toBe(true);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: false,
+      quality: { status: 'needs_review' },
+    });
+  });
   it('渲染成功的输出里带检查结果；模板字体本机没装只算提示，不进要改的那一组', () => {
     const content = join(dir, 'content.json');
     writeFileSync(

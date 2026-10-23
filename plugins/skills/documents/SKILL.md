@@ -82,6 +82,8 @@ python3 container_tools/render.py --content content.json --out "<绝对路径>/Q
 
 ## 渲染之后：看版式检查
 
+先看标准输出里的 `quality.status`：`passed` 表示列出的版式检查通过；`failed` 表示有确定问题，需要修正；`needs_review` 表示有估算性问题或检查未跑成，需要修正或复核。后两种会保留文件、返回 `ok:false` 并退出 **6**，不是“已验收”。PDF 沿用转换前 docx 的检查状态，不能把转成 PDF 当作版式问题已消失。
+
 渲染成功的输出里带两组检查结果（`_shared/layout_check.py`，离线、不渲染，用字体度量与字形表估算）：
 
 - `layout_warnings`：**要改的**。文字溢出文本框、字体里没有的字（会显示成方框，比如 `U+2212` 减号）、

@@ -30,7 +30,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import stat
 import sys
+import tempfile
+import hashlib
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -143,6 +146,7 @@ def ensure_office_runtime(modules: Iterable[str]) -> None:
     所以判断留在这里：缺模块 + 扩展装了 → 用扩展的解释器重跑；扩展没装 → 照常报 3 号退出码。
     环境变量做防重入，避免换了解释器还缺模块时无限套娃。
     """
+    configure_plot_cache()
     wanted = (*modules, *OFFICE_SUPPORT_MODULES)
     missing = [name for name in wanted if importlib.util.find_spec(name) is None]
     if not missing:
@@ -157,6 +161,33 @@ def ensure_office_runtime(modules: Iterable[str]) -> None:
         [str(interpreter), *sys.argv],
         {**os.environ, "EVOWORK_SKILL_REEXEC": "1"},
     )
+
+
+def configure_plot_cache() -> Path | None:
+    configured = os.environ.get("MPLCONFIGDIR")
+    if configured:
+        candidate = Path(configured)
+        try:
+            if candidate.is_dir():
+                with tempfile.TemporaryFile(dir=candidate):
+                    return candidate
+        except OSError:
+            pass
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    identity = str(uid) if uid is not None else hashlib.sha256(str(Path.home()).encode()).hexdigest()[:16]
+    root = Path(tempfile.gettempdir()) / f"evowork-office-cache-{identity}"
+    try:
+        for directory in (root, root / "matplotlib", root / "xdg"):
+            directory.mkdir(mode=0o700, exist_ok=True)
+            info = directory.lstat()
+            if not stat.S_ISDIR(info.st_mode) or (uid is not None and info.st_uid != uid):
+                return None
+            directory.chmod(0o700)
+        os.environ["MPLCONFIGDIR"] = str(root / "matplotlib")
+        os.environ.setdefault("XDG_CACHE_HOME", str(root / "xdg"))
+        return root / "matplotlib"
+    except OSError:
+        return None
 
 
 def fail(code: int, message: str, detail: str | None = None) -> None:
@@ -402,4 +433,9 @@ def succeeded(out_path: Path | None = None, **extra: Any) -> None:
     if out_path is not None:
         payload["path"] = str(out_path)
     payload.update(extra)
+    quality = extra.get("quality")
+    if quality and quality.get("status") != "passed":
+        payload.update(ok=False, code=EXIT_PARTIAL, message="文件已生成，但检查未通过，请先修正或复核，不要声明交付已验收。")
     print(json.dumps(payload, ensure_ascii=False))
+    if not payload["ok"]:
+        sys.exit(EXIT_PARTIAL)

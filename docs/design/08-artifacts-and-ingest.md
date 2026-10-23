@@ -320,6 +320,12 @@ mark_artifact --operation-kind create --expected-output-count 1 --output-format 
 
 ### 5.4 M0 必须拿到的结论（总纲 §10.2 第 1 条）
 
+**2026-10-23 交付检查契约**：渲染完成与验收通过分开。结构化输出增加 `quality.status`（passed / failed / needs_review）和检查范围；确定的缺字、越界、错误公式阻止“验收通过”，版式溢出估算与未完成的检查标为待复核。非通过结果保留已生成文件，输出 `ok: false`、退出码 6，明确修正或复核动作；不能因检查抛异常而返回空警告并宣称通过。
+
+xlsx 在保存前检查公式引用和本地计算结果：支持受限的算术、比较、条件与常见汇总函数，不运行公式里的程序、不出网；明确错误（断引用、除零、循环依赖等）退出码 2，不写坏文件。未支持的函数 / 引用明确列出待复核，不猜结果、不冒充完整 Excel 引擎；可以核验的公式保留原公式并写入计算缓存，供本机解析与预览读取。重算范围是生成的工作簿，不在源数据上执行宏、外部链接或公式代码。
+
+办公脚本在导入 Matplotlib 之前配置用户专属、权限 0700 的临时缓存目录，跨命令复用字体缓存。显式配置且可写的 `MPLCONFIGDIR` 保持生效；不可写时使用本机临时缓存，不向项目目录写缓存。共享目录拒绝符号链接和其他用户所有的目录；首次冷启动仍须建立字体索引。
+
 用 GLM-5.3-flash 跑三个任务并人工评分：① 从一份 Excel 生成 8 页 pptx；② 从需求描述生成 6 页 docx（含表格与目录）；③ 从 csv 生成含公式的 xlsx。评判标准写进 M0 验收：**文字不溢出、公式可用、中文不乱码、层级正确**四项全过才算达标。不达标按 R4 换旗舰档，**不靠加模板硬扛**（总纲原话）。
 
 **评分材料（2026-10-22）**：`apps/desktop/test/e2e/ui/u1-artifacts.real.spec.mjs` 用固定种子的输入（`harness/u1/make_inputs.py`）跑这三个任务，把产物收进 `test-results/u1-scoring/artifacts/`，再按产物读出机器能确定的事实（页数、表格、目录、公式与断引用、字体、纸张，`harness/u1/facts.py`），生成留给人填的 `评分表.md`。它**不替人打分**：溢出与乱码要看渲染结果。跑法：`EVOWORK_UI_MODEL_PRESET=glm-5.3-flash EVOWORK_UI_MODEL_KEY=… node node_modules/@playwright/test/cli.js test u1-artifacts --project=real --retries=0`。

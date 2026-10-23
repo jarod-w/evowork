@@ -18,7 +18,8 @@
  *    **之前用户回合的**可以不回传，只对实测过的厂商这么做（`ToChatOptions.dropPriorTurnReasoning`）。
  */
 import type { ContentItem, ResponseItem, ResponsesRequest, ResponsesTool } from '../protocol.js';
-import type { DegradeReason, ModelCapabilities } from '../capabilities.js';
+import type { DegradeReason, ModelCapabilities, ProviderId } from '../capabilities.js';
+import { mapReasoningEffort, supportsReasoningEffort } from '../reasoning-effort.js';
 import { chatToolName } from './tool-names.js';
 
 export interface ChatMessage {
@@ -58,6 +59,7 @@ export interface ChatRequest {
   readonly stream_options?: { readonly include_usage: boolean };
   readonly temperature?: number;
   readonly max_tokens?: number;
+  readonly reasoning_effort?: string;
 }
 
 export class UnsupportedInputError extends Error {
@@ -139,6 +141,7 @@ function reasoningTextFrom(item: Extract<ResponseItem, { type: 'reasoning' }>): 
 }
 
 export interface ToChatOptions {
+  readonly provider?: ProviderId;
   /**
    * 之前各个用户回合的思维链不再回传（2026-10-22，只对实测过的厂商开：DeepSeek · Kimi · GLM，见
    * `providers/registry.ts` 的 `DROPS_PRIOR_TURN_REASONING`）。**当前回合**的照旧挂回（坑 4）。
@@ -366,6 +369,20 @@ export function toChatRequest(
   }
   if (!capabilities.reasoning) degradations.add('NO_REASONING');
   if (!capabilities.promptCache) degradations.add('NO_PROMPT_CACHE');
+  const requestedEffort = request.reasoning?.effort;
+  const effort =
+    requestedEffort && capabilities.reasoning
+      ? mapReasoningEffort(options.provider, upstreamModel, requestedEffort)
+      : undefined;
+  if (requestedEffort && !effort) {
+    if (capabilities.reasoning && supportsReasoningEffort(options.provider, upstreamModel)) {
+      throw new UnsupportedInputError(
+        'REASONING_EFFORT_UNSUPPORTED',
+        '当前模型不支持所请求的推理强度，请选择 low、high 或 max。',
+      );
+    }
+    degradations.add('REASONING_EFFORT_UNSUPPORTED');
+  }
 
   // 命名空间摊平成一组扁平函数（tool-names.ts）；整个命名空间当成一个工具发出去，模型就看不到里面那些
   const tools = request.tools?.flatMap((tool) =>
@@ -381,6 +398,7 @@ export function toChatRequest(
   return {
     request: {
       model: upstreamModel,
+      ...(effort ? { reasoning_effort: effort } : {}),
       messages,
       ...(tools && tools.length > 0 ? { tools } : {}),
       ...(request.tool_choice && request.tool_choice !== 'auto'

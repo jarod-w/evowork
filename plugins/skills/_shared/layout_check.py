@@ -37,6 +37,9 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evowork_skill import configure_plot_cache
+
+configure_plot_cache()
 
 EMU_PER_PT = 12700
 LINE_SPACING = 1.2
@@ -138,6 +141,9 @@ TOKEN = re.compile(r"[A-Za-z0-9_.,:;%+\-/()'\"$€£¥#&@!?]+\s*|\s+|.", re.S)
 
 def _lines_needed(text: str, width_pt: float, font_path: Path, name: str, size_pt: float) -> int:
     """贪心折行：西文按词、中文按字。空段也占一行。"""
+    hard_lines = re.split(r"\r\n|[\r\n\v]", text)
+    if len(hard_lines) > 1:
+        return sum(_lines_needed(line, width_pt, font_path, name, size_pt) for line in hard_lines)
     if width_pt <= 0:
         return 1
     lines, current = 1, 0.0
@@ -225,7 +231,7 @@ def _frame_issues(frame, box_width_emu: int, box_height_emu: int, where: str, fo
         runs = list(paragraph.runs) or [None]
         size = max((_size_pt(r, paragraph) for r in runs if r is not None), default=DEFAULT_PT)
         line_pt = size * LINE_SPACING
-        text = "".join(r.text for r in paragraph.runs)
+        text = paragraph.text
         latin, east_asian = _run_fonts(runs[0], paragraph) if runs[0] is not None else (paragraph.font.name, None)
         name, path = fonts.for_text(latin, east_asian, text, count=False)
         for run in paragraph.runs:
@@ -365,12 +371,16 @@ def check_file(path: Path) -> dict[str, Any]:
 
 
 def for_output(path: Path) -> dict[str, Any]:
-    """渲染器成功输出里附带的检查结果。**检查本身出错不影响交付**：产物已经写好了，只记一条提示。"""
+    """文件已经生成；检查失败与估算性警告均不能冒充验收通过。"""
     try:
         result = check_file(path)
     except Exception as error:  # noqa: BLE001
-        return {"layout_warnings": [], "layout_notes": [_issue("info", "check-failed", "全文", f"版式检查没跑成：{type(error).__name__}")]}
-    return {"layout_warnings": result["warnings"], "layout_notes": result["notes"]}
+        return {"layout_warnings": [], "layout_notes": [_issue("info", "check-failed", "全文", f"版式检查没跑成：{type(error).__name__}")], "quality": {"status": "needs_review", "checks": ["layout"], "reason": "check-failed"}}
+    warnings = result["warnings"]
+    estimated = {"overflow", "table-off-slide"}
+    unavailable = any(note["kind"] in {"check-failed", "unsupported"} for note in result["notes"])
+    status = "failed" if any(issue["kind"] not in estimated for issue in warnings) else "needs_review" if warnings or result.get("truncated") or unavailable else "passed"
+    return {"layout_warnings": warnings, "layout_notes": result["notes"], "quality": {"status": status, "checks": ["layout"], "warning_count": len(warnings)}}
 
 
 def main() -> None:

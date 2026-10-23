@@ -83,6 +83,8 @@ python3 container_tools/render.py --content "<临时目录>/content.json" --out 
 
 ## 渲染之后：看版式检查
 
+先看标准输出里的 `quality.status`：`passed` 表示列出的版式检查通过；`failed` 表示有确定问题，需要修正；`needs_review` 表示有估算性溢出或检查未跑成，需要修正或复核。后两种会保留文件、返回 `ok:false` 并退出 **6**，不是“已验收”。不能因为文件已存在就直接登记为完成；先处理检查结果，做不到时向用户说明具体边界。
+
 渲染成功的输出里带两组检查结果（`_shared/layout_check.py`，离线、不渲染，用字体度量与字形表估算）：
 
 - `layout_warnings`：**要改的**。文字溢出文本框、字体里没有的字（会显示成方框，比如 `U+2212` 减号）、

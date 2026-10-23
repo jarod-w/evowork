@@ -28,6 +28,7 @@ import type { Provider, ProviderConfig } from './providers/types.js';
 import { createTranslator, type ChatChunk } from './translate/from-chat.js';
 import { toChatRequest, UnsupportedInputError } from './translate/to-chat.js';
 import { namespacedToolNames } from './translate/tool-names.js';
+import { reasoningEffortNotice } from './reasoning-effort.js';
 
 export interface PipelineDeps {
   readonly models: CapabilityLookup;
@@ -120,6 +121,7 @@ export async function* runPipeline(
   let converted;
   try {
     converted = toChatRequest(request, model.upstreamModel, model.capabilities, {
+      provider: model.provider,
       dropPriorTurnReasoning: DROPS_PRIOR_TURN_REASONING.has(model.provider),
     });
   } catch (err) {
@@ -286,14 +288,16 @@ export async function* runPipeline(
   }
 
   if (!sawDone) {
-    // 流没有正常收尾（连接被掐断）。仍然收尾一次：**已经产生的内容不该丢**，
-    // 但要在日志里记下来 —— 这类"半截响应"是上游质量的重要信号
-    log?.warn('gateway.stream.truncated', { durationMs: now() - startedAt });
+    log?.debug('gateway.stream.missing_done', { durationMs: now() - startedAt });
   }
 
   const finishEvents = translator.finish();
   for (const reason of translator.degradations()) degradations.add(reason);
   yield* finishEvents;
+  if (finishEvents.some((event) => event.type === EVENT.failed)) {
+    log?.warn('gateway.stream.incomplete', { durationMs: now() - startedAt });
+    return;
+  }
 
   const usageEvent = finishEvents.find((e) => e.type === EVENT.completed) as
     | {
@@ -372,13 +376,17 @@ async function collectJson(lines: AsyncIterable<string>): Promise<unknown> {
 }
 
 /** 供 UI 用的能力文案（03 §4.5 的徽标 + 03 §8 的拒绝说明）。 */
-export function capabilityNotices(model: ModelRegistryEntry): string[] {
+export function capabilityNotices(
+  model: Pick<ModelRegistryEntry, 'provider' | 'upstreamModel' | 'capabilities'>,
+): string[] {
   const notices: string[] = [];
   for (const [key, copy] of Object.entries(CAPABILITY_COPY)) {
     if (!copy) continue;
     const enabled = model.capabilities[key as keyof typeof model.capabilities];
     if (enabled === false) notices.push(copy);
   }
+  if (model.capabilities.reasoning)
+    notices.push(reasoningEffortNotice(model.provider, model.upstreamModel));
   return notices;
 }
 

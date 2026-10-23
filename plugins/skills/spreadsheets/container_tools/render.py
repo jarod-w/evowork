@@ -363,7 +363,7 @@ def write_csv(sheet: dict, out_path: Path) -> None:
             writer.writerow(["" if value is None else value for value in row])
 
 
-def render_xlsx(content: dict, out_path: Path) -> None:
+def render_xlsx(content: dict, out_path: Path) -> dict:
     try:
         from openpyxl import Workbook
         from openpyxl.formatting.rule import CellIsRule, DataBarRule
@@ -477,8 +477,16 @@ def render_xlsx(content: dict, out_path: Path) -> None:
 
     # openpyxl 默认把「创建者」写成 openpyxl：交付的文件属性里不留生成库的名字
     book.properties.creator = ""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    book.save(out_path)
+    from formula_check import save_with_cache, verify_workbook
+
+    quality, values = verify_workbook(book)
+    if quality["status"] == "failed":
+        issue = next(issue for issue in quality["issues"] if issue["kind"] == "formula-error")
+        fail(EXIT_INVALID_CONTENT, f"第 {issue['sheet']} 张表 {issue['cell']} 公式计算失败（{issue['error']}），请修正后再生成。")
+    book.calculation.calcMode = "auto"
+    book.calculation.fullCalcOnLoad = True
+    save_with_cache(book, out_path, values)
+    return quality
 
 
 # ─────────────────────────── 提取：已有文件 → 内容 JSON ───────────────────────────
@@ -1555,8 +1563,8 @@ def main() -> None:
     if suffix != ".xlsx":
         fail(EXIT_INVALID_CONTENT, f"输出格式只支持 .xlsx 与 .csv，收到 {suffix or '(无扩展名)'}。")
 
-    render_xlsx(content, out_path)
-    succeeded(out_path, sheets=len(content["sheets"]), format="xlsx")
+    quality = render_xlsx(content, out_path)
+    succeeded(out_path, sheets=len(content["sheets"]), format="xlsx", quality=quality)
 
 
 if __name__ == "__main__":
