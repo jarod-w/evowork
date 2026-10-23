@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import re
+import warnings
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -135,11 +137,38 @@ def has_cjk(content: dict) -> bool:
     texts = [content.get("title", ""), content.get("x_label", ""), content.get("y_label", "")]
     texts += [str(c) for c in content.get("categories", [])]
     texts += [s["name"] for s in content["series"]]
-    texts.append(content.get("source", ""))
-    return any("一" <= ch <= "鿿" for text in texts for ch in text)
+    texts.append(f"数据来源：{content['source']}" if content.get("source") else "")
+    return any(0x2E80 <= ord(ch) <= 0x9FFF or 0xAC00 <= ord(ch) <= 0xD7AF or 0xF900 <= ord(ch) <= 0xFAFF or 0x20000 <= ord(ch) <= 0x323AF for text in texts for ch in text)
 
 
-def render(content: dict, out_path: Path) -> None:
+def glyph_quality(fig) -> dict:
+    """检查实际渲染选中的字形（包括字体回退和数学文本），不把原始文本放进诊断。"""
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", UserWarning)
+            fig.canvas.draw()
+        return warnings_quality(caught)
+    except Exception as error:
+        return {"status": "needs_review", "checks": ["glyphs"], "issues": [{"kind": "check-failed", "reason": type(error).__name__}]}
+
+
+def warnings_quality(caught) -> dict:
+    missing = set()
+    other = False
+    for warning in caught:
+        message = str(warning.message)
+        match = re.search(r"Glyph (\d+).*missing from", message)
+        if match:
+            missing.add(f"U+{int(match.group(1)):04X}")
+        else:
+            other = True
+    issues = ([{"kind": "missing-glyph", "where": "chart-text", "codepoints": sorted(missing)[:30]}] if missing else [])
+    if other:
+        issues.append({"kind": "render-warning", "where": "chart"})
+    return {"status": "failed" if missing else "needs_review" if other else "passed", "checks": ["glyphs"], "issues": issues}
+
+
+def render(content: dict, out_path: Path) -> dict:
     try:
         import matplotlib
 
@@ -215,8 +244,10 @@ def render(content: dict, out_path: Path) -> None:
     else:  # bar / stacked-bar
         positions = range(len(categories))
         if chart == "stacked-bar":
-            bottom = [0.0] * len(categories)
+            positive = [0.0] * len(categories)
+            negative = [0.0] * len(categories)
             for index, item in enumerate(series):
+                bottom = [positive[i] if value >= 0 else negative[i] for i, value in enumerate(item["values"])]
                 ax.bar(
                     positions,
                     item["values"],
@@ -225,7 +256,11 @@ def render(content: dict, out_path: Path) -> None:
                     color=palette[index % len(palette)],
                     width=metrics["bar_width"],
                 )
-                bottom = [b + v for b, v in zip(bottom, item["values"])]
+                for i, value in enumerate(item["values"]):
+                    if value >= 0:
+                        positive[i] += value
+                    else:
+                        negative[i] += value
         else:
             count = len(series)
             slot = metrics["bar_width"] / count
@@ -248,6 +283,9 @@ def render(content: dict, out_path: Path) -> None:
         ax.set_ylabel(content["y_label"], fontsize=metrics["label_pt"], color=mode["text_secondary"])
 
     if chart != "pie":
+        from matplotlib.ticker import FuncFormatter
+
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: formatter(value)))
         ax.grid(axis="y", color=mode["grid"], linewidth=metrics["grid_width"])
         ax.set_axisbelow(True)
         for spine in ("top", "right"):
@@ -270,9 +308,19 @@ def render(content: dict, out_path: Path) -> None:
         )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, format=out_path.suffix.lstrip(".") or "png", facecolor=fig.get_facecolor())
-    plt.close(fig)
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", UserWarning)
+            fig.tight_layout()
+            quality = glyph_quality(fig)
+            fig.savefig(out_path, format=out_path.suffix.lstrip(".") or "png", facecolor=fig.get_facecolor())
+        saved = warnings_quality(caught)
+        if saved["status"] != "passed":
+            quality["issues"].extend(saved["issues"])
+            quality["status"] = "failed" if "failed" in (quality["status"], saved["status"]) else "needs_review"
+        return quality
+    finally:
+        plt.close(fig)
 
 
 def main() -> None:
@@ -300,8 +348,8 @@ def main() -> None:
     out_path = Path(args.out).resolve()
     if out_path.suffix.lower() not in (".svg", ".png"):
         fail(EXIT_INVALID_CONTENT, f"输出格式只支持 .svg 与 .png，收到 {out_path.suffix or '(无扩展名)'}。")
-    render(content, out_path)
-    succeeded(out_path, chart=content["chart"], series=len(content["series"]))
+    quality = render(content, out_path)
+    succeeded(out_path, chart=content["chart"], series=len(content["series"]), quality=quality)
 
 
 if __name__ == "__main__":

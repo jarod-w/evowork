@@ -18,20 +18,9 @@
  * 同时承担"起进程"与"编排"两件事，而它们的失败方式完全不同：
  * 起进程失败要中止启动，编排出错只该让某一个功能不可用。
  */
-import { createHash } from 'node:crypto';
+import { createArtifactFileIO } from './artifact-files.js';
 import type { TaskEnvironments } from './task-environments.js';
-import {
-  closeSync,
-  constants,
-  existsSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 
 import {
@@ -102,49 +91,6 @@ function toIndexPort(repo: ReturnType<typeof createArtifactRepo>): IndexPort {
   };
 }
 
-/**
- * 真实文件系统的读取。
- *
- * 流式计算完整内容哈希，避免文件后半部等长修改漏报；不将整份产物同时读进内存。
- */
-function hashFile(path: string): { sizeBytes: number; contentHash: string } | undefined {
-  let fd: number | undefined;
-  try {
-    if (!lstatSync(path).isFile()) return undefined;
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) return undefined;
-    const hash = createHash('sha256'),
-      buffer = Buffer.alloc(64 * 1024);
-    let bytes: number;
-    while ((bytes = readSync(fd, buffer, 0, buffer.length, null)) > 0)
-      hash.update(buffer.subarray(0, bytes));
-    const after = fstatSync(fd);
-    if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) return undefined;
-    return { sizeBytes: stat.size, contentHash: hash.digest('hex') };
-  } catch {
-    return undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-function listFilesRecursively(root: string, depth = 0): string[] {
-  if (depth > 8 || !existsSync(root)) return [];
-  const out: string[] = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const full = join(root, entry.name);
-    if (entry.isDirectory()) {
-      // 深目录（node_modules 之类）由 `isIgnored` 在上层过滤，这里先别递归进去
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      out.push(...listFilesRecursively(full, depth + 1));
-    } else if (entry.isFile()) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
 export function createLocalServices(options: LocalServicesOptions) {
   const now = options.now ?? (() => Date.now());
   const automations = createAutomationRepo(options.store.db);
@@ -193,9 +139,12 @@ export function createLocalServices(options: LocalServicesOptions) {
   /* ── 文件变化 ↔ 产物索引 ─────────────────────────────────────── */
 
   const index = toIndexPort(artifacts);
+  const artifactFiles = createArtifactFileIO();
+  const hashFile = artifactFiles.stat;
   const fs = createPollingFileSystem({
-    listFiles: (root) => listFilesRecursively(root).map((path) => path),
-    stat: hashFile,
+    ...artifactFiles,
+    onError: () =>
+      options.logger?.warn('artifacts.scan.failed', { reason: 'FILESYSTEM_UNAVAILABLE' }),
   });
 
   const watchers = new Map<string, ReturnType<typeof createArtifactWatcher>>();

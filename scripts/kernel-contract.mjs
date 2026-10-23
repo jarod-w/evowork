@@ -53,6 +53,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gitCheckoutHead } from './git-checkout-head.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const KERNEL_DIR = resolve(process.env.EVOWORK_KERNEL_DIR ?? join(REPO_ROOT, '..', 'codex'));
@@ -682,17 +683,7 @@ function generateWireSamples({ enums, enumMeta }) {
 
 /** 内核当前签出，写进生成文件的头部 —— 生成物要说得清自己是从哪来的。 */
 function kernelHead() {
-  const head = join(KERNEL_DIR, '.git/HEAD');
-  try {
-    const ref = readFileSync(head, 'utf8').trim();
-    const m = /^ref: (.+)$/.exec(ref);
-    if (!m) return ref.slice(0, 12);
-    return readFileSync(join(KERNEL_DIR, '.git', m[1]), 'utf8')
-      .trim()
-      .slice(0, 12);
-  } catch {
-    return '未知';
-  }
+  return gitCheckoutHead(KERNEL_DIR);
 }
 
 /**

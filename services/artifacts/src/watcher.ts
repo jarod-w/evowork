@@ -29,10 +29,13 @@ export interface FileSystemPort {
   /** 列出目录下的所有文件（相对或绝对路径都行，保持一致即可） */
   listFiles(root: string): readonly string[];
   stat(path: string): { readonly sizeBytes: number; readonly contentHash: string } | undefined;
+  /** 基线只需身份指纹，不必同步读取整个文件。 */
+  fingerprint?(path: string): string | undefined;
   /** 订阅变化。返回退订函数。丢事件是允许的 —— 对账会兜底 */
   watch(
     root: string,
     onChange: (path: string, kind: 'add' | 'modify' | 'delete') => void,
+    onBatch?: (changes: readonly { path: string; kind: 'add' | 'modify' | 'delete' }[]) => void,
   ): () => void;
 }
 
@@ -69,6 +72,8 @@ export interface ArtifactProvenance {
 export function createArtifactWatcher(options: WatcherOptions) {
   let workspaceRoot: string | undefined;
   const ignored = (path: string) => isIgnored(workspaceRoot ? relative(workspaceRoot, path) : path);
+  const fingerprint = (path: string) =>
+    options.fs.fingerprint ? options.fs.fingerprint(path) : options.fs.stat(path)?.contentHash;
   const context = (provenance?: ArtifactProvenance, inheritDefaults = true): RecognizeContext => ({
     workspaceRoot,
     threadId: provenance?.threadId ?? (inheritDefaults ? options.threadId : undefined),
@@ -128,17 +133,10 @@ export function createArtifactWatcher(options: WatcherOptions) {
     // `start()` 时已经存在、且此前不在索引里的文件只是工作空间基线，不是本次任务的产物。
     // 只有它们的内容后来发生变化时，才从基线移除并作为新信号处理。
     for (const [path, hash] of baseline) {
-      const current = options.fs.stat(path)?.contentHash;
+      const current = fingerprint(path);
       if (current === undefined || current !== hash) baseline.delete(path);
     }
     const discoverable = onDisk.filter((path) => !baseline.has(path));
-
-    // ① 磁盘上有、索引里没有 → 补进去（丢掉的 add 事件）
-    let added = 0;
-    for (const path of discoverable) {
-      if (indexedPaths.has(path)) continue;
-      if (apply(recognize({ signal: 'HOOK_SCAN', path }, context(undefined, false)))) added += 1;
-    }
 
     // ② 索引里有、磁盘上没有 → 先按内容哈希在"新出现的文件"里找它
     const candidates = discoverable
@@ -154,11 +152,24 @@ export function createArtifactWatcher(options: WatcherOptions) {
       const located = relocate(record, candidates);
       if (located.fileState === 'PRESENT') {
         options.index.setFileState(record.id, 'PRESENT', located.path);
+        // A single target must not absorb multiple source records with identical content.
+        candidates.splice(
+          candidates.findIndex((candidate) => candidate.path === located.path),
+          1,
+        );
         moved += 1;
       } else {
         options.index.setFileState(record.id, 'MISSING');
         missing += 1;
       }
+    }
+    // 移动先认领；只把剩余路径作为新增，避免先插入新记录再搬来旧记录。
+    let added = 0;
+    for (const candidate of candidates) {
+      if (
+        apply(recognize({ signal: 'HOOK_SCAN', path: candidate.path }, context(undefined, false)))
+      )
+        added += 1;
     }
     return { added, moved, missing };
   }
@@ -192,11 +203,24 @@ export function createArtifactWatcher(options: WatcherOptions) {
       const indexed = new Set(options.index.listPresent(root).map((record) => record.path));
       for (const path of options.fs.listFiles(root)) {
         if (ignored(path) || indexed.has(path)) continue;
-        const hash = options.fs.stat(path)?.contentHash;
-        if (hash !== undefined) baseline.set(path, hash);
+        const token = fingerprint(path);
+        if (token !== undefined) baseline.set(path, token);
       }
       reconcile(root);
-      stops.push(options.fs.watch(root, ingestScannedPath));
+      stops.push(
+        options.fs.watch(
+          root,
+          (path, kind) => {
+            if (kind === 'modify') ingestScannedPath(path, kind);
+            else reconcile(root);
+          },
+          (changes) => {
+            if (changes.some((change) => change.kind !== 'modify')) reconcile(root);
+            for (const change of changes)
+              if (change.kind === 'modify') ingestScannedPath(change.path, 'modify');
+          },
+        ),
+      );
       if (timer === undefined) {
         timer = setInterval(
           () => reconcile(root),
@@ -239,40 +263,101 @@ export function createArtifactWatcher(options: WatcherOptions) {
  *
  * （真的遇到大目录时，宿主可以换成内核的 `fs/watch` —— 端口就是为此留的。）
  */
+export interface FileSnapshot {
+  readonly fingerprint: string;
+  readonly contentHash?: string | undefined;
+}
+
 export function createPollingFileSystem(io: {
   readonly listFiles: (root: string) => readonly string[];
   readonly stat: (path: string) => { sizeBytes: number; contentHash: string } | undefined;
+  readonly fingerprint?: ((path: string) => string | undefined) | undefined;
+  /** 一次完整的异步快照；在发布前填好 stat 的缓存。失败时保留上一份快照。 */
+  readonly scan?: ((root: string) => Promise<ReadonlyMap<string, FileSnapshot>>) | undefined;
+  readonly onError?: (() => void) | undefined;
   readonly intervalMs?: number;
 }): FileSystemPort {
   return {
     listFiles: io.listFiles,
     stat: io.stat,
-    watch(root, onChange) {
-      let previous = new Map<string, string>();
+    ...(io.fingerprint ? { fingerprint: io.fingerprint } : {}),
+    watch(root, onChange, onBatch) {
+      let previous = new Map<string, FileSnapshot>();
       for (const path of io.listFiles(root)) {
-        const stat = io.stat(path);
-        if (stat) previous.set(path, stat.contentHash);
-      }
-
-      const timer = setInterval(() => {
-        const current = new Map<string, string>();
-        for (const path of io.listFiles(root)) {
+        if (io.fingerprint) {
+          const token = io.fingerprint(path);
+          if (token !== undefined) previous.set(path, { fingerprint: token });
+        } else {
           const stat = io.stat(path);
-          if (stat) current.set(path, stat.contentHash);
+          if (stat)
+            previous.set(path, { fingerprint: stat.contentHash, contentHash: stat.contentHash });
         }
-        for (const [path, hash] of current) {
+      }
+      let stopped = false,
+        scanning = false;
+      const publish = (current: ReadonlyMap<string, FileSnapshot>) => {
+        if (stopped) return;
+        const changes: { path: string; kind: 'add' | 'modify' | 'delete' }[] = [];
+        for (const [path, entry] of current) {
           const before = previous.get(path);
-          if (before === undefined) onChange(path, 'add');
-          else if (before !== hash) onChange(path, 'modify');
+          // 读取过程中发生变化或权限暂不可用：下一轮再查，不发布不稳定的内容。
+          if (entry.contentHash === undefined) continue;
+          if (before === undefined) changes.push({ path, kind: 'add' });
+          else if (
+            before.contentHash !== undefined
+              ? before.contentHash !== entry.contentHash
+              : before.fingerprint !== entry.fingerprint
+          )
+            changes.push({ path, kind: 'modify' });
         }
-        for (const path of previous.keys()) {
-          if (!current.has(path)) onChange(path, 'delete');
+        for (const path of previous.keys())
+          if (!current.has(path)) changes.push({ path, kind: 'delete' });
+        const next = new Map(current);
+        for (const [path, entry] of current) {
+          if (entry.contentHash === undefined) {
+            const before = previous.get(path);
+            if (before) next.set(path, before);
+            else next.delete(path);
+          }
         }
-        previous = current;
+        previous = next;
+        if (onBatch) onBatch(changes);
+        else
+          for (const change of changes) {
+            if (stopped) break;
+            onChange(change.path, change.kind);
+          }
+      };
+      const timer = setInterval(() => {
+        if (stopped || scanning) return;
+        if (io.scan) {
+          scanning = true;
+          void io
+            .scan(root)
+            .then(publish)
+            .catch(() => io.onError?.())
+            .finally(() => {
+              scanning = false;
+            });
+          return;
+        }
+        try {
+          const current = new Map<string, FileSnapshot>();
+          for (const path of io.listFiles(root)) {
+            const stat = io.stat(path);
+            if (stat)
+              current.set(path, { fingerprint: stat.contentHash, contentHash: stat.contentHash });
+          }
+          publish(current);
+        } catch {
+          io.onError?.();
+        }
       }, io.intervalMs ?? 2_000);
-      if (typeof timer.unref === 'function') timer.unref();
-
-      return () => clearInterval(timer);
+      timer.unref?.();
+      return () => {
+        stopped = true;
+        clearInterval(timer);
+      };
     },
   };
 }

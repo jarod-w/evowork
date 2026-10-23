@@ -5,7 +5,7 @@
  * 而是"产物没出现在结果区"或"云端留了个半截文件"。
  */
 import { createLogger } from '@evowork/logging';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createArtifactWatcher,
@@ -18,6 +18,8 @@ import {
   type FileSystemPort,
   type IndexPort,
 } from '../src/index.js';
+
+afterEach(() => vi.useRealTimers());
 
 const NOW = Date.parse('2026-09-05T10:00:00Z');
 
@@ -128,7 +130,44 @@ describe('**移动优先按内容哈希重新定位**（08 §8）', () => {
 
     expect(stats.moved).toBe(1);
     expect(stats.missing).toBe(0);
+    expect(stats.added).toBe(0);
+    expect(records).toHaveLength(1);
     expect(records.find((r) => r.id === 'af_1')?.path).toBe('/w/archive/report.docx');
+  });
+
+  it('一个移动目标只能认领一条旧记录，不能把两份同内容文件合到一起', () => {
+    const { watcher, records, disk } = harness({ '/w/a.docx': 'same', '/w/b.docx': 'same' });
+    watcher.reconcile('/w');
+    disk.clear();
+    disk.set('/w/c.docx', 'same');
+    expect(watcher.reconcile('/w')).toEqual({ added: 0, moved: 1, missing: 1 });
+    expect(records).toHaveLength(2);
+    expect(records.filter((r) => r.path === '/w/c.docx')).toHaveLength(1);
+  });
+
+  it('真实轮询的 add/delete 顺序也复用移动对账，保留原 ID 和归属', () => {
+    const { watcher, records, disk, fs } = harness({ '/w/a.docx': 'same' });
+    let changed!: Parameters<FileSystemPort['watch']>[1];
+    fs.watch = (_root, callback) => {
+      changed = callback;
+      return () => undefined;
+    };
+    watcher.ingestPath('/w/a.docx', 'add', { threadId: 'owner', turnId: 'turn' });
+    watcher.start('/w');
+    disk.delete('/w/a.docx');
+    disk.set('/w/new.docx', 'same');
+    changed('/w/new.docx', 'add');
+    changed('/w/a.docx', 'delete');
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      id: 'af_1',
+      threadId: 'owner',
+      turnId: 'turn',
+      version: 1,
+      path: '/w/new.docx',
+      fileState: 'PRESENT',
+    });
+    watcher.stop();
   });
 
   it('真的删掉了 → MISSING，但**索引条目保留**（"重新生成"要靠它）', () => {
@@ -215,6 +254,96 @@ describe('轮询文件系统：三个平台行为一致、不丢事件', () => {
     expect(events).toEqual(['add:/w/b.txt', 'modify:/w/a.txt', 'delete:/w/b.txt']);
     stop();
     vi.useRealTimers();
+  });
+});
+
+describe('异步轮询不重叠，停止后的结果不能再发布', () => {
+  it('基线只读指纹；慢扫描不重叠，迟到结果被丢弃', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: Map<string, { fingerprint: string; contentHash: string }>) => void;
+    const scan = vi.fn(
+      () =>
+        new Promise<Map<string, { fingerprint: string; contentHash: string }>>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const fs = createPollingFileSystem({
+      listFiles: () => ['/w/a.md'],
+      fingerprint: () => 'v1',
+      stat: () => {
+        throw new Error('不能在主线程全读基线');
+      },
+      scan,
+      intervalMs: 10,
+    });
+    const change = vi.fn();
+    const stop = fs.watch('/w', change);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(scan).toHaveBeenCalledTimes(1);
+    stop();
+    finish(new Map([['/w/a.md', { fingerprint: 'v2', contentHash: 'new' }]]));
+    await vi.advanceTimersByTimeAsync(20);
+    expect(change).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});
+
+describe('异步快照的失败和批量变化', () => {
+  it('暂时读不到的新文件在稳定后仍新增，扫描失败不把已有文件标为删除', async () => {
+    vi.useFakeTimers();
+    let round = 0;
+    const scan = vi.fn(async () => {
+      round++;
+      if (round === 1)
+        return new Map([
+          ['/w/existing.md', { fingerprint: 'old', contentHash: 'same' }],
+          ['/w/new.md', { fingerprint: 'v1' }],
+        ]);
+      if (round === 2) throw new Error('unavailable');
+      return new Map([
+        ['/w/existing.md', { fingerprint: 'old', contentHash: 'same' }],
+        ['/w/new.md', { fingerprint: 'v1', contentHash: 'hash' }],
+      ]);
+    });
+    const errors = vi.fn(),
+      changes = vi.fn();
+    const fs = createPollingFileSystem({
+      listFiles: () => ['/w/existing.md'],
+      stat: () => undefined,
+      fingerprint: () => 'old',
+      scan,
+      onError: errors,
+      intervalMs: 10,
+    });
+    const stop = fs.watch('/w', changes);
+    await vi.advanceTimersByTimeAsync(30);
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(changes.mock.calls).toEqual([['/w/new.md', 'add']]);
+    stop();
+  });
+  it('一轮批量生成只发布一次批次，不为每个文件重新扫整个目录', async () => {
+    vi.useFakeTimers();
+    const batch = vi.fn(),
+      change = vi.fn();
+    const scan = async () =>
+      new Map(
+        Array.from(
+          { length: 100 },
+          (_, i) => [`/w/${i}.json`, { fingerprint: 'v1', contentHash: String(i) }] as const,
+        ),
+      );
+    const fs = createPollingFileSystem({
+      listFiles: () => [],
+      stat: () => undefined,
+      scan,
+      intervalMs: 10,
+    });
+    const stop = fs.watch('/w', change, batch);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0]?.[0]).toHaveLength(100);
+    expect(change).not.toHaveBeenCalled();
+    stop();
   });
 });
 
