@@ -42,6 +42,10 @@ describe('计算过公式再交付', () => {
       ['=AVERAGEIF(Detail!A2:A4,"East",Detail!B2:B4)', 20],
       ['=AVERAGEIFS(Detail!B2:B4,Detail!A2:A4,"East")', 20],
       ['=COUNTIF(Detail!A2:A4,"E*")', 2],
+      ['=COUNTIF(Detail!B2:B5,"*")', 0],
+      ['=COUNTIF(Detail!A2:A5,"*")', 3],
+      ['=SUMIF(Detail!B2:B4,"*",Detail!C2:C4)', 0],
+      ['=COUNTIF(Detail!B2:B5,"??")', 0],
       ['=COUNT(Detail!B2:B4)', 3],
       ['=COUNTA(Detail!A2:A4)', 3],
       ['=MIN(Detail!B2:B4)', 10],
@@ -94,6 +98,7 @@ describe('计算过公式再交付', () => {
     expect(JSON.parse(read.stdout)).toEqual(samples.map(([, expected]) => expected));
   });
   it.each([
+    '=SUMPRODUCT(A1:B1,A1:A2)',
     "='MissingSheet'!A{row}",
     '=A{row}/0',
     '=B{row}+1',

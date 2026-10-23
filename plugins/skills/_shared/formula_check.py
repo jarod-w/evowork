@@ -324,7 +324,8 @@ class FormulaCheck:
             return not self.truth(values[0])
         if name == "SUMPRODUCT" and values:
             arrays = [self.values(value) if isinstance(value, Area) else [value] for value in values]
-            if len({len(array) for array in arrays}) != 1:
+            shapes = {(value.bottom - value.top + 1, value.right - value.left + 1) if isinstance(value, Area) else (1, 1) for value in values}
+            if len(shapes) != 1:
                 raise FormulaFault("#VALUE!")
             return sum(math.prod(value if isinstance(value, (float, int)) and not isinstance(value, bool) else 0 for value in row) for row in zip(*arrays))
         raise UnverifiedFormula("function-arguments")
@@ -350,7 +351,8 @@ class FormulaCheck:
         if "~" in operand:
             raise UnverifiedFormula("escaped-criterion")
         pattern = "".join("[[]" if char == "[" else "[]]" if char == "]" else char for char in operand.casefold())
-        matched = fnmatch.fnmatchcase(str(value if value is not None else "").casefold(), pattern)
+        wildcard = "*" in operand or "?" in operand
+        matched = (not wildcard or isinstance(value, str)) and fnmatch.fnmatchcase(str(value if value is not None else "").casefold(), pattern)
         return not matched if operator == "<>" else matched
 
     def conditional(self, name, values):

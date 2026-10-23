@@ -323,6 +323,8 @@
 
 **2026-10-23 执行效果修正规格**：只有上游明确以 `stop` / `tool_calls` 结束、且工具参数是完整 JSON 对象时，网关才能发送 `response.completed`。EOF / `[DONE]` 不能替代业务结束原因；缺失结束原因按连接中断处理，长度截断、内容过滤和畸形参数明确失败，保留已流出的文字但不提交残缺工具调用。已有合法结束原因时允许省略 `[DONE]`。失败不会自动执行工具。
 
+**同日补充 P1 边界**：非流式上游的完整 JSON 经同一翻译器转换，保留文字、思维链、工具调用、结束原因与用量，不因缺少 SSE 前缀丢弃。非流式正文上限 8MiB、错误正文上限 64KiB；从收到响应头到读完整体采用首片等待预算作为总期限，并受片间空闲预算与客户端取消约束，超时或超限掐断上游。错误正文读取失败仍按原 HTTP 状态映射，不能把 401 变成可重试错误。托管转发在请求中止或响应连接提前关闭时立即取消上游，并释放读取器；正常响应结束不触发错误取消。
+
 推理强度经网关转换成 Chat 顶层 `reasoning_effort`，按协议类型和确切模型名适配。依据 2026-10-23 的 [DeepSeek](https://api-docs.deepseek.com/guides/thinking_mode/)、[Kimi](https://platform.kimi.ai/docs/api/chat)、[GLM](https://docs.bigmodel.cn/api-reference/模型-api/对话补全) 官方参数文档：P0 三家支持 low / high / max；DeepSeek 按厂商规则 minimal→low、medium/xhigh→high、ultra→max，另支持 none；Kimi K3 / GLM-5.3 Flash 的 minimal→low、medium→high、xhigh/ultra→max 是产品映射，目录明确说明。未核实支持的模型不冒传参数，目录提示使用厂商默认值，并记录能力降级；不把“能显示思维链”当成“可调推理强度”。本次文档核对不是厂商实测。
 
 | 模型          | 适配重点                                                                                                    |

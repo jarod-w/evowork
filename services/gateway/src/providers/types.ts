@@ -20,7 +20,7 @@ export interface ProviderConfig {
 
 export interface UpstreamResponse {
   readonly status: number;
-  /** SSE 行流。非流式上游由适配器自己包装成单行 */
+  /** 响应体的行流。非流式 JSON 由管道有界收集，再经同一翻译器转换 */
   readonly lines: AsyncIterable<string>;
   readonly headers: Readonly<Record<string, string>>;
 }

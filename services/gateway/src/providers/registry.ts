@@ -33,6 +33,11 @@ import {
   type UpstreamResponse,
 } from './types.js';
 import { UPSTREAM_DISCONNECTED } from '../idle.js';
+import {
+  COMPLETION_BODY_MAX_BYTES,
+  ERROR_BODY_MAX_BYTES,
+  UpstreamBodyError,
+} from '../upstream-body.js';
 import type { ChatRequest } from '../translate/to-chat.js';
 
 /** 从上游错误体里挖出 message / code，容忍三家各自的嵌套形状。 */
@@ -199,19 +204,28 @@ async function postChat(
     }
   });
 
-  return { status: response.status, headers, lines: iterateLines(response) };
+  const maxBytes =
+    response.status >= 400
+      ? ERROR_BODY_MAX_BYTES
+      : !request.stream
+        ? COMPLETION_BODY_MAX_BYTES
+        : undefined;
+  return { status: response.status, headers, lines: iterateLines(response, maxBytes) };
 }
 
 /** 把 Response body 切成行。SSE 的 `data:` 前缀由调用方处理。 */
-async function* iterateLines(response: Response): AsyncIterable<string> {
+async function* iterateLines(response: Response, maxBytes?: number): AsyncIterable<string> {
   const body = response.body;
   if (!body) return;
   const decoder = new TextDecoder();
   let buffer = '';
+  let bytes = 0;
   // Node 的 ReadableStream 实现了 async iterator（web 标准里还没有），
   // 所以这里显式转型而不是依赖 DOM 类型
   const stream = body as unknown as AsyncIterable<Uint8Array>;
   for await (const chunk of stream) {
+    bytes += chunk.byteLength;
+    if (maxBytes !== undefined && bytes > maxBytes) throw new UpstreamBodyError('too-large');
     buffer += decoder.decode(chunk, { stream: true });
     let idx = buffer.indexOf('\n');
     while (idx >= 0) {

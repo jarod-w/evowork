@@ -25,7 +25,13 @@ import {
 import { EVENT, type ResponsesEvent, type ResponsesRequest } from './protocol.js';
 import { DROPS_PRIOR_TURN_REASONING } from './providers/registry.js';
 import type { Provider, ProviderConfig } from './providers/types.js';
-import { createTranslator, type ChatChunk } from './translate/from-chat.js';
+import { chunksFromCompletion, createTranslator, type ChatChunk } from './translate/from-chat.js';
+import {
+  COMPLETION_BODY_MAX_BYTES,
+  ERROR_BODY_MAX_BYTES,
+  readUpstreamBody,
+  UpstreamBodyError,
+} from './upstream-body.js';
 import { toChatRequest, UnsupportedInputError } from './translate/to-chat.js';
 import { namespacedToolNames } from './translate/tool-names.js';
 import { reasoningEffortNotice } from './reasoning-effort.js';
@@ -165,25 +171,87 @@ export async function* runPipeline(
     return;
   }
 
-  if (upstream.status >= 400) {
-    const body = await collectJson(upstream.lines);
-    const mapped = provider.mapError(upstream.status, body);
-    const safeMapped = safeCode(mapped.code);
-    log?.warn('gateway.upstream.error', {
-      statusCode: upstream.status,
-      ...(safeMapped ? { errorCode: safeMapped } : {}),
-      durationMs: now() - startedAt,
-    });
-    yield* translator.fail(mapped);
-    return;
+  const idleMs = deps.upstreamIdleMs ?? DEFAULT_UPSTREAM_IDLE_MS;
+  const firstChunkMs = deps.upstreamFirstChunkMs ?? DEFAULT_FIRST_CHUNK_MS;
+  let completion: unknown;
+  if (upstream.status >= 400 || !converted.request.stream) {
+    let body: string;
+    try {
+      body = await readUpstreamBody(upstream.lines, {
+        maxBytes: upstream.status >= 400 ? ERROR_BODY_MAX_BYTES : COMPLETION_BODY_MAX_BYTES,
+        totalMs: firstChunkMs,
+        idleMs,
+        signal: upstreamSignal,
+      });
+    } catch (error) {
+      watchdog.abort();
+      const reason = error instanceof UpstreamBodyError ? error.reason : 'disconnected';
+      log?.warn('gateway.upstream.body_failed', { reason, statusCode: upstream.status });
+      const message =
+        reason === 'too-large'
+          ? '模型服务返回的响应体过大，未提交本次工具调用，请重试。'
+          : reason === 'timeout'
+            ? '模型服务响应体读取超时，未提交本次工具调用，请重试。'
+            : '模型服务响应体读取中断，未提交本次工具调用，请重试。';
+      yield* translator.fail(
+        upstream.status >= 400
+          ? provider.mapError(upstream.status, { message })
+          : { code: UPSTREAM_DISCONNECTED, message },
+      );
+      return;
+    }
+    if (upstream.status >= 400) {
+      const mapped = provider.mapError(upstream.status, parseErrorBody(body));
+      const safeMapped = safeCode(mapped.code);
+      log?.warn('gateway.upstream.error', {
+        statusCode: upstream.status,
+        ...(safeMapped ? { errorCode: safeMapped } : {}),
+        durationMs: now() - startedAt,
+      });
+      yield* translator.fail(mapped);
+      return;
+    }
+    try {
+      completion = JSON.parse(body);
+      if (
+        typeof completion === 'object' &&
+        completion !== null &&
+        'error' in completion &&
+        completion.error
+      ) {
+        yield* translator.fail(provider.mapError(200, completion));
+        return;
+      }
+      if (
+        !completion ||
+        typeof completion !== 'object' ||
+        !Array.isArray((completion as { choices?: unknown }).choices)
+      ) {
+        throw new Error('invalid-completion');
+      }
+    } catch {
+      yield* translator.fail({
+        code: UPSTREAM_DISCONNECTED,
+        message: '模型服务返回的完整响应不是有效的对话 JSON，未提交本次工具调用，请重试。',
+      });
+      return;
+    }
   }
 
   let firstTokenAt: number | undefined;
   let sawDone = false;
 
-  const idleMs = deps.upstreamIdleMs ?? DEFAULT_UPSTREAM_IDLE_MS;
-  const firstChunkMs = deps.upstreamFirstChunkMs ?? DEFAULT_FIRST_CHUNK_MS;
-  const lines = upstream.lines[Symbol.asyncIterator]();
+  // A whole JSON completion enters the same translator and finish validation as SSE.
+  const source = converted.request.stream
+    ? upstream.lines
+    : (async function* () {
+        for (const chunk of chunksFromCompletion(
+          completion as Parameters<typeof chunksFromCompletion>[0],
+        )) {
+          yield `data: ${JSON.stringify(chunk)}`;
+        }
+      })();
+  const lines = source[Symbol.asyncIterator]();
   /**
    * 已经要来、还没到的那一片。**必须跨轮保留**：看门狗赢了这一轮之后再调一次
    * `lines.next()` 就是对同一个迭代器的并发 next，行会错乱（而且错得很难看出来）。
@@ -287,7 +355,7 @@ export async function* runPipeline(
     void lines.return?.().catch(() => undefined);
   }
 
-  if (!sawDone) {
+  if (!sawDone && converted.request.stream) {
     log?.debug('gateway.stream.missing_done', { durationMs: now() - startedAt });
   }
 
@@ -353,15 +421,12 @@ export function parseSseData(line: string): string | undefined {
   return payload.length > 0 ? payload : undefined;
 }
 
-async function collectJson(lines: AsyncIterable<string>): Promise<unknown> {
-  const parts: string[] = [];
-  for await (const line of lines) parts.push(line);
-  const text = parts.join('\n');
+function parseErrorBody(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
     // A non-2xx response can still contain an SSE error envelope (MiMo 503).
-    for (const line of parts) {
+    for (const line of text.split('\n')) {
       const payload = parseSseData(line);
       if (!payload || payload === '[DONE]') continue;
       try {

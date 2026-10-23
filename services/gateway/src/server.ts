@@ -279,7 +279,12 @@ export function createGatewayServer(options: ServerOptions): Server {
     requestId: string,
   ): Promise<void> {
     const abortFwd = new AbortController();
-    req.on('aborted', () => abortFwd.abort());
+    const cancelRequest = () => abortFwd.abort();
+    const cancelResponse = () => {
+      if (!res.writableEnded) abortFwd.abort();
+    };
+    req.once('aborted', cancelRequest);
+    res.once('close', cancelResponse);
     try {
       const out = await forwardHosted({
         upstreamBaseUrl: fwd.upstreamBaseUrl,
@@ -316,45 +321,52 @@ export function createGatewayServer(options: ServerOptions): Server {
         if (out.body) {
           const reader = out.body.getReader();
           let sawChunk = false;
-          for (;;) {
-            const budget = sawChunk ? idleMs : firstChunkMs;
-            // 非 SSE 的响应体没有心跳护着，但同样不该无限等：一份永远读不完的
-            // 错误体和一条卡死的流是同一件事
-            const step = await raceIdle(reader.read(), budget);
-            if (step === STALLED) {
-              abortFwd.abort();
-              logger?.warn('gateway.forward.stalled', {
-                reason: 'UPSTREAM_IDLE',
-                waitedMs: budget,
-                credentialSource: 'hosted',
-              });
-              if (stream) {
-                // 头已经写出去了，只能在流里说。`invalid_prompt` 是内核唯一
-                // "终止 + 原样显示 message"的通道（理由见 pipeline.ts 的长注释）
-                stream.write(
-                  toSseData({
-                    type: EVENT.failed,
-                    response: {
-                      id: `resp_fwd_${requestId}`,
-                      error: {
-                        code: 'invalid_prompt',
-                        message: stalledMessage('云端网关', budget),
+          try {
+            for (;;) {
+              if (abortFwd.signal.aborted || res.destroyed) break;
+              const budget = sawChunk ? idleMs : firstChunkMs;
+              // 非 SSE 的响应体没有心跳护着，但同样不该无限等：一份永远读不完的
+              // 错误体和一条卡死的流是同一件事
+              const step = await raceIdle(reader.read(), budget);
+              if (step === STALLED) {
+                abortFwd.abort();
+                logger?.warn('gateway.forward.stalled', {
+                  reason: 'UPSTREAM_IDLE',
+                  waitedMs: budget,
+                  credentialSource: 'hosted',
+                });
+                if (stream) {
+                  // 头已经写出去了，只能在流里说。`invalid_prompt` 是内核唯一
+                  // "终止 + 原样显示 message"的通道（理由见 pipeline.ts 的长注释）
+                  stream.write(
+                    toSseData({
+                      type: EVENT.failed,
+                      response: {
+                        id: `resp_fwd_${requestId}`,
+                        error: {
+                          code: 'invalid_prompt',
+                          message: stalledMessage('云端网关', budget),
+                        },
                       },
-                    },
-                  }),
-                );
-                stream.write('data: [DONE]\n\n');
+                    }),
+                  );
+                  stream.write('data: [DONE]\n\n');
+                }
+                break;
               }
-              break;
+              const { done, value } = step;
+              if (done) break;
+              if (value) {
+                sawChunk = true;
+                const buf = Buffer.from(value);
+                if (stream) stream.write(buf);
+                else res.write(buf);
+              }
             }
-            const { done, value } = step;
-            if (done) break;
-            if (value) {
-              sawChunk = true;
-              const buf = Buffer.from(value);
-              if (stream) stream.write(buf);
-              else res.write(buf);
-            }
+          } finally {
+            // A pending read must not keep the forwarded connection alive after stop/timeout.
+            void reader.cancel().catch(() => undefined);
+            reader.releaseLock();
           }
         }
       } finally {
@@ -362,6 +374,7 @@ export function createGatewayServer(options: ServerOptions): Server {
       }
       res.end();
     } catch (err) {
+      if (abortFwd.signal.aborted || res.destroyed) return;
       logger?.error('gateway.forward.failed', errorFields(err));
       if (!res.headersSent) {
         res.writeHead(502, JSON_HEADERS);
@@ -369,6 +382,9 @@ export function createGatewayServer(options: ServerOptions): Server {
       } else {
         res.end();
       }
+    } finally {
+      req.removeListener('aborted', cancelRequest);
+      res.removeListener('close', cancelResponse);
     }
   }
 

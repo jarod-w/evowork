@@ -9,7 +9,7 @@
 import type { AddressInfo } from 'node:net';
 
 import { createLogger, memorySink } from '@evowork/logging';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createModelRegistry, type ModelRegistryEntry } from '../src/capabilities.js';
 import type { ResolvedModel } from '../src/layers.js';
@@ -448,6 +448,67 @@ describe('hosted 转发（D11）', () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('not_signed_in');
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it.each(['headers', 'body'])('停止托管请求（等待 %s）立即取消上游，不继续消耗', async (phase) => {
+    let upstreamSignal: AbortSignal | undefined;
+    let cleanup: (() => void) | undefined;
+    let started!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const server = createGatewayServer({
+      models: hostedLookup(),
+      providers: {},
+      configFor: () => ({ baseUrl: 'unused', apiKey: 'unused' }),
+      authenticate: () => true,
+      heartbeatMs: 0,
+      upstreamIdleMs: 10000,
+      hostedForward: {
+        upstreamBaseUrl: 'https://cloud.example',
+        accessJwt: 'fake',
+        fetchImpl: (async (_url, init) => {
+          upstreamSignal = init?.signal ?? undefined;
+          started();
+          if (phase === 'headers')
+            return new Promise<Response>((_resolve, reject) => {
+              cleanup = () => reject(new Error('cancelled'));
+              upstreamSignal?.addEventListener('abort', cleanup, { once: true });
+            });
+          const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
+              cleanup = () => controller.error(new Error('cancelled'));
+              upstreamSignal?.addEventListener('abort', cleanup, { once: true });
+            },
+          });
+          return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+        }) as typeof fetch,
+      },
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    const abort = new AbortController();
+    const response = fetch(`http://127.0.0.1:${port}/v1/responses`, {
+      method: 'POST',
+      body: JSON.stringify({ model: HOSTED.id, input: [] }),
+      signal: abort.signal,
+    });
+    void response.catch(() => undefined);
+    try {
+      await reached;
+      if (phase === 'body') await (await response).body!.getReader().read();
+      abort.abort();
+      await vi.waitFor(() => expect(upstreamSignal?.aborted).toBe(true), {
+        timeout: 500,
+        interval: 10,
+      });
+    } finally {
+      abort.abort();
+      cleanup?.();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it('带转发配置时打到云端，不走本机 configFor', async () => {
