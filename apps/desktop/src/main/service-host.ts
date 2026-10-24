@@ -2838,10 +2838,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       if (options.gatewayEntryPath) {
         await launchLocalGateway();
         if (stopping) return;
-        // `REMOTE` 没有 notice：网关在服务器上是正常部署，不该提示任何东西
-        if (gateway && !gateway.result.started && gateway.result.reason !== 'REMOTE') {
-          options.emitToRenderer(IPC.notice, { kind: 'model', text: gateway.result.notice });
-        }
+        /*
+         * 没启动的原因已经在模型目录的 `unavailable` 里（`readModelCatalog`）。
+         * Composer 用它画输入区告警，并带上下一步按钮。再推一条页面通知，
+         * 首页顶部会把同一句话再画一遍，而且这条加上之后不会随模型配好而撤掉。
+         * `REMOTE` 本来也没有 notice：网关在服务器上是正常部署。
+         */
         const ready = await awaitGatewayReady();
         if (stopping) return;
         if (!ready) {

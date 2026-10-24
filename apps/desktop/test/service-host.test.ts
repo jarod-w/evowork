@@ -837,6 +837,14 @@ describe('从访达启动也能拿到厂商密钥', () => {
     expect(result.reason).toBe('no-keys');
     expect(result.unavailable).toContain('密钥');
     expect(result.unavailable).not.toContain('连不上模型网关');
+    // 同一句已经在目录里，输入区会显示。再推页面通知，首页顶部会重复一遍。
+    expect(
+      emitted.some(
+        (event) =>
+          event.channel === IPC.notice &&
+          String((event.payload as { text?: string }).text ?? '').includes('本机网关没有启动'),
+      ),
+    ).toBe(false);
   });
 
   it('再次启动先回收上次没退出的网关，再拉起新进程', async () => {
@@ -900,6 +908,13 @@ describe('从访达启动也能拿到厂商密钥', () => {
     const result = await host.actions.listModels();
     expect(result.unavailable).toContain('端口');
     expect(result.unavailable).not.toContain('立刻退出');
+    expect(
+      emitted.some(
+        (event) =>
+          event.channel === IPC.notice &&
+          String((event.payload as { text?: string }).text ?? '').includes('端口被别的程序占着'),
+      ),
+    ).toBe(false);
   });
 });
 
