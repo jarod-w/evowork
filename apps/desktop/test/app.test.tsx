@@ -407,9 +407,7 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
     pickProjectDirectory: vi.fn(async () => ({ path: '/Users/x/work' })),
     completeOnboarding: vi.fn(async () => undefined),
     /*
-     * 办公扩展（08 §4）。默认"支持但没装" —— 这是**干净机器上的真实初始状态**，
-     * 也是引导第 ④ 步唯一有内容可渲染的状态。默认成"装好了"会让那一屏在
-     * 绝大多数测试里退化成一句"已经装好了"，等于没测。
+     * 模拟未准备的办公组件，用于覆盖设置中的修复状态。
      */
     getRuntimeStatus: vi.fn(async () => ({
       installed: false,
@@ -2840,172 +2838,37 @@ describe('侧边栏的六个入口都要有落点', () => {
   });
 });
 
-describe('首次引导（02 §9）', () => {
-  it('没走过引导时它盖住整个界面', async () => {
-    const { bridge } = fakeBridge({
-      getStartup: async () => ({ ...STARTUP, onboarded: false }),
-    });
-    render(<App bridge={bridge} />);
-    // 引导在，主界面不在
-    await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeNull());
-    expect(screen.getByText(/第 1 \/ 4 步/)).toBeTruthy();
-  });
+describe('首次启动直接进入主界面（02 §9）', () => {
+  it.each([false, true])(
+    '旧引导标记 %s 都不阻止使用，不要求选择目录或安装组件',
+    async (onboarded) => {
+      const { bridge } = fakeBridge({
+        getStartup: async () => ({ ...STARTUP, onboarded, workspaces: [] }),
+      });
+      render(<App bridge={bridge} />);
+      expect(await screen.findByLabelText('需求输入')).toBeTruthy();
+      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目');
+      expect(screen.queryByRole('heading', { name: '欢迎使用 EvoWork' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '开始使用' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '现在安装' })).toBeNull();
+      expect(bridge.completeOnboarding).not.toHaveBeenCalled();
+      expect(bridge.setWorkingDirectory).not.toHaveBeenCalled();
+      expect(bridge.createProject).not.toHaveBeenCalled();
+      expect(bridge.installOfficeRuntime).not.toHaveBeenCalled();
+    },
+  );
 
-  it('走过引导就直接进主界面', async () => {
-    const { bridge } = fakeBridge();
-    render(<App bridge={bridge} />);
-    expect(await screen.findByLabelText('侧边栏')).toBeTruthy();
-  });
-
-  /*
-   * **落 `meta` 表，不是渲染层的 localStorage**：换个窗口、清个缓存都不该让
-   * 用户再走一遍四步引导，而"这台机器配好了没有"本来就是本机状态。
-   */
-  it('走完引导调 completeOnboarding 并进主界面', async () => {
-    const completeOnboarding = vi.fn(async () => undefined);
-    const { bridge } = fakeBridge({
-      getStartup: async () => ({ ...STARTUP, onboarded: false }),
-      completeOnboarding,
-    });
-    render(<App bridge={bridge} />);
-
-    // 直接跳到最后一步（每一步的必填校验由 onboarding.test 覆盖）
-    await screen.findByText(/第 1 \/ 4 步/);
-    for (let i = 0; i < 4; i += 1) {
-      const next = screen.queryByRole('button', { name: /下一步|开始使用/ });
-      if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
-    }
-    const finish = screen.queryByRole('button', { name: '开始使用' });
-    if (finish) fireEvent.click(finish);
-    if (completeOnboarding.mock.calls.length > 0) {
-      await waitFor(() => expect(screen.queryByLabelText('侧边栏')).toBeTruthy());
-    }
-  });
-
-  it('引导目录只设置无项目任务保存位置，不创建项目，完成后首页仍无项目', async () => {
-    const selected = '/Users/li/task-files';
-    let onboarded = false;
-    const getStartup = vi.fn(async () => ({ ...STARTUP, onboarded, workspaces: [] }));
-    const setWorkingDirectory = vi.fn(async () => ({ path: selected, isDefault: false }));
-    const completeOnboarding = vi.fn(async () => {
-      onboarded = true;
-    });
-    const { bridge } = fakeBridge({ getStartup, setWorkingDirectory, completeOnboarding });
-    render(<App bridge={bridge} />);
-
-    await screen.findByText(/第 1 \/ 4 步/);
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    expect(await screen.findByRole('heading', { name: '无项目任务的保存位置' })).toBeTruthy();
-    expect(await screen.findByText('/w/workspaces')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    expect(await screen.findByText(selected)).toBeTruthy();
-    expect(screen.queryByText('/w/workspaces')).toBeNull();
-    expect(setWorkingDirectory).toHaveBeenCalledWith({});
-    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
-    expect(bridge.createProject).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    fireEvent.click(screen.getByRole('button', { name: '以后再说' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始使用' }));
-
-    expect(await screen.findByLabelText('需求输入')).toBeTruthy();
-    expect(completeOnboarding).toHaveBeenCalledOnce();
-    expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目');
-    await screen.findByLabelText('选择模型');
-    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '整理附件' } });
-    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
-    await waitFor(() =>
-      expect(bridge.send).toHaveBeenCalledWith(expect.objectContaining({ text: '整理附件' })),
-    );
-  });
-
-  it('引导只展示保存位置，已有项目不混入，也可再次选择替换', async () => {
-    const setWorkingDirectory = vi
-      .fn()
-      .mockResolvedValueOnce({ path: '/files/first', isDefault: false })
-      .mockResolvedValueOnce({ path: '/files/second', isDefault: false });
+  it('已有项目不被自动选中', async () => {
     const { bridge } = fakeBridge({
       getStartup: async () => ({
         ...STARTUP,
         onboarded: false,
         workspaces: [{ id: 'p1', name: '已有项目', path: '/projects/existing' }],
       }),
-      setWorkingDirectory,
     });
     render(<App bridge={bridge} />);
-    await screen.findByText(/第 1 \/ 4 步/);
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    await screen.findByText('/w/workspaces');
-    expect(screen.queryByText('/projects/existing')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    await screen.findByText('/files/first');
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    await screen.findByText('/files/second');
-    expect(screen.queryByText('/files/first')).toBeNull();
-    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
-    expect(bridge.createProject).not.toHaveBeenCalled();
-  });
-
-  it('只有一个项目时全局首页仍不擅自预选', async () => {
-    const { bridge } = fakeBridge({
-      getStartup: async () => ({
-        ...STARTUP,
-        workspaces: [{ id: 'p1', name: 'AI_COMPANY', path: '/Users/wangli/Desktop/AI_COMPANY' }],
-      }),
-    });
-    render(<App bridge={bridge} />);
-    await waitFor(() =>
-      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目'),
-    );
-  });
-
-  it('有多个项目时不擅自选一个 —— 用户得自己挑任务跑在哪', async () => {
-    const { bridge } = fakeBridge({
-      getStartup: async () => ({
-        ...STARTUP,
-        workspaces: [
-          { id: 'p1', name: '甲', path: '/a' },
-          { id: 'p2', name: '乙', path: '/b' },
-        ],
-      }),
-    });
-    render(<App bridge={bridge} />);
-    const button = await screen.findByLabelText('选择项目');
-    expect(button.textContent).not.toContain('甲');
-    expect(button.textContent).not.toContain('乙');
-    expect(button.textContent).toContain('不使用项目');
-  });
-
-  it('首运行选择被拒时显示理由并保留原保存位置', async () => {
-    const { bridge } = fakeBridge({
-      getStartup: async () => ({ ...STARTUP, onboarded: false }),
-      setWorkingDirectory: vi.fn(async () => {
-        throw new Error('这个目录被安全策略拦下了（受保护目录），换一个吧。');
-      }),
-    });
-    render(<App bridge={bridge} />);
-    await screen.findByText(/第 1 \/ 4 步/);
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    await screen.findByText('/w/workspaces');
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    expect(await screen.findByText(/这个目录被安全策略拦下了/)).toBeTruthy();
-    expect(screen.getByText('/w/workspaces')).toBeTruthy();
-    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
-  });
-
-  it('取消选择保留原保存位置且不提示', async () => {
-    const { bridge } = fakeBridge({
-      getStartup: async () => ({ ...STARTUP, onboarded: false }),
-    });
-    render(<App bridge={bridge} />);
-    await screen.findByText(/第 1 \/ 4 步/);
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    await screen.findByText('/w/workspaces');
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
-    await waitFor(() => expect(bridge.setWorkingDirectory).toHaveBeenCalledOnce());
-    expect(screen.getByText('/w/workspaces')).toBeTruthy();
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText('需求输入')).toBeTruthy();
+    expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目');
   });
 });
 
@@ -3528,6 +3391,23 @@ describe('项目页接线（Task 13）', () => {
  * 各拉一次的话，"设置里明明有这个模型、下拉里却没有"会变成一次没人能复现的排查）。
  */
 describe('设置页（11 §4.4）', () => {
+  it('启动时办公组件初始化失败，进入设置能读到原因并手动修复', async () => {
+    const { bridge } = fakeBridge({
+      getRuntimeStatus: async () => ({
+        installed: false,
+        missing: ['docx'],
+        supported: true,
+        error: '随包办公组件损坏，请重新安装 EvoWork。',
+      }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    fireEvent.click(await screen.findByRole('button', { name: '关于与更新' }));
+    expect(await screen.findByText('随包办公组件损坏，请重新安装 EvoWork。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新安装' })).toBeTruthy();
+  });
+
   it('用户菜单中的「设置」到达模型接入分区', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);
@@ -3683,17 +3563,7 @@ describe('深链：挂载时那一次 takeDeeplink（02 §8）', () => {
     await waitFor(() => expect(bridge.takeDeeplink).toHaveBeenCalled());
   });
 
-  it('**引导屏上也要看得见** —— 那正是收到分享链接的人第一次启动的样子', async () => {
-    /*
-     * 这条在真 `.app` 上红过（2026-09-27）。
-     *
-     * 深链的拒绝文案走 `pushToast`，而 `ToastStack` 当时只渲染在主分支里；
-     * 引导那一支是个提前 `return`，到不了它。于是第一次启动时收到的每一条深链
-     * 都被无声吞掉 —— 而「收到分享链接 → 第一次打开应用」恰好是这个特性
-     * 最主要的使用场景，也是 02 §8 规则 3 要防的那个「什么都没发生」。
-     *
-     * 组件测试当时全绿，因为没有人在**没走完引导**的状态下试过深链。
-     */
+  it('首次启动直接进入主界面时也能看到深链拒绝原因', async () => {
     const { bridge } = fakeBridge({
       getStartup: async () => ({ ...STARTUP, onboarded: false }),
       takeDeeplink: vi.fn(async () => ({
@@ -3702,8 +3572,7 @@ describe('深链：挂载时那一次 takeDeeplink（02 §8）', () => {
     });
     render(<App bridge={bridge} />);
 
-    // 先确认我们**确实**停在引导屏，否则这条会在主界面上空过
-    await waitFor(() => expect(screen.getByText('欢迎使用 EvoWork')).toBeTruthy());
+    expect(await screen.findByLabelText('需求输入')).toBeTruthy();
     await waitFor(() =>
       expect(
         screen.getByText('这份产物不在这台电脑上 —— 它是别人分享给你的，请用网页上的「下载」。'),

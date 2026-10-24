@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { withRuntimeInstaller } from './build-office-runtime.mjs';
+
 /*
  * 临时目录的清理。此前这个脚本的每一段都建了目录、一个都没删 ——
  * 跑几十次之后 /var/folders 下攒了几个 GB，而每一次运行本身都是绿的。
@@ -76,13 +78,41 @@ for (const [rel, what] of [
   ['plugins', '技能与策略包（K3）'],
   ['config', '配置模板'],
   ['gateway', '本机网关'],
-  ['office/NotoSansSC.ttf', '中文字体'],
+  ['office/runtime', '完整办公运行时'],
 ]) {
   const full = join(resources, rel);
   check(existsSync(full), `${what} 不在包里：Resources/${rel}`);
   if (existsSync(full) && statSync(full).isDirectory()) {
     check(readdirSync(full).length > 0, `${what} 是个空目录：Resources/${rel}`);
   }
+}
+
+// 使用实际随包成品部署到全新临时目录；禁用下载并拒绝 pip/字体处理。
+const runtimeHome = mkdtempSync(join(tmpdir(), 'evowork-pkg-office-'));
+try {
+  await withRuntimeInstaller(async (api) => {
+    const result = await api.installOfficeRuntime({
+      home: runtimeHome,
+      prebuiltRuntimeDir: join(resources, 'office/runtime'),
+      downloadFn: async () => {
+        throw new Error('随包部署禁止下载');
+      },
+      runFn: async (file, args) => {
+        if (!args.includes('-c')) throw new Error('随包部署禁止 pip 或字体处理');
+        const result = spawnSync(file, args, { encoding: 'utf8', timeout: 120_000 });
+        return {
+          code: result.status ?? 1,
+          stdout: result.stdout ?? '',
+          stderr: result.stderr ?? '',
+        };
+      },
+    });
+    check(result.ok, result.ok ? '' : `随包办公组件部署失败：${result.message}`);
+    if (result.ok)
+      notes.push('实际随包办公运行时在全新目录完成本地复制与模块/版本/字体验收，零下载、零 pip');
+  });
+} finally {
+  removeE2EHome(runtimeHome);
 }
 
 // ── ③ 对外可见的字符串里不许有内核品牌（K5）────────────────────────────
@@ -169,16 +199,21 @@ if (existsSync(exe) && problems.length === 0) {
     app = await electron.launch({
       executablePath: exe,
       args: [`--user-data-dir=${join(userData, 'chromium')}`],
-      env: { ...env, EVOWORK_HOME: join(userData, '.evowork') },
+      env: { ...env, EVOWORK_OFFICE_PYTHON: '', EVOWORK_HOME: join(userData, '.evowork') },
       timeout: 120_000,
     });
     const page = await app.firstWindow();
     /*
-     * 干净的 user-data-dir = 从没用过的机器，所以第一屏必然是首次引导。
+     * 干净的 user-data-dir = 从没用过的机器，所以第一屏直接显示任务输入区。
      * 断言它，而不是"窗口开了" —— 白窗口也算开了。
      */
-    await page.getByRole('heading', { name: '欢迎使用 EvoWork' }).waitFor({ timeout: 90_000 });
-    notes.push('打包后的应用能启动，并渲染出首次引导');
+    await page.getByLabel('需求输入').waitFor({ timeout: 90_000 });
+    const runtimeStatus = await page.evaluate(() => globalThis.evowork.getRuntimeStatus());
+    check(
+      runtimeStatus.installed,
+      `首次启动自动部署办公组件失败：${runtimeStatus.error ?? runtimeStatus.missing.join('、')}`,
+    );
+    notes.push('打包后的应用首次启动直接显示主界面，办公组件自动准备后已可用');
   } catch (error) {
     problems.push(`打包后的应用起不来或没渲染出界面：${String(error).slice(0, 300)}`);
   } finally {
@@ -211,7 +246,7 @@ if (existsSync(exe) && problems.length === 0) {
         // 干净的家目录 = 这台机器上没有任何任务，所以这条必然走"不在本机"那一支
         'evowork://task/thr_not_here',
       ],
-      env: { ...env, EVOWORK_HOME: join(deepHome, '.evowork') },
+      env: { ...env, EVOWORK_OFFICE_PYTHON: '', EVOWORK_HOME: join(deepHome, '.evowork') },
       timeout: 120_000,
     });
     const page = await app.firstWindow();
@@ -261,11 +296,11 @@ if (existsSync(exe) && problems.length === 0) {
     app = await electron.launch({
       executablePath: exe,
       args: [`--user-data-dir=${chromium}`],
-      env: { ...env, EVOWORK_HOME: join(shared, 'home-first') },
+      env: { ...env, EVOWORK_OFFICE_PYTHON: '', EVOWORK_HOME: join(shared, 'home-first') },
       timeout: 120_000,
     });
     const page = await app.firstWindow();
-    await page.getByRole('heading', { name: '欢迎使用 EvoWork' }).waitFor({ timeout: 90_000 });
+    await page.getByLabel('需求输入').waitFor({ timeout: 90_000 });
 
     /*
      * ⑦a **协议注册**：问 LaunchServices 它认不认这个 bundle。
@@ -332,7 +367,7 @@ if (existsSync(exe) && problems.length === 0) {
     const second = spawnSync(exe, [`--user-data-dir=${chromium}`, 'evowork://library/nod_second'], {
       encoding: 'utf8',
       timeout: 60_000,
-      env: { ...env, EVOWORK_HOME: homeB },
+      env: { ...env, EVOWORK_OFFICE_PYTHON: '', EVOWORK_HOME: homeB },
     });
     check(
       second.status === 0,

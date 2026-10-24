@@ -77,6 +77,9 @@ export interface LocalServicesOptions {
    * 随基础包带的 Noto Sans SC。有这份，安装就不再去 GitHub 拉字体。
    */
   readonly bundledFontPath?: string | undefined;
+  /** 构建时已装好依赖的随包办公运行时。 */
+  readonly prebuiltRuntimeDir?: string | undefined;
+  readonly officeRuntimeRoot?: string | undefined;
   readonly isModelAvailable?: ((modelId: string) => Promise<boolean>) | undefined;
 }
 
@@ -95,7 +98,7 @@ export function createLocalServices(options: LocalServicesOptions) {
   const now = options.now ?? (() => Date.now());
   const automations = createAutomationRepo(options.store.db);
   const artifacts = createArtifactRepo(options.store.db);
-  const probe = createRuntimeProbe();
+  const probe = createRuntimeProbe({ runtimeRoot: options.officeRuntimeRoot });
 
   /* ── scheduler ↔ 内核 ───────────────────────────────────────── */
 
@@ -320,11 +323,23 @@ export function createLocalServices(options: LocalServicesOptions) {
    * 必须 `invalidate()` —— 不失效的话界面会一直显示"没装"，用户刚装完就被告知没装，
    * 只能重启 App 才认。这正是 `probe.ts` 头注释里写的那个"安装流程结束时调用"。
    */
+  let runtimeError: string | undefined;
   let runtimeInstalling = false;
   let runtimeInstall: Promise<RuntimeInstallResultView> | undefined;
   const officeRuntime = {
     /** 正在装吗。在线升级退出前要告诉用户「办公扩展正在安装」会被打断 */
     installing: (): boolean => runtimeInstalling,
+    /** 只自动部署随包成品；开发模式和管理员解释器不自动安装。 */
+    initialize: async (): Promise<void> => {
+      if (options.prebuiltRuntimeDir === undefined || process.env.EVOWORK_OFFICE_PYTHON?.trim())
+        return;
+      if (officeRuntime.status().installed) return;
+      try {
+        await officeRuntime.install();
+      } catch {
+        // install 已保存原因；不让办公组件故障阻止应用的文本功能。
+      }
+    },
     status: (): RuntimeStatusView => {
       const missing = RUNTIME_TIERS.office.probeModules.filter((m) => !probe.hasModule(m));
       const triple = TRIPLE_BY_PLATFORM[`${process.arch}-${process.platform}`];
@@ -334,25 +349,35 @@ export function createLocalServices(options: LocalServicesOptions) {
       const outdated =
         missing.length === 0 &&
         !process.env.EVOWORK_OFFICE_PYTHON &&
-        runtimeStampStatus() !== 'current';
+        runtimeStampStatus(undefined, options.officeRuntimeRoot) !== 'current';
       return {
         installed: missing.length === 0,
+        ...(runtimeError !== undefined ? { error: runtimeError } : {}),
         missing,
         supported: triple !== undefined,
         ...(outdated ? { outdated: true } : {}),
-        ...(triple !== undefined
-          ? {
-              downloadSize: `约 ${Math.round(totalDownloadBytes(triple, { includeFont: !fontBundled }) / 1_000_000)} MB`,
-            }
-          : {}),
+        ...(options.prebuiltRuntimeDir !== undefined
+          ? { downloadSize: '随应用提供，无需下载' }
+          : triple !== undefined
+            ? {
+                downloadSize: `约 ${Math.round(totalDownloadBytes(triple, { includeFont: !fontBundled }) / 1_000_000)} MB`,
+              }
+            : {}),
       };
     },
 
     install: (): Promise<RuntimeInstallResultView> => {
       if (runtimeInstall) return runtimeInstall;
       runtimeInstalling = true;
+      runtimeError = undefined;
       runtimeInstall = (async () => {
         const result = await installOfficeRuntime({
+          ...(options.officeRuntimeRoot !== undefined
+            ? { runtimeRoot: options.officeRuntimeRoot }
+            : {}),
+          ...(options.prebuiltRuntimeDir !== undefined
+            ? { prebuiltRuntimeDir: options.prebuiltRuntimeDir }
+            : {}),
           ...(options.logger ? { logger: options.logger } : {}),
           ...(process.env.EVOWORK_OFFICE_BUNDLE
             ? { bundleDir: process.env.EVOWORK_OFFICE_BUNDLE }
@@ -368,15 +393,21 @@ export function createLocalServices(options: LocalServicesOptions) {
               ...(p.detail !== undefined ? { detail: p.detail } : {}),
             }),
         });
+        runtimeError = result.ok ? undefined : result.message;
         // 成功与否都失效一次：失败也可能装进去了一部分，缓存住旧答案只会更乱
         return result.ok
           ? { ok: true }
           : { ok: false, failure: result.failure, message: result.message };
-      })().finally(() => {
-        probe.invalidate();
-        runtimeInstalling = false;
-        runtimeInstall = undefined;
-      });
+      })()
+        .catch((error: unknown) => {
+          runtimeError = `办公组件初始化失败：${error instanceof Error ? error.message : String(error)}`;
+          throw error;
+        })
+        .finally(() => {
+          probe.invalidate();
+          runtimeInstalling = false;
+          runtimeInstall = undefined;
+        });
       return runtimeInstall;
     },
   };

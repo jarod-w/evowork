@@ -32,7 +32,7 @@ const execFile = promisify(execFileCallback);
 const OFFICE_KINDS = new Set<InputKind>(['docx', 'xlsx', 'pptx', 'pdf', 'rtf']);
 
 export interface OfficeParserOptions {
-  readonly interpreter?: string | undefined;
+  readonly interpreter?: string | (() => string | undefined) | undefined;
   readonly scriptPath?: string | undefined;
   /** 覆盖 `execFile`，测试里用来注入假进程而不碰真 Python */
   readonly run?: typeof execFile | undefined;
@@ -114,7 +114,10 @@ export function createOfficeParser(options: OfficeParserOptions = {}): ExternalP
   return {
     async parse(input): Promise<ParseResult | undefined> {
       if (!OFFICE_KINDS.has(input.kind)) return undefined;
-      const interpreter = options.interpreter ?? resolveOfficeInterpreter();
+      const interpreter =
+        typeof options.interpreter === 'function'
+          ? options.interpreter()
+          : (options.interpreter ?? resolveOfficeInterpreter());
       const scriptPath = options.scriptPath ?? resolveOfficeParserScript();
       if (!interpreter || !scriptPath) return undefined;
       if (!existsSync(input.absolutePath) || !isAbsolute(input.absolutePath)) return undefined;

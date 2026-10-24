@@ -664,7 +664,7 @@ export interface RendererBridgeOptions {
    * 装扩展要起子进程、要下载，而这个文件其余部分全是纯翻译 ——
    * 注入之后"装不上时界面怎么表现"能在测试里跑，不必真下 40MB。
    *
-   * 没给时 `getRuntimeStatus` 报 `supported: false`，引导页据此**不显示安装按钮**
+   * 没给时 `getRuntimeStatus` 报 `supported: false`，设置页据此显示组件不可用
    * （而不是显示一个点了没反应的）。
    */
   readonly officeRuntime?:

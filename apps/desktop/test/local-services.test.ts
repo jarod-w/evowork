@@ -119,7 +119,9 @@ function fakeAdapter() {
   };
 }
 
-function make(overrides: { now?: () => number } = {}) {
+function make(
+  overrides: { now?: () => number; prebuiltRuntimeDir?: string; officeRuntimeRoot?: string } = {},
+) {
   mkdirSync(join(dir, 'work'), { recursive: true });
   const { adapter, calls } = fakeAdapter();
   const notices: string[] = [];
@@ -129,6 +131,12 @@ function make(overrides: { now?: () => number } = {}) {
     adapter: adapter as unknown as Parameters<typeof createLocalServices>[0]['adapter'],
     notify: (text) => notices.push(text),
     now: overrides.now ?? (() => NOW),
+    ...(overrides.officeRuntimeRoot !== undefined
+      ? { officeRuntimeRoot: overrides.officeRuntimeRoot }
+      : {}),
+    ...(overrides.prebuiltRuntimeDir !== undefined
+      ? { prebuiltRuntimeDir: overrides.prebuiltRuntimeDir }
+      : {}),
   });
   return { services, adapter, calls, notices };
 }
@@ -667,7 +675,131 @@ describe('路径展示', () => {
   });
 });
 
+describe('启动自动准备随包办公组件', () => {
+  it('干净环境自动部署一次，已有可用运行时不再安装', async () => {
+    vi.stubEnv('EVOWORK_OFFICE_PYTHON', '');
+    const { services } = make({
+      prebuiltRuntimeDir: '/app/office/runtime',
+      officeRuntimeRoot: join(dir, 'runtime/office'),
+    });
+    const moduleProbe = vi.spyOn(services.probe, 'hasModule').mockReturnValue(false);
+    const install = vi
+      .spyOn(runtimeInstaller, 'installOfficeRuntime')
+      .mockImplementation(async () => {
+        moduleProbe.mockReturnValue(true);
+        return { ok: true, interpreter: '/test/python', offline: true };
+      });
+    try {
+      await services.officeRuntime.initialize();
+      await services.officeRuntime.initialize();
+      expect(install).toHaveBeenCalledTimes(1);
+      expect(install).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prebuiltRuntimeDir: '/app/office/runtime',
+          runtimeRoot: join(dir, 'runtime/office'),
+        }),
+      );
+      expect(services.officeRuntime.status().installed).toBe(true);
+    } finally {
+      services.stop();
+      install.mockRestore();
+      moduleProbe.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each(['development', 'administrator', 'installed'])(
+    '%s 环境不自动安装或联网',
+    async (mode) => {
+      vi.stubEnv('EVOWORK_OFFICE_PYTHON', mode === 'administrator' ? '/managed/python' : '');
+      const { services } = make(
+        mode === 'development' ? {} : { prebuiltRuntimeDir: '/app/office/runtime' },
+      );
+      const moduleProbe = vi
+        .spyOn(services.probe, 'hasModule')
+        .mockReturnValue(mode === 'installed');
+      const install = vi.spyOn(runtimeInstaller, 'installOfficeRuntime');
+      try {
+        await services.officeRuntime.initialize();
+        expect(install).not.toHaveBeenCalled();
+      } finally {
+        services.stop();
+        install.mockRestore();
+        moduleProbe.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
+  it('自动部署失败不阻止启动，原因可由设置读取；修复成功后清除原因', async () => {
+    vi.stubEnv('EVOWORK_OFFICE_PYTHON', '');
+    const { services } = make({ prebuiltRuntimeDir: '/missing/runtime' });
+    const moduleProbe = vi.spyOn(services.probe, 'hasModule').mockReturnValue(false);
+    const install = vi
+      .spyOn(runtimeInstaller, 'installOfficeRuntime')
+      .mockResolvedValueOnce({
+        ok: false,
+        failure: 'VERIFY',
+        message: '安装包里的办公组件缺失或损坏。请重新安装 EvoWork。',
+      })
+      .mockResolvedValueOnce({ ok: true, interpreter: '/test/python', offline: true });
+    try {
+      await expect(services.officeRuntime.initialize()).resolves.toBeUndefined();
+      expect(services.officeRuntime.status().error).toContain('重新安装 EvoWork');
+      expect(services.officeRuntime.installing()).toBe(false);
+      await services.officeRuntime.install();
+      expect(services.officeRuntime.status().error).toBeUndefined();
+    } finally {
+      services.stop();
+      install.mockRestore();
+      moduleProbe.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('部署子进程异常仍可启动并保留具体原因', async () => {
+    vi.stubEnv('EVOWORK_OFFICE_PYTHON', '');
+    const { services } = make({ prebuiltRuntimeDir: '/app/office/runtime' });
+    const moduleProbe = vi.spyOn(services.probe, 'hasModule').mockReturnValue(false);
+    const install = vi
+      .spyOn(runtimeInstaller, 'installOfficeRuntime')
+      .mockRejectedValue(new Error('磁盘空间不足'));
+    try {
+      await expect(services.officeRuntime.initialize()).resolves.toBeUndefined();
+      expect(services.officeRuntime.status().error).toContain('磁盘空间不足');
+      expect(services.officeRuntime.installing()).toBe(false);
+    } finally {
+      services.stop();
+      install.mockRestore();
+      moduleProbe.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('共享办公组件安装', () => {
+  it('正式包的成品路径传到安装器，缺失时也不改用下载', async () => {
+    const install = vi.spyOn(runtimeInstaller, 'installOfficeRuntime').mockResolvedValue({
+      ok: false,
+      failure: 'VERIFY',
+      message: '安装包里的办公组件缺失或损坏。请重新安装 EvoWork。',
+    });
+    try {
+      const { services } = make({ prebuiltRuntimeDir: '/missing/app/office/runtime' });
+      expect(services.officeRuntime.status().downloadSize).toBe('随应用提供，无需下载');
+      expect(await services.officeRuntime.install()).toMatchObject({
+        ok: false,
+        failure: 'VERIFY',
+      });
+      expect(install).toHaveBeenCalledWith(
+        expect.objectContaining({ prebuiltRuntimeDir: '/missing/app/office/runtime' }),
+      );
+      services.stop();
+    } finally {
+      install.mockRestore();
+    }
+  });
+
   it('设置和技能同时请求只启动一次，抛错后清理状态并允许重试', async () => {
     let rejectInstall: (error: Error) => void = () => undefined;
     const install = vi

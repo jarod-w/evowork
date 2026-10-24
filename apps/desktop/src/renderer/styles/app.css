@@ -3761,8 +3761,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 
 .ew-automation-form,
 .ew-automation-history,
-.ew-audit,
-.ew-onboarding {
+.ew-audit {
   color: var(--text-primary);
   font-family: var(--font-cjk);
   font-size: var(--font-body-size);
@@ -4074,8 +4073,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--warning-text);
   font-size: var(--font-caption-size);
 }
-.ew-form-actions,
-.ew-onboarding-actions {
+.ew-form-actions {
   display: flex;
   gap: var(--space-8);
 }
@@ -4109,49 +4107,6 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: var(--font-micro-size);
-}
-
-/* ─────────────────────────── 首运行引导（02 §9）─────────────────────────── */
-
-.ew-onboarding {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  background: var(--bg-canvas);
-}
-.ew-onboarding-progress {
-  margin: 0 0 var(--space-8);
-  color: var(--text-tertiary);
-  font-size: var(--font-caption-size);
-}
-.ew-onboarding-title {
-  margin: 0 0 var(--space-16);
-  font-size: var(--font-title-1-size);
-  line-height: var(--font-title-1-line);
-  font-weight: var(--font-title-1-weight);
-}
-.ew-onboarding-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-12);
-}
-.ew-privacy-line {
-  margin: 0;
-  padding: var(--space-12);
-  border-radius: var(--r-md);
-  background: var(--bg-sunken);
-  line-height: var(--font-body-lg-line);
-}
-.ew-onboarding-list {
-  margin: 0;
-  padding-left: var(--space-20);
-  color: var(--text-secondary);
-}
-.ew-onboarding-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-8);
-  margin-top: var(--space-24);
 }
 
 /* ── 5.33 ProgressBar（办公扩展安装，08 §4）──────────────────────── */
@@ -4224,12 +4179,6 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-dialog-field:has(input[type='checkbox']) {
   flex-direction: row;
   align-items: center;
-  gap: var(--space-8);
-}
-
-.ew-onboarding-progress-block {
-  display: flex;
-  flex-direction: column;
   gap: var(--space-8);
 }
 

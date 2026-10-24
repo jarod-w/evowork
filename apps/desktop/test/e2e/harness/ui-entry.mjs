@@ -38,11 +38,8 @@ if (!repoRoot || !appServerPath) throw new Error('UI 测试入口缺少仓库或
  */
 const TURN_MARKER = 'EVOWORK-UI-HOLD';
 
-/**
- * 保留首次引导（`onboarding.spec.mjs` 用）。默认跳过 —— 别的旅程要测的东西在引导之后，
- * 而引导会**盖住整个界面**（`startup.onboarded` 为假时 app.tsx 直接 return 引导视图）。
- */
-const KEEP_ONBOARDING = process.env.EVOWORK_UI_KEEP_ONBOARDING === '1';
+/** 首次启动测试保持零项目；其他旅程按既有夹具创建测试项目。 */
+const FRESH_START = process.env.EVOWORK_UI_FRESH_START === '1';
 
 /**
  * 用**真网关 + 真模型**跑（`EVOWORK_UI_REAL_MODEL=1`）。默认是假网关。
@@ -150,7 +147,7 @@ publishControls({
   gateway,
   workspace,
   turnMarker: TURN_MARKER,
-  keptOnboarding: KEEP_ONBOARDING,
+  freshStart: FRESH_START,
   models: UI_MODELS,
   ...(computerUse ? { computerUse: { ...computerUse, script: cuaScript } } : {}),
 });
@@ -365,18 +362,8 @@ ${process.env.EVOWORK_UI_MEMORY_IMPORT === 'disabled' ? '[features]\nexternal_ag
 
   if (registered.length > 0) assertRegistered(registered);
 
-  /*
-   * **跳过首次引导**，让第一条旅程聚焦在它要测的东西上。
-   *
-   * 引导会盖住整个界面（`startup.onboarded` 为假时 app.tsx 直接 return 引导视图），
-   * 而断言型 E2E 从来没见过它 —— 它们只经 preload 桥说话。真窗口绕不过去。
-   *
-   * 走的是**公开的桥**而不是直接写 meta 表：那张表是服务层的实现细节，
-   * 测试伸手进去就等于替产品决定「引导算走完了」是什么意思。
-   * 写完要 reload：`startup` 是渲染层挂载时读一次的，不会自己回来看。
-   */
-  if (!KEEP_ONBOARDING) {
-    await desktop.evaluate('window.evowork.completeOnboarding()');
+  // 通用旅程预建测试项目；首次启动旅程保留全新状态。
+  if (!FRESH_START) {
     if (!resumeHome)
       await desktop.evaluate(
         `window.evowork.createProject(${JSON.stringify({ name: 'UI', path: workspace })})`,

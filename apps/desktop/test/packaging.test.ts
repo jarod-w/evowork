@@ -92,15 +92,16 @@ describe('未签名 mac 包会补 ad-hoc 签名（U4）', () => {
   });
 });
 
-describe('中文字体随基础包分发（R10 例外）', () => {
-  it('electron-builder 把字体打进 extraResources —— 漏了客户点安装会去打 GitHub', () => {
+describe('完整办公运行时随应用分发', () => {
+  it('electron-builder 把目标架构的完整目录放进应用资源', () => {
     const yml = readFileSync(resolve(APP_ROOT, '../../build/electron-builder.yml'), 'utf8');
-    expect(yml).toContain('build/office/NotoSansSC.ttf');
-    expect(yml).toContain('office/NotoSansSC.ttf');
+    expect(yml).toContain('build/office/${os}-${arch}/runtime');
+    expect(yml).toContain('to: office/runtime');
   });
 
-  it('入口把随包字体路径交给安装器，打包漏了也不改去 GitHub', () => {
-    expect(read('src/main/electron-entry.mjs')).toContain('bundledFontPath');
-    expect(read('src/main/electron-entry.mjs')).toContain('office/NotoSansSC.ttf');
+  it('正式入口始终提供成品路径，资源缺失不能回退联网安装', () => {
+    expect(read('src/main/electron-entry.mjs')).toContain(
+      "prebuiltRuntimeDir: join(resourceRoot, 'office', 'runtime')",
+    );
   });
 });

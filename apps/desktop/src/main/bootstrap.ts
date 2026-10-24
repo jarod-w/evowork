@@ -201,6 +201,8 @@ export interface BootstrapOptions {
   readonly pluginsDir?: string | undefined;
   /** 随基础包带的 Noto Sans SC。打包后在 Resources/office/ */
   readonly bundledFontPath?: string | undefined;
+  /** 构建时已装好依赖的随包办公运行时。 */
+  readonly prebuiltRuntimeDir?: string | undefined;
   /** 注入以便测试；默认用真的宿主 */
   readonly createHost?:
     ((options: Parameters<typeof createServiceHost>[0]) => ServiceHost) | undefined;
@@ -264,6 +266,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
       quit: () => electron.app.quit(),
       ...(options.configDir !== undefined ? { configDir: options.configDir } : {}),
       ...(options.pluginsDir !== undefined ? { pluginsDir: options.pluginsDir } : {}),
+      ...(options.prebuiltRuntimeDir !== undefined
+        ? { prebuiltRuntimeDir: options.prebuiltRuntimeDir }
+        : {}),
       ...(options.bundledFontPath !== undefined
         ? { bundledFontPath: options.bundledFontPath }
         : {}),

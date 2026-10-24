@@ -168,15 +168,15 @@ Copyright (c) 2023-2025 The Ratatui Developers
 
 ## 3. 解析与产物运行时
 
-办公扩展的 Python 解释器与六个包、以及 OCR 扩展，按 08 §4 **按需下载**，不随主程序。
-中文字体 Noto Sans SC 约 18MB **随基础包分发**（客户机器访问不了 GitHub raw）。
-它们各自的许可证清单如下；按需下载的部分会在下载前的确认界面里给出链接：
+办公运行时的 Python 解释器、已安装的六个固定版本包及全部依赖按 08 §4 随主程序完整分发；OCR 扩展仍独立发行。
+中文字体 Noto Sans SC 在构建时切成静态实例，与完整办公运行时一起分发。
+主要组件的许可证清单如下；成品保留解释器与 Python 包附带的许可证文件。
 
 | 档位 | 主要组件 | 许可证 |
 |---|---|---|
 | 办公扩展 · 解释器 | CPython 3.12.14（python-build-standalone 20260901，`install_only`） | PSF-2.0 |
 | 办公扩展 · Python 包 | python-docx==1.2.0 · openpyxl==3.1.5 · python-pptx==1.0.2 · matplotlib==3.11.1 · pdfplumber==0.11.10 · jsonschema==4.26.0 | MIT · MIT · MIT · PSF-2.0 · MIT · MIT |
-| 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，随基础包分发，安装时切成 wght=400 静态实例） | SIL Open Font License 1.1 |
+| 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，构建时切成 wght=400 静态实例，与完整办公运行时随包分发） | SIL Open Font License 1.1 |
 | OCR 候选包 · 引擎 | Tesseract 5.5.1 + Leptonica 1.85.0（固定源码，按原生平台构建） | Apache-2.0 · BSD-2-Clause |
 | OCR 候选包 · 语言数据 | tessdata_fast `87416418657359cb625c412a48b6e1d6d41c29bd`（chi_sim / eng / osd） | Apache-2.0 |
 

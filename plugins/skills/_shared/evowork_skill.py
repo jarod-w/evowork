@@ -50,7 +50,7 @@ EXIT_PARTIAL = 6
 #: 一处说"解析组件"、一处说"生成组件"会让用户以为要装两个东西（08 §4 原话）。
 RUNTIME_TIERS = {
     "base": {"label": "基础组件", "size": "0MB", "note": "随主程序，无需下载"},
-    "office": {"label": "办公扩展", "size": "约 120MB", "note": "Word / Excel / PPT / PDF 文本层"},
+    "office": {"label": "办公扩展", "size": "随应用提供，无需下载", "note": "Word / Excel / PPT / PDF 文本层"},
     "ocr": {"label": "OCR 扩展", "size": "约 23MB", "note": "扫描件与图片文字识别（PDF 另需办公扩展）"},
 }
 
@@ -61,7 +61,7 @@ def runtime_missing_message(tier: str, what: str) -> str:
     return f"需要安装本地{spec['label']}（{spec['size']}）才能{what}。安装后重试即可。"
 
 
-#: 办公扩展的安装位置（08 §4：按需下载，装在自己的目录里而不是污染系统 python）。
+#: 办公扩展的安装位置（08 §4：完整成品随包、本地部署，装在自己的目录里而不是污染系统 python）。
 #: 可用 EVOWORK_OFFICE_PYTHON 覆盖 —— 企业离线部署会把它装在别处。
 OFFICE_VENV = Path.home() / ".evowork" / "runtime" / "office"
 

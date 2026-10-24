@@ -1,0 +1,2 @@
+Matplotlib is building the font cache; this may take a moment.
+{"offline": true, "pip_install": false, "documents": ["docx", "xlsx", "pptx", "pdf", "png"], "font": "Noto Sans SC"}

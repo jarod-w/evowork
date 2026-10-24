@@ -162,6 +162,29 @@ describe('路径布局（09 §7）', () => {
   });
 });
 
+it('宿主启动等待办公组件自动准备，完成前内核不能接收任务', async () => {
+  host = makeHost();
+  let prepared = false;
+  let release: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const initialize = vi
+    .spyOn(host.services.officeRuntime, 'initialize')
+    .mockImplementation(async () => {
+      await ready;
+      prepared = true;
+    });
+  const starting = host.start();
+  expect(initialize).toHaveBeenCalledTimes(1);
+  expect(prepared).toBe(false);
+  expect(child.received).toEqual([]);
+  release();
+  await starting;
+  expect(prepared).toBe(true);
+  expect(child.received.length).toBeGreaterThan(0);
+});
+
 describe('干净机器上的第一次运行', () => {
   it('宿主构造时就把 home / logs / kernel 建出来', () => {
     // 干净目录：只有 mkdtemp 建的 root，下面什么都没有

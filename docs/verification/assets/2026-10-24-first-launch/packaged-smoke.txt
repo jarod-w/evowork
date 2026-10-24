@@ -1,0 +1,12 @@
+产物：dist/release/mac-arm64/EvoWork.app
+· 实际随包办公运行时在全新目录完成本地复制与模块/版本/字体验收，零下载、零 pip
+· ad-hoc 签名（无 Developer ID）：本机能开，别的 Mac 下载后会被 Gatekeeper 拦（U4 未关闭）
+· spctl 如预期拒绝了这个包
+· 打包后的应用首次启动直接显示主界面，办公组件自动准备后已可用
+· 冷启动 argv 深链走通：未知 ID 给出了明确错误（02 §8 规则 3）
+· （这一条是 Windows / Linux 形状的冷启动；macOS 的冷启动走 open-url，见第 ⑦ 段）
+· LaunchServices 认这个包是 evowork: 的处理者（协议注册这一半成立）
+· macOS `open-url` 的**派发**这一段验不到 —— 直接 exec 起的进程收不到它，而经 LaunchServices 启动就没法隔离 EVOWORK_HOME（理由写在代码注释里）
+· 单实例锁生效：第二个实例把 argv 递给了第一个，自己在开库之前就退了
+
+✅ 打包产物冒烟通过（不含签名与公证的正式验收 —— 见上面的说明）

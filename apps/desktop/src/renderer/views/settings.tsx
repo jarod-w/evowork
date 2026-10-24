@@ -1815,6 +1815,11 @@ function AboutSection(props: SettingsPageProps) {
         {props.appName} <span className="ew-mono">{props.appVersion}</span>
       </p>
 
+      <p className="ew-settings-note">
+        文件处理、命令执行和定时任务都在这台电脑上完成，文档解析不会把原始文件传到云上。
+        模型调用需要联网，你的提问和相关上下文会发给所选模型服务商；EvoWork 网关不保存这些内容。
+      </p>
+
       <UpdateBlock {...props} update={update} onQuit={quit} />
 
       {offer &&

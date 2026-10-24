@@ -130,6 +130,29 @@ describe('包装层：不依赖办公扩展', () => {
     expect(readFileSync(SRC_PARSER, 'utf8')).toContain('--kind');
   });
 
+  it('解释器从配置的应用目录解析，不回退到另一个用户环境', () => {
+    const root = join(dir, 'custom-app', 'runtime', 'office');
+    expect(resolveOfficeInterpreter({ runtimeRoot: root, interpreter: '' })).toBeUndefined();
+    mkdirSync(join(root, 'bin'), { recursive: true });
+    const python = join(root, 'bin/python3');
+    writeFileSync(python, 'placeholder');
+    expect(resolveOfficeInterpreter({ runtimeRoot: root, interpreter: '' })).toBe(python);
+  });
+
+  it('启动时构造的预览解析器在自动部署完成后使用新的解释器', async () => {
+    const original = join(dir, 'original.docx');
+    writeFileSync(original, minimalDocx());
+    const runtime: { python?: string } = {};
+    const parser = createOfficeParser({
+      interpreter: () => runtime.python,
+      scriptPath: writeStub('late.py', SUCCESS_STUB),
+    });
+    const input = { kind: 'docx' as const, absolutePath: original, timeoutMs: 10_000 };
+    expect(await parser.parse(input)).toBeUndefined();
+    runtime.python = 'python3';
+    expect((await parser.parse(input))?.markdown).toContain('总体情况');
+  });
+
   it('假解释器跑通后给出 Markdown，而不是 undefined', async () => {
     const original = join(dir, 'original.docx');
     writeFileSync(original, minimalDocx());

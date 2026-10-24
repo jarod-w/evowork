@@ -80,11 +80,8 @@ async function reapGateway(pid) {
 }
 
 export const test = base.extend({
-  /**
-   * 保留首次引导。用 `test.use({ keepOnboarding: true })` 打开。
-   * 默认跳过：别的旅程要测的东西都在引导之后，而引导会盖住整个界面。
-   */
-  keepOnboarding: [false, { option: true }],
+  /** 不预建测试项目，保留全新用户状态。 */
+  freshStart: [false, { option: true }],
 
   /**
    * 用真网关 + 真厂商跑。由 `playwright.config.mjs` 的 `real` project 打开。
@@ -118,7 +115,7 @@ export const test = base.extend({
 
   electronApp: async (
     {
-      keepOnboarding,
+      freshStart,
       realModel,
       registerModels,
       hostGateway,
@@ -164,7 +161,7 @@ export const test = base.extend({
                 .digest('hex'),
             }
           : {}),
-        ...(keepOnboarding ? { EVOWORK_UI_KEEP_ONBOARDING: '1' } : {}),
+        ...(freshStart ? { EVOWORK_UI_FRESH_START: '1' } : {}),
         ...(realModel ? { EVOWORK_UI_REAL_MODEL: '1', EVOWORK_UI_MODEL_KEY: requireKey() } : {}),
         ...(registerModels ? { EVOWORK_UI_REGISTER_MODELS: '1' } : {}),
         ...(hostGateway ? { EVOWORK_UI_HOST_GATEWAY: '1' } : {}),
@@ -242,10 +239,10 @@ export const test = base.extend({
     }
   },
 
-  page: async ({ electronApp, keepOnboarding }, use) => {
+  page: async ({ electronApp }, use) => {
     const page = await electronApp.firstWindow();
     /*
-     * 先等入口把话说完（引导跳过、项目建好、控制面挂齐），再去碰界面。
+     * 先等入口把话说完（测试项目建好、控制面挂齐），再去碰界面。
      * 少了这一步，spec 读控制面会读到 `undefined` —— 而那不报错，只是让断言失去意义。
      */
     await expect
@@ -254,18 +251,11 @@ export const test = base.extend({
       })
       .toBe(true);
     /*
-     * 等输入框可见，而不是等 `domcontentloaded`：入口在引导走完之后会 **reload**
+     * 等输入框可见，而不是等 `domcontentloaded`：通用夹具在创建测试项目后会 **reload**
      * 一次，太早拿到的 page 正对着一个马上要被替换掉的文档。
-     * 输入框出现 = 引导过了、项目建好了、工作台真的渲染出来了。
+     * 输入框出现表示工作台已经渲染出来。
      */
-    /*
-     * 等的东西按模式分：引导模式下界面上根本没有输入框（引导盖住了整个界面），
-     * 等它只会以一句「超时」告终，而真正的原因是"等错了东西"。
-     */
-    const ready = keepOnboarding
-      ? page.getByRole('heading', { name: '欢迎使用 EvoWork' })
-      : page.getByLabel('需求输入');
-    await ready.waitFor({ state: 'visible', timeout: 120_000 });
+    await page.getByLabel('需求输入').waitFor({ state: 'visible', timeout: 120_000 });
     await use(page);
   },
 });

@@ -216,53 +216,41 @@ git status --short        # 非空就别构建要拿去部署的产物
 要么构建前确认树干净，要么从独立的 `git worktree` 构建。线上那份产物**从哪来**，
 建议在服务器上落一份 `PROVENANCE`：commit、构建时树是否干净、验证方法、已知缺口。
 
-### 3.3 办公扩展（按需，08 §4）
+### 3.3 完整办公运行时（随应用分发，08 §4）
 
-处理与生成 Word / Excel / PPT / PDF 需要一个**独立的 Python 环境**，装在
-`~/.evowork/runtime/office/`。**用户不需要敲任何命令** —— 在 App 里点「现在安装」即可
-（引导第 ③ 步「解析组件」，或第一次遇到这类文件时）。它会下载一份自包含的 python、装六个钉死版本的包、
-装一份中文字体，全程可见进度，装完当场验收。
+正式 DMG/ZIP 内的 `.app` 携带完整 Python、已安装的办公依赖与静态中文字体。
+首次启动直接进入主界面，没有引导步骤；缺失的办公组件自动准备。组件准备仅从应用资源复制、验收并原子换入
+`~/.evowork/runtime/office/`，不运行 pip、不下载依赖。初始化失败在设置中显示具体原因并提供修复。升级后旧运行时可继续使用，
+需更新时点重新安装，从当前应用本地部署。管理员仍可用 `EVOWORK_OFFICE_PYTHON` 指定解释器。
+自定义 `EVOWORK_HOME` 时，组件位于该数据目录的 `runtime/office/`；探针、内核技能和预览解析统一使用这份解释器。
 
-开发时想用命令装同一份（等价于点按钮）：
-
-```bash
-EVOWORK_INSTALL_E2E=1 npx vitest run --project runtime-installer -t "干净 HOME"
-```
-
-> **不要再用 `uv venv` 装它**（2026-09-07 前本节教的就是这个）。uv 建出来的目录
-> **不可搬运**：`bin/python` 是指向 `~/.local/share/uv/python/...` 的绝对符号链接，
-> 拷到别的机器上就是死链，而且那个 venv **不带 pip**。安装器改用
-> python-build-standalone 的 `install_only` 构建，解出来自包含、位置无关、自带 pip。
-> 已经用 uv 装过的环境仍然能用（解释器候选路径两种布局都认），但新装一律走安装器。
-
-装在自己的目录而不是系统 python：卸载 = 删一个目录，系统 python 升级不会带走它，
-而"装没装"这个判断就是"那个解释器能不能 import 那些模块"，没有歧义。
-
-**不装也能用**：文本 / Markdown / CSV / TSV / JSON / 压缩包走内置解析器（基础包）。
-四个技能在缺模块时会**自动换到这个解释器重跑**；两边都没有时以退出码 3 + 可操作提示结束，
-不会产出坏文件。
-
-#### 企业离线部署（上不了 GitHub / 清华镜像的机器）
-
-在一台**有网**的机器上打包，把整个目录下发给客户：
+构建前，在**目标平台与架构**的构建环境准备成品：
 
 ```bash
-# 给本机架构打；给别的平台加 --triple（wheel 分平台，一份包只服务一个 triple）
-node scripts/build-office-bundle.mjs --out ~/evowork-office-bundle
-node scripts/build-office-bundle.mjs --triple x86_64-pc-windows-msvc --out ./bundle-win
+node scripts/build-office-runtime.mjs
+# 构建机也可使用旧式离线解释器 + wheels 作为输入
+node scripts/build-office-runtime.mjs --bundle /path/to/office-bundle
+# 或复用清单一致的完整运行时（仍会复制到新位置后真实验收）
+node scripts/build-office-runtime.mjs --from-runtime /path/to/installed/office
+pnpm run build
+pnpm run package
+node scripts/verify-packaged-app.mjs
 ```
 
-产出 `python-<triple>.tar.gz` · `wheels/` · `NotoSansSC.ttf` · `MANIFEST.json`。
-目标机器上：
+输出为 `build/office/<os>-<arch>/runtime/`，包含 `.evowork-runtime.json`、
+`.evowork-bundle.json` 与全部传递依赖的 `installed-packages.json`。
+构建时完成字体静态实例化；最终路径再次验收 Python/平台/包版本、模块和字体，拒绝树外或绝对符号链接。
+`--arch` 必须与构建机的 Node 架构相同；x64 成品需由 x64 构建环境单独生成并执行验证。
+打包前验收失败会阻止出包，不能只在 arm64 机器上下载 x64 wheels 后跳过运行验证。
 
-```bash
-export EVOWORK_OFFICE_BUNDLE=/path/to/bundle   # 然后在 App 里点「现在安装」
-```
+`extraResources` 将该目录放到 `Resources/office/runtime/`，用户拖动应用时一起带走。
+随包目录缺失/损坏/版本或架构不符会明确提示重新安装 EvoWork，不联网补装。
+打包后冒烟使用实际 `.app` 资源向全新临时目录部署，并拒绝下载和 pip/字体处理调用。
+基础包压缩预算 400 MiB，办公目录安装后预算 350 MiB，分别测量 DMG/ZIP 与目录体积。
 
-这条路径**一个字节都不出网**（测试把下载函数换成"一被调用就失败"来守这一条）。
-**2026-09-07 实测**：本机打包 → 干净 HOME 离线装完 41.7 秒，六个模块与字体全部可用。
-
-扩展装在别处时（预置镜像、共享盘）用 `EVOWORK_OFFICE_PYTHON` 指向那个解释器。
+`python-build-standalone` 的自包含 `install_only` 仍是解释器来源，禁止直接拷贝开发机 `.venv`。
+`scripts/build-office-bundle.mjs` 与 `EVOWORK_OFFICE_BUNDLE` 保留为构建/显式开发安装兼容路径；
+正式应用始终使用随包成品，无需用户配置离线包变量。OCR 继续使用独立管理员离线发行包。
 
 ---
 
@@ -419,7 +407,7 @@ Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端�
 | [account.ts](../apps/desktop/src/main/account.ts) · [policy-pack.ts](../apps/desktop/src/main/policy-pack.ts) | 桌面 App → identity | 登录后：账号、设备、JWKS 与签名策略包 |
 | [update-check.ts](../apps/desktop/src/main/update-check.ts) | 桌面 App → 更新源 | 检查 / 下载更新（§5.3.1） |
 | [hub-client](../services/hub-client/src/node.ts) | 桌面 App → 插件 Hub | 刷新索引、下载内容包（§5.3.2） |
-| [runtime-installer/src/download.ts](../services/runtime-installer/src/download.ts) | 桌面 App → GitHub / 清华 PyPI 镜像 | 用户点「现在安装」办公扩展时（§3.3）；离线包模式不出网 |
+| [runtime-installer/src/download.ts](../services/runtime-installer/src/download.ts) | 构建/显式开发安装 → GitHub / 清华 PyPI 镜像 | 只用于准备办公成品（§3.3）；正式应用仅本地复制，不调用下载器 |
 | [identity/src/http.ts](../services/identity/src/http.ts) | identity | 转发 hosted 模型调用；管理端探测上游模型目录 |
 
 另有随包的浏览器 MCP 驱动本机 Chrome 访问网页（连接器被信任后按 origin 逐次授权），不经上面任何一处。
@@ -512,7 +500,7 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 | 源 | 谁要它 | 状态 |
 | --- | --- | --- |
 | 自动更新 | [electron-builder.yml](../build/electron-builder.yml) 的 `publish: generic` → `https://update.nucleant.cn/${channel}` | **已上线，2026-10-08 发出第一版 `0.0.5`**（未签名 dmg / zip，`latest/`）。仓库随后打了 `v0.0.6` tag（2026-10-13，`package.json` 现为 0.0.6），但本文与 status.md 都没有它上传到更新源的记录。边界见总纲 Q46（§10.1.8）与 D9 的 K6 登记；没有证书时能做什么，见[在线升级提案](superpowers/specs/2026-10-02-online-update-design.md) |
-| 按需下载的办公扩展（`office` / `ocr` 档） | 08 §4 的三档运行时 | **不需要自建分发端**：`office` 档由 App 内安装器从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的上游地址（python-build-standalone、清华 PyPI 镜像）下载并校验（§3.3）；`ocr` 档运行时只从管理员配置的离线包安装（`EVOWORK_OCR_BUNDLE` + `EVOWORK_OCR_BUNDLE_DIGEST`），默认构建里没有可用的 OCR 发行包 |
+| 办公运行时 / OCR 扩展 | 08 §4 的分档运行时 | `office` 完整成品随应用分发，构建时安装验收；用户部署零网络、零 pip（§3.3）。`ocr` 仍从管理员离线包安装（`EVOWORK_OCR_BUNDLE` + `EVOWORK_OCR_BUNDLE_DIGEST`），默认构建没有可用 OCR 发行包 |
 
 若将来要把办公扩展改成自托管，这是 B 拓扑里唯一可能要再加一个桶的地方 —— 两个源可以是同一个桶的两个前缀。
 
@@ -705,9 +693,8 @@ dmg / zip 各 **197MB**（2026-09-06 口径，**尚未计入** 2026-09-19 随包
 
 ### 5.5 首次运行
 
-用户侧的授权引导在应用内（02 §9 四步）：欢迎与隐私说明 → 选工作空间 →
-解析组件（**可跳过**）→ 完成。权限默认值暂时不进引导（选了也不会进 `turn/start`）。
-模型不在引导里配：进 App 后去「设置 → 模型」添加自定义模型（密钥进系统钥匙串）。
+首次启动直接进入主界面，不再显示欢迎、目录或组件安装引导（02 §9）。默认保存位置可在「设置 → 常规」更改，办公组件自动从随包成品准备。
+模型在「设置 → 模型」添加自定义模型（密钥进系统钥匙串）；权限继续由任务输入区设置。
 
 ### 5.6 D9 云端职责的现状（2026-10-20 订正：原「还不需要部署的四件事」只剩企业私有源索引一件未建）
 
@@ -766,9 +753,9 @@ electron-builder 目标并不代表电脑操控已跨平台可用。详细边界
 | 网关启动即退出，日志 `gateway.boot.no_tokens` | 没配 `EVOWORK_GATEWAY_TOKENS` | 同上 |
 | Electron `FATAL ... Running as root` | 容器里以 root 跑 | 加 `--no-sandbox`（仅限容器/CI） |
 | `require('electron')` 报 "failed to install correctly" | pnpm 拦了 postinstall，运行时才发现 | `pnpm rebuild electron`；确认 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 里有它 |
-| 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 在 App 里点「现在安装」（§3.3）；或用 `EVOWORK_OFFICE_PYTHON` 指定已装好的解释器 |
+| 技能报"需要安装本地办公扩展" | 办公扩展没装或路径不对 | 在「设置 → 关于与更新」修复办公组件（§3.3）；或用 `EVOWORK_OFFICE_PYTHON` 指定已装好的解释器 |
 | 安装卡在 0% 不动 | 连接停滞。**60 秒收不到数据就会自己失败并给出原因**，不会一直挂着 | 换个网络重试，或用离线包（§3.3） |
-| 安装报"连不上 Python 包镜像（清华源）" | 公司代理拦了清华 PyPI 镜像（最常见的一类失败） | 用离线包（§3.3） |
+| 办公组件部署失败 | 随包成品缺失、损坏、版本/架构不符，或本机磁盘/执行限制 | 查看错误并重新安装对应架构 EvoWork；不会回退网络安装（§3.3） |
 | 安装报"下载到的文件与预期不符" | 中间设备改写了响应，或这个 EvoWork 版本的清单已过期 | **不要重试**（内容不对不是运气问题）：换网络，或用离线包 |
 | 图表里的中文变方框 | 扩展没装，或字体没被加载 | 装办公扩展 —— 它带一份 Noto Sans SC。装了仍报错时按提示装一款系统中文字体 |
 | 内核 stderr 报 `could not find bubblewrap` | Linux 沙箱组件没装 | `apt install bubblewrap`。不装它会回落到自带的那个，**不阻断启动**，所以容易被当成噪音漏掉 |

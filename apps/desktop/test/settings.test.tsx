@@ -1032,6 +1032,12 @@ describe('关于与更新', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('隐私说明保留在关于页，明确本机执行与模型调用联网', () => {
+    page({ section: 'about', update: updateView() });
+    expect(screen.getByText(/文件处理、命令执行和定时任务都在这台电脑上完成/)).toBeTruthy();
+    expect(screen.getByText(/模型调用需要联网/)).toBeTruthy();
+  });
+
   it('办公扩展装着但不是这一版要的组件：在这里说，重新安装由用户点（A4）', () => {
     const onInstallRuntime = vi.fn();
     page({

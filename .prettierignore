@@ -47,3 +47,6 @@ packages/protocol/src/kernel-wire.generated.ts
 build/.kernel-src/
 build/.kernel-target/
 build/kernel/
+
+# 完整 Python 成品由构建脚本生成
+build/office/*-*/

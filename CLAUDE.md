@@ -113,7 +113,7 @@ evowork/
     store/               【本机】本机 sqlite **25 张表**（`schema.ts` 24 张含 FTS 虚表 + `meta`）+ 两个迁移器 + 状态投影 + automation/audit/artifact/project/share 五个 repo（M2a，见 09 §4）
     scheduler/           【本机】定时调度（M5；带时区的 cron · misfire 补偿 · 设备绑定 · 与内核的桥接）
     ingest/              【本机】解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时（M3，K6，无云端兜底）
-    runtime-installer/   【本机】办公扩展的按需安装（08 §4）。**K6 登记：唯一为装扩展而出网的包**——
+    runtime-installer/   【本机】完整办公运行时的随包本地部署（08 §4）；下载/pip 仅供构建或显式开发安装——
                          下载器不放进 ingest，正是为了让那边的"不出网"扫描能收紧成整个 src 目录
     catalog/             【本机】技能 · 连接器 · 专家 ·「套件」的判定：P0/P1/P2 审计 · Hub 条目合并与 5.4 更新判定（05 / 13）。**不出网**（整目录扫描守着）
     hub-client/          【本机】插件 Hub 的下行通道：拉索引 · 验签 · 缓存 · 下载（13，H1）。**K6 登记：唯一为 Hub 出网的包**——
@@ -241,20 +241,20 @@ git --no-pager log --oneline HEAD..origin/main    # 上游漂移（D7）
 
 同名任务已配在工作区里（终端 → 运行任务）。
 
-**本机运行时**（08 §4 的"按需下载的办公扩展"）：
+**本机运行时**（08 §4：构建时安装全部依赖、完整成品随应用分发）：
 
 | 位置 | 内容 | 谁在用 |
 |---|---|---|
 | `~/.evowork/runtime/office/` | 自包含 CPython 3.12 + 六个钉死版本的包（python-docx · openpyxl · python-pptx · matplotlib · pdfplumber · jsonschema）+ `fonts/` 里一份中文字体 | 四个技能的 `render.py`（缺模块时**自动换到这个解释器重跑**）· `services/ingest` 的运行时探测 |
 
-**用户在 App 里点「现在安装」即可**（引导第 ④ 步），实现在 `services/runtime-installer`。
+**首次启动自动准备缺失的办公组件，直接进入主界面，不再展示首次引导**；设置保留修复入口。实现在 `services/runtime-installer`：从随包目录本地复制与验收，不运行 pip、不联网，资源损坏不得回退下载。
 装在自己的目录里而不是系统 python：卸载 = 删一个目录，系统 python 升级不会带走它，
 而"装没装"这个判断就是"那个解释器能不能 import 那些模块"，没有歧义。
 
 **别再用 `uv venv` 装它**：uv 建的目录不可搬运（`bin/python` 是指向 uv 自己 python 目录的
 绝对符号链接），而且不带 pip —— 客户机器上拷过去就是死链。安装器用
 python-build-standalone 的 `install_only` 构建，自包含、位置无关、自带 pip。
-企业离线部署用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打；插件 Hub 的离线包同一个思路：`EVOWORK_HUB_BUNDLE` + `scripts/build-hub-bundle.mjs`），
+构建机用 `scripts/build-office-runtime.mjs` 准备完整成品，旧式 `EVOWORK_OFFICE_BUNDLE` 仅供构建/开发兼容（插件 Hub 离线包仍用 `EVOWORK_HUB_BUNDLE` + `scripts/build-hub-bundle.mjs`），
 或用 `EVOWORK_OFFICE_PYTHON` 指向已装好的解释器。
 
 ---

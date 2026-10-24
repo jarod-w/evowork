@@ -1,36 +1,23 @@
 /**
- * 办公扩展的安装编排（08 §4「按需下载」的实现处）。
- *
- * ```
- * ① 下 python 发行版 → ② 解包 → ③ pip 装六个包 → ④ 拷随包字体并切静态实例 → ⑤ 验收 → ⑥ 原子换入
- * ```
- *
- * ## 在此之前这里是空的
- *
- * 08 §4 决定"按需下载"是 2026-09-03 的事，但下载器一直没写。表现是：引导页解析组件那一步的
- * `runtimeInstalled` 硬编码成 `false`，Word / Excel / PPT / PDF 在**任何一台干净机器上
- * 都不可用**，而用户没有任何出路 —— 唯一的装法写在 `docs/build-and-deploy.md` 里，
- * 需要用户自己装 uv 再敲两条命令。这个文件是把那两条命令变成一个按钮。
- *
- * ## 四条把"能装上"变成"装得对"的规则
- *
- * 1. **原子换入。** 全程装在 `office.staging/`，只有验收通过才 rename 成 `office/`。
- *    半截的目录比没有更糟：`resolveOfficeInterpreter` 只看解释器文件在不在，
- *    一个装了一半的目录会被判成"装好了"，然后每次生成产物都以奇怪的方式失败。
- * 2. **验收是真的跑一遍。** 不是"文件都在"，是用装出来的解释器 import 那六个模块、
- *    并且让 matplotlib 真的把字体登记出 `Noto Sans SC` 这个家族名 ——
- *    `plugins/skills/charts` 在用户机器上就是这么找字体的，验收要走同一条路。
- * 3. **失败有类型，且都能说人话。** 网络断了、代理改写了内容、磁盘满了、平台不支持，
- *    这四件事用户要做的动作完全不同，合并成一句"安装失败"等于让他们去猜。
- * 4. **离线包一个字节都不出网**（§3 / K6）。`EVOWORK_OFFICE_BUNDLE` 指向一个事先打好的目录时，
- *    python 从那里解包、pip 用 `--no-index --find-links` 装本地 wheel、字体也从那里拿。
- *    这条路径在断网的机器上必须能走完 —— 企业部署的验收标准就是"拔网线还能装上"。
+ * 办公运行时：正式应用复制构建时已安装的完整成品，验收后原子换入。
+ * 下载/pip/字体处理仅供构建与显式开发安装；随包成品失败不回退网络。
  */
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  cp,
+  mkdir,
+  readdir,
+  readlink,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 
 import { OFFICE_RUNTIME_DIR } from '@evowork/ingest/runtime.js';
 import { errorFields, type Logger } from '@evowork/logging';
@@ -58,6 +45,7 @@ import {
  * 而"正在安装 Python 包"至少让人知道现在在等什么、大概还要多久。
  */
 export type InstallPhase =
+  | 'copy-runtime'
   | 'download-python'
   | 'extract-python'
   | 'install-packages'
@@ -67,6 +55,7 @@ export type InstallPhase =
   | 'done';
 
 export const PHASE_LABEL: Readonly<Record<InstallPhase, string>> = Object.freeze({
+  'copy-runtime': '正在部署随包办公组件',
   'download-python': '正在下载运行时',
   'extract-python': '正在解包',
   'install-packages': '正在安装文档处理组件',
@@ -84,6 +73,7 @@ export const PHASE_LABEL: Readonly<Record<InstallPhase, string>> = Object.freeze
  * 因为阶段名同时在变；不可接受的是让它停在某个数字上一动不动。
  */
 const PHASE_WEIGHT: Readonly<Record<InstallPhase, number>> = Object.freeze({
+  'copy-runtime': 0,
   'download-python': 0.4,
   'extract-python': 0.1,
   'install-packages': 0.25,
@@ -150,6 +140,10 @@ export type RunFn = (
 ) => Promise<RunResult>;
 
 export interface InstallOptions {
+  /** 应用数据目录中的目标根；自动部署须尊重 EVOWORK_HOME。 */
+  readonly runtimeRoot?: string | undefined;
+  /** 完整随包成品；指定后任何失败均不会回退下载或 pip。 */
+  readonly prebuiltRuntimeDir?: string | undefined;
   readonly home?: string | undefined;
   readonly platformKey?: string | undefined;
   readonly onProgress?: ((progress: InstallProgress) => void) | undefined;
@@ -202,8 +196,11 @@ function stampContent(): string {
  *
  * 只读本地一个文件，不出网。
  */
-export function runtimeStampStatus(home: string = homedir()): 'current' | 'outdated' | 'missing' {
-  const path = join(officeRoot(home), RUNTIME_STAMP_FILE);
+export function runtimeStampStatus(
+  home: string = homedir(),
+  root: string = officeRoot(home),
+): 'current' | 'outdated' | 'missing' {
+  const path = join(root, RUNTIME_STAMP_FILE);
   if (!existsSync(path)) return 'missing';
   try {
     const stamp = JSON.parse(readFileSync(path, 'utf8')) as { manifestDigest?: unknown };
@@ -240,7 +237,7 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
   const triple = TRIPLE_BY_PLATFORM[platformKey];
   const run = options.runFn ?? defaultRun;
   const download = options.downloadFn ?? downloadAsset;
-  const offline = options.bundleDir !== undefined;
+  const offline = options.prebuiltRuntimeDir !== undefined || options.bundleDir !== undefined;
   const log = options.logger;
 
   if (triple === undefined) {
@@ -252,8 +249,8 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
     };
   }
 
-  const target = officeRoot(home);
-  const staging = stagingRoot(home);
+  const target = options.runtimeRoot ?? officeRoot(home);
+  const staging = `${target}.staging`;
 
   const claimed = await claimStaging(staging);
   if (!claimed) {
@@ -267,6 +264,24 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
   const report = makeReporter(options.onProgress);
 
   try {
+    if (options.prebuiltRuntimeDir !== undefined) {
+      const source = options.prebuiltRuntimeDir;
+      const problem = await prebuiltRuntimeProblem(source, platformKey);
+      if (problem) return fail('VERIFY', problem);
+      if (options.signal?.aborted) return fail('ABORTED', '安装已取消。');
+      options.onProgress?.({ phase: 'copy-runtime', percent: 0 });
+      await cp(source, staging, { recursive: true, verbatimSymlinks: true });
+      if (options.signal?.aborted) return fail('ABORTED', '安装已取消。');
+      options.onProgress?.({ phase: 'verify', percent: 90 });
+      const verified = await verifyOfficeRuntime(staging, platformKey, run, options.signal);
+      if (options.signal?.aborted) return fail('ABORTED', '安装已取消。');
+      if (!verified.ok) return fail('VERIFY', verified.message);
+      await swapIn(staging, target);
+      options.onProgress?.({ phase: 'done', percent: 100 });
+      log?.info('office.install.done', { itemCount: REQUIREMENTS.length });
+      return { ok: true, interpreter: interpreterIn(target, platformKey), offline: true };
+    }
+
     /* ① python 发行版 —— 下载或从离线包取 */
     const archive = join(staging, 'python.tar.gz');
     const fontFromDisk = options.bundleDir !== undefined || options.bundledFontPath !== undefined;
@@ -398,7 +413,13 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
 
     /* ⑤ 验收：真的 import，真的登记字体 */
     report('verify', 0);
-    const verified = await verify(python, join(fonts, FONT_FILE_NAME), run, options.signal);
+    const verified = await verify(
+      python,
+      join(fonts, FONT_FILE_NAME),
+      run,
+      options.signal,
+      platformKey,
+    );
     if (!verified.ok) {
       log?.warn('office.install.verify_failed', { reason: verified.reason });
       return fail('VERIFY', verified.message);
@@ -409,6 +430,7 @@ export async function installOfficeRuntime(options: InstallOptions = {}): Promis
      * ⑥ 写版本戳，再原子换入。戳写在 staging 里、跟着 rename 一起进去：
      * 先换入再写，中间被杀就会留下一个「装好了、但没有戳」的目录，下次被判成旧清单。
      */
+    if (options.signal?.aborted) return fail('ABORTED', '安装已取消。');
     await writeFile(join(staging, RUNTIME_STAMP_FILE), stampContent(), 'utf8');
     await swapIn(staging, target);
     report('done', 1);
@@ -511,9 +533,16 @@ async function verify(
   fontPath: string,
   run: RunFn,
   signal: AbortSignal | undefined,
+  platformKey: string = `${process.arch}-${process.platform}`,
 ): Promise<{ ok: true } | { ok: false; reason: string; message: string }> {
   const script = [
-    'import json',
+    'import json, sys, platform',
+    `assert sys.platform == ${JSON.stringify(platformKey.split('-')[1])}`,
+    'from importlib.metadata import version',
+    `assert platform.machine().lower() in ${JSON.stringify(platformKey.startsWith('arm64-') ? ['arm64', 'aarch64'] : ['x86_64', 'amd64'])}`,
+    `assert sys.version.split()[0] == ${JSON.stringify(PYTHON_VERSION)}`,
+    `requirements = ${JSON.stringify(REQUIREMENTS)}`,
+    'assert all(version(r.split("==")[0]) == r.split("==")[1] for r in requirements)',
     'import docx, openpyxl, pptx, pdfplumber, matplotlib, jsonschema',
     'matplotlib.use("Agg")',
     'from matplotlib import font_manager',
@@ -522,7 +551,7 @@ async function verify(
     `print(json.dumps({"font": ${JSON.stringify(FONT_FAMILY)} in names}))`,
   ].join('\n');
 
-  const result = await run(python, ['-c', script], { ...(signal ? { signal } : {}) });
+  const result = await run(python, ['-I', '-c', script], { ...(signal ? { signal } : {}) });
   if (result.code !== 0) {
     return {
       ok: false,
@@ -551,7 +580,12 @@ async function verify(
 async function swapIn(staging: string, target: string): Promise<void> {
   const retired = `${target}.old-${Date.now()}`;
   if (existsSync(target)) await rename(target, retired);
-  await rename(staging, target);
+  try {
+    await rename(staging, target);
+  } catch (error) {
+    if (existsSync(retired)) await rename(retired, target);
+    throw error;
+  }
   await rm(retired, { recursive: true, force: true });
 }
 
@@ -647,6 +681,7 @@ const defaultRun: RunFn = (file, args, options) =>
         ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}),
         ...(options?.signal ? { signal: options.signal } : {}),
         maxBuffer: 16 * 1024 * 1024,
+        ...(args.includes('-c') ? { timeout: 120_000 } : {}),
         // 索引由 `--index-url` 钉死（清华源），不跟本机 pip.conf 走。
         // 仍继承父进程环境：公司代理 / 自定义 CA 配在 HTTP_PROXY、SSL_CERT_FILE 上。
       },
@@ -664,3 +699,78 @@ const defaultRun: RunFn = (file, args, options) =>
       },
     );
   });
+
+/** 完整成品的目标平台与清单；构建后随目录一起分发。 */
+export const RUNTIME_BUNDLE_FILE = '.evowork-bundle.json';
+
+export function runtimeBundleMetadata(platformKey: string): string {
+  return JSON.stringify({ platformKey, manifestDigest: RUNTIME_MANIFEST_DIGEST }, null, 2) + '\n';
+}
+
+/** 目录必须自包含，禁止将构建机器上的绝对链接带给用户。 */
+export async function prebuiltRuntimeProblem(
+  root: string,
+  platformKey: string,
+): Promise<string | undefined> {
+  try {
+    const metadata = JSON.parse(readFileSync(join(root, RUNTIME_BUNDLE_FILE), 'utf8')) as {
+      platformKey?: unknown;
+      manifestDigest?: unknown;
+    };
+    const stamp = JSON.parse(readFileSync(join(root, RUNTIME_STAMP_FILE), 'utf8')) as {
+      manifestDigest?: unknown;
+    };
+    if (metadata.platformKey !== platformKey)
+      return '随包办公组件与这台设备的架构不符。请安装对应架构的 EvoWork。';
+    if (
+      metadata.manifestDigest !== RUNTIME_MANIFEST_DIGEST ||
+      stamp.manifestDigest !== RUNTIME_MANIFEST_DIGEST
+    ) {
+      return '随包办公组件版本不符。请重新安装 EvoWork。';
+    }
+    if (
+      !existsSync(interpreterIn(root, platformKey)) ||
+      !existsSync(join(root, 'fonts', FONT_FILE_NAME))
+    ) {
+      return '安装包里的办公组件不完整。请重新安装 EvoWork。';
+    }
+    const base = await realpath(root);
+    const walk = async (dir: string): Promise<void> => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isSymbolicLink()) {
+          if (isAbsolute(await readlink(full))) throw new Error('运行时包含绝对符号链接');
+          const target = relative(base, await realpath(full));
+          if (
+            target === '..' ||
+            target.startsWith('../') ||
+            target.startsWith('..\\') ||
+            isAbsolute(target)
+          ) {
+            throw new Error('运行时包含目录外的符号链接');
+          }
+        } else if (entry.isDirectory()) await walk(full);
+      }
+    };
+    await walk(root);
+    return undefined;
+  } catch {
+    return '安装包里的办公组件缺失或损坏。请重新安装 EvoWork。';
+  }
+}
+
+/** 用实际解释器验收已安装成品，构建搬迁后和用户本地复制后共用。 */
+export async function verifyOfficeRuntime(
+  root: string,
+  platformKey: string = `${process.arch}-${process.platform}`,
+  run: RunFn = defaultRun,
+  signal?: AbortSignal,
+): ReturnType<typeof verify> {
+  return verify(
+    interpreterIn(root, platformKey),
+    join(root, 'fonts', FONT_FILE_NAME),
+    run,
+    signal,
+    platformKey,
+  );
+}

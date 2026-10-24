@@ -84,7 +84,7 @@ describe('探测：装了一半是真实会发生的状态', () => {
     expect(result.available).toBe(false);
     expect(result.tier).toBe('office');
     expect(result.message).toContain('办公扩展');
-    expect(result.message).toContain('约 120MB');
+    expect(result.message).toContain('随应用提供，无需下载');
   });
 
   it('扫描件的文案说的是"识别扫描件"而不是泛泛的"解析这个文件"', () => {

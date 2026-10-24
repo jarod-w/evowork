@@ -63,3 +63,6 @@ build/computer-use/
 # 只在某次失败的那台机器上有意义，提交进来只会让下一次 diff 变噪音。
 test-results/
 playwright-report/
+
+# 构建时安装好的办公运行时（按平台/架构生成，不提交二进制）
+build/office/*-*/

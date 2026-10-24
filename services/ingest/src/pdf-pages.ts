@@ -39,8 +39,8 @@ if rendered < 1: raise ValueError('PAGE_LIMIT')
 
 export async function renderPdfPages(
   directory: string,
+  interpreter: string | undefined = resolveOfficeInterpreter(),
 ): Promise<{ pages: Buffer[]; total: number }> {
-  const interpreter = resolveOfficeInterpreter();
   if (!interpreter) throw new Error('PDF_RENDERER_MISSING');
   await runIsolatedProcess({
     executable: interpreter,

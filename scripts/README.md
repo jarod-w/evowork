@@ -96,3 +96,10 @@ EVOWORK_PROBE_KEY=... node scripts/verify-provider.mjs \
 第三类是 2026-10-02 生成第一批夹具时立刻抓到的真缺陷：0.0.1 / 0.0.2 的配置没有根键
 `default_permissions`，现在的内核对 `config/read`、`plugin/list` 等四个方法直接回 -32603
 （插件页因此是空的）。修法是 `service-host.ts` 的 `migrateDefaultPermissions`。
+
+## 完整办公运行时（08 §4）
+
+打包前在目标架构运行 `node scripts/build-office-runtime.mjs`，
+或使用 `--bundle <离线解释器与wheel目录>` / `--from-runtime <完整已安装目录>`。
+输出 `build/office/<os>-<arch>/runtime/`，搬迁后验证解释器、包版本、模块与字体。
+`package.mjs` 拒绝缺失/旧清单/错误架构成品；`verify-packaged-app.mjs` 验证实际随包成品向全新目录本地部署、零下载/零 pip。

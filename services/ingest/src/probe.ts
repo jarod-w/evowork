@@ -19,6 +19,7 @@ import { verifyOcrRuntime } from './ocr-runtime.js';
 import { officeInterpreterPaths, type RuntimeProbe } from './runtime.js';
 
 export interface ProbeOptions {
+  readonly runtimeRoot?: string | undefined;
   readonly home?: string | undefined;
   /** 覆盖解释器路径（企业离线部署 / 测试） */
   readonly interpreter?: string | undefined;
@@ -28,7 +29,9 @@ export interface ProbeOptions {
 export function resolveOfficeInterpreter(options: ProbeOptions = {}): string | undefined {
   const override = options.interpreter ?? process.env.EVOWORK_OFFICE_PYTHON;
   if (override) return existsSync(override) ? override : undefined;
-  return officeInterpreterPaths(options.home ?? homedir()).find((path) => existsSync(path));
+  return officeInterpreterPaths(options.home ?? homedir(), options.runtimeRoot).find((path) =>
+    existsSync(path),
+  );
 }
 
 export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {

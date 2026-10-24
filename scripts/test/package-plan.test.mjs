@@ -1,7 +1,7 @@
 /**
  * 打包计划（M9 / R10）。
  *
- * 两条断言在这里最有价值：**按需下载的东西不许进基础包**（混进去不报错，只是悄悄胖 200MB），
+ * 两条断言在这里最有价值：**完整办公运行时允许随包，OCR 仍须独立**，
  * 以及**缺证书时整体降级为未签名并把标注写进文件名**（半签名的产物比未签名的更危险）。
  */
 import { describe, expect, it } from 'vitest';
@@ -16,14 +16,17 @@ import {
 } from '../package-plan.mjs';
 
 describe('三档运行时的边界（08 §4 / R10）', () => {
-  it('**Python 办公库不许进基础包** —— 混进去不会报错，只会让安装包胖一倍', () => {
+  it('完整 Python 办公库允许随基础包分发', () => {
     const result = checkTierPlacement([
       'dist/main/index.js',
       'resources/kernel/codex-app-server',
       'resources/python/site-packages/openpyxl/__init__.py',
     ]);
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain('按需下载');
+    expect(result.ok).toBe(true);
+  });
+
+  it('OCR 仍独立发行，混入基础包会拒绝', () => {
+    expect(checkTierPlacement(['Resources/ocr/tessdata/eng.traineddata']).ok).toBe(false);
   });
 
   it('干净的基础包通过，中文字体随基础包走不算越界', () => {
@@ -39,7 +42,7 @@ describe('三档运行时的边界（08 §4 / R10）', () => {
   it('预算超了要红，且提示先查是不是有东西混进了基础包', () => {
     const result = checkSizeBudget('base', SIZE_BUDGET.base + 1);
     expect(result.ok).toBe(false);
-    expect(result.message).toContain('按需下载');
+    expect(result.message).toContain('重复依赖');
   });
 
   it('三档各有预算，基础包最大', () => {

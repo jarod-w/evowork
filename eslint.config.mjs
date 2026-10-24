@@ -24,6 +24,7 @@ export default tseslint.config(
       '.kernel-drift/**',
       // scripts/build-kernel.mjs 导出的内核源码副本与编译缓存：上游代码，不归本仓库的规则管
       'build/.kernel-src/**',
+      'build/office/*-*/**',
       'build/.kernel-target/**',
       'patches/**',
       'docs/**/*.html',

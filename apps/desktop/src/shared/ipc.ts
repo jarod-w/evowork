@@ -254,12 +254,7 @@ export interface StartupInfo {
   readonly workspaces: readonly WorkspaceView[];
   /** 已有任务（冷启动时投影表里就有，不必等事件流） */
   readonly tasks: readonly TaskRowView[];
-  /**
-   * 走没走过首次引导（02 §9）。
-   *
-   * 落在 `meta` 表而不是渲染层的 localStorage：换个窗口、清个缓存都不该让
-   * 用户再走一遍四步引导，而"这台机器配好了没有"本来就是本机状态。
-   */
+  /** 旧版引导完成标记，仅保留兼容读取；当前界面不据此阻塞首次使用。 */
   readonly onboarded: boolean;
   /**
    * `turn/start.approvalsReviewer` 能否下发。false 时 Composer 把「帮我批准」
@@ -966,6 +961,8 @@ export interface ApprovalView {
  * 而不是让用户从头装一遍。
  */
 export interface RuntimeStatusView {
+  /** 启动自动部署或修复失败的原因，保留到下次部署，供设置页显示。 */
+  readonly error?: string | undefined;
   readonly installed: boolean;
   /** 缺哪些模块。**逐个列出来** —— "装了一半"是真实会发生的状态 */
   readonly missing: readonly string[];
@@ -977,9 +974,8 @@ export interface RuntimeStatusView {
    * 装着、模块也 import 得动，但**装的不是这一版要的清单**（新版本改了钉死的版本，
    * 或者是加版本戳之前装的）。在线升级提案 §4 A4。
    *
-   * 不影响 `installed`：旧清单照样能用，只是版本不对。重新安装仍由用户点（K6 登记：
-   * 办公扩展只在用户点安装时下载）。用户自己指定了解释器（`EVOWORK_OFFICE_PYTHON`）时不判。
-   * **界面还没接**：提示条要先出原型，和「检查更新」一起做。
+   * 不影响 `installed`：旧清单照样能用，只是版本不对。已有环境的重新安装仍由用户在设置中发起，本地部署不出网。用户自己指定了解释器（`EVOWORK_OFFICE_PYTHON`）时不判。
+   * 设置中的版本提示与修复入口读取此字段。
    */
   readonly outdated?: boolean | undefined;
 }

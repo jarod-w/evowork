@@ -1,5 +1,6 @@
 import { ownerProjectOf } from '@evowork/projects';
 import { inspectOcrBundle, installOcrBundle } from '@evowork/runtime-installer';
+import { renderPdfPages } from '@evowork/ingest/pdf-pages.js';
 import { verifyOcrRuntime } from '@evowork/ingest';
 import { createAttachmentTextHost } from './attachment-text-host.js';
 import { createLibraryHost, type LibraryHost } from './library-host.js';
@@ -171,7 +172,7 @@ import {
   readBundleManifest,
 } from '@evowork/hub-client';
 import { parseAllowlist } from '@evowork/catalog';
-import { officeInterpreterPaths, createOfficeLayoutPreview } from '@evowork/ingest';
+import { createOfficeLayoutPreview } from '@evowork/ingest';
 import {
   OFFICIAL_HUB_NAME,
   officialHubDisabled,
@@ -861,6 +862,8 @@ export interface ServiceHostOptions {
    * 给了，办公扩展安装就不再去 GitHub 拉字体。
    */
   readonly bundledFontPath?: string | undefined;
+  /** 构建时已装好依赖的随包办公运行时。 */
+  readonly prebuiltRuntimeDir?: string | undefined;
   /** 注入进程环境，便于测试 */
   readonly env?: NodeJS.ProcessEnv;
   /** 注入 spawn，便于测试（见文件头：宿主的接线逻辑必须能被测） */
@@ -1547,6 +1550,17 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           ...communicationHost.environment,
           ...nextActionsHost.environment,
           ...fileHost.environment,
+          ...(options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim()
+            ? {
+                EVOWORK_OFFICE_PYTHON:
+                  services.probe.interpreter() ??
+                  join(
+                    options.paths.home,
+                    'runtime/office',
+                    process.platform === 'win32' ? 'python.exe' : 'bin/python3',
+                  ),
+              }
+            : {}),
         }),
         extraEnv: {
           ...computerUse.environment,
@@ -1697,6 +1711,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         taskId: threadId,
       } satisfies RendererEvent);
     },
+    ...(options.prebuiltRuntimeDir !== undefined
+      ? {
+          prebuiltRuntimeDir: options.prebuiltRuntimeDir,
+          officeRuntimeRoot: join(options.paths.home, 'runtime', 'office'),
+        }
+      : {}),
     ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
     isModelAvailable: async (modelId) => {
       const catalog = await automationCatalog.read?.();
@@ -2141,8 +2161,25 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       files: readonly { readonly name: string; readonly bytes: Uint8Array }[],
     ) => ingestAttachments(workspaceRoot, files),
   };
-  const officePreviewParser = createOfficeParser({ assetOutput: 'temporary' });
-  const officeLayoutPreview = createOfficeLayoutPreview();
+  const officePreviewParser = createOfficeParser({
+    assetOutput: 'temporary',
+    interpreter: services.probe.interpreter,
+  });
+  const officeLayoutPreview = createOfficeLayoutPreview({
+    ...(options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim()
+      ? { fontDirectory: join(options.paths.home, 'runtime/office/fonts') }
+      : {}),
+    render: (directory) =>
+      renderPdfPages(
+        directory,
+        services.probe.interpreter() ??
+          join(
+            options.paths.home,
+            'runtime/office',
+            process.platform === 'win32' ? 'python.exe' : 'bin/python3',
+          ),
+      ),
+  });
 
   const automationPorts = {
     save: (input: AutomationMutationInput & { readonly id: string }): void => {
@@ -2218,11 +2255,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     signedIn: () => account.signedIn(),
     // 用户机器上没有 node：stdio 连接器的 JS 用 Electron 自己跑（HUB-Q6a=A，同 browser / cua）
     nodeRuntime: { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } },
-    pythonCommand: () => {
-      const override = process.env.EVOWORK_OFFICE_PYTHON?.trim();
-      if (override) return existsSync(override) ? override : undefined;
-      return officeInterpreterPaths(homedir()).find((p) => existsSync(p));
-    },
+    pythonCommand: services.probe.interpreter,
     officeRuntime: services.officeRuntime,
     setSkillEnabledByPath: async (path, enabled) => {
       await adapter.setSkillEnabled({ path, enabled });
@@ -2751,6 +2784,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
 
     async start() {
+      // 内核开始接受任务前准备随包办公组件，不再向用户展示安装引导。
+      await services.officeRuntime.initialize();
       await imageHost.ready;
       await communicationHost.ready;
       await nextActionsHost.ready;

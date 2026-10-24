@@ -105,7 +105,7 @@ import type {
   MentionCandidate,
   SlashCommand,
 } from './components/composer.js';
-import { Banner, Dialog, EmptyState, IconButton } from './components/primitives.js';
+import { Dialog, EmptyState, IconButton } from './components/primitives.js';
 import { GOAL_STATUS_LABELS, parseGoalCommand } from '../shared/goal-command.js';
 import { MemoryImportDialog, type MemoryImportPorts } from './components/memory-import.js';
 import { isImportCommand } from '../shared/import-command.js';
@@ -143,7 +143,6 @@ import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
 import { Library, type LibraryNav } from './views/library.js';
-import { Onboarding, ONBOARDING_STEPS, type OnboardingStep } from './views/onboarding.js';
 import { ProjectDetailPage } from './views/project-detail.js';
 import { actionErrorText } from './action-error.js';
 export { actionErrorText } from './action-error.js';
@@ -723,9 +722,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [library, setLibrary] = useState<LibraryDataView | null>(null);
   const [automations, setAutomations] = useState<AutomationsDataView | null>(null);
   const [audit, setAudit] = useState<AuditDataView | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>(
-    ONBOARDING_STEPS[0] as OnboardingStep,
-  );
   /**
    * 办公扩展的状态与安装（08 §4）。
    *
@@ -1657,8 +1653,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   /**
    * 办公扩展：进来先探一次，安装进度订阅整个会话都在。
    *
-   * 订阅不只在引导页开：安装可能在引导里发起，而用户会一边装一边往下走完引导 ——
-   * 只在那一屏订阅的话，走出去再回来进度就断了。
+   * 初次部署由宿主在启动时完成；设置中的修复操作使用同一份状态和进度。
    */
   useEffect(() => {
     void bridge
@@ -3606,94 +3601,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     ],
   );
 
-  /*
-   * 首次引导（02 §9）。**盖住整个界面** —— 它要拿到项目目录的答案，
-   * 这件事决定后面每个任务在哪跑。走完落 `meta` 表，不再出现。
-   * 权限档位暂时不在这里问：选了也不会进 `turn/start`。
-   *
-   * `startup === null` 时不显示：那时我们还不知道走没走过，
-   * 闪一下引导再消失比晚半秒更糟。
-   */
-  if (startup !== null && !startup.onboarded) {
-    return (
-      <div className="ew-app ew-app-onboarding">
-        {/*
-         * `Onboarding` 本身不接 `notices`（它是独立视图，本次修复不改它）。
-         * 拒绝目录的提示直接摆在它上面——引导屏这时候是整个界面，
-         * 用户的视线躲不开这条 Banner，效果和别处塞进 `notices` 一样。
-         */}
-        {notices.map((notice, index) => (
-          <Banner key={`${notice.tone}-${index}`} tone={notice.tone}>
-            {notice.text}
-          </Banner>
-        ))}
-        <Onboarding
-          step={onboardingStep}
-          onStepChange={setOnboardingStep}
-          workingDirectory={workingDirectory}
-          workingDirectoryBusy={workingDirectoryBusy}
-          onPickWorkingDirectory={() => {
-            if (workingDirectoryBusy) return;
-            setWorkingDirectoryBusy(true);
-            void bridge
-              .setWorkingDirectory({})
-              .then(setWorkingDirectory)
-              .catch((error: unknown) => {
-                reportFailure(error, '没能设置保存位置。');
-              })
-              .finally(() => setWorkingDirectoryBusy(false));
-          }}
-          /*
-           * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，
-           * 因为下载器没实现 —— 那时"如实说"是唯一诚实的选择。现在它实现了，
-           * 这一屏接的是真实探测结果与真实安装动作。
-           */
-          runtimeInstalled={runtime?.installed ?? false}
-          runtimeSupported={runtime?.supported ?? false}
-          {...(runtime?.downloadSize !== undefined
-            ? { runtimeDownloadSize: runtime.downloadSize }
-            : {})}
-          {...(runtimeProgress ? { runtimeProgress } : {})}
-          {...(runtimeError !== undefined ? { runtimeError } : {})}
-          onInstallRuntime={() => void installRuntime()}
-          onSkipRuntime={() => setOnboardingStep('done')}
-          onFinish={() => {
-            void bridge
-              .completeOnboarding()
-              .then(async () => {
-                try {
-                  const info = await bridge.getStartup();
-                  setStartup({ ...info, onboarded: true });
-                } catch {
-                  setStartup((prev) => (prev ? { ...prev, onboarded: true } : prev));
-                }
-              })
-              .catch((error: unknown) => {
-                setNotices((prev) => [
-                  ...prev,
-                  { tone: 'danger', text: actionErrorText(error, '没能完成引导。') },
-                ]);
-              });
-          }}
-        />
-        {/*
-         * **引导屏也要有 Toast 出口。**
-         *
-         * 这一支是 `return`，它此前只渲染 `notices` 与 `Onboarding` ——
-         * `ToastStack` 在下面那个主分支里，引导期间**永远到不了**。
-         * 于是任何在引导期间 `pushToast` 的东西都被无声吞掉。
-         *
-         * 最要命的那条正是深链：用户收到一条 `evowork://share/…`，点开，
-         * 应用第一次启动 → 引导屏 → 主进程把「这份产物不在这台电脑上」推过来 →
-         * 变成一个没有宿主的 toast → **什么都没发生**。
-         * 那恰好是 02 §8 规则 3（未知 ID 要给明确错误，不是空白页）要防的事，
-         * 而它在最可能发生的那个场景里是失效的。2026-09-27 在真 `.app` 上实测到。
-         */}
-        <ToastStack toasts={toasts} onDismiss={dismissToast} />
-      </div>
-    );
-  }
-
   return (
     <div className="ew-app">
       {sidebarCollapsed ? (
@@ -4172,7 +4079,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           runtime={runtime}
           runtimeProgress={runtimeProgress}
-          runtimeError={runtimeError}
+          runtimeError={runtimeError ?? runtime?.error}
           onInstallRuntime={() => void installRuntime()}
           onUsePrompt={prepareTaskWithText}
           onWriteSkill={() => {

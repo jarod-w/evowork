@@ -1,15 +1,8 @@
 /**
  * 三档解析运行时的分发（08 §4，R10 的落点）。
  *
- * ## 为什么不全量随包
- *
- * 全量携带 Python + 办公库 + tesseract 中文模型是 300MB+，把它挡在"第一次打开应用"前面
- * 会让大量用户在还没看到产品之前就流失。所以按档分发，用到哪档下哪档。
- *
- * ## 一条容易被忽略的约束：**文案必须统一**
- *
- * 08 §4 的原话：「产物生成技能同样依赖办公扩展，因此首次生成 PPT/Word 也会触发同一次下载。
- * 提示文案要统一，不能一次说"解析组件"、一次说"生成组件"」。
+ * 办公运行时在构建时安装好并随主程序分发，用户只做本地部署；OCR 仍独立。
+ * 解析与生成共用同一份档位、路径和提示文案。
  *
  * 落法是：这里与 `plugins/skills/_shared/evowork_skill.py` 的 `RUNTIME_TIERS` 是同一份数据，
  * 由 `test/runtime.test.ts` 逐字段比对 —— 两边分叉会直接变红。
@@ -36,7 +29,7 @@ export const RUNTIME_TIERS: Readonly<Record<RuntimeTier, TierSpec>> = Object.fre
   },
   office: {
     label: '办公扩展',
-    size: '约 120MB',
+    size: '随应用提供，无需下载',
     note: 'Word / Excel / PPT / PDF 文本层',
     probeModules: ['docx', 'openpyxl', 'pptx', 'pdfplumber', 'matplotlib'],
   },
@@ -160,8 +153,8 @@ export function officeFontsPath(home: string): string {
  * 与 `plugins/skills/_shared/evowork_skill.py` 的 `office_python()` 是同一份约定，
  * 由 `test/runtime.test.ts` 逐条比对。
  */
-export function officeInterpreterPaths(home: string): readonly string[] {
-  const root = `${home}/${OFFICE_RUNTIME_DIR}`;
+export function officeInterpreterPaths(home: string, runtimeRoot?: string): readonly string[] {
+  const root = runtimeRoot ?? `${home}/${OFFICE_RUNTIME_DIR}`;
   return [
     `${root}/bin/python`,
     `${root}/bin/python3`,
@@ -200,7 +193,7 @@ export function probeTiers(probe: RuntimeProbe): readonly TierStatus[] {
  * 这种输入现在能不能处理。
  *
  * 返回的不是布尔而是"缺什么 + 该说什么"，因为 03 §8 要求的是
- * 「需要安装本地解析组件（约 180MB）」+ 「安装」/「以原始文件引用」两个出路，
+ * 「需要安装本地解析组件（随应用提供，无需下载）」+ 「安装」/「以原始文件引用」两个出路，
  * 而不是一句"不支持"。
  */
 export interface Availability {

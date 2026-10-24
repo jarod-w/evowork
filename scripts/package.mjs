@@ -7,7 +7,7 @@
  * 直接 `electron-builder --mac dmg` 也能出包，区别在于那样出的包：
  *
  *   · 缺证书时静默产出一个**名字看起来像正式包**的未签名 dmg（U4 明确要求标注进文件名）；
- *   · 体积超预算、或者办公运行时混进基础包（08 §4），都要等用户下载时才发现（R10）。
+ *   · 体积超预算、或者办公运行时缺失/错架构（08 §4），都要等用户下载时才发现（R10）。
  *
  * 用法：
  *   node scripts/package.mjs              # 当前平台当前架构
@@ -15,12 +15,11 @@
  *   node scripts/package.mjs --dry-run    # 只跑前置检查，不真打包
  */
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { readManifest } from './build-office-bundle.mjs';
+import { verifyPrebuiltRuntime } from './build-office-runtime.mjs';
 import { kernelProvenanceProblem } from './kernel-provenance.mjs';
 import { artifactName, checkSizeBudget, checkTierPlacement, planSigning } from './package-plan.mjs';
 
@@ -80,18 +79,19 @@ if (!existsSync(kernelBin)) {
   if (provenance) problems.push(provenance);
 }
 
-// ── 前置检查 ③：随包中文字体 ────────────────────────────────────────────
-const fontPath = join(ROOT, 'build/office/NotoSansSC.ttf');
-if (!existsSync(fontPath)) {
-  problems.push(
-    '缺中文字体 build/office/NotoSansSC.ttf —— 它随基础包分发，漏了客户点「现在安装」会去打 GitHub',
+// ── 前置检查 ③：完整办公运行时，必须能在目标架构执行 ───────────────────
+const officeDir = join(ROOT, 'build/office', `${OS_KEY}-${arch}`, 'runtime');
+try {
+  await verifyPrebuiltRuntime(officeDir, `${arch}-${process.platform}`);
+  const budget = checkSizeBudget(
+    'office',
+    walk(officeDir).reduce((sum, file) => sum + statSync(file).size, 0),
   );
-} else {
-  const actual = createHash('sha256').update(readFileSync(fontPath)).digest('hex');
-  const expected = readManifest().font.sha256;
-  if (actual !== expected) {
-    problems.push(`build/office/NotoSansSC.ttf 的 sha256 与清单不符（${actual} ≠ ${expected}）`);
-  }
+  if (!budget.ok) problems.push(budget.message);
+} catch (error) {
+  problems.push(
+    `完整办公运行时不可用：${error.message} —— 先在目标架构运行 node scripts/build-office-runtime.mjs`,
+  );
 }
 
 if (problems.length > 0) {
@@ -161,8 +161,7 @@ function walk(dir) {
 }
 
 /*
- * 档位检查看的是**文件名**，所以对着解压后的 .app 跑：办公库混进来时它长的样子是
- * `Resources/.../site-packages/openpyxl/...`，在 dmg 里看不见。
+ * 档位检查允许办公运行时随包，只阻止仍独立发行的 OCR 组件混入。
  */
 if (OS_KEY === 'mac' && existsSync(appDir)) {
   const tier = checkTierPlacement(walk(appDir).map((f) => relative(appDir, f)));
@@ -173,11 +172,9 @@ if (OS_KEY === 'mac' && existsSync(appDir)) {
 /*
  * 体积预算量的是**安装包**，不是解压后的 .app。
  *
- * 口径来自 R10 与 08 §4 的原话（「首次下载 300MB+ 挡在体验前面」「安装包 +100–300MB」）——
- * 约束的是用户下载多少。解压后的 .app 一定更大：Electron 的 framework 单独就 250MB 上下，
- * 拿它去比 240MB 会永远红，而那个红不指向任何可以做的事。
+ * 安装包预算量压缩后下载体积；办公目录单独量安装后体积（08 §4）。
  */
-const installers = readdirSync(outDir).filter((f) => /\.(dmg|exe|AppImage|deb)$/.test(f));
+const installers = readdirSync(outDir).filter((f) => /\.(dmg|zip|exe|AppImage|deb)$/.test(f));
 for (const f of installers) {
   const budget = checkSizeBudget('base', statSync(join(outDir, f)).size);
   console.log(`体积预算（${f}）：${budget.message}`);

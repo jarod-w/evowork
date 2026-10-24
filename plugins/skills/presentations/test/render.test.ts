@@ -257,7 +257,7 @@ describe('结构化生成：先校验再渲染（08 §5.3）', () => {
   });
 });
 
-describe('办公扩展未安装时的行为（08 §4 的按需下载）', () => {
+describe('办公扩展未部署时的行为（08 §4 的随包成品）', () => {
   // 不用 skipIf：**强制**无扩展环境，这样装没装扩展的机器上都验得到这条路径 ——
   // 而它恰恰是用户第一次用时走的那条
   it('给出可操作的提示与专用退出码 3，而不是 python 堆栈', () => {
@@ -270,7 +270,7 @@ describe('办公扩展未安装时的行为（08 §4 的按需下载）', () => 
     expect(payload.code).toBe(3);
     // 文案要与解析管道统一：不能一处说"解析组件"一处说"生成组件"（08 §4 最后一段）
     expect(payload.message).toContain('办公扩展');
-    expect(payload.message).toContain('120MB');
+    expect(payload.message).toContain('随应用提供，无需下载');
     expect(result.stderr).not.toContain('Traceback');
     expect(result.stderr).not.toContain('ModuleNotFoundError');
   });

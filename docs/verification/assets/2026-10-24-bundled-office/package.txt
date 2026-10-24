@@ -1,0 +1,30 @@
+⚠ 缺少 APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID、CSC_LINK，本次产出未签名包（U4）。另一台 Mac 经浏览器下载后会提示「已损坏」，先 xattr -cr 清隔离标记；正式分发需要 Developer ID 与公证。
+
+$ electron-builder --mac dmg zip --arm64 --config build/electron-builder.yml --config.artifactName=${productName}-${version}-${os}-${arch}-unsigned.${ext} --config.mac.identity=null
+  • electron-builder  version=26.15.3 os=27.0.0
+  • loaded configuration  file=/Users/wangli/develop/evowork/evowork/build/electron-builder.yml
+  • detected workspace root for project using packageManager field  pm=pnpm config=pnpm@10.30.3 resolved=/Users/wangli/develop/evowork/evowork projectDir=/Users/wangli/develop/evowork/evowork
+  • executing @electron/rebuild  electronVersion=44.2.0 arch=arm64 buildFromSource=false workspaceRoot=/Users/wangli/develop/evowork/evowork projectDir=./ appDir=apps/desktop
+  • installing native dependencies  arch=arm64
+  • completed installing native dependencies
+  • packaging       platform=darwin arch=arm64 electron=44.2.0 appOutDir=dist/release/mac-arm64
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=/Users/wangli/develop/evowork/evowork/dist/release/mac-arm64
+  • searching for node modules  pm=pnpm searchDir=/Users/wangli/develop/evowork/evowork/apps/desktop
+  • duplicate dependency references  dependencies=["@evowork/hub-protocol@link:../../packages/hub-protocol","@evowork/policy@link:../../services/policy","@evowork/protocol@link:../../packages/protocol","@evowork/store@link:../../services/store","d3-drag@3.0.0","d3-interpolate@3.0.1","d3-time@3.1.0","d3-time-format@4.1.0","d3-transition@3.0.1"]
+  • default Electron icon is used  reason=application icon is not set
+ad-hoc 重签 /Users/wangli/develop/evowork/evowork/dist/release/mac-arm64/EvoWork.app（U4：无 Developer ID，不能公证）
+/Users/wangli/develop/evowork/evowork/dist/release/mac-arm64/EvoWork.app: replacing existing signature
+  • skipped macOS code signing  reason=identity explicitly is set to null
+  • building        target=macOS zip arch=arm64 file=dist/release/EvoWork-0.0.6-mac-arm64-unsigned.zip
+  • building        target=DMG arch=arm64 file=dist/release/EvoWork-0.0.6-mac-arm64-unsigned.dmg
+  • building block map  blockMapFile=dist/release/EvoWork-0.0.6-mac-arm64-unsigned.dmg.blockmap
+  • building block map  blockMapFile=dist/release/EvoWork-0.0.6-mac-arm64-unsigned.zip.blockmap
+
+档位检查：办公运行时可随包，OCR 组件保持独立。
+体积预算（EvoWork-0.0.6-mac-arm64-unsigned.dmg）：base: 295MB / 400MB
+体积预算（EvoWork-0.0.6-mac-arm64-unsigned.zip）：base: 300MB / 400MB
+
+产物：
+   dist/release/EvoWork-0.0.6-mac-arm64-unsigned.dmg  295.2MB
+   dist/release/EvoWork-0.0.6-mac-arm64-unsigned.zip  300.1MB

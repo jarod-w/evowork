@@ -52,12 +52,12 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 │  sqlite: ~/.evowork/evowork.db（node:sqlite · WAL · FTS5）                    │
 │  密钥: ~/.evowork/secrets.bin（safeStorage 密文，**不读回渲染层**）              │
 └──────┬──────────────┬─────────────────┬───────────────────┬──────────────────┘
-       │ ② stdio      │ ⑤ 子进程         │ ④ 受限子进程        │ ⑦ HTTPS（装扩展）
+       │ ② stdio      │ ⑤ 子进程         │ ④ 受限子进程        │ ⑦ 本地复制（办公）
        │ JSON-RPC v2  │ + 进程环境注入    │                    │
 ┌──────┴──────────┐ ┌─┴────────────────┐ ┌┴──────────────┐ ┌──┴─────────────────┐
-│ codex-app-server│ │ 本机网关（D11 常驻）│ │ 技能 render.py │ │ python-build-      │
-│ 内核 · 常驻 1 个 │ │ hosted/private 转发 │ │ 解析器子进程   │ │ standalone + wheels│
-│ 只读 · 不改      │ │ 密钥只在它的环境里 │ │ office/ocr 档  │ │ （K6 登记的出网）   │
+│ codex-app-server│ │ 本机网关（D11 常驻）│ │ 技能 render.py │ │ 随包完整办公运行时 │
+│ 内核 · 常驻 1 个 │ │ hosted/private 转发 │ │ 解析器子进程   │ │ Resources/office/  │
+│ 只读 · 不改      │ │ 密钥只在它的环境里 │ │ office/ocr 档  │ │ runtime（零网络）  │
 └──────┬──────────┘ └─┬────────────────┘ └───────────────┘ └────────────────────┘
        │ ③ 内核 spawn 短命 hook 进程（stdin/stdout 各一行 JSON）→ 追加 ~/.evowork/audit.jsonl
        │   pre_tool_use · permission_request · post_tool_use · session_end     └─ 宿主搬进 audit_log 表
@@ -76,7 +76,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 └────────────────────────────┘
 ```
 
-**图里是 2026-09 的七条基线通道**（§4 逐条说明谁实现、谁在守）。⑦ 是 2026-09-07 新增的：办公扩展的下载器单独放进 `services/runtime-installer`，
+**图里是 2026-09 的七条基线通道**（§4 逐条说明谁实现、谁在守）。⑦ 于 2026-10-24 改为随包成品本地部署；下载器仅在构建/显式开发安装使用，仍单独放进 `services/runtime-installer`，
 **正是为了让 `services/ingest` 的"不出网"扫描能收紧成整个 `src/` 目录**而不必留口子。
 
 2026-10 起又加了几条出网路径，图里没画（每条都是用户显式开启或触发，出网登记见[总纲](evowork-on-codex-design.md) D9 / K6）：
@@ -116,7 +116,7 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
 | `@evowork/store` | [services/store](../services/store/) | 本机 sqlite：两类表 · 两个迁移器 · 状态派生 · 投影 · automation/artifact/project/audit/share 五个 repo | [schema.ts](../services/store/src/schema.ts) · [repositories.ts](../services/store/src/repositories.ts) |
 | `@evowork/scheduler` | [services/scheduler](../services/scheduler/) | 定时调度：带时区 cron · misfire 补偿 · 失败分类 · 设备绑定 · 与内核的桥 | [cron.ts](../services/scheduler/src/cron.ts) · [kernel-bridge.ts](../services/scheduler/src/kernel-bridge.ts) |
 | `@evowork/ingest` | [services/ingest](../services/ingest/) | 本机解析管道：识别 · 六道闸门 · 内置解析器 · 三档运行时探测 | [pipeline.ts](../services/ingest/src/pipeline.ts) · [probe.ts](../services/ingest/src/probe.ts) |
-| `@evowork/runtime-installer` | [services/runtime-installer](../services/runtime-installer/) | 办公扩展（自包含 CPython + 六个钉死版本的包 + 中文字体）的按需安装；**K6 登记：唯一为装扩展而出网的包** | [install.ts](../services/runtime-installer/src/install.ts) · [manifest.ts](../services/runtime-installer/src/manifest.ts) |
+| `@evowork/runtime-installer` | [services/runtime-installer](../services/runtime-installer/) | 完整办公运行时（自包含 CPython + 已安装依赖 + 静态中文字体）的随包本地部署；下载/pip 仅用于构建和显式开发安装 | [install.ts](../services/runtime-installer/src/install.ts) · [manifest.ts](../services/runtime-installer/src/manifest.ts) |
 | `@evowork/policy` | [services/policy](../services/policy/) | 路径三级策略 · 命令风险 · 预算并发 · 审计链 · **四个 hook 的决策** | [paths.ts](../services/policy/src/paths.ts) · [hooks/contract.ts](../services/policy/src/hooks/contract.ts) |
 | `@evowork/projects` | [services/projects](../services/projects/) | 「项目」（= 总纲的空间）的判定与视图逻辑：归属、卡片、文件树排序。**不做 I/O** | [membership.ts](../services/projects/src/membership.ts) · [cards.ts](../services/projects/src/cards.ts) |
 | `@evowork/catalog` | [services/catalog](../services/catalog/) | 技能 / 连接器 / 专家目录的判定与视图：P0/P1/P2 静态审计、来源标注、信任态。**不做 I/O** | [audit.ts](../services/catalog/src/audit.ts) · [skills.ts](../services/catalog/src/skills.ts) · [connectors.ts](../services/catalog/src/connectors.ts) |
@@ -293,13 +293,12 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
   渲染层经 `prepareShare` / `createShare` / `createThreadShare` / `revokeShare` / `listShares` 五个动作调用
   （`prepareShare` 不上传任何东西）；接收方打开的 `/s/<id>` 页面在 [apps/web/share.html](../apps/web/share.html)。
 
-### ⑦ 办公扩展下载：唯一为装扩展而出网的路径（K6 登记）
+### ⑦ 完整办公运行时：构建时安装、用户本地部署
 
-- [services/runtime-installer](../services/runtime-installer/)：从 [manifest.ts](../services/runtime-installer/src/manifest.ts) 钉死的 URL + 校验和下载 CPython，六个 python 包由 pip 从清华镜像（`--index-url`）安装，中文字体从随包的 `Resources/office/NotoSansSC.ttf` 拷出再切静态实例，装进 `~/.evowork/runtime/office/`，
-  装完做"搬走目录再跑"的可搬运检查，然后 `probe.invalidate()` 重探。
-- 用户在 App 里点「现在安装」（引导第 ③ 步 / 设置页）才触发；进度经 `runtimeProgress` 频道推送，文案真源在安装器包里。
-- 离线机器用 `EVOWORK_OFFICE_BUNDLE` 指向离线包（`scripts/build-office-bundle.mjs` 打），此时下载函数**一被调用就炸**（测试如此构造）。
-- 它不在 `services/ingest` 里，是为了让那边的 K6 扫描（`fetch(` / `node:http`）能覆盖整个 `src/` 目录而不留口子。
+- [build-office-runtime.mjs](../scripts/build-office-runtime.mjs) 复用安装器在构建机准备 Python/依赖/字体，输出按平台架构区分的完整目录；在最终路径验证可搬运性，记录清单、平台和全部依赖版本。
+- electron-builder 将成品放进 `.app/Contents/Resources/office/runtime/`；入口始终通过 bootstrap → service-host → local-services 把此路径交给安装器，即使缺资源也不会退回在线安装。
+- 首次启动在内核就绪前自动准备缺失的办公组件（已有可用环境/管理员覆盖保留），直接进入主界面，没有首次引导；设置保留修复。准备时仅复制成品到 `office.staging/`，核对平台与清单、实际 import/版本/字体验收，再原子换入 `~/.evowork/runtime/office/`，`probe.invalidate()` 重探。零网络、零 pip，失败保留旧环境。
+- 旧式 wheel 离线包保留用于构建/开发，管理员解释器覆盖保持；OCR 仍独立安装。`services/ingest` 的 K6 整目录扫描继续不留出网口子。
 
 ---
 

@@ -1,0 +1,9 @@
+
+Running 2 tests using 1 worker
+
+(node:73116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/onboarding.spec.mjs:7:1 › 首次启动直接进入主界面，刷新后仍可使用，不创建默认项目 (7.9s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/working-directory.spec.mjs:4:1 › 常规修改无项目工作目录，新任务实际使用新目录，刷新与恢复默认不迁移旧任务 (6.4s)
+
+  2 passed (15.5s)

@@ -1,51 +1,13 @@
-/**
- * 打包计划与体积预算（M9 / R10）。
- *
- * ## R10 是这份文件存在的理由
- *
- * R10：安装包含内核二进制 + Python/Node 运行时（+100–300MB）、三平台签名公证、自动更新。
- * 缓解手段有三条，其中两条落在这里：
- *
- *   · **解析运行时按需下载而非全量随包**（08 §4）—— 所以基础包里**不该出现**
- *     python-docx / openpyxl / matplotlib 这些东西。这条靠 `checkTierPlacement` 守着：
- *     它们混进基础包不会报错，只会让安装包悄悄胖 200MB。
- *     例外：Noto Sans SC 约 18MB 随基础包走（客户上不了 GitHub raw）。
- *   · **体积预算**：超了要红，而不是等用户下载时才发现。
- *
- * 第三条（升级走差量包）在 electron-builder 的 publish 配置里。
- *
- * ## 签名：没有证书就产出「未签名」的包，而不是假装签了
- *
- * P0-5 的证书是外部依赖（U4）。CI 里签名步骤存在但在无 secrets 时跳过，
- * **产物标注「未签名」** —— 这是 work-priority §10 给 U4 的替代方案，
- * 而"标注"必须是产物文件名的一部分，否则没人会注意到。
- */
-
-/** 各档的体积预算（字节）。数值来自 08 §4 与 R10。 */
+/** 打包预算：办公运行时完整随包，OCR 仍单独发行（08 §4 / R10）。 */
 export const SIZE_BUDGET = Object.freeze({
-  /**
-   * 基础包：Electron + 内核二进制 + 我们的代码 + **中文字体**（~18MB）。
-   *
-   * 字体本属办公扩展，但 GitHub raw 在客户网络上经常打不开，
-   * 2026-09-19 起随基础包走。Python 解释器与办公库仍按需下载。
-   */
-  base: 240 * 1024 * 1024,
-  /** 办公扩展（按需下载；不含已随基础包走的字体） */
-  office: 140 * 1024 * 1024,
-  /** OCR 扩展（按需下载） */
+  /** 主安装包压缩后下载体积，包含完整办公运行时。 */
+  base: 400 * 1024 * 1024,
+  /** 完整办公目录安装后体积，单独测量。 */
+  office: 350 * 1024 * 1024,
   ocr: 80 * 1024 * 1024,
 });
 
-/** 只允许出现在按需下载档里的东西。混进基础包 = 安装包悄悄胖一倍。 */
-const ON_DEMAND_MARKERS = [
-  'python-docx',
-  'openpyxl',
-  'python-pptx',
-  'pdfplumber',
-  'matplotlib',
-  'tesseract',
-  'site-packages',
-];
+const ON_DEMAND_MARKERS = ['tesseract', 'tessdata'];
 
 export function checkTierPlacement(basePackageFiles) {
   const offenders = basePackageFiles.filter((file) =>
@@ -56,8 +18,8 @@ export function checkTierPlacement(basePackageFiles) {
     offenders,
     message:
       offenders.length === 0
-        ? '基础包里没有按需下载的运行时。'
-        : `这些东西不该进基础包（08 §4 决定按需下载）：${offenders.join('、')}`,
+        ? '办公运行时可随包，OCR 组件保持独立。'
+        : `这些 OCR 组件不该进基础包（08 §4 独立发行）：${offenders.join('、')}`,
   };
 }
 
@@ -72,7 +34,7 @@ export function checkSizeBudget(tier, actualBytes) {
     message:
       actualBytes <= budget
         ? `${tier}: ${mb(actualBytes)} / ${mb(budget)}`
-        : `${tier} 超出预算：${mb(actualBytes)} > ${mb(budget)}。R10 的缓解手段是按需下载与差量升级，先看是不是有东西混进了基础包。`,
+        : `${tier} 超出预算：${mb(actualBytes)} > ${mb(budget)}。请检查重复依赖、构建缓存及 OCR 是否误入基础包；办公运行时必须完整随包。`,
   };
 }
 

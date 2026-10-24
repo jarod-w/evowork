@@ -223,6 +223,8 @@ if (isPrimaryInstance) {
       : join(repoRoot, 'dist/gateway/main.js'),
     configDir: isPackaged ? join(resourceRoot, 'config') : join(repoRoot, 'config'),
     pluginsDir: join(resourceRoot, 'plugins'),
+    // 正式包始终传路径，缺成品也不得改走在线安装。
+    ...(isPackaged ? { prebuiltRuntimeDir: join(resourceRoot, 'office', 'runtime') } : {}),
     ...(bundledFontPath !== undefined ? { bundledFontPath } : {}),
     preloadPath: join(import.meta.dirname, '../preload/index.bundle.cjs'),
     rendererHtmlPath: join(import.meta.dirname, '../renderer/index.html'),

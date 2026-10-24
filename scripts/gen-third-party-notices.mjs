@@ -186,9 +186,11 @@ if (npm.available) {
 
 L.push('## 3. 解析与产物运行时');
 L.push('');
-L.push('办公扩展的 Python 解释器与六个包、以及 OCR 扩展，按 08 §4 **按需下载**，不随主程序。');
-L.push('中文字体 Noto Sans SC 约 18MB **随基础包分发**（客户机器访问不了 GitHub raw）。');
-L.push('它们各自的许可证清单如下；按需下载的部分会在下载前的确认界面里给出链接：');
+L.push(
+  '办公运行时的 Python 解释器、已安装的六个固定版本包及全部依赖按 08 §4 随主程序完整分发；OCR 扩展仍独立发行。',
+);
+L.push('中文字体 Noto Sans SC 在构建时切成静态实例，与完整办公运行时一起分发。');
+L.push('主要组件的许可证清单如下；成品保留解释器与 Python 包附带的许可证文件。');
 L.push('');
 /*
  * 版本号从**安装清单**里读，不在这里抄一份。
@@ -211,7 +213,7 @@ L.push(
  * 保留版权声明与许可证原文。漏登记它是 K5 意义上的实质缺失，不是形式问题。
  */
 L.push(
-  '| 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，随基础包分发，安装时切成 wght=400 静态实例） |' +
+  '| 办公扩展 · 中文字体 | Noto Sans SC（Google Fonts，构建时切成 wght=400 静态实例，与完整办公运行时随包分发） |' +
     ' SIL Open Font License 1.1 |',
 );
 const ocrSources = JSON.parse(
