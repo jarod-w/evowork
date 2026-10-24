@@ -3876,9 +3876,10 @@ describe('任务引导的异步草稿保护', () => {
     });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('a已完成任务'));
-    fireEvent.click(await screen.findByRole('button', { name: '填入' }));
-    await waitFor(() => expect(actOnNextAction).toHaveBeenCalledOnce());
     const box = screen.getByLabelText('需求输入');
+    await waitFor(() => expect(box.getAttribute('placeholder')).toBe(candidate().prompt));
+    fireEvent.keyDown(box, { key: 'ArrowRight' });
+    await waitFor(() => expect(actOnNextAction).toHaveBeenCalledOnce());
     fireEvent.change(box, { target: { value: '等待时输入的新草稿' } });
     await act(async () => {
       finish(candidate());
@@ -3904,13 +3905,13 @@ describe('任务引导的异步草稿保护', () => {
     });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('a已完成任务'));
-    await screen.findByRole('button', { name: '填入' });
+    const input = screen.getByLabelText('需求输入');
+    await waitFor(() => expect(input.getAttribute('placeholder')).toBe(candidate().prompt));
     await act(async () => {
       emit.ui?.({ type: 'next-actions-changed', taskId: 'a' });
     });
     await waitFor(() => expect(getNextActions).toHaveBeenCalledTimes(2));
-    expect(screen.queryByLabelText('下一步建议')).not.toBeNull();
-    const input = screen.getByLabelText('需求输入');
+    expect(input.getAttribute('placeholder')).toBe(candidate().prompt);
     fireEvent.keyDown(input, { key: 'Tab' });
     await waitFor(() => expect(input).toHaveProperty('value', candidate().prompt));
     expect(accept).toHaveBeenCalledOnce();
@@ -3937,12 +3938,11 @@ describe('任务引导的异步草稿保护', () => {
     fireEvent.click(await screen.findByText('a已完成任务'));
     await waitFor(() => expect(getNextActions).toHaveBeenCalledWith({ threadId: 'a' }));
     fireEvent.click(screen.getByText('b已完成任务'));
-    await screen.findByRole('button', { name: '填入' });
+    const input = screen.getByLabelText('需求输入');
+    await waitFor(() => expect(input.getAttribute('placeholder')).toBe(candidate('b').prompt));
     await act(async () => {
       finish([candidate('a')]);
     });
-    expect(screen.getByLabelText('需求输入').getAttribute('placeholder')).toBe(
-      candidate('b').prompt,
-    );
+    expect(input.getAttribute('placeholder')).toBe(candidate('b').prompt);
   });
 });

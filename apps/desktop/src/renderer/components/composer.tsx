@@ -727,28 +727,6 @@ export function Composer(props: ComposerProps) {
             </>
           ) : null}
 
-          {suggestion ? (
-            <div className="ew-next-action" aria-label="下一步建议">
-              <span>建议：{suggestion.title}</span>
-              <PillButton
-                variant="ghost"
-                disabled={props.suggestionBusy}
-                onClick={() => {
-                  props.onAcceptSuggestion?.();
-                  textareaRef.current?.focus();
-                }}
-              >
-                填入
-              </PillButton>
-              <PillButton
-                variant="ghost"
-                disabled={props.suggestionBusy}
-                onClick={props.onDismissSuggestion}
-              >
-                忽略
-              </PillButton>
-            </div>
-          ) : null}
           <textarea
             ref={textareaRef}
             className="ew-composer-textarea"
@@ -781,15 +759,26 @@ export function Composer(props: ComposerProps) {
             onKeyDown={(event) => {
               if (
                 suggestion &&
-                props.onAcceptSuggestion &&
                 !props.suggestionBusy &&
-                event.key === 'Tab' &&
                 !event.shiftKey &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
                 !event.nativeEvent.isComposing
               ) {
-                event.preventDefault();
-                props.onAcceptSuggestion();
-                return;
+                if (
+                  (event.key === 'Tab' || event.key === 'ArrowRight') &&
+                  props.onAcceptSuggestion
+                ) {
+                  event.preventDefault();
+                  props.onAcceptSuggestion();
+                  return;
+                }
+                if (event.key === 'Escape' && props.onDismissSuggestion) {
+                  event.preventDefault();
+                  props.onDismissSuggestion();
+                  return;
+                }
               }
               if (trigger && candidates.length > 0) {
                 if (event.key === 'ArrowDown') {

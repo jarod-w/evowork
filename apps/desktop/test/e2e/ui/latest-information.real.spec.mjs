@@ -227,7 +227,10 @@ for (const winter of [false, true]) {
       expect(wire.filter((row) => row.type === 'response').every((row) => row.status === 200)).toBe(
         true,
       );
-      await expect(page.getByLabel('下一步建议')).toBeVisible();
+      await expect(page.getByLabel('需求输入')).toHaveAttribute(
+        'placeholder',
+        args.actions[0].prompt.trim(),
+      );
       await page.screenshot({ path: info.outputPath('verified.png') });
     } finally {
       if (!page.isClosed()) {

@@ -2,6 +2,7 @@
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 import { horizontalOverflow, resizeWindow } from './assertions.mjs';
 test.use({ registerModels: true });
+const DEFAULT_PLACEHOLDER = '输入需求，或描述你想完成的工作';
 const candidate = { title: '验收交付结果', prompt: '检查刚生成的交付结果，汇总验收结论。' };
 async function propose(electronApp, marker, outcome = 'delivered', held = false) {
   await electronApp.evaluate(
@@ -76,7 +77,7 @@ test('缺少标题返回字段级错误，保留最终交付且不保存建议�
   expect(JSON.stringify(calls[0])).toContain('不重试');
   expect(result.turns).toHaveLength(1);
   expect(result.turns[0].status).toBe('completed');
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
 });
 test('纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行', async ({
   page,
@@ -113,7 +114,7 @@ test('纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不�
     marker + ' 只在回复中给三步计划，下一阶段准备验收清单。',
   );
   await idle(page);
-  await expect(page.getByLabel('下一步建议')).toBeVisible();
+  await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', candidate.prompt);
   const current = await task(page, marker);
   const result = await history(page, current.id);
   expect(result.turns).toHaveLength(1);
@@ -144,7 +145,7 @@ test('模型忽略结束提醒也能完成原回合，不无限重试或伪造�
   await startTaskInWorkspace(page, electronApp, marker + ' 回复一个计划。');
   await idle(page);
   await expect(page.getByText('结束 ' + marker, { exact: true })).toBeVisible();
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   const current = await task(page, marker);
   const result = await history(page, current.id);
   expect(result.turns).toHaveLength(1);
@@ -159,29 +160,29 @@ test('MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送
   await propose(electronApp, marker);
   await startTaskInWorkspace(page, electronApp, marker + ' 生成交付结果');
   await idle(page);
-  const suggestion = page.getByLabel('下一步建议');
-  await expect(suggestion).toBeVisible();
+  const input = page.getByLabel('需求输入');
+  await expect(input).toHaveAttribute('placeholder', candidate.prompt);
+  await expect(page.getByRole('button', { name: '填入', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '忽略', exact: true })).toHaveCount(0);
   const current = await task(page, marker);
   expect(
     (await history(page, current.id)).items.filter((item) => item.type === 'userMessage'),
   ).toHaveLength(1);
   await page.reload();
   await page.getByRole('button', { name: current.title, exact: true }).click();
-  await expect(suggestion).toBeVisible();
-  const input = page.getByLabel('需求输入');
   await expect(input).toHaveValue('');
   await expect(input).toHaveAttribute('placeholder', candidate.prompt);
   await page.screenshot({ path: testInfo.outputPath('next-action.png') });
   await resizeWindow(electronApp, 480, 820);
   await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click();
-  await expect(suggestion.getByRole('button', { name: '填入', exact: true })).toBeVisible();
+  await expect(input).toHaveAttribute('placeholder', candidate.prompt);
   expect(await horizontalOverflow(page)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath('next-action-480.png') });
   await resizeWindow(electronApp, 1280, 820);
   await input.focus();
   await input.press('Tab');
   await expect(input).toHaveValue(candidate.prompt);
-  await expect(suggestion).toHaveCount(0);
+  await expect(input).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   expect(
     (await history(page, current.id)).items.filter((item) => item.type === 'userMessage'),
   ).toHaveLength(1);
@@ -195,9 +196,9 @@ test('MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送
           .length,
     )
     .toBe(2);
-  await expect(suggestion).toHaveCount(0);
+  await expect(input).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
 });
-test('运行中的候选不展示、不覆盖草稿，点击填入不发送；忽略刷新后仍隐藏', async ({
+test('运行中的候选不展示、不覆盖草稿，方向右键只填入不发送；Escape 忽略刷新后仍隐藏', async ({
   page,
   electronApp,
 }) => {
@@ -209,16 +210,16 @@ test('运行中的候选不展示、不覆盖草稿，点击填入不发送；�
     .toBe(true);
   const input = page.getByLabel('需求输入');
   await input.fill('用户自己的草稿');
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(input).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
   await idle(page);
   await expect(input).toHaveValue('用户自己的草稿');
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(input).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   await input.fill('');
-  const suggestion = page.getByLabel('下一步建议');
-  await expect(suggestion).toBeVisible();
+  await expect(input).toHaveAttribute('placeholder', candidate.prompt);
   const current = await task(page, marker);
-  await suggestion.getByRole('button', { name: '填入', exact: true }).click();
+  await input.focus();
+  await input.press('ArrowRight');
   await expect(input).toHaveValue(candidate.prompt);
   await expect(input).toBeFocused();
   expect(
@@ -230,14 +231,15 @@ test('运行中的候选不展示、不覆盖草稿，点击填入不发送；�
   await propose(electronApp, second);
   await startTaskInWorkspace(page, electronApp, second + ' 生成结果');
   await idle(page);
-  await expect(suggestion).toBeVisible();
+  await expect(input).toHaveAttribute('placeholder', candidate.prompt);
   const ignored = await task(page, second);
-  await suggestion.getByRole('button', { name: '忽略', exact: true }).click();
-  await expect(suggestion).toHaveCount(0);
+  await input.focus();
+  await input.press('Escape');
+  await expect(input).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   await page.reload();
   await page.getByRole('button', { name: ignored.title, exact: true }).click();
   await expect(page.getByLabel('需求输入')).toBeVisible();
-  await expect(suggestion).toHaveCount(0);
+  await expect(input).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
 });
 test('等待用户补充不展示下一步建议', async ({ page, electronApp }) => {
   const marker = 'ASK-' + Date.now().toString(36);
@@ -245,7 +247,7 @@ test('等待用户补充不展示下一步建议', async ({ page, electronApp })
   await startTaskInWorkspace(page, electronApp, marker + ' 需要补充需求');
   await idle(page);
   await expect(page.getByText('请补充目标格式 ' + marker, { exact: true })).toBeVisible();
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
 });
 
 test('提出候选后停止回合，不发布或恢复未完成建议', async ({ page, electronApp }) => {
@@ -256,7 +258,7 @@ test('提出候选后停止回合，不发布或恢复未完成建议', async ({
     .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
     .toBe(true);
   const current = await task(page, marker);
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
   await idle(page);
@@ -265,5 +267,5 @@ test('提出候选后停止回合，不发布或恢复未完成建议', async ({
   ).toEqual([]);
   await page.reload();
   await page.getByRole('button', { name: current.title, exact: true }).click();
-  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+  await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
 });

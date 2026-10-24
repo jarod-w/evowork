@@ -191,7 +191,7 @@ jsdom **不做布局**，也发不出可信输入事件。受控 `textarea` 的�
 
 ## 下一步建议
 
-`next-actions.spec.mjs` 使用真实 Electron、发货内核、随包 MCP 和本机确定性上游，验证候选在成功完成后出现、刷新并重新打开任务后恢复、Tab/点击只填入草稿、编辑后发送才增加用户消息、运行中草稿不被覆盖、关闭持久化、等待输入与停止后隐藏，含窄窗截图。命令：`pnpm exec playwright test next-actions.spec.mjs --project=fake --retries=0`。它验证链路和交互，不代表真实厂商模型建议质量已验收。
+`next-actions.spec.mjs` 使用真实 Electron、发货内核、随包 MCP 和本机确定性上游，验证候选在成功完成后出现、刷新并重新打开任务后恢复、Tab/方向右键只填入草稿、编辑后发送才增加用户消息、运行中草稿不被覆盖、Escape 关闭持久化、等待输入与停止后隐藏，含窄窗截图。命令：`pnpm exec playwright test next-actions.spec.mjs --project=fake --retries=0`。它验证链路和交互，不代表真实厂商模型建议质量已验收。
 
 `next-actions.real.spec.mjs` 使用宿主网关及 `EVOWORK_UI_MODEL_PRESET` 指定的 `mimo-v2.6-flash` 或 `deepseek-flash`。随机本机文件与两阶段业务需求不指定建议工具名，核对模型主动提交的候选、真实 JSON/Markdown 交付、草稿保护、采纳零发送、编辑后发送，以及等待补充/关闭后刷新恢复。`EVOWORK_UI_MODEL_KEY` 只经进程环境输入，禁止在命令参数或仓库文件中填写。入口：`pnpm exec playwright test next-actions.real.spec.mjs --project=real --retries=0`。本机观测器仅记录这两个指定厂商的型号、端点与响应状态，不记录请求正文或鉴权。
 

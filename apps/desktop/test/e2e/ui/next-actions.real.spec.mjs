@@ -143,7 +143,8 @@ test('真实模型自主提出后续建议：实际文件交付、草稿保护�
       max: Math.max(...values),
     });
     await expect(input).toHaveValue('用户正在编辑的草稿 ' + m.marker);
-    await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+    const defaultPlaceholder = '输入需求，或描述你想完成的工作';
+    await expect(input).toHaveAttribute('placeholder', defaultPlaceholder);
     const first = await history(page, task.id);
     expect(first.items.some((item) => item.type === 'commandExecution')).toBe(true);
     expect(proposals(first).length).toBeGreaterThan(0);
@@ -154,25 +155,24 @@ test('真实模型自主提出后续建议：实际文件交付、草稿保护�
     expect(argumentsOf(proposal).actions.length).toBeGreaterThan(0);
     expect(existsSync(join(m.root, 'accepted-report.md'))).toBe(false);
     await input.fill('');
-    const suggestion = page.getByLabel('下一步建议');
-    await expect(suggestion).toBeVisible();
     const actions = await page.evaluate(
       (threadId) => window.evowork.getNextActions({ threadId }),
       task.id,
     );
     expect(actions).toHaveLength(1);
     expect(actions[0].prompt.length).toBeGreaterThan(4);
+    await expect(input).toHaveAttribute('placeholder', actions[0].prompt);
     await page.screenshot({ path: info.outputPath('next-actions-real-suggestion.png') });
     await page.reload();
     await page.getByRole('button', { name: task.title, exact: true }).click();
-    await expect(suggestion).toBeVisible();
+    await expect(input).toHaveAttribute('placeholder', actions[0].prompt);
     await input.focus();
     await input.press('Tab');
     await expect(input).toHaveValue(actions[0].prompt);
     expect(
       (await history(page, task.id)).items.filter((item) => item.type === 'userMessage'),
     ).toHaveLength(1);
-    await expect(suggestion).toHaveCount(0);
+    await expect(input).toHaveAttribute('placeholder', defaultPlaceholder);
     const followup =
       actions[0].prompt +
       '\n具体要求：仅基于 analysis.json 生成 accepted-report.md，内容包含分析结果和验收标识 ' +
@@ -220,7 +220,9 @@ test('真实模型等待补充时无建议，回答后交付计划；点击忽�
     task = await currentTask(page, m);
     await completed(page, task.id, 1);
     const awaiting = await history(page, task.id);
-    await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+    const input = page.getByLabel('需求输入');
+    const defaultPlaceholder = '输入需求，或描述你想完成的工作';
+    await expect(input).toHaveAttribute('placeholder', defaultPlaceholder);
     expect(
       await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), task.id),
     ).toEqual([]);
@@ -229,31 +231,29 @@ test('真实模型等待补充时无建议，回答后交付计划；点击忽�
       expect(argumentsOf(item).actions).toEqual([]);
     }
     await page.screenshot({ path: info.outputPath('next-actions-real-awaiting.png') });
-    await page
-      .getByLabel('需求输入')
-      .fill(
-        '选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。',
-      );
+    await input.fill(
+      '选择 Markdown。现在仅在回复中给出三步上线计划，不写文件。下一阶段我准备将计划扩展成回滚演练检查清单，本轮先不制作清单。实际执行上线将来再由我安排，目前只完成计划；不要联网、读取环境变量或使用子任务。',
+    );
     await page.getByRole('button', { name: '发送', exact: true }).click();
     await completed(page, task.id, 2);
-    const suggestion = page.getByLabel('下一步建议');
-    await expect(suggestion).toBeVisible();
     const actions = await page.evaluate(
       (threadId) => window.evowork.getNextActions({ threadId }),
       task.id,
     );
     expect(actions).toHaveLength(1);
+    await expect(input).toHaveAttribute('placeholder', actions[0].prompt);
     const delivered = await history(page, task.id);
     const proposal = proposals(delivered).at(-1);
     expect(proposal?.status).toBe('completed');
     expect(argumentsOf(proposal).outcome).toBe('delivered');
     expect(actions[0].prompt).toContain('回滚');
     expect(actions[0].prompt).toMatch(/演练|检查/);
-    await suggestion.getByRole('button', { name: '忽略', exact: true }).click();
-    await expect(suggestion).toHaveCount(0);
+    await input.focus();
+    await input.press('Escape');
+    await expect(input).toHaveAttribute('placeholder', defaultPlaceholder);
     await page.reload();
     await page.getByRole('button', { name: task.title, exact: true }).click();
-    await expect(suggestion).toHaveCount(0);
+    await expect(input).toHaveAttribute('placeholder', defaultPlaceholder);
     expect(
       await page.evaluate((threadId) => window.evowork.getNextActions({ threadId }), task.id),
     ).toEqual([]);

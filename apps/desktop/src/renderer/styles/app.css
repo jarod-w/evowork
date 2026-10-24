@@ -5306,16 +5306,3 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-primary);
   font-weight: var(--font-title-1-weight);
 }
-
-.ew-next-action {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-secondary);
-  font-size: var(--font-body-sm-size);
-}
-.ew-next-action > span {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}

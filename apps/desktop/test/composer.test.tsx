@@ -962,35 +962,43 @@ describe('本地项目动作与固定任务目录', () => {
 
 describe('下一步建议只填草稿', () => {
   const suggestion = { title: '验收页面', prompt: '检查刚部署的页面。' };
-  it('灰字不算输入，Enter 不采纳，Tab 只填入不发送', () => {
+  it('不渲染顶部建议栏或填入按钮；灰字不算输入，Enter 不采纳，Tab 与方向右键只填入不发送', () => {
     const accept = vi.fn();
     const send = vi.fn();
     renderComposer({ suggestion, onAcceptSuggestion: accept }, send);
     const box = screen.getByLabelText('需求输入');
     expect(box.getAttribute('placeholder')).toBe(suggestion.prompt);
+    expect(screen.queryByText(`建议：${suggestion.title}`)).toBeNull();
+    expect(screen.queryByRole('button', { name: '填入' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '忽略' })).toBeNull();
     expect((box as HTMLTextAreaElement).value).toBe('');
     fireEvent.keyDown(box, { key: 'Enter' });
     expect(accept).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     fireEvent.keyDown(box, { key: 'Tab', shiftKey: true });
+    fireEvent.keyDown(box, { key: 'ArrowRight', shiftKey: true });
+    fireEvent.keyDown(box, { key: 'ArrowRight', metaKey: true });
     expect(accept).not.toHaveBeenCalled();
     fireEvent.keyDown(box, { key: 'Tab' });
     expect(accept).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(box, { key: 'ArrowRight' });
+    expect(accept).toHaveBeenCalledTimes(2);
     expect(send).not.toHaveBeenCalled();
   });
-  it('点击填入和忽略各走明确回调，已有草稿永远保持', () => {
+  it('空输入框按 Escape 持久忽略建议，已有草稿时方向右键与 Escape 不误触建议回调', () => {
     const accept = vi.fn();
     const dismiss = vi.fn();
     renderComposer({ suggestion, onAcceptSuggestion: accept, onDismissSuggestion: dismiss });
-    fireEvent.click(screen.getByRole('button', { name: '填入' }));
-    expect(accept).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: '忽略' }));
+    const box = screen.getByLabelText('需求输入');
+    fireEvent.keyDown(box, { key: 'Escape' });
     expect(dismiss).toHaveBeenCalledOnce();
     type('我正在编辑的需求');
-    expect(screen.queryByLabelText('下一步建议')).toBeNull();
-    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toBe(
-      '我正在编辑的需求',
-    );
+    expect(box.getAttribute('placeholder')).toBe(COMPOSER_PLACEHOLDER);
+    fireEvent.keyDown(box, { key: 'ArrowRight' });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(accept).not.toHaveBeenCalled();
+    expect(dismiss).toHaveBeenCalledOnce();
+    expect((box as HTMLTextAreaElement).value).toBe('我正在编辑的需求');
   });
   it.each([
     { runState: 'running' as const },
@@ -1009,7 +1017,6 @@ describe('下一步建议只填草稿', () => {
     },
   ])('运行、预算、队列和附件下隐藏建议：%j', (over) => {
     renderComposer({ ...over, suggestion });
-    expect(screen.queryByLabelText('下一步建议')).toBeNull();
     expect(screen.getByLabelText('需求输入').getAttribute('placeholder')).toBe(
       COMPOSER_PLACEHOLDER,
     );
