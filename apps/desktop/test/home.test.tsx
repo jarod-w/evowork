@@ -106,7 +106,7 @@ describe('克制的空白首页（类 ChatGPT UI §8）', () => {
 });
 
 describe('已经有工作之后的首页', () => {
-  it('先给出进行中和待处理，问候不再占满首屏，点待办能回去', () => {
+  it('有进行中或待处理时顶部显示当前工作，底部仍保留问候、快捷建议与贴底输入框', () => {
     const onOpenAttention = vi.fn();
     render(
       <Harness
@@ -125,14 +125,29 @@ describe('已经有工作之后的首页', () => {
         }}
       />,
     );
-    expect(screen.queryByRole('heading', { name: 'EvoWork，我帮你' })).toBeNull();
     expect(screen.getByRole('region', { name: '当前工作' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: '新的需求' })).toBeTruthy();
+    expect(screen.queryByText('自动化已暂停')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'EvoWork，我帮你' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /文档处理/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /报销单/ }));
     expect(onOpenAttention).toHaveBeenCalledWith(expect.objectContaining({ threadId: 't' }));
     expect(document.querySelector('.ew-home-primary')?.lastElementChild).toBe(
       document.querySelector('.ew-composer'),
     );
+  });
+
+  it('历史任务已全部结束（0 进行中 / 0 待处理 / 0 暂停）时不显示全零状态区，保持清爽新建态', () => {
+    render(
+      <Harness
+        over={{
+          pulse: { hasHistory: true, running: 0, waiting: 0, pausedAutomations: 0 },
+          attention: [],
+        }}
+      />,
+    );
+    expect(screen.queryByRole('region', { name: '当前工作' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'EvoWork，我帮你' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /文档处理/ })).toBeTruthy();
   });
 });
 

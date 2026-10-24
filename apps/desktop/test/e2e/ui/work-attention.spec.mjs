@@ -33,10 +33,8 @@ test('有任务后首页给出状态，待批准能从侧栏点回去，产物�
   await expect(review.getByText('已接受这一版')).toBeVisible();
 
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
-  const home = page.getByRole('region', { name: '当前工作' });
-  await expect(home).toBeVisible();
-  await expect(home).toContainText('现在没有需要你处理的事');
-  await expect(page.getByRole('heading', { name: '有什么可以帮忙的？' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '当前工作' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '有什么可以帮忙的？' })).toBeVisible();
 
   await electronApp.evaluate((_) => {
     globalThis.__evoworkE2E.gateway.scriptNext({
@@ -54,8 +52,9 @@ test('有任务后首页给出状态，待批准能从侧栏点回去，产物�
   await expect(card).toBeVisible();
 
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  const home = page.getByRole('region', { name: '当前工作' });
   await expect(home).toBeVisible();
-  await expect(home.getByRole('button', { name: '等你处理' })).toBeEnabled();
+  await expect(home.getByRole('button', { name: /等你处理/ })).toBeEnabled();
   const queue = page.getByRole('region', { name: '待处理' });
   await expect(queue).toBeVisible();
   await queue.getByRole('button', { name: /待批准/ }).click();

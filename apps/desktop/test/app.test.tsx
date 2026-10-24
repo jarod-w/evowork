@@ -1188,7 +1188,7 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(screen.getByRole('searchbox', { name: '搜索聊天' })).toBeTruthy();
 
     fireEvent.keyDown(window, { key: 'o', metaKey: true, shiftKey: true });
-    expect(await screen.findByRole('region', { name: '当前工作' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: '有什么可以帮忙的？' })).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: '搜索聊天' })).toBeNull();
 
     fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true });

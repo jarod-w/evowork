@@ -3075,14 +3075,15 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   min-height: 0;
   width: 100%;
 }
-.ew-home[data-returning='true'] .ew-home-primary {
-  flex: none;
-}
 .ew-home-status {
   display: flex;
   flex-direction: column;
-  gap: var(--space-12);
-  margin-bottom: var(--space-24);
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-sunken);
+  margin-bottom: var(--space-16);
 }
 .ew-home-pulse {
   display: flex;
@@ -3090,14 +3091,13 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   gap: var(--space-8);
 }
 .ew-home-pulse-item {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
   min-width: 0;
-  padding: var(--space-12);
-  border: 0;
-  border-radius: var(--r-md);
+  padding: var(--space-6) var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
   background: var(--bg-surface);
   color: var(--text-primary);
   font: inherit;
@@ -3116,9 +3116,9 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--text-secondary);
 }
 .ew-home-pulse-item strong {
-  font-size: var(--font-title-2-size);
-  line-height: var(--font-title-2-line);
-  font-weight: var(--font-title-2-weight);
+  font-size: var(--font-label-size);
+  line-height: var(--font-label-line);
+  font-weight: var(--font-label-weight);
 }
 .ew-home-quiet,
 .ew-home-continue {
