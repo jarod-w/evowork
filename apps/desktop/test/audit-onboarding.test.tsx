@@ -170,15 +170,7 @@ describe('审计页：防篡改与保留期', () => {
 
 function OnboardingHarness({ over = {} }: { over?: Partial<OnboardingProps> }) {
   const [step, setStep] = useState<OnboardingStep>(over.step ?? 'welcome');
-  return (
-    <Onboarding
-      step={step}
-      onStepChange={setStep}
-      workspaces={[]}
-      runtimeInstalled={false}
-      {...over}
-    />
-  );
+  return <Onboarding step={step} onStepChange={setStep} runtimeInstalled={false} {...over} />;
 }
 
 describe('首运行第 ① 屏：Q3 的对外表达，**措辞不可夸大**', () => {
@@ -202,22 +194,38 @@ describe('四步引导（02 §9）', () => {
     expect(ONBOARDING_STEPS).toEqual(['welcome', 'workspace', 'runtime', 'done']);
   });
 
-  it('第 ② 步对外叫「项目」，不叫「工作空间」（UI-GAP-22）', () => {
+  it('第 ② 步设置无项目任务的保存位置', () => {
     render(<OnboardingHarness over={{ step: 'workspace' }} />);
-    expect(screen.getByRole('heading', { name: '选一个项目' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '无项目任务的保存位置' })).toBeTruthy();
     expect(screen.queryByText(/工作空间/)).toBeNull();
   });
 
-  it('没选项目也能继续引导并使用独立任务目录', () => {
+  it('不另选目录也能继续，说明默认位置与独立子目录', () => {
     render(<OnboardingHarness over={{ step: 'workspace' }} />);
     expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
       false,
     );
-    expect(blockingReason({ step: 'workspace', workspaces: [] })).toBeUndefined();
+    expect(blockingReason({ step: 'workspace' })).toBeUndefined();
+    expect(screen.getByText(/每个任务使用独立子目录/)).toBeTruthy();
+    expect(screen.getByText(/可以使用默认位置/)).toBeTruthy();
+  });
+
+  it('保存位置时暂时禁用重复选择和下一步', () => {
+    render(<OnboardingHarness over={{ step: 'workspace', workingDirectoryBusy: true }} />);
+    expect((screen.getByRole('button', { name: '正在更改…' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it('选了之后可以继续', () => {
-    render(<OnboardingHarness over={{ step: 'workspace', workspaces: ['/w'] }} />);
+    render(
+      <OnboardingHarness
+        over={{ step: 'workspace', workingDirectory: { path: '/w', isDefault: false } }}
+      />,
+    );
     expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
       false,
     );
@@ -225,7 +233,11 @@ describe('四步引导（02 §9）', () => {
 
   it('没有「接入模型」这一步 —— 模型在设置里配', () => {
     expect(ONBOARDING_STEPS.includes('model' as (typeof ONBOARDING_STEPS)[number])).toBe(false);
-    render(<OnboardingHarness over={{ step: 'runtime', workspaces: ['/w'] }} />);
+    render(
+      <OnboardingHarness
+        over={{ step: 'runtime', workingDirectory: { path: '/w', isDefault: false } }}
+      />,
+    );
     expect(screen.getByRole('heading', { name: '文档解析组件' })).toBeTruthy();
     expect(screen.queryByText('DeepSeek API 密钥')).toBeNull();
     expect(screen.queryByText('接入模型')).toBeNull();
@@ -235,7 +247,11 @@ describe('四步引导（02 §9）', () => {
     expect(ONBOARDING_STEPS.includes('permissions' as (typeof ONBOARDING_STEPS)[number])).toBe(
       false,
     );
-    render(<OnboardingHarness over={{ step: 'workspace', workspaces: ['/w'] }} />);
+    render(
+      <OnboardingHarness
+        over={{ step: 'workspace', workingDirectory: { path: '/w', isDefault: false } }}
+      />,
+    );
     expect(screen.queryByText('默认权限')).toBeNull();
     expect(screen.queryByText('完全访问')).toBeNull();
   });
@@ -243,7 +259,7 @@ describe('四步引导（02 §9）', () => {
 
 describe('**第 ④ 步必须可跳过，且说清后果**（R10）', () => {
   it('跳过不被阻塞', () => {
-    expect(blockingReason({ step: 'runtime', workspaces: ['/w'] })).toBeUndefined();
+    expect(blockingReason({ step: 'runtime' })).toBeUndefined();
   });
 
   it('给两个出路，且说清跳过之后哪类文件用不了', () => {

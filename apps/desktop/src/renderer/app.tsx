@@ -727,14 +727,6 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     ONBOARDING_STEPS[0] as OnboardingStep,
   );
   /**
-   * 引导里已选的项目路径。
-   *
-   * 单独一份 state 而不是选完才等 `getStartup`：选完要立刻能点「下一步」，
-   * 而为了看到刚选的目录重拉一次整个启动数据，中间那半秒按钮还是灰的 ——
-   * 用户会以为没选上，再点一次。快照仍会在后台校正，供首页下拉使用。
-   */
-  const [pickedWorkspaces, setPickedWorkspaces] = useState<readonly string[]>([]);
-  /**
    * 办公扩展的状态与安装（08 §4）。
    *
    * 三份 state 而不是一份：**"没装"、"正在装"、"装失败了"是三种不同的界面**，
@@ -1571,10 +1563,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       });
   }, [bridge]);
 
-  /*
-   * 项目列表变了就校正 Composer 的选中项：引导刚建的、侧栏新建的唯一项目，
-   * 以及「在此项目新建任务」留下的选择。删掉当前项后若还剩一个，改选剩下那个。
-   */
+  // 首次引导与设置页共享无项目任务的保存位置，项目列表不参与这一步。
+  useEffect(() => {
+    if (startup?.onboarded !== false) return;
+    let active = true;
+    void bridge
+      .getWorkingDirectory()
+      .then((directory) => {
+        if (active) setWorkingDirectory(directory);
+      })
+      .catch((error: unknown) => {
+        if (active) reportFailure(error, '没能读取保存位置。');
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridge, startup?.onboarded, reportFailure]);
 
   /*
    * 全局快捷键只负责跨页面导航；文本输入自己的 Enter / Esc 仍由 Composer 处理。
@@ -3626,48 +3630,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         <Onboarding
           step={onboardingStep}
           onStepChange={setOnboardingStep}
-          workspaces={[
-            ...startup.workspaces.map((w) => w.path ?? w.name),
-            ...pickedWorkspaces.filter((p) => !startup.workspaces.some((w) => w.path === p)),
-          ]}
-          /*
-           * **这一步是硬门槛**：`blockingReason` 要求至少一个项目，
-           * 而干净机器上内核一个 project 都没有。不接这个回调的话，
-           * 「下一步」永远是灰的 —— 整个应用打不开（2026-09-06 实测撞到）。
-           */
-          onPickWorkspace={() => {
+          workingDirectory={workingDirectory}
+          workingDirectoryBusy={workingDirectoryBusy}
+          onPickWorkingDirectory={() => {
+            if (workingDirectoryBusy) return;
+            setWorkingDirectoryBusy(true);
             void bridge
-              .pickWorkspace()
-              .then((r) => {
-                if (r.path) {
-                  setPickedWorkspaces((prev) => [...new Set([...prev, r.path as string])]);
-                  /*
-                   * 选完立刻校正侧栏/Composer 用的快照，不等走完引导。
-                   * 「下一步」仍由 `pickedWorkspaces` 点亮，不把按钮灰着等到这次往返。
-                   */
-                  void bridge
-                    .getStartup()
-                    .then((info) =>
-                      setStartup((previous) =>
-                        previous === null ? info : { ...previous, workspaces: info.workspaces },
-                      ),
-                    )
-                    .catch(() => undefined);
-                  return;
-                }
-                /*
-                 * 只有"被拒"才提示，取消不提示（`r.refused` 是 undefined 时什么都不做）——
-                 * 这正是本条修复要的区分：拒绝要如实说，取消不需要多此一举打扰用户。
-                 */
-                if (r.refused)
-                  setNotices((prev) => [...prev, { tone: 'warning', text: r.refused as string }]);
-              })
+              .setWorkingDirectory({})
+              .then(setWorkingDirectory)
               .catch((error: unknown) => {
-                setNotices((prev) => [
-                  ...prev,
-                  { tone: 'danger', text: actionErrorText(error, '没能选择目录。') },
-                ]);
-              });
+                reportFailure(error, '没能设置保存位置。');
+              })
+              .finally(() => setWorkingDirectoryBusy(false));
           }}
           /*
            * 办公扩展（08 §4）。2026-09-07 之前这里硬编码 `runtimeInstalled={false}`，

@@ -1,18 +1,13 @@
-/**
- * **第三条真交互旅程：首次运行引导。**
- *
- * 它是每个用户看到的**第一样东西**，也是最没被自动化碰过的一段：断言型 E2E 从不经过它
- * （它们只经 preload 桥说话），而 jsdom 的组件测试渲染的是一个脱离了真实 startup 状态的壳。
- *
- * 这一段出过一次真事故：`showOpenDialog` 没注入时，引导会卡在「选一个项目」——
- * `blockingReason` 要求至少有一个工作空间，而干净机器上一个都没有，**整个应用打不开**
- * （bootstrap.ts:70-74，2026-09-06 实测撞到）。这条旅程就是钉住那种情况。
- */
+/** 首次引导设置无项目任务保存位置，不创建默认项目。 */
+import { realpathSync } from 'node:fs';
 import { expect, test } from './fixtures.mjs';
 
 test.use({ keepOnboarding: true });
 
-test('首次引导：读到隐私承诺 → 选目录 → 走完之后不再回来', async ({ page, electronApp }) => {
+test('首次引导：读到隐私承诺 → 选目录 → 走完之后不再回来', async ({
+  page,
+  electronApp,
+}, testInfo) => {
   /*
    * ① **两句隐私承诺都要在。**
    *
@@ -26,8 +21,8 @@ test('首次引导：读到隐私承诺 → 选目录 → 走完之后不再回�
 
   await page.getByRole('button', { name: '下一步' }).click();
 
-  // ② 第二步：一个工作空间都还没有
-  await expect(page.getByRole('heading', { name: '选一个项目' })).toBeVisible();
+  // ② 第二步显示默认保存位置，不展示或创建项目。
+  await expect(page.getByRole('heading', { name: '无项目任务的保存位置' })).toBeVisible();
 
   /*
    * ③ **不选目录也能往下走，而且界面要说出来。**
@@ -38,11 +33,25 @@ test('首次引导：读到隐私承诺 → 选目录 → 走完之后不再回�
    */
   const next = page.getByRole('button', { name: '下一步' });
   await expect(next).toBeEnabled();
-  await expect(page.locator('.ew-app-onboarding')).toContainText('也可以点下一步');
+  await expect(page.locator('.ew-app-onboarding')).toContainText('点下一步保留当前设置');
 
   // ④ 选文件夹（系统对话框由主进程的假实现回答，见 harness/ui-entry.mjs）
-  const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  const initial = await page.evaluate(() => window.evowork.getWorkingDirectory());
+  expect(initial.isDefault).toBe(true);
+  await expect(page.locator('.ew-app-onboarding')).toContainText(initial.path);
+  const workspace = realpathSync(
+    await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace),
+  );
   await page.getByRole('button', { name: '选择文件夹' }).click();
+  await expect(page.locator('.ew-app-onboarding')).toContainText(workspace);
+  expect(await page.evaluate(() => window.evowork.getWorkingDirectory())).toEqual({
+    path: workspace,
+    isDefault: false,
+  });
+  expect((await page.evaluate(() => window.evowork.getStartup())).workspaces).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('onboarding-task-directory.png') });
+  await page.reload();
+  await page.getByRole('button', { name: '下一步' }).click();
   await expect(page.locator('.ew-app-onboarding')).toContainText(workspace);
 
   // ⑤ 选了目录照样能往下走（选目录是可选的，不是被它反过来锁住）
@@ -64,4 +73,31 @@ test('首次引导：读到隐私承诺 → 选目录 → 走完之后不再回�
   await page.reload();
   await expect(page.getByLabel('需求输入')).toBeVisible();
   await expect(page.getByRole('heading', { name: '欢迎使用 EvoWork' })).toHaveCount(0);
+  expect((await page.evaluate(() => window.evowork.getStartup())).workspaces).toEqual([]);
+  await expect(page.getByRole('button', { name: '选择项目', exact: true })).toContainText(
+    '不使用项目',
+  );
+  await page.getByLabel('需求输入').fill('ONBOARDING_TASK_DIRECTORY');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect
+    .poll(async () => (await page.evaluate(() => window.evowork.getStartup())).tasks.length)
+    .toBe(1);
+  await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+  const startup = await page.evaluate(() => window.evowork.getStartup());
+  expect(startup.tasks[0].cwd.startsWith(`${workspace}/`)).toBe(true);
+  expect(startup.tasks[0].projectId).toBeNull();
+  expect(startup.workspaces).toEqual([]);
+});
+
+test('首次引导跳过选目录：沿用默认位置，不创建项目', async ({ page }) => {
+  const initial = await page.evaluate(() => window.evowork.getWorkingDirectory());
+  expect(initial.isDefault).toBe(true);
+  await page.getByRole('button', { name: '下一步' }).click();
+  await expect(page.locator('.ew-app-onboarding')).toContainText(initial.path);
+  await page.getByRole('button', { name: '下一步' }).click();
+  await page.getByRole('button', { name: '下一步' }).click();
+  await page.getByRole('button', { name: '开始使用' }).click();
+  await expect(page.getByLabel('需求输入')).toBeVisible();
+  expect(await page.evaluate(() => window.evowork.getWorkingDirectory())).toEqual(initial);
+  expect((await page.evaluate(() => window.evowork.getStartup())).workspaces).toEqual([]);
 });

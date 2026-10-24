@@ -2,7 +2,7 @@
  * 首次运行与授权引导（02 §9）。
  *
  * ```
- * ① 欢迎 + 隐私说明   ② 选项目   ③ 解析运行时（可跳过）   ④ 完成
+ * ① 欢迎 + 隐私说明   ② 无项目任务保存位置   ③ 解析运行时（可跳过）   ④ 完成
  * ```
  *
  * 「权限默认值」暂时不进引导：选了既不写 `default_permissions`，也不进 `turn/start`，
@@ -31,6 +31,8 @@
  */
 import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
 
+import type { WorkingDirectoryView } from '../../shared/ipc.js';
+
 import { Banner, EmptyState, PillButton, ProgressBar } from '../components/primitives.js';
 
 export type OnboardingStep = 'welcome' | 'workspace' | 'runtime' | 'done';
@@ -44,7 +46,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
 
 export const STEP_TITLE: Readonly<Record<OnboardingStep, string>> = Object.freeze({
   welcome: '欢迎使用 EvoWork',
-  workspace: '选一个项目',
+  workspace: '无项目任务的保存位置',
   runtime: '文档解析组件',
   done: '好了',
 });
@@ -63,8 +65,9 @@ export const PRIVACY_STATEMENT = Object.freeze([
 export interface OnboardingProps {
   readonly step: OnboardingStep;
   readonly onStepChange: (step: OnboardingStep) => void;
-  readonly workspaces: readonly string[];
-  readonly onPickWorkspace?: (() => void) | undefined;
+  readonly workingDirectory?: WorkingDirectoryView | null | undefined;
+  readonly workingDirectoryBusy?: boolean | undefined;
+  readonly onPickWorkingDirectory?: (() => void) | undefined;
   readonly gatewayUrl?: string | undefined;
   readonly onGatewayUrlChange?: ((url: string) => void) | undefined;
   readonly runtimeInstalled: boolean;
@@ -100,7 +103,7 @@ export function Onboarding(props: OnboardingProps) {
         <h1 className="ew-onboarding-title">{STEP_TITLE[props.step]}</h1>
 
         {props.step === 'welcome' ? <Welcome /> : null}
-        {props.step === 'workspace' ? <Workspace {...props} /> : null}
+        {props.step === 'workspace' ? <TaskDirectory {...props} /> : null}
         {props.step === 'runtime' ? <Runtime {...props} /> : null}
         {props.step === 'done' ? <Done /> : null}
 
@@ -123,35 +126,35 @@ function Welcome() {
   );
 }
 
-function Workspace(props: OnboardingProps) {
+function TaskDirectory(props: OnboardingProps) {
   return (
     <div className="ew-onboarding-body">
       <p>
-        选择文件夹可作为本地项目的工作目录。也可以直接开始无项目任务，附件和产物会保存在独立目录中。
-        文件访问仍受权限与安全策略控制。
+        无项目任务的附件和产物会保存在这里，每个任务使用独立子目录。
+        可以使用默认位置，也可以选择其他文件夹，或点下一步保留当前设置。之后可在「设置 →
+        常规」中更改。 文件访问仍受权限与安全策略控制。
       </p>
-      {props.workspaces.length === 0 ? (
-        <EmptyState
-          title="还没有选目录"
-          hint="可以选择工作文件夹，也可以点下一步，之后随时再加。"
-          action={
-            <PillButton variant="accent" onClick={props.onPickWorkspace}>
-              选择文件夹
-            </PillButton>
-          }
-        />
-      ) : (
+      {props.workingDirectory ? (
         <>
-          <ul className="ew-onboarding-list">
-            {props.workspaces.map((path) => (
-              <li key={path}>
-                <code>{path}</code>
-              </li>
-            ))}
-          </ul>
-          <PillButton onClick={props.onPickWorkspace}>再加一个</PillButton>
+          <p className="ew-field-hint">
+            {props.workingDirectory.isDefault ? '默认保存位置' : '保存位置'}
+          </p>
+          <p className="ew-settings-directory">
+            <code>{props.workingDirectory.path}</code>
+          </p>
         </>
+      ) : (
+        <EmptyState title="保存位置暂未显示" hint="可以选择文件夹，或稍后在设置中查看。" />
       )}
+      <div className="ew-onboarding-actions">
+        <PillButton
+          variant="accent"
+          disabled={props.workingDirectoryBusy}
+          onClick={props.onPickWorkingDirectory}
+        >
+          {props.workingDirectoryBusy ? '正在更改…' : '选择文件夹'}
+        </PillButton>
+      </div>
     </div>
   );
 }
@@ -265,10 +268,11 @@ function Footer(props: OnboardingProps & { readonly index: number }) {
 }
 
 /** 挡住「下一步」的原因。**返回 undefined 表示可以继续**。 */
-export function blockingReason(_props: {
+export function blockingReason(props: {
   readonly step: OnboardingStep;
-  readonly workspaces: readonly string[];
+  readonly workingDirectoryBusy?: boolean | undefined;
 }): string | undefined {
+  if (props.step === 'workspace' && props.workingDirectoryBusy) return '正在保存位置，请稍候。';
   // 第 ③ 步**不阻塞**（R10）：可跳过是它的设计要求，不是妥协
   return undefined;
 }

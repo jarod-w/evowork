@@ -2878,61 +2878,67 @@ describe('首次引导（02 §9）', () => {
     }
   });
 
-  /*
-   * 02 §9：选目录 → 写入首个 project → 进首页时 Composer 已预选。
-   *
-   * 项目页吃 `listProjects()`，侧栏和 Composer 吃 `startup.workspaces`。
-   * 引导结束若只把 `onboarded` 翻成 true、不把刚建的项目写回这份快照，
-   * 项目页看得到、对话框却说「还没有项目」，第一条任务也会落到默认目录。
-   */
-  it('走完引导后项目已列出，全局首页默认无项目', async () => {
-    const PROJECT = {
-      id: 'p1',
-      name: 'AI_COMPANY',
-      path: '/Users/wangli/Desktop/AI_COMPANY',
-    };
+  it('引导目录只设置无项目任务保存位置，不创建项目，完成后首页仍无项目', async () => {
+    const selected = '/Users/li/task-files';
     let onboarded = false;
-    let workspaces: StartupInfo['workspaces'] = [];
-    const getStartup = vi.fn(async () => ({
-      ...STARTUP,
-      onboarded,
-      workspaces,
-    }));
-    const pickWorkspace = vi.fn(async () => {
-      workspaces = [PROJECT];
-      return { path: PROJECT.path };
-    });
+    const getStartup = vi.fn(async () => ({ ...STARTUP, onboarded, workspaces: [] }));
+    const setWorkingDirectory = vi.fn(async () => ({ path: selected, isDefault: false }));
     const completeOnboarding = vi.fn(async () => {
       onboarded = true;
     });
-    const { bridge } = fakeBridge({ getStartup, pickWorkspace, completeOnboarding });
+    const { bridge } = fakeBridge({ getStartup, setWorkingDirectory, completeOnboarding });
     render(<App bridge={bridge} />);
 
     await screen.findByText(/第 1 \/ 4 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-    fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
-    expect(await screen.findByText(PROJECT.path)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: '无项目任务的保存位置' })).toBeTruthy();
+    expect(await screen.findByText('/w/workspaces')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
+    expect(await screen.findByText(selected)).toBeTruthy();
+    expect(screen.queryByText('/w/workspaces')).toBeNull();
+    expect(setWorkingDirectory).toHaveBeenCalledWith({});
+    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
+    expect(bridge.createProject).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
     fireEvent.click(screen.getByRole('button', { name: '以后再说' }));
     fireEvent.click(screen.getByRole('button', { name: '开始使用' }));
 
-    await waitFor(() => expect(completeOnboarding).toHaveBeenCalled());
     expect(await screen.findByLabelText('需求输入')).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目'),
-    );
-    expect(screen.getByRole('button', { name: 'AI_COMPANY' })).toBeTruthy();
+    expect(completeOnboarding).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText('选择项目').textContent).toContain('不使用项目');
     await screen.findByLabelText('选择模型');
-
-    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '看看这个目录' } });
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '整理附件' } });
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
     await waitFor(() =>
-      expect(bridge.send).toHaveBeenCalledWith(
-        expect.objectContaining({
-          text: '看看这个目录',
-        }),
-      ),
+      expect(bridge.send).toHaveBeenCalledWith(expect.objectContaining({ text: '整理附件' })),
     );
+  });
+
+  it('引导只展示保存位置，已有项目不混入，也可再次选择替换', async () => {
+    const setWorkingDirectory = vi
+      .fn()
+      .mockResolvedValueOnce({ path: '/files/first', isDefault: false })
+      .mockResolvedValueOnce({ path: '/files/second', isDefault: false });
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        onboarded: false,
+        workspaces: [{ id: 'p1', name: '已有项目', path: '/projects/existing' }],
+      }),
+      setWorkingDirectory,
+    });
+    render(<App bridge={bridge} />);
+    await screen.findByText(/第 1 \/ 4 步/);
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    await screen.findByText('/w/workspaces');
+    expect(screen.queryByText('/projects/existing')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
+    await screen.findByText('/files/first');
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
+    await screen.findByText('/files/second');
+    expect(screen.queryByText('/files/first')).toBeNull();
+    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
+    expect(bridge.createProject).not.toHaveBeenCalled();
   });
 
   it('只有一个项目时全局首页仍不擅自预选', async () => {
@@ -2965,53 +2971,37 @@ describe('首次引导（02 §9）', () => {
     expect(button.textContent).toContain('不使用项目');
   });
 
-  /*
-   * 首运行第②步选中一个被安全策略拦下的目录（如 `~/.ssh`）时，`pickWorkspace`
-   * 带回的 `refused` 必须真的出现在界面上，而不是被 `app.tsx` 里的
-   * `if (r.path) …` 悄悄吞掉——那正是这条缺陷本来的样子：按钮点了，
-   * 什么都没发生，用户以为自己没点中。
-   */
-  it('首运行选中被拒的目录——拒绝理由要真的显示出来，不是点了没反应', async () => {
+  it('首运行选择被拒时显示理由并保留原保存位置', async () => {
     const { bridge } = fakeBridge({
       getStartup: async () => ({ ...STARTUP, onboarded: false }),
-      pickWorkspace: vi.fn(async () => ({
-        refused: '这个目录被安全策略拦下了（受保护目录），换一个吧。',
-      })),
+      setWorkingDirectory: vi.fn(async () => {
+        throw new Error('这个目录被安全策略拦下了（受保护目录），换一个吧。');
+      }),
     });
     render(<App bridge={bridge} />);
-
-    // 从欢迎屏进到「选一个项目」这一步
     await screen.findByText(/第 1 \/ 4 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-
-    fireEvent.click(await screen.findByRole('button', { name: '选择文件夹' }));
-
-    expect(
-      await screen.findByText('这个目录被安全策略拦下了（受保护目录），换一个吧。'),
-    ).toBeTruthy();
-    // 被拒的目录不能被当成"选成功了"混进已选列表——按钮还在，不会变成"再加一个"
-    expect(screen.getByRole('button', { name: '选择文件夹' })).toBeTruthy();
+    await screen.findByText('/w/workspaces');
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
+    expect(await screen.findByText(/这个目录被安全策略拦下了/)).toBeTruthy();
+    expect(screen.getByText('/w/workspaces')).toBeTruthy();
+    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
   });
 
-  /*
-   * 取消（`pickDirectory` 什么都没选，`pickWorkspace` 回 `{}`）不该弹任何提示——
-   * 用户自己关掉了系统的文件夹选择框，没有话可说，硬提示反而是打扰。
-   */
-  it('取消选择保持安静——不该弹出任何提示', async () => {
+  it('取消选择保留原保存位置且不提示', async () => {
     const { bridge } = fakeBridge({
       getStartup: async () => ({ ...STARTUP, onboarded: false }),
-      pickWorkspace: vi.fn(async () => ({})),
     });
     render(<App bridge={bridge} />);
-
     await screen.findByText(/第 1 \/ 4 步/);
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
-
-    const pick = await screen.findByRole('button', { name: '选择文件夹' });
-    fireEvent.click(pick);
-    await waitFor(() => expect(bridge.pickWorkspace).toHaveBeenCalled());
-
+    await screen.findByText('/w/workspaces');
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }));
+    await waitFor(() => expect(bridge.setWorkingDirectory).toHaveBeenCalledOnce());
+    expect(screen.getByText('/w/workspaces')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
+    expect(bridge.pickWorkspace).not.toHaveBeenCalled();
   });
 });
 
