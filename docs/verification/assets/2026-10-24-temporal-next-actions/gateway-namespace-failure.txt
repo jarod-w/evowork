@@ -1,0 +1,122 @@
+
+Running 2 tests using 1 worker
+
+(node:52912) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整 (36.5s)
+(node:53442) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整 (41.5s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "deepseek/deepseek-flash"
+    Received: "evowork/deepseek-flash"
+
+      160 |       const task = startup.tasks.find((item) => item.title?.includes(marker));
+      161 |       expect(task).toBeTruthy();
+    > 162 |       expect(task.modelId).toBe('deepseek/deepseek-flash');
+          |                            ^
+      163 |       const history = await page.evaluate(
+      164 |         (threadId) => window.evowork.openTask({ threadId }),
+      165 |         task.id,
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:162:28
+
+    attachment #1: quotes.json (application/json) ──────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/quotes-json-e277f129f538a42b3460344117ecfa727374566a.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: news-index.json (application/json) ──────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/news-index-json-16d558e5c321f9ea7ab2aa38d2cd7131a904a954.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: N1.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N1-html-c24009bee41c79cb503324c40a46d3c44ea707ed.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #4: N2.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N2-html-de931721bf46ae6f743271661c0b49e42f5569a7.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #5: N3.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N3-html-e91282c9455a18c23107d2647a4958079dbd80bd.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #6: N4.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N4-html-2a863eff72bd59ef7ee589848368efef4d74d1e1.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #7: N5.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N5-html-cf63b8a445ad72f489e9a3743cafc3a22025c82b.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #8: final-ui.txt (text/plain) ───────────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/final-ui-txt-a495a0911ceaa74154a064f108b93905ae0048ea.txt
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #9: kernel-lifecycle.json (application/json) ────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/kernel-lifecycle-json-9d4b1598faefc966143701f3794f7a775f1f840e.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "deepseek/deepseek-flash"
+    Received: "evowork/deepseek-flash"
+
+      160 |       const task = startup.tasks.find((item) => item.title?.includes(marker));
+      161 |       expect(task).toBeTruthy();
+    > 162 |       expect(task.modelId).toBe('deepseek/deepseek-flash');
+          |                            ^
+      163 |       const history = await page.evaluate(
+      164 |         (threadId) => window.evowork.openTask({ threadId }),
+      165 |         task.id,
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:162:28
+
+    attachment #1: quotes.json (application/json) ──────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/quotes-json-5bb35640978f02ef5371776e2f30e78695ad38e5.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: news-index.json (application/json) ──────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/news-index-json-0d86757f4a49b8edd1513c859a7d9560bea04c92.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: N1.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N1-html-9d433f7f7d02b5bb4831613eb2f288afcbf53598.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #4: N2.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N2-html-381b346ba12d4072e8e7f74546a726a1b6032a1a.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #5: N3.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N3-html-d82e4eba1cb87e4c588160079a7904a98721e03e.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #6: N4.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N4-html-2c0827c97c7acf7dbc0150c6f385005ba4d4902c.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #7: N5.html (text/html) ─────────────────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/N5-html-d0c08c11244e5303275407eb55af86a1a812ab10.html
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #8: final-ui.txt (text/plain) ───────────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/final-ui-txt-9038974a9b30c0ad03e5b6d988ab35ec26b3819a.txt
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #9: kernel-lifecycle.json (application/json) ────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/kernel-lifecycle-json-e3e7f2807558be4fd6dad32a228ff65383f7625b.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整
+    [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整

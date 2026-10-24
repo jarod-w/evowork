@@ -1,0 +1,16 @@
+
+Running 9 tests using 1 worker
+
+(node:38699) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/composer.spec.mjs:12:1 › 输入 → 发送 → 进入运行态 → 中断 (7.5s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/composer.spec.mjs:74:1 › 首页不预选项目，两个无项目任务有独立目录 (3.1s)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:44:1 › 缺少标题返回字段级错误，保留最终交付且不保存建议或自动重试 (4.9s)
+  ✓  4 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:81:1 › 纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行 (5.0s)
+  ✓  5 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:129:1 › 模型忽略结束提醒也能完成原回合，不无限重试或伪造建议 (2.5s)
+  ✓  6 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:154:1 › MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送走原回合链路 (3.6s)
+  ✓  7 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:200:1 › 运行中的候选不展示、不覆盖草稿，点击填入不发送；忽略刷新后仍隐藏 (5.2s)
+  ✓  8 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:242:1 › 等待用户补充不展示下一步建议 (3.0s)
+  ✓  9 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:251:1 › 提出候选后停止回合，不发布或恢复未完成建议 (2.5s)
+
+  9 passed (38.0s)

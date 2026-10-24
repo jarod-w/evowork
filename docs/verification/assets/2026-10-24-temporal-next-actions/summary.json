@@ -1,0 +1,68 @@
+{
+  "provider": "deepseek",
+  "upstreamModel": "deepseek-flash",
+  "endpoint": "https://api.deepseek.com/v1/chat/completions",
+  "cases": [
+    {
+      "case": "summer",
+      "tradeDate": "2026-10-23",
+      "requests": 15,
+      "responses": 15,
+      "httpStatuses": [
+        200
+      ],
+      "unexpectedKernelExits": 0,
+      "turns": [
+        {
+          "id": "01a16bac-1b0d-7e01-8b86-5b65286913e3",
+          "status": "completed",
+          "startedAtMs": 1792807803000,
+          "completedAtMs": 1792807840000,
+          "durationMs": 37112
+        }
+      ],
+      "proposalCalls": 1,
+      "proposalTitles": [
+        "扩成两日对照表"
+      ],
+      "newsUses": {
+        "N1": "历史背景",
+        "N2": "历史背景",
+        "N3": "当日归因",
+        "N4": "盘后新事件",
+        "N5": "冲突待核验"
+      }
+    },
+    {
+      "case": "winter",
+      "tradeDate": "2026-11-25",
+      "requests": 16,
+      "responses": 16,
+      "httpStatuses": [
+        200
+      ],
+      "unexpectedKernelExits": 0,
+      "turns": [
+        {
+          "id": "01a16bac-fb49-7fc0-871d-1f99bae1a121",
+          "status": "completed",
+          "startedAtMs": 1792807861000,
+          "completedAtMs": 1792807886000,
+          "durationMs": 25412
+        }
+      ],
+      "proposalCalls": 1,
+      "proposalTitles": [
+        "扩成两日对照表"
+      ],
+      "newsUses": {
+        "N1": "历史背景",
+        "N2": "历史背景",
+        "N3": "当日归因",
+        "N4": "盘后新事件",
+        "N5": "冲突待核验"
+      }
+    }
+  ],
+  "credentialExactScanHits": 0
+}

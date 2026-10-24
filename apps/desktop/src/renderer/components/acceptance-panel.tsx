@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 
 import type { AttentionItem } from '../attention.js';
-import type { TaskStatusView } from '../shared/ipc.js';
+import type { TaskStatusView } from '../../shared/ipc.js';
 import { Badge, EmptyState, PillButton } from './primitives.js';
 
 const STORAGE_KEY = 'evowork.delivery-acceptance';

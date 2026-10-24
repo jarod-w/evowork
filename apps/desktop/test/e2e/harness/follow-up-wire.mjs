@@ -31,6 +31,16 @@ export function installFollowUpWire(path) {
             JSON.stringify(message.content ?? '').includes('优先把该目标写成建议'),
         ),
         hasNextActionTool: JSON.stringify(body.tools ?? []).includes('propose_next_actions'),
+        hasNextActionFieldRules: JSON.stringify(body.tools ?? []).includes(
+          '只有 prompt、reason 而没有 title 会被拒绝',
+        ),
+        hasTemporalRulesInSystem: (body.messages ?? []).some(
+          (message) =>
+            message.role === 'system' &&
+            JSON.stringify(message.content ?? '').includes('最新信息必须对齐时间与对象') &&
+            JSON.stringify(message.content ?? '').includes('不能一律排除收盘后报道'),
+        ),
+        hasTemporalTask: JSON.stringify(body.messages ?? []).includes('LATEST_'),
         hasNextActionTask: JSON.stringify(body.messages ?? []).includes('REALNEXT_'),
         hasNextActionStopReminder: JSON.stringify(body.messages ?? []).includes(
           '本回合尚未登记下一步状态。',

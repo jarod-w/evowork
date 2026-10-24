@@ -1,0 +1,9 @@
+
+Running 2 tests using 1 worker
+
+(node:61210) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整 (1.0m)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:134:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整 (30.7s)
+
+  2 passed (1.6m)

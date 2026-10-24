@@ -97,3 +97,35 @@ it('redacts arbitrary error metadata and leaves other endpoints unobserved', asy
   expect(rows()[1]).toMatchObject({ type: 'transport-error', name: 'Error', code: null });
   expect(readFileSync(path, 'utf8')).not.toContain('secret');
 });
+
+it('records temporal and required-field guidance as booleans without retaining task contents', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('private response')));
+  installFollowUpWire(path);
+  await globalThis.fetch('https://api.deepseek.com/v1/chat/completions', {
+    ...payload,
+    body: JSON.stringify({
+      model: 'deepseek-flash',
+      messages: [
+        { role: 'system', content: '最新信息必须对齐时间与对象；不能一律排除收盘后报道' },
+        { role: 'user', content: 'private task LATEST_test' },
+      ],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'propose_next_actions',
+            description: '只有 prompt、reason 而没有 title 会被拒绝',
+          },
+        },
+      ],
+    }),
+  });
+  expect(rows()[0]).toMatchObject({
+    hasTemporalTask: true,
+    hasTemporalRulesInSystem: true,
+    hasNextActionFieldRules: true,
+  });
+  expect(readFileSync(path, 'utf8')).not.toMatch(
+    /private task|private response|最新信息必须对齐|test-secret/,
+  );
+});

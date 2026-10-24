@@ -1,0 +1,9 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |kernel-adapter| test/next-actions.test.ts (28 tests) 56ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  09:52:02
+   Duration  543ms (transform 120ms, setup 0ms, collect 147ms, tests 56ms, environment 0ms, prepare 62ms)

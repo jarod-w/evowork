@@ -49,6 +49,49 @@ beforeEach(() => {
 });
 afterEach(() => store.close());
 describe('下一步建议与执行队列分离', () => {
+  it('缺少标题时指出每个字段，不保存半组候选、不触发补报重试', async () => {
+    const raw = {
+      outcome: 'delivered',
+      actions: [{ prompt: '对比两天行情' }, { prompt: '核对事件时间' }],
+    };
+    expect(() => service.propose('a', raw)).toThrow(
+      'actions[0].title 必须是 1–80 字符的非空字符串；actions[1].title 必须是 1–80 字符的非空字符串',
+    );
+    expect(new NextActionStore(store).get('a')).toBeUndefined();
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    complete();
+    expect(await service.list('a')).toEqual([]);
+  });
+  it.each([
+    [null, 'arguments 必须是对象'],
+    [{}, 'outcome 必须是 delivered 或 needs_input'],
+    [{ ...args, actions: {} }, 'actions 必须是最多 3 条的数组'],
+    [{ ...args, actions: Array(4).fill(args.actions[0]) }, 'actions 必须是最多 3 条的数组'],
+    [{ ...args, actions: [null] }, 'actions[0] 必须是对象'],
+    [{ ...args, actions: [{ title: ' ', prompt: '验证' }] }, 'actions[0].title'],
+    [{ ...args, actions: [{ title: '验证', prompt: '' }] }, 'actions[0].prompt'],
+    [{ ...args, actions: [{ title: '验证', prompt: '验证', reason: 3 }] }, 'actions[0].reason'],
+    [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数组'],
+  ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+    expect(() => service.propose('a', raw)).toThrow(field);
+    expect(new NextActionStore(store).get('a')).toBeUndefined();
+  });
+  it('额外字段只报告固定路径，不把未知键或用户正文放进错误', () => {
+    const privateText = 'PRIVATE_CONTENT_SENTINEL';
+    let message = '';
+    try {
+      service.propose('a', {
+        ...args,
+        [privateText]: privateText,
+        actions: [{ ...args.actions[0], [privateText]: privateText }],
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('arguments 包含不支持的字段');
+    expect(message).toContain('actions[0] 包含不支持的字段');
+    expect(message).not.toContain(privateText);
+  });
   it('纯文本遗漏登记时只提醒一次，同回合重入与并发检查不能无限续跑', async () => {
     const results = await Promise.all([
       service.checkStop('a', 'one', false),

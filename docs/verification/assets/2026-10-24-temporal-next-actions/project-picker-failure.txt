@@ -1,0 +1,124 @@
+
+Running 2 tests using 1 worker
+
+(node:42205) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:141:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整 (34.7s)
+(node:42702) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:141:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整 (35.5s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:141:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('menuitem', { name: /^时效核验/ })
+
+
+      186 |       expect(result.ok).toBe(true);
+      187 |       // 正常项目创建返回新列表；这里经 preload 建测试项目，需要重新加载到界面状态。
+    > 188 |       await page.reload();
+          |                           ^
+      189 |       await expect(page.getByLabel('需求输入')).toBeVisible();
+      190 |       await page.getByRole('button', { name: '选择项目' }).click();
+      191 |       await page.getByRole('menuitem', { name: /^时效核验/ }).click();
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:188:59
+
+    attachment #1: final-ui.txt (text/plain) ───────────────────────────────────────────────────────
+    EvoWork
+    新建任务
+    自动化
+    插件
+    资料库
+    项目
+    ⋯
+    最近
+    w
+    wangli
+    v0.0.6
+    有什么可以帮忙的？
+    文档处理
+    金融服务
+    数据分析及可视化
+    个人工作台
+    请求批准
+    ▾
+    不使用项目
+    ▾
+    不使用项目
+    附件和产物保存在这个任务的独立目录
+    ✓
+    选择文件夹…
+    deepseek/deepseek-flash
+    ▾
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: quotes.json (application/json) ──────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/quotes-json-5e3357380f12d0d542a78888233aa38fb9642803.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: news-index.json (application/json) ──────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/news-index-json-4f4e8847c00485e14575d32982fae964583b7a10.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:141:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('menuitem', { name: /^时效核验/ })
+
+
+      186 |       await page.getByRole('button', { name: '开始使用', exact: true }).click();
+      187 |       await expect(page.getByLabel('需求输入')).toBeVisible();
+    > 188 |       const result = await page.evaluate(
+          |                                          ^
+      189 |         (path) => window.evowork.createProject({ name: '时效核验', path }),
+      190 |         workspace,
+      191 |       );
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:188:59
+
+    attachment #1: final-ui.txt (text/plain) ───────────────────────────────────────────────────────
+    EvoWork
+    新建任务
+    自动化
+    插件
+    资料库
+    项目
+    ⋯
+    最近
+    w
+    wangli
+    v0.0.6
+    有什么可以帮忙的？
+    文档处理
+    金融服务
+    数据分析及可视化
+    个人工作台
+    请求批准
+    ▾
+    不使用项目
+    ▾
+    不使用项目
+    附件和产物保存在这个任务的独立目录
+    ✓
+    选择文件夹…
+    deepseek/deepseek-flash
+    ▾
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: quotes.json (application/json) ──────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/quotes-json-302dd41fe936726c6b6474862306447ce60c2008.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: news-index.json (application/json) ──────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/news-index-json-54722502a609247c81c080fb605550969c223bcd.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:141:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整
+    [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:141:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整

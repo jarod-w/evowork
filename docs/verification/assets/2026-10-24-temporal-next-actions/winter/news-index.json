@@ -1,0 +1,32 @@
+[
+  {
+    "id": "N1",
+    "published": "2026-11-25T08:14:00-05:00",
+    "title": "Futures fall after Moderna crashes and AI selloff",
+    "body_file": "news/N1.html"
+  },
+  {
+    "id": "N2",
+    "published": "2026-11-25T15:25:00-05:00",
+    "title": "Meta shares are down 9% this week",
+    "body_file": "news/N2.html"
+  },
+  {
+    "id": "N3",
+    "published": "2026-11-25T16:20:00-05:00",
+    "title": "Wall Street closes lower as oil and yields rise; tech steadies",
+    "body_file": "news/N3.html"
+  },
+  {
+    "id": "N4",
+    "published": "2026-11-25T18:49:00-05:00",
+    "title": "AI supplier withdraws IPO after the closing bell",
+    "body_file": "news/N4.html"
+  },
+  {
+    "id": "N5",
+    "published": "2026-11-25T16:30:00-05:00",
+    "title": "Nasdaq-100 closes down 0.21%",
+    "body_file": "news/N5.html"
+  }
+]

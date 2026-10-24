@@ -1,0 +1,49 @@
+{
+  "fixture": "离线验收快照，非实时行情",
+  "query_time": "2026-10-24T09:06:00+08:00",
+  "user_timezone": "Asia/Shanghai",
+  "market_timezone": "America/New_York",
+  "calendar": [
+    {
+      "date": "2026-10-22",
+      "close": "16:00"
+    },
+    {
+      "date": "2026-10-23",
+      "close": "16:00"
+    },
+    {
+      "date": "2026-10-24",
+      "closed": true
+    }
+  ],
+  "quotes": [
+    {
+      "name": "NASDAQ Composite",
+      "symbol": "IXIC",
+      "previous_close": 53874,
+      "close": 53760.8646,
+      "trade_date": "2026-10-23",
+      "session": "regular_close",
+      "previous_trade_date": "2026-10-22"
+    },
+    {
+      "name": "NASDAQ-100",
+      "symbol": "NDX",
+      "previous_close": 54874,
+      "close": 54871.80504,
+      "trade_date": "2026-10-23",
+      "session": "regular_close",
+      "previous_trade_date": "2026-10-22"
+    },
+    {
+      "name": "Dow Jones Industrial Average",
+      "symbol": "DJI",
+      "previous_close": 55874,
+      "close": 55186.7498,
+      "trade_date": "2026-10-23",
+      "session": "regular_close",
+      "previous_trade_date": "2026-10-22"
+    }
+  ]
+}

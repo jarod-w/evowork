@@ -1,0 +1,60 @@
+
+Running 2 tests using 1 worker
+
+(node:50752) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:147:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整 (53.5s)
+(node:51553) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:147:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整 (12.0s)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:147:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整
+
+    Error: page.waitForTimeout: Target page, context or browser has been closed
+
+      221 |             .catch(() => undefined);
+      222 |         else if ((await page.getByLabel('输入区').getAttribute('data-run-state')) === 'idle') break;
+    > 223 |         else await page.waitForTimeout(500);
+          |                         ^
+      224 |       }
+      225 |       await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+      226 |       const startup = await page.evaluate(() => window.evowork.getStartup());
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:223:25
+
+    attachment #1: quotes.json (application/json) ──────────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/quotes-json-92bd1d77f08636888a0d8063c6e21e652339b0f0.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: news-index.json (application/json) ──────────────────────────────────────────────
+    test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/news-index-json-c3f40b30e06a4b90d906aab917931928123e951c.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/latest-information.real-夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:147:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整
+
+    Error: page.waitForTimeout: Target page, context or browser has been closed
+
+      221 |             .catch(() => undefined);
+      222 |         else if ((await page.getByLabel('输入区').getAttribute('data-run-state')) === 'idle') break;
+    > 223 |         else await page.waitForTimeout(500);
+          |                         ^
+      224 |       }
+      225 |       await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+      226 |       const startup = await page.evaluate(() => window.evowork.getStartup());
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:223:25
+
+    attachment #1: quotes.json (application/json) ──────────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/quotes-json-bf95c34410a328bcb4db65d7759c5af3c9a104a8.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: news-index.json (application/json) ──────────────────────────────────────────────
+    test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/attachments/news-index-json-1303fa89e69c59e440e1c6ad7111c8935aa7e03b.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/latest-information.real-冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:147:3 › 夏令时周末：事件时间、周度口径与相近指数不混用，建议标题完整
+    [real] › apps/desktop/test/e2e/ui/latest-information.real.spec.mjs:147:3 › 冬令时休市日：事件时间、周度口径与相近指数不混用，建议标题完整

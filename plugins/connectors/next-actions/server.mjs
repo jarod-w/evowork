@@ -4,7 +4,7 @@ export const tools = [
   {
     name: 'propose_next_actions',
     description:
-      '每个回合结束前登记一次下一步状态，包括纯文本计划/说明和追问回合；不执行、不排队。当前请求范围内的工作必须先完成，不得转成建议。等待用户回答时 outcome=needs_input 且 actions=[]；没有有价值的下一步也返回空列表。用户明确说出的下一阶段目标应优先成为候选；“本轮只做分析、先不制作汇报”限制执行范围，不禁止建议，不应据此返回空列表。没有适合的下一步或用户不要建议时允许空列表。不要推荐已完成操作，不编造目标地址、文件或收件人。回合结束前提交，随后正常交付最终回复。',
+      '每个回合结束前登记一次下一步状态，包括纯文本计划/说明和追问回合；不执行、不排队。每条 actions 必须同时填写 title（1–80 字符的短标题）和 prompt（1–2000 字符的完整需求），reason 可选；只有 prompt、reason 而没有 title 会被拒绝。提交前逐条核对必填字段；参数或服务失败后不重试，继续交付当前任务。当前请求范围内的工作必须先完成，不得转成建议。等待用户回答时 outcome=needs_input 且 actions=[]；没有有价值的下一步也返回空列表。用户明确说出的下一阶段目标应优先成为候选；“本轮只做分析、先不制作汇报”限制执行范围，不禁止建议，不应据此返回空列表。没有适合的下一步或用户不要建议时允许空列表。不要推荐已完成操作，不编造目标地址、文件或收件人。回合结束前提交，随后正常交付最终回复。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -17,8 +17,18 @@ export const tools = [
             type: 'object',
             additionalProperties: false,
             properties: {
-              title: { type: 'string', minLength: 1, maxLength: 80 },
-              prompt: { type: 'string', minLength: 1, maxLength: 2000 },
+              title: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 80,
+                description: '必填：建议的短标题，不能省略或只含空白。',
+              },
+              prompt: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 2000,
+                description: '必填：用户可直接发送的完整需求，与 title 同时提供。',
+              },
               reason: { type: 'string', maxLength: 300 },
             },
             required: ['title', 'prompt'],

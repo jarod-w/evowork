@@ -1,0 +1,213 @@
+[ERROR] fetch failed
+For help, run: pnpm help exec
+
+
+ ❯ |kernel-adapter| test/next-actions.test.ts (28 tests | 11 failed) 55ms
+   × 下一步建议与执行队列分离 > 缺少标题时指出每个字段，不保存半组候选、不触发补报重试 9ms
+     → expected [Function] to throw error including 'actions[0].title 必须是 1–80 字符的非空字符串；ac…' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 0 2ms
+     → expected [Function] to throw error including 'arguments 必须是对象' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 1 2ms
+     → expected [Function] to throw error including 'outcome 必须是 delivered 或 needs_input' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 2 2ms
+     → expected [Function] to throw error including 'actions 必须是最多 3 条的数组' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 3 2ms
+     → expected [Function] to throw error including 'actions 必须是最多 3 条的数组' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 4 2ms
+     → expected [Function] to throw error including 'actions[0] 必须是对象' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 5 2ms
+     → expected [Function] to throw error including 'actions[0].title' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 6 1ms
+     → expected [Function] to throw error including 'actions[0].prompt' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 7 2ms
+     → expected [Function] to throw error including 'actions[0].reason' but got '建议参数无效。'
+   × 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 8 2ms
+     → expected [Function] to throw error including 'needs_input 时 actions 必须为空数组' but got '等待用户输入时不应提交下一步建议。'
+   × 下一步建议与执行队列分离 > 额外字段只报告固定路径，不把未知键或用户正文放进错误 2ms
+     → expected '建议参数无效。' to contain 'arguments 包含不支持的字段'
+   ✓ 下一步建议与执行队列分离 > 纯文本遗漏登记时只提醒一次，同回合重入与并发检查不能无限续跑 2ms
+   ✓ 下一步建议与执行队列分离 > 已提交空列表或已尝试失败的工具都不触发结束提醒 1ms
+   ✓ 下一步建议与执行队列分离 > 旧回合、非根任务、重建服务、活动目标和未知状态不能唤醒建议循环 2ms
+   ✓ 下一步建议与执行队列分离 > 异步检查期间新回合开始，旧提醒不能作用到新回合 2ms
+   ✓ 下一步建议与执行队列分离 > 回合结束前不可见，成功后只展示第一条，采纳只改变建议状态 2ms
+   ✓ 下一步建议与执行队列分离 > failed 不发布；新回合及旧完成通知不能复活建议 2ms
+   ✓ 下一步建议与执行队列分离 > interrupted 不发布；新回合及旧完成通知不能复活建议 2ms
+   ✓ 下一步建议与执行队列分离 > 无建议、等待输入、非法嵌套正文和未核对来源不生成可用建议 2ms
+   ✓ 下一步建议与执行队列分离 > 目标 active 时隐藏 2ms
+   ✓ 下一步建议与执行队列分离 > 目标 paused 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 目标 blocked 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 目标 usageLimited 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 目标 budgetLimited 时隐藏 1ms
+   ✓ 下一步建议与执行队列分离 > 队列、待审批、归档、子任务和自动化均不展示 3ms
+   ✓ 下一步建议与执行队列分离 > 查询目标时新回合开始，迟到响应不发布；目标未知不伪装成无目标 2ms
+   ✓ 下一步建议与执行队列分离 > 同时采纳与关闭只成功一次，不复活已经消费的建议 2ms
+   ✓ 下一步建议与执行队列分离 > 重建服务保留可用/关闭状态，丢弃未完成提案；删除清理正文 2ms
+
+ Test Files  1 failed (1)
+      Tests  11 failed | 17 passed (28)
+   Start at  09:52:24
+   Duration  450ms (transform 121ms, setup 0ms, collect 151ms, tests 55ms, environment 0ms, prepare 48ms)
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 缺少标题时指出每个字段，不保存半组候选、不触发补报重试
+AssertionError: expected [Function] to throw error including 'actions[0].title 必须是 1–80 字符的非空字符串；ac…' but got '建议参数无效。'
+
+Expected: "actions[0].title 必须是 1–80 字符的非空字符串；actions[1].title 必须是 1–80 字符的非空字符串"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:57:45
+     55|       actions: [{ prompt: '对比两天行情' }, { prompt: '核对事件时间' }],
+     56|     };
+     57|     expect(() => service.propose('a', raw)).toThrow(
+       |                                             ^
+     58|       'actions[0].title 必须是 1–80 字符的非空字符串；actions[1].title 必须是 1–80 字符…
+     59|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 0
+AssertionError: expected [Function] to throw error including 'arguments 必须是对象' but got '建议参数无效。'
+
+Expected: "arguments 必须是对象"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 1
+AssertionError: expected [Function] to throw error including 'outcome 必须是 delivered 或 needs_input' but got '建议参数无效。'
+
+Expected: "outcome 必须是 delivered 或 needs_input"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 2
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 3
+AssertionError: expected [Function] to throw error including 'actions 必须是最多 3 条的数组' but got '建议参数无效。'
+
+Expected: "actions 必须是最多 3 条的数组"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 4
+AssertionError: expected [Function] to throw error including 'actions[0] 必须是对象' but got '建议参数无效。'
+
+Expected: "actions[0] 必须是对象"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 5
+AssertionError: expected [Function] to throw error including 'actions[0].title' but got '建议参数无效。'
+
+Expected: "actions[0].title"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 6
+AssertionError: expected [Function] to throw error including 'actions[0].prompt' but got '建议参数无效。'
+
+Expected: "actions[0].prompt"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 7
+AssertionError: expected [Function] to throw error including 'actions[0].reason' but got '建议参数无效。'
+
+Expected: "actions[0].reason"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 非法参数给出具体字段且不写入候选 8
+AssertionError: expected [Function] to throw error including 'needs_input 时 actions 必须为空数组' but got '等待用户输入时不应提交下一步建议。'
+
+Expected: "needs_input 时 actions 必须为空数组"
+Received: "等待用户输入时不应提交下一步建议。"
+
+ ❯ test/next-actions.test.ts:76:45
+     74|     [{ ...args, outcome: 'needs_input' }, 'needs_input 时 actions 必须为空数…
+     75|   ])('非法参数给出具体字段且不写入候选 %#', (raw, field) => {
+     76|     expect(() => service.propose('a', raw)).toThrow(field);
+       |                                             ^
+     77|     expect(new NextActionStore(store).get('a')).toBeUndefined();
+     78|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+ FAIL  |kernel-adapter| test/next-actions.test.ts > 下一步建议与执行队列分离 > 额外字段只报告固定路径，不把未知键或用户正文放进错误
+AssertionError: expected '建议参数无效。' to contain 'arguments 包含不支持的字段'
+
+Expected: "arguments 包含不支持的字段"
+Received: "建议参数无效。"
+
+ ❯ test/next-actions.test.ts:91:21
+     89|       message = (error as Error).message;
+     90|     }
+     91|     expect(message).toContain('arguments 包含不支持的字段');
+       |                     ^
+     92|     expect(message).toContain('actions[0] 包含不支持的字段');
+     93|     expect(message).not.toContain(privateText);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯

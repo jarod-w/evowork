@@ -41,6 +41,43 @@ async function idle(page) {
 async function history(page, id) {
   return page.evaluate((threadId) => window.evowork.openTask({ threadId }), id);
 }
+test('缺少标题返回字段级错误，保留最终交付且不保存建议或自动重试', async ({
+  page,
+  electronApp,
+}) => {
+  const marker = 'INVALIDNEXT-' + Date.now().toString(36);
+  await electronApp.evaluate((_electron, marker) => {
+    const gateway = globalThis.__evoworkE2E.gateway;
+    gateway.scriptWhen(
+      'invalid-next-actions',
+      (view) => view.text.includes(marker) && !view.calls.includes('propose_next_actions'),
+      {
+        tool: 'propose_next_actions',
+        args: { outcome: 'delivered', actions: [{ prompt: '核对行情' }, { prompt: '核对新闻' }] },
+      },
+    );
+    gateway.scriptWhen(
+      'finish-invalid-next-actions',
+      (view) => view.text.includes(marker) && view.calls.includes('propose_next_actions'),
+      { kind: 'text', text: '当前分析已交付 ' + marker },
+    );
+  }, marker);
+  await startTaskInWorkspace(page, electronApp, marker + ' 分析并交付结论。');
+  await idle(page);
+  await expect(page.getByText('当前分析已交付 ' + marker, { exact: true })).toBeVisible();
+  const current = await task(page, marker);
+  const result = await history(page, current.id);
+  const calls = result.items.filter(
+    (item) => item.type === 'mcpToolCall' && item.tool === 'propose_next_actions',
+  );
+  expect(calls).toHaveLength(1);
+  expect(JSON.stringify(calls[0])).toContain('actions[0].title');
+  expect(JSON.stringify(calls[0])).toContain('actions[1].title');
+  expect(JSON.stringify(calls[0])).toContain('不重试');
+  expect(result.turns).toHaveLength(1);
+  expect(result.turns[0].status).toBe('completed');
+  await expect(page.getByLabel('下一步建议')).toHaveCount(0);
+});
 test('纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行', async ({
   page,
   electronApp,

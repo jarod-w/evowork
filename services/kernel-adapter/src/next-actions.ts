@@ -2,6 +2,47 @@ import { NextActionStore, type NextAction, type Store } from '@evowork/store';
 import type { Adapter } from './adapter.js';
 import type { UiEvent } from './events.js';
 
+/** Only fixed field paths and expectations enter errors; never echo user values or keys. */
+function proposalIssues(raw: unknown): string[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['arguments 必须是对象'];
+  const input = raw as Record<string, unknown>;
+  const issues: string[] = [];
+  if (Object.keys(input).some((key) => !['outcome', 'actions'].includes(key)))
+    issues.push('arguments 包含不支持的字段，仅允许 outcome、actions');
+  if (input.outcome !== 'delivered' && input.outcome !== 'needs_input')
+    issues.push('outcome 必须是 delivered 或 needs_input');
+  if (!Array.isArray(input.actions) || input.actions.length > 3) {
+    issues.push('actions 必须是最多 3 条的数组');
+    return issues;
+  }
+  if (input.outcome === 'needs_input' && input.actions.length)
+    issues.push('needs_input 时 actions 必须为空数组');
+  input.actions.forEach((item: unknown, index: number) => {
+    const path = `actions[${index}]`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      issues.push(`${path} 必须是对象`);
+      return;
+    }
+    const action = item as Record<string, unknown>;
+    if (Object.keys(action).some((key) => !['title', 'prompt', 'reason'].includes(key)))
+      issues.push(`${path} 包含不支持的字段，仅允许 title、prompt、reason`);
+    for (const [field, max] of [
+      ['title', 80],
+      ['prompt', 2000],
+    ] as const) {
+      const value = action[field];
+      if (typeof value !== 'string' || !value.trim() || value.length > max)
+        issues.push(`${path}.${field} 必须是 1–${max} 字符的非空字符串`);
+    }
+    if (
+      action.reason !== undefined &&
+      (typeof action.reason !== 'string' || action.reason.length > 300)
+    )
+      issues.push(`${path}.reason 必须是不超过 300 字符的字符串`);
+  });
+  return issues;
+}
+
 export function createNextActions(options: {
   store: Store;
   adapter: () => Adapter;
@@ -41,31 +82,11 @@ export function createNextActions(options: {
       if (!bound) throw new Error('无法核对本次建议的来源回合。');
       const turn = turns.get(threadId);
       if (turn?.turnId === bound.turnId) turn.attempted = true;
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('建议参数无效。');
-      const input = raw as Record<string, unknown>;
-      if (
-        Object.keys(input).some((key) => !['outcome', 'actions'].includes(key)) ||
-        !['delivered', 'needs_input'].includes(String(input.outcome)) ||
-        !Array.isArray(input.actions) ||
-        input.actions.length > 3
-      )
-        throw new Error('建议参数无效。');
-      const actions: NextAction[] = input.actions.map((item: unknown, index: number) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item))
-          throw new Error('建议参数无效。');
-        const action = item as Record<string, unknown>;
-        if (
-          Object.keys(action).some((key) => !['title', 'prompt', 'reason'].includes(key)) ||
-          typeof action.title !== 'string' ||
-          !action.title.trim() ||
-          action.title.length > 80 ||
-          typeof action.prompt !== 'string' ||
-          !action.prompt.trim() ||
-          action.prompt.length > 2000 ||
-          (action.reason !== undefined &&
-            (typeof action.reason !== 'string' || action.reason.length > 300))
-        )
-          throw new Error('建议参数无效。');
+      const issues = proposalIssues(raw);
+      if (issues.length)
+        throw new Error(`建议参数无效：${issues.join('；')}。继续交付当前任务，不重试。`);
+      const input = raw as { actions: { title: string; prompt: string; reason?: string }[] };
+      const actions: NextAction[] = input.actions.map((action, index) => {
         return {
           id: bound.callId + ':' + index,
           threadId,
@@ -75,8 +96,6 @@ export function createNextActions(options: {
           ...(typeof action.reason === 'string' ? { reason: action.reason.trim() } : {}),
         };
       });
-      if (input.outcome === 'needs_input' && actions.length)
-        throw new Error('等待用户输入时不应提交下一步建议。');
       repo.propose(threadId, bound.turnId, actions);
       return {
         saved: true,
