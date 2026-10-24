@@ -5,7 +5,7 @@
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 import { expectFileAnswer, idle, scriptFileTools } from './file-results-support.mjs';
 
-test('有任务后首页给出状态，待批准能从侧栏点回去，产物先进入验收', async ({
+test('有任务后首页给出状态，待批准能从侧栏点回去，产物直接进入结果预览', async ({
   page,
   electronApp,
 }) => {
@@ -17,8 +17,8 @@ test('有任务后首页给出状态，待批准能从侧栏点回去，产物�
     electronApp,
     'WORK-ACCEPT',
     [
-      { tool: 'exec_command', args: { cmd: "printf 'delivered\\n' > output.txt" } },
-      { tool: 'register_file', args: { path: 'output.txt' } },
+      { tool: 'exec_command', args: { cmd: "printf '# delivered\\n' > output.md" } },
+      { tool: 'register_file', args: { path: 'output.md' } },
     ],
     '验收原型已交付。',
   );
@@ -26,11 +26,15 @@ test('有任务后首页给出状态，待批准能从侧栏点回去，产物�
   await expectFileAnswer(page, electronApp, '验收原型已交付。');
   await idle(page);
 
-  await page.getByRole('tab', { name: '验收', exact: true }).click();
-  const review = page.getByRole('region', { name: '验收' });
-  await expect(review).toContainText('output.txt');
-  await review.getByRole('button', { name: '接受这一版', exact: true }).click();
-  await expect(review.getByText('已接受这一版')).toBeVisible();
+  await expect(page.getByRole('tab', { name: '产物', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByRole('tab', { name: '验收', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: '浏览器', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '文件预览：output.md' })).toContainText(
+    'delivered',
+  );
 
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await expect(page.getByRole('region', { name: '当前工作' })).toHaveCount(0);

@@ -184,9 +184,18 @@ describe('结果区（04 §1）', () => {
     const { container } = renderWorkspace({ hasResults: true });
     const segmented = container.querySelector('.ew-segmented');
     expect(segmented?.getAttribute('data-variant')).toBe('light');
-    for (const label of ['验收', '产物', '文件', '变更', '浏览器']) {
+    for (const label of ['产物', '文件', '变更', '浏览器']) {
       expect(screen.getByRole('tab', { name: label })).toBeTruthy();
     }
+    expect(screen.queryByRole('tab', { name: '验收' })).toBeNull();
+  });
+
+  it('按 resultTabs 动态收敛顶栏视图，隐藏无内容的标签', () => {
+    renderWorkspace({ hasResults: true, resultTabs: ['artifacts', 'changes'] });
+    expect(screen.getByRole('tab', { name: '产物' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '变更' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '文件' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '浏览器' })).toBeNull();
   });
 
   it('⌘I 切换结果区（02 §6）', () => {

@@ -120,7 +120,6 @@ import type { RenderItem } from './components/item-renderers.js';
 import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
 import { FileTree } from './components/file-tree.js';
 import { newestActiveTask, summarizeWork } from './attention.js';
-import { AcceptancePanel } from './components/acceptance-panel.js';
 import { FilePreview } from './components/file-preview.js';
 import { SkillInstallDialog } from './components/skill-install-dialog.js';
 import {
@@ -983,7 +982,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     Readonly<Record<string, string>>
   >({});
   const [resultDismissed, setResultDismissed] = useState<Readonly<Record<string, boolean>>>({});
+  const resultDismissedRef = useRef(resultDismissed);
+  resultDismissedRef.current = resultDismissed;
   const fileOpenRequests = useRef(new Map<string, string | symbol>());
+  const autoPreviewedArtifact = useRef(new Map<string, string>());
 
   const dismissToast = useCallback((id: string) => {
     const timer = toastTimers.current.get(id);
@@ -1972,7 +1974,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       );
   }, [activeTaskId, bridge, startup, tasks]);
 
-  /** 有产物就展开结果区；用户关过一次就尊重其选择。 */
+  /** 有产物就展开结果区并加载最新产物预览；用户关过一次就尊重其选择。 */
   useEffect(() => {
     if (activeTaskId === null || resultDismissed[activeTaskId]) return;
     const result = taskResults[activeTaskId];
@@ -1982,13 +1984,36 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setResultUi((previous) => {
       const current = previous[activeTaskId];
       if (current?.open === true) return previous;
-      // 第一次因产物打开结果区时落在验收，而不是文件列表。用户随后选过的标签保留。
       return {
         ...previous,
-        [activeTaskId]: { open: true, tab: current?.tab ?? 'acceptance' },
+        [activeTaskId]: { open: true, tab: current?.tab ?? 'artifacts' },
       };
     });
-  }, [activeTaskId, bridge, itemsByTask, resultDismissed, taskResults]);
+    if (!bridge.readResultPreview || fileOpenRequests.current.has(activeTaskId)) return;
+    const artifactKey = `${latest.id}:${latest.version}`;
+    if (autoPreviewedArtifact.current.get(activeTaskId) === artifactKey) return;
+    autoPreviewedArtifact.current.set(activeTaskId, artifactKey);
+    const taskId = activeTaskId;
+    void bridge
+      .readResultPreview({ artifactId: latest.id })
+      .then((preview) => {
+        if (
+          deletedTaskIds.current.has(taskId) ||
+          resultDismissedRef.current[taskId] ||
+          fileOpenRequests.current.has(taskId) ||
+          autoPreviewedArtifact.current.get(taskId) !== artifactKey
+        )
+          return;
+        setPreviewByTask((previous) => ({ ...previous, [taskId]: preview }));
+        if (preview.kind === 'html') {
+          setResultUi((previous) => ({
+            ...previous,
+            [taskId]: { open: true, tab: 'browser' },
+          }));
+        }
+      })
+      .catch(() => undefined);
+  }, [activeTaskId, bridge, resultDismissed, taskResults]);
 
   /**
    * 进到某一页时才去拉它的数据。
@@ -2897,8 +2922,46 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ? { open: false, tab: 'artifacts' as ResultPane }
       : (resultUi[activeTaskId] ?? {
           open: hasCurrentResults,
-          tab: (currentResults.artifacts.length > 0 ? 'acceptance' : 'changes') as ResultPane,
+          tab: (currentResults.artifacts.length > 0 ? 'artifacts' : 'changes') as ResultPane,
         });
+  const availableResultTabs = useMemo((): readonly ResultPane[] => {
+    const tabs: ResultPane[] = [];
+    const artifactKeys = new Set(
+      currentResults.artifacts.map((artifact) => changePathKey(artifact.path, active?.cwd)),
+    );
+    const hasDistinctWorkspaceFiles = (currentResults.workspace?.files ?? []).some(
+      (file) => !artifactKeys.has(changePathKey(file.path, active?.cwd)),
+    );
+    const hasArtifacts = currentResults.artifacts.length > 0;
+    const hasFiles =
+      currentFiles.length > 0 ||
+      hasDistinctWorkspaceFiles ||
+      (Boolean(currentPreview) && currentPreview?.kind !== 'html' && !hasArtifacts);
+    const hasChanges =
+      changedFiles.length > 0 ||
+      (currentResults.workspace?.warnings.length ?? 0) > 0 ||
+      currentItems.some(
+        (item) =>
+          item.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0,
+      );
+    const hasBrowser = currentPreview?.kind === 'html';
+
+    if (hasArtifacts || activeResultUi.tab === 'artifacts') tabs.push('artifacts');
+    if (hasFiles || activeResultUi.tab === 'files') tabs.push('files');
+    if (hasChanges || activeResultUi.tab === 'changes') tabs.push('changes');
+    if (hasBrowser || activeResultUi.tab === 'browser') tabs.push('browser');
+    return tabs.length > 0 ? tabs : ['artifacts'];
+  }, [
+    active?.cwd,
+    activeResultUi.tab,
+    changedFiles.length,
+    currentFiles.length,
+    currentItems,
+    currentPreview,
+    currentResults.artifacts,
+    currentResults.workspace?.files,
+    currentResults.workspace?.warnings.length,
+  ]);
   const updateResultUi = useCallback(
     (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
       if (activeTaskId === null) return;
@@ -2957,6 +3020,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       if (!file?.reversible) throw new Error('文件状态已改变，请重新查看后撤销。');
       await bridge.revertTaskFile({ threadId, path, scope, revision });
       fileOpenRequests.current.delete(threadId);
+      autoPreviewedArtifact.current.delete(threadId);
       const result = await bridge.getTaskResults({ threadId });
       setTaskResults((previous) => ({ ...previous, [threadId]: result }));
       setPreviewByTask((previous) => {
@@ -4326,51 +4390,37 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           artifacts={currentResults.artifacts}
           onOpenArtifact={openArtifact}
           hasResults={hasCurrentResults}
+          resultTabs={availableResultTabs}
           resultOpen={activeResultUi.open}
           resultTab={activeResultUi.tab}
           onResultOpenChange={(open) => {
+            resultDismissedRef.current = { ...resultDismissedRef.current, [activeTaskId]: !open };
             setResultDismissed((previous) => ({ ...previous, [activeTaskId]: !open }));
             updateResultUi({ open });
           }}
           onResultTabChange={(tab) => updateResultUi({ tab })}
           resultPanels={{
-            acceptance: (
-              <AcceptancePanel
-                threadId={activeTaskId}
-                status={active?.status ?? 'idle'}
-                artifacts={currentResults.artifacts}
-                files={changedFiles.map((file) => ({ path: file.displayPath ?? file.path }))}
-                notes={currentResults.workspace?.warnings ?? []}
-                blocked={work.items.filter(
-                  (item) =>
-                    item.threadId === activeTaskId &&
-                    (item.kind === 'approval' || item.kind === 'budget' || item.kind === 'blocked'),
-                )}
-                onOpenArtifact={openArtifact}
-                onShowChanges={() => updateResultUi({ open: true, tab: 'changes' })}
-                onRequestChanges={() => {
-                  setDraft('这一版先不接受。请按验收里列出的差异继续改。');
-                  document.querySelector<HTMLTextAreaElement>('.ew-composer-textarea')?.focus();
-                }}
-              />
-            ),
             artifacts:
               currentResults.artifacts.length > 0 ? (
                 <div className="ew-result-preview-stack">
-                  <ul className="ew-result-artifacts">
-                    {currentResults.artifacts.map((artifact) => (
-                      <li key={artifact.id}>
-                        <button
-                          type="button"
-                          className="ew-result-artifact"
-                          onClick={() => openArtifact(artifact.id)}
-                        >
-                          <span>{artifact.name}</span>
-                          <span>版本 {artifact.version}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  {currentResults.artifacts.length > 1 ||
+                  !currentPreview ||
+                  currentPreview.kind === 'html' ? (
+                    <ul className="ew-result-artifacts">
+                      {currentResults.artifacts.map((artifact) => (
+                        <li key={artifact.id}>
+                          <button
+                            type="button"
+                            className="ew-result-artifact"
+                            onClick={() => openArtifact(artifact.id)}
+                          >
+                            <span>{artifact.name}</span>
+                            <span>版本 {artifact.version}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   {currentPreview && currentPreview.kind !== 'html' ? (
                     <FilePreview preview={currentPreview} onAnnotate={annotatePreview} />
                   ) : null}

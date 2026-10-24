@@ -1372,19 +1372,56 @@ describe('结果工作区真实接线', () => {
     expect(screen.queryByText('迟到的第一份文件')).toBeNull();
   });
 
-  it('助手交付措辞不再代替明确打开事件', async () => {
+  it('有登记产物时默认落在「产物」并直接显示预览，同时按内容收敛无用标签', async () => {
     const readResultPreview = vi.fn(async () => ({
       name: 'out.md',
       kind: 'text' as const,
-      content: 'preview',
+      content: '直接预览正文',
     }));
-    const { bridge, emit } = fakeBridge({
+    const { bridge } = fakeBridge({
       getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
       readResultPreview,
       getTaskResults: async () => ({
         artifacts: [
           { id: 'a1', name: 'out.md', path: '/w/out.md', version: 1, artifactType: 'document' },
         ],
+        workspace: {
+          turnId: 'one',
+          thread: [],
+          turn: [],
+          files: [{ path: '/w/out.md', source: 'task' as const }],
+          warnings: [],
+        },
+      }),
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+    expect(await screen.findByText('直接预览正文')).toBeTruthy();
+    expect(readResultPreview).toHaveBeenCalledWith({ artifactId: 'a1' });
+    expect(screen.getByRole('tab', { name: '产物' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByRole('tab', { name: '验收' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '浏览器' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '文件' })).toBeNull();
+  });
+
+  it('助手交付措辞不再代替明确打开事件', async () => {
+    const readTaskFilePreview = vi.fn(async () => ({
+      name: 'out.md',
+      kind: 'text' as const,
+      content: 'preview',
+    }));
+    const { bridge, emit } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      readTaskFilePreview,
+      getTaskResults: async () => ({
+        artifacts: [],
+        workspace: {
+          turnId: 'one',
+          thread: [],
+          turn: [],
+          files: [{ path: '/w/out.md', source: 'task' as const }],
+          warnings: [],
+        },
       }),
     });
     render(<App bridge={bridge} />);
@@ -1397,7 +1434,7 @@ describe('结果工作区真实接线', () => {
         item: { id: 'msg', type: 'agentMessage', text: '已完成，已生成，请查看预览。' },
       }),
     );
-    expect(readResultPreview).not.toHaveBeenCalled();
+    expect(readTaskFilePreview).not.toHaveBeenCalled();
   });
 
   it('慢文件预览返回前用户已关闭结果区，旧请求不能重新展开', async () => {

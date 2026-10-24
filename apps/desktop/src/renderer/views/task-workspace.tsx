@@ -80,15 +80,26 @@ export const STATUS_VIEW: Readonly<
   idle: { label: '还没有开始', badge: 'neutral', tone: 'muted', breathing: false },
 });
 
-export type ResultPane = 'acceptance' | 'artifacts' | 'files' | 'changes' | 'browser';
+export type ResultPane = 'artifacts' | 'files' | 'changes' | 'browser';
 
 const RESULT_TABS = [
-  { id: 'acceptance', label: '验收' },
   { id: 'artifacts', label: '产物' },
   { id: 'files', label: '文件' },
   { id: 'changes', label: '变更' },
   { id: 'browser', label: '浏览器' },
 ] as const;
+
+const ARTIFACT_TYPE_LABEL: Readonly<Record<string, string>> = Object.freeze({
+  document: '文档',
+  spreadsheet: '表格',
+  presentation: '幻灯片',
+  pdf: 'PDF',
+  chart: '图表',
+  image: '图片',
+  data: '数据',
+  archive: '压缩包',
+  webpage: '网页',
+});
 
 /**
  * 会被收进相邻操作组的协议条目。未知类型故意不在这里：上游新增 item
@@ -320,6 +331,7 @@ export interface TaskWorkspaceProps {
   }[];
   readonly resultPanel?: React.ReactNode | undefined;
   readonly resultPanels?: Readonly<Partial<Record<ResultPane, React.ReactNode>>> | undefined;
+  readonly resultTabs?: readonly ResultPane[] | undefined;
   readonly resultOpen?: boolean | undefined;
   readonly resultTab?: ResultPane | undefined;
   readonly onResultOpenChange?: ((open: boolean) => void) | undefined;
@@ -398,7 +410,16 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const [localResultTab, setLocalResultTab] = useState<ResultPane>('artifacts');
   const resultOpen =
     props.resultOpen ?? localResultOpen ?? Boolean(props.hasResults || props.resultPanel);
-  const resultTab = props.resultTab ?? localResultTab;
+  const visibleResultTabs = useMemo(() => {
+    if (!props.resultTabs || props.resultTabs.length === 0) return RESULT_TABS;
+    const allowed = new Set(props.resultTabs);
+    const filtered = RESULT_TABS.filter((t) => allowed.has(t.id));
+    return filtered.length > 0 ? filtered : RESULT_TABS;
+  }, [props.resultTabs]);
+  const requestedResultTab = props.resultTab ?? localResultTab;
+  const resultTab = visibleResultTabs.some((t) => t.id === requestedResultTab)
+    ? requestedResultTab
+    : (visibleResultTabs[0]?.id ?? 'artifacts');
   const [visibleCount, setVisibleCount] = useState(TIMELINE_PAGE_SIZE);
   const [hasNewContent, setHasNewContent] = useState(false);
   const [resultWidth, setResultWidth] = useState<number | undefined>(undefined);
@@ -1001,7 +1022,9 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                       className="ew-timeline-artifact"
                       onClick={() => props.onOpenArtifact?.(artifact.id)}
                     >
-                      <span className="ew-timeline-artifact-kind">{artifact.artifactType}</span>
+                      <span className="ew-timeline-artifact-kind">
+                        {ARTIFACT_TYPE_LABEL[artifact.artifactType] ?? artifact.artifactType}
+                      </span>
                       <strong>{artifact.name}</strong>
                       <span>版本 {artifact.version} · 打开预览</span>
                     </button>
@@ -1148,24 +1171,17 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
             <SegmentedControl
               variant="light"
               ariaLabel="结果区视图"
-              items={RESULT_TABS.map((t) => ({ id: t.id, label: t.label }))}
+              items={visibleResultTabs.map((t) => ({ id: t.id, label: t.label }))}
               value={resultTab}
               onChange={(id) => setResultTab(id as ResultPane)}
             />
             <div className="ew-result-body" data-pane={resultTab}>
-              {props.resultPanels?.[resultTab] ??
-                props.resultPanel ??
-                (resultTab === 'acceptance' ? (
-                  <EmptyState
-                    title="还没有可以验收的交付"
-                    hint="产物或文件变更出现后，在这里确认这一版。"
-                  />
-                ) : (
-                  <EmptyState
-                    title="还没有产物"
-                    hint="文档、表格、幻灯片等交付物生成后会自动收集到这里。"
-                  />
-                ))}
+              {props.resultPanels?.[resultTab] ?? props.resultPanel ?? (
+                <EmptyState
+                  title="还没有产物"
+                  hint="文档、表格、幻灯片等交付物生成后会自动收集到这里。"
+                />
+              )}
             </div>
           </aside>
         ) : null}
