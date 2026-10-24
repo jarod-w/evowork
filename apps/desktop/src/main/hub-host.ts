@@ -354,14 +354,14 @@ export function hubStatus(ports: HubHostPorts, runtime: HubRuntime): HubStatusVi
               ? 'auto'
               : 'manual-only';
   const last = runtime.last;
+  // 索引过期不在这里再报一条。括号里的时间是上次拉取时间，不是 expiresAt，
+  // 刚刷新成功也会显示「已过期」，而再刷新也消不掉。禁止新装落在条目状态和安装拒绝上。
   const warning =
     last?.status === 'rejected'
       ? `收到的目录没有通过校验，已丢弃，继续显示缓存：${last.reason}`
       : last?.status === 'unreachable'
         ? unreachableCopy(ports, index)
-        : index?.expired === true
-          ? `EvoWork 精选的目录已过期（更新于 ${formatTime(index.fetchedAt)}），暂时不能安装新内容`
-          : undefined;
+        : undefined;
   const caption = statusCaption(ports);
   return {
     configured: ports.source !== undefined,

@@ -1427,8 +1427,8 @@ const HUB_STATE_LABEL: Readonly<Record<HubEntryView['state'], string>> = {
 /**
  * 「EvoWork 精选」的状态条 + 来源筛选。
  *
- * warning（校验失败丢弃 / 连不上用缓存 / 目录过期）与 caption（为什么只有随包内容）都**常驻**，
- * 不是一闪而过的 Toast —— 「不静默降级」（5.6）。
+ * warning（校验失败丢弃 / 连不上用缓存）与 caption（为什么只有随包内容）都**常驻**，
+ * 不是一闪而过的 Toast —— 「不静默降级」（5.6）。索引过期不在这里再报一条。
  */
 function HubBar({
   hub,

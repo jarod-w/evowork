@@ -329,8 +329,10 @@ describe('安装（13 §5.3）', () => {
     now += 30 * 24 * 3600;
     const view = hubCatalogView(p, p.runtime);
     expect(view.entries[0]?.state).toBe('expired');
-    expect(view.status.warning).toMatch(/过期/);
-    expect((await installHubItem(p, { kind: 'skill', id: 'minutes' })).ok).toBe(false);
+    expect(view.status.warning).toBeUndefined();
+    const refused = await installHubItem(p, { kind: 'skill', id: 'minutes' });
+    expect(refused.ok).toBe(false);
+    expect(refused.refused).toMatch(/过期/);
   });
 
   it('5.5：Hub 发布随包技能的更高版本 → Hub 那份生效、随包那份停用；卸载后回落', async () => {
