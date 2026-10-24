@@ -748,6 +748,10 @@ describe('运行中的本次发送方式与回执', () => {
     sectionId: 'ungrouped',
   }));
   const startup = async () => ({ ...STARTUP, tasks });
+  const selectSteer = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: '本次发送方式' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /立即插话/ }));
+  };
 
   it('插话成功恢复排队，下一条按排队发送，反馈来自实际回执', async () => {
     const send = vi.fn(async (input: import('../src/shared/ipc.js').SendInput) => ({
@@ -757,7 +761,7 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge } = fakeBridge({ getStartup: startup, send });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    await selectSteer();
     const box = screen.getByLabelText('需求输入');
     fireEvent.change(box, { target: { value: '换个方向' } });
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
@@ -767,7 +771,7 @@ describe('运行中的本次发送方式与回执', () => {
     expect(send).toHaveBeenLastCalledWith(
       expect.objectContaining({ threadId: 'first', steer: true }),
     );
-    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
     expect(box).toHaveProperty('value', '');
     fireEvent.change(box, { target: { value: '完成后补一页' } });
     fireEvent.keyDown(box, { key: 'Enter' });
@@ -791,7 +795,7 @@ describe('运行中的本次发送方式与回执', () => {
     });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    await selectSteer();
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '改查上海' } });
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     await waitFor(() =>
@@ -800,7 +804,7 @@ describe('运行中的本次发送方式与回执', () => {
       ),
     );
     expect(screen.queryByText('已发送，正在调整方向')).toBeNull();
-    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
   });
 
   it('发送失败保留草稿和插话选择，重试成功后才重置', async () => {
@@ -811,18 +815,16 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge } = fakeBridge({ getStartup: startup, send });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    await selectSteer();
     const box = screen.getByLabelText('需求输入');
     fireEvent.change(box, { target: { value: '保留这条' } });
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     await screen.findByText('没能发出去：暂时断线');
     expect(box).toHaveProperty('value', '保留这条');
-    expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('button', { name: '立即插话' })).toBeTruthy();
     expect(screen.queryByLabelText('发送状态')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
-    await waitFor(() =>
-      expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy());
     expect(send).toHaveBeenCalledTimes(2);
   });
 
@@ -830,18 +832,18 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge, emit } = fakeBridge({ getStartup: startup });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    await selectSteer();
+    expect(screen.getByRole('button', { name: '立即插话' })).toBeTruthy();
     fireEvent.click(screen.getByText('second运行任务'));
-    await waitFor(() =>
-      expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy());
     fireEvent.click(screen.getByText('first运行任务'));
-    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
-    fireEvent.click(screen.getByRole('radio', { name: '立即插话' }));
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
+    await selectSteer();
+    expect(screen.getByRole('button', { name: '立即插话' })).toBeTruthy();
     act(() => emit.ui?.({ type: 'task-updated', taskId: 'first', status: 'idle' }));
-    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByRole('button', { name: '本次发送方式' })).toBeNull();
     act(() => emit.ui?.({ type: 'task-updated', taskId: 'first', status: 'running' }));
-    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
   });
 
   it('发送在途时不可重复提交，切任务后迟到的回执不改变新草稿与选择', async () => {
@@ -855,11 +857,11 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge } = fakeBridge({ getStartup: startup, send });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    fireEvent.click(await screen.findByRole('radio', { name: '立即插话' }));
+    await selectSteer();
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '旧消息' } });
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     expect(screen.getByRole('button', { name: '立即插话' })).toHaveProperty('disabled', true);
-    expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: '本次发送方式' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: '停止' })).toHaveProperty('disabled', false);
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
     expect(send).toHaveBeenCalledOnce();
@@ -867,7 +869,7 @@ describe('运行中的本次发送方式与回执', () => {
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '新任务草稿' } });
     await act(async () => finish({ threadId: 'first', steered: true }));
     expect(screen.getByLabelText('需求输入')).toHaveProperty('value', '新任务草稿');
-    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
     expect(screen.queryByLabelText('发送状态')).toBeNull();
   });
 });

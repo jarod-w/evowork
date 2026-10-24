@@ -28,6 +28,12 @@ describe('操作摘要', () => {
         completed: true,
       }),
     ).toBe('已运行 python business.py');
+    expect(
+      describeActivity({
+        type: 'commandExecution',
+        command: '/bin/bash -lc \'mkdir -p "$TMPDIR/evowork.mkt" && curl -s https://example.com\'',
+      }),
+    ).toBe('正在运行 mkdir -p "$TMPDIR/evowork.mkt" && curl -s https://example.com');
   });
   it('等待批准、失败与中断不能伪装成正常完成', () => {
     expect(activityState({ type: 'commandExecution', completed: true, exitCode: 1 })).toBe(

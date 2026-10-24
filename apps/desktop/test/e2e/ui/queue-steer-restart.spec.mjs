@@ -260,7 +260,8 @@ test('完整重启：无法证明接受的插话继续保留草稿和附件，�
     await c.page.getByRole('menuitem', { name: /添加本地文件/ }).click();
     await expect(c.page.locator('.ew-attachment[data-state="ready"]')).toHaveCount(1);
     await arm(c, 'turn/steer', 'drop-request');
-    await c.page.getByRole('radio', { name: '立即插话' }).check();
+    await c.page.getByRole('button', { name: '本次发送方式', exact: true }).click();
+    await c.page.getByRole('menuitem', { name: /立即插话/ }).click();
     await input(c.page).fill('UNKNOWN-STEER-NEVER-REPLAY');
     await input(c.page).press('Enter');
     await expect(c.page.getByText(/发送结果尚未确认/)).toBeVisible();

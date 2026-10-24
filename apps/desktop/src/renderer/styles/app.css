@@ -1859,6 +1859,42 @@ textarea {
   margin-left: 0;
   white-space: nowrap;
 }
+.ew-send-split {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: var(--layout-send-button-size);
+  border-radius: var(--r-full);
+}
+.ew-send-split-main {
+  padding: 0 var(--space-8) 0 var(--space-12);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ew-send-split-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--layout-send-button-size);
+  padding: 0 var(--space-8) 0 var(--space-6);
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  border-top-right-radius: var(--r-full);
+  border-bottom-right-radius: var(--r-full);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  font: inherit;
+  font-size: var(--font-caption-size);
+  cursor: pointer;
+}
+.ew-send-split-trigger[data-state='disabled'] {
+  background: var(--bg-selected);
+  color: var(--text-secondary);
+}
+.ew-send-split-trigger:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
 .ew-stop-button {
   display: inline-flex;
   align-items: center;

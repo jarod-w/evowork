@@ -5,6 +5,10 @@ test.use({ desktopEnv: { EVOWORK_UI_DELIVERY_RPC_FAULT: '1' } });
 const composer = (page) => page.getByLabel('输入区');
 const input = (page) => page.getByLabel('需求输入');
 const queue = (page) => page.getByLabel('排队中的追问');
+async function selectSteer(page) {
+  await page.getByRole('button', { name: '本次发送方式', exact: true }).click();
+  await page.getByRole('menuitem', { name: /立即插话/ }).click();
+}
 async function arm(app, method, kind, persistent = false) {
   await app.evaluate(
     (_, args) => globalThis.__evoworkE2E.deliveryFaults.arm(...args),
@@ -71,14 +75,14 @@ async function evidence(page, app, info, label) {
 test('拒绝：草稿、附件和插话选择保留，重试只接受一次', async ({ page, electronApp: app }, info) => {
   await begin(page, app);
   await attach(page, app, info);
-  await page.getByRole('radio', { name: '立即插话' }).check();
+  await selectSteer(page);
   await arm(app, 'turn/steer', 'reject');
   await input(page).fill('REJECT-RETRY');
   await input(page).press('Enter');
   await expect(page.getByText(/没能发出去：/)).toBeVisible();
   await expect(input(page)).toHaveValue('REJECT-RETRY');
   await expect(page.locator('.ew-attachment')).toHaveCount(1);
-  await expect(page.getByRole('radio', { name: '立即插话' })).toBeChecked();
+  await expect(page.getByRole('button', { name: '立即插话', exact: true })).toBeVisible();
   await input(page).press('Enter');
   await expect(page.getByLabel('发送状态')).toHaveText('已发送，正在调整方向');
   await expect(input(page)).toHaveValue('');
@@ -129,13 +133,13 @@ test('无法确认：保留草稿附件，重复发送只核对、不盲目重�
   await begin(page, app);
   await attach(page, app, info);
   await arm(app, 'turn/steer', 'drop-request');
-  await page.getByRole('radio', { name: '立即插话' }).check();
+  await selectSteer(page);
   await input(page).fill('UNKNOWN-REQUEST');
   await input(page).press('Enter');
   await expect(page.getByText(/发送结果尚未确认/)).toBeVisible();
   await expect(input(page)).toHaveValue('UNKNOWN-REQUEST');
   await expect(page.locator('.ew-attachment')).toHaveCount(1);
-  await expect(page.getByRole('radio', { name: '立即插话' })).toBeChecked();
+  await expect(page.getByRole('button', { name: '立即插话', exact: true })).toBeVisible();
   await input(page).press('Enter');
   await expect(page.getByText(/发送结果尚未确认/)).toHaveCount(1);
   await expect(page.getByRole('button', { name: '立即插话', exact: true })).toBeEnabled();
@@ -177,7 +181,7 @@ for (const mode of ['steer', 'queue']) {
     const marker = `COMPLETED-RACE-${mode}`;
     await hold(app, marker);
     await arm(app, mode === 'steer' ? 'turn/steer' : 'thread/queue/add', 'hold-request');
-    if (mode === 'steer') await page.getByRole('radio', { name: '立即插话' }).check();
+    if (mode === 'steer') await selectSteer(page);
     await input(page).fill(marker);
     await input(page).press('Enter');
     await expect.poll(async () => (await fault(app)).held).toBe(1);
@@ -268,7 +272,7 @@ test('插话已接受但核对故障：完成后沿用原身份核对，不会�
   await begin(page, app);
   await arm(app, 'turn/steer', 'drop-response');
   await arm(app, 'thread/items/list', 'reject', true);
-  await page.getByRole('radio', { name: '立即插话' }).check();
+  await selectSteer(page);
   await input(page).fill('STEER-ACCEPTED-UNKNOWN');
   await input(page).press('Enter');
   await expect(page.getByText(/发送结果尚未确认/)).toBeVisible();
@@ -316,7 +320,7 @@ test('结束竞态叠加队列不可用：本机降级消息直接进入新回�
   const marker = 'LOCAL-COMPLETED-RACE';
   await hold(app, marker);
   await arm(app, 'turn/steer', 'hold-request');
-  await page.getByRole('radio', { name: '立即插话' }).check();
+  await selectSteer(page);
   await input(page).fill(marker);
   await input(page).press('Enter');
   await expect.poll(async () => (await fault(app)).held).toBe(1);

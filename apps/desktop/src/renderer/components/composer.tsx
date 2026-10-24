@@ -1075,6 +1075,8 @@ export function Composer(props: ComposerProps) {
               blockedReason={!localControl && unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined}
               queuePosition={props.queuePosition}
               steer={props.steer}
+              onSteerChange={props.onSteerChange}
+              modeDisabled={props.environmentBusy}
               localCommand={Boolean(goalCommand || memoryCommand)}
               onSend={props.onSend}
               onInterrupt={props.onInterrupt}
@@ -1084,32 +1086,6 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
 
-      {/* 04 §5.5：只影响本次发送；停止与发送是独立动作。 */}
-      {runState === 'running' && !goalCommand && !memoryCommand ? (
-        <div className="ew-follow-up-options" role="radiogroup" aria-label="本次发送方式">
-          <label title="等待当前任务完成后处理这条消息。">
-            <input
-              type="radio"
-              name={`${completionListId}-follow-up`}
-              checked={!props.steer}
-              disabled={props.environmentBusy}
-              onChange={() => props.onSteerChange?.(false)}
-            />
-            排队发送
-          </label>
-          <label title="调整当前执行方向；已运行的动作不会撤销，在途工具可能需要先返回。">
-            <input
-              type="radio"
-              name={`${completionListId}-follow-up`}
-              checked={props.steer ?? false}
-              disabled={props.environmentBusy}
-              onChange={() => props.onSteerChange?.(true)}
-            />
-            立即插话
-          </label>
-          <span>仅本次发送，发送后恢复排队</span>
-        </div>
-      ) : null}
       {props.sendFeedback ? (
         <p className="ew-send-feedback" role="status" aria-label="发送状态">
           {props.sendFeedback}
@@ -1238,6 +1214,8 @@ function SendButton({
   blockedReason,
   queuePosition,
   steer,
+  onSteerChange,
+  modeDisabled,
   localCommand,
   onSend,
   onInterrupt,
@@ -1249,13 +1227,22 @@ function SendButton({
   readonly blockedReason?: string | undefined;
   readonly queuePosition?: number | undefined;
   readonly steer?: boolean | undefined;
+  readonly onSteerChange?: ((steer: boolean) => void) | undefined;
+  readonly modeDisabled?: boolean | undefined;
   readonly localCommand?: boolean | undefined;
   readonly onSend: () => void;
   readonly onInterrupt?: (() => void) | undefined;
   readonly onAddBudget?: (() => void) | undefined;
 }): ReactNode {
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (runState !== 'running' || localCommand || modeDisabled) {
+      setMenuOpen(false);
+    }
+  }, [runState, localCommand, modeDisabled]);
+
   if (runState === 'running') {
-    // 03 §4.6：运行中始终可停止；发送独立遵守草稿和附件的可用性。
+    // 03 §4.6 / 04 §5.5：运行中始终可停止；发送按钮采用组合按钮（[排队发送 | ▾]），不再在卡片外挂单选框行。
     return (
       <div className="ew-composer-run-actions">
         <button
@@ -1267,16 +1254,85 @@ function SendButton({
           {renderIcon('stop')}
           停止
         </button>
-        <button
-          type="button"
-          className="ew-send-button"
-          data-state={disabled ? 'disabled' : 'ready'}
-          disabled={disabled}
-          title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : blockedReason}
-          onClick={onSend}
-        >
-          {localCommand ? '发送' : steer ? '立即插话' : '排队发送'}
-        </button>
+        {localCommand ? (
+          <button
+            type="button"
+            className="ew-send-button"
+            data-state={disabled ? 'disabled' : 'ready'}
+            disabled={disabled}
+            title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : blockedReason}
+            onClick={onSend}
+          >
+            发送
+          </button>
+        ) : (
+          <span
+            className="ew-send-split"
+            data-state={disabled ? 'disabled' : 'ready'}
+            data-send-mode={steer ? 'steer' : 'queue'}
+          >
+            <button
+              type="button"
+              className="ew-send-button ew-send-split-main"
+              data-state={disabled ? 'disabled' : 'ready'}
+              disabled={disabled}
+              title={
+                parsing > 0
+                  ? `正在本地解析 ${parsing} 个文件…`
+                  : (blockedReason ??
+                    (steer
+                      ? '立即插话：仅本次发送，发送后恢复排队'
+                      : '排队发送：等待当前任务完成后处理'))
+              }
+              onClick={() => {
+                setMenuOpen(false);
+                onSend();
+              }}
+            >
+              {steer ? '立即插话' : '排队发送'}
+            </button>
+            <button
+              type="button"
+              className="ew-send-split-trigger"
+              aria-label="本次发送方式"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              data-state={disabled ? 'disabled' : 'ready'}
+              disabled={modeDisabled}
+              title={
+                steer
+                  ? '本次发送方式：立即插话（仅本次发送，发送后恢复排队）'
+                  : '本次发送方式：排队发送（等待当前任务完成后处理）'
+              }
+              onClick={() => setMenuOpen((value) => !value)}
+            >
+              <span aria-hidden="true">▾</span>
+            </button>
+            <Popover open={menuOpen} onClose={() => setMenuOpen(false)} align="end">
+              <Menu
+                ariaLabel="本次发送方式"
+                items={[
+                  {
+                    id: 'queue',
+                    label: '排队发送',
+                    checked: !steer,
+                    description: '等当前回合完成后处理',
+                  },
+                  {
+                    id: 'steer',
+                    label: '立即插话',
+                    checked: Boolean(steer),
+                    description: '仅本次发送，发送后恢复排队',
+                  },
+                ]}
+                onSelect={(id) => {
+                  setMenuOpen(false);
+                  onSteerChange?.(id === 'steer');
+                }}
+              />
+            </Popover>
+          </span>
+        )}
       </div>
     );
   }

@@ -828,13 +828,13 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
     prompt.mockRestore();
   });
 
-  it('运行中提供互斥的本次方式，默认排队，选择不会发送', () => {
+  it('运行中通过组合按钮切换本次发送方式，默认排队，选择不会直接发送', () => {
     const onSend = vi.fn();
     const onSteerChange = vi.fn();
     const { rerender } = render(
       <Composer value="补充要求" onChange={() => {}} onSend={onSend} runState="idle" />,
     );
-    expect(screen.queryByRole('radiogroup', { name: '本次发送方式' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '本次发送方式' })).toBeNull();
     rerender(
       <Composer
         value="补充要求"
@@ -844,12 +844,12 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
         onSteerChange={onSteerChange}
       />,
     );
-    expect(screen.getByRole('radio', { name: '排队发送' })).toHaveProperty('checked', true);
-    expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('checked', false);
-    fireEvent.click(screen.getByRole('radio', { name: '立即插话' }));
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '本次发送方式' }));
+    expect(screen.getByText('仅本次发送，发送后恢复排队')).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitem', { name: /立即插话/ }));
     expect(onSteerChange).toHaveBeenCalledWith(true);
     expect(onSend).not.toHaveBeenCalled();
-    expect(screen.getByText('仅本次发送，发送后恢复排队')).toBeTruthy();
   });
 
   it.each([false, true])('运行中发送与停止独立（插话=%s）', (steer) => {
@@ -891,7 +891,7 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
     expect(onSend).not.toHaveBeenCalled();
     expect(onInterrupt).toHaveBeenCalledOnce();
     if (over.environmentBusy)
-      expect(screen.getByRole('radio', { name: '立即插话' })).toHaveProperty('disabled', true);
+      expect(screen.getByRole('button', { name: '本次发送方式' })).toHaveProperty('disabled', true);
   });
 
   it('执行中按 Esc 中断（04 §5.5）', () => {

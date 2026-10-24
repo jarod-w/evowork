@@ -70,6 +70,19 @@ export function activityState(
     return 'failed';
   return item.completed === true || item.status === 'completed' ? 'completed' : 'running';
 }
+/**
+ * 剥离内核执行命令时外层包裹的 `/bin/bash -lc '...'` 或 `zsh -lc "..."`，
+ * 让过程摘要直接展示真实命令内容（展开详情里的 `$ ...` 仍保留原样）。
+ */
+export function unwrapShellCommand(raw: string): string {
+  const trimmed = raw.trim();
+  const match = trimmed.match(
+    /^(?:\/(?:usr\/)?bin\/)?(?:bash|zsh|sh)\s+-(?:l?c|cl)\s+(['"])([\s\S]*)\1$/u,
+  );
+  const body = match?.[2] ? match[2].trim() : trimmed;
+  return body.replace(/\s+/gu, ' ');
+}
+
 export function describeActivity(item: ActivityItem): string {
   const state = activityState(item);
   const prefix = state === 'running' ? '正在' : state === 'pending' ? '等待确认：' : '已';
@@ -88,7 +101,7 @@ export function describeActivity(item: ActivityItem): string {
       return `${prefix}查看目录${typeof action.path === 'string' ? ` ${action.path}` : ''}`;
     if (action?.type === 'search')
       return `${prefix}搜索文件${typeof action.query === 'string' ? `：${action.query}` : ''}`;
-    return `${prefix}运行 ${value(item, 'command') || '命令'}`;
+    return `${prefix}运行 ${unwrapShellCommand(value(item, 'command')) || '命令'}`;
   }
   const detail =
     value(item, 'progress') || value(item, 'query') || value(item, 'tool') || value(item, 'name');

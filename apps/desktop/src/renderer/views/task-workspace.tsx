@@ -546,7 +546,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
         }
         setApprovalInView(cards.every((card) => seen.get(card) === true));
       },
-      { root, threshold: 0.5 },
+      { root, threshold: 0.1 },
     );
     for (const card of cards) observer.observe(card);
     return () => observer.disconnect();
