@@ -73,14 +73,18 @@ const tables = db
   // FTS5 的影子表由虚拟表自己维护，往里直接写会把索引写坏
   .filter((t, _i, all) => !all.some((v) => /VIRTUAL TABLE/i.test(v.sql ?? '') && t.name.startsWith(v.name + '_')));
 
-function valueFor(table, column, index) {
+function valueFor(table, column, index, sql) {
   const lower = column.name.toLowerCase();
   if (lower in KNOWN) return KNOWN[lower];
   if (lower === 'id') return 'fx-' + table;
   if (lower.endsWith('_id')) return 'fx-' + lower.slice(0, -3);
   if (lower.endsWith('_at') || lower === 'first_seen' || lower === 'last_seen') return 1759000000000 + index;
   const type = (column.type ?? '').toUpperCase();
-  if (type.includes('INT')) return index + 1;
+  if (type.includes('INT')) {
+    // follow_up_control.paused 这类 CHECK(col IN (0,1)) 不能用递增整数
+    if ((sql ?? '').includes('CHECK(' + column.name + ' IN (0,1))')) return index % 2;
+    return index + 1;
+  }
   if (type.includes('REAL') || type.includes('FLOA') || type.includes('DOUB')) return index + 0.5;
   return 'fx-' + table + '-' + column.name;
 }
@@ -92,7 +96,7 @@ for (const table of tables) {
   // 自增主键让 sqlite 自己给；其余每一列都写，这样升级后能逐列核对
   const written = columns.filter((c) => !(c.pk === 1 && /INTEGER/i.test(c.type) && !virtual));
   const row = {};
-  written.forEach((c, i) => (row[c.name] = valueFor(table.name, c, i)));
+  written.forEach((c, i) => (row[c.name] = valueFor(table.name, c, i, table.sql)));
   const names = Object.keys(row);
   db.prepare(
     'INSERT INTO ' + table.name + ' (' + names.join(', ') + ') VALUES (' + names.map(() => '?').join(', ') + ')',
