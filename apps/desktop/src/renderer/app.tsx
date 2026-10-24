@@ -117,7 +117,12 @@ import { transcriptFileName, transcriptToMarkdown } from './views/thread-transcr
 import { renderIcon } from './components/icons.js';
 import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
-import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
+import {
+  ChangesView,
+  isBinaryOrLargeDiff,
+  type ChangedFile,
+  type DiffScope,
+} from './components/changes-view.js';
 import { FileTree } from './components/file-tree.js';
 import { newestActiveTask, summarizeWork } from './attention.js';
 import { FilePreview } from './components/file-preview.js';
@@ -2853,29 +2858,45 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ?.capabilities.find((capability) => capability.id === 'reasoning')?.available ?? true;
   const currentTurnId = activeTaskId === null ? undefined : latestTurnByTask[activeTaskId];
   const currentTurnDiff = activeTaskId === null ? undefined : turnDiffByTask[activeTaskId];
-  const changedFiles = useMemo(
+  const threadChangedFiles = useMemo(
     () =>
       currentResults.workspace
-        ? diffScope === 'thread'
-          ? currentResults.workspace.thread
-          : currentResults.workspace.turn
+        ? currentResults.workspace.thread
+        : changedFilesFromItems(currentItems, undefined, undefined, active?.cwd),
+    [active?.cwd, currentItems, currentResults.workspace],
+  );
+  const turnChangedFiles = useMemo(
+    () =>
+      currentResults.workspace
+        ? currentResults.workspace.turn
         : changedFilesFromItems(
             currentItems,
-            diffScope === 'turn' ? currentTurnId : undefined,
-            diffScope === 'turn' && currentTurnDiff?.turnId === currentTurnId
-              ? currentTurnDiff?.diff
-              : undefined,
+            currentTurnId,
+            currentTurnDiff?.turnId === currentTurnId ? currentTurnDiff?.diff : undefined,
             active?.cwd,
           ),
-    [
-      active?.cwd,
-      currentResults.workspace,
-      currentItems,
-      currentTurnDiff,
-      currentTurnId,
-      diffScope,
-    ],
+    [active?.cwd, currentItems, currentResults.workspace, currentTurnDiff, currentTurnId],
   );
+  const changedFiles = diffScope === 'thread' ? threadChangedFiles : turnChangedFiles;
+  const showDiffScopeToggle = useMemo(() => {
+    const turnCount = activeTaskId === null ? 0 : (turnsByTask[activeTaskId]?.length ?? 0);
+    if (turnCount > 1) return true;
+    if (diffScope === 'turn' && turnChangedFiles.length === 0 && threadChangedFiles.length > 0)
+      return true;
+    if (threadChangedFiles.length !== turnChangedFiles.length) return true;
+    if (threadChangedFiles.some((file) => !isBinaryOrLargeDiff(file))) return true;
+    return threadChangedFiles.some((file, index) => {
+      const other = turnChangedFiles[index];
+      return (
+        !other ||
+        file.path !== other.path ||
+        file.diff !== other.diff ||
+        file.added !== other.added ||
+        file.removed !== other.removed ||
+        file.reversible !== other.reversible
+      );
+    });
+  }, [activeTaskId, diffScope, threadChangedFiles, turnChangedFiles, turnsByTask]);
   // 项目目录里的既有文件只是「文件」Tab 可浏览的数据，不是当前任务的结果信号。
   // 否则一发送消息、任务进入 processing，目录读取完成就会把结果区提前撑开。
   // 只有任务产物索引或本轮 FileChange 才能证明这次确实产生/修改了文件。
@@ -2937,13 +2958,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       currentFiles.length > 0 ||
       hasDistinctWorkspaceFiles ||
       (Boolean(currentPreview) && currentPreview?.kind !== 'html' && !hasArtifacts);
+    const hasMeaningfulFileChanges = hasArtifacts
+      ? threadChangedFiles.some(
+          (file) =>
+            !artifactKeys.has(changePathKey(file.path, active?.cwd)) ||
+            (file.kind !== 'add' && (file.added > 0 || file.removed > 0)),
+        )
+      : threadChangedFiles.length > 0 ||
+        changedFiles.length > 0 ||
+        currentItems.some(
+          (item) =>
+            item.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0,
+        );
     const hasChanges =
-      changedFiles.length > 0 ||
-      (currentResults.workspace?.warnings.length ?? 0) > 0 ||
-      currentItems.some(
-        (item) =>
-          item.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0,
-      );
+      hasMeaningfulFileChanges || (currentResults.workspace?.warnings.length ?? 0) > 0;
     const hasBrowser = currentPreview?.kind === 'html';
 
     if (hasArtifacts || activeResultUi.tab === 'artifacts') tabs.push('artifacts');
@@ -2961,6 +2989,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     currentResults.artifacts,
     currentResults.workspace?.files,
     currentResults.workspace?.warnings.length,
+    threadChangedFiles,
   ]);
   const updateResultUi = useCallback(
     (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
@@ -4493,8 +4522,26 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 <ChangesView
                   files={changedFiles}
                   scope={diffScope}
+                  showScopeToggle={showDiffScopeToggle}
                   onScopeChange={setDiffScope}
                   selectedPath={selectedChangeByTask[activeTaskId]}
+                  onOpenFile={(path: string) => {
+                    const matchedArtifact = currentResults.artifacts.find(
+                      (artifact) =>
+                        changePathKey(artifact.path, active?.cwd) ===
+                        changePathKey(path, active?.cwd),
+                    );
+                    if (matchedArtifact) {
+                      openArtifact(matchedArtifact.id);
+                      return;
+                    }
+                    if (bridge.readTaskFilePreview) {
+                      void showPreview(
+                        () => bridge.readTaskFilePreview!({ threadId: activeTaskId, path }),
+                        'files',
+                      );
+                    }
+                  }}
                   {...(bridge.revertTaskFile
                     ? {
                         onRevert: (path: string, revision?: string, scope?: DiffScope) =>

@@ -1374,7 +1374,7 @@ describe('结果工作区真实接线', () => {
 
   it('有登记产物时默认落在「产物」并直接显示预览，同时按内容收敛无用标签', async () => {
     const readResultPreview = vi.fn(async () => ({
-      name: 'out.md',
+      name: 'out.xlsx',
       kind: 'text' as const,
       content: '直接预览正文',
     }));
@@ -1383,13 +1383,43 @@ describe('结果工作区真实接线', () => {
       readResultPreview,
       getTaskResults: async () => ({
         artifacts: [
-          { id: 'a1', name: 'out.md', path: '/w/out.md', version: 1, artifactType: 'document' },
+          {
+            id: 'a1',
+            name: 'out.xlsx',
+            path: '/w/out.xlsx',
+            version: 1,
+            artifactType: 'spreadsheet',
+          },
         ],
         workspace: {
           turnId: 'one',
-          thread: [],
-          turn: [],
-          files: [{ path: '/w/out.md', source: 'task' as const }],
+          thread: [
+            {
+              path: '/w/out.xlsx',
+              added: 0,
+              removed: 0,
+              diff: '二进制或较大文件内容已变化；可打开文件查看。',
+              kind: 'add' as const,
+              source: 'task' as const,
+              reversible: true,
+              revision: 'r1',
+              diffMode: 'net' as const,
+            },
+          ],
+          turn: [
+            {
+              path: '/w/out.xlsx',
+              added: 0,
+              removed: 0,
+              diff: '二进制或较大文件内容已变化；可打开文件查看。',
+              kind: 'add' as const,
+              source: 'task' as const,
+              reversible: true,
+              revision: 'r1',
+              diffMode: 'net' as const,
+            },
+          ],
+          files: [{ path: '/w/out.xlsx', source: 'task' as const }],
           warnings: [],
         },
       }),
@@ -1402,6 +1432,7 @@ describe('结果工作区真实接线', () => {
     expect(screen.queryByRole('tab', { name: '验收' })).toBeNull();
     expect(screen.queryByRole('tab', { name: '浏览器' })).toBeNull();
     expect(screen.queryByRole('tab', { name: '文件' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '变更' })).toBeNull();
   });
 
   it('助手交付措辞不再代替明确打开事件', async () => {

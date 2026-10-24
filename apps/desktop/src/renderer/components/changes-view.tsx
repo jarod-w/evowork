@@ -35,7 +35,20 @@ export interface ChangedFile {
 }
 
 export type DiffScope = 'turn' | 'thread';
-export type DiffLayout = 'unified' | 'split';
+
+const CHANGE_KIND_LABEL: Readonly<Record<string, string>> = Object.freeze({
+  add: '新增',
+  modify: '已修改',
+  delete: '已删除',
+});
+
+export function isBinaryOrLargeDiff(file: ChangedFile): boolean {
+  return (
+    file.added === 0 &&
+    file.removed === 0 &&
+    (file.diff === '' || file.diff.startsWith('二进制') || !/^[+-]/m.test(file.diff))
+  );
+}
 
 /** 撤销 = 动磁盘；回滚 = 只动对话。文案与这个映射绑死。 */
 export const REVERT_COPY = {
@@ -57,15 +70,17 @@ export interface ChangesViewProps {
   readonly files: readonly ChangedFile[];
   readonly scope: DiffScope;
   readonly onScopeChange: (scope: DiffScope) => void;
+  /** 单回合且本回合与全任务变更一致时可隐藏范围切换。默认显示。 */
+  readonly showScopeToggle?: boolean | undefined;
   /** 从时间线点某个修改/删除路径时，直接选中它的 diff。 */
   readonly selectedPath?: string | undefined;
+  readonly onOpenFile?: ((path: string) => void) | undefined;
   readonly onRevert?: ((path: string, revision?: string, scope?: DiffScope) => void) | undefined;
   readonly onRollback?: ((path: string) => void) | undefined;
 }
 
 export function ChangesView(props: ChangesViewProps) {
   const [selected, setSelected] = useState<string | null>(props.files[0]?.path ?? null);
-  const [layout, setLayout] = useState<DiffLayout>('unified');
   const [confirm, setConfirm] = useState<{
     kind: RevertKind;
     path: string;
@@ -84,65 +99,78 @@ export function ChangesView(props: ChangesViewProps) {
     }
   }, [props.files, props.selectedPath]);
 
+  const showScope = props.showScopeToggle ?? true;
+
   return (
     <div className="ew-changes-view">
-      <div className="ew-changes-toolbar">
-        <SegmentedControl
-          variant="light"
-          ariaLabel="变更范围"
-          value={props.scope}
-          items={[
-            { id: 'turn', label: '本回合' },
-            { id: 'thread', label: '本任务全部' },
-          ]}
-          onChange={(id) => props.onScopeChange(id as DiffScope)}
-        />
-        <SegmentedControl
-          variant="light"
-          ariaLabel="diff 视图"
-          value={layout}
-          items={[
-            { id: 'unified', label: '统一' },
-            { id: 'split', label: '并排' },
-          ]}
-          onChange={(id) => setLayout(id as DiffLayout)}
-        />
-      </div>
+      {showScope ? (
+        <div className="ew-changes-toolbar">
+          <SegmentedControl
+            variant="light"
+            ariaLabel="变更范围"
+            value={props.scope}
+            items={[
+              { id: 'turn', label: '本回合' },
+              { id: 'thread', label: '本任务全部' },
+            ]}
+            onChange={(id) => props.onScopeChange(id as DiffScope)}
+          />
+        </div>
+      ) : null}
 
       {props.files.length === 0 ? (
         <EmptyState title="当前范围没有文件变更" hint="可切换范围，查看其他回合的变更记录。" />
       ) : null}
 
       <ul className="ew-changed-files">
-        {props.files.map((file) => (
-          <li key={file.path}>
-            <button
-              type="button"
-              className="ew-changed-file"
-              data-selected={file.path === current?.path ? 'true' : undefined}
-              data-outside={file.outsideWorkspace ? 'true' : undefined}
-              onClick={() => setSelected(file.path)}
-            >
-              <span className="ew-changed-file-path" title={file.path}>
-                {file.displayPath ?? file.path}
-              </span>
-              {file.source === 'workspace' ? <span>来源待确认</span> : null}
-              {file.outsideWorkspace ? (
-                <span className="ew-changed-file-outside">工作空间之外</span>
-              ) : null}
-              <span className="ew-diff-added">+{file.added}</span>
-              <span className="ew-diff-removed">-{file.removed}</span>
-            </button>
-          </li>
-        ))}
+        {props.files.map((file) => {
+          const hasLineCounts = file.added > 0 || file.removed > 0;
+          const kindLabel = file.kind ? CHANGE_KIND_LABEL[file.kind] : undefined;
+          return (
+            <li key={file.path}>
+              <button
+                type="button"
+                className="ew-changed-file"
+                data-selected={file.path === current?.path ? 'true' : undefined}
+                data-outside={file.outsideWorkspace ? 'true' : undefined}
+                onClick={() => setSelected(file.path)}
+              >
+                <span className="ew-changed-file-path" title={file.path}>
+                  {file.displayPath ?? file.path}
+                </span>
+                {file.source === 'workspace' ? <span>来源待确认</span> : null}
+                {file.outsideWorkspace ? (
+                  <span className="ew-changed-file-outside">工作空间之外</span>
+                ) : null}
+                {hasLineCounts ? (
+                  <>
+                    <span className="ew-diff-added">+{file.added}</span>
+                    <span className="ew-diff-removed">-{file.removed}</span>
+                  </>
+                ) : kindLabel ? (
+                  <span className="ew-changed-file-kind">{kindLabel}</span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       {current ? (
-        <div className="ew-diff" data-layout={layout}>
+        <div className="ew-diff">
           {current.diffMode === 'history' ? (
             <p>按发生顺序展示变更记录，行数为累计编辑量。</p>
           ) : null}
-          <pre className="ew-diff-body">{current.diff}</pre>
+          {isBinaryOrLargeDiff(current) ? (
+            <div className="ew-diff-body ew-diff-body-notice">
+              <span>{current.diff}</span>
+              {props.onOpenFile && current.kind !== 'delete' ? (
+                <PillButton onClick={() => props.onOpenFile?.(current.path)}>打开预览</PillButton>
+              ) : null}
+            </div>
+          ) : (
+            <pre className="ew-diff-body">{current.diff}</pre>
+          )}
           <div className="ew-diff-actions">
             {props.onRevert && current.reversible ? (
               <PillButton
@@ -159,7 +187,10 @@ export function ChangesView(props: ChangesViewProps) {
               </PillButton>
             ) : null}
             {props.onRollback ? (
-              <PillButton onClick={() => setConfirm({ kind: 'rollback', path: current.path })}>
+              <PillButton
+                variant="ghost"
+                onClick={() => setConfirm({ kind: 'rollback', path: current.path })}
+              >
                 回滚到这个回合
               </PillButton>
             ) : null}

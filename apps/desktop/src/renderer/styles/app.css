@@ -3267,6 +3267,11 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   color: var(--warning-text);
   font-size: var(--font-micro-size);
 }
+.ew-changed-file-kind {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-caption-size);
+}
 .ew-diff-added {
   color: var(--success-text);
   font-size: var(--font-caption-size);
@@ -3283,6 +3288,15 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-family: var(--font-mono);
   font-size: var(--font-caption-size);
   overflow-x: auto;
+}
+.ew-diff-body-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  font-family: var(--font-cjk);
+  color: var(--text-secondary);
 }
 .ew-diff-actions {
   display: flex;

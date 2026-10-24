@@ -44,14 +44,42 @@ describe('文件列表与 diff', () => {
     );
   });
 
-  it('范围与视图两个切换都用**浅色**分段控件（决定已装内容怎么看）', () => {
+  it('范围切换用**浅色**分段控件，且不渲染无效果的「统一 / 并排」切换', () => {
     renderView();
     const variants = [...document.querySelectorAll('.ew-segmented')].map((n) =>
       n.getAttribute('data-variant'),
     );
-    expect(variants).toEqual(['light', 'light']);
+    expect(variants).toEqual(['light']);
     expect(screen.getByRole('tab', { name: '本任务全部' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '并排' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '并排' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '统一' })).toBeNull();
+  });
+
+  it('单回合且范围一致时可隐藏「本回合 / 本任务全部」切换', () => {
+    renderView({ showScopeToggle: false });
+    expect(screen.queryByRole('tab', { name: '本回合' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '本任务全部' })).toBeNull();
+  });
+
+  it('二进制或无行号统计的文件不显示 +0 / -0，并提供直接打开预览入口', () => {
+    const onOpenFile = vi.fn();
+    renderView({
+      files: [
+        {
+          path: '天津未来三天天气对比_20261025-1027.xlsx',
+          added: 0,
+          removed: 0,
+          kind: 'add',
+          diff: '二进制或较大文件内容已变化；可打开文件查看。',
+        },
+      ],
+      onOpenFile,
+    });
+    expect(screen.queryByText('+0')).toBeNull();
+    expect(screen.queryByText('-0')).toBeNull();
+    expect(screen.getByText('新增')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '打开预览' }));
+    expect(onOpenFile).toHaveBeenCalledWith('天津未来三天天气对比_20261025-1027.xlsx');
   });
 
   it('空态解释这里会出现什么，而不是「暂无数据」', () => {

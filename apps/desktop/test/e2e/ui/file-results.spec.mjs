@@ -183,6 +183,7 @@ test('代码重复修改展示任务和回合完整净差异，默认页签、�
   await expect(diff).toContainText("-const title = 'before';");
   await expect(diff).not.toContainText('middle');
   await expect(diff).toContainText("+const title = 'after';");
+  await expect(page.getByRole('tab', { name: '并排', exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: '本回合', exact: true }).click();
   await expect(page.locator('.ew-changed-files > li')).toHaveCount(1);
   await expect(diff).toContainText("-const title = 'before';");
@@ -197,10 +198,11 @@ test('代码重复修改展示任务和回合完整净差异，默认页签、�
   );
   await page.getByLabel('需求输入').fill('再修改一次');
   await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.getByText(/^E2E response \d+$/)).toBeVisible();
+  await expect
+    .poll(() => readFileSync(join(workspace, 'app.ts'), 'utf8'))
+    .toContain("const title = 'final';");
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
   await expect(page.locator('.ew-result-pane')).toHaveCount(0);
-  expect(readFileSync(join(workspace, 'app.ts'), 'utf8')).toContain("const title = 'final';");
   await page.getByRole('button', { name: '打开结果', exact: true }).click();
   await expect(page.getByRole('tab', { name: '变更', exact: true })).toHaveAttribute(
     'aria-selected',
