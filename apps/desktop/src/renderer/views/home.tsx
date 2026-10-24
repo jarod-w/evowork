@@ -14,6 +14,8 @@
  */
 import { useCallback, useEffect } from 'react';
 
+import type { AttentionItem, HomePulse } from '../attention.js';
+import { AttentionList } from '../components/attention-list.js';
 import { Composer, type ComposerProps, type SelectOption } from '../components/composer.js';
 import { renderIcon } from '../components/icons.js';
 import { Banner, FilterChipRow, ScenarioChip } from '../components/primitives.js';
@@ -91,6 +93,15 @@ export interface HomeProps {
    */
   readonly notices?:
     readonly { readonly tone: 'info' | 'warning' | 'danger'; readonly text: string }[] | undefined;
+  /**
+   * 已经有任务或自动化时，首页先给状态，不再只留一句问候。
+   * 不传则保持第一次打开的空白首页。
+   */
+  readonly pulse?: HomePulse | undefined;
+  readonly attention?: readonly AttentionItem[] | undefined;
+  readonly onOpenAttention?: ((item: AttentionItem) => void) | undefined;
+  readonly onOpenRunning?: (() => void) | undefined;
+  readonly onOpenAutomations?: (() => void) | undefined;
 }
 
 export function Home(props: HomeProps) {
@@ -126,8 +137,14 @@ export function Home(props: HomeProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [chips, writePrompt, onPickFile]);
 
+  const returning = props.pulse?.hasHistory === true;
+  const attention = props.attention ?? [];
+  const waiting = props.pulse?.waiting ?? 0;
+  const running = props.pulse?.running ?? 0;
+  const paused = props.pulse?.pausedAutomations ?? 0;
+
   return (
-    <div className="ew-home">
+    <div className="ew-home" data-returning={returning ? 'true' : undefined}>
       {/* hiddenInset 没有系统标题栏；这条空白带负责把首页顶部交给窗口拖动。 */}
       <div className="ew-home-titlebar" aria-hidden="true" />
 
@@ -143,10 +160,56 @@ export function Home(props: HomeProps) {
           </Banner>
         ))}
 
-        <div className="ew-home-primary">
-          <h1 className="ew-hero">{props.heroLine}</h1>
+        {returning ? (
+          <section className="ew-home-status" role="region" aria-label="当前工作">
+            <div className="ew-home-pulse">
+              <button
+                type="button"
+                className="ew-home-pulse-item"
+                disabled={running === 0}
+                onClick={props.onOpenRunning}
+              >
+                <span>进行中</span>
+                <strong>{running}</strong>
+              </button>
+              <button
+                type="button"
+                className="ew-home-pulse-item"
+                disabled={waiting === 0}
+                onClick={() => {
+                  const first = attention.find((item) => item.kind !== 'automation');
+                  if (first) props.onOpenAttention?.(first);
+                }}
+              >
+                <span>等你处理</span>
+                <strong>{waiting}</strong>
+              </button>
+              <button
+                type="button"
+                className="ew-home-pulse-item"
+                disabled={paused === 0}
+                onClick={props.onOpenAutomations}
+              >
+                <span>自动化已暂停</span>
+                <strong>{paused}</strong>
+              </button>
+            </div>
+            {attention.length > 0 && props.onOpenAttention ? (
+              <AttentionList items={attention} onOpen={props.onOpenAttention} />
+            ) : (
+              <p className="ew-home-quiet">现在没有需要你处理的事。下面可以直接开始新的需求。</p>
+            )}
+          </section>
+        ) : null}
 
-          {props.value.trim() === '' && chips.length > 0 ? (
+        <div className="ew-home-primary">
+          {returning ? (
+            <h2 className="ew-home-continue">新的需求</h2>
+          ) : (
+            <h1 className="ew-hero">{props.heroLine}</h1>
+          )}
+
+          {!returning && props.value.trim() === '' && chips.length > 0 ? (
             <FilterChipRow ariaLabel="快捷建议">
               {chips.map((chip, index) => (
                 <ScenarioChip

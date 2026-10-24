@@ -1186,7 +1186,7 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(screen.getByRole('searchbox', { name: '搜索聊天' })).toBeTruthy();
 
     fireEvent.keyDown(window, { key: 'o', metaKey: true, shiftKey: true });
-    expect(await screen.findByText('有什么可以帮忙的？')).toBeTruthy();
+    expect(await screen.findByRole('region', { name: '当前工作' })).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: '搜索聊天' })).toBeNull();
 
     fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true });
@@ -1239,8 +1239,8 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(within(dialog).getByText('新聊天')).toBeTruthy();
     expect(within(dialog).getByText('打开文件夹')).toBeTruthy();
     expect(within(dialog).getByText('搜索文件')).toBeTruthy();
-    // 浮层打开时，当前首页没有被搜索页替换。
-    expect(screen.getByText('有什么可以帮忙的？')).toBeTruthy();
+    // 浮层打开时，当前首页没有被搜索页替换。已有任务时首页先给出工作状态。
+    expect(screen.getByRole('region', { name: '当前工作' })).toBeTruthy();
 
     fireEvent.change(within(dialog).getByLabelText('搜索聊天'), {
       target: { value: '片段' },

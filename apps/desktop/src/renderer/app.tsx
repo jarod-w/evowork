@@ -1,5 +1,4 @@
 import type { AttachmentTextInput, InstallAttachmentSkillInput } from '../shared/ipc.js';
-import { SkillInstallDialog } from './components/skill-install-dialog.js';
 import type { LibraryActions, LibraryDocumentInput } from '../shared/ipc.js';
 import type {
   ImageSettingsView,
@@ -120,7 +119,10 @@ import { createMermaidRenderer } from './components/mermaid-renderer.js';
 import type { RenderItem } from './components/item-renderers.js';
 import { ChangesView, type ChangedFile, type DiffScope } from './components/changes-view.js';
 import { FileTree } from './components/file-tree.js';
+import { newestActiveTask, summarizeWork } from './attention.js';
+import { AcceptancePanel } from './components/acceptance-panel.js';
 import { FilePreview } from './components/file-preview.js';
+import { SkillInstallDialog } from './components/skill-install-dialog.js';
 import {
   shouldAutoDismiss,
   ToastStack,
@@ -1973,9 +1975,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     setResultUi((previous) => {
       const current = previous[activeTaskId];
       if (current?.open === true) return previous;
+      // 第一次因产物打开结果区时落在验收，而不是文件列表。用户随后选过的标签保留。
       return {
         ...previous,
-        [activeTaskId]: { open: true, tab: current?.tab ?? 'artifacts' },
+        [activeTaskId]: { open: true, tab: current?.tab ?? 'acceptance' },
       };
     });
   }, [activeTaskId, bridge, itemsByTask, resultDismissed, taskResults]);
@@ -1999,13 +2002,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then((next) => setShares(next ?? { rows: [] }))
         .catch(() => setShares({ rows: [] }));
     }
-    if (view === 'automations') {
+    if (view === 'automations' || (view === 'task' && activeTaskId === null)) {
       void bridge
         .getAutomations()
         .then(setAutomations)
         .catch(() => setAutomations(null));
     }
-    if (view === 'audit')
+    if (view === 'audit' || (view === 'task' && activeTaskId === null))
       void bridge
         .getAudit()
         .then(setAudit)
@@ -2056,7 +2059,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         .then(setMemorySettingsView)
         .catch(() => setMemorySettingsView(null));
     }
-  }, [view, activeProjectId, bridge, applyAccessView]);
+  }, [view, activeProjectId, activeTaskId, bridge, applyAccessView]);
 
   // Codex 在后台整理记忆；个性化页打开时自动跟进，不要求用户退出再进。
   useEffect(() => {
@@ -2854,12 +2857,40 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       (item) =>
         item.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0,
     );
+  const work = useMemo(
+    () =>
+      summarizeWork({
+        tasks,
+        approvals,
+        goals: Object.values(goalsByTask).filter(
+          (goal): goal is NonNullable<typeof goal> => goal !== undefined,
+        ),
+        audits: audit?.records ?? [],
+        automations: automations?.automations ?? [],
+      }),
+    [approvals, audit, automations, goalsByTask, tasks],
+  );
+  const openAttention = useCallback(
+    (item: { threadId?: string | undefined; automationId?: string | undefined }) => {
+      afterSettingsGuard(() => {
+        if (item.automationId) {
+          setView('automations');
+          return;
+        }
+        if (!item.threadId) return;
+        draftIdentity.current = crypto.randomUUID();
+        setActiveTaskId(item.threadId);
+        setViewDirect('task');
+      });
+    },
+    [afterSettingsGuard, setView],
+  );
   const activeResultUi =
     activeTaskId === null
       ? { open: false, tab: 'artifacts' as ResultPane }
       : (resultUi[activeTaskId] ?? {
           open: hasCurrentResults,
-          tab: (currentResults.artifacts.length > 0 ? 'artifacts' : 'changes') as ResultPane,
+          tab: (currentResults.artifacts.length > 0 ? 'acceptance' : 'changes') as ResultPane,
         });
   const updateResultUi = useCallback(
     (patch: Partial<{ open: boolean; tab: ResultPane }>) => {
@@ -3702,6 +3733,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ) : (
         <Sidebar
           tasks={tasks}
+          attention={work.items}
+          onOpenAttention={openAttention}
           sections={[]}
           selectedId={view === 'task' ? (activeTaskId ?? undefined) : undefined}
           activeNavId={navIdForView(view, activeTaskId)}
@@ -4189,6 +4222,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onScenarioChange={setScenarioId}
           cases={startup?.cases}
           notices={notices}
+          pulse={work.pulse}
+          attention={work.items}
+          onOpenAttention={openAttention}
+          onOpenRunning={() => {
+            const task = newestActiveTask(tasks);
+            if (task) openAttention({ threadId: task.id });
+          }}
+          onOpenAutomations={() => setView('automations')}
           composer={composer}
           value={draft}
           onChange={changeDraft}
@@ -4398,6 +4439,26 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           onResultTabChange={(tab) => updateResultUi({ tab })}
           resultPanels={{
+            acceptance: (
+              <AcceptancePanel
+                threadId={activeTaskId}
+                status={active?.status ?? 'idle'}
+                artifacts={currentResults.artifacts}
+                files={changedFiles.map((file) => ({ path: file.displayPath ?? file.path }))}
+                notes={currentResults.workspace?.warnings ?? []}
+                blocked={work.items.filter(
+                  (item) =>
+                    item.threadId === activeTaskId &&
+                    (item.kind === 'approval' || item.kind === 'budget' || item.kind === 'blocked'),
+                )}
+                onOpenArtifact={openArtifact}
+                onShowChanges={() => updateResultUi({ open: true, tab: 'changes' })}
+                onRequestChanges={() => {
+                  setDraft('这一版先不接受。请按验收里列出的差异继续改。');
+                  document.querySelector<HTMLTextAreaElement>('.ew-composer-textarea')?.focus();
+                }}
+              />
+            ),
             artifacts:
               currentResults.artifacts.length > 0 ? (
                 <div className="ew-result-preview-stack">

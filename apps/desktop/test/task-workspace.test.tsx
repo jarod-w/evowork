@@ -184,7 +184,7 @@ describe('结果区（04 §1）', () => {
     const { container } = renderWorkspace({ hasResults: true });
     const segmented = container.querySelector('.ew-segmented');
     expect(segmented?.getAttribute('data-variant')).toBe('light');
-    for (const label of ['产物', '文件', '变更', '浏览器']) {
+    for (const label of ['验收', '产物', '文件', '变更', '浏览器']) {
       expect(screen.getByRole('tab', { name: label })).toBeTruthy();
     }
   });
@@ -488,6 +488,19 @@ describe('审批：**内联在时间线上，不是模态**（04 §5.3）', () =
     const card = container.querySelector('.ew-content-column .ew-approval-card');
     expect(card, '审批卡应在内容列里（内联），不是挂在 body 上的模态').not.toBeNull();
     expect(screen.getByText('有 1 项待你确认')).toBeTruthy();
+  });
+
+  it('别的任务上的批准不画进当前对话', () => {
+    renderWorkspace({
+      taskId: 'here',
+      pendingApprovals: [
+        { ...approval, threadId: 'here' },
+        { ...approval, id: 'apv_other', threadId: 'there', reason: '会删掉别的任务里的文件' },
+      ],
+    });
+    expect(screen.getByText('有 1 项待你确认')).toBeTruthy();
+    expect(screen.queryByText('会删掉别的任务里的文件')).toBeNull();
+    expect(screen.getByText('会联网安装软件包')).toBeTruthy();
   });
 
   it('决定沿着 onDecide 往上传（带 approval id）', () => {

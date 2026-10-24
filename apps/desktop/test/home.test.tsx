@@ -105,6 +105,37 @@ describe('克制的空白首页（类 ChatGPT UI §8）', () => {
   });
 });
 
+describe('已经有工作之后的首页', () => {
+  it('先给出进行中和待处理，问候不再占满首屏，点待办能回去', () => {
+    const onOpenAttention = vi.fn();
+    render(
+      <Harness
+        over={{
+          pulse: { hasHistory: true, running: 1, waiting: 1, pausedAutomations: 0 },
+          attention: [
+            {
+              id: 'approval:t',
+              kind: 'approval',
+              title: '报销单',
+              detail: '将运行一条本机命令',
+              threadId: 't',
+            },
+          ],
+          onOpenAttention,
+        }}
+      />,
+    );
+    expect(screen.queryByRole('heading', { name: 'EvoWork，我帮你' })).toBeNull();
+    expect(screen.getByRole('region', { name: '当前工作' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '新的需求' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /报销单/ }));
+    expect(onOpenAttention).toHaveBeenCalledWith(expect.objectContaining({ threadId: 't' }));
+    expect(document.querySelector('.ew-home-primary')?.lastElementChild).toBe(
+      document.querySelector('.ew-composer'),
+    );
+  });
+});
+
 describe('场景切换时的取值（03 §2.5）', () => {
   it('**用户改过的控件保留用户的值**，其余回落新场景默认值', () => {
     const next = applyScenarioDefaults(

@@ -28,6 +28,8 @@ import {
 
 import { BRAND } from '@evowork/tokens';
 
+import type { AttentionItem } from '../attention.js';
+import { AttentionList } from '../components/attention-list.js';
 import { renderIcon } from '../components/icons.js';
 import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
 import {
@@ -126,6 +128,9 @@ export type RowAction =
 
 export interface SidebarProps {
   readonly tasks: readonly TaskRow[];
+  /** 离开当前任务后仍要能点到的待办。空则不占侧栏。 */
+  readonly attention?: readonly AttentionItem[] | undefined;
+  readonly onOpenAttention?: ((item: AttentionItem) => void) | undefined;
   readonly sections: readonly TaskSection[];
   readonly selectedId?: string | undefined;
   readonly onSelect?: ((id: string) => void) | undefined;
@@ -493,6 +498,13 @@ export function Sidebar(props: SidebarProps) {
             />
           ))}
         </div>
+
+        {(props.attention?.length ?? 0) > 0 && props.onOpenAttention ? (
+          <section className="ew-attention" aria-label="待处理">
+            <p className="ew-attention-heading">待处理</p>
+            <AttentionList items={props.attention ?? []} onOpen={props.onOpenAttention} />
+          </section>
+        ) : null}
 
         <section
           className="ew-sidebar-projects"

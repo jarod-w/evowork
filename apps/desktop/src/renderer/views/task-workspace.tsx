@@ -80,9 +80,10 @@ export const STATUS_VIEW: Readonly<
   idle: { label: '还没有开始', badge: 'neutral', tone: 'muted', breathing: false },
 });
 
-export type ResultPane = 'artifacts' | 'files' | 'changes' | 'browser';
+export type ResultPane = 'acceptance' | 'artifacts' | 'files' | 'changes' | 'browser';
 
 const RESULT_TABS = [
+  { id: 'acceptance', label: '验收' },
   { id: 'artifacts', label: '产物' },
   { id: 'files', label: '文件' },
   { id: 'changes', label: '变更' },
@@ -518,6 +519,13 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   }, [props.focusItemId, props.items]);
 
   const failureSummary = props.turnFailure?.text;
+  const visibleApprovals = useMemo(
+    () =>
+      props.taskId === undefined
+        ? props.pendingApprovals
+        : props.pendingApprovals.filter((approval) => approval.threadId === props.taskId),
+    [props.pendingApprovals, props.taskId],
+  );
   useEffect(() => {
     const node = conversationRef.current;
     if (!node) return;
@@ -527,11 +535,11 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     } else {
       setHasNewContent(true);
     }
-  }, [props.items, props.pendingApprovals.length, failureSummary]);
+  }, [props.items, visibleApprovals.length, failureSummary]);
 
   const approvalsById = useMemo(
-    () => new Map(props.pendingApprovals.map((a) => [a.id, a])),
-    [props.pendingApprovals],
+    () => new Map(visibleApprovals.map((a) => [a.id, a])),
+    [visibleApprovals],
   );
   const mountedItems = useMemo(() => {
     let start = Math.max(0, props.items.length - visibleCount);
@@ -860,7 +868,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           >
             {/* z-400 吸顶条（10 §3.5）：用户可能在别的页面，回来时要能立刻看到有待确认 */}
             <PendingApprovalBar
-              count={props.pendingApprovals.length}
+              count={visibleApprovals.length}
               onJump={() => {
                 document.querySelector('.ew-approval-card')?.scrollIntoView({ block: 'center' });
               }}
@@ -910,7 +918,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                 </PillButton>
               ) : null}
               {props.items.length === 0 &&
-              props.pendingApprovals.length === 0 &&
+              visibleApprovals.length === 0 &&
               !props.historyLoading &&
               props.status === 'idle' ? (
                 <EmptyState
@@ -1049,7 +1057,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                 <ApprovalCard
                   key={approval.id}
                   approval={approval}
-                  autoFocus={approval.id === props.pendingApprovals[0]?.id}
+                  autoFocus={approval.id === visibleApprovals[0]?.id}
                   onDecide={(decision) => props.onDecide(approval.id, decision)}
                   {...(props.onAnswer
                     ? { onAnswer: (answer) => props.onAnswer?.(approval.id, answer) }
@@ -1119,12 +1127,19 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               onChange={(id) => setResultTab(id as ResultPane)}
             />
             <div className="ew-result-body" data-pane={resultTab}>
-              {props.resultPanels?.[resultTab] ?? props.resultPanel ?? (
-                <EmptyState
-                  title="还没有产物"
-                  hint="文档、表格、幻灯片等交付物生成后会自动收集到这里。"
-                />
-              )}
+              {props.resultPanels?.[resultTab] ??
+                props.resultPanel ??
+                (resultTab === 'acceptance' ? (
+                  <EmptyState
+                    title="还没有可以验收的交付"
+                    hint="产物或文件变更出现后，在这里确认这一版。"
+                  />
+                ) : (
+                  <EmptyState
+                    title="还没有产物"
+                    hint="文档、表格、幻灯片等交付物生成后会自动收集到这里。"
+                  />
+                ))}
             </div>
           </aside>
         ) : null}
