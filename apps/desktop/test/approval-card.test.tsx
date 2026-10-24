@@ -29,16 +29,38 @@ function approval(over: Partial<ApprovalViewModel> = {}): ApprovalViewModel {
 }
 
 describe('命令审批卡（10 §3.2）', () => {
-  it('先显示影响、范围、原因，命令收在技术详情里', () => {
-    const { container } = render(<ApprovalCard approval={approval()} onDecide={() => {}} />);
-    const text = container.querySelector('.ew-approval-card')?.textContent ?? '';
-    expect(text.indexOf('影响')).toBeLessThan(text.indexOf('范围'));
-    expect(text.indexOf('范围')).toBeLessThan(text.indexOf('原因'));
+  it('原因直接作为正文主文案，影响收为头部标签，命令收在技术详情里', () => {
+    render(
+      <ApprovalCard
+        approval={approval({
+          impact: '需要联网',
+          reason: '要查今天美股的真实收盘数据，需要联网访问行情接口。是否允许？',
+        })}
+        onDecide={() => {}}
+      />,
+    );
+    expect(screen.getByText('本机命令')).toBeTruthy();
+    expect(screen.getByText('需要联网')).toBeTruthy();
+    // 原因末尾自带的「是否允许？」被剥离，不与卡片标题重复
+    expect(screen.getByText('要查今天美股的真实收盘数据，需要联网访问行情接口。')).toBeTruthy();
     expect(screen.getByText(/目录：~\/work\/weekly/)).toBeTruthy();
-    expect(screen.getByText('这个命令会从网络安装软件包')).toBeTruthy();
     expect(screen.queryByText(/pip install openpyxl/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '查看技术详情' }));
     expect(screen.getByText(/pip install openpyxl/)).toBeTruthy();
+  });
+
+  it('默认沙箱 UUID 目录不在主卡片展示，收在技术详情里', () => {
+    render(
+      <ApprovalCard
+        approval={approval({
+          cwd: '/Users/wangli/.evowork/workspaces/78191451-8ed0-45ee-8c68-9da07d84e0ca',
+        })}
+        onDecide={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/78191451-8ed0-45ee-8c68-9da07d84e0ca/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看技术详情' }));
+    expect(screen.getByText(/78191451-8ed0-45ee-8c68-9da07d84e0ca/)).toBeTruthy();
   });
 
   it('**理由缺失时显式说明缺失**，而不是留空（没有理由的审批等于让用户瞎点）', () => {
@@ -278,9 +300,13 @@ describe('待确认吸顶条（10 §3.5）', () => {
     expect(screen.queryByText(/全部允许/)).toBeNull();
   });
 
-  it('没有待审批时整条不渲染', () => {
+  it('没有待审批或待审批卡已在视口内时整条不渲染', () => {
     const { container } = render(<PendingApprovalBar count={0} onJump={() => {}} />);
     expect(container.firstChild).toBeNull();
+    const { container: inViewContainer } = render(
+      <PendingApprovalBar count={1} inView onJump={() => {}} />,
+    );
+    expect(inViewContainer.firstChild).toBeNull();
   });
 });
 
@@ -417,20 +443,20 @@ describe('追问审批卡（item/tool/requestUserInput）', () => {
  * 进程**写输入，说成「将运行一条本机命令」是描述错了 —— 用户点的是一个他没看懂的东西。
  */
 describe('命令审批卡分得清 command 与 writeStdin', () => {
-  it('writeStdin 不说成"运行一条命令"', () => {
+  it('writeStdin 不说成"本机命令"', () => {
     render(
       <ApprovalCard
         approval={approval({ kind: 'command', commandKind: 'writeStdin' } as never)}
         onDecide={() => {}}
       />,
     );
-    expect(document.body.textContent).toContain('将向正在运行的程序输入内容');
-    expect(document.body.textContent).not.toContain('将运行一条本机命令');
+    expect(document.body.textContent).toContain('向运行中程序输入');
+    expect(document.body.textContent).not.toContain('本机命令');
   });
 
-  it('普通命令仍然是"运行一条本机命令"', () => {
+  it('普通命令标为"本机命令"', () => {
     render(<ApprovalCard approval={approval({ kind: 'command' })} onDecide={() => {}} />);
-    expect(document.body.textContent).toContain('将运行一条本机命令');
+    expect(document.body.textContent).toContain('本机命令');
   });
 });
 

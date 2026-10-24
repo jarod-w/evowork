@@ -526,6 +526,31 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
         : props.pendingApprovals.filter((approval) => approval.threadId === props.taskId),
     [props.pendingApprovals, props.taskId],
   );
+  const [approvalInView, setApprovalInView] = useState(false);
+  useEffect(() => {
+    const root = conversationRef.current;
+    if (!root || visibleApprovals.length === 0 || typeof IntersectionObserver === 'undefined') {
+      setApprovalInView(false);
+      return;
+    }
+    const cards = [...root.querySelectorAll('.ew-approval-card')];
+    if (cards.length === 0) {
+      setApprovalInView(false);
+      return;
+    }
+    const seen = new Map<Element, boolean>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          seen.set(entry.target, entry.isIntersecting);
+        }
+        setApprovalInView(cards.every((card) => seen.get(card) === true));
+      },
+      { root, threshold: 0.5 },
+    );
+    for (const card of cards) observer.observe(card);
+    return () => observer.disconnect();
+  }, [visibleApprovals]);
   useEffect(() => {
     const node = conversationRef.current;
     if (!node) return;
@@ -866,9 +891,10 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               if (followOutputRef.current) setHasNewContent(false);
             }}
           >
-            {/* z-400 吸顶条（10 §3.5）：用户可能在别的页面，回来时要能立刻看到有待确认 */}
+            {/* z-400 吸顶条（10 §3.5）：用户可能在别的页面或滚走了，回来时要能立刻看到有待确认；卡片已在当前视口时自动收起 */}
             <PendingApprovalBar
               count={visibleApprovals.length}
+              inView={approvalInView}
               onJump={() => {
                 document.querySelector('.ew-approval-card')?.scrollIntoView({ block: 'center' });
               }}

@@ -51,7 +51,7 @@ test('审批卡：点允许之后，命令真的执行了', async ({ page, elect
    * "执行内核没有给出理由"。看到那句兜底文案就说明理由真的丢了 ——
    * 而用户正是靠这句话决定点不点允许的，留空就是"让用户瞎点"的开始。
    */
-  await expect(card).toContainText('原因');
+  await expect(card).toContainText('真交互测试：验证点了允许之后命令真的会执行');
   await expect(card).not.toContainText('执行内核没有给出理由');
 
   // ③ 展开技术详情，用户能看见到底要执行什么（看不见就是在盲签）

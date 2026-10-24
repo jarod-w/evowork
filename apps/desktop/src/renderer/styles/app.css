@@ -1376,31 +1376,24 @@ textarea {
 .ew-approval-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-8);
 }
 
-.ew-approval-step {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--font-caption-size);
-  font-weight: var(--font-caption-weight);
+.ew-approval-header-main,
+.ew-approval-impact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-6);
 }
 
-.ew-approval-impact,
-.ew-approval-scope,
-.ew-approval-reason {
+.ew-approval-scope {
   display: grid;
   gap: var(--space-4);
 }
 
-.ew-approval-impact {
-  padding: var(--space-12);
-  border: 1px solid var(--warning);
-  border-radius: var(--r-12);
-  background: var(--warning-weak);
-}
-
-.ew-approval-impact p,
 .ew-approval-scope p,
 .ew-approval-reason p {
   margin: 0;
@@ -1420,11 +1413,15 @@ textarea {
   white-space: pre-wrap;
   word-break: break-all;
 }
+.ew-approval-reason {
+  margin: 0;
+  color: var(--text-primary);
+}
 .ew-approval-cwd,
-.ew-approval-reason,
 .ew-approval-purpose {
   margin: 0;
   color: var(--text-secondary);
+  font-size: var(--font-caption-size);
 }
 .ew-approval-changes li {
   display: flex;
@@ -1441,8 +1438,19 @@ textarea {
 }
 .ew-approval-actions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-8);
   flex-wrap: wrap;
+}
+.ew-approval-actions-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+.ew-approval-tech-toggle {
+  margin-left: auto;
 }
 /* 一组追问里的每一道题。题与题之间要分得开，否则读起来像一段话 */
 .ew-approval-one-question {

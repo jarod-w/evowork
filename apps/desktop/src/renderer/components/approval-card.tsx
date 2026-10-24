@@ -69,6 +69,35 @@ export interface ApprovalViewModel {
 /** 命令超长时的截断长度。**只截尾部，不省略中间**。 */
 const COMMAND_PREVIEW_LIMIT = 160;
 
+/**
+ * 系统为未绑定文件夹的任务自动分配的默认沙箱目录（`~/.evowork/workspaces/<uuid>`）。
+ * 在主卡片上展示这串 UUID 对用户没有决策价值，收进「查看技术详情」即可；
+ * 用户绑定的真实目录或非默认路径仍在卡片正文直接展示。
+ */
+const DEFAULT_SANDBOX_CWD_RE =
+  /(?:^|[\\/])\.evowork[\\/]workspaces[\\/][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[\\/]|$)/i;
+
+export function isDefaultSandboxCwd(cwd: string | undefined): boolean {
+  if (!cwd) return true;
+  return DEFAULT_SANDBOX_CWD_RE.test(cwd.trim());
+}
+
+/**
+ * 模型写的 `justification` 常在末尾自带一句「是否允许？」，与卡片标题「需要你确认」及底部按钮重复。
+ * 仅在前面已有完整说明时剥离末尾冗余反问，保留正文语义。
+ */
+export function cleanApprovalReason(raw: string): string {
+  const trimmed = raw.trim();
+  const stripped = trimmed.replace(
+    /([。！？.!?]|[，,；;\s]+)(?:请确认)?(?:是否允许|允许吗|是否同意|要允许吗)[？?。!！]*$/u,
+    (_match, lead: string, offset: number) => {
+      if (offset === 0) return _match;
+      return /^[。！？.!?]$/.test(lead) ? lead : '。';
+    },
+  );
+  return stripped.trim();
+}
+
 function CommandBody({ approval }: { readonly approval: ApprovalViewModel }) {
   const [full, setFull] = useState(false);
   const command = approval.command ?? '';
@@ -148,7 +177,9 @@ export function ApprovalCard({
     approval.kind === 'userInput' || (approval.kind === 'mcp' && !approval.toolCall);
   const confirmationForm =
     approval.kind === 'mcp' && approval.options?.some((option) => option.id === 'confirm');
-  const dangerous = (approval.changes ?? []).some((c) => c.kind === 'delete');
+  const dangerous =
+    (approval.changes ?? []).some((c) => c.kind === 'delete') ||
+    (approval.impact?.includes('删除') ?? false);
   // 清单没查到时按"不知道改了什么"说，不说"0 个文件"
   const fileImpact = approval.changes
     ? `将改动 ${approval.changes.length} 个文件`
@@ -158,21 +189,46 @@ export function ApprovalCard({
     if (autoFocus) cardRef.current?.focus();
   }, [autoFocus]);
 
-  const impact =
+  const impactBadges: {
+    readonly label: string;
+    readonly variant: 'neutral' | 'warning' | 'danger';
+  }[] =
     approval.kind === 'command'
-      ? // writeStdin 是往**已经在跑的进程**写输入，说成"运行一条命令"是错的
-        approval.commandKind === 'writeStdin'
-        ? '将向正在运行的程序输入内容'
-        : approval.impact
-          ? `将运行一条本机命令 · ${approval.impact}`
-          : '将运行一条本机命令'
+      ? [
+          // writeStdin 是往**已经在跑的进程**写输入，说成"运行命令"是错的
+          approval.commandKind === 'writeStdin'
+            ? { label: '向运行中程序输入', variant: 'warning' as const }
+            : { label: '本机命令', variant: 'neutral' as const },
+          ...(approval.impact
+            ? approval.impact
+                .split(/[、·]/)
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .map((label) => ({
+                  label,
+                  variant: (label.includes('删除') ? 'danger' : 'warning') as 'warning' | 'danger',
+                }))
+            : []),
+        ]
       : approval.kind === 'fileChange'
-        ? fileImpact
+        ? [{ label: fileImpact, variant: dangerous ? 'danger' : 'warning' }]
         : approval.kind === 'permissions'
-          ? '将扩大这个任务可访问的范围'
+          ? [{ label: '扩大访问范围', variant: 'warning' }]
           : approval.kind === 'mcp' && approval.toolCall
-            ? (approval.impact ?? '将让连接器执行一个操作')
-            : '需要你的回答才能继续';
+            ? [{ label: approval.impact ?? '将让连接器执行一个操作', variant: 'warning' }]
+            : [];
+
+  const rawReason =
+    (approval.kind === 'permissions' ? (approval.purpose ?? approval.reason) : approval.reason) ??
+    approval.purpose ??
+    '执行内核没有给出理由 —— 这本身值得警惕，建议先拒绝。';
+  const displayReason = cleanApprovalReason(rawReason);
+  const showCommandCwd = approval.kind === 'command' && !isDefaultSandboxCwd(approval.cwd);
+  const hasScope =
+    showCommandCwd ||
+    approval.kind === 'fileChange' ||
+    (approval.kind === 'mcp' && Boolean(approval.toolCall)) ||
+    approval.kind === 'permissions';
 
   return (
     <section
@@ -186,13 +242,24 @@ export function ApprovalCard({
       data-tone={dangerous ? 'danger' : 'warning'}
     >
       <header className="ew-approval-header">
-        <strong>{isQuestion && !confirmationForm ? '需要你回答' : '需要你确认'}</strong>
-        {approval.unattended ? (
-          // 定时任务的审批超时 10 分钟自动拒绝（10 §3.6）——必须在卡上说清楚
-          <Badge variant="warning">无人值守 · 10 分钟后自动取消</Badge>
-        ) : null}
-        {approval.waitedMs !== undefined && approval.waitedMs >= 30 * 60_000 ? (
-          <Badge variant="neutral">已等待 {Math.floor(approval.waitedMs / 60_000)} 分钟</Badge>
+        <div className="ew-approval-header-main">
+          <strong>{isQuestion && !confirmationForm ? '需要你回答' : '需要你确认'}</strong>
+          {approval.unattended ? (
+            // 定时任务的审批超时 10 分钟自动拒绝（10 §3.6）——必须在卡上说清楚
+            <Badge variant="warning">无人值守 · 10 分钟后自动取消</Badge>
+          ) : null}
+          {approval.waitedMs !== undefined && approval.waitedMs >= 30 * 60_000 ? (
+            <Badge variant="neutral">已等待 {Math.floor(approval.waitedMs / 60_000)} 分钟</Badge>
+          ) : null}
+        </div>
+        {!isQuestion && impactBadges.length > 0 ? (
+          <div className="ew-approval-impact">
+            {impactBadges.map((badge, index) => (
+              <Badge key={`${badge.label}-${index}`} variant={badge.variant}>
+                {badge.label}
+              </Badge>
+            ))}
+          </div>
         ) : null}
       </header>
 
@@ -291,71 +358,65 @@ export function ApprovalCard({
         </div>
       ) : (
         <>
-          <div className="ew-approval-impact">
-            <span className="ew-approval-step">影响</span>
-            <strong>{impact}</strong>
-          </div>
-          <div className="ew-approval-scope">
-            <span className="ew-approval-step">范围</span>
-            {approval.kind === 'command' ? (
-              <p>{approval.cwd ? `目录：${approval.cwd}` : '当前项目目录'}</p>
-            ) : null}
-            {approval.kind === 'fileChange' ? <FileChangeBody approval={approval} /> : null}
-            {approval.kind === 'mcp' && approval.toolCall ? (
-              <ul>
-                {approval.toolCall.scope.map((line, index) => (
-                  <li key={`s${index}`}>{line}</li>
-                ))}
-              </ul>
-            ) : null}
-            {approval.kind === 'permissions' ? (
-              <ul>
-                {(approval.paths ?? []).map((entry, index) => (
-                  <li key={`p${index}`}>
-                    {entry.path} · {entry.access}
-                  </li>
-                ))}
-                {(approval.networkTargets ?? []).map((target, index) => (
-                  <li key={`n${index}`}>{target} · HTTPS</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-          {/* 「为什么需要确认」是必填的（10 §3.2）。缺失时**显式说明缺失** ——
+          {/* 「为什么需要确认」是必填的（10 §3.2），直接作为正文主文案呈现。缺失时**显式说明缺失** ——
               留空会让用户以为这次审批没有理由，那正是"让用户瞎点"的开始 */}
-          <p className="ew-approval-reason">
-            <span className="ew-approval-step">原因</span>
-            {(approval.kind === 'permissions'
-              ? (approval.purpose ?? approval.reason)
-              : approval.reason) ??
-              approval.purpose ??
-              '执行内核没有给出理由 —— 这本身值得警惕，建议先拒绝。'}
-          </p>
+          <p className="ew-approval-reason">{displayReason}</p>
+          {hasScope ? (
+            <div className="ew-approval-scope">
+              {showCommandCwd ? <p className="ew-approval-cwd">目录：{approval.cwd}</p> : null}
+              {approval.kind === 'fileChange' ? <FileChangeBody approval={approval} /> : null}
+              {approval.kind === 'mcp' && approval.toolCall ? (
+                <ul>
+                  {approval.toolCall.scope.map((line, index) => (
+                    <li key={`s${index}`}>{line}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {approval.kind === 'permissions' ? (
+                <ul>
+                  {(approval.paths ?? []).map((entry, index) => (
+                    <li key={`p${index}`}>
+                      {entry.path} · {entry.access}
+                    </li>
+                  ))}
+                  {(approval.networkTargets ?? []).map((target, index) => (
+                    <li key={`n${index}`}>{target} · HTTPS</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
           <footer className="ew-approval-actions">
-            {/* 范围最小化：默认按钮是"允许这一次"（10 §3.4） */}
-            <PillButton variant="accent" onClick={() => onDecide('accept')}>
-              允许这一次
-            </PillButton>
-            {approval.allowAcceptForSession ? (
-              <PillButton onClick={() => onDecide('acceptForSession')}>本次任务内都允许</PillButton>
-            ) : null}
-            <PillButton onClick={() => onDecide('decline')}>拒绝</PillButton>
-            {/* Cancel 与 Decline 要分清：前者结束整个动作（10 §3.1） */}
-            <PillButton variant="ghost" onClick={() => onDecide('cancel')}>
-              结束这个动作
-            </PillButton>
-          </footer>
-          {approval.kind === 'command' ? (
-            <div className="ew-approval-technical">
+            <div className="ew-approval-actions-primary">
+              {/* 范围最小化：默认按钮是"允许这一次"（10 §3.4） */}
+              <PillButton variant="accent" onClick={() => onDecide('accept')}>
+                允许这一次
+              </PillButton>
+              {approval.allowAcceptForSession ? (
+                <PillButton onClick={() => onDecide('acceptForSession')}>
+                  本次任务内都允许
+                </PillButton>
+              ) : null}
+              <PillButton onClick={() => onDecide('decline')}>拒绝</PillButton>
+              {/* Cancel 与 Decline 要分清：前者结束整个动作（10 §3.1） */}
+              <PillButton variant="ghost" onClick={() => onDecide('cancel')}>
+                结束这个动作
+              </PillButton>
+            </div>
+            {approval.kind === 'command' ? (
               <button
                 type="button"
-                className="ew-item-action"
+                className="ew-item-action ew-approval-tech-toggle"
                 aria-expanded={technicalOpen}
                 onClick={() => setTechnicalOpen((value) => !value)}
               >
                 {technicalOpen ? '收起技术详情' : '查看技术详情'}
               </button>
-              {technicalOpen ? <CommandBody approval={approval} /> : null}
+            ) : null}
+          </footer>
+          {approval.kind === 'command' && technicalOpen ? (
+            <div className="ew-approval-technical">
+              <CommandBody approval={approval} />
             </div>
           ) : null}
         </>
@@ -367,17 +428,20 @@ export function ApprovalCard({
 /**
  * 待确认吸顶条（10 §3.5）。
  *
- * 审批卡内联在时间线上，但用户可能在别的页面 —— 所以对话区顶部要有 `z-400` 的吸顶条。
+ * 审批卡内联在时间线上，但用户可能在别的页面或滚走了 —— 所以对话区顶部要有 `z-400` 的吸顶条；
+ * 当待确认卡本身已经在当前可视区内时自动收起，避免屏幕上同时出现两处「需要你确认」。
  * **多个待审批按到达顺序逐个处理，不做"全部允许"**（10 §3.5 最后一句）。
  */
 export function PendingApprovalBar({
   count,
+  inView = false,
   onJump,
 }: {
   readonly count: number;
+  readonly inView?: boolean | undefined;
   readonly onJump: () => void;
 }) {
-  if (count === 0) return null;
+  if (count === 0 || inView) return null;
   return (
     <div className="ew-approval-bar" role="status">
       <span>有 {count} 项待你确认</span>
