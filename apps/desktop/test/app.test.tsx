@@ -3390,7 +3390,62 @@ describe('项目页接线（Task 13）', () => {
  * 以及**设置页改完密钥之后 Composer 的下拉跟着变**（两处用的是同一份目录 ——
  * 各拉一次的话，"设置里明明有这个模型、下拉里却没有"会变成一次没人能复现的排查）。
  */
+it('服务启动中先显示可编辑的主界面，禁止提前发送，就绪后保留草稿', async () => {
+  let release!: (info: StartupInfo) => void;
+  const { bridge } = fakeBridge({
+    getStartup: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  });
+  render(<App bridge={bridge} />);
+  const input = screen.getByLabelText('需求输入');
+  fireEvent.change(input, { target: { value: '启动时写好的内容' } });
+  expect(screen.getByText('正在准备本机服务…')).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^发送$/ })).toHaveProperty('disabled', true);
+  await act(async () => {
+    release(STARTUP);
+  });
+  await waitFor(() => expect(screen.queryByText('正在准备本机服务…')).toBeNull());
+  expect(input).toHaveProperty('value', '启动时写好的内容');
+});
+
 describe('设置页（11 §4.4）', () => {
+  it('后台验证中不误报未安装，完成通知自动刷新设置状态', async () => {
+    let progress!: Parameters<EvoworkBridge['onRuntimeProgress']>[0];
+    const status = vi.fn().mockResolvedValue({
+      installed: false,
+      missing: [],
+      supported: true,
+      checking: true,
+      bundled: true,
+    });
+    const { bridge } = fakeBridge({
+      getRuntimeStatus: status,
+      onRuntimeProgress: (handler) => {
+        progress = handler;
+        return () => undefined;
+      },
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    fireEvent.click(await screen.findByRole('button', { name: '关于与更新' }));
+    expect(await screen.findByText('正在后台验证办公组件，可以继续使用其他功能…')).toBeTruthy();
+    expect(screen.queryByText('还没有安装。Word / Excel / PPT / PDF 的处理要用它。')).toBeNull();
+    status.mockResolvedValue({
+      installed: true,
+      missing: [],
+      supported: true,
+      checking: false,
+      bundled: true,
+    });
+    await act(async () => {
+      progress({ phase: 'done', label: '检查完成', percent: 100 });
+    });
+    expect(await screen.findByText('已安装，与这个版本要求的组件一致。')).toBeTruthy();
+  });
+
   it('启动时办公组件初始化失败，进入设置能读到原因并手动修复', async () => {
     const { bridge } = fakeBridge({
       getRuntimeStatus: async () => ({

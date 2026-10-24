@@ -2048,10 +2048,20 @@ function OfficeRuntimeBlock(props: SettingsPageProps) {
     body = (
       <Banner
         tone="danger"
-        action={<PillButton onClick={props.onInstallRuntime}>重新安装</PillButton>}
+        action={
+          <PillButton onClick={props.onInstallRuntime}>
+            {runtime.bundled ? '重新验证' : '重新安装'}
+          </PillButton>
+        }
       >
         {props.runtimeError}
       </Banner>
+    );
+  } else if (runtime.checking) {
+    body = (
+      <p className="ew-settings-note" role="status">
+        正在后台验证办公组件，可以继续使用其他功能…
+      </p>
     );
   } else if (!runtime.supported) {
     body = <p className="ew-settings-note">这台电脑的架构没有对应的办公扩展。</p>;

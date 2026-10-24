@@ -961,6 +961,10 @@ export interface ApprovalView {
  * 而不是让用户从头装一遍。
  */
 export interface RuntimeStatusView {
+  /** 后台验证中，不能当作未安装。 */
+  readonly checking?: boolean | undefined;
+  /** 正式包直接使用随包组件，修复入口重新验证。 */
+  readonly bundled?: boolean | undefined;
   /** 启动自动部署或修复失败的原因，保留到下次部署，供设置页显示。 */
   readonly error?: string | undefined;
   readonly installed: boolean;

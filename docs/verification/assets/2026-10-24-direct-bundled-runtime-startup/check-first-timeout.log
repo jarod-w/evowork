@@ -1,0 +1,28 @@
+ ✓ |desktop| test/goal-command.test.ts (1 test) 2ms
+ ✓ |desktop| test/computer-use-model.test.ts (1 test) 2ms
+ ✓ |desktop| test/early-events.test.ts (3 tests) 2ms
+ ✓ |desktop| test/logout-keeps-local-rows.test.ts (1 test) 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |skill-documents| test/render.test.ts > PDF 由本机 LibreOffice 转出（2026-10-22：经与预览转换器相同的隔离） > 假 soffice 按预览那组参数写出带 %PDF 头的文件
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/render.test.ts:246:28
+    244| `;
+    245|
+    246|   it.runIf(hasDocx && onMac)('假 soffice 按预览那组参数写出带 %PDF 头的文件', () => {
+       |                            ^
+    247|     const result = run(DOC, 'out.pdf', [], { EVOWORK_OFFICE_CONVERTER:…
+    248|     expect(result.status, result.stderr).toBe(EXIT.ok);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 207 passed | 1 skipped (209)
+      Tests  1 failed | 3406 passed | 2 skipped (3409)
+   Start at  19:18:57
+   Duration  123.97s (transform 4.46s, setup 4.18s, collect 10.29s, tests 185.79s, environment 18.75s, prepare 7.32s)
+
+ ELIFECYCLE  Test failed. See above for more details.
+ ELIFECYCLE  Command failed with exit code 1.

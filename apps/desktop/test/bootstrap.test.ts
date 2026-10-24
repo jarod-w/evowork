@@ -162,6 +162,47 @@ beforeEach(() => {
 
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
+it('主界面先加载，服务就绪前 IPC 等待，握手后才执行动作', async () => {
+  const electron = fakeElectron();
+  const host = fakeHost();
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let loaded = false;
+  const createWindow = electron.createWindow;
+  const start = vi.spyOn(host, 'start').mockImplementation(async () => {
+    expect(loaded).toBe(true);
+    await ready;
+  });
+  const booting = bootstrap({
+    electron: {
+      ...electron,
+      createWindow: (options) => {
+        const window = createWindow(options);
+        return {
+          ...window,
+          loadFile: async () => {
+            loaded = true;
+          },
+        };
+      },
+    },
+    appServerPath: '/fake/app-server',
+    preloadPath: '/fake/preload.js',
+    rendererHtmlPath: '/fake/index.html',
+    createHost: () => host,
+  });
+  await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+  const sending = handlers.get('evowork:send')!(null, { text: 'hello' });
+  await Promise.resolve();
+  expect(host.actions.send).not.toHaveBeenCalled();
+  release();
+  await booting;
+  await sending;
+  expect(host.actions.send).toHaveBeenCalledTimes(1);
+});
+
 describe('窗口安全参数（R5）', () => {
   it('五项全开且方向正确', async () => {
     await boot();

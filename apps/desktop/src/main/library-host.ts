@@ -45,6 +45,8 @@ export async function createLibraryHost(options: {
   readonly openPath: (path: string) => Promise<void>;
   readonly runtimeRoot?: string | undefined;
   readonly extract?: typeof extractLibraryBody;
+  readonly interpreter?: () => string | undefined;
+  readonly ready?: () => Promise<void>;
   readonly quotaBytes?: number | undefined;
 }) {
   const home = await realpath(options.home);
@@ -181,6 +183,8 @@ export async function createLibraryHost(options: {
               note: '图片仅按文件名可搜；选择“识别文字”才会读取图片内容。',
             });
           } else {
+            if (/\.(pdf|docx|xlsx|pptx)$/i.test(path)) await options.ready?.();
+            const interpreter = options.interpreter?.();
             if (record.ocrAllowed && (image || extname(path) === '.pdf')) {
               try {
                 verifyOcrRuntime(runtimeRoot);
@@ -189,6 +193,7 @@ export async function createLibraryHost(options: {
               }
               state(id, { state: 'ocr' });
               const processor = createOcrProcessor({
+                ...(interpreter ? { interpreter } : {}),
                 runtimeRoot,
                 cacheRoot: join(home, 'cache', 'ingest'),
               });
@@ -232,6 +237,7 @@ export async function createLibraryHost(options: {
             } else if (!result) {
               state(id, { state: 'extracting' });
               result = await (options.extract ?? extractLibraryBody)({
+                ...(interpreter ? { interpreter } : {}),
                 path,
                 signal: abort.signal,
               });

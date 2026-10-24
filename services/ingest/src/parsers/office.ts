@@ -75,6 +75,7 @@ function parserEnv(): NodeJS.ProcessEnv {
   env.NO_PROXY = '*';
   env.no_proxy = '*';
   env.PYTHONNOUSERSITE = '1';
+  env.PYTHONDONTWRITEBYTECODE = '1';
   return env;
 }
 

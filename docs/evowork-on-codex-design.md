@@ -536,7 +536,7 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 
 **K6 登记：办公运行时随包分发（2026-10-24 修订）**。
 
-办公 Python、全部依赖与静态中文字体在构建机器上安装并验收，完整可搬运目录进入 `.app/Contents/Resources/office/runtime/`，随 DMG/ZIP 分发。首次启动在内核就绪前自动将随包成品复制到本机 staging（仅缺少办公运行时且没有管理员解释器覆盖时），设置保留手动修复/重新安装入口；部署时校验清单、平台、模块版本和字体后原子换入 `~/.evowork/runtime/office/`。不运行 pip、不处理字体、不下载任何依赖；随包资源缺失、损坏或架构不符时明确报错，不回退网络安装。应用资源只读，用户数据不写进 `.app`。
+办公 Python、全部依赖与静态中文字体在构建机器上安装并验收，完整可搬运目录进入 `.app/Contents/Resources/office/runtime/`，随 DMG/ZIP 分发。正式应用直接使用随包解释器，不复制整套运行时到用户目录。先加载主界面，宿主启动与办公组件验证在后台进行；验证用单个异步 Python 子进程核对平台、清单、模块版本与字体并预热可写字体缓存，结果在会话内复用。验证中与失败状态在设置中明确展示，验证失败可重试，资源损坏需重新安装应用；不影响普通文本任务。办公文件解析等待同一份验证结果，解析、预览和内核技能使用同一路径。不运行 pip、不处理字体、不下载任何依赖；随包资源缺失、损坏或架构不符时明确报错，不回退网络安装。应用资源只读，用户数据不写进 `.app`。
 
 上游下载与 pip 仅用于构建/显式开发安装：`github.com`（固定 CPython 资产及 sha256）、清华 PyPI 镜像（固定包版本）；可从既有离线 wheel 包构建。构建按目标平台/架构分别执行并验证搬迁后仍可运行，禁止将普通 `.venv` 直接打包。`services/ingest` 保持整个 src 目录不出网。OCR 仍是独立可选扩展，未随办公运行时捆绑。
 
@@ -799,7 +799,7 @@ EvoWork 保留默认开启、默认排除外部上下文的产品选择；后者
 **v0.4 修订（三条，依据 F11 与 08 §4/§5.3）**：
 
 1. **内核 `artifact_type` 只有 `presentation` / `document` / `spreadsheet` / `pdf`，没有 `chart`**（`core-plugins/src/artifact_operation.rs:24-49`）。因此 `charts` 技能没有内核类型可对齐，EvoWork 自建 9 类产物类型体系：`document` / `spreadsheet` / `presentation` / `pdf` / `chart` / `image` / `webpage` / `data` / `archive`（08 §2.3）。`chart` 与 `image` 都可能是 png，**靠信号源而不是扩展名区分**。
-2. **解析运行时按档位分发**（2026-10-24：办公运行时完整随包，OCR 独立）：基础包（TXT/MD/CSV/TSV/ZIP/JSON + **Noto Sans SC 中文字体**，随主程序）· 办公运行时（自包含 Python + 已安装的办公依赖 + 静态中文字体，随主程序分发，首次使用仅本地复制与验收）· OCR 扩展（本机首版已实现：固定 Tesseract 5.5.1 + tessdata_fast 简中/英文及方向数据，PDF 渲染复用办公扩展的 pypdfium2/Pillow，见 [16 §14](design/16-ocr-and-library-search.md)；原 ~60MB/80 MiB 仅预算，可搬运发行包与官方下载地址尚未发布）。办公能力默认离线部署；OCR 按独立发行包管理。**产物生成技能与解析管道共用同一档位**，提示文案必须统一（08 §4）；图片 OCR 与 PDF OCR 的依赖分别说明。办公运行时与字体均在构建时准备，用户部署不依赖 GitHub 或 PyPI 镜像。
+2. **解析运行时按档位分发**（2026-10-24：办公运行时完整随包，OCR 独立）：基础包（TXT/MD/CSV/TSV/ZIP/JSON + **Noto Sans SC 中文字体**，随主程序）· 办公运行时（自包含 Python + 已安装的办公依赖 + 静态中文字体，随主程序分发，直接使用随包解释器，后台异步验收）· OCR 扩展（本机首版已实现：固定 Tesseract 5.5.1 + tessdata_fast 简中/英文及方向数据，PDF 渲染复用办公扩展的 pypdfium2/Pillow，见 [16 §14](design/16-ocr-and-library-search.md)；原 ~60MB/80 MiB 仅预算，可搬运发行包与官方下载地址尚未发布）。办公能力默认离线部署；OCR 按独立发行包管理。**产物生成技能与解析管道共用同一档位**，提示文案必须统一（08 §4）；图片 OCR 与 PDF OCR 的依赖分别说明。办公运行时与字体均在构建时准备，用户部署不依赖 GitHub 或 PyPI 镜像。
 3. **结构化生成原则（R4 的主要缓解手段）**：模型的输出不是 pptx/docx 本体、也不是 python 代码，而是一份**受 JSON Schema 约束的内容 JSON**；排版、字号、留白、配色由 `render.py` 按模板库完成。理由：轻量档模型（Q16 的 GLM-5.3-flash）在"生成 python-pptx 代码"上失败率高，在"填受约束 JSON"上可靠得多。每个技能必须带 JSON Schema，校验失败把具体错误回给模型让它修一次，而不是直接失败（08 §5.3）。
 
 **输入侧（解析上传文件）**——`UserInput` 只支持 Text / Image / Audio，因此：

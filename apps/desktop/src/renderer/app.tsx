@@ -1653,14 +1653,22 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   /**
    * 办公扩展：进来先探一次，安装进度订阅整个会话都在。
    *
-   * 初次部署由宿主在启动时完成；设置中的修复操作使用同一份状态和进度。
+   * 宿主在后台验证；首次读取与完成事件共用同一份缓存状态。
    */
   useEffect(() => {
     void bridge
       .getRuntimeStatus()
       .then(setRuntime)
       .catch(() => setRuntime(null));
-    return bridge.onRuntimeProgress(setRuntimeProgress);
+    return bridge.onRuntimeProgress((progress) => {
+      setRuntimeProgress(progress.phase === 'done' ? undefined : progress);
+      if (progress.phase === 'done') {
+        void bridge
+          .getRuntimeStatus()
+          .then(setRuntime)
+          .catch(() => undefined);
+      }
+    });
   }, [bridge]);
 
   /** 在线升级：进来先取一次，之后跟着主进程推（下载进度、自动检查的结果都走这里） */
@@ -3521,9 +3529,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setCatalogTab('skills');
         setView('catalog');
       },
-      ...(modelAccess?.policyPack?.status === 'expired' && modelAccess.policyPack.message
-        ? { sendLockedReason: modelAccess.policyPack.message }
-        : {}),
+      ...(!startup
+        ? {
+            startupPending: !failure,
+            sendLockedReason: failure ? '本机服务启动失败，请重新启动应用。' : '正在准备本机服务…',
+          }
+        : modelAccess?.policyPack?.status === 'expired' && modelAccess.policyPack.message
+          ? { sendLockedReason: modelAccess.policyPack.message }
+          : {}),
       /*
        * 03 §8：模型不可用 → danger 条 + 禁用发送，**不换一个模型继续**。
        * 没配模型：下一动作是去设置页添加，再 fetch 一次解决不了。
@@ -3589,6 +3602,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       steer,
       sendFeedback,
       sendReason,
+      failure,
       workspaceId,
       reportFailure,
       startup,

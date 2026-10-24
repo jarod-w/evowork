@@ -25,6 +25,8 @@ interface Source {
 export function createAttachmentTextHost(options: {
   readonly home: string;
   readonly runtimeRoot: string;
+  readonly interpreter?: () => string | undefined;
+  readonly ready?: () => Promise<void>;
 }) {
   const records = new Map<string, Source>(),
     jobs = new Map<string, AbortController>();
@@ -98,7 +100,10 @@ export function createAttachmentTextHost(options: {
     void (async () => {
       await save(record);
       try {
+        await options.ready?.();
+        const interpreter = options.interpreter?.();
         const result = await createOcrProcessor({
+          ...(interpreter ? { interpreter } : {}),
           runtimeRoot: options.runtimeRoot,
           cacheRoot: join(options.home, 'cache', 'ingest'),
         }).recognize({

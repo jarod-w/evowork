@@ -219,10 +219,11 @@ git status --short        # 非空就别构建要拿去部署的产物
 ### 3.3 完整办公运行时（随应用分发，08 §4）
 
 正式 DMG/ZIP 内的 `.app` 携带完整 Python、已安装的办公依赖与静态中文字体。
-首次启动直接进入主界面，没有引导步骤；缺失的办公组件自动准备。组件准备仅从应用资源复制、验收并原子换入
-`~/.evowork/runtime/office/`，不运行 pip、不下载依赖。初始化失败在设置中显示具体原因并提供修复。升级后旧运行时可继续使用，
-需更新时点重新安装，从当前应用本地部署。管理员仍可用 `EVOWORK_OFFICE_PYTHON` 指定解释器。
-自定义 `EVOWORK_HOME` 时，组件位于该数据目录的 `runtime/office/`；探针、内核技能和预览解析统一使用这份解释器。
+首次启动先加载主界面，服务握手期间显示准备提示；办公组件直接使用
+`Resources/office/runtime/` 的解释器，不复制到用户数据目录、不运行 pip、不下载依赖。
+后台以单个 Python 进程验证模块/版本/字体并预热 `EVOWORK_HOME/cache/matplotlib/`（默认 `~/.evowork/cache/matplotlib/`）；会话内复用结果。
+设置展示正在验证/可用/失败，可重新验证；资源损坏须重新安装应用。升级应用即使用新随包运行时，旧版用户目录的副本不优先使用。
+管理员仍可用 `EVOWORK_OFFICE_PYTHON` 指定解释器。探针、内核技能、预览与资料库解析统一选择同一解释器，用户数据不写入 `.app`。
 
 构建前，在**目标平台与架构**的构建环境准备成品：
 
@@ -407,7 +408,7 @@ Q1=A（纯本地桌面应用，见 D9）决定了部署面很小：**服务端�
 | [account.ts](../apps/desktop/src/main/account.ts) · [policy-pack.ts](../apps/desktop/src/main/policy-pack.ts) | 桌面 App → identity | 登录后：账号、设备、JWKS 与签名策略包 |
 | [update-check.ts](../apps/desktop/src/main/update-check.ts) | 桌面 App → 更新源 | 检查 / 下载更新（§5.3.1） |
 | [hub-client](../services/hub-client/src/node.ts) | 桌面 App → 插件 Hub | 刷新索引、下载内容包（§5.3.2） |
-| [runtime-installer/src/download.ts](../services/runtime-installer/src/download.ts) | 构建/显式开发安装 → GitHub / 清华 PyPI 镜像 | 只用于准备办公成品（§3.3）；正式应用仅本地复制，不调用下载器 |
+| [runtime-installer/src/download.ts](../services/runtime-installer/src/download.ts) | 构建/显式开发安装 → GitHub / 清华 PyPI 镜像 | 只用于准备办公成品（§3.3）；正式应用直接使用随包运行时，不调用下载器 |
 | [identity/src/http.ts](../services/identity/src/http.ts) | identity | 转发 hosted 模型调用；管理端探测上游模型目录 |
 
 另有随包的浏览器 MCP 驱动本机 Chrome 访问网页（连接器被信任后按 origin 逐次授权），不经上面任何一处。

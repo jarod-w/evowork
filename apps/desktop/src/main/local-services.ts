@@ -37,6 +37,8 @@ import { createRuntimeProbe } from '@evowork/ingest';
 import { RUNTIME_TIERS } from '@evowork/ingest/runtime.js';
 import {
   installOfficeRuntime,
+  prebuiltRuntimeProblem,
+  verifyOfficeRuntime,
   PHASE_LABEL,
   runtimeStampStatus,
   totalDownloadBytes,
@@ -80,6 +82,7 @@ export interface LocalServicesOptions {
   /** 构建时已装好依赖的随包办公运行时。 */
   readonly prebuiltRuntimeDir?: string | undefined;
   readonly officeRuntimeRoot?: string | undefined;
+  readonly officeCacheDirectory?: string | undefined;
   readonly isModelAvailable?: ((modelId: string) => Promise<boolean>) | undefined;
 }
 
@@ -98,7 +101,11 @@ export function createLocalServices(options: LocalServicesOptions) {
   const now = options.now ?? (() => Date.now());
   const automations = createAutomationRepo(options.store.db);
   const artifacts = createArtifactRepo(options.store.db);
-  const probe = createRuntimeProbe({ runtimeRoot: options.officeRuntimeRoot });
+  const officeModules = RUNTIME_TIERS.office.probeModules;
+  const bundled =
+    options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim();
+  const runtimeRoot = bundled ? options.prebuiltRuntimeDir : options.officeRuntimeRoot;
+  const probe = createRuntimeProbe({ runtimeRoot, cachedModules: officeModules });
 
   /* ── scheduler ↔ 内核 ───────────────────────────────────────── */
 
@@ -316,29 +323,56 @@ export function createLocalServices(options: LocalServicesOptions) {
 
   /* ── 办公扩展：探测 + 安装（08 §4）───────────────────────────── */
 
-  /**
-   * 扩展的状态与安装入口。
-   *
-   * 探测结果**不缓存在这一层**：`createRuntimeProbe()` 自己带缓存，而安装成功后
-   * 必须 `invalidate()` —— 不失效的话界面会一直显示"没装"，用户刚装完就被告知没装，
-   * 只能重启 App 才认。这正是 `probe.ts` 头注释里写的那个"安装流程结束时调用"。
-   */
+  // 验证与安装各自共享一个在途 Promise；查询状态始终只读缓存。
   let runtimeError: string | undefined;
   let runtimeInstalling = false;
   let runtimeInstall: Promise<RuntimeInstallResultView> | undefined;
+  let runtimeVerification: Promise<void> | undefined;
+  let runtimeVerified = false;
+  let stopped = false;
+  const runtimeAbort = new AbortController();
   const officeRuntime = {
-    /** 正在装吗。在线升级退出前要告诉用户「办公扩展正在安装」会被打断 */
     installing: (): boolean => runtimeInstalling,
-    /** 只自动部署随包成品；开发模式和管理员解释器不自动安装。 */
-    initialize: async (): Promise<void> => {
-      if (options.prebuiltRuntimeDir === undefined || process.env.EVOWORK_OFFICE_PYTHON?.trim())
-        return;
-      if (officeRuntime.status().installed) return;
-      try {
-        await officeRuntime.install();
-      } catch {
-        // install 已保存原因；不让办公组件故障阻止应用的文本功能。
-      }
+    initialize: (): Promise<void> => {
+      if (runtimeVerification) return runtimeVerification;
+      if (runtimeVerified || stopped) return Promise.resolve();
+      runtimeError = undefined;
+      options.onRuntimeProgress?.({ phase: 'verify', label: '正在验证办公组件', percent: 0 });
+      runtimeVerification = (async () => {
+        if (bundled) {
+          const root = options.prebuiltRuntimeDir!;
+          const problem = await prebuiltRuntimeProblem(root, `${process.arch}-${process.platform}`);
+          if (problem) throw new Error(problem);
+          if (runtimeAbort.signal.aborted) return;
+          const result = await verifyOfficeRuntime(
+            root,
+            undefined,
+            undefined,
+            runtimeAbort.signal,
+            options.officeCacheDirectory,
+          );
+          if (!result.ok)
+            throw new Error('随包办公组件未能通过验证。可重新验证；仍失败请重新安装 EvoWork。');
+          probe.setModules(officeModules, true);
+        } else {
+          await probe.refresh(officeModules, runtimeAbort.signal);
+        }
+      })()
+        .catch((error: unknown) => {
+          probe.setModules(officeModules, false);
+          runtimeError = error instanceof Error ? error.message : '办公组件验证失败，请重试。';
+        })
+        .finally(() => {
+          runtimeVerified = true;
+          runtimeVerification = undefined;
+          if (!stopped)
+            options.onRuntimeProgress?.({
+              phase: 'done',
+              label: runtimeError ? '办公组件验证失败' : '办公组件检查完成',
+              percent: 100,
+            });
+        });
+      return runtimeVerification;
     },
     status: (): RuntimeStatusView => {
       const missing = RUNTIME_TIERS.office.probeModules.filter((m) => !probe.hasModule(m));
@@ -349,9 +383,11 @@ export function createLocalServices(options: LocalServicesOptions) {
       const outdated =
         missing.length === 0 &&
         !process.env.EVOWORK_OFFICE_PYTHON &&
-        runtimeStampStatus(undefined, options.officeRuntimeRoot) !== 'current';
+        runtimeStampStatus(undefined, runtimeRoot) !== 'current';
       return {
         installed: missing.length === 0,
+        checking: !runtimeVerified || runtimeVerification !== undefined,
+        ...(bundled ? { bundled: true } : {}),
         ...(runtimeError !== undefined ? { error: runtimeError } : {}),
         missing,
         supported: triple !== undefined,
@@ -368,6 +404,18 @@ export function createLocalServices(options: LocalServicesOptions) {
 
     install: (): Promise<RuntimeInstallResultView> => {
       if (runtimeInstall) return runtimeInstall;
+      if (bundled || process.env.EVOWORK_OFFICE_PYTHON?.trim()) {
+        runtimeVerified = false;
+        return officeRuntime.initialize().then(() =>
+          runtimeError || !officeRuntime.status().installed
+            ? {
+                ok: false,
+                failure: 'VERIFY',
+                message: runtimeError ?? '指定的办公解释器无法加载所需组件，请联系管理员。',
+              }
+            : { ok: true },
+        );
+      }
       runtimeInstalling = true;
       runtimeError = undefined;
       runtimeInstall = (async () => {
@@ -394,7 +442,9 @@ export function createLocalServices(options: LocalServicesOptions) {
             }),
         });
         runtimeError = result.ok ? undefined : result.message;
-        // 成功与否都失效一次：失败也可能装进去了一部分，缓存住旧答案只会更乱
+        probe.invalidate();
+        await probe.refresh(officeModules, runtimeAbort.signal);
+        runtimeVerified = true;
         return result.ok
           ? { ok: true }
           : { ok: false, failure: result.failure, message: result.message };
@@ -404,7 +454,6 @@ export function createLocalServices(options: LocalServicesOptions) {
           throw error;
         })
         .finally(() => {
-          probe.invalidate();
           runtimeInstalling = false;
           runtimeInstall = undefined;
         });
@@ -538,6 +587,8 @@ export function createLocalServices(options: LocalServicesOptions) {
     },
 
     stop(): void {
+      stopped = true;
+      runtimeAbort.abort();
       if (tick) clearInterval(tick);
       tick = undefined;
       for (const watcher of watchers.values()) watcher.stop();

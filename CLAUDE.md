@@ -245,9 +245,9 @@ git --no-pager log --oneline HEAD..origin/main    # 上游漂移（D7）
 
 | 位置 | 内容 | 谁在用 |
 |---|---|---|
-| `~/.evowork/runtime/office/` | 自包含 CPython 3.12 + 六个钉死版本的包（python-docx · openpyxl · python-pptx · matplotlib · pdfplumber · jsonschema）+ `fonts/` 里一份中文字体 | 四个技能的 `render.py`（缺模块时**自动换到这个解释器重跑**）· `services/ingest` 的运行时探测 |
+| `.app/Contents/Resources/office/runtime/`（正式包；旧版/开发为 `~/.evowork/runtime/office/`） | 自包含 CPython 3.12 + 六个钉死版本的包（python-docx · openpyxl · python-pptx · matplotlib · pdfplumber · jsonschema）+ `fonts/` 里一份中文字体 | 四个技能的 `render.py`（缺模块时**自动换到这个解释器重跑**）· `services/ingest` 的运行时探测 |
 
-**首次启动自动准备缺失的办公组件，直接进入主界面，不再展示首次引导**；设置保留修复入口。实现在 `services/runtime-installer`：从随包目录本地复制与验收，不运行 pip、不联网，资源损坏不得回退下载。
+**主界面先加载，正式包直接使用随包办公运行时，后台单进程异步验证与字体缓存预热，不再展示首次引导**；设置显示验证状态、提供重新验证。零复制、零 pip、零网络，资源损坏需重新安装应用，不得回退下载。验证与构建安装器在 `services/runtime-installer`，后台编排在 `local-services.ts`。
 装在自己的目录里而不是系统 python：卸载 = 删一个目录，系统 python 升级不会带走它，
 而"装没装"这个判断就是"那个解释器能不能 import 那些模块"，没有歧义。
 

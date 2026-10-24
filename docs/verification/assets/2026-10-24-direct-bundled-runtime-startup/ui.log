@@ -1,0 +1,13 @@
+
+Running 4 tests using 1 worker
+
+(node:15003) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/attachments.spec.mjs:23:1 › 选 23 个：前 20 个就绪、后 3 个说清原因；发出去的请求里图一张不少、csv 不当图 (4.2s)
+
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/attachments.spec.mjs:121:1 › 把带图的 docx 与 pptx 拖进输入框：两个都就绪，图也抽出来了 (2.3s)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/onboarding.spec.mjs:7:1 › 首次启动直接进入主界面，刷新后仍可使用，不创建默认项目 (2.3s)
+  ✓  4 [fake] › apps/desktop/test/e2e/ui/working-directory.spec.mjs:4:1 › 常规修改无项目工作目录，新任务实际使用新目录，刷新与恢复默认不迁移旧任务 (2.8s)
+
+  4 passed (12.1s)

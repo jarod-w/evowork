@@ -1,0 +1,7 @@
+产物：dist/release/mac-arm64/EvoWork.app
+· 实际随包解释器用单个进程完成模块/版本/字体验证，缓存可写，零复制、零 pip
+· ad-hoc 签名（无 Developer ID）：本机能开，别的 Mac 下载后会被 Gatekeeper 拦（U4 未关闭）
+· spctl 如预期拒绝了这个包
+
+❌ 打包产物有问题：
+  - codesign --verify 没过 —— 包是坏的，别的 Mac 上会报「已损坏」

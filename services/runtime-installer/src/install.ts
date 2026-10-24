@@ -534,9 +534,16 @@ async function verify(
   run: RunFn,
   signal: AbortSignal | undefined,
   platformKey: string = `${process.arch}-${process.platform}`,
+  cacheDirectory?: string,
 ): Promise<{ ok: true } | { ok: false; reason: string; message: string }> {
   const script = [
-    'import json, sys, platform',
+    'import json, sys, platform, os',
+    ...(cacheDirectory
+      ? [
+          `os.makedirs(${JSON.stringify(cacheDirectory)}, mode=0o700, exist_ok=True)`,
+          `os.environ["MPLCONFIGDIR"] = ${JSON.stringify(cacheDirectory)}`,
+        ]
+      : []),
     `assert sys.platform == ${JSON.stringify(platformKey.split('-')[1])}`,
     'from importlib.metadata import version',
     `assert platform.machine().lower() in ${JSON.stringify(platformKey.startsWith('arm64-') ? ['arm64', 'aarch64'] : ['x86_64', 'amd64'])}`,
@@ -551,7 +558,7 @@ async function verify(
     `print(json.dumps({"font": ${JSON.stringify(FONT_FAMILY)} in names}))`,
   ].join('\n');
 
-  const result = await run(python, ['-I', '-c', script], { ...(signal ? { signal } : {}) });
+  const result = await run(python, ['-I', '-B', '-c', script], { ...(signal ? { signal } : {}) });
   if (result.code !== 0) {
     return {
       ok: false,
@@ -765,6 +772,7 @@ export async function verifyOfficeRuntime(
   platformKey: string = `${process.arch}-${process.platform}`,
   run: RunFn = defaultRun,
   signal?: AbortSignal,
+  cacheDirectory?: string,
 ): ReturnType<typeof verify> {
   return verify(
     interpreterIn(root, platformKey),
@@ -772,5 +780,6 @@ export async function verifyOfficeRuntime(
     run,
     signal,
     platformKey,
+    cacheDirectory,
   );
 }

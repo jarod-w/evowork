@@ -288,6 +288,7 @@ export interface ComposerProps {
    * 与 `modelUnavailable` 分开：那条是「检查模型接入」，这条是连企业网更新策略。
    */
   readonly sendLockedReason?: string | undefined;
+  readonly startupPending?: boolean | undefined;
 }
 
 /** 触发中的补全菜单：`@` 统一发现、`$` 显式技能、行首 `/` 本地命令。 */
@@ -531,7 +532,7 @@ export function Composer(props: ComposerProps) {
       {props.environmentBusy ? <Banner tone="info">正在准备文件和工作目录…</Banner> : null}
       {/* 03 §8：模型不可用 → danger 条 + 禁用发送。**不换一个模型继续** */}
       {props.sendLockedReason ? (
-        <Banner tone="danger">{props.sendLockedReason}</Banner>
+        <Banner tone={props.startupPending ? 'info' : 'danger'}>{props.sendLockedReason}</Banner>
       ) : props.modelUnavailable ? (
         <Banner
           tone="danger"

@@ -332,17 +332,19 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
    * 与"主进程实现了什么"没有分叉的余地 —— 少一个就是编译期的类型错误，
    * 而不是运行期一句没人看见的报错（bootstrap.test.ts 有一条断言在扫它）。
    */
+  let resolveReady: () => void = () => undefined;
+  let rejectReady: (error: unknown) => void = () => undefined;
+  const hostReady = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  // 没有 IPC 请求时也接住失败；启动错误仍由 bootstrap 向入口报告。
+  void hostReady.catch(() => undefined);
   for (const action of RENDERER_ACTIONS) {
-    electron.ipcMain.handle(`evowork:${action}`, async (_event, payload) =>
-      (host.actions[action] as (arg: never) => Promise<unknown>)(payload as never),
-    );
-  }
-
-  try {
-    await host.start();
-  } catch (error) {
-    reportStartupFailure(error);
-    throw error;
+    electron.ipcMain.handle(`evowork:${action}`, async (_event, payload) => {
+      await hostReady;
+      return (host.actions[action] as (arg: never) => Promise<unknown>)(payload as never);
+    });
   }
 
   /*
@@ -390,12 +392,6 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   electron.app.onOpenUrl?.((url) => handleDeeplink(url));
   electron.app.onSecondInstance?.((argv) => handleDeeplink(deeplinkFromArgv(argv)));
 
-  if (options.devServerUrl) await window.loadURL(options.devServerUrl);
-  else await window.loadFile(options.rendererHtmlPath);
-
-  // 冷启动那一次：Windows / Linux 把 URL 放在自己的 argv 里，没有事件可接
-  handleDeeplink(deeplinkFromArgv(process.argv));
-
   // macOS 首发（Q26），但"关掉最后一个窗口就退出"在三个平台上都是对的：
   // 这是一个本机服务宿主，留一个没有窗口的后台进程只会让人以为它挂了
   electron.app.on('window-all-closed', () => electron.app.quit());
@@ -404,7 +400,27 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
    * 所以 `stop()` 必须在它的第一个 await 之前把网关杀掉，否则子进程变成孤儿，
    * 下次启动 bind 失败，界面就是「本机网关启动后立刻退出了」。
    */
-  electron.app.on('before-quit', () => void host.stop());
+  let quitting = false;
+  electron.app.on('before-quit', () => {
+    quitting = true;
+    rejectReady(new Error('应用正在退出。'));
+    void host.stop();
+  });
+
+  // 先让 React 画出主界面；握手与后台验证不再挡住窗口内容。
+  if (options.devServerUrl) await window.loadURL(options.devServerUrl);
+  else await window.loadFile(options.rendererHtmlPath);
+  if (quitting) return { window, host };
+  handleDeeplink(deeplinkFromArgv(process.argv));
+  try {
+    await host.start();
+    resolveReady();
+  } catch (error) {
+    rejectReady(error);
+    if (quitting) return { window, host };
+    reportStartupFailure(error);
+    throw error;
+  }
 
   return { window, host };
 }

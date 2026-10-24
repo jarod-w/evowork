@@ -87,18 +87,20 @@ for (const [rel, what] of [
   }
 }
 
-// 使用实际随包成品部署到全新临时目录；禁用下载并拒绝 pip/字体处理。
+// 直接验证实际随包成品；可写字体缓存位于临时数据目录，运行时不复制。
 const runtimeHome = mkdtempSync(join(tmpdir(), 'evowork-pkg-office-'));
 try {
   await withRuntimeInstaller(async (api) => {
-    const result = await api.installOfficeRuntime({
-      home: runtimeHome,
-      prebuiltRuntimeDir: join(resources, 'office/runtime'),
-      downloadFn: async () => {
-        throw new Error('随包部署禁止下载');
-      },
-      runFn: async (file, args) => {
-        if (!args.includes('-c')) throw new Error('随包部署禁止 pip 或字体处理');
+    const root = join(resources, 'office/runtime');
+    const problem = await api.prebuiltRuntimeProblem(root, `${process.arch}-${process.platform}`);
+    check(!problem, problem ?? '');
+    let processes = 0;
+    const result = await api.verifyOfficeRuntime(
+      root,
+      undefined,
+      async (file, args) => {
+        processes += 1;
+        if (!args.includes('-c')) throw new Error('随包验证禁止 pip 或字体处理');
         const result = spawnSync(file, args, { encoding: 'utf8', timeout: 120_000 });
         return {
           code: result.status ?? 1,
@@ -106,10 +108,14 @@ try {
           stderr: result.stderr ?? '',
         };
       },
-    });
-    check(result.ok, result.ok ? '' : `随包办公组件部署失败：${result.message}`);
+      undefined,
+      join(runtimeHome, 'matplotlib'),
+    );
+    check(result.ok, result.ok ? '' : `随包办公组件验证失败：${result.message}`);
+    check(processes === 1, '办公验证应只起一个 Python 子进程');
+    check(!existsSync(join(runtimeHome, 'runtime/office')), '直接使用随包解释器不应复制运行时');
     if (result.ok)
-      notes.push('实际随包办公运行时在全新目录完成本地复制与模块/版本/字体验收，零下载、零 pip');
+      notes.push('实际随包解释器用单个进程完成模块/版本/字体验证，缓存可写，零复制、零 pip');
   });
 } finally {
   removeE2EHome(runtimeHome);
@@ -176,7 +182,7 @@ if (adHoc) {
 }
 
 // ── ⑤ 真的起得来：用一次性 user-data-dir，别碰用户自己的家目录 ─────────
-const { _electron: electron } = await import('@playwright/test');
+const { _electron: electron, expect } = await import('@playwright/test');
 const userData = mkdtempSync(join(tmpdir(), 'evowork-pkg-smoke-'));
 const exe = join(appPath, 'Contents/MacOS/EvoWork');
 check(existsSync(exe), `可执行文件不在：${exe}`);
@@ -196,6 +202,7 @@ if (existsSync(exe) && problems.length === 0) {
      *
      * 所以隔离必须由应用自己提供。`EVOWORK_HOME` 就是为这件事补的。
      */
+    const launchAt = Date.now();
     app = await electron.launch({
       executablePath: exe,
       args: [`--user-data-dir=${join(userData, 'chromium')}`],
@@ -208,12 +215,62 @@ if (existsSync(exe) && problems.length === 0) {
      * 断言它，而不是"窗口开了" —— 白窗口也算开了。
      */
     await page.getByLabel('需求输入').waitFor({ timeout: 90_000 });
+    const mainVisibleMs = Date.now() - launchAt;
+    await page.screenshot({ path: join(ROOT, 'dist', 'startup-main.png') });
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => (await globalThis.evowork.getRuntimeStatus()).checking),
+        { timeout: 120_000 },
+      )
+      .toBe(false);
+    const runtimeReadyMs = Date.now() - launchAt;
     const runtimeStatus = await page.evaluate(() => globalThis.evowork.getRuntimeStatus());
     check(
       runtimeStatus.installed,
-      `首次启动自动部署办公组件失败：${runtimeStatus.error ?? runtimeStatus.missing.join('、')}`,
+      `首次启动后台验证办公组件失败：${runtimeStatus.error ?? runtimeStatus.missing.join('、')}`,
     );
-    notes.push('打包后的应用首次启动直接显示主界面，办公组件自动准备后已可用');
+    // 在没有用户运行时副本的环境，经正式 IPC 解析随包 Python 生成的 Word。
+    const documentPath = join(userData, 'startup-smoke.docx');
+    const python = join(resources, 'office/runtime/bin/python3');
+    const generated = spawnSync(
+      python,
+      [
+        '-B',
+        '-c',
+        'from docx import Document; import sys; d=Document(); d.add_paragraph("STARTUP_BUNDLED_RUNTIME"); d.save(sys.argv[1])',
+        documentPath,
+      ],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    check(generated.status === 0, `随包解释器生成 Word 失败：${generated.stderr}`);
+    if (generated.status === 0) {
+      const attachments = await page.evaluate(
+        async (bytes) =>
+          globalThis.evowork.ingestAttachments({
+            draftId: 'startup-smoke',
+            files: [{ name: 'startup-smoke.docx', bytes: Uint8Array.from(bytes) }],
+          }),
+        Array.from(readFileSync(documentPath)),
+      );
+      check(
+        attachments.length === 1 &&
+          attachments[0].state === 'ready' &&
+          attachments[0].references.some(
+            (reference) =>
+              reference.type === 'text' && reference.text.includes('STARTUP_BUNDLED_RUNTIME'),
+          ),
+        '实际应用没有用随包运行时成功解析 Word 正文',
+      );
+    }
+    check(
+      !existsSync(join(userData, '.evowork/runtime/office')),
+      '首次启动不应复制办公运行时到用户目录',
+    );
+    check(existsSync(join(userData, '.evowork/cache/matplotlib')), '后台验证没有预热可写字体缓存');
+    notes.push(
+      `首次启动主界面 ${mainVisibleMs}ms 可见，后台验证 ${runtimeReadyMs}ms 就绪；数据目录没有运行时副本`,
+    );
   } catch (error) {
     problems.push(`打包后的应用起不来或没渲染出界面：${String(error).slice(0, 300)}`);
   } finally {
@@ -390,6 +447,14 @@ if (existsSync(exe) && problems.length === 0) {
     await app?.close().catch(() => undefined);
     removeE2EHome(shared);
   }
+}
+
+// 验证、解析和应用退出以后包内资源仍须保持封印有效。
+try {
+  execFileSync('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'pipe' });
+  notes.push('后台验证、Word 解析和应用退出后，签名资源封印仍有效');
+} catch {
+  problems.push('运行随包 Python 后签名校验失败，应用资源被修改');
 }
 
 // ── 报告 ───────────────────────────────────────────────────────────────

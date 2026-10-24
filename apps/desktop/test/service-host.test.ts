@@ -162,7 +162,7 @@ describe('路径布局（09 §7）', () => {
   });
 });
 
-it('宿主启动等待办公组件自动准备，完成前内核不能接收任务', async () => {
+it('办公验证在后台执行，未完成也能完成内核握手', async () => {
   host = makeHost();
   let prepared = false;
   let release: () => void = () => undefined;
@@ -179,10 +179,11 @@ it('宿主启动等待办公组件自动准备，完成前内核不能接收任�
   expect(initialize).toHaveBeenCalledTimes(1);
   expect(prepared).toBe(false);
   expect(child.received).toEqual([]);
-  release();
   await starting;
-  expect(prepared).toBe(true);
+  expect(prepared).toBe(false);
   expect(child.received.length).toBeGreaterThan(0);
+  release();
+  await ready;
 });
 
 describe('干净机器上的第一次运行', () => {

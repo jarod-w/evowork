@@ -1,0 +1,10 @@
+产物：dist/release/mac-arm64/EvoWork.app
+· 实际随包解释器用单个进程完成模块/版本/字体验证，缓存可写，零复制、零 pip
+· ad-hoc 签名（无 Developer ID）：本机能开，别的 Mac 下载后会被 Gatekeeper 拦（U4 未关闭）
+· spctl 如预期拒绝了这个包
+· 后台验证、Word 解析和应用退出后，签名资源封印仍有效
+
+❌ 打包产物有问题：
+  - 打包后的应用起不来或没渲染出界面：TimeoutError: electron.launch: Timeout 120000ms exceeded.
+Call log:
+[2m  - <launching> /Users/wangli/develop/evowork/evowork/dist/release/mac-arm64/EvoWork.app/Contents/MacOS/EvoWork --inspect=0 --remote-debugging-port=0 --user-data-dir=/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-pkg-s

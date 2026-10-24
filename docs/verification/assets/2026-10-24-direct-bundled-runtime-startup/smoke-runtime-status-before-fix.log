@@ -1,0 +1,40 @@
+产物：dist/release/mac-arm64/EvoWork.app
+2026-10-24T11:33:58.531Z pw:browser <launching> /Users/wangli/develop/evowork/evowork/dist/release/mac-arm64/EvoWork.app/Contents/MacOS/EvoWork --inspect=0 --remote-debugging-port=0 --user-data-dir=/var/folders/b6/5bqgjcl54zd0_701jf9z8bl00000gn/T/evowork-pkg-smoke-ce6ju3/chromium
+2026-10-24T11:33:58.535Z pw:browser <launched> pid=17445
+2026-10-24T11:33:59.246Z pw:browser [pid=17445][err] Debugger listening on ws://127.0.0.1:52749/5a18fe9b-c21c-4762-963c-d83c263ff5ed
+2026-10-24T11:33:59.246Z pw:browser [pid=17445][err] For help, see: https://nodejs.org/learn/getting-started/debugging
+2026-10-24T11:33:59.246Z pw:browser <ws connecting> ws://127.0.0.1:52749/5a18fe9b-c21c-4762-963c-d83c263ff5ed
+2026-10-24T11:33:59.252Z pw:browser [pid=17445][err] Debugger attached.
+2026-10-24T11:33:59.254Z pw:browser <ws connected> ws://127.0.0.1:52749/5a18fe9b-c21c-4762-963c-d83c263ff5ed
+2026-10-24T11:33:59.510Z pw:browser [pid=17445][err]
+2026-10-24T11:33:59.510Z pw:browser [pid=17445][err] DevTools listening on ws://127.0.0.1:52751/devtools/browser/561e0d10-deb4-4d35-9398-81943131de8f
+2026-10-24T11:33:59.510Z pw:browser <ws connecting> ws://127.0.0.1:52751/devtools/browser/561e0d10-deb4-4d35-9398-81943131de8f
+2026-10-24T11:34:00.013Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.012Z","level":"info","event":"desktop.kernel_config.installed","service":"desktop","appVersion":"0.0.6","platform":"darwin"}
+2026-10-24T11:34:00.017Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.014Z","level":"info","event":"desktop.mode_instructions.installed","service":"desktop","appVersion":"0.0.6","platform":"darwin","itemCount":6}
+2026-10-24T11:34:00.034Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.034Z","level":"info","event":"store.migration.authoritative","service":"desktop","appVersion":"0.0.6","platform":"darwin","schemaVersion":7,"reason":"MIGRATED"}
+2026-10-24T11:34:00.034Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.034Z","level":"info","event":"store.migration.projection","service":"desktop","appVersion":"0.0.6","platform":"darwin","schemaVersion":5,"reason":"MIGRATED"}
+2026-10-24T11:34:00.074Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.074Z","level":"info","event":"desktop.kernel_config.model_catalog_written","service":"desktop","appVersion":"0.0.6","platform":"darwin","itemCount":3}
+2026-10-24T11:34:00.074Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.074Z","level":"info","event":"desktop.model_access.ready","service":"desktop","appVersion":"0.0.6","platform":"darwin","authMode":"local","secretStore":"keychain"}
+2026-10-24T11:34:00.075Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.075Z","level":"info","event":"desktop.secrets.saved","service":"desktop","appVersion":"0.0.6","platform":"darwin","secretStore":"keychain"}
+2026-10-24T11:34:00.075Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.075Z","level":"info","event":"desktop.gateway_token.minted","service":"desktop","appVersion":"0.0.6","platform":"darwin","reason":"LOCAL","secretStore":"keychain"}
+2026-10-24T11:34:00.230Z pw:browser <ws connected> ws://127.0.0.1:52751/devtools/browser/561e0d10-deb4-4d35-9398-81943131de8f
+2026-10-24T11:34:00.375Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.374Z","level":"warn","event":"gateway.child.skipped","service":"desktop","appVersion":"0.0.6","platform":"darwin","reason":"NO_KEYS"}
+2026-10-24T11:34:00.516Z pw:browser [pid=17445][err] sandbox_extension_issue_file failed for /Users/wangli/develop/evowork/evowork/dist/release/mac-arm64/EvoWork.app/Contents/Frameworks/EvoWork Helper.app/Contents/Resources: 1 (Operation not permitted)
+2026-10-24T11:34:00.734Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.734Z","level":"info","event":"desktop.host.started","service":"desktop","appVersion":"0.0.6","platform":"darwin","itemCount":6,"concurrency":3}
+2026-10-24T11:34:00.745Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:00.745Z","level":"info","event":"adapter.reconcile.done","service":"desktop","appVersion":"0.0.6","platform":"darwin","itemCount":0}
+2026-10-24T11:34:18.512Z pw:browser <ws disconnecting> ws://127.0.0.1:52749/5a18fe9b-c21c-4762-963c-d83c263ff5ed
+2026-10-24T11:34:18.514Z pw:browser [pid=17445][err] Debugger ending on ws://127.0.0.1:52749/5a18fe9b-c21c-4762-963c-d83c263ff5ed
+2026-10-24T11:34:18.514Z pw:browser [pid=17445][err] For help, see: https://nodejs.org/learn/getting-started/debugging
+2026-10-24T11:34:18.515Z pw:browser <ws disconnected> ws://127.0.0.1:52749/5a18fe9b-c21c-4762-963c-d83c263ff5ed code=1005 reason=
+2026-10-24T11:34:18.517Z pw:browser [pid=17445][out] {"ts":"2026-10-24T11:34:18.517Z","level":"info","event":"desktop.host.stopped","service":"desktop","appVersion":"0.0.6","platform":"darwin"}
+2026-10-24T11:34:18.598Z pw:browser [pid=17445] <process did exit: exitCode=0, signal=null>
+2026-10-24T11:34:18.598Z pw:browser [pid=17445] starting temporary directories cleanup
+2026-10-24T11:34:18.599Z pw:browser <ws disconnected> ws://127.0.0.1:52751/devtools/browser/561e0d10-deb4-4d35-9398-81943131de8f code=1006 reason=
+· 实际随包解释器用单个进程完成模块/版本/字体验证，缓存可写，零复制、零 pip
+· ad-hoc 签名（无 Developer ID）：本机能开，别的 Mac 下载后会被 Gatekeeper 拦（U4 未关闭）
+· spctl 如预期拒绝了这个包
+· 首次启动主界面 1963ms 可见，后台验证 3641ms 就绪；数据目录没有运行时副本
+· 后台验证、Word 解析和应用退出后，签名资源封印仍有效
+
+❌ 打包产物有问题：
+  - 首次启动后台验证办公组件失败：docx、openpyxl、pptx、pdfplumber、matplotlib

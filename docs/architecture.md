@@ -52,7 +52,7 @@ L1–L4 分层图见[总纲 §4.1](evowork-on-codex-design.md)。那是**逻辑�
 │  sqlite: ~/.evowork/evowork.db（node:sqlite · WAL · FTS5）                    │
 │  密钥: ~/.evowork/secrets.bin（safeStorage 密文，**不读回渲染层**）              │
 └──────┬──────────────┬─────────────────┬───────────────────┬──────────────────┘
-       │ ② stdio      │ ⑤ 子进程         │ ④ 受限子进程        │ ⑦ 本地复制（办公）
+       │ ② stdio      │ ⑤ 子进程         │ ④ 受限子进程        │ ⑦ 随包运行（办公）
        │ JSON-RPC v2  │ + 进程环境注入    │                    │
 ┌──────┴──────────┐ ┌─┴────────────────┐ ┌┴──────────────┐ ┌──┴─────────────────┐
 │ codex-app-server│ │ 本机网关（D11 常驻）│ │ 技能 render.py │ │ 随包完整办公运行时 │
@@ -248,7 +248,7 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
 ### ④ 主进程 → 技能 / 解析子进程
 
 - 技能：`SKILL.md` 声明能力，`container_tools/render.py` 出产物，`mark_artifact.mjs` 上报。
-- 运行时按 [runtime.ts](../services/ingest/src/runtime.ts) 分三档 `base` / `office` / `ocr`。`office` 档装在 `~/.evowork/runtime/office/`
+- 运行时按 [runtime.ts](../services/ingest/src/runtime.ts) 分三档 `base` / `office` / `ocr`。正式包的 `office` 档直接位于 `Resources/office/runtime/`，开发环境可用 `~/.evowork/runtime/office/`
   （python-build-standalone 的 `install_only` 构建：自包含、位置无关、自带 pip；**不用 `uv venv`**，它建的目录不可搬运），
   四个技能的 `render.py` 缺模块时**自动换到这个解释器重跑**。可用 `EVOWORK_OFFICE_PYTHON` / `EVOWORK_OFFICE_BUNDLE` 覆盖。
 - TS 侧与 Python 侧（`plugins/skills/_shared/evowork_skill.py`）的档位文案是**同一份数据**，由测试逐字段比对。
@@ -293,11 +293,11 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
   渲染层经 `prepareShare` / `createShare` / `createThreadShare` / `revokeShare` / `listShares` 五个动作调用
   （`prepareShare` 不上传任何东西）；接收方打开的 `/s/<id>` 页面在 [apps/web/share.html](../apps/web/share.html)。
 
-### ⑦ 完整办公运行时：构建时安装、用户本地部署
+### ⑦ 完整办公运行时：构建时安装、随包直接运行
 
 - [build-office-runtime.mjs](../scripts/build-office-runtime.mjs) 复用安装器在构建机准备 Python/依赖/字体，输出按平台架构区分的完整目录；在最终路径验证可搬运性，记录清单、平台和全部依赖版本。
-- electron-builder 将成品放进 `.app/Contents/Resources/office/runtime/`；入口始终通过 bootstrap → service-host → local-services 把此路径交给安装器，即使缺资源也不会退回在线安装。
-- 首次启动在内核就绪前自动准备缺失的办公组件（已有可用环境/管理员覆盖保留），直接进入主界面，没有首次引导；设置保留修复。准备时仅复制成品到 `office.staging/`，核对平台与清单、实际 import/版本/字体验收，再原子换入 `~/.evowork/runtime/office/`，`probe.invalidate()` 重探。零网络、零 pip，失败保留旧环境。
+- electron-builder 将成品放进 `.app/Contents/Resources/office/runtime/`；入口始终通过 bootstrap → service-host → local-services 把此路径交给探针与后台验证，即使缺资源也不会退回在线安装。
+- 主界面先加载，服务相关 IPC 等待宿主握手就绪；输入区显示准备状态。办公验证在后台进行，不阻塞宿主/内核：检查平台/清单和链接，用一个异步 Python 子进程验证模块/版本/字体，预热数据目录的可写字体缓存，查询只读会话缓存。正式启动零复制、零网络、零 pip，旧用户运行时副本不优先使用。办公附件解析等待验证，文本功能不等待；设置自动刷新状态，可重新验证，损坏须重新安装应用。退出取消在途验证。
 - 旧式 wheel 离线包保留用于构建/开发，管理员解释器覆盖保持；OCR 仍独立安装。`services/ingest` 的 K6 整目录扫描继续不留出网口子。
 
 ---
@@ -604,7 +604,7 @@ Electron **44**（Node 24）：`node:sqlite` 要 Node ≥ 22.5，而 Electron �
   logs/
   kernel/               = 内核家目录。config.toml **在这里**（F21），宿主只知道"内核的家在这儿"，
                         **不知道那个环境变量叫什么** —— 那是适配层的知识
-  runtime/office/       办公扩展（自包含 CPython + 六个包 + fonts/；卸载 = 删一个目录）
+  runtime/office/       旧版/开发环境办公扩展（正式包直接使用 Resources/office/runtime）
   runtime/ocr/          本地 OCR 组件（只从校验过的离线包安装）
   workspaces/           无项目任务的独立 cwd（每个任务一个 <uuid>；设置「常规」可改到自选目录）
   drafts/               Composer 草稿附件的暂存区，发送前归入最终环境

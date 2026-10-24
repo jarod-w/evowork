@@ -110,6 +110,8 @@ export interface HubHostPorts {
     | {
         readonly status: () => {
           readonly installed: boolean;
+          readonly checking?: boolean | undefined;
+          readonly bundled?: boolean | undefined;
           readonly outdated?: boolean | undefined;
           readonly supported: boolean;
           readonly downloadSize?: string | undefined;
@@ -582,7 +584,9 @@ export async function installHubItem(
   const findings = [...prepared.findings];
   if (dependency.missing)
     findings.push(
-      `需要安装或更新办公组件（${ports.officeRuntime?.status().downloadSize ?? '共享运行环境'}），确认后将自动下载并安装；企业离线环境可使用办公组件离线包。`,
+      ports.officeRuntime?.status().bundled
+        ? '随包办公组件暂不可用，确认后将重新验证；若资源损坏，请重新安装 EvoWork。'
+        : `需要安装或更新办公组件（${ports.officeRuntime?.status().downloadSize ?? '共享运行环境'}），确认后将自动下载并安装；企业离线环境可使用办公组件离线包。`,
     );
   if (installed !== undefined) {
     findings.unshift(
@@ -646,6 +650,7 @@ function officeDependency(
       return { ok: false, refused: '技能声明了不支持的运行组件，请更新应用或联系发布者。' };
     if (deps.length === 0) return { ok: true, missing: false };
     const status = ports.officeRuntime?.status();
+    if (status?.checking) return { ok: false, refused: '正在验证办公组件，请稍后重试安装技能。' };
     if (status?.installed && status.outdated !== true) return { ok: true, missing: false };
     if (!status?.supported) return { ok: false, refused: '当前应用或系统不支持所需的办公组件。' };
     return { ok: true, missing: true };

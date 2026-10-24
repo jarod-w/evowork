@@ -10,7 +10,7 @@
  * 扩展的安装状态在一次会话里几乎不变，所以缓存到显式失效为止 ——
  * 安装流程结束时调用 `invalidate()`。
  */
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +24,8 @@ export interface ProbeOptions {
   /** 覆盖解释器路径（企业离线部署 / 测试） */
   readonly interpreter?: string | undefined;
   readonly timeoutMs?: number | undefined;
+  /** 宿主在后台批量验证；同步查询只读缓存，禁止阻塞 Electron 主线程。 */
+  readonly cachedModules?: readonly string[] | undefined;
 }
 
 export function resolveOfficeInterpreter(options: ProbeOptions = {}): string | undefined {
@@ -37,6 +39,8 @@ export function resolveOfficeInterpreter(options: ProbeOptions = {}): string | u
 export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
   invalidate(): void;
   interpreter(): string | undefined;
+  setModules(modules: readonly string[], available: boolean): void;
+  refresh(modules: readonly string[], signal?: AbortSignal): Promise<void>;
 } {
   const cache = new Map<string, boolean>();
   let interpreter: string | undefined | null = null; // null = 还没查过
@@ -67,6 +71,7 @@ export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
     hasModule(name: string): boolean {
       const cached = cache.get(name);
       if (cached !== undefined) return cached;
+      if (options.cachedModules?.includes(name)) return false;
 
       const python = resolve();
       let ok = false;
@@ -89,5 +94,46 @@ export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
       interpreter = null;
     },
     interpreter: resolve,
+    setModules(modules, available) {
+      for (const name of modules) cache.set(name, available);
+    },
+    async refresh(modules, signal) {
+      const python = resolve();
+      for (const name of modules) cache.set(name, false);
+      if (!python) return;
+      const script = [
+        'import importlib, json',
+        'result = {}',
+        `for name in ${JSON.stringify(modules)}:`,
+        '    try:',
+        '        importlib.import_module(name)',
+        '        result[name] = True',
+        '    except Exception:',
+        '        result[name] = False',
+        'print(json.dumps(result))',
+      ].join('\n');
+      await new Promise<void>((done) => {
+        execFile(
+          python,
+          ['-B', '-c', script],
+          {
+            timeout: options.timeoutMs ?? 120_000,
+            maxBuffer: 1024 * 1024,
+            ...(signal ? { signal } : {}),
+          },
+          (error, stdout) => {
+            if (!error) {
+              try {
+                const results = JSON.parse(stdout) as Record<string, unknown>;
+                for (const name of modules) cache.set(name, results[name] === true);
+              } catch {
+                /* 无效响应保持不可用。 */
+              }
+            }
+            done();
+          },
+        );
+      });
+    },
   };
 }

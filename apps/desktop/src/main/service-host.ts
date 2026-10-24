@@ -87,7 +87,7 @@ import {
   KERNEL_PROMPT_RULES,
   classifyPath,
 } from '@evowork/policy';
-import { createIngest, createOfficeParser, type IngestOutcome } from '@evowork/ingest';
+import { createIngest, createOfficeParser, detectKind, type IngestOutcome } from '@evowork/ingest';
 import { BRAND } from '@evowork/tokens';
 import { createShareFlow, createUploader, shareState } from '@evowork/artifacts';
 import {
@@ -1053,6 +1053,7 @@ const RECONCILE_INTERVAL_MS = 10 * 60_000;
  * （09 §4.6：宁可启动失败也不丢定时任务定义），此时不该已经起了一个内核进程在那儿等着。
  */
 export function createServiceHost(options: ServiceHostOptions): ServiceHost {
+  let stopping = false;
   const logger =
     options.logger ??
     createLogger({
@@ -1550,13 +1551,14 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           ...communicationHost.environment,
           ...nextActionsHost.environment,
           ...fileHost.environment,
+          MPLCONFIGDIR: join(options.paths.home, 'cache', 'matplotlib'),
+          PYTHONDONTWRITEBYTECODE: '1',
           ...(options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim()
             ? {
                 EVOWORK_OFFICE_PYTHON:
-                  services.probe.interpreter() ??
+                  officeInterpreter() ??
                   join(
-                    options.paths.home,
-                    'runtime/office',
+                    options.prebuiltRuntimeDir!,
                     process.platform === 'win32' ? 'python.exe' : 'bin/python3',
                   ),
               }
@@ -1715,6 +1717,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       ? {
           prebuiltRuntimeDir: options.prebuiltRuntimeDir,
           officeRuntimeRoot: join(options.paths.home, 'runtime', 'office'),
+          officeCacheDirectory: join(options.paths.home, 'cache', 'matplotlib'),
         }
       : {}),
     ...(options.bundledFontPath !== undefined ? { bundledFontPath: options.bundledFontPath } : {}),
@@ -1725,6 +1728,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     logger,
   });
   services.startArtifactReports(options.paths.artifactLog);
+  // 即使随包文件缺失也保留所选路径，让调用明确失败，不能暗中退回旧用户环境。
+  const officeInterpreter = (): string | undefined =>
+    services.probe.interpreter() ??
+    (options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim()
+      ? join(
+          options.prebuiltRuntimeDir,
+          process.platform === 'win32' ? 'python.exe' : 'bin/python3',
+        )
+      : undefined);
 
   let reconcileTimer: ReturnType<typeof setInterval> | undefined;
   let hubTimer: ReturnType<typeof setInterval> | undefined;
@@ -2066,6 +2078,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   const attachmentText = createAttachmentTextHost({
     home: options.paths.home,
+    interpreter: officeInterpreter,
+    ready: services.officeRuntime.initialize,
     runtimeRoot:
       (options.env ?? process.env).EVOWORK_OCR_RUNTIME ??
       join(options.paths.home, 'runtime', 'ocr'),
@@ -2075,9 +2089,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     workspaceRoot: string,
     files: readonly { readonly name: string; readonly bytes: Uint8Array; readonly path?: string }[],
   ): Promise<readonly ComposerAttachmentView[]> => {
+    if (
+      files.some((file) =>
+        ['docx', 'xlsx', 'pptx', 'pdf', 'zip'].includes(
+          detectKind({ fileName: file.name, head: file.bytes.subarray(0, 512) }),
+        ),
+      )
+    ) {
+      await services.officeRuntime.initialize();
+    }
     const ingest = createIngest({
       probe: services.probe,
-      externalParser: createOfficeParser({ interpreter: services.probe.interpreter() }),
+      externalParser: createOfficeParser({ interpreter: officeInterpreter() }),
       store: {
         createUploadDir: (slug, at) => {
           uploadSequence += 1;
@@ -2163,19 +2186,18 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   };
   const officePreviewParser = createOfficeParser({
     assetOutput: 'temporary',
-    interpreter: services.probe.interpreter,
+    interpreter: officeInterpreter,
   });
   const officeLayoutPreview = createOfficeLayoutPreview({
     ...(options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim()
-      ? { fontDirectory: join(options.paths.home, 'runtime/office/fonts') }
+      ? { fontDirectory: join(options.prebuiltRuntimeDir!, 'fonts') }
       : {}),
     render: (directory) =>
       renderPdfPages(
         directory,
-        services.probe.interpreter() ??
+        officeInterpreter() ??
           join(
-            options.paths.home,
-            'runtime/office',
+            options.prebuiltRuntimeDir ?? join(options.paths.home, 'runtime/office'),
             process.platform === 'win32' ? 'python.exe' : 'bin/python3',
           ),
       ),
@@ -2255,7 +2277,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     signedIn: () => account.signedIn(),
     // 用户机器上没有 node：stdio 连接器的 JS 用 Electron 自己跑（HUB-Q6a=A，同 browser / cua）
     nodeRuntime: { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } },
-    pythonCommand: services.probe.interpreter,
+    pythonCommand: officeInterpreter,
     officeRuntime: services.officeRuntime,
     setSkillEnabledByPath: async (path, enabled) => {
       await adapter.setSkillEnabled({ path, enabled });
@@ -2363,6 +2385,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const getLibraryHost = (): Promise<LibraryHost> => {
     libraryReady ??= createLibraryHost({
       home: options.paths.home,
+      interpreter: officeInterpreter,
+      ready: services.officeRuntime.initialize,
       db: store.db,
       databasePath: options.paths.db,
       artifacts: () => services.artifacts.listAllForProjects(),
@@ -2784,18 +2808,25 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
 
     async start() {
-      // 内核开始接受任务前准备随包办公组件，不再向用户展示安装引导。
-      await services.officeRuntime.initialize();
+      if (stopping) return;
+      // 只在后台验证；文本功能与内核握手不等待 Python。
+      void services.officeRuntime.initialize();
       await imageHost.ready;
+      if (stopping) return;
       await communicationHost.ready;
+      if (stopping) return;
       await nextActionsHost.ready;
+      if (stopping) return;
       await fileHost.ready;
+      if (stopping) return;
       /*
        * 已登录才 restore（会打 identity）。未登录时 vault 里没有 refresh，
        * restore 立刻返回，**零出网**（11 §12 第 14 条）。
        */
       await account.restore();
+      if (stopping) return;
       await refreshPolicy();
+      if (stopping) return;
       gatewayRuntimeEnv = composeGatewayEnv();
       /*
        * 网关**在内核之前起**：内核握手之后随时可能发第一个请求，
@@ -2806,11 +2837,13 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
        */
       if (options.gatewayEntryPath) {
         await launchLocalGateway();
+        if (stopping) return;
         // `REMOTE` 没有 notice：网关在服务器上是正常部署，不该提示任何东西
         if (gateway && !gateway.result.started && gateway.result.reason !== 'REMOTE') {
           options.emitToRenderer(IPC.notice, { kind: 'model', text: gateway.result.notice });
         }
         const ready = await awaitGatewayReady();
+        if (stopping) return;
         if (!ready) {
           logger.warn('gateway.child.not_ready', { reason: 'TIMEOUT' });
           options.emitToRenderer(IPC.notice, {
@@ -2821,7 +2854,9 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       }
 
       const catalog = await adapter.start();
+      if (stopping) return;
       await communicationHost.service.start();
+      if (stopping) return;
       logger.info('desktop.host.started', {
         itemCount: catalog.permissionProfiles.length,
         concurrency: catalog.scenarios.length,
@@ -2859,6 +2894,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           errorClass: err instanceof Error ? err.name : 'UnknownError',
         });
       });
+      if (stopping) return;
       // 13 §4.4：启动一次 + 每小时一次。不满足 canAutoFetch（未登录且没打开开关）时一个请求都不发
       const autoRefreshHub = () => {
         void refreshHub(hubPorts, hubPorts.runtime, 'auto').catch((err: unknown) => {
@@ -2876,6 +2912,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           });
         });
       }
+      if (stopping) return;
       hubTimer = setInterval(autoRefreshHub, HUB_REFRESH_INTERVAL_MS);
       hubTimer.unref?.();
       // Q46-1 / Q46-2：每天最多一次，而且当前登录状态下的开关开着才发请求（判断在 checkForUpdate 里）
@@ -2928,6 +2965,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
 
     async stop() {
+      if (stopping) return;
+      stopping = true;
       /*
        * 网关必须在第一个 await 之前停。
        *
@@ -2942,6 +2981,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       for (const resolve of approvalReplies.values()) resolve({ decision: 'cancel' });
       approvalReplies.clear();
       pendingApprovalById.clear();
+      services.stop();
       attachmentText.stop();
       library?.dispose();
       imageHost.close();
@@ -2954,7 +2994,6 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       if (updateTimer) clearInterval(updateTimer);
       // 退出时还在下的安装包：停掉并删半截文件，不留一个看起来像安装包的 .part
       updates.cancelUpdateDownload(updateHost.runtime);
-      services.stop();
       await adapter.stop();
       store.close();
       logger.info('desktop.host.stopped', {});
