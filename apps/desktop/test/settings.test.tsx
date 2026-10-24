@@ -691,7 +691,7 @@ describe('添加模型：上下文大小', () => {
     );
   });
 
-  it('**能力表认得出的型号锁定为表里的值**并说出处；不发这一项 —— 主进程本来就按表覆盖', () => {
+  it('**能力表认得出的型号锁定为表里的值**，对话框只说压缩点；不发这一项 —— 主进程本来就按表覆盖', () => {
     const props = page({ access: CONTEXT_ACCESS });
     fireEvent.click(screen.getByRole('button', { name: '添加模型' }));
     fireEvent.click(screen.getByRole('button', { name: '供应商' }));
@@ -705,9 +705,11 @@ describe('添加模型：上下文大小', () => {
     expect(trigger.textContent).toContain('1,048,576（1M）');
     // 01 §6.3：禁用必须说原因，而且说清怎么才能自己选
     expect(trigger.title).toContain('能力表');
-    expect(screen.getByText(/2026-10-05 实测/)).toBeTruthy();
+    // 实测日期是内部记录，下拉已经显示 1,048,576。对话框只留下压缩点。
+    expect(screen.queryByText(/2026-10-05 实测/)).toBeNull();
+    expect(screen.queryByText(/能力表里有这个型号/)).toBeNull();
     // 1M 的 90% 远过上限，压缩点就是上限
-    expect(screen.getByText(/上下文到约 256K/)).toBeTruthy();
+    expect(screen.getByText('上下文到约 256K 时自动压缩早期对话。')).toBeTruthy();
 
     save();
     expect(vi.mocked(props.onAddCustomModel).mock.calls[0]?.[0]).not.toHaveProperty(

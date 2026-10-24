@@ -922,8 +922,8 @@ const MODE_LABEL: Readonly<Record<string, string>> = Object.freeze({
  * 它决定内核在哪儿压缩早期对话（总纲 D2）。四条规矩：
  * - 档位 32K / 64K / 128K / 256K / 1M / 自定义，**按十进制存**（128K = 128,000，比厂商常说的
  *   131,072 小）：估小只是早一点压缩，估大了长任务会在压缩之前被上游拒绝，所以宁小勿大。
- * - **能力表认得出的型号锁定为表里的值**并说出处：保存时主进程本来就按表覆盖，
- *   让人改了却不生效是静默降级。
+ * - **能力表认得出的型号锁定为表里的值**：保存时主进程本来就按表覆盖，
+ *   让人改了却不生效是静默降级。实测日期留在能力表里，对话框只说大约何时压缩。
  * - 下面一行算出压缩点：min(上限, 90% 上下文)（F46）。三个数都由宿主给（`ContextPolicyView`）。
  * - 自定义的值进不了内核目录（小于下限）时禁用保存并说为什么。
  *
@@ -1316,9 +1316,7 @@ function ContextSizeField({
           onChange={() => undefined}
         />
         <p className="ew-field-hint">
-          能力表里有这个型号：{known.maxContextTokens.toLocaleString('en-US')} token，
-          {known.source}。上下文到约 {shortTokens(compactAt(known.maxContextTokens))}{' '}
-          时自动压缩早期对话。
+          上下文到约 {shortTokens(compactAt(known.maxContextTokens))} 时自动压缩早期对话。
         </p>
       </div>
     );

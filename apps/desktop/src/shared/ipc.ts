@@ -1130,15 +1130,16 @@ export interface CustomModelView {
 /**
  * 能力表里认得出的一个型号名（含别名）和它的上下文（11 §4.4）。
  *
- * 「添加模型」里填到这些名字时，上下文**锁定**为表里的值并说明出处 ——
+ * 「添加模型」里填到这些名字时，上下文**锁定**为表里的值 ——
  * 保存时主进程本来就按表覆盖，让用户改了却不生效是静默降级。
+ * 出处不进对话框：数字已经在下拉里，实测日期留在能力表。
  */
 export interface KnownContextView {
   readonly provider: string;
   /** 小写；比较前把用户填的名字也转小写、去空格 */
   readonly upstreamModel: string;
   readonly maxContextTokens: number;
-  /** 给人看的出处，例如「2026-10-05 实测」「厂商文档，没实测」 */
+  /** 出处，例如「2026-10-05 实测」。对话框不展示 */
   readonly source: string;
 }
 
