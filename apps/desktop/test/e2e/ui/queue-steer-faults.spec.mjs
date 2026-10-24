@@ -181,8 +181,8 @@ for (const mode of ['steer', 'queue']) {
     const marker = `COMPLETED-RACE-${mode}`;
     await hold(app, marker);
     await arm(app, mode === 'steer' ? 'turn/steer' : 'thread/queue/add', 'hold-request');
-    if (mode === 'steer') await selectSteer(page);
     await input(page).fill(marker);
+    if (mode === 'steer') await selectSteer(page);
     await input(page).press('Enter');
     await expect.poll(async () => (await fault(app)).held).toBe(1);
     await releaseModel(app);
@@ -272,8 +272,8 @@ test('插话已接受但核对故障：完成后沿用原身份核对，不会�
   await begin(page, app);
   await arm(app, 'turn/steer', 'drop-response');
   await arm(app, 'thread/items/list', 'reject', true);
-  await selectSteer(page);
   await input(page).fill('STEER-ACCEPTED-UNKNOWN');
+  await selectSteer(page);
   await input(page).press('Enter');
   await expect(page.getByText(/发送结果尚未确认/)).toBeVisible();
   await releaseModel(app);
@@ -320,8 +320,8 @@ test('结束竞态叠加队列不可用：本机降级消息直接进入新回�
   const marker = 'LOCAL-COMPLETED-RACE';
   await hold(app, marker);
   await arm(app, 'turn/steer', 'hold-request');
-  await selectSteer(page);
   await input(page).fill(marker);
+  await selectSteer(page);
   await input(page).press('Enter');
   await expect.poll(async () => (await fault(app)).held).toBe(1);
   await releaseModel(app);

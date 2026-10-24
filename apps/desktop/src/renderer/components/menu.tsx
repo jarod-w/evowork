@@ -349,6 +349,8 @@ export interface InlineSelectProps {
    * 差的只是触发器的外形（Q24 的"受控扩展"）。
    */
   readonly field?: boolean | undefined;
+  /** 锁定态隐藏下拉箭头（如任务已开始后的项目指示器） */
+  readonly hideChevron?: boolean | undefined;
   /** 一项都没有时显示的话（见 `MenuProps.emptyHint`）。**不给就用通用兜底，绝不留空盒子** */
   readonly emptyHint?: string | undefined;
 }
@@ -387,9 +389,11 @@ export function InlineSelect(props: InlineSelectProps) {
           </span>
         ) : null}
         <span className="ew-inline-select-label">{selected?.label ?? props.placeholder}</span>
-        <span className="ew-inline-select-chevron" aria-hidden="true">
-          ▾
-        </span>
+        {props.hideChevron ? null : (
+          <span className="ew-inline-select-chevron" aria-hidden="true">
+            ▾
+          </span>
+        )}
       </button>
 
       {/* 03 §2.5：用户改过的控件带一个 4px 圆点，点它回落场景默认值 */}

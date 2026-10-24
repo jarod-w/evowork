@@ -828,12 +828,24 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
     prompt.mockRestore();
   });
 
-  it('运行中通过组合按钮切换本次发送方式，默认排队，选择不会直接发送', () => {
+  it('运行中未输入时只显示停止按钮，开始输入后才显示组合发送按钮，默认排队，选择不会直接发送', () => {
     const onSend = vi.fn();
     const onSteerChange = vi.fn();
     const { rerender } = render(
       <Composer value="补充要求" onChange={() => {}} onSend={onSend} runState="idle" />,
     );
+    expect(screen.queryByRole('button', { name: '本次发送方式' })).toBeNull();
+    rerender(
+      <Composer
+        value=""
+        onChange={() => {}}
+        onSend={onSend}
+        runState="running"
+        onSteerChange={onSteerChange}
+      />,
+    );
+    expect(screen.getByRole('button', { name: '停止' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '排队发送' })).toBeNull();
     expect(screen.queryByRole('button', { name: '本次发送方式' })).toBeNull();
     rerender(
       <Composer
@@ -885,8 +897,12 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
     const onSend = vi.fn();
     const onInterrupt = vi.fn();
     renderComposer({ ...over, runState: 'running', onInterrupt }, onSend);
-    expect(screen.getByRole('button', { name: '排队发送' })).toHaveProperty('disabled', true);
-    fireEvent.click(screen.getByRole('button', { name: '排队发送' }));
+    if (over.value === '') {
+      expect(screen.queryByRole('button', { name: '排队发送' })).toBeNull();
+    } else {
+      expect(screen.getByRole('button', { name: '排队发送' })).toHaveProperty('disabled', true);
+      fireEvent.click(screen.getByRole('button', { name: '排队发送' }));
+    }
     fireEvent.click(screen.getByRole('button', { name: '停止' }));
     expect(onSend).not.toHaveBeenCalled();
     expect(onInterrupt).toHaveBeenCalledOnce();

@@ -66,6 +66,9 @@ test('运行中：默认是排队而不是插话', async ({ page, electronApp })
   await expectHeld(electronApp);
 
   const modeTrigger = page.getByRole('button', { name: '本次发送方式', exact: true });
+  // 未输入内容时不展示发送方式按钮，只展示停止
+  await expect(modeTrigger).toHaveCount(0);
+  await input.fill('补充一点');
   await expect(modeTrigger).toBeVisible();
   await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
 
@@ -90,14 +93,13 @@ test('运行中：单次插话、发送反馈与下一条恢复排队', async ({
   await expect(composer).toHaveAttribute('data-run-state', 'running');
   await expectHeld(electronApp);
 
-  await selectSteer(page);
-
   const marker = `STEER-${Date.now()}`;
   await input.fill(`插话：只要三条 ${marker}`);
+  await selectSteer(page);
   await page.getByRole('button', { name: '立即插话', exact: true }).click();
   await expect(page.getByLabel('发送状态')).toHaveText('已发送，正在调整方向');
   await page.screenshot({ path: info.outputPath('steered-status.png') });
-  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toHaveCount(0);
 
   /*
    * **没有排队区**才说明走的是 `turn/steer` 而不是入队。
@@ -106,6 +108,7 @@ test('运行中：单次插话、发送反馈与下一条恢复排队', async ({
   await expect(page.getByLabel('排队中的追问')).toHaveCount(0);
   const nextMarker = `QUEUE-AFTER-${Date.now()}`;
   await input.fill(nextMarker);
+  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '排队发送', exact: true }).click();
   await expect(page.getByLabel('发送状态')).toHaveText('等待当前任务完成');
   await expect(page.getByLabel('排队中的追问')).toContainText(nextMarker);
@@ -226,15 +229,15 @@ test('运行中：缺失活动回合投影时插话改为排队，完整显示�
   });
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'running');
   await expectHeld(electronApp);
-  await selectSteer(page);
   const marker = `FALLBACK-${Date.now()}`;
   await input.fill(marker);
+  await selectSteer(page);
   await page.getByRole('button', { name: '立即插话', exact: true }).click();
   await expect(page.getByLabel('发送状态')).toHaveText(
     '等待当前任务完成 当前没有可插话的回合，这条输入已改为排队。',
   );
   await expect(page.getByLabel('排队中的追问')).toContainText(marker);
-  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toHaveCount(0);
   expect(await gatewaySaw(electronApp, marker)).toBe(false);
   await page.screenshot({ path: info.outputPath('steer-fallback-reason.png') });
   await releaseHeldTurn(electronApp);
@@ -251,9 +254,9 @@ test('运行中：窄窗发送和停止独立，停止保留草稿；下轮恢�
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'running');
   await expectHeld(electronApp);
-  await selectSteer(page);
   const draft = `未发送草稿-${Date.now()}`;
   await input.fill(draft);
+  await selectSteer(page);
   for (const width of [1000, 600]) {
     await electronApp.evaluate(
       ({ BrowserWindow }, nextWidth) => BrowserWindow.getAllWindows()[0].setSize(nextWidth, 800),
@@ -295,6 +298,7 @@ test('运行中：窄窗发送和停止独立，停止保留草稿；下轮恢�
   await holdNextTurn(electronApp, '再次运行验证恢复默认方式');
   await input.fill('再次运行验证恢复默认方式');
   await page.getByRole('button', { name: '发送', exact: true }).click();
+  await input.fill('补充一点');
   await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await releaseHeldTurn(electronApp);
@@ -309,19 +313,23 @@ test('切换运行任务或回到新任务时不携带插话选择', async ({ pa
   await input.fill(first);
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expectHeld(electronApp);
+  await input.fill('草稿');
   await selectSteer(page);
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await expect(page.getByRole('button', { name: '本次发送方式', exact: true })).toHaveCount(0);
   await sidebar.getByRole('button', { name: first, exact: true }).click();
+  await input.fill('草稿');
   await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
   await selectSteer(page);
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await holdNextTurn(electronApp, second);
   await input.fill(second);
   await page.getByRole('button', { name: '发送', exact: true }).click();
+  await input.fill('草稿');
   await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
   await selectSteer(page);
   await sidebar.getByRole('button', { name: first, exact: true }).click();
+  await input.fill('草稿');
   await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await sidebar.getByRole('button', { name: second, exact: true }).click();

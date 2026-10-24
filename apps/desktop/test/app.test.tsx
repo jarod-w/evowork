@@ -761,9 +761,9 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge } = fakeBridge({ getStartup: startup, send });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    await selectSteer();
     const box = screen.getByLabelText('需求输入');
     fireEvent.change(box, { target: { value: '换个方向' } });
+    await selectSteer();
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     await waitFor(() =>
       expect(screen.getByLabelText('发送状态').textContent).toBe('已发送，正在调整方向'),
@@ -771,9 +771,10 @@ describe('运行中的本次发送方式与回执', () => {
     expect(send).toHaveBeenLastCalledWith(
       expect.objectContaining({ threadId: 'first', steer: true }),
     );
-    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
     expect(box).toHaveProperty('value', '');
+    expect(screen.queryByRole('button', { name: '排队发送' })).toBeNull();
     fireEvent.change(box, { target: { value: '完成后补一页' } });
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
     fireEvent.keyDown(box, { key: 'Enter' });
     await waitFor(() =>
       expect(screen.getByLabelText('发送状态').textContent).toBe('等待当前任务完成'),
@@ -795,8 +796,8 @@ describe('运行中的本次发送方式与回执', () => {
     });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    await selectSteer();
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '改查上海' } });
+    await selectSteer();
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     await waitFor(() =>
       expect(screen.getByLabelText('发送状态').textContent).toBe(
@@ -804,7 +805,7 @@ describe('运行中的本次发送方式与回执', () => {
       ),
     );
     expect(screen.queryByText('已发送，正在调整方向')).toBeNull();
-    expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '立即插话' })).toBeNull();
   });
 
   it('发送失败保留草稿和插话选择，重试成功后才重置', async () => {
@@ -815,16 +816,17 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge } = fakeBridge({ getStartup: startup, send });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    await selectSteer();
     const box = screen.getByLabelText('需求输入');
     fireEvent.change(box, { target: { value: '保留这条' } });
+    await selectSteer();
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     await screen.findByText('没能发出去：暂时断线');
     expect(box).toHaveProperty('value', '保留这条');
     expect(screen.getByRole('button', { name: '立即插话' })).toBeTruthy();
     expect(screen.queryByLabelText('发送状态')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy());
+    await waitFor(() => expect(box).toHaveProperty('value', ''));
+    expect(screen.queryByRole('button', { name: '立即插话' })).toBeNull();
     expect(send).toHaveBeenCalledTimes(2);
   });
 
@@ -832,6 +834,8 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge, emit } = fakeBridge({ getStartup: startup });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
+    const box = screen.getByLabelText('需求输入');
+    fireEvent.change(box, { target: { value: '草稿' } });
     await selectSteer();
     expect(screen.getByRole('button', { name: '立即插话' })).toBeTruthy();
     fireEvent.click(screen.getByText('second运行任务'));
@@ -857,8 +861,8 @@ describe('运行中的本次发送方式与回执', () => {
     const { bridge } = fakeBridge({ getStartup: startup, send });
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('first运行任务'));
-    await selectSteer();
     fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '旧消息' } });
+    await selectSteer();
     fireEvent.click(screen.getByRole('button', { name: '立即插话' }));
     expect(screen.getByRole('button', { name: '立即插话' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: '本次发送方式' })).toHaveProperty('disabled', true);

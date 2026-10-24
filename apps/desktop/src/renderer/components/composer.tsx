@@ -1005,6 +1005,7 @@ export function Composer(props: ComposerProps) {
               ariaLabel="选择项目"
               icon={renderIcon('folder')}
               placeholder={props.workspaceLabel ?? '不使用项目'}
+              hideChevron={props.workspaceLocked}
               value={props.workspaceLocked ? undefined : (props.workspaceId ?? 'no-project')}
               options={
                 props.workspaceLocked
@@ -1070,6 +1071,7 @@ export function Composer(props: ComposerProps) {
               runState={
                 runState === 'running' ? runState : goalCommand || memoryCommand ? 'idle' : runState
               }
+              hasDraft={props.value.trim() !== '' || attachments.length > 0}
               disabled={sendDisabled}
               parsing={localControl ? 0 : parsing}
               blockedReason={!localControl && unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined}
@@ -1209,6 +1211,7 @@ export function Composer(props: ComposerProps) {
 
 function SendButton({
   runState,
+  hasDraft,
   disabled,
   parsing,
   blockedReason,
@@ -1222,6 +1225,7 @@ function SendButton({
   onAddBudget,
 }: {
   readonly runState: ComposerRunState;
+  readonly hasDraft: boolean;
   readonly disabled: boolean;
   readonly parsing: number;
   readonly blockedReason?: string | undefined;
@@ -1236,34 +1240,51 @@ function SendButton({
 }): ReactNode {
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
-    if (runState !== 'running' || localCommand || modeDisabled) {
+    if (runState !== 'running' || !hasDraft || localCommand || modeDisabled) {
       setMenuOpen(false);
     }
-  }, [runState, localCommand, modeDisabled]);
+  }, [runState, hasDraft, localCommand, modeDisabled]);
 
   if (runState === 'running') {
-    // 03 §4.6 / 04 §5.5：运行中始终可停止；发送按钮采用组合按钮（[排队发送 | ▾]），不再在卡片外挂单选框行。
+    // 状态 1：运行中且未输入任何内容/附件时，只显示纯图标「停止」按钮（32×32），不展示灰掉的发送按钮
+    if (!hasDraft) {
+      return (
+        <div className="ew-composer-run-actions">
+          <button
+            type="button"
+            className="ew-stop-button"
+            aria-label="停止"
+            onClick={onInterrupt}
+            title="停止当前任务（Esc / ⌘.）"
+          >
+            {renderIcon('stop')}
+          </button>
+        </div>
+      );
+    }
+    // 状态 2 & 3：运行中开始打字或添加附件后，右侧滑出纯图标组合按钮（排队 [↑ | ▾] / 插话 [⚡ | ▾]）
     return (
       <div className="ew-composer-run-actions">
         <button
           type="button"
           className="ew-stop-button"
+          aria-label="停止"
           onClick={onInterrupt}
           title="停止当前任务（Esc / ⌘.）"
         >
           {renderIcon('stop')}
-          停止
         </button>
         {localCommand ? (
           <button
             type="button"
             className="ew-send-button"
             data-state={disabled ? 'disabled' : 'ready'}
+            aria-label="发送"
             disabled={disabled}
-            title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : blockedReason}
+            title={parsing > 0 ? `正在本地解析 ${parsing} 个文件…` : (blockedReason ?? '发送')}
             onClick={onSend}
           >
-            发送
+            {renderIcon('arrow-up')}
           </button>
         ) : (
           <span
@@ -1275,6 +1296,8 @@ function SendButton({
               type="button"
               className="ew-send-button ew-send-split-main"
               data-state={disabled ? 'disabled' : 'ready'}
+              data-send-mode={steer ? 'steer' : 'queue'}
+              aria-label={steer ? '立即插话' : '排队发送'}
               disabled={disabled}
               title={
                 parsing > 0
@@ -1289,7 +1312,7 @@ function SendButton({
                 onSend();
               }}
             >
-              {steer ? '立即插话' : '排队发送'}
+              {renderIcon(steer ? 'bolt' : 'arrow-up')}
             </button>
             <button
               type="button"
@@ -1298,6 +1321,7 @@ function SendButton({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               data-state={disabled ? 'disabled' : 'ready'}
+              data-send-mode={steer ? 'steer' : 'queue'}
               disabled={modeDisabled}
               title={
                 steer
@@ -1315,12 +1339,14 @@ function SendButton({
                   {
                     id: 'queue',
                     label: '排队发送',
+                    icon: renderIcon('arrow-up'),
                     checked: !steer,
                     description: '等当前回合完成后处理',
                   },
                   {
                     id: 'steer',
                     label: '立即插话',
+                    icon: renderIcon('bolt'),
                     checked: Boolean(steer),
                     description: '仅本次发送，发送后恢复排队',
                   },

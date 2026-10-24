@@ -120,12 +120,13 @@ for (const lostReply of [false, true]) {
         `${original} 这是两阶段本机计算任务。第一步仅运行 python3 followup_gate.py，等脚本返回后才能开始第二步，不并行执行。第二步计算 19*23，将“${original}:437”写入 original.txt，并最终只回复“${original} 原任务完成 437”。不要修改脚本或创建 phase-release；不要联网、创建子任务或其他会话。`,
       );
       task = await runningStep(page, m);
-      await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '排队发送', exact: true })).toHaveCount(0);
       await page
         .getByLabel('需求输入')
         .fill(
           `${queued} 这是排队追加任务：在原任务完成后计算 17+25，把“${queued}:42”写入 queued.txt，最终回复“${queued} 排队任务完成 42”。不要改 original.txt，不创建子任务或其他会话。`,
         );
+      await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
       if (lostReply)
         await electronApp.evaluate(() =>
           globalThis.__evoworkE2E.deliveryFaults.arm('thread/queue/add', 'drop-response'),
@@ -211,16 +212,16 @@ test('MiMo：立即插话改变同一回合的后续计划，反馈与实际结�
       `${original} 这是两阶段本机计算任务。第一步仅运行 python3 followup_gate.py，等脚本返回后才能开始第二步，不并行执行。第二步计算 19*23，将“${original}:437”写入 old-plan.txt，最终回复“${original} 原计划完成 437”。不要修改脚本或创建 phase-release；不要联网、创建子任务或其他会话。`,
     );
     task = await runningStep(page, m);
-    await page.getByRole('button', { name: '本次发送方式', exact: true }).click();
-    await page.getByRole('menuitem', { name: /立即插话/ }).click();
     await page
       .getByLabel('需求输入')
       .fill(
         `${redirected} 现在调整当前任务：取消准备阶段之后的旧计划，不要创建 old-plan.txt，也不要回复旧的完成标记。准备步骤返回后改为计算 17+25，把“${redirected}:42”写入 redirected.txt，最终只回复“${redirected} 已改为新方向 42”。这是对当前任务的纠正，不是另一个排队任务。不创建子任务或其他会话。`,
       );
+    await page.getByRole('button', { name: '本次发送方式', exact: true }).click();
+    await page.getByRole('menuitem', { name: /立即插话/ }).click();
     await page.getByRole('button', { name: '立即插话', exact: true }).click();
     await expect(page.getByLabel('发送状态')).toHaveText('已发送，正在调整方向');
-    await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '立即插话', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('排队中的追问')).toHaveCount(0);
     m.observations = {
       acceptedFeedback: await page.getByLabel('发送状态').innerText(),
