@@ -54,7 +54,10 @@ export function createOfficeLayoutPreview(
       return { note: '未找到本机 LibreOffice 版式转换器；以下仅为正文预览，不代表原文件排版。' };
     if (!['.docx', '.xlsx', '.pptx', '.rtf'].includes(extname(path).toLowerCase()))
       return { note: '此格式没有版式预览。' };
-    const directory = mkdtempSync(join(tmpdir(), 'evowork-office-preview-'));
+    // LibreOffice 的 Unix socket 名称还要拼接 UID 和配置哈希；macOS 默认 TMPDIR 太长。
+    const directory = mkdtempSync(
+      join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'ew-office-'),
+    );
     try {
       if (!lstatSync(path).isFile() || lstatSync(path).size > 50 * 1024 * 1024)
         throw new Error('INPUT_LIMIT');
@@ -92,6 +95,7 @@ export function createOfficeLayoutPreview(
         executable,
         args: [
           '-env:UserInstallation=' + pathToFileURL(profile).href,
+          '-env:OSL_SOCKET_PATH=' + directory,
           '--headless',
           '--nologo',
           '--nodefault',
@@ -108,6 +112,7 @@ export function createOfficeLayoutPreview(
           ...['/dev/random', '/dev/urandom'].filter(existsSync),
         ],
         writeDirectory: directory,
+        allowLocalIpc: true,
         timeoutMs: 45_000,
         maxResidentBytes: 1024 * 1024 * 1024,
       });

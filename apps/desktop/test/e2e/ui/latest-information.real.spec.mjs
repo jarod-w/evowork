@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { expect, startTaskInWorkspace, runUntilIdle, test } from './fixtures.mjs';
+import { selectRealModel } from '../harness/real-models.mjs';
 
 test.use({
   registerModels: true,
@@ -136,6 +137,10 @@ for (const winter of [false, true]) {
     electronApp,
   }, info) => {
     test.setTimeout(360000);
+    const model = selectRealModel();
+    const base = new URL(model.baseUrl);
+    base.pathname = base.pathname === '/' ? '/v1/' : base.pathname.replace(/\/?$/, '/');
+    const endpoint = new URL('chat/completions', base).href;
     const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
     const expected = snapshot(workspace, winter);
     for (const name of ['quotes.json', 'news-index.json'])
@@ -159,8 +164,8 @@ for (const winter of [false, true]) {
       const startup = await page.evaluate(() => window.evowork.getStartup());
       const task = startup.tasks.find((item) => item.title?.includes(marker));
       expect(task).toBeTruthy();
-      // 任务投影使用网关命名空间；厂商模型和最终端点在 wire 证据中另行精确核对。
-      expect(task.modelId).toBe('evowork/deepseek-flash');
+      // 允许同一型号的旧网关别名；实际厂商型号与端点仍在 wire 中逐次精确核对。
+      expect([model.id, `evowork/${model.upstreamModel}`]).toContain(task.modelId);
       const history = await page.evaluate(
         (threadId) => window.evowork.openTask({ threadId }),
         task.id,
@@ -217,8 +222,8 @@ for (const winter of [false, true]) {
       expect(
         requests.every(
           (row) =>
-            row.model === 'deepseek-flash' &&
-            row.endpoint === 'https://api.deepseek.com/v1/chat/completions' &&
+            row.model === model.upstreamModel &&
+            row.endpoint === endpoint &&
             row.hasTemporalRulesInSystem &&
             row.hasNextActionFieldRules,
         ),

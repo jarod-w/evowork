@@ -26,21 +26,26 @@ async function runCommand(page, electronApp, cmd, nth) {
    */
   const marker = `HOOK-E2E-${nth}-${Math.random().toString(36).slice(2, 8)}`;
   await electronApp.evaluate(
-    (_electron, { marker, cmd }) =>
-      globalThis.__evoworkE2E.gateway.scriptWhen(
-        marker,
-        (request) => request.text.includes(marker),
-        { tool: 'exec_command', args: { cmd } },
-      ),
+    (_electron, { marker, cmd }) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen(marker, (request) => request.text.includes(marker), {
+        tool: 'exec_command',
+        args: { cmd },
+      });
+      gateway.scriptWhen(`${marker}-done`, (request) => request.text.includes(marker), {
+        kind: 'text',
+        text: `${marker} DONE`,
+      });
+    },
     { marker, cmd },
   );
   // 第一条开新任务，要开在用例的工作区里（见 `startTaskInWorkspace`）；之后是同一任务里的追加
   if (nth === 0) await startTaskInWorkspace(page, electronApp, `${marker} 执行 ${cmd}`);
   else {
     await page.getByLabel('需求输入').fill(`${marker} 执行 ${cmd}`);
-    await page.getByRole('button', { name: '发送' }).click();
+    await page.getByRole('button', { name: '发送', exact: true }).click();
   }
-  await expect(page.getByText('E2E response').nth(nth)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(`${marker} DONE`, { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
     timeout: 60_000,
   });

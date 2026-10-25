@@ -1,0 +1,21 @@
+{
+  "path": "/private/tmp/evowork-glm-check-snapshot/evowork",
+  "files": {
+    "scripts/test/follow-up-wire.test.mjs": "26e404de370c44aaed54bb1dee29b15b4097528e6ecdf9997640754eab7a9608",
+    "scripts/test/fake-gateway.test.mjs": "a31179192c1726e6ffd1c4bcf179250f1a1e7c8fb229b1d1d97e57262a2f8f00",
+    "apps/desktop/test/e2e/harness/follow-up-wire.mjs": "5779f29d37163f2ac92b8e04ac7db8df7539c46d6cc543d8e2102a58a15a72dc",
+    "apps/desktop/test/e2e/harness/acceptance/cases.mjs": "84b8fc0bac6414591ef4c85b8f71909e30469837baa61356569407a3c64ad785",
+    "apps/desktop/test/e2e/harness/acceptance/checks.py": "452e11b34180d41454b1c5111747dc6fddefdcd4e299a5e7b5f1558a4e313447",
+    "apps/desktop/test/e2e/harness/acceptance/selftest.py": "4412d3a37cf183dea9f3e47109f931c338f6f3d8bc2c2f3a39608ddb23cd0397",
+    "apps/desktop/test/e2e/ui/acceptance.real.spec.mjs": "555ec86264272c2281619405005560f205c5d675e5520618a20b64ca85a92e24",
+    "apps/desktop/test/e2e/ui/latest-information.real.spec.mjs": "eb47292fe3091694fcfdcf7000c794c62cd46da5919efa8c95953b9faf41461b",
+    "apps/desktop/test/e2e/ui/memory-import.real.spec.mjs": "1e62dac72cc27ce2e977a7e86575eb43e8ec8e265eeb9830bd3c951fe15fda64",
+    "apps/desktop/test/e2e/ui/reasoning-wrap.real.spec.mjs": "aaedae797527d0aa26d282278f4fc26b1fe60c4e67ede6801930e392f0947a67",
+    "apps/desktop/test/e2e/ui/README.md": "aa566e7577d01c02c237f3d11cdaa94439074b4bde7f450c0478f13ee7b9003f",
+    "plugins/skills/spreadsheets/SKILL.md": "e25280050eb0baac6c7844a7e05c29374894cc8fc4a06640af80009eee58aa6b",
+    "plugins/skills/documents/SKILL.md": "c89b45841d525c24f017a8f6f82fb8b554741fd65afb62a1088cc498d0d66ae2",
+    "docs/design/08-artifacts-and-ingest.md": "53338c21576445b4bdaa2849a057fbbe3a3c1b3ff950e95a3d1b0d3e300dcd59"
+  },
+  "basis": "start-of-run HEAD plus initial diff and explicit GLM fixes",
+  "excluded": "parallel session-to-skill feature changes"
+}

@@ -253,6 +253,19 @@ printf '%%PDF-1.4\\n%%fake\\n' > "$outdir/document.pdf"
   });
 
   it.runIf(hasDocx && onMac)(
+    '转换器可在任务目录内建立真实本地 IPC，路径不超过 Unix socket 上限',
+    () => {
+      const script = fakeConverter(`${ACCEPTING}
+case " $* " in *" -env:OSL_SOCKET_PATH=$outdir "*) ;; *) exit 17;; esac
+/usr/bin/perl -MSocket -e 'socket(my $s, PF_UNIX, SOCK_STREAM, 0) or die; bind($s, sockaddr_un($ARGV[0])) or die; listen($s, 1) or die; socket(my $c, PF_UNIX, SOCK_STREAM, 0) or die; connect($c, sockaddr_un($ARGV[0])) or die' "$outdir/OSL_PIPE_501_SingleOfficeIPC_0123456789abcdef0123456789abcdef"
+`);
+      const result = run(DOC, 'ipc.pdf', [], { EVOWORK_OFFICE_CONVERTER: script });
+      expect(result.status, result.stderr).toBe(EXIT.ok);
+      expect(readFileSync(join(dir, 'ipc.pdf')).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    },
+  );
+
+  it.runIf(hasDocx && onMac)(
     '**转换时连不了网**：转换器想访问本机 HTTP 服务，一个请求都到不了（K6）',
     async () => {
       let hits = 0;

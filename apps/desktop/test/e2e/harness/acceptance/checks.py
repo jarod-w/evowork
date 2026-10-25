@@ -14,6 +14,7 @@
   原版把所有 `|` 行拼成一张、取第一张的表头 —— 2026-10-01 真跑时 C1 先放了一张汇总表就被判了 FAIL。
 - 改⑥ D6：连姓名一起查（原版只查身份证 / 卡号 / 手机号，报告里写明了这个缺口）。
   本地残留（pii_residue）与经代理的外连（egress_via_proxy）只作记录（INFO），不判失败。
+- 改⑧ D1-4：两阶段审批验收另查已批准的草稿确实写成指定文本，避免只看后续拒绝后文件没变。
 
 用法：python3 checks.py <ctx.json>，向 stdout 输出结果数组 JSON。
 """
@@ -125,6 +126,14 @@ def _rel_to_home(ctx, path: Path) -> str:
 @check
 def file_exists(ctx, path):
     return P(path) if _out(ctx, path) else F(f"未产出 {path}")
+
+
+@check
+def file_text_equals(ctx, path, text):
+    p = _out(ctx, path)
+    if not p:
+        return F(f"未产出 {path}")
+    return P() if p.read_text(encoding="utf-8").strip() == text else F(f"{path} 内容不符")
 
 
 @check

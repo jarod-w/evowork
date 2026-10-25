@@ -14,10 +14,17 @@ import { expect, test } from './fixtures.mjs';
 
 /** 让模型回一段指定正文，然后等它渲染完 */
 async function replyWith(page, electronApp, text) {
-  await electronApp.evaluate((_electron, payload) => {
-    globalThis.__evoworkE2E.gateway.scriptNext({ kind: 'text', text: payload });
-  }, text);
-  await page.getByLabel('需求输入').fill('画个图');
+  const marker = `VISUALIZER-${Date.now()}`;
+  await electronApp.evaluate(
+    (_electron, { marker, text }) => {
+      globalThis.__evoworkE2E.gateway.scriptWhen(marker, (view) => view.text.includes(marker), {
+        kind: 'text',
+        text,
+      });
+    },
+    { marker, text },
+  );
+  await page.getByLabel('需求输入').fill(`画个图 ${marker}`);
   await page.getByRole('button', { name: '发送' }).click();
   await expect(page.getByRole('main', { name: '对话区' })).toBeVisible();
 }

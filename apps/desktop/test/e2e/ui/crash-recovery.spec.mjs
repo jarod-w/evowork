@@ -33,7 +33,11 @@ test('内核崩溃：界面如实说出来，而且之后还能继续发任务',
    * 只把横幅画出来、而新任务再也发不出去的话，那不是恢复，是一句好听的讣告。
    */
   await electronApp.evaluate(() => {
-    globalThis.__evoworkE2E.gateway.scriptNext({ kind: 'text', text: '重启之后我还在。' });
+    globalThis.__evoworkE2E.gateway.scriptWhen(
+      'after-restart',
+      (view) => view.text.includes('内核重启之后还能发吗'),
+      { kind: 'text', text: '重启之后我还在。' },
+    );
   });
   await composer.fill('内核重启之后还能发吗');
   await page.getByRole('button', { name: '发送' }).click();

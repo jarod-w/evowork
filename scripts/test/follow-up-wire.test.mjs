@@ -83,6 +83,42 @@ it('observes DeepSeek model and endpoint without retaining credentials or messag
   );
 });
 
+it('observes the GLM endpoint and temporal rules without retaining private input', async () => {
+  const response = new Response('private response');
+  const fetch = vi.fn().mockResolvedValue(response);
+  vi.stubGlobal('fetch', fetch);
+  installFollowUpWire(path);
+  const endpoint = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+  const input = {
+    ...payload,
+    body: JSON.stringify({
+      model: 'glm-5.3-flash',
+      messages: [
+        {
+          role: 'system',
+          content: 'private policy 最新信息必须对齐时间与对象；不能一律排除收盘后报道',
+        },
+        { role: 'user', content: 'private task LATEST_test' },
+      ],
+    }),
+  };
+  expect(await globalThis.fetch(endpoint, input)).toBe(response);
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(endpoint, input);
+  expect(rows()).toMatchObject([
+    {
+      type: 'request',
+      model: 'glm-5.3-flash',
+      endpoint,
+      hasTemporalTask: true,
+      hasTemporalRulesInSystem: true,
+    },
+    { type: 'response', status: 200 },
+  ]);
+  expect(readFileSync(path, 'utf8')).not.toMatch(
+    /private task|private policy|private response|test-secret/,
+  );
+});
+
 it('redacts arbitrary error metadata and leaves other endpoints unobserved', async () => {
   const error = Object.assign(new Error('secret-message'), {
     name: 'secret-name',

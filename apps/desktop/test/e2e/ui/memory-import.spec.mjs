@@ -654,7 +654,7 @@ test('原生结构化记忆引用在实时消息和刷新历史中显示', async
   await expect(citation).toBeVisible();
   await citation.click();
   await expect(page.getByText('MEMORY.md:1–2', { exact: true })).toBeVisible();
-  await expect(page.locator('.ew-markdown')).not.toContainText('oai-mem-citation');
+  await expect(page.getByRole('feed')).not.toContainText('oai-mem-citation');
   await page.screenshot({ path: info.outputPath('memory-citation-history.png') });
 });
 

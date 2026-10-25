@@ -1,0 +1,4774 @@
+{
+  "platform": "darwin-arm64",
+  "scope": "real Electron and shipped kernel with controlled model gateway",
+  "phases": {
+    "initial": {
+      "stats": {
+        "startTime": "2026-10-24T14:36:32.303Z",
+        "duration": 1107162.804,
+        "expected": 145,
+        "skipped": 0,
+        "unexpected": 21,
+        "flaky": 0
+      },
+      "cases": [
+        {
+          "file": "approval.spec.mjs",
+          "title": "审批卡：点允许之后，命令真的执行了",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 25052,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "attachments.spec.mjs",
+          "title": "选 23 个：前 20 个就绪、后 3 个说清原因；发出去的请求里图一张不少、csv 不当图",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 8078,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "attachments.spec.mjs",
+          "title": "把带图的 docx 与 pptx 拖进输入框：两个都就绪，图也抽出来了",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4201,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "composer.spec.mjs",
+          "title": "输入 → 发送 → 进入运行态 → 中断",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1827,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "composer.spec.mjs",
+          "title": "首页不预选项目，两个无项目任务有独立目录",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1931,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "设置页、内核配置、模型的工具清单三处都关着",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1734,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "告知 → 硬禁止 → 准入 → 状态条 → 停止控制 → 留存内容",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3353,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "请求批准档：写动作再批一次，批了才落到应用上",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4244,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "完全访问：写动作不再逐次弹卡，告知、准入与硬禁止照旧",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3554,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "完全访问下 Enter 提交仍需独立确认：确认本次动作",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3908,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "完全访问下 Enter 提交仍需独立确认：拒绝",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3860,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "认不出的应用名：回 APP_NOT_FOUND，不冒充策略拒绝",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2937,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "不同意传输：Helper 一次都没被问过，同一任务里也不再追问",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2134,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "始终允许：设置页列出这一条，撤销后立即消失、落盘也清掉",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 23692,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "辅助功能撤权注销工具；手动恢复后重新检查，AX-only 可重新启用",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4865,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "组件故障可重新检查恢复，故障期间不注册工具",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3194,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "无关企业约束不禁用；全局 deny 禁用、移除后可检查恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2146,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "crash-recovery.spec.mjs",
+          "title": "内核崩溃：界面如实说出来，而且之后还能继续发任务",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 63014,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "请求批准：纯删除命令要先问，拒绝后文件一个字节都没变",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 5918,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "请求批准：点「允许这一次」之后才真的删",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6301,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "完全访问：删除仍然问你，而不是被内核直接拒掉",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 5574,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "覆盖已有文件要先问（内核补丁 P6，D1-2），拒绝后内容一个字节都没变",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6505,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "新建文件照常直接跑 —— 模型最常见的动作，不能因为 P6 每次都问",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4504,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "apply_patch 删除被策略拒绝 —— 那一轮是 `printf >` 被拒后改用它删了重建",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3240,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "apply_patch 把已有文件整篇换掉被策略拒绝；局部修改照常执行",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 2850,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "**已知缺口**：追加与删除写进同一段含 `>>` 的脚本时，删除不问（D1-4 的一种写法）",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4688,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "撤销可取消；刷新后副本仍可用；本回合和任务范围恢复到不同起点",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 25023,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "回合之间的用户编辑禁止按任务起点覆盖，本回合仍能恢复到用户版本",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 24947,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "真实MCP分页发现105个文件不泄露正文；助手交付措辞不会代替打开事件",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3440,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "技能先上报后创建和编辑，最新落盘版本始终归实际任务且不生成虚假首版",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 22404,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "确认期间发生外部修改就拒绝覆盖；撤销其他文件不能洗掉这个冲突",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3104,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "会话回滚明确不动磁盘；二进制和超过64KB的等长修改仍能实际恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2581,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "同工作目录另一任务运行时禁止撤销，结束后当前页面恢复撤销入口",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2319,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "后台任务明确打开不会抢当前任务，切回后显示对应文件",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2704,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "真实MCP拒绝缺失/目录/穿越/软链路径，未打开外部文件或错误认领",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2012,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "超出单文件快照上限会提示限制，不显示虚假的撤销按钮",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2094,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "四类 Office 在真实界面显示页面，逐一翻页并正确显示总页数",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 27105,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "超过20页如实标明截断，页码和翻页不会进入未渲染的空白页",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 22749,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "组件不可用时明确回退，正文或失败原因可见且无空白PDF框",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4621,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "组件不可用时明确回退，正文或失败原因可见且无空白PDF框",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3865,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "组件不可用时明确回退，正文或失败原因可见且无空白PDF框",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2642,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-restart.spec.mjs",
+          "title": "关闭整个应用再启动，原文件记录和撤销副本仍有效",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4375,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "shell 变化可发现，原生工具明确登记和打开，创建修改删除能逐项确认后恢复磁盘",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3459,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "Office 通过实际本机转换显示 PDF；没有转换器时如实说明正文回退",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3172,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "代码重复修改展示任务和回合完整净差异，默认页签、关闭选择与重开历史正确",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2696,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "两个真实任务共用工作目录并发生成，上报脚本携带各自任务身份",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2473,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "goal 从真实输入启动、暂停、查看、恢复、完成与清除",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5779,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "未创建目标时，查看与控制给出提示且不创建任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 13535,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "未完成目标替换先确认：取消保留旧目标，确认重置预算并执行新目标",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3586,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算恢复并清除",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4399,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "image-generation.spec.mjs",
+          "title": "大图生成后查看图片：任务成功、预览可见、重载不重复生成",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 6749,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "image-generation.spec.mjs",
+          "title": "拒绝图片费用确认：零服务商请求且正常结束",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 3659,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "image-generation.spec.mjs",
+          "title": "服务商返回 404：明确记录型号不可用，不伪装取消或成功",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 4108,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "layout.spec.mjs",
+          "title": "macOS：交通灯的位置是留出来的，品牌名不会被压住",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2179,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "layout.spec.mjs",
+          "title": "三个断点下都不出现横向滚动条",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1164,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "layout.spec.mjs",
+          "title": "被裁掉的文字要么有省略号，要么悬停能看到全文",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1103,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "library-search.spec.mjs",
+          "title": "资料副本的正文命中、位置预览、引用草稿与移除；刷新后范围仍保留",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4484,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memories.spec.mjs",
+          "title": "/memories 从补全和手输打开，取消不保存，禁读在真实任务中生效",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2124,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import-restart.spec.mjs",
+          "title": "整个应用关闭重开，项目记忆、读取设置、原生历史和去重均保持",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5257,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "设置及 /import 共用向导，取消零写入、仅选中项目、保留开关、去重与历史恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3922,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "发货内核实际整理导入资料，新任务收到记忆索引，禁读任务不注入",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3331,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "原生批次部分失败时保留成功项目并显示失败原因，可重新检测重试",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2070,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "空来源及缺少可靠项目目录时无候选，重新检测可发现新增项目",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1395,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "返回修改项目及取消零写入，个性化入口保持原生成和模型设置，新建任务可达",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2032,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "手动更新同步来源修改和删除，检测前不自动同步，历史与来源保持可追溯",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1706,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "确认时来源已删除则拒绝写入，可重新检测导入剩余项目",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1637,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "确认前内核重启使旧选择失效，拒绝零写入，重新检测可恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2857,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "长项目列表在宽中窄窗口可滚动到最后项目，确认按钮和键盘焦点始终可达",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2059,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "模型网关不可用时 /import 仍在本地工作，复制成功且不创建模型任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1488,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "自动同步默认关闭、限定已授权项目，定时同步更新和删减，关闭后停止",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 125514,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "原生结构化记忆引用在实时消息和刷新历史中显示",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 3497,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "V2 整理状态读取真实整体就绪接口，不把零任务显示为正在整理",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3293,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "自动同步遇到原生复制失败会暂停，历史保留失败结果",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1947,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "未知结果不重放，原生历史可核对真实成功，重新检测去重",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 22479,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "升级保留关闭设置，入口明确说明且不允许检测",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1437,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "已写入但结果未知时暂停，核对历史后才显式恢复，无自动重放",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 85480,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "model-switch.spec.mjs",
+          "title": "换模型：下拉里选另一个，下一回合的请求就用它",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2934,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "明确要求派子代理：子代理真的跑了、只拿到委派的话，结论回到根任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 12541,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "运行中派出的子代理：不切换任务，标题栏就能打开它的只读时间线",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 12330,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "子任务视图里追加要求：先送回根任务，再由根代理用 followup_task 转给子代理",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 12262,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "兄弟代理互发：agent_a 用 send_message 把结果交给正在等待的 agent_b",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2047,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "缺少标题返回字段级错误，保留最终交付且不保存建议或自动重试",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1445,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2003,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "模型忽略结束提醒也能完成原回合，不无限重试或伪造建议",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1442,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送走原回合链路",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2468,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "运行中的候选不展示、不覆盖草稿，方向右键只填入不发送；Escape 忽略刷新后仍隐藏",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2830,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "等待用户补充不展示下一步建议",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1962,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "提出候选后停止回合，不发布或恢复未完成建议",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1639,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "ocr-attachments.spec.mjs",
+          "title": "离线安装后识别扫描 PDF 和图片：普通附件不进入资料库，发送只含选择的识别文字",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 925,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "onboarding.spec.mjs",
+          "title": "首次启动直接进入主界面，刷新后仍可使用，不创建默认项目",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1895,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "output-stream.spec.mjs",
+          "title": "输出流保持进度与操作顺序，当前动作可见，停止和刷新后计时与详情一致",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5575,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "policy-hooks.spec.mjs",
+          "title": "读 ~/.ssh 的命令在执行前被拦下，并留下审计",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1513,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "policy-hooks.spec.mjs",
+          "title": "普通命令照常执行 —— 包括以系统目录里的程序开头的那种",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1636,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "policy-hooks.spec.mjs",
+          "title": "内核技能与记忆目录读得到，内核配置照拦 —— 内核亲口指给模型的路径不能被自己的策略挡住",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 1738,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "project-hover.spec.mjs",
+          "title": "项目悬浮卡展示目录与真实聊天数，置顶和编辑可用，窄窗口不裁切",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3543,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "拒绝：草稿、附件和插话选择保留，重试只接受一次",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1994,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "排队drop-response：超时核对原生队列，迟到回执不重复发送",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3677,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "排队hold-response：超时核对原生队列，迟到回执不重复发送",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3729,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "无法确认：保留草稿附件，重复发送只核对、不盲目重投",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3609,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "发送处理中：连续回车和点击只投递一次，切任务后迟到回执不污染新草稿",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1531,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "结束竞态：steer请求在原回合结束后才到达，接受一次且反馈真实",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1906,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "结束竞态：queue请求在原回合结束后才到达，接受一次且反馈真实",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1808,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "停止与继续：native队列保留两条，停止后不启动，明确继续才顺序执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4301,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "停止与继续：local队列保留两条，停止后不启动，明确继续才顺序执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4279,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "已接受后的队列刷新失败不会谎报没发出去",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1521,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "插话已接受但核对故障：完成后沿用原身份核对，不会再建回合",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3724,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "回执等待中仍可停止，已接受的排队项不会越过停止自动执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1523,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "结束竞态叠加队列不可用：本机降级消息直接进入新回合",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1985,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：追问已接受但 IPC 回执丢失，恢复原身份重试不重投",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4895,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：首轮已接受但 IPC 回执丢失，恢复原身份重试不重投",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2264,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：原生接受但回执与核对失败，停止意图在加载任务前接管队列",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 7194,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：无法证明接受的插话继续保留草稿和附件，重试只核对",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4804,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：本机队列意外退出后恢复，编辑顺序与删除保持，明确继续才执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5527,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：本机队列停止后恢复，编辑顺序与删除保持，明确继续才执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5781,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：本机队列出队已接受但回执丢失，恢复核对后不再次启动回合",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6913,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：默认是排队而不是插话",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1187,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：单次插话、发送反馈与下一条恢复排队",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1797,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：Esc 把回合停下来",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1147,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：追问进排队区，能调序、能编辑、能删除，放行后自动跑",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1742,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：缺失活动回合投影时插话改为排队，完整显示原因",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1787,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：窄窗发送和停止独立，停止保留草稿；下轮恢复排队",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1655,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "切换运行任务或回到新任务时不携带插话选择",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2067,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "settings.spec.mjs",
+          "title": "七个分类、模型标签与记忆渐进披露在三档窗口可用",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3470,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "settings.spec.mjs",
+          "title": "预算失焦不写入，取消离开保留草稿，明确保存后刷新仍保留",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1932,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "settings.spec.mjs",
+          "title": "图片表单保留失败草稿，标签和业务导航均保护未保存内容",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1774,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install-layout.spec.mjs",
+          "title": "长审计只滚正文，操作始终可见；卡片标签完整换行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1288,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "单个 SKILL.MD 安装后可通过 slash 选择、发送并恢复历史",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2170,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "单个 SKILL.MD 安装后可通过 dollar 选择、发送并恢复历史",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1966,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "添加技能附件不自动安装；点击全局安装后当前和另一个新任务都能发现",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1295,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "附件正文中的高风险声明不能代替用户确认；取消零安装、确认后才可用",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1461,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "带引号和多行描述的技能安装后立即可启停，更新与卸载同步刷新候选",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2541,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "table-layout.spec.mjs",
+          "title": "长路径不挤压日期，中文控件保持横向，行操作互不重叠且不触发打开",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1405,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "table-layout.spec.mjs",
+          "title": "Web 表格的长标识可横向滚动，中文表头与按钮不被挤成竖排",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1426,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "task-recovery.spec.mjs",
+          "title": "长任务写入后崩溃：历史恢复、刷新仍可继续、文件不重复写入",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3061,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "task-recovery.spec.mjs",
+          "title": "审批期间崩溃：旧审批撤销，未经批准的写入不会在恢复后执行",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 21121,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "task-recovery.spec.mjs",
+          "title": "真宿主将运行记录结束为环境失败，不增加连败且释放并发名额",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2719,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "theme.spec.mjs",
+          "title": "高对比度模式只改那三个边框 token，别的一个都不动",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 934,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "theme.spec.mjs",
+          "title": "键盘走到哪里，哪里就要看得见",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 925,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "thread-communication.spec.mjs",
+          "title": "对话发现同项目目标并确认发送，执行、回传、汇总与刷新恢复，无回复循环",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3489,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "thread-communication.spec.mjs",
+          "title": "代理发起独立会话请求：拒绝后零投递",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2515,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "thread-communication.spec.mjs",
+          "title": "代理发起独立会话请求：批准后执行并回传",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3085,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "turn-failure.real-window.spec.mjs",
+          "title": "上游给英文原因：卡片上是人话，原文折在「详情」里",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1188,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "插件：三个分类 Tab 都切得动，搜索框在",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1077,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "项目：列表在，搜索在，每个项目都有更多操作",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1275,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "项目详情：四个 Tab 逐个切得过去",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1115,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "独立搜索：打得开，快捷操作在",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 968,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "审计：进得去，筛选与导出都在",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1001,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views.spec.mjs",
+          "title": "资料库：从侧边栏进得去，两栏都在，布局站得住",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1002,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views.spec.mjs",
+          "title": "自动化：从侧边栏进得去，能看到新建入口",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 956,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views.spec.mjs",
+          "title": "设置：菜单里进得去，每个分区都点得开",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1253,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "visualizer.spec.mjs",
+          "title": "mermaid fence 真的被渲染成 SVG",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 61279,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "visualizer.spec.mjs",
+          "title": "html fence 进沙箱 iframe，而且拿不到 same-origin",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2406,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "visualizer.spec.mjs",
+          "title": "evowork-chart 的非法 spec 被拒绝渲染，并把原始 JSON 显示出来",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 31086,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：授权读取、引用点击与历史恢复",
+          "project": "fake",
+          "status": "unexpected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "failed",
+              "duration": 39883,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：拒绝后零请求、编造引用不可点击",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 7109,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "window-security.spec.mjs",
+          "title": "窗口缩不到 480×600 以下（01 §1 / §4.2）",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1366,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "window-security.spec.mjs",
+          "title": "外链不在应用窗口里打开 —— 那等于把 preload 桥交出去",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2450,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "window-security.spec.mjs",
+          "title": "任何导航都被阻止 —— 页面只能是我们打包的那一个",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2468,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "work-attention.spec.mjs",
+          "title": "有任务后首页给出状态，待批准能从侧栏点回去，产物直接进入结果预览",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2978,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "WorkBuddy 文本和文件预览取消零提交，个人/项目保存、去重、设置历史及窄窗",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4121,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "原生 note 后续整理进入新任务，禁读不注入，无内核重启",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3721,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "模型只声称成功仍显示未确认，重复提交不重放",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1582,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "导入中主动终止测试内核，恢复后未知批次不重放",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3122,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "拒绝无效 UTF-8、超大文件和不可用模型，预览不执行 HTML",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1104,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "503 后同一整理作业重试成功、记忆进入新任务且不重启内核",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3680,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "working-directory.spec.mjs",
+          "title": "常规修改无项目工作目录，新任务实际使用新目录，刷新与恢复默认不迁移旧任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2537,
+              "retry": 0
+            }
+          ]
+        }
+      ]
+    },
+    "browser-fixed": {
+      "stats": {
+        "startTime": "2026-10-24T15:15:42.329Z",
+        "duration": 47899.192,
+        "expected": 6,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "cases": [
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：授权读取、引用点击与历史恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 11007,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：拒绝后零请求、编造引用不可点击",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6138,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：授权读取、引用点击与历史恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 8777,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：拒绝后零请求、编造引用不可点击",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6159,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：授权读取、引用点击与历史恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 8554,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：拒绝后零请求、编造引用不可点击",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6183,
+              "retry": 0
+            }
+          ]
+        }
+      ]
+    },
+    "final": {
+      "stats": {
+        "startTime": "2026-10-24T15:51:27.719Z",
+        "duration": 730801.703,
+        "expected": 166,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "cases": [
+        {
+          "file": "approval.spec.mjs",
+          "title": "审批卡：点允许之后，命令真的执行了",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3349,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "attachments.spec.mjs",
+          "title": "选 23 个：前 20 个就绪、后 3 个说清原因；发出去的请求里图一张不少、csv 不当图",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2875,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "attachments.spec.mjs",
+          "title": "把带图的 docx 与 pptx 拖进输入框：两个都就绪，图也抽出来了",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2053,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "composer.spec.mjs",
+          "title": "输入 → 发送 → 进入运行态 → 中断",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1221,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "composer.spec.mjs",
+          "title": "首页不预选项目，两个无项目任务有独立目录",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1469,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "设置页、内核配置、模型的工具清单三处都关着",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1519,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "告知 → 硬禁止 → 准入 → 状态条 → 停止控制 → 留存内容",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2750,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "请求批准档：写动作再批一次，批了才落到应用上",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2824,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "完全访问：写动作不再逐次弹卡，告知、准入与硬禁止照旧",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2561,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "完全访问下 Enter 提交仍需独立确认：确认本次动作",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2981,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "完全访问下 Enter 提交仍需独立确认：拒绝",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2998,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "认不出的应用名：回 APP_NOT_FOUND，不冒充策略拒绝",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1841,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "不同意传输：Helper 一次都没被问过，同一任务里也不再追问",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1795,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "始终允许：设置页列出这一条，撤销后立即消失、落盘也清掉",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2035,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "辅助功能撤权注销工具；手动恢复后重新检查，AX-only 可重新启用",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1353,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "组件故障可重新检查恢复，故障期间不注册工具",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1126,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "computer-use.spec.mjs",
+          "title": "无关企业约束不禁用；全局 deny 禁用、移除后可检查恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1280,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "crash-recovery.spec.mjs",
+          "title": "内核崩溃：界面如实说出来，而且之后还能继续发任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2513,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "请求批准：纯删除命令要先问，拒绝后文件一个字节都没变",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3921,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "请求批准：点「允许这一次」之后才真的删",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1749,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "完全访问：删除仍然问你，而不是被内核直接拒掉",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2331,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "覆盖已有文件要先问（内核补丁 P6，D1-2），拒绝后内容一个字节都没变",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1634,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "新建文件照常直接跑 —— 模型最常见的动作，不能因为 P6 每次都问",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1582,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "apply_patch 删除被策略拒绝 —— 那一轮是 `printf >` 被拒后改用它删了重建",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1498,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "apply_patch 把已有文件整篇换掉被策略拒绝；局部修改照常执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1938,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "destructive-approval.spec.mjs",
+          "title": "**已知缺口**：追加与删除写进同一段含 `>>` 的脚本时，删除不问（D1-4 的一种写法）",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1594,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "撤销可取消；刷新后副本仍可用；本回合和任务范围恢复到不同起点",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3106,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "回合之间的用户编辑禁止按任务起点覆盖，本回合仍能恢复到用户版本",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2678,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "真实MCP分页发现105个文件不泄露正文；助手交付措辞不会代替打开事件",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2485,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "技能先上报后创建和编辑，最新落盘版本始终归实际任务且不生成虚假首版",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4888,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "确认期间发生外部修改就拒绝覆盖；撤销其他文件不能洗掉这个冲突",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2198,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "会话回滚明确不动磁盘；二进制和超过64KB的等长修改仍能实际恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2176,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "同工作目录另一任务运行时禁止撤销，结束后当前页面恢复撤销入口",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2056,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "后台任务明确打开不会抢当前任务，切回后显示对应文件",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2486,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "真实MCP拒绝缺失/目录/穿越/软链路径，未打开外部文件或错误认领",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1739,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-lifecycle.spec.mjs",
+          "title": "超出单文件快照上限会提示限制，不显示虚假的撤销按钮",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1678,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "四类 Office 在真实界面显示页面，逐一翻页并正确显示总页数",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 23954,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "超过20页如实标明截断，页码和翻页不会进入未渲染的空白页",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5715,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "组件不可用时明确回退，正文或失败原因可见且无空白PDF框",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2241,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "组件不可用时明确回退，正文或失败原因可见且无空白PDF框",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2198,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-office.spec.mjs",
+          "title": "组件不可用时明确回退，正文或失败原因可见且无空白PDF框",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 8757,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-restart.spec.mjs",
+          "title": "关闭整个应用再启动，原文件记录和撤销副本仍有效",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3419,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "shell 变化可发现，原生工具明确登记和打开，创建修改删除能逐项确认后恢复磁盘",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3069,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "Office 通过实际本机转换显示 PDF；没有转换器时如实说明正文回退",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 18766,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "代码重复修改展示任务和回合完整净差异，默认页签、关闭选择与重开历史正确",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2601,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "file-results.spec.mjs",
+          "title": "两个真实任务共用工作目录并发生成，上报脚本携带各自任务身份",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1747,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "goal 从真实输入启动、暂停、查看、恢复、完成与清除",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5550,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "未创建目标时，查看与控制给出提示且不创建任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 13093,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "未完成目标替换先确认：取消保留旧目标，确认重置预算并执行新目标",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2027,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "goal.spec.mjs",
+          "title": "预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算恢复并清除",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4214,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "image-generation.spec.mjs",
+          "title": "大图生成后查看图片：任务成功、预览可见、重载不重复生成",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 7601,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "image-generation.spec.mjs",
+          "title": "拒绝图片费用确认：零服务商请求且正常结束",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2579,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "image-generation.spec.mjs",
+          "title": "服务商返回 404：明确记录型号不可用，不伪装取消或成功",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2994,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "layout.spec.mjs",
+          "title": "macOS：交通灯的位置是留出来的，品牌名不会被压住",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 930,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "layout.spec.mjs",
+          "title": "三个断点下都不出现横向滚动条",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 929,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "layout.spec.mjs",
+          "title": "被裁掉的文字要么有省略号，要么悬停能看到全文",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 909,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "library-search.spec.mjs",
+          "title": "资料副本的正文命中、位置预览、引用草稿与移除；刷新后范围仍保留",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4262,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memories.spec.mjs",
+          "title": "/memories 从补全和手输打开，取消不保存，禁读在真实任务中生效",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2044,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import-restart.spec.mjs",
+          "title": "整个应用关闭重开，项目记忆、读取设置、原生历史和去重均保持",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3280,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "设置及 /import 共用向导，取消零写入、仅选中项目、保留开关、去重与历史恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3642,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "发货内核实际整理导入资料，新任务收到记忆索引，禁读任务不注入",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2252,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "原生批次部分失败时保留成功项目并显示失败原因，可重新检测重试",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1547,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "空来源及缺少可靠项目目录时无候选，重新检测可发现新增项目",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1175,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "返回修改项目及取消零写入，个性化入口保持原生成和模型设置，新建任务可达",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1799,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "手动更新同步来源修改和删除，检测前不自动同步，历史与来源保持可追溯",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1493,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "确认时来源已删除则拒绝写入，可重新检测导入剩余项目",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1430,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "确认前内核重启使旧选择失效，拒绝零写入，重新检测可恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2746,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "长项目列表在宽中窄窗口可滚动到最后项目，确认按钮和键盘焦点始终可达",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1775,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "模型网关不可用时 /import 仍在本地工作，复制成功且不创建模型任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1228,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "自动同步默认关闭、限定已授权项目，定时同步更新和删减，关闭后停止",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 125885,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "原生结构化记忆引用在实时消息和刷新历史中显示",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1650,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "V2 整理状态读取真实整体就绪接口，不把零任务显示为正在整理",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2577,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "自动同步遇到原生复制失败会暂停，历史保留失败结果",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1530,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "未知结果不重放，原生历史可核对真实成功，重新检测去重",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 21919,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "升级保留关闭设置，入口明确说明且不允许检测",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 990,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "memory-import.spec.mjs",
+          "title": "已写入但结果未知时暂停，核对历史后才显式恢复，无自动重放",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 84839,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "model-switch.spec.mjs",
+          "title": "换模型：下拉里选另一个，下一回合的请求就用它",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1395,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "明确要求派子代理：子代理真的跑了、只拿到委派的话，结论回到根任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 12335,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "运行中派出的子代理：不切换任务，标题栏就能打开它的只读时间线",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 11977,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "子任务视图里追加要求：先送回根任务，再由根代理用 followup_task 转给子代理",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 12212,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "multi-agent.spec.mjs",
+          "title": "兄弟代理互发：agent_a 用 send_message 把结果交给正在等待的 agent_b",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1877,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "缺少标题返回字段级错误，保留最终交付且不保存建议或自动重试",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1402,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "纯文本漏登记由 Stop 在原回合提醒一次，补报建议且不自动执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1954,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "模型忽略结束提醒也能完成原回合，不无限重试或伪造建议",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1411,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "MCP 候选完成后显示，刷新保留，Tab 只填入，编辑后发送走原回合链路",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2474,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "运行中的候选不展示、不覆盖草稿，方向右键只填入不发送；Escape 忽略刷新后仍隐藏",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2865,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "等待用户补充不展示下一步建议",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1939,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "next-actions.spec.mjs",
+          "title": "提出候选后停止回合，不发布或恢复未完成建议",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1656,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "ocr-attachments.spec.mjs",
+          "title": "离线安装后识别扫描 PDF 和图片：普通附件不进入资料库，发送只含选择的识别文字",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 20292,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "onboarding.spec.mjs",
+          "title": "首次启动直接进入主界面，刷新后仍可使用，不创建默认项目",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1628,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "output-stream.spec.mjs",
+          "title": "输出流保持进度与操作顺序，当前动作可见，停止和刷新后计时与详情一致",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5518,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "policy-hooks.spec.mjs",
+          "title": "读 ~/.ssh 的命令在执行前被拦下，并留下审计",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1520,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "policy-hooks.spec.mjs",
+          "title": "普通命令照常执行 —— 包括以系统目录里的程序开头的那种",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1593,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "policy-hooks.spec.mjs",
+          "title": "内核技能与记忆目录读得到，内核配置照拦 —— 内核亲口指给模型的路径不能被自己的策略挡住",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2548,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "project-hover.spec.mjs",
+          "title": "项目悬浮卡展示目录与真实聊天数，置顶和编辑可用，窄窗口不裁切",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3083,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "拒绝：草稿、附件和插话选择保留，重试只接受一次",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1973,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "排队drop-response：超时核对原生队列，迟到回执不重复发送",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3697,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "排队hold-response：超时核对原生队列，迟到回执不重复发送",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3717,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "无法确认：保留草稿附件，重复发送只核对、不盲目重投",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3558,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "发送处理中：连续回车和点击只投递一次，切任务后迟到回执不污染新草稿",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1515,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "结束竞态：steer请求在原回合结束后才到达，接受一次且反馈真实",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1884,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "结束竞态：queue请求在原回合结束后才到达，接受一次且反馈真实",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1756,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "停止与继续：native队列保留两条，停止后不启动，明确继续才顺序执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4730,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "停止与继续：local队列保留两条，停止后不启动，明确继续才顺序执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4333,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "已接受后的队列刷新失败不会谎报没发出去",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1485,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "插话已接受但核对故障：完成后沿用原身份核对，不会再建回合",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3675,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "回执等待中仍可停止，已接受的排队项不会越过停止自动执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1507,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-faults.spec.mjs",
+          "title": "结束竞态叠加队列不可用：本机降级消息直接进入新回合",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1862,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：追问已接受但 IPC 回执丢失，恢复原身份重试不重投",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4849,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：首轮已接受但 IPC 回执丢失，恢复原身份重试不重投",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1941,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：原生接受但回执与核对失败，停止意图在加载任务前接管队列",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6945,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：无法证明接受的插话继续保留草稿和附件，重试只核对",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4709,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：本机队列意外退出后恢复，编辑顺序与删除保持，明确继续才执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5497,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：本机队列停止后恢复，编辑顺序与删除保持，明确继续才执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5642,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer-restart.spec.mjs",
+          "title": "完整重启：本机队列出队已接受但回执丢失，恢复核对后不再次启动回合",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 6830,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：默认是排队而不是插话",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1134,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：单次插话、发送反馈与下一条恢复排队",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1778,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：Esc 把回合停下来",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1145,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：追问进排队区，能调序、能编辑、能删除，放行后自动跑",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1763,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：缺失活动回合投影时插话改为排队，完整显示原因",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1775,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "运行中：窄窗发送和停止独立，停止保留草稿；下轮恢复排队",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1667,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "queue-steer.spec.mjs",
+          "title": "切换运行任务或回到新任务时不携带插话选择",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2061,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "settings.spec.mjs",
+          "title": "七个分类、模型标签与记忆渐进披露在三档窗口可用",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3401,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "settings.spec.mjs",
+          "title": "预算失焦不写入，取消离开保留草稿，明确保存后刷新仍保留",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1925,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "settings.spec.mjs",
+          "title": "图片表单保留失败草稿，标签和业务导航均保护未保存内容",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1775,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install-layout.spec.mjs",
+          "title": "长审计只滚正文，操作始终可见；卡片标签完整换行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1206,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "单个 SKILL.MD 安装后可通过 slash 选择、发送并恢复历史",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2158,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "单个 SKILL.MD 安装后可通过 dollar 选择、发送并恢复历史",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1924,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "添加技能附件不自动安装；点击全局安装后当前和另一个新任务都能发现",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1266,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "附件正文中的高风险声明不能代替用户确认；取消零安装、确认后才可用",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1343,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "skill-install.spec.mjs",
+          "title": "带引号和多行描述的技能安装后立即可启停，更新与卸载同步刷新候选",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2392,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "table-layout.spec.mjs",
+          "title": "长路径不挤压日期，中文控件保持横向，行操作互不重叠且不触发打开",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1342,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "table-layout.spec.mjs",
+          "title": "Web 表格的长标识可横向滚动，中文表头与按钮不被挤成竖排",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1383,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "task-recovery.spec.mjs",
+          "title": "长任务写入后崩溃：历史恢复、刷新仍可继续、文件不重复写入",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3073,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "task-recovery.spec.mjs",
+          "title": "审批期间崩溃：旧审批撤销，未经批准的写入不会在恢复后执行",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2791,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "task-recovery.spec.mjs",
+          "title": "真宿主将运行记录结束为环境失败，不增加连败且释放并发名额",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2318,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "theme.spec.mjs",
+          "title": "高对比度模式只改那三个边框 token，别的一个都不动",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 892,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "theme.spec.mjs",
+          "title": "键盘走到哪里，哪里就要看得见",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 896,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "thread-communication.spec.mjs",
+          "title": "对话发现同项目目标并确认发送，执行、回传、汇总与刷新恢复，无回复循环",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3412,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "thread-communication.spec.mjs",
+          "title": "代理发起独立会话请求：拒绝后零投递",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2545,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "thread-communication.spec.mjs",
+          "title": "代理发起独立会话请求：批准后执行并回传",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2877,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "turn-failure.real-window.spec.mjs",
+          "title": "上游给英文原因：卡片上是人话，原文折在「详情」里",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1158,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "插件：三个分类 Tab 都切得动，搜索框在",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1046,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "项目：列表在，搜索在，每个项目都有更多操作",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1101,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "项目详情：四个 Tab 逐个切得过去",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1097,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "独立搜索：打得开，快捷操作在",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 946,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views-rest.spec.mjs",
+          "title": "审计：进得去，筛选与导出都在",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 970,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views.spec.mjs",
+          "title": "资料库：从侧边栏进得去，两栏都在，布局站得住",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 948,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views.spec.mjs",
+          "title": "自动化：从侧边栏进得去，能看到新建入口",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 928,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "views.spec.mjs",
+          "title": "设置：菜单里进得去，每个分区都点得开",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1231,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "visualizer.spec.mjs",
+          "title": "mermaid fence 真的被渲染成 SVG",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1247,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "visualizer.spec.mjs",
+          "title": "html fence 进沙箱 iframe，而且拿不到 same-origin",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1129,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "visualizer.spec.mjs",
+          "title": "evowork-chart 的非法 spec 被拒绝渲染，并把原始 JSON 显示出来",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1093,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：授权读取、引用点击与历史恢复",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 8557,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "web-research.spec.mjs",
+          "title": "公开资料：拒绝后零请求、编造引用不可点击",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 5971,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "window-security.spec.mjs",
+          "title": "窗口缩不到 480×600 以下（01 §1 / §4.2）",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 894,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "window-security.spec.mjs",
+          "title": "外链不在应用窗口里打开 —— 那等于把 preload 桥交出去",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2407,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "window-security.spec.mjs",
+          "title": "任何导航都被阻止 —— 页面只能是我们打包的那一个",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2422,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "work-attention.spec.mjs",
+          "title": "有任务后首页给出状态，待批准能从侧栏点回去，产物直接进入结果预览",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2926,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "WorkBuddy 文本和文件预览取消零提交，个人/项目保存、去重、设置历史及窄窗",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 4039,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "原生 note 后续整理进入新任务，禁读不注入，无内核重启",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3635,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "模型只声称成功仍显示未确认，重复提交不重放",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1586,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "导入中主动终止测试内核，恢复后未知批次不重放",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2864,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "拒绝无效 UTF-8、超大文件和不可用模型，预览不执行 HTML",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 1126,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "workbuddy-memory.spec.mjs",
+          "title": "503 后同一整理作业重试成功、记忆进入新任务且不重启内核",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 3625,
+              "retry": 0
+            }
+          ]
+        },
+        {
+          "file": "working-directory.spec.mjs",
+          "title": "常规修改无项目工作目录，新任务实际使用新目录，刷新与恢复默认不迁移旧任务",
+          "project": "fake",
+          "status": "expected",
+          "attempts": 1,
+          "results": [
+            {
+              "status": "passed",
+              "duration": 2420,
+              "retry": 0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -54,7 +54,13 @@ test('真实模型：运行中的思考预览自动换行，展开与窄窗口�
     timeout: 150_000,
   });
   await expect(page.getByRole('alert', { name: '回合失败' })).toHaveCount(0);
-  await expect(page.locator('.ew-item-agent')).not.toBeEmpty();
+  await expect
+    .poll(async () =>
+      (await page.locator('.ew-item-agent').allTextContents()).some(
+        (text) => text.trim().length > 0,
+      ),
+    )
+    .toBe(true);
   await expect(page.locator('.ew-reasoning-preview')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('completed.png') });
 });

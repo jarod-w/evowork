@@ -39,12 +39,17 @@ function read(workspace, rel) {
 async function runCommand(page, electronApp, cmd, { decision = '拒绝', nth }) {
   const marker = `DESTRUCTIVE-${Date.now()}-${nth}`;
   await electronApp.evaluate(
-    (_electron, { marker, cmd }) =>
-      globalThis.__evoworkE2E.gateway.scriptWhen(
-        marker,
-        (request) => request.text.includes(marker),
-        { tool: 'exec_command', args: { cmd } },
-      ),
+    (_electron, { marker, cmd }) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen(marker, (request) => request.text.includes(marker), {
+        tool: 'exec_command',
+        args: { cmd },
+      });
+      gateway.scriptWhen(`${marker}-done`, (request) => request.text.includes(marker), {
+        kind: 'text',
+        text: `${marker} DONE`,
+      });
+    },
     { marker, cmd },
   );
   /*
@@ -54,11 +59,12 @@ async function runCommand(page, electronApp, cmd, { decision = '拒绝', nth }) 
   if (nth === 0) await startTaskInWorkspace(page, electronApp, `${marker} 执行 ${cmd}`);
   else {
     await page.getByLabel('需求输入').fill(`${marker} 执行 ${cmd}`);
-    await page.getByRole('button', { name: '发送' }).click();
+    await page.getByRole('button', { name: '发送', exact: true }).click();
   }
 
   const card = page.getByLabel('需要你确认');
-  const reply = page.getByText('E2E response').nth(nth);
+  // Stop 提醒会追加回复，不能按旧回复的数量认定本次命令已经完成。
+  const reply = page.getByText(`${marker} DONE`, { exact: true });
   const first = await Promise.race([
     card.waitFor({ state: 'visible', timeout: 60_000 }).then(() => 'card'),
     reply.waitFor({ state: 'visible', timeout: 60_000 }).then(() => 'reply'),

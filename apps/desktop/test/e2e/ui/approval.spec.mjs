@@ -27,7 +27,11 @@ test('审批卡：点允许之后，命令真的执行了', async ({ page, elect
    */
   await electronApp.evaluate(
     (_electron, script) => {
-      globalThis.__evoworkE2E.gateway.scriptNext(script);
+      globalThis.__evoworkE2E.gateway.scriptWhen(
+        'approve-file',
+        (view) => view.text.includes('写一个需要我批准的文件'),
+        script,
+      );
     },
     {
       tool: 'exec_command',

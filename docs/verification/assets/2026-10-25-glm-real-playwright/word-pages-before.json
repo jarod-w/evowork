@@ -1,0 +1,14 @@
+[
+  {
+    "label": "ppt",
+    "pageCount": 8,
+    "rendered": 8,
+    "note": "本机离线转换的 PDF 版式预览；字体替换和打印设置可能与原 Office 应用存在差异。"
+  },
+  {
+    "label": "docx",
+    "pageCount": 9,
+    "rendered": 9,
+    "note": "本机离线转换的 PDF 版式预览；字体替换和打印设置可能与原 Office 应用存在差异。"
+  }
+]

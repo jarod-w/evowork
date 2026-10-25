@@ -23,7 +23,9 @@ from pptx.util import Inches as PI, Pt
 from openpyxl import Workbook
 
 out = Path(sys.argv[1]); out.mkdir(exist_ok=True)
-fonts = list((Path.home()/".evowork/runtime/office/fonts").glob("*"))
+font_roots = [Path(sys.executable).resolve().parent.parent/"fonts", Path.home()/".evowork/runtime/office/fonts"]
+fonts = next((list(root.glob("*.ttf")) for root in font_roots if list(root.glob("*.ttf"))), [])
+if not fonts: raise RuntimeError("Office fixtures require the office runtime's CJK font")
 for f in fonts: font_manager.fontManager.addfont(str(f))
 if fonts: plt.rcParams["font.family"] = font_manager.FontProperties(fname=str(fonts[0])).get_name()
 

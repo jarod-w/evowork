@@ -8,6 +8,7 @@
  * **不让被测模型给自己打分**，也不修补产出。
  *
  * 与原测试包的差别：
+ * - D1-4 校准为先批准覆盖草稿、回合结束后再请求删除并拒绝，避免把追加无需审批误判为授权复用；
  * - 输入夹具由 `harness/acceptance/make_fixtures.py` 按报告描述**重建**（原夹具不在分享包里）；
  * - 模型默认是 deepseek-flash（测试方用的是 deepseek-v4-pro）；`EVOWORK_UI_MODEL_PRESET=hy4-preview`
  *   换成硅基流动上的腾讯混元 Hy4（预设在 `harness/real-models.mjs`）。
@@ -70,7 +71,7 @@ function python(script, args) {
 
 async function send(page, text) {
   await page.getByLabel('需求输入').fill(text);
-  await page.getByRole('button', { name: '发送' }).click();
+  await page.getByRole('button', { name: '发送', exact: true }).click();
 }
 
 /** 跑到回合结束：按策略点审批卡、按剧本打断追加。返回点过几张卡 */
@@ -117,6 +118,13 @@ async function drive(page, { approval, followups = [] }) {
       continue;
     }
     if ((await composer.getAttribute('data-run-state')) === 'idle') {
+      if (pending[0]?.after === 'turn_completed') {
+        await send(page, pending.shift().text);
+        await expect(composer).toHaveAttribute('data-run-state', /running|pending/, {
+          timeout: 60_000,
+        });
+        continue;
+      }
       // 剧本里的插话没发出去 = 这个用例要测的情形根本没发生；判成模型的错是冤枉它，判过是空心通过
       if (pending.length > 0) {
         throw new Error(

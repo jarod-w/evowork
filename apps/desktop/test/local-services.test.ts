@@ -798,6 +798,8 @@ describe('直接使用随包运行时与后台验证', () => {
 
 describe('共享办公组件安装', () => {
   it('设置和技能同时请求只启动一次，抛错后清理状态并允许重试', async () => {
+    // 这里验证安装路径；真实办公回归提供的管理员解释器会改走验证路径。
+    vi.stubEnv('EVOWORK_OFFICE_PYTHON', '');
     let rejectInstall: (error: Error) => void = () => undefined;
     const install = vi
       .spyOn(runtimeInstaller, 'installOfficeRuntime')
@@ -823,6 +825,7 @@ describe('共享办公组件安装', () => {
       expect(services.officeRuntime.installing()).toBe(false);
     } finally {
       install.mockRestore();
+      vi.unstubAllEnvs();
     }
   });
 });

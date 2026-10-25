@@ -1447,10 +1447,11 @@ def office_converter() -> Path | None:
 
 def _sandbox_profile(read_roots: list[Path], write_dir: Path) -> str:
     """与 `services/ingest/src/isolated-process.ts` 的 parserSandboxProfile 同一份规则：
-    默认全拒、只读系统目录与转换器自身、只写这次的临时目录、**禁一切网络**。
+    默认全拒、只读系统目录与转换器自身、只写本次目录、禁止 IP 网络；仅允许目录内 Unix IPC。
     多读一个 `/bin`：转换器是脚本时要用到 `/bin/sh`（测试用的假转换器就是）。"""
     quoted = lambda path: json.dumps(str(Path(os.path.realpath(path))))  # noqa: E731
     roots = " ".join(f"(subpath {quoted(path)})" for path in read_roots)
+    socket_prefix = json.dumps(str(write_dir.resolve()) + "/")
     return "\n".join(
         [
             "(version 1)",
@@ -1466,6 +1467,9 @@ def _sandbox_profile(read_roots: list[Path], write_dir: Path) -> str:
             f"{roots} (subpath {quoted(write_dir)}))",
             f'(allow file-write* (literal "/dev/null") (subpath {quoted(write_dir)}))',
             "(deny network*)",
+            f"(allow network-bind (path-prefix {socket_prefix}))",
+            f"(allow network-outbound (remote unix-socket (path-prefix {socket_prefix})))",
+            f"(allow network-inbound (local unix-socket (path-prefix {socket_prefix})))",
         ]
     )
 
@@ -1519,7 +1523,9 @@ def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
             EXIT_RUNTIME_MISSING,
             "需要本机 LibreOffice（soffice）才能把文档导出成 PDF。安装后重试，或改交付 .docx / .md。",
         )
-    work = Path(os.path.realpath(tempfile.mkdtemp(prefix="evowork-pdf-")))
+    work = Path(os.path.realpath(tempfile.mkdtemp(
+        prefix="ew-pdf-", dir="/private/tmp" if sys.platform == "darwin" else None,
+    )))
     try:
         profile = work / "profile"
         (profile / "user").mkdir(parents=True)
@@ -1533,6 +1539,7 @@ def convert_docx_to_pdf(docx_path: Path, pdf_path: Path) -> None:
             [
                 str(executable),
                 "-env:UserInstallation=" + profile.as_uri(),
+                "-env:OSL_SOCKET_PATH=" + str(work),
                 "--headless",
                 "--nologo",
                 "--nodefault",

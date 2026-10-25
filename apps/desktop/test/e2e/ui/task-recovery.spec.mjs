@@ -84,7 +84,12 @@ test('审批期间崩溃：旧审批撤销，未经批准的写入不会在恢�
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
   const file = join(workspace, 'must-not-be-written.txt');
   await electronApp.evaluate(
-    (_electron, script) => globalThis.__evoworkE2E.gateway.scriptNext(script),
+    (_electron, script) =>
+      globalThis.__evoworkE2E.gateway.scriptWhen(
+        'approval-before-crash',
+        (view) => view.text.includes('等待我批准之后才写入文件'),
+        script,
+      ),
     {
       tool: 'exec_command',
       args: {

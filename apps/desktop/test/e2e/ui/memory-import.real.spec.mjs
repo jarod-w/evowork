@@ -198,7 +198,10 @@ test('真模型导入后使用、任务/全局禁读和三个项目的范围约�
           : name === 'BETA_ON'
             ? beta
             : 'UNKNOWN';
-    await expect.soft(page.locator('.ew-item-agent').filter({ hasText: expected })).toBeVisible();
+    // 一个回合可有多条助手消息；仍只认可见的助手回复，不能命中用户提示中的 UNKNOWN。
+    await expect
+      .soft(page.getByRole('feed').locator('.ew-item-agent').filter({ hasText: expected }).first())
+      .toBeVisible();
     await page.screenshot({ path: info.outputPath(`memory-${name.toLowerCase()}.png`) });
     expect.soft(record.status, name).toBe('completed');
     expect.soft(record.wire.length, `${name} 请求观测完整`).toBeGreaterThan(0);

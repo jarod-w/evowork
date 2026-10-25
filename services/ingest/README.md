@@ -25,6 +25,10 @@
 
 ## 目录
 
+Office 版式转换使用短任务目录和显式 `OSL_SOCKET_PATH`，仅该转换器通过 `allowLocalIpc`
+使用任务目录内的 Unix socket。TCP、目录外 Unix socket、目录外文件写入仍拒绝；普通解析器
+保持默认不允许 IPC。参见设计 19 的 2026-10-24 隔离转换修订。
+
 ```
 src/
   detect.ts          类型识别：magic bytes 优先、扩展名兜底、编码嗅探（GBK/UTF-8）

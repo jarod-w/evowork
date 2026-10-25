@@ -84,6 +84,27 @@ export async function scriptFileTools(electronApp, marker, steps, answer) {
   );
 }
 
+/** 每次追问单独认领工具和完成回复，旧回合的回复不能提前结束等待或漏批写入。 */
+export async function sendFileCommand(page, electronApp, prompt, cmd) {
+  await electronApp.evaluate(
+    (_, { prompt, cmd }) => {
+      const { gateway } = globalThis.__evoworkE2E;
+      gateway.scriptWhen(`${prompt}-command`, (request) => request.text.includes(prompt), {
+        tool: 'exec_command',
+        args: { cmd },
+      });
+      gateway.scriptWhen(`${prompt}-done`, (request) => request.text.includes(prompt), {
+        kind: 'text',
+        text: `${prompt} DONE`,
+      });
+    },
+    { prompt, cmd },
+  );
+  await page.getByLabel('需求输入').fill(prompt);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await settle(page, `${prompt} DONE`);
+}
+
 export async function expectFileAnswer(page, electronApp, answer) {
   try {
     await expect(page.getByText(answer, { exact: true })).toBeVisible();

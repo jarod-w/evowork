@@ -4,6 +4,14 @@
 
 跑法：`pnpm run test:ui`（需要 `build/kernel/<平台>/codex-app-server`，或设 `EVOWORK_APP_SERVER`）。
 
+`test:ui` 显式选择 `fake` project；`test:ui-real` 才使用真实模型。完整确定性回归也包含真实 Office 版式转换与 OCR，运行前提供：
+
+- `EVOWORK_OFFICE_PYTHON`：办公运行时解释器，可指向 `build/office/<平台>/runtime/bin/python3`，字体必须随运行时存在。
+- `EVOWORK_OFFICE_CONVERTER`：实际 LibreOffice `soffice`；不使用假转换器代替版式验收。
+- `EVOWORK_OCR_TEST_RUNTIME`：由 `scripts/build-ocr-bundle.mjs` 构建并校验的 OCR 目录；测试使用不代表正式发行验收通过。
+
+先完成 `pnpm run build`，再运行 `pnpm run test:ui --retries=0`。`--list` 可核对范围；macOS arm64 的 2026-10-25 全量为 166 条、44 个文件。每次使用隔离应用数据目录，不替换已安装应用。
+
 **多附件旅程**（`attachments.spec.mjs` · `attachments.real.spec.mjs`）还要**办公扩展的 python**
 （默认 `~/.evowork/runtime/office/bin/python3`，或设 `EVOWORK_OFFICE_PYTHON`）：输入由
 `../harness/make-office-fixtures.py` 当场生成（带图的 docx / pptx 等）。缺了就报错，不跳过。
@@ -46,7 +54,9 @@ EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash node node_modules/@playwright/test/cli.j
 
 2026-09-28 外部测试方那套验收（A 办公产物 · B 取数清洗 · C 长任务与交互 · D 安全）的 Playwright 版。
 提示词、审批策略（`approve_all` / `deny_all` / `approve_first_then_deny`）、C3 的中途打断与判定项
-**逐字取自报告**，用例表在 `../harness/acceptance/cases.mjs`。
+取自报告，用例表在 `../harness/acceptance/cases.mjs`。D1-4 于 2026-10-25 校准为两次用户请求：
+先批准覆盖草稿，再拒绝后续删除，同时核对草稿实际改写和两个原件完整。原报告的追加不需要审批，
+“只批第一张”可能批准的就是删除，不能把获准删除误判为授权复用；原始失败证据保留。
 
 ```bash
 EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:acceptance                    # 全部 23 例，约一小时

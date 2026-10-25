@@ -312,6 +312,15 @@ export function createFakeGateway({
       requestBodies.push(body);
       requestCount += 1;
       const current = requestCount;
+      // generate=false 只建立连接，不是模型采样，不能领走工具/故障剧本或扣住回合。
+      if (JSON.parse(body).generate === false) {
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+        const id = `resp_${current}`;
+        sendEvent(response, { type: 'response.created', response: { id } });
+        sendEvent(response, { type: 'response.completed', response: { id, end_turn: true } });
+        response.end('data: [DONE]\n\n');
+        return;
+      }
       const rule = claimRule(body);
       if (rule) {
         void untilReady(rule).then(() => respondWithScript(response, rule.script, current, body));

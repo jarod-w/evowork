@@ -2,6 +2,8 @@
 
 stdio MCP server，使用独立 Chrome / Chromium profile；不继承用户浏览器登录态。构建入口 `node scripts/build.mjs` 会装配同源动作策略 `vendor/policy.mjs`，并从独立目录验证发布包可启动。
 
+macOS 的专用临时浏览器使用 mock keychain，不访问用户登录钥匙串；否则隔离 HOME 下网络服务可能等待钥匙串访问，表现为授权后导航超时。
+
 工具：`browser_search`、`browser_read_page`、`browser_navigate`、`browser_snapshot`、`browser_screenshot`、`browser_click`、`browser_fill`、`browser_press_key`、`browser_scroll`、`browser_download`。
 
 - 搜索免 Key，默认 Bing，可显式选择 Baidu / DuckDuckGo，返回 1–10 条来源。先在「插件 → 连接器」信任浏览器；本机需安装 Chrome / Chromium。

@@ -566,8 +566,9 @@ test.describe('假原生 Helper：宿主到界面的整条链路', () => {
     expect(readFileSync(grantsPath, 'utf8')).not.toContain(canary);
 
     const section = await openComputerUseSettings(page);
-    const row = section.locator('p').filter({ hasText: `${TEXTEDIT} · 允许` });
+    const row = section.locator('.ew-settings-row').filter({ hasText: TEXTEDIT });
     await expect(row).toBeVisible();
+    await expect(row).toContainText('允许操作');
     await row.getByRole('button', { name: '撤销授权' }).click();
     await expect(section).not.toContainText(TEXTEDIT);
     expect(existsSync(grantsPath)).toBe(true);

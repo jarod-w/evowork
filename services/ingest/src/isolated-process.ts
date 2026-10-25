@@ -27,6 +27,8 @@ export interface IsolatedProcessOptions {
   readonly onStdout?: ((chunk: string) => void) | undefined;
   readonly maxResidentBytes?: number | undefined;
   readonly maxOutputBytes?: number | undefined;
+  /** 仅 Office 转换器的单实例 IPC；限于本次工作目录，不允许 IP 网络。 */
+  readonly allowLocalIpc?: boolean | undefined;
 }
 
 export function parserEnvironment(workDirectory: string): NodeJS.ProcessEnv {
@@ -41,9 +43,20 @@ export function parserEnvironment(workDirectory: string): NodeJS.ProcessEnv {
   };
 }
 
-export function parserSandboxProfile(readPaths: readonly string[], writeDirectory: string): string {
+export function parserSandboxProfile(
+  readPaths: readonly string[],
+  writeDirectory: string,
+  allowLocalIpc = false,
+): string {
   const quoted = (path: string): string => JSON.stringify(realpathSync(resolve(path)));
   const roots = readPaths.map((path) => `(subpath ${quoted(path)})`).join(' ');
+  const socketPrefix = JSON.stringify(realpathSync(resolve(writeDirectory)) + '/');
+  const localIpc = allowLocalIpc
+    ? `
+(allow network-bind (path-prefix ${socketPrefix}))
+(allow network-outbound (remote unix-socket (path-prefix ${socketPrefix})))
+(allow network-inbound (local unix-socket (path-prefix ${socketPrefix})))`
+    : '';
   return `(version 1)
 (deny default)
 (allow process-fork)
@@ -55,7 +68,7 @@ export function parserSandboxProfile(readPaths: readonly string[], writeDirector
 (allow file-read-data (literal "/"))
 (allow file-read* (subpath "/System") (subpath "/usr") (subpath "/Library/Apple") (subpath "/Library/Fonts") (literal "/dev/null") ${roots} (subpath ${quoted(writeDirectory)}))
 (allow file-write* (literal "/dev/null") (subpath ${quoted(writeDirectory)}))
-(deny network*)`;
+(deny network*)${localIpc}`;
 }
 
 export async function runIsolatedProcess(options: IsolatedProcessOptions): Promise<string> {
@@ -65,6 +78,7 @@ export async function runIsolatedProcess(options: IsolatedProcessOptions): Promi
   const profile = parserSandboxProfile(
     [dirname(realpathSync(options.executable)), ...options.readPaths],
     options.writeDirectory,
+    options.allowLocalIpc,
   );
   return new Promise((resolveResult, reject) => {
     const child = spawn(

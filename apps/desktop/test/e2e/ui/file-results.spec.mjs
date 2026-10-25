@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { expect, makeOfficeFixtures, startTaskInWorkspace, test } from './fixtures.mjs';
-import { scriptFileTools, expectFileAnswer } from './file-results-support.mjs';
+import { scriptFileTools, sendFileCommand, expectFileAnswer } from './file-results-support.mjs';
 
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const patch = (before, after) =>
@@ -192,12 +192,12 @@ test('代码重复修改展示任务和回合完整净差异，默认页签、�
   await page.screenshot({ path: testInfo.outputPath('code-net-diff.png') });
 
   await page.getByRole('button', { name: '关闭结果', exact: true }).click();
-  await electronApp.evaluate(
-    (_, cmd) => globalThis.__evoworkE2E.gateway.scriptNext({ tool: 'exec_command', args: { cmd } }),
+  await sendFileCommand(
+    page,
+    electronApp,
+    '再修改一次',
     patch("const title = 'after';", "const title = 'final';"),
   );
-  await page.getByLabel('需求输入').fill('再修改一次');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect
     .poll(() => readFileSync(join(workspace, 'app.ts'), 'utf8'))
     .toContain("const title = 'final';");

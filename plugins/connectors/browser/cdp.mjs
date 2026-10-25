@@ -151,6 +151,8 @@ export function createBrowserDriver({
         [
           '--remote-debugging-port=0',
           '--headless=new',
+          // 专用临时 profile 不使用用户登录钥匙串；隔离 HOME 时真实钥匙串会阻塞网络服务。
+          ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []),
           '--no-first-run',
           '--disable-background-networking',
           '--disable-extensions',

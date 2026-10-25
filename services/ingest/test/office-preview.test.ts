@@ -46,6 +46,8 @@ it('版式转换使用独立副本、禁宏配置和隔离进程，返回 PDF �
     run: async (input) => {
       temporary = input.writeDirectory;
       expect(input.args).toContain('--headless');
+      expect(input.args).toContain('-env:OSL_SOCKET_PATH=' + temporary);
+      expect(input.allowLocalIpc).toBe(true);
       expect(readFileSync(join(temporary, 'profile/user/fonts/CJK.ttf'), 'utf8')).toBe('font');
       expect(existsSync(join(temporary, 'profile/user/fonts/outside.ttf'))).toBe(false);
       expect(input.readPaths).not.toContain(source);

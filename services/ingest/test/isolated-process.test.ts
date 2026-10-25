@@ -1,6 +1,13 @@
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -116,6 +123,83 @@ it('deadline kills the entire process group and bounds output', async () => {
       maxOutputBytes: 100,
     }),
   ).rejects.toMatchObject({ code: 'OUTPUT_LIMIT' });
+});
+
+it('Office IPC stays inside its job directory and cannot read files or connect outside it', async () => {
+  const dir = temporary();
+  if (process.platform !== 'darwin') {
+    await expect(
+      runIsolatedProcess({
+        executable: '/usr/bin/perl',
+        args: ['-e', 'exit 0'],
+        readPaths: [],
+        writeDirectory: dir,
+        allowLocalIpc: true,
+        timeoutMs: 10_000,
+      }),
+    ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' });
+    return;
+  }
+  const outside = temporary();
+  const secret = join(outside, 'private.txt');
+  writeFileSync(secret, 'outside the Office job');
+  let connections = 0;
+  const peer = createServer((socket) => {
+    connections++;
+    socket.destroy();
+  });
+  const tcp = createServer((socket) => {
+    connections++;
+    socket.destroy();
+  });
+  const foreignSocket = join(outside, 's');
+  await new Promise<void>((resolve) => peer.listen(foreignSocket, resolve));
+  const alias = join(dir, 'alias');
+  symlinkSync(foreignSocket, alias);
+  await new Promise<void>((resolve) => tcp.listen(0, '127.0.0.1', resolve));
+  const address = tcp.address();
+  if (!address || typeof address === 'string') throw new Error('No local address');
+  const code = `use Socket;
+    socket(my $server, PF_UNIX, SOCK_STREAM, 0) or die 'socket failed';
+    bind($server, sockaddr_un($ARGV[0])) or die 'inside bind failed';
+    listen($server, 1) or die 'inside listen failed';
+    socket(my $client, PF_UNIX, SOCK_STREAM, 0) or die 'client failed';
+    connect($client, sockaddr_un($ARGV[0])) or die 'inside connect failed';
+    my $read = open(my $outside, '<', $ARGV[1]);
+    my $write = open(my $forbidden, '>', $ARGV[1]);
+    socket(my $peer, PF_UNIX, SOCK_STREAM, 0);
+    my $foreign = connect($peer, sockaddr_un($ARGV[2]));
+    socket(my $tcp, PF_INET, SOCK_STREAM, getprotobyname('tcp'));
+    my $network = connect($tcp, sockaddr_in($ARGV[3], inet_aton('127.0.0.1')));
+    socket(my $alias, PF_UNIX, SOCK_STREAM, 0);
+    my $escaped = connect($alias, sockaddr_un($ARGV[4]));
+    socket(my $listener, PF_INET, SOCK_STREAM, getprotobyname('tcp'));
+    my $bound = bind($listener, sockaddr_in(0, inet_aton('127.0.0.1')));
+    print 'inside-ipc,', ($read ? 'read-open' : 'read-denied'), ',',
+      ($write ? 'write-open' : 'write-denied'), ',',
+      ($foreign ? 'peer-open' : 'peer-denied'), ',',
+      ($network ? 'network-open' : 'network-denied'), ',',
+      ($escaped ? 'alias-open' : 'alias-denied'), ',',
+      ($bound ? 'tcp-bind-open' : 'tcp-bind-denied');`;
+  try {
+    expect(
+      await runIsolatedProcess({
+        executable: '/usr/bin/perl',
+        args: ['-e', code, join(dir, 's'), secret, foreignSocket, String(address.port), alias],
+        readPaths: [],
+        writeDirectory: dir,
+        allowLocalIpc: true,
+        timeoutMs: 10_000,
+      }),
+    ).toBe(
+      'inside-ipc,read-denied,write-denied,peer-denied,network-denied,alias-denied,tcp-bind-denied',
+    );
+    expect(connections).toBe(0);
+    expect(readFileSync(secret, 'utf8')).toBe('outside the Office job');
+  } finally {
+    peer.close();
+    tcp.close();
+  }
 });
 
 it('cancellation kills forked OCR descendants before they can write a late result', async () => {

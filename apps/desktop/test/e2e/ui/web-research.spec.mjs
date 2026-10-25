@@ -54,7 +54,7 @@ for (const accepted of [true, false]) {
   test(`公开资料：${accepted ? '授权读取、引用点击与历史恢复' : '拒绝后零请求、编造引用不可点击'}`, async ({
     page,
     electronApp,
-  }) => {
+  }, testInfo) => {
     let requests = 0;
     const server = createServer((_req, res) => {
       requests++;
@@ -92,7 +92,22 @@ for (const accepted of [true, false]) {
         await expect(page.getByText('[来源不可用]', { exact: true })).toBeVisible();
         return;
       }
-      expect(requests).toBeGreaterThan(0);
+      const tasks = (await page.evaluate(() => window.evowork.getStartup())).tasks;
+      expect(tasks).toHaveLength(1);
+      const task = tasks[0];
+      const history = await page.evaluate(
+        (threadId) => window.evowork.openTask({ threadId }),
+        task.id,
+      );
+      const reads = history.items.filter(
+        (item) => item.type === 'mcpToolCall' && item.tool.endsWith('browser_read_page'),
+      );
+      await testInfo.attach('browser-read-result.json', {
+        body: Buffer.from(JSON.stringify(reads, null, 2)),
+        contentType: 'application/json',
+      });
+      expect(reads).toHaveLength(1);
+      expect(requests, JSON.stringify(reads)).toBeGreaterThan(0);
       const citation = page.getByRole('link', { name: '[127.0.0.1]', exact: true });
       await expect(citation).toBeVisible();
       await citation.click();

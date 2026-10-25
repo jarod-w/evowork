@@ -13,6 +13,7 @@ import {
   results,
   revertSelected,
   scriptFileTools,
+  sendFileCommand,
   selectTask,
   settle,
   taskId,
@@ -49,15 +50,12 @@ test('撤销可取消；刷新后副本仍可用；本回合和任务范围恢�
   await selectTask(page, marker);
   await changes(page);
   await expect(page.getByRole('button', { name: '撤销这次变更', exact: true })).toBeVisible();
-  await electronApp.evaluate(() =>
-    globalThis.__evoworkE2E.gateway.scriptNext({
-      tool: 'exec_command',
-      args: { cmd: "printf 'final\\n' > state.txt" },
-    }),
+  await sendFileCommand(
+    page,
+    electronApp,
+    '第二回合只修改 state.txt',
+    "printf 'final\\n' > state.txt",
   );
-  await page.getByLabel('需求输入').fill('第二回合只修改 state.txt');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await settle(page, /^E2E response/);
   await changes(page);
   await page.getByRole('tab', { name: '本回合', exact: true }).click();
   await expect(page.locator('.ew-diff-body')).toContainText('-middle');
@@ -82,15 +80,7 @@ test('回合之间的用户编辑禁止按任务起点覆盖，本回合仍能�
   writeFileSync(path, 'original');
   await commandTask(page, electronApp, 'FILE-GAP', 'printf first-agent > gap.txt');
   writeFileSync(path, 'user-between-turns');
-  await electronApp.evaluate(() =>
-    globalThis.__evoworkE2E.gateway.scriptNext({
-      tool: 'exec_command',
-      args: { cmd: 'printf second-agent > gap.txt' },
-    }),
-  );
-  await page.getByLabel('需求输入').fill('修改 gap.txt');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await settle(page, /^E2E response/);
+  await sendFileCommand(page, electronApp, '修改 gap.txt', 'printf second-agent > gap.txt');
   await changes(page);
   await page.getByRole('tab', { name: '本任务全部', exact: true }).click();
   await expect(page.getByText(/回合之间存在外部文件改动/)).toBeVisible();
@@ -154,13 +144,7 @@ test('技能先上报后创建和编辑，最新落盘版本始终归实际任�
     .poll(async () => (await results(page, id)).artifacts.map((a) => a.version))
     .toEqual([1]);
   expect(readFileSync(path, 'utf8')).toBe('FIRST');
-  await electronApp.evaluate(
-    (_, cmd) => globalThis.__evoworkE2E.gateway.scriptNext({ tool: 'exec_command', args: { cmd } }),
-    cmd('edit'),
-  );
-  await page.getByLabel('需求输入').fill('编辑刚才生成的报告');
-  await page.getByRole('button', { name: '发送', exact: true }).click();
-  await settle(page, /^E2E response/);
+  await sendFileCommand(page, electronApp, '编辑刚才生成的报告', cmd('edit'));
   await expect
     .poll(async () => (await results(page, id)).artifacts.map((a) => a.version))
     .toEqual([2]);

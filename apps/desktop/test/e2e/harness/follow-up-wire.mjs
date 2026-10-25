@@ -9,7 +9,7 @@ export function installFollowUpWire(path) {
   globalThis.fetch = async function (input, init) {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     if (
-      !['api.xiaomimimo.com', 'api.deepseek.com'].includes(url.hostname) ||
+      !['api.xiaomimimo.com', 'api.deepseek.com', 'open.bigmodel.cn'].includes(url.hostname) ||
       !url.pathname.endsWith('/chat/completions')
     )
       return originalFetch.call(this, input, init);

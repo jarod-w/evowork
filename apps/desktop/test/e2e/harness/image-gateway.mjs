@@ -108,6 +108,30 @@ export async function createImageGateway({ repoRoot, workspace, home, mode }) {
             },
           ],
         };
+      } else if (!calls.some((name) => name.endsWith('propose_next_actions'))) {
+        // 跟随产品的结束约定先登记无后续建议。否则 Stop 会让这个固定剧本重复最终回复，
+        // 甚至再次把同一张图送进视觉请求；付费生成与实际查看仍分别只能有一次。
+        const name = body.tools?.find((t) => t.function.name.endsWith('propose_next_actions'))
+          ?.function.name;
+        if (!name) throw new Error('NEXT_ACTIONS_TOOL_NOT_DISCOVERED');
+        delta = {
+          tool_calls: [
+            {
+              index: 0,
+              id: 'next_actions_call',
+              type: 'function',
+              function: {
+                name,
+                arguments: JSON.stringify({
+                  outcome: /"status"\s*:\s*"completed"/.test(toolText)
+                    ? 'delivered'
+                    : 'needs_input',
+                  actions: [],
+                }),
+              },
+            },
+          ],
+        };
       } else if (!calls.some((name) => name.endsWith('view_image'))) {
         // 内核可能在 MCP JSON 前加工具结果说明；按字段识别，最终状态另由公开 IPC 断言。
         const status = toolText.match(/"status"\s*:\s*"(completed|cancelled|failed)"/)?.[1];
