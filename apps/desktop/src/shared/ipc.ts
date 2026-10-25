@@ -94,6 +94,11 @@ export interface NextActionActions {
   }): Promise<NextActionView>;
 }
 export type RendererEvent =
+  | {
+      readonly type: 'skill-extraction-changed';
+      readonly taskId: string;
+      readonly sourceTaskId: string;
+    }
   | { readonly type: 'queue-changed'; readonly taskId: string }
   | { readonly type: 'next-actions-changed'; readonly taskId: string }
   | {

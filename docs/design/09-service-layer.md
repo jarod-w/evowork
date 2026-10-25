@@ -281,6 +281,8 @@ CREATE UNIQUE INDEX ix_run_idem ON automation_run(automation_id, fire_time);  --
 
 ### 4.5 其余表（节选）
 
+**技能提炼权威元数据（2026-10-25）**：`meta` 的 `evowork.skillExtraction.draft.*` 保存来源范围、证据、修订、草稿与文本资源、目标范围、实际安装状态；`thread.*` / `source.*` 关联提炼任务与来源任务，`call.*` 防止同一次工具投递重复发布。草稿不在技能扫描根中，投影重建不得删除它；无需增加业务表或改变 schema 版本。正文不进入日志。来源读取和工具调用归属经适配层，正式安装后按精确路径及启用状态核对。具体交互和删除留存边界见 [23](23-session-to-skill.md)。
+
 完整表清单以 `services/store/src/schema.ts` 与 `migrate.ts` 为准；项目（`project_local` / `project_root`）、运行中投递（`follow_up_*`）、图片操作、资料库文档/分块与权威 `meta`（含任务环境登记）等后续表不在下表展开，见各自章节或设计。
 
 | 表              | 用途                                        | 文档    |

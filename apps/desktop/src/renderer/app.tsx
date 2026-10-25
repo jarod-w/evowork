@@ -156,12 +156,14 @@ import { CreateProjectDialog, ProjectsPage } from './views/projects.js';
 import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskSearchPalette } from './views/task-search.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
+import { useSkillExtraction } from './views/skill-extraction.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge
   extends
     MemoryImportPorts,
     Partial<LibraryActions>,
+    Partial<import('../shared/skill-extraction.js').SkillExtractionActions>,
     Partial<import('../shared/ipc.js').CommunicationActions>,
     Partial<import('../shared/ipc.js').NextActionActions> {
   getAttachmentText?(
@@ -613,6 +615,7 @@ function savedComposerDraft(usePendingCache = true): {
 export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const savedDraft = useRef(savedComposerDraft(!bridge.getPendingSend));
   const deletedTaskIds = useRef(new Set<string>());
+  const refreshSkillExtraction = useRef<() => void>(() => undefined);
   const [tasks, setTasks] = useState<readonly TaskRowView[]>([]);
   const [itemsByTask, setItemsByTask] = useState<Readonly<Record<string, readonly RenderItem[]>>>(
     {},
@@ -1203,6 +1206,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
     const offs = [
       bridge.onUiEvent((event) => {
+        if (
+          (event.type === 'skill-extraction-changed' &&
+            [event.taskId, event.sourceTaskId].includes(activeTaskId ?? '')) ||
+          (event.type === 'turn-completed' && event.taskId === activeTaskId) ||
+          event.type === 'task-removed'
+        )
+          refreshSkillExtraction.current();
         if (
           'taskId' in event &&
           event.taskId === activeTaskId &&
@@ -2372,6 +2382,30 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   // 运行态必须来自当前任务。后台自动化或另一个任务的状态事件不能把当前 Composer
   // 误切成“停止/插话”模式。
   const running = activeRoot?.status === 'running' || activeRoot?.status === 'pending';
+  const skillExtraction = useSkillExtraction({
+    bridge,
+    taskId: activeTaskId,
+    modelId,
+    running,
+    openTask: (id, itemId) => {
+      setActiveTaskId(id);
+      setFocusItemId(itemId);
+      setView('task');
+    },
+    useSkill: (input) => {
+      beginNewTask();
+      setWorkspaceId(input.projectId ?? undefined);
+      setDraft(input.text);
+      setReferences([input.reference]);
+    },
+    changed: () => {
+      void refreshComposerContext();
+    },
+    failed: reportFailure,
+  });
+  refreshSkillExtraction.current = () => {
+    void skillExtraction.refresh();
+  };
   useEffect(() => {
     setSteer(false);
     setSendFeedback(undefined);
@@ -2901,6 +2935,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   // 否则一发送消息、任务进入 processing，目录读取完成就会把结果区提前撑开。
   // 只有任务产物索引或本轮 FileChange 才能证明这次确实产生/修改了文件。
   const hasCurrentResults =
+    skillExtraction.inExtraction ||
     Boolean(currentPreview) ||
     currentResults.artifacts.length > 0 ||
     (currentResults.workspace?.files.length ?? 0) > 0 ||
@@ -2943,10 +2978,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       ? { open: false, tab: 'artifacts' as ResultPane }
       : (resultUi[activeTaskId] ?? {
           open: hasCurrentResults,
-          tab: (currentResults.artifacts.length > 0 ? 'artifacts' : 'changes') as ResultPane,
+          tab: (skillExtraction.inExtraction
+            ? 'skill'
+            : currentResults.artifacts.length > 0
+              ? 'artifacts'
+              : 'changes') as ResultPane,
         });
   const availableResultTabs = useMemo((): readonly ResultPane[] => {
     const tabs: ResultPane[] = [];
+    if (skillExtraction.inExtraction) tabs.push('skill');
     const artifactKeys = new Set(
       currentResults.artifacts.map((artifact) => changePathKey(artifact.path, active?.cwd)),
     );
@@ -2980,6 +3020,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     if (hasBrowser || activeResultUi.tab === 'browser') tabs.push('browser');
     return tabs.length > 0 ? tabs : ['artifacts'];
   }, [
+    skillExtraction.inExtraction,
     active?.cwd,
     activeResultUi.tab,
     changedFiles.length,
@@ -4237,6 +4278,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         />
       ) : (
         <TaskWorkspace
+          onExtractSkill={!isSubagent ? skillExtraction.begin : undefined}
+          contextBar={skillExtraction.contextBar}
           taskId={activeTaskId}
           turns={turnsByTask[activeTaskId] ?? []}
           title={active?.title ?? null}
@@ -4429,6 +4472,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           onResultTabChange={(tab) => updateResultUi({ tab })}
           resultPanels={{
+            skill: skillExtraction.panel,
             artifacts:
               currentResults.artifacts.length > 0 ? (
                 <div className="ew-result-preview-stack">
@@ -4690,6 +4734,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       <p className="ew-window-size-hint" role="status">
         窗口较窄，建议放大窗口获得完整布局
       </p>
+      {skillExtraction.dialogs}
       {pendingAttachmentSkill ? (
         <SkillInstallDialog
           key={pendingAttachmentSkill.input.attachmentId}

@@ -80,9 +80,10 @@ export const STATUS_VIEW: Readonly<
   idle: { label: '还没有开始', badge: 'neutral', tone: 'muted', breathing: false },
 });
 
-export type ResultPane = 'artifacts' | 'files' | 'changes' | 'browser';
+export type ResultPane = 'artifacts' | 'files' | 'changes' | 'browser' | 'skill';
 
 const RESULT_TABS = [
+  { id: 'skill', label: '技能草稿' },
   { id: 'artifacts', label: '产物' },
   { id: 'files', label: '文件' },
   { id: 'changes', label: '变更' },
@@ -298,6 +299,8 @@ function TurnHeader({ turn }: { readonly turn: TurnView }) {
 }
 
 export interface TaskWorkspaceProps {
+  readonly onExtractSkill?: (() => void) | undefined;
+  readonly contextBar?: React.ReactNode | undefined;
   readonly taskId?: string | undefined;
   readonly title: string | null;
   readonly status: TaskStatus;
@@ -411,7 +414,8 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
   const resultOpen =
     props.resultOpen ?? localResultOpen ?? Boolean(props.hasResults || props.resultPanel);
   const visibleResultTabs = useMemo(() => {
-    if (!props.resultTabs || props.resultTabs.length === 0) return RESULT_TABS;
+    if (!props.resultTabs || props.resultTabs.length === 0)
+      return RESULT_TABS.filter((tab) => tab.id !== 'skill');
     const allowed = new Set(props.resultTabs);
     const filtered = RESULT_TABS.filter((t) => allowed.has(t.id));
     return filtered.length > 0 ? filtered : RESULT_TABS;
@@ -436,6 +440,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
     taskMenuTriggerRef.current?.focus();
   }, []);
   const taskMenuItems: MenuItemSpec[] = [
+    ...(props.onExtractSkill ? [{ id: 'extract-skill', label: '提炼为技能' }] : []),
     ...(props.onGoalSave ? [{ id: 'goal', label: props.goal ? '目标与预算' : '设置目标' }] : []),
     ...(props.onFork
       ? [
@@ -736,6 +741,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
                   items={taskMenuItems}
                   onSelect={(id) => {
                     closeTaskMenu();
+                    if (id === 'extract-skill') props.onExtractSkill?.();
                     if (id === 'goal') setGoalOpen((open) => !open);
                     if (id === 'fork') props.onFork?.(false);
                     if (id === 'side-chat') props.onFork?.(true);
@@ -746,6 +752,8 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
           ) : null}
         </div>
       </header>
+
+      {props.contextBar}
 
       {props.goal ||
       ((props.status === 'running' || props.status === 'pending') && steps.length > 0) ? (
@@ -1141,6 +1149,7 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
         {resultOpen ? (
           <aside
             className="ew-result-pane"
+            data-current-pane={resultTab}
             aria-label="结果区"
             style={resultWidth === undefined ? undefined : { width: resultWidth }}
           >

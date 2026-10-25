@@ -8,6 +8,8 @@ export function SkillInstallDialog(props: {
   readonly audit: NonNullable<CatalogMutationResult['audit']>;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
+  readonly confirmLabel?: string | undefined;
+  readonly description?: string | undefined;
 }) {
   const [ack, setAck] = useState(false);
   const [name, setName] = useState('');
@@ -15,14 +17,15 @@ export function SkillInstallDialog(props: {
   return (
     <Dialog
       title={audit.level === 'p2' ? '高风险技能' : '安装前请确认'}
-      confirmLabel="安装为全局技能"
+      confirmLabel={props.confirmLabel ?? '安装为全局技能'}
       variant={audit.level === 'p2' ? 'danger' : 'default'}
       confirmDisabled={audit.level === 'p2' ? name.trim() !== audit.skillId : !ack}
       onCancel={props.onCancel}
       onConfirm={props.onConfirm}
     >
       <p>
-        安装后可在所有新旧任务中使用。单文件安装只包含这份 SKILL.md；有脚本或资源时请从目录安装。
+        {props.description ??
+          '安装后可在所有新旧任务中使用。单文件安装只包含这份 SKILL.md；有脚本或资源时请从目录安装。'}
       </p>
       <AuditFindings findings={audit.findings} />
       {audit.worstCase ? <p>{audit.worstCase}</p> : null}

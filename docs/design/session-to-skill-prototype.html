@@ -1,0 +1,230 @@
+<div id="ew-skill-prototype" aria-label="EvoWork 任务提炼技能交互原型"></div>
+<style>
+#ew-skill-prototype{--ew-bg:light-dark(#fff,#202020);--ew-nav:light-dark(#f9f9f9,#191919);--ew-inset:light-dark(#f3f3f3,#2b2b2b);--ew-hover:light-dark(#ededed,#353535);--ew-fg:light-dark(#0d0d0d,#ececec);--ew-secondary:light-dark(#414141,#c4c4c4);--ew-muted:light-dark(#707070,#a5a5a5);--ew-line:light-dark(#e7e7e7,#393939);--ew-primary:light-dark(#0d0d0d,#ececec);--ew-on-primary:light-dark(#fff,#161616);--ew-green:light-dark(#1b6b4f,#91d3ae);--ew-green-bg:light-dark(#e8f5ee,#213a2e);--ew-blue:light-dark(#014a8f,#9dc9f5);--ew-blue-bg:light-dark(#e8f1fa,#253544);--ew-warning:light-dark(#923b0f,#efbd97);--ew-warning-bg:light-dark(#f8ede6,#422e24);--ew-danger:light-dark(#9a1f1c,#f4aaa7);--ew-scrim:light-dark(rgb(13 13 13 / 35%),rgb(0 0 0 / 65%));font:400 14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ew-fg);container-type:inline-size;color-scheme:light dark;width:100%;}
+#ew-skill-prototype *{box-sizing:border-box;}
+#ew-skill-prototype button,#ew-skill-prototype input,#ew-skill-prototype textarea,#ew-skill-prototype select{font:inherit;color:inherit;}
+#ew-skill-prototype button{cursor:inherit;}
+#ew-skill-prototype button:focus-visible,#ew-skill-prototype input:focus-visible,#ew-skill-prototype textarea:focus-visible,#ew-skill-prototype select:focus-visible{outline:2px solid var(--ew-blue);outline-offset:3px;}
+#ew-skill-prototype button:disabled{opacity:.45;cursor:not-allowed;}
+#ew-skill-prototype .ew-preview-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:8px 4px 12px;font-size:12px;color:var(--ew-muted);}
+#ew-skill-prototype .ew-preview-bar span{display:inline-flex;align-items:center;gap:7px;}
+#ew-skill-prototype .ew-shell{position:relative;display:grid;grid-template-columns:216px minmax(0,1fr);min-height:740px;background:var(--ew-bg);border:1px solid var(--ew-line);border-radius:12px;overflow:clip;}
+#ew-skill-prototype .ew-sidebar{background:var(--ew-nav);padding:24px 14px;display:flex;flex-direction:column;gap:26px;}
+#ew-skill-prototype .ew-brand{display:flex;align-items:center;gap:9px;font-size:18px;font-weight:500;padding:0 8px;}
+#ew-skill-prototype .ew-brand-mark{display:grid;place-items:center;width:27px;height:27px;border-radius:8px;background:var(--ew-green);color:var(--ew-bg);font-weight:500;}
+#ew-skill-prototype .ew-nav-group{display:grid;gap:4px;}
+#ew-skill-prototype .ew-nav-label{font-size:12px;color:var(--ew-muted);padding:8px;}
+#ew-skill-prototype .ew-nav-row{padding:9px 10px;border-radius:8px;color:var(--ew-secondary);display:flex;align-items:center;gap:8px;min-width:0;}
+#ew-skill-prototype .ew-nav-row.active{background:var(--ew-hover);color:var(--ew-fg);}
+#ew-skill-prototype .ew-nav-row small{display:block;color:var(--ew-muted);font-size:12px;}
+#ew-skill-prototype .ew-nav-row button{border:0;background:none;padding:0;text-align:left;min-width:0;overflow-wrap:anywhere;}
+#ew-skill-prototype .ew-sidebar-bottom{margin-top:auto;display:flex;align-items:center;gap:8px;color:var(--ew-muted);font-size:12px;padding:8px;}
+#ew-skill-prototype .ew-avatar{display:grid;place-items:center;background:var(--ew-hover);width:28px;height:28px;border-radius:50%;color:var(--ew-secondary);flex:none;}
+#ew-skill-prototype .ew-main{min-width:0;display:flex;flex-direction:column;}
+#ew-skill-prototype .ew-topbar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:66px;padding:14px 24px;border-bottom:1px solid var(--ew-line);}
+#ew-skill-prototype .ew-title{font-size:15px;font-weight:500;overflow-wrap:anywhere;}
+#ew-skill-prototype .ew-kicker{font-size:12px;color:var(--ew-muted);font-weight:400;}
+#ew-skill-prototype .ew-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+#ew-skill-prototype .ew-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:6px 13px;border:1px solid var(--ew-line);background:var(--ew-bg);border-radius:8px;text-decoration:none;white-space:normal;text-align:center;}
+#ew-skill-prototype .ew-button:hover:not(:disabled){background:var(--ew-hover);}
+#ew-skill-prototype .ew-button.primary{background:var(--ew-primary);border-color:var(--ew-primary);color:var(--ew-on-primary);}
+#ew-skill-prototype .ew-button.primary:hover:not(:disabled){background:var(--ew-primary);opacity:.85;}
+#ew-skill-prototype .ew-button.ghost{background:transparent;border-color:transparent;padding:5px 7px;}
+#ew-skill-prototype .ew-button.small{font-size:12px;min-height:29px;padding:4px 8px;}
+#ew-skill-prototype .ew-button.icon{width:34px;padding:5px;flex:none;}
+#ew-skill-prototype .ew-link{border:0;background:none;padding:0;color:var(--ew-blue);text-align:left;text-decoration:none;}
+#ew-skill-prototype .ew-link:hover{text-decoration:underline;}
+#ew-skill-prototype .ew-menu{position:absolute;z-index:10;right:20px;top:57px;width:210px;padding:6px;background:var(--ew-bg);border:1px solid var(--ew-line);border-radius:10px;box-shadow:0 8px 28px var(--ew-scrim);}
+#ew-skill-prototype .ew-menu button{display:flex;gap:9px;align-items:center;width:100%;border:0;background:transparent;border-radius:6px;padding:10px;text-align:left;}
+#ew-skill-prototype .ew-menu button:hover{background:var(--ew-hover);}
+#ew-skill-prototype .ew-sourcebar{padding:10px 24px;background:var(--ew-nav);border-bottom:1px solid var(--ew-line);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ew-secondary);}
+#ew-skill-prototype .ew-sourcebar>span{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+#ew-skill-prototype .ew-workspace{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);flex:1;min-width:0;}
+#ew-skill-prototype .ew-workspace.single{display:block;}
+#ew-skill-prototype .ew-chat{display:flex;flex-direction:column;min-width:0;padding:30px 28px 18px;gap:22px;}
+#ew-skill-prototype .ew-workspace.single .ew-chat{max-width:740px;margin:auto;min-height:650px;padding:32px 36px 22px;}
+#ew-skill-prototype .ew-msg{overflow-wrap:anywhere;}
+#ew-skill-prototype .ew-msg.user{background:var(--ew-inset);padding:12px 16px;border-radius:16px 16px 4px 16px;margin-left:24px;align-self:flex-end;max-width:95%;}
+#ew-skill-prototype .ew-msg.assistant{padding-right:4px;}
+#ew-skill-prototype .ew-msg p{margin:8px 0;}
+#ew-skill-prototype .ew-msg ul,#ew-skill-prototype .ew-msg ol{padding-left:21px;margin:8px 0;}
+#ew-skill-prototype .ew-byline{font-size:12px;color:var(--ew-muted);margin-bottom:9px;display:flex;align-items:center;gap:7px;}
+#ew-skill-prototype .ew-byline strong{font-weight:500;color:var(--ew-secondary);}
+#ew-skill-prototype .ew-doc-chip{display:flex;align-items:center;gap:10px;border:1px solid var(--ew-line);border-radius:10px;padding:10px 12px;max-width:300px;}
+#ew-skill-prototype .ew-doc-chip small{display:block;color:var(--ew-muted);font-size:12px;}
+#ew-skill-prototype .ew-note{font-size:12px;color:var(--ew-muted);}
+#ew-skill-prototype .ew-callout{background:var(--ew-blue-bg);color:var(--ew-blue);border-radius:8px;padding:11px 12px;font-size:12px;overflow-wrap:anywhere;}
+#ew-skill-prototype .ew-callout.warning{background:var(--ew-warning-bg);color:var(--ew-warning);}
+#ew-skill-prototype .ew-callout.success{background:var(--ew-green-bg);color:var(--ew-green);}
+#ew-skill-prototype .ew-clarify{border:1px solid var(--ew-line);border-radius:10px;padding:13px;margin-top:15px;}
+#ew-skill-prototype .ew-clarify p{margin:0 0 9px;}
+#ew-skill-prototype .ew-suggestions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;}
+#ew-skill-prototype .ew-suggestion{border:1px solid var(--ew-line);background:var(--ew-bg);border-radius:999px;padding:6px 10px;font-size:12px;text-align:left;}
+#ew-skill-prototype .ew-suggestion:hover{background:var(--ew-inset);}
+#ew-skill-prototype .ew-composer-area{margin-top:auto;padding-top:20px;}
+#ew-skill-prototype .ew-composer{border:1px solid var(--ew-line);background:var(--ew-inset);border-radius:20px;padding:12px;}
+#ew-skill-prototype .ew-composer textarea{display:block;width:100%;border:0;background:transparent;resize:vertical;min-height:55px;max-height:190px;padding:2px 4px;}
+#ew-skill-prototype .ew-composer-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
+#ew-skill-prototype .ew-composer-footer span{font-size:12px;color:var(--ew-muted);}
+#ew-skill-prototype .ew-pane{min-width:0;border-left:1px solid var(--ew-line);display:flex;flex-direction:column;}
+#ew-skill-prototype .ew-pane-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:15px 22px;border-bottom:1px solid var(--ew-line);}
+#ew-skill-prototype .ew-pane-head strong{font-weight:500;}
+#ew-skill-prototype .ew-pill{font-size:11px;padding:3px 7px;background:var(--ew-inset);color:var(--ew-secondary);border-radius:5px;display:inline-flex;gap:5px;align-items:center;}
+#ew-skill-prototype .ew-pill.success{background:var(--ew-green-bg);color:var(--ew-green);}
+#ew-skill-prototype .ew-draft{padding:22px 24px;flex:1;min-width:0;}
+#ew-skill-prototype .ew-draft h2{font-size:20px;font-weight:500;margin:0 0 5px;}
+#ew-skill-prototype .ew-draft h3{font-size:13px;font-weight:500;margin:23px 0 8px;color:var(--ew-secondary);}
+#ew-skill-prototype .ew-draft p{margin:6px 0;}
+#ew-skill-prototype .ew-draft ol,#ew-skill-prototype .ew-draft ul{padding-left:21px;margin:6px 0;}
+#ew-skill-prototype .ew-draft li{margin:5px 0;}
+#ew-skill-prototype .ew-draft code{background:var(--ew-inset);padding:2px 5px;border-radius:4px;font-size:12px;overflow-wrap:anywhere;}
+#ew-skill-prototype .ew-rule{display:flex;align-items:flex-start;gap:8px;}
+#ew-skill-prototype .ew-rule>span{flex:1;}
+#ew-skill-prototype .ew-rule button{flex:none;margin-top:2px;font-size:12px;}
+#ew-skill-prototype .ew-input-list{display:flex;flex-wrap:wrap;gap:7px;}
+#ew-skill-prototype .ew-input-chip{background:var(--ew-inset);padding:5px 9px;border-radius:6px;font-size:12px;}
+#ew-skill-prototype .ew-savebar{border-top:1px solid var(--ew-line);padding:16px 22px 18px;background:var(--ew-bg);}
+#ew-skill-prototype .ew-save-options{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0;}
+#ew-skill-prototype .ew-save-options label{display:flex;gap:6px;align-items:center;}
+#ew-skill-prototype input[type=radio]{accent-color:var(--ew-primary);}
+#ew-skill-prototype .ew-save-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap;}
+#ew-skill-prototype .ew-save-bottom .ew-note{flex:1;min-width:130px;}
+#ew-skill-prototype .ew-code{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0;}
+#ew-skill-prototype .ew-change{border-left:2px solid var(--ew-green);padding-left:11px;margin:12px 0;font-size:12px;color:var(--ew-secondary);}
+#ew-skill-prototype .ew-overlay{position:absolute;inset:0;z-index:30;background:var(--ew-scrim);display:flex;align-items:flex-start;justify-content:center;padding:78px 20px 24px;}
+#ew-skill-prototype .ew-dialog{background:var(--ew-bg);border:1px solid var(--ew-line);border-radius:16px;box-shadow:0 12px 40px var(--ew-scrim);padding:24px;width:480px;max-width:100%;}
+#ew-skill-prototype .ew-dialog-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:20px;}
+#ew-skill-prototype .ew-dialog h2{font-size:18px;font-weight:500;margin:0;}
+#ew-skill-prototype .ew-field{display:grid;gap:7px;margin:16px 0;}
+#ew-skill-prototype .ew-field>label{font-size:13px;font-weight:500;}
+#ew-skill-prototype .ew-field textarea,#ew-skill-prototype .ew-field input,#ew-skill-prototype .ew-field select{width:100%;padding:10px 12px;border:1px solid var(--ew-line);border-radius:8px;background:var(--ew-bg);min-width:0;}
+#ew-skill-prototype .ew-field textarea{min-height:88px;resize:vertical;}
+#ew-skill-prototype .ew-dialog-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:24px;flex-wrap:wrap;}
+#ew-skill-prototype .ew-source-card{padding:12px 14px;background:var(--ew-inset);border-radius:9px;}
+#ew-skill-prototype .ew-source-card p{margin:4px 0;}
+#ew-skill-prototype .ew-source-quote{margin:16px 0;padding:15px;background:var(--ew-inset);border-radius:9px;}
+#ew-skill-prototype .ew-source-quote p{margin:0;}
+#ew-skill-prototype .ew-mobile-tabs{display:none;padding:8px 16px;gap:6px;border-bottom:1px solid var(--ew-line);}
+#ew-skill-prototype .ew-mobile-tabs button[aria-pressed=true]{background:var(--ew-primary);color:var(--ew-on-primary);}
+#ew-skill-prototype .ew-mobile-tabs .ew-button[aria-pressed=true]:hover:not(:disabled){background:var(--ew-primary);color:var(--ew-on-primary);}
+#ew-skill-prototype .ew-empty{padding:55px 28px;color:var(--ew-muted);}
+#ew-skill-prototype .ew-loading{width:7px;height:7px;display:inline-block;border-radius:50%;background:var(--ew-green);animation:ew-pulse 1s ease-in-out infinite;}
+#ew-skill-prototype .ew-progress-row{display:flex;gap:8px;align-items:center;color:var(--ew-secondary);}
+#ew-skill-prototype .ew-success-head{display:flex;gap:10px;align-items:center;margin-bottom:12px;font-weight:500;}
+#ew-skill-prototype .ew-success-icon{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--ew-green-bg);color:var(--ew-green);}
+#ew-skill-prototype .ew-use-skill{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;background:var(--ew-green-bg);color:var(--ew-green);border-radius:6px;font-size:12px;margin-bottom:10px;}
+#ew-skill-prototype .ew-highlight{background:var(--ew-blue-bg);padding:12px;border-radius:10px;}
+#ew-skill-prototype [hidden]{display:none!important;}
+#ew-skill-prototype i[data-lucide]{display:inline-block;width:16px;height:16px;}
+#ew-skill-prototype .ew-icon{width:16px;height:16px;flex:none;}
+@keyframes ew-pulse{50%{opacity:.3;}}
+@container (max-width:1099px){#ew-skill-prototype .ew-shell{grid-template-columns:minmax(0,1fr);}#ew-skill-prototype .ew-sidebar{display:none;}}
+@container (max-width:759px){#ew-skill-prototype .ew-workspace{display:block;}#ew-skill-prototype .ew-mobile-tabs{display:flex;}#ew-skill-prototype .ew-chat{padding:24px 20px;min-height:570px;}#ew-skill-prototype .ew-workspace.single .ew-chat{padding:24px 20px;}#ew-skill-prototype .ew-pane{border-left:0;}#ew-skill-prototype .ew-workspace[data-mobile=chat] .ew-pane{display:none;}#ew-skill-prototype .ew-workspace[data-mobile=draft] .ew-chat{display:none;}#ew-skill-prototype .ew-topbar{padding:14px 18px;}#ew-skill-prototype .ew-sourcebar{padding:10px 18px;}#ew-skill-prototype .ew-shell{min-height:700px;}#ew-skill-prototype .ew-overlay{padding:50px 12px 24px;}#ew-skill-prototype .ew-dialog{padding:20px;}#ew-skill-prototype .ew-draft{padding:20px;}#ew-skill-prototype .ew-preview-bar{gap:6px;}#ew-skill-prototype .ew-title{font-size:14px;}#ew-skill-prototype .ew-topbar .ew-pill{display:none;}}
+@media(pointer:coarse){#ew-skill-prototype .ew-button,#ew-skill-prototype .ew-suggestion,#ew-skill-prototype .ew-link{min-height:44px;}#ew-skill-prototype input,#ew-skill-prototype select,#ew-skill-prototype textarea{font-size:16px;}}
+@media(prefers-reduced-motion:reduce){#ew-skill-prototype .ew-loading{animation:none;}}
+</style>
+<script>
+(()=>{
+const root=document.getElementById('ew-skill-prototype');
+const initial=()=>({page:'source',phase:'ready',menu:false,modal:null,adjust:false,range:'all',focus:'',hasDraft:false,revision:1,name:'销售异常分析与报告',report:true,threshold:'',scope:'project',mobile:'chat',code:false,input:'',refund:true,supplement:'',changes:[],messages:[],useText:'请使用销售异常分析与报告技能，分析新的销售数据。\n数据文件：\n分析月份：\n重点区域：',notice:'',highlight:false});
+let state=initial();
+const settings={project:'经营分析',scenario:'正常流程'};
+let timer=null;
+let lastFocus='ew-more';
+const ownSnapshots=new Set();
+const busy=()=>['generating','editing','checking','enabling'].includes(state.phase);
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon=name=>`<i data-lucide="${name}" class="ew-icon" aria-hidden="true"></i>`;
+const btn=(label,action,kind='',extra='')=>`<button type="button" class="ew-button cursor-interaction ${kind}" data-action="${action}" ${extra}>${label}</button>`;
+const link=(label,action,extra='')=>`<button type="button" class="ew-link cursor-interaction" data-action="${action}" ${extra}>${label}</button>`;
+const scopeLabel=()=>state.scope==='project'?`「${settings.project}」项目`:'本机所有任务';
+const title=()=>state.report?'销售异常分析与报告':'销售异常分析';
+function persist(){
+ if(!window.openai?.setWidgetState)return;
+ const {menu,modal,...saved}=state;
+ saved.messages=saved.messages.slice(-8).map(m=>({...m,text:m.text.slice(0,300)}));
+ for(const key of ['input','focus','supplement','useText'])saved[key]=saved[key].slice(0,600);
+ const privateContent={state:saved,settings:{...settings}};
+ ownSnapshots.add(JSON.stringify(privateContent));
+ if(ownSnapshots.size>80)ownSnapshots.delete(ownSnapshots.values().next().value);
+ window.openai.setWidgetState({modelContent:{prototype:'任务会话提炼技能',page:state.page,phase:state.phase,scope:scopeLabel(),revision:state.revision,report:state.report,threshold:state.threshold,project:settings.project,scenario:settings.scenario},privateContent}).catch(()=>{});
+}
+function restore(saved){if(!saved?.privateContent?.state)return;const incoming=saved.privateContent;Object.assign(settings,incoming.settings||{});state={...initial(),...incoming.state,menu:false,modal:null};if(busy())state.phase=state.hasDraft?'draft':'ready';}
+restore(window.openai?.widgetState);
+function sourcebar(){return `<div class="ew-sourcebar"><span>${icon('link-2')}<span>来源：十月份销售分析 · ${state.range==='all'?'全部4轮':'第2轮起'} · 截至10:35</span></span>${link('查看原任务','go-source')}</div>`;}
+function sidebar(){return `<aside class="ew-sidebar"><div class="ew-brand"><span class="ew-brand-mark">e</span>EvoWork</div><div class="ew-nav-group"><div class="ew-nav-row">${icon('square-pen')} 新任务</div><div class="ew-nav-row">${icon('search')} 搜索</div><div class="ew-nav-row">${icon('blocks')} 插件</div></div><div class="ew-nav-group"><div class="ew-nav-label">项目</div><div class="ew-nav-row">${icon('folder')} ${settings.project==='无项目'?'未关联项目':'经营分析'}</div><div class="ew-nav-label">最近</div><div class="ew-nav-row ${state.page==='source'?'active':''}"><button type="button" data-action="go-source" class="cursor-interaction">十月份销售分析</button></div>${state.hasDraft||state.page==='extract'?`<div class="ew-nav-row ${state.page==='extract'?'active':''}"><button type="button" data-action="resume" class="cursor-interaction">提炼技能 · 销售分析<small>${state.phase==='saved'?'技能已启用':'技能草稿'}</small></button></div>`:''}</div><div class="ew-sidebar-bottom"><span class="ew-avatar">我</span><span>本机工作空间</span></div></aside>`;}
+function sourceContent(){return `<div class="ew-workspace single"><section class="ew-chat" aria-label="来源任务对话"><div class="ew-note">示例任务 · 2026年10月25日</div><div class="ew-msg user"><div class="ew-byline">你 · 第1轮</div>分析十月份的销售数据，按区域找出异常，最后整理成周会报告。</div><div class="ew-msg assistant"><div class="ew-byline"><strong>EvoWork</strong></div><p>先核对数据口径，再比较各区域的销售额、订单数和退款情况。</p></div><div class="ew-msg user ${state.highlight?'ew-highlight':''}"><div class="ew-byline">你 · 第2轮 · 10:18</div>${settings.scenario==='来源记录缺失'?'该轮记录无法读取，未纳入本次提炼。':'退款按实际发生月份冲减，不要归到原订单月份。这个口径以后也沿用。'}</div><div class="ew-msg user"><div class="ew-byline">你 · 第3轮 · 10:24</div>这次先看环比超过20%的区域。</div><div class="ew-msg user"><div class="ew-byline">你 · 第4轮 · 10:31</div>报告按“结论、异常区域、证据、下一步”来组织，每个结论都要能追到数据。</div><div class="ew-msg assistant"><div class="ew-byline"><strong>EvoWork</strong> · 已完成</div><p>已按确认的退款口径完成分析，报告保留了异常对应的数据依据。</p><div class="ew-doc-chip">${icon('file-text')}<div>十月份销售分析报告<small>示例产物 · 周会报告</small></div></div></div>${state.hasDraft?`<div class="ew-callout success">已有一份基于本任务的技能草稿。 ${link('继续提炼 →','resume')}</div>`:''}<div class="ew-composer-area"><div class="ew-composer"><textarea aria-label="来源任务输入" placeholder="继续这个任务…" disabled></textarea><div class="ew-composer-footer"><span>${settings.project==='无项目'?'无项目':settings.project} · 示例会话</span><span>从右上角 ⋯ 提炼技能</span></div></div></div></section></div>`;}
+function userMsg(text){return `<div class="ew-msg user">${esc(text)}</div>`;}
+function assistantMsg(text){return `<div class="ew-msg assistant"><div class="ew-byline"><strong>EvoWork</strong></div><p>${esc(text)}</p></div>`;}
+function chatContent(){
+ const generating=state.phase==='generating';
+ return `<section class="ew-chat" aria-label="提炼对话"><div class="ew-msg user">${state.focus?esc(state.focus):'把这个任务中的处理方法提炼成可复用技能。'}<div class="ew-note" style="margin-top:6px">${state.range==='all'?'全部4轮':'从第2轮开始'} · 截至10:35的记录</div></div>${generating?`<div class="ew-progress-row" role="status"><span class="ew-loading"></span>正在整理可复用方法…</div>${btn('停止提炼','stop','small')}`:state.hasDraft?`<div class="ew-msg assistant"><div class="ew-byline"><strong>EvoWork</strong></div><p>已整理出一份技能草稿，保留分析口径${state.report?'和报告结构':''}，将月份、区域和数据文件改为每次提供。</p><div class="ew-change">${state.changes.length?state.changes.map(x=>`<div>${esc(x)}</div>`).join(''):'保留：退款统计口径、证据要求<br>参数化：月份、区域、数据文件'}</div>${!state.threshold?`<div class="ew-clarify"><p>“环比超过20%”是本次要求。以后如何处理？</p><div class="ew-actions">${btn('每次指定','threshold-ask','small')}${btn('固定为20%','threshold-fixed','small')}</div><div class="ew-note" style="margin-top:8px">未选择时会在使用技能时询问。</div></div>`:''}${!state.refund?`<div class="ew-callout warning" style="margin-top:14px">第2轮口径纠正记录缺失。请补充退款统计口径后再启用。${btn('补充口径','supplement','small')}</div>`:''}<div class="ew-suggestions">${state.report?`<button class="ew-suggestion cursor-interaction" type="button" data-action="remove-report">只保留分析，去掉报告</button>`:`<button class="ew-suggestion cursor-interaction" type="button" data-action="add-report">加回报告要求</button>`}<button class="ew-suggestion cursor-interaction" type="button" data-action="go-source">核对原任务</button></div></div>`:`<div class="ew-msg assistant"><p>提炼已停止。范围和重点已保留，可以继续。</p>${btn('继续提炼','generate','primary small')}</div>`}${state.messages.map(m=>m.role==='user'?userMsg(m.text):assistantMsg(m.text)).join('')}${state.phase==='editing'?`<div class="ew-progress-row" role="status"><span class="ew-loading"></span>正在更新草稿… ${link('停止修改','stop')}</div>`:''}<div class="ew-composer-area"><div class="ew-composer"><textarea id="ew-edit-input" data-field="input" aria-label="修改技能" placeholder="描述你希望如何修改这个技能…" ${busy()||!state.hasDraft?'disabled':''}>${esc(state.input)}</textarea><div class="ew-composer-footer"><span>只修改技能草稿</span>${btn('发送修改 ↑','edit','primary small',busy()||!state.hasDraft?'disabled':'')}</div></div><div class="ew-note" style="margin-top:8px">支持示例：去掉报告、每次指定阈值、改名为…</div></div></section>`;
+}
+function skillMarkdown(){const threshold=state.threshold==='20%'?'以环比超过20%作为异常筛选条件。':'执行前询问本次异常阈值，不把示例的20%设为固定规则。';return `---\nname: sales-anomaly-analysis\ndescription: 分析销售数据中的区域异常${state.report?'，按确认口径形成有证据的报告':''}。适用于销售复盘与区域表现分析。\n---\n\n# ${state.name}\n\n## 输入\n销售数据文件、分析月份、区域范围、异常阈值。\n\n## 处理方法\n1. 核对数据字段、时间范围与统计口径。\n2. ${state.refund?'退款按实际发生月份冲减，不回溯归入原订单月份。':'退款口径待用户补充；未明确前不执行统计。'}\n3. 按区域汇总销售额、订单数和退款情况。\n4. ${threshold}\n5. 每条异常结论引用对应数据，区分事实与推测。\n\n## 交付要求\n${state.report?'按“结论、异常区域、证据、下一步”组织报告。':'输出异常区域清单及对应数据证据。'}\n\n## 边界\n不携带原任务数据和绝对路径。外部动作遵循本次任务授权。\n`;}
+function draftBody(){return `<h2>${esc(state.name)}</h2><p class="ew-note">${state.report?'从销售数据中识别区域异常，形成有证据的复盘报告。':'从销售数据中识别区域异常，输出可追溯的分析结果。'}</p><h3>适用场景</h3><p>销售复盘、区域表现比较与异常排查。</p><h3>每次需要的信息</h3><div class="ew-input-list"><span class="ew-input-chip">销售数据文件</span><span class="ew-input-chip">分析月份</span><span class="ew-input-chip">区域范围</span>${state.threshold!=='20%'?'<span class="ew-input-chip">异常阈值</span>':''}</div><h3>处理方法</h3><ol><li>核对字段、时间范围和统计口径。</li><li><div class="ew-rule"><span>${state.refund?'退款按实际发生月份冲减。':'退款口径待补充，暂不能启用。'}</span>${state.refund?link('来源','rule-source','id="ew-rule-return"'):''}</div></li><li>按区域比较销售额、订单数和退款。</li><li>${state.threshold==='20%'?'筛选环比超过20%的区域。':'执行前确认本次异常阈值。'}</li><li>为异常结论附上对应数据证据。</li></ol><h3>交付要求</h3><p>${state.report?'按“结论、异常区域、证据、下一步”组织报告。':'输出异常区域清单及对应数据证据。'}</p><h3>复用边界</h3><p class="ew-note">不携带原数据、固定月份或绝对路径。每次使用时提供新的输入。</p>`;}
+function savebar(){
+ if(state.phase==='saved')return `<div class="ew-savebar"><div class="ew-success-head"><span class="ew-success-icon">✓</span>已保存并启用</div><p class="ew-note">可在${esc(scopeLabel())}中使用 · 尚未在新任务中试用</p><div class="ew-actions">${btn('用此技能新建任务','new-use','primary')}${btn('查看技能','detail')}</div><p class="ew-note" style="margin:10px 0 0">原型模拟结果，不会实际安装技能。</p></div>`;
+ const saving=['checking','enabling'].includes(state.phase);
+ return `<div class="ew-savebar"><div class="ew-note">使用范围</div><div class="ew-save-options"><label><input type="radio" name="ew-scope" value="project" ${state.scope==='project'?'checked':''} ${settings.project==='无项目'||busy()?'disabled':''}>当前项目${settings.project==='无项目'?'':` · ${esc(settings.project)}`}</label><label><input type="radio" name="ew-scope" value="global" ${state.scope==='global'?'checked':''} ${busy()?'disabled':''}>所有任务</label></div><div class="ew-note">${settings.project==='无项目'?'来源任务未关联项目。所有任务指本机全部项目及无项目任务。':`保存后可在${esc(scopeLabel())}中使用。`}</div>${state.phase==='failed'?`<div class="ew-callout warning" style="margin-top:12px" role="alert"><strong>已保存，启用失败</strong><br>技能目录暂未刷新成功，草稿仍在。可重试启用。</div>`:''}<div class="ew-save-bottom"><span class="ew-note" role="status">${saving?(state.phase==='checking'?'正在检查当前版本…':'正在保存并刷新技能…'):state.notice?esc(state.notice):state.refund?'✓ 草稿已保留 · 不会被其他任务调用':'需补充退款口径后启用'}</span>${btn(saving?'处理中…':state.phase==='failed'?'重试启用':'保存并启用',state.phase==='failed'?'retry-enable':'save','primary',busy()||!state.hasDraft||!state.refund?'disabled':'')}</div></div>`;
+}
+function pane(){return `<section class="ew-pane" aria-label="技能草稿预览"><div class="ew-pane-head"><div><strong>技能草稿</strong> <span class="ew-pill ${state.phase==='saved'?'success':''}">${state.phase==='saved'?'已启用':`修订 ${state.revision}`}</span></div>${link(state.code?'返回预览':'查看 SKILL.md','toggle-code')}</div><div class="ew-draft">${!state.hasDraft?'<div class="ew-empty">草稿将在这里出现。<br><span class="ew-note">方法、输入和交付要求会分别整理。</span></div>':state.code?`<pre class="ew-code">${esc(skillMarkdown())}</pre>`:draftBody()}</div>${savebar()}</section>`;}
+function extraction(){return `${sourcebar()}<div class="ew-mobile-tabs" aria-label="工作区面板">${btn('对话','tab-chat','small',`aria-pressed="${state.mobile==='chat'}"`)}${btn('技能草稿','tab-draft','small',`aria-pressed="${state.mobile==='draft'}"`)}</div><div class="ew-workspace" data-mobile="${state.mobile}">${chatContent()}${pane()}</div>`;}
+function useContent(){return `<div class="ew-workspace single"><section class="ew-chat" aria-label="新任务草稿"><div style="padding-top:80px"><div class="ew-kicker">新的任务</div><h2 style="font-size:24px;font-weight:500;margin:8px 0 12px">用同一套方法，处理新的数据</h2><p class="ew-note">技能已带入。补充这次的输入后再发送。</p></div><div class="ew-composer-area"><div class="ew-composer"><div class="ew-use-skill">${icon('sparkles')}$${esc(state.name)}</div><textarea data-field="useText" aria-label="新任务需求" style="min-height:120px">${esc(state.useText)}</textarea><div class="ew-composer-footer"><span>${settings.project==='无项目'?'无项目':settings.project} · 尚未发送</span>${btn('发送任务 ↑','send-use','primary small')}</div></div>${state.notice?`<div class="ew-callout" style="margin-top:12px" role="status">${esc(state.notice)}</div>`:'<p class="ew-note">没有复制原任务数据，也没有自动执行。</p>'}</div></section></div>`;}
+function dialog(){if(!state.modal)return '';let content='';
+ if(state.modal==='setup')content=`<div class="ew-dialog-top"><h2 id="ew-dialog-title">从本任务提炼技能</h2>${btn('×','close-modal','ghost icon','aria-label="关闭"')}</div><div class="ew-source-card"><div class="ew-note">来源任务</div><p>十月份销售分析</p><div class="ew-note">${settings.project==='无项目'?'无项目':esc(settings.project)} · 截至10:35的完整记录</div></div><div class="ew-field"><div style="display:flex;justify-content:space-between;gap:8px"><span>记录范围：${state.range==='all'?'全部4轮':'第2轮起'}</span>${link(state.adjust?'收起':'调整','adjust-range')}</div>${state.adjust?`<label for="ew-range">从哪一轮开始</label><select id="ew-range" data-field="range"><option value="all" ${state.range==='all'?'selected':''}>第1轮：需求与数据口径</option><option value="second" ${state.range==='second'?'selected':''}>第2轮：退款口径纠正</option></select><div class="ew-note">后续完整回合一并纳入；不包含在途消息。</div>`:''}</div><div class="ew-field"><label for="ew-focus">提炼重点 <span class="ew-note">（可选）</span></label><textarea id="ew-focus" data-field="focus" placeholder="例如：保留分析方法和报告格式，去掉本次数据">${esc(state.focus)}</textarea></div><div class="ew-note">将新建关联提炼任务。原任务和交付物保持原样。</div><div class="ew-dialog-footer">${btn('取消','close-modal')}${btn(state.hasDraft?'继续已有草稿':'开始提炼',state.hasDraft?'resume-modal':'generate','primary')}</div>`;
+ if(state.modal==='source')content=`<div class="ew-dialog-top"><h2 id="ew-dialog-title">这条规则的来源</h2>${btn('×','close-modal','ghost icon','aria-label="关闭"')}</div><div class="ew-note">${state.supplement?'提炼技能 · 销售分析 · 你 · 补充说明':'十月份销售分析 · 你 · 第2轮 · 10:18'}</div><blockquote class="ew-source-quote"><p>${state.supplement?esc(state.supplement):'退款按实际发生月份冲减，不要归到原订单月份。这个口径以后也沿用。'}</p></blockquote><div class="ew-callout">${state.supplement?'保留依据：本次提炼任务中补充的口径；原任务的缺失记录没有被恢复。':'保留依据：用户明确要求以后沿用，而非从单次结果推断。'}</div><div class="ew-dialog-footer">${btn('关闭','close-modal')}${state.supplement?'':btn('在原任务中查看','locate-source','primary')}</div>`;
+ if(state.modal==='supplement')content=`<div class="ew-dialog-top"><h2 id="ew-dialog-title">补充缺失的统计口径</h2>${btn('×','close-modal','ghost icon','aria-label="关闭"')}</div><p>缺少第2轮纠正记录，尚不能确定退款应该计入哪个月份。</p><div class="ew-field"><label for="ew-supplement">本技能应沿用的退款口径</label><textarea id="ew-supplement" data-field="supplement" placeholder="例如：退款按实际发生月份冲减">${esc(state.supplement)}</textarea></div><div class="ew-note">补充后会作为本次提炼任务中的用户说明，不伪造为原会话记录。</div><div class="ew-dialog-footer">${btn('取消','close-modal')}${btn('应用到草稿','apply-supplement','primary')}</div>`;
+ if(state.modal==='detail')content=`<div class="ew-dialog-top"><h2 id="ew-dialog-title">${esc(state.name)}</h2>${btn('×','close-modal','ghost icon','aria-label="关闭"')}</div><span class="ew-pill success">已启用</span><div class="ew-field"><label>使用范围</label><div>${esc(scopeLabel())}</div></div><div class="ew-field"><label>来源</label><div>从「十月份销售分析」提炼 · 修订${state.revision}</div></div><div class="ew-field"><label>试用状态</label><div>尚未在新任务中试用</div></div><div class="ew-note">预览中的保存结果为模拟状态。</div><div class="ew-dialog-footer">${btn('关闭','close-modal')}${btn('用此技能新建任务','new-use','primary')}</div>`;
+ return `<div class="ew-overlay" data-overlay="true"><section class="ew-dialog" role="dialog" aria-modal="true" aria-labelledby="ew-dialog-title">${content}</section></div>`;
+}
+function render(){
+ const isSource=state.page==='source';const isUse=state.page==='use';
+ root.innerHTML=`<div class="ew-preview-bar"><span>交互原型 · 示例会话 · 保存不会实际安装</span><span>${btn('重新体验','reset','ghost small')}</span></div><div class="ew-shell">${sidebar()}<main class="ew-main"><header class="ew-topbar"><div><div class="ew-title">${isSource?'十月份销售分析':isUse?'新任务':`提炼技能 · 销售分析`}</div><div class="ew-kicker">${isSource?'经营复盘':isUse?'已带入技能，等待新的输入':state.phase==='saved'?'技能已启用':'从一次任务，留下可复用的方法'}</div></div><div class="ew-actions">${isSource?'<span class="ew-pill">已完成</span>'+btn('⋯','menu','icon','id="ew-more" aria-label="任务操作" aria-haspopup="menu" aria-expanded="'+state.menu+'"'):btn(isUse?'返回技能':'返回原任务',isUse?'back-saved':'go-source','ghost small')}</div>${state.menu?`<div class="ew-menu" role="menu"><button type="button" role="menuitem" data-action="setup" class="cursor-interaction">${icon('sparkles')}提炼为技能</button></div>`:''}</header>${isSource?sourceContent():isUse?useContent():extraction()}</main>${dialog()}</div>`;
+ if(globalThis.lucide)globalThis.lucide.createIcons({attrs:{width:16,height:16}});
+ if(state.modal)queueMicrotask(()=>root.querySelector('[role=dialog] button')?.focus());
+}
+function commit(){persist();render();}
+function startGenerate(){state.modal=null;state.menu=false;state.page='extract';state.phase='generating';state.mobile='chat';state.scope=settings.project==='无项目'?'global':'project';state.refund=settings.scenario!=='来源记录缺失';state.notice='';commit();clearTimeout(timer);timer=setTimeout(()=>{state.hasDraft=true;state.phase='draft';state.report=!/去掉.*报告|只.*分析/.test(state.focus);state.name=title();state.mobile='draft';commit();},950);}
+function recordChange(text){state.revision++;state.changes=[text];if(state.phase==='saved'||state.phase==='failed')state.phase='draft';state.notice='';}
+function mutate(text,action){state.input='';state.messages.push({role:'user',text});state.phase='editing';commit();clearTimeout(timer);timer=setTimeout(()=>{let change='';if(action==='remove-report'||/去掉.*报告|只保留分析|不要.*报告/.test(text)){state.report=false;state.name=title();change='已移除报告生成要求，保留异常清单与数据证据。';}else if(action==='add-report'||/加回.*报告|恢复.*报告/.test(text)){state.report=true;state.name=title();change='已加回报告结构与交付要求。';}else if(/每次.*(指定|确认|询问).*阈值|阈值.*每次/.test(text)){state.threshold='ask';change='异常阈值改为每次使用时指定。';}else if(/固定.*20/.test(text)){state.threshold='20%';change='异常阈值固定为环比超过20%。';}else if(/改名为/.test(text)){const name=text.split('改名为')[1].trim().replace(/[。！]$/,'').slice(0,48);if(name){state.name=name;change=`技能名称改为“${name}”。`;}}else if(/当前项目/.test(text)&&settings.project!=='无项目'){state.scope='project';change='使用范围调整为当前项目，内容保持不变。';}state.phase='draft';if(change){recordChange(change);state.messages.push({role:'assistant',text:change});}else state.messages.push({role:'assistant',text:'此原型未模拟这条修改，草稿保持原样。可尝试“去掉报告”“每次指定阈值”或“改名为…”来体验。'});state.mobile='draft';commit();},650);}
+function save(retry=false){if(busy()||!state.hasDraft||!state.refund)return;state.phase=retry?'enabling':'checking';state.notice='';commit();clearTimeout(timer);timer=setTimeout(()=>{if(!retry){state.phase='enabling';commit();timer=setTimeout(()=>finishSave(false),650);}else finishSave(true);},450);}
+function finishSave(retry){state.phase=settings.scenario==='首次启用失败'&&!retry?'failed':'saved';state.mobile='draft';commit();}
+root.addEventListener('input',event=>{const field=event.target.dataset.field;if(field){state[field]=event.target.value;persist();}});
+root.addEventListener('change',event=>{if(event.target.dataset.field==='range'){commit();queueMicrotask(()=>root.querySelector('#ew-range')?.focus());return;}if(event.target.name==='ew-scope'){state.scope=event.target.value;if(state.phase==='failed'){state.phase='draft';state.notice='目标范围已变更，请重新保存。';}commit();}});
+root.addEventListener('click',event=>{
+ const button=event.target.closest('[data-action]');if(!button||button.disabled)return;const action=button.dataset.action;
+ if(action==='menu'){state.menu=!state.menu;commit();if(state.menu)root.querySelector('[role=menuitem]')?.focus();return;}
+ if(action==='setup'){lastFocus='ew-more';state.menu=false;state.modal='setup';commit();return;}
+ if(action==='close-modal'){state.modal=null;commit();root.querySelector('#'+lastFocus)?.focus();return;}
+ if(action==='adjust-range'){state.adjust=!state.adjust;commit();return;}
+ if(action==='generate'){startGenerate();return;}
+ if(action==='resume'||action==='resume-modal'){state.modal=null;state.page='extract';state.highlight=false;commit();return;}
+ if(action==='go-source'||action==='locate-source'){state.modal=null;state.page='source';state.highlight=action==='locate-source';commit();return;}
+ if(action==='rule-source'){lastFocus='ew-rule-return';state.modal='source';commit();return;}
+ if(action==='tab-chat'||action==='tab-draft'){state.mobile=action==='tab-chat'?'chat':'draft';commit();return;}
+ if(action==='toggle-code'){state.code=!state.code;commit();return;}
+ if(action==='threshold-ask'||action==='threshold-fixed'){state.threshold=action==='threshold-ask'?'ask':'20%';recordChange(state.threshold==='ask'?'阈值改为每次使用时指定。':'阈值固定为环比超过20%。');state.messages.push({role:'user',text:state.threshold==='ask'?'异常阈值每次指定。':'阈值固定为20%。'});commit();return;}
+ if(action==='remove-report'){mutate('只保留分析，去掉报告。',action);return;}
+ if(action==='add-report'){mutate('加回报告要求。',action);return;}
+ if(action==='edit'){if(!state.input.trim())return;mutate(state.input.trim());return;}
+ if(action==='supplement'){state.modal='supplement';commit();return;}
+ if(action==='apply-supplement'){if(!/^(退款)?按实际发生月份冲减[。.]?$/.test(state.supplement.trim())){state.notice='本原型支持补充“退款按实际发生月份冲减”，其他口径尚未模拟。';state.modal=null;commit();return;}state.refund=true;state.modal=null;state.messages.push({role:'user',text:state.supplement});recordChange('已根据本次补充说明恢复退款口径，来源为提炼任务。');commit();return;}
+ if(action==='save'){save();return;}
+ if(action==='retry-enable'){save(true);return;}
+ if(action==='detail'){state.modal='detail';commit();return;}
+ if(action==='new-use'){state.modal=null;state.page='use';state.notice='';state.useText=`请使用${state.name}技能，分析新的销售数据。\n数据文件：\n分析月份：\n重点区域：${state.threshold==='20%'?'':'\n异常阈值：'}`;commit();return;}
+ if(action==='send-use'){state.notice='这是原型预览：需求已准备好，尚未实际发送或执行。';commit();return;}
+ if(action==='back-saved'){state.page='extract';state.mobile='draft';state.notice='';commit();return;}
+ if(action==='stop'){clearTimeout(timer);state.phase=state.hasDraft?'draft':'stopped';state.messages.push({role:'assistant',text:state.hasDraft?'修改已停止，保留上一版草稿。':'提炼已停止，可继续。'});commit();return;}
+ if(action==='reset'){clearTimeout(timer);state=initial();state.scope=settings.project==='无项目'?'global':'project';commit();}
+});
+root.addEventListener('keydown',event=>{
+ if(event.key==='Escape'){if(state.modal){state.modal=null;commit();root.querySelector('#'+lastFocus)?.focus();}else if(state.menu){state.menu=false;commit();root.querySelector('#ew-more')?.focus();}return;}
+ if(event.key==='Tab'&&state.modal){const controls=[...root.querySelectorAll('[role=dialog] button:not(:disabled),[role=dialog] input,[role=dialog] textarea,[role=dialog] select')];const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}
+ if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)&&event.target.dataset.field==='input'){event.preventDefault();if(state.input.trim()&&!busy())mutate(state.input.trim());}
+});
+window.addEventListener('openai:set_globals',event=>{const incoming=event.detail?.globals?.widgetState;if(incoming&&!ownSnapshots.has(JSON.stringify(incoming.privateContent))){clearTimeout(timer);restore(incoming);render();}});
+render();
+if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:()=>{clearTimeout(timer);state=initial();state.scope=settings.project==='无项目'?'global':'project';commit();}});tweak.addSelect(settings,'project',{label:'来源任务所属',options:['经营分析','无项目']});tweak.addSelect(settings,'scenario',{label:'体验场景',options:['正常流程','来源记录缺失','首次启用失败']});}
+})();
+</script>

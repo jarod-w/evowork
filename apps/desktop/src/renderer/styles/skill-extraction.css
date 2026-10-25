@@ -1,0 +1,144 @@
+/* Compositions of the task/result/dialog primitives, design 23. */
+.ew-result-pane[data-current-pane='skill'] {
+  overflow: hidden;
+}
+.ew-result-body[data-pane='skill'] {
+  display: flex;
+  min-height: 0;
+}
+.ew-skill-sourcebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-24);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-skill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-skill-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+.ew-skill-panel-head {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-20);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ew-skill-filebar,
+.ew-skill-content,
+.ew-skill-savebar {
+  padding: var(--space-16) var(--space-20);
+}
+.ew-skill-filebar label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--font-caption-size);
+}
+.ew-skill-filebar select {
+  width: auto;
+  max-width: 100%;
+}
+.ew-skill-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.ew-skill-description {
+  color: var(--text-secondary);
+}
+.ew-skill-changes {
+  border-left: 1px solid var(--success-text);
+  padding-left: var(--space-12);
+  margin: var(--space-20) 0;
+  color: var(--text-secondary);
+}
+.ew-skill-evidence {
+  display: grid;
+  gap: var(--space-12);
+  margin: var(--space-20) 0;
+}
+.ew-skill-evidence > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+.ew-skill-evidence .ew-pill-button {
+  flex: none;
+}
+.ew-skill-savebar {
+  flex: none;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+.ew-skill-savebar p,
+.ew-skill-save-bottom {
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+}
+.ew-skill-save-bottom {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-top: var(--space-16);
+}
+.ew-skill-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.ew-skill-scope legend {
+  font-size: var(--font-caption-size);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-8);
+}
+.ew-skill-scope label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.ew-skill-setup-source,
+.ew-skill-quote {
+  padding: var(--space-12);
+  margin: var(--space-16) 0;
+  border-radius: var(--r-lg);
+  background: var(--bg-sunken);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.ew-skill-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--font-caption-size);
+}
+.ew-skill-error,
+.ew-skill-savebar .ew-skill-error {
+  color: var(--danger-text);
+  overflow-wrap: anywhere;
+}

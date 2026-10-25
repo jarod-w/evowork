@@ -158,10 +158,24 @@ export async function installSkill(
   }
 }
 
+/** Called only with a host-validated project root, never with a renderer-selected path. */
+export function installProjectSkill(
+  ports: CatalogPorts,
+  input: InstallSkillInput,
+  projectRoot: string,
+): CatalogMutationResult {
+  if (input.kind !== 'directory' || !input.path)
+    return mutation(ports, false, '项目技能需要完整目录。');
+  return installPreparedSkill(ports, input, { src: input.path, sourceKind: 'local' }, [
+    join(projectRoot, '.agents'),
+  ]);
+}
+
 function installPreparedSkill(
   ports: CatalogPorts,
   input: InstallSkillInput,
   prepared: { src: string; sourceKind: 'local' | 'git' },
+  destinations?: readonly string[],
 ): CatalogMutationResult {
   const { src, sourceKind } = prepared;
   const singleFile = input.kind === 'file';
@@ -218,7 +232,7 @@ function installPreparedSkill(
   }
 
   try {
-    replaceInstalledSkill(ports, { src, singleFile, skillMd, id, sourceKind });
+    replaceInstalledSkill(ports, { src, singleFile, skillMd, id, sourceKind }, destinations);
   } catch (err: unknown) {
     return mutation(ports, false, `没能装上：${err instanceof Error ? err.message : String(err)}`);
   }
@@ -235,8 +249,9 @@ function replaceInstalledSkill(
     id: string;
     sourceKind: string;
   },
+  destinations?: readonly string[],
 ): void {
-  const stages = [ports.userRoot, ports.kernelHome].map((root) => {
+  const stages = (destinations ?? [ports.userRoot, ports.kernelHome]).map((root) => {
     const temporary = join(root, `.skill-install-${randomUUID()}`);
     return {
       temporary,
@@ -267,7 +282,7 @@ function replaceInstalledSkill(
     // 发货内核要求文件第一行直接是 ---，安装副本去掉 UTF-8 BOM。
     ports.writeText(join(user.next, 'SKILL.md'), input.skillMd.replace(/^\uFEFF/, ''));
     ports.writeText(join(user.next, SOURCE_MARKER_FILE), `${input.sourceKind}\n`);
-    ports.copyDir(user.next, stages[1]!.next);
+    for (const stage of stages.slice(1)) ports.copyDir(user.next, stage.next);
     for (const stage of stages) {
       ports.mkdirp(dirname(stage.dest));
       if (ports.exists(stage.dest)) {

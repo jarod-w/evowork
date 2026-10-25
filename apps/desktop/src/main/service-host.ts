@@ -1,3 +1,4 @@
+import { createSkillExtractionHost, patchSkillExtractionConfig } from './skill-extraction-host.js';
 import { ownerProjectOf } from '@evowork/projects';
 import { inspectOcrBundle, installOcrBundle } from '@evowork/runtime-installer';
 import { renderPdfPages } from '@evowork/ingest/pdf-pages.js';
@@ -1491,6 +1492,15 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       ),
       { mode: 0o600 },
     );
+  const catalogPorts = createFsCatalogPorts({
+    pluginsDir: options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
+    userRoot: options.paths.home,
+    kernelHome: options.paths.kernelHome,
+    // 用户机器上没有 node：随包的 browser 连接器用 Electron 自己跑（同 computer-use 的 cua_repl）。
+    // 2026-10-02 之前这里没传，默认成了 `node`，信任之后在客户机器上起不来
+    nodeCommand: process.execPath,
+    nodeEnv: { ELECTRON_RUN_AS_NODE: '1' },
+  });
   const nextActionsHost = createNextActionsHost({
     store,
     adapter: () => adapter,
@@ -1507,6 +1517,27 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         readFileSync(kernelConfigPath, 'utf8'),
         process.execPath,
         join(options.pluginsDir, 'connectors/next-actions/server.mjs'),
+      ),
+      { mode: 0o600 },
+    );
+  const skillExtractionHost = createSkillExtractionHost({
+    store,
+    adapter: () => adapter,
+    environments,
+    catalog: catalogPorts,
+    dataDir: options.paths.home,
+    budget: () => readPreferences().taskTokenBudget ?? undefined,
+    denied: () =>
+      policyView.status === 'expired' ? (policyView.message ?? '当前策略不允许执行。') : undefined,
+    changed: (event) => options.emitToRenderer(IPC.uiEvent, event),
+  });
+  if (options.pluginsDir)
+    writeFileSync(
+      kernelConfigPath,
+      patchSkillExtractionConfig(
+        readFileSync(kernelConfigPath, 'utf8'),
+        process.execPath,
+        join(options.pluginsDir, 'connectors/skill-drafts/server.mjs'),
       ),
       { mode: 0o600 },
     );
@@ -1550,6 +1581,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           ...imageHost.environment,
           ...communicationHost.environment,
           ...nextActionsHost.environment,
+          ...skillExtractionHost.environment,
           ...fileHost.environment,
           MPLCONFIGDIR: join(options.paths.home, 'cache', 'matplotlib'),
           PYTHONDONTWRITEBYTECODE: '1',
@@ -1585,6 +1617,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         if (cwd) services.watchWorkspace(cwd);
       }
       if (event.type === 'task-removed') {
+        skillExtractionHost.removed(event.threadId);
         computerUse.endThread(event.threadId);
         imageHost.remove(event.threadId);
       }
@@ -1609,6 +1642,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       imageHost.rotate();
       fileHost.rotate();
       nextActionsHost.rotate();
+      skillExtractionHost.rotate();
       if (notice.kind === 'kernel-lost' || notice.kind === 'kernel-failed')
         communicationHost.rotate();
       if (notice.kind === 'kernel-restarted') void communicationHost.service.start();
@@ -2239,15 +2273,6 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
   };
 
-  const catalogPorts = createFsCatalogPorts({
-    pluginsDir: options.pluginsDir ?? join(options.paths.home, 'missing-plugins'),
-    userRoot: options.paths.home,
-    kernelHome: options.paths.kernelHome,
-    // 用户机器上没有 node：随包的 browser 连接器用 Electron 自己跑（同 computer-use 的 cua_repl）。
-    // 2026-10-02 之前这里没传，默认成了 `node`，信任之后在客户机器上起不来
-    nodeCommand: process.execPath,
-    nodeEnv: { ELECTRON_RUN_AS_NODE: '1' },
-  });
   /*
    * 插件 Hub（13，H1）。出网只在 hub-client；什么时候能出网由 hub-host 判：
    * 登录了才自动拉，未登录要用户在设置里打开（HUB-Q3=B）。官方源的地址由部署给，
@@ -2452,6 +2477,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     imageGeneration: imageHost,
     communication: communicationHost.service,
     nextActions: nextActionsHost.service,
+    skillExtraction: skillExtractionHost,
     openComputerUseSettings: async (permission = 'accessibility') => {
       if (process.platform !== 'darwin' || !options.openExternal)
         throw new Error('当前平台不能打开此权限设置。');
@@ -2816,6 +2842,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       await communicationHost.ready;
       if (stopping) return;
       await nextActionsHost.ready;
+      await skillExtractionHost.ready;
       if (stopping) return;
       await fileHost.ready;
       if (stopping) return;
@@ -2990,6 +3017,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       fileHost.close();
       communicationHost.close();
       nextActionsHost.close();
+      skillExtractionHost.close();
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (hubTimer) clearInterval(hubTimer);

@@ -250,6 +250,12 @@ export const RENDERER_ACTIONS = Object.freeze([
    * 只在用户点进那一页（或打开「发现应用」）时才需要，**不并进 getStartup**。
    */
   'getCatalog',
+  'getSkillSource',
+  'startSkillExtraction',
+  'getSkillExtraction',
+  'setSkillExtractionScope',
+  'saveSkillExtraction',
+  'refreshSkillSource',
   'installSkill',
   'pickSkillFile',
   'installAttachmentSkill',

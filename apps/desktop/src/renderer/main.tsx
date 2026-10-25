@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app.js';
 import { TOKENS_CSS } from '@evowork/tokens';
 import './styles/app.css';
+import './styles/skill-extraction.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('找不到 #root —— index.html 被改坏了');

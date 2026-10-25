@@ -503,6 +503,7 @@ export interface ProjectPorts {
 }
 
 export interface RendererBridgeOptions {
+  readonly skillExtraction?: import('./skill-extraction-host.js').SkillExtractionHost | undefined;
   readonly fileHost?: ReturnType<typeof createFileHost> | undefined;
   readonly attachmentText?: AttachmentTextHost | undefined;
   readonly ocrRuntime?:
@@ -1552,6 +1553,45 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
   const sendingDrafts = new Map<string, Promise<SendResult>>();
   return {
+    async getSkillSource(
+      input: Parameters<
+        import('../shared/skill-extraction.js').SkillExtractionActions['getSkillSource']
+      >[0],
+    ) {
+      if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
+      return options.skillExtraction.getSkillSource(input);
+    },
+    async startSkillExtraction(
+      input: Parameters<
+        import('../shared/skill-extraction.js').SkillExtractionActions['startSkillExtraction']
+      >[0],
+    ) {
+      if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
+      return options.skillExtraction.startSkillExtraction(input);
+    },
+    async getSkillExtraction(input: { threadId: string }) {
+      return options.skillExtraction?.getSkillExtraction(input) ?? null;
+    },
+    async setSkillExtractionScope(
+      input: Parameters<
+        import('../shared/skill-extraction.js').SkillExtractionActions['setSkillExtractionScope']
+      >[0],
+    ) {
+      if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
+      return options.skillExtraction.setSkillExtractionScope(input);
+    },
+    async saveSkillExtraction(
+      input: Parameters<
+        import('../shared/skill-extraction.js').SkillExtractionActions['saveSkillExtraction']
+      >[0],
+    ) {
+      if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
+      return options.skillExtraction.saveSkillExtraction(input);
+    },
+    async refreshSkillSource(input: { threadId: string }) {
+      if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
+      return options.skillExtraction.refreshSkillSource(input);
+    },
     async getPendingSend(): Promise<SendInput | undefined> {
       return followUp.pending<SendInput>();
     },
