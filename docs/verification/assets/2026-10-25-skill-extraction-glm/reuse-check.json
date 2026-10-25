@@ -1,0 +1,29 @@
+{
+  "input": [
+    {
+      "id": "east-new",
+      "sales": 850,
+      "refunds": 61
+    },
+    {
+      "id": "west-new",
+      "sales": 20,
+      "refunds": 104
+    }
+  ],
+  "actual": {
+    "rows": [
+      {
+        "id": "east-new",
+        "net": 789
+      },
+      {
+        "id": "west-new",
+        "net": -84
+      }
+    ],
+    "total": 705,
+    "quality_gate": "checked"
+  },
+  "expectedTotal": 705
+}

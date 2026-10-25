@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ✓ |desktop| test/skill-extraction-host.test.ts (11 tests) 174ms
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  11:19:56
+   Duration  741ms (transform 205ms, setup 62ms, collect 278ms, tests 174ms, environment 0ms, prepare 53ms)
+

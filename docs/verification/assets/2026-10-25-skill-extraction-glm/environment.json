@@ -1,0 +1,22 @@
+{
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "head": "d26e625e9670e025aad0ba6cadd8272528384dcc",
+  "node": "v24.19.0",
+  "model": "glm-5.3-flash",
+  "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+  "credentialSource": "Hidden input to in-memory launcher; child process environment only",
+  "files": {
+    "apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs": "28d9bdbe3935279272823cc1464cacfba7dce3123d38b3071ad30c9d1c7b1b68",
+    "plugins/connectors/skill-drafts/server.mjs": "17f0bc3a406ff3585e8c6f4706cdcdc1506f44236001dbeed74e1e148ab3e732"
+  },
+  "handoffFiles": {
+    "apps/desktop/src/main/skill-extraction-host.ts": "687f367ec174b8a52acf84b875f3191275bfcb1769e2afdacec9b5c2429619bd",
+    "apps/desktop/test/skill-extraction-host.test.ts": "4bf64fc21bd9fc2271322efb4f7f5d1492f870ee35e71dec922e2d33535ee1e6",
+    "apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs": "db5887685585e31c9f4e726748c30a0fcc5f4cec31c4c82fffb4ef357ef2c2d4",
+    "apps/desktop/test/e2e/ui/skill-extraction.spec.mjs": "8a41dc6c6f5cb76ec910756a0b8a83213a951370da671349593e46559e88f60c",
+    "plugins/connectors/skill-drafts/server.mjs": "f84302f289b042ad2c3c9def26b342747ef0b5ffae5396e3f0ec891ccfeea9d9",
+    "config/modes/craft.md": "e8b3afd80abe1e91661354c3a8cbd52df5d8d9d2f9f66e4487f243597d72ade2",
+    "config/modes/shipped.json": "f7909cbd1be4bba58cb1fed857f08164753a4024de7bbb1470a552d9f3386662"
+  }
+}

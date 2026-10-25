@@ -53,7 +53,22 @@ async function scriptExtraction(electronApp, marker, value = content, revision =
     { marker, value, revision },
   );
 }
-async function idle(page) {
+async function idle(page, threadId) {
+  if (threadId)
+    await expect
+      .poll(
+        async () => {
+          const history = await page.evaluate(
+            (id) => window.evowork.openTask({ threadId: id }),
+            threadId,
+          );
+          return (
+            history.turns.length > 0 && history.turns.every((turn) => turn.status === 'completed')
+          );
+        },
+        { timeout: 60000 },
+      )
+      .toBe(true);
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
     timeout: 60000,
   });
@@ -79,8 +94,8 @@ test('项目任务从菜单提炼、来源定位、模型修改、刷新恢复�
     electronApp,
     marker + ' 退款按实际发生月份冲减，每个结论附数据证据。',
   );
-  await idle(page);
   const source = (await page.evaluate(() => window.evowork.getStartup())).tasks[0];
+  await idle(page, source.id);
   await scriptExtraction(electronApp, marker);
   await extract(page, '保留统计口径和报告结构，月份与文件参数化。');
   const extraction = (await page.evaluate(() => window.evowork.getStartup())).tasks.find(
@@ -163,8 +178,8 @@ test('无项目任务默认全局，未保存不被发现，保存后独立任�
   await expect
     .poll(async () => (await page.evaluate(() => window.evowork.getStartup())).tasks.length)
     .toBe(1);
-  await idle(page);
   const source = (await page.evaluate(() => window.evowork.getStartup())).tasks[0];
+  await idle(page, source.id);
   expect(source.projectId).toBeNull();
   await scriptExtraction(electronApp, marker);
   await extract(page);
@@ -198,7 +213,8 @@ test('明确的自然语言要求通过真实工具创建关联草稿，未保�
     electronApp,
     marker + ' 退款按实际发生月份冲减，结论附数据证据。',
   );
-  await idle(page);
+  const source = (await page.evaluate(() => window.evowork.getStartup())).tasks[0];
+  await idle(page, source.id);
   await scriptExtraction(electronApp, marker);
   await electronApp.evaluate((_electron, marker) => {
     const gateway = globalThis.__evoworkE2E.gateway;

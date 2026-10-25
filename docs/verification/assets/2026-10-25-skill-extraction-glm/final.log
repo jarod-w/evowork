@@ -1,0 +1,12 @@
+
+Running 3 tests using 1 worker
+
+(node:25272) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:193:1 › 真实模型：项目提炼、来源追溯、对话修订、保存与新数据实际复用 (4.3m)
+  ✓  2 [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:289:1 › 真实模型：无项目来源默认全局，保存前不生效、保存后跨任务可发现且刷新保留 (1.4m)
+  ✓  3 [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:325:1 › 真实模型：明确自然语言请求自主调用工具创建关联草稿，未保存不安装 (1.5m)
+
+  Slow test file: [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs (7.2m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  3 passed (7.2m)

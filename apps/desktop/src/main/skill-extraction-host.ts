@@ -170,7 +170,11 @@ export function createSkillExtractionHost(options: {
   };
   const editable = (threadId: string, revision?: number) => {
     const draft = get(threadId);
-    if (!draft || draft.threadId !== threadId) throw new Error('没有这个提炼任务的技能草稿。');
+    if (!draft) throw new Error('没有这个提炼任务的技能草稿。');
+    if (draft.threadId !== threadId)
+      throw new Error(
+        '当前是来源任务，草稿由已创建的关联提炼任务独立处理。请通过“继续提炼”打开关联提炼任务；不要在来源任务中读取或发布草稿。本次调用被拒绝不代表关联草稿生成失败。',
+      );
     if (revision !== undefined && draft.revision !== revision)
       throw new Error('草稿已更新，请查看最新版本后重试。');
     if (saves.has(draft.id)) throw new Error('当前版本正在保存，请完成后再修改。');
@@ -587,7 +591,8 @@ export function createSkillExtractionHost(options: {
       });
       return {
         threadId: result.threadId,
-        instruction: '关联提炼任务已创建。原任务不继续制作技能文件，可打开该任务审阅。',
+        instruction:
+          '关联提炼任务已创建，正在独立生成草稿。本次成功表示创建了任务，不代表草稿已完成。原任务在此交接：只告知用户已创建并可点击“继续提炼”查看；不要再调用 get_skill_draft 或 publish_skill_draft，也不要把原任务不能读取草稿解释为生成失败。草稿的读取、发布与进度只在关联提炼任务中处理。',
       };
     }
     let draft = editable(threadId);

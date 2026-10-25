@@ -1,0 +1,53 @@
+
+Running 3 tests using 1 worker
+
+(node:15241) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:183:1 › 真实模型：项目提炼、来源追溯、对话修订、保存与新数据实际复用 (4.3m)
+(node:24381) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:267:1 › 真实模型：无项目来源默认全局，保存前不生效、保存后跨任务可发现且刷新保留 (2.0m)
+(node:24828) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:303:1 › 真实模型：明确自然语言请求自主调用工具创建关联草稿，未保存不安装 (1.6m)
+
+
+  1) [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:183:1 › 真实模型：项目提炼、来源追溯、对话修订、保存与新数据实际复用 
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: '从“读取当前目录 source-a6665fac…', exact: true })
+
+
+      230 |   expect(revised.content.sources.some((rule) => rule.evidenceId.startsWith('edit-'))).toBe(true);
+      231 |   await page.reload();
+    > 232 |   await page.getByRole('button', { name: task.title, exact: true }).click();
+          |                                                                     ^
+      233 |   await expect(page.locator('.ew-skill-content')).toContainText('quality_gate');
+      234 |   const saved = await save(page, task);
+      235 |   await page.screenshot({ path: info.outputPath('project-saved.png') });
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:232:69
+
+    Error Context: ../../../../../private/tmp/evowork-skill-glm-real/initial/results/skill-extraction.real-真实模型：项目提炼、来源追溯、对话修订、保存与新数据实际复用-real/error-context.md
+
+  2) [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:267:1 › 真实模型：无项目来源默认全局，保存前不生效、保存后跨任务可发现且刷新保留 
+
+    Error: 文件已保存，正在核对启用状态。
+
+      107 |         if (await checkbox.count()) await checkbox.check();
+      108 |         else {
+    > 109 |           const draft = await draftOf(page, task.id);
+          |                              ^
+      110 |           await audit.getByRole('textbox').fill(draft.content.slug);
+      111 |         }
+      112 |         await audit.getByRole('button', { name: '保存并启用', exact: true }).click();
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:109:30
+        at save (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:96:3)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:292:17
+
+    Error Context: ../../../../../private/tmp/evowork-skill-glm-real/initial/results/skill-extraction.real-真实模型：无项目来源默认全局，保存前不生效、保存后跨任务可发现且刷新保留-real/error-context.md
+
+  2 failed
+    [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:183:1 › 真实模型：项目提炼、来源追溯、对话修订、保存与新数据实际复用 
+    [real] › apps/desktop/test/e2e/ui/skill-extraction.real.spec.mjs:267:1 › 真实模型：无项目来源默认全局，保存前不生效、保存后跨任务可发现且刷新保留 
+  1 passed (7.9m)

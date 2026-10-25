@@ -1,0 +1,41 @@
+
+Running 3 tests using 1 worker
+
+(node:47017) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:72:1 › 项目任务从菜单提炼、来源定位、模型修改、刷新恢复、保存并复用，项目技能不出现在无项目任务 (8.3s)
+  ✘  2 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:156:1 › 无项目任务默认全局，未保存不被发现，保存后独立任务可发现并保留来源关系 (22.3s)
+(node:47463) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:194:1 › 明确的自然语言要求通过真实工具创建关联草稿，未保存不安装 (5.4s)
+
+
+  1) [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:156:1 › 无项目任务默认全局，未保存不被发现，保存后独立任务可发现并保留来源关系 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: '从本任务提炼技能' })
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: '从本任务提炼技能' }) with timeout 20000ms
+      - waiting for getByRole('dialog', { name: '从本任务提炼技能' })
+
+
+      63 |   await page.getByRole('menuitem', { name: '提炼为技能', exact: true }).click();
+      64 |   const dialog = page.getByRole('dialog', { name: '从本任务提炼技能' });
+    > 65 |   await expect(dialog).toBeVisible();
+         |                        ^
+      66 |   if (focus) await dialog.getByLabel('提炼重点（可选）').fill(focus);
+      67 |   await dialog.getByRole('button', { name: '开始提炼', exact: true }).click();
+      68 |   await expect(page.locator('.ew-skill-panel-head')).toContainText(content.name);
+        at extract (/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:65:24)
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:170:3
+
+    Error Context: ../../../../../private/tmp/evowork-skill-glm-handoff-fake/skill-extraction-无项目任务默认全局，未保存不被发现，保存后独立任务可发现并保留来源关系-fake/error-context.md
+
+  1 failed
+    [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:156:1 › 无项目任务默认全局，未保存不被发现，保存后独立任务可发现并保留来源关系 
+  2 passed (37.1s)

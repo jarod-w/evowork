@@ -1,0 +1,33 @@
+
+ RUN  v3.2.7 /Users/wangli/develop/evowork/evowork
+
+ ❯ |desktop| test/skill-extraction-boundary-before.test.ts (11 tests | 1 failed) 183ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 创建关联任务前固定来源范围，排除在途回合；草稿不进入技能目录且并发发起不重复 24ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 草稿发布校验真实调用、修订与来源，重新创建宿主仍能恢复内容 16ms
+   × 任务会话提炼技能的实际存储与安装后果 > 来源任务误调草稿工具时明确交接位置，拒绝读写且不把关联草稿报告为丢失 11ms
+     → expected [Function] to throw error including '关联提炼任务' but got '没有这个提炼任务的技能草稿。'
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 项目技能只写项目目录，资源同时落盘；新修订需要重新保存，旧修订不能覆盖 24ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 全局安装保留两份副本，目录核对失败如实记录，重试后才报告启用 19ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 同名技能不覆盖，危险能力必须先确认且被审计脚本不执行 11ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 拒绝软链写出项目、资源路径穿越和引用缺失，错误不回显正文 8ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 补充最新记录不会重新纳入用户排除的早期回合 8ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 删除来源清除原文证据，删除提炼任务清理草稿，已安装文件保留 13ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 全局镜像使用路径别名时按真实目录匹配，不误报未发现 14ms
+   ✓ 任务会话提炼技能的实际存储与安装后果 > 令牌与真实在途来源必须同时满足，令牌轮换后旧请求被拒绝 33ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |desktop| test/skill-extraction-boundary-before.test.ts > 任务会话提炼技能的实际存储与安装后果 > 来源任务误调草稿工具时明确交接位置，拒绝读写且不把关联草稿报告为丢失
+AssertionError: expected [Function] to throw error including '关联提炼任务' but got '没有这个提炼任务的技能草稿。'
+
+Expected: "关联提炼任务"
+Received: "没有这个提炼任务的技能草稿。"
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 passed (11)
+   Start at  11:19:54
+   Duration  885ms (transform 232ms, setup 84ms, collect 312ms, tests 183ms, environment 0ms, prepare 50ms)
+

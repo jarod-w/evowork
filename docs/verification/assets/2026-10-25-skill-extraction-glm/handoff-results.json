@@ -1,0 +1,140 @@
+{
+  "config": {
+    "argv": [
+      "/usr/local/bin/node",
+      "/Users/wangli/develop/evowork/evowork/node_modules/@playwright/test/cli.js",
+      "test",
+      "skill-extraction.real.spec.mjs",
+      "--project=real",
+      "--retries=0",
+      "--reporter=list,json",
+      "--output=/private/tmp/evowork-skill-glm-real/handoff/results",
+      "--grep",
+      "明确自然语言"
+    ],
+    "configFile": "/Users/wangli/develop/evowork/evowork/playwright.config.mjs",
+    "rootDir": "/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/global-setup.mjs",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/tmp/evowork-skill-glm-real/handoff/results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "fake",
+        "name": "fake",
+        "testDir": "/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui",
+        "testIgnore": [
+          "**/*.real.spec.mjs"
+        ],
+        "testMatch": [
+          "**/*.spec.mjs"
+        ],
+        "timeout": 180000
+      },
+      {
+        "outputDir": "/private/tmp/evowork-skill-glm-real/handoff/results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "real",
+        "name": "real",
+        "testDir": "/Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.real.spec.mjs"
+        ],
+        "timeout": 300000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "skill-extraction.real.spec.mjs",
+      "file": "skill-extraction.real.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "真实模型：明确自然语言请求自主调用工具创建关联草稿，未保存不安装",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "real",
+              "projectName": "real",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 85322,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-25T04:31:02.180Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b13e6e1dfddd5bf6e379-4542272bfc9a478cda79",
+          "file": "skill-extraction.real.spec.mjs",
+          "line": 325,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-25T04:31:01.834Z",
+    "duration": 85708.709,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

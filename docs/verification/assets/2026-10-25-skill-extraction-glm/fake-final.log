@@ -1,0 +1,10 @@
+
+Running 3 tests using 1 worker
+
+(node:48258) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:87:1 › 项目任务从菜单提炼、来源定位、模型修改、刷新恢复、保存并复用，项目技能不出现在无项目任务 (6.0s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:171:1 › 无项目任务默认全局，未保存不被发现，保存后独立任务可发现并保留来源关系 (2.8s)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:209:1 › 明确的自然语言要求通过真实工具创建关联草稿，未保存不安装 (3.1s)
+
+  3 passed (12.2s)

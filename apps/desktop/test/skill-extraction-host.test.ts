@@ -215,6 +215,16 @@ describe('任务会话提炼技能的实际存储与安装后果', () => {
     await host.ready;
     expect((await host.getSkillExtraction({ threadId: draft.threadId }))?.content).toEqual(base);
   });
+  it('来源任务误调草稿工具时明确交接位置，拒绝读写且不把关联草稿报告为丢失', async () => {
+    const draft = await start();
+    await expect(host.call('source', 'get_skill_draft', {})).rejects.toThrow('关联提炼任务');
+    await expect(
+      host.call('source', 'publish_skill_draft', { expectedRevision: 1, draft: base }),
+    ).rejects.toThrow('关联提炼任务');
+    expect((await host.getSkillExtraction({ threadId: draft.threadId }))?.revision).toBe(1);
+    expect((await host.getSkillExtraction({ threadId: draft.threadId }))?.content).toEqual(base);
+    expect(existsSync(join(project, '.agents', 'skills'))).toBe(false);
+  });
   it('项目技能只写项目目录，资源同时落盘；新修订需要重新保存，旧修订不能覆盖', async () => {
     const content = {
       ...base,
