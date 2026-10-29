@@ -1,9 +1,74 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { expect, test } from './fixtures.mjs';
 
 const skillText = (name, body = '帮助整理工作。') =>
   `---\nname: ${name}\ndescription: 工作教练\n---\n${body}\n`;
+
+test('共享目录技能与预算一致，同名副本可独立停用且保留文件', async ({
+  page,
+  electronApp,
+}, testInfo) => {
+  const home = await electronApp.evaluate(() => globalThis.__evoworkE2E.home);
+  const paths = Array.from({ length: 4 }, (_, index) => {
+    const path = join(home, '.agents', 'skills', `shared-charts-${index}`, 'SKILL.md');
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      `---\nname: charts\ndescription: 共享图表副本${index + 1}${'仅用于整理本机数据。'.repeat(120)}\n---\n`,
+    );
+    return path;
+  });
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  const catalog = await page.evaluate(() => window.evowork.getCatalog());
+  const shared = catalog.skills.filter((skill) => skill.sourceLabel === '用户共享');
+  expect(shared).toHaveLength(paths.length);
+  expect(catalog.skills.filter((skill) => skill.id === 'charts')).toHaveLength(paths.length + 1);
+  expect(catalog.skillBudget.over).toBe(true);
+  await expect(
+    page.getByRole('button', { name: `我已安装的 ${catalog.skills.length}` }),
+  ).toBeVisible();
+  const warning = page.getByText('已启用技能的目录预计超出预算，部分说明可能被缩短或省略');
+  await expect(warning).toBeVisible();
+  await page.getByRole('searchbox', { name: '搜索技能' }).fill('共享图表副本');
+  await page.screenshot({ path: testInfo.outputPath('shared-skills-budget.png') });
+  for (let index = 0; index < paths.length; index += 1) {
+    await page
+      .locator('.ew-item-card')
+      .filter({ hasText: `共享图表副本${index + 1}` })
+      .click();
+    const nativePath = shared.find(
+      (skill) => realpathSync(skill.skillPath) === realpathSync(paths[index]),
+    ).skillPath;
+    await expect(page.getByText(`位置：${nativePath}`)).toBeVisible();
+    await expect(page.getByRole('button', { name: '卸载', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: '停用', exact: true }).click();
+    await expect(page.getByRole('button', { name: '启用', exact: true })).toBeVisible();
+    const current = await page.evaluate(() => window.evowork.getCatalog());
+    expect(
+      current.skills.find((skill) => skill.source === 'official' && skill.id === 'charts').enabled,
+    ).toBe(true);
+    expect(
+      current.skills.filter((skill) => skill.sourceLabel === '用户共享' && !skill.enabled),
+    ).toHaveLength(index + 1);
+    await page.getByRole('button', { name: '返回目录' }).click();
+  }
+  await expect(warning).toHaveCount(0);
+  expect(paths.every((path) => existsSync(path))).toBe(true);
+  await page.reload();
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  await expect(page.getByText('已停用', { exact: true })).toHaveCount(paths.length);
+  await expect(warning).toHaveCount(0);
+  await page.getByRole('searchbox', { name: '搜索技能' }).fill('共享图表副本');
+  await page.screenshot({ path: testInfo.outputPath('shared-skills-disabled.png') });
+});
 
 async function addSkillAttachment(page, text) {
   await page.locator('.ew-composer-shell').evaluate((element, contents) => {

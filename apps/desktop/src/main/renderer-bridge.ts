@@ -172,6 +172,7 @@ import {
   createExpert,
   emptyCatalog,
   installSkill,
+  mergeDiscoveredSkills,
   missingPortsResult,
   readCatalog,
   removeConnectorAction,
@@ -1128,20 +1129,14 @@ export function createRendererActions(options: RendererBridgeOptions) {
         : Promise.resolve({ value: { data: [], nextCursor: null }, error: undefined }),
     ]);
     const entry = listed.data[0];
-    const byName = new Map((entry?.skills ?? []).map((skill) => [skill.name, skill]));
-    const skills = base.skills.map((skill) => {
-      const kernel = byName.get(skill.id);
-      return kernel
-        ? {
-            ...skill,
-            enabled: kernel.enabled,
-            scope: kernel.scope,
-            skillPath: kernel.path,
-          }
-        : skill;
-    });
+    const skills = options.catalogPorts
+      ? mergeDiscoveredSkills(options.catalogPorts, base.skills, entry?.skills ?? [])
+      : base.skills;
     const disabled = new Set(
-      skills.filter((skill) => skill.enabled === false).map((skill) => `skill:${skill.id}`),
+      // 应用模板仍对应本应用管理的副本；共享的同名技能不能替它启用或停用。
+      base.skills
+        .filter((skill) => skills.find((merged) => merged.id === skill.id)?.enabled === false)
+        .map((skill) => `skill:${skill.id}`),
     );
     const statusByName = new Map(connectorStatus.value.data.map((status) => [status.name, status]));
     const connectors = base.connectors.map((connector) => {

@@ -159,7 +159,8 @@ it('图片草稿不改变已保存设置，失败保留草稿，测试按钮只�
     'https://different.example/api/v3/',
   );
   expect(verifyImageConnection).not.toHaveBeenCalled();
-  expect(onFormState).toHaveBeenLastCalledWith({ dirty: true, busy: false });
+  // 错误文案出现后，表单状态的 effect 仍可能尚未通知父组件。
+  await waitFor(() => expect(onFormState).toHaveBeenLastCalledWith({ dirty: true, busy: false }));
   fireEvent.click(screen.getByRole('button', { name: '取消' }));
   expect(onFormState).toHaveBeenLastCalledWith({ dirty: false, busy: false });
 });

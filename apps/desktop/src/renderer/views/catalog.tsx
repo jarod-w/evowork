@@ -290,7 +290,7 @@ export function CatalogPage(props: CatalogPageProps) {
   };
 
   const selectedSkill =
-    selected?.kind === 'skill' ? skills.find((s) => s.id === selected.id) : undefined;
+    selected?.kind === 'skill' ? skills.find((s) => skillKey(s) === selected.id) : undefined;
   const selectedConnector =
     selected?.kind === 'connector' ? connectors.find((c) => c.id === selected.id) : undefined;
   const selectedExpert =
@@ -395,7 +395,14 @@ export function CatalogPage(props: CatalogPageProps) {
         ) : null}
         {props.tab === 'skills' && data?.skillBudget?.over ? (
           <Banner tone="warning">
-            {data.skillBudget.warning ?? '已启用的技能太多，模型将看不到部分技能的说明'}
+            <p>
+              {data.skillBudget.warning ?? '已启用技能的目录预计超出预算，部分说明可能被缩短或省略'}
+            </p>
+            <p>
+              目录估算占用 {data.skillBudget.used.toLocaleString('zh-CN')} /{' '}
+              {data.skillBudget.budget.toLocaleString('zh-CN')}{' '}
+              token（按最小支持窗口估算）。可停用不常用的技能，实际可见内容取决于所用模型。
+            </p>
           </Banner>
         ) : null}
         {(data?.skillErrors ?? []).map((error) => (
@@ -427,7 +434,7 @@ export function CatalogPage(props: CatalogPageProps) {
                 : undefined
             }
             onUninstall={
-              selectedSkill.source === 'official'
+              selectedSkill.source === 'official' || selectedSkill.uninstallDisabledReason
                 ? undefined
                 : () =>
                     setPending({
@@ -1015,7 +1022,7 @@ function SkillsGrid({
           />
           <div className="ew-projects-grid">
             {featured.map((s) => (
-              <SkillCard key={`feat-${s.id}`} skill={s} onSelect={onSelect} />
+              <SkillCard key={`feat-${skillKey(s)}`} skill={s} onSelect={onSelect} />
             ))}
           </div>
         </>
@@ -1068,12 +1075,16 @@ function SkillsGrid({
       ) : (
         <div className="ew-projects-grid">
           {visible.map((s) => (
-            <SkillCard key={s.id} skill={s} onSelect={onSelect} />
+            <SkillCard key={skillKey(s)} skill={s} onSelect={onSelect} />
           ))}
         </div>
       )}
     </>
   );
+}
+
+function skillKey(skill: CatalogItemView): string {
+  return skill.skillPath ?? skill.id;
 }
 
 function SkillCard({
@@ -1087,9 +1098,14 @@ function SkillCard({
     <ItemCard
       name={skill.name}
       description={skill.description}
-      badges={[skill.sourceLabel, skill.riskLabel, skill.installed ? '已安装' : '未安装']}
+      badges={[
+        skill.sourceLabel,
+        skill.riskLabel,
+        skill.installed ? '已安装' : '未安装',
+        ...(skill.enabled === false ? ['已停用'] : []),
+      ]}
       tone={skill.riskLevel === 'p2' ? 'warning' : 'default'}
-      onClick={() => onSelect(skill.id)}
+      onClick={() => onSelect(skillKey(skill))}
     />
   );
 }
@@ -1220,6 +1236,7 @@ function SkillDetail({
           作用域：{skill.scope} · {skill.enabled === false ? '已停用' : '已启用'}
         </p>
       ) : null}
+      {skill.skillPath ? <p className="ew-catalog-detail-meta">位置：{skill.skillPath}</p> : null}
       {skill.findings.length > 0 ? (
         <ul className="ew-catalog-findings">
           {skill.findings.map((f) => (
@@ -1242,7 +1259,9 @@ function SkillDetail({
         {onUninstall ? (
           <PillButton onClick={onUninstall}>卸载</PillButton>
         ) : (
-          <span className="ew-catalog-muted">官方内置技能不能卸载。</span>
+          <span className="ew-catalog-muted">
+            {skill.uninstallDisabledReason ?? '官方内置技能不能卸载。'}
+          </span>
         )}
       </div>
     </div>

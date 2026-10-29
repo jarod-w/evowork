@@ -22,7 +22,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import {
   auditSkillFiles,
@@ -137,6 +137,89 @@ export function readCatalog(ports: CatalogPorts): CatalogDataView {
     experts: experts.map(toExpertView),
     apps: apps.map(toAppView),
   };
+}
+
+/** 内核发现范围可能大于本应用的安装目录；同名技能必须按文件路径分别管理。 */
+export function mergeDiscoveredSkills(
+  ports: CatalogPorts,
+  installed: readonly CatalogItemView[],
+  discovered: readonly {
+    readonly name: string;
+    readonly description: string;
+    readonly path: string;
+    readonly scope: NonNullable<CatalogItemView['scope']>;
+    readonly enabled: boolean;
+    readonly pluginId?: string | null;
+    readonly interface?: { readonly displayName?: string; readonly defaultPrompt?: string };
+  }[],
+): readonly CatalogItemView[] {
+  const byPath = new Map(discovered.map((skill) => [canonicalSkillPath(skill.path), skill]));
+  const matched = new Set<string>();
+  const rows = installed.map((skill) => {
+    if (!skill.skillPath) return skill;
+    const direct = byPath.get(canonicalSkillPath(skill.skillPath));
+    // 全局安装保存于用户目录，内核读取其镜像；不使用名称匹配外部同名技能。
+    const mirror = byPath.get(
+      canonicalSkillPath(
+        join(ports.kernelHome, 'skills', basename(dirname(skill.skillPath)), 'SKILL.md'),
+      ),
+    );
+    const native = direct ?? (skill.source !== 'official' ? mirror : undefined);
+    if (!native) return skill;
+    matched.add(canonicalSkillPath(native.path));
+    return {
+      ...skill,
+      description: native.description,
+      enabled: native.enabled,
+      scope: native.scope,
+      skillPath: native.path,
+    };
+  });
+  for (const [path, skill] of byPath) {
+    if (matched.has(path)) continue;
+    const audit = auditSkillFiles(ports.io.listFiles(dirname(skill.path), 3));
+    const official =
+      path ===
+      canonicalSkillPath(
+        join(ports.pluginsDir, 'skills', basename(dirname(skill.path)), 'SKILL.md'),
+      );
+    rows.push({
+      id: skill.name,
+      name: skill.interface?.displayName || skill.name,
+      description: skill.description,
+      category: '未分类',
+      source: official ? 'official' : 'local',
+      sourceLabel: official
+        ? '官方内置'
+        : skill.pluginId
+          ? '套件技能'
+          : { user: '用户共享', repo: '项目技能', system: '系统技能', admin: '管理员技能' }[
+              skill.scope
+            ],
+      installed: true,
+      featured: false,
+      riskLevel: audit.level,
+      riskLabel: riskLabel(audit.level),
+      findings: audit.findings.map((finding) => finding.detail),
+      ...(audit.worstCase !== undefined ? { worstCase: audit.worstCase } : {}),
+      ...(skill.interface?.defaultPrompt ? { defaultPrompt: skill.interface.defaultPrompt } : {}),
+      enabled: skill.enabled,
+      scope: skill.scope,
+      skillPath: skill.path,
+      ...(official
+        ? {}
+        : { uninstallDisabledReason: '此技能由外部目录或套件管理，可在这里停用。' }),
+    });
+  }
+  return rows;
+}
+
+function canonicalSkillPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 export async function installSkill(
@@ -797,6 +880,7 @@ function toSkillView(s: SkillRecord): CatalogItemView {
     sourceLabel: sourceLabel(s.source),
     installed: s.installed,
     featured: s.featured,
+    skillPath: join(s.path, 'SKILL.md'),
     riskLevel: s.audit.level,
     riskLabel: riskLabel(s.audit.level),
     findings: s.audit.findings.map((f) => f.detail),

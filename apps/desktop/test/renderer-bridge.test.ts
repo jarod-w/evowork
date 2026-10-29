@@ -446,6 +446,75 @@ describe('Composer 技能上下文', () => {
     }
   });
 
+  it('目录显示预算中的共享技能；同名技能按路径启停，不覆盖内置技能', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ew-shared-skills-'));
+    const store = memoryStore();
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(home, 'plugins'),
+      userRoot: join(home, 'user'),
+      kernelHome: join(home, 'kernel'),
+    });
+    const officialPath = join(home, 'plugins', 'skills', 'coach', 'SKILL.md');
+    const sharedPaths = ['first', 'second', 'third', 'fourth'].map((dir) =>
+      join(home, 'shared', dir, 'SKILL.md'),
+    );
+    const native = [officialPath, ...sharedPaths].map((path, index) => ({
+      name: 'coach',
+      description: index === 0 ? '工作教练' : '共享工作教练'.repeat(200),
+      path,
+      scope: 'user' as const,
+      enabled: true,
+    }));
+    for (const skill of native) {
+      mkdirSync(join(skill.path, '..'), { recursive: true });
+      writeFileSync(skill.path, `---\nname: coach\ndescription: ${skill.description}\n---\n`);
+    }
+    const adapter = fakeAdapter({
+      listSkills: vi.fn(async () => ({ data: [{ cwd: home, skills: native, errors: [] }] })),
+      setSkillEnabled: vi.fn(async (input) => {
+        native.find((skill) => skill.path === input.path)!.enabled = input.enabled;
+        return input.enabled;
+      }),
+    });
+    try {
+      const actions = makeActions({ store, adapter, catalogPorts });
+      const catalog = await actions.getCatalog();
+      expect(catalog.skillBudget?.over).toBe(true);
+      expect(catalog.skills).toHaveLength(native.length);
+      expect(catalog.skills.map((skill) => skill.skillPath)).toEqual(native.map((s) => s.path));
+      expect(catalog.skills[0]).toMatchObject({ source: 'official', enabled: true });
+      for (const skill of catalog.skills.slice(1)) {
+        expect(skill.sourceLabel).toBe('用户共享');
+        expect(skill.uninstallDisabledReason).toBeTruthy();
+      }
+      let result;
+      for (const path of sharedPaths) {
+        result = await actions.setSkillEnabled({ path, name: 'coach', enabled: false });
+        expect(result.ok).toBe(true);
+      }
+      expect(result!.catalog.skillBudget?.over).toBe(false);
+      expect(result!.catalog.skills.map((s) => s.enabled)).toEqual([
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(result!.catalog.apps.some((app) => app.id === 'skill:coach')).toBe(true);
+      await actions.setSkillEnabled({ path: sharedPaths[0]!, name: 'coach', enabled: true });
+      const disabledOfficial = await actions.setSkillEnabled({
+        path: officialPath,
+        name: 'coach',
+        enabled: false,
+      });
+      expect(disabledOfficial.catalog.apps.some((app) => app.id === 'skill:coach')).toBe(false);
+      expect(sharedPaths.every((path) => existsSync(path))).toBe(true);
+    } finally {
+      store.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it('内核没有返回请求目录时明确报错，不能拿其他工作空间的技能代替', async () => {
     const store = memoryStore();
     store.db

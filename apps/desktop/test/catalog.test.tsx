@@ -275,16 +275,51 @@ describe('CatalogPage', () => {
     expect(screen.getByRole('button', { name: '重新确认并更新' })).toBeTruthy();
   });
 
-  it('启用的技能超过 prompt 预算 → 技能页常驻 warning（不静默截断）', () => {
+  it('同名共享技能可分别打开和停用，显示路径且不提供卸载', async () => {
+    const paths = ['/shared/first/SKILL.md', '/shared/second/SKILL.md'];
+    const skills = paths.map((skillPath, index) => ({
+      id: 'coach',
+      name: '工作教练',
+      description: `共享副本${index + 1}`,
+      category: '未分类',
+      source: 'local' as const,
+      sourceLabel: '用户共享',
+      installed: true,
+      featured: false,
+      riskLevel: 'p0' as const,
+      riskLabel: '低风险',
+      findings: [],
+      enabled: true,
+      scope: 'user' as const,
+      skillPath,
+      uninstallDisabledReason: '此技能由外部目录管理，可在这里停用。',
+    }));
+    const setEnabled = vi.fn(async () => ({ ok: true, catalog: { ...EMPTY, skills } }));
+    renderPage({ skills }, 'skills', { onSetSkillEnabled: setEnabled });
+    expect(screen.getByRole('button', { name: /我已安装的 2/ })).toBeTruthy();
+    fireEvent.click(screen.getByText('共享副本2'));
+    expect(screen.getByText(`位置：${paths[1]}`)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '卸载' })).toBeNull();
+    expect(screen.queryByText('官方内置技能不能卸载。')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '停用' }));
+    await waitFor(() =>
+      expect(setEnabled).toHaveBeenCalledWith({ path: paths[1], name: 'coach', enabled: false }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '返回目录' }));
+    fireEvent.click(screen.getByText('共享副本1'));
+    expect(screen.getByText(`位置：${paths[0]}`)).toBeTruthy();
+  });
+
+  it('启用的技能超过 prompt 预算 → 显示估算值，不断言当前模型已截断', () => {
     renderPage({
       skillBudget: {
         used: 3000,
         budget: 2560,
         over: true,
-        warning: '已启用的技能太多，模型将看不到部分技能的说明',
       },
     });
-    expect(screen.getByText('已启用的技能太多，模型将看不到部分技能的说明')).toBeTruthy();
+    expect(screen.getByText('已启用技能的目录预计超出预算，部分说明可能被缩短或省略')).toBeTruthy();
+    expect(screen.getByText(/3,000.*2,560/)).toBeTruthy();
   });
 });
 

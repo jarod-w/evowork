@@ -156,7 +156,7 @@ export const HUB_INTEGRITY_REFUSAL = '签名校验失败';
 export const HUB_STDIO_WORST_CASE =
   '它会以你的身份在这台电脑上运行程序，能读写你能读写的所有文件。';
 /** 5.6：不静默截断。 */
-export const HUB_BUDGET_WARNING = '已启用的技能太多，模型将看不到部分技能的说明';
+export const HUB_BUDGET_WARNING = '已启用技能的目录预计超出预算，部分说明可能被缩短或省略';
 /** 5.6：未登录、开关关着。 */
 export const HUB_SIGNED_OUT_CAPTION = '登录或在设置中开启后，可以获取 EvoWork 精选内容';
 export const HUB_OFF_CAPTION = '这台电脑的部署配置停用了 EvoWork 精选内容';

@@ -23,6 +23,7 @@ import {
   createExpert,
   createFsCatalogPorts,
   installSkill,
+  mergeDiscoveredSkills,
   missingPortsResult,
   readCatalog,
   refreshOfficialConnectors,
@@ -50,6 +51,21 @@ describe('技能目录安装审计（05 §3.3）', () => {
       kernelHome: join(root, 'kernel'),
     });
   }
+
+  it('精选版本覆盖后仍正确标注内核返回的旧内置副本，不误标为用户共享', () => {
+    const p = ports();
+    const path = join(root, 'plugins', 'skills', 'charts', 'SKILL.md');
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, '---\nname: charts\ndescription: 内置图表\n---\n');
+    const rows = mergeDiscoveredSkills(
+      p,
+      [],
+      [{ name: 'charts', description: '内置图表', path, scope: 'user', enabled: false }],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ source: 'official', sourceLabel: '官方内置', enabled: false });
+    expect(rows[0]?.uninstallDisabledReason).toBeUndefined();
+  });
 
   function writeSkill(dir: string, name: string, extraFile?: { name: string; text: string }) {
     mkdirSync(dir, { recursive: true });

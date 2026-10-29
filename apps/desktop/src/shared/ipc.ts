@@ -1529,6 +1529,8 @@ export interface CatalogItemView {
   readonly scope?: 'user' | 'repo' | 'system' | 'admin' | undefined;
   /** `skills/config/write` 的精确选择器。 */
   readonly skillPath?: string | undefined;
+  /** 非本应用管理的技能只允许启停，不能按名称卸载共享文件。 */
+  readonly uninstallDisabledReason?: string | undefined;
 }
 
 export interface ConnectorView {
