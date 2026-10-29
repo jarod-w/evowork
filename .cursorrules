@@ -23,7 +23,7 @@
 
 越过任何一条，代价都是每次上游 rebase 重付一遍。允许实现简陋，不允许调用点错位。
 
-1. **K1 内核不可变。** 不改 `../codex`。扩展点做不到时才落 `patches/evowork/*.patch`，
+1. **K1 内核不可变。** 不改 `../codex`。`codex/AGENTS.md` 是上游贡献者指南，不授权直接改内核。扩展点做不到时才落 `patches/evowork/*.patch`，
    每个补丁必须说明四个扩展点为什么不行。硬上限 ≤ 5 文件 / ≤ 500 行。
 2. **K2 唯一边界是 app-server JSON-RPC v2。** 不链接 Rust、不调 SDK 内部、
    不读内核 sqlite / rollout。实验方法只在 `services/kernel-adapter` 出现。

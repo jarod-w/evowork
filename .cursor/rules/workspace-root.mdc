@@ -1,0 +1,8 @@
+---
+description: 多根工作区边界。挂上 evowork.code-workspace 同目录的 .cursorrules；codex 只读。
+alwaysApply: true
+---
+
+@../.cursorrules
+
+上一层文件挂不上时仍遵守：`evowork/` 与 `evowork-hub/` 可写，规则在各自的 `CLAUDE.md`；`codex/` 只读，`codex/AGENTS.md` 不授权改内核。
