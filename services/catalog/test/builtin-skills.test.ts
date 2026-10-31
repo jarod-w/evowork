@@ -43,7 +43,6 @@ const EXPECTED = [
   'scan-to-ledger',
   'skill-creator',
   'spreadsheets',
-  'ui-design',
   'weekly-report',
 ] as const;
 

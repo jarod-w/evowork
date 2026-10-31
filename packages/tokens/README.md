@@ -1,8 +1,7 @@
 # @evowork/tokens —— 01 的 design token（M2）
 
 [01 §2](../../docs/design/01-ui-design-system.md) 是**数值真源**，这个包是它的代码形态
-（CSS 变量 + TS 常量）。01 的浅色中性层与语义色自 2026-09-16 起对齐
-[`plugins/skills/ui-design`](../../plugins/skills/ui-design/SKILL.md) 工作台基线。
+（CSS 变量 + TS 常量），延续 2026-09-16 的冷灰工作台基线。
 `docs/design/ui-spec.html` 是渲染面；三者不一致时以 01 为准。
 
 **四条 token 纪律**（01 §2 / §8）：

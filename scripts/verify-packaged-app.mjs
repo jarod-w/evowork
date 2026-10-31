@@ -87,6 +87,11 @@ for (const [rel, what] of [
   }
 }
 
+check(
+  !existsSync(join(resources, 'plugins/skills/ui-design')),
+  '已移除的界面设计技能不应出现在随包资源中：Resources/plugins/skills/ui-design',
+);
+
 // 直接验证实际随包成品；可写字体缓存位于临时数据目录，运行时不复制。
 const runtimeHome = mkdtempSync(join(tmpdir(), 'evowork-pkg-office-'));
 try {

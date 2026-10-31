@@ -10,7 +10,7 @@ mode              = "request-approval"
 instructions_file = "modes/craft-design.md"
 budget_limit      = 400000
 
-skills              = ["charts", "ui-design"]
+skills              = ["charts"]
 connectors          = []
 experts_recommended = []
 

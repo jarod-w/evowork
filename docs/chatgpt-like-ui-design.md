@@ -5,7 +5,7 @@
 > 适用范围：EvoWork 桌面端现有功能的界面重组与视觉刷新
 > 相关文档：[UI 设计系统](design/01-ui-design-system.md) · [信息架构](design/02-information-architecture.md) · [首页与输入区](design/03-home-and-composer.md) · [任务工作台](design/04-task-workspace.md) · [当前开发状态](status.md)
 >
-> v0.9：视觉真源改为 `plugins/skills/ui-design` 工作台基线；C3–C6 产品行为不变。
+> v0.9：视觉改为冷灰工作台基线；数值真源见 [01](design/01-ui-design-system.md)，C3–C6 产品行为不变。
 > v0.10：Q45 Composer 一级模式改为请求批准 / 帮我批准 / 完全访问；发送链路已接（`auto_review` 仅单测）。
 
 ## 1. 文档目的
@@ -86,7 +86,7 @@ OpenAI 官方插件架构把“插件”定义为用户发现、安装、分享�
 
 **决定（2026-09-16 修订）：** 信息结构、交互层级仍借鉴对话工作台（对话中心、侧栏导航、底部输入、按需并排结果），不做像素级复制商标或第三方文案。
 
-**视觉语言**走 [`plugins/skills/ui-design`](../plugins/skills/ui-design/SKILL.md) 2026-09-16 基线：冷灰中性层、发丝分割、紧凑控件、无框助手回复。数值真源是 [01](design/01-ui-design-system.md)。
+**视觉语言**走 [01](design/01-ui-design-system.md) 的 2026-09-16 工作台基线：冷灰中性层、发丝分割、紧凑控件、无框助手回复。数值真源是 [01](design/01-ui-design-system.md)。
 
 **仍保留的产品约束：**
 
@@ -602,7 +602,7 @@ Composer 是首页和任务页共用的唯一输入组件，固定在主内容�
 
 ## 14. 视觉语言
 
-本次视觉走 `ui-design` 工作台基线：冷灰中性层、发丝分割、紧凑控件。不追随第三方产品的具体色值或商标。品牌绿只用于 K5 品牌层与进行中状态，焦点与链接用蓝。
+本次视觉走 [01](design/01-ui-design-system.md) 的冷灰工作台基线：冷灰中性层、发丝分割、紧凑控件。不追随第三方产品的具体色值或商标。品牌绿只用于 K5 品牌层与进行中状态，焦点与链接用蓝。
 
 ### 14.1 色彩
 

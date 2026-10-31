@@ -134,7 +134,7 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
 
 **任务会话提炼技能（2026-10-25）**：桌面 `skill-extraction-host` 通过适配层读取历史并创建关联任务，以权威 `meta` 保存草稿与修订；随包 `skill-drafts` MCP 通过临时令牌保护的回环HTTP提交结构化草稿，宿主同时核对真实在途工具归属。渲染层使用窄IPC与已有任务/结果/确认组件，正式保存沿用catalog安装检查，项目与全局根分开写入，原生发现和启用核对后才报告成功。没有新增workspace包、执行内核补丁或云端服务；数据流及留存边界见[23](design/23-session-to-skill.md)。
 
-**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）+ `ui-design`（指令包，无渲染脚本）+ `image-generation` · `computer-use`（引导技能）+ `skill-creator` ·
+**非包资产**：[plugins/skills/](../plugins/skills/) 四个办公技能（SKILL.md + schema + `render.py` + 共用骨架 + `interface.json`）+ `image-generation` · `computer-use`（引导技能）+ `skill-creator` ·
 [plugins/hooks/evowork-policy/](../plugins/hooks/evowork-policy/) 策略包的 I/O 壳 ·
 [plugins/connectors/](../plugins/connectors/) 随包 stdio MCP：`browser`（官方浏览器，Q9；含免 Key 搜索）· `image-generation` · `thread-communication` · `workspace-files` · `computer-use`（`cua_repl`）·
 [config/](../config/) 内核配置模板 · 模式片段 · 场景包 · **产品身份底稿 `prompts/base-instructions.md`**（F25）· 案例池 ·

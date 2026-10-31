@@ -40,6 +40,8 @@
 
 ### 1.2 现状（2026-10-02 核对）
 
+> 2026-10-31 更新：下表为历史快照；`ui-design` 已从随包技能中移除，插件页不再列出，后续安装包也不携带。当前清单见 `services/catalog/test/builtin-skills.test.ts`。
+
 「插件」页的数据全部来自 [`catalog-host.ts:121`](../../apps/desktop/src/main/catalog-host.ts) 的 `readCatalog`，再由 [`renderer-bridge.ts`](../../apps/desktop/src/main/renderer-bridge.ts) 的 `catalogWithKernelSkills` 补上内核状态：
 
 | Tab | 随包 | 其他来源 | 本机现状 |

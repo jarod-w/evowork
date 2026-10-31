@@ -437,7 +437,7 @@ export const BUILTIN_SCENARIOS: readonly Scenario[] = [
     mode: 'request-approval',
     permissions: 'evowork-workspace',
     instructionsFile: 'modes/craft-design.md',
-    skills: ['charts', 'ui-design'],
+    skills: ['charts'],
     chips: [
       { label: '出几个方案', icon: 'lightbulb', prompt: '围绕这个主题给我几个方案：' },
       { label: '配图', icon: 'image', prompt: '帮我生成一张配图：' },

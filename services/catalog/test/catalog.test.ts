@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -183,29 +183,10 @@ describe('技能扫描', () => {
     });
   });
 
-  it('随包 ui-design 进官方目录：中文展示名、无脚本、对外不含 Codex / OpenAI', () => {
+  it('官方目录不再提供界面设计技能', () => {
     const root = join(fileURLToPath(new URL('.', import.meta.url)), '../../../plugins/skills');
     const skills = listSkills({ official: root, user: '/nope' }, nodeCatalogIo);
-    const skill = skills.find((s) => s.id === 'ui-design');
-    expect(skill?.name).toBe('界面设计');
-    expect(skill?.interface.category).toBe('设计');
-    expect(skill?.source).toBe('official');
-    expect(skill?.audit.level).toBe('p0');
-    const files = [
-      'SKILL.md',
-      'interface.json',
-      'assets/ui-tokens.css',
-      'references/foundations.md',
-      'references/patterns.md',
-      'references/output-style.md',
-      'references/implementation.md',
-    ];
-    const blob = files
-      .map((file) => readFileSync(join(root, 'ui-design', file), 'utf8'))
-      .join('\n');
-    expect(blob).not.toMatch(/Codex|OpenAI|ChatGPT/i);
-    expect(blob).toContain('--ew-ui-bg-canvas');
-    expect(blob).not.toContain('--codex-');
+    expect(skills.some((skill) => skill.id === 'ui-design')).toBe(false);
   });
 
   it('随包 computer-use 技能可发现，且保持无脚本的 P0 权限面', () => {

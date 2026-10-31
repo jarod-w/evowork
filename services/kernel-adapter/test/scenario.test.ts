@@ -306,9 +306,9 @@ describe('场景包（03 §2.2）', () => {
     ]);
   });
 
-  it('design 场景带上界面设计技能，不把它算进办公四件套', () => {
+  it('design 场景只预设图表技能，保留设计界面入口', () => {
     const design = BUILTIN_SCENARIOS.find((s) => s.id === 'design');
-    expect(design?.skills).toEqual(['charts', 'ui-design']);
+    expect(design?.skills).toEqual(['charts']);
     expect(design?.chips?.map((c) => c.label)).toEqual(['出几个方案', '配图', '设计界面']);
   });
 

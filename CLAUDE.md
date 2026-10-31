@@ -133,7 +133,7 @@ evowork/
     hub-protocol/        插件 Hub 的索引协议：形状 · 验签 · 内容包 tar.gz · 版本与吊销范围（13 §4；evowork-hub 的 CI 也用它）
   ext/                   L2 Rust 扩展 crate（extension-api contributor）
   plugins/               L2 随产品分发的插件包
-    skills/              办公产物技能 documents / spreadsheets / presentations / charts（共用 `_shared/`）+ 界面设计 ui-design
+    skills/              办公产物技能 documents / spreadsheets / presentations / charts（共用 `_shared/`）
                          + 文种与辅助技能 minutes · weekly-report · email-draft · data-analysis · diagrams · scan-to-ledger · batch-files（#20）
                          + image-generation（AI 生图与编辑）· computer-use（电脑操控）· skill-creator（在项目里新建技能）
     agents/              专家角色 *.toml（agent-roles 格式）

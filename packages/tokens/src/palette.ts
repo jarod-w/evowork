@@ -12,7 +12,7 @@
 
 // ─────────────────────────── 中性色（冷灰工作台层，01 §2.1）───────────────────────────
 //
-// 数值对齐 plugins/skills/ui-design 2026-09-16 基线。暗色值收录在 DARK_*，
+// 数值对齐 docs/design/01-ui-design-system.md §2。暗色值收录在 DARK_*，
 // 产品 CSS **不注入**（C7）。
 
 export const LIGHT_NEUTRAL = {
