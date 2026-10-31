@@ -44,6 +44,13 @@ export default tseslint.config(
   },
 
   {
+    files: ['prototypes/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+  },
+
+  {
     plugins: { '@evowork': evowork },
     rules: {
       '@evowork/no-kernel-internals': 'error',

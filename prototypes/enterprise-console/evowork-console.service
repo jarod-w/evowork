@@ -1,0 +1,17 @@
+[Unit]
+Description=EvoWork enterprise console prototype
+After=network.target
+
+[Service]
+Type=simple
+User=evowork-proto
+Group=evowork-proto
+WorkingDirectory=/opt/evowork-console
+ExecStart=/usr/bin/node /opt/evowork-console/server.mjs
+Restart=on-failure
+RestartSec=2
+Environment=PORT=8888
+Environment=HOST=0.0.0.0
+
+[Install]
+WantedBy=multi-user.target
