@@ -169,6 +169,11 @@ if (isPrimaryInstance) {
       },
       // 「项目」页的「打开文件夹」（清单 §4.5）。同样只有主进程能调 shell
       openPath: (path) => shell.openPath(path),
+      showItemInFolder: (path) => shell.showItemInFolder(path),
+      showSaveDialog: (options) => {
+        const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+        return parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options);
+      },
       openExternal: (url) => shell.openExternal(url),
       // 启动失败里用户能自己处理的那几类（如库比应用新），退出前弹一次说明
       showErrorBox: (title, content) => dialog.showErrorBox(title, content),

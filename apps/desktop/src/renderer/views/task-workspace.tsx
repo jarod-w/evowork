@@ -43,7 +43,13 @@ import {
   type RenderItem,
 } from '../components/item-renderers.js';
 import { renderIcon } from '../components/icons.js';
-import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
+import {
+  ArtifactOpenMenu,
+  Menu,
+  Popover,
+  type ArtifactOpenActions,
+  type MenuItemSpec,
+} from '../components/menu.js';
 import {
   Badge,
   Banner,
@@ -101,6 +107,48 @@ const ARTIFACT_TYPE_LABEL: Readonly<Record<string, string>> = Object.freeze({
   archive: '压缩包',
   webpage: '网页',
 });
+
+function artifactFormatLabel(artifact: {
+  readonly name: string;
+  readonly artifactType: string;
+}): string {
+  const ext = artifact.name.includes('.')
+    ? artifact.name.split('.').at(-1)?.toLowerCase()
+    : undefined;
+  switch (ext) {
+    case 'xlsx':
+    case 'xls':
+      return 'Excel';
+    case 'csv':
+      return 'CSV';
+    case 'docx':
+    case 'doc':
+      return 'Word';
+    case 'pptx':
+    case 'ppt':
+      return 'PPT';
+    case 'pdf':
+      return 'PDF';
+    default:
+      return ARTIFACT_TYPE_LABEL[artifact.artifactType] ?? artifact.artifactType;
+  }
+}
+
+function artifactIconName(artifact: {
+  readonly name: string;
+  readonly artifactType: string;
+}): string {
+  const ext = artifact.name.includes('.')
+    ? artifact.name.split('.').at(-1)?.toLowerCase()
+    : undefined;
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || artifact.artifactType === 'spreadsheet')
+    return 'spreadsheet';
+  if (ext === 'pptx' || ext === 'ppt' || artifact.artifactType === 'presentation')
+    return 'presentation';
+  if (artifact.artifactType === 'image') return 'image';
+  if (artifact.artifactType === 'chart') return 'pie-chart';
+  return 'file-text';
+}
 
 /**
  * 会被收进相邻操作组的协议条目。未知类型故意不在这里：上游新增 item
@@ -378,6 +426,7 @@ export interface TaskWorkspaceProps {
     readonly version: number;
   }[];
   readonly onOpenArtifact?: ((id: string) => void) | undefined;
+  readonly artifactOpenActions?: ArtifactOpenActions | undefined;
   /**
    * 正在拉历史。为 true 时不显示「还没有消息」—— 那是刚创建的空态（04 §8），
    * 已完成任务加载中画那句等于撒谎。
@@ -1024,18 +1073,43 @@ export function TaskWorkspace(props: TaskWorkspaceProps) {
               {props.items.length > 0 && (props.artifacts ?? []).length > 0 ? (
                 <section className="ew-timeline-artifacts" aria-label="任务产物">
                   {(props.artifacts ?? []).map((artifact) => (
-                    <button
+                    <div
                       key={artifact.id}
-                      type="button"
                       className="ew-timeline-artifact"
-                      onClick={() => props.onOpenArtifact?.(artifact.id)}
+                      role="group"
+                      aria-label={`任务产物：${artifact.name}`}
                     >
-                      <span className="ew-timeline-artifact-kind">
-                        {ARTIFACT_TYPE_LABEL[artifact.artifactType] ?? artifact.artifactType}
-                      </span>
-                      <strong>{artifact.name}</strong>
-                      <span>版本 {artifact.version} · 打开预览</span>
-                    </button>
+                      <button
+                        type="button"
+                        className="ew-timeline-artifact-main"
+                        onClick={() => props.onOpenArtifact?.(artifact.id)}
+                      >
+                        <span
+                          className="ew-timeline-artifact-badge"
+                          data-artifact-type={artifact.artifactType}
+                          aria-hidden="true"
+                        >
+                          {renderIcon(artifactIconName(artifact))}
+                        </span>
+                        <span className="ew-timeline-artifact-info">
+                          <strong>{artifact.name}</strong>
+                          <span className="ew-timeline-artifact-kind">
+                            {artifactFormatLabel(artifact)} · 版本 {artifact.version} · 打开预览
+                          </span>
+                        </span>
+                      </button>
+                      <ArtifactOpenMenu
+                        artifactId={artifact.id}
+                        artifactName={artifact.name}
+                        actions={{
+                          ...props.artifactOpenActions,
+                          onOpenPreview: props.onOpenArtifact,
+                          onOpenFile:
+                            props.artifactOpenActions?.onOpenFile ??
+                            (props.onOpenArtifact ? (id) => props.onOpenArtifact?.(id) : undefined),
+                        }}
+                      />
+                    </div>
                   ))}
                 </section>
               ) : null}

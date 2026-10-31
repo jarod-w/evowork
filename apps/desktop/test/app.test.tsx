@@ -1335,6 +1335,68 @@ describe('结果工作区真实接线', () => {
     expect(openResultFile).toHaveBeenCalledWith({ artifactId: 'a1' });
   });
 
+  it('预览顶栏与产物列表的「打开方式」菜单可调用指定本机应用、在 Finder 中显示与下载副本', async () => {
+    const openResultFile = vi.fn(async () => undefined);
+    const revealResultFile = vi.fn(async () => undefined);
+    const saveResultFileCopy = vi.fn(async () => ({
+      saved: true,
+      destinationPath: '/Users/x/Downloads/天津未来三天天气对比_20261025-1027.xlsx',
+    }));
+    const listResultOpenApps = vi.fn(async () => [
+      { id: '/Applications/wpsoffice.app', name: 'WPS Office', isDefault: true },
+      { id: '/Applications/Microsoft Excel.app', name: 'Microsoft Excel', isDefault: false },
+    ]);
+    const readResultPreview = vi.fn(async () => ({
+      name: '天津未来三天天气对比_20261025-1027.xlsx',
+      kind: 'markdown' as const,
+      content: '### 逐日对比',
+      message: '未找到本机 LibreOffice 版式转换器；以下仅为正文预览，不代表原文件排版。',
+    }));
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({ ...STARTUP, tasks: [resultTask] }),
+      getTaskResults: vi.fn(async () => ({
+        artifacts: [
+          {
+            id: 'a-weather',
+            name: '天津未来三天天气对比_20261025-1027.xlsx',
+            path: '/Users/x/q3/天津未来三天天气对比_20261025-1027.xlsx',
+            artifactType: 'spreadsheet',
+            version: 3,
+          },
+        ],
+      })),
+      openResultFile,
+      revealResultFile,
+      saveResultFileCopy,
+      listResultOpenApps,
+      readResultPreview,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('生成季度报告'));
+
+    expect(await screen.findByText('逐日对比')).toBeTruthy();
+    const trigger = await screen.findByRole('button', { name: '打开方式' });
+    fireEvent.click(trigger);
+
+    const wpsItem = await screen.findByRole('menuitem', { name: 'WPS Office（默认）' });
+    expect(screen.getByRole('menuitem', { name: 'Microsoft Excel' })).toBeTruthy();
+    fireEvent.click(wpsItem);
+    expect(openResultFile).toHaveBeenCalledWith({
+      artifactId: 'a-weather',
+      appId: '/Applications/wpsoffice.app',
+    });
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '在 Finder 中显示' }));
+    expect(revealResultFile).toHaveBeenCalledWith({ artifactId: 'a-weather' });
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '下载副本' }));
+    await waitFor(() =>
+      expect(saveResultFileCopy).toHaveBeenCalledWith({ artifactId: 'a-weather' }),
+    );
+  });
+
   it('明确打开事件可以预览未索引文件；迟到的旧预览不能覆盖新的打开请求', async () => {
     let finishFirst!: (preview: FilePreviewView) => void;
     const readTaskFilePreview = vi.fn(async (input: { path: string }): Promise<FilePreviewView> => {

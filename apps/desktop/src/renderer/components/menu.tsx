@@ -22,6 +22,10 @@ import {
   type ReactNode,
 } from 'react';
 
+import type { ResultOpenAppView } from '../../shared/ipc.js';
+import { renderIcon } from './icons.js';
+import { PillButton } from './primitives.js';
+
 export interface MenuItemSpec {
   readonly id: string;
   readonly label: string;
@@ -580,6 +584,148 @@ export function ModelSelect({
             </div>
           ))}
         </div>
+      </Popover>
+    </span>
+  );
+}
+
+export interface ArtifactOpenActions {
+  readonly onListOpenApps?:
+    ((artifactId: string) => Promise<readonly ResultOpenAppView[]>) | undefined;
+  readonly onOpenFile?: ((artifactId: string, appId?: string | undefined) => void) | undefined;
+  readonly onRevealInFolder?: ((artifactId: string) => void) | undefined;
+  readonly onSaveCopy?: ((artifactId: string) => void) | undefined;
+  readonly onOpenPreview?: ((artifactId: string) => void) | undefined;
+}
+
+/**
+ * 产物卡片与结果区共用的「打开方式 ⌄」下拉菜单（04 §6.1 / 08 §6）：
+ *   · 本机可用应用列表（macOS 下由 LaunchServices 列举并标出默认应用，其余环境回退为「使用默认应用打开」）
+ *   · 应用内预览（卡片与列表行提供；已在预览顶栏内时不重复显示）
+ *   · 分割线 + 在 Finder 中显示 + 下载副本
+ */
+export function ArtifactOpenMenu({
+  artifactId,
+  artifactName,
+  actions,
+}: {
+  readonly artifactId: string;
+  readonly artifactName: string;
+  readonly actions: ArtifactOpenActions;
+}) {
+  const [open, setOpen] = useState(false);
+  const [apps, setApps] = useState<readonly ResultOpenAppView[] | null>(null);
+  const loadingRef = useRef(false);
+  const menuId = useId();
+
+  useEffect(() => {
+    setOpen(false);
+    setApps(null);
+    loadingRef.current = false;
+  }, [artifactId]);
+
+  const ensureAppsLoaded = useCallback(() => {
+    if (!actions.onListOpenApps || apps !== null || loadingRef.current) return;
+    loadingRef.current = true;
+    void actions
+      .onListOpenApps(artifactId)
+      .then((list) => {
+        setApps(list);
+      })
+      .catch(() => {
+        setApps([]);
+      })
+      .finally(() => {
+        loadingRef.current = false;
+      });
+  }, [actions, apps, artifactId]);
+
+  const items: MenuItemSpec[] = [];
+  if (apps && apps.length > 0) {
+    for (const app of apps) {
+      items.push({
+        id: `app:${app.id}`,
+        label: app.isDefault ? `${app.name}（默认）` : app.name,
+        icon: app.iconDataUrl ? (
+          <img className="ew-menu-app-icon" src={app.iconDataUrl} alt="" />
+        ) : (
+          renderIcon('arrow-up-right')
+        ),
+        group: 'apps',
+      });
+    }
+  } else if (actions.onOpenFile) {
+    items.push({
+      id: 'open-default',
+      label: '使用默认应用打开',
+      icon: renderIcon('arrow-up-right'),
+      group: 'apps',
+    });
+  }
+  if (actions.onOpenPreview) {
+    items.push({
+      id: 'open-preview',
+      label: '应用内预览',
+      icon: renderIcon('eye'),
+      group: 'apps',
+    });
+  }
+  if (actions.onRevealInFolder) {
+    items.push({
+      id: 'reveal-folder',
+      label: '在 Finder 中显示',
+      icon: renderIcon('folder'),
+      group: 'file',
+    });
+  }
+  if (actions.onSaveCopy) {
+    items.push({
+      id: 'save-copy',
+      label: '下载副本',
+      icon: renderIcon('download'),
+      group: 'file',
+    });
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <span
+      className="ew-artifact-open-menu"
+      onMouseEnter={ensureAppsLoaded}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <PillButton
+        expanded={open}
+        trailing={renderIcon('chevron-down')}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) ensureAppsLoaded();
+        }}
+      >
+        打开方式
+      </PillButton>
+      <Popover open={open} onClose={() => setOpen(false)} align="end">
+        <Menu
+          id={menuId}
+          ariaLabel={`${artifactName} 的打开方式`}
+          items={items}
+          onSelect={(selectedId) => {
+            setOpen(false);
+            if (selectedId === 'open-default') {
+              actions.onOpenFile?.(artifactId);
+            } else if (selectedId.startsWith('app:')) {
+              actions.onOpenFile?.(artifactId, selectedId.slice(4));
+            } else if (selectedId === 'open-preview') {
+              actions.onOpenPreview?.(artifactId);
+            } else if (selectedId === 'reveal-folder') {
+              actions.onRevealInFolder?.(artifactId);
+            } else if (selectedId === 'save-copy') {
+              actions.onSaveCopy?.(artifactId);
+            }
+          }}
+        />
       </Popover>
     </span>
   );

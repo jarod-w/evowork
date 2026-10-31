@@ -119,6 +119,14 @@ export interface ElectronApi {
    * `openProjectFolder` 必须把原因送回渲染层，不能静默成功。
    */
   readonly openPath?: ((path: string) => Promise<string>) | undefined;
+  /** 在访达 / 资源管理器中定位并高亮显示文件（`shell.showItemInFolder`） */
+  readonly showItemInFolder?: ((path: string) => void | Promise<void>) | undefined;
+  /** 弹出系统另存为对话框（`dialog.showSaveDialog`） */
+  readonly showSaveDialog?:
+    | ((options: {
+        defaultPath?: string | undefined;
+      }) => Promise<{ canceled: boolean; filePath?: string | undefined }>)
+    | undefined;
   /** 系统浏览器。PKCE 登录与「打开管理端」都走这里，渲染进程自己不能出网 */
   readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   /**
@@ -310,6 +318,23 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
                */
               const error = await electron.openPath?.(path);
               if (error) throw new Error(error);
+            },
+          }
+        : {}),
+      ...(electron.showItemInFolder
+        ? {
+            showItemInFolder: async (path: string): Promise<void> => {
+              await electron.showItemInFolder?.(path);
+            },
+          }
+        : {}),
+      ...(electron.showSaveDialog
+        ? {
+            pickSavePath: async (defaultName: string): Promise<string | undefined> => {
+              const r = await electron.showSaveDialog?.({
+                defaultPath: join(electron.app.getPath('downloads'), defaultName),
+              });
+              return r && !r.canceled && r.filePath ? r.filePath : undefined;
             },
           }
         : {}),

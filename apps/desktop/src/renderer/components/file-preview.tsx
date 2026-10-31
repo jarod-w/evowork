@@ -7,6 +7,7 @@ import type {
 } from '../../shared/ipc.js';
 import { EmptyState } from './primitives.js';
 import { renderMarkdown } from './item-renderers.js';
+import { ArtifactOpenMenu, type ArtifactOpenActions } from './menu.js';
 
 const LOCAL_PREVIEW_CSP =
   "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline';";
@@ -68,9 +69,11 @@ function highlightedSource(content: string) {
 export function FilePreview({
   preview,
   onAnnotate,
+  artifactOpenActions,
 }: {
   readonly preview: FilePreviewView | null;
   readonly onAnnotate?: ((annotation: FileAnnotationView) => void) | undefined;
+  readonly artifactOpenActions?: ArtifactOpenActions | undefined;
 }) {
   const contentRef = useRef<HTMLElement | null>(null);
   const regionStartRef = useRef<RegionPoint | null>(null);
@@ -89,7 +92,21 @@ export function FilePreview({
   }, [preview?.name]);
   if (!preview) return <EmptyState title="选择一个文件" hint="文件内容会在这里预览。" />;
   if (preview.kind === 'unsupported') {
-    return <EmptyState title={preview.name} hint={preview.message ?? '暂不支持内嵌预览。'} />;
+    return (
+      <EmptyState
+        title={preview.name}
+        hint={preview.message ?? '暂不支持内嵌预览。'}
+        action={
+          preview.artifactId && artifactOpenActions ? (
+            <ArtifactOpenMenu
+              artifactId={preview.artifactId}
+              artifactName={preview.name}
+              actions={artifactOpenActions}
+            />
+          ) : undefined
+        }
+      />
+    );
   }
   const captureSelection = (): void => {
     const selection = window.getSelection();
@@ -172,15 +189,24 @@ export function FilePreview({
     <section className="ew-file-preview-text" aria-label={`文件预览：${preview.name}`}>
       <div className="ew-file-preview-toolbar">
         <strong>{preview.name}</strong>
-        {onAnnotate ? (
-          <button
-            type="button"
-            className="ew-pill-button"
-            onClick={() => setAnnotating((value) => !value)}
-          >
-            添加批注
-          </button>
-        ) : null}
+        <div className="ew-file-preview-actions">
+          {preview.artifactId && artifactOpenActions ? (
+            <ArtifactOpenMenu
+              artifactId={preview.artifactId}
+              artifactName={preview.name}
+              actions={artifactOpenActions}
+            />
+          ) : null}
+          {onAnnotate ? (
+            <button
+              type="button"
+              className="ew-pill-button"
+              onClick={() => setAnnotating((value) => !value)}
+            >
+              添加批注
+            </button>
+          ) : null}
+        </div>
       </div>
       {preview.message ? <p>{preview.message}</p> : null}
       {renderedPages?.length ? (

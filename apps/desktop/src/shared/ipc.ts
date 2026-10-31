@@ -563,9 +563,17 @@ export interface TaskResultsView {
   }[];
 }
 
+export interface ResultOpenAppView {
+  readonly id: string;
+  readonly name: string;
+  readonly isDefault: boolean;
+  readonly iconDataUrl?: string | undefined;
+}
+
 export interface FilePreviewView {
   readonly name: string;
   readonly kind: 'text' | 'source' | 'markdown' | 'html' | 'image' | 'pdf' | 'unsupported';
+  readonly artifactId?: string | undefined;
   readonly content?: string | undefined;
   readonly language?: string | undefined;
   readonly truncated?: boolean | undefined;

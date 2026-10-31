@@ -105,7 +105,10 @@ export const RENDERER_ACTIONS = Object.freeze([
   /** 当前任务的产物，以及从索引中校验后交给系统打开的动作。 */
   'getTaskResults',
   'revertTaskFile',
+  'listResultOpenApps',
   'openResultFile',
+  'revealResultFile',
+  'saveResultFileCopy',
   'readResultPreview',
   'readTaskFilePreview',
   'readProjectFilePreview',

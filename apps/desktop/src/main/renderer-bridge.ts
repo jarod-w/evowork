@@ -126,6 +126,7 @@ import type {
   SharePlanResult,
   ThreadShareInput,
   FilePreviewView,
+  ResultOpenAppView,
   ModelAccessMutationResult,
   ModelCatalogResult,
   ModelProbeResult,
@@ -496,6 +497,19 @@ export interface ProjectPorts {
   ) => Promise<readonly { readonly name: string; readonly isDirectory: boolean }[]>;
   /** 在访达 / 资源管理器里打开 */
   readonly openFolder: (path: string) => Promise<void>;
+  /** 列举本机可打开该文件的应用程序（macOS LaunchServices）；未注入或不支持时返回空数组 */
+  readonly listOpenApps?: ((path: string) => Promise<readonly ResultOpenAppView[]>) | undefined;
+  /** 用指定的本机应用打开文件 */
+  readonly openWithApp?: ((path: string, appId: string) => Promise<void>) | undefined;
+  /** 在访达 / 资源管理器中定位并高亮显示文件 */
+  readonly revealInFolder?: ((path: string) => Promise<void>) | undefined;
+  /** 弹出另存为对话框并将文件复制到目标路径 */
+  readonly saveFileCopy?:
+    | ((
+        sourcePath: string,
+        defaultName: string,
+      ) => Promise<{ readonly saved: boolean; readonly destinationPath?: string | undefined }>)
+    | undefined;
   /** 读不到（不存在、没权限）返回 undefined —— 不要把它和空文件混为一谈 */
   readonly readTextFile: (path: string) => Promise<string | undefined>;
   /** 超过 maxBytes 或不是普通文件时返回 undefined，避免预览动作把主进程内存撑满。 */
@@ -2765,13 +2779,67 @@ export function createRendererActions(options: RendererBridgeOptions) {
       options.fileHost.changed(input.threadId);
     },
 
-    async openResultFile(input: { readonly artifactId: string }): Promise<void> {
+    async listResultOpenApps(input: {
+      readonly artifactId: string;
+    }): Promise<readonly ResultOpenAppView[]> {
+      const artifact = (options.pageData?.listArtifacts() ?? []).find(
+        (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
+      );
+      if (!artifact || !options.projectPorts?.listOpenApps) return [];
+      return options.projectPorts.listOpenApps(artifact.path);
+    },
+
+    async openResultFile(input: {
+      readonly artifactId: string;
+      readonly appId?: string | undefined;
+    }): Promise<void> {
       const artifact = (options.pageData?.listArtifacts() ?? []).find(
         (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
       );
       if (!artifact) throw new Error('这个产物已经不存在。');
       if (!options.projectPorts) throw new Error(NO_PORTS);
+      if (input.appId !== undefined) {
+        if (!options.projectPorts.openWithApp || !options.projectPorts.listOpenApps) {
+          throw new Error('当前环境不支持指定应用打开文件。');
+        }
+        const allowedApps = await options.projectPorts.listOpenApps(artifact.path);
+        if (!allowedApps.some((app) => app.id === input.appId)) {
+          throw new Error('所选应用不在本机可用打开方式列表中。');
+        }
+        await options.projectPorts.openWithApp(artifact.path, input.appId);
+        return;
+      }
       await options.projectPorts.openFolder(artifact.path);
+    },
+
+    async revealResultFile(input: { readonly artifactId: string }): Promise<void> {
+      const artifact = (options.pageData?.listArtifacts() ?? []).find(
+        (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
+      );
+      if (!artifact) throw new Error('这个产物已经不存在。');
+      if (!options.projectPorts) throw new Error(NO_PORTS);
+      if (options.projectPorts.revealInFolder) {
+        await options.projectPorts.revealInFolder(artifact.path);
+        return;
+      }
+      await options.projectPorts.openFolder(dirname(artifact.path));
+    },
+
+    async saveResultFileCopy(input: {
+      readonly artifactId: string;
+    }): Promise<{ readonly saved: boolean; readonly destinationPath?: string | undefined }> {
+      const artifact = (options.pageData?.listArtifacts() ?? []).find(
+        (row) => row.id === input.artifactId && row.fileState === 'PRESENT',
+      );
+      if (!artifact) throw new Error('这个产物已经不存在。');
+      if (!options.projectPorts) throw new Error(NO_PORTS);
+      if (!options.projectPorts.saveFileCopy) {
+        throw new Error('这个版本不能另存文件副本。');
+      }
+      return options.projectPorts.saveFileCopy(
+        artifact.path,
+        artifact.title || basename(artifact.path),
+      );
     },
 
     async readResultPreview(input: { readonly artifactId: string }): Promise<FilePreviewView> {
@@ -2781,11 +2849,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!artifact || !options.projectPorts) {
         return { name: '产物', kind: 'unsupported', message: '这个产物已经不存在。' };
       }
-      return previewFile(
+      const preview = await previewFile(
         options.projectPorts,
         artifact.path,
         artifact.title || basename(artifact.path),
       );
+      return { ...preview, artifactId: artifact.id };
     },
 
     /**

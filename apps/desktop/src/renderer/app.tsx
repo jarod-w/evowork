@@ -55,6 +55,7 @@ import type {
   ThreadShareInput,
   FilePreviewView,
   FileAnnotationView,
+  ResultOpenAppView,
   RevertTaskFileInput,
   ModelAccessMutationResult,
   ModelAccessView,
@@ -126,6 +127,7 @@ import {
 import { FileTree } from './components/file-tree.js';
 import { newestActiveTask, summarizeWork } from './attention.js';
 import { FilePreview } from './components/file-preview.js';
+import { ArtifactOpenMenu, type ArtifactOpenActions } from './components/menu.js';
 import { SkillInstallDialog } from './components/skill-install-dialog.js';
 import {
   shouldAutoDismiss,
@@ -253,7 +255,12 @@ export interface EvoworkBridge
   clearTaskGoal?(input: { threadId: string }): Promise<void>;
   getTaskResults(input: { threadId: string }): Promise<TaskResultsView>;
   revertTaskFile?(input: RevertTaskFileInput): Promise<void>;
-  openResultFile(input: { artifactId: string }): Promise<void>;
+  listResultOpenApps?(input: { artifactId: string }): Promise<readonly ResultOpenAppView[]>;
+  openResultFile(input: { artifactId: string; appId?: string | undefined }): Promise<void>;
+  revealResultFile?(input: { artifactId: string }): Promise<void>;
+  saveResultFileCopy?(input: {
+    artifactId: string;
+  }): Promise<{ readonly saved: boolean; readonly destinationPath?: string | undefined }>;
   readResultPreview?(input: { artifactId: string }): Promise<FilePreviewView>;
   readTaskFilePreview?(input: TaskFilePreviewInput): Promise<FilePreviewView>;
   readProjectFilePreview?(input: { projectId: string; path: string }): Promise<FilePreviewView>;
@@ -2019,7 +2026,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           autoPreviewedArtifact.current.get(taskId) !== artifactKey
         )
           return;
-        setPreviewByTask((previous) => ({ ...previous, [taskId]: preview }));
+        setPreviewByTask((previous) => ({
+          ...previous,
+          [taskId]: { ...preview, artifactId: preview.artifactId ?? latest.id },
+        }));
         if (preview.kind === 'html') {
           setResultUi((previous) => ({
             ...previous,
@@ -3134,13 +3144,49 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const openArtifact = useCallback(
     (id: string) => {
       if (bridge.readResultPreview)
-        void showPreview(() => bridge.readResultPreview!({ artifactId: id }));
+        void showPreview(async () => {
+          const preview = await bridge.readResultPreview!({ artifactId: id });
+          return { ...preview, artifactId: preview.artifactId ?? id };
+        });
       else
         void bridge
           .openResultFile({ artifactId: id })
           .catch((error: unknown) => reportFailure(error, '打不开这个产物。'));
     },
     [bridge, reportFailure, showPreview],
+  );
+  const artifactOpenActions = useMemo<ArtifactOpenActions>(
+    () => ({
+      onListOpenApps: bridge.listResultOpenApps
+        ? (artifactId) => bridge.listResultOpenApps!({ artifactId })
+        : undefined,
+      onOpenFile: (artifactId, appId) => {
+        void bridge
+          .openResultFile({
+            artifactId,
+            ...(appId !== undefined ? { appId } : {}),
+          })
+          .catch((error: unknown) => reportFailure(error, '打不开这个产物。'));
+      },
+      onRevealInFolder: (artifactId) => {
+        const reveal = bridge.revealResultFile
+          ? bridge.revealResultFile({ artifactId })
+          : bridge.openResultFile({ artifactId });
+        void reveal.catch((error: unknown) => reportFailure(error, '无法在文件夹中显示该产物。'));
+      },
+      onSaveCopy: bridge.saveResultFileCopy
+        ? (artifactId) => {
+            void bridge.saveResultFileCopy!({ artifactId })
+              .then((res) => {
+                if (res.saved) {
+                  pushToast({ tone: 'info', text: '已保存副本。' });
+                }
+              })
+              .catch((error: unknown) => reportFailure(error, '没能保存文件副本。'));
+          }
+        : undefined,
+    }),
+    [bridge, pushToast, reportFailure],
   );
   const openChangedFile = useCallback(
     (path: string, kind: string) => {
@@ -4461,6 +4507,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }}
           artifacts={currentResults.artifacts}
           onOpenArtifact={openArtifact}
+          artifactOpenActions={artifactOpenActions}
           hasResults={hasCurrentResults}
           resultTabs={availableResultTabs}
           resultOpen={activeResultUi.open}
@@ -4481,7 +4528,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                   currentPreview.kind === 'html' ? (
                     <ul className="ew-result-artifacts">
                       {currentResults.artifacts.map((artifact) => (
-                        <li key={artifact.id}>
+                        <li key={artifact.id} className="ew-result-artifact-item">
                           <button
                             type="button"
                             className="ew-result-artifact"
@@ -4490,12 +4537,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                             <span>{artifact.name}</span>
                             <span>版本 {artifact.version}</span>
                           </button>
+                          <ArtifactOpenMenu
+                            artifactId={artifact.id}
+                            artifactName={artifact.name}
+                            actions={{
+                              ...artifactOpenActions,
+                              onOpenPreview: openArtifact,
+                            }}
+                          />
                         </li>
                       ))}
                     </ul>
                   ) : null}
                   {currentPreview && currentPreview.kind !== 'html' ? (
-                    <FilePreview preview={currentPreview} onAnnotate={annotatePreview} />
+                    <FilePreview
+                      preview={currentPreview}
+                      onAnnotate={annotatePreview}
+                      artifactOpenActions={artifactOpenActions}
+                    />
                   ) : null}
                 </div>
               ) : (

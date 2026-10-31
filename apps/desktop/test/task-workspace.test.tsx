@@ -775,4 +775,59 @@ describe('2.7.3–2.7.5 补齐项', () => {
     expect(screen.queryByRole('separator', { name: '调整结果区宽度' })).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
+
+  it('对话流产物卡提供「打开方式」下拉：支持指定本机应用、应用内预览、在 Finder 中显示与下载副本', async () => {
+    const onOpenArtifact = vi.fn();
+    const onOpenFile = vi.fn();
+    const onRevealInFolder = vi.fn();
+    const onSaveCopy = vi.fn();
+    const onListOpenApps = vi.fn(async () => [
+      { id: '/Applications/wpsoffice.app', name: 'WPS Office', isDefault: true },
+      { id: '/Applications/LibreOffice.app', name: 'LibreOffice', isDefault: false },
+    ]);
+
+    renderWorkspace({
+      items: [{ id: 'm1', type: 'agentMessage', completed: true, text: '已生成表格' }],
+      artifacts: [
+        {
+          id: 'art-1',
+          name: '信安世纪_2026年9月及10月部门人员费用.xlsx',
+          artifactType: 'spreadsheet',
+          version: 3,
+        },
+      ],
+      onOpenArtifact,
+      artifactOpenActions: {
+        onListOpenApps,
+        onOpenFile,
+        onRevealInFolder,
+        onSaveCopy,
+      },
+    });
+
+    const cardGroup = screen.getByRole('group', {
+      name: '任务产物：信安世纪_2026年9月及10月部门人员费用.xlsx',
+    });
+    expect(cardGroup.textContent).toContain('Excel · 版本 3 · 打开预览');
+
+    const trigger = screen.getByRole('button', { name: '打开方式' });
+    fireEvent.click(trigger);
+
+    const wpsItem = await screen.findByRole('menuitem', { name: 'WPS Office（默认）' });
+    expect(screen.getByRole('menuitem', { name: 'LibreOffice' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '应用内预览' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '在 Finder 中显示' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '下载副本' })).toBeTruthy();
+
+    fireEvent.click(wpsItem);
+    expect(onOpenFile).toHaveBeenCalledWith('art-1', '/Applications/wpsoffice.app');
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '在 Finder 中显示' }));
+    expect(onRevealInFolder).toHaveBeenCalledWith('art-1');
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('menuitem', { name: '下载副本' }));
+    expect(onSaveCopy).toHaveBeenCalledWith('art-1');
+  });
 });

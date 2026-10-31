@@ -1040,6 +1040,94 @@ describe('任务产物结果', () => {
     expect(result.artifacts).toHaveLength(1);
     expect(result.artifacts[0]?.path).toBe('/w/out/report.docx');
   });
+
+  it('打开方式：列举可用应用、校验选定 appId、在文件夹中显示并支持另存副本', async () => {
+    const { filterAndSortOpenApps } = await import('../src/main/open-with-apps.js');
+    expect(
+      filterAndSortOpenApps([
+        { path: '/Applications/LibreOffice.app', name: 'LibreOffice', isDefault: false },
+        { path: '/Applications/ChatGPT.app', name: 'ChatGPT', isDefault: false },
+        { path: '/Applications/wpsoffice.app', name: 'WPS Office', isDefault: true },
+      ]),
+    ).toEqual([
+      { id: '/Applications/wpsoffice.app', name: 'WPS Office', isDefault: true },
+      { id: '/Applications/LibreOffice.app', name: 'LibreOffice', isDefault: false },
+    ]);
+
+    const openFolder = vi.fn(async () => undefined);
+    const openWithApp = vi.fn(async () => undefined);
+    const revealInFolder = vi.fn(async () => undefined);
+    const saveFileCopy = vi.fn(async () => ({
+      saved: true,
+      destinationPath: '/Users/x/Downloads/report.xlsx',
+    }));
+    const listOpenApps = vi.fn(async () => [
+      { id: '/Applications/wpsoffice.app', name: 'WPS Office', isDefault: true },
+      { id: '/Applications/Microsoft Excel.app', name: 'Microsoft Excel', isDefault: false },
+    ]);
+
+    const actions = makeActions({
+      pageData: {
+        listArtifacts: () => [
+          {
+            id: 'a-xlsx',
+            path: '/w/out/report.xlsx',
+            title: 'report.xlsx',
+            artifactType: 'spreadsheet',
+            operationKind: 'create',
+            version: 2,
+            fileState: 'PRESENT' as const,
+            threadId: 't1',
+            createdAt: 1,
+          },
+        ],
+        listAutomations: () => [],
+        listRuns: () => [],
+        listAudit: () => [],
+        auditOldestAt: () => undefined,
+        deviceId: 'd1',
+        deviceName: '这台电脑',
+      },
+      projectPorts: ports({
+        openFolder,
+        listOpenApps,
+        openWithApp,
+        revealInFolder,
+        saveFileCopy,
+      }),
+    });
+
+    await expect(actions.listResultOpenApps({ artifactId: 'a-xlsx' })).resolves.toEqual([
+      { id: '/Applications/wpsoffice.app', name: 'WPS Office', isDefault: true },
+      { id: '/Applications/Microsoft Excel.app', name: 'Microsoft Excel', isDefault: false },
+    ]);
+
+    await actions.openResultFile({
+      artifactId: 'a-xlsx',
+      appId: '/Applications/Microsoft Excel.app',
+    });
+    expect(openWithApp).toHaveBeenCalledWith(
+      '/w/out/report.xlsx',
+      '/Applications/Microsoft Excel.app',
+    );
+
+    await expect(
+      actions.openResultFile({
+        artifactId: 'a-xlsx',
+        appId: '/System/Applications/Utilities/Terminal.app',
+      }),
+    ).rejects.toThrow('所选应用不在本机可用打开方式列表中');
+    expect(openWithApp).toHaveBeenCalledTimes(1);
+
+    await actions.revealResultFile({ artifactId: 'a-xlsx' });
+    expect(revealInFolder).toHaveBeenCalledWith('/w/out/report.xlsx');
+
+    await expect(actions.saveResultFileCopy({ artifactId: 'a-xlsx' })).resolves.toEqual({
+      saved: true,
+      destinationPath: '/Users/x/Downloads/report.xlsx',
+    });
+    expect(saveFileCopy).toHaveBeenCalledWith('/w/out/report.xlsx', 'report.xlsx');
+  });
 });
 
 describe('子任务详情', () => {

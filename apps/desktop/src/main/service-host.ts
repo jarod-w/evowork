@@ -1,4 +1,5 @@
 import { createSkillExtractionHost, patchSkillExtractionConfig } from './skill-extraction-host.js';
+import { listMacOpenApps, openFileWithMacApp } from './open-with-apps.js';
 import { ownerProjectOf } from '@evowork/projects';
 import { inspectOcrBundle, installOcrBundle } from '@evowork/runtime-installer';
 import { renderPdfPages } from '@evowork/ingest/pdf-pages.js';
@@ -51,6 +52,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import {
+  copyFile,
   lstat,
   stat,
   open as openFile,
@@ -898,6 +900,16 @@ export interface ServiceHostOptions {
   readonly pickFiles?: () => Promise<readonly string[]>;
   /** 在访达 / 资源管理器里打开一个目录。由 M9 入口注入 `shell.openPath` */
   readonly openPath?: ((path: string) => Promise<void>) | undefined;
+  /** 在访达 / 资源管理器中定位并选中文件（`shell.showItemInFolder`） */
+  readonly showItemInFolder?: ((path: string) => Promise<void>) | undefined;
+  /** 弹出系统另存为对话框，返回选定路径；取消时返回 undefined */
+  readonly pickSavePath?: ((defaultName: string) => Promise<string | undefined>) | undefined;
+  /** 列举本机可打开该文件的应用（默认在 macOS 下调 LaunchServices） */
+  readonly listOpenApps?:
+    | ((path: string) => Promise<readonly import('../shared/ipc.js').ResultOpenAppView[]>)
+    | undefined;
+  /** 使用指定本机应用打开文件（默认在 macOS 下调 `open -a`） */
+  readonly openWithApp?: ((path: string, appId: string) => Promise<void>) | undefined;
   /** 系统浏览器（Q33=A 的 PKCE 登录）。没给时登录动作会如实失败 */
   readonly openExternal?: ((url: string) => Promise<void>) | undefined;
   /** 「下载」文件夹（`app.getPath('downloads')`）。在线升级把安装包下到这里（2026-10-03 定） */
@@ -2571,6 +2583,35 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       openFolder: async (path) => {
         if (!options.openPath) throw new Error('这个版本不能打开文件夹。');
         await options.openPath(path);
+      },
+      listOpenApps: async (path) => {
+        if (options.listOpenApps) return options.listOpenApps(path);
+        return process.platform === 'darwin' ? listMacOpenApps(path) : [];
+      },
+      openWithApp: async (path, appId) => {
+        if (options.openWithApp) {
+          await options.openWithApp(path, appId);
+          return;
+        }
+        if (process.platform !== 'darwin') {
+          throw new Error('当前系统不支持指定应用打开文件。');
+        }
+        await openFileWithMacApp(path, appId);
+      },
+      revealInFolder: async (path) => {
+        if (options.showItemInFolder) {
+          await options.showItemInFolder(path);
+          return;
+        }
+        if (!options.openPath) throw new Error('这个版本不能打开文件夹。');
+        await options.openPath(dirname(path));
+      },
+      saveFileCopy: async (sourcePath, defaultName) => {
+        if (!options.pickSavePath) throw new Error('这个版本不能另存文件副本。');
+        const destinationPath = await options.pickSavePath(defaultName);
+        if (!destinationPath) return { saved: false };
+        await copyFile(sourcePath, destinationPath);
+        return { saved: true, destinationPath };
       },
       readTextFile: async (path) => {
         try {
