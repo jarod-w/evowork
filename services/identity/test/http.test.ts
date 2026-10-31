@@ -2,12 +2,12 @@ import type { AddressInfo } from 'node:net';
 
 import { createServer } from 'node:http';
 
-import { generateEs256KeyPair } from '@evowork/account';
+import { codeChallengeS256, generateEs256KeyPair } from '@evowork/account';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { openIdentityDb } from '../src/db.js';
 import { createIdentityServer } from '../src/http.js';
-import { memoryMailer } from '../src/mailer.js';
+import { memoryMailer, MailDeliveryError, isTokenMail, type Mailer } from '../src/mailer.js';
 import { TEST_ARGON } from '../src/password.js';
 import { parseMasterKey } from '../src/secret-box.js';
 import { createIdentity } from '../src/service.js';
@@ -17,14 +17,14 @@ const MASTER = parseMasterKey('cd'.repeat(32));
 let baseUrl = '';
 let close: () => Promise<void> = async () => undefined;
 
-async function start() {
+async function start(mailer: Mailer = memoryMailer(), webOrigin?: string) {
   const db = openIdentityDb(':memory:');
   const keys = generateEs256KeyPair();
   const identity = createIdentity({
     db,
     keys,
     masterKey: MASTER,
-    mailer: memoryMailer(),
+    mailer,
     argon: TEST_ARGON,
     publicOrigin: 'http://127.0.0.1',
   });
@@ -33,7 +33,12 @@ async function start() {
     password: 'change-me',
     tenantName: 'default',
   });
-  const server = createIdentityServer({ identity, keys, internalToken: 'svc-token' });
+  const server = createIdentityServer({
+    identity,
+    keys,
+    internalToken: 'svc-token',
+    ...(webOrigin ? { webOrigin } : {}),
+  });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const addr = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${addr.port}`;
@@ -327,4 +332,144 @@ describe('identity HTTP', () => {
 
     await new Promise<void>((resolve) => upstreamServer.close(() => resolve()));
   });
+});
+
+describe('账号注册完整 HTTP 流程', () => {
+  it('注册→验证→登录→PKCE换票→续期→重置密码吊销旧会话', async () => {
+    const mail = memoryMailer();
+    const { identity } = await start(mail);
+    const post = async (path: string, body: unknown, token?: string) =>
+      fetch(`${baseUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    const continuation = new URLSearchParams({
+      code_challenge: codeChallengeS256('v'.repeat(43)),
+      redirect_uri: 'http://127.0.0.1:4390/callback',
+      state: 'desktop-state',
+      device_id: 'desktop',
+    }).toString();
+    expect(
+      (
+        await post('/v1/signup', {
+          email: 'journey@example.com',
+          password: 'original-password-123',
+          continuation,
+        })
+      ).status,
+    ).toBe(201);
+    const loginBody = {
+      identifier: 'journey@example.com',
+      password: 'original-password-123',
+      deviceId: 'desktop',
+    };
+    expect((await post('/v1/login', loginBody)).status).toBe(401);
+    const verification = mail.sent[0];
+    if (!verification || !isTokenMail(verification)) throw new Error('missing verification');
+    expect(verification.continuation).toContain('desktop-state');
+    expect((await post('/v1/verify-email', { token: verification.token })).status).toBe(200);
+    const login = await post('/v1/login', loginBody);
+    expect(login.status).toBe(200);
+    const browser = (await login.json()) as { accessToken: string; refreshToken: string };
+    const auth = await post(
+      '/v1/oauth/authorize',
+      {
+        code_challenge: codeChallengeS256('v'.repeat(43)),
+        redirect_uri: 'http://127.0.0.1:4390/callback',
+        device_id: 'desktop',
+      },
+      browser.accessToken,
+    );
+    expect(auth.status).toBe(200);
+    const { code } = (await auth.json()) as { code: string };
+    const exchangeBody = {
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: 'v'.repeat(43),
+      redirect_uri: 'http://127.0.0.1:4390/callback',
+      device_id: 'desktop',
+    };
+    const exchanged = await post('/v1/oauth/token', exchangeBody);
+    expect(exchanged.status).toBe(200);
+    const desktop = (await exchanged.json()) as { accessToken: string; refreshToken: string };
+    expect((await post('/v1/oauth/token', exchangeBody)).status).toBe(404);
+    const renewal = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      refresh_token: desktop.refreshToken,
+    });
+    expect(renewal.status).toBe(200);
+    const renewed = (await renewal.json()) as { refreshToken: string };
+    expect(
+      (
+        await post('/v1/oauth/token', {
+          grant_type: 'refresh_token',
+          refresh_token: desktop.refreshToken,
+        })
+      ).status,
+    ).toBe(401);
+    const browserSession = login.headers.get('set-cookie')?.match(/session=([^;]+)/)?.[1];
+    expect(browserSession && identity.userIdFromSession(browserSession)).toBeTruthy();
+    expect(
+      (await post('/v1/forgot-password', { email: 'journey@example.com', continuation })).status,
+    ).toBe(200);
+    const reset = mail.sent.at(-1);
+    if (!reset || !isTokenMail(reset)) throw new Error('missing reset');
+    expect(
+      (await post('/v1/reset-password', { token: reset.token, password: 'changed-password-456' }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await post('/v1/oauth/token', {
+          grant_type: 'refresh_token',
+          refresh_token: renewed.refreshToken,
+        })
+      ).status,
+    ).toBe(401);
+    expect(browserSession && identity.userIdFromSession(browserSession)).toBeUndefined();
+    expect((await post('/v1/login', loginBody)).status).toBe(401);
+    expect(
+      (await post('/v1/login', { ...loginBody, password: 'changed-password-456' })).status,
+    ).toBe(200);
+  });
+
+  it('发信失败明确返回503，不能返回注册成功', async () => {
+    await start({
+      async send() {
+        throw new MailDeliveryError();
+      },
+    });
+    const response = await fetch(`${baseUrl}/v1/signup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'failed@example.com', password: 'strong-password-123' }),
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'mail-unavailable' } });
+  });
+});
+
+it.each([
+  ['https://account.nucleant.cn', true],
+  ['http://127.0.0.1:8000', false],
+])('账号页 %s 的 Cookie Secure 与传输匹配', async (webOrigin, secure) => {
+  await start(memoryMailer(), String(webOrigin));
+  const response = await fetch(`${baseUrl}/v1/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      identifier: 'admin@example.com',
+      password: 'change-me',
+      deviceId: 'cookie-test',
+    }),
+  });
+  expect(response.status).toBe(200);
+  const cookie = response.headers.get('set-cookie') ?? '';
+  expect(cookie).toContain('HttpOnly');
+  expect(cookie).toContain('SameSite=Lax');
+  expect(cookie.includes('; Secure')).toBe(secure);
 });

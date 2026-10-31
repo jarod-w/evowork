@@ -15,7 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 
-import { clearSession, onSessionExpired, readSession } from './api.js';
+import { clearSession, onSessionExpired, pkceSearch, readSession } from './api.js';
 import { Dialog } from './components.js';
 import {
   AccountDeletePage,
@@ -52,10 +52,13 @@ export function App(props: AppProps = {}) {
   const [path, setPath] = useState(() => routeOf(props.initialPath ?? window.location.pathname));
   const [sessionRev, setSessionRev] = useState(0);
   const [expired, setExpired] = useState(false);
-  const search = props.initialSearch ?? window.location.search;
+  const [search, setSearch] = useState(props.initialSearch ?? window.location.search);
 
   useEffect(() => {
-    const onPop = () => setPath(routeOf(window.location.pathname));
+    const onPop = () => {
+      setPath(routeOf(window.location.pathname));
+      setSearch(window.location.search);
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -63,9 +66,14 @@ export function App(props: AppProps = {}) {
   useEffect(() => onSessionExpired(() => setExpired(true)), []);
 
   function go(next: string) {
-    const url = next.startsWith('/') ? next : `/${next}`;
-    window.history.pushState({}, '', url);
-    setPath(routeOf(url.split('?')[0] ?? url));
+    const target = new URL(next.startsWith('/') ? next : `/${next}`, window.location.origin);
+    if (['/signin', '/signup', '/reset'].includes(target.pathname)) {
+      for (const [key, value] of new URLSearchParams(pkceSearch(search)))
+        target.searchParams.set(key, value);
+    }
+    window.history.pushState({}, '', `${target.pathname}${target.search}`);
+    setPath(routeOf(target.pathname));
+    setSearch(target.search);
     setSessionRev((n) => n + 1);
   }
 
@@ -85,7 +93,7 @@ export function App(props: AppProps = {}) {
         onSessionChanged={() => setSessionRev((n) => n + 1)}
       />
     ) : path === '/signup' ? (
-      <SignUpPage onGo={go} />
+      <SignUpPage search={search} onGo={go} />
     ) : path === '/verify' ? (
       <VerifyPage search={search} onGo={go} />
     ) : path === '/reset' ? (

@@ -40,3 +40,28 @@ EVOWORK_IDENTITY_DB           # 文件库。不设则 :memory:，密钥与策略
 ## 明确不做
 
 支付 / 充值（Q42）· 分享页（Q41）· 第二个客户租户 · 短信 · 企业 OIDC SSO（等客户 IdP，不在 1.5 周里程碑表里）。
+
+## 真实发信（2026-10-31）
+
+账号服务支持 SMTP 和 Resend 兼容 API。生产不默认把验证链接打进日志。
+SMTP 配置保存在服务端环境（例如 root 可读的 `/etc/evowork-web.env`），不随桌面分发：
+
+```ini
+EVOWORK_MAIL_TRANSPORT=smtp
+EVOWORK_SMTP_HOST=smtp.qq.com
+EVOWORK_SMTP_PORT=465
+EVOWORK_SMTP_USER=<发信邮箱>
+EVOWORK_SMTP_PASSWORD=<邮箱授权码>
+EVOWORK_MAIL_FROM=<发信邮箱>
+EVOWORK_WEB_ORIGIN=<用户实际打开的账号页地址>
+```
+
+生产 `EVOWORK_WEB_ORIGIN=https://account.nucleant.cn`；该配置为 HTTPS 时，浏览器会话 Cookie 增加 `Secure`，保留 `HttpOnly` / `SameSite=Lax`。不依据客户端传入的代理头切换 Cookie 策略。
+
+465 直接 TLS；587 强制 STARTTLS，校验证书。不开 SMTP debug，不记录密码、邮件正文或验证链接。
+注册、重发验证、找回密码和邀请接口等待投递服务接受；失败返回 `503 mail-unavailable`，页面不会报已发送。
+邮箱验证可限频重发；重置密码同时吊销旧 refresh 和浏览器会话，旧 access 最长保留到自身过期。
+
+API 模式为 `EVOWORK_MAIL_TRANSPORT=api`，配置 `EVOWORK_MAIL_API_KEY`、`EVOWORK_MAIL_FROM`；
+可选 `EVOWORK_MAIL_API_URL`，默认 `https://api.resend.com/emails`，只接受 HTTPS。
+仅开发时显式设置 `EVOWORK_MAIL_TRANSPORT=log` 才使用旧 stderr 通道；不配置发信时明确不可用。

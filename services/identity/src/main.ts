@@ -4,7 +4,7 @@ import { createLogger, jsonLinesSink } from '@evowork/logging';
 import { bootstrapFromEnv } from './config.js';
 import { openIdentityDb } from './db.js';
 import { createIdentityServer } from './http.js';
-import { devMailer } from './mailer.js';
+import { configuredMailer } from './mailer.js';
 import { PROD_ARGON } from './password.js';
 import { parseMasterKey } from './secret-box.js';
 import { createIdentity } from './service.js';
@@ -43,7 +43,7 @@ export function main(): void {
     db,
     keys,
     masterKey,
-    mailer: devMailer(env('EVOWORK_WEB_ORIGIN') ?? 'http://127.0.0.1:5174'),
+    mailer: configuredMailer(process.env, env('EVOWORK_WEB_ORIGIN') ?? 'http://127.0.0.1:5174'),
     argon: PROD_ARGON,
     publicOrigin: env('EVOWORK_PUBLIC_ORIGIN') ?? 'http://127.0.0.1:8788',
   });

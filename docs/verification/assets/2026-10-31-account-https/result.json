@@ -1,0 +1,33 @@
+{
+  "startedAt": "2026-10-31T14:07:12.453Z",
+  "home": "/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-account-home-2UyIBC",
+  "mode": "production-timer",
+  "origin": "https://account.nucleant.cn",
+  "server": "43.143.248.70",
+  "checks": [
+    "desktop-signup-real-mail-verification-pkce-login",
+    "real-time-automatic-refresh-without-restarting-gateway",
+    "encrypted-refresh-restored-after-desktop-restart",
+    "real-reset-mail-new-password-and-desktop-relogin"
+  ],
+  "verifyMailDigest": "3f19e859afaafaf8231a3088df5cd35a7e07ebde27cdb89c35dd708d320085b0",
+  "secureCookieVerified": true,
+  "renewals": [
+    {
+      "at": 1793455651390,
+      "grant": "authorization_code",
+      "accessDigest": "d6340c1762bc10f941d1975e7c35e82d98b49fcf9da62c3cd8206e3d73e68f99",
+      "refreshDigest": "46640623b541ceaa790d9ad8fe3f10c427834cf7bcdfbb1b32011a73e77a6aa1"
+    },
+    {
+      "at": 1793456491042,
+      "grant": "refresh_token",
+      "accessDigest": "e1ddd9806d34cea7e8a00cb7ce37ba6ea753bc269a936e0e00de34f2f7d6a475",
+      "refreshDigest": "7b644b939304bdfd94bee9bf14dfa9f425594f28a53beb7100d8acc99017a372"
+    }
+  ],
+  "resetMailDigest": "a799b0256d2c3b0a51f0ea62fab1c7c8807e305c5b8af719fd2cae3c09a2845f",
+  "completedAt": "2026-10-31T14:22:25.522Z",
+  "cloudTestAccountDeleted": true,
+  "localTestHomeRemoved": true
+}

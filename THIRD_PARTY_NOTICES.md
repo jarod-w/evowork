@@ -34,7 +34,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 
 ## 2. 运行时依赖（npm，生产依赖）
 
-共 117 个包。
+共 118 个包。
 
 ### ⚠️ 需要法务单独看的许可证
 
@@ -147,6 +147,7 @@ Copyright (c) 2023-2025 The Ratatui Developers
 | `lodash-es` | 4.18.1 | MIT |
 | `marked` | 16.4.2 | MIT |
 | `mermaid` | 11.17.2 | MIT |
+| `nodemailer` | 10.3.1 | MIT-0 |
 | `package-manager-detector` | 1.8.0 | MIT |
 | `path-data-parser` | 0.1.0 | MIT |
 | `points-on-curve` | 0.2.0 | MIT |

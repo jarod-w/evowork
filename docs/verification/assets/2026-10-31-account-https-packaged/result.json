@@ -1,0 +1,18 @@
+{
+  "startedAt": "2026-10-31T14:22:31.628Z",
+  "home": "/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-account-home-BlePLv",
+  "mode": "packaged-smoke",
+  "origin": "https://account.nucleant.cn",
+  "server": "43.143.248.70",
+  "checks": [
+    "desktop-signup-real-mail-verification-pkce-login",
+    "encrypted-refresh-restored-after-desktop-restart",
+    "real-reset-mail-new-password-and-desktop-relogin"
+  ],
+  "verifyMailDigest": "9edaed5dcf2f110c87c37ec1d4dd4784ed7aac9c0cc8ac08c720355ce36d051b",
+  "secureCookieVerified": true,
+  "resetMailDigest": "a240914d4286616eae0ce25a77a146568c5e4fecff5f1a01bea0b06481e8b7d5",
+  "completedAt": "2026-10-31T14:23:51.243Z",
+  "cloudTestAccountDeleted": true,
+  "localTestHomeRemoved": true
+}

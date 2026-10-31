@@ -1,0 +1,45 @@
+{
+  "checkedAt": "2026-10-31T14:21:33.438Z",
+  "requests": [
+    {
+      "url": "https://account.nucleant.cn/healthz",
+      "status": 200,
+      "hsts": "max-age=31536000"
+    },
+    {
+      "url": "https://account.nucleant.cn/readyz",
+      "status": 200,
+      "hsts": "max-age=31536000"
+    },
+    {
+      "url": "https://account.nucleant.cn/signin",
+      "status": 200,
+      "hsts": "max-age=31536000"
+    },
+    {
+      "url": "https://hub.nucleant.cn/v1/evowork/index.json",
+      "status": 200,
+      "hsts": "max-age=31536000; includeSubDomains"
+    },
+    {
+      "url": "https://update.nucleant.cn/latest/latest-mac.yml",
+      "status": 200,
+      "hsts": null
+    },
+    {
+      "url": "http://account.nucleant.cn/signin",
+      "status": 308,
+      "location": "https://account.nucleant.cn/signin"
+    },
+    {
+      "url": "http://43.143.248.70:8000/signin",
+      "status": 308,
+      "location": "https://account.nucleant.cn/signin"
+    },
+    {
+      "url": "http://119.3.221.92:8000/signin",
+      "status": 308,
+      "location": "https://account.nucleant.cn/signin"
+    }
+  ]
+}

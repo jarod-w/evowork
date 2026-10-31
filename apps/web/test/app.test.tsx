@@ -100,7 +100,7 @@ describe('登录表单', () => {
     render(
       <App
         initialPath="/signin"
-        initialSearch="?code_challenge=abc&redirect_uri=http://127.0.0.1:4390/cb&state=s&device_id=dev"
+        initialSearch="?code_challenge=abc&redirect_uri=http://127.0.0.1:4390/callback&state=s&device_id=dev"
       />,
     );
     expect(screen.getByText(/EvoWork 桌面版/)).toBeTruthy();

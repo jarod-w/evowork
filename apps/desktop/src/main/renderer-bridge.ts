@@ -634,7 +634,7 @@ export interface RendererBridgeOptions {
    */
   readonly accountPorts?:
     | {
-        startLogin(): Promise<AccountActionResult>;
+        startLogin(input?: { readonly signup?: boolean }): Promise<AccountActionResult>;
         logout(): Promise<AccountActionResult>;
         listDevices(): Promise<readonly DeviceView[]>;
         revokeDevice(deviceId: string): Promise<AccountActionResult>;
@@ -2222,9 +2222,9 @@ export function createRendererActions(options: RendererBridgeOptions) {
       }
     },
 
-    startLogin(): Promise<AccountActionResult> {
+    startLogin(input?: { readonly signup?: boolean }): Promise<AccountActionResult> {
       return (
-        options.accountPorts?.startLogin() ??
+        options.accountPorts?.startLogin(input) ??
         Promise.resolve({ ok: false, refused: '这个版本还不能登录账号。' })
       );
     },

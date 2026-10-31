@@ -9,6 +9,8 @@
  */
 import { createServer, type Server } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   ACCESS_JWT_ENV,
@@ -42,6 +44,8 @@ export interface AccountOrigins {
 }
 
 export interface AccountDeps extends AccountOrigins {
+  readonly onSessionChanged?: (() => Promise<void> | void) | undefined;
+  readonly now?: (() => number) | undefined;
   readonly vault: AccountVault;
   readonly readFlag: (key: string) => string | undefined;
   readonly writeFlag: (key: string, value: string) => void;
@@ -67,18 +71,40 @@ export interface AccountSession {
   decorate(): AccountDecoration;
   /** 注入本机网关子进程。未登录时是空对象 —— 调用方不得据此出网 */
   gatewayInject(): NodeJS.ProcessEnv;
-  startLogin(): Promise<{ ok: boolean; refused?: string }>;
+  startLogin(page?: 'signin' | 'signup'): Promise<{ ok: boolean; refused?: string }>;
   logout(): Promise<void>;
   listDevices(): Promise<readonly DeviceView[]>;
   revokeDevice(deviceId: string): Promise<{ ok: boolean; refused?: string }>;
   openWeb(path: string): Promise<{ ok: boolean; refused?: string }>;
   restore(): Promise<void>;
+  refresh(): Promise<boolean>;
+  dispose(): void;
 }
 
-export function originsFromEnv(env: NodeJS.ProcessEnv): AccountOrigins {
+export function originsFromEnv(env: NodeJS.ProcessEnv, configDir?: string): AccountOrigins {
+  let bundled: AccountOrigins = {};
+  if (configDir) {
+    try {
+      const value = JSON.parse(
+        readFileSync(join(configDir, 'account.json'), 'utf8'),
+      ) as AccountOrigins;
+      if (value && typeof value === 'object')
+        bundled = {
+          ...(typeof value.webOrigin === 'string' ? { webOrigin: value.webOrigin } : {}),
+          ...(typeof value.identityOrigin === 'string'
+            ? { identityOrigin: value.identityOrigin }
+            : {}),
+        };
+    } catch {
+      // 没有随包配置的开发环境仍可显式用环境变量配置。
+    }
+  }
   const identity =
-    env.EVOWORK_IDENTITY_ORIGIN?.trim() || env.EVOWORK_HOSTED_ORIGIN?.trim() || undefined;
-  const web = env.EVOWORK_WEB_ORIGIN?.trim() || undefined;
+    env.EVOWORK_IDENTITY_ORIGIN?.trim() ||
+    env.EVOWORK_HOSTED_ORIGIN?.trim() ||
+    bundled.identityOrigin?.trim() ||
+    undefined;
+  const web = env.EVOWORK_WEB_ORIGIN?.trim() || bundled.webOrigin?.trim() || undefined;
   return {
     ...(web ? { webOrigin: web.replace(/\/$/, '') } : {}),
     ...(identity ? { identityOrigin: identity.replace(/\/$/, '') } : {}),
@@ -87,6 +113,13 @@ export function originsFromEnv(env: NodeJS.ProcessEnv): AccountOrigins {
 
 export function createAccountSession(deps: AccountDeps): AccountSession {
   const fetchFn = deps.fetchFn ?? fetch;
+  const now = deps.now ?? Date.now;
+  let expiresAt = 0;
+  let generation = 0;
+  let disposed = false;
+  let renewal: Promise<boolean> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pendingLogin: { cancel(): void } | undefined;
   let accessJwt: string | undefined;
   let role: 'member' | 'admin' | undefined;
   let tenantModelsJson: string | undefined;
@@ -113,17 +146,131 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
     }
   }
 
+  function clearTimer(): void {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+  }
+
+  function clearMemory(): void {
+    clearTimer();
+    accessJwt = undefined;
+    expiresAt = 0;
+    role = undefined;
+    tenantModelsJson = undefined;
+    devices = [];
+    quotaUsed = undefined;
+    quotaLimit = undefined;
+  }
+
+  async function changed(): Promise<void> {
+    try {
+      await deps.onSessionChanged?.();
+    } catch {
+      deps.logger?.warn('desktop.account.sync_failed', { reason: 'SESSION_CHANGED' });
+    }
+  }
+
+  function schedule(delay = Math.max(1_000, expiresAt - now() - 60_000)): void {
+    clearTimer();
+    if (disposed) return;
+    timer = setTimeout(() => {
+      void refresh();
+    }, delay);
+    timer.unref?.();
+  }
+
   async function identityFetch(path: string, init: RequestInit = {}): Promise<Response> {
     const origin = deps.identityOrigin;
     if (!origin) throw new Error('no-identity');
-    return fetchFn(`${origin}${path}`, init);
+    return fetchFn(`${origin}${path}`, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(15_000),
+    });
   }
 
-  async function applyTokens(access: string, refresh: string): Promise<void> {
+  async function applyTokens(
+    access: string,
+    refreshToken: string,
+    expected: number,
+  ): Promise<boolean> {
+    if (disposed || expected !== generation) return false;
+    if (!deps.vault.set(REFRESH_SECRET, refreshToken)) {
+      clearMemory();
+      deps.vault.remove(REFRESH_SECRET);
+      await changed();
+      return false;
+    }
     accessJwt = access;
     role = decodeRole(access);
-    deps.vault.set(REFRESH_SECRET, refresh);
-    await refreshCatalog();
+    try {
+      const claims = JSON.parse(
+        Buffer.from(access.split('.')[1] ?? '', 'base64url').toString('utf8'),
+      ) as { exp?: number };
+      expiresAt = typeof claims.exp === 'number' ? claims.exp * 1000 : now() + 15 * 60_000;
+    } catch {
+      expiresAt = now() + 15 * 60_000;
+    }
+    schedule();
+    // 先更新网关令牌，目录/配额暂时断网不能把已成功换票变成登录失败。
+    await changed();
+    try {
+      await refreshCatalog();
+    } catch {
+      /* 下次账号请求可重试。 */
+    }
+    return expected === generation && !disposed;
+  }
+
+  async function refresh(): Promise<boolean> {
+    if (renewal) return renewal;
+    const refreshToken = deps.vault.get(REFRESH_SECRET);
+    if (disposed || !refreshToken || !deps.identityOrigin) return false;
+    const expected = generation;
+    renewal = (async () => {
+      try {
+        const res = await identityFetch('/v1/oauth/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+        });
+        if (expected !== generation || disposed) return false;
+        if (!res.ok) {
+          if (res.status === 400 || res.status === 401 || res.status === 403) {
+            generation += 1;
+            clearMemory();
+            deps.vault.remove(REFRESH_SECRET);
+            await changed();
+          } else {
+            schedule(30_000);
+          }
+          return false;
+        }
+        const tokens = (await res.json()) as { accessToken?: string; refreshToken?: string };
+        if (!tokens.accessToken || !tokens.refreshToken) {
+          schedule(30_000);
+          return false;
+        }
+        return await applyTokens(tokens.accessToken, tokens.refreshToken, expected);
+      } catch {
+        if (expected === generation && !disposed) schedule(30_000);
+        return false;
+      } finally {
+        renewal = undefined;
+      }
+    })();
+    return renewal;
+  }
+
+  async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    if (accessJwt && expiresAt - now() < 60_000) await refresh();
+    const send = () =>
+      identityFetch(path, {
+        ...init,
+        headers: { ...init.headers, authorization: `Bearer ${accessJwt ?? ''}` },
+      });
+    const result = await send();
+    if (result.status === 401 && (await refresh())) return send();
+    return result;
   }
 
   async function refreshCatalog(): Promise<void> {
@@ -131,9 +278,11 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
       tenantModelsJson = undefined;
       return;
     }
+    const expected = generation;
     const res = await identityFetch('/v1/catalog', {
       headers: { authorization: `Bearer ${accessJwt}` },
     });
+    if (expected !== generation || disposed) return;
     if (!res.ok) {
       tenantModelsJson = undefined;
       return;
@@ -165,41 +314,73 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
         },
       });
     }
+    if (expected !== generation || disposed) return;
     tenantModelsJson = specs.length > 0 ? encodeTenantModels(specs) : undefined;
     const quotaRes = await identityFetch('/v1/quota', {
       headers: { authorization: `Bearer ${accessJwt}` },
     });
-    if (quotaRes.ok) {
+    if (quotaRes.ok && expected === generation && !disposed) {
       const q = (await quotaRes.json()) as { used?: number; limit?: number };
+      if (expected !== generation || disposed) return;
       quotaUsed = typeof q.used === 'number' ? q.used : undefined;
       quotaLimit = typeof q.limit === 'number' ? q.limit : undefined;
     }
   }
 
-  async function listenLoopback(): Promise<{ server: Server; port: number; code: Promise<URL> }> {
+  async function listenLoopback(): Promise<{
+    server: Server;
+    port: number;
+    code: Promise<URL>;
+    cancel(): void;
+  }> {
     const server = createServer();
-    const port = await (deps.listen
-      ? deps.listen(server)
-      : new Promise<number>((resolve, reject) => {
-          server.listen(0, '127.0.0.1', () => {
-            const addr = server.address();
-            if (addr && typeof addr === 'object') resolve(addr.port);
-            else reject(new Error('listen'));
-          });
-        }));
+    let settle: ((url: URL) => void) | undefined;
+    let fail: ((error: Error) => void) | undefined;
     const code = new Promise<URL>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout')), 5 * 60 * 1000);
-      server.on('request', (req, res) => {
-        const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        res.end('<!doctype html><p>可以回到 EvoWork 了。</p>');
-        if (url.pathname === '/callback') {
-          clearTimeout(timer);
-          resolve(url);
-        }
-      });
+      settle = resolve;
+      fail = reject;
     });
-    return { server, port, code };
+    // 浏览器打开失败/用户取消时，拒绝也不会成为未处理异常。
+    void code.catch(() => undefined);
+    const timeout = setTimeout(() => fail?.(new Error('timeout')), 15 * 60_000);
+    timeout.unref?.();
+    server.on('request', (req, res) => {
+      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      if (url.pathname !== '/callback') {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><p>可以回到 EvoWork 了。</p>');
+      clearTimeout(timeout);
+      settle?.(url);
+    });
+    try {
+      const port = await (deps.listen
+        ? deps.listen(server)
+        : new Promise<number>((resolve, reject) => {
+            server.once('error', reject);
+            server.listen(0, '127.0.0.1', () => {
+              const addr = server.address();
+              if (addr && typeof addr === 'object') resolve(addr.port);
+              else reject(new Error('listen'));
+            });
+          }));
+      return {
+        server,
+        port,
+        code,
+        cancel() {
+          clearTimeout(timeout);
+          fail?.(new Error('cancelled'));
+        },
+      };
+    } catch (error) {
+      clearTimeout(timeout);
+      server.close();
+      throw error;
+    }
   }
 
   return {
@@ -210,13 +391,13 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
       };
     },
 
-    signedIn: () => accessJwt !== undefined,
+    signedIn: () => accessJwt !== undefined && expiresAt > now(),
 
-    accessToken: () => accessJwt,
+    accessToken: () => (expiresAt > now() ? accessJwt : undefined),
 
     decorate() {
       return {
-        signedIn: accessJwt !== undefined,
+        signedIn: accessJwt !== undefined && expiresAt > now(),
         ...(role ? { role } : {}),
         ...(devices.length > 0 ? { devices } : {}),
         ...(quotaUsed !== undefined ? { quotaUsed } : {}),
@@ -225,7 +406,7 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
     },
 
     gatewayInject() {
-      if (!accessJwt || !deps.identityOrigin) return {};
+      if (!accessJwt || expiresAt <= now() || !deps.identityOrigin) return {};
       return {
         [ACCESS_JWT_ENV]: accessJwt,
         [UPSTREAM_BASE_URL_ENV]: deps.identityOrigin,
@@ -233,7 +414,11 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
       };
     },
 
-    async startLogin() {
+    async startLogin(page = 'signin') {
+      if (disposed || pendingLogin)
+        return { ok: false, refused: '登录已在进行，请完成浏览器中的登录。' };
+      generation += 1;
+      const expected = generation;
       const web = deps.webOrigin;
       const identity = deps.identityOrigin;
       if (!web || !identity) {
@@ -242,9 +427,16 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
       const verifier = generateCodeVerifier();
       const challenge = codeChallengeS256(verifier);
       const state = randomBytes(16).toString('base64url');
-      const { server, port, code: returned } = await listenLoopback();
+      let loop: Awaited<ReturnType<typeof listenLoopback>>;
+      try {
+        loop = await listenLoopback();
+      } catch {
+        return { ok: false, refused: '无法打开本机登录回调，请稍后再试。' };
+      }
+      const { server, port, code: returned } = loop;
+      pendingLogin = loop;
       const redirectUri = `http://127.0.0.1:${port}/callback`;
-      const start = new URL(`${web}/signin`);
+      const start = new URL(`${web}/${page}`);
       start.searchParams.set('code_challenge', challenge);
       start.searchParams.set('code_challenge_method', 'S256');
       start.searchParams.set('redirect_uri', redirectUri);
@@ -278,32 +470,32 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
         if (!tokens.accessToken || !tokens.refreshToken) {
           return { ok: false, refused: '换票失败，请重新登录。' };
         }
-        await applyTokens(tokens.accessToken, tokens.refreshToken);
+        if (!(await applyTokens(tokens.accessToken, tokens.refreshToken, expected))) {
+          return { ok: false, refused: '登录已取消或无法保存登录凭据，请检查系统密钥库。' };
+        }
         deps.logger?.info('desktop.account.signed_in', { authMode: 'hosted' });
         return { ok: true };
       } catch {
         return { ok: false, refused: '登录没有完成。可以稍后再试，本机任务不受影响。' };
       } finally {
+        loop.cancel();
+        if (pendingLogin === loop) pendingLogin = undefined;
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     },
 
     async logout() {
-      accessJwt = undefined;
-      role = undefined;
-      tenantModelsJson = undefined;
-      devices = [];
-      quotaUsed = undefined;
-      quotaLimit = undefined;
+      generation += 1;
+      pendingLogin?.cancel();
+      clearMemory();
       deps.vault.remove(REFRESH_SECRET);
+      await changed();
       deps.logger?.info('desktop.account.signed_out', { authMode: 'local' });
     },
 
     async listDevices() {
       if (!accessJwt) return [];
-      const res = await identityFetch('/v1/devices', {
-        headers: { authorization: `Bearer ${accessJwt}` },
-      });
+      const res = await authorizedFetch('/v1/devices');
       if (!res.ok) return [];
       const body = (await res.json()) as { devices?: DeviceView[] };
       devices = body.devices ?? [];
@@ -312,7 +504,7 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
 
     async revokeDevice(id) {
       if (!accessJwt) return { ok: false, refused: '还没有登录。' };
-      const res = await identityFetch('/v1/devices/revoke', {
+      const res = await authorizedFetch('/v1/devices/revoke', {
         method: 'POST',
         headers: {
           authorization: `Bearer ${accessJwt}`,
@@ -334,27 +526,14 @@ export function createAccountSession(deps: AccountDeps): AccountSession {
     },
 
     async restore() {
-      const refresh = deps.vault.get(REFRESH_SECRET);
-      if (!refresh || !deps.identityOrigin) return;
-      try {
-        const res = await identityFetch('/v1/oauth/token', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refresh }),
-        });
-        if (!res.ok) {
-          deps.vault.remove(REFRESH_SECRET);
-          return;
-        }
-        const tokens = (await res.json()) as { accessToken?: string; refreshToken?: string };
-        if (!tokens.accessToken || !tokens.refreshToken) {
-          deps.vault.remove(REFRESH_SECRET);
-          return;
-        }
-        await applyTokens(tokens.accessToken, tokens.refreshToken);
-      } catch {
-        /* 未登录可用：恢复失败就保持未登录，不出网重试 */
-      }
+      await refresh();
+    },
+    refresh,
+    dispose() {
+      disposed = true;
+      generation += 1;
+      clearTimer();
+      pendingLogin?.cancel();
     },
   };
 }

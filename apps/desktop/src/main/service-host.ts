@@ -1255,7 +1255,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const fromKernel = readGatewayBaseUrl(options.paths.kernelHome, baseEnv);
   const gatewayBaseUrl = isLocalGateway(fromKernel) ? fromKernel : DEFAULT_GATEWAY_BASE_URL;
   const account = createAccountSession({
-    ...originsFromEnv(baseEnv),
+    onSessionChanged: async () => {
+      if (stopping) return;
+      gateway?.updateAccessToken?.(account.accessToken() ?? '');
+    },
+    ...originsFromEnv(baseEnv, options.configDir),
     vault: modelAccess.accountVault,
     readFlag: (key) => readMeta(store.db, key),
     writeFlag: (key, value) => writeMeta(store.db, key, value),
@@ -2822,8 +2826,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     sharePorts: shareFlowPorts(),
     accountPorts: {
-      startLogin: async () => {
-        const result = await account.startLogin();
+      startLogin: async (input) => {
+        const result = await account.startLogin(input?.signup === true ? 'signup' : 'signin');
         if (result.ok) {
           await refreshPolicy();
           await restartGateway();
@@ -3037,6 +3041,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     async stop() {
       if (stopping) return;
       stopping = true;
+      account.dispose();
       /*
        * 网关必须在第一个 await 之前停。
        *

@@ -233,6 +233,15 @@ export function main(): void {
   const heartbeatMs = numberEnv('GATEWAY_SSE_HEARTBEAT_MS');
   const upstreamIdleMs = numberEnv('GATEWAY_UPSTREAM_IDLE_MS');
 
+  const hostedForward = upstreamBaseUrl ? { upstreamBaseUrl, accessJwt } : undefined;
+  // 只有持有父进程 IPC 通道的桌面宿主能更新；不增加 HTTP 密钥入口。
+  process.on('message', (message: unknown) => {
+    if (!hostedForward || !message || typeof message !== 'object') return;
+    const value = message as { type?: string; accessToken?: string };
+    if (value.type === 'evowork-account-token' && typeof value.accessToken === 'string') {
+      hostedForward.accessJwt = value.accessToken;
+    }
+  });
   const server = createGatewayServer({
     ...(env('ARK_API_KEY')
       ? {
@@ -253,7 +262,7 @@ export function main(): void {
     ...(upstreamIdleMs !== undefined ? { upstreamIdleMs } : {}),
     authenticate:
       authMode === 'hosted' && jwtPem ? jwtAuth({ publicPem: jwtPem }) : staticTokenAuth(tokens),
-    ...(accessJwt && upstreamBaseUrl ? { hostedForward: { upstreamBaseUrl, accessJwt } } : {}),
+    ...(hostedForward ? { hostedForward } : {}),
   });
 
   /*

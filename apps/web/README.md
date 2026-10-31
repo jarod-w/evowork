@@ -89,3 +89,7 @@ EVOWORK_WEB_ORIGIN=http://127.0.0.1:5174
 VITE_IDENTITY_ORIGIN=http://127.0.0.1:8788
 pnpm --filter @evowork/web dev
 ```
+
+账号 API 未指定 `VITE_IDENTITY_ORIGIN` 时使用页面同源地址；开发时仍按上面的变量配置本机 identity。
+注册、验证及重置邮件保留桌面 PKCE 的公开参数，回到登录页后继续原授权。
+`POST /v1/resend-verification` 支持重发验证邮件；发信失败显示服务端原因和重试入口。

@@ -318,7 +318,7 @@ export interface EvoworkBridge
   getMemorySettings?(): Promise<MemorySettingsView>;
   setMemorySettings?(input: MemorySettingsInput): Promise<MemoryMutationResult>;
   resetMemories?(): Promise<MemoryMutationResult>;
-  startLogin(): Promise<{ ok: boolean; refused?: string }>;
+  startLogin(input?: { readonly signup?: boolean }): Promise<{ ok: boolean; refused?: string }>;
   logout(): Promise<{ ok: boolean; refused?: string }>;
   listDevices(): Promise<readonly import('../shared/ipc.js').DeviceView[]>;
   revokeDevice(input: { deviceId: string }): Promise<{ ok: boolean; refused?: string }>;
@@ -4030,9 +4030,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             if (!result.ok) throw new Error(result.refused ?? '本地记忆没有清空。');
             setMemoryImportRevision((value) => value + 1);
           }}
-          onLogin={() => {
+          onLogin={(signup) => {
             void bridge
-              .startLogin()
+              .startLogin({ signup: signup === true })
               .then((result) => {
                 if (!result.ok) setSettingsRefusal(result.refused);
                 else setSettingsRefusal(undefined);
@@ -4878,7 +4878,7 @@ function MainPage(props: {
   readonly onImportMemories: () => void;
   readonly onMemorySettings: (input: MemorySettingsInput) => Promise<void>;
   readonly onResetMemories: () => Promise<void>;
-  readonly onLogin: () => void;
+  readonly onLogin: (signup?: boolean) => void;
   readonly onLogout: () => void;
   readonly onRevokeDevice: (deviceId: string) => void;
   readonly onOpenAccountWeb: (path: string) => void;
