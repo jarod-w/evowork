@@ -18,6 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -98,7 +99,8 @@ const BUNDLES = [
   },
 ];
 for (const bundle of BUNDLES) {
-  run(join(ROOT, 'node_modules/.bin/esbuild'), [
+  run(process.execPath, [
+    join(ROOT, 'node_modules/esbuild/bin/esbuild'),
     bundle.entry,
     '--bundle',
     `--outfile=${bundle.out}`,
@@ -294,13 +296,16 @@ copyFileSync(
 
 console.log('\n④ 打包渲染层');
 /*
- * 用 pnpm --filter 而不是直接跑 `node node_modules/vite/bin/vite.js`。
- *
- * pnpm 不做提升：vite 只装在 `apps/desktop/node_modules` 里，仓库根没有。
- * 写死根路径会在这里失败，而失败信息（"Command failed"）完全不解释原因 ——
- * 交给 pnpm 解析，它知道每个包各自的 bin 在哪。
+ * 从桌面包解析 Vite，避免依赖 pnpm 的提升或平台特定的 .bin 启动脚本。
+ * 使用 Node 执行 JS 入口，在 Windows 上也不需要 shell。
  */
-run('pnpm', ['--filter', '@evowork/desktop', 'run', 'build']);
+const desktopDir = join(ROOT, 'apps/desktop');
+const desktopRequire = createRequire(join(desktopDir, 'package.json'));
+run(
+  process.execPath,
+  [join(dirname(desktopRequire.resolve('vite/package.json')), 'bin/vite.js'), 'build'],
+  desktopDir,
+);
 
 console.log('\n✅ 构建完成。产物：');
 console.log('   dist/gateway/main.js                             网关（单文件，可直接 node 运行）');
