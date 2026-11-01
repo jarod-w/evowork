@@ -1,0 +1,52 @@
+[
+  {
+    "method": "item/autoApprovalReview/started",
+    "params": {
+      "threadId": "01a19495-3fe9-7312-931b-3d53620cb8a5",
+      "turnId": "01a19495-3ff9-7ed3-a0d5-00085746ebb6",
+      "startedAtMs": 1793494186377,
+      "reviewId": "708e529b-4e40-46f2-bc5b-8df9c6bb1e0b",
+      "targetItemId": "call_748345e4f664494fb8ace382",
+      "review": {
+        "status": "inProgress",
+        "riskLevel": null,
+        "userAuthorization": null,
+        "rationale": null
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/completed",
+    "params": {
+      "threadId": "01a19495-3fe9-7312-931b-3d53620cb8a5",
+      "turnId": "01a19495-3ff9-7ed3-a0d5-00085746ebb6",
+      "startedAtMs": 1793494186377,
+      "completedAtMs": 1793494193070,
+      "reviewId": "708e529b-4e40-46f2-bc5b-8df9c6bb1e0b",
+      "targetItemId": "call_748345e4f664494fb8ace382",
+      "decisionSource": "agent",
+      "review": {
+        "status": "approved",
+        "riskLevel": "low",
+        "userAuthorization": "high",
+        "rationale": "The user explicitly requested a single Enter keypress in Microsoft Word after reading its current state; this is a narrowly scoped, reversible UI action on an already verified app."
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  }
+]

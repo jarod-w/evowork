@@ -1,0 +1,102 @@
+[
+  {
+    "method": "item/autoApprovalReview/started",
+    "params": {
+      "threadId": "01a19491-a904-7b81-9ce4-53decf839151",
+      "turnId": "01a19491-a914-7cb2-b42b-c6e55326e8ca",
+      "startedAtMs": 1793493940195,
+      "reviewId": "34f31b5a-552a-4bdb-819c-bf17b5bbf05d",
+      "targetItemId": "call_00_GxuLEV0LgiPGw3uS5T666943",
+      "review": {
+        "status": "inProgress",
+        "riskLevel": null,
+        "userAuthorization": null,
+        "rationale": null
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "set_value",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/completed",
+    "params": {
+      "threadId": "01a19491-a904-7b81-9ce4-53decf839151",
+      "turnId": "01a19491-a914-7cb2-b42b-c6e55326e8ca",
+      "startedAtMs": 1793493940195,
+      "completedAtMs": 1793493941138,
+      "reviewId": "34f31b5a-552a-4bdb-819c-bf17b5bbf05d",
+      "targetItemId": "call_00_GxuLEV0LgiPGw3uS5T666943",
+      "decisionSource": "agent",
+      "review": {
+        "status": "approved",
+        "riskLevel": "low",
+        "userAuthorization": "unknown",
+        "rationale": "Auto-review returned a low-risk allow decision."
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "set_value",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/started",
+    "params": {
+      "threadId": "01a19491-a904-7b81-9ce4-53decf839151",
+      "turnId": "01a19491-a914-7cb2-b42b-c6e55326e8ca",
+      "startedAtMs": 1793493942716,
+      "reviewId": "91e542dd-f97a-4d0f-8cc5-ac9b87181654",
+      "targetItemId": "call_00_HtaFC0Q8WxfFcxaphPVd9171",
+      "review": {
+        "status": "inProgress",
+        "riskLevel": null,
+        "userAuthorization": null,
+        "rationale": null
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/completed",
+    "params": {
+      "threadId": "01a19491-a904-7b81-9ce4-53decf839151",
+      "turnId": "01a19491-a914-7cb2-b42b-c6e55326e8ca",
+      "startedAtMs": 1793493942716,
+      "completedAtMs": 1793493943547,
+      "reviewId": "91e542dd-f97a-4d0f-8cc5-ac9b87181654",
+      "targetItemId": "call_00_HtaFC0Q8WxfFcxaphPVd9171",
+      "decisionSource": "agent",
+      "review": {
+        "status": "approved",
+        "riskLevel": "low",
+        "userAuthorization": "unknown",
+        "rationale": "Auto-review returned a low-risk allow decision."
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  }
+]

@@ -21,11 +21,11 @@ export const SYSTEM_SETTINGS = 'com.apple.systempreferences';
 /** 元素编号（AX 扁平文本里的 `[n]`）。模型拿到的只有这几个数 */
 export const ELEMENT = Object.freeze({ window: 1, body: 2, save: 3, canary: 4 });
 
-export function createFakeComputerUse() {
+export function createFakeComputerUse(appSpec = { app: TEXTEDIT, name: 'TextEdit' }) {
   /** 只出现在「被读取的界面」里的一段字：用来判它去了哪（模型请求、任务历史）、没去哪（审计、日志） */
   const canary = `CUA-AX-CANARY-${randomBytes(4).toString('hex')}`;
   const window = {
-    app: TEXTEDIT,
+    app: appSpec.app,
     processId: 4242,
     windowId: 'fake-textedit-1',
     x: 0,
@@ -35,7 +35,7 @@ export function createFakeComputerUse() {
     scale: 2,
   };
   const apps = [
-    { app: TEXTEDIT, name: 'TextEdit', identity: 'fake-signature-textedit', kind: 'ordinary' },
+    { ...appSpec, identity: 'fake-signature-textedit', kind: 'ordinary' },
     { app: TERMINAL, name: '终端', identity: 'fake-signature-terminal', kind: 'terminal' },
     {
       app: SYSTEM_SETTINGS,
@@ -49,6 +49,9 @@ export function createFakeComputerUse() {
     screenRecording = false,
     componentError = false;
   let body = '';
+  let sent = 0;
+  const messaging = appSpec.app === 'com.tencent.xinWeChat';
+  if (messaging) body = '仅用于本机验收的消息';
   let saved = false;
   let selectAll = false;
   let stops = 0;
@@ -57,10 +60,11 @@ export function createFakeComputerUse() {
 
   function axText() {
     return [
-      `[${ELEMENT.window}] window "未命名.rtf" focused`,
-      `[${ELEMENT.body}] textArea "正文" value=${JSON.stringify(body)} settable`,
-      `[${ELEMENT.save}] button "保存" enabled actions=[Press]`,
+      `[${ELEMENT.window}] window "${messaging ? 'EvoWork 测试联系人（本机模拟）' : '未命名.rtf'}" focused`,
+      `[${ELEMENT.body}] textArea "${messaging ? '消息输入框' : '正文'}" value=${JSON.stringify(body)} settable`,
+      `[${ELEMENT.save}] button "${messaging ? '发送' : '保存'}" enabled actions=[Press]`,
       `[${ELEMENT.canary}] staticText "${canary}"`,
+      ...(messaging ? [`发送结果：${sent ? '已发送本机测试消息' : '尚未发送'}`] : []),
     ].join('\n');
   }
 
@@ -85,12 +89,19 @@ export function createFakeComputerUse() {
           return { ...window, app: params.app ?? TEXTEDIT };
         case 'inspect_action':
           return {
-            window,
+            window: { ...window },
             text: axText(),
             target: {
-              app: TEXTEDIT,
+              app: appSpec.app,
               role: params.element_index === ELEMENT.save ? 'AXButton' : 'AXTextArea',
-              label: params.element_index === ELEMENT.save ? '保存' : '正文',
+              label:
+                params.element_index === ELEMENT.save
+                  ? messaging
+                    ? '发送'
+                    : '保存'
+                  : messaging
+                    ? '消息输入框'
+                    : '正文',
               editable: params.element_index !== ELEMENT.save,
             },
           };
@@ -99,7 +110,7 @@ export function createFakeComputerUse() {
             window: { ...window, app: params.app ?? TEXTEDIT },
             elements: Object.values(ELEMENT),
             // 漏放时答出来的东西必须看得出是漏了（见文件头）
-            text: params.app === TEXTEDIT ? axText() : `[1] window "${params.app}" ${canary}`,
+            text: params.app === appSpec.app ? axText() : `[1] window "${params.app}" ${canary}`,
             coordinateFallback: false,
           };
         case 'set_value':
@@ -116,6 +127,10 @@ export function createFakeComputerUse() {
           if (params.element_index === ELEMENT.body && params.mode === 'replace') selectAll = true;
           return { ok: true };
         case 'press_key':
+          if (params.key === 'Enter' && messaging) {
+            sent += 1;
+            body = '';
+          }
           if (params.key === 'Meta+S') saved = true;
           if (params.key === 'Meta+A') selectAll = true;
           if (params.key === 'Backspace' || params.key === 'Delete') {
@@ -143,6 +158,7 @@ export function createFakeComputerUse() {
     calls,
     document: () => body,
     saved: () => saved,
+    sent: () => sent,
     stops: () => stops,
   };
 }

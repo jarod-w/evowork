@@ -64,7 +64,18 @@ struct NativePolicyTests {
         check(fromRight?.location == 1 && fromRight?.length == 3, "extend selection left")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: nil) == nil, "missing original selection denied")
         check(selectedTextRange(value: value, text: "乙", prefix: "", suffix: "", mode: "extend", existing: CFRange(location: 4, length: 2)) == nil, "out-of-bounds selection denied")
-        print("Native policy checks passed (54 cases).")
+        check(nativeKeyStroke("Meta+V") == nil, "clipboard shortcut bypass denied")
+        check(nativeKeyStroke("Meta+Tab") == nil, "global app switch denied")
+        check(nativeKeyStroke("Meta+Space") == nil, "global launcher denied")
+        check(nativeKeyStroke("Enter")?.0 == 36, "explicit submit key mapped")
+        check(nativeKeyStroke("Tab")?.0 == 48, "navigation key mapped")
+        check(nativeKeyStroke("Meta+A")?.1 == .maskCommand, "local select-all preserved")
+        check(nativeElementClick(role: "AXTextArea", subrole: "", actions: []) == .focus, "text area uses focus without Press")
+        check(nativeElementClick(role: "AXTextField", subrole: "", actions: ["AXPress"]) == .focus, "text field does not submit")
+        check(nativeElementClick(role: "AXButton", subrole: "", actions: ["AXPress"]) == .press, "button Press preserved")
+        check(nativeElementClick(role: "AXButton", subrole: "", actions: []) == nil, "unknown click route rejected")
+        check(nativeElementClick(role: "AXTextField", subrole: "AXSecureTextField", actions: ["AXPress"]) == nil, "secure field focus rejected")
+        print("Native policy checks passed (65 cases).")
     }
 }
 

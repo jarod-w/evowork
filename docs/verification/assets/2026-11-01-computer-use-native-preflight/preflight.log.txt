@@ -1,0 +1,12 @@
+{
+  "status": "blocked",
+  "failures": [],
+  "blockers": [
+    "NO_CODE_SIGNING_IDENTITY",
+    "SIGNED_DESKTOP_HOST_REQUIRED",
+    "SIGNED_NATIVE_HELPER_REQUIRED",
+    "ACCESSIBILITY_TCC_REQUIRED"
+  ],
+  "nativeAcceptanceCompleted": false,
+  "output": "/Users/jarod.ai/develop/evowork/evowork/dist/cu-native-validation/preflight.json"
+}

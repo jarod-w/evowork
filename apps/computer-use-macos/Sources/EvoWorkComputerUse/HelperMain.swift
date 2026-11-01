@@ -326,7 +326,23 @@ func trustedCaller() -> Bool {
             let buttonName = params["button"] as? String ?? "left"
             guard (1...3).contains(count), ["left", "right", "middle"].contains(buttonName) else { try fail("POLICY_DENIED") }
             if let selected, count == 1, buttonName == "left" {
-                guard AXUIElementPerformAction(selected, kAXPressAction as CFString) == .success else { try fail("ELEMENT_NOT_FOUND") }
+                var actions: CFArray?
+                _ = AXUIElementCopyActionNames(selected, &actions)
+                let route = nativeElementClick(
+                    role: ax(selected, kAXRoleAttribute) as? String ?? "",
+                    subrole: ax(selected, kAXSubroleAttribute) as? String ?? "",
+                    actions: actions as? [String] ?? []
+                )
+                switch route {
+                case .focus:
+                    var settable = DarwinBoolean(false)
+                    guard AXUIElementIsAttributeSettable(selected, kAXFocusedAttribute as CFString, &settable) == .success,
+                          settable.boolValue,
+                          AXUIElementSetAttributeValue(selected, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else { try fail("ELEMENT_NOT_FOUND") }
+                case .press:
+                    guard AXUIElementPerformAction(selected, kAXPressAction as CFString) == .success else { try fail("ELEMENT_NOT_FOUND") }
+                case nil: try fail("ELEMENT_NOT_FOUND")
+                }
             } else {
                 let location = try actionPoint(params, selected, bounds)
                 let button: CGMouseButton = buttonName == "right" ? .right : buttonName == "middle" ? .center : .left
@@ -349,8 +365,7 @@ func trustedCaller() -> Bool {
             let allowed = ["ShowMenu": kAXShowMenuAction, "Confirm": kAXConfirmAction, "Cancel": kAXCancelAction, "Increment": kAXIncrementAction, "Decrement": kAXDecrementAction]
             guard let name = allowed[action], AXUIElementPerformAction(selected, name as CFString) == .success else { try fail("ELEMENT_NOT_FOUND") }
         case "press_key":
-            let keys: [String: (CGKeyCode, CGEventFlags)] = ["Enter": (36, []), "Tab": (48, []), "Shift+Tab": (48, .maskShift), "Escape": (53, []), "Backspace": (51, []), "Delete": (117, []), "ArrowUp": (126, []), "ArrowDown": (125, []), "ArrowLeft": (123, []), "ArrowRight": (124, []), "Home": (115, []), "End": (119, []), "PageUp": (116, []), "PageDown": (121, []), "Meta+A": (0, .maskCommand), "Meta+C": (8, .maskCommand), "Meta+V": (9, .maskCommand), "Meta+X": (7, .maskCommand), "Meta+Z": (6, .maskCommand), "Meta+Shift+Z": (6, [.maskCommand, .maskShift]), "Meta+S": (1, .maskCommand)]
-            guard let key = params["key"] as? String, let value = keys[key] else { try fail("POLICY_DENIED") }
+            guard let key = params["key"] as? String, let value = nativeKeyStroke(key) else { try fail("POLICY_DENIED") }
             try postKey(value.0, flags: value.1)
         case "paste":
             guard let text = params["text"] as? String, params["format"] as? String == "plain" else { try fail("POLICY_DENIED") }

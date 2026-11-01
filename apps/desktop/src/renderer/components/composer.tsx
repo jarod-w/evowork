@@ -123,7 +123,7 @@ export const MODE_OPTIONS: readonly SelectOption[] = [
   {
     id: 'approve-for-me',
     label: '帮我批准',
-    description: '仅对检测到的风险操作请求批准',
+    description: '由安全审查决定是否批准，保留必要确认',
   },
   {
     id: 'full-access',

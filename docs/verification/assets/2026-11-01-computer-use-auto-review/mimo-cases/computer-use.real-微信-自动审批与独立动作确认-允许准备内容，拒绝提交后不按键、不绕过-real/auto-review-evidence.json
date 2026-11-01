@@ -1,0 +1,52 @@
+[
+  {
+    "method": "item/autoApprovalReview/started",
+    "params": {
+      "threadId": "01a19494-3d3e-7eb1-85fb-ebeab3c7b960",
+      "turnId": "01a19494-3d4e-7191-a06b-34904488dd7c",
+      "startedAtMs": 1793494121573,
+      "reviewId": "76a9a25b-0486-4a82-90d3-ca398bc17e15",
+      "targetItemId": "call_ce1d6a2f8558430287b36ba5",
+      "review": {
+        "status": "inProgress",
+        "riskLevel": null,
+        "userAuthorization": null,
+        "rationale": null
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/completed",
+    "params": {
+      "threadId": "01a19494-3d3e-7eb1-85fb-ebeab3c7b960",
+      "turnId": "01a19494-3d4e-7191-a06b-34904488dd7c",
+      "startedAtMs": 1793494121573,
+      "completedAtMs": 1793494132269,
+      "reviewId": "76a9a25b-0486-4a82-90d3-ca398bc17e15",
+      "targetItemId": "call_ce1d6a2f8558430287b36ba5",
+      "decisionSource": "agent",
+      "review": {
+        "status": "approved",
+        "riskLevel": "medium",
+        "userAuthorization": "high",
+        "rationale": "The planned Enter press exactly matches the user's explicit instruction in the already-inspected WeChat input window; it is a narrowly scoped, single action that may send the prepared local test message, and the required confirmation is being evaluated here."
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  }
+]

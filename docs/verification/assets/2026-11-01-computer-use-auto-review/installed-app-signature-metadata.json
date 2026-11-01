@@ -1,0 +1,28 @@
+{
+  "readOnly": true,
+  "activatedApps": false,
+  "axOrScreenshotRead": false,
+  "apps": [
+    {
+      "app": "wpsoffice.app",
+      "bundleID": "com.kingsoft.wpsoffice.mac",
+      "signingID": "com.kingsoft.wpsoffice.mac",
+      "teamID": "YK4WKE5WAM",
+      "displayExitCode": 0
+    },
+    {
+      "app": "WeChat.app",
+      "bundleID": "com.tencent.xinWeChat",
+      "signingID": "com.tencent.xinWeChat",
+      "teamID": "5A4RE8SF68",
+      "displayExitCode": 0
+    },
+    {
+      "app": "TextEdit.app",
+      "bundleID": "com.apple.TextEdit",
+      "signingID": "com.apple.TextEdit",
+      "teamID": "not set",
+      "displayExitCode": 0
+    }
+  ]
+}

@@ -23,6 +23,7 @@ export {
   type Workspace,
 } from './adapter.js';
 export type { MemoryTextRecord, MemoryTextInput, MemoryTextResult } from './memory-text-import.js';
+export { readAutoApprovalReviews, type AutoApprovalReview } from './auto-review.js';
 export {
   createApprovalRouter,
   elicitationChoice,

@@ -189,7 +189,7 @@ evowork/
 | 消息 / 回合 | Turn / Item | `thread/turns/list`、`thread/items/list` |
 | 子任务 | Subagent Thread | `parentThreadId` / `ancestorThreadId` |
 | 产物 | 工作空间里的文件 | 文件系统是真源，服务层只存索引（D6） |
-| 请求批准 / 帮我批准 / 完全访问 | `permissions` + `approvalPolicy` + `approvalsReviewer` | Q45。Composer 一级模式。`send(modeId)` 已展开进 `turn/start`；`auto_review` 仅单测，未对真实内核验证 |
+| 请求批准 / 帮我批准 / 完全访问 | `permissions` + `approvalPolicy` + `approvalsReviewer` | Q45。Composer 一级模式。`send(modeId)` 已展开进 `turn/start`；`auto_review` 已用真实内核、宿主网关与指定厂商模型专项验证；原生 AX/TCC 仍待正式签名验收（见 2026-11-01 验收记录） |
 | 「规划中」状态 | 无对应 | 服务层按是否有 `plan` item 派生（Q45：不看协作模式） |
 
 ---
@@ -284,7 +284,7 @@ python-build-standalone 的 `install_only` 构建，自包含、位置无关、�
 | Q18 运营位 | **本版首页与侧栏不设置运营位**、不做积分体系 | 2026-09-11 UI 评审覆盖原“保留插槽”方案；未来如需建设必须另立需求并重新评审隐私与数据边界 |
 | Q19 团队空间 | **只读订阅** | 复用「企业私有源索引」这一条云端职责，不新增；写入方向走 Q10 分享通道。「与我共享」收件箱不做 |
 | **Q20 助理** | **一个常驻的特殊 Thread** | 固定 cwd `~/.evowork/assistant/`、内部只读（`evowork-ask`）、不进任务列表、可 `thread/fork` 升级；别为它自建会话存储。入口仍下架 |
-| **Q45 Composer 主模式** | **请求批准 / 帮我批准 / 完全访问** | 前端传 `modeId`，适配层展开为 `permissions` + `approvalPolicy` + `approvalsReviewer`。帮我批准未接通时禁用并给原因，**不静默降级**。发送链路已接；`auto_review` 仅单测 |
+| **Q45 Composer 主模式** | **请求批准 / 帮我批准 / 完全访问** | 前端传 `modeId`，适配层展开为 `permissions` + `approvalPolicy` + `approvalsReviewer`。帮我批准未接通时禁用并给原因，**不静默降级**。发送链路已接；`auto_review` 真实模型专项已验，原生签名验收待补 |
 | **Q46 在线升级** | 手动「检查更新」随时可点；已登录每天最多自动检查一次（**可关**）；未登录默认不自动（独立开关，不和 Hub 的合并）；检查到只提示、不自动下载，包下到「下载」文件夹；**不强制更新**；**首页不放提示** | 更新请求**不带账号令牌、`deviceId`、版本号**；本机执行面永远不因版本旧而停用；企业用 `disableUpdateCheck` / `EVOWORK_UPDATE_FEED`。自动安装等 U4（证书） |
 | **Q23 桌面壳** | **Electron** | 不用 Tauri（体积优势被随包 Python 运行时抹平，而侧载子进程/自动更新/公证的成熟度 Electron 更高） |
 | **Q24 前端栈** | **React + TS + Vite，组件全自建（token 驱动），不引 UI 库** | 组件只能来自 01 §5 的清单（现 37 个）；**出现清单外的组件先补进 01** |

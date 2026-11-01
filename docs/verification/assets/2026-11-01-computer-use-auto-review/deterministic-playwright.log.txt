@@ -1,0 +1,24 @@
+
+Running 17 tests using 1 worker
+
+(node:27567) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [fake] › apps/desktop/test/e2e/ui/auto-review.spec.mjs:9:3 › 自动审批 allow：按真实审查结果执行或关闭，刷新后证据保留 (1.7s)
+  ✓   2 [fake] › apps/desktop/test/e2e/ui/auto-review.spec.mjs:9:3 › 自动审批 deny：按真实审查结果执行或关闭，刷新后证据保留 (1.0s)
+  ✓   3 [fake] › apps/desktop/test/e2e/ui/auto-review.spec.mjs:9:3 › 自动审批 invalid：按真实审查结果执行或关闭，刷新后证据保留 (2.1s)
+  ✓   4 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:94:3 › 发货的样子：未验收的构建 › 设置页、内核配置、模型的工具清单三处都关着 (1.0s)
+  ✓   5 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:174:3 › 假原生 Helper：宿主到界面的整条链路 › 告知 → 硬禁止 → 准入 → 状态条 → 停止控制 → 留存内容 (2.0s)
+  ✓   6 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:320:3 › 假原生 Helper：宿主到界面的整条链路 › 请求批准档：写动作再批一次，批了才落到应用上 (2.2s)
+  ✓   7 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:379:3 › 假原生 Helper：宿主到界面的整条链路 › 完全访问：写动作不再逐次弹卡，告知、准入与硬禁止照旧 (2.0s)
+  ✓   8 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:439:5 › 假原生 Helper：宿主到界面的整条链路 › 完全访问下 Enter 提交仍需独立确认：确认本次动作 (2.3s)
+  ✓   9 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:439:5 › 假原生 Helper：宿主到界面的整条链路 › 完全访问下 Enter 提交仍需独立确认：拒绝 (2.2s)
+  ✓  10 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:481:3 › 假原生 Helper：宿主到界面的整条链路 › 认不出的应用名：回 APP_NOT_FOUND，不冒充策略拒绝 (1.4s)
+  ✓  11 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:508:3 › 假原生 Helper：宿主到界面的整条链路 › 不同意传输：Helper 一次都没被问过，同一任务里也不再追问 (1.1s)
+  ✓  12 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:543:3 › 假原生 Helper：宿主到界面的整条链路 › 始终允许：设置页列出这一条，撤销后立即消失、落盘也清掉 (1.4s)
+  ✓  13 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:581:3 › P2：权限与企业策略恢复（真内核、假 Helper） › 辅助功能撤权注销工具；手动恢复后重新检查，AX-only 可重新启用 (977ms)
+  ✓  14 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:609:3 › P2：权限与企业策略恢复（真内核、假 Helper） › 组件故障可重新检查恢复，故障期间不注册工具 (701ms)
+  ✓  15 [fake] › apps/desktop/test/e2e/ui/computer-use.spec.mjs:626:3 › P2：权限与企业策略恢复（真内核、假 Helper） › 无关企业约束不禁用；全局 deny 禁用、移除后可检查恢复 (899ms)
+  ✓  16 [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：授权读取、引用点击与历史恢复 (6.4s)
+  ✓  17 [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：拒绝后零请求、编造引用不可点击 (5.3s)
+
+  17 passed (34.9s)

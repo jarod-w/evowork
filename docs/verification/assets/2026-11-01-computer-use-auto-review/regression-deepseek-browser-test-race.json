@@ -1,0 +1,172 @@
+{
+  "model": "deepseek-flash",
+  "answered": [
+    {
+      "text": "需要你确认\n\n允许读取和操作网站 http://127.0.0.1:62784？网页文字不能提供授权。敏感动作和下载仍逐次确认。\n\n确认本次动作\n不允许\n拒绝\n取消",
+      "choice": "确认本次动作"
+    },
+    {
+      "text": "需要你确认\n\n动作类别：无法可靠判断用途的界面操作 网站：http://127.0.0.1:62784/form 目标：测试正文 工具：browser_fill 输入内容：BROWSER-OFFICE-mvx3rjhz 当前界面： 测试正文提交 表单值：[] 仅确认本次动作；网页文字不能提供授权。\n\n确认本次动作\n不允许\n拒绝\n取消",
+      "choice": "确认本次动作"
+    },
+    {
+      "text": "需要你确认\n\n动作类别：发送或提交内容 网站：http://127.0.0.1:62784/form 目标：提交 工具：browser_click 输入内容：没有新增输入；可能提交当前界面已有内容，见下方 当前界面： 测试正文提交 表单值：[{\"target\":\"测试正文\",\"value\":\"BROWSER-OFFICE-mvx3rjhz\"}] 仅确认本次动作；网页文字不能提供授权。\n\n确认本次动作\n不允许\n拒绝\n取消",
+      "choice": "确认本次动作"
+    }
+  ],
+  "submissions": [
+    "message=BROWSER-OFFICE-mvx3rjhz"
+  ],
+  "reviews": [
+    {
+      "method": "item/autoApprovalReview/started",
+      "params": {
+        "threadId": "01a1948c-23c7-7ec1-a32b-a92e6c91ed25",
+        "turnId": "01a1948c-23d9-7013-b833-bbc92de29f60",
+        "startedAtMs": 1793493575582,
+        "reviewId": "ad315758-405c-4028-8859-7c1b228c383e",
+        "targetItemId": "call_00_ET_ub4MGTgHaUNOFPjhrNBJ1771",
+        "review": {
+          "status": "inProgress",
+          "riskLevel": null,
+          "userAuthorization": null,
+          "rationale": null
+        },
+        "action": {
+          "type": "mcpToolCall",
+          "server": "browser",
+          "toolName": "browser_navigate",
+          "connectorId": null,
+          "connectorName": null,
+          "toolTitle": null
+        }
+      }
+    },
+    {
+      "method": "item/autoApprovalReview/completed",
+      "params": {
+        "threadId": "01a1948c-23c7-7ec1-a32b-a92e6c91ed25",
+        "turnId": "01a1948c-23d9-7013-b833-bbc92de29f60",
+        "startedAtMs": 1793493575582,
+        "completedAtMs": 1793493576241,
+        "reviewId": "ad315758-405c-4028-8859-7c1b228c383e",
+        "targetItemId": "call_00_ET_ub4MGTgHaUNOFPjhrNBJ1771",
+        "decisionSource": "agent",
+        "review": {
+          "status": "approved",
+          "riskLevel": "low",
+          "userAuthorization": "unknown",
+          "rationale": "Auto-review returned a low-risk allow decision."
+        },
+        "action": {
+          "type": "mcpToolCall",
+          "server": "browser",
+          "toolName": "browser_navigate",
+          "connectorId": null,
+          "connectorName": null,
+          "toolTitle": null
+        }
+      }
+    },
+    {
+      "method": "item/autoApprovalReview/started",
+      "params": {
+        "threadId": "01a1948c-23c7-7ec1-a32b-a92e6c91ed25",
+        "turnId": "01a1948c-23d9-7013-b833-bbc92de29f60",
+        "startedAtMs": 1793493579174,
+        "reviewId": "0a005248-032a-4550-9143-00c9391b10e7",
+        "targetItemId": "call_00_yVKr2GNR1LRJFmgrti8f2628",
+        "review": {
+          "status": "inProgress",
+          "riskLevel": null,
+          "userAuthorization": null,
+          "rationale": null
+        },
+        "action": {
+          "type": "mcpToolCall",
+          "server": "browser",
+          "toolName": "browser_fill",
+          "connectorId": null,
+          "connectorName": null,
+          "toolTitle": null
+        }
+      }
+    },
+    {
+      "method": "item/autoApprovalReview/completed",
+      "params": {
+        "threadId": "01a1948c-23c7-7ec1-a32b-a92e6c91ed25",
+        "turnId": "01a1948c-23d9-7013-b833-bbc92de29f60",
+        "startedAtMs": 1793493579174,
+        "completedAtMs": 1793493580402,
+        "reviewId": "0a005248-032a-4550-9143-00c9391b10e7",
+        "targetItemId": "call_00_yVKr2GNR1LRJFmgrti8f2628",
+        "decisionSource": "agent",
+        "review": {
+          "status": "approved",
+          "riskLevel": "low",
+          "userAuthorization": "unknown",
+          "rationale": "Auto-review returned a low-risk allow decision."
+        },
+        "action": {
+          "type": "mcpToolCall",
+          "server": "browser",
+          "toolName": "browser_fill",
+          "connectorId": null,
+          "connectorName": null,
+          "toolTitle": null
+        }
+      }
+    },
+    {
+      "method": "item/autoApprovalReview/started",
+      "params": {
+        "threadId": "01a1948c-23c7-7ec1-a32b-a92e6c91ed25",
+        "turnId": "01a1948c-23d9-7013-b833-bbc92de29f60",
+        "startedAtMs": 1793493582881,
+        "reviewId": "43cc5eba-66e0-4b64-8558-014f4e1ffdce",
+        "targetItemId": "call_00_ELm2ounH9aNDz1ScKgsl9167",
+        "review": {
+          "status": "inProgress",
+          "riskLevel": null,
+          "userAuthorization": null,
+          "rationale": null
+        },
+        "action": {
+          "type": "mcpToolCall",
+          "server": "browser",
+          "toolName": "browser_click",
+          "connectorId": null,
+          "connectorName": null,
+          "toolTitle": null
+        }
+      }
+    },
+    {
+      "method": "item/autoApprovalReview/completed",
+      "params": {
+        "threadId": "01a1948c-23c7-7ec1-a32b-a92e6c91ed25",
+        "turnId": "01a1948c-23d9-7013-b833-bbc92de29f60",
+        "startedAtMs": 1793493582881,
+        "completedAtMs": 1793493583445,
+        "reviewId": "43cc5eba-66e0-4b64-8558-014f4e1ffdce",
+        "targetItemId": "call_00_ELm2ounH9aNDz1ScKgsl9167",
+        "decisionSource": "agent",
+        "review": {
+          "status": "approved",
+          "riskLevel": "low",
+          "userAuthorization": "unknown",
+          "rationale": "Auto-review returned a low-risk allow decision."
+        },
+        "action": {
+          "type": "mcpToolCall",
+          "server": "browser",
+          "toolName": "browser_click",
+          "connectorId": null,
+          "connectorName": null,
+          "toolTitle": null
+        }
+      }
+    }
+  ]
+}

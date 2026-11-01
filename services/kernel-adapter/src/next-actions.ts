@@ -50,7 +50,10 @@ export function createNextActions(options: {
 }) {
   const repo = new NextActionStore(options.store);
   repo.expire(); // A crashed, unfinished proposal is never published on recovery.
-  const turns = new Map<string, { turnId: string; attempted: boolean; reminded: boolean }>();
+  const turns = new Map<
+    string,
+    { turnId: string; attempted: boolean; reminded: boolean; suppressed?: boolean }
+  >();
   const runningRoot = (threadId: string, turnId: string) => {
     const row = options.store.threads.get(threadId);
     return (
@@ -75,6 +78,10 @@ export function createNextActions(options: {
     );
   };
   return {
+    suppressReminder(threadId: string, turnId: string): void {
+      const turn = turns.get(threadId);
+      if (turn?.turnId === turnId) turn.suppressed = true;
+    },
     propose(threadId: string, raw: unknown) {
       const bound = options
         .adapter()
@@ -117,6 +124,7 @@ export function createNextActions(options: {
         turn?.turnId === turnId &&
         !turn.attempted &&
         !turn.reminded &&
+        !turn.suppressed &&
         runningRoot(threadId, turnId) &&
         repo.get(threadId)?.turnId !== turnId;
       if (!eligible()) return {};
@@ -171,6 +179,11 @@ export function createNextActions(options: {
       return candidate;
     },
     onEvent(event: UiEvent) {
+      if (event.type === 'approval-review') {
+        if (['denied', 'timedOut', 'aborted', 'unknown'].includes(event.review.status))
+          this.suppressReminder(event.threadId, event.review.turnId);
+        return;
+      }
       if (event.type === 'item-started' || event.type === 'item-completed') {
         const turn = turns.get(event.threadId);
         if (

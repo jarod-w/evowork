@@ -1385,6 +1385,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     cancelApprovals: () => adapter.cancelComputerUseApprovals(),
     changed: (status) => options.emitToRenderer(IPC.computerUseStatus, status),
     audit: (record) => {
+      if (['USER_STOPPED', 'APP_DENIED', 'SCREEN_LOCKED'].includes(record.resultCode))
+        nextActionsHost.service.suppressReminder(record.threadId, record.turnId);
       createAuditRepo(store.db).insertMany([
         {
           occurredAt: Date.now(),
@@ -1688,7 +1690,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       }
       return new Promise((resolve) => {
         approvalReplies.set(approval.id, resolve);
-        pendingApprovalById.set(approval.id, approval);
+        const turnId = approval.turnId ?? store.threads.get(approval.threadId)?.last_turn_id;
+        pendingApprovalById.set(approval.id, { ...approval, ...(turnId ? { turnId } : {}) });
         options.emitToRenderer(
           IPC.askApproval,
           toApprovalView(approval, adapter.allowsAcceptForSession(approval), Date.now()),
@@ -1802,6 +1805,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       return;
     }
     approvalReplies.delete(id);
+    const approval = pendingApprovalById.get(id);
+    if (
+      approval?.turnId &&
+      (reply.decision === 'decline' || reply.decision === 'cancel' || reply.optionId === 'deny')
+    )
+      nextActionsHost.service.suppressReminder(approval.threadId, approval.turnId);
     pendingApprovalById.delete(id);
     pending(reply);
   };

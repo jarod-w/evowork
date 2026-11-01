@@ -77,6 +77,7 @@ export async function bootApp({
     process.env.EVOWORK_UI_DELIVERY_RPC_FAULT === '1' ? createDeliveryRpcFaults() : undefined;
   let kernelChild;
   const kernelLifecycle = [];
+  const approvalReviews = [];
   const expectedKernelExits = new WeakSet();
   const memoryImportFaults =
     process.env.EVOWORK_UI_MEMORY_RPC_FAULT === '1' ? createMemoryRpcFaults() : undefined;
@@ -98,6 +99,22 @@ export async function bootApp({
           );
           if (command === appServerPath) {
             kernelChild = child;
+            let reviewBuffer = '';
+            child.stdout.on('data', (chunk) => {
+              reviewBuffer += chunk.toString();
+              let end;
+              while ((end = reviewBuffer.indexOf('\n')) >= 0) {
+                const line = reviewBuffer.slice(0, end);
+                reviewBuffer = reviewBuffer.slice(end + 1);
+                try {
+                  const message = JSON.parse(line);
+                  if (message.method?.startsWith('item/autoApprovalReview/'))
+                    approvalReviews.push({ method: message.method, params: message.params });
+                } catch {
+                  // The kernel transport owns malformed-frame handling.
+                }
+              }
+            });
             kernelLifecycle.push({ kind: 'started', pid: child.pid, at: Date.now() });
             child.once('exit', (code, signal) => {
               kernelLifecycle.push({
@@ -198,6 +215,7 @@ export async function bootApp({
     /** 当前内核子进程的 pid。重启后会换一个，所以每次都重新读，不要缓存 */
     kernelPid: () => kernelChild?.pid,
     kernelLifecycle: () => kernelLifecycle.map((event) => ({ ...event })),
+    approvalReviews: () => [...approvalReviews],
     killKernel: () => {
       if (!kernelChild)
         throw new Error('没有捕获内核子进程（bootApp 要传 captureKernelProcess）。');

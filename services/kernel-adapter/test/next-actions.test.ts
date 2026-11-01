@@ -49,6 +49,25 @@ beforeEach(() => {
 });
 afterEach(() => store.close());
 describe('下一步建议与执行队列分离', () => {
+  it('用户拒绝后不强制追加建议登记，旧回合的拒绝不影响新回合', async () => {
+    service.suppressReminder('a', 'one');
+    expect(await service.checkStop('a', 'one', false)).toEqual({});
+    expect(new NextActionStore(store).get('a')).toBeUndefined();
+    running('two');
+    service.suppressReminder('a', 'one');
+    expect(await service.checkStop('a', 'two', false)).toMatchObject({ decision: 'block' });
+  });
+  it.each(['denied', 'timedOut', 'aborted', 'unknown'] as const)(
+    '自动审查 %s 后不强制追加模型工作',
+    async (status) => {
+      service.onEvent({
+        type: 'approval-review',
+        threadId: 'a',
+        review: { reviewId: 'r1', turnId: 'one', status, startedAtMs: 1 },
+      });
+      expect(await service.checkStop('a', 'one', false)).toEqual({});
+    },
+  );
   it('缺少标题时指出每个字段，不保存半组候选、不触发补报重试', async () => {
     const raw = {
       outcome: 'delivered',

@@ -51,6 +51,20 @@ const RULES: readonly [ComputerUseActionCategory, string, RegExp][] = [
   ['install', '安装或修改安全设置', /安装|扩展|安全设置|install|extension|security setting/i],
   ['send', '发送或提交内容', /发送|提交|发布|分享|评论|send|submit|publish|share|post\b|comment/i],
 ];
+const LOCAL_EDITOR_APPS = new Set(
+  [
+    'com.apple.TextEdit',
+    'com.tencent.xinWeChat',
+    'com.tencent.WeWorkMac',
+    'com.kingsoft.wpsoffice.mac',
+    'com.microsoft.Word',
+    'com.microsoft.Excel',
+    'com.microsoft.Powerpoint',
+    'com.apple.iWork.Pages',
+    'com.apple.iWork.Numbers',
+    'com.apple.iWork.Keynote',
+  ].map((app) => app.toLowerCase()),
+);
 /** 启发式仅用来说明风险；安全边界是「无法识别也确认」，不是关键词匹配的准确率。 */
 export function assessComputerUseAction(
   name: string,
@@ -65,6 +79,20 @@ export function assessComputerUseAction(
   });
   for (const [category, title, expression] of RULES)
     if (expression.test(target.label)) return result(category, title);
+  // The native single-element route sets AX Focus for these roles; it never presses a submit action.
+  if (
+    name === 'click' &&
+    Number.isInteger(args.element_index) &&
+    Number(args.element_index) > 0 &&
+    args.x === undefined &&
+    args.y === undefined &&
+    (args.button === undefined || args.button === 'left') &&
+    (args.click_count === undefined || args.click_count === 1) &&
+    target.editable &&
+    ['AXTextArea', 'AXTextField'].includes(target.role) &&
+    LOCAL_EDITOR_APPS.has(target.app.toLowerCase())
+  )
+    return result('navigation', '聚焦本地编辑框', false);
   if (name === 'press_key' && ['Delete', 'Backspace', 'Meta+X'].includes(String(args.key)))
     return result('delete', '删除或剪切内容');
   if (name === 'press_key' && args.key === 'Enter') return result('send', '可能提交内容');

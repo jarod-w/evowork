@@ -55,6 +55,7 @@ describe('固定工具协议', () => {
     ['scroll', { x: 0, y: 0, direction: 'down', pages: 6 }],
     ['press_key', { key: 'Meta+Tab' }],
     ['press_key', { key: 'Meta+Space' }],
+    ['press_key', { key: 'Meta+V' }],
     ['drag', { from_x: 0, from_y: 0, to_x: 1, to_y: 1, duration_ms: 2001 }],
     ['type_text', { text: 'x'.repeat(65537) }],
   ])('拒绝越界或歧义参数 %s', (name, args) => {

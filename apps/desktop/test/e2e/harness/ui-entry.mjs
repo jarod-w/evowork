@@ -134,7 +134,16 @@ let gateway = IMAGE_GENERATION
   : REAL_MODEL
     ? null
     : createFakeGateway({ turnMarker: TURN_MARKER, models: UI_MODELS });
-const computerUse = FAKE_COMPUTER_USE ? createFakeComputerUse() : null;
+const computerUseApps = {
+  wechat: { app: 'com.tencent.xinWeChat', name: '微信' },
+  wps: { app: 'com.kingsoft.wpsoffice.mac', name: 'WPS Office' },
+  word: { app: 'com.microsoft.Word', name: 'Microsoft Word' },
+};
+const fakeApp = process.env.EVOWORK_UI_CUA_APP;
+if (fakeApp && !computerUseApps[fakeApp]) throw new Error('未知的电脑操控测试应用');
+const computerUse = FAKE_COMPUTER_USE
+  ? createFakeComputerUse(fakeApp ? computerUseApps[fakeApp] : undefined)
+  : null;
 
 /*
  * **静态事实在启动之前就挂出去**，别等 `main()` 跑完。

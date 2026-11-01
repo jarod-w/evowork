@@ -1,0 +1,18 @@
+{
+  "model": "mimo-v2.6-flash",
+  "reply": "抱歉，当前安全规则不允许我操控「终端」或命令行前端，因此无法按此方式执行 ls。如果你允许，我可以通过受控命令直接读取当前工作区并告诉你结果。",
+  "answered": [],
+  "actions": [
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "health",
+      "hasStateId": false
+    }
+  ],
+  "commands": [
+    "已读取 SKILL.md\n0 秒\n退出码 0"
+  ]
+}

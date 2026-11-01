@@ -427,7 +427,7 @@ describe('渐进披露的选择器（类 ChatGPT UI §9）', () => {
     expect(screen.getByRole('menuitem', { name: /^帮我批准/ })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /^完全访问/ })).toBeTruthy();
     expect(screen.getByText('编辑工作空间外的文件或使用互联网时询问你')).toBeTruthy();
-    expect(screen.getByText('仅对检测到的风险操作请求批准')).toBeTruthy();
+    expect(screen.getByText('由安全审查决定是否批准，保留必要确认')).toBeTruthy();
     expect(screen.getByText('可以读写这台电脑上的文件并联网')).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: /^Craft$/ })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /^Plan$/ })).toBeNull();

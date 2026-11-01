@@ -1,0 +1,10 @@
+Building for debugging...
+[3 / 13] EvoWorkComputerUsePolicy
+[6 / 16] EvoWorkComputerUsePolicy
+/Users/jarod.ai/develop/evowork/evowork/apps/computer-use-macos/Package.swift: EvoWorkComputerUsePolicy: ld: warning: search path '/Library/Developer/CommandLineTools/Developer/Library/Frameworks' not found
+[13 / 17] EvoWorkComputerUsePolicyTests-product
+[18 / 19] EvoWorkComputerUsePolicyTests-product/Users/jarod.ai/develop/evowork/evowork/apps/computer-use-macos/Package.swift: EvoWorkComputerUsePolicyTests-product: ld: warning: search path '/Library/Developer/CommandLineTools/Developer/usr/lib' not found
+/Users/jarod.ai/develop/evowork/evowork/apps/computer-use-macos/Package.swift: EvoWorkComputerUsePolicyTests-product: ld: warning: search path '/Library/Developer/CommandLineTools/Developer/Library/Frameworks' not found
+
+Build complete! (0.64秒)
+Native policy checks passed (65 cases).

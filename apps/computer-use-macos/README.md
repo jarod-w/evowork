@@ -6,10 +6,14 @@
 
 2026-10-06 按用户要求增加微信（`com.tencent.xinWeChat` / `5A4RE8SF68`）、企业微信（`com.tencent.WeWorkMac` / `88L2Q4487U`）、印象笔记（`com.yinxiang.Mac` / `7D498F54KM`）、WPS Office（`com.kingsoft.wpsoffice.mac` / `YK4WKE5WAM`）和 Thunderbird（`org.mozilla.thunderbird` / `43AQ936H96`）；应用标识与对应 Team ID 必须同时匹配，五者本机安装签名已核对。已知应用共 21 个；同厂商其它应用不自动放行。准入与企业策略仍生效，发送/分享/Enter/带换行输入及未知编辑仍要求本次动作确认。
 
-`node scripts/build-computer-use.mjs` 在 macOS 构建 Swift 并装配 `build/computer-use/EvoWork Computer Use.app`。2026-09-24 在 macOS 27.0 / CLT 27.0 上原生 release 编译与装配通过。`swift run --package-path apps/computer-use-macos EvoWorkComputerUsePolicyTests` 运行不依赖 XCTest/宏的策略检查，覆盖窗口绑定、重复文本拒绝、UTF-16 范围、`extend`、坐标边界和拖拽路径（54 项，含身份类别/发布者/标识冒充拒绝）；装配后用 `node scripts/verify-computer-use-health.mjs` 检查真实 Helper 进程的长度帧与 `health` 握手，以及非受信父进程在读取应用前被拒绝。这两项都不能代替 AX/TCC 真机测试。构建出的发布标记强制 `releaseVerified=false`，桌面不能启用，也不会注册可用工具。
+`node scripts/build-computer-use.mjs` 在 macOS 构建 Swift 并装配 `build/computer-use/EvoWork Computer Use.app`。2026-09-24 在 macOS 27.0 / CLT 27.0 上原生 release 编译与装配通过。`swift run --package-path apps/computer-use-macos EvoWorkComputerUsePolicyTests` 运行不依赖 XCTest/宏的策略检查，覆盖窗口绑定、重复文本拒绝、UTF-16 范围、`extend`、坐标边界和拖拽路径（65 项，含身份类别/发布者/标识冒充与剪贴板/全局快捷键旁路拒绝）；装配后用 `node scripts/verify-computer-use-health.mjs` 检查真实 Helper 进程的长度帧与 `health` 握手，以及非受信父进程在读取应用前被拒绝。这两项都不能代替 AX/TCC 真机测试。构建出的发布标记强制 `releaseVerified=false`，桌面不能启用，也不会注册可用工具。
 
 发布前必须完成：AX/截图/动作原生真机测试；同 Team ID 签名、公证与升级 TCC；同 Team ID 正向调用方 code-signature 验收（源码和非受信调用拒绝已实现）；剪贴板中断/崩溃恢复；窗口移动/锁屏/多屏/secure field；动作预算和无变化检测；中断 P95 < 500 ms；所有九个动作；MCP 图文/blob/备份真实删除。不能手工翻转发布标记代替这些验收。
 
 P2 元数据探针 `node scripts/verify-computer-use-apps.mjs` 直接提取生产签名函数，在独立 Swift 程序里验证真实运行应用。只读签名与进程元数据，不激活窗口、不读 AX、不请求 TCC；Finder 必须通过 ordinary 准入，失败退出。当前 macOS 27.0 的 Finder 多架构切片已通过；这不证明同 Team ID 正向宿主调用或 AX/TCC 能力。
 
 可在命令后指定已运行的 bundle id，例如 `node scripts/verify-computer-use-apps.mjs com.tencent.xinWeChat com.yinxiang.Mac`。指定应用必须出现在运行中前台类型应用中并通过 ordinary 准入，否则探针失败；只输出身份分类/数量，不输出聊天或笔记内容。
+
+原生 AX/TCC 验收前先运行 `node scripts/verify-computer-use-preflight.mjs`，可用 `--host-app=/绝对路径/EvoWork.app`、`--helper-app=/绝对路径/EvoWork Computer Use.app` 和 `--output=/绝对路径/preflight.json` 指定待测产物。它核对正式签名/同 Team ID、已安装目标 App 的签名、真实 Helper 的 TCC 状态及非受信宿主读取被拒；不会修改权限或发布标记，也不读取 AX 正文。退出码 2 表示前置阻塞，1 表示探针/安全断言失败，0 仅表示前置就绪；所有结果始终标记 `nativeAcceptanceCompleted=false`，不能代替真实 AX/动作/撤权矩阵。当前实测见[原生验收前置记录](../../docs/verification/2026-11-01-computer-use-native-preflight.md)。
+
+2026-11-01：文本框/文本区的元素单击使用经可设置性检查的 AX Focus，普通按钮保持 AXPress；拒绝安全字段和未知动作，不在失败后猜坐标。`Meta+V` 已从按键工具和原生映射同时移除，粘贴须显式提供纯文本。焦点分支尚待正式签名下的真实应用验收。

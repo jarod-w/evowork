@@ -22,9 +22,21 @@ import {
 } from '@evowork/protocol';
 import type { Logger } from '@evowork/logging';
 import { deriveStatus, type DerivedStatus, type Store } from '@evowork/store';
+import {
+  deleteAutoApprovalReviews,
+  interruptAutoApprovalReviews,
+  parseAutoApprovalReview,
+  saveAutoApprovalReview,
+  type AutoApprovalReview,
+} from './auto-review.js';
 
 /** 前端消费的语义化事件。**不包含协议方法名** —— 前端不该知道那些（K2）。 */
 export type UiEvent =
+  | {
+      readonly type: 'approval-review';
+      readonly threadId: string;
+      readonly review: AutoApprovalReview;
+    }
   | { readonly type: 'task-disconnected'; readonly threadId: string }
   | {
       readonly type: 'task-restored';
@@ -385,6 +397,7 @@ export function createEventRouter(options: EventRouterOptions) {
         ephemeralThreadIds.delete(p.threadId);
         ephemeralLastTurnStatus.delete(p.threadId);
       } else {
+        deleteAutoApprovalReviews(store, p.threadId);
         store.threads.remove(p.threadId);
       }
       onUiEvent({ type: 'task-removed', threadId: p.threadId });
@@ -410,6 +423,8 @@ export function createEventRouter(options: EventRouterOptions) {
     [NOTIFICATION.turnCompleted]: (params) => {
       const p = params as { threadId?: string; turn?: Turn };
       if (!p.threadId || !p.turn) return [];
+      for (const review of interruptAutoApprovalReviews(store, p.threadId, now(), p.turn.id))
+        onUiEvent({ type: 'approval-review', threadId: p.threadId, review });
       const ephemeral = ephemeralThreadIds.has(p.threadId);
       if (ephemeral) ephemeralLastTurnStatus.set(p.threadId, p.turn.status);
       const status = ephemeral
@@ -720,6 +735,20 @@ export function createEventRouter(options: EventRouterOptions) {
   };
 
   // 流式增量（09 §3.4：不落库，只更新 UI）
+  for (const method of [
+    NOTIFICATION.itemAutoApprovalReviewStarted,
+    NOTIFICATION.itemAutoApprovalReviewCompleted,
+  ]) {
+    handlers[method] = (params) => {
+      const p = params as { threadId?: unknown } | null;
+      if (typeof p?.threadId !== 'string' || ephemeralThreadIds.has(p.threadId)) return [];
+      const review = parseAutoApprovalReview(params);
+      if (review && saveAutoApprovalReview(store, p.threadId, review))
+        onUiEvent({ type: 'approval-review', threadId: p.threadId, review });
+      return [];
+    };
+  }
+
   const deltaChannels: Record<string, DeltaChannel> = {
     [NOTIFICATION.itemAgentMessageDelta]: 'agentMessage',
     [NOTIFICATION.itemPlanDelta]: 'plan',

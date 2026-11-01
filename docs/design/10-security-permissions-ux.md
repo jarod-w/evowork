@@ -1,5 +1,9 @@
 # 10 · 安全与权限 UX
 
+> **2026-11-01 拒绝后的收尾**：用户拒绝或取消动作、自动审查拒绝或超时后，该回合不再由下一步建议的 Stop hook 强制追加模型工作；不生成虚假的建议登记。抑制绑定询问创建时的 threadId/turnId，迟到回复不影响新回合，新回合恢复正常建议逻辑。模型仍应说明实际未执行的结果。
+
+> **2026-11-01 首版优先级与自动审查收口**：电脑操控和「帮我批准」均为首版必交付。自动批准复用内核同步 Guardian；自定义模型目录未提供内置审查型号时，由内核使用当前任务模型独立审查，不映射为完全访问、不新增厂商请求通道。消费 `item/autoApprovalReview/started` / `completed`，对话区使用已有折叠组件显示审查进行中、通过、阻止、超时或取消及风险和理由。以 reviewId 关联，不能用最近一次工具猜测；最近 512 条审查结果随任务保存在本机 meta，仅保存状态、归属、时间和理由，不复制 action/命令/MCP 参数；刷新与重启恢复，真实删除任务同步清理，迟到通知不得重建。失败关闭按原生决定执行，不自动重试或代用户覆盖。电脑操控的应用准入和独立敏感动作确认保持有效；正式原生验收仍按设计 12 §17。
+
 > **2026-10-06 AI 图片决策同步（IMG-Q1–IMG-Q11 均采纳建议；单图生成/编辑首版已实施，实现与验收边界见 [15 §15](15-ai-image-generation.md)）**：图片上传与费用授权按 [15 §9](15-ai-image-generation.md#9-隐私授权和费用)。默认关闭，首次配置不替代具体上传授权；绑定任务、provider、内容哈希与次数/可靠金额限额，企业 deny 优先、范围变化重新确认。每次一张/每任务四次/一个在途，仅交互根任务；图片额度独立于对话 token，不自动重试未知消费，也不承诺取消退款。
 
 > **2026-10-01 Composer 修订基线：** 本文有关强制选项目、最近项目自动预选、无项目附件阻断、任务中途改 cwd、按 cwd 推断所有任务归属的旧条款由[修订设计](../superpowers/specs/2026-09-27-composer-pick-folder-design.md)取代。全局首页默认无项目；无项目任务使用宿主登记的独立持久 cwd；附件先在草稿内本地暂存，发送前归入最终环境；创建后固定 cwd，换项目新建任务；显式归属优先，旧/外部任务才按最长路径边界匹配。无项目自动化可执行，真实环境错误立即暂停。`InlineSelect.actions` 承载选择文件夹动作。宿主在权威 `meta` 中保存草稿/任务环境、projectId 和首次发送状态，不读取内核内部存储。
@@ -138,7 +142,7 @@ Composer 常显选择器控制「这次任务里，模型动手前要不要问�
 | `modeId`            | 名字     | 一句话（UI 直接显示）                         | `permissions`       | `approvalPolicy` | `approvalsReviewer` | 二次确认 |
 | ------------------- | -------- | --------------------------------------------- | ------------------- | ---------------- | ------------------- | -------- |
 | `request-approval`  | 请求批准 | 编辑工作空间外的文件或使用互联网时询问你      | `evowork-workspace` | `on-request` | `user`              | 无       |
-| `approve-for-me`    | 帮我批准 | 仅对检测到的风险操作请求批准                  | `evowork-workspace` | `on-request` | `auto_review`       | 无       |
+| `approve-for-me`    | 帮我批准 | 由安全审查决定是否批准，保留必要确认                  | `evowork-workspace` | `on-request` | `auto_review`       | 无       |
 | `full-access`       | 完全访问 | 可以读写这台电脑上的文件并联网                | `:danger-full-access` | `granular`（见下） | `user`              | 要       |
 
 对应内核：`turn/start.permissions`（F5，与 `sandboxPolicy` 互斥）· `turn/start.approvalPolicy` · `turn/start.approvalsReviewer`（`v2/turn.rs:218`，取值 `user` / `auto_review`）。`collaborationMode.mode` 三档都是 `default`，指令共用 `config/modes/craft.md`。
@@ -184,10 +188,10 @@ Composer 常显选择器控制「这次任务里，模型动手前要不要问�
 **硬规则**：
 
 1. 默认「请求批准」。
-2. 帮我批准依赖 Guardian 自动审查。`approvalsReviewer` 不可用或功能未开时，该项 `allowed: false`，原因「安全自动审查还没接通」—— **不隐藏，也不许当成请求批准发出去**（不静默降级）。接通后，低/中风险自动过（10 §4 的 Low/Medium 映射），High 升级为审批卡且不提供「本次任务内都允许」，Critical 仍拒绝。
+2. 帮我批准依赖 Guardian 自动审查。`approvalsReviewer` 不可用或功能未开时，该项 `allowed: false`，原因「安全自动审查还没接通」—— **不隐藏，也不许当成请求批准发出去**（不静默降级）。当前同步审查使用内核的 allow/deny 决定；拒绝、解析失败和超时不执行，不在宿主按风险级别重新放行。电脑操控和浏览器连接器自己的敏感动作确认仍交用户；用户需要继续时，显式切换请求批准后重新发起，不自动覆盖拒绝。第 4 节的理想风险映射不替代这个已验证的原生行为。
 3. 完全访问必须二次确认，文案列出最坏后果，并写明 **10 §2.3 的硬拦截仍然生效**（不要抄「电脑上的任何文件」这种会让用户以为 SSH 私钥也能读的句子）。确认只对当前任务生效。Windows 按 §7 停用并给原因。
 4. 不再另设权限下拉。企业自定义 profile 附在同一菜单底部；未知 id 显示 id 本身。
-5. **已接线**：`bridge.send` 传 `modeId`，适配层展开进 `turn/start`。`auto_review` 尚未对着真实内核验证。
+5. **已接线**：`bridge.send` 传 `modeId`，适配层展开进 `turn/start`。`auto_review` 已用真实内核、宿主网关和用户指定 MiMo/DeepSeek 模型专项验证，覆盖审查证据恢复及敏感动作拒绝即停；原生 AX/TCC 未验，见[验收记录](../verification/2026-11-01-computer-use-auto-review.md)。
 
 ---
 

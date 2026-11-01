@@ -1,4 +1,5 @@
 import { FollowUpStore, type FollowUpResult } from '@evowork/store';
+import { deleteAutoApprovalReviews, interruptAutoApprovalReviews } from './auto-review.js';
 import { createMemoryImporter } from './memory-import.js';
 import {
   createMemoryTextImporter,
@@ -800,6 +801,7 @@ export function createAdapter(options: AdapterOptions) {
       if (session.generation !== generation) return recovered;
       if (ephemeralThreadIds.has(threadId)) continue;
       const revision = threadRevisions.get(threadId);
+      interruptAutoApprovalReviews(store, threadId, now());
       try {
         await taskCwd(threadId);
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
@@ -1887,6 +1889,7 @@ export function createAdapter(options: AdapterOptions) {
         return;
       }
       await session.peer.request(METHOD.threadDelete, { threadId });
+      deleteAutoApprovalReviews(store, threadId);
       store.db.prepare('DELETE FROM meta WHERE key = ?').run(`evowork.memory.use.${threadId}`);
       store.threads.remove(threadId);
       session.openThreads.delete(threadId);
@@ -2417,6 +2420,7 @@ export function createAdapter(options: AdapterOptions) {
       if (session.phase !== 'ready')
         throw new TransportClosedError('执行内核尚未恢复，请稍后创建任务');
       await taskCwd(threadId);
+      if (!session.openThreads.has(threadId)) interruptAutoApprovalReviews(store, threadId, now());
       session.openThreads.add(threadId);
       const ephemeral = ephemeralThreads.get(threadId);
       if (ephemeral) {

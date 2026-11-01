@@ -1057,6 +1057,37 @@ export function ItemRenderer({
     }
 
     // ⑰⑱ 安全审查的进入/退出（配合 guardian-v2，10 §4）
+    case 'autoApprovalReview': {
+      const status = text(item, 'status');
+      const labels: Record<string, string> = {
+        inProgress: '正在审查',
+        approved: '已通过',
+        denied: '已阻止',
+        timedOut: '审查超时，未执行',
+        aborted: '已取消',
+        unknown: '状态未知，请检查任务结果',
+      };
+      const risks: Record<string, string> = {
+        low: '低风险',
+        medium: '中风险',
+        high: '高风险',
+        critical: '极高风险',
+      };
+      return (
+        <Collapsible
+          key={status}
+          kind={kind}
+          defaultExpanded={status !== 'inProgress' && status !== 'approved'}
+          summary={`自动审批 · ${labels[status] ?? labels.unknown}`}
+        >
+          {risks[text(item, 'riskLevel')] ? <p>{risks[text(item, 'riskLevel')]}</p> : null}
+          {text(item, 'rationale') ? <p>{text(item, 'rationale')}</p> : null}
+          {['denied', 'timedOut', 'aborted'].includes(status) ? (
+            <p>此判定不表示动作已完成。需要继续时，可切换到请求批准后重新发起。</p>
+          ) : null}
+        </Collapsible>
+      );
+    }
     case 'enteredReviewMode':
       return <Divider kind={kind}>进入安全审查</Divider>;
     case 'exitedReviewMode':

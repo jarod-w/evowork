@@ -97,7 +97,7 @@ export const MODES: Readonly<Record<ModeId, ModeDefinition>> = Object.freeze({
   'approve-for-me': {
     id: 'approve-for-me',
     label: '帮我批准',
-    summary: '仅对检测到的风险操作请求批准',
+    summary: '由安全审查决定是否批准，保留必要确认',
     kernelMode: 'default',
     permissions: 'evowork-workspace',
     kernelPermissions: 'evowork-workspace',

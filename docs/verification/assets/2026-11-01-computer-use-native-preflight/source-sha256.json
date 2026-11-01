@@ -1,0 +1,6 @@
+{
+  "scripts/verify-computer-use-preflight.mjs": "916dbbcc48f8865231d1beea61b44d4a23ee440d2c15cbc9380988170e883ad4",
+  "scripts/test/computer-use-preflight.test.mjs": "7b533c80d36c492c94fee4716ada717d600cb4fca6bd8b5d9c8ac8e912d0e323",
+  "apps/computer-use-macos/Sources/EvoWorkComputerUse/HelperMain.swift": "0f04471ab7959a6df00fb17660a7a22a34333a229166bb3e3ae3e49dbfd48f63",
+  "build/computer-use/EvoWork Computer Use.app/Contents/MacOS/EvoWorkComputerUse": "33f10c240356cd3b3af4f252f8ad52e3d589d8c4a9020641c8b2cf0c999b14cc"
+}

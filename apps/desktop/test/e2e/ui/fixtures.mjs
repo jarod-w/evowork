@@ -209,6 +209,11 @@ export const test = base.extend({
         JSON.stringify(lifecycle, null, 2),
       );
     const home = await app.evaluate(() => globalThis.__evoworkE2E?.home).catch(() => undefined);
+    if (home && existsSync(join(home, 'follow-up-wire.jsonl')))
+      writeFileSync(
+        testInfo.outputPath('model-wire.jsonl'),
+        readFileSync(join(home, 'follow-up-wire.jsonl')),
+      );
     const gatewayPid = await app
       .evaluate(() => globalThis.__evoworkE2E?.gatewayPid)
       .catch(() => undefined);

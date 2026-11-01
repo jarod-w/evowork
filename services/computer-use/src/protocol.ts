@@ -154,7 +154,6 @@ export const TOOLS = [
         'PageDown',
         'Meta+A',
         'Meta+C',
-        'Meta+V',
         'Meta+X',
         'Meta+Z',
         'Meta+Shift+Z',

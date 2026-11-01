@@ -316,7 +316,7 @@ describe('场景包（03 §2.2）', () => {
     expect(MODES['request-approval'].label).toBe('请求批准');
     expect(MODES['request-approval'].summary).toBe('编辑工作空间外的文件或使用互联网时询问你');
     expect(MODES['approve-for-me'].label).toBe('帮我批准');
-    expect(MODES['approve-for-me'].summary).toBe('仅对检测到的风险操作请求批准');
+    expect(MODES['approve-for-me'].summary).toBe('由安全审查决定是否批准，保留必要确认');
     expect(MODES['full-access'].label).toBe('完全访问');
     expect(MODES['full-access'].summary).toBe('可以读写这台电脑上的文件并联网');
     expect(MODES['full-access'].summary).not.toContain('任何文件');

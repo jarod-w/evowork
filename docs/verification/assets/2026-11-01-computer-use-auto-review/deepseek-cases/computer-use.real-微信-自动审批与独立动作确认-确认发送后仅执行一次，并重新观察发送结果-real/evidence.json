@@ -1,0 +1,101 @@
+{
+  "model": "deepseek-flash",
+  "reply": "已在「EvoWork 测试联系人（本机模拟）」会话中单独按一次 Enter。\n\n发送前草稿：仅用于本机验收的消息\n发送状态：已发送本机测试消息\n输入框当前为空，未重复发送",
+  "answered": [
+    {
+      "kind": "mcp",
+      "text": "需要你回答 EvoWork 将读取你允许的应用窗口。界面文字和必要截图会发送给模型 evowork/deepseek-flash（凭据来源：用户自有模型密钥（deepseek）），并保存在此任务本机历史中。归档会保留内容；真正删除任务才会清除。删除本机任务不能撤回模型提供方已收到的数据。 继续并启用 拒绝 取消",
+      "choice": "继续并启用",
+      "at": "2026-11-01T00:43:50.925Z"
+    },
+    {
+      "kind": "mcp",
+      "text": "需要你回答 允许 EvoWork 读取并操作 微信？应用准入不会跳过动作审批。 仅本次任务 始终允许此应用 不允许 拒绝 取消",
+      "choice": "仅本次任务",
+      "at": "2026-11-01T00:43:52.301Z"
+    },
+    {
+      "kind": "mcp",
+      "text": "需要你确认 动作类别：可能提交内容 应用：微信（com.tencent.xinWeChat） 目标：消息输入框；工具：press_key 动作参数：{\"app\":\"com.tencent.xinWeChat\",\"key\":\"Enter\",\"state_id\":\"47a05050-49d4-4892-a320-8f2d8460849c\"} 输入内容：没有新增输入；可能提交当前界面已有内容，见下方 当前界面内容： [1] window \"EvoWork 测试联系人（本机模拟）\" focused [2] textArea \"消息输入框\" value=\"仅用于本机验收的消息\" settable [3]",
+      "choice": "确认本次动作",
+      "at": "2026-11-01T00:43:55.840Z"
+    }
+  ],
+  "actions": [
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "list_apps",
+      "hasStateId": false
+    },
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "list_apps",
+      "hasStateId": false
+    },
+    {
+      "method": "get_app_state",
+      "app": "com.tencent.xinWeChat",
+      "hasStateId": false
+    },
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "list_apps",
+      "hasStateId": false
+    },
+    {
+      "method": "inspect_action",
+      "app": "com.tencent.xinWeChat",
+      "key": "Enter",
+      "hasStateId": true
+    },
+    {
+      "method": "pause_for_approval",
+      "app": "com.tencent.xinWeChat",
+      "key": "Enter",
+      "hasStateId": true
+    },
+    {
+      "method": "inspect_action",
+      "app": "com.tencent.xinWeChat",
+      "key": "Enter",
+      "hasStateId": true
+    },
+    {
+      "method": "press_key",
+      "app": "com.tencent.xinWeChat",
+      "key": "Enter",
+      "hasStateId": true
+    },
+    {
+      "method": "health",
+      "hasStateId": false
+    },
+    {
+      "method": "list_apps",
+      "hasStateId": false
+    },
+    {
+      "method": "get_app_state",
+      "app": "com.tencent.xinWeChat",
+      "hasStateId": false
+    }
+  ],
+  "commands": []
+}

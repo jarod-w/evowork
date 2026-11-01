@@ -1,0 +1,109 @@
+{
+  "at": "2026-11-01T01:37:51.473Z",
+  "platform": "darwin-arm64",
+  "buildVersion": "0.0.8",
+  "releaseVerified": false,
+  "helperSha256": "33f10c240356cd3b3af4f252f8ad52e3d589d8c4a9020641c8b2cf0c999b14cc",
+  "signingIdentityCount": 0,
+  "host": {
+    "path": "/Users/jarod.ai/develop/evowork/evowork/dist/release/mac-arm64/EvoWork.app",
+    "installed": true,
+    "identifier": "com.evowork.desktop",
+    "trusted": false,
+    "version": "0.0.8"
+  },
+  "helper": {
+    "path": "/Users/jarod.ai/develop/evowork/evowork/build/computer-use/EvoWork Computer Use.app",
+    "installed": true,
+    "identifier": "EvoWorkComputerUse",
+    "trusted": false,
+    "version": "0.0.8"
+  },
+  "health": {
+    "accessibility": false,
+    "screenRecording": true,
+    "buildVersion": "0.0.8",
+    "protocolVersion": 1
+  },
+  "apps": [
+    {
+      "name": "wechat",
+      "expectedIdentifier": "com.tencent.xinWeChat",
+      "path": "/Applications/WeChat.app",
+      "installed": true,
+      "identifier": "com.tencent.xinWeChat",
+      "team": "5A4RE8SF68",
+      "trusted": true,
+      "version": "4.2.0"
+    },
+    {
+      "name": "textedit",
+      "expectedIdentifier": "com.apple.TextEdit",
+      "path": "/System/Applications/TextEdit.app",
+      "installed": true,
+      "identifier": "com.apple.TextEdit",
+      "trusted": true,
+      "version": "1.21"
+    },
+    {
+      "name": "wps",
+      "expectedIdentifier": "com.kingsoft.wpsoffice.mac",
+      "path": "/Applications/wpsoffice.app",
+      "installed": true,
+      "identifier": "com.kingsoft.wpsoffice.mac",
+      "team": "YK4WKE5WAM",
+      "trusted": true,
+      "version": "12.1.29182"
+    },
+    {
+      "name": "word",
+      "expectedIdentifier": "com.microsoft.Word",
+      "path": "/Applications/Microsoft Word.app",
+      "installed": false,
+      "trusted": false
+    },
+    {
+      "name": "excel",
+      "expectedIdentifier": "com.microsoft.Excel",
+      "path": "/Applications/Microsoft Excel.app",
+      "installed": false,
+      "trusted": false
+    },
+    {
+      "name": "powerpoint",
+      "expectedIdentifier": "com.microsoft.Powerpoint",
+      "path": "/Applications/Microsoft PowerPoint.app",
+      "installed": false,
+      "trusted": false
+    }
+  ],
+  "untrustedReads": [
+    {
+      "app": "com.tencent.xinWeChat",
+      "ok": false,
+      "code": "POLICY_DENIED"
+    },
+    {
+      "app": "com.apple.TextEdit",
+      "ok": false,
+      "code": "POLICY_DENIED"
+    },
+    {
+      "app": "com.kingsoft.wpsoffice.mac",
+      "ok": false,
+      "code": "POLICY_DENIED"
+    }
+  ],
+  "appContentRead": false,
+  "tccChanged": false,
+  "status": "blocked",
+  "failures": [],
+  "blockers": [
+    "NO_CODE_SIGNING_IDENTITY",
+    "SIGNED_DESKTOP_HOST_REQUIRED",
+    "SIGNED_NATIVE_HELPER_REQUIRED",
+    "ACCESSIBILITY_TCC_REQUIRED"
+  ],
+  "nativeAcceptanceCompleted": false,
+  "publicationGateChanged": false
+}

@@ -18,6 +18,58 @@ import {
 
 const CTX: ItemRenderContext = { reasoningAvailable: true };
 
+describe('自动审批结果', () => {
+  it('进行中变为阻止时自动展开，不能把失败藏在此前的折叠状态里', () => {
+    const { rerender } = renderItem({
+      id: 'review',
+      type: 'autoApprovalReview',
+      status: 'inProgress',
+    });
+    rerender(
+      <ItemRenderer
+        item={{
+          id: 'review',
+          type: 'autoApprovalReview',
+          status: 'denied',
+          rationale: '审查未通过',
+        }}
+        context={CTX}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: '自动审批 · 已阻止' }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(screen.getByText('审查未通过')).toBeTruthy();
+  });
+  it('通过后显示结果，理由默认折叠且主动展开可读', () => {
+    renderItem({
+      id: 'review',
+      type: 'autoApprovalReview',
+      status: 'approved',
+      riskLevel: 'low',
+      rationale: '用户明确授权的新建文件',
+    });
+    const button = screen.getByRole('button', { name: '自动审批 · 已通过' });
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(button);
+    expect(screen.getByText('低风险')).toBeTruthy();
+    expect(screen.getByText('用户明确授权的新建文件')).toBeTruthy();
+  });
+  it.each(['denied', 'timedOut', 'aborted'])('%s 不误报动作已执行，理由按纯文本渲染', (status) => {
+    const { container } = renderItem({
+      id: 'review',
+      type: 'autoApprovalReview',
+      status,
+      rationale: '<img src=x onerror=alert(1)>',
+    });
+    expect(container.textContent).toContain('此判定不表示动作已完成');
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByRole('button', { name: /自动审批/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+  });
+});
+
 const WEB_SOURCE = {
   id: 'web_0123456789abcdef',
   url: 'https://example.test/report',

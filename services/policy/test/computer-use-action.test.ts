@@ -3,6 +3,33 @@ import { assessComputerUseAction } from '../src/computer-use-action.js';
 
 describe('电脑操控业务动作风险', () => {
   it.each([
+    'com.apple.TextEdit',
+    'com.tencent.xinWeChat',
+    'com.kingsoft.wpsoffice.mac',
+    'com.microsoft.Word',
+  ])('%s 的确定性本地编辑框聚焦免额外业务确认', (app) => {
+    const target = { app, role: 'AXTextArea', label: '正文', editable: true };
+    expect(assessComputerUseAction('click', { element_index: 2 }, target)).toMatchObject({
+      category: 'navigation',
+      confirmation: false,
+    });
+    expect(assessComputerUseAction('click', { x: 10, y: 10 }, target).confirmation).toBe(true);
+    expect(
+      assessComputerUseAction('click', { element_index: 2, click_count: 2 }, target).confirmation,
+    ).toBe(true);
+    expect(
+      assessComputerUseAction('click', { element_index: 2, button: 'right' }, target).confirmation,
+    ).toBe(true);
+    expect(
+      assessComputerUseAction('click', { element_index: 2 }, { ...target, label: '支付密码' })
+        .confirmation,
+    ).toBe(true);
+    expect(
+      assessComputerUseAction('click', { element_index: 2 }, { ...target, role: 'AXButton' })
+        .confirmation,
+    ).toBe(true);
+  });
+  it.each([
     'com.tencent.xinWeChat',
     'com.tencent.WeWorkMac',
     'com.yinxiang.Mac',

@@ -11,6 +11,7 @@ import { FollowUpStore, openStore, type Store } from '@evowork/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAdapter, type Adapter } from '../src/adapter.js';
+import { readAutoApprovalReviews, saveAutoApprovalReview } from '../src/auto-review.js';
 import type { PendingApproval } from '../src/approvals.js';
 import type { CapabilityReport } from '../src/capabilities.js';
 import type { UiEvent } from '../src/events.js';
@@ -75,6 +76,29 @@ afterEach(async () => {
 });
 
 describe('启动序列（09 §3.2）', () => {
+  it('新进程打开任务终止遗留审查；同一进程重新打开不能取消在途审查', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'review-task' }));
+    const review = {
+      reviewId: 'old',
+      turnId: 'turn1',
+      status: 'inProgress' as const,
+      startedAtMs: 100,
+    };
+    saveAutoApprovalReview(store, 'review-task', review);
+    await (
+      await adapter.openTask('review-task')
+    ).latestTurn;
+    expect(readAutoApprovalReviews(store, 'review-task')[0]?.status).toBe('aborted');
+    saveAutoApprovalReview(store, 'review-task', { ...review, reviewId: 'live' });
+    await (
+      await adapter.openTask('review-task')
+    ).latestTurn;
+    expect(
+      readAutoApprovalReviews(store, 'review-task').find((entry) => entry.reviewId === 'live')
+        ?.status,
+    ).toBe('inProgress');
+  });
   it('握手 → 权限档 → 功能开关 → 能力探测；审批处理器**在 start 之前**就位', async () => {
     const catalog = await adapter.start();
 

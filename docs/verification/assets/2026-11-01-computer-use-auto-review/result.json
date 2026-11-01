@@ -1,0 +1,32 @@
+{
+  "baseline": "8f57a6d",
+  "version": "0.0.8",
+  "platform": "macOS arm64",
+  "check": {
+    "exitCode": 0,
+    "passed": 3483,
+    "existingSkipped": 2
+  },
+  "realModelPlaywright": {
+    "mimo-v2.6-flash": {
+      "passed": 14,
+      "retries": 0,
+      "skipped": 0
+    },
+    "deepseek-flash": {
+      "passed": 14,
+      "retries": 0,
+      "skipped": 0
+    }
+  },
+  "deterministicPlaywright": {
+    "passed": 17,
+    "retries": 0,
+    "skipped": 0
+  },
+  "nativePolicyCases": 65,
+  "releaseVerified": false,
+  "desktopHelper": "injected fake native Helper; real Electron/kernel/host/MCP/provider",
+  "browser": "actual Chrome, local synthetic form",
+  "nativeAxTccAcceptance": "pending Developer ID and real-app acceptance"
+}

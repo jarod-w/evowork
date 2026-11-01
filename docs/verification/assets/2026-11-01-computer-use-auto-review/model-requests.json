@@ -1,0 +1,70 @@
+{
+  "mimo": {
+    "playwrightStats": {
+      "startTime": "2026-11-01T00:46:14.521Z",
+      "duration": 528737.366,
+      "expected": 14,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "requestCount": 164,
+    "observedResponseCount": 162,
+    "modelCounts": {
+      "mimo-v2.6-flash": 164
+    },
+    "endpointCounts": {
+      "https://api.xiaomimimo.com/v1/chat/completions": 164
+    },
+    "observedStatusCounts": {
+      "200": 162
+    },
+    "noResponseObservedBeforeEvidenceCapture": [
+      {
+        "case": "browser-office.real-浏览器办公自动审批：填写表单，拒绝提交后零-POST-real",
+        "pid": 24993,
+        "id": 14,
+        "at": 1793494065907
+      },
+      {
+        "case": "computer-use.real-帮我批准：普通编辑自动审查，敏感提交仍独立确认-approve-real",
+        "pid": 27093,
+        "id": 16,
+        "at": 1793494408478
+      }
+    ],
+    "kernelStartedCount": 14,
+    "unexpectedKernelExits": 0
+  },
+  "deepseek": {
+    "playwrightStats": {
+      "startTime": "2026-11-01T00:43:13.616Z",
+      "duration": 153572.177,
+      "expected": 14,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "requestCount": 166,
+    "observedResponseCount": 165,
+    "modelCounts": {
+      "deepseek-flash": 166
+    },
+    "endpointCounts": {
+      "https://api.deepseek.com/v1/chat/completions": 166
+    },
+    "observedStatusCounts": {
+      "200": 165
+    },
+    "noResponseObservedBeforeEvidenceCapture": [
+      {
+        "case": "computer-use.real-WPS-Office-自动审批与独立动作确认-允许准备内容，拒绝提交后不按键、不绕过-real",
+        "pid": 22936,
+        "id": 12,
+        "at": 1793493859114
+      }
+    ],
+    "kernelStartedCount": 14,
+    "unexpectedKernelExits": 0
+  }
+}

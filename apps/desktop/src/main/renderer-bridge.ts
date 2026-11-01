@@ -48,6 +48,8 @@ import type {
 import { isMemoriesCommand } from '../shared/memory-command.js';
 import {
   titleFromText,
+  readAutoApprovalReviews,
+  type AutoApprovalReview,
   isModeId,
   type Adapter,
   type ApprovalDecision,
@@ -222,6 +224,36 @@ const TEXT_DELTA_FIELD: Readonly<Record<string, string | undefined>> = {
 };
 
 const COMMAND_OUTPUT_LINE_LIMIT = 500;
+
+function autoApprovalReviewItem(review: AutoApprovalReview): RenderItemView {
+  return {
+    ...review,
+    id: `evowork-auto-review:${review.reviewId}`,
+    type: 'autoApprovalReview',
+    _turnId: review.turnId,
+    completed: review.status !== 'inProgress',
+  };
+}
+
+function withAutoApprovalReviews(
+  store: Store,
+  threadId: string,
+  items: readonly RenderItemView[],
+): RenderItemView[] {
+  const reviews = readAutoApprovalReviews(store, threadId);
+  const remaining = new Set(reviews);
+  const result: RenderItemView[] = [];
+  for (const item of items) {
+    for (const review of remaining) {
+      if (review.targetItemId !== item.id) continue;
+      result.push(autoApprovalReviewItem(review));
+      remaining.delete(review);
+    }
+    result.push(item);
+  }
+  result.push(...[...remaining].map(autoApprovalReviewItem));
+  return result;
+}
 
 /** 命令输出只保留尾部 500 行，避免长时间任务把渲染进程内存持续撑大。 */
 export function tailCommandOutput(value: string): string {
@@ -800,6 +832,10 @@ export function createEventTranslator(store: Store, now: () => number) {
   };
   return function translate(event: UiEvent): readonly RendererEvent[] {
     switch (event.type) {
+      case 'approval-review':
+        return [
+          { type: 'item', taskId: event.threadId, item: autoApprovalReviewItem(event.review) },
+        ];
       case 'task-disconnected':
       case 'task-restored': {
         for (const [id, held] of streaming)
@@ -812,12 +848,16 @@ export function createEventTranslator(store: Store, now: () => number) {
             type: 'task-restored',
             taskId: event.threadId,
             history: {
-              items: event.items.map((item) => {
-                const owner = (event.turns ?? (turn ? [turn] : [])).find(
-                  (candidate) => candidate.id === item._turnId,
-                );
-                return toTaskHistoryItem(item, (owner ?? turn)?.status !== 'inProgress');
-              }),
+              items: withAutoApprovalReviews(
+                store,
+                event.threadId,
+                event.items.map((item) => {
+                  const owner = (event.turns ?? (turn ? [turn] : [])).find(
+                    (candidate) => candidate.id === item._turnId,
+                  );
+                  return toTaskHistoryItem(item, (owner ?? turn)?.status !== 'inProgress');
+                }),
+              ),
               turns: (event.turns ?? (turn ? [turn] : [])).map(toTurnView),
               ...(turn ? { latestTurnId: turn.id } : {}),
               ...(turn?.status === 'failed' && turn.error
@@ -2363,17 +2403,21 @@ export function createRendererActions(options: RendererBridgeOptions) {
       try {
         const listed = await items;
         return {
-          items: listed.map((item) => {
-            const owner = historyTurns.find((candidate) => candidate.id === item._turnId);
-            return toTaskHistoryItem(item, (owner ?? turn)?.status !== 'inProgress');
-          }),
+          items: withAutoApprovalReviews(
+            store,
+            threadId,
+            listed.map((item) => {
+              const owner = historyTurns.find((candidate) => candidate.id === item._turnId);
+              return toTaskHistoryItem(item, (owner ?? turn)?.status !== 'inProgress');
+            }),
+          ),
           turns: historyTurns.map(toTurnView),
           ...turnFields,
         };
       } catch (err: unknown) {
         const reason = err instanceof Error ? err.message : String(err);
         return {
-          items: cached.map(digestToRenderItem),
+          items: withAutoApprovalReviews(store, threadId, cached.map(digestToRenderItem)),
           turns: historyTurns.map(toTurnView),
           incomplete: `读不到这个任务的完整历史：${reason}`,
           ...turnFields,

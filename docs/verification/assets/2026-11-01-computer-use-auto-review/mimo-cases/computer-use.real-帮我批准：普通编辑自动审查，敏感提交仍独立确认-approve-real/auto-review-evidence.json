@@ -1,0 +1,102 @@
+[
+  {
+    "method": "item/autoApprovalReview/started",
+    "params": {
+      "threadId": "01a19498-422a-7a31-8d14-6b25a7e02e62",
+      "turnId": "01a19498-423a-7281-aff2-bac3ad5571d3",
+      "startedAtMs": 1793494381972,
+      "reviewId": "4c05a630-3e7d-4284-80a3-3b5742d7e3ef",
+      "targetItemId": "call_3aafc59707f24e3d82f76284",
+      "review": {
+        "status": "inProgress",
+        "riskLevel": null,
+        "userAuthorization": null,
+        "rationale": null
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "set_value",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/completed",
+    "params": {
+      "threadId": "01a19498-422a-7a31-8d14-6b25a7e02e62",
+      "turnId": "01a19498-423a-7281-aff2-bac3ad5571d3",
+      "startedAtMs": 1793494381972,
+      "completedAtMs": 1793494386301,
+      "reviewId": "4c05a630-3e7d-4284-80a3-3b5742d7e3ef",
+      "targetItemId": "call_3aafc59707f24e3d82f76284",
+      "decisionSource": "agent",
+      "review": {
+        "status": "approved",
+        "riskLevel": "low",
+        "userAuthorization": "high",
+        "rationale": "用户明确授权在 TextEdit 当前“正文”中用 set_value 写入该精确字符串；目标元素和值均匹配，且不保存、不操作其它应用，属于范围明确且可撤销的本地编辑。"
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "set_value",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/started",
+    "params": {
+      "threadId": "01a19498-422a-7a31-8d14-6b25a7e02e62",
+      "turnId": "01a19498-423a-7281-aff2-bac3ad5571d3",
+      "startedAtMs": 1793494398812,
+      "reviewId": "68bd6177-323b-4cfa-b4d0-12efbd817e7a",
+      "targetItemId": "call_f0dc69551d8d4839bc48e3f1",
+      "review": {
+        "status": "inProgress",
+        "riskLevel": null,
+        "userAuthorization": null,
+        "rationale": null
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  },
+  {
+    "method": "item/autoApprovalReview/completed",
+    "params": {
+      "threadId": "01a19498-422a-7a31-8d14-6b25a7e02e62",
+      "turnId": "01a19498-423a-7281-aff2-bac3ad5571d3",
+      "startedAtMs": 1793494398812,
+      "completedAtMs": 1793494400790,
+      "reviewId": "68bd6177-323b-4cfa-b4d0-12efbd817e7a",
+      "targetItemId": "call_f0dc69551d8d4839bc48e3f1",
+      "decisionSource": "agent",
+      "review": {
+        "status": "approved",
+        "riskLevel": "low",
+        "userAuthorization": "high",
+        "rationale": "用户明确要求在重新读取确认后单独按一次 Enter；当前 TextEdit 窗口聚焦、状态最新，该按键仅在目标正文内产生本地换行，不保存或影响其它应用。"
+      },
+      "action": {
+        "type": "mcpToolCall",
+        "server": "cua_repl",
+        "toolName": "press_key",
+        "connectorId": null,
+        "connectorName": null,
+        "toolTitle": null
+      }
+    }
+  }
+]

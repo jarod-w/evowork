@@ -55,3 +55,17 @@ public func selectedTextRange(value: String, text: String, prefix: String, suffi
     let unionStart = min(start, existing.location)
     return CFRange(location: unionStart, length: max(end, existing.location + existing.length) - unionStart)
 }
+
+// Explicit plain-text paste owns clipboard access; shortcuts cannot paste arbitrary clipboard types.
+public func nativeKeyStroke(_ key: String) -> (CGKeyCode, CGEventFlags)? {
+    let keys: [String: (CGKeyCode, CGEventFlags)] = ["Enter": (36, []), "Tab": (48, []), "Shift+Tab": (48, .maskShift), "Escape": (53, []), "Backspace": (51, []), "Delete": (117, []), "ArrowUp": (126, []), "ArrowDown": (125, []), "ArrowLeft": (123, []), "ArrowRight": (124, []), "Home": (115, []), "End": (119, []), "PageUp": (116, []), "PageDown": (121, []), "Meta+A": (0, .maskCommand), "Meta+C": (8, .maskCommand), "Meta+X": (7, .maskCommand), "Meta+Z": (6, .maskCommand), "Meta+Shift+Z": (6, [.maskCommand, .maskShift]), "Meta+S": (1, .maskCommand)]
+    return keys[key]
+}
+
+public enum NativeElementClick: Equatable { case press, focus }
+// Editable AX fields generally have no Press action. Focus is not a submit action.
+public func nativeElementClick(role: String, subrole: String, actions: [String]) -> NativeElementClick? {
+    if subrole == "AXSecureTextField" { return nil }
+    if ["AXTextArea", "AXTextField"].contains(role) { return .focus }
+    return actions.contains("AXPress") ? .press : nil
+}

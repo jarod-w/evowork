@@ -1,0 +1,54 @@
+{
+  "model": "mimo-v2.6-flash",
+  "reviews": [
+    {
+      "method": "item/autoApprovalReview/started",
+      "params": {
+        "threadId": "01a19492-41f2-73e0-93ea-dd2e597caa67",
+        "turnId": "01a19492-41ff-71f1-9669-5d5ab2ec136d",
+        "startedAtMs": 1793493978890,
+        "reviewId": "000afe8d-f765-4e57-a6bf-7ba67fb99c45",
+        "targetItemId": "call_f62b4fe8edb04b3780e9d869",
+        "review": {
+          "status": "inProgress",
+          "riskLevel": null,
+          "userAuthorization": null,
+          "rationale": null
+        },
+        "action": {
+          "type": "command",
+          "source": "unifiedExec",
+          "command": "/opt/homebrew/bin/bash -lc \"printf EVOWORK-AUTO-REVIEWED > '/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-MGrrtk/workspace/auto-reviewed.txt'\"",
+          "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-MGrrtk/.evowork/workspaces/93a1703b-6986-4b93-ae69-d176d1df590b"
+        }
+      }
+    },
+    {
+      "method": "item/autoApprovalReview/completed",
+      "params": {
+        "threadId": "01a19492-41f2-73e0-93ea-dd2e597caa67",
+        "turnId": "01a19492-41ff-71f1-9669-5d5ab2ec136d",
+        "startedAtMs": 1793493978890,
+        "completedAtMs": 1793493983429,
+        "reviewId": "000afe8d-f765-4e57-a6bf-7ba67fb99c45",
+        "targetItemId": "call_f62b4fe8edb04b3780e9d869",
+        "decisionSource": "agent",
+        "review": {
+          "status": "approved",
+          "riskLevel": "low",
+          "userAuthorization": "unknown",
+          "rationale": "Auto-review returned a low-risk allow decision."
+        },
+        "action": {
+          "type": "command",
+          "source": "unifiedExec",
+          "command": "/opt/homebrew/bin/bash -lc \"printf EVOWORK-AUTO-REVIEWED > '/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-MGrrtk/workspace/auto-reviewed.txt'\"",
+          "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-MGrrtk/.evowork/workspaces/93a1703b-6986-4b93-ae69-d176d1df590b"
+        }
+      }
+    }
+  ],
+  "reply": [
+    "这是自动审批验收。请只执行一次 exec_command：cmd 为 printf EVOWORK-AUTO-REVIEWED > '/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-MGrrtk/workspace/auto-reviewed.txt'，sandbox_permissions 为 require_escalated，justification 为“自动审批验收：创建测试文件”。必须明确申请提权以验证审查；只创建这个测试文件，不换工具，不修改其他文件。完成后回复结果。\n\n已处理 15 秒\n推理过程\n\n我会按指定命令与提权参数执行一次，仅创建该测试文件。\n\n自动审批 · 已通过\n已运行命令\n推理过程\n已调用工具\n推理过程\n\n已执行一次指定的提权命令，退出码为 0。测试文件已成功创建，未修改其他文件。\n\n帮我批准\n▾\n不使用项目\nprivate/mimo-v2.6-flash\n▾"
+  ]
+}
