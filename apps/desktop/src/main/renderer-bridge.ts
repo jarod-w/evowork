@@ -1,4 +1,5 @@
 import type { AttachmentTextHost } from './attachment-text-host.js';
+import { ocrDisabledReason } from './platform-features.js';
 import type { AttachmentTextInput } from '../shared/ipc.js';
 import type { LibraryHost } from './library-host.js';
 import type { LibraryDocumentInput, LibrarySearchInput } from '../shared/ipc.js';
@@ -2767,6 +2768,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return options.attachmentText.status(await attachmentRoot(input), input.attachmentId);
     },
     async controlAttachmentText(input: AttachmentTextInput): Promise<ComposerAttachmentView> {
+      const reason = ocrDisabledReason(options.platform);
+      if (reason && ['ocr', 'continue', 'partial'].includes(input.action)) throw new Error(reason);
       if (!options.attachmentText) throw new Error('此构建未接附件识别。');
       if (!['ocr', 'continue', 'stop', 'partial', 'remove'].includes(input.action))
         throw new Error('未知附件动作。');
@@ -2964,11 +2967,15 @@ export function createRendererActions(options: RendererBridgeOptions) {
       return (await options.library()).clearBodyCache();
     },
     async getOcrRuntime() {
+      const reason = ocrDisabledReason(options.platform);
+      if (reason) return { installed: false, canInstall: false, disabled: true, message: reason };
       return options.ocrRuntime
         ? options.ocrRuntime.status()
         : { installed: false, canInstall: false, message: '此构建没有接 OCR 组件安装。' };
     },
     async installOcrRuntime() {
+      const reason = ocrDisabledReason(options.platform);
+      if (reason) throw new Error(reason);
       if (!options.ocrRuntime) throw new Error('此构建没有接 OCR 组件安装。');
       return options.ocrRuntime.install();
     },
@@ -3022,6 +3029,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
       readonly rotation?: 0 | 90 | 180 | 270 | undefined;
     }): Promise<LibraryDataView> {
       if (!options.library) throw new Error('此构建没有接资料处理。');
+      const reason = ocrDisabledReason(options.platform);
+      if (reason && input.action === 'ocr') throw new Error(reason);
       if (!['stop', 'continue', 'ocr', 'remove'].includes(input.action))
         throw new Error('未知资料动作。');
       return (await options.library()).control(input);

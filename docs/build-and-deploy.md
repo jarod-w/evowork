@@ -685,6 +685,8 @@ pnpm release             # 经 ssh 隧道直连服务器本机的 MinIO（S3 Sig
 [scripts/package.mjs](../scripts/package.mjs)。三平台目标：macOS（dmg / zip，Q26 首发）·
 Windows（nsis）· Linux（AppImage / deb）。
 
+**2026-11-01 Windows x64 基础版准备**：已补原生构建脚本、沙箱辅助程序来源检查、Windows hooks 与独立更新清单；电脑操控、OCR 和完全访问保持关闭。手动候选包工作流、构建命令与需要 Windows 真机验证的清单见 [windows-x64.md](windows-x64.md)。本轮尚未在 Windows 出包或发布。
+
 ```bash
 # 一次性：打补丁编内核，放到 build/kernel/<os>-<arch>/（§2.0；不要再从 ../codex/target 拷）
 node scripts/build-kernel.mjs

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
 import { createOcrProcessor, sourceDigest } from '@evowork/ingest';
 import type { ComposerAttachmentView, AttachmentTextInput } from '../shared/ipc.js';
+import { ocrDisabledReason } from './platform-features.js';
 
 interface Source {
   readonly id: string;
@@ -27,7 +28,9 @@ export function createAttachmentTextHost(options: {
   readonly runtimeRoot: string;
   readonly interpreter?: () => string | undefined;
   readonly ready?: () => Promise<void>;
+  readonly platform?: NodeJS.Platform;
 }) {
+  const disabledReason = ocrDisabledReason(options.platform);
   const records = new Map<string, Source>(),
     jobs = new Map<string, AbortController>();
   const folder = join(options.home, 'attachment-sources');
@@ -66,6 +69,7 @@ export function createAttachmentTextHost(options: {
           textProcessing: { state: 'stopped' },
         };
       }
+      if (disabledReason) record.view = { ...record.view, textProcessing: undefined };
       records.set(id, record);
     }
     const realRoot = await realpath(root),
@@ -73,7 +77,7 @@ export function createAttachmentTextHost(options: {
     if (
       record.root !== realRoot ||
       path !== resolve(record.path) ||
-      !path.startsWith(`${realRoot}/uploads/`) ||
+      !path.startsWith(join(realRoot, 'uploads') + sep) ||
       (await lstat(record.path)).isSymbolicLink()
     )
       throw new Error('附件不在当前任务目录。');
@@ -184,7 +188,7 @@ export function createAttachmentTextHost(options: {
     if ((await sourceDigest(record.path)) !== result.hash)
       throw new Error('附件内容已变化，请重新识别。');
     if (record.view.textProcessing?.state === 'removed' || (automatic && record.stopped)) return;
-    const path = join(record.path.slice(0, record.path.lastIndexOf('/')), 'ocr-content.md');
+    const path = join(dirname(record.path), 'ocr-content.md');
     const text = `来源：${record.view.name}\n${result.complete ? '完整识别' : `仅使用已完成 ${result.completed}/${result.total} 页；未完成页未包含。`}\n识别文字可能有误，请核对原件。\n\n${result.text}`;
     const temporary = `${path}.${randomUUID()}.tmp`;
     await writeFile(temporary, text, { mode: 0o600, flag: 'wx' });
@@ -227,7 +231,7 @@ export function createAttachmentTextHost(options: {
             name: view.name,
             path: await realpath(path),
           },
-          ...(supportsOcr ? { textProcessing: { state: 'available' } } : {}),
+          textProcessing: supportsOcr && !disabledReason ? { state: 'available' } : undefined,
         },
         stopped: false,
       };
@@ -243,6 +247,8 @@ export function createAttachmentTextHost(options: {
       return (await get(root, id)).path;
     },
     async control(root: string, input: AttachmentTextInput): Promise<ComposerAttachmentView> {
+      if (disabledReason && ['ocr', 'continue', 'partial'].includes(input.action))
+        throw new Error(disabledReason);
       const record = await get(root, input.attachmentId);
       if (input.action === 'stop' || input.action === 'remove') {
         record.stopped = true;

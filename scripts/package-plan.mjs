@@ -61,13 +61,33 @@ export function planSigning(env, platform) {
     // 标注必须进**文件名**，否则没人会注意到（U4 的替代方案原话是"产物标注未签名"）
     suffix: '-unsigned',
     missing,
-    message: `缺少 ${missing.join('、')}，本次产出未签名包（U4）。另一台 Mac 经浏览器下载后会提示「已损坏」，先 xattr -cr 清隔离标记；正式分发需要 Developer ID 与公证。`,
+    message:
+      `缺少 ${missing.join('、')}，本次产出未签名包（U4）。` +
+      (platform === 'win'
+        ? 'Windows 代码签名尚未启用；正式分发前需验证签名与安装提示。'
+        : '另一台 Mac 经浏览器下载后会提示「已损坏」，先 xattr -cr 清隔离标记；正式分发需要 Developer ID 与公证。'),
   };
 }
 
 /** 产物文件名。未签名时后缀进名字。 */
 export function artifactName(productName, version, platform, arch, extension, suffix = '') {
   return `${productName}-${version}-${platform}-${arch}${suffix}.${extension}`;
+}
+
+/** Windows 的沙箱运行与首次配置依赖同目录的辅助程序。 */
+export function kernelBinaryNames(platform) {
+  return platform === 'win32'
+    ? ['codex-app-server.exe', 'codex-windows-sandbox-setup.exe', 'codex-command-runner.exe']
+    : ['codex-app-server'];
+}
+
+/** 解包目录由 electron-builder 决定；发布和打包检查共用。 */
+export function packagedAppDirectory(distDir, platform, arch) {
+  if (platform === 'darwin')
+    return `${distDir}/${arch === 'x64' ? 'mac' : `mac-${arch}`}/EvoWork.app`;
+  if (platform === 'win32')
+    return `${distDir}/${arch === 'x64' ? 'win-unpacked' : `win-${arch}-unpacked`}`;
+  return `${distDir}/${arch === 'x64' ? 'linux-unpacked' : `linux-${arch}-unpacked`}`;
 }
 
 /**

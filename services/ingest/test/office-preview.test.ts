@@ -13,6 +13,20 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createOfficeLayoutPreview, resolveOfficeConverter } from '../src/office-preview.js';
 
 let directory: string;
+it('Windows 明确回退正文预览，不尝试无隔离转换', async () => {
+  let called = false;
+  const result = await createOfficeLayoutPreview({
+    platform: 'win32',
+    executable: 'converter',
+    run: async () => {
+      called = true;
+      return '';
+    },
+  })('source.docx');
+  expect(called).toBe(false);
+  expect(result.pdf).toBeUndefined();
+  expect(result.note).toContain('Windows 基础版暂未提供');
+});
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'evowork-office-layout-'));
 });

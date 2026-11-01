@@ -73,6 +73,7 @@ export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLaunch
       const extraEnv = { ...options.extraEnv, ...options.extraEnvProvider?.() };
       const cwd = join(options.kernelHome, 'startup');
       const spawnOptions: SpawnOptions = {
+        windowsHide: true,
         cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {

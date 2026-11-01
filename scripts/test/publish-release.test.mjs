@@ -4,7 +4,15 @@
  * `--dry-run` 在真仓库上跑一次就能看到每一项检查的结论。
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +26,8 @@ import {
   MANIFEST_NAME,
   uploadPlan,
   uploadRelease,
+  isRemote,
+  checkRelease,
 } from '../publish-release.mjs';
 import { signatureNameFor } from '../update-signing.mjs';
 
@@ -51,6 +61,11 @@ describe('脚本与客户端用同一份解析器', () => {
 });
 
 describe('上传顺序', () => {
+  it('Windows 发布只更新 latest.yml，不覆盖 macOS 清单', () => {
+    const manifest = { files: [{ url: 'EvoWork-0.0.8-win-x64.exe' }], raw: Buffer.from('win') };
+    const plan = uploadPlan(manifest, [], 'win32');
+    expect(plan.at(-1).files).toEqual(['latest.yml']);
+  });
   const raw = Buffer.from(REAL_SHAPE);
   const manifest = { ...parseLatestYml(REAL_SHAPE), raw };
   const available = [
@@ -79,11 +94,47 @@ describe('上传顺序', () => {
 });
 
 describe('发之前的检查', () => {
+  it('Windows 盘符路径是本地目录，只有 SSH 目标才走远程上传', () => {
+    expect(isRemote('C:\\release\\staging')).toBe(false);
+    expect(isRemote('D:/release')).toBe(false);
+    expect(isRemote('user@host:/srv/update')).toBe(true);
+  });
   let dir;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'evowork-publish-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('Windows 预检读取 latest.yml 和 win-unpacked 内的公钥，不要求存在 Mac 应用', async () => {
+    const version = JSON.parse(
+      readFileSync(new URL('../../apps/desktop/package.json', import.meta.url), 'utf8'),
+    ).version;
+    const { UPDATE_PUBLIC_KEYS } = await loadClientModule('apps/desktop/src/main/update-keys.ts');
+    const kid = UPDATE_PUBLIC_KEYS.find((key) => key.role === 'daily').kid;
+    const name = `EvoWork-${version}-win-x64-unsigned.exe`,
+      content = Buffer.from('installer');
+    writeFileSync(join(dir, name), content);
+    writeFileSync(
+      join(dir, 'latest.yml'),
+      `version: ${version}\nfiles:\n  - url: ${name}\n    sha512: ${createHash('sha512').update(content).digest('base64')}\n    size: ${content.length}\n`,
+    );
+    mkdirSync(join(dir, 'win-unpacked/resources'), { recursive: true });
+    writeFileSync(join(dir, 'win-unpacked/resources/app.asar'), kid);
+    const { results } = await checkRelease({
+      distDir: dir,
+      kid,
+      dest: join(dir, 'staging'),
+      channel: 'latest',
+      platform: 'win32',
+      arch: 'x64',
+    });
+    for (const label of [
+      '清单版本与 package.json 一致',
+      '清单包含目标平台与架构安装包',
+      `打包产物里嵌着 kid=${kid}`,
+    ])
+      expect(results.find((result) => result.label === label)?.ok, label).toBe(true);
+  });
 
   function manifestFor(content) {
     writeFileSync(join(dir, 'a.zip'), content);

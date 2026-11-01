@@ -62,6 +62,7 @@ extraResources:
 # 未签名时 afterPack 会 ad-hoc 重签 .app（见 scripts/after-pack.mjs）。
 # 缺这一步，identity=null 留下的 Electron 残签会让别的 Mac 报「已损坏」。
 afterPack: ./scripts/after-pack.mjs
+afterSign: ./scripts/after-sign.mjs
 
 mac:
   extraResources:
@@ -79,7 +80,9 @@ mac:
 
 win:
   target:
-    - nsis
+    - target: nsis
+      arch:
+        - x64
   # Q6 / U5：Windows 的隔离强度结论还没拿到。产品在运行时会按保守侧处理
   # （停用完全访问 + 能力页说明），打包这一层不做特殊处理。
 

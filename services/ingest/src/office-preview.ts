@@ -44,11 +44,16 @@ export function createOfficeLayoutPreview(
     fontDirectory?: string | undefined;
     run?: ((input: IsolatedProcessOptions) => Promise<string>) | undefined;
     render?: ((directory: string) => Promise<{ pages: Buffer[]; total: number }>) | undefined;
+    platform?: NodeJS.Platform | undefined;
   } = {},
 ) {
   return async (
     path: string,
   ): Promise<{ pdf?: Buffer; pages?: Buffer[]; pageCount?: number; note: string }> => {
+    if ((options.platform ?? process.platform) === 'win32')
+      return {
+        note: 'Windows 基础版暂未提供 Office 版式预览；以下仅为正文预览，可打开原文件查看排版。',
+      };
     const converter = options.executable ?? resolveOfficeConverter();
     if (!converter)
       return { note: '未找到本机 LibreOffice 版式转换器；以下仅为正文预览，不代表原文件排版。' };

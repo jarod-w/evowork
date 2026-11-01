@@ -36,6 +36,7 @@ import {
 import { arch, platform } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { kernelBinaryNames } from './package-plan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CODEX = resolve(process.env.EVOWORK_CODEX_DIR ?? join(ROOT, '..', 'codex'));
@@ -54,6 +55,7 @@ const platformKey =
       ? `win-${arch()}`
       : `linux-${arch()}`;
 const binaryName = platform() === 'win32' ? 'codex-app-server.exe' : 'codex-app-server';
+const binaries = kernelBinaryNames(platform());
 
 function step(message) {
   process.stdout.write(`▸ ${message}\n`);
@@ -137,7 +139,13 @@ if (checkOnly) {
 step(`cargo build -p codex-app-server（${profile}）`);
 const build = spawnSync(
   'cargo',
-  ['build', '-p', 'codex-app-server', ...(profile === 'release' ? ['--release'] : [])],
+  [
+    'build',
+    '-p',
+    'codex-app-server',
+    ...(platform() === 'win32' ? ['-p', 'codex-windows-sandbox', '--bins'] : []),
+    ...(profile === 'release' ? ['--release'] : []),
+  ],
   {
     cwd: join(SRC, 'codex-rs'),
     stdio: 'inherit',
@@ -146,10 +154,9 @@ const build = spawnSync(
 );
 if (build.status !== 0) throw new Error('cargo build 失败，见上面的输出。');
 
-const built = join(TARGET, profile, binaryName);
 const outDir = join(ROOT, 'build', 'kernel', platformKey);
 mkdirSync(outDir, { recursive: true });
-copyFileSync(built, join(outDir, binaryName));
+for (const name of binaries) copyFileSync(join(TARGET, profile, name), join(outDir, name));
 writeFileSync(
   join(outDir, 'KERNEL_PROVENANCE.json'),
   `${JSON.stringify(
@@ -158,6 +165,7 @@ writeFileSync(
       profile,
       patches: patchList,
       binarySha256: sha(join(outDir, binaryName)),
+      binaries: Object.fromEntries(binaries.map((name) => [name, sha(join(outDir, name))])),
       builtAt: new Date().toISOString(),
     },
     null,

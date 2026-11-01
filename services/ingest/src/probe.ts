@@ -52,6 +52,8 @@ export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
 
   return {
     hasOcrRuntime(): boolean {
+      // Windows 基础版不得因管理员解释器/旧离线组件存在而自动开放 OCR。
+      if (process.platform === 'win32') return false;
       const key = 'native-ocr-runtime';
       const cached = cache.get(key);
       if (cached !== undefined) return cached;
@@ -78,6 +80,7 @@ export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
       if (python) {
         try {
           execFileSync(python, ['-c', `import ${name}`], {
+            windowsHide: true,
             stdio: 'ignore',
             timeout: options.timeoutMs ?? 10_000,
           });
@@ -117,6 +120,7 @@ export function createRuntimeProbe(options: ProbeOptions = {}): RuntimeProbe & {
           python,
           ['-B', '-c', script],
           {
+            windowsHide: true,
             timeout: options.timeoutMs ?? 120_000,
             maxBuffer: 1024 * 1024,
             ...(signal ? { signal } : {}),

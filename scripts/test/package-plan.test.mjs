@@ -52,6 +52,13 @@ describe('三档运行时的边界（08 §4 / R10）', () => {
 });
 
 describe('签名：没有证书就产出未签名包（U4）', () => {
+  it('Windows 缺证书标为未签名，提示本平台的签名缺口', () => {
+    const plan = planSigning({}, 'win');
+    expect(plan.sign).toBe(false);
+    expect(plan.suffix).toBe('-unsigned');
+    expect(plan.message).toContain('Windows');
+    expect(plan.message).not.toContain('xattr');
+  });
   it('macOS 缺任何一个 secret 都**整体降级** —— 半签名的产物看起来像正式包', () => {
     const plan = planSigning({ APPLE_ID: 'x', CSC_LINK: 'y' }, 'mac');
     expect(plan.sign).toBe(false);

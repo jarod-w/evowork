@@ -11,12 +11,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { parse } from 'smol-toml';
 
 import {
   ensureKernelHooks,
   ensureModeInstructions,
   ensurePaths,
   resolvePaths,
+  migrateKernelConfigText,
 } from '../src/main/service-host.js';
 
 const ROOT = resolve(import.meta.dirname, '../../..');
@@ -109,4 +111,47 @@ describe.skipIf(process.platform === 'win32')('策略 hook 装进内核目录的
     const printed = execFileSync('/bin/sh', ['-c', result!.commands[0]!]).toString().trim();
     expect(printed).toMatch(/plugins\/hooks\/evowork-policy\/bin\/.+\.mjs$/);
   });
+});
+
+it('Windows 也安装所有策略事件，路径里的 shell 字符不成为命令', () => {
+  const paths = resolvePaths(join(dir, 'home'));
+  ensurePaths(paths);
+  const executable = "C:\\Users\\张 三's & %TEMP%!\\EvoWork.exe";
+  const result = ensureKernelHooks(paths, {
+    pluginsDir: join(ROOT, 'plugins'),
+    execPath: executable,
+    platform: 'win32',
+  });
+  expect(result?.commands.length).toBeGreaterThan(0);
+  const written = JSON.parse(readFileSync(result!.sourcePath, 'utf8')) as {
+    hooks: Record<string, { hooks: { command: string }[] }[]>;
+  };
+  expect(Object.keys(written.hooks)).toContain('PreToolUse');
+  for (const command of result!.commands) {
+    expect(command).toMatch(/^powershell\.exe .* -EncodedCommand [A-Za-z0-9+/=]+$/);
+    expect(command).not.toContain('%TEMP%');
+    const script = Buffer.from(command.split(' ').at(-1)!, 'base64').toString('utf16le');
+    expect(script).toContain("$env:ELECTRON_RUN_AS_NODE='1'");
+    expect(script).toContain(executable.replaceAll("'", "''"));
+    expect(script).toContain('exit $LASTEXITCODE');
+  }
+});
+
+it('Windows 启动迁移显式选择上游沙箱，保留已有设置与其它配置', () => {
+  for (const text of [
+    'model="demo"\n',
+    '[windows]\nother=true\n',
+    '["windows"]\nother=true\n',
+    'windows.other=true\n',
+  ]) {
+    const once = migrateKernelConfigText(text, 'win32');
+    expect((parse(once.text).windows as Record<string, unknown>).sandbox).toBe('elevated');
+    expect(migrateKernelConfigText(once.text, 'win32').text).toBe(once.text);
+  }
+  const explicit = '[windows]\nsandbox="unelevated"\n';
+  expect(
+    (parse(migrateKernelConfigText(explicit, 'win32').text).windows as Record<string, unknown>)
+      .sandbox,
+  ).toBe('unelevated');
+  expect(parse(migrateKernelConfigText('model="demo"\n', 'darwin').text).windows).toBeUndefined();
 });

@@ -1,0 +1,2 @@
+# 模式指令/补丁/发行校验按字节计算哈希，Windows checkout 也保留 LF。
+* text=auto eol=lf

@@ -3159,6 +3159,12 @@ describe('工作空间只有一处真源（spec §2.2）', () => {
     expect(startup.approvalsReviewerAvailable).toBe(false);
     expect(startup.fullAccessAllowed).toBe(false);
     expect(startup.fullAccessDisabledReason).toContain('还没有评估结论');
+    expect(await actions.getOcrRuntime()).toMatchObject({
+      installed: false,
+      canInstall: false,
+      disabled: true,
+    });
+    await expect(actions.installOcrRuntime()).rejects.toThrow('暂未开放 OCR');
   });
 
   it('pickWorkspace 选完就建成空间 —— 首运行第②步选的目录必须活到下次启动', async () => {

@@ -160,7 +160,8 @@ export interface PathContext {
  */
 export function normalizePath(input: string, home: string): string {
   let path = input.replace(/\\/g, '/');
-  if (path.startsWith('~/')) path = `${home}/${path.slice(2)}`;
+  const normalizedHome = home.replace(/\\/g, '/').replace(/\/$/, '');
+  if (path.startsWith('~/')) path = `${normalizedHome}/${path.slice(2)}`;
 
   const isAbsolute = path.startsWith('/') || /^[a-zA-Z]:/.test(path);
   const parts: string[] = [];
@@ -176,9 +177,11 @@ export function normalizePath(input: string, home: string): string {
   let resolved = (isAbsolute && !/^[a-zA-Z]:/.test(path) ? '/' : '') + parts.join('/');
   if (path.endsWith('/') && !resolved.endsWith('/')) resolved += '/';
 
-  const normalizedHome = home.replace(/\\/g, '/').replace(/\/$/, '');
-  if (resolved === normalizedHome) return '~';
-  if (resolved.startsWith(`${normalizedHome}/`)) {
+  const windows = /^[a-zA-Z]:\//.test(path) || path.startsWith('//');
+  const comparison = windows ? resolved.toLowerCase() : resolved;
+  const homeComparison = windows ? normalizedHome.toLowerCase() : normalizedHome;
+  if (comparison === homeComparison) return '~';
+  if (comparison.startsWith(`${homeComparison}/`)) {
     return `~/${resolved.slice(normalizedHome.length + 1)}`;
   }
   return resolved;
@@ -190,8 +193,10 @@ export function workspaceRootRefusal(
   home: string,
 ): { readonly kind: 'too-broad' | 'evowork-data'; readonly reason: string } | undefined {
   const slash = rawPath.replace(/\\/g, '/');
-  const path = normalizePath(rawPath, '').replace(/\/+$/, '');
-  const userHome = normalizePath(home, '').replace(/\/+$/, '');
+  const windows = /^[a-zA-Z]:[\\/]/.test(home) || home.startsWith('\\\\');
+  const compare = (value: string) => (windows ? value.toLowerCase() : value);
+  const path = compare(normalizePath(rawPath, '').replace(/\/+$/, ''));
+  const userHome = compare(normalizePath(home, '').replace(/\/+$/, ''));
   if (
     path === '' ||
     /^[a-zA-Z]:$/.test(path) ||
@@ -229,13 +234,22 @@ export function classifyPath(
   context: PathContext,
   access: PathAccess = 'write',
 ): PathDecision {
-  const path = normalizePath(rawPath, context.home);
+  const windows = /^[a-zA-Z]:[\\/]/.test(context.home) || context.home.startsWith('\\\\');
+  const compare = (path: string) => (windows ? path.toLowerCase() : path);
+  const path = compare(normalizePath(rawPath, context.home));
 
   // ① 硬拦截优先。**先于工作空间判定** —— 否则把工作空间设在 ~/.ssh 就能绕过
   for (const rule of HARD_BLOCK_RULES) {
     if (
-      rule.prefixes.some((prefix) => underPrefix(path, prefix)) &&
-      !exempted(rule, path, access)
+      rule.prefixes.some((prefix) => underPrefix(path, compare(prefix))) &&
+      !exempted(
+        {
+          ...rule,
+          exceptions: rule.exceptions?.map((e) => ({ ...e, prefix: compare(e.prefix) })) ?? [],
+        },
+        path,
+        access,
+      )
     ) {
       return {
         verdict: 'hard-block',
@@ -247,7 +261,7 @@ export function classifyPath(
 
   // ② 工作空间内：按 profile 放行
   const roots = [context.workspaceRoot, ...(context.extraRoots ?? [])].map((root) =>
-    normalizePath(root, context.home),
+    compare(normalizePath(root, context.home)),
   );
   for (const root of roots) {
     if (path === root || path.startsWith(`${root}/`)) {
@@ -256,7 +270,7 @@ export function classifyPath(
   }
 
   // ③ 个人目录与工作空间之外：逐次审批
-  const personal = PERSONAL_DIR_PREFIXES.some((prefix) => underPrefix(path, prefix));
+  const personal = PERSONAL_DIR_PREFIXES.some((prefix) => underPrefix(path, compare(prefix)));
   return {
     verdict: 'needs-approval',
     rule: personal ? 'personal-dir' : 'outside-workspace',

@@ -688,7 +688,8 @@ export function Library(props: LibraryProps) {
                               更新副本
                             </PillButton>
                           ) : null}
-                          {['png', 'jpg', 'jpeg', 'webp', 'pdf'].includes(row.extension ?? '') ? (
+                          {!ocrRuntime?.disabled &&
+                          ['png', 'jpg', 'jpeg', 'webp', 'pdf'].includes(row.extension ?? '') ? (
                             <PillButton variant="ghost" onClick={() => setConfirmOcr(row.id)}>
                               识别文字
                             </PillButton>

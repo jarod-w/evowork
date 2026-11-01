@@ -1,0 +1,79 @@
+name: Windows x64 candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: '不可变的内核提交 SHA（需与产品补丁和协议检查一致）'
+        required: true
+        default: 'd583e73c4d1204f1e9f654ef87065e9f0dd07ac7'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: evowork
+    steps:
+      - name: 验证内核提交为不可变 SHA
+        working-directory: ${{ github.workspace }}
+        env:
+          KERNEL_REF: ${{ inputs.kernel_ref }}
+        run: |
+          if ($env:KERNEL_REF -notmatch '^[0-9a-fA-F]{40}$') { throw 'kernel_ref 必须是完整提交 SHA' }
+      - uses: actions/checkout@v4
+        with:
+          path: evowork
+      - uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          ref: ${{ inputs.kernel_ref }}
+          path: codex
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: evowork/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          architecture: x64
+          cache: pnpm
+          cache-dependency-path: evowork/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: 安装锁定的 Rust 工具链
+        working-directory: codex/codex-rs
+        run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            evowork/build/.kernel-target
+          key: windows-x64-rust-${{ inputs.kernel_ref }}-${{ hashFiles('evowork/patches/evowork/*.patch') }}
+      - name: 类型与 Windows 基础版回归
+        run: |
+          pnpm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/vitest/vitest.mjs run scripts/test/windows-package.test.mjs scripts/test/package-plan.test.mjs scripts/test/publish-release.test.mjs apps/desktop/test/kernel-policy-install.test.ts apps/desktop/test/windows-hooks.test.ts
+      - name: 构建带补丁的内核和沙箱辅助程序
+        run: node scripts/build-kernel.mjs
+      - name: 构建并验证完整办公运行时
+        run: node scripts/build-office-runtime.mjs
+      - name: 构建桌面
+        run: pnpm run build
+      - name: 生成未签名候选安装包（不发布）
+        run: pnpm run package -- --arch x64
+      - name: 检查成品结构、架构与办公运行时
+        run: node scripts/verify-windows-package.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-unsigned-unverified
+          path: |
+            evowork/dist/release/*.exe
+            evowork/dist/release/*.blockmap
+            evowork/dist/release/latest.yml
+            evowork/dist/release/win-unpacked
+          if-no-files-found: error

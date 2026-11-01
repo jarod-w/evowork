@@ -211,8 +211,16 @@ if (isPrimaryInstance) {
     appServerPath:
       process.env.EVOWORK_APP_SERVER ??
       (isPackaged
-        ? join(resourceRoot, 'kernel', 'codex-app-server')
-        : join(kernelCheckout, 'codex-rs/target/debug/codex-app-server')),
+        ? join(
+            resourceRoot,
+            'kernel',
+            process.platform === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
+          )
+        : join(
+            kernelCheckout,
+            'codex-rs/target/debug',
+            process.platform === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
+          )),
     /*
      * 随包的 `config/`（electron-builder.yml 的 extraResources 把它放在 resources 下）。
      * 首次运行时 `[permissions.*]` 四个档位从这里装进内核家目录 ——

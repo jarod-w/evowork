@@ -22,16 +22,32 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { build } from 'esbuild';
 
 import { readPrivateKey, signatureNameFor, signManifest } from './update-signing.mjs';
+import { packagedAppDirectory } from './package-plan.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
-export const MANIFEST_NAME = 'latest-mac.yml';
+export function releaseManifestName(platform) {
+  if (platform === 'darwin') return 'latest-mac.yml';
+  if (platform === 'win32') return 'latest.yml';
+  if (platform === 'linux') return 'latest-linux.yml';
+  throw new Error(`不支持的发布平台：${platform}`);
+}
+export const MANIFEST_NAME = releaseManifestName(process.platform);
 
 /* ───────────────────────────── 纯函数（有测试） ───────────────────────────── */
 
@@ -39,7 +55,7 @@ export const MANIFEST_NAME = 'latest-mac.yml';
  * 上传分三批，顺序就是正确性的一部分（见文件头）。
  * `blockmap` 跟着安装包走：electron-updater 的差量下载要它，缺了只是退回整包下载。
  */
-export function uploadPlan(manifest, available) {
+export function uploadPlan(manifest, available, platform = process.platform) {
   const packages = [];
   for (const file of manifest.files) {
     packages.push(file.url);
@@ -48,7 +64,7 @@ export function uploadPlan(manifest, available) {
   return [
     { phase: 'packages', files: packages },
     { phase: 'signature', files: [`signatures/${signatureNameFor(manifest.raw)}`] },
-    { phase: 'manifest', files: [MANIFEST_NAME] },
+    { phase: 'manifest', files: [releaseManifestName(platform)] },
   ];
 }
 
@@ -106,20 +122,20 @@ export async function loadClientModule(relativePath) {
   return import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 }
 
-function isRemote(dest) {
-  return /^[^/:]+:/.test(dest);
+export function isRemote(dest) {
+  return !/^[a-z]:[\\/]/i.test(dest) && /^[^/:]+:/.test(dest);
 }
 
-function readPublishedManifest(dest, channel) {
+function readPublishedManifest(dest, channel, manifestName) {
   try {
     if (isRemote(dest)) {
       const [host, base] = splitRemote(dest);
-      return execFileSync('ssh', [host, 'cat', `${base}/${channel}/${MANIFEST_NAME}`], {
+      return execFileSync('ssh', [host, 'cat', `${base}/${channel}/${manifestName}`], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       });
     }
-    const path = join(dest, channel, MANIFEST_NAME);
+    const path = join(dest, channel, manifestName);
     return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
   } catch {
     return undefined; // 第一次发布：线上还没有清单
@@ -132,10 +148,16 @@ function splitRemote(dest) {
 }
 
 /** 每一项都要过；返回 [{ ok, label, detail? }] */
-export async function checkRelease({ distDir, kid, dest, channel }) {
-  const { parseUpdateManifest, compareVersions } = await loadClientModule(
-    'apps/desktop/src/main/update-manifest.ts',
-  );
+export async function checkRelease({
+  distDir,
+  kid,
+  dest,
+  channel,
+  platform = process.platform,
+  arch = process.arch,
+}) {
+  const { parseUpdateManifest, compareVersions, manifestNameFor, pickPackageFor } =
+    await loadClientModule('apps/desktop/src/main/update-manifest.ts');
   const version = JSON.parse(readFileSync(join(REPO, 'apps/desktop/package.json'), 'utf8')).version;
   const results = [];
   const add = (ok, label, detail) => results.push({ ok, label, ...(detail ? { detail } : {}) });
@@ -149,10 +171,12 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
     `HEAD 上的 tag：${tags.join(' ') || '无'}`,
   );
 
-  const manifestPath = join(distDir, MANIFEST_NAME);
+  const manifestName = releaseManifestName(platform);
+  if (manifestNameFor(platform) !== manifestName) throw new Error('发布端与客户端清单名不一致');
+  const manifestPath = join(distDir, manifestName);
   let manifest;
   if (!existsSync(manifestPath)) {
-    add(false, `${MANIFEST_NAME} 存在`, `${distDir} 下没有，先跑 pnpm run package`);
+    add(false, `${manifestName} 存在`, `${distDir} 下没有，先跑 pnpm run package`);
   } else {
     const raw = readFileSync(manifestPath);
     const parsed = parseUpdateManifest(raw.toString('utf8'));
@@ -160,6 +184,16 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
     else manifest = { ...parsed.manifest, raw };
   }
   if (manifest) {
+    const targetPackage = pickPackageFor(manifest, platform, arch);
+    add(
+      Boolean(
+        targetPackage?.url.includes(
+          `-${platform === 'darwin' ? 'mac' : platform === 'win32' ? 'win' : 'linux'}-${arch}`,
+        ),
+      ),
+      '清单包含目标平台与架构安装包',
+      `${platform}/${arch}`,
+    );
     add(
       manifest.version === version,
       '清单版本与 package.json 一致',
@@ -189,7 +223,11 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
   add(keyProblems.length === 0, '客户端内嵌的公钥够发这一版', keyProblems.join('；'));
 
   // 源码里有这把 key 不等于打出来的包里有：dist/ 可能是更早一次打包留下的
-  const asar = join(distDir, 'mac-arm64/EvoWork.app/Contents/Resources/app.asar');
+  const app = packagedAppDirectory(distDir, platform, arch);
+  const asar = join(
+    app,
+    platform === 'darwin' ? 'Contents/Resources/app.asar' : 'resources/app.asar',
+  );
   const embedded = existsSync(asar) && readFileSync(asar).includes(Buffer.from(kid));
   add(
     embedded,
@@ -197,7 +235,7 @@ export async function checkRelease({ distDir, kid, dest, channel }) {
     existsSync(asar) ? '包是没带这把公钥的那次打出来的，重新打包' : `${asar} 不存在`,
   );
 
-  const published = readPublishedManifest(dest, channel);
+  const published = readPublishedManifest(dest, channel, manifestName);
   if (manifest) {
     const parsedOnline = published ? parseUpdateManifest(published) : undefined;
     const online = parsedOnline?.ok ? parsedOnline.manifest.version : undefined;
@@ -229,7 +267,17 @@ export function uploadRelease(distDir, dest, channel, plan) {
     const sources = step.files.map((f) => join(distDir, f));
     // -rlt 而不是 -a：不带本机的属主与权限过去（-a 会在服务器上留下发版机的 uid 501），
     // 远端以 ssh 登录的用户身份按它自己的 umask 落盘
-    execFileSync('rsync', ['-rlt', ...sources, `${target}${subdir}`], { stdio: 'inherit' });
+    if (isRemote(dest)) {
+      execFileSync('rsync', ['-rlt', ...sources, `${target}${subdir}`], { stdio: 'inherit' });
+    } else {
+      // 原生 Windows 不依赖 rsync；同目录临时文件 + rename，清单仍最后替换。
+      for (const file of step.files) {
+        const path = join(target, file);
+        const temporary = `${path}.${process.pid}.tmp`;
+        copyFileSync(join(distDir, file), temporary);
+        renameSync(temporary, path);
+      }
+    }
     console.log(`  ✓ ${step.phase}：${step.files.join(' · ')}`);
   }
 }
@@ -247,20 +295,27 @@ async function main(argv) {
   const channel = option(argv, '--channel') ?? 'latest';
   const keyFile = option(argv, '--key-file');
   const dryRun = argv.includes('--dry-run');
+  const platform = option(argv, '--platform') ?? process.platform;
+  const arch = option(argv, '--arch') ?? (platform === 'win32' ? 'x64' : process.arch);
+  releaseManifestName(platform);
+  if (!['x64', 'arm64'].includes(arch) || (platform === 'win32' && arch !== 'x64'))
+    throw new Error('架构不支持；Windows 基础版仅支持 x64');
   if (!dest || !kid)
     throw new Error(
-      '用法：publish-release.mjs --dest <目录|user@host:/路径> --kid <kid> [--dry-run]',
+      '用法：publish-release.mjs --dest <目录|user@host:/路径> --kid <kid> [--platform darwin|win32|linux] [--arch x64|arm64] [--dry-run]',
     );
   const distDir = join(REPO, 'dist/release');
 
   console.log(`发布前检查（channel=${channel} → ${dest}）`);
-  const { results, manifest } = await checkRelease({ distDir, kid, dest, channel });
+  const { results, manifest } = await checkRelease({ distDir, kid, dest, channel, platform, arch });
   for (const r of results)
     console.log(`  ${r.ok ? '✅' : '❌'} ${r.label}${r.ok || !r.detail ? '' : `：${r.detail}`}`);
   if (results.some((r) => !r.ok)) throw new Error('有检查没过，一个文件都没传');
 
-  console.log('提醒：verify-packaged-app.mjs 会真的启动应用，这里不替你跑 —— 发版前确认它是绿的。');
-  const plan = uploadPlan(manifest, readdirSync(distDir));
+  console.log(
+    '提醒：发布前需在目标系统完成成品启动、安装与升级验收，见 docs/windows-x64.md；这里不替代真机验收。',
+  );
+  const plan = uploadPlan(manifest, readdirSync(distDir), platform);
   if (dryRun) {
     for (const step of plan) console.log(`  · ${step.phase}：${step.files.join(' · ')}`);
     console.log('--dry-run：没有签名、没有上传。');

@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { kernelBinaryNames } from './package-plan.mjs';
 
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
@@ -30,6 +31,14 @@ export function kernelProvenanceProblem(kernelBin, root) {
     return `${kernelBin} 旁边没有 KERNEL_PROVENANCE.json，不知道它打没打内核补丁 —— ${rebuild}`;
   }
   const provenance = JSON.parse(readFileSync(file, 'utf8'));
+  if (kernelBin.endsWith('.exe')) {
+    for (const name of kernelBinaryNames('win32')) {
+      const binary = join(dirname(kernelBin), name);
+      if (!existsSync(binary)) return `缺 Windows 内核组件 ${name} —— ${rebuild}`;
+      if (provenance.binaries?.[name] !== sha256(binary))
+        return `Windows 内核组件 ${name} 缺少来源或已被换过 —— ${rebuild}`;
+    }
+  }
   if (provenance.binarySha256 !== sha256(kernelBin)) {
     return `${kernelBin} 与 KERNEL_PROVENANCE.json 记的不是同一个二进制（被换过）—— ${rebuild}`;
   }

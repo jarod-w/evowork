@@ -728,6 +728,7 @@ export interface LibrarySearchView {
 export interface OcrRuntimeView {
   readonly installed: boolean;
   readonly canInstall: boolean;
+  readonly disabled?: boolean | undefined;
   readonly bytes?: number | undefined;
   readonly message: string;
 }

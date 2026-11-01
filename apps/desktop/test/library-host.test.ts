@@ -35,6 +35,25 @@ const settled = async () => {
   }
   throw new Error('index never settled');
 };
+it('Windows 的资料库保留文本索引，拒绝 OCR 入口', async () => {
+  const source = join(root, 'notes.txt');
+  await writeFile(source, 'Windows 基础版文本检索');
+  host = await createLibraryHost({
+    home: root,
+    db: store.db,
+    databasePath: join(root, 'library.db'),
+    artifacts: () => [],
+    approveArtifact: async () => false,
+    pickFiles: async () => [source],
+    openPath: async () => {},
+    platform: 'win32',
+  });
+  await host.importFiles();
+  await host.enable();
+  const row = (await settled()).rows[0]!;
+  expect(row.state).toBe('searchable');
+  await expect(host.control({ documentId: row.id, action: 'ocr' })).rejects.toThrow('暂未开放 OCR');
+});
 it('imports a controlled copy, searches body with cross-block AND/snippets, and copies only a selected location', async () => {
   const source = join(root, 'external.txt');
   await writeFile(source, '合同 毛利率\n' + 'a'.repeat(4500) + '\n付款方式 全角ＡＢＣ');

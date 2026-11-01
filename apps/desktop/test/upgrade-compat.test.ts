@@ -177,6 +177,7 @@ describe.each(fixtures)('从 EvoWork $meta.appVersion 升级上来（$meta.name�
       defaultPermissions: false,
       bundledSkills: false,
       chatgptBaseUrl: false,
+      windowsSandbox: false,
     });
     expect(twice.text).toBe(once.text);
     const baseUrl = original.split('\n').find((line) => /^\s*base_url\s*=/.test(line));

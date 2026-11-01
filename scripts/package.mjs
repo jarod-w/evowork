@@ -18,10 +18,17 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 import { verifyPrebuiltRuntime } from './build-office-runtime.mjs';
 import { kernelProvenanceProblem } from './kernel-provenance.mjs';
-import { artifactName, checkSizeBudget, checkTierPlacement, planSigning } from './package-plan.mjs';
+import {
+  artifactName,
+  checkSizeBudget,
+  checkTierPlacement,
+  planSigning,
+  packagedAppDirectory,
+} from './package-plan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,6 +47,9 @@ if (!OS_KEY) {
 const argv = process.argv.slice(2);
 const arch = argv.includes('--arch') ? argv[argv.indexOf('--arch') + 1] : process.arch;
 const dryRun = argv.includes('--dry-run');
+if (OS_KEY === 'win' && (arch !== 'x64' || process.arch !== 'x64')) {
+  throw new Error('Windows 基础版仅支持原生 x64 构建；请使用 Windows x64 的 Node 和构建机。');
+}
 
 /** 每个平台的默认目标。与 build/electron-builder.yml 的 target 列表一致。 */
 const TARGETS = { mac: ['dmg', 'zip'], win: ['nsis'], linux: ['AppImage', 'deb'] }[OS_KEY];
@@ -132,7 +142,7 @@ const args = [
 if (!signing.sign) {
   // 不是"跳过签名"，是**明确关掉自动发现**：否则 electron-builder 会摸到钥匙串里
   // 任意一张证书然后签出一个我们没打算签的包
-  args.push('--config.mac.identity=null');
+  args.push(OS_KEY === 'win' ? '--config.win.signExecutable=false' : '--config.mac.identity=null');
 }
 
 console.log(`\n$ electron-builder ${args.join(' ')}`);
@@ -140,15 +150,19 @@ if (dryRun) {
   console.log('（--dry-run：前置检查通过，未执行打包）');
   process.exit(0);
 }
-execFileSync(join(ROOT, 'node_modules/.bin/electron-builder'), args, {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: signing.sign ? process.env : { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' },
-});
+execFileSync(
+  process.execPath,
+  [createRequire(import.meta.url).resolve('electron-builder/cli.js'), ...args],
+  {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: signing.sign ? process.env : { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' },
+  },
+);
 
 // ── 事后预算（R10）───────────────────────────────────────────────────────
 const outDir = join(ROOT, 'dist/release');
-const appDir = join(outDir, arch === 'x64' ? 'mac' : `mac-${arch}`, 'EvoWork.app');
+const appDir = packagedAppDirectory(outDir, process.platform, arch);
 
 function walk(dir) {
   const out = [];
@@ -163,7 +177,7 @@ function walk(dir) {
 /*
  * 档位检查允许办公运行时随包，只阻止仍独立发行的 OCR 组件混入。
  */
-if (OS_KEY === 'mac' && existsSync(appDir)) {
+if (existsSync(appDir)) {
   const tier = checkTierPlacement(walk(appDir).map((f) => relative(appDir, f)));
   console.log(`\n档位检查：${tier.message}`);
   if (!tier.ok) process.exitCode = 1;

@@ -5,6 +5,7 @@ import { inspectOcrBundle, installOcrBundle } from '@evowork/runtime-installer';
 import { renderPdfPages } from '@evowork/ingest/pdf-pages.js';
 import { verifyOcrRuntime } from '@evowork/ingest';
 import { createAttachmentTextHost } from './attachment-text-host.js';
+import { ocrDisabledReason } from './platform-features.js';
 import { createLibraryHost, type LibraryHost } from './library-host.js';
 import { parse as parseImageRequirements } from 'smol-toml';
 import { createImageHost } from './image-host.js';
@@ -62,7 +63,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { cpus, homedir, hostname, totalmem, userInfo } from 'node:os';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join, sep } from 'node:path';
 
 import {
   buildKernelModelCatalog,
@@ -395,14 +396,18 @@ function shellQuote(value: string): string {
  *
  * 用 Electron 自己充当 node（`ELECTRON_RUN_AS_NODE=1`）：**用户机器上没有 node**。
  * 每次启动重写 —— App 挪了位置或升级之后，旧路径就指向不存在的文件。
- * Windows 暂不装：内核在那边不走 `$SHELL -lc`，命令写法不同，而且没验过（U5 同一处）。
+ * Windows 经 cmd /C 启动编码后的 PowerShell：路径不进入 cmd 的展开/转义层。
+ * 系统命令执行与内核 hook 信任仍须 Windows 真机验收。
  */
 export function ensureKernelHooks(
   paths: EvoworkPaths,
-  input: { readonly pluginsDir: string; readonly execPath: string },
+  input: {
+    readonly pluginsDir: string;
+    readonly execPath: string;
+    readonly platform?: NodeJS.Platform;
+  },
 ): KernelHooks | undefined {
   const target = join(paths.kernelHome, 'hooks.json');
-  if (process.platform === 'win32') return undefined;
   const pluginRoot = join(input.pluginsDir, 'hooks', 'evowork-policy');
   const manifestPath = join(pluginRoot, 'hooks.json');
   if (!existsSync(manifestPath)) return undefined;
@@ -423,7 +428,16 @@ export function ensureKernelHooks(
         ...(group.matcher !== undefined ? { matcher: group.matcher } : {}),
         hooks: group.hooks.map((hook) => {
           const script = hook.command.replace(/^node \$\{CLAUDE_PLUGIN_ROOT\}\//, '');
-          const command = `ELECTRON_RUN_AS_NODE=1 ${shellQuote(input.execPath)} ${shellQuote(join(pluginRoot, script))}`;
+          const scriptPath = join(pluginRoot, script);
+          const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+          const command =
+            (input.platform ?? process.platform) === 'win32'
+              ? 'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ' +
+                Buffer.from(
+                  `$ErrorActionPreference='Stop'; $OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); [Console]::InputEncoding=$OutputEncoding; $env:ELECTRON_RUN_AS_NODE='1'; & ${psQuote(input.execPath)} ${psQuote(scriptPath)}; exit $LASTEXITCODE`,
+                  'utf16le',
+                ).toString('base64')
+              : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(input.execPath)} ${shellQuote(scriptPath)}`;
           commands.push(command);
           return { type: 'command', command };
         }),
@@ -479,7 +493,10 @@ const MULTI_AGENT_V2_SETTINGS = [
  * 单独成一个函数，是为了让升级兼容测试（`test/upgrade-compat.test.ts`）跑的就是宿主跑的
  * 这一串，而不是测试里抄的一份 —— 抄的那份会在下一次有人往这里加一步时悄悄过期。
  */
-export function migrateKernelConfigText(text: string): {
+export function migrateKernelConfigText(
+  text: string,
+  platform: NodeJS.Platform = process.platform,
+): {
   readonly text: string;
   readonly changed: {
     readonly retiredModel: boolean;
@@ -489,6 +506,7 @@ export function migrateKernelConfigText(text: string): {
     readonly defaultPermissions: boolean;
     readonly bundledSkills: boolean;
     readonly chatgptBaseUrl: boolean;
+    readonly windowsSandbox: boolean;
   };
 } {
   const retiredModel = removeRetiredDefaultModel(text);
@@ -499,8 +517,9 @@ export function migrateKernelConfigText(text: string): {
   const defaultPermissions = migrateDefaultPermissions(retries.text);
   const bundledSkills = migrateBundledSkillsConfig(defaultPermissions.text);
   const chatgptBaseUrl = migrateChatgptBaseUrl(bundledSkills.text);
+  const windowsSandbox = migrateWindowsSandboxConfig(chatgptBaseUrl.text, platform);
   return {
-    text: chatgptBaseUrl.text,
+    text: windowsSandbox.text,
     changed: {
       retiredModel: retiredModel.changed,
       multiAgentV2: multiAgentV2.changed,
@@ -509,7 +528,34 @@ export function migrateKernelConfigText(text: string): {
       defaultPermissions: defaultPermissions.changed,
       bundledSkills: bundledSkills.changed,
       chatgptBaseUrl: chatgptBaseUrl.changed,
+      windowsSandbox: windowsSandbox.changed,
     },
+  };
+}
+
+/** 上游默认未启用 Windows 沙箱；仅为未显式设置的 Windows 配置补上选择。 */
+function migrateWindowsSandboxConfig(
+  text: string,
+  platform: NodeJS.Platform,
+): { text: string; changed: boolean } {
+  if (platform !== 'win32') return { text, changed: false };
+  const windows = parseImageRequirements(text).windows;
+  if (windows && typeof windows === 'object' && 'sandbox' in windows)
+    return { text, changed: false };
+  const table = /^[\t ]*\[(?:windows|"windows"|'windows')\][\t ]*(?:#[^\r\n]*)?\r?$/m;
+  if (table.test(text))
+    return { text: text.replace(table, '$&\nsandbox = "elevated"'), changed: true };
+  // 无显式表时用根级 dotted key，兼容已有 windows.other 与后续 windows 子表。
+  const section = text.search(/^[\t ]*\[/m);
+  const at = section < 0 ? text.length : section;
+  const prefix = text.slice(0, at);
+  return {
+    text:
+      prefix +
+      (prefix && !prefix.endsWith('\n') ? '\n' : '') +
+      'windows.sandbox = "elevated"\n' +
+      text.slice(at),
+    changed: true,
   };
 }
 
@@ -1324,7 +1370,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
   const writeComputerUseConfig = (enabled: boolean): void => {
     // 不支持的平台无需注册。macOS 默认禁用；启用后供下一条任务加载。
-    if (process.platform !== 'darwin' || !options.pluginsDir) return;
+    if (!options.pluginsDir) return;
     const content = existsSync(kernelConfigPath) ? readFileSync(kernelConfigPath, 'utf8') : '';
     writeFileSync(
       kernelConfigPath,
@@ -1332,7 +1378,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         content,
         process.execPath,
         join(options.pluginsDir, 'connectors/computer-use/server.mjs'),
-        enabled,
+        enabled && process.platform === 'darwin',
       ),
       { mode: 0o600 },
     );
@@ -2393,6 +2439,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const ocrBundle = (options.env ?? process.env).EVOWORK_OCR_BUNDLE;
   const ocrBundleDigest = (options.env ?? process.env).EVOWORK_OCR_BUNDLE_DIGEST;
   const ocrRuntimeStatus = async () => {
+    const reason = ocrDisabledReason();
+    if (reason) return { installed: false, canInstall: false, disabled: true, message: reason };
     let installed = false;
     try {
       verifyOcrRuntime(ocrRoot);
@@ -2456,7 +2504,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
             path = await realpath(artifact.path);
           if (classifyPath(path, { home: homedir(), workspaceRoot: root }).verdict !== 'allow')
             return false;
-          return path.startsWith(`${root}/`) && path === artifact.path;
+          return path.startsWith(root + sep) && path === artifact.path;
         } catch {
           return false;
         }
@@ -2482,6 +2530,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     ocrRuntime: {
       status: ocrRuntimeStatus,
       install: async () => {
+        const reason = ocrDisabledReason();
+        if (reason) throw new Error(reason);
         if (!ocrBundle || !ocrBundleDigest) throw new Error('尚未配置可验证的 OCR 离线包。');
         await installOcrBundle({
           bundle: ocrBundle,

@@ -18,22 +18,30 @@
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
 
 import { HOOK_VENDOR } from './package-plan.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const desktopRequire = createRequire(join(ROOT, 'apps/desktop/package.json'));
 
 function run(command, args, cwd = ROOT) {
   console.log(`\n$ ${command} ${args.join(' ')}`);
   execFileSync(command, args, { cwd, stdio: 'inherit' });
 }
 
-if (process.platform === 'darwin') run('node', [join(ROOT, 'scripts/build-computer-use.mjs')]);
+if (process.platform === 'darwin')
+  run(process.execPath, [join(ROOT, 'scripts/build-computer-use.mjs')]);
 
 console.log('① 编译 TypeScript（含声明文件）');
-run('node', [join(ROOT, 'node_modules/typescript/bin/tsc'), '--build', 'tsconfig.build.json']);
+run(process.execPath, [
+  join(ROOT, 'node_modules/typescript/bin/tsc'),
+  '--build',
+  'tsconfig.build.json',
+]);
 
 console.log('\n② 复制 Electron 入口');
 /*
@@ -98,21 +106,22 @@ const BUNDLES = [
   },
 ];
 for (const bundle of BUNDLES) {
-  run(join(ROOT, 'node_modules/.bin/esbuild'), [
-    bundle.entry,
-    '--bundle',
-    `--outfile=${bundle.out}`,
-    '--platform=node',
-    `--format=${bundle.format}`,
-    '--target=node22',
+  await build({
+    absWorkingDir: ROOT,
+    entryPoints: [bundle.entry],
+    bundle: true,
+    outfile: bundle.out,
+    platform: 'node',
+    format: bundle.format,
+    target: 'node22',
     /*
      * **只把 electron 排除在外**，workspace 包必须打进来 ——
      * 它们不是运行时能解析到的 npm 依赖，`--packages=external` 会让产物在服务器上
      * 找不到 `@evowork/logging`。node 内置模块由 `--platform=node` 自动外置。
      */
-    '--external:electron',
-    '--log-level=warning',
-  ]);
+    external: ['electron'],
+    logLevel: 'warning',
+  });
   console.log(`   ${bundle.entry} → ${bundle.out}`);
 }
 
@@ -294,13 +303,14 @@ copyFileSync(
 
 console.log('\n④ 打包渲染层');
 /*
- * 用 pnpm --filter 而不是直接跑 `node node_modules/vite/bin/vite.js`。
- *
- * pnpm 不做提升：vite 只装在 `apps/desktop/node_modules` 里，仓库根没有。
- * 写死根路径会在这里失败，而失败信息（"Command failed"）完全不解释原因 ——
- * 交给 pnpm 解析，它知道每个包各自的 bin 在哪。
+ * vite 只装在 apps/desktop，不假设根目录提升依赖。
+ * 从桌面 package.json 解析 CLI，用当前 Node 执行，避免 Windows .cmd shim 与 shell 转义。
  */
-run('pnpm', ['--filter', '@evowork/desktop', 'run', 'build']);
+run(
+  process.execPath,
+  [join(dirname(desktopRequire.resolve('vite/package.json')), 'bin/vite.js'), 'build'],
+  join(ROOT, 'apps/desktop'),
+);
 
 console.log('\n✅ 构建完成。产物：');
 console.log('   dist/gateway/main.js                             网关（单文件，可直接 node 运行）');

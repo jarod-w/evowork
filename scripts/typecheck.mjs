@@ -34,7 +34,7 @@ function hasTsTests(dir) {
 }
 
 function tsc(...args) {
-  execFileSync('node', [join(REPO_ROOT, 'node_modules/typescript/bin/tsc'), ...args], {
+  execFileSync(process.execPath, [join(REPO_ROOT, 'node_modules/typescript/bin/tsc'), ...args], {
     cwd: REPO_ROOT,
     stdio: 'inherit',
   });

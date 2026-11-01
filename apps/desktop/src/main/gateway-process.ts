@@ -237,6 +237,7 @@ function spawnLocalGateway(options: GatewayProcessOptions): GatewayProcess {
 
   try {
     const child = spawnFn(options.execPath ?? process.execPath, [options.entryPath], {
+      windowsHide: true,
       env: {
         ...env,
         // 打包后跑的是 Electron 二进制；没有它 Electron 会去开一个窗口而不是执行脚本

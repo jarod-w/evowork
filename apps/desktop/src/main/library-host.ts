@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import { ocrDisabledReason } from './platform-features.js';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
@@ -48,7 +49,9 @@ export async function createLibraryHost(options: {
   readonly interpreter?: () => string | undefined;
   readonly ready?: () => Promise<void>;
   readonly quotaBytes?: number | undefined;
+  readonly platform?: NodeJS.Platform;
 }) {
+  const disabledReason = ocrDisabledReason(options.platform);
   const home = await realpath(options.home);
   const registry = await openLibraryRegistry(join(home, 'library'));
   const projection = createLibraryProjection(options.db);
@@ -140,7 +143,8 @@ export async function createLibraryHost(options: {
           // Hash-keyed cache never grants scope; it is read only after registration/path checks.
           const contentFile = join(cache, `${hash}-body-v1.json`);
           let result: LibraryExtraction | undefined;
-          if (!record.ocrAllowed) {
+          const ocrAllowed = record.ocrAllowed && !disabledReason;
+          if (!ocrAllowed) {
             try {
               if (
                 !(await lstat(contentFile)).isSymbolicLink() &&
@@ -171,7 +175,7 @@ export async function createLibraryHost(options: {
             }
           }
           const image = ['.png', '.jpg', '.jpeg', '.webp'].includes(extname(path));
-          if (image && !record.ocrAllowed) {
+          if (image && !ocrAllowed) {
             const fresh = get(id);
             if (!fresh || (epochs.get(id) ?? 0) !== epoch) continue;
             await registry.update({ ...fresh, hash });
@@ -180,12 +184,12 @@ export async function createLibraryHost(options: {
             running.delete(id);
             state(id, {
               state: 'ocrRequired',
-              note: '图片仅按文件名可搜；选择“识别文字”才会读取图片内容。',
+              note: disabledReason ?? '图片仅按文件名可搜；选择“识别文字”才会读取图片内容。',
             });
           } else {
             if (/\.(pdf|docx|xlsx|pptx)$/i.test(path)) await options.ready?.();
             const interpreter = options.interpreter?.();
-            if (record.ocrAllowed && (image || extname(path) === '.pdf')) {
+            if (ocrAllowed && (image || extname(path) === '.pdf')) {
               try {
                 verifyOcrRuntime(runtimeRoot);
               } catch {
@@ -593,6 +597,7 @@ export async function createLibraryHost(options: {
       action: 'stop' | 'continue' | 'ocr' | 'remove';
       rotation?: 0 | 90 | 180 | 270 | undefined;
     }): Promise<LibraryDataView> {
+      if (input.action === 'ocr' && disabledReason) throw new Error(disabledReason);
       const r = get(input.documentId);
       if (!r) throw new Error('资料不存在。');
       if (input.action === 'remove') {

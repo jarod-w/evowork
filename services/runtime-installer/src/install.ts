@@ -685,6 +685,7 @@ const defaultRun: RunFn = (file, args, options) =>
       file,
       [...args],
       {
+        windowsHide: true,
         ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}),
         ...(options?.signal ? { signal: options.signal } : {}),
         maxBuffer: 16 * 1024 * 1024,

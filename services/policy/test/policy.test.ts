@@ -43,6 +43,14 @@ import {
 const HOME = '/Users/li';
 const CONTEXT = { workspaceRoot: '/Users/li/work/weekly', home: HOME };
 
+it('Windows 默认不区分大小写的路径不能绕过系统与凭据拦截', () => {
+  const context = { workspaceRoot: 'C:\\Users\\Alice\\work', home: 'C:\\Users\\Alice' };
+  for (const path of ['c:\\WINDOWS\\System32', 'C:\\USERS\\ALICE\\.SSH\\id_rsa']) {
+    expect(classifyPath(path, context).verdict).toBe('hard-block');
+  }
+  expect(classifyPath('c:\\users\\alice\\WORK\\report.txt', context).verdict).toBe('allow');
+});
+
 describe('路径归一化：`..` 必须在匹配前解析掉', () => {
   it('把 home 折成 ~', () => {
     expect(normalizePath('/Users/li/work', HOME)).toBe('~/work');
