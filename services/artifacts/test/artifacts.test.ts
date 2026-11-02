@@ -154,6 +154,8 @@ describe('哪些文件不算产物', () => {
       expect(isIgnored(path), path).toBe(true);
     }
     expect(isIgnored('/w/report.docx')).toBe(false);
+    expect(isIgnored('C:\\work\\uploads\\copy\\content.md')).toBe(true);
+    expect(isIgnored('C:\\work\\outputs\\report.docx')).toBe(false);
   });
 
   it('删除事件不产生新记录（由 fs/watch 标 MISSING）', () => {

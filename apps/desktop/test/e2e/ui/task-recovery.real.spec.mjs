@@ -1,16 +1,25 @@
 /** 真模型验证恢复指令会检查磁盘进度；不代替确定性的崩溃/审批时序测试。 */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
+import { localPythonCommand } from './shell-commands.mjs';
 
 test.use({ registerModels: true, hostGateway: true });
-const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 
 test('真模型：崩溃后核对已写文件，完成剩余步骤且不重复第一阶段', async ({ page, electronApp }) => {
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
   const saved = join(workspace, 'phase-one.txt');
   const result = join(workspace, 'phase-two.txt');
-  const cmd = `printf 'saved-once\n' >> ${quote(saved)}; sleep 45; printf 'remaining-done\n' > ${quote(result)}`;
+  const cmd = localPythonCommand([
+    '-c',
+    [
+      'from pathlib import Path; import time',
+      `with Path(${JSON.stringify(saved)}).open('a', encoding='utf-8', newline='\\n') as f: f.write('saved-once\\n')`,
+      'time.sleep(45)',
+      `Path(${JSON.stringify(result)}).write_text('remaining-done\\n', encoding='utf-8', newline='\\n')`,
+    ].join('\n'),
+  ]);
   await startTaskInWorkspace(
     page,
     electronApp,

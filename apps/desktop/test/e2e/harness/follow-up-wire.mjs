@@ -24,6 +24,11 @@ export function installFollowUpWire(path) {
         at: Date.now(),
         endpoint: url.origin + url.pathname,
         model: body.model,
+        toolNames: (body.tools ?? [])
+          .map((tool) => tool.function?.name)
+          .filter(
+            (name) => typeof name === 'string' && /^[a-zA-Z_][a-zA-Z0-9_-]{0,200}$/.test(name),
+          ),
         hasNextActionRules: JSON.stringify(body.messages ?? []).includes('优先把该目标写成建议'),
         hasNextActionRulesInSystem: (body.messages ?? []).some(
           (message) =>
@@ -41,6 +46,7 @@ export function installFollowUpWire(path) {
             JSON.stringify(message.content ?? '').includes('不能一律排除收盘后报道'),
         ),
         hasTemporalTask: JSON.stringify(body.messages ?? []).includes('LATEST_'),
+        hasGuardianTranscript: JSON.stringify(body.messages ?? []).includes('>>> TRANSCRIPT START'),
         hasNextActionTask: JSON.stringify(body.messages ?? []).includes('REALNEXT_'),
         hasNextActionStopReminder: JSON.stringify(body.messages ?? []).includes(
           '本回合尚未登记下一步状态。',

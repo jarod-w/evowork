@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { expect, test } from './fixtures.mjs';
 import { kernelProvenanceProblem } from '../../../../../scripts/kernel-provenance.mjs';
 import { removeE2EHome } from '../harness/runner.mjs';
+import { terminateTestAppTree } from '../harness/terminate-app-tree.mjs';
+import { appTestEnvironment } from '../harness/app-test-path.mjs';
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, '../../../../..');
 const input = (page) => page.getByLabel('需求输入');
@@ -22,13 +24,22 @@ async function journey(info, run) {
       platform() === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
     );
   expect(kernelProvenanceProblem(binary, root)).toBeFalsy();
-  const { ELECTRON_RUN_AS_NODE: _node, ...parentEnv } = process.env;
+  const parentEnv = appTestEnvironment(process.env);
   let app,
     page,
     home,
     ok = false;
   const boots = [];
+  const stages = [];
+  const stage = (name) => {
+    stages.push({ name, at: new Date().toISOString() });
+    writeFileSync(
+      info.outputPath('restart-stages.json'),
+      JSON.stringify({ boots, stages }, null, 2),
+    );
+  };
   async function launch() {
+    stage('launch-start');
     app = await electron.launch({
       executablePath: require('electron'),
       args: [join(root, 'apps/desktop/test/e2e/harness/ui-entry.mjs')],
@@ -51,8 +62,10 @@ async function journey(info, run) {
     home ??= await app.evaluate(() => globalThis.__evoworkE2E.home);
     boots.push({
       electronPid: app.process().pid,
+      runtimePid: await app.evaluate(() => process.pid),
       lifecycle: await app.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle()),
     });
+    stage('launch-ready');
   }
   const controls = {
     get app() {
@@ -62,17 +75,32 @@ async function journey(info, run) {
       return page;
     },
     async reboot(crash = false) {
-      boots[0].exitKind = crash ? 'SIGKILL' : 'closed';
+      stage(crash ? 'forced-reboot-start' : 'normal-reboot-start');
+      boots[0].exitKind = crash ? 'forced' : 'closed';
       boots[0].lifecycle = await app.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle());
       await page.screenshot({ path: info.outputPath('before-restart.png') });
       if (crash) {
-        const child = app.process();
-        const exited = new Promise((resolve) => child.once('exit', resolve));
-        child.kill('SIGKILL');
-        await exited;
-      } else await app.close();
+        const knownPids = await app.evaluate(() => [
+          globalThis.__evoworkE2E.kernelPid(),
+          globalThis.__evoworkE2E.gatewayPid,
+        ]);
+        boots[0].forcedTermination = await terminateTestAppTree(app.process(), knownPids);
+        if (platform() === 'win32') {
+          expect(boots[0].forcedTermination.allObservedExited).toBe(true);
+          expect(boots[0].forcedTermination.verifiedExitedPids).toContain(
+            boots[0].lifecycle[0].pid,
+          );
+          for (const pid of knownPids.filter((pid) => typeof pid === 'number'))
+            expect(boots[0].forcedTermination.verifiedExitedPids).toContain(pid);
+        }
+      } else {
+        stage('normal-close-start');
+        await app.close();
+        stage('normal-close-complete');
+      }
       app = undefined;
       await launch();
+      stage('reboot-complete');
       expect(boots[1].electronPid).not.toBe(boots[0].electronPid);
       expect(boots[1].lifecycle[0].pid).not.toBe(boots[0].lifecycle[0].pid);
     },
@@ -119,7 +147,9 @@ async function journey(info, run) {
     await run(controls);
     ok = true;
   } finally {
+    stage('finally-close-start');
     if (app) await app.close();
+    stage('finally-close-complete');
     if (ok && home) removeE2EHome(home);
   }
 }
@@ -309,6 +339,22 @@ for (const stopped of [false, true])
       await c.page.getByRole('button', { name: '继续队列', exact: true }).click();
       await expect(queue(c.page)).toHaveCount(0);
       await expect(composer(c.page)).toHaveAttribute('data-run-state', 'idle');
+      // Queue removal and an idle render can precede the final native turn's items.
+      // Wait for authoritative completion before checking exact history order/count.
+      await expect
+        .poll(async () => {
+          const history = await c.page.evaluate(async () => {
+            const task = (await window.evowork.getStartup()).tasks.find(
+              (entry) => entry.title === '重启验证原任务',
+            );
+            return window.evowork.openTask({ threadId: task.id });
+          });
+          return {
+            finalMessages: userItems(history, 'LOCAL-A').length,
+            finalStatus: history.turns.at(-1)?.status,
+          };
+        })
+        .toEqual({ finalMessages: 1, finalStatus: 'completed' });
       const after = await c.snapshot('local-restored-executed');
       expect(after.histories[0].turns).toHaveLength(3);
       const messages = after.histories[0].items

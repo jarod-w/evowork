@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
-const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+import { localNodeCommand, writeFileCommand } from './shell-commands.mjs';
+import { approveFixtureCommand } from './file-results-support.mjs';
 
 test('长任务写入后崩溃：历史恢复、刷新仍可继续、文件不重复写入', async ({ page, electronApp }) => {
   const errors = [];
@@ -25,9 +26,20 @@ test('长任务写入后崩溃：历史恢复、刷新仍可继续、文件不�
         { kind: 'hold' },
       );
     },
-    { marker, cmd: `printf 'saved-once\n' >> ${quote(saved)}` },
+    {
+      marker,
+      cmd: localNodeCommand([
+        '-e',
+        "require('fs').appendFileSync(process.argv[1], 'saved-once\\n')",
+        saved,
+      ]),
+    },
   );
   await startTaskInWorkspace(page, electronApp, `先保存资料，再完成报告 ${marker}`);
+  await approveFixtureCommand(
+    page,
+    () => existsSync(saved) && readFileSync(saved, 'utf8') === 'saved-once\n',
+  );
   await expect
     .poll(() => (existsSync(saved) ? readFileSync(saved, 'utf8') : ''))
     .toBe('saved-once\n');
@@ -93,7 +105,7 @@ test('审批期间崩溃：旧审批撤销，未经批准的写入不会在恢�
     {
       tool: 'exec_command',
       args: {
-        cmd: `printf denied > ${quote(file)}`,
+        cmd: writeFileCommand(file, 'denied'),
         sandbox_permissions: 'require_escalated',
         justification: '恢复验收的受控写入',
       },

@@ -69,7 +69,8 @@ def main() -> None:
         facts = docx_facts(path) if path.suffix.lower() == ".docx" else xlsx_facts(path)
     except Exception as error:  # noqa: BLE001 —— 打不开本身就是要报告的事实
         facts = {"error": f"{type(error).__name__}: {error}"}
-    print(json.dumps(facts, ensure_ascii=False))
+    # The caller decodes JSON as UTF-8; ASCII escapes also work with a GBK console.
+    print(json.dumps(facts, ensure_ascii=True))
 
 
 if __name__ == "__main__":

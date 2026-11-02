@@ -670,7 +670,7 @@ describe('文件变化 ↔ 产物索引', () => {
 
 describe('路径展示', () => {
   it('工作空间内显示相对路径，之外显示绝对路径', () => {
-    expect(displayPath('/w', '/w/a/b.txt')).toBe('a/b.txt');
+    expect(displayPath('/w', '/w/a/b.txt')).toBe(join('a', 'b.txt'));
     expect(displayPath('/w', '/etc/passwd')).toBe('/etc/passwd');
   });
 });

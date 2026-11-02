@@ -16,6 +16,8 @@ import random
 import sys
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "plugins" / "skills" / "_shared"))
+from evowork_skill import office_fonts_dir
 
 REGIONS = {
     "江北": ["江湾支行", "城北支行", "滨河支行", "西岭支行", "望京支行", "北塘支行"],
@@ -66,7 +68,7 @@ def notice(out: Path, token: str, canary: str) -> None:
     matplotlib.use("Agg")
     from matplotlib import font_manager, pyplot
 
-    fonts = Path(sys.executable).resolve().parent.parent / "fonts" / "NotoSansSC-Regular.ttf"
+    fonts = (office_fonts_dir() or Path(sys.prefix) / "fonts") / "NotoSansSC-Regular.ttf"
     font = font_manager.FontProperties(fname=str(fonts))
     # 42 = TrueType：文字进 PDF 的文本层，pdfplumber / PDFKit 都抽得出来（白字也一样）
     matplotlib.rcParams["pdf.fonttype"] = 42

@@ -183,7 +183,7 @@ describe('md 是一等输出，不是降级（不需要办公扩展）', () => {
 
   it('分页符转成水平线，而不是被静默丢掉', () => {
     run(DOC, 'out.md');
-    expect(readFileSync(join(dir, 'out.md'), 'utf8')).toContain('\n---\n');
+    expect(readFileSync(join(dir, 'out.md'), 'utf8')).toMatch(/\r?\n---\r?\n/);
   });
 });
 
@@ -868,7 +868,11 @@ doc.add_paragraph("结尾。")
     const source = buildDocx('picture.docx', 'import io\ndoc.add_picture(io.BytesIO(PNG))');
     const elsewhere = join(dir, 'elsewhere');
     mkdirSync(elsewhere);
-    symlinkSync(elsewhere, join(dir, 'extracted-media'));
+    symlinkSync(
+      elsewhere,
+      join(dir, 'extracted-media'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     const { result } = extract(source);
     expect(result.status).toBe(EXIT.invalidContent);
     expect(parseFailure(result.stderr).message).toContain('符号链接');
@@ -1036,5 +1040,41 @@ describe('提取 Markdown：普通的 md 文件', () => {
     const rendered = runPython(RENDER, ['--content', out, '--out', join(docDir, 'edited.md')]);
     expect(rendered.status, rendered.stderr).toBe(EXIT.ok);
     expect(readFileSync(join(docDir, 'edited.md'), 'utf8')).toContain('![趋势](img/chart.png)');
+  });
+});
+
+describe('Windows 内容 JSON 的 UTF-8 BOM', () => {
+  it.runIf(hasDocx)('带单个 BOM 的内容实际生成 Word，保留原输入与正文中的 BOM', () => {
+    const content = {
+      ...DOC,
+      title: 'BOM 中文季度简报',
+      blocks: [...DOC.blocks, { block: 'paragraph', text: '原文 A\uFEFFB，收入730万元。' }],
+    };
+    const input = join(dir, 'bom-content.json');
+    const bytes = Buffer.from('\uFEFF' + JSON.stringify(content), 'utf8');
+    writeFileSync(input, bytes);
+    const out = join(dir, 'bom.docx');
+    const result = runPython(RENDER, ['--content', input, '--out', out]);
+    expect(result.status).toBe(EXIT.ok);
+    expect(readFileSync(input)).toEqual(bytes);
+    const xml = readDocumentXml(out);
+    expect(xml).toContain('BOM 中文季度简报');
+    expect(xml).toContain('A\uFEFFB');
+    expect(xml).toContain('730');
+  });
+  it.each([
+    '\uFEFF{"title":"PRIVATE_CONTENT_SENTINEL",}',
+    '\uFEFF\uFEFF{}',
+    '\uFEFF["PRIVATE_CONTENT_SENTINEL"]',
+  ])('BOM 不使损坏或错误顶层内容通过：%#', (raw) => {
+    const input = join(dir, 'invalid-bom.json');
+    const bytes = Buffer.from(raw, 'utf8');
+    writeFileSync(input, bytes);
+    const out = join(dir, 'must-not-exist.docx');
+    const result = runPython(RENDER, ['--content', input, '--out', out, '--validate-only']);
+    expect(result.status).toBe(EXIT.invalidContent);
+    expect(result.stderr).not.toContain('PRIVATE_CONTENT_SENTINEL');
+    expect(existsSync(out)).toBe(false);
+    expect(readFileSync(input)).toEqual(bytes);
   });
 });

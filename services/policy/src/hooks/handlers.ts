@@ -11,7 +11,7 @@
  * 10 §2.3：这条对 `evowork-full` 同样生效。看了 permission_mode 就等于给了绕过的口子。
  */
 
-import { resolve } from 'node:path';
+import { posix, win32 } from 'node:path';
 import { memoryNoteReceipt } from '../memory-note-receipt.js';
 
 import {
@@ -137,6 +137,12 @@ function hardBlocks(
   return hits;
 }
 
+function resolvePatchPath(cwd: string, path: string): string {
+  // 策略输入可以来自任一平台，不能让运行测试的 OS 改变路径语义。
+  const paths = /^[a-zA-Z]:[\\/]|^\\\\/.test(cwd) ? win32 : posix;
+  return paths.resolve(cwd, path);
+}
+
 /** apply_patch 改到的每个文件按「写」判；相对路径按 cwd 解析（内核也是这么落盘的）。 */
 function patchHardBlocks(
   input: PreToolUseInput,
@@ -145,7 +151,7 @@ function patchHardBlocks(
   const hits = [];
   for (const op of parseApplyPatch(input.tool_name, extractCommand(input.tool_input)) ?? []) {
     if (op.path === '') continue;
-    const decision = classifyPath(resolve(input.cwd, op.path), context, 'write');
+    const decision = classifyPath(resolvePatchPath(input.cwd, op.path), context, 'write');
     if (decision.verdict === 'hard-block') hits.push({ raw: op.path, decision });
   }
   return hits;
@@ -258,7 +264,7 @@ function applyPatchDenial(
       return { reason: deletePatchReason(op.path), summary: 'APPLY_PATCH_DELETE', path: op.path };
     }
     if (op.path === '') continue;
-    const original = env.readFile(resolve(input.cwd, op.path));
+    const original = env.readFile(resolvePatchPath(input.cwd, op.path));
     if (original === undefined) continue; // 新建文件：照常
     // Add File 写到已有文件上会直接覆盖它（内核 apply-patch 的 AddFile 分支不查是否存在）
     if (op.kind === 'add' || replacesWholeFile(op, original)) {

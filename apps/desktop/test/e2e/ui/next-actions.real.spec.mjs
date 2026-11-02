@@ -2,7 +2,9 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
+import { readJsonFile } from '../harness/read-json.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
 
 test.use({
@@ -138,7 +140,7 @@ test('真实模型自主提出后续建议：实际文件交付、草稿保护�
     const input = page.getByLabel('需求输入');
     await input.fill('用户正在编辑的草稿 ' + m.marker);
     await completed(page, task.id, 1);
-    expect(JSON.parse(readFileSync(join(m.root, 'analysis.json'), 'utf8'))).toEqual({
+    expect(readJsonFile(join(m.root, 'analysis.json'))).toEqual({
       total: values.reduce((sum, value) => sum + value, 0),
       max: Math.max(...values),
     });

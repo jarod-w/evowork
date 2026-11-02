@@ -1,5 +1,5 @@
 import { mkdtemp, mkdir, readFile, writeFile, realpath, symlink, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, parse, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openStore, type Store } from '@evowork/store';
@@ -9,6 +9,8 @@ let home: string;
 let store: Store;
 let environments: TaskEnvironments;
 const roots = new Map<string, string>();
+const linkDirectory = (target: string, path: string) =>
+  symlink(target, path, process.platform === 'win32' ? 'junction' : 'dir');
 beforeEach(async () => {
   home = await realpath(await mkdtemp(join(tmpdir(), 'evowork-environment-')));
   store = openStore({ path: ':memory:' });
@@ -33,7 +35,7 @@ describe('任务环境的真实文件系统后果', () => {
     await mkdir(selected);
     await environments.setWorkingDirectory(selected);
     const first = await environments.prepare('new');
-    expect(first.cwd.startsWith(`${selected}/`)).toBe(true);
+    expect(first.cwd.startsWith(`${selected}${sep}`)).toBe(true);
     const restored = createTaskEnvironments({
       store,
       home,
@@ -50,7 +52,7 @@ describe('任务环境的真实文件系统后果', () => {
     await restored.setWorkingDirectory(null);
     expect(
       (await restored.prepare('default')).cwd.startsWith(
-        `${join(home, '.evowork', 'workspaces')}/`,
+        `${join(home, '.evowork', 'workspaces')}${sep}`,
       ),
     ).toBe(true);
     expect((await restored.prepare('new')).cwd).toBe(first.cwd);
@@ -79,7 +81,7 @@ describe('任务环境的真实文件系统后果', () => {
     await mkdir(outside);
     await environments.setWorkingDirectory(selected);
     await rm(selected, { recursive: true });
-    await symlink(outside, selected);
+    await linkDirectory(outside, selected);
     await expect(environments.prepare('replaced-root')).rejects.toThrow('工作目录已被替换');
   });
 
@@ -155,7 +157,7 @@ describe('任务环境的真实文件系统后果', () => {
     const outside = join(home, 'outside');
     await mkdir(project);
     await mkdir(outside);
-    await symlink(outside, join(project, 'uploads'));
+    await linkDirectory(outside, join(project, 'uploads'));
     await expect(
       environments.references('draft-1', project, [
         { type: 'mention', name: '资料', path: source },
@@ -166,10 +168,10 @@ describe('任务环境的真实文件系统后果', () => {
   it('任务目录被换成软链、home 和任意祖先、任意内部目录都拒绝', async () => {
     const environment = await environments.prepare('draft-1');
     await rm(environment.cwd, { recursive: true });
-    await symlink(home, environment.cwd);
+    await linkDirectory(home, environment.cwd);
     await expect(environments.validate(environment.cwd)).rejects.toThrow();
     await expect(environments.validate(home)).rejects.toThrow('范围过大');
-    await expect(environments.validate('/')).rejects.toThrow('范围过大');
+    await expect(environments.validate(parse(home).root)).rejects.toThrow('范围过大');
     await mkdir(join(home, '.evowork', 'secrets'));
     await expect(environments.validate(join(home, '.evowork', 'secrets'))).rejects.toThrow(
       '应用的数据目录',

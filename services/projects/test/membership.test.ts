@@ -10,6 +10,29 @@ import { isUnderRoot } from '../src/index.js';
 const HOME = '/Users/li';
 
 describe('isUnderRoot', () => {
+  it.each([
+    ['C:\\', 'C:\\private.txt'],
+    ['c:/', 'c:/private.txt'],
+    ['D:/work/..', 'D:/private.txt'],
+    ['\\\\server\\share', '\\\\server\\share\\private.txt'],
+    ['\\\\server\\share\\project\\..', '\\\\server\\share\\private.txt'],
+  ])('Windows 根目录 %s 不能把整个盘或共享认作可预览项目', (root, file) => {
+    expect(isUnderRoot(root, file, 'C:\\Users\\u')).toBe(false);
+  });
+
+  it('Windows 根目录守卫仍允许具体的本地与 UNC 项目', () => {
+    expect(isUnderRoot('C:\\work\\project', 'C:\\work\\project\\file.md', 'C:\\Users\\u')).toBe(
+      true,
+    );
+    expect(
+      isUnderRoot(
+        '\\\\server\\share\\project',
+        '\\\\server\\share\\project\\file.md',
+        'C:\\Users\\u',
+      ),
+    ).toBe(true);
+  });
+
   it('root 自身算在内', () => {
     expect(isUnderRoot('/w/proj', '/w/proj', HOME)).toBe(true);
   });

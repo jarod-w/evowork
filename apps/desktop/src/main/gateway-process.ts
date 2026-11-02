@@ -382,10 +382,13 @@ function commandOf(pid: number): string {
       'powershell.exe',
       [
         '-NoProfile',
+        '-NonInteractive',
         '-Command',
-        `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+        `([wmi]"Win32_Process.Handle='${pid}'").CommandLine`,
       ],
-      { encoding: 'utf8', timeout: 2_000, windowsHide: true },
+      // Windows PowerShell/WMI cold startup can itself exceed two seconds.
+      // Keep this bounded, but do not misclassify a live listener as an empty port.
+      { encoding: 'utf8', timeout: 5_000, windowsHide: true },
     ).trim();
   }
   return execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'command='], {

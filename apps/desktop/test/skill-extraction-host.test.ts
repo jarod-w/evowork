@@ -305,7 +305,11 @@ describe('任务会话提炼技能的实际存储与安装后果', () => {
     const draft = await start();
     const elsewhere = join(dir, 'elsewhere');
     await mkdir(elsewhere);
-    await symlink(elsewhere, join(project, '.agents'));
+    await symlink(
+      elsewhere,
+      join(project, '.agents'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     await expect(
       host.saveSkillExtraction({ threadId: draft.threadId, revision: 1 }),
     ).rejects.toThrow('目标技能目录');
@@ -347,7 +351,7 @@ describe('任务会话提炼技能的实际存储与安装后果', () => {
   });
   it('全局镜像使用路径别名时按真实目录匹配，不误报未发现', async () => {
     const alias = join(dir, 'kernel-alias');
-    await symlink(join(data, 'kernel'), alias);
+    await symlink(join(data, 'kernel'), alias, process.platform === 'win32' ? 'junction' : 'dir');
     host.close();
     kernelHome = alias;
     host = makeHost();

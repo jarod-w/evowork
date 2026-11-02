@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openStore, createArtifactRepo, type Store } from '@evowork/store';
 import { IMAGE_MODELS, ImageApiError, type ImageRequest } from '@evowork/gateway';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -36,6 +37,15 @@ afterEach(() => {
 });
 const response = () =>
   Promise.resolve({ b64: png.toString('base64'), model: IMAGE_MODELS[0].id, generatedImages: 1 });
+it('outside task files, including another Windows volume, are denied before content parsing', () => {
+  const service = createImageService({
+    db: store.db,
+    valid: () => true,
+    ask: async () => true,
+    submit: response,
+  });
+  expect(() => service.register(root, fileURLToPath(import.meta.url))).toThrow('IMAGE_PATH_DENIED');
+});
 it('PNG validates complete compressed bytes and rejects altered/truncated bytes', () => {
   expect(inspectPng(png)).toEqual({ width: 1, height: 1 });
   expect(() => inspectPng(png.subarray(0, -1))).toThrow();
@@ -182,6 +192,13 @@ it('only registered bounded files in the same task may be uploaded, mutations/sy
   const modified = await service.run(context, { prompt: 'blue', imageRef: ref });
   expect(modified.error_code).toBe('IMAGE_FILE_CHANGED');
   expect(submit).not.toHaveBeenCalled();
-  symlinkSync(path, join(root, 'link.png'));
-  expect(() => service.register(root, join(root, 'link.png'))).toThrow('IMAGE_PATH_DENIED');
+  let linked = join(root, 'link.png');
+  if (process.platform === 'win32') {
+    const alias = join(root, 'linked');
+    symlinkSync(root, alias, 'junction');
+    linked = join(alias, 'selected.png');
+  } else {
+    symlinkSync(path, linked);
+  }
+  expect(() => service.register(root, linked)).toThrow('IMAGE_PATH_DENIED');
 });

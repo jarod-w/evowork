@@ -988,6 +988,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [subtasksByTask, setSubtasksByTask] = useState<
     Readonly<Record<string, readonly TaskRowView[]>>
   >({});
+  const subtaskRevisions = useRef(new Map<string, number>());
   const [focusItemId, setFocusItemId] = useState<string | undefined>(undefined);
   const [steer, setSteer] = useState(false);
   const [sendFeedback, setSendFeedback] = useState<string | undefined>(undefined);
@@ -1308,6 +1309,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         if (event.type === 'task-removed') {
           deletedTaskIds.current.add(event.taskId);
           setTasks((previous) => previous.filter((task) => task.id !== event.taskId));
+          subtaskRevisions.current.delete(event.taskId);
+          setSubtasksByTask((previous) =>
+            Object.fromEntries(
+              Object.entries(previous)
+                .filter(([id]) => id !== event.taskId)
+                .map(([id, subtasks]) => [id, subtasks.filter((task) => task.id !== event.taskId)]),
+            ),
+          );
           setActiveTaskId((previous) => (previous === event.taskId ? null : previous));
           const remove = <T,>(previous: Readonly<Record<string, T>>) => {
             const next = { ...previous };
@@ -1407,6 +1416,23 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           }));
           return;
         }
+        if (event.type === 'subtasks-changed') {
+          if (deletedTaskIds.current.has(event.taskId)) return;
+          subtaskRevisions.current.set(
+            event.taskId,
+            (subtaskRevisions.current.get(event.taskId) ?? 0) + 1,
+          );
+          const subtasks = event.subtasks.filter((task) => !deletedTaskIds.current.has(task.id));
+          setSubtasksByTask((previous) => ({ ...previous, [event.taskId]: subtasks }));
+          setTasks((previous) => {
+            const incoming = new Map(subtasks.map((task) => [task.id, task]));
+            return [
+              ...previous.map((task) => incoming.get(task.id) ?? task),
+              ...subtasks.filter((task) => !previous.some((old) => old.id === task.id)),
+            ];
+          });
+          return;
+        }
         if (event.type === 'queue-changed') {
           void bridge
             .listQueuedInputs?.({ threadId: event.taskId })
@@ -1421,15 +1447,18 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'task-updated') {
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === event.taskId
-                ? {
-                    ...t,
-                    ...(event.status ? { status: event.status } : {}),
-                    ...(event.title !== undefined ? { title: event.title } : {}),
-                  }
-                : t,
+          const updateTask = (task: TaskRowView): TaskRowView =>
+            task.id === event.taskId
+              ? {
+                  ...task,
+                  ...(event.status ? { status: event.status } : {}),
+                  ...(event.title !== undefined ? { title: event.title } : {}),
+                }
+              : task;
+          setTasks((previous) => previous.map(updateTask));
+          setSubtasksByTask((previous) =>
+            Object.fromEntries(
+              Object.entries(previous).map(([id, subtasks]) => [id, subtasks.map(updateTask)]),
             ),
           );
           if (event.status) {
@@ -1946,9 +1975,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   useEffect(() => {
     if (activeTaskId === null || !bridge.listSubtasks) return;
     const threadId = activeTaskId;
+    const revision = (subtaskRevisions.current.get(threadId) ?? 0) + 1;
+    subtaskRevisions.current.set(threadId, revision);
     void bridge
       .listSubtasks({ threadId })
-      .then((subtasks) => setSubtasksByTask((previous) => ({ ...previous, [threadId]: subtasks })))
+      .then((subtasks) => {
+        if (
+          subtaskRevisions.current.get(threadId) !== revision ||
+          deletedTaskIds.current.has(threadId)
+        )
+          return;
+        setSubtasksByTask((previous) => ({
+          ...previous,
+          [threadId]: subtasks.filter((task) => !deletedTaskIds.current.has(task.id)),
+        }));
+      })
       .catch((error: unknown) => reportFailure(error, '没能读取子任务。'));
   }, [activeTaskId, bridge, reportFailure, activeCollabItems, activeTaskStatus]);
 

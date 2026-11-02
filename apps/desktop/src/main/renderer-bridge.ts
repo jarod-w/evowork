@@ -29,7 +29,7 @@ import { describeMcpToolApproval } from './mcp-tool-approval-view.js';
  * （连报错都没有：`void send()` 把 rejection 吞了）。
  * 它一直没被发现，是因为这条链路从来没有被真正拉起来过。
  */
-import { resolve } from 'node:path';
+import { posix, resolve, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mergeWebSources, webResearchResult, type WebSource } from '../shared/web-sources.js';
 import type { TaskEnvironments } from './task-environments.js';
@@ -845,6 +845,18 @@ export function createEventTranslator(store: Store, now: () => number) {
       }
       case 'queue-changed':
         return [{ type: 'queue-changed', taskId: event.threadId }];
+      case 'subtasks-changed':
+        return [
+          {
+            type: 'subtasks-changed',
+            taskId: event.threadId,
+            subtasks: store.threads
+              .queryThreadIds({ parentThreadId: event.threadId })
+              .map((id) => store.threads.get(id))
+              .filter((row): row is ProjectionRow => row !== undefined)
+              .map((row) => taskRow(row, now())),
+          },
+        ];
       case 'task-status':
         return [{ type: 'task-updated', taskId: event.threadId, status: event.status }];
       case 'turn-started':
@@ -2678,7 +2690,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!realRoot) return [];
       const response = await adapter.searchFiles(input.query, [realRoot], `composer:${realRoot}`);
       return response.files.flatMap((match) => {
-        const absolute = resolve(match.root, match.path);
+        const absolute = resolveWithinRoot(match.root, match.path);
         if (!isUnderRoot(realRoot, absolute, ports.home)) return [];
         const label = match.path.replace(/^\.\//, '');
         return [
@@ -2873,7 +2885,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       if (!realRoot) {
         return { name, kind: 'unsupported', message: '任务工作空间现在不可用。' };
       }
-      const requested = resolve(realRoot, input.path);
+      const requested = resolveWithinRoot(realRoot, input.path);
       const lexical = resolveChildPath(realRoot, requested, ports.home);
       if (!lexical) {
         return {
@@ -4011,13 +4023,17 @@ export function digestToRenderItem(entry: ItemDigestEntry): RenderItemView {
 
 /** 路径的最后一段。不用 `node:path` 是因为这几个函数也被渲染层的测试直接调 */
 function basename(path: string): string {
-  const cut = path.lastIndexOf('/');
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   return cut < 0 ? path : path.slice(cut + 1);
 }
 
 function dirname(path: string): string {
-  const cut = path.lastIndexOf('/');
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   return cut <= 0 ? '/' : path.slice(0, cut);
+}
+
+function resolveWithinRoot(root: string, path: string): string {
+  return (/^[a-z]:[\\/]|^\\\\/i.test(root) ? win32 : posix).resolve(root, path);
 }
 
 /** 扩展名（不含点）。没有扩展名返回 undefined —— 不编一个空串当"有扩展名" */

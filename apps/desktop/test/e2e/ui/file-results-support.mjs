@@ -1,6 +1,16 @@
 import { expect } from './fixtures.mjs';
+import { shellQuote } from './shell-commands.mjs';
 
-export const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+export const quote = shellQuote;
+
+/** Approve this visible fixture command only; readiness must come from its real disk effect. */
+export async function approveFixtureCommand(page, ready) {
+  const approval = page.getByLabel('需要你确认').first();
+  await expect.poll(async () => (await ready()) || (await approval.count()) > 0).toBe(true);
+  if (await approval.count())
+    await approval.getByRole('button', { name: '允许这一次', exact: true }).click();
+  await expect.poll(ready).toBe(true);
+}
 export const idle = (page) =>
   expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
 export async function taskId(page, marker) {

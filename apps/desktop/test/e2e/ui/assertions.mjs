@@ -1,3 +1,11 @@
+import { realpathSync } from 'node:fs';
+import { isAbsolute, relative, sep } from 'node:path';
+
+export function strictlyWithinDirectory(root, path) {
+  const child = relative(realpathSync.native(root), realpathSync.native(path));
+  return child !== '' && child !== '..' && !child.startsWith('..' + sep) && !isAbsolute(child);
+}
+
 /**
  * 几条**任何页面都该成立**的几何/样式判据。
  *

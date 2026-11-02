@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { arch, platform } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { writeFileCommand } from './shell-commands.mjs';
 import {
   changes,
   results,
@@ -65,7 +66,7 @@ test('关闭整个应用再启动，原文件记录和撤销副本仍有效', as
     await scriptFileTools(
       app,
       'FILE-RESTART',
-      [{ tool: 'exec_command', args: { cmd: 'printf changed > persistent.txt' } }],
+      [{ tool: 'exec_command', args: { cmd: writeFileCommand('persistent.txt', 'changed') } }],
       'RESTART DONE',
     );
     await startTaskInWorkspace(page, app, 'FILE-RESTART');

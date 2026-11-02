@@ -5,6 +5,8 @@ export function createDeliveryRpcFaults() {
   const rules = new Map();
   const counts = {};
   const held = [];
+  const rpcErrors = [];
+  const resumeResults = [];
   let dropped = 0;
   return {
     arm(method, kind, persistent = false) {
@@ -17,11 +19,18 @@ export function createDeliveryRpcFaults() {
       for (const resume of held.splice(0)) resume();
     },
     snapshot() {
-      return { counts: { ...counts }, held: held.length, dropped };
+      return {
+        counts: { ...counts },
+        held: held.length,
+        dropped,
+        rpcErrors: [...rpcErrors],
+        resumeResults: [...resumeResults],
+      };
     },
     attach(child) {
       const lost = new Set();
       const delayed = new Set();
+      const requests = new Map();
       let incoming = '';
       let outgoing = '';
       const inputDecoder = new StringDecoder('utf8');
@@ -46,6 +55,11 @@ export function createDeliveryRpcFaults() {
             write.call(this, line + '\n');
             continue;
           }
+          if (request.id !== undefined)
+            requests.set(request.id, {
+              method: request.method,
+              threadId: request.params?.threadId,
+            });
           counts[request.method] = (counts[request.method] ?? 0) + 1;
           const rule = rules.get(request.method);
           if (rule && !rule.persistent) rules.delete(request.method);
@@ -85,6 +99,30 @@ export function createDeliveryRpcFaults() {
           } catch {
             emit.call(this, event, Buffer.from(line + '\n'));
             continue;
+          }
+          if (!response.method && requests.has(response.id)) {
+            const request = requests.get(response.id);
+            requests.delete(response.id);
+            // Metadata only: never retain native error messages, IDs, turns or bodies.
+            if (response.error) {
+              rpcErrors.push({
+                method: request.method,
+                code: Number.isFinite(response.error.code) ? response.error.code : null,
+              });
+              if (rpcErrors.length > 64) rpcErrors.shift();
+            }
+            if (request.method === 'thread/resume') {
+              const thread = response.result?.thread;
+              const status = thread?.status?.type;
+              resumeResults.push({
+                success: !response.error,
+                sameThread: typeof request.threadId === 'string' && thread?.id === request.threadId,
+                status: ['notLoaded', 'idle', 'active', 'systemError'].includes(status)
+                  ? status
+                  : 'unknown',
+              });
+              if (resumeResults.length > 128) resumeResults.shift();
+            }
           }
           if (!response.method && lost.delete(response.id)) {
             dropped++;

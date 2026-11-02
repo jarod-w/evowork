@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { installFollowUpWire } from '../../apps/desktop/test/e2e/harness/follow-up-wire.mjs';
+import { installApprovalWire } from '../../apps/desktop/test/e2e/harness/approval-wire.mjs';
 
 let home, path;
 beforeEach(() => {
@@ -22,6 +23,35 @@ const payload = {
   headers: { authorization: 'Bearer test-secret-never-log' },
 };
 const rows = () => readFileSync(path, 'utf8').trim().split('\n').map(JSON.parse);
+
+it('approval observation preserves decisions and distinguishes repeated actions without retaining private fields', async () => {
+  let resolve;
+  const result = { decision: 'accept' };
+  const pending = new Promise((done) => {
+    resolve = done;
+  });
+  const router = { handle: vi.fn(() => pending) };
+  const original = router.handle;
+  const restore = installApprovalWire(router, path);
+  const params = {
+    threadId: 'private-thread',
+    itemId: 'private-item',
+    command: 'private-body test-secret',
+    cwd: 'private-path',
+  };
+  const first = router.handle('command', params);
+  const second = router.handle('command', params);
+  expect(rows()).toHaveLength(2);
+  expect(rows()[0].requestHash).toBe(rows()[1].requestHash);
+  resolve(result);
+  expect(await first).toBe(result);
+  expect(await second).toBe(result);
+  expect(rows().filter((r) => r.type === 'finished')).toHaveLength(2);
+  expect(original).toHaveBeenCalledTimes(2);
+  expect(readFileSync(path, 'utf8')).not.toMatch(/private|test-secret|accept|command/);
+  restore();
+  expect(router.handle).toBe(original);
+});
 
 it('pairs successful HTTP observations without retaining request headers or body', async () => {
   const response = new Response('private response');

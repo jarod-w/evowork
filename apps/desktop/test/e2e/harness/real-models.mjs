@@ -18,8 +18,8 @@ export const REAL_MODEL_PRESETS = Object.freeze({
     displayName: 'DeepSeek Flash',
     provider: 'deepseek',
     upstreamModel: 'deepseek-flash',
-    baseUrl: 'https://api.deepseek.com',
-    probeUrl: 'https://api.deepseek.com/models',
+    baseUrl: 'https://api.deepseek.com/v1',
+    probeUrl: 'https://api.deepseek.com/v1/models',
     capabilities: {
       streaming: true,
       toolCalls: true,

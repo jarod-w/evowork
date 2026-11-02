@@ -5,6 +5,7 @@ import {
   openSync,
   closeSync,
   ftruncateSync,
+  existsSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
@@ -17,8 +18,9 @@ import {
   selectTask,
   settle,
   taskId,
-  quote,
+  approveFixtureCommand,
 } from './file-results-support.mjs';
+import { localNodeCommand, writeFileCommand } from './shell-commands.mjs';
 
 async function commandTask(page, electronApp, marker, cmd) {
   await scriptFileTools(
@@ -41,7 +43,12 @@ test('撤销可取消；刷新后副本仍可用；本回合和任务范围恢�
   const path = join(root, 'state.txt');
   writeFileSync(path, 'original\n');
   const marker = 'FILE-SCOPES';
-  const id = await commandTask(page, electronApp, marker, "printf 'middle\\n' > state.txt");
+  const id = await commandTask(
+    page,
+    electronApp,
+    marker,
+    writeFileCommand('state.txt', 'middle\n'),
+  );
   await changes(page);
   await page.getByRole('button', { name: '撤销这次变更', exact: true }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: '取消', exact: true }).click();
@@ -54,7 +61,7 @@ test('撤销可取消；刷新后副本仍可用；本回合和任务范围恢�
     page,
     electronApp,
     '第二回合只修改 state.txt',
-    "printf 'final\\n' > state.txt",
+    writeFileCommand('state.txt', 'final\n'),
   );
   await changes(page);
   await page.getByRole('tab', { name: '本回合', exact: true }).click();
@@ -78,9 +85,14 @@ test('回合之间的用户编辑禁止按任务起点覆盖，本回合仍能�
   const root = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace),
     path = join(root, 'gap.txt');
   writeFileSync(path, 'original');
-  await commandTask(page, electronApp, 'FILE-GAP', 'printf first-agent > gap.txt');
+  await commandTask(page, electronApp, 'FILE-GAP', writeFileCommand('gap.txt', 'first-agent'));
   writeFileSync(path, 'user-between-turns');
-  await sendFileCommand(page, electronApp, '修改 gap.txt', 'printf second-agent > gap.txt');
+  await sendFileCommand(
+    page,
+    electronApp,
+    '修改 gap.txt',
+    writeFileCommand('gap.txt', 'second-agent'),
+  );
   await changes(page);
   await page.getByRole('tab', { name: '本任务全部', exact: true }).click();
   await expect(page.getByText(/回合之间存在外部文件改动/)).toBeVisible();
@@ -102,7 +114,10 @@ test('真实MCP分页发现105个文件不泄露正文；助手交付措辞不�
       {
         tool: 'exec_command',
         args: {
-          cmd: 'node -e \'const fs=require("fs");for(let i=0;i<105;i++)fs.writeFileSync(`file-${String(i).padStart(3,"0")}.txt`,"BODY-PRIVATE-DATA")\'',
+          cmd: localNodeCommand([
+            '-e',
+            "const fs=require('fs');for(let i=0;i<105;i++)fs.writeFileSync('file-'+String(i).padStart(3,'0')+'.txt','BODY-PRIVATE-DATA')",
+          ]),
         },
       },
       { tool: 'list_files', args: {} },
@@ -138,7 +153,19 @@ test('技能先上报后创建和编辑，最新落盘版本始终归实际任�
     path = join(root, 'delayed-report.md');
   const mark = resolve('plugins/skills/documents/container_tools/mark_artifact.mjs');
   const cmd = (operation) =>
-    `node ${quote(mark)} --operation-kind ${operation} --output-format md --path ${quote(path)}\nsleep 1.2\nprintf ${operation === 'create' ? 'FIRST' : 'SECOND'} > ${quote(path)}`;
+    [
+      localNodeCommand([
+        mark,
+        '--operation-kind',
+        operation,
+        '--output-format',
+        'md',
+        '--path',
+        path,
+      ]),
+      localNodeCommand(['-e', 'setTimeout(()=>{},1200)']),
+      writeFileCommand(path, operation === 'create' ? 'FIRST' : 'SECOND'),
+    ].join('\n');
   const id = await commandTask(page, electronApp, 'FILE-DELAY', cmd('create'));
   await expect
     .poll(async () => (await results(page, id)).artifacts.map((a) => a.version))
@@ -165,7 +192,7 @@ test('确认期间发生外部修改就拒绝覆盖；撤销其他文件不能�
     page,
     electronApp,
     'FILE-CONFLICT',
-    'printf agent > one.txt\nprintf agent > two.txt',
+    [writeFileCommand('one.txt', 'agent'), writeFileCommand('two.txt', 'agent')].join('\n'),
   );
   await changes(page);
   await page
@@ -211,7 +238,10 @@ test('会话回滚明确不动磁盘；二进制和超过64KB的等长修改仍�
     page,
     electronApp,
     'FILE-BINARY',
-    'node -e \'const fs=require("fs"); fs.writeFileSync("data.bin",Buffer.from([0,9,8,7,255])); fs.writeFileSync("long.txt","x".repeat(70000)+"after!")\'',
+    localNodeCommand([
+      '-e',
+      "const fs=require('fs');fs.writeFileSync('data.bin',Buffer.from([0,9,8,7,255]));fs.writeFileSync('long.txt','x'.repeat(70000)+'after!')",
+    ]),
   );
   await changes(page);
   await page
@@ -242,7 +272,7 @@ test('同工作目录另一任务运行时禁止撤销，结束后当前页面�
   page,
   electronApp,
 }) => {
-  await commandTask(page, electronApp, 'FILE-OWNER', 'printf generated > shared.txt');
+  await commandTask(page, electronApp, 'FILE-OWNER', writeFileCommand('shared.txt', 'generated'));
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await startTaskInWorkspace(page, electronApp, 'FILE-BUSY EVOWORK-UI-HOLD');
   await expect
@@ -256,32 +286,37 @@ test('同工作目录另一任务运行时禁止撤销，结束后当前页面�
 });
 
 test('后台任务明确打开不会抢当前任务，切回后显示对应文件', async ({ page, electronApp }, info) => {
-  await electronApp.evaluate(() => {
-    globalThis.__fileOpenGate = false;
-    const { gateway } = globalThis.__evoworkE2E;
-    gateway.scriptWhen(
-      'background-write',
-      (v) => v.text.includes('FILE-BACKGROUND') && v.calls.length === 0,
-      { tool: 'exec_command', args: { cmd: 'printf background-content > background.txt' } },
-    );
-    gateway.scriptWhen(
-      'background-open',
-      (v) => v.text.includes('FILE-BACKGROUND') && v.calls.length === 1,
-      {
-        tool: (body) => {
-          const flatten = (list) => list.flatMap((t) => (t.tools ? flatten(t.tools) : [t.name]));
-          return flatten(JSON.parse(body).tools).find((n) => n?.endsWith('open_file'));
+  await electronApp.evaluate(
+    (_, cmd) => {
+      globalThis.__fileOpenGate = false;
+      const { gateway } = globalThis.__evoworkE2E;
+      gateway.scriptWhen(
+        'background-write',
+        (v) => v.text.includes('FILE-BACKGROUND') && v.calls.length === 0,
+        { tool: 'exec_command', args: { cmd } },
+      );
+      gateway.scriptWhen(
+        'background-open',
+        (v) => v.text.includes('FILE-BACKGROUND') && v.calls.length === 1,
+        {
+          tool: (body) => {
+            const flatten = (list) => list.flatMap((t) => (t.tools ? flatten(t.tools) : [t.name]));
+            return flatten(JSON.parse(body).tools).find((n) => n?.endsWith('open_file'));
+          },
+          args: { path: 'background.txt' },
         },
-        args: { path: 'background.txt' },
-      },
-      { ready: () => globalThis.__fileOpenGate },
-    );
-    gateway.scriptWhen('background-done', (v) => v.text.includes('FILE-BACKGROUND'), {
-      kind: 'text',
-      text: 'BACKGROUND DONE',
-    });
-  });
+        { ready: () => globalThis.__fileOpenGate },
+      );
+      gateway.scriptWhen('background-done', (v) => v.text.includes('FILE-BACKGROUND'), {
+        kind: 'text',
+        text: 'BACKGROUND DONE',
+      });
+    },
+    writeFileCommand('background.txt', 'background-content'),
+  );
   await startTaskInWorkspace(page, electronApp, 'FILE-BACKGROUND');
+  const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  await approveFixtureCommand(page, () => existsSync(join(workspace, 'background.txt')));
   await expect
     .poll(() =>
       electronApp.evaluate(() =>
@@ -356,7 +391,7 @@ test('超出单文件快照上限会提示限制，不显示虚假的撤销按�
   const fd = openSync(join(root, 'oversized.bin'), 'w');
   ftruncateSync(fd, 33 * 1024 * 1024);
   closeSync(fd);
-  await commandTask(page, electronApp, 'FILE-QUOTA', 'printf safe > small.txt');
+  await commandTask(page, electronApp, 'FILE-QUOTA', writeFileCommand('small.txt', 'safe'));
   await changes(page);
   await expect(page.getByText(/较大文件仅比较元数据/)).toBeVisible();
   await expect(page.getByRole('button', { name: '撤销这次变更', exact: true })).toHaveCount(0);

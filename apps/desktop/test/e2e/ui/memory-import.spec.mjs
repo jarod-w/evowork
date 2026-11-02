@@ -36,7 +36,7 @@ async function confirmAlpha(page) {
 }
 
 async function sources(electronApp) {
-  const workspace = realpathSync(
+  const workspace = realpathSync.native(
     await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace),
   );
   const home = dirname(workspace);
@@ -99,8 +99,12 @@ test('设置及 /import 共用向导，取消零写入、仅选中项目、保�
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   await expect(dialog.getByText('alpha-project：资料已导入')).toBeVisible();
   await expect(dialog).toContainText('不代表记忆已经整理就绪');
-  expect(importedMemory(fixture.kernelHome, 'alpha-project')).toEqual({
-    scope: { cwd: fixture.workspace },
+  const imported = importedMemory(fixture.kernelHome, 'alpha-project');
+  expect({
+    ...imported,
+    scope: { ...imported.scope, cwd: realpathSync.native(imported.scope.cwd) },
+  }).toEqual({
+    scope: { cwd: realpathSync.native(fixture.workspace) },
     text: '# Alpha project\nALPHA_IMPORT_EVIDENCE: use violet reports.\n',
   });
   expect(importedMemory(fixture.kernelHome, 'beta-project')).toBeNull();
@@ -225,7 +229,27 @@ test('发货内核实际整理导入资料，新任务收到记忆索引，禁�
   await send('IMPORT_CONSOLIDATION_TRIGGER_UI');
   await expect
     .poll(() => consolidatedMemory(fixture.kernelHome)?.memory, { timeout: 45000 })
-    .toContain('ALPHA_IMPORT_EVIDENCE');
+    .toContain('ALPHA_IMPORT_EVIDENCE')
+    .catch(async (error) => {
+      const diagnostic = await electronApp.evaluate(() =>
+        globalThis.__evoworkE2E.gateway.requestBodies.map((raw) => {
+          const body = JSON.parse(raw);
+          return {
+            model: body.model,
+            phase2: raw.includes('phase2_workspace_diff.md'),
+            evidenceRead: raw.includes('IMPORTED_EVIDENCE_READ'),
+            outputs: (body.input ?? [])
+              .filter((item) => item.type === 'function_call_output')
+              .map((item) => String(item.output).slice(-2500)),
+          };
+        }),
+      );
+      await testInfo.attach('consolidation-public-gateway', {
+        body: JSON.stringify(diagnostic, null, 2),
+        contentType: 'application/json',
+      });
+      throw error;
+    });
   await expect
     .poll(() =>
       electronApp.evaluate(() =>
@@ -287,7 +311,21 @@ test('原生批次部分失败时保留成功项目并显示失败原因，可�
     await dialog.getByRole('button', { name: '继续', exact: true }).click();
     await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
     await expect(dialog.getByText('beta-project：资料已导入')).toBeVisible();
-    await expect(dialog.getByText(/alpha-project：无法读取来源文件/)).toBeVisible();
+    const reason =
+      process.platform === 'win32'
+        ? '这个项目未能导入，请检查来源文件后重新检测。'
+        : '无法读取来源文件，请检查目录权限。';
+    await expect(dialog.getByText('alpha-project：' + reason, { exact: true })).toBeVisible();
+    const history = await page.evaluate(() => window.evowork.getMemoryImportHistory());
+    expect(history[0].projects).toEqual(
+      expect.arrayContaining([
+        { key: 'alpha-project', ok: false, reason },
+        { key: 'beta-project', ok: true },
+      ]),
+    );
+    expect(importedMemory(fixture.kernelHome, 'alpha-project').text).toContain(
+      'ALPHA_IMPORT_EVIDENCE',
+    );
   } finally {
     lockImportedMemory(fixture.kernelHome, 'alpha-project', false);
   }

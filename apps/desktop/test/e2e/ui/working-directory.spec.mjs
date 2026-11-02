@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { expect, test } from './fixtures.mjs';
+import { strictlyWithinDirectory } from './assertions.mjs';
 
 test('常规修改无项目工作目录，新任务实际使用新目录，刷新与恢复默认不迁移旧任务', async ({
   page,
@@ -34,7 +35,7 @@ test('常规修改无项目工作目录，新任务实际使用新目录，刷�
     .toBe(1);
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
   const first = (await page.evaluate(() => window.evowork.getStartup())).tasks[0];
-  expect(first.cwd.startsWith(`${selected}/`)).toBe(true);
+  expect(strictlyWithinDirectory(selected, first.cwd)).toBe(true);
   expect(first.projectId).toBeNull();
   await openGeneral();
   await page.getByRole('button', { name: '恢复默认', exact: true }).click();
@@ -49,6 +50,6 @@ test('常规修改无项目工作目录，新任务实际使用新目录，刷�
   const tasks = (await page.evaluate(() => window.evowork.getStartup())).tasks;
   expect(tasks.find((task) => task.id === first.id).cwd).toBe(first.cwd);
   expect(
-    tasks.find((task) => task.id !== first.id).cwd.startsWith(`${realpathSync(initial.path)}/`),
+    strictlyWithinDirectory(initial.path, tasks.find((task) => task.id !== first.id).cwd),
   ).toBe(true);
 });

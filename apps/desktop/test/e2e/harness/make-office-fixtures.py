@@ -13,6 +13,8 @@
 """
 import sys, io
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "plugins" / "skills" / "_shared"))
+from evowork_skill import office_fonts_dir
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
@@ -23,8 +25,8 @@ from pptx.util import Inches as PI, Pt
 from openpyxl import Workbook
 
 out = Path(sys.argv[1]); out.mkdir(exist_ok=True)
-font_roots = [Path(sys.executable).resolve().parent.parent/"fonts", Path.home()/".evowork/runtime/office/fonts"]
-fonts = next((list(root.glob("*.ttf")) for root in font_roots if list(root.glob("*.ttf"))), [])
+font_root = office_fonts_dir() or Path(sys.prefix) / "fonts"
+fonts = list(font_root.glob("*.ttf"))
 if not fonts: raise RuntimeError("Office fixtures require the office runtime's CJK font")
 for f in fonts: font_manager.fontManager.addfont(str(f))
 if fonts: plt.rcParams["font.family"] = font_manager.FontProperties(fname=str(fonts[0])).get_name()

@@ -30,6 +30,7 @@
  */
 import { appendFileSync } from 'node:fs';
 import { connect } from 'node:net';
+import { isAbsolute } from 'node:path';
 
 const ARG_SPEC = {
   '--operation-kind': 'operationKind',
@@ -56,7 +57,7 @@ function validate(args) {
   if (!['create', 'edit'].includes(args.operationKind)) {
     problems.push('--operation-kind 必须是 create 或 edit');
   }
-  if (!args.path || !args.path.startsWith('/')) {
+  if (!args.path || !isAbsolute(args.path)) {
     problems.push('--path 必须是绝对路径（产物本体留在工作空间里，索引只记路径）');
   }
   if (!args.outputFormat) problems.push('--output-format 必填（如 pptx）');

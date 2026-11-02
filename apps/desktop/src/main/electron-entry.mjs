@@ -11,7 +11,16 @@
  * 而那个红没有任何信息量（我们知道它没装）。写成 .mjs 让类型检查跳过这一个文件，
  * 其余全部照常受约束。装上 electron 之后可以原样改名成 .ts。
  */
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  safeStorage,
+  session,
+  shell,
+} from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -160,6 +169,7 @@ if (isPrimaryInstance) {
         },
       },
       createWindow: (options) => new BrowserWindow(options),
+      session: session,
       ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
       // 首运行第②步 / Composer「添加本地文件」。挂到当前窗口上，否则 macOS
       // 上无主对话框会落到应用后面，表现同样是「点了没反应」。

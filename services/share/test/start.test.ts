@@ -15,6 +15,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -166,7 +167,8 @@ describe('进程入口（按部署方式打包后真起）', () => {
   function entry(): string {
     if (bundle) return bundle;
     const out = join(mkdtempSync(join(tmpdir(), 'evowork-share-entry-')), 'main.mjs');
-    execFileSync(join(ROOT, 'node_modules/.bin/esbuild'), [
+    execFileSync(process.execPath, [
+      createRequire(import.meta.url).resolve('esbuild/bin/esbuild'),
       join(ROOT, 'services/share/src/main.ts'),
       '--bundle',
       `--outfile=${out}`,

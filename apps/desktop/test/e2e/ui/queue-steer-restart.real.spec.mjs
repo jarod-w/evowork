@@ -7,7 +7,11 @@ import { join, resolve } from 'node:path';
 import { kernelProvenanceProblem } from '../../../../../scripts/kernel-provenance.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
 import { removeE2EHome } from '../harness/runner.mjs';
+import { terminateTestAppTree } from '../harness/terminate-app-tree.mjs';
+import { appTestEnvironment } from '../harness/app-test-path.mjs';
+import { startCommandApprovals } from './command-approvals.mjs';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { localPythonCommand } from './shell-commands.mjs';
 
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, '../../../../..');
@@ -28,8 +32,6 @@ const users = (history, marker) =>
 
 async function journey(info, run) {
   const selected = selectRealModel();
-  expect(selected.upstreamModel).toBe('mimo-v2.6-flash');
-  expect(selected.baseUrl).toBe('https://api.xiaomimimo.com/v1');
   const key = process.env.EVOWORK_UI_MODEL_KEY;
   if (!key) throw new Error('真实模型重启验收需要 EVOWORK_UI_MODEL_KEY，不允许跳过');
   const binary =
@@ -41,16 +43,18 @@ async function journey(info, run) {
       platform() === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
     );
   expect(kernelProvenanceProblem(binary, root)).toBeFalsy();
-  const { ELECTRON_RUN_AS_NODE: _node, ...parentEnv } = process.env;
+  const parentEnv = appTestEnvironment(process.env);
   let app,
     page,
     home,
     workspace,
     taskId,
+    originalDraft,
     ok = false;
   const boots = [];
   const mainOutput = [];
   const observations = [];
+  const stopApprovals = startCommandApprovals(() => page);
   const suffix = randomBytes(6).toString('hex');
   const original = `REALFOLLOW_RESTART_${suffix}`;
   const queued = `REALFOLLOW_ONCE_${suffix}`;
@@ -110,6 +114,9 @@ async function journey(info, run) {
     },
     original,
     queued,
+    get originalDraft() {
+      return originalDraft;
+    },
     history,
     wire,
     async begin(loseIpc = false) {
@@ -131,14 +138,48 @@ async function journey(info, run) {
       await startTaskInWorkspace(
         page,
         app,
-        `${original} 两阶段任务：第一步只运行 python3 restart_gate.py，等返回再计算19*23，将结果437写入original.txt并简短回复。禁止修改脚本或创建phase-release，不并行执行，不联网，不创建子任务或其他会话。`,
+        `${original} 两阶段任务：第一步只运行 ${localPythonCommand(['restart_gate.py'])}，等返回再计算19*23，将结果437写入original.txt并简短回复。禁止修改脚本或创建phase-release，不并行执行，不联网，不创建子任务或其他会话。`,
       );
       const tasks = (await page.evaluate(() => window.evowork.getStartup())).tasks;
       taskId = tasks.find((task) => task.cwd && realpathSync(task.cwd) === workspace)?.id;
       expect(taskId).toBeTruthy();
+      const pendingBefore = loseIpc
+        ? await page.evaluate(() => window.evowork.getPendingSend())
+        : undefined;
+      if (loseIpc) {
+        expect(pendingBefore?.text).toContain(original);
+        expect(await input(page).inputValue()).toBe(pendingBefore.text);
+        originalDraft = pendingBefore.text;
+      }
+      let openedPendingTask = false;
       await expect
-        .poll(() => existsSync(join(workspace, 'phase-ready')), { timeout: 120000 })
+        .poll(
+          async () => {
+            if (loseIpc && !openedPendingTask && !existsSync(join(workspace, 'phase-ready'))) {
+              const entry = page
+                .getByRole('region', { name: '待处理' })
+                .getByRole('button', { name: /待批准/ })
+                .first();
+              if (await entry.count()) {
+                await entry.click({ timeout: 1000 });
+                openedPendingTask = true;
+              }
+            }
+            return existsSync(join(workspace, 'phase-ready'));
+          },
+          { timeout: 120000 },
+        )
         .toBe(true);
+      if (loseIpc) {
+        const pendingAfter = await page.evaluate(() => window.evowork.getPendingSend());
+        expect(pendingAfter).toEqual(pendingBefore);
+        observations.push({
+          kind: 'lost-ipc-ui-approval-route',
+          openedPendingTask,
+          pendingBefore,
+          pendingAfter,
+        });
+      }
       // The first lost IPC response deliberately prevents navigation to the new task.
       // Public kernel history, rather than this still-pending composer, proves execution.
       if (!loseIpc) await expect(composer(page)).toHaveAttribute('data-run-state', 'running');
@@ -192,14 +233,23 @@ async function journey(info, run) {
           { timeout: 60000 },
         )
         .toBe(0);
-      boots[0].exitKind = crash ? 'SIGKILL' : 'closed';
+      boots[0].exitKind = crash ? 'forced' : 'closed';
       boots[0].lifecycle = await app.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle());
       await c.snapshot('before-restart');
       if (crash) {
-        const child = app.process();
-        const exited = new Promise((resolve) => child.once('exit', resolve));
-        child.kill('SIGKILL');
-        await exited;
+        const knownPids = await app.evaluate(() => [
+          globalThis.__evoworkE2E.kernelPid(),
+          globalThis.__evoworkE2E.gatewayPid,
+        ]);
+        boots[0].forcedTermination = await terminateTestAppTree(app.process(), knownPids);
+        if (platform() === 'win32') {
+          expect(boots[0].forcedTermination.allObservedExited).toBe(true);
+          expect(boots[0].forcedTermination.verifiedExitedPids).toContain(
+            boots[0].lifecycle[0].pid,
+          );
+          for (const pid of knownPids.filter((pid) => typeof pid === 'number'))
+            expect(boots[0].forcedTermination.verifiedExitedPids).toContain(pid);
+        }
       } else await app.close();
       app = undefined;
       await launch();
@@ -314,25 +364,50 @@ async function journey(info, run) {
     const terminal = wire().filter(
       (row) => row.type === 'response' || row.type === 'transport-error',
     );
-    expect(terminal).toHaveLength(requests.length);
-    for (const request of requests)
-      expect(
-        terminal.filter((row) => row.pid === request.pid && row.id === request.id),
-      ).toHaveLength(1);
+    const interrupted = [];
+    for (const request of requests) {
+      const outcomes = terminal.filter((row) => row.pid === request.pid && row.id === request.id);
+      const termination = boots
+        .map((boot) => boot.forcedTermination)
+        .find((event) => event?.verifiedExitedPids.includes(request.pid));
+      if (termination) expect(request.at).toBeLessThanOrEqual(termination.completedAt);
+      if (outcomes.length === 0 && termination) {
+        // A killed gateway cannot append an HTTP outcome. Record only the verified
+        // process interruption; do not manufacture a provider response or error.
+        interrupted.push({
+          pid: request.pid,
+          id: request.id,
+          requestedAt: request.at,
+          verifiedExitedAt: termination.completedAt,
+        });
+      } else expect(outcomes).toHaveLength(1);
+    }
+    expect(terminal.length + interrupted.length).toBe(requests.length);
+    observations.push({ kind: 'verified-process-interruptions', requests: interrupted });
     expect(responses.length).toBeGreaterThan(0);
     expect(responses.every((row) => row.status === 200)).toBe(true);
     await c.snapshot('final-evidence');
     ok = true;
   } finally {
+    const approved = await stopApprovals();
+    await info.attach('command-approvals', {
+      body: JSON.stringify({ approved }),
+      contentType: 'application/json',
+    });
     if (app) {
       if (!ok) await c.snapshot('failure').catch(() => undefined);
       await app.close();
     }
     save('process-lifecycle.json', { boots });
     if (ok) {
-      expect(boots[0].exit).toMatchObject(
-        boots[0].exitKind === 'SIGKILL' ? { signal: 'SIGKILL' } : { code: 0, signal: null },
-      );
+      if (boots[0].exitKind === 'forced' && platform() === 'win32') {
+        expect(boots[0].exit?.signal).toBeNull();
+        expect(Number.isInteger(boots[0].exit?.code) && boots[0].exit.code !== 0).toBe(true);
+        expect(boots[0].forcedTermination?.taskkillExitCode).toBe(0);
+      } else
+        expect(boots[0].exit).toMatchObject(
+          boots[0].exitKind === 'forced' ? { signal: 'SIGKILL' } : { code: 0, signal: null },
+        );
       expect(boots[1].exit).toMatchObject({ code: 0, signal: null });
     }
     writeFileSync(
@@ -343,13 +418,14 @@ async function journey(info, run) {
   }
 }
 
-test('MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投', async ({
+test('真模型重启：首轮已接受但 IPC 回执丢失，强退后原身份重试不重投', async ({
   playwright: _,
 }, info) => {
   test.setTimeout(360000);
   await journey(info, async (c) => {
     await c.begin(true);
-    const originalText = await input(c.page).inputValue();
+    const originalText = c.originalDraft;
+    expect(originalText).toContain(c.original);
     await c.reboot(true);
     await expect(input(c.page)).toHaveValue(originalText);
     await input(c.page).press('Enter');
@@ -362,7 +438,7 @@ test('MiMo 重启：首轮已接受但 IPC 回执丢失，强退后原身份重�
   });
 });
 
-test('MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑', async ({
+test('真模型重启：追问已接受但 IPC 回执丢失，停止强退后不重投或自动续跑', async ({
   playwright: _,
 }, info) => {
   test.setTimeout(360000);
@@ -385,7 +461,7 @@ test('MiMo 重启：追问已接受但 IPC 回执丢失，停止强退后不重�
 });
 
 for (const crash of [false, true])
-  test(`MiMo 重启：本机降级队列停止后${crash ? '强制' : '正常'}退出，明确继续才执行一次`, async ({
+  test(`真模型重启：本机降级队列停止后${crash ? '强制' : '正常'}退出，明确继续才执行一次`, async ({
     playwright: _,
   }, info) => {
     test.setTimeout(360000);

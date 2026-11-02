@@ -2389,7 +2389,10 @@ describe('首次运行装内核配置', () => {
   });
 
   it('随包模板把根键放在首个 TOML table 前，并显式启用完整 V2', () => {
-    const template = readFileSync(join(process.cwd(), 'config', 'config.toml.template'), 'utf8');
+    const template = readFileSync(
+      join(process.cwd(), 'config', 'config.toml.template'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
     const firstTable = template.search(/^\s*\[/m);
     expect(template.indexOf('default_permissions = "evowork-workspace"')).toBeLessThan(firstTable);
     expect(template.indexOf('approval_policy = "on-request"')).toBeLessThan(firstTable);
@@ -3451,4 +3454,33 @@ it('无有效目录的任务拒绝投递，也不持久保存其草稿恢复正�
   } finally {
     store.close();
   }
+});
+
+it('子任务投影通知只携带该父任务的完整子任务元数据', () => {
+  const store = memoryStore();
+  store.db
+    .prepare(
+      'INSERT INTO thread_projection (thread_id,parent_thread_id,derived_status,title) VALUES (?, ?, ?, ?)',
+    )
+    .run('event-child', 'event-root', 'pending', '投影子任务');
+  store.db
+    .prepare(
+      'INSERT INTO thread_projection (thread_id,parent_thread_id,derived_status,title) VALUES (?, ?, ?, ?)',
+    )
+    .run('unrelated-child', 'other-root', 'pending', '其他子任务');
+  const translate = createEventTranslator(store, () => 1000);
+  expect(translate({ type: 'subtasks-changed', threadId: 'event-root' })).toEqual([
+    {
+      type: 'subtasks-changed',
+      taskId: 'event-root',
+      subtasks: [
+        expect.objectContaining({
+          id: 'event-child',
+          parentThreadId: 'event-root',
+          status: 'pending',
+          title: '投影子任务',
+        }),
+      ],
+    },
+  ]);
 });

@@ -13,7 +13,7 @@
  *
  * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... pnpm run test:ui-real`
  */
-import { expect, test } from './fixtures.mjs';
+import { expect, runUntilIdle, test } from './fixtures.mjs';
 
 /** K5 说的「对外可见字符串」里不许出现的东西 */
 const FORBIDDEN = ['Codex', 'codex', 'OpenAI', 'openai', 'ChatGPT'];
@@ -23,11 +23,17 @@ async function ask(page, text) {
   await page.getByRole('button', { name: '发送' }).click();
   const conversation = page.getByRole('main', { name: '对话区' });
   await expect(conversation).toBeVisible();
-  // 等回合真的收尾：运行中读到的是半截话
-  await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
-    timeout: 240_000,
-  });
-  return (await conversation.innerText()).trim();
+  await runUntilIdle(page);
+  await expect(page.getByRole('alert', { name: '回合失败' })).toHaveCount(0);
+  const agents = conversation.locator('.ew-item-agent');
+  await expect(agents.first()).toBeVisible();
+  const startup = await page.evaluate(() => window.evowork.getStartup());
+  const task = [...startup.tasks].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  expect(task?.id, '必须实际创建任务，不能把用户提示或启动错误当成模型回答').toBeTruthy();
+  const history = await page.evaluate((id) => window.evowork.openTask({ threadId: id }), task.id);
+  expect(history.turns.length).toBeGreaterThan(0);
+  expect(history.turns.every((turn) => turn.status === 'completed')).toBe(true);
+  return (await agents.allInnerTexts()).join('\n').trim();
 }
 
 test('问「介绍一下自己」，回答里不许出现内核品牌（K5）', async ({ page }) => {

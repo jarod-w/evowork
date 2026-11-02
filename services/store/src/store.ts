@@ -66,6 +66,16 @@ const ITEM_DIGEST_KEEP = 50;
 
 export function openStore(options: OpenStoreOptions): Store {
   const raw = new DatabaseSync(options.path);
+  try {
+    return initializeStore(raw, options);
+  } catch (error) {
+    // 迁移拒绝启动时也必须释放文件；Windows 不能删除或替换仍被打开的库。
+    raw.close();
+    throw error;
+  }
+}
+
+function initializeStore(raw: DatabaseSync, options: OpenStoreOptions): Store {
   const db: SqliteLike = raw as unknown as SqliteLike;
 
   // WAL：单写者多读者。内存库不支持 WAL，pragma 会静默回落到 memory 模式

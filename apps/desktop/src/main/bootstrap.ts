@@ -60,10 +60,17 @@ export interface BrowserWindowOptions {
     readonly nodeIntegration: boolean;
     readonly sandbox: boolean;
     readonly webviewTag: boolean;
+    readonly spellcheck: boolean;
   };
 }
 
 export interface ElectronApi {
+  readonly session: {
+    readonly defaultSession: {
+      setSpellCheckerDictionaryDownloadURL(url: string): void;
+      setSpellCheckerEnabled(enabled: boolean): void;
+    };
+  };
   readonly normalizeImage?: ((bytes: Buffer) => Buffer) | undefined;
   readonly app: {
     whenReady(): Promise<void>;
@@ -169,6 +176,7 @@ export const WINDOW_SECURITY = Object.freeze({
   nodeIntegration: false,
   sandbox: true,
   webviewTag: false,
+  spellcheck: false,
 });
 
 /** 01 §3.1：480 以下进入单栏紧凑布局，窗口仍可缩到该尺寸。 */
@@ -224,6 +232,12 @@ export interface BootstrapResult {
 export async function bootstrap(options: BootstrapOptions): Promise<BootstrapResult> {
   const { electron } = options;
   await electron.app.whenReady();
+  // Disabling a window's spellchecker alone still downloads dictionaries on
+  // Windows/Linux. Block that undeclared CDN route before creating any window.
+  electron.session.defaultSession.setSpellCheckerDictionaryDownloadURL(
+    'evowork-disabled://spellcheck-dictionaries/',
+  );
+  electron.session.defaultSession.setSpellCheckerEnabled(false);
 
   /*
    * 数据根目录。默认 `~/.evowork`，**`EVOWORK_HOME` 可以把它整个挪走**。

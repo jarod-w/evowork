@@ -56,6 +56,12 @@ describe('模式指令：没被改过的旧版升级，改过的保留', () => {
     expect(readFileSync(join(paths.modes, 'craft.md'), 'utf8')).toBe('企业自己写的 Craft 指令\n');
   });
 
+  it('Windows 换行不等于用户修改，未改内容的旧模式仍能升级', () => {
+    const { paths, configDir } = setup('旧版\r\n');
+    expect(ensureModeInstructions(paths, configDir)).toBe(1);
+    expect(readFileSync(join(paths.modes, 'craft.md'), 'utf8')).toBe('新版\n');
+  });
+
   it('**仓库里每个模式文件的当前版本都登记在 shipped.json 里** —— 否则下次升级认不出它', () => {
     const modes = join(ROOT, 'config', 'modes');
     const shipped = JSON.parse(readFileSync(join(modes, 'shipped.json'), 'utf8')) as {

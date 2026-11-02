@@ -85,7 +85,7 @@ function listing(path: string): string[] {
 describe('workspace 是模型写的，只认任务目录', () => {
   it('workspace 经过符号链接指到任务目录时照常工作（macOS 的 /var 就是这种链接）', () => {
     const alias = join(dir, 'alias');
-    symlinkSync(ws, alias);
+    symlinkSync(ws, alias, process.platform === 'win32' ? 'junction' : 'dir');
     writeFileSync(join(ws, 'a.txt'), 'a');
     const result = run({
       operation: 'rename',
@@ -235,7 +235,7 @@ describe('只在工作区里移动', () => {
   it('路径经过符号链接目录时拒绝', () => {
     const outside = join(dir, 'outside');
     mkdirSync(outside);
-    symlinkSync(outside, join(ws, 'linked'));
+    symlinkSync(outside, join(ws, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
     writeFileSync(join(ws, 'a.txt'), 'a');
     const result = run({
       operation: 'rename',

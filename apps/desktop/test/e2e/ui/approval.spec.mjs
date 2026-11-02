@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from './fixtures.mjs';
+import { approveCommandOnce } from './command-approvals.mjs';
 
 test('审批卡：点允许之后，命令真的执行了', async ({ page, electronApp }) => {
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
@@ -36,7 +37,10 @@ test('审批卡：点允许之后，命令真的执行了', async ({ page, elect
     {
       tool: 'exec_command',
       args: {
-        cmd: `printf EVOWORK-UI-APPROVED > ${JSON.stringify(approvedFile)}`,
+        cmd:
+          process.platform === 'win32'
+            ? `[System.IO.File]::WriteAllText('${approvedFile.replaceAll("'", "''")}', 'EVOWORK-UI-APPROVED', [System.Text.UTF8Encoding]::new($false))`
+            : `printf EVOWORK-UI-APPROVED > ${JSON.stringify(approvedFile)}`,
         sandbox_permissions: 'require_escalated',
         justification: '真交互测试：验证点了允许之后命令真的会执行',
       },
@@ -60,13 +64,15 @@ test('审批卡：点允许之后，命令真的执行了', async ({ page, elect
 
   // ③ 展开技术详情，用户能看见到底要执行什么（看不见就是在盲签）
   await card.getByRole('button', { name: '查看技术详情' }).click();
+  const fullCommand = card.getByRole('button', { name: '查看完整命令', exact: true });
+  if (await fullCommand.count()) await fullCommand.click();
   await expect(card).toContainText('EVOWORK-UI-APPROVED');
 
   /*
    * ④ **点默认按钮**，不是"本次任务内都允许"。
    * 10 §3.4 要范围最小化，而默认按钮是用户最可能点的那个 —— 要测就测它。
    */
-  await card.getByRole('button', { name: '允许这一次' }).click();
+  expect(await approveCommandOnce(page)).toBe(true);
 
   /*
    * ⑤ **落到磁盘上才算数。**

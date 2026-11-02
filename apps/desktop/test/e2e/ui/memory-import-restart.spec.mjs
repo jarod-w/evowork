@@ -59,7 +59,9 @@ test('整个应用关闭重开，项目记忆、读取设置、原生历史和�
   }
   try {
     let page = await launch();
-    const workspace = realpathSync(await app.evaluate(() => globalThis.__evoworkE2E.workspace));
+    const workspace = realpathSync.native(
+      await app.evaluate(() => globalThis.__evoworkE2E.workspace),
+    );
     home = dirname(workspace);
     seedClaudeMemory(
       home,
@@ -98,8 +100,12 @@ test('整个应用关闭重开，项目记忆、读取设置、原生历史和�
       useMemories: false,
       generateMemories: false,
     });
-    expect(importedMemory(join(home, '.evowork', 'kernel'), 'restart-project')).toMatchObject({
-      scope: { cwd: workspace },
+    const imported = importedMemory(join(home, '.evowork', 'kernel'), 'restart-project');
+    expect({
+      ...imported,
+      scope: { ...imported.scope, cwd: realpathSync.native(imported.scope.cwd) },
+    }).toMatchObject({
+      scope: { cwd: realpathSync.native(workspace) },
       text: expect.stringContaining('PERSISTENT_IMPORT_MARKER'),
     });
     await page.getByRole('button', { name: /菜单$/ }).click();

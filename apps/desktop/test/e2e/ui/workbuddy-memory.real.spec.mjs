@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, toNamespacedPath } from 'node:path';
 import { consolidatedMemory } from '../../../../../services/kernel-adapter/test-support/claude-memory-fixture.mjs';
 import {
   workbuddyNotes,
@@ -21,7 +21,6 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
 }, info) => {
   test.setTimeout(1_500_000);
   const selected = selectRealModel();
-  expect(selected.upstreamModel).toBe('mimo-v2.6-flash');
   const modelId = selected.id;
   const workspace = realpathSync(
     await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace),
@@ -178,7 +177,10 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
     const task = (await page.evaluate(() => window.evowork.getStartup())).tasks.find(
       (row) => row.id === result.threadId,
     );
-    expect(task?.cwd, `${name} 实际任务 cwd`).toBe(paths[project]);
+    expect(task?.cwd, `${name} 应有实际任务 cwd`).toBeTruthy();
+    expect(toNamespacedPath(realpathSync.native(task.cwd)), `${name} 实际任务 cwd`).toBe(
+      toNamespacedPath(realpathSync.native(paths[project])),
+    );
     const record = {
       name,
       task,

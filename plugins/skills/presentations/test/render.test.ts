@@ -14,7 +14,7 @@
  * 当前环境没有 python-pptx，因此**渲染路径的测试会自动跳过并说明原因**，
  * 而不是假装通过。假装通过的测试比没有测试更糟：它会让人以为这条路已经验证过了。
  */
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -282,7 +282,7 @@ describe('办公扩展未部署时的行为（08 §4 的随包成品）', () => 
     const payload = JSON.parse(result.stdout) as { ok: boolean; slides: number };
     expect(payload).toMatchObject({ ok: true, slides: 4 });
     // pptx 是 zip：头两个字节是 PK
-    const head = execFileSync('head', ['-c', '2', out], { encoding: 'latin1' });
+    const head = readFileSync(out).subarray(0, 2).toString('latin1');
     expect(head).toBe('PK');
   });
 
@@ -296,8 +296,10 @@ describe('办公扩展未部署时的行为（08 §4 的随包成品）', () => 
 });
 
 describe('mark_artifact：产物识别的信号 ①（08 §2.2）', () => {
-  it('参数形状沿用内核约定，写一行 JSON 到日志', () => {
+  it.each([false, true])('参数形状沿用内核约定，写一行 JSON 到日志（正斜杠=%s）', (forward) => {
     const logPath = join(dir, 'artifacts.jsonl');
+    const nativePath = join(dir, '季度 报告.pptx');
+    const outputPath = forward ? nativePath.replaceAll('\\', '/') : nativePath;
     const result = spawnSync(
       'node',
       [
@@ -311,13 +313,13 @@ describe('mark_artifact：产物识别的信号 ①（08 §2.2）', () => {
         '--title',
         'Q3 业绩汇报',
         '--path',
-        join(dir, 'Q3.pptx'),
+        outputPath,
       ],
       { encoding: 'utf8', env: { ...process.env, EVOWORK_ARTIFACT_LOG: logPath } },
     );
 
     expect(result.status).toBe(0);
-    const line = execFileSync('cat', [logPath], { encoding: 'utf8' }).trim();
+    const line = readFileSync(logPath, 'utf8').trim();
     const record = JSON.parse(line) as Record<string, unknown>;
     expect(record).toMatchObject({
       kind: 'artifact.mark',
@@ -326,20 +328,24 @@ describe('mark_artifact：产物识别的信号 ①（08 §2.2）', () => {
       expectedOutputCount: 1,
       outputFormat: 'pptx',
       title: 'Q3 业绩汇报',
+      path: outputPath,
     });
     // **不含** OpenAI 的 marketplace 名（K5：不引入第三方品牌字符串；F10：那个常量对我们无用）
     expect(line).not.toContain('openai');
   });
 
-  it('相对路径被拒 —— 索引记的是绝对路径（D6：文件系统是真源）', () => {
-    const result = spawnSync(
-      'node',
-      [MARK, '--operation-kind', 'create', '--output-format', 'pptx', '--path', 'relative.pptx'],
-      { encoding: 'utf8' },
-    );
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('绝对路径');
-  });
+  it.each(['relative.pptx', 'C:relative.pptx'])(
+    '相对路径 %s 被拒 —— 索引记的是绝对路径（D6：文件系统是真源）',
+    (path) => {
+      const result = spawnSync(
+        'node',
+        [MARK, '--operation-kind', 'create', '--output-format', 'pptx', '--path', path],
+        { encoding: 'utf8' },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('绝对路径');
+    },
+  );
 
   it('operation-kind 只认 create / edit', () => {
     const result = spawnSync(
@@ -368,9 +374,7 @@ describe('模板（排版由模板决定，不由模型决定）', () => {
   it('三个模板都有完整的 theme 与 metrics，且渲染代码里没有字面量数值', () => {
     for (const id of ['business', 'minimal', 'data-heavy']) {
       const spec = JSON.parse(
-        execFileSync('cat', [join(SKILL_ROOT, 'templates', id, 'template.json')], {
-          encoding: 'utf8',
-        }),
+        readFileSync(join(SKILL_ROOT, 'templates', id, 'template.json'), 'utf8'),
       ) as {
         theme: { styles: Record<string, unknown>; font_cjk: string };
         metrics: Record<string, unknown>;
@@ -663,7 +667,11 @@ describe('提取 pptx：extracted-media 的写入规则', () => {
     const deck = renderChartDeck();
     const elsewhere = join(dir, 'elsewhere');
     mkdirSync(elsewhere);
-    symlinkSync(elsewhere, join(dir, 'extracted-media'));
+    symlinkSync(
+      elsewhere,
+      join(dir, 'extracted-media'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     const { result } = extractDeck(deck);
     expect(result.status).toBe(2);
     expect((JSON.parse(result.stderr) as { message: string }).message).toContain('符号链接');

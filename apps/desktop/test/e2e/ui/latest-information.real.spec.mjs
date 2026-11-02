@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { expect, startTaskInWorkspace, runUntilIdle, test } from './fixtures.mjs';
+import { readJsonFile } from '../harness/read-json.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
 
 test.use({
@@ -144,7 +145,7 @@ for (const winter of [false, true]) {
     const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
     const expected = snapshot(workspace, winter);
     for (const name of ['quotes.json', 'news-index.json'])
-      await evidence(info, name, JSON.parse(readFileSync(join(workspace, name), 'utf8')));
+      await evidence(info, name, readJsonFile(join(workspace, name)));
     for (const id of ['N1', 'N2', 'N3', 'N4', 'N5'])
       await evidence(
         info,
@@ -173,7 +174,7 @@ for (const winter of [false, true]) {
       await evidence(info, 'history.json', history);
       expect(history.turns).toHaveLength(1);
       expect(history.turns.every((turn) => turn.status === 'completed')).toBe(true);
-      const report = JSON.parse(readFileSync(join(workspace, 'review.json'), 'utf8'));
+      const report = readJsonFile(join(workspace, 'review.json'));
       await evidence(info, 'review.json', report);
       expect(report.trade_date).toBe(expected.day);
       for (const [symbol, change] of [

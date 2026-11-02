@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   buildOfficeRuntime,
@@ -12,6 +12,17 @@ import {
 } from '../build-office-runtime.mjs';
 
 describe('完整办公运行时构建', () => {
+  let posixShell;
+  beforeAll(() => {
+    if (process.platform !== 'win32') return;
+    // Discover and initialize the foreign shell as fixture setup. The test's
+    // original 5 s budget covers relocation and execution, not Git discovery.
+    posixShell = resolve(
+      execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(),
+      '../../../bin/bash.exe',
+    );
+    execFileSync(posixShell, ['--noprofile', '--norc', '-c', ':']);
+  });
   it('拒绝用本机架构构造未经执行验证的另一架构成品', async () => {
     await expect(
       buildOfficeRuntime({ arch: process.arch === 'arm64' ? 'x64' : 'arm64' }),
@@ -41,8 +52,17 @@ describe('完整办公运行时构建', () => {
       await relocatePythonLaunchers(old);
       const moved = join(scratch, 'app resources');
       await rename(old, moved);
-      expect(execFileSync(join(moved, 'bin/fonttools'), { encoding: 'utf8' }).trim()).toBe(
-        join(moved, 'bin/python3'),
+      const launcher = join(moved, 'bin/fonttools');
+      // This tests the shipped POSIX launcher. Windows cannot execute a shebang;
+      // use the Bash distributed with Git, which the repository checks require.
+      const output =
+        process.platform === 'win32'
+          ? execFileSync(posixShell, ['--noprofile', '--norc', launcher.replaceAll('\\', '/')], {
+              encoding: 'utf8',
+            })
+          : execFileSync(launcher, { encoding: 'utf8' });
+      expect(output.trim().replaceAll('\\', '/')).toBe(
+        join(moved, 'bin/python3').replaceAll('\\', '/'),
       );
     } finally {
       await rm(scratch, { recursive: true, force: true });

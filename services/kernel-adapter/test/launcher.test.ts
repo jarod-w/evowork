@@ -5,6 +5,10 @@
  * 这些原先散在桌面壳里，被 `@evowork/no-kernel-internals` 纠正过来（见 launcher.ts 的头注释）。
  */
 import { EventEmitter } from 'node:events';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -48,6 +52,73 @@ function fakeChild() {
 }
 
 describe('createSpawnLauncher', () => {
+  it.runIf(process.platform === 'win32')(
+    '停止真实自有内核进程时，其连接器子进程也必须退出且重复停止安全',
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), 'evowork-kernel-stop-'));
+      const cleanupHome = resolve(home);
+      if (dirname(cleanupHome) !== resolve(tmpdir())) throw new Error('Unexpected test directory');
+      mkdirSync(join(home, 'startup'));
+      const powershell = join(
+        process.env.SystemRoot ?? 'C:\\Windows',
+        'System32',
+        'WindowsPowerShell',
+        'v1.0',
+        'powershell.exe',
+      );
+      const program =
+        "$info = New-Object System.Diagnostics.ProcessStartInfo; $info.FileName = [System.IO.Path]::Combine($PSHOME, 'powershell.exe'); $info.Arguments = '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 300'; $info.UseShellExecute = $false; $info.CreateNoWindow = $true; $started = [System.Diagnostics.Process]::Start($info); @{parentPid=$PID;childPid=$started.Id} | ConvertTo-Json -Compress; Start-Sleep -Seconds 300";
+      let child: ChildProcess | undefined;
+      let closed: Promise<void> | undefined;
+      let identity: { parentPid: number; childPid: number } | undefined;
+      const alive = (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+          throw error;
+        }
+      };
+      try {
+        const proc = launchSync(
+          createSpawnLauncher({
+            appServerPath: powershell,
+            kernelHome: home,
+            spawnFn: ((_file, _args, options) => {
+              child = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', program], {
+                ...options,
+                windowsHide: true,
+              });
+              closed = new Promise<void>((done) => child!.once('close', () => done()));
+              return child;
+            }) as typeof spawn,
+          }),
+        );
+        let output = '';
+        proc.onStdout((chunk) => {
+          output += chunk;
+          if (output.includes('\n')) identity = JSON.parse(output.split('\n')[0]!);
+        });
+        await expect.poll(() => identity, { timeout: 5000 }).toBeDefined();
+        expect(identity!.parentPid).toBe(child!.pid);
+        expect(alive(identity!.childPid)).toBe(true);
+        proc.kill();
+        await expect.poll(() => alive(identity!.parentPid), { timeout: 2000 }).toBe(false);
+        await expect.poll(() => alive(identity!.childPid), { timeout: 2000 }).toBe(false);
+        proc.kill();
+      } finally {
+        if (identity?.childPid && alive(identity.childPid))
+          process.kill(identity.childPid, 'SIGKILL');
+        if (child?.pid && alive(child.pid)) child.kill('SIGKILL');
+        await closed;
+        if (identity?.childPid)
+          await expect.poll(() => alive(identity!.childPid), { timeout: 2000 }).toBe(false);
+        rmSync(cleanupHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      }
+    },
+    20000,
+  );
   it('把 CODEX_HOME 指向我们的目录，但**保留内核原本的变量名**（K5）', () => {
     const child = fakeChild();
     const spawnFn = spawnSpy(child);

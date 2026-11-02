@@ -55,7 +55,11 @@ export function isUnderRoot(root: string, candidate: string, home: string): bool
   //   内部解析 `..`/`.` 之后才会归到根，原始参数上根本看不出来。
   // 现在两侧统一先转绝对路径、再一次性去掉所有结尾斜杠，两个来源的花样都在
   // 转换后收敛成同一个值，这里只需要判一次。
-  if (absoluteRoot === '' || absoluteRoot === '/') return false;
+  const uncRoot =
+    (root.replace(/\\/g, '/').startsWith('//') || absoluteRoot.startsWith('//')) &&
+    absoluteRoot.split('/').filter(Boolean).length <= 2;
+  if (absoluteRoot === '' || absoluteRoot === '/' || /^[a-z]:$/i.test(absoluteRoot) || uncRoot)
+    return false;
 
   return absoluteCandidate === absoluteRoot || absoluteCandidate.startsWith(`${absoluteRoot}/`);
 }

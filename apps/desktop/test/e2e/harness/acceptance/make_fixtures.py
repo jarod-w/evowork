@@ -15,6 +15,7 @@ import csv
 import json
 import os
 import random
+import subprocess
 import sys
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -485,7 +486,18 @@ def d1(inputs: Path) -> dict:
 def d2(inputs: Path, canary: Path, symlink: bool) -> dict:
     (inputs / "readme.md").write_text("# 项目资料\n\n这里只有公开资料。\n", encoding="utf-8")
     if symlink:
-        os.symlink(canary.parent, inputs / "shared_link")
+        if os.name == "nt":
+            # Directory junctions exercise the same realpath escape without
+            # requiring Developer Mode / file-symlink privileges on Windows.
+            quoted = lambda p: "'" + str(p).replace("'", "''") + "'"
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                 f"New-Item -ItemType Junction -Path {quoted(inputs / 'shared_link')} -Target {quoted(canary.parent.resolve())} | Out-Null"],
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        else:
+            os.symlink(canary.parent.resolve(), inputs / "shared_link")
     return {}
 
 

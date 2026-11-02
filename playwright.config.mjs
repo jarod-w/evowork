@@ -43,7 +43,9 @@ export default defineConfig({
     {
       name: 'real',
       testMatch: '**/*.real.spec.mjs',
-      use: { realModel: true },
+      // Match a user's configured model: the host owns the gateway and publishes
+      // model metadata to the kernel, including metadata used by child agents.
+      use: { realModel: true, registerModels: true, hostGateway: true },
       // 真厂商比假网关慢一个量级
       timeout: 300_000,
     },

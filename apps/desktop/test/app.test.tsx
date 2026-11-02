@@ -1553,13 +1553,17 @@ describe('结果工作区真实接线', () => {
     render(<App bridge={bridge} />);
     fireEvent.click(await screen.findByText('生成季度报告'));
     await screen.findByRole('button', { name: '关闭结果' });
-    emit.ui?.({
-      type: 'file-open-requested',
-      taskId: resultTask.id,
-      path: 'report.docx',
-      requestId: 'slow',
-    });
+    act(() =>
+      emit.ui?.({
+        type: 'file-open-requested',
+        taskId: resultTask.id,
+        path: 'report.docx',
+        requestId: 'slow',
+      }),
+    );
+    await waitFor(() => expect(finish).toBeDefined());
     fireEvent.click(screen.getByRole('button', { name: '关闭结果' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '关闭结果' })).toBeNull());
     await act(async () => finish({ name: 'report.docx', kind: 'text', content: '迟到预览' }));
     expect(screen.queryByRole('button', { name: '关闭结果' })).toBeNull();
     expect(screen.queryByText('迟到预览')).toBeNull();
@@ -3999,4 +4003,77 @@ describe('任务引导的异步草稿保护', () => {
     });
     expect(input.getAttribute('placeholder')).toBe(candidate('b').prompt);
   });
+});
+
+it('子代理投影完成后刷新入口且旧的空列表不能覆盖新子任务', async () => {
+  const rootRow = {
+    id: 'late-root',
+    title: '延迟投影根任务',
+    status: 'running' as const,
+    timeLabel: '刚刚',
+    updatedAt: 1,
+    sectionId: 'ungrouped',
+  };
+  const childRow = {
+    ...rootRow,
+    id: 'late-child',
+    title: '延迟投影子任务',
+    parentThreadId: rootRow.id,
+    status: 'pending' as const,
+  };
+  let finishOld!: (rows: readonly (typeof childRow)[]) => void;
+  const listSubtasks = vi.fn(
+    () =>
+      new Promise<readonly (typeof childRow)[]>((resolve) => {
+        finishOld = resolve;
+      }),
+  );
+  const { bridge, emit } = fakeBridge({
+    getStartup: async () => ({ ...STARTUP, tasks: [rootRow] }),
+    listSubtasks,
+  });
+  render(<App bridge={bridge} />);
+  fireEvent.click(await screen.findByText(rootRow.title));
+  await waitFor(() => expect(finishOld).toBeDefined());
+  act(() => emit.ui?.({ type: 'subtasks-changed', taskId: rootRow.id, subtasks: [childRow] }));
+  expect(await screen.findByRole('button', { name: '子任务 1' })).toBeTruthy();
+  await act(async () => {
+    finishOld([]);
+  });
+  expect(screen.getByRole('button', { name: '子任务 1' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '子任务 1' }));
+  fireEvent.click(await screen.findByText(childRow.title));
+  expect(await screen.findByRole('button', { name: '返回根任务' })).toBeTruthy();
+  expect(
+    within(screen.getByRole('navigation', { name: '侧边栏' })).queryByText(childRow.title),
+  ).toBeNull();
+});
+
+it('子任务抽屉跟进状态和移除通知', async () => {
+  const rootRow = {
+    id: 'status-root',
+    title: '状态根任务',
+    status: 'running' as const,
+    timeLabel: '刚刚',
+    updatedAt: 1,
+    sectionId: 'ungrouped',
+  };
+  const childRow = {
+    ...rootRow,
+    id: 'status-child',
+    title: '状态子任务',
+    parentThreadId: rootRow.id,
+  };
+  const { bridge, emit } = fakeBridge({
+    getStartup: async () => ({ ...STARTUP, tasks: [rootRow] }),
+    listSubtasks: async () => [childRow],
+  });
+  render(<App bridge={bridge} />);
+  fireEvent.click(await screen.findByText(rootRow.title));
+  fireEvent.click(await screen.findByRole('button', { name: '子任务 1' }));
+  const drawer = screen.getByRole('complementary', { name: '子任务详情' });
+  act(() => emit.ui?.({ type: 'task-updated', taskId: childRow.id, status: 'pending' }));
+  expect(await within(drawer).findByText(/待你确认/)).toBeTruthy();
+  act(() => emit.ui?.({ type: 'task-removed', taskId: childRow.id }));
+  await waitFor(() => expect(within(drawer).queryByText(childRow.title)).toBeNull());
 });

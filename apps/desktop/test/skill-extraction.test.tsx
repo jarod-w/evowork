@@ -72,6 +72,66 @@ function Harness({
   );
 }
 describe('技能提炼异步操作与用户正在查看的任务隔离', () => {
+  it.each([
+    [
+      'Windows 原生分隔符',
+      'C:\\work\\.agents\\skills\\sales-review',
+      'C:\\work\\.agents\\skills\\sales-review\\SKILL.md',
+      true,
+    ],
+    [
+      'Windows 混合分隔符',
+      'C:\\work\\.agents\\skills\\sales-review',
+      'C:/work/.agents/skills/sales-review/SKILL.md',
+      true,
+    ],
+    [
+      '同名技能的其他目录',
+      'C:\\work\\.agents\\skills\\sales-review',
+      'C:/other/.agents/skills/sales-review/SKILL.md',
+      false,
+    ],
+    ['POSIX 名称中的反斜线', '/work/sales\\review', '/work/sales/review/SKILL.md', false],
+  ])('项目技能路径：%s 必须按已保存的位置复用', async (_, installedPath, candidatePath, match) => {
+    const projectDraft: SkillExtractionView = {
+      ...draft,
+      scope: 'project',
+      source: { ...source, projectId: 'project', projectName: '销售' },
+      installed: { ...draft.installed!, scope: 'project', path: installedPath },
+    };
+    const bridge = {
+      getSkillExtraction: vi.fn(async () => projectDraft),
+      getComposerContext: vi.fn(async () => ({
+        commands: [],
+        mentions: [
+          {
+            id: 'project-skill',
+            category: 'skill',
+            insertAs: 'skill',
+            label: 'sales-review',
+            name: 'sales-review',
+            path: candidatePath,
+            scope: 'project',
+          },
+        ],
+      })),
+    } as unknown as EvoworkBridge;
+    const onUse = vi.fn();
+    render(<Harness taskId="extract" bridge={bridge} onUse={onUse} />);
+    fireEvent.click(await screen.findByRole('button', { name: '用此技能新建任务' }));
+    if (match) {
+      await waitFor(() => expect(onUse).toHaveBeenCalledTimes(1));
+      expect(onUse).toHaveBeenCalledWith({
+        projectId: 'project',
+        text: '$sales-review 请使用这个技能处理新的输入：\n',
+        reference: { type: 'skill', name: 'sales-review', path: candidatePath },
+      });
+    } else {
+      await screen.findByText('当前范围找不到已启用的技能，请重新检查或启用。');
+      expect(onUse).not.toHaveBeenCalled();
+    }
+    expect(bridge.getComposerContext).toHaveBeenCalledWith({ workspaceId: 'project' });
+  });
   it('技能候选迟到时不覆盖用户已经切换到的任务或输入', async () => {
     const pending = deferred<ComposerContextView>();
     const bridge = {

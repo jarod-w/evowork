@@ -26,6 +26,7 @@ from evowork_skill import (  # noqa: E402 -- 必须在 sys.path 调整之后
     EXIT_OK,
     EXIT_RUNTIME_MISSING,
     fail,
+    is_link_or_junction,
     lossy_extraction,
     refuse_overwrite,
     load_template,
@@ -215,7 +216,7 @@ def _write_media(asset_dir: Path, stem: str, suffix: str, blob: bytes) -> str:
 
     之前同名就覆盖（第二份幻灯片的 slide-3 冲掉第一份的），`extracted-media` 是指向别处的链接也照写。
     """
-    if asset_dir.is_symlink():
+    if is_link_or_junction(asset_dir):
         fail(
             EXIT_INVALID_CONTENT,
             f"{asset_dir.name} 是一个符号链接，提取不往里面写图片。换一个 --out 目录再提取。",

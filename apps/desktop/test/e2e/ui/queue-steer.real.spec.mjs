@@ -2,7 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { selectRealModel } from '../harness/real-models.mjs';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
+import { localPythonCommand } from './shell-commands.mjs';
 
 test.use({
   registerModels: true,
@@ -12,8 +14,6 @@ test.use({
 
 async function setup(page, electronApp) {
   const selected = selectRealModel();
-  expect(selected.upstreamModel).toBe('mimo-v2.6-flash');
-  expect(selected.baseUrl).toBe('https://api.xiaomimimo.com/v1');
   const root = realpathSync(await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace));
   const suffix = randomBytes(6).toString('hex');
   // A real task step waits for test data readiness. Only tool timing is controlled;
@@ -94,17 +94,17 @@ async function save(page, electronApp, info, m, task, extra) {
 function checkWire(m) {
   const requests = m.wire().filter((row) => row.type === 'request');
   expect(requests.length).toBeGreaterThan(0);
-  expect(requests.every((row) => row.model === 'mimo-v2.6-flash')).toBe(true);
-  expect(
-    requests.every((row) => row.endpoint === 'https://api.xiaomimimo.com/v1/chat/completions'),
-  ).toBe(true);
+  expect(requests.every((row) => row.model === m.selected.upstreamModel)).toBe(true);
+  expect(requests.every((row) => row.endpoint === `${m.selected.baseUrl}/chat/completions`)).toBe(
+    true,
+  );
 }
 function release(m) {
   writeFileSync(join(m.root, 'phase-release'), 'ready');
 }
 
 for (const lostReply of [false, true]) {
-  test(`MiMo：排队等待原回合结束，丢回执=${lostReply}，反馈准确`, async ({
+  test(`真模型：排队等待原回合结束，丢回执=${lostReply}，反馈准确`, async ({
     page,
     electronApp,
   }, info) => {
@@ -117,7 +117,7 @@ for (const lostReply of [false, true]) {
       await startTaskInWorkspace(
         page,
         electronApp,
-        `${original} 这是两阶段本机计算任务。第一步仅运行 python3 followup_gate.py，等脚本返回后才能开始第二步，不并行执行。第二步计算 19*23，将“${original}:437”写入 original.txt，并最终只回复“${original} 原任务完成 437”。不要修改脚本或创建 phase-release；不要联网、创建子任务或其他会话。`,
+        `${original} 这是两阶段本机计算任务。第一步仅运行 ${localPythonCommand(['followup_gate.py'])}，等脚本返回后才能开始第二步，不并行执行。第二步计算 19*23，将“${original}:437”写入 original.txt，并最终只回复“${original} 原任务完成 437”。不要修改脚本或创建 phase-release；不要联网、创建子任务或其他会话。`,
       );
       task = await runningStep(page, m);
       await expect(page.getByRole('button', { name: '排队发送', exact: true })).toHaveCount(0);
@@ -196,7 +196,7 @@ for (const lostReply of [false, true]) {
   });
 }
 
-test('MiMo：立即插话改变同一回合的后续计划，反馈与实际结果一致', async ({
+test('真模型：立即插话改变同一回合的后续计划，反馈与实际结果一致', async ({
   page,
   electronApp,
 }, info) => {
@@ -209,7 +209,7 @@ test('MiMo：立即插话改变同一回合的后续计划，反馈与实际结�
     await startTaskInWorkspace(
       page,
       electronApp,
-      `${original} 这是两阶段本机计算任务。第一步仅运行 python3 followup_gate.py，等脚本返回后才能开始第二步，不并行执行。第二步计算 19*23，将“${original}:437”写入 old-plan.txt，最终回复“${original} 原计划完成 437”。不要修改脚本或创建 phase-release；不要联网、创建子任务或其他会话。`,
+      `${original} 这是两阶段本机计算任务。第一步仅运行 ${localPythonCommand(['followup_gate.py'])}，等脚本返回后才能开始第二步，不并行执行。第二步计算 19*23，将“${original}:437”写入 old-plan.txt，最终回复“${original} 原计划完成 437”。不要修改脚本或创建 phase-release；不要联网、创建子任务或其他会话。`,
     );
     task = await runningStep(page, m);
     await page
@@ -264,7 +264,7 @@ test('MiMo：立即插话改变同一回合的后续计划，反馈与实际结�
   }
 });
 
-test('MiMo：停止后保留队列，明确继续才计算追加任务', async ({ page, electronApp }, info) => {
+test('真模型：停止后保留队列，明确继续才计算追加任务', async ({ page, electronApp }, info) => {
   test.setTimeout(360000);
   const m = await setup(page, electronApp);
   const original = `REALFOLLOW_STOP_${m.suffix}`;
@@ -274,7 +274,7 @@ test('MiMo：停止后保留队列，明确继续才计算追加任务', async (
     await startTaskInWorkspace(
       page,
       electronApp,
-      `${original} 第一步只运行 python3 followup_gate.py，等待返回后第二步计算19*23写入original.txt。不要创建phase-release，不创建子任务或其他会话。`,
+      `${original} 第一步只运行 ${localPythonCommand(['followup_gate.py'])}，等待返回后第二步计算19*23写入original.txt。不要创建phase-release，不创建子任务或其他会话。`,
     );
     task = await runningStep(page, m);
     await page

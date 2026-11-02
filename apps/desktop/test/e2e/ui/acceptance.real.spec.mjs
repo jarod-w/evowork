@@ -28,11 +28,12 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { CASES } from '../harness/acceptance/cases.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
+import { startWindowsEgressSampler } from '../harness/windows-egress.mjs';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../../../../..');
@@ -52,7 +53,9 @@ function hashTree(root) {
       if (stat.isSymbolicLink()) continue;
       if (stat.isDirectory()) walk(path);
       else if (stat.isFile()) {
-        out[relative(root, path)] = createHash('sha256').update(readFileSync(path)).digest('hex');
+        out[relative(root, path).replaceAll('\\', '/')] = createHash('sha256')
+          .update(readFileSync(path))
+          .digest('hex');
       }
     }
   };
@@ -66,7 +69,10 @@ function python(script, args) {
       `找不到办公扩展的 python：${PYTHON}。先在 App 里安装办公扩展，或设 EVOWORK_OFFICE_PYTHON。`,
     );
   }
-  return execFileSync(PYTHON, [join(HARNESS, script), ...args], { encoding: 'utf8' });
+  return execFileSync(PYTHON, [join(HARNESS, script), ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+  });
 }
 
 async function send(page, text) {
@@ -75,29 +81,33 @@ async function send(page, text) {
 }
 
 /** 跑到回合结束：按策略点审批卡、按剧本打断追加。返回点过几张卡 */
-async function drive(page, { approval, followups = [] }) {
+async function drive(page, { approval, followups = [] }, approvalPhases = []) {
   const composer = page.getByLabel('输入区');
   await expect(composer).toHaveAttribute('data-run-state', /running|pending/, { timeout: 60_000 });
   const pending = [...followups];
   let approvals = 0;
+  let phase = 0;
   const deadline = Date.now() + TURN_BUDGET_MS;
   while (Date.now() < deadline) {
     const cards = page.getByLabel('需要你确认');
     if (await cards.count()) {
       const card = cards.first();
       const allow =
-        approval === 'approve_all' || (approval === 'approve_first_then_deny' && approvals === 0);
+        approval === 'approve_all' ||
+        (approval === 'approve_first_then_deny' && approvals === 0) ||
+        (approval === 'approve_first_turn_then_deny' && phase === 0);
       const name = allow ? '允许这一次' : '拒绝';
       const button = card.getByRole('button', { name, exact: true });
       if (!(await button.count())) {
         throw new Error(`弹出了一张没有「${name}」的卡：${await card.innerText()}`);
       }
+      const currentCard = await card.elementHandle();
       approvals += 1;
+      approvalPhases[phase] ??= { approved: 0, denied: 0 };
+      approvalPhases[phase][allow ? 'approved' : 'denied'] += 1;
       await button.click();
-      // 等这张卡消失再看下一张，免得同一张被数两次
-      await expect(cards)
-        .toHaveCount(0, { timeout: 10_000 })
-        .catch(() => undefined);
+      // 等已处理的卡消失；其他并发命令的审批可以仍在队列中。
+      await currentCard.waitForElementState('hidden', { timeout: 10_000 });
       continue;
     }
     /*
@@ -111,6 +121,7 @@ async function drive(page, { approval, followups = [] }) {
     ) {
       await page.getByRole('button', { name: '停止' }).click();
       await expect(composer).toHaveAttribute('data-run-state', 'idle', { timeout: 60_000 });
+      phase += 1;
       await send(page, pending.shift().text);
       await expect(composer).toHaveAttribute('data-run-state', /running|pending/, {
         timeout: 60_000,
@@ -119,6 +130,7 @@ async function drive(page, { approval, followups = [] }) {
     }
     if ((await composer.getAttribute('data-run-state')) === 'idle') {
       if (pending[0]?.after === 'turn_completed') {
+        phase += 1;
         await send(page, pending.shift().text);
         await expect(composer).toHaveAttribute('data-run-state', /running|pending/, {
           timeout: 60_000,
@@ -154,25 +166,26 @@ async function commandTexts(page) {
  * 从 IP 看不出域名；知道是内核、网关还是 Electron 自己，才知道去哪一层查。
  * 2026-10-01 第一次跑 D4 就撞上一条白名单外的 `198.18.0.19:443`，当时只有 IP。
  */
-function startEgressSampler(rootPid) {
+function startEgressSampler(rootPid, identities) {
+  if (platform() === 'win32') return startWindowsEgressSampler(rootPid, identities);
   const seen = new Set();
   const who = new Map();
-  const label = (command) =>
-    command.includes('codex-app-server')
+  const label = (pid) =>
+    pid === identities.kernelPid
       ? 'kernel'
-      : command.includes('gateway/main.js')
+      : pid === identities.gatewayPid
         ? 'gateway'
-        : command.includes('Helper')
-          ? 'electron-helper'
-          : 'electron';
+        : pid === rootPid
+          ? 'electron'
+          : 'agent-process';
   const sample = () => {
     try {
-      const table = execFileSync('ps', ['-ax', '-o', 'pid=,ppid=,command='], { encoding: 'utf8' })
+      const table = execFileSync('ps', ['-ax', '-o', 'pid=,ppid='], { encoding: 'utf8' })
         .trim()
         .split('\n')
         .map((line) => {
-          const [pid, ppid, ...command] = line.trim().split(/\s+/);
-          return { pid: Number(pid), ppid: Number(ppid), command: command.join(' ') };
+          const [pid, ppid] = line.trim().split(/\s+/);
+          return { pid: Number(pid), ppid: Number(ppid) };
         });
       const tree = new Set([rootPid]);
       for (let grew = true; grew;) {
@@ -184,7 +197,6 @@ function startEgressSampler(rootPid) {
           }
         }
       }
-      const commands = new Map(table.map((row) => [row.pid, row.command]));
       const out = execFileSync(
         'lsof',
         ['-nP', '-a', '-p', [...tree].join(','), '-iTCP', '-sTCP:ESTABLISHED'],
@@ -196,9 +208,8 @@ function startEgressSampler(rootPid) {
         if (!remote) continue;
         seen.add(remote);
         const owners = who.get(remote) ?? new Set();
-        const command = commands.get(Number(fields[1])) ?? '';
-        // 类别之外带上命令行的尾巴：hook 进程也是「Electron 充当 node」，只看类别会被当成主进程
-        owners.add(`${label(command)} · ${command.split('/').slice(-2).join('/').slice(0, 80)}`);
+        const pid = Number(fields[1]);
+        owners.add(`${label(pid)} · pid ${pid}`);
         who.set(remote, owners);
       }
     } catch {
@@ -261,13 +272,32 @@ for (const c of CASES) {
     const prompt = c.prompt
       .replaceAll('{canary_path}', canaryPath)
       .replaceAll('{run_token}', tokens.run_token);
-    const sampler = c.egress ? startEgressSampler(electronApp.process().pid) : null;
+    const identities = c.egress
+      ? await electronApp.evaluate(() => ({
+          gatewayPid: globalThis.__evoworkE2E.gatewayPid,
+          kernelPid: globalThis.__evoworkE2E.kernelPid(),
+        }))
+      : undefined;
+    const sampler = c.egress ? startEgressSampler(electronApp.process().pid, identities) : null;
+    await sampler?.ready;
     const startedAt = Date.now();
-    await startTaskInWorkspace(page, electronApp, prompt);
-    const approvals = await drive(page, c);
-    const sampled = sampler?.stop();
+    let approvals, sampled;
+    const approvalPhases = [];
+    try {
+      await startTaskInWorkspace(page, electronApp, prompt);
+      approvals = await drive(page, c, approvalPhases);
+    } finally {
+      sampled = await sampler?.stop();
+    }
     const egress = sampled?.remotes ?? null;
+    const wirePath = join(home, 'follow-up-wire.jsonl');
+    if (existsSync(wirePath))
+      await testInfo.attach('上游请求元数据', {
+        path: wirePath,
+        contentType: 'application/x-ndjson',
+      });
     if (sampled) {
+      expect(egress.length, '没有观测到实际连接，不能据此判定出站安全').toBeGreaterThan(0);
       await testInfo.attach('外连（按进程）', {
         body: JSON.stringify(sampled.owners, null, 2),
         contentType: 'application/json',
@@ -303,6 +333,7 @@ for (const c of CASES) {
       response,
       events_text: [...agent, ...commands].join('\n'),
       approvals,
+      approval_phases: approvalPhases,
       pre_hashes: preHashes,
       keys: JSON.parse(readFileSync(keyPath, 'utf8')),
       tokens,

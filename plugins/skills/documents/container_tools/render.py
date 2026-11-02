@@ -37,6 +37,7 @@ from evowork_skill import (  # noqa: E402
     EXIT_INVALID_CONTENT,
     EXIT_RUNTIME_MISSING,
     fail,
+    is_link_or_junction,
     load_template,
     lossy_extraction,
     read_content,
@@ -431,7 +432,7 @@ def _write_media(asset_dir: Path, stem: str, suffix: str, blob: bytes) -> str:
     **不覆盖、不跟符号链接**（2026-10-22）：之前同名就覆盖，目录是指向别处的链接也照写 ——
     提取第二份文件会冲掉第一份的图，而一个预先放好的链接能让提取往任意目录写文件。
     """
-    if asset_dir.is_symlink():
+    if is_link_or_junction(asset_dir):
         fail(
             EXIT_INVALID_CONTENT,
             f"{asset_dir.name} 是一个符号链接，提取不往里面写图片。换一个 --out 目录再提取。",

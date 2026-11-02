@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { arch, homedir, platform } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, toNamespacedPath } from 'node:path';
 
 import { _electron as electron, expect, test as base } from '@playwright/test';
 
@@ -140,7 +140,8 @@ export const test = base.extend({
      * VS Code 的终端与扩展宿主会设它，继承下去 Electron 就以普通 Node 启动，
      * 入口第一行 import 直接报 "does not provide an export named 'app'"。
      */
-    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+    const { appTestEnvironment } = await import('../harness/app-test-path.mjs');
+    const parentEnv = appTestEnvironment(process.env);
 
     const app = await electron.launch({
       executablePath: require('electron'),
@@ -198,6 +199,39 @@ export const test = base.extend({
      * 路径要在**测试跑完之后、关闭之前**取：太早的话 `bootApp` 还没发布控制面，
      * 拿到的是 undefined；太晚的话进程没了，问不出来。
      */
+    if (testInfo.status !== testInfo.expectedStatus) {
+      // Public bridge only; retain a failed task without inspecting native kernel files.
+      let timer;
+      const capture = app
+        .firstWindow()
+        .then((page) =>
+          page.evaluate(async () => {
+            const startup = await window.evowork.getStartup();
+            const task = [...startup.tasks].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+            return {
+              task,
+              history: task ? await window.evowork.openTask({ threadId: task.id }) : null,
+            };
+          }),
+        )
+        .catch(() => null);
+      const state = await Promise.race([
+        capture,
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(null), 1500);
+        }),
+      ]).finally(() => clearTimeout(timer));
+      if (state) {
+        let body = JSON.stringify(state, null, 2);
+        const secret = process.env.EVOWORK_UI_MODEL_KEY;
+        if (secret && body.includes(secret))
+          body = JSON.stringify({
+            error: 'Credential detected; public history capture discarded.',
+          });
+        writeFileSync(testInfo.outputPath('failure-public-state.json'), body);
+      }
+    }
+
     const lifecycle = await app
       .evaluate(() => globalThis.__evoworkE2E?.kernelLifecycle?.())
       .catch(() => undefined);
@@ -209,6 +243,18 @@ export const test = base.extend({
         JSON.stringify(lifecycle, null, 2),
       );
     const home = await app.evaluate(() => globalThis.__evoworkE2E?.home).catch(() => undefined);
+    const wire = typeof home === 'string' ? join(home, 'follow-up-wire.jsonl') : undefined;
+    if (wire && existsSync(wire))
+      await testInfo.attach('upstream-request-metadata', {
+        path: wire,
+        contentType: 'application/x-ndjson',
+      });
+    const approvalWire = typeof home === 'string' ? join(home, 'approval-wire.jsonl') : undefined;
+    if (approvalWire && existsSync(approvalWire))
+      await testInfo.attach('approval-request-metadata', {
+        path: approvalWire,
+        contentType: 'application/x-ndjson',
+      });
     const gatewayPid = await app
       .evaluate(() => globalThis.__evoworkE2E?.gatewayPid)
       .catch(() => undefined);
@@ -239,7 +285,7 @@ export const test = base.extend({
     }
   },
 
-  page: async ({ electronApp }, use) => {
+  page: async ({ electronApp }, use, testInfo) => {
     const page = await electronApp.firstWindow();
     /*
      * 先等入口把话说完（测试项目建好、控制面挂齐），再去碰界面。
@@ -257,17 +303,22 @@ export const test = base.extend({
      */
     await page.getByLabel('需求输入').waitFor({ state: 'visible', timeout: 120_000 });
     await use(page);
+    if (testInfo.status !== testInfo.expectedStatus && !page.isClosed()) {
+      const screenshot = await page.screenshot({ timeout: 5_000 }).catch(() => undefined);
+      if (screenshot)
+        await testInfo.attach('failure-window', { body: screenshot, contentType: 'image/png' });
+    }
   },
 });
 
 export { expect } from '@playwright/test';
 
-/** 同一个目录在 macOS 上有 `/var/...` 与 `/private/var/...` 两种写法 */
+/** Canonicalize macOS aliases and Windows extended-length path prefixes. */
 function samePath(path) {
   try {
-    return realpathSync(path);
+    return toNamespacedPath(realpathSync.native(path));
   } catch {
-    return path;
+    return toNamespacedPath(path);
   }
 }
 
@@ -328,6 +379,8 @@ export async function runUntilIdle(page) {
       await allow.click({ timeout: 5_000 }).catch(() => undefined);
       continue;
     }
+    if (await page.getByRole('alert', { name: '回合失败' }).count())
+      throw new Error('真实回合失败，不能按正常完成继续验收');
     if ((await composer.getAttribute('data-run-state')) === 'idle') return;
     await page.waitForTimeout(500);
   }

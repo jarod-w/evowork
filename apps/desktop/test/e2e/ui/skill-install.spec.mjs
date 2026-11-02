@@ -22,13 +22,37 @@ test('共享目录技能与预算一致，同名副本可独立停用且保留�
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(
       path,
-      `---\nname: charts\ndescription: 共享图表副本${index + 1}${'仅用于整理本机数据。'.repeat(120)}\n---\n`,
+      `---\nname: charts\ndescription: 共享图表副本${index + 1}${'仅用于整理本机数据。'.repeat(90)}\n---\n`,
     );
     return path;
   });
   await page.getByRole('button', { name: '插件', exact: true }).click();
   const catalog = await page.evaluate(() => window.evowork.getCatalog());
   const shared = catalog.skills.filter((skill) => skill.sourceLabel === '用户共享');
+  if (shared.length !== paths.length) {
+    const native = await electronApp.evaluate(() =>
+      globalThis.__evoworkE2E.host.adapter.listSkills([], true),
+    );
+    await testInfo.attach('shared-discovery-catalog', {
+      body: JSON.stringify(
+        {
+          skills: catalog.skills.map(({ id, sourceLabel, skillPath }) => ({
+            id,
+            sourceLabel,
+            skillPath,
+          })),
+          native: native.data.map(({ cwd, skills, errors }) => ({
+            cwd,
+            paths: skills.map(({ path }) => path),
+            errors,
+          })),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+  }
   expect(shared).toHaveLength(paths.length);
   expect(catalog.skills.filter((skill) => skill.id === 'charts')).toHaveLength(paths.length + 1);
   expect(catalog.skillBudget.over).toBe(true);
@@ -45,7 +69,7 @@ test('共享目录技能与预算一致，同名副本可独立停用且保留�
       .filter({ hasText: `共享图表副本${index + 1}` })
       .click();
     const nativePath = shared.find(
-      (skill) => realpathSync(skill.skillPath) === realpathSync(paths[index]),
+      (skill) => realpathSync.native(skill.skillPath) === realpathSync.native(paths[index]),
     ).skillPath;
     await expect(page.getByText(`位置：${nativePath}`)).toBeVisible();
     await expect(page.getByRole('button', { name: '卸载', exact: true })).toHaveCount(0);
