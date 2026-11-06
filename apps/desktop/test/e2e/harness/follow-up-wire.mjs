@@ -2,6 +2,8 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+const testMarkers = (text) => [...new Set(text.match(/REALFOLLOW_[A-Z]+_[a-f0-9]+/g) ?? [])];
+
 /** Test-only upstream observation. No headers, credentials, prompt or response bodies are saved. */
 export function installFollowUpWire(path) {
   const originalFetch = globalThis.fetch;
@@ -51,11 +53,18 @@ export function installFollowUpWire(path) {
         hasNextActionStopReminder: JSON.stringify(body.messages ?? []).includes(
           '本回合尚未登记下一步状态。',
         ),
-        markers: [
-          ...new Set(
-            JSON.stringify(body.messages ?? []).match(/REALFOLLOW_[A-Z]+_[a-f0-9]+/g) ?? [],
-          ),
-        ],
+        markers: testMarkers(JSON.stringify(body.messages ?? [])),
+        delegationMarkers: testMarkers(
+          (body.messages ?? [])
+            .filter(
+              (message) =>
+                message.role === 'user' &&
+                typeof message.content === 'string' &&
+                message.content.startsWith('Message Type: NEW_TASK\n'),
+            )
+            .map((message) => message.content)
+            .join('\n'),
+        ),
       }) + '\n',
     );
     let response;
