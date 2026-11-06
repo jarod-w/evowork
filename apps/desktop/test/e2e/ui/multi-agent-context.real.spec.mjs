@@ -95,7 +95,13 @@ test('主任务并行运行三个子代理，子代理请求各自持有独立�
       const running = list.filter((task) => task.status === 'running');
       if (running.length === 3) {
         overlap = { at: Date.now(), children: running };
+        const drawer = page.getByRole('complementary', { name: '子任务详情' });
+        if (!(await drawer.isVisible()))
+          await page.getByRole('button', { name: '子任务 3', exact: true }).click();
+        await expect(drawer.getByRole('listitem')).toHaveCount(3);
+        await expect(drawer.getByText(/^进行中 ·/)).toHaveCount(3);
         await page.screenshot({ path: info.outputPath('parallel-window.png') });
+        await drawer.getByRole('button', { name: '关闭子任务详情' }).click();
         for (const { file, result } of assignments)
           writeFileSync(join(workspace, file), result + '\n');
       }
