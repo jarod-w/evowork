@@ -436,6 +436,76 @@ describe('上游不说话时，发现它的必须是网关', () => {
     expect(events.at(-1)?.type).toBe(EVENT.failed);
   });
 
+  it.each([false, true])('心跳不续期模型响应超时，已有工具片段=%s', async (afterToolFragment) => {
+    let signal: AbortSignal | undefined;
+    const frames = [
+      ...(afterToolFragment
+        ? [
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"read-1","function":{"name":"exec_command","arguments":"{"}}]}}]}',
+          ]
+        : []),
+      ...Array.from({ length: 16 }, () => ': keep-alive'),
+      'data: {"choices":[{"delta":{"content":"too late"},"finish_reason":"stop"}]}',
+      'data: [DONE]',
+    ];
+    const provider = stallingProvider({
+      lines: frames,
+      gapMs: 8,
+      seen: (value) => {
+        signal = value;
+      },
+    });
+    const events = await collect(
+      runPipeline(
+        request(),
+        { requestId: 'heartbeat' },
+        {
+          ...deps(provider),
+          upstreamFirstChunkMs: afterToolFragment ? 1_000 : 65,
+          upstreamIdleMs: 65,
+        },
+      ),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: EVENT.failed,
+      response: { error: { code: UPSTREAM_DISCONNECTED } },
+    });
+    expect(events.some((event) => event.type === EVENT.outputItemDone)).toBe(false);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('首条心跳与角色帧保留模型开始输出前的等待预算', async () => {
+    const provider: Provider = {
+      ...fakeProvider({}),
+      async send() {
+        return {
+          status: 200,
+          headers: {},
+          lines: (async function* () {
+            yield ': keep-alive';
+            yield 'data: {"choices":[{"delta":{"role":"assistant"}}]}';
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            yield 'data: {"choices":[{"delta":{"content":"好了"},"finish_reason":"stop"}]}';
+            yield 'data: [DONE]';
+          })(),
+        };
+      },
+    };
+    const events = await collect(
+      runPipeline(
+        request(),
+        { requestId: 'slow-start' },
+        {
+          ...deps(provider),
+          upstreamFirstChunkMs: 500,
+          upstreamIdleMs: 15,
+        },
+      ),
+    );
+    expect(events.at(-1)?.type).toBe(EVENT.completed);
+  });
+
   it('看门狗关掉（0）时行为与从前一致：一直等下去', async () => {
     const provider = stallingProvider({
       lines: [
