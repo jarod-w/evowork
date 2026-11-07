@@ -1019,7 +1019,8 @@ export function createAdapter(options: AdapterOptions) {
         // A transient read error is not evidence that a live thread needs resuming.
         if (!(error instanceof JsonRpcCallError) || !error.isMethodNotFound) throw error;
       }
-      if (current && current.thread.status.type !== 'notLoaded') return current;
+      if (current && (current.thread.status.type !== 'notLoaded' || activeTurns.has(threadId)))
+        return current;
       if (session.generation !== generation || session.phase !== 'ready')
         throw new TransportClosedError('执行内核连接已变化，请重新打开任务');
       return session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
@@ -2511,7 +2512,28 @@ export function createAdapter(options: AdapterOptions) {
           // 老内核没有回合分页时，resume 返回的回合仍是协议提供的时间真源。
           return (await resumed)?.thread.turns ?? [];
         }
-      })();
+      })().then((history) => {
+        // A live turn/started notification remains authoritative while paged
+        // history temporarily reconstructs the same turn as interrupted.
+        const live = activeTurns.get(threadId);
+        if (!live) return history;
+        const current = history.map((turn) =>
+          turn.id === live && turn.status === 'interrupted'
+            ? { ...turn, status: 'inProgress' as const }
+            : turn,
+        );
+        return current.some((turn) => turn.id === live)
+          ? current
+          : [
+              ...current,
+              {
+                id: live,
+                status: 'inProgress' as const,
+                items: [],
+                itemsView: 'notLoaded' as const,
+              },
+            ];
+      });
       const latestTurn = turns.then(async (history) => {
         const turn = history.at(-1);
         const thread = (await resumed)?.thread;

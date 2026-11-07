@@ -233,7 +233,7 @@ test('apply_patch 把已有文件整篇换掉被策略拒绝；局部修改照�
   await expect.poll(() => read(workspace, 'D1_draft.md')).toBe('# 草稿\n\n第一段（已改）\n');
 });
 
-test('**已知缺口**：追加与删除写进同一段含 `>>` 的脚本时，删除不问（D1-4 的一种写法）', async ({
+test('追加与删除同一脚本：Windows 必须审批，POSIX 保留已知缺口记录', async ({
   page,
   electronApp,
 }) => {
@@ -242,7 +242,9 @@ test('**已知缺口**：追加与删除写进同一段含 `>>` 的脚本时，�
   const seen = await runCommand(
     page,
     electronApp,
-    "printf '待审\\n' >> inputs/D1_draft.md && rm inputs/D1_important.xlsx",
+    process.platform === 'win32'
+      ? "Add-Content -LiteralPath 'inputs/D1_draft.md' -Value '待审'; Remove-Item -LiteralPath 'inputs/D1_important.xlsx'"
+      : "printf '待审\\n' >> inputs/D1_draft.md && rm inputs/D1_important.xlsx",
     { nth: 0 },
   );
   /*
@@ -250,6 +252,14 @@ test('**已知缺口**：追加与删除写进同一段含 `>>` 的脚本时，�
    * （`shell-command/src/bash.rs` 的 `parse_shell_lc_plain_commands`），`>>` 是追加、P6 也不管，
    * 于是整段放行。变红 = 内核开始覆盖了：删掉这条，并把 10 §2.4 的「仍然的缺口」一并改掉。
    */
+  if (process.platform === 'win32') {
+    expect(seen).not.toBeNull();
+    expect(seen.reason).toContain('删除文件');
+    expect(seen.sessionButton).toBe(0);
+    expect(read(workspace, 'D1_important.xlsx')).toBe('IMPORTANT');
+    expect(read(workspace, 'D1_draft.md')).toBe('# 草稿\n');
+    return;
+  }
   expect(seen, '这段脚本现在会弹卡了 —— 内核行为变了，去更新文档').toBeNull();
   expect(read(workspace, 'D1_important.xlsx')).toBeNull();
 });

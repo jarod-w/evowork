@@ -1,10 +1,32 @@
 import { writeFileSync } from 'node:fs';
-import { expect, test } from './fixtures.mjs';
+import { expect, test as base } from './fixtures.mjs';
 
-test.use({ desktopEnv: { EVOWORK_UI_DELIVERY_RPC_FAULT: '1' } });
+const test = base.extend({ desktopEnv: { EVOWORK_UI_DELIVERY_RPC_FAULT: '1' } });
+// 结束竞态使用产品默认 RPC 期限；1500ms 注入只用于下面专门的超时/丢回执场景。
+// Playwright 的 20s 业务断言期限不变，Stop hook 不会把竞态误变成超时测试。
+const completionRace = test.extend({
+  desktopEnv: { EVOWORK_UI_DELIVERY_RPC_FAULT: '1', EVOWORK_UI_DELIVERY_NORMAL_TIMEOUT: '1' },
+});
 const composer = (page) => page.getByLabel('输入区');
 const input = (page) => page.getByLabel('需求输入');
 const queue = (page) => page.getByLabel('排队中的追问');
+test.afterEach(async ({ page, electronApp: app }, info) => {
+  if (info.status === info.expectedStatus || page.isClosed()) return;
+  const startup = await page.evaluate(() => window.evowork.getStartup());
+  const histories = await Promise.all(
+    startup.tasks.map((task) =>
+      page.evaluate((threadId) => window.evowork.openTask({ threadId }), task.id),
+    ),
+  );
+  await info.attach('failed-public-delivery-state', {
+    body: JSON.stringify({
+      faults: await fault(app),
+      histories,
+      lifecycle: await app.evaluate(() => globalThis.__evoworkE2E.kernelLifecycle()),
+    }),
+    contentType: 'application/json',
+  });
+});
 async function selectSteer(page) {
   await page.getByRole('button', { name: '本次发送方式', exact: true }).click();
   await page.getByRole('menuitem', { name: /立即插话/ }).click();
@@ -173,38 +195,38 @@ test('发送处理中：连续回车和点击只投递一次，切任务后迟�
 });
 
 for (const mode of ['steer', 'queue']) {
-  test(`结束竞态：${mode}请求在原回合结束后才到达，接受一次且反馈真实`, async ({
-    page,
-    electronApp: app,
-  }, info) => {
-    await begin(page, app);
-    const marker = `COMPLETED-RACE-${mode}`;
-    await hold(app, marker);
-    await arm(app, mode === 'steer' ? 'turn/steer' : 'thread/queue/add', 'hold-request');
-    await input(page).fill(marker);
-    if (mode === 'steer') await selectSteer(page);
-    await input(page).press('Enter');
-    await expect.poll(async () => (await fault(app)).held).toBe(1);
-    await releaseModel(app);
-    await expect(composer(page)).toHaveAttribute('data-run-state', 'idle');
-    await releaseFault(app);
-    await expect.poll(() => saw(app, marker)).toBe(true);
-    await expect(composer(page)).toHaveAttribute('data-run-state', 'running');
-    if (mode === 'steer')
-      await expect(page.getByLabel('发送状态')).toHaveText(
-        '原回合已结束或已切换，这条输入已改为排队。',
-      );
-    await expect(input(page)).toHaveValue('');
-    const histories = await evidence(page, app, info, `completion-race-${mode}`);
-    expect(histories[0].turns).toHaveLength(2);
-    expect(
-      histories[0].items.filter(
-        (item) => item.type === 'userMessage' && JSON.stringify(item).includes(marker),
-      ),
-    ).toHaveLength(1);
-    await page.getByRole('button', { name: '停止', exact: true }).click();
-    await releaseModel(app);
-  });
+  completionRace(
+    `结束竞态：${mode}请求在原回合结束后才到达，接受一次且反馈真实`,
+    async ({ page, electronApp: app }, info) => {
+      await begin(page, app);
+      const marker = `COMPLETED-RACE-${mode}`;
+      await hold(app, marker);
+      await arm(app, mode === 'steer' ? 'turn/steer' : 'thread/queue/add', 'hold-request');
+      await input(page).fill(marker);
+      if (mode === 'steer') await selectSteer(page);
+      await input(page).press('Enter');
+      await expect.poll(async () => (await fault(app)).held).toBe(1);
+      await releaseModel(app);
+      await expect(composer(page)).toHaveAttribute('data-run-state', 'idle');
+      await releaseFault(app);
+      await expect.poll(() => saw(app, marker)).toBe(true);
+      await expect(composer(page)).toHaveAttribute('data-run-state', 'running');
+      if (mode === 'steer')
+        await expect(page.getByLabel('发送状态')).toHaveText(
+          '原回合已结束或已切换，这条输入已改为排队。',
+        );
+      await expect(input(page)).toHaveValue('');
+      const histories = await evidence(page, app, info, `completion-race-${mode}`);
+      expect(histories[0].turns).toHaveLength(2);
+      expect(
+        histories[0].items.filter(
+          (item) => item.type === 'userMessage' && JSON.stringify(item).includes(marker),
+        ),
+      ).toHaveLength(1);
+      await page.getByRole('button', { name: '停止', exact: true }).click();
+      await releaseModel(app);
+    },
+  );
 }
 
 for (const mode of ['native', 'local']) {
@@ -312,27 +334,27 @@ test('回执等待中仍可停止，已接受的排队项不会越过停止自�
   expect(histories[0].turns.map((turn) => turn.status)).toEqual(['interrupted']);
 });
 
-test('结束竞态叠加队列不可用：本机降级消息直接进入新回合', async ({
-  page,
-  electronApp: app,
-}, info) => {
-  await begin(page, app);
-  const marker = 'LOCAL-COMPLETED-RACE';
-  await hold(app, marker);
-  await arm(app, 'turn/steer', 'hold-request');
-  await input(page).fill(marker);
-  await selectSteer(page);
-  await input(page).press('Enter');
-  await expect.poll(async () => (await fault(app)).held).toBe(1);
-  await releaseModel(app);
-  await expect(composer(page)).toHaveAttribute('data-run-state', 'idle');
-  await arm(app, 'thread/queue/add', 'unavailable');
-  await releaseFault(app);
-  await expect.poll(() => saw(app, marker)).toBe(true);
-  await expect(page.getByLabel('发送状态')).toHaveText('原回合已结束，这条输入已开始执行。');
-  await expect(queue(page)).toHaveCount(0);
-  const histories = await evidence(page, app, info, 'local-completion-race');
-  expect(histories[0].turns).toHaveLength(2);
-  await page.getByRole('button', { name: '停止', exact: true }).click();
-  await releaseModel(app);
-});
+completionRace(
+  '结束竞态叠加队列不可用：本机降级消息直接进入新回合',
+  async ({ page, electronApp: app }, info) => {
+    await begin(page, app);
+    const marker = 'LOCAL-COMPLETED-RACE';
+    await hold(app, marker);
+    await arm(app, 'turn/steer', 'hold-request');
+    await input(page).fill(marker);
+    await selectSteer(page);
+    await input(page).press('Enter');
+    await expect.poll(async () => (await fault(app)).held).toBe(1);
+    await releaseModel(app);
+    await expect(composer(page)).toHaveAttribute('data-run-state', 'idle');
+    await arm(app, 'thread/queue/add', 'unavailable');
+    await releaseFault(app);
+    await expect.poll(() => saw(app, marker)).toBe(true);
+    await expect(page.getByLabel('发送状态')).toHaveText('原回合已结束，这条输入已开始执行。');
+    await expect(queue(page)).toHaveCount(0);
+    const histories = await evidence(page, app, info, 'local-completion-race');
+    expect(histories[0].turns).toHaveLength(2);
+    await page.getByRole('button', { name: '停止', exact: true }).click();
+    await releaseModel(app);
+  },
+);

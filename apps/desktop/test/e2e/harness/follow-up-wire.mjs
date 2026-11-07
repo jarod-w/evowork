@@ -111,7 +111,10 @@ export function createFollowUpObservedGatewayEntry(home, repoRoot) {
   const entry = join(home, 'follow-up-observed-gateway.mjs');
   writeFileSync(
     entry,
-    `import { installFollowUpWire } from ${JSON.stringify(import.meta.url)};\n` +
+    (process.env.EVOWORK_TOOL_DIAGNOSTICS
+      ? `process.env.EVOWORK_TOOL_DIAGNOSTICS = ${JSON.stringify(process.env.EVOWORK_TOOL_DIAGNOSTICS)};\nawait import(${JSON.stringify(new URL('./tool-call-wire.mjs', import.meta.url).href)});\n`
+      : '') +
+      `import { installFollowUpWire } from ${JSON.stringify(import.meta.url)};\n` +
       `installFollowUpWire(${JSON.stringify(join(home, 'follow-up-wire.jsonl'))});\n` +
       `const { main } = await import(${JSON.stringify(pathToFileURL(join(repoRoot, 'dist/gateway/main.js')).href)});\nmain();\n`,
   );

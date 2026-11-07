@@ -67,6 +67,9 @@ test('缺少标题返回字段级错误，保留最终交付且不保存建议�
   await idle(page);
   await expect(page.getByText('当前分析已交付 ' + marker, { exact: true })).toBeVisible();
   const current = await task(page, marker);
+  await expect
+    .poll(async () => (await history(page, current.id)).turns[0]?.status)
+    .toBe('completed');
   const result = await history(page, current.id);
   const calls = result.items.filter(
     (item) => item.type === 'mcpToolCall' && item.tool === 'propose_next_actions',
@@ -147,6 +150,9 @@ test('模型忽略结束提醒也能完成原回合，不无限重试或伪造�
   await expect(page.getByText('结束 ' + marker, { exact: true })).toBeVisible();
   await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
   const current = await task(page, marker);
+  await expect
+    .poll(async () => (await history(page, current.id)).turns[0]?.status)
+    .toBe('completed');
   const result = await history(page, current.id);
   expect(result.turns).toHaveLength(1);
   expect(result.turns[0].status).toBe('completed');

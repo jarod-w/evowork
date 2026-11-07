@@ -187,6 +187,23 @@ describe('任务会话提炼技能的实际存储与安装后果', () => {
     expect(existsSync(join(project, '.agents', 'skills'))).toBe(false);
     expect(existsSync(join(data, 'skills'))).toBe(false);
   });
+  it('字符串化草稿明确指路且不消耗修订，同一调用纠正为对象后只发布一次', async () => {
+    const draft = await start();
+    callId = 'encoded-draft-recovery';
+    await expect(
+      host.call(draft.threadId, 'publish_skill_draft', {
+        expectedRevision: 1,
+        draft: JSON.stringify(base),
+      }),
+    ).rejects.toThrow('不要传 JSON 字符串');
+    expect((await host.getSkillExtraction({ threadId: 'source' }))?.revision).toBe(1);
+    await host.call(draft.threadId, 'publish_skill_draft', { expectedRevision: 1, draft: base });
+    await host.call(draft.threadId, 'publish_skill_draft', { expectedRevision: 1, draft: base });
+    const saved = await host.getSkillExtraction({ threadId: 'source' });
+    expect(saved?.revision).toBe(2);
+    expect(saved?.content).toEqual(base);
+  });
+
   it('草稿发布校验真实调用、修订与来源，重新创建宿主仍能恢复内容', async () => {
     const draft = await start();
     bound = false;

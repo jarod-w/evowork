@@ -143,7 +143,11 @@ export const test = base.extend({
     const { appTestEnvironment } = await import('../harness/app-test-path.mjs');
     const parentEnv = appTestEnvironment(process.env);
 
+    // 产物归当前测试的结果目录，便于保留证据，避免驱动私有临时目录的清理阻塞退出。
+    const artifactsDir = testInfo.outputPath('electron-artifacts');
+    mkdirSync(artifactsDir, { recursive: true });
     const app = await electron.launch({
+      artifactsDir,
       executablePath: require('electron'),
       args: [resolve(ROOT, 'apps/desktop/test/e2e/harness/ui-entry.mjs')],
       cwd: ROOT,

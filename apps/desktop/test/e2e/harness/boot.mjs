@@ -10,7 +10,7 @@
  * 区别只是 `show` 这一个参数 —— 启动链路两边一模一样，这正是拆出这个文件的目的。
  */
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,6 +22,7 @@ import { publishControls, waitFor } from './runner.mjs';
 import { kernelTestEnvironment } from './app-test-path.mjs';
 import { createDeliveryRpcFaults } from '../../../../../services/kernel-adapter/test-support/delivery-rpc-faults.mjs';
 import { createMemoryRpcFaults } from '../../../../../services/kernel-adapter/test-support/memory-rpc-faults.mjs';
+import { inspectHookDiagnostics } from '../../../../../services/kernel-adapter/test-support/hook-diagnostics.mjs';
 
 /**
  * 一次性的 EVOWORK_HOME：产物、本机 sqlite、内核配置全在里面。
@@ -88,7 +89,7 @@ export async function bootApp({
     ? {
         spawnFn: (command, args, spawnOptions) => {
           // The launcher inherits the real process environment, independently of hostEnv.
-          // Keep external-agent discovery inside this test's disposable OS home too.
+          // Set the shell HOME without claiming to redirect Windows Known Folders.
           const child = spawn(
             command,
             args,
@@ -125,6 +126,16 @@ export async function bootApp({
       }
     : {};
 
+  const lifecycle = (event, extra = {}) => {
+    if (process.env.EVOWORK_UI_LIFECYCLE_LOG)
+      appendFileSync(
+        process.env.EVOWORK_UI_LIFECYCLE_LOG,
+        JSON.stringify({ at: Date.now(), pid: process.pid, event, ...extra }) + '\n',
+      );
+  };
+  app.on('before-quit', () => lifecycle('before-quit'));
+  app.on('window-all-closed', () => lifecycle('window-all-closed'));
+  process.on('exit', (code) => lifecycle('process-exit', { code }));
   const result = await bootstrap({
     electron: {
       app: {
@@ -139,7 +150,19 @@ export async function bootApp({
        * 焦点、hover、滚动进视野这些动作在隐藏窗口上语义不同，Playwright 的
        * actionability 检查会一直等不到「可点击」。
        */
-      createWindow: (options) => new BrowserWindow({ ...options, show }),
+      createWindow: (options) => {
+        const window = new BrowserWindow({ ...options, show });
+        window.on('close', () => lifecycle('window-close'));
+        window.on('closed', () => lifecycle('window-closed'));
+        window.on('unresponsive', () => lifecycle('window-unresponsive'));
+        window.webContents.on('render-process-gone', (_event, details) =>
+          lifecycle('renderer-gone', {
+            reason: details.reason,
+            exitCode: details.exitCode,
+          }),
+        );
+        return window;
+      },
       session: session,
       normalizeImage: (bytes) => {
         const image = nativeImage.createFromBuffer(bytes),
@@ -176,7 +199,12 @@ export async function bootApp({
         ...options,
         env: { ...process.env, HOME: home, ...hostEnv },
         ...spawnSeam,
-        ...(deliveryFaults ? { deliveryTimeoutMs: 1500 } : {}),
+        ...(process.env.EVOWORK_UI_EXTERNAL_SKILL_ROOT === '1'
+          ? { additionalSkillRoots: [join(home, '.agents', 'skills')] }
+          : {}),
+        ...(deliveryFaults && process.env.EVOWORK_UI_DELIVERY_NORMAL_TIMEOUT !== '1'
+          ? { deliveryTimeoutMs: 1500 }
+          : {}),
         /*
          * 电脑操控的注入驱动（`fake-computer-use.mjs`）：顶替随包的原生 Helper 与它的发布标记。
          * 默认不给 —— 宿主按发货的样子读随包标记，那条「未验收不能启用」的闸门也要有人走。
@@ -201,6 +229,7 @@ export async function bootApp({
 
   const booted = {
     host: result.host,
+    inspectHooks: () => inspectHookDiagnostics(result.host.adapter),
     window,
     evaluate,
     openedExternalUrls,

@@ -2876,3 +2876,91 @@ describe('真实模型暴露的投影与临时队列边界', () => {
     await expect(adapter.listQueuedInputs('persistent-thread')).rejects.toThrow();
   });
 });
+
+it('活动回合的分页中断占位不能覆盖实时状态，历史旧回合保持中断', async () => {
+  await adapter.start();
+  const threadId = 'live-history-race';
+  store.threads.upsertFromThread(makeThread({ id: threadId }));
+  adapter.events.handle('turn/started', {
+    threadId,
+    turn: makeTurn({ id: 'live-turn', status: 'inProgress' }),
+  });
+  server.handlers.set('thread/read', () => ({
+    thread: makeThread({
+      id: threadId,
+      status: { type: 'active', activeFlags: [] },
+      turns: [makeTurn({ id: 'live-turn', status: 'inProgress' })],
+    }),
+  }));
+  server.handlers.set('thread/turns/list', () => ({
+    data: [
+      makeTurn({ id: 'live-turn', status: 'interrupted' }),
+      makeTurn({ id: 'old-turn', status: 'interrupted' }),
+    ],
+    nextCursor: null,
+  }));
+  const opened = await adapter.openTask(threadId);
+  expect((await opened.turns).map((t) => [t.id, t.status])).toEqual([
+    ['old-turn', 'interrupted'],
+    ['live-turn', 'inProgress'],
+  ]);
+  await expect(opened.latestTurn).resolves.toMatchObject({ id: 'live-turn', status: 'inProgress' });
+  expect(store.threads.get(threadId)?.last_turn_status).toBe('inProgress');
+  expect(server.received.filter((r) => r.method === 'thread/resume')).toHaveLength(0);
+});
+it('没有实时活动回合证明时，分页中断不能被本机旧投影恢复为运行', async () => {
+  await adapter.start();
+  const threadId = 'cold-interrupted';
+  store.threads.upsertFromThread(
+    makeThread({ id: threadId, turns: [makeTurn({ id: 'stale', status: 'inProgress' })] }),
+  );
+  server.handlers.set('thread/read', () => ({ thread: makeThread({ id: threadId }) }));
+  server.handlers.set('thread/turns/list', () => ({
+    data: [makeTurn({ id: 'stale', status: 'interrupted' })],
+    nextCursor: null,
+  }));
+  const opened = await adapter.openTask(threadId);
+  await expect(opened.latestTurn).resolves.toMatchObject({ id: 'stale', status: 'interrupted' });
+});
+
+it('实时启动证据禁止恢复未加载快照，分页遗漏只补回合元数据', async () => {
+  await adapter.start();
+  const threadId = 'live-notloaded';
+  store.threads.upsertFromThread(makeThread({ id: threadId }));
+  adapter.events.handle('turn/started', {
+    threadId,
+    turn: makeTurn({ id: 'live-missing', status: 'inProgress' }),
+  });
+  let resumes = 0;
+  server.handlers.set('thread/read', () => ({
+    thread: makeThread({ id: threadId, status: { type: 'notLoaded' } }),
+  }));
+  server.handlers.set('thread/resume', () => {
+    resumes++;
+    return { thread: makeThread({ id: threadId }) };
+  });
+  server.handlers.set('thread/turns/list', () => ({ data: [], nextCursor: null }));
+  const opened = await adapter.openTask(threadId);
+  const turns = await opened.turns;
+  await opened.latestTurn;
+  expect(resumes).toBe(0);
+  expect(turns).toEqual([
+    { id: 'live-missing', status: 'inProgress', items: [], itemsView: 'notLoaded' },
+  ]);
+});
+it('原生分页已给出明确完成时不能被迟到的活动标记盖回运行', async () => {
+  await adapter.start();
+  const threadId = 'completed-page';
+  store.threads.upsertFromThread(makeThread({ id: threadId }));
+  adapter.events.handle('turn/started', {
+    threadId,
+    turn: makeTurn({ id: 'done', status: 'inProgress' }),
+  });
+  server.handlers.set('thread/read', () => ({ thread: makeThread({ id: threadId }) }));
+  server.handlers.set('thread/turns/list', () => ({
+    data: [makeTurn({ id: 'done', status: 'completed' })],
+    nextCursor: null,
+  }));
+  const opened = await adapter.openTask(threadId);
+  await expect(opened.latestTurn).resolves.toMatchObject({ id: 'done', status: 'completed' });
+});

@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { completedTurnAnswer } from '../harness/turn-answer.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 import { approveTaskTreeCommandOnce } from './task-tree-approvals.mjs';
@@ -83,14 +84,24 @@ async function snapshot(page) {
   const root = await rootTask(page);
   const read = (threadId) =>
     page.evaluate((id) => window.evowork.openTask({ threadId: id }), threadId);
-  const rootItems = (await read(root.id)).items;
+  let rootHistory;
+  await expect
+    .poll(async () => {
+      rootHistory = await read(root.id);
+      return (
+        rootHistory.turns.length > 0 &&
+        rootHistory.turns.every((turn) => turn.status !== 'inProgress')
+      );
+    })
+    .toBe(true);
+  const rootItems = rootHistory.items;
   const children = await page.evaluate(
     (threadId) => window.evowork.listSubtasks({ threadId }),
     root.id,
   );
   const childItems = {};
   for (const child of children) childItems[child.id] = (await read(child.id)).items;
-  return { root, rootItems, children, childItems };
+  return { root, rootItems, rootTurns: rootHistory.turns, children, childItems };
 }
 
 /**
@@ -101,13 +112,13 @@ async function snapshot(page) {
 const spawned = (items) =>
   items.filter((item) => item.type === 'subAgentActivity' && item.kind === 'started');
 
-/** 根任务最后一条助手消息 —— 「告诉我」的那句 */
-function finalAnswer(items) {
-  return items.filter((item) => item.type === 'agentMessage').at(-1)?.text ?? '';
-}
+/** 本回合已经交给用户的答案；Stop 补报后的确认不抹去原交付。 */
+const finalAnswer = completedTurnAnswer;
 
 /** 回合失败、或模型一个字没回，就不是「模型选择了怎么做」—— 报原因，不判分 */
 function requireRealRun(snap) {
+  if (!snap.rootTurns?.length || snap.rootTurns.some((turn) => turn.status !== 'completed'))
+    throw new Error('根任务真实回合没有成功完成，不判分。');
   if (!finalAnswer(snap.rootItems).trim()) {
     throw new Error('根任务没有给出任何回复：这一轮没有真正跑起来，不判分。看附件里的历史。');
   }

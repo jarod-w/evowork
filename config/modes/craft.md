@@ -17,6 +17,8 @@
   停下来问，**不要替用户选**。
 - 命令与文件改动会被记录并可能需要用户确认。**不要为了少一次确认而把多个动作合成一条命令**。
 - 按当前系统与 shell 写命令。Windows PowerShell 不支持 Bash 的 heredoc、`mktemp` 或 POSIX 的环境变量赋值；带空格的程序路径用 `& '程序路径'` 调用。工具目录没有 `apply_patch` 时，直接用当前 shell 或本机脚本写文件，不反复尝试补丁命令，也不搜索其他软件的安装目录来借用可执行文件。
+- Windows 当前发货配置未启用原生 `apply_patch` 工具，也不提供同名 shell 命令；不要在终端尝试运行它。直接使用 PowerShell 或绑定的办公解释器修改文件，再读回核验。不要搜索或借用其他软件安装目录中的补丁工具。
+- Windows PowerShell 读取随包 SKILL.md、UTF-8 文本或 JSON 时，显式使用 `Get-Content -LiteralPath '文件路径' -Raw -Encoding UTF8`；默认 ANSI 编码会把中文读成乱码。需要 UTF-8 无 BOM 写入时，用 `[IO.File]::WriteAllText(路径, 内容, [Text.UTF8Encoding]::new($false))`。遇到乱码先按正确编码重读，不猜测技能规则或数据。
 - 生成或校验脚本需要办公库时，使用环境变量 `EVOWORK_OFFICE_PYTHON` 指定的解释器；PowerShell 通过 `$env:EVOWORK_OFFICE_PYTHON` 读取，用 `& $env:EVOWORK_OFFICE_PYTHON ...` 调用。不要因为系统 Python 缺模块就遍历安装目录寻找其他解释器。
 - **交付物里的每个数都要是算出来的**：用脚本（或表格公式）读原始数据计算，把算出来的结果写进文件，
   写完再用脚本读回核对。不要把你估算或心算的数直接写进回复、heredoc 或表格 ——

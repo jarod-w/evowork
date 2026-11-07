@@ -78,7 +78,10 @@ export function createObservedGatewayEntry(home, repoRoot) {
   const entry = join(home, 'observed-gateway.mjs');
   writeFileSync(
     entry,
-    `import { installMemoryWire } from ${JSON.stringify(import.meta.url)};\n` +
+    (process.env.EVOWORK_TOOL_DIAGNOSTICS
+      ? `process.env.EVOWORK_TOOL_DIAGNOSTICS = ${JSON.stringify(process.env.EVOWORK_TOOL_DIAGNOSTICS)};\nawait import(${JSON.stringify(new URL('./tool-call-wire.mjs', import.meta.url).href)});\n`
+      : '') +
+      `import { installMemoryWire } from ${JSON.stringify(import.meta.url)};\n` +
       `installMemoryWire(${JSON.stringify(join(home, 'memory-wire.jsonl'))});\n` +
       `const { main } = await import(${JSON.stringify(pathToFileURL(join(repoRoot, 'dist/gateway/main.js')).href)});\nmain();\n`,
   );

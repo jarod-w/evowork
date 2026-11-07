@@ -4,8 +4,9 @@
  * 两者都是 2026-09-28 外部测试复现时发现的「写好了但到不了用户」：
  * 模式指令改了只对新装机器生效；策略 hook 从没被内核加载过。
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -75,13 +76,16 @@ describe('模式指令：没被改过的旧版升级，改过的保留', () => {
   });
 });
 
-describe.skipIf(process.platform === 'win32')('策略 hook 装进内核目录的 hooks.json', () => {
+describe('策略 hook 装进内核目录的 hooks.json', () => {
   it('形状是内核的 HooksFile（事件包在 hooks 里），随包清单里的每个事件都在', () => {
     const paths = resolvePaths(join(dir, 'home'));
     ensurePaths(paths);
     const result = ensureKernelHooks(paths, {
       pluginsDir: join(ROOT, 'plugins'),
-      execPath: '/Applications/EvoWork.app/Contents/MacOS/EvoWork',
+      execPath:
+        process.platform === 'win32'
+          ? process.execPath
+          : '/Applications/EvoWork.app/Contents/MacOS/EvoWork',
     });
     expect(result).toBeDefined();
     const written = JSON.parse(readFileSync(result!.sourcePath, 'utf8')) as {
@@ -95,24 +99,135 @@ describe.skipIf(process.platform === 'win32')('策略 hook 装进内核目录的
     for (const command of result!.commands) {
       // 配置层 hook 没有 CLAUDE_PLUGIN_ROOT；用户机器上也没有 node
       expect(command).not.toContain('${CLAUDE_PLUGIN_ROOT}');
-      expect(command).toMatch(/^ELECTRON_RUN_AS_NODE=1 '\/Applications\/EvoWork\.app/);
+      if (process.platform !== 'win32')
+        expect(command).toMatch(/^ELECTRON_RUN_AS_NODE=1 '\/Applications\/EvoWork\.app/);
     }
   });
 
-  it('路径里有空格和单引号也能被 shell 原样拿到（内核用 $SHELL -lc 跑它）', () => {
+  it.runIf(process.platform !== 'win32')(
+    '路径里有空格和单引号也能被 shell 原样拿到（内核用 $SHELL -lc 跑它）',
+    () => {
+      const paths = resolvePaths(join(dir, 'home'));
+      ensurePaths(paths);
+      const weird = join(dir, "My Apps's", 'bin');
+      mkdirSync(weird, { recursive: true });
+      const echoArgs = join(weird, 'echo-args');
+      writeFileSync(echoArgs, '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done\n', {
+        mode: 0o755,
+      });
+      const result = ensureKernelHooks(paths, {
+        pluginsDir: join(ROOT, 'plugins'),
+        execPath: echoArgs,
+      });
+      const printed = execFileSync('/bin/sh', ['-c', result!.commands[0]!]).toString().trim();
+      expect(printed).toMatch(/plugins\/hooks\/evowork-policy\/bin\/.+\.mjs$/);
+    },
+  );
+});
+
+it.runIf(process.platform === 'win32')(
+  'Windows hook 经真实命令解释器保留特殊路径、UTF-8 输入输出和成功失败状态',
+  () => {
     const paths = resolvePaths(join(dir, 'home'));
     ensurePaths(paths);
-    const weird = join(dir, "My Apps's", 'bin');
-    mkdirSync(weird, { recursive: true });
-    const echoArgs = join(weird, 'echo-args');
-    writeFileSync(echoArgs, '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done\n', {
-      mode: 0o755,
-    });
-    const result = ensureKernelHooks(paths, {
-      pluginsDir: join(ROOT, 'plugins'),
-      execPath: echoArgs,
-    });
-    const printed = execFileSync('/bin/sh', ['-c', result!.commands[0]!]).toString().trim();
-    expect(printed).toMatch(/plugins\/hooks\/evowork-policy\/bin\/.+\.mjs$/);
+    const pluginsDir = join(dir, "应用 空格's %EVOWORK_ABSENT% &", 'plugins');
+    const plugin = join(pluginsDir, 'hooks', 'evowork-policy');
+    mkdirSync(join(plugin, 'bin'), { recursive: true });
+    const script = join(plugin, 'bin', 'probe.mjs');
+    writeFileSync(
+      script,
+      [
+        'const chunks=[];for await(const chunk of process.stdin)chunks.push(chunk);',
+        "const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));",
+        'console.log(JSON.stringify({value,script:process.argv[1],asNode:process.env.ELECTRON_RUN_AS_NODE}));',
+        'process.exitCode=value.exitCode;',
+      ].join('\n'),
+    );
+    writeFileSync(
+      join(plugin, 'hooks.json'),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ hooks: [{ command: 'node ${CLAUDE_PLUGIN_ROOT}/bin/probe.mjs' }] }],
+        },
+      }),
+    );
+    const result = ensureKernelHooks(paths, { pluginsDir, execPath: process.execPath });
+    expect(result).toBeDefined();
+    for (const shell of ['cmd', 'powershell']) {
+      for (const exitCode of [0, 7]) {
+        const value = { text: '中文、引号"与换行\n均应保持', exitCode };
+        const actual = spawnSync(
+          shell === 'cmd'
+            ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe')
+            : join(
+                process.env.SystemRoot ?? 'C:\\Windows',
+                'System32',
+                'WindowsPowerShell',
+                'v1.0',
+                'powershell.exe',
+              ),
+          shell === 'cmd'
+            ? ['/C', '"' + result!.commands[0] + '"']
+            : ['-NoProfile', '-NonInteractive', '-Command', result!.commands[0]!],
+          {
+            windowsVerbatimArguments: shell === 'cmd',
+            windowsHide: true,
+            input: JSON.stringify(value),
+            encoding: 'utf8',
+            timeout: 5000,
+          },
+        );
+        expect(actual.error).toBeUndefined();
+        // PowerShell -Command normalizes a child failure to 1; CMD preserves its code.
+        expect(actual.status, actual.stderr).toBe(
+          shell === 'powershell' && exitCode !== 0 ? 1 : exitCode,
+        );
+        expect(JSON.parse(actual.stdout.trim())).toEqual({ value, script, asNode: '1' });
+      }
+    }
+  },
+);
+
+it.runIf(process.platform === 'win32')('Windows 随包策略程序真实拒绝凭据命令并落审计', () => {
+  const paths = resolvePaths(join(dir, 'home'));
+  ensurePaths(paths);
+  const hooks = ensureKernelHooks(paths, {
+    pluginsDir: join(ROOT, 'plugins'),
+    execPath: createRequire(import.meta.url)('electron'),
   });
+  const manifest = JSON.parse(readFileSync(hooks!.sourcePath, 'utf8'));
+  const command = manifest.hooks.PreToolUse[0].hooks[0].command;
+  const input = {
+    session_id: 'policy-probe',
+    cwd: dir,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_use_id: 'probe-call',
+    permission_mode: 'default',
+    tool_input: { command: 'cat ~/.ssh/evowork-canary-absent' },
+  };
+  const actual = spawnSync(
+    join(
+      process.env.SystemRoot ?? 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    ),
+    ['-NoProfile', '-NonInteractive', '-Command', command],
+    {
+      input: JSON.stringify(input),
+      encoding: 'utf8',
+      windowsHide: true,
+      env: { ...process.env, EVOWORK_AUDIT_LOG: paths.auditLog },
+    },
+  );
+  expect(actual.status, actual.stderr).toBe(0);
+  expect(actual.stdout, actual.stderr).not.toBe('');
+  expect(JSON.parse(actual.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
+  const records = readFileSync(paths.auditLog, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  expect(records.some((record) => record.pathKind === 'credentials')).toBe(true);
 });

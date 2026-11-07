@@ -24,8 +24,10 @@ export function appTestEnvironment(env) {
 }
 
 /** The provider key belongs to the gateway, not to model-executed shell tools. */
-export function kernelTestEnvironment(env, home, providerKey, platform = process.platform) {
-  const isolated = { ...env, HOME: home, ...(platform === 'win32' ? { USERPROFILE: home } : {}) };
+export function kernelTestEnvironment(env, home, providerKey) {
+  // Windows Known Folders remain tied to the real account; overriding USERPROFILE
+  // alone breaks Chrome's dedicated-profile remote debugging checks.
+  const isolated = { ...env, HOME: home };
   if (providerKey) {
     for (const [name, value] of Object.entries(isolated)) {
       if (value === providerKey) delete isolated[name];

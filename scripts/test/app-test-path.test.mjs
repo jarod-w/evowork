@@ -53,11 +53,11 @@ it('kernel shell cannot inherit the provider credential, while local gateway and
   expect(env.DEEPSEEK_API_KEY).toBe('provider-secret');
 });
 
-it('Windows native user-skill discovery uses the disposable test profile, not the host profile', () => {
+it('Windows shell HOME isolation preserves the real profile required by Chrome known folders', () => {
   const env = { HOME: 'C:\\real-home', USERPROFILE: 'C:\\real-home' };
   const isolated = kernelTestEnvironment(env, 'C:\\test-home', undefined, 'win32');
   expect(isolated.HOME).toBe('C:\\test-home');
-  expect(isolated.USERPROFILE).toBe('C:\\test-home');
+  expect(isolated.USERPROFILE).toBe('C:\\real-home');
   expect(env.USERPROFILE).toBe('C:\\real-home');
 });
 

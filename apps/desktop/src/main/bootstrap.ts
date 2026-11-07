@@ -259,6 +259,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     webPreferences: { preload: options.preloadPath, ...WINDOW_SECURITY },
   });
 
+  let rendererAvailable = true;
+  window.on('closed', () => {
+    rendererAvailable = false;
+  });
+
   // 外链一律不在应用窗口里打开：应用窗口有 preload，等于把桥暴露给任意页面
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => {
@@ -353,7 +358,9 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
           }
         : {}),
       ...(electron.openExternal ? { openExternal: electron.openExternal } : {}),
-      emitToRenderer: (channel, payload) => window.webContents.send(channel, payload),
+      emitToRenderer: (channel, payload) => {
+        if (rendererAvailable) window.webContents.send(channel, payload);
+      },
     });
   } catch (error) {
     reportStartupFailure(error);
@@ -441,6 +448,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
    */
   let quitting = false;
   electron.app.on('before-quit', () => {
+    rendererAvailable = false;
     quitting = true;
     rejectReady(new Error('应用正在退出。'));
     void host.stop();

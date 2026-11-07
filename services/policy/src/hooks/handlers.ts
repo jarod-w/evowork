@@ -42,6 +42,7 @@ export interface HookResult {
 export interface HookEnvironment {
   readonly computerUseAvailable?: boolean;
   readonly home: string;
+  readonly evoworkDataDir?: string | undefined;
   readonly now: () => number;
   /** 额外被视为工作空间内的目录（`runtimeWorkspaceRoots`） */
   readonly extraRoots?: readonly string[] | undefined;
@@ -192,6 +193,7 @@ export function handlePreToolUse(input: PreToolUseInput, env: HookEnvironment): 
   const context: PathContext = {
     workspaceRoot: input.cwd,
     home: env.home,
+    ...(env.evoworkDataDir ? { evoworkDataDir: env.evoworkDataDir } : {}),
     ...(env.extraRoots ? { extraRoots: env.extraRoots } : {}),
   };
   const audit: AuditRecord[] = [];
@@ -285,6 +287,7 @@ export function handlePermissionRequest(
   const context: PathContext = {
     workspaceRoot: input.cwd,
     home: env.home,
+    ...(env.evoworkDataDir ? { evoworkDataDir: env.evoworkDataDir } : {}),
     ...(env.extraRoots ? { extraRoots: env.extraRoots } : {}),
   };
   const audit: AuditRecord[] = [];

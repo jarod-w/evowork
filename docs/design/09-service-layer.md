@@ -436,3 +436,9 @@ artifacts 管范围/登记/对账与增量队列，ingest 管解析/OCR，runtim
 权威迁移 v7 新增 `next_action(thread_id, turn_id, state, payload)`：保存每个任务最后一组结构化候选、来源回合及 proposed / available / accepted / dismissed / expired 状态。正文只在本机权威表和正常工具历史，日志与任务投影不复制。它不属于待发输入，不能被队列调度；投影重建不删除，任务删除清理。升级 v6 先备份，失败回滚并拒绝启动。交互与生命周期见 [22](22-next-actions.md)。
 
 **Windows 停止时的进程回收（2026-11-02）**：启动器只对自己持有的活跃内核子进程 PID 调用系统 `taskkill /PID … /T /F`，回收其 MCP、Git 等后代并释放继承管道；重复停止幂等。工具失败只记录错误类别和退出码，保留停止根进程的兜底，不记录命令正文。该清理行为不等同于强隔离；根进程已意外退出或应用被强杀时的完整包含性未因此证明，U5 保持开放。
+
+### 宿主提供的额外技能目录（2026-11-02）
+
+ServiceHost 可接收显式的 `additionalSkillRoots` 目录，与随包官方技能目录合并，经适配层已有的 `skills/extraRoots/set` 注册并在内核重启后重放；不扫描或复制其正文、不改变原生默认目录发现。此入口仅由集成宿主传入，不增加 renderer 任意目录注册动作。Windows E2E 使用该公开原生注册机制指定一次性共享技能目录，不再声称改写 `USERPROFILE` 即能重定向 Known Folders。
+
+Windows 策略 hook 启动使用系统 PowerShell 的只读配置启动方式，将宿主绑定的程序和脚本路径作为完整命令的一部分注册；不依赖用户安装 Node。包装明确处理 UTF-8 stdin/stdout，并保留成功/失败状态：CMD 保留子进程退出码，PowerShell 的外层 `-Command` 会把非零子进程状态归一为 1，测试同时验证两种解释器的实际行为。仅信任适配层核对来源文件和完整命令后由内核返回的 currentHash；不改变 Windows 隔离评估或完全访问档。

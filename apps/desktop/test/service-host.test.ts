@@ -151,6 +151,17 @@ it('旧 Lite 图片配置停止启用，不能隐式改成其它付费型号', a
   expect(readMeta(host.store.db, 'image.settings')).toBe(saved);
 });
 
+it('宿主显式共享技能目录经原生注册，不依赖 Windows 用户目录变量', async () => {
+  const shared = join(dir, 'external-skills');
+  mkdirSync(shared, { recursive: true });
+  host = makeHost({ additionalSkillRoots: [shared] });
+  await host.start();
+  const registrations = child.received
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === 'skills/extraRoots/set');
+  expect(registrations.map((message) => message.params.extraRoots)).toEqual([[shared]]);
+});
+
 describe('路径布局（09 §7）', () => {
   it('内核家目录指向 `~/.evowork/kernel/`（环境变量名归适配层，桌面层不该知道）', () => {
     const paths = resolvePaths('/home/u/.evowork');

@@ -299,6 +299,24 @@ describe('PermissionRequest：指向受保护位置的提权**直接拒绝**', (
     expect(result.audit[0]?.approvalResult).toBe('decline');
   });
 
+  it('搬迁后的应用配置与技能目录提权仍直接拒绝', () => {
+    for (const path of [
+      'D:/isolated/app-data/kernel/config.toml',
+      'D:/isolated/app-data/kernel/skills/demo/SKILL.md',
+    ]) {
+      const result = handlePermissionRequest(
+        { session_id: 't1', turn_id: 'turn1', cwd: 'D:/workspace', tool_input: { path } },
+        { ...ENV, home: 'C:/Users/li', evoworkDataDir: 'D:/isolated/app-data' },
+      );
+      expect(
+        (result.output as { hookSpecificOutput: Record<string, string> })?.hookSpecificOutput
+          .decision,
+        path,
+      ).toBe('deny');
+      expect(result.audit[0]?.approvalResult).toBe('decline');
+    }
+  });
+
   it('普通提权交给用户，策略层不替用户点允许', () => {
     const result = handlePermissionRequest(
       {

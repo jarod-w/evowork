@@ -430,3 +430,92 @@ describe('平台能力（10 §7 / Q26）', () => {
     }
   });
 });
+
+it('Windows 主目录中的反斜杠不使 tilde 凭据路径绕过硬拦截', () => {
+  const context = { workspaceRoot: 'D:\\work', home: 'C:\\Users\\职员' };
+  expect(normalizePath('~/.ssh/evowork-canary-absent', context.home)).toBe(
+    '~/.ssh/evowork-canary-absent',
+  );
+  expect(classifyPath('~/.ssh/evowork-canary-absent', context, 'read')).toMatchObject({
+    verdict: 'hard-block',
+    rule: 'credentials',
+  });
+});
+
+it('自定义应用数据目录中的配置和历史仍硬拦截，工作空间与主目录无关', () => {
+  const context = {
+    workspaceRoot: 'D:/isolated/app-data',
+    home: 'C:/Users/person',
+    evoworkDataDir: 'D:/isolated/app-data',
+  };
+  expect(
+    classifyPath('D:/isolated/app-data/kernel/config-canary.toml', context, 'read'),
+  ).toMatchObject({ verdict: 'hard-block', rule: 'evowork-self' });
+  expect(
+    classifyPath('D:/isolated/app-data/kernel/sessions/canary', context, 'read'),
+  ).toMatchObject({ verdict: 'hard-block', rule: 'evowork-history' });
+  expect(
+    classifyPath('D:/isolated/app-data/kernel/skills/a/reference/canary', context, 'read').verdict,
+  ).toBe('allow');
+  expect(
+    classifyPath('D:/isolated/app-data/kernel/skills/a/reference/canary', context, 'write').verdict,
+  ).toBe('hard-block');
+  expect(classifyPath('C:/Users/person/.ssh/canary', context, 'read').verdict).toBe('hard-block');
+});
+
+it('PowerShell 删除命令含大小写和模块限定也必须显示删除风险，不能整任务放开', () => {
+  for (const command of [
+    "Remove-Item -LiteralPath 'draft.txt'",
+    'Add-Content notes.txt x; rEmOvE-iTeM draft.txt',
+    'Microsoft.PowerShell.Management\\Remove-Item draft.txt',
+  ]) {
+    const risk = commandApprovalRationale(command, undefined);
+    expect(risk.dimensions).toContain('deletes');
+    expect(risk.reason).toContain('删除文件');
+  }
+});
+
+describe('Windows 大小写硬拦截不扩大授权', () => {
+  const context = {
+    home: 'C:/Users/Li',
+    workspaceRoot: 'D:/app-data',
+    evoworkDataDir: 'D:/app-data',
+  };
+  it('Windows 敏感路径大小写别名和主目录大小写不能绕过硬拦截', () => {
+    for (const path of [
+      '~/.SSH/evowork-canary-absent',
+      'c:/USERS/li/.ssh/evowork-canary-absent',
+      'd:/APP-DATA/KERNEL/config-canary.toml',
+      'D:/APP-DATA/KERNEL/SESSIONS/canary',
+    ])
+      expect(classifyPath(path, context, 'read').verdict, path).toBe('hard-block');
+  });
+  it('大小写硬拦截修复不能扩大工作空间或例外授权，POSIX 匹配保持大小写敏感', () => {
+    expect(
+      classifyPath(
+        '/home/li/.SSH/file',
+        { home: '/home/li', workspaceRoot: '/home/li/.SSH' },
+        'read',
+      ).verdict,
+    ).toBe('allow');
+    expect(classifyPath('D:/app-data/kernel/SKILLS/demo/SKILL.md', context, 'read').verdict).toBe(
+      'hard-block',
+    );
+    expect(classifyPath('D:/APP-DATA/ordinary.txt', context, 'write').verdict).toBe(
+      'needs-approval',
+    );
+    expect(classifyPath('D:/app-data/kernel/skills/demo/SKILL.md', context, 'read').verdict).toBe(
+      'allow',
+    );
+    expect(classifyPath('D:/app-data/kernel/skills/demo/SKILL.md', context, 'write').verdict).toBe(
+      'hard-block',
+    );
+    expect(
+      classifyPath(
+        '/home/li/Work/file.txt',
+        { home: '/home/li', workspaceRoot: '/home/li/work' },
+        'write',
+      ).verdict,
+    ).toBe('needs-approval');
+  });
+});

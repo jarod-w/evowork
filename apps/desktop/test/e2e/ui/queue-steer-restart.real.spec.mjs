@@ -403,7 +403,10 @@ async function journey(info, run) {
       if (boots[0].exitKind === 'forced' && platform() === 'win32') {
         expect(boots[0].exit?.signal).toBeNull();
         expect(Number.isInteger(boots[0].exit?.code) && boots[0].exit.code !== 0).toBe(true);
-        expect(boots[0].forcedTermination?.taskkillExitCode).toBe(0);
+        const termination = boots[0].forcedTermination;
+        expect(termination?.allObservedExited).toBe(true);
+        expect(termination?.verifiedExitedPids).toContain(boots[0].electronPid);
+        expect(Number.isInteger(termination?.taskkillExitCode)).toBe(true);
       } else
         expect(boots[0].exit).toMatchObject(
           boots[0].exitKind === 'forced' ? { signal: 'SIGKILL' } : { code: 0, signal: null },

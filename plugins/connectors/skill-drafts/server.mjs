@@ -2,6 +2,8 @@ import { createInterface } from 'node:readline';
 
 const draftSchema = {
   type: 'object',
+  description:
+    '完整结构化草稿对象。直接传对象，不要 JSON.stringify、JSON 字符串或 Markdown 代码块；只有 instructions、files.content 等具体文本字段使用字符串。',
   additionalProperties: false,
   properties: {
     slug: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,63}$' },

@@ -396,14 +396,13 @@ function shellQuote(value: string): string {
  *
  * 用 Electron 自己充当 node（`ELECTRON_RUN_AS_NODE=1`）：**用户机器上没有 node**。
  * 每次启动重写 —— App 挪了位置或升级之后，旧路径就指向不存在的文件。
- * Windows 暂不装：内核在那边不走 `$SHELL -lc`，命令写法不同，而且没验过（U5 同一处）。
+ * Windows 通过系统 PowerShell 包装 UTF-8 管道与真实退出码；这不改变 U5 隔离结论。
  */
 export function ensureKernelHooks(
   paths: EvoworkPaths,
   input: { readonly pluginsDir: string; readonly execPath: string },
 ): KernelHooks | undefined {
   const target = join(paths.kernelHome, 'hooks.json');
-  if (process.platform === 'win32') return undefined;
   const pluginRoot = join(input.pluginsDir, 'hooks', 'evowork-policy');
   const manifestPath = join(pluginRoot, 'hooks.json');
   if (!existsSync(manifestPath)) return undefined;
@@ -424,7 +423,36 @@ export function ensureKernelHooks(
         ...(group.matcher !== undefined ? { matcher: group.matcher } : {}),
         hooks: group.hooks.map((hook) => {
           const script = hook.command.replace(/^node \$\{CLAUDE_PLUGIN_ROOT\}\//, '');
-          const command = `ELECTRON_RUN_AS_NODE=1 ${shellQuote(input.execPath)} ${shellQuote(join(pluginRoot, script))}`;
+          const scriptPath = join(pluginRoot, script);
+          const psQuote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+          const windowsScript = [
+            "$ErrorActionPreference='Stop'",
+            "$ProgressPreference='SilentlyContinue'",
+            '$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)',
+            "$env:ELECTRON_RUN_AS_NODE='1'",
+            '[Console]::In.ReadToEnd() | & ' + psQuote(input.execPath) + ' ' + psQuote(scriptPath),
+            'exit $LASTEXITCODE',
+          ].join('\n');
+          const windowsShell = join(
+            process.env.SystemRoot ?? 'C:\\Windows',
+            'System32',
+            'WindowsPowerShell',
+            'v1.0',
+            'powershell.exe',
+          );
+          // The native runner may use PowerShell or CMD. A bound absolute system
+          // path needs no shell-specific invocation operator on either one.
+          if (
+            process.platform === 'win32' &&
+            !/^[a-zA-Z]:[\\/][a-zA-Z0-9_./\\-]+$/.test(windowsShell)
+          )
+            throw new Error('Windows 策略 hook 的系统解释器路径不受支持。');
+          const command =
+            process.platform === 'win32'
+              ? windowsShell +
+                ' -NoLogo -NoProfile -NonInteractive -EncodedCommand ' +
+                Buffer.from(windowsScript, 'utf16le').toString('base64')
+              : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(input.execPath)} ${shellQuote(scriptPath)}`;
           commands.push(command);
           return { type: 'command', command };
         }),
@@ -862,6 +890,8 @@ export interface ServiceHostOptions {
    * 没给时官方目录是空的 —— 不假装有办公技能。
    */
   readonly pluginsDir?: string | undefined;
+  /** 集成宿主显式提供的额外只读技能根，经原生接口注册，不改变默认发现。 */
+  readonly additionalSkillRoots?: readonly string[];
   /**
    * 随基础包带的 Noto Sans SC（打包后在 `process.resourcesPath/office/`）。
    * 给了，办公扩展安装就不再去 GitHub 拉字体。
@@ -1566,7 +1596,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     validateCwd: environments.validate,
     store,
     logger,
-    ...(options.pluginsDir ? { skillRoots: [join(options.pluginsDir, 'skills')] } : {}),
+    skillRoots: [
+      ...(options.pluginsDir ? [join(options.pluginsDir, 'skills')] : []),
+      ...(options.additionalSkillRoots ?? []),
+    ],
     ...(kernelHooks
       ? {
           bundledHooks: {
@@ -1622,6 +1655,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           EVOWORK_CUA_HOST_READY:
             process.platform === 'darwin' && computerUseReleaseVerified ? '1' : '0',
           EVOWORK_AUDIT_LOG: options.paths.auditLog,
+          EVOWORK_POLICY_DATA_DIR: options.paths.home,
           EVOWORK_ARTIFACT_LOG: options.paths.artifactLog,
           ...(gatewayToken ? { EVOWORK_GATEWAY_TOKEN: gatewayToken } : {}),
         },

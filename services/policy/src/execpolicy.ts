@@ -69,13 +69,13 @@ const MATCHERS: readonly Matcher[] = Object.freeze([
   },
   {
     rule: 'recursive-delete',
-    test: /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b|\bRemove-Item\b.*-Recurse/,
+    test: /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b|\bRemove-Item\b.*-Recurse/i,
     dimensions: ['deletes', 'writes-disk'],
     reason: '这个命令会递归删除文件，删掉的东西找不回来',
   },
   {
     rule: 'delete',
-    test: /\b(rm|unlink|rmdir|del)\b/,
+    test: /\b(rm|unlink|rmdir|del|Remove-Item)\b/i,
     dimensions: ['deletes', 'writes-disk'],
     reason: DELETE_REASON,
   },

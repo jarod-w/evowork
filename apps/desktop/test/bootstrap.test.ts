@@ -475,3 +475,42 @@ describe('启动失败要让用户看见（在线升级提案 §4 A1）', () => 
     expect(shown).toEqual([]);
   });
 });
+
+it.each(['closed', 'before-quit'] as const)('停止向已经%s的窗口推送宿主事件', async (eventName) => {
+  const electron = fakeElectron();
+  const callbacks = new Map<string, () => void>();
+  const originalCreate = electron.createWindow;
+  const fake = {
+    ...electron,
+    app: {
+      ...electron.app,
+      on: (name: string, fn: () => void) => {
+        callbacks.set(name, fn);
+      },
+    },
+    createWindow: (options: BrowserWindowOptions) => {
+      const window = originalCreate(options);
+      return {
+        ...window,
+        on: (name: string, fn: () => void) => {
+          callbacks.set(name, fn);
+        },
+      };
+    },
+  };
+  await bootstrap({
+    electron: fake,
+    appServerPath: '/fake/app-server',
+    preloadPath: '/fake/preload.js',
+    rendererHtmlPath: '/fake/index.html',
+    createHost: (options) => {
+      hostOptions = options;
+      return fakeHost();
+    },
+  });
+  hostOptions.emitToRenderer?.('before', {});
+  const count = sent.length;
+  callbacks.get(eventName)?.();
+  hostOptions.emitToRenderer?.('after', {});
+  expect(sent.length).toBe(count);
+});

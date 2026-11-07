@@ -15,7 +15,7 @@
  */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -28,7 +28,7 @@ const CANDIDATES = [
 async function loadPolicy() {
   for (const candidate of CANDIDATES) {
     try {
-      return await import(candidate);
+      return await import(pathToFileURL(candidate).href);
     } catch {
       /* 下一个 */
     }
@@ -50,6 +50,7 @@ async function readStdin() {
 export function hookEnvironment() {
   return {
     home: homedir(),
+    evoworkDataDir: process.env.EVOWORK_POLICY_DATA_DIR,
     now: () => Date.now(),
     computerUseAvailable: process.env.EVOWORK_CUA_HOST_READY === '1',
     readFile: (path) => {

@@ -14,6 +14,7 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from './fixtures.mjs';
+import { boundAttachmentPath, isBoundAttachmentRead } from '../harness/attachment-read.mjs';
 
 const SKILL_NAME = 'e2e-weekly-coach';
 const SKILL_MD = `---
@@ -68,9 +69,53 @@ test('附上 SKILL.md 说「装到系统里」：指路到「安装为全局技�
 
   const conversation = page.getByRole('main', { name: '对话区' });
   await expect(conversation.locator('.ew-item-agent').first()).toBeVisible({ timeout: 240_000 });
-  await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
-    timeout: 240_000,
-  });
+  if (process.platform === 'win32') {
+    const home = await electronApp.evaluate(() => globalThis.__evoworkE2E.home);
+    const note = await conversation.locator('.ew-item-user').first().innerText();
+    const attachmentPath = boundAttachmentPath(note, home);
+    const powershellPath = join(
+      process.env.SystemRoot ?? 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    );
+    const deadline = Date.now() + 240_000;
+    while (Date.now() < deadline) {
+      const pending = page.getByLabel('需要你确认', { exact: true }).first();
+      const card = (await pending.count()) ? await pending.elementHandle() : null;
+      if (card) {
+        // 固定当前卡片和按钮，避免审批消失后 locator 重新绑定到另一个请求。
+        for (const label of ['查看技术详情', '查看完整命令']) {
+          const buttons = await card.$('button');
+          for (const button of buttons) {
+            if ((await button.innerText()).trim() === label) await button.click();
+          }
+        }
+        const command = await card.$eval('.ew-approval-command', (el) => el.textContent);
+        expect(
+          isBoundAttachmentRead(command, attachmentPath, powershellPath),
+          '未知审批必须保留，不能自动允许：' + command,
+        ).toBe(true);
+        const buttons = await card.$('button');
+        const allows = [];
+        for (const button of buttons) {
+          if ((await button.innerText()).trim() === '允许这一次') allows.push(button);
+        }
+        expect(allows).toHaveLength(1);
+        await allows[0].click();
+      }
+      if ((await page.getByLabel('输入区').getAttribute('data-run-state')) === 'idle') break;
+      await page.waitForTimeout(150);
+    }
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
+      timeout: 1,
+    });
+  } else {
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
+      timeout: 240_000,
+    });
+  }
 
   // ① 附件说明：第三人称、首行标明出处（它就画在用户自己的气泡里）
   const bubble = (await conversation.locator('.ew-item-user').first().innerText()).trim();

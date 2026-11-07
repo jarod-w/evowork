@@ -150,6 +150,8 @@ export interface PathContext {
   readonly extraRoots?: readonly string[];
   /** 用户主目录，用来把 `~` 展开 */
   readonly home: string;
+  /** 宿主绑定的实际应用数据目录；搬迁后仍保护自身配置和历史。 */
+  readonly evoworkDataDir?: string;
 }
 
 /**
@@ -159,8 +161,9 @@ export interface PathContext {
  * 这是这个文件里最容易写错、也最致命的一处。
  */
 export function normalizePath(input: string, home: string): string {
+  const normalizedHome = home.replace(/\\/g, '/').replace(/\/$/, '');
   let path = input.replace(/\\/g, '/');
-  if (path.startsWith('~/')) path = `${home}/${path.slice(2)}`;
+  if (path.startsWith('~/')) path = `${normalizedHome}/${path.slice(2)}`;
 
   const isAbsolute = path.startsWith('/') || /^[a-zA-Z]:/.test(path);
   const parts: string[] = [];
@@ -176,7 +179,6 @@ export function normalizePath(input: string, home: string): string {
   let resolved = (isAbsolute && !/^[a-zA-Z]:/.test(path) ? '/' : '') + parts.join('/');
   if (path.endsWith('/') && !resolved.endsWith('/')) resolved += '/';
 
-  const normalizedHome = home.replace(/\\/g, '/').replace(/\/$/, '');
   if (normalizedHome !== '' && resolved === normalizedHome) return '~';
   if (normalizedHome !== '' && resolved.startsWith(`${normalizedHome}/`)) {
     return `~/${resolved.slice(normalizedHome.length + 1)}`;
@@ -230,11 +232,58 @@ export function classifyPath(
   access: PathAccess = 'write',
 ): PathDecision {
   const path = normalizePath(rawPath, context.home);
+  // Only hard-block matching folds Windows case. Workspace and exception
+  // comparisons stay conservative, including case-sensitive Windows directories.
+  const windowsPath =
+    /^[a-zA-Z]:/.test(context.home) ||
+    /^[a-zA-Z]:/.test(rawPath) ||
+    context.home.startsWith('\\\\') ||
+    context.home.startsWith('//');
+  const absoluteHardPath = (candidate: string): string =>
+    candidate === '~'
+      ? normalizePath(context.home, '')
+      : candidate.startsWith('~/')
+        ? normalizePath(context.home, '') + candidate.slice(1)
+        : candidate;
+  const hardBlockMatch = (candidate: string, prefix: string): boolean =>
+    windowsPath
+      ? underPrefix(
+          absoluteHardPath(candidate).toLowerCase(),
+          absoluteHardPath(prefix).toLowerCase(),
+        )
+      : underPrefix(candidate, prefix);
 
   // ① 硬拦截优先。**先于工作空间判定** —— 否则把工作空间设在 ~/.ssh 就能绕过
-  for (const rule of HARD_BLOCK_RULES) {
+  const dataRoot = context.evoworkDataDir
+    ? normalizePath(context.evoworkDataDir, context.home).replace(/\/$/, '')
+    : undefined;
+  const defaultPrefix = '~/.evowork/';
+  const rules = HARD_BLOCK_RULES.flatMap((rule): readonly BlockRule[] => {
+    if (!dataRoot || !rule.prefixes.some((prefix) => prefix.startsWith(defaultPrefix)))
+      return [rule];
+    const relocate = (prefix: string) =>
+      prefix.startsWith(defaultPrefix)
+        ? dataRoot + '/' + prefix.slice(defaultPrefix.length)
+        : prefix;
+    return [
+      rule,
+      {
+        ...rule,
+        prefixes: rule.prefixes.map(relocate),
+        ...(rule.exceptions
+          ? {
+              exceptions: rule.exceptions.map((item) => ({
+                ...item,
+                prefix: relocate(item.prefix),
+              })),
+            }
+          : {}),
+      },
+    ];
+  });
+  for (const rule of rules) {
     if (
-      rule.prefixes.some((prefix) => underPrefix(path, prefix)) &&
+      rule.prefixes.some((prefix) => hardBlockMatch(path, prefix)) &&
       !exempted(rule, path, access)
     ) {
       return {

@@ -16,8 +16,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { settle } from './file-results-support.mjs';
+import { shellQuote, writeFileCommand } from './shell-commands.mjs';
 
-async function runCommand(page, electronApp, cmd, nth) {
+async function runCommand(page, electronApp, cmd, nth, mustBlock = false, approveFixture = false) {
   /*
    * **按内容认领，不按到达顺序**（2026-10-22 改）。原先用 `scriptNext`：内核在回合之前还会发
    * 别的请求（记忆、下一步建议），剧本被它们领走，回合拿到的只是一句文字回复、命令根本没发出去 ——
@@ -45,6 +47,32 @@ async function runCommand(page, electronApp, cmd, nth) {
     await page.getByLabel('需求输入').fill(`${marker} 执行 ${cmd}`);
     await page.getByRole('button', { name: '发送', exact: true }).click();
   }
+  if (mustBlock) {
+    const approval = page.getByLabel('需要你确认');
+    await expect
+      .poll(
+        async () =>
+          (await approval.count()) > 0 ||
+          (await page.getByText(`${marker} DONE`, { exact: true }).count()) > 0,
+        { timeout: 60000 },
+      )
+      .toBe(true);
+    if (await approval.count()) {
+      await test.info().attach('protected-command-public-state', {
+        body: JSON.stringify(
+          {
+            audit: await page.evaluate(() => window.evowork.getAudit()),
+            hooks: await electronApp.evaluate(() => globalThis.__evoworkE2E.inspectHooks()),
+          },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      });
+      throw new Error('预期硬拦截的命令进入了审批；没有批准该动作。');
+    }
+  }
+  if (approveFixture) await settle(page, `${marker} DONE`, 60_000);
   await expect(page.getByText(`${marker} DONE`, { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
     timeout: 60_000,
@@ -62,8 +90,9 @@ test('读 ~/.ssh 的命令在执行前被拦下，并留下审计', async ({ pag
   await runCommand(
     page,
     electronApp,
-    `cat ~/.ssh/evowork-e2e-canary-absent; printf RAN > ${JSON.stringify(ran)}`,
+    `cat ~/${process.platform === 'win32' ? '.SSH' : '.ssh'}/evowork-e2e-canary-absent; printf RAN > ${JSON.stringify(ran)}`,
     0,
+    true,
   );
 
   // 整条命令没有执行：hook 在工具调用之前就拒掉了
@@ -85,7 +114,11 @@ test('普通命令照常执行 —— 包括以系统目录里的程序开头的
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
   const ok = join(workspace, 'ok.txt');
 
-  await runCommand(page, electronApp, `/usr/bin/env printf OK > ${JSON.stringify(ok)}`, 0);
+  const cmd =
+    process.platform === 'win32'
+      ? writeFileCommand(ok, 'OK')
+      : `/usr/bin/env printf OK > ${JSON.stringify(ok)}`;
+  await runCommand(page, electronApp, cmd, 0, false, true);
 
   expect(existsSync(ok) ? readFileSync(ok, 'utf8') : null).toBe('OK');
   // PreToolUse 与 PostToolUse 真的跑过：它们各为这条命令写一条，摘要是命令本身
@@ -93,7 +126,11 @@ test('普通命令照常执行 —— 包括以系统目录里的程序开头的
     .poll(
       async () =>
         (await audit(page)).filter(
-          (r) => r.toolName === 'Bash' && (r.actionSummary ?? '').includes('printf OK'),
+          (r) =>
+            r.toolName === 'Bash' &&
+            (r.actionSummary ?? '').includes(
+              process.platform === 'win32' ? 'node.exe' : 'printf OK',
+            ),
         ).length,
       { timeout: 15_000 },
     )
@@ -112,25 +149,44 @@ test('内核技能与记忆目录读得到，内核配置照拦 —— 内核亲
 }) => {
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
   const marker = (name) => join(workspace, name);
-
+  const kernelHome = join(
+    await electronApp.evaluate(() => globalThis.__evoworkE2E.home),
+    '.evowork',
+    'kernel',
+  );
+  const command = (target, output, directory = false) => {
+    const read =
+      process.platform === 'win32'
+        ? `${directory ? 'Get-ChildItem' : 'Get-Content'} -LiteralPath ${shellQuote(target)} -ErrorAction SilentlyContinue`
+        : `${directory ? 'ls' : 'cat'} ${shellQuote(target)}`;
+    return read + '; ' + writeFileCommand(marker(output), 'RAN');
+  };
   await runCommand(
     page,
     electronApp,
-    `cat ~/.evowork/kernel/skills/e2e-absent/reference/guide.md; printf RAN > ${JSON.stringify(marker('ran-skill-read.txt'))}`,
+    command(
+      join(kernelHome, 'skills', 'e2e-absent', 'reference', 'guide.md'),
+      'ran-skill-read.txt',
+    ),
     0,
+    false,
+    true,
   );
+  // Only a nonexistent canary path is addressed; never enumerate actual native memory files.
   await runCommand(
     page,
     electronApp,
-    // eslint-disable-next-line @evowork/no-kernel-internals -- 这是交给假模型去执行的命令，测试本身不读写该目录
-    `ls ~/.evowork/kernel/memories/; printf RAN > ${JSON.stringify(marker('ran-memories-read.txt'))}`,
+    command(join(kernelHome, 'memories', 'e2e-absent'), 'ran-memories-read.txt', true),
     1,
+    false,
+    true,
   );
   await runCommand(
     page,
     electronApp,
-    `cat ~/.evowork/kernel/config-e2e-absent.toml; printf RAN > ${JSON.stringify(marker('ran-config-read.txt'))}`,
+    command(join(kernelHome, 'config-e2e-absent.toml'), 'ran-config-read.txt'),
     2,
+    true,
   );
 
   expect(existsSync(marker('ran-skill-read.txt')), '读技能参考文件被拦了').toBe(true);

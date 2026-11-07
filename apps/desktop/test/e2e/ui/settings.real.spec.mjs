@@ -137,7 +137,18 @@ test('真模型：设置七分类和窄窗、已保存模型连通性、记忆�
   await expect(page.locator('.ew-settings-model-name')).toContainText([m.model.displayName]);
   await page.getByRole('button', { name: `修改 ${m.model.id}`, exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByLabel('endpoint 地址')).toHaveValue(m.model.baseUrl);
+  const labels = {
+    deepseek: 'DeepSeek API',
+    moonshot: 'Kimi（Moonshot）API',
+    zhipu: 'GLM（智谱）API',
+    private: '其他 OpenAI 兼容 API',
+  };
+  await expect(
+    dialog.getByRole('button', { name: '供应商', exact: true }).locator('.ew-inline-select-label'),
+  ).toHaveText(labels[m.model.provider]);
+  if (m.model.provider === 'private')
+    await expect(dialog.getByLabel('endpoint 地址')).toHaveValue(m.model.baseUrl);
+  else await expect(dialog.getByLabel('endpoint 地址')).toHaveCount(0);
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: `检查 ${m.model.id} 连接`, exact: true }).click();
   await expect(page.getByText('通了：这个模型现在可以用。', { exact: true })).toBeVisible({
