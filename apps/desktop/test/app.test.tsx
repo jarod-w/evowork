@@ -2712,6 +2712,39 @@ describe('侧边栏的六个入口都要有落点', () => {
    * 还没做的页面**说清是没做**，不留一个空白主区
    * （CLAUDE.md §9.1：降级、跳过、认不出来都要如实说）。
    */
+  it('智能体入口保留插件，前端配置跨导航保留且不创建后台任务', async () => {
+    const { bridge } = fakeBridge();
+    render(<App bridge={bridge} />);
+    const entry = await screen.findByRole('button', { name: '智能体' });
+    fireEvent.click(entry);
+    expect(entry.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: '插件' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '新建智能体' }));
+    await screen.findByLabelText(/智能体名称/);
+    fireEvent.change(screen.getByLabelText(/智能体名称/), { target: { value: '前端审阅助手' } });
+    fireEvent.change(screen.getByLabelText(/角色说明/), { target: { value: '供页面审阅' } });
+    fireEvent.change(screen.getByLabelText(/^工作指令/), { target: { value: '整理输入材料' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存智能体' }));
+    fireEvent.click(screen.getByRole('button', { name: '插件' }));
+    await screen.findByRole('tab', { name: '技能' });
+    fireEvent.click(screen.getByRole('button', { name: '智能体' }));
+    expect(await screen.findByRole('article', { name: '前端审阅助手' })).toBeTruthy();
+    expect(bridge.send).not.toHaveBeenCalled();
+    expect(bridge.createExpert).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(screen.getByRole('article', { name: '前端审阅助手' })).getByRole('button', {
+        name: '编辑',
+      }),
+    );
+    await screen.findByLabelText(/智能体名称/);
+    fireEvent.change(screen.getByLabelText(/智能体名称/), { target: { value: '未保存的名称' } });
+    fireEvent.click(screen.getByRole('button', { name: '本机用户 菜单' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置' }));
+    const leave = await screen.findByRole('dialog', { name: '离开当前配置？' });
+    fireEvent.click(within(leave).getByRole('button', { name: '继续编辑' }));
+    expect((screen.getByLabelText(/智能体名称/) as HTMLInputElement).value).toBe('未保存的名称');
+  });
+
   it('插件页是真目录，不是「还没做好」', async () => {
     const { bridge } = fakeBridge();
     render(<App bridge={bridge} />);

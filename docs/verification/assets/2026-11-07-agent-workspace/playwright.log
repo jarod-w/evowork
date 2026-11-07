@@ -1,0 +1,8 @@
+
+Running 1 test using 1 worker
+
+(node:91207) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/agent-workspace.spec.mjs:4:1 › 智能体前端：独立入口、会话配置、协作演示与窄窗显示，不创建后台任务 (10.5s)
+
+  1 passed (10.8s)

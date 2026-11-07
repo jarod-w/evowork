@@ -206,7 +206,7 @@ export interface SidebarProps {
 }
 
 /**
- * 02 §1 的一级信息架构：**4 个固定入口 + 项目/任务动态区**。
+ * 02 §1 的一级信息架构：**5 个固定入口 + 项目/任务动态区**。
  *
  * 写死在这里而不是由调用方传，是因为它就是固定的 —— 02 §1 的那张表是产品的骨架，
  * 不是配置。传进来只会让"侧边栏有哪几项"变成一个各页面各答一次的问题。
@@ -226,6 +226,7 @@ export const MAIN_NAV: NonNullable<SidebarProps['nav']> = [
   { id: 'new-task', label: '新建任务', icon: 'new-task' },
   { id: 'automations', label: '自动化', icon: 'automation' },
   { id: 'catalog', label: '插件', icon: 'catalog' },
+  { id: 'agents', label: '智能体', icon: 'agent' },
   { id: 'library', label: '资料库', icon: 'library' },
 ];
 

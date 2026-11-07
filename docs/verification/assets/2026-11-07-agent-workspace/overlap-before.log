@@ -1,0 +1,30 @@
+
+Running 1 test using 1 worker
+
+(node:88505) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [fake] › apps/desktop/test/e2e/ui/agent-workspace.spec.mjs:4:1 › 智能体前端：独立入口、会话配置、协作演示与窄窗显示，不创建后台任务 (9.6s)
+
+
+  1) [fake] › apps/desktop/test/e2e/ui/agent-workspace.spec.mjs:4:1 › 智能体前端：独立入口、会话配置、协作演示与窄窗显示，不创建后台任务
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 38
+    Received:    24
+
+      66 |         .boundingBox();
+      67 |       const breadcrumb = await page.locator('.ew-agents-topline > span').first().boundingBox();
+    > 68 |       expect(breadcrumb.x).toBeGreaterThanOrEqual(restore.x + restore.width);
+         |                            ^
+      69 |     }
+      70 |     for (const tab of ['① 组建团队', '② 流程编排', '③ 运行监控']) {
+      71 |       await page.getByRole('tab', { name: tab, exact: true }).click();
+        at /Users/wangli/develop/evowork/evowork/apps/desktop/test/e2e/ui/agent-workspace.spec.mjs:68:28
+
+    Error: Protocol error (Page.handleJavaScriptDialog): No dialog is showing
+
+    Error Context: test-results/agent-workspace-智能体前端：独立入口、会话配置、协作演示与窄窗显示，不创建后台任务-fake/error-context.md
+
+  1 failed
+    [fake] › apps/desktop/test/e2e/ui/agent-workspace.spec.mjs:4:1 › 智能体前端：独立入口、会话配置、协作演示与窄窗显示，不创建后台任务

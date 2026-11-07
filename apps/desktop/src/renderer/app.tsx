@@ -146,6 +146,11 @@ import {
   type CatalogTab,
 } from './views/catalog.js';
 import type { LibraryRow } from '@evowork/artifacts/library.js';
+import { AgentWorkspacePage } from './views/agent-workspace.js';
+import {
+  createAgentWorkspaceExamples,
+  type AgentWorkspaceItem,
+} from './views/agent-workspace-state.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
 import { Library, type LibraryNav } from './views/library.js';
@@ -475,6 +480,7 @@ type MainView =
   | 'audit'
   | 'projects'
   | 'catalog'
+  | 'agents'
   /** 设置（11 §4.4）。**一页多分区**，分区由 `settingsSection` 决定 —— 不是六个视图 */
   | 'settings'
   | 'more';
@@ -484,6 +490,7 @@ const NAV_TO_VIEW: Readonly<Record<string, MainView>> = {
   'new-task': 'task',
   projects: 'projects',
   catalog: 'catalog',
+  agents: 'agents',
   automations: 'automations',
   library: 'library',
   more: 'more',
@@ -499,6 +506,7 @@ const VIEW_TO_NAV: Readonly<Partial<Record<MainView, string>>> = {
   task: 'new-task',
   projects: 'projects',
   catalog: 'catalog',
+  agents: 'agents',
   automations: 'automations',
   library: 'library',
   more: 'more',
@@ -683,6 +691,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     savedDraft.current.workspaceId,
   );
   const [view, setViewDirect] = useState<MainView>('task');
+  const currentView = useRef(view);
+  currentView.current = view;
+  const [agentWorkspaceItems, setAgentWorkspaceItems] = useState<readonly AgentWorkspaceItem[]>(
+    createAgentWorkspaceExamples,
+  );
   const settingsLeaveGuard = useRef<SettingsLeaveGuard | null>(null);
   const registerSettingsGuard = useCallback((guard: SettingsLeaveGuard | null) => {
     settingsLeaveGuard.current = guard;
@@ -697,7 +710,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, []);
   const setView = useCallback((next: MainView) => {
     const guard = settingsLeaveGuard.current;
-    if (guard && next !== 'settings')
+    if (guard && next !== currentView.current)
       void guard().then((allowed) => {
         if (allowed) setViewDirect(next);
       });
@@ -3974,6 +3987,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       {view !== 'task' ? (
         <MainPage
           view={view}
+          agentWorkspaceItems={agentWorkspaceItems}
+          onAgentWorkspaceItemsChange={setAgentWorkspaceItems}
           onRegisterLeaveGuard={registerSettingsGuard}
           onOpenLibrary={() => {
             setLibraryInitialNav('recent');
@@ -4874,6 +4889,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  * 02 §1 的 6 个入口是产品骨架。「更多」现在还没有本体页，给一个如实说明的空页。
  */
 function MainPage(props: {
+  readonly agentWorkspaceItems: readonly AgentWorkspaceItem[];
+  readonly onAgentWorkspaceItemsChange: (items: readonly AgentWorkspaceItem[]) => void;
   readonly onRegisterLeaveGuard: (guard: SettingsLeaveGuard | null) => void;
   readonly onOpenLibrary: () => void;
   readonly onOpenAudit: () => void;
@@ -5156,6 +5173,15 @@ function MainPage(props: {
           onOpenDetail={props.onOpenProject}
           onPickDirectory={props.onPickDirectory}
           {...(props.projectRefusal !== undefined ? { refusal: props.projectRefusal } : {})}
+        />
+      );
+
+    case 'agents':
+      return (
+        <AgentWorkspacePage
+          items={props.agentWorkspaceItems}
+          onItemsChange={props.onAgentWorkspaceItemsChange}
+          onRegisterLeaveGuard={props.onRegisterLeaveGuard}
         />
       );
 
