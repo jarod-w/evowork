@@ -214,6 +214,8 @@ export interface ComposerProps {
   readonly workspaceLocked?: boolean | undefined;
   readonly workspaceLabel?: string | undefined;
   readonly environmentBusy?: boolean | undefined;
+  /** 启动时核对待确认发送，期间锁定操作，但没有文件正在准备。 */
+  readonly sendRecoveryPending?: boolean | undefined;
   readonly workspaces?: readonly SelectOption[] | undefined;
   readonly workspaceId?: string | undefined;
   readonly onWorkspaceChange?: ((id: string) => void) | undefined;
@@ -425,13 +427,14 @@ export function Composer(props: ComposerProps) {
     };
   }, [props.onSearchMentions, trigger]);
 
+  const interactionBusy = props.environmentBusy === true || props.sendRecoveryPending === true;
   const suggestion =
     props.value === '' &&
     attachments.length === 0 &&
     (props.queued ?? []).length === 0 &&
     runState === 'idle' &&
     !trigger &&
-    !props.environmentBusy &&
+    !interactionBusy &&
     !props.sendLockedReason &&
     !props.modelUnavailable
       ? props.suggestion
@@ -453,7 +456,7 @@ export function Composer(props: ComposerProps) {
     (!localControl && parsing > 0) ||
     (!localControl && unadded) ||
     blockedByModel ||
-    props.environmentBusy === true ||
+    interactionBusy ||
     (props.sendLockedReason !== undefined && !stoppingGoalControl && !memoryCommand) ||
     (!memoryCommand && confirmFullAccess);
 
@@ -527,7 +530,7 @@ export function Composer(props: ComposerProps) {
       className="ew-composer"
       aria-label="输入区"
       data-run-state={runState}
-      aria-busy={props.environmentBusy}
+      aria-busy={interactionBusy}
     >
       {props.environmentBusy ? <Banner tone="info">正在准备文件和工作目录…</Banner> : null}
       {/* 03 §8：模型不可用 → danger 条 + 禁用发送。**不换一个模型继续** */}
@@ -1013,8 +1016,10 @@ export function Composer(props: ComposerProps) {
                       })),
                     ]
               }
-              disabled={props.environmentBusy}
-              disabledReason="正在准备文件和工作目录…"
+              disabled={interactionBusy}
+              disabledReason={
+                props.sendRecoveryPending ? '正在核对上次发送…' : '正在准备文件和工作目录…'
+              }
               actions={
                 props.workspaceLocked
                   ? props.onNewTaskInOtherProject
@@ -1068,7 +1073,7 @@ export function Composer(props: ComposerProps) {
               queuePosition={props.queuePosition}
               steer={props.steer}
               onSteerChange={props.onSteerChange}
-              modeDisabled={props.environmentBusy}
+              modeDisabled={interactionBusy}
               localCommand={Boolean(goalCommand || memoryCommand)}
               onSend={props.onSend}
               onInterrupt={props.onInterrupt}

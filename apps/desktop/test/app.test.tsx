@@ -3838,6 +3838,51 @@ describe('Composer 文件夹动作与草稿', () => {
 });
 
 describe('宿主恢复的待确认发送', () => {
+  it('启动核对完成后选择工作目录，仍显示真实的文件准备提示', async () => {
+    let finish!: (value: { ok: boolean; projects: [] }) => void;
+    const importProject = vi.fn(
+      () => new Promise<{ ok: boolean; projects: [] }>((resolve) => (finish = resolve)),
+    );
+    const { bridge } = fakeBridge({ getPendingSend: async () => undefined, importProject });
+    render(<App bridge={bridge} />);
+    const project = await screen.findByLabelText('选择项目');
+    await waitFor(() => expect(project).toHaveProperty('disabled', false));
+    fireEvent.click(project);
+    fireEvent.click(screen.getByRole('menuitem', { name: /选择文件夹/ }));
+    expect(importProject).toHaveBeenCalledOnce();
+    expect(screen.getByText('正在准备文件和工作目录…')).toBeTruthy();
+    await act(async () => finish({ ok: false, projects: [] }));
+    expect(screen.queryByText('正在准备文件和工作目录…')).toBeNull();
+    expect(project).toHaveProperty('disabled', false);
+  });
+
+  it('启动核对发送记录时不显示文件准备提示，保留草稿且核对完成前不能发送', async () => {
+    let finish!: (value: undefined) => void;
+    const { bridge } = fakeBridge({
+      getPendingSend: () => new Promise<undefined>((resolve) => (finish = resolve)),
+    });
+    render(<App bridge={bridge} />);
+    const input = await screen.findByLabelText('需求输入');
+    expect(screen.queryByText('正在准备文件和工作目录…')).toBeNull();
+    fireEvent.change(input, { target: { value: '启动时输入的草稿' } });
+    expect(screen.getByRole('button', { name: '发送' })).toHaveProperty('disabled', true);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(bridge.send).not.toHaveBeenCalled();
+
+    await act(async () => finish(undefined));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '发送' })).toHaveProperty('disabled', false),
+    );
+    expect(input).toHaveProperty('value', '启动时输入的草稿');
+    expect(screen.queryByText('正在准备文件和工作目录…')).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(bridge.send).toHaveBeenCalledWith(
+        expect.objectContaining({ text: '启动时输入的草稿' }),
+      ),
+    );
+  });
+
   it('没有浏览器缓存也恢复原身份和审批档，确认收到后才向宿主确认清理', async () => {
     const payload = {
       submissionId: 'durable-send',
@@ -3871,6 +3916,7 @@ it('恢复接口失败时保留禁止发送状态，不能靠新身份绕过未�
   });
   render(<App bridge={bridge} />);
   expect(await screen.findByText(/没能恢复待确认发送/)).toBeTruthy();
+  expect(screen.queryByText('正在准备文件和工作目录…')).toBeNull();
   fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '不能盲目重发' } });
   expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });

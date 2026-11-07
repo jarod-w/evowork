@@ -664,7 +664,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [mode, setMode] = useState<ModeId>('request-approval');
   const [draft, setDraft] = useState(savedDraft.current.text);
   const draftIdentity = useRef(savedDraft.current.id);
-  const [environmentBusy, setEnvironmentBusy] = useState(Boolean(bridge.getPendingSend));
+  const [environmentBusy, setEnvironmentBusy] = useState(false);
+  const [sendRecoveryPending, setSendRecoveryPending] = useState(Boolean(bridge.getPendingSend));
 
   const pendingEnvironment = useRef(Boolean(bridge.getPendingSend));
   const pendingSubmission = useRef<PendingSend | undefined>(savedDraft.current.pending);
@@ -1146,7 +1147,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .finally(() => {
         if (!cancelled && restored) {
           pendingEnvironment.current = false;
-          setEnvironmentBusy(false);
+          setSendRecoveryPending(false);
         }
       });
     return () => {
@@ -3643,6 +3644,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         ? (startup?.workspaces.find((w) => w.id === workspaceId)?.name ?? '不使用项目')
         : undefined,
       environmentBusy,
+      sendRecoveryPending,
       onPickFolder: () => void pickComposerFolder(),
       onNewTaskInOtherProject: beginNewTask,
       permissions,
@@ -3774,6 +3776,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       installAttachmentSkill,
       skillInstalling,
       environmentBusy,
+      sendRecoveryPending,
       activeTaskId,
       pickComposerFolder,
       addAttachments,
