@@ -16,7 +16,7 @@
  * 仓库路径，而打包产物里没有那个路径）。这种失败要在构建时就红，不能等到运行时。
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
@@ -99,8 +99,22 @@ const BUNDLES = [
   },
 ];
 for (const bundle of BUNDLES) {
-  run(process.execPath, [
-    join(ROOT, 'node_modules/esbuild/bin/esbuild'),
+  /*
+   * Windows 上 esbuild 的 bin 仍是 JS，必须交给 node。
+   * 其它平台的安装脚本会把这个文件换成原生二进制，node 执行会直接报语法错误。
+   */
+  const esbuildBin = join(ROOT, 'node_modules/esbuild/bin/esbuild');
+  const header = Buffer.alloc(2);
+  const fd = openSync(esbuildBin, 'r');
+  try {
+    readSync(fd, header, 0, 2, 0);
+  } finally {
+    closeSync(fd);
+  }
+  const esbuildCommand = header[0] === 0x23 && header[1] === 0x21 ? process.execPath : esbuildBin;
+  const esbuildArgs = header[0] === 0x23 && header[1] === 0x21 ? [esbuildBin] : [];
+  run(esbuildCommand, [
+    ...esbuildArgs,
     bundle.entry,
     '--bundle',
     `--outfile=${bundle.out}`,
