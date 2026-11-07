@@ -427,6 +427,60 @@ describe('hosted 转发（D11）', () => {
     };
   }
 
+  it('续期后新请求使用新令牌，原有响应流继续完成', async () => {
+    const credentials: string[] = [];
+    let upstream!: ReadableStreamDefaultController<Uint8Array>;
+    const forwarded = {
+      upstreamBaseUrl: 'https://cloud.example',
+      accessJwt: 'old-token',
+      fetchImpl: (async (url, init) => {
+        credentials.push(new Headers(init?.headers).get('authorization') ?? '');
+        if (String(url).endsWith('/models')) return Response.json({ data: [] });
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              upstream = controller;
+              controller.enqueue(
+                new TextEncoder().encode(
+                  'data: {"type":"response.created","id":"first-response"}\n\n',
+                ),
+              );
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      }) as typeof fetch,
+    };
+    const server = createGatewayServer({
+      models: hostedLookup(),
+      providers: {},
+      configFor: () => ({ baseUrl: 'unused', apiKey: 'unused' }),
+      authenticate: () => true,
+      heartbeatMs: 0,
+      upstreamIdleMs: 0,
+      upstreamFirstChunkMs: 0,
+      hostedForward: forwarded,
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const response = await fetch(`${base}/v1/responses`, {
+        method: 'POST',
+        body: JSON.stringify({ model: HOSTED.id, input: [], stream: true }),
+      });
+      const text = response.text();
+      forwarded.accessJwt = 'renewed-token';
+      expect((await fetch(`${base}/v1/evowork/models`)).status).toBe(200);
+      expect(credentials).toEqual(['Bearer old-token', 'Bearer renewed-token']);
+      upstream.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+      upstream.close();
+      expect(await text).toContain('first-response');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('没带 JWT / 上游时 hosted 模型是 401 not_signed_in，不回落到本机 key', async () => {
     const server = createGatewayServer({
       models: hostedLookup(),

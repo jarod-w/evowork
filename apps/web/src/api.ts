@@ -161,7 +161,7 @@ export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError;
 
 export function identityOrigin(): string {
   const fromEnv = import.meta.env.VITE_IDENTITY_ORIGIN;
-  return (fromEnv && fromEnv.trim() !== '' ? fromEnv : 'http://127.0.0.1:8788').replace(/\/$/, '');
+  return (fromEnv && fromEnv.trim() !== '' ? fromEnv : window.location.origin).replace(/\/$/, '');
 }
 
 export function readSession(): Session | undefined {
@@ -209,8 +209,37 @@ export function parsePkce(search: string): PkceQuery | undefined {
   const state = q.get('state') ?? '';
   const deviceId = q.get('device_id') ?? '';
   if (!codeChallenge || !redirectUri || !deviceId) return undefined;
-  if (!redirectUri.startsWith('http://127.0.0.1:')) return undefined;
+  try {
+    const uri = new URL(redirectUri);
+    if (
+      uri.protocol !== 'http:' ||
+      uri.hostname !== '127.0.0.1' ||
+      !uri.port ||
+      uri.username ||
+      uri.password ||
+      uri.pathname !== '/callback' ||
+      uri.search ||
+      uri.hash
+    )
+      return undefined;
+  } catch {
+    return undefined;
+  }
   return { codeChallenge, redirectUri, state, deviceId };
+}
+
+/** 仅保留公开 PKCE 参数，邮件验证令牌不跟到登录请求里。 */
+export function pkceSearch(search: string): string {
+  const pkce = parsePkce(search);
+  return pkce
+    ? new URLSearchParams({
+        code_challenge: pkce.codeChallenge,
+        code_challenge_method: 'S256',
+        redirect_uri: pkce.redirectUri,
+        state: pkce.state,
+        device_id: pkce.deviceId,
+      }).toString()
+    : '';
 }
 
 /** 同一时刻只跑一次续期：六个面板并发打 401 时，不该换六次令牌。 */
@@ -233,6 +262,7 @@ async function refreshSession(): Promise<boolean> {
       const body = (await res.json()) as { accessToken?: string; refreshToken?: string };
       if (!body.accessToken || !body.refreshToken) return false;
       const current = readSession();
+      if (!current || current.refreshToken !== session.refreshToken) return false;
       writeSession({
         accessToken: body.accessToken,
         refreshToken: body.refreshToken,
@@ -311,8 +341,8 @@ export async function syncSessionFromMe(): Promise<Session | undefined> {
   const out = await api<{ role: Role; mustChangePassword: boolean }>('/v1/me');
   if (!out.ok) return session;
   const next: Session = {
-    accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
+    accessToken: readSession()?.accessToken ?? session.accessToken,
+    refreshToken: readSession()?.refreshToken ?? session.refreshToken,
     role: out.data.role,
     mustChangePassword: out.data.mustChangePassword,
   };

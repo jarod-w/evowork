@@ -1,8 +1,8 @@
 # 编译与部署手册
 
 > **更新于 2026-10-01；2026-10-20 按当前代码订正**（构建步骤与产物、内核补丁数、出网点、分享 / 策略包 / 更新源 / 电脑操控的现状、§6 / §7 里已修掉的条目；没有重跑任何命令，订正处只对照了代码与配置）。本文里的每条命令都在本机实际跑过；**跑不通的地方会写明"没验过"**，
-> 不写"应该可以"。**唯一的例外是 §5.2.1**（账号页与账号服务的部署），那一节照录的是
-> 另一轮在 Ubuntu 上的实测，本文作者没有重跑 —— 该节开头与 §7 都标着这件事。上游内核与本仓库分开写，因为它们的工具链、构建时长、失败方式完全不同。
+> 不写"应该可以"。**唯一的例外是 §5.2.1 的历史部署命令**（账号页与账号服务），该段照录的是
+> 另一轮在 Ubuntu 上的实测，本文作者没有重跑 —— 该节开头与 §7 都标着这件事；2026-10-31 追加的迁移与 HTTPS 段已独立实测。上游内核与本仓库分开写，因为它们的工具链、构建时长、失败方式完全不同。
 
 两个项目的关系见 [CLAUDE.md](../CLAUDE.md) 第 1 节：`../codex` 是**只读的执行内核**，
 本仓库是产品。产品需要内核的一个二进制（`codex-app-server`），两者只通过 JSON-RPC 说话（K2）。
@@ -469,7 +469,7 @@ PrivateTmp=yes
 Q1=A 之下这两件仍在云端（D9 四条职责里的第一条）。
 
 ```bash
-# SPA。origin 在**构建期**编进包里 —— 改地址必须重新构建
+# SPA。默认走页面同源；显式 VITE_IDENTITY_ORIGIN 在构建期编进包里
 VITE_IDENTITY_ORIGIN=http://<host> pnpm --filter @evowork/web build
 rsync -az --delete apps/web/dist/ root@<host>:/opt/evowork/web/
 
@@ -493,8 +493,41 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 | `*.html` 必须 `no-cache, must-revalidate` | 重新部署后用户仍加载旧壳，**没有任何报错**。实测踩到过：被换掉的那张默认页没带 `Cache-Control`，浏览器按启发式缓存了它，用户看到的一直是旧页面 |
 | `/assets/*` 可以 `immutable` 长缓存 | 文件名带内容哈希，改了必换名，所以这条是安全的 |
 
-**邮件仍是开发期通道**：`devMailer` 把验证/重置链接写到 stderr（部署后即 journald）。
-自助注册的用户拿不到邮件，要管理员从 `journalctl -u evowork-identity` 里捞链接。
+**2026-10-31：SMTP 已接入**。真实发信配置见 `services/identity/README.md`，只保存在服务端环境。
+注册、验证重发、密码重置及邀请等待投递服务接受；失败返回 503。只有显式选择 `EVOWORK_MAIL_TRANSPORT=log`
+的开发环境才写验证链接到 stderr。当前虚拟机使用 QQ SMTP 465 TLS，Web 与 API 同源走 HTTPS。
+桌面随包 `config/account.json` 配置同一地址，访达启动不再依赖 shell 环境变量。
+
+#### 2026-10-31：迁移及 HTTPS 实测
+
+当前账号与分享入口为 **`https://account.nucleant.cn`**，服务器 **43.143.248.70**。
+部署目录 `/opt/evowork-web`，静态页在 `dist/`；identity 与 share 分别监听
+`127.0.0.1:8788` / `127.0.0.1:8790`，由 systemd 管理。
+数据库保存在 `/var/lib/evowork-web` / `/var/lib/evowork-share`，服务端环境在
+`/etc/evowork-web.env` / `/etc/evowork-share.env`（root 0600）。迁移保留原数据库和签发密钥。
+
+Apache 配置源为 [`build/account-apache.conf`](../build/account-apache.conf)，安装为
+`/etc/apache2/sites-available/zz-account.nucleant.cn.conf`，保持更新站点作为默认 TLS vhost。
+80 端口保留 `/.well-known/acme-challenge/`，其余请求 308 跳 HTTPS；443 支持 TLS 1.2/1.3。
+新 IP 的 8000 端口使用 [`build/account-legacy-http.conf`](../build/account-legacy-http.conf)；
+旧 IP `119.3.221.92:8000` 也直接 308 到域名。旧机器账号后端保持停止，数据保留。
+
+`EVOWORK_WEB_ORIGIN`、`EVOWORK_PUBLIC_ORIGIN` 和 share 的 `EVOWORK_SHARE_ORIGIN`
+均设为新 HTTPS 地址；验证/重置邮件和分享返回地址使用域名。HTTPS 配置下浏览器会话
+Cookie 增加 `Secure`，保留 `HttpOnly` / `SameSite=Lax`。桌面 PKCE 回调仍为本机 loopback HTTP。
+
+证书使用服务器既有 Certbot 和 `/var/www/acme` webroot 签发：
+
+```bash
+certbot certonly --webroot -w /var/www/acme --cert-name account.nucleant.cn -d account.nucleant.cn --non-interactive --keep-until-expiring
+certbot renew --cert-name account.nucleant.cn --dry-run --run-deploy-hooks
+```
+
+证书路径 `/etc/letsencrypt/live/account.nucleant.cn/`，`certbot.timer` 已启用。
+部署 hook `/etc/letsencrypt/renewal-hooks/deploy/50-evowork-account-apache` 仅在该证书续期后
+执行 Apache `configtest` 和 reload；模拟续期及 hook 已成功执行。
+TLS 切换前已先跑新 IP 的真实邮件/桌面账号旅程，切换后验证记录见
+[迁移与 HTTPS 验收](verification/2026-10-31-account-https.md)。本节上面的历史部署命令不等于当前目录布局。
 
 ### 5.3 两个静态文件源（不是应用服务器）
 
@@ -507,7 +540,7 @@ identity 监听 `127.0.0.1:8788`，**不对外**；SPA 与 `/v1/*` 由同一个 
 
 #### 5.3.0 服务器（2026-10-07 起：43.143.248.70）
 
-更新源与 Hub 在同一台机器上：**43.143.248.70**（腾讯云，Ubuntu 26.04，root 免密 ssh），**专用**，上面没有别的服务。
+更新源与 Hub 在同一台机器上：**43.143.248.70**（腾讯云，Ubuntu 26.04，root 免密 ssh）。2026-10-31 起同机还部署账号与分享服务（§5.2.1）。
 2026-10-07 机主把 `update` / `hub` 两条 A 记录从 115.190.115.161 改到这里（那台在火山引擎上，被未备案拦截挡住，见本节末），
 同日在这台空机器上从零搭起。**下面每条都在它上面实际跑过**；服务器上的完整记录在 `/opt/evowork/PROVENANCE`。
 

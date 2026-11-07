@@ -1,9 +1,11 @@
 import { randomInt } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { readJsonFile } from '../harness/read-json.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
 import { horizontalOverflow, resizeWindow } from './assertions.mjs';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
 
 test.use({
   registerModels: true,
@@ -28,8 +30,6 @@ async function openSettings(page, label) {
 }
 async function setup(electronApp) {
   const model = selectRealModel();
-  expect(model.upstreamModel).toBe('mimo-v2.6-flash');
-  expect(model.baseUrl).toBe('https://api.xiaomimimo.com/v1');
   const root = realpathSync(await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace));
   const values = Array.from({ length: 8 }, () => randomInt(100, 1000));
   writeFileSync(join(root, 'settings-input.json'), JSON.stringify(values));
@@ -62,7 +62,7 @@ async function completeFileTask(page, electronApp, m, info) {
       { timeout: 180000, intervals: [500, 1000, 2000] },
     )
     .toBe(true);
-  const result = JSON.parse(readFileSync(join(m.root, 'settings-result.json'), 'utf8'));
+  const result = readJsonFile(join(m.root, 'settings-result.json'));
   expect(result).toEqual({ sum: m.values.reduce((a, b) => a + b, 0), max: Math.max(...m.values) });
   const history = await page.evaluate((id) => window.evowork.openTask({ threadId: id }), task.id);
   expect(history.items.some((item) => item.type === 'commandExecution')).toBe(true);
@@ -123,7 +123,7 @@ async function saveEvidence(page, electronApp, m, info, extra) {
   writeFileSync(info.outputPath('real-settings-evidence.json'), body);
 }
 
-test('MiMo：设置七分类和窄窗、已保存模型连通性、记忆开关刷新保持及真实文件任务', async ({
+test('真模型：设置七分类和窄窗、已保存模型连通性、记忆开关刷新保持及真实文件任务', async ({
   page,
   electronApp,
 }, info) => {
@@ -175,7 +175,7 @@ test('MiMo：设置七分类和窄窗、已保存模型连通性、记忆开关�
   await saveEvidence(page, electronApp, m, info, { memoryRestored: memory.enabled, ...completed });
 });
 
-test('MiMo：预算不在失焦时保存、离开保护草稿、明确保存刷新保持并可正常执行任务', async ({
+test('真模型：预算不在失焦时保存、离开保护草稿、明确保存刷新保持并可正常执行任务', async ({
   page,
   electronApp,
 }, info) => {

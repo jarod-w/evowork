@@ -155,7 +155,7 @@ def guard_chain(root: Path, rel: Path) -> None:
             info = os.lstat(current)
         except (FileNotFoundError, NotADirectoryError):
             return
-        if stat.S_ISLNK(info.st_mode):
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
             raise Refused(SYMLINK)
 
 
@@ -232,7 +232,7 @@ class Planner:
                 if len(names) > 1:
                     raise Refused("目标路径上有几个只差大小写的同名文件夹，分不清该用哪一个。")
                 info = os.lstat(self.ws.root / current / names[0])
-                if stat.S_ISLNK(info.st_mode):
+                if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
                     raise Refused(SYMLINK)
                 if not stat.S_ISDIR(info.st_mode):
                     raise Refused("目标路径上有一段已经是文件，不是文件夹。")
@@ -297,7 +297,7 @@ class Journal:
 
     def apply(self, op: Move) -> None:
         self.ensure_dirs(op.dirs)
-        if op.source == op.target:
+        if str(op.source) == str(op.target):
             return
         if op.case_only:
             middle = op.source.parent / f".evowork-rename-{secrets.token_hex(6)}"
@@ -439,7 +439,7 @@ def rename_all(ws: Workspace, raw: dict, out_path: Path) -> None:
         target, dirs, itself = planner.resolve_target(
             wanted, source=info, exists_message=f"目标已经存在{SAME_NAME}。不会覆盖。"
         )
-        if target == source:
+        if str(target) == str(source):
             raise Refused("重命名的来源和目标是同一个文件。")
         ops.append(Move(source, target, dirs, case_only=itself))
     result = {

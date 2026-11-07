@@ -1,9 +1,12 @@
 import { randomInt } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { readJsonFile } from '../harness/read-json.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
 import { goalTask, readGoal, reopenGoalTask } from './goal-journey.mjs';
+import { localPythonCommand } from './shell-commands.mjs';
 
 test.use({
   registerModels: true,
@@ -34,7 +37,7 @@ async function snapshot(page, root, task) {
     history: await history(page, task.id),
     wire: wire(root),
     result: existsSync(join(root, 'budget-result.json'))
-      ? JSON.parse(readFileSync(join(root, 'budget-result.json'), 'utf8'))
+      ? readJsonFile(join(root, 'budget-result.json'))
       : null,
   };
 }
@@ -46,13 +49,11 @@ function persist(info, evidence) {
 }
 
 for (const action of ['追加预算', '结束任务']) {
-  test(`MiMo：设置默认预算真正耗尽、刷新不续跑，明确${action}`, async ({
+  test(`真模型：设置默认预算真正耗尽、刷新不续跑，明确${action}`, async ({
     page,
     electronApp,
   }, info) => {
     const model = selectRealModel();
-    expect(model.upstreamModel).toBe('mimo-v2.6-flash');
-    expect(model.baseUrl).toBe('https://api.xiaomimimo.com/v1');
     const root = realpathSync(await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace));
     const values = [randomInt(100, 1000), randomInt(100, 1000)];
     writeFileSync(join(root, 'budget-input.json'), JSON.stringify(values));
@@ -63,7 +64,7 @@ for (const action of ['追加预算', '结束任务']) {
       [
         'from pathlib import Path',
         'import time',
-        "if not Path('budget-checkpoint.txt').exists(): Path('budget-checkpoint.txt').write_text('ready-once\\n')",
+        "if not Path('budget-checkpoint.txt').exists(): Path('budget-checkpoint.txt').write_text('ready-once\\n', encoding='utf-8', newline='\\n')",
         'deadline = time.monotonic() + 90',
         "while not Path('budget-release').exists():",
         "    if time.monotonic() > deadline: raise RuntimeError('input not ready')",
@@ -94,7 +95,7 @@ for (const action of ['追加预算', '结束任务']) {
       await startTaskInWorkspace(
         page,
         electronApp,
-        '这是预算暂停验收。首先仅执行 python3 budget_checkpoint.py，等待脚本返回。' +
+        `这是预算暂停验收。首先仅执行 ${localPythonCommand(['budget_checkpoint.py'])}，等待脚本返回。` +
           '预算耗尽时遵守系统限制，立即收尾，不执行剩余步骤，不标记目标完成。' +
           '用户明确追加预算后才继续：读取 budget-input.json，用本机 Python 计算两个整数之和，' +
           '把 {"sum":整数} 写入 budget-result.json，读取核验后调用 update_goal 标记 complete，最终回复“预算恢复验收完成”。' +

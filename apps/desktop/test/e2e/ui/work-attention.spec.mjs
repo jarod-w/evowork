@@ -3,7 +3,8 @@
  * 假网关 + 真窗口。不依赖厂商模型。
  */
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
-import { expectFileAnswer, idle, scriptFileTools } from './file-results-support.mjs';
+import { localNodeCommand, writeFileCommand } from './shell-commands.mjs';
+import { expectFileAnswer, idle, scriptFileTools, settle } from './file-results-support.mjs';
 
 test('有任务后首页给出状态，待批准能从侧栏点回去，产物直接进入结果预览', async ({
   page,
@@ -17,12 +18,13 @@ test('有任务后首页给出状态，待批准能从侧栏点回去，产物�
     electronApp,
     'WORK-ACCEPT',
     [
-      { tool: 'exec_command', args: { cmd: "printf '# delivered\\n' > output.md" } },
+      { tool: 'exec_command', args: { cmd: writeFileCommand('output.md', '# delivered\n') } },
       { tool: 'register_file', args: { path: 'output.md' } },
     ],
     '验收原型已交付。',
   );
   await startTaskInWorkspace(page, electronApp, 'WORK-ACCEPT');
+  await settle(page, '验收原型已交付。', 20_000);
   await expectFileAnswer(page, electronApp, '验收原型已交付。');
   await idle(page);
 
@@ -40,16 +42,19 @@ test('有任务后首页给出状态，待批准能从侧栏点回去，产物�
   await expect(page.getByRole('region', { name: '当前工作' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '有什么可以帮忙的？' })).toBeVisible();
 
-  await electronApp.evaluate((_) => {
-    globalThis.__evoworkE2E.gateway.scriptNext({
-      tool: 'exec_command',
-      args: {
-        cmd: 'printf held',
-        sandbox_permissions: 'require_escalated',
-        justification: '确认离开这条任务后，待批准仍出现在侧栏',
-      },
-    });
-  });
+  await electronApp.evaluate(
+    (_, cmd) => {
+      globalThis.__evoworkE2E.gateway.scriptNext({
+        tool: 'exec_command',
+        args: {
+          cmd,
+          sandbox_permissions: 'require_escalated',
+          justification: '确认离开这条任务后，待批准仍出现在侧栏',
+        },
+      });
+    },
+    localNodeCommand(['-e', "process.stdout.write('held')"]),
+  );
   await page.getByLabel('需求输入').fill('WORK-WAIT 等我批准');
   await page.getByRole('button', { name: '发送' }).click();
   const card = page.getByLabel('需要你确认');

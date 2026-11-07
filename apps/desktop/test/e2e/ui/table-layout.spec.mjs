@@ -77,7 +77,7 @@ test('长路径不挤压日期，中文控件保持横向，行操作互不重�
       await page.getByRole('tab', { name: mode, exact: true }).click();
       for (const width of [1200, 900, 480]) {
         await app.evaluate(
-          ({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setSize(w, 800),
+          ({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setContentSize(w, 800),
           width,
         );
         await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
@@ -194,7 +194,7 @@ test('Web 表格的长标识可横向滚动，中文表头与按钮不被挤成�
     const page = await app.firstWindow();
     for (const width of [1200, 900, 480]) {
       await app.evaluate(
-        ({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setSize(w, 600),
+        ({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setContentSize(w, 600),
         width,
       );
       await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);

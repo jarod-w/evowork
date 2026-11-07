@@ -19,6 +19,7 @@ import { join } from 'node:path';
 
 import { selectRealModel } from '../harness/real-models.mjs';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { approveTaskTreeCommandOnce } from './task-tree-approvals.mjs';
 
 /*
  * 走宿主自己的本机网关，模型登记成自定义模型 —— 与用户在设置页加了 MiMo 之后一模一样。
@@ -55,7 +56,7 @@ async function placeInputs(electronApp) {
 }
 
 /**
- * 跑到根任务回合结束。审批卡一律「允许这一次」—— 子代理的审批也弹在这里（审批是全局的）。
+ * 跑到根任务回合结束。本用例明确授权任务树内命令：通过实际子任务入口进入它的时间线，逐项「允许这一次」。
  * 回合失败的用例**不判分**：什么都没做也会让「没派子代理」空心通过。
  */
 async function runUntilIdle(page) {
@@ -63,15 +64,7 @@ async function runUntilIdle(page) {
   await expect(composer).toHaveAttribute('data-run-state', /running|pending/, { timeout: 60_000 });
   const deadline = Date.now() + TURN_BUDGET_MS;
   while (Date.now() < deadline) {
-    const card = page.getByLabel('需要你确认');
-    if (await card.count()) {
-      const allow = card.first().getByRole('button', { name: '允许这一次' });
-      if (!(await allow.count())) {
-        throw new Error(`弹出了一张没有「允许这一次」的卡：${await card.first().innerText()}`);
-      }
-      await allow.click();
-      continue;
-    }
+    if (await approveTaskTreeCommandOnce(page)) continue;
     if ((await composer.getAttribute('data-run-state')) === 'idle') return;
     await page.waitForTimeout(300);
   }

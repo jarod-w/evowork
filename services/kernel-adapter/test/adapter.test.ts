@@ -556,7 +556,12 @@ describe('本地记忆（当前 Codex 基线）', () => {
     expect(
       server.received.findLast((r) => r.method === 'thread/fork')?.params.config,
     ).toMatchObject({ 'memories.use_memories': false });
-    await adapter.openTask(task.threadId);
+    server.handlers.set('thread/read', () => ({
+      thread: makeThread({ id: task.threadId, status: { type: 'notLoaded' } }),
+    }));
+    await (
+      await adapter.openTask(task.threadId)
+    ).latestTurn;
     expect(
       server.received.findLast((r) => r.method === 'thread/resume')?.params.config,
     ).toMatchObject({ 'memories.use_memories': false });
@@ -1442,6 +1447,66 @@ describe('任务列表与筛选（04 §3.4）', () => {
 });
 
 describe('打开任务（04 §9：< 300ms 出内容）', () => {
+  it('重复读取已加载任务不恢复会话或重放未决审批，历史仍取最新权威结果', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'pending-read' }));
+    let replays = 0;
+    let status: 'inProgress' | 'completed' = 'inProgress';
+    server.handlers.set('thread/read', () => ({
+      thread: makeThread({ id: 'pending-read', turns: [makeTurn({ id: 'current', status })] }),
+    }));
+    server.handlers.set('thread/resume', () => {
+      replays++;
+      return { thread: makeThread({ id: 'pending-read' }) };
+    });
+    for (let count = 0; count < 3; count++) {
+      const opened = await adapter.openTask('pending-read');
+      await opened.items;
+      await opened.latestTurn;
+    }
+    expect(replays, '只读历史不能触发恢复动作和审批重放').toBe(0);
+    status = 'completed';
+    const latest = await adapter.openTask('pending-read');
+    await expect(latest.latestTurn).resolves.toMatchObject({ id: 'current', status: 'completed' });
+  });
+
+  it('并发打开未加载任务只恢复一次，随后只读；关闭再打开也不重放审批', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'cold-read' }));
+    let loaded = false;
+    let resumes = 0;
+    server.handlers.set('thread/read', () => ({
+      thread: makeThread({ id: 'cold-read', status: { type: loaded ? 'idle' : 'notLoaded' } }),
+    }));
+    server.handlers.set('thread/resume', () => {
+      resumes++;
+      loaded = true;
+      return { thread: makeThread({ id: 'cold-read' }) };
+    });
+    const opened = await Promise.all([
+      adapter.openTask('cold-read'),
+      adapter.openTask('cold-read'),
+    ]);
+    await Promise.all(opened.map((entry) => entry.latestTurn));
+    adapter.closeTask('cold-read');
+    await (
+      await adapter.openTask('cold-read')
+    ).latestTurn;
+    expect(resumes, '只在原生状态为 notLoaded 时恢复，并合并并发恢复').toBe(1);
+  });
+
+  it('只读快照暂时失败不能猜测未加载并恢复会话', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'read-failed' }));
+    server.handlers.set('thread/read', () => {
+      throw new Error('temporary read failure');
+    });
+    const opened = await adapter.openTask('read-failed');
+    await opened.items;
+    await opened.latestTurn;
+    expect(server.received.filter((r) => r.method === 'thread/resume')).toHaveLength(0);
+  });
+
   it('同时读取最近回合，让重启后仍能恢复失败原因与本回合范围', async () => {
     await adapter.start();
     store.threads.upsertFromThread(makeThread({ id: 't1' }));
@@ -1634,7 +1699,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     );
   });
 
-  it('分页接口不可用时优先使用 resume 已返回的历史，不再触发会失败的 thread/read', async () => {
+  it('旧内核没有快照读取及分页方法时使用 resume 历史，不再重复不支持的 thread/read', async () => {
     await adapter.start();
     store.threads.upsertFromThread(makeThread({ id: 't1' }));
     server.removeMethod('thread/items/list');
@@ -1650,7 +1715,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
       }),
     }));
     server.handlers.set('thread/read', () => {
-      throw new Error('failed to read thread');
+      throw new FakeRpcError(ERROR_CODE.methodNotFound, 'thread/read unavailable');
     });
 
     const { items } = await adapter.openTask('t1');
@@ -1663,7 +1728,7 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
         _turnId: 'turn-from-resume',
       },
     ]);
-    expect(server.received.filter((request) => request.method === 'thread/read')).toHaveLength(0);
+    expect(server.received.filter((request) => request.method === 'thread/read')).toHaveLength(1);
   });
 });
 
@@ -2021,7 +2086,7 @@ describe('崩溃恢复的端到端（09 §1）', () => {
   it('历史读取开始后新的回合通知到达，旧快照不能把新回合投影成已完成', async () => {
     await adapter.start();
     store.threads.upsertFromThread(makeThread({ id: 'race' }));
-    server.handlers.set('thread/resume', () => {
+    server.handlers.set('thread/read', () => {
       server.notify('turn/started', { threadId: 'race', turn: makeTurn({ id: 'new-turn' }) });
       return {
         thread: makeThread({
@@ -2758,5 +2823,56 @@ describe('下一步建议的真实调用绑定', () => {
       });
     await new Promise((resolve) => setImmediate(resolve));
     expect(resolve()).toBeUndefined();
+  });
+});
+
+describe('真实模型暴露的投影与临时队列边界', () => {
+  it('子代理投影异步落库后通知父任务刷新', async () => {
+    server.handlers.set('thread/read', () => ({
+      thread: makeThread({ id: 'projection-child', parentThreadId: 'projection-root' }),
+    }));
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 'projection-root' }));
+    server.notify('item/started', {
+      threadId: 'projection-root',
+      turnId: 'turn',
+      item: {
+        type: 'subAgentActivity',
+        id: 'spawn',
+        kind: 'started',
+        agentThreadId: 'projection-child',
+        agentPath: '/root/child',
+      },
+    });
+    expect(store.threads.get('projection-child')).toBeUndefined();
+    expect(ui).not.toContainEqual({ type: 'subtasks-changed', threadId: 'projection-root' });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(store.threads.get('projection-child')?.parent_thread_id).toBe('projection-root');
+    expect(ui).toContainEqual({ type: 'subtasks-changed', threadId: 'projection-root' });
+    expect(ui).not.toContainEqual(
+      expect.objectContaining({ type: 'task-created', threadId: 'projection-child' }),
+    );
+  });
+  it('临时线程没有队列，持久任务的真实队列错误仍向调用方报告', async () => {
+    await adapter.start();
+    server.handlers.set('thread/queue/list', () => {
+      throw new FakeRpcError(
+        ERROR_CODE.invalidRequest,
+        'ephemeral thread does not support queued submissions',
+      );
+    });
+    server.notify('thread/started', {
+      thread: makeThread({ id: 'transient-thread', ephemeral: true }),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(adapter.listQueuedInputs('transient-thread')).resolves.toEqual([]);
+    expect(
+      server.received.filter(
+        (r) => r.method === 'thread/queue/list' && r.params.threadId === 'transient-thread',
+      ),
+    ).toHaveLength(0);
+    store.threads.upsertFromThread(makeThread({ id: 'persistent-thread' }));
+    await expect(adapter.listQueuedInputs('persistent-thread')).rejects.toThrow();
   });
 });

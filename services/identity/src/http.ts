@@ -9,6 +9,7 @@ import { bearer, meteringDayUtc, parseMeteringDay, verifyAccessToken } from '@ev
 import { errorFields, type Logger } from '@evowork/logging';
 
 import { IdentityError, type Identity } from './service.js';
+import { MailDeliveryError, withMailDelivery } from './mailer.js';
 import type { Es256KeyPair } from '@evowork/account';
 import { toJwks } from '@evowork/account';
 
@@ -138,6 +139,10 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
     try {
       await route(req, res, url);
     } catch (err) {
+      if (err instanceof MailDeliveryError) {
+        json(res, 503, { error: { message: err.message, code: 'mail-unavailable' } });
+        return;
+      }
       if (err instanceof IdentityError) {
         json(res, statusOf(err.code), { error: { message: err.message, code: err.code } });
         return;
@@ -157,8 +162,20 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
         json(res, 400, { error: { message: '需要邮箱和密码', code: 'bad-request' } });
         return;
       }
-      const out = identity.signup({ email, password });
+      const continuation = str(body.continuation);
+      const out = await withMailDelivery(() =>
+        identity.signup({ email, password, ...(continuation ? { continuation } : {}) }),
+      );
       json(res, 201, { userId: out.userId });
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/v1/resend-verification') {
+      const body = await readJson(req);
+      await withMailDelivery(() =>
+        identity.resendVerification(str(body.email) ?? '', str(body.continuation)),
+      );
+      json(res, 200, { ok: true });
       return;
     }
 
@@ -192,7 +209,10 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
         ...(platform ? { platform } : {}),
       });
       const session = identity.createSession(out.userId);
-      res.setHeader('set-cookie', `session=${session}; Path=/; HttpOnly; SameSite=Lax`);
+      res.setHeader(
+        'set-cookie',
+        `session=${session}; Path=/; HttpOnly; SameSite=Lax${options.webOrigin?.startsWith('https://') ? '; Secure' : ''}`,
+      );
       json(res, 200, {
         accessToken: out.accessToken,
         refreshToken: out.refreshToken,
@@ -204,8 +224,10 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
     }
 
     if (req.method === 'POST' && path === '/v1/forgot-password') {
-      const email = str((await readJson(req)).email);
-      if (email) identity.requestPasswordReset(email);
+      const body = await readJson(req);
+      const email = str(body.email);
+      if (email)
+        await withMailDelivery(() => identity.requestPasswordReset(email, str(body.continuation)));
       json(res, 200, { ok: true });
       return;
     }
@@ -606,11 +628,13 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
       const role = str(body.role) === 'admin' ? 'admin' : 'member';
       const quotaClass = str(body.quotaClass);
       json(res, 200, {
-        invite: identity.createInvite(actorId, {
-          email,
-          role,
-          ...(quotaClass ? { quotaClass } : {}),
-        }),
+        invite: await withMailDelivery(() =>
+          identity.createInvite(actorId, {
+            email,
+            role,
+            ...(quotaClass ? { quotaClass } : {}),
+          }),
+        ),
       });
       return;
     }
@@ -630,7 +654,9 @@ export function createIdentityServer(options: IdentityServerOptions): Server {
         json(res, 400, { error: { message: '需要 inviteId', code: 'bad-request' } });
         return;
       }
-      json(res, 200, { invite: identity.resendInvite(actorId, inviteId) });
+      json(res, 200, {
+        invite: await withMailDelivery(() => identity.resendInvite(actorId, inviteId)),
+      });
       return;
     }
     if (req.method === 'GET' && path === '/v1/admin/policy-pack/reach') {

@@ -249,6 +249,7 @@ async function main() {
           apiKey: process.env.EVOWORK_UI_MODEL_KEY,
           customModels: REAL_CUSTOM_MODELS,
           logFile: join(home, 'gateway.log'),
+          entryPath: createFollowUpObservedGatewayEntry(home, repoRoot),
         })
       : null;
   if (real) {
@@ -329,7 +330,7 @@ ${process.env.EVOWORK_UI_MEMORY_IMPORT === 'disabled' ? '[features]\nexternal_ag
           gatewayEntryPath:
             process.env.EVOWORK_UI_MEMORY_WIRE === '1'
               ? createObservedGatewayEntry(home, repoRoot)
-              : process.env.EVOWORK_UI_FOLLOW_UP_WIRE === '1'
+              : REAL_MODEL || process.env.EVOWORK_UI_FOLLOW_UP_WIRE === '1'
                 ? createFollowUpObservedGatewayEntry(home, repoRoot)
                 : join(repoRoot, 'dist/gateway/main.js'),
         }

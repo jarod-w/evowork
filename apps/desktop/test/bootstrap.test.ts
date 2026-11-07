@@ -39,9 +39,16 @@ let earlyUrl: string | undefined;
 let subscribed = false;
 let hostOptions: Parameters<typeof import('../src/main/service-host.js').createServiceHost>[0];
 let queued: unknown[] = [];
+let spellcheckEvents: string[] = [];
 
 function fakeElectron(): ElectronApi {
   return {
+    session: {
+      defaultSession: {
+        setSpellCheckerDictionaryDownloadURL: (url) => spellcheckEvents.push(`dictionary:${url}`),
+        setSpellCheckerEnabled: (enabled) => spellcheckEvents.push(`enabled:${enabled}`),
+      },
+    },
     app: {
       whenReady: () => Promise.resolve(),
       on: () => undefined,
@@ -65,6 +72,7 @@ function fakeElectron(): ElectronApi {
       onSecondInstance: (handler) => (secondInstance = handler),
     },
     createWindow: (options): ElectronWindow => {
+      spellcheckEvents.push('window');
       windowOptions = options;
       return {
         webContents: {
@@ -157,6 +165,7 @@ beforeEach(() => {
   secondInstance = undefined;
   earlyUrl = undefined;
   queued = [];
+  spellcheckEvents = [];
   subscribed = false;
 });
 
@@ -204,6 +213,15 @@ it('主界面先加载，服务就绪前 IPC 等待，握手后才执行动作',
 });
 
 describe('窗口安全参数（R5）', () => {
+  it('窗口创建前就禁止拼写词典后台出站，关闭窗口选项本身不够', async () => {
+    await boot();
+    expect(spellcheckEvents).toEqual([
+      'dictionary:evowork-disabled://spellcheck-dictionaries/',
+      'enabled:false',
+      'window',
+    ]);
+    expect(windowOptions?.webPreferences).toHaveProperty('spellcheck', false);
+  });
   it('五项全开且方向正确', async () => {
     await boot();
     expect(windowOptions?.webPreferences).toMatchObject({
@@ -212,6 +230,7 @@ describe('窗口安全参数（R5）', () => {
       sandbox: true,
       webviewTag: false,
       preload: '/fake/preload.js',
+      spellcheck: false,
     });
   });
 
@@ -221,6 +240,7 @@ describe('窗口安全参数（R5）', () => {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
+      spellcheck: false,
     });
   });
 

@@ -85,8 +85,8 @@ let emitted: { channel: string; payload: unknown }[];
 type HostOptions = Parameters<typeof createServiceHost>[0];
 
 /** spawn 的调用记录：只关心可执行文件 */
-function spawnSpy(value: unknown) {
-  return vi.fn((..._args: unknown[]) => value) as unknown as ReturnType<typeof vi.fn> & {
+function spawnSpy(value: () => unknown) {
+  return vi.fn((..._args: unknown[]) => value()) as unknown as ReturnType<typeof vi.fn> & {
     mock: { calls: [string, readonly string[], Record<string, unknown>][] };
   };
 }
@@ -123,6 +123,7 @@ beforeEach(() => {
 afterEach(async () => {
   await host?.stop().catch(() => undefined);
   host = undefined;
+  vi.unstubAllEnvs();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -153,12 +154,12 @@ it('旧 Lite 图片配置停止启用，不能隐式改成其它付费型号', a
 describe('路径布局（09 §7）', () => {
   it('内核家目录指向 `~/.evowork/kernel/`（环境变量名归适配层，桌面层不该知道）', () => {
     const paths = resolvePaths('/home/u/.evowork');
-    expect(paths.kernelHome).toBe('/home/u/.evowork/kernel');
-    expect(paths.db).toBe('/home/u/.evowork/evowork.db');
+    expect(paths.kernelHome).toBe(join('/home/u/.evowork', 'kernel'));
+    expect(paths.db).toBe(join('/home/u/.evowork', 'evowork.db'));
     // EvoWork 自己的配置与内核配置分开放（09 §7：不混进 config.toml）
-    expect(paths.modes).toBe('/home/u/.evowork/modes');
-    expect(paths.scenarios).toBe('/home/u/.evowork/scenarios');
-    expect(paths.gatewayEnv).toBe('/home/u/.evowork/gateway.env');
+    expect(paths.modes).toBe(join('/home/u/.evowork', 'modes'));
+    expect(paths.scenarios).toBe(join('/home/u/.evowork', 'scenarios'));
+    expect(paths.gatewayEnv).toBe(join('/home/u/.evowork', 'gateway.env'));
   });
 });
 
@@ -187,7 +188,7 @@ it('办公验证在后台执行，未完成也能完成内核握手', async () =
 });
 
 describe('干净机器上的第一次运行', () => {
-  it('宿主构造时就把 home / logs / kernel 建出来', () => {
+  it('宿主构造时就把 home / logs / kernel 建出来', async () => {
     // 干净目录：只有 mkdtemp 建的 root，下面什么都没有
     const fresh = mkdtempSync(join(tmpdir(), 'evowork-fresh-'));
     const paths = resolvePaths(join(fresh, '.evowork'));
@@ -209,10 +210,12 @@ describe('干净机器上的第一次运行', () => {
     // 库能开出来本身就说明父目录在（sqlite 不会替你建目录）
     expect(host.store.migrations.length).toBeGreaterThan(0);
 
+    await host.stop();
+    host = undefined;
     rmSync(fresh, { recursive: true, force: true });
   });
 
-  it('不凭空建 modes / scenarios —— 空目录会掩盖"随包内容没装上"', () => {
+  it('不凭空建 modes / scenarios —— 空目录会掩盖"随包内容没装上"', async () => {
     const fresh = mkdtempSync(join(tmpdir(), 'evowork-fresh-'));
     const paths = resolvePaths(join(fresh, '.evowork'));
     host = createServiceHost({
@@ -227,6 +230,8 @@ describe('干净机器上的第一次运行', () => {
     expect(existsSync(paths.modes)).toBe(false);
     expect(existsSync(paths.scenarios)).toBe(false);
 
+    await host.stop();
+    host = undefined;
     rmSync(fresh, { recursive: true, force: true });
   });
 });
@@ -275,13 +280,17 @@ describe('启动顺序：**先开库、再起内核**（09 §4.6 的直接后果
   });
 
   it('spawn 的是 appServerPath 指向的可执行文件（环境变量由适配层负责，见 launcher 测试）', async () => {
-    const spawnFn = spawnSpy(child);
+    vi.stubEnv('PYTHONUTF8', '0');
+    vi.stubEnv('PYTHONIOENCODING', 'gbk');
+    const spawnFn = spawnSpy(() => child);
     host = makeHost({ spawnFn: spawnFn as unknown as NonNullable<HostOptions['spawnFn']> });
     await host.start();
 
     expect(spawnFn.mock.calls[0]?.[0]).toBe('/fake/codex-app-server');
     expect(spawnFn.mock.calls[0]?.[2].env).toMatchObject({
       EVOWORK_ARTIFACT_LOG: resolvePaths(dir).artifactLog,
+      PYTHONUTF8: '1',
+      PYTHONIOENCODING: 'utf-8',
     });
     // 宿主**不知道**内核的环境变量叫什么 —— 那是 createSpawnLauncher 的知识（K2 边界）。
     // 直接扫源码：这条断言的对象是"这个文件里不该出现那个名字"，
@@ -703,6 +712,13 @@ describe('UI 事件与审批的接线（K2：渲染进程不认协议方法名�
       },
     });
     await new Promise((resolve) => setImmediate(resolve));
+    if (process.platform === 'win32') {
+      await expect(
+        host.actions.setTaskMode({ threadId: 't1', modeId: 'full-access' }),
+      ).rejects.toThrow('隔离强度');
+      expect(host.store.threads.get('t1')?.mode_id).not.toBe('full-access');
+      return;
+    }
     await host.actions.setTaskMode({ threadId: 't1', modeId: 'full-access' });
     emitted = [];
 
@@ -1033,7 +1049,7 @@ describe('Composer 一次选多个文件（真实宿主接线）', () => {
     expect(attachments).toHaveLength(24);
     const byName = new Map(attachments.map((a) => [a.name, a]));
     expect(byName.get('已被移走.txt')?.error).toContain('读不到');
-    const ready = picked.slice(0, 20).map((path) => byName.get(path.split('/').pop() ?? ''));
+    const ready = picked.slice(0, 20).map((path) => byName.get(path.split(/[\\/]/).pop() ?? ''));
     expect(ready.every((a) => a?.state === 'ready')).toBe(true);
     const refused = ['第21份.txt', '第22份.txt', '第23份.txt'].map((name) => byName.get(name));
     for (const attachment of refused) {

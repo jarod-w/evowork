@@ -17,6 +17,12 @@ function markdown(draft: SkillExtractionView): string {
     : '';
 }
 
+function matchesInstalledSkillFile(candidate: string, directory: string): boolean {
+  const windowsPath = /^(?:[a-z]:[\\/]|\\\\)/i.test(directory);
+  const normalize = (path: string) => (windowsPath ? path.replaceAll('\\', '/') : path);
+  return normalize(candidate) === normalize(directory).replace(/\/$/, '') + '/SKILL.md';
+}
+
 /** Composes existing task, result, dialog, and installation primitives. */
 export function useSkillExtraction(options: {
   bridge: EvoworkBridge;
@@ -174,7 +180,7 @@ export function useSkillExtraction(options: {
         (item) =>
           item.category === 'skill' &&
           item.name === draft.installed!.slug &&
-          (item.path === draft.installed!.path + '/SKILL.md' ||
+          (matchesInstalledSkillFile(item.path, draft.installed!.path) ||
             (draft.scope === 'global' && item.scope === 'user')),
       );
       if (!candidate) throw new Error('当前范围找不到已启用的技能，请重新检查或启用。');

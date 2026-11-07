@@ -3,6 +3,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { readJsonFile } from '../harness/read-json.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
 
 test.use({
@@ -207,7 +208,7 @@ test('真实模型：项目提炼、来源追溯、对话修订、保存与新�
     electronApp,
     `读取当前目录 ${sourceFile}，本机计算每行 net=sales-refunds，负值不得归零。写入 source-result.json，格式为 {"rows":[{"id":"原始id","net":整数}],"total":整数} 并读回核验；每行保留id作为证据。不要生成汇报。${guard}`,
   );
-  expect(JSON.parse(readFileSync(join(root, 'source-result.json'), 'utf8'))).toEqual({
+  expect(readJsonFile(join(root, 'source-result.json'))).toEqual({
     rows: input.map((row) => ({ id: row.id, net: row.sales - row.refunds })),
     total: input.reduce((sum, row) => sum + row.sales - row.refunds, 0),
   });
@@ -265,7 +266,7 @@ test('真实模型：项目提炼、来源追溯、对话修订、保存与新�
   );
   await completed(page, reused.id, 1);
   expect(realpathSync(reused.cwd)).toBe(root);
-  expect(JSON.parse(readFileSync(join(root, 'reuse-result.json'), 'utf8'))).toEqual({
+  expect(readJsonFile(join(root, 'reuse-result.json'))).toEqual({
     rows: replacement.map((row) => ({ id: row.id, net: row.sales - row.refunds })),
     total: replacement.reduce((sum, row) => sum + row.sales - row.refunds, 0),
     quality_gate: 'checked',
@@ -275,7 +276,7 @@ test('真实模型：项目提炼、来源追溯、对话修订、保存与新�
     JSON.stringify(
       {
         input: replacement,
-        actual: JSON.parse(readFileSync(join(root, 'reuse-result.json'), 'utf8')),
+        actual: readJsonFile(join(root, 'reuse-result.json')),
         expectedTotal: replacement.reduce((sum, row) => sum + row.sales - row.refunds, 0),
       },
       null,

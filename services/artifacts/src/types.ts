@@ -76,7 +76,7 @@ export const ARTIFACT_TYPE_LABEL: Readonly<Record<ArtifactType, string>> = Objec
 });
 
 export function extensionOf(path: string): string {
-  const name = path.split('/').pop() ?? path;
+  const name = path.split(/[\\/]/).pop() ?? path;
   const index = name.lastIndexOf('.');
   return index <= 0 ? '' : name.slice(index + 1).toLowerCase();
 }
@@ -102,5 +102,5 @@ const IGNORED_PATTERNS: readonly RegExp[] = [
 ];
 
 export function isIgnored(path: string): boolean {
-  return IGNORED_PATTERNS.some((pattern) => pattern.test(path));
+  return IGNORED_PATTERNS.some((pattern) => pattern.test(path.replace(/\\/g, '/')));
 }

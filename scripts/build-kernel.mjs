@@ -90,7 +90,7 @@ if (upToDate) {
     maxBuffer: 2 * 1024 ** 3,
   });
   if (archive.status !== 0) throw new Error(`git archive 失败：${archive.stderr}`);
-  const untar = spawnSync('tar', ['-x', '-C', SRC], { input: archive.stdout });
+  const untar = spawnSync('tar', ['-x', '-f', '-'], { cwd: SRC, input: archive.stdout });
   if (untar.status !== 0) throw new Error(`解包失败：${untar.stderr}`);
 
   for (const name of patches) {

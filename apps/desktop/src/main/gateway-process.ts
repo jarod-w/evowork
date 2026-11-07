@@ -136,6 +136,8 @@ export type GatewayStartResult =
     };
 
 export interface GatewayProcess {
+  /** 只更新内存令牌，不中断当前流。 */
+  updateAccessToken?(accessToken: string): void;
   readonly result: GatewayStartResult;
   /** 子进程已经结束。重起前要等它，否则新进程会撞上还没放开的端口。 */
   readonly exited: Promise<void>;
@@ -244,7 +246,7 @@ function spawnLocalGateway(options: GatewayProcessOptions): GatewayProcess {
         ...(options.token ? { EVOWORK_GATEWAY_TOKENS: options.token } : {}),
       },
       // 网关的 stdout 是结构化日志（Q14：不含正文），进父进程日志即可
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -312,6 +314,12 @@ function spawnLocalGateway(options: GatewayProcessOptions): GatewayProcess {
     // **静默丢掉**（Q14 的设计意图）—— 实测这条日志带过一次 droppedFields:1
     options.logger?.info('gateway.child.started', { itemCount: keys.length });
     return {
+      updateAccessToken(accessToken) {
+        if (stopping || !child.connected) return;
+        child.send({ type: 'evowork-account-token', accessToken }, (error) => {
+          if (error) options.logger?.warn('gateway.child.token_failed', { reason: 'IPC' });
+        });
+      },
       get result() {
         return result;
       },
@@ -374,10 +382,13 @@ function commandOf(pid: number): string {
       'powershell.exe',
       [
         '-NoProfile',
+        '-NonInteractive',
         '-Command',
-        `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+        `([wmi]"Win32_Process.Handle='${pid}'").CommandLine`,
       ],
-      { encoding: 'utf8', timeout: 2_000, windowsHide: true },
+      // Windows PowerShell/WMI cold startup can itself exceed two seconds.
+      // Keep this bounded, but do not misclassify a live listener as an empty port.
+      { encoding: 'utf8', timeout: 5_000, windowsHide: true },
     ).trim();
   }
   return execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'command='], {

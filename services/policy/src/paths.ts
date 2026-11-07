@@ -177,8 +177,8 @@ export function normalizePath(input: string, home: string): string {
   if (path.endsWith('/') && !resolved.endsWith('/')) resolved += '/';
 
   const normalizedHome = home.replace(/\\/g, '/').replace(/\/$/, '');
-  if (resolved === normalizedHome) return '~';
-  if (resolved.startsWith(`${normalizedHome}/`)) {
+  if (normalizedHome !== '' && resolved === normalizedHome) return '~';
+  if (normalizedHome !== '' && resolved.startsWith(`${normalizedHome}/`)) {
     return `~/${resolved.slice(normalizedHome.length + 1)}`;
   }
   return resolved;

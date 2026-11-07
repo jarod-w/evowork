@@ -8,6 +8,7 @@ import type { Adapter } from '@evowork/kernel-adapter';
 import { createProjectRepo } from '@evowork/store';
 import { installSkill, installProjectSkill, type CatalogPorts } from './catalog-host.js';
 import type { TaskEnvironments } from './task-environments.js';
+import { isDescendantPath } from './local-paths.js';
 import type { RendererEvent } from '../shared/ipc.js';
 import type {
   PublishedSkillDraft,
@@ -496,7 +497,7 @@ export function createSkillExtractionHost(options: {
     );
     for (const file of content.files) {
       const dest = join(directory, file.path);
-      if (!dest.startsWith(directory + '/')) throw new Error('资源路径超出草稿目录。');
+      if (!isDescendantPath(directory, dest)) throw new Error('资源路径超出草稿目录。');
       await safeParent(directory, dirname(file.path));
       await writeFile(dest, file.content, { encoding: 'utf8', mode: 0o600 });
     }

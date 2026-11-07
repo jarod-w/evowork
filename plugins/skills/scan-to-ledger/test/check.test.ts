@@ -183,7 +183,7 @@ describe('扫描文本才能入账', () => {
       { encoding: 'utf8' },
     ).trim();
     // 日期列是真日期（data_type 'd'），不是一串字：spreadsheets 2026-10-22 起把 ISO 日期写成日期值
-    expect(inspected.split('\n')).toEqual(['128', '=C2', '2026-09-01 00:00:00 d']);
+    expect(inspected.split(/\r?\n/)).toEqual(['128', '=C2', '2026-09-01 00:00:00 d']);
   });
 
   it('图片不识别', () => {

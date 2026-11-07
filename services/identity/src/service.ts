@@ -18,7 +18,7 @@ import {
 import type { BootstrapConfig } from './config.js';
 import type { SqliteLike } from './db.js';
 import { newId, randomSecret, sha256Hex } from './ids.js';
-import type { Mailer } from './mailer.js';
+import { desktopContinuation, sendMail, type Mailer } from './mailer.js';
 import { hashPassword, verifyPassword, type ArgonParams } from './password.js';
 import { decryptSecret, encryptSecret } from './secret-box.js';
 
@@ -97,7 +97,7 @@ export function createIdentity(deps: IdentityDeps) {
 
   function findUserByIdentifier(identifier: string): UserRow | undefined {
     return deps.db
-      .prepare(`SELECT * FROM users WHERE email = ? OR phone = ?`)
+      .prepare(`SELECT * FROM users WHERE lower(email) = lower(?) OR phone = ?`)
       .get(identifier, identifier) as UserRow | undefined;
   }
 
@@ -205,7 +205,7 @@ export function createIdentity(deps: IdentityDeps) {
     if (q.used >= q.limit) {
       if (!claimNotice(tenantId, userId, 'exhausted')) return;
       if (user?.email && !optedOut) {
-        void deps.mailer.send({
+        sendMail(deps.mailer, {
           to: user.email,
           template: 'quota-exhausted',
           used: q.used,
@@ -214,7 +214,7 @@ export function createIdentity(deps: IdentityDeps) {
       }
       if (settings.warn_admin === 1) {
         for (const to of adminEmails(tenantId)) {
-          void deps.mailer.send({
+          sendMail(deps.mailer, {
             to,
             template: 'quota-exhausted',
             used: q.used,
@@ -229,7 +229,7 @@ export function createIdentity(deps: IdentityDeps) {
     if (settings.warn_member !== 1 || optedOut || !user?.email) return;
     if (q.used * 100 < q.limit * settings.warn_percent) return;
     if (!claimNotice(tenantId, userId, 'warn')) return;
-    void deps.mailer.send({
+    sendMail(deps.mailer, {
       to: user.email,
       template: 'quota-warn',
       used: q.used,
@@ -467,7 +467,9 @@ export function createIdentity(deps: IdentityDeps) {
       return { created: true, tenantId };
     },
 
-    signup(input: { email: string; password: string }): { userId: string } {
+    signup(input: { email: string; password: string; continuation?: string }): { userId: string } {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))
+        throw new IdentityError('invalid', '请输入有效的邮箱地址。');
       if (findUserByIdentifier(input.email)) {
         throw new IdentityError('conflict', '这个邮箱已经注册过。');
       }
@@ -477,7 +479,12 @@ export function createIdentity(deps: IdentityDeps) {
           `INSERT INTO users (id, email, phone, password_hash, email_verified, must_change_password, created_at)
          VALUES (?, ?, NULL, ?, 0, 0, ?)`,
         )
-        .run(userId, input.email, hashPassword(input.password, deps.argon), now());
+        .run(
+          userId,
+          input.email.trim().toLowerCase(),
+          hashPassword(input.password, deps.argon),
+          now(),
+        );
       const token = randomSecret();
       deps.db
         .prepare(
@@ -485,8 +492,46 @@ export function createIdentity(deps: IdentityDeps) {
          VALUES (?, ?, 'verify', ?, ?, NULL)`,
         )
         .run(newId('em'), userId, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
-      void deps.mailer.send({ to: input.email, template: 'verify', token });
+      sendMail(deps.mailer, {
+        to: input.email,
+        template: 'verify',
+        token,
+        ...(desktopContinuation(input.continuation)
+          ? { continuation: desktopContinuation(input.continuation)! }
+          : {}),
+      });
       return { userId };
+    },
+
+    resendVerification(email: string, continuation?: string): void {
+      const user = findUserByIdentifier(email);
+      if (!user || user.email_verified) return;
+      const recent = deps.db
+        .prepare(
+          `SELECT expires_at FROM email_tokens WHERE user_id = ? AND purpose = 'verify' ORDER BY expires_at DESC LIMIT 1`,
+        )
+        .get(user.id) as { expires_at: number } | undefined;
+      if (recent && recent.expires_at - EMAIL_TOKEN_TTL_MS > now() - 60_000) {
+        throw new IdentityError('locked', '请稍等一分钟再重发验证邮件。');
+      }
+      const token = randomSecret();
+      deps.db
+        .prepare(
+          `UPDATE email_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'verify' AND consumed_at IS NULL`,
+        )
+        .run(now(), user.id);
+      deps.db
+        .prepare(
+          `INSERT INTO email_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at) VALUES (?, ?, 'verify', ?, ?, NULL)`,
+        )
+        .run(newId('em'), user.id, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
+      const next = desktopContinuation(continuation);
+      sendMail(deps.mailer, {
+        to: user.email!,
+        template: 'verify',
+        token,
+        ...(next ? { continuation: next } : {}),
+      });
     },
 
     verifyEmail(token: string): void {
@@ -502,7 +547,7 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db.prepare(`UPDATE users SET email_verified = 1 WHERE id = ?`).run(row.user_id);
     },
 
-    requestPasswordReset(email: string): void {
+    requestPasswordReset(email: string, continuation?: string): void {
       const user = findUserByIdentifier(email);
       // 不暴露「这个邮箱在不在」—— 没用户也假装发出去了
       if (!user?.email) return;
@@ -513,7 +558,14 @@ export function createIdentity(deps: IdentityDeps) {
          VALUES (?, ?, 'reset', ?, ?, NULL)`,
         )
         .run(newId('em'), user.id, sha256Hex(token), now() + EMAIL_TOKEN_TTL_MS);
-      void deps.mailer.send({ to: user.email, template: 'reset', token });
+      sendMail(deps.mailer, {
+        to: user.email,
+        template: 'reset',
+        token,
+        ...(desktopContinuation(continuation)
+          ? { continuation: desktopContinuation(continuation)! }
+          : {}),
+      });
     },
 
     resetPassword(token: string, next: string): void {
@@ -529,6 +581,17 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db
         .prepare(`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`)
         .run(hashPassword(next, deps.argon), row.user_id);
+      deps.db
+        .prepare(
+          `UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`,
+        )
+        .run(now(), row.user_id);
+      deps.db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(row.user_id);
+      deps.db
+        .prepare(
+          `UPDATE email_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'reset' AND consumed_at IS NULL`,
+        )
+        .run(now(), row.user_id);
     },
 
     changePassword(userId: string, current: string, next: string): void {
@@ -606,7 +669,16 @@ export function createIdentity(deps: IdentityDeps) {
       challenge: string;
       redirectUri: string;
     }): { code: string } {
-      if (!input.redirectUri.startsWith('http://127.0.0.1:')) {
+      if (
+        !desktopContinuation(
+          new URLSearchParams({
+            code_challenge: input.challenge,
+            redirect_uri: input.redirectUri,
+            state: 'validate',
+            device_id: input.deviceId,
+          }).toString(),
+        )
+      ) {
         throw new IdentityError('invalid-redirect', '桌面登录只能回调到本机 loopback。');
       }
       const code = randomSecret();
@@ -921,7 +993,7 @@ export function createIdentity(deps: IdentityDeps) {
           now(),
           now() + INVITE_TTL_MS,
         );
-      void deps.mailer.send({
+      sendMail(deps.mailer, {
         to: email,
         template: 'invite',
         token,
@@ -978,7 +1050,7 @@ export function createIdentity(deps: IdentityDeps) {
       deps.db
         .prepare(`UPDATE invites SET token_hash = ?, expires_at = ? WHERE id = ?`)
         .run(sha256Hex(token), now() + INVITE_TTL_MS, inviteId);
-      void deps.mailer.send({
+      sendMail(deps.mailer, {
         to: row.email,
         template: 'invite',
         token,

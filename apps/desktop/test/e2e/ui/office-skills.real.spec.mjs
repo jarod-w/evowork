@@ -52,7 +52,9 @@ const sha = (file) => createHash('sha256').update(readFileSync(file)).digest('he
 function listFiles(root, dir = root) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
-    return entry.isDirectory() ? listFiles(root, path) : [relative(root, path)];
+    return entry.isDirectory()
+      ? listFiles(root, path)
+      : [relative(root, path).replaceAll('\\', '/')];
   });
 }
 

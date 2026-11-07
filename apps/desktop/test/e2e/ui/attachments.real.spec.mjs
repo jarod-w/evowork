@@ -9,7 +9,8 @@
  * 跑法：`EVOWORK_UI_MODEL_KEY=sk-... npx playwright test attachments --project=real`
  * （默认 DeepSeek Flash；要办公扩展的 python，见 `makeOfficeFixtures`）
  */
-import { expect, makeOfficeFixtures, test } from './fixtures.mjs';
+import { expect, makeOfficeFixtures } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
 
 test('附上 docx / pptx / xlsx / csv / png 五个文件，一轮里逐个答对（含只在图里的数）', async ({
   page,

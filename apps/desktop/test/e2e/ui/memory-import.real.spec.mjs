@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, toNamespacedPath } from 'node:path';
 import {
   consolidatedMemory,
   importedMemory,
@@ -84,7 +84,11 @@ test('真模型导入后使用、任务/全局禁读和三个项目的范围约�
   await dialog.getByRole('button', { name: '确认导入', exact: true }).click();
   for (const name of ['alpha', 'beta']) {
     await expect(dialog.getByText(`${name}-project：资料已导入`)).toBeVisible();
-    expect(importedMemory(kernelHome, `${name}-project`).scope.cwd).toBe(paths[name]);
+    expect(
+      toNamespacedPath(
+        realpathSync.native(importedMemory(kernelHome, `${name}-project`).scope.cwd),
+      ),
+    ).toBe(toNamespacedPath(realpathSync.native(paths[name])));
   }
   await dialog.getByRole('button', { name: '完成', exact: true }).click();
 

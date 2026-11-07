@@ -125,10 +125,13 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
   const sessionDirectory = `ew-cua-${process.pid}-${randomBytes(6).toString('hex')}`;
   const preferred = join(options.root, 'run', sessionDirectory);
   const directory =
-    Buffer.byteLength(join(preferred, 'cua.sock')) < 104
+    process.platform === 'win32' || Buffer.byteLength(join(preferred, 'cua.sock')) < 104
       ? preferred
       : join('/tmp', sessionDirectory);
-  const socketPath = join(directory, 'cua.sock');
+  // Native transport follows the execution OS, even when a test injects a macOS
+  // helper. The feature still requires options.platform === 'darwin' below.
+  const socketPath =
+    process.platform === 'win32' ? `\\\\.\\pipe\\${sessionDirectory}` : join(directory, 'cua.sock');
   const grantsPath = join(options.root, 'computer-use-grants.json');
   let grants: Record<string, Grant> = Object.create(null) as Record<string, Grant>;
   try {
@@ -736,7 +739,7 @@ export function createComputerUseHost(options: ComputerUseHostOptions) {
     await new Promise<void>((resolve, reject) => {
       server!.once('error', reject);
       server!.listen(socketPath, () => {
-        chmodSync(socketPath, 0o600);
+        if (process.platform !== 'win32') chmodSync(socketPath, 0o600);
         resolve();
       });
     });

@@ -36,9 +36,11 @@ textarea {
   font-family: inherit;
 }
 
-/* 01 §3.1 骨架 A：侧边栏 275（clamp 240–520）+ 主内容区 flex */
+/* 01 §3.1 骨架 A：侧边栏 275（clamp 240–520）+ 主内容区，顶部通知独立占位 */
 .ew-app {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
 }
@@ -52,8 +54,16 @@ textarea {
 .ew-app > .ew-page,
 .ew-app > .ew-library,
 .ew-app > .ew-project-detail {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 3;
   min-width: 0;
+  min-height: 0;
+}
+.ew-app > .ew-sidebar,
+.ew-app > .ew-sidebar-restore {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  min-height: 0;
 }
 
 /* 手动折叠后的稳定恢复入口；它占用窄轨道，不覆盖任务顶栏内容。 */
@@ -1562,6 +1572,8 @@ textarea {
 
 /* 吸顶条：z-400，必须高于模态之外的一切（01 §2.8 / 10 §3.5） */
 .ew-approval-bar {
+  grid-column: 2;
+  grid-row: 1;
   position: sticky;
   top: 0;
   z-index: var(--z-approval-bar);
@@ -3707,19 +3719,25 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 }
 
 .ew-toast-stack {
-  position: fixed;
-  right: var(--space-16);
-  bottom: var(--space-16);
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+  width: var(--layout-toast-width);
+  max-width: calc(100% - var(--space-16) * 2);
+  max-height: 30dvh;
+  margin: var(--space-8) var(--space-16);
+  overflow-y: auto;
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
 }
 .ew-toast {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  width: var(--layout-toast-width);
+  width: 100%;
   padding: var(--space-12) var(--space-16);
   border-radius: var(--r-lg);
   background: var(--bg-surface);

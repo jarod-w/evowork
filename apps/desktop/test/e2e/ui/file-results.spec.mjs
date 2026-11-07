@@ -2,11 +2,26 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { expect, makeOfficeFixtures, startTaskInWorkspace, test } from './fixtures.mjs';
-import { scriptFileTools, sendFileCommand, expectFileAnswer } from './file-results-support.mjs';
+import {
+  scriptFileTools,
+  sendFileCommand,
+  expectFileAnswer,
+  settle,
+  selectTask,
+  approveFixtureCommand,
+} from './file-results-support.mjs';
+import { localNodeCommand, writeFileCommand } from './shell-commands.mjs';
 
-const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const patch = (before, after) =>
-  `apply_patch <<'PATCH'\n*** Begin Patch\n*** Update File: app.ts\n@@\n-${before}\n+${after}\n*** End Patch\nPATCH`;
+  process.platform === 'win32'
+    ? localNodeCommand([
+        '-e',
+        "const fs=require('fs');const p=process.argv[1];const from=Buffer.from(process.argv[2],'hex').toString();const to=Buffer.from(process.argv[3],'hex').toString();const text=fs.readFileSync(p,'utf8');if(!text.includes(from))throw Error('fixture before text missing');fs.writeFileSync(p,text.replace(from,to))",
+        'app.ts',
+        Buffer.from(before).toString('hex'),
+        Buffer.from(after).toString('hex'),
+      ])
+    : `apply_patch <<'PATCH'\n*** Begin Patch\n*** Update File: app.ts\n@@\n-${before}\n+${after}\n*** End Patch\nPATCH`;
 
 test('shell 变化可发现，原生工具明确登记和打开，创建修改删除能逐项确认后恢复磁盘', async ({
   page,
@@ -22,7 +37,11 @@ test('shell 变化可发现，原生工具明确登记和打开，创建修改�
       {
         tool: 'exec_command',
         args: {
-          cmd: "printf 'changed\\n' > change.txt\nprintf 'delivered\\n' > output.txt\nrm remove.txt",
+          cmd: [
+            writeFileCommand('change.txt', 'changed\n'),
+            writeFileCommand('output.txt', 'delivered\n'),
+            localNodeCommand(['-e', "require('fs').unlinkSync('remove.txt')"]),
+          ].join('\n'),
         },
       },
       { tool: 'list_files', args: {} },
@@ -172,6 +191,7 @@ test('代码重复修改展示任务和回合完整净差异，默认页签、�
     },
   );
   await startTaskInWorkspace(page, electronApp, marker);
+  await settle(page, '代码修改完成。');
   await expect(page.getByText('代码修改完成。', { exact: true })).toBeVisible();
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
   await expect(page.getByRole('tab', { name: '变更', exact: true })).toHaveAttribute(
@@ -233,10 +253,29 @@ test('两个真实任务共用工作目录并发生成，上报脚本携带各�
 }) => {
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
   const mark = resolve('plugins/skills/documents/container_tools/mark_artifact.mjs');
-  const outputs = ['first', 'second'].map((name) => ({
+  const home = await electronApp.evaluate(() => globalThis.__evoworkE2E.home);
+  const gate = join(home, 'fixture-first-mark-ready');
+  const wait = localNodeCommand([
+    '-e',
+    "const fs=require('fs');const until=Date.now()+15000;while(!fs.existsSync(process.argv[1])){if(Date.now()>until)throw Error('fixture gate timed out');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}",
+    gate,
+  ]);
+  const outputs = ['first', 'second'].map((name, index) => ({
     marker: `FILE-RESULTS-${name}`,
     path: join(workspace, `${name}.md`),
-    cmd: `printf '${name}' > ${quote(join(workspace, `${name}.md`))}\nnode ${quote(mark)} --operation-kind create --output-format md --path ${quote(join(workspace, `${name}.md`))}`,
+    cmd: [
+      writeFileCommand(join(workspace, `${name}.md`), name),
+      ...(index === 0 ? [wait] : []),
+      localNodeCommand([
+        mark,
+        '--operation-kind',
+        'create',
+        '--output-format',
+        'md',
+        '--path',
+        join(workspace, `${name}.md`),
+      ]),
+    ].join('\n'),
   }));
   await electronApp.evaluate((_, outputs) => {
     const { gateway } = globalThis.__evoworkE2E;
@@ -261,6 +300,14 @@ test('两个真实任务共用工作目录并发生成，上报脚本携带各�
     .toBe(true);
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await startTaskInWorkspace(page, electronApp, outputs[1].marker);
+  await approveFixtureCommand(page, () => existsSync(outputs[1].path));
+  await selectTask(page, outputs[0].marker);
+  await approveFixtureCommand(page, () => existsSync(outputs[0].path));
+  await selectTask(page, outputs[1].marker);
+  await expect(page.getByRole('heading', { name: outputs[1].marker, exact: true })).toBeVisible();
+  // First task reports while the second task is active, even when Windows asks
+  // for command approval. Never infer ownership from the active conversation.
+  writeFileSync(gate, 'ready');
   await expect
     .poll(
       async () => {

@@ -1,0 +1,22 @@
+{
+  "origin": "https://account.nucleant.cn",
+  "checkedAt": "2026-10-31T14:19:11.039Z",
+  "checks": [
+    "trusted-https-login-and-secure-cookie",
+    "/healthz",
+    "/readyz",
+    "/.well-known/jwks.json",
+    "/v1/me",
+    "/v1/catalog",
+    "/v1/quota",
+    "/v1/devices",
+    "/v1/admin/members",
+    "/v1/admin/models",
+    "/v1/admin/usage",
+    "unauthenticated-me-denied",
+    "share-generated-https-url",
+    "share-page-metadata-download",
+    "share-revoked-download-denied",
+    "test-admin-device-revoked"
+  ]
+}

@@ -13,7 +13,7 @@
  * 被测的是**选完之后**的那一段：宿主 → 解析管道 → 附件条 → 发送 → 模型请求。
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { expect, makeOfficeFixtures, test } from './fixtures.mjs';
 
@@ -94,7 +94,7 @@ test('选 23 个：前 20 个就绪、后 3 个说清原因；发出去的请求
   // 20 个就绪的每一个都进了这一回合；被移掉的 3 个没有
   // 单独的图片走「不解析」那条路（08 §3.3），只有一个 localImage、没有文字 —— 它在下面按图数
   for (const path of picked.slice(0, 20).filter((p) => !p.endsWith('.png'))) {
-    const name = path.split('/').at(-1);
+    const name = basename(path);
     expect(text, `${name} 没进这一回合`).toContain(name);
   }
   for (const name of ['笔记16.txt', '笔记17.txt', '笔记18.txt']) {

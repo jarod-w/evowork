@@ -181,7 +181,7 @@ export function recognize(signal: RecognitionSignal, context: RecognizeContext):
     title:
       signal.signal === 'SKILL_REPORT' && signal.title
         ? signal.title
-        : (signal.path.split('/').pop() ?? signal.path),
+        : (signal.path.split(/[\\/]/).pop() ?? signal.path),
     operationKind:
       signal.signal === 'SKILL_REPORT' ? signal.operationKind : previous ? 'edit' : 'create',
     sizeBytes: stat?.sizeBytes,

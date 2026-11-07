@@ -123,6 +123,8 @@ export const TIER_OF: Readonly<Record<InputKind, RuntimeTier>> = Object.freeze({
  * 与 `plugins/skills/_shared/evowork_skill.py` 的 `office_python()` 是同一套路径约定，
  * 由 `test/runtime.test.ts` 比对 —— 两边分叉的表现是"解析说装了、生成说没装"。
  */
+import { join } from 'node:path';
+
 export const OFFICE_RUNTIME_DIR = '.evowork/runtime/office';
 
 /**
@@ -135,7 +137,7 @@ export const OFFICE_RUNTIME_DIR = '.evowork/runtime/office';
 export const OFFICE_FONTS_SUBDIR = 'fonts';
 
 export function officeFontsPath(home: string): string {
-  return `${home}/${OFFICE_RUNTIME_DIR}/${OFFICE_FONTS_SUBDIR}`;
+  return join(home, OFFICE_RUNTIME_DIR, OFFICE_FONTS_SUBDIR);
 }
 
 /**
@@ -154,12 +156,12 @@ export function officeFontsPath(home: string): string {
  * 由 `test/runtime.test.ts` 逐条比对。
  */
 export function officeInterpreterPaths(home: string, runtimeRoot?: string): readonly string[] {
-  const root = runtimeRoot ?? `${home}/${OFFICE_RUNTIME_DIR}`;
+  const root = runtimeRoot ?? join(home, OFFICE_RUNTIME_DIR);
   return [
-    `${root}/bin/python`,
-    `${root}/bin/python3`,
-    `${root}/Scripts/python.exe`,
-    `${root}/python.exe`,
+    join(root, 'bin', 'python'),
+    join(root, 'bin', 'python3'),
+    join(root, 'Scripts', 'python.exe'),
+    join(root, 'python.exe'),
   ];
 }
 

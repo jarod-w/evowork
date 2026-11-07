@@ -1,31 +1,39 @@
-import { expect, test } from './fixtures.mjs';
+import { expect } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
+import { localNodeCommand } from './shell-commands.mjs';
 
 test('输出流保持进度与操作顺序，当前动作可见，停止和刷新后计时与详情一致', async ({
   page,
   electronApp,
 }, testInfo) => {
-  await electronApp.evaluate(() => {
-    const gateway = globalThis.__evoworkE2E.gateway;
-    gateway.scriptWhen(
-      'stream-command',
-      (r) => r.text.includes('OUTPUT-STREAM-UI') && !r.calls.includes('exec_command'),
-      {
-        preamble: '先核对本机执行环境，再整理结果。',
-        tool: 'exec_command',
-        args: { cmd: "sleep 1; printf 'STREAM_TOOL_OK\n'; sleep 2", yield_time_ms: 10_000 },
-      },
-    );
-    gateway.scriptWhen(
-      'stream-progress',
-      (r) => r.text.includes('OUTPUT-STREAM-UI') && r.calls.includes('exec_command'),
-      {
-        kind: 'hold',
-        text: '执行环境已核对，正在整理结果。',
-        phase: 'commentary',
-        completeMessage: true,
-      },
-    );
-  });
+  await electronApp.evaluate(
+    (_, cmd) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen(
+        'stream-command',
+        (r) => r.text.includes('OUTPUT-STREAM-UI') && !r.calls.includes('exec_command'),
+        {
+          preamble: '先核对本机执行环境，再整理结果。',
+          tool: 'exec_command',
+          args: { cmd, yield_time_ms: 10_000 },
+        },
+      );
+      gateway.scriptWhen(
+        'stream-progress',
+        (r) => r.text.includes('OUTPUT-STREAM-UI') && r.calls.includes('exec_command'),
+        {
+          kind: 'hold',
+          text: '执行环境已核对，正在整理结果。',
+          phase: 'commentary',
+          completeMessage: true,
+        },
+      );
+    },
+    localNodeCommand([
+      '-e',
+      "setTimeout(()=>{process.stdout.write('STREAM_TOOL_OK\\n');setTimeout(()=>{},2000)},1000)",
+    ]),
+  );
   await page.getByLabel('需求输入').fill('OUTPUT-STREAM-UI 核对执行环境并整理结果');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const first = page.getByText('先核对本机执行环境，再整理结果。', { exact: true });

@@ -53,7 +53,7 @@ export function taskTitleFromArtifact(record: ArtifactRecord): TaskTitleCandidat
   if (record.version !== 1) return undefined;
   if (!record.threadId) return undefined;
 
-  const basename = record.path.split('/').pop() ?? record.path;
+  const basename = record.path.split(/[\\/]/).pop() ?? record.path;
   const title = record.title.trim();
   if (title === '' || title === basename) return undefined;
 

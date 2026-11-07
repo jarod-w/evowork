@@ -100,6 +100,11 @@ export type RendererEvent =
       readonly sourceTaskId: string;
     }
   | { readonly type: 'queue-changed'; readonly taskId: string }
+  | {
+      readonly type: 'subtasks-changed';
+      readonly taskId: string;
+      readonly subtasks: readonly TaskRowView[];
+    }
   | { readonly type: 'next-actions-changed'; readonly taskId: string }
   | {
       readonly type: 'file-open-requested';

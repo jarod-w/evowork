@@ -2,6 +2,8 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+const testMarkers = (text) => [...new Set(text.match(/REALFOLLOW_[A-Z]+_[a-f0-9]+/g) ?? [])];
+
 /** Test-only upstream observation. No headers, credentials, prompt or response bodies are saved. */
 export function installFollowUpWire(path) {
   const originalFetch = globalThis.fetch;
@@ -24,6 +26,11 @@ export function installFollowUpWire(path) {
         at: Date.now(),
         endpoint: url.origin + url.pathname,
         model: body.model,
+        toolNames: (body.tools ?? [])
+          .map((tool) => tool.function?.name)
+          .filter(
+            (name) => typeof name === 'string' && /^[a-zA-Z_][a-zA-Z0-9_-]{0,200}$/.test(name),
+          ),
         hasNextActionRules: JSON.stringify(body.messages ?? []).includes('优先把该目标写成建议'),
         hasNextActionRulesInSystem: (body.messages ?? []).some(
           (message) =>
@@ -41,15 +48,23 @@ export function installFollowUpWire(path) {
             JSON.stringify(message.content ?? '').includes('不能一律排除收盘后报道'),
         ),
         hasTemporalTask: JSON.stringify(body.messages ?? []).includes('LATEST_'),
+        hasGuardianTranscript: JSON.stringify(body.messages ?? []).includes('>>> TRANSCRIPT START'),
         hasNextActionTask: JSON.stringify(body.messages ?? []).includes('REALNEXT_'),
         hasNextActionStopReminder: JSON.stringify(body.messages ?? []).includes(
           '本回合尚未登记下一步状态。',
         ),
-        markers: [
-          ...new Set(
-            JSON.stringify(body.messages ?? []).match(/REALFOLLOW_[A-Z]+_[a-f0-9]+/g) ?? [],
-          ),
-        ],
+        markers: testMarkers(JSON.stringify(body.messages ?? [])),
+        delegationMarkers: testMarkers(
+          (body.messages ?? [])
+            .filter(
+              (message) =>
+                message.role === 'user' &&
+                typeof message.content === 'string' &&
+                message.content.startsWith('Message Type: NEW_TASK\n'),
+            )
+            .map((message) => message.content)
+            .join('\n'),
+        ),
       }) + '\n',
     );
     let response;

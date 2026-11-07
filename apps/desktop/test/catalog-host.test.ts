@@ -227,7 +227,7 @@ describe('技能目录安装审计（05 §3.3）', () => {
       {
         ...p,
         renamePath: (from, to) => {
-          if (from.endsWith('/next') && to.startsWith(join(root, 'kernel')))
+          if (/[\\/]next$/.test(from) && to.startsWith(join(root, 'kernel')))
             throw new Error('模拟替换失败');
           p.renamePath(from, to);
         },
@@ -582,7 +582,9 @@ describe('官方 browser 连接器在用户机器上起得来（没有 node）',
     expect(refreshOfficialConnectors(p)).toBe(true);
     const config = readFileSync(join(root, 'kernel', 'config.toml'), 'utf8');
     expect(config).not.toMatch(/command = "node"/);
-    expect(config).toMatch(/Resources\/plugins\/connectors\/browser\/server\.mjs/);
+    expect(config.replace(/\\\\/g, '/')).toMatch(
+      /Resources\/plugins\/connectors\/browser\/server\.mjs/,
+    );
     // 用户的选择（信任、逐工具权限）不动
     expect(config).toMatch(/approval_mode = "prompt"/);
     // 第二次没有变化，不写盘

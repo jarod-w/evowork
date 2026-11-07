@@ -57,6 +57,11 @@ describe('路径归一化：`..` 必须在匹配前解析掉', () => {
     expect(normalizePath('C:\\Windows\\\\system32', HOME)).toBe('C:/Windows/system32');
     expect(normalizePath('/a//b/./c', HOME)).toBe('/a/b/c');
   });
+
+  it('未提供 home 时保留绝对根路径，不把它折成用户主目录', () => {
+    expect(normalizePath('/', '')).toBe('/');
+    expect(normalizePath('/w/report.md', '')).toBe('/w/report.md');
+  });
 });
 
 describe('三级路径策略（10 §2.3）', () => {

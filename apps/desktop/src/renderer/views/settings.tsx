@@ -126,7 +126,7 @@ export interface SettingsPageProps {
   }) => void | Promise<void>;
   readonly onMemorySettings: (input: MemorySettingsInput) => void | Promise<void>;
   readonly onResetMemories: () => void | Promise<void>;
-  readonly onLogin?: () => void;
+  readonly onLogin?: (signup?: boolean) => void;
   readonly onLogout?: () => void;
   readonly onRevokeDevice?: (deviceId: string) => void;
   readonly onOpenAccountWeb?: (path: string) => void;
@@ -649,9 +649,12 @@ function AccountSection(props: SettingsPageProps) {
             <PillButton onClick={onLogout}>退出登录</PillButton>
           ) : null
         ) : onLogin ? (
-          <PillButton variant="accent" onClick={onLogin}>
-            在浏览器中登录
-          </PillButton>
+          <>
+            <PillButton variant="accent" onClick={() => onLogin()}>
+              在浏览器中登录
+            </PillButton>
+            <PillButton onClick={() => onLogin(true)}>注册账号</PillButton>
+          </>
         ) : null}
       </SettingsRow>
       <p className="ew-settings-note">

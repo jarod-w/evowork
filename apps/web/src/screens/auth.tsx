@@ -4,7 +4,7 @@
  * 登录页是这个产品唯一的对外品牌面（K5）：左栏那三句话原先全藏在登录之后，
  * 而"文件不上云 / 管理员结构上看不到 / 不登录也能用"恰恰是企业第一个问的三件事。
  */
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import {
   api,
@@ -13,6 +13,8 @@ import {
   formatDay,
   parsePkce,
   passwordStrength,
+  pkceSearch,
+  type ApiResult,
   publicApi,
   readSession,
   syncSessionFromMe,
@@ -108,6 +110,7 @@ export function SignInPage(props: {
 }) {
   const action = useAction();
   const [returning, setReturning] = useState(false);
+  const [returnError, setReturnError] = useState<string>();
   const pkce = parsePkce(props.search);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -115,7 +118,7 @@ export function SignInPage(props: {
     const body = formData(e);
     await action.run(
       async () => {
-        const out = await api<{
+        const out = await publicApi<{
           accessToken: string;
           refreshToken: string;
           role: Session['role'];
@@ -143,7 +146,17 @@ export function SignInPage(props: {
       () => {
         if (pkce) {
           setReturning(true);
-          void finishDesktopPkce(pkce);
+          void finishDesktopPkce(pkce)
+            .then((error) => {
+              if (error) {
+                setReturning(false);
+                setReturnError(error);
+              }
+            })
+            .catch(() => {
+              setReturning(false);
+              setReturnError('没能返回桌面版，请重新登录。');
+            });
           return;
         }
         props.onSignedIn();
@@ -219,7 +232,9 @@ export function SignInPage(props: {
                 </a>
               }
             />
-            {action.error ? <p className="ew-error ew-muted">{action.error}</p> : null}
+            {action.error || returnError ? (
+              <p className="ew-error ew-muted">{action.error ?? returnError}</p>
+            ) : null}
             <div className="ew-actions">
               <Button
                 type="submit"
@@ -248,21 +263,30 @@ export function SignInPage(props: {
   );
 }
 
-export function SignUpPage(props: { readonly onGo: (path: string) => void }) {
+export function SignUpPage(props: {
+  readonly search: string;
+  readonly onGo: (path: string) => void;
+}) {
   const action = useAction();
   const [ok, setOk] = useState(false);
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [email, setEmail] = useState('');
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const body = formData(e);
     if (pw !== confirm) return;
+    setEmail(body.email ?? '');
     await action.run(
       () =>
-        api('/v1/signup', {
+        publicApi('/v1/signup', {
           method: 'POST',
-          body: JSON.stringify({ email: body.email, password: pw }),
+          body: JSON.stringify({
+            email: body.email,
+            password: pw,
+            continuation: pkceSearch(props.search),
+          }),
         }),
       () => setOk(true),
     );
@@ -272,6 +296,20 @@ export function SignUpPage(props: { readonly onGo: (path: string) => void }) {
     return (
       <AuthCard title="请查收验证邮件">
         <Banner tone="success">验证邮件已经发出。点开里面的链接就能登录了 —— 我们不发短信。</Banner>
+        {action.error ? <p className="ew-error ew-muted">{action.error}</p> : null}
+        <Button
+          busy={action.busy}
+          onClick={() =>
+            void action.run(() =>
+              publicApi('/v1/resend-verification', {
+                method: 'POST',
+                body: JSON.stringify({ email, continuation: pkceSearch(props.search) }),
+              }),
+            )
+          }
+        >
+          重新发送验证邮件
+        </Button>
         <Button variant="primary" size="lg" block onClick={() => props.onGo('/signin')}>
           去登录
         </Button>
@@ -308,6 +346,24 @@ export function SignUpPage(props: { readonly onGo: (path: string) => void }) {
           </Button>
         </div>
       </form>
+      {email ? (
+        <Button
+          busy={action.busy}
+          onClick={() =>
+            void action.run(
+              () =>
+                publicApi('/v1/resend-verification', {
+                  method: 'POST',
+                  body: JSON.stringify({ email, continuation: pkceSearch(props.search) }),
+                }),
+              () => setOk(true),
+            )
+          }
+        >
+          重新发送验证邮件
+        </Button>
+      ) : null}
+      <Button onClick={() => props.onGo('/signin')}>已有账号，去登录</Button>
     </AuthCard>
   );
 }
@@ -318,6 +374,9 @@ export function VerifyPage(props: {
 }) {
   const [state, setState] = useState<'pending' | 'ok' | 'fail'>('pending');
   const [message, setMessage] = useState('正在验证…');
+  const verification = useRef<{ token: string; result: Promise<ApiResult<unknown>> } | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     const token = new URLSearchParams(props.search).get('token') ?? '';
@@ -326,12 +385,15 @@ export function VerifyPage(props: {
       setMessage('这个链接里没有验证令牌。');
       return;
     }
-    void api('/v1/verify-email', { method: 'POST', body: JSON.stringify({ token }) }).then(
-      (out) => {
-        setState(out.ok ? 'ok' : 'fail');
-        setMessage(out.ok ? '邮箱已验证，可以登录了。' : out.error.message);
-      },
-    );
+    if (verification.current?.token !== token)
+      verification.current = {
+        token,
+        result: publicApi('/v1/verify-email', { method: 'POST', body: JSON.stringify({ token }) }),
+      };
+    void verification.current.result.then((out) => {
+      setState(out.ok ? 'ok' : 'fail');
+      setMessage(out.ok ? '邮箱已验证，可以登录了。' : out.error.message);
+    });
   }, [props.search]);
 
   return (
@@ -395,7 +457,10 @@ export function ResetPage(props: {
     const body = formData(e);
     await action.run(
       () =>
-        api('/v1/forgot-password', { method: 'POST', body: JSON.stringify({ email: body.email }) }),
+        publicApi('/v1/forgot-password', {
+          method: 'POST',
+          body: JSON.stringify({ email: body.email, continuation: pkceSearch(props.search) }),
+        }),
       () => {
         setSent(true);
         setLeft(RESEND_SECONDS);
@@ -408,7 +473,7 @@ export function ResetPage(props: {
     if (pw !== confirm) return;
     await action.run(
       () =>
-        api('/v1/reset-password', {
+        publicApi('/v1/reset-password', {
           method: 'POST',
           body: JSON.stringify({ token, password: pw }),
         }),

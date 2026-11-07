@@ -66,12 +66,21 @@ function readKernelLicenseInfo() {
 
 function readNpmLicenses() {
   try {
-    const raw = execFileSync('pnpm', ['licenses', 'list', '--json', '--prod'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
+    const entry = process.env.npm_execpath;
+    const nodeEntry = entry && /(?:^|[\\/])pnpm\.(?:c?js|mjs)$/.test(entry) ? entry : undefined;
+    const windowsShim = !nodeEntry && process.platform === 'win32';
+    const raw = execFileSync(
+      nodeEntry ? process.execPath : windowsShim ? 'pnpm.cmd' : 'pnpm',
+      [...(nodeEntry ? [nodeEntry] : []), 'licenses', 'list', '--json', '--prod'],
+      {
+        cwd: REPO_ROOT,
+        // The fallback arguments are fixed literals; Windows cannot execute .cmd via execFile alone.
+        shell: windowsShim,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
     // 没有生产依赖时 pnpm 打印一句人话而不是 JSON（"No license information available"）。
     // 这是骨架阶段的正常状态，不是错误 —— 报成错误会让 CI 从第一天起就红着，
     // 而"CI 一直是红的"比没有 CI 更糟。
@@ -239,7 +248,7 @@ const content = `${L.join('\n')}\n`;
 
 if (checkOnly) {
   const existing = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
-  if (existing !== content) {
+  if (existing.replace(/\r\n/g, '\n') !== content.replace(/\r\n/g, '\n')) {
     // 先说「读不到依赖树」：那是本机环境问题（如 pnpm store 缺文件），不是清单过时 ——
     // 这时去跑 `pnpm notices` 会把 114 个包的清单改写成一句警告
     if (!npm.available) {

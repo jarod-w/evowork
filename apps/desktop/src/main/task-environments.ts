@@ -1,7 +1,8 @@
 /** 宿主权威环境登记。meta 与项目表同库；投影重建不会丢失归属和恢复关系。 */
 import { randomUUID } from 'node:crypto';
 import { cp, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
+import { isDescendantPath } from './local-paths.js';
 import { classifyPath, workspaceRootRefusal } from '@evowork/policy';
 import { readMeta, writeMeta, type Store } from '@evowork/store';
 import type { ComposerReferenceView, WorkingDirectoryView } from '../shared/ipc.js';
@@ -84,7 +85,7 @@ export function createTaskEnvironments(options: {
         if (!value) return false;
         const env = JSON.parse(value) as TaskEnvironment;
         return (
-          env.managed && env.cwd === real && real.startsWith(`${join(realData, 'workspaces')}/`)
+          env.managed && env.cwd === real && isDescendantPath(join(realData, 'workspaces'), real)
         );
       });
       // 助理为宿主固定环境，不能通过前端传任意内部路径冒充。
@@ -100,7 +101,7 @@ export function createTaskEnvironments(options: {
       throw new Error('工作目录不存在，请重新选择。');
     const real = await realpath(path);
     const realData = await realpath(dataDir).catch(() => dataDir);
-    if (real === realData || real.startsWith(`${realData}/`))
+    if (real === realData || isDescendantPath(realData, real))
       throw new Error('不能使用应用的数据目录，请选择其他工作目录。');
     const refusal = workspaceRootRefusal(real, await realpath(home));
     if (refusal) throw new Error(refusal.reason);
@@ -170,7 +171,7 @@ export function createTaskEnvironments(options: {
       const base = join(from, 'uploads');
       if (
         !refs.some((ref) =>
-          ref.type === 'text' ? ref.text.includes(base) : ref.path.startsWith(`${base}/`),
+          ref.type === 'text' ? ref.text.includes(base) : isDescendantPath(base, ref.path),
         )
       )
         return refs;
@@ -208,8 +209,8 @@ export function createTaskEnvironments(options: {
           ? { ...ref, text: ref.text.replaceAll(base, target) }
           : {
               ...ref,
-              path: ref.path.startsWith(`${base}/`)
-                ? target + ref.path.slice(base.length)
+              path: isDescendantPath(base, ref.path)
+                ? join(target, relative(base, ref.path))
                 : ref.path,
             },
       );

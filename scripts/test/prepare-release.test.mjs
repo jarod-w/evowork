@@ -1,13 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { newerVersion, notesFromSubjects, prepareRelease } from '../prepare-release.mjs';
 
-function repository() {
+function seedRepository() {
   const root = mkdtempSync(join(tmpdir(), 'evowork-release-'));
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
   git('init');
@@ -25,6 +25,32 @@ function repository() {
   git('add', '.');
   git('commit', '-m', 'feat(search): 支持正文搜索');
   return { root, git };
+}
+
+// Git process startup is much slower on Windows. Build the identical committed
+// baseline once, then give every test its own copy without sharing mutations.
+let baseline;
+const repositories = [];
+beforeAll(() => {
+  baseline = seedRepository().root;
+  repositories.push(baseline);
+});
+afterAll(() => {
+  for (const root of repositories) {
+    if (!resolve(root).startsWith(resolve(tmpdir()) + '\\') && process.platform === 'win32')
+      throw new Error('测试清理路径不在临时目录');
+    if (!basename(root).startsWith('evowork-release-')) throw new Error('测试清理路径前缀无效');
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+function repository() {
+  const root = mkdtempSync(join(tmpdir(), 'evowork-release-'));
+  repositories.push(root);
+  cpSync(baseline, root, { recursive: true });
+  return {
+    root,
+    git: (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }),
+  };
 }
 
 describe('准备发布', () => {

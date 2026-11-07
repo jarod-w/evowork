@@ -36,7 +36,7 @@ describe('真实磁盘发现、净差异与归属', () => {
     journal.finish('task');
     const view = journal.view('task')!;
     expect(
-      view.thread.map((file) => [file.path.split('/').at(-1), file.kind, file.source]),
+      view.thread.map((file) => [file.path.split(/[\\/]/).at(-1), file.kind, file.source]),
     ).toEqual([
       ['deleted.txt', 'delete', 'workspace'],
       ['existing.txt', 'modify', 'workspace'],

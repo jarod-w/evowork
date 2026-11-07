@@ -1,7 +1,9 @@
 /** 真模型、宿主网关、发货内核与真窗口；文件内容及权威目标为验收依据。 */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+import { expect, startTaskInWorkspace } from './fixtures.mjs';
+import { test } from './command-approvals.mjs';
+import { localPythonCommand } from './shell-commands.mjs';
 import {
   attachGoalEvidence,
   attachGoalFailure,
@@ -23,7 +25,7 @@ test('真模型 goal：首轮未完成自动续跑，验证文件后完成，刷
   await startTaskInWorkspace(
     page,
     electronApp,
-    `/goal ${marker} 分两回合完成验收。第一个回合只回复“阶段一就绪”，不调用任何工具，不完成目标，并结束这个回合。系统自动开启下一个回合后，用 exec_command 在当前工作目录创建 goal-result.txt，内容严格为 ${marker} 加一个换行；读取文件核验，再调用 update_goal 标记 complete。不要派生子任务、联网或修改其它文件。`,
+    `/goal ${marker} 分两回合完成验收。第一个回合只回复“阶段一就绪”，不调用任何工具，不完成目标，并结束这个回合。系统自动开启下一个回合后，用 exec_command 在当前工作目录创建 goal-result.txt，UTF-8 无 BOM，内容严格为 ${marker} 加一个 LF 换行；读取文件核验，再调用 update_goal 标记 complete。不要派生子任务、联网或修改其它文件。`,
   );
   const task = await goalTask(page);
   try {
@@ -58,10 +60,18 @@ test('真模型 goal：运行时暂停，刷新与内核重启保留，恢复后
   electronApp,
 }, testInfo) => {
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  const checkpoint = localPythonCommand([
+    '-c',
+    [
+      'from pathlib import Path; import time',
+      "with Path('goal-checkpoint.txt').open('a', encoding='utf-8', newline='\\n') as f: f.write('saved-once\\n')",
+      'time.sleep(20)',
+    ].join('\n'),
+  ]);
   await startTaskInWorkspace(
     page,
     electronApp,
-    '/goal 分两阶段交付。首次回合用 exec_command 执行单条命令：printf "saved-once\\n" >> goal-checkpoint.txt; sleep 20 。命令返回后只回复“检查点已保存”，结束回合，不调用 update_goal、不执行第二阶段。我会在等待期间暂停目标。系统恢复并开启下一回合后先读取 goal-checkpoint.txt，已有检查点不能重复写入；创建 goal-resumed.txt，内容严格为 resumed-done 加换行，读取核验，最后调用 update_goal complete。不要联网、派生子任务或修改其它文件。',
+    `/goal 分两阶段交付。首次回合用 exec_command 执行单条命令：\n${checkpoint}\n命令返回后只回复“检查点已保存”，结束回合，不调用 update_goal、不执行第二阶段。我会在等待期间暂停目标。系统恢复并开启下一回合后先读取 goal-checkpoint.txt，已有检查点不能重复写入；创建 goal-resumed.txt，UTF-8 无 BOM，内容严格为 resumed-done 加一个 LF 换行，读取核验，最后调用 update_goal complete。不要联网、派生子任务或修改其它文件。`,
   );
   const task = await goalTask(page);
   try {
@@ -104,7 +114,7 @@ test('真模型 goal：极小预算耗尽后停止续跑，刷新保留状态并
   await startTaskInWorkspace(
     page,
     electronApp,
-    '/goal 预算停止验收。先用 exec_command 执行 sleep 20；返回后只回复“仍有剩余步骤”，结束回合，目标尚未完成，不调用 update_goal。后续回合也不要标记完成，不要写文件、联网或派生子任务。',
+    `/goal 预算停止验收。先用 exec_command 执行 ${localPythonCommand(['-c', 'import time; time.sleep(20)'])}；返回后只回复“仍有剩余步骤”，结束回合，目标尚未完成，不调用 update_goal。后续回合也不要标记完成，不要写文件、联网或派生子任务。`,
   );
   const task = await goalTask(page);
   try {

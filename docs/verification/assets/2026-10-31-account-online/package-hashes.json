@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-10-31T12:46:17.100Z",
+  "files": {
+    "dist/main/bootstrap.bundle.js": "e544aefae7525aeca0b9c1121d0ed02190af48c8eb1005f9f56dcbd9768ba208",
+    "dist/main/electron-entry.mjs": "082ae3d83ea39d4f7d95cdd48fc89e1da5dc0381a2f0faf5263beacda22df8f3",
+    "dist/preload/index.bundle.cjs": "20febd5ab17214578e6a916b567ec6c72dee692b592c2a605ce2335137d1c28a",
+    "dist/renderer/index.html": "5809f79f299f9abbcd809fe3b993199fa67676603e9892f85bbee541b3f2979e",
+    "gateway/main.js": "e35048a824d3ea384b3a60bff5ca6f99c83f2e3aaef784d2802344d2c61777a2",
+    "config/account.json": "e6838970a8e0bc0928e0b5704fd39ae89f8c307d8d312edaba7f36cc881935a4",
+    "kernel/codex-app-server": "9bfc07cc6070a11ce5d38ce12bd00ca6b6937db91ad2f43fca39740bd48d75fc"
+  }
+}

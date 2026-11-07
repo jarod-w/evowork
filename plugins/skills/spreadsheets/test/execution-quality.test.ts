@@ -195,7 +195,8 @@ describe('字体缓存跨 Python 命令复用', () => {
     expect(second.status, second.stderr).toBe(0);
     const one = JSON.parse(first.stdout),
       two = JSON.parse(second.stdout);
-    expect(two).toMatchObject({ path: one.path, existing: true, mode: 0o700 });
+    expect(two).toMatchObject({ path: one.path, existing: true });
+    if (process.platform !== 'win32') expect(two.mode).toBe(0o700);
     expect(readFileSync(join(one.path, 'audit-marker'), 'utf8')).toBe('cache');
   });
 });

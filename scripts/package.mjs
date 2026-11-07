@@ -140,7 +140,7 @@ if (dryRun) {
   console.log('（--dry-run：前置检查通过，未执行打包）');
   process.exit(0);
 }
-execFileSync(join(ROOT, 'node_modules/.bin/electron-builder'), args, {
+execFileSync(process.execPath, [join(ROOT, 'node_modules/electron-builder/cli.js'), ...args], {
   cwd: ROOT,
   stdio: 'inherit',
   env: signing.sign ? process.env : { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' },

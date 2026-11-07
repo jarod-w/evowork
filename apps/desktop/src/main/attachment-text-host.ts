@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { createOcrProcessor, sourceDigest } from '@evowork/ingest';
+import { isDescendantPath } from './local-paths.js';
 import type { ComposerAttachmentView, AttachmentTextInput } from '../shared/ipc.js';
 
 interface Source {
@@ -73,7 +74,7 @@ export function createAttachmentTextHost(options: {
     if (
       record.root !== realRoot ||
       path !== resolve(record.path) ||
-      !path.startsWith(`${realRoot}/uploads/`) ||
+      !isDescendantPath(join(realRoot, 'uploads'), path) ||
       (await lstat(record.path)).isSymbolicLink()
     )
       throw new Error('附件不在当前任务目录。');

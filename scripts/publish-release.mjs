@@ -21,8 +21,19 @@
  * 它指向的签名和安装包都已经在了。旧版本的文件一律不删（不带 `--delete`），出问题时能对照。
  */
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  copyFileSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -107,7 +118,7 @@ export async function loadClientModule(relativePath) {
 }
 
 function isRemote(dest) {
-  return /^[^/:]+:/.test(dest);
+  return !/^[a-z]:/i.test(dest) && /^[^/:\\]+:/.test(dest);
 }
 
 function readPublishedManifest(dest, channel) {
@@ -229,7 +240,20 @@ export function uploadRelease(distDir, dest, channel, plan) {
     const sources = step.files.map((f) => join(distDir, f));
     // -rlt 而不是 -a：不带本机的属主与权限过去（-a 会在服务器上留下发版机的 uid 501），
     // 远端以 ssh 登录的用户身份按它自己的 umask 落盘
-    execFileSync('rsync', ['-rlt', ...sources, `${target}${subdir}`], { stdio: 'inherit' });
+    if (isRemote(dest)) {
+      execFileSync('rsync', ['-rlt', ...sources, `${target}${subdir}`], { stdio: 'inherit' });
+    } else {
+      for (const file of step.files) {
+        const destination = join(target, file);
+        const temporary = `${destination}.${randomUUID()}.partial`;
+        try {
+          copyFileSync(join(distDir, file), temporary, constants.COPYFILE_EXCL);
+          renameSync(temporary, destination);
+        } finally {
+          rmSync(temporary, { force: true });
+        }
+      }
+    }
     console.log(`  ✓ ${step.phase}：${step.files.join(' · ')}`);
   }
 }

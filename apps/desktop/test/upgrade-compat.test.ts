@@ -179,9 +179,9 @@ describe.each(fixtures)('从 EvoWork $meta.appVersion 升级上来（$meta.name�
       chatgptBaseUrl: false,
     });
     expect(twice.text).toBe(once.text);
-    const baseUrl = original.split('\n').find((line) => /^\s*base_url\s*=/.test(line));
+    const baseUrl = original.split(/\r?\n/).find((line) => /^\s*base_url\s*=/.test(line));
     expect(baseUrl, '夹具的配置里应当有网关地址').toBeDefined();
-    expect(once.text.split('\n')).toContain(baseUrl);
+    expect(once.text.split(/\r?\n/)).toContain(baseUrl);
   });
 });
 

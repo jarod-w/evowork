@@ -1,6 +1,6 @@
 /** 全新用户首次启动直接进入主界面，不经过引导。 */
-import { realpathSync } from 'node:fs';
 import { expect, test } from './fixtures.mjs';
+import { strictlyWithinDirectory } from './assertions.mjs';
 
 test.use({ freshStart: true });
 
@@ -27,9 +27,7 @@ test('首次启动直接进入主界面，刷新后仍可使用，不创建默�
     .toBe(1);
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
   const startup = await page.evaluate(() => window.evowork.getStartup());
-  expect(realpathSync(startup.tasks[0].cwd).startsWith(`${realpathSync(initial.path)}/`)).toBe(
-    true,
-  );
+  expect(strictlyWithinDirectory(initial.path, startup.tasks[0].cwd)).toBe(true);
   expect(startup.tasks[0].projectId).toBeNull();
   expect(startup.workspaces).toEqual([]);
 });

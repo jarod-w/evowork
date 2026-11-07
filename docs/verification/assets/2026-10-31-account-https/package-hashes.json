@@ -1,0 +1,41 @@
+{
+  "app": "dist/account-https-validation/mac-arm64/EvoWork.app/Contents/Resources",
+  "checkedAt": "2026-10-31T14:19:52.442Z",
+  "files": [
+    {
+      "file": "dist/main/bootstrap.bundle.js",
+      "sha256": "e544aefae7525aeca0b9c1121d0ed02190af48c8eb1005f9f56dcbd9768ba208",
+      "match": true
+    },
+    {
+      "file": "dist/main/electron-entry.mjs",
+      "sha256": "082ae3d83ea39d4f7d95cdd48fc89e1da5dc0381a2f0faf5263beacda22df8f3",
+      "match": true
+    },
+    {
+      "file": "dist/preload/index.bundle.cjs",
+      "sha256": "20febd5ab17214578e6a916b567ec6c72dee692b592c2a605ce2335137d1c28a",
+      "match": true
+    },
+    {
+      "file": "dist/renderer/index.html",
+      "sha256": "5809f79f299f9abbcd809fe3b993199fa67676603e9892f85bbee541b3f2979e",
+      "match": true
+    },
+    {
+      "file": "gateway/main.js",
+      "sha256": "e35048a824d3ea384b3a60bff5ca6f99c83f2e3aaef784d2802344d2c61777a2",
+      "match": true
+    },
+    {
+      "file": "config/account.json",
+      "sha256": "14f387ee8a29529ecfd2928858b8ef66d8e886da4d543ebff31994547be5587c",
+      "match": true
+    },
+    {
+      "file": "kernel/codex-app-server",
+      "sha256": "9bfc07cc6070a11ce5d38ce12bd00ca6b6937db91ad2f43fca39740bd48d75fc",
+      "match": true
+    }
+  ]
+}

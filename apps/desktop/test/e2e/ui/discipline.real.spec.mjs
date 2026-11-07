@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { approveCommandOnce } from './command-approvals.mjs';
 
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 
@@ -40,16 +41,7 @@ async function runUntilIdle(page, { stopAfterFirstCommand = false } = {}) {
   await expect(composer).toHaveAttribute('data-run-state', /running|pending/, { timeout: 60_000 });
   const deadline = Date.now() + 240_000;
   while (Date.now() < deadline) {
-    const card = page.getByLabel('需要你确认');
-    if (await card.count()) {
-      const allow = card.first().getByRole('button', { name: '允许这一次' });
-      if (!(await allow.count())) {
-        // 没有「允许这一次」的卡（追问、连接器授权……）：把它画了什么交出来，而不是等 30 秒超时
-        throw new Error(`弹出了一张没有「允许这一次」的卡：${await card.first().innerText()}`);
-      }
-      await allow.click();
-      continue;
-    }
+    if (await approveCommandOnce(page)) continue;
     // 认过程组而不是命令条目：过程组默认折叠，运行中命令条目不渲染（同 acceptance.real.spec，2026-10-22）
     if (
       stopAfterFirstCommand &&

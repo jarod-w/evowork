@@ -128,12 +128,12 @@ def main() -> None:
     kind = path.suffix.lower()
     facts = {".pptx": pptx_facts, ".docx": docx_facts, ".xlsx": xlsx_facts}.get(kind)
     if facts is None:
-        print(json.dumps({"error": f"不认识的类型 {kind}"}, ensure_ascii=False))
+        print(json.dumps({"error": f"不认识的类型 {kind}"}, ensure_ascii=True))
         return
     try:
-        print(json.dumps(facts(path), ensure_ascii=False))
+        print(json.dumps(facts(path), ensure_ascii=True))
     except Exception as error:  # noqa: BLE001 —— 打不开本身就是要记下的事实
-        print(json.dumps({"error": f"打不开：{type(error).__name__}: {error}"}, ensure_ascii=False))
+        print(json.dumps({"error": f"打不开：{type(error).__name__}: {error}"}, ensure_ascii=True))
 
 
 if __name__ == "__main__":

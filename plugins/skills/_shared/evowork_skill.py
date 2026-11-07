@@ -37,10 +37,28 @@ import hashlib
 from pathlib import Path
 from typing import Any, Iterable
 
+# The command protocol consumes UTF-8 bytes, independently of the Windows locale.
+# This also covers argparse help and validation errors before runtime re-entry.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 EXIT_OK = 0
 EXIT_INVALID_CONTENT = 2
 EXIT_RUNTIME_MISSING = 3
 EXIT_MISSING_ASSET = 4
+
+
+def is_link_or_junction(path: Path) -> bool:
+    """Reject Windows reparse points as well as POSIX symbolic links."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
+
 #: 转换器在、也跑了，但没转成（超时、文档坏了、被隔离拦下）。与 3 分开：报成「缺运行时」会让用户去重装
 EXIT_CONVERSION_FAILED = 5
 #: 执行到一半出错，而且没能全部撤回：磁盘上是半完成状态，消息里逐条列出哪些改动已经生效（batch-files）
@@ -156,10 +174,18 @@ def ensure_office_runtime(modules: Iterable[str]) -> None:
     interpreter = office_python()
     if interpreter is None:
         return
+    argv = [str(interpreter), *sys.argv]
+    env = {**os.environ, "EVOWORK_SKILL_REEXEC": "1"}
+    if os.name == "nt":
+        # Windows 没有 POSIX 的进程替换语义；execve 在本机还会崩溃，
+        # 导致调用方拿不到渲染结果。等待子进程并继承管道，原样返回退出码。
+        import subprocess
+
+        sys.exit(subprocess.call(argv, env=env))
     os.execve(
         str(interpreter),
-        [str(interpreter), *sys.argv],
-        {**os.environ, "EVOWORK_SKILL_REEXEC": "1"},
+        argv,
+        env,
     )
 
 
@@ -330,7 +356,7 @@ def load_template(skill_root: Path, template_id: str) -> dict:
 
 def read_content(path: Path) -> dict:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         fail(EXIT_INVALID_CONTENT, f"找不到内容文件：{path}")
     except json.JSONDecodeError as err:

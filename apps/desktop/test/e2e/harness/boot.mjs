@@ -14,10 +14,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, session } from 'electron';
 
 import { bootstrap, createServiceHost } from '../../../dist/main/bootstrap.bundle.js';
+import { installApprovalWire } from './approval-wire.mjs';
 import { publishControls, waitFor } from './runner.mjs';
+import { kernelTestEnvironment } from './app-test-path.mjs';
 import { createDeliveryRpcFaults } from '../../../../../services/kernel-adapter/test-support/delivery-rpc-faults.mjs';
 import { createMemoryRpcFaults } from '../../../../../services/kernel-adapter/test-support/memory-rpc-faults.mjs';
 
@@ -76,6 +78,7 @@ export async function bootApp({
   const deliveryFaults =
     process.env.EVOWORK_UI_DELIVERY_RPC_FAULT === '1' ? createDeliveryRpcFaults() : undefined;
   let kernelChild;
+  let gatewayChild;
   const kernelLifecycle = [];
   const expectedKernelExits = new WeakSet();
   const memoryImportFaults =
@@ -92,10 +95,15 @@ export async function bootApp({
             command === appServerPath
               ? {
                   ...spawnOptions,
-                  env: { ...spawnOptions.env, HOME: home },
+                  env: kernelTestEnvironment(
+                    spawnOptions.env,
+                    home,
+                    process.env.EVOWORK_UI_MODEL_KEY,
+                  ),
                 }
               : spawnOptions,
           );
+          if (gatewayEntryPath && args.includes(gatewayEntryPath)) gatewayChild = child;
           if (command === appServerPath) {
             kernelChild = child;
             kernelLifecycle.push({ kind: 'started', pid: child.pid, at: Date.now() });
@@ -132,6 +140,7 @@ export async function bootApp({
        * actionability 检查会一直等不到「可点击」。
        */
       createWindow: (options) => new BrowserWindow({ ...options, show }),
+      session: session,
       normalizeImage: (bytes) => {
         const image = nativeImage.createFromBuffer(bytes),
           size = image.getSize();
@@ -176,6 +185,8 @@ export async function bootApp({
       }),
   });
 
+  if (process.env.EVOWORK_UI_REAL_MODEL === '1')
+    installApprovalWire(result.host.adapter.approvals, join(home, 'approval-wire.jsonl'));
   const window = result.window;
   const evaluate = (source) => window.webContents.executeJavaScript(source, true);
   /*
@@ -195,6 +206,7 @@ export async function bootApp({
     openedExternalUrls,
     memoryImportFaults,
     deliveryFaults,
+    ...(gatewayChild?.pid ? { gatewayPid: gatewayChild.pid } : {}),
     /** 当前内核子进程的 pid。重启后会换一个，所以每次都重新读，不要缓存 */
     kernelPid: () => kernelChild?.pid,
     kernelLifecycle: () => kernelLifecycle.map((event) => ({ ...event })),

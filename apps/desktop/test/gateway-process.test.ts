@@ -27,6 +27,8 @@ function fakeSpawn() {
     stderr: { on: vi.fn() },
     on: vi.fn(),
     kill: vi.fn(),
+    connected: true,
+    send: vi.fn((_message: unknown, callback: (error: Error | null) => void) => callback(null)),
   };
   const spawnFn = vi.fn(() => child);
   return { child, spawnFn: spawnFn as unknown as typeof import('node:child_process').spawn };
@@ -151,6 +153,26 @@ describe('起不起本机网关：判据是 app.toml 的 mode（D11）', () => {
 });
 
 describe('起起来之后的参数', () => {
+  it('续期只通过父子进程 IPC 更新令牌，不重启网关', () => {
+    const { child, spawnFn } = fakeSpawn();
+    const gateway = startLocalGateway({
+      baseUrl: 'http://127.0.0.1:9999/v1',
+      runsLocally: true,
+      entryPath: entry(),
+      token: 'local-token',
+      env: { DEEPSEEK_API_KEY: 'k' },
+      spawnFn,
+    });
+    gateway.updateAccessToken?.('renewed-cloud-token');
+    expect(child.send).toHaveBeenCalledWith(
+      { type: 'evowork-account-token', accessToken: 'renewed-cloud-token' },
+      expect.any(Function),
+    );
+    expect(child.kill).not.toHaveBeenCalled();
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    gateway.stop();
+  });
+
   it('用 ELECTRON_RUN_AS_NODE 跑 —— **用户机器上没有 node**', () => {
     const { spawnFn } = fakeSpawn();
     const path = entry();

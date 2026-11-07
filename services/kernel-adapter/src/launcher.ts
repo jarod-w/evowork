@@ -14,8 +14,9 @@
  *
  * 所以桌面壳现在只传路径，不知道环境变量叫什么。
  */
-import { spawn, type SpawnOptions } from 'node:child_process';
+import { spawn, spawnSync, type SpawnOptions } from 'node:child_process';
 import { join } from 'node:path';
+import type { Logger } from '@evowork/logging';
 
 import type { KernelLauncher, KernelProcess } from './session.js';
 
@@ -35,6 +36,7 @@ export interface SpawnLauncherOptions {
   readonly spawnFn?: typeof spawn;
   /** 内核 stderr 的处理。默认丢弃 —— 见下面的注释 */
   readonly onStderr?: (chunk: string) => void;
+  readonly logger?: Logger;
 }
 
 /** 本机回环：内核发往本机网关、hook 与 MCP 子进程的流量都在这里 */
@@ -110,6 +112,7 @@ export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLaunch
         }
       }
 
+      let stopRequested = false;
       return {
         writeLine: (line) => {
           stdin.write(`${line}\n`);
@@ -121,6 +124,29 @@ export function createSpawnLauncher(options: SpawnLauncherOptions): KernelLaunch
           child.on('exit', (code, signal) => handler({ code, signal }));
         },
         kill: () => {
+          if (stopRequested) return;
+          stopRequested = true;
+          if (
+            process.platform === 'win32' &&
+            Number.isSafeInteger(child.pid) &&
+            child.pid! > 1 &&
+            child.pid !== process.pid &&
+            child.exitCode === null &&
+            child.signalCode === null
+          ) {
+            // Windows SIGTERM ends only the root; its MCP/git children can keep
+            // inherited pipes alive after a successful desktop shutdown.
+            const result = spawnSync(
+              join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe'),
+              ['/PID', String(child.pid), '/T', '/F'],
+              { stdio: 'ignore', windowsHide: true, timeout: 5000 },
+            );
+            if (!result.error && result.status === 0) return;
+            options.logger?.warn('kernel.process_tree.stop_failed', {
+              errorClass: result.error?.name ?? 'ProcessExitError',
+              exitCode: result.status,
+            });
+          }
           child.kill();
         },
       };

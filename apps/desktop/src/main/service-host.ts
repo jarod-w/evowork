@@ -5,6 +5,7 @@ import { inspectOcrBundle, installOcrBundle } from '@evowork/runtime-installer';
 import { renderPdfPages } from '@evowork/ingest/pdf-pages.js';
 import { verifyOcrRuntime } from '@evowork/ingest';
 import { createAttachmentTextHost } from './attachment-text-host.js';
+import { isDescendantPath } from './local-paths.js';
 import { createLibraryHost, type LibraryHost } from './library-host.js';
 import { parse as parseImageRequirements } from 'smol-toml';
 import { createImageHost } from './image-host.js';
@@ -800,7 +801,8 @@ export function ensureModeInstructions(paths: EvoworkPaths, configDir: string): 
 }
 
 function sha256Hex(data: Buffer): string {
-  return createHash('sha256').update(data).digest('hex');
+  // 已发布的模式以 LF 登记；Windows 检出或旧安装的 CRLF 不代表用户修改过内容。
+  return createHash('sha256').update(data.toString('utf8').replaceAll('\r\n', '\n')).digest('hex');
 }
 
 /** 读不到或读坏了就当作「没有任何已知版本」：宁可不升级，也不覆盖一份可能被改过的文件 */
@@ -1255,7 +1257,11 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   const fromKernel = readGatewayBaseUrl(options.paths.kernelHome, baseEnv);
   const gatewayBaseUrl = isLocalGateway(fromKernel) ? fromKernel : DEFAULT_GATEWAY_BASE_URL;
   const account = createAccountSession({
-    ...originsFromEnv(baseEnv),
+    onSessionChanged: async () => {
+      if (stopping) return;
+      gateway?.updateAccessToken?.(account.accessToken() ?? '');
+    },
+    ...originsFromEnv(baseEnv, options.configDir),
     vault: modelAccess.accountVault,
     readFlag: (key) => readMeta(store.db, key),
     writeFlag: (key, value) => writeMeta(store.db, key, value),
@@ -1581,6 +1587,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       launcher: createSpawnLauncher({
         appServerPath: options.appServerPath,
         kernelHome: options.paths.kernelHome,
+        logger,
         /*
          * 内核的进程环境。hook 是**内核起的子进程**，环境从这里继承 ——
          * 所以 `EVOWORK_AUDIT_LOG` 必须在这一层给，而不是给我们自己的进程。
@@ -1597,6 +1604,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
           ...fileHost.environment,
           MPLCONFIGDIR: join(options.paths.home, 'cache', 'matplotlib'),
           PYTHONDONTWRITEBYTECODE: '1',
+          PYTHONUTF8: '1',
+          PYTHONIOENCODING: 'utf-8',
           ...(options.prebuiltRuntimeDir !== undefined && !process.env.EVOWORK_OFFICE_PYTHON?.trim()
             ? {
                 EVOWORK_OFFICE_PYTHON:
@@ -2443,7 +2452,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
             path = await realpath(artifact.path);
           if (classifyPath(path, { home: homedir(), workspaceRoot: root }).verdict !== 'allow')
             return false;
-          return path.startsWith(`${root}/`) && path === artifact.path;
+          return isDescendantPath(root, path) && path === artifact.path;
         } catch {
           return false;
         }
@@ -2822,8 +2831,8 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     },
     sharePorts: shareFlowPorts(),
     accountPorts: {
-      startLogin: async () => {
-        const result = await account.startLogin();
+      startLogin: async (input) => {
+        const result = await account.startLogin(input?.signup === true ? 'signup' : 'signin');
         if (result.ok) {
           await refreshPolicy();
           await restartGateway();
@@ -3037,6 +3046,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     async stop() {
       if (stopping) return;
       stopping = true;
+      account.dispose();
       /*
        * 网关必须在第一个 await 之前停。
        *

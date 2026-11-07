@@ -108,6 +108,7 @@ export type UiEvent =
       readonly usage: ThreadTokenUsage;
     }
   | { readonly type: 'queue-changed'; readonly threadId: string }
+  | { readonly type: 'subtasks-changed'; readonly threadId: string }
   | { readonly type: 'task-goal-changed'; readonly threadId: string; readonly goal?: ThreadGoal }
   | { readonly type: 'skills-changed' }
   | { readonly type: 'connectors-changed' }

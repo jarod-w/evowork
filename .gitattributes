@@ -1,0 +1,2 @@
+# Match Prettier and the byte hashes used for shipped mode instructions on every OS.
+* text=auto eol=lf

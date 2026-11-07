@@ -545,6 +545,9 @@ export function createAdapter(options: AdapterOptions) {
       });
       if (response?.thread && !store.threads.get(threadId)) {
         store.threads.upsertFromThread(response.thread);
+        const parentThreadId = response.thread.parentThreadId;
+        if (parentThreadId)
+          options.onUiEvent?.({ type: 'subtasks-changed', threadId: parentThreadId });
       }
     } catch (err) {
       logger?.warn('adapter.subagent.project_failed', { threadId, ...errorFields(err) });
@@ -992,6 +995,46 @@ export function createAdapter(options: AdapterOptions) {
       consolidatedThreads: status.v2ConsolidatedThreads,
       ready: status.v2Ready,
     };
+  }
+
+  const historyThreadLoads = new Map<
+    string,
+    { readonly generation: number; readonly request: Promise<ThreadReadResponse> }
+  >();
+
+  /** Reading a loaded thread must not replay pending approvals via thread/resume. */
+  function readHistoryThread(threadId: string): Promise<ThreadReadResponse> {
+    const generation = session.generation;
+    const pending = historyThreadLoads.get(threadId);
+    if (pending?.generation === generation) return pending.request;
+    const request = (async () => {
+      let current: ThreadReadResponse | undefined;
+      try {
+        current = await session.peer.request<ThreadReadResponse>(METHOD.threadRead, {
+          threadId,
+          includeTurns: true,
+        });
+      } catch (error) {
+        if (session.generation !== generation || session.phase !== 'ready') throw error;
+        // A transient read error is not evidence that a live thread needs resuming.
+        if (!(error instanceof JsonRpcCallError) || !error.isMethodNotFound) throw error;
+      }
+      if (current && current.thread.status.type !== 'notLoaded') return current;
+      if (session.generation !== generation || session.phase !== 'ready')
+        throw new TransportClosedError('执行内核连接已变化，请重新打开任务');
+      return session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
+        threadId,
+        config: await memoryThreadConfig({ model: store.threads.get(threadId)?.model, threadId }),
+      });
+    })();
+    historyThreadLoads.set(threadId, { generation, request });
+    void request
+      .finally(() => {
+        if (historyThreadLoads.get(threadId)?.request === request)
+          historyThreadLoads.delete(threadId);
+      })
+      .catch(() => undefined);
+    return request;
   }
 
   // These are thread/start and cold thread/resume overrides, never global writes.
@@ -2132,6 +2175,8 @@ export function createAdapter(options: AdapterOptions) {
     },
 
     async listQueuedInputs(threadId: string): Promise<readonly QueuedInput[]> {
+      // Ephemeral conversations cannot have native queued submissions.
+      if (ephemeralThreadIds.has(threadId)) return [];
       const response = await callExperimental<{
         readonly data?: readonly { readonly id?: string; readonly input?: readonly UserInput[] }[];
       }>(EXPERIMENTAL_METHOD.threadQueueList, { threadId, limit: 100 }, () => ({ data: [] }));
@@ -2431,12 +2476,7 @@ export function createAdapter(options: AdapterOptions) {
       const cached = store.readItemDigest(threadId);
       const revision = threadRevisions.get(threadId);
       await protectStoppedQueue(threadId);
-      const resumed = session.peer
-        .request<ThreadResumeResponse>(METHOD.threadResume, {
-          threadId,
-          config: await memoryThreadConfig({ model: store.threads.get(threadId)?.model, threadId }),
-        })
-        .catch(() => undefined);
+      const resumed = readHistoryThread(threadId).catch(() => undefined);
       const items = (async () => {
         const response = await resumed;
         return listAllThreadItemsWithFallback(

@@ -1,0 +1,15 @@
+{
+  "startedAt": "2026-10-31T13:08:13.718Z",
+  "home": "/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-account-home-FNka6R",
+  "mode": "packaged-smoke",
+  "checks": [
+    "desktop-signup-real-mail-verification-pkce-login",
+    "encrypted-refresh-restored-after-desktop-restart",
+    "real-reset-mail-new-password-and-desktop-relogin"
+  ],
+  "verifyMailDigest": "5b6534950b0126082cb12a060c0917e4f3920b00ad38414f44d476dec90abf33",
+  "resetMailDigest": "dbc0b1f13d46081861324ba82bb8de277193dc1931e7096c0fc703fb500633ae",
+  "completedAt": "2026-10-31T13:09:01.205Z",
+  "cloudTestAccountDeleted": true,
+  "localTestHomeRemoved": true
+}

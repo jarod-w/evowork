@@ -231,9 +231,9 @@ describe('渲染层不引服务层的 barrel（浏览器环境没有 node 内置
 });
 
 /*
- * **每个顶层视图的根类都要出现在 `.ew-app >` 的 flex 规则里。**
+ * **每个顶层视图的根类都要出现在 `.ew-app >` 的主内容槽规则里。**
  *
- * `.ew-app` 是 `display: flex`，主内容区靠 `flex: 1; min-width: 0` 才铺开。
+ * 外壳用 grid 让通知独立占位，主内容区位于可伸展的第二列、第三行。
  * 漏掉一个的表现是那一页**缩成左上角一小块**，而页面组件自己的样式全是对的 ——
  * 2026-09-06 接四个页面时 `.ew-page` 就是这样：类名是我新造的，CSS 里一条规则都没有。
  *
@@ -241,12 +241,15 @@ describe('渲染层不引服务层的 barrel（浏览器环境没有 node 内置
  * 这条断言比"每个类都要有规则"窄得多（那样要给 35 个纯语义类挨个开白名单），
  * 但它守的正是**会让整页看起来坏掉**的那一种。
  */
-describe('主内容区的每个根类都要参与 .ew-app 的 flex 布局', () => {
-  const VIEW_ROOTS = ['ew-home', 'ew-task-workspace', 'ew-page', 'ew-library'];
+describe('主内容区的每个根类都要参与 .ew-app 的布局', () => {
+  const VIEW_ROOTS = ['ew-home', 'ew-task-workspace', 'ew-page', 'ew-library', 'ew-project-detail'];
 
-  it('四个视图根都在 `.ew-app >` 的规则里', () => {
-    const rule = /\.ew-app\s*>[^{]*\{[^}]*flex:\s*1[^}]*\}/.exec(code)?.[0] ?? '';
-    expect(rule, '找不到 `.ew-app > ... { flex: 1 }` 这条规则').not.toBe('');
+  it('所有视图根都占用可伸展的主内容槽', () => {
+    const shell = /\.ew-app\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(shell).toContain('grid-template-columns: auto minmax(0, 1fr)');
+    const rule =
+      /\.ew-app\s*>[^{]*\{[^}]*grid-column:\s*2[^}]*grid-row:\s*3[^}]*\}/.exec(code)?.[0] ?? '';
+    expect(rule, '找不到各顶层视图共用的主内容槽规则').not.toBe('');
     for (const root of VIEW_ROOTS) {
       expect(rule, `${root} 不在 .ew-app > 的规则里 —— 那一页会缩成左上角一小块`).toContain(
         `.${root}`,

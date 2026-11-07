@@ -412,7 +412,9 @@ describe('电脑操控宿主边界', () => {
   it('用户数据路径过长时仍能启动短路径私有 socket', async () => {
     const s = setup(true, 'long-user-profile-'.repeat(5));
     try {
-      expect(s.host.environment.EVOWORK_CUA_SOCKET).toMatch(/^\/tmp\/ew-cua-/);
+      expect(s.host.environment.EVOWORK_CUA_SOCKET).toMatch(
+        process.platform === 'win32' ? /^\\\\\.\\pipe\\ew-cua-/ : /^\/tmp\/ew-cua-/,
+      );
       expect((await s.host.setEnabled(true)).state).toBe('ready');
       expect(existsSync(s.host.environment.EVOWORK_CUA_SOCKET)).toBe(true);
     } finally {

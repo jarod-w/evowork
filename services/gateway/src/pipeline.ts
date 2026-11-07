@@ -44,7 +44,7 @@ export interface PipelineDeps {
   readonly now?: () => number;
   readonly newResponseId?: () => string;
   /**
-   * 上游**两片之间**最多允许安静多久（默认见 `idle.ts`）。超过就判这条流已经死了。
+   * 上游开始生成后，模型输出最多可以停顿多久（默认见 `idle.ts`）。
    *
    * 在这之前网关对"上游不说话"没有任何判断：`for await` 会一直等下去，
    * 而等到最后替我们做判断的是内核 —— 300 秒后它发
@@ -56,7 +56,7 @@ export interface PipelineDeps {
    */
   readonly upstreamIdleMs?: number;
   /**
-   * 拿到响应头之后、**第一片**到达之前的等待上限。默认 300 秒。
+   * 拿到响应头之后、模型开始输出之前的等待上限。默认 300 秒。
    *
    * 与上一项分开，是因为它们量级本来就不同：首片要等上游读完整个上下文
    * （长上下文 + 思考模型能到分钟级），而流动起来之后的 120 秒空档只意味着连接死了。
@@ -252,23 +252,20 @@ export async function* runPipeline(
         }
       })();
   const lines = source[Symbol.asyncIterator]();
-  /**
-   * 已经要来、还没到的那一片。**必须跨轮保留**：看门狗赢了这一轮之后再调一次
-   * `lines.next()` 就是对同一个迭代器的并发 next，行会错乱（而且错得很难看出来）。
-   */
-  let pending: Promise<IteratorResult<string>> | undefined;
-  let sawLine = false;
+  // MiMo can keep an SSE connection open with comment frames before or between tokens.
+  // Give model progress a deadline, so heartbeats alone cannot keep a child turn running.
+  let lastProgressAt = performance.now();
+  let budget = firstChunkMs;
 
   try {
     for (;;) {
-      pending ??= lines.next();
-      const budget = sawLine ? idleMs : firstChunkMs;
-      const step = await raceIdle(pending, budget);
+      const remaining = budget - (performance.now() - lastProgressAt);
+      const pending = budget <= 0 || remaining > 0 ? lines.next() : undefined;
+      const step = pending ? await raceIdle(pending, remaining) : STALLED;
       if (step === STALLED) {
         // 放弃这一片，但**必须接住它后面的拒绝**：abort 之后它几乎一定会 reject，
         // 没人接的 promise 拒绝在 Node 里是直接把网关进程带走
-        void pending.catch(() => undefined);
-        pending = undefined;
+        void pending?.catch(() => undefined);
         watchdog.abort();
         log?.warn('gateway.stream.stalled', {
           reason: 'UPSTREAM_IDLE',
@@ -293,9 +290,7 @@ export async function* runPipeline(
         });
         return;
       }
-      pending = undefined;
       if (step.done) break;
-      sawLine = true;
       const line = step.value;
       const payload = parseSseData(line);
       if (payload === undefined) continue;
@@ -324,6 +319,21 @@ export async function* runPipeline(
         });
         yield* translator.fail(mapped);
         return;
+      }
+
+      if (
+        chunk.usage ||
+        chunk.choices?.some(({ delta, finish_reason }) =>
+          Boolean(
+            finish_reason ||
+            delta?.content ||
+            delta?.reasoning_content ||
+            delta?.tool_calls?.length,
+          ),
+        )
+      ) {
+        lastProgressAt = performance.now();
+        budget = idleMs;
       }
 
       const events = translator.push(chunk);

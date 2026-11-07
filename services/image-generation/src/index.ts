@@ -12,7 +12,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ImageApiError, type ImageRequest, type ImageResponse } from '@evowork/gateway';
 import { createArtifactRepo, readMeta, writeMeta, type SqliteLike } from '@evowork/store';
 import { inspectPng } from './png.js';
@@ -69,7 +69,7 @@ export interface ImageServiceOptions {
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 function inside(root: string, path: string) {
   const rel = relative(root, path);
-  return rel !== '' && !rel.startsWith('..' + sep) && rel !== '..' && !rel.startsWith(sep);
+  return rel !== '' && !rel.startsWith('..' + sep) && rel !== '..' && !isAbsolute(rel);
 }
 function securePath(root: string, path: string) {
   const realRoot = realpathSync(root);
@@ -330,7 +330,8 @@ export function createImageService(options: ImageServiceOptions) {
         height: size.height,
       });
       writeFileSync(partial, bytes, { mode: 0o600, flag: 'wx' });
-      const fd = openSync(partial, 'r');
+      // Windows FlushFileBuffers requires a writable handle.
+      const fd = openSync(partial, 'r+');
       try {
         fsyncSync(fd);
       } finally {
@@ -342,11 +343,15 @@ export function createImageService(options: ImageServiceOptions) {
       }
       if (existsSync(path)) throw new ImageApiError('IMAGE_OUTPUT_EXISTS');
       renameSync(partial, path);
-      const directory = openSync(dirname(path), 'r');
-      try {
-        fsyncSync(directory);
-      } finally {
-        closeSync(directory);
+      // Node cannot open/fsync a directory on Windows. The file has been flushed
+      // before the atomic rename; retain directory fsync on platforms supporting it.
+      if (process.platform !== 'win32') {
+        const directory = openSync(dirname(path), 'r');
+        try {
+          fsyncSync(directory);
+        } finally {
+          closeSync(directory);
+        }
       }
       index(get(op.id)!);
     } catch (e) {
