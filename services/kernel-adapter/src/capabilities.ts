@@ -76,6 +76,14 @@ export const DEGRADATION: Readonly<Record<string, Degradation>> = Object.freeze(
     fallback: '只在本机移除记录',
     userVisible: '移除只在这台电脑上生效。',
   },
+  [EXPERIMENTAL_METHOD.threadBackgroundTerminalsList]: {
+    fallback: '仅中断回合，不能确认后台命令退出；工作台停止标失败并保留记录',
+    userVisible: '后台命令停止未确认，请检查节点任务，必要时退出应用。',
+  },
+  [EXPERIMENTAL_METHOD.threadBackgroundTerminalsTerminate]: {
+    fallback: '同后台终端枚举缺失，不用 OS pid 或额外 shell 兜底',
+    userVisible: '后台命令停止未确认，请检查节点任务，必要时退出应用。',
+  },
   [EXPERIMENTAL_METHOD.threadQueueAdd]: {
     fallback: '前端本地队列：执行中的输入先存本机，turn/completed 后自动发送',
     userVisible: '排队仍可用（队列只在这台电脑上）。',

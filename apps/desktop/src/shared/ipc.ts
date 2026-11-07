@@ -340,6 +340,7 @@ export type ModelUnavailableReason =
   'no-token' | 'no-keys' | 'unauthorized' | 'unreachable' | 'empty' | 'http' | 'broken-install';
 
 export interface SendInput {
+  readonly agentId?: string | undefined;
   /** 仅用于本机崩溃恢复，不进入模型输入或日志。 */
   readonly recovery?:
     | {
@@ -1861,4 +1862,26 @@ export interface MemoryImportInput {
 export interface MemoryImportResult {
   readonly importId?: string | undefined;
   readonly refused?: string | undefined;
+}
+
+export interface AgentWorkspaceActions {
+  listAgentWorkspace(): Promise<readonly import('@evowork/store').AgentWorkspaceItem[]>;
+  saveAgentWorkspace(input: {
+    agent: import('@evowork/store').AgentWorkspaceItem;
+  }): Promise<import('@evowork/store').AgentWorkspaceItem>;
+  deleteAgentWorkspace(input: { id: string; revision: number }): Promise<void>;
+  startAgentWorkspaceRun(input: {
+    agentId: string;
+    prompt: string;
+    workspaceId?: string | undefined;
+    modelId?: string | undefined;
+  }): Promise<import('@evowork/store').AgentWorkspaceRun>;
+  getAgentWorkspaceRun(input: {
+    agentId: string;
+  }): Promise<import('@evowork/store').AgentWorkspaceRun | undefined>;
+  decideAgentWorkspaceRun(input: {
+    runId: string;
+    nodeId?: string | undefined;
+    action: 'confirm' | 'stop';
+  }): Promise<import('@evowork/store').AgentWorkspaceRun>;
 }

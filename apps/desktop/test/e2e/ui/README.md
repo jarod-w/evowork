@@ -206,3 +206,11 @@ jsdom **不做布局**，也发不出可信输入事件。受控 `textarea` 的�
 `next-actions.real.spec.mjs` 使用宿主网关及 `EVOWORK_UI_MODEL_PRESET` 指定的 `mimo-v2.6-flash` 或 `deepseek-flash`。随机本机文件与两阶段业务需求不指定建议工具名，核对模型主动提交的候选、真实 JSON/Markdown 交付、草稿保护、采纳零发送、编辑后发送，以及等待补充/关闭后刷新恢复。`EVOWORK_UI_MODEL_KEY` 只经进程环境输入，禁止在命令参数或仓库文件中填写。入口：`pnpm exec playwright test next-actions.real.spec.mjs --project=real --retries=0`。本机观测器仅记录这两个指定厂商的型号、端点与响应状态，不记录请求正文或鉴权。
 
 `next-actions.spec.mjs` 另覆盖纯文本漏调时官方 Stop 在原回合提醒一次，以及模型忽略提醒仍可结束，防止无限补报或自动执行。2026-10-21 两模型各 2/2 的完整结果、前轮漏调失败与实际 Stop 历史见[验收记录](../../../../../docs/verification/2026-10-21-next-actions-real.md)。
+
+## 智能体工作台
+
+`agent-workspace.spec.mjs` 保留配置与布局主旅程；`agent-workspace-boundaries.spec.mjs` 验证筛选/离开保护、过期保存与删除、IPC 校验、human/review 拒绝、流式停止、上游失败和一路并发；`agent-workspace-restart.spec.mjs` 关闭整个 App 后复用隔离 HOME，验证中断与不重投。夹具配置经公开 IPC 保存，运行与历史也从公开接口读取。
+
+`agent-workspace.real.spec.mjs` 验角色快照和串行交接；`agent-workspace-execution.real.spec.mjs` 用真实模型验双成员同时运行、随机文件计算交付及停止真实本机命令。后者的受控程序只在隔离项目中读写，90 秒有界；停止后释放门闩也不能产生完成文件。通过的隔离 HOME 正常清理，失败保留证据。
+
+总计 15 条（10 fake / 5 real），使用 `EVOWORK_UI_MODEL_PRESET=mimo-v2.6-flash`，密钥经隐藏输入注入 `EVOWORK_UI_MODEL_KEY`，运行 `node node_modules/@playwright/test/cli.js test agent-workspace --project=fake --project=real --retries=0`。修复前失败、最终验收与覆盖边界见[扩展记录](../../../../../docs/verification/2026-11-07-agent-workspace-playwright-expanded.md)。

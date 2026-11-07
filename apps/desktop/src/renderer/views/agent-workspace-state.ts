@@ -1,4 +1,4 @@
-/** 前端评审模型。示例不代表已安装角色，所有编辑结果仅存于当前 App 会话。 */
+/** 智能体编辑辅助；运行协议与校验由本机服务负责。 */
 export interface AgentCapability {
   readonly id: string;
   readonly name: string;
@@ -16,8 +16,6 @@ export const AGENT_SKILLS: readonly AgentCapability[] = [
 export const AGENT_CONNECTORS: readonly AgentCapability[] = [
   { id: 'files', name: '本地文件', description: '任务工作目录中的文件' },
   { id: 'browser', name: '浏览器', description: '检索与浏览网页内容' },
-  { id: 'feishu', name: '飞书', description: '示例选项 · 尚未接入' },
-  { id: 'wecom', name: '企业微信', description: '示例选项 · 尚未接入' },
 ];
 export const AGENT_ARCHITECTURES = [
   {
@@ -36,40 +34,22 @@ export const AGENT_ARCHITECTURES = [
   { id: 'custom', name: '自定义流程', description: '按节点顺序与进入条件执行', icon: 'settings' },
 ] as const;
 export type AgentArchitecture = (typeof AGENT_ARCHITECTURES)[number]['id'];
-export interface AgentRole {
-  id: string;
-  name: string;
-  description: string;
-  instructions: string;
-  skills: string[];
-  connectors: string[];
-}
-interface AgentBase extends AgentRole {
-  example: boolean;
-  icon: string;
-}
-export interface SingleAgentDraft extends AgentBase {
-  kind: 'single';
-}
-export interface AgentTeamMember extends AgentRole {
-  sourceAgentId?: string | undefined;
-  lead: boolean;
-}
-export interface AgentFlowNode {
-  id: string;
-  name: string;
-  memberId: string;
-  input: string;
-  output: string;
-  condition: 'success' | 'review' | 'human';
-}
-export interface TeamAgentDraft extends AgentBase {
-  kind: 'team';
-  architecture: AgentArchitecture;
-  members: AgentTeamMember[];
-  nodes: AgentFlowNode[];
-}
-export type AgentWorkspaceItem = SingleAgentDraft | TeamAgentDraft;
+export type {
+  AgentRole,
+  AgentWorkspaceItem,
+  SingleAgentDraft,
+  TeamAgentDraft,
+  AgentTeamMember,
+  AgentFlowNode,
+} from '@evowork/store/agent-workspace-model';
+import type {
+  AgentWorkspaceItem,
+  SingleAgentDraft,
+  TeamAgentDraft,
+  AgentTeamMember,
+  AgentFlowNode,
+} from '@evowork/store/agent-workspace-model';
+export { agentFlowBatches } from '@evowork/store/agent-workspace-model';
 
 export function newSingleAgent(): SingleAgentDraft {
   return {
@@ -96,10 +76,7 @@ export function memberFromAgent(agent: SingleAgentDraft): AgentTeamMember {
     lead: false,
   };
 }
-export function newTeamAgent(
-  singles: readonly SingleAgentDraft[],
-  example = false,
-): TeamAgentDraft {
+export function newTeamAgent(singles: readonly SingleAgentDraft[]): TeamAgentDraft {
   const lead: AgentTeamMember = {
     ...newSingleAgent(),
     name: '主控智能体',
@@ -125,11 +102,11 @@ export function newTeamAgent(
   return {
     ...newSingleAgent(),
     kind: 'team',
-    name: example ? '经营分析协作团队' : '',
+    name: '',
     description: '多位专家分析业务数据与行业变化，复核后形成经营分析报告。',
     skills: [...new Set(members.flatMap((m) => m.skills))],
     icon: 'team',
-    example,
+    example: false,
     architecture: 'supervisor',
     members,
     nodes: [
@@ -140,62 +117,6 @@ export function newTeamAgent(
       node('汇总报告并交付', lead, '各节点的处理结果与证据', '经营分析报告'),
     ],
   };
-}
-export function createAgentWorkspaceExamples(): AgentWorkspaceItem[] {
-  const examples: SingleAgentDraft[] = [
-    {
-      ...newSingleAgent(),
-      id: 'example-report',
-      name: '报告撰写助手',
-      description: '把零散材料整理成结构清晰、重点突出的工作报告，让每一次交付都有条理。',
-      instructions:
-        '先确认用途、读者与交付格式。按背景、事实、分析、建议组织内容，信息不足时明确标注。',
-      skills: ['documents', 'writing'],
-      icon: 'file-text',
-      example: true,
-    },
-    {
-      ...newSingleAgent(),
-      id: 'example-data',
-      name: '数据分析专家',
-      description: '从业务数据中发现趋势与异常，解释关键指标变化，并给出有依据的建议。',
-      instructions: '核对数据口径与时间范围，再清洗与计算。每项结论附上指标依据，区分事实与推断。',
-      skills: ['analysis', 'charts'],
-      icon: 'pie-chart',
-      example: true,
-    },
-    {
-      ...newSingleAgent(),
-      id: 'example-research',
-      name: '行业研究助手',
-      description: '检索行业动态，对比市场信息，整理可追溯的研究结论与参考资料。',
-      instructions: '围绕研究问题检索多方来源，标明来源与日期，交叉核实关键事实。',
-      skills: ['search', 'documents'],
-      connectors: ['browser'],
-      icon: 'compass',
-      example: true,
-    },
-    {
-      ...newSingleAgent(),
-      id: 'example-review',
-      name: '风险复核专家',
-      description: '独立检查证据完整性和结论口径，帮助发现遗漏与潜在风险。',
-      instructions: '逐条核对证据与结论，标注证据不足和口径冲突，输出复核意见与待处理清单。',
-      skills: ['review', 'analysis'],
-      icon: 'shield',
-      example: true,
-    },
-  ];
-  return [...examples, newTeamAgent(examples.slice(1), true)];
-}
-export function agentFlowBatches(team: TeamAgentDraft): AgentFlowNode[][] {
-  const { nodes, architecture } = team;
-  if (nodes.length < 3 || architecture === 'custom' || architecture === 'handoff')
-    return nodes.map((n) => [n]);
-  if (architecture === 'parallel')
-    return [[nodes[0]!], nodes.slice(1, -1), [nodes.at(-1)!]].filter((b) => b.length > 0);
-  if (nodes.length >= 5) return [[nodes[0]!], nodes.slice(1, 3), ...nodes.slice(3).map((n) => [n])];
-  return nodes.map((n) => [n]);
 }
 export function validateAgentDraft(agent: AgentWorkspaceItem): string | undefined {
   if (!agent.name.trim()) return '请填写名称。';

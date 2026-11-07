@@ -1,0 +1,30 @@
+[
+  {
+    "case": "agent-workspace.real-MiMo-单体：角色指令生效，刷新保留配置，编辑和删除不改变已有任务快照-real",
+    "requests": 6,
+    "responses": 6,
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  {
+    "case": "agent-workspace.real-MiMo-团队：真实输出经人工确认后交接并汇总，刷新恢复等待状态-real",
+    "requests": 11,
+    "responses": 11,
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  }
+]

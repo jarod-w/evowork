@@ -1,3 +1,5 @@
+import type { AgentWorkspaceActions } from '../../shared/ipc.js';
+import type { AgentWorkspaceRun } from '@evowork/store/agent-workspace-model';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { renderIcon } from '../components/icons.js';
@@ -30,13 +32,18 @@ import {
 } from './agent-workspace-state.js';
 
 export interface AgentWorkspacePageProps {
+  readonly actions?: Partial<AgentWorkspaceActions> | undefined;
+  readonly modelId?: string | undefined;
+  readonly workspaceId?: string | undefined;
+  readonly onOpenTask?: ((id: string) => void) | undefined;
+  readonly onConversation?: ((id: string, text: string) => Promise<void>) | undefined;
   readonly items: readonly AgentWorkspaceItem[];
   readonly onItemsChange: (items: readonly AgentWorkspaceItem[]) => void;
   readonly onRegisterLeaveGuard?: ((guard: SettingsLeaveGuard | null) => void) | undefined;
 }
 type TeamTab = 'team' | 'flow' | 'monitor';
 type RunPreview = {
-  status: 'idle' | 'running' | 'waiting' | 'completed' | 'stopped';
+  status: 'idle' | 'running' | 'waiting' | 'completed' | 'stopped' | 'failed' | 'interrupted';
   batch: number;
   completed: string[];
   confirmed: string[];
@@ -44,7 +51,9 @@ type RunPreview = {
 };
 const RUN_COPY = {
   idle: '待运行',
-  running: '演示中',
+  running: '运行中',
+  failed: '失败',
+  interrupted: '已中断',
   waiting: '等待确认',
   completed: '已完成',
   stopped: '已停止',
@@ -54,9 +63,14 @@ const copy = <T,>(value: T): T => structuredClone(value);
 const capabilityNames = (ids: readonly string[]) =>
   ids.map((id) => AGENT_SKILLS.find((s) => s.id === id)?.name ?? id);
 
-/** 组合现有基础控件的页面；不持 IPC、后台客户端或模型执行入口。 */
+/** 本机配置与真实任务运行视图。 */
 export function AgentWorkspacePage({
   items,
+  actions,
+  modelId,
+  workspaceId,
+  onConversation,
+  onOpenTask,
   onItemsChange,
   onRegisterLeaveGuard,
 }: AgentWorkspacePageProps) {
@@ -73,9 +87,71 @@ export function AgentWorkspacePage({
   const [picked, setPicked] = useState<string[]>([]);
   const [chat, setChat] = useState<SingleAgentDraft | null>(null);
   const [chatPrompt, setChatPrompt] = useState('');
-  const [chatPreview, setChatPreview] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [runPrompt, setRunPrompt] = useState('');
   const [leavePrompt, setLeavePrompt] = useState(false);
-  const [run, setRun] = useState<RunPreview>(EMPTY_RUN);
+  const [realRun, setRealRun] = useState<AgentWorkspaceRun | null>(null);
+  const run: RunPreview = realRun
+    ? {
+        status: realRun.status,
+        batch: realRun.batch,
+        completed: realRun.nodes.filter((n) => n.status === 'completed').map((n) => n.nodeId),
+        confirmed: realRun.nodes.filter((n) => n.confirmed).map((n) => n.nodeId),
+        logs: realRun.logs,
+      }
+    : EMPTY_RUN;
+  const fail = (error: unknown) =>
+    setFeedback(error instanceof Error ? error.message : '操作失败，请重试。');
+  useEffect(() => {
+    let cancelled = false;
+    if (!actions?.listAgentWorkspace) {
+      setFeedback('智能体服务不可用。');
+      return;
+    }
+    void actions
+      .listAgentWorkspace()
+      .then((values) => {
+        if (!cancelled) onItemsChange(values);
+      })
+      .catch(fail);
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, onItemsChange]);
+  useEffect(() => {
+    if (!editor || editor.kind !== 'team' || !actions?.getAgentWorkspaceRun) return;
+    let cancelled = false;
+    let pending = false;
+    const refresh = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const value = await actions.getAgentWorkspaceRun!({ agentId: editor.id });
+        if (!cancelled) setRealRun(value ?? null);
+      } catch (error) {
+        if (!cancelled) fail(error);
+      } finally {
+        pending = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 700);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [editor?.id, actions]);
+  const decide = async (action: 'confirm' | 'stop', nodeId?: string) => {
+    if (!realRun || !actions?.decideAgentWorkspaceRun || busy) return;
+    setBusy(true);
+    try {
+      setRealRun(await actions.decideAgentWorkspaceRun({ runId: realRun.id, nodeId, action }));
+    } catch (error) {
+      fail(error);
+    } finally {
+      setBusy(false);
+    }
+  };
   const baseline = useRef('');
   const dirty = editor !== null && JSON.stringify(editor) !== baseline.current;
   const running = run.status === 'running' || run.status === 'waiting';
@@ -86,7 +162,7 @@ export function AgentWorkspacePage({
   const scroll = useRef<HTMLDivElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const requestLeave = useCallback((): Promise<boolean> => {
-    if (!leaveState.current.dirty && !leaveState.current.running) return Promise.resolve(true);
+    if (!leaveState.current.dirty) return Promise.resolve(true);
     if (leavePromise.current) return leavePromise.current;
     leavePromise.current = new Promise((resolve) => {
       leaveResolve.current = resolve;
@@ -115,49 +191,19 @@ export function AgentWorkspacePage({
     if (scroll.current) scroll.current.scrollTop = 0;
   }, [editor?.id, editor?.kind, teamTab]);
 
-  const team = editor?.kind === 'team' ? editor : null;
+  const team =
+    editor?.kind === 'team' ? (teamTab === 'monitor' && realRun ? realRun.agent : editor) : null;
   const batches = team ? agentFlowBatches(team) : [];
   const currentBatch = batches[run.batch] ?? [];
-  const waitingNode = currentBatch.find(
-    (n) => n.condition === 'human' && !run.confirmed.includes(n.id),
+  const waitingNode = team?.nodes.find((n) =>
+    realRun?.nodes.some((state) => state.nodeId === n.id && state.status === 'waiting'),
   );
-  useEffect(() => {
-    if (run.status !== 'running' || !team) return;
-    const batch = agentFlowBatches(team)[run.batch];
-    if (!batch) return;
-    const timer = window.setTimeout(() => {
-      const pending = batch.find((n) => n.condition === 'human' && !run.confirmed.includes(n.id));
-      setRun((previous) =>
-        pending
-          ? {
-              ...previous,
-              status: 'waiting',
-              logs: [...previous.logs, `等待人工确认：${pending.name}（模拟输出）`],
-            }
-          : {
-              ...previous,
-              batch: previous.batch + 1,
-              completed: [...previous.completed, ...batch.map((n) => n.id)],
-              status: previous.batch + 1 >= agentFlowBatches(team).length ? 'completed' : 'running',
-              logs: [
-                ...previous.logs,
-                ...batch.map((n) => `模拟完成：${n.name} · ${n.output || '节点处理结果'}`),
-                ...(previous.batch + 1 >= agentFlowBatches(team).length
-                  ? ['演示已完成；以上进度与输出均为模拟结果。']
-                  : []),
-              ],
-            },
-      );
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [run.status, run.batch, run.confirmed, team]);
-
   const finishLeave = (allowed: boolean) => {
     setLeavePrompt(false);
     leavePromise.current = null;
     const resolve = leaveResolve.current;
     leaveResolve.current = null;
-    if (allowed) setRun(EMPTY_RUN);
+
     resolve?.(allowed);
   };
   const navigate = (action: () => void) => {
@@ -173,7 +219,7 @@ export function AgentWorkspacePage({
     baseline.current = JSON.stringify(draft);
     setEditor(draft);
     setTeamTab('team');
-    setRun(EMPTY_RUN);
+    setRealRun(null);
     setFeedback(null);
     if (draft.kind === 'team') {
       setMemberId(draft.members[0]?.id ?? '');
@@ -181,52 +227,88 @@ export function AgentWorkspacePage({
     }
   };
   const singles = items.filter((a): a is SingleAgentDraft => a.kind === 'single');
-  const newTeam = () =>
-    navigate(() => open(newTeamAgent(singles.filter((a) => a.id !== 'example-report'))));
+  const newTeam = () => navigate(() => open(newTeamAgent(singles)));
   const back = () => navigate(() => setEditor(null));
   const update = <K extends keyof AgentWorkspaceItem>(key: K, value: AgentWorkspaceItem[K]) =>
     setEditor((previous) => (previous ? { ...previous, [key]: value } : previous));
   const updateTeam = (change: Partial<TeamAgentDraft>) => {
-    setRun(EMPTY_RUN);
+    if (running || busy) {
+      setFeedback('请先停止运行，再修改配置。');
+      return;
+    }
+    setRealRun(null);
     setEditor((previous) => (previous?.kind === 'team' ? { ...previous, ...change } : previous));
   };
-  const save = (start = false) => {
-    if (!editor) return;
+  const save = async (start = false) => {
+    if (!editor || busy) return;
     if (editor.kind === 'single' && !form.current?.reportValidity()) return;
     const invalid = validateAgentDraft(editor);
     if (invalid) {
       setFeedback(invalid);
       return;
     }
-    const value: AgentWorkspaceItem = {
-      ...copy(editor),
-      name: editor.name.trim(),
-      description: editor.description.trim(),
-      example: false,
-    };
-    if (value.kind === 'team') value.skills = [...new Set(value.members.flatMap((m) => m.skills))];
-    onItemsChange(
-      items.some((a) => a.id === value.id)
-        ? items.map((a) => (a.id === value.id ? value : a))
-        : [value, ...items],
-    );
-    baseline.current = JSON.stringify(value);
-    setEditor(value);
-    setFeedback('已暂存于本次会话，刷新页面后恢复示例。');
-    if (value.kind === 'single') {
-      setEditor(null);
-      setFilter('all');
-      setQuery('');
-      if (start) {
-        setChat(value);
-        setChatPrompt('');
-        setChatPreview(false);
+    if (!actions?.saveAgentWorkspace) {
+      setFeedback('智能体服务不可用。');
+      return;
+    }
+    setBusy(true);
+    try {
+      const value = await actions.saveAgentWorkspace({ agent: editor });
+      onItemsChange(
+        items.some((a) => a.id === value.id)
+          ? items.map((a) => (a.id === value.id ? value : a))
+          : [value, ...items],
+      );
+      baseline.current = JSON.stringify(value);
+      setEditor(value);
+      setFeedback('已保存到本机。');
+      if (value.kind === 'single') {
+        setEditor(null);
+        setFilter('all');
+        setQuery('');
+        if (start) {
+          setChat(value);
+          setChatPrompt('');
+        }
       }
+      return value;
+    } catch (error) {
+      fail(error);
+      return;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const startRun = async () => {
+    if (!team || busy || !runPrompt.trim()) return;
+    if (dirty) {
+      setFeedback('请先保存团队配置，再启动运行。');
+      return;
+    }
+    if (!actions?.startAgentWorkspaceRun) {
+      setFeedback('团队执行服务不可用。');
+      return;
+    }
+    setBusy(true);
+    try {
+      setRealRun(
+        await actions.startAgentWorkspaceRun({
+          agentId: team.id,
+          prompt: runPrompt,
+          modelId,
+          workspaceId,
+        }),
+      );
+      setFeedback(null);
+    } catch (error) {
+      fail(error);
+    } finally {
+      setBusy(false);
     }
   };
   const changeTab = (tab: TeamTab) => {
     if (running && tab !== 'monitor') {
-      setFeedback('请先停止演示，再修改团队或流程。');
+      setFeedback('请先停止运行，再修改团队或流程。');
       return;
     }
     setTeamTab(tab);
@@ -234,7 +316,7 @@ export function AgentWorkspacePage({
   };
   const exportConfig = (agent: AgentWorkspaceItem) => {
     const href = URL.createObjectURL(
-      new Blob([JSON.stringify({ schemaVersion: 1, preview: true, agent }, null, 2)], {
+      new Blob([JSON.stringify({ schemaVersion: 1, preview: false, agent }, null, 2)], {
         type: 'application/json',
       }),
     );
@@ -257,13 +339,13 @@ export function AgentWorkspacePage({
       updateTeam({ nodes: team.nodes.map((n) => (n.id === node.id ? { ...n, ...change } : n)) });
   };
   const openConversation = (agent: AgentWorkspaceItem) => {
+    setFeedback(null);
     if (agent.kind === 'team') {
       open(agent);
       setTeamTab('monitor');
     } else {
       setChat(agent);
       setChatPrompt('');
-      setChatPreview(false);
     }
   };
   const visibleItems = items.filter(
@@ -286,7 +368,7 @@ export function AgentWorkspacePage({
           <span>
             智能体{editor ? ` / ${editor.kind === 'single' ? '单个智能体' : '多智能体协作'}` : ''}
           </span>
-          <Badge variant="neutral">前端预览 · 示例数据</Badge>
+          <Badge variant="neutral">本机智能体</Badge>
         </div>
         {editor ? (
           <GhostButton label="返回智能体" onClick={back} icon={renderIcon('arrow-left')} />
@@ -316,7 +398,12 @@ export function AgentWorkspacePage({
                 <PillButton icon={renderIcon('download')} onClick={() => exportConfig(team)}>
                   导出配置
                 </PillButton>
-                <PillButton variant="accent" icon={renderIcon('check')} onClick={() => save()}>
+                <PillButton
+                  variant="accent"
+                  icon={renderIcon('check')}
+                  disabled={busy || running}
+                  onClick={() => void save()}
+                >
                   保存团队
                 </PillButton>
               </>
@@ -376,7 +463,7 @@ export function AgentWorkspacePage({
               <h2>
                 我的智能体 <span className="ew-agents-count">{items.length}</span>
               </h2>
-              <span>配置仅暂存于本次会话</span>
+              <span>配置保存在本机</span>
             </div>
             <div className="ew-agents-toolbar">
               <SegmentedControl
@@ -419,13 +506,16 @@ export function AgentWorkspacePage({
                         {agent.kind === 'team'
                           ? `${agent.members.length} 个成员 · 协作团队`
                           : '单个智能体'}
-                        {agent.example ? ' · 示例' : ' · 会话草稿'}
+                        {' · 本机配置'}
                       </p>
                     </div>
                     <IconButton
                       label={`管理${agent.name}`}
                       icon={renderIcon('more-horizontal')}
-                      onClick={() => setManageTarget(agent)}
+                      onClick={() => {
+                        setFeedback(null);
+                        setManageTarget(agent);
+                      }}
                     />
                   </div>
                   <p className="ew-agents-description">{agent.description}</p>
@@ -491,14 +581,14 @@ export function AgentWorkspacePage({
                 </AgentPanel>
                 <AgentPanel
                   step="2"
-                  title="可用技能"
+                  title="偏好技能"
                   description="选择完成这类工作时需要的能力（可选）。"
                 >
                   <CapabilityOptions
                     items={AGENT_SKILLS}
                     selected={editor.skills}
                     onChange={(value) => update('skills', value)}
-                    label="可用技能"
+                    label="偏好技能"
                   />
                 </AgentPanel>
                 <AgentPanel
@@ -512,7 +602,9 @@ export function AgentWorkspacePage({
                     onChange={(value) => update('connectors', value)}
                     label="连接器"
                   />
-                  <p className="ew-agents-note">连接器为配置选项示意，选中不表示已连接或已授权。</p>
+                  <p className="ew-agents-note">
+                    技能和连接器用于配置工作偏好，实际使用仍受安装、信任与工具审批约束。
+                  </p>
                 </AgentPanel>
               </div>
               <aside className="ew-agents-panel ew-agents-preview">
@@ -533,11 +625,18 @@ export function AgentWorkspacePage({
               </aside>
             </div>
             <footer className="ew-agents-form-footer">
-              <span>{dirty ? '有未保存的修改' : '配置暂存于本次会话'}</span>
+              <span>{dirty ? '有未保存的修改' : '配置已保存到本机'}</span>
               <div className="ew-agents-actions">
                 <PillButton onClick={back}>取消</PillButton>
-                <PillButton onClick={() => save(true)}>保存并开始对话</PillButton>
-                <PillButton variant="accent" icon={renderIcon('check')} onClick={() => save()}>
+                <PillButton disabled={busy} onClick={() => void save(true)}>
+                  保存并开始对话
+                </PillButton>
+                <PillButton
+                  variant="accent"
+                  icon={renderIcon('check')}
+                  disabled={busy || running}
+                  onClick={() => void save()}
+                >
                   保存智能体
                 </PillButton>
               </div>
@@ -594,7 +693,7 @@ export function AgentWorkspacePage({
                       aria-pressed={team.architecture === architecture.id}
                       onClick={() => {
                         updateTeam({ architecture: architecture.id });
-                        setRun(EMPTY_RUN);
+                        setRealRun(null);
                       }}
                     >
                       {renderIcon(architecture.icon)}
@@ -673,7 +772,7 @@ export function AgentWorkspacePage({
                         items={AGENT_SKILLS}
                         selected={teamMember.skills}
                         onChange={(skills) => updateMember({ skills })}
-                        label="成员可用技能"
+                        label="成员偏好技能"
                       />
                       <CapabilityOptions
                         items={AGENT_CONNECTORS}
@@ -698,7 +797,7 @@ export function AgentWorkspacePage({
                   <PillButton
                     icon={renderIcon('plus')}
                     disabled={team.nodes.length >= 20}
-                    disabledReason="前端预览最多支持 20 个节点"
+                    disabledReason="最多支持 20 个节点"
                     onClick={() => {
                       const added: AgentFlowNode = {
                         id: crypto.randomUUID(),
@@ -712,7 +811,7 @@ export function AgentWorkspacePage({
                       nodes.splice(Math.max(0, nodes.length - 1), 0, added);
                       updateTeam({ nodes });
                       setNodeId(added.id);
-                      setRun(EMPTY_RUN);
+                      setRealRun(null);
                     }}
                   >
                     添加节点
@@ -821,7 +920,7 @@ export function AgentWorkspacePage({
                           }
                         >
                           <option value="success">执行成功后继续</option>
-                          <option value="review">复核通过后继续（演示）</option>
+                          <option value="review">复核输出后继续（人工确认）</option>
                           <option value="human">等待人工确认</option>
                         </select>
                       </label>
@@ -833,7 +932,7 @@ export function AgentWorkspacePage({
                           const nodes = team.nodes.filter((n) => n.id !== node.id);
                           updateTeam({ nodes });
                           setNodeId(nodes[0]?.id ?? '');
-                          setRun(EMPTY_RUN);
+                          setRealRun(null);
                         }}
                       >
                         删除节点
@@ -847,52 +946,41 @@ export function AgentWorkspacePage({
                 <div className="ew-agents-section-heading">
                   <div>
                     <h2>
-                      协作运行演示 <Badge variant="warning">模拟</Badge>
+                      协作运行 <Badge variant="info">真实任务</Badge>
                     </h2>
-                    <p>按当前成员、节点和协作方式展示流程，不调用真实模型。</p>
+                    <p>按已保存的成员和流程执行；节点审批与详细记录可在任务中查看。</p>
                   </div>
                   <div className="ew-agents-actions">
                     <PillButton
-                      disabled={!running}
-                      disabledReason="当前没有运行中的演示"
-                      onClick={() =>
-                        setRun((previous) => ({
-                          ...previous,
-                          status: 'stopped',
-                          logs: [...previous.logs, '演示已停止。'],
-                        }))
-                      }
+                      disabled={!running || busy}
+                      disabledReason="当前没有运行中的任务"
+                      onClick={() => void decide('stop')}
                     >
                       停止
                     </PillButton>
                     <PillButton
                       variant="accent"
                       icon={renderIcon('play')}
-                      disabled={running}
-                      disabledReason="请等待当前演示结束或先停止"
-                      onClick={() => {
-                        const invalid = validateAgentDraft(team);
-                        if (invalid) {
-                          setFeedback(invalid);
-                          return;
-                        }
-                        setFeedback(null);
-                        setRun({
-                          ...EMPTY_RUN,
-                          status: 'running',
-                          logs: [
-                            `启动本地模拟：${team.name}`,
-                            '当前日志和节点输出均为前端演示数据。',
-                          ],
-                        });
-                      }}
+                      disabled={running || busy || !runPrompt.trim() || dirty}
+                      disabledReason="请先保存配置、填写需求，并等待当前运行结束"
+                      onClick={() => void startRun()}
                     >
-                      模拟运行
+                      开始运行
                     </PillButton>
                   </div>
                 </div>
+                <label className="ew-agents-field">
+                  <span>团队任务需求</span>
+                  <textarea
+                    aria-label="团队任务需求"
+                    value={runPrompt}
+                    disabled={running || busy}
+                    maxLength={16000}
+                    onChange={(event) => setRunPrompt(event.target.value)}
+                  />
+                </label>
                 <div className="ew-agents-metrics">
-                  <Metric label="本次任务状态" value={RUN_COPY[run.status]} hint="本地交互演示" />
+                  <Metric label="本次任务状态" value={RUN_COPY[run.status]} hint="本机真实任务" />
                   <Metric
                     label="执行节点"
                     value={`${run.completed.length} / ${team.nodes.length}`}
@@ -934,6 +1022,26 @@ export function AgentWorkspacePage({
                             <div>
                               <strong>{n.name}</strong>
                               <small>{team.members.find((m) => m.id === n.memberId)?.name}</small>
+                              {realRun?.nodes.find((state) => state.nodeId === n.id)?.threadId ? (
+                                <PillButton
+                                  onClick={() =>
+                                    onOpenTask?.(
+                                      realRun.nodes.find((state) => state.nodeId === n.id)!
+                                        .threadId!,
+                                    )
+                                  }
+                                >
+                                  查看节点任务
+                                </PillButton>
+                              ) : null}
+                              {realRun?.nodes.find((state) => state.nodeId === n.id)?.output ? (
+                                <details>
+                                  <summary>节点输出</summary>
+                                  <pre>
+                                    {realRun.nodes.find((state) => state.nodeId === n.id)!.output}
+                                  </pre>
+                                </details>
+                              ) : null}
                             </div>
                             <span>
                               {completed
@@ -941,7 +1049,7 @@ export function AgentWorkspacePage({
                                 : run.status === 'waiting' && waitingNode?.id === n.id
                                   ? '等待确认'
                                   : active
-                                    ? '演示中'
+                                    ? '运行中'
                                     : run.status === 'stopped'
                                       ? '已停止'
                                       : '等待中'}
@@ -953,37 +1061,21 @@ export function AgentWorkspacePage({
                     {run.status === 'waiting' && waitingNode ? (
                       <div className="ew-agents-confirm-run">
                         <strong>流程等待人工确认</strong>
-                        <p>{waitingNode.name}已提交模拟输出。</p>
+                        <p>{waitingNode.name}已提交真实输出，请复核后继续。</p>
+                        <pre>{realRun?.nodes.find((n) => n.nodeId === waitingNode.id)?.output}</pre>
                         <div className="ew-agents-actions">
                           <PillButton
                             variant="accent"
-                            onClick={() =>
-                              setRun((previous) => ({
-                                ...previous,
-                                status: 'running',
-                                confirmed: [...previous.confirmed, waitingNode.id],
-                                logs: [...previous.logs, `已人工确认：${waitingNode.name}`],
-                              }))
-                            }
+                            onClick={() => void decide('confirm', waitingNode.id)}
                           >
                             确认并继续
                           </PillButton>
-                          <PillButton
-                            onClick={() =>
-                              setRun((previous) => ({
-                                ...previous,
-                                status: 'stopped',
-                                logs: [...previous.logs, '人工拒绝，演示已停止。'],
-                              }))
-                            }
-                          >
-                            拒绝并停止
-                          </PillButton>
+                          <PillButton onClick={() => void decide('stop')}>拒绝并停止</PillButton>
                         </div>
                       </div>
                     ) : null}
                   </AgentPanel>
-                  <AgentPanel title="协作日志" action={<Badge variant="neutral">模拟事件</Badge>}>
+                  <AgentPanel title="协作日志" action={<Badge variant="neutral">执行记录</Badge>}>
                     <div className="ew-agents-log" role="log" aria-label="协作运行日志">
                       {run.logs.length ? (
                         run.logs.map((line, index) => (
@@ -993,7 +1085,7 @@ export function AgentWorkspacePage({
                           </p>
                         ))
                       ) : (
-                        <p>等待启动。流程将按当前配置模拟执行。</p>
+                        <p>等待启动。填写任务需求后开始执行。</p>
                       )}
                     </div>
                   </AgentPanel>
@@ -1005,8 +1097,8 @@ export function AgentWorkspacePage({
                 {teamTab === 'team'
                   ? '成员与节点配置将随团队一起保存。'
                   : teamTab === 'flow'
-                    ? '调整会实时显示在画布上，保存团队后暂存。'
-                    : '以上进度与输出仅用于界面评审。'}
+                    ? '调整会实时显示在画布上，保存后生效。'
+                    : '以上进度来自真实节点任务。离开此页不会停止后台执行。'}
               </span>
               <div className="ew-agents-actions">
                 {teamTab !== 'team' ? (
@@ -1028,7 +1120,7 @@ export function AgentWorkspacePage({
           </>
         ) : null}
         <p className="ew-agents-footnote">
-          {renderIcon('shield')}前端预览：配置仅保留在本次会话，对话与协作运行均不执行真实任务。
+          {renderIcon('shield')}配置保存在本机；任务沿用模型、技能安装状态与工具审批设置。
         </p>
       </div>
       {manageTarget ? (
@@ -1066,12 +1158,21 @@ export function AgentWorkspacePage({
           confirmLabel="确认删除"
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
-            onItemsChange(items.filter((a) => a.id !== deleteTarget.id));
-            setDeleteTarget(null);
-            setFeedback('已移除本次会话中的配置。');
+            if (busy || !actions?.deleteAgentWorkspace || !deleteTarget.revision) return;
+            setBusy(true);
+            void actions
+              .deleteAgentWorkspace({ id: deleteTarget.id, revision: deleteTarget.revision })
+              .then(() => {
+                onItemsChange(items.filter((a) => a.id !== deleteTarget.id));
+                setDeleteTarget(null);
+                setFeedback('已删除本机配置。');
+              })
+              .catch(fail)
+              .finally(() => setBusy(false));
           }}
         >
-          <p>删除此页暂存的配置，已保存团队中的成员快照不受影响。刷新后将恢复初始示例。</p>
+          {feedback ? <p role="alert">{feedback}</p> : null}
+          <p>删除本机配置，已保存团队中的成员快照和任务历史不受影响。</p>
         </Dialog>
       ) : null}
       {picking && team ? (
@@ -1120,34 +1221,35 @@ export function AgentWorkspacePage({
       {chat ? (
         <Dialog
           title={`与${chat.name}对话`}
-          confirmLabel={chatPreview ? '返回任务输入' : '预览任务'}
+          confirmLabel="开始任务"
           cancelLabel="关闭"
           closable
-          confirmDisabled={!chatPreview && !chatPrompt.trim()}
-          onCancel={() => setChat(null)}
-          onConfirm={() => setChatPreview((previous) => !previous)}
+          confirmDisabled={busy || !chatPrompt.trim()}
+          onCancel={() => {
+            if (!busy) setChat(null);
+          }}
+          onConfirm={() => {
+            if (busy || !onConversation) return;
+            setBusy(true);
+            void onConversation(chat.id, chatPrompt)
+              .then(() => setChat(null))
+              .catch(fail)
+              .finally(() => setBusy(false));
+          }}
         >
-          <Badge variant="info">对话界面预览</Badge>
-          <p className="ew-agents-note">仅预览任务需求与能力配置，不创建任务或调用模型。</p>
-          {chatPreview ? (
-            <div className="ew-agents-task-preview">
-              <h3>任务需求</h3>
-              <p>{chatPrompt}</p>
-              <h3>工作角色</h3>
-              <p>{chat.description}</p>
-              <SkillTags skills={chat.skills} />
-            </div>
-          ) : (
-            <label className="ew-agents-field">
-              <span>任务需求</span>
-              <textarea
-                value={chatPrompt}
-                maxLength={2000}
-                onChange={(event) => setChatPrompt(event.target.value)}
-                placeholder="告诉它你想完成什么工作…"
-              />
-            </label>
-          )}
+          {feedback ? <p role="alert">{feedback}</p> : null}
+          <p className="ew-agents-note">
+            使用已保存的角色配置创建真实任务，沿用当前选择的模型与项目。
+          </p>
+          <label className="ew-agents-field">
+            <span>任务需求</span>
+            <textarea
+              value={chatPrompt}
+              maxLength={16000}
+              onChange={(event) => setChatPrompt(event.target.value)}
+              placeholder="告诉它你想完成什么工作…"
+            />
+          </label>
         </Dialog>
       ) : null}
       {leavePrompt ? (
@@ -1159,7 +1261,7 @@ export function AgentWorkspacePage({
           onConfirm={() => finishLeave(true)}
         >
           <p>
-            {running ? '离开将停止当前演示。' : ''}
+            {running ? '离开后后台任务继续运行，可返回此页查看进度。' : ''}
             {dirty ? '当前修改还没有保存，离开后将丢弃这些修改。' : ''}
           </p>
         </Dialog>

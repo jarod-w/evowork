@@ -6355,3 +6355,9 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
     overflow-x: auto;
   }
 }
+
+.ew-agents pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}

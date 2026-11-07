@@ -1,3 +1,4 @@
+import { AgentWorkspaceRunner } from '@evowork/kernel-adapter';
 import { createSkillExtractionHost, patchSkillExtractionConfig } from './skill-extraction-host.js';
 import { listMacOpenApps, openFileWithMacApp } from './open-with-apps.js';
 import { ownerProjectOf } from '@evowork/projects';
@@ -2506,7 +2507,12 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     return libraryReady;
   };
 
+  const agentWorkspaceRunner = new AgentWorkspaceRunner(store, adapter, async (cwd) => {
+    if (policyView.status === 'expired') throw new Error('执行策略已过期。');
+    await environments.validate(cwd);
+  });
   const actions = createRendererActions({
+    agentWorkspaceRunner,
     fileHost,
     library: getLibraryHost,
     ocrRuntime: {
@@ -2968,6 +2974,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
 
       const catalog = await adapter.start();
       if (stopping) return;
+      await agentWorkspaceRunner.recover();
       await communicationHost.service.start();
       if (stopping) return;
       logger.info('desktop.host.started', {
@@ -3081,6 +3088,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       if (stopping) return;
       stopping = true;
       account.dispose();
+      agentWorkspaceRunner.close();
       /*
        * 网关必须在第一个 await 之前停。
        *

@@ -16,7 +16,17 @@
  * 仓库路径，而打包产物里没有那个路径）。这种失败要在构建时就红，不能等到运行时。
  */
 import { execFileSync } from 'node:child_process';
-import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, rmSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';

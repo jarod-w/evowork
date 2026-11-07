@@ -1214,11 +1214,13 @@ export function createAdapter(options: AdapterOptions) {
         scenarios.find((s) => s.default) ??
         scenarios[0];
       if (!scenario) throw new Error('没有可用的场景包');
+      const agentInstructions = readMeta(store.db, `evowork.agent.instructions.${threadId}`);
       const expanded = expandTurnStart({
         threadId,
         input: [{ type: 'text', text }],
         scenario,
         overrides: {
+          ...(agentInstructions ? { agentInstructions } : {}),
           model: requireResolvedModel(row.model ?? scenario.model),
           modeId: resolveModeId(row.mode_id ?? 'craft'),
           cwd: await taskCwd(threadId),
@@ -1731,6 +1733,12 @@ export function createAdapter(options: AdapterOptions) {
         config: memoryConfig,
       });
       const threadId = started.thread.id;
+      if (args.overrides?.agentInstructions)
+        writeMeta(
+          store.db,
+          `evowork.agent.instructions.${threadId}`,
+          args.overrides.agentInstructions,
+        );
       writeMeta(
         store.db,
         `evowork.memory.use.${threadId}`,
@@ -2111,7 +2119,9 @@ export function createAdapter(options: AdapterOptions) {
           scenarios[0];
         if (!scenario) throw new Error('没有可用的场景包');
 
+        const agentInstructions = readMeta(store.db, `evowork.agent.instructions.${args.threadId}`);
         const overrides: ComposerOverrides = {
+          ...(agentInstructions ? { agentInstructions } : {}),
           ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
           ...(row?.permission_id ? { permissions: row.permission_id } : {}),
           ...(row?.model ? { model: row.model } : {}),
@@ -2295,7 +2305,9 @@ export function createAdapter(options: AdapterOptions) {
             scenarios.find((candidate) => candidate.default) ??
             scenarios[0];
           if (!scenario) return;
+          const agentInstructions = readMeta(store.db, `evowork.agent.instructions.${threadId}`);
           const overrides: ComposerOverrides = {
+            ...(agentInstructions ? { agentInstructions } : {}),
             ...(row?.mode_id ? { modeId: resolveModeId(row.mode_id) } : {}),
             ...(row?.permission_id ? { permissions: row.permission_id } : {}),
             ...(row?.model ? { model: row.model } : {}),
@@ -2437,6 +2449,34 @@ export function createAdapter(options: AdapterOptions) {
         });
         throw err;
       }
+    },
+
+    /** 回合停止不等于统一执行的后台进程退出。只操作这个任务的官方 processId。 */
+    async terminateTaskCommands(threadId: string): Promise<void> {
+      type Terminals = { data: readonly { processId: string }[] };
+      for (let page = 0; page < 20; page += 1) {
+        const listed = await callExperimental<Terminals | undefined>(
+          EXPERIMENTAL_METHOD.threadBackgroundTerminalsList,
+          { threadId, limit: 100 },
+          () => undefined,
+        );
+        if (!listed || !Array.isArray(listed.data))
+          throw new Error('后台命令枚举不可用，停止未确认。');
+        if (listed.data.length === 0) return;
+        for (const entry of listed.data) {
+          if (typeof entry.processId !== 'string' || !entry.processId)
+            throw new Error('后台命令标识无效，停止未确认。');
+          const result = await callExperimental<{ terminated: boolean } | undefined>(
+            EXPERIMENTAL_METHOD.threadBackgroundTerminalsTerminate,
+            { threadId, processId: entry.processId },
+            () => undefined,
+          );
+          if (!result || typeof result.terminated !== 'boolean')
+            throw new Error('后台命令终止不可用，停止未确认。');
+          // false 也可能是进程刚自然退出；下一次枚举确认是否仍在，而不是猜测成功。
+        }
+      }
+      throw new Error('后台命令仍未清空，停止未确认。');
     },
 
     /** 把持久化对话截到某回合之前；内核明确保证它不改工作区文件。 */

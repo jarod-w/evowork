@@ -211,7 +211,7 @@ OCR 组件**不在运行时下载**：[ocr-install.ts](../services/runtime-insta
 - 实现：[preload/index.ts](../apps/desktop/src/preload/index.ts) ↔ [service-host.ts](../apps/desktop/src/main/service-host.ts) 的 `IPC` + [renderer-bridge.ts](../apps/desktop/src/main/renderer-bridge.ts) 的 `createRendererActions`。
   契约类型在 [shared/ipc.ts](../apps/desktop/src/shared/ipc.ts)，**两侧共用一份** —— 2026-09-06 之前三处各写一份、各自能编译、合起来是断的。
 - 渲染进程能做的**全部事情**：订阅 `computerUseStatus` / `uiEvent` / `notice` / `degrade` / `pendingApprovals` / `runtimeProgress` / `updateStatus` 七个频道；
-  调用 `RENDERER_ACTIONS` 里的 **159 个动作**（2026-10-20 实数；分组以 preload 源码里的注释为准，这里不再逐类计数）；
+  调用 `RENDERER_ACTIONS` 里的 **159 个动作**（2026-11-07 实数；分组以 preload 源码里的注释为准，这里不再逐类计数）；
   另有一条主进程→渲染进程的审批**请求**频道 `askApproval`。
 - `ipcRenderer` 本身**绝不暴露** —— 暴露它等于把整个 IPC 面交出去，之后每次"临时加个频道"都会绕过这里。
 - **动作清单与实现逐项相等**由 `bootstrap.test.ts` 钉住（`RENDERER_ACTIONS` ↔ `ServiceHost['actions']`）。这条约束是被一次真实故障换来的：主进程只注册了审批一个 handler，界面上"回车没反应"且一行报错都没有。
@@ -443,14 +443,14 @@ SSE 回内核。**全程不落盘 prompt 与响应体**（Q14）
 驱动是 Node 内置 `node:sqlite`（`DatabaseSync`），自带 WAL 与 FTS5 —— 没有原生模块，
 因此 Electron 打包不需要按 ABI 重编译（代价是 Electron 的 Node 版本必须 ≥ 22.5，见 §8）。库在 `~/.evowork/evowork.db`。
 
-**24 张业务表分两类**（[schema.ts](../services/store/src/schema.ts) 的 `TABLES`，2026-10-20 实数），外加迁移器自建的 `meta` 表（"25 张"的口径含它）：
+**26 张业务表分两类**（[schema.ts](../services/store/src/schema.ts) 的 `TABLES`，2026-11-07 实数），外加迁移器自建的 `meta` 表（"27 张"的口径含它）：
 
 | 类别 | 真源在哪 | 迁移失败时 | 表 |
 | --- | --- | --- | --- |
 | **投影类**（8） | 内核 / 文件系统 | **丢弃重建**，附一条警告，继续启动 | `thread_projection` `item_digest` `library_node` `library_index`(FTS5) `library_document` `library_chunk` `access_log` `unknown_event` |
-| **权威类**（16） | 只在这里 | 备份 → 失败则回滚并**抛错，宁可启动失败** | `project_local` `project_root` `artifact` `automation` `automation_run` `share` `subscription` `notification` `audit_log` `thread_message` `image_operation` `follow_up_receipt` `follow_up_queue` `follow_up_control` `follow_up_composer` `next_action` |
+| **权威类**（18） | 只在这里 | 备份 → 失败则回滚并**抛错，宁可启动失败** | `project_local` `project_root` `artifact` `automation` `automation_run` `share` `subscription` `notification` `audit_log` `thread_message` `image_operation` `follow_up_receipt` `follow_up_queue` `follow_up_control` `follow_up_composer` `next_action` `agent_workspace` `agent_workspace_run` |
 
-两类各有**独立的版本号与独立的迁移器**（[migrate.ts](../services/store/src/migrate.ts)，投影类当前 **v5**、权威类当前 **v7**），
+两类各有**独立的版本号与独立的迁移器**（[migrate.ts](../services/store/src/migrate.ts)，投影类当前 **v5**、权威类当前 **v8**），
 两条路径没有任何共享的可写状态 —— 不这么做的话，"重建索引"的逻辑总有一天会把 `automation` 表也清了。
 
 `artifact` 归权威类是一个需要说明的判断：产物**本体**的真源是文件系统（D6），

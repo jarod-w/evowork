@@ -10,6 +10,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./agent-workspace-model": {
+      "types": "./src/agent-workspace-model.ts",
+      "default": "./src/agent-workspace-model.ts"
     }
   },
   "scripts": {

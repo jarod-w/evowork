@@ -207,6 +207,7 @@ export interface Scenario {
 
 /** 用户在 Composer 里的显式选择（优先级最高）。 */
 export interface ComposerOverrides {
+  readonly agentInstructions?: string;
   readonly model?: string;
   readonly permissions?: string;
   readonly modeId?: ModeId;
@@ -271,6 +272,8 @@ export function composeInstructions(ctx: ExpandContext, mode: ModeDefinition): s
     if (scenarioFragment) parts.push(scenarioFragment.trim());
   }
 
+  if (ctx.overrides?.agentInstructions) parts.push(ctx.overrides.agentInstructions);
+
   const runtime = ctx.runtime;
   if (runtime) {
     const lines: string[] = [];
@@ -319,6 +322,8 @@ export function expandTurnStart(ctx: ExpandContext): ExpandResult {
   const permissionsFieldAvailable = ctx.permissionsFieldAvailable ?? true;
 
   let collaborationMode: CollaborationMode | undefined;
+  if (overrides.agentInstructions && !collaborationModeAvailable)
+    throw new Error('执行内核不支持智能体工作指令，请更新应用。');
   if (collaborationModeAvailable) {
     collaborationMode = {
       mode: mode.kernelMode,

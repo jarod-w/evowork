@@ -1,3 +1,4 @@
+import type { AgentWorkspaceActions } from '../shared/ipc.js';
 import type { AttachmentTextInput, InstallAttachmentSkillInput } from '../shared/ipc.js';
 import type { LibraryActions, LibraryDocumentInput } from '../shared/ipc.js';
 import type {
@@ -147,10 +148,7 @@ import {
 } from './views/catalog.js';
 import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AgentWorkspacePage } from './views/agent-workspace.js';
-import {
-  createAgentWorkspaceExamples,
-  type AgentWorkspaceItem,
-} from './views/agent-workspace-state.js';
+import { type AgentWorkspaceItem } from './views/agent-workspace-state.js';
 import { AutomationsPage } from './views/automations.js';
 import { Home, type Scenario } from './views/home.js';
 import { Library, type LibraryNav } from './views/library.js';
@@ -169,6 +167,7 @@ import { useSkillExtraction } from './views/skill-extraction.js';
 export interface EvoworkBridge
   extends
     MemoryImportPorts,
+    Partial<AgentWorkspaceActions>,
     Partial<LibraryActions>,
     Partial<import('../shared/skill-extraction.js').SkillExtractionActions>,
     Partial<import('../shared/ipc.js').CommunicationActions>,
@@ -693,9 +692,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [view, setViewDirect] = useState<MainView>('task');
   const currentView = useRef(view);
   currentView.current = view;
-  const [agentWorkspaceItems, setAgentWorkspaceItems] = useState<readonly AgentWorkspaceItem[]>(
-    createAgentWorkspaceExamples,
-  );
+  const [agentWorkspaceItems, setAgentWorkspaceItems] = useState<readonly AgentWorkspaceItem[]>([]);
   const settingsLeaveGuard = useRef<SettingsLeaveGuard | null>(null);
   const registerSettingsGuard = useCallback((guard: SettingsLeaveGuard | null) => {
     settingsLeaveGuard.current = guard;
@@ -3987,6 +3984,14 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       {view !== 'task' ? (
         <MainPage
           view={view}
+          agentWorkspaceActions={bridge}
+          agentWorkspaceModelId={modelId}
+          agentWorkspaceProjectId={workspaceId}
+          onAgentConversation={async (agentId, text) => {
+            const result = await bridge.send({ agentId, text, modelId, workspaceId });
+            setActiveTaskId(result.threadId);
+            setView('task');
+          }}
           agentWorkspaceItems={agentWorkspaceItems}
           onAgentWorkspaceItemsChange={setAgentWorkspaceItems}
           onRegisterLeaveGuard={registerSettingsGuard}
@@ -4889,6 +4894,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
  * 02 §1 的 6 个入口是产品骨架。「更多」现在还没有本体页，给一个如实说明的空页。
  */
 function MainPage(props: {
+  readonly agentWorkspaceActions: Partial<AgentWorkspaceActions>;
+  readonly agentWorkspaceModelId?: string | undefined;
+  readonly agentWorkspaceProjectId?: string | undefined;
+  readonly onAgentConversation: (id: string, text: string) => Promise<void>;
   readonly agentWorkspaceItems: readonly AgentWorkspaceItem[];
   readonly onAgentWorkspaceItemsChange: (items: readonly AgentWorkspaceItem[]) => void;
   readonly onRegisterLeaveGuard: (guard: SettingsLeaveGuard | null) => void;
@@ -5179,6 +5188,11 @@ function MainPage(props: {
     case 'agents':
       return (
         <AgentWorkspacePage
+          actions={props.agentWorkspaceActions}
+          modelId={props.agentWorkspaceModelId}
+          workspaceId={props.agentWorkspaceProjectId}
+          onConversation={props.onAgentConversation}
+          onOpenTask={props.onOpenTask}
           items={props.agentWorkspaceItems}
           onItemsChange={props.onAgentWorkspaceItemsChange}
           onRegisterLeaveGuard={props.onRegisterLeaveGuard}

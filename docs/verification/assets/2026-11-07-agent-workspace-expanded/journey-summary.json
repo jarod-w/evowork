@@ -1,0 +1,55 @@
+{
+  "parallel": {
+    "status": "completed",
+    "concurrencyLimit": 2,
+    "overlapNodeStatuses": [
+      "running",
+      "running"
+    ],
+    "nodeCount": 4,
+    "snapshotRevision": 1,
+    "savedRevision": 2
+  },
+  "fileDelivery": {
+    "status": "completed",
+    "expected": {
+      "sum": 44789,
+      "max": 8470
+    },
+    "values": [
+      5874,
+      7538,
+      4002,
+      8470,
+      7587,
+      1187,
+      2390,
+      2056,
+      5685
+    ],
+    "approved": 0,
+    "nodeCount": 2
+  },
+  "stop": {
+    "status": "stopped",
+    "turnStatuses": [
+      "interrupted"
+    ],
+    "nextNodeThreadIds": [
+      null,
+      null
+    ],
+    "approved": 0,
+    "assertion": "释放门闩 1.2 秒后 workspace-finished 仍不存在；用例通过"
+  },
+  "restart": {
+    "before": "waiting",
+    "after": "interrupted",
+    "sameRun": true,
+    "outputPreserved": true,
+    "nextNodeThreadIds": [
+      null,
+      null
+    ]
+  }
+}

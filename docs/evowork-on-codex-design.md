@@ -1319,3 +1319,9 @@ O0 须固定包/语言/渲染器清单与样本，验证离线可搬运、实际
 ### 任务引导补充决策（2026-10-20）
 
 用户确认采用当前 Agent 通过本机 MCP 提交结构化下一步建议。建议与已授权待执行队列独立，宿主验证真实来源并在回合完成后筛选展示；采纳只填入草稿，发送沿用现有链路。不修改内核、不另发推荐模型请求、不新增外网路径。细化与边界见 [22：下一步建议](design/22-next-actions.md)。
+
+### 智能体工作台停止补充（2026-11-07）
+
+真实 MiMo 的受控本机命令证实：`turn/interrupt` 结束回合后，统一执行的后台进程仍可能运行，不能据此声称节点执行已完全停止。工作台的停止/失败收尾与启动恢复经适配层追加官方实验接口 `thread/backgroundTerminals/list` 与 `thread/backgroundTerminals/terminate`，按节点 threadId 枚举并终止不透明 processId，复查清空；不使用 OS pid 猜测、额外 shell kill 或修改内核。实验方法缺失、终止失败或复查仍有进程时明确显示停止未确认，不伪装成功。不新增出网路径。
+
+本次核对：`codex-rs/app-server-protocol/src/protocol/common.rs:752` / `:757` 声明两方法；`protocol/v2/thread.rs:1209` / `:1245` 定义 camelCase 参数；`app-server/src/request_processors/thread_processor.rs:2406` 按 threadId 加载任务后终止目标后台进程；`core/src/unified_exec/process_manager.rs:1835` 等待 `terminate_confirmed`。内核目录只读。

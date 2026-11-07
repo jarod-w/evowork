@@ -2964,3 +2964,69 @@ it('原生分页已给出明确完成时不能被迟到的活动标记盖回运�
   const opened = await adapter.openTask(threadId);
   await expect(opened.latestTurn).resolves.toMatchObject({ id: 'done', status: 'completed' });
 });
+
+describe('工作台停止后的后台命令确认', () => {
+  it('只枚举目标任务，逐个终止 processId 并复查；进程自然退出的 false 由空列表确认', async () => {
+    await adapter.start();
+    let listed = 0;
+    server.handlers.set('thread/backgroundTerminals/list', ({ params }) => {
+      expect(params).toEqual({ threadId: 'owned-task', limit: 100 });
+      listed += 1;
+      return {
+        data: listed === 1 ? [{ processId: '317' }, { processId: '829' }] : [],
+        nextCursor: null,
+      };
+    });
+    server.handlers.set('thread/backgroundTerminals/terminate', ({ params }) => {
+      expect(params.threadId).toBe('owned-task');
+      return { terminated: params.processId === '317' };
+    });
+    await expect(adapter.terminateTaskCommands('owned-task')).resolves.toBeUndefined();
+    expect(
+      server.received
+        .filter((r) => r.method === 'thread/backgroundTerminals/terminate')
+        .map((r) => r.params),
+    ).toEqual([
+      { threadId: 'owned-task', processId: '317' },
+      { threadId: 'owned-task', processId: '829' },
+    ]);
+    expect(listed).toBe(2);
+  });
+  it('不支持枚举时显式降级并拒绝确认停止，不执行额外命令', async () => {
+    await adapter.start();
+    await expect(adapter.terminateTaskCommands('owned-task')).rejects.toThrow('停止未确认');
+    expect(
+      degradations.some(
+        (r) => r.method === 'thread/backgroundTerminals/list' && r.state === 'unavailable',
+      ),
+    ).toBe(true);
+    expect(server.received.some((r) => r.method === 'thread/backgroundTerminals/terminate')).toBe(
+      false,
+    );
+  });
+  it('终止接口缺失，或进程持续存在时，都不能把停止算成功', async () => {
+    await adapter.start();
+    server.handlers.set('thread/backgroundTerminals/list', () => ({
+      data: [{ processId: '317' }],
+      nextCursor: null,
+    }));
+    await expect(adapter.terminateTaskCommands('owned-task')).rejects.toThrow('停止未确认');
+    expect(
+      degradations.some(
+        (r) => r.method === 'thread/backgroundTerminals/terminate' && r.state === 'unavailable',
+      ),
+    ).toBe(true);
+  });
+  it('进程拒绝退出时有界失败，不能因 RPC 返回就声称已经停止', async () => {
+    await adapter.start();
+    server.handlers.set('thread/backgroundTerminals/list', () => ({
+      data: [{ processId: '317' }],
+      nextCursor: null,
+    }));
+    server.handlers.set('thread/backgroundTerminals/terminate', () => ({ terminated: false }));
+    await expect(adapter.terminateTaskCommands('owned-task')).rejects.toThrow('仍未清空');
+    expect(
+      server.received.filter((r) => r.method === 'thread/backgroundTerminals/list'),
+    ).toHaveLength(20);
+  });
+});

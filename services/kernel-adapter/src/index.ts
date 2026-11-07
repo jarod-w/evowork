@@ -108,3 +108,5 @@ export type {
 export { MemoryImportRefusal } from './memory-import.js';
 
 export { createNextActions, type NextActions } from './next-actions.js';
+
+export { AgentWorkspaceRunner, agentRoleInstructions } from './agent-workspace.js';

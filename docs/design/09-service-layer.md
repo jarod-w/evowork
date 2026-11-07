@@ -126,6 +126,7 @@ Q1=A 下所有东西都在用户机器上。进程边界的划分原则：**崩�
 | 实验方法                              | 缺失时的降级                                                                             | 用户可见影响                                                                 |
 | ------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `project/*`                           | **本机 `project_local` / `project_root` 两张权威表是真源**，内核只做尽力镜像；镜像失败不影响任何功能 | 无。新建的空间只在这台电脑上可见（`project/create` 不可用时）    |
+| `thread/backgroundTerminals/list` / `terminate` | 停止回合后不能确认后台命令终止，工作台明确标失败并提示检查/退出应用 | 不展示为已完全停止，不使用 OS pid 或 shell 兜底 |
 | `thread/queue/*`                      | 本机权威队列：自然完成后自动发送；停止/重启后等待明确继续                          | 队列不可跨客户端可见（单客户端场景无影响）                                   |
 | `thread/search` / `searchOccurrences` | 只做标题搜索（`thread/list?searchTerm`）+ 本机投影表缓存的消息摘要                       | 对话内搜索能力下降，需明确提示「内容搜索暂不可用」                           |
 | `turn/start.collaborationMode`        | 退回 `turn/start.model` + `effort`，developer instructions 通过 `additionalContext` 注入 | 执行指令强度下降；Q45 三档的审批策略不受此项影响                         |
@@ -286,6 +287,8 @@ CREATE UNIQUE INDEX ix_run_idem ON automation_run(automation_id, fire_time);  --
 ### 4.5 其余表（节选）
 
 **技能提炼权威元数据（2026-10-25）**：`meta` 的 `evowork.skillExtraction.draft.*` 保存来源范围、证据、修订、草稿与文本资源、目标范围、实际安装状态；`thread.*` / `source.*` 关联提炼任务与来源任务，`call.*` 防止同一次工具投递重复发布。草稿不在技能扫描根中，投影重建不得删除它；无需增加业务表或改变 schema 版本。正文不进入日志。来源读取和工具调用归属经适配层，正式安装后按精确路径及启用状态核对。具体交互和删除留存边界见 [23](23-session-to-skill.md)。
+
+**智能体工作台（2026-11-07）**：权威 v8 增加配置与运行快照两表 `agent_workspace` / `agent_workspace_run`，修订号防止过期覆盖；角色指令快照保存在权威 `meta`，编辑或删除配置不追溯已有任务。团队执行、确认与中断语义见 [24](24-agent-workspace.md)，不新增云端职责。
 
 完整表清单以 `services/store/src/schema.ts` 与 `migrate.ts` 为准；项目（`project_local` / `project_root`）、运行中投递（`follow_up_*`）、图片操作、资料库文档/分块与权威 `meta`（含任务环境登记）等后续表不在下表展开，见各自章节或设计。
 

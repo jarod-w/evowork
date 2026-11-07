@@ -44,6 +44,21 @@ export type DerivedStatus = (typeof DERIVED_STATUS)[number];
 
 export const TABLES: readonly TableSpec[] = [
   {
+    name: 'agent_workspace',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS agent_workspace (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
+    ],
+  },
+  {
+    name: 'agent_workspace_run',
+    klass: 'authoritative',
+    ddl: [
+      `CREATE TABLE IF NOT EXISTS agent_workspace_run (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS ix_agent_workspace_run ON agent_workspace_run(agent_id, created_at)`,
+    ],
+  },
+  {
     name: 'next_action',
     klass: 'authoritative',
     ddl: [

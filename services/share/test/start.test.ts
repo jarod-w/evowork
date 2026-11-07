@@ -7,7 +7,7 @@
  *     `IPAddressAllow` 才挡下来。
  * `createShareServer` 的单测碰不到这里 —— 它们接收的是已经解析好的参数。
  */
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtempSync } from 'node:fs';
@@ -167,16 +167,17 @@ describe('进程入口（按部署方式打包后真起）', () => {
   function entry(): string {
     if (bundle) return bundle;
     const out = join(mkdtempSync(join(tmpdir(), 'evowork-share-entry-')), 'main.mjs');
-    execFileSync(process.execPath, [
-      createRequire(import.meta.url).resolve('esbuild/bin/esbuild'),
-      join(ROOT, 'services/share/src/main.ts'),
-      '--bundle',
-      `--outfile=${out}`,
-      '--platform=node',
-      '--format=esm',
-      '--target=node22',
-      '--log-level=warning',
-    ]);
+    // npm 安装可能把 CLI 换成原生可执行文件；JS API 不依赖 CLI 文件形状。
+    const esbuild = createRequire(import.meta.url)('esbuild') as typeof import('esbuild');
+    esbuild.buildSync({
+      entryPoints: [join(ROOT, 'services/share/src/main.ts')],
+      bundle: true,
+      outfile: out,
+      platform: 'node',
+      format: 'esm',
+      target: 'node22',
+      logLevel: 'warning',
+    });
     bundle = out;
     return out;
   }

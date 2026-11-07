@@ -1,0 +1,21 @@
+{
+  "taskStatus": "interrupted",
+  "turns": [
+    {
+      "id": "01a1b601-9da2-7492-8601-15b3b9f9ff6f",
+      "status": "interrupted",
+      "startedAtMs": 1794054921000,
+      "completedAtMs": 1794054927000,
+      "durationMs": 6129
+    }
+  ],
+  "commands": [
+    {
+      "id": "call_e6ad24496e104129baca9a2c",
+      "type": "commandExecution",
+      "status": "completed",
+      "exitCode": 0
+    }
+  ],
+  "assertion": "释放门闩后 workspace-finished 存在；用例失败"
+}

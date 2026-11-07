@@ -99,6 +99,9 @@ export const EXPERIMENTAL_METHOD = {
   projectUpdate: 'project/update',
   projectDelete: 'project/delete',
 
+  threadBackgroundTerminalsList: 'thread/backgroundTerminals/list',
+  threadBackgroundTerminalsTerminate: 'thread/backgroundTerminals/terminate',
+
   threadQueueAdd: 'thread/queue/add',
   threadQueueList: 'thread/queue/list',
   threadQueueUpdate: 'thread/queue/update',

@@ -2712,8 +2712,15 @@ describe('侧边栏的六个入口都要有落点', () => {
    * 还没做的页面**说清是没做**，不留一个空白主区
    * （CLAUDE.md §9.1：降级、跳过、认不出来都要如实说）。
    */
-  it('智能体入口保留插件，前端配置跨导航保留且不创建后台任务', async () => {
+  it('智能体入口保留插件，后台配置跨导航恢复，保存不创建任务', async () => {
     const { bridge } = fakeBridge();
+    let configurations: import('@evowork/store/agent-workspace-model').AgentWorkspaceItem[] = [];
+    bridge.listAgentWorkspace = vi.fn(async () => configurations);
+    bridge.saveAgentWorkspace = vi.fn(async ({ agent }) => {
+      const saved = { ...agent, revision: 1 };
+      configurations = [saved];
+      return saved;
+    });
     render(<App bridge={bridge} />);
     const entry = await screen.findByRole('button', { name: '智能体' });
     fireEvent.click(entry);
@@ -2725,6 +2732,7 @@ describe('侧边栏的六个入口都要有落点', () => {
     fireEvent.change(screen.getByLabelText(/角色说明/), { target: { value: '供页面审阅' } });
     fireEvent.change(screen.getByLabelText(/^工作指令/), { target: { value: '整理输入材料' } });
     fireEvent.click(screen.getByRole('button', { name: '保存智能体' }));
+    await screen.findByRole('article', { name: '前端审阅助手' });
     fireEvent.click(screen.getByRole('button', { name: '插件' }));
     await screen.findByRole('tab', { name: '技能' });
     fireEvent.click(screen.getByRole('button', { name: '智能体' }));

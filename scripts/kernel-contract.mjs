@@ -103,6 +103,8 @@ const OUTGOING = {
   // 两个字段都没有 `Option`。漏掉 `turnId` = 「停止」按钮从来没成功过一次。
   // 空串是内核定义的「启动期中断」，是合法值，所以这里只要求**键在**。
   'turn/interrupt': { keys: ['threadId', 'turnId'] },
+  'thread/backgroundTerminals/list': { keys: ['threadId', 'limit'] },
+  'thread/backgroundTerminals/terminate': { keys: ['threadId', 'processId'] },
   'skills/extraRoots/set': { keys: ['extraRoots'] },
   'skills/list': { maybe: ['cwds', 'forceReload'] },
   'skills/config/write': { keys: ['enabled'], maybe: ['path', 'name'] },

@@ -1,0 +1,92 @@
+[
+  {
+    "case": "agent-workspace.real-MiMo-单体：角色指令生效，刷新保留配置，编辑和删除不改变已有任务快照-real",
+    "requests": 7,
+    "responses": 7,
+    "events": {
+      "request": 7,
+      "response": 7
+    },
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  {
+    "case": "agent-workspace-execution.-87a25-机命令，释放外部门闩后也不能写出完成文件或启动后续节点-real",
+    "requests": 1,
+    "responses": 1,
+    "events": {
+      "request": 1,
+      "response": 1
+    },
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  {
+    "case": "agent-workspace.real-MiMo-团队：真实输出经人工确认后交接并汇总，刷新恢复等待状态-real",
+    "requests": 10,
+    "responses": 10,
+    "events": {
+      "request": 10,
+      "response": 10
+    },
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  {
+    "case": "agent-workspace-execution.-ec829-本机的随机输入，真实计算并写文件，复核后按真实结果交接-real",
+    "requests": 8,
+    "responses": 8,
+    "events": {
+      "request": 8,
+      "response": 8
+    },
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  {
+    "case": "agent-workspace-execution.-ce26d-同时执行，结果按角色汇合，运行快照不受后续配置修改影响-real",
+    "requests": 8,
+    "responses": 8,
+    "events": {
+      "request": 8,
+      "response": 8
+    },
+    "endpoints": [
+      "https://api.xiaomimimo.com/v1/chat/completions"
+    ],
+    "models": [
+      "mimo-v2.6-flash"
+    ],
+    "statuses": [
+      200
+    ]
+  }
+]

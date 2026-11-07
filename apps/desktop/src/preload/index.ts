@@ -52,6 +52,12 @@ export const RENDERER_CHANNELS = Object.freeze({
  * 所以契约里没有多参数的动作。
  */
 export const RENDERER_ACTIONS = Object.freeze([
+  'listAgentWorkspace',
+  'saveAgentWorkspace',
+  'deleteAgentWorkspace',
+  'startAgentWorkspaceRun',
+  'getAgentWorkspaceRun',
+  'decideAgentWorkspaceRun',
   'verifyImageConnection',
   'getImageSettings',
   'saveImageSettings',

@@ -345,3 +345,23 @@ describe('场景包（03 §2.2）', () => {
     expect(resolveModeId('approve-for-me')).toBe('approve-for-me');
   });
 });
+
+describe('智能体工作指令', () => {
+  it('保留模式指令并附加角色，不支持指令扩展时拒绝执行', () => {
+    const result = expandTurnStart({
+      ...base,
+      overrides: { agentInstructions: '角色校验码 ROLE-317' },
+    });
+    expect(result.params.collaborationMode?.settings?.developer_instructions).toContain('ROLE-317');
+    expect(result.params.collaborationMode?.settings?.developer_instructions).toContain(
+      FRAGMENTS['modes/craft.md'],
+    );
+    expect(() =>
+      expandTurnStart({
+        ...base,
+        overrides: { agentInstructions: '角色校验码' },
+        collaborationModeAvailable: false,
+      }),
+    ).toThrow('不支持智能体工作指令');
+  });
+});

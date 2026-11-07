@@ -1,3 +1,5 @@
+import { AgentWorkspaceStore } from '@evowork/store';
+import { agentRoleInstructions, type AgentWorkspaceRunner } from '@evowork/kernel-adapter';
 import type { AttachmentTextHost } from './attachment-text-host.js';
 import type { AttachmentTextInput } from '../shared/ipc.js';
 import type { LibraryHost } from './library-host.js';
@@ -518,6 +520,7 @@ export interface ProjectPorts {
 }
 
 export interface RendererBridgeOptions {
+  readonly agentWorkspaceRunner?: AgentWorkspaceRunner | undefined;
   readonly skillExtraction?: import('./skill-extraction-host.js').SkillExtractionHost | undefined;
   readonly fileHost?: ReturnType<typeof createFileHost> | undefined;
   readonly attachmentText?: AttachmentTextHost | undefined;
@@ -1066,6 +1069,7 @@ export function createEventTranslator(store: Store, now: () => number) {
  */
 export function createRendererActions(options: RendererBridgeOptions) {
   const { adapter, store } = options;
+  const agentWorkspace = new AgentWorkspaceStore(store);
   const followUp = new FollowUpStore(store, false);
   const now = options.now ?? (() => Date.now());
 
@@ -1574,6 +1578,58 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
   const sendingDrafts = new Map<string, Promise<SendResult>>();
   return {
+    async listAgentWorkspace() {
+      return agentWorkspace.list();
+    },
+    async saveAgentWorkspace(input: { agent: unknown }) {
+      return agentWorkspace.save(input.agent);
+    },
+    async deleteAgentWorkspace(input: { id: string; revision: number }) {
+      agentWorkspace.remove(input.id, input.revision);
+    },
+    async getAgentWorkspaceRun(input: { agentId: string }) {
+      return agentWorkspace.runs(input.agentId)[0];
+    },
+    async decideAgentWorkspaceRun(input: {
+      runId: string;
+      nodeId?: string | undefined;
+      action: 'confirm' | 'stop';
+    }) {
+      if (!options.agentWorkspaceRunner) throw new Error('团队执行服务不可用。');
+      return options.agentWorkspaceRunner.decide(input);
+    },
+    async startAgentWorkspaceRun(input: {
+      agentId: string;
+      prompt: string;
+      workspaceId?: string | undefined;
+      modelId?: string | undefined;
+    }) {
+      const locked = options.policyPorts?.readOnlyReason();
+      if (locked) throw new Error(locked);
+      if (!options.agentWorkspaceRunner || !options.environments)
+        throw new Error('团队执行服务不可用。');
+      if (input.workspaceId) await checkedProjectRoot(input.workspaceId);
+      const environment = await options.environments.prepare(randomUUID(), input.workspaceId);
+      const preferences = options.preferencePorts?.read();
+      return options.agentWorkspaceRunner.start(
+        {
+          ...input,
+          cwd: environment.cwd,
+          concurrencyLimit: preferences?.concurrencyLimit ?? 3,
+          ...(preferences?.taskTokenBudget === undefined
+            ? {}
+            : { budgetLimit: preferences.taskTokenBudget }),
+        },
+        (threadId) => {
+          options.environments!.bind(threadId, {
+            cwd: environment.cwd,
+            projectId: environment.projectId,
+            managed: environment.managed,
+          });
+          options.environments!.markSent(threadId);
+        },
+      );
+    },
     async getSkillSource(
       input: Parameters<
         import('../shared/skill-extraction.js').SkillExtractionActions['getSkillSource']
@@ -1695,6 +1751,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
         throw new Error('请通过 /memories 打开本地记忆设置，不要发送给模型。');
       if (input.threadId && input.useMemories !== undefined)
         throw new Error('读取记忆只能在新任务发送前选择；已有任务的记忆无法撤回。');
+      if (input.agentId && input.threadId) throw new Error('已有任务不能更换智能体，请新建任务。');
+      const selectedAgent = input.agentId ? agentWorkspace.get(input.agentId) : undefined;
+      if (selectedAgent && selectedAgent.kind !== 'single')
+        throw new Error('团队请从运行监控启动。');
+      const agentInstructions = selectedAgent ? agentRoleInstructions(selectedAgent) : undefined;
       const id = input.draftId;
       if (id && sendingDrafts.has(id)) return sendingDrafts.get(id)!;
       const operation = (async () => {
@@ -1845,8 +1906,13 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
         // 用户手选的模型 / 审批档是优先级最高的一档（03 §2.4：场景默认 → 档 → 用户显式选择）
         const overrides =
-          input.modelId !== undefined || input.modeId !== undefined || cwd || defaultBudget
+          input.modelId !== undefined ||
+          input.modeId !== undefined ||
+          cwd ||
+          defaultBudget ||
+          agentInstructions
             ? {
+                ...(agentInstructions ? { agentInstructions } : {}),
                 ...(input.modelId !== undefined ? { model: input.modelId } : {}),
                 ...(input.modeId !== undefined ? { modeId: input.modeId } : {}),
                 ...(cwd ? { cwd } : {}),

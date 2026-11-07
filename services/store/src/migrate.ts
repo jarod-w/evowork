@@ -263,6 +263,14 @@ export const AUTHORITATIVE_MIGRATIONS: readonly Migration[] = [
         db.exec(ddl);
     },
   },
+  {
+    version: 8,
+    summary: '智能体配置与团队运行权威快照',
+    up: (db) => {
+      for (const table of AUTHORITATIVE_TABLES.filter((t) => t.name.startsWith('agent_workspace')))
+        for (const ddl of table.ddl) db.exec(ddl);
+    },
+  },
 ];
 
 export const PROJECTION_VERSION = PROJECTION_MIGRATIONS.at(-1)?.version ?? 0;
