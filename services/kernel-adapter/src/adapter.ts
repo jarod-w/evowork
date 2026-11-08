@@ -1,4 +1,5 @@
 import { FollowUpStore, type FollowUpResult } from '@evowork/store';
+import { commandRunsBundledScript } from './hook-command.js';
 import { createMemoryImporter } from './memory-import.js';
 import {
   createMemoryTextImporter,
@@ -659,7 +660,7 @@ export function createAdapter(options: AdapterOptions) {
               ['trusted', 'managed'].includes(h.trustStatus) &&
               options.bundledHooks!.sourcePaths.includes(h.sourcePath) &&
               options.bundledHooks!.commands.includes(h.command ?? '') &&
-              (h.command ?? '').includes('post-tool-use.mjs'),
+              commandRunsBundledScript(h.command ?? '', 'post-tool-use.mjs'),
           )
           .map((h) => ({ sourcePath: h.sourcePath, displayOrder: h.displayOrder })),
       );

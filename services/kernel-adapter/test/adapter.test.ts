@@ -5,6 +5,7 @@
  * 发一条消息真的会先 `thread/start` 再 `turn/start`、筛选真的走投影表而不是全量拉、
  * 实验方法不可用时真的走了兜底、审批真的在 start 之前就有人接。
  */
+import { Buffer } from 'node:buffer';
 import { ERROR_CODE, EXPERIMENTAL_METHOD, JsonRpcCallError } from '@evowork/protocol';
 import { createLogger, memorySink } from '@evowork/logging';
 import { FollowUpStore, openStore, type Store } from '@evowork/store';
@@ -2432,7 +2433,7 @@ describe('随包策略 hook：握手后信任宿主写的那几条（2026-09-28 
     enabled: true,
   });
 
-  function adapterWith(hooks: readonly unknown[]) {
+  function adapterWith(hooks: readonly unknown[], commands: readonly string[] = OURS) {
     server.handlers.set('hooks/list', () => ({
       data: [{ cwd: '/', hooks, warnings: [], errors: [] }],
     }));
@@ -2445,7 +2446,7 @@ describe('随包策略 hook：握手后信任宿主写的那几条（2026-09-28 
     const a = createAdapter({
       store,
       scenarios: BUILTIN_SCENARIOS.map((scenario) => ({ ...scenario, model: 'test/model' })),
-      bundledHooks: { sourcePaths: [SOURCE], commands: OURS },
+      bundledHooks: { sourcePaths: [SOURCE], commands },
       sessionOptions: {
         launcher: server.launcher(),
         clientInfo: { name: 'evowork-desktop', version: '0.0.0' },
@@ -2486,6 +2487,36 @@ describe('随包策略 hook：握手后信任宿主写的那几条（2026-09-28 
     ]);
     await a.start();
     expect(server.received.some((r) => r.method === 'config/batchWrite')).toBe(false);
+    await a.stop();
+  });
+
+  it('Windows 编码后的 post-tool-use 仍算受信任写入回执', async () => {
+    const encode = (scriptFile: string) =>
+      'powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ' +
+      Buffer.from(
+        `& 'EvoWork.exe' 'D:/plugins/hooks/evowork-policy/bin/${scriptFile}'`,
+        'utf16le',
+      ).toString('base64');
+    const post = encode('post-tool-use.mjs');
+    const pre = encode('pre-tool-use.mjs');
+    const listed = (command: string, eventName: string) => ({
+      key: eventName,
+      eventName,
+      handlerType: 'command',
+      command,
+      sourcePath: SOURCE,
+      currentHash: 'hash',
+      trustStatus: 'trusted',
+      enabled: true,
+      async: false,
+      displayOrder: 0,
+    });
+    const { a } = adapterWith(
+      [listed(pre, 'preToolUse'), listed(post, 'postToolUse'), listed(pre, 'postToolUse')],
+      [pre, post],
+    );
+    await a.start();
+    expect((await a.getMemoryTextImportStatus()).supported).toBe(true);
     await a.stop();
   });
 

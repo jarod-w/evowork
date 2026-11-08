@@ -2223,7 +2223,13 @@ export function createRendererActions(options: RendererBridgeOptions) {
           },
         );
       } finally {
-        await options.environments.discard(draftId);
+        // 结果已经落库。Windows 上内核还把这份草稿目录当作 cwd 时，rmdir 会 EBUSY；
+        // 清不掉不能把已保存或未确认的结果改写成导入失败。
+        await options.environments.discard(draftId).catch((error: unknown) => {
+          options.logger?.warn('desktop.workbuddy.draft_cleanup_failed', {
+            errorClass: error instanceof Error ? error.name : 'UnknownError',
+          });
+        });
       }
     },
     setMemoryImportSync(input: { readonly enabled: boolean }): Promise<MemoryImportSyncView> {

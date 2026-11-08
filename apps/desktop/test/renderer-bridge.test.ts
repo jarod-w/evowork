@@ -50,7 +50,7 @@ import {
   migrateStreamRetryBudget,
   resolvePaths,
 } from '../src/main/service-host.js';
-import { createTaskEnvironments } from '../src/main/task-environments.js';
+import { createTaskEnvironments, type TaskEnvironments } from '../src/main/task-environments.js';
 import { createAttachmentTextHost } from '../src/main/attachment-text-host.js';
 
 function row(over: Partial<ProjectionRow> = {}): ProjectionRow {
@@ -165,6 +165,40 @@ describe('无项目工作目录设置', () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe('WorkBuddy 文本导入', () => {
+  it('草稿目录删不掉时仍交回导入结果', async () => {
+    const record = {
+      id: 'note',
+      createdAt: 1,
+      scope: 'personal',
+      filename: 'note.md',
+      state: 'saved' as const,
+    };
+    const importMemoryText = vi.fn(async () => ({ record }));
+    let discarded = false;
+    const actions = makeActions({
+      adapter: fakeAdapter({ importMemoryText }),
+      readModelCatalog: async () =>
+        ({
+          models: [{ id: 'private/e2e-model' }],
+        }) as import('../src/shared/ipc.js').ModelCatalogResult,
+      environments: {
+        prepare: async () => ({ cwd: 'D:\\draft', projectId: null, managed: true }),
+        discard: async () => {
+          discarded = true;
+          const error = new Error("EBUSY: resource busy or locked, rmdir 'D:\\draft'");
+          (error as NodeJS.ErrnoException).code = 'EBUSY';
+          throw error;
+        },
+      } as unknown as TaskEnvironments,
+    });
+    await expect(
+      actions.importWorkBuddyText({ text: 'violet reports', model: 'private/e2e-model' }),
+    ).resolves.toEqual({ record });
+    expect(discarded).toBe(true);
   });
 });
 
