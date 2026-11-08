@@ -57,8 +57,9 @@ test('真模型浏览器：授权前零读取，真实 Chrome 取回未知口令
         url +
         '。提取网页正文中的验收口令，完整逐字输出口令，并按工具返回的 source.id 添加 [[cite:来源ID]] 来源引用。不要猜测口令；不要用终端、Python 或其他方式联网；不要写文件、访问其他 URL 或派生子任务。',
     );
-    const approval = page.getByLabel('需要你确认');
     const origin = page.getByRole('alertdialog').filter({ hasText: '允许读取和操作网站' });
+    // 来源确认卡的无障碍名称也是「需要你确认」，必须先排除，避免把它当成连接器审批。
+    const approval = page.getByLabel('需要你确认').filter({ hasNotText: '允许读取和操作网站' });
     await expect
       .poll(async () => (await approval.count()) > 0 || (await origin.count()) > 0, {
         timeout: 90000,
