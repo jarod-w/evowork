@@ -297,9 +297,9 @@ export function CatalogPage(props: CatalogPageProps) {
     selected?.kind === 'expert' ? experts.find((e) => e.id === selected.id) : undefined;
 
   return (
-    <div className="ew-page">
+    <div className="ew-page ew-catalog">
       {hubBusy ? <p role="status">正在安装技能并准备所需组件，请稍候…</p> : null}
-      <div className="ew-page-title-bar">
+      <div className="ew-page-title-bar ew-catalog-toolbar">
         <SegmentedControl
           variant="dark"
           ariaLabel="目录种类"
@@ -1447,7 +1447,7 @@ const HUB_STATE_LABEL: Readonly<Record<HubEntryView['state'], string>> = {
  * 「EvoWork 精选」的状态条 + 来源筛选。
  *
  * warning（校验失败丢弃 / 连不上用缓存）与 caption（为什么只有随包内容）都**常驻**，
- * 不是一闪而过的 Toast —— 「不静默降级」（5.6）。索引过期不在这里再报一条。
+ * 不是一闪而过的 Toast —— 「不静默降级」（5.6）。到期提示依据签名正文中的 expiresAt。
  */
 function HubBar({
   hub,
@@ -1464,6 +1464,17 @@ function HubBar({
   return (
     <>
       {status.warning !== undefined ? <Banner tone="warning">{status.warning}</Banner> : null}
+      {status.expired ? (
+        <Banner tone="warning">
+          {status.sourceName}目录已
+          {status.expiresAt !== undefined ? `于 ${formatHubDate(status.expiresAt)} ` : ''}
+          过期，暂时不能安装新内容。
+          {status.fetchMode === 'offline'
+            ? '请更新离线内容包。'
+            : '服务器尚未提供有效的新目录，需要维护者更新。'}
+          已安装内容可继续使用。
+        </Banner>
+      ) : null}
       {status.caption !== undefined ? (
         <p className="ew-catalog-muted" role="status">
           {status.caption}
@@ -1473,7 +1484,13 @@ function HubBar({
         <FilterChip label="全部来源" selected={!hubOnly} onClick={() => onHubOnly(false)} />
         <FilterChip label={status.sourceName} selected={hubOnly} onClick={() => onHubOnly(true)} />
         {status.fetchedAt !== undefined ? (
-          <span className="ew-catalog-muted">更新于 {formatHubTime(status.fetchedAt)}</span>
+          <span className="ew-catalog-muted">最近检查 {formatHubTime(status.fetchedAt)}</span>
+        ) : null}
+        {status.issuedAt !== undefined ? (
+          <span className="ew-catalog-muted">目录签发 {formatHubDate(status.issuedAt)}</span>
+        ) : null}
+        {status.expiresAt !== undefined ? (
+          <span className="ew-catalog-muted">目录有效期至 {formatHubDate(status.expiresAt)}</span>
         ) : null}
         {status.canRefresh ? <GhostButton label="刷新" icon="↻" onClick={onRefresh} /> : null}
       </FilterChipRow>
@@ -1599,4 +1616,8 @@ function formatHubTime(sec: number): string {
   const d = new Date(sec * 1000);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${String(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatHubDate(sec: number): string {
+  return `${String(new Date(sec * 1000).getFullYear())}-${formatHubTime(sec)}`;
 }

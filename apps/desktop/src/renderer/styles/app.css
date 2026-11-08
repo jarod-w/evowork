@@ -4661,6 +4661,40 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 
 /* ─────────────────────────── 技能 · 连接器（05）─────────────────────────── */
 
+.ew-catalog > .ew-content-column {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--layout-content-column) + var(--space-64));
+  min-width: 0;
+}
+.ew-catalog .ew-filter-chip-track {
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+.ew-catalog [aria-label='来源'] .ew-catalog-muted {
+  white-space: nowrap;
+}
+.ew-catalog .ew-projects-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--layout-item-card-width)), 1fr));
+}
+.ew-catalog .ew-item-card {
+  max-width: 100%;
+}
+.ew-catalog-toolbar {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: var(--layout-title-bar-height);
+}
+.ew-catalog-toolbar > .ew-search-input {
+  min-width: 0;
+  max-width: 100%;
+}
+.ew-catalog-toolbar > .ew-ghost-button,
+.ew-catalog-toolbar > .ew-catalog-add {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .ew-catalog-add {
   position: relative;
 }

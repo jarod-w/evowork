@@ -1670,7 +1670,10 @@ export interface HubStatusView {
   readonly expired: boolean;
   /** 秒。 */
   readonly fetchedAt?: number | undefined;
-  /** 常驻 warning 条：校验失败丢弃 / 连不上用缓存 / 目录过期。 */
+  /** 签名目录的签发时间和到期时间（秒），与最近检查时间分开。 */
+  readonly issuedAt?: number | undefined;
+  readonly expiresAt?: number | undefined;
+  /** 常驻 warning 条：校验失败丢弃 / 连不上用缓存。 */
   readonly warning?: string | undefined;
   /** 常驻 caption：为什么只有随包内容。 */
   readonly caption?: string | undefined;

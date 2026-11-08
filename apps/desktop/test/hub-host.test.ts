@@ -326,13 +326,24 @@ describe('安装（13 §5.3）', () => {
     serveIndex([publish('skill', 'minutes', '1.0.0', skillFiles('minutes'))]);
     const p = ports();
     await refreshHub(p, p.runtime, 'manual');
+    const issuedAt = now - 10;
+    const expiresAt = now + 7 * 24 * 3600;
     now += 30 * 24 * 3600;
+    // 服务器仍返回同一份旧目录；网络检查成功不能给签名目录续期。
+    expect((await refreshHub(p, p.runtime, 'manual')).ok).toBe(true);
     const view = hubCatalogView(p, p.runtime);
     expect(view.entries[0]?.state).toBe('expired');
+    expect(view.status).toMatchObject({ fetchedAt: now, issuedAt, expiresAt, expired: true });
     expect(view.status.warning).toBeUndefined();
     const refused = await installHubItem(p, { kind: 'skill', id: 'minutes' });
     expect(refused.ok).toBe(false);
     expect(refused.refused).toMatch(/过期/);
+    expect(refused.refused).toMatch(/维护者/);
+    // 发布新目录后，同一技能恢复可安装；不需要清缓存或重装应用。
+    serveIndex([publish('skill', 'minutes', '1.0.0', skillFiles('minutes'))]);
+    expect((await refreshHub(p, p.runtime, 'manual')).ok).toBe(true);
+    expect(hubCatalogView(p, p.runtime).entries[0]?.state).toBe('available');
+    expect((await installHubItem(p, { kind: 'skill', id: 'minutes' })).ok).toBe(true);
   });
 
   it('5.5：Hub 发布随包技能的更高版本 → Hub 那份生效、随包那份停用；卸载后回落', async () => {

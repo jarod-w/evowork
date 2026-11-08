@@ -76,6 +76,39 @@ const HUB_STATUS = {
 };
 
 describe('CatalogPage', () => {
+  it('刚检查过的旧目录仍显示实际到期时间与维护者指引，并保留网络警告', () => {
+    renderPage({
+      hub: {
+        status: {
+          ...HUB_STATUS,
+          expired: true,
+          fetchedAt: 1_794_044_669,
+          issuedAt: 1_791_466_688,
+          expiresAt: 1_792_071_488,
+          warning: '精选源暂时无法访问，显示的是缓存内容',
+        },
+        entries: [],
+      },
+    });
+    expect(screen.getByText(/最近检查/)).toBeTruthy();
+    expect(screen.getByText(/目录签发/)).toBeTruthy();
+    expect(screen.getByText(/目录有效期至/)).toBeTruthy();
+    expect(screen.getByText(/需要维护者更新/)).toBeTruthy();
+    expect(screen.getByText(/已安装内容可继续使用/)).toBeTruthy();
+    expect(screen.getByText(/精选源暂时无法访问/)).toBeTruthy();
+  });
+
+  it('有效目录展示有效期，不提示需要维护者更新', () => {
+    renderPage({
+      hub: {
+        status: { ...HUB_STATUS, fetchedAt: 1_800_000_000, expiresAt: 1_800_604_800 },
+        entries: [],
+      },
+    });
+    expect(screen.getByText(/目录有效期至/)).toBeTruthy();
+    expect(screen.queryByText(/需要维护者更新/)).toBeNull();
+  });
+
   it('文件安装独立打开文件选择器，P2 未确认不会提交安装授权', async () => {
     const pickFile = vi.fn(async () => '/downloads/SKILL.MD');
     const pickDirectory = vi.fn(async () => '/directory');

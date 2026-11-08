@@ -354,8 +354,7 @@ export function hubStatus(ports: HubHostPorts, runtime: HubRuntime): HubStatusVi
               ? 'auto'
               : 'manual-only';
   const last = runtime.last;
-  // 索引过期不在这里再报一条。括号里的时间是上次拉取时间，不是 expiresAt，
-  // 刚刷新成功也会显示「已过期」，而再刷新也消不掉。禁止新装落在条目状态和安装拒绝上。
+  // 网络/校验警告与到期状态分别展示；到期依据来自签名正文，不用最近检查时间推算。
   const warning =
     last?.status === 'rejected'
       ? `收到的目录没有通过校验，已丢弃，继续显示缓存：${last.reason}`
@@ -371,7 +370,13 @@ export function hubStatus(ports: HubHostPorts, runtime: HubRuntime): HubStatusVi
     fetchWhenSignedOut: readFetchWhenSignedOut(ports),
     canRefresh: canManualFetch(ports),
     expired: index?.expired === true,
-    ...(index !== undefined ? { fetchedAt: index.fetchedAt } : {}),
+    ...(index !== undefined
+      ? {
+          fetchedAt: index.fetchedAt,
+          issuedAt: index.payload.issuedAt,
+          expiresAt: index.payload.expiresAt,
+        }
+      : {}),
     ...(warning !== undefined ? { warning } : {}),
     ...(caption !== undefined ? { caption } : {}),
   };
@@ -550,7 +555,7 @@ export async function installHubItem(
   if (index.expired) {
     return {
       ok: false,
-      refused: `EvoWork 精选的目录已过期（更新于 ${formatTime(index.fetchedAt)}），暂时不能安装新内容。`,
+      refused: `EvoWork 精选的目录已于 ${formatTime(index.payload.expiresAt)} 过期，暂时不能安装新内容。${ports.offline !== undefined ? '请更新离线内容包。' : '服务器尚未提供有效的新目录，需要维护者更新。'}已安装内容可继续使用。`,
     };
   }
   const item = index.payload.items.find((i) => i.kind === input.kind && i.id === input.id);
