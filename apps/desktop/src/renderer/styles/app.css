@@ -4765,6 +4765,7 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-catalog-detail-meta {
   margin: 0;
   color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 .ew-catalog-detail-actions {
   display: flex;

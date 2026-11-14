@@ -4,7 +4,7 @@
  * 三 Tab 共用同一套标题栏骨架（SegmentedControl + 搜索 + 已安装筛选 + 添加）。
  * 数据全是宿主给的：这一层不读盘、不调内核。
  */
-import { useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type {
   CatalogBundleView,
@@ -235,6 +235,7 @@ export function CatalogPage(props: CatalogPageProps) {
 
   const data = props.data;
   const skills = data?.skills ?? [];
+  const skillGroups = useMemo(() => groupSharedSkills(skills), [skills]);
   const connectors = data?.connectors ?? [];
   const experts = data?.experts ?? [];
 
@@ -257,7 +258,7 @@ export function CatalogPage(props: CatalogPageProps) {
     }
   };
 
-  const matchingSkills = skills.filter((skill) =>
+  const matchingSkills = skillGroups.filter((skill) =>
     matchesQuery(q, skill.name, skill.description, skill.category, skill.sourceLabel),
   );
   const featuredPool = ownedOnly ? [] : matchingSkills.filter((skill) => skill.featured);
@@ -300,7 +301,7 @@ export function CatalogPage(props: CatalogPageProps) {
       ? `已信任 ${connectors.filter((connector) => connector.trusted).length}`
       : props.tab === 'experts'
         ? `已选用 ${experts.filter((expert) => selectedExperts.has(expert.id)).length}`
-        : `我已安装的 ${skills.filter((skill) => skill.installed).length}`;
+        : `我已安装的 ${skillGroups.filter((skill) => skill.installed).length}`;
 
   const closeDialog = () => {
     setPending(null);
@@ -465,14 +466,24 @@ export function CatalogPage(props: CatalogPageProps) {
           />
         ) : null}
         {props.tab === 'skills' && data?.skillBudget?.over ? (
-          <Banner tone="warning">
+          <Banner tone={data.skillBudget.basis === 'fallback' ? 'info' : 'warning'}>
             <p>
-              {data.skillBudget.warning ?? '已启用技能的目录预计超出预算，部分说明可能被缩短或省略'}
+              {data.skillBudget.basis === 'fallback'
+                ? '技能目录超过参考预算，尚未取得完整的可用模型窗口信息'
+                : (data.skillBudget.warning ??
+                  '已启用技能的目录预计超出预算，部分说明可能被缩短或省略')}
             </p>
             <p>
               目录估算占用 {data.skillBudget.used.toLocaleString('zh-CN')} /{' '}
-              {data.skillBudget.budget.toLocaleString('zh-CN')}{' '}
-              token（按最小支持窗口估算）。可停用不常用的技能，实际可见内容取决于所用模型。
+              {data.skillBudget.budget.toLocaleString('zh-CN')} token
+              {data.skillBudget.basis === 'available-models'
+                ? `（按可用模型的最小窗口 ${data.skillBudget.contextWindow?.toLocaleString('zh-CN')} token 的 2% 估算）`
+                : '（按 128,000 token 窗口的参考基线估算，不代表当前模型已超限）'}
+              。
+              {data.skillBudget.enabledCount !== undefined
+                ? `计入 ${data.skillBudget.enabledCount} 个启用副本。`
+                : null}
+              可停用不常用的技能或多余副本，实际可见内容取决于所用模型。
             </p>
           </Banner>
         ) : null}
@@ -502,6 +513,12 @@ export function CatalogPage(props: CatalogPageProps) {
         {selectedSkill ? (
           <SkillDetail
             skill={selectedSkill}
+            copies={
+              skillGroups.find((group) =>
+                group.copies?.some((copy) => skillKey(copy) === skillKey(selectedSkill)),
+              )?.copies
+            }
+            onSelectCopy={(copy) => setSelected({ kind: 'skill', id: skillKey(copy) })}
             onBack={() => setSelected(null)}
             onUse={() => {
               if (selectedSkill.defaultPrompt) props.onUsePrompt(selectedSkill.defaultPrompt);
@@ -1055,7 +1072,7 @@ function SkillsGrid({
   readonly ownedOnly: boolean;
   readonly onClearFilters?: (() => void) | undefined;
   readonly featured: readonly CatalogItemView[];
-  readonly visible: readonly CatalogItemView[];
+  readonly visible: readonly SkillCardView[];
   readonly cats: readonly string[];
   readonly category: string | undefined;
   readonly onCategory: (id: string | undefined) => void;
@@ -1262,6 +1279,34 @@ function SkillsGrid({
   );
 }
 
+type SkillCardView = CatalogItemView & { readonly copies?: readonly CatalogItemView[] };
+
+/** 同名同描述的共享技能合为一张卡；实际文件、选择和启停仍按路径区分。 */
+function groupSharedSkills(skills: readonly CatalogItemView[]): readonly SkillCardView[] {
+  const groups = new Map<string, CatalogItemView[]>();
+  for (const skill of skills) {
+    const key =
+      skill.sourceLabel === '用户共享' && skill.skillPath && skill.uninstallDisabledReason
+        ? JSON.stringify([
+            skill.id,
+            skill.name,
+            skill.description,
+            skill.scope,
+            skill.category,
+            skill.riskLevel,
+          ])
+        : skillKey(skill);
+    const copies = groups.get(key);
+    if (copies) copies.push(skill);
+    else groups.set(key, [skill]);
+  }
+  return [...groups.values()].map((copies) => ({
+    ...copies[0]!,
+    enabled: copies.some((copy) => copy.enabled !== false),
+    copies,
+  }));
+}
+
 function skillKey(skill: CatalogItemView): string {
   return skill.skillPath ?? skill.id;
 }
@@ -1270,14 +1315,18 @@ function SkillCard({
   skill,
   onSelect,
 }: {
-  readonly skill: CatalogItemView;
+  readonly skill: SkillCardView;
   readonly onSelect: (id: string) => void;
 }) {
   return (
     <ItemCard
       name={skill.name}
       description={skill.description}
-      badges={[skill.sourceLabel, skill.riskLabel]}
+      badges={[
+        skill.sourceLabel,
+        skill.riskLabel,
+        ...(skill.copies && skill.copies.length > 1 ? [`${skill.copies.length} 个副本`] : []),
+      ]}
       tone={skill.riskLevel === 'p2' ? 'warning' : 'default'}
       footer={
         <>
@@ -1474,12 +1523,16 @@ function ExpertsGrid({
 
 function SkillDetail({
   skill,
+  copies,
+  onSelectCopy,
   onBack,
   onUse,
   onUninstall,
   onSetEnabled,
 }: {
   readonly skill: CatalogItemView;
+  readonly copies?: readonly CatalogItemView[] | undefined;
+  readonly onSelectCopy: (copy: CatalogItemView) => void;
   readonly onBack: () => void;
   readonly onUse: () => void;
   readonly onUninstall?: (() => void) | undefined;
@@ -1498,7 +1551,28 @@ function SkillDetail({
           作用域：{skill.scope} · {skill.enabled === false ? '已停用' : '已启用'}
         </p>
       ) : null}
-      {skill.skillPath ? <p className="ew-catalog-detail-meta">位置：{skill.skillPath}</p> : null}
+      {copies && copies.length > 1 ? (
+        <div className="ew-catalog-detail-meta">
+          <p>
+            发现 {copies.length} 个同名同描述的共享副本，附带文件可能不同。
+            每个启用副本都会计入目录预算，可选择副本查看并停用多余项。
+          </p>
+          {copies.map((copy, index) => (
+            <p key={skillKey(copy)}>
+              <PillButton
+                aria-pressed={skillKey(copy) === skillKey(skill)}
+                onClick={() => onSelectCopy(copy)}
+              >
+                副本 {index + 1} · {copy.enabled === false ? '已停用' : '已启用'}
+              </PillButton>{' '}
+              {copy.skillPath}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      {skill.skillPath ? (
+        <p className="ew-catalog-detail-meta">{`位置：${skill.skillPath}`}</p>
+      ) : null}
       {skill.findings.length > 0 ? (
         <ul className="ew-catalog-findings">
           {skill.findings.map((f) => (

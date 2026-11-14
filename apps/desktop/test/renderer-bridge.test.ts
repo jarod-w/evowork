@@ -549,6 +549,73 @@ describe('Composer 技能上下文', () => {
     }
   });
 
+  it('技能预算跟随可用模型最小窗口，计入所有启用副本；未知窗口明确退回参考基线', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ew-skill-model-budget-'));
+    const store = memoryStore();
+    const catalogPorts = createFsCatalogPorts({
+      pluginsDir: join(home, 'plugins'),
+      userRoot: join(home, 'user'),
+      kernelHome: join(home, 'kernel'),
+    });
+    const skills = Array.from({ length: 12 }, (_, index) => ({
+      name: 'shared',
+      description: 'a'.repeat(1024),
+      path: join(home, `copy-${index}`, 'SKILL.md'),
+      scope: 'user' as const,
+      enabled: true,
+    }));
+    const model = (id: string, maxContextTokens?: number, denied?: string) => ({
+      id,
+      label: id,
+      provider: 'private',
+      capabilities: [],
+      notices: [],
+      credentialSource: 'private' as const,
+      verified: false,
+      maxContextTokens,
+      denied,
+    });
+    let models = [model('large', 1_000_000), model('disabled', 32_000, '已停用')];
+    const readModelCatalog = vi.fn();
+    const actions = makeActions({
+      store,
+      catalogPorts,
+      readModelCatalog,
+      skillBudgetModels: () => models,
+      adapter: fakeAdapter({
+        listSkills: vi.fn(async () => ({ data: [{ cwd: home, skills, errors: [] }] })),
+      }),
+    });
+    try {
+      const large = (await actions.getCatalog()).skillBudget!;
+      expect(large).toMatchObject({
+        budget: 20_000,
+        over: false,
+        basis: 'available-models',
+        enabledCount: 12,
+      });
+      expect(large.used).toBeGreaterThan(2560);
+      models = [model('large', 1_000_000), model('small', 32_000)];
+      expect((await actions.getCatalog()).skillBudget).toMatchObject({
+        used: large.used,
+        budget: 640,
+        over: true,
+        basis: 'available-models',
+      });
+      models = [model('large', 1_000_000), model('unknown')];
+      expect((await actions.getCatalog()).skillBudget).toMatchObject({
+        budget: 2560,
+        basis: 'fallback',
+      });
+      models = [];
+      expect((await actions.getCatalog()).skillBudget?.basis).toBe('fallback');
+      expect(readModelCatalog).not.toHaveBeenCalled();
+    } finally {
+      store.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it('内核没有返回请求目录时明确报错，不能拿其他工作空间的技能代替', async () => {
     const store = memoryStore();
     store.db

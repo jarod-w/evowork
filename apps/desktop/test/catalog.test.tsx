@@ -379,15 +379,76 @@ describe('CatalogPage', () => {
     expect(screen.getByText(`位置：${paths[0]}`)).toBeTruthy();
   });
 
+  it('同名同描述的共享副本只显示一张卡，详情可分别选择和停用，不隐藏其他来源', async () => {
+    const copies = ['/shared/bucket-a/pdf/SKILL.md', '/shared/bucket-b/pdf/SKILL.md'].map(
+      (skillPath) => ({
+        id: 'pdf',
+        name: 'pdf',
+        description: '处理 PDF',
+        category: '未分类',
+        source: 'local' as const,
+        sourceLabel: '用户共享',
+        installed: true,
+        featured: false,
+        riskLevel: 'p0' as const,
+        riskLabel: '低风险',
+        findings: [],
+        enabled: true,
+        scope: 'user' as const,
+        skillPath,
+        uninstallDisabledReason: '由外部目录管理。',
+      }),
+    );
+    const official = {
+      ...copies[0]!,
+      source: 'official' as const,
+      sourceLabel: '官方内置',
+      skillPath: '/plugins/pdf/SKILL.md',
+      uninstallDisabledReason: undefined,
+    };
+    const skills = [...copies, official];
+    const setEnabled = vi.fn(async () => ({ ok: true, catalog: { ...EMPTY, skills } }));
+    renderPage({ skills }, 'skills', { onSetSkillEnabled: setEnabled });
+    expect(screen.getByRole('button', { name: /我已安装的 2/ })).toBeTruthy();
+    expect(document.querySelectorAll('.ew-item-card')).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: '管理 · pdf' })[0]!);
+    expect(screen.getByText(/附带文件可能不同/)).toBeTruthy();
+    expect(screen.getByText(`位置：${copies[0]!.skillPath}`)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '副本 2 · 已启用' }));
+    expect(screen.getByText(`位置：${copies[1]!.skillPath}`)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '停用' }));
+    await waitFor(() =>
+      expect(setEnabled).toHaveBeenCalledWith({
+        path: copies[1]!.skillPath,
+        name: 'pdf',
+        enabled: false,
+      }),
+    );
+    expect(screen.queryByRole('button', { name: '卸载' })).toBeNull();
+  });
+
+  it('未知模型窗口只显示参考提示，不把固定基线说成当前模型已超限', () => {
+    renderPage({
+      skillBudget: { used: 4719, budget: 2560, over: true, basis: 'fallback', enabledCount: 32 },
+    });
+    expect(screen.getByText('技能目录超过参考预算，尚未取得完整的可用模型窗口信息')).toBeTruthy();
+    expect(screen.getByText(/不代表当前模型已超限/)).toBeTruthy();
+    expect(screen.getByText(/计入 32 个启用副本/)).toBeTruthy();
+    expect(screen.queryByText('已启用技能的目录预计超出预算，部分说明可能被缩短或省略')).toBeNull();
+  });
+
   it('启用的技能超过 prompt 预算 → 显示估算值，不断言当前模型已截断', () => {
     renderPage({
       skillBudget: {
         used: 3000,
         budget: 2560,
         over: true,
+        basis: 'available-models',
+        contextWindow: 128_000,
       },
     });
     expect(screen.getByText('已启用技能的目录预计超出预算，部分说明可能被缩短或省略')).toBeTruthy();
+    expect(screen.getByText(/按可用模型的最小窗口 128,000/)).toBeTruthy();
     expect(screen.getByText(/3,000.*2,560/)).toBeTruthy();
   });
 });

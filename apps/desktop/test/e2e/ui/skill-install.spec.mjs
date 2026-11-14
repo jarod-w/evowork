@@ -115,7 +115,12 @@ test.describe('显式共享目录', () => {
     }
     expect(shared).toHaveLength(paths.length);
     expect(catalog.skills.filter((skill) => skill.id === 'charts')).toHaveLength(paths.length + 1);
-    expect(catalog.skillBudget.over).toBe(true);
+    expect(catalog.skillBudget).toMatchObject({
+      basis: 'available-models',
+      contextWindow: 32_000,
+      budget: 640,
+      over: true,
+    });
     await expect(
       page.getByRole('button', { name: `我已安装的 ${catalog.skills.length}` }),
     ).toBeVisible();
@@ -146,14 +151,104 @@ test.describe('显式共享目录', () => {
       ).toHaveLength(index + 1);
       await page.getByRole('button', { name: '返回目录' }).click();
     }
+    // 假模型窗口为 32K，内置技能本身也可能超出 640 token。
+    // 按真实窗口验证：保留 charts，停用其余内置项后才应消除告警。
+    const afterShared = await page.evaluate(() => window.evowork.getCatalog());
+    expect(afterShared.skillBudget.used).toBeLessThan(catalog.skillBudget.used);
+    for (const skill of afterShared.skills.filter(
+      (skill) => skill.source === 'official' && skill.id !== 'charts',
+    )) {
+      await page.evaluate(
+        (skill) =>
+          window.evowork.setSkillEnabled({
+            path: skill.skillPath,
+            name: skill.id,
+            enabled: false,
+          }),
+        skill,
+      );
+    }
+    await page.reload();
+    await page.getByRole('button', { name: '插件', exact: true }).click();
+    const reduced = await page.evaluate(() => window.evowork.getCatalog());
+    expect(reduced.skillBudget).toMatchObject({ budget: 640, over: false, enabledCount: 1 });
+    expect(
+      reduced.skills.find((skill) => skill.source === 'official' && skill.id === 'charts').enabled,
+    ).toBe(true);
     await expect(warning).toHaveCount(0);
     expect(paths.every((path) => existsSync(path))).toBe(true);
     await page.reload();
     await page.getByRole('button', { name: '插件', exact: true }).click();
+    await page.getByRole('searchbox', { name: '搜索技能' }).fill('共享图表副本');
     await expect(page.getByText('已停用', { exact: true })).toHaveCount(paths.length);
     await expect(warning).toHaveCount(0);
     await page.getByRole('searchbox', { name: '搜索技能' }).fill('共享图表副本');
     await page.screenshot({ path: testInfo.outputPath('shared-skills-disabled.png') });
+  });
+
+  test('共享同步副本合为一张卡，切换后只停用所选路径并保留文件', async ({
+    page,
+    electronApp,
+  }, testInfo) => {
+    const home = await electronApp.evaluate(() => globalThis.__evoworkE2E.home);
+    const paths = ['bucket-a', 'bucket-b'].map((bucket, index) => {
+      const path = join(home, '.agents', 'skills', 'synced', bucket, 'duplicate-pdf', 'SKILL.md');
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(
+        path,
+        `---\nname: duplicate-pdf\ndescription: 同步 PDF 技能\n---\n副本正文 ${index + 1}\n`,
+      );
+      return path;
+    });
+    await page.getByRole('button', { name: '插件', exact: true }).click();
+    await page.getByRole('searchbox', { name: '搜索技能' }).fill('duplicate-pdf');
+    const cards = page.locator('.ew-item-card').filter({ hasText: 'duplicate-pdf' });
+    await expect(cards).toHaveCount(1);
+    await expect(cards.getByText('2 个副本')).toBeVisible();
+    const catalog = await page.evaluate(() => window.evowork.getCatalog());
+    const copies = catalog.skills.filter((skill) => skill.id === 'duplicate-pdf');
+    expect(copies).toHaveLength(2);
+    const second = copies[1];
+    await cards.getByRole('button', { name: '管理 · duplicate-pdf', exact: true }).click();
+    await page.getByRole('button', { name: '副本 2 · 已启用' }).click();
+    await expect(page.getByText(`位置：${second.skillPath}`)).toBeVisible();
+    await page.getByRole('button', { name: '停用', exact: true }).click();
+    await expect(page.getByRole('button', { name: '副本 2 · 已停用' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '副本 1 · 已启用' })).toBeVisible();
+    const updated = await page.evaluate(() => window.evowork.getCatalog());
+    expect(
+      updated.skills.filter((skill) => skill.id === 'duplicate-pdf' && skill.enabled),
+    ).toHaveLength(1);
+    expect(updated.skillBudget.enabledCount).toBe(catalog.skillBudget.enabledCount - 1);
+    expect(updated.skillBudget.used).toBeLessThan(catalog.skillBudget.used);
+    await page.screenshot({ path: testInfo.outputPath('shared-copies-detail.png') });
+    await electronApp.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setSize(480, 900),
+    );
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(480);
+    await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click();
+    await expect(page.getByRole('button', { name: '副本 2 · 已停用' })).toBeVisible();
+    expect(
+      await page
+        .locator('.ew-catalog-detail')
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    expect(
+      await page
+        .locator('.ew-catalog-toolbar')
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    const installedButton = await page.getByRole('button', { name: /我已安装的/ }).boundingBox();
+    expect(installedButton.x + installedButton.width).toBeLessThanOrEqual(480);
+    await page.screenshot({ path: testInfo.outputPath('shared-copies-detail-480.png') });
+    await page.reload();
+    await page.getByRole('button', { name: '插件', exact: true }).click();
+    await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click();
+    await page.getByRole('searchbox', { name: '搜索技能' }).fill('duplicate-pdf');
+    await expect(cards).toHaveCount(1);
+    await cards.getByRole('button', { name: '管理 · duplicate-pdf', exact: true }).click();
+    await expect(page.getByRole('button', { name: '副本 2 · 已停用' })).toBeVisible();
+    expect(paths.every((path) => existsSync(path))).toBe(true);
   });
 });
 

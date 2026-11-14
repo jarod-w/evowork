@@ -134,6 +134,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe('目录条目 → 下拉选项', () => {
   it('标签是 `provider/上游模型名` —— 用户要能一眼看出发给谁、发的哪个型号', () => {
     expect(toModelOption(entry()).label).toBe('deepseek/deepseek-v4-flash');
+    expect(toModelOption(entry()).maxContextTokens).toBe(128_000);
   });
 
   /**

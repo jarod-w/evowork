@@ -2721,6 +2721,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     userName: userInfo().username,
     cases: BUILTIN_CASES,
     readModelCatalog,
+    skillBudgetModels: () => computerUseModelCatalog,
     /*
      * 一次收下三家内置厂商密钥并拉起网关。界面不再调用这条（引导不收密钥，
      * 设置页走「添加模型」）；测试与兼容路径仍走这里。

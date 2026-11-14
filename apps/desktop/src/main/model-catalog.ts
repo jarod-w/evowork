@@ -254,6 +254,7 @@ export async function waitUntilGatewayReady(
 export function toModelOption(entry: ModelCatalogEntry): ModelOptionView {
   return {
     id: entry.id,
+    maxContextTokens: entry.capabilities.maxContextTokens,
     // 01 §5.15：等宽的 `provider/model`。用上游真实模型名而不是 displayName ——
     // 用户要能一眼看出发给谁、发的是哪个型号
     label: `${entry.provider}/${entry.upstreamModel}`,

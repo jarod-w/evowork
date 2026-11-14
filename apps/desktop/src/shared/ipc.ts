@@ -285,6 +285,8 @@ export interface StartupInfo {
  * 等于把一个 HTTP 契约钉死在 UI 组件上。
  */
 export interface ModelOptionView {
+  /** 与网关及内核模型目录相同的上下文窗口，供技能预算估算。 */
+  readonly maxContextTokens?: number | undefined;
   readonly id: string;
   /** 等宽显示的 `provider/model` */
   readonly label: string;
@@ -1686,6 +1688,9 @@ export interface HubCatalogView {
 
 /** 进 prompt 的技能目录预算（13 §6 / HF6）。超了给 warning，**不静默截断**。 */
 export interface SkillBudgetView {
+  readonly basis?: 'available-models' | 'fallback' | undefined;
+  readonly contextWindow?: number | undefined;
+  readonly enabledCount?: number | undefined;
   readonly used: number;
   readonly budget: number;
   readonly over: boolean;

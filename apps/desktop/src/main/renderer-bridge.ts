@@ -598,6 +598,8 @@ export interface RendererBridgeOptions {
    * 没给时下拉为空并说明原因 —— **不假装有模型可选**（03 §8）。
    */
   readonly readModelCatalog?: (() => Promise<ModelCatalogResult>) | undefined;
+  /** 最近一次读取的可用模型目录；技能页不额外出网或等待模型网关。 */
+  readonly skillBudgetModels?: (() => ModelCatalogResult['models']) | undefined;
   /**
    * 把用户填的厂商密钥写进本机并拉起网关。
    *
@@ -1158,6 +1160,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
             }))
         : Promise.resolve({ value: { data: [], nextCursor: null }, error: undefined }),
     ]);
+    const availableModels = (options.skillBudgetModels?.() ?? []).filter((model) => !model.denied);
+    const windows = availableModels.map((model) => model.maxContextTokens);
+    const contextWindow =
+      windows.length > 0 && windows.every((window) => Number.isFinite(window) && window! > 0)
+        ? Math.min(...(windows as number[]))
+        : undefined;
     const entry = listed.data[0];
     const skills = options.catalogPorts
       ? mergeDiscoveredSkills(options.catalogPorts, base.skills, entry?.skills ?? [])
@@ -1206,7 +1214,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
       ...base,
       ...(options.hubPorts ? { hub: hubCatalogView(options.hubPorts, hubRuntime) } : {}),
       ...(options.catalogPorts
-        ? { skillBudget: skillBudgetView(options.catalogPorts, entry?.skills ?? []) }
+        ? { skillBudget: skillBudgetView(options.catalogPorts, entry?.skills ?? [], contextWindow) }
         : {}),
       experts: base.experts.map((expert) =>
         hubExperts.has(expert.id) ? { ...expert, source: 'hub' as const } : expert,

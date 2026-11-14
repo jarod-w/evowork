@@ -164,13 +164,7 @@ export const HUB_OFF_CAPTION = '这台电脑的部署配置停用了 EvoWork 精
 export const HUB_ORG_OFF_CAPTION = '你所在的组织已停用 EvoWork 精选内容';
 export const HUB_UNCONFIGURED_CAPTION = '这个版本还没有接入 EvoWork 精选源';
 
-/**
- * 支持的最小上下文窗口（13 §6：核心层预算按它算）。128K 原本取自 `known-models.ts`
- * 里内置模型的最小值；2026-10-05 那张表按厂商文档订正后内置三家都是 1M 级，
- * **这里有意不跟着放大**：内核按每个模型的真实窗口算技能目录预算，表外的自定义模型可以比 1M 小
- * （默认 256k，手改 `models.toml` 可以更小），按 1M 算的预算在它们身上会漏报截断。
- * 128K 对 32K / 64K 的模型仍偏大，还没处理。
- */
+/** 无法取得完整可用模型窗口时的参考基线，不代表当前模型的实际预算。 */
 export const HUB_MIN_CONTEXT_WINDOW = 128_000;
 
 /* ── 状态与偏好 ─────────────────────────────────────────────────────────── */
@@ -457,14 +451,19 @@ export function skillBudgetView(
     readonly path: string;
     readonly enabled: boolean;
   }[],
-  contextWindow: number = HUB_MIN_CONTEXT_WINDOW,
+  contextWindow?: number,
 ): SkillBudgetView {
   const visible = skills.filter((s) => s.enabled && !hiddenFromPrompt(ports, s.path));
   const used = skillCatalogCost(visible);
-  const budget = skillCatalogBudget(contextWindow);
+  const knownWindow = Number.isFinite(contextWindow) && contextWindow! > 0;
+  const window = knownWindow ? contextWindow! : HUB_MIN_CONTEXT_WINDOW;
+  const budget = skillCatalogBudget(window);
   return {
     used,
     budget,
+    contextWindow: window,
+    basis: knownWindow ? 'available-models' : 'fallback',
+    enabledCount: visible.length,
     over: used > budget,
     ...(used > budget ? { warning: HUB_BUDGET_WARNING } : {}),
   };
