@@ -469,6 +469,41 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
   return { bridge, emit };
 }
 
+it('在插件目录查看只读权限，连接示例邮箱并在任务中试用', async () => {
+  const { bridge } = fakeBridge();
+  render(<App bridge={bridge} />);
+  await screen.findByRole('heading', { name: '有什么可以帮忙的？' });
+  fireEvent.click(screen.getByRole('button', { name: '插件' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索技能' }), {
+    target: { value: '邮件摘要' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '查看权限' }));
+  expect(screen.getByText(/只读内置的 3 封示例邮件/)).toBeTruthy();
+  expect(screen.getByText('未连接', { selector: '.ew-dialog .ew-badge' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: '查看权限' }));
+  fireEvent.click(screen.getByRole('button', { name: '模拟连接' }));
+  expect(screen.getByRole('dialog', { name: '示例邮箱已连接' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '在任务中试用' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成摘要' }));
+  expect(screen.getByText('周四下班前提交发布演示稿。')).toBeTruthy();
+  expect(screen.getByText('周三前补充邮件权限页截图。')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: '查看权限' }));
+  fireEvent.click(screen.getByRole('button', { name: '断开连接' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认断开' }));
+  expect(screen.queryByText('周三前补充邮件权限页截图。')).toBeNull();
+  expect((screen.getByRole('button', { name: '生成摘要' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(bridge.trustConnector).not.toHaveBeenCalled();
+  expect(bridge.authorizeConnector).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: '返回插件目录' }));
+  fireEvent.click(screen.getByRole('tab', { name: '连接器' }));
+  expect(screen.getByText('示例邮箱')).toBeTruthy();
+});
+
 describe('自动消失提示的生命周期', () => {
   it.each(['dismiss', 'unmount'])('%s 会清理待执行的提示定时器', async (action) => {
     const timeout = vi.spyOn(window, 'setTimeout');
@@ -2762,7 +2797,7 @@ describe('侧边栏的六个入口都要有落点', () => {
     expect((await screen.findAllByText('文档')).length).toBeGreaterThan(0);
     expect(screen.queryByText('技能·连接器还没做好')).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: '专家' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'EvoWork 专家' }));
     expect(await screen.findByText('还没有专家')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('tab', { name: '连接器' }));

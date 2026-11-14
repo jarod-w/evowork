@@ -1,7 +1,7 @@
 /**
  * 技能 · 连接器页（05）。断的是用户看见的东西：Tab、空态、文案，不是中间字段。
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CatalogDataView } from '../src/shared/ipc.js';
@@ -210,10 +210,11 @@ describe('CatalogPage', () => {
       },
       'connectors',
     );
-    fireEvent.click(screen.getByText('日历'));
+    fireEvent.click(screen.getByRole('button', { name: '查看权限 · 日历' }));
     expect(screen.getByText('授权状态：尚未授权')).toBeTruthy();
     expect(screen.getByText('search_events')).toBeTruthy();
     expect(screen.getByRole('button', { name: '去授权' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '已信任 1' })).toBeTruthy();
   });
 
   it('专家 Tab 空态不预置角色包', () => {
@@ -242,6 +243,33 @@ describe('CatalogPage', () => {
     expect(screen.getByText('还没有专家')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: '＋ 新建专家' })[0]!);
     expect(screen.getByText('新建专家')).toBeTruthy();
+  });
+
+  it('清除筛选恢复技能，搜索能找到精选且不会重复显示', () => {
+    renderPage({
+      skills: [
+        {
+          id: 'report',
+          name: '报告整理',
+          description: '整理团队周报',
+          category: '办公协同',
+          source: 'official',
+          sourceLabel: '官方内置',
+          installed: true,
+          featured: true,
+          riskLevel: 'p0',
+          riskLabel: '低风险',
+          findings: [],
+        },
+      ],
+    });
+    const search = screen.getByRole('searchbox', { name: '搜索技能' });
+    fireEvent.change(search, { target: { value: '周报' } });
+    expect(screen.getAllByRole('button', { name: '管理 · 报告整理' })).toHaveLength(1);
+    fireEvent.change(search, { target: { value: '找不到' } });
+    fireEvent.click(screen.getByRole('button', { name: '浏览全部技能' }));
+    expect((search as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('button', { name: '管理 · 报告整理' })).toBeTruthy();
   });
 
   it('添加技能有三项入口，没有 SkillHub Tab', () => {
@@ -330,7 +358,11 @@ describe('CatalogPage', () => {
     const setEnabled = vi.fn(async () => ({ ok: true, catalog: { ...EMPTY, skills } }));
     renderPage({ skills }, 'skills', { onSetSkillEnabled: setEnabled });
     expect(screen.getByRole('button', { name: /我已安装的 2/ })).toBeTruthy();
-    fireEvent.click(screen.getByText('共享副本2'));
+    fireEvent.click(
+      within(screen.getByText('共享副本2').closest('.ew-item-card')!).getByRole('button', {
+        name: '管理 · 工作教练',
+      }),
+    );
     expect(screen.getByText(`位置：${paths[1]}`)).toBeTruthy();
     expect(screen.queryByRole('button', { name: '卸载' })).toBeNull();
     expect(screen.queryByText('官方内置技能不能卸载。')).toBeNull();
@@ -339,7 +371,11 @@ describe('CatalogPage', () => {
       expect(setEnabled).toHaveBeenCalledWith({ path: paths[1], name: 'coach', enabled: false }),
     );
     fireEvent.click(screen.getByRole('button', { name: '返回目录' }));
-    fireEvent.click(screen.getByText('共享副本1'));
+    fireEvent.click(
+      within(screen.getByText('共享副本1').closest('.ew-item-card')!).getByRole('button', {
+        name: '管理 · 工作教练',
+      }),
+    );
     expect(screen.getByText(`位置：${paths[0]}`)).toBeTruthy();
   });
 

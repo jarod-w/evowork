@@ -4,7 +4,7 @@
  * 三 Tab 共用同一套标题栏骨架（SegmentedControl + 搜索 + 已安装筛选 + 添加）。
  * 数据全是宿主给的：这一层不读盘、不调内核。
  */
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
 import type {
   CatalogBundleView,
@@ -21,6 +21,7 @@ import { AuditFindings } from '../components/audit-findings.js';
 import { Menu, Popover } from '../components/menu.js';
 import { TextTabs } from '../components/panels.js';
 import {
+  Badge,
   Banner,
   Dialog,
   EmptyState,
@@ -33,6 +34,7 @@ import {
   SectionHeader,
   SegmentedControl,
 } from '../components/primitives.js';
+import { MailTrialPermissions, type CatalogMailTrial } from './mail-summary-trial.js';
 
 export type CatalogTab = 'experts' | 'skills' | 'connectors';
 
@@ -105,6 +107,7 @@ export interface CatalogPageProps {
   readonly onUsePrompt: (prompt: string) => void;
   readonly onWriteSkill: () => void;
   readonly hubActions?: CatalogHubActions | undefined;
+  readonly mailTrial?: CatalogMailTrial | undefined;
 }
 
 type Pending =
@@ -123,14 +126,32 @@ type Pending =
   | { readonly kind: 'connector' }
   | { readonly kind: 'expert' }
   | { readonly kind: 'trust'; readonly connector: ConnectorView }
+  | { readonly kind: 'uninstall-package'; readonly name: string; readonly uninstall: () => void }
   | { readonly kind: 'uninstall-skill'; readonly id: string; readonly name: string }
   | { readonly kind: 'remove-expert'; readonly id: string; readonly name: string }
   | { readonly kind: 'remove-connector'; readonly id: string; readonly name: string }
   | null;
 
+const SELECTED_EXPERTS_KEY = 'evowork.catalog.selected-experts';
+
+function loadSelectedExperts(): ReadonlySet<string> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(SELECTED_EXPERTS_KEY) ?? '[]');
+    return new Set(Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function matchesQuery(query: string, ...parts: readonly string[]): boolean {
+  return parts.join(' ').toLowerCase().includes(query);
+}
+
 export function CatalogPage(props: CatalogPageProps) {
   const [query, setQuery] = useState('');
-  const [installedOnly, setInstalledOnly] = useState(false);
+  const [showMailPermissions, setShowMailPermissions] = useState(false);
+  const [ownedOnly, setOwnedOnly] = useState(false);
+  const [selectedExperts, setSelectedExperts] = useState(loadSelectedExperts);
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [bundleTab, setBundleTab] = useState<'recommend' | 'bundles'>('recommend');
   const [featuredOffset, setFeaturedOffset] = useState(0);
@@ -217,62 +238,69 @@ export function CatalogPage(props: CatalogPageProps) {
   const connectors = data?.connectors ?? [];
   const experts = data?.experts ?? [];
 
-  const visibleSkills = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return skills.filter((s) => {
-      if (installedOnly && !s.installed) return false;
-      if (category !== undefined && s.category !== category) return false;
-      if (bundleTab === 'bundles') return false;
-      if (q === '') return true;
-      return (
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q)
-      );
-    });
-  }, [skills, query, installedOnly, category, bundleTab]);
+  const q = query.trim().toLowerCase();
+  const hasFilters = q !== '' || ownedOnly || category !== undefined;
+  const clearFilters = () => {
+    setQuery('');
+    setOwnedOnly(false);
+    setCategory(undefined);
+  };
+  const toggleExpert = (id: string) => {
+    const next = new Set(selectedExperts);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedExperts(next);
+    try {
+      localStorage.setItem(SELECTED_EXPERTS_KEY, JSON.stringify([...next]));
+    } catch {
+      // 存储不可用时保留当前目录会话里的选用状态。
+    }
+  };
 
-  const featured = useMemo(() => {
-    const pool = skills.filter((s) => s.featured);
-    if (pool.length <= 3) return pool;
-    const start = ((featuredOffset % pool.length) + pool.length) % pool.length;
-    return [0, 1, 2].map((i) => pool[(start + i) % pool.length]).filter((s) => s !== undefined);
-  }, [skills, featuredOffset]);
-
-  const cats = useMemo(
-    () => [...new Set(skills.map((s) => s.category))].sort((a, b) => a.localeCompare(b)),
-    [skills],
+  const matchingSkills = skills.filter((skill) =>
+    matchesQuery(q, skill.name, skill.description, skill.category, skill.sourceLabel),
   );
-
-  const visibleConnectors = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return connectors.filter((c) => {
-      if (installedOnly && !c.trusted) return false;
-      if (category === 'browser' && c.category !== 'browser') return false;
-      if (category === 'custom' && c.category !== 'custom') return false;
-      if (q === '') return true;
-      return c.name.toLowerCase().includes(q);
-    });
-  }, [connectors, query, installedOnly, category]);
-
-  const visibleExperts = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return experts.filter((e) => {
-      if (q === '') return true;
-      return e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q);
-    });
-  }, [experts, query]);
+  const featuredPool = ownedOnly ? [] : matchingSkills.filter((skill) => skill.featured);
+  const firstFeatured = featuredPool.length > 0 ? featuredOffset % featuredPool.length : 0;
+  const featured = [
+    ...featuredPool.slice(firstFeatured),
+    ...featuredPool.slice(0, firstFeatured),
+  ].slice(0, 3);
+  const featuredKeys = new Set(featured.map(skillKey));
+  const visibleSkills = matchingSkills.filter(
+    (skill) =>
+      !featuredKeys.has(skillKey(skill)) &&
+      (!ownedOnly || skill.installed) &&
+      (ownedOnly || category === undefined || skill.category === category),
+  );
+  const cats = [...new Set(skills.map((skill) => skill.category))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const visibleConnectors = connectors.filter(
+    (connector) =>
+      (!ownedOnly || connector.trusted) &&
+      (category === undefined || category === connector.category) &&
+      matchesQuery(q, connector.name, statusBadge(connector)),
+  );
+  const visibleExperts = experts.filter(
+    (expert) =>
+      (!ownedOnly || selectedExperts.has(expert.id)) &&
+      matchesQuery(q, expert.name, expert.description, expert.category),
+  );
+  const hubEntries = (data?.hub?.entries ?? []).filter(
+    (entry) =>
+      entry.kind === HUB_KIND[props.tab] &&
+      matchesQuery(q, entry.displayName, entry.description, entry.category),
+  );
 
   const searchPlaceholder =
     props.tab === 'experts' ? '搜索专家' : props.tab === 'connectors' ? '搜索连接器' : '搜索技能';
-  const installedCount =
+  const filterLabel =
     props.tab === 'connectors'
-      ? connectors.filter((c) => c.trusted).length
+      ? `已信任 ${connectors.filter((connector) => connector.trusted).length}`
       : props.tab === 'experts'
-        ? experts.length
-        : skills.filter((s) => s.installed).length;
-  const installedLabel =
-    props.tab === 'connectors' ? `已连接 ${installedCount}` : `我已安装的 ${installedCount}`;
+        ? `已选用 ${experts.filter((expert) => selectedExperts.has(expert.id)).length}`
+        : `我已安装的 ${skills.filter((skill) => skill.installed).length}`;
 
   const closeDialog = () => {
     setPending(null);
@@ -296,6 +324,40 @@ export function CatalogPage(props: CatalogPageProps) {
   const selectedExpert =
     selected?.kind === 'expert' ? experts.find((e) => e.id === selected.id) : undefined;
 
+  const mailTrial = props.mailTrial;
+  const showMailTrial =
+    mailTrial &&
+    selected === null &&
+    !hubOnly &&
+    !ownedOnly &&
+    ((props.tab === 'skills' &&
+      (category === undefined || category === '效率工具') &&
+      bundleTab === 'recommend' &&
+      matchesQuery(q, '邮件摘要试用', '收件箱', '待办')) ||
+      (props.tab === 'connectors' &&
+        category === undefined &&
+        matchesQuery(q, '邮件', '示例邮箱')));
+
+  const mailTrialCard =
+    showMailTrial && mailTrial ? (
+      <ItemCard
+        name={props.tab === 'skills' ? '邮件摘要试用' : '示例邮箱'}
+        description={
+          props.tab === 'skills' ? '用示例邮件生成重点和待办。' : '为邮件摘要试用提供只读访问。'
+        }
+        footer={
+          <>
+            <Badge variant={mailTrial.connected ? 'success' : 'neutral'}>
+              {mailTrial.connected ? '已连接' : '未连接'}
+            </Badge>
+            <PillButton variant="accent" onClick={() => setShowMailPermissions(true)}>
+              查看权限
+            </PillButton>
+          </>
+        }
+      />
+    ) : null;
+
   return (
     <div className="ew-page ew-catalog">
       {hubBusy ? <p role="status">正在安装技能并准备所需组件，请稍候…</p> : null}
@@ -307,14 +369,16 @@ export function CatalogPage(props: CatalogPageProps) {
           onChange={(id) => {
             props.onTab(id as CatalogTab);
             setSelected(null);
-            setQuery('');
-            setInstalledOnly(false);
-            setCategory(undefined);
+            clearFilters();
+            setHubOnly(false);
+            setBundleTab('recommend');
+            setFeaturedOffset(0);
+            setAddOpen(false);
           }}
           items={[
-            { id: 'experts', label: '专家' },
             { id: 'skills', label: '技能' },
             { id: 'connectors', label: '连接器' },
+            { id: 'experts', label: 'EvoWork 专家' },
           ]}
         />
         <SearchInput
@@ -323,11 +387,14 @@ export function CatalogPage(props: CatalogPageProps) {
           placeholder={searchPlaceholder}
           ariaLabel={searchPlaceholder}
         />
-        <GhostButton
-          label={installedLabel}
-          icon={installedOnly ? '☑' : '☐'}
-          onClick={() => setInstalledOnly((v) => !v)}
-        />
+        {!hubOnly && (props.tab !== 'skills' || bundleTab === 'recommend') ? (
+          <GhostButton
+            label={filterLabel}
+            pressed={ownedOnly}
+            icon={ownedOnly ? '☑' : '☐'}
+            onClick={() => setOwnedOnly((v) => !v)}
+          />
+        ) : null}
         {props.tab === 'skills' ? (
           <span className="ew-catalog-add">
             <PillButton variant="accent" onClick={() => setAddOpen((v) => !v)}>
@@ -389,7 +456,11 @@ export function CatalogPage(props: CatalogPageProps) {
           <HubBar
             hub={data.hub}
             hubOnly={hubOnly}
-            onHubOnly={setHubOnly}
+            onHubOnly={(value) => {
+              setHubOnly(value);
+              setOwnedOnly(false);
+              setCategory(undefined);
+            }}
             onRefresh={() => void props.hubActions?.refresh()}
           />
         ) : null}
@@ -415,6 +486,18 @@ export function CatalogPage(props: CatalogPageProps) {
             连接器状态读取失败：{error}
           </p>
         ))}
+
+        {showMailTrial && props.tab === 'skills' && !hasFilters ? (
+          <div className="ew-catalog-trial-callout">
+            <div>
+              <h2>试用邮件摘要</h2>
+              <p>查看读取权限，连接示例邮箱，再到任务里生成摘要。</p>
+            </div>
+            <PillButton variant="accent" onClick={() => setShowMailPermissions(true)}>
+              开始试用
+            </PillButton>
+          </div>
+        ) : null}
 
         {selectedSkill ? (
           <SkillDetail
@@ -464,6 +547,8 @@ export function CatalogPage(props: CatalogPageProps) {
         ) : selectedExpert ? (
           <ExpertDetail
             expert={selectedExpert}
+            selected={selectedExperts.has(selectedExpert.id)}
+            onToggle={() => toggleExpert(selectedExpert.id)}
             onBack={() => setSelected(null)}
             onUse={(prompt) => props.onUsePrompt(prompt)}
             onRemove={
@@ -479,40 +564,59 @@ export function CatalogPage(props: CatalogPageProps) {
           />
         ) : hubOnly && data?.hub && props.hubActions ? (
           <HubGrid
-            entries={data.hub.entries.filter(
-              (e) =>
-                e.kind === HUB_KIND[props.tab] &&
-                (query.trim() === '' ||
-                  `${e.displayName} ${e.description} ${e.category}`
-                    .toLowerCase()
-                    .includes(query.trim().toLowerCase())),
-            )}
+            entries={hubEntries}
+            onClearSearch={q ? clearFilters : undefined}
             status={data.hub.status}
             onInstall={(ref) => void installHub(ref)}
-            onUninstall={(ref) => void props.hubActions?.uninstall(ref)}
+            onUninstall={(entry) =>
+              setPending({
+                kind: 'uninstall-package',
+                name: entry.displayName,
+                uninstall: () =>
+                  void props.hubActions?.uninstall({ kind: entry.kind, id: entry.id }),
+              })
+            }
             onRollback={(ref) => void props.hubActions?.rollback(ref)}
           />
         ) : props.tab === 'skills' ? (
           <SkillsGrid
+            trialCard={mailTrialCard}
             featured={featured}
+            canShuffle={featuredPool.length > featured.length}
+            ownedOnly={ownedOnly}
+            onClearFilters={hasFilters ? clearFilters : undefined}
             visible={visibleSkills}
             cats={cats}
             category={category}
             onCategory={setCategory}
             bundleTab={bundleTab}
-            onBundleTab={setBundleTab}
+            onBundleTab={(tab) => {
+              setBundleTab(tab);
+              setOwnedOnly(false);
+              setCategory(undefined);
+            }}
             onShuffle={() => setFeaturedOffset((n) => n + 1)}
             query={query}
             onSelect={(id) => setSelected({ kind: 'skill', id })}
             onWrite={props.onWriteSkill}
-            bundles={data?.bundles ?? []}
+            bundles={(data?.bundles ?? []).filter((bundle) =>
+              matchesQuery(q, bundle.name, bundle.description, bundle.category),
+            )}
             bundleErrors={data?.bundleErrors ?? []}
             onInstallBundle={installBundle}
-            onUninstallBundle={props.onUninstallBundle}
+            onUninstallBundle={(bundle) =>
+              setPending({
+                kind: 'uninstall-package',
+                name: bundle.name,
+                uninstall: () => void props.onUninstallBundle(bundle.id),
+              })
+            }
           />
         ) : props.tab === 'connectors' ? (
           <ConnectorsGrid
+            trialCard={mailTrialCard}
             rows={visibleConnectors}
+            onClearFilters={hasFilters ? clearFilters : undefined}
             query={query}
             category={category}
             onCategory={setCategory}
@@ -522,12 +626,31 @@ export function CatalogPage(props: CatalogPageProps) {
         ) : (
           <ExpertsGrid
             rows={visibleExperts}
+            selected={selectedExperts}
+            onToggle={toggleExpert}
+            onClearFilters={hasFilters ? clearFilters : undefined}
             query={query}
             onSelect={(id) => setSelected({ kind: 'expert', id })}
             onCreate={() => setPending({ kind: 'expert' })}
           />
         )}
       </div>
+
+      {showMailPermissions && mailTrial ? (
+        <MailTrialPermissions
+          connected={mailTrial.connected}
+          onClose={() => setShowMailPermissions(false)}
+          onConnect={() => mailTrial.onConnectionChange(true)}
+          onContinue={() => {
+            setShowMailPermissions(false);
+            mailTrial.onOpenTask();
+          }}
+          onDisconnect={() => {
+            mailTrial.onConnectionChange(false);
+            setShowMailPermissions(false);
+          }}
+        />
+      ) : null}
 
       {pending?.kind === 'git' ? (
         <Dialog
@@ -833,6 +956,21 @@ export function CatalogPage(props: CatalogPageProps) {
         </Dialog>
       ) : null}
 
+      {pending?.kind === 'uninstall-package' ? (
+        <Dialog
+          title={`卸载「${pending.name}」`}
+          confirmLabel="卸载"
+          variant="danger"
+          onCancel={closeDialog}
+          onConfirm={() => {
+            closeDialog();
+            pending.uninstall();
+          }}
+        >
+          <p>卸载后，本机任务需要重新安装才能使用此插件。</p>
+        </Dialog>
+      ) : null}
+
       {pending?.kind === 'uninstall-skill' ? (
         <Dialog
           title={`卸载「${pending.name}」`}
@@ -892,7 +1030,11 @@ export function CatalogPage(props: CatalogPageProps) {
 }
 
 function SkillsGrid({
+  trialCard,
   featured,
+  canShuffle,
+  ownedOnly,
+  onClearFilters,
   visible,
   cats,
   category,
@@ -908,6 +1050,10 @@ function SkillsGrid({
   onInstallBundle,
   onUninstallBundle,
 }: {
+  readonly trialCard: ReactNode;
+  readonly canShuffle: boolean;
+  readonly ownedOnly: boolean;
+  readonly onClearFilters?: (() => void) | undefined;
   readonly featured: readonly CatalogItemView[];
   readonly visible: readonly CatalogItemView[];
   readonly cats: readonly string[];
@@ -922,7 +1068,7 @@ function SkillsGrid({
   readonly bundles: readonly CatalogBundleView[];
   readonly bundleErrors: readonly { readonly path: string; readonly message: string }[];
   readonly onInstallBundle: CatalogPageProps['onInstallBundle'];
-  readonly onUninstallBundle: CatalogPageProps['onUninstallBundle'];
+  readonly onUninstallBundle: (bundle: CatalogBundleView) => void;
 }) {
   if (bundleTab === 'bundles') {
     return (
@@ -943,8 +1089,13 @@ function SkillsGrid({
         ))}
         {bundles.length === 0 ? (
           <EmptyState
-            title="还没有套件"
-            hint="套件是包含多技能 / MCP / hooks 的分发单元。EvoWork 只读取本机与工作区市场，安装前先检查它能做什么。"
+            title={query.trim() ? `没有找到「${query.trim()}」` : '还没有套件'}
+            hint={query.trim() ? undefined : '套件可以包含多项技能、MCP 连接器与 hooks。'}
+            action={
+              onClearFilters ? (
+                <PillButton onClick={onClearFilters}>清除搜索</PillButton>
+              ) : undefined
+            }
           />
         ) : (
           <div className="ew-projects-grid">
@@ -957,20 +1108,47 @@ function SkillsGrid({
                   ...(bundle.sourceLabel ? [bundle.sourceLabel] : []),
                   bundle.marketplaceName,
                   bundle.category,
-                  bundle.pendingReview
-                    ? '待确认'
-                    : bundle.installed
-                      ? bundle.enabled
-                        ? '已启用'
-                        : '已停用'
-                      : '未安装',
                   ...(bundle.riskLabel ? [bundle.riskLabel] : []),
                   ...(bundle.version ? [bundle.version] : []),
                 ]}
                 tone={bundle.available && bundle.riskLevel !== 'p2' ? 'default' : 'warning'}
-                action={
-                  bundle.pendingReview && bundle.marketplacePath ? (
-                    <>
+                footer={
+                  <>
+                    <Badge
+                      variant={
+                        bundle.pendingReview
+                          ? 'warning'
+                          : bundle.installed && bundle.enabled
+                            ? 'success'
+                            : 'neutral'
+                      }
+                    >
+                      {bundle.pendingReview
+                        ? '待确认'
+                        : bundle.installed
+                          ? bundle.enabled
+                            ? '已启用'
+                            : '已停用'
+                          : '未安装'}
+                    </Badge>
+                    {bundle.pendingReview && bundle.marketplacePath ? (
+                      <>
+                        <PillButton
+                          variant="accent"
+                          onClick={() =>
+                            void onInstallBundle({
+                              marketplacePath: bundle.marketplacePath!,
+                              pluginName: bundle.pluginName,
+                            })
+                          }
+                        >
+                          审查并启用
+                        </PillButton>
+                        <PillButton onClick={() => onUninstallBundle(bundle)}>卸载</PillButton>
+                      </>
+                    ) : bundle.installed ? (
+                      <PillButton onClick={() => onUninstallBundle(bundle)}>卸载</PillButton>
+                    ) : bundle.available && bundle.marketplacePath ? (
                       <PillButton
                         variant="accent"
                         onClick={() =>
@@ -980,29 +1158,14 @@ function SkillsGrid({
                           })
                         }
                       >
-                        审查并启用
+                        安装
                       </PillButton>
-                      <PillButton onClick={() => void onUninstallBundle(bundle.id)}>
-                        卸载
-                      </PillButton>
-                    </>
-                  ) : bundle.installed ? (
-                    <PillButton onClick={() => void onUninstallBundle(bundle.id)}>卸载</PillButton>
-                  ) : bundle.available && bundle.marketplacePath ? (
-                    <PillButton
-                      variant="accent"
-                      onClick={() =>
-                        void onInstallBundle({
-                          marketplacePath: bundle.marketplacePath!,
-                          pluginName: bundle.pluginName,
-                        })
-                      }
-                    >
-                      安装
-                    </PillButton>
-                  ) : (
-                    <span className="ew-catalog-muted">{bundle.disabledReason ?? '不可安装'}</span>
-                  )
+                    ) : (
+                      <span className="ew-catalog-muted">
+                        {bundle.disabledReason ?? '不可安装'}
+                      </span>
+                    )}
+                  </>
                 }
               />
             ))}
@@ -1014,11 +1177,11 @@ function SkillsGrid({
 
   return (
     <>
-      {featured.length > 0 && query.trim() === '' ? (
+      {featured.length > 0 ? (
         <>
           <SectionHeader
             title="精选技能"
-            actions={<GhostButton label="换一换" onClick={onShuffle} />}
+            actions={canShuffle ? <GhostButton label="换一换" onClick={onShuffle} /> : undefined}
           />
           <div className="ew-projects-grid">
             {featured.map((s) => (
@@ -1038,7 +1201,7 @@ function SkillsGrid({
         ]}
       />
 
-      {cats.length > 0 ? (
+      {!ownedOnly && cats.length > 0 ? (
         <FilterChipRow ariaLabel="技能分类">
           <FilterChip
             label="全部"
@@ -1056,24 +1219,40 @@ function SkillsGrid({
         </FilterChipRow>
       ) : null}
 
-      {visible.length === 0 ? (
+      {visible.length === 0 && !trialCard ? (
         <EmptyState
-          title={query.trim() === '' ? '还没有可安装的技能' : `没有找到「${query.trim()}」`}
+          title={
+            query.trim()
+              ? featured.length
+                ? '没有更多匹配的技能'
+                : `没有找到「${query.trim()}」`
+              : ownedOnly
+                ? '还没有已安装的技能'
+                : category !== undefined
+                  ? '这个分类暂无推荐技能'
+                  : featured.length
+                    ? '没有更多推荐技能'
+                    : '还没有可安装的技能'
+          }
           hint={
-            query.trim() === ''
+            !onClearFilters && featured.length === 0
               ? '办公技能会随产品分发。若这里是空的，说明随包的 plugins/skills 没装上。'
               : undefined
           }
           action={
-            query.trim() !== '' ? (
-              <PillButton variant="accent" onClick={onWrite}>
-                让 EvoWork 帮我写一个技能
-              </PillButton>
+            onClearFilters ? (
+              <div className="ew-catalog-detail-actions">
+                <PillButton onClick={onClearFilters}>浏览全部技能</PillButton>
+                {query.trim() && !ownedOnly && !featured.length ? (
+                  <PillButton onClick={onWrite}>让 EvoWork 帮我写一个技能</PillButton>
+                ) : null}
+              </div>
             ) : undefined
           }
         />
       ) : (
         <div className="ew-projects-grid">
+          {trialCard}
           {visible.map((s) => (
             <SkillCard key={skillKey(s)} skill={s} onSelect={onSelect} />
           ))}
@@ -1098,19 +1277,28 @@ function SkillCard({
     <ItemCard
       name={skill.name}
       description={skill.description}
-      badges={[
-        skill.sourceLabel,
-        skill.riskLabel,
-        skill.installed ? '已安装' : '未安装',
-        ...(skill.enabled === false ? ['已停用'] : []),
-      ]}
+      badges={[skill.sourceLabel, skill.riskLabel]}
       tone={skill.riskLevel === 'p2' ? 'warning' : 'default'}
-      onClick={() => onSelect(skillKey(skill))}
+      footer={
+        <>
+          <Badge variant={skill.installed && skill.enabled !== false ? 'success' : 'neutral'}>
+            {skill.installed ? (skill.enabled === false ? '已停用' : '已安装') : '未安装'}
+          </Badge>
+          <PillButton
+            ariaLabel={`${skill.installed ? '管理' : '查看详情'} · ${skill.name}`}
+            onClick={() => onSelect(skillKey(skill))}
+          >
+            {skill.installed ? '管理' : '查看详情'}
+          </PillButton>
+        </>
+      }
     />
   );
 }
 
 function ConnectorsGrid({
+  trialCard,
+  onClearFilters,
   rows,
   query,
   category,
@@ -1118,6 +1306,8 @@ function ConnectorsGrid({
   onSelect,
   onAdd,
 }: {
+  readonly onClearFilters?: (() => void) | undefined;
+  readonly trialCard: ReactNode;
   readonly rows: readonly ConnectorView[];
   readonly query: string;
   readonly category: string | undefined;
@@ -1132,6 +1322,11 @@ function ConnectorsGrid({
       </p>
       <FilterChipRow ariaLabel="连接器分类">
         <FilterChip
+          label="全部"
+          selected={category === undefined}
+          onClick={() => onCategory(undefined)}
+        />
+        <FilterChip
           label="浏览器"
           selected={category === 'browser'}
           onClick={() => onCategory(category === 'browser' ? undefined : 'browser')}
@@ -1142,27 +1337,59 @@ function ConnectorsGrid({
           onClick={() => onCategory(category === 'custom' ? undefined : 'custom')}
         />
       </FilterChipRow>
-      {rows.length === 0 ? (
+      {rows.length === 0 && !trialCard ? (
         <EmptyState
-          title={query.trim() === '' ? '还没有连接器' : `没有找到「${query.trim()}」`}
-          hint="本版只有 browser 这一个官方连接器。也可以添加自定义 MCP。"
+          title={
+            query.trim()
+              ? `没有找到「${query.trim()}」`
+              : onClearFilters
+                ? '没有符合筛选条件的连接器'
+                : '还没有连接器'
+          }
+          hint={onClearFilters ? undefined : '可以添加自定义 MCP。'}
           action={
-            <PillButton variant="accent" onClick={onAdd}>
-              ＋ 自定义连接器
-            </PillButton>
+            onClearFilters ? (
+              <PillButton onClick={onClearFilters}>浏览全部连接器</PillButton>
+            ) : (
+              <PillButton variant="accent" onClick={onAdd}>
+                ＋ 自定义连接器
+              </PillButton>
+            )
           }
         />
       ) : (
         <div className="ew-projects-grid">
+          {trialCard}
           {rows.map((c) => (
             <ItemCard
               key={c.id}
               name={c.name}
               description={connectorStatusText(c)}
-              badges={[c.kind === 'official' ? '官方内置' : '自建', statusBadge(c)]}
+              badges={[
+                c.kind === 'official' ? '官方内置' : c.kind === 'hub' ? 'EvoWork 精选' : '自建',
+              ]}
               tone={c.status === 'failed' || c.status === 'disabled' ? 'warning' : 'default'}
-              onClick={() => onSelect(c.id)}
-              action={c.status === 'untrusted' ? <span>＋</span> : undefined}
+              footer={
+                <>
+                  <Badge
+                    variant={
+                      c.status === 'connected'
+                        ? 'success'
+                        : c.status === 'failed'
+                          ? 'warning'
+                          : 'neutral'
+                    }
+                  >
+                    {statusBadge(c)}
+                  </Badge>
+                  <PillButton
+                    ariaLabel={`${c.status === 'needs-auth' || !c.trusted ? '查看权限' : '管理'} · ${c.name}`}
+                    onClick={() => onSelect(c.id)}
+                  >
+                    {c.status === 'needs-auth' || !c.trusted ? '查看权限' : '管理'}
+                  </PillButton>
+                </>
+              }
             />
           ))}
         </div>
@@ -1173,10 +1400,16 @@ function ConnectorsGrid({
 
 function ExpertsGrid({
   rows,
+  selected,
+  onToggle,
+  onClearFilters,
   query,
   onSelect,
   onCreate,
 }: {
+  readonly selected: ReadonlySet<string>;
+  readonly onToggle: (id: string) => void;
+  readonly onClearFilters?: (() => void) | undefined;
   readonly rows: readonly CatalogExpertView[];
   readonly query: string;
   readonly onSelect: (id: string) => void;
@@ -1185,12 +1418,22 @@ function ExpertsGrid({
   if (rows.length === 0) {
     return (
       <EmptyState
-        title={query.trim() === '' ? '还没有专家' : `没有找到「${query.trim()}」`}
-        hint="本期不预置角色包。新建一个，或把 agent-roles TOML 放到 ~/.evowork/agents/。"
+        title={
+          query.trim()
+            ? `没有找到「${query.trim()}」`
+            : onClearFilters
+              ? '还没有已选用的专家'
+              : '还没有专家'
+        }
+        hint={onClearFilters ? undefined : '新建专家后，可以从目录选用或直接对话。'}
         action={
-          <PillButton variant="accent" onClick={onCreate}>
-            ＋ 新建专家
-          </PillButton>
+          onClearFilters ? (
+            <PillButton onClick={onClearFilters}>浏览全部专家</PillButton>
+          ) : (
+            <PillButton variant="accent" onClick={onCreate}>
+              ＋ 新建专家
+            </PillButton>
+          )
         }
       />
     );
@@ -1203,7 +1446,26 @@ function ExpertsGrid({
           name={e.name}
           description={e.description}
           badges={[e.category, e.source === 'official' ? '官方内置' : '本地目录']}
-          onClick={() => onSelect(e.id)}
+          footer={
+            <>
+              <Badge variant={selected.has(e.id) ? 'success' : 'neutral'}>
+                {selected.has(e.id) ? '已选用' : '未选用'}
+              </Badge>
+              <PillButton
+                ariaLabel={`${selected.has(e.id) ? '取消选用' : '选用'} · ${e.name}`}
+                onClick={() => onToggle(e.id)}
+              >
+                {selected.has(e.id) ? '取消选用' : '选用'}
+              </PillButton>
+              <PillButton
+                ariaLabel={`查看详情 · ${e.name}`}
+                variant="ghost"
+                onClick={() => onSelect(e.id)}
+              >
+                查看详情
+              </PillButton>
+            </>
+          }
         />
       ))}
     </div>
@@ -1367,10 +1629,14 @@ function connectorAuthText(status: NonNullable<ConnectorView['authStatus']>): st
 
 function ExpertDetail({
   expert,
+  selected,
+  onToggle,
   onBack,
   onUse,
   onRemove,
 }: {
+  readonly selected: boolean;
+  readonly onToggle: () => void;
   readonly expert: CatalogExpertView;
   readonly onBack: () => void;
   readonly onUse: (prompt: string) => void;
@@ -1382,6 +1648,9 @@ function ExpertDetail({
       <h1 className="ew-catalog-detail-title">{expert.name}</h1>
       <p className="ew-catalog-detail-desc">{expert.description}</p>
       <p className="ew-catalog-detail-meta">{expert.category}</p>
+      <p className="ew-catalog-detail-meta">
+        选用状态用于本机插件目录筛选。可用下方示例或「直接对话」开启任务。
+      </p>
       {expert.instructions ? (
         <pre className="ew-catalog-instructions">{expert.instructions}</pre>
       ) : null}
@@ -1404,6 +1673,7 @@ function ExpertDetail({
         >
           直接对话
         </PillButton>
+        <PillButton onClick={onToggle}>{selected ? '取消选用' : '选用'}</PillButton>
         {onRemove ? <PillButton onClick={onRemove}>删除</PillButton> : null}
       </div>
     </div>
@@ -1500,21 +1770,26 @@ function HubBar({
 
 function HubGrid({
   entries,
+  onClearSearch,
   status,
   onInstall,
   onUninstall,
   onRollback,
 }: {
+  readonly onClearSearch?: (() => void) | undefined;
   readonly entries: readonly HubEntryView[];
   readonly status: HubCatalogView['status'];
   readonly onInstall: (ref: HubItemRef) => void;
-  readonly onUninstall: (ref: HubItemRef) => void;
+  readonly onUninstall: (entry: HubEntryView) => void;
   readonly onRollback: (ref: HubItemRef) => void;
 }) {
   if (entries.length === 0) {
     return (
       <EmptyState
-        title={`${status.sourceName}里还没有这一类内容`}
+        title={onClearSearch ? '没有匹配的精选插件' : `${status.sourceName}里还没有这一类内容`}
+        action={
+          onClearSearch ? <PillButton onClick={onClearSearch}>清除搜索</PillButton> : undefined
+        }
         hint={
           status.caption ??
           (status.fetchedAt === undefined
@@ -1544,19 +1819,31 @@ function HubGrid({
             badges={[
               status.sourceName,
               ...(entry.isNew ? ['新上架'] : []),
-              HUB_STATE_LABEL[entry.state],
               entry.riskLabel,
               ...(entry.promptVisible ? [] : ['按需带入']),
               version,
             ]}
             tone={entry.state === 'revoked' || entry.riskLevel === 'p2' ? 'warning' : 'default'}
-            action={
-              <HubAction
-                entry={entry}
-                onInstall={() => onInstall(ref)}
-                onUninstall={() => onUninstall(ref)}
-                onRollback={() => onRollback(ref)}
-              />
+            footer={
+              <>
+                <Badge
+                  variant={
+                    entry.state === 'installed'
+                      ? 'success'
+                      : entry.state === 'revoked'
+                        ? 'warning'
+                        : 'neutral'
+                  }
+                >
+                  {HUB_STATE_LABEL[entry.state]}
+                </Badge>
+                <HubAction
+                  entry={entry}
+                  onInstall={() => onInstall(ref)}
+                  onUninstall={() => onUninstall(entry)}
+                  onRollback={() => onRollback(ref)}
+                />
+              </>
             }
           />
         );

@@ -4679,7 +4679,8 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--layout-item-card-width)), 1fr));
 }
 .ew-catalog .ew-item-card {
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
 }
 .ew-catalog-toolbar {
   flex-wrap: wrap;
@@ -4694,6 +4695,34 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-catalog-toolbar > .ew-catalog-add {
   flex-shrink: 0;
   white-space: nowrap;
+}
+.ew-catalog-toolbar > .ew-segmented {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  height: auto;
+  max-width: 100%;
+}
+.ew-catalog-toolbar > .ew-ghost-button[aria-pressed='true'] {
+  background: var(--bg-selected);
+}
+.ew-catalog-trial-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--accent-weak);
+}
+.ew-catalog-trial-callout h2 {
+  margin: 0;
+  font-size: var(--font-title-2-size);
+}
+.ew-catalog-trial-callout p {
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
 }
 .ew-catalog-add {
   position: relative;
@@ -6394,4 +6423,103 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-width: 100%;
+}
+
+/* 插件卡片底部分离只读状态与操作。 */
+.ew-catalog .ew-item-card-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: auto;
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ew-catalog .ew-item-card-footer > button {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ew-catalog .ew-item-card-footer > .ew-badge {
+  margin-inline-end: auto;
+}
+
+.ew-catalog .ew-item-card-footer .ew-pill-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 邮件摘要示例任务 */
+.ew-mail-trial {
+  overscroll-behavior: contain;
+}
+
+.ew-mail-trial .ew-content-column > .ew-ghost-button {
+  align-self: flex-start;
+}
+
+.ew-mail-trial-permissions {
+  margin: 0 0 var(--space-12);
+}
+
+.ew-mail-trial-permissions dt {
+  font-weight: var(--font-body-lg-weight);
+  margin-top: var(--space-8);
+}
+
+.ew-mail-trial-permissions dd {
+  margin: 0;
+}
+
+.ew-mail-trial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--layout-item-card-width)), 1fr));
+  gap: var(--space-12);
+  align-items: start;
+}
+
+.ew-mail-trial-panel,
+.ew-mail-trial-access {
+  min-width: 0;
+  padding: var(--space-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+}
+
+.ew-mail-trial-access {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.ew-mail-trial-access > button {
+  margin-inline-start: auto;
+}
+
+.ew-mail-trial-panel h3 {
+  margin: var(--space-8) 0 var(--space-4);
+  font-size: var(--font-body-size);
+}
+
+.ew-mail-trial-panel ul {
+  margin: 0 0 var(--space-12);
+  padding-inline-start: var(--space-20);
+  overflow-wrap: anywhere;
+}
+
+.ew-mail-trial-panel .ew-mail-trial-messages {
+  padding: 0;
+  list-style: none;
+}
+
+.ew-mail-trial-messages li {
+  padding: var(--space-8) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ew-mail-trial-messages p {
+  margin: var(--space-4) 0 0;
 }

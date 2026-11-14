@@ -116,6 +116,7 @@ export function StatusDot({
 /** 01 §5.8 PillButton：高 28，`--r-full`。 */
 export function PillButton({
   children,
+  ariaLabel,
   variant = 'default',
   icon,
   trailing,
@@ -125,6 +126,7 @@ export function PillButton({
   expanded,
 }: {
   readonly children: ReactNode;
+  readonly ariaLabel?: string | undefined;
   readonly variant?: 'default' | 'accent' | 'ghost' | 'danger' | undefined;
   /** §5.8 的「可选图标 14」 */
   readonly icon?: ReactNode | undefined;
@@ -142,6 +144,7 @@ export function PillButton({
       data-variant={variant}
       disabled={disabled}
       aria-expanded={expanded}
+      aria-label={ariaLabel}
       {...(disabled && disabledReason ? { title: disabledReason } : {})}
       onClick={onClick}
     >
@@ -739,6 +742,7 @@ export function GhostButton({
   onClick,
   disabled,
   disabledReason,
+  pressed,
 }: {
   readonly label: string;
   readonly count?: number | undefined;
@@ -746,12 +750,14 @@ export function GhostButton({
   readonly onClick?: (() => void) | undefined;
   readonly disabled?: boolean | undefined;
   readonly disabledReason?: string | undefined;
+  readonly pressed?: boolean | undefined;
 }) {
   return (
     <button
       type="button"
       className="ew-ghost-button"
       disabled={disabled}
+      aria-pressed={pressed}
       title={disabled ? disabledReason : undefined}
       onClick={onClick}
     >
@@ -1123,6 +1129,7 @@ export function ItemCard({
   badges,
   tone = 'default',
   action,
+  footer,
   onClick,
 }: {
   readonly icon?: ReactNode | undefined;
@@ -1133,6 +1140,8 @@ export function ItemCard({
   readonly tone?: 'default' | 'warning' | undefined;
   /** 右上角。§5.20 是 `+`，项目卡换成 `⋯` 菜单 */
   readonly action?: ReactNode | undefined;
+  /** 底部的状态与独立文字按钮。 */
+  readonly footer?: ReactNode | undefined;
   readonly onClick?: (() => void) | undefined;
 }) {
   const hasBadges = badges !== undefined && badges.length > 0;
@@ -1140,7 +1149,7 @@ export function ItemCard({
     <div
       className="ew-item-card"
       data-tone={tone}
-      data-with-badges={hasBadges ? 'true' : undefined}
+      data-with-badges={hasBadges || footer ? 'true' : undefined}
       {...(onClick ? { role: 'button', tabIndex: 0, onClick } : {})}
       {...(onClick
         ? {
@@ -1183,6 +1192,7 @@ export function ItemCard({
           ))}
         </p>
       ) : null}
+      {footer ? <div className="ew-item-card-footer">{footer}</div> : null}
     </div>
   );
 }

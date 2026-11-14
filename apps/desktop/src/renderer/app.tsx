@@ -146,6 +146,11 @@ import {
   type CatalogPageProps,
   type CatalogTab,
 } from './views/catalog.js';
+import {
+  MailSummaryTrialPage,
+  useMailTrialConnection,
+  type CatalogMailTrial,
+} from './views/mail-summary-trial.js';
 import type { LibraryRow } from '@evowork/artifacts/library.js';
 import { AgentWorkspacePage } from './views/agent-workspace.js';
 import { type AgentWorkspaceItem } from './views/agent-workspace-state.js';
@@ -479,6 +484,7 @@ type MainView =
   | 'audit'
   | 'projects'
   | 'catalog'
+  | 'mail-summary-trial'
   | 'agents'
   /** 设置（11 §4.4）。**一页多分区**，分区由 `settingsSection` 决定 —— 不是六个视图 */
   | 'settings'
@@ -505,6 +511,7 @@ const VIEW_TO_NAV: Readonly<Partial<Record<MainView, string>>> = {
   task: 'new-task',
   projects: 'projects',
   catalog: 'catalog',
+  'mail-summary-trial': 'catalog',
   agents: 'agents',
   automations: 'automations',
   library: 'library',
@@ -783,6 +790,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [projectRefusal, setProjectRefusal] = useState<string | undefined>(undefined);
   const [catalog, setCatalog] = useState<CatalogDataView | null>(null);
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('skills');
+  const mailTrial = useMailTrialConnection();
   const [catalogRefusal, setCatalogRefusal] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -4266,6 +4274,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onRemoveProject={removeProject}
           onPickDirectory={view === 'catalog' ? pickCatalogDirectory : pickProjectDirectory}
           catalog={catalog}
+          mailTrial={{ ...mailTrial, onOpenTask: () => setView('mail-summary-trial') }}
+          onBackToCatalog={() => setView('catalog')}
           catalogTab={catalogTab}
           onCatalogTab={setCatalogTab}
           {...(catalogRefusal !== undefined ? { catalogRefusal } : {})}
@@ -4993,6 +5003,8 @@ function MainPage(props: {
   readonly onRemoveProject: (id: string) => void;
   readonly onPickDirectory: () => Promise<string | undefined>;
   readonly catalog: CatalogDataView | null;
+  readonly mailTrial: CatalogMailTrial;
+  readonly onBackToCatalog: () => void;
   readonly catalogTab: CatalogTab;
   readonly onCatalogTab: (tab: CatalogTab) => void;
   readonly catalogRefusal?: string | undefined;
@@ -5199,9 +5211,19 @@ function MainPage(props: {
         />
       );
 
+    case 'mail-summary-trial':
+      return (
+        <MailSummaryTrialPage
+          connected={props.mailTrial.connected}
+          onConnectionChange={props.mailTrial.onConnectionChange}
+          onBack={props.onBackToCatalog}
+        />
+      );
+
     case 'catalog':
       return (
         <CatalogPage
+          mailTrial={props.mailTrial}
           data={props.catalog}
           tab={props.catalogTab}
           onTab={props.onCatalogTab}

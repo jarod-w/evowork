@@ -12,6 +12,63 @@ import { expect, test } from './fixtures.mjs';
 const skillText = (name, body = '帮助整理工作。') =>
   `---\nname: ${name}\ndescription: 工作教练\n---\n${body}\n`;
 
+test('邮件摘要试用在窄窗口完成只读连接、生成和断开', async ({ page, electronApp }) => {
+  await page.getByRole('button', { name: '插件', exact: true }).click();
+  await electronApp.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setSize(480, 760),
+  );
+  await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click();
+  await page.getByRole('button', { name: '开始试用', exact: true }).click();
+  const permissions = page.getByRole('dialog', { name: '邮件摘要 · 权限' });
+  await expect(permissions.getByText(/只读内置的 3 封/)).toBeVisible();
+  await permissions.getByRole('button', { name: '模拟连接' }).click();
+  const receipt = page.getByRole('dialog', { name: '示例邮箱已连接' });
+  await receipt.getByRole('button', { name: '在任务中试用' }).click();
+  await page.getByRole('button', { name: '生成摘要' }).click();
+  const result = page.getByRole('region', { name: '摘要结果' });
+  await expect(result.getByRole('listitem')).toHaveCount(5);
+  await expect(result).toBeInViewport({ ratio: 0.99 });
+  const panels = page.locator('.ew-mail-trial-panel');
+  const [inbox, summary] = await Promise.all([
+    panels.nth(0).boundingBox(),
+    panels.nth(1).boundingBox(),
+  ]);
+  expect(summary.x).toBe(inbox.x);
+  expect(summary.y).toBeGreaterThan(inbox.y);
+
+  await page.getByRole('button', { name: '查看权限', exact: true }).click();
+  await permissions.getByRole('button', { name: '断开连接' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认断开' }).click();
+  await expect(page.getByRole('button', { name: '生成摘要' })).toBeDisabled();
+  await expect(result).toHaveCount(0);
+  await page.getByRole('button', { name: '返回插件目录' }).click();
+  await expect(page.getByRole('searchbox', { name: '搜索技能' })).toBeVisible();
+});
+
+test('专家可选用、按状态筛选并在刷新后取消选用', async ({ page }) => {
+  const openExperts = async () => {
+    await page.getByRole('button', { name: '插件', exact: true }).click();
+    await page.getByRole('tab', { name: 'EvoWork 专家' }).click();
+  };
+  await openExperts();
+  await page.getByRole('button', { name: '＋ 新建专家', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: '新建专家' });
+  await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('产品审阅');
+  await dialog.getByRole('textbox', { name: '一句话描述' }).fill('审阅产品需求');
+  await dialog.getByRole('button', { name: '创建', exact: true }).click();
+  const card = page.locator('.ew-item-card').filter({ hasText: '产品审阅' });
+  await expect(card.getByText('未选用', { exact: true })).toBeVisible();
+  await card.getByRole('button', { name: '选用 · 产品审阅', exact: true }).click();
+  await expect(card.getByText('已选用', { exact: true })).toBeVisible();
+  await page.reload();
+  await openExperts();
+  await page.getByRole('button', { name: '已选用 1', exact: true }).click();
+  await card.getByRole('button', { name: '取消选用 · 产品审阅', exact: true }).click();
+  await expect(page.getByText('还没有已选用的专家')).toBeVisible();
+  await page.getByRole('button', { name: '浏览全部专家' }).click();
+  await expect(card.getByText('未选用', { exact: true })).toBeVisible();
+});
+
 test.describe('显式共享目录', () => {
   test.use({ desktopEnv: { EVOWORK_UI_EXTERNAL_SKILL_ROOT: '1' } });
 
@@ -70,6 +127,7 @@ test.describe('显式共享目录', () => {
       await page
         .locator('.ew-item-card')
         .filter({ hasText: `共享图表副本${index + 1}` })
+        .getByRole('button', { name: '管理', exact: false })
         .click();
       const nativePath = shared.find(
         (skill) => realpathSync.native(skill.skillPath) === realpathSync.native(paths[index]),
@@ -261,7 +319,7 @@ test('带引号和多行描述的技能安装后立即可启停，更新与卸�
     await page.getByRole('menuitem', { name: '从 SKILL.md 文件安装' }).click();
   };
   const openDetail = async () => {
-    await page.getByRole('button', { name: new RegExp(`${name}.*已安装`) }).click();
+    await page.getByRole('button', { name: `管理 · ${name}`, exact: true }).click();
   };
   await page.getByRole('button', { name: '插件', exact: true }).click();
   await installPickedFile();
