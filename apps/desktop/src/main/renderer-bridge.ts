@@ -178,6 +178,7 @@ import {
   mergeDiscoveredSkills,
   missingPortsResult,
   readCatalog,
+  readExperts,
   removeConnectorAction,
   setConnectorToolPolicyAction,
   removeExpert,
@@ -1759,11 +1760,12 @@ export function createRendererActions(options: RendererBridgeOptions) {
         throw new Error('请通过 /memories 打开本地记忆设置，不要发送给模型。');
       if (input.threadId && input.useMemories !== undefined)
         throw new Error('读取记忆只能在新任务发送前选择；已有任务的记忆无法撤回。');
-      if (input.agentId && input.threadId) throw new Error('已有任务不能更换智能体，请新建任务。');
+      if ((input.agentId || input.expertId) && input.threadId)
+        throw new Error('已有任务不能更换角色，请新建任务。');
+      if (input.agentId && input.expertId) throw new Error('新任务只能选择一个角色。');
       const selectedAgent = input.agentId ? agentWorkspace.get(input.agentId) : undefined;
       if (selectedAgent && selectedAgent.kind !== 'single')
         throw new Error('团队请从运行监控启动。');
-      const agentInstructions = selectedAgent ? agentRoleInstructions(selectedAgent) : undefined;
       const id = input.draftId;
       if (id && sendingDrafts.has(id)) return sendingDrafts.get(id)!;
       const operation = (async () => {
@@ -1846,6 +1848,21 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ) {
           throw new Error('任务工作目录已固定，换项目请新建任务。');
         }
+        let agentInstructions = selectedAgent ? agentRoleInstructions(selectedAgent) : undefined;
+        if (input.expertId && !environment?.threadId) {
+          if (options.hubPorts) await enforceOrganizationPolicy(options.hubPorts);
+          const expert = options.catalogPorts
+            ? readExperts(options.catalogPorts).find((candidate) => candidate.id === input.expertId)
+            : undefined;
+          if (!expert) throw new Error('这位专家已不可用，请重新选择。');
+          agentInstructions = agentRoleInstructions({
+            ...expert,
+            instructions: expert.instructions ?? '',
+            skills: [],
+            connectors: [],
+          });
+        }
+
         if (input.submissionId && input.draftId)
           followUp.savePending(input.submissionId, input.draftId, input.threadId, input);
         const toKernelReference = (reference: ComposerReferenceView): UserInput => {

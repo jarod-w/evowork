@@ -343,6 +343,8 @@ export type ModelUnavailableReason =
 
 export interface SendInput {
   readonly agentId?: string | undefined;
+  /** 插件页选择的本机专家，只用于新任务。 */
+  readonly expertId?: string | undefined;
   /** 仅用于本机崩溃恢复，不进入模型输入或日志。 */
   readonly recovery?:
     | {

@@ -292,12 +292,22 @@ describe('专家 TOML', () => {
       description: '看报表',
       category: '投资理财',
       sampleTasks: ['解读这份财报', '做一份预算表'],
-      instructions: '用中文回答',
+      instructions: '用中文回答。\n\n[输出]\n保留 "引号"、制表符\t和 C:\\docs。',
     });
     const parsed = parseAgentToml(text, '/finance.toml', 'local');
     expect(parsed?.name).toBe('财务分析专家');
     expect(parsed?.interface.sampleTasks).toEqual(['解读这份财报', '做一份预算表']);
-    expect(parsed?.instructions).toBe('用中文回答');
+    expect(parsed?.instructions).toBe('用中文回答。\n\n[输出]\n保留 "引号"、制表符\t和 C:\\docs。');
+  });
+
+  it('旧版保存的多行指令仍可用，包括看起来像表头的正文', () => {
+    const legacy =
+      'name = "legacy"\n[interface]\n' +
+      'display_name = "原有专家"\ninstructions = "第一行\n[正文]\n第二行"\n';
+    expect(parseAgentToml(legacy, '/legacy.toml', 'local')).toMatchObject({
+      name: '原有专家',
+      instructions: '第一行\n[正文]\n第二行',
+    });
   });
 
   it('官方目录空时列表为空，不是一份假专家', () => {

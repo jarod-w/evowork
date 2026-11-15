@@ -582,6 +582,7 @@ function clearPendingSend(id: string): void {
 function savedComposerDraft(usePendingCache = true): {
   id: string;
   text: string;
+  expertId?: string;
   workspaceId?: string;
   taskId?: string;
   pending?: PendingSend;
@@ -609,6 +610,7 @@ function savedComposerDraft(usePendingCache = true): {
         return {
           id: input.draftId,
           text: input.text,
+          ...(input.expertId ? { expertId: input.expertId } : {}),
           ...(input.threadId ? { taskId: input.threadId } : {}),
           pending: { ...value.submission, unconfirmed: true },
           attachments: value.attachments,
@@ -677,6 +679,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [permissionId, setPermissionId] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<ModeId>('request-approval');
   const [draft, setDraft] = useState(savedDraft.current.text);
+  const [draftExpertId, setDraftExpertId] = useState(savedDraft.current.expertId);
   const draftIdentity = useRef(savedDraft.current.id);
   const [environmentBusy, setEnvironmentBusy] = useState(false);
   const [sendRecoveryPending, setSendRecoveryPending] = useState(Boolean(bridge.getPendingSend));
@@ -1106,6 +1109,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         JSON.stringify({
           id: draftIdentity.current,
           text: draft,
+          expertId: draftExpertId,
           workspaceId,
           attachments,
           references,
@@ -1114,10 +1118,13 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     } catch {
       /* 沙箱禁用持久存储时保留内存草稿。 */
     }
-  }, [activeTaskId, draft, workspaceId, attachments, references]);
+  }, [activeTaskId, draft, draftExpertId, workspaceId, attachments, references]);
   const currentDraftTask = useRef(activeTaskId);
   useEffect(() => {
-    if (currentDraftTask.current !== activeTaskId) draftIdentity.current = crypto.randomUUID();
+    if (currentDraftTask.current !== activeTaskId) {
+      draftIdentity.current = crypto.randomUUID();
+      if (activeTaskId !== null) setDraftExpertId(undefined);
+    }
     currentDraftTask.current = activeTaskId;
   }, [activeTaskId]);
   useEffect(() => {
@@ -1148,6 +1155,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         };
         setActiveTaskId(payload.threadId ?? null);
         setDraft(payload.text);
+        setDraftExpertId(payload.expertId);
         if (payload.modeId) setMode(payload.modeId);
         if (payload.modelId) {
           setModelId(payload.modelId);
@@ -1174,8 +1182,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
   }, [bridge, reportFailure]);
 
-  const beginNewTask = useCallback(
-    () =>
+  const startDraft = useCallback(
+    (text = '', expertId?: string) =>
       afterSettingsGuard(() => {
         if (!pendingEnvironment.current)
           void bridge
@@ -1185,7 +1193,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         setWorkspaceId(undefined);
         setActiveTaskId(null);
         setDraftMemoryUse('default');
-        setDraft('');
+        setDraft(text);
+        setDraftExpertId(expertId);
         setReferences([]);
         setAttachments([]);
         setPendingAttachmentSkill(null);
@@ -1197,6 +1206,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       }),
     [bridge, reportFailure, afterSettingsGuard],
   );
+  const beginNewTask = useCallback(() => startDraft(), [startDraft]);
 
   /*
    * 冷启动那条深链走**拉**不走推：推的时候 React 还没订阅事件，会丢
@@ -2611,6 +2621,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
                 ...(replaceGoal ? { replaceGoal: true } : {}),
                 draftId: identity,
                 ...(activeTaskId ? { threadId: activeTaskId } : {}),
+                ...(!activeTaskId && draftExpertId ? { expertId: draftExpertId } : {}),
                 ...(!activeTaskId && draftMemoryUse !== 'default'
                   ? { useMemories: draftMemoryUse === 'enabled' }
                   : {}),
@@ -2722,6 +2733,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       activeTaskId,
       scenarioId,
       draftMemoryUse,
+      draftExpertId,
       openMemories,
       openMemoryImport,
       modelId,
@@ -2823,13 +2835,11 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   }, [activeTaskId, bridge, kernelUnavailable, modelId, mode, scenarioId, workspaceId]);
 
   const prepareTaskWithText = useCallback(
-    (text: string) => {
+    (text: string, expertId?: string) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
-      beginNewTask();
-      setDraft(trimmed);
+      if (trimmed) startDraft(trimmed, expertId);
     },
-    [beginNewTask],
+    [startDraft],
   );
 
   const applyCatalogResult = useCallback(
@@ -5035,7 +5045,7 @@ function MainPage(props: {
   readonly runtimeProgress?: RuntimeProgressView | undefined;
   readonly runtimeError?: string | undefined;
   readonly onInstallRuntime: () => void;
-  readonly onUsePrompt: (prompt: string) => void;
+  readonly onUsePrompt: (prompt: string, expertId?: string) => void;
   readonly onWriteSkill: () => void;
 }) {
   switch (props.view) {

@@ -181,10 +181,19 @@ describe('WorkBuddy 文本导入', () => {
     let discarded = false;
     const actions = makeActions({
       adapter: fakeAdapter({ importMemoryText }),
-      readModelCatalog: async () =>
-        ({
-          models: [{ id: 'private/e2e-model' }],
-        }) as import('../src/shared/ipc.js').ModelCatalogResult,
+      readModelCatalog: async () => ({
+        models: [
+          {
+            id: 'private/e2e-model',
+            label: '测试模型',
+            provider: 'private',
+            capabilities: [],
+            notices: [],
+            credentialSource: 'private',
+            verified: false,
+          },
+        ],
+      }),
       environments: {
         prepare: async () => ({ cwd: 'D:\\draft', projectId: null, managed: true }),
         discard: async () => {

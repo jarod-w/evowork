@@ -819,7 +819,7 @@ function writeExpert(
   const c = ports.catalog;
   const dir = join(c.userRoot, 'agents');
   const dest = join(dir, `${item.id}.toml`);
-  if (parseAgentToml(text, dest, 'local') === undefined) {
+  if (parseAgentToml(text, dest, 'local')?.id !== item.id) {
     return { ok: false, refused: '专家内容包的格式不对。' };
   }
   if (installed === undefined && c.exists(dest)) {

@@ -104,7 +104,7 @@ export interface CatalogPageProps {
   readonly onRemoveExpert: (id: string) => Promise<CatalogMutationResult>;
   readonly onPickDirectory: () => Promise<string | undefined>;
   readonly onPickSkillFile?: (() => Promise<string | undefined>) | undefined;
-  readonly onUsePrompt: (prompt: string) => void;
+  readonly onUsePrompt: (prompt: string, expertId?: string) => void;
   readonly onWriteSkill: () => void;
   readonly hubActions?: CatalogHubActions | undefined;
   readonly mailTrial?: CatalogMailTrial | undefined;
@@ -567,7 +567,7 @@ export function CatalogPage(props: CatalogPageProps) {
             selected={selectedExperts.has(selectedExpert.id)}
             onToggle={() => toggleExpert(selectedExpert.id)}
             onBack={() => setSelected(null)}
-            onUse={(prompt) => props.onUsePrompt(prompt)}
+            onUse={(prompt) => props.onUsePrompt(prompt, selectedExpert.id)}
             onRemove={
               selectedExpert.source === 'official'
                 ? undefined
@@ -1494,7 +1494,10 @@ function ExpertsGrid({
           key={e.id}
           name={e.name}
           description={e.description}
-          badges={[e.category, e.source === 'official' ? '官方内置' : '本地目录']}
+          badges={[
+            e.category,
+            e.source === 'official' ? '官方内置' : e.source === 'hub' ? 'EvoWork 精选' : '本地目录',
+          ]}
           footer={
             <>
               <Badge variant={selected.has(e.id) ? 'success' : 'neutral'}>
@@ -1733,7 +1736,7 @@ function ExpertDetail({
           <SectionHeader title="擅长任务" />
           <div className="ew-catalog-samples">
             {expert.sampleTasks.map((t) => (
-              <PillButton key={t} onClick={() => onUse(`请以「${expert.name}」的身份：${t}`)}>
+              <PillButton key={t} onClick={() => onUse(t)}>
                 {t}
               </PillButton>
             ))}
@@ -1741,10 +1744,7 @@ function ExpertDetail({
         </>
       ) : null}
       <div className="ew-catalog-detail-actions">
-        <PillButton
-          variant="accent"
-          onClick={() => onUse(`请以「${expert.name}」的身份协助完成接下来的任务。`)}
-        >
+        <PillButton variant="accent" onClick={() => onUse('请介绍你可以如何协助我。')}>
           直接对话
         </PillButton>
         <PillButton onClick={onToggle}>{selected ? '取消选用' : '选用'}</PillButton>

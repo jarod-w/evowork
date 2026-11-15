@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@evowork/hub-protocol": "workspace:*",
-    "js-yaml": "4.3.2"
+    "js-yaml": "4.3.2",
+    "smol-toml": "1.9.0"
   }
 }

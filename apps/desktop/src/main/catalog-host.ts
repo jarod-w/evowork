@@ -129,12 +129,12 @@ export function emptyCatalog(): CatalogDataView {
 export function readCatalog(ports: CatalogPorts): CatalogDataView {
   const skills = listSkills(skillRoots(ports), ports.io);
   const connectors = mergeConnectors(readStore(ports), officialBrowser(ports));
-  const experts = listExperts(expertRoots(ports), ports.io);
+  const experts = readExperts(ports);
   const apps = listApps(skills, connectors);
   return {
     skills: skills.map(toSkillView),
     connectors: connectors.map(toConnectorView),
-    experts: experts.map(toExpertView),
+    experts,
     apps: apps.map(toAppView),
   };
 }
@@ -570,6 +570,10 @@ export function createExpert(ports: CatalogPorts, input: CreateExpertInput): Cat
     return mutation(ports, false, `没能创建：${err instanceof Error ? err.message : String(err)}`);
   }
   return mutation(ports, true);
+}
+
+export function readExperts(ports: CatalogPorts): readonly CatalogExpertView[] {
+  return listExperts(expertRoots(ports), ports.io).map(toExpertView);
 }
 
 export function removeExpert(ports: CatalogPorts, id: string): CatalogMutationResult {
