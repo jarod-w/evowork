@@ -179,6 +179,8 @@ export type RendererEvent =
   | {
       readonly type: 'turn-retrying';
       readonly taskId: string;
+      /** 未完成的模型输出仅供预览，重连后从对话流清除。 */
+      readonly discardedItemIds?: readonly string[];
       readonly attempt?: number | undefined;
       readonly maxAttempts?: number | undefined;
     }

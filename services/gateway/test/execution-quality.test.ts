@@ -20,7 +20,7 @@ describe('响应结束必须有有效证据', () => {
     '%s 不得被标成完成或执行残缺调用',
     (reason) => {
       const translator = createTranslator({ responseId: 'test', capabilities });
-      translator.push({
+      const preview = translator.push({
         choices: [
           {
             delta: {
@@ -33,6 +33,9 @@ describe('响应结束必须有有效证据', () => {
           },
         ],
       });
+      expect(preview).toContainEqual(
+        expect.objectContaining({ type: 'response.output_text.delta' }),
+      );
       const events = translator.finish();
       expect(events.some((event) => event.type === 'response.completed')).toBe(false);
       expect(events.some((event) => event.type === 'response.failed')).toBe(true);
@@ -49,7 +52,7 @@ describe('响应结束必须有有效证据', () => {
             event.type === 'response.output_item.done' &&
             (event as { item: { type: string } }).item.type === 'message',
         ),
-      ).toBe(true);
+      ).toBe(reason !== undefined);
     },
   );
 

@@ -518,6 +518,9 @@ const VIEW_TO_NAV: Readonly<Partial<Record<MainView, string>>> = {
   more: 'more',
 };
 
+const RESUME_TASK_REQUEST =
+  '继续完成这个任务。先核对已有对话、计划、工具结果和工作目录中的产物，只执行剩余步骤。不要重复已确认完成的写入、发送、提交等操作。若操作已完成而只缺总结，直接汇报已有结果。操作结果不明确时，先核实；仍无法确认时，先向我确认再尝试执行。';
+
 /**
  * 从「按任务 id 存的表」里去掉一个任务，返回 setState 的 updater。
  *
@@ -1398,6 +1401,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'turn-retrying') {
+          if (event.discardedItemIds?.length) {
+            const discarded = new Set(event.discardedItemIds);
+            setItemsByTask((previous) => ({
+              ...previous,
+              [event.taskId]: (previous[event.taskId] ?? []).filter(
+                (item) => !discarded.has(item.id),
+              ),
+            }));
+          }
           setTurnRetries((previous) => ({
             ...previous,
             [event.taskId]: {
@@ -2766,44 +2778,61 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const retryCurrentTurn = useCallback(async () => {
     if (activeTaskId === null || kernelUnavailable || continuingTasks.current.has(activeTaskId))
       return;
-    const request = lastUserMessageRequest(itemsByTask[activeTaskId] ?? []);
-    if (!request) {
-      pushToast({
-        tone: 'warning',
-        text: '上一条需求含当前无法安全重放的输入，请在输入框里确认后重新发送。',
-      });
-      return;
-    }
-    continuingTasks.current.add(activeTaskId);
-    setContinuingTaskId(activeTaskId);
-    setTurnFailures((previous) => {
-      const next = { ...previous };
-      delete next[activeTaskId];
-      return next;
-    });
+    const threadId = activeTaskId;
+    const revision = turnRevisionByTask.current.get(threadId);
+    const failedTurnId = latestTurnByTask[threadId];
+    continuingTasks.current.add(threadId);
+    setContinuingTaskId(threadId);
     try {
+      const history = await bridge.openTask({ threadId });
+      if (
+        turnRevisionByTask.current.get(threadId) !== revision ||
+        (failedTurnId !== undefined && history.latestTurnId !== failedTurnId)
+      )
+        return;
+      const failed = history.turns?.find((turn) => turn.id === history.latestTurnId);
+      if (failed?.status !== 'failed') return;
+
+      const items = history.items.filter((item) => item._turnId === failed.id);
+      // Replay only if the authoritative history proves that this turn had no operations.
+      // Unknown item types (including new tool types) or missing history use recovery.
+      const canReplay =
+        !history.incomplete &&
+        !history.items.some((item) => typeof item._turnId !== 'string') &&
+        items.filter((item) => item.type === 'userMessage').length === 1 &&
+        items.every((item) =>
+          ['userMessage', 'agentMessage', 'reasoning', 'plan'].includes(item.type),
+        );
+      const request = canReplay ? lastUserMessageRequest(items) : undefined;
+      if (canReplay && !request) {
+        pushToast({
+          tone: 'warning',
+          text: '上一条需求含当前无法安全重放的输入，请在输入框里确认后重新发送。',
+        });
+        return;
+      }
+      setTurnFailures(dropTask(threadId));
       await bridge.send({
-        threadId: activeTaskId,
-        text: request.text,
-        ...(request.references.length > 0 ? { references: request.references } : {}),
+        threadId,
+        text: request?.text ?? RESUME_TASK_REQUEST,
+        ...(request?.references.length ? { references: request.references } : {}),
         scenarioId,
         ...(modelId !== undefined ? { modelId } : {}),
         ...(mode !== undefined ? { modeId: mode } : {}),
         ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
     } catch (error: unknown) {
-      // 重试本身失败也走同一套两层文案 —— 否则这条路径又会把裸英文摆到卡片上
       const raw = error instanceof Error ? error.message : String(error);
-      setTurnFailures((previous) => ({ ...previous, [activeTaskId]: turnFailureCopy(raw) }));
+      setTurnFailures((previous) => ({ ...previous, [threadId]: turnFailureCopy(raw) }));
     } finally {
-      continuingTasks.current.delete(activeTaskId);
-      setContinuingTaskId((current) => (current === activeTaskId ? null : current));
+      continuingTasks.current.delete(threadId);
+      setContinuingTaskId((current) => (current === threadId ? null : current));
     }
   }, [
     activeTaskId,
     bridge,
-    itemsByTask,
     kernelUnavailable,
+    latestTurnByTask,
     modelId,
     mode,
     pushToast,
@@ -2819,7 +2848,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     try {
       await bridge.send({
         threadId,
-        text: '继续完成这个任务。先核对已有对话、计划和工作目录中的产物，确认哪些步骤已经完成、哪些操作的结果尚不确定；只执行剩余步骤。不要重复已确认完成的写入、发送、提交等操作。结果不明确或需要再次授权时先向我确认。',
+        text: RESUME_TASK_REQUEST,
         scenarioId,
         ...(modelId !== undefined ? { modelId } : {}),
         ...(mode !== undefined ? { modeId: mode } : {}),

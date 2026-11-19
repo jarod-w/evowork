@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "ERR_PNPM_MISSING_PACKAGE_INDEX_FILE",
+    "message": "Failed to find package index file for dompurify@3.4.14 (at sha512-dVoH9z+MY+C9IilgGCk3YfFqjLi3fChm2OiKJMzh6axrJ5qwxqWaZamgmHrpv22CN/KdbZJuGEGgfQoL00LTdg==\tdompurify@3.4.14), please consider running 'pnpm install'"
+  }
+}

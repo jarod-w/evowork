@@ -1881,48 +1881,58 @@ describe('回合失败留在任务时间线', () => {
     finish({ threadId: 'recover' });
     await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
   });
-  it('显示内核原始原因，并能用上一条需求重试当前任务', async () => {
-    const send = vi.fn(async () => ({ threadId: 't-failed' }));
-    const task = {
-      id: 't-failed',
-      title: '失败任务',
-      status: 'failed' as const,
-      timeLabel: '刚刚',
-      updatedAt: Date.now(),
-      sectionId: 'ungrouped',
-    };
-    const { bridge, emit } = fakeBridge({
-      getStartup: async () => ({ ...STARTUP, tasks: [task] }),
-      openTask: vi.fn(async () => ({
-        items: [
-          {
-            id: 'u1',
-            type: 'userMessage',
-            completed: true,
-            content: [{ type: 'text', text: '继续生成报告' }],
-          },
-        ],
-      })),
-      send,
-    });
-    render(<App bridge={bridge} />);
-    fireEvent.click(await screen.findByText('失败任务'));
-    expect(await screen.findByText('继续生成报告')).toBeTruthy();
-    await waitFor(() => expect(emit.ui).toBeDefined());
-    emit.ui?.({
-      type: 'turn-failed',
-      taskId: 't-failed',
-      message: '模型暂时不可用',
-      details: '上游超时',
-    });
-    expect(await screen.findByText(/模型暂时不可用（上游超时）/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    await waitFor(() =>
-      expect(send).toHaveBeenCalledWith(
-        expect.objectContaining({ threadId: 't-failed', text: '继续生成报告' }),
-      ),
-    );
-  });
+  it.each([false, true])(
+    '失败时保留原因并按历史完整性选择重试方式，不完整=%s',
+    async (incomplete) => {
+      const send = vi.fn(async () => ({ threadId: 't-failed' }));
+      const task = {
+        id: 't-failed',
+        title: '失败任务',
+        status: 'failed' as const,
+        timeLabel: '刚刚',
+        updatedAt: Date.now(),
+        sectionId: 'ungrouped',
+      };
+      const { bridge, emit } = fakeBridge({
+        getStartup: async () => ({ ...STARTUP, tasks: [task] }),
+        openTask: vi.fn(async () => ({
+          ...(incomplete ? { incomplete: '只能读取缓存摘要' } : {}),
+          latestTurnId: 'failed-turn',
+          turns: [{ id: 'failed-turn', status: 'failed' as const }],
+          items: [
+            {
+              id: 'u1',
+              _turnId: 'failed-turn',
+              type: 'userMessage',
+              completed: true,
+              content: [{ type: 'text', text: '继续生成报告' }],
+            },
+          ],
+        })),
+        send,
+      });
+      render(<App bridge={bridge} />);
+      fireEvent.click(await screen.findByText('失败任务'));
+      expect(await screen.findByText('继续生成报告')).toBeTruthy();
+      await waitFor(() => expect(emit.ui).toBeDefined());
+      emit.ui?.({
+        type: 'turn-failed',
+        taskId: 't-failed',
+        message: '模型暂时不可用',
+        details: '上游超时',
+      });
+      expect(await screen.findByText(/模型暂时不可用（上游超时）/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: '重试' }));
+      await waitFor(() =>
+        expect(send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            threadId: 't-failed',
+            text: incomplete ? expect.stringContaining('只执行剩余步骤') : '继续生成报告',
+          }),
+        ),
+      );
+    },
+  );
 
   it('内核重试期间显示「正在重新连接」，**下一条内容一到就撤掉**', async () => {
     const task = {

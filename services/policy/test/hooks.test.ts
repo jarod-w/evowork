@@ -448,20 +448,14 @@ describe('hook 包的接线', () => {
     '../../../plugins/hooks/evowork-policy',
   );
 
-  it('策略事件及下一步 Stop 检查都已装配且有对应脚本', () => {
+  it('策略事件已装配且有对应脚本，结束不强制补报建议', () => {
     const file = JSON.parse(readFileSync(join(PLUGIN_ROOT, 'hooks.json'), 'utf8')) as {
       hooks?: Record<string, { hooks: { command: string }[] }[]>;
     };
     // 内核的 HooksFile：事件在 `hooks` 里。放在顶层 = 解析成空集、被静默丢掉
     const manifest = file.hooks ?? {};
     const events = Object.keys(manifest);
-    expect(events.sort()).toEqual([
-      'PermissionRequest',
-      'PostToolUse',
-      'PreToolUse',
-      'SessionEnd',
-      'Stop',
-    ]);
+    expect(events.sort()).toEqual(['PermissionRequest', 'PostToolUse', 'PreToolUse', 'SessionEnd']);
 
     for (const event of events) {
       for (const group of manifest[event] ?? []) {

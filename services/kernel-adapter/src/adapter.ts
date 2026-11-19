@@ -2786,7 +2786,7 @@ async function listAllThreadItems(
     if (next === undefined || next === null || next === '') return items;
     cursor = next;
   }
-  return items;
+  throw new Error('任务历史超出分页读取上限，未能取得完整记录。');
 }
 
 /**

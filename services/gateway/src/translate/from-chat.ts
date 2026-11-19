@@ -231,13 +231,23 @@ export function createTranslator(options: TranslatorOptions) {
       ensureStarted(events);
       finished = true;
 
-      let failure: { code: string; message: string } | undefined;
       if (!finishReason) {
-        failure = {
-          code: UPSTREAM_DISCONNECTED,
-          message: '模型连接在响应完成前中断，未执行本次工具调用，请重试。',
-        };
-      } else if (finishReason !== 'stop' && finishReason !== 'tool_calls') {
+        // Deltas were only previews. Finalizing them here would persist failed-attempt text
+        // in history and feed that same text back to the model on its next attempt.
+        events.push({
+          type: EVENT.failed,
+          response: {
+            id: responseId,
+            error: {
+              code: UPSTREAM_DISCONNECTED,
+              message: '模型连接在响应完成前中断，未执行本次工具调用，请重试。',
+            },
+          },
+        });
+        return events;
+      }
+      let failure: { code: string; message: string } | undefined;
+      if (finishReason !== 'stop' && finishReason !== 'tool_calls') {
         failure = {
           code: 'invalid_prompt',
           message:

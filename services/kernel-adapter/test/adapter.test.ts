@@ -1656,6 +1656,17 @@ describe('打开任务（04 §9：< 300ms 出内容）', () => {
     expect(listed.every((item) => typeof item.type === 'string')).toBe(true);
   });
 
+  it('历史分页超过读取上限时报告不完整，不能把部分条目作为完整历史', async () => {
+    await adapter.start();
+    store.threads.upsertFromThread(makeThread({ id: 't1' }));
+    server.handlers.set('thread/items/list', ({ params }) => ({
+      data: [],
+      nextCursor: String(Number(params.cursor ?? 0) + 1),
+    }));
+    const { items } = await adapter.openTask('t1');
+    await expect(items).rejects.toThrow('未能取得完整记录');
+  });
+
   it('thread/items/list 不受当前存储支持时，用 thread/read 补回完整历史', async () => {
     await adapter.start();
     store.threads.upsertFromThread(makeThread({ id: 't1' }));

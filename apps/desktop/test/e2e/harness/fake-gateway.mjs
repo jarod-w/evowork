@@ -202,10 +202,17 @@ export function createFakeGateway({
         });
       }
       releaseScriptedTurn = () => {
-        sendEvent(response, {
-          type: 'response.completed',
-          response: { id, end_turn: true },
-        });
+        if (script.failOnRelease) {
+          sendEvent(response, {
+            type: 'response.failed',
+            response: { id, error: { code: 'upstream_disconnected', message: 'test stream cut' } },
+          });
+        } else {
+          sendEvent(response, {
+            type: 'response.completed',
+            response: { id, end_turn: true },
+          });
+        }
         response.end('data: [DONE]\n\n');
         releaseScriptedTurn = undefined;
       };

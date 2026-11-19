@@ -61,6 +61,22 @@ function run(chunks: readonly ChatChunk[], capabilities = FULL) {
 // ─────────────────────── 矩阵第 1 行：流式事件序列 ───────────────────────
 
 describe('① 流式事件序列：item_id / output_index 由网关自行编号（D2）', () => {
+  it('上游在结束帧前断开，已流出的正文和推理不成为已完成的历史条目', () => {
+    const translator = createTranslator({ responseId: 'resp_cutoff', capabilities: FULL });
+    const preview = translator.push({
+      choices: [{ delta: { content: '正文片段', reasoning_content: '推理片段' } }],
+    });
+    expect(preview).toContainEqual(expect.objectContaining({ type: EVENT.outputTextDelta }));
+    expect(translator.finish()).toEqual([
+      expect.objectContaining({
+        type: EVENT.failed,
+        response: expect.objectContaining({
+          error: expect.objectContaining({ code: 'upstream_disconnected' }),
+        }),
+      }),
+    ]);
+  });
+
   it('文本流：created → item_added → 多个 delta → item_done → completed', () => {
     const { events } = run([
       { choices: [{ delta: { content: '好的，' } }] },
@@ -117,16 +133,6 @@ describe('① 流式事件序列：item_id / output_index 由网关自行编号�
       item: { content: { text: string }[] };
     };
     expect(done.item.content[0]?.text).toBe('一次性回复');
-  });
-
-  it('流被掐断时保留文字，但不能宣称响应完成', () => {
-    const translator = createTranslator({ responseId: 'resp_1', capabilities: FULL });
-    const events = [
-      ...translator.push({ choices: [{ delta: { content: '半句话' } }] }),
-      ...translator.finish(),
-    ];
-    expect(events.map((e) => e.type)).toContain(EVENT.outputItemDone);
-    expect(events.at(-1)?.type).toBe(EVENT.failed);
   });
 });
 

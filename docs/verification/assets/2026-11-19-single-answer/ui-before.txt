@@ -1,0 +1,37 @@
+
+Running 1 test using 1 worker
+
+(node:41503) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:86:3 › 纯文本「介绍一下自己」漏登记建议仍只交付一次，刷新不出现重复正文 (23.0s)
+
+
+  1) [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:86:3 › 纯文本「介绍一下自己」漏登记建议仍只交付一次，刷新不出现重复正文
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByText('我是 EvoWork 的执行智能体，可以帮你完成办公任务。SINGLEANSWER-mwnjxcd1', { exact: true })
+    Expected: 1
+    Received: 2
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toHaveCount" getByText('我是 EvoWork 的执行智能体，可以帮你完成办公任务。SINGLEANSWER-mwnjxcd1', { exact: true }) with timeout 20000ms
+      - waiting for getByText('我是 EvoWork 的执行智能体，可以帮你完成办公任务。SINGLEANSWER-mwnjxcd1', { exact: true })
+        44 × locator resolved to 2 elements
+           - unexpected value "2"
+
+
+      109 |     await startTaskInWorkspace(page, electronApp, marker + ' ' + request);
+      110 |     await idle(page);
+    > 111 |     await expect(page.getByText(answer, { exact: true })).toHaveCount(1);
+          |                                                           ^
+      112 |     await expect(page.getByLabel('需求输入')).toHaveAttribute('placeholder', DEFAULT_PLACEHOLDER);
+      113 |     const current = await task(page, marker);
+      114 |     const result = await history(page, current.id);
+        at /Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/next-actions.spec.mjs:111:59
+
+    Error Context: test-results/next-actions-纯文本「介绍一下自己」漏登记建议仍只交付一次，刷新不出现重复正文-fake/error-context.md
+
+  1 failed
+    [fake] › apps/desktop/test/e2e/ui/next-actions.spec.mjs:86:3 › 纯文本「介绍一下自己」漏登记建议仍只交付一次，刷新不出现重复正文

@@ -1,0 +1,36 @@
+
+ RUN  v3.2.7 /Users/jarod.ai/develop/evowork/evowork
+
+ ❯ |desktop| test/next-actions-host.test.ts (4 tests | 1 failed) 28ms
+   × 本机建议 MCP 宿主 > 旧 Stop 地址不再阻塞已交付的回合或要求补报建议 18ms
+     → expected 200 to be 403 // Object.is equality
+   ✓ 本机建议 MCP 宿主 > 需要本机令牌和真实来源，登记只暂存不发布，旧令牌失效 7ms
+   ✓ 本机建议 MCP 宿主 > 模型自报任务身份和正文不同均不能冒用在途调用 1ms
+   ✓ 本机建议 MCP 宿主 > 注册幂等，保留其它 MCP 和权限，不在配置落盘令牌 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |desktop| test/next-actions-host.test.ts > 本机建议 MCP 宿主 > 旧 Stop 地址不再阻塞已交付的回合或要求补报建议
+AssertionError: expected 200 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+- 403
++ 200
+
+ ❯ test/next-actions-host.test.ts:43:29
+     41|       body: JSON.stringify({ threadId: 'task', turnId: 'turn', stopHoo…
+     42|     });
+     43|     expect(response.status).toBe(403);
+       |                             ^
+     44|     expect(await host.service.list('task')).toEqual([]);
+     45|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  20:53:52
+   Duration  381ms (transform 124ms, setup 54ms, collect 150ms, tests 28ms, environment 0ms, prepare 28ms)
