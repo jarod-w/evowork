@@ -198,6 +198,8 @@ P0-5 签名资质（1–3 周外部等待）───────────→
 
 ## 10. 因外部依赖而尚未被证伪的断言（**不得当成已验证**）
 
+2026-11-20：[#24](https://github.com/jarod-w/evowork/issues/24) 的预算耗尽停止链路已修复并用真实 Electron / 发货内核验证：确定性 5/5、指定 MiMo 极小预算 1/1；权威回合变为 interrupted、Composer idle、后台命令停止、刷新不续跑。预算仍按内核工具/回合边界计量，不承诺精确 token 截断；macOS arm64 之外未验。完整检查与凭据见[验收记录](verification/2026-11-20-goal-budget-stop.md)。
+
 2026-10-24 补充：办公运行时已改为构建时安装全部依赖并随 DMG/ZIP 分发；macOS arm64 实际镜像禁网部署及办公样例、最终全仓 3417 项通过，详见 [验收记录](verification/2026-10-24-bundled-office-runtime.md)。U4 的正式签名/公证与其他架构/平台实机验收未关闭。
 
 同日后续：整个首次引导已删除，默认进入主界面；自动准备组件的数据目录隔离、最终全仓 3405 项通过、真实 UI 2/2 与实际包首次自动部署通过，见[验收记录](verification/2026-10-24-first-launch-without-onboarding.md)。签名/公证和其他平台边界保持。

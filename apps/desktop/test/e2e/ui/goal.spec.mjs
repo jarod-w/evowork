@@ -1,4 +1,8 @@
-import { expect, test } from './fixtures.mjs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { startCommandApprovals } from './command-approvals.mjs';
+import { localPythonCommand } from './shell-commands.mjs';
+import { expect, test, startTaskInWorkspace } from './fixtures.mjs';
 import { goalTask, readGoal, reopenGoalTask, submitGoalCommand } from './goal-journey.mjs';
 
 test('goal 从真实输入启动、暂停、查看、恢复、完成与清除', async ({ page, electronApp }) => {
@@ -159,4 +163,78 @@ test('预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算�
   await submitGoalCommand(page, '/goal clear');
   expect(await readGoal(page, task.id)).toBeUndefined();
   await expect(page.getByLabel('持续目标')).toHaveCount(0);
+});
+
+test('预算在工具执行中耗尽：中断回合、停止后台命令且刷新不续跑（#24）', async ({
+  page,
+  electronApp,
+}) => {
+  const command = localPythonCommand([
+    '-c',
+    "from pathlib import Path; import time; Path('budget-started.txt').write_text('started'); time.sleep(8); Path('budget-leaked.txt').write_text('leaked')",
+  ]);
+  await electronApp.evaluate(
+    (_, { command }) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen('budget-wait', (r) => r.text.includes('GOAL-INFLIGHT-BUDGET'), {
+        kind: 'hold',
+      });
+      gateway.scriptWhen(
+        'budget-command',
+        (r) => r.text.includes('GOAL-INFLIGHT-BUDGET') && r.tools.includes('exec_command'),
+        {
+          tool: 'exec_command',
+          args: { cmd: command, yield_time_ms: 1000, max_output_tokens: 1000 },
+          usage: { input_tokens: 1234, output_tokens: 56, total_tokens: 1290 },
+        },
+      );
+      // 模型不服从预算收尾提示时，宿主也必须能停止执行。
+      gateway.scriptWhen(
+        'budget-ignore',
+        (r) => r.text.includes('GOAL-INFLIGHT-BUDGET') && r.calls.includes('exec_command'),
+        {
+          kind: 'hold',
+        },
+      );
+    },
+    { command },
+  );
+  const stopApprovals = startCommandApprovals(() => page);
+  try {
+    await startTaskInWorkspace(
+      page,
+      electronApp,
+      '/goal GOAL-INFLIGHT-BUDGET 验证在途工具预算停止',
+    );
+    await expect
+      .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
+      .toBe(true);
+    const task = await goalTask(page);
+    await submitGoalCommand(page, '/goal');
+    const panel = page.getByLabel('长任务目标');
+    await panel.getByLabel('Token 预算', { exact: true }).fill('1');
+    await panel.getByRole('button', { name: '保存', exact: true }).click();
+    await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
+    const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+    await expect.poll(() => existsSync(join(workspace, 'budget-started.txt'))).toBe(true);
+    await expect(page.getByLabel('持续目标')).toContainText('预算已耗尽');
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+    const history = await page.evaluate((id) => window.evowork.openTask({ threadId: id }), task.id);
+    expect(history.turns.some((turn) => turn.status === 'inProgress')).toBe(false);
+    expect(history.turns.some((turn) => turn.status === 'interrupted')).toBe(true);
+    const turns = history.turns.map((turn) => turn.id);
+    await reopenGoalTask(page, task);
+    await expect(page.getByLabel('持续目标')).toContainText('预算已耗尽');
+    // 超过命令原定的完成时间，确认中断回合后命令没有继续落盘。
+    await page.waitForTimeout(9000);
+    expect(existsSync(join(workspace, 'budget-leaked.txt'))).toBe(false);
+    const restored = await page.evaluate(
+      (id) => window.evowork.openTask({ threadId: id }),
+      task.id,
+    );
+    expect(restored.turns.map((turn) => turn.id)).toEqual(turns);
+    expect(restored.turns.some((turn) => turn.status === 'inProgress')).toBe(false);
+  } finally {
+    await stopApprovals();
+  }
 });

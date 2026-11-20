@@ -1886,6 +1886,186 @@ describe('目标与预算（Q11：用内核的 ThreadGoal.tokenBudget，不自�
   });
 });
 
+describe('目标预算耗尽停止执行（#24）', () => {
+  async function runningTask() {
+    await adapter.start();
+    const { threadId } = await adapter.createTask({
+      overrides: { cwd: '/w' },
+      input: [{ type: 'text', text: '持续执行' }],
+    });
+    adapter.events.handle('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'budget-turn', status: 'inProgress' }),
+    });
+    return threadId;
+  }
+
+  function goalChanged(threadId: string, status = 'budgetLimited') {
+    adapter.events.handle('thread/goal/updated', {
+      threadId,
+      goal: { threadId, objective: '持续执行', status, tokenBudget: 1, tokensUsed: 100 },
+    });
+  }
+
+  it('权威预算耗尽只中断一次，清理后台命令，并阻止队列自动启动', async () => {
+    const threadId = await runningTask();
+    let commands = [{ processId: 'command-1' }];
+    server.handlers.set('thread/backgroundTerminals/list', () => ({ data: commands }));
+    server.handlers.set('thread/backgroundTerminals/terminate', () => {
+      commands = [];
+      return { terminated: true };
+    });
+    server.removeMethod('thread/queue/add');
+    await adapter.sendMessage({ threadId, input: [{ type: 'text', text: '排队需求' }] });
+    goalChanged(threadId);
+    goalChanged(threadId);
+    await expect.poll(() => commands.length).toBe(0);
+    expect(server.received.filter((r) => r.method === 'turn/interrupt')).toEqual([
+      { method: 'turn/interrupt', params: { threadId, turnId: 'budget-turn' } },
+    ]);
+    // 界面必须等待真实终态通知，不能靠预算状态伪造回合结束。
+    expect(store.threads.get(threadId)?.last_turn_status).toBe('inProgress');
+    adapter.events.handle('turn/completed', {
+      threadId,
+      turn: makeTurn({ id: 'budget-turn', status: 'interrupted' }),
+    });
+    const starts = server.received.filter((r) => r.method === 'turn/start').length;
+    await adapter.startNextQueued(threadId);
+    expect(server.received.filter((r) => r.method === 'turn/start')).toHaveLength(starts);
+    expect(await adapter.listQueuedInputs(threadId)).toHaveLength(1);
+    expect(store.threads.get(threadId)?.last_turn_status).toBe('interrupted');
+  });
+
+  it('回合已经结束后才收到耗尽通知，也清理遗留后台命令，不发送空中断', async () => {
+    const threadId = await runningTask();
+    adapter.events.handle('turn/completed', {
+      threadId,
+      turn: makeTurn({ id: 'budget-turn', status: 'completed' }),
+    });
+    let commands = [{ processId: 'leftover-command' }];
+    server.handlers.set('thread/backgroundTerminals/list', () => ({ data: commands }));
+    server.handlers.set('thread/backgroundTerminals/terminate', () => {
+      commands = [];
+      return { terminated: true };
+    });
+    goalChanged(threadId);
+    await expect.poll(() => commands.length).toBe(0);
+    expect(server.received.some((r) => r.method === 'turn/interrupt')).toBe(false);
+    expect(store.threads.get(threadId)?.last_turn_status).toBe('completed');
+  });
+
+  it('中断失败给出可见提示，保留真实运行状态，后续通知可重新尝试', async () => {
+    const threadId = await runningTask();
+    server.handlers.set('turn/interrupt', () => {
+      throw new FakeRpcError(ERROR_CODE.internalError, 'interrupt failed');
+    });
+    goalChanged(threadId);
+    await expect.poll(() => ui.some((event) => event.type === 'kernel-warning')).toBe(true);
+    expect(store.threads.get(threadId)?.last_turn_status).toBe('inProgress');
+    expect(ui.some((event) => event.type === 'turn-completed')).toBe(false);
+    server.handlers.set('turn/interrupt', () => ({}));
+    server.handlers.set('thread/backgroundTerminals/list', () => ({ data: [] }));
+    goalChanged(threadId);
+    await expect
+      .poll(() => server.received.filter((r) => r.method === 'turn/interrupt').length)
+      .toBe(2);
+  });
+
+  it('追加预算恢复必须等旧回合的后台命令清理完，避免误停新回合', async () => {
+    const threadId = await runningTask();
+    const peer = adapter.session.peer;
+    const request = peer.request.bind(peer);
+    let release!: () => void;
+    const cleanup = new Promise<void>((done) => {
+      release = done;
+    });
+    let cleaning = false;
+    peer.request = async <T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
+      if (method === 'thread/backgroundTerminals/list') {
+        cleaning = true;
+        await cleanup;
+      }
+      return request<T>(method, params, timeoutMs);
+    };
+    server.handlers.set('thread/backgroundTerminals/list', () => ({ data: [] }));
+    goalChanged(threadId);
+    await expect.poll(() => cleaning).toBe(true);
+    let resumed = false;
+    const pending = adapter.setGoal(threadId, { status: 'active', tokenBudget: 1000 }).then(() => {
+      resumed = true;
+    });
+    try {
+      await new Promise((done) => setImmediate(done));
+      expect(resumed).toBe(false);
+      expect(
+        server.received.some((r) => r.method === 'thread/goal/set' && r.params.status === 'active'),
+      ).toBe(false);
+    } finally {
+      release();
+      await pending;
+    }
+    expect(resumed).toBe(true);
+  });
+
+  it.each(['active', 'paused', 'blocked', 'usageLimited', 'complete'])(
+    '%s 目标不触发预算中断',
+    async (status) => {
+      const threadId = await runningTask();
+      goalChanged(threadId, status);
+      await new Promise((done) => setImmediate(done));
+      expect(server.received.some((r) => r.method === 'turn/interrupt')).toBe(false);
+    },
+  );
+
+  it('预算通知先于回合开始时仍中断；追加预算后的新回合正常运行', async () => {
+    await adapter.start();
+    const threadId = 'budget-race';
+    store.threads.upsertFromThread(makeThread({ id: threadId }));
+    server.handlers.set('thread/backgroundTerminals/list', () => ({ data: [] }));
+    const peer = adapter.session.peer;
+    const request = peer.request.bind(peer);
+    let release!: () => void;
+    let cleaning = false;
+    const cleanup = new Promise<void>((done) => {
+      release = done;
+    });
+    peer.request = async <T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
+      if (method === 'thread/backgroundTerminals/list' && !cleaning) {
+        cleaning = true;
+        await cleanup;
+      }
+      return request<T>(method, params, timeoutMs);
+    };
+    goalChanged(threadId);
+    await expect.poll(() => cleaning).toBe(true);
+    adapter.events.handle('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'late-turn', status: 'inProgress' }),
+    });
+    try {
+      await new Promise((done) => setImmediate(done));
+      expect(server.received.some((r) => r.method === 'turn/interrupt')).toBe(false);
+    } finally {
+      release();
+    }
+    await expect
+      .poll(() => server.received.filter((r) => r.method === 'turn/interrupt').length)
+      .toBe(1);
+    adapter.events.handle('turn/completed', {
+      threadId,
+      turn: makeTurn({ id: 'late-turn', status: 'interrupted' }),
+    });
+    await adapter.setGoal(threadId, { status: 'active', tokenBudget: 1000 });
+    goalChanged(threadId, 'active');
+    adapter.events.handle('turn/started', {
+      threadId,
+      turn: makeTurn({ id: 'resumed-turn', status: 'inProgress' }),
+    });
+    await new Promise((done) => setImmediate(done));
+    expect(server.received.filter((r) => r.method === 'turn/interrupt')).toHaveLength(1);
+  });
+});
+
 describe('搜索命中定位', () => {
   it('保留 itemId 与命中区间，供 UI 滚动到单条消息', async () => {
     server.handlers.set('thread/searchOccurrences', () => ({

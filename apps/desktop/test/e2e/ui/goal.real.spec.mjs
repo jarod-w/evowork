@@ -129,6 +129,11 @@ test('真模型 goal：极小预算耗尽后停止续跑，刷新保留状态并
     expect(goal.tokenBudget).toBe(1);
     expect(goal.tokensUsed).toBeGreaterThan(1);
     expect(history.turns).toHaveLength(1);
+    expect(history.turns.every((turn) => turn.status !== 'inProgress')).toBe(true);
+    await page.waitForTimeout(2000);
+    const stopped = await page.evaluate((id) => window.evowork.openTask({ threadId: id }), task.id);
+    expect(stopped.turns.map((turn) => turn.id)).toEqual(history.turns.map((turn) => turn.id));
+    expect(stopped.turns.every((turn) => turn.status !== 'inProgress')).toBe(true);
     await reopenGoalTask(page, task);
     await expect(page.getByLabel('持续目标')).toContainText('预算已耗尽');
     await expect(page.getByRole('button', { name: '追加预算', exact: true })).toBeEnabled();

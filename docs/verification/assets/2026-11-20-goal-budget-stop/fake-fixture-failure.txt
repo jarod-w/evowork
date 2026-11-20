@@ -1,0 +1,36 @@
+
+Running 5 tests using 1 worker
+
+(node:56059) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:8:1 › goal 从真实输入启动、暂停、查看、恢复、完成与清除 (1.3s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:45:1 › 未创建目标时，查看与控制给出提示且不创建任务 (639ms)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:55:1 › 未完成目标替换先确认：取消保留旧目标，确认重置预算并执行新目标 (1.3s)
+  ✓  4 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:106:1 › 预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算恢复并清除 (3.3s)
+  ✘  5 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:168:1 › 预算在工具执行中耗尽：中断回合、停止后台命令且刷新不续跑（#24） (21.0s)
+
+
+  1) [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:168:1 › 预算在工具执行中耗尽：中断回合、停止后台命令且刷新不续跑（#24） ─────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 20000ms exceeded while waiting on the predicate
+
+      217 |     await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
+      218 |     const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+    > 219 |     await expect.poll(() => existsSync(join(workspace, 'budget-started.txt'))).toBe(true);
+          |                                                                                ^
+      220 |     await expect(page.getByLabel('持续目标')).toContainText('预算已耗尽');
+      221 |     await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+      222 |     const history = await page.evaluate((id) => window.evowork.openTask({ threadId: id }), task.id);
+        at /Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/goal.spec.mjs:219:80
+
+    Error Context: ../../../../../private/tmp/evowork-issue24-fake-results/goal-预算在工具执行中耗尽：中断回合、停止后台命令且刷新不续跑（-24）-fake/error-context.md
+
+  1 failed
+    [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:168:1 › 预算在工具执行中耗尽：中断回合、停止后台命令且刷新不续跑（#24） ──────
+  4 passed (27.6s)

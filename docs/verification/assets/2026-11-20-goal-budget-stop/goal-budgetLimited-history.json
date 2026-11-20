@@ -1,0 +1,94 @@
+{
+  "model": {
+    "name": "mimo-v2.6-flash",
+    "id": "xiaomi/mimo-v2.6-flash",
+    "displayName": "MiMo v2.6 Flash",
+    "provider": "private",
+    "upstreamModel": "mimo-v2.6-flash",
+    "baseUrl": "https://api.xiaomimimo.com/v1",
+    "probeUrl": "https://api.xiaomimimo.com/v1/models",
+    "capabilities": {
+      "streaming": true,
+      "toolCalls": true,
+      "parallelToolCalls": true,
+      "reasoning": true,
+      "promptCache": true,
+      "imageInput": true,
+      "maxContextTokens": 128000
+    }
+  },
+  "task": {
+    "id": "01a1f862-200a-7060-a7a0-f6e75172f183",
+    "title": "预算停止验收。先用 exec_command 执…",
+    "status": "idle",
+    "timeLabel": "刚刚",
+    "updatedAt": 1795168542000,
+    "sectionId": "ungrouped",
+    "parentThreadId": null,
+    "hasArtifacts": false,
+    "source": "manual",
+    "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-jGvx7S/workspace",
+    "modelId": "xiaomi/mimo-v2.6-flash",
+    "modeId": "request-approval",
+    "projectId": "p-f3b16a15-a64d-4a76-87db-fcadffe3e9cc"
+  },
+  "goal": {
+    "threadId": "01a1f862-200a-7060-a7a0-f6e75172f183",
+    "objective": "预算停止验收。先用 exec_command 执行 '/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'import time; time.sleep(20)'；返回后只回复“仍有剩余步骤”，结束回合，目标尚未完成，不调用 update_goal。后续回合也不要标记完成，不要写文件、联网或派生子任务。",
+    "status": "budgetLimited",
+    "tokenBudget": 1,
+    "tokensUsed": 14726,
+    "timeUsedSeconds": 9,
+    "createdAt": 1795168542,
+    "updatedAt": 1795168552
+  },
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a1f862-20cc-79a0-b791-d1b67943bf8d",
+        "clientId": "2e5eb447-91ac-40b8-a00c-94fde22cbd3d",
+        "content": [
+          {
+            "type": "text",
+            "text": "预算停止验收。先用 exec_command 执行 '/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'import time; time.sleep(20)'；返回后只回复“仍有剩余步骤”，结束回合，目标尚未完成，不调用 update_goal。后续回合也不要标记完成，不要写文件、联网或派生子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a1f862-20bc-7543-a2cb-cb988973e87f",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mwot00r6981ylm_0",
+        "summary": [
+          "We need must execute exact command. Need preamble before tool call. Then reply only phrase. No goal exists likely, don't update. Use exec command."
+        ],
+        "content": [],
+        "_turnId": "01a1f862-20bc-7543-a2cb-cb988973e87f",
+        "completed": true
+      },
+      {
+        "type": "agentMessage",
+        "id": "msg_resp_mwot00r6981ylm_1",
+        "text": "执行你指定的等待命令。",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null,
+        "_turnId": "01a1f862-20bc-7543-a2cb-cb988973e87f",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a1f862-20bc-7543-a2cb-cb988973e87f",
+        "status": "interrupted",
+        "startedAtMs": 1795168542000,
+        "completedAtMs": 1795168552000,
+        "durationMs": 9870
+      }
+    ],
+    "latestTurnId": "01a1f862-20bc-7543-a2cb-cb988973e87f"
+  }
+}

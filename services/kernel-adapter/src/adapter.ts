@@ -313,6 +313,7 @@ export function createAdapter(options: AdapterOptions) {
     interactive = false,
     timeoutMs?: number,
   ): Promise<TurnStartResponse> {
+    await budgetStopTasks.get(threadId);
     if (session.phase !== 'ready')
       throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
     try {
@@ -477,6 +478,47 @@ export function createAdapter(options: AdapterOptions) {
     return row.last_turn_id ?? undefined;
   }
 
+  const budgetLimitedThreads = new Set<string>();
+  const budgetStops = new Map<string, string>();
+  const budgetStopTasks = new Map<string, Promise<void>>();
+
+  // 内核的预算提示依赖模型主动收尾（KeepActive），不能代替宿主的停止闸门。
+  // 只使用权威目标状态，不按累计 token 猜测，也不伪造 turn/completed。
+  function stopBudgetLimitedTurn(threadId: string): void {
+    pausedQueues.add(threadId);
+    const turnId = activeTurnId(threadId);
+    const stopKey = turnId ?? '';
+    if (budgetStops.get(threadId) === stopKey) return;
+    budgetStops.set(threadId, stopKey);
+    const generation = session.generation;
+    const previousStop = budgetStopTasks.get(threadId);
+    const pending = (async () => {
+      // 预算通知与下一回合启动可能相邻；旧清理也必须包含在恢复等待中。
+      await previousStop?.catch(() => undefined);
+      if (session.generation !== generation) return;
+      if (turnId) await interruptTask(threadId, turnId);
+      else await protectStoppedQueue(threadId);
+      if (session.generation === generation) await terminateTaskCommands(threadId);
+    })();
+    budgetStopTasks.set(threadId, pending);
+    void pending
+      .catch((error: unknown) => {
+        if (budgetStops.get(threadId) === stopKey) budgetStops.delete(threadId);
+        logger?.warn('adapter.goal.stop_failed', {
+          threadId,
+          ...(turnId ? { turnId } : {}),
+          ...errorFields(error),
+        });
+        options.onUiEvent?.({
+          type: 'kernel-warning',
+          text: '目标预算已耗尽，但停止执行未确认，请检查任务并点击停止。',
+        });
+      })
+      .finally(() => {
+        if (budgetStopTasks.get(threadId) === pending) budgetStopTasks.delete(threadId);
+      });
+  }
+
   const events = createEventRouter({
     store,
     ephemeralThreadIds,
@@ -493,6 +535,8 @@ export function createAdapter(options: AdapterOptions) {
         session.openThreads.delete(event.threadId);
         localQueues.delete(event.threadId);
         activeTurns.delete(event.threadId);
+        budgetLimitedThreads.delete(event.threadId);
+        budgetStops.delete(event.threadId);
         desktopTurns.delete(event.threadId);
         forgetFileChanges((entry) => entry.threadId === event.threadId);
         forgetMcpCalls(event.threadId);
@@ -501,6 +545,7 @@ export function createAdapter(options: AdapterOptions) {
       if (event.type === 'turn-started') {
         if (!ephemeralThreadIds.has(event.threadId)) session.openThreads.add(event.threadId);
         activeTurns.set(event.threadId, event.turnId);
+        if (budgetLimitedThreads.has(event.threadId)) stopBudgetLimitedTurn(event.threadId);
         if (desktopTurns.get(event.threadId) !== event.turnId) desktopTurns.delete(event.threadId);
       }
       // 审批只发生在回合进行中，所以回合结束就可以把这一份清单扔掉
@@ -518,6 +563,15 @@ export function createAdapter(options: AdapterOptions) {
       if (event.type === 'item-started' || event.type === 'item-completed') {
         rememberFileChanges(event);
         rememberMcpCall(event);
+      }
+      if (event.type === 'task-goal-changed') {
+        if (event.goal?.status === 'budgetLimited') {
+          budgetLimitedThreads.add(event.threadId);
+          stopBudgetLimitedTurn(event.threadId);
+        } else {
+          budgetLimitedThreads.delete(event.threadId);
+          budgetStops.delete(event.threadId);
+        }
       }
       options.onUiEvent?.(event);
     },
@@ -580,6 +634,9 @@ export function createAdapter(options: AdapterOptions) {
         memoryImporter.invalidate();
         memoryTextImporter.invalidate();
         activeTurns.clear();
+        budgetLimitedThreads.clear();
+        budgetStops.clear();
+        budgetStopTasks.clear();
         approvals.cancel(() => true);
         forgetFileChanges(() => true);
         inFlightMcpCalls.clear();
@@ -791,6 +848,63 @@ export function createAdapter(options: AdapterOptions) {
       }
     }
   }
+  async function interruptTask(
+    threadId: string,
+    turnId = activeTurnId(threadId) ?? '',
+  ): Promise<void> {
+    pausedQueues.add(threadId);
+    try {
+      await session.peer.request(METHOD.turnInterrupt, { threadId, turnId });
+      await protectStoppedQueue(threadId);
+    } catch (err) {
+      // 回合在请求路上自己结束了 —— 用户要的「停下」已经达成，再报一次错
+      // 只会让人以为没停住，然后再点一次，凑出一串重复的报错。
+      // 空串是合法的中断参数，却不是合法的 id 字段值 —— 直接记会被字段表判成畸形，
+      // 在 throw 档位上让日志本身成为第二个故障。
+      const turnField = turnId ? { turnId } : {};
+      if (isTurnAlreadyOver(err)) {
+        activeTurns.delete(threadId);
+        await protectStoppedQueue(threadId);
+        logger?.info('adapter.interrupt.already_stopped', { threadId, ...turnField });
+        return;
+      }
+      logger?.warn('adapter.interrupt.failed', {
+        threadId,
+        ...turnField,
+        ...errorFields(err),
+        ...(err instanceof JsonRpcCallError ? { reason: `rpc_${err.code}` } : {}),
+      });
+      throw err;
+    }
+  }
+
+  async function terminateTaskCommands(threadId: string): Promise<void> {
+    type Terminals = { data: readonly { processId: string }[] };
+    for (let page = 0; page < 20; page += 1) {
+      const listed = await callExperimental<Terminals | undefined>(
+        EXPERIMENTAL_METHOD.threadBackgroundTerminalsList,
+        { threadId, limit: 100 },
+        () => undefined,
+      );
+      if (!listed || !Array.isArray(listed.data))
+        throw new Error('后台命令枚举不可用，停止未确认。');
+      if (listed.data.length === 0) return;
+      for (const entry of listed.data) {
+        if (typeof entry.processId !== 'string' || !entry.processId)
+          throw new Error('后台命令标识无效，停止未确认。');
+        const result = await callExperimental<{ terminated: boolean } | undefined>(
+          EXPERIMENTAL_METHOD.threadBackgroundTerminalsTerminate,
+          { threadId, processId: entry.processId },
+          () => undefined,
+        );
+        if (!result || typeof result.terminated !== 'boolean')
+          throw new Error('后台命令终止不可用，停止未确认。');
+        // false 也可能是进程刚自然退出；下一次枚举确认是否仍在，而不是猜测成功。
+      }
+    }
+    throw new Error('后台命令仍未清空，停止未确认。');
+  }
+
   async function protectAllStoppedQueues(): Promise<void> {
     for (const threadId of localQueues.paused()) await protectStoppedQueue(threadId);
   }
@@ -2425,60 +2539,11 @@ export function createAdapter(options: AdapterOptions) {
      * 因此那条路径上 Promise resolve 意味着真的停住了。
      */
     async interrupt(threadId: string): Promise<void> {
-      pausedQueues.add(threadId);
-      const turnId = activeTurnId(threadId) ?? '';
-      try {
-        await session.peer.request(METHOD.turnInterrupt, { threadId, turnId });
-        await protectStoppedQueue(threadId);
-      } catch (err) {
-        // 回合在请求路上自己结束了 —— 用户要的「停下」已经达成，再报一次错
-        // 只会让人以为没停住，然后再点一次，凑出一串重复的报错。
-        // 空串是合法的中断参数，却不是合法的 id 字段值 —— 直接记会被字段表判成畸形，
-        // 在 throw 档位上让日志本身成为第二个故障。
-        const turnField = turnId ? { turnId } : {};
-        if (isTurnAlreadyOver(err)) {
-          activeTurns.delete(threadId);
-          await protectStoppedQueue(threadId);
-          logger?.info('adapter.interrupt.already_stopped', { threadId, ...turnField });
-          return;
-        }
-        logger?.warn('adapter.interrupt.failed', {
-          threadId,
-          ...turnField,
-          ...errorFields(err),
-          ...(err instanceof JsonRpcCallError ? { reason: `rpc_${err.code}` } : {}),
-        });
-        throw err;
-      }
+      await interruptTask(threadId);
     },
 
     /** 回合停止不等于统一执行的后台进程退出。只操作这个任务的官方 processId。 */
-    async terminateTaskCommands(threadId: string): Promise<void> {
-      type Terminals = { data: readonly { processId: string }[] };
-      for (let page = 0; page < 20; page += 1) {
-        const listed = await callExperimental<Terminals | undefined>(
-          EXPERIMENTAL_METHOD.threadBackgroundTerminalsList,
-          { threadId, limit: 100 },
-          () => undefined,
-        );
-        if (!listed || !Array.isArray(listed.data))
-          throw new Error('后台命令枚举不可用，停止未确认。');
-        if (listed.data.length === 0) return;
-        for (const entry of listed.data) {
-          if (typeof entry.processId !== 'string' || !entry.processId)
-            throw new Error('后台命令标识无效，停止未确认。');
-          const result = await callExperimental<{ terminated: boolean } | undefined>(
-            EXPERIMENTAL_METHOD.threadBackgroundTerminalsTerminate,
-            { threadId, processId: entry.processId },
-            () => undefined,
-          );
-          if (!result || typeof result.terminated !== 'boolean')
-            throw new Error('后台命令终止不可用，停止未确认。');
-          // false 也可能是进程刚自然退出；下一次枚举确认是否仍在，而不是猜测成功。
-        }
-      }
-      throw new Error('后台命令仍未清空，停止未确认。');
-    },
+    terminateTaskCommands,
 
     /** 把持久化对话截到某回合之前；内核明确保证它不改工作区文件。 */
     async revertTask(threadId: string, beforeTurnId: string): Promise<void> {
@@ -2625,6 +2690,7 @@ export function createAdapter(options: AdapterOptions) {
         readonly tokenBudget?: number | null;
       },
     ): Promise<ThreadGoal | undefined> {
+      if (changes.status === 'active') await budgetStopTasks.get(threadId);
       if (changes.status === 'active' && !session.openThreads.has(threadId)) {
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
           threadId,

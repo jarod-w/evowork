@@ -289,7 +289,10 @@ export function createFakeGateway({
       },
     });
     // `end_turn: false`：工具调用之后回合还要继续
-    sendEvent(response, { type: 'response.completed', response: { id, end_turn: false } });
+    sendEvent(response, {
+      type: 'response.completed',
+      response: { id, end_turn: false, ...(script.usage ? { usage: script.usage } : {}) },
+    });
     response.end('data: [DONE]\n\n');
   }
 

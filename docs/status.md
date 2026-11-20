@@ -1,5 +1,9 @@
 # 开发状态
 
+> **2026-11-20：修复目标预算耗尽后回合仍在运行（[#24](https://github.com/jarod-w/evowork/issues/24)）。**
+> 内核在工具完成时把目标改为 `budgetLimited`，但只向模型注入收尾提示，宿主此前没有执行停止动作。适配层现在按权威状态暂停队列、中断当前回合并清理后台命令；重复通知去重，覆盖通知先于回合开始的竞态，追加预算和新回合等待旧清理完成。Composer 仍由真实回合终态恢复 idle，不伪造完成；停止失败给出可见提示。未修改上游内核或新增补丁。
+> **验收**：新增单元先红后绿，适配测试 **139/139**；完整构建通过；确定性真实窗口 **5/5**，含后台命令原定完成时间过后仍未写出文件、刷新不续跑；指定 `mimo-v2.6-flash` / `https://api.xiaomimimo.com/v1` 原问题回归 **1/1**，预算 1、用量 14726，权威回合 `interrupted`，Composer idle，刷新无新增回合。完整 `pnpm run check` 退出 0，**3621 通过 / 6 项既有跳过**，见[验收记录](verification/2026-11-20-goal-budget-stop.md)。仅 macOS arm64，未升级版本、替换安装或发布。
+
 > **2026-11-20：修复内核在 GitHub 不通时请求 chatgpt.com（[#23](https://github.com/jarod-w/evowork/issues/23)，K6 / K7）。**
 > 内核同步 OpenAI 精选插件市场时，git 与 GitHub HTTP 都失败且本机没有快照，就回退到写死的 `chatgpt.com/backend-api/plugins/export/curated`，再从 `files.openai.com` 下载。这个地址不受 `chatgpt_base_url` 控制。宿主现在起内核前预置一份空快照（`ensureKernelCuratedSnapshot`，只补缺的），内核据此跳过回退。GitHub 通时仍正常同步，界面本来就不展示这个市场。未改内核，不占 K1 预算。登记见[总纲 K6](evowork-on-codex-design.md)。
 > **验收**：`verify-kernel-egress.mjs` 新增 `--github-unreachable`（代理指向连不上的端口）。不预置时稳定复现 `chatgpt.com ×3`，预置后只剩已登记的 `github.com` / `api.github.com`，判通过。`pnpm run check` 退出 0，**3611 项通过 / 6 项既有跳过**。本机 `/usr/bin/git` 是占位程序，GitHub HTTP 同步也没在 40 秒内完成，所以「GitHub 通时真快照替换占位」只按内核代码确认（`startup_sync.rs:193`、`:323` 比 sha），没有实测到。外部验收 D4 用 `mimo-v2.6-flash` 跑了前后对照（单 worker、零重试）：先用修复前的主进程包，内核多出两个白名单外目的地（`104.244.46.185:443`、`172.64.155.169:443`），判失败；重新构建后通过，内核只连 GitHub 的地址。这两个 IP 没做反查，不确认对应哪个域名。
