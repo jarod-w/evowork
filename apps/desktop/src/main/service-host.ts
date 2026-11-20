@@ -365,6 +365,48 @@ export function ensureKernelExecPolicyRules(paths: EvoworkPaths): string {
   return target;
 }
 
+/**
+ * 给内核预置一份**空的**精选插件快照（#23，K6 / K7）。
+ *
+ * 内核启动后会同步 OpenAI 精选插件市场：先 git、再 GitHub HTTP；两条都失败**且本机没有快照**时，
+ * 回退到写死的 `chatgpt.com/backend-api/plugins/export/curated`，再按它给的地址去
+ * `files.openai.com` 下载（`codex-rs/core-plugins/src/startup_sync.rs` 的
+ * `sync_openai_plugins_repo_with_transport_overrides`）。这个地址不受 `chatgpt_base_url` 管，
+ * 托管 requirements 只认 `/etc/codex/`，`features.plugins` 一关套件也没了 —— 配置层关不掉它。
+ * 新装机器 + GitHub 不通（或各 30 秒超时），就会撞上。
+ *
+ * 内核判「已有快照」只看两个文件在不在（`has_local_curated_plugins_snapshot`），
+ * 所以放一份空市场就能让它跳过那条回退。占位 sha 永远对不上远端，GitHub 通的时候照样整份换掉；
+ * 这个市场在 `.tmp/` 下，`services/catalog` 本来就不让它进产品。
+ *
+ * **只补缺的，不覆盖**：内核同步下来的真快照不能被换回空的。
+ */
+export function ensureKernelCuratedSnapshot(paths: EvoworkPaths): boolean {
+  const manifest = join(
+    paths.kernelHome,
+    '.tmp',
+    'plugins',
+    '.agents',
+    'plugins',
+    'marketplace.json',
+  );
+  const sha = join(paths.kernelHome, '.tmp', 'plugins.sha');
+  let wrote = false;
+  if (!existsSync(manifest)) {
+    mkdirSync(dirname(manifest), { recursive: true });
+    writeFileSync(manifest, `${JSON.stringify({ name: 'openai-curated', plugins: [] })}\n`, 'utf8');
+    wrote = true;
+  }
+  if (!existsSync(sha)) {
+    writeFileSync(sha, `${CURATED_SNAPSHOT_PLACEHOLDER_SHA}\n`, 'utf8');
+    wrote = true;
+  }
+  return wrote;
+}
+
+/** 不是合法的提交号：内核拿它跟远端比永远不相等，GitHub 一通就会被真快照替换 */
+export const CURATED_SNAPSHOT_PLACEHOLDER_SHA = 'evowork-empty-seed';
+
 /** 装进内核的策略 hook：写在哪、每条的命令是什么（适配层据此只信任我们自己写的那几条）。 */
 export interface KernelHooks {
   readonly sourcePath: string;
@@ -1141,6 +1183,16 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
   } catch (err) {
     // 写不出来只是回到内核自己的启发式（删除不一定问）；不值得让启动失败
     logger.warn('desktop.kernel_config.exec_rules_failed', {
+      errorClass: err instanceof Error ? err.name : 'UnknownError',
+    });
+  }
+  try {
+    if (ensureKernelCuratedSnapshot(options.paths)) {
+      logger.info('desktop.kernel_config.curated_snapshot_seeded', {});
+    }
+  } catch (err) {
+    // 写不出来时内核在 GitHub 不通的那次启动会去请求 chatgpt.com（#23）；启动照常，但要留痕
+    logger.warn('desktop.kernel_config.curated_snapshot_failed', {
       errorClass: err instanceof Error ? err.name : 'UnknownError',
     });
   }

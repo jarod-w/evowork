@@ -559,12 +559,21 @@ Ask 只读讨论从 Composer 下架。`evowork-ask` 与 `config/modes/ask.md` �
 | 项             | 内容                                                                                                                                                                                                 |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 触发           | **内核每次启动**在后台线程跑一次，不是用户动作。门在 `core-plugins/src/manager.rs:710`：plugins 功能开 + 没有远端插件目录 + 市场策略放行这个源                                                          |
-| 去哪           | `github.com`：`git ls-remote` / `git clone https://github.com/openai/plugins.git`（`core-plugins/src/startup_sync.rs:30`）。本机没有 git 时退回 HTTP（GitHub zipball / 备份归档），走内核的 HTTP 客户端 —— 会经系统代理，D4 里内核那条指向 `127.0.0.1:7890` 的连接很可能就是它 |
+| 去哪           | `github.com`：`git ls-remote` / `git clone https://github.com/openai/plugins.git`（`core-plugins/src/startup_sync.rs:30`）。git 不可用或失败时退回 HTTP（`api.github.com` 查提交、zipball 经 `codeload.github.com`），走内核的 HTTP 客户端 —— 会经系统代理，D4 里内核那条指向 `127.0.0.1:7890` 的连接很可能就是它。**再往后那一步「备份归档」不在登记范围**：它是 `chatgpt.com` + `files.openai.com`，已由宿主预置空快照挡住（见下一条，#23） |
 | 带什么         | **只读拉取一个公开仓库**（git upload-pack / HTTP GET）。不带 prompt、文件名、任务 id、机器标识；带的只是 git / HTTP 客户端的常规请求头                                                             |
 | 落在哪         | `~/.evowork/kernel/.tmp/plugins/`（内核的「OpenAI curated」市场快照）                                                                                                                                  |
 | 界面上看得见吗 | **目前看不见，但理由不是原来写的那条**（2026-10-02 订正，[13 HF4 / HF5](design/13-plugin-hub.md)）：`local` 类型**本身就包含** curated 市场（`app-server/src/request_processors/plugins.rs:617` · `core-plugins/src/manager.rs:3540`，实测返回「Codex official」50 个插件）。原来看不见，是因为同一请求里的 `workspace-directory` 是 ChatGPT 远端目录、没登录 ChatGPT 时整个请求报错，桥接层把错误吞成了空列表 —— **那是碰巧，不是守住**。**2026-10-02 已修**（[13 §9](design/13-plugin-hub.md)，H0）：适配层只传 `local`；`@evowork/catalog` 的 `listBundles` 按路径滤掉 `<kernelHome>/.tmp/` 下的所有市场；读失败写进 `bundleErrors`；守卫判的是「渲染层收到的任何套件，其路径都不在 `.tmp/` 之下」（`apps/desktop/test/bundle-host.test.ts`），安装前还会重新列一遍，渲染层直接传 `.tmp/` 路径也装不上。**同步本身照旧发生**，看不见的只是这条通道 |
 | 为什么不关     | 只有三条路：`[features] plugins = false`（本机插件套件也一起没了）· 托管 requirements 禁这个源（要写 `/etc/codex`，桌面应用做不到）· 内核补丁（占 K1 预算）。代价都大于一次只读拉取公开仓库             |
 | 守卫           | 验收 D4（`apps/desktop/test/e2e/ui/acceptance.real.spec.mjs`）把 `github.com` 列进允许的外连目的地，别的目的地照样判失败；外连按进程记录，下次多出一条能直接看到是谁连的                              |
+
+**K6 / K7：精选插件同步回退到 ChatGPT 备份归档（2026-11-20 关闭，[#23](https://github.com/jarod-w/evowork/issues/23)）**。上面那条同步在 git 与 GitHub HTTP 都失败、本机又没有快照时，会请求写死的 `https://chatgpt.com/backend-api/plugins/export/curated`，再从它返回的 `files.openai.com` 地址下载（`core-plugins/src/startup_sync.rs:26` 与 `:130-162`）。这个地址不读 `chatgpt_base_url`，下一条的关法管不到它；新装机器 + GitHub 不通就会撞上，MiMo 实测 D4 抓到过一次。
+
+| 项       | 内容 |
+| -------- | ---- |
+| 怎么关   | 内核判「已有快照」只看 `.tmp/plugins/.agents/plugins/marketplace.json` 与 `.tmp/plugins.sha` 在不在（`startup_sync.rs:366`）。宿主起内核前补齐这两个文件（`service-host.ts` 的 `ensureKernelCuratedSnapshot`：空市场 + 占位 sha，只补缺的、不覆盖），内核就跳过那条回退。占位 sha 不是提交号，GitHub 通时 git / HTTP 同步照样整份替换。不占 K1 预算 |
+| 为什么不用别的 | 与上一条「为什么不关」相同：`features.plugins = false` 会连套件一起关掉；托管 requirements 只认 `/etc/codex`；内核补丁会占掉 K1 的第 5 个文件 |
+| 守卫     | `node scripts/verify-kernel-egress.mjs --github-unreachable` 把内核代理指向连不上的端口，逼它走完回退链；加 `--no-seed` 不预置快照，复现修复前的 `chatgpt.com ×3`。单测：`apps/desktop/test/renderer-bridge.test.ts` 里「新装机器预置空的精选插件快照」 |
+| 剩余风险 | 升级内核后快照路径或判定改了，这一层会悄悄失效 —— 升级时跑上面那条 `--github-unreachable` |
 
 **K6 登记：内核连 ChatGPT 后端（2026-10-22 关闭）**。本机内核日志 10-12、10-15 两次启动都向 `chatgpt.com` 发过请求；10-22 用发货内核（d583e73c4d + P6/P7）与用户本机配置复现：启动后调用 `plugin/list`，内核请求 `https://chatgpt.com/backend-api/plugins/featured?platform=codex`，返回 401（请求已到达对方），同时起了一个指向 `chatgpt.com` 的远程控制循环。这违反 K6（未经授权出网）与 K7（不用 OpenAI 侧的服务）：
 

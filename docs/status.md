@@ -1,5 +1,9 @@
 # 开发状态
 
+> **2026-11-20：修复内核在 GitHub 不通时请求 chatgpt.com（[#23](https://github.com/jarod-w/evowork/issues/23)，K6 / K7）。**
+> 内核同步 OpenAI 精选插件市场时，git 与 GitHub HTTP 都失败且本机没有快照，就回退到写死的 `chatgpt.com/backend-api/plugins/export/curated`，再从 `files.openai.com` 下载。这个地址不受 `chatgpt_base_url` 控制。宿主现在起内核前预置一份空快照（`ensureKernelCuratedSnapshot`，只补缺的），内核据此跳过回退。GitHub 通时仍正常同步，界面本来就不展示这个市场。未改内核，不占 K1 预算。登记见[总纲 K6](evowork-on-codex-design.md)。
+> **验收**：`verify-kernel-egress.mjs` 新增 `--github-unreachable`（代理指向连不上的端口）。不预置时稳定复现 `chatgpt.com ×3`，预置后只剩已登记的 `github.com` / `api.github.com`，判通过。`pnpm run check` 退出 0，**3611 项通过 / 6 项既有跳过**。本机 `/usr/bin/git` 是占位程序，GitHub HTTP 同步也没在 40 秒内完成，所以「GitHub 通时真快照替换占位」只按内核代码确认（`startup_sync.rs:193`、`:323` 比 sha），没有实测到。外部验收 D4 用 `mimo-v2.6-flash` 跑了前后对照（单 worker、零重试）：先用修复前的主进程包，内核多出两个白名单外目的地（`104.244.46.185:443`、`172.64.155.169:443`），判失败；重新构建后通过，内核只连 GitHub 的地址。这两个 IP 没做反查，不确认对应哪个域名。
+
 > **2026-11-19：修复重试重复执行与重连残留正文。**
 > 失败卡「重试」先读取失败回合的最新历史，只有确认操作尚未发生且可完整重建单条输入时才重发原需求。其他情况在原任务核对历史与工具结果、继续剩余步骤。断流片段仅作预览，网关不将其提交为已完成消息，桌面在重连时移除该次预览并保留已完成进度。
 > **验收**：两条故障窗口回归先红后绿；完整构建、确定性窗口 **13/13**、`deepseek-flash` 故障注入窗口 **2/2**。写入后总结失败，重试后文件仍只有一行；断流重连成功，界面和刷新后的历史均只有一条完整回复。使用仓库锁定的 pnpm 10.30.3、对应本机缓存及随包办公 Python，`pnpm run check` 退出 0，**3597 项通过 / 6 项既有跳过**，含许可证检查。未替换安装版或发布。

@@ -41,7 +41,9 @@ import {
   type ProjectPorts,
 } from '../src/main/renderer-bridge.js';
 import {
+  CURATED_SNAPSHOT_PLACEHOLDER_SHA,
   ensureKernelConfig,
+  ensureKernelCuratedSnapshot,
   ensureKernelExecPolicyRules,
   ensureKernelModelCatalog,
   ensurePaths,
@@ -2566,6 +2568,34 @@ describe('首次运行装内核配置', () => {
     expect(target).toBe(join(rulesDir, 'evowork.rules'));
     expect(readFileSync(target, 'utf8')).toBe(KERNEL_PROMPT_RULES);
     expect(readFileSync(join(rulesDir, 'default.rules'), 'utf8')).toContain('"ls"');
+  });
+
+  it('新装机器预置空的精选插件快照，内核就不会回退去请求 chatgpt.com（#23）；**已有的真快照不碰**', () => {
+    const home = mkdtempSync(join(tmpdir(), 'evowork-curated-'));
+    const paths = resolvePaths(home);
+    ensurePaths(paths);
+    const manifest = join(paths.kernelHome, '.tmp/plugins/.agents/plugins/marketplace.json');
+    const sha = join(paths.kernelHome, '.tmp/plugins.sha');
+
+    expect(ensureKernelCuratedSnapshot(paths)).toBe(true);
+    // 内核 has_local_curated_plugins_snapshot 判的就是这两个文件
+    expect(JSON.parse(readFileSync(manifest, 'utf8'))).toEqual({
+      name: 'openai-curated',
+      plugins: [],
+    });
+    expect(readFileSync(sha, 'utf8').trim()).toBe(CURATED_SNAPSHOT_PLACEHOLDER_SHA);
+    expect(ensureKernelCuratedSnapshot(paths)).toBe(false);
+
+    const synced = '{"name":"openai-curated","plugins":[{"name":"gmail"}]}';
+    writeFileSync(manifest, synced, 'utf8');
+    writeFileSync(sha, 'fedcba9876543210fedcba9876543210fedcba98\n', 'utf8');
+    expect(ensureKernelCuratedSnapshot(paths)).toBe(false);
+    expect(readFileSync(manifest, 'utf8')).toBe(synced);
+    expect(readFileSync(sha, 'utf8')).toContain('fedcba98');
+
+    rmSync(sha);
+    expect(ensureKernelCuratedSnapshot(paths)).toBe(true);
+    expect(readFileSync(manifest, 'utf8')).toBe(synced);
   });
 
   it('给内核写模型目录：**根键必须在第一个表之前**，否则整份配置会被判无效', () => {

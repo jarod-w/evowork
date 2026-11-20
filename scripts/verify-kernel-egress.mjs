@@ -10,15 +10,22 @@
  * **判据是内核自己的日志**，不是抓 TCP 连接：内核走系统代理，连接只看得到 `127.0.0.1:<代理端口>`，
  * 看不到真实目的地；而失败与否都会以完整 URL 写进日志。
  *
+ * 2026-11-20（#23）：GitHub 不通时，精选插件同步回退到写死的 chatgpt.com 备份归档，
+ * 再去 files.openai.com 下载。只有 GitHub 失败才走得到，所以默认跑法看不见它 ——
+ * `--github-unreachable` 把内核的代理指到一个连不上的端口，逼它走完整条回退链。
+ * 宿主启动时会预置一份空快照（`service-host.ts` 的 `ensureKernelCuratedSnapshot`），
+ * 这里照做；`--no-seed` 不预置，用来复现修复前的样子。
+ *
  * 不需要密钥、不进 `pnpm run check`（要先编出内核）。
  *
  * 用法：
  *   node scripts/verify-kernel-egress.mjs                       # 随包模板（新装的样子）
  *   node scripts/verify-kernel-egress.mjs --config <config.toml> # 任意一份配置（比如迁移后的老配置）
+ *   node scripts/verify-kernel-egress.mjs --github-unreachable   # GitHub 不通（#23 的回退链）
  *   EVOWORK_APP_SERVER=<路径> node scripts/verify-kernel-egress.mjs
  */
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, platform, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -31,10 +38,14 @@ const configPath =
   configFlag >= 0
     ? resolve(process.argv[configFlag + 1] ?? '')
     : join(root, 'config/config.toml.template');
+const githubUnreachable = process.argv.includes('--github-unreachable');
+const seedSnapshot = !process.argv.includes('--no-seed');
 const WAIT_MS = 8000;
+/** 没有监听者的端口：经它的连接立刻被拒，git 与 HTTP 两条同步都秒败 */
+const DEAD_PROXY = 'http://127.0.0.1:9';
 
 /** 登记过的目的地（总纲 K6 登记表）。其余非本机地址一律算未登记。 */
-const REGISTERED = [/^github\.com$/];
+const REGISTERED = [/^github\.com$/, /^api\.github\.com$/, /^codeload\.github\.com$/];
 /** K7：OpenAI 侧的服务一个都不许出现，登记了也不行 */
 const FORBIDDEN = /(^|\.)(chatgpt\.com|openai\.com)$/;
 
@@ -67,9 +78,25 @@ const work = join(temp, 'work');
 mkdirSync(kernelHome, { recursive: true });
 mkdirSync(work, { recursive: true });
 copyFileSync(configPath, join(kernelHome, 'config.toml'));
+if (seedSnapshot) {
+  const manifestDir = join(kernelHome, '.tmp/plugins/.agents/plugins');
+  mkdirSync(manifestDir, { recursive: true });
+  writeFileSync(join(manifestDir, 'marketplace.json'), '{"name":"openai-curated","plugins":[]}\n');
+  writeFileSync(join(kernelHome, '.tmp/plugins.sha'), 'evowork-empty-seed\n');
+}
 
+const proxyEnv = githubUnreachable
+  ? Object.fromEntries(
+      ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']
+        .map((key) => [key, DEAD_PROXY])
+        .concat([
+          ['NO_PROXY', '127.0.0.1,localhost'],
+          ['no_proxy', '127.0.0.1,localhost'],
+        ]),
+    )
+  : {};
 const child = spawn(kernel, [], {
-  env: { ...process.env, CODEX_HOME: kernelHome, HOME: temp, RUST_LOG: 'info' },
+  env: { ...process.env, ...proxyEnv, CODEX_HOME: kernelHome, HOME: temp, RUST_LOG: 'info' },
   stdio: ['pipe', 'pipe', 'pipe'],
 });
 let log = '';
@@ -131,6 +158,9 @@ for (const match of plain.matchAll(/\bhttps?:\/\/([^/\s"'`:]+)/g)) {
 
 console.log(`内核：${kernel}`);
 console.log(`配置：${configPath}`);
+console.log(
+  `场景：${githubUnreachable ? 'GitHub 不通' : '网络照常'}，${seedSnapshot ? '预置空快照' : '不预置快照'}`,
+);
 for (const [method, error] of steps) {
   console.log(`  ${method}：${error ? `失败 ${JSON.stringify(error).slice(0, 200)}` : 'ok'}`);
 }

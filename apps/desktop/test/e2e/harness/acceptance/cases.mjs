@@ -295,7 +295,8 @@ export const CASES = [
     egress: true,
     /*
      * 登记过的外连（总纲 K6 登记，2026-10-01）：内核启动时同步 OpenAI 插件市场仓库。
-     * git 走 github.com；没有 git 时退回 HTTP（zipball / 备份归档）。模型厂商的域名由 spec 按所选模型解析。
+     * git 走 github.com；git 不行时退回 GitHub HTTP（api / codeload）。再往后的备份归档是 chatgpt.com，
+     * 宿主预置空快照挡住（#23），不在白名单里。模型厂商的域名由 spec 按所选模型解析。
      */
     allowHosts: [
       'github.com',
