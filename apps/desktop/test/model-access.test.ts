@@ -277,7 +277,7 @@ describe('自定义模型的能力位来自能力表（known-models）', () => {
     });
     /*
      * 改成一个不读图的型号：徽标必须跟着变，否则用户发了图只会得到"我没看到"。
-     * deepseek-v4-pro 不在能力表里（落到保守默认），厂商文档也写着它不支持视觉。
+     * deepseek-v4-pro 的厂商文档写着它不支持视觉，上下文是另一个值。
      * （原先这里用的是 deepseek-v4-flash —— 2026-10-05 它成了 deepseek-flash 的别名。）
      */
     expect(
@@ -293,7 +293,10 @@ describe('自定义模型的能力位来自能力表（known-models）', () => {
       capabilities: { imageInput: boolean; maxContextTokens: number };
     }[];
     expect(specs[0]?.capabilities.imageInput).toBe(false);
-    // 上下文也不许继承旧型号的 1M：估大了内核等不到压缩，厂商先以超长拒绝
+    expect(specs[0]?.capabilities).toEqual(
+      findKnownModel('deepseek', 'deepseek-v4-pro')?.capabilities,
+    );
+    // 上下文也不许继承旧型号的值：估大了内核等不到压缩，厂商先以超长拒绝
     expect(specs[0]?.capabilities.maxContextTokens).not.toBe(
       findKnownModel('deepseek', 'deepseek-flash')?.capabilities.maxContextTokens,
     );

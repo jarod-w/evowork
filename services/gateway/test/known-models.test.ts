@@ -51,6 +51,31 @@ describe('认得出来的型号：结论只有一份', () => {
     );
   });
 
+  it('厂商文档里写着纯文本 / 不支持视觉的型号不读图 —— 标错了用户发了图只会得到"我没看到"', () => {
+    expect(findKnownModel('deepseek', 'deepseek-v4-pro')?.capabilities.imageInput).toBe(false);
+    expect(findKnownModel('zhipu', 'glm-5.3')?.capabilities.imageInput).toBe(false);
+  });
+
+  it('K3.1 Pro 与 GLM-5.3-FlashX 能读图、会推理（厂商文档）', () => {
+    for (const [provider, model] of [
+      ['moonshot', 'kimi-k3.1-pro'],
+      ['moonshot', 'kimi-k3.1-pro-highspeed'],
+      ['zhipu', 'glm-5.3-flashx'],
+    ] as const) {
+      const known = findKnownModel(provider, model);
+      expect(known?.capabilities.imageInput, model).toBe(true);
+      expect(known?.capabilities.reasoning, model).toBe(true);
+    }
+  });
+
+  it('只读过文档的型号不进内置目录，也不冒充实测', () => {
+    for (const model of ['deepseek-v4-pro', 'kimi-k3.1-pro', 'glm-5.3', 'glm-5.3-flashx']) {
+      const known = KNOWN_MODELS.find((m) => m.upstreamModel === model);
+      expect(known?.builtinId, model).toBeUndefined();
+      expect(known?.evidence, model).toBe('vendor-doc');
+    }
+  });
+
   it('大小写与空格不影响识别（厂商控制台里复制出来的常带这些）', () => {
     expect(findKnownModel('moonshot', '  Kimi-K3 ')?.builtinId).toBe('evowork/kimi-k3');
   });

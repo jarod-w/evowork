@@ -9,7 +9,8 @@ export function supportsReasoningEffort(provider: ProviderId | undefined, model:
         'deepseek-v4-flash-vision-exp',
         'deepseek-v4-pro',
       ].includes(model)) ||
-    (provider === 'moonshot' && model === 'kimi-k3') ||
+    (provider === 'moonshot' &&
+      ['kimi-k3', 'kimi-k3.1-pro', 'kimi-k3.1-pro-highspeed'].includes(model.toLowerCase())) ||
     (provider === 'zhipu' &&
       ['glm-5.3', 'glm-5.3-flash', 'glm-5.3-flashx'].includes(model.toLowerCase()))
   );

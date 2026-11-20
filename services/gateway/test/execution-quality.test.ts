@@ -172,8 +172,13 @@ describe('推理强度跨网关传递', () => {
   });
   const models: readonly [ProviderId, string][] = [
     ['deepseek', 'deepseek-flash'],
+    ['deepseek', 'deepseek-v4-pro'],
     ['moonshot', 'kimi-k3'],
+    ['moonshot', 'kimi-k3.1-pro'],
+    ['moonshot', 'kimi-k3.1-pro-highspeed'],
     ['zhipu', 'glm-5.3-flash'],
+    ['zhipu', 'glm-5.3'],
+    ['zhipu', 'glm-5.3-flashx'],
   ];
   it.each(models)('%s 将不同强度发送给上游', (provider, model) => {
     for (const effort of ['low', 'high', 'max']) {

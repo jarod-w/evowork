@@ -201,6 +201,120 @@ export const KNOWN_MODELS: readonly KnownModel[] = [
    * 留着它等于对一个已经不存在的型号下结论，而且结论与旧名现在背后的型号相反。
    * 那次实测的结果仍记在总纲 D2 的表里。
    */
+  /*
+   * 以下五条只读过厂商文档（2026-11-20 核对），都没有 `builtinId`：认得出来，但不进内置目录。
+   * **并行工具调用只认文档里写明的**：Kimi 的工具调用指南写了「一次返回多个 tool_calls」；
+   * DeepSeek 与智谱的文档没写，同族型号实测成立也不替它们担保，先标 false。
+   */
+  {
+    provider: 'deepseek',
+    upstreamModel: 'deepseek-v4-pro',
+    displayName: 'DeepSeek V4 Pro',
+    tier: 'flagship',
+    evidence: 'vendor-doc',
+    unverified: ALL_CAPABILITY_KEYS,
+    notes:
+      '厂商文档（api-docs.deepseek.com 的 Models & Pricing，2026-11-20 核对）：型号版本 DeepSeek-V4-Pro-0813；' +
+      '支持思考与非思考模式（默认思考）、Tool Calls、Responses API；**Vision 一栏写着 Not supported**；' +
+      '上下文与 deepseek-flash 同列写「1M」，没有精确 token 数，按小的那种读法记 1,000,000；' +
+      '有缓存命中价，记为支持提示缓存。文档没写并行工具调用，标 false。',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: false,
+      reasoning: true,
+      promptCache: true,
+      imageInput: false,
+      maxContextTokens: 1_000_000,
+    },
+  },
+  {
+    provider: 'moonshot',
+    upstreamModel: 'kimi-k3.1-pro',
+    displayName: 'Kimi K3.1 Pro',
+    tier: 'flagship',
+    evidence: 'vendor-doc',
+    unverified: ALL_CAPABILITY_KEYS,
+    notes:
+      '厂商文档（platform.kimi.com 的 K3.1 Pro 快速开始、模型参数参考、产品定价，2026-11-20 核对）：' +
+      '始终开启思考，`reasoning_effort` 支持 low / high / max；支持视觉输入，' +
+      '**只接受 base64 与 `ms://` file id，不接公网图片 URL**（与 kimi-k3 相同）；' +
+      '工具调用指南写明可一次返回多个 tool_calls；前缀缓存自动生效；' +
+      '定价页写「K3 系列模型均支持 1,048,576 tokens 上下文窗口」。',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: true,
+      promptCache: true,
+      imageInput: true,
+      maxContextTokens: 1_048_576,
+    },
+  },
+  {
+    provider: 'moonshot',
+    upstreamModel: 'kimi-k3.1-pro-highspeed',
+    displayName: 'Kimi K3.1 Pro Highspeed',
+    tier: 'flagship',
+    evidence: 'vendor-doc',
+    unverified: ALL_CAPABILITY_KEYS,
+    notes:
+      '厂商文档（platform.kimi.com 的 K3.1 Pro 快速开始，2026-11-20 核对）：K3.1 Pro 的高速版，' +
+      '「同等智能，输出速度约 2~3 倍」；模型参数参考把它与 kimi-k3、kimi-k3.1-pro 列为同一组 K3 系列参数，' +
+      '能力位按 kimi-k3.1-pro 记。单列一条而不是别名：它是另一个计费型号（新用户代金券不适用），不是旧名路由。',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: true,
+      reasoning: true,
+      promptCache: true,
+      imageInput: true,
+      maxContextTokens: 1_048_576,
+    },
+  },
+  {
+    provider: 'zhipu',
+    upstreamModel: 'glm-5.3',
+    displayName: 'GLM 5.3',
+    tier: 'flagship',
+    evidence: 'vendor-doc',
+    unverified: ALL_CAPABILITY_KEYS,
+    notes:
+      '厂商文档（docs.bigmodel.cn 的 GLM-5.3 页，2026-11-20 核对）：' +
+      '**「目前仅支持处理文本模态信息」**，所以不读图；始终启用思考，`reasoning_effort` 支持 low / high / max；' +
+      '支持工具调用与上下文缓存；上下文只写「1M」，按小的那种读法记 1,000,000。文档没写并行工具调用，标 false。',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: false,
+      reasoning: true,
+      promptCache: true,
+      imageInput: false,
+      maxContextTokens: 1_000_000,
+    },
+  },
+  {
+    provider: 'zhipu',
+    upstreamModel: 'glm-5.3-flashx',
+    displayName: 'GLM 5.3 FlashX',
+    tier: 'light',
+    evidence: 'vendor-doc',
+    unverified: ALL_CAPABILITY_KEYS,
+    notes:
+      '厂商文档（docs.bigmodel.cn 的 GLM-5.3-Flash/FlashX 页，2026-11-20 核对）：与 GLM-5.3-Flash 同页，' +
+      '原生多模态（图片、视频、文件），推理速度约 200 tokens/s；文本参数与 GLM-5.3 一致，支持 1M 上下文' +
+      '（按小的那种读法记 1,000,000）；思考只支持开启；支持上下文缓存。' +
+      '单列一条而不是 glm-5.3-flash 的别名：那条的能力位是实测出来的，这条没有。文档没写并行工具调用，标 false。',
+    capabilities: {
+      streaming: true,
+      toolCalls: true,
+      parallelToolCalls: false,
+      reasoning: true,
+      promptCache: true,
+      imageInput: true,
+      maxContextTokens: 1_000_000,
+    },
+  },
 ];
 
 /** 按 (协议适配类型, 上游模型名) 建索引，别名一起进去。**大小写不敏感**：厂商文档与控制台大小写不一。 */
