@@ -1195,3 +1195,54 @@ describe('下一步建议只填草稿', () => {
     );
   });
 });
+
+describe('焦点不在输入框时的 ⌘V（03 §4.4）', () => {
+  const shot = () => new File([new Uint8Array([1, 2, 3])], 'image.png', { type: 'image/png' });
+  const clip = (files: File[], text = '') => ({
+    clipboardData: { files, getData: (type: string) => (type === 'text/plain' ? text : '') },
+  });
+
+  it('发完一条焦点停在「发送」上：粘贴的截图照样成为附件，焦点回到输入框', () => {
+    const added = vi.fn();
+    renderComposer({ value: '已有草稿', onFilesAdded: added });
+    const send = screen.getByRole('button', { name: '发送' });
+    send.focus();
+    const file = shot();
+    fireEvent.paste(send, clip([file]));
+    expect(added).toHaveBeenCalledWith([file]);
+    expect(document.activeElement).toBe(screen.getByLabelText('需求输入'));
+  });
+
+  it('点过对话区（焦点在 body）：粘贴的文字接到草稿末尾，不覆盖已写的内容', () => {
+    renderComposer({ value: '先看这段：' });
+    fireEvent.paste(document.body, clip([], '报错信息'));
+    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toBe(
+      '先看这段：报错信息',
+    );
+  });
+
+  it('在输入框里粘贴截图只加一次附件 —— 输入框自己的处理与窗口级处理不能各算一遍', () => {
+    const added = vi.fn();
+    renderComposer({ onFilesAdded: added });
+    fireEvent.paste(screen.getByLabelText('需求输入'), clip([shot()]));
+    expect(added).toHaveBeenCalledOnce();
+  });
+
+  it('别的输入框与模态框里的粘贴不被抢走', () => {
+    const added = vi.fn();
+    renderComposer({ value: '', onFilesAdded: added });
+    const search = document.createElement('input');
+    document.body.append(search);
+    fireEvent.paste(search, clip([shot()], '搜索词'));
+    search.remove();
+
+    const modal = document.createElement('div');
+    modal.setAttribute('aria-modal', 'true');
+    document.body.append(modal);
+    fireEvent.paste(document.body, clip([shot()], '模态框里'));
+    modal.remove();
+
+    expect(added).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('需求输入') as HTMLTextAreaElement).value).toBe('');
+  });
+});

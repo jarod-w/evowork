@@ -167,3 +167,69 @@ test('把带图的 docx 与 pptx 拖进输入框：两个都就绪，图也抽�
   // docx 两张 + pptx 两张：拖进来的字节同样要经过抽图那一步
   expect(images).toHaveLength(office.reduce((sum, fixture) => sum + fixture.embeddedImages, 0));
 });
+
+/*
+ * ⌘V 粘贴截图。图写进**系统剪贴板**（主进程 `clipboard`），由 Chromium 自己读 ——
+ * 与截图工具、微信截图之后按 ⌘V 是同一段。
+ *
+ * 2026-11-21 真窗口复现：光标在输入框里时一直是好的；坏的是**焦点不在输入框**的时候。
+ * 发完一条焦点停在「发送」上，按 ⌘V 什么都不发生，也没有任何提示。
+ * Playwright 的 ⌘V 直接进网页、不经过 macOS 菜单栏；菜单那一段在安装版上用真按键单独核过。
+ */
+async function copyScreenshot(electronApp) {
+  await electronApp.evaluate(async ({ clipboard, ClipboardItem, nativeImage }) => {
+    const size = 32;
+    const pixels = Buffer.alloc(size * size * 4);
+    for (let i = 0; i < pixels.length; i += 4) pixels.set([0, 0, 255, 255], i);
+    const png = nativeImage.createFromBitmap(pixels, { width: size, height: size }).toPNG();
+    await clipboard.write([
+      new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) }),
+    ]);
+  });
+}
+
+test('⌘V 粘贴截图：输入框里能粘，发完一条焦点不在输入框也能粘，发出去的是图', async ({
+  page,
+  electronApp,
+}) => {
+  const input = page.getByLabel('需求输入');
+  const composer = page.getByLabel('输入区');
+  const ready = page.locator('.ew-attachment[data-state="ready"]');
+
+  await copyScreenshot(electronApp);
+  await input.click();
+  await page.keyboard.press('Meta+v');
+  await expect(ready).toHaveCount(1, { timeout: 30_000 });
+  await page.getByRole('button', { name: /^移除附件：/ }).click();
+  await expect(page.locator('.ew-attachment')).toHaveCount(0);
+
+  await input.fill('先随便聊一句');
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(composer).toHaveAttribute('data-run-state', 'idle', { timeout: 60_000 });
+  // 发送的收尾（回执、清草稿）结束前添加附件会被挡下；那是另一件事，这里等它结束
+  await expect(composer).toHaveAttribute('aria-busy', 'false');
+  // 前置条件：焦点确实不在输入框里，否则下面这段与上面那段验的是同一件事
+  await expect(input).not.toBeFocused();
+
+  await copyScreenshot(electronApp);
+  await page.keyboard.press('Meta+v');
+  await expect(ready).toHaveCount(1, { timeout: 30_000 });
+  await expect(input, '粘贴之后要能接着打字').toBeFocused();
+
+  const marker = `PASTE-ATTACH-${Date.now()}`;
+  await input.fill(`看看这张截图 ${marker}`);
+  await page.getByRole('button', { name: '发送' }).click();
+  const findRequest = () =>
+    electronApp.evaluate(
+      (_electron, needle) =>
+        globalThis.__evoworkE2E.gateway.requestBodies.find((body) => body.includes(needle)) ?? null,
+      marker,
+    );
+  await expect.poll(findRequest, { message: '网关没收到这一回合的请求' }).not.toBeNull();
+  const lastUser = JSON.parse(await findRequest())
+    .input.filter((item) => item.role === 'user')
+    .at(-1);
+  const images = lastUser.content.filter((part) => part.type === 'input_image');
+  expect(images, '粘贴的截图没有作为图发给模型').toHaveLength(1);
+  expect(images[0].image_url).toMatch(/^data:image\//);
+});

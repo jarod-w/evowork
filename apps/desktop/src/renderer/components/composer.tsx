@@ -402,6 +402,19 @@ export function parsingCount(attachments: readonly Attachment[]): number {
   return attachments.filter((a) => a.state === 'parsing').length;
 }
 
+/**
+ * 焦点不在任何可编辑控件里时，窗口里的 ⌘V 归输入框（03 §4.4）。
+ *
+ * 发完一条焦点停在「发送」上、点过对话区则落在 body 上 —— 这两处按 ⌘V
+ * 以前什么都不发生，而「发完一条、去截图、回来粘贴」正是继续对话最常见的顺序。
+ * 别的输入框（搜索、重命名、设置项）和打开着的模态框里的粘贴不能被抢走。
+ */
+export function pasteBelongsToComposer(target: EventTarget | null): boolean {
+  const editable = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+  if (target instanceof Element && target.closest(editable)) return false;
+  return document.querySelector('[aria-modal="true"]') === null;
+}
+
 const MIN_ROWS = 3;
 const MAX_ROWS = 12;
 
@@ -598,6 +611,38 @@ export function Composer(props: ComposerProps) {
     pendingCaret.current = null;
     box.setSelectionRange(caret, caret);
   }, [props.value]);
+
+  const pasteSink = useRef({
+    value: props.value,
+    onChange: props.onChange,
+    onFilesAdded: props.onFilesAdded,
+  });
+  pasteSink.current = {
+    value: props.value,
+    onChange: props.onChange,
+    onFilesAdded: props.onFilesAdded,
+  };
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const box = textareaRef.current;
+      if (event.defaultPrevented || !box || !pasteBelongsToComposer(event.target)) return;
+      const files = [...(event.clipboardData?.files ?? [])];
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      if (files.length > 0 && !pasteSink.current.onFilesAdded) return;
+      if (files.length === 0 && text === '') return;
+      event.preventDefault();
+      box.focus();
+      if (files.length > 0) {
+        pasteSink.current.onFilesAdded?.(files);
+        return;
+      }
+      const next = `${pasteSink.current.value}${text}`;
+      pendingCaret.current = next.length;
+      pasteSink.current.onChange(next);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, []);
 
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, props.value.split('\n').length));
 
