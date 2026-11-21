@@ -17,6 +17,7 @@ import {
   LOCAL_PARSE_PROMISE,
   composerModeOptions,
   detectTrigger,
+  uploadMentionCandidates,
   parsingCount,
   UNADDED_ATTACHMENT_BLOCKS_SEND,
   type ComposerProps,
@@ -215,7 +216,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
       ],
     });
     type('/清');
-    expect(screen.getByText('本地指令 · 不发送给模型')).toBeTruthy();
+    expect(screen.getByText('本地指令 · 选中即执行，不发送给模型')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('option', { name: /清空/ }));
     expect(onRunLocalCommand).toHaveBeenCalledWith('clear');
@@ -285,6 +286,89 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     });
     fireEvent.keyDown(type('/clear'), { key: 'Enter' });
     expect(onRunLocalCommand).toHaveBeenCalledWith('clear');
+  });
+});
+
+describe('引用整块删除与目标子命令（03 §4.2 / §4.3）', () => {
+  it('光标在已绑定 token 末尾时，退格删掉整块并留下其余文字', () => {
+    renderComposer({ boundTokens: ['@Q3.xlsx'] });
+    const box = type('看 @Q3.xlsx 吧');
+    const end = '看 @Q3.xlsx'.length;
+    (box as HTMLTextAreaElement).setSelectionRange(end, end);
+    fireEvent.keyDown(box, { key: 'Backspace' });
+    expect(box).toHaveProperty('value', '看  吧');
+    expect(document.querySelector('.ew-composer-token')).toBeNull();
+  });
+
+  it('已绑定 token 有底色，没绑定的同形文字没有', () => {
+    renderComposer({ value: '看 @Q3.xlsx', boundTokens: ['@Q3.xlsx'] });
+    expect(document.querySelector('.ew-composer-token')?.textContent).toBe('@Q3.xlsx');
+  });
+
+  it('token 前面的退格不整块删除', () => {
+    // fireEvent 不执行浏览器的默认删除，所以这里只断言没有把 token 整块吃掉
+    renderComposer({ boundTokens: ['@Q3.xlsx'] });
+    const box = type('看 @Q3.xlsx');
+    (box as HTMLTextAreaElement).setSelectionRange(1, 1);
+    fireEvent.keyDown(box, { key: 'Backspace' });
+    expect(box).toHaveProperty('value', '看 @Q3.xlsx');
+  });
+
+  it('已上传附件进入 @ 候选，解析中的不进入', () => {
+    expect(
+      uploadMentionCandidates([
+        {
+          id: 'a1',
+          name: '年报.pdf',
+          state: 'ready',
+          references: [{ type: 'mention', path: '/task/uploads/年报.pdf' }],
+        },
+        { id: 'a2', name: '还在解析.pdf', state: 'parsing', references: [] },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'upload:a1',
+        label: '年报.pdf',
+        category: 'upload',
+        path: '/task/uploads/年报.pdf',
+      }),
+    ]);
+  });
+
+  it('`/goal` 才列出暂停、恢复和清除', () => {
+    const commands = [
+      { id: 'goal', label: 'goal · 持续推进目标', kind: 'local' as const, insertText: '/goal' },
+      {
+        id: 'goal-pause',
+        label: 'goal pause · 暂停目标',
+        kind: 'local' as const,
+        insertText: '/goal pause',
+      },
+      {
+        id: 'goal-resume',
+        label: 'goal resume · 恢复目标',
+        kind: 'local' as const,
+        insertText: '/goal resume',
+      },
+      {
+        id: 'goal-clear',
+        label: 'goal clear · 清除目标',
+        kind: 'local' as const,
+        insertText: '/goal clear',
+      },
+    ];
+    const { unmount } = renderComposer({ slashCommands: commands });
+    type('/go');
+    expect(screen.getByRole('option', { name: /持续推进目标/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /暂停目标/ })).toBeNull();
+    expect(screen.getByText('本地指令 · 发送时执行，不发送给模型')).toBeTruthy();
+    unmount();
+
+    renderComposer({ slashCommands: commands });
+    type('/goal');
+    expect(screen.getByRole('option', { name: /暂停目标/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /恢复目标/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /清除目标/ })).toBeTruthy();
   });
 });
 
@@ -991,11 +1075,19 @@ describe('排队与插话（04 §5.4 / §5.5）', () => {
       expect(screen.getByRole('button', { name: '本次发送方式' })).toHaveProperty('disabled', true);
   });
 
-  it('执行中按 Esc 中断（04 §5.5）', () => {
+  it('输入框为空时 Esc 中断；有草稿时 Esc 不中断，⌘. 仍中断', () => {
     const onInterrupt = vi.fn();
-    renderComposer({ runState: 'running', onInterrupt });
+    const { unmount } = renderComposer({ runState: 'running', onInterrupt });
     fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Escape' });
-    expect(onInterrupt).toHaveBeenCalled();
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    unmount();
+
+    renderComposer({ value: '补充要求', runState: 'running', onInterrupt });
+    const box = screen.getByLabelText('需求输入');
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(box, { key: '.', metaKey: true });
+    expect(onInterrupt).toHaveBeenCalledTimes(2);
   });
 });
 

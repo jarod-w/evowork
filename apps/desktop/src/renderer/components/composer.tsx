@@ -24,6 +24,7 @@ import { renderIcon } from './icons.js';
 import { parseGoalCommand } from '../../shared/goal-command.js';
 import { isImportCommand } from '../../shared/import-command.js';
 import { isMemoriesCommand } from '../../shared/memory-command.js';
+import { tokenSpans } from '../../shared/reference-token.js';
 import { skillToken } from '../../shared/skill-token.js';
 import { unknownLeadingCommand } from '../../shared/slash-command.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
@@ -78,6 +79,33 @@ export interface MentionCandidate {
   /** 插入到 `UserInput` 时的形态：技能是 `Skill`，其余是 `Mention`（03 §4.2） */
   readonly insertAs: 'mention' | 'skill';
   readonly path?: string | undefined;
+}
+
+/** 当前草稿里已就绪、且有路径的附件。`@` 用来再次引用，不另走一遍文件搜索。 */
+export function uploadMentionCandidates(
+  attachments: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly state: string;
+    readonly references?: readonly { readonly type: string; readonly path?: string }[] | undefined;
+  }[],
+): MentionCandidate[] {
+  return attachments.flatMap((attachment) => {
+    if (attachment.state !== 'ready') return [];
+    const reference = attachment.references?.find(
+      (item) => (item.type === 'mention' || item.type === 'localImage') && item.path,
+    );
+    if (!reference?.path) return [];
+    return [
+      {
+        id: `upload:${attachment.id}`,
+        label: attachment.name,
+        category: 'upload' as const,
+        insertAs: 'mention' as const,
+        path: reference.path,
+      },
+    ];
+  });
 }
 
 const CATEGORY_LABEL: Readonly<Record<MentionCategory, string>> = {
@@ -208,6 +236,8 @@ export interface ComposerProps {
   readonly slashCommands?: readonly SlashCommand[] | undefined;
   /** 已绑定技能的显示名与内部名。草稿开头的 `/词` 不在其中、也不是本地命令时禁止发送 */
   readonly boundSkillLabels?: readonly string[] | undefined;
+  /** 已绑定引用在草稿里的可见文本。退格整块删除，并画底色（03 §4.2） */
+  readonly boundTokens?: readonly string[] | undefined;
   readonly onRunLocalCommand?: ((id: string) => void) | undefined;
   readonly onInsertReference?: ((candidate: MentionCandidate) => void) | undefined;
   readonly onRunSkillCommand?: ((id: string) => void) | undefined;
@@ -381,6 +411,8 @@ export function Composer(props: ComposerProps) {
   const mode = props.mode ?? 'request-approval';
   const modeOptions = props.modeOptions ?? composerModeOptions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const pendingCaret = useRef<number | null>(null);
   const completionListId = useId();
   const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -504,6 +536,8 @@ export function Composer(props: ComposerProps) {
       .slice(0, 8);
     const commands = (props.slashCommands ?? [])
       .filter((c) => c.kind === 'local' && c.label.toLowerCase().includes(q))
+      // `/goal` 才展开暂停/恢复/清除，避免四条目标指令占满第一屏
+      .filter((c) => q === 'goal' || !/^goal-(?:pause|resume|clear)$/u.test(c.id))
       .slice(0, 8);
     return [...commands, ...skills];
   }, [trigger, props.mentionCandidates, props.slashCommands, searchedMentions]);
@@ -534,7 +568,70 @@ export function Composer(props: ComposerProps) {
     [trigger, props],
   );
 
+  const tokenPieces = useMemo(() => {
+    const spans = tokenSpans(props.value, props.boundTokens ?? []);
+    const pieces: { key: string; text: string; token: boolean }[] = [];
+    let cursor = 0;
+    for (const span of spans) {
+      if (span.start > cursor)
+        pieces.push({
+          key: `t${cursor}`,
+          text: props.value.slice(cursor, span.start),
+          token: false,
+        });
+      pieces.push({
+        key: `k${span.start}`,
+        text: props.value.slice(span.start, span.end),
+        token: true,
+      });
+      cursor = span.end;
+    }
+    if (cursor < props.value.length)
+      pieces.push({ key: `t${cursor}`, text: props.value.slice(cursor), token: false });
+    return pieces;
+  }, [props.boundTokens, props.value]);
+
+  useEffect(() => {
+    const caret = pendingCaret.current;
+    const box = textareaRef.current;
+    if (caret === null || !box) return;
+    pendingCaret.current = null;
+    box.setSelectionRange(caret, caret);
+  }, [props.value]);
+
   const rows = Math.min(MAX_ROWS, Math.max(MIN_ROWS, props.value.split('\n').length));
+
+  function removeTokenAtCaret(key: 'Backspace' | 'Delete'): boolean {
+    const box = textareaRef.current;
+    if (!box) return false;
+    const start = box.selectionStart ?? 0;
+    const end = box.selectionEnd ?? start;
+    const spans = tokenSpans(props.value, props.boundTokens ?? []);
+    const collapsed =
+      start === end
+        ? spans.find((span) =>
+            key === 'Backspace'
+              ? start > span.start && start <= span.end
+              : start >= span.start && start < span.end,
+          )
+        : undefined;
+    const covering =
+      start === end ? [] : spans.filter((span) => span.start < end && span.end > start);
+    const range =
+      collapsed ??
+      (covering.length === 0
+        ? undefined
+        : {
+            start: Math.min(start, ...covering.map((span) => span.start)),
+            end: Math.max(end, ...covering.map((span) => span.end)),
+          });
+    if (!range || (start !== end && range.start === start && range.end === end)) return false;
+    pendingCaret.current = range.start;
+    const next = `${props.value.slice(0, range.start)}${props.value.slice(range.end)}`;
+    props.onChange(next);
+    syncTrigger(next, range.start);
+    return true;
+  }
 
   return (
     <section
@@ -742,98 +839,126 @@ export function Composer(props: ComposerProps) {
             </>
           ) : null}
 
-          <textarea
-            ref={textareaRef}
-            className="ew-composer-textarea"
-            aria-label="需求输入"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={Boolean(trigger && candidates.length > 0)}
-            aria-controls={trigger && candidates.length > 0 ? completionListId : undefined}
-            aria-activedescendant={
-              trigger && candidates[activeIndex]
-                ? `${completionListId}-option-${activeIndex}`
-                : undefined
-            }
-            placeholder={suggestion?.prompt ?? COMPOSER_PLACEHOLDER}
-            rows={rows}
-            value={props.value}
-            onChange={(event) => {
-              props.onChange(event.target.value);
-              syncTrigger(
-                event.target.value,
-                event.target.selectionStart ?? event.target.value.length,
-              );
-            }}
-            onPaste={(event) => {
-              const files = [...event.clipboardData.files];
-              if (files.length === 0) return;
-              event.preventDefault();
-              props.onFilesAdded?.(files);
-            }}
-            onKeyDown={(event) => {
-              // 组字时的回车、方向键、Esc 属于输入法：不选补全、不发送、不中断（03 §4.3）
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-              if (
-                suggestion &&
-                !props.suggestionBusy &&
-                !event.shiftKey &&
-                !event.altKey &&
-                !event.ctrlKey &&
-                !event.metaKey
-              ) {
+          <div className="ew-composer-field">
+            <div ref={highlightRef} className="ew-composer-highlight" aria-hidden="true">
+              {tokenPieces.map((piece) =>
+                piece.token ? (
+                  <span key={piece.key} className="ew-composer-token">
+                    {piece.text}
+                  </span>
+                ) : (
+                  <span key={piece.key}>{piece.text}</span>
+                ),
+              )}
+            </div>
+            <textarea
+              ref={textareaRef}
+              className="ew-composer-textarea"
+              aria-label="需求输入"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={Boolean(trigger && candidates.length > 0)}
+              aria-controls={trigger && candidates.length > 0 ? completionListId : undefined}
+              aria-activedescendant={
+                trigger && candidates[activeIndex]
+                  ? `${completionListId}-option-${activeIndex}`
+                  : undefined
+              }
+              placeholder={suggestion?.prompt ?? COMPOSER_PLACEHOLDER}
+              rows={rows}
+              value={props.value}
+              onChange={(event) => {
+                props.onChange(event.target.value);
+                syncTrigger(
+                  event.target.value,
+                  event.target.selectionStart ?? event.target.value.length,
+                );
+              }}
+              onPaste={(event) => {
+                const files = [...event.clipboardData.files];
+                if (files.length === 0) return;
+                event.preventDefault();
+                props.onFilesAdded?.(files);
+              }}
+              onScroll={(event) => {
+                if (highlightRef.current)
+                  highlightRef.current.scrollTop = event.currentTarget.scrollTop;
+              }}
+              onKeyDown={(event) => {
+                // 组字时的回车、方向键、Esc 属于输入法：不选补全、不发送、不中断（03 §4.3）
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (
-                  (event.key === 'Tab' || event.key === 'ArrowRight') &&
-                  props.onAcceptSuggestion
+                  (event.key === 'Backspace' || event.key === 'Delete') &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.altKey &&
+                  removeTokenAtCaret(event.key)
                 ) {
                   event.preventDefault();
-                  props.onAcceptSuggestion();
                   return;
                 }
-                if (event.key === 'Escape' && props.onDismissSuggestion) {
+                if (
+                  suggestion &&
+                  !props.suggestionBusy &&
+                  !event.shiftKey &&
+                  !event.altKey &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  if (
+                    (event.key === 'Tab' || event.key === 'ArrowRight') &&
+                    props.onAcceptSuggestion
+                  ) {
+                    event.preventDefault();
+                    props.onAcceptSuggestion();
+                    return;
+                  }
+                  if (event.key === 'Escape' && props.onDismissSuggestion) {
+                    event.preventDefault();
+                    props.onDismissSuggestion();
+                    return;
+                  }
+                }
+                if (trigger && candidates.length > 0) {
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    setActiveIndex((i) => (i + 1) % candidates.length);
+                    return;
+                  }
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setActiveIndex((i) => (i - 1 + candidates.length) % candidates.length);
+                    return;
+                  }
+                  if (event.key === 'Enter' || event.key === 'Tab') {
+                    event.preventDefault();
+                    const chosen = candidates[activeIndex];
+                    if (chosen) applyCandidate(chosen);
+                    return;
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setTrigger(null);
+                    return;
+                  }
+                }
+                // ⏎ 发送，⇧⏎ 换行（截图与常规一致）
+                if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
-                  props.onDismissSuggestion();
-                  return;
+                  if (!sendDisabled) props.onSend();
                 }
-              }
-              if (trigger && candidates.length > 0) {
-                if (event.key === 'ArrowDown') {
+                // 04 §5.5：空草稿时 Esc 中断；有草稿时 Esc 留给输入，中断用 ⌘. 或停止按钮
+                if (
+                  runState === 'running' &&
+                  ((event.metaKey && event.key === '.') ||
+                    (event.key === 'Escape' && props.value.length === 0))
+                ) {
                   event.preventDefault();
-                  setActiveIndex((i) => (i + 1) % candidates.length);
-                  return;
+                  props.onInterrupt?.();
                 }
-                if (event.key === 'ArrowUp') {
-                  event.preventDefault();
-                  setActiveIndex((i) => (i - 1 + candidates.length) % candidates.length);
-                  return;
-                }
-                if (event.key === 'Enter' || event.key === 'Tab') {
-                  event.preventDefault();
-                  const chosen = candidates[activeIndex];
-                  if (chosen) applyCandidate(chosen);
-                  return;
-                }
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  setTrigger(null);
-                  return;
-                }
-              }
-              // ⏎ 发送，⇧⏎ 换行（截图与常规一致）
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                if (!sendDisabled) props.onSend();
-              }
-              // 04 §5.5：⌘. / Esc 中断
-              if (
-                runState === 'running' &&
-                (event.key === 'Escape' || (event.metaKey && event.key === '.'))
-              ) {
-                event.preventDefault();
-                props.onInterrupt?.();
-              }
-            }}
-          />
+              }}
+            />
+          </div>
 
           {trigger && candidates.length > 0 ? (
             <div className="ew-completion" data-kind={trigger.kind === '@' ? 'mention' : 'command'}>
@@ -856,7 +981,12 @@ export function Composer(props: ComposerProps) {
                         label: c.label,
                         group: c.kind,
                         // 本地指令必须与技能可区分：不加这个标注，用户会以为 `/清空` 发给了模型
-                        description: c.kind === 'local' ? '本地指令 · 不发送给模型' : '技能',
+                        description:
+                          c.kind === 'local'
+                            ? c.insertText
+                              ? '本地指令 · 发送时执行，不发送给模型'
+                              : '本地指令 · 选中即执行，不发送给模型'
+                            : '技能',
                       },
                 )}
                 onSelect={(id) => {

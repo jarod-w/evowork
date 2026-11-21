@@ -2792,17 +2792,33 @@ export function createRendererActions(options: RendererBridgeOptions) {
 
     async searchComposerMentions(input: {
       readonly workspaceId?: string | undefined;
+      readonly threadId?: string | undefined;
       readonly query: string;
     }): Promise<ComposerContextView['mentions']> {
-      const root = input.workspaceId ? rootOf(input.workspaceId) : undefined;
+      if (!input.query.trim()) return [];
       const ports = options.projectPorts;
-      if (!root || !ports || !input.query.trim()) return [];
-      const realRoot = await realRootOf(ports, root);
+      // 已有任务搜它自己的目录（含无项目任务）；首页才用所选项目根。
+      const registered = input.threadId ? store.threads.get(input.threadId)?.cwd : undefined;
+      if (input.threadId && !registered) return [];
+      const root = registered ?? (input.workspaceId ? rootOf(input.workspaceId) : undefined);
+      if (!root) return [];
+      let realRoot: string | undefined;
+      if (input.threadId && options.environments) {
+        try {
+          realRoot = await options.environments.validate(root);
+        } catch {
+          return [];
+        }
+      } else if (ports) {
+        realRoot = await realRootOf(ports, root);
+      }
       if (!realRoot) return [];
+      const home = ports?.home;
+      if (!home) return [];
       const response = await adapter.searchFiles(input.query, [realRoot], `composer:${realRoot}`);
       return response.files.flatMap((match) => {
         const absolute = resolveWithinRoot(match.root, match.path);
-        if (!isUnderRoot(realRoot, absolute, ports.home)) return [];
+        if (!isUnderRoot(realRoot, absolute, home)) return [];
         const label = match.path.replace(/^\.\//, '');
         return [
           {

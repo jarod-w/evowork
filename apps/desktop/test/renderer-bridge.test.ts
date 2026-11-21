@@ -1008,6 +1008,60 @@ describe('Composer 技能上下文', () => {
     expect(adapter.searchFiles).toHaveBeenCalledWith('road', ['/w/project'], 'composer:/w/project');
     expect(projectPorts.readDir).not.toHaveBeenCalled();
   });
+
+  it('已有任务按任务目录搜索，没有项目也能找到文件', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-mention-')));
+    const taskDir = join(home, 'standalone');
+    mkdirSync(taskDir);
+    const store = memoryStore();
+    try {
+      store.db
+        .prepare(
+          `INSERT INTO thread_projection (thread_id, derived_status, cwd) VALUES (?, 'idle', ?)`,
+        )
+        .run('t1', taskDir);
+      const environments = createTaskEnvironments({
+        store,
+        home,
+        dataDir: join(home, '.evowork'),
+        projectRoot: () => undefined,
+      });
+      const adapter = fakeAdapter({
+        searchFiles: vi.fn(async () => ({
+          files: [
+            {
+              root: taskDir,
+              path: 'notes/pass.txt',
+              match_type: 'file' as const,
+              file_name: 'pass.txt',
+              score: 1,
+              indices: [],
+            },
+          ],
+        })),
+      });
+      const actions = makeActions({
+        store,
+        adapter,
+        environments,
+        projectPorts: ports({ home, realpath: async (path) => path }),
+      });
+
+      await expect(
+        actions.searchComposerMentions({ threadId: 't1', query: 'pass' }),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          label: 'notes/pass.txt',
+          path: join(taskDir, 'notes/pass.txt'),
+          category: 'file',
+        }),
+      ]);
+      expect(adapter.searchFiles).toHaveBeenCalledWith('pass', [taskDir], `composer:${taskDir}`);
+      await expect(actions.searchComposerMentions({ query: 'pass' })).resolves.toEqual([]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('连接器实时状态与授权', () => {

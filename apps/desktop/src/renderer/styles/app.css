@@ -1874,14 +1874,34 @@ textarea {
   border-radius: inherit;
   background: transparent;
 }
+.ew-composer-field {
+  position: relative;
+}
+.ew-composer-highlight,
 .ew-composer-textarea {
+  font-family: inherit;
+  font-size: var(--font-body-lg-size);
+  line-height: var(--font-body-lg-line);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.ew-composer-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: transparent;
+}
+.ew-composer-token {
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+}
+.ew-composer-textarea {
+  position: relative;
   width: 100%;
   border: 0;
   background: transparent;
   color: var(--text-primary);
-  font-family: inherit;
-  font-size: var(--font-body-lg-size);
-  line-height: var(--font-body-lg-line);
   resize: none;
 }
 .ew-composer-textarea:focus {

@@ -98,6 +98,7 @@ import type { ApprovalDecision } from './components/approval-card.js';
 import {
   Composer,
   composerModeOptions,
+  uploadMentionCandidates,
   type ModeId,
   type SelectOption,
 } from './components/composer.js';
@@ -112,6 +113,7 @@ import { GOAL_STATUS_LABELS, parseGoalCommand } from '../shared/goal-command.js'
 import { MemoryImportDialog, type MemoryImportPorts } from './components/memory-import.js';
 import { isImportCommand } from '../shared/import-command.js';
 import { isMemoriesCommand } from '../shared/memory-command.js';
+import { referenceTokenStrings } from '../shared/reference-token.js';
 import { skillToken } from '../shared/skill-token.js';
 import { unknownLeadingCommand } from '../shared/slash-command.js';
 import { MemoriesDialog } from './components/memory-dialog.js';
@@ -275,6 +277,7 @@ export interface EvoworkBridge
   }): Promise<ComposerContextView>;
   searchComposerMentions?(input: {
     workspaceId?: string;
+    threadId?: string;
     query: string;
   }): Promise<ComposerContextView['mentions']>;
   pickAttachments?(input: PickAttachmentsInput): Promise<readonly ComposerAttachmentView[]>;
@@ -3327,14 +3330,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       .join('\n\n');
     setDraft((previous) => (previous.trim() ? `${previous}\n\n${block}` : block));
   }, []);
+  const mentionCandidates = useMemo(
+    () => [...uploadMentionCandidates(gatedAttachments), ...composerContext.mentions],
+    [gatedAttachments, composerContext.mentions],
+  );
+  const boundTokens = useMemo(
+    () => referenceTokenStrings(references, mentionCandidates),
+    [references, mentionCandidates],
+  );
   const changeDraft = useCallback(
     (next: string) => {
       setDraft(next);
-      setReferences((previous) =>
-        reconcileComposerReferences(next, previous, composerContext.mentions),
-      );
+      setReferences((previous) => reconcileComposerReferences(next, previous, mentionCandidates));
     },
-    [composerContext.mentions],
+    [mentionCandidates],
   );
   const addAttachments = useCallback(
     async (action: (id: string) => Promise<readonly ComposerAttachmentView[] | undefined>) => {
@@ -3628,16 +3637,21 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           ),
         );
       },
-      mentionCandidates: composerContext.mentions as readonly MentionCandidate[],
+      mentionCandidates,
       onSearchMentions: bridge.searchComposerMentions
         ? (query: string) =>
             bridge.searchComposerMentions!({
               query,
-              ...(workspaceId ? { workspaceId } : {}),
+              ...(interactionTaskId
+                ? { threadId: interactionTaskId }
+                : workspaceId
+                  ? { workspaceId }
+                  : {}),
             }) as Promise<readonly MentionCandidate[]>
         : undefined,
       slashCommands: composerContext.commands as readonly SlashCommand[],
       boundSkillLabels,
+      boundTokens,
       onInsertReference: (candidate: MentionCandidate) => {
         if (!candidate.path) return;
         const reference: ComposerReferenceView =
@@ -3889,6 +3903,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       pickComposerFolder,
       addAttachments,
       composerContext,
+      mentionCandidates,
+      boundTokens,
       queuedByTask,
       steer,
       sendFeedback,
@@ -5389,7 +5405,7 @@ export function lastUserMessageText(items: readonly RenderItem[]): string | unde
 export function reconcileComposerReferences(
   value: string,
   references: readonly ComposerReferenceView[],
-  candidates: ComposerContextView['mentions'],
+  candidates: readonly { readonly path?: string | undefined; readonly label: string }[],
 ): readonly ComposerReferenceView[] {
   return references.filter((reference) => {
     if (reference.type !== 'mention' && reference.type !== 'skill') return true;
