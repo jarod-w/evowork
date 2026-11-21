@@ -113,6 +113,7 @@ import { MemoryImportDialog, type MemoryImportPorts } from './components/memory-
 import { isImportCommand } from '../shared/import-command.js';
 import { isMemoriesCommand } from '../shared/memory-command.js';
 import { skillToken } from '../shared/skill-token.js';
+import { unknownLeadingCommand } from '../shared/slash-command.js';
 import { MemoriesDialog } from './components/memory-dialog.js';
 import { ShareDialog, type SharePhase } from './components/share-dialog.js';
 import { transcriptFileName, transcriptToMarkdown } from './views/thread-transcript.js';
@@ -2517,10 +2518,24 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     return memory;
   }, [bridge]);
 
+  const boundSkillLabels = useMemo(
+    () =>
+      references.flatMap((reference) => {
+        if (reference.type !== 'skill') return [];
+        const candidate = composerContext.mentions.find((item) => item.path === reference.path);
+        return [reference.name, candidate?.label].filter((label): label is string =>
+          Boolean(label),
+        );
+      }),
+    [references, composerContext.mentions],
+  );
+
   const send = useCallback(
     async (replaceGoal = false) => {
       const identity = draftIdentity.current;
       const text = draft.trim();
+      // Composer 已禁用发送并说明原因；这里兜住其他调用点
+      if (unknownLeadingCommand(text, boundSkillLabels)) return;
       if (isImportCommand(text)) {
         if (text !== '/import') pushToast({ tone: 'info', text: '/import 不接受参数。' });
         else {
@@ -2732,6 +2747,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [
       bridge,
       draft,
+      boundSkillLabels,
       gatedAttachments,
       references,
       activeTaskId,
@@ -3621,6 +3637,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             }) as Promise<readonly MentionCandidate[]>
         : undefined,
       slashCommands: composerContext.commands as readonly SlashCommand[],
+      boundSkillLabels,
       onInsertReference: (candidate: MentionCandidate) => {
         if (!candidate.path) return;
         const reference: ComposerReferenceView =
@@ -3844,6 +3861,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       isSubagent,
       active?.status,
       references.length,
+      boundSkillLabels,
       running,
       activeTaskId,
       interactionTaskId,

@@ -176,7 +176,7 @@ describe('任务内的技能发现', () => {
     await act(async () => {
       finishOld(skillContext('old-coach'));
     });
-    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '$' } });
+    fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '/' } });
     expect(await screen.findByRole('option', { name: /new-coach/ })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /old-coach/ })).toBeNull();
   });
@@ -387,8 +387,8 @@ function fakeBridge(over: Partial<EvoworkBridge> = {}) {
       })),
       commands: [
         { id: 'memories', label: 'memories · 记忆设置', kind: 'local' as const },
-        { id: 'new-task', label: '新建任务', kind: 'local' as const },
-        { id: 'clear', label: '清空输入', kind: 'local' as const },
+        { id: 'new-task', label: 'new · 新建任务', kind: 'local' as const },
+        { id: 'clear', label: 'clear · 清空输入', kind: 'local' as const },
       ],
     })),
     openResultFile: vi.fn(async () => undefined),

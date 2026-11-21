@@ -2784,8 +2784,8 @@ export function createRendererActions(options: RendererBridgeOptions) {
             kind: 'local',
             insertText: '/goal clear',
           },
-          { id: 'new-task', label: '新建任务', kind: 'local' },
-          { id: 'clear', label: '清空输入', kind: 'local' },
+          { id: 'new-task', label: 'new · 新建任务', kind: 'local' },
+          { id: 'clear', label: 'clear · 清空输入', kind: 'local' },
         ],
       };
     },

@@ -67,13 +67,24 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     fireEvent.click(buttons[0]!);
     expect(install).toHaveBeenCalledWith('skill');
   });
-  it('`@` 在任意位置都触发', () => {
+  it('`@` 在开头、空白和中文后面都触发', () => {
     expect(detectTrigger('看一下 @Q3', 9)?.kind).toBe('@');
     expect(detectTrigger('@', 1)).toEqual({ kind: '@', start: 0, query: '' });
+    expect(detectTrigger('请看@报告', 5)).toEqual({ kind: '@', start: 2, query: '报告' });
   });
 
-  it('`$` 显式触发技能', () => {
-    expect(detectTrigger('请用 $pres', 8)).toEqual({ kind: '$', start: 3, query: 'pres' });
+  it('**邮箱里的 `@` 不触发** —— 否则输入 `jarod@foo.com` 会拿 `foo.com` 去搜文件', () => {
+    expect(detectTrigger('发给 jarod@foo.com', 16)).toBeNull();
+    expect(detectTrigger('a.b+c@x', 7)).toBeNull();
+  });
+
+  it('`@` 的查询里可以带 `/`，打到子目录时菜单不断', () => {
+    expect(detectTrigger('看 @src/app', 10)).toEqual({ kind: '@', start: 2, query: 'src/app' });
+  });
+
+  it('`$` 不再弹出菜单 —— `$100` 这类金额不该去过滤技能', () => {
+    expect(detectTrigger('请用 $pres', 8)).toBeNull();
+    expect(detectTrigger('预算 $100', 7)).toBeNull();
   });
 
   it('**`/` 只在行首触发** —— 否则 `~/work/a.md` 里的斜杠会弹菜单', () => {
@@ -85,6 +96,9 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
 
   it('空格与换行会终止触发（打完一个词就不再是补全上下文）', () => {
     expect(detectTrigger('@Q3 报表', 6)).toBeNull();
+    // 中文输入里常见的全角空格、制表符同样算词边界
+    expect(detectTrigger('@Q3\u3000报表', 6)).toBeNull();
+    expect(detectTrigger('@Q3\t报表', 6)).toBeNull();
   });
 
   it('`@` 候选按类别分组，选中后插入到输入框', () => {
@@ -105,7 +119,7 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     renderComposer({
       mentionCandidates: [
         { id: 'f1', label: 'Q3.xlsx', category: 'file', insertAs: 'mention' },
-        { id: 's1', label: 'Q3 skill', category: 'skill', insertAs: 'skill' },
+        { id: 'l1', label: 'Q3 纪要', category: 'library', insertAs: 'mention' },
       ],
     });
     const box = type('@Q3');
@@ -136,43 +150,57 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     ]);
   });
 
-  it('从 `@` 统一发现中选技能时改写为 `/技能`，并保留结构化引用', () => {
-    const onChange = vi.fn();
-    const onInsertReference = vi.fn();
+  it('`@` 只引用上下文，不列技能（技能只从 `/` 选，每个技能一个入口）', () => {
     renderComposer({
-      onChange,
-      onInsertReference,
-      mentionCandidates: [
-        {
-          id: 's1',
-          label: '演示文稿',
-          name: 'presentations',
-          category: 'skill',
-          insertAs: 'skill',
-        },
-      ],
-    });
-    type('@演示');
-    fireEvent.click(screen.getByRole('option', { name: /演示文稿/ }));
-    expect(onChange).toHaveBeenLastCalledWith('/演示文稿 ');
-    expect(onInsertReference).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'presentations' }),
-    );
-  });
-
-  it('`$` 菜单只出现技能，选择后插入 `$技能`', () => {
-    const onChange = vi.fn();
-    renderComposer({
-      onChange,
       mentionCandidates: [
         { id: 'f1', label: 'presentations.md', category: 'file', insertAs: 'mention' },
         { id: 's1', label: 'presentations', category: 'skill', insertAs: 'skill' },
       ],
     });
+    type('@pres');
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('option', { name: /presentations\.md/ })).toBeTruthy();
+  });
+
+  it('输入 `$` 不弹菜单', () => {
+    renderComposer({
+      mentionCandidates: [
+        { id: 's1', label: 'presentations', category: 'skill', insertAs: 'skill' },
+      ],
+    });
     type('$pres');
-    expect(screen.queryByRole('option', { name: /presentations\.md/ })).toBeNull();
-    fireEvent.click(screen.getByRole('option', { name: /^presentations/ }));
-    expect(onChange).toHaveBeenLastCalledWith('$presentations ');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('**输入法组字时的回车不选补全、不发送** —— 否则拼音上屏会被当成选择或发送', () => {
+    const onChange = vi.fn();
+    const onSend = vi.fn();
+    renderComposer(
+      {
+        onChange,
+        mentionCandidates: [{ id: 'f1', label: 'zhou.md', category: 'file', insertAs: 'mention' }],
+      },
+      onSend,
+    );
+    const box = type('@zhou');
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(box, { key: 'ArrowDown', keyCode: 229 });
+    expect(onChange).toHaveBeenLastCalledWith('@zhou');
+    expect(screen.getByRole('listbox', { name: '引用候选' })).toBeTruthy();
+
+    type('周报');
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true });
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('输入法组字时的 Esc 不中断运行中的任务', () => {
+    const onInterrupt = vi.fn();
+    renderComposer({ runState: 'running', onInterrupt });
+    const box = type('zhou');
+    fireEvent.keyDown(box, { key: 'Escape', isComposing: true });
+    expect(onInterrupt).not.toHaveBeenCalled();
   });
 
   it('`/` 本地指令选中即执行，不作为提示词插入输入框', () => {
@@ -247,6 +275,59 @@ describe('触发补全（03 §4.2 / §4.3）', () => {
     fireEvent.click(screen.getByRole('option', { name: `${name}技能` }));
     expect(screen.getByLabelText('需求输入')).toHaveProperty('value', `/skills/${name} `);
     expect(onRunLocalCommand).not.toHaveBeenCalled();
+  });
+
+  it('手输 `/clear` 能在菜单里找到「clear · 清空输入」并执行', () => {
+    const onRunLocalCommand = vi.fn();
+    renderComposer({
+      onRunLocalCommand,
+      slashCommands: [{ id: 'clear', label: 'clear · 清空输入', kind: 'local' }],
+    });
+    fireEvent.keyDown(type('/clear'), { key: 'Enter' });
+    expect(onRunLocalCommand).toHaveBeenCalledWith('clear');
+  });
+});
+
+describe('未识别的行首指令不发给模型（03 §4.3）', () => {
+  const sendButton = () => screen.getByRole('button', { name: '发送' });
+
+  it('**`/clear 帮我` 禁止发送并说明原因** —— 否则它会被当成提示词发给模型', () => {
+    const onSend = vi.fn();
+    renderComposer({ value: '/clear 帮我' }, onSend);
+    expect(sendButton()).toHaveProperty('disabled', true);
+    expect(screen.getByRole('status', { name: '未识别的指令' }).textContent).toContain(
+      '没有「/clear」这条指令',
+    );
+    fireEvent.keyDown(screen.getByLabelText('需求输入'), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('没从菜单绑定的 `/技能名` 同样拦下，绑定后放行', () => {
+    const { unmount } = renderComposer({ value: '/周报 写本周' });
+    expect(sendButton()).toHaveProperty('disabled', true);
+    unmount();
+    renderComposer({ value: '/周报 写本周', boundSkillLabels: ['周报', 'weekly-report'] });
+    expect(sendButton()).toHaveProperty('disabled', false);
+    expect(screen.queryByRole('status', { name: '未识别的指令' })).toBeNull();
+  });
+
+  it.each([
+    ['本地命令', '/goal 完成季度报告'],
+    ['路径', '/Users/x/a.md 帮我看看'],
+    ['`//` 转义', '//clear 是什么意思'],
+    ['普通文字', '帮我 /clear 一下'],
+  ])('%s 不拦', (_kind, value) => {
+    renderComposer({ value });
+    expect(sendButton()).toHaveProperty('disabled', false);
+  });
+
+  it('菜单还开着时不提示，避免边打边报错', () => {
+    renderComposer({
+      slashCommands: [{ id: 'clear', label: 'clear · 清空输入', kind: 'local' }],
+    });
+    type('/cle');
+    expect(screen.getByRole('listbox', { name: '指令与技能候选' })).toBeTruthy();
+    expect(screen.queryByRole('status', { name: '未识别的指令' })).toBeNull();
   });
 });
 

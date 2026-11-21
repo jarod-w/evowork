@@ -25,6 +25,7 @@ import { parseGoalCommand } from '../../shared/goal-command.js';
 import { isImportCommand } from '../../shared/import-command.js';
 import { isMemoriesCommand } from '../../shared/memory-command.js';
 import { skillToken } from '../../shared/skill-token.js';
+import { unknownLeadingCommand } from '../../shared/slash-command.js';
 import { Menu, InlineSelect, ModelSelect, Popover, type ModelOption } from './menu.js';
 import { Badge, Banner, Dialog, GhostButton, PillButton } from './primitives.js';
 
@@ -205,6 +206,8 @@ export interface ComposerProps {
   readonly mentionCandidates?: readonly MentionCandidate[] | undefined;
   readonly onSearchMentions?: ((query: string) => Promise<readonly MentionCandidate[]>) | undefined;
   readonly slashCommands?: readonly SlashCommand[] | undefined;
+  /** 已绑定技能的显示名与内部名。草稿开头的 `/词` 不在其中、也不是本地命令时禁止发送 */
+  readonly boundSkillLabels?: readonly string[] | undefined;
   readonly onRunLocalCommand?: ((id: string) => void) | undefined;
   readonly onInsertReference?: ((candidate: MentionCandidate) => void) | undefined;
   readonly onRunSkillCommand?: ((id: string) => void) | undefined;
@@ -293,9 +296,9 @@ export interface ComposerProps {
   readonly startupPending?: boolean | undefined;
 }
 
-/** 触发中的补全菜单：`@` 统一发现、`$` 显式技能、行首 `/` 本地命令。 */
+/** 触发中的补全菜单：`@` 引用上下文，行首 `/` 本地指令与技能。 */
 interface Trigger {
-  readonly kind: '@' | '$' | '/';
+  readonly kind: '@' | '/';
   /** 触发字符在 `value` 中的下标 */
   readonly start: number;
   readonly query: string;
@@ -310,10 +313,14 @@ interface Trigger {
 export function detectTrigger(value: string, caret: number): Trigger | null {
   for (let i = caret - 1; i >= 0; i -= 1) {
     const ch = value[i] as string;
-    if (ch === '\n' || ch === ' ') break;
-    if (ch === '@' || ch === '$' || ch === '/') {
-      // `/` 必须在行首（前面只能是字符串开头或换行）。否则 `~/work/a.md` 会误触发
-      if (ch === '/' && i !== 0 && value[i - 1] !== '\n') break;
+    if (/\s/u.test(ch)) break;
+    if (ch === '@') {
+      // 紧跟在邮箱用字符后面的是邮箱或账号（`jarod@foo.com`），不是引用
+      if (i > 0 && /[A-Za-z0-9._%+-]/u.test(value[i - 1] as string)) break;
+      return { kind: ch, start: i, query: value.slice(i + 1, caret) };
+    }
+    // `/` 必须在行首，否则 `~/work/a.md` 会误触发；不在行首时继续往前找，`@src/app` 才不断
+    if (ch === '/' && (i === 0 || value[i - 1] === '\n')) {
       return { kind: ch, start: i, query: value.slice(i + 1, caret) };
     }
   }
@@ -451,8 +458,13 @@ export function Composer(props: ComposerProps) {
   const stoppingGoalControl = localGoalControl && goalCommand.action !== 'resume';
   const blockedByModel = props.modelUnavailable !== undefined && !localControl;
   const unadded = attachments.some((attachment) => attachment.state === 'failed');
+  const unknownCommand = unknownLeadingCommand(props.value, props.boundSkillLabels ?? []);
+  const unknownCommandHint = unknownCommand
+    ? `没有「${unknownCommand}」这条指令，不会发给模型。指令和技能请从 / 菜单里选；要当普通文字发送，在开头多写一个 /。`
+    : undefined;
   const sendDisabled =
     empty ||
+    unknownCommand !== undefined ||
     (!localControl && parsing > 0) ||
     (!localControl && unadded) ||
     blockedByModel ||
@@ -471,7 +483,7 @@ export function Composer(props: ComposerProps) {
         ]),
       );
       return [...byId.values()]
-        .filter((c) => c.label.toLowerCase().includes(q))
+        .filter((c) => c.category !== 'skill' && c.label.toLowerCase().includes(q))
         .map((candidate, order) => ({
           candidate,
           order,
@@ -490,7 +502,6 @@ export function Composer(props: ComposerProps) {
           (c.label.toLowerCase().includes(q) || c.name?.toLowerCase().includes(q)),
       )
       .slice(0, 8);
-    if (trigger.kind === '$') return skills;
     const commands = (props.slashCommands ?? [])
       .filter((c) => c.kind === 'local' && c.label.toLowerCase().includes(q))
       .slice(0, 8);
@@ -513,7 +524,7 @@ export function Composer(props: ComposerProps) {
   }, []);
 
   const insertCompletion = useCallback(
-    (label: string, prefix?: '@' | '$' | '/') => {
+    (label: string, prefix?: '@' | '/') => {
       if (!trigger) return;
       const before = props.value.slice(0, trigger.start);
       const after = props.value.slice(trigger.start + 1 + trigger.query.length);
@@ -761,14 +772,15 @@ export function Composer(props: ComposerProps) {
               props.onFilesAdded?.(files);
             }}
             onKeyDown={(event) => {
+              // 组字时的回车、方向键、Esc 属于输入法：不选补全、不发送、不中断（03 §4.3）
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
               if (
                 suggestion &&
                 !props.suggestionBusy &&
                 !event.shiftKey &&
                 !event.altKey &&
                 !event.ctrlKey &&
-                !event.metaKey &&
-                !event.nativeEvent.isComposing
+                !event.metaKey
               ) {
                 if (
                   (event.key === 'Tab' || event.key === 'ArrowRight') &&
@@ -829,13 +841,7 @@ export function Composer(props: ComposerProps) {
                 id={completionListId}
                 semanticRole="listbox"
                 itemId={(_item, index) => `${completionListId}-option-${index}`}
-                ariaLabel={
-                  trigger.kind === '@'
-                    ? '引用候选'
-                    : trigger.kind === '$'
-                      ? '技能候选'
-                      : '指令与技能候选'
-                }
+                ariaLabel={trigger.kind === '@' ? '引用候选' : '指令与技能候选'}
                 activeId={candidates[activeIndex]?.id}
                 items={candidates.map((c) =>
                   'category' in c
@@ -1069,7 +1075,10 @@ export function Composer(props: ComposerProps) {
               hasDraft={props.value.trim() !== '' || attachments.length > 0}
               disabled={sendDisabled}
               parsing={localControl ? 0 : parsing}
-              blockedReason={!localControl && unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined}
+              blockedReason={
+                unknownCommandHint ??
+                (!localControl && unadded ? UNADDED_ATTACHMENT_BLOCKS_SEND : undefined)
+              }
               queuePosition={props.queuePosition}
               steer={props.steer}
               onSteerChange={props.onSteerChange}
@@ -1083,6 +1092,11 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
 
+      {unknownCommandHint && !(trigger && candidates.length > 0) ? (
+        <p className="ew-send-feedback" role="status" aria-label="未识别的指令">
+          {unknownCommandHint}
+        </p>
+      ) : null}
       {props.sendFeedback ? (
         <p className="ew-send-feedback" role="status" aria-label="发送状态">
           {props.sendFeedback}
@@ -1197,10 +1211,9 @@ export function Composer(props: ComposerProps) {
     }
     if ('category' in chosen) props.onInsertReference?.(chosen);
     else props.onRunSkillCommand?.(chosen.id);
-    if ('category' in chosen && chosen.category === 'skill') {
-      const token = trigger?.kind === '$' ? `$${chosen.label}` : skillToken(chosen.label);
-      insertCompletion(token.slice(1), token[0] as '/' | '$');
-    } else insertCompletion(chosen.label);
+    if ('category' in chosen && chosen.category === 'skill')
+      insertCompletion(skillToken(chosen.label).slice(1), '/');
+    else insertCompletion(chosen.label);
   }
 }
 
