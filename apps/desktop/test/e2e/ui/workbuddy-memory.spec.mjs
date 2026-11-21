@@ -26,9 +26,9 @@ async function open(page) {
   await expect(dialog.getByLabel('导入模型')).not.toHaveValue('');
   return dialog;
 }
-async function installModel(electronApp, name = 'write', hold = false) {
+async function installModel(electronApp, name = 'write', hold = false, finalFailure = false) {
   await electronApp.evaluate(
-    (_, { name, hold }) => {
+    (_, { name, hold, finalFailure }) => {
       const gateway = globalThis.__evoworkE2E.gateway;
       if (hold) {
         gateway.scriptWhen(name, (v) => v.text.includes('WORKBUDDY_TEXT_IMPORT_V1'), {
@@ -58,10 +58,12 @@ async function installModel(electronApp, name = 'write', hold = false) {
       gateway.scriptWhen(
         name + '-done',
         (v) => v.text.includes('WORKBUDDY_TEXT_IMPORT_V1') && v.calls.includes('add_ad_hoc_note'),
-        { kind: 'text', text: 'Memory saved.' },
+        finalFailure
+          ? { kind: 'fail', code: 'invalid_prompt', text: 'Synthetic final reply failure' }
+          : { kind: 'text', text: 'Memory saved.' },
       );
     },
-    { name, hold },
+    { name, hold, finalFailure },
   );
 }
 async function submit(dialog, text) {
@@ -281,22 +283,92 @@ test.describe('后台整理瞬时故障恢复', () => {
   });
 });
 
-test('模型只声称成功仍显示未确认，重复提交不重放', async ({ page, electronApp }) => {
+test('模型只声称成功显示缺少回执的失败终态，重复提交不重放', async ({
+  page,
+  electronApp,
+}, info) => {
   const f = await fixture(electronApp);
   let dialog = await open(page);
   await submit(dialog, 'LIAR_MODEL_EVIDENCE');
-  await expect(dialog.getByRole('alert')).toContainText('结果未确认');
+  await expect(dialog.getByRole('alert')).toContainText('导入未完成');
+  await expect(dialog.getByRole('alert')).toContainText('未收到可信保存回执');
+  expect(
+    (await page.evaluate(() => window.evowork.getWorkBuddyImportStatus())).history[0],
+  ).toMatchObject({
+    state: 'failed',
+    reason: 'receipt_missing',
+  });
   expect(workbuddyNotes(f.kernelHome)).toHaveLength(0);
+  await resizeWindow(electronApp, 480, 760);
+  expect(await horizontalOverflow(page)).toBe(0);
+  await page.screenshot({ path: info.outputPath('workbuddy-failed-480.png') });
   await dialog.getByRole('button', { name: '完成', exact: true }).click();
   const requests = await electronApp.evaluate(
     () => globalThis.__evoworkE2E.gateway.requestBodies.length,
   );
+  await page.reload();
+  expect(
+    (await page.evaluate(() => window.evowork.getWorkBuddyImportStatus())).history[0],
+  ).toMatchObject({
+    state: 'failed',
+    reason: 'receipt_missing',
+  });
   dialog = await open(page);
   await submit(dialog, 'LIAR_MODEL_EVIDENCE');
   await expect(dialog).toContainText('本次没有重复提交');
   expect(
     await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.requestBodies.length),
   ).toBe(requests);
+});
+
+test('原生保存后最终模型回复失败，仍显示已保存且刷新后不重放', async ({
+  page,
+  electronApp,
+}, info) => {
+  const f = await fixture(electronApp);
+  let dialog = await open(page);
+  await installModel(electronApp, 'save-then-fail', false, true);
+  await submit(dialog, 'SAVED_BEFORE_FINAL_REPLY_FAILURE');
+  await expect(dialog.getByRole('status').filter({ hasText: '资料已保存' })).toBeVisible();
+  expect(workbuddyNotes(f.kernelHome)).toHaveLength(1);
+  const record = (await page.evaluate(() => window.evowork.getWorkBuddyImportStatus())).history[0];
+  expect(record.state).toBe('saved');
+  await page.screenshot({ path: info.outputPath('workbuddy-saved-after-failure.png') });
+  await dialog.getByRole('button', { name: '完成', exact: true }).click();
+  const requests = await electronApp.evaluate(
+    () => globalThis.__evoworkE2E.gateway.requestBodies.length,
+  );
+  await page.reload();
+  expect((await page.evaluate(() => window.evowork.getWorkBuddyImportStatus())).history[0]).toEqual(
+    record,
+  );
+  dialog = await open(page);
+  await submit(dialog, 'SAVED_BEFORE_FINAL_REPLY_FAILURE');
+  await expect(dialog).toContainText('本次没有重复提交');
+  expect(
+    await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.requestBodies.length),
+  ).toBe(requests);
+});
+
+test('模型请求失败显示明确失败原因，不伪报保存', async ({ page, electronApp }) => {
+  const f = await fixture(electronApp);
+  const dialog = await open(page);
+  await electronApp.evaluate(() => {
+    globalThis.__evoworkE2E.gateway.scriptWhen(
+      'workbuddy-request-failure',
+      (v) => v.text.includes('WORKBUDDY_TEXT_IMPORT_V1'),
+      { kind: 'fail', code: 'invalid_prompt', text: 'Synthetic import request failure' },
+    );
+  });
+  await submit(dialog, 'FAILED_WORKBUDDY_MODEL_REQUEST');
+  await expect(dialog.getByRole('alert')).toContainText('导入模型执行失败');
+  expect(
+    (await page.evaluate(() => window.evowork.getWorkBuddyImportStatus())).history[0],
+  ).toMatchObject({
+    state: 'failed',
+    reason: 'turn_failed',
+  });
+  expect(workbuddyNotes(f.kernelHome)).toHaveLength(0);
 });
 
 test('导入中主动终止测试内核，恢复后未知批次不重放', async ({ page, electronApp }) => {
@@ -310,6 +382,7 @@ test('导入中主动终止测试内核，恢复后未知批次不重放', async
     .toBe(true);
   await electronApp.evaluate(() => globalThis.__evoworkE2E.killKernel());
   await expect(dialog.getByRole('alert')).toContainText('结果未确认');
+  await expect(dialog.getByRole('alert')).toContainText('内核连接断开');
   await expect(page.locator('.ew-banner').filter({ hasText: '执行内核已重启' })).toBeVisible({
     timeout: 60000,
   });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   WorkBuddyImportInput,
+  WorkBuddyImportRecordView,
   WorkBuddyImportResult,
   WorkBuddyImportStatusView,
 } from '../../shared/ipc.js';
@@ -11,6 +12,20 @@ export interface WorkBuddyImportPorts {
   importWorkBuddyText?(input: WorkBuddyImportInput): Promise<WorkBuddyImportResult>;
 }
 
+function failureDescription(record: WorkBuddyImportRecordView): string {
+  const reasons: Record<NonNullable<WorkBuddyImportRecordView['reason']>, string> = {
+    receipt_missing: '回合已结束，但未收到可信保存回执。',
+    receipt_mismatch: '保存回执的文件名或正文与本次导入不一致。',
+    turn_failed: '导入模型执行失败，未确认资料保存。请检查模型服务和可用额度。',
+    turn_interrupted: '导入回合已中断，未确认资料保存。',
+    request_failed: '导入请求失败或响应超时，未确认资料保存。',
+    timeout: '等待保存回执超时，未确认导入是否完成。',
+    disconnected: '导入期间内核连接断开，未确认导入是否完成。',
+    app_restarted: '上次导入期间应用退出，未确认导入是否完成。',
+  };
+  return record.reason ? reasons[record.reason] : '未收到可信保存回执。';
+}
+
 export function WorkBuddyHistory({ status }: { readonly status: WorkBuddyImportStatusView }) {
   return (
     <section aria-label="WorkBuddy 导入历史">
@@ -18,7 +33,12 @@ export function WorkBuddyHistory({ status }: { readonly status: WorkBuddyImportS
       {status.history.map((r) => (
         <p key={r.id} className="ew-memory-import-record">
           {new Date(r.createdAt).toLocaleString()} · {r.scope === 'personal' ? '个人偏好' : r.scope}
-          ：{r.state === 'saved' ? '资料已保存，等待后续整理' : '结果未确认，请勿重复提交'}
+          ：
+          {r.state === 'saved'
+            ? '资料已保存，等待后续整理'
+            : r.state === 'pending'
+              ? '正在导入…'
+              : `${r.state === 'failed' ? '导入未完成' : '结果未确认'}：${failureDescription(r)}请勿重复提交。`}
         </p>
       ))}
     </section>
@@ -223,7 +243,9 @@ export function WorkBuddyMemoryImport(props: {
             </p>
           ) : (
             <p role="alert">
-              结果未确认。请到设置 → 导入核对历史，不要直接重复提交。模型回复不作为保存成功的依据。
+              {result?.record.state === 'failed' ? '导入未完成。' : '结果未确认。'}
+              {result ? failureDescription(result.record) : null}
+              请到设置 → 导入核对历史，不要直接重复提交。模型回复不作为保存成功的依据。
             </p>
           )}
           <p>原始 WorkBuddy 记忆保持不变。读取关闭时不会自动开启。</p>

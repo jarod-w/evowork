@@ -22,7 +22,12 @@ export {
   type TaskListItem,
   type Workspace,
 } from './adapter.js';
-export type { MemoryTextRecord, MemoryTextInput, MemoryTextResult } from './memory-text-import.js';
+export type {
+  MemoryTextRecord,
+  MemoryTextInput,
+  MemoryTextResult,
+  MemoryTextFailureReason,
+} from './memory-text-import.js';
 export {
   createApprovalRouter,
   elicitationChoice,

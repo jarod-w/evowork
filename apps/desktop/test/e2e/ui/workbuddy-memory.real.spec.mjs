@@ -35,6 +35,22 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
   mkdirSync(paths.beta);
   mkdirSync(paths.gamma);
   const projects = {};
+  await electronApp.evaluate(() => {
+    const controls = globalThis.__evoworkE2E;
+    controls.workbuddyEvents = [];
+    const peer = controls.host.adapter.session.peer;
+    peer.onNotification('turn/completed', (p) => {
+      controls.workbuddyEvents.push({
+        threadId: p.threadId,
+        status: p.turn?.status,
+        error: p.turn?.error,
+      });
+    });
+    peer.onNotification('item/completed', (p) => {
+      if (p.item?.type === 'agentMessage')
+        controls.workbuddyEvents.push({ threadId: p.threadId, message: p.item.text });
+    });
+  });
   const evidence = {
     model: selected.upstreamModel,
     paths,
@@ -55,6 +71,7 @@ test('MiMo 真实 WorkBuddy 文本导入、个人及项目归属、新任务使�
     const body = JSON.stringify(
       {
         ...evidence,
+        importEvents: await electronApp.evaluate(() => globalThis.__evoworkE2E.workbuddyEvents),
         notes: workbuddyNotes(kernelHome),
         runtime: workbuddyRuntimeEvidence(kernelHome),
         consolidated: consolidatedMemory(kernelHome),

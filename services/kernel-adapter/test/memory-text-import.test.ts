@@ -3,11 +3,22 @@ import { METHOD, NOTIFICATION, type JsonRpcPeer } from '@evowork/protocol';
 import { memoryNoteReceipt } from '@evowork/policy';
 import { createMemoryTextImporter, type MemoryTextRecord } from '../src/memory-text-import.js';
 
-function fixture() {
-  let stored: readonly MemoryTextRecord[] = [];
+function fixture(initialRecords: readonly MemoryTextRecord[] = []) {
+  let stored: readonly MemoryTextRecord[] = initialRecords;
   const calls: { method: string; params: unknown }[] = [];
   const handlers = new Map<string, Set<(params: unknown) => void>>();
-  let behavior: 'saved' | 'claim' | 'wrong-source' | 'wrong-order' | 'changed' | 'hold' = 'saved';
+  let behavior:
+    | 'saved'
+    | 'claim'
+    | 'wrong-source'
+    | 'wrong-order'
+    | 'changed'
+    | 'hold'
+    | 'failed'
+    | 'failed-after-save'
+    | 'receipt-hold'
+    | 'start-error'
+    | 'interrupted' = 'saved';
   const emit = (name: string, params: unknown) => {
     for (const h of handlers.get(name) ?? []) h(params);
   };
@@ -20,7 +31,10 @@ function fixture() {
     },
     async request(method: string, params: unknown) {
       calls.push({ method, params });
-      if (method === METHOD.threadStart) return { thread: { id: 'native-thread' } };
+      if (method === METHOD.threadStart) {
+        if (behavior === 'start-error') throw new Error('sensitive provider details');
+        return { thread: { id: 'native-thread' } };
+      }
       if (method === METHOD.turnStart) {
         const p = params as { input: readonly { text: string }[] };
         const args = JSON.parse(p.input[0]!.text.split('\n').at(-1)!) as {
@@ -28,7 +42,7 @@ function fixture() {
           note: string;
         };
         expect(stored[0]?.state).toBe('pending');
-        if (behavior !== 'claim' && behavior !== 'hold')
+        if (!['claim', 'hold', 'failed', 'interrupted'].includes(behavior))
           emit(NOTIFICATION.hookCompleted, {
             threadId: 'native-thread',
             run: {
@@ -49,10 +63,16 @@ function fixture() {
               ],
             },
           });
-        if (behavior !== 'hold')
+        if (!['hold', 'receipt-hold'].includes(behavior))
           emit(NOTIFICATION.turnCompleted, {
             threadId: 'native-thread',
-            turn: { status: 'completed' },
+            turn: {
+              status: behavior.startsWith('failed')
+                ? 'failed'
+                : behavior === 'interrupted'
+                  ? 'interrupted'
+                  : 'completed',
+            },
           });
         return { turn: { id: 'turn' } };
       }
@@ -105,7 +125,72 @@ describe('WorkBuddy native memory tool import', () => {
     async (behavior) => {
       const f = fixture();
       f.behavior(behavior);
-      expect((await f.importer.import(input, personal)).record.state).toBe('unknown');
+      expect((await f.importer.import(input, personal)).record).toMatchObject({
+        state: 'failed',
+        reason: behavior === 'changed' ? 'receipt_mismatch' : 'receipt_missing',
+      });
+      expect((await f.build().import(input, personal)).duplicate).toBe(true);
+      expect(f.calls.filter((c) => c.method === METHOD.turnStart)).toHaveLength(1);
+    },
+  );
+  it('a confirmed native save remains saved even if the final model response fails', async () => {
+    const f = fixture();
+    f.behavior('failed-after-save');
+    expect((await f.importer.import(input, personal)).record.state).toBe('saved');
+  });
+  it('persists a trusted save before the final model reply, including across app restart', async () => {
+    const f = fixture();
+    f.behavior('receipt-hold');
+    let finished = false;
+    const pending = f.importer.import(input, personal).then((result) => {
+      finished = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(f.stored()[0]?.state).toBe('saved'), { interval: 1 });
+    expect(finished).toBe(false);
+    expect(f.build().history()[0]?.state).toBe('saved');
+    f.importer.invalidate();
+    expect((await pending).record.state).toBe('saved');
+    expect((await f.build().import(input, personal)).duplicate).toBe(true);
+  });
+  it('keeps a confirmed save on timeout while quarantining a turn that may still be running', async () => {
+    const f = fixture();
+    f.behavior('receipt-hold');
+    expect((await f.importer.import(input, personal)).record.state).toBe('saved');
+    expect(f.importer.isBusy()).toBe(true);
+    expect(f.calls.find((c) => c.method === METHOD.turnInterrupt)?.params).toEqual({
+      threadId: 'native-thread',
+      turnId: 'turn',
+    });
+  });
+  it('records request failure before creating a turn without persisting provider text', async () => {
+    const f = fixture();
+    f.behavior('start-error');
+    expect((await f.importer.import(input, personal)).record).toMatchObject({
+      state: 'failed',
+      reason: 'request_failed',
+    });
+    expect(JSON.stringify(f.stored())).not.toContain('sensitive');
+    expect(f.calls.some((c) => c.method === METHOD.turnStart)).toBe(false);
+  });
+  it('persists an interrupted app session with a reason while keeping legacy unknown operations deduplicated', async () => {
+    const f = fixture();
+    const saved = (await f.importer.import(input, personal)).record;
+    const restarted = fixture([{ ...saved, state: 'pending' }]);
+    expect(restarted.stored()[0]).toMatchObject({ state: 'unknown', reason: 'app_restarted' });
+    expect((await restarted.importer.import(input, personal)).duplicate).toBe(true);
+    const legacy = fixture([{ ...saved, state: 'unknown' }]);
+    expect((await legacy.importer.import(input, personal)).duplicate).toBe(true);
+    expect(legacy.calls).toHaveLength(0);
+  });
+  it.each(['failed', 'interrupted'] as const)(
+    'persists a diagnostic terminal result for a %s turn without replay',
+    async (behavior) => {
+      const f = fixture();
+      f.behavior(behavior);
+      const result = await f.importer.import(input, personal);
+      expect(result.record).toMatchObject({ state: 'failed', reason: `turn_${behavior}` });
+      expect(f.build().history()[0]).toEqual(result.record);
       expect((await f.build().import(input, personal)).duplicate).toBe(true);
       expect(f.calls.filter((c) => c.method === METHOD.turnStart)).toHaveLength(1);
     },
@@ -150,14 +235,14 @@ describe('WorkBuddy native memory tool import', () => {
     await vi.waitFor(() => expect(f.calls.some((c) => c.method === METHOD.turnStart)).toBe(true));
     await expect(f.importer.import(input, personal)).rejects.toThrow('正在导入');
     f.importer.invalidate();
-    expect((await first).record.state).toBe('unknown');
+    expect((await first).record).toMatchObject({ state: 'unknown', reason: 'disconnected' });
     expect((await f.importer.import(input, personal)).duplicate).toBe(true);
   });
   it('times out with the actual native turn id and prevents other memory writes until a restart', async () => {
     const f = fixture();
     f.behavior('hold');
     const result = await f.importer.import(input, personal);
-    expect(result.record.state).toBe('unknown');
+    expect(result.record).toMatchObject({ state: 'unknown', reason: 'timeout' });
     expect(f.calls.find((c) => c.method === METHOD.turnInterrupt)?.params).toEqual({
       threadId: 'native-thread',
       turnId: 'turn',

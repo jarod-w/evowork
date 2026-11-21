@@ -1,0 +1,12 @@
+
+ RUN  v3.2.7 /Users/jarod.ai/develop/evowork/evowork
+
+ ✓ |policy| test/memory-note-receipt.test.ts (3 tests) 2ms
+ ✓ |desktop| test/workbuddy-history.test.tsx (1 test) 16ms
+ ✓ |kernel-adapter| test/memory-text-import.test.ts (18 tests) 161ms
+ ✓ |desktop| test/memory-preparation.test.tsx (3 tests) 85ms
+
+ Test Files  4 passed (4)
+      Tests  25 passed (25)
+   Start at  10:39:12
+   Duration  440ms (transform 143ms, setup 67ms, collect 221ms, tests 263ms, environment 305ms, prepare 105ms)

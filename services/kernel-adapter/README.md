@@ -29,6 +29,8 @@
 
 **WorkBuddy 文本快照（2026-10-17）**：`memory-text-import.ts` 在显式确认后以临时会话调用原生 `memories.add_ad_hoc_note`，以受信任同步 PostToolUse 的公开 `hook/completed` 回执校验文件名及正文哈希；同时核对来源文件和 hook 顺序。不开启内部 raw events，不读写原生记忆文件。临时会话以 `threadSource` 标识，在 `thread/started` 提前于启动响应时同样隔离其任务/队列事件。宿主只持久化哈希与状态，未知批次不重放；可能仍在执行的超时写入阻止后续记忆写操作，应用重开后核对。正式能力、用量与整理延迟见 [20](../../docs/design/20-memory-import.md) 和 [WorkBuddy 验收](../../docs/verification/2026-10-17-workbuddy-memory-import.md)。
 
+2026-11-21（#26）：可信保存回执到达即落盘 `saved`，最终模型回复失败不再覆盖成功。无回执的已结束回合为 `failed`，保存固定诊断原因；超时/断线/响应不明仍为有原因的 `unknown`，重开应用也持久化在途记录的未确认原因。旧记录及所有失败/未确认记录继续参与去重，不自动重放，不保存模型错误正文。
+
 **智能体工作台（24）**：`agent-workspace.ts` 在本机执行团队的有界批次（最多三节点，遵守用户调低后的并发）；每节点经 `createTask` 创建真实任务，沿用模型网关、审批和任务预算。真实输出传给后续批次，human/review 在输出后等待用户确认；停止中断活动及在途创建节点，失败不启动后续批次，重启不自动重投。角色指令经既有 `collaborationMode.settings.developer_instructions` 注入，权威快照用于后续发送、队列与会话通信，不改内核。
 
 2026-11-07 扩展 Playwright 实测发现：回合中断不能保证统一执行的后台命令退出。工作台通过适配层 `terminateTaskCommands` 使用官方 `thread/backgroundTerminals/list` / `terminate`，按任务枚举 processId、确认终止并复查；停止、失败收尾与在途创建返回都走这条链路。接口缺失或清空失败显式标失败，不使用 OS pid / shell 兜底。

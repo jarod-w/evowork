@@ -1,0 +1,15 @@
+
+Running 8 tests using 1 worker
+
+(node:13783) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:76:1 › WorkBuddy 文本和文件预览取消零提交，个人/项目保存、去重、设置历史及窄窗 (4.6s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:275:1 › 原生 note 后续整理进入新任务，禁读不注入，无内核重启 (3.3s)
+  ✓  3 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:281:3 › 后台整理瞬时故障恢复 › 503 后同一整理作业重试成功、记忆进入新任务且不重启内核 (2.5s)
+  ✓  4 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:286:1 › 模型只声称成功显示缺少回执的失败终态，重复提交不重放 (1.1s)
+  ✓  5 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:324:1 › 原生保存后最终模型回复失败，仍显示已保存且刷新后不重放 (1.2s)
+  ✓  6 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:353:1 › 模型请求失败显示明确失败原因，不伪报保存 (803ms)
+  ✓  7 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:374:1 › 导入中主动终止测试内核，恢复后未知批次不重放 (2.4s)
+  ✓  8 [fake] › apps/desktop/test/e2e/ui/workbuddy-memory.spec.mjs:404:1 › 拒绝无效 UTF-8、超大文件和不可用模型，预览不执行 HTML (681ms)
+
+  8 passed (17.1s)

@@ -1,0 +1,76 @@
+{
+  "model": "mimo-v2.6-flash",
+  "paths": {
+    "alpha": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-kXt74S/workspace",
+    "beta": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-kXt74S/beta",
+    "gamma": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-kXt74S/gamma"
+  },
+  "alpha": "ALPHA_WEEKLY_069cc7677844",
+  "beta": "BETA_WEEKLY_069cc7677844",
+  "personal": "WB_PERSONAL_069cc7677844",
+  "imports": [
+    {
+      "name": "personal",
+      "record": {
+        "id": "63a14383608782393fd4f35750ae5946b636129086b437deefdbb13d4f6c6666",
+        "createdAt": 1795228773433,
+        "scope": "personal",
+        "filename": "2026-11-21T02-39-33-workbuddy-63a14383608782393fd4f35750ae5946.md",
+        "state": "failed",
+        "reason": "receipt_missing"
+      }
+    }
+  ],
+  "cases": [],
+  "lifecycleSnapshots": [
+    {
+      "phase": "final",
+      "events": [
+        {
+          "kind": "started",
+          "pid": 15148,
+          "at": 1795228773074
+        }
+      ]
+    }
+  ],
+  "importEvents": [
+    {
+      "threadId": "01a1fbf9-2c3b-7cf2-8031-2cfe03bd08f9",
+      "status": "completed",
+      "error": null
+    }
+  ],
+  "notes": [],
+  "runtime": {
+    "streamMaxRetries": 2,
+    "upstream503Errors": 0,
+    "unsupportedPlanCalls": 0
+  },
+  "consolidated": null,
+  "diagnostics": [],
+  "wire": [
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "memoryContext": false,
+      "alphaInDeveloper": false,
+      "betaInDeveloper": false,
+      "alphaAnywhere": false,
+      "betaAnywhere": false,
+      "personalInDeveloper": false,
+      "personalAnywhere": true,
+      "consolidation": false,
+      "sourceDiff": false,
+      "workbuddyImport": true,
+      "workbuddyToolCall": false
+    }
+  ],
+  "outcomes": [
+    {
+      "model": "xiaomi/mimo-v2.6-flash",
+      "cases": [],
+      "status": 200
+    }
+  ]
+}

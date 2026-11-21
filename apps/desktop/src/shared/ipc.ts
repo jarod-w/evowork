@@ -1818,7 +1818,8 @@ export interface WorkBuddyImportRecordView {
   readonly createdAt: number;
   readonly scope: string;
   readonly filename: string;
-  readonly state: 'pending' | 'saved' | 'unknown';
+  readonly state: 'pending' | 'saved' | 'failed' | 'unknown';
+  readonly reason?: import('@evowork/kernel-adapter').MemoryTextFailureReason | undefined;
 }
 export interface WorkBuddyImportInput {
   readonly text: string;

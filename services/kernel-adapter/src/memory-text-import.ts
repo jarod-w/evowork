@@ -2,12 +2,23 @@ import { createHash } from 'node:crypto';
 import { METHOD, NOTIFICATION, type JsonRpcPeer } from '@evowork/protocol';
 import { memoryNoteReceipt } from '@evowork/policy';
 
+export type MemoryTextFailureReason =
+  | 'receipt_missing'
+  | 'receipt_mismatch'
+  | 'turn_failed'
+  | 'turn_interrupted'
+  | 'request_failed'
+  | 'timeout'
+  | 'disconnected'
+  | 'app_restarted';
+
 export interface MemoryTextRecord {
   readonly id: string;
   readonly createdAt: number;
   readonly scope: string;
   readonly filename: string;
-  readonly state: 'pending' | 'saved' | 'unknown';
+  readonly state: 'pending' | 'saved' | 'failed' | 'unknown';
+  readonly reason?: MemoryTextFailureReason;
 }
 export interface MemoryTextInput {
   readonly text: string;
@@ -31,9 +42,11 @@ export function createMemoryTextImporter(options: {
   readonly write: (records: readonly MemoryTextRecord[]) => void;
   readonly timeoutMs?: number;
 }) {
-  let records = options
-    .read()
-    .map((r) => (r.state === 'pending' ? { ...r, state: 'unknown' as const } : r));
+  const previous = options.read();
+  let records = previous.map((r): MemoryTextRecord =>
+    r.state === 'pending' ? { ...r, state: 'unknown', reason: 'app_restarted' } : r,
+  );
+  if (previous.some((r) => r.state === 'pending')) options.write(records);
   let active: { threadId: string; lost: () => void } | undefined;
   let busy = false;
   const internalThreads = new Set<string>();
@@ -131,11 +144,15 @@ export function createMemoryTextImporter(options: {
         save(record); // Persist before any model can perform the write; unknown operations are never replayed.
         let threadId: string | undefined;
         let receipt = false;
+        let mismatchedReceipt = false;
         let terminal = false;
         let lost = false;
         let turnSubmitted = false;
         let turnId: string | undefined;
-        let settle: ((state: 'saved' | 'unknown') => void) | undefined;
+        type Outcome = Pick<MemoryTextRecord, 'state' | 'reason'>;
+        let settle: ((outcome: Outcome) => void) | undefined;
+        const finish = (state: 'failed' | 'unknown', reason: MemoryTextFailureReason) =>
+          settle?.(receipt ? { state: 'saved' } : { state, reason });
         let timer: ReturnType<typeof setTimeout> | undefined;
         const peer = options.peer();
         const offHook = peer.onNotification(NOTIFICATION.hookCompleted, (raw) => {
@@ -161,19 +178,38 @@ export function createMemoryTextImporter(options: {
             trustedHooks.some(
               (h) => h.sourcePath === p.run?.sourcePath && h.displayOrder === p.run?.displayOrder,
             ) &&
-            p.run.entries?.some((e) => e.kind === 'context' && e.text === expected)
-          )
-            receipt = true;
+            p.run.entries
+          ) {
+            if (p.run.entries.some((e) => e.kind === 'context' && e.text === expected)) {
+              receipt = true;
+              // The tool has saved the exact note. Persist proof before a final reply or app exit.
+              save({ ...record, state: 'saved' });
+            } else if (
+              p.run.entries.some(
+                (e) => e.kind === 'context' && e.text?.startsWith('EW_MEMORY_NOTE_V1:'),
+              )
+            )
+              mismatchedReceipt = true;
+          }
         });
         const offTurn = peer.onNotification(NOTIFICATION.turnCompleted, (raw) => {
           const p = raw as { threadId?: string; turn?: { status?: string } };
           if (p.threadId === threadId) {
             terminal = true;
-            settle?.(receipt && p.turn?.status === 'completed' ? 'saved' : 'unknown');
+            finish(
+              'failed',
+              p.turn?.status === 'failed'
+                ? 'turn_failed'
+                : p.turn?.status === 'interrupted'
+                  ? 'turn_interrupted'
+                  : mismatchedReceipt
+                    ? 'receipt_mismatch'
+                    : 'receipt_missing',
+            );
           }
         });
         try {
-          const completion = new Promise<'saved' | 'unknown'>((resolve) => {
+          const completion = new Promise<Outcome>((resolve) => {
             settle = resolve;
           });
           const threadSource = `evowork_memory_import:${id}`;
@@ -202,11 +238,11 @@ export function createMemoryTextImporter(options: {
             threadId,
             lost: () => {
               lost = true;
-              settle?.('unknown');
+              finish('unknown', 'disconnected');
             },
           };
           timer = setTimeout(() => {
-            settle?.('unknown');
+            finish('unknown', 'timeout');
             if (turnId)
               void request(peer, METHOD.turnInterrupt, { threadId, turnId }, 2000).catch(() => {});
           }, options.timeoutMs ?? 120_000);
@@ -221,12 +257,14 @@ export function createMemoryTextImporter(options: {
             ],
           });
           turnId = turn.turn.id;
-          const state = await completion;
-          const done = { ...record, state };
+          const outcome = await completion;
+          const done = { ...record, ...outcome };
           save(done);
           return { record: done };
         } catch {
-          const done = { ...record, state: 'unknown' as const };
+          const done: MemoryTextRecord = receipt
+            ? { ...record, state: 'saved' }
+            : { ...record, state: turnSubmitted ? 'unknown' : 'failed', reason: 'request_failed' };
           save(done);
           return { record: done };
         } finally {

@@ -1,0 +1,153 @@
+
+ RUN  v3.2.7 /Users/jarod.ai/develop/evowork/evowork
+
+ ❯ |kernel-adapter| test/memory-text-import.test.ts (14 tests | 9 failed) 114ms
+   ✓ WorkBuddy native memory tool import > only a matching trusted successful hook receipt proves saving; globals and raw events untouched 1ms
+   × WorkBuddy native memory tool import > does not trust claim or replay an unconfirmed operation 3ms
+     → expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+   × WorkBuddy native memory tool import > does not trust wrong-source or replay an unconfirmed operation 0ms
+     → expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+   × WorkBuddy native memory tool import > does not trust wrong-order or replay an unconfirmed operation 0ms
+     → expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+   × WorkBuddy native memory tool import > does not trust changed or replay an unconfirmed operation 0ms
+     → expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+   × WorkBuddy native memory tool import > a confirmed native save remains saved even if the final model response fails 0ms
+     → expected 'unknown' to be 'saved' // Object.is equality
+   × WorkBuddy native memory tool import > persists a diagnostic terminal result for a failed turn without replay 0ms
+     → expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+   × WorkBuddy native memory tool import > persists a diagnostic terminal result for a interrupted turn without replay 0ms
+     → expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+   ✓ WorkBuddy native memory tool import > normalizes BOM and newlines for deduplication but preserves distinct scopes 0ms
+   ✓ WorkBuddy native memory tool import > keeps multiline Unicode and literal escapes readable without a nested JSON string 0ms
+   ✓ WorkBuddy native memory tool import > refuses invalid and oversized content before creating a native session 0ms
+   ✓ WorkBuddy native memory tool import > refuses before submission when the trusted synchronous completion hook is unavailable 0ms
+   × WorkBuddy native memory tool import > disconnect settles unknown without automatic retry and excludes a concurrent write 54ms
+     → expected { …(5) } to match object { state: 'unknown', …(1) }
+(4 matching properties omitted from actual)
+   × WorkBuddy native memory tool import > times out with the actual native turn id and prevents other memory writes until a restart 52ms
+     → expected { …(5) } to match object { state: 'unknown', reason: 'timeout' }
+(4 matching properties omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > does not trust claim or replay an unconfirmed operation
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > does not trust wrong-source or replay an unconfirmed operation
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > does not trust wrong-order or replay an unconfirmed operation
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > does not trust changed or replay an unconfirmed operation
+AssertionError: expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "reason": "receipt_missing",
+-   "state": "failed",
++   "state": "unknown",
+  }
+
+ ❯ test/memory-text-import.test.ts:119:65
+    117|       const f = fixture();
+    118|       f.behavior(behavior);
+    119|       expect((await f.importer.import(input, personal)).record).toMatc…
+       |                                                                 ^
+    120|         state: 'failed',
+    121|         reason: behavior === 'changed' ? 'receipt_mismatch' : 'receipt…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > a confirmed native save remains saved even if the final model response fails
+AssertionError: expected 'unknown' to be 'saved' // Object.is equality
+
+Expected: "saved"
+Received: "unknown"
+
+ ❯ test/memory-text-import.test.ts:130:69
+    128|     const f = fixture();
+    129|     f.behavior('failed-after-save');
+    130|     expect((await f.importer.import(input, personal)).record.state).to…
+       |                                                                     ^
+    131|   });
+    132|   it.each(['failed', 'interrupted'] as const)('persists a diagnostic t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > persists a diagnostic terminal result for a failed turn without replay
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > persists a diagnostic terminal result for a interrupted turn without replay
+AssertionError: expected { …(5) } to match object { state: 'failed', …(1) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "reason": "turn_failed",
+-   "state": "failed",
++   "state": "unknown",
+  }
+
+ ❯ test/memory-text-import.test.ts:136:27
+    134|     f.behavior(behavior);
+    135|     const result = await f.importer.import(input, personal);
+    136|     expect(result.record).toMatchObject({ state: 'failed', reason: `tu…
+       |                           ^
+    137|     expect(f.build().history()[0]).toEqual(result.record);
+    138|     expect((await f.build().import(input, personal)).duplicate).toBe(t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > disconnect settles unknown without automatic retry and excludes a concurrent write
+AssertionError: expected { …(5) } to match object { state: 'unknown', …(1) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "reason": "disconnected",
+    "state": "unknown",
+  }
+
+ ❯ test/memory-text-import.test.ts:181:34
+    179|     await expect(f.importer.import(input, personal)).rejects.toThrow('…
+    180|     f.importer.invalidate();
+    181|     expect((await first).record).toMatchObject({ state: 'unknown', rea…
+       |                                  ^
+    182|     expect((await f.importer.import(input, personal)).duplicate).toBe(…
+    183|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  |kernel-adapter| test/memory-text-import.test.ts > WorkBuddy native memory tool import > times out with the actual native turn id and prevents other memory writes until a restart
+AssertionError: expected { …(5) } to match object { state: 'unknown', reason: 'timeout' }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "reason": "timeout",
+    "state": "unknown",
+  }
+
+ ❯ test/memory-text-import.test.ts:188:27
+    186|     f.behavior('hold');
+    187|     const result = await f.importer.import(input, personal);
+    188|     expect(result.record).toMatchObject({ state: 'unknown', reason: 't…
+       |                           ^
+    189|     expect(f.calls.find((c) => c.method === METHOD.turnInterrupt)?.par…
+    190|       threadId: 'native-thread',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 5 passed (14)
+   Start at  10:31:21
+   Duration  302ms (transform 47ms, setup 0ms, collect 57ms, tests 114ms, environment 0ms, prepare 29ms)
