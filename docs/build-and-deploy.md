@@ -683,7 +683,7 @@ pnpm release             # 经 ssh 隧道直连服务器本机的 MinIO（S3 Sig
 
 打包配置在 [build/electron-builder.yml](../build/electron-builder.yml)，驱动是
 [scripts/package.mjs](../scripts/package.mjs)。三平台目标：macOS（dmg / zip，Q26 首发）·
-Windows（nsis）· Linux（AppImage / deb）。
+Windows（nsis：首次安装提供协议确认、安装目录与快捷方式选择向导，应用内升级传 `--updated --force-run /S` 静默覆盖原目录，见 [build/installer.nsh](../build/installer.nsh)）· Linux（AppImage / deb）。
 
 ```bash
 # 一次性：打补丁编内核，放到 build/kernel/<os>-<arch>/（§2.0；不要再从 ../codex/target 拷）

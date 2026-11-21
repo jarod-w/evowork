@@ -41,7 +41,7 @@ import { computerUseModelContext } from './computer-use-model.js';
  * `bootstrap.ts` 注入。这样宿主的接线逻辑能在测试里跑，而不必起一个 Electron ——
  * 否则"启动顺序对不对""崩溃后有没有恢复"这类问题只能靠手点。
  */
-import type { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
@@ -2441,6 +2441,21 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
         if (!options.openPath) throw new Error('这个构建打不开文件：没有注入 openPath');
         await options.openPath(path);
       },
+      spawnInstaller: (path, args) =>
+        new Promise<void>((resolve, reject) => {
+          const { ELECTRON_RUN_AS_NODE: _drop, ...env } = process.env;
+          const spawnInstallerProcess = options.spawnFn ?? spawn;
+          const child = spawnInstallerProcess(path, [...args], {
+            detached: true,
+            stdio: 'ignore',
+            env,
+          });
+          child.once('error', reject);
+          child.once('spawn', () => {
+            child.unref();
+            resolve();
+          });
+        }),
       quit: () => options.quit?.(),
       emit: (view) => options.emitToRenderer(IPC.updateStatus, view),
       quitImpact: () => updateQuitImpact(),

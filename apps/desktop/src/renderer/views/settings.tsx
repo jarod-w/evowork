@@ -2023,8 +2023,9 @@ function UpdateBlock(
             EvoWork {update.offer.version} 已下载并通过校验，保存在「下载」文件夹。
           </Banner>
           <p className="ew-settings-note">
-            现在的安装包还没有 Apple 签名，所以要手动替换：EvoWork 退出后会打开安装包，把 EvoWork
-            拖进「应用程序」并选择「替换」，再重新打开。
+            {update.offer.fileName.toLowerCase().endsWith('.exe')
+              ? 'EvoWork 退出后会在原安装目录自动完成覆盖升级，并在安装结束后重新打开。'
+              : '现在的安装包还没有 Apple 签名，所以要手动替换：EvoWork 退出后会打开安装包，把 EvoWork 拖进「应用程序」并选择「替换」，再重新打开。'}
           </p>
         </>
       ) : null}

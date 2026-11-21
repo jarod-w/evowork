@@ -1029,9 +1029,22 @@ describe('关于与更新', () => {
       })),
       onQuitAndInstall,
     });
+    expect(screen.getByText(/拖进「应用程序」/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '退出并打开安装包' }));
     await vi.waitFor(() => expect(onQuitAndInstall).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('Windows 安装包下载就绪后提示原目录自动覆盖升级，不误导用户去找 macOS「应用程序」', () => {
+    page({
+      section: 'about',
+      update: updateView({
+        phase: 'ready',
+        offer: { ...OFFER, fileName: 'EvoWork-0.0.5-win-x64-unsigned.exe' },
+      }),
+    });
+    expect(screen.getByText(/在原安装目录自动完成覆盖升级/)).toBeTruthy();
+    expect(screen.queryByText(/拖进「应用程序」/)).toBeNull();
   });
 
   it('隐私说明保留在关于页，明确本机执行与模型调用联网', () => {

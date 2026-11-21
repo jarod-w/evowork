@@ -78,10 +78,27 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
 
 win:
+  icon: build/icon.ico
   target:
     - nsis
   # Q6 / U5：Windows 的隔离强度结论还没拿到。产品在运行时会按保守侧处理
   # （停用完全访问 + 能力页说明），打包这一层不做特殊处理。
+
+nsis:
+  # 桌面成品连同随包办公运行时落盘近 1GB，不能默认无提示静默塞进 C 盘：
+  # 首次安装提供完整向导（许可协议同意 → 目录选择 → 快捷方式勾选，见 build/installer.nsh）；
+  # 应用内升级由 update-check.ts 传 `--updated --force-run /S` 静默覆盖原目录并自动重开。
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  installerLanguages:
+    - zh_CN
+    - en_US
+  include: build/installer.nsh
 
 linux:
   target:

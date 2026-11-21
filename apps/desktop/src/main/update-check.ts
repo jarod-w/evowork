@@ -110,6 +110,11 @@ export interface UpdateHostPorts {
   /** 毫秒 */
   readonly now: () => number;
   readonly openPath: (path: string) => Promise<void>;
+  /**
+   * Windows 上带参数拉起 NSIS 安装包（脱离当前进程，应用退出后静默覆盖原安装目录并自动重新打开）。
+   * 不注入时退回 `openPath`（打开图形向导）。
+   */
+  readonly spawnInstaller?: ((path: string, args: readonly string[]) => Promise<void>) | undefined;
   readonly quit: () => void;
   readonly emit: (status: UpdateStatusView) => void;
   readonly quitImpact: () => UpdateQuitImpactView;
@@ -502,6 +507,13 @@ export function cancelUpdateDownload(runtime: UpdateRuntime): void {
 /* ───────────────────────────── 退出并打开 ───────────────────────────── */
 
 /**
+ * Windows NSIS 静默升级参数：
+ * - `--updated`：跳过首次安装的许可协议、目录选择与附加任务页，并保留用户原有的快捷方式选择；
+ * - `--force-run` + `/S`：后台静默覆盖原安装目录（如用户首次选在 D 盘则继续装在 D 盘），完成后自动重新打开 EvoWork。
+ */
+export const WINDOWS_SILENT_UPGRADE_ARGS = ['--updated', '--force-run', '/S'] as const;
+
+/**
  * 打开之前**再校验一次**：「下载」文件夹谁都能动，下好到点下去之间文件可能已经不是那一份了。
  * 先打开安装包、再退出：顺序反过来，退出之后就没人去打开它了。
  */
@@ -523,7 +535,11 @@ export async function quitAndOpenInstaller(
     );
     return { ok: false, refused: runtime.message };
   }
-  await ports.openPath(path);
+  if (ports.platform === 'win32' && path.toLowerCase().endsWith('.exe') && ports.spawnInstaller) {
+    await ports.spawnInstaller(path, WINDOWS_SILENT_UPGRADE_ARGS);
+  } else {
+    await ports.openPath(path);
+  }
   ports.logger?.info('desktop.update.quit_to_install', {});
   ports.quit();
   return { ok: true };

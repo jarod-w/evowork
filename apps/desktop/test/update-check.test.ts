@@ -143,6 +143,7 @@ function makeHost(
 ) {
   const emitted: UpdateStatusView[] = [];
   const opened: string[] = [];
+  const spawned: { path: string; args: readonly string[] }[] = [];
   const events: string[] = [];
   let now = 1_800_000_000_000;
   const { signedIn = false, ...rest } = overrides;
@@ -161,6 +162,10 @@ function makeHost(
       opened.push(path);
       events.push('open');
     },
+    spawnInstaller: async (path, args) => {
+      spawned.push({ path, args });
+      events.push('spawn');
+    },
     quit: () => events.push('quit'),
     emit: (view) => emitted.push(view),
     quitImpact: () => ({ runningTasks: [], upcoming: [], runtimeInstalling: false }),
@@ -171,6 +176,7 @@ function makeHost(
     runtime: updates.createUpdateRuntime(),
     emitted,
     opened,
+    spawned,
     events,
     advance: (ms: number) => (now += ms),
   };
@@ -425,6 +431,55 @@ describe('退出并打开安装包', () => {
     expect((await updates.quitAndOpenInstaller(h.ports, h.runtime)).ok).toBe(true);
     expect(h.events).toEqual(['open', 'quit']);
     expect(h.opened).toEqual([join(root, 'Downloads', PACKAGE_NAME)]);
+    expect(h.spawned).toEqual([]);
+  });
+
+  it('Windows 应用内升级：带静默覆盖参数拉起 NSIS 安装包，不重弹首次安装的图形向导，且拉起失败时不退出应用', async () => {
+    const winExe = Buffer.from('这是 0.0.5 的 Windows NSIS 安装包（测试替身）'.repeat(1200));
+    const winName = 'EvoWork-0.0.5-win-x64-unsigned.exe';
+    const winManifest = Buffer.from(
+      `version: 0.0.5
+files:
+  - url: ${winName}
+    sha512: ${createHash('sha512').update(winExe).digest('base64')}
+    size: ${String(winExe.length)}
+path: ${winName}
+sha512: x
+releaseDate: '2026-10-03T00:00:00.000Z'
+`,
+    );
+    files.set('/latest/latest.yml', winManifest);
+    files.set(
+      `/latest/signatures/${signatureNameFor(winManifest)}`,
+      Buffer.from(OURS.signFile(winManifest)),
+    );
+    files.set(`/latest/${winName}`, winExe);
+
+    const okHost = makeHost({ platform: 'win32', arch: 'x64' });
+    await updates.checkForUpdate(okHost.ports, okHost.runtime, 'manual');
+    await updates.downloadUpdate(okHost.ports, okHost.runtime);
+    expect((await updates.quitAndOpenInstaller(okHost.ports, okHost.runtime)).ok).toBe(true);
+    expect(okHost.events).toEqual(['spawn', 'quit']);
+    expect(okHost.opened).toEqual([]);
+    expect(okHost.spawned).toEqual([
+      {
+        path: join(root, 'Downloads', winName),
+        args: ['--updated', '--force-run', '/S'],
+      },
+    ]);
+
+    const brokenHost = makeHost({
+      platform: 'win32',
+      arch: 'x64',
+      spawnInstaller: async () => {
+        throw new Error('EACCES');
+      },
+    });
+    await updates.checkForUpdate(brokenHost.ports, brokenHost.runtime, 'manual');
+    await expect(
+      updates.quitAndOpenInstaller(brokenHost.ports, brokenHost.runtime),
+    ).rejects.toThrow('EACCES');
+    expect(brokenHost.events).toEqual([]);
   });
 
   it('下好之后「下载」文件夹里的文件被换了：不打开、不退出，要求重新下载', async () => {

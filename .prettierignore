@@ -50,3 +50,6 @@ build/kernel/
 
 # 完整 Python 成品由构建脚本生成
 build/office/*-*/
+
+# NSIS 许可协议文件要求保留 UTF-8 BOM 与 CRLF 换行
+build/license_*.txt
