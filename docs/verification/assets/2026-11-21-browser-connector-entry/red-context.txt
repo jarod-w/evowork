@@ -1,0 +1,218 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: web-research.spec.mjs >> 公开资料：授权读取、引用点击与历史恢复
+- Location: apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3
+
+# Error details
+
+```
+TimeoutError: locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('.ew-projects-grid').getByRole('button', { name: /^浏览器 / })
+
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=f1e3]:
+  - navigation "侧边栏" [ref=f1e4]:
+    - button "折叠侧边栏" [ref=f1e6] [cursor=pointer]
+    - generic [ref=f1e9]:
+      - generic [ref=f1e10]: EvoWork
+      - button "打开搜索框" [ref=f1e15] [cursor=pointer]
+      - button "筛选任务" [ref=f1e20] [cursor=pointer]
+    - button "新建任务" [ref=f1e24] [cursor=pointer]
+    - generic [ref=f1e29]:
+      - generic [ref=f1e30]:
+        - button "自动化" [ref=f1e31] [cursor=pointer]
+        - button "插件" [ref=f1e37] [cursor=pointer]
+        - button "智能体" [ref=f1e44] [cursor=pointer]
+        - button "资料库" [ref=f1e50] [cursor=pointer]
+      - region "项目" [ref=f1e55]:
+        - generic [ref=f1e56]:
+          - button "项目" [expanded] [ref=f1e57] [cursor=pointer]
+          - generic [ref=f1e62]:
+            - generic:
+              - generic:
+                - button "项目更多操作":
+                  - generic [aria-hidden]: ⋯
+              - button "创建项目"
+        - button "UI" [ref=f1e66] [cursor=pointer]
+      - region "最近" [ref=f1e74]:
+        - button "最近" [expanded] [ref=f1e76] [cursor=pointer]
+        - generic:
+          - generic:
+            - list
+    - button "jarod.ai 菜单" [ref=f1e84] [cursor=pointer]:
+      - generic [aria-hidden] [ref=f1e85]: j
+      - generic [ref=f1e86]:
+        - generic [ref=f1e87]: jarod.ai
+        - generic [ref=f1e88]: v44.2.0
+  - generic [ref=f1e89]:
+    - generic [ref=f1e90]:
+      - tablist "目录种类" [ref=f1e91]:
+        - tab "技能" [ref=f1e92] [cursor=pointer]
+        - tab "连接器" [active] [selected] [ref=f1e94] [cursor=pointer]
+        - tab "EvoWork 专家" [ref=f1e96] [cursor=pointer]
+      - generic [ref=f1e98]:
+        - generic [aria-hidden] [ref=f1e99]: ⌕
+        - searchbox "搜索连接器" [ref=f1e100]
+      - button "已信任 0" [ref=f1e101] [cursor=pointer]:
+        - generic [aria-hidden] [ref=f1e102]: ☐
+      - button "＋ 自定义连接器" [ref=f1e104] [cursor=pointer]
+    - generic [ref=f1e106]:
+      - status [ref=f1e107]: 登录或在设置中开启后，可以获取 EvoWork 精选内容
+      - group "来源" [ref=f1e108]:
+        - generic [ref=f1e109]:
+          - checkbox "全部来源" [checked] [ref=f1e110] [cursor=pointer]
+          - checkbox "EvoWork 精选" [ref=f1e111] [cursor=pointer]
+          - button "刷新" [ref=f1e112] [cursor=pointer]:
+            - generic [aria-hidden] [ref=f1e113]: ↻
+      - paragraph [ref=f1e115]: 本版支持通过 MCP 协议接入任意第三方服务。官方连接器目录将在后续版本提供。
+      - group "连接器分类" [ref=f1e116]:
+        - generic [ref=f1e117]:
+          - checkbox "全部" [checked] [ref=f1e118] [cursor=pointer]
+          - checkbox "浏览器" [ref=f1e119] [cursor=pointer]
+          - checkbox "自建" [ref=f1e120] [cursor=pointer]
+      - generic [ref=f1e121]:
+        - generic [ref=f1e122]:
+          - generic "示例邮箱" [ref=f1e124]
+          - paragraph [ref=f1e125]: 为邮件摘要试用提供只读访问。
+          - generic [ref=f1e126]:
+            - generic [ref=f1e127]: 未连接
+            - button "查看权限" [ref=f1e128] [cursor=pointer]
+        - generic [ref=f1e130]:
+          - generic "浏览器" [ref=f1e132]
+          - paragraph [ref=f1e133]: 待信任 · 添加后还没有启动
+          - paragraph [ref=f1e134]:
+            - generic "官方内置" [ref=f1e135]
+          - generic [ref=f1e136]:
+            - generic [ref=f1e137]: 待信任
+            - button "查看权限 · 浏览器" [ref=f1e138] [cursor=pointer]:
+              - generic [ref=f1e139]: 查看权限
+```
+
+# Test source
+
+```ts
+  1   | /** 真 Electron / 内核 / browser MCP / Chrome / 本机网页；模型响应可控，不依赖外站稳定性。 */
+  2   | import { createHash } from 'node:crypto';
+  3   | import { createServer } from 'node:http';
+  4   | import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
+  5   |
+  6   | async function enableBrowser(page) {
+  7   |   await page.getByRole('button', { name: '插件', exact: true }).click();
+  8   |   await page.getByRole('tab', { name: '连接器', exact: true }).click();
+  9   |   await page
+  10  |     .locator('.ew-projects-grid')
+  11  |     .getByRole('button', { name: /^浏览器 / })
+> 12  |     .click();
+      |      ^ TimeoutError: locator.click: Timeout 30000ms exceeded.
+  13  |   await page.getByRole('button', { name: '信任并启用', exact: true }).click();
+  14  |   await page
+  15  |     .getByRole('alertdialog', { name: '信任「浏览器」' })
+  16  |     .getByRole('button', { name: '信任并启用' })
+  17  |     .click();
+  18  |   await expect(page.getByRole('button', { name: '信任并启用', exact: true })).toHaveCount(0);
+  19  |   await page.getByRole('button', { name: '新建任务' }).first().click();
+  20  | }
+  21  |
+  22  | async function scriptRead(electronApp, marker, url, id) {
+  23  |   await electronApp.evaluate(
+  24  |     (_electron, { marker, url, id }) => {
+  25  |       const gateway = globalThis.__evoworkE2E.gateway;
+  26  |       gateway.scriptWhen(
+  27  |         `${marker}-read`,
+  28  |         (view) =>
+  29  |           view.text.includes(marker) &&
+  30  |           view.calls.length === 0 &&
+  31  |           view.tools.some((tool) => tool.endsWith('browser_read_page')),
+  32  |         {
+  33  |           tool: (body) => {
+  34  |             const flatten = (list) =>
+  35  |               list.flatMap((entry) => (entry.tools ? flatten(entry.tools) : [entry.name]));
+  36  |             return flatten(JSON.parse(body).tools).find((tool) =>
+  37  |               tool?.endsWith('browser_read_page'),
+  38  |             );
+  39  |           },
+  40  |           args: { url },
+  41  |         },
+  42  |       );
+  43  |       gateway.scriptWhen(
+  44  |         `${marker}-reply`,
+  45  |         (view) => view.text.includes(marker) && view.calls.length === 1,
+  46  |         { kind: 'text', text: `验收回答 ${marker}。[[cite:${id}]]` },
+  47  |       );
+  48  |     },
+  49  |     { marker, url, id },
+  50  |   );
+  51  | }
+  52  |
+  53  | for (const accepted of [true, false]) {
+  54  |   test(`公开资料：${accepted ? '授权读取、引用点击与历史恢复' : '拒绝后零请求、编造引用不可点击'}`, async ({
+  55  |     page,
+  56  |     electronApp,
+  57  |   }, testInfo) => {
+  58  |     let requests = 0;
+  59  |     const server = createServer((_req, res) => {
+  60  |       requests++;
+  61  |       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  62  |       res.end(
+  63  |         `<title>本机官方研究报告</title><main><h1>研究报告</h1><p>${'可核对的公开正文。'.repeat(20)}</p></main>`,
+  64  |       );
+  65  |     });
+  66  |     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  67  |     const url = `http://127.0.0.1:${server.address().port}/report`;
+  68  |     const id = `web_${createHash('sha256').update(url).digest('hex').slice(0, 16)}`;
+  69  |     const marker = `WEB-${accepted ? 'ACCEPT' : 'DENY'}-${Date.now()}`;
+  70  |     try {
+  71  |       await enableBrowser(page);
+  72  |       await scriptRead(electronApp, marker, url, id);
+  73  |       await startTaskInWorkspace(page, electronApp, `读取公开资料并给出来源 ${marker}`);
+  74  |       const first = page.getByLabel('需要你确认');
+  75  |       await expect(first).toBeVisible({ timeout: 90_000 });
+  76  |       const native = first.getByRole('button', { name: '允许这一次', exact: true });
+  77  |       if (await native.count()) await native.click();
+  78  |       const origin = page.getByRole('alertdialog').filter({ hasText: '允许读取和操作网站' });
+  79  |       await expect(origin).toBeVisible({ timeout: 90_000 });
+  80  |       await expect(origin).toContainText(`http://127.0.0.1:${server.address().port}`);
+  81  |       expect(requests, '授权之前就访问了页面').toBe(0);
+  82  |       await origin
+  83  |         .getByRole('button', { name: accepted ? '确认本次动作' : '不允许', exact: true })
+  84  |         .click();
+  85  |       await expect(page.getByText(`验收回答 ${marker}。`, { exact: false })).toBeVisible({
+  86  |         timeout: 90_000,
+  87  |       });
+  88  |       await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+  89  |       if (!accepted) {
+  90  |         expect(requests).toBe(0);
+  91  |         await expect(page.locator('.ew-web-citation')).toHaveCount(0);
+  92  |         await expect(page.getByText('[来源不可用]', { exact: true })).toBeVisible();
+  93  |         return;
+  94  |       }
+  95  |       const tasks = (await page.evaluate(() => window.evowork.getStartup())).tasks;
+  96  |       expect(tasks).toHaveLength(1);
+  97  |       const task = tasks[0];
+  98  |       const history = await page.evaluate(
+  99  |         (threadId) => window.evowork.openTask({ threadId }),
+  100 |         task.id,
+  101 |       );
+  102 |       const reads = history.items.filter(
+  103 |         (item) => item.type === 'mcpToolCall' && item.tool.endsWith('browser_read_page'),
+  104 |       );
+  105 |       await testInfo.attach('browser-read-result.json', {
+  106 |         body: Buffer.from(JSON.stringify(reads, null, 2)),
+  107 |         contentType: 'application/json',
+  108 |       });
+  109 |       expect(reads).toHaveLength(1);
+  110 |       expect(requests, JSON.stringify(reads)).toBeGreaterThan(0);
+  111 |       const citation = page.getByRole('link', { name: '[127.0.0.1]', exact: true });
+  112 |       await expect(citation).toBeVisible();
+```

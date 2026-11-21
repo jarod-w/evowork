@@ -1,0 +1,52 @@
+
+Running 2 tests using 1 worker
+
+(node:21881) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：授权读取、引用点击与历史恢复 (30.8s)
+(node:21938) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：拒绝后零请求、编造引用不可点击 (30.8s)
+
+
+  1) [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：授权读取、引用点击与历史恢复 ────────────
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.ew-projects-grid').getByRole('button', { name: /^浏览器 / })
+
+
+      10 |     .locator('.ew-projects-grid')
+      11 |     .getByRole('button', { name: /^浏览器 / })
+    > 12 |     .click();
+         |      ^
+      13 |   await page.getByRole('button', { name: '信任并启用', exact: true }).click();
+      14 |   await page
+      15 |     .getByRole('alertdialog', { name: '信任「浏览器」' })
+        at enableBrowser (/Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/web-research.spec.mjs:12:6)
+        at /Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/web-research.spec.mjs:71:7
+
+    Error Context: ../../../../../private/tmp/evowork-issue28-red-results/web-research-公开资料：授权读取、引用点击与历史恢复-fake/error-context.md
+
+  2) [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：拒绝后零请求、编造引用不可点击 ───────────
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.ew-projects-grid').getByRole('button', { name: /^浏览器 / })
+
+
+      10 |     .locator('.ew-projects-grid')
+      11 |     .getByRole('button', { name: /^浏览器 / })
+    > 12 |     .click();
+         |      ^
+      13 |   await page.getByRole('button', { name: '信任并启用', exact: true }).click();
+      14 |   await page
+      15 |     .getByRole('alertdialog', { name: '信任「浏览器」' })
+        at enableBrowser (/Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/web-research.spec.mjs:12:6)
+        at /Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/web-research.spec.mjs:71:7
+
+    Error Context: ../../../../../private/tmp/evowork-issue28-red-results/web-research-公开资料：拒绝后零请求、编造引用不可点击-fake/error-context.md
+
+  2 failed
+    [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：授权读取、引用点击与历史恢复 ─────────────
+    [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:54:3 › 公开资料：拒绝后零请求、编造引用不可点击 ────────────

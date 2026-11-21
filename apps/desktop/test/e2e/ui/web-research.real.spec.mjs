@@ -1,10 +1,11 @@
 /** Actual provider, shipped browser MCP and Chrome; the page value is never in the prompt. */
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
 import { selectRealModel } from '../harness/real-models.mjs';
+import { trustBrowserConnector } from './browser-connector.mjs';
 
 test.use({
   registerModels: true,
@@ -37,18 +38,8 @@ test('真模型浏览器：授权前零读取，真实 Chrome 取回未知口令
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const url = 'http://127.0.0.1:' + server.address().port + '/report';
   try {
-    await page.getByRole('button', { name: '插件', exact: true }).click();
-    await page.getByRole('tab', { name: '连接器', exact: true }).click();
-    await page
-      .locator('.ew-projects-grid')
-      .getByRole('button', { name: /^浏览器 / })
-      .click();
-    await page.getByRole('button', { name: '信任并启用', exact: true }).click();
-    await page
-      .getByRole('alertdialog', { name: '信任「浏览器」' })
-      .getByRole('button', { name: '信任并启用' })
-      .click();
-    await expect(page.getByRole('button', { name: '信任并启用', exact: true })).toHaveCount(0);
+    await trustBrowserConnector(page);
+    await page.screenshot({ path: info.outputPath('browser-connector-trusted.png') });
     await page.getByRole('button', { name: '新建任务', exact: true }).first().click();
     await startTaskInWorkspace(
       page,
@@ -133,7 +124,13 @@ test('真模型浏览器：授权前零读取，真实 Chrome 取回未知口令
     const evidence = JSON.stringify({ url, marker, requests, task, history, wire }, null, 2);
     if (process.env.EVOWORK_UI_MODEL_KEY && evidence.includes(process.env.EVOWORK_UI_MODEL_KEY))
       throw new Error('凭据命中，拒绝保存证据');
-    await info.attach('real-browser-evidence', { body: evidence, contentType: 'application/json' });
+    const evidencePath = info.outputPath('real-browser-evidence.json');
+    writeFileSync(evidencePath, evidence);
+    await info.attach('real-browser-evidence', {
+      path: evidencePath,
+      contentType: 'application/json',
+    });
+    await page.screenshot({ path: info.outputPath('browser-read-and-citation.png') });
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

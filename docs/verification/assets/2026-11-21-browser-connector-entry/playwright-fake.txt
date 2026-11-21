@@ -1,0 +1,9 @@
+
+Running 2 tests using 1 worker
+
+(node:22201) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:39:3 › 公开资料：授权读取、引用点击与历史恢复 (3.5s)
+  ✓  2 [fake] › apps/desktop/test/e2e/ui/web-research.spec.mjs:39:3 › 公开资料：拒绝后零请求、编造引用不可点击 (1.2s)
+
+  2 passed (4.9s)

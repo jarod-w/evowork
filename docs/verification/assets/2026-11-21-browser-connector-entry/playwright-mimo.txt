@@ -1,0 +1,8 @@
+
+Running 1 test using 1 worker
+
+(node:28509) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [real] › apps/desktop/test/e2e/ui/web-research.real.spec.mjs:16:1 › 真模型浏览器：授权前零读取，真实 Chrome 取回未知口令并保留来源引用 (21.1s)
+
+  1 passed (21.3s)

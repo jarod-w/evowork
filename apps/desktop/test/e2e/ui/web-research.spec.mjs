@@ -2,22 +2,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { expect, startTaskInWorkspace, test } from './fixtures.mjs';
-
-async function enableBrowser(page) {
-  await page.getByRole('button', { name: '插件', exact: true }).click();
-  await page.getByRole('tab', { name: '连接器', exact: true }).click();
-  await page
-    .locator('.ew-projects-grid')
-    .getByRole('button', { name: /^浏览器 / })
-    .click();
-  await page.getByRole('button', { name: '信任并启用', exact: true }).click();
-  await page
-    .getByRole('alertdialog', { name: '信任「浏览器」' })
-    .getByRole('button', { name: '信任并启用' })
-    .click();
-  await expect(page.getByRole('button', { name: '信任并启用', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '新建任务' }).first().click();
-}
+import { trustBrowserConnector } from './browser-connector.mjs';
 
 async function scriptRead(electronApp, marker, url, id) {
   await electronApp.evaluate(
@@ -68,7 +53,9 @@ for (const accepted of [true, false]) {
     const id = `web_${createHash('sha256').update(url).digest('hex').slice(0, 16)}`;
     const marker = `WEB-${accepted ? 'ACCEPT' : 'DENY'}-${Date.now()}`;
     try {
-      await enableBrowser(page);
+      await trustBrowserConnector(page);
+      await page.screenshot({ path: testInfo.outputPath('browser-connector-trusted.png') });
+      await page.getByRole('button', { name: '新建任务', exact: true }).first().click();
       await scriptRead(electronApp, marker, url, id);
       await startTaskInWorkspace(page, electronApp, `读取公开资料并给出来源 ${marker}`);
       const first = page.getByLabel('需要你确认');

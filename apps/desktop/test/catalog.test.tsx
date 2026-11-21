@@ -217,6 +217,22 @@ describe('CatalogPage', () => {
     expect(screen.getByRole('button', { name: '已信任 1' })).toBeTruthy();
   });
 
+  it('浏览器通过具名的查看权限按钮进入详情，确认信任前不启用', async () => {
+    const trust = vi.fn(async () => ({ ok: true, catalog: EMPTY }));
+    renderPage({}, 'connectors', { onTrustConnector: trust });
+    fireEvent.click(screen.getByRole('button', { name: '查看权限 · 浏览器' }));
+    expect(screen.getByRole('heading', { name: '浏览器' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '信任并启用' }));
+    let dialog = screen.getByRole('alertdialog', { name: '信任「浏览器」' });
+    expect(trust).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    expect(trust).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '信任并启用' }));
+    dialog = screen.getByRole('alertdialog', { name: '信任「浏览器」' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '信任并启用' }));
+    await waitFor(() => expect(trust).toHaveBeenCalledExactlyOnceWith('browser'));
+  });
+
   it('专家 Tab 空态不预置角色包', () => {
     render(
       <CatalogPage
