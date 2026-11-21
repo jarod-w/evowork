@@ -19,9 +19,10 @@ async function expectLayoutIsSound(page, electronApp, view) {
   expect(bad, `${view} 里有文字被无声硬裁：既没有省略号也没有 title`).toEqual([]);
 }
 
-test('插件：三个分类 Tab 都切得动，搜索框在', async ({ page, electronApp }) => {
+test('插件：发现 / 我的已装与三个分类 Tab 都切得动，搜索框在', async ({ page, electronApp }) => {
   await page.getByRole('button', { name: '插件', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '精选技能' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '发现', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /我的已装/ })).toBeVisible();
 
   /*
    * 三个 Tab 是 05 的「技能 · 连接器 · 专家」三分。少一个的后果不是报错，

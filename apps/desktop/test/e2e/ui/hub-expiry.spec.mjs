@@ -20,10 +20,12 @@ test('过期签名目录显示真实到期与维护指引，最近检查不会�
   await page.getByRole('button', { name: '插件', exact: true }).click();
   const catalog = await page.evaluate(() => window.evowork.getCatalog());
   expect(catalog.hub.status).toMatchObject({ expired: true, expiresAt });
-  await expect(page.getByText(/最近检查/)).toBeVisible();
-  await expect(page.getByText(/目录有效期至 2026-10-15/)).toBeVisible();
   await expect(page.getByText(/需要维护者更新/)).toBeVisible();
-  await page.getByRole('checkbox', { name: 'EvoWork 精选', exact: true }).click();
+  await page.getByRole('button', { name: /目录已过期/ }).click();
+  const popover = page.getByRole('dialog', { name: '精选目录状态' });
+  await expect(popover.getByText(/最近检查/)).toBeVisible();
+  await expect(popover.getByText(/目录有效期至 2026-10-15/)).toBeVisible();
+  await page.getByRole('tab', { name: '发现', exact: true }).click();
   await expect(page.getByText('目录已过期，暂不能安装', { exact: true })).toBeVisible();
   await electronApp.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setSize(480, 900),

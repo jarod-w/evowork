@@ -1,5 +1,5 @@
 /**
- * 技能 · 连接器页（05）。断的是用户看见的东西：Tab、空态、文案，不是中间字段。
+ * 插件目录页（05 · 13）。断的是用户看见的东西：双视图 Tab、弹层元数据、空态、文案，不是中间字段。
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -39,8 +39,6 @@ function renderPage(
       onInstallSkill={async () => ({ ok: true, catalog: data })}
       onUninstallSkill={async () => ({ ok: true, catalog: data })}
       onSetSkillEnabled={async () => ({ ok: true, catalog: data })}
-      onInstallBundle={async () => ({ ok: true, catalog: data })}
-      onUninstallBundle={async () => ({ ok: true, catalog: data })}
       onAddConnector={async () => ({ ok: true, catalog: data })}
       onTrustConnector={async () => ({ ok: true, catalog: data })}
       onAuthorizeConnector={async () => ({ ok: true, catalog: data })}
@@ -76,7 +74,7 @@ const HUB_STATUS = {
 };
 
 describe('CatalogPage', () => {
-  it('刚检查过的旧目录仍显示实际到期时间与维护者指引，并保留网络警告', () => {
+  it('过期签名目录常驻顶部警告条，弹层里展示最近检查、签发与到期时间，并保留网络警告', () => {
     renderPage({
       hub: {
         status: {
@@ -90,23 +88,30 @@ describe('CatalogPage', () => {
         entries: [],
       },
     });
-    expect(screen.getByText(/最近检查/)).toBeTruthy();
-    expect(screen.getByText(/目录签发/)).toBeTruthy();
-    expect(screen.getByText(/目录有效期至/)).toBeTruthy();
     expect(screen.getByText(/需要维护者更新/)).toBeTruthy();
     expect(screen.getByText(/已安装内容可继续使用/)).toBeTruthy();
     expect(screen.getByText(/精选源暂时无法访问/)).toBeTruthy();
+    // 正常时间戳收在右上角弹层里，不平铺在主区
+    expect(screen.queryByText(/目录签发/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /目录已过期/ }));
+    const popover = screen.getByRole('dialog', { name: '精选目录状态' });
+    expect(within(popover).getByText(/最近检查/)).toBeTruthy();
+    expect(within(popover).getByText(/目录签发/)).toBeTruthy();
+    expect(within(popover).getByText(/目录有效期至/)).toBeTruthy();
   });
 
-  it('有效目录展示有效期，不提示需要维护者更新', () => {
+  it('有效目录不弹告警条，点开「精选目录」弹层才展示有效期且不提示维护者更新', () => {
     renderPage({
       hub: {
         status: { ...HUB_STATUS, fetchedAt: 1_800_000_000, expiresAt: 1_800_604_800 },
         entries: [],
       },
     });
-    expect(screen.getByText(/目录有效期至/)).toBeTruthy();
     expect(screen.queryByText(/需要维护者更新/)).toBeNull();
+    expect(screen.queryByText(/目录有效期至/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /精选目录/ }));
+    const popover = screen.getByRole('dialog', { name: '精选目录状态' });
+    expect(within(popover).getByText(/目录有效期至/)).toBeTruthy();
   });
 
   it('文件安装独立打开文件选择器，P2 未确认不会提交安装授权', async () => {
@@ -153,9 +158,11 @@ describe('CatalogPage', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(install).not.toHaveBeenCalled();
   });
-  it('技能空态如实说随包目录没装上，不编一套演示技能', () => {
+
+  it('技能空态如实说随包目录没装上，不编一套演示技能，也不再渲染邮件摘要试用', () => {
     renderPage();
-    expect(screen.getByText('还没有可安装的技能')).toBeTruthy();
+    expect(screen.getByText('还没有已安装的技能')).toBeTruthy();
+    expect(screen.queryByText(/邮件摘要/)).toBeNull();
   });
 
   it('连接器 Tab 常驻说明官方目录未提供', () => {
@@ -167,8 +174,6 @@ describe('CatalogPage', () => {
         onInstallSkill={async () => ({ ok: true, catalog: EMPTY })}
         onUninstallSkill={async () => ({ ok: true, catalog: EMPTY })}
         onSetSkillEnabled={async () => ({ ok: true, catalog: EMPTY })}
-        onInstallBundle={async () => ({ ok: true, catalog: EMPTY })}
-        onUninstallBundle={async () => ({ ok: true, catalog: EMPTY })}
         onAddConnector={async () => ({ ok: true, catalog: EMPTY })}
         onTrustConnector={async () => ({ ok: true, catalog: EMPTY })}
         onAuthorizeConnector={async () => ({ ok: true, catalog: EMPTY })}
@@ -214,7 +219,6 @@ describe('CatalogPage', () => {
     expect(screen.getByText('授权状态：尚未授权')).toBeTruthy();
     expect(screen.getByText('search_events')).toBeTruthy();
     expect(screen.getByRole('button', { name: '去授权' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '已信任 1' })).toBeTruthy();
   });
 
   it('浏览器通过具名的查看权限按钮进入详情，确认信任前不启用', async () => {
@@ -242,8 +246,6 @@ describe('CatalogPage', () => {
         onInstallSkill={async () => ({ ok: true, catalog: EMPTY })}
         onUninstallSkill={async () => ({ ok: true, catalog: EMPTY })}
         onSetSkillEnabled={async () => ({ ok: true, catalog: EMPTY })}
-        onInstallBundle={async () => ({ ok: true, catalog: EMPTY })}
-        onUninstallBundle={async () => ({ ok: true, catalog: EMPTY })}
         onAddConnector={async () => ({ ok: true, catalog: EMPTY })}
         onTrustConnector={async () => ({ ok: true, catalog: EMPTY })}
         onAuthorizeConnector={async () => ({ ok: true, catalog: EMPTY })}
@@ -261,7 +263,7 @@ describe('CatalogPage', () => {
     expect(screen.getByText('新建专家')).toBeTruthy();
   });
 
-  it('清除筛选恢复技能，搜索能找到精选且不会重复显示', () => {
+  it('清除筛选恢复技能，不再拆成「精选技能」与「推荐」两块重复显示', () => {
     renderPage({
       skills: [
         {
@@ -279,6 +281,7 @@ describe('CatalogPage', () => {
         },
       ],
     });
+    expect(screen.queryByRole('heading', { name: '精选技能' })).toBeNull();
     const search = screen.getByRole('searchbox', { name: '搜索技能' });
     fireEvent.change(search, { target: { value: '周报' } });
     expect(screen.getAllByRole('button', { name: '管理 · 报告整理' })).toHaveLength(1);
@@ -288,10 +291,15 @@ describe('CatalogPage', () => {
     expect(screen.getByRole('button', { name: '管理 · 报告整理' })).toBeTruthy();
   });
 
-  it('添加技能有三项入口，没有 SkillHub Tab', () => {
+  it('采用发现 / 我的已装双视图与技能 / 连接器 / 专家三类切换，不渲染套件和 SkillHub Tab', () => {
     renderPage();
-    expect(screen.getByRole('tab', { name: '推荐' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '套件' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '发现' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /我的已装/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '技能' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '连接器' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '专家' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'EvoWork 专家' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '套件' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'SkillHub' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '＋ 添加技能' }));
     expect(screen.getByRole('menuitem', { name: '从目录安装' })).toBeTruthy();
@@ -299,7 +307,7 @@ describe('CatalogPage', () => {
     expect(screen.getByRole('menuitem', { name: '让 EvoWork 帮我写一个' })).toBeTruthy();
   });
 
-  it('插件 Hub（13 §5.6）：caption 常驻说明为什么只有随包内容；来源筛选切到精选后，状态写在卡上', () => {
+  it('插件 Hub（13 §5.6）：未开启说明与刷新收在右上角弹层；切到「发现」展示精选条目与状态', () => {
     renderPage({
       hub: {
         status: HUB_STATUS,
@@ -341,15 +349,39 @@ describe('CatalogPage', () => {
         ],
       },
     });
-    expect(screen.getByText(HUB_STATUS.caption)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    // 未开启说明不直接飘在「我的已装」主区
+    expect(screen.queryByText(HUB_STATUS.caption)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /精选未开启/ }));
+    const popover = screen.getByRole('dialog', { name: '精选目录状态' });
+    expect(within(popover).getByText(HUB_STATUS.caption)).toBeTruthy();
+    fireEvent.click(within(popover).getByRole('button', { name: '刷新' }));
     expect(hubActions.refresh).toHaveBeenCalled();
-    fireEvent.click(screen.getByText('EvoWork 精选', { selector: 'button, button *' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: '发现' }));
     expect(screen.getByText('有更新，需重新确认')).toBeTruthy();
     expect(screen.getByText(/新增访问：collect\.example\.com/)).toBeTruthy();
     expect(screen.getByText(/发现诱导安装外部程序的指令/)).toBeTruthy();
-    expect(screen.getByText('按需带入')).toBeTruthy();
+    expect(screen.getByText(/按需带入/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新确认并更新' })).toBeTruthy();
+  });
+
+  it('未开启精选且目录为空时，「发现」展示清晰空态与操作入口', () => {
+    const openSettings = vi.fn();
+    renderPage(
+      {
+        hub: {
+          status: HUB_STATUS,
+          entries: [],
+        },
+      },
+      'skills',
+      { onOpenHubSettings: openSettings },
+    );
+    fireEvent.click(screen.getByRole('tab', { name: '发现' }));
+    expect(screen.getByText('尚未开启 EvoWork 精选')).toBeTruthy();
+    expect(screen.getByText(HUB_STATUS.caption)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '去设置开启' }));
+    expect(openSettings).toHaveBeenCalledOnce();
   });
 
   it('同名共享技能可分别打开和停用，显示路径且不提供卸载', async () => {
@@ -373,7 +405,7 @@ describe('CatalogPage', () => {
     }));
     const setEnabled = vi.fn(async () => ({ ok: true, catalog: { ...EMPTY, skills } }));
     renderPage({ skills }, 'skills', { onSetSkillEnabled: setEnabled });
-    expect(screen.getByRole('button', { name: /我已安装的 2/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /我的已装 3/ })).toBeTruthy();
     fireEvent.click(
       within(screen.getByText('共享副本2').closest('.ew-item-card')!).getByRole('button', {
         name: '管理 · 工作教练',
@@ -386,7 +418,7 @@ describe('CatalogPage', () => {
     await waitFor(() =>
       expect(setEnabled).toHaveBeenCalledWith({ path: paths[1], name: 'coach', enabled: false }),
     );
-    fireEvent.click(screen.getByRole('button', { name: '返回目录' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
     fireEvent.click(
       within(screen.getByText('共享副本1').closest('.ew-item-card')!).getByRole('button', {
         name: '管理 · 工作教练',
@@ -425,7 +457,6 @@ describe('CatalogPage', () => {
     const skills = [...copies, official];
     const setEnabled = vi.fn(async () => ({ ok: true, catalog: { ...EMPTY, skills } }));
     renderPage({ skills }, 'skills', { onSetSkillEnabled: setEnabled });
-    expect(screen.getByRole('button', { name: /我已安装的 2/ })).toBeTruthy();
     expect(document.querySelectorAll('.ew-item-card')).toHaveLength(2);
     fireEvent.click(screen.getAllByRole('button', { name: '管理 · pdf' })[0]!);
     expect(screen.getByText(/附带文件可能不同/)).toBeTruthy();
@@ -510,7 +541,7 @@ it('Hub 组件确认后显示准备状态，等待期间不重复安装，失败
     )
     .mockResolvedValue({ ok: true, catalog: data });
   renderPage(data, 'skills', { hubActions: { ...hubActions, install } });
-  fireEvent.click(screen.getByText('EvoWork 精选', { selector: 'button, button *' }));
+  fireEvent.click(screen.getByRole('tab', { name: '发现' }));
   fireEvent.click(screen.getByRole('button', { name: '安装' }));
   await screen.findByRole('dialog');
   expect(screen.getByText('需要安装办公组件（约 200 MB）')).toBeTruthy();

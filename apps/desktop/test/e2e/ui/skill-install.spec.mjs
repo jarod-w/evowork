@@ -12,43 +12,10 @@ import { expect, test } from './fixtures.mjs';
 const skillText = (name, body = '帮助整理工作。') =>
   `---\nname: ${name}\ndescription: 工作教练\n---\n${body}\n`;
 
-test('邮件摘要试用在窄窗口完成只读连接、生成和断开', async ({ page, electronApp }) => {
-  await page.getByRole('button', { name: '插件', exact: true }).click();
-  await electronApp.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].setSize(480, 760),
-  );
-  await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click();
-  await page.getByRole('button', { name: '开始试用', exact: true }).click();
-  const permissions = page.getByRole('dialog', { name: '邮件摘要 · 权限' });
-  await expect(permissions.getByText(/只读内置的 3 封/)).toBeVisible();
-  await permissions.getByRole('button', { name: '模拟连接' }).click();
-  const receipt = page.getByRole('dialog', { name: '示例邮箱已连接' });
-  await receipt.getByRole('button', { name: '在任务中试用' }).click();
-  await page.getByRole('button', { name: '生成摘要' }).click();
-  const result = page.getByRole('region', { name: '摘要结果' });
-  await expect(result.getByRole('listitem')).toHaveCount(5);
-  await expect(result).toBeInViewport({ ratio: 0.99 });
-  const panels = page.locator('.ew-mail-trial-panel');
-  const [inbox, summary] = await Promise.all([
-    panels.nth(0).boundingBox(),
-    panels.nth(1).boundingBox(),
-  ]);
-  expect(summary.x).toBe(inbox.x);
-  expect(summary.y).toBeGreaterThan(inbox.y);
-
-  await page.getByRole('button', { name: '查看权限', exact: true }).click();
-  await permissions.getByRole('button', { name: '断开连接' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认断开' }).click();
-  await expect(page.getByRole('button', { name: '生成摘要' })).toBeDisabled();
-  await expect(result).toHaveCount(0);
-  await page.getByRole('button', { name: '返回插件目录' }).click();
-  await expect(page.getByRole('searchbox', { name: '搜索技能' })).toBeVisible();
-});
-
 test('专家可选用、按状态筛选并在刷新后取消选用', async ({ page }) => {
   const openExperts = async () => {
     await page.getByRole('button', { name: '插件', exact: true }).click();
-    await page.getByRole('tab', { name: 'EvoWork 专家' }).click();
+    await page.getByRole('tab', { name: '专家', exact: true }).click();
   };
   await openExperts();
   await page.getByRole('button', { name: '＋ 新建专家', exact: true }).first().click();
@@ -62,7 +29,8 @@ test('专家可选用、按状态筛选并在刷新后取消选用', async ({ pa
   await expect(card.getByText('已选用', { exact: true })).toBeVisible();
   await page.reload();
   await openExperts();
-  await page.getByRole('button', { name: '已选用 1', exact: true }).click();
+  await page.getByRole('button', { name: '专家筛选', exact: true }).click();
+  await page.getByRole('menuitem', { name: '已选用 1', exact: true }).click();
   await card.getByRole('button', { name: '取消选用 · 产品审阅', exact: true }).click();
   await expect(page.getByText('还没有已选用的专家')).toBeVisible();
   await page.getByRole('button', { name: '浏览全部专家' }).click();
@@ -122,7 +90,9 @@ test.describe('显式共享目录', () => {
       over: true,
     });
     await expect(
-      page.getByRole('button', { name: `我已安装的 ${catalog.skills.length}` }),
+      page.getByRole('tab', {
+        name: `我的已装 ${catalog.skills.length + catalog.connectors.length + catalog.experts.length}`,
+      }),
     ).toBeVisible();
     const warning = page.getByText('已启用技能的目录预计超出预算，部分说明可能被缩短或省略');
     await expect(warning).toBeVisible();
@@ -149,7 +119,7 @@ test.describe('显式共享目录', () => {
       expect(
         current.skills.filter((skill) => skill.sourceLabel === '用户共享' && !skill.enabled),
       ).toHaveLength(index + 1);
-      await page.getByRole('button', { name: '返回目录' }).click();
+      await page.getByRole('button', { name: '返回列表' }).click();
     }
     // 假模型窗口为 32K，内置技能本身也可能超出 640 token。
     // 按真实窗口验证：保留 charts，停用其余内置项后才应消除告警。
@@ -238,8 +208,8 @@ test.describe('显式共享目录', () => {
         .locator('.ew-catalog-toolbar')
         .evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
-    const installedButton = await page.getByRole('button', { name: /我已安装的/ }).boundingBox();
-    expect(installedButton.x + installedButton.width).toBeLessThanOrEqual(480);
+    const installedTab = await page.getByRole('tab', { name: /我的已装/ }).boundingBox();
+    expect(installedTab.x + installedTab.width).toBeLessThanOrEqual(480);
     await page.screenshot({ path: testInfo.outputPath('shared-copies-detail-480.png') });
     await page.reload();
     await page.getByRole('button', { name: '插件', exact: true }).click();
