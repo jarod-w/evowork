@@ -1,9 +1,15 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startCommandApprovals } from './command-approvals.mjs';
 import { localPythonCommand } from './shell-commands.mjs';
 import { expect, test, startTaskInWorkspace } from './fixtures.mjs';
-import { goalTask, readGoal, reopenGoalTask, submitGoalCommand } from './goal-journey.mjs';
+import {
+  attachGoalEvidence,
+  goalTask,
+  readGoal,
+  reopenGoalTask,
+  submitGoalCommand,
+} from './goal-journey.mjs';
 
 test('goal 从真实输入启动、暂停、查看、恢复、完成与清除', async ({ page, electronApp }) => {
   await electronApp.evaluate(() => {
@@ -24,7 +30,7 @@ test('goal 从真实输入启动、暂停、查看、恢复、完成与清除', 
     .toBe(true);
   await submit('/goal pause');
   await expect(status).toContainText('已暂停');
-  await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
+  // 暂停必须主动结束在途回合，不能由夹具替产品放行模型。
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
   await submit('/goal');
   await expect(page.getByLabel('长任务目标')).toBeVisible();
@@ -68,7 +74,7 @@ test('未完成目标替换先确认：取消保留旧目标，确认重置预�
     .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
     .toBe(true);
   await submitGoalCommand(page, '/goal pause');
-  await electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.releaseScriptedTurn());
+  // 暂停必须主动结束在途回合，不能由夹具替产品放行模型。
   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
   const task = await goalTask(page);
   await submitGoalCommand(page, '/goal');
@@ -234,6 +240,105 @@ test('预算在工具执行中耗尽：中断回合、停止后台命令且刷�
     );
     expect(restored.turns.map((turn) => turn.id)).toEqual(turns);
     expect(restored.turns.some((turn) => turn.status === 'inProgress')).toBe(false);
+  } finally {
+    await stopApprovals();
+  }
+});
+
+test('目标面板暂停中断在途命令，重启保留暂停，恢复后检查点不重复（#25）', async ({
+  page,
+  electronApp,
+}, testInfo) => {
+  const command = localPythonCommand([
+    '-c',
+    'from pathlib import Path; import time; f=Path("goal-checkpoint.txt").open("ab"); f.write(bytes.fromhex("73617665642d6f6e63650a")); f.close(); time.sleep(8); Path("goal-resumed.txt").write_bytes(bytes.fromhex("726573756d65642d646f6e650a"))',
+  ]);
+  const resume = localPythonCommand([
+    '-c',
+    'from pathlib import Path; Path("goal-resumed.txt").write_bytes(bytes.fromhex("726573756d65642d646f6e650a"))',
+  ]);
+  await electronApp.evaluate(
+    (_, { command }) => {
+      const gateway = globalThis.__evoworkE2E.gateway;
+      gateway.scriptWhen(
+        'pause-checkpoint',
+        (r) => r.text.includes('GOAL-PAUSE-CONTROL') && r.tools.includes('exec_command'),
+        {
+          tool: 'exec_command',
+          args: { cmd: command, yield_time_ms: 1000 },
+        },
+      );
+      gateway.scriptWhen(
+        'pause-ignoring-model',
+        (r) =>
+          r.text.includes('GOAL-PAUSE-CONTROL') &&
+          !globalThis.__evoworkE2E.resumedPause &&
+          r.calls.includes('exec_command'),
+        { kind: 'hold' },
+      );
+    },
+    { command },
+  );
+  const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
+  const checkpoint = () =>
+    existsSync(join(workspace, 'goal-checkpoint.txt'))
+      ? readFileSync(join(workspace, 'goal-checkpoint.txt'), 'utf8')
+      : '';
+  const stopApprovals = startCommandApprovals(() => page);
+  try {
+    await startTaskInWorkspace(
+      page,
+      electronApp,
+      '/goal GOAL-PAUSE-CONTROL 保存检查点，暂停后不得执行后续阶段',
+    );
+    const task = await goalTask(page);
+    await expect.poll(checkpoint).toBe('saved-once\n');
+    expect(existsSync(join(workspace, 'goal-resumed.txt'))).toBe(false);
+    await submitGoalCommand(page, '/goal');
+    await page.getByLabel('长任务目标').getByRole('button', { name: '暂停', exact: true }).click();
+    await expect(page.getByLabel('持续目标')).toContainText('已暂停');
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+    const { history } = await attachGoalEvidence(page, testInfo, task);
+    expect(history.turns.some((turn) => turn.status === 'inProgress')).toBe(false);
+    expect(history.turns.some((turn) => turn.status === 'interrupted')).toBe(true);
+    await page.waitForTimeout(9000);
+    expect(existsSync(join(workspace, 'goal-resumed.txt'))).toBe(false);
+    await reopenGoalTask(page, task);
+    await electronApp.evaluate(() => globalThis.__evoworkE2E.killKernel());
+    await expect(page.locator('.ew-banner').filter({ hasText: '执行内核已重启' })).toBeVisible({
+      timeout: 60000,
+    });
+    await expect.poll(async () => (await readGoal(page, task.id))?.status).toBe('paused');
+    expect(checkpoint()).toBe('saved-once\n');
+    expect(existsSync(join(workspace, 'goal-resumed.txt'))).toBe(false);
+    const restarted = await page.evaluate(
+      (id) => window.evowork.openTask({ threadId: id }),
+      task.id,
+    );
+    expect(restarted.turns.map((turn) => turn.id)).toEqual(history.turns.map((turn) => turn.id));
+    await electronApp.evaluate(
+      (_, { resume }) => {
+        globalThis.__evoworkE2E.resumedPause = true;
+        const gateway = globalThis.__evoworkE2E.gateway;
+        gateway.scriptWhen(
+          'pause-resume-file',
+          (r) => r.text.includes('GOAL-PAUSE-CONTROL') && r.tools.includes('exec_command'),
+          { tool: 'exec_command', args: { cmd: resume } },
+        );
+        gateway.scriptWhen(
+          'pause-resume-complete',
+          (r) => r.text.includes('GOAL-PAUSE-CONTROL') && r.tools.includes('update_goal'),
+          { tool: 'update_goal', args: { status: 'complete' } },
+        );
+      },
+      { resume },
+    );
+    await submitGoalCommand(page, '/goal resume');
+    await expect(page.getByLabel('持续目标')).toContainText('已完成');
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+    expect(checkpoint()).toBe('saved-once\n');
+    expect(readFileSync(join(workspace, 'goal-resumed.txt'), 'utf8')).toBe('resumed-done\n');
+    await attachGoalEvidence(page, testInfo, task);
   } finally {
     await stopApprovals();
   }

@@ -1,0 +1,106 @@
+{
+  "model": {
+    "name": "mimo-v2.6-flash",
+    "id": "xiaomi/mimo-v2.6-flash",
+    "displayName": "MiMo v2.6 Flash",
+    "provider": "private",
+    "upstreamModel": "mimo-v2.6-flash",
+    "baseUrl": "https://api.xiaomimimo.com/v1",
+    "probeUrl": "https://api.xiaomimimo.com/v1/models",
+    "capabilities": {
+      "streaming": true,
+      "toolCalls": true,
+      "parallelToolCalls": true,
+      "reasoning": true,
+      "promptCache": true,
+      "imageInput": true,
+      "maxContextTokens": 128000
+    }
+  },
+  "task": {
+    "id": "01a1f875-6d81-7f10-9162-99fd6bc26bfe",
+    "title": "分两阶段交付。首次回合只调用终端工具执行现成脚本…",
+    "status": "idle",
+    "timeLabel": "刚刚",
+    "updatedAt": 1795169807000,
+    "sectionId": "ungrouped",
+    "parentThreadId": null,
+    "hasArtifacts": false,
+    "source": "manual",
+    "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-APQY4A/workspace",
+    "modelId": "xiaomi/mimo-v2.6-flash",
+    "modeId": "request-approval",
+    "projectId": "p-657ffffd-708f-4707-b1f2-8965cac4ab97"
+  },
+  "goal": {
+    "threadId": "01a1f875-6d81-7f10-9162-99fd6bc26bfe",
+    "objective": "分两阶段交付。首次回合只调用终端工具执行现成脚本，cmd 字段严格为：\n'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' 'goal-phase-one.py'\n脚本已由测试准备好，会写检查点并等待20秒，不要重写或转义脚本，也不要并行执行其它命令。命令返回后只回复“检查点已保存”，结束回合，不调用 update_goal、不执行第二阶段。我会在等待期间暂停目标。系统恢复并开启下一回合后先读取 goal-checkpoint.txt，已有检查点不能重复写入；创建 goal-resumed.txt，UTF-8 无 BOM，内容严格为 resumed-done 加一个 LF 换行，读取核验，最后调用 update_goal complete。不要联网、派生子任务或修改其它文件。",
+    "status": "paused",
+    "tokenBudget": null,
+    "tokensUsed": 14788,
+    "timeUsedSeconds": 6,
+    "createdAt": 1795169807,
+    "updatedAt": 1795169814
+  },
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a1f875-6e41-72e3-a850-79b050d50449",
+        "clientId": "c5a3c959-b2b9-416c-ac2c-375599742774",
+        "content": [
+          {
+            "type": "text",
+            "text": "分两阶段交付。首次回合只调用终端工具执行现成脚本，cmd 字段严格为：\n'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' 'goal-phase-one.py'\n脚本已由测试准备好，会写检查点并等待20秒，不要重写或转义脚本，也不要并行执行其它命令。命令返回后只回复“检查点已保存”，结束回合，不调用 update_goal、不执行第二阶段。我会在等待期间暂停目标。系统恢复并开启下一回合后先读取 goal-checkpoint.txt，已有检查点不能重复写入；创建 goal-resumed.txt，UTF-8 无 BOM，内容严格为 resumed-done 加一个 LF 换行，读取核验，最后调用 update_goal complete。不要联网、派生子任务或修改其它文件。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a1f875-6e30-74b3-ab67-99bbe70ee799",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mwotr4uesm8fd9_0",
+        "summary": [
+          "We need follow exact. First turn only terminal tool command exact cmd. Need commentary preamble? User says first turn only call terminal tool, no parallel. Preamble would violate only terminal? We should tool call only. Must cmd exactly quoted. Use exec_command, cmd exact. yield 30000 due20 sec."
+        ],
+        "content": [],
+        "_turnId": "01a1f875-6e30-74b3-ab67-99bbe70ee799",
+        "completed": true
+      },
+      {
+        "type": "commandExecution",
+        "id": "call_d901ed4f58da496aa7776650",
+        "pluginId": null,
+        "scriptPath": null,
+        "command": "/opt/homebrew/bin/bash -lc \"'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' 'goal-phase-one.py'\"",
+        "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-APQY4A/workspace",
+        "processId": "93961",
+        "source": "unifiedExecStartup",
+        "status": "failed",
+        "commandActions": [
+          {
+            "type": "unknown",
+            "command": "'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' 'goal-phase-one.py'"
+          }
+        ],
+        "aggregatedOutput": null,
+        "exitCode": -1,
+        "durationMs": 776,
+        "_turnId": "01a1f875-6e30-74b3-ab67-99bbe70ee799",
+        "output": "",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a1f875-6e30-74b3-ab67-99bbe70ee799",
+        "status": "interrupted",
+        "startedAtMs": 1795169807000,
+        "completedAtMs": 1795169814000,
+        "durationMs": 6863
+      }
+    ],
+    "latestTurnId": "01a1f875-6e30-74b3-ab67-99bbe70ee799"
+  }
+}

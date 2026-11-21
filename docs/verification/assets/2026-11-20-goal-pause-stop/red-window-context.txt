@@ -1,0 +1,172 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: goal.spec.mjs >> goal 从真实输入启动、暂停、查看、恢复、完成与清除
+- Location: apps/desktop/test/e2e/ui/goal.spec.mjs:8:1
+
+# Error details
+
+```
+Error: expect(locator).toHaveAttribute(expected) failed
+
+Locator:  getByLabel('输入区')
+Expected: "idle"
+Received: "running"
+Timeout:  20000ms
+
+Call log:
+  - Expect "toHaveAttribute" getByLabel('输入区') with timeout 20000ms
+  - waiting for getByLabel('输入区')
+    43 × locator resolved to <section aria-label="输入区" aria-busy="false" class="ew-composer" data-run-state="running">…</section>
+       - unexpected value "running"
+
+```
+
+```yaml
+- region "输入区":
+  - combobox "需求输入"
+  - button "添加内容"
+  - button "审批档": 请求批准
+  - button "选择项目": 不使用项目
+  - button "选择模型": private/e2e-model
+  - button "停止"
+```
+
+# Test source
+
+```ts
+  1   | import { existsSync } from 'node:fs';
+  2   | import { join } from 'node:path';
+  3   | import { startCommandApprovals } from './command-approvals.mjs';
+  4   | import { localPythonCommand } from './shell-commands.mjs';
+  5   | import { expect, test, startTaskInWorkspace } from './fixtures.mjs';
+  6   | import { goalTask, readGoal, reopenGoalTask, submitGoalCommand } from './goal-journey.mjs';
+  7   |
+  8   | test('goal 从真实输入启动、暂停、查看、恢复、完成与清除', async ({ page, electronApp }) => {
+  9   |   await electronApp.evaluate(() => {
+  10  |     const gateway = globalThis.__evoworkE2E.gateway;
+  11  |     gateway.scriptWhen('goal-first', (r) => r.text.includes('GOAL-UI-LIFECYCLE'), { kind: 'hold' });
+  12  |   });
+  13  |   const input = page.getByLabel('需求输入');
+  14  |   const submit = async (text) => {
+  15  |     await input.fill(text);
+  16  |     await page.getByRole('button', { name: '发送', exact: true }).click();
+  17  |     await expect(input).toHaveValue('');
+  18  |   };
+  19  |   await submit('/goal GOAL-UI-LIFECYCLE 完成并验证报告');
+  20  |   const status = page.getByLabel('持续目标');
+  21  |   await expect(status).toContainText('持续推进中');
+  22  |   await expect
+  23  |     .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
+  24  |     .toBe(true);
+  25  |   await submit('/goal pause');
+  26  |   await expect(status).toContainText('已暂停');
+  27  |   // 暂停必须主动结束在途回合，不能由夹具替产品放行模型。
+> 28  |   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+      |                                        ^ Error: expect(locator).toHaveAttribute(expected) failed
+  29  |   await submit('/goal');
+  30  |   await expect(page.getByLabel('长任务目标')).toBeVisible();
+  31  |   await electronApp.evaluate(() => {
+  32  |     const gateway = globalThis.__evoworkE2E.gateway;
+  33  |     gateway.scriptWhen(
+  34  |       'goal-complete',
+  35  |       (r) => r.text.includes('GOAL-UI-LIFECYCLE') && r.tools.includes('update_goal'),
+  36  |       { tool: 'update_goal', args: { status: 'complete' } },
+  37  |     );
+  38  |   });
+  39  |   await submit('/goal resume');
+  40  |   await expect(status).toContainText('已完成');
+  41  |   await submit('/goal clear');
+  42  |   await expect(status).toHaveCount(0);
+  43  | });
+  44  |
+  45  | test('未创建目标时，查看与控制给出提示且不创建任务', async ({ page }) => {
+  46  |   await submitGoalCommand(page, '/goal');
+  47  |   await expect(page.getByRole('status').filter({ hasText: '还没有目标' })).toBeVisible();
+  48  |   for (const command of ['/goal pause', '/goal resume', '/goal clear']) {
+  49  |     await submitGoalCommand(page, command);
+  50  |   }
+  51  |   expect((await page.evaluate(() => window.evowork.getStartup())).tasks).toHaveLength(0);
+  52  |   await expect(page.getByLabel('持续目标')).toHaveCount(0);
+  53  | });
+  54  |
+  55  | test('未完成目标替换先确认：取消保留旧目标，确认重置预算并执行新目标', async ({
+  56  |   page,
+  57  |   electronApp,
+  58  | }) => {
+  59  |   await electronApp.evaluate(() => {
+  60  |     globalThis.__evoworkE2E.gateway.scriptWhen(
+  61  |       'original',
+  62  |       (view) => view.text.includes('GOAL-ORIGINAL'),
+  63  |       { kind: 'hold' },
+  64  |     );
+  65  |   });
+  66  |   await submitGoalCommand(page, '/goal GOAL-ORIGINAL 原目标');
+  67  |   await expect
+  68  |     .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
+  69  |     .toBe(true);
+  70  |   await submitGoalCommand(page, '/goal pause');
+  71  |   // 暂停必须主动结束在途回合，不能由夹具替产品放行模型。
+  72  |   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+  73  |   const task = await goalTask(page);
+  74  |   await submitGoalCommand(page, '/goal');
+  75  |   const panel = page.getByLabel('长任务目标');
+  76  |   await panel.getByLabel('Token 预算', { exact: true }).fill('100000');
+  77  |   await panel.getByRole('button', { name: '保存', exact: true }).click();
+  78  |   await expect.poll(async () => (await readGoal(page, task.id))?.tokenBudget).toBe(100000);
+  79  |   const original = await readGoal(page, task.id);
+  80  |   const input = page.getByLabel('需求输入');
+  81  |   await input.fill('/goal GOAL-REPLACEMENT 新目标');
+  82  |   await page.getByRole('button', { name: '发送', exact: true }).click();
+  83  |   const dialog = page.getByRole('dialog', { name: '替换当前目标？' });
+  84  |   await expect(dialog).toBeVisible();
+  85  |   await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  86  |   expect(await readGoal(page, task.id)).toEqual(original);
+  87  |   await expect(input).toHaveValue('/goal GOAL-REPLACEMENT 新目标');
+  88  |   await electronApp.evaluate(() => {
+  89  |     globalThis.__evoworkE2E.gateway.scriptWhen(
+  90  |       'replacement',
+  91  |       (view) => view.text.includes('GOAL-REPLACEMENT') && view.tools.includes('update_goal'),
+  92  |       { tool: 'update_goal', args: { status: 'complete' } },
+  93  |     );
+  94  |   });
+  95  |   await page.getByRole('button', { name: '发送', exact: true }).click();
+  96  |   await dialog.getByRole('button', { name: '替换并开始', exact: true }).click();
+  97  |   await expect(input).toHaveValue('');
+  98  |   await expect(page.getByLabel('持续目标')).toContainText('已完成');
+  99  |   const replaced = await readGoal(page, task.id);
+  100 |   expect(replaced.objective).toBe('GOAL-REPLACEMENT 新目标');
+  101 |   expect(replaced.tokenBudget).toBeNull();
+  102 |   const history = await page.evaluate((id) => window.evowork.openTask({ threadId: id }), task.id);
+  103 |   expect(history.items.filter((item) => item.type === 'userMessage')).toHaveLength(2);
+  104 | });
+  105 |
+  106 | test('预算编辑拒绝非正数，耗尽后不续跑，刷新后追加预算恢复并清除', async ({
+  107 |   page,
+  108 |   electronApp,
+  109 | }) => {
+  110 |   await electronApp.evaluate(() =>
+  111 |     globalThis.__evoworkE2E.gateway.scriptWhen(
+  112 |       'budget',
+  113 |       (view) => view.text.includes('GOAL-UI-BUDGET'),
+  114 |       { kind: 'hold' },
+  115 |     ),
+  116 |   );
+  117 |   await submitGoalCommand(page, '/goal GOAL-UI-BUDGET 等待预算停止');
+  118 |   await expect
+  119 |     .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.gateway.scriptedTurnHeld()))
+  120 |     .toBe(true);
+  121 |   const task = await goalTask(page);
+  122 |   await submitGoalCommand(page, '/goal');
+  123 |   const panel = page.getByLabel('长任务目标');
+  124 |   const budget = panel.getByLabel('Token 预算', { exact: true });
+  125 |   const save = panel.getByRole('button', { name: '保存', exact: true });
+  126 |   for (const value of ['0', '-1', '1.5']) {
+  127 |     await budget.fill(value);
+  128 |     await expect(save).toBeDisabled();
+```

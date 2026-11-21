@@ -1,0 +1,106 @@
+{
+  "model": {
+    "name": "mimo-v2.6-flash",
+    "id": "xiaomi/mimo-v2.6-flash",
+    "displayName": "MiMo v2.6 Flash",
+    "provider": "private",
+    "upstreamModel": "mimo-v2.6-flash",
+    "baseUrl": "https://api.xiaomimimo.com/v1",
+    "probeUrl": "https://api.xiaomimimo.com/v1/models",
+    "capabilities": {
+      "streaming": true,
+      "toolCalls": true,
+      "parallelToolCalls": true,
+      "reasoning": true,
+      "promptCache": true,
+      "imageInput": true,
+      "maxContextTokens": 128000
+    }
+  },
+  "task": {
+    "id": "01a1f876-1826-72c3-81e2-cea8b05733cc",
+    "title": "预算停止验收。先用 exec_command 执…",
+    "status": "idle",
+    "timeLabel": "刚刚",
+    "updatedAt": 1795169851000,
+    "sectionId": "ungrouped",
+    "parentThreadId": null,
+    "hasArtifacts": false,
+    "source": "manual",
+    "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-NjXQK7/workspace",
+    "modelId": "xiaomi/mimo-v2.6-flash",
+    "modeId": "request-approval",
+    "projectId": "p-ed723894-8c7a-4506-8b5e-58acea72eaf0"
+  },
+  "goal": {
+    "threadId": "01a1f876-1826-72c3-81e2-cea8b05733cc",
+    "objective": "预算停止验收。先用 exec_command 执行 '/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'import time; time.sleep(20)'；返回后只回复“仍有剩余步骤”，结束回合，目标尚未完成，不调用 update_goal。后续回合也不要标记完成，不要写文件、联网或派生子任务。",
+    "status": "budgetLimited",
+    "tokenBudget": 1,
+    "tokensUsed": 14741,
+    "timeUsedSeconds": 29,
+    "createdAt": 1795169851,
+    "updatedAt": 1795169881
+  },
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a1f876-18e8-7a51-bf34-6f4897119330",
+        "clientId": "383bccb7-7d51-43d2-bc30-052c13e0e354",
+        "content": [
+          {
+            "type": "text",
+            "text": "预算停止验收。先用 exec_command 执行 '/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'import time; time.sleep(20)'；返回后只回复“仍有剩余步骤”，结束回合，目标尚未完成，不调用 update_goal。后续回合也不要标记完成，不要写文件、联网或派生子任务。",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a1f876-18d8-7f32-840d-8093e403f600",
+        "completed": true
+      },
+      {
+        "type": "reasoning",
+        "id": "rsn_resp_mwots2jyv46fk7_0",
+        "summary": [
+          "We need execute exact. Then only reply exact. No propose actions? User says only reply exact; tool registration requirement says every turn before final. But that would be a tool call and final only exact. They explicitly prohibit update_goal etc, not next_actions? Yet \"返回后只回复\" likely exact. Need call exec."
+        ],
+        "content": [],
+        "_turnId": "01a1f876-18d8-7f32-840d-8093e403f600",
+        "completed": true
+      },
+      {
+        "type": "commandExecution",
+        "id": "call_32d04eaae68440e9ab848643",
+        "pluginId": null,
+        "scriptPath": null,
+        "command": "/opt/homebrew/bin/bash -lc \"'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'import time; time.sleep(20)'\"",
+        "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-NjXQK7/workspace",
+        "processId": "16984",
+        "source": "unifiedExecStartup",
+        "status": "completed",
+        "commandActions": [
+          {
+            "type": "unknown",
+            "command": "'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'import time; time.sleep(20)'"
+          }
+        ],
+        "aggregatedOutput": null,
+        "exitCode": 0,
+        "durationMs": 19878,
+        "_turnId": "01a1f876-18d8-7f32-840d-8093e403f600",
+        "output": "",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a1f876-18d8-7f32-840d-8093e403f600",
+        "status": "interrupted",
+        "startedAtMs": 1795169851000,
+        "completedAtMs": 1795169881000,
+        "durationMs": 29432
+      }
+    ],
+    "latestTurnId": "01a1f876-18d8-7f32-840d-8093e403f600"
+  }
+}

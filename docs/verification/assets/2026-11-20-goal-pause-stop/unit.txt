@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 /Users/jarod.ai/develop/evowork/evowork
+
+ ✓ |kernel-adapter| test/adapter.test.ts (144 tests) 572ms
+ ✓ |desktop| test/renderer-bridge.test.ts (160 tests) 175ms
+
+ Test Files  2 passed (2)
+      Tests  304 passed (304)
+   Start at  18:14:04
+   Duration  931ms (transform 489ms, setup 30ms, collect 668ms, tests 747ms, environment 133ms, prepare 47ms)

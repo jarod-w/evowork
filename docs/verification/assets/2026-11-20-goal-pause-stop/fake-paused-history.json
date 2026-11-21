@@ -1,0 +1,78 @@
+{
+  "task": {
+    "id": "01a1f875-3b2f-7d13-831e-b6d904570424",
+    "title": "GOAL-PAUSE-CONTROL 保存检查点…",
+    "status": "idle",
+    "timeLabel": "刚刚",
+    "updatedAt": 1795169794000,
+    "sectionId": "ungrouped",
+    "parentThreadId": null,
+    "hasArtifacts": false,
+    "source": "manual",
+    "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-bjVUKM/workspace",
+    "modelId": "e2e-model",
+    "modeId": "request-approval",
+    "projectId": "p-644b7588-a5ea-4dba-8b39-b460b24e7638"
+  },
+  "goal": {
+    "threadId": "01a1f875-3b2f-7d13-831e-b6d904570424",
+    "objective": "GOAL-PAUSE-CONTROL 保存检查点，暂停后不得执行后续阶段",
+    "status": "paused",
+    "tokenBudget": null,
+    "tokensUsed": 0,
+    "timeUsedSeconds": 0,
+    "createdAt": 1795169795,
+    "updatedAt": 1795169795
+  },
+  "history": {
+    "items": [
+      {
+        "type": "userMessage",
+        "id": "01a1f875-3bf1-7a00-a3da-3f903044d986",
+        "clientId": "6dcdf435-7e87-450e-88d6-ab7316566c4c",
+        "content": [
+          {
+            "type": "text",
+            "text": "GOAL-PAUSE-CONTROL 保存检查点，暂停后不得执行后续阶段",
+            "text_elements": []
+          }
+        ],
+        "_turnId": "01a1f875-3be1-78a3-b04c-b4c66cba4eb4",
+        "completed": true
+      },
+      {
+        "type": "commandExecution",
+        "id": "call_1",
+        "pluginId": null,
+        "scriptPath": null,
+        "command": "/opt/homebrew/bin/bash -lc \"'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'from pathlib import Path; import time; f=Path(\\\"goal-checkpoint.txt\\\").open(\\\"ab\\\"); f.write(bytes.fromhex(\\\"73617665642d6f6e63650a\\\")); f.close(); time.sleep(8); Path(\\\"goal-resumed.txt\\\").write_bytes(bytes.fromhex(\\\"726573756d65642d646f6e650a\\\"))'\"",
+        "cwd": "/private/var/folders/8s/0jmhf_j15wv1vgf18sdgsg9r0000gn/T/evowork-ui-bjVUKM/workspace",
+        "processId": "23443",
+        "source": "unifiedExecStartup",
+        "status": "failed",
+        "commandActions": [
+          {
+            "type": "unknown",
+            "command": "'/Users/jarod.ai/develop/evowork/evowork/build/office/mac-arm64/runtime/bin/python3' '-c' 'from pathlib import Path; import time; f=Path(\"goal-checkpoint.txt\").open(\"ab\"); f.write(bytes.fromhex(\"73617665642d6f6e63650a\")); f.close(); time.sleep(8); Path(\"goal-resumed.txt\").write_bytes(bytes.fromhex(\"726573756d65642d646f6e650a\"))'"
+          }
+        ],
+        "aggregatedOutput": null,
+        "exitCode": -1,
+        "durationMs": 144,
+        "_turnId": "01a1f875-3be1-78a3-b04c-b4c66cba4eb4",
+        "output": "",
+        "completed": true
+      }
+    ],
+    "turns": [
+      {
+        "id": "01a1f875-3be1-78a3-b04c-b4c66cba4eb4",
+        "status": "interrupted",
+        "startedAtMs": 1795169795000,
+        "completedAtMs": 1795169795000,
+        "durationMs": 369
+      }
+    ],
+    "latestTurnId": "01a1f875-3be1-78a3-b04c-b4c66cba4eb4"
+  }
+}

@@ -1,5 +1,5 @@
 /** 真模型、宿主网关、发货内核与真窗口；文件内容及权威目标为验收依据。 */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, startTaskInWorkspace } from './fixtures.mjs';
 import { test } from './command-approvals.mjs';
@@ -60,31 +60,40 @@ test('真模型 goal：运行时暂停，刷新与内核重启保留，恢复后
   electronApp,
 }, testInfo) => {
   const workspace = await electronApp.evaluate(() => globalThis.__evoworkE2E.workspace);
-  const checkpoint = localPythonCommand([
-    '-c',
+  // 把合成程序写入临时项目，模型只传脚本路径，避免多层引号/换行被转写。
+  writeFileSync(
+    join(workspace, 'goal-phase-one.py'),
     [
-      'from pathlib import Path; import time',
-      "with Path('goal-checkpoint.txt').open('a', encoding='utf-8', newline='\\n') as f: f.write('saved-once\\n')",
+      'from pathlib import Path',
+      'import time',
+      'with Path("goal-checkpoint.txt").open("ab") as f:',
+      '    f.write(bytes.fromhex("73617665642d6f6e63650a"))',
       'time.sleep(20)',
+      '',
     ].join('\n'),
-  ]);
+  );
+  const checkpoint = localPythonCommand(['goal-phase-one.py']);
   await startTaskInWorkspace(
     page,
     electronApp,
-    `/goal 分两阶段交付。首次回合用 exec_command 执行单条命令：\n${checkpoint}\n命令返回后只回复“检查点已保存”，结束回合，不调用 update_goal、不执行第二阶段。我会在等待期间暂停目标。系统恢复并开启下一回合后先读取 goal-checkpoint.txt，已有检查点不能重复写入；创建 goal-resumed.txt，UTF-8 无 BOM，内容严格为 resumed-done 加一个 LF 换行，读取核验，最后调用 update_goal complete。不要联网、派生子任务或修改其它文件。`,
+    `/goal 分两阶段交付。首次回合只调用终端工具执行现成脚本，cmd 字段严格为：\n${checkpoint}\n脚本已由测试准备好，会写检查点并等待20秒，不要重写或转义脚本，也不要并行执行其它命令。命令返回后只回复“检查点已保存”，结束回合，不调用 update_goal、不执行第二阶段。我会在等待期间暂停目标。系统恢复并开启下一回合后先读取 goal-checkpoint.txt，已有检查点不能重复写入；创建 goal-resumed.txt，UTF-8 无 BOM，内容严格为 resumed-done 加一个 LF 换行，读取核验，最后调用 update_goal complete。不要联网、派生子任务或修改其它文件。`,
   );
   const task = await goalTask(page);
   try {
     await expect
       .poll(() => contents(join(workspace, 'goal-checkpoint.txt')), { timeout: 120_000 })
       .toBe('saved-once\n');
+    expect(existsSync(join(workspace, 'goal-resumed.txt'))).toBe(false);
+    await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'running');
     await submitGoalCommand(page, '/goal pause');
     await expect(page.getByLabel('持续目标')).toContainText('已暂停');
     await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle', {
       timeout: 120_000,
     });
     expect(existsSync(join(workspace, 'goal-resumed.txt'))).toBe(false);
-    const before = await readGoal(page, task.id);
+    const { goal: before, history: pausedHistory } = await attachGoalEvidence(page, testInfo, task);
+    expect(pausedHistory.turns.some((turn) => turn.status === 'inProgress')).toBe(false);
+    expect(pausedHistory.turns.some((turn) => turn.status === 'interrupted')).toBe(true);
     await reopenGoalTask(page, task);
     await expect(page.getByLabel('持续目标')).toContainText('已暂停');
     await electronApp.evaluate(() => globalThis.__evoworkE2E.killKernel());
@@ -94,6 +103,14 @@ test('真模型 goal：运行时暂停，刷新与内核重启保留，恢复后
     await expect.poll(async () => (await readGoal(page, task.id))?.status).toBe('paused');
     expect((await readGoal(page, task.id)).objective).toBe(before.objective);
     expect(existsSync(join(workspace, 'goal-resumed.txt'))).toBe(false);
+    expect(contents(join(workspace, 'goal-checkpoint.txt'))).toBe('saved-once\n');
+    const restarted = await page.evaluate(
+      (id) => window.evowork.openTask({ threadId: id }),
+      task.id,
+    );
+    expect(restarted.turns.map((turn) => turn.id)).toEqual(
+      pausedHistory.turns.map((turn) => turn.id),
+    );
     await submitGoalCommand(page, '/goal resume');
     await expect(page.getByLabel('持续目标')).toContainText('已完成', { timeout: 150_000 });
     await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');

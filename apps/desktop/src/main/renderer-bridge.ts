@@ -2696,6 +2696,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.tokenBudget !== undefined ? { tokenBudget: input.tokenBudget } : {}),
       };
+      if (input.status === 'paused') return adapter.pauseGoal(threadId, changes);
       return adapter.setGoal(threadId, changes);
     },
 

@@ -1,0 +1,37 @@
+
+Running 1 test using 1 worker
+
+(node:81700) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:8:1 › goal 从真实输入启动、暂停、查看、恢复、完成与清除 (21.1s)
+
+
+  1) [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:8:1 › goal 从真实输入启动、暂停、查看、恢复、完成与清除 ─────────────
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  getByLabel('输入区')
+    Expected: "idle"
+    Received: "running"
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toHaveAttribute" getByLabel('输入区') with timeout 20000ms
+      - waiting for getByLabel('输入区')
+        43 × locator resolved to <section aria-label="输入区" aria-busy="false" class="ew-composer" data-run-state="running">…</section>
+           - unexpected value "running"
+
+
+      26 |   await expect(status).toContainText('已暂停');
+      27 |   // 暂停必须主动结束在途回合，不能由夹具替产品放行模型。
+    > 28 |   await expect(page.getByLabel('输入区')).toHaveAttribute('data-run-state', 'idle');
+         |                                        ^
+      29 |   await submit('/goal');
+      30 |   await expect(page.getByLabel('长任务目标')).toBeVisible();
+      31 |   await electronApp.evaluate(() => {
+        at /Users/jarod.ai/develop/evowork/evowork/apps/desktop/test/e2e/ui/goal.spec.mjs:28:40
+
+    Error Context: ../../../../../private/tmp/evowork-issue25-red-results/goal-goal-从真实输入启动、暂停、查看、恢复、完成与清除-fake/error-context.md
+
+  1 failed
+    [fake] › apps/desktop/test/e2e/ui/goal.spec.mjs:8:1 › goal 从真实输入启动、暂停、查看、恢复、完成与清除 ──────────────

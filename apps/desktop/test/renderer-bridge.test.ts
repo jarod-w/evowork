@@ -885,6 +885,19 @@ describe('Composer 技能上下文', () => {
     expect(adapter.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('用户暂停入口调用完整停止动作，内部目标准备仍走 setGoal', async () => {
+    const adapter = fakeAdapter({
+      pauseGoal: vi.fn(async () => ({ status: 'paused' })) as unknown as Adapter['pauseGoal'],
+      setGoal: vi.fn(),
+    });
+    const actions = makeActions({ adapter, store: fakeStore(() => row()) });
+    await expect(actions.setTaskGoal({ threadId: 't1', status: 'paused' })).resolves.toMatchObject({
+      status: 'paused',
+    });
+    expect(adapter.pauseGoal).toHaveBeenCalledWith('t1', { status: 'paused' });
+    expect(adapter.setGoal).not.toHaveBeenCalled();
+  });
+
   it('确认替换重置目标及预算，先暂停目标再发送最后恢复', async () => {
     const calls: string[] = [];
     const adapter = fakeAdapter({

@@ -313,7 +313,7 @@ export function createAdapter(options: AdapterOptions) {
     interactive = false,
     timeoutMs?: number,
   ): Promise<TurnStartResponse> {
-    await budgetStopTasks.get(threadId);
+    await goalStopTasks.get(threadId);
     if (session.phase !== 'ready')
       throw new TransportClosedError('执行内核尚未恢复，请稍后继续任务');
     try {
@@ -478,9 +478,10 @@ export function createAdapter(options: AdapterOptions) {
     return row.last_turn_id ?? undefined;
   }
 
+  const pausedGoals = new Set<string>();
   const budgetLimitedThreads = new Set<string>();
   const budgetStops = new Map<string, string>();
-  const budgetStopTasks = new Map<string, Promise<void>>();
+  const goalStopTasks = new Map<string, Promise<void>>();
 
   // 内核的预算提示依赖模型主动收尾（KeepActive），不能代替宿主的停止闸门。
   // 只使用权威目标状态，不按累计 token 猜测，也不伪造 turn/completed。
@@ -490,33 +491,49 @@ export function createAdapter(options: AdapterOptions) {
     const stopKey = turnId ?? '';
     if (budgetStops.get(threadId) === stopKey) return;
     budgetStops.set(threadId, stopKey);
+    const pending = stopGoalExecution(threadId);
+    void pending.catch((error: unknown) => {
+      if (budgetStops.get(threadId) === stopKey) budgetStops.delete(threadId);
+      logger?.warn('adapter.goal.stop_failed', {
+        threadId,
+        ...(turnId ? { turnId } : {}),
+        ...errorFields(error),
+      });
+      options.onUiEvent?.({
+        type: 'kernel-warning',
+        text: '目标预算已耗尽，但停止执行未确认，请检查任务并点击停止。',
+      });
+    });
+  }
+
+  /** 用户暂停和预算停止共用串行清理；beforeStop 先持久化暂停，禁止内核续跑。 */
+  function stopGoalExecution(
+    threadId: string,
+    beforeStop?: () => Promise<void>,
+    afterStop?: () => Promise<void>,
+  ): Promise<void> {
+    pausedQueues.add(threadId);
     const generation = session.generation;
-    const previousStop = budgetStopTasks.get(threadId);
+    const previousStop = goalStopTasks.get(threadId);
     const pending = (async () => {
-      // 预算通知与下一回合启动可能相邻；旧清理也必须包含在恢复等待中。
       await previousStop?.catch(() => undefined);
-      if (session.generation !== generation) return;
+      if (session.generation !== generation)
+        throw new TransportClosedError('执行内核已重启，停止执行未确认。');
+      await beforeStop?.();
+      const turnId = activeTurnId(threadId);
       if (turnId) await interruptTask(threadId, turnId);
       else await protectStoppedQueue(threadId);
-      if (session.generation === generation) await terminateTaskCommands(threadId);
+      if (session.generation !== generation)
+        throw new TransportClosedError('执行内核已重启，停止执行未确认。');
+      await terminateTaskCommands(threadId);
+      await afterStop?.();
     })();
-    budgetStopTasks.set(threadId, pending);
-    void pending
-      .catch((error: unknown) => {
-        if (budgetStops.get(threadId) === stopKey) budgetStops.delete(threadId);
-        logger?.warn('adapter.goal.stop_failed', {
-          threadId,
-          ...(turnId ? { turnId } : {}),
-          ...errorFields(error),
-        });
-        options.onUiEvent?.({
-          type: 'kernel-warning',
-          text: '目标预算已耗尽，但停止执行未确认，请检查任务并点击停止。',
-        });
-      })
-      .finally(() => {
-        if (budgetStopTasks.get(threadId) === pending) budgetStopTasks.delete(threadId);
-      });
+    goalStopTasks.set(threadId, pending);
+    const clear = () => {
+      if (goalStopTasks.get(threadId) === pending) goalStopTasks.delete(threadId);
+    };
+    void pending.then(clear, clear);
+    return pending;
   }
 
   const events = createEventRouter({
@@ -535,6 +552,7 @@ export function createAdapter(options: AdapterOptions) {
         session.openThreads.delete(event.threadId);
         localQueues.delete(event.threadId);
         activeTurns.delete(event.threadId);
+        pausedGoals.delete(event.threadId);
         budgetLimitedThreads.delete(event.threadId);
         budgetStops.delete(event.threadId);
         desktopTurns.delete(event.threadId);
@@ -546,6 +564,18 @@ export function createAdapter(options: AdapterOptions) {
         if (!ephemeralThreadIds.has(event.threadId)) session.openThreads.add(event.threadId);
         activeTurns.set(event.threadId, event.turnId);
         if (budgetLimitedThreads.has(event.threadId)) stopBudgetLimitedTurn(event.threadId);
+        else if (pausedGoals.has(event.threadId)) {
+          void stopGoalExecution(event.threadId).catch((error: unknown) => {
+            logger?.warn('adapter.goal.pause_failed', {
+              threadId: event.threadId,
+              ...errorFields(error),
+            });
+            options.onUiEvent?.({
+              type: 'kernel-warning',
+              text: '目标已暂停，但停止执行未确认，请检查任务并点击停止。',
+            });
+          });
+        }
         if (desktopTurns.get(event.threadId) !== event.turnId) desktopTurns.delete(event.threadId);
       }
       // 审批只发生在回合进行中，所以回合结束就可以把这一份清单扔掉
@@ -636,7 +666,7 @@ export function createAdapter(options: AdapterOptions) {
         activeTurns.clear();
         budgetLimitedThreads.clear();
         budgetStops.clear();
-        budgetStopTasks.clear();
+        goalStopTasks.clear();
         approvals.cancel(() => true);
         forgetFileChanges(() => true);
         inFlightMcpCalls.clear();
@@ -2690,7 +2720,7 @@ export function createAdapter(options: AdapterOptions) {
         readonly tokenBudget?: number | null;
       },
     ): Promise<ThreadGoal | undefined> {
-      if (changes.status === 'active') await budgetStopTasks.get(threadId);
+      if (changes.status === 'active') await goalStopTasks.get(threadId);
       if (changes.status === 'active' && !session.openThreads.has(threadId)) {
         const resumed = await session.peer.request<ThreadResumeResponse>(METHOD.threadResume, {
           threadId,
@@ -2699,17 +2729,53 @@ export function createAdapter(options: AdapterOptions) {
         store.threads.upsertFromThread(resumed.thread);
         session.openThreads.add(threadId);
       }
-      const response = await session.peer.request<{ readonly goal?: ThreadGoal }>(
-        METHOD.threadGoalSet,
-        { threadId, ...changes },
-      );
+      const wasPaused = pausedGoals.has(threadId);
+      if (changes.status === 'active') pausedGoals.delete(threadId);
+      const response = await session.peer
+        .request<{ readonly goal?: ThreadGoal }>(METHOD.threadGoalSet, { threadId, ...changes })
+        .catch((error: unknown) => {
+          if (wasPaused) pausedGoals.add(threadId);
+          throw error;
+        });
       if (response.goal)
         store.threads.setTaskSettings(threadId, { budgetLimit: response.goal.tokenBudget });
       return response.goal;
     },
 
+    /** 用户暂停：持久化目标后确认回合与后台命令均停止。内部准备目标仍使用 setGoal。 */
+    async pauseGoal(
+      threadId: string,
+      changes: { readonly objective?: string; readonly tokenBudget?: number | null } = {},
+    ): Promise<ThreadGoal | undefined> {
+      pausedGoals.add(threadId);
+      let goal: ThreadGoal | undefined;
+      try {
+        await stopGoalExecution(
+          threadId,
+          async () => {
+            goal = await this.setGoal(threadId, { ...changes, status: 'paused' });
+          },
+          async () => {
+            const latest = await this.getGoal(threadId);
+            // 在途 update_goal 可能与暂停写入竞态；停止后校正仍属于暂停操作，恢复须等待。
+            goal =
+              latest && latest.status !== 'paused'
+                ? await this.setGoal(threadId, { status: 'paused' })
+                : (latest ?? goal);
+          },
+        );
+        await goalStopTasks.get(threadId);
+        return goal;
+      } catch (error) {
+        throw new Error('暂停目标未能确认停止执行，请检查任务并重试暂停或点击停止。', {
+          cause: error,
+        });
+      }
+    },
+
     async clearGoal(threadId: string): Promise<void> {
       await session.peer.request(METHOD.threadGoalClear, { threadId });
+      pausedGoals.delete(threadId);
       store.threads.setTaskSettings(threadId, { budgetLimit: null });
     },
 
