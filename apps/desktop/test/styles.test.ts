@@ -371,6 +371,17 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
     expect(inlineTitleBar).toContain(
       'padding-right: calc(var(--layout-window-controls-width) + var(--space-12))',
     );
+
+    const restoreButtons =
+      /html\[data-platform='windows'\]\s+\.ew-sidebar-restore button\s*\{([^}]*)\}/.exec(
+        code,
+      )?.[1] ?? '';
+    expect(restoreButtons).toContain('-webkit-app-region: no-drag');
+    const collapsedTopbar =
+      /html\[data-platform='windows'\]\s+\.ew-app\[data-sidebar-collapsed='true'\]\s*>\s*\.ew-window-topbar\s*\{([^}]*)\}/.exec(
+        code,
+      )?.[1] ?? '';
+    expect(collapsedTopbar).toContain('margin-left: var(--layout-collapsed-toolbar-reserve)');
   });
 });
 

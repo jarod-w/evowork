@@ -6664,6 +6664,11 @@ html[data-platform='windows'] .ew-app > .ew-window-topbar {
   -webkit-app-region: drag;
 }
 
+/* 折叠后恢复条是 fixed，不再撑开第 1 列；拖拽带必须让出左侧工具簇，避免盖住展开按钮。 */
+html[data-platform='windows'] .ew-app[data-sidebar-collapsed='true'] > .ew-window-topbar {
+  margin-left: var(--layout-collapsed-toolbar-reserve);
+}
+
 html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-approval-bar {
   grid-row: 2;
 }
@@ -6707,7 +6712,15 @@ html[data-platform='windows'] .ew-sidebar-restore {
   width: auto;
   height: var(--layout-window-overlay-height);
   padding: 0 var(--space-12);
-  background: transparent;
+  background: var(--bg-canvas);
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * Windows titleBarOverlay 只看命中的那个元素。父级 no-drag 不会传给按钮，
+ * 透明按钮会被系统当成标题栏拖拽区，点击不会进入页面。
+ */
+html[data-platform='windows'] .ew-sidebar-restore button {
   -webkit-app-region: no-drag;
 }
 
