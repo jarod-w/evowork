@@ -74,6 +74,55 @@ test('macOS：交通灯的位置是留出来的，品牌名不会被压住', asy
   );
 });
 
+test('Windows：一体化单行顶栏通顶，且右上角窗口控制区不压住任何按钮', async ({ page }) => {
+  test.skip(
+    process.platform !== 'win32',
+    '只有 Windows 启用 titleBarStyle: hidden + titleBarOverlay 单行沉浸式顶栏',
+  );
+
+  await expect(page.locator('html')).toHaveAttribute('data-platform', 'windows');
+  await expect(page.locator('.ew-sidebar-titlebar')).toHaveCount(0);
+
+  const brandRow = await page.locator('.ew-sidebar-brand').boundingBox();
+  const brandName = await page.locator('.ew-brand-name').boundingBox();
+  const collapse = await page.getByRole('button', { name: '折叠侧边栏' }).boundingBox();
+  expect(brandRow).not.toBeNull();
+  expect(brandName).not.toBeNull();
+  expect(collapse).not.toBeNull();
+  expect(brandRow.y).toBeLessThanOrEqual(1);
+  expect(brandRow.height).toBeLessThanOrEqual(45);
+  expect(overlaps(brandName, collapse), '品牌名与折叠侧边栏按钮重叠').toBe(false);
+
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth }));
+  const WINDOW_CONTROLS = { x: viewport.width - 140, y: 0, width: 140, height: 44 };
+  const intruders = await page.evaluate((rect) => {
+    const hits = [];
+    for (const el of document.querySelectorAll('button, a, input, textarea, [role="tab"]')) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (
+        r.left < rect.x + rect.width &&
+        rect.x < r.right &&
+        r.top < rect.y + rect.height &&
+        rect.y < r.bottom
+      ) {
+        hits.push(`${el.getAttribute('aria-label') || el.textContent || el.tagName}`);
+      }
+    }
+    return hits;
+  }, WINDOW_CONTROLS);
+  expect(intruders, '有交互控件落入 Windows 右上角最小化/最大化/关闭按钮区').toEqual([]);
+
+  await page.getByRole('button', { name: '折叠侧边栏' }).click();
+  const expand = await page.getByRole('button', { name: '展开侧边栏' }).boundingBox();
+  const quickNewTask = await page.getByRole('button', { name: '新建任务' }).boundingBox();
+  expect(expand).not.toBeNull();
+  expect(quickNewTask).not.toBeNull();
+  expect(expand.y + expand.height).toBeLessThanOrEqual(45);
+  expect(quickNewTask.y + quickNewTask.height).toBeLessThanOrEqual(45);
+  await page.getByRole('button', { name: '展开侧边栏' }).click();
+});
+
 test('三个断点下都不出现横向滚动条', async ({ page, electronApp }) => {
   /*
    * app.css 的断点是 1100 / 760 / 480。**每个都要比它窄一点去试** ——

@@ -9,18 +9,15 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './app.js';
 import { TOKENS_CSS } from '@evowork/tokens';
+import { detectDesktopPlatform } from './platform.js';
 import './styles/app.css';
 import './styles/skill-extraction.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('找不到 #root —— index.html 被改坏了');
 
-// hiddenInset 下 macOS 交通灯浮在页面内容上。只给 macOS 标记，CSS 才能为它留位；
-// Windows / Linux 使用系统标题栏，不应平白把品牌名向右推。
-document.documentElement.dataset.platform =
-  navigator.platform.startsWith('Mac') || navigator.userAgent.includes('Macintosh')
-    ? 'macos'
-    : 'other';
+// 01 §3.2：按平台标记窗口形态（macOS 交通灯留白 / Windows titleBarOverlay 一体化顶栏 / 其他系统栏）
+document.documentElement.dataset.platform = detectDesktopPlatform();
 
 // token 由 packages/tokens 生成后注入，避免手写一份 CSS 变量与 TS 常量分叉
 const style = document.createElement('style');

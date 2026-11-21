@@ -16,6 +16,8 @@
  */
 import { join } from 'node:path';
 
+import { LAYOUT, LIGHT_NEUTRAL } from '@evowork/tokens';
+
 import { RENDERER_ACTIONS } from '../preload/index.js';
 import { DEEPLINK_SCHEME, deeplinkFromArgv, resolveDeeplink } from './deeplink.js';
 import { createServiceHost, resolvePaths, type ServiceHost, IPC } from './service-host.js';
@@ -45,6 +47,14 @@ export interface ElectronWindow {
    */
   show?(): void;
   focus?(): void;
+  /** Windows / Linux：彻底收起传统顶层菜单栏（Alt 也不再弹出），保留应用菜单快捷键角色。 */
+  setMenuBarVisibility?(visible: boolean): void;
+}
+
+export interface TitleBarOverlayOptions {
+  readonly color: string;
+  readonly symbolColor: string;
+  readonly height: number;
 }
 
 export interface BrowserWindowOptions {
@@ -52,8 +62,14 @@ export interface BrowserWindowOptions {
   readonly height: number;
   readonly minWidth: number;
   readonly minHeight: number;
-  /** macOS：交通灯浮在内容上（01 §3.2：页面控件在标题栏行内，没有独立 header） */
-  readonly titleBarStyle?: 'hiddenInset' | undefined;
+  /**
+   * 01 §3.2：
+   * - macOS 用 `hiddenInset`（交通灯浮在内容上）；
+   * - Windows 用 `hidden` + `titleBarOverlay`（去掉双标题栏，仅保留右上角原生 `— □ ✕`）。
+   */
+  readonly titleBarStyle?: 'hidden' | 'hiddenInset' | undefined;
+  readonly titleBarOverlay?: TitleBarOverlayOptions | undefined;
+  readonly autoHideMenuBar?: boolean | undefined;
   readonly webPreferences: {
     readonly preload: string;
     readonly contextIsolation: boolean;
@@ -190,19 +206,45 @@ export const WINDOW_SIZE = Object.freeze({
 /**
  * 01 §3.2：**页面级控件放在窗口标题栏行内，没有独立的页面 header**。
  *
- * 这要求内容延伸到标题栏下面，所以 macOS 上用 `hiddenInset`（交通灯保留、标题栏消失）。
- * 用系统标题栏的话，侧边栏那条 52 高的图标带下面会再压一条系统栏 ——
- * 界面矮一截、且顶部凭空多出一条与设计稿无关的横带。
- *
- * 侧边栏的三个图标是**右对齐**的（01 §3.2 给的中心 x = 161/197/233），
- * 所以 Windows / Linux 上窗口控件跑到右上角也不会打架，不需要按平台分支。
+ * - macOS：`hiddenInset`（交通灯保留在左上角，系统标题栏消失）；
+ * - Windows：`titleBarStyle: 'hidden'` + `titleBarOverlay` + 隐藏菜单栏，消除「原生白标题栏 +
+ *   文件/编辑/窗口菜单栏 + 空交通灯占位行 + 重复品牌行」四层堆叠，仅保留右上角原生 `— □ ✕`；
+ * - Linux / 其他：隐藏传统菜单栏，保留桌面环境原生标题栏。
  */
-export const WINDOW_CHROME = Object.freeze({
+export const MACOS_WINDOW_CHROME = Object.freeze({
   titleBarStyle: 'hiddenInset' as const,
 });
 
+export const WINDOWS_WINDOW_CHROME = Object.freeze({
+  titleBarStyle: 'hidden' as const,
+  titleBarOverlay: Object.freeze({
+    // 透明底色让左侧灰侧栏与右侧白画布各自无缝通顶，避免固定纯色在左右分栏某一边形成补丁色块
+    color: '#ffffff00',
+    symbolColor: LIGHT_NEUTRAL['text-primary'],
+    height: LAYOUT.windowOverlayHeight,
+  }),
+  autoHideMenuBar: true,
+});
+
+export const OTHER_WINDOW_CHROME = Object.freeze({
+  autoHideMenuBar: true,
+});
+
+/** 向后兼容常量：指向 macOS `hiddenInset` 配置。跨平台分支请用 `windowChromeForPlatform`。 */
+export const WINDOW_CHROME = MACOS_WINDOW_CHROME;
+
+export function windowChromeForPlatform(
+  platform: NodeJS.Platform = process.platform,
+): Pick<BrowserWindowOptions, 'titleBarStyle' | 'titleBarOverlay' | 'autoHideMenuBar'> {
+  if (platform === 'darwin') return MACOS_WINDOW_CHROME;
+  if (platform === 'win32') return WINDOWS_WINDOW_CHROME;
+  return OTHER_WINDOW_CHROME;
+}
+
 export interface BootstrapOptions {
   readonly electron: ElectronApi;
+  /** 测试注入目标平台；生产缺省读 `process.platform`。 */
+  readonly platform?: NodeJS.Platform | undefined;
   /** app-server 可执行文件（M9 打包时随内核二进制分发） */
   readonly appServerPath: string;
   /** 网关单文件产物。只在 `base_url` 指向本机时才被执行（见 `gateway-process.ts`） */
@@ -253,11 +295,15 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
   const paths = resolvePaths(
     process.env.EVOWORK_HOME ?? join(electron.app.getPath('home'), '.evowork'),
   );
+  const runtimePlatform = options.platform ?? process.platform;
   const window = electron.createWindow({
     ...WINDOW_SIZE,
-    ...(process.platform === 'darwin' ? WINDOW_CHROME : {}),
+    ...windowChromeForPlatform(runtimePlatform),
     webPreferences: { preload: options.preloadPath, ...WINDOW_SECURITY },
   });
+  if (runtimePlatform !== 'darwin') {
+    window.setMenuBarVisibility?.(false);
+  }
 
   let rendererAvailable = true;
   window.on('closed', () => {

@@ -14,6 +14,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   bootstrap,
+  MACOS_WINDOW_CHROME,
+  OTHER_WINDOW_CHROME,
+  WINDOWS_WINDOW_CHROME,
+  windowChromeForPlatform,
   WINDOW_SECURITY,
   WINDOW_SIZE,
   type BrowserWindowOptions,
@@ -151,6 +155,56 @@ it('技能文件选择器允许单个 Markdown 文件，取消返回 undefined',
   });
   dialog.mockResolvedValueOnce({ canceled: true, filePaths: [] });
   expect(await hostOptions.pickSkillFile?.()).toBeUndefined();
+});
+
+it('Windows 启用 hidden + titleBarOverlay 一体化顶栏并隐藏传统菜单栏，macOS 保持 hiddenInset', async () => {
+  expect(windowChromeForPlatform('darwin')).toEqual(MACOS_WINDOW_CHROME);
+  expect(windowChromeForPlatform('win32')).toEqual(WINDOWS_WINDOW_CHROME);
+  expect(windowChromeForPlatform('linux')).toEqual(OTHER_WINDOW_CHROME);
+
+  const setMenuBarVisibility = vi.fn();
+  const baseElectron = fakeElectron();
+  await bootstrap({
+    electron: {
+      ...baseElectron,
+      createWindow: (options) => ({
+        ...baseElectron.createWindow(options),
+        setMenuBarVisibility,
+      }),
+    },
+    platform: 'win32',
+    appServerPath: '/fake/app-server',
+    preloadPath: '/fake/preload.js',
+    rendererHtmlPath: '/fake/index.html',
+    createHost: () => fakeHost(),
+  });
+  expect(windowOptions?.titleBarStyle).toBe('hidden');
+  expect(windowOptions?.titleBarOverlay).toEqual({
+    color: '#ffffff00',
+    symbolColor: '#0d0d0d',
+    height: 44,
+  });
+  expect(windowOptions?.autoHideMenuBar).toBe(true);
+  expect(setMenuBarVisibility).toHaveBeenCalledWith(false);
+
+  setMenuBarVisibility.mockClear();
+  await bootstrap({
+    electron: {
+      ...baseElectron,
+      createWindow: (options) => ({
+        ...baseElectron.createWindow(options),
+        setMenuBarVisibility,
+      }),
+    },
+    platform: 'darwin',
+    appServerPath: '/fake/app-server',
+    preloadPath: '/fake/preload.js',
+    rendererHtmlPath: '/fake/index.html',
+    createHost: () => fakeHost(),
+  });
+  expect(windowOptions?.titleBarStyle).toBe('hiddenInset');
+  expect(windowOptions?.titleBarOverlay).toBeUndefined();
+  expect(setMenuBarVisibility).not.toHaveBeenCalled();
 });
 
 beforeEach(() => {

@@ -239,7 +239,13 @@ export const LAYOUT = {
    */
   /** §3.2 macOS 交通灯占位：left 20 起、宽 60 */
   trafficLightWidth: 60,
-  /** §3.3 品牌行（logo + 名称 + AppSwitcherChip） */
+  /** §3.2 Windows 一体化顶栏高度（titleBarOverlay 与单行侧栏顶栏共用） */
+  windowOverlayHeight: 44,
+  /** §3.2 Windows 右上角原生窗口控制按钮组（最小化 / 最大化 / 关闭）安全留白宽 */
+  windowControlsWidth: 140,
+  /** §4.1 Windows 侧边栏折叠后左上角紧凑工具簇（Logo + 展开 + 新建任务）留白宽 */
+  collapsedToolbarReserve: 128,
+  /** §3.3 品牌行（logo + 名称） */
   brandRowHeight: 36,
   /** §5.2 AppSwitcherChip */
   appSwitcherHeight: 26,

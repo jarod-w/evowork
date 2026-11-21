@@ -38,6 +38,7 @@ textarea {
 
 /* 01 §3.1 骨架 A：侧边栏 275（clamp 240–520）+ 主内容区，顶部通知独立占位 */
 .ew-app {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -233,12 +234,17 @@ textarea {
 
 .ew-task-title {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--font-title-2-size);
   line-height: var(--font-title-2-line);
   font-weight: var(--font-title-2-weight);
 }
 
 .ew-title-bar-actions {
+  flex: none;
   margin-left: auto;
   display: flex;
   align-items: center;
@@ -2404,18 +2410,18 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-sidebar-titlebar button {
   -webkit-app-region: no-drag;
 }
-/* 品牌与搜索单独成行，和系统交通灯之间保持清楚的上下层级。 */
+/* 品牌与搜索行：macOS 下位于交通灯标题栏带下方；Windows / Linux 下合并为单行顶栏（01 §3.2）。 */
 .ew-sidebar-brand {
   display: flex;
   align-items: center;
   gap: var(--space-8);
   height: var(--layout-brand-row-height);
-  padding: 0 var(--space-8);
+  padding: 0 var(--space-4) 0 var(--space-8);
 }
 .ew-brand-name {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-8);
   flex: 1;
   min-width: 0;
   font-size: var(--font-title-2-size);
@@ -2423,20 +2429,28 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   font-weight: var(--font-title-2-weight);
   letter-spacing: -0.01em;
 }
+.ew-brand-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--text-primary);
+}
+.ew-brand-logo .ew-icon {
+  width: var(--layout-icon-size);
+  height: var(--layout-icon-size);
+}
 .ew-brand-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ew-brand-chevron {
+.ew-sidebar-brand-actions {
   display: inline-flex;
+  align-items: center;
   flex: none;
-  color: var(--text-tertiary);
-}
-.ew-brand-chevron .ew-icon {
-  width: var(--layout-chevron-size);
-  height: var(--layout-chevron-size);
+  gap: var(--space-2);
 }
 
 /* §5.2 AppSwitcherChip */
@@ -6615,4 +6629,88 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
 .ew-catalog .ew-item-card-footer .ew-pill-label {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* ───────────────────── 跨平台一体化顶栏（01 §3.2 / §4.1）───────────────────── */
+
+.ew-dialog-backdrop,
+.ew-search-backdrop,
+.ew-popover {
+  -webkit-app-region: no-drag;
+}
+
+html[data-platform='other'] .ew-sidebar-brand {
+  height: var(--layout-window-overlay-height);
+}
+
+html[data-platform='windows'] .ew-sidebar-brand {
+  height: var(--layout-window-overlay-height);
+  -webkit-app-region: drag;
+}
+
+html[data-platform='windows'] .ew-sidebar-brand button {
+  -webkit-app-region: no-drag;
+}
+
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+html[data-platform='windows'] .ew-app > .ew-window-topbar {
+  grid-column: 2;
+  grid-row: 1;
+  height: var(--layout-window-overlay-height);
+  background: var(--bg-canvas);
+  -webkit-app-region: drag;
+}
+
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-approval-bar {
+  grid-row: 2;
+}
+
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-toast-stack {
+  grid-row: 3;
+}
+
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-home,
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-task-workspace,
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-page,
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-library,
+html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-project-detail {
+  grid-row: 4;
+}
+
+html[data-platform='windows'] .ew-home-titlebar {
+  display: none;
+}
+
+html[data-platform='windows'] .ew-app[data-window-topbar='inline'] .ew-title-bar {
+  height: var(--layout-window-overlay-height);
+  padding-right: calc(var(--layout-window-controls-width) + var(--space-12));
+}
+
+html[data-platform='windows']
+  .ew-app[data-window-topbar='inline'][data-sidebar-collapsed='true']
+  .ew-title-bar {
+  padding-left: var(--layout-collapsed-toolbar-reserve);
+}
+
+html[data-platform='windows'] .ew-sidebar-restore {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-4);
+  width: auto;
+  height: var(--layout-window-overlay-height);
+  padding: 0 var(--space-12);
+  background: transparent;
+  -webkit-app-region: no-drag;
+}
+
+html[data-platform='windows'] .ew-window-size-hint {
+  top: calc(var(--layout-window-overlay-height) + var(--space-4));
 }

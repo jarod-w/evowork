@@ -16,6 +16,7 @@ import {
   type SidebarProps,
   type TaskRow,
 } from '../src/renderer/views/sidebar.js';
+import { detectDesktopPlatform } from '../src/renderer/platform.js';
 
 function task(over: Partial<TaskRow> & { id: string }): TaskRow {
   return {
@@ -670,5 +671,44 @@ describe('本机磁盘占用（Q17：不是云配额）', () => {
     expect(document.querySelector('.ew-quota-bar')?.getAttribute('data-level')).toBe('warning');
     rerender(<Sidebar tasks={[]} sections={[]} diskUsageLabel="x" diskUsagePercent={97} />);
     expect(document.querySelector('.ew-quota-bar')?.getAttribute('data-level')).toBe('danger');
+  });
+});
+
+describe('跨平台侧边栏顶栏形态（01 §3.2）', () => {
+  it('按 navigator 识别 macOS / Windows / 其他桌面平台', () => {
+    expect(detectDesktopPlatform({ platform: 'MacIntel', userAgent: 'Macintosh' })).toBe('macos');
+    expect(detectDesktopPlatform({ platform: 'Win32', userAgent: 'Windows NT 10.0' })).toBe(
+      'windows',
+    );
+    expect(detectDesktopPlatform({ platform: 'Linux x86_64', userAgent: 'X11; Linux' })).toBe(
+      'other',
+    );
+  });
+
+  it('Windows 单行顶栏去除空交通灯行与伪下拉箭头，把品牌 Logo、搜索、筛选、折叠收进同一行', () => {
+    const onToggleCollapse = vi.fn();
+    const { container } = renderSidebar({ platform: 'windows', onToggleCollapse });
+    expect(container.querySelector('.ew-sidebar-titlebar')).toBeNull();
+    expect(container.querySelector('.ew-brand-chevron')).toBeNull();
+    const brand = container.querySelector('.ew-sidebar-brand');
+    expect(brand).not.toBeNull();
+    expect(brand?.querySelector('.ew-brand-logo svg')).not.toBeNull();
+    expect(within(brand as HTMLElement).getByText('EvoWork')).toBeTruthy();
+    expect(within(brand as HTMLElement).getByRole('button', { name: '打开搜索框' })).toBeTruthy();
+    expect(within(brand as HTMLElement).getByRole('button', { name: '筛选任务' })).toBeTruthy();
+    fireEvent.click(within(brand as HTMLElement).getByRole('button', { name: '折叠侧边栏' }));
+    expect(onToggleCollapse).toHaveBeenCalledOnce();
+  });
+
+  it('macOS 保留交通灯独立标题栏带，折叠按钮不重复出现在品牌行', () => {
+    const { container } = renderSidebar({ platform: 'macos' });
+    const titlebar = container.querySelector('.ew-sidebar-titlebar');
+    const brand = container.querySelector('.ew-sidebar-brand');
+    expect(titlebar).not.toBeNull();
+    expect(brand).not.toBeNull();
+    expect(
+      within(titlebar as HTMLElement).getByRole('button', { name: '折叠侧边栏' }),
+    ).toBeTruthy();
+    expect(within(brand as HTMLElement).queryByRole('button', { name: '折叠侧边栏' })).toBeNull();
   });
 });

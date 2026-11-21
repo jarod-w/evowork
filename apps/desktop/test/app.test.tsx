@@ -1199,6 +1199,48 @@ describe('全局快捷键与侧栏折叠', () => {
     expect(screen.getByLabelText('侧边栏')).toBeTruthy();
   });
 
+  it('Windows 折叠侧边栏后在左上角保留紧凑工具簇，可直接新建任务或恢复侧栏', async () => {
+    const previousPlatform = document.documentElement.dataset.platform;
+    document.documentElement.dataset.platform = 'windows';
+    try {
+      const { bridge, emit } = fakeBridge();
+      const { container } = render(<App bridge={bridge} />);
+      await waitFor(() => expect(emit.ui).toBeDefined());
+      emit.ui?.({
+        type: 'task-created',
+        task: {
+          id: 't-win',
+          title: 'Windows 旧任务',
+          status: 'completed',
+          timeLabel: '刚刚',
+          updatedAt: Date.now(),
+          sectionId: 'ungrouped',
+        },
+      });
+      fireEvent.click(await screen.findByText('Windows 旧任务'));
+      expect(container.querySelector('.ew-app')?.getAttribute('data-window-topbar')).toBe('inline');
+
+      fireEvent.click(screen.getByRole('button', { name: '折叠侧边栏' }));
+      expect(screen.queryByLabelText('侧边栏')).toBeNull();
+      expect(container.querySelector('.ew-sidebar-restore .ew-brand-logo svg')).not.toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
+      expect(await screen.findByRole('heading', { name: '有什么可以帮忙的？' })).toBeTruthy();
+      expect(container.querySelector('.ew-app')?.getAttribute('data-window-topbar')).toBe(
+        'standalone',
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }));
+      expect(screen.getByLabelText('侧边栏')).toBeTruthy();
+    } finally {
+      if (previousPlatform === undefined) {
+        delete document.documentElement.dataset.platform;
+      } else {
+        document.documentElement.dataset.platform = previousPlatform;
+      }
+    }
+  });
+
   it('点搜索按钮打开覆盖当前界面的面板，先显示最近聊天与快捷操作', async () => {
     const searchTasks = vi.fn(async () => [
       {

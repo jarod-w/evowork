@@ -166,6 +166,7 @@ import { Sidebar, type RowAction } from './views/sidebar.js';
 import { TaskSearchPalette } from './views/task-search.js';
 import { TaskWorkspace, type ResultPane } from './views/task-workspace.js';
 import { useSkillExtraction } from './views/skill-extraction.js';
+import { currentDesktopPlatform } from './platform.js';
 
 /** preload 暴露的窄接口。**这就是渲染进程能做的全部事情**。 */
 export interface EvoworkBridge
@@ -3959,18 +3960,38 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     ],
   );
 
+  const platform = currentDesktopPlatform();
+  const hasTopBanners = computerUse?.state === 'active' || toasts.length > 0;
+  const showWindowTopbar =
+    platform === 'windows' && (view !== 'task' || activeTaskId === null || hasTopBanners);
+
   return (
-    <div className="ew-app">
+    <div
+      className="ew-app"
+      data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
+      data-window-topbar={
+        platform === 'windows' ? (showWindowTopbar ? 'standalone' : 'inline') : undefined
+      }
+    >
       {sidebarCollapsed ? (
         <div className="ew-sidebar-restore">
+          {platform === 'windows' ? (
+            <span className="ew-brand-logo" aria-hidden="true">
+              {renderIcon('brand-logo')}
+            </span>
+          ) : null}
           <IconButton
             label="展开侧边栏"
             icon={renderIcon('panel-left')}
             onClick={() => setSidebarCollapsed(false)}
           />
+          {platform === 'windows' ? (
+            <IconButton label="新建任务" icon={renderIcon('new-task')} onClick={beginNewTask} />
+          ) : null}
         </div>
       ) : (
         <Sidebar
+          platform={platform}
           tasks={tasks}
           attention={work.items}
           onOpenAttention={openAttention}
@@ -4075,6 +4096,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
             : {})}
         />
       )}
+
+      {showWindowTopbar ? <div className="ew-window-topbar" aria-hidden="true" /> : null}
 
       {computerUse?.state === 'active' ? (
         <div className="ew-approval-bar" role="status">

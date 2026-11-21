@@ -31,6 +31,7 @@ import { BRAND } from '@evowork/tokens';
 import type { AttentionItem } from '../attention.js';
 import { AttentionList } from '../components/attention-list.js';
 import { renderIcon } from '../components/icons.js';
+import { currentDesktopPlatform, type DesktopPlatform } from '../platform.js';
 import { Menu, Popover, type MenuItemSpec } from '../components/menu.js';
 import {
   Dialog,
@@ -183,6 +184,8 @@ export interface SidebarProps {
   readonly onNavSelect?: ((id: string) => void) | undefined;
   /** 品牌名（K5：换品牌只改 token，布局零改动）。缺省用 BRAND.appName */
   readonly brandName?: string | undefined;
+  /** 平台窗口形态（01 §3.2）；缺省按当前运行环境识别。 */
+  readonly platform?: DesktopPlatform | undefined;
   readonly onToggleCollapse?: (() => void) | undefined;
   readonly searchOpen?: boolean | undefined;
   readonly onSearchOpenChange?: ((open: boolean) => void) | undefined;
@@ -404,48 +407,56 @@ export function Sidebar(props: SidebarProps) {
    * 猜成首页会让用户看到主区已经是自动化、侧边栏却还停在新建任务。
    */
   const activeNavId = props.activeNavId;
+  const platform = props.platform ?? currentDesktopPlatform();
+  const brandLabel = props.brandName ?? BRAND.appName;
+  const collapseButton = (
+    <IconButton
+      label="折叠侧边栏"
+      icon={renderIcon('panel-left')}
+      onClick={props.onToggleCollapse}
+    />
+  );
 
   return (
     <nav className="ew-sidebar" aria-label="侧边栏">
-      {/* macOS 窗口控制区：品牌另起一行，避免和交通灯挤在一起。 */}
-      <div className="ew-sidebar-titlebar">
-        <IconButton
-          label="折叠侧边栏"
-          icon={renderIcon('panel-left')}
-          onClick={props.onToggleCollapse}
-        />
-      </div>
+      {/* macOS 交通灯浮在左上角，保留独立标题栏带；Windows / Linux 合并为单行品牌顶栏（01 §3.2）。 */}
+      {platform === 'macos' ? <div className="ew-sidebar-titlebar">{collapseButton}</div> : null}
 
       <div className="ew-sidebar-brand">
         <span className="ew-brand-name">
-          <span className="ew-brand-label">{props.brandName ?? BRAND.appName}</span>
-          <span className="ew-brand-chevron" aria-hidden="true">
-            {renderIcon('chevron-down')}
+          <span className="ew-brand-logo" aria-hidden="true">
+            {renderIcon('brand-logo')}
+          </span>
+          <span className="ew-brand-label" title={brandLabel}>
+            {brandLabel}
           </span>
         </span>
-        <IconButton
-          // 与下面 SearchInput 的无障碍名区分开：两个都叫「搜索任务」时，
-          // 读屏用户听到的是两个同名控件，而测试里也定位不到唯一元素
-          label={searchOpen ? '收起搜索框' : '打开搜索框'}
-          icon={renderIcon('search')}
-          selected={searchOpen}
-          onClick={() => setSearchOpen(!searchOpen)}
-        />
-        <span className="ew-filter-anchor">
+        <span className="ew-sidebar-brand-actions">
           <IconButton
-            label="筛选任务"
-            icon={renderIcon('filter')}
-            selected={filterOpen || isFilterActive(filter)}
-            onClick={() => setFilterOpen((v) => !v)}
+            // 与下面 SearchInput 的无障碍名区分开：两个都叫「搜索任务」时，
+            // 读屏用户听到的是两个同名控件，而测试里也定位不到唯一元素
+            label={searchOpen ? '收起搜索框' : '打开搜索框'}
+            icon={renderIcon('search')}
+            selected={searchOpen}
+            onClick={() => setSearchOpen(!searchOpen)}
           />
-          <Popover open={filterOpen} onClose={() => setFilterOpen(false)} align="end">
-            <FilterPanel
-              filter={filter}
-              tasks={topLevel}
-              onChange={setFilter}
-              onReset={() => setFilter(EMPTY_FILTER)}
+          <span className="ew-filter-anchor">
+            <IconButton
+              label="筛选任务"
+              icon={renderIcon('filter')}
+              selected={filterOpen || isFilterActive(filter)}
+              onClick={() => setFilterOpen((v) => !v)}
             />
-          </Popover>
+            <Popover open={filterOpen} onClose={() => setFilterOpen(false)} align="end">
+              <FilterPanel
+                filter={filter}
+                tasks={topLevel}
+                onChange={setFilter}
+                onReset={() => setFilter(EMPTY_FILTER)}
+              />
+            </Popover>
+          </span>
+          {platform !== 'macos' ? collapseButton : null}
         </span>
       </div>
 

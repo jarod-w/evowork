@@ -350,6 +350,28 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
     expect(content).toContain('min-height: 0');
     expect(content).not.toContain('min-height: 100%');
   });
+
+  it('Windows 一体化顶栏与右侧窗口控制区留白已声明（01 §3.2）', () => {
+    const winBrand =
+      /html\[data-platform='windows'\]\s+\.ew-sidebar-brand\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(winBrand).toContain('height: var(--layout-window-overlay-height)');
+    expect(winBrand).toContain('-webkit-app-region: drag');
+
+    const winTopbar =
+      /html\[data-platform='windows'\]\s+\.ew-app\s*>\s*\.ew-window-topbar\s*\{([^}]*)\}/.exec(
+        code,
+      )?.[1] ?? '';
+    expect(winTopbar).toContain('height: var(--layout-window-overlay-height)');
+    expect(winTopbar).toContain('-webkit-app-region: drag');
+
+    const inlineTitleBar =
+      /html\[data-platform='windows'\]\s+\.ew-app\[data-window-topbar='inline'\]\s+\.ew-title-bar\s*\{([^}]*)\}/.exec(
+        code,
+      )?.[1] ?? '';
+    expect(inlineTitleBar).toContain(
+      'padding-right: calc(var(--layout-window-controls-width) + var(--space-12))',
+    );
+  });
 });
 
 /*
