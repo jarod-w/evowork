@@ -206,7 +206,7 @@ test('⌘V 粘贴截图：输入框里能粘，发完一条焦点不在输入框
   await input.fill('先随便聊一句');
   await page.getByRole('button', { name: '发送' }).click();
   await expect(composer).toHaveAttribute('data-run-state', 'idle', { timeout: 60_000 });
-  // 发送的收尾（回执、清草稿）结束前添加附件会被挡下；那是另一件事，这里等它结束
+  // 等发送收尾结束，下面这段才是「焦点不在输入框」。收尾还没结束时粘贴会先排上。
   await expect(composer).toHaveAttribute('aria-busy', 'false');
   // 前置条件：焦点确实不在输入框里，否则下面这段与上面那段验的是同一件事
   await expect(input).not.toBeFocused();
@@ -232,4 +232,40 @@ test('⌘V 粘贴截图：输入框里能粘，发完一条焦点不在输入框
   const images = lastUser.content.filter((part) => part.type === 'input_image');
   expect(images, '粘贴的截图没有作为图发给模型').toHaveLength(1);
   expect(images[0].image_url).toMatch(/^data:image\//);
+});
+
+test('应用菜单是中文的，右键有复制和粘贴，粘贴菜单项能把图放进输入框', async ({
+  page,
+  electronApp,
+}) => {
+  const menu = await electronApp.evaluate(({ Menu, BrowserWindow }) => ({
+    labels: (Menu.getApplicationMenu()?.items ?? []).map((item) => ({
+      label: item.label,
+      submenu: (item.submenu?.items ?? []).map((child) => child.label),
+    })),
+    contextMenuListeners:
+      BrowserWindow.getAllWindows()[0].webContents.listenerCount('context-menu'),
+  }));
+  expect(menu.labels.map((item) => item.label)).toContain('编辑');
+  expect(menu.labels.find((item) => item.label === '编辑')?.submenu).toEqual(
+    expect.arrayContaining(['复制', '粘贴']),
+  );
+  expect(menu.labels.map((item) => item.label)).not.toContain('Edit');
+  expect(menu.contextMenuListeners).toBeGreaterThan(0);
+
+  const input = page.getByLabel('需求输入');
+  await input.click({ button: 'right' });
+  await expect
+    .poll(() => electronApp.evaluate(() => globalThis.__evoworkE2E.lastContextMenu ?? []))
+    .toEqual(expect.arrayContaining(['复制', '粘贴']));
+  await page.keyboard.press('Escape');
+
+  await copyScreenshot(electronApp);
+  await input.click();
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.paste();
+  });
+  await expect(page.locator('.ew-attachment[data-state="ready"]')).toHaveCount(1, {
+    timeout: 30_000,
+  });
 });

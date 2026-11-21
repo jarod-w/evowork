@@ -14,9 +14,14 @@ import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { app, BrowserWindow, ipcMain, nativeImage, session } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, session } from 'electron';
 
 import { bootstrap, createServiceHost } from '../../../dist/main/bootstrap.bundle.js';
+import {
+  applicationMenuTemplate,
+  bindEditContextMenu,
+  menuBarName,
+} from '../../../dist/main/edit-menu.js';
 import { installApprovalWire } from './approval-wire.mjs';
 import { publishControls, waitFor } from './runner.mjs';
 import { kernelTestEnvironment } from './app-test-path.mjs';
@@ -136,6 +141,14 @@ export async function bootApp({
   app.on('before-quit', () => lifecycle('before-quit'));
   app.on('window-all-closed', () => lifecycle('window-all-closed'));
   process.on('exit', (code) => lifecycle('process-exit', { code }));
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      applicationMenuTemplate({
+        appName: menuBarName(app.getName()),
+        platform: process.platform,
+      }),
+    ),
+  );
   const result = await bootstrap({
     electron: {
       app: {
@@ -152,6 +165,11 @@ export async function bootApp({
        */
       createWindow: (options) => {
         const window = new BrowserWindow({ ...options, show });
+        bindEditContextMenu(window.webContents, (template) => {
+          const labels = template.flatMap((item) => ('label' in item ? [item.label] : []));
+          globalThis.__evoworkE2E = { ...globalThis.__evoworkE2E, lastContextMenu: labels };
+          Menu.buildFromTemplate(template).popup({ window });
+        });
         window.on('close', () => lifecycle('window-close'));
         window.on('closed', () => lifecycle('window-closed'));
         window.on('unresponsive', () => lifecycle('window-unresponsive'));

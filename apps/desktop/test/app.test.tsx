@@ -2842,6 +2842,54 @@ describe('侧边栏的六个入口都要有落点', () => {
     expect(await screen.findByText('周报.docx')).toBeTruthy();
   });
 
+  it('发送还没结束时添加的文件会排上，结束后仍然出现', async () => {
+    let finishSend: (value: { threadId: string }) => void = () => undefined;
+    const sendGate = new Promise<{ threadId: string }>((resolve) => {
+      finishSend = resolve;
+    });
+    const pickAttachments = vi.fn(async () => [
+      {
+        id: 'later',
+        name: '补充.docx',
+        kind: 'document' as const,
+        sizeLabel: '1 KB',
+        state: 'ready' as const,
+        references: [{ type: 'mention' as const, name: '补充.docx', path: '/w/uploads/补充.docx' }],
+      },
+    ]);
+    const { bridge } = fakeBridge({
+      getStartup: async () => ({
+        ...STARTUP,
+        tasks: [
+          {
+            id: 't1',
+            title: 'hello. 介绍一下自己',
+            status: 'completed' as const,
+            timeLabel: '刚刚',
+            updatedAt: Date.now(),
+            sectionId: 'ungrouped',
+            cwd: '/Users/x/default',
+          },
+        ],
+      }),
+      send: vi.fn(() => sendGate),
+      pickAttachments,
+    });
+    render(<App bridge={bridge} />);
+    fireEvent.click(await screen.findByText('hello. 介绍一下自己'));
+    const input = await screen.findByLabelText('需求输入');
+    fireEvent.change(input, { target: { value: '先发这一句' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(bridge.send).toHaveBeenCalled());
+    expect(pickAttachments).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '添加内容' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /添加本地文件/ }));
+    expect(pickAttachments).not.toHaveBeenCalled();
+    finishSend({ threadId: 't1' });
+    expect(await screen.findByText('补充.docx')).toBeTruthy();
+    expect(pickAttachments).toHaveBeenCalledTimes(1);
+  });
+
   it('首页未选项目就添加本地文件时说明原因，不静默没反应', async () => {
     const pickAttachments = vi.fn(async () => {
       throw new Error('先选择一个项目，附件会保存在项目的 uploads 目录。');

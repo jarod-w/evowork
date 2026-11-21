@@ -16,6 +16,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   nativeImage,
   safeStorage,
   session,
@@ -31,6 +32,7 @@ import { join } from 'node:path';
  * （build-and-deploy §3.1 记过一次）。
  */
 import { bootstrap } from './bootstrap.bundle.js';
+import { applicationMenuTemplate, bindEditContextMenu, menuBarName } from './edit-menu.js';
 /*
  * 早到事件的缓冲。**单独一个模块是为了能被测** —— 它跟 `import 'electron'` 绑在
  * 一起就一行测试都盖不到，而「早到了会不会丢」恰好是这条链路最容易坏的地方。
@@ -146,6 +148,12 @@ const bundledFontPath = isPackaged || existsSync(officeFontPath) ? officeFontPat
  * 它唯一还该做的事就是消失 —— 走到这里就意味着它会去开同一个 sqlite。
  */
 if (isPrimaryInstance) {
+  const menuName = menuBarName(app.getName());
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      applicationMenuTemplate({ appName: menuName, platform: process.platform }),
+    ),
+  );
   bootstrap({
     electron: {
       app: {
@@ -168,7 +176,13 @@ if (isPrimaryInstance) {
           secondInstanceArgv.connect(handler);
         },
       },
-      createWindow: (options) => new BrowserWindow(options),
+      createWindow: (options) => {
+        const window = new BrowserWindow(options);
+        bindEditContextMenu(window.webContents, (template) => {
+          Menu.buildFromTemplate(template).popup({ window });
+        });
+        return window;
+      },
       session: session,
       ipcMain: { handle: (channel, handler) => ipcMain.handle(channel, handler) },
       // 首运行第②步 / Composer「添加本地文件」。挂到当前窗口上，否则 macOS

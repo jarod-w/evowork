@@ -130,6 +130,7 @@ import {
 } from './components/changes-view.js';
 import { FileTree } from './components/file-tree.js';
 import { newestActiveTask, summarizeWork } from './attention.js';
+import { createWorkQueue } from './work-queue.js';
 import { FilePreview } from './components/file-preview.js';
 import { ArtifactOpenMenu, type ArtifactOpenActions } from './components/menu.js';
 import { SkillInstallDialog } from './components/skill-install-dialog.js';
@@ -685,6 +686,31 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   const [sendRecoveryPending, setSendRecoveryPending] = useState(Boolean(bridge.getPendingSend));
 
   const pendingEnvironment = useRef(Boolean(bridge.getPendingSend));
+  /*
+   * 发送确认、选文件夹、添加附件共用这把锁。锁被占着时再粘贴或再选文件，
+   * 以前直接 return，附件就没了。现在排上，等这次操作放开后再加入当前草稿。
+   * 发送本身不排队，避免同一条发出去两次。
+   */
+  const attachmentQueue =
+    useRef(
+      createWorkQueue<(id: string) => Promise<readonly ComposerAttachmentView[] | undefined>>(),
+    );
+  const addAttachmentsRef = useRef<
+    (
+      action: (id: string) => Promise<readonly ComposerAttachmentView[] | undefined>,
+    ) => Promise<void>
+  >(async () => undefined);
+  const releaseEnvironmentRef = useRef<() => void>(() => undefined);
+  releaseEnvironmentRef.current = () => {
+    pendingEnvironment.current = false;
+    setEnvironmentBusy(false);
+    attachmentQueue.current.release(
+      () => pendingEnvironment.current,
+      (action) => {
+        void addAttachmentsRef.current(action);
+      },
+    );
+  };
   const pendingSubmission = useRef<PendingSend | undefined>(savedDraft.current.pending);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [models, setModels] = useState<readonly ModelOptionView[]>([]);
@@ -1172,8 +1198,8 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       )
       .finally(() => {
         if (!cancelled && restored) {
-          pendingEnvironment.current = false;
           setSendRecoveryPending(false);
+          releaseEnvironmentRef.current();
         }
       });
     return () => {
@@ -2609,7 +2635,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           reportFailure(error, '没能执行目标命令。');
           return;
         } finally {
-          pendingEnvironment.current = false;
+          releaseEnvironmentRef.current();
         }
       }
       const attachmentReferences = gatedAttachments.flatMap((attachment) => attachment.references);
@@ -2708,6 +2734,16 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           // 浏览器存储不可用不影响已发送的任务。
         }
         void bridge.discardComposerDraft?.({ draftId: identity }).catch(() => undefined);
+        /*
+         * 换任务时草稿身份原来要等 effect 才换。发送过程中排上的附件在那之前启动，
+         * 就会写进刚丢掉的旧草稿，界面上等于还是丢了。这里先换成新身份，effect 看到
+         * 已经对齐就不再换一次。
+         */
+        if (currentDraftTask.current !== threadId) {
+          draftIdentity.current = crypto.randomUUID();
+          currentDraftTask.current = threadId;
+          setDraftExpertId(undefined);
+        }
         setActiveTaskId(threadId);
         setAttachments([]);
         setReferences([]);
@@ -2743,8 +2779,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           },
         ]);
       } finally {
-        pendingEnvironment.current = false;
-        setEnvironmentBusy(false);
+        releaseEnvironmentRef.current();
       }
     },
     [
@@ -3347,7 +3382,10 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
   const addAttachments = useCallback(
     async (action: (id: string) => Promise<readonly ComposerAttachmentView[] | undefined>) => {
-      if (pendingEnvironment.current) return;
+      if (pendingEnvironment.current) {
+        attachmentQueue.current.push(action);
+        return;
+      }
       const identity = draftIdentity.current;
       const taskId = activeTaskId;
       pendingEnvironment.current = true;
@@ -3359,12 +3397,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       } catch (error: unknown) {
         reportFailure(error, '没能添加本地文件。');
       } finally {
-        pendingEnvironment.current = false;
-        setEnvironmentBusy(false);
+        releaseEnvironmentRef.current();
       }
     },
     [activeTaskId, reportFailure],
   );
+  addAttachmentsRef.current = addAttachments;
   const pickComposerFolder = useCallback(async () => {
     if (pendingEnvironment.current) return;
     const identity = draftIdentity.current;
@@ -3382,8 +3420,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     } catch (error: unknown) {
       reportFailure(error, '没能打开项目文件夹。');
     } finally {
-      pendingEnvironment.current = false;
-      setEnvironmentBusy(false);
+      releaseEnvironmentRef.current();
     }
   }, [bridge, reportFailure, pushToast]);
   useEffect(() => {
