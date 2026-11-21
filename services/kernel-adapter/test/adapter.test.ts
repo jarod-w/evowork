@@ -3224,6 +3224,14 @@ describe('真实模型暴露的投影与临时队列边界', () => {
         (r) => r.method === 'thread/queue/list' && r.params.threadId === 'transient-thread',
       ),
     ).toHaveLength(0);
+    store.threads.upsertFromThread(makeThread({ id: 'unmarked-ephemeral' }));
+    await expect(adapter.listQueuedInputs('unmarked-ephemeral')).resolves.toEqual([]);
+    server.handlers.set('thread/queue/list', () => {
+      throw new FakeRpcError(
+        ERROR_CODE.internalError,
+        'queued submission operation failed: database is locked',
+      );
+    });
     store.threads.upsertFromThread(makeThread({ id: 'persistent-thread' }));
     await expect(adapter.listQueuedInputs('persistent-thread')).rejects.toThrow();
   });

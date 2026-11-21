@@ -2333,9 +2333,24 @@ export function createAdapter(options: AdapterOptions) {
     async listQueuedInputs(threadId: string): Promise<readonly QueuedInput[]> {
       // Ephemeral conversations cannot have native queued submissions.
       if (ephemeralThreadIds.has(threadId)) return [];
-      const response = await callExperimental<{
+      let response: {
         readonly data?: readonly { readonly id?: string; readonly input?: readonly UserInput[] }[];
-      }>(EXPERIMENTAL_METHOD.threadQueueList, { threadId, limit: 100 }, () => ({ data: [] }));
+      };
+      try {
+        response = await callExperimental(
+          EXPERIMENTAL_METHOD.threadQueueList,
+          { threadId, limit: 100 },
+          () => ({ data: [] }),
+        );
+      } catch (error) {
+        /*
+         * 记忆整理、审批复核这类内部线程没有队列。内核回 invalid_request，
+         * 不是用户的排队坏了。刷新时把它当成空队列，别再弹「没能刷新排队消息」。
+         * 存储故障这类真实错误仍交给调用方。
+         */
+        if (queueListingRefused(error)) return localQueues.get(threadId) ?? [];
+        throw error;
+      }
       const remote = (response.data ?? [])
         .filter((entry): entry is { readonly id: string; readonly input?: readonly UserInput[] } =>
           Boolean(entry.id),
@@ -2873,6 +2888,17 @@ function record(value: unknown): Readonly<Record<string, unknown>> {
 const ITEM_LIST_PAGE_SIZE = 100;
 /** 防止 `nextCursor` 永远非空时死循环。50 页 × 100 = 5000 条，远超当前对话长度。 */
 const ITEM_LIST_PAGE_CAP = 50;
+
+/** 内核明确表示这条线程没有可列出的队列，刷新应得到空列表而不是失败。 */
+function queueListingRefused(error: unknown): boolean {
+  return (
+    error instanceof JsonRpcCallError &&
+    error.code === ERROR_CODE.invalidRequest &&
+    /^(ephemeral thread does not support queued submissions|thread not found:|session .+ is archived\.|direct app-server input is not allowed)/.test(
+      error.rpcMessage,
+    )
+  );
+}
 
 /**
  * `thread/items/list` 的 `data[]` 是 `{ turnId, item }`（`ThreadItemEntry`）。

@@ -383,6 +383,19 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
       )?.[1] ?? '';
     expect(collapsedTopbar).toContain('margin-left: var(--layout-collapsed-toolbar-reserve)');
   });
+
+  it('通知浮在标题栏下方，不占网格行把任务标题顶下去', () => {
+    const stack = /\.ew-toast-stack\s*\{([^}]*)\}/.exec(code)?.[1] ?? '';
+    expect(stack).toContain('position: absolute');
+    expect(stack).toContain('top: calc(var(--layout-title-bar-height) + var(--space-8))');
+    const inline =
+      /html\[data-platform='windows'\]\s+\.ew-app\[data-window-topbar='inline'\]\s*>\s*\.ew-toast-stack\s*\{([^}]*)\}/.exec(
+        code,
+      )?.[1] ?? '';
+    expect(inline).toContain(
+      'top: calc(var(--layout-window-overlay-height) + var(--space-8))',
+    );
+  });
 });
 
 /*

@@ -1525,22 +1525,12 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
               Object.entries(previous).map(([id, subtasks]) => [id, subtasks.map(updateTask)]),
             ),
           );
-          if (event.status) {
-            if (bridge.listQueuedInputs) {
-              void bridge
-                .listQueuedInputs({ threadId: event.taskId })
-                .then((queued) =>
-                  setQueuedByTask((previous) => ({ ...previous, [event.taskId]: queued })),
-                )
-                .catch((error: unknown) => reportFailure(error, '没能刷新排队消息。'));
-            }
-            if (event.status === 'running') {
-              setTurnFailures((previous) => {
-                const next = { ...previous };
-                delete next[event.taskId];
-                return next;
-              });
-            }
+          if (event.status === 'running') {
+            setTurnFailures((previous) => {
+              const next = { ...previous };
+              delete next[event.taskId];
+              return next;
+            });
           }
           return;
         }
@@ -1975,19 +1965,20 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     };
   }, [activeTaskId, bridge]);
 
-  /** 任务切换时同步它所属的项目与排队追问。 */
+  const activeTask =
+    activeTaskId === null ? undefined : tasks.find((task) => task.id === activeTaskId);
+  const queuedThreadId =
+    activeTaskId === null ? null : (rootTaskFor(tasks, activeTaskId)?.id ?? activeTaskId);
+  /** 任务切换时同步它所属的项目与排队追问。状态刷新不重读队列，避免每条进度都打一次。 */
   useEffect(() => {
-    const cwd =
-      activeTaskId === null ? undefined : tasks.find((task) => task.id === activeTaskId)?.cwd;
-    const taskWorkspace = startup?.workspaces.find((workspace) => {
-      const task = tasks.find((item) => item.id === activeTaskId);
-      return task?.projectId !== undefined
-        ? task.projectId === workspace.id
-        : workspace.path === cwd;
-    });
+    const taskWorkspace = startup?.workspaces.find((workspace) =>
+      activeTask?.projectId !== undefined
+        ? activeTask.projectId === workspace.id
+        : workspace.path === activeTask?.cwd,
+    );
     if (activeTaskId !== null) setWorkspaceId(taskWorkspace?.id);
-    if (activeTaskId !== null && bridge.listQueuedInputs) {
-      const threadId = rootTaskFor(tasks, activeTaskId)?.id ?? activeTaskId;
+    if (queuedThreadId !== null && bridge.listQueuedInputs) {
+      const threadId = queuedThreadId;
       void bridge
         .listQueuedInputs({ threadId })
         .then((queued) =>
@@ -1997,7 +1988,15 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         )
         .catch((error: unknown) => reportFailure(error, '没能读取排队消息。'));
     }
-  }, [activeTaskId, bridge, reportFailure, startup, tasks, workspaceId]);
+  }, [
+    activeTask?.cwd,
+    activeTask?.projectId,
+    activeTaskId,
+    bridge,
+    queuedThreadId,
+    reportFailure,
+    startup,
+  ]);
 
   // 只在打开任务时补快照；实时通知是权威更新，不能被较早发出的读取覆盖。
   useEffect(() => {
@@ -3961,9 +3960,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
   );
 
   const platform = currentDesktopPlatform();
-  const hasTopBanners = computerUse?.state === 'active' || toasts.length > 0;
   const showWindowTopbar =
-    platform === 'windows' && (view !== 'task' || activeTaskId === null || hasTopBanners);
+    platform === 'windows' &&
+    (view !== 'task' || activeTaskId === null || computerUse?.state === 'active');
 
   return (
     <div

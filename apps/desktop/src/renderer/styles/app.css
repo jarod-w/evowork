@@ -36,7 +36,7 @@ textarea {
   font-family: inherit;
 }
 
-/* 01 §3.1 骨架 A：侧边栏 275（clamp 240–520）+ 主内容区，顶部通知独立占位 */
+/* 01 §3.1 骨架 A：侧边栏 275（clamp 240–520）+ 主内容区。通知浮在内容上，不占行、不把标题顶下去 */
 .ew-app {
   position: relative;
   display: grid;
@@ -3756,15 +3756,25 @@ html[data-platform='macos'] .ew-sidebar-titlebar::before {
   grid-column: 2;
   grid-row: 2;
   justify-self: end;
+  align-self: start;
+  position: absolute;
+  /* 贴在标题栏下面。绝对定位不占网格行，任务标题留在窗口顶上。 */
+  top: calc(var(--layout-title-bar-height) + var(--space-8));
+  right: var(--space-16);
   width: var(--layout-toast-width);
   max-width: calc(100% - var(--space-16) * 2);
   max-height: 30dvh;
-  margin: var(--space-8) var(--space-16);
+  margin: 0;
   overflow-y: auto;
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+}
+/* 结果区开着时，提示让出右侧结果栏，避免盖住「变更」。 */
+.ew-app:has(.ew-task-workspace[data-result-open='true']) > .ew-toast-stack {
+  right: calc(42% + var(--space-16));
+  max-width: calc(58% - var(--space-16) * 3);
 }
 .ew-toast {
   box-sizing: border-box;
@@ -6675,6 +6685,10 @@ html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-app
 
 html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-toast-stack {
   grid-row: 3;
+  top: calc(var(--layout-window-overlay-height) + var(--space-8));
+}
+html[data-platform='windows'] .ew-app[data-window-topbar='inline'] > .ew-toast-stack {
+  top: calc(var(--layout-window-overlay-height) + var(--space-8));
 }
 
 html[data-platform='windows'] .ew-app[data-window-topbar='standalone'] > .ew-home,
