@@ -105,21 +105,16 @@ describe('策略包的 vendor 步骤', () => {
   });
 });
 
-describe('Windows NSIS 安装向导配置（协议确认 · 目录选择 · 快捷方式勾选 · 品牌图标）', () => {
-  it('关闭一键静默塞 C 盘，开放安装目录修改并挂载自定义附加任务脚本与品牌图标', () => {
+describe('Windows NSIS 安装向导配置（协议确认 · 目录选择 · 快捷方式勾选）', () => {
+  it('关闭一键静默塞 C 盘，开放安装目录修改并挂载自定义附加任务脚本', () => {
     const yml = readFileSync(join(BUILD_DIR, 'electron-builder.yml'), 'utf8');
-    expect(yml).toMatch(/^\s*icon:\s*build\/icon\.ico$/m);
+    expect(yml).not.toMatch(/^\s*icon:\s*build\/icon\.ico$/m);
     expect(yml).toMatch(/^\s*oneClick:\s*false$/m);
     expect(yml).toMatch(/^\s*perMachine:\s*false$/m);
     expect(yml).toMatch(/^\s*allowToChangeInstallationDirectory:\s*true$/m);
     expect(yml).toMatch(/^\s*include:\s*build\/installer\.nsh$/m);
 
-    for (const asset of [
-      'icon.ico',
-      'installerHeader.bmp',
-      'installerSidebar.bmp',
-      'installer.nsh',
-    ]) {
+    for (const asset of ['installerHeader.bmp', 'installerSidebar.bmp', 'installer.nsh']) {
       expect(existsSync(join(BUILD_DIR, asset)), `build/${asset} 缺失`).toBe(true);
     }
     const nsh = readFileSync(join(BUILD_DIR, 'installer.nsh'), 'utf8');

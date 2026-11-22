@@ -78,7 +78,6 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
 
 win:
-  icon: build/icon.ico
   target:
     - nsis
   # Q6 / U5：Windows 的隔离强度结论还没拿到。产品在运行时会按保守侧处理
