@@ -43,7 +43,7 @@ export type CatalogMode = 'discover' | 'installed';
 export interface CatalogHubActions {
   readonly refresh: () => Promise<CatalogMutationResult>;
   readonly install: (
-    input: HubItemRef & { acknowledge?: boolean; confirmName?: string },
+    input: HubItemRef & { acknowledge?: boolean; confirmName?: string; reviewToken?: string },
   ) => Promise<CatalogMutationResult>;
   readonly uninstall: (ref: HubItemRef) => Promise<CatalogMutationResult>;
   readonly rollback: (ref: HubItemRef) => Promise<CatalogMutationResult>;
@@ -70,12 +70,14 @@ export interface CatalogPageProps {
     url?: string;
     acknowledge?: boolean;
     confirmName?: string;
+    reviewToken?: string;
   }) => Promise<CatalogMutationResult>;
   readonly onUninstallSkill: (id: string) => Promise<CatalogMutationResult>;
   readonly onSetSkillEnabled: (input: {
     path: string;
     name: string;
     enabled: boolean;
+    allowImplicitInvocation?: boolean;
   }) => Promise<CatalogMutationResult>;
   readonly onAddConnector: (input: {
     name: string;
@@ -116,6 +118,7 @@ type Pending =
       readonly level: string;
       readonly findings: readonly string[];
       readonly worstCase?: string;
+      readonly reviewToken?: string | undefined;
       readonly source:
         | { kind: 'file' | 'directory' | 'git'; path?: string; url?: string }
         | { kind: 'hub'; ref: HubItemRef };
@@ -179,7 +182,7 @@ export function CatalogPage(props: CatalogPageProps) {
 
   /** Hub 条目同样先过审计（13 §5.3）：P1 / P2 转成确认卡。 */
   const installHub = async (
-    ref: HubItemRef & { acknowledge?: boolean; confirmName?: string },
+    ref: HubItemRef & { acknowledge?: boolean; confirmName?: string; reviewToken?: string },
   ): Promise<void> => {
     if (!props.hubActions || hubInstalling.current) return;
     hubInstalling.current = true;
@@ -190,6 +193,7 @@ export function CatalogPage(props: CatalogPageProps) {
         setPending({
           kind: 'audit',
           skillId: result.audit.skillId,
+          reviewToken: result.audit.reviewToken,
           level: result.audit.level,
           findings: result.audit.findings,
           ...(result.audit.worstCase !== undefined ? { worstCase: result.audit.worstCase } : {}),
@@ -427,6 +431,7 @@ export function CatalogPage(props: CatalogPageProps) {
                           setPending({
                             kind: 'audit',
                             skillId: result.audit.skillId,
+                            reviewToken: result.audit.reviewToken,
                             level: result.audit.level,
                             findings: result.audit.findings,
                             ...(result.audit.worstCase !== undefined
@@ -535,11 +540,12 @@ export function CatalogPage(props: CatalogPageProps) {
             }}
             onSetEnabled={
               selectedSkill.skillPath
-                ? (enabled) =>
+                ? (enabled, allowImplicitInvocation) =>
                     void props.onSetSkillEnabled({
                       path: selectedSkill.skillPath!,
                       name: selectedSkill.id,
                       enabled,
+                      ...(allowImplicitInvocation !== undefined ? { allowImplicitInvocation } : {}),
                     })
                 : undefined
             }
@@ -772,6 +778,7 @@ export function CatalogPage(props: CatalogPageProps) {
                 setPending({
                   kind: 'audit',
                   skillId: result.audit.skillId,
+                  reviewToken: result.audit.reviewToken,
                   level: result.audit.level,
                   findings: result.audit.findings,
                   ...(result.audit.worstCase !== undefined
@@ -819,6 +826,7 @@ export function CatalogPage(props: CatalogPageProps) {
             if (source.kind === 'hub') {
               void installHub({
                 ...source.ref,
+                ...(pending.reviewToken ? { reviewToken: pending.reviewToken } : {}),
                 acknowledge: true,
                 ...(pending.level === 'p2' ? { confirmName: pending.skillId } : {}),
               });
@@ -826,6 +834,7 @@ export function CatalogPage(props: CatalogPageProps) {
             }
             void props.onInstallSkill({
               kind: source.kind,
+              ...(pending.reviewToken ? { reviewToken: pending.reviewToken } : {}),
               ...(source.path !== undefined ? { path: source.path } : {}),
               ...(source.url !== undefined ? { url: source.url } : {}),
               acknowledge: true,
@@ -1437,7 +1446,8 @@ function SkillDetail({
   readonly onBack: () => void;
   readonly onUse: () => void;
   readonly onUninstall?: (() => void) | undefined;
-  readonly onSetEnabled?: ((enabled: boolean) => void) | undefined;
+  readonly onSetEnabled?:
+    ((enabled: boolean, allowImplicitInvocation?: boolean) => void) | undefined;
 }) {
   return (
     <div className="ew-catalog-detail">
@@ -1471,6 +1481,10 @@ function SkillDetail({
           ))}
         </div>
       ) : null}
+      <p className="ew-catalog-detail-meta">
+        调用方式：
+        {skill.allowImplicitInvocation === false ? '仅手动调用' : '自动匹配，也可手动调用'}
+      </p>
       {skill.skillPath ? (
         <p className="ew-catalog-detail-meta">{`位置：${skill.skillPath}`}</p>
       ) : null}
@@ -1486,6 +1500,15 @@ function SkillDetail({
         {onSetEnabled ? (
           <PillButton onClick={() => onSetEnabled(skill.enabled === false)}>
             {skill.enabled === false ? '启用' : '停用'}
+          </PillButton>
+        ) : null}
+        {skill.invocationEditable && onSetEnabled ? (
+          <PillButton
+            onClick={() =>
+              onSetEnabled(skill.enabled !== false, skill.allowImplicitInvocation === false)
+            }
+          >
+            {skill.allowImplicitInvocation === false ? '允许自动匹配' : '设为仅手动调用'}
           </PillButton>
         ) : null}
         {skill.defaultPrompt ? (

@@ -71,6 +71,7 @@ export interface SkillExtractionActions {
     revision: number;
     acknowledge?: boolean;
     confirmName?: string;
+    reviewToken?: string;
   }): Promise<SkillExtractionSaveResult>;
   refreshSkillSource(input: { threadId: string }): Promise<SkillExtractionView>;
 }

@@ -31,7 +31,7 @@ import {
 } from '@evowork/hub-protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createFsCatalogPorts, readCatalog } from '../src/main/catalog-host.js';
+import { createFsCatalogPorts, readCatalog, setSkillInvocation } from '../src/main/catalog-host.js';
 import { OFFICIAL_HUB_KEYS, officialHubSource } from '../src/main/hub-config.js';
 import {
   canAutoFetch,
@@ -500,6 +500,45 @@ describe('更新 · 吊销 · 回滚（13 §5.4，HUB-Q4=A）', () => {
     await refreshHub(p, p.runtime, 'manual');
     await installHubItem(p, { kind: 'skill', id: 'minutes' });
   }
+
+  it('更新兼容路径失败保留当前版、上一版和版本登记；恢复后仍可回滚', async () => {
+    const p = ports();
+    await installed(p);
+    serveIndex([publish('skill', 'minutes', '1.1.0', skillFiles('minutes', '第二版'))]);
+    await refreshHub(p, p.runtime, 'manual');
+    const before = readHubState(p);
+    const failing = {
+      ...p,
+      catalog: {
+        ...p.catalog,
+        renamePath: (from: string, to: string) => {
+          if (to === join(root, 'kernel', 'skills', 'minutes') && from.endsWith('/next'))
+            throw new Error('disk');
+          p.catalog.renamePath(from, to);
+        },
+      },
+    };
+    serveIndex([publish('skill', 'minutes', '1.2.0', skillFiles('minutes', '第三版'))]);
+    await refreshHub(failing, failing.runtime, 'manual');
+    expect(readFileSync(kernelSkill('minutes'), 'utf8')).toContain('第二版');
+    expect(readFileSync(userSkill('minutes'), 'utf8')).toContain('第二版');
+    expect(readHubState(p)).toEqual(before);
+    expect((await rollbackHubItem(p, { kind: 'skill', id: 'minutes' })).ok).toBe(true);
+    expect(readFileSync(kernelSkill('minutes'), 'utf8')).toContain('第一版');
+  });
+
+  it('用户选择仅手动调用在 Hub 更新后保留', async () => {
+    const p = ports();
+    await installed(p);
+    expect(setSkillInvocation(p.catalog, kernelSkill('minutes'), false).ok).toBe(true);
+    serveIndex([publish('skill', 'minutes', '1.1.0', skillFiles('minutes', '第二版'))]);
+    await refreshHub(p, p.runtime, 'manual');
+    expect(
+      readCatalog(p.catalog).skills.find((skill) => skill.id === 'minutes')
+        ?.allowImplicitInvocation,
+    ).toBe(false);
+    expect(readFileSync(kernelSkill('minutes'), 'utf8')).toContain('第二版');
+  });
 
   it('能力没扩大 → 刷新时静默更新，保留上一版，可以回滚', async () => {
     const p = ports();

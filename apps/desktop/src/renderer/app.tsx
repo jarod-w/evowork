@@ -276,6 +276,7 @@ export interface EvoworkBridge
   getComposerContext?(input: {
     workspaceId?: string;
     threadId?: string;
+    forceReload?: boolean;
   }): Promise<ComposerContextView>;
   searchComposerMentions?(input: {
     workspaceId?: string;
@@ -388,12 +389,14 @@ export interface EvoworkBridge
     url?: string | undefined;
     acknowledge?: boolean | undefined;
     confirmName?: string | undefined;
+    reviewToken?: string | undefined;
   }): Promise<CatalogMutationResult>;
   uninstallSkill(input: { id: string }): Promise<CatalogMutationResult>;
   setSkillEnabled(input: {
     path: string;
     name: string;
     enabled: boolean;
+    allowImplicitInvocation?: boolean;
   }): Promise<CatalogMutationResult>;
   installPluginBundle(input: {
     marketplacePath: string;
@@ -404,6 +407,7 @@ export interface EvoworkBridge
   uninstallPluginBundle(input: { pluginId: string }): Promise<CatalogMutationResult>;
   refreshHub?(): Promise<CatalogMutationResult>;
   installHubItem?(input: {
+    reviewToken?: string;
     kind: HubItemRef['kind'];
     id: string;
     acknowledge?: boolean | undefined;
@@ -1085,31 +1089,39 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
     [pushToast],
   );
 
-  const refreshComposerContext = useCallback(async () => {
-    const request = ++composerContextRequest.current;
-    if (!bridge.getComposerContext) return;
-    try {
-      const context = await bridge.getComposerContext(
-        activeTaskId !== null ? { threadId: activeTaskId } : workspaceId ? { workspaceId } : {},
-      );
-      if (request !== composerContextRequest.current) return;
-      setComposerContext(context);
-      const skillErrors = context.skillErrors;
-      if (skillErrors?.length) {
-        setNotices((previous) => [
-          ...previous,
-          {
-            tone: 'warning',
-            text: `有 ${skillErrors.length} 个技能无法加载：${skillErrors[0]?.message ?? '格式无效'}`,
-          },
-        ]);
+  const refreshComposerContext = useCallback(
+    async (forceReload = false) => {
+      const request = ++composerContextRequest.current;
+      if (!bridge.getComposerContext) return;
+      try {
+        const context = await bridge.getComposerContext({
+          ...(activeTaskId !== null
+            ? { threadId: activeTaskId }
+            : workspaceId
+              ? { workspaceId }
+              : {}),
+          ...(forceReload ? { forceReload: true } : {}),
+        });
+        if (request !== composerContextRequest.current) return;
+        setComposerContext(context);
+        const skillErrors = context.skillErrors;
+        if (skillErrors?.length) {
+          setNotices((previous) => [
+            ...previous,
+            {
+              tone: 'warning',
+              text: `有 ${skillErrors.length} 个技能无法加载：${skillErrors[0]?.message ?? '格式无效'}`,
+            },
+          ]);
+        }
+      } catch (error) {
+        if (request !== composerContextRequest.current) return;
+        setComposerContext({ mentions: [], commands: [] });
+        reportFailure(error, '没能刷新技能列表。');
       }
-    } catch (error) {
-      if (request !== composerContextRequest.current) return;
-      setComposerContext({ mentions: [], commands: [] });
-      reportFailure(error, '没能刷新技能列表。');
-    }
-  }, [activeTaskId, bridge, reportFailure, workspaceId]);
+    },
+    [activeTaskId, bridge, reportFailure, workspaceId],
+  );
   const latestComposerRefresh = useRef(refreshComposerContext);
   latestComposerRefresh.current = refreshComposerContext;
 
@@ -1444,7 +1456,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
         }
         if (event.type === 'turn-started' || event.type === 'turn-completed') {
           if (event.type === 'turn-completed' && event.taskId === activeTaskId) {
-            void refreshComposerContext();
+            void refreshComposerContext(true);
           }
           turnRevisionByTask.current.set(
             event.taskId,
@@ -1588,7 +1600,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           return;
         }
         if (event.type === 'skills-changed') {
-          void refreshComposerContext();
+          void refreshComposerContext(true);
           return;
         }
         if (event.type === 'connectors-changed') {
@@ -2513,7 +2525,7 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
       setReferences([input.reference]);
     },
     changed: () => {
-      void refreshComposerContext();
+      void refreshComposerContext(true);
     },
     failed: reportFailure,
   });
@@ -4996,6 +5008,9 @@ export function App({ bridge }: { readonly bridge: EvoworkBridge }) {
           onConfirm={() =>
             void installAttachmentSkill({
               ...pendingAttachmentSkill.input,
+              ...(pendingAttachmentSkill.audit.reviewToken
+                ? { reviewToken: pendingAttachmentSkill.audit.reviewToken }
+                : {}),
               acknowledge: true,
               ...(pendingAttachmentSkill.audit.level === 'p2'
                 ? { confirmName: pendingAttachmentSkill.audit.skillId }

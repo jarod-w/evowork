@@ -1,0 +1,7 @@
+[1124/221641.429334:ERROR:electron/shell/common/mac/codesign_util.cc:79] task_name_for_pid: (os/kern) failure (5)
+{
+  "error": {
+    "code": "ERR_PNPM_MISSING_PACKAGE_INDEX_FILE",
+    "message": "Failed to find package index file for dompurify@3.4.14 (at /Users/jarod.ai/develop/evowork/.pnpm-store/v10/index/75/5a07f73f8c63e0bd22296018293761f16a8cb8b77c2866d8e88a24cce1e9ac-dompurify@3.4.14.json), please consider running 'pnpm install'"
+  }
+}

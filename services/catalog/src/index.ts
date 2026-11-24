@@ -13,6 +13,8 @@ export {
   filterSkills,
   listSkills,
   parseFrontmatter,
+  skillAllowsImplicit,
+  patchSkillInvocation,
   parseInterfaceJson,
   rotateFeatured,
   HUB_REVOKED_MARKER,

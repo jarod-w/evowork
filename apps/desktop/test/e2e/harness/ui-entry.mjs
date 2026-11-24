@@ -351,7 +351,10 @@ ${process.env.EVOWORK_UI_MEMORY_IMPORT === 'disabled' ? '[features]\nexternal_ag
      */
     showOpenDialog: async (options) => {
       if (!options?.properties?.includes('openFile')) {
-        return { canceled: false, filePaths: [workspace] };
+        return {
+          canceled: false,
+          filePaths: [globalThis.__evoworkE2E?.pickedDirectory ?? workspace],
+        };
       }
       const picked = globalThis.__evoworkE2E?.pickedFiles ?? [];
       return {

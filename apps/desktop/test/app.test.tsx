@@ -236,7 +236,10 @@ describe('任务内的技能发现', () => {
               },
         );
       });
-      expect(getComposerContext).toHaveBeenLastCalledWith({ threadId: 'standalone' });
+      expect(getComposerContext).toHaveBeenLastCalledWith({
+        threadId: 'standalone',
+        forceReload: true,
+      });
       fireEvent.change(screen.getByLabelText('需求输入'), { target: { value: '/' } });
       expect(await screen.findByRole('option', { name: /工作教练/ })).toBeTruthy();
       fireEvent.click(screen.getByRole('option', { name: /工作教练/ }));

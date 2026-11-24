@@ -139,6 +139,34 @@ function makeActions(overrides: Partial<Parameters<typeof createRendererActions>
   });
 }
 
+describe('技能候选快照', () => {
+  it('合并并发查询，显式刷新与短期过期能发现新技能，失败可重试', async () => {
+    let time = 0;
+    const store = memoryStore();
+    const adapter = fakeAdapter({
+      listSkills: vi.fn(async () => ({ data: [{ cwd: '/w', skills: [], errors: [] }] })),
+    });
+    const actions = makeActions({ store, adapter, now: () => time });
+    try {
+      await Promise.all([actions.getComposerContext({}), actions.getComposerContext({})]);
+      expect(adapter.listSkills).toHaveBeenCalledTimes(1);
+      await actions.getComposerContext({ forceReload: true });
+      expect(adapter.listSkills).toHaveBeenCalledTimes(2);
+      time = 2001;
+      await actions.getComposerContext({});
+      expect(adapter.listSkills).toHaveBeenCalledTimes(3);
+      vi.mocked(adapter.listSkills).mockRejectedValueOnce(new Error('unavailable'));
+      await expect(actions.getComposerContext({ forceReload: true })).rejects.toThrow(
+        'unavailable',
+      );
+      await actions.getComposerContext({});
+      expect(adapter.listSkills).toHaveBeenCalledTimes(5);
+    } finally {
+      store.close();
+    }
+  });
+});
+
 describe('无项目工作目录设置', () => {
   it('选择、取消和恢复默认走真实环境登记，不创建项目；拒绝目录保留原选择', async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'ew-working-directory-')));
@@ -431,6 +459,49 @@ describe('Composer 技能上下文', () => {
       attachmentText.stop();
       store.close();
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('文件保存但内核只发现同名外部副本时，安装不能伪报已生效', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ew-skill-discovery-'));
+    const store = memoryStore();
+    try {
+      const catalogPorts = createFsCatalogPorts({
+        pluginsDir: join(root, 'plugins'),
+        userRoot: join(root, 'user'),
+        kernelHome: join(root, 'kernel'),
+      });
+      const path = join(root, 'SKILL.md');
+      writeFileSync(path, '---\nname: coach\ndescription: 工作教练\n---\n');
+      const adapter = fakeAdapter({
+        listSkills: vi.fn(async () => ({
+          data: [
+            {
+              cwd: root,
+              skills: [
+                {
+                  name: 'coach',
+                  description: '外部副本',
+                  path: '/external/coach/SKILL.md',
+                  enabled: true,
+                  scope: 'user' as const,
+                },
+              ],
+              errors: [],
+            },
+          ],
+        })),
+      });
+      const result = await makeActions({ store, adapter, catalogPorts }).installSkill({
+        kind: 'file',
+        path,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.refused).toContain('内核尚未发现');
+      expect(existsSync(join(root, 'user', 'skills', 'coach', 'SKILL.md'))).toBe(true);
+    } finally {
+      store.close();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

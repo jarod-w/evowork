@@ -1,3 +1,12 @@
+import { createHash } from 'node:crypto';
+import {
+  replaceSkillDirectories,
+  removeSkillDirectories,
+  skillDestinations,
+  skillContentHash,
+  SKILL_PROVENANCE,
+  preserveSkillInvocation,
+} from './skill-storage.js';
 /**
  * 插件 Hub 的本机宿主（13 §4.4–§5.6，H1）。
  *
@@ -26,6 +35,8 @@ import {
   parseFrontmatter,
   parseHubInstallState,
   patchMcpServersToml,
+  patchSkillInvocation,
+  skillAllowsImplicit,
   reconcileAudit,
   removeInstalled,
   riskLabel,
@@ -138,6 +149,7 @@ export interface HubMutation {
   readonly audit?:
     | {
         readonly skillId: string;
+        readonly reviewToken?: string;
         readonly subject: 'hub';
         readonly level: RiskLevel;
         readonly findings: readonly string[];
@@ -147,6 +159,7 @@ export interface HubMutation {
 }
 
 export interface InstallHubInput extends HubItemRef {
+  readonly reviewToken?: string | undefined;
   readonly acknowledge?: boolean | undefined;
   readonly confirmName?: string | undefined;
 }
@@ -475,7 +488,11 @@ function hiddenFromPrompt(
 ): boolean {
   const dir = skillMdPath.replace(/[/\\]SKILL\.md$/i, '');
   const yaml = ports.io.readText(join(dir, 'agents', 'openai.yaml'));
-  return yaml !== undefined && /allow_implicit_invocation\s*:\s*false/.test(yaml);
+  try {
+    return !skillAllowsImplicit(yaml);
+  } catch {
+    return true;
+  }
 }
 
 /* ── 安装 ───────────────────────────────────────────────────────────────── */
@@ -601,13 +618,21 @@ export async function installHubItem(
     dependency.missing ||
     prepared.level !== 'p0' ||
     (installed !== undefined && findings.length > 0);
-  if (needsAck && input.acknowledge !== true) {
+  const reviewToken = createHash('sha256')
+    .update(JSON.stringify([item.version, item.package, prepared.level, findings]))
+    .digest('hex');
+  if (
+    needsAck &&
+    (input.acknowledge !== true ||
+      (input.reviewToken !== undefined && input.reviewToken !== reviewToken))
+  ) {
     return {
       ok: false,
       needsConfirm: true,
       audit: {
         skillId: item.id,
         subject: 'hub',
+        reviewToken,
         level: prepared.level,
         findings,
         ...(prepared.worstCase !== undefined ? { worstCase: prepared.worstCase } : {}),
@@ -767,27 +792,37 @@ async function writeSkill(
     }
     overridesBundled = true;
   }
-  if (installed !== undefined && c.exists(dest)) {
-    const keep = rollbackDir(ports, 'skill', item.id);
-    if (c.exists(keep)) c.removePath(keep);
-    c.mkdirp(join(hubDir(ports), 'rollback', 'skill'));
-    c.copyDir(dest, keep);
-  }
-  if (c.exists(dest)) c.removePath(dest);
-  writeFiles(c, dest, files);
-  c.writeText(join(dest, SOURCE_MARKER_FILE), 'hub\n');
-  // HF7：按需层 = 启用但不进 prompt 目录
-  if (!item.promptVisible) {
-    c.mkdirp(join(dest, 'agents'));
-    c.writeText(
-      join(dest, 'agents', 'openai.yaml'),
-      'policy:\n  allow_implicit_invocation: false\n',
-    );
-  }
-  const kernelDest = join(c.kernelHome, 'skills', item.id);
-  c.mkdirp(join(c.kernelHome, 'skills'));
-  if (c.exists(kernelDest)) c.removePath(kernelDest);
-  c.copyDir(dest, kernelDest);
+  const keep = rollbackDir(ports, 'skill', item.id);
+  replaceSkillDirectories(
+    c,
+    skillDestinations(c, item.id),
+    (next) => {
+      writeFiles(c, next, files);
+      c.writeText(join(next, SOURCE_MARKER_FILE), 'hub\n');
+      if (!item.promptVisible) {
+        c.mkdirp(join(next, 'agents'));
+        c.writeText(
+          join(next, 'agents', 'openai.yaml'),
+          patchSkillInvocation(c.io.readText(join(next, 'agents', 'openai.yaml')), false),
+        );
+      }
+      const invocation = preserveSkillInvocation(c, dest, next);
+      c.writeText(
+        join(next, SKILL_PROVENANCE),
+        JSON.stringify({
+          schemaVersion: 1,
+          source: 'hub',
+          version: item.version,
+          ...(invocation !== undefined ? { allowImplicitInvocation: invocation } : {}),
+          package: item.package,
+          contentHash: skillContentHash(next),
+        }),
+      );
+    },
+    installed && c.exists(dest)
+      ? [{ dest: keep, prepare: (backup) => c.copyDir(dest, backup) }]
+      : [],
+  );
   if (overridesBundled) {
     await ports.setSkillEnabledByPath?.(join(c.pluginsDir, 'skills', item.id, 'SKILL.md'), false);
   }
@@ -1027,10 +1062,7 @@ export async function uninstallHubItem(ports: HubHostPorts, ref: HubItemRef): Pr
   const c = ports.catalog;
   try {
     if (ref.kind === 'skill') {
-      const dest = join(c.userRoot, 'skills', ref.id);
-      const kernelDest = join(c.kernelHome, 'skills', ref.id);
-      if (c.exists(dest)) c.removePath(dest);
-      if (c.exists(kernelDest)) c.removePath(kernelDest);
+      removeSkillDirectories(c, skillDestinations(c, ref.id));
       // 5.5：卸载 Hub 版本后回落到随包版本
       if (installed.overridesBundled === true) {
         await ports.setSkillEnabledByPath?.(join(c.pluginsDir, 'skills', ref.id, 'SKILL.md'), true);
@@ -1073,12 +1105,22 @@ export async function rollbackHubItem(ports: HubHostPorts, ref: HubItemRef): Pro
   if (!c.exists(keep)) return { ok: false, refused: '上一版的文件不在了，没法回滚。' };
   try {
     if (ref.kind === 'skill') {
-      const dest = join(c.userRoot, 'skills', ref.id);
-      const kernelDest = join(c.kernelHome, 'skills', ref.id);
-      if (c.exists(dest)) c.removePath(dest);
-      c.copyDir(keep, dest);
-      if (c.exists(kernelDest)) c.removePath(kernelDest);
-      c.copyDir(dest, kernelDest);
+      replaceSkillDirectories(c, skillDestinations(c, ref.id), (next) => {
+        c.copyDir(keep, next);
+        const invocation = preserveSkillInvocation(c, join(c.userRoot, 'skills', ref.id), next);
+        if (invocation !== undefined) {
+          const metadataPath = join(next, SKILL_PROVENANCE);
+          const raw = c.io.readText(metadataPath);
+          c.writeText(
+            metadataPath,
+            JSON.stringify({
+              ...(raw ? JSON.parse(raw) : {}),
+              allowImplicitInvocation: invocation,
+              contentHash: skillContentHash(next),
+            }),
+          );
+        }
+      });
     } else if (ref.kind === 'expert') {
       c.writeText(
         join(c.userRoot, 'agents', `${ref.id}.toml`),

@@ -1,0 +1,18 @@
+
+Running 11 tests using 1 worker
+
+(node:7142) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `Electron --trace-warnings ...` to show where the warning was created)
+  ✓   1 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:87:1 › 项目任务从菜单提炼、来源定位、模型修改、刷新恢复、保存并复用，项目技能不出现在无项目任务 (2.1s)
+  ✓   2 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:171:1 › 无项目任务默认全局，未保存不被发现，保存后独立任务可发现并保留来源关系 (1.4s)
+  ✓   3 [fake] › apps/desktop/test/e2e/ui/skill-extraction.spec.mjs:209:1 › 明确的自然语言要求通过真实工具创建关联草稿，未保存不安装 (1.3s)
+  ✓   4 [fake] › apps/desktop/test/e2e/ui/skill-install-layout.spec.mjs:12:1 › 长审计只滚正文，操作始终可见；卡片标签完整换行 (895ms)
+  ✓   5 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:15:1 › 专家可选用、按状态筛选并在刷新后取消选用 (901ms)
+  ✓   6 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:43:3 › 显式共享目录 › 共享目录技能与预算一致，同名副本可独立停用且保留文件 (2.8s)
+  ✓   7 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:159:3 › 显式共享目录 › 共享同步副本合为一张卡，切换后只停用所选路径并保留文件 (1.2s)
+  ✓   8 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:242:1 › 单个 SKILL.MD 安装后可通过 / 选择、发送并恢复历史 (1.3s)
+  ✓   9 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:309:1 › 添加技能附件不自动安装；点击全局安装后当前和另一个新任务都能发现 (791ms)
+  ✓  10 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:337:1 › 附件正文中的高风险声明不能代替用户确认；取消零安装、确认后才可用 (832ms)
+  ✓  11 [fake] › apps/desktop/test/e2e/ui/skill-install.spec.mjs:361:1 › 带引号和多行描述的技能安装后立即可启停，更新与卸载同步刷新候选 (6.3s)
+
+  11 passed (20.1s)

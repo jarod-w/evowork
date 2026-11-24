@@ -464,6 +464,7 @@ export interface ComposerAttachmentView {
 }
 
 export interface InstallAttachmentSkillInput extends PickAttachmentsInput {
+  readonly reviewToken?: string | undefined;
   readonly attachmentId: string;
   readonly acknowledge?: boolean;
   readonly confirmName?: string;
@@ -1546,6 +1547,8 @@ export interface CatalogItemView {
   readonly worstCase?: string | undefined;
   readonly defaultPrompt?: string | undefined;
   readonly enabled?: boolean | undefined;
+  readonly allowImplicitInvocation?: boolean | undefined;
+  readonly invocationEditable?: boolean | undefined;
   readonly scope?: 'user' | 'repo' | 'system' | 'admin' | undefined;
   /** `skills/config/write` 的精确选择器。 */
   readonly skillPath?: string | undefined;
@@ -1720,11 +1723,13 @@ export interface CatalogDataView {
  */
 export interface CatalogMutationResult {
   readonly ok: boolean;
+  readonly installedSkillPath?: string;
   readonly refused?: string | undefined;
   readonly needsConfirm?: boolean | undefined;
   readonly audit?:
     | {
         readonly skillId: string;
+        readonly reviewToken?: string | undefined;
         /** 确认卡的措辞：技能、套件，还是 Hub 条目。缺省 = 技能。 */
         readonly subject?: 'skill' | 'bundle' | 'hub' | undefined;
         readonly level: string;

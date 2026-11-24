@@ -1,0 +1,12 @@
+[1124/220821.016011:ERROR:electron/shell/common/mac/codesign_util.cc:79] task_name_for_pid: (os/kern) failure (5)
+
+> evowork@0.6.5 check:kernel-contract /Users/jarod.ai/develop/evowork/evowork
+> node scripts/kernel-contract.mjs
+
+[1124/220821.182037:ERROR:electron/shell/common/mac/codesign_util.cc:79] task_name_for_pid: (os/kern) failure (5)
+
+# 协议形状自检（K2）
+
+请求 54 个 · 通知 30 条 · 回复 5 个 · 镜像枚举 4 个（豁免 6）· 内核结构体 663 个
+
+✅ 我们发的形状和内核接受的形状一致。

@@ -13,6 +13,8 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  lstatSync,
+  symlinkSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -34,6 +36,8 @@ import {
   mergeConnectors,
   parseConnectorStore,
   parseFrontmatter,
+  skillAllowsImplicit,
+  patchSkillInvocation,
   patchMcpServersToml,
   removeConnector,
   renderAgentToml,
@@ -55,6 +59,15 @@ import {
   type SkillRecord,
   type StoredConnector,
 } from '@evowork/catalog';
+
+import {
+  replaceSkillDirectories,
+  removeSkillDirectories,
+  skillDestinations,
+  skillContentHash,
+  SKILL_PROVENANCE,
+  preserveSkillInvocation,
+} from './skill-storage.js';
 
 import type {
   CatalogAppView,
@@ -79,6 +92,7 @@ export interface CatalogPorts {
   readonly exists: (path: string) => boolean;
   readonly mkdirp: (path: string) => void;
   readonly copyDir: (src: string, dest: string) => void;
+  readonly linkDir: (target: string, path: string) => void;
   readonly removePath: (path: string) => void;
   readonly renamePath: (from: string, to: string) => void;
   readonly writeText: (path: string, content: string) => void;
@@ -87,7 +101,10 @@ export interface CatalogPorts {
   readonly gitClone: (
     url: string,
     dest: string,
-  ) => Promise<{ readonly ok: true } | { readonly ok: false; readonly error: string }>;
+  ) => Promise<
+    | { readonly ok: true; readonly revision?: string }
+    | { readonly ok: false; readonly error: string }
+  >;
 }
 
 export interface InstallSkillInput {
@@ -96,6 +113,7 @@ export interface InstallSkillInput {
   readonly url?: string | undefined;
   readonly acknowledge?: boolean | undefined;
   readonly confirmName?: string | undefined;
+  readonly reviewToken?: string | undefined;
 }
 
 export interface AddConnectorInput {
@@ -132,7 +150,14 @@ export function readCatalog(ports: CatalogPorts): CatalogDataView {
   const experts = readExperts(ports);
   const apps = listApps(skills, connectors);
   return {
-    skills: skills.map(toSkillView),
+    skills: skills.map((skill) => ({
+      ...toSkillView(skill),
+      allowImplicitInvocation: skillAllowsImplicit(
+        ports.io.readText(join(skill.path, 'agents', 'openai.yaml')),
+      ),
+      invocationEditable: skill.source !== 'official' && !skill.hubRevoked,
+      ...(skill.hubRevoked ? { enabled: false, invocationEditable: false } : {}),
+    })),
     connectors: connectors.map(toConnectorView),
     experts,
     apps: apps.map(toAppView),
@@ -206,6 +231,10 @@ export function mergeDiscoveredSkills(
       enabled: skill.enabled,
       scope: skill.scope,
       skillPath: skill.path,
+      allowImplicitInvocation: skillAllowsImplicit(
+        ports.io.readText(join(dirname(skill.path), 'agents', 'openai.yaml')),
+      ),
+      invocationEditable: false,
       ...(official
         ? {}
         : { uninstallDisabledReason: '此技能由外部目录或套件管理，可在这里停用。' }),
@@ -214,7 +243,7 @@ export function mergeDiscoveredSkills(
   return rows;
 }
 
-function canonicalSkillPath(path: string): string {
+export function canonicalSkillPath(path: string): string {
   try {
     return realpathSync(path);
   } catch {
@@ -222,26 +251,64 @@ function canonicalSkillPath(path: string): string {
   }
 }
 
+interface SkillSnapshot {
+  readonly key: string;
+  readonly token: string;
+  readonly directory: string;
+  readonly sourceKind: 'local' | 'git';
+  readonly origin: Readonly<Record<string, string>>;
+  readonly hash: string;
+  readonly id: string;
+  readonly cleanup: ReturnType<typeof setTimeout>;
+}
+
+const reviews = new WeakMap<CatalogPorts, Map<string, SkillSnapshot>>();
+
+export function disposeSkillReviews(ports: CatalogPorts): void {
+  for (const snapshot of reviews.get(ports)?.values() ?? []) forgetSnapshot(ports, snapshot);
+}
+
+function forgetSnapshot(ports: CatalogPorts, snapshot: SkillSnapshot): void {
+  reviews.get(ports)?.delete(snapshot.key);
+  clearTimeout(snapshot.cleanup);
+  try {
+    ports.removePath(snapshot.directory);
+  } catch {
+    /* Outside skill roots. */
+  }
+}
+
 export async function installSkill(
   ports: CatalogPorts,
   input: InstallSkillInput,
 ): Promise<CatalogMutationResult> {
+  const key = JSON.stringify([input.kind, input.path, input.url]);
+  const pending = reviews.get(ports)?.get(key);
+  if (input.acknowledge && pending && (!input.reviewToken || pending.token === input.reviewToken))
+    return installSnapshot(ports, input, pending);
+  if (input.reviewToken) return mutation(ports, false, '安装确认已过期，请重新选择技能并审查。');
   const prepared = await resolveInstallSource(ports, input);
   if (!prepared.ok) return mutation(ports, false, prepared.refused);
   try {
-    return installPreparedSkill(ports, input, prepared);
+    const snapshot = prepareSnapshot(ports, input, prepared, key);
+    return installSnapshot(ports, { ...input, acknowledge: false }, snapshot);
+  } catch (error) {
+    return mutation(
+      ports,
+      false,
+      `没能准备技能：${error instanceof Error ? error.message : String(error)}`,
+    );
   } finally {
     if (prepared.temporary) {
       try {
         ports.removePath(prepared.temporary);
       } catch {
-        /* 克隆暂存不在技能扫描根下，清理失败不改变安装结果。 */
+        /* Outside skill roots. */
       }
     }
   }
 }
 
-/** Called only with a host-validated project root, never with a renderer-selected path. */
 export function installProjectSkill(
   ports: CatalogPorts,
   input: InstallSkillInput,
@@ -249,211 +316,195 @@ export function installProjectSkill(
 ): CatalogMutationResult {
   if (input.kind !== 'directory' || !input.path)
     return mutation(ports, false, '项目技能需要完整目录。');
-  return installPreparedSkill(ports, input, { src: input.path, sourceKind: 'local' }, [
-    join(projectRoot, '.agents'),
-  ]);
+  const key = JSON.stringify([projectRoot, input.path]);
+  const destinations = [join(projectRoot, '.agents', 'skills')];
+  const pending = reviews.get(ports)?.get(key);
+  if (input.acknowledge && pending) return installSnapshot(ports, input, pending, destinations);
+  try {
+    const snapshot = prepareSnapshot(ports, input, { src: input.path, sourceKind: 'local' }, key);
+    return installSnapshot(ports, { ...input, acknowledge: false }, snapshot, destinations);
+  } catch (error) {
+    return mutation(
+      ports,
+      false,
+      `没能准备技能：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
-function installPreparedSkill(
+function prepareSnapshot(
   ports: CatalogPorts,
   input: InstallSkillInput,
-  prepared: { src: string; sourceKind: 'local' | 'git' },
-  destinations?: readonly string[],
-): CatalogMutationResult {
-  const { src, sourceKind } = prepared;
-  const singleFile = input.kind === 'file';
-  const skillFile = singleFile ? src : findSkillFile(ports, src);
-  const skillMd = skillFile ? ports.io.readText(skillFile) : undefined;
-  if (skillMd === undefined) {
-    return mutation(
-      ports,
-      false,
-      singleFile ? '这个技能文件现在读不到。' : '这个目录没有 SKILL.md，不是一个技能。',
-    );
+  prepared: { src: string; sourceKind: 'local' | 'git'; origin?: Readonly<Record<string, string>> },
+  key: string,
+): SkillSnapshot {
+  const directory = ports.mkdtemp('ew-skill-review-');
+  try {
+    const file = input.kind === 'file' ? prepared.src : findSkillFile(ports, prepared.src);
+    const markdown = file ? ports.io.readText(file) : undefined;
+    if (markdown === undefined) throw new Error('这个技能文件读不到，目录必须包含 SKILL.md。');
+    const frontmatter = parseFrontmatter(markdown);
+    if (!frontmatter.description || (input.kind === 'file' && !frontmatter.name))
+      throw new Error('SKILL.md 需要有效的 YAML 元数据与 description；单文件还需要 name。');
+    const id = frontmatter.name || basename(prepared.src);
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id))
+      throw new Error('技能名须为 1–64 位字母、数字、连字符或下划线，不能包含路径。');
+    if (Buffer.byteLength(markdown, 'utf8') > 1024 * 1024)
+      throw new Error('技能文件不能超过 1 MB。');
+    if (input.kind === 'file') ports.mkdirp(directory);
+    else ports.copyDir(prepared.src, directory);
+    for (const entry of ports.io.readDir(directory)) {
+      if (!entry.isDirectory && entry.name.toLowerCase() === 'skill.md')
+        ports.removePath(join(directory, entry.name));
+    }
+    ports.removePath(join(directory, SOURCE_MARKER_FILE));
+    ports.removePath(join(directory, SKILL_PROVENANCE));
+    ports.writeText(join(directory, 'SKILL.md'), markdown.replace(/^\uFEFF/, ''));
+    ports.writeText(join(directory, SOURCE_MARKER_FILE), `${prepared.sourceKind}\n`);
+    const map = reviews.get(ports) ?? new Map<string, SkillSnapshot>();
+    const previous = map.get(key);
+    if (previous) forgetSnapshot(ports, previous);
+    while (map.size >= 8) forgetSnapshot(ports, map.values().next().value!);
+    const snapshot: SkillSnapshot = {
+      key,
+      directory,
+      id,
+      token: randomUUID(),
+      sourceKind: prepared.sourceKind,
+      origin: prepared.origin ?? { path: prepared.src },
+      hash: skillContentHash(directory),
+      cleanup: setTimeout(() => forgetSnapshot(ports, snapshot), 10 * 60_000),
+    };
+    snapshot.cleanup.unref();
+    map.set(key, snapshot);
+    reviews.set(ports, map);
+    return snapshot;
+  } catch (error) {
+    ports.removePath(directory);
+    throw error;
   }
-  const frontmatter = parseFrontmatter(skillMd);
-  if (!frontmatter.description || (singleFile && !frontmatter.name)) {
-    return mutation(
-      ports,
-      false,
-      'SKILL.md 需要有效的 YAML 元数据与 description；单文件还需要 name。',
-    );
-  }
-  const id = frontmatter.name || basename(src);
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) {
-    return mutation(ports, false, '技能名须为 1–64 位字母、数字、连字符或下划线，不能包含路径。');
-  }
-  if (singleFile && Buffer.byteLength(skillMd, 'utf8') > 1024 * 1024) {
-    return mutation(ports, false, '技能文件不能超过 1 MB。');
-  }
+}
 
+function installSnapshot(
+  ports: CatalogPorts,
+  input: InstallSkillInput,
+  snapshot: SkillSnapshot,
+  projectRoots?: readonly string[],
+): CatalogMutationResult {
   const official = listSkills({ official: skillRoots(ports).official, user: '/nope' }, ports.io);
-  if (official.some((s) => s.id === id)) {
+  if (official.some((skill) => skill.id === snapshot.id)) {
+    forgetSnapshot(ports, snapshot);
     return mutation(ports, false, '这是随包技能，已经在目录里了，不必再装一份。');
   }
-
-  const audit = auditSkillFiles(
-    singleFile ? [{ relativePath: 'SKILL.md', text: skillMd }] : ports.io.listFiles(src, 3),
-  );
-  const needsAck = audit.level === 'p1' || audit.level === 'p2';
-  const needsName = audit.level === 'p2';
-  if (needsAck && input.acknowledge !== true) {
+  const managed = listSkills(skillRoots(ports), ports.io).find((skill) => skill.id === snapshot.id);
+  if (!projectRoots && (managed?.source === 'hub' || managed?.source === 'private')) {
+    forgetSnapshot(ports, snapshot);
+    return mutation(ports, false, '同名技能由内容源管理，请先卸载它再安装本地版本。');
+  }
+  const audit = auditSkillFiles(ports.io.listFiles(snapshot.directory, 32));
+  if (audit.level !== 'p0' && !input.acknowledge)
     return {
       ok: false,
       needsConfirm: true,
       audit: {
-        skillId: id,
+        skillId: snapshot.id,
+        reviewToken: snapshot.token,
         level: audit.level,
-        findings: audit.findings.map((f) => f.detail),
-        ...(audit.worstCase !== undefined ? { worstCase: audit.worstCase } : {}),
+        findings: audit.findings.map((finding) => finding.detail),
+        ...(audit.worstCase ? { worstCase: audit.worstCase } : {}),
       },
       catalog: readCatalog(ports),
     };
-  }
-  if (needsName && input.confirmName !== id) {
-    return mutation(ports, false, `要安装高风险技能，请输入技能名「${id}」确认。`);
-  }
-
+  if (audit.level === 'p2' && input.confirmName !== snapshot.id)
+    return mutation(ports, false, `要安装高风险技能，请输入技能名「${snapshot.id}」确认。`);
   try {
-    replaceInstalledSkill(ports, { src, singleFile, skillMd, id, sourceKind }, destinations);
-  } catch (err: unknown) {
-    return mutation(ports, false, `没能装上：${err instanceof Error ? err.message : String(err)}`);
-  }
-  return mutation(ports, true);
-}
-
-/** 两份暂存都完成后才替换；同步 I/O 失败恢复两边旧目录。 */
-function replaceInstalledSkill(
-  ports: CatalogPorts,
-  input: {
-    src: string;
-    singleFile: boolean;
-    skillMd: string;
-    id: string;
-    sourceKind: string;
-  },
-  destinations?: readonly string[],
-): void {
-  const stages = (destinations ?? [ports.userRoot, ports.kernelHome]).map((root) => {
-    const temporary = join(root, `.skill-install-${randomUUID()}`);
-    return {
-      temporary,
-      next: join(temporary, 'next'),
-      backup: join(temporary, 'previous'),
-      dest: join(root, 'skills', input.id),
-      backedUp: false,
-      promoted: false,
-      retain: false,
-    };
-  });
-  try {
-    for (const stage of stages) ports.mkdirp(stage.temporary);
-    const user = stages[0]!;
-    if (input.singleFile) ports.mkdirp(user.next);
-    else ports.copyDir(input.src, user.next);
-    for (const entry of ports.io.readDir(user.next)) {
-      if (
-        !entry.isDirectory &&
-        entry.name !== 'SKILL.md' &&
-        entry.name.toLowerCase() === 'skill.md'
-      )
-        ports.removePath(join(user.next, entry.name));
-    }
-    // 写自己的文件，不能沿来源包里的符号链接回写原始文件。
-    ports.removePath(join(user.next, 'SKILL.md'));
-    ports.removePath(join(user.next, SOURCE_MARKER_FILE));
-    // 发货内核要求文件第一行直接是 ---，安装副本去掉 UTF-8 BOM。
-    ports.writeText(join(user.next, 'SKILL.md'), input.skillMd.replace(/^\uFEFF/, ''));
-    ports.writeText(join(user.next, SOURCE_MARKER_FILE), `${input.sourceKind}\n`);
-    for (const stage of stages.slice(1)) ports.copyDir(user.next, stage.next);
-    for (const stage of stages) {
-      ports.mkdirp(dirname(stage.dest));
-      if (ports.exists(stage.dest)) {
-        ports.renamePath(stage.dest, stage.backup);
-        stage.backedUp = true;
-      }
-      ports.renamePath(stage.next, stage.dest);
-      stage.promoted = true;
-    }
-  } catch (error) {
-    const recoveryErrors: string[] = [];
-    for (const stage of [...stages].reverse()) {
-      try {
-        if (stage.promoted) ports.removePath(stage.dest);
-        if (stage.backedUp) ports.renamePath(stage.backup, stage.dest);
-      } catch {
-        stage.retain = true;
-        recoveryErrors.push(`旧版本备份保留在 ${stage.backup}`);
-      }
-    }
-    if (recoveryErrors.length)
-      throw new Error(
-        `${error instanceof Error ? error.message : String(error)}；恢复失败：${recoveryErrors.join('；')}`,
+    if (skillContentHash(snapshot.directory) !== snapshot.hash)
+      throw new Error('已审计内容发生变化，请重新审查。');
+    const destinations =
+      projectRoots?.map((root) => join(root, snapshot.id)) ?? skillDestinations(ports, snapshot.id);
+    replaceSkillDirectories(ports, destinations, (next) => {
+      ports.copyDir(snapshot.directory, next);
+      const invocation = preserveSkillInvocation(ports, destinations[0]!, next);
+      ports.writeText(
+        join(next, SKILL_PROVENANCE),
+        JSON.stringify({
+          schemaVersion: 1,
+          source: snapshot.sourceKind,
+          ...snapshot.origin,
+          ...(invocation !== undefined ? { allowImplicitInvocation: invocation } : {}),
+          contentHash: skillContentHash(next),
+          installedAt: new Date().toISOString(),
+        }),
       );
-    throw error;
+    });
+    return { ...mutation(ports, true), installedSkillPath: join(destinations[0]!, 'SKILL.md') };
+  } catch (error) {
+    return mutation(
+      ports,
+      false,
+      `没能装上：${error instanceof Error ? error.message : String(error)}`,
+    );
   } finally {
-    for (const stage of stages) {
-      if (stage.retain) continue;
-      try {
-        ports.removePath(stage.temporary);
-      } catch {
-        /* 清理失败只留下不被扫描的暂存目录。 */
-      }
-    }
+    forgetSnapshot(ports, snapshot);
   }
 }
 
 export function uninstallSkill(ports: CatalogPorts, id: string): CatalogMutationResult {
-  const skills = listSkills(skillRoots(ports), ports.io);
-  const skill = skills.find((s) => s.id === id);
-  if (skill === undefined) return mutation(ports, false, '没有这个技能。');
-  if (skill.source === 'official') {
-    return mutation(ports, false, '官方内置技能不能卸载。');
-  }
-  const stages = [
-    { root: ports.userRoot, dest: skill.path },
-    // 卸载定位依据实际安装目录，不能把可编辑的 frontmatter name 当路径。
-    { root: ports.kernelHome, dest: join(ports.kernelHome, 'skills', basename(skill.path)) },
-  ].map(({ root, dest }) => ({
-    dest,
-    temporary: join(root, `.skill-uninstall-${randomUUID()}`),
-    moved: false,
-    retain: false,
-  }));
+  const skill = listSkills(skillRoots(ports), ports.io).find((entry) => entry.id === id);
+  if (!skill) return mutation(ports, false, '没有这个技能。');
+  if (skill.source === 'official') return mutation(ports, false, '官方内置技能不能卸载。');
   try {
-    // 先移出两边扫描目录；任一移动失败，都恢复原位。
-    for (const stage of stages) {
-      if (!ports.exists(stage.dest)) continue;
-      ports.renamePath(stage.dest, stage.temporary);
-      stage.moved = true;
-    }
-  } catch (err: unknown) {
-    const recoveryErrors: string[] = [];
-    for (const stage of [...stages].reverse()) {
-      if (!stage.moved) continue;
-      try {
-        ports.renamePath(stage.temporary, stage.dest);
-      } catch {
-        stage.retain = true;
-        recoveryErrors.push(`备份保留在 ${stage.temporary}`);
-      }
-    }
+    removeSkillDirectories(ports, skillDestinations(ports, basename(skill.path)));
+  } catch (error) {
     return mutation(
       ports,
       false,
-      `没能卸载：${err instanceof Error ? err.message : String(err)}${recoveryErrors.length ? `；恢复失败：${recoveryErrors.join('；')}` : ''}`,
+      `没能卸载：${error instanceof Error ? error.message : String(error)}`,
     );
-  } finally {
-    for (const stage of stages) {
-      if (!stage.moved || stage.retain) continue;
-      try {
-        ports.removePath(stage.temporary);
-      } catch {
-        /* 清理失败只留下不被扫描的目录。 */
-      }
-    }
   }
   return mutation(ports, true);
+}
+
+export function setSkillInvocation(
+  ports: CatalogPorts,
+  path: string,
+  enabled: boolean,
+): CatalogMutationResult {
+  const skill = listSkills(skillRoots(ports), ports.io).find(
+    (entry) =>
+      entry.source !== 'official' &&
+      !entry.hubRevoked &&
+      [
+        join(entry.path, 'SKILL.md'),
+        join(ports.kernelHome, 'skills', basename(entry.path), 'SKILL.md'),
+      ].some((candidate) => canonicalSkillPath(candidate) === canonicalSkillPath(path)),
+  );
+  if (!skill) return mutation(ports, false, '只能修改本应用管理的已安装技能。');
+  try {
+    replaceSkillDirectories(ports, skillDestinations(ports, basename(skill.path)), (next) => {
+      ports.copyDir(skill.path, next);
+      const policyPath = join(next, 'agents', 'openai.yaml');
+      const policy = patchSkillInvocation(ports.io.readText(policyPath), enabled);
+      ports.mkdirp(dirname(policyPath));
+      ports.writeText(policyPath, policy);
+      const previous = ports.io.readText(join(next, SKILL_PROVENANCE));
+      ports.writeText(
+        join(next, SKILL_PROVENANCE),
+        JSON.stringify({
+          ...(previous ? JSON.parse(previous) : {}),
+          allowImplicitInvocation: enabled,
+          contentHash: skillContentHash(next),
+        }),
+      );
+    });
+    return mutation(ports, true);
+  } catch (error) {
+    return mutation(
+      ports,
+      false,
+      `没能修改调用方式：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 export function addConnector(ports: CatalogPorts, input: AddConnectorInput): CatalogMutationResult {
@@ -609,13 +660,22 @@ export function createFsCatalogPorts(input: {
     nodeCommand: input.nodeCommand ?? 'node',
     ...(input.nodeEnv !== undefined ? { nodeEnv: input.nodeEnv } : {}),
     io,
-    exists: (path) => existsSync(path),
+    exists: (path) => {
+      try {
+        lstatSync(path);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    linkDir: (target, path) =>
+      symlinkSync(target, path, process.platform === 'win32' ? 'junction' : 'dir'),
     mkdirp: (path) => {
       mkdirSync(path, { recursive: true });
     },
     copyDir: (src, dest) => {
       // 选中的根目录可以是别名；暂存本身必须是独立目录。
-      cpSync(realpathSync(src), dest, { recursive: true });
+      cpSync(realpathSync(src), dest, { recursive: true, dereference: true });
       const git = join(dest, '.git');
       if (existsSync(git)) rmSync(git, { recursive: true, force: true });
     },
@@ -671,7 +731,7 @@ function walkFiles(
   }
   const out: { relativePath: string; text?: string | undefined }[] = [];
   for (const name of names) {
-    if (name === 'node_modules' || name === '.git') continue;
+    if (name === 'node_modules' || name === '.git' || name === SKILL_PROVENANCE) continue;
     const childRel = rel === '' ? name : join(rel, name);
     const full = join(root, childRel);
     let dir = false;
@@ -691,13 +751,15 @@ function walkFiles(
 }
 
 function isText(name: string): boolean {
-  return /\.(md|json|py|mjs|js|ts|toml|txt|yml|yaml)$/i.test(name);
+  return /\.(md|json|py|mjs|cjs|js|ts|toml|txt|yml|yaml|sh|ps1|bat|html|css|csv)$/i.test(name);
 }
 
 function defaultGitClone(
   url: string,
   dest: string,
-): Promise<{ readonly ok: true } | { readonly ok: false; readonly error: string }> {
+): Promise<
+  { readonly ok: true; readonly revision?: string } | { readonly ok: false; readonly error: string }
+> {
   return new Promise((resolve) => {
     const child = spawn('git', ['clone', '--depth', '1', '--', url, dest], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -710,8 +772,22 @@ function defaultGitClone(
       resolve({ ok: false, error: err.message });
     });
     child.on('close', (code) => {
-      if (code === 0) resolve({ ok: true });
-      else resolve({ ok: false, error: stderr.trim() || `git clone 退出码 ${String(code)}` });
+      if (code === 0) {
+        const revision = spawn('git', ['-C', dest, 'rev-parse', 'HEAD'], {
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        let commit = '';
+        revision.stdout.on('data', (chunk: Buffer) => {
+          commit += chunk.toString();
+        });
+        revision.on('error', () => resolve({ ok: true }));
+        revision.on('close', () =>
+          resolve({
+            ok: true,
+            ...(/^[a-f0-9]{40,64}$/.test(commit.trim()) ? { revision: commit.trim() } : {}),
+          }),
+        );
+      } else resolve({ ok: false, error: stderr.trim() || `git clone 退出码 ${String(code)}` });
     });
   });
 }
@@ -796,6 +872,7 @@ async function resolveInstallSource(
       readonly src: string;
       readonly sourceKind: 'local' | 'git';
       readonly temporary?: string;
+      readonly origin?: Readonly<Record<string, string>>;
     }
   | { readonly ok: false; readonly refused: string }
 > {
@@ -820,7 +897,17 @@ async function resolveInstallSource(
     const src = findSkillDir(ports, dest);
     if (src === undefined) return { ok: false, refused: '仓库里没有 SKILL.md。' };
     keepForInstall = true;
-    return { ok: true, src, sourceKind: 'git', temporary: dest };
+    return {
+      ok: true,
+      src,
+      sourceKind: 'git',
+      temporary: dest,
+      origin: {
+        url,
+        subdirectory: src === dest ? '.' : basename(src),
+        ...(cloned.revision ? { commit: cloned.revision } : {}),
+      },
+    };
   } catch (error) {
     return {
       ok: false,

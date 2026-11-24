@@ -31,7 +31,7 @@ import { describeMcpToolApproval } from './mcp-tool-approval-view.js';
  * （连报错都没有：`void send()` 把 rejection 吞了）。
  * 它一直没被发现，是因为这条链路从来没有被真正拉起来过。
  */
-import { posix, resolve, win32 } from 'node:path';
+import { join, posix, resolve, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mergeWebSources, webResearchResult, type WebSource } from '../shared/web-sources.js';
 import type { TaskEnvironments } from './task-environments.js';
@@ -175,6 +175,8 @@ import {
   createExpert,
   emptyCatalog,
   installSkill,
+  canonicalSkillPath,
+  setSkillInvocation,
   mergeDiscoveredSkills,
   missingPortsResult,
   readCatalog,
@@ -702,6 +704,7 @@ export interface RendererBridgeOptions {
    * 判定在 `@evowork/catalog`；这里只接线。
    */
   readonly catalogPorts?: CatalogPorts | undefined;
+  readonly skillMigrationConflicts?: readonly string[];
   /**
    * 插件 Hub（13，H1）。没给时「EvoWork 精选」整块不出现，五个 Hub 动作如实拒绝。
    * 出网只在 `@evowork/hub-client` 里；什么时候允许出网由 `hub-host` 判（HUB-Q3=B）。
@@ -1088,6 +1091,23 @@ export function createRendererActions(options: RendererBridgeOptions) {
   const agentWorkspace = new AgentWorkspaceStore(store);
   const followUp = new FollowUpStore(store, false);
   const now = options.now ?? (() => Date.now());
+  const composerSkills = new Map<
+    string,
+    { at: number; promise: ReturnType<typeof adapter.listSkills> }
+  >();
+  function listComposerSkills(cwd: string | undefined, force: boolean) {
+    const key = cwd ?? '';
+    const cached = composerSkills.get(key);
+    if (!force && cached && now() - cached.at < 2_000) return cached.promise;
+    const promise = adapter.listSkills(cwd ? [cwd] : [], true);
+    const entry = { at: now(), promise };
+    if (composerSkills.size >= 32) composerSkills.delete(composerSkills.keys().next().value!);
+    composerSkills.set(key, entry);
+    void promise.catch(() => {
+      if (composerSkills.get(key) === entry) composerSkills.delete(key);
+    });
+    return promise;
+  }
 
   /**
    * V2 子代理不接受 app-server 的直接用户输入。沿 parent_thread_id 一直追到根；
@@ -1157,6 +1177,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
   }
 
   async function catalogWithKernelSkills(): Promise<CatalogDataView> {
+    composerSkills.clear();
     const base = options.catalogPorts ? readCatalog(options.catalogPorts) : emptyCatalog();
     if (typeof adapter.listSkills !== 'function') return base;
     const [listed, bundleCatalog, connectorStatus] = await Promise.all([
@@ -1224,6 +1245,16 @@ export function createRendererActions(options: RendererBridgeOptions) {
     const hubExperts = new Set(
       (hubInstalled?.items ?? []).filter((i) => i.kind === 'expert').map((i) => i.id),
     );
+    const migrationConflicts = (options.skillMigrationConflicts ?? []).filter((name) => {
+      const ports = options.catalogPorts;
+      if (!ports || name === '用户技能目录') return true;
+      const source = join(ports.userRoot, 'skills', name, 'SKILL.md');
+      if (ports.io.readText(source) === undefined) return false;
+      return (
+        canonicalSkillPath(source) !==
+        canonicalSkillPath(join(ports.kernelHome, 'skills', name, 'SKILL.md'))
+      );
+    });
     return {
       ...base,
       ...(options.hubPorts ? { hub: hubCatalogView(options.hubPorts, hubRuntime) } : {}),
@@ -1238,7 +1269,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
       apps: base.apps.filter((app) => !disabled.has(app.id)),
       bundles: bundleCatalog.bundles,
       ...(bundleCatalog.bundleErrors.length ? { bundleErrors: bundleCatalog.bundleErrors } : {}),
-      ...(entry?.errors.length ? { skillErrors: entry.errors } : {}),
+      ...(entry?.errors.length || migrationConflicts.length
+        ? {
+            skillErrors: [
+              ...(entry?.errors ?? []),
+              ...migrationConflicts.map((name) => ({
+                path: name,
+                message: '旧技能镜像内容不一致或迁移失败，已保留原文件，请核对后重新安装。',
+              })),
+            ],
+          }
+        : {}),
       ...(connectorStatus.error ? { connectorErrors: [connectorStatus.error] } : {}),
     };
   }
@@ -1247,8 +1288,26 @@ export function createRendererActions(options: RendererBridgeOptions) {
     result: CatalogMutationResult,
   ): Promise<CatalogMutationResult> {
     if (!result.ok) return result;
+    composerSkills.clear();
     try {
-      return { ...result, catalog: await catalogWithKernelSkills() };
+      const catalog = await catalogWithKernelSkills();
+      if (
+        result.installedSkillPath &&
+        typeof adapter.listSkills === 'function' &&
+        !catalog.skills.some(
+          (skill) =>
+            skill.skillPath &&
+            typeof skill.enabled === 'boolean' &&
+            canonicalSkillPath(skill.skillPath) === canonicalSkillPath(result.installedSkillPath!),
+        )
+      )
+        return {
+          ...result,
+          catalog,
+          ok: false,
+          refused: '技能文件已保存，但内核尚未发现这份技能。请刷新技能列表并检查加载错误。',
+        };
+      return { ...result, catalog };
     } catch {
       return {
         ...result,
@@ -1685,7 +1744,11 @@ export function createRendererActions(options: RendererBridgeOptions) {
       >[0],
     ) {
       if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
-      return options.skillExtraction.saveSkillExtraction(input);
+      try {
+        return await options.skillExtraction.saveSkillExtraction(input);
+      } finally {
+        composerSkills.clear();
+      }
     },
     async refreshSkillSource(input: { threadId: string }) {
       if (!options.skillExtraction) throw new Error('技能提炼服务不可用。');
@@ -2709,6 +2772,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
     async getComposerContext(input: {
       readonly workspaceId?: string | undefined;
       readonly threadId?: string | undefined;
+      readonly forceReload?: boolean;
     }): Promise<ComposerContextView> {
       const mentions: ComposerContextView['mentions'][number][] = [];
       // 已有任务以自己的执行目录为准；无项目任务、项目子目录都不能回退到默认目录。
@@ -2739,7 +2803,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
         });
       }
       // 首次创建 .agents/skills 时可能尚未建立目录监听；显式刷新不能继续读旧缓存。
-      const listed = await adapter.listSkills(skillCwd ? [skillCwd] : [], true);
+      const listed = await listComposerSkills(skillCwd, input.forceReload === true);
       const skillEntry = skillCwd
         ? listed.data.find((entry) => entry.cwd === skillCwd)
         : listed.data[0];
@@ -3867,6 +3931,7 @@ export function createRendererActions(options: RendererBridgeOptions) {
           path,
           ...(input.acknowledge !== undefined ? { acknowledge: input.acknowledge } : {}),
           ...(input.confirmName !== undefined ? { confirmName: input.confirmName } : {}),
+          ...(input.reviewToken !== undefined ? { reviewToken: input.reviewToken } : {}),
         }),
       );
     },
@@ -3886,9 +3951,17 @@ export function createRendererActions(options: RendererBridgeOptions) {
       readonly path: string;
       readonly name: string;
       readonly enabled: boolean;
+      readonly allowImplicitInvocation?: boolean;
     }): Promise<CatalogMutationResult> {
+      if (input.allowImplicitInvocation !== undefined) {
+        if (!options.catalogPorts) return missingPortsResult();
+        return refreshedSkillResult(
+          setSkillInvocation(options.catalogPorts, input.path, input.allowImplicitInvocation),
+        );
+      }
       try {
         const effective = await adapter.setSkillEnabled(input);
+        composerSkills.clear();
         const catalog = await catalogWithKernelSkills();
         return {
           ok: effective === input.enabled,

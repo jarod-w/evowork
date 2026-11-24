@@ -1,3 +1,5 @@
+import { disposeSkillReviews } from './catalog-host.js';
+import { migrateSkillMirrors } from './skill-storage.js';
 import { AgentWorkspaceRunner } from '@evowork/kernel-adapter';
 import { createSkillExtractionHost, patchSkillExtractionConfig } from './skill-extraction-host.js';
 import { listMacOpenApps, openFileWithMacApp } from './open-with-apps.js';
@@ -1602,6 +1604,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     nodeCommand: process.execPath,
     nodeEnv: { ELECTRON_RUN_AS_NODE: '1' },
   });
+  const skillMigrationConflicts = migrateSkillMirrors(catalogPorts);
   const nextActionsHost = createNextActionsHost({
     store,
     adapter: () => adapter,
@@ -2789,6 +2792,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     cases: BUILTIN_CASES,
     readModelCatalog,
     skillBudgetModels: () => computerUseModelCatalog,
+    skillMigrationConflicts,
     /*
      * 一次收下三家内置厂商密钥并拉起网关。界面不再调用这条（引导不收密钥，
      * 设置页走「添加模型」）；测试与兼容路径仍走这里。
@@ -3179,6 +3183,7 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
       communicationHost.close();
       nextActionsHost.close();
       skillExtractionHost.close();
+      disposeSkillReviews(catalogPorts);
       await computerUse.close();
       if (reconcileTimer) clearInterval(reconcileTimer);
       if (hubTimer) clearInterval(hubTimer);

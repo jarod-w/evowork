@@ -509,6 +509,7 @@ export function createSkillExtractionHost(options: {
       path: directory,
       ...(input.acknowledge ? { acknowledge: true } : {}),
       ...(input.confirmName ? { confirmName: input.confirmName } : {}),
+      ...(input.reviewToken ? { reviewToken: input.reviewToken } : {}),
     };
     const result = projectRoot
       ? await installProjectSkill(options.catalog, args, projectRoot)

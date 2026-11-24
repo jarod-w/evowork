@@ -392,9 +392,7 @@ describe('macOS 标题栏给交通灯留位（01 §3.2）', () => {
       /html\[data-platform='windows'\]\s+\.ew-app\[data-window-topbar='inline'\]\s*>\s*\.ew-toast-stack\s*\{([^}]*)\}/.exec(
         code,
       )?.[1] ?? '';
-    expect(inline).toContain(
-      'top: calc(var(--layout-window-overlay-height) + var(--space-8))',
-    );
+    expect(inline).toContain('top: calc(var(--layout-window-overlay-height) + var(--space-8))');
   });
 });
 

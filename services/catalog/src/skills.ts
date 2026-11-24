@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { JSON_SCHEMA, load } from 'js-yaml';
+import { JSON_SCHEMA, load, dump } from 'js-yaml';
 
 import { auditSkillFiles, type AuditFile } from './audit.js';
 import type { SkillInterface, SkillRecord, SkillSource } from './types.js';
@@ -28,6 +28,30 @@ const SKIP_DIRS = new Set(['_shared', 'node_modules', '.git', 'test']);
 export const SOURCE_MARKER_FILE = '.evowork-source';
 /** Hub 条目被吊销后改写的来源标记（13 §5.4：停用、不删）。 */
 export const HUB_REVOKED_MARKER = 'hub-revoked';
+
+export function skillAllowsImplicit(text: string | undefined): boolean {
+  if (!text?.trim()) return true;
+  try {
+    const data = load(text, { schema: JSON_SCHEMA }) as {
+      policy?: { allow_implicit_invocation?: boolean };
+    } | null;
+    return data?.policy?.allow_implicit_invocation !== false;
+  } catch {
+    return false;
+  }
+}
+
+export function patchSkillInvocation(text: string | undefined, enabled: boolean): string {
+  const data: unknown = text?.trim() ? load(text, { schema: JSON_SCHEMA }) : {};
+  if (!data || typeof data !== 'object' || Array.isArray(data))
+    throw new Error('技能策略格式无效。');
+  const record = data as Record<string, unknown>;
+  const policy = record.policy ?? {};
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy))
+    throw new Error('技能策略格式无效。');
+  record.policy = { ...policy, allow_implicit_invocation: enabled };
+  return dump(record, { noRefs: true });
+}
 
 export function parseFrontmatter(text: string): { name: string; description: string } {
   const empty = { name: '', description: '' };

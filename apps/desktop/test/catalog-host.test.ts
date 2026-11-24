@@ -5,6 +5,7 @@
 import {
   existsSync,
   lstatSync,
+  realpathSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -16,13 +17,15 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { migrateSkillMirrors, skillContentHash } from '../src/main/skill-storage.js';
 
 import {
   addConnector,
   createExpert,
   createFsCatalogPorts,
   installSkill,
+  setSkillInvocation,
   mergeDiscoveredSkills,
   missingPortsResult,
   readCatalog,
@@ -120,6 +123,138 @@ describe('技能目录安装审计（05 §3.3）', () => {
     ).toBe('local');
   });
 
+  it('Git 确认使用同一份审计快照，只克隆一次并记录提交', async () => {
+    const p = ports();
+    const gitClone = vi.fn(async (_url: string, destination: string) => {
+      writeSkill(destination, 'reviewed', { name: 'run.py', text: 'print("reviewed")' });
+      return { ok: true as const, revision: 'a'.repeat(40) };
+    });
+    const host = { ...p, gitClone };
+    const input = { kind: 'git' as const, url: 'https://example.test/skills.git' };
+    const review = await installSkill(host, input);
+    expect(review.needsConfirm).toBe(true);
+    const installed = await installSkill(host, {
+      ...input,
+      acknowledge: true,
+      reviewToken: review.audit?.reviewToken,
+    });
+    expect(installed.ok).toBe(true);
+    expect(gitClone).toHaveBeenCalledTimes(1);
+    expect(
+      installed.catalog.skills.find((skill) => skill.id === 'reviewed')?.findings.join(' '),
+    ).not.toContain('example.test');
+    const directory = join(root, 'user', 'skills', 'reviewed');
+    const provenance = JSON.parse(readFileSync(join(directory, '.evowork-install.json'), 'utf8'));
+    expect(provenance).toMatchObject({
+      source: 'git',
+      commit: 'a'.repeat(40),
+      url: input.url,
+      contentHash: skillContentHash(directory),
+    });
+  });
+
+  it('确认后源目录变化不会改变已审计安装内容，凭据不能跨来源使用', async () => {
+    const p = ports();
+    const source = join(root, 'source');
+    writeSkill(source, 'reviewed', { name: 'run.py', text: 'original' });
+    const input = { kind: 'directory' as const, path: source };
+    const review = await installSkill(p, input);
+    writeFileSync(join(source, 'run.py'), 'changed');
+    const wrong = await installSkill(p, {
+      ...input,
+      path: join(root, 'other'),
+      acknowledge: true,
+      reviewToken: review.audit?.reviewToken,
+    });
+    expect(wrong.ok).toBe(false);
+    expect(
+      (
+        await installSkill(p, {
+          ...input,
+          acknowledge: true,
+          reviewToken: review.audit?.reviewToken,
+        })
+      ).ok,
+    ).toBe(true);
+    expect(readFileSync(join(root, 'kernel', 'skills', 'reviewed', 'run.py'), 'utf8')).toBe(
+      'original',
+    );
+    expect(
+      (
+        await installSkill(p, {
+          ...input,
+          acknowledge: true,
+          reviewToken: review.audit?.reviewToken,
+        })
+      ).ok,
+    ).toBe(false);
+  });
+
+  it('旧镜像只在完整内容一致时迁移，冲突原样保留，迁移可重复运行', () => {
+    const p = ports();
+    for (const name of ['same', 'conflict']) {
+      writeSkill(join(root, 'user', 'skills', name), name);
+      writeSkill(join(root, 'kernel', 'skills', name), name);
+    }
+    writeFileSync(join(root, 'kernel', 'skills', 'conflict', 'extra.txt'), 'keep');
+    writeSkill(join(root, 'user', 'skills', 'empty-dir-conflict'), 'empty-dir-conflict');
+    writeSkill(join(root, 'kernel', 'skills', 'empty-dir-conflict'), 'empty-dir-conflict');
+    mkdirSync(join(root, 'kernel', 'skills', 'empty-dir-conflict', 'required-empty'));
+    expect(migrateSkillMirrors(p)).toEqual(['conflict', 'empty-dir-conflict']);
+    expect(realpathSync(join(root, 'kernel', 'skills', 'same'))).toBe(
+      realpathSync(join(root, 'user', 'skills', 'same')),
+    );
+    expect(readFileSync(join(root, 'kernel', 'skills', 'conflict', 'extra.txt'), 'utf8')).toBe(
+      'keep',
+    );
+    expect(migrateSkillMirrors(p)).toEqual(['conflict', 'empty-dir-conflict']);
+  });
+
+  it('启动可恢复受管技能丢失的兼容链接，但不激活吊销或未登记文件', () => {
+    const p = ports();
+    for (const [name, marker] of [
+      ['managed', 'local'],
+      ['revoked', 'hub-revoked'],
+      ['unmanaged', ''],
+    ] as const) {
+      const directory = join(root, 'user', 'skills', name);
+      writeSkill(directory, name);
+      if (marker) writeFileSync(join(directory, '.evowork-source'), marker);
+    }
+    expect(migrateSkillMirrors(p)).toEqual([]);
+    expect(realpathSync(join(root, 'kernel', 'skills', 'managed'))).toBe(
+      realpathSync(join(root, 'user', 'skills', 'managed')),
+    );
+    expect(existsSync(join(root, 'kernel', 'skills', 'revoked'))).toBe(false);
+    expect(existsSync(join(root, 'kernel', 'skills', 'unmanaged'))).toBe(false);
+  });
+
+  it('仅手动调用保留原策略和界面信息，外部技能不可修改', async () => {
+    const p = ports();
+    const source = join(root, 'source');
+    writeSkill(source, 'manual');
+    mkdirSync(join(source, 'agents'));
+    writeFileSync(
+      join(source, 'agents', 'openai.yaml'),
+      'interface:\n  display_name: 保留\npolicy:\n  other: keep\n',
+    );
+    expect((await installSkill(p, { kind: 'directory', path: source })).ok).toBe(true);
+    const path = join(root, 'kernel', 'skills', 'manual', 'SKILL.md');
+    const changed = setSkillInvocation(p, path, false);
+    expect(changed.ok).toBe(true);
+    expect(
+      changed.catalog.skills.find((entry) => entry.id === 'manual')?.allowImplicitInvocation,
+    ).toBe(false);
+    const yaml = readFileSync(
+      join(root, 'user', 'skills', 'manual', 'agents', 'openai.yaml'),
+      'utf8',
+    );
+    expect(yaml).toContain('display_name: 保留');
+    expect(yaml).toContain('other: keep');
+    expect(setSkillInvocation(p, join(source, 'SKILL.md'), true).ok).toBe(false);
+    expect(setSkillInvocation(p, path, true).ok).toBe(true);
+  });
+
   it('官方技能不能卸载', async () => {
     mkdirSync(join(root, 'plugins', 'skills', 'documents'), { recursive: true });
     writeFileSync(
@@ -194,7 +329,7 @@ describe('技能目录安装审计（05 §3.3）', () => {
     );
   });
 
-  it('更新的内核镜像拷贝失败时，两份旧版本都保留', async () => {
+  it('更新的兼容链接建立失败时，旧版本和旧路径都保留', async () => {
     const p = ports();
     const src = join(root, 'src');
     writeSkill(src, 'coach');
@@ -204,9 +339,8 @@ describe('技能目录安装审计（05 §3.3）', () => {
     const result = await installSkill(
       {
         ...p,
-        copyDir: (from, to) => {
-          if (to.startsWith(join(root, 'kernel'))) throw new Error('模拟磁盘错误');
-          p.copyDir(from, to);
+        linkDir: () => {
+          throw new Error('模拟链接失败');
         },
       },
       { kind: 'directory', path: src },
@@ -276,7 +410,8 @@ describe('技能目录安装审计（05 §3.3）', () => {
     expect(readFileSync(marker, 'utf8')).toBe('不能改写');
     for (const base of ['user', 'kernel']) {
       const dest = join(root, base, 'skills', 'coach');
-      expect(lstatSync(dest).isSymbolicLink()).toBe(false);
+      expect(lstatSync(dest).isSymbolicLink()).toBe(base === 'kernel');
+      expect(realpathSync(dest)).toBe(realpathSync(join(root, 'user', 'skills', 'coach')));
       expect(lstatSync(join(dest, 'SKILL.md')).isSymbolicLink()).toBe(false);
       expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(text.slice(1));
       expect(readFileSync(join(dest, '.evowork-source'), 'utf8')).toBe('local\n');

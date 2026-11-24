@@ -148,7 +148,13 @@ export function useSkillExtraction(options: {
       const result = await bridge.saveSkillExtraction({
         threadId: draft.threadId,
         revision: draft.revision,
-        ...(confirmed ? { acknowledge: true, confirmName: audit?.skillId ?? '' } : {}),
+        ...(confirmed
+          ? {
+              acknowledge: true,
+              confirmName: audit?.skillId ?? '',
+              ...(audit?.reviewToken ? { reviewToken: audit.reviewToken } : {}),
+            }
+          : {}),
       });
       if (latest.current.taskId !== draft.threadId) return;
       setDraft(result.draft);
@@ -173,6 +179,7 @@ export function useSkillExtraction(options: {
       if (!draft?.installed || !draft.content) return;
       if (!bridge.getComposerContext) throw new Error('当前版本不能加载技能候选。');
       const context = await bridge.getComposerContext({
+        forceReload: true,
         ...(draft.source.projectId ? { workspaceId: draft.source.projectId } : {}),
       });
       if (latest.current.taskId !== draft.threadId) return;

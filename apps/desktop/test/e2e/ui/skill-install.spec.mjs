@@ -389,7 +389,8 @@ test('带引号和多行描述的技能安装后立即可启停，更新与卸�
   );
   expect(installed.scope).toBe('user');
   const nativePath = installed.skillPath;
-  const userPath = join(dirname(dirname(dirname(dirname(nativePath)))), 'skills', name, 'SKILL.md');
+  const home = await electronApp.evaluate(() => globalThis.__evoworkE2E.home);
+  const userPath = join(home, '.evowork', 'skills', name, 'SKILL.md');
   expect(readFileSync(nativePath, 'utf8')).toBe(contents.slice(1));
   expect(readFileSync(userPath, 'utf8')).toBe(contents.slice(1));
   expect(readFileSync(path, 'utf8')).toBe(contents);

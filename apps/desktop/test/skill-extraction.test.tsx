@@ -130,7 +130,10 @@ describe('技能提炼异步操作与用户正在查看的任务隔离', () => {
       await screen.findByText('当前范围找不到已启用的技能，请重新检查或启用。');
       expect(onUse).not.toHaveBeenCalled();
     }
-    expect(bridge.getComposerContext).toHaveBeenCalledWith({ workspaceId: 'project' });
+    expect(bridge.getComposerContext).toHaveBeenCalledWith({
+      workspaceId: 'project',
+      forceReload: true,
+    });
   });
   it('技能候选迟到时不覆盖用户已经切换到的任务或输入', async () => {
     const pending = deferred<ComposerContextView>();
