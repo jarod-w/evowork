@@ -28,6 +28,8 @@ export default tseslint.config(
       'build/.kernel-target/**',
       'patches/**',
       'docs/**/*.html',
+      // 验证录制、源码快照与模型生成的交付物是原始证据，不是产品源码。
+      'docs/verification/assets/**',
     ],
   },
 
@@ -62,7 +64,11 @@ export default tseslint.config(
 
   // 组件文件：token-only 样式（01 §9）
   {
-    files: ['apps/desktop/src/renderer/**/*.{ts,tsx}', 'apps/web/src/**/*.{ts,tsx}'],
+    files: [
+      'apps/desktop/src/renderer/**/*.{ts,tsx}',
+      'apps/web/src/**/*.{ts,tsx}',
+      'apps/site/src/**/*.{ts,tsx}',
+    ],
     languageOptions: {
       globals: { ...globals.browser },
     },
