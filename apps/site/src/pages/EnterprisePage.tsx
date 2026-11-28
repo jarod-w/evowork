@@ -33,7 +33,7 @@ function buildMailtoHref(contactEmail: string, payload: BookingPayload): string 
   return `mailto:${contactEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-/** 企业版与预约演示页（含可配置端点 + 兜底联系邮箱的 B9 表单）。 */
+/** 企业版与预约演示页（含下一企业版本计划 + 可配置端点与兜底联系邮箱的预约表单）。 */
 export function EnterprisePage({
   content,
   onNavigate,
@@ -150,7 +150,7 @@ export function EnterprisePage({
                 <span>{enterprise.primaryCta}</span>
                 <SiteIcon name="arrow-right" />
               </a>
-              <a className="ews-btn ews-btn-secondary ews-btn-lg" href="#governance">
+              <a className="ews-btn ews-btn-secondary ews-btn-lg" href="#next-plan">
                 <span>{enterprise.secondaryCta}</span>
               </a>
             </div>
@@ -197,6 +197,39 @@ export function EnterprisePage({
         </div>
       </section>
 
+      {/* 下一企业版本核心计划：全量操作日志审计 + 敏感信息仿真脱敏还原 */}
+      <section id="next-plan" className="ews-section">
+        <div className="ews-container">
+          <div className="ews-section-head">
+            <h2>{enterprise.nextPlanTitle}</h2>
+            <p>{enterprise.nextPlanSubtitle}</p>
+          </div>
+
+          <div className="ews-roadmap-grid">
+            {enterprise.nextPlanCards.map((card) => (
+              <div key={card.id} className="ews-roadmap-card">
+                <div className="ews-roadmap-head">
+                  <span className="ews-badge-accent">{card.badge}</span>
+                </div>
+                <h3>{card.title}</h3>
+                <p>{card.summary}</p>
+                <ul className="ews-check-list">
+                  {card.flowSteps.map((step) => (
+                    <li key={step}>
+                      <span className="ews-list-check">
+                        <SiteIcon name="check" />
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="ews-tab-stage-highlight">{card.highlight}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* 企业治理与内容隔离 */}
       <section id="governance" className="ews-section">
         <div className="ews-container">
@@ -216,7 +249,7 @@ export function EnterprisePage({
         </div>
       </section>
 
-      {/* 诚实的交付透明度表 */}
+      {/* 企业能力当前进展与规划表 */}
       <section className="ews-section">
         <div className="ews-container">
           <div className="ews-section-head">
@@ -257,7 +290,7 @@ export function EnterprisePage({
         </div>
       </section>
 
-      {/* B9: 预约演示与联系表单 */}
+      {/* 预约演示与联系表单 */}
       <section id="booking" className="ews-section">
         <div className="ews-container">
           <div className="ews-booking-split">

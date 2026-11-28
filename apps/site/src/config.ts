@@ -4,17 +4,13 @@
 export interface SiteConfig {
   readonly version: string;
   readonly releaseDate: string;
-  /** 拿到 Apple Developer ID 公证签名后，改为 false（或注入 VITE_SHOW_MAC_UNSIGNED_GUIDE=false）即可全局隐藏未签名 xattr 引导卡。 */
+  /** 拿到 Apple 公证签名后，改为 false（或注入 VITE_SHOW_MAC_UNSIGNED_GUIDE=false）即可全局隐藏未签名 xattr 引导卡。 */
   readonly showMacUnsignedGuide: boolean;
   /** 可选：企业版预约表单提交端点（支持 Webhook 或后端 API）。为空时启用无后端预览回执。 */
   readonly leadEndpoint: string;
   /** 企业联系兜底邮箱。 */
   readonly contactEmail: string;
   readonly links: {
-    readonly github: string;
-    readonly githubIssues: string;
-    readonly githubReleases: string;
-    readonly accountPortal: string;
     readonly macArm64Dmg: string;
     readonly windowsSetupExe: string;
   };
@@ -34,10 +30,6 @@ export const SITE_CONFIG: SiteConfig = {
   leadEndpoint: readEnv('VITE_LEAD_ENDPOINT'),
   contactEmail: readEnv('VITE_CONTACT_EMAIL') || 'enterprise@nucleant.cn',
   links: {
-    github: 'https://github.com/jarod-w/evowork',
-    githubIssues: 'https://github.com/jarod-w/evowork/issues',
-    githubReleases: 'https://github.com/jarod-w/evowork/releases',
-    accountPortal: 'https://account.nucleant.cn',
     macArm64Dmg: 'https://update.nucleant.cn/latest/EvoWork-0.6.5-mac-arm64-unsigned.dmg',
     windowsSetupExe: 'https://update.nucleant.cn/latest/EvoWork-0.6.5-win-x64-setup.exe',
   },

@@ -19,11 +19,9 @@ export interface StageMediaOverride {
 
 export type HeroSceneId = 'sales-report' | 'contract-audit';
 
-export type DeliverableSceneId = 'word' | 'excel' | 'ppt';
+export type DeliverySceneId = 'office' | 'research' | 'schedule';
 
-export type WorkflowSceneId = 'library' | 'schedule' | 'goal' | 'skill';
-
-export type StageSceneId = HeroSceneId | DeliverableSceneId | WorkflowSceneId;
+export type StageSceneId = HeroSceneId | DeliverySceneId;
 
 export interface ActionLink {
   readonly label: string;
@@ -57,6 +55,18 @@ export interface HeroSceneSpec {
   readonly mediaOverride?: StageMediaOverride | undefined;
 }
 
+export interface SkillShowcaseItem {
+  readonly id: string;
+  readonly domain: string;
+  readonly name: string;
+  readonly summary: string;
+  readonly deliverableTag: string;
+  readonly prompt: string;
+  readonly outputTitle: string;
+  readonly outputHighlights: readonly string[];
+  readonly outputMetrics: readonly { readonly label: string; readonly value: string }[];
+}
+
 export interface TabbedShowcaseItem {
   readonly id: StageSceneId;
   readonly icon: 'doc' | 'table' | 'slides' | 'library' | 'clock' | 'target' | 'spark';
@@ -69,6 +79,15 @@ export interface TabbedShowcaseItem {
   readonly stageBullets: readonly string[];
   readonly stageFooterNote: string;
   readonly mediaOverride?: StageMediaOverride | undefined;
+}
+
+export interface ComputerActionCapability {
+  readonly id: string;
+  readonly icon: 'library' | 'globe' | 'shield';
+  readonly badge: string;
+  readonly title: string;
+  readonly description: string;
+  readonly sampleSteps: readonly string[];
 }
 
 export interface PromptCardItem {
@@ -147,6 +166,15 @@ export interface EnterpriseModeCard {
   readonly points: readonly string[];
 }
 
+export interface EnterpriseRoadmapCard {
+  readonly id: string;
+  readonly badge: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly flowSteps: readonly string[];
+  readonly highlight: string;
+}
+
 export interface EnterpriseStatusRow {
   readonly capability: string;
   readonly status: 'ready' | 'planned';
@@ -169,9 +197,7 @@ export interface SiteContent {
     readonly switchLocaleLabel: string;
     readonly menuOpen: string;
     readonly menuClose: string;
-    readonly accountLogin: string;
     readonly backToTop: string;
-    readonly openSourceBadge: string;
   };
   readonly nav: {
     readonly items: readonly { readonly page: PageId; readonly label: string }[];
@@ -188,10 +214,25 @@ export interface SiteContent {
     readonly trustStrip: readonly string[];
     readonly stageCaption: string;
     readonly heroScenes: readonly HeroSceneSpec[];
-    readonly deliverablesSection: {
+    readonly proSkillsSection: {
+      readonly title: string;
+      readonly subtitle: string;
+      readonly badge: string;
+      readonly items: readonly SkillShowcaseItem[];
+    };
+    readonly deliverySection: {
       readonly title: string;
       readonly subtitle: string;
       readonly items: readonly TabbedShowcaseItem[];
+    };
+    readonly computerActionSection: {
+      readonly title: string;
+      readonly subtitle: string;
+      readonly badge: string;
+      readonly promptLabel: string;
+      readonly samplePrompt: string;
+      readonly capabilities: readonly ComputerActionCapability[];
+      readonly footerNote: string;
     };
     readonly zeroBarrierSection: {
       readonly title: string;
@@ -206,11 +247,6 @@ export interface SiteContent {
       readonly providers: readonly { readonly name: string; readonly note: string }[];
       readonly guideLinkLabel: string;
       readonly noAccountNote: string;
-    };
-    readonly workflowSection: {
-      readonly title: string;
-      readonly subtitle: string;
-      readonly items: readonly TabbedShowcaseItem[];
     };
     readonly trustSection: {
       readonly title: string;
@@ -264,14 +300,6 @@ export interface SiteContent {
     readonly quickStartTitle: string;
     readonly quickStartSubtitle: string;
     readonly quickStartSteps: readonly StepItem[];
-    readonly changelogTitle: string;
-    readonly changelogSubtitle: string;
-    readonly changelogReleases: readonly {
-      readonly version: string;
-      readonly label: string;
-      readonly items: readonly string[];
-    }[];
-    readonly viewAllReleasesLabel: string;
   };
   readonly docs: {
     readonly title: string;
@@ -293,6 +321,9 @@ export interface SiteContent {
     readonly modesTitle: string;
     readonly modesSubtitle: string;
     readonly modes: readonly EnterpriseModeCard[];
+    readonly nextPlanTitle: string;
+    readonly nextPlanSubtitle: string;
+    readonly nextPlanCards: readonly EnterpriseRoadmapCard[];
     readonly governanceTitle: string;
     readonly governanceSubtitle: string;
     readonly governanceCards: readonly { readonly title: string; readonly description: string }[];

@@ -148,7 +148,7 @@ export function DownloadPage({
         </div>
       </section>
 
-      {/* B7: 3 步快速上手 */}
+      {/* 3 步快速上手 */}
       <StepperGuideBlock
         title={download.quickStartTitle}
         subtitle={download.quickStartSubtitle}
@@ -156,44 +156,6 @@ export function DownloadPage({
         locale={content.locale}
         onNavigate={onNavigate}
       />
-
-      {/* 近期更新记录 */}
-      <section className="ews-section">
-        <div className="ews-container">
-          <div className="ews-section-head">
-            <h2>{download.changelogTitle}</h2>
-            <p>{download.changelogSubtitle}</p>
-          </div>
-
-          <div className="ews-changelog-grid">
-            {download.changelogReleases.map((rel) => (
-              <article key={rel.version} className="ews-release-card">
-                <div className="ews-release-head">
-                  <span className="ews-release-ver">v{rel.version}</span>
-                  <span className="ews-badge-accent">{rel.label}</span>
-                </div>
-                <ul className="ews-release-list">
-                  {rel.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-
-          <div className="ews-notice-banner">
-            <a
-              className="ews-inline-link"
-              href={SITE_CONFIG.links.github}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <span>{download.viewAllReleasesLabel}</span>
-              <SiteIcon name="external" />
-            </a>
-          </div>
-        </div>
-      </section>
     </>
   );
 }

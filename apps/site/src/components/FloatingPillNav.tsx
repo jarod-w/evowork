@@ -1,6 +1,5 @@
 import { useState } from 'react';
 
-import { SITE_CONFIG } from '../config.js';
 import { buildPath } from '../router.js';
 import type { Locale, PageId, PlatformId, SiteContent } from '../types.js';
 import { BrandMark, SiteIcon } from './icons.js';
@@ -15,8 +14,7 @@ export interface FloatingPillNavProps {
 
 /**
  * B1: 悬浮胶囊导航栏。
- * 参考 doubao.com/work 的居中悬浮毛玻璃胶囊布局，针对 EvoWork 增加双语切换、
- * 账号外链与移动端抽屉菜单。
+ * 参考 doubao.com/work 的居中悬浮毛玻璃胶囊布局，含双语切换、预约演示与系统识别下载入口。
  */
 export function FloatingPillNav({
   content,
@@ -133,15 +131,6 @@ export function FloatingPillNav({
                 </a>
               );
             })}
-            <a
-              className="ews-mobile-link"
-              href={SITE_CONFIG.links.accountPortal}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <span>{content.common.accountLogin}</span>
-              <SiteIcon name="external" />
-            </a>
           </div>
           <div className="ews-mobile-drawer-ctas">
             <a

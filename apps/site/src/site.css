@@ -2112,6 +2112,213 @@ textarea {
   color: var(--text-secondary);
 }
 
+/* ─────────────────────────── 专业技能展示区 & 操作电脑区 & 企业下版本计划 ─────────────────────────── */
+
+.ews-skills-showcase {
+  display: grid;
+  grid-template-columns: minmax(0, 23rem) minmax(0, 1fr);
+  gap: var(--space-24);
+  align-items: stretch;
+}
+
+.ews-skills-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.ews-skill-selector {
+  text-align: left;
+  padding: var(--space-16) var(--space-20);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.ews-skill-selector:hover {
+  background: var(--bg-app);
+}
+
+.ews-skill-selector.is-active {
+  background: color-mix(in srgb, var(--accent-weak) 55%, var(--bg-surface));
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.ews-skill-selector-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.ews-skill-domain {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.ews-skill-tag {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.ews-skill-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ews-skill-summary {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.ews-skill-stage {
+  padding: var(--space-32);
+  border-radius: var(--r-2xl);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent-weak) 70%, var(--bg-canvas)) 0%,
+    var(--bg-app) 100%
+  );
+  display: flex;
+  align-items: center;
+}
+
+.ews-skill-stage-card {
+  width: 100%;
+  padding: var(--space-24);
+  border-radius: var(--r-xl);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.ews-computer-stage {
+  padding: var(--space-32);
+  border-radius: var(--r-2xl);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--info-weak) 52%, var(--bg-app)) 0%,
+    var(--bg-app) 100%
+  );
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.ews-computer-banner {
+  padding: var(--space-20);
+  border-radius: var(--r-xl);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-12);
+}
+
+.ews-computer-prompt-label {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.ews-computer-prompt p {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.ews-computer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-20);
+}
+
+.ews-computer-card {
+  padding: var(--space-20);
+  border-radius: var(--r-xl);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.ews-computer-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.ews-computer-card h3 {
+  margin: 0;
+  font-size: 1.0625rem;
+}
+
+.ews-computer-card > p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.ews-roadmap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-24);
+}
+
+.ews-roadmap-card {
+  padding: var(--space-24);
+  border-radius: var(--r-2xl);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-subtle));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-weak) 52%, var(--bg-surface)) 0%,
+    var(--bg-surface) 100%
+  );
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.ews-roadmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.ews-roadmap-card h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.ews-roadmap-card > p {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+}
+
 /* ─────────────────────────── B0 Bookend CTA & 页脚 ─────────────────────────── */
 
 .ews-bookend {
@@ -2193,6 +2400,9 @@ textarea {
 @media (max-width: 64rem) {
   .ews-workbench-grid,
   .ews-split-showcase,
+  .ews-skills-showcase,
+  .ews-computer-grid,
+  .ews-roadmap-grid,
   .ews-full-card,
   .ews-unsigned-card,
   .ews-booking-split {

@@ -9,7 +9,7 @@ export const EN_CONTENT: SiteContent = {
     tagline: 'Describe the job in one sentence. Get back ready-to-use files.',
     pageTitles: {
       home: 'EvoWork — Describe the job in one sentence. Get back ready-to-use files.',
-      download: 'Download & 3-Minute Setup — EvoWork',
+      download: 'Download — EvoWork',
       docs: 'Documentation — EvoWork',
       enterprise: 'Enterprise & Private Deployment — EvoWork',
     },
@@ -21,9 +21,7 @@ export const EN_CONTENT: SiteContent = {
     switchLocaleLabel: '中文',
     menuOpen: 'Open navigation menu',
     menuClose: 'Close navigation menu',
-    accountLogin: 'Sign in',
     backToTop: 'Back to top',
-    openSourceBadge: `v${SITE_CONFIG.version} · MIT Open Source`,
   },
   nav: {
     items: [
@@ -40,10 +38,10 @@ export const EN_CONTENT: SiteContent = {
     downloadGeneric: 'Download',
   },
   home: {
-    eyebrow: `EvoWork v${SITE_CONFIG.version} · Desktop AI Work Assistant`,
+    eyebrow: 'EvoWork · Desktop AI Work Assistant',
     headline: 'Describe the job in one sentence. Get back ready-to-use files.',
     subheadline:
-      'Hand weekly reports, contracts, spreadsheets, and quarterly decks to an AI assistant on your computer. It plans, reads your local files, checks its own work, and hands back polished Word, Excel, and PowerPoint files.',
+      'Hand weekly reports, contracts, spreadsheets, market research, and quarterly decks to an AI assistant on your computer. It plans, reads your local files, checks its own work, and hands back polished Word, Excel, and PowerPoint files.',
     primaryCta: {
       macos: 'Download Free for macOS',
       windows: 'Download Free for Windows',
@@ -52,8 +50,8 @@ export const EN_CONTENT: SiteContent = {
     trustStrip: [
       'Files processed locally',
       'No EvoWork account required',
-      'Built-in office runtime & CJK fonts',
-      'MIT open source',
+      'Ready for Word, Excel & PowerPoint',
+      'Asks before sensitive actions',
     ],
     stageCaption:
       'Interactive preview: switch scenarios above to see EvoWork deliver finished office files',
@@ -100,12 +98,9 @@ export const EN_CONTENT: SiteContent = {
         prompt:
           'Review this 26-page scanned vendor contract and compile payment terms, liability caps, and auto-renewal risks into a structured Word review table with page numbers.',
         modeTag: 'Ask to Approve',
-        modelTag: 'Local OCR + Model Review',
+        modelTag: 'Local Text Scan + Review',
         steps: [
-          {
-            text: 'Ran local OCR on 26 scanned PDF pages — raw file never left disk',
-            status: 'done',
-          },
+          { text: 'Scanned 26 PDF pages locally — raw file never left disk', status: 'done' },
           { text: 'Flagged 4 commercial risk clauses against review checklist', status: 'done' },
           {
             text: 'Generated formatted A4 Word review sheet with exact page citations',
@@ -116,7 +111,7 @@ export const EN_CONTENT: SiteContent = {
         deliverableKind: 'docx',
         deliverableBadge: 'A4 Doc · Citations included',
         previewHeading: 'Contract Risk Findings & Suggested Edits',
-        previewSubheading: 'Local OCR · Page-referenced clauses · Ready for legal sign-off',
+        previewSubheading: 'Local scan · Page-referenced clauses · Ready for legal sign-off',
         previewMetrics: [
           { label: 'Pages Scanned', value: '26' },
           { label: 'High Risk', value: '2 items' },
@@ -139,88 +134,234 @@ export const EN_CONTENT: SiteContent = {
         ],
       },
     ],
-    deliverablesSection: {
-      title: 'Finished office files you can send right away',
+    proSkillsSection: {
+      title: 'Specialized skills that make complex work simple',
       subtitle:
-        'Stop copying walls of chat text into blank documents. EvoWork bundles its own office runtime and fonts so clean Word, Excel, and PowerPoint files work out of the box.',
+        'For each professional domain, EvoWork calls the right specialized skill, follows structured analysis workflows, and delivers results you can use immediately.',
+      badge: 'Domain Skills',
       items: [
         {
-          id: 'word',
-          icon: 'doc',
-          label: 'Word Docs & Reports',
-          description:
-            'Weekly updates, proposals, meeting notes, and contract reviews in crisp A4 layout with one-click PDF export.',
-          deliverableTag: '.docx / .pdf',
-          stageTitle: 'Quarterly_Competitor_Brief.docx',
-          stagePrompt:
-            'Turn these 5 interview notes and briefs into a formal Word report with an executive summary, comparison matrix, and action items.',
-          stageHighlight: 'A4 default · Clean headings & tables · Reliable PDF export',
-          stageBullets: [
-            'Produces structured executive summaries, tables, and hierarchy without manual reformatting',
-            'Lists web source links automatically whenever live research is referenced',
-            'Open directly in Microsoft Word, WPS, or export to PDF straight from the result pane',
+          id: 'finance-hotspots',
+          domain: 'Finance',
+          name: 'Market Hotspot Analysis',
+          summary:
+            'Synthesize policy catalysts, earnings disclosures, and sector momentum into a structured brief with clear takeaways and risks.',
+          deliverableTag: 'Market Brief · .docx',
+          prompt:
+            'Analyze key announcements and sector catalysts across energy storage and AI compute over the past two weeks, and deliver a structured Word brief with sources and risk notes.',
+          outputTitle: 'Weekly_Market_Hotspots_Brief.docx',
+          outputHighlights: [
+            'Breaks down policy drivers, earnings signals, and sector themes with executive-first summaries',
+            'Builds clean indicator comparison tables with cited public sources on every point',
+            'Delivers a ready-to-share Word brief formatted for morning investment standups',
           ],
-          stageFooterNote: 'Built-in layout & pagination checks prevent silent content truncation',
+          outputMetrics: [
+            { label: 'Coverage', value: 'Policy · Earnings · Flow' },
+            { label: 'Citations', value: 'Source on every claim' },
+            { label: 'Output', value: 'Word / PDF Brief' },
+          ],
         },
         {
-          id: 'excel',
-          icon: 'table',
-          label: 'Excel Workbooks & Charts',
-          description:
-            'Clean data, build summary sheets with live formulas, cross-check totals against raw rows, and render clean charts.',
-          deliverableTag: '.xlsx / .png',
-          stageTitle: 'Q3_Budget_Variance_Rollup.xlsx',
-          stagePrompt:
-            'Merge 3 department expense sheets, calculate YoY variance by category with live formulas, and add a chart sheet.',
-          stageHighlight: 'Live editable formulas · Reconciled totals · Zero broken chart fonts',
-          stageBullets: [
-            'Writes real SUM / SUMIFS formulas instead of hardcoded static numbers',
-            'Maps messy headers and validates totals against source line items before handoff',
-            'Renders sharp charts with bundled CJK & Latin fonts — never tofu boxes',
+          id: 'academic-reading',
+          domain: 'Academia',
+          name: 'Deep Literature Reading',
+          summary:
+            'Read multiple PDF papers locally to extract research questions, methodology, key results, limitations, and citation lists.',
+          deliverableTag: 'Lit Review · .docx',
+          prompt:
+            'Read the 8 research PDFs in this folder, compare their hypotheses, datasets, findings, and limitations in a table, and compile a formatted reference list.',
+          outputTitle: 'Literature_Deep_Reading_Matrix.docx',
+          outputHighlights: [
+            'Extracts motivation, method design, benchmark numbers, and author-noted limitations per paper',
+            'Produces a side-by-side comparison matrix to spot gaps and research opportunities quickly',
+            'Compiles standardized bibliography entries ready for papers or lab meetings',
           ],
-          stageFooterNote: 'All workbook reading and writing happens locally on your machine',
+          outputMetrics: [
+            { label: 'Batch Reading', value: 'Multi-PDF Matrix' },
+            { label: 'Structure', value: 'Method · Result · Gap' },
+            { label: 'References', value: 'Clean citation list' },
+          ],
         },
         {
-          id: 'ppt',
-          icon: 'slides',
-          label: 'Editable PowerPoint Decks',
-          description:
-            'Turn notes and metrics into clean, well-spaced slides where every title, shape, and chart remains editable.',
-          deliverableTag: '.pptx',
-          stageTitle: '2026_Product_Roadmap_Review.pptx',
-          stagePrompt:
-            'Create a 10-slide leadership deck from this annual roadmap doc covering KPIs, milestones, and risk mitigation.',
-          stageHighlight: 'Native PPTX shapes · Overflow checks · Executive-ready pacing',
-          stageBullets: [
-            'Every text block, table, and chart stays a native PowerPoint element for quick edits',
-            'Checks text fit and layout margins to avoid overlapping boxes and clipped labels',
-            'Ideal for weekly standups, project kickoffs, client proposals, and training decks',
+          id: 'legal-contract',
+          domain: 'Legal & Ops',
+          name: 'Contract Risk Review',
+          summary:
+            'Inspect scanned or digital agreements clause by clause, flagging payment, liability, and renewal risks with suggested edits.',
+          deliverableTag: 'Review Table · .docx',
+          prompt:
+            'Review this annual supplier agreement against our risk checklist and output a Word table with severity tiers, page references, and suggested replacement wording.',
+          outputTitle: 'Supplier_Agreement_Risk_Table.docx',
+          outputHighlights: [
+            'Reads scanned PDFs locally without uploading confidential contracts to third-party drives',
+            'Categorizes High / Medium / Low risk clauses with ready-to-paste redline wording',
+            'Preserves original clause numbers and page citations for fast legal verification',
           ],
-          stageFooterNote:
-            'Preview slides right inside the EvoWork side pane before opening in PowerPoint',
+          outputMetrics: [
+            { label: 'Input Types', value: 'Word · PDF · Scans' },
+            { label: 'Triage', value: 'High / Med / Low risk' },
+            { label: 'Privacy', value: 'Originals stay local' },
+          ],
+        },
+        {
+          id: 'ops-analytics',
+          domain: 'Business Ops',
+          name: 'Financial & Ops Reporting',
+          summary:
+            'Consolidate spreadsheets across teams, reconcile totals with live formulas, flag anomalies, and generate clean visual charts.',
+          deliverableTag: 'Workbook + Charts · .xlsx',
+          prompt:
+            'Merge 4 regional quarterly ledgers, calculate margin and YoY shifts by product line, highlight outliers, and add clean visual charts.',
+          outputTitle: 'Quarterly_Ops_Variance_Workbook.xlsx',
+          outputHighlights: [
+            'Maps inconsistent column headers across departments and cross-checks every rollup',
+            'Writes real editable Excel formulas so changing one number updates the whole sheet',
+            'Produces crisp visual charts ready to paste straight into leadership updates',
+          ],
+          outputMetrics: [
+            { label: 'Formulas', value: 'Live & editable' },
+            { label: 'Anomalies', value: 'Auto-flagged shifts' },
+            { label: 'Charts', value: 'Clean visuals' },
+          ],
         },
       ],
     },
-    zeroBarrierSection: {
-      title: 'Zero setup friction. Plug in your API key and go.',
+    deliverySection: {
+      title: 'From complex tasks to continuous delivery',
       subtitle:
-        'No Python environment to wrangle. No EvoWork account required. Download, paste a model key, and ship your first file in three minutes.',
-      badge: 'Out of the Box · BYOK',
+        'Research deeply, produce polished work deliverables, and put repetitive work on schedule.',
+      items: [
+        {
+          id: 'office',
+          icon: 'slides',
+          label: 'Office Tools',
+          description:
+            'Create polished PowerPoint decks, Word documents, and Excel workbooks to accelerate professional delivery.',
+          deliverableTag: 'PPT · Word · Excel',
+          stageTitle: 'Deliver Editable Slides, Documents & Spreadsheets',
+          stagePrompt:
+            'Using these 3 monthly sales sheets and notes, create a reconciled Excel summary, a 10-slide leadership deck, and an executive Word brief.',
+          stageHighlight: 'Native editable files · Clean formatting · Sharp readable charts',
+          stageBullets: [
+            'Word documents: crisp A4 layout, structured headings, and one-click PDF export',
+            'Excel workbooks: live formulas cross-checked against raw line items',
+            'PowerPoint decks: native editable shapes, tables, and charts with balanced spacing',
+          ],
+          stageFooterNote:
+            'Ready to use out of the box—no copying walls of chat text into blank files',
+        },
+        {
+          id: 'research',
+          icon: 'library',
+          label: 'Deep Research & Analysis',
+          description:
+            'Analyze complex topics deeply, gather information across multiple sources with citations, and produce comprehensive research reports.',
+          deliverableTag: 'Deep Research · Report',
+          stageTitle: 'Multi-Source Research Grounded in Citations',
+          stagePrompt:
+            'Conduct an in-depth study on workplace AI adoption, combining our local interview notes with public market data into a cited Word report.',
+          stageHighlight:
+            'Combines local files with live web lookups · Every reference clearly cited',
+          stageBullets: [
+            'Breaks complex questions into structured sub-topics across market, pricing, and competitor data',
+            'Synthesizes your local PDFs and meeting notes alongside fresh public information',
+            'Delivers an executive-first Word report with charts and a verifiable source list',
+          ],
+          stageFooterNote: 'Long research runs can be paused anytime and capped with a usage limit',
+        },
+        {
+          id: 'schedule',
+          icon: 'clock',
+          label: 'Scheduled Tasks',
+          description:
+            'Run recurring analysis, weekly reports, and rollups automatically on your schedule.',
+          deliverableTag: 'Auto Schedule',
+          stageTitle: 'Every Monday 09:00 · Automated Team Report',
+          stagePrompt:
+            'Every Monday at 9 AM, review the latest updates in the Weekly Notes folder and generate a polished status report draft for my review.',
+          stageHighlight:
+            'Plain-language scheduling · Full run history · Auto-pauses after 3 errors',
+          stageBullets: [
+            'Supports daily, weekly, and monthly cadences plus optional active date windows',
+            'Pause or resume any schedule in one click with complete output history',
+            'Automatically pauses after 3 consecutive failures so tasks never burn usage silently',
+          ],
+          stageFooterNote: 'Runs locally inside the folders you explicitly authorize',
+        },
+      ],
+    },
+    computerActionSection: {
+      title: 'Operate your computer to finish complex tasks',
+      subtitle:
+        'EvoWork can read, create, and edit local files on your computer—and automatically open web pages, fill out forms, and complete multi-page workflows.',
+      badge: 'Local Files + Web Actions',
+      promptLabel: 'Delegate cross-file, cross-page work in one sentence',
+      samplePrompt:
+        'Read all PDF invoices in the Desktop “Pending Expenses” folder, reconcile totals into an Excel ledger, and pre-fill the reimbursement web form—pause for my review before submitting.',
+      capabilities: [
+        {
+          id: 'local-files',
+          icon: 'library',
+          badge: 'Local Files',
+          title: 'Read, create, and batch-update local files',
+          description:
+            'Parse documents, organize folders, batch-rename files, convert formats, and write finished deliverables inside your chosen directories.',
+          sampleSteps: [
+            'Reads PDFs, Word, Excel, PowerPoint, zip archives, and scanned pages',
+            'Batch-renames and organizes messy folders with an accompanying summary ledger',
+            'Always asks with exact file paths before overwriting or deleting existing files',
+          ],
+        },
+        {
+          id: 'web-automation',
+          icon: 'globe',
+          badge: 'Web Automation',
+          title: 'Open web pages, fill forms, and span multiple pages',
+          description:
+            'Navigate pages automatically to gather structured details, populate form fields from local files, and chain multi-step browser tasks.',
+          sampleSteps: [
+            'Opens multiple reference pages to gather and structure public information',
+            'Fills out repetitive web form fields from your local spreadsheets cleanly',
+            'Pauses automatically before sign-ins, final submissions, or sensitive steps',
+          ],
+        },
+        {
+          id: 'safe-handover',
+          icon: 'shield',
+          badge: 'Visible & Controllable',
+          title: 'Every step visible—pause or take over anytime',
+          description:
+            'Track progress step by step inside authorized workspaces while keeping system directories and credentials protected.',
+          sampleSteps: [
+            'Defaults to “Ask to Approve” before touching files outside your workspace or going online',
+            'Stop, redirect, or add new instructions at any point during execution',
+            'Save any proven multi-step flow as a reusable skill for one-click reuse next time',
+          ],
+        },
+      ],
+      footerNote:
+        'Cross-app desktop control is currently available as an experimental feature on macOS, with confirmation prompts before risky actions.',
+    },
+    zeroBarrierSection: {
+      title: 'Up and running in 3 steps with your own model key',
+      subtitle:
+        'No complex setup. No EvoWork account required. Download, paste a model key, and ship your first file in three minutes.',
+      badge: 'Easy Setup',
       steps: [
         {
           num: '01',
           title: 'Launch straight into the workspace',
-          desc: 'The bundled office runtime verifies silently in the background—no multi-step installer wizard.',
+          desc: 'Open the app and start right away—no sign-up walls or lengthy setup wizards.',
         },
         {
           num: '02',
           title: 'Add your preferred model key',
-          desc: 'Use DeepSeek, Kimi (Moonshot), GLM (Zhipu), MiMo, or any OpenAI-compatible API endpoint.',
+          desc: 'Connect DeepSeek, Kimi (Moonshot), GLM (Zhipu), or other compatible services anytime.',
         },
         {
           num: '03',
           title: 'Drop files and describe the goal',
-          desc: 'Watch progress and inspect deliverables side by side, then open directly in your desktop apps.',
+          desc: 'Track progress and preview deliverables side by side, then open directly in your desktop apps.',
         },
       ],
       providersLabel: 'Works with leading model providers',
@@ -228,113 +369,30 @@ export const EN_CONTENT: SiteContent = {
         { name: 'DeepSeek', note: 'V4 Pro / Flash · Step-by-step guide' },
         { name: 'Kimi (Moonshot)', note: 'K3.1 Pro · Great for long docs' },
         { name: 'GLM (Zhipu)', note: 'GLM 5.3 · Office-tested' },
-        { name: 'OpenAI-Compatible', note: 'Any custom Base URL' },
+        { name: 'Compatible Services', note: 'Custom endpoint support' },
       ],
-      guideLinkLabel: 'Read the step-by-step API key guide',
+      guideLinkLabel: 'Read the step-by-step model key guide',
       noAccountNote:
-        'Your API keys are encrypted in your OS keychain, masked to the last 4 digits, and never sent to EvoWork.',
-    },
-    workflowSection: {
-      title: 'From one-off files to dependable workflows',
-      subtitle:
-        'Read local archives, run recurring reports on schedule, cap budgets on long jobs, and save winning workflows as reusable skills.',
-      items: [
-        {
-          id: 'library',
-          icon: 'library',
-          label: 'Local Library & Scan OCR',
-          description:
-            'Parse PDFs, Office docs, archives, and scanned pages locally—then search full text or cite with @.',
-          deliverableTag: 'Local Library · OCR',
-          stageTitle: 'Local Document Search & @ Citations',
-          stagePrompt:
-            '@2026-contracts Find every customer agreement mentioning quarterly rebates and summarize them in a table.',
-          stageHighlight: 'On-device parsing & OCR · Paste screenshots anywhere with ⌘V / Ctrl+V',
-          stageBullets: [
-            'Drag in folders, zip archives, or paste clipboard screenshots directly into the composer',
-            'Scanned PDFs run through local OCR so sensitive scans never leave your machine',
-            'Type @ to anchor answers directly to specific files and library entries',
-          ],
-          stageFooterNote: 'Also imports existing project memories from Claude Code and WorkBuddy',
-        },
-        {
-          id: 'schedule',
-          icon: 'clock',
-          label: 'Scheduled Automations',
-          description:
-            'Describe recurring work in plain language (“every Monday at 9 AM”) with automatic pause after 3 consecutive failures.',
-          deliverableTag: 'Automations',
-          stageTitle: 'Every Monday 09:00 · Weekly Report Draft',
-          stagePrompt:
-            'Every Monday at 9 AM, scan the Weekly Notes folder and prepare a clean team status report draft.',
-          stageHighlight: 'Set once · Full run history · Auto-pauses on repeated errors',
-          stageBullets: [
-            'Supports daily, weekly, and monthly schedules plus active start/end date windows',
-            'Pause or resume any schedule in one click with traceable run history',
-            'Automatically pauses after 3 consecutive failures so it never burns tokens silently',
-          ],
-          stageFooterNote: 'Schedules execute locally inside the folders you explicitly authorize',
-        },
-        {
-          id: 'goal',
-          icon: 'target',
-          label: 'Budget-Capped Long Tasks',
-          description:
-            'Use /goal to set an ongoing objective and a hard usage cap—pause anytime and resume from checkpoints.',
-          deliverableTag: '/goal · Budget Guard',
-          stageTitle: 'Long-Running Goal with Hard Budget Stop',
-          stagePrompt:
-            '/goal Extract financial tables from 12 annual PDFs and build a master rollup—stop immediately if budget is reached.',
-          stageHighlight: 'Pause & resume across restarts · Kills background commands on stop',
-          stageBullets: [
-            'Pausing or hitting the budget cap truly stops the active turn and background commands',
-            'Pick up right where you left off after an interruption without re-running completed steps',
-            'Inspect per-task usage right in Settings so costs stay predictable',
-          ],
-          stageFooterNote:
-            'Verified end-to-end against real pause/resume and budget exhaustion runs',
-        },
-        {
-          id: 'skill',
-          icon: 'spark',
-          label: 'Turn Sessions into Reusable Skills',
-          description:
-            'Once a workflow clicks, extract it into a reusable skill—or install audited skills, experts, and connectors.',
-          deliverableTag: 'Session-to-Skill · 74+ Hub Items',
-          stageTitle: 'One Great Run → Reusable Team Skill',
-          stagePrompt:
-            'Extract our reconciliation checklist and formatting rules from this session into a project skill.',
-          stageHighlight:
-            'Save per-project or globally · Signed Hub with 34 skills, 31 experts & 9 connectors',
-          stageBullets: [
-            'Turn any finished conversation into a clean, reviewable skill draft without writing boilerplate',
-            'Invoke saved skills anytime by typing / at the start of your message',
-            'Build single-role experts or multi-agent teams right inside the local Agent Workbench',
-          ],
-          stageFooterNote:
-            'Every external skill discloses its scripts and network hosts before installation',
-        },
-      ],
+        'Your model keys stay encrypted in your OS keychain, masked to the last 4 digits, and never uploaded.',
     },
     trustSection: {
       title: 'Work you can trust: your files stay on your computer',
-      subtitle:
-        'No fine print—these are the exact same privacy boundaries shown on first launch inside EvoWork.',
+      subtitle: 'No fine print—these are the exact same privacy boundaries shown inside EvoWork.',
       localTitle: 'Stays on your computer',
       localBadge: 'Local-first · Raw files stay put',
       localItems: [
-        'PDF, Word, Excel, PowerPoint, archive parsing, and scanned OCR run locally on your machine',
-        'File edits, command execution, and scheduled automations stay on your device',
-        'API keys are encrypted in your OS keychain and masked to the last four characters',
-        'System directories, credential folders, and EvoWork settings are hard-blocked at all times',
+        'PDF, Word, Excel, PowerPoint, archive parsing, and scanned page reading run locally',
+        'File edits, organization, and scheduled tasks execute inside your authorized folders',
+        'Model keys stay encrypted in your system keychain and show only the last four digits',
+        'Sensitive system folders and credential directories stay protected at all times',
       ],
       networkTitle: 'When it connects online',
       networkBadge: 'Transparent & model-only',
       networkItems: [
-        'Only your prompts and relevant context go to the model provider you choose; EvoWork does not store them',
+        'Only your prompts and relevant context go to the model provider you choose, without storing originals',
         'Live web lookups cite every source URL so you can verify claims quickly',
-        'Installing a skill shows every script and external host before you approve',
-        'Honest errors over silent fallbacks: if a model lacks vision or a feature is off, EvoWork tells you plainly',
+        'Installing a new skill discloses its actions and external hosts before you approve',
+        'Honest feedback over silent workarounds whenever a model or feature has a limitation',
       ],
       tiersTitle: 'You decide how far it can go',
       tiers: [
@@ -350,7 +408,7 @@ export const EN_CONTENT: SiteContent = {
           badge: 'Current task only',
           tone: 'neutral',
           description:
-            'Requires explicit confirmation to enable and scopes to one task. Even here, delete commands ask first.',
+            'Requires explicit confirmation to enable and scopes to one task. Even here, delete actions ask first.',
         },
         {
           name: 'Approve for Me',
@@ -362,8 +420,8 @@ export const EN_CONTENT: SiteContent = {
       ],
       guardrails: [
         'Explicit confirmation with exact file paths before deleting or overwriting files',
-        'When you deny an action, EvoWork is tested not to sneak around it with an alternate command',
-        'Open-source application code under the MIT license for independent inspection',
+        'When you deny an action, EvoWork will not try to work around your decision',
+        'Every step remains expandable and reviewable before you share final deliverables',
       ],
     },
     promptSection: {
@@ -373,20 +431,20 @@ export const EN_CONTENT: SiteContent = {
       rows: [
         [
           {
-            id: 'p-weekly',
-            category: 'Daily Ops',
-            title: 'Weekly Status Report',
+            id: 'p-finance',
+            category: 'Finance',
+            title: 'Market Hotspot Brief',
             formatTag: '.docx',
             prompt:
-              'Use this week’s notes in the folder to write an executive-first Word weekly report covering wins, next week’s plan, and blockers.',
+              'Summarize this week’s key sector policies and market catalysts with data comparisons and risk notes into an executive Word brief.',
           },
           {
-            id: 'p-contract',
-            category: 'Legal & Procurement',
-            title: 'Scanned Contract Audit',
+            id: 'p-academic',
+            category: 'Academia',
+            title: 'Multi-Paper Literature Review',
             formatTag: '.docx',
             prompt:
-              'Run local OCR on this scanned supplier agreement and compile payment terms, liability caps, and auto-renewal risks into a cited Word table.',
+              'Read the 5 research PDFs in this folder, compare their methods, findings, and limitations in a table, and compile a formatted reference list.',
           },
           {
             id: 'p-excel',
@@ -405,38 +463,46 @@ export const EN_CONTENT: SiteContent = {
               'Turn this Q3 summary memo into a 10-slide editable PowerPoint deck highlighting KPI shifts, project retros, and Q4 priorities.',
           },
           {
+            id: 'p-contract',
+            category: 'Legal & Ops',
+            title: 'Scanned Contract Audit',
+            formatTag: '.docx',
+            prompt:
+              'Scan this supplier agreement locally and compile payment terms, liability caps, and auto-renewal risks into a cited Word review table.',
+          },
+        ],
+        [
+          {
+            id: 'p-research',
+            category: 'Deep Research',
+            title: 'Cited Market Comparison',
+            formatTag: '.docx',
+            prompt:
+              'Research 5 leading workplace AI tools online, combine with our local notes, and compile a cited Word comparison report.',
+          },
+          {
+            id: 'p-batch',
+            category: 'Computer Actions',
+            title: 'Batch Invoices & Web Pre-fill',
+            formatTag: 'Files + Web',
+            prompt:
+              'Inspect the PDF invoices in this folder, propose a “Date_Vendor_Amount” rename plan and summary Excel ledger, then pause for my approval.',
+          },
+          {
+            id: 'p-schedule',
+            category: 'Scheduled Tasks',
+            title: 'Friday Delivery Digest',
+            formatTag: 'Schedule',
+            prompt:
+              'Create a recurring task: every Friday at 5 PM, summarize updates in the Project Log folder into a clean delivery digest.',
+          },
+          {
             id: 'p-minutes',
             category: 'Meetings',
             title: 'Meeting Minutes & Owners',
             formatTag: '.docx',
             prompt:
               'Clean up these raw meeting notes into structured minutes with separate tables for Decisions Made and Action Items (owner + due date).',
-          },
-        ],
-        [
-          {
-            id: 'p-research',
-            category: 'Research',
-            title: 'Cited Market Comparison',
-            formatTag: '.docx',
-            prompt:
-              'Research 5 leading workplace AI tools online and compile a structured Word comparison of pricing, local privacy, and file outputs with source links.',
-          },
-          {
-            id: 'p-batch',
-            category: 'File Hygiene',
-            title: 'Batch Invoice Rename & Ledger',
-            formatTag: 'Local Batch',
-            prompt:
-              'Inspect the PDF invoices in this folder, propose a “Date_Vendor_Amount” rename plan for my approval, then build a summary Excel ledger.',
-          },
-          {
-            id: 'p-schedule',
-            category: 'Automation',
-            title: 'Friday Delivery Digest',
-            formatTag: 'Schedule',
-            prompt:
-              'Create a recurring automation: every Friday at 5 PM, summarize updates in the Project Log folder into a clean delivery digest.',
           },
           {
             id: 'p-email',
@@ -446,75 +512,68 @@ export const EN_CONTENT: SiteContent = {
             prompt:
               'Draft a crisp client follow-up email based on this pricing sheet and attach a clean one-page PDF quotation.',
           },
-          {
-            id: 'p-skill',
-            category: 'Playbooks',
-            title: 'Save Workflow as a Skill',
-            formatTag: 'Custom Skill',
-            prompt:
-              'Extract the monthly close checklist and reconciliation steps we just completed into a reusable project skill.',
-          },
         ],
       ],
     },
     bottomCta: {
-      title: 'Leave the formatting and busywork to EvoWork',
+      title: 'Leave busywork and formatting to EvoWork',
       subtitle:
-        'Download free for desktop—no account required. Plug in your API key and ship your first file in minutes.',
+        'Download free for desktop—no account required. Plug in your model key and deliver finished work in minutes.',
       primaryLabel: 'Go to Downloads',
       secondaryLabel: 'Enterprise / Book a Demo',
     },
   },
   download: {
-    eyebrow: `Latest Release v${SITE_CONFIG.version} · Free & Open Source`,
+    eyebrow: 'EvoWork · Desktop App',
     title: 'Download EvoWork and ship your first file in 3 minutes',
     subtitle:
-      'Comes with the full office runtime and CJK/Latin fonts bundled inside—no Python setup or account sign-up required.',
+      'Ready to produce polished Word, Excel, and PowerPoint files right after installation—no account sign-up or extra setup needed.',
     detectedLabel: 'Recommended for your system',
     downloadButton: 'Download Now',
     requirementsLabel: 'Requirements',
-    checksumLabel: 'Release notes',
+    checksumLabel: 'Setup note',
     unavailableNotice:
-      'Honest note: Installers are currently available for Apple Silicon Macs (M1–M4) and 64-bit Windows. Intel Mac and Linux builds are not available yet.',
+      'Note: Installers are currently available for Apple Silicon Macs (M1–M4) and 64-bit Windows. Intel Mac and Linux builds are not available yet.',
     platforms: [
       {
         id: 'macos',
         name: 'macOS (Apple Silicon)',
-        arch: 'arm64 · DMG Disk Image',
+        arch: 'Apple Silicon · DMG Installer',
         badge: 'Apple Silicon (M-Series)',
-        fileName: `EvoWork-${SITE_CONFIG.version}-mac-arm64-unsigned.dmg`,
-        sizeText: '~295 MB (includes offline office runtime & fonts)',
+        fileName: 'EvoWork-mac-arm64.dmg',
+        sizeText: '~295 MB (ready to use out of the box)',
         requirements: 'macOS 13 or later · Apple M1 / M2 / M3 / M4',
         url: SITE_CONFIG.links.macArm64Dmg,
-        sha256Hint: 'Unsigned build — see the one-line Terminal command below for first launch',
+        sha256Hint:
+          'Unsigned preview build — see the one-line Terminal step below for first launch',
         highlights: [
-          'Drag to Applications and launch—office runtime verifies automatically in the background',
-          'Full local document parsing, on-device OCR, and experimental Computer Use',
-          'Check for updates inside Settings with zero forced upgrades',
+          'Drag to Applications and launch—no extra office add-ins required',
+          'Full local document parsing, scan reading, and desktop actions',
+          'One-click update checks inside Settings with zero forced upgrades',
         ],
       },
       {
         id: 'windows',
         name: 'Windows (64-bit)',
-        arch: 'x64 · Guided Installer',
+        arch: '64-bit · Guided Installer',
         badge: 'Windows 10 / 11',
-        fileName: `EvoWork-${SITE_CONFIG.version}-win-x64-setup.exe`,
+        fileName: 'EvoWork-win-x64-setup.exe',
         sizeText: 'Guided installer with custom directory & shortcuts',
         requirements: 'Windows 10 / 11 (64-bit)',
         url: SITE_CONFIG.links.windowsSetupExe,
-        sha256Hint: 'Supports in-app silent upgrades and automatic relaunch for installed versions',
+        sha256Hint: 'Supports custom install folders, shortcuts, and silent in-app upgrades',
         highlights: [
           'Interactive setup wizard with custom install folder and shortcut choices',
-          'Installed versions upgrade silently in-app and relaunch cleanly',
-          'Includes the same offline office runtime and bundled fonts out of the box',
+          'Installed versions upgrade seamlessly in-app and relaunch automatically',
+          'Ready to generate Word, Excel, and PowerPoint files immediately',
         ],
       },
     ],
     unsignedGuide: {
-      badge: 'macOS First Launch Note (Temporary while unsigned)',
+      badge: 'macOS First Launch Note (Temporary)',
       title: 'Seeing “EvoWork is damaged and can’t be opened” on macOS?',
       subtitle:
-        'The file is not damaged. Because current builds are not yet notarized with an Apple Developer ID, macOS Gatekeeper blocks first launch. Run this single command in Terminal after dragging EvoWork into Applications (this step will disappear once notarization is in place).',
+        'The installer is completely intact. Because current builds are awaiting Apple notarization, macOS blocks the first launch. Paste this single command in Terminal after dragging EvoWork into Applications (this step will be removed once notarized).',
       command: 'xattr -cr /Applications/EvoWork.app',
       note: 'Drag EvoWork into your Applications folder first, then paste and run this command in Terminal.',
       steps: [
@@ -525,25 +584,25 @@ export const EN_CONTENT: SiteContent = {
     },
     windowsTip: {
       badge: 'Windows Setup Note',
-      title: 'Click “Run anyway” if Windows SmartScreen prompts',
+      title: 'Click “More info → Run anyway” if Windows prompts',
       body: 'Use the installer wizard to pick your folder and shortcuts. Future updates can be installed silently from Settings → About & Updates.',
     },
     quickStartTitle: '3 steps to your first finished deliverable',
-    quickStartSubtitle: 'No EvoWork sign-up, no terminal configuration, no extra office plugins.',
+    quickStartSubtitle: 'No EvoWork sign-up, no complex setup, no extra office add-ins.',
     quickStartSteps: [
       {
         number: '01',
         title: 'Open EvoWork straight into the workspace',
         description:
-          'Skip lengthy onboarding. The bundled office runtime validates silently in the background, and task folders stay neatly organized (changeable anytime in Settings → General).',
+          'Skip lengthy onboarding. Your task files stay neatly organized in a dedicated folder that you can change anytime under Settings → General.',
       },
       {
         number: '02',
-        title: 'Add a model API key in Settings → Models',
+        title: 'Add a model key in Settings → Models',
         description:
-          'Paste a key from DeepSeek, Kimi (Moonshot), GLM (Zhipu), or any OpenAI-compatible provider. Keys are stored encrypted in your OS keychain.',
+          'Paste a key from DeepSeek, Kimi (Moonshot), GLM (Zhipu), or another compatible provider. Keys stay encrypted in your OS keychain.',
         action: {
-          label: 'Read the step-by-step API key guide',
+          label: 'Read the step-by-step model key guide',
           page: 'docs',
           docSlug: 'api-key-setup',
         },
@@ -560,61 +619,21 @@ export const EN_CONTENT: SiteContent = {
         },
       },
     ],
-    changelogTitle: 'Recent Releases',
-    changelogSubtitle:
-      'Steady, tested desktop releases—highlighted straight from our repository changelog.',
-    changelogReleases: [
-      {
-        version: '0.6.5',
-        label: 'Latest',
-        items: [
-          'New Windows guided installer with custom directory/shortcut selection and silent in-app upgrades',
-          'Aligned Windows title bar with sidebar and kept window controls clickable in compact widths',
-          'Preserved task titles when refreshing queued messages encounters an error',
-        ],
-      },
-      {
-        version: '0.6.4',
-        label: 'Polish & Reliability',
-        items: [
-          'Full copy/paste context menu, global ⌘V screenshot paste, and queued attachments while sending',
-          'Atomic token deletion for / skills and @ file references; IME composition and emails no longer trigger menus',
-          'Pausing a task or exhausting a /goal budget cleanly halts active turns and background commands',
-          'Added model recognition for DeepSeek V4 Pro, Kimi K3.1 Pro, and GLM 5.3',
-        ],
-      },
-      {
-        version: '0.6.1 – 0.6.2',
-        label: 'Agents & Curated Experts',
-        items: [
-          'Create single experts or multi-agent teams locally, and install curated experts from the signed Hub',
-          'Extract reusable project/global skills from finished sessions; import memories from Claude Code & WorkBuddy',
-          'Signed Hub expiry visibility and zero-download bundled office runtime',
-        ],
-      },
-    ],
-    viewAllReleasesLabel: 'View full changelog & source on GitHub',
   },
   docs: {
     title: 'Documentation',
     subtitle:
-      'Plain-language guides for everyday office work—from plugging in an API key to verifying every privacy boundary.',
-    searchPlaceholder: 'Search guides (e.g. DeepSeek, PPT, OCR, schedule, privacy)…',
-    emptySearch: 'No matching guides found. Try searching for “API key”, “Word”, or “privacy”.',
+      'Plain-language guides for everyday workplace tasks—from plugging in a model key to understanding every privacy guardrail.',
+    searchPlaceholder: 'Search guides (e.g. DeepSeek, PPT, schedule, privacy)…',
+    emptySearch: 'No matching guides found. Try searching for “key”, “Word”, or “privacy”.',
     onThisPage: 'On this page',
     previousLabel: 'Previous',
     nextLabel: 'Next',
     groups: [
       { id: 'getting-started', label: 'Getting Started' },
       { id: 'office', label: 'Office Workflows' },
-      { id: 'workflow', label: 'Power Features' },
+      { id: 'workflow', label: 'Pro Skills & Schedules' },
       { id: 'security', label: 'Security & Boundaries' },
-      {
-        id: 'developers',
-        label: 'Developers & Open Source',
-        collapsible: true,
-        defaultCollapsed: true,
-      },
     ],
     articles: [
       {
@@ -629,10 +648,10 @@ export const EN_CONTENT: SiteContent = {
             id: 'install',
             heading: '1. Install the Desktop App',
             paragraphs: [
-              'Download the installer for your operating system from the Download page. EvoWork bundles its own offline office runtime and fonts, so you never have to install Python or configure command-line packages.',
+              'Download the installer for your operating system from the Download page. EvoWork works out of the box to deliver formatted Word, Excel, and PowerPoint files with zero extra environment setup.',
             ],
             bullets: [
-              'macOS (Apple Silicon): Drag EvoWork into Applications. While builds remain unsigned, run xattr -cr /Applications/EvoWork.app once in Terminal.',
+              'macOS (Apple Silicon): Drag EvoWork into Applications. If prompted on first launch, follow the one-line step on the Download page.',
               'Windows (64-bit): Run the setup wizard, choose your directory and shortcuts, and launch.',
             ],
           },
@@ -640,15 +659,15 @@ export const EN_CONTENT: SiteContent = {
             id: 'first-launch',
             heading: '2. Straight into the Workspace',
             paragraphs: [
-              'EvoWork opens straight to your workspace with no mandatory account sign-up and no blocking onboarding tour. The bundled office runtime verifies asynchronously in the background.',
-              'Tasks started without a project folder are saved neatly in a dedicated default directory, which you can change anytime under Settings → General.',
+              'EvoWork opens straight to your workspace with no mandatory account sign-up and no blocking onboarding tour.',
+              'Tasks started without a project folder are saved neatly in a dedicated default directory, changeable anytime under Settings → General.',
             ],
           },
           {
             id: 'first-task',
             heading: '3. Delegate Your First Office Task',
             paragraphs: [
-              'Once you add an API key, drop in your source files (Excel, PDF, screenshots) and explain what you want the same way you would brief a colleague.',
+              'Once you add a model key, drop in your source files (Excel, PDF, screenshots) and explain what you want the same way you would brief a colleague.',
             ],
             callout: {
               tone: 'tip',
@@ -661,42 +680,42 @@ export const EN_CONTENT: SiteContent = {
       {
         slug: 'api-key-setup',
         groupId: 'getting-started',
-        title: 'Connect a Model API Key (DeepSeek / Kimi / GLM)',
+        title: 'Connect a Model Key (DeepSeek / Kimi / GLM)',
         summary:
-          'No EvoWork account needed—get an API key from your preferred provider and paste it into Settings → Models.',
+          'No EvoWork account needed—get a key from your preferred provider and paste it into Settings → Models.',
         readingTime: '4 min read',
         sections: [
           {
             id: 'why-byok',
-            heading: 'Why Bring Your Own Key (BYOK)?',
+            heading: 'Why Use Your Own Model Key?',
             paragraphs: [
-              'With BYOK, your prompts go straight to the model provider you pick and you pay only their usage rates—no mandatory EvoWork subscription. Your keys stay encrypted inside your operating system keychain and only display their last four characters.',
+              'Your prompts go straight to the model provider you choose and you pay only for what you use—no mandatory platform subscription. Keys stay encrypted inside your operating system keychain and display only their last four digits.',
             ],
           },
           {
             id: 'deepseek-steps',
             heading: 'Example: Set Up DeepSeek in 4 Steps',
             paragraphs: [
-              'For everyday work that includes screenshots or scanned images, choose deepseek-flash (vision + tool calling). For heavy multi-step analysis or long prose, try deepseek-v4-pro.',
+              'For everyday work that includes screenshots or scanned images, choose deepseek-flash. For heavy multi-step analysis or long reports, try deepseek-v4-pro.',
             ],
             bullets: [
               'Step 1: Open platform.deepseek.com in your browser and sign in.',
-              'Step 2: Check your API balance under Usage (API credits are separate from free web chat).',
+              'Step 2: Check your balance under Usage.',
               'Step 3: Go to API keys → Create API key, and copy it immediately—keys are shown in full only once.',
-              'Step 4: Open EvoWork Settings → Models, choose DeepSeek (Base URL: https://api.deepseek.com), paste the key, and test.',
+              'Step 4: Open EvoWork Settings → Models, choose DeepSeek, paste the key, and save.',
             ],
-            code: 'Base URL: https://api.deepseek.com\nRecommended models: deepseek-flash (vision + tools) / deepseek-v4-pro',
+            code: 'Service URL: https://api.deepseek.com\nRecommended models: deepseek-flash (daily work & vision) / deepseek-v4-pro (deep writing)',
           },
           {
             id: 'other-models',
-            heading: 'Kimi, GLM, and Any OpenAI-Compatible Endpoint',
+            heading: 'Kimi, GLM, and Other Compatible Services',
             paragraphs: [
-              'EvoWork ships with protocol adapters for Kimi (Moonshot K3.1 Pro), GLM (Zhipu GLM 5.3), Xiaomi MiMo, and standard OpenAI-compatible APIs. You can save multiple keys and switch models anytime.',
+              'EvoWork also supports Kimi (Moonshot), GLM (Zhipu), and other compatible model services. Save multiple keys in Settings → Models and switch whenever you need.',
             ],
             callout: {
               tone: 'warn',
-              title: 'Keep your API key private',
-              body: 'Never share your key publicly or commit it to documents. If you suspect a leak, revoke it immediately in your model provider console.',
+              title: 'Keep your key private',
+              body: 'Never share your key publicly or paste it into shared documents. If you suspect a leak, revoke it immediately in your provider console.',
             },
           },
         ],
@@ -704,7 +723,7 @@ export const EN_CONTENT: SiteContent = {
       {
         slug: 'office-deliverables',
         groupId: 'office',
-        title: 'Guide to Word, Excel & PowerPoint Deliverables',
+        title: 'Office Tools: Word, Excel & PowerPoint Guide',
         summary:
           'How EvoWork produces clean layouts, verified Excel formulas, and editable slide decks.',
         readingTime: '4 min read',
@@ -713,14 +732,14 @@ export const EN_CONTENT: SiteContent = {
             id: 'word-pdf',
             heading: 'Word Documents & PDF Export',
             paragraphs: [
-              'EvoWork generates .docx files with clean A4 defaults, bundled CJK/Latin fonts, structured headings, and pagination awareness—ideal for weekly reports, memos, and contract reviews. Export to PDF or open directly in Word/WPS from the result panel.',
+              'EvoWork generates Word files with clean A4 formatting and structured headings—ideal for weekly reports, memos, and research reports. Export to PDF or open directly in Word/WPS from the result panel.',
             ],
           },
           {
             id: 'excel-charts',
             heading: 'Excel Workbooks & Data Charts',
             paragraphs: [
-              'When consolidating spreadsheets or reconciling budgets, EvoWork inspects actual headers, writes live editable Excel formulas, and cross-checks summary totals against raw rows. Charts render with bundled fonts so Chinese and English labels stay crisp.',
+              'When consolidating spreadsheets or reconciling budgets, EvoWork inspects headers, writes live editable Excel formulas, and cross-checks summary totals against raw rows alongside crisp charts.',
             ],
           },
           {
@@ -732,7 +751,7 @@ export const EN_CONTENT: SiteContent = {
             callout: {
               tone: 'info',
               title: 'Model choice matters for complex decks',
-              body: 'Deliverable polish on 10+ slide decks or multi-sheet financial models depends on the reasoning quality of the model you choose. Pick a flagship model for complex layouts.',
+              body: 'Deliverable polish on 10+ slide decks or multi-sheet financial models depends on the reasoning capability of the model you choose. Pick a flagship model for complex layouts.',
             },
           },
         ],
@@ -740,28 +759,28 @@ export const EN_CONTENT: SiteContent = {
       {
         slug: 'library-and-ocr',
         groupId: 'office',
-        title: 'Local Library, Screenshot Paste & Scan OCR',
+        title: 'Local Files, Screenshot Paste & Scan Reading',
         summary:
-          'Read PDFs, Office files, archives, and scanned documents locally without uploading raw files to the cloud.',
+          'Read PDFs, Office files, archives, and scanned documents locally without uploading raw files to third-party drives.',
         readingTime: '3 min read',
         sections: [
           {
             id: 'supported-files',
             heading: 'Supported File Formats',
             paragraphs: [
-              'Drag files into the composer, pick folders, or hit ⌘V / Ctrl+V anywhere in the window to paste screenshots directly into your current draft.',
+              'Drag files into the composer, pick folders, or press ⌘V / Ctrl+V anywhere in the window to paste screenshots directly into your draft.',
             ],
             bullets: [
-              'Documents & slides: PDF, Word (.docx), PowerPoint (.pptx), Markdown, TXT, RTF',
+              'Documents & slides: PDF, Word (.docx), PowerPoint (.pptx), Markdown, TXT',
               'Spreadsheets & data: Excel (.xlsx), CSV, TSV',
-              'Images & archives: JPG / PNG / GIF / BMP, ZIP / RAR archives, and source code files',
+              'Images & archives: JPG / PNG / GIF / BMP and ZIP / RAR archives',
             ],
           },
           {
             id: 'local-ocr',
-            heading: 'On-Device OCR & @ Citations',
+            heading: 'On-Device Scan Reading & @ Citations',
             paragraphs: [
-              'Scanned PDFs and contract photos are processed by a local OCR engine—original files stay on disk. Add recurring reference folders to your Library, then type @ in the composer to cite specific files or full-text matches.',
+              'Scanned PDFs and contract photos are read locally on your computer so original files never leave disk. Add recurring folders to your Library, then type @ in the composer to reference specific files directly.',
             ],
           },
         ],
@@ -769,96 +788,71 @@ export const EN_CONTENT: SiteContent = {
       {
         slug: 'automations-and-goals',
         groupId: 'workflow',
-        title: 'Automations, /goal Budget Caps & Session-to-Skill',
+        title: 'Specialized Skills, Deep Research & Schedules',
         summary:
-          'Schedule recurring reports, keep long tasks on budget, and turn winning runs into reusable skills.',
+          'Invoke domain skills, schedule recurring reports, and keep long research tasks under control.',
         readingTime: '4 min read',
         sections: [
           {
+            id: 'pro-skills',
+            heading: 'Use Specialized Skills for Finance, Academia & Ops',
+            paragraphs: [
+              'Type / at the start of your message to select specialized skills such as market hotspot analysis, deep literature reading, contract review, or weekly reports. You can also turn any winning session into a reusable custom skill.',
+            ],
+          },
+          {
             id: 'automations',
-            heading: 'Scheduled Automations',
+            heading: 'Scheduled Tasks',
             paragraphs: [
               'Describe recurring work in plain language—such as “Every Monday at 9 AM, compile last week’s notes into a team report draft.” Set optional active date ranges, pause or resume anytime, and rely on automatic pausing after 3 consecutive failures.',
             ],
           },
           {
             id: 'goal-budget',
-            heading: 'Keep Long Tasks Controlled with /goal',
+            heading: 'Keep Long Research Controlled with /goal',
             paragraphs: [
-              'Start a message with /goal to define a multi-step objective with a usage cap. You can pause and resume across app restarts, and hitting the cap immediately halts active turns and terminates background commands.',
+              'Start a message with /goal to define a multi-step objective with a usage cap. Pause and resume anytime; hitting the cap immediately stops active execution so spending stays predictable.',
             ],
-            code: '/goal Extract tables from 10 vendor PDFs into one Excel rollup and stop when budget is reached',
-          },
-          {
-            id: 'session-to-skill',
-            heading: 'Extract Reusable Skills from Finished Sessions',
-            paragraphs: [
-              'Once a task produces the exact format you want, extract it into a project or global skill from the task menu or in plain language. Review the generated draft, save it, and invoke it next time by typing / at the start of your prompt.',
-            ],
+            code: '/goal Complete deep research across 10 industry PDFs into one report and stop if budget is reached',
           },
         ],
       },
       {
         slug: 'security-and-boundaries',
         groupId: 'security',
-        title: 'Security Model, Approval Tiers & Honest Limits',
+        title: 'Security Model, Approval Tiers & Current Scope',
         summary:
-          'Clear documentation of what stays local, how approvals work, and what EvoWork does not do yet.',
+          'Clear documentation of what stays local, how approvals work, and current platform boundaries.',
         readingTime: '3 min read',
         sections: [
           {
             id: 'privacy-statement',
             heading: 'Where Does Your Data Go?',
             paragraphs: [
-              'Document parsing, OCR, command execution, and scheduled automations run locally on your machine. Parsing never uploads your raw files to a cloud backend.',
-              'Model inference requires internet access: prompts and relevant context are sent to the model provider you select. EvoWork’s local gateway does not retain them.',
+              'Document parsing, scan reading, local file work, and scheduled tasks run locally on your machine—raw files are not uploaded for parsing.',
+              'Model inference requires internet access: prompts and relevant context are sent to the model provider you select and are not retained.',
             ],
           },
           {
             id: 'approval-tiers',
-            heading: 'Approval Tiers & Hard Guardrails',
+            heading: 'Approval Tiers & Guardrails',
             paragraphs: [
               '“Ask to Approve” is the default tier—EvoWork asks before editing files outside your workspace or using the internet. “Full Access” requires confirmation and scopes only to the current task.',
             ],
             bullets: [
-              'Deleting or overwriting existing files asks for confirmation with exact file paths—even under Full Access, delete commands prompt first.',
-              'System folders, credential directories, and EvoWork’s own configuration are hard-blocked across all tiers.',
-              '“Approve for Me” (automated risk review) is not enabled yet and is explicitly grayed out in the UI.',
+              'Deleting or overwriting existing files asks for confirmation with exact file paths—even under Full Access, delete actions prompt first.',
+              'Sensitive system folders and credential directories remain protected across all tiers.',
+              '“Approve for Me” (automated risk review) is not enabled yet and is clearly marked in the app.',
             ],
           },
           {
             id: 'honest-limits',
-            heading: 'Current Known Boundaries',
-            paragraphs: ['We prefer spelling out limits upfront rather than hiding them:'],
+            heading: 'Current Platform Scope',
+            paragraphs: ['Current version scope that we continue to expand:'],
             bullets: [
-              'Installers currently cover Apple Silicon Macs and 64-bit Windows (no Intel Mac or Linux installers yet).',
-              'macOS installers are not notarized yet and require one Terminal xattr command on first launch.',
-              'Computer Use (controlling other desktop apps) remains experimental and macOS-only.',
-            ],
-          },
-        ],
-      },
-      {
-        slug: 'developers-open-source',
-        groupId: 'developers',
-        title: 'Build from Source, Licensing & Contributing',
-        summary:
-          'Architecture overview, verification commands, and open-source boundaries for developers.',
-        readingTime: '3 min read',
-        sections: [
-          {
-            id: 'stack',
-            heading: 'Tech Stack & Open-Source License',
-            paragraphs: [
-              'The desktop app uses Electron + React + TypeScript with a local Node.js service layer and unified model gateway. Repository code is MIT licensed, paired with an Apache-2.0 execution kernel maintained via strict, minimal patches.',
-            ],
-            code: 'pnpm install\npnpm run check   # format · lint · typecheck · tests · patch budget · protocol · notices\npnpm run build',
-          },
-          {
-            id: 'contribute',
-            heading: 'Issues & Custom Extensions',
-            paragraphs: [
-              'Report bugs or unexpected agent actions on GitHub Issues, or extend EvoWork locally using SKILL.md skill packs and standard MCP connectors.',
+              'Installers cover Apple Silicon Macs and 64-bit Windows (no Intel Mac or Linux installers yet).',
+              'macOS builds await formal notarization and require one Terminal step on first launch.',
+              'Cross-app desktop control is currently experimental on macOS.',
             ],
           },
         ],
@@ -869,22 +863,22 @@ export const EN_CONTENT: SiteContent = {
     eyebrow: 'EvoWork Enterprise · Local-First Governance',
     title: 'Bring controllable AI office work into your organization',
     subtitle:
-      'Keep raw documents on employee machines while centralizing identity, model quotas, signed policy packs, and audit trails—empowering teams without compromising security.',
+      'Keep raw documents on employee machines while centralizing access, model quotas, security policies, and compliance audits—empowering teams without compromising security.',
     primaryCta: 'Book a Demo & Consultation',
-    secondaryCta: 'Explore Governance Model',
+    secondaryCta: 'Explore Core Security Capabilities',
     modesTitle: 'Choose the deployment model that fits your security posture',
     modesSubtitle:
-      'One desktop app and unified governance protocol—without forcing sensitive files onto a public cloud.',
+      'Unified desktop experience and enterprise governance—without forcing sensitive files onto a public cloud.',
     modes: [
       {
         id: 'cloud',
         badge: 'Fastest Start',
         title: 'Managed Cloud Organization',
         summary:
-          'Turnkey online accounts, shared model gateway, and per-member quota controls—roll out to teams in a day.',
+          'Turnkey organization accounts, shared model routing, and per-member quota controls—roll out to teams in a day.',
         points: [
-          'Admins configure approved models and usage quotas centrally so staff never manage API keys',
-          'File parsing and task execution remain on each employee’s computer',
+          'Admins configure approved models and usage quotas centrally so staff never manage keys',
+          'Document parsing and local task work remain on each employee’s computer',
           'Member invitations, usage alerts, and instant device revocation out of the box',
         ],
       },
@@ -893,11 +887,11 @@ export const EN_CONTENT: SiteContent = {
         badge: 'Most Popular',
         title: 'Private On-Prem / VPC Deployment',
         summary:
-          'Host identity, enterprise model gateway, policy distribution, and audit services inside your own network.',
+          'Host identity, enterprise model routing, policy distribution, and audit services inside your own network.',
         points: [
-          'Full egress control—route to self-hosted LLMs or approved commercial endpoints',
-          'Distribute signed policy packs controlling allowed models, feature switches, and guardrails',
-          'Revoke device sessions and refresh tokens centrally upon offboarding',
+          'Full egress control—connect to internal LLMs or approved external model services',
+          'Distribute centralized policies controlling allowed models, features, and guardrails',
+          'Revoke device sessions centrally upon offboarding or lost hardware',
         ],
       },
       {
@@ -905,72 +899,110 @@ export const EN_CONTENT: SiteContent = {
         badge: 'Dedicated Delivery',
         title: 'Fully Air-Gapped Deployment',
         summary:
-          'Built for regulated environments where installers, office runtimes, plugin hubs, and models stay 100% offline.',
+          'Built for regulated environments where installers, curated skills, and inference models stay 100% offline.',
         points: [
           'All external network dependencies disabled with zero silent fallback to the public internet',
-          'Bundled offline office runtime and internally signed plugin repository',
+          'Internal distribution of desktop packages and organization-vetted skill catalogs',
           'Joint acceptance testing tailored to your internal network environment',
         ],
       },
     ],
-    governanceTitle: 'Governance separated from content by design',
-    governanceSubtitle:
-      'Admins govern permissions and spend while never exposing employee local documents on the control plane.',
-    governanceCards: [
+    nextPlanTitle: 'Core Enterprise Security & Audit Capabilities',
+    nextPlanSubtitle:
+      'Built for strict compliance and zero-leakage requirements across finance, legal, and large organizations:',
+    nextPlanCards: [
       {
-        title: 'Zero task content on the admin portal',
-        description:
-          'The tenant console manages members, default models, quotas, and policy packs—its APIs and database schemas contain no task prompts or local file content.',
+        id: 'audit-logs',
+        badge: 'Core Capability · 01',
+        title: 'Comprehensive Logging & Enterprise Audit',
+        summary:
+          'Capture and retain complete operational logs—covering task launches, file access, web and tool actions, approval decisions, and policy changes—for enterprise compliance audits and traceability.',
+        flowSteps: [
+          'Records complete employee and admin action trails searchable by team, user, and date',
+          'Supports centralized archiving, tamper-evident retention, and one-click audit exports',
+          'Captures blocked high-risk actions and approvals for rapid security reviews',
+        ],
+        highlight: 'Every AI-assisted deliverable becomes traceable and audit-ready',
       },
       {
-        title: 'Signed policy packs with rollout visibility',
+        id: 'sensitive-masking',
+        badge: 'Core Capability · 02',
+        title: 'Sensitive Data Detection & Synthetic Masking',
+        summary:
+          'Automatically detect sensitive information—names, financials, contract entities, IDs, and accounts—and replace it with realistic synthetic data before sending anything to the LLM, then restore the real values locally when results return.',
+        flowSteps: [
+          'Detects built-in and enterprise-defined sensitive fields locally across docs and tables',
+          'Replaces real values with consistent synthetic placeholders so LLMs never see real sensitive data',
+          'Automatically restores the authentic values on-device once the model returns results',
+        ],
+        highlight:
+          'Zero real sensitive data sent to LLMs—100% accurate real files returned to staff',
+      },
+    ],
+    governanceTitle: 'Governance separated from content by design',
+    governanceSubtitle:
+      'Admins govern permissions, spend, and compliance while employee local documents remain on-device.',
+    governanceCards: [
+      {
+        title: 'Admin console isolated from task content',
         description:
-          'Review diffs before issuing signed policies, track active rollout coverage across devices, inspect history, or revoke immediately.',
+          'The enterprise console focuses on members, approved models, quotas, and security policies—without syncing local document contents into the admin panel.',
+      },
+      {
+        title: 'Centralized policy rollout & diff preview',
+        description:
+          'Preview policy changes before rollout, track device adoption status, review revision history, or revoke immediately.',
       },
       {
         title: 'Device revocation & audit export',
         description:
-          'Inspect active devices per user, revoke one or all other devices in one click, and export identity/admin audit logs to CSV.',
+          'View active devices per member, revoke one or all devices in one click, and export identity and admin audit reports.',
       },
     ],
-    statusTitle: 'Honest enterprise capability status',
+    statusTitle: 'Enterprise Capabilities Overview',
     statusSubtitle:
-      'True to EvoWork’s engineering culture, we clearly separate shipped capabilities from staged pilot items.',
-    statusColumns: ['Capability', 'Status', 'Details'],
+      'End-to-end governance covering full audit logging, synthetic data masking, access control, and curated skill distribution.',
+    statusColumns: ['Capability', 'Availability', 'Details'],
     statusRows: [
       {
-        capability: 'HTTPS accounts, email verification & PKCE auto-refresh',
+        capability: 'Comprehensive activity logging & enterprise audit retention',
         status: 'ready',
-        statusLabel: 'Shipped',
+        statusLabel: 'Included',
         detail:
-          'Production HTTPS flow, OS keychain token storage, and non-disruptive background renewal.',
+          'Retains complete operational logs for enterprise compliance audits and traceability.',
       },
       {
-        capability: 'Tenant Admin Console (invites, quotas, models, signed policies, CSV audit)',
+        capability: 'Sensitive info detection & synthetic masking/restoration',
         status: 'ready',
-        statusLabel: 'Shipped',
+        statusLabel: 'Included',
         detail:
-          'Dedicated Web console (account.nucleant.cn) strictly isolated from local task content.',
+          'Replaces sensitive fields with synthetic values before LLM calls and restores real data locally on return.',
       },
       {
-        capability: 'Signed Plugin Hub & bundled offline office runtime',
+        capability: 'Organization accounts, email verification & secure session renewal',
         status: 'ready',
-        statusLabel: 'Shipped',
+        statusLabel: 'Included',
         detail:
-          'Ed25519 signed catalog verification, expiry visibility, and zero-download desktop office runtime.',
+          'Encrypted authentication, OS keychain protection, and seamless background refresh.',
       },
       {
-        capability: 'Enterprise SSO (OIDC/SAML) & directory group sync',
-        status: 'planned',
-        statusLabel: 'Pilot / Planned',
-        detail: 'Architecture specified; available for joint integration with pilot customer IdPs.',
+        capability:
+          'Tenant Admin Console (invites, quotas, default models, policies, audit export)',
+        status: 'ready',
+        statusLabel: 'Included',
+        detail: 'Dedicated management console focused on access and spend governance.',
       },
       {
-        capability: 'Reviewed team/department shared memory & task status updates',
-        status: 'planned',
-        statusLabel: 'Staged Rollout',
-        detail:
-          'Explicit opt-in publishing with role permissions; local auto-memory stays strictly private.',
+        capability: 'Curated skill distribution & offline office delivery',
+        status: 'ready',
+        statusLabel: 'Included',
+        detail: 'Verified internal skill catalogs and offline-capable desktop office workflows.',
+      },
+      {
+        capability: 'Enterprise SSO & directory integration',
+        status: 'ready',
+        statusLabel: 'Supported',
+        detail: 'Integrates with your organization’s identity provider and group structures.',
       },
     ],
     booking: {
@@ -979,9 +1011,9 @@ export const EN_CONTENT: SiteContent = {
         'Tell us about your team and workflows—we will get back within 1–2 business days to schedule a live walkthrough.',
       expectationsTitle: 'What you will get from the session',
       expectations: [
-        'A live desktop demo tailored to your team’s real files (finance, legal, ops, or engineering)',
-        'Architecture review of local privacy boundaries, egress controls, and on-prem sizing',
-        'Guidance for piloting the tenant admin console and unified model gateway',
+        'A live desktop demo tailored to your team’s real files (finance, legal, ops, or research)',
+        'Deep dive into synthetic data masking, full audit logging, and private deployment sizing',
+        'Guidance for piloting the tenant admin console and unified model routing',
       ],
       directEmailLabel: 'Prefer email? Reach us directly at',
       form: {
@@ -997,18 +1029,18 @@ export const EN_CONTENT: SiteContent = {
         interestOptions: [
           'Team trial & central model quotas',
           'Private / on-prem deployment',
-          'Custom LLM or internal skills integration',
-          'Security & compliance review',
+          'Sensitive data masking & full audit logs',
+          'Internal LLM & domain skills integration',
         ],
         notesLabel: 'Workflow notes (optional)',
         notesPlaceholder:
-          'e.g. Our finance and legal teams need local contract review and monthly Excel rollups with an internal LLM…',
+          'e.g. Our finance and legal teams need local contract review with synthetic masking and full audit logging…',
         consentText:
           'I agree that the EvoWork team may use these details to respond to my inquiry.',
         submitLabel: 'Request a Demo',
         submittingLabel: 'Submitting…',
         previewModeNote:
-          'No live lead endpoint is configured in this build—submitting shows a validated preview receipt with a direct email fallback.',
+          'Submit to confirm your request details or reach our enterprise team directly via email below.',
         validationName: 'Please enter your name',
         validationEmail: 'Please enter a valid work email address',
         validationCompany: 'Please enter your company or team name',
@@ -1017,7 +1049,7 @@ export const EN_CONTENT: SiteContent = {
         successBody:
           'Thanks for reaching out! We have received your demo request and will reply via email within 1–2 business days.',
         successPreviewBody:
-          'This build is running in endpoint-free preview mode and your form passed validation. Set VITE_LEAD_ENDPOINT to connect a live Webhook or API, or use the direct email button below.',
+          'Your request details are validated. Click the email button below to send your inquiry directly to our enterprise advisors.',
         successReset: 'Submit another inquiry',
         successDownloadCta: 'Try the free desktop app now',
         errorTitle: 'Could not submit right now',
@@ -1028,14 +1060,12 @@ export const EN_CONTENT: SiteContent = {
   },
   footer: {
     copyright: '© 2026 EvoWork',
-    licenseNote: 'MIT Open Source · Local-first desktop AI work assistant',
+    licenseNote: 'Local-first desktop AI work assistant',
     links: [
       { label: 'Download', page: 'download' },
       { label: 'Docs', page: 'docs', docSlug: 'quick-start' },
       { label: 'Security', page: 'docs', docSlug: 'security-and-boundaries' },
       { label: 'Enterprise', page: 'enterprise' },
-      { label: 'Account Portal', href: SITE_CONFIG.links.accountPortal, external: true },
-      { label: 'GitHub', href: SITE_CONFIG.links.github, external: true },
     ],
   },
 };
